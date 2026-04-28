@@ -15,8 +15,8 @@ from .utils import build_frontmatter, now_iso, read_md
 
 def _all_md(case_dir: Path) -> list[Path]:
     out: list[Path] = []
-    for sub in ("00_INPUT", "01_PROCESADO", "02_ANALISIS", "03_DECISION",
-                "04_OUTPUT_PREDEMANDA", "05_PROCEDIMIENTO", "06_AI_COWORK"):
+    for sub in ("00_Input", "01_Procesado", "02_Analisis", "03_Decision",
+                "04_Output predemanda", "05_Procedimiento", "06_Anonimizado", "07_AI cowork"):
         d = case_dir / sub
         if d.exists():
             out.extend(sorted(d.rglob("*.md")))

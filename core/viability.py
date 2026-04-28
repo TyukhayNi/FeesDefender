@@ -1,7 +1,7 @@
 """Análisis de viabilidad de la reclamación.
 
 Lee el `documentos_top.md`, concatena los `.md` referenciados (limitando tokens
-estimados), llama al prompt `viabilidad` y escribe `03_DECISION/viabilidad.md`.
+estimados), llama al prompt `viabilidad` y escribe `03_Decision/viabilidad.md`.
 También extrae hechos atómicos y contradicciones en archivos separados.
 """
 
@@ -19,12 +19,12 @@ _MAX_CONTEXT_CHARS = 18_000  # margen prudente para llama3 8k contexto
 
 
 def _gather_top_context(case_id: str) -> tuple[str, list[str]]:
-    top_path = caso_path(case_id) / "02_ANALISIS" / "documentos_top.md"
+    top_path = caso_path(case_id) / "02_Analisis" / "documentos_top.md"
     if not top_path.exists():
         return "", []
     _, body = read_md(top_path)
     slugs = _LINK_RE.findall(body)
-    proc_dir = caso_path(case_id) / "01_PROCESADO"
+    proc_dir = caso_path(case_id) / "01_Procesado"
 
     chunks: list[str] = []
     used: list[str] = []
@@ -75,12 +75,12 @@ def analyze(case_id: str) -> dict[str, Path]:
     contexto, used = _gather_top_context(case_id)
     if not contexto:
         raise FileNotFoundError(
-            "No hay 02_ANALISIS/documentos_top.md. Ejecuta antes el scoring."
+            "No hay 02_Analisis/documentos_top.md. Ejecuta antes el scoring."
         )
 
     return {
-        "viabilidad": _run_and_save(case_id, "viabilidad", "viabilidad.md", "03_DECISION", contexto, used),
-        "hechos_atomicos": _run_and_save(case_id, "hechos_atomicos", "hechos_atomicos.md", "02_ANALISIS", contexto, used),
-        "contradicciones": _run_and_save(case_id, "contradicciones", "contradicciones.md", "02_ANALISIS", contexto, used),
-        "prueba_indexada": _run_and_save(case_id, "prueba_indexada", "prueba_indexada.md", "02_ANALISIS", contexto, used),
+        "viabilidad": _run_and_save(case_id, "viabilidad", "viabilidad.md", "03_Decision", contexto, used),
+        "hechos_atomicos": _run_and_save(case_id, "hechos_atomicos", "hechos_atomicos.md", "02_Analisis", contexto, used),
+        "contradicciones": _run_and_save(case_id, "contradicciones", "contradicciones.md", "02_Analisis", contexto, used),
+        "prueba_indexada": _run_and_save(case_id, "prueba_indexada", "prueba_indexada.md", "02_Analisis", contexto, used),
     }

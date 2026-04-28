@@ -1,4 +1,4 @@
-"""CLI: sincronizar un expediente desde sudespacho.net al `00_INPUT/` local.
+"""CLI: sincronizar un expediente desde sudespacho.net al `00_Input/` local.
 
 Uso:
 
@@ -189,7 +189,7 @@ def sync_all(
     errors_global: list[str] = []
 
     for case_id in casos:
-        index = settings.casos_root / case_id / "00_INPUT" / "_caso.md"
+        index = settings.casos_root / case_id / "00_Input" / "_caso.md"
         if not index.exists():
             continue
 

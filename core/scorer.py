@@ -6,8 +6,8 @@ Tres modos (configurables por `SCORING_MODE`):
   - hybrid:    heurística como prefiltro + LLM solo sobre top 2*K
 
 Salidas:
-  - `02_ANALISIS/scoring.md`         (tabla razonada)
-  - `02_ANALISIS/documentos_top.md`  (los K más relevantes con enlaces)
+  - `02_Analisis/scoring.md`         (tabla razonada)
+  - `02_Analisis/documentos_top.md`  (los K más relevantes con enlaces)
 """
 
 from __future__ import annotations
@@ -104,7 +104,7 @@ def _llm_score(case_id: str, md_path: Path, text: str) -> tuple[float, list[str]
 
 
 def _iter_processed(case_id: str):
-    proc = caso_path(case_id) / "01_PROCESADO"
+    proc = caso_path(case_id) / "01_Procesado"
     for md in sorted(proc.glob("*.md")):
         meta, body = read_md(md)
         if meta.get("tipo") != "documento_procesado":
@@ -134,7 +134,7 @@ def score(case_id: str, *, mode: str | None = None, top_k: int | None = None) ->
     docs.sort(key=lambda d: d.score, reverse=True)
 
     # scoring.md (tabla razonada completa)
-    out_dir = caso_path(case_id) / "02_ANALISIS"
+    out_dir = caso_path(case_id) / "02_Analisis"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     table_lines = ["| # | Documento | Score | Motivos |", "|---|---|---|---|"]
@@ -146,7 +146,7 @@ def score(case_id: str, *, mode: str | None = None, top_k: int | None = None) ->
     fm = {
         "case_id": case_id,
         "tipo": "scoring",
-        "fase": "02_ANALISIS",
+        "fase": "02_Analisis",
         "fecha": now_iso(),
         "modo": mode,
         "top_k": top_k,

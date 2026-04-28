@@ -147,18 +147,61 @@ def tag_crm(tipo: str) -> str:
 # Estructura de carpetas de un caso
 # ---------------------------------------------------------------------------
 
-# El orden importa: refleja el flujo procesal.
-# 07_ANONIMIZADO: Markdown anonimizado listo para LLMs online (sin PII).
+# El orden importa: refleja el flujo procesal del abogado.
+# Anonimizado (06) va antes de AI cowork (07): primero se elimina la PII,
+# luego se trabaja con LLMs externos sobre material ya limpio.
 CASO_SUBDIRS: tuple[str, ...] = (
-    "00_INPUT",
-    "01_PROCESADO",
-    "02_ANALISIS",
-    "03_DECISION",
-    "04_OUTPUT_PREDEMANDA",
-    "05_PROCEDIMIENTO",
-    "06_AI_COWORK",
-    "07_ANONIMIZADO",
-    "90_NOTAS_PERSONALES",
+    "00_Input",
+    "01_Procesado",
+    "02_Analisis",
+    "03_Decision",
+    "04_Output predemanda",
+    "05_Procedimiento",
+    "06_Anonimizado",
+    "07_AI cowork",
+    "90_Notas personales",
+)
+
+# Subcarpetas de intake dentro de 00_INPUT/.
+#
+# Terminología de partes (cubre compraventa, arrendamiento y traspaso):
+#   "propietario" = quien ofrece el bien (antes "vendedor")
+#   "buscador"    = quien busca el bien (antes "comprador" o "arrendatario")
+#
+# Nivel 2 — fuentes de documentos (numeradas):
+#   01_drive_ev, 02_whatsapp, 03_email, 04_manual
+#
+# Nivel 3 — conversaciones estándar dentro de 02_whatsapp/ y 03_email/:
+#   00_consultor-propietario/
+#   01_consultor-buscador/
+#   02_grupo-operacion/     (whatsapp) | 02_direccion-ev/ (email)
+#   03_otros/
+#
+# Automatización pendiente: drive_ev (cuenta engelvoelkers.com),
+#                           email (nikolai.tyukhay@engelvoelkers.com),
+#                           whatsapp (exportación manual por ahora).
+
+INPUT_SUBDIRS: tuple[str, ...] = (
+    "01_Drive EV",   # carpeta W-XXXXXX del Drive engelvoelkers.com (intake pendiente automatizar)
+    "02_Whatsapp",   # conversaciones exportadas manualmente (automatización pendiente)
+    "03_Email",      # hilos de correo exportados manualmente (automatización pendiente)
+    "04_Manual",     # cualquier documento que no proceda de las fuentes anteriores
+)
+
+# Subcarpetas de nivel 3 dentro de 02_Whatsapp/
+WHATSAPP_SUBDIRS: tuple[str, ...] = (
+    "00_Consultor propietario",
+    "01_Consultor buscador",
+    "02_Grupo operacion",
+    "03_Otros",
+)
+
+# Subcarpetas de nivel 3 dentro de 03_Email/
+EMAIL_SUBDIRS: tuple[str, ...] = (
+    "00_Consultor propietario",
+    "01_Consultor buscador",
+    "02_Direccion EV",
+    "03_Otros",
 )
 
 

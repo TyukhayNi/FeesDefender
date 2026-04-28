@@ -253,8 +253,8 @@ def test_pull_expediente_marcador_idempotente(tmp_casos_root):
     """Si el marcador .pulled existe en sudespacho_{id}/, pull_expediente
     devuelve sin hacer llamada de red (modo skip)."""
     case_manager.ensure_case("EV-2026-099")
-    # Arquitectura multi-expediente: marker en 00_INPUT/sudespacho_{id}/.pulled
-    target_dir = tmp_casos_root / "EV-2026-099" / "00_INPUT" / "sudespacho_123"
+    # Arquitectura multi-expediente: marker en 00_Input/sudespacho_{id}/.pulled
+    target_dir = tmp_casos_root / "EV-2026-099" / "00_Input" / "sudespacho_123"
     target_dir.mkdir(parents=True, exist_ok=True)
     (target_dir / "doc1.pdf").write_bytes(b"x" * 10)
     (target_dir / ".pulled").write_text(

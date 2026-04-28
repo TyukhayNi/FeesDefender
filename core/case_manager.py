@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from .config import CASO_SUBDIRS, caso_path, settings
+from .config import CASO_SUBDIRS, INPUT_SUBDIRS, WHATSAPP_SUBDIRS, EMAIL_SUBDIRS, caso_path, settings
 from .utils import now_iso, write_md
 
 
@@ -18,7 +18,7 @@ class ExpedienteLink:
     """Referencia a un expediente del CRM vinculado a este caso."""
     id: str                              # ID numérico en sudespacho
     element: str                         # "expedientes_judiciales" | "extrajudiciales"
-    input_dir: str                       # subcarpeta en 00_INPUT (ej. "sudespacho_648")
+    input_dir: str                       # subcarpeta en 00_Input (ej. "sudespacho_648")
 
 
 @dataclass
@@ -44,13 +44,13 @@ class CaseMeta:
 
 
 def _write_case_index(case_dir: Path, meta: CaseMeta) -> Path:
-    index = case_dir / "00_INPUT" / "_caso.md"
+    index = case_dir / "00_Input" / "_caso.md"
     ref_line = f"- Referencia CRM: **{meta.referencia_crm}**\n" if meta.referencia_crm else ""
     exp_lines = ""
     if meta.sudespacho_expedientes:
         exp_lines = "\n## Expedientes sudespacho\n\n"
         for e in meta.sudespacho_expedientes:
-            exp_lines += f"- `{e['element']}` ID {e['id']} → `00_INPUT/{e['input_dir']}/`\n"
+            exp_lines += f"- `{e['element']}` ID {e['id']} → `00_Input/{e['input_dir']}/`\n"
     body = (
         f"# {meta.titulo}\n\n"
         f"Caso `{meta.case_id}` — estado **{meta.estado}**.\n\n"
@@ -76,7 +76,7 @@ def _write_case_index(case_dir: Path, meta: CaseMeta) -> Path:
     fm = {
         "case_id": meta.case_id,
         "tipo": "caso_index",
-        "fase": "00_INPUT",
+        "fase": "00_Input",
         "fecha": meta.creado_en,
         "estado": meta.estado,
         "referencia_crm": meta.referencia_crm,
@@ -99,7 +99,7 @@ def register_expediente(
     Es idempotente: si el expediente ya está registrado, no hace nada.
     """
     input_dir_name = f"sudespacho_{expediente_id}"
-    index = caso_path(case_id) / "00_INPUT" / "_caso.md"
+    index = caso_path(case_id) / "00_Input" / "_caso.md"
 
     if not index.exists():
         return input_dir_name  # ensure_case no se llamó aún — se registrará al crearlo
@@ -166,7 +166,15 @@ def ensure_case(
     for sub in CASO_SUBDIRS:
         (case_dir / sub).mkdir(exist_ok=True)
 
-    index_path = case_dir / "00_INPUT" / "_caso.md"
+    # Subcarpetas de intake dentro de 00_Input/ (niveles 2 y 3)
+    for intake_sub in INPUT_SUBDIRS:
+        (case_dir / "00_Input" / intake_sub).mkdir(exist_ok=True)
+    for sub3 in WHATSAPP_SUBDIRS:
+        (case_dir / "00_Input" / "02_Whatsapp" / sub3).mkdir(exist_ok=True)
+    for sub3 in EMAIL_SUBDIRS:
+        (case_dir / "00_Input" / "03_Email" / sub3).mkdir(exist_ok=True)
+
+    index_path = case_dir / "00_Input" / "_caso.md"
     is_new = not index_path.exists()
 
     meta = CaseMeta(

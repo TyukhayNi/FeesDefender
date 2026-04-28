@@ -1,4 +1,4 @@
-"""Extracción de texto a partir de los archivos de `00_INPUT/`.
+"""Extracción de texto a partir de los archivos de `00_Input/`.
 
 Estrategia de extracción por extensión:
   - .pdf, .docx, .html, .pptx → Docling (cuando está disponible)
@@ -8,7 +8,7 @@ Estrategia de extracción por extensión:
   - .csv, .xlsx               → pandas → CSV plano
   - .eml                      → email.message_from_binary_file
 
-Cada extracción produce un archivo `01_PROCESADO/raw_text/{slug}.txt` con el
+Cada extracción produce un archivo `01_Procesado/raw_text/{slug}.txt` con el
 texto extraído. La fase siguiente (`markdown_generator`) lo envuelve en `.md`
 con frontmatter.
 """
@@ -155,10 +155,10 @@ def _extract_one(path: Path) -> tuple[str, str]:
 def extract_all(case_id: str) -> list[ExtractionResult]:
     inv = load_inventory(case_id)
     case_dir = caso_path(case_id)
-    out_dir = case_dir / "01_PROCESADO" / "raw_text"
+    out_dir = case_dir / "01_Procesado" / "raw_text"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    input_dir = case_dir / "00_INPUT"
+    input_dir = case_dir / "00_Input"
     results: list[ExtractionResult] = []
 
     for f in inv["files"]:

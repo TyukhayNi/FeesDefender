@@ -2,7 +2,7 @@
 
 Lee `viabilidad.md`, `hechos_atomicos.md`, `prueba_indexada.md` y
 `contradicciones.md`, los pasa al prompt `demanda` y escribe
-`04_OUTPUT_PREDEMANDA/demanda.md`. También genera, si procede,
+`04_Output predemanda/demanda.md`. También genera, si procede,
 `requerimiento_previo.md` con el prompt `requerimiento`.
 """
 
@@ -15,10 +15,10 @@ from .llm import LLMError, run_prompt
 from .utils import now_iso, read_md, write_md
 
 _INPUTS = [
-    ("viabilidad", "03_DECISION/viabilidad.md"),
-    ("hechos_atomicos", "02_ANALISIS/hechos_atomicos.md"),
-    ("prueba_indexada", "02_ANALISIS/prueba_indexada.md"),
-    ("contradicciones", "02_ANALISIS/contradicciones.md"),
+    ("viabilidad", "03_Decision/viabilidad.md"),
+    ("hechos_atomicos", "02_Analisis/hechos_atomicos.md"),
+    ("prueba_indexada", "02_Analisis/prueba_indexada.md"),
+    ("contradicciones", "02_Analisis/contradicciones.md"),
 ]
 
 
@@ -66,8 +66,8 @@ def _generate(case_id: str, prompt_id: str, filename: str, fase: str) -> Path:
 
 
 def draft_demanda(case_id: str) -> Path:
-    return _generate(case_id, "demanda", "demanda.md", "04_OUTPUT_PREDEMANDA")
+    return _generate(case_id, "demanda", "demanda.md", "04_Output predemanda")
 
 
 def draft_requerimiento(case_id: str) -> Path:
-    return _generate(case_id, "requerimiento", "requerimiento_previo.md", "04_OUTPUT_PREDEMANDA")
+    return _generate(case_id, "requerimiento", "requerimiento_previo.md", "04_Output predemanda")

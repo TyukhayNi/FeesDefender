@@ -1,11 +1,11 @@
-"""Inventario de archivos en `00_INPUT/`.
+"""Inventario de archivos en `00_Input/`.
 
 Genera `_inventory.json` con metadatos por archivo (tamaño, hash, mime básico,
 fecha mtime, fuente) para alimentar las fases siguientes del pipeline.
 
-Convención de fuentes: cada subcarpeta directa de `00_INPUT/` representa
+Convención de fuentes: cada subcarpeta directa de `00_Input/` representa
 una fuente de ingestión (`sudespacho/`, `drive/`, `email/`, `whatsapp/`,
-`manual/`, ...). Los archivos sueltos en la raíz de `00_INPUT/` se
+`manual/`, ...). Los archivos sueltos en la raíz de `00_Input/` se
 clasifican como `manual`. La ruta relativa preserva la fuente.
 """
 
@@ -48,7 +48,7 @@ _CONTROL_FILES = {"_inventory.json", ".pulled", ".synced"}
 
 
 def _source_of(rel_parts: tuple[str, ...]) -> str:
-    """Determina la fuente a partir de la ruta relativa al 00_INPUT/.
+    """Determina la fuente a partir de la ruta relativa al 00_Input/.
 
     Si está en una subcarpeta directa, esa es la fuente. Si está en la
     raíz, se considera 'manual' (drag-and-drop del abogado).
@@ -75,8 +75,8 @@ def _entry(root: Path, path: Path) -> FileEntry:
 
 
 def scan(case_id: str) -> Path:
-    """Recorre 00_INPUT/, escribe _inventory.json y devuelve su ruta."""
-    input_dir = caso_path(case_id) / "00_INPUT"
+    """Recorre 00_Input/, escribe _inventory.json y devuelve su ruta."""
+    input_dir = caso_path(case_id) / "00_Input"
     if not input_dir.exists():
         raise FileNotFoundError(f"No existe {input_dir}")
 
@@ -114,7 +114,7 @@ def scan(case_id: str) -> Path:
 
 
 def load(case_id: str) -> dict:
-    inv = caso_path(case_id) / "00_INPUT" / "_inventory.json"
+    inv = caso_path(case_id) / "00_Input" / "_inventory.json"
     if not inv.exists():
         raise FileNotFoundError(f"Inventario no generado: {inv}")
     return json.loads(inv.read_text(encoding="utf-8"))

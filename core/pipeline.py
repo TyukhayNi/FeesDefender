@@ -1,6 +1,6 @@
 """Orquestador del pipeline.
 
-Ejecuta los pasos en orden y deja en `06_AI_COWORK/_pipeline_log.md` un
+Ejecuta los pasos en orden y deja en `07_AI cowork/_pipeline_log.md` un
 resumen estructurado de cada ejecución (paso, resultado, errores recoverables).
 """
 
@@ -88,7 +88,7 @@ def run(
 
 
 def _write_log(pr: PipelineRun) -> Path:
-    log_dir = caso_path(pr.case_id) / "06_AI_COWORK"
+    log_dir = caso_path(pr.case_id) / "07_AI cowork"
     log_dir.mkdir(parents=True, exist_ok=True)
     lines = [
         f"# Ejecución de pipeline — {pr.started_at}",
@@ -104,5 +104,5 @@ def _write_log(pr: PipelineRun) -> Path:
         ok = "✅" if s.ok else "❌"
         detail = s.detail or s.artifact or ""
         lines.append(f"| `{s.name}` | {ok} | {detail} |")
-    fm = {"case_id": pr.case_id, "tipo": "pipeline_log", "fase": "06_AI_COWORK", "fecha": pr.started_at}
+    fm = {"case_id": pr.case_id, "tipo": "pipeline_log", "fase": "07_AI cowork", "fecha": pr.started_at}
     return write_md(log_dir / "_pipeline_log.md", fm, "\n".join(lines))

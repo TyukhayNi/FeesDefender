@@ -20,7 +20,7 @@ def test_ensure_case_crea_estructura(tmp_casos_root):
     assert case_dir.exists()
     for sub in CASO_SUBDIRS:
         assert (case_dir / sub).is_dir(), f"Falta subcarpeta {sub}"
-    assert (case_dir / "00_INPUT" / "_caso.md").exists()
+    assert (case_dir / "00_Input" / "_caso.md").exists()
 
 
 def test_ensure_case_idempotente(tmp_casos_root):
@@ -29,7 +29,7 @@ def test_ensure_case_idempotente(tmp_casos_root):
 
     case_manager.ensure_case("EV-2026-TEST")
     # Crear un archivo de usuario que NO debe ser sobrescrito
-    user_file = (tmp_casos_root / "EV-2026-TEST" / "90_NOTAS_PERSONALES" / "mi_nota.md")
+    user_file = (tmp_casos_root / "EV-2026-TEST" / "90_Notas personales" / "mi_nota.md")
     user_file.write_text("contenido del abogado", encoding="utf-8")
 
     case_manager.ensure_case("EV-2026-TEST")  # segunda llamada

@@ -1,6 +1,6 @@
 """Conversión del texto extraído a `.md` con frontmatter trazable.
 
-Por cada archivo procesado escribe `01_PROCESADO/{slug}.md`. El frontmatter
+Por cada archivo procesado escribe `01_Procesado/{slug}.md`. El frontmatter
 incluye la procedencia (`source_path`), el `extractor` usado y un resumen
 cuantitativo (`chars`, `tokens_estim`).
 """
@@ -20,7 +20,7 @@ def _estimate_tokens(text: str) -> int:
 
 
 def build(case_id: str, results: list[ExtractionResult]) -> list[Path]:
-    out_dir = caso_path(case_id) / "01_PROCESADO"
+    out_dir = caso_path(case_id) / "01_Procesado"
     out_dir.mkdir(parents=True, exist_ok=True)
     paths: list[Path] = []
 
@@ -30,7 +30,7 @@ def build(case_id: str, results: list[ExtractionResult]) -> list[Path]:
         meta = {
             "case_id": case_id,
             "tipo": "documento_procesado",
-            "fase": "01_PROCESADO",
+            "fase": "01_Procesado",
             "fecha": now_iso(),
             "source_path": r.rel_path,
             "extractor": r.method,

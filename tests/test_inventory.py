@@ -12,7 +12,7 @@ def test_inventory_scan_filtra_extensiones(tmp_casos_root):
     importlib.reload(inventory)
 
     case_dir = case_manager.ensure_case("EV-2026-001")
-    inp = case_dir / "00_INPUT"
+    inp = case_dir / "00_Input"
     (inp / "documento.pdf").write_bytes(b"%PDF-1.4 dummy")
     (inp / "nota.txt").write_text("nota relevante", encoding="utf-8")
     (inp / "ruido.bin").write_bytes(b"\x00\x01")  # debe descartarse
@@ -28,14 +28,14 @@ def test_inventory_scan_filtra_extensiones(tmp_casos_root):
 
 
 def test_inventory_clasifica_por_fuente(tmp_casos_root):
-    """Archivos en subcarpetas de 00_INPUT/ heredan la fuente; los de la
+    """Archivos en subcarpetas de 00_Input/ heredan la fuente; los de la
     raíz se etiquetan como 'manual'."""
     from core import case_manager, inventory
     importlib.reload(case_manager)
     importlib.reload(inventory)
 
     case_dir = case_manager.ensure_case("EV-2026-002")
-    inp = case_dir / "00_INPUT"
+    inp = case_dir / "00_Input"
 
     # sudespacho/
     (inp / "sudespacho").mkdir(exist_ok=True)

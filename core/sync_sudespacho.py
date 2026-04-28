@@ -662,7 +662,7 @@ def pull_expediente(
     )
 
     source_dir_name = _source_dir(str(expediente_id))
-    input_root = caso_path(case_id) / "00_INPUT"
+    input_root = caso_path(case_id) / "00_Input"
     target_dir = input_root / source_dir_name
     target_dir.mkdir(parents=True, exist_ok=True)
 

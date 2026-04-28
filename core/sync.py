@@ -1,12 +1,12 @@
 """Sincronización de documentación desde un remoto rclone.
 
-Wrapper fino: ejecuta `rclone copy <remote_path> <case>/00_INPUT/drive
+Wrapper fino: ejecuta `rclone copy <remote_path> <case>/00_Input/drive
 --skip-links`. No mueve ni borra nada en el remoto. Si rclone no está
 disponible, lanza `SyncError` con instrucciones legibles.
 
 Convención: cada backend de ingesta escribe en su propia subcarpeta
-dentro de `00_INPUT/` para preservar trazabilidad de origen y permitir
-idempotencia por fuente. Aquí: `00_INPUT/drive/`.
+dentro de `00_Input/` para preservar trazabilidad de origen y permitir
+idempotencia por fuente. Aquí: `00_Input/drive/`.
 """
 
 from __future__ import annotations
@@ -50,9 +50,9 @@ def _check_binary() -> str:
 
 
 def pull(case_id: str, *, remote_path: str, dry_run: bool = False) -> SyncResult:
-    """Sincroniza el remoto al `00_INPUT/drive/` del caso."""
+    """Sincroniza el remoto al `00_Input/drive/` del caso."""
     binary = _check_binary()
-    target = caso_path(case_id) / "00_INPUT" / _SOURCE_DIR
+    target = caso_path(case_id) / "00_Input" / _SOURCE_DIR
     target.mkdir(parents=True, exist_ok=True)
 
     cmd = [

@@ -13,7 +13,7 @@ Flujo:
     1. Lee data/CASOS/ y encuentra todos los _caso.md con expedientes registrados
     2. Para cada expediente: pull incremental (solo docs nuevos desde último sync)
     3. Si hay docs nuevos y --run-pipeline: extractor → markdown → scorer
-    4. Escribe log en 06_AI_COWORK/_sync_log.md de cada caso
+    4. Escribe log en 07_AI cowork/_sync_log.md de cada caso
     5. Imprime resumen por consola
 
 Configuración en .env:
@@ -66,7 +66,7 @@ def _setup_logging(log_file: str | None = None) -> logging.Logger:
 
 def _read_expedientes(case_id: str) -> list[dict]:
     """Lee la lista de expedientes del índice _caso.md."""
-    index = settings.casos_root / case_id / "00_INPUT" / "_caso.md"
+    index = settings.casos_root / case_id / "00_Input" / "_caso.md"
     if not index.exists():
         return []
     text = index.read_text(encoding="utf-8")
@@ -81,8 +81,8 @@ def _read_expedientes(case_id: str) -> list[dict]:
 
 
 def _append_sync_log(case_id: str, entries: list[str]) -> None:
-    """Añade una entrada al log de sync del caso en 06_AI_COWORK/."""
-    log_path = settings.casos_root / case_id / "06_AI_COWORK" / "_sync_log.md"
+    """Añade una entrada al log de sync del caso en 07_AI cowork/."""
+    log_path = settings.casos_root / case_id / "07_AI cowork" / "_sync_log.md"
     ts = datetime.now().strftime("%Y-%m-%d %H:%M")
     block = f"\n## {ts}\n\n" + "\n".join(f"- {e}" for e in entries) + "\n"
     with log_path.open("a", encoding="utf-8") as f:
