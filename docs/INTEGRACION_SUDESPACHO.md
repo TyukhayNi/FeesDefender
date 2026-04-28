@@ -1,0 +1,438 @@
+# Integración sudespacho.net — Referencia centralizada
+
+> Conocimiento empírico acumulado sobre la API de sudespacho.net.  
+> Todo lo aquí documentado ha sido verificado contra el tenant `tnm.sudespacho.net`  
+> (commons-pro). Última actualización: 2026-04-28.
+
+---
+
+## 1. Arquitectura de la plataforma
+
+sudespacho.net expone **dos superficies de integración** con comportamientos distintos:
+
+| Superficie | Host | Auth | Uso en FeesDefender |
+|---|---|---|---|
+| **API REST nueva** | `api-crm-commons-pro.sudespacho.biz` | `x-api-key: <API_KEY>` | Healthcheck, metadatos de documentos |
+| **Frontal heredado** | `tnm.sudespacho.net` | Cookie `PHPSESSID` + CSRF token | Listado y descarga de documentos |
+
+Ambas superficies son **necesarias** porque la API REST nueva no expone el listado de documentos de un expediente. El Gestor Documental (Gdocu) solo es accesible vía el frontal PHP heredado.
+
+---
+
+## 2. Autenticación
+
+### 2.1 API REST nueva
+
+```
+Header: x-api-key: <SUDESPACHO_API_KEY>
+```
+
+**⚠️ El header `Authorization` está reservado al flujo JWT de sesión web del CRM.**  
+Usar `Authorization` con la API key devuelve 401 aunque la key sea válida. Confirmado empíricamente el 2026-04-25.
+
+Obtener la API key: `tnm.sudespacho.net → Ajustes → API → Generar clave`.
+
+### 2.2 Frontal heredado
+
+```
+Cookie: PHPSESSID=<valor>
+Header: X-CSRF-Token: <token de 32 hex chars> (en el body del POST, campo csrf_token)
+```
+
+**Obtener PHPSESSID:** Chrome DevTools → Application → Cookies → `tnm.sudespacho.net` → valor de `PHPSESSID`.
+
+**Obtener CSRF token:** aparece en el HTML de cualquier página del CRM como:
+```javascript
+var csrf_token = '...32 caracteres hex...';
+```
+El cliente `sync_sudespacho_legacy.py` lo extrae automáticamente del HTML tras login.
+
+**⚠️ La cookie caduca por inactividad.** Si `check_legacy` devuelve "Sesión expirada", renovar manualmente y actualizar `.env`.
+
+### 2.3 Variables de entorno (.env)
+
+```env
+# API REST
+SUDESPACHO_BASE_URL=https://api-crm-commons-pro.sudespacho.biz
+SUDESPACHO_API_KEY=<tu_api_key>
+SUDESPACHO_AUTH_HEADER=x-api-key
+SUDESPACHO_AUTH_SCHEME=
+SUDESPACHO_ELEMENT=expedientes_judiciales
+SUDESPACHO_TIMEOUT_S=120
+
+# Frontal heredado
+SUDESPACHO_LEGACY_HOST=tnm.sudespacho.net
+SUDESPACHO_LEGACY_PHPSESSID=<valor_copiado_de_devtools>
+SUDESPACHO_LEGACY_TIMEOUT_S=120
+```
+
+---
+
+## 3. Endpoints confirmados
+
+### 3.1 API REST nueva (`api-crm-commons-pro.sudespacho.biz`)
+
+| Método | Endpoint | Descripción | Estado |
+|---|---|---|---|
+| GET | `/api/documents?itemsPerPage=1` | Healthcheck efectivo con API key | ✅ Confirmado |
+| GET | `/api/online/current` | Healthcheck nativo (solo sesión web, no API key) | ⚠️ 404 con API key |
+| GET | `/api/element_register/{element}/{id}?properties[]=…` | Metadatos del expediente | ⚠️ Bug 500 en backend |
+| GET | `/api/documents/{id}` | Metadatos de un documento (id_carpeta, categoria, etc.) | ✅ Confirmado |
+| GET | `/api/documents` | Listado con filterGroup | ✅ Confirmado |
+| GET | `/api/folders/gdocu/{parent}?related_element=…&related_member=…` | Carpetas Gdocu del expediente | ✅ Confirmado |
+| GET | `/api/documents/{folder_id}/zip/files` | Zip de carpeta Gdocu | ✅ Confirmado |
+| GET | `/api/documents/{id}/downloadUri` | URL de descarga de un documento | ✅ Confirmado |
+| GET | `/api/documents/presigned_urls/s3/download/{documentId}` | URL S3 prefirmada | ✅ Confirmado |
+| GET | `/api/related_registers?id={register_id}` | Relaciones entre registros (extrajudicial↔judicial) | ✅ Confirmado |
+| POST | `/api/expedient/convert/{id}` | Convertir extrajudicial → judicial | ✅ Documentado |
+| POST | _(no aplica — va por el frontal heredado)_ | Crear expediente extrajudicial | → ver sección 3.2 |
+
+#### Bug conocido: `element_register` devuelve 500
+
+`GET /api/element_register/expedientes_judiciales/{id}?properties[]=id` → HTTP 500 "Array to string conversion". Bug en el backend de sudespacho. No tiene workaround conocido. Usamos el frontal heredado para todo lo que requiera el expediente completo.
+
+### 3.2 Frontal heredado (`tnm.sudespacho.net`)
+
+| Método | Endpoint | Descripción | Estado |
+|---|---|---|---|
+| POST | `/gdocu/list/elemento/gdocu/elemento_relacionado/{element}/miembro_relacionado/{id}/direccion_relacionado/der` | Listado de documentos (devuelve HTML) | ✅ Confirmado |
+| POST | `/gestordocumental/predownloadfile/elemento_relacionado/{element}/miembro_relacionado/{id}/direccion_relacionado/der` | Resolución método descarga (s3/cloud/s3old) | ✅ Confirmado |
+| POST | `/gestordocumental/descargaficheros3/id_docu/{doc_id}/elemento_relacionado/{element}/miembro_relacionado/{id}/direccion_relacionado/der` | URL S3 prefirmada del documento | ✅ Confirmado |
+| POST | `/extrajudiciales/saveadd/elemento/extrajudiciales` | Crear expediente extrajudicial | ✅ Confirmado 2026-04-28 |
+
+---
+
+## 4. Modelo de datos
+
+### 4.1 Elementos (tipos de registro)
+
+| Slug | Descripción |
+|---|---|
+| `expedientes_judiciales` | Expediente judicial (serie 28) |
+| `expedientes_extrajudiciales` | Expediente extrajudicial (serie 42) |
+| `clientes_propios` | Clientes parte actora |
+| `clientes_contrarios` | Clientes parte contraria |
+| `procuradores_propios` | Procuradores |
+| `abogados_propios` | Abogados |
+| `colaboradores` | Colaboradores externos |
+
+### 4.2 Campos de documentos (`DOC_FIELDS` en `sync_sudespacho.py`)
+
+| Campo API | Alias interno | Descripción |
+|---|---|---|
+| `id` | `id` | ID numérico del documento |
+| `nombreoriginal` | `filename` | Nombre original del fichero |
+| `nombrefinal` | `filename_final` | Nombre final tras procesado |
+| `mime` | `mime` | MIME type |
+| `tamano` | `size` | Tamaño en bytes |
+| `fechamodificacion` | `modified_at` | Fecha de modificación |
+| `fechapublicacion` | `created_at` | Fecha de publicación/creación |
+| `categoria` | `category` | Categoría del documento |
+| `doc` | `url` | URL prefirmada S3 |
+| `id_carpeta` | `id_folder` | ID de la carpeta Gdocu |
+| `relatedRegisters` | `related` | Relaciones del documento |
+| `tipo` | `type` | Tipo de documento |
+| `asunto` | `subject` | Asunto/título |
+
+### 4.3 Propiedades de expediente (`EXPEDIENTE_DEFAULT_PROPERTIES`)
+
+```python
+("id", "referencia", "asunto", "estado",
+ "cliente", "contraparte",
+ "fecha_apertura", "fecha_cierre",
+ "importe_reclamado")
+```
+
+### 4.4 Relaciones entre expedientes
+
+```
+GET /api/related_registers?id={register_id}
+```
+
+Devuelve `hydra:Collection` de `RelatedRegisterView`:
+- `element`: tipo de entidad relacionada
+- `registries`: dict `{id_registro: {...}}` de registros vinculados
+
+**Caso real verificado:**
+- Extrajudicial `591` (serie 42, Civil) → Judicial `648` (serie 28, creado 2026-04-13)
+
+### 4.5 Shape de metadatos de documento (API nueva)
+
+La respuesta de `GET /api/documents/{id}` usa un shape **no estándar**:
+
+```json
+{
+  "id": "40020",
+  "isPrimary": false,
+  "values": [
+    {"property": {"name": "id_carpeta"}, "value": "306", "label": "CIVIL"},
+    {"property": {"name": "nombreoriginal"}, "value": "CEDULA DE EMPLAZAMIENTO..."},
+    ...
+  ]
+}
+```
+
+El cliente lo aplana a un dict simple para uso interno. Ver `get_document_metadata()` en `sync_sudespacho.py`.
+
+---
+
+## 5. Flujo de descarga de documentos
+
+```
+sync_sudespacho_legacy.list_doc_ids(expediente_id, element)
+    → POST /gdocu/list/... → HTML
+    → regex id="fila_gdocu_<doc_id>" → [doc_id, ...]
+
+Para cada doc_id:
+    sync_sudespacho.get_document_metadata(doc_id)   [opcional, para carpeta destino]
+        → GET /api/documents/{doc_id}
+        → id_carpeta_label → slug de carpeta
+
+    sync_sudespacho_legacy.download_document(doc_id, expediente_id, tmp_path)
+        → POST /gestordocumental/predownloadfile/... → {resultado, metodo: 's3'|...}
+        → POST /gestordocumental/descargaficheros3/... → {resultado, url: '<S3_URL>'}
+        → GET <S3_URL> (sin auth, presigned, TTL ~5 min) → bytes
+        → Content-Disposition → filename_in_disposition
+        → write to tmp_path → rename a {slug}.{ext}
+```
+
+---
+
+## 6. Operaciones pendientes de confirmar
+
+### 6.1 Crear expediente extrajudicial — ✅ CONFIRMADO (2026-04-28)
+
+**Endpoint:** `POST https://tnm.sudespacho.net/extrajudiciales/saveadd/elemento/extrajudiciales`  
+**Auth:** PHPSESSID (cookie) + `csrf_token` en el body (3 repeticiones, observado en captura)  
+**Content-Type:** `application/x-www-form-urlencoded; charset=UTF-8`  
+**Surface:** frontal heredado (NO la API REST nueva)
+
+**Campos del formulario confirmados** (campo_XXXX__extrajudiciales):
+
+| ID campo | Valor en test | Significado |
+|---|---|---|
+| `campo_1740` | `TEST-CAPTURA-FEESDEFENDER` | **referencia_cliente** — identificador cruzado entre sudespacho/Drive/FeesDefender. Formato: `"MaRS2 - Puerto Rico 2, 5º 2 - (W-0470GM) - Negativa arras"`. Coincide con el `case_id`. |
+| `campo_1731` | `28-04-2026` | **fecha_apertura** (DD-MM-YYYY) |
+| `campo_1730` | `2000` | **importe_reclamado** (entero sin separadores) |
+| `campo_1750` | `2.000,00` | importe_reclamado (display ES "N.NNN,NN") |
+| `campo_1729` | `0,00` | **costas** (0,00 por defecto; se actualiza al cierre) |
+| `campo_1734` | `0,00` | **cuantía** (0,00 por defecto; todos los importes forman la Cuantía) |
+| `campo_1748` | `Civil` | materia (select) |
+| `campo_1749` | `reclamacion extrajudicial` | subtipo (select) |
+| `campo_1747` | `2026` | año (para numeración) |
+| `campo_1737` | `49` | **nº expediente extrajudicial** — auto-asignado por el servidor; el valor enviado es el siguiente libre en ese momento. Enviar `0` es seguro. |
+| `campo_2487` | `Nikolai_Tyukhay` | responsable (username CRM) |
+| `campo_2488[]` | `#528800___214`, `#a32929___135`, `__void__` | tags (formato `#{color}___{id}`, termina en `__void__`) |
+| `campo_1735` | `<p>...</p>` | descripción HTML |
+| `campo_2586` | `02` | **posición procesal** — `01`=Actor, `02`=Demandado, `03`=Querellante, `04`=Querellado, `05`=Denunciante, `06`=Denunciado, `07`=Resp. Civil Directo, `08`=Resp. Civil Subsidiario. Confirmado 2026-04-28. Ver constantes `POSICION_*` en `sudespacho_create.py`. |
+| `campo_2587` | `0` | pendiente identificar (valor fijo) |
+
+**Implementación:** `core/sudespacho_create.py` — función `create_expediente()`.
+
+**Grupos y usuarios** (`permisos_grupos[]` / `permisos_usuarios[]`):
+
+| ID | Tipo | Nombre |
+|---|---|---|
+| 2 | Grupo | OFICINA_1 |
+| 7 | Grupo | DIRECCION+CONTABILIDAD |
+| 2 | Usuario | Nikolai_Tyukhay |
+| 17 | Usuario | Paola_Barreto |
+
+Formato: claves repetidas en el form-data, una por ID. Mismo mecanismo para cualquier otro elemento del CRM.
+
+**Shape de respuesta** (confirmado con saveedit el 2026-04-28):
+```json
+{
+  "resultado": true,
+  "dato": "600",
+  "wfcontroller": "extrajudiciales",
+  "updated": true,
+  "info": "Guardar registro"
+}
+```
+El ID del expediente está en el campo `"dato"`. Para saveadd (creación) el campo contendrá el ID nuevo asignado.
+
+### 6.2 Convertir extrajudicial → judicial
+
+Endpoint documentado: `POST /api/expedient/convert/{id}`  
+Pendiente: confirmar payload y respuesta con una conversión real.
+
+---
+
+## 7. Módulos FeesDefender que usan esta integración
+
+| Módulo | Superficie | Función |
+|---|---|---|
+| `core/sync_sudespacho.py` | API REST nueva | Healthcheck, metadatos docs, descarga zip, listado filterGroup |
+| `core/sync_sudespacho_legacy.py` | Frontal heredado | Listado doc IDs, descarga individual, CSRF |
+| `core/sudespacho_create.py` | API REST nueva + legacy (TBD) | **Crear expediente extrajudicial** (pendiente) |
+| `scripts/sync_sudespacho.py` | CLI Typer | `check`, `check_legacy`, `pull` |
+| `scripts/scheduled_sync.py` | CLI Typer | Pull incremental diario de todos los casos |
+
+---
+
+## 8. Gotchas / cosas no obvias
+
+1. **`x-api-key` ≠ `Authorization`**: El OpenAPI oficial declara `Authorization` pero corresponde al JWT de sesión web. La API key va siempre en `x-api-key`.
+
+2. **PHPSESSID caduca**: Por inactividad, no por tiempo fijo. Si `check_legacy` falla, renovar desde DevTools.
+
+3. **`element_register` bug 500**: `GET /api/element_register/{element}/{id}` devuelve 500 para cualquier combinación de `properties[]`. Bug en el backend de sudespacho. No usarlo hasta que lo corrijan.
+
+4. **Listado de documentos no está en la API nueva**: `GET /api/documents` con `filterGroup[filters][0][property]=relatedRegisters` retorna colección vacía aunque el expediente tenga documentos. El listado real solo funciona por el frontal PHP.
+
+5. **URL S3 prefirmada expira en ~5 min**: Resolver y descargar en la misma operación. No cachear la URL.
+
+6. **PowerShell Invoke-WebRequest vs Invoke-RestMethod**: El primero devuelve bytes decimales uno por línea. Usar siempre `Invoke-RestMethod` o guardar con `Out-File` y leer con `Read` tool.
+
+7. **Mount sync Linux↔Windows**: Archivos escritos por el agente pueden no aparecer inmediatamente en el mount Linux de bash. Verificar existencia con `Read` tool (ruta Windows).
+
+8. **`developers.sudespacho.net`**: Fuera de la allowlist de Cowork. Si se necesita consultar la documentación oficial, el usuario debe acceder directamente o autorizar el dominio en Settings → Capabilities.
+
+---
+
+## 9. Caso real de referencia
+
+```
+Expediente extrajudicial: 591  (serie 42, Civil)
+  ↓ relacionado con
+Expediente judicial:      648  (serie 28, creado 2026-04-13)
+  Cliente: EV MMC SPAIN, S.L.U.
+  Case ID local: "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
+  Docs descargados: 5 archivos, 5,35 MB
+  Carpetas Gdocu: civil/, demanda/
+```
+
+---
+
+## 10. Historial de descubrimientos
+
+| Fecha | Descubrimiento |
+|---|---|
+| 2026-04-25 | Confirmado que `Authorization` rechaza API key; `x-api-key` es el header correcto |
+| 2026-04-25 | Bug 500 en `element_register` para cualquier `properties[]` |
+| 2026-04-25 | `/api/online/current` devuelve 404 con API key (solo sesión web) |
+| 2026-04-26 | Flujo legacy completo decodificado y verificado (list + predownload + S3) |
+| 2026-04-26 | Arquitectura multi-expediente implementada: `sudespacho_{id}/` + marcador `.pulled` JSON |
+| 2026-04-26 | Pull real expediente 648: 5 docs, 5,35 MB, carpetas civil/ y demanda/ |
+| 2026-04-28 | Endpoint `related_registers` documentado y verificado (extrajudicial 591 → judicial 648) |
+| 2026-04-28 | Endpoint CREATE extrajudicial confirmado: `POST /extrajudiciales/saveadd/elemento/extrajudiciales` vía frontal legacy, form-urlencoded, campos campo_XXXX |
+| 2026-04-28 | Lista completa de 80 tags capturada desde selectize del formulario de alta extrajudicial |
+| 2026-04-28 | Corrección: POSIBILIDAD EXITO=50% es azul (#5b9bd1___286), no lila |
+| 2026-04-28 | Corrección: NEGATIVA CONTRATO ARRENDAMIENTO es rojo (#a32929___155), no verde |
+| 2026-04-28 | Confirmados IDs pendientes: CONSULTORES (194), DEVOLUCION HONORARIOS (126), todos los rojos (49 tags) |
+| 2026-04-28 | FRANQUICIA: tag no creado aún en el CRM |
+
+---
+
+## 11. Sistema de etiquetas (tags) en sudespacho
+
+> Fuente: Manual Gestión Interna Despacho, sección "¿Qué ETIQUETAS/TAGS y NOTAS ponemos?"  
+> Implementación: `core/sudespacho_create.py` — constantes `TAG_*` y función `tag_defaults_for_tipo_caso()`.
+
+### 11.1 Formato del token
+
+```
+#{color_hex}___{tag_id}
+```
+
+Ejemplos: `#528800___214`, `#a32929___135`. El **último elemento** de cualquier lista de tags debe ser siempre `__void__` (el builder lo añade automáticamente).
+
+### 11.2 Orden canónico
+
+Por expediente nuevo (Manual):
+
+1. **Equipo / Rojo** — identifica el equipo comercial responsable
+2. **Asunto / Verde** — tipo de reclamación
+3. **Valoración / Lila** — riesgo (defensiva) o probabilidad de éxito (actora)
+
+El tag **azul** (ciudad) no figura como obligatorio en el Manual. Se añade cuando está disponible.
+
+### 11.3 Tags por categoría
+
+#### Verde `#528800` — Tipo de asunto (11 de FeesDefender, 18 total en CRM)
+
+| Constante Python | Tag CRM | ID | Estado |
+|---|---|---|---|
+| `TAG_VERDE_BAD_DEBT` | BAD DEBT | 110 | ✅ |
+| `TAG_VERDE_NEGATIVA_OFERTA` | NEGATIVA OFERTA | 129 | ✅ |
+| `TAG_VERDE_NEGATIVA_ARRAS` | NEGATIVA ARRAS | 127 | ✅ |
+| `TAG_VERDE_NEGATIVA_ESCRITURA` | NEGATIVA ESCRITURA | 161 | ✅ |
+| `TAG_VERDE_VUELTA` | VUELTA | 95 | ✅ |
+| `TAG_VERDE_INCUMPLIMIENTO_EXCLUSIVA` | INCUMPLIMIENTO EXCLUSIVA | 170 | ✅ |
+| `TAG_VERDE_RESPONSABILIDAD_PROF` | RESPONSABILIDAD PROFESIONAL | 123 | ✅ |
+| `TAG_VERDE_DEVOLUCION_RESERVA` | DEVOLUCIÓN RESERVA | 125 | ✅ |
+| `TAG_VERDE_LAU_20` | LAU 20 | 214 | ✅ |
+| `TAG_VERDE_DEVOLUCION_HONORARIOS` | DEVOLUCION HONORARIOS | 126 | ✅ |
+| `TAG_VERDE_CONSULTORES` | CONSULTORES | 194 | ✅ |
+| _(ninguno)_ | NEGATIVA CONTRATO ARRENDAMIENTO | — | ⚠️ Es tag **rojo** (#a32929___155), ver abajo |
+| _(ninguno)_ | FRANQUICIA | — | ❌ No creado en CRM (2026-04-28) |
+
+#### Lila `#5229a3` — Valoración de riesgo (SOLO defensiva, 3 tags)
+
+| Constante Python | Tag CRM | ID | Cuándo asignar |
+|---|---|---|---|
+| `TAG_LILA_RIESGO_POSIBLE` | RIESGO POSIBLE 15-50% | 217 | **DEFAULT** — todos los demás casos |
+| `TAG_LILA_RIESGO_REMOTO` | RIESGO REMOTO <15% | 216 | Acuerdo extrajudicial OR >2 años sin actividad |
+| `TAG_LILA_RIESGO_PROBABLE` | RIESGO PROBABLE >50% | 218 | Recomendaríamos reclamar si fuéramos el actor |
+
+⚠️ **No hay tags lila para casos actores.** La valoración de éxito actora usa color **azul**.
+
+#### Azul `#5b9bd1` — Ciudad + probabilidad de éxito actora (10 tags)
+
+| Constante Python | Tag CRM | ID | Cuándo usar |
+|---|---|---|---|
+| `TAG_AZUL_MADRID` | MADRID | 258 | Plaza Madrid |
+| `TAG_AZUL_VALENCIA` | VALENCIA | 257 | Plaza Valencia |
+| `TAG_AZUL_POSIBILIDAD_50` | POSIBILIDAD EXITO=50% | 286 | **DEFAULT actora** — todos los asuntos nuevos |
+
+⚠️ Bilbao, Sevilla, Santander y San Sebastián **no tienen tag azul de ciudad** en el CRM. Solo sus equipos tienen tags rojos (BiRS*, SeRS*, SaRS*). Los tags de probabilidad <15%→50% y <15% tampoco existen aún.
+
+#### Rojo `#a32929` — Equipos comerciales + tipo especial (49 tags)
+
+Nomenclatura: `{ciudad(2)}{tipo_op(2)}{nº}` — Ba=Barcelona, Ma=Madrid, Bi=Bilbao, Sa=Santander, Se=Sevilla, Va=Valencia · RR=Residential Rentals, RS=Residential Sales, CR=Commercial Rentals, CS=Commercial Sales.
+
+Lista completa confirmada 2026-04-28:
+
+| Ciudad | Tags |
+|---|---|
+| Barcelona Residential Rentals | BaRR1 (135), BaRR3 (113), BaRR4 (175) |
+| Barcelona Residential Sales | BaRS1-12 (156,140,128,163,112/122,97,134,138,137,131,94,162) |
+| Barcelona Commercial Rentals | BaCR1 (172), BaCR10 (287) |
+| Barcelona Commercial Sales | BaCS1 (136), BaCS10 (139) |
+| Bilbao Residential Sales | BiRS1 (273), BiRS2 (268) |
+| Madrid Residential Rentals | MaRR1 (119), MaRR2 (118), MaRR3 (225) |
+| Madrid Residential Sales | MaRS1-10,13,14 (96,117,115,116,133,130,141,236,120,106,190,189) |
+| Santander Residential Sales | SaRS1 (276) |
+| Sevilla Residential Sales | SeRS1 (230), SeRS6 (285) |
+| Valencia Commercial Rentals | VaCR1 (132) |
+| Valencia Residential Rentals | VaRR1 (104) |
+| Valencia Residential Sales | VaRS1-5 (99,102,103,114,271) |
+| Valencia PD (pendiente confirmar tipo) | VaPD1 (178) |
+| **Tipo especial** | `TAG_ROJO_NEGATIVA_CONTRATO_ARR` = **#a32929___155** |
+
+El tag `NEGATIVA CONTRATO ARRENDAMIENTO` (#a32929___155) está categorizado como rojo en el CRM, posiblemente porque lo usa el equipo de alquileres como identificador propio. `tag_defaults_for_tipo_caso("NEGATIVA_CONTRATO_ARRENDAMIENTO")` lo incluye correctamente.
+
+### 11.4 Función `tag_defaults_for_tipo_caso(tipo_caso)`
+
+```python
+from core.sudespacho_create import tag_defaults_for_tipo_caso, TAG_ROJO_BaRR1
+
+# Asunto actora: BAD DEBT, equipo BaRR1, Madrid
+tags = [TAG_ROJO_BaRR1, TAG_AZUL_MADRID] + tag_defaults_for_tipo_caso("BAD_DEBT")
+# → ["#a32929___135", "#5b9bd1___258", "#528800___110", "#5229a3___286"]
+
+# Asunto defensiva: LAU 20 (sin equipo ni ciudad)
+tags = tag_defaults_for_tipo_caso("LAU_20")
+# → ["#528800___214", "#5229a3___217"]
+```
+
+El `TAG_SENTINEL` (`__void__`) se añade automáticamente en `build_form_data()`, no es necesario incluirlo en la lista.
+
+### 11.5 Notas estándar por tipo de caso
+
+El Manual define plantillas de texto para el campo `descripcion_html` del expediente. Las constantes `NOTA_*` en `sudespacho_create.py` contienen el texto base; los campos entre `(...)` y `[...]` se sustituyen con los datos del caso concreto.
+
+### 11.6 Nota sobre discrepancia en default lila para defensiva
+
+El Manual establece `RIESGO_POSIBLE` como el default para todos los asuntos defensiva, con `RIESGO_REMOTO` reservado para situaciones específicas (acuerdo o inactividad prolongada). En sesión de trabajo anterior se indicó verbalmente que el default sería `RIESGO_REMOTO`. **La función `tag_defaults_for_tipo_caso()` sigue el Manual escrito** (`RIESGO_POSIBLE`). Consultar con el despacho si la instrucción verbal prevalece.

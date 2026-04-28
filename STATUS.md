@@ -2,7 +2,7 @@
 
 > Snapshot rápido del estado del proyecto. Actualizar al cerrar cada sesión.
 
-**Última actualización:** 2026-04-28 (reorganización de carpetas)
+**Última actualización:** 2026-04-28 (tags CRM + notas auditoria)
 
 ---
 
@@ -14,6 +14,9 @@
 | Pipeline | ⏳ No ejecutado aún end-to-end |
 | Primer caso real | ✅ Creado, docs descargados |
 | Taxonomía de casos | ✅ Actualizada en config.py |
+| `sudespacho_create.py` | ✅ Completo — DTO, tags, notas, helper |
+| Tags CRM verificados | ✅ 87 tags auditados y corregidos (2026-04-28) |
+| Notas de expediente | ✅ 13 NOTA_* alineadas con Manual 1.1.4 |
 | Task Scheduler | ⏳ Pendiente configurar |
 
 ---
@@ -39,10 +42,15 @@
 - Subida al Drive de `tyukhay.legal` para acceso del equipo con sus LLMs.
 - Anonymizer: integrar proyecto externo de anonimización ya en desarrollo (no construir desde cero).
 
-### Creación expediente en sudespacho
+### Creación expediente en sudespacho ✅
 
 - **Semiautomática**: FeesDefender prepara datos → botón "Crear en sudespacho" que el usuario confirma.
-- Endpoint POST aún no confirmado. **Acción pendiente**: capturar POST en DevTools al crear un extrajudicial manualmente.
+- Endpoint: `POST /extrajudiciales/saveadd/elemento/extrajudiciales` (frontal legacy, form-urlencoded).
+- Implementado en `core/sudespacho_create.py`. Referencia completa en `docs/INTEGRACION_SUDESPACHO.md`.
+- **Tags CRM mapeados** ✅ — 87 tags auditados, IDs constantes en `sudespacho_create.py`.
+- **`tag_defaults_for_tipo_caso(tipo_caso)`** ✅ — devuelve [tag_verde, tag_lila] según posición procesal.
+- **13 `NOTA_*`** ✅ — plantillas de notas de expediente alineadas con Manual 1.1.4.
+- Pendiente: integrar en UI Streamlit (pestaña "Nuevo Caso").
 
 ### Roles de intake
 
@@ -94,16 +102,18 @@ python -m scripts.run_pipeline "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
 
 ## Próximas tareas (orden de prioridad)
 
-1. **[NIKOLAI — 5 min]** Capturar en DevTools el POST de creación de expediente extrajudicial en sudespacho → endpoint + payload → desbloquea integración CRM.
-2. **[NIKOLAI]** Conectar cuenta `nikolai.tyukhay@engelvoelkers.com` en Cowork → desbloquea intake Drive E&V.
-3. **[Nuevo hilo]** Módulo `core/intake_drive.py` — pull desde carpeta Drive operación E&V al `00_INPUT/`.
-4. **[Nuevo hilo]** Módulo `core/anonymizer.py` — integrar proyecto externo de anonimización.
-5. **[Nuevo hilo]** Streamlit: nueva pestaña "Nuevo Caso" con formulario + botón "Crear en sudespacho".
-6. **[Nuevo hilo]** Subida output anonimizado al Drive tyukhay.legal.
-7. Limpiar `sudespacho/` residual y ejecutar pipeline end-to-end en caso real.
-8. Configurar Windows Task Scheduler para `scheduled_sync.py` (diario 08:00).
-9. Reforzar `prompts/viabilidad.md` con jurisprudencia sobre nexo causal.
-10. Tests adicionales: `test_linker`, `test_scorer`, `test_pipeline`.
+1. ~~Capturar POST creación expediente extrajudicial~~ ✅ 2026-04-28
+2. ~~Mapear IDs de tags CRM~~ ✅ 2026-04-28 — 87 tags, `sudespacho_create.py`
+3. ~~Añadir `tag_defaults_for_tipo_caso()` y 13 `NOTA_*`~~ ✅ 2026-04-28
+4. **[SIGUIENTE]** Limpiar `sudespacho/` residual y ejecutar pipeline end-to-end en caso real `EV-2026-001`.
+5. **[SIGUIENTE]** Streamlit: pestaña "Nuevo Caso" — formulario + botón "Crear en sudespacho" usando `sudespacho_create.py`.
+6. **[NIKOLAI]** Conectar cuenta `nikolai.tyukhay@engelvoelkers.com` en Cowork → desbloquea intake Drive E&V.
+7. **[Nuevo hilo]** Módulo `core/intake_drive.py` — pull desde carpeta Drive operación E&V al `00_INPUT/`.
+8. **[Nuevo hilo]** Módulo `core/anonymizer.py` — integrar proyecto externo de anonimización.
+9. **[Nuevo hilo]** Subida output anonimizado al Drive tyukhay.legal.
+10. Configurar Windows Task Scheduler para `scheduled_sync.py` (diario 08:00).
+11. Reforzar `prompts/viabilidad.md` con jurisprudencia sobre nexo causal.
+12. Tests adicionales: `test_linker`, `test_scorer`, `test_pipeline`.
 
 ---
 
