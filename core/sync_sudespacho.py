@@ -43,8 +43,8 @@ obtenerlos hay dos rutas:
 Autenticación: API key en header `x-api-key`, sin esquema (el valor del
 header es la clave literal). El header `Authorization` está reservado al
 flujo JWT de sesión web del CRM y rechaza tokens de API key. Confirmado
-empíricamente contra el tenant commons-pro el 2026-04-25 (ver hilo del
-HANDOFF). El OpenAPI declara `Authorization`, pero ese declarativo
+empíricamente contra el tenant commons-pro el 2026-04-25 (ver docs/DEAD_ENDS.md).
+El OpenAPI declara `Authorization`, pero ese declarativo
 corresponde a la auth de sesión web, no a la API key.
 """
 
