@@ -3,7 +3,7 @@
 > **Fuente de verdad única del proyecto.**
 > Actualizar al cerrar cada sesión con `python -m scripts.session_close`.
 
-**Última actualización:** 2026-04-28 (protocolo sesión + session_close.py + DEAD_ENDS.md)
+**Última actualización:** 2026-04-28 (primer pipeline end-to-end OK + correcciones checklist apertura)
 
 ---
 
@@ -13,9 +13,9 @@ Ejecutar siempre antes de empezar a trabajar:
 
 ```powershell
 cd "G:\Unidades compartidas\DESPACHO - PRODUCCION\Base datos expedientes"
-git log --oneline -5                            # ¿qué cambió desde la última sesión?
-pytest -q --tb=no                               # ¿sigue verde?
-python -m scripts.sync_sudespacho check_legacy  # ¿PHPSESSID válida?
+git log --oneline -5                             # ¿qué cambió desde la última sesión?
+python -m pytest -q --tb=no                     # ¿sigue verde?
+python -m scripts.sync_sudespacho check-legacy  # ¿PHPSESSID válida? (Claude la renueva automáticamente)
 ```
 
 Luego leer la sección **[SIGUIENTE]** en "Próximas tareas" más abajo.
@@ -54,8 +54,8 @@ git commit -m "<mensaje que Claude propuso>"
 
 | Ítem | Estado |
 |------|--------|
-| Tests | ✅ 25/25 |
-| Pipeline | ⏳ No ejecutado aún end-to-end |
+| Tests | ✅ 44/44 |
+| Pipeline | ✅ Ejecutado end-to-end (BaRR3, 2026-04-28, 9/9 pasos OK, ~9 min) |
 | Primer caso real | ✅ Creado, docs descargados |
 | Taxonomía de casos | ✅ Actualizada en config.py |
 | `sudespacho_create.py` | ✅ Completo — DTO, tags, notas, helper |
@@ -155,8 +155,8 @@ python -m scripts.run_pipeline "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
 3. ~~Añadir `tag_defaults_for_tipo_caso()` y 13 `NOTA_*`~~ ✅ 2026-04-28
 4. ~~Crear protocolo de sesión: `session_close.py`, `DEAD_ENDS.md`, mapa dependencias~~ ✅ 2026-04-28
 5. ~~Protocolo de cierre definitivo: 4 momentos, session_close.py simplificado, sin interactividad~~ ✅ 2026-04-28
-6. **[SIGUIENTE]** Limpiar `sudespacho/` residual y ejecutar pipeline end-to-end en caso real.
-6. **[SIGUIENTE]** Streamlit: pestaña "Nuevo Caso" — formulario + botón "Crear en sudespacho" usando `sudespacho_create.py`.
+6. ~~Limpiar `sudespacho/` residual y ejecutar pipeline end-to-end en caso real~~ ✅ 2026-04-28 — 9/9 pasos OK, ~9 min.
+7. **[SIGUIENTE]** Streamlit: pestaña "Nuevo Caso" — formulario + botón "Crear en sudespacho" usando `sudespacho_create.py`.
 7. **[NIKOLAI]** Conectar cuenta `nikolai.tyukhay@engelvoelkers.com` en Cowork → desbloquea intake Drive E&V.
 8. **[Nuevo hilo]** Módulo `core/intake_drive.py` — pull desde carpeta Drive operación E&V al `00_INPUT/`.
 9. **[Nuevo hilo]** Módulo `core/anonymizer.py` — integrar proyecto externo de anonimización.
@@ -164,6 +164,7 @@ python -m scripts.run_pipeline "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
 11. Configurar Windows Task Scheduler para `scheduled_sync.py` (diario 08:00).
 12. Reforzar `prompts/viabilidad.md` con jurisprudencia sobre nexo causal.
 13. Tests adicionales: `test_linker`, `test_scorer`, `test_pipeline`.
+14. **[Evaluación]** Backend LLM: valorar sustitución de Ollama/llama3 por Claude API (Haiku) para análisis. Equipo tiene i7-1255U sin GPU discreta — inferencia local en CPU muy lenta. Alternativas: (a) modelo cuantizado `llama3:8b-instruct-q4_0`, (b) Claude Haiku vía API (mínimo coste por caso, sin carga local).
 
 ---
 
