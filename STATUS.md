@@ -2,7 +2,7 @@
 
 > Snapshot rápido del estado del proyecto. Actualizar al cerrar cada sesión.
 
-**Última actualización:** 2026-04-28
+**Última actualización:** 2026-04-28 (reorganización de carpetas)
 
 ---
 
@@ -85,8 +85,8 @@
 
 **⚠️ Acción pendiente antes de lanzar pipeline:**
 ```powershell
-cd "G:\Unidades compartidas\DESPACHO - PRODUCCION\Sudespacho.net\Base datos expedientes"
-Remove-Item -Recurse -Force "data\CASOS\BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU\00_INPUT\sudespacho"
+cd "G:\Unidades compartidas\DESPACHO - PRODUCCION\Base datos expedientes"
+Remove-Item -Recurse -Force "G:\Unidades compartidas\EXPEDIENTES - TYUKHAY LEGAL\CASOS\BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU\00_INPUT\sudespacho"
 python -m scripts.run_pipeline "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
 ```
 
@@ -114,6 +114,32 @@ python -m scripts.run_pipeline "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
 - `SUDESPACHO_LEGACY_HOST` — `tnm.sudespacho.net` (fijo).
 - `DRIVE_OUTPUT_FOLDER_ID` — carpeta Drive tyukhay.legal para output anonimizado (pendiente configurar).
 - `DRIVE_EV_ROOT_FOLDER_ID` — carpeta raíz Drive engelvoelkers.com para intake E&V (pendiente cuenta corporativa).
+
+---
+
+## Estructura de carpetas en Google Drive (reorganizada 2026-04-28)
+
+```
+G:\Unidades compartidas\
+├── DESPACHO - PRODUCCION\
+│   └── Base datos expedientes\    ← código FeesDefender (git → GitHub TyukhayNi/FeesDefender)
+│       ├── core/  scripts/  tests/  prompts/  docs/
+│       ├── streamlit_app.py
+│       └── .env                   ← local, nunca a GitHub
+│
+└── EXPEDIENTES - TYUKHAY LEGAL\
+    └── CASOS\                     ← expedientes reales (acceso equipo: Paola, Ana)
+        ├── _PLANTILLA/
+        └── {case_id}/
+```
+
+**Variables de entorno afectadas:**
+- `CASOS_ROOT=G:\Unidades compartidas\EXPEDIENTES - TYUKHAY LEGAL\CASOS` — ya actualizado en `.env`
+
+**⚠️ Pendiente:** mover la carpeta `CASOS\` desde `DESPACHO - PRODUCCION\` al nuevo Shared Drive `EXPEDIENTES - TYUKHAY LEGAL\`:
+```powershell
+Move-Item "G:\Unidades compartidas\DESPACHO - PRODUCCION\CASOS" "G:\Unidades compartidas\EXPEDIENTES - TYUKHAY LEGAL\CASOS"
+```
 
 ---
 
