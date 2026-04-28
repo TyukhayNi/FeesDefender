@@ -240,7 +240,11 @@ class SudespachoLegacyClient:
         self._csrf_token = m.group(1)
         return self._csrf_token
 
-    def _post_form(self, path: str, body: dict[str, str]) -> httpx.Response:
+    def _post_form(
+        self,
+        path: str,
+        body: "dict[str, str] | list[tuple[str, str]]",
+    ) -> httpx.Response:
         encoded = urllib.parse.urlencode(body)
         try:
             r = self._client.post(
@@ -273,6 +277,57 @@ class SudespachoLegacyClient:
             ) from exc
 
     # --- API pública ------------------------------------------------------
+
+    @property
+    def host(self) -> str:
+        """Host del tenant sin esquema (ej. 'tnm.sudespacho.net')."""
+        return self.cfg.host
+
+    def get_csrf_token(self) -> str:
+        """Devuelve el CSRF token activo de la sesión (obteniéndolo si aún no se cacheó).
+
+        Wrapper público de _get_csrf_token(). Útil para módulos externos
+        (ej. sudespacho_create.py) que necesitan el token para construir
+        el body de una request antes de llamar a post_form().
+        """
+        return self._get_csrf_token()
+
+    def post_form(
+        self,
+        path: str,
+        form_data: "list[tuple[str, str]]",
+    ) -> Any:
+        """Envía un POST form-urlencoded y devuelve el JSON de respuesta parseado.
+
+        A diferencia de _post_form(), acepta una lista de tuplas para
+        permitir claves repetidas (ej. tags, csrf_token enviado varias veces).
+        La URL puede ser un path relativo ("/extrajudiciales/...") o una
+        URL completa ("https://tnm.sudespacho.net/..."); en el segundo caso
+        se extrae el path automáticamente.
+
+        Args:
+            path: Path relativo o URL completa del endpoint.
+            form_data: Lista de tuplas (campo, valor).
+
+        Returns:
+            dict con el JSON de respuesta.
+
+        Raises:
+            SudespachoLegacyError: si hay error HTTP o la sesión expiró.
+        """
+        # Normalizar: si es URL completa extraer solo el path
+        if path.startswith("http://") or path.startswith("https://"):
+            parsed = urllib.parse.urlparse(path)
+            path = parsed.path
+            if parsed.query:
+                path = f"{path}?{parsed.query}"
+
+        r = self._post_form(path, form_data)
+        if r.status_code >= 400:
+            raise SudespachoLegacyError(
+                f"POST {path} → HTTP {r.status_code}: {r.text[:400]}"
+            )
+        return self._parse_json_loose(r)
 
     def healthcheck(self) -> bool:
         """Valida que la cookie de sesión es válida obteniendo el CSRF."""
