@@ -1,0 +1,20 @@
+[project]
+name = "feesguard"
+version = "0.1.0"
+description = "FeesGuard — Sistema integral de defensa de honorarios de intermediación inmobiliaria"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "Nikolai Tyukhay" }]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra -q"
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["E501"]

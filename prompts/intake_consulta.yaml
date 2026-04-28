@@ -1,0 +1,595 @@
+# =============================================================================
+#  PROTOCOLO DE PREGUNTAS — ANÁLISIS DE VIABILIDAD
+#  Reclamación de honorarios de intermediación inmobiliaria (EV MMC SPAIN, S.L.U.)
+# =============================================================================
+#
+#  Estructura formal del cuestionario que el wizard de kickoff_extrajudicial
+#  presenta al consultor. Cada pregunta lleva:
+#    - id              identificador único (qNN)
+#    - texto           literal de la pregunta
+#    - proposito       qué fragmento del nexo causal acredita
+#    - tipo            forma de la respuesta (drives la UI del wizard)
+#    - opciones        para selección/multiselección (cuando aplica)
+#    - obligatoria     si bloquea avanzar sin responder
+#    - aplica_a        taxonomía de casos donde la pregunta es relevante
+#    - categoria       leg del nexo causal que ataca
+#
+#  Tipos de respuesta soportados:
+#    texto_libre              caja de texto multilinea
+#    si_no                    boolean estricto
+#    si_no_detalle            boolean + caja de detalle si "sí"
+#    seleccion                única, lista cerrada
+#    seleccion_otro           única + opción "otro" con texto libre
+#    seleccion_multiple       checkbox múltiple
+#    numero                   entero
+#    importe                  decimal con €
+#    fecha                    YYYY-MM-DD
+#    archivo                  ruta a fichero adjuntado
+#
+#  Convenciones taxonomía de casos (alineada con prompts/clasificacion_caso.md):
+#    vuelta                   ruptura del nexo causal (terceros, contacto previo)
+#    negativa_oferta          rechazo a oferta a precio
+#    negativa_arras           rechazo a firmar arras tras oferta aceptada
+#    negativa_escritura       rechazo a escriturar tras arras
+#    sin_pago                 bad debt: operación consumada pero no se pagan honorarios
+#    tercera_agencia          intervención decisiva de tercero
+#    incumplimiento_exclusiva ruptura de cláusula de exclusiva
+#    otro
+# =============================================================================
+
+metadata:
+  nombre: "Protocolo Análisis Viabilidad Honorarios EV"
+  cliente: "EV MMC SPAIN, S.L.U."
+  fuente: "docs/Protocolo_Preguntas_Viabilidad_EV.txt"
+  version: "1.0"
+  fecha: "2026-04-25"
+  total_preguntas: 63
+
+# Categorías de nexo causal — cada pregunta mapea a una de estas. El LLM
+# las usa para puntuar viabilidad por leg de la teoría del caso.
+categorias_nexo_causal:
+  existencia_encargo:        "Acreditación del título: contrato de mediación válido y vigente."
+  intervencion_agencia:      "Actividad mediadora desplegada (visitas, exposés, comunicaciones)."
+  identificacion_comprador:  "Vinculación causal del comprador con la agencia."
+  oferta_y_aceptacion:       "Existencia de oferta, traslado y aceptación por vendedor."
+  arras_y_desistimiento:     "Gestión de arras y desistimiento del vendedor."
+  ruptura_nexo:              "Detección de terceros o vías que rompen la causalidad (vueltas)."
+  intervencion_team_leader:  "Participación del Team Leader en la operación."
+
+# Aplicabilidad por defecto: si una sección o pregunta no especifica,
+# se aplica a todos los tipos.
+aplica_a_default: [vuelta, negativa_oferta, negativa_arras, negativa_escritura,
+                   sin_pago, tercera_agencia, incumplimiento_exclusiva, otro]
+
+
+# =============================================================================
+#  SECCIONES
+# =============================================================================
+secciones:
+
+  # ---------------------------------------------------------------------------
+  - id: captacion_encargo
+    orden: 1
+    titulo: "CAPTACIÓN DEL INMUEBLE (ENCARGO)"
+    proposito: |
+      Identificar prueba documental del título (encargo), su validez,
+      eventuales modificaciones y la prueba documental disponible.
+    aplica_a: [vuelta, negativa_oferta, negativa_arras, negativa_escritura,
+               incumplimiento_exclusiva]
+    categoria: existencia_encargo
+    preguntas:
+
+      - id: q01
+        texto: "¿Cómo conseguiste el contacto con el propietario?"
+        proposito: "Fuente del lead — base para futura trazabilidad de la captación."
+        tipo: seleccion_otro
+        opciones: [contacto_privado, web_engel_volkers, idealista, recomendacion, otro_portal]
+        obligatoria: true
+
+      - id: q02
+        texto: "¿Con quién hablaste al inicio? Indica nombre y apellidos."
+        proposito: "Identifica al interlocutor para localizar emails y WhatsApps."
+        tipo: texto_libre
+        obligatoria: true
+
+      - id: q03
+        texto: "¿Llegaste a conocer en persona a ese interlocutor?"
+        proposito: "Define dinámica de comunicación y prueba documental disponible."
+        tipo: si_no_detalle
+        obligatoria: true
+
+      - id: q04
+        texto: "¿Cómo os comunicabais habitualmente? Indica medios y personas."
+        proposito: "Localiza los canales con prueba (correo, WhatsApp, llamadas)."
+        tipo: seleccion_multiple
+        opciones: [email, whatsapp, telefono, presencial, sms, otros]
+        permite_detalle: true
+        obligatoria: true
+
+      - id: q05
+        texto: "¿Preparaste una Listing Presentation (PowerPoint de la valoración)?"
+        proposito: "Acredita actividad pre-encargo y profesionalidad del servicio."
+        tipo: si_no
+        obligatoria: false
+
+      - id: q06
+        texto: "¿Adelantaste el encargo antes de firmarlo para que lo revisaran?"
+        proposito: "Información precontractual y validez del consentimiento (LCU)."
+        tipo: si_no_detalle
+        obligatoria: true
+
+      - id: q07
+        texto: "¿Cómo lo adelantaste?"
+        proposito: "Soporte probatorio del envío precontractual."
+        tipo: seleccion_otro
+        opciones: [email, whatsapp, copia_fisica_en_casa, presencial, otro]
+        obligatoria: false
+        depende_de: { q06: si }
+
+      - id: q08
+        texto: "¿Se firmó finalmente el encargo de mediación?"
+        proposito: "Existencia del título de la reclamación. CRÍTICO."
+        tipo: si_no_detalle
+        obligatoria: true
+
+      - id: q09
+        texto: "¿Se modificaron las condiciones del encargo (honorarios, precio, etc.)?"
+        proposito: "Anexos o instrucciones del propietario — refuerzan la trazabilidad."
+        tipo: si_no_detalle
+        obligatoria: true
+
+      - id: q10
+        texto: "¿Quién firmó el encargo por parte del propietario?"
+        proposito: "Análisis de representación o mandato verbal."
+        tipo: texto_libre
+        obligatoria: true
+        depende_de: { q08: si }
+
+      - id: q11
+        texto: "¿Cómo se firmó el encargo?"
+        proposito: "Tipo de prueba: papel firmado o firma electrónica certificada."
+        tipo: seleccion
+        opciones: [presencial_papel, docusign, otro_firma_electronica, mixto]
+        obligatoria: true
+        depende_de: { q08: si }
+
+      - id: q12
+        texto: "¿Dónde se firmó el encargo y en qué circunstancias?"
+        proposito: "Aplicación de normativa de consumidores (desistimiento art. 102 LCU)."
+        tipo: texto_libre
+        obligatoria: true
+        depende_de: { q08: si }
+
+      - id: q13
+        texto: "¿Tenemos el original firmado del encargo?"
+        proposito: "Defensa frente a impugnaciones de autenticidad."
+        tipo: si_no
+        obligatoria: true
+        depende_de: { q08: si }
+
+      - id: q14
+        texto: "¿El propietario te dio poderes o autorización para comercializar? ¿Cómo se acredita?"
+        proposito: "Suficiencia de la representación."
+        tipo: si_no_detalle
+        obligatoria: false
+
+      - id: q15
+        texto: "¿Teníamos llaves del inmueble?"
+        proposito: "Dinámica de las visitas — facilidad de acceso."
+        tipo: si_no
+        obligatoria: false
+
+      - id: q16
+        texto: "¿El propietario solía estar presente en las visitas?"
+        proposito: "Si conocía o no al comprador directamente."
+        tipo: si_no
+        obligatoria: false
+
+  # ---------------------------------------------------------------------------
+  - id: comercializacion
+    orden: 2
+    titulo: "COMERCIALIZACIÓN"
+    proposito: "Acreditar la actividad mediadora desplegada por la agencia."
+    categoria: intervencion_agencia
+    preguntas:
+
+      - id: q17
+        texto: "¿Cuántas visitas aproximadamente se realizaron al inmueble?"
+        proposito: "Mide alcance de la actividad mediadora."
+        tipo: numero
+        obligatoria: true
+
+      - id: q18
+        texto: "¿Cuántos exposés del inmueble se enviaron?"
+        proposito: "Mide alcance de la actividad mediadora."
+        tipo: numero
+        obligatoria: true
+
+  # ---------------------------------------------------------------------------
+  - id: visitas
+    orden: 3
+    titulo: "VISITAS"
+    proposito: "Vincular al comprador con la agencia."
+    categoria: identificacion_comprador
+    preguntas:
+
+      - id: q19
+        texto: "¿Cómo llegó el comprador?"
+        proposito: "Origen del contacto — clave para acreditar identificación causal."
+        tipo: seleccion_otro
+        opciones: [idealista, web_engel_volkers, recomendacion_agente, contacto_directo,
+                   exposé_externo, otro_portal, otro]
+        obligatoria: true
+
+      - id: q20
+        texto: "¿Con quién tratabas por parte del comprador? Nombre y apellidos."
+        proposito: "Identifica posibles pruebas documentales (email, WhatsApp)."
+        tipo: texto_libre
+        obligatoria: true
+
+      - id: q21
+        texto: "¿Cómo os comunicabais?"
+        proposito: "Identifica medios de prueba de la gestión."
+        tipo: seleccion_multiple
+        opciones: [email, whatsapp, telefono, presencial, sms]
+        permite_detalle: true
+        obligatoria: true
+
+      - id: q22
+        texto: "¿Le enviaste el exposé del inmueble? ¿Cómo?"
+        proposito: "Acredita identificación específica del inmueble por la agencia."
+        tipo: si_no_detalle
+        obligatoria: true
+
+      - id: q23
+        texto: "¿El comprador firmó hoja de visita?"
+        proposito: "Acredita la visita — prueba típica en estos pleitos."
+        tipo: si_no
+        obligatoria: true
+
+      - id: q24
+        texto: "¿Tenemos copia o el original de la hoja de visita?"
+        proposito: "Asegura medio de prueba ante eventual impugnación."
+        tipo: seleccion
+        opciones: [original, copia, no_disponible]
+        obligatoria: true
+        depende_de: { q23: si }
+
+      - id: q25
+        texto: "¿Cuántas visitas hizo el comprador al inmueble?"
+        proposito: "Intensidad de la intervención sobre el comprador."
+        tipo: numero
+        obligatoria: true
+
+      - id: q26
+        texto: "¿Quién estuvo presente en las visitas?"
+        proposito: "Reconstruye circunstancias y posibles testigos."
+        tipo: texto_libre
+        obligatoria: false
+
+  # ---------------------------------------------------------------------------
+  - id: oferta_comprador
+    orden: 4
+    titulo: "OFERTA – COMPRADOR"
+    proposito: "Acreditar existencia de oferta y su documentación."
+    aplica_a: [vuelta, negativa_oferta, negativa_arras, negativa_escritura, sin_pago]
+    categoria: oferta_y_aceptacion
+    preguntas:
+
+      - id: q27
+        texto: "¿Cuántas ofertas hizo el comprador (aunque no fueran formales) y cuál era el precio?"
+        proposito: "Incluye verbales o por WhatsApp — intensidad negociadora."
+        tipo: texto_libre
+        obligatoria: true
+
+      - id: q28
+        texto: "¿Cuántas se formalizaron por escrito y cuál era el precio?"
+        proposito: "Documenta ofertas en formularios o documentos firmados."
+        tipo: texto_libre
+        obligatoria: true
+
+      - id: q29
+        texto: "¿Dónde y cómo firmó el comprador la oferta?"
+        proposito: "Circunstancias de la firma — soporte probatorio."
+        tipo: texto_libre
+        obligatoria: false
+
+      - id: q30
+        texto: "¿Cómo te envió la oferta el comprador?"
+        proposito: "Canal con trazabilidad documental."
+        tipo: seleccion_otro
+        opciones: [email, whatsapp, presencial, otro]
+        obligatoria: false
+
+      - id: q31
+        texto: "¿Tenemos el original firmado de la oferta?"
+        proposito: "Defensa frente a impugnaciones de autenticidad."
+        tipo: si_no
+        obligatoria: true
+
+      - id: q32
+        texto: "¿El comprador entregó señal o reserva? ¿Por qué importe?"
+        proposito: "Compromiso económico que refuerza seriedad de oferta."
+        tipo: si_no_detalle
+        obligatoria: true
+
+      - id: q33
+        texto: "¿Se devolvió esa cantidad? ¿En qué circunstancias?"
+        proposito: "Trazabilidad financiera y narrativa del fracaso."
+        tipo: si_no_detalle
+        obligatoria: false
+        depende_de: { q32: si }
+
+      - id: q34
+        texto: "¿Firmó compromiso de seriedad de oferta? (solo Madrid)"
+        proposito: "Documento específico del mercado de Madrid — refuerza compromiso."
+        tipo: seleccion
+        opciones: [si, no, no_aplica]
+        obligatoria: false
+
+      - id: q35
+        texto: "¿Tenemos el original de ese documento de seriedad?"
+        proposito: "Soporte probatorio del compromiso."
+        tipo: seleccion
+        opciones: [si, no, no_aplica]
+        obligatoria: false
+        depende_de: { q34: si }
+
+  # ---------------------------------------------------------------------------
+  - id: comunicacion_interna
+    orden: 5
+    titulo: "COMUNICACIÓN INTERNA"
+    proposito: "Identificar prueba interna de la mediación y su eficacia."
+    categoria: intervencion_agencia
+    preguntas:
+
+      - id: q36
+        texto: "¿Se creó un grupo o canal interno (por ejemplo WhatsApp)?"
+        proposito: "Existencia de prueba interna de la actividad."
+        tipo: si_no
+        obligatoria: false
+
+      - id: q37
+        texto: "¿Quién participaba en ese canal?"
+        proposito: "Identifica testigos potenciales internos."
+        tipo: texto_libre
+        obligatoria: false
+        depende_de: { q36: si }
+
+      - id: q38
+        texto: "¿Se compartían ofertas y evolución de la operación?"
+        proposito: "Refuerza prueba de actividad y conocimiento del estado del caso."
+        tipo: si_no
+        obligatoria: false
+        depende_de: { q36: si }
+
+  # ---------------------------------------------------------------------------
+  - id: comunicacion_agencia_vendedor
+    orden: 6
+    titulo: "COMUNICACIÓN AGENCIA – VENDEDOR"
+    proposito: "Acreditar traslado de oferta y aceptación."
+    aplica_a: [vuelta, negativa_oferta, negativa_arras, negativa_escritura, sin_pago]
+    categoria: oferta_y_aceptacion
+    preguntas:
+
+      - id: q39
+        texto: "¿Cuántas ofertas comunicaste al vendedor?"
+        proposito: "Intensidad de la comunicación con el principal."
+        tipo: numero
+        obligatoria: true
+
+      - id: q40
+        texto: "¿Cómo se las enviaste al vendedor?"
+        proposito: "Canal con prueba (preferible escrito)."
+        tipo: seleccion_multiple
+        opciones: [telefono, email, whatsapp, presencial]
+        obligatoria: true
+
+      - id: q41
+        texto: "¿Cómo te comunicó el vendedor la aceptación?"
+        proposito: "Forma de la aceptación — clave para perfección de la operación."
+        tipo: texto_libre
+        obligatoria: true
+
+      - id: q42
+        texto: "¿Te devolvió la oferta firmada?"
+        proposito: "Documentación de la aceptación."
+        tipo: si_no
+        obligatoria: true
+
+      - id: q43
+        texto: "¿Quién firmó la oferta por parte del vendedor?"
+        proposito: "Análisis de representación y mandato."
+        tipo: texto_libre
+        obligatoria: false
+        depende_de: { q42: si }
+
+      - id: q44
+        texto: "¿Dónde firmó el vendedor?"
+        proposito: "Circunstancias y normativa de consumo aplicable."
+        tipo: texto_libre
+        obligatoria: false
+        depende_de: { q42: si }
+
+      - id: q45
+        texto: "¿Tenemos el original firmado por el vendedor?"
+        proposito: "Defensa frente a impugnaciones de autenticidad."
+        tipo: si_no
+        obligatoria: true
+        depende_de: { q42: si }
+
+  # ---------------------------------------------------------------------------
+  - id: arras
+    orden: 7
+    titulo: "ARRAS"
+    proposito: "Acreditar gestión, aceptación de oferta y desistimiento del vendedor."
+    aplica_a: [negativa_arras, negativa_escritura, vuelta]
+    categoria: arras_y_desistimiento
+    preguntas:
+
+      - id: q46
+        texto: "¿Preparasteis borrador de arras?"
+        proposito: "Actividad post-aceptación — acredita seriedad de la operación."
+        tipo: si_no
+        obligatoria: true
+
+      - id: q47
+        texto: "¿Se envió a los compradores y cómo?"
+        proposito: "Trazabilidad del traslado del borrador."
+        tipo: si_no_detalle
+        obligatoria: true
+        depende_de: { q46: si }
+
+      - id: q48
+        texto: "¿Se envió a los vendedores y cómo?"
+        proposito: "Trazabilidad del traslado al vendedor."
+        tipo: si_no_detalle
+        obligatoria: true
+        depende_de: { q46: si }
+
+      - id: q49
+        texto: "¿Los compradores dieron su conformidad?"
+        proposito: "Aceptación del clausulado por parte del comprador."
+        tipo: si_no_detalle
+        obligatoria: true
+        depende_de: { q46: si }
+
+      - id: q50
+        texto: "¿Los vendedores dieron su conformidad?"
+        proposito: "Aceptación del clausulado por parte del vendedor — central."
+        tipo: si_no_detalle
+        obligatoria: true
+        depende_de: { q46: si }
+
+      - id: q51
+        texto: "¿Hubo modificaciones de la oferta (fecha de arras u otras condiciones)?"
+        proposito: "Modificaciones que pudieran ser pretexto del desistimiento."
+        tipo: si_no_detalle
+        obligatoria: false
+
+      - id: q52
+        texto: "¿Se fijó la fecha, hora y lugar de la firma del contrato privado con entrega de arras?"
+        proposito: "Concreción de la operación — desistimiento posterior es injustificado."
+        tipo: si_no_detalle
+        obligatoria: true
+
+      - id: q53
+        texto: "¿Los compradores confirmaron por escrito su asistencia a la firma?"
+        proposito: "Disposición efectiva del comprador a firmar."
+        tipo: si_no
+        obligatoria: false
+        depende_de: { q52: si }
+
+      - id: q54
+        texto: "¿Los vendedores confirmaron por escrito su asistencia a la firma?"
+        proposito: "Aceptación tácita o expresa antes del desistimiento."
+        tipo: si_no
+        obligatoria: false
+        depende_de: { q52: si }
+
+      - id: q55
+        texto: "¿Los compradores prepararon los medios de pago?"
+        proposito: "Capacidad financiera y disposición real del comprador."
+        tipo: si_no
+        obligatoria: false
+        depende_de: { q52: si }
+
+      - id: q56
+        texto: "¿Cómo comunicó el vendedor que no iba a firmar?"
+        proposito: "Forma del desistimiento — documenta su unilateralidad."
+        tipo: texto_libre
+        obligatoria: true
+
+      - id: q57
+        texto: "¿Qué motivo dio el vendedor para no firmar?"
+        proposito: "Análisis de la justificación (a refutar en demanda)."
+        tipo: texto_libre
+        obligatoria: true
+
+  # ---------------------------------------------------------------------------
+  - id: vueltas
+    orden: 8
+    titulo: "PREGUNTAS ESPECÍFICAS \"VUELTAS\""
+    proposito: "Detectar ruptura del nexo causal por terceros."
+    aplica_a: [vuelta, tercera_agencia]
+    categoria: ruptura_nexo
+    preguntas:
+
+      - id: q58
+        texto: "¿Sabes si intervino otra agencia?"
+        proposito: "Valora intervención de tercero."
+        tipo: si_no_detalle
+        obligatoria: true
+
+      - id: q59
+        texto: "¿El comprador visitó el inmueble con otra agencia antes o después?"
+        proposito: "Pérdida o no de causalidad."
+        tipo: si_no_detalle
+        obligatoria: true
+
+      - id: q60
+        texto: "¿El comprador hizo alguna oferta fuera de Engel & Völkers?"
+        proposito: "Intervención decisiva de otro intermediario."
+        tipo: si_no_detalle
+        obligatoria: true
+
+      - id: q61
+        texto: "¿Informaste al propietario de la identidad del comprador? ¿Cómo?"
+        proposito: "Acredita que el vendedor conocía al comprador por la agencia — central en vueltas."
+        tipo: si_no_detalle
+        obligatoria: true
+
+      - id: q62
+        texto: "Según tu experiencia, ¿cómo crees que el comprador llegó a contactar con el vendedor?"
+        proposito: "Reconstrucción de la mecánica de la \"vuelta\" — base de la teoría del caso."
+        tipo: texto_libre
+        obligatoria: true
+
+  # ---------------------------------------------------------------------------
+  - id: team_leader
+    orden: 9
+    titulo: "TEAM LEADER"
+    proposito: "Detectar si el Team Leader tuvo intervención directa."
+    categoria: intervencion_team_leader
+    preguntas:
+
+      - id: q63
+        texto: "¿Qué intervención tuvo el Team Leader en la operación?"
+        proposito: "Si participó activamente, su testimonio refuerza la teoría del caso."
+        tipo: texto_libre
+        obligatoria: false
+
+
+# =============================================================================
+#  HEURÍSTICAS DE CIERRE — para el LLM al evaluar viabilidad
+# =============================================================================
+heuristicas_viabilidad:
+
+  # Banderas rojas que merman seriamente la viabilidad
+  banderas_rojas:
+    - condicion: "q08 == no"
+      impacto: critico
+      motivo: "Sin encargo firmado no hay título de la reclamación."
+    - condicion: "q13 == no AND q11 != docusign"
+      impacto: alto
+      motivo: "Sin original ni firma electrónica certificada, alta exposición a impugnación de autenticidad."
+    - condicion: "q23 == no AND q24 == no_disponible"
+      impacto: alto
+      motivo: "Sin hoja de visita la identificación del comprador queda débil."
+    - condicion: "q42 == no AND q41 ambiguo"
+      impacto: alto
+      motivo: "Aceptación no documentada — perfección de la operación cuestionable."
+    - condicion: "q58 == si AND q61 == no"
+      impacto: alto
+      motivo: "Tercera agencia intervino y el vendedor no recibió formalmente la identidad del comprador por EV — riesgo serio de \"vuelta\"."
+
+  # Indicadores positivos
+  indicadores_positivos:
+    - condicion: "q08 == si AND q13 == si"
+      motivo: "Encargo firmado con original — base sólida del título."
+    - condicion: "q23 == si AND q24 == original"
+      motivo: "Hoja de visita original — identificación causal robusta."
+    - condicion: "q42 == si AND q45 == si"
+      motivo: "Oferta firmada por vendedor con original — perfección documental."
+    - condicion: "q50 == si AND q56 != ''"
+      motivo: "Vendedor aceptó arras y luego desistió — narrativa fuerte para demanda."

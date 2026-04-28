@@ -1,0 +1,198 @@
+"""Creación y registro de casos.
+
+`ensure_case` es idempotente: si la carpeta existe, solo asegura que estén las
+subcarpetas estándar. Nunca borra contenido del usuario.
+"""
+
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass
+from pathlib import Path
+
+from .config import CASO_SUBDIRS, caso_path, settings
+from .utils import now_iso, write_md
+
+
+@dataclass
+class ExpedienteLink:
+    """Referencia a un expediente del CRM vinculado a este caso."""
+    id: str                              # ID numérico en sudespacho
+    element: str                         # "expedientes_judiciales" | "extrajudiciales"
+    input_dir: str                       # subcarpeta en 00_INPUT (ej. "sudespacho_648")
+
+
+@dataclass
+class CaseMeta:
+    case_id: str
+    titulo: str
+    referencia_crm: str | None = None    # "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
+    cliente: str | None = None
+    contraparte: str | None = None
+    jurisdiccion: str = "civil"
+    organo: str | None = None
+    cuantia: float | None = None
+    drive_link: str | None = None
+    drive_remote_path: str | None = None
+    estado: str = "instruccion"          # instruccion | predemanda | demanda | recurso | archivado
+    sudespacho_expedientes: list[dict] = None   # lista de ExpedienteLink serializados
+    creado_en: str = ""
+    actualizado_en: str = ""
+
+    def __post_init__(self):
+        if self.sudespacho_expedientes is None:
+            self.sudespacho_expedientes = []
+
+
+def _write_case_index(case_dir: Path, meta: CaseMeta) -> Path:
+    index = case_dir / "00_INPUT" / "_caso.md"
+    ref_line = f"- Referencia CRM: **{meta.referencia_crm}**\n" if meta.referencia_crm else ""
+    exp_lines = ""
+    if meta.sudespacho_expedientes:
+        exp_lines = "\n## Expedientes sudespacho\n\n"
+        for e in meta.sudespacho_expedientes:
+            exp_lines += f"- `{e['element']}` ID {e['id']} → `00_INPUT/{e['input_dir']}/`\n"
+    body = (
+        f"# {meta.titulo}\n\n"
+        f"Caso `{meta.case_id}` — estado **{meta.estado}**.\n\n"
+        f"{ref_line}"
+        f"## Partes\n\n"
+        f"- Cliente: {meta.cliente or '_(pendiente)_'}\n"
+        f"- Contraparte: {meta.contraparte or '_(pendiente)_'}\n\n"
+        f"## Sede\n\n"
+        f"- Jurisdicción: {meta.jurisdiccion}\n"
+        f"- Órgano: {meta.organo or '_(pendiente)_'}\n"
+        f"- Cuantía: {meta.cuantia if meta.cuantia is not None else '_(pendiente)_'}\n\n"
+        f"## Fuente documental\n\n"
+        f"- Drive: {meta.drive_link or '_(sin enlace)_'}\n"
+        f"- Remoto rclone: `{meta.drive_remote_path or '_(no configurado)_'}`\n"
+        f"{exp_lines}\n"
+        f"## Navegación\n\n"
+        f"- [[scoring]]\n"
+        f"- [[viabilidad]]\n"
+        f"- [[hechos_atomicos]]\n"
+        f"- [[contradicciones]]\n"
+        f"- [[demanda]]\n"
+    )
+    fm = {
+        "case_id": meta.case_id,
+        "tipo": "caso_index",
+        "fase": "00_INPUT",
+        "fecha": meta.creado_en,
+        "estado": meta.estado,
+        "referencia_crm": meta.referencia_crm,
+        "sudespacho_expedientes": meta.sudespacho_expedientes,
+        "drive": meta.drive_remote_path,
+        "meta": asdict(meta),
+    }
+    return write_md(index, fm, body)
+
+
+def register_expediente(
+    case_id: str,
+    expediente_id: str,
+    element: str,
+) -> str:
+    """Registra un expediente del CRM en el índice del caso.
+
+    Añade la entrada a `sudespacho_expedientes` en `_caso.md` si no existe.
+    Devuelve el nombre de la subcarpeta de ingesta: `sudespacho_{expediente_id}`.
+    Es idempotente: si el expediente ya está registrado, no hace nada.
+    """
+    input_dir_name = f"sudespacho_{expediente_id}"
+    index = caso_path(case_id) / "00_INPUT" / "_caso.md"
+
+    if not index.exists():
+        return input_dir_name  # ensure_case no se llamó aún — se registrará al crearlo
+
+    import yaml as _yaml
+    text = index.read_text(encoding="utf-8")
+
+    # Extraer frontmatter existente
+    if text.startswith("---"):
+        _, fm_raw, _ = text.split("---", 2)
+        fm = _yaml.safe_load(fm_raw) or {}
+    else:
+        fm = {}
+
+    expedientes = fm.get("sudespacho_expedientes") or []
+    ids_existentes = {str(e.get("id")) for e in expedientes if isinstance(e, dict)}
+
+    if str(expediente_id) not in ids_existentes:
+        expedientes.append({
+            "id": str(expediente_id),
+            "element": element,
+            "input_dir": input_dir_name,
+        })
+        # Re-escribir el índice con el nuevo expediente
+        meta_dict = (fm.get("meta") or {})
+        meta_dict["sudespacho_expedientes"] = expedientes
+        meta = CaseMeta(
+            case_id=case_id,
+            titulo=meta_dict.get("titulo", case_id),
+            referencia_crm=meta_dict.get("referencia_crm"),
+            cliente=meta_dict.get("cliente"),
+            contraparte=meta_dict.get("contraparte"),
+            jurisdiccion=meta_dict.get("jurisdiccion", "civil"),
+            organo=meta_dict.get("organo"),
+            cuantia=meta_dict.get("cuantia"),
+            drive_link=meta_dict.get("drive_link"),
+            drive_remote_path=meta_dict.get("drive_remote_path"),
+            estado=meta_dict.get("estado", "instruccion"),
+            sudespacho_expedientes=expedientes,
+            creado_en=meta_dict.get("creado_en", ""),
+            actualizado_en=now_iso(),
+        )
+        _write_case_index(caso_path(case_id), meta)
+
+    return input_dir_name
+
+
+def ensure_case(
+    case_id: str,
+    *,
+    titulo: str | None = None,
+    referencia_crm: str | None = None,
+    cliente: str | None = None,
+    contraparte: str | None = None,
+    drive_link: str | None = None,
+    drive_remote_path: str | None = None,
+    cuantia: float | None = None,
+    organo: str | None = None,
+) -> Path:
+    """Crea (o asegura) la estructura de un caso. Devuelve la ruta del caso."""
+    case_dir = caso_path(case_id)
+    case_dir.mkdir(parents=True, exist_ok=True)
+
+    for sub in CASO_SUBDIRS:
+        (case_dir / sub).mkdir(exist_ok=True)
+
+    index_path = case_dir / "00_INPUT" / "_caso.md"
+    is_new = not index_path.exists()
+
+    meta = CaseMeta(
+        case_id=case_id,
+        titulo=titulo or case_id,
+        referencia_crm=referencia_crm,
+        cliente=cliente,
+        contraparte=contraparte,
+        drive_link=drive_link,
+        drive_remote_path=drive_remote_path,
+        cuantia=cuantia,
+        organo=organo,
+        creado_en=now_iso() if is_new else "",
+        actualizado_en=now_iso(),
+    )
+
+    if is_new:
+        _write_case_index(case_dir, meta)
+
+    return case_dir
+
+
+def list_cases() -> list[str]:
+    if not settings.casos_root.exists():
+        return []
+    return sorted(
+        p.name for p in settings.casos_root.iterdir()
+        if p.is_dir() and not p.name.startswith("_")
+    )

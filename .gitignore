@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Entorno
+.env
+.env.local
+
+# Datos sensibles — NUNCA versionar expedientes
+data/CASOS/*
+!data/CASOS/_PLANTILLA/
+!data/CASOS/_PLANTILLA/**
+
+# Mapas de anonimización (si los usamos en algún momento)
+*.anonmap
+*.anonmap.json
+
+# Logs
+logs/
+*.log
+
+# Sistema
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Streamlit
+.streamlit/secrets.toml
