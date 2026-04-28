@@ -3,7 +3,7 @@
 > **Fuente de verdad única del proyecto.**
 > Actualizar al cerrar cada sesión con `python -m scripts.session_close`.
 
-**Última actualización:** 2026-04-28 (subcarpetas intake creadas en BaRR3 y MaRS2; exp 597 vinculado a MaRS2)
+**Última actualización:** 2026-04-28 (remoto rclone gdrive_ev configurado; arquitectura intake Drive E&V definida)
 
 ---
 
@@ -81,8 +81,16 @@ git commit -m "<mensaje que Claude propuso>"
 
 ### Drop Zone para documentos E&V
 
-- Cuenta `engelvoelkers.com` pendiente de conectar en Cowork.
-- Mientras tanto: upload directo desde la UI de Streamlit + opción carpeta designada en Drive tyukhay.legal.
+- Remoto rclone `gdrive_ev` ✅ configurado 2026-04-28 con `nikolai.tyukhay@engelvoelkers.com`.
+  - Token en `C:\Users\tnm33\AppData\Roaming\rclone\rclone.conf` (no va a git).
+  - Cowork no soporta múltiples cuentas Google — rclone es la solución definitiva.
+- **Estructura de carpetas E&V:** no es canónica — cada equipo tiene su árbol propio.
+  - Patrón general: `Shared Drive (ej. "Barcelona - S1") → [subcarpetas variables] → W-XXXXXX/`
+  - Solución: trabajar con **folder ID** (no rutas), extraído de la URL de la carpeta.
+- **Diseño `intake_drive.py`:**
+  - `_caso.md` almacena: `drive_ev_team_id` (Shared Drive ID) + `drive_ev_folder_id` (carpeta W-XXXXXX).
+  - Usuario pega la URL de la carpeta W-XXXXXX en el formulario Streamlit → se extrae el folder_id.
+  - Comando rclone: `rclone copy "gdrive_ev:" dest/ --drive-team-drive <team_id> --drive-root-folder-id <folder_id>`
 
 ### Output anonimizado
 
@@ -158,8 +166,13 @@ python -m scripts.run_pipeline "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
 6. ~~Limpiar `sudespacho/` residual y ejecutar pipeline end-to-end en caso real~~ ✅ 2026-04-28 — 9/9 pasos OK, ~9 min.
 7. **[SIGUIENTE]** Pull expediente 597 en MaRS2 (`python -m scripts.sync_sudespacho pull "MaRS2 - Puerto Rico 2, 5 º 2 - (W-0470GM) - Negativa arras" 597 --element extrajudiciales`) → verificar estructura en disco → lanzar pipeline MaRS2.
 8. **[SIGUIENTE-B]** Streamlit: pestaña "Nuevo Caso" — formulario + botón "Crear en sudespacho" usando `sudespacho_create.py`.
-7. **[NIKOLAI]** Conectar cuenta `nikolai.tyukhay@engelvoelkers.com` en Cowork → desbloquea intake Drive E&V.
-8. **[Nuevo hilo]** Módulo `core/intake_drive.py` — pull desde carpeta Drive operación E&V al `00_INPUT/`.
+7. ~~**[NIKOLAI]** Conectar cuenta `nikolai.tyukhay@engelvoelkers.com` en Cowork~~ ✅ 2026-04-28 — rclone `gdrive_ev` configurado; Cowork no soporta multi-cuenta, rclone es la solución definitiva.
+8. **[SIGUIENTE-C]** Módulo `core/intake_drive.py`:
+   - Inputs: `case_id`, `drive_ev_team_id`, `drive_ev_folder_id` (extraído de URL W-XXXXXX)
+   - Ejecuta: `rclone copy "gdrive_ev:" 00_INPUT/manual/ --drive-team-drive <team_id> --drive-root-folder-id <folder_id>`
+   - Actualiza `_caso.md` con los IDs y marca `.pulled` en `00_INPUT/manual/`
+   - Tests: `test_intake_drive.py` con mock de rclone
+   - UI: campo "URL carpeta Drive E&V" en formulario Streamlit "Nuevo Caso" → extrae team_id + folder_id automáticamente
 9. **[Nuevo hilo]** Módulo `core/anonymizer.py` — integrar proyecto externo de anonimización.
 10. **[Nuevo hilo]** Subida output anonimizado al Drive tyukhay.legal.
 11. Configurar Windows Task Scheduler para `scheduled_sync.py` (diario 08:00).

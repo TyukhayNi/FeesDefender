@@ -48,7 +48,11 @@ class Settings:
     # Drive (integración Google Drive — tyukhay.legal)
     drive_output_folder_id: str = os.getenv("DRIVE_OUTPUT_FOLDER_ID", "")
     # Drive (integración Google Drive — engelvoelkers.com, para intake E&V)
-    drive_ev_root_folder_id: str = os.getenv("DRIVE_EV_ROOT_FOLDER_ID", "")
+    # Remoto rclone configurado con `rclone config` → gdrive_ev (cuenta engelvoelkers.com)
+    # Cada caso almacena en _caso.md: drive_ev_team_id + drive_ev_folder_id
+    # intake_drive.py usa: rclone copy "gdrive_ev:" dest/ --drive-team-drive <team_id> --drive-root-folder-id <folder_id>
+    drive_ev_remote: str = os.getenv("DRIVE_EV_REMOTE", "gdrive_ev")
+    drive_ev_root_folder_id: str = os.getenv("DRIVE_EV_ROOT_FOLDER_ID", "")  # legacy, no usar
 
     # Logging
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
