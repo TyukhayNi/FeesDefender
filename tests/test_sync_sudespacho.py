@@ -250,15 +250,19 @@ def test_extract_zip_invalido_vuelca_y_lanza(tmp_path):
 # ---- Idempotencia del pull -----------------------------------------------
 
 def test_pull_expediente_marcador_idempotente(tmp_casos_root):
-    """Si el marcador existe, pull_expediente devuelve sin red ni cliente."""
+    """Si el marcador .pulled existe en sudespacho_{id}/, pull_expediente
+    devuelve sin hacer llamada de red (modo skip)."""
     case_manager.ensure_case("EV-2026-099")
-    target_dir = tmp_casos_root / "EV-2026-099" / "00_INPUT"
+    # Arquitectura multi-expediente: marker en 00_INPUT/sudespacho_{id}/.pulled
+    target_dir = tmp_casos_root / "EV-2026-099" / "00_INPUT" / "sudespacho_123"
+    target_dir.mkdir(parents=True, exist_ok=True)
     (target_dir / "doc1.pdf").write_bytes(b"x" * 10)
-    (target_dir / ".sudespacho_pulled").write_text(
-        '{"expediente_id":"123"}', encoding="utf-8",
+    (target_dir / ".pulled").write_text(
+        '{"doc_ids": ["doc1"], "last_sync": "2026-04-28T00:00:00"}',
+        encoding="utf-8",
     )
 
-    # Sin SUDESPACHO_API_KEY ni cliente: el marcador corta la ejecución antes.
+    # El marcador corta la ejecución antes de cualquier llamada de red.
     result = pull_expediente("EV-2026-099", "123")
     assert result.documents_downloaded == 0
     assert result.documents_total >= 1

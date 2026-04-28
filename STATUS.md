@@ -3,7 +3,7 @@
 > **Fuente de verdad única del proyecto.**
 > Actualizar al cerrar cada sesión con `python -m scripts.session_close`.
 
-**Última actualización:** 2026-04-28 (tags CRM + notas auditoria)
+**Última actualización:** 2026-04-28 (protocolo sesión + session_close.py + DEAD_ENDS.md)
 
 ---
 
@@ -22,16 +22,31 @@ Luego leer la sección **[SIGUIENTE]** en "Próximas tareas" más abajo.
 
 ---
 
-## ⚡ Checklist de cierre de sesión
+## ⚡ Protocolo de cierre de sesión
+
+**Momento 1 — Claude presenta en el chat (sin acción del usuario):**
+
+Claude revisa y comunica:
+- [ ] Tests: ¿alguno nuevo o modificado? ¿estado esperado?
+- [ ] Dead ends: ¿hubo callejón nuevo? → entrada propuesta para `docs/DEAD_ENDS.md`
+- [ ] Dependencias: ¿algún fichero modificado activa la tabla de `docs/ARQUITECTURA.md`?
+- [ ] STATUS.md: texto exacto de fecha + resumen + tareas completadas + [SIGUIENTE]
+- [ ] Memoria: ¿hay decisión de arquitectura o patrón nuevo que guardar?
+- [ ] Commit: mensaje propuesto
+
+**Momento 2 — Usuario revisa y aprueba** ("sí" en el chat)
+
+**Momento 3 — Claude ejecuta** todos los cambios de ficheros (STATUS.md, DEAD_ENDS.md, memoria)
+
+**Momento 4 — Usuario pega una sola línea en PowerShell:**
 
 ```powershell
 cd "G:\Unidades compartidas\DESPACHO - PRODUCCION\Base datos expedientes"
 python -m scripts.session_close
+# Si los tests pasan:
+git add -A
+git commit -m "<mensaje que Claude propuso>"
 ```
-
-El script guía los 5 pasos: tests → diff → STATUS.md → commit → recordatorios (DEAD_ENDS, dependencias).
-Si hubo callejón sin salida nuevo → `docs/DEAD_ENDS.md`.
-Si cambiaron ficheros con dependencias → consultar `docs/ARQUITECTURA.md` sección "Mapa de dependencias".
 
 ---
 
@@ -46,6 +61,10 @@ Si cambiaron ficheros con dependencias → consultar `docs/ARQUITECTURA.md` secc
 | `sudespacho_create.py` | ✅ Completo — DTO, tags, notas, helper |
 | Tags CRM verificados | ✅ 87 tags auditados y corregidos (2026-04-28) |
 | Notas de expediente | ✅ 13 NOTA_* alineadas con Manual 1.1.4 |
+| `session_close.py` | ✅ Simplificado — solo pytest, sin interactividad |
+| `docs/DEAD_ENDS.md` | ✅ 7 callejones documentados |
+| `docs/ARQUITECTURA.md` | ✅ Mapa de dependencias + convención commits |
+| Protocolo de sesión | ✅ 4 momentos — Claude presenta → aprueba → ejecuta → PS |
 | Task Scheduler | ⏳ Pendiente configurar |
 
 ---
@@ -135,7 +154,8 @@ python -m scripts.run_pipeline "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
 2. ~~Mapear IDs de tags CRM~~ ✅ 2026-04-28 — 87 tags, `sudespacho_create.py`
 3. ~~Añadir `tag_defaults_for_tipo_caso()` y 13 `NOTA_*`~~ ✅ 2026-04-28
 4. ~~Crear protocolo de sesión: `session_close.py`, `DEAD_ENDS.md`, mapa dependencias~~ ✅ 2026-04-28
-5. **[SIGUIENTE]** Limpiar `sudespacho/` residual y ejecutar pipeline end-to-end en caso real.
+5. ~~Protocolo de cierre definitivo: 4 momentos, session_close.py simplificado, sin interactividad~~ ✅ 2026-04-28
+6. **[SIGUIENTE]** Limpiar `sudespacho/` residual y ejecutar pipeline end-to-end en caso real.
 6. **[SIGUIENTE]** Streamlit: pestaña "Nuevo Caso" — formulario + botón "Crear en sudespacho" usando `sudespacho_create.py`.
 7. **[NIKOLAI]** Conectar cuenta `nikolai.tyukhay@engelvoelkers.com` en Cowork → desbloquea intake Drive E&V.
 8. **[Nuevo hilo]** Módulo `core/intake_drive.py` — pull desde carpeta Drive operación E&V al `00_INPUT/`.
