@@ -1,4 +1,4 @@
-"""FeesGuard — Sistema integral de defensa de honorarios. UI Streamlit.
+"""FeesDefender — Motor de análisis y reclamación de honorarios. UI Streamlit.
 
 La UI no contiene lógica de negocio: solo orquesta llamadas al `core` y
 visualiza los `.md` resultantes. Pensada para uso local del abogado.
@@ -13,10 +13,10 @@ import streamlit as st
 from core import case_manager, llm, pipeline
 from core.config import CASO_SUBDIRS, caso_path, settings
 
-st.set_page_config(page_title="FeesGuard", layout="wide")
+st.set_page_config(page_title="FeesDefender", layout="wide")
 
-st.title("FeesGuard")
-st.caption("Sistema integral de defensa de honorarios — análisis de viabilidad y preparación de reclamación")
+st.title("⚖️ FeesDefender")
+st.caption("Motor de análisis y reclamación de honorarios inmobiliarios — análisis de viabilidad y preparación de reclamación")
 
 # ---------------------------------------------------------------------------
 # Estado del entorno

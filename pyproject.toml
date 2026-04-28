@@ -1,7 +1,7 @@
 [project]
-name = "feesguard"
+name = "feesdefender"
 version = "0.1.0"
-description = "FeesGuard — Sistema integral de defensa de honorarios de intermediación inmobiliaria"
+description = "FeesDefender — Motor de análisis y reclamación de honorarios inmobiliarios"
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [{ name = "Nikolai Tyukhay" }]
