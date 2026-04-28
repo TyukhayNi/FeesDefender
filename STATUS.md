@@ -1,8 +1,37 @@
 # STATUS — FeesDefender
 
-> Snapshot rápido del estado del proyecto. Actualizar al cerrar cada sesión.
+> **Fuente de verdad única del proyecto.**
+> Actualizar al cerrar cada sesión con `python -m scripts.session_close`.
 
 **Última actualización:** 2026-04-28 (tags CRM + notas auditoria)
+
+---
+
+## ⚡ Checklist de apertura de sesión
+
+Ejecutar siempre antes de empezar a trabajar:
+
+```powershell
+cd "G:\Unidades compartidas\DESPACHO - PRODUCCION\Base datos expedientes"
+git log --oneline -5                            # ¿qué cambió desde la última sesión?
+pytest -q --tb=no                               # ¿sigue verde?
+python -m scripts.sync_sudespacho check_legacy  # ¿PHPSESSID válida?
+```
+
+Luego leer la sección **[SIGUIENTE]** en "Próximas tareas" más abajo.
+
+---
+
+## ⚡ Checklist de cierre de sesión
+
+```powershell
+cd "G:\Unidades compartidas\DESPACHO - PRODUCCION\Base datos expedientes"
+python -m scripts.session_close
+```
+
+El script guía los 5 pasos: tests → diff → STATUS.md → commit → recordatorios (DEAD_ENDS, dependencias).
+Si hubo callejón sin salida nuevo → `docs/DEAD_ENDS.md`.
+Si cambiaron ficheros con dependencias → consultar `docs/ARQUITECTURA.md` sección "Mapa de dependencias".
 
 ---
 
@@ -105,15 +134,16 @@ python -m scripts.run_pipeline "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
 1. ~~Capturar POST creación expediente extrajudicial~~ ✅ 2026-04-28
 2. ~~Mapear IDs de tags CRM~~ ✅ 2026-04-28 — 87 tags, `sudespacho_create.py`
 3. ~~Añadir `tag_defaults_for_tipo_caso()` y 13 `NOTA_*`~~ ✅ 2026-04-28
-4. **[SIGUIENTE]** Limpiar `sudespacho/` residual y ejecutar pipeline end-to-end en caso real `EV-2026-001`.
-5. **[SIGUIENTE]** Streamlit: pestaña "Nuevo Caso" — formulario + botón "Crear en sudespacho" usando `sudespacho_create.py`.
-6. **[NIKOLAI]** Conectar cuenta `nikolai.tyukhay@engelvoelkers.com` en Cowork → desbloquea intake Drive E&V.
-7. **[Nuevo hilo]** Módulo `core/intake_drive.py` — pull desde carpeta Drive operación E&V al `00_INPUT/`.
-8. **[Nuevo hilo]** Módulo `core/anonymizer.py` — integrar proyecto externo de anonimización.
-9. **[Nuevo hilo]** Subida output anonimizado al Drive tyukhay.legal.
-10. Configurar Windows Task Scheduler para `scheduled_sync.py` (diario 08:00).
-11. Reforzar `prompts/viabilidad.md` con jurisprudencia sobre nexo causal.
-12. Tests adicionales: `test_linker`, `test_scorer`, `test_pipeline`.
+4. ~~Crear protocolo de sesión: `session_close.py`, `DEAD_ENDS.md`, mapa dependencias~~ ✅ 2026-04-28
+5. **[SIGUIENTE]** Limpiar `sudespacho/` residual y ejecutar pipeline end-to-end en caso real.
+6. **[SIGUIENTE]** Streamlit: pestaña "Nuevo Caso" — formulario + botón "Crear en sudespacho" usando `sudespacho_create.py`.
+7. **[NIKOLAI]** Conectar cuenta `nikolai.tyukhay@engelvoelkers.com` en Cowork → desbloquea intake Drive E&V.
+8. **[Nuevo hilo]** Módulo `core/intake_drive.py` — pull desde carpeta Drive operación E&V al `00_INPUT/`.
+9. **[Nuevo hilo]** Módulo `core/anonymizer.py` — integrar proyecto externo de anonimización.
+10. **[Nuevo hilo]** Subida output anonimizado al Drive tyukhay.legal.
+11. Configurar Windows Task Scheduler para `scheduled_sync.py` (diario 08:00).
+12. Reforzar `prompts/viabilidad.md` con jurisprudencia sobre nexo causal.
+13. Tests adicionales: `test_linker`, `test_scorer`, `test_pipeline`.
 
 ---
 
