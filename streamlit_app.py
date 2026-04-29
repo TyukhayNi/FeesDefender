@@ -12,6 +12,13 @@ from pathlib import Path
 import streamlit as st
 
 from core import case_manager, llm, pipeline, sudespacho_create as _sc
+from core.intake_drive import DriveIntakeError, parse_drive_url, pull_drive_ev
+from core.sudespacho_relations import (
+    NuevoColaborador,
+    SudespachoRelationsError as _SRelError,
+    ensure_colaborador_vinculado,
+    link_ev_mmc,
+)
 from core.config import (
     CASO_SUBDIRS,
     caso_path,
@@ -19,6 +26,7 @@ from core.config import (
     TIPOS_CASO_ALL,
     posicion_de_tipo,
     POSICION_ACTORA,
+    DRIVE_EV_TEAM_IDS,
 )
 
 # ---------------------------------------------------------------------------
@@ -202,6 +210,20 @@ def _valid_email(addr: str) -> bool:
     return bool(_EMAIL_RE.match(addr.strip()))
 
 
+def _email_to_nombre(email: str) -> str:
+    """Deriva el nombre de un email E&V: nombre.apellido@engelvoelkers.com → 'Nombre Apellido'.
+
+    Funciona con cualquier email: capitaliza las partes del local-part separadas
+    por puntos, guiones o guiones bajos. Devuelve cadena vacía si el email es vacío.
+    """
+    email = email.strip()
+    if not email or "@" not in email:
+        return ""
+    local = email.split("@")[0]
+    parts = re.split(r"[.\-_]", local)
+    return " ".join(p.capitalize() for p in parts if p)
+
+
 # ---------------------------------------------------------------------------
 # Sidebar — estado del entorno
 # ---------------------------------------------------------------------------
@@ -233,9 +255,85 @@ with tab_casos:
     else:
         st.write(f"**{len(cases)}** casos en `{settings.casos_root}`")
         st.dataframe(
-            [{"case_id": c, "ruta": str(caso_path(c))} for c in cases],
+            [{"case_id": c} for c in cases],
             use_container_width=True,
         )
+
+        st.divider()
+        with st.expander("📥 Pull Drive E&V — caso existente"):
+            _caso_sel = st.selectbox(
+                "Caso", cases, key="casos_drive_sel",
+                help="Selecciona el caso al que quieres vincular la carpeta del Drive E&V.",
+            )
+            _drive_url_cas = st.text_input(
+                "URL carpeta W-XXXXXX",
+                placeholder="https://drive.google.com/drive/folders/…",
+                key="casos_drive_url",
+                help="Pega la URL de la carpeta de la operación en el Drive engelvoelkers.com. El folder ID se extrae automáticamente.",
+            )
+
+            # Resolver team_id desde el código de equipo del case_id
+            _equipo_code_cas = _caso_sel.split(" - ")[0].strip() if _caso_sel else ""
+            _team_id_cas = DRIVE_EV_TEAM_IDS.get(_equipo_code_cas)
+            if _team_id_cas:
+                st.caption(f"Shared Drive: `{_team_id_cas}` · **{_equipo_code_cas}**")
+            else:
+                st.caption(f"Equipo `{_equipo_code_cas}` sin Shared Drive configurado.")
+                _team_id_cas = st.text_input(
+                    "Shared Drive ID (manual)",
+                    placeholder="0ADxxxxxxxxxxxxx",
+                    key="casos_drive_team_manual",
+                    help="ID del Shared Drive raíz de la oficina E&V. Navega al Shared Drive en drive.google.com y copia el ID de la URL.",
+                ).strip()
+
+            _force_cas = st.checkbox(
+                "Actualizar (re-sincronizar con Drive E&V)",
+                key="casos_drive_force",
+                help=(
+                    "Por defecto el pull se omite si ya se hizo antes. "
+                    "Marca esta opción para volver a sincronizar con el Drive E&V "
+                    "y descargar documentos nuevos o modificados desde el último pull. "
+                    "rclone solo transfiere los archivos que han cambiado, no descarga todo de nuevo."
+                ),
+            )
+
+            if st.button("⬇️ Pull Drive E&V", key="casos_drive_btn",
+                         help="Descarga los documentos de la carpeta W-XXXXXX al caso local. Solo transfiere archivos nuevos o modificados."):
+
+                if not _drive_url_cas.strip():
+                    st.error("Introduce la URL de la carpeta W-XXXXXX.")
+                elif not _team_id_cas:
+                    st.error("Shared Drive ID no disponible — introdúcelo manualmente.")
+                else:
+                    try:
+                        _fid_cas = parse_drive_url(_drive_url_cas)
+                    except ValueError as _ve:
+                        st.error(f"URL no válida: {_ve}")
+                    else:
+                        with st.spinner("Descargando documentos del Drive E&V…"):
+                            try:
+                                _dr_cas = pull_drive_ev(
+                                    _caso_sel,
+                                    folder_id=_fid_cas,
+                                    team_id=_team_id_cas,
+                                    force=_force_cas,
+                                )
+                                if _dr_cas.skipped:
+                                    st.info(
+                                        f"Ya descargado previamente "
+                                        f"({_dr_cas.files_after} archivo/s). "
+                                        "Marca «Forzar re-descarga» si quieres actualizar."
+                                    )
+                                else:
+                                    st.success(
+                                        f"✅ **{_dr_cas.files_after}** archivo/s descargados "
+                                        f"en `00_Input/01_Drive EV/`."
+                                    )
+                            except DriveIntakeError as _die:
+                                st.error(
+                                    "❌ Error rclone:  \n"
+                                    + "  \n".join(_die.result.errors)
+                                )
 
 
 # ── TAB: Nuevo caso ─────────────────────────────────────────────────────────
@@ -353,6 +451,7 @@ with tab_nuevo:
             "Ciudad *",
             list(_CIUDADES.keys()),
             key="nc_ciudad",
+            help="Ciudad de la oficina E&V responsable de la operación. Filtra el selector de equipos.",
         )
     with col2:
         tipo_caso = st.selectbox(
@@ -360,6 +459,7 @@ with tab_nuevo:
             list(TIPOS_CASO_ALL.keys()),
             format_func=lambda k: TIPOS_CASO_ALL[k][0].capitalize(),
             key="nc_tipo",
+            help="Tipo de incumplimiento o reclamación. Determina los tags CRM, la posición procesal y la nota estándar del expediente.",
         )
 
     # ------------------------------------------------------------------
@@ -388,12 +488,14 @@ with tab_nuevo:
             "Dirección operación *",
             placeholder="Gran Via 40, 3º 1ª",
             key="nc_dir",
+            help="Dirección completa del inmueble. Se usa para construir el ID del caso.",
         )
     with col4:
         ref_mls = st.text_input(
             "ID GO *",
             placeholder="W-030LFT",
             key="nc_mls",
+            help="Referencia de la operación en el MLS de E&V (formato W-XXXXXX). Identifica unívocamente la operación.",
         )
 
     col5, col6 = st.columns(2)
@@ -403,6 +505,7 @@ with tab_nuevo:
             min_value=0.0,
             step=100.0,
             key="nc_cuantia",
+            help="Importe de los honorarios reclamados en euros. Se registra en el expediente del CRM. Déjalo en 0 si no se conoce todavía.",
         )
     # col6 libre — reservado para campo futuro
 
@@ -420,12 +523,14 @@ with tab_nuevo:
             "Mail Team Leader *",
             placeholder="teamleader@engelvoelkers.com",
             key="nc_mail_tl",
+            help="Email corporativo del Team Leader. Se usará para crear o vincular el colaborador en el CRM. El nombre se deriva automáticamente del email.",
         )
     with col_m2:
         mail_captador = st.text_input(
             "Mail Consultor Captador *",
             placeholder="captador@engelvoelkers.com",
             key="nc_mail_captador",
+            help="Email del consultor que captó la operación. Se vinculará como colaborador en el expediente del CRM.",
         )
 
     col_m3, col_m4 = st.columns(2)
@@ -443,6 +548,57 @@ with tab_nuevo:
             key="nc_mail_otros",
             help="Opcional. Cualquier otro interviniente en la operación.",
         )
+
+    # Nombres derivados automáticamente de los emails (sin campos manuales)
+    nombre_tl       = _email_to_nombre(mail_tl)
+    nombre_captador = _email_to_nombre(mail_captador)
+    nombre_buscador = _email_to_nombre(mail_buscador)
+    nombre_otros    = _email_to_nombre(mail_otros)
+
+    # ------------------------------------------------------------------
+    # § 5 — Fuente documental Drive E&V (opcional)
+    # ------------------------------------------------------------------
+    st.markdown(
+        '<div class="ev-section-label">Drive E&amp;V — carpeta de la operación</div>',
+        unsafe_allow_html=True,
+    )
+
+    drive_url_input = st.text_input(
+        "URL carpeta W-XXXXXX",
+        placeholder="https://drive.google.com/drive/folders/1BxiMV…",
+        key="nc_drive_url",
+        help=(
+            "Pega la URL de la carpeta de la operación en el Drive engelvoelkers.com. "
+            "El Shared Drive se detecta automáticamente a partir del equipo seleccionado."
+        ),
+    )
+
+    # Resolución automática del Shared Drive ID desde el equipo seleccionado
+    _equipo_code = equipo_label.split("—")[0].strip()
+    _auto_team_id: str | None = DRIVE_EV_TEAM_IDS.get(_equipo_code)
+
+    if _auto_team_id:
+        st.caption(f"Shared Drive: `{_auto_team_id}` · detectado para **{_equipo_code}**")
+        drive_team_id_resolved = _auto_team_id
+    else:
+        st.warning(
+            f"Shared Drive no configurado para **{_equipo_code}**. "
+            "Introduce el ID manualmente (visible en la URL del Shared Drive raíz)."
+        )
+        drive_team_id_resolved = st.text_input(
+            "Shared Drive ID",
+            placeholder="0ADxxxxxxxxxxxxx",
+            key="nc_drive_team_id_fallback",
+            help="ID del Shared Drive raíz de la oficina E&V. Abre el Shared Drive en drive.google.com y copia el ID alfanumérico que aparece en la URL después de /drive/.",
+        ).strip()
+
+    # Preview del folder_id extraído (feedback visual inmediato)
+    if drive_url_input.strip():
+        try:
+            _fid_preview = parse_drive_url(drive_url_input)
+            st.caption(f"folder ID: `{_fid_preview}`")
+        except ValueError:
+            st.caption("⚠️ URL no reconocida — revisa el formato.")
 
     # ------------------------------------------------------------------
     # Preview del case_id (live)
@@ -466,6 +622,7 @@ with tab_nuevo:
             value="",
             placeholder=_case_id_auto,
             key="nc_override",
+            help="Edita el ID del caso solo si el generado automáticamente no es correcto. Se usa como nombre de carpeta y referencia en el CRM.",
         )
 
     final_case_id = (
@@ -482,6 +639,7 @@ with tab_nuevo:
             "📁 Crear caso local",
             use_container_width=True,
             key="nc_btn_local",
+            help="Crea la estructura de carpetas del caso en el Drive de Tyukhay Legal. No crea expediente en el CRM.",
         )
     with col_b:
         btn_sudespacho = st.button(
@@ -489,6 +647,7 @@ with tab_nuevo:
             type="primary",
             use_container_width=True,
             key="nc_btn_sudespacho",
+            help="Crea el caso local Y el expediente extrajudicial en el CRM sudespacho.net, vinculando EV MMC SPAIN como cliente y los consultores como colaboradores.",
         )
 
     if btn_local or btn_sudespacho:
@@ -540,7 +699,44 @@ with tab_nuevo:
                 )
             st.success(f"Caso local disponible en `{_path}`")
 
-            # 2. Crear expediente en sudespacho (solo si se pulsó ese botón)
+            # 2. Pull Drive E&V (si el usuario rellenó la URL)
+            _drive_url_val = drive_url_input.strip()
+            _drive_team_val = drive_team_id_resolved
+            if _drive_url_val:
+                try:
+                    _folder_id = parse_drive_url(_drive_url_val)
+                except ValueError as _ve:
+                    st.error(f"URL Drive E&V no válida: {_ve}")
+                else:
+                    if not _drive_team_val:
+                        st.warning(
+                            "⚠️ Rellena el **Shared Drive ID** para poder hacer el pull del Drive E&V."
+                        )
+                    else:
+                        with st.spinner("Descargando documentos del Drive E&V…"):
+                            try:
+                                _dr = pull_drive_ev(
+                                    final_case_id,
+                                    folder_id=_folder_id,
+                                    team_id=_drive_team_val,
+                                )
+                                if _dr.skipped:
+                                    st.info(
+                                        f"Drive E&V ya estaba descargado "
+                                        f"({_dr.files_after} archivo/s en `01_Drive EV/`)."
+                                    )
+                                else:
+                                    st.success(
+                                        f"✅ Drive E&V descargado — "
+                                        f"**{_dr.files_after}** archivo/s en `00_Input/01_Drive EV/`."
+                                    )
+                            except DriveIntakeError as _die:
+                                st.error(
+                                    f"❌ Error al descargar el Drive E&V:  \n"
+                                    + "  \n".join(_die.result.errors)
+                                )
+
+            # 3. Crear expediente en sudespacho (solo si se pulsó ese botón)
             if btn_sudespacho:
                 # Tags: rojo (equipo) + verde/lila (tipo caso) + azul (ciudad)
                 _tags = [_EQUIPOS[equipo_label]] + _sc.tag_defaults_for_tipo_caso(tipo_caso)
@@ -576,6 +772,42 @@ with tab_nuevo:
                             f"✅ Expediente creado en sudespacho — **ID: {_exp_id}**  \n"
                             f"Vinculado en `_caso.md`."
                         )
+                        # 3b. Vincular EV MMC SPAIN, S.L.U. como cliente
+                        try:
+                            link_ev_mmc(_exp_id)
+                            st.success("✅ Cliente **EV MMC SPAIN, S.L.U.** vinculado.")
+                        except _SRelError as exc:
+                            st.warning(f"⚠️ No se pudo vincular EV MMC: {exc}")
+
+                        # 3c. Vincular colaboradores del equipo
+                        _colaboradores_ui: list[tuple[str, str]] = [
+                            (nombre_tl.strip(),        mail_tl.strip()),
+                            (nombre_captador.strip(),  mail_captador.strip()),
+                            (nombre_buscador.strip(),  mail_buscador.strip()),
+                            (nombre_otros.strip(),     mail_otros.strip()),
+                        ]
+                        _col_a_vincular = [
+                            (n, m) for n, m in _colaboradores_ui if n and m
+                        ]
+                        if _col_a_vincular:
+                            with st.spinner(
+                                f"Vinculando {len(_col_a_vincular)} colaborador/es…"
+                            ):
+                                for _nc, _mc in _col_a_vincular:
+                                    try:
+                                        _cid, _created = ensure_colaborador_vinculado(
+                                            _exp_id,
+                                            NuevoColaborador(nombre=_nc, email=_mc),
+                                        )
+                                        _accion = "creado y vinculado" if _created else "vinculado"
+                                        st.success(
+                                            f"✅ **{_nc}** — {_accion} (ID: {_cid})"
+                                        )
+                                    except _SRelError as exc:
+                                        st.warning(
+                                            f"⚠️ {_nc} ({_mc}): {exc}"
+                                        )
+
                     except _sc.SudespachoCreateError as exc:
                         st.error(f"Error al crear el expediente: {exc}")
                     except Exception as exc:
@@ -589,16 +821,29 @@ with tab_pipeline:
     if not cases:
         st.info("Aún no hay casos.")
     else:
-        case_id = st.selectbox("Caso", cases)
+        case_id = st.selectbox(
+            "Caso", cases,
+            help="Caso sobre el que se ejecutará el pipeline completo de análisis.",
+        )
         col1, col2, col3 = st.columns(3)
         with col1:
-            do_sync = st.checkbox("Sincronizar Drive (rclone)", value=False)
+            do_sync = st.checkbox(
+                "Sincronizar Drive (rclone)", value=False,
+                help="Ejecuta rclone antes del análisis para traer los últimos documentos del Drive E&V al caso local. Desactívalo si los documentos ya están actualizados.",
+            )
         with col2:
-            do_demanda = st.checkbox("Generar demanda", value=True)
+            do_demanda = st.checkbox(
+                "Generar demanda", value=True,
+                help="Incluye el paso de generación del borrador de demanda al final del pipeline. Desactívalo si solo quieres ejecutar el análisis de viabilidad.",
+            )
         with col3:
-            drive_remote_path = st.text_input("Remoto rclone (override)")
+            drive_remote_path = st.text_input(
+                "Remoto rclone (override)",
+                help="Ruta remota rclone alternativa (p. ej. 'gdrive_ev:W-030LFT'). Déjalo vacío para usar la configuración del caso.",
+            )
 
-        if st.button("Ejecutar pipeline", type="primary"):
+        if st.button("Ejecutar pipeline", type="primary",
+                     help="Lanza el pipeline completo: extracción de documentos, análisis de viabilidad y (si está activado) borrador de demanda."):
             with st.spinner("Ejecutando..."):
                 pr = pipeline.run(
                     case_id,
@@ -627,14 +872,23 @@ with tab_visor:
     if not cases:
         st.info("Aún no hay casos.")
     else:
-        case_id = st.selectbox("Caso", cases, key="visor_caso")
-        sub = st.selectbox("Subcarpeta", list(CASO_SUBDIRS), key="visor_sub")
+        case_id = st.selectbox(
+            "Caso", cases, key="visor_caso",
+            help="Caso cuya documentación quieres consultar.",
+        )
+        sub = st.selectbox(
+            "Subcarpeta", list(CASO_SUBDIRS), key="visor_sub",
+            help="Fase del pipeline: 00 = documentos originales, 02 = análisis, 03 = decisión, 04 = borrador predemanda…",
+        )
         sub_dir = caso_path(case_id) / sub
         files = sorted(sub_dir.rglob("*.md"))
         if not files:
             st.write("_(sin .md en esta fase)_")
         else:
-            sel = st.selectbox("Archivo", [str(p.relative_to(sub_dir)) for p in files])
+            sel = st.selectbox(
+                "Archivo", [str(p.relative_to(sub_dir)) for p in files],
+                help="Archivo Markdown a visualizar. Selecciona el que quieres revisar.",
+            )
             target = sub_dir / sel
             st.markdown(f"`{target}`")
             st.markdown(target.read_text(encoding="utf-8"))

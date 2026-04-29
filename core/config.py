@@ -212,3 +212,74 @@ EMAIL_SUBDIRS: tuple[str, ...] = (
 def caso_path(case_id: str) -> Path:
     """Devuelve la ruta absoluta a un caso. No lo crea."""
     return settings.casos_root / case_id
+
+
+# ---------------------------------------------------------------------------
+# Shared Drive IDs del Drive engelvoelkers.com (remote gdrive_ev)
+#
+# Mapping equipo_code → Shared Drive ID.
+# Obtenido con: rclone backend drives gdrive_ev:  (2026-04-29)
+# None = Shared Drive no identificado — requiere introducción manual en UI.
+# ---------------------------------------------------------------------------
+
+DRIVE_EV_TEAM_IDS: dict[str, str | None] = {
+    # ── Barcelona Residential Rentals ───────────────────────────────────────
+    "BaRR1":  "0AD32Qb2sgwRPUk9PVA",   # Barcelona Rentals - R1
+    "BaRR3":  "0AE-9XG_p0ERaUk9PVA",   # Barcelona Rentals - R3
+    "BaRR4":  "0AF1OhJWdJxguUk9PVA",   # Barcelona Rentals - R4
+    # ── Barcelona Residential Sales ─────────────────────────────────────────
+    "BaRS1":  "0ADrldKiH6lk5Uk9PVA",   # Barcelona - S1
+    "BaRS2":  "0AEw_yWPTwm2pUk9PVA",   # Barcelona - S2
+    "BaRS3":  "0AAPGi435EiuRUk9PVA",   # Barcelona - S3
+    "BaRS4":  "0AF1OhJWdJxguUk9PVA",   # Barcelona Rentals - R4
+    "BaRS5":  "0ABSsikBsoCoUUk9PVA",   # Barcelona - S5
+    "BaRS6":  "0AFcFz9dooXbyUk9PVA",   # Barcelona - S6
+    "BaRS7":  "0AGbBxb76Fl14Uk9PVA",   # Barcelona - S7
+    "BaRS8":  "0AJGVcVJqtIgpUk9PVA",   # Barcelona - S8
+    "BaRS9":  "0AFudh8LJ7y1kUk9PVA",   # Barcelona - S9
+    "BaRS10": "0ANCaHYw47N_aUk9PVA",   # Barcelona - S10
+    "BaRS11": "0AG2Z-PWFo9PHUk9PVA",   # Barcelona - S11
+    "BaRS12": "0AGciVQvwEO3ZUk9PVA",   # Barcelona - S12
+    # ── Barcelona Commercial ─────────────────────────────────────────────────
+    "BaCR1":  "0AO2kC2doh2bpUk9PVA",   # BCN Comm - Propiedades
+    "BaCR10": "0APxcQvRXJ8w_Uk9PVA",   # BCN Comm - MC2
+    "BaCS1":  "0AO2kC2doh2bpUk9PVA",   # BCN Comm - Propiedades
+    "BaCS10": "0APxcQvRXJ8w_Uk9PVA",   # BCN Comm - MC2
+    # ── Bilbao ───────────────────────────────────────────────────────────────
+    "BiRS1":  "0APU1_XB6UB2WUk9PVA",   # Bilbao - S1
+    "BiRS2":  "0AI7ThNrdHBBFUk9PVA",   # Bilbao - S2
+    # ── Madrid Residential Rentals ───────────────────────────────────────────
+    "MaRR1":  "0AA5B1lBGVwHzUk9PVA",   # Madrid - R1
+    "MaRR2":  "0AMPTnhKWXMC_Uk9PVA",   # Madrid - R2
+    "MaRR3":  "0AHmE27AuXAeeUk9PVA",   # Madrid - R3
+    # ── Madrid Residential Sales ─────────────────────────────────────────────
+    "MaRS1":  "0ALZysk_iHdzKUk9PVA",   # Madrid - S1
+    "MaRS2":  "0AACVnfVQelcbUk9PVA",   # Madrid - S2
+    "MaRS3":  "0AINsdi_58ooZUk9PVA",   # Madrid - S3
+    "MaRS4":  "0AAfoBM86F2IBUk9PVA",   # Madrid - S4
+    "MaRS5":  "0AHGeJ5ExBVAOUk9PVA",   # Madrid - S5
+    "MaRS6":  "0AEuUTqdS_SlSUk9PVA",   # Madrid - S6
+    "MaRS7":  "0AObhZ4KtWlKIUk9PVA",   # Madrid - S7
+    "MaRS8":  "0AOXSD3P3OC1OUk9PVA",   # Madrid - S8
+    "MaRS9":  "0ADvMel_HuihoUk9PVA",   # Madrid - S9
+    "MaRS10": "0ABEaSgRKczw1Uk9PVA",   # Madrid - S10
+    "MaRS13": "0ALgE1v7V402eUk9PVA",   # Madrid - S13
+    "MaRS14": "0ACrd4VNKpz43Uk9PVA",   # Madrid - S14
+    # ── San Sebastián ────────────────────────────────────────────────────────
+    "SSRR1":  "0AGtY4pu8itx0Uk9PVA",   # San Sebastian - R1
+    "SSRS1":  "0AEYW3gPNMOhrUk9PVA",   # San Sebastian - S1
+    # ── Santander ────────────────────────────────────────────────────────────
+    "SaRS1":  "0AEUJHKlwbQGUUk9PVA",   # Santander - S1
+    # ── Sevilla (S1 y S6 comparten Shared Drive) ─────────────────────────────
+    "SeRS1":  "0ABSFVWC_PfdBUk9PVA",   # Sevilla - S1 / S6
+    "SeRS6":  "0ABSFVWC_PfdBUk9PVA",   # Sevilla - S1 / S6
+    # ── Valencia ─────────────────────────────────────────────────────────────
+    "VaCR1":  "0AKHkaZNM-iYtUk9PVA",   # Valencia - Commercial
+    "VaPD1":  "0AKY5CXRI9bzNUk9PVA",   # Valencia - PD1
+    "VaRR1":  "0AF3-W0dpQNIFUk9PVA",   # Valencia - R1
+    "VaRS1":  "0AJMNkvj7zrzYUk9PVA",   # Valencia - S1
+    "VaRS2":  "0AIJDXpIMN3ySUk9PVA",   # Valencia - S2
+    "VaRS3":  "0AI05EoJNE-gdUk9PVA",   # Valencia - S3
+    "VaRS4":  "0AEHRwRoH0ROdUk9PVA",   # Valencia - S4
+    "VaRS5":  "0AJhYfh30xs85Uk9PVA",   # Valencia - S5
+}

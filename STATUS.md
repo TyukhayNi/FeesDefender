@@ -3,7 +3,7 @@
 > **Fuente de verdad única del proyecto.**
 > Actualizar al cerrar cada sesión con `python -m scripts.session_close`.
 
-**Última actualización:** 2026-04-29 (sudespacho_relations: endpoint saveselect confirmado; vínculos cliente+colaborador funcionales)
+**Última actualización:** 2026-04-29 (tooltips UI completados en toda la app; columna ruta eliminada de tab Casos; Drive E&V pull integrado en UI; nombres derivados automáticamente de emails)
 
 ---
 
@@ -16,6 +16,7 @@ cd "G:\Unidades compartidas\DESPACHO - PRODUCCION\Base datos expedientes"
 git log --oneline -5                             # ¿qué cambió desde la última sesión?
 python -m pytest -q --tb=no                     # ¿sigue verde?
 python -m scripts.sync_sudespacho check-legacy  # ¿PHPSESSID válida? (Claude la renueva automáticamente)
+.\run_app.bat                                    # arrancar Streamlit (o doble clic en el .bat)
 ```
 
 Luego leer la sección **[SIGUIENTE]** en "Próximas tareas" más abajo.
@@ -61,6 +62,11 @@ git commit -m "<mensaje que Claude propuso>"
 | `sudespacho_create.py` | ✅ Completo — DTO, tags, notas, helper |
 | `sudespacho_relations.py` | ✅ Completo — deduplicación, link cliente, link colaborador |
 | Endpoint saveselect | ✅ Confirmado 2026-04-29 — cliente+colaborador persistidos en exp 600 |
+| `core/intake_drive.py` | ✅ Completo — pull rclone gdrive_ev, marker .pulled, 27 tests |
+| UI Drive E&V | ✅ Integrado en tab Nuevo caso + tab Casos (caso existente) |
+| Nombres automáticos desde email | ✅ _email_to_nombre() — sin campos manuales |
+| Tooltips UI | ✅ help= en todos los campos interactivos de streamlit_app.py |
+| `run_app.bat` | ✅ Lanzador para usuarios finales (Paola, Ana) |
 | Tags CRM verificados | ✅ 87 tags auditados y corregidos (2026-04-28) |
 | Notas de expediente | ✅ 13 NOTA_* alineadas con Manual 1.1.4 |
 | `session_close.py` | ✅ Simplificado — solo pytest, sin interactividad |
@@ -167,10 +173,11 @@ python -m scripts.run_pipeline "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
 5. ~~Protocolo de cierre definitivo: 4 momentos, session_close.py simplificado, sin interactividad~~ ✅ 2026-04-28
 6. ~~Limpiar `sudespacho/` residual y ejecutar pipeline end-to-end en caso real~~ ✅ 2026-04-28 — 9/9 pasos OK, ~9 min.
 7. ~~`core/sudespacho_relations.py` — deduplicación, link cliente (EV MMC), link/create colaborador~~ ✅ 2026-04-29 — 25 tests, endpoint saveselect confirmado en producción.
-8. **[SIGUIENTE]** Integrar `link_ev_mmc` + `ensure_colaborador_vinculado` en UI Streamlit pestaña "Nuevo Caso" — ejecutar tras `create_expediente()`, mostrar resultado al usuario.
-   - Heurística nombre desde email E&V: `nombre.apellido@engelvoelkers.com` → `"Nombre Apellido"` (split `.`, capitalizar). Mostrar en campo editable para confirmación antes de enviar. Implementar en UI, **no** en core.
-9. **[SIGUIENTE-B]** Borrar colaborador de prueba ID=777 ("TEST FEESDEFENDER BORRAR") del CRM tnm.sudespacho.net/views/... manualmente.
-10. **[SIGUIENTE-UI]** Declarar dependencias en `pyproject.toml` + script `.bat` de arranque para usuarios finales (Paola, Ana).
+8. ~~Integrar `link_ev_mmc` + `ensure_colaborador_vinculado` en UI Streamlit pestaña "Nuevo Caso"~~ ✅ 2026-04-29 — nombres derivados automáticamente de emails; colaboradores vinculados tras crear expediente.
+9. ~~Módulo `core/intake_drive.py` + integración UI~~ ✅ 2026-04-29 — pull Drive E&V en tab Nuevo caso y tab Casos; auto-resolución Shared Drive ID; 27 tests.
+10. ~~Tooltips `help=` en toda la UI~~ ✅ 2026-04-29 — todos los campos interactivos cubiertos; ruta eliminada del listado de casos.
+11. **[SIGUIENTE]** `[SIGUIENTE-B]` Borrar colaborador de prueba ID=777 ("TEST FEESDEFENDER BORRAR") del CRM tnm.sudespacho.net manualmente.
+12. **[SIGUIENTE-UI]** Declarar dependencias en `pyproject.toml` (ya existe `run_app.bat`).
 11. ~~**[NIKOLAI]** Conectar cuenta `nikolai.tyukhay@engelvoelkers.com` en Cowork~~ ✅ 2026-04-28 — rclone `gdrive_ev` configurado; Cowork no soporta multi-cuenta, rclone es la solución definitiva.
 12. **[SIGUIENTE-C]** Módulo `core/intake_drive.py`:
    - Inputs: `case_id`, `drive_ev_team_id`, `drive_ev_folder_id` (extraído de URL W-XXXXXX)

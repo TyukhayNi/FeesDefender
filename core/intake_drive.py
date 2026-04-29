@@ -1,0 +1,265 @@
+"""Intake de documentos desde el Drive de Engel & Völkers.
+
+Copia la carpeta W-XXXXXX del Drive engelvoelkers.com al caso local
+mediante rclone, usando el remote `gdrive_ev` (cuenta corporativa E&V).
+
+Configuración rclone (ya configurado con `rclone config`):
+    remote: gdrive_ev  — cuenta nikolai.tyukhay@engelvoelkers.com
+    token:  C:/Users/tnm33/AppData/Roaming/rclone/rclone.conf (no va a git)
+
+Comando rclone ejecutado:
+    rclone copy "gdrive_ev:" "{destino}" \\
+        --drive-team-drive {team_id} \\
+        --drive-root-folder-id {folder_id} \\
+        --stats-one-line-date --log-level INFO
+
+Destino local: `00_Input/01_Drive EV/` dentro del caso.
+
+Marcador de idempotencia: `00_Input/01_Drive EV/.pulled` (JSON)
+  {
+    "team_id": "...",
+    "folder_id": "...",
+    "last_sync": "2026-...",
+    "rclone_returncode": 0,
+    "errors": []
+  }
+
+Modos de operación:
+  force=False  →  skip si .pulled ya existe (primera descarga)
+  force=True   →  re-ejecuta rclone siempre (actualiza docs)
+
+Nota: rclone es idempotente por diseño (solo copia ficheros nuevos/modificados),
+por lo que force=True en pulls posteriores solo transfiere deltas.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import subprocess
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from .case_manager import register_drive_ev
+from .config import caso_path, settings
+from .utils import now_iso
+
+
+# ---------------------------------------------------------------------------
+# Constantes
+# ---------------------------------------------------------------------------
+
+_DRIVE_EV_INPUT_SUBDIR = "01_Drive EV"
+_PULL_MARKER = ".pulled"
+
+# Regex que cubre los formatos habituales de URL de carpeta Google Drive:
+#   https://drive.google.com/drive/folders/{id}
+#   https://drive.google.com/drive/u/0/folders/{id}
+#   https://drive.google.com/drive/u/0/folders/{id}?usp=sharing
+_DRIVE_FOLDER_RE = re.compile(
+    r"https://drive\.google\.com/drive(?:/u/\d+)?/folders/([a-zA-Z0-9_-]+)"
+)
+
+
+# ---------------------------------------------------------------------------
+# DTOs
+# ---------------------------------------------------------------------------
+
+@dataclass
+class DriveIntakeResult:
+    """Resultado de una operación de pull desde el Drive E&V."""
+    case_id: str
+    team_id: str
+    folder_id: str
+    target_dir: Path
+    files_after: int       # archivos en destino tras el pull (excluye .pulled)
+    skipped: bool          # True si .pulled existía y no se forzó
+    rclone_returncode: int = 0
+    errors: list[str] = field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# API pública
+# ---------------------------------------------------------------------------
+
+def parse_drive_url(url: str) -> str:
+    """Extrae el folder_id de una URL de carpeta Google Drive.
+
+    Soporta:
+    - https://drive.google.com/drive/folders/{id}
+    - https://drive.google.com/drive/u/0/folders/{id}
+    - https://drive.google.com/drive/u/0/folders/{id}?usp=sharing&resourcekey=...
+
+    Si `url` no tiene formato URL de Drive pero parece un ID de Google
+    (solo alfanumérico + guion + guion_bajo, ≥10 chars), lo devuelve tal cual.
+
+    Raises:
+        ValueError: si no puede extraer un folder_id reconocible.
+    """
+    url = url.strip()
+
+    # Intentar extraer de URL completa
+    m = _DRIVE_FOLDER_RE.search(url)
+    if m:
+        return m.group(1)
+
+    # Aceptar IDs directos (sin prefijo de URL)
+    if re.fullmatch(r"[a-zA-Z0-9_-]{10,}", url):
+        return url
+
+    raise ValueError(
+        f"No se pudo extraer folder_id de la URL: {url!r}\n"
+        "Formatos admitidos:\n"
+        "  · https://drive.google.com/drive/folders/<id>\n"
+        "  · https://drive.google.com/drive/u/0/folders/<id>\n"
+        "  · ID directo de carpeta (solo caracteres alfanuméricos, - y _)"
+    )
+
+
+def pull_drive_ev(
+    case_id: str,
+    folder_id: str,
+    team_id: str,
+    *,
+    force: bool = False,
+) -> DriveIntakeResult:
+    """Copia la carpeta W-XXXXXX del Drive E&V al caso local.
+
+    Args:
+        case_id:   Identificador del caso (debe existir en casos_root).
+        folder_id: ID de la carpeta W-XXXXXX en el Drive engelvoelkers.com.
+        team_id:   ID del Shared Drive (Team Drive) de E&V que contiene la carpeta.
+        force:     Si True, re-ejecuta rclone aunque .pulled ya exista.
+
+    Returns:
+        DriveIntakeResult con el resultado de la operación.
+
+    Raises:
+        FileNotFoundError: si el caso no existe en casos_root.
+        DriveIntakeError:  si rclone devuelve código de error.
+    """
+    case_dir = caso_path(case_id)
+    if not case_dir.exists():
+        raise FileNotFoundError(
+            f"El caso '{case_id}' no existe en {settings.casos_root}. "
+            "Llama a ensure_case() antes de pull_drive_ev()."
+        )
+
+    target_dir = case_dir / "00_Input" / _DRIVE_EV_INPUT_SUBDIR
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    marker = target_dir / _PULL_MARKER
+
+    # --- Idempotencia: skip si .pulled existe y no se fuerza ---
+    if marker.exists() and not force:
+        files_after = _count_files(target_dir)
+        return DriveIntakeResult(
+            case_id=case_id,
+            team_id=team_id,
+            folder_id=folder_id,
+            target_dir=target_dir,
+            files_after=files_after,
+            skipped=True,
+        )
+
+    # --- Ejecutar rclone ---
+    remote = settings.drive_ev_remote   # "gdrive_ev" por defecto
+    cmd = [
+        settings.rclone_binary,
+        "copy",
+        f"{remote}:",
+        str(target_dir),
+        "--drive-team-drive", team_id,
+        "--drive-root-folder-id", folder_id,
+        "--stats-one-line-date",
+        "--log-level", "INFO",
+    ]
+
+    errors: list[str] = []
+    returncode = 0
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,  # 5 min
+        )
+        returncode = result.returncode
+        if returncode != 0:
+            stderr_tail = result.stderr[-2000:] if result.stderr else ""
+            errors.append(f"rclone exit {returncode}: {stderr_tail}")
+    except subprocess.TimeoutExpired:
+        returncode = -1
+        errors.append("rclone timeout (>300 s)")
+    except FileNotFoundError:
+        returncode = -2
+        errors.append(
+            f"Binario rclone no encontrado: '{settings.rclone_binary}'. "
+            "Verifica RCLONE_BINARY en .env o que rclone esté en el PATH."
+        )
+
+    # --- Escribir marcador ---
+    marker.write_text(
+        json.dumps(
+            {
+                "team_id": team_id,
+                "folder_id": folder_id,
+                "last_sync": now_iso(),
+                "rclone_returncode": returncode,
+                "errors": errors,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    # --- Actualizar _caso.md ---
+    if returncode == 0:
+        register_drive_ev(case_id, team_id, folder_id)
+
+    files_after = _count_files(target_dir)
+
+    result_obj = DriveIntakeResult(
+        case_id=case_id,
+        team_id=team_id,
+        folder_id=folder_id,
+        target_dir=target_dir,
+        files_after=files_after,
+        skipped=False,
+        rclone_returncode=returncode,
+        errors=errors,
+    )
+
+    if errors:
+        raise DriveIntakeError(result_obj)
+
+    return result_obj
+
+
+# ---------------------------------------------------------------------------
+# Excepción
+# ---------------------------------------------------------------------------
+
+class DriveIntakeError(RuntimeError):
+    """Error durante el pull del Drive E&V. Adjunta el DriveIntakeResult parcial."""
+
+    def __init__(self, result: DriveIntakeResult) -> None:
+        self.result = result
+        msgs = "; ".join(result.errors) if result.errors else "Error desconocido"
+        super().__init__(f"pull_drive_ev falló para '{result.case_id}': {msgs}")
+
+
+# ---------------------------------------------------------------------------
+# Helpers internos
+# ---------------------------------------------------------------------------
+
+def _count_files(directory: Path) -> int:
+    """Cuenta archivos en `directory` (no recursivo), excluyendo archivos de control."""
+    _CONTROL = {_PULL_MARKER, "_inventory.json", ".synced"}
+    return sum(
+        1
+        for p in directory.iterdir()
+        if p.is_file() and p.name not in _CONTROL
+    )

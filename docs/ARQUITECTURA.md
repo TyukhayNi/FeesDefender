@@ -9,7 +9,8 @@
 │ Core: pipeline + módulos            │  ← lógica de negocio
 │   case_manager · sync · inventory    │
 │   sync_sudespacho · sync_sudespacho_legacy
-│   sudespacho_create                  │
+│   sudespacho_create · sudespacho_relations
+│   intake_drive                       │  ← pull Drive E&V (rclone gdrive_ev)
 │   extractor · markdown_generator     │
 │   scorer · viability · demanda       │
 │   linker · llm · pipeline            │
@@ -48,6 +49,7 @@ Cada paso es ejecutable de forma aislada. El pipeline es **idempotente**: re-eje
 | `core/case_manager.py` — `CaseMeta`, `ExpedienteLink` | `tests/test_case_manager.py`, `core/pipeline.py` si consume esos campos |
 | `prompts/*.md` | Invalidar frontmatter `prompt_hash` en `.md` generados existentes (re-ejecutar pipeline sobre casos afectados) |
 | `core/pipeline.py` — orden de pasos | `docs/ARQUITECTURA.md` sección "Flujo de un caso", `STATUS.md` sección Pipeline |
+| `core/intake_drive.py` — campos `CaseMeta` | `core/case_manager.py` (`drive_ev_team_id`, `drive_ev_folder_id`), `tests/test_intake_drive.py` |
 | Añadir módulo nuevo en `core/` | `core/__init__.py`, `docs/ARQUITECTURA.md` diagrama de capas, `STATUS.md` inventario |
 | Añadir script en `scripts/` | `STATUS.md` sección "Cómo arrancar", `pyproject.toml` si tiene entry point |
 | Añadir prompt en `prompts/` | `STATUS.md` inventario, `core/viability.py` o módulo que lo consume |

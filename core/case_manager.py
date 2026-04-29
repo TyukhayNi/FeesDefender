@@ -33,6 +33,8 @@ class CaseMeta:
     cuantia: float | None = None
     drive_link: str | None = None
     drive_remote_path: str | None = None
+    drive_ev_team_id: str | None = None   # Shared Drive ID de la carpeta E&V (gdrive_ev)
+    drive_ev_folder_id: str | None = None  # Folder ID de la carpeta W-XXXXXX
     estado: str = "instruccion"          # instruccion | predemanda | demanda | recurso | archivado
     sudespacho_expedientes: list[dict] = None   # lista de ExpedienteLink serializados
     creado_en: str = ""
@@ -51,6 +53,10 @@ def _write_case_index(case_dir: Path, meta: CaseMeta) -> Path:
         exp_lines = "\n## Expedientes sudespacho\n\n"
         for e in meta.sudespacho_expedientes:
             exp_lines += f"- `{e['element']}` ID {e['id']} → `00_Input/{e['input_dir']}/`\n"
+    drive_ev_line = (
+        f"- Drive E&V team: `{meta.drive_ev_team_id}` / folder: `{meta.drive_ev_folder_id}`\n"
+        if meta.drive_ev_team_id or meta.drive_ev_folder_id else ""
+    )
     body = (
         f"# {meta.titulo}\n\n"
         f"Caso `{meta.case_id}` — estado **{meta.estado}**.\n\n"
@@ -65,6 +71,7 @@ def _write_case_index(case_dir: Path, meta: CaseMeta) -> Path:
         f"## Fuente documental\n\n"
         f"- Drive: {meta.drive_link or '_(sin enlace)_'}\n"
         f"- Remoto rclone: `{meta.drive_remote_path or '_(no configurado)_'}`\n"
+        f"{drive_ev_line}"
         f"{exp_lines}\n"
         f"## Navegación\n\n"
         f"- [[scoring]]\n"
@@ -195,6 +202,53 @@ def ensure_case(
         _write_case_index(case_dir, meta)
 
     return case_dir
+
+
+def register_drive_ev(
+    case_id: str,
+    team_id: str,
+    folder_id: str,
+) -> None:
+    """Registra los IDs del Drive E&V en el frontmatter de _caso.md.
+
+    Almacena drive_ev_team_id y drive_ev_folder_id en el meta del índice.
+    Idempotente: si los IDs ya coinciden, no hace nada.
+    """
+    import yaml as _yaml
+
+    index = caso_path(case_id) / "00_Input" / "_caso.md"
+    if not index.exists():
+        return  # ensure_case no se llamó aún
+
+    text = index.read_text(encoding="utf-8")
+    if text.startswith("---"):
+        _, fm_raw, _ = text.split("---", 2)
+        fm = _yaml.safe_load(fm_raw) or {}
+    else:
+        fm = {}
+
+    meta_dict = fm.get("meta") or {}
+
+    # Idempotencia: si ya están los mismos IDs, no reescribir
+    if (
+        meta_dict.get("drive_ev_team_id") == team_id
+        and meta_dict.get("drive_ev_folder_id") == folder_id
+    ):
+        return
+
+    meta_dict["drive_ev_team_id"] = team_id
+    meta_dict["drive_ev_folder_id"] = folder_id
+
+    from dataclasses import fields as _dc_fields
+
+    known = {f.name for f in _dc_fields(CaseMeta)}
+    kwargs = {k: v for k, v in meta_dict.items() if k in known}
+    kwargs.setdefault("case_id", case_id)
+    kwargs.setdefault("titulo", case_id)
+    kwargs["actualizado_en"] = now_iso()
+
+    meta = CaseMeta(**kwargs)
+    _write_case_index(caso_path(case_id), meta)
 
 
 def list_cases() -> list[str]:
