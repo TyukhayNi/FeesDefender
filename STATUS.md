@@ -3,7 +3,7 @@
 > **Fuente de verdad única del proyecto.**
 > Actualizar al cerrar cada sesión con `python -m scripts.session_close`.
 
-**Última actualización:** 2026-04-29 (UI rediseñada con estilística E&V; emails equipo; ciudad→equipo filtrado; reorden tabs)
+**Última actualización:** 2026-04-29 (sudespacho_relations: endpoint saveselect confirmado; vínculos cliente+colaborador funcionales)
 
 ---
 
@@ -54,11 +54,13 @@ git commit -m "<mensaje que Claude propuso>"
 
 | Ítem | Estado |
 |------|--------|
-| Tests | ✅ 44/44 (sin cambios en esta sesión — core no tocado) |
+| Tests | ✅ 70/70 (25 nuevos en test_sudespacho_relations) |
 | Pipeline | ✅ Ejecutado end-to-end (BaRR3, 2026-04-28, 9/9 pasos OK, ~9 min) |
 | Primer caso real | ✅ Creado, docs descargados |
 | Taxonomía de casos | ✅ Actualizada en config.py |
 | `sudespacho_create.py` | ✅ Completo — DTO, tags, notas, helper |
+| `sudespacho_relations.py` | ✅ Completo — deduplicación, link cliente, link colaborador |
+| Endpoint saveselect | ✅ Confirmado 2026-04-29 — cliente+colaborador persistidos en exp 600 |
 | Tags CRM verificados | ✅ 87 tags auditados y corregidos (2026-04-28) |
 | Notas de expediente | ✅ 13 NOTA_* alineadas con Manual 1.1.4 |
 | `session_close.py` | ✅ Simplificado — solo pytest, sin interactividad |
@@ -164,11 +166,12 @@ python -m scripts.run_pipeline "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
 4. ~~Crear protocolo de sesión: `session_close.py`, `DEAD_ENDS.md`, mapa dependencias~~ ✅ 2026-04-28
 5. ~~Protocolo de cierre definitivo: 4 momentos, session_close.py simplificado, sin interactividad~~ ✅ 2026-04-28
 6. ~~Limpiar `sudespacho/` residual y ejecutar pipeline end-to-end en caso real~~ ✅ 2026-04-28 — 9/9 pasos OK, ~9 min.
-7. **[SIGUIENTE]** Pull expediente 597 en MaRS2 (`python -m scripts.sync_sudespacho pull "MaRS2 - Puerto Rico 2, 5 º 2 - (W-0470GM) - Negativa arras" 597 --element extrajudiciales`) → verificar estructura en disco → lanzar pipeline MaRS2.
-8. ~~**[SIGUIENTE-B]** Streamlit: pestaña "Nuevo Caso" — formulario + botón "Crear en sudespacho"~~ ✅ 2026-04-29 — implementado + estilo E&V.
-8b. **[SIGUIENTE-UI]** Declarar dependencias en `pyproject.toml` + script `.bat` de arranque para usuarios finales (Paola, Ana).
-7. ~~**[NIKOLAI]** Conectar cuenta `nikolai.tyukhay@engelvoelkers.com` en Cowork~~ ✅ 2026-04-28 — rclone `gdrive_ev` configurado; Cowork no soporta multi-cuenta, rclone es la solución definitiva.
-8. **[SIGUIENTE-C]** Módulo `core/intake_drive.py`:
+7. ~~`core/sudespacho_relations.py` — deduplicación, link cliente (EV MMC), link/create colaborador~~ ✅ 2026-04-29 — 25 tests, endpoint saveselect confirmado en producción.
+8. **[SIGUIENTE]** Integrar `link_ev_mmc` + `ensure_colaborador_vinculado` en UI Streamlit pestaña "Nuevo Caso" — ejecutar tras `create_expediente()`, mostrar resultado al usuario.
+9. **[SIGUIENTE-B]** Borrar colaborador de prueba ID=777 ("TEST FEESDEFENDER BORRAR") del CRM tnm.sudespacho.net/views/... manualmente.
+10. **[SIGUIENTE-UI]** Declarar dependencias en `pyproject.toml` + script `.bat` de arranque para usuarios finales (Paola, Ana).
+11. ~~**[NIKOLAI]** Conectar cuenta `nikolai.tyukhay@engelvoelkers.com` en Cowork~~ ✅ 2026-04-28 — rclone `gdrive_ev` configurado; Cowork no soporta multi-cuenta, rclone es la solución definitiva.
+12. **[SIGUIENTE-C]** Módulo `core/intake_drive.py`:
    - Inputs: `case_id`, `drive_ev_team_id`, `drive_ev_folder_id` (extraído de URL W-XXXXXX)
    - Ejecuta: `rclone copy "gdrive_ev:" 00_INPUT/manual/ --drive-team-drive <team_id> --drive-root-folder-id <folder_id>`
    - Actualiza `_caso.md` con los IDs y marca `.pulled` en `00_INPUT/manual/`

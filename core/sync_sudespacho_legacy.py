@@ -224,8 +224,11 @@ class SudespachoLegacyClient:
     def _get_csrf_token(self) -> str:
         if self._csrf_token:
             return self._csrf_token
-        # GET a la home — el HTML siempre incluye `var csrf_token = '...';`
-        r = self._client.get("/")
+        # GET a la home con follow_redirects=True — la raíz puede redirigir (302)
+        # a una ruta interna; necesitamos la página final que contiene el token.
+        # Confirmado 2026-04-29: GET / devuelve 302 cuyo body vacío no tiene
+        # el token; siguiendo el redirect sí aparece.
+        r = self._client.get("/", follow_redirects=True)
         self._check_session(r, "/")
         if r.status_code >= 400:
             raise SudespachoLegacyError(

@@ -2,7 +2,7 @@
 
 > Conocimiento empírico acumulado sobre la API de sudespacho.net.  
 > Todo lo aquí documentado ha sido verificado contra el tenant `tnm.sudespacho.net`  
-> (commons-pro). Última actualización: 2026-04-28.
+> (commons-pro). Última actualización: 2026-04-29.
 
 ---
 
@@ -97,6 +97,10 @@ SUDESPACHO_LEGACY_TIMEOUT_S=120
 |---|---|---|---|
 | POST | `/gdocu/list/elemento/gdocu/elemento_relacionado/{element}/miembro_relacionado/{id}/direccion_relacionado/der` | Listado de documentos (devuelve HTML) | ✅ Confirmado |
 | POST | `/gestordocumental/predownloadfile/elemento_relacionado/{element}/miembro_relacionado/{id}/direccion_relacionado/der` | Resolución método descarga (s3/cloud/s3old) | ✅ Confirmado |
+| GET | `/autocompletar/buscar/elemento/{element}?term={q}&` | Búsqueda autocomplete por cualquier elemento CRM | ✅ Confirmado 2026-04-29 |
+| POST | `/clientespropios/saveselect/elemento/clientes_propios/elemento_relacionado/extrajudiciales/miembro_relacionado/{exp_id}/direccion_relacionado/der` | Vincular cliente a expediente extrajudicial | ✅ Confirmado 2026-04-29 |
+| POST | `/views/saveselect/elemento/colaboradores/elemento_relacionado/extrajudiciales/miembro_relacionado/{exp_id}/direccion_relacionado/der` | Vincular colaborador a expediente extrajudicial | ✅ Confirmado 2026-04-29 |
+| POST | `/views/saveadd/elemento/colaboradores` | Crear nuevo colaborador | ✅ Confirmado 2026-04-29 |
 | POST | `/gestordocumental/descargaficheros3/id_docu/{doc_id}/elemento_relacionado/{element}/miembro_relacionado/{id}/direccion_relacionado/der` | URL S3 prefirmada del documento | ✅ Confirmado |
 | POST | `/extrajudiciales/saveadd/elemento/extrajudiciales` | Crear expediente extrajudicial | ✅ Confirmado 2026-04-28 |
 
@@ -305,7 +309,92 @@ Expediente judicial:      648  (serie 28, creado 2026-04-13)
 
 ---
 
-## 10. Historial de descubrimientos
+## 10. Operaciones de relación (confirmadas 2026-04-29)
+
+### 10.1 Constantes del tenant tnm
+
+| Entidad | ID | Notas |
+|---|---|---|
+| EV MMC SPAIN, S.L.U. | `2` (clientes_propios) | ID 73 = DUPLICADO — nunca usar |
+
+### 10.2 Autocomplete de búsqueda
+
+```
+GET /autocompletar/buscar/elemento/{element}?term={query}&
+Auth: PHPSESSID (cookie)
+Response: [{"id": 1, "label": "...", "value": "{id}", "data": []}]
+```
+
+Elementos confirmados: `extrajudiciales`, `colaboradores`, `clientes_propios`.
+La búsqueda es fulltext sobre los campos visibles del listado.
+`value` contiene el ID numérico del registro.
+
+### 10.3 Vincular cliente a expediente extrajudicial
+
+```
+POST /clientespropios/saveselect/elemento/clientes_propios
+     /elemento_relacionado/extrajudiciales
+     /miembro_relacionado/{exp_id}
+     /direccion_relacionado/der
+Content-Type: application/x-www-form-urlencoded
+Body: seleccionado[]={client_id}
+      &numeroresultados_listado=5
+      &documentos_adjuntos_seleccionados=
+      &csrf_token={token}
+      &cc-num=HubspotCollectedFormsWorkaround
+Response: JSON {"resultado": true, "acumulaDatos": {"clientes_propios": ["{client_id}"]}}
+```
+
+⚠️ El endpoint es **saveselect** (no `select`) y **sin** `/elemento_relacion/` al final.
+El navegador abre un popup con `/addselect/...`; al pulsar "Guardar" el popup llama
+`saveselect()` en el padre, que hace el POST a este endpoint.
+
+### 10.4 Vincular colaborador a expediente extrajudicial
+
+```
+POST /views/saveselect/elemento/colaboradores
+     /elemento_relacionado/extrajudiciales
+     /miembro_relacionado/{exp_id}
+     /direccion_relacionado/der
+Body: seleccionado[]={colab_id}
+      &numeroresultados_listado=5
+      &documentos_adjuntos_seleccionados=
+      &csrf_token={token}
+      &cc-num=HubspotCollectedFormsWorkaround
+Response: JSON {"resultado": true, "acumulaDatos": {"colaboradores": ["{colab_id}"]}}
+```
+
+### 10.5 Crear colaborador
+
+```
+POST /views/saveadd/elemento/colaboradores
+Body: (form-urlencoded, campos campo_XXXX__colaboradores)
+Response: {"resultado": true, "dato": "{colab_id}", "wfcontroller": "colaboradores"}
+```
+
+Mapping de campos de colaborador (confirmado 2026-04-29, miembro 776):
+
+| Campo | Significado | Notas |
+|---|---|---|
+| campo_1086__colaboradores | Nombre completo | Obligatorio |
+| campo_1080__colaboradores | Email | Clave de deduplicación |
+| campo_1084__colaboradores | Nacionalidad | select; "1" = Sin Asignar |
+| campo_1085__colaboradores | NIF/CIF | |
+| campo_1083__colaboradores | Móvil | |
+| campo_1090__colaboradores | Teléfono 1 | |
+| campo_1091__colaboradores | Teléfono 2 | |
+| campo_1081__colaboradores | Fax | |
+| campo_1092__colaboradores | Teléfono 3 | |
+| campo_1094__colaboradores | Web | |
+| campo_1079__colaboradores | Dirección | |
+| campo_1089__colaboradores | Provincia | select |
+| campo_1088__colaboradores | Población | |
+| campo_1078__colaboradores | CP | |
+| campo_1087__colaboradores | Notas | textarea, HTML |
+
+---
+
+## 11. Historial de descubrimientos
 
 | Fecha | Descubrimiento |
 |---|---|
@@ -319,6 +408,9 @@ Expediente judicial:      648  (serie 28, creado 2026-04-13)
 | 2026-04-28 | Endpoint CREATE extrajudicial confirmado: `POST /extrajudiciales/saveadd/elemento/extrajudiciales` vía frontal legacy, form-urlencoded, campos campo_XXXX |
 | 2026-04-28 | Lista completa de 80 tags capturada desde selectize del formulario de alta extrajudicial |
 | 2026-04-28 | Corrección: POSIBILIDAD EXITO=50% es azul (#5b9bd1___286), no lila |
+| 2026-04-29 | Endpoints de relación confirmados: autocomplete, link cliente, link colaborador, create colaborador |
+| 2026-04-29 | EV MMC SPAIN ID=2 confirmado (ID 73 = duplicado — nunca usar) |
+| 2026-04-29 | Mapping completo de campos de colaborador (campo_1086..1087) obtenido de miembro 776 |
 | 2026-04-28 | Corrección: NEGATIVA CONTRATO ARRENDAMIENTO es rojo (#a32929___155), no verde |
 | 2026-04-28 | Confirmados IDs pendientes: CONSULTORES (194), DEVOLUCION HONORARIOS (126), todos los rojos (49 tags) |
 | 2026-04-28 | FRANQUICIA: tag no creado aún en el CRM |

@@ -61,6 +61,15 @@
 - **Confirmado:** 2026-04-28
 - **Conclusión:** No accesible sin sesión activa. Usar Drive MCP si está en My Drive, o exportación manual si está en Shared Drive.
 
+### Endpoint `/select/` para vincular elementos — no persiste
+
+- **Intentado:** `POST /clientespropios/select/elemento/clientes_propios/.../elemento_relacion/` y equivalente para colaboradores con body `seleccionado[]=2&csrf_token=...&cc-num=...`
+- **Resultado:** HTTP 200 con HTML completo (~104 KB) pero el vínculo NO se guarda en el CRM. El tab "Clientes" del expediente sigue mostrando 0.
+- **Confirmado:** 2026-04-29
+- **Causa raíz:** El flujo real del CRM usa un popup (`popup_open()`) cuyo botón "Guardar" llama a `saveselect()` en el padre. El padre hace un POST distinto a `/saveselect/` (no `/select/`).
+- **Endpoint correcto:** `POST /clientespropios/saveselect/elemento/clientes_propios/.../` (sin `/elemento_relacion/` al final). Devuelve JSON `{"resultado": true, ...}`. Requiere además `numeroresultados_listado=5` y `documentos_adjuntos_seleccionados=` en el body.
+- **Implementado en:** `core/sudespacho_relations.py` → `_link_element()`.
+
 ---
 
 ## Git desde bash sandbox (Linux)
