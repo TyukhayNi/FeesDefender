@@ -168,6 +168,7 @@ python -m scripts.run_pipeline "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
 6. ~~Limpiar `sudespacho/` residual y ejecutar pipeline end-to-end en caso real~~ ✅ 2026-04-28 — 9/9 pasos OK, ~9 min.
 7. ~~`core/sudespacho_relations.py` — deduplicación, link cliente (EV MMC), link/create colaborador~~ ✅ 2026-04-29 — 25 tests, endpoint saveselect confirmado en producción.
 8. **[SIGUIENTE]** Integrar `link_ev_mmc` + `ensure_colaborador_vinculado` en UI Streamlit pestaña "Nuevo Caso" — ejecutar tras `create_expediente()`, mostrar resultado al usuario.
+   - Heurística nombre desde email E&V: `nombre.apellido@engelvoelkers.com` → `"Nombre Apellido"` (split `.`, capitalizar). Mostrar en campo editable para confirmación antes de enviar. Implementar en UI, **no** en core.
 9. **[SIGUIENTE-B]** Borrar colaborador de prueba ID=777 ("TEST FEESDEFENDER BORRAR") del CRM tnm.sudespacho.net/views/... manualmente.
 10. **[SIGUIENTE-UI]** Declarar dependencias en `pyproject.toml` + script `.bat` de arranque para usuarios finales (Paola, Ana).
 11. ~~**[NIKOLAI]** Conectar cuenta `nikolai.tyukhay@engelvoelkers.com` en Cowork~~ ✅ 2026-04-28 — rclone `gdrive_ev` configurado; Cowork no soporta multi-cuenta, rclone es la solución definitiva.
