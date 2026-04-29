@@ -3,7 +3,7 @@
 > **Fuente de verdad única del proyecto.**
 > Actualizar al cerrar cada sesión con `python -m scripts.session_close`.
 
-**Última actualización:** 2026-04-28 (remoto rclone gdrive_ev configurado; arquitectura intake Drive E&V definida)
+**Última actualización:** 2026-04-29 (UI rediseñada con estilística E&V; emails equipo; ciudad→equipo filtrado; reorden tabs)
 
 ---
 
@@ -54,7 +54,7 @@ git commit -m "<mensaje que Claude propuso>"
 
 | Ítem | Estado |
 |------|--------|
-| Tests | ✅ 44/44 (sin cambios en esta sesión) |
+| Tests | ✅ 44/44 (sin cambios en esta sesión — core no tocado) |
 | Pipeline | ✅ Ejecutado end-to-end (BaRR3, 2026-04-28, 9/9 pasos OK, ~9 min) |
 | Primer caso real | ✅ Creado, docs descargados |
 | Taxonomía de casos | ✅ Actualizada en config.py |
@@ -165,7 +165,8 @@ python -m scripts.run_pipeline "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
 5. ~~Protocolo de cierre definitivo: 4 momentos, session_close.py simplificado, sin interactividad~~ ✅ 2026-04-28
 6. ~~Limpiar `sudespacho/` residual y ejecutar pipeline end-to-end en caso real~~ ✅ 2026-04-28 — 9/9 pasos OK, ~9 min.
 7. **[SIGUIENTE]** Pull expediente 597 en MaRS2 (`python -m scripts.sync_sudespacho pull "MaRS2 - Puerto Rico 2, 5 º 2 - (W-0470GM) - Negativa arras" 597 --element extrajudiciales`) → verificar estructura en disco → lanzar pipeline MaRS2.
-8. **[SIGUIENTE-B]** Streamlit: pestaña "Nuevo Caso" — formulario + botón "Crear en sudespacho" usando `sudespacho_create.py`.
+8. ~~**[SIGUIENTE-B]** Streamlit: pestaña "Nuevo Caso" — formulario + botón "Crear en sudespacho"~~ ✅ 2026-04-29 — implementado + estilo E&V.
+8b. **[SIGUIENTE-UI]** Declarar dependencias en `pyproject.toml` + script `.bat` de arranque para usuarios finales (Paola, Ana).
 7. ~~**[NIKOLAI]** Conectar cuenta `nikolai.tyukhay@engelvoelkers.com` en Cowork~~ ✅ 2026-04-28 — rclone `gdrive_ev` configurado; Cowork no soporta multi-cuenta, rclone es la solución definitiva.
 8. **[SIGUIENTE-C]** Módulo `core/intake_drive.py`:
    - Inputs: `case_id`, `drive_ev_team_id`, `drive_ev_folder_id` (extraído de URL W-XXXXXX)
