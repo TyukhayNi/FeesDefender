@@ -3,7 +3,7 @@
 > **Fuente de verdad única del proyecto.**
 > Actualizar al cerrar cada sesión con `python -m scripts.session_close`.
 
-**Última actualización:** 2026-04-30 (módulo judicial: campo_XXXX, tags grupo-2, relaciones y endpoints documentados e implementados en sudespacho_create.py + sudespacho_relations.py)
+**Última actualización:** 2026-04-30 (script create_judicial_tags.py — crea tags ciudad+equipo en grupo judicial; pendiente ejecutar en siguiente sesión)
 
 ---
 
@@ -178,7 +178,7 @@ python -m scripts.run_pipeline "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
 10. ~~Tooltips `help=` en toda la UI~~ ✅ 2026-04-29 — todos los campos interactivos cubiertos; ruta eliminada del listado de casos.
 11. **[SIGUIENTE-B]** Borrar colaborador de prueba ID=777 ("TEST FEESDEFENDER BORRAR") del CRM tnm.sudespacho.net manualmente.
 12. **[SIGUIENTE-UI]** Declarar dependencias en `pyproject.toml` (ya existe `run_app.bat`).
-13. **[SIGUIENTE-J-TAGS]** Crear tags de ciudad faltantes en grupo judicial (grupo 2) via `create_tag_judicial()`: MADRID, BARCELONA, VALENCIA, BILBAO, SEVILLA, SAN SEBASTIÁN, SANTANDER (color `#5b9bd1`). Luego añadir constantes `J_TAG_AZUL_*` en `sudespacho_create.py`.
+13. **[SIGUIENTE-J-TAGS]** ⬅️ **SIGUIENTE** — Script listo en `scripts/create_judicial_tags.py`. Ejecutar desde PowerShell (`python -m scripts.create_judicial_tags`), pegar salida a Claude y añadir constantes `J_TAG_AZUL_*` / `J_TAG_ROJO_*` en `sudespacho_create.py`. Tags ciudad: MADRID, BARCELONA, VALENCIA, BILBAO, SEVILLA, SAN SEBASTIÁN, SANTANDER (`#5b9bd1`). Tags equipo: BiRS1, BiRS2, SaRS1, SeRS6, SSRR1, SSRS1, VaRS5, BaCS10, MaRS11, MaRS12, MaRS13 (`#a32929`).
 14. **[SIGUIENTE-J-TEAMS]** Crear tags de equipo faltantes en grupo judicial: BiRS1, BiRS2, SaRS1, SeRS6, SSRR1, SSRS1, VaRS5, BaCS10, MaRS11, MaRS12, MaRS13 (color `#a32929`).
 15. **[SIGUIENTE-J-UI]** Extender tab "Nuevo caso" en `streamlit_app.py` con toggle extrajudicial/judicial, campos específicos judiciales (NIG, tipo procedimiento, posición procesal), y llamada a `create_expediente_judicial()` + `link_ev_mmc_judicial()`.
 16. **[SIGUIENTE-J-TESTS]** Tests para `create_expediente_judicial()`, `build_form_data_judicial()` y funciones de relación judicial.
