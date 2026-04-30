@@ -3,7 +3,7 @@
 > **Fuente de verdad única del proyecto.**
 > Actualizar al cerrar cada sesión con `python -m scripts.session_close`.
 
-**Última actualización:** 2026-04-29 (tooltips UI completados en toda la app; columna ruta eliminada de tab Casos; Drive E&V pull integrado en UI; nombres derivados automáticamente de emails)
+**Última actualización:** 2026-04-30 (módulo judicial: campo_XXXX, tags grupo-2, relaciones y endpoints documentados e implementados en sudespacho_create.py + sudespacho_relations.py)
 
 ---
 
@@ -59,8 +59,8 @@ git commit -m "<mensaje que Claude propuso>"
 | Pipeline | ✅ Ejecutado end-to-end (BaRR3, 2026-04-28, 9/9 pasos OK, ~9 min) |
 | Primer caso real | ✅ Creado, docs descargados |
 | Taxonomía de casos | ✅ Actualizada en config.py |
-| `sudespacho_create.py` | ✅ Completo — DTO, tags, notas, helper |
-| `sudespacho_relations.py` | ✅ Completo — deduplicación, link cliente, link colaborador |
+| `sudespacho_create.py` | ✅ Extrajudicial + ✅ Judicial (2026-04-30) — DTO, tags, notas, helper |
+| `sudespacho_relations.py` | ✅ Extrajudicial + ✅ Judicial (2026-04-30) — deduplicación, link cliente/contrario/procurador, link colaborador, create_tag |
 | Endpoint saveselect | ✅ Confirmado 2026-04-29 — cliente+colaborador persistidos en exp 600 |
 | `core/intake_drive.py` | ✅ Completo — pull rclone gdrive_ev, marker .pulled, 27 tests |
 | UI Drive E&V | ✅ Integrado en tab Nuevo caso + tab Casos (caso existente) |
@@ -176,8 +176,12 @@ python -m scripts.run_pipeline "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
 8. ~~Integrar `link_ev_mmc` + `ensure_colaborador_vinculado` en UI Streamlit pestaña "Nuevo Caso"~~ ✅ 2026-04-29 — nombres derivados automáticamente de emails; colaboradores vinculados tras crear expediente.
 9. ~~Módulo `core/intake_drive.py` + integración UI~~ ✅ 2026-04-29 — pull Drive E&V en tab Nuevo caso y tab Casos; auto-resolución Shared Drive ID; 27 tests.
 10. ~~Tooltips `help=` en toda la UI~~ ✅ 2026-04-29 — todos los campos interactivos cubiertos; ruta eliminada del listado de casos.
-11. **[SIGUIENTE]** `[SIGUIENTE-B]` Borrar colaborador de prueba ID=777 ("TEST FEESDEFENDER BORRAR") del CRM tnm.sudespacho.net manualmente.
+11. **[SIGUIENTE-B]** Borrar colaborador de prueba ID=777 ("TEST FEESDEFENDER BORRAR") del CRM tnm.sudespacho.net manualmente.
 12. **[SIGUIENTE-UI]** Declarar dependencias en `pyproject.toml` (ya existe `run_app.bat`).
+13. **[SIGUIENTE-J-TAGS]** Crear tags de ciudad faltantes en grupo judicial (grupo 2) via `create_tag_judicial()`: MADRID, BARCELONA, VALENCIA, BILBAO, SEVILLA, SAN SEBASTIÁN, SANTANDER (color `#5b9bd1`). Luego añadir constantes `J_TAG_AZUL_*` en `sudespacho_create.py`.
+14. **[SIGUIENTE-J-TEAMS]** Crear tags de equipo faltantes en grupo judicial: BiRS1, BiRS2, SaRS1, SeRS6, SSRR1, SSRS1, VaRS5, BaCS10, MaRS11, MaRS12, MaRS13 (color `#a32929`).
+15. **[SIGUIENTE-J-UI]** Extender tab "Nuevo caso" en `streamlit_app.py` con toggle extrajudicial/judicial, campos específicos judiciales (NIG, tipo procedimiento, posición procesal), y llamada a `create_expediente_judicial()` + `link_ev_mmc_judicial()`.
+16. **[SIGUIENTE-J-TESTS]** Tests para `create_expediente_judicial()`, `build_form_data_judicial()` y funciones de relación judicial.
 11. ~~**[NIKOLAI]** Conectar cuenta `nikolai.tyukhay@engelvoelkers.com` en Cowork~~ ✅ 2026-04-28 — rclone `gdrive_ev` configurado; Cowork no soporta multi-cuenta, rclone es la solución definitiva.
 12. **[SIGUIENTE-C]** Módulo `core/intake_drive.py`:
    - Inputs: `case_id`, `drive_ev_team_id`, `drive_ev_folder_id` (extraído de URL W-XXXXXX)

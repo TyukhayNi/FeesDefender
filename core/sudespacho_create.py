@@ -283,6 +283,419 @@ TAG_ROJO_VaRS4  = "#a32929___114"
 TAG_ROJO_VaRS5  = "#a32929___271"
 
 
+# ---------------------------------------------------------------------------
+# Tags judiciales — grupo 2  (IDs DISTINTOS del grupo extrajudicial)
+# ---------------------------------------------------------------------------
+# Fuente: select campo_2486 del formulario de alta judicial, capturado 2026-04-30
+# Total: 78 tags activos. Completamente distintos al grupo extrajudicial (grupo 1).
+#
+# ⚠️ CIUDAD: el grupo judicial NO tiene tags de ciudad (Madrid, Barcelona...).
+#    Hay que crearlos vía POST /tagsinput/saveadd/... (pendiente 2026-04-30).
+# ⚠️ EQUIPOS faltantes respecto al grupo extrajudicial:
+#    BiRS1, BiRS2, SaRS1, SeRS6, SSRR1, SSRS1, VaRS5, MaRS11, MaRS12, MaRS13
+#    (MaRS15 SÍ existe en judicial con ID 63, aunque no existe en extrajudicial)
+
+# -- Verde (#528800): Tipo de asunto (14 tags) --------------------------------
+J_TAG_VERDE_BAD_DEBT                  = "#528800___12"
+J_TAG_VERDE_DEVOLUCION_RESERVA        = "#528800___24"
+J_TAG_VERDE_DEVOLUCION_HONORARIOS     = "#528800___55"
+J_TAG_VERDE_INCUMPLIMIENTO_EXCLUSIVA  = "#528800___62"
+J_TAG_VERDE_VUELTA                    = "#528800___1"
+J_TAG_VERDE_LAU_20                    = "#528800___227"
+J_TAG_VERDE_CONSULTORES               = "#528800___210"
+J_TAG_VERDE_NEGATIVA_ARRAS            = "#528800___180"
+J_TAG_VERDE_NEGATIVA_ESCRITURA        = "#528800___184"
+J_TAG_VERDE_NEGATIVA_OFERTA           = "#528800___197"
+J_TAG_VERDE_RESPONSABILIDAD_PROF      = "#528800___19"
+J_TAG_VERDE_PARTICULAR                = "#528800___10"
+J_TAG_VERDE_LABORAL                   = "#528800___196"
+J_TAG_VERDE_INSPECCION_LABORAL_VA     = "#528800___238"
+
+# NEGATIVA CONTRATO ARRENDAMIENTO es AZUL en judicial (distinto de extrajudicial donde es rojo)
+J_TAG_AZUL_NEGATIVA_CONTRATO_ARR      = "#5b9bd1___283"
+
+# FRANQUICIA es rojo en grupo judicial (igual que en extrajudicial)
+J_TAG_ROJO_J_FRANQUICIA               = "#a32929___7"
+
+# -- Lila (#5229a3): Valoración de riesgo / probabilidad de éxito (6 tags) ---
+#
+# Defensiva (E&V demandada):
+J_TAG_LILA_RIESGO_REMOTO              = "#5229a3___219"   # <15%
+J_TAG_LILA_RIESGO_POSIBLE             = "#5229a3___220"   # <15%-50% — DEFAULT defensiva
+J_TAG_LILA_RIESGO_PROBABLE            = "#5229a3___221"   # >50%
+# Actora (E&V reclama):
+J_TAG_LILA_POSIBILIDAD_50             = "#5229a3___259"   # =50% — DEFAULT actora
+J_TAG_LILA_POSIBILIDAD_15_50          = "#5229a3___260"   # <15%-50%
+J_TAG_LILA_POSIBILIDAD_LT_15          = "#5229a3___261"   # <15%
+
+# -- Rojo (#a32929): Equipos comerciales (44 tags) ----------------------------
+# Barcelona
+J_TAG_ROJO_BaCR1  = "#a32929___32"
+J_TAG_ROJO_BaCR10 = "#a32929___195"
+J_TAG_ROJO_BaCS1  = "#a32929___101"
+J_TAG_ROJO_BaDP1  = "#a32929___56"     # tipo op. pendiente confirmar
+J_TAG_ROJO_BaRR1  = "#a32929___33"
+J_TAG_ROJO_BaRR2  = "#a32929___34"     # existe en judicial, NO en extrajudicial
+J_TAG_ROJO_BaRR3  = "#a32929___39"
+J_TAG_ROJO_BaRR4  = "#a32929___82"     # existe en judicial, NO en extrajudicial
+J_TAG_ROJO_BaRS1  = "#a32929___46"
+J_TAG_ROJO_BaRS2  = "#a32929___30"
+J_TAG_ROJO_BaRS3  = "#a32929___37"
+J_TAG_ROJO_BaRS5  = "#a32929___45"
+J_TAG_ROJO_BaRS6  = "#a32929___25"
+J_TAG_ROJO_BaRS7  = "#a32929___29"
+J_TAG_ROJO_BaRS8  = "#a32929___185"
+J_TAG_ROJO_BaRS9  = "#a32929___35"
+J_TAG_ROJO_BaRS10 = "#a32929___57"
+J_TAG_ROJO_BaRS11 = "#a32929___121"
+J_TAG_ROJO_BaRS12 = "#a32929___192"
+# Madrid
+J_TAG_ROJO_MaPD1  = "#a32929___75"
+J_TAG_ROJO_MaRR1  = "#a32929___41"
+J_TAG_ROJO_MaRR3  = "#a32929___191"
+J_TAG_ROJO_MaRS1  = "#a32929___52"
+J_TAG_ROJO_MaRS2  = "#a32929___60"
+J_TAG_ROJO_MaRS3  = "#a32929___72"     # ⚠️ ID 26 también es MaRS3 en el CRM (duplicado)
+J_TAG_ROJO_MaRS4  = "#a32929___73"
+J_TAG_ROJO_MaRS5  = "#a32929___71"
+J_TAG_ROJO_MaRS6  = "#a32929___54"
+J_TAG_ROJO_MaRS7  = "#a32929___51"
+J_TAG_ROJO_MaRS8  = "#a32929___53"
+J_TAG_ROJO_MaRS9  = "#a32929___58"
+J_TAG_ROJO_MaRS10 = "#a32929___61"
+J_TAG_ROJO_MaRS14 = "#a32929___74"
+J_TAG_ROJO_MaRS15 = "#a32929___63"    # existe en judicial, NO en extrajudicial
+# Sevilla
+J_TAG_ROJO_SeRS1  = "#a32929___239"
+# Valencia
+J_TAG_ROJO_VaCR1  = "#a32929___78"
+J_TAG_ROJO_VaCR2  = "#a32929___47"
+J_TAG_ROJO_VaPD1  = "#a32929___182"
+J_TAG_ROJO_VaRR1  = "#a32929___42"
+J_TAG_ROJO_VaRR3  = "#a32929___43"
+J_TAG_ROJO_VaRS1  = "#a32929___36"
+J_TAG_ROJO_VaRS2  = "#a32929___31"
+J_TAG_ROJO_VaRS3  = "#a32929___44"
+J_TAG_ROJO_VaRS4  = "#a32929___59"
+
+# -- Azul (#5b9bd1): Equipos con color azul en grupo judicial (8 tags) --------
+# (Algunos equipos que son ROJOS en extrajudicial son AZULES en judicial)
+J_TAG_AZUL_BaRR10 = "#5b9bd1___265"
+J_TAG_AZUL_BaCS2  = "#5b9bd1___279"
+J_TAG_AZUL_BaRS4  = "#5b9bd1___275"   # BaRS4: ROJO en extrajudicial, AZUL en judicial
+J_TAG_AZUL_MaRR2  = "#5b9bd1___266"   # MaRR2: ROJO en extrajudicial, AZUL en judicial
+J_TAG_AZUL_VaCS1  = "#5b9bd1___278"
+# ⚠️ NO hay tags de ciudad (Madrid, Barcelona...) en el grupo judicial (2026-04-30)
+
+# Mapa tipo_caso → tag verde para expedientes judiciales.
+# Parallel a _TIPO_A_TAG_VERDE del grupo extrajudicial.
+_TIPO_A_TAG_VERDE_J: dict[str, str | None] = {
+    "BAD_DEBT":                         J_TAG_VERDE_BAD_DEBT,
+    "NEGATIVA_OFERTA":                  J_TAG_VERDE_NEGATIVA_OFERTA,
+    "NEGATIVA_ARRAS":                   J_TAG_VERDE_NEGATIVA_ARRAS,
+    "NEGATIVA_ESCRITURA":               J_TAG_VERDE_NEGATIVA_ESCRITURA,
+    "NEGATIVA_CONTRATO_ARRENDAMIENTO":  J_TAG_AZUL_NEGATIVA_CONTRATO_ARR,
+    "VUELTA":                           J_TAG_VERDE_VUELTA,
+    "INCUMPLIMIENTO_EXCLUSIVA":         J_TAG_VERDE_INCUMPLIMIENTO_EXCLUSIVA,
+    "RESPONSABILIDAD_PROFESIONAL":      J_TAG_VERDE_RESPONSABILIDAD_PROF,
+    "DEVOLUCION_RESERVA":               J_TAG_VERDE_DEVOLUCION_RESERVA,
+    "LAU_20":                           J_TAG_VERDE_LAU_20,
+    "DEVOLUCION_HONORARIOS":            J_TAG_VERDE_DEVOLUCION_HONORARIOS,
+    "CONSULTORES":                      J_TAG_VERDE_CONSULTORES,
+    "FRANQUICIA":                       J_TAG_ROJO_J_FRANQUICIA,
+}
+
+
+def tag_defaults_for_tipo_caso_judicial(tipo_caso: str) -> list[str]:
+    """Equivalente judicial de `tag_defaults_for_tipo_caso()`.
+
+    Usa los IDs del grupo 2 (tags judiciales), completamente distintos
+    del grupo 1 (extrajudicial).
+
+    Args:
+        tipo_caso: Clave de config.TIPOS_CASO_ALL (ej. "DEVOLUCION_RESERVA").
+
+    Returns:
+        Lista [tag_asunto, tag_valoracion] (sin sentinel).
+    """
+    from . import config
+
+    posicion_cfg = config.posicion_de_tipo(tipo_caso)
+
+    asunto_tag = _TIPO_A_TAG_VERDE_J.get(tipo_caso)
+
+    if posicion_cfg == config.POSICION_ACTORA:
+        valoracion_tag = J_TAG_LILA_POSIBILIDAD_50
+    else:
+        valoracion_tag = J_TAG_LILA_RIESGO_POSIBLE
+
+    tags: list[str] = []
+    if asunto_tag is not None:
+        tags.append(asunto_tag)
+    tags.append(valoracion_tag)
+    return tags
+
+
+# ---------------------------------------------------------------------------
+# Tipos de procedimiento judicial (campo_878)
+# ---------------------------------------------------------------------------
+
+TIPO_PROC_DILIGENCIAS_PREVIAS          = "Diligencias Previas"
+TIPO_PROC_JUICIO_VERBAL                = "procedimiento juicio verbal"    # E&V más frecuente
+TIPO_PROC_JUICIO_ORDINARIO             = "procedimiento juicio ordinario"
+TIPO_PROC_MONITORIO                    = "procedimiento monitorio"
+TIPO_PROC_DESAHUCIO                    = "procedimiento desahucio"
+TIPO_PROC_APELACION                    = "procedimiento recurso apelacion"
+TIPO_PROC_CONCILIACION                 = "procedimiento conciliacion"
+TIPO_PROC_EJECUCION                    = "procedimiento ejecucion titulos judiciales"
+TIPO_PROC_RECLAMACION_EXTRAJUDICIAL    = "reclamacion extrajudicial"
+
+# Tipo de procedimiento recomendado para DEVOLUCION_RESERVA (Juicio Verbal <6000€)
+TIPO_PROC_DEFAULT_EV                   = TIPO_PROC_JUICIO_VERBAL
+
+# ---------------------------------------------------------------------------
+# Endpoint de creación judicial
+# ---------------------------------------------------------------------------
+
+_ENDPOINT_CREATE_JUDICIAL = (
+    "/expedientesjudiciales/saveadd/elemento/expedientes_judiciales"
+)
+
+
+# ---------------------------------------------------------------------------
+# DTO expediente judicial
+# ---------------------------------------------------------------------------
+
+@dataclass
+class NuevoExpedienteJudicial:
+    """Datos necesarios para crear un expediente judicial en sudespacho.
+
+    El campo clave es `referencia_cliente` (campo_867): debe coincidir con
+    el case_id de FeesDefender. Para E&V, formato taxonomía:
+        "MaRS2 - Puerto Rico 2, 5º 2 - (W-0470GM) - Devolucion reserva"
+
+    Diferencias respecto al extrajudicial:
+    - Tiene NIG, referencia_propia, numero_anterior, tipo_procedimiento.
+    - El responsable se llama "abogado_principal" (campo_866, select de usuarios).
+    - Las tags usan campo_2486 con IDs del grupo judicial (J_TAG_*).
+    - No tiene campo_1749 (subtipo); en su lugar, campo_878 (tipo_procedimiento).
+    """
+    referencia_cliente: str               # → campo_867
+    fecha_apertura: date = field(default_factory=date.today)
+
+    # Tags CRM del grupo judicial (J_TAG_*). NO usar TAG_* del grupo extrajudicial.
+    tags: list[str] = field(default_factory=list)
+
+    # Tipo de procedimiento (select campo_878)
+    tipo_procedimiento: str = TIPO_PROC_JUICIO_VERBAL
+
+    # Tipo de asunto (select campo_876)
+    tipo_asunto: str = MATERIA_CIVIL
+
+    # Posición procesal (select campo_2485)
+    posicion: str = POSICION_DEMANDADO    # E&V suele ser demandada en judiciales
+
+    # Campos específicos judiciales
+    NIG: str = ""                          # → campo_860 (Número de Identificación del Juicio)
+    referencia_propia: str = ""            # → campo_870
+    referencia_procurador: str = ""        # → campo_869
+
+    # Importes
+    cuantia: float = 0.0                   # → campo_849
+    costas: float = 0.0                    # → campo_848
+    intereses: float = 0.0                 # → campo_856
+
+    # Abogado principal (username del CRM, campo_866)
+    abogado_principal: str = "Nikolai_Tyukhay"
+
+    # Notas (HTML)
+    notas_html: str = ""                   # → campo_861
+
+    # Permisos (mismos defaults que extrajudicial)
+    grupos: list[int] = field(default_factory=lambda: list(GRUPOS_DEFAULT))
+    usuarios: list[int] = field(default_factory=lambda: list(USUARIOS_DEFAULT))
+
+
+# ---------------------------------------------------------------------------
+# Builder de form-data judicial
+# ---------------------------------------------------------------------------
+
+def build_form_data_judicial(
+    datos: NuevoExpedienteJudicial,
+    csrf_token: str,
+) -> list[tuple[str, str]]:
+    """Construye el body form-urlencoded para crear un expediente judicial.
+
+    Campos confirmados el 2026-04-30 por fetch del formulario de alta.
+    Endpoint: POST /expedientesjudiciales/saveadd/elemento/expedientes_judiciales
+
+    Args:
+        datos: Datos del expediente judicial.
+        csrf_token: Token CSRF extraído de la sesión PHP activa.
+
+    Returns:
+        Lista de tuplas (campo, valor) para pasar a httpx/requests.
+    """
+    fecha_str = datos.fecha_apertura.strftime("%d-%m-%Y")
+    año_str = str(datos.fecha_apertura.year)
+    momento = hex(int(time.time()))[2:]
+
+    total = datos.cuantia + datos.costas + datos.intereses
+
+    tags = list(datos.tags)
+    tags_con_sentinel = tags + [TAG_SENTINEL]
+
+    form: list[tuple[str, str]] = [
+        # Datos básicos
+        ("campo_851__expedientes_judiciales",  fecha_str),
+        ("campo_864__expedientes_judiciales",  "0"),        # num_expediente: auto-asignado
+        ("campo_875__expedientes_judiciales",  año_str),    # serie expediente
+        ("campo_860__expedientes_judiciales",  datos.NIG),
+        # campos ocultos del formulario (valores por defecto observados)
+        ("campo_855__expedientes_judiciales",  "No"),       # Historico: No por defecto
+        ("campo_852__expedientes_judiciales",  ""),         # fecha_alta_hist: vacío
+        ("campo_868__expedientes_judiciales",  ""),         # referencia_historico: vacío
+        # Datos del expediente
+        ("valor_select",                       "1"),
+        ("etiqueta_select",                    ""),
+        ("campo_876__expedientes_judiciales",  datos.tipo_asunto),
+        ("campo_867__expedientes_judiciales",  datos.referencia_cliente),
+        ("campo_869__expedientes_judiciales",  datos.referencia_procurador),
+        # campo_847 (Siniestro) oculto — No por defecto
+        ("campo_847__expedientes_judiciales",  "No"),
+        ("valor_select",                       "1"),
+        ("etiqueta_select",                    ""),
+        ("campo_878__expedientes_judiciales",  datos.tipo_procedimiento),
+        ("campo_870__expedientes_judiciales",  datos.referencia_propia),
+        ("campo_862__expedientes_judiciales",  ""),         # numero_anterior: vacío
+        ("campo_2485__expedientes_judiciales", datos.posicion),
+        ("campo_866__expedientes_judiciales",  datos.abogado_principal),
+        # Cuantías
+        ("campo_849__expedientes_judiciales",  _fmt_importe_entero(datos.cuantia)),
+        ("campo_848__expedientes_judiciales",  _fmt_importe_entero(datos.costas)),
+        ("campo_856__expedientes_judiciales",  _fmt_importe_entero(datos.intereses)),
+        ("campo_879__expedientes_judiciales",  _fmt_importe_display(total)),
+    ]
+
+    # Tags (clave repetida, termina en __void__)
+    for tag in tags_con_sentinel:
+        form.append(("campo_2486__expedientes_judiciales[]", tag))
+
+    form += [
+        # Notas
+        ("campo_861__expedientes_judiciales",  datos.notas_html),
+    ]
+
+    # Permisos
+    for gid in datos.grupos:
+        form.append(("permisos_grupos[]", str(gid)))
+    for uid in datos.usuarios:
+        form.append(("permisos_usuarios[]", str(uid)))
+
+    form += [
+        ("csrf_token",                    csrf_token),
+        ("cc-num",                        "HubspotCollectedFormsWorkaround"),
+        ("momento_log",                   momento),
+        ("",                              ""),
+        ("",                              ""),
+        ("ajax",                          "true"),
+        ("csrf_token",                    csrf_token),
+        ("validar_formatos_nacionales",   "false"),
+        ("csrf_token",                    csrf_token),
+    ]
+
+    return form
+
+
+# ---------------------------------------------------------------------------
+# Función principal: crear expediente judicial
+# ---------------------------------------------------------------------------
+
+def create_expediente_judicial(
+    datos: NuevoExpedienteJudicial,
+    *,
+    legacy_client: SudespachoLegacyClient | None = None,
+    legacy_host: str | None = None,
+) -> str:
+    """Crea un expediente judicial en sudespacho.net.
+
+    Usa el frontal heredado (mismo mecanismo que create_expediente).
+    El CSRF token se extrae automáticamente de la sesión PHP activa.
+
+    Args:
+        datos: Datos del nuevo expediente judicial.
+        legacy_client: Cliente legacy reutilizable (opcional).
+        legacy_host: Host del tenant (opcional).
+
+    Returns:
+        ID numérico del expediente creado (str).
+
+    Raises:
+        SudespachoCreateError: si la creación falla o la respuesta no contiene el ID.
+        SudespachoLegacyError: si la sesión PHP ha expirado.
+
+    Example::
+
+        from core.sudespacho_create import (
+            create_expediente_judicial, NuevoExpedienteJudicial,
+            tag_defaults_for_tipo_caso_judicial, J_TAG_ROJO_MaRS6,
+            TIPO_PROC_JUICIO_VERBAL, POSICION_DEMANDADO,
+        )
+
+        tags = [J_TAG_ROJO_MaRS6] + tag_defaults_for_tipo_caso_judicial("DEVOLUCION_RESERVA")
+        eid = create_expediente_judicial(NuevoExpedienteJudicial(
+            referencia_cliente="MaRS6 - Calle Mayor 10 - (W-031ABC) - Devolucion reserva",
+            tipo_procedimiento=TIPO_PROC_JUICIO_VERBAL,
+            posicion=POSICION_DEMANDADO,
+            cuantia=3500.00,
+            tags=tags,
+        ))
+        # eid → "700"
+    """
+    owns_client = legacy_client is None
+    try:
+        client = legacy_client or SudespachoLegacyClient()
+    except SudespachoLegacyError as exc:
+        raise SudespachoCreateError(
+            f"No se pudo inicializar el cliente legacy: {exc}. "
+            "Revisa SUDESPACHO_LEGACY_PHPSESSID en .env."
+        ) from exc
+
+    try:
+        try:
+            csrf_token = client.get_csrf_token()
+        except SudespachoLegacyError as exc:
+            raise SudespachoCreateError(
+                f"No se pudo obtener el CSRF token: {exc}"
+            ) from exc
+
+        form_data = build_form_data_judicial(datos, csrf_token)
+
+        url = f"https://{legacy_host or client.host}{_ENDPOINT_CREATE_JUDICIAL}"
+        try:
+            response = client.post_form(url, form_data)
+        except SudespachoLegacyError as exc:
+            raise SudespachoCreateError(
+                f"POST {_ENDPOINT_CREATE_JUDICIAL} falló: {exc}"
+            ) from exc
+
+        expediente_id = extract_id_from_response(response)
+        if not expediente_id:
+            raise SudespachoCreateError(
+                f"Expediente judicial creado pero no se pudo extraer su ID. "
+                f"Respuesta: {str(response)[:400]}."
+            )
+
+        return expediente_id
+
+    finally:
+        if owns_client:
+            try:
+                client.__exit__(None, None, None)
+            except Exception:
+                pass
+
+
 def format_tag(color_hex: str, tag_id: str | int) -> str:
     """Construye el token de tag esperado por sudespacho.
 

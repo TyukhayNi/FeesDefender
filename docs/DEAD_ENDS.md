@@ -82,6 +82,19 @@
 
 ---
 
+## Claude in Chrome — Formularios con TinyMCE (sudespacho alta/edición)
+
+### `javascript_tool`, `computer` (clicks, screenshots) — bloqueados por TinyMCE
+
+- **Intentado:** ejecutar JS (`javascript_tool`), hacer click (`computer:left_click`), capturar pantalla (`computer:screenshot`) en páginas de alta/edición del CRM (`/add/`, `/saveedit/`)
+- **Resultado:** `Cannot access a chrome-extension:// URL of different extension` — TinyMCE crea un iframe con URL `chrome-extension://` que bloquea TODOS los métodos de la extensión Claude in Chrome.
+- **Confirmado:** 2026-04-30
+- **Qué sí funciona:** `form_input` (set values), `read_page` (accessibility tree), `read_network_requests`
+- **Workaround para extraer campos del formulario:** hacer `fetch()` al URL del formulario desde la página de LISTA (sin TinyMCE activo), parsear el HTML con `DOMParser` y extraer `querySelectorAll('[name^="campo_"]')`. Ver sesión 2026-04-30.
+- **Workaround para submit:** no encontrado. El formulario no se puede enviar de forma automática cuando TinyMCE está cargado. Para capturar campos, usar el fetch desde la lista en lugar de submit real.
+
+---
+
 ## Plantilla para nuevas entradas
 
 ```markdown

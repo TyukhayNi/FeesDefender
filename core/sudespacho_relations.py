@@ -100,6 +100,47 @@ _LINK_COLABORADOR_PATH = (
 
 _SAVEADD_COLABORADOR_PATH = "/views/saveadd/elemento/colaboradores"
 
+# ---------------------------------------------------------------------------
+# Rutas para expedientes JUDICIALES (confirmadas 2026-04-30 desde miembro/648)
+# ---------------------------------------------------------------------------
+
+_LINK_CLIENTE_JUDICIAL_PATH = (
+    "/clientespropios/saveselect/elemento/clientes_propios"
+    "/elemento_relacionado/expedientes_judiciales"
+    "/miembro_relacionado/{exp_id}"
+    "/direccion_relacionado/der"
+)
+
+_LINK_CONTRARIO_JUDICIAL_PATH = (
+    "/clientescontrarios/saveselect/elemento/clientes_contrarios"
+    "/elemento_relacionado/expedientes_judiciales"
+    "/miembro_relacionado/{exp_id}"
+    "/direccion_relacionado/der"
+)
+
+_LINK_PROCURADOR_JUDICIAL_PATH = (
+    "/views/saveselect/elemento/procuradores_propios"
+    "/elemento_relacionado/expedientes_judiciales"
+    "/miembro_relacionado/{exp_id}"
+    "/direccion_relacionado/der"
+)
+
+_LINK_COLABORADOR_JUDICIAL_PATH = (
+    "/views/saveselect/elemento/colaboradores"
+    "/elemento_relacionado/expedientes_judiciales"
+    "/miembro_relacionado/{exp_id}"
+    "/direccion_relacionado/der"
+)
+
+# Endpoint de creación de tags en el grupo judicial (grupo 2)
+# Capturado 2026-04-30 desde /tags/view/elemento/tags/miembro/2
+_SAVEADD_TAG_JUDICIAL_PATH = (
+    "/tagsinput/saveadd/elemento/tags_input"
+    "/elemento_relacionado/tags"
+    "/miembro_relacionado/2"
+    "/direccion_relacionado/der"
+)
+
 
 # ---------------------------------------------------------------------------
 # Excepciones
@@ -533,6 +574,233 @@ def ensure_colaborador_vinculado(
         link_colaborador(exp_id, colab_id, client=client)
 
         return colab_id, created
+
+    finally:
+        if owns_client:
+            try:
+                client.__exit__(None, None, None)
+            except Exception:
+                pass
+
+
+# ---------------------------------------------------------------------------
+# Relaciones para expedientes JUDICIALES
+# ---------------------------------------------------------------------------
+
+def link_ev_mmc_judicial(
+    exp_id: str,
+    *,
+    client: SudespachoLegacyClient | None = None,
+) -> None:
+    """Vincula EV MMC SPAIN, S.L.U. (ID=2) como cliente del expediente judicial.
+
+    Args:
+        exp_id: ID del expediente judicial.
+        client: Cliente legacy reutilizable (opcional).
+    """
+    owns_client = client is None
+    if owns_client:
+        client = SudespachoLegacyClient()
+    try:
+        _link_element(_LINK_CLIENTE_JUDICIAL_PATH, exp_id, EV_MMC_SPAIN_ID, client)
+    finally:
+        if owns_client:
+            try:
+                client.__exit__(None, None, None)
+            except Exception:
+                pass
+
+
+def link_contrario_judicial(
+    exp_id: str,
+    contrario_id: str,
+    *,
+    client: SudespachoLegacyClient | None = None,
+) -> None:
+    """Vincula un cliente contrario al expediente judicial.
+
+    Args:
+        exp_id: ID del expediente judicial.
+        contrario_id: ID del cliente contrario en el CRM (clientes_contrarios).
+        client: Cliente legacy reutilizable (opcional).
+    """
+    owns_client = client is None
+    if owns_client:
+        client = SudespachoLegacyClient()
+    try:
+        _link_element(_LINK_CONTRARIO_JUDICIAL_PATH, exp_id, contrario_id, client)
+    finally:
+        if owns_client:
+            try:
+                client.__exit__(None, None, None)
+            except Exception:
+                pass
+
+
+def link_procurador_judicial(
+    exp_id: str,
+    procurador_id: str,
+    *,
+    client: SudespachoLegacyClient | None = None,
+) -> None:
+    """Vincula un procurador propio al expediente judicial.
+
+    Args:
+        exp_id: ID del expediente judicial.
+        procurador_id: ID del procurador en el CRM (procuradores_propios).
+        client: Cliente legacy reutilizable (opcional).
+    """
+    owns_client = client is None
+    if owns_client:
+        client = SudespachoLegacyClient()
+    try:
+        _link_element(_LINK_PROCURADOR_JUDICIAL_PATH, exp_id, procurador_id, client)
+    finally:
+        if owns_client:
+            try:
+                client.__exit__(None, None, None)
+            except Exception:
+                pass
+
+
+def link_colaborador_judicial(
+    exp_id: str,
+    colab_id: str,
+    *,
+    client: SudespachoLegacyClient | None = None,
+) -> None:
+    """Vincula un colaborador existente al expediente judicial.
+
+    Args:
+        exp_id: ID del expediente judicial.
+        colab_id: ID del colaborador en el CRM.
+        client: Cliente legacy reutilizable (opcional).
+    """
+    owns_client = client is None
+    if owns_client:
+        client = SudespachoLegacyClient()
+    try:
+        _link_element(_LINK_COLABORADOR_JUDICIAL_PATH, exp_id, colab_id, client)
+    finally:
+        if owns_client:
+            try:
+                client.__exit__(None, None, None)
+            except Exception:
+                pass
+
+
+def ensure_colaborador_vinculado_judicial(
+    exp_id: str,
+    datos: NuevoColaborador,
+    *,
+    client: SudespachoLegacyClient | None = None,
+) -> tuple[str, bool]:
+    """Garantiza que el colaborador existe en el CRM y está vinculado al expediente judicial.
+
+    Mismo flujo que ensure_colaborador_vinculado() pero para expedientes judiciales.
+
+    Args:
+        exp_id: ID del expediente judicial.
+        datos: Datos del colaborador.
+        client: Cliente legacy reutilizable (opcional).
+
+    Returns:
+        Tupla (colab_id, created).
+    """
+    owns_client = client is None
+    if owns_client:
+        client = SudespachoLegacyClient()
+    try:
+        colab_id = find_colaborador_by_email(datos.email, client=client)
+        created = False
+
+        if colab_id is None:
+            colab_id = create_colaborador(datos, client=client)
+            created = True
+
+        link_colaborador_judicial(exp_id, colab_id, client=client)
+
+        return colab_id, created
+
+    finally:
+        if owns_client:
+            try:
+                client.__exit__(None, None, None)
+            except Exception:
+                pass
+
+
+# ---------------------------------------------------------------------------
+# Creación de tags en el grupo judicial (grupo 2)
+# ---------------------------------------------------------------------------
+
+def create_tag_judicial(
+    nombre: str,
+    color_hex: str,
+    *,
+    client: SudespachoLegacyClient | None = None,
+) -> str:
+    """Crea un nuevo tag en el grupo judicial (miembro/2) de sudespacho.
+
+    Necesario para añadir tags de ciudad (Madrid, Barcelona, etc.) que
+    faltan en el grupo judicial. Los IDs resultantes deben añadirse
+    como constantes J_TAG_* en sudespacho_create.py.
+
+    Args:
+        nombre: Nombre del tag (ej. "MADRID").
+        color_hex: Color hexadecimal CON almohadilla (ej. "#5b9bd1").
+        client: Cliente legacy reutilizable (opcional).
+
+    Returns:
+        ID numérico del tag creado (str).
+
+    Raises:
+        SudespachoRelationsError: si la creación falla.
+
+    Example::
+
+        tag_id = create_tag_judicial("MADRID", "#5b9bd1")
+        # → "302"  (ID asignado por el servidor)
+        # Añadir a sudespacho_create.py:
+        #   J_TAG_AZUL_MADRID = f"#5b9bd1___{tag_id}"
+    """
+    owns_client = client is None
+    if owns_client:
+        client = SudespachoLegacyClient()
+    try:
+        csrf = client.get_csrf_token()
+
+        form: list[tuple[str, str]] = [
+            ("campo_2424__tags_input", nombre),
+            ("campo_2422__tags_input", color_hex),
+        ]
+        for gid in GRUPOS_DEFAULT:
+            form.append(("permisos_grupos[]", str(gid)))
+        for uid in USUARIOS_DEFAULT:
+            form.append(("permisos_usuarios[]", str(uid)))
+        form += [
+            ("csrf_token", csrf),
+            ("cc-num", _CC_NUM),
+            ("ajax", "true"),
+            ("csrf_token", csrf),
+            ("validar_formatos_nacionales", "false"),
+            ("csrf_token", csrf),
+        ]
+
+        try:
+            response = client.post_form(_SAVEADD_TAG_JUDICIAL_PATH, form)
+        except SudespachoLegacyError as exc:
+            raise SudespachoRelationsError(
+                f"POST {_SAVEADD_TAG_JUDICIAL_PATH} falló: {exc}"
+            ) from exc
+
+        tag_id = _extract_id(response)
+        if not tag_id:
+            raise SudespachoRelationsError(
+                f"Tag '{nombre}' creado pero no se pudo extraer su ID. "
+                f"Respuesta: {str(response)[:400]}"
+            )
+        return tag_id
 
     finally:
         if owns_client:

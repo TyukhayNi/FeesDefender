@@ -2,7 +2,7 @@
 
 > Conocimiento empírico acumulado sobre la API de sudespacho.net.  
 > Todo lo aquí documentado ha sido verificado contra el tenant `tnm.sudespacho.net`  
-> (commons-pro). Última actualización: 2026-04-29.
+> (commons-pro). Última actualización: 2026-04-30.
 
 ---
 
@@ -394,6 +394,100 @@ Mapping de campos de colaborador (confirmado 2026-04-29, miembro 776):
 
 ---
 
+## 12. Expediente judicial — Crear y vincular (confirmado 2026-04-30)
+
+### 12.1 Crear expediente judicial
+
+**Endpoint:** `POST https://tnm.sudespacho.net/expedientesjudiciales/saveadd/elemento/expedientes_judiciales`  
+**Auth:** PHPSESSID (cookie) + `csrf_token` en el body (3 repeticiones)  
+**Content-Type:** `application/x-www-form-urlencoded; charset=UTF-8`
+
+**Campos del formulario** (campo_XXXX__expedientes_judiciales):
+
+| ID campo | Significado | Notas |
+|---|---|---|
+| `campo_851` | fecha_alta | DD-MM-YYYY |
+| `campo_864` | num_expediente | Enviar "0" (auto-asignado) |
+| `campo_875` | serie_expediente | YYYY (select) |
+| `campo_860` | NIG | Número de Identificación del Juicio |
+| `campo_855` | historico | hidden; "No" por defecto |
+| `campo_852` | fecha_alta_hist | Vacío normalmente |
+| `campo_868` | referencia_historico | Vacío normalmente |
+| `campo_876` | tipo_asunto | select: Civil, Penal, Administrativo, Laboral, Familia |
+| `campo_867` | **referencia_cliente** | Identificador cruzado FeesDefender (case_id) |
+| `campo_869` | referencia_procurador | |
+| `campo_847` | siniestro | hidden; "No" por defecto |
+| `campo_878` | tipo_procedimiento | select: "procedimiento juicio verbal", "procedimiento juicio ordinario", etc. |
+| `campo_870` | referencia_propia | Referencia interna del despacho |
+| `campo_862` | numero_anterior | |
+| `campo_2485` | posicion_procesal | select: "01"=Actor, "02"=Demandado, etc. |
+| `campo_866` | abogado_principal | select de usernames (ej. "Nikolai_Tyukhay") |
+| `campo_849` | cuantia | Número entero |
+| `campo_848` | costas | Número entero |
+| `campo_856` | intereses | Número entero |
+| `campo_879` | total | Formato ES "N.NNN,NN" |
+| `campo_2486[]` | tags | Tokens `#{color}___{id}` del grupo judicial; termina en `__void__` |
+| `campo_861` | notas | HTML (sin TinyMCE conflicto en POST directo) |
+
+**Shape de respuesta:** idéntico al extrajudicial — `{"resultado": true, "dato": "{id}", ...}`
+
+**Implementación:** `core/sudespacho_create.py` — `create_expediente_judicial()`.
+
+### 12.2 Endpoints de relación judicial (confirmados 2026-04-30, miembro/648)
+
+| Relación | Endpoint POST (saveselect) | Notas |
+|---|---|---|
+| Cliente propio (EV MMC) | `/clientespropios/saveselect/elemento/clientes_propios/elemento_relacionado/expedientes_judiciales/miembro_relacionado/{id}/direccion_relacionado/der` | Body: `seleccionado[]={id}&numeroresultados_listado=5&...` |
+| Cliente contrario | `/clientescontrarios/saveselect/elemento/clientes_contrarios/elemento_relacionado/expedientes_judiciales/miembro_relacionado/{id}/direccion_relacionado/der` | |
+| Procurador propio | `/views/saveselect/elemento/procuradores_propios/elemento_relacionado/expedientes_judiciales/miembro_relacionado/{id}/direccion_relacionado/der` | |
+| Colaborador | `/views/saveselect/elemento/colaboradores/elemento_relacionado/expedientes_judiciales/miembro_relacionado/{id}/direccion_relacionado/der` | |
+| Extrajudicial relacionado | `/extrajudiciales/saveselect/elemento/extrajudiciales/elemento_relacionado/expedientes_judiciales/miembro_relacionado/{id}/direccion_relacionado/der` | |
+| Juzgado (especial) | `/views/saveselectrelacion/elemento/juzgados/elemento_relacion/autos/elemento_relacionado/expedientes_judiciales/miembro_relacionado/{id}/direccion_relacionado/der` | Usa `saveselectrelacion`, no `saveselect` |
+
+**Implementación:** `core/sudespacho_relations.py` — `link_ev_mmc_judicial()`, `link_contrario_judicial()`, `link_procurador_judicial()`, `link_colaborador_judicial()`, `ensure_colaborador_vinculado_judicial()`.
+
+### 12.3 Tags del grupo judicial (grupo 2) — distintos del grupo extrajudicial (grupo 1)
+
+⚠️ **Los IDs de tags son completamente distintos entre grupos.** Usar siempre `J_TAG_*` para judiciales.
+
+**78 tags activos capturados 2026-04-30.** Pendiente crear tags de ciudad (Madrid, Barcelona, etc.) que NO existen en el grupo judicial.
+
+**Valoración (lila):**
+
+| Tag | ID judicial | Equivalente extrajudicial |
+|---|---|---|
+| POSIBILIDAD EXITO = 50% | 259 | 286 |
+| POSIBILIDAD EXITO <15% - >50% | 260 | — |
+| POSIBILIDAD EXITO < 15% | 261 | — |
+| RIESGO REMOTO <15% | 219 | 216 |
+| RIESGO POSIBLE <15%-50% | 220 | 217 |
+| RIESGO PROBABLE >50% | 221 | 218 |
+
+**Asunto (verde):** BAD DEBT (12), DEVOLUCION RESERVA (24), DEVOLUCION HONORARIOS (55), INCUMPLIMIENTO EXCLUSIVA (62), VUELTA (1), LAU 20 (227), CONSULTORES (210), NEGATIVA ARRAS (180), NEGATIVA ESCRITURA (184), NEGATIVA OFERTA (197), RESPONSABILIDAD PROFESIONAL (19). NEGATIVA CONTRATO ARRENDAMIENTO es **azul** en judicial (ID 283).
+
+**Equipos faltantes en grupo judicial** (existen en extrajudicial, NO en judicial):
+BiRS1, BiRS2, SaRS1, SeRS6, SSRR1, SSRS1, VaRS5, BaCS10 (extraj→ID 139), MaRS11, MaRS12, MaRS13.
+
+### 12.4 Crear tags en el grupo judicial
+
+**Endpoint:** `POST /tagsinput/saveadd/elemento/tags_input/elemento_relacionado/tags/miembro_relacionado/2/direccion_relacionado/der`
+
+**Campos:**
+
+| Campo | Descripción |
+|---|---|
+| `campo_2424__tags_input` | Nombre del tag |
+| `campo_2422__tags_input` | Color hex con # (ej. `#5b9bd1`) |
+| `permisos_grupos[]` | [2] |
+| `permisos_usuarios[]` | [2] |
+| `csrf_token` | × 3 |
+
+**Respuesta:** `{"resultado": true, "dato": "{id}", ...}` — el ID del nuevo tag está en `"dato"`.
+
+**Implementación:** `core/sudespacho_relations.py` — `create_tag_judicial()`.
+
+---
+
 ## 11. Historial de descubrimientos
 
 | Fecha | Descubrimiento |
@@ -414,6 +508,11 @@ Mapping de campos de colaborador (confirmado 2026-04-29, miembro 776):
 | 2026-04-28 | Corrección: NEGATIVA CONTRATO ARRENDAMIENTO es rojo (#a32929___155), no verde |
 | 2026-04-28 | Confirmados IDs pendientes: CONSULTORES (194), DEVOLUCION HONORARIOS (126), todos los rojos (49 tags) |
 | 2026-04-28 | FRANQUICIA: tag no creado aún en el CRM |
+| 2026-04-30 | Todos los campo_XXXX del formulario judicial capturados por fetch HTML (sin TinyMCE) |
+| 2026-04-30 | 78 tags del grupo judicial (miembro/2) capturados — IDs distintos del grupo extrajudicial |
+| 2026-04-30 | Endpoints de relación judicial confirmados desde expediente 648 |
+| 2026-04-30 | Endpoint creación de tags judiciales confirmado: POST /tagsinput/saveadd/.../miembro_relacionado/2/... |
+| 2026-04-30 | TinyMCE bloquea `computer` y `javascript_tool` en páginas de formulario. Workaround: fetch HTML desde página lista (sin TinyMCE) |
 
 ---
 
