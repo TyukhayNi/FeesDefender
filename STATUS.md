@@ -3,7 +3,7 @@
 > **Fuente de verdad única del proyecto.**
 > Actualizar al cerrar cada sesión con `python -m scripts.session_close`.
 
-**Última actualización:** 2026-05-04 (auditoría CRM completa: REST elimina PHPSESSID para docs; 3 nuevos endpoints confirmados; INTEGRACION_SUDESPACHO.md + DEAD_ENDS.md actualizados; [NUEVO-HILO-AUDITORIA] cerrado; [SIGUIENTE] = crear caso DEVOLUCION_RESERVA desde UI)
+**Última actualización:** 2026-05-04 (Bloque A REST gdocu: `list_gdocu_docs_rest` + `download_document_rest` + `GdocuDocInfo` implementados en `sync_sudespacho.py`; `pull_expediente` usa REST sin PHPSESSID como vía principal; fallback legacy conservado; 26 tests nuevos → 118 total; `INTEGRACION_SUDESPACHO.md` sección 7 actualizada; commit 0c1ac95)
 
 ---
 
@@ -60,6 +60,8 @@ git commit -m "<mensaje que Claude propuso>"
 | Primer caso real | ✅ Creado, docs descargados |
 | Taxonomía de casos | ✅ Actualizada en config.py |
 | `sudespacho_create.py` | ✅ Extrajudicial + ✅ Judicial (2026-05-04) — DTO, tags completos, notas, helper |
+| `list_gdocu_docs_rest` + `download_document_rest` | ✅ Implementado 2026-05-04 — sin PHPSESSID (solo x-api-key) |
+| `pull_expediente` REST-first | ✅ Implementado 2026-05-04 — fallback legacy automático si REST falla |
 | `core/intake_demanda.py` | ✅ save_file(), extract_zip() (path traversal sanitizado), list_files() (2026-05-04) |
 | `core/share_drive.py` | ✅ share_folder_with_team() via Drive API v3 + build_request_email() (2026-05-04) |
 | `05_Demanda judicial` | ✅ Añadida a INPUT_SUBDIRS — ensure_case() la crea automáticamente (2026-05-04) |
@@ -199,7 +201,8 @@ python -m scripts.run_pipeline "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
 14. ~~**[SIGUIENTE-J-TEAMS]**~~ ✅ 2026-05-04 — Ver punto anterior.
 15. ~~**[SIGUIENTE-J-UI]**~~ ✅ 2026-05-04 — Toggle Extrajudicial/Judicial en `streamlit_app.py`: radio, `_J_EQUIPOS_POR_CIUDAD`, `_J_CIUDADES`, § 3b con NIG + tipo procedimiento, handler bifurcado llamando a `create_expediente_judicial()`.
 16. **[SIGUIENTE]** ⬅️ **Crear caso DEVOLUCION_RESERVA desde la UI** — Abrir Streamlit, seleccionar "Judicial", rellenar los datos del caso que recibió E&V, pulsar "⚡ Crear caso + enviar a sudespacho".
-17. **[SIGUIENTE-SHARE]** Probar compartición directa carpeta E&V: tab Casos → expander "Compartir carpeta E&V" → botón "⚡ Compartir directamente". Si falla por token expirado, ejecutar `rclone ls gdrive_ev:` para refrescarlo.
+17. **[SIGUIENTE-B-COLAB]** Verificar end-to-end botón 🔍 colaboradores: Chrome con sesión activa en tnm.sudespacho.net → 🔄 sidebar Streamlit → probar búsqueda de colaborador. Requiere PHPSESSID válido (no tiene alternativa REST conocida).
+18. **[SIGUIENTE-SHARE]** Probar compartición directa carpeta E&V: tab Casos → expander "Compartir carpeta E&V" → botón "⚡ Compartir directamente". Si falla por token expirado, ejecutar `rclone ls gdrive_ev:` para refrescarlo.
 16. **[SIGUIENTE-J-TESTS]** Tests para `create_expediente_judicial()`, `build_form_data_judicial()` y funciones de relación judicial.
 11. ~~**[NIKOLAI]** Conectar cuenta `nikolai.tyukhay@engelvoelkers.com` en Cowork~~ ✅ 2026-04-28 — rclone `gdrive_ev` configurado; Cowork no soporta multi-cuenta, rclone es la solución definitiva.
 12. **[SIGUIENTE-C]** Módulo `core/intake_drive.py`:
@@ -288,7 +291,7 @@ data/CASOS/{case_id}/
 ## Tests — última ejecución
 
 ```
-pytest -q   →   92 passed (2026-05-04)
+pytest -q   →   118 passed (2026-05-04)
 ```
 Módulos cubiertos: `case_manager`, `inventory`, `utils`,
-`sync_sudespacho`, `sync_sudespacho_legacy`.
+`sync_sudespacho` (+26 nuevos: REST gdocu), `sync_sudespacho_legacy`.
