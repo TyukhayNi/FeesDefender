@@ -353,9 +353,10 @@ Pendiente: confirmar payload y respuesta con una conversión real.
 
 | Módulo | Superficie | Función |
 |---|---|---|
-| `core/sync_sudespacho.py` | API REST nueva | Healthcheck, metadatos docs, descarga zip, listado filterGroup |
-| `core/sync_sudespacho_legacy.py` | Frontal heredado | Listado doc IDs, descarga individual, CSRF |
-| `core/sudespacho_create.py` | API REST nueva + legacy (TBD) | **Crear expediente extrajudicial** (pendiente) |
+| `core/sync_sudespacho.py` | API REST nueva | Healthcheck, metadatos docs, descarga zip, listado filterGroup. **Desde 2026-05-04:** `list_gdocu_docs_rest()` + `download_document_rest()` — listado y descarga sin PHPSESSID. `pull_expediente()` usa REST como vía principal; fallback automático a legacy si REST no disponible. |
+| `core/sync_sudespacho_legacy.py` | Frontal heredado | **Fallback** listado doc IDs + descarga individual. Requiere PHPSESSID + @token + @refreshToken. Sigue siendo la única superficie para operaciones de escritura (crear expedientes, vincular relaciones, buscar colaboradores). |
+| `core/sudespacho_relations.py` | Frontal heredado | Buscar / crear / vincular colaboradores. Toda la lógica de relaciones (extrajudicial + judicial). Requiere PHPSESSID. Sin alternativa REST conocida. |
+| `core/sudespacho_create.py` | Frontal heredado | Crear expediente extrajudicial y judicial. Requiere PHPSESSID + CSRF. |
 | `scripts/sync_sudespacho.py` | CLI Typer | `check`, `check_legacy`, `pull` |
 | `scripts/scheduled_sync.py` | CLI Typer | Pull incremental diario de todos los casos |
 

@@ -134,9 +134,18 @@ ENDPOINTS = {
     "folders":             "/api/folders/{element}/{parent}",    # element=gdocu, parent=0
     "documents_zip":       "/api/documents/{id}/zip/files",      # id = folder Gdocu
 
-    # Descarga individual (alternativas)
+    # Descarga individual (alternativas legacy)
     "document_download_uri": "/api/documents/{id}/downloadUri",
     "presigned_download":    "/api/documents/presigned_urls/{service}/download/{documentId}",
+
+    # ---- Nuevos endpoints REST (confirmados 2026-05-04, sin PHPSESSID) ----
+    # Listado de documentos Gdocu de un expediente vía element_registries
+    # Filtro: filterGroup associated + property=left.{element}.id
+    "element_registries":    "/api/element_registries/{element}",
+
+    # URL S3 prefirmada para descarga de un documento (TTL 600s)
+    # Params: relatedElement, relatedId, direction=left
+    "presigned_download_url": "/api/files/presigned_download_url/{doc_id}",
 }
 
 # Mapping de campos en la respuesta de Documents.
@@ -198,6 +207,31 @@ class DocumentInfo:
     mime: str | None
     size: int | None
     modified_at: str | None
+    raw: dict[str, Any]
+
+
+@dataclass
+class GdocuDocInfo:
+    """Documento del Gestor Documental obtenido vía API REST (element_registries/gdocu).
+
+    A diferencia de DocumentInfo (que viene de /api/documents), este DTO
+    se construye desde /api/element_registries/gdocu — confirmado 2026-05-04.
+
+    Campos:
+        doc_id          ID numérico del documento (str).
+        filename        Nombre final del archivo (campo nombrefinal del CRM).
+        id_carpeta      ID numérico de la carpeta Gdocu (str o None).
+        id_carpeta_label  Etiqueta legible de la carpeta (ej. "CIVIL") o None.
+        mime            MIME type o None.
+        size            Tamaño en bytes o None.
+        raw             Dict original devuelto por la API (para debug).
+    """
+    doc_id: str
+    filename: str
+    id_carpeta: str | None
+    id_carpeta_label: str | None
+    mime: str | None
+    size: int | None
     raw: dict[str, Any]
 
 
@@ -509,7 +543,218 @@ class SudespachoClient:
                 dst.write(src.read())
         return target_dir
 
-    # ---- Documentos: filtrado y descarga individual ---------------------
+    # ---- Gdocu REST (sin PHPSESSID) — confirmados 2026-05-04 -----------
+
+    def list_gdocu_docs_rest(
+        self,
+        expediente_id: str,
+        *,
+        element: str | None = None,
+        items_per_page: int = 100,
+    ) -> list[GdocuDocInfo]:
+        """Lista los documentos del Gestor Documental de un expediente vía REST.
+
+        Endpoint: GET /api/element_registries/gdocu
+        Auth: solo x-api-key — SIN PHPSESSID. Confirmado 2026-05-04.
+
+        Propiedades solicitadas (índices según nomenclatura del CRM):
+            2  → nombrefinal  (nombre final del archivo)
+            4  → mime
+            9  → tamano       (tamaño en bytes)
+            11 → id_carpeta   (carpeta Gdocu, con label si disponible)
+
+        Args:
+            expediente_id: ID del expediente en el CRM.
+            element: Tipo de expediente (default: cfg.element).
+            items_per_page: Número de resultados por página.
+
+        Returns:
+            Lista de GdocuDocInfo con filename, carpeta y metadatos.
+
+        Raises:
+            SudespachoError: si la llamada falla o la respuesta no es parseable.
+        """
+        elem = element or self.cfg.element
+
+        base_params: dict[str, Any] = {
+            "properties[2]":  "nombrefinal",
+            "properties[4]":  "mime",
+            "properties[9]":  "tamano",
+            "properties[11]": "id_carpeta",
+            "filterGroup[condition]":                                        "AND",
+            "filterGroup[filterGroups][0][filters][0][operator]":            "associated",
+            "filterGroup[filterGroups][0][filters][0][value]":               str(expediente_id),
+            "filterGroup[filterGroups][0][filters][0][property]":            f"left.{elem}.id",
+            "filterGroup[filterGroups][0][condition]":                       "AND",
+            "itemsPerPage":   items_per_page,
+            "return_totals":  "true",
+        }
+
+        path = ENDPOINTS["element_registries"].format(element="gdocu")
+        results: list[GdocuDocInfo] = []
+        page = 1
+
+        while True:
+            params = {**base_params, "page": page}
+            payload = self._get_json(path, **params)
+            members = self._items(payload)
+            if not members:
+                break
+
+            for member in members:
+                doc_id = str(member.get("id", "")).strip()
+                if not doc_id:
+                    continue
+
+                # Aplanar array values → dict {nombre: {value, label?}}
+                values_map: dict[str, dict[str, Any]] = {}
+                for v in (member.get("values") or []):
+                    if not isinstance(v, dict):
+                        continue
+                    prop_name = (v.get("property") or {}).get("name") or v.get("name")
+                    if prop_name:
+                        values_map[prop_name] = {
+                            "value": v.get("value"),
+                            "label": v.get("label"),
+                        }
+
+                filename = str(
+                    values_map.get("nombrefinal", {}).get("value")
+                    or f"doc_{doc_id}.bin"
+                )
+                id_carpeta_raw = values_map.get("id_carpeta", {}).get("value")
+                id_carpeta = str(id_carpeta_raw) if id_carpeta_raw is not None else None
+                id_carpeta_label = values_map.get("id_carpeta", {}).get("label") or None
+                mime = values_map.get("mime", {}).get("value")
+                size_raw = values_map.get("tamano", {}).get("value")
+                try:
+                    size: int | None = int(size_raw) if size_raw is not None else None
+                except (ValueError, TypeError):
+                    size = None
+
+                results.append(GdocuDocInfo(
+                    doc_id=doc_id,
+                    filename=filename,
+                    id_carpeta=id_carpeta,
+                    id_carpeta_label=id_carpeta_label,
+                    mime=mime,
+                    size=size,
+                    raw=member,
+                ))
+
+            # Paginación: continuar si hay más páginas
+            total = (
+                int(payload.get("hydra:totalItems", 0))
+                if isinstance(payload, dict) else 0
+            )
+            if len(results) >= total or len(members) < items_per_page:
+                break
+            page += 1
+
+        return results
+
+    def get_presigned_download_url(
+        self,
+        doc_id: str | int,
+        expediente_id: str | int,
+        *,
+        element: str | None = None,
+    ) -> str:
+        """Obtiene la URL S3 prefirmada para descargar un documento vía REST.
+
+        Endpoint: GET /api/files/presigned_download_url/{doc_id}
+        Auth: solo x-api-key — SIN PHPSESSID. Confirmado 2026-05-04.
+        TTL de la URL S3: 600 segundos. Descargar inmediatamente.
+
+        Args:
+            doc_id: ID del documento en el CRM.
+            expediente_id: ID del expediente al que pertenece.
+            element: Tipo de expediente (default: cfg.element).
+
+        Returns:
+            URL S3 prefirmada como string.
+
+        Raises:
+            SudespachoError: si la llamada falla o no se puede extraer la URL.
+        """
+        elem = element or self.cfg.element
+        path = ENDPOINTS["presigned_download_url"].format(doc_id=doc_id)
+
+        try:
+            r = self._get(
+                path,
+                relatedElement=elem,
+                relatedId=str(expediente_id),
+                direction="left",
+            )
+            r.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise SudespachoError(
+                f"presigned_download_url doc {doc_id} → HTTP {exc.response.status_code}: "
+                f"{exc.response.text[:300]}"
+            ) from exc
+
+        # La respuesta puede ser: URL directa (text/plain) o JSON {"url": "..."}
+        text = r.text.strip().strip('"')
+        if text.startswith("http"):
+            return text
+
+        try:
+            payload = r.json()
+        except Exception:
+            raise SudespachoError(
+                f"presigned_download_url doc {doc_id}: respuesta no parseable. "
+                f"Inicio: {r.text[:300]}"
+            )
+
+        if isinstance(payload, str) and payload.startswith("http"):
+            return payload
+        if isinstance(payload, dict):
+            for key in ("url", "downloadUrl", "presignedUrl", "presigned_url", "doc"):
+                val = payload.get(key)
+                if isinstance(val, str) and val.startswith("http"):
+                    return val
+
+        raise SudespachoError(
+            f"presigned_download_url doc {doc_id}: no se pudo extraer URL S3. "
+            f"Respuesta: {r.text[:300]}"
+        )
+
+    def download_document_rest(
+        self,
+        doc_id: str | int,
+        expediente_id: str | int,
+        target_path: Path,
+        *,
+        element: str | None = None,
+    ) -> Path:
+        """Descarga un documento al target_path usando el flujo REST (sin PHPSESSID).
+
+        Pasos:
+            1. GET /api/files/presigned_download_url/{doc_id} → URL S3 (TTL 600s)
+            2. GET <S3_URL> (sin auth) → bytes → target_path
+
+        Auth: solo x-api-key. Confirmado 2026-05-04.
+
+        Args:
+            doc_id: ID del documento.
+            expediente_id: ID del expediente al que pertenece.
+            target_path: Ruta de destino (los directorios padre se crean automáticamente).
+            element: Tipo de expediente (default: cfg.element).
+
+        Returns:
+            target_path (ruta donde se escribió el archivo).
+
+        Raises:
+            SudespachoError: si no se puede obtener la URL o la descarga falla.
+        """
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        url = self.get_presigned_download_url(doc_id, expediente_id, element=element)
+        data = self._download_url_raw(url)
+        target_path.write_bytes(data)
+        return target_path
+
+    # ---- Documentos: filtrado y descarga individual (legacy REST) --------
 
     def list_documents_by_expediente(
         self,
@@ -655,12 +900,13 @@ def pull_expediente(
       force=True                      →  re-descarga todo
 
     Tras una descarga incremental exitosa, actualiza el array `doc_ids` en .pulled.
-    """
-    from .sync_sudespacho_legacy import (
-        SudespachoLegacyClient,
-        SudespachoLegacyError,
-    )
 
+    Vías de descarga (en orden de preferencia):
+      1. REST — list_gdocu_docs_rest + download_document_rest (sin PHPSESSID).
+         Solo requiere x-api-key. Confirmado 2026-05-04.
+      2. Legacy — list_doc_ids + download_document del frontal heredado PHP.
+         Requiere PHPSESSID + @token + @refreshToken. Fallback si REST falla.
+    """
     source_dir_name = _source_dir(str(expediente_id))
     input_root = caso_path(case_id) / "00_Input"
     target_dir = input_root / source_dir_name
@@ -686,29 +932,14 @@ def pull_expediente(
             ],
         )
 
-    owns_legacy = legacy_client is None
-    try:
-        legacy = legacy_client or SudespachoLegacyClient()
-    except SudespachoLegacyError as exc:
-        return PullResult(
-            case_id=case_id,
-            expediente_id=str(expediente_id),
-            documents_total=0,
-            documents_downloaded=0,
-            bytes_downloaded=0,
-            target_dir=target_dir,
-            errors=[f"Cliente legacy no disponible: {exc}"],
-        )
-
     elem = element or "expedientes_judiciales"
     errors: list[str] = []
     bytes_before = _dir_size(target_dir)
     docs_processed: list[str] = []
     by_carpeta: dict[str, int] = {}
+    already_pulled: set[str] = set()
 
-    # Cliente API nuevo (opcional) para enriquecer con id_carpeta_label.
-    # Si no está configurado o falla, los documentos van a la raíz de
-    # 00_INPUT/sudespacho/ sin agrupación por carpeta.
+    # Cliente API REST (primario — no requiere PHPSESSID para documentos).
     api_client = client
     owns_api = False
     if api_client is None:
@@ -716,92 +947,190 @@ def pull_expediente(
             api_client = SudespachoClient()
             owns_api = True
         except SudespachoError:
-            api_client = None  # API key no configurada → flat fallback
+            api_client = None  # API key no configurada → fallback legacy
 
     try:
-        # 1) Listar IDs de documentos del expediente vía frontal heredado
-        try:
-            doc_ids = legacy.list_doc_ids(str(expediente_id), element=elem)
-        except SudespachoLegacyError as exc:
-            return PullResult(
-                case_id=case_id,
-                expediente_id=str(expediente_id),
-                documents_total=0,
-                documents_downloaded=0,
-                bytes_downloaded=0,
-                target_dir=target_dir,
-                errors=[f"list_doc_ids: {exc}"],
-            )
-
-        if not doc_ids:
-            errors.append(
-                f"El Gestor Documental del expediente {expediente_id} está vacío "
-                f"(o el elemento '{elem}' no es el correcto)."
-            )
-
-        # Incremental: filtrar solo doc IDs no descargados previamente
-        if incremental and marker.exists():
+        # ---------------------------------------------------------------
+        # VÍA REST (preferida): list_gdocu_docs_rest + download_document_rest
+        # Solo necesita x-api-key. Sin PHPSESSID. Confirmado 2026-05-04.
+        # ---------------------------------------------------------------
+        rest_doc_infos: list[GdocuDocInfo] | None = None
+        if api_client is not None:
             try:
-                pulled_data = json.loads(marker.read_text(encoding="utf-8"))
-                already_pulled = set(pulled_data.get("doc_ids", []))
-            except (json.JSONDecodeError, OSError):
-                already_pulled = set()
-            doc_ids_to_download = [d for d in doc_ids if d not in already_pulled]
-        else:
-            doc_ids_to_download = doc_ids
-            already_pulled = set()
-
-        # 2) Por cada documento: metadata (carpeta) + descarga + rename
-        for doc_id in doc_ids_to_download:
-            # Resolver carpeta destino según id_carpeta del documento
-            folder_slug = "_sin_carpeta"
-            if api_client is not None:
-                try:
-                    meta = api_client.get_document_metadata(doc_id)
-                    label = (
-                        meta.get("id_carpeta_label")
-                        or meta.get("categoria")
-                        or meta.get("carpeta_label")
-                    )
-                    if label:
-                        folder_slug = slugify(str(label)) or "_sin_carpeta"
-                except SudespachoError as exc:
-                    errors.append(f"meta doc {doc_id}: {exc}")
-
-            doc_dir = target_dir / folder_slug
-            doc_dir.mkdir(parents=True, exist_ok=True)
-            tmp = doc_dir / f"sudespacho_{doc_id}.tmp"
-
-            try:
-                result = legacy.download_document(
-                    doc_id, str(expediente_id), tmp, element=elem,
+                rest_doc_infos = api_client.list_gdocu_docs_rest(
+                    str(expediente_id), element=elem
                 )
-            except SudespachoLegacyError as exc:
-                errors.append(f"download doc {doc_id}: {exc}")
-                if tmp.exists():
-                    tmp.unlink(missing_ok=True)
-                # Limpia carpeta si quedó vacía
+            except SudespachoError as exc:
+                errors.append(
+                    f"REST listing falló, usando fallback legacy: {exc}"
+                )
+                rest_doc_infos = None
+
+        if rest_doc_infos is not None:
+            # Incremental: filtrar IDs ya descargados
+            if incremental and marker.exists():
                 try:
-                    if not any(doc_dir.iterdir()):
-                        doc_dir.rmdir()
-                except OSError:
-                    pass
-                continue
+                    pulled_data = json.loads(marker.read_text(encoding="utf-8"))
+                    already_pulled = set(pulled_data.get("doc_ids", []))
+                except (json.JSONDecodeError, OSError):
+                    already_pulled = set()
+                infos_to_download = [
+                    d for d in rest_doc_infos if d.doc_id not in already_pulled
+                ]
+            else:
+                infos_to_download = rest_doc_infos
+                already_pulled = set()
 
-            # Renombrar al nombre original normalizado, dentro de su carpeta
-            original = result.filename_in_disposition or f"doc_{doc_id}.bin"
-            stem = slugify(Path(original).stem) or f"doc_{doc_id}"
-            ext = Path(original).suffix or ".bin"
-            final = doc_dir / f"{stem}{ext}"
-            i = 1
-            while final.exists() and final != tmp:
-                final = doc_dir / f"{stem}__{i}{ext}"
-                i += 1
-            tmp.rename(final)
-            docs_processed.append(doc_id)
-            by_carpeta[folder_slug] = by_carpeta.get(folder_slug, 0) + 1
+            if not rest_doc_infos:
+                errors.append(
+                    f"El Gestor Documental del expediente {expediente_id} está vacío "
+                    f"(o el elemento '{elem}' no es el correcto)."
+                )
 
-        # 3) Inventario final (cuenta archivos en TODA la subjerarquía)
+            for info in infos_to_download:
+                # Carpeta destino: id_carpeta_label si disponible
+                label = info.id_carpeta_label or info.id_carpeta or ""
+                folder_slug = slugify(str(label)) if label else "_sin_carpeta"
+                doc_dir = target_dir / folder_slug
+                doc_dir.mkdir(parents=True, exist_ok=True)
+                tmp = doc_dir / f"sudespacho_{info.doc_id}.tmp"
+
+                try:
+                    api_client.download_document_rest(  # type: ignore[union-attr]
+                        info.doc_id, str(expediente_id), tmp, element=elem,
+                    )
+                except SudespachoError as exc:
+                    errors.append(f"download REST doc {info.doc_id}: {exc}")
+                    tmp.unlink(missing_ok=True)
+                    try:
+                        if not any(doc_dir.iterdir()):
+                            doc_dir.rmdir()
+                    except OSError:
+                        pass
+                    continue
+
+                # Renombrar con el nombre del archivo según el CRM
+                original = info.filename or f"doc_{info.doc_id}.bin"
+                stem = slugify(Path(original).stem) or f"doc_{info.doc_id}"
+                ext = Path(original).suffix or ".bin"
+                final = doc_dir / f"{stem}{ext}"
+                i = 1
+                while final.exists() and final != tmp:
+                    final = doc_dir / f"{stem}__{i}{ext}"
+                    i += 1
+                tmp.rename(final)
+                docs_processed.append(info.doc_id)
+                by_carpeta[folder_slug] = by_carpeta.get(folder_slug, 0) + 1
+
+        else:
+            # ---------------------------------------------------------------
+            # FALLBACK LEGACY: requiere PHPSESSID + @token + @refreshToken
+            # Se activa si la API REST no está disponible o falla.
+            # ---------------------------------------------------------------
+            from .sync_sudespacho_legacy import (
+                SudespachoLegacyClient,
+                SudespachoLegacyError,
+            )
+
+            owns_legacy = legacy_client is None
+            try:
+                legacy = legacy_client or SudespachoLegacyClient()
+            except SudespachoLegacyError as exc:
+                return PullResult(
+                    case_id=case_id,
+                    expediente_id=str(expediente_id),
+                    documents_total=0,
+                    documents_downloaded=0,
+                    bytes_downloaded=0,
+                    target_dir=target_dir,
+                    errors=errors + [f"REST falló y cliente legacy no disponible: {exc}"],
+                )
+
+            try:
+                try:
+                    doc_ids = legacy.list_doc_ids(str(expediente_id), element=elem)
+                except SudespachoLegacyError as exc:
+                    return PullResult(
+                        case_id=case_id,
+                        expediente_id=str(expediente_id),
+                        documents_total=0,
+                        documents_downloaded=0,
+                        bytes_downloaded=0,
+                        target_dir=target_dir,
+                        errors=errors + [f"list_doc_ids legacy: {exc}"],
+                    )
+
+                if not doc_ids:
+                    errors.append(
+                        f"El Gestor Documental del expediente {expediente_id} está vacío "
+                        f"(o el elemento '{elem}' no es el correcto)."
+                    )
+
+                # Incremental: filtrar IDs ya descargados
+                if incremental and marker.exists():
+                    try:
+                        pulled_data = json.loads(marker.read_text(encoding="utf-8"))
+                        already_pulled = set(pulled_data.get("doc_ids", []))
+                    except (json.JSONDecodeError, OSError):
+                        already_pulled = set()
+                    doc_ids_to_download = [
+                        d for d in doc_ids if d not in already_pulled
+                    ]
+                else:
+                    doc_ids_to_download = doc_ids
+                    already_pulled = set()
+
+                for doc_id in doc_ids_to_download:
+                    # Carpeta destino: metadata vía API REST si disponible
+                    folder_slug = "_sin_carpeta"
+                    if api_client is not None:
+                        try:
+                            meta = api_client.get_document_metadata(doc_id)
+                            label = (
+                                meta.get("id_carpeta_label")
+                                or meta.get("categoria")
+                                or meta.get("carpeta_label")
+                            )
+                            if label:
+                                folder_slug = slugify(str(label)) or "_sin_carpeta"
+                        except SudespachoError as exc:
+                            errors.append(f"meta legacy doc {doc_id}: {exc}")
+
+                    doc_dir = target_dir / folder_slug
+                    doc_dir.mkdir(parents=True, exist_ok=True)
+                    tmp = doc_dir / f"sudespacho_{doc_id}.tmp"
+
+                    try:
+                        result = legacy.download_document(
+                            doc_id, str(expediente_id), tmp, element=elem,
+                        )
+                    except SudespachoLegacyError as exc:
+                        errors.append(f"download legacy doc {doc_id}: {exc}")
+                        tmp.unlink(missing_ok=True)
+                        try:
+                            if not any(doc_dir.iterdir()):
+                                doc_dir.rmdir()
+                        except OSError:
+                            pass
+                        continue
+
+                    original = result.filename_in_disposition or f"doc_{doc_id}.bin"
+                    stem = slugify(Path(original).stem) or f"doc_{doc_id}"
+                    ext = Path(original).suffix or ".bin"
+                    final = doc_dir / f"{stem}{ext}"
+                    i = 1
+                    while final.exists() and final != tmp:
+                        final = doc_dir / f"{stem}__{i}{ext}"
+                        i += 1
+                    tmp.rename(final)
+                    docs_processed.append(doc_id)
+                    by_carpeta[folder_slug] = by_carpeta.get(folder_slug, 0) + 1
+
+            finally:
+                if owns_legacy:
+                    legacy.__exit__(None, None, None)
+
+        # Inventario final
         downloaded = [
             p for p in target_dir.rglob("*")
             if p.is_file() and p.name != _PULL_MARKER
@@ -818,7 +1147,9 @@ def pull_expediente(
                         "element": elem,
                         "doc_ids": all_doc_ids,
                         "by_carpeta": by_carpeta,
-                        "last_sync": __import__("datetime").datetime.now().isoformat(timespec="seconds"),
+                        "last_sync": __import__("datetime").datetime.now().isoformat(
+                            timespec="seconds"
+                        ),
                         "errors": errors,
                     },
                     ensure_ascii=False,
@@ -838,8 +1169,6 @@ def pull_expediente(
             errors=errors,
         )
     finally:
-        if owns_legacy:
-            legacy.__exit__(None, None, None)
         if owns_api and api_client is not None:
             api_client.__exit__(None, None, None)
 
