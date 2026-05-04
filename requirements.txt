@@ -23,6 +23,7 @@ openpyxl>=3.1
 
 # Utilidades
 rich>=13.7
+browser-cookie3>=0.19       # lectura automática de cookies de Chrome (renovación PHPSESSID)
 tqdm>=4.66
 loguru>=0.7
 typer>=0.12              # CLI

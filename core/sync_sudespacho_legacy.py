@@ -71,6 +71,50 @@ def _env(name: str, default: str | None = None) -> str | None:
     return v.strip() if isinstance(v, str) else v
 
 
+def _get_phpsessid_from_chrome(host: str) -> str | None:
+    """Intenta leer PHPSESSID del perfil de Chrome en el sistema local.
+
+    Usa browser-cookie3, que accede al store de cookies de Chrome sin
+    necesidad de intervención del usuario. Funciona con Chrome abierto o
+    cerrado en Windows. Devuelve None si no está disponible o falla.
+
+    El valor obtenido se escribe también en SUDESPACHO_LEGACY_PHPSESSID
+    del .env para que futuros usos sin Chrome tengan la cookie actualizada.
+    """
+    try:
+        import browser_cookie3  # type: ignore
+        jar = browser_cookie3.chrome(domain_name=host)
+        for cookie in jar:
+            if cookie.name == "PHPSESSID":
+                value = cookie.value
+                if value:
+                    _update_env_phpsessid(value)
+                return value
+    except Exception:
+        pass
+    return None
+
+
+def _update_env_phpsessid(new_value: str) -> None:
+    """Actualiza SUDESPACHO_LEGACY_PHPSESSID en el .env si el valor cambió."""
+    from pathlib import Path
+    env_path = Path(__file__).resolve().parent.parent / ".env"
+    if not env_path.exists():
+        return
+    try:
+        text = env_path.read_text(encoding="utf-8")
+        import re as _re
+        updated = _re.sub(
+            r"(SUDESPACHO_LEGACY_PHPSESSID\s*=\s*).*",
+            rf"\g<1>{new_value}",
+            text,
+        )
+        if updated != text:
+            env_path.write_text(updated, encoding="utf-8")
+    except Exception:
+        pass
+
+
 # ---------------------------------------------------------------------------
 # Configuración
 # ---------------------------------------------------------------------------
@@ -84,14 +128,22 @@ class SudespachoLegacyConfig:
     @classmethod
     def from_env(cls) -> "SudespachoLegacyConfig":
         host = _env("SUDESPACHO_LEGACY_HOST")
-        cookie = _env("SUDESPACHO_LEGACY_PHPSESSID")
-        if not host or not cookie:
+        if not host:
             raise SudespachoLegacyError(
-                "Faltan SUDESPACHO_LEGACY_HOST o SUDESPACHO_LEGACY_PHPSESSID en .env. "
-                "Cópialo desde DevTools → Application → Cookies → "
-                "<tu_subdominio>.sudespacho.net → PHPSESSID."
+                "Falta SUDESPACHO_LEGACY_HOST en .env."
             )
         host = host.replace("https://", "").replace("http://", "").rstrip("/")
+
+        # Intentar obtener cookie fresca de Chrome automáticamente.
+        # Si Chrome no está disponible o falla, caemos al valor del .env.
+        cookie = _get_phpsessid_from_chrome(host) or _env("SUDESPACHO_LEGACY_PHPSESSID")
+
+        if not cookie:
+            raise SudespachoLegacyError(
+                "No se pudo obtener PHPSESSID: ni desde Chrome ni desde .env. "
+                "Asegúrate de tener Chrome abierto con sesión activa en "
+                f"https://{host}, o pega el valor en SUDESPACHO_LEGACY_PHPSESSID del .env."
+            )
         return cls(
             host=host,
             phpsessid=cookie,

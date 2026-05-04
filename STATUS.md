@@ -3,7 +3,7 @@
 > **Fuente de verdad única del proyecto.**
 > Actualizar al cerrar cada sesión con `python -m scripts.session_close`.
 
-**Última actualización:** 2026-04-30 (script create_judicial_tags.py — crea tags ciudad+equipo en grupo judicial; pendiente ejecutar en siguiente sesión)
+**Última actualización:** 2026-05-04 (toggle judicial en UI Streamlit; browser-cookie3 en SudespachoLegacyConfig; tags judiciales completos en sudespacho_create.py)
 
 ---
 
@@ -59,15 +59,17 @@ git commit -m "<mensaje que Claude propuso>"
 | Pipeline | ✅ Ejecutado end-to-end (BaRR3, 2026-04-28, 9/9 pasos OK, ~9 min) |
 | Primer caso real | ✅ Creado, docs descargados |
 | Taxonomía de casos | ✅ Actualizada en config.py |
-| `sudespacho_create.py` | ✅ Extrajudicial + ✅ Judicial (2026-04-30) — DTO, tags, notas, helper |
+| `sudespacho_create.py` | ✅ Extrajudicial + ✅ Judicial (2026-05-04) — DTO, tags completos, notas, helper |
 | `sudespacho_relations.py` | ✅ Extrajudicial + ✅ Judicial (2026-04-30) — deduplicación, link cliente/contrario/procurador, link colaborador, create_tag |
 | Endpoint saveselect | ✅ Confirmado 2026-04-29 — cliente+colaborador persistidos en exp 600 |
 | `core/intake_drive.py` | ✅ Completo — pull rclone gdrive_ev, marker .pulled, 27 tests |
 | UI Drive E&V | ✅ Integrado en tab Nuevo caso + tab Casos (caso existente) |
 | Nombres automáticos desde email | ✅ _email_to_nombre() — sin campos manuales |
 | Tooltips UI | ✅ help= en todos los campos interactivos de streamlit_app.py |
+| Toggle judicial UI | ✅ streamlit_app.py — radio Extrajudicial/Judicial, § 3b con NIG + tipo procedimiento, handler bifurcado (2026-05-04) |
+| browser-cookie3 | ✅ PHPSESSID renovación automática desde Chrome en SudespachoLegacyConfig.from_env() (2026-05-04) |
 | `run_app.bat` | ✅ Lanzador para usuarios finales (Paola, Ana) |
-| Tags CRM verificados | ✅ 87 tags auditados y corregidos (2026-04-28) |
+| Tags CRM verificados | ✅ 87 extrajudicial (2026-04-28) + 88 judicial con nuevos (2026-05-04) |
 | Notas de expediente | ✅ 13 NOTA_* alineadas con Manual 1.1.4 |
 | `session_close.py` | ✅ Simplificado — solo pytest, sin interactividad |
 | `docs/DEAD_ENDS.md` | ✅ 7 callejones documentados |
@@ -178,9 +180,10 @@ python -m scripts.run_pipeline "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
 10. ~~Tooltips `help=` en toda la UI~~ ✅ 2026-04-29 — todos los campos interactivos cubiertos; ruta eliminada del listado de casos.
 11. **[SIGUIENTE-B]** Borrar colaborador de prueba ID=777 ("TEST FEESDEFENDER BORRAR") del CRM tnm.sudespacho.net manualmente.
 12. **[SIGUIENTE-UI]** Declarar dependencias en `pyproject.toml` (ya existe `run_app.bat`).
-13. **[SIGUIENTE-J-TAGS]** ⬅️ **SIGUIENTE** — Script listo en `scripts/create_judicial_tags.py`. Ejecutar desde PowerShell (`python -m scripts.create_judicial_tags`), pegar salida a Claude y añadir constantes `J_TAG_AZUL_*` / `J_TAG_ROJO_*` en `sudespacho_create.py`. Tags ciudad: MADRID, BARCELONA, VALENCIA, BILBAO, SEVILLA, SAN SEBASTIÁN, SANTANDER (`#5b9bd1`). Tags equipo: BiRS1, BiRS2, SaRS1, SeRS6, SSRR1, SSRS1, VaRS5, BaCS10, MaRS11, MaRS12, MaRS13 (`#a32929`).
-14. **[SIGUIENTE-J-TEAMS]** Crear tags de equipo faltantes en grupo judicial: BiRS1, BiRS2, SaRS1, SeRS6, SSRR1, SSRS1, VaRS5, BaCS10, MaRS11, MaRS12, MaRS13 (color `#a32929`).
-15. **[SIGUIENTE-J-UI]** Extender tab "Nuevo caso" en `streamlit_app.py` con toggle extrajudicial/judicial, campos específicos judiciales (NIG, tipo procedimiento, posición procesal), y llamada a `create_expediente_judicial()` + `link_ev_mmc_judicial()`.
+13. ~~**[SIGUIENTE-J-TAGS]**~~ ✅ 2026-05-04 — Tags ciudad (IDs 297-303) y equipos faltantes (304-313) creados manualmente en CRM + constantes añadidas a `sudespacho_create.py`.
+14. ~~**[SIGUIENTE-J-TEAMS]**~~ ✅ 2026-05-04 — Ver punto anterior.
+15. ~~**[SIGUIENTE-J-UI]**~~ ✅ 2026-05-04 — Toggle Extrajudicial/Judicial en `streamlit_app.py`: radio, `_J_EQUIPOS_POR_CIUDAD`, `_J_CIUDADES`, § 3b con NIG + tipo procedimiento, handler bifurcado llamando a `create_expediente_judicial()`.
+16. **[SIGUIENTE]** ⬅️ **Crear caso DEVOLUCION_RESERVA desde la UI** — Abrir Streamlit, seleccionar "Judicial", rellenar los datos del caso que recibió E&V, pulsar "⚡ Crear caso + enviar a sudespacho".
 16. **[SIGUIENTE-J-TESTS]** Tests para `create_expediente_judicial()`, `build_form_data_judicial()` y funciones de relación judicial.
 11. ~~**[NIKOLAI]** Conectar cuenta `nikolai.tyukhay@engelvoelkers.com` en Cowork~~ ✅ 2026-04-28 — rclone `gdrive_ev` configurado; Cowork no soporta multi-cuenta, rclone es la solución definitiva.
 12. **[SIGUIENTE-C]** Módulo `core/intake_drive.py`:

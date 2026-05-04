@@ -365,8 +365,21 @@ J_TAG_ROJO_MaRS9  = "#a32929___58"
 J_TAG_ROJO_MaRS10 = "#a32929___61"
 J_TAG_ROJO_MaRS14 = "#a32929___74"
 J_TAG_ROJO_MaRS15 = "#a32929___63"    # existe en judicial, NO en extrajudicial
+# Bilbao Residential Sales (creados 2026-05-04)
+J_TAG_ROJO_BiRS1  = "#a32929___304"
+J_TAG_ROJO_BiRS2  = "#a32929___305"
+# Santander Residential Sales (creado 2026-05-04)
+J_TAG_ROJO_SaRS1  = "#a32929___306"
 # Sevilla
 J_TAG_ROJO_SeRS1  = "#a32929___239"
+J_TAG_ROJO_SeRS6  = "#a32929___307"   # creado 2026-05-04
+# San Sebastián (creados 2026-05-04)
+J_TAG_ROJO_SSRR1  = "#a32929___308"
+J_TAG_ROJO_SSRS1  = "#a32929___309"
+# Madrid Residential Sales adicionales (creados 2026-05-04)
+J_TAG_ROJO_MaRS11 = "#a32929___311"
+J_TAG_ROJO_MaRS12 = "#a32929___312"
+J_TAG_ROJO_MaRS13 = "#a32929___313"
 # Valencia
 J_TAG_ROJO_VaCR1  = "#a32929___78"
 J_TAG_ROJO_VaCR2  = "#a32929___47"
@@ -377,15 +390,24 @@ J_TAG_ROJO_VaRS1  = "#a32929___36"
 J_TAG_ROJO_VaRS2  = "#a32929___31"
 J_TAG_ROJO_VaRS3  = "#a32929___44"
 J_TAG_ROJO_VaRS4  = "#a32929___59"
+J_TAG_ROJO_VaRS5  = "#a32929___310"   # creado 2026-05-04
 
-# -- Azul (#5b9bd1): Equipos con color azul en grupo judicial (8 tags) --------
+# -- Azul (#5b9bd1): Equipos con color azul en grupo judicial --------
 # (Algunos equipos que son ROJOS en extrajudicial son AZULES en judicial)
 J_TAG_AZUL_BaRR10 = "#5b9bd1___265"
 J_TAG_AZUL_BaCS2  = "#5b9bd1___279"
 J_TAG_AZUL_BaRS4  = "#5b9bd1___275"   # BaRS4: ROJO en extrajudicial, AZUL en judicial
 J_TAG_AZUL_MaRR2  = "#5b9bd1___266"   # MaRR2: ROJO en extrajudicial, AZUL en judicial
 J_TAG_AZUL_VaCS1  = "#5b9bd1___278"
-# ⚠️ NO hay tags de ciudad (Madrid, Barcelona...) en el grupo judicial (2026-04-30)
+
+# -- Azul (#5b9bd1): Tags de CIUDAD en grupo judicial (creados 2026-05-04) ----
+J_TAG_AZUL_CIUDAD_MADRID        = "#5b9bd1___297"
+J_TAG_AZUL_CIUDAD_VALENCIA      = "#5b9bd1___298"
+J_TAG_AZUL_CIUDAD_BARCELONA     = "#5b9bd1___299"
+J_TAG_AZUL_CIUDAD_SAN_SEBASTIAN = "#5b9bd1___300"
+J_TAG_AZUL_CIUDAD_BILBAO        = "#5b9bd1___301"
+J_TAG_AZUL_CIUDAD_SANTANDER     = "#5b9bd1___302"
+J_TAG_AZUL_CIUDAD_SEVILLA       = "#5b9bd1___303"
 
 # Mapa tipo_caso → tag verde para expedientes judiciales.
 # Parallel a _TIPO_A_TAG_VERDE del grupo extrajudicial.

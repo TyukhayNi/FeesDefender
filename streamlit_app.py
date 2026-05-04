@@ -340,6 +340,15 @@ with tab_casos:
 with tab_nuevo:
     st.subheader("Nuevo caso")
 
+    _tipo_exp_sel = st.radio(
+        "Tipo de expediente",
+        ["Extrajudicial", "Judicial"],
+        horizontal=True,
+        key="nc_tipo_exp",
+        help="Extrajudicial: fase previa o reclamación sin demanda interpuesta. Judicial: proceso ya iniciado ante el juzgado.",
+    )
+    es_judicial = _tipo_exp_sel == "Judicial"
+
     # ------------------------------------------------------------------
     # Datos maestros
     # ------------------------------------------------------------------
@@ -440,6 +449,101 @@ with tab_nuevo:
         "LAU_20":                          _sc.NOTA_LAU_20,
     }
 
+    # Equipos judiciales — grupo 2 (J_TAG_* del módulo sudespacho_create)
+    _J_EQUIPOS_POR_CIUDAD: dict[str, dict[str, str]] = {
+        "Barcelona": {
+            "BaRR1  — BCN Residential Rentals 1":  _sc.J_TAG_ROJO_BaRR1,
+            "BaRR2  — BCN Residential Rentals 2":  _sc.J_TAG_ROJO_BaRR2,
+            "BaRR3  — BCN Residential Rentals 3":  _sc.J_TAG_ROJO_BaRR3,
+            "BaRR4  — BCN Residential Rentals 4":  _sc.J_TAG_ROJO_BaRR4,
+            "BaRR10 — BCN Residential Rentals 10": _sc.J_TAG_AZUL_BaRR10,
+            "BaRS1  — BCN Residential Sales 1":    _sc.J_TAG_ROJO_BaRS1,
+            "BaRS2  — BCN Residential Sales 2":    _sc.J_TAG_ROJO_BaRS2,
+            "BaRS3  — BCN Residential Sales 3":    _sc.J_TAG_ROJO_BaRS3,
+            "BaRS4  — BCN Residential Sales 4":    _sc.J_TAG_AZUL_BaRS4,
+            "BaRS5  — BCN Residential Sales 5":    _sc.J_TAG_ROJO_BaRS5,
+            "BaRS6  — BCN Residential Sales 6":    _sc.J_TAG_ROJO_BaRS6,
+            "BaRS7  — BCN Residential Sales 7":    _sc.J_TAG_ROJO_BaRS7,
+            "BaRS8  — BCN Residential Sales 8":    _sc.J_TAG_ROJO_BaRS8,
+            "BaRS9  — BCN Residential Sales 9":    _sc.J_TAG_ROJO_BaRS9,
+            "BaRS10 — BCN Residential Sales 10":   _sc.J_TAG_ROJO_BaRS10,
+            "BaRS11 — BCN Residential Sales 11":   _sc.J_TAG_ROJO_BaRS11,
+            "BaRS12 — BCN Residential Sales 12":   _sc.J_TAG_ROJO_BaRS12,
+            "BaCR1  — BCN Commercial Rentals 1":   _sc.J_TAG_ROJO_BaCR1,
+            "BaCR10 — BCN Commercial Rentals 10":  _sc.J_TAG_ROJO_BaCR10,
+            "BaCS1  — BCN Commercial Sales 1":     _sc.J_TAG_ROJO_BaCS1,
+            "BaCS2  — BCN Commercial Sales 2":     _sc.J_TAG_AZUL_BaCS2,
+            "BaDP1  — BCN (pendiente) 1":          _sc.J_TAG_ROJO_BaDP1,
+        },
+        "Bilbao": {
+            "BiRS1  — Bilbao Residential Sales 1": _sc.J_TAG_ROJO_BiRS1,
+            "BiRS2  — Bilbao Residential Sales 2": _sc.J_TAG_ROJO_BiRS2,
+        },
+        "Madrid": {
+            "MaRR1  — MAD Residential Rentals 1":  _sc.J_TAG_ROJO_MaRR1,
+            "MaRR2  — MAD Residential Rentals 2":  _sc.J_TAG_AZUL_MaRR2,
+            "MaRR3  — MAD Residential Rentals 3":  _sc.J_TAG_ROJO_MaRR3,
+            "MaRS1  — MAD Residential Sales 1":    _sc.J_TAG_ROJO_MaRS1,
+            "MaRS2  — MAD Residential Sales 2":    _sc.J_TAG_ROJO_MaRS2,
+            "MaRS3  — MAD Residential Sales 3":    _sc.J_TAG_ROJO_MaRS3,
+            "MaRS4  — MAD Residential Sales 4":    _sc.J_TAG_ROJO_MaRS4,
+            "MaRS5  — MAD Residential Sales 5":    _sc.J_TAG_ROJO_MaRS5,
+            "MaRS6  — MAD Residential Sales 6":    _sc.J_TAG_ROJO_MaRS6,
+            "MaRS7  — MAD Residential Sales 7":    _sc.J_TAG_ROJO_MaRS7,
+            "MaRS8  — MAD Residential Sales 8":    _sc.J_TAG_ROJO_MaRS8,
+            "MaRS9  — MAD Residential Sales 9":    _sc.J_TAG_ROJO_MaRS9,
+            "MaRS10 — MAD Residential Sales 10":   _sc.J_TAG_ROJO_MaRS10,
+            "MaRS11 — MAD Residential Sales 11":   _sc.J_TAG_ROJO_MaRS11,
+            "MaRS12 — MAD Residential Sales 12":   _sc.J_TAG_ROJO_MaRS12,
+            "MaRS13 — MAD Residential Sales 13":   _sc.J_TAG_ROJO_MaRS13,
+            "MaRS14 — MAD Residential Sales 14":   _sc.J_TAG_ROJO_MaRS14,
+            "MaRS15 — MAD Residential Sales 15":   _sc.J_TAG_ROJO_MaRS15,
+            "MaPD1  — MAD (pendiente) 1":          _sc.J_TAG_ROJO_MaPD1,
+        },
+        "San Sebastián": {
+            "SSRR1  — San Sebastián Residential Rentals 1": _sc.J_TAG_ROJO_SSRR1,
+            "SSRS1  — San Sebastián Residential Sales 1":   _sc.J_TAG_ROJO_SSRS1,
+        },
+        "Santander": {
+            "SaRS1  — Santander Residential Sales 1": _sc.J_TAG_ROJO_SaRS1,
+        },
+        "Sevilla": {
+            "SeRS1  — Sevilla Residential Sales 1":  _sc.J_TAG_ROJO_SeRS1,
+            "SeRS6  — Sevilla Residential Sales 6":  _sc.J_TAG_ROJO_SeRS6,
+        },
+        "Valencia": {
+            "VaCR1  — Valencia Commercial Rentals 1":  _sc.J_TAG_ROJO_VaCR1,
+            "VaCR2  — Valencia Commercial Rentals 2":  _sc.J_TAG_ROJO_VaCR2,
+            "VaCS1  — Valencia Commercial Sales 1":    _sc.J_TAG_AZUL_VaCS1,
+            "VaPD1  — Valencia (pendiente) 1":         _sc.J_TAG_ROJO_VaPD1,
+            "VaRR1  — Valencia Residential Rentals 1": _sc.J_TAG_ROJO_VaRR1,
+            "VaRR3  — Valencia Residential Rentals 3": _sc.J_TAG_ROJO_VaRR3,
+            "VaRS1  — Valencia Residential Sales 1":   _sc.J_TAG_ROJO_VaRS1,
+            "VaRS2  — Valencia Residential Sales 2":   _sc.J_TAG_ROJO_VaRS2,
+            "VaRS3  — Valencia Residential Sales 3":   _sc.J_TAG_ROJO_VaRS3,
+            "VaRS4  — Valencia Residential Sales 4":   _sc.J_TAG_ROJO_VaRS4,
+            "VaRS5  — Valencia Residential Sales 5":   _sc.J_TAG_ROJO_VaRS5,
+        },
+    }
+    _J_EQUIPOS: dict[str, str] = {
+        k: v for equipos in _J_EQUIPOS_POR_CIUDAD.values() for k, v in equipos.items()
+    }
+    _J_CIUDADES: dict[str, str | None] = {
+        "— selecciona ciudad —": None,
+        "Barcelona":     _sc.J_TAG_AZUL_CIUDAD_BARCELONA,
+        "Bilbao":        _sc.J_TAG_AZUL_CIUDAD_BILBAO,
+        "Madrid":        _sc.J_TAG_AZUL_CIUDAD_MADRID,
+        "San Sebastián": _sc.J_TAG_AZUL_CIUDAD_SAN_SEBASTIAN,
+        "Santander":     _sc.J_TAG_AZUL_CIUDAD_SANTANDER,
+        "Sevilla":       _sc.J_TAG_AZUL_CIUDAD_SEVILLA,
+        "Valencia":      _sc.J_TAG_AZUL_CIUDAD_VALENCIA,
+    }
+
+    # Selección activa según tipo de expediente
+    _EQUIPOS_ACTIVOS_POR_CIUDAD = _J_EQUIPOS_POR_CIUDAD if es_judicial else _EQUIPOS_POR_CIUDAD
+    _EQUIPOS_ACTIVOS            = _J_EQUIPOS            if es_judicial else _EQUIPOS
+    _CIUDADES_ACTIVAS           = _J_CIUDADES           if es_judicial else _CIUDADES
+
     # ------------------------------------------------------------------
     # § 1 — Ciudad y tipo de caso
     # ------------------------------------------------------------------
@@ -449,7 +553,7 @@ with tab_nuevo:
     with col1:
         ciudad_label = st.selectbox(
             "Ciudad *",
-            list(_CIUDADES.keys()),
+            list(_CIUDADES_ACTIVAS.keys()),
             key="nc_ciudad",
             help="Ciudad de la oficina E&V responsable de la operación. Filtra el selector de equipos.",
         )
@@ -466,9 +570,9 @@ with tab_nuevo:
     # § 2 — Equipo comercial (filtrado por ciudad)
     # ------------------------------------------------------------------
     if ciudad_label == "— selecciona ciudad —":
-        _equipos_disp = _EQUIPOS                          # fallback: todos
+        _equipos_disp = _EQUIPOS_ACTIVOS
     else:
-        _equipos_disp = _EQUIPOS_POR_CIUDAD.get(ciudad_label, _EQUIPOS)
+        _equipos_disp = _EQUIPOS_ACTIVOS_POR_CIUDAD.get(ciudad_label, _EQUIPOS_ACTIVOS)
 
     equipo_label = st.selectbox(
         "Equipo comercial *",
@@ -508,6 +612,50 @@ with tab_nuevo:
             help="Importe de los honorarios reclamados en euros. Se registra en el expediente del CRM. Déjalo en 0 si no se conoce todavía.",
         )
     # col6 libre — reservado para campo futuro
+
+    # ------------------------------------------------------------------
+    # § 3b — Datos judiciales (solo visible si tipo = Judicial)
+    # ------------------------------------------------------------------
+    if es_judicial:
+        st.markdown(
+            '<div class="ev-section-label">Datos judiciales</div>',
+            unsafe_allow_html=True,
+        )
+        _TIPOS_PROC_LABELS: dict[str, str] = {
+            _sc.TIPO_PROC_JUICIO_VERBAL:              "Juicio verbal",
+            _sc.TIPO_PROC_JUICIO_ORDINARIO:           "Juicio ordinario",
+            _sc.TIPO_PROC_MONITORIO:                  "Monitorio",
+            _sc.TIPO_PROC_DESAHUCIO:                  "Desahucio",
+            _sc.TIPO_PROC_APELACION:                  "Recurso de apelación",
+            _sc.TIPO_PROC_CONCILIACION:               "Conciliación",
+            _sc.TIPO_PROC_EJECUCION:                  "Ejecución de títulos judiciales",
+            _sc.TIPO_PROC_RECLAMACION_EXTRAJUDICIAL:  "Reclamación extrajudicial",
+        }
+        col_j1, col_j2 = st.columns(2)
+        with col_j1:
+            tipo_proc_sel = st.selectbox(
+                "Tipo de procedimiento *",
+                list(_TIPOS_PROC_LABELS.keys()),
+                format_func=lambda k: _TIPOS_PROC_LABELS[k],
+                key="nc_tipo_proc",
+                help=(
+                    "Tipo de procedimiento judicial. "
+                    "Juicio verbal es el más frecuente para reclamaciones E&V por cuantía < 6.000 €."
+                ),
+            )
+        with col_j2:
+            nig_val = st.text_input(
+                "NIG",
+                placeholder="2800 1 2026 00001234",
+                key="nc_nig",
+                help=(
+                    "Número de Identificación del Expediente judicial (campo_860 en el CRM). "
+                    "Opcional en el momento de creación; puede completarse después."
+                ),
+            )
+    else:
+        tipo_proc_sel = _sc.TIPO_PROC_JUICIO_VERBAL   # valor por defecto, no se envía
+        nig_val = ""
 
     # ------------------------------------------------------------------
     # § 4 — Contactos del equipo
@@ -738,38 +886,67 @@ with tab_nuevo:
 
             # 3. Crear expediente en sudespacho (solo si se pulsó ese botón)
             if btn_sudespacho:
-                # Tags: rojo (equipo) + verde/lila (tipo caso) + azul (ciudad)
-                _tags = [_EQUIPOS[equipo_label]] + _sc.tag_defaults_for_tipo_caso(tipo_caso)
-                _ciudad_tag = _CIUDADES.get(ciudad_label)
-                if _ciudad_tag:
-                    _tags.append(_ciudad_tag)
-
-                # Posición procesal
+                # Posición procesal (común a ambos tipos)
                 _pos = (
                     _sc.POSICION_ACTOR
                     if posicion_de_tipo(tipo_caso) == POSICION_ACTORA
                     else _sc.POSICION_DEMANDADO
                 )
-
-                # Nota estándar del tipo de caso
+                # Nota estándar del tipo de caso (común)
                 _nota = _NOTAS.get(tipo_caso, "")
 
-                _datos = _sc.NuevoExpedienteExtrajudicial(
-                    referencia_cliente=final_case_id,
-                    cuantia=cuantia_nc,
-                    tags=_tags,
-                    posicion=_pos,
-                    descripcion_html=_nota,
-                )
+                if es_judicial:
+                    # Tags grupo 2 (J_TAG_*)
+                    _tags = (
+                        [_EQUIPOS_ACTIVOS[equipo_label]]
+                        + _sc.tag_defaults_for_tipo_caso_judicial(tipo_caso)
+                    )
+                    _ciudad_tag = _CIUDADES_ACTIVAS.get(ciudad_label)
+                    if _ciudad_tag:
+                        _tags.append(_ciudad_tag)
+                    _datos = _sc.NuevoExpedienteJudicial(
+                        referencia_cliente=final_case_id,
+                        cuantia=cuantia_nc,
+                        tags=_tags,
+                        posicion=_pos,
+                        tipo_procedimiento=tipo_proc_sel,
+                        NIG=nig_val.strip(),
+                        notas_html=_nota,
+                    )
+                    _tipo_registro = "judiciales"
+                    _label_tipo    = "judicial"
+                    _spinner_msg   = "Creando expediente judicial en sudespacho…"
+                else:
+                    # Tags grupo 1 (TAG_*)
+                    _tags = (
+                        [_EQUIPOS_ACTIVOS[equipo_label]]
+                        + _sc.tag_defaults_for_tipo_caso(tipo_caso)
+                    )
+                    _ciudad_tag = _CIUDADES_ACTIVAS.get(ciudad_label)
+                    if _ciudad_tag:
+                        _tags.append(_ciudad_tag)
+                    _datos = _sc.NuevoExpedienteExtrajudicial(
+                        referencia_cliente=final_case_id,
+                        cuantia=cuantia_nc,
+                        tags=_tags,
+                        posicion=_pos,
+                        descripcion_html=_nota,
+                    )
+                    _tipo_registro = "extrajudiciales"
+                    _label_tipo    = "extrajudicial"
+                    _spinner_msg   = "Creando expediente en sudespacho…"
 
-                with st.spinner("Creando expediente en sudespacho…"):
+                with st.spinner(_spinner_msg):
                     try:
-                        _exp_id = _sc.create_expediente(_datos)
+                        if es_judicial:
+                            _exp_id = _sc.create_expediente_judicial(_datos)
+                        else:
+                            _exp_id = _sc.create_expediente(_datos)
                         case_manager.register_expediente(
-                            final_case_id, _exp_id, "extrajudiciales"
+                            final_case_id, _exp_id, _tipo_registro
                         )
                         st.success(
-                            f"✅ Expediente creado en sudespacho — **ID: {_exp_id}**  \n"
+                            f"✅ Expediente {_label_tipo} creado en sudespacho — **ID: {_exp_id}**  \n"
                             f"Vinculado en `_caso.md`."
                         )
                         # 3b. Vincular EV MMC SPAIN, S.L.U. como cliente
