@@ -374,25 +374,26 @@ with st.sidebar:
             st.caption(
                 "Pega los tres valores y pulsa **Guardar** al final. "
                 "Los campos se mantienen mientras no cierres la sesión de Streamlit.\n\n"
-                "**Cómo obtenerlos** (Chrome DevTools F12 → Console en tnm.sudespacho.net):\n"
-                "```\ncopy(localStorage.getItem('token'))        → @token\n"
-                "copy(localStorage.getItem('refresh_token')) → @refreshToken\n"
-                "copy(document.cookie.match(/PHPSESSID=([^;]+)/)?.[1]) → PHPSESSID\n```"
+                "**Cómo obtenerlos** — Chrome DevTools F12 en tnm.sudespacho.net:\n\n"
+                "**@token y @refreshToken** → pestaña **Application → Cookies → tnm.sudespacho.net** "
+                "→ copiar el valor de la cookie `@token` y `@refreshToken`.\n\n"
+                "**PHPSESSID** → misma pestaña Application → Cookies → copiar el valor de `PHPSESSID`.\n\n"
+                "⚠️ *No usar Console/localStorage — esos tokens son distintos a las cookies PHP.*"
             )
             _php = st.text_input(
                 "PHPSESSID",
                 key="_manual_phpsessid",
-                help="DevTools Console: copy(document.cookie.match(/PHPSESSID=([^;]+)/)?.[1])",
+                help="DevTools → Application → Cookies → tnm.sudespacho.net → valor de PHPSESSID",
             )
             _jwt = st.text_input(
                 "@token (JWT)",
                 key="_manual_jwt",
-                help="DevTools Console: copy(localStorage.getItem('token'))",
+                help="DevTools → Application → Cookies → tnm.sudespacho.net → valor de @token",
             )
             _ref = st.text_input(
                 "@refreshToken",
                 key="_manual_refresh",
-                help="DevTools Console: copy(localStorage.getItem('refresh_token'))",
+                help="DevTools → Application → Cookies → tnm.sudespacho.net → valor de @refreshToken",
             )
             if st.button("💾 Guardar cookies en .env", key="_save_manual_cookies",
                          help="Guarda los valores introducidos en .env y recarga la caché."):

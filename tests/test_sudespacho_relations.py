@@ -5,6 +5,8 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch, call
 import pytest
 
+import httpx
+
 from core.sudespacho_relations import (
     EV_MMC_SPAIN_ID,
     NuevoColaborador,
@@ -12,6 +14,7 @@ from core.sudespacho_relations import (
     _autocomplete,
     _extract_id,
     _link_element,
+    _list_colaboradores_rest,
     _LINK_CLIENTE_PATH,
     _LINK_COLABORADOR_PATH,
     _SAVEADD_COLABORADOR_PATH,
@@ -21,6 +24,8 @@ from core.sudespacho_relations import (
     find_expediente_by_referencia,
     link_colaborador,
     link_ev_mmc,
+    load_all_colaboradores,
+    search_colaboradores_for_ui,
 )
 
 
@@ -175,14 +180,11 @@ def test_find_expediente_con_client_externo():
 # ---------------------------------------------------------------------------
 
 def test_find_colaborador_por_email(monkeypatch):
-    """Búsqueda por email exacto vía POST HTML — devuelve el ID del colaborador."""
-    client = _mock_client()
-    # _search_colaboradores_html usa _post_form y accede a r.text
-    html = _html_colaboradores([
-        {"id": "301", "name": "Maria Garcia", "email": "maria.garcia@engelvoelkers.com"},
-    ])
-    client._post_form.return_value = _mock_post_response(200, html)
-    with patch("core.sudespacho_relations.SudespachoLegacyClient", return_value=client):
+    """Búsqueda por email exacto vía REST API — devuelve el ID del colaborador."""
+    colabs = [
+        {"id": "301", "label": "Maria Garcia  ·  maria.garcia@engelvoelkers.com", "email": "maria.garcia@engelvoelkers.com"},
+    ]
+    with patch("core.sudespacho_relations._list_colaboradores_rest", return_value=colabs):
         result = find_colaborador_by_email("maria.garcia@engelvoelkers.com")
     assert result == "301"
 
@@ -194,10 +196,11 @@ def test_find_colaborador_email_vacio():
 
 
 def test_find_colaborador_no_encontrado(monkeypatch):
-    """Si el HTML no contiene filas, devuelve None."""
-    client = _mock_client()
-    client._post_form.return_value = _mock_post_response(200, "<table></table>")
-    with patch("core.sudespacho_relations.SudespachoLegacyClient", return_value=client):
+    """Si la lista REST no contiene el email, devuelve None."""
+    colabs = [
+        {"id": "301", "label": "Otro Colab  ·  otro@engelvoelkers.com", "email": "otro@engelvoelkers.com"},
+    ]
+    with patch("core.sudespacho_relations._list_colaboradores_rest", return_value=colabs):
         result = find_colaborador_by_email("nuevo@example.com")
     assert result is None
 
@@ -320,50 +323,50 @@ def test_create_colaborador_sin_id_en_respuesta(monkeypatch):
 def test_ensure_colaborador_existente(monkeypatch):
     """Si el colaborador ya existe, no se crea — solo se vincula."""
     client = _mock_client()
-    # Primera llamada a _post_form: búsqueda HTML — devuelve fila con el colaborador
-    html_search = _html_colaboradores([
-        {"id": "301", "name": "Existente", "email": "existente@engelvoelkers.com"},
-    ])
-    r_search = _mock_post_response(200, html_search)
-    # Segunda llamada a _post_form: saveselect (link) — devuelve JSON
+    colabs_rest = [
+        {"id": "301", "label": "Existente  ·  existente@engelvoelkers.com", "email": "existente@engelvoelkers.com"},
+    ]
+    # Única llamada a _post_form: saveselect (link)
     r_link = _mock_post_response(200)
     r_link.json.return_value = {"resultado": True, "acumulaDatos": {"colaboradores": ["301"]}}
-    client._post_form.side_effect = [r_search, r_link]
+    client._post_form.return_value = r_link
 
-    with patch("core.sudespacho_relations.SudespachoLegacyClient", return_value=client):
-        colab_id, created = ensure_colaborador_vinculado(
-            "600",
-            NuevoColaborador(nombre="Existente", email="existente@engelvoelkers.com"),
-        )
+    with patch("core.sudespacho_relations._list_colaboradores_rest", return_value=colabs_rest):
+        with patch("core.sudespacho_relations.SudespachoLegacyClient", return_value=client):
+            colab_id, created = ensure_colaborador_vinculado(
+                "600",
+                NuevoColaborador(nombre="Existente", email="existente@engelvoelkers.com"),
+            )
 
     assert colab_id == "301"
     assert created is False
     client.post_form.assert_not_called()  # no se llamó a create (post_form público)
-    assert client._post_form.call_count == 2  # búsqueda + link
+    assert client._post_form.call_count == 1  # solo link (búsqueda es REST)
 
 
 def test_ensure_colaborador_nuevo(monkeypatch):
     """Si el colaborador no existe, se crea y luego se vincula."""
     client = _mock_client()
-    # Primera llamada a _post_form: búsqueda HTML — sin resultados
-    r_search = _mock_post_response(200, "<table></table>")
-    # Segunda llamada a _post_form: saveselect (link) — devuelve JSON
+    # REST no devuelve el colaborador (lista vacía → None)
+    colabs_rest: list[dict] = []
+    # _post_form: saveselect (link) — devuelve JSON
     r_link = _mock_post_response(200)
     r_link.json.return_value = {"resultado": True, "acumulaDatos": {"colaboradores": ["999"]}}
-    client._post_form.side_effect = [r_search, r_link]
+    client._post_form.return_value = r_link
     # post_form público: saveadd devuelve nuevo ID
     client.post_form.return_value = {"resultado": True, "dato": "999"}
 
-    with patch("core.sudespacho_relations.SudespachoLegacyClient", return_value=client):
-        colab_id, created = ensure_colaborador_vinculado(
-            "600",
-            NuevoColaborador(nombre="Nuevo Consultor", email="nuevo@engelvoelkers.com"),
-        )
+    with patch("core.sudespacho_relations._list_colaboradores_rest", return_value=colabs_rest):
+        with patch("core.sudespacho_relations.SudespachoLegacyClient", return_value=client):
+            colab_id, created = ensure_colaborador_vinculado(
+                "600",
+                NuevoColaborador(nombre="Nuevo Consultor", email="nuevo@engelvoelkers.com"),
+            )
 
     assert colab_id == "999"
     assert created is True
     client.post_form.assert_called_once()    # saveadd llamado una vez
-    assert client._post_form.call_count == 2  # búsqueda + link
+    assert client._post_form.call_count == 1  # solo link (búsqueda es REST)
 
 
 def test_ensure_colaborador_email_vacio(monkeypatch):
@@ -385,3 +388,122 @@ def test_ensure_colaborador_email_vacio(monkeypatch):
     assert created is True
     # No se llamó a autocomplete (email vacío → find_colaborador_by_email devuelve None sin GET)
     client._client.get.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# _list_colaboradores_rest
+# ---------------------------------------------------------------------------
+
+def _make_httpx_response(data: dict, status: int = 200) -> MagicMock:
+    """Mock de httpx.Response para _list_colaboradores_rest."""
+    r = MagicMock()
+    r.status_code = status
+    r.json.return_value = data
+    r.text = str(data)
+    return r
+
+
+def _hydra_page(members: list[dict], total: int) -> dict:
+    """Respuesta hydra:Collection con los miembros dados."""
+    return {
+        "hydra:member": members,
+        "hydra:totalItems": total,
+    }
+
+
+def _member(id_: str, nombre: str, email: str = "") -> dict:
+    values = [{"property": {"name": "nombre"}, "value": nombre}]
+    if email:
+        values.append({"property": {"name": "email"}, "value": email})
+    return {"id": id_, "values": values}
+
+
+def test_list_colaboradores_rest_una_pagina(monkeypatch):
+    """Lista de colaboradores en una sola página devuelve todos los registros."""
+    page_data = _hydra_page(
+        [
+            _member("301", "Maria Garcia", "maria@ev.com"),
+            _member("302", "Juan López"),
+        ],
+        total=2,
+    )
+    with patch("httpx.get", return_value=_make_httpx_response(page_data)):
+        result = _list_colaboradores_rest()
+    assert len(result) == 2
+    assert result[0]["id"] == "301"
+    assert "maria@ev.com" in result[0]["label"]
+    assert result[0]["email"] == "maria@ev.com"
+    assert result[1]["id"] == "302"
+    assert result[1]["email"] == ""
+
+
+def test_list_colaboradores_rest_sin_nombre_ignorado(monkeypatch):
+    """Miembros sin campo 'nombre' se ignoran."""
+    page_data = _hydra_page(
+        [
+            {"id": "303", "values": [{"property": {"name": "email"}, "value": "solo@email.com"}]},
+            _member("304", "Con Nombre"),
+        ],
+        total=2,
+    )
+    with patch("httpx.get", return_value=_make_httpx_response(page_data)):
+        result = _list_colaboradores_rest()
+    assert len(result) == 1
+    assert result[0]["id"] == "304"
+
+
+def test_list_colaboradores_rest_http_error(monkeypatch):
+    """Error de red lanza SudespachoRelationsError."""
+    with patch("httpx.get", side_effect=httpx.ConnectError("timeout")):
+        with pytest.raises(SudespachoRelationsError, match="REST GET colaboradores"):
+            _list_colaboradores_rest()
+
+
+def test_list_colaboradores_rest_status_error(monkeypatch):
+    """HTTP 401 lanza SudespachoRelationsError."""
+    r = _make_httpx_response({}, status=401)
+    with patch("httpx.get", return_value=r):
+        with pytest.raises(SudespachoRelationsError, match="HTTP 401"):
+            _list_colaboradores_rest()
+
+
+# ---------------------------------------------------------------------------
+# load_all_colaboradores / search_colaboradores_for_ui
+# ---------------------------------------------------------------------------
+
+def test_load_all_colaboradores_delega_rest(monkeypatch):
+    """load_all_colaboradores() devuelve la lista completa de REST."""
+    colabs = [{"id": "301", "label": "X  ·  x@ev.com", "email": "x@ev.com"}]
+    with patch("core.sudespacho_relations._list_colaboradores_rest", return_value=colabs):
+        result = load_all_colaboradores()
+    assert result == colabs
+
+
+def test_search_colaboradores_for_ui_filtra_por_termino(monkeypatch):
+    """search_colaboradores_for_ui filtra en cliente por término en label."""
+    colabs = [
+        {"id": "301", "label": "Maria Garcia  ·  maria@ev.com", "email": "maria@ev.com"},
+        {"id": "302", "label": "Juan López  ·  juan@ev.com", "email": "juan@ev.com"},
+    ]
+    with patch("core.sudespacho_relations._list_colaboradores_rest", return_value=colabs):
+        result = search_colaboradores_for_ui("maria")
+    assert len(result) == 1
+    assert result[0]["id"] == "301"
+
+
+def test_search_colaboradores_for_ui_termino_corto(monkeypatch):
+    """Términos de menos de 2 caracteres devuelven lista vacía sin llamar a REST."""
+    with patch("core.sudespacho_relations._list_colaboradores_rest") as mock_rest:
+        result = search_colaboradores_for_ui("a")
+    assert result == []
+    mock_rest.assert_not_called()
+
+
+def test_search_colaboradores_for_ui_sin_resultados(monkeypatch):
+    """Término que no coincide devuelve lista vacía."""
+    colabs = [
+        {"id": "301", "label": "Maria Garcia  ·  maria@ev.com", "email": "maria@ev.com"},
+    ]
+    with patch("core.sudespacho_relations._list_colaboradores_rest", return_value=colabs):
+        result = search_colaboradores_for_ui("xyz_no_existe")
+    assert result == []

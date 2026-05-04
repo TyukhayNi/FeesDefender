@@ -62,6 +62,9 @@ import urllib.parse
 from dataclasses import dataclass, field
 from typing import Any
 
+import httpx
+
+from .sync_sudespacho import SudespachoConfig
 from .sync_sudespacho_legacy import (
     SudespachoLegacyClient,
     SudespachoLegacyError,
@@ -772,29 +775,104 @@ def create_tag_judicial(
 
 
 # ---------------------------------------------------------------------------
-# Búsqueda de colaboradores — endpoint real: POST /views/menu/elemento/colaboradores
+# Búsqueda de colaboradores — REST API (2026-05-04: migrado desde PHP legacy)
 # ---------------------------------------------------------------------------
 #
-# DEAD END documentado: GET /autocompletar/buscar/elemento/colaboradores?term=...
-# devuelve siempre body vacío (HTTP 200, len=0) aunque existan colaboradores.
-# Confirmado 2026-05-04 contra tenant tnm. Usar _search_colaboradores_html().
+# DEAD END — POST /views/menu/elemento/colaboradores (PHP legacy):
+#   Requiere PHPSESSID válido. El login SPA no crea PHPSESSID (confirmado
+#   2026-05-04). El servidor PHP expira la sesión tras ~24 min de inactividad
+#   y no hay mecanismo automatizable para renovarla sin login PHP legacy.
+#   Por tanto, toda búsqueda de colaboradores usa ahora la REST API.
 #
-# Estructura HTML de la tabla (confirmada 2026-05-04):
-#   <tr id="fila_colaboradores_{id}">
-#     <td>[0] Co</td> <td>[1]</td> <td>[2]</td>
-#     <td>[3] NOMBRE COMPLETO</td>
-#     <td>[4]</td>
-#     <td>[5] email@engelvoelkers.com</td>
-#     ...
-#   </tr>
+# Endpoint REST (confirmado 2026-05-04, sin PHPSESSID):
+#   GET /api/element_registries/colaboradores
+#       ?page=1&itemsPerPage=500&properties[]=nombre&properties[]=email
+#   Auth: x-api-key
+#   Nota: el endpoint NO filtra server-side por término; filtrado en cliente.
+#   Total colaboradores tenant tnm: ~765.
 
-import re as _re_colab
+_PATH_COLAB_LIST = "/views/menu/elemento/colaboradores"  # conservado para link/create
 
-_ROW_RE    = _re_colab.compile(r'id="fila_colaboradores_(\d+)".*?</tr>', _re_colab.DOTALL | _re_colab.IGNORECASE)
-_TD_RE     = _re_colab.compile(r'<td[^>]*>(.*?)</td>',                   _re_colab.DOTALL | _re_colab.IGNORECASE)
-_TAG_RE    = _re_colab.compile(r'<[^>]+>')
 
-_PATH_COLAB_LIST = "/views/menu/elemento/colaboradores"
+def _list_colaboradores_rest(
+    *,
+    cfg: SudespachoConfig | None = None,
+) -> list[dict[str, str]]:
+    """Obtiene todos los colaboradores del CRM vía REST API (sin PHPSESSID).
+
+    Usa GET /api/element_registries/colaboradores paginado (500/página).
+    El filtrado se realiza en cliente porque el endpoint no soporta búsqueda
+    server-side.
+
+    Args:
+        cfg: Configuración REST (opcional; si None, carga desde .env).
+
+    Returns:
+        Lista de dicts {id, label, email}.
+
+    Raises:
+        SudespachoRelationsError: si el endpoint falla o devuelve error HTTP.
+    """
+    if cfg is None:
+        cfg = SudespachoConfig.from_env()
+
+    results: list[dict[str, str]] = []
+    page = 1
+    PAGE_SIZE = 500
+
+    while True:
+        try:
+            r = httpx.get(
+                f"{cfg.base_url}/api/element_registries/colaboradores",
+                params={
+                    "page":          page,
+                    "itemsPerPage":  PAGE_SIZE,
+                    "properties[]":  ["nombre", "email"],
+                },
+                headers={cfg.auth_header: cfg.api_key},
+                timeout=cfg.timeout_s,
+            )
+        except httpx.HTTPError as exc:
+            raise SudespachoRelationsError(
+                f"REST GET colaboradores (página {page}) falló: {exc}"
+            ) from exc
+
+        if r.status_code != 200:
+            raise SudespachoRelationsError(
+                f"REST GET colaboradores → HTTP {r.status_code}: {r.text[:300]}"
+            )
+
+        data = r.json()
+        members = data.get("hydra:member", [])
+        fetched_this_page = len(members)
+
+        for member in members:
+            colab_id = str(member.get("id", ""))
+            nombre = ""
+            email = ""
+            for val in member.get("values", []):
+                prop_name = val.get("property", {}).get("name", "")
+                if prop_name == "nombre":
+                    nombre = val.get("value", "") or ""
+                elif prop_name == "email":
+                    email = val.get("value", "") or ""
+            if not nombre:
+                continue
+            results.append({
+                "id":    colab_id,
+                "label": nombre + (f"  ·  {email}" if email else ""),
+                "email": email,
+            })
+
+        # Usar el número de miembros recibidos (antes del filtro) para decidir si
+        # hay más páginas — no `len(results)`, que puede ser menor si se filtraron
+        # miembros sin nombre.
+        total = data.get("hydra:totalItems", 0)
+        if not members or fetched_this_page < PAGE_SIZE:
+            break
+        page += 1
+
+    return results
 
 
 def _search_colaboradores_html(
@@ -849,36 +927,28 @@ def find_colaborador_by_email(
 ) -> str | None:
     """Busca un colaborador en el CRM por su dirección de email (búsqueda exacta).
 
-    Usa POST /views/menu/elemento/colaboradores con cadBusqueda=email y
-    devuelve el ID del primer resultado cuyo email coincida exactamente.
+    Usa la REST API (/api/element_registries/colaboradores) — no requiere PHPSESSID.
+    El parámetro `client` se conserva por compatibilidad con llamadas existentes
+    pero ya no se usa en la búsqueda.
 
     Args:
         email: Email del colaborador.
-        client: Cliente legacy reutilizable (opcional).
+        client: Ignorado (conservado por compatibilidad).
 
     Returns:
         ID del colaborador si existe, None si no se encuentra.
     """
     if not email:
         return None
-    owns_client = client is None
-    if owns_client:
-        client = SudespachoLegacyClient()
     try:
-        results = _search_colaboradores_html(email, client)
-        email_lower = email.strip().lower()
-        for r in results:
-            if r["email"].lower() == email_lower:
-                return r["id"]
-        return None
+        all_colabs = _list_colaboradores_rest()
     except SudespachoRelationsError:
         raise
-    finally:
-        if owns_client:
-            try:
-                client.__exit__(None, None, None)
-            except Exception:
-                pass
+    email_lower = email.strip().lower()
+    for c in all_colabs:
+        if c["email"].lower() == email_lower:
+            return c["id"]
+    return None
 
 
 def load_all_colaboradores(
@@ -887,25 +957,16 @@ def load_all_colaboradores(
 ) -> list[dict[str, str]]:
     """Carga todos los colaboradores del CRM sin filtro.
 
-    Útil para pre-cargar la lista completa en la UI y hacer filtrado local.
-    Usa POST /views/menu/elemento/colaboradores con cadBusqueda vacío.
+    Usa la REST API (/api/element_registries/colaboradores) — no requiere PHPSESSID.
+    El parámetro `client` se conserva por compatibilidad.
 
     Returns:
         Lista completa de dicts {id, label, email}.
     """
-    owns_client = client is None
-    if owns_client:
-        client = SudespachoLegacyClient()
     try:
-        return _search_colaboradores_html("", client)
-    except SudespachoLegacyError as exc:
-        raise SudespachoRelationsError(str(exc)) from exc
-    finally:
-        if owns_client:
-            try:
-                client.__exit__(None, None, None)
-            except Exception:
-                pass
+        return _list_colaboradores_rest()
+    except SudespachoRelationsError:
+        raise
 
 
 def search_colaboradores_for_ui(
@@ -915,18 +976,19 @@ def search_colaboradores_for_ui(
 ) -> list[dict[str, str]]:
     """Busca colaboradores en el CRM para autosugerencia en la UI.
 
-    Usa POST /views/menu/elemento/colaboradores con cadBusqueda=term.
-    El CRM filtra por nombre y email sobre todos los campos visibles del listado.
+    Usa la REST API — no requiere PHPSESSID. Carga todos los colaboradores
+    y filtra en cliente (el endpoint no soporta búsqueda server-side).
 
     Args:
         term: Nombre o email parcial (mínimo 2 caracteres).
-        client: Cliente legacy reutilizable (opcional).
+        client: Ignorado (conservado por compatibilidad).
 
     Returns:
-        Lista de dicts {id, label, email}.
+        Lista de dicts {id, label, email} con los resultados que contengan
+        `term` (insensible a mayúsculas) en nombre o email.
 
     Raises:
-        SudespachoRelationsError: si el endpoint falla.
+        SudespachoRelationsError: si el endpoint REST falla.
 
     Example::
 
@@ -936,17 +998,9 @@ def search_colaboradores_for_ui(
     """
     if not term or len(term) < 2:
         return []
-
-    owns_client = client is None
-    if owns_client:
-        client = SudespachoLegacyClient()
     try:
-        return _search_colaboradores_html(term, client)
-    except SudespachoLegacyError as exc:
-        raise SudespachoRelationsError(str(exc)) from exc
-    finally:
-        if owns_client:
-            try:
-                client.__exit__(None, None, None)
-            except Exception:
-                pass
+        all_colabs = _list_colaboradores_rest()
+    except SudespachoRelationsError:
+        raise
+    term_lower = term.strip().lower()
+    return [c for c in all_colabs if term_lower in c["label"].lower()]

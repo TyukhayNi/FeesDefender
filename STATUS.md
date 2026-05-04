@@ -3,7 +3,7 @@
 > **Fuente de verdad única del proyecto.**
 > Actualizar al cerrar cada sesión con `python -m scripts.session_close`.
 
-**Última actualización:** 2026-05-04 (Bloque A REST gdocu: `list_gdocu_docs_rest` + `download_document_rest` + `GdocuDocInfo` implementados en `sync_sudespacho.py`; `pull_expediente` usa REST sin PHPSESSID como vía principal; fallback legacy conservado; 26 tests nuevos → 118 total; `INTEGRACION_SUDESPACHO.md` sección 7 actualizada; commit 0c1ac95)
+**Última actualización:** 2026-05-04 (Bloque B colaboradores REST: `_list_colaboradores_rest()` implementado en `sudespacho_relations.py`; búsqueda colaboradores migrada a REST — elimina dependencia PHPSESSID; bug fix paginación (`fetched_this_page < PAGE_SIZE`); tests actualizados (find/ensure mockean `_list_colaboradores_rest`); 8 tests nuevos → 146 total; sidebar instrucciones corregidas (Application→Cookies); 3 entradas DEAD_ENDS.md añadidas)
 
 ---
 
@@ -55,7 +55,7 @@ git commit -m "<mensaje que Claude propuso>"
 
 | Ítem | Estado |
 |------|--------|
-| Tests | ✅ 92/92 (11 nuevos: _is_eplan_landing, _jwt_expires_in_secs, _update_env_field) |
+| Tests | ✅ 146/146 (8 nuevos: _list_colaboradores_rest, load_all_colaboradores, search_colaboradores_for_ui) |
 | Pipeline | ✅ Ejecutado end-to-end (BaRR3, 2026-04-28, 9/9 pasos OK, ~9 min) |
 | Primer caso real | ✅ Creado, docs descargados |
 | Taxonomía de casos | ✅ Actualizada en config.py |
@@ -81,7 +81,7 @@ git commit -m "<mensaje que Claude propuso>"
 | `_try_renew_php_session` | ✅ Implementado 2026-05-04 — confirmado insuficiente sin PHPSESSID válido |
 | `_update_env_field` (escribe .env + os.environ) | ✅ Implementado 2026-05-04 |
 | Sidebar session_state (expander persistente) | ✅ Fix 2026-05-04 |
-| UI `_email_input_with_crm` + botón 🔍 | ✅ Implementado — test end-to-end bloqueado por PHPSESSID expirado |
+| UI `_email_input_with_crm` + botón 🔍 | ✅ Implementado — búsqueda migrada a REST (sin PHPSESSID); verificación end-to-end pendiente |
 | `run_app.bat` | ✅ Lanzador para usuarios finales (Paola, Ana) |
 | Tags CRM verificados | ✅ 87 extrajudicial (2026-04-28) + 88 judicial con nuevos (2026-05-04) |
 | Notas de expediente | ✅ 13 NOTA_* alineadas con Manual 1.1.4 |
@@ -201,7 +201,7 @@ python -m scripts.run_pipeline "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
 14. ~~**[SIGUIENTE-J-TEAMS]**~~ ✅ 2026-05-04 — Ver punto anterior.
 15. ~~**[SIGUIENTE-J-UI]**~~ ✅ 2026-05-04 — Toggle Extrajudicial/Judicial en `streamlit_app.py`: radio, `_J_EQUIPOS_POR_CIUDAD`, `_J_CIUDADES`, § 3b con NIG + tipo procedimiento, handler bifurcado llamando a `create_expediente_judicial()`.
 16. **[SIGUIENTE]** ⬅️ **Crear caso DEVOLUCION_RESERVA desde la UI** — Abrir Streamlit, seleccionar "Judicial", rellenar los datos del caso que recibió E&V, pulsar "⚡ Crear caso + enviar a sudespacho".
-17. **[SIGUIENTE-B-COLAB]** Verificar end-to-end botón 🔍 colaboradores: Chrome con sesión activa en tnm.sudespacho.net → 🔄 sidebar Streamlit → probar búsqueda de colaborador. Requiere PHPSESSID válido (no tiene alternativa REST conocida).
+17. **[SIGUIENTE-B-COLAB]** ⬅️ **Verificar end-to-end botón 🔍 colaboradores** en Streamlit: abrir app → "Nuevo Caso" → campo email colaborador → teclear término → confirmar que aparecen sugerencias. Ya no requiere PHPSESSID (migrado a REST con x-api-key).
 18. **[SIGUIENTE-SHARE]** Probar compartición directa carpeta E&V: tab Casos → expander "Compartir carpeta E&V" → botón "⚡ Compartir directamente". Si falla por token expirado, ejecutar `rclone ls gdrive_ev:` para refrescarlo.
 16. **[SIGUIENTE-J-TESTS]** Tests para `create_expediente_judicial()`, `build_form_data_judicial()` y funciones de relación judicial.
 11. ~~**[NIKOLAI]** Conectar cuenta `nikolai.tyukhay@engelvoelkers.com` en Cowork~~ ✅ 2026-04-28 — rclone `gdrive_ev` configurado; Cowork no soporta multi-cuenta, rclone es la solución definitiva.
@@ -291,7 +291,8 @@ data/CASOS/{case_id}/
 ## Tests — última ejecución
 
 ```
-pytest -q   →   118 passed (2026-05-04)
+pytest -q   →   146 passed (2026-05-04)
 ```
 Módulos cubiertos: `case_manager`, `inventory`, `utils`,
-`sync_sudespacho` (+26 nuevos: REST gdocu), `sync_sudespacho_legacy`.
+`sync_sudespacho` (+26 nuevos: REST gdocu), `sync_sudespacho_legacy`,
+`sudespacho_relations` (+8 nuevos: REST colaboradores).

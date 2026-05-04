@@ -126,6 +126,12 @@
 
 ## SPA Vue — login no crea sesión PHP
 
+### Login en `/tnm` (SPA) → el PHPSESSID nunca cambia; la sesión PHP en el servidor expira
+- **Intentado:** salir y volver a loguearse en la SPA → comprobar PHPSESSID en Application→Cookies
+- **Resultado:** el PHPSESSID mantiene el mismo valor (`l9liv1acf04sh2u05s3kcgrl0u`) antes y después del login. El browser conserva la cookie en su jar pero la sesión PHP del servidor ya expiró. El SPA login no crea una sesión PHP nueva.
+- **Confirmado:** 2026-05-04
+- **Conclusión:** No hay mecanismo automatizable para obtener un PHPSESSID válido a través del flujo SPA. El PHPSESSID del servidor solo puede crearse desde el login PHP legacy (si existe) o explorando endpoints REST alternativos para las operaciones que lo requieren.
+
 ### Login en `/tnm` (SPA) → solo JWT en localStorage, sin PHPSESSID
 - **Intentado:** login en `https://tnm.sudespacho.net/tnm` (SPA Vue) → captura de cookies → uso de `PHPSESSID` resultante en FeesDefender
 - **Resultado:** la SPA solo almacena tokens JWT en `localStorage` del navegador (`token`, `refreshToken`). No hace ninguna petición al backend PHP que cree o renueve una sesión PHP (`PHPSESSID`). Las cookies `@token` y `@refreshToken` que aparecen en DevTools son distintas de los tokens de `localStorage` y tienen origen distinto.
@@ -158,6 +164,32 @@
 - **Resultado:** `[BLOCKED: Sensitive key]` — la capa de seguridad del agente bloquea cualquier operación JS que lea o exponga tokens de autenticación, incluyendo intentos de copia interna sin devolverlos al chat
 - **Confirmado:** 2026-05-04
 - **Conclusión:** extracción/inyección de tokens de sesión CRM **siempre** requiere acción manual del usuario (DevTools Console + sidebar Streamlit). No automatizable desde el agente.
+
+---
+
+## Sidebar Streamlit — `localStorage.getItem('token')` ≠ cookie `@token`
+
+### Las instrucciones originales del sidebar usaban localStorage en lugar de Application→Cookies
+- **Error:** el sidebar mostraba `copy(localStorage.getItem('token'))` y `copy(localStorage.getItem('refresh_token'))` para obtener `@token` y `@refreshToken`
+- **Resultado:** el usuario pegaba el token SPA (para llamadas REST de la Vue app) en lugar de la cookie `@token` que necesita el backend PHP — la sesión seguía fallando con «E-plan»
+- **Confirmado:** 2026-05-04 — confirmado empíricamente al comprobar que el error persistía tras pegar los valores de localStorage
+- **Causa:** el token JWT de localStorage y la cookie `@token` son emitidos por distintos flujos de auth y tienen valores diferentes
+- **Solución:** obtener los tres valores desde DevTools → **Application → Cookies → tnm.sudespacho.net** (no desde Console/localStorage). Corregido en `streamlit_app.py` (2026-05-04).
+
+---
+
+## URLs de navegación del CRM — rutas PHP legacy no funcionan en el navegador
+
+### Rutas `/extrajudiciales/index/...` o `/judiciales/index/...` en el navegador → E-plan o 404
+- **Intentado:** navegar con Chrome a `https://tnm.sudespacho.net/extrajudiciales/index/elemento/extrajudiciales` para acceder al listado de expedientes extrajudiciales
+- **Resultado:** el navegador muestra la landing E-plan o página en blanco — la URL no existe como ruta navegable
+- **Confirmado:** 2026-05-04 (extrajudiciales); sesión anterior (judiciales)
+- **Causa:** Las rutas PHP legacy (`/extrajudiciales/`, `/judiciales/`) son solo endpoints de API consumidos por la SPA internamente. La navegación del usuario ocurre íntegramente dentro de la SPA (`/tnm/...`).
+- **URLs correctas para navegación en el navegador / Chrome MCP:**
+  - Extrajudiciales: `https://tnm.sudespacho.net/tnm/gestion/extrajudiciales`
+  - Judiciales: `https://tnm.sudespacho.net/tnm/gestion/judiciales` *(pendiente confirmar)*
+  - Dashboard: `https://tnm.sudespacho.net/tnm/dashboard`
+- **Conclusión:** Para navegar al CRM desde Chrome MCP, usar siempre rutas SPA (`/tnm/...`). Las rutas legacy solo se usan en peticiones HTTP directas (Python, curl) con las 3 cookies de auth.
 
 ---
 
