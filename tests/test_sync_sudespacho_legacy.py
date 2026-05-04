@@ -304,18 +304,9 @@ def test_update_env_field_updates_os_environ_and_file(tmp_path, monkeypatch):
     import os
     env_file = tmp_path / ".env"
     env_file.write_text("SUDESPACHO_LEGACY_JWT=old_value\n", encoding="utf-8")
-
-    # Parchear Path para que apunte al fichero temporal
-    import core.sync_sudespacho_legacy as _mod
-    from pathlib import Path
-    original_resolve = Path.resolve
-    monkeypatch.setattr(
-        Path, "resolve",
-        lambda self: env_file if str(self).endswith(".env") else original_resolve(self),
-    )
     monkeypatch.delenv("SUDESPACHO_LEGACY_JWT", raising=False)
 
-    _update_env_field("SUDESPACHO_LEGACY_JWT", "new_value")
+    _update_env_field("SUDESPACHO_LEGACY_JWT", "new_value", _env_path=env_file)
 
     assert os.environ.get("SUDESPACHO_LEGACY_JWT") == "new_value"
     assert "SUDESPACHO_LEGACY_JWT=new_value" in env_file.read_text(encoding="utf-8")
@@ -325,17 +316,9 @@ def test_update_env_field_adds_missing_key(tmp_path, monkeypatch):
     import os
     env_file = tmp_path / ".env"
     env_file.write_text("OTHER_KEY=value\n", encoding="utf-8")
-
-    import core.sync_sudespacho_legacy as _mod
-    from pathlib import Path
-    original_resolve = Path.resolve
-    monkeypatch.setattr(
-        Path, "resolve",
-        lambda self: env_file if str(self).endswith(".env") else original_resolve(self),
-    )
     monkeypatch.delenv("NEW_FIELD", raising=False)
 
-    _update_env_field("NEW_FIELD", "new_val")
+    _update_env_field("NEW_FIELD", "new_val", _env_path=env_file)
 
     assert "NEW_FIELD=new_val" in env_file.read_text(encoding="utf-8")
     assert os.environ.get("NEW_FIELD") == "new_val"
