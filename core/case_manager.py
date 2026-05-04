@@ -251,6 +251,35 @@ def register_drive_ev(
     _write_case_index(caso_path(case_id), meta)
 
 
+def get_drive_ev_ids(case_id: str) -> tuple[str | None, str | None]:
+    """Devuelve ``(team_id, folder_id)`` del Drive E&V registrados en ``_caso.md``.
+
+    Lee el frontmatter YAML del índice del caso. Devuelve ``(None, None)``
+    si el caso no existe, no tiene índice o aún no tiene carpeta E&V vinculada.
+
+    Args:
+        case_id: Identificador del caso.
+
+    Returns:
+        Tupla ``(drive_ev_team_id, drive_ev_folder_id)``.
+    """
+    import yaml as _yaml
+
+    index = caso_path(case_id) / "00_Input" / "_caso.md"
+    if not index.exists():
+        return None, None
+    text = index.read_text(encoding="utf-8")
+    if not text.startswith("---"):
+        return None, None
+    try:
+        _, fm_raw, _ = text.split("---", 2)
+        fm = _yaml.safe_load(fm_raw) or {}
+    except Exception:
+        return None, None
+    meta = fm.get("meta") or {}
+    return meta.get("drive_ev_team_id"), meta.get("drive_ev_folder_id")
+
+
 def list_cases() -> list[str]:
     if not settings.casos_root.exists():
         return []

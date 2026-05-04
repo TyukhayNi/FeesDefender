@@ -3,7 +3,7 @@
 > **Fuente de verdad única del proyecto.**
 > Actualizar al cerrar cada sesión con `python -m scripts.session_close`.
 
-**Última actualización:** 2026-05-04 (toggle judicial en UI Streamlit; browser-cookie3 en SudespachoLegacyConfig; tags judiciales completos en sudespacho_create.py)
+**Última actualización:** 2026-05-04 (intake demanda judicial: upload+unzip en UI; compartición carpeta E&V con equipo; 05_Demanda judicial en árbol del caso; 100 tests)
 
 ---
 
@@ -60,6 +60,12 @@ git commit -m "<mensaje que Claude propuso>"
 | Primer caso real | ✅ Creado, docs descargados |
 | Taxonomía de casos | ✅ Actualizada en config.py |
 | `sudespacho_create.py` | ✅ Extrajudicial + ✅ Judicial (2026-05-04) — DTO, tags completos, notas, helper |
+| `core/intake_demanda.py` | ✅ save_file(), extract_zip() (path traversal sanitizado), list_files() (2026-05-04) |
+| `core/share_drive.py` | ✅ share_folder_with_team() via Drive API v3 + build_request_email() (2026-05-04) |
+| `05_Demanda judicial` | ✅ Añadida a INPUT_SUBDIRS — ensure_case() la crea automáticamente (2026-05-04) |
+| `case_manager.get_drive_ev_ids()` | ✅ Lee folder_id del frontmatter de _caso.md (2026-05-04) |
+| UI intake demanda | ✅ Tab Casos — expander upload+unzip ZIP automático (2026-05-04) |
+| UI compartir carpeta | ✅ Tab Casos — expander directo (Drive API) + mensaje solicitud (2026-05-04) |
 | `sudespacho_relations.py` | ✅ Extrajudicial + ✅ Judicial (2026-04-30) — deduplicación, link cliente/contrario/procurador, link colaborador, create_tag |
 | Endpoint saveselect | ✅ Confirmado 2026-04-29 — cliente+colaborador persistidos en exp 600 |
 | `core/intake_drive.py` | ✅ Completo — pull rclone gdrive_ev, marker .pulled, 27 tests |
@@ -184,6 +190,7 @@ python -m scripts.run_pipeline "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
 14. ~~**[SIGUIENTE-J-TEAMS]**~~ ✅ 2026-05-04 — Ver punto anterior.
 15. ~~**[SIGUIENTE-J-UI]**~~ ✅ 2026-05-04 — Toggle Extrajudicial/Judicial en `streamlit_app.py`: radio, `_J_EQUIPOS_POR_CIUDAD`, `_J_CIUDADES`, § 3b con NIG + tipo procedimiento, handler bifurcado llamando a `create_expediente_judicial()`.
 16. **[SIGUIENTE]** ⬅️ **Crear caso DEVOLUCION_RESERVA desde la UI** — Abrir Streamlit, seleccionar "Judicial", rellenar los datos del caso que recibió E&V, pulsar "⚡ Crear caso + enviar a sudespacho".
+17. **[SIGUIENTE-SHARE]** Probar compartición directa carpeta E&V: tab Casos → expander "Compartir carpeta E&V" → botón "⚡ Compartir directamente". Si falla por token expirado, ejecutar `rclone ls gdrive_ev:` para refrescarlo.
 16. **[SIGUIENTE-J-TESTS]** Tests para `create_expediente_judicial()`, `build_form_data_judicial()` y funciones de relación judicial.
 11. ~~**[NIKOLAI]** Conectar cuenta `nikolai.tyukhay@engelvoelkers.com` en Cowork~~ ✅ 2026-04-28 — rclone `gdrive_ev` configurado; Cowork no soporta multi-cuenta, rclone es la solución definitiva.
 12. **[SIGUIENTE-C]** Módulo `core/intake_drive.py`:

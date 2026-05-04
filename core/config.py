@@ -186,10 +186,11 @@ CASO_SUBDIRS: tuple[str, ...] = (
 #                           whatsapp (exportación manual por ahora).
 
 INPUT_SUBDIRS: tuple[str, ...] = (
-    "01_Drive EV",   # carpeta W-XXXXXX del Drive engelvoelkers.com (intake pendiente automatizar)
-    "02_Whatsapp",   # conversaciones exportadas manualmente (automatización pendiente)
-    "03_Email",      # hilos de correo exportados manualmente (automatización pendiente)
-    "04_Manual",     # cualquier documento que no proceda de las fuentes anteriores
+    "01_Drive EV",        # carpeta W-XXXXXX del Drive engelvoelkers.com (intake automatizado)
+    "02_Whatsapp",        # conversaciones exportadas manualmente (automatización pendiente)
+    "03_Email",           # hilos de correo exportados manualmente (automatización pendiente)
+    "04_Manual",          # cualquier documento que no proceda de las fuentes anteriores
+    "05_Demanda judicial",  # demanda + docs judiciales subidos manualmente desde la UI
 )
 
 # Subcarpetas de nivel 3 dentro de 02_Whatsapp/

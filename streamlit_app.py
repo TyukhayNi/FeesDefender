@@ -13,6 +13,9 @@ import streamlit as st
 
 from core import case_manager, llm, pipeline, sudespacho_create as _sc
 from core.intake_drive import DriveIntakeError, parse_drive_url, pull_drive_ev
+from core import intake_demanda
+from core import share_drive as _sd
+import zipfile as _zipfile
 from core.sudespacho_relations import (
     NuevoColaborador,
     SudespachoRelationsError as _SRelError,
@@ -334,6 +337,189 @@ with tab_casos:
                                     "❌ Error rclone:  \n"
                                     + "  \n".join(_die.result.errors)
                                 )
+
+        st.divider()
+        with st.expander("📄 Demanda / documentos judiciales"):
+            _caso_dem = st.selectbox(
+                "Caso",
+                cases,
+                key="casos_dem_sel",
+                help=(
+                    "Selecciona el caso al que quieres subir la demanda "
+                    "y demás documentos judiciales."
+                ),
+            )
+
+            # ── Archivos ya guardados ──────────────────────────────────────
+            _dem_files = intake_demanda.list_files(_caso_dem)
+            if _dem_files:
+                st.caption(
+                    f"**{len(_dem_files)}** archivo/s en `05_Demanda judicial/`:"
+                )
+                for _df in _dem_files:
+                    _size_kb = _df.stat().st_size // 1024
+                    st.caption(f"· {_df.name}  ({_size_kb} KB)")
+            else:
+                st.caption("_(sin documentos judiciales todavía)_")
+
+            st.divider()
+
+            # ── Uploader ───────────────────────────────────────────────────
+            _uploaded_dem = st.file_uploader(
+                "Subir demanda y documentos judiciales",
+                accept_multiple_files=True,
+                type=["pdf", "docx", "doc", "jpg", "jpeg", "png", "txt", "eml", "msg", "zip"],
+                key="casos_dem_uploader",
+                help=(
+                    "Sube la demanda y demás documentos judiciales "
+                    "(autos, notificaciones, diligencias…). "
+                    "Se guardan en `00_Input/05_Demanda judicial/`. "
+                    "Los archivos **ZIP se descomprimen automáticamente** manteniendo "
+                    "la estructura de carpetas interna."
+                ),
+            )
+
+            if st.button(
+                "⬆️ Guardar documentos",
+                key="casos_dem_btn",
+                disabled=not _uploaded_dem,
+                help="Guarda los archivos seleccionados. Los ZIP se descomprimen automáticamente.",
+            ):
+                _saved_dem = 0
+                _errors_dem: list[str] = []
+                for _uf in _uploaded_dem:
+                    try:
+                        _raw = _uf.read()
+                        if _uf.name.lower().endswith(".zip"):
+                            _extracted = intake_demanda.extract_zip(_caso_dem, _raw)
+                            _saved_dem += len(_extracted)
+                            st.success(
+                                f"✅ **{_uf.name}** descomprimido — "
+                                f"**{len(_extracted)}** archivo/s extraídos."
+                            )
+                        else:
+                            intake_demanda.save_file(_caso_dem, _uf.name, _raw)
+                            _saved_dem += 1
+                    except _zipfile.BadZipFile:
+                        _errors_dem.append(
+                            f"{_uf.name}: el archivo no es un ZIP válido."
+                        )
+                    except Exception as _exc:
+                        _errors_dem.append(f"{_uf.name}: {_exc}")
+
+                if _saved_dem and not any(_uf.name.lower().endswith(".zip") for _uf in _uploaded_dem):
+                    # Mensaje global solo si no hay ZIPs (los ZIPs ya muestran su propio mensaje)
+                    st.success(
+                        f"✅ **{_saved_dem}** archivo/s guardados "
+                        f"en `05_Demanda judicial/`."
+                    )
+                for _err_dem in _errors_dem:
+                    st.error(f"❌ {_err_dem}")
+
+        st.divider()
+        with st.expander("🔗 Compartir carpeta E&V con el equipo"):
+            _caso_share = st.selectbox(
+                "Caso",
+                cases,
+                key="casos_share_sel",
+                help="Selecciona el caso cuya carpeta E&V quieres compartir con el equipo.",
+            )
+
+            # ── Carpeta registrada en el caso ──────────────────────────────
+            _share_team_id, _share_folder_id = case_manager.get_drive_ev_ids(_caso_share)
+            if _share_folder_id:
+                _share_folder_url = (
+                    f"https://drive.google.com/drive/folders/{_share_folder_id}"
+                )
+                st.caption(f"Carpeta registrada: [{_share_folder_url}]({_share_folder_url})")
+            else:
+                st.warning(
+                    "Este caso no tiene carpeta E&V registrada. "
+                    "Vincúlala primero desde «Pull Drive E&V»."
+                )
+                _share_url_manual = st.text_input(
+                    "URL carpeta W-XXXXXX (manual)",
+                    placeholder="https://drive.google.com/drive/folders/…",
+                    key="casos_share_url_manual",
+                    help="Introduce la URL si aún no has hecho el pull de Drive E&V.",
+                ).strip()
+                if _share_url_manual:
+                    try:
+                        _share_folder_id = parse_drive_url(_share_url_manual)
+                        _share_folder_url = (
+                            f"https://drive.google.com/drive/folders/{_share_folder_id}"
+                        )
+                    except ValueError:
+                        _share_folder_id = None
+                        _share_folder_url = _share_url_manual
+                else:
+                    _share_folder_id = None
+                    _share_folder_url = ""
+
+            # ── Equipo al que compartir (fijo) ─────────────────────────────
+            st.markdown('<div class="ev-section-label">Se compartirá con</div>', unsafe_allow_html=True)
+            for _se in _sd.TEAM_EMAILS:
+                st.caption(f"· {_se}")
+
+            st.divider()
+
+            # ── Botones ────────────────────────────────────────────────────
+            _col_sh1, _col_sh2 = st.columns(2)
+
+            with _col_sh1:
+                _btn_share_direct = st.button(
+                    "⚡ Compartir directamente",
+                    key="casos_share_direct_btn",
+                    disabled=not _share_folder_id,
+                    use_container_width=True,
+                    help=(
+                        "Intenta compartir la carpeta usando las credenciales de "
+                        "nikolai.tyukhay@engelvoelkers.com (token rclone.conf). "
+                        "Puede fallar si el token está expirado o la política de dominio "
+                        "lo impide — en ese caso usa el mensaje de solicitud."
+                    ),
+                )
+
+            with _col_sh2:
+                _btn_share_email = st.button(
+                    "📋 Generar mensaje de solicitud",
+                    key="casos_share_email_btn",
+                    disabled=not _share_folder_url,
+                    use_container_width=True,
+                    help=(
+                        "Genera el mensaje para pedir a un compañero de E&V "
+                        "que comparta la carpeta con el equipo."
+                    ),
+                )
+
+            if _btn_share_direct and _share_folder_id:
+                # Aviso si el token puede estar expirado
+                if not _sd.is_token_likely_valid():
+                    st.warning(
+                        "⚠️ El token de rclone parece expirado. "
+                        "Ejecuta `rclone ls gdrive_ev:` para refrescarlo y vuelve a intentarlo."
+                    )
+                else:
+                    with st.spinner("Compartiendo carpeta con el equipo…"):
+                        try:
+                            _share_res = _sd.share_folder_with_team(_share_folder_id)
+                            for _r in _share_res.results:
+                                if _r.success:
+                                    st.success(f"✅ **{_r.email}** — acceso concedido.")
+                                else:
+                                    st.error(f"❌ **{_r.email}** — {_r.error}")
+                            if not _share_res.all_ok:
+                                st.info(
+                                    "Algunos emails no pudieron compartirse directamente. "
+                                    "Usa «Generar mensaje de solicitud» para los que fallaron."
+                                )
+                        except _sd.ShareDriveConfigError as _sce:
+                            st.error(f"Error de configuración: {_sce}")
+
+            if _btn_share_email and _share_folder_url:
+                _email_text = _sd.build_request_email(_share_folder_url)
+                st.code(_email_text, language=None)
+                st.caption("Copia el texto y pégalo en un email a tus compañeros de E&V.")
 
 
 # ── TAB: Nuevo caso ─────────────────────────────────────────────────────────
