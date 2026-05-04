@@ -3,7 +3,7 @@
 > **Fuente de verdad única del proyecto.**
 > Actualizar al cerrar cada sesión con `python -m scripts.session_close`.
 
-**Última actualización:** 2026-05-04 (sugerencias email colaborador con botón 🔍; cambio auth sudespacho @token JWT + refreshToken; CSRF multi-URL; User-Agent Chrome; renovación sesión CRM en sidebar)
+**Última actualización:** 2026-05-04 (renovación automática JWT: proactive refresh, E-plan detection, _try_renew_php_session; sidebar session_state fix; _email_input_with_crm con botón 🔍; auditoría CRM pendiente)
 
 ---
 
@@ -55,7 +55,7 @@ git commit -m "<mensaje que Claude propuso>"
 
 | Ítem | Estado |
 |------|--------|
-| Tests | ✅ 70/70 (25 nuevos en test_sudespacho_relations) |
+| Tests | ✅ 70+11 (11 nuevos: _is_eplan_landing, _jwt_expires_in_secs, _update_env_field) |
 | Pipeline | ✅ Ejecutado end-to-end (BaRR3, 2026-04-28, 9/9 pasos OK, ~9 min) |
 | Primer caso real | ✅ Creado, docs descargados |
 | Taxonomía de casos | ✅ Actualizada en config.py |
@@ -74,6 +74,12 @@ git commit -m "<mensaje que Claude propuso>"
 | Tooltips UI | ✅ help= en todos los campos interactivos de streamlit_app.py |
 | Toggle judicial UI | ✅ streamlit_app.py — radio Extrajudicial/Judicial, § 3b con NIG + tipo procedimiento, handler bifurcado (2026-05-04) |
 | browser-cookie3 | ✅ PHPSESSID renovación automática desde Chrome en SudespachoLegacyConfig.from_env() (2026-05-04) |
+| Renovación proactiva JWT (`_proactive_refresh_if_needed`) | ✅ Implementado 2026-05-04 |
+| Detección E-plan (`_is_eplan_landing`, `_get_csrf_token`) | ✅ Implementado 2026-05-04 |
+| `_try_renew_php_session` | ✅ Implementado 2026-05-04 — confirmado insuficiente sin PHPSESSID válido |
+| `_update_env_field` (escribe .env + os.environ) | ✅ Implementado 2026-05-04 |
+| Sidebar session_state (expander persistente) | ✅ Fix 2026-05-04 |
+| UI `_email_input_with_crm` + botón 🔍 | ✅ Implementado — test end-to-end bloqueado por PHPSESSID expirado |
 | `run_app.bat` | ✅ Lanzador para usuarios finales (Paola, Ana) |
 | Tags CRM verificados | ✅ 87 extrajudicial (2026-04-28) + 88 judicial con nuevos (2026-05-04) |
 | Notas de expediente | ✅ 13 NOTA_* alineadas con Manual 1.1.4 |
@@ -184,8 +190,8 @@ python -m scripts.run_pipeline "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
 8. ~~Integrar `link_ev_mmc` + `ensure_colaborador_vinculado` en UI Streamlit pestaña "Nuevo Caso"~~ ✅ 2026-04-29 — nombres derivados automáticamente de emails; colaboradores vinculados tras crear expediente.
 9. ~~Módulo `core/intake_drive.py` + integración UI~~ ✅ 2026-04-29 — pull Drive E&V en tab Nuevo caso y tab Casos; auto-resolución Shared Drive ID; 27 tests.
 10. ~~Tooltips `help=` en toda la UI~~ ✅ 2026-04-29 — todos los campos interactivos cubiertos; ruta eliminada del listado de casos.
-11. **[NUEVO-HILO-EMAIL]** ⬅️ Sugerencias email colaborador — botón 🔍 implementado, flujo sin verificar end-to-end. `@token` JWT caduca en 1h; renovación automática no implementada. Tratar en hilo independiente.
-2. **[NUEVO-HILO-CRM]** ⬅️ Cambio auth sudespacho 2026-05-04: auditar todas las conexiones FeesDefender↔CRM afectadas (@token JWT + refreshToken + PHPSESSID, CSRF, creación expedientes, descarga docs, saveselect). Verificar tests de `sync_sudespacho_legacy` con nuevos campos en `SudespachoLegacyConfig`. Implementar renovación automática JWT con `@refreshToken`. Tratar en hilo independiente.
+11. ~~**[NUEVO-HILO-EMAIL]**~~ ✅ 2026-05-04 — Renovación JWT implementada; sidebar session_state fix; botón 🔍 implementado. Test end-to-end pendiente hasta resolver PHPSESSID.
+2. **[SIGUIENTE]** ⬅️ **[NUEVO-HILO-AUDITORIA]** Auditoría completa conexión FeesDefender↔CRM: mapear flujo auth (SPA JWT + PHP session), determinar cómo crear sesión PHP desde JWT o alternativa, actualizar `docs/INTEGRACION_SUDESPACHO.md` y `docs/DEAD_ENDS.md`, verificar 🔍 end-to-end con sesión PHP válida.
 3. **[SIGUIENTE-B]** Borrar colaborador de prueba ID=777 ("TEST FEESDEFENDER BORRAR") del CRM tnm.sudespacho.net manualmente.
 12. **[SIGUIENTE-UI]** Declarar dependencias en `pyproject.toml` (ya existe `run_app.bat`).
 13. ~~**[SIGUIENTE-J-TAGS]**~~ ✅ 2026-05-04 — Tags ciudad (IDs 297-303) y equipos faltantes (304-313) creados manualmente en CRM + constantes añadidas a `sudespacho_create.py`.
@@ -212,7 +218,9 @@ python -m scripts.run_pipeline "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
 
 ## Credenciales / variables de entorno críticas
 
-- `SUDESPACHO_LEGACY_PHPSESSID` — caduca por inactividad. Si `check_legacy` falla, renovar desde DevTools → Application → Cookies → tnm.sudespacho.net.
+- `SUDESPACHO_LEGACY_PHPSESSID` — caduca por inactividad del servidor PHP (~24 min). La SPA (`/tnm`) **no** renueva la sesión PHP. Para obtener PHPSESSID válido: necesita sesión PHP activa. Ver [NUEVO-HILO-AUDITORIA].
+- `SUDESPACHO_LEGACY_JWT` — caduca en 1h. Renovación proactiva implementada (`_proactive_refresh_if_needed`). Renovación manual: sidebar Streamlit → 🔄 → pegar token de DevTools Console: `copy(localStorage.getItem('token'))`.
+- `SUDESPACHO_LEGACY_REFRESH_TOKEN` — long-lived. Usar para renovar JWT antes de expiración.
 - `SUDESPACHO_API_KEY` — API REST, estable.
 - `SUDESPACHO_LEGACY_HOST` — `tnm.sudespacho.net` (fijo).
 - `DRIVE_OUTPUT_FOLDER_ID` — carpeta Drive tyukhay.legal para output anonimizado (pendiente configurar).

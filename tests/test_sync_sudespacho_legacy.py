@@ -14,6 +14,9 @@ from core.sync_sudespacho_legacy import (
     _LAST_PAGE_RE,
     _ROW_ID_RE,
     _extract_filename,
+    _is_eplan_landing,
+    _jwt_expires_in_secs,
+    _update_env_field,
 )
 
 
@@ -233,3 +236,106 @@ def test_strip_html_helper():
         "<td><b>Hola</b>&nbsp;mundo &amp; cía</td>"
     )
     assert out == "Hola mundo & cía"
+
+
+# ---- _is_eplan_landing ----------------------------------------------------
+
+class _FakeResponse:
+    def __init__(self, status_code: int, text: str):
+        self.status_code = status_code
+        self.text = text
+
+
+def test_is_eplan_landing_true():
+    r = _FakeResponse(200, "<title>E-plan - sudespacho.net</title>")
+    assert _is_eplan_landing(r) is True
+
+
+def test_is_eplan_landing_false_crm_page():
+    r = _FakeResponse(200, "<title>Colaboradores · TNM</title><script>var csrf_token='abc'</script>")
+    assert _is_eplan_landing(r) is False
+
+
+def test_is_eplan_landing_false_non_200():
+    r = _FakeResponse(404, "E-plan - sudespacho.net")
+    assert _is_eplan_landing(r) is False
+
+
+def test_is_eplan_landing_checks_only_start():
+    # El marcador aparece después de los primeros 2000 chars — NO debe detectarse
+    r = _FakeResponse(200, "x" * 2100 + "E-plan - sudespacho.net")
+    assert _is_eplan_landing(r) is False
+
+
+# ---- _jwt_expires_in_secs -------------------------------------------------
+
+def _make_jwt(offset_secs: int) -> str:
+    """Construye un JWT mínimo con exp = now + offset_secs."""
+    import base64, json, time
+    payload = {"exp": int(time.time()) + offset_secs, "iat": int(time.time())}
+    p = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
+    return f"header.{p}.sig"
+
+
+def test_jwt_expires_in_secs_future():
+    secs = _jwt_expires_in_secs(_make_jwt(3600))
+    assert secs is not None and 3580 <= secs <= 3600
+
+
+def test_jwt_expires_in_secs_expired():
+    secs = _jwt_expires_in_secs(_make_jwt(-100))
+    assert secs is not None and secs < 0
+
+
+def test_jwt_expires_in_secs_invalid_string():
+    assert _jwt_expires_in_secs("no_es_un_jwt") is None
+
+
+def test_jwt_expires_in_secs_without_exp():
+    import base64, json
+    payload = {"iat": 1000}  # sin campo exp
+    p = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
+    assert _jwt_expires_in_secs(f"h.{p}.s") is None
+
+
+# ---- _update_env_field ----------------------------------------------------
+
+def test_update_env_field_updates_os_environ_and_file(tmp_path, monkeypatch):
+    import os
+    env_file = tmp_path / ".env"
+    env_file.write_text("SUDESPACHO_LEGACY_JWT=old_value\n", encoding="utf-8")
+
+    # Parchear Path para que apunte al fichero temporal
+    import core.sync_sudespacho_legacy as _mod
+    from pathlib import Path
+    original_resolve = Path.resolve
+    monkeypatch.setattr(
+        Path, "resolve",
+        lambda self: env_file if str(self).endswith(".env") else original_resolve(self),
+    )
+    monkeypatch.delenv("SUDESPACHO_LEGACY_JWT", raising=False)
+
+    _update_env_field("SUDESPACHO_LEGACY_JWT", "new_value")
+
+    assert os.environ.get("SUDESPACHO_LEGACY_JWT") == "new_value"
+    assert "SUDESPACHO_LEGACY_JWT=new_value" in env_file.read_text(encoding="utf-8")
+
+
+def test_update_env_field_adds_missing_key(tmp_path, monkeypatch):
+    import os
+    env_file = tmp_path / ".env"
+    env_file.write_text("OTHER_KEY=value\n", encoding="utf-8")
+
+    import core.sync_sudespacho_legacy as _mod
+    from pathlib import Path
+    original_resolve = Path.resolve
+    monkeypatch.setattr(
+        Path, "resolve",
+        lambda self: env_file if str(self).endswith(".env") else original_resolve(self),
+    )
+    monkeypatch.delenv("NEW_FIELD", raising=False)
+
+    _update_env_field("NEW_FIELD", "new_val")
+
+    assert "NEW_FIELD=new_val" in env_file.read_text(encoding="utf-8")
+    assert os.environ.get("NEW_FIELD") == "new_val"

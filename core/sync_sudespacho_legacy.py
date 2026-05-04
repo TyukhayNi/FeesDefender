@@ -71,6 +71,155 @@ def _env(name: str, default: str | None = None) -> str | None:
     return v.strip() if isinstance(v, str) else v
 
 
+# ---------------------------------------------------------------------------
+# Detección de sesión expirada y renovación automática de JWT
+# ---------------------------------------------------------------------------
+
+# Cadena que aparece en el <title> de la landing de E-plan cuando la sesión
+# no está autenticada (HTTP 200 pero no es el CRM).
+_EPLAN_MARKER = "E-plan - sudespacho.net"
+
+# Endpoint estándar de Symfony (gesdinet/jwt-refresh-token-bundle).
+# Configurable via .env: SUDESPACHO_LEGACY_JWT_REFRESH_PATH
+_DEFAULT_JWT_REFRESH_PATH = "/api/token/refresh"
+
+
+def _is_eplan_landing(r: httpx.Response) -> bool:
+    """Devuelve True si la respuesta es la landing de E-plan (sesión no autenticada).
+
+    El servidor devuelve HTTP 200 con la página de marketing de E-plan cuando
+    el @token JWT ha expirado y no hay sesión válida. No lanza 401/302.
+    Solo se inspecciona el inicio del body para no parsear documentos HTML grandes.
+    """
+    return r.status_code == 200 and _EPLAN_MARKER in r.text[:2000]
+
+
+def _update_env_field(field: str, value: str) -> None:
+    """Actualiza (o añade) un campo clave=valor en el .env del proyecto.
+
+    También actualiza os.environ para que el proceso actual vea el nuevo valor
+    sin necesidad de reiniciar (importante para SudespachoLegacyConfig.from_env()
+    en sucesivas instanciaciones dentro de la misma sesión Streamlit).
+
+    Si el campo no existe en .env se añade al final. Si el valor es idéntico
+    al actual no escribe el fichero (evita tocar mtime innecesariamente).
+    """
+    env_path = Path(__file__).resolve().parent.parent / ".env"
+    if not env_path.exists():
+        return
+    try:
+        text = env_path.read_text(encoding="utf-8")
+        pattern = re.compile(rf"^({re.escape(field)}\s*=\s*)(.*)$", re.MULTILINE)
+        if pattern.search(text):
+            updated = pattern.sub(rf"\g<1>{value}", text)
+        else:
+            # Campo no existe → añadirlo al final
+            updated = text.rstrip("\n") + f"\n{field}={value}\n"
+        if updated != text:
+            env_path.write_text(updated, encoding="utf-8")
+        # Actualizar el entorno del proceso actual
+        os.environ[field] = value
+    except Exception:
+        pass
+
+
+_API_CRM_HOST = "https://api-crm-commons-pro.sudespacho.biz"
+_JWT_REFRESH_PATH = "/api/user/refresh"   # GET con ?refresh_token=<rt> + Authorization: Bearer <jwt>
+
+
+def _jwt_expires_in_secs(jwt_str: str) -> int | None:
+    """Decodifica el payload del JWT (sin verificar firma) y devuelve los segundos
+    hasta expiración. Devuelve None si el token no es un JWT válido.
+    Un valor negativo indica que ya ha expirado.
+    """
+    import base64 as _b64
+    try:
+        parts = jwt_str.split(".")
+        if len(parts) != 3:
+            return None
+        payload_b64 = parts[1]
+        # Añadir padding si falta
+        payload_b64 += "=" * (4 - len(payload_b64) % 4)
+        payload = json.loads(_b64.urlsafe_b64decode(payload_b64))
+        exp = payload.get("exp")
+        if exp is None:
+            return None
+        import time as _time
+        return int(exp - _time.time())
+    except Exception:
+        return None
+
+
+def _try_refresh_jwt(current_jwt: str, refresh_token: str) -> str | None:
+    """Renueva el @token JWT usando el endpoint del CRM.
+
+    Endpoint: GET https://api-crm-commons-pro.sudespacho.biz/api/user/refresh
+              ?refresh_token=<@refreshToken>
+    Header: Authorization: Bearer <@token-aún-vigente>
+
+    IMPORTANTE: este endpoint requiere que el @token actual sea aún válido (no
+    expirado). Está diseñado para renovación PROACTIVA (ej. < 5 min para expirar).
+    Si el @token ya expiró, devuelve None y el usuario debe reiniciar sesión.
+
+    Si la renovación tiene éxito, actualiza SUDESPACHO_LEGACY_JWT (y
+    SUDESPACHO_LEGACY_REFRESH_TOKEN si el servidor devuelve uno nuevo) tanto
+    en .env como en os.environ.
+
+    Args:
+        current_jwt: Valor actual del @token (debe ser vigente).
+        refresh_token: Valor del @refreshToken almacenado en .env.
+
+    Returns:
+        Nuevo @token si la renovación fue exitosa; None si falló.
+    """
+    if not refresh_token or not current_jwt:
+        return None
+
+    try:
+        import urllib.parse as _up
+        path = f"{_JWT_REFRESH_PATH}?refresh_token={_up.quote(refresh_token)}"
+        with httpx.Client(
+            base_url=_API_CRM_HOST,
+            timeout=20,
+            follow_redirects=False,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/124.0.0.0 Safari/537.36"
+                ),
+                "Authorization": f"Bearer {current_jwt}",
+                "Accept": "application/json",
+            },
+        ) as c:
+            r = c.get(path)
+        if r.status_code >= 400:
+            return None
+        try:
+            data = r.json()
+        except Exception:
+            return None
+        # El API devuelve {"@token": "<nuevo_jwt>", "@refreshToken": "<nuevo_rt>"}
+        # o posiblemente {"token": ..., "refresh_token": ...}
+        new_token: str | None = (
+            data.get("@token")
+            or data.get("token")
+            or data.get("jwt")
+            or data.get("access_token")
+        )
+        new_refresh: str | None = (
+            data.get("@refreshToken")
+            or data.get("refresh_token")
+        )
+        if new_token:
+            _update_env_field("SUDESPACHO_LEGACY_JWT", new_token)
+            if new_refresh and new_refresh != refresh_token:
+                _update_env_field("SUDESPACHO_LEGACY_REFRESH_TOKEN", new_refresh)
+        return new_token or None
+    except Exception:
+        return None
+
+
 def _get_phpsessid_from_chrome(host: str) -> tuple[str | None, str | None]:
     """Intenta leer PHPSESSID del perfil de Chrome en el sistema local.
 
@@ -89,23 +238,8 @@ def _get_phpsessid_from_chrome(host: str) -> tuple[str | None, str | None]:
 
 
 def _update_env_phpsessid(new_value: str) -> None:
-    """Actualiza SUDESPACHO_LEGACY_PHPSESSID en el .env si el valor cambió."""
-    from pathlib import Path
-    env_path = Path(__file__).resolve().parent.parent / ".env"
-    if not env_path.exists():
-        return
-    try:
-        text = env_path.read_text(encoding="utf-8")
-        import re as _re
-        updated = _re.sub(
-            r"(SUDESPACHO_LEGACY_PHPSESSID\s*=\s*).*",
-            rf"\g<1>{new_value}",
-            text,
-        )
-        if updated != text:
-            env_path.write_text(updated, encoding="utf-8")
-    except Exception:
-        pass
+    """Actualiza SUDESPACHO_LEGACY_PHPSESSID en el .env y en os.environ."""
+    _update_env_field("SUDESPACHO_LEGACY_PHPSESSID", new_value)
 
 
 def renovar_phpsessid_desde_chrome() -> tuple[bool, str]:
@@ -257,6 +391,8 @@ class SudespachoLegacyClient:
     def __init__(self, cfg: SudespachoLegacyConfig | None = None) -> None:
         self.cfg = cfg or SudespachoLegacyConfig.from_env()
         self._csrf_token: str | None = None
+        # Bandera anti-bucle: True si ya se intentó renovar el JWT en esta sesión.
+        self._jwt_refresh_attempted: bool = False
         self._client = httpx.Client(
             base_url=self.cfg.base_url,
             timeout=self.cfg.timeout_s,
@@ -308,9 +444,96 @@ class SudespachoLegacyClient:
                 f"401 en {path}. Cookie de sesión inválida. Refresca PHPSESSID."
             )
 
+    def _proactive_refresh_if_needed(self) -> bool:
+        """Renueva proactivamente el JWT si le quedan menos de 5 minutos.
+
+        Debe llamarse al inicio de operaciones de larga duración o al obtener
+        el CSRF token. No hace nada si el JWT tiene más de 5 min de vida o
+        si ya se intentó renovar en esta sesión.
+
+        Returns:
+            True si el JWT fue renovado con éxito.
+        """
+        if self._jwt_refresh_attempted or not self.cfg.jwt_token:
+            return False
+        secs_left = _jwt_expires_in_secs(self.cfg.jwt_token)
+        if secs_left is None or secs_left > 300:   # >5 min → no hace falta
+            return False
+        self._jwt_refresh_attempted = True
+        new_token = _try_refresh_jwt(self.cfg.jwt_token, self.cfg.refresh_token)
+        if not new_token:
+            return False
+        self._client.cookies["@token"] = new_token
+        self._csrf_token = None
+        return True
+
+    def _check_and_refresh_if_needed(self, r: httpx.Response) -> bool:
+        """Detecta landing E-plan. En ese caso el @token ya ha expirado y no
+        es posible renovarlo automáticamente (el endpoint de refresh requiere
+        un JWT todavía vigente). Registra el intento para evitar bucles.
+
+        Returns:
+            False siempre (no puede renovar tras expiración — uso informativo).
+        """
+        if not _is_eplan_landing(r):
+            return False
+        self._jwt_refresh_attempted = True   # marcar para evitar bucles
+        return False
+
+    def _try_renew_php_session(self, path: str) -> "httpx.Response | None":
+        """Intenta renovar la sesión PHP eliminando el PHPSESSID expirado.
+
+        Cuando el PHPSESSID del servidor ha expirado (garbage-collected por
+        inactividad), el PHP puede crear una nueva sesión si recibe un @token
+        válido sin PHPSESSID. El nuevo PHPSESSID llega en Set-Cookie y httpx
+        lo guarda automáticamente en su cookie jar.
+
+        Si la respuesta ya no es E-plan y contiene csrf_token, la sesión se
+        renovó con éxito. En ese caso guarda el nuevo PHPSESSID en .env.
+
+        Returns:
+            La respuesta si contiene csrf_token, None si sigue siendo E-plan
+            o si se produjo un error.
+        """
+        try:
+            # Crear cliente temporal sin PHPSESSID para forzar nueva sesión
+            temp_cookies = {
+                k: v for k, v in {
+                    "@token":        self.cfg.jwt_token,
+                    "@refreshToken": self.cfg.refresh_token,
+                }.items() if v
+            }
+            with httpx.Client(
+                base_url=self.cfg.base_url,
+                timeout=self.cfg.timeout_s,
+                cookies=temp_cookies,
+                follow_redirects=True,
+                headers=dict(self._client.headers),
+            ) as tmp:
+                r = tmp.get(path)
+                if r.status_code >= 400 or _is_eplan_landing(r):
+                    return None
+                m = _CSRF_RE.search(r.text)
+                if not m:
+                    return None
+                # Nueva sesión establecida — extraer PHPSESSID de las cookies
+                new_phpsessid = tmp.cookies.get("PHPSESSID")
+                if new_phpsessid:
+                    _update_env_field("SUDESPACHO_LEGACY_PHPSESSID", new_phpsessid)
+                    self._client.cookies["PHPSESSID"] = new_phpsessid
+                # Copiar todas las cookies de la sesión temporal al cliente principal
+                for name, val in tmp.cookies.items():
+                    self._client.cookies[name] = val
+                self._csrf_token = m.group(1) or m.group(2)
+                return r
+        except Exception:
+            return None
+
     def _get_csrf_token(self) -> str:
         if self._csrf_token:
             return self._csrf_token
+        # Renovación proactiva: si el JWT expira en < 5 min, renovar antes de usarlo
+        self._proactive_refresh_if_needed()
         # GET / devuelve la landing page de E-plan (no ejecuta JS), sin token.
         # Usamos una URL de CRM autenticado que sabemos que contiene el token.
         # Orden de preferencia: colaboradores → expedientes → raíz con redirect.
@@ -319,6 +542,7 @@ class SudespachoLegacyClient:
             "/views/menu/elemento/expedientes_judiciales",
             "/views/menu/elemento/extrajudiciales",
         ]
+        r = None
         for _path in _candidates:
             try:
                 r = self._client.get(_path, follow_redirects=True)
@@ -327,16 +551,43 @@ class SudespachoLegacyClient:
             self._check_session(r, _path)
             if r.status_code >= 400:
                 continue
+            # Si detectamos landing E-plan, primero intentar renovar JWT proactivo;
+            # si el JWT es válido pero la sesión PHP expiró, intentar nueva sesión.
+            if _is_eplan_landing(r):
+                self._check_and_refresh_if_needed(r)
+                # Intento 1: ¿el @token sigue vigente? Intentar nueva sesión PHP.
+                if self.cfg.jwt_token and (_jwt_expires_in_secs(self.cfg.jwt_token) or -1) > 0:
+                    r2 = self._try_renew_php_session(_path)
+                    if r2 is not None and self._csrf_token:
+                        return self._csrf_token
+                # Intento 2: JWT renovado recientemente — reintentar con sesión principal
+                try:
+                    r = self._client.get(_path, follow_redirects=True)
+                except Exception:
+                    continue
+                if r.status_code >= 400:
+                    continue
             m = _CSRF_RE.search(r.text)
             if m:
                 # Grupo 1 → JS inline (v1/v2), Grupo 2 → URL param en script src (v3)
                 self._csrf_token = m.group(1) or m.group(2)
                 return self._csrf_token
         # Ningún candidato funcionó — diagnóstico con el último response
-        _preview = r.text[:400].replace("\n", " ").replace("\r", "")
+        _preview = (r.text[:400].replace("\n", " ").replace("\r", "") if r is not None else "sin respuesta")
+        # Diagnóstico específico: ¿es la landing de E-plan?
+        _is_eplan = r is not None and _is_eplan_landing(r)
+        if _is_eplan:
+            raise SudespachoLegacyError(
+                "Sesión CRM expirada — el servidor devuelve la landing de E-plan. "
+                "El @token JWT ha caducado y no se puede renovar automáticamente. "
+                "Solución: inicia sesión en https://tnm.sudespacho.net en Chrome y "
+                "usa el botón «🔄 Renovar sesión CRM» en el sidebar de Streamlit "
+                "para pegar las nuevas cookies en .env."
+            )
         raise SudespachoLegacyError(
             f"No se encontró csrf_token en ninguna página CRM. "
-            f"Última URL: {r.url} | HTTP {r.status_code} | "
+            f"Última URL: {r.url if r is not None else 'N/A'} | "
+            f"HTTP {r.status_code if r is not None else 'N/A'} | "
             f"HTML inicio: {_preview}"
         )
 

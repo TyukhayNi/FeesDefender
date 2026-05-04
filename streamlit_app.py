@@ -12,7 +12,10 @@ from pathlib import Path
 import streamlit as st
 
 from core import case_manager, llm, pipeline, sudespacho_create as _sc
-from core.sync_sudespacho_legacy import renovar_phpsessid_desde_chrome as _renovar_crm
+from core.sync_sudespacho_legacy import (
+    renovar_phpsessid_desde_chrome as _renovar_crm,
+    _update_env_field as _update_crm_env,
+)
 from core.intake_drive import DriveIntakeError, parse_drive_url, pull_drive_ev
 from core import intake_demanda
 from core import share_drive as _sd
@@ -346,24 +349,69 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("#### Sesión CRM")
+    # Inicializar estado del panel manual (persiste entre rerenders)
+    if "show_manual_crm" not in st.session_state:
+        st.session_state.show_manual_crm = False
+
     if st.button(
         "🔄 Renovar sesión CRM",
         use_container_width=True,
-        help="Actualiza la cookie PHPSESSID leyéndola de Chrome. "
-             "Úsalo si las sugerencias de email o la creación de expedientes "
-             "falla con error de sesión.",
+        help="Actualiza las cookies de sesión (PHPSESSID + @token + @refreshToken) "
+             "leyéndolas de Chrome. Úsalo si las sugerencias de email o la creación "
+             "de expedientes falla con error de sesión o E-plan.",
     ):
         _ok, _result = _renovar_crm()
         if _ok:
-            # Invalida la caché de colaboradores para forzar recarga con la nueva sesión
             _colabs_cache.clear()
+            st.session_state.show_manual_crm = False
             st.success("Sesión CRM renovada ✓")
         else:
-            st.error(
-                f"No se pudo renovar automáticamente: {_result}\n\n"
-                "Solución manual: DevTools → Application → Cookies → "
-                "tnm.sudespacho.net → copia PHPSESSID → pégalo en `.env`."
+            st.session_state.show_manual_crm = True
+            st.error(f"No se pudo renovar automáticamente: {_result}")
+
+    if st.session_state.show_manual_crm:
+        with st.expander("✏️ Pegar cookies manualmente", expanded=True):
+            st.caption(
+                "Pega los tres valores y pulsa **Guardar** al final. "
+                "Los campos se mantienen mientras no cierres la sesión de Streamlit.\n\n"
+                "**Cómo obtenerlos** (Chrome DevTools F12 → Console en tnm.sudespacho.net):\n"
+                "```\ncopy(localStorage.getItem('token'))        → @token\n"
+                "copy(localStorage.getItem('refresh_token')) → @refreshToken\n"
+                "copy(document.cookie.match(/PHPSESSID=([^;]+)/)?.[1]) → PHPSESSID\n```"
             )
+            _php = st.text_input(
+                "PHPSESSID",
+                key="_manual_phpsessid",
+                help="DevTools Console: copy(document.cookie.match(/PHPSESSID=([^;]+)/)?.[1])",
+            )
+            _jwt = st.text_input(
+                "@token (JWT)",
+                key="_manual_jwt",
+                help="DevTools Console: copy(localStorage.getItem('token'))",
+            )
+            _ref = st.text_input(
+                "@refreshToken",
+                key="_manual_refresh",
+                help="DevTools Console: copy(localStorage.getItem('refresh_token'))",
+            )
+            if st.button("💾 Guardar cookies en .env", key="_save_manual_cookies",
+                         help="Guarda los valores introducidos en .env y recarga la caché."):
+                _saved = []
+                if _php.strip():
+                    _update_crm_env("SUDESPACHO_LEGACY_PHPSESSID", _php.strip())
+                    _saved.append("PHPSESSID")
+                if _jwt.strip():
+                    _update_crm_env("SUDESPACHO_LEGACY_JWT", _jwt.strip())
+                    _saved.append("@token")
+                if _ref.strip():
+                    _update_crm_env("SUDESPACHO_LEGACY_REFRESH_TOKEN", _ref.strip())
+                    _saved.append("@refreshToken")
+                if _saved:
+                    _colabs_cache.clear()
+                    st.session_state.show_manual_crm = False
+                    st.success(f"Guardado: {', '.join(_saved)} ✓ — recarga la página para aplicar.")
+                else:
+                    st.warning("No se introdujo ningún valor.")
 
 # ---------------------------------------------------------------------------
 # Tabs
