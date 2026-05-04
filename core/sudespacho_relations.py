@@ -58,7 +58,9 @@ Constantes fijas del tenant tnm:
 
 from __future__ import annotations
 
+import math
 import urllib.parse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -816,40 +818,39 @@ def _list_colaboradores_rest(
     if cfg is None:
         cfg = SudespachoConfig.from_env()
 
-    results: list[dict[str, str]] = []
-    page = 1
     PAGE_SIZE = 500
+    base_url  = f"{cfg.base_url}/api/element_registries/colaboradores"
+    headers   = {cfg.auth_header: cfg.api_key}
 
-    while True:
+    def _fetch_page(page: int) -> list[dict]:
+        """Descarga una página y devuelve sus miembros crudos."""
         try:
             r = httpx.get(
-                f"{cfg.base_url}/api/element_registries/colaboradores",
+                base_url,
                 params={
-                    "page":          page,
-                    "itemsPerPage":  PAGE_SIZE,
-                    "properties[]":  ["nombre", "email"],
+                    "page":         page,
+                    "itemsPerPage": PAGE_SIZE,
+                    "properties[]": ["nombre", "email"],
                 },
-                headers={cfg.auth_header: cfg.api_key},
+                headers=headers,
                 timeout=cfg.timeout_s,
             )
         except httpx.HTTPError as exc:
             raise SudespachoRelationsError(
                 f"REST GET colaboradores (página {page}) falló: {exc}"
             ) from exc
-
         if r.status_code != 200:
             raise SudespachoRelationsError(
-                f"REST GET colaboradores → HTTP {r.status_code}: {r.text[:300]}"
+                f"REST GET colaboradores p{page} → HTTP {r.status_code}: {r.text[:300]}"
             )
+        return r.json()
 
-        data = r.json()
-        members = data.get("hydra:member", [])
-        fetched_this_page = len(members)
-
+    def _parse_members(members: list[dict]) -> list[dict[str, str]]:
+        """Convierte miembros crudos en dicts {id, label, email}."""
+        out = []
         for member in members:
             colab_id = str(member.get("id", ""))
-            nombre = ""
-            email = ""
+            nombre = email = ""
             for val in member.get("values", []):
                 prop_name = val.get("property", {}).get("name", "")
                 if prop_name == "nombre":
@@ -858,19 +859,35 @@ def _list_colaboradores_rest(
                     email = val.get("value", "") or ""
             if not nombre:
                 continue
-            results.append({
+            out.append({
                 "id":    colab_id,
                 "label": nombre + (f"  ·  {email}" if email else ""),
                 "email": email,
             })
+        return out
 
-        # Usar el número de miembros recibidos (antes del filtro) para decidir si
-        # hay más páginas — no `len(results)`, que puede ser menor si se filtraron
-        # miembros sin nombre.
-        total = data.get("hydra:totalItems", 0)
-        if not members or fetched_this_page < PAGE_SIZE:
-            break
-        page += 1
+    # Página 1: determina el total y ya aporta los primeros registros.
+    data_p1  = _fetch_page(1)
+    total    = data_p1.get("hydra:totalItems", 0)
+    members1 = data_p1.get("hydra:member", [])
+    results  = _parse_members(members1)
+
+    num_pages = math.ceil(total / PAGE_SIZE) if total else 1
+    remaining = list(range(2, num_pages + 1))
+
+    if remaining:
+        # Descarga las páginas restantes en paralelo (máx. 8 hilos).
+        pages_data: dict[int, list[dict]] = {}
+        with ThreadPoolExecutor(max_workers=min(8, len(remaining))) as pool:
+            future_to_page = {pool.submit(_fetch_page, p): p for p in remaining}
+            for future in as_completed(future_to_page):
+                p = future_to_page[future]
+                data = future.result()   # propaga SudespachoRelationsError si hay fallo
+                pages_data[p] = data.get("hydra:member", [])
+
+        # Añadir en orden para mantener estabilidad del resultado.
+        for p in remaining:
+            results.extend(_parse_members(pages_data[p]))
 
     return results
 

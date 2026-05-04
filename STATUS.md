@@ -3,7 +3,7 @@
 > **Fuente de verdad única del proyecto.**
 > Actualizar al cerrar cada sesión con `python -m scripts.session_close`.
 
-**Última actualización:** 2026-05-04 (Bloque B colaboradores REST: `_list_colaboradores_rest()` implementado en `sudespacho_relations.py`; búsqueda colaboradores migrada a REST — elimina dependencia PHPSESSID; bug fix paginación (`fetched_this_page < PAGE_SIZE`); tests actualizados (find/ensure mockean `_list_colaboradores_rest`); 8 tests nuevos → 146 total; sidebar instrucciones corregidas (Application→Cookies); 3 entradas DEAD_ENDS.md añadidas)
+**Última actualización:** 2026-05-04 (Fix preset-key StreamlitAPIException botón 🔍; paginación paralela `_list_colaboradores_rest` con ThreadPoolExecutor + test multi-página → 147 tests; pre-calentamiento caché colaboradores en sidebar; `run_app.bat` con `start` — PS no necesario; `core/keepalive.py` hilo keep-alive PHPSESSID 14 min; CSRF candidates actualizados a `/tnm/gestion/...`; diagnóstico: rutas SPA devuelven E-plan con PHPSESSID → hipótesis: crear expedientes ya usa REST+JWT sin CSRF)
 
 ---
 
@@ -55,7 +55,7 @@ git commit -m "<mensaje que Claude propuso>"
 
 | Ítem | Estado |
 |------|--------|
-| Tests | ✅ 146/146 (8 nuevos: _list_colaboradores_rest, load_all_colaboradores, search_colaboradores_for_ui) |
+| Tests | ✅ 147/147 (+1 multi-página paralela _list_colaboradores_rest) |
 | Pipeline | ✅ Ejecutado end-to-end (BaRR3, 2026-04-28, 9/9 pasos OK, ~9 min) |
 | Primer caso real | ✅ Creado, docs descargados |
 | Taxonomía de casos | ✅ Actualizada en config.py |
@@ -81,7 +81,7 @@ git commit -m "<mensaje que Claude propuso>"
 | `_try_renew_php_session` | ✅ Implementado 2026-05-04 — confirmado insuficiente sin PHPSESSID válido |
 | `_update_env_field` (escribe .env + os.environ) | ✅ Implementado 2026-05-04 |
 | Sidebar session_state (expander persistente) | ✅ Fix 2026-05-04 |
-| UI `_email_input_with_crm` + botón 🔍 | ✅ Implementado — búsqueda migrada a REST (sin PHPSESSID); verificación end-to-end pendiente |
+| UI `_email_input_with_crm` + botón 🔍 | ✅ End-to-end verificado 2026-05-04 — fix preset-key, búsqueda REST instantánea tras pre-calentamiento |
 | `run_app.bat` | ✅ Lanzador para usuarios finales (Paola, Ana) |
 | Tags CRM verificados | ✅ 87 extrajudicial (2026-04-28) + 88 judicial con nuevos (2026-05-04) |
 | Notas de expediente | ✅ 13 NOTA_* alineadas con Manual 1.1.4 |
@@ -200,8 +200,8 @@ python -m scripts.run_pipeline "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
 13. ~~**[SIGUIENTE-J-TAGS]**~~ ✅ 2026-05-04 — Tags ciudad (IDs 297-303) y equipos faltantes (304-313) creados manualmente en CRM + constantes añadidas a `sudespacho_create.py`.
 14. ~~**[SIGUIENTE-J-TEAMS]**~~ ✅ 2026-05-04 — Ver punto anterior.
 15. ~~**[SIGUIENTE-J-UI]**~~ ✅ 2026-05-04 — Toggle Extrajudicial/Judicial en `streamlit_app.py`: radio, `_J_EQUIPOS_POR_CIUDAD`, `_J_CIUDADES`, § 3b con NIG + tipo procedimiento, handler bifurcado llamando a `create_expediente_judicial()`.
-16. **[SIGUIENTE]** ⬅️ **Crear caso DEVOLUCION_RESERVA desde la UI** — Abrir Streamlit, seleccionar "Judicial", rellenar los datos del caso que recibió E&V, pulsar "⚡ Crear caso + enviar a sudespacho".
-17. **[SIGUIENTE-B-COLAB]** ⬅️ **Verificar end-to-end botón 🔍 colaboradores** en Streamlit: abrir app → "Nuevo Caso" → campo email colaborador → teclear término → confirmar que aparecen sugerencias. Ya no requiere PHPSESSID (migrado a REST con x-api-key).
+16. **[SIGUIENTE]** ⬅️ **Auditar creación expediente en SPA** — DevTools → Network → crear expediente manualmente en sudespacho → capturar POST → determinar si sigue usando form+CSRF o ya es REST+JWT. Resultado determina si PHPSESSID sigue siendo necesario para crear expedientes desde FD.
+17. ~~**[SIGUIENTE-B-COLAB]**~~ ✅ 2026-05-04 — botón 🔍 end-to-end verificado.
 18. **[SIGUIENTE-SHARE]** Probar compartición directa carpeta E&V: tab Casos → expander "Compartir carpeta E&V" → botón "⚡ Compartir directamente". Si falla por token expirado, ejecutar `rclone ls gdrive_ev:` para refrescarlo.
 16. **[SIGUIENTE-J-TESTS]** Tests para `create_expediente_judicial()`, `build_form_data_judicial()` y funciones de relación judicial.
 11. ~~**[NIKOLAI]** Conectar cuenta `nikolai.tyukhay@engelvoelkers.com` en Cowork~~ ✅ 2026-04-28 — rclone `gdrive_ev` configurado; Cowork no soporta multi-cuenta, rclone es la solución definitiva.

@@ -546,9 +546,9 @@ class SudespachoLegacyClient:
         # Usamos una URL de CRM autenticado que sabemos que contiene el token.
         # Orden de preferencia: colaboradores → expedientes → raíz con redirect.
         _candidates = [
-            "/views/menu/elemento/colaboradores",
-            "/views/menu/elemento/expedientes_judiciales",
-            "/views/menu/elemento/extrajudiciales",
+            "/tnm/gestion/colaboradores",
+            "/tnm/gestion/expedientes_judiciales",
+            "/tnm/gestion/extrajudiciales",
         ]
         r = None
         for _path in _candidates:

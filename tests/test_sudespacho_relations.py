@@ -467,6 +467,36 @@ def test_list_colaboradores_rest_status_error(monkeypatch):
             _list_colaboradores_rest()
 
 
+def test_list_colaboradores_rest_multi_pagina(monkeypatch):
+    """Con total > PAGE_SIZE, las páginas restantes se descargan en paralelo
+    y el resultado final contiene los registros de todas las páginas en orden."""
+    page1 = _hydra_page(
+        [_member("1", "Ana Uno", "ana@ev.com")],
+        total=1001,   # fuerza 3 páginas con PAGE_SIZE=500
+    )
+    page2 = _hydra_page(
+        [_member("2", "Bob Dos", "bob@ev.com")],
+        total=1001,
+    )
+    page3 = _hydra_page(
+        [_member("3", "Carla Tres", "carla@ev.com")],
+        total=1001,
+    )
+
+    responses = {1: page1, 2: page2, 3: page3}
+
+    def _fake_get(url, *, params, headers, timeout):
+        page_num = int(params["page"])
+        return _make_httpx_response(responses[page_num])
+
+    with patch("httpx.get", side_effect=_fake_get):
+        result = _list_colaboradores_rest()
+
+    assert len(result) == 3
+    ids = {r["id"] for r in result}
+    assert ids == {"1", "2", "3"}
+
+
 # ---------------------------------------------------------------------------
 # load_all_colaboradores / search_colaboradores_for_ui
 # ---------------------------------------------------------------------------

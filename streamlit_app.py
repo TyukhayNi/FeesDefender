@@ -16,6 +16,10 @@ from core.sync_sudespacho_legacy import (
     renovar_phpsessid_desde_chrome as _renovar_crm,
     _update_env_field as _update_crm_env,
 )
+from core import keepalive as _keepalive
+
+# Arrancar keep-alive en cuanto se carga el módulo (idempotente).
+_keepalive.ensure_started()
 from core.intake_drive import DriveIntakeError, parse_drive_url, pull_drive_ev
 from core import intake_demanda
 from core import share_drive as _sd
@@ -263,6 +267,12 @@ def _email_input_with_crm(
             st.session_state.pop(sugg_key, None)
             st.session_state.pop(_error_key, None)
 
+    # Preset injection: si "← Usar" escribió un valor en la sesión anterior,
+    # copiarlo al widget ANTES de instanciarlo (única ventana válida para hacerlo).
+    _preset_key = f"{key}_preset"
+    if _preset_key in st.session_state:
+        st.session_state[key] = st.session_state.pop(_preset_key)
+
     # Campo + botón en la misma fila
     _col_input, _col_btn = st.columns([5, 1])
     with _col_input:
@@ -309,7 +319,9 @@ def _email_input_with_crm(
                 help="Rellena el campo con el email del colaborador seleccionado.",
             ):
                 _sel = _sugg[_sel_idx]
-                st.session_state[key] = _sel["email"] or _sel["label"]
+                # No se puede escribir session_state[key] con widget ya instanciado.
+                # Usamos preset_key: en el próximo render se inyecta antes del widget.
+                st.session_state[_preset_key] = _sel["email"] or _sel["label"]
                 st.session_state.pop(sugg_key, None)
                 st.rerun()
         with _info_c:
@@ -347,6 +359,18 @@ with st.sidebar:
     else:
         st.warning("Ollama no responde. Ejecuta `ollama pull <modelo>`.")
 
+    # Pre-calentamiento de caché de colaboradores — se ejecuta en la carga inicial
+    # de la app (primera vez que se renderiza el sidebar) y queda cacheado 1h.
+    # Así el primer 🔍 es instantáneo.
+    if "_colabs_prewarmed" not in st.session_state:
+        try:
+            with st.spinner("Cargando colaboradores CRM…"):
+                _colabs_cache()
+            st.session_state["_colabs_prewarmed"] = True
+        except Exception:
+            # Si falla (CRM no disponible, creds caducadas), no bloqueamos la UI.
+            st.session_state["_colabs_prewarmed"] = False
+
     st.markdown("---")
     st.markdown("#### Sesión CRM")
     # Inicializar estado del panel manual (persiste entre rerenders)
@@ -364,10 +388,22 @@ with st.sidebar:
         if _ok:
             _colabs_cache.clear()
             st.session_state.show_manual_crm = False
+            _keepalive.ping_now()   # fuerza ping inmediato para validar nueva sesión
             st.success("Sesión CRM renovada ✓")
         else:
             st.session_state.show_manual_crm = True
             st.error(f"No se pudo renovar automáticamente: {_result}")
+
+    # Indicador keep-alive
+    _ping = _keepalive.last_ping
+    if _ping["ts"] is not None:
+        _ts = _ping["ts"].strftime("%H:%M")
+        if _ping["ok"]:
+            st.caption(f"🟢 Sesión PHP activa · último ping {_ts}")
+        else:
+            st.caption(f"🔴 Sesión PHP inactiva · {_ts}")
+            if _ping["err"]:
+                st.caption(_ping["err"])
 
     if st.session_state.show_manual_crm:
         with st.expander("✏️ Pegar cookies manualmente", expanded=True):
