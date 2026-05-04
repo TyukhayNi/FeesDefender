@@ -51,6 +51,24 @@ def _mock_post_response(status=200, text="<html>OK</html>"):
     return r
 
 
+def _html_colaboradores(rows: list[dict]) -> str:
+    """HTML con filas de colaboradores para mockear _search_colaboradores_html.
+
+    Genera la estructura que espera _ROW_RE + _TD_RE:
+      <tr id="fila_colaboradores_{id}"> con 6 <td>, name en [3], email en [5].
+    """
+    parts = ["<table>"]
+    for row in rows:
+        parts.append(f'<tr id="fila_colaboradores_{row["id"]}">')
+        parts.append("<td>0</td><td>1</td><td>2</td>")
+        parts.append(f'<td>{row["name"]}</td>')
+        parts.append("<td>4</td>")
+        parts.append(f'<td>{row["email"]}</td>')
+        parts.append("</tr>")
+    parts.append("</table>")
+    return "".join(parts)
+
+
 # ---------------------------------------------------------------------------
 # Constantes
 # ---------------------------------------------------------------------------
@@ -157,10 +175,13 @@ def test_find_expediente_con_client_externo():
 # ---------------------------------------------------------------------------
 
 def test_find_colaborador_por_email(monkeypatch):
+    """Búsqueda por email exacto vía POST HTML — devuelve el ID del colaborador."""
     client = _mock_client()
-    client._client.get.return_value = _mock_get_response(
-        [{"id": 1, "label": "Maria Garcia", "value": "301", "data": []}]
-    )
+    # _search_colaboradores_html usa _post_form y accede a r.text
+    html = _html_colaboradores([
+        {"id": "301", "name": "Maria Garcia", "email": "maria.garcia@engelvoelkers.com"},
+    ])
+    client._post_form.return_value = _mock_post_response(200, html)
     with patch("core.sudespacho_relations.SudespachoLegacyClient", return_value=client):
         result = find_colaborador_by_email("maria.garcia@engelvoelkers.com")
     assert result == "301"
@@ -173,8 +194,9 @@ def test_find_colaborador_email_vacio():
 
 
 def test_find_colaborador_no_encontrado(monkeypatch):
+    """Si el HTML no contiene filas, devuelve None."""
     client = _mock_client()
-    client._client.get.return_value = _mock_get_response([])
+    client._post_form.return_value = _mock_post_response(200, "<table></table>")
     with patch("core.sudespacho_relations.SudespachoLegacyClient", return_value=client):
         result = find_colaborador_by_email("nuevo@example.com")
     assert result is None
@@ -298,14 +320,15 @@ def test_create_colaborador_sin_id_en_respuesta(monkeypatch):
 def test_ensure_colaborador_existente(monkeypatch):
     """Si el colaborador ya existe, no se crea — solo se vincula."""
     client = _mock_client()
-    # Autocomplete encuentra al colaborador
-    client._client.get.return_value = _mock_get_response(
-        [{"id": 1, "label": "Existente", "value": "301", "data": []}]
-    )
-    # Link OK — saveselect devuelve JSON con resultado:true
-    r = _mock_post_response(200)
-    r.json.return_value = {"resultado": True, "acumulaDatos": {"colaboradores": ["301"]}}
-    client._post_form.return_value = r
+    # Primera llamada a _post_form: búsqueda HTML — devuelve fila con el colaborador
+    html_search = _html_colaboradores([
+        {"id": "301", "name": "Existente", "email": "existente@engelvoelkers.com"},
+    ])
+    r_search = _mock_post_response(200, html_search)
+    # Segunda llamada a _post_form: saveselect (link) — devuelve JSON
+    r_link = _mock_post_response(200)
+    r_link.json.return_value = {"resultado": True, "acumulaDatos": {"colaboradores": ["301"]}}
+    client._post_form.side_effect = [r_search, r_link]
 
     with patch("core.sudespacho_relations.SudespachoLegacyClient", return_value=client):
         colab_id, created = ensure_colaborador_vinculado(
@@ -315,20 +338,21 @@ def test_ensure_colaborador_existente(monkeypatch):
 
     assert colab_id == "301"
     assert created is False
-    client.post_form.assert_not_called()  # no se llamó a create
+    client.post_form.assert_not_called()  # no se llamó a create (post_form público)
+    assert client._post_form.call_count == 2  # búsqueda + link
 
 
 def test_ensure_colaborador_nuevo(monkeypatch):
     """Si el colaborador no existe, se crea y luego se vincula."""
     client = _mock_client()
-    # Primera llamada GET: autocomplete no encuentra nada
-    client._client.get.return_value = _mock_get_response([])
-    # post_form: saveadd devuelve nuevo ID
+    # Primera llamada a _post_form: búsqueda HTML — sin resultados
+    r_search = _mock_post_response(200, "<table></table>")
+    # Segunda llamada a _post_form: saveselect (link) — devuelve JSON
+    r_link = _mock_post_response(200)
+    r_link.json.return_value = {"resultado": True, "acumulaDatos": {"colaboradores": ["999"]}}
+    client._post_form.side_effect = [r_search, r_link]
+    # post_form público: saveadd devuelve nuevo ID
     client.post_form.return_value = {"resultado": True, "dato": "999"}
-    # _post_form: saveselect link OK — devuelve JSON
-    r = _mock_post_response(200)
-    r.json.return_value = {"resultado": True, "acumulaDatos": {"colaboradores": ["999"]}}
-    client._post_form.return_value = r
 
     with patch("core.sudespacho_relations.SudespachoLegacyClient", return_value=client):
         colab_id, created = ensure_colaborador_vinculado(
@@ -338,8 +362,8 @@ def test_ensure_colaborador_nuevo(monkeypatch):
 
     assert colab_id == "999"
     assert created is True
-    client.post_form.assert_called_once()   # saveadd llamado
-    client._post_form.assert_called_once()  # link llamado
+    client.post_form.assert_called_once()    # saveadd llamado una vez
+    assert client._post_form.call_count == 2  # búsqueda + link
 
 
 def test_ensure_colaborador_email_vacio(monkeypatch):

@@ -253,45 +253,6 @@ def find_expediente_by_referencia(
                 pass
 
 
-def find_colaborador_by_email(
-    email: str,
-    *,
-    client: SudespachoLegacyClient | None = None,
-) -> str | None:
-    """Busca un colaborador en el CRM por su dirección de email.
-
-    Args:
-        email: Email del colaborador (ej. "maria.garcia@engelvoelkers.com").
-        client: Cliente legacy reutilizable (opcional).
-
-    Returns:
-        ID del colaborador si existe, None si no se encuentra.
-
-    Note:
-        El autocomplete busca también por nombre; si el email es parcialmente
-        único puede haber falsos positivos. Se devuelve el primer resultado.
-        Verificar con el nombre si hay ambigüedad.
-    """
-    if not email:
-        return None
-    owns_client = client is None
-    if owns_client:
-        client = SudespachoLegacyClient()
-    try:
-        results = _autocomplete("colaboradores", email, client)
-        if results:
-            return str(results[0]["value"])
-        return None
-    except SudespachoLegacyError as exc:
-        raise SudespachoRelationsError(str(exc)) from exc
-    finally:
-        if owns_client:
-            try:
-                client.__exit__(None, None, None)
-            except Exception:
-                pass
-
-
 # ---------------------------------------------------------------------------
 # Creación de colaborador
 # ---------------------------------------------------------------------------
@@ -802,6 +763,187 @@ def create_tag_judicial(
             )
         return tag_id
 
+    finally:
+        if owns_client:
+            try:
+                client.__exit__(None, None, None)
+            except Exception:
+                pass
+
+
+# ---------------------------------------------------------------------------
+# Búsqueda de colaboradores — endpoint real: POST /views/menu/elemento/colaboradores
+# ---------------------------------------------------------------------------
+#
+# DEAD END documentado: GET /autocompletar/buscar/elemento/colaboradores?term=...
+# devuelve siempre body vacío (HTTP 200, len=0) aunque existan colaboradores.
+# Confirmado 2026-05-04 contra tenant tnm. Usar _search_colaboradores_html().
+#
+# Estructura HTML de la tabla (confirmada 2026-05-04):
+#   <tr id="fila_colaboradores_{id}">
+#     <td>[0] Co</td> <td>[1]</td> <td>[2]</td>
+#     <td>[3] NOMBRE COMPLETO</td>
+#     <td>[4]</td>
+#     <td>[5] email@engelvoelkers.com</td>
+#     ...
+#   </tr>
+
+import re as _re_colab
+
+_ROW_RE    = _re_colab.compile(r'id="fila_colaboradores_(\d+)".*?</tr>', _re_colab.DOTALL | _re_colab.IGNORECASE)
+_TD_RE     = _re_colab.compile(r'<td[^>]*>(.*?)</td>',                   _re_colab.DOTALL | _re_colab.IGNORECASE)
+_TAG_RE    = _re_colab.compile(r'<[^>]+>')
+
+_PATH_COLAB_LIST = "/views/menu/elemento/colaboradores"
+
+
+def _search_colaboradores_html(
+    term: str,
+    client: SudespachoLegacyClient,
+) -> list[dict[str, str]]:
+    """POST al listado de colaboradores con cadBusqueda y parsea la tabla HTML.
+
+    Returns:
+        Lista de dicts {id, label, email}.
+    """
+    csrf = client.get_csrf_token()
+    form: list[tuple[str, str]] = [
+        ("cadBusqueda",                                        term),
+        ("csrf_token",                                         csrf),
+        ("ubicacion",                                          ""),
+        ("idlistado_bsq_list_colaboradores",                   ""),
+        # Sin paginación: pedimos hasta 1000 resultados para no perder
+        # colaboradores cuando cadBusqueda="" (la página por defecto es ~20).
+        ("numeroresultados_listado_bsq_list_colaboradores",    "1000"),
+    ]
+    try:
+        r = client._post_form(_PATH_COLAB_LIST, form)
+    except SudespachoLegacyError as exc:
+        raise SudespachoRelationsError(
+            f"POST {_PATH_COLAB_LIST} falló: {exc}"
+        ) from exc
+
+    html = r.text
+    results: list[dict[str, str]] = []
+    for row_m in _ROW_RE.finditer(html):
+        colab_id = row_m.group(1)
+        cells = _TD_RE.findall(row_m.group(0))
+        if len(cells) < 6:
+            continue
+        name  = _TAG_RE.sub("", cells[3]).strip()
+        email = _TAG_RE.sub("", cells[5]).strip()
+        if not name:
+            continue
+        results.append({
+            "id":    colab_id,
+            "label": name + (f"  ·  {email}" if email else ""),
+            "email": email,
+        })
+    return results
+
+
+def find_colaborador_by_email(
+    email: str,
+    *,
+    client: SudespachoLegacyClient | None = None,
+) -> str | None:
+    """Busca un colaborador en el CRM por su dirección de email (búsqueda exacta).
+
+    Usa POST /views/menu/elemento/colaboradores con cadBusqueda=email y
+    devuelve el ID del primer resultado cuyo email coincida exactamente.
+
+    Args:
+        email: Email del colaborador.
+        client: Cliente legacy reutilizable (opcional).
+
+    Returns:
+        ID del colaborador si existe, None si no se encuentra.
+    """
+    if not email:
+        return None
+    owns_client = client is None
+    if owns_client:
+        client = SudespachoLegacyClient()
+    try:
+        results = _search_colaboradores_html(email, client)
+        email_lower = email.strip().lower()
+        for r in results:
+            if r["email"].lower() == email_lower:
+                return r["id"]
+        return None
+    except SudespachoRelationsError:
+        raise
+    finally:
+        if owns_client:
+            try:
+                client.__exit__(None, None, None)
+            except Exception:
+                pass
+
+
+def load_all_colaboradores(
+    *,
+    client: SudespachoLegacyClient | None = None,
+) -> list[dict[str, str]]:
+    """Carga todos los colaboradores del CRM sin filtro.
+
+    Útil para pre-cargar la lista completa en la UI y hacer filtrado local.
+    Usa POST /views/menu/elemento/colaboradores con cadBusqueda vacío.
+
+    Returns:
+        Lista completa de dicts {id, label, email}.
+    """
+    owns_client = client is None
+    if owns_client:
+        client = SudespachoLegacyClient()
+    try:
+        return _search_colaboradores_html("", client)
+    except SudespachoLegacyError as exc:
+        raise SudespachoRelationsError(str(exc)) from exc
+    finally:
+        if owns_client:
+            try:
+                client.__exit__(None, None, None)
+            except Exception:
+                pass
+
+
+def search_colaboradores_for_ui(
+    term: str,
+    *,
+    client: SudespachoLegacyClient | None = None,
+) -> list[dict[str, str]]:
+    """Busca colaboradores en el CRM para autosugerencia en la UI.
+
+    Usa POST /views/menu/elemento/colaboradores con cadBusqueda=term.
+    El CRM filtra por nombre y email sobre todos los campos visibles del listado.
+
+    Args:
+        term: Nombre o email parcial (mínimo 2 caracteres).
+        client: Cliente legacy reutilizable (opcional).
+
+    Returns:
+        Lista de dicts {id, label, email}.
+
+    Raises:
+        SudespachoRelationsError: si el endpoint falla.
+
+    Example::
+
+        results = search_colaboradores_for_ui("joaquin")
+        # → [{"id": "762", "label": "JOAQUIN ALAPONT  ·  joaquin.alapont@engelvoelkers.com",
+        #      "email": "joaquin.alapont@engelvoelkers.com"}, ...]
+    """
+    if not term or len(term) < 2:
+        return []
+
+    owns_client = client is None
+    if owns_client:
+        client = SudespachoLegacyClient()
+    try:
+        return _search_colaboradores_html(term, client)
+    except SudespachoLegacyError as exc:
+        raise SudespachoRelationsError(str(exc)) from exc
     finally:
         if owns_client:
             try:

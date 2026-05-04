@@ -3,7 +3,7 @@
 > **Fuente de verdad única del proyecto.**
 > Actualizar al cerrar cada sesión con `python -m scripts.session_close`.
 
-**Última actualización:** 2026-05-04 (intake demanda judicial: upload+unzip en UI; compartición carpeta E&V con equipo; 05_Demanda judicial en árbol del caso; 100 tests)
+**Última actualización:** 2026-05-04 (sugerencias email colaborador con botón 🔍; cambio auth sudespacho @token JWT + refreshToken; CSRF multi-URL; User-Agent Chrome; renovación sesión CRM en sidebar)
 
 ---
 
@@ -184,7 +184,9 @@ python -m scripts.run_pipeline "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
 8. ~~Integrar `link_ev_mmc` + `ensure_colaborador_vinculado` en UI Streamlit pestaña "Nuevo Caso"~~ ✅ 2026-04-29 — nombres derivados automáticamente de emails; colaboradores vinculados tras crear expediente.
 9. ~~Módulo `core/intake_drive.py` + integración UI~~ ✅ 2026-04-29 — pull Drive E&V en tab Nuevo caso y tab Casos; auto-resolución Shared Drive ID; 27 tests.
 10. ~~Tooltips `help=` en toda la UI~~ ✅ 2026-04-29 — todos los campos interactivos cubiertos; ruta eliminada del listado de casos.
-11. **[SIGUIENTE-B]** Borrar colaborador de prueba ID=777 ("TEST FEESDEFENDER BORRAR") del CRM tnm.sudespacho.net manualmente.
+11. **[NUEVO-HILO-EMAIL]** ⬅️ Sugerencias email colaborador — botón 🔍 implementado, flujo sin verificar end-to-end. `@token` JWT caduca en 1h; renovación automática no implementada. Tratar en hilo independiente.
+2. **[NUEVO-HILO-CRM]** ⬅️ Cambio auth sudespacho 2026-05-04: auditar todas las conexiones FeesDefender↔CRM afectadas (@token JWT + refreshToken + PHPSESSID, CSRF, creación expedientes, descarga docs, saveselect). Verificar tests de `sync_sudespacho_legacy` con nuevos campos en `SudespachoLegacyConfig`. Implementar renovación automática JWT con `@refreshToken`. Tratar en hilo independiente.
+3. **[SIGUIENTE-B]** Borrar colaborador de prueba ID=777 ("TEST FEESDEFENDER BORRAR") del CRM tnm.sudespacho.net manualmente.
 12. **[SIGUIENTE-UI]** Declarar dependencias en `pyproject.toml` (ya existe `run_app.bat`).
 13. ~~**[SIGUIENTE-J-TAGS]**~~ ✅ 2026-05-04 — Tags ciudad (IDs 297-303) y equipos faltantes (304-313) creados manualmente en CRM + constantes añadidas a `sudespacho_create.py`.
 14. ~~**[SIGUIENTE-J-TEAMS]**~~ ✅ 2026-05-04 — Ver punto anterior.

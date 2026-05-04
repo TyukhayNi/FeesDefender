@@ -6,6 +6,16 @@
 
 ---
 
+## Frontal heredado — colaboradores
+
+### `GET /autocompletar/buscar/elemento/colaboradores?term=...` — devuelve siempre body vacío
+- **Intentado:** GET con term=TEST, term=joaquin, term=a, term=nikolai — todos retornan HTTP 200 con body vacío (len=0)
+- **Confirmado:** 2026-05-04 contra tenant tnm (colaboradores sí existen: IDs 774-777+)
+- **Causa probable:** El elemento `colaboradores` no está indexado en el endpoint de autocomplete del tenant, o requiere contexto de formulario que la petición directa no aporta
+- **Solución:** `POST /views/menu/elemento/colaboradores` con `cadBusqueda=<term>` → respuesta HTML con tabla. Celdas: [3]=nombre, [5]=email. Filas: `id="fila_colaboradores_{id}"`. Implementado en `_search_colaboradores_html()` en `sudespacho_relations.py` (2026-05-04).
+
+---
+
 ## API sudespacho.net
 
 ### `/api/element_register/{element}/{id}` — bug 500 en backend
@@ -92,6 +102,25 @@
 - **Qué sí funciona:** `form_input` (set values), `read_page` (accessibility tree), `read_network_requests`
 - **Workaround para extraer campos del formulario:** hacer `fetch()` al URL del formulario desde la página de LISTA (sin TinyMCE activo), parsear el HTML con `DOMParser` y extraer `querySelectorAll('[name^="campo_"]')`. Ver sesión 2026-04-30.
 - **Workaround para submit:** no encontrado. El formulario no se puede enviar de forma automática cuando TinyMCE está cargado. Para capturar campos, usar el fetch desde la lista en lugar de submit real.
+
+---
+
+## Servidor sudespacho — `@token` JWT requerido desde 2026-05
+
+### Python recibe `E-plan - sudespacho.net` en todas las URLs del CRM
+- **Intentado:** GET con solo `PHPSESSID` (User-Agent FeesGuard/0.1 y luego Chrome real)
+- **Resultado:** HTTP 200 con `<title>E-plan - sudespacho.net</title>` — el servidor requiere también la cookie `@token` (JWT, TTL 1h) y `@refreshToken` además de PHPSESSID. Sin ellas, sirve la landing page sin importar el User-Agent.
+- **Confirmado:** 2026-05-04
+- **Conclusión:** Añadir las tres cookies al `SudespachoLegacyClient`: `PHPSESSID`, `@token`, `@refreshToken`. Configuradas en `.env` como `SUDESPACHO_LEGACY_JWT` y `SUDESPACHO_LEGACY_REFRESH_TOKEN`. Implementado en `SudespachoLegacyConfig.from_env()` y `SudespachoLegacyClient.__init__`.
+- **Acción pendiente:** El `@token` expira en 1h. Implementar renovación automática usando `@refreshToken` contra el endpoint de refresh del servidor.
+
+## `browser_cookie3` — RequiresAdminError en Windows
+
+### `browser_cookie3.chrome()` falla con `RequiresAdminError`
+- **Intentado:** `browser_cookie3.chrome(domain_name="tnm.sudespacho.net")` desde proceso sin Admin
+- **Resultado:** `RequiresAdminError: This operation requires admin. Please run as admin.` — DPAPI de Windows requiere Admin para descifrar cookies de Chrome.
+- **Confirmado:** 2026-05-04
+- **Conclusión:** No usar `browser_cookie3` en Windows sin elevar privilegios. Renovación PHPSESSID manual: botón «🔄 Renovar sesión CRM» en sidebar de Streamlit (lee cookie via Chrome MCP).
 
 ---
 

@@ -71,28 +71,21 @@ def _env(name: str, default: str | None = None) -> str | None:
     return v.strip() if isinstance(v, str) else v
 
 
-def _get_phpsessid_from_chrome(host: str) -> str | None:
+def _get_phpsessid_from_chrome(host: str) -> tuple[str | None, str | None]:
     """Intenta leer PHPSESSID del perfil de Chrome en el sistema local.
 
-    Usa browser-cookie3, que accede al store de cookies de Chrome sin
-    necesidad de intervención del usuario. Funciona con Chrome abierto o
-    cerrado en Windows. Devuelve None si no está disponible o falla.
+    En Windows, browser_cookie3 requiere permisos de Admin para descifrar
+    las cookies de Chrome (DPAPI), por lo que falla en uso normal.
+    Esta función queda como stub — la renovación se hace desde la UI Streamlit
+    (botón «🔄 Renovar sesión CRM» en el sidebar) o manualmente en .env.
 
-    El valor obtenido se escribe también en SUDESPACHO_LEGACY_PHPSESSID
-    del .env para que futuros usos sin Chrome tengan la cookie actualizada.
+    Returns:
+        (None, motivo)  siempre — la renovación automática no está disponible.
     """
-    try:
-        import browser_cookie3  # type: ignore
-        jar = browser_cookie3.chrome(domain_name=host)
-        for cookie in jar:
-            if cookie.name == "PHPSESSID":
-                value = cookie.value
-                if value:
-                    _update_env_phpsessid(value)
-                return value
-    except Exception:
-        pass
-    return None
+    return None, (
+        "Renovación automática deshabilitada en Windows (requiere Admin). "
+        "Usa el botón «🔄 Renovar sesión CRM» en el sidebar de Streamlit."
+    )
 
 
 def _update_env_phpsessid(new_value: str) -> None:
@@ -115,6 +108,19 @@ def _update_env_phpsessid(new_value: str) -> None:
         pass
 
 
+def renovar_phpsessid_desde_chrome() -> tuple[bool, str]:
+    """Intenta renovar PHPSESSID desde Chrome y actualiza el .env.
+
+    Devuelve (True, nuevo_valor) si tuvo éxito, (False, motivo_error) si no.
+    Pensado para ser llamado desde el botón «🔄 Renovar sesión CRM» de la UI.
+    """
+    host = _env("SUDESPACHO_LEGACY_HOST") or "tnm.sudespacho.net"
+    value, error = _get_phpsessid_from_chrome(host)
+    if value:
+        return True, value
+    return False, (error or "Error desconocido")
+
+
 # ---------------------------------------------------------------------------
 # Configuración
 # ---------------------------------------------------------------------------
@@ -123,6 +129,8 @@ def _update_env_phpsessid(new_value: str) -> None:
 class SudespachoLegacyConfig:
     host: str                # ej. tnm.sudespacho.net (sin esquema)
     phpsessid: str
+    jwt_token: str = ""      # cookie @token (TTL 1h) — requerida desde 2026-05
+    refresh_token: str = ""  # cookie @refreshToken (long-lived)
     timeout_s: int = 120
 
     @classmethod
@@ -134,19 +142,17 @@ class SudespachoLegacyConfig:
             )
         host = host.replace("https://", "").replace("http://", "").rstrip("/")
 
-        # Intentar obtener cookie fresca de Chrome automáticamente.
-        # Si Chrome no está disponible o falla, caemos al valor del .env.
-        cookie = _get_phpsessid_from_chrome(host) or _env("SUDESPACHO_LEGACY_PHPSESSID")
-
-        if not cookie:
+        phpsessid = _env("SUDESPACHO_LEGACY_PHPSESSID") or ""
+        if not phpsessid:
             raise SudespachoLegacyError(
-                "No se pudo obtener PHPSESSID: ni desde Chrome ni desde .env. "
-                "Asegúrate de tener Chrome abierto con sesión activa en "
-                f"https://{host}, o pega el valor en SUDESPACHO_LEGACY_PHPSESSID del .env."
+                "Falta SUDESPACHO_LEGACY_PHPSESSID en .env. "
+                "Usa el botón «🔄 Renovar sesión CRM» en Streamlit."
             )
         return cls(
             host=host,
-            phpsessid=cookie,
+            phpsessid=phpsessid,
+            jwt_token=_env("SUDESPACHO_LEGACY_JWT") or "",
+            refresh_token=_env("SUDESPACHO_LEGACY_REFRESH_TOKEN") or "",
             timeout_s=int(_env("SUDESPACHO_LEGACY_TIMEOUT_S", "120") or "120"),
         )
 
@@ -185,8 +191,19 @@ _EXP_ROW_RE = re.compile(
 # Última página: aparece en el listado como `pagina(<N>, 'list_<element>')`
 _LAST_PAGE_RE = re.compile(r"pagina\((\d+)\s*,\s*'list_[a-z_]+'\)")
 
-# Regex para extraer csrf_token de cualquier página HTML del frontal
-_CSRF_RE = re.compile(r"var\s+csrf_token\s*=\s*'([0-9a-f]{32})'")
+# Regex para extraer csrf_token de cualquier página HTML del frontal.
+# El CRM ha ido cambiando cómo lo inyecta:
+#   v1 (original): var csrf_token = 'TOKEN';          (JS inline, comilla simple)
+#   v2 (≥2026-05): var csrf_token = "TOKEN";          (JS inline, comilla doble)
+#   v3 (≥2026-05): <script src="...?csrf_token=TOKEN"> (URL param en src de script)
+# Captura en grupo 1 la primera coincidencia que encuentre.
+_CSRF_RE = re.compile(
+    r"(?:"
+    r"var\s+csrf_token\s*=\s*['\"]([0-9a-f]{32})['\"]"   # v1 + v2: JS inline
+    r"|"
+    r"csrf_token=([0-9a-f]{32})"                           # v3: URL param en script src
+    r")"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -243,11 +260,29 @@ class SudespachoLegacyClient:
         self._client = httpx.Client(
             base_url=self.cfg.base_url,
             timeout=self.cfg.timeout_s,
-            cookies={"PHPSESSID": self.cfg.phpsessid},
+            # Tres cookies requeridas desde 2026-05 (servidor sudespacho).
+            # PHPSESSID: sesión PHP. @token: JWT 1h. @refreshToken: long-lived.
+            # Nota: httpx envía el nombre tal cual; el servidor espera "@token"
+            # (el navegador lo muestra como "%40token" en document.cookie).
+            cookies={
+                k: v for k, v in {
+                    "PHPSESSID":      self.cfg.phpsessid,
+                    "@token":         self.cfg.jwt_token,
+                    "@refreshToken":  self.cfg.refresh_token,
+                }.items() if v
+            },
             follow_redirects=False,  # detectar 302 a /login
             headers={
-                "User-Agent": "FeesGuard/0.1 (sync_sudespacho_legacy)",
-                "Accept": "text/html,application/json",
+                # User-Agent de Chrome real — Cloudflare bloquea UAs de bot
+                # sirviendo la landing page E-plan aunque PHPSESSID sea válido.
+                # Confirmado 2026-05-04: FeesGuard/0.1 → landing; Chrome UA → CRM.
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/124.0.0.0 Safari/537.36"
+                ),
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
             },
         )
 
@@ -276,24 +311,34 @@ class SudespachoLegacyClient:
     def _get_csrf_token(self) -> str:
         if self._csrf_token:
             return self._csrf_token
-        # GET a la home con follow_redirects=True — la raíz puede redirigir (302)
-        # a una ruta interna; necesitamos la página final que contiene el token.
-        # Confirmado 2026-04-29: GET / devuelve 302 cuyo body vacío no tiene
-        # el token; siguiendo el redirect sí aparece.
-        r = self._client.get("/", follow_redirects=True)
-        self._check_session(r, "/")
-        if r.status_code >= 400:
-            raise SudespachoLegacyError(
-                f"No se pudo obtener CSRF token: GET / → HTTP {r.status_code}"
-            )
-        m = _CSRF_RE.search(r.text)
-        if not m:
-            raise SudespachoLegacyError(
-                "No se encontró `var csrf_token = '...';` en el HTML del frontal. "
-                "¿Cambió la plantilla del CRM?"
-            )
-        self._csrf_token = m.group(1)
-        return self._csrf_token
+        # GET / devuelve la landing page de E-plan (no ejecuta JS), sin token.
+        # Usamos una URL de CRM autenticado que sabemos que contiene el token.
+        # Orden de preferencia: colaboradores → expedientes → raíz con redirect.
+        _candidates = [
+            "/views/menu/elemento/colaboradores",
+            "/views/menu/elemento/expedientes_judiciales",
+            "/views/menu/elemento/extrajudiciales",
+        ]
+        for _path in _candidates:
+            try:
+                r = self._client.get(_path, follow_redirects=True)
+            except Exception:
+                continue
+            self._check_session(r, _path)
+            if r.status_code >= 400:
+                continue
+            m = _CSRF_RE.search(r.text)
+            if m:
+                # Grupo 1 → JS inline (v1/v2), Grupo 2 → URL param en script src (v3)
+                self._csrf_token = m.group(1) or m.group(2)
+                return self._csrf_token
+        # Ningún candidato funcionó — diagnóstico con el último response
+        _preview = r.text[:400].replace("\n", " ").replace("\r", "")
+        raise SudespachoLegacyError(
+            f"No se encontró csrf_token en ninguna página CRM. "
+            f"Última URL: {r.url} | HTTP {r.status_code} | "
+            f"HTML inicio: {_preview}"
+        )
 
     def _post_form(
         self,

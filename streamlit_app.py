@@ -12,6 +12,7 @@ from pathlib import Path
 import streamlit as st
 
 from core import case_manager, llm, pipeline, sudespacho_create as _sc
+from core.sync_sudespacho_legacy import renovar_phpsessid_desde_chrome as _renovar_crm
 from core.intake_drive import DriveIntakeError, parse_drive_url, pull_drive_ev
 from core import intake_demanda
 from core import share_drive as _sd
@@ -21,6 +22,8 @@ from core.sudespacho_relations import (
     SudespachoRelationsError as _SRelError,
     ensure_colaborador_vinculado,
     link_ev_mmc,
+    search_colaboradores_for_ui as _search_colabs,
+    load_all_colaboradores as _load_all_colabs,
 )
 from core.config import (
     CASO_SUBDIRS,
@@ -35,6 +38,17 @@ from core.config import (
 # ---------------------------------------------------------------------------
 # Configuración de página + CSS corporativo Engel & Völkers
 # ---------------------------------------------------------------------------
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _colabs_cache() -> list[dict]:
+    """Lista completa de colaboradores del CRM, cacheada 1 hora.
+
+    Lanza excepción si el CRM no está disponible. Streamlit NO cachea
+    excepciones, de modo que el próximo intento hará una nueva petición
+    en lugar de devolver una lista vacía cacheada por error.
+    """
+    return _load_all_colabs()
+
 
 st.set_page_config(
     page_title="FeesDefender · Engel & Völkers",
@@ -213,6 +227,95 @@ def _valid_email(addr: str) -> bool:
     return bool(_EMAIL_RE.match(addr.strip()))
 
 
+def _email_input_with_crm(
+    label: str,
+    key: str,
+    placeholder: str = "",
+    help: str = "",
+) -> str:
+    """Text input de email con autosugerencia del CRM.
+
+    El usuario escribe y pulsa el botón 🔍 (o Enter) para ver sugerencias.
+    Filtra localmente sobre la lista cacheada (_colabs_cache, TTL 1h).
+    """
+    sugg_key = f"{key}_sugg"
+    _error_key = f"{key}_crm_err"
+
+    def _run_search() -> None:
+        val = st.session_state.get(key, "").strip().lower()
+        if len(val) >= 2:
+            try:
+                all_colabs = _colabs_cache()
+            except Exception as exc:
+                st.session_state[_error_key] = str(exc)
+                st.session_state.pop(sugg_key, None)
+                return
+            st.session_state.pop(_error_key, None)
+            matches = [
+                c for c in all_colabs
+                if val in c["label"].lower() or val in c["email"].lower()
+            ]
+            st.session_state[sugg_key] = matches[:12]
+        else:
+            st.session_state.pop(sugg_key, None)
+            st.session_state.pop(_error_key, None)
+
+    # Campo + botón en la misma fila
+    _col_input, _col_btn = st.columns([5, 1])
+    with _col_input:
+        email_val = st.text_input(
+            label,
+            key=key,
+            placeholder=placeholder,
+            help=help + " Escribe y pulsa 🔍 (o Enter) para ver sugerencias del CRM.",
+            on_change=_run_search,
+        )
+    with _col_btn:
+        st.write("")  # alineación vertical
+        if st.button(
+            "🔍",
+            key=f"{key}_search_btn",
+            use_container_width=True,
+            help="Buscar este texto en los colaboradores del CRM.",
+        ):
+            _run_search()
+            st.rerun()
+
+    if _crm_err := st.session_state.get(_error_key):
+        st.caption(f"⚠️ CRM no disponible: {_crm_err}")
+
+    _sugg = st.session_state.get(sugg_key, [])
+    if _sugg:
+        _sel_idx = st.selectbox(
+            "Sugerencias CRM",
+            range(len(_sugg)),
+            format_func=lambda i: (
+                _sugg[i]["label"]
+                + (f"  ·  {_sugg[i]['email']}" if _sugg[i]["email"] else "")
+            ),
+            key=f"{key}_sel",
+            label_visibility="collapsed",
+            help="Colaborador encontrado en el CRM. Pulsa «← Usar» para rellenar el campo.",
+        )
+        _btn_c, _info_c = st.columns([1, 4])
+        with _btn_c:
+            if st.button(
+                "← Usar",
+                key=f"{key}_use",
+                use_container_width=True,
+                help="Rellena el campo con el email del colaborador seleccionado.",
+            ):
+                _sel = _sugg[_sel_idx]
+                st.session_state[key] = _sel["email"] or _sel["label"]
+                st.session_state.pop(sugg_key, None)
+                st.rerun()
+        with _info_c:
+            if not _sugg[_sel_idx]["email"]:
+                st.caption("⚠️ Email no disponible en el CRM — cópialo manualmente.")
+
+    return email_val
+
+
 def _email_to_nombre(email: str) -> str:
     """Deriva el nombre de un email E&V: nombre.apellido@engelvoelkers.com → 'Nombre Apellido'.
 
@@ -240,6 +343,27 @@ with st.sidebar:
         st.success("Ollama disponible")
     else:
         st.warning("Ollama no responde. Ejecuta `ollama pull <modelo>`.")
+
+    st.markdown("---")
+    st.markdown("#### Sesión CRM")
+    if st.button(
+        "🔄 Renovar sesión CRM",
+        use_container_width=True,
+        help="Actualiza la cookie PHPSESSID leyéndola de Chrome. "
+             "Úsalo si las sugerencias de email o la creación de expedientes "
+             "falla con error de sesión.",
+    ):
+        _ok, _result = _renovar_crm()
+        if _ok:
+            # Invalida la caché de colaboradores para forzar recarga con la nueva sesión
+            _colabs_cache.clear()
+            st.success("Sesión CRM renovada ✓")
+        else:
+            st.error(
+                f"No se pudo renovar automáticamente: {_result}\n\n"
+                "Solución manual: DevTools → Application → Cookies → "
+                "tnm.sudespacho.net → copia PHPSESSID → pégalo en `.env`."
+            )
 
 # ---------------------------------------------------------------------------
 # Tabs
@@ -817,31 +941,18 @@ with tab_nuevo:
             _sc.TIPO_PROC_EJECUCION:                  "Ejecución de títulos judiciales",
             _sc.TIPO_PROC_RECLAMACION_EXTRAJUDICIAL:  "Reclamación extrajudicial",
         }
-        col_j1, col_j2 = st.columns(2)
-        with col_j1:
-            tipo_proc_sel = st.selectbox(
-                "Tipo de procedimiento *",
-                list(_TIPOS_PROC_LABELS.keys()),
-                format_func=lambda k: _TIPOS_PROC_LABELS[k],
-                key="nc_tipo_proc",
-                help=(
-                    "Tipo de procedimiento judicial. "
-                    "Juicio verbal es el más frecuente para reclamaciones E&V por cuantía < 6.000 €."
-                ),
-            )
-        with col_j2:
-            nig_val = st.text_input(
-                "NIG",
-                placeholder="2800 1 2026 00001234",
-                key="nc_nig",
-                help=(
-                    "Número de Identificación del Expediente judicial (campo_860 en el CRM). "
-                    "Opcional en el momento de creación; puede completarse después."
-                ),
-            )
+        tipo_proc_sel = st.selectbox(
+            "Tipo de procedimiento *",
+            list(_TIPOS_PROC_LABELS.keys()),
+            format_func=lambda k: _TIPOS_PROC_LABELS[k],
+            key="nc_tipo_proc",
+            help=(
+                "Tipo de procedimiento judicial. "
+                "Juicio verbal es el más frecuente para reclamaciones E&V por cuantía < 6.000 €."
+            ),
+        )
     else:
         tipo_proc_sel = _sc.TIPO_PROC_JUICIO_VERBAL   # valor por defecto, no se envía
-        nig_val = ""
 
     # ------------------------------------------------------------------
     # § 4 — Contactos del equipo
@@ -851,35 +962,36 @@ with tab_nuevo:
         unsafe_allow_html=True,
     )
 
+    # -- Campos de email con autosugerencia CRM -----------------------
     col_m1, col_m2 = st.columns(2)
     with col_m1:
-        mail_tl = st.text_input(
+        mail_tl = _email_input_with_crm(
             "Mail Team Leader *",
-            placeholder="teamleader@engelvoelkers.com",
             key="nc_mail_tl",
+            placeholder="teamleader@engelvoelkers.com",
             help="Email corporativo del Team Leader. Se usará para crear o vincular el colaborador en el CRM. El nombre se deriva automáticamente del email.",
         )
     with col_m2:
-        mail_captador = st.text_input(
+        mail_captador = _email_input_with_crm(
             "Mail Consultor Captador *",
-            placeholder="captador@engelvoelkers.com",
             key="nc_mail_captador",
+            placeholder="captador@engelvoelkers.com",
             help="Email del consultor que captó la operación. Se vinculará como colaborador en el expediente del CRM.",
         )
 
     col_m3, col_m4 = st.columns(2)
     with col_m3:
-        mail_buscador = st.text_input(
+        mail_buscador = _email_input_with_crm(
             "Mail Consultor Buscador",
-            placeholder="buscador@engelvoelkers.com",
             key="nc_mail_buscador",
+            placeholder="buscador@engelvoelkers.com",
             help="Opcional. Se usa cuando hay consultor de la parte buscadora.",
         )
     with col_m4:
-        mail_otros = st.text_input(
+        mail_otros = _email_input_with_crm(
             "Mail Otros implicados",
-            placeholder="otros@engelvoelkers.com",
             key="nc_mail_otros",
+            placeholder="otros@engelvoelkers.com",
             help="Opcional. Cualquier otro interviniente en la operación.",
         )
 
@@ -897,13 +1009,15 @@ with tab_nuevo:
         unsafe_allow_html=True,
     )
 
+    _drive_url_label = "URL carpeta W-XXXXXX *" if es_judicial else "URL carpeta W-XXXXXX"
     drive_url_input = st.text_input(
-        "URL carpeta W-XXXXXX",
+        _drive_url_label,
         placeholder="https://drive.google.com/drive/folders/1BxiMV…",
         key="nc_drive_url",
         help=(
             "Pega la URL de la carpeta de la operación en el Drive engelvoelkers.com. "
             "El Shared Drive se detecta automáticamente a partir del equipo seleccionado."
+            + (" Obligatorio para expedientes judiciales: es la fuente de los documentos del procedimiento." if es_judicial else "")
         ),
     )
 
@@ -1007,6 +1121,10 @@ with tab_nuevo:
         elif not _valid_email(mail_captador):
             _missing.append("Mail Consultor Captador — formato inválido")
 
+        # URL Drive E&V (obligatoria para judiciales)
+        if es_judicial and not drive_url_input.strip():
+            _missing.append("URL carpeta Drive E&V (obligatoria para expedientes judiciales)")
+
         # Email Consultor Buscador (opcional — solo validar formato si se rellena)
         if mail_buscador.strip() and not _valid_email(mail_buscador):
             _missing.append("Mail Consultor Buscador — formato inválido")
@@ -1096,7 +1214,7 @@ with tab_nuevo:
                         tags=_tags,
                         posicion=_pos,
                         tipo_procedimiento=tipo_proc_sel,
-                        NIG=nig_val.strip(),
+                        NIG="",
                         notas_html=_nota,
                     )
                     _tipo_registro = "judiciales"
