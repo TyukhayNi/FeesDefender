@@ -124,6 +124,17 @@
 
 ---
 
+## SPA Vue — login no crea sesión PHP
+
+### Login en `/tnm` (SPA) → solo JWT en localStorage, sin PHPSESSID
+- **Intentado:** login en `https://tnm.sudespacho.net/tnm` (SPA Vue) → captura de cookies → uso de `PHPSESSID` resultante en FeesDefender
+- **Resultado:** la SPA solo almacena tokens JWT en `localStorage` del navegador (`token`, `refreshToken`). No hace ninguna petición al backend PHP que cree o renueve una sesión PHP (`PHPSESSID`). Las cookies `@token` y `@refreshToken` que aparecen en DevTools son distintas de los tokens de `localStorage` y tienen origen distinto.
+- **Confirmado:** 2026-05-04 (auditoría red completa durante login SPA)
+- **Conclusión:** No hay forma de obtener PHPSESSID a través del flujo de login SPA. La sesión PHP del frontal heredado (`/views/`) se crea por un mecanismo PHP propio no identificado. Puede requerir interacción con una URL del frontal heredado autenticada con JWT, pero esta vía no ha sido verificada.
+- **Acción pendiente:** `[NUEVO-HILO-AUDITORIA]` — identificar si algún endpoint PHP acepta `@token` para crear sesión PHP nueva.
+
+---
+
 ## PHPSESSID — expiración independiente; SPA no crea sesión PHP
 
 ### PHP session expira por inactividad; login SPA no la renueva

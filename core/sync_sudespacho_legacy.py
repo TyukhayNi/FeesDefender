@@ -94,7 +94,11 @@ def _is_eplan_landing(r: httpx.Response) -> bool:
     return r.status_code == 200 and _EPLAN_MARKER in r.text[:2000]
 
 
-def _update_env_field(field: str, value: str) -> None:
+def _update_env_field(
+    field: str,
+    value: str,
+    _env_path: "Path | None" = None,
+) -> None:
     """Actualiza (o añade) un campo clave=valor en el .env del proyecto.
 
     También actualiza os.environ para que el proceso actual vea el nuevo valor
@@ -103,8 +107,12 @@ def _update_env_field(field: str, value: str) -> None:
 
     Si el campo no existe en .env se añade al final. Si el valor es idéntico
     al actual no escribe el fichero (evita tocar mtime innecesariamente).
+
+    Args:
+        _env_path: ruta al .env; si None, se usa <project_root>/.env.
+                   Parámetro privado para facilitar tests unitarios.
     """
-    env_path = Path(__file__).resolve().parent.parent / ".env"
+    env_path = _env_path or (Path(__file__).resolve().parent.parent / ".env")
     if not env_path.exists():
         return
     try:

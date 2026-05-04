@@ -2,7 +2,7 @@
 
 > Conocimiento empírico acumulado sobre la API de sudespacho.net.  
 > Todo lo aquí documentado ha sido verificado contra el tenant `tnm.sudespacho.net`  
-> (commons-pro). Última actualización: 2026-04-30.
+> (commons-pro). Última actualización: 2026-05-04.
 
 ---
 
@@ -12,10 +12,12 @@ sudespacho.net expone **dos superficies de integración** con comportamientos di
 
 | Superficie | Host | Auth | Uso en FeesDefender |
 |---|---|---|---|
-| **API REST nueva** | `api-crm-commons-pro.sudespacho.biz` | `x-api-key: <API_KEY>` | Healthcheck, metadatos de documentos |
-| **Frontal heredado** | `tnm.sudespacho.net` | Cookie `PHPSESSID` + CSRF token | Listado y descarga de documentos |
+| **API REST nueva** | `api-crm-commons-pro.sudespacho.biz` | `x-api-key: <API_KEY>` | Healthcheck, metadatos, **listado y descarga de documentos** (desde 2026-05-04) |
+| **Frontal heredado** | `tnm.sudespacho.net` | Cookies `PHPSESSID` + `@token` + `@refreshToken` + CSRF token | Crear expedientes, vincular relaciones, buscar colaboradores |
 
-Ambas superficies son **necesarias** porque la API REST nueva no expone el listado de documentos de un expediente. El Gestor Documental (Gdocu) solo es accesible vía el frontal PHP heredado.
+**Desde 2026-05-04**, el listado y descarga de documentos (Gestor Documental / Gdocu) **es completamente operativo vía API REST** sin necesidad de PHPSESSID. El frontal heredado solo sigue siendo necesario para operaciones de escritura (crear expedientes, vincular entidades).
+
+**⚠️ Cambio auth 2026-05-04:** El servidor requiere tres cookies simultáneas para el frontal heredado: `PHPSESSID` (sesión PHP), `@token` (JWT, TTL ~1h) y `@refreshToken`. Sin las tres, el servidor devuelve la landing page (`E-plan - sudespacho.net`) con HTTP 200.
 
 ---
 
@@ -60,11 +62,25 @@ SUDESPACHO_AUTH_SCHEME=
 SUDESPACHO_ELEMENT=expedientes_judiciales
 SUDESPACHO_TIMEOUT_S=120
 
-# Frontal heredado
+# Frontal heredado — las tres cookies son obligatorias desde 2026-05-04
 SUDESPACHO_LEGACY_HOST=tnm.sudespacho.net
 SUDESPACHO_LEGACY_PHPSESSID=<valor_copiado_de_devtools>
+SUDESPACHO_LEGACY_JWT=<valor_de_@token_copiado_de_devtools>
+SUDESPACHO_LEGACY_REFRESH_TOKEN=<valor_de_@refreshToken_copiado_de_devtools>
 SUDESPACHO_LEGACY_TIMEOUT_S=120
 ```
+
+**Cómo obtener las tres cookies** (Chrome DevTools → Application → Cookies → `tnm.sudespacho.net`):
+- `PHPSESSID` → variable `SUDESPACHO_LEGACY_PHPSESSID`
+- `@token` → variable `SUDESPACHO_LEGACY_JWT`
+- `@refreshToken` → variable `SUDESPACHO_LEGACY_REFRESH_TOKEN`
+
+O desde la consola del CRM (abrir DevTools → Console, con sesión activa):
+```javascript
+document.cookie.split(';').map(c=>c.trim()).filter(c=>c.startsWith('PHPSESSID')||c.startsWith('@'))
+```
+
+⚠️ `@token` expira en ~1h. `PHPSESSID` expira por inactividad (~24 min). Renovar ambos cuando `check_legacy` falle.
 
 ---
 
@@ -83,6 +99,9 @@ SUDESPACHO_LEGACY_TIMEOUT_S=120
 | GET | `/api/documents/{folder_id}/zip/files` | Zip de carpeta Gdocu | ✅ Confirmado |
 | GET | `/api/documents/{id}/downloadUri` | URL de descarga de un documento | ✅ Confirmado |
 | GET | `/api/documents/presigned_urls/s3/download/{documentId}` | URL S3 prefirmada | ✅ Confirmado |
+| GET | `/api/element_registries/{element}?filterGroup[...]=associated&value={id}&property=left.{element}.id` | Listado de cualquier tipo de elemento filtrado por expediente asociado (Gdocu, actuaciones, etc.) **SIN PHPSESSID** | ✅ Confirmado 2026-05-04 |
+| GET | `/api/element_registries/summary/{element}?filterGroup[...]=...` | Agregado/resumen de un tipo de elemento (ej. total cuantía) | ✅ Confirmado 2026-05-04 |
+| GET | `/api/files/presigned_download_url/{doc_id}?relatedElement={element}&relatedId={exp_id}&direction=left` | URL S3 prefirmada para descarga/visualización de documento **SIN PHPSESSID** | ✅ Confirmado 2026-05-04 |
 | GET | `/api/related_registers?id={register_id}` | Relaciones entre registros (extrajudicial↔judicial) | ✅ Confirmado |
 | POST | `/api/expedient/convert/{id}` | Convertir extrajudicial → judicial | ✅ Documentado |
 | POST | _(no aplica — va por el frontal heredado)_ | Crear expediente extrajudicial | → ver sección 3.2 |
@@ -90,6 +109,47 @@ SUDESPACHO_LEGACY_TIMEOUT_S=120
 #### Bug conocido: `element_register` devuelve 500
 
 `GET /api/element_register/expedientes_judiciales/{id}?properties[]=id` → HTTP 500 "Array to string conversion". Bug en el backend de sudespacho. No tiene workaround conocido. Usamos el frontal heredado para todo lo que requiera el expediente completo.
+
+#### Detalle: `/api/element_registries/{element}` — listado filtrado por expediente (confirmado 2026-05-04)
+
+```
+GET https://api-crm-commons-pro.sudespacho.biz/api/element_registries/gdocu
+    ?page=1
+    &itemsPerPage=25
+    &properties[2]=nombrefinal
+    &properties[4]=mime
+    &properties[9]=tamano
+    &properties[11]=id_carpeta
+    &properties[12]=origen
+    &properties[13]=origen_id
+    &filterGroup[condition]=AND
+    &filterGroup[filterGroups][0][filters][0][operator]=associated
+    &filterGroup[filterGroups][0][filters][0][value]={expediente_id}
+    &filterGroup[filterGroups][0][filters][0][property]=left.expedientes_judiciales.id
+    &filterGroup[filterGroups][0][condition]=AND
+    &return_totals=true
+Header: x-api-key: <API_KEY>
+→ HTTP 200, JSON {"hydra:member": [...], "hydra:totalItems": N}
+```
+
+El campo `id` del registro devuelto es el `doc_id` que se usa en `presigned_download_url`.
+
+Para listar actuaciones: sustituir `gdocu` por `actuaciones` y ajustar `properties[]`.
+
+#### Detalle: `/api/files/presigned_download_url/{doc_id}` — URL S3 prefirmada (confirmado 2026-05-04)
+
+```
+GET https://api-crm-commons-pro.sudespacho.biz/api/files/presigned_download_url/{doc_id}
+    ?relatedElement=expedientes_judiciales
+    &relatedId={expediente_id}
+    &direction=left
+Header: x-api-key: <API_KEY>
+→ HTTP 200, devuelve URL S3 prefirmada
+```
+
+La URL S3 apunta a `api-crm-tmp.s3.eu-west-1.amazonaws.com/{uuid}/{filename}` con TTL de **600 segundos** (`X-Amz-Expires=600`). Resolver y descargar en la misma operación.
+
+Este endpoint es el mismo que usa el CRM para el visor PDF y para el botón "Descargar" del menú `...` de cada documento.
 
 ### 3.2 Frontal heredado (`tnm.sudespacho.net`)
 
@@ -181,6 +241,32 @@ El cliente lo aplana a un dict simple para uso interno. Ver `get_document_metada
 ---
 
 ## 5. Flujo de descarga de documentos
+
+### 5.1 Flujo REST nuevo — **preferido** (sin PHPSESSID, confirmado 2026-05-04)
+
+```
+GET /api/element_registries/gdocu
+    ?filterGroup[filterGroups][0][filters][0][operator]=associated
+    &filterGroup[filterGroups][0][filters][0][value]={expediente_id}
+    &filterGroup[filterGroups][0][filters][0][property]=left.expedientes_judiciales.id
+    &properties[2]=nombrefinal&properties[4]=mime&properties[9]=tamano&...
+    &return_totals=true
+    → JSON {"hydra:member": [{id: 40054, values: [...]}, ...]}
+    → extraer doc_id (campo "id") y nombrefinal de cada registro
+
+Para cada doc_id:
+    GET /api/files/presigned_download_url/{doc_id}
+        ?relatedElement=expedientes_judiciales&relatedId={expediente_id}&direction=left
+        → URL S3 prefirmada (TTL 600s)
+
+    GET <S3_URL> (sin auth, presigned)
+        → bytes → guardar en disco
+```
+
+Este flujo no requiere PHPSESSID. Solo necesita `x-api-key`.  
+**Pendiente de implementar en `core/sync_sudespacho.py`** como reemplazo de los métodos legacy.
+
+### 5.2 Flujo legacy — válido pero requiere PHPSESSID + @token
 
 ```
 sync_sudespacho_legacy.list_doc_ids(expediente_id, element)
@@ -283,7 +369,7 @@ Pendiente: confirmar payload y respuesta con una conversión real.
 
 3. **`element_register` bug 500**: `GET /api/element_register/{element}/{id}` devuelve 500 para cualquier combinación de `properties[]`. Bug en el backend de sudespacho. No usarlo hasta que lo corrijan.
 
-4. **Listado de documentos no está en la API nueva**: `GET /api/documents` con `filterGroup[filters][0][property]=relatedRegisters` retorna colección vacía aunque el expediente tenga documentos. El listado real solo funciona por el frontal PHP.
+4. ~~**Listado de documentos no está en la API nueva**~~ **CORREGIDO 2026-05-04**: El listado de documentos de un expediente SÍ está disponible vía API REST nueva usando `GET /api/element_registries/gdocu` con filtro `associated` (ver sección 3.1). El endpoint `/api/documents` con `relatedRegisters` como propiedad filtrable era el que no funcionaba — pero `element_registries` sí funciona. PHPSESSID ya no es necesario para listar ni descargar documentos.
 
 5. **URL S3 prefirmada expira en ~5 min**: Resolver y descargar en la misma operación. No cachear la URL.
 
@@ -513,6 +599,11 @@ BiRS1, BiRS2, SaRS1, SeRS6, SSRR1, SSRS1, VaRS5, BaCS10 (extraj→ID 139), MaRS1
 | 2026-04-30 | Endpoints de relación judicial confirmados desde expediente 648 |
 | 2026-04-30 | Endpoint creación de tags judiciales confirmado: POST /tagsinput/saveadd/.../miembro_relacionado/2/... |
 | 2026-04-30 | TinyMCE bloquea `computer` y `javascript_tool` en páginas de formulario. Workaround: fetch HTML desde página lista (sin TinyMCE) |
+| 2026-05-04 | **Cambio auth frontal heredado**: servidor requiere tres cookies simultáneas `PHPSESSID` + `@token` (JWT, TTL ~1h) + `@refreshToken`. Sin ellas sirve landing page con HTTP 200. Implementado en `SudespachoLegacyConfig.from_env()`. |
+| 2026-05-04 | **SPA login NO crea PHPSESSID**: el login en `/tnm` (SPA Vue) solo genera tokens JWT en `localStorage`. La sesión PHP del frontal heredado requiere mecanismo distinto (no automatizable). |
+| 2026-05-04 | **`/api/element_registries/gdocu` elimina dependencia de PHPSESSID para docs**: listado de documentos de un expediente ahora completamente operativo vía REST con solo `x-api-key`. Filtro: `associated` + `property=left.expedientes_judiciales.id`. |
+| 2026-05-04 | **`/api/files/presigned_download_url/{doc_id}`**: descarga de documento vía REST sin PHPSESSID. TTL URL S3: 600s. Mismo endpoint que usa el CRM para visor y botón "Descargar". |
+| 2026-05-04 | Gotcha #4 corregido: `element_registries/gdocu` SÍ lista documentos vía REST. La limitación anterior (`/api/documents?relatedRegisters`) era de ese endpoint concreto. |
 
 ---
 

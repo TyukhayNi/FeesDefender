@@ -3,7 +3,7 @@
 > **Fuente de verdad única del proyecto.**
 > Actualizar al cerrar cada sesión con `python -m scripts.session_close`.
 
-**Última actualización:** 2026-05-04 (renovación automática JWT: proactive refresh, E-plan detection, _try_renew_php_session; sidebar session_state fix; _email_input_with_crm con botón 🔍; auditoría CRM pendiente)
+**Última actualización:** 2026-05-04 (auditoría CRM completa: REST elimina PHPSESSID para docs; 3 nuevos endpoints confirmados; INTEGRACION_SUDESPACHO.md + DEAD_ENDS.md actualizados; [NUEVO-HILO-AUDITORIA] cerrado; [SIGUIENTE] = crear caso DEVOLUCION_RESERVA desde UI)
 
 ---
 
@@ -55,7 +55,7 @@ git commit -m "<mensaje que Claude propuso>"
 
 | Ítem | Estado |
 |------|--------|
-| Tests | ✅ 70+11 (11 nuevos: _is_eplan_landing, _jwt_expires_in_secs, _update_env_field) |
+| Tests | ✅ 92/92 (11 nuevos: _is_eplan_landing, _jwt_expires_in_secs, _update_env_field) |
 | Pipeline | ✅ Ejecutado end-to-end (BaRR3, 2026-04-28, 9/9 pasos OK, ~9 min) |
 | Primer caso real | ✅ Creado, docs descargados |
 | Taxonomía de casos | ✅ Actualizada en config.py |
@@ -84,7 +84,8 @@ git commit -m "<mensaje que Claude propuso>"
 | Tags CRM verificados | ✅ 87 extrajudicial (2026-04-28) + 88 judicial con nuevos (2026-05-04) |
 | Notas de expediente | ✅ 13 NOTA_* alineadas con Manual 1.1.4 |
 | `session_close.py` | ✅ Simplificado — solo pytest, sin interactividad |
-| `docs/DEAD_ENDS.md` | ✅ 7 callejones documentados |
+| `docs/DEAD_ENDS.md` | ✅ 8 callejones documentados (+ SPA login NO crea PHPSESSID, 2026-05-04) |
+| `docs/INTEGRACION_SUDESPACHO.md` | ✅ Actualizado 2026-05-04: REST cubre listing+descarga; 3 nuevos endpoints; gotcha #4 corregido |
 | `docs/ARQUITECTURA.md` | ✅ Mapa de dependencias + convención commits |
 | Protocolo de sesión | ✅ 4 momentos — Claude presenta → aprueba → ejecuta → PS |
 | Task Scheduler | ⏳ Pendiente configurar |
@@ -191,7 +192,7 @@ python -m scripts.run_pipeline "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
 9. ~~Módulo `core/intake_drive.py` + integración UI~~ ✅ 2026-04-29 — pull Drive E&V en tab Nuevo caso y tab Casos; auto-resolución Shared Drive ID; 27 tests.
 10. ~~Tooltips `help=` en toda la UI~~ ✅ 2026-04-29 — todos los campos interactivos cubiertos; ruta eliminada del listado de casos.
 11. ~~**[NUEVO-HILO-EMAIL]**~~ ✅ 2026-05-04 — Renovación JWT implementada; sidebar session_state fix; botón 🔍 implementado. Test end-to-end pendiente hasta resolver PHPSESSID.
-2. **[SIGUIENTE]** ⬅️ **[NUEVO-HILO-AUDITORIA]** Auditoría completa conexión FeesDefender↔CRM: mapear flujo auth (SPA JWT + PHP session), determinar cómo crear sesión PHP desde JWT o alternativa, actualizar `docs/INTEGRACION_SUDESPACHO.md` y `docs/DEAD_ENDS.md`, verificar 🔍 end-to-end con sesión PHP válida.
+2. ~~**[NUEVO-HILO-AUDITORIA]**~~ ✅ 2026-05-04 — REST elimina PHPSESSID para docs: `/api/element_registries/gdocu` + `/api/files/presigned_download_url/{doc_id}` confirmados sin PHPSESSID. Auth legacy ahora requiere 3 cookies. SPA login NO crea PHPSESSID. Docs actualizados. Verificación 🔍 pendiente ([TAREA-3]).
 3. **[SIGUIENTE-B]** Borrar colaborador de prueba ID=777 ("TEST FEESDEFENDER BORRAR") del CRM tnm.sudespacho.net manualmente.
 12. **[SIGUIENTE-UI]** Declarar dependencias en `pyproject.toml` (ya existe `run_app.bat`).
 13. ~~**[SIGUIENTE-J-TAGS]**~~ ✅ 2026-05-04 — Tags ciudad (IDs 297-303) y equipos faltantes (304-313) creados manualmente en CRM + constantes añadidas a `sudespacho_create.py`.
@@ -287,7 +288,7 @@ data/CASOS/{case_id}/
 ## Tests — última ejecución
 
 ```
-pytest -q   →   25 passed
+pytest -q   →   92 passed (2026-05-04)
 ```
 Módulos cubiertos: `case_manager`, `inventory`, `utils`,
 `sync_sudespacho`, `sync_sudespacho_legacy`.
