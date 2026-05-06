@@ -650,6 +650,42 @@ def test_link_rest_multiples_relaciones(monkeypatch):
     assert mock_post.call_args[1]["json"] == relations
 
 
+def test_link_rest_401_reintenta_con_refresh_exitoso(monkeypatch):
+    """401 en primer intento + renovación JWT exitosa → reintenta y devuelve."""
+    monkeypatch.setenv("SUDESPACHO_LEGACY_JWT", "jwt-caducado")
+
+    resp_401 = MagicMock()
+    resp_401.status_code = 401
+
+    resp_201 = _mock_httpx_post_201()
+
+    with patch("httpx.post", side_effect=[resp_401, resp_201]) as mock_post, \
+         patch("core.sudespacho_relations.try_auto_refresh_jwt",
+               return_value=("jwt-nuevo", "")):
+        _link_rest("extrajudiciales", "600", ["right.clientes_propios.2"])
+
+    assert mock_post.call_count == 2  # intento original + reintento con JWT nuevo
+    # El segundo intento usa el JWT renovado
+    segundo_header = mock_post.call_args_list[1].kwargs["headers"]["Authorization"]
+    assert segundo_header == "Bearer jwt-nuevo"
+
+
+def test_link_rest_401_lanza_error_si_refresh_falla(monkeypatch):
+    """401 + renovación fallida → SudespachoRelationsError con mención de 401."""
+    monkeypatch.setenv("SUDESPACHO_LEGACY_JWT", "jwt-caducado")
+    monkeypatch.delenv("SUDESPACHO_LEGACY_REFRESH_TOKEN", raising=False)
+
+    resp_401 = MagicMock()
+    resp_401.status_code = 401
+    resp_401.text = '{"code":401,"message":"Expired JWT Token"}'
+
+    with patch("httpx.post", return_value=resp_401), \
+         patch("core.sudespacho_relations.try_auto_refresh_jwt",
+               return_value=(None, "Sesión expirada")):
+        with pytest.raises(SudespachoRelationsError, match="401"):
+            _link_rest("extrajudiciales", "600", ["right.clientes_propios.2"])
+
+
 # ---------------------------------------------------------------------------
 # _link_rest_or_legacy
 # ---------------------------------------------------------------------------

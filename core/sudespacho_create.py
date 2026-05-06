@@ -80,6 +80,7 @@ import httpx
 from .sync_sudespacho_legacy import (
     SudespachoLegacyClient,
     SudespachoLegacyError,
+    try_auto_refresh_jwt,
 )
 
 # ---------------------------------------------------------------------------
@@ -1223,6 +1224,10 @@ def _build_rest_payload_judicial(datos: "NuevoExpedienteJudicial") -> dict:
 def _rest_post(endpoint: str, payload: dict) -> str:
     """Envía el POST REST de creación y devuelve el ID del expediente creado.
 
+    Incluye bucle 401 → refresh: si el servidor devuelve 401 (JWT expirado),
+    intenta renovar el JWT automáticamente (POST /api/token/refresh con el
+    @refreshToken) y reintenta la petición una sola vez.
+
     Args:
         endpoint: Path relativo, ej. "/api/element_register/extrajudiciales".
         payload: Body JSON (flat dict con propiedades semánticas).
@@ -1236,48 +1241,59 @@ def _rest_post(endpoint: str, payload: dict) -> str:
     """
     jwt = _get_jwt_from_env()
     url = f"{_REST_BASE}{endpoint}"
-    try:
-        r = httpx.post(
-            url,
-            json=payload,
-            headers={
-                "Authorization":  f"Bearer {jwt}",
-                "Content-Type":   "application/json",
-                "Accept":         "application/json",
-                "User-Agent": (
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/124.0.0.0 Safari/537.36"
-                ),
-            },
-            timeout=_REST_TIMEOUT,
-        )
-    except httpx.HTTPError as exc:
-        raise SudespachoCreateError(f"REST POST {endpoint} falló: {exc}") from exc
+    _headers = {
+        "Authorization":  f"Bearer {jwt}",
+        "Content-Type":   "application/json",
+        "Accept":         "application/json",
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
+    }
 
-    if r.status_code == 201:
+    for attempt in range(2):  # máximo 2 intentos (1 original + 1 tras refresh)
         try:
-            data = r.json()
-            eid = str(data.get("id", ""))
-            if eid and eid.isdigit():
-                return eid
+            r = httpx.post(url, json=payload, headers=_headers, timeout=_REST_TIMEOUT)
+        except httpx.HTTPError as exc:
+            raise SudespachoCreateError(f"REST POST {endpoint} falló: {exc}") from exc
+
+        # 401 en el primer intento → renovar JWT y reintentar una vez
+        if r.status_code == 401 and attempt == 0:
+            new_jwt, refresh_err = try_auto_refresh_jwt()
+            if new_jwt:
+                _headers = {**_headers, "Authorization": f"Bearer {new_jwt}"}
+                continue
+            raise SudespachoCreateError(
+                f"REST POST {endpoint} → HTTP 401 (JWT expirado). "
+                f"Renovación automática fallida: {refresh_err}"
+            )
+
+        if r.status_code == 201:
+            try:
+                data = r.json()
+                eid = str(data.get("id", ""))
+                if eid and eid.isdigit():
+                    return eid
+            except Exception:
+                pass
+            raise SudespachoCreateError(
+                f"REST POST {endpoint} devolvió 201 pero sin ID válido. "
+                f"Body: {r.text[:300]}"
+            )
+
+        # Error: intentar extraer el mensaje
+        try:
+            err_body = r.json()
+            detail = err_body.get("detail") or err_body.get("hydra:description") or r.text[:300]
         except Exception:
-            pass
+            detail = r.text[:300]
         raise SudespachoCreateError(
-            f"REST POST {endpoint} devolvió 201 pero sin ID válido. "
-            f"Body: {r.text[:300]}"
+            f"REST POST {endpoint} → HTTP {r.status_code}: {detail}"
         )
 
-    # Error: intentar extraer el mensaje
-    try:
-        err = r.json()
-        detail = err.get("detail") or err.get("hydra:description") or r.text[:300]
-    except Exception:
-        detail = r.text[:300]
-
-    raise SudespachoCreateError(
-        f"REST POST {endpoint} → HTTP {r.status_code}: {detail}"
-    )
+    # Rama de seguridad: no debería alcanzarse nunca
+    raise SudespachoCreateError(f"REST POST {endpoint}: máximo de reintentos alcanzado")
 
 
 def create_expediente_rest(

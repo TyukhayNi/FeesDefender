@@ -209,6 +209,17 @@
 
 ---
 
+## REST API — Sin endpoint de login programático con credenciales
+
+### `POST /api/authentication` / `POST /api/login` / `POST /api/token` (inicial) — no existen
+- **Intentado:** Búsqueda exhaustiva en el spec OAS3 (`/api/docs.json`, 466 paths, auditoría 2026-05-06) de un endpoint que acepte email+password y devuelva `@token` + `@refreshToken`
+- **Resultado:** No existe ningún endpoint de autenticación inicial con credenciales. El único endpoint de auth documentado es `POST /api/token/refresh` (renovación con `@refreshToken` existente, ya implementado en `_try_refresh_jwt_post()`). El flujo de login de la SPA Vue almacena sus tokens en `localStorage` del navegador con origen distinto al de las cookies PHP.
+- **Confirmado:** 2026-05-06
+- **Conclusión:** No es posible obtener tokens CRM programáticamente a partir de credenciales (email/password). Cuando `@refreshToken` también expira, la renovación de sesión completa requiere intervención manual: DevTools → Application → Cookies → tnm.sudespacho.net → copiar 3 cookies (`PHPSESSID`, `@token`, `@refreshToken`) → sidebar Streamlit 🔄.
+- **Acción pendiente `[NUEVO-HILO-AUDITORIA-2]`:** Verificar si algún endpoint PHP legacy acepta `@token` JWT para crear una sesión PHP nueva (PHPSESSID) de forma programática. No confirmado — pendiente de investigación.
+
+---
+
 ## Plantilla para nuevas entradas
 
 ```markdown

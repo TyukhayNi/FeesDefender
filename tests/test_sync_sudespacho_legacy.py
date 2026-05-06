@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 from core.sync_sudespacho_legacy import (
@@ -16,7 +18,9 @@ from core.sync_sudespacho_legacy import (
     _extract_filename,
     _is_eplan_landing,
     _jwt_expires_in_secs,
+    _try_refresh_jwt_post,
     _update_env_field,
+    try_auto_refresh_jwt,
 )
 
 
@@ -322,3 +326,96 @@ def test_update_env_field_adds_missing_key(tmp_path, monkeypatch):
 
     assert "NEW_FIELD=new_val" in env_file.read_text(encoding="utf-8")
     assert os.environ.get("NEW_FIELD") == "new_val"
+
+
+# ---- _try_refresh_jwt_post ------------------------------------------------
+
+def _mock_httpx_client_post(status_code: int, json_body: dict | None = None):
+    """Helper: devuelve un mock de httpx.Client que responde al POST con status_code."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = status_code
+    if json_body is not None:
+        mock_resp.json.return_value = json_body
+    else:
+        mock_resp.json.side_effect = Exception("no JSON")
+
+    mock_ctx = MagicMock()
+    mock_ctx.__enter__ = MagicMock(return_value=mock_ctx)
+    mock_ctx.__exit__ = MagicMock(return_value=False)
+    mock_ctx.post.return_value = mock_resp
+    return mock_ctx
+
+
+def test_try_refresh_jwt_post_exito():
+    """POST al endpoint de refresh con refreshToken válido → devuelve nuevo JWT."""
+    mock_ctx = _mock_httpx_client_post(
+        200,
+        {"token": "nuevo-jwt-abc", "refresh_token": "nuevo-rt-xyz"},
+    )
+    with patch("core.sync_sudespacho_legacy.httpx.Client", return_value=mock_ctx):
+        result = _try_refresh_jwt_post("mi-refresh-token")
+    assert result == "nuevo-jwt-abc"
+
+
+def test_try_refresh_jwt_post_exito_formato_alternativo():
+    """El CRM puede responder con @token en lugar de token."""
+    mock_ctx = _mock_httpx_client_post(200, {"@token": "jwt-alternativo"})
+    with patch("core.sync_sudespacho_legacy.httpx.Client", return_value=mock_ctx):
+        result = _try_refresh_jwt_post("rt")
+    assert result == "jwt-alternativo"
+
+
+def test_try_refresh_jwt_post_falla_401():
+    """POST con refreshToken expirado → 401 → devuelve None."""
+    mock_ctx = _mock_httpx_client_post(401)
+    with patch("core.sync_sudespacho_legacy.httpx.Client", return_value=mock_ctx):
+        result = _try_refresh_jwt_post("rt-expirado")
+    assert result is None
+
+
+def test_try_refresh_jwt_post_sin_refresh_token():
+    """Sin refreshToken no se intenta la petición."""
+    assert _try_refresh_jwt_post("") is None
+
+
+def test_try_refresh_jwt_post_respuesta_sin_token():
+    """El servidor responde 200 pero sin campo de token → None."""
+    mock_ctx = _mock_httpx_client_post(200, {"message": "ok"})
+    with patch("core.sync_sudespacho_legacy.httpx.Client", return_value=mock_ctx):
+        result = _try_refresh_jwt_post("rt")
+    assert result is None
+
+
+# ---- try_auto_refresh_jwt -------------------------------------------------
+
+def test_try_auto_refresh_jwt_exito(monkeypatch):
+    """Con refreshToken válido → renueva JWT y devuelve (nuevo_jwt, '')."""
+    monkeypatch.setenv("SUDESPACHO_LEGACY_REFRESH_TOKEN", "rt-valido")
+    with patch(
+        "core.sync_sudespacho_legacy._try_refresh_jwt_post",
+        return_value="jwt-renovado",
+    ):
+        jwt, err = try_auto_refresh_jwt()
+    assert jwt == "jwt-renovado"
+    assert err == ""
+
+
+def test_try_auto_refresh_jwt_sin_refresh_token(monkeypatch):
+    """Sin @refreshToken configurado → (None, mensaje explicativo)."""
+    monkeypatch.delenv("SUDESPACHO_LEGACY_REFRESH_TOKEN", raising=False)
+    jwt, err = try_auto_refresh_jwt()
+    assert jwt is None
+    assert "@refreshToken" in err
+
+
+def test_try_auto_refresh_jwt_refresh_expirado(monkeypatch):
+    """@refreshToken también caducado → (None, instrucciones manuales)."""
+    monkeypatch.setenv("SUDESPACHO_LEGACY_REFRESH_TOKEN", "rt-expirado")
+    monkeypatch.setenv("SUDESPACHO_LEGACY_HOST", "tnm.sudespacho.net")
+    with patch(
+        "core.sync_sudespacho_legacy._try_refresh_jwt_post",
+        return_value=None,
+    ):
+        jwt, err = try_auto_refresh_jwt()
+    assert jwt is None
+    assert "Streamlit" in err   # mensaje contiene referencia al botón de renovación manual

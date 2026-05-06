@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -58,6 +59,47 @@ def _setup_logging(log_file: str | None = None) -> logging.Logger:
         handlers=handlers,
     )
     return logging.getLogger("scheduled_sync")
+
+
+# ---------------------------------------------------------------------------
+# Keep-alive rclone gdrive_ev
+# ---------------------------------------------------------------------------
+
+def _keepalive_gdrive_ev(log: logging.Logger) -> None:
+    """Hace una llamada ligera a gdrive_ev para mantener el OAuth token activo.
+
+    Google invalida el refresh token si no se usa durante 6 meses.
+    Ejecutar esto diariamente previene esa caducidad sin intervención manual.
+
+    Usa `rclone about gdrive_ev:` — solo consulta la cuota de almacenamiento,
+    no lista ni descarga ningún fichero. rclone renueva el access token
+    automáticamente y persiste el resultado en rclone.conf.
+
+    No interrumpe el sync si falla: solo emite un warning.
+    """
+    try:
+        result = subprocess.run(
+            ["rclone", "about", "gdrive_ev:"],
+            timeout=30,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            log.debug("gdrive_ev keep-alive OK")
+        else:
+            log.warning(
+                "gdrive_ev keep-alive falló (código %d): %s — "
+                "puede que el token haya expirado. Ejecutar: "
+                "rclone config reconnect gdrive_ev:",
+                result.returncode,
+                (result.stderr or "").strip()[:200],
+            )
+    except FileNotFoundError:
+        log.warning("rclone no encontrado en PATH — keep-alive gdrive_ev omitido")
+    except subprocess.TimeoutExpired:
+        log.warning("gdrive_ev keep-alive timeout (30s)")
+    except Exception as exc:
+        log.warning("gdrive_ev keep-alive error inesperado: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -100,6 +142,11 @@ def run(*, run_pipeline: bool = False, log_file: str | None = None) -> int:
     if not settings.casos_root.exists():
         log.error("CASOS_ROOT no existe: %s", settings.casos_root)
         return 1
+
+    # Keep-alive del token OAuth de gdrive_ev — previene caducidad por inactividad.
+    # Google invalida el refresh token tras 6 meses sin uso; esta llamada diaria
+    # lo mantiene vivo sin intervención manual.
+    _keepalive_gdrive_ev(log)
 
     casos = sorted(
         p.name for p in settings.casos_root.iterdir()

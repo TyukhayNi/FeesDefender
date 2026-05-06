@@ -133,6 +133,7 @@ def _update_env_field(
 
 _API_CRM_HOST = "https://api-crm-commons-pro.sudespacho.biz"
 _JWT_REFRESH_PATH = "/api/user/refresh"   # GET con ?refresh_token=<rt> + Authorization: Bearer <jwt>
+_POST_REFRESH_PATH = "/api/token/refresh" # POST con {"refresh_token": rt} — no requiere JWT vigente
 
 
 def _jwt_expires_in_secs(jwt_str: str) -> int | None:
@@ -226,6 +227,116 @@ def _try_refresh_jwt(current_jwt: str, refresh_token: str) -> str | None:
         return new_token or None
     except Exception:
         return None
+
+
+def _try_refresh_jwt_post(refresh_token: str) -> str | None:
+    """Renueva el JWT enviando solo el @refreshToken (POST).
+
+    A diferencia de _try_refresh_jwt() (GET /api/user/refresh, requiere JWT vigente),
+    este endpoint acepta únicamente el refreshToken y funciona aunque el @token
+    haya expirado.
+
+    Endpoint: POST https://api-crm-commons-pro.sudespacho.biz/api/token/refresh
+    Body JSON: {"refresh_token": "<@refreshToken>"}
+    Response:  {"token": "<nuevo_jwt>", "refresh_token": "<nuevo_rt>"}
+               (formato gesdinet/jwt-refresh-token-bundle)
+
+    Actualiza SUDESPACHO_LEGACY_JWT (y SUDESPACHO_LEGACY_REFRESH_TOKEN si el
+    servidor devuelve uno nuevo) en .env y en os.environ.
+
+    Args:
+        refresh_token: Valor del @refreshToken almacenado en .env.
+
+    Returns:
+        Nuevo @token si la renovación fue exitosa; None si falló.
+    """
+    if not refresh_token:
+        return None
+    try:
+        with httpx.Client(
+            base_url=_API_CRM_HOST,
+            timeout=20,
+            follow_redirects=False,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/124.0.0.0 Safari/537.36"
+                ),
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+        ) as c:
+            r = c.post(
+                _POST_REFRESH_PATH,
+                json={"refresh_token": refresh_token},
+            )
+        if r.status_code >= 400:
+            return None
+        try:
+            data = r.json()
+        except Exception:
+            return None
+        # Formato gesdinet estándar: {"token": "...", "refresh_token": "..."}
+        # Posibles variantes del CRM: "@token" / "jwt" / "access_token"
+        new_token: str | None = (
+            data.get("token")
+            or data.get("@token")
+            or data.get("jwt")
+            or data.get("access_token")
+        )
+        new_refresh: str | None = (
+            data.get("refresh_token")
+            or data.get("@refreshToken")
+        )
+        if new_token:
+            _update_env_field("SUDESPACHO_LEGACY_JWT", new_token)
+            if new_refresh and new_refresh != refresh_token:
+                _update_env_field("SUDESPACHO_LEGACY_REFRESH_TOKEN", new_refresh)
+        return new_token or None
+    except Exception:
+        return None
+
+
+def try_auto_refresh_jwt() -> tuple[str | None, str]:
+    """Renueva el JWT automáticamente. Llamar cuando se recibe HTTP 401.
+
+    Estrategia:
+    1. POST /api/token/refresh con el @refreshToken del .env.
+       Funciona aunque el @token ya haya expirado (Symfony gesdinet standard).
+    2. Si el @refreshToken también ha caducado: intenta browser_cookie3
+       (siempre falla en Windows sin Admin → devuelve instrucciones manuales).
+
+    Actualiza SUDESPACHO_LEGACY_JWT en .env y os.environ si tiene éxito.
+
+    Returns:
+        (nuevo_jwt, "")          si la renovación tuvo éxito.
+        (None, mensaje_error)    si falló — el mensaje describe la acción manual necesaria.
+    """
+    refresh_token = (_env("SUDESPACHO_LEGACY_REFRESH_TOKEN") or "").strip()
+    if not refresh_token:
+        return None, (
+            "@refreshToken no configurado en .env. "
+            "Inicia sesión en el CRM y usa el botón «🔄 Renovar sesión CRM» en Streamlit."
+        )
+
+    # Intento 1: POST /api/token/refresh (no requiere @token vigente)
+    new_jwt = _try_refresh_jwt_post(refresh_token)
+    if new_jwt:
+        return new_jwt, ""
+
+    # Intento 2: browser_cookie3 — stub (siempre falla en Windows sin Admin).
+    # Se invoca para mantener la interfaz completa descrita en el plan;
+    # _get_phpsessid_from_chrome() siempre devuelve (None, mensaje).
+    host = _env("SUDESPACHO_LEGACY_HOST") or "tnm.sudespacho.net"
+    _get_phpsessid_from_chrome(host)  # intenta; siempre falla en este entorno
+
+    return None, (
+        "La sesión CRM ha expirado completamente (@token y @refreshToken caducados). "
+        "Solución: inicia sesión en https://tnm.sudespacho.net en Chrome y "
+        "usa el botón «🔄 Renovar sesión CRM» en el sidebar de Streamlit "
+        "para pegar las 3 cookies nuevas (PHPSESSID, @token, @refreshToken) en .env."
+    )
 
 
 def _get_phpsessid_from_chrome(host: str) -> tuple[str | None, str | None]:
@@ -401,6 +512,8 @@ class SudespachoLegacyClient:
         self._csrf_token: str | None = None
         # Bandera anti-bucle: True si ya se intentó renovar el JWT en esta sesión.
         self._jwt_refresh_attempted: bool = False
+        # Bandera anti-bucle para la renovación POST (refresh_token → nuevo JWT).
+        self._post_refresh_attempted: bool = False
         self._client = httpx.Client(
             base_url=self.cfg.base_url,
             timeout=self.cfg.timeout_s,
@@ -563,12 +676,25 @@ class SudespachoLegacyClient:
             # si el JWT es válido pero la sesión PHP expiró, intentar nueva sesión.
             if _is_eplan_landing(r):
                 self._check_and_refresh_if_needed(r)
-                # Intento 1: ¿el @token sigue vigente? Intentar nueva sesión PHP.
+                # Rama A: @token aún vigente → intentar nueva sesión PHP sin PHPSESSID.
                 if self.cfg.jwt_token and (_jwt_expires_in_secs(self.cfg.jwt_token) or -1) > 0:
                     r2 = self._try_renew_php_session(_path)
                     if r2 is not None and self._csrf_token:
                         return self._csrf_token
-                # Intento 2: JWT renovado recientemente — reintentar con sesión principal
+                # Rama B: @token expirado → renovar vía POST /api/token/refresh
+                #          y luego intentar nueva sesión PHP con el token renovado.
+                elif not self._post_refresh_attempted and self.cfg.refresh_token:
+                    self._post_refresh_attempted = True
+                    new_jwt = _try_refresh_jwt_post(self.cfg.refresh_token)
+                    if new_jwt:
+                        self._client.cookies["@token"] = new_jwt
+                        self._csrf_token = None
+                        # Con el JWT renovado, intentar que el servidor cree sesión PHP nueva.
+                        r2 = self._try_renew_php_session(_path)
+                        if r2 is not None and self._csrf_token:
+                            return self._csrf_token
+                # Último intento: reintentar con la sesión principal
+                # (cookies actualizadas tras Rama A/B, o sin cambios si ambas fallaron).
                 try:
                     r = self._client.get(_path, follow_redirects=True)
                 except Exception:

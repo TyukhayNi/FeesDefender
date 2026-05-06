@@ -72,6 +72,7 @@ from .sync_sudespacho import SudespachoConfig
 from .sync_sudespacho_legacy import (
     SudespachoLegacyClient,
     SudespachoLegacyError,
+    try_auto_refresh_jwt,
 )
 from .sudespacho_create import (
     GRUPOS_DEFAULT,
@@ -429,6 +430,9 @@ def _link_rest(
       - Idempotente: relaciones ya existentes devuelven 201 sin crear duplicados
       - Independiente de PHPSESSID — elimina la última dependencia legacy
 
+    Incluye bucle 401 → refresh: si el servidor devuelve 401 (JWT expirado),
+    intenta renovar el JWT automáticamente y reintenta la petición una vez.
+
     Comportamiento con datos inválidos (documentado):
       - Direction inválida  → HTTP 500 (PHP exception sin validar)
       - Array vacío []      → HTTP 404 "It is necessary to include properties"
@@ -450,28 +454,39 @@ def _link_rest(
         )
 
     url = f"{_REST_BASE}{_REST_RELATION_PATH.format(element=element, exp_id=exp_id)}"
-    try:
-        r = httpx.post(
-            url,
-            json=relations,
-            headers={
-                "Authorization": f"Bearer {jwt}",
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-                "User-Agent": (
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/124.0.0.0 Safari/537.36"
-                ),
-            },
-            timeout=_REST_TIMEOUT,
-        )
-    except httpx.HTTPError as exc:
-        raise SudespachoRelationsError(
-            f"REST POST relation_element/{element}/{exp_id} falló: {exc}"
-        ) from exc
+    _headers = {
+        "Authorization": f"Bearer {jwt}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
+    }
 
-    if r.status_code != 201:
+    for attempt in range(2):  # máximo 2 intentos (1 original + 1 tras refresh)
+        try:
+            r = httpx.post(url, json=relations, headers=_headers, timeout=_REST_TIMEOUT)
+        except httpx.HTTPError as exc:
+            raise SudespachoRelationsError(
+                f"REST POST relation_element/{element}/{exp_id} falló: {exc}"
+            ) from exc
+
+        # 401 en el primer intento → renovar JWT y reintentar una vez
+        if r.status_code == 401 and attempt == 0:
+            new_jwt, refresh_err = try_auto_refresh_jwt()
+            if new_jwt:
+                _headers = {**_headers, "Authorization": f"Bearer {new_jwt}"}
+                continue
+            raise SudespachoRelationsError(
+                f"REST POST relation_element/{element}/{exp_id} → HTTP 401 (JWT expirado). "
+                f"Renovación automática fallida: {refresh_err}"
+            )
+
+        if r.status_code == 201:
+            return
+
         raise SudespachoRelationsError(
             f"REST POST relation_element/{element}/{exp_id} "
             f"→ HTTP {r.status_code}: {r.text[:200]}"

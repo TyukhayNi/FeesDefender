@@ -3,7 +3,7 @@
 > **Fuente de verdad única del proyecto.**
 > Actualizar al cerrar cada sesión con `python -m scripts.session_close`.
 
-**Última actualización:** 2026-05-06 (checks existencia en Nuevo Caso: `get_case_status()` en `case_manager` + warnings + checkboxes de confirmación en UI para carpeta local y expediente CRM ya registrado; 3 tests nuevos; caso MaRS15 creado localmente — CRM pendiente por JWT expirado, pull rclone pendiente por token `gdrive_ev` caducado. Total: 202 tests.)
+**Última actualización:** 2026-05-06 (renovación automática JWT implementada: `_try_refresh_jwt_post` + `try_auto_refresh_jwt` + retry loop 401 en `_rest_post` y `_link_rest`; keep-alive `_keepalive_gdrive_ev()` en `scheduled_sync.py`; confirmado: REST API no expone login con credenciales — dead end documentado; 13 tests nuevos. Total: 215 tests.)
 
 ---
 
@@ -55,11 +55,13 @@ git commit -m "<mensaje que Claude propuso>"
 
 | Ítem | Estado |
 |------|--------|
-| Tests | ✅ 199/199 (+5 get_drive_folder_info — 2026-05-06) |
+| Tests | ✅ 215/215 (+13 JWT refresh + retry loop 401 — 2026-05-06) |
 | Pipeline | ✅ Ejecutado end-to-end (BaRR3, 2026-04-28, 9/9 pasos OK, ~9 min) |
 | Primer caso real | ✅ Creado, docs descargados |
 | Taxonomía de casos | ✅ Actualizada en config.py |
 | `sudespacho_create.py` | ✅ REST-first (2026-05-06): extrajudicial + judicial con `Authorization: Bearer <JWT>` sin PHPSESSID; fallback legacy automático |
+| Renovación JWT automática (`POST /api/token/refresh`) | ✅ 2026-05-06 — `_try_refresh_jwt_post` + `try_auto_refresh_jwt` + retry loop 401 en `_rest_post` (create) y `_link_rest` (relations) |
+| Keep-alive `gdrive_ev` | ✅ 2026-05-06 — `_keepalive_gdrive_ev()` en `scheduled_sync.py`; previene caducidad OAuth a 6 meses |
 | `list_gdocu_docs_rest` + `download_document_rest` | ✅ Implementado 2026-05-04 — sin PHPSESSID (solo x-api-key) |
 | `pull_expediente` REST-first | ✅ Implementado 2026-05-04 — fallback legacy automático si REST falla |
 | `core/intake_demanda.py` | ✅ save_file(), extract_zip() (path traversal sanitizado), list_files() (2026-05-04) |
@@ -207,7 +209,8 @@ python -m scripts.run_pipeline "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
 17. ~~**[SIGUIENTE]** Ejecutar `pytest -q`~~ ✅ 2026-05-06 — 178/178 en verde.
 18. ~~**[SIGUIENTE-REST-RELATIONS]**~~ ✅ 2026-05-06 — ver arriba.
 19. ~~**[SIGUIENTE]**~~ ✅ 2026-05-06 — Caso MaRS15 local creado (idempotente); URL Drive guardada en `_caso.md`; CRM falló por JWT expirado; pull rclone falló por token `gdrive_ev` caducado. Checks de existencia (carpeta + expediente CRM) implementados en UI. Pendiente completar CRM + pull tras renovar sesión.
-20. **[SIGUIENTE]** ⬅️ Implementar renovación automática de sesión CRM transparente: cuando se recibe HTTP 401, reintentar `POST /api/token/refresh` con `@refreshToken`; si también ha caducado, leer las 3 cookies frescas desde Chrome vía `browser-cookie3` y persistir en `.env` con `_update_env_field`. Una vez implementado, completar MaRS15 (CRM + pull rclone tras `rclone ls gdrive_ev:`).
+20. ~~**[SIGUIENTE]** Renovación automática JWT...~~ ✅ 2026-05-06 — `_try_refresh_jwt_post` + retry loop 401 implementados en create y relations. Cuando `@refreshToken` también expira: instrucción manual clara en UI. Confirmado: no existe endpoint login programático en REST API (ver DEAD_ENDS.md).
+21. **[SIGUIENTE]** ⬅️ Completar MaRS15: renovar sesión CRM manualmente (DevTools → 3 cookies → sidebar Streamlit 🔄) → crear expediente CRM → pull rclone gdrive_ev. Luego: `[NUEVO-HILO-AUDITORIA-2]` — investigar si algún endpoint PHP acepta `@token` para crear PHPSESSID sin interacción de navegador.
 18. ~~**[SIGUIENTE-REST-RELATIONS]**~~ ✅ 2026-05-06 — `POST /api/relation_element/` confirmado HTTP 201 con Bearer JWT. 6 `link_*` migradas a REST-first + fallback legacy. 12 tests nuevos. `.env` actualizado.
 11. ~~**[NIKOLAI]** Conectar cuenta `nikolai.tyukhay@engelvoelkers.com` en Cowork~~ ✅ 2026-04-28 — rclone `gdrive_ev` configurado; Cowork no soporta multi-cuenta, rclone es la solución definitiva.
 12. **[SIGUIENTE-C]** Módulo `core/intake_drive.py`:
@@ -296,10 +299,10 @@ data/CASOS/{case_id}/
 ## Tests — última ejecución
 
 ```
-pytest -q   →   199 passed (2026-05-06)
+pytest -q   →   215 passed (2026-05-06)
 ```
 Módulos cubiertos: `case_manager`, `inventory`, `utils`,
-`sync_sudespacho` (+26 nuevos: REST gdocu), `sync_sudespacho_legacy`,
-`sudespacho_relations` (+8 REST colaboradores, +12 REST relation_element),
-`sudespacho_create` (+31 nuevos: REST extrajudicial + judicial, tags, payloads, REST-first fallback),
+`sync_sudespacho` (+26 nuevos: REST gdocu), `sync_sudespacho_legacy` (+8 nuevos: JWT refresh),
+`sudespacho_relations` (+8 REST colaboradores, +12 REST relation_element, +2 retry 401),
+`sudespacho_create` (+31 nuevos: REST extrajudicial + judicial, tags, payloads, REST-first fallback, +3 retry 401),
 `intake_drive` (+5 nuevos: `get_drive_folder_info` token OK/sin token/API 401/rclone falla/nombre vacío).
