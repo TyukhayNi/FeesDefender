@@ -24,6 +24,7 @@ from core.sudespacho_relations import (
     ensure_colaborador_vinculado,
     find_colaborador_by_email,
     find_expediente_by_referencia,
+    find_expediente_judicial_by_referencia,
     link_colaborador,
     link_ev_mmc,
     load_all_colaboradores,
@@ -175,6 +176,53 @@ def test_find_expediente_con_client_externo():
     result = find_expediente_by_referencia("ref", client=client)
     assert result == "777"
     client.__exit__.assert_not_called()  # cliente externo no se cierra
+
+
+# ---------------------------------------------------------------------------
+# find_expediente_judicial_by_referencia
+# ---------------------------------------------------------------------------
+
+def test_find_expediente_judicial_encontrado(monkeypatch):
+    client = _mock_client()
+    client._client.get.return_value = _mock_get_response(
+        [{"id": 1, "label": "648 - 2026", "value": "648", "data": []}]
+    )
+    with patch("core.sudespacho_relations.SudespachoLegacyClient", return_value=client):
+        result = find_expediente_judicial_by_referencia("MaRS2 - Gran Via 40 - (W-0001) - Dev. Reserva")
+    assert result == "648"
+    # Verifica que se usó el slug correcto de judiciales
+    call_url = client._client.get.call_args[0][0]
+    assert "expedientes_judiciales" in call_url
+
+
+def test_find_expediente_judicial_no_encontrado(monkeypatch):
+    client = _mock_client()
+    client._client.get.return_value = _mock_get_response([])
+    with patch("core.sudespacho_relations.SudespachoLegacyClient", return_value=client):
+        result = find_expediente_judicial_by_referencia("Caso Que No Existe")
+    assert result is None
+
+
+def test_find_expediente_judicial_con_client_externo():
+    """Si se pasa client externo, no se llama a SudespachoLegacyClient()."""
+    client = _mock_client()
+    client._client.get.return_value = _mock_get_response(
+        [{"id": 1, "label": "x", "value": "999", "data": []}]
+    )
+    result = find_expediente_judicial_by_referencia("ref", client=client)
+    assert result == "999"
+    client.__exit__.assert_not_called()
+
+
+def test_find_expediente_judicial_no_usa_slug_extrajudicial(monkeypatch):
+    """Garantiza que la búsqueda judicial NO consulta el endpoint extrajudicial."""
+    client = _mock_client()
+    client._client.get.return_value = _mock_get_response([])
+    with patch("core.sudespacho_relations.SudespachoLegacyClient", return_value=client):
+        find_expediente_judicial_by_referencia("cualquier referencia")
+    call_url = client._client.get.call_args[0][0]
+    assert "extrajudiciales" not in call_url
+    assert "expedientes_judiciales" in call_url
 
 
 # ---------------------------------------------------------------------------

@@ -226,8 +226,10 @@ def caso_path(case_id: str) -> Path:
 DRIVE_EV_TEAM_IDS: dict[str, str | None] = {
     # ── Barcelona Residential Rentals ───────────────────────────────────────
     "BaRR1":  "0AD32Qb2sgwRPUk9PVA",   # Barcelona Rentals - R1
+    "BaRR2":  "0AKR2FOV4YCODUk9PVA",   # Barcelona Rentals - R2
     "BaRR3":  "0AE-9XG_p0ERaUk9PVA",   # Barcelona Rentals - R3
     "BaRR4":  "0AF1OhJWdJxguUk9PVA",   # Barcelona Rentals - R4
+    "BaRR10": "0APuQs9qUZ25tUk9PVA",   # Barcelona Rentals - R10
     # ── Barcelona Residential Sales ─────────────────────────────────────────
     "BaRS1":  "0ADrldKiH6lk5Uk9PVA",   # Barcelona - S1
     "BaRS2":  "0AEw_yWPTwm2pUk9PVA",   # Barcelona - S2
@@ -246,6 +248,8 @@ DRIVE_EV_TEAM_IDS: dict[str, str | None] = {
     "BaCR10": "0APxcQvRXJ8w_Uk9PVA",   # BCN Comm - MC2
     "BaCS1":  "0AO2kC2doh2bpUk9PVA",   # BCN Comm - Propiedades
     "BaCS10": "0APxcQvRXJ8w_Uk9PVA",   # BCN Comm - MC2
+    # ── Barcelona Pendiente ──────────────────────────────────────────────────
+    "BaDP1":  "0ADwt6QSqkvYXUk9PVA",   # Barcelona - PD1
     # ── Bilbao ───────────────────────────────────────────────────────────────
     "BiRS1":  "0APU1_XB6UB2WUk9PVA",   # Bilbao - S1
     "BiRS2":  "0AI7ThNrdHBBFUk9PVA",   # Bilbao - S2
@@ -264,8 +268,13 @@ DRIVE_EV_TEAM_IDS: dict[str, str | None] = {
     "MaRS8":  "0AOXSD3P3OC1OUk9PVA",   # Madrid - S8
     "MaRS9":  "0ADvMel_HuihoUk9PVA",   # Madrid - S9
     "MaRS10": "0ABEaSgRKczw1Uk9PVA",   # Madrid - S10
+    "MaRS11": "0AKTVQk7Rxw6pUk9PVA",   # Madrid - S11
+    "MaRS12": "0AMKhFJmGDw-lUk9PVA",   # Madrid - S12
     "MaRS13": "0ALgE1v7V402eUk9PVA",   # Madrid - S13
     "MaRS14": "0ACrd4VNKpz43Uk9PVA",   # Madrid - S14
+    "MaRS15": "0AJbQHw3Fn24RUk9PVA",   # Madrid - S15
+    # ── Madrid Pendiente ─────────────────────────────────────────────────────
+    "MaPD1":  "0ANRMr1sAL6DiUk9PVA",   # Madrid - PD1
     # ── San Sebastián ────────────────────────────────────────────────────────
     "SSRR1":  "0AGtY4pu8itx0Uk9PVA",   # San Sebastian - R1
     "SSRS1":  "0AEYW3gPNMOhrUk9PVA",   # San Sebastian - S1
@@ -276,8 +285,11 @@ DRIVE_EV_TEAM_IDS: dict[str, str | None] = {
     "SeRS6":  "0ABSFVWC_PfdBUk9PVA",   # Sevilla - S1 / S6
     # ── Valencia ─────────────────────────────────────────────────────────────
     "VaCR1":  "0AKHkaZNM-iYtUk9PVA",   # Valencia - Commercial
+    "VaCR2":  "0AKHkaZNM-iYtUk9PVA",   # Valencia - Commercial (mismo drive)
+    "VaCS1":  "0AKHkaZNM-iYtUk9PVA",   # Valencia - Commercial (mismo drive)
     "VaPD1":  "0AKY5CXRI9bzNUk9PVA",   # Valencia - PD1
     "VaRR1":  "0AF3-W0dpQNIFUk9PVA",   # Valencia - R1
+    "VaRR3":  "0AEHjRLJkpmlHUk9PVA",   # Valencia - R3
     "VaRS1":  "0AJMNkvj7zrzYUk9PVA",   # Valencia - S1
     "VaRS2":  "0AIJDXpIMN3ySUk9PVA",   # Valencia - S2
     "VaRS3":  "0AI05EoJNE-gdUk9PVA",   # Valencia - S3

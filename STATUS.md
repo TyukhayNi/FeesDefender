@@ -3,7 +3,7 @@
 > **Fuente de verdad única del proyecto.**
 > Actualizar al cerrar cada sesión con `python -m scripts.session_close`.
 
-**Última actualización:** 2026-05-06 (Validado `POST /api/relation_element/{element}/{id}` con `Authorization: Bearer <JWT>` en tenant tnm — HTTP 201 confirmado, idempotente, sin PHPSESSID. `sudespacho_relations.py` migrado a REST-first: 6 funciones `link_*` usan `_link_rest()` + fallback automático a `saveselect` legacy si JWT expirado. 12 tests nuevos. `.env` actualizado con JWT fresco. `docs/ARQUITECTURA_CRM_SUDESPACHO.md` sección 7.1 marcada como confirmada + mapa de auth corregido.)
+**Última actualización:** 2026-05-06 (Drive URL al inicio del formulario Nuevo Caso. Auto-fill expandido: ciudad, equipo, dirección e ID GO se infieren automáticamente del driveId devuelto por la Drive API. `DriveFolderInfo` dataclass + `get_drive_folder_info()` en `intake_drive.py`. Bloque auto-fill sin `st.rerun()`. §5 eliminado: resolución Shared Drive ID implícita (API → lookup equipo → expander fallback). 5 tests nuevos para `get_drive_folder_info`. Total: 199 tests.)
 
 ---
 
@@ -55,7 +55,7 @@ git commit -m "<mensaje que Claude propuso>"
 
 | Ítem | Estado |
 |------|--------|
-| Tests | ✅ 190/190 esperado (+12 REST relation_element — 2026-05-06; verificar con pytest) |
+| Tests | ✅ 199/199 (+5 get_drive_folder_info — 2026-05-06) |
 | Pipeline | ✅ Ejecutado end-to-end (BaRR3, 2026-04-28, 9/9 pasos OK, ~9 min) |
 | Primer caso real | ✅ Creado, docs descargados |
 | Taxonomía de casos | ✅ Actualizada en config.py |
@@ -70,8 +70,8 @@ git commit -m "<mensaje que Claude propuso>"
 | UI compartir carpeta | ✅ Tab Casos — expander directo (Drive API) + mensaje solicitud (2026-05-04) |
 | `sudespacho_relations.py` | ✅ REST-first (2026-05-06): 6 `link_*` via `POST /api/relation_element/` sin PHPSESSID; fallback legacy automático |
 | Endpoint saveselect | ✅ Confirmado 2026-04-29 — cliente+colaborador persistidos en exp 600 |
-| `core/intake_drive.py` | ✅ Completo — pull rclone gdrive_ev, marker .pulled, 27 tests |
-| UI Drive E&V | ✅ Integrado en tab Nuevo caso + tab Casos (caso existente) |
+| `core/intake_drive.py` | ✅ Completo — pull rclone gdrive_ev, marker .pulled, `DriveFolderInfo`, `get_drive_folder_info`, 32 tests |
+| UI Drive E&V | ✅ Drive URL al inicio del formulario; auto-fill ciudad + equipo + dirección + ID GO desde driveId |
 | Nombres automáticos desde email | ✅ _email_to_nombre() — sin campos manuales |
 | Tooltips UI | ✅ help= en todos los campos interactivos de streamlit_app.py |
 | Toggle judicial UI | ✅ streamlit_app.py — radio Extrajudicial/Judicial, § 3b con NIG + tipo procedimiento, handler bifurcado (2026-05-04) |
@@ -195,7 +195,7 @@ python -m scripts.run_pipeline "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
 10. ~~Tooltips `help=` en toda la UI~~ ✅ 2026-04-29 — todos los campos interactivos cubiertos; ruta eliminada del listado de casos.
 11. ~~**[NUEVO-HILO-EMAIL]**~~ ✅ 2026-05-04 — Renovación JWT implementada; sidebar session_state fix; botón 🔍 implementado. Test end-to-end pendiente hasta resolver PHPSESSID.
 2. ~~**[NUEVO-HILO-AUDITORIA]**~~ ✅ 2026-05-04 — REST elimina PHPSESSID para docs: `/api/element_registries/gdocu` + `/api/files/presigned_download_url/{doc_id}` confirmados sin PHPSESSID. Auth legacy ahora requiere 3 cookies. SPA login NO crea PHPSESSID. Docs actualizados. Verificación 🔍 pendiente ([TAREA-3]).
-3. **[SIGUIENTE-B]** Borrar colaborador de prueba ID=777 ("TEST FEESDEFENDER BORRAR") del CRM tnm.sudespacho.net manualmente.
+3. ~~**[SIGUIENTE-B]**~~ ✅ 2026-05-06 — Colaborador de prueba ID=777 ("TEST FEESDEFENDER BORRAR") borrado manualmente del CRM tnm.sudespacho.net.
 12. **[SIGUIENTE-UI]** Declarar dependencias en `pyproject.toml` (ya existe `run_app.bat`).
 13. ~~**[SIGUIENTE-J-TAGS]**~~ ✅ 2026-05-04 — Tags ciudad (IDs 297-303) y equipos faltantes (304-313) creados manualmente en CRM + constantes añadidas a `sudespacho_create.py`.
 14. ~~**[SIGUIENTE-J-TEAMS]**~~ ✅ 2026-05-04 — Ver punto anterior.
@@ -206,7 +206,7 @@ python -m scripts.run_pipeline "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
 16. ~~**[SIGUIENTE-J-TESTS]**~~ ✅ 2026-05-06 — `test_sudespacho_create_rest.py` cubre REST extrajudicial + judicial (payloads, tags, REST-first + fallback).
 17. ~~**[SIGUIENTE]** Ejecutar `pytest -q`~~ ✅ 2026-05-06 — 178/178 en verde.
 18. ~~**[SIGUIENTE-REST-RELATIONS]**~~ ✅ 2026-05-06 — ver arriba.
-19. **[SIGUIENTE]** ⬅️ `[SIGUIENTE-SHARE]` Probar compartición directa carpeta E&V: tab Casos → expander "Compartir carpeta E&V" → botón "⚡ Compartir directamente".
+19. **[SIGUIENTE]** ⬅️ Crear caso real pendiente: MaRS15, Devolución de reserva, Madrid. Pegar URL Drive E&V → verificar auto-fill ciudad/equipo/dirección/ID GO → crear. Luego probar `[SIGUIENTE-SHARE]`.
 18. ~~**[SIGUIENTE-REST-RELATIONS]**~~ ✅ 2026-05-06 — `POST /api/relation_element/` confirmado HTTP 201 con Bearer JWT. 6 `link_*` migradas a REST-first + fallback legacy. 12 tests nuevos. `.env` actualizado.
 11. ~~**[NIKOLAI]** Conectar cuenta `nikolai.tyukhay@engelvoelkers.com` en Cowork~~ ✅ 2026-04-28 — rclone `gdrive_ev` configurado; Cowork no soporta multi-cuenta, rclone es la solución definitiva.
 12. **[SIGUIENTE-C]** Módulo `core/intake_drive.py`:
@@ -295,9 +295,10 @@ data/CASOS/{case_id}/
 ## Tests — última ejecución
 
 ```
-pytest -q   →   178 passed (2026-05-06) — ejecutar para confirmar 190/190
+pytest -q   →   199 passed (2026-05-06)
 ```
 Módulos cubiertos: `case_manager`, `inventory`, `utils`,
 `sync_sudespacho` (+26 nuevos: REST gdocu), `sync_sudespacho_legacy`,
 `sudespacho_relations` (+8 REST colaboradores, +12 REST relation_element),
-`sudespacho_create` (+31 nuevos: REST extrajudicial + judicial, tags, payloads, REST-first fallback).
+`sudespacho_create` (+31 nuevos: REST extrajudicial + judicial, tags, payloads, REST-first fallback),
+`intake_drive` (+5 nuevos: `get_drive_folder_info` token OK/sin token/API 401/rclone falla/nombre vacío).

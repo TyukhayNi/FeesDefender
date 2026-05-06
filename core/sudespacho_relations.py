@@ -271,6 +271,47 @@ def find_expediente_by_referencia(
                 pass
 
 
+def find_expediente_judicial_by_referencia(
+    referencia_cliente: str,
+    *,
+    client: SudespachoLegacyClient | None = None,
+) -> str | None:
+    """Busca un expediente judicial por su referencia_cliente (case_id).
+
+    Útil para detectar duplicados antes de crear un nuevo expediente judicial.
+
+    Args:
+        referencia_cliente: El case_id de FeesDefender (ej. "MaRS2 - ...").
+            Coincide con campo_867 del formulario judicial.
+        client: Cliente legacy reutilizable (opcional).
+
+    Returns:
+        ID del expediente si existe, None si no hay coincidencia.
+
+    Example::
+
+        exp_id = find_expediente_judicial_by_referencia("MaRS2 - Puerto Rico 2, ...")
+        if exp_id:
+            print(f"Ya existe expediente judicial #{exp_id}")
+    """
+    owns_client = client is None
+    if owns_client:
+        client = SudespachoLegacyClient()
+    try:
+        results = _autocomplete("expedientes_judiciales", referencia_cliente, client)
+        if results:
+            return str(results[0]["value"])
+        return None
+    except SudespachoLegacyError as exc:
+        raise SudespachoRelationsError(str(exc)) from exc
+    finally:
+        if owns_client:
+            try:
+                client.__exit__(None, None, None)
+            except Exception:
+                pass
+
+
 # ---------------------------------------------------------------------------
 # Creación de colaborador
 # ---------------------------------------------------------------------------

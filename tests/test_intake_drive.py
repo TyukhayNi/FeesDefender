@@ -5,6 +5,7 @@ Cubre:
 - pull_drive_ev: idempotencia (.pulled), force=True, fallo rclone, timeout.
 - register_drive_ev (vía pull_drive_ev): persistencia en _caso.md.
 - DriveIntakeError: se lanza con result adjunto en fallo de rclone.
+- get_drive_folder_info: token OK, sin token, error API.
 """
 
 from __future__ import annotations
@@ -13,17 +14,20 @@ import importlib
 import json
 import subprocess
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from core import case_manager
 from core.intake_drive import (
     DriveIntakeError,
+    DriveFolderInfo,
     DriveIntakeResult,
     _DRIVE_EV_INPUT_SUBDIR,
     _PULL_MARKER,
+    get_drive_folder_info,
     parse_drive_url,
+    parse_ev_folder_name,
     pull_drive_ev,
 )
 
@@ -326,3 +330,131 @@ def test_register_drive_ev_no_falla_si_caso_no_existe(tmp_casos_root):
     from core.case_manager import register_drive_ev
     # No debe lanzar, simplemente hace nada
     register_drive_ev("EV-INEXISTENTE-999", team_id="teamA", folder_id="folderB")
+
+
+# ---------------------------------------------------------------------------
+# parse_ev_folder_name
+# ---------------------------------------------------------------------------
+
+def test_parse_folder_guion_simple():
+    d, m = parse_ev_folder_name("Pedro Lain Entralgo 4 Chalet 4- W-02W4PJ")
+    assert d == "Pedro Lain Entralgo 4 Chalet 4"
+    assert m == "W-02W4PJ"
+
+
+def test_parse_folder_guion_con_espacios():
+    d, m = parse_ev_folder_name("Gran Via 40, 3º 1ª - W-030LFT")
+    assert d == "Gran Via 40, 3º 1ª"
+    assert m == "W-030LFT"
+
+
+def test_parse_folder_guion_largo():
+    d, m = parse_ev_folder_name("Serrano 45, 2º Izq – W-04ABCD")
+    assert d == "Serrano 45, 2º Izq"
+    assert m == "W-04ABCD"
+
+
+def test_parse_folder_mls_en_minusculas():
+    """El ID GO debe normalizarse a mayúsculas."""
+    d, m = parse_ev_folder_name("Calle Mayor 1 - w-030lft")
+    assert m == "W-030LFT"
+
+
+def test_parse_folder_sin_codigo_w():
+    """Sin código W-XXXXXX devuelve cadenas vacías."""
+    d, m = parse_ev_folder_name("Carpeta sin referencia")
+    assert d == ""
+    assert m == ""
+
+
+def test_parse_folder_solo_codigo():
+    """Solo código sin dirección: dirección vacía."""
+    d, m = parse_ev_folder_name("- W-030LFT")
+    assert m == "W-030LFT"
+
+
+def test_parse_folder_espacios_extra():
+    """Espacios extra al principio/final no deben afectar."""
+    d, m = parse_ev_folder_name("  Av. Diagonal 500  -  W-XYZABC  ")
+    assert d == "Av. Diagonal 500"
+    assert m == "W-XYZABC"
+
+
+# ---------------------------------------------------------------------------
+# get_drive_folder_info
+# ---------------------------------------------------------------------------
+
+def _mock_rclone_token(monkeypatch, token: str | None = "fake_access_token"):
+    """Mock de subprocess.run que simula `rclone config show gdrive_ev` con token."""
+    token_json = f'{{"access_token": "{token}"}}' if token else "{}"
+    mock = MagicMock()
+    mock.returncode = 0
+    mock.stdout = f"[gdrive_ev]\ntoken = {token_json}\n"
+    mock.stderr = ""
+    monkeypatch.setattr("subprocess.run", lambda *a, **kw: mock)
+
+
+class TestGetDriveFolderInfo:
+    def test_ok_devuelve_name_y_drive_id(self, monkeypatch):
+        """Cuando rclone y la API responden correctamente, devuelve DriveFolderInfo."""
+        _mock_rclone_token(monkeypatch)
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "name": "Gran Via 40, 3º 1ª - W-030LFT",
+            "driveId": "0AJbQHw3Fn24RUk9PVA",
+        }
+
+        with patch("httpx.get", return_value=mock_resp):
+            info = get_drive_folder_info("folderXYZ123456")
+
+        assert isinstance(info, DriveFolderInfo)
+        assert info.name == "Gran Via 40, 3º 1ª - W-030LFT"
+        assert info.drive_id == "0AJbQHw3Fn24RUk9PVA"
+
+    def test_sin_token_devuelve_none(self, monkeypatch):
+        """Si rclone no devuelve token, la función devuelve None sin llamar a httpx."""
+        mock = MagicMock()
+        mock.returncode = 0
+        mock.stdout = "[gdrive_ev]\nscope = drive\n"  # sin línea token
+        mock.stderr = ""
+        monkeypatch.setattr("subprocess.run", lambda *a, **kw: mock)
+
+        with patch("httpx.get") as mock_get:
+            result = get_drive_folder_info("folderXYZ123456")
+
+        assert result is None
+        mock_get.assert_not_called()
+
+    def test_api_error_401_devuelve_none(self, monkeypatch):
+        """Si la Drive API devuelve 401, la función devuelve None."""
+        _mock_rclone_token(monkeypatch)
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 401
+
+        with patch("httpx.get", return_value=mock_resp):
+            result = get_drive_folder_info("folderXYZ123456")
+
+        assert result is None
+
+    def test_rclone_falla_devuelve_none(self, monkeypatch):
+        """Si subprocess.run lanza excepción, devuelve None sin propagar."""
+        monkeypatch.setattr("subprocess.run", lambda *a, **kw: (_ for _ in ()).throw(OSError("rclone not found")))
+
+        result = get_drive_folder_info("folderXYZ123456")
+        assert result is None
+
+    def test_nombre_vacio_devuelve_none(self, monkeypatch):
+        """Si la API devuelve name vacío, devuelve None (carpeta sin nombre no es útil)."""
+        _mock_rclone_token(monkeypatch)
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"name": "", "driveId": "0AJbQHw3Fn24RUk9PVA"}
+
+        with patch("httpx.get", return_value=mock_resp):
+            result = get_drive_folder_info("folderXYZ123456")
+
+        assert result is None

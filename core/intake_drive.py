@@ -239,6 +239,125 @@ def pull_drive_ev(
 
 
 # ---------------------------------------------------------------------------
+# Resolución de nombre de carpeta E&V
+# ---------------------------------------------------------------------------
+
+# Patrón: "Dirección del inmueble - W-XXXXXX"
+# Acepta guion simple o largo, espacios opcionales alrededor.
+_EV_FOLDER_RE = re.compile(
+    r"^(.*?)\s*[-–]\s*(W-[A-Z0-9]{5,8})\s*$",
+    re.IGNORECASE,
+)
+
+
+def parse_ev_folder_name(folder_name: str) -> tuple[str, str]:
+    """Extrae dirección e ID GO del nombre de carpeta W-XXXXXX de E&V.
+
+    Formato esperado: «Dirección del inmueble - W-XXXXXX»
+
+    Returns:
+        Tupla (direccion, mls_id). Cadenas vacías si el formato no coincide.
+
+    Examples::
+
+        parse_ev_folder_name("Pedro Lain Entralgo 4 Chalet 4- W-02W4PJ")
+        # → ("Pedro Lain Entralgo 4 Chalet 4", "W-02W4PJ")
+
+        parse_ev_folder_name("Gran Via 40, 3º 1ª – W-030LFT")
+        # → ("Gran Via 40, 3º 1ª", "W-030LFT")
+    """
+    m = _EV_FOLDER_RE.match(folder_name.strip())
+    if m:
+        return m.group(1).strip(), m.group(2).upper()
+    return "", ""
+
+
+@dataclass
+class DriveFolderInfo:
+    """Metadatos básicos de una carpeta de Google Drive E&V."""
+    name: str           # Nombre de la carpeta (p.ej. "Gran Via 40 - W-030LFT")
+    drive_id: str       # ID del Shared Drive que contiene la carpeta
+
+
+def _get_drive_access_token() -> str | None:
+    """Extrae el access_token OAuth del remote gdrive_ev en rclone.conf."""
+    import json as _json
+    try:
+        result = subprocess.run(
+            ["rclone", "config", "show", "gdrive_ev"],
+            capture_output=True, text=True, timeout=5,
+        )
+        for line in result.stdout.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("token"):
+                parts = stripped.split("=", 1)
+                if len(parts) == 2:
+                    token_json = parts[1].strip()
+                    access_token = _json.loads(token_json).get("access_token")
+                    return access_token or None
+    except Exception:
+        pass
+    return None
+
+
+def get_drive_folder_info(folder_id: str) -> DriveFolderInfo | None:
+    """Obtiene nombre y Shared Drive ID de una carpeta del Drive E&V.
+
+    Usa la API REST de Google Drive (v3) con el access_token del remote
+    ``gdrive_ev`` almacenado en rclone.conf. Devuelve None si el token
+    está expirado, la carpeta no existe o cualquier error de red.
+
+    El token se renueva automáticamente cada vez que rclone hace un pull;
+    si ha caducado, el auto-fill simplemente no se activa (no es un error
+    bloqueante).
+
+    Args:
+        folder_id: ID de la carpeta Google Drive (extraído de la URL).
+
+    Returns:
+        DriveFolderInfo(name, drive_id), o None si no se pudo obtener.
+    """
+    access_token = _get_drive_access_token()
+    if not access_token:
+        return None
+
+    try:
+        import httpx
+        r = httpx.get(
+            f"https://www.googleapis.com/drive/v3/files/{folder_id}",
+            params={
+                "fields": "name,driveId",
+                "supportsAllDrives": "true",
+                "includeItemsFromAllDrives": "true",
+            },
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=5,
+        )
+        if r.status_code == 200:
+            data = r.json()
+            name = data.get("name", "")
+            drive_id = data.get("driveId", "")
+            if name:
+                return DriveFolderInfo(name=name, drive_id=drive_id)
+    except Exception:
+        pass
+    return None
+
+
+def get_drive_folder_name(folder_id: str) -> str | None:
+    """Obtiene el nombre de una carpeta de Drive E&V dado su folder_id.
+
+    .. deprecated::
+        Usar :func:`get_drive_folder_info` que también devuelve el driveId.
+
+    Returns:
+        Nombre de la carpeta, o None si no se pudo obtener.
+    """
+    info = get_drive_folder_info(folder_id)
+    return info.name if info else None
+
+
+# ---------------------------------------------------------------------------
 # Excepción
 # ---------------------------------------------------------------------------
 

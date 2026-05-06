@@ -20,7 +20,14 @@ from core import keepalive as _keepalive
 
 # Arrancar keep-alive en cuanto se carga el módulo (idempotente).
 _keepalive.ensure_started()
-from core.intake_drive import DriveIntakeError, parse_drive_url, pull_drive_ev
+from core.intake_drive import (
+    DriveIntakeError,
+    DriveFolderInfo as _DriveFolderInfo,
+    get_drive_folder_info as _get_drive_folder_info,
+    parse_drive_url,
+    parse_ev_folder_name as _parse_ev_folder_name,
+    pull_drive_ev,
+)
 from core import intake_demanda
 from core import share_drive as _sd
 import zipfile as _zipfile
@@ -28,6 +35,8 @@ from core.sudespacho_relations import (
     NuevoColaborador,
     SudespachoRelationsError as _SRelError,
     ensure_colaborador_vinculado,
+    find_expediente_judicial_by_referencia as _find_exp_judicial,
+    find_expediente_by_referencia as _find_exp_extrajudicial,
     link_ev_mmc,
     search_colaboradores_for_ui as _search_colabs,
     load_all_colaboradores as _load_all_colabs,
@@ -940,6 +949,116 @@ with tab_nuevo:
     _CIUDADES_ACTIVAS           = _J_CIUDADES           if es_judicial else _CIUDADES
 
     # ------------------------------------------------------------------
+    # Helper: driveId → (ciudad_label, equipo_label)
+    # ------------------------------------------------------------------
+    def _resolve_equipo_from_drive_id(
+        drive_id: str,
+        equipos_por_ciudad: dict,
+    ) -> tuple[str, str] | None:
+        """Devuelve (ciudad_label, equipo_label) dado un Shared Drive ID.
+
+        Busca en DRIVE_EV_TEAM_IDS el equipo_code que corresponde al driveId,
+        luego lo cruza con el diccionario equipos_por_ciudad para obtener las
+        etiquetas de selectbox. Devuelve None si no se encuentra.
+        """
+        # Construir mapa inverso: drive_id → equipo_code
+        # (varios equipos pueden compartir el mismo Shared Drive)
+        _rev = {v: k for k, v in DRIVE_EV_TEAM_IDS.items()}
+        equipo_code = _rev.get(drive_id)
+        if not equipo_code:
+            return None
+        for ciudad, equipos in equipos_por_ciudad.items():
+            for eq_label in equipos:
+                if eq_label.startswith(equipo_code):
+                    return ciudad, eq_label
+        return None
+
+    # ------------------------------------------------------------------
+    # Auto-fill desde Drive E&V (antes de renderizar widgets)
+    # Lee nc_drive_url del session_state (ya persistido del render anterior).
+    # Sin st.rerun(): los valores se inyectan directamente en session_state.
+    # ------------------------------------------------------------------
+    _drive_url_cached = st.session_state.get("nc_drive_url", "").strip()
+    if _drive_url_cached:
+        try:
+            _fid_cached = parse_drive_url(_drive_url_cached)
+            if st.session_state.get("_nc_drive_autofilled_fid") != _fid_cached:
+                with st.spinner("Obteniendo metadatos de carpeta…"):
+                    _folder_info_top = _get_drive_folder_info(_fid_cached)
+                st.session_state["_nc_drive_autofilled_fid"] = _fid_cached
+                if _folder_info_top:
+                    # Dirección e ID GO
+                    _auto_dir_top, _auto_mls_top = _parse_ev_folder_name(_folder_info_top.name)
+                    if _auto_dir_top and not st.session_state.get("nc_dir"):
+                        st.session_state["nc_dir"] = _auto_dir_top
+                    if _auto_mls_top and not st.session_state.get("nc_mls"):
+                        st.session_state["nc_mls"] = _auto_mls_top
+                    # Shared Drive ID (para el pull)
+                    if _folder_info_top.drive_id:
+                        st.session_state["_nc_autofill_team_id"] = _folder_info_top.drive_id
+                        # Ciudad y equipo comercial
+                        _eq_resolved = _resolve_equipo_from_drive_id(
+                            _folder_info_top.drive_id, _EQUIPOS_ACTIVOS_POR_CIUDAD
+                        )
+                        if _eq_resolved:
+                            _auto_ciudad, _auto_equipo = _eq_resolved
+                            # Auto-fill ciudad y equipo solo si ciudad está todavía
+                            # en el placeholder de selección (usuario no ha tocado nada)
+                            if st.session_state.get("nc_ciudad", "— selecciona ciudad —") == "— selecciona ciudad —":
+                                st.session_state["nc_ciudad"] = _auto_ciudad
+                                st.session_state["nc_equipo"] = _auto_equipo
+        except ValueError:
+            pass
+
+    # ------------------------------------------------------------------
+    # § 0 — Fuente documental Drive E&V (campo principal — va al inicio)
+    # ------------------------------------------------------------------
+    st.markdown(
+        '<div class="ev-section-label">Drive E&amp;V — carpeta de la operación</div>',
+        unsafe_allow_html=True,
+    )
+
+    _drive_url_label = "URL carpeta W-XXXXXX *" if es_judicial else "URL carpeta W-XXXXXX"
+    drive_url_input = st.text_input(
+        _drive_url_label,
+        placeholder="https://drive.google.com/drive/folders/1BxiMV…",
+        key="nc_drive_url",
+        help=(
+            "Pega la URL de la carpeta de la operación en el Drive engelvoelkers.com. "
+            "Ciudad, equipo, dirección e ID GO se autorellenan automáticamente."
+            + (" Obligatorio para expedientes judiciales: es la fuente de los documentos del procedimiento." if es_judicial else "")
+        ),
+    )
+
+    # Captions de feedback: folder_id + auto-fill aplicado
+    if drive_url_input.strip():
+        try:
+            _fid_preview = parse_drive_url(drive_url_input)
+            _preview_parts = [f"folder ID: `{_fid_preview}`"]
+            _autofilled_team = st.session_state.get("_nc_autofill_team_id", "")
+            if _autofilled_team:
+                # Mostrar qué equipo/Shared Drive se detectó
+                _eq_rev = {v: k for k, v in DRIVE_EV_TEAM_IDS.items()}
+                _detected_code = _eq_rev.get(_autofilled_team, "")
+                _preview_parts.append(f"Shared Drive: `{_autofilled_team}`" + (f" ({_detected_code})" if _detected_code else ""))
+            _autofill_dir = st.session_state.get("nc_dir", "")
+            _autofill_mls = st.session_state.get("nc_mls", "")
+            _autofill_ciudad = st.session_state.get("nc_ciudad", "")
+            if st.session_state.get("_nc_drive_autofilled_fid") == _fid_preview:
+                _af_parts = []
+                if _autofill_ciudad and _autofill_ciudad != "— selecciona ciudad —":
+                    _af_parts.append(f"Ciudad: **{_autofill_ciudad}**")
+                if _autofill_dir:
+                    _af_parts.append(f"Dir: **{_autofill_dir}**")
+                if _autofill_mls:
+                    _af_parts.append(f"ID GO: **{_autofill_mls}**")
+                if _af_parts:
+                    _preview_parts.append("💡 " + " · ".join(_af_parts))
+            st.caption(" · ".join(_preview_parts))
+        except ValueError:
+            st.caption("⚠️ URL no reconocida — revisa el formato.")
+
+    # ------------------------------------------------------------------
     # § 1 — Ciudad y tipo de caso
     # ------------------------------------------------------------------
     st.markdown('<div class="ev-section-label">Operación</div>', unsafe_allow_html=True)
@@ -1087,51 +1206,22 @@ with tab_nuevo:
     nombre_otros    = _email_to_nombre(mail_otros)
 
     # ------------------------------------------------------------------
-    # § 5 — Fuente documental Drive E&V (opcional)
+    # Resolución del Shared Drive ID para el pull
+    # Prioridad: (1) auto-fill desde Drive API  (2) lookup por equipo  (3) fallback manual
     # ------------------------------------------------------------------
-    st.markdown(
-        '<div class="ev-section-label">Drive E&amp;V — carpeta de la operación</div>',
-        unsafe_allow_html=True,
-    )
+    _equipo_code_resolved  = equipo_label.split("—")[0].strip()
+    _team_from_api         = st.session_state.get("_nc_autofill_team_id", "")
+    _team_from_equipo      = DRIVE_EV_TEAM_IDS.get(_equipo_code_resolved, "")
+    drive_team_id_resolved = _team_from_api or _team_from_equipo
 
-    _drive_url_label = "URL carpeta W-XXXXXX *" if es_judicial else "URL carpeta W-XXXXXX"
-    drive_url_input = st.text_input(
-        _drive_url_label,
-        placeholder="https://drive.google.com/drive/folders/1BxiMV…",
-        key="nc_drive_url",
-        help=(
-            "Pega la URL de la carpeta de la operación en el Drive engelvoelkers.com. "
-            "El Shared Drive se detecta automáticamente a partir del equipo seleccionado."
-            + (" Obligatorio para expedientes judiciales: es la fuente de los documentos del procedimiento." if es_judicial else "")
-        ),
-    )
-
-    # Resolución automática del Shared Drive ID desde el equipo seleccionado
-    _equipo_code = equipo_label.split("—")[0].strip()
-    _auto_team_id: str | None = DRIVE_EV_TEAM_IDS.get(_equipo_code)
-
-    if _auto_team_id:
-        st.caption(f"Shared Drive: `{_auto_team_id}` · detectado para **{_equipo_code}**")
-        drive_team_id_resolved = _auto_team_id
-    else:
-        st.warning(
-            f"Shared Drive no configurado para **{_equipo_code}**. "
-            "Introduce el ID manualmente (visible en la URL del Shared Drive raíz)."
-        )
-        drive_team_id_resolved = st.text_input(
-            "Shared Drive ID",
-            placeholder="0ADxxxxxxxxxxxxx",
-            key="nc_drive_team_id_fallback",
-            help="ID del Shared Drive raíz de la oficina E&V. Abre el Shared Drive en drive.google.com y copia el ID alfanumérico que aparece en la URL después de /drive/.",
-        ).strip()
-
-    # Preview del folder_id extraído (feedback visual inmediato)
-    if drive_url_input.strip():
-        try:
-            _fid_preview = parse_drive_url(drive_url_input)
-            st.caption(f"folder ID: `{_fid_preview}`")
-        except ValueError:
-            st.caption("⚠️ URL no reconocida — revisa el formato.")
+    if not drive_team_id_resolved:
+        with st.expander("⚙️ Shared Drive ID (manual)", expanded=False):
+            drive_team_id_resolved = st.text_input(
+                "Shared Drive ID",
+                placeholder="0ADxxxxxxxxxxxxx",
+                key="nc_drive_team_id_fallback",
+                help="Abre el Shared Drive en drive.google.com y copia el ID alfanumérico de la URL. Solo es necesario si el equipo no aparece configurado.",
+            ).strip()
 
     # ------------------------------------------------------------------
     # Preview del case_id (live)
@@ -1247,7 +1337,8 @@ with tab_nuevo:
                 else:
                     if not _drive_team_val:
                         st.warning(
-                            "⚠️ Rellena el **Shared Drive ID** para poder hacer el pull del Drive E&V."
+                            "⚠️ No se pudo determinar el Shared Drive ID. "
+                            "Introduce el ID manualmente en el expander '⚙️ Shared Drive ID' del formulario."
                         )
                     else:
                         with st.spinner("Descargando documentos del Drive E&V…"):
@@ -1275,6 +1366,45 @@ with tab_nuevo:
 
             # 3. Crear expediente en sudespacho (solo si se pulsó ese botón)
             if btn_sudespacho:
+                # ── Guardia anti-duplicados ─────────────────────────────────
+                # Busca en el CRM si ya existe un expediente con esta referencia.
+                # Si existe, bloquea y muestra el ID salvo que el usuario haya
+                # confirmado explícitamente en el render anterior.
+                _dup_confirm_key = f"_dup_confirmed_{final_case_id}"
+                _dup_id: str | None = None
+                try:
+                    with st.spinner("Verificando duplicados en el CRM…"):
+                        _finder = (
+                            _find_exp_judicial
+                            if es_judicial
+                            else _find_exp_extrajudicial
+                        )
+                        _dup_id = _finder(final_case_id)
+                except _SRelError as _dup_err:
+                    st.warning(
+                        f"⚠️ No se pudo verificar duplicados en el CRM: {_dup_err}  \n"
+                        "Puedes continuar bajo tu responsabilidad."
+                    )
+
+                if _dup_id and not st.session_state.get(_dup_confirm_key):
+                    st.error(
+                        f"⚠️ Ya existe un expediente con esta referencia en sudespacho "
+                        f"(**ID: {_dup_id}**).  \n"
+                        "Si quieres crearlo igualmente, pulsa **Confirmar de todos modos**."
+                    )
+                    if st.button(
+                        "Confirmar de todos modos",
+                        key=f"_dup_confirm_btn_{final_case_id}",
+                        type="secondary",
+                        help="Crea el expediente aunque ya exista uno con la misma referencia.",
+                    ):
+                        st.session_state[_dup_confirm_key] = True
+                        st.rerun()
+                    st.stop()
+
+                # Limpiar flag de confirmación tras pasar la guardia
+                st.session_state.pop(_dup_confirm_key, None)
+
                 # Posición procesal (común a ambos tipos)
                 _pos = (
                     _sc.POSICION_ACTOR
