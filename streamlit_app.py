@@ -35,9 +35,11 @@ from core.sudespacho_relations import (
     NuevoColaborador,
     SudespachoRelationsError as _SRelError,
     ensure_colaborador_vinculado,
+    ensure_colaborador_vinculado_judicial,
     find_expediente_judicial_by_referencia as _find_exp_judicial,
     find_expediente_by_referencia as _find_exp_extrajudicial,
     link_ev_mmc,
+    link_ev_mmc_judicial,
     search_colaboradores_for_ui as _search_colabs,
     load_all_colaboradores as _load_all_colabs,
 )
@@ -1488,7 +1490,10 @@ with tab_nuevo:
                         )
                         # 3b. Vincular EV MMC SPAIN, S.L.U. como cliente
                         try:
-                            link_ev_mmc(_exp_id)
+                            if es_judicial:
+                                link_ev_mmc_judicial(_exp_id)
+                            else:
+                                link_ev_mmc(_exp_id)
                             st.success("✅ Cliente **EV MMC SPAIN, S.L.U.** vinculado.")
                         except _SRelError as exc:
                             st.warning(f"⚠️ No se pudo vincular EV MMC: {exc}")
@@ -1509,10 +1514,16 @@ with tab_nuevo:
                             ):
                                 for _nc, _mc in _col_a_vincular:
                                     try:
-                                        _cid, _created = ensure_colaborador_vinculado(
-                                            _exp_id,
-                                            NuevoColaborador(nombre=_nc, email=_mc),
-                                        )
+                                        if es_judicial:
+                                            _cid, _created = ensure_colaborador_vinculado_judicial(
+                                                _exp_id,
+                                                NuevoColaborador(nombre=_nc, email=_mc),
+                                            )
+                                        else:
+                                            _cid, _created = ensure_colaborador_vinculado(
+                                                _exp_id,
+                                                NuevoColaborador(nombre=_nc, email=_mc),
+                                            )
                                         _accion = "creado y vinculado" if _created else "vinculado"
                                         st.success(
                                             f"✅ **{_nc}** — {_accion} (ID: {_cid})"

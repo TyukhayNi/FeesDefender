@@ -3,7 +3,7 @@
 > **Fuente de verdad única del proyecto.**
 > Actualizar al cerrar cada sesión con `python -m scripts.session_close`.
 
-**Última actualización:** 2026-05-06 (renovación automática JWT implementada: `_try_refresh_jwt_post` + `try_auto_refresh_jwt` + retry loop 401 en `_rest_post` y `_link_rest`; keep-alive `_keepalive_gdrive_ev()` en `scheduled_sync.py`; confirmado: REST API no expone login con credenciales — dead end documentado; 13 tests nuevos. Total: 215 tests.)
+**Última actualización:** 2026-05-06 (fix UI: `streamlit_app.py` usaba `link_ev_mmc`/`ensure_colaborador_vinculado` extrajudiciales para casos judiciales → vinculaciones silenciosamente ignoradas por el servidor. Fix: bifurcación por `es_judicial` → `link_ev_mmc_judicial` + `ensure_colaborador_vinculado_judicial`. MaRS15: expediente judicial creado en CRM, EV MMC + 2 colaboradores vinculados; `juanluis.garcia@engelvoelkers.com` pendiente vincular manualmente; pull gdrive_ev pendiente. `@refreshToken=null` en localStorage incluso tras login limpio: investigar Opción A. 215 tests.)
 
 ---
 
@@ -210,7 +210,8 @@ python -m scripts.run_pipeline "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
 18. ~~**[SIGUIENTE-REST-RELATIONS]**~~ ✅ 2026-05-06 — ver arriba.
 19. ~~**[SIGUIENTE]**~~ ✅ 2026-05-06 — Caso MaRS15 local creado (idempotente); URL Drive guardada en `_caso.md`; CRM falló por JWT expirado; pull rclone falló por token `gdrive_ev` caducado. Checks de existencia (carpeta + expediente CRM) implementados en UI. Pendiente completar CRM + pull tras renovar sesión.
 20. ~~**[SIGUIENTE]** Renovación automática JWT...~~ ✅ 2026-05-06 — `_try_refresh_jwt_post` + retry loop 401 implementados en create y relations. Cuando `@refreshToken` también expira: instrucción manual clara en UI. Confirmado: no existe endpoint login programático en REST API (ver DEAD_ENDS.md).
-21. **[SIGUIENTE]** ⬅️ Completar MaRS15: renovar sesión CRM manualmente (DevTools → 3 cookies → sidebar Streamlit 🔄) → crear expediente CRM → pull rclone gdrive_ev. Luego: `[NUEVO-HILO-AUDITORIA-2]` — investigar si algún endpoint PHP acepta `@token` para crear PHPSESSID sin interacción de navegador.
+21. ~~**[SIGUIENTE]** Completar MaRS15: renovar sesión CRM~~  ✅ 2026-05-06 — Expediente judicial creado; EV MMC + 2 colaboradores vinculados. Pendiente: vincular `juanluis.garcia@engelvoelkers.com` manualmente en CRM + pull rclone gdrive_ev.
+22. **[SIGUIENTE]** ⬅️ **Opción A — migrar creación de colaboradores a REST:** probar `POST /api/element_register/colaboradores` con `Authorization: Bearer <JWT>`. Si funciona, reescribir `_create_colaborador()` en `sudespacho_relations.py` REST-first + tests. Elimina única dependencia legacy PHP en flujo nuevo caso. Tras eso: pull rclone gdrive_ev de MaRS15.
 18. ~~**[SIGUIENTE-REST-RELATIONS]**~~ ✅ 2026-05-06 — `POST /api/relation_element/` confirmado HTTP 201 con Bearer JWT. 6 `link_*` migradas a REST-first + fallback legacy. 12 tests nuevos. `.env` actualizado.
 11. ~~**[NIKOLAI]** Conectar cuenta `nikolai.tyukhay@engelvoelkers.com` en Cowork~~ ✅ 2026-04-28 — rclone `gdrive_ev` configurado; Cowork no soporta multi-cuenta, rclone es la solución definitiva.
 12. **[SIGUIENTE-C]** Módulo `core/intake_drive.py`:
