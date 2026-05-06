@@ -3,7 +3,7 @@
 > **Fuente de verdad única del proyecto.**
 > Actualizar al cerrar cada sesión con `python -m scripts.session_close`.
 
-**Última actualización:** 2026-05-06 (UI: aviso `st.info()` cuando auto-fill aplica datos desde Drive; sección "Entorno" eliminada del sidebar; expander cookies manuales colapsado `⚙️ Renovación manual (administrador)` + mensaje amigable para usuarios no técnicos; reordenación flujo Nuevo Caso: local → CRM → pull; `register_drive_ev()` llamado antes del pull para persistir URL en `_caso.md`. Total: 199 tests.)
+**Última actualización:** 2026-05-06 (checks existencia en Nuevo Caso: `get_case_status()` en `case_manager` + warnings + checkboxes de confirmación en UI para carpeta local y expediente CRM ya registrado; 3 tests nuevos; caso MaRS15 creado localmente — CRM pendiente por JWT expirado, pull rclone pendiente por token `gdrive_ev` caducado. Total: 202 tests.)
 
 ---
 
@@ -206,7 +206,8 @@ python -m scripts.run_pipeline "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
 16. ~~**[SIGUIENTE-J-TESTS]**~~ ✅ 2026-05-06 — `test_sudespacho_create_rest.py` cubre REST extrajudicial + judicial (payloads, tags, REST-first + fallback).
 17. ~~**[SIGUIENTE]** Ejecutar `pytest -q`~~ ✅ 2026-05-06 — 178/178 en verde.
 18. ~~**[SIGUIENTE-REST-RELATIONS]**~~ ✅ 2026-05-06 — ver arriba.
-19. **[SIGUIENTE]** ⬅️ Crear caso real MaRS15 (Pedro Laín Entralgo 4, W-02W4PJ, Devolución reserva). Caso local ya existe en CASOS (ensure_case OK, sin expediente CRM, sin pull). Ir a Nuevo Caso → introducir datos y URL Drive E&V → "⚡ Crear caso + enviar a sudespacho" → verificar orden local → URL guardada → CRM → pull. Luego probar `[SIGUIENTE-SHARE]`.
+19. ~~**[SIGUIENTE]**~~ ✅ 2026-05-06 — Caso MaRS15 local creado (idempotente); URL Drive guardada en `_caso.md`; CRM falló por JWT expirado; pull rclone falló por token `gdrive_ev` caducado. Checks de existencia (carpeta + expediente CRM) implementados en UI. Pendiente completar CRM + pull tras renovar sesión.
+20. **[SIGUIENTE]** ⬅️ Implementar renovación automática de sesión CRM transparente: cuando se recibe HTTP 401, reintentar `POST /api/token/refresh` con `@refreshToken`; si también ha caducado, leer las 3 cookies frescas desde Chrome vía `browser-cookie3` y persistir en `.env` con `_update_env_field`. Una vez implementado, completar MaRS15 (CRM + pull rclone tras `rclone ls gdrive_ev:`).
 18. ~~**[SIGUIENTE-REST-RELATIONS]**~~ ✅ 2026-05-06 — `POST /api/relation_element/` confirmado HTTP 201 con Bearer JWT. 6 `link_*` migradas a REST-first + fallback legacy. 12 tests nuevos. `.env` actualizado.
 11. ~~**[NIKOLAI]** Conectar cuenta `nikolai.tyukhay@engelvoelkers.com` en Cowork~~ ✅ 2026-04-28 — rclone `gdrive_ev` configurado; Cowork no soporta multi-cuenta, rclone es la solución definitiva.
 12. **[SIGUIENTE-C]** Módulo `core/intake_drive.py`:

@@ -280,6 +280,40 @@ def get_drive_ev_ids(case_id: str) -> tuple[str | None, str | None]:
     return meta.get("drive_ev_team_id"), meta.get("drive_ev_folder_id")
 
 
+def get_case_status(case_id: str) -> dict:
+    """Comprueba el estado local del caso.
+
+    Devuelve un dict con:
+    - ``local_exists`` (bool): True si la carpeta existe en CASOS_ROOT.
+    - ``expedientes`` (list[dict]): expedientes CRM registrados en ``_caso.md``
+      (lista vacía si la carpeta no existe o el índice no tiene entradas).
+
+    No lanza excepciones: en caso de error de lectura devuelve estado mínimo.
+    """
+    import yaml as _yaml
+
+    case_dir = caso_path(case_id)
+    local_exists = case_dir.exists()
+    expedientes: list[dict] = []
+
+    if local_exists:
+        index = case_dir / "00_Input" / "_caso.md"
+        if index.exists():
+            try:
+                text = index.read_text(encoding="utf-8")
+                if text.startswith("---"):
+                    _, fm_raw, _ = text.split("---", 2)
+                    fm = _yaml.safe_load(fm_raw) or {}
+                    expedientes = [
+                        e for e in (fm.get("sudespacho_expedientes") or [])
+                        if isinstance(e, dict)
+                    ]
+            except Exception:
+                pass
+
+    return {"local_exists": local_exists, "expedientes": expedientes}
+
+
 def list_cases() -> list[str]:
     if not settings.casos_root.exists():
         return []

@@ -47,3 +47,38 @@ def test_list_cases(tmp_casos_root):
     assert "EV-2026-002" in cases
     # _PLANTILLA empieza con _ → debe quedar fuera
     assert not any(c.startswith("_") for c in cases)
+
+
+def test_get_case_status_no_existe(tmp_casos_root):
+    """Caso que no existe → local_exists=False, expedientes vacío."""
+    from core import case_manager
+    importlib.reload(case_manager)
+
+    status = case_manager.get_case_status("EV-INEXISTENTE")
+    assert status["local_exists"] is False
+    assert status["expedientes"] == []
+
+
+def test_get_case_status_existe_sin_expedientes(tmp_casos_root):
+    """Carpeta creada pero sin expedientes CRM registrados."""
+    from core import case_manager
+    importlib.reload(case_manager)
+
+    case_manager.ensure_case("EV-2026-TEST")
+    status = case_manager.get_case_status("EV-2026-TEST")
+    assert status["local_exists"] is True
+    assert status["expedientes"] == []
+
+
+def test_get_case_status_con_expediente(tmp_casos_root):
+    """Carpeta con un expediente CRM registrado."""
+    from core import case_manager
+    importlib.reload(case_manager)
+
+    case_manager.ensure_case("EV-2026-TEST")
+    case_manager.register_expediente("EV-2026-TEST", "999", "expedientes_judiciales")
+    status = case_manager.get_case_status("EV-2026-TEST")
+    assert status["local_exists"] is True
+    assert len(status["expedientes"]) == 1
+    assert status["expedientes"][0]["id"] == "999"
+    assert status["expedientes"][0]["element"] == "expedientes_judiciales"

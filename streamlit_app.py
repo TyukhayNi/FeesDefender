@@ -1246,6 +1246,55 @@ with tab_nuevo:
     )
 
     # ------------------------------------------------------------------
+    # Checks de existencia: carpeta local + expedientes CRM ya registrados
+    # ------------------------------------------------------------------
+    _case_status   = case_manager.get_case_status(final_case_id)
+    _local_exists  = _case_status["local_exists"]
+    _exp_existentes: list[dict] = _case_status["expedientes"]
+
+    _block_local = False
+    _block_crm   = False
+
+    if _local_exists:
+        st.warning(
+            f"⚠️ La carpeta **`{final_case_id}`** ya existe en CASOS. "
+            "Su contenido no se sobreescribirá.",
+            icon="📁",
+        )
+        _confirmar_local = st.checkbox(
+            "Entendido — continuar con la carpeta existente",
+            key="nc_confirm_local",
+            help=(
+                "La carpeta local ya existe. Marca para confirmar que quieres "
+                "usar la carpeta existente y proceder."
+            ),
+        )
+        _block_local = not _confirmar_local
+
+    if _exp_existentes:
+        _exp_resumen = ", ".join(
+            f"`{e.get('element', '?')}` ID **{e.get('id', '?')}**"
+            for e in _exp_existentes
+        )
+        st.warning(
+            f"⚠️ Este caso ya tiene expediente/s registrado/s en el CRM: {_exp_resumen}. "
+            "Al enviar a sudespacho solo se actualizarán relaciones y se hará el pull "
+            "(no se creará un expediente duplicado).",
+            icon="🗂️",
+        )
+        _confirmar_crm = st.checkbox(
+            "Entendido — continuar (actualizar relaciones y pull)",
+            key="nc_confirm_crm",
+            help=(
+                "El expediente CRM ya existe. Marca para confirmar que quieres "
+                "proceder: se actualizarán las relaciones y se realizará el pull del Drive."
+            ),
+        )
+        _block_crm = not _confirmar_crm
+
+    _btn_disabled = _block_local or _block_crm
+
+    # ------------------------------------------------------------------
     # Botones de acción
     # ------------------------------------------------------------------
     st.divider()
@@ -1255,6 +1304,7 @@ with tab_nuevo:
             "📁 Crear caso local",
             use_container_width=True,
             key="nc_btn_local",
+            disabled=_btn_disabled,
             help="Crea la estructura de carpetas del caso en el Drive de Tyukhay Legal. No crea expediente en el CRM.",
         )
     with col_b:
@@ -1263,7 +1313,8 @@ with tab_nuevo:
             type="primary",
             use_container_width=True,
             key="nc_btn_sudespacho",
-            help="Crea el caso local Y el expediente extrajudicial en el CRM sudespacho.net, vinculando EV MMC SPAIN como cliente y los consultores como colaboradores.",
+            disabled=_btn_disabled,
+            help="Crea el caso local Y el expediente en el CRM sudespacho.net, vinculando EV MMC SPAIN como cliente y los consultores como colaboradores.",
         )
 
     if btn_local or btn_sudespacho:
