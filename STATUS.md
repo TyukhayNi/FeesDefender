@@ -3,7 +3,7 @@
 > **Fuente de verdad única del proyecto.**
 > Actualizar al cerrar cada sesión con `python -m scripts.session_close`.
 
-**Última actualización:** 2026-05-04 (Fix preset-key StreamlitAPIException botón 🔍; paginación paralela `_list_colaboradores_rest` con ThreadPoolExecutor + test multi-página → 147 tests; pre-calentamiento caché colaboradores en sidebar; `run_app.bat` con `start` — PS no necesario; `core/keepalive.py` hilo keep-alive PHPSESSID 14 min; CSRF candidates actualizados a `/tnm/gestion/...`; diagnóstico: rutas SPA devuelven E-plan con PHPSESSID → hipótesis: crear expedientes ya usa REST+JWT sin CSRF)
+**Última actualización:** 2026-05-06 (Auditoría creación expediente confirmada: SPA usa REST `POST /api/element_register/{element}` con `Authorization: Bearer <JWT>` — sin PHPSESSID ni CSRF. `sudespacho_create.py` migrado a REST-first + fallback legacy para extrajudicial Y judicial. `_tag_id_from_token`, `_tags_to_rest`, `_build_rest_payload_*`, `create_expediente_rest`, `create_expediente_judicial_rest`, `_rest_post`. Tests: `test_sudespacho_create_rest.py`. DEAD_ENDS.md: 2 endpoints REST inútiles documentados. INTEGRACION_SUDESPACHO.md: endpoints confirmados + mapping propiedades CamelCase/lowercase.)
 
 ---
 
@@ -55,11 +55,11 @@ git commit -m "<mensaje que Claude propuso>"
 
 | Ítem | Estado |
 |------|--------|
-| Tests | ✅ 147/147 (+1 multi-página paralela _list_colaboradores_rest) |
+| Tests | ✅ 147/147 existentes + `test_sudespacho_create_rest.py` añadido (pendiente ejecutar en PS) |
 | Pipeline | ✅ Ejecutado end-to-end (BaRR3, 2026-04-28, 9/9 pasos OK, ~9 min) |
 | Primer caso real | ✅ Creado, docs descargados |
 | Taxonomía de casos | ✅ Actualizada en config.py |
-| `sudespacho_create.py` | ✅ Extrajudicial + ✅ Judicial (2026-05-04) — DTO, tags completos, notas, helper |
+| `sudespacho_create.py` | ✅ REST-first (2026-05-06): extrajudicial + judicial con `Authorization: Bearer <JWT>` sin PHPSESSID; fallback legacy automático |
 | `list_gdocu_docs_rest` + `download_document_rest` | ✅ Implementado 2026-05-04 — sin PHPSESSID (solo x-api-key) |
 | `pull_expediente` REST-first | ✅ Implementado 2026-05-04 — fallback legacy automático si REST falla |
 | `core/intake_demanda.py` | ✅ save_file(), extract_zip() (path traversal sanitizado), list_files() (2026-05-04) |
@@ -87,7 +87,7 @@ git commit -m "<mensaje que Claude propuso>"
 | Notas de expediente | ✅ 13 NOTA_* alineadas con Manual 1.1.4 |
 | `session_close.py` | ✅ Simplificado — solo pytest, sin interactividad |
 | `docs/DEAD_ENDS.md` | ✅ 8 callejones documentados (+ SPA login NO crea PHPSESSID, 2026-05-04) |
-| `docs/INTEGRACION_SUDESPACHO.md` | ✅ Actualizado 2026-05-04: REST cubre listing+descarga; 3 nuevos endpoints; gotcha #4 corregido |
+| `docs/INTEGRACION_SUDESPACHO.md` | ✅ Actualizado 2026-05-06: endpoints REST creación confirmados + mapping propiedades CamelCase vs lowercase + dead ends saveselect |
 | `docs/ARQUITECTURA.md` | ✅ Mapa de dependencias + convención commits |
 | Protocolo de sesión | ✅ 4 momentos — Claude presenta → aprueba → ejecuta → PS |
 | Task Scheduler | ⏳ Pendiente configurar |
@@ -200,10 +200,11 @@ python -m scripts.run_pipeline "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
 13. ~~**[SIGUIENTE-J-TAGS]**~~ ✅ 2026-05-04 — Tags ciudad (IDs 297-303) y equipos faltantes (304-313) creados manualmente en CRM + constantes añadidas a `sudespacho_create.py`.
 14. ~~**[SIGUIENTE-J-TEAMS]**~~ ✅ 2026-05-04 — Ver punto anterior.
 15. ~~**[SIGUIENTE-J-UI]**~~ ✅ 2026-05-04 — Toggle Extrajudicial/Judicial en `streamlit_app.py`: radio, `_J_EQUIPOS_POR_CIUDAD`, `_J_CIUDADES`, § 3b con NIG + tipo procedimiento, handler bifurcado llamando a `create_expediente_judicial()`.
-16. **[SIGUIENTE]** ⬅️ **Auditar creación expediente en SPA** — DevTools → Network → crear expediente manualmente en sudespacho → capturar POST → determinar si sigue usando form+CSRF o ya es REST+JWT. Resultado determina si PHPSESSID sigue siendo necesario para crear expedientes desde FD.
+16. ~~**[SIGUIENTE]** Auditar creación expediente en SPA~~ ✅ 2026-05-06 — Confirmado REST+JWT sin PHPSESSID. `create_expediente()` y `create_expediente_judicial()` migrados a REST-first. Tests en `test_sudespacho_create_rest.py`.
 17. ~~**[SIGUIENTE-B-COLAB]**~~ ✅ 2026-05-04 — botón 🔍 end-to-end verificado.
 18. **[SIGUIENTE-SHARE]** Probar compartición directa carpeta E&V: tab Casos → expander "Compartir carpeta E&V" → botón "⚡ Compartir directamente". Si falla por token expirado, ejecutar `rclone ls gdrive_ev:` para refrescarlo.
-16. **[SIGUIENTE-J-TESTS]** Tests para `create_expediente_judicial()`, `build_form_data_judicial()` y funciones de relación judicial.
+16. ~~**[SIGUIENTE-J-TESTS]**~~ ✅ 2026-05-06 — `test_sudespacho_create_rest.py` cubre REST extrajudicial + judicial (payloads, tags, REST-first + fallback).
+17. **[SIGUIENTE]** ⬅️ **Ejecutar `pytest -q` en PS** para verificar que los 147 tests existentes siguen en verde y los nuevos de `test_sudespacho_create_rest.py` pasan. Luego commit.
 11. ~~**[NIKOLAI]** Conectar cuenta `nikolai.tyukhay@engelvoelkers.com` en Cowork~~ ✅ 2026-04-28 — rclone `gdrive_ev` configurado; Cowork no soporta multi-cuenta, rclone es la solución definitiva.
 12. **[SIGUIENTE-C]** Módulo `core/intake_drive.py`:
    - Inputs: `case_id`, `drive_ev_team_id`, `drive_ev_folder_id` (extraído de URL W-XXXXXX)
@@ -291,8 +292,10 @@ data/CASOS/{case_id}/
 ## Tests — última ejecución
 
 ```
-pytest -q   →   146 passed (2026-05-04)
+pytest -q   →   147 passed (2026-05-04)
 ```
 Módulos cubiertos: `case_manager`, `inventory`, `utils`,
 `sync_sudespacho` (+26 nuevos: REST gdocu), `sync_sudespacho_legacy`,
 `sudespacho_relations` (+8 nuevos: REST colaboradores).
+
+**Pendiente ejecutar en PS (2026-05-06):** `test_sudespacho_create_rest.py` — tests REST creación extrajudicial + judicial.

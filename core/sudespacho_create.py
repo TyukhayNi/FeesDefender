@@ -69,15 +69,75 @@ Pendiente confirmar
 
 from __future__ import annotations
 
+import os
 import time
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
+import httpx
+
 from .sync_sudespacho_legacy import (
     SudespachoLegacyClient,
     SudespachoLegacyError,
 )
+
+# ---------------------------------------------------------------------------
+# Constantes REST API (api-crm-commons-pro.sudespacho.biz)
+# ---------------------------------------------------------------------------
+
+_REST_BASE = "https://api-crm-commons-pro.sudespacho.biz"
+_REST_TIMEOUT = 60
+
+# Endpoints REST de creación (confirmados 2026-05-06 por ingeniería inversa del SPA)
+#   POST /api/element_register/extrajudiciales
+#   POST /api/element_register/expedientes_judiciales
+# Auth: Authorization: Bearer <@token JWT>  — NO requiere PHPSESSID ni CSRF
+# Body: JSON plano con nombres semánticos de propiedad (no campo_XXXX)
+# Response: {"id": <int>, "message": "Created!"}  —  HTTP 201
+
+_REST_CREATE_EXTRAJUDICIAL = "/api/element_register/extrajudiciales"
+_REST_CREATE_JUDICIAL      = "/api/element_register/expedientes_judiciales"
+
+
+def _tag_id_from_token(tag: str) -> str:
+    """Extrae el ID numérico de un token de tag CRM.
+
+    Los tokens tienen el formato "#{color}___{id}" (ej. "#528800___214").
+    El endpoint REST espera solo el ID numérico como string.
+
+    Args:
+        tag: Token en formato "#{color}___{id}" o ID numérico directo.
+
+    Returns:
+        El ID numérico como string (ej. "214").
+    """
+    if "___" in tag:
+        return tag.split("___")[1]
+    return tag
+
+
+def _tags_to_rest(tags: list[str]) -> list[str]:
+    """Convierte lista de tokens CRM a formato REST (array de IDs string).
+
+    Args:
+        tags: Lista de tokens "#{color}___{id}" (sin sentinel __void__).
+
+    Returns:
+        Lista de IDs numéricos como strings, ej. ["214", "286"].
+    """
+    return [_tag_id_from_token(t) for t in tags if t != "__void__" and t]
+
+
+def _get_jwt_from_env() -> str:
+    """Lee el JWT (@token) del .env/os.environ. Lanza ValueError si no está."""
+    jwt = (os.getenv("SUDESPACHO_LEGACY_JWT") or "").strip()
+    if not jwt:
+        raise ValueError(
+            "SUDESPACHO_LEGACY_JWT no está configurado en .env. "
+            "Actualízalo desde el sidebar de Streamlit (botón 🔄)."
+        )
+    return jwt
 
 
 # ---------------------------------------------------------------------------
@@ -641,8 +701,9 @@ def create_expediente_judicial(
 ) -> str:
     """Crea un expediente judicial en sudespacho.net.
 
-    Usa el frontal heredado (mismo mecanismo que create_expediente).
-    El CSRF token se extrae automáticamente de la sesión PHP activa.
+    Estrategia REST-first (desde 2026-05-06): igual que create_expediente().
+    Intenta REST (/api/element_register/expedientes_judiciales); si falla,
+    cae al frontal heredado (PHPSESSID + CSRF).
 
     Args:
         datos: Datos del nuevo expediente judicial.
@@ -674,13 +735,21 @@ def create_expediente_judicial(
         ))
         # eid → "700"
     """
+    # --- Intento 1: REST API (sin PHPSESSID) ---
+    rest_error: Exception | None = None
+    try:
+        return create_expediente_judicial_rest(datos)
+    except Exception as exc:
+        rest_error = exc
+
+    # --- Intento 2: Frontal heredado (fallback) ---
     owns_client = legacy_client is None
     try:
         client = legacy_client or SudespachoLegacyClient()
     except SudespachoLegacyError as exc:
         raise SudespachoCreateError(
-            f"No se pudo inicializar el cliente legacy: {exc}. "
-            "Revisa SUDESPACHO_LEGACY_PHPSESSID en .env."
+            f"REST falló ({rest_error}) y el cliente legacy tampoco pudo iniciarse: {exc}. "
+            "Revisa SUDESPACHO_LEGACY_JWT y SUDESPACHO_LEGACY_PHPSESSID en .env."
         ) from exc
 
     try:
@@ -688,7 +757,7 @@ def create_expediente_judicial(
             csrf_token = client.get_csrf_token()
         except SudespachoLegacyError as exc:
             raise SudespachoCreateError(
-                f"No se pudo obtener el CSRF token: {exc}"
+                f"REST falló ({rest_error}). CSRF token del fallback: {exc}"
             ) from exc
 
         form_data = build_form_data_judicial(datos, csrf_token)
@@ -698,13 +767,13 @@ def create_expediente_judicial(
             response = client.post_form(url, form_data)
         except SudespachoLegacyError as exc:
             raise SudespachoCreateError(
-                f"POST {_ENDPOINT_CREATE_JUDICIAL} falló: {exc}"
+                f"REST falló ({rest_error}). POST legacy {_ENDPOINT_CREATE_JUDICIAL} falló: {exc}"
             ) from exc
 
         expediente_id = extract_id_from_response(response)
         if not expediente_id:
             raise SudespachoCreateError(
-                f"Expediente judicial creado pero no se pudo extraer su ID. "
+                f"Expediente judicial creado (legacy fallback) pero no se pudo extraer su ID. "
                 f"Respuesta: {str(response)[:400]}."
             )
 
@@ -1076,6 +1145,185 @@ def extract_id_from_response(response: Any) -> str | None:
 # Función principal
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Creación vía REST API (sin PHPSESSID, solo JWT) — confirmado 2026-05-06
+# ---------------------------------------------------------------------------
+
+def _build_rest_payload_extrajudicial(datos: "NuevoExpedienteExtrajudicial") -> dict:
+    """Construye el body JSON para crear un expediente extrajudicial via REST.
+
+    Mapping de propiedades confirmado el 2026-05-06 contra
+    POST /api/element_register/extrajudiciales.
+    Los nombres semánticos son distintos a los campo_XXXX del frontal legacy.
+
+    Propiedades del elemento extrajudiciales (obtenidas del error 500 del servidor):
+        Referencia_Cliente, Fecha_alta, Tipo_Asunto, Tipo_Procedimiento,
+        cuantia, costas, intereses, total, Profesional, Notas,
+        tnm_posicionprocesal, tnm_siniestro, serie_expediente,
+        Numero_Expediente, tags, ...
+    """
+    total = datos.cuantia + datos.costas + datos.intereses
+    return {
+        "Referencia_Cliente":   datos.referencia_cliente,
+        "Fecha_alta":           datos.fecha_apertura.strftime("%Y-%m-%d"),
+        "Tipo_Asunto":          datos.materia,
+        "Tipo_Procedimiento":   datos.subtipo,
+        "cuantia":              int(round(datos.cuantia)),
+        "costas":               int(round(datos.costas)),
+        "intereses":            int(round(datos.intereses)),
+        "total":                round(total, 2),
+        "Profesional":          datos.responsable,
+        "Notas":                datos.descripcion_html,
+        "tnm_posicionprocesal": datos.posicion,
+        "tnm_siniestro":        "0",
+        "serie_expediente":     str(datos.fecha_apertura.year),
+        "Numero_Expediente":    "0",
+        "tags":                 _tags_to_rest(datos.tags),
+    }
+
+
+def _build_rest_payload_judicial(datos: "NuevoExpedienteJudicial") -> dict:
+    """Construye el body JSON para crear un expediente judicial via REST.
+
+    Mapping de propiedades confirmado el 2026-05-06 contra
+    POST /api/element_register/expedientes_judiciales.
+
+    Propiedades del elemento expedientes_judiciales (obtenidas del error 500):
+        referencia_cliente, fecha_alta, tipo_asunto, tipo_procedimiento,
+        cuantia, costas, intereses, total, profesional_asignado, notas,
+        posicion_procesal, NIG, referencia_procurador, referencia_propia,
+        serie_expediente, num_expediente, tags, ...
+
+    Nota: judicial usa nombres en minúscula (referencia_cliente, fecha_alta)
+    mientras extrajudicial usa CamelCase (Referencia_Cliente, Fecha_alta).
+    Ambos verificados contra las listas de propiedades devueltas por el servidor.
+    """
+    total = datos.cuantia + datos.costas + datos.intereses
+    return {
+        "referencia_cliente":   datos.referencia_cliente,
+        "fecha_alta":           datos.fecha_apertura.strftime("%Y-%m-%d"),
+        "tipo_asunto":          datos.tipo_asunto,
+        "tipo_procedimiento":   datos.tipo_procedimiento,
+        "cuantia":              int(round(datos.cuantia)),
+        "costas":               int(round(datos.costas)),
+        "intereses":            int(round(datos.intereses)),
+        "total":                round(total, 2),
+        "profesional_asignado": datos.abogado_principal,
+        "notas":                datos.notas_html,
+        "posicion_procesal":    datos.posicion,
+        "NIG":                  datos.NIG,
+        "referencia_procurador": datos.referencia_procurador,
+        "referencia_propia":    datos.referencia_propia,
+        "serie_expediente":     str(datos.fecha_apertura.year),
+        "num_expediente":       "0",
+        "tags":                 _tags_to_rest(datos.tags),
+    }
+
+
+def _rest_post(endpoint: str, payload: dict) -> str:
+    """Envía el POST REST de creación y devuelve el ID del expediente creado.
+
+    Args:
+        endpoint: Path relativo, ej. "/api/element_register/extrajudiciales".
+        payload: Body JSON (flat dict con propiedades semánticas).
+
+    Returns:
+        ID numérico del expediente creado (str).
+
+    Raises:
+        SudespachoCreateError: si el servidor devuelve error o no hay ID.
+        ValueError: si SUDESPACHO_LEGACY_JWT no está configurado.
+    """
+    jwt = _get_jwt_from_env()
+    url = f"{_REST_BASE}{endpoint}"
+    try:
+        r = httpx.post(
+            url,
+            json=payload,
+            headers={
+                "Authorization":  f"Bearer {jwt}",
+                "Content-Type":   "application/json",
+                "Accept":         "application/json",
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/124.0.0.0 Safari/537.36"
+                ),
+            },
+            timeout=_REST_TIMEOUT,
+        )
+    except httpx.HTTPError as exc:
+        raise SudespachoCreateError(f"REST POST {endpoint} falló: {exc}") from exc
+
+    if r.status_code == 201:
+        try:
+            data = r.json()
+            eid = str(data.get("id", ""))
+            if eid and eid.isdigit():
+                return eid
+        except Exception:
+            pass
+        raise SudespachoCreateError(
+            f"REST POST {endpoint} devolvió 201 pero sin ID válido. "
+            f"Body: {r.text[:300]}"
+        )
+
+    # Error: intentar extraer el mensaje
+    try:
+        err = r.json()
+        detail = err.get("detail") or err.get("hydra:description") or r.text[:300]
+    except Exception:
+        detail = r.text[:300]
+
+    raise SudespachoCreateError(
+        f"REST POST {endpoint} → HTTP {r.status_code}: {detail}"
+    )
+
+
+def create_expediente_rest(
+    datos: "NuevoExpedienteExtrajudicial",
+) -> str:
+    """Crea un expediente extrajudicial via REST API (sin PHPSESSID).
+
+    Usa POST /api/element_register/extrajudiciales con JWT Bearer.
+    No requiere PHPSESSID ni CSRF token.
+
+    Args:
+        datos: Datos del expediente extrajudicial.
+
+    Returns:
+        ID numérico del expediente creado (str).
+
+    Raises:
+        SudespachoCreateError: si la creación falla.
+        ValueError: si SUDESPACHO_LEGACY_JWT no está en .env.
+    """
+    payload = _build_rest_payload_extrajudicial(datos)
+    return _rest_post(_REST_CREATE_EXTRAJUDICIAL, payload)
+
+
+def create_expediente_judicial_rest(
+    datos: "NuevoExpedienteJudicial",
+) -> str:
+    """Crea un expediente judicial via REST API (sin PHPSESSID).
+
+    Usa POST /api/element_register/expedientes_judiciales con JWT Bearer.
+    No requiere PHPSESSID ni CSRF token.
+
+    Args:
+        datos: Datos del expediente judicial.
+
+    Returns:
+        ID numérico del expediente creado (str).
+
+    Raises:
+        SudespachoCreateError: si la creación falla.
+        ValueError: si SUDESPACHO_LEGACY_JWT no está en .env.
+    """
+    payload = _build_rest_payload_judicial(datos)
+    return _rest_post(_REST_CREATE_JUDICIAL, payload)
+
+
 class SudespachoCreateError(RuntimeError):
     pass
 
@@ -1088,28 +1336,28 @@ def create_expediente(
 ) -> str:
     """Crea un expediente extrajudicial en sudespacho.net.
 
-    Usa el frontal heredado (mismo mecanismo que sync_sudespacho_legacy).
-    El CSRF token se extrae automáticamente de la sesión PHP activa.
+    Estrategia REST-first (desde 2026-05-06):
+      1. Intenta crear via REST API (/api/element_register/extrajudiciales).
+         Auth: JWT Bearer — NO requiere PHPSESSID ni CSRF.
+      2. Si REST falla (JWT expirado, error de red, etc.), cae al frontal
+         heredado (PHPSESSID + CSRF), que sigue operativo.
 
     Args:
         datos: Datos del nuevo expediente.
-        legacy_client: Cliente legacy reutilizable (opcional).
-        legacy_host: Host del tenant (opcional; por defecto lee SUDESPACHO_LEGACY_HOST del .env).
+        legacy_client: Cliente legacy reutilizable para el fallback (opcional).
+        legacy_host: Host del tenant para el fallback (opcional).
 
     Returns:
         ID numérico del expediente creado (str).
 
     Raises:
-        SudespachoCreateError: si la creación falla o la respuesta no contiene el ID.
-        SudespachoLegacyError: si la sesión PHP ha expirado.
+        SudespachoCreateError: si tanto REST como legacy fallan.
 
     Example::
 
-        from core.sudespacho_create import create_expediente, NuevoExpedienteExtrajudicial
-
         from core.sudespacho_create import (
             create_expediente, NuevoExpedienteExtrajudicial,
-            tag_defaults_for_tipo_caso, TAG_ROJO_BaRR1, TAG_SENTINEL,
+            tag_defaults_for_tipo_caso, TAG_ROJO_BaRR1,
         )
 
         tags = [TAG_ROJO_BaRR1] + tag_defaults_for_tipo_caso("NEGATIVA_ARRAS")
@@ -1120,45 +1368,48 @@ def create_expediente(
         ))
         # eid → "653"
     """
+    # --- Intento 1: REST API (sin PHPSESSID) ---
+    rest_error: Exception | None = None
+    try:
+        return create_expediente_rest(datos)
+    except Exception as exc:
+        rest_error = exc
+
+    # --- Intento 2: Frontal heredado (fallback) ---
     owns_client = legacy_client is None
     try:
         client = legacy_client or SudespachoLegacyClient()
     except SudespachoLegacyError as exc:
         raise SudespachoCreateError(
-            f"No se pudo inicializar el cliente legacy: {exc}. "
-            "Revisa SUDESPACHO_LEGACY_PHPSESSID en .env."
+            f"REST falló ({rest_error}) y el cliente legacy tampoco pudo iniciarse: {exc}. "
+            "Revisa SUDESPACHO_LEGACY_JWT y SUDESPACHO_LEGACY_PHPSESSID en .env."
         ) from exc
 
     try:
-        # 1. Obtener CSRF token activo de la sesión
         try:
             csrf_token = client.get_csrf_token()
         except SudespachoLegacyError as exc:
             raise SudespachoCreateError(
-                f"No se pudo obtener el CSRF token: {exc}"
+                f"REST falló ({rest_error}). Fallback legacy también falló "
+                f"al obtener CSRF: {exc}"
             ) from exc
 
-        # 2. Construir el body
         form_data = build_form_data(datos, csrf_token)
-
-        # 3. Enviar el POST
         url = f"https://{legacy_host or client.host}{_ENDPOINT_CREATE}"
         try:
             response = client.post_form(url, form_data)
         except SudespachoLegacyError as exc:
             raise SudespachoCreateError(
-                f"POST {_ENDPOINT_CREATE} falló: {exc}"
+                f"REST falló ({rest_error}). Fallback legacy POST {_ENDPOINT_CREATE} "
+                f"también falló: {exc}"
             ) from exc
 
-        # 4. Extraer el ID del expediente creado
         expediente_id = extract_id_from_response(response)
         if not expediente_id:
             raise SudespachoCreateError(
-                f"Expediente creado pero no se pudo extraer su ID. "
-                f"Respuesta: {str(response)[:400]}. "
-                "Revisa extract_id_from_response() con el shape real de la respuesta."
+                f"Expediente creado (fallback legacy) pero sin ID extraíble. "
+                f"Respuesta: {str(response)[:400]}."
             )
-
         return expediente_id
 
     finally:

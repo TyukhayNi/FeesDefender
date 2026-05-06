@@ -2,7 +2,7 @@
 
 > Conocimiento empírico acumulado sobre la API de sudespacho.net.  
 > Todo lo aquí documentado ha sido verificado contra el tenant `tnm.sudespacho.net`  
-> (commons-pro). Última actualización: 2026-05-04.
+> (commons-pro). Última actualización: 2026-05-06.
 
 ---
 
@@ -12,10 +12,12 @@ sudespacho.net expone **dos superficies de integración** con comportamientos di
 
 | Superficie | Host | Auth | Uso en FeesDefender |
 |---|---|---|---|
-| **API REST nueva** | `api-crm-commons-pro.sudespacho.biz` | `x-api-key: <API_KEY>` | Healthcheck, metadatos, **listado y descarga de documentos** (desde 2026-05-04) |
-| **Frontal heredado** | `tnm.sudespacho.net` | Cookies `PHPSESSID` + `@token` + `@refreshToken` + CSRF token | Crear expedientes, vincular relaciones, buscar colaboradores |
+| **API REST nueva** | `api-crm-commons-pro.sudespacho.biz` | `x-api-key: <API_KEY>` o `Authorization: Bearer <JWT>` según el endpoint | Healthcheck, metadatos, documentos, **crear expedientes** (desde 2026-05-06) |
+| **Frontal heredado** | `tnm.sudespacho.net` | Cookies `PHPSESSID` + `@token` + `@refreshToken` + CSRF token | Vincular relaciones (saveselect), buscar colaboradores, crear colaboradores |
 
-**Desde 2026-05-04**, el listado y descarga de documentos (Gestor Documental / Gdocu) **es completamente operativo vía API REST** sin necesidad de PHPSESSID. El frontal heredado solo sigue siendo necesario para operaciones de escritura (crear expedientes, vincular entidades).
+**Desde 2026-05-06**, la creación de expedientes extrajudiciales y judiciales **es completamente operativa vía API REST** (`POST /api/element_register/{element}` con `Authorization: Bearer <JWT>`) sin necesidad de PHPSESSID ni CSRF. FeesDefender implementa estrategia REST-first con fallback al frontal heredado.
+
+**Desde 2026-05-04**, el listado y descarga de documentos (Gestor Documental / Gdocu) también es operativo vía API REST. El frontal heredado solo sigue siendo necesario para operaciones de vinculación (`saveselect`): vincular EV MMC, colaborador, cliente a un expediente.
 
 **⚠️ Cambio auth 2026-05-04:** El servidor requiere tres cookies simultáneas para el frontal heredado: `PHPSESSID` (sesión PHP), `@token` (JWT, TTL ~1h) y `@refreshToken`. Sin las tres, el servidor devuelve la landing page (`E-plan - sudespacho.net`) con HTTP 200.
 
@@ -104,7 +106,74 @@ document.cookie.split(';').map(c=>c.trim()).filter(c=>c.startsWith('PHPSESSID')|
 | GET | `/api/files/presigned_download_url/{doc_id}?relatedElement={element}&relatedId={exp_id}&direction=left` | URL S3 prefirmada para descarga/visualización de documento **SIN PHPSESSID** | ✅ Confirmado 2026-05-04 |
 | GET | `/api/related_registers?id={register_id}` | Relaciones entre registros (extrajudicial↔judicial) | ✅ Confirmado |
 | POST | `/api/expedient/convert/{id}` | Convertir extrajudicial → judicial | ✅ Documentado |
-| POST | _(no aplica — va por el frontal heredado)_ | Crear expediente extrajudicial | → ver sección 3.2 |
+| POST | `/api/element_register/extrajudiciales` | Crear expediente **extrajudicial** — `Authorization: Bearer <JWT>`, JSON plano, HTTP 201 → `{"id": N}` | ✅ Confirmado 2026-05-06 |
+| POST | `/api/element_register/expedientes_judiciales` | Crear expediente **judicial** — `Authorization: Bearer <JWT>`, JSON plano, HTTP 201 → `{"id": N}` | ✅ Confirmado 2026-05-06 |
+| POST | `/api/related_registers` | ❌ 405 — solo acepta GET (ver DEAD_ENDS.md) | ✗ Dead end |
+
+#### Detalle: crear expediente extrajudicial vía REST (confirmado 2026-05-06)
+
+```
+POST https://api-crm-commons-pro.sudespacho.biz/api/element_register/extrajudiciales
+Authorization: Bearer <SUDESPACHO_LEGACY_JWT>   ← mismo @token del frontal PHP
+Content-Type: application/json
+
+{
+  "Referencia_Cliente":   "MaRS6 - Gran Vía 1 - (W-001TEST) - Negativa arras",
+  "Fecha_alta":           "2026-05-06",
+  "Tipo_Asunto":          "Civil",
+  "Tipo_Procedimiento":   "reclamacion extrajudicial",
+  "cuantia":              10000,
+  "costas":               0,
+  "intereses":            0,
+  "total":                10000.0,
+  "Profesional":          "Nikolai_Tyukhay",
+  "Notas":                "",
+  "tnm_posicionprocesal": "01",
+  "tnm_siniestro":        "0",
+  "serie_expediente":     "2026",
+  "Numero_Expediente":    "0",
+  "tags":                 ["130", "127", "286"]
+}
+→ HTTP 201, {"id": 599, "message": "Created!"}
+```
+
+**Notas importantes:**
+- El `Authorization: Bearer` usa `SUDESPACHO_LEGACY_JWT` (= cookie `@token`) — **no** la `SUDESPACHO_API_KEY`.
+- Los nombres de propiedad son **CamelCase** para extrajudiciales (p.ej. `Referencia_Cliente`, `Fecha_alta`).
+- Las tags se envían como **array de IDs numéricos** (`["130", "127"]`), **no** como tokens completos (`"#528800___127"`). Usar `_tags_to_rest()` para la conversión.
+- El body vacío `{}` devuelve 404. Un body con propiedades inválidas devuelve 500 con la lista completa de propiedades válidas (útil para discovery).
+- `Numero_Expediente: "0"` → el servidor asigna el número definitivo.
+
+#### Detalle: crear expediente judicial vía REST (confirmado 2026-05-06)
+
+```
+POST https://api-crm-commons-pro.sudespacho.biz/api/element_register/expedientes_judiciales
+Authorization: Bearer <SUDESPACHO_LEGACY_JWT>
+Content-Type: application/json
+
+{
+  "referencia_cliente":    "MaRS6 - Gran Vía 1 - (W-001TEST) - Negativa arras",
+  "fecha_alta":            "2026-05-06",
+  "tipo_asunto":           "Civil",
+  "tipo_procedimiento":    "procedimiento juicio verbal",
+  "cuantia":               10000,
+  "costas":                0,
+  "intereses":             0,
+  "total":                 10000.0,
+  "profesional_asignado":  "Nikolai_Tyukhay",
+  "notas":                 "",
+  "posicion_procesal":     "01",
+  "NIG":                   "",
+  "referencia_procurador": "",
+  "referencia_propia":     "",
+  "serie_expediente":      "2026",
+  "num_expediente":        "0",
+  "tags":                  ["130", "127", "286"]
+}
+→ HTTP 201, {"id": 700, "message": "Created!"}
+```
+
+**Diferencia respecto a extrajudicial:** judicial usa nombres **en minúscula** (`referencia_cliente`, `fecha_alta`) mientras extrajudicial usa **CamelCase** (`Referencia_Cliente`, `Fecha_alta`). Ambos confirmados contra la lista de propiedades devuelta por el servidor ante body inválido (HTTP 500).
 
 #### Bug conocido: `element_register` devuelve 500
 
@@ -162,7 +231,8 @@ Este endpoint es el mismo que usa el CRM para el visor PDF y para el botón "Des
 | POST | `/views/saveselect/elemento/colaboradores/elemento_relacionado/extrajudiciales/miembro_relacionado/{exp_id}/direccion_relacionado/der` | Vincular colaborador a expediente extrajudicial | ✅ Confirmado 2026-04-29 |
 | POST | `/views/saveadd/elemento/colaboradores` | Crear nuevo colaborador | ✅ Confirmado 2026-04-29 |
 | POST | `/gestordocumental/descargaficheros3/id_docu/{doc_id}/elemento_relacionado/{element}/miembro_relacionado/{id}/direccion_relacionado/der` | URL S3 prefirmada del documento | ✅ Confirmado |
-| POST | `/extrajudiciales/saveadd/elemento/extrajudiciales` | Crear expediente extrajudicial | ✅ Confirmado 2026-04-28 |
+| POST | `/extrajudiciales/saveadd/elemento/extrajudiciales` | Crear expediente extrajudicial (legacy fallback) | ✅ Confirmado 2026-04-28 |
+| POST | `/judiciales/saveadd/elemento/expedientes_judiciales` | Crear expediente judicial (legacy fallback) | ✅ Confirmado 2026-05-04 |
 
 ---
 

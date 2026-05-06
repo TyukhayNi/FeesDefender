@@ -193,6 +193,22 @@
 
 ---
 
+## REST API — operaciones de vinculación (saveselect vía REST)
+
+### `POST /api/related_registers` → 405 Method Not Allowed
+- **Intentado:** POST a `https://api-crm-commons-pro.sudespacho.biz/api/related_registers` con body `{"register_id": X, "related_id": Y, "element": "..."}`
+- **Resultado:** HTTP 405 — el endpoint solo acepta GET (listado de relaciones).
+- **Confirmado:** 2026-05-06
+- **Conclusión:** No existe equivalente REST para la operación `saveselect` del frontal legacy. Las vinculaciones (link EV MMC, link colaborador) siguen requiriendo el frontal heredado PHP (`/saveselect/`).
+
+### `POST /api/register_relations` → 404 Not Found
+- **Intentado:** POST a `https://api-crm-commons-pro.sudespacho.biz/api/register_relations` buscando un endpoint alternativo para crear relaciones entre expedientes y entidades
+- **Resultado:** HTTP 404 — el endpoint no existe en la API REST.
+- **Confirmado:** 2026-05-06
+- **Conclusión:** No hay ruta REST para crear relaciones entre registros. Todas las operaciones de tipo `saveselect` (vincular EV MMC, colaborador, cliente) permanecen en el path legacy PHP.
+
+---
+
 ## Plantilla para nuevas entradas
 
 ```markdown
