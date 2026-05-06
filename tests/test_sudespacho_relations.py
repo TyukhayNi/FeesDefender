@@ -302,7 +302,7 @@ def test_link_element_resultado_false():
 # ---------------------------------------------------------------------------
 
 def test_link_ev_mmc(monkeypatch):
-    monkeypatch.delenv("SUDESPACHO_LEGACY_JWT", raising=False)  # fuerza path legacy
+    monkeypatch.delenv("SUDESPACHO_API_KEY", raising=False)  # fuerza path legacy
     client = _mock_client()
     r = _mock_post_response(200)
     r.json.return_value = {"resultado": True, "acumulaDatos": {"clientes_propios": [EV_MMC_SPAIN_ID]}}
@@ -322,7 +322,7 @@ def test_link_ev_mmc(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_link_colaborador(monkeypatch):
-    monkeypatch.delenv("SUDESPACHO_LEGACY_JWT", raising=False)  # fuerza path legacy
+    monkeypatch.delenv("SUDESPACHO_API_KEY", raising=False)  # fuerza path legacy
     client = _mock_client()
     r = _mock_post_response(200)
     r.json.return_value = {"resultado": True, "acumulaDatos": {"colaboradores": ["301"]}}
@@ -343,7 +343,7 @@ def test_link_colaborador(monkeypatch):
 
 def test_create_colaborador_ok(monkeypatch):
     """REST falla (JWT ausente) → fallback legacy OK."""
-    monkeypatch.delenv("SUDESPACHO_LEGACY_JWT", raising=False)  # fuerza fallback
+    monkeypatch.delenv("SUDESPACHO_API_KEY", raising=False)  # fuerza fallback
     client = _mock_client()
     client.post_form.return_value = {"resultado": True, "dato": "402", "wfcontroller": "colaboradores"}
     datos = NuevoColaborador(nombre="Ana López", email="ana.lopez@engelvoelkers.com", movil="+34 600 111 222")
@@ -366,7 +366,7 @@ def test_create_colaborador_ok(monkeypatch):
 
 def test_create_colaborador_sin_id_en_respuesta(monkeypatch):
     """REST falla (JWT ausente) → fallback legacy devuelve respuesta sin ID → error."""
-    monkeypatch.delenv("SUDESPACHO_LEGACY_JWT", raising=False)  # fuerza fallback
+    monkeypatch.delenv("SUDESPACHO_API_KEY", raising=False)  # fuerza fallback
     client = _mock_client()
     client.post_form.return_value = {"resultado": False}
     datos = NuevoColaborador(nombre="Test", email="test@test.com")
@@ -381,7 +381,7 @@ def test_create_colaborador_sin_id_en_respuesta(monkeypatch):
 
 def test_rest_post_colaborador_201(monkeypatch):
     """REST devuelve 201 → ID extraído correctamente."""
-    monkeypatch.setenv("SUDESPACHO_LEGACY_JWT", "test_jwt_token")
+    monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
     datos = NuevoColaborador(
         nombre="Ana López",
         email="ana.lopez@engelvoelkers.com",
@@ -404,7 +404,7 @@ def test_rest_post_colaborador_201(monkeypatch):
 
 def test_rest_post_colaborador_payload_campos_opcionales_omitidos(monkeypatch):
     """Campos opcionales vacíos no se incluyen en el payload REST."""
-    monkeypatch.setenv("SUDESPACHO_LEGACY_JWT", "test_jwt_token")
+    monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
     datos = NuevoColaborador(nombre="Solo Nombre", email="", movil="", nif="")
     resp = _make_httpx_response({"id": 781, "message": "Created!"}, status=201)
     with patch("core.sudespacho_relations.httpx.post", return_value=resp) as mock_post:
@@ -415,7 +415,7 @@ def test_rest_post_colaborador_payload_campos_opcionales_omitidos(monkeypatch):
 
 def test_rest_post_colaborador_payload_nif_y_telefono(monkeypatch):
     """nif → nif_cif, telefono → telefono1 en el payload REST."""
-    monkeypatch.setenv("SUDESPACHO_LEGACY_JWT", "test_jwt_token")
+    monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
     datos = NuevoColaborador(
         nombre="Pedro Martín",
         email="pedro@test.com",
@@ -432,45 +432,12 @@ def test_rest_post_colaborador_payload_nif_y_telefono(monkeypatch):
     assert "telefono" not in payload
 
 
-def test_rest_post_colaborador_jwt_ausente(monkeypatch):
-    """Sin JWT → ValueError (capturado por create_colaborador como fallback)."""
-    monkeypatch.delenv("SUDESPACHO_LEGACY_JWT", raising=False)
+def test_rest_post_colaborador_apikey_ausente(monkeypatch):
+    """Sin SUDESPACHO_API_KEY → ValueError (capturado por create_colaborador como fallback)."""
+    monkeypatch.delenv("SUDESPACHO_API_KEY", raising=False)
     datos = NuevoColaborador(nombre="Test", email="test@test.com")
-    with pytest.raises(ValueError, match="SUDESPACHO_LEGACY_JWT"):
+    with pytest.raises(ValueError, match="SUDESPACHO_API_KEY"):
         _rest_post_colaborador(datos)
-
-
-def test_rest_post_colaborador_401_refresh_201(monkeypatch):
-    """401 en primer intento → refresh JWT → 201 en segundo intento."""
-    monkeypatch.setenv("SUDESPACHO_LEGACY_JWT", "jwt_expirado")
-    datos = NuevoColaborador(nombre="Test", email="test@test.com")
-    resp_401 = _make_httpx_response({}, status=401)
-    resp_201 = _make_httpx_response({"id": 783, "message": "Created!"}, status=201)
-    with patch("core.sudespacho_relations.httpx.post", side_effect=[resp_401, resp_201]) as mock_post:
-        with patch(
-            "core.sudespacho_relations.try_auto_refresh_jwt",
-            return_value=("jwt_renovado", None),
-        ):
-            colab_id = _rest_post_colaborador(datos)
-    assert colab_id == "783"
-    assert mock_post.call_count == 2
-    # Segundo intento usa el JWT renovado
-    second_headers = mock_post.call_args_list[1][1]["headers"]
-    assert "jwt_renovado" in second_headers["Authorization"]
-
-
-def test_rest_post_colaborador_401_sin_refresh(monkeypatch):
-    """401 y refresh falla → SudespachoRelationsError."""
-    monkeypatch.setenv("SUDESPACHO_LEGACY_JWT", "jwt_expirado")
-    datos = NuevoColaborador(nombre="Test", email="test@test.com")
-    resp_401 = _make_httpx_response({}, status=401)
-    with patch("core.sudespacho_relations.httpx.post", return_value=resp_401):
-        with patch(
-            "core.sudespacho_relations.try_auto_refresh_jwt",
-            return_value=(None, "refresh token expirado"),
-        ):
-            with pytest.raises(SudespachoRelationsError, match="401"):
-                _rest_post_colaborador(datos)
 
 
 # ---------------------------------------------------------------------------
@@ -479,7 +446,7 @@ def test_rest_post_colaborador_401_sin_refresh(monkeypatch):
 
 def test_create_colaborador_rest_first_ok(monkeypatch):
     """JWT presente → REST usado, legacy no llamado."""
-    monkeypatch.setenv("SUDESPACHO_LEGACY_JWT", "jwt_valido")
+    monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
     datos = NuevoColaborador(nombre="REST Colaborador", email="rest@test.com")
     with patch(
         "core.sudespacho_relations._rest_post_colaborador",
@@ -492,7 +459,7 @@ def test_create_colaborador_rest_first_ok(monkeypatch):
 
 def test_create_colaborador_rest_falla_fallback_legacy(monkeypatch):
     """REST falla → fallback legacy devuelve ID correctamente."""
-    monkeypatch.setenv("SUDESPACHO_LEGACY_JWT", "jwt_valido")
+    monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
     client = _mock_client()
     client.post_form.return_value = {"resultado": True, "dato": "901"}
     datos = NuevoColaborador(nombre="Fallback Colaborador", email="fallback@test.com")
@@ -512,7 +479,7 @@ def test_create_colaborador_rest_falla_fallback_legacy(monkeypatch):
 
 def test_ensure_colaborador_existente(monkeypatch):
     """Si el colaborador ya existe, no se crea — solo se vincula."""
-    monkeypatch.delenv("SUDESPACHO_LEGACY_JWT", raising=False)  # fuerza path legacy
+    monkeypatch.delenv("SUDESPACHO_API_KEY", raising=False)  # fuerza path legacy
     client = _mock_client()
     colabs_rest = [
         {"id": "301", "label": "Existente  ·  existente@engelvoelkers.com", "email": "existente@engelvoelkers.com"},
@@ -537,7 +504,7 @@ def test_ensure_colaborador_existente(monkeypatch):
 
 def test_ensure_colaborador_nuevo(monkeypatch):
     """Si el colaborador no existe, se crea y luego se vincula."""
-    monkeypatch.delenv("SUDESPACHO_LEGACY_JWT", raising=False)  # fuerza path legacy
+    monkeypatch.delenv("SUDESPACHO_API_KEY", raising=False)  # fuerza path legacy
     client = _mock_client()
     # REST no devuelve el colaborador (lista vacía → None)
     colabs_rest: list[dict] = []
@@ -562,7 +529,8 @@ def test_ensure_colaborador_nuevo(monkeypatch):
 
 
 def test_ensure_colaborador_email_vacio(monkeypatch):
-    """Colaborador sin email: no se puede buscar, se crea directamente."""
+    """Colaborador sin email: no se puede buscar, se crea directamente (ruta legacy)."""
+    monkeypatch.delenv("SUDESPACHO_API_KEY", raising=False)  # fuerza fallback legacy
     client = _mock_client()
     # Sin email no hay búsqueda, va directamente a create
     client.post_form.return_value = {"resultado": True, "dato": "888"}
@@ -734,8 +702,8 @@ def _mock_httpx_post_201():
 
 
 def test_link_rest_ok(monkeypatch):
-    """_link_rest() envía POST correcto con Bearer JWT y acepta 201."""
-    monkeypatch.setenv("SUDESPACHO_LEGACY_JWT", "test_jwt_token")
+    """_link_rest() envía POST correcto con x-api-key y acepta 201."""
+    monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
     mock_resp = _mock_httpx_post_201()
 
     with patch("httpx.post", return_value=mock_resp) as mock_post:
@@ -747,22 +715,22 @@ def test_link_rest_ok(monkeypatch):
     assert "relation_element/extrajudiciales/600" in call_kwargs[0][0]
     # Body correcto
     assert call_kwargs[1]["json"] == ["right.clientes_propios.2"]
-    # Auth Bearer JWT
+    # Auth x-api-key (clave estática)
     headers = call_kwargs[1]["headers"]
-    assert headers["Authorization"] == "Bearer test_jwt_token"
+    assert headers["x-api-key"] == "test-api-key"
     assert headers["Content-Type"] == "application/json"
 
 
-def test_link_rest_sin_jwt_lanza_value_error(monkeypatch):
-    """Sin SUDESPACHO_LEGACY_JWT, _link_rest() lanza ValueError."""
-    monkeypatch.delenv("SUDESPACHO_LEGACY_JWT", raising=False)
-    with pytest.raises(ValueError, match="SUDESPACHO_LEGACY_JWT"):
+def test_link_rest_sin_apikey_lanza_value_error(monkeypatch):
+    """Sin SUDESPACHO_API_KEY, _link_rest() lanza ValueError."""
+    monkeypatch.delenv("SUDESPACHO_API_KEY", raising=False)
+    with pytest.raises(ValueError, match="SUDESPACHO_API_KEY"):
         _link_rest("extrajudiciales", "600", ["right.clientes_propios.2"])
 
 
 def test_link_rest_http_no_201_lanza_error(monkeypatch):
     """HTTP != 201 de POST relation_element lanza SudespachoRelationsError."""
-    monkeypatch.setenv("SUDESPACHO_LEGACY_JWT", "test_jwt_token")
+    monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
     r = MagicMock()
     r.status_code = 401
     r.text = '{"code":401,"message":"Expired JWT Token"}'
@@ -774,7 +742,7 @@ def test_link_rest_http_no_201_lanza_error(monkeypatch):
 
 def test_link_rest_error_de_red_lanza_error(monkeypatch):
     """Error de conexión httpx lanza SudespachoRelationsError."""
-    monkeypatch.setenv("SUDESPACHO_LEGACY_JWT", "test_jwt_token")
+    monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
     with patch("httpx.post", side_effect=httpx.ConnectError("timeout")):
         with pytest.raises(SudespachoRelationsError, match="REST POST relation_element"):
             _link_rest("extrajudiciales", "600", ["right.clientes_propios.2"])
@@ -782,7 +750,7 @@ def test_link_rest_error_de_red_lanza_error(monkeypatch):
 
 def test_link_rest_multiples_relaciones(monkeypatch):
     """_link_rest() pasa correctamente un array con múltiples relaciones."""
-    monkeypatch.setenv("SUDESPACHO_LEGACY_JWT", "jwt")
+    monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
     mock_resp = _mock_httpx_post_201()
     relations = ["right.clientes_propios.2", "right.colaboradores.50"]
 
@@ -792,41 +760,6 @@ def test_link_rest_multiples_relaciones(monkeypatch):
     assert mock_post.call_args[1]["json"] == relations
 
 
-def test_link_rest_401_reintenta_con_refresh_exitoso(monkeypatch):
-    """401 en primer intento + renovación JWT exitosa → reintenta y devuelve."""
-    monkeypatch.setenv("SUDESPACHO_LEGACY_JWT", "jwt-caducado")
-
-    resp_401 = MagicMock()
-    resp_401.status_code = 401
-
-    resp_201 = _mock_httpx_post_201()
-
-    with patch("httpx.post", side_effect=[resp_401, resp_201]) as mock_post, \
-         patch("core.sudespacho_relations.try_auto_refresh_jwt",
-               return_value=("jwt-nuevo", "")):
-        _link_rest("extrajudiciales", "600", ["right.clientes_propios.2"])
-
-    assert mock_post.call_count == 2  # intento original + reintento con JWT nuevo
-    # El segundo intento usa el JWT renovado
-    segundo_header = mock_post.call_args_list[1].kwargs["headers"]["Authorization"]
-    assert segundo_header == "Bearer jwt-nuevo"
-
-
-def test_link_rest_401_lanza_error_si_refresh_falla(monkeypatch):
-    """401 + renovación fallida → SudespachoRelationsError con mención de 401."""
-    monkeypatch.setenv("SUDESPACHO_LEGACY_JWT", "jwt-caducado")
-    monkeypatch.delenv("SUDESPACHO_LEGACY_REFRESH_TOKEN", raising=False)
-
-    resp_401 = MagicMock()
-    resp_401.status_code = 401
-    resp_401.text = '{"code":401,"message":"Expired JWT Token"}'
-
-    with patch("httpx.post", return_value=resp_401), \
-         patch("core.sudespacho_relations.try_auto_refresh_jwt",
-               return_value=(None, "Sesión expirada")):
-        with pytest.raises(SudespachoRelationsError, match="401"):
-            _link_rest("extrajudiciales", "600", ["right.clientes_propios.2"])
-
 
 # ---------------------------------------------------------------------------
 # _link_rest_or_legacy
@@ -834,7 +767,7 @@ def test_link_rest_401_lanza_error_si_refresh_falla(monkeypatch):
 
 def test_link_rest_or_legacy_rest_wins(monkeypatch):
     """Si REST devuelve 201, no se llama a _link_element (legacy)."""
-    monkeypatch.setenv("SUDESPACHO_LEGACY_JWT", "jwt_ok")
+    monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
     client = _mock_client()
 
     with patch("core.sudespacho_relations._link_rest") as mock_rest:
@@ -851,7 +784,7 @@ def test_link_rest_or_legacy_rest_wins(monkeypatch):
 
 def test_link_rest_or_legacy_fallback_si_rest_falla(monkeypatch):
     """Si REST lanza SudespachoRelationsError, se usa legacy saveselect."""
-    monkeypatch.setenv("SUDESPACHO_LEGACY_JWT", "jwt_expirado")
+    monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
     client = _mock_client()
     r = _mock_post_response(200)
     r.json.return_value = {"resultado": True, "acumulaDatos": {}}
@@ -868,9 +801,9 @@ def test_link_rest_or_legacy_fallback_si_rest_falla(monkeypatch):
     client._post_form.assert_called_once()
 
 
-def test_link_rest_or_legacy_fallback_si_no_jwt(monkeypatch):
-    """Si JWT ausente (ValueError), también usa fallback legacy."""
-    monkeypatch.delenv("SUDESPACHO_LEGACY_JWT", raising=False)
+def test_link_rest_or_legacy_fallback_si_no_apikey(monkeypatch):
+    """Si SUDESPACHO_API_KEY ausente (ValueError), también usa fallback legacy."""
+    monkeypatch.delenv("SUDESPACHO_API_KEY", raising=False)
     client = _mock_client()
     r = _mock_post_response(200)
     r.json.return_value = {"resultado": True}
@@ -891,7 +824,7 @@ def test_link_rest_or_legacy_fallback_si_no_jwt(monkeypatch):
 
 def test_link_ev_mmc_rest_first(monkeypatch):
     """link_ev_mmc() usa REST cuando JWT está disponible."""
-    monkeypatch.setenv("SUDESPACHO_LEGACY_JWT", "jwt_valido")
+    monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
     client = _mock_client()
 
     with patch("core.sudespacho_relations.SudespachoLegacyClient", return_value=client):
@@ -907,7 +840,7 @@ def test_link_ev_mmc_rest_first(monkeypatch):
 
 def test_link_colaborador_rest_first(monkeypatch):
     """link_colaborador() usa REST cuando JWT está disponible."""
-    monkeypatch.setenv("SUDESPACHO_LEGACY_JWT", "jwt_valido")
+    monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
     client = _mock_client()
 
     with patch("core.sudespacho_relations.SudespachoLegacyClient", return_value=client):

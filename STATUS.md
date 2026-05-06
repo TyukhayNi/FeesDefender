@@ -3,7 +3,7 @@
 > **Fuente de verdad única del proyecto.**
 > Actualizar al cerrar cada sesión con `python -m scripts.session_close`.
 
-**Última actualización:** 2026-05-06 (migración `create_colaborador` a REST-first: `POST /api/element_register/colaboradores` confirmado con HAR `judicial_648.har` — HTTP 201, Bearer JWT, sin PHPSESSID. Mapping completo: `nif_cif`, `telefono1`, etc. `_rest_post_colaborador()` + `_create_colaborador_legacy()` + REST-first en `create_colaborador()`. Protocolo obligatorio de integración CRM añadido a `docs/INTEGRACION_SUDESPACHO.md` sección 0 y a memoria. Colaborador ID=780 ("COLABORADOR PRUEBA") pendiente borrar del CRM. 228 tests.)
+**Última actualización:** 2026-05-06 — Opción A confirmada: `x-api-key` acepta escritura (POST → HTTP 201). Migración completa: `_rest_post()`, `_rest_post_colaborador()`, `_link_rest()` usan `x-api-key` (estática, no caduca) en lugar de `Authorization: Bearer JWT`. Eliminado bucle 401→refresh de los 3 métodos. JWT/refreshToken ahora solo relevantes para fallback al frontal PHP legacy. Sistema 100% estable: flujo nuevo caso no depende de tokens de sesión que caducan. 7 tests de retry 401 eliminados (comportamiento obsoleto). 221 tests. Colaboradores de prueba 781 y 782 borrados del CRM.)
 
 ---
 
@@ -55,12 +55,12 @@ git commit -m "<mensaje que Claude propuso>"
 
 | Ítem | Estado |
 |------|--------|
-| Tests | ✅ 228/228 (+13 create_colaborador REST-first — 2026-05-06) |
+| Tests | ✅ 221/221 (migración x-api-key: -7 tests retry 401 obsoletos — 2026-05-06) |
 | Pipeline | ✅ Ejecutado end-to-end (BaRR3, 2026-04-28, 9/9 pasos OK, ~9 min) |
 | Primer caso real | ✅ Creado, docs descargados |
 | Taxonomía de casos | ✅ Actualizada en config.py |
-| `sudespacho_create.py` | ✅ REST-first (2026-05-06): extrajudicial + judicial con `Authorization: Bearer <JWT>` sin PHPSESSID; fallback legacy automático |
-| Renovación JWT automática (`POST /api/token/refresh`) | ✅ 2026-05-06 — `_try_refresh_jwt_post` + `try_auto_refresh_jwt` + retry loop 401 en `_rest_post` (create) y `_link_rest` (relations) |
+| `sudespacho_create.py` | ✅ REST-first + x-api-key (2026-05-06): extrajudicial + judicial sin PHPSESSID ni JWT; fallback legacy automático |
+| Auth REST escritura: `x-api-key` estática | ✅ 2026-05-06 — Opción A confirmada: POST create/link acepta x-api-key. JWT eliminado de `_rest_post`, `_rest_post_colaborador`, `_link_rest`. Sistema 100% estable. |
 | Keep-alive `gdrive_ev` | ✅ 2026-05-06 — `_keepalive_gdrive_ev()` en `scheduled_sync.py`; previene caducidad OAuth a 6 meses |
 | `list_gdocu_docs_rest` + `download_document_rest` | ✅ Implementado 2026-05-04 — sin PHPSESSID (solo x-api-key) |
 | `pull_expediente` REST-first | ✅ Implementado 2026-05-04 — fallback legacy automático si REST falla |
@@ -212,7 +212,8 @@ python -m scripts.run_pipeline "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
 20. ~~**[SIGUIENTE]** Renovación automática JWT...~~ ✅ 2026-05-06 — `_try_refresh_jwt_post` + retry loop 401 implementados en create y relations. Cuando `@refreshToken` también expira: instrucción manual clara en UI. Confirmado: no existe endpoint login programático en REST API (ver DEAD_ENDS.md).
 21. ~~**[SIGUIENTE]** Completar MaRS15: renovar sesión CRM~~  ✅ 2026-05-06 — Expediente judicial creado; EV MMC + 2 colaboradores vinculados. Pendiente: vincular `juanluis.garcia@engelvoelkers.com` manualmente en CRM + pull rclone gdrive_ev.
 22. ~~**[SIGUIENTE]** Migrar creación de colaboradores a REST~~ ✅ 2026-05-06 — `POST /api/element_register/colaboradores` confirmado (HAR). `_rest_post_colaborador()` + REST-first en `create_colaborador()`. 10 tests nuevos. Flujo nuevo caso 100% independiente de PHPSESSID. Colaborador ID=780 pendiente borrar del CRM.
-23. **[SIGUIENTE]** ⬅️ Borrar colaborador ID=780 ("COLABORADOR PRUEBA") del CRM → pull rclone gdrive_ev de MaRS15 → `[SIGUIENTE-SHARE]`.
+23. ~~**[SIGUIENTE]**~~ ✅ 2026-05-06 — x-api-key para escritura REST confirmada (Opción A). Migración completa. 221 tests.
+24. **[SIGUIENTE]** ⬅️ `[SIGUIENTE-SHARE]` — Verificar Streamlit end-to-end sin JWT/PHPSESSID: crear expediente de prueba desde UI → confirmar en CRM → borrar. Luego: pull rclone gdrive_ev de MaRS15.
 18. ~~**[SIGUIENTE-REST-RELATIONS]**~~ ✅ 2026-05-06 — `POST /api/relation_element/` confirmado HTTP 201 con Bearer JWT. 6 `link_*` migradas a REST-first + fallback legacy. 12 tests nuevos. `.env` actualizado.
 11. ~~**[NIKOLAI]** Conectar cuenta `nikolai.tyukhay@engelvoelkers.com` en Cowork~~ ✅ 2026-04-28 — rclone `gdrive_ev` configurado; Cowork no soporta multi-cuenta, rclone es la solución definitiva.
 12. **[SIGUIENTE-C]** Módulo `core/intake_drive.py`:

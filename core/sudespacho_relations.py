@@ -39,7 +39,7 @@ Endpoints confirmados el 2026-04-29 contra el tenant tnm.sudespacho.net:
 
     5b. Crear colaborador nuevo (REST-first, confirmado 2026-05-06 HAR judicial_648.har)
         POST https://api-crm-commons-pro.sudespacho.biz/api/element_register/colaboradores
-        Auth: Authorization: Bearer <JWT>
+        Auth: x-api-key (clave estática — migrado a x-api-key el 2026-05-06, Opción A)
         Body: {"nombre": "...", "email": "..."}
         Response: {"id": 780, "message": "Created!"}
         Idéntico al patrón de create_expediente_rest().
@@ -79,7 +79,6 @@ from .sync_sudespacho import SudespachoConfig
 from .sync_sudespacho_legacy import (
     SudespachoLegacyClient,
     SudespachoLegacyError,
-    try_auto_refresh_jwt,
 )
 from .sudespacho_create import (
     GRUPOS_DEFAULT,
@@ -326,16 +325,12 @@ def find_expediente_judicial_by_referencia(
 # ---------------------------------------------------------------------------
 
 def _rest_post_colaborador(datos: "NuevoColaborador") -> str:
-    """POST /api/element_register/colaboradores con Bearer JWT.
+    """POST /api/element_register/colaboradores con x-api-key.
 
     Confirmado 2026-05-06 (HAR judicial_648.har, tenant tnm):
-      - Auth: Authorization: Bearer <JWT>
+      - Auth: x-api-key (clave estática, no caduca) — migrado desde Bearer JWT el 2026-05-06
       - Body: {"nombre": "...", "email": "...", ...}
       - Response 201: {"id": N, "message": "Created!"}
-      - Idéntico al patrón de _rest_post() en sudespacho_create.py
-
-    Incluye bucle 401 → refresh: si el JWT expira intenta renovarlo y reintenta
-    una sola vez.
 
     Args:
         datos: Datos del colaborador a crear.
@@ -345,15 +340,14 @@ def _rest_post_colaborador(datos: "NuevoColaborador") -> str:
 
     Raises:
         SudespachoRelationsError: HTTP != 201 o error de red.
-        ValueError: SUDESPACHO_LEGACY_JWT no configurado.
+        ValueError: SUDESPACHO_API_KEY no configurado.
     """
-    jwt = (os.getenv("SUDESPACHO_LEGACY_JWT") or "").strip()
-    if not jwt:
+    api_key = (os.getenv("SUDESPACHO_API_KEY") or "").strip()
+    if not api_key:
         raise ValueError(
-            "SUDESPACHO_LEGACY_JWT vacío — renovar token (sidebar Streamlit → 🔄)"
+            "SUDESPACHO_API_KEY vacío en .env — ve a tnm.sudespacho.net → Ajustes → API"
         )
 
-    # Solo los campos que FeesDefender usa; los opcionales se omiten si están vacíos.
     payload: dict[str, str] = {"nombre": datos.nombre}
     if datos.email:
         payload["email"] = datos.email
@@ -365,59 +359,39 @@ def _rest_post_colaborador(datos: "NuevoColaborador") -> str:
         payload["nif_cif"] = datos.nif
 
     url = f"{_REST_BASE}{_REST_CREATE_COLABORADOR}"
-    _headers = {
-        "Authorization": f"Bearer {jwt}",
+    headers = {
+        "x-api-key":    api_key,
         "Content-Type": "application/json",
-        "Accept": "application/json",
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0.0.0 Safari/537.36"
-        ),
+        "Accept":       "application/json",
     }
 
-    for attempt in range(2):  # máx. 2 intentos (original + 1 tras refresh)
-        try:
-            r = httpx.post(url, json=payload, headers=_headers, timeout=_REST_TIMEOUT)
-        except httpx.HTTPError as exc:
-            raise SudespachoRelationsError(
-                f"REST POST {_REST_CREATE_COLABORADOR} falló: {exc}"
-            ) from exc
-
-        if r.status_code == 401 and attempt == 0:
-            new_jwt, refresh_err = try_auto_refresh_jwt()
-            if new_jwt:
-                _headers = {**_headers, "Authorization": f"Bearer {new_jwt}"}
-                continue
-            raise SudespachoRelationsError(
-                f"REST POST {_REST_CREATE_COLABORADOR} → HTTP 401 (JWT expirado). "
-                f"Renovación automática fallida: {refresh_err}"
-            )
-
-        if r.status_code == 201:
-            try:
-                data = r.json()
-                colab_id = str(data.get("id", ""))
-                if colab_id and colab_id.isdigit():
-                    return colab_id
-            except Exception:
-                pass
-            raise SudespachoRelationsError(
-                f"REST POST {_REST_CREATE_COLABORADOR} devolvió 201 pero sin ID. "
-                f"Body: {r.text[:300]}"
-            )
-
-        try:
-            err = r.json()
-            detail = err.get("detail") or err.get("hydra:description") or r.text[:300]
-        except Exception:
-            detail = r.text[:300]
+    try:
+        r = httpx.post(url, json=payload, headers=headers, timeout=_REST_TIMEOUT)
+    except httpx.HTTPError as exc:
         raise SudespachoRelationsError(
-            f"REST POST {_REST_CREATE_COLABORADOR} → HTTP {r.status_code}: {detail}"
+            f"REST POST {_REST_CREATE_COLABORADOR} falló: {exc}"
+        ) from exc
+
+    if r.status_code == 201:
+        try:
+            data = r.json()
+            colab_id = str(data.get("id", ""))
+            if colab_id and colab_id.isdigit():
+                return colab_id
+        except Exception:
+            pass
+        raise SudespachoRelationsError(
+            f"REST POST {_REST_CREATE_COLABORADOR} devolvió 201 pero sin ID. "
+            f"Body: {r.text[:300]}"
         )
 
+    try:
+        err = r.json()
+        detail = err.get("detail") or err.get("hydra:description") or r.text[:300]
+    except Exception:
+        detail = r.text[:300]
     raise SudespachoRelationsError(
-        f"REST POST {_REST_CREATE_COLABORADOR}: máximo de reintentos alcanzado"
+        f"REST POST {_REST_CREATE_COLABORADOR} → HTTP {r.status_code}: {detail}"
     )
 
 
@@ -562,17 +536,14 @@ def _link_rest(
     exp_id: str,
     relations: list[str],
 ) -> None:
-    """POST /api/relation_element/{element}/{exp_id} con Bearer JWT.
+    """POST /api/relation_element/{element}/{exp_id} con x-api-key.
 
     Confirmado 2026-05-06 en tenant tnm:
-      - Auth: Authorization: Bearer <JWT>  (mismo token que create_expediente)
+      - Auth: x-api-key (clave estática, no caduca) — migrado desde Bearer JWT el 2026-05-06
       - Body: array JSON  ["right.clientes_propios.2", ...]
       - Response 201 "Created!" en éxito
       - Idempotente: relaciones ya existentes devuelven 201 sin crear duplicados
-      - Independiente de PHPSESSID — elimina la última dependencia legacy
-
-    Incluye bucle 401 → refresh: si el servidor devuelve 401 (JWT expirado),
-    intenta renovar el JWT automáticamente y reintenta la petición una vez.
+      - Independiente de PHPSESSID
 
     Comportamiento con datos inválidos (documentado):
       - Direction inválida  → HTTP 500 (PHP exception sin validar)
@@ -586,52 +557,35 @@ def _link_rest(
 
     Raises:
         SudespachoRelationsError: HTTP != 201 o error de red.
-        ValueError: SUDESPACHO_LEGACY_JWT no configurado.
+        ValueError: SUDESPACHO_API_KEY no configurado.
     """
-    jwt = (os.getenv("SUDESPACHO_LEGACY_JWT") or "").strip()
-    if not jwt:
+    api_key = (os.getenv("SUDESPACHO_API_KEY") or "").strip()
+    if not api_key:
         raise ValueError(
-            "SUDESPACHO_LEGACY_JWT vacío — renovar token (sidebar Streamlit → 🔄)"
+            "SUDESPACHO_API_KEY vacío en .env — ve a tnm.sudespacho.net → Ajustes → API"
         )
 
     url = f"{_REST_BASE}{_REST_RELATION_PATH.format(element=element, exp_id=exp_id)}"
-    _headers = {
-        "Authorization": f"Bearer {jwt}",
+    headers = {
+        "x-api-key":    api_key,
         "Content-Type": "application/json",
-        "Accept": "application/json",
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0.0.0 Safari/537.36"
-        ),
+        "Accept":       "application/json",
     }
 
-    for attempt in range(2):  # máximo 2 intentos (1 original + 1 tras refresh)
-        try:
-            r = httpx.post(url, json=relations, headers=_headers, timeout=_REST_TIMEOUT)
-        except httpx.HTTPError as exc:
-            raise SudespachoRelationsError(
-                f"REST POST relation_element/{element}/{exp_id} falló: {exc}"
-            ) from exc
-
-        # 401 en el primer intento → renovar JWT y reintentar una vez
-        if r.status_code == 401 and attempt == 0:
-            new_jwt, refresh_err = try_auto_refresh_jwt()
-            if new_jwt:
-                _headers = {**_headers, "Authorization": f"Bearer {new_jwt}"}
-                continue
-            raise SudespachoRelationsError(
-                f"REST POST relation_element/{element}/{exp_id} → HTTP 401 (JWT expirado). "
-                f"Renovación automática fallida: {refresh_err}"
-            )
-
-        if r.status_code == 201:
-            return
-
+    try:
+        r = httpx.post(url, json=relations, headers=headers, timeout=_REST_TIMEOUT)
+    except httpx.HTTPError as exc:
         raise SudespachoRelationsError(
-            f"REST POST relation_element/{element}/{exp_id} "
-            f"→ HTTP {r.status_code}: {r.text[:200]}"
-        )
+            f"REST POST relation_element/{element}/{exp_id} falló: {exc}"
+        ) from exc
+
+    if r.status_code == 201:
+        return
+
+    raise SudespachoRelationsError(
+        f"REST POST relation_element/{element}/{exp_id} "
+        f"→ HTTP {r.status_code}: {r.text[:200]}"
+    )
 
 
 def _link_rest_or_legacy(

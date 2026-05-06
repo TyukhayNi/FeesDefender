@@ -212,7 +212,7 @@ class TestBuildRestPayloadJudicial:
 
 class TestCreateExpedienteRest:
     def test_devuelve_id_cuando_201(self, datos_extrajudicial, monkeypatch):
-        monkeypatch.setenv("SUDESPACHO_LEGACY_JWT", "jwt-test-token")
+        monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
 
         mock_resp = MagicMock()
         mock_resp.status_code = 201
@@ -223,16 +223,16 @@ class TestCreateExpedienteRest:
 
         assert eid == "599"
         call_kwargs = mock_post.call_args
-        assert "Authorization" in call_kwargs.kwargs["headers"]
-        assert call_kwargs.kwargs["headers"]["Authorization"] == "Bearer jwt-test-token"
+        assert "x-api-key" in call_kwargs.kwargs["headers"]
+        assert call_kwargs.kwargs["headers"]["x-api-key"] == "test-api-key"
 
     def test_lanza_error_si_no_jwt(self, datos_extrajudicial, monkeypatch):
-        monkeypatch.delenv("SUDESPACHO_LEGACY_JWT", raising=False)
-        with pytest.raises(ValueError, match="SUDESPACHO_LEGACY_JWT"):
+        monkeypatch.delenv("SUDESPACHO_API_KEY", raising=False)
+        with pytest.raises(ValueError, match="SUDESPACHO_API_KEY"):
             create_expediente_rest(datos_extrajudicial)
 
     def test_lanza_error_si_no_201(self, datos_extrajudicial, monkeypatch):
-        monkeypatch.setenv("SUDESPACHO_LEGACY_JWT", "jwt-test-token")
+        monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
 
         mock_resp = MagicMock()
         mock_resp.status_code = 400
@@ -243,7 +243,7 @@ class TestCreateExpedienteRest:
                 create_expediente_rest(datos_extrajudicial)
 
     def test_url_endpoint_correcto(self, datos_extrajudicial, monkeypatch):
-        monkeypatch.setenv("SUDESPACHO_LEGACY_JWT", "jwt-test-token")
+        monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
 
         mock_resp = MagicMock()
         mock_resp.status_code = 201
@@ -263,7 +263,7 @@ class TestCreateExpedienteRest:
 
 class TestCreateExpedienteJudicialRest:
     def test_devuelve_id_cuando_201(self, datos_judicial, monkeypatch):
-        monkeypatch.setenv("SUDESPACHO_LEGACY_JWT", "jwt-test-token")
+        monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
 
         mock_resp = MagicMock()
         mock_resp.status_code = 201
@@ -277,7 +277,7 @@ class TestCreateExpedienteJudicialRest:
         assert "expedientes_judiciales" in url_llamado
 
     def test_lanza_error_si_no_201(self, datos_judicial, monkeypatch):
-        monkeypatch.setenv("SUDESPACHO_LEGACY_JWT", "jwt-test-token")
+        monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
 
         mock_resp = MagicMock()
         mock_resp.status_code = 422
@@ -294,7 +294,7 @@ class TestCreateExpedienteJudicialRest:
 
 class TestCreateExpedienteRestFirst:
     def test_usa_rest_si_jwt_disponible(self, datos_extrajudicial, monkeypatch):
-        monkeypatch.setenv("SUDESPACHO_LEGACY_JWT", "jwt-test-token")
+        monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
 
         mock_resp = MagicMock()
         mock_resp.status_code = 201
@@ -307,7 +307,7 @@ class TestCreateExpedienteRestFirst:
 
     def test_fallback_a_legacy_si_rest_falla(self, datos_extrajudicial, monkeypatch):
         """Si REST lanza excepción, debe intentarse la vía legacy."""
-        monkeypatch.setenv("SUDESPACHO_LEGACY_JWT", "jwt-test-token")
+        monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
 
         with patch("core.sudespacho_create.httpx.post", side_effect=Exception("network error")):
             with patch("core.sudespacho_create.SudespachoLegacyClient") as MockClient:
@@ -330,7 +330,7 @@ class TestCreateExpedienteRestFirst:
 
 class TestCreateExpedienteJudicialRestFirst:
     def test_usa_rest_si_jwt_disponible(self, datos_judicial, monkeypatch):
-        monkeypatch.setenv("SUDESPACHO_LEGACY_JWT", "jwt-test-token")
+        monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
 
         mock_resp = MagicMock()
         mock_resp.status_code = 201
@@ -342,7 +342,7 @@ class TestCreateExpedienteJudicialRestFirst:
         assert eid == "701"
 
     def test_fallback_a_legacy_si_rest_falla(self, datos_judicial, monkeypatch):
-        monkeypatch.setenv("SUDESPACHO_LEGACY_JWT", "jwt-test-token")
+        monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
 
         with patch("core.sudespacho_create.httpx.post", side_effect=Exception("network error")):
             with patch("core.sudespacho_create.SudespachoLegacyClient") as MockClient:
@@ -358,62 +358,3 @@ class TestCreateExpedienteJudicialRestFirst:
 
         assert eid == "702"
 
-
-# ---------------------------------------------------------------------------
-# Bucle 401 → refresh automático en _rest_post
-# ---------------------------------------------------------------------------
-
-class TestRestPost401Retry:
-    """Verifica el comportamiento de _rest_post() ante JWT expirado (HTTP 401)."""
-
-    def test_reintenta_tras_401_con_refresh_exitoso(self, datos_extrajudicial, monkeypatch):
-        """401 + renovación exitosa → reintenta y devuelve el ID del segundo intento."""
-        monkeypatch.setenv("SUDESPACHO_LEGACY_JWT", "jwt-caducado")
-
-        resp_401 = MagicMock()
-        resp_401.status_code = 401
-
-        resp_201 = MagicMock()
-        resp_201.status_code = 201
-        resp_201.json.return_value = {"id": 888}
-
-        with patch("core.sudespacho_create.httpx.post", side_effect=[resp_401, resp_201]) as mock_post, \
-             patch("core.sudespacho_create.try_auto_refresh_jwt", return_value=("jwt-nuevo", "")):
-            eid = create_expediente_rest(datos_extrajudicial)
-
-        assert eid == "888"
-        assert mock_post.call_count == 2  # 1 intento original + 1 reintento con JWT nuevo
-        # El segundo intento usa el JWT renovado
-        segundo_header = mock_post.call_args_list[1].kwargs["headers"]["Authorization"]
-        assert segundo_header == "Bearer jwt-nuevo"
-
-    def test_lanza_error_si_401_y_refresh_falla(self, datos_extrajudicial, monkeypatch):
-        """401 + fallo de renovación → SudespachoCreateError con mención del status 401."""
-        monkeypatch.setenv("SUDESPACHO_LEGACY_JWT", "jwt-caducado")
-
-        resp_401 = MagicMock()
-        resp_401.status_code = 401
-
-        with patch("core.sudespacho_create.httpx.post", return_value=resp_401), \
-             patch("core.sudespacho_create.try_auto_refresh_jwt",
-                   return_value=(None, "Sesión expirada completamente")):
-            with pytest.raises(SudespachoCreateError, match="401"):
-                create_expediente_rest(datos_extrajudicial)
-
-    def test_no_reintenta_si_segundo_intento_tambien_401(self, datos_extrajudicial, monkeypatch):
-        """Tras refresh exitoso, si el segundo intento devuelve 401 → error sin bucle infinito."""
-        monkeypatch.setenv("SUDESPACHO_LEGACY_JWT", "jwt-caducado")
-
-        resp_401_1 = MagicMock()
-        resp_401_1.status_code = 401
-
-        resp_401_2 = MagicMock()
-        resp_401_2.status_code = 401
-
-        with patch("core.sudespacho_create.httpx.post", side_effect=[resp_401_1, resp_401_2]) as mock_post, \
-             patch("core.sudespacho_create.try_auto_refresh_jwt", return_value=("jwt-nuevo", "")):
-            with pytest.raises(SudespachoCreateError):
-                create_expediente_rest(datos_extrajudicial)
-
-        # Solo 2 llamadas: no hay bucle infinito
-        assert mock_post.call_count == 2
