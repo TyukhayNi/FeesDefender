@@ -299,6 +299,7 @@ def test_link_element_resultado_false():
 # ---------------------------------------------------------------------------
 
 def test_link_ev_mmc(monkeypatch):
+    monkeypatch.delenv("SUDESPACHO_LEGACY_JWT", raising=False)  # fuerza path legacy
     client = _mock_client()
     r = _mock_post_response(200)
     r.json.return_value = {"resultado": True, "acumulaDatos": {"clientes_propios": [EV_MMC_SPAIN_ID]}}
@@ -318,6 +319,7 @@ def test_link_ev_mmc(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_link_colaborador(monkeypatch):
+    monkeypatch.delenv("SUDESPACHO_LEGACY_JWT", raising=False)  # fuerza path legacy
     client = _mock_client()
     r = _mock_post_response(200)
     r.json.return_value = {"resultado": True, "acumulaDatos": {"colaboradores": ["301"]}}
@@ -372,6 +374,7 @@ def test_create_colaborador_sin_id_en_respuesta(monkeypatch):
 
 def test_ensure_colaborador_existente(monkeypatch):
     """Si el colaborador ya existe, no se crea — solo se vincula."""
+    monkeypatch.delenv("SUDESPACHO_LEGACY_JWT", raising=False)  # fuerza path legacy
     client = _mock_client()
     colabs_rest = [
         {"id": "301", "label": "Existente  ·  existente@engelvoelkers.com", "email": "existente@engelvoelkers.com"},
@@ -396,6 +399,7 @@ def test_ensure_colaborador_existente(monkeypatch):
 
 def test_ensure_colaborador_nuevo(monkeypatch):
     """Si el colaborador no existe, se crea y luego se vincula."""
+    monkeypatch.delenv("SUDESPACHO_LEGACY_JWT", raising=False)  # fuerza path legacy
     client = _mock_client()
     # REST no devuelve el colaborador (lista vacía → None)
     colabs_rest: list[dict] = []
