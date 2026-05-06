@@ -29,7 +29,7 @@ Endpoints confirmados el 2026-04-29 contra el tenant tnm.sudespacho.net:
              + documentos_adjuntos_seleccionados= + csrf_token + cc-num
        Response: JSON {"resultado": true, "acumulaDatos": {...}}
 
-    5. Crear colaborador nuevo
+    5. Crear colaborador nuevo (legacy fallback)
        POST /views/saveadd/elemento/colaboradores
        Body: campo_1086__colaboradores={nombre}
              campo_1080__colaboradores={email}
@@ -37,19 +37,26 @@ Endpoints confirmados el 2026-04-29 contra el tenant tnm.sudespacho.net:
              + csrf_token + cc-num + permisos + ajax=true
        Response: {"resultado": true, "dato": "{colab_id}", ...}
 
-Mapping de campos para colaboradores (confirmado 2026-04-29):
-    campo_1086 → Nombre (obligatorio)
-    campo_1080 → Email
-    campo_1084 → Nacionalidad (select, "1" = Sin Asignar)
-    campo_1085 → NIF/CIF
-    campo_1083 → Móvil
-    campo_1090 → Teléfono 1
-    campo_1091 → Teléfono 2
-    campo_1079 → Dirección
-    campo_1089 → Provincia
-    campo_1088 → Población
-    campo_1078 → CP
-    campo_1087 → Notas
+    5b. Crear colaborador nuevo (REST-first, confirmado 2026-05-06 HAR judicial_648.har)
+        POST https://api-crm-commons-pro.sudespacho.biz/api/element_register/colaboradores
+        Auth: Authorization: Bearer <JWT>
+        Body: {"nombre": "...", "email": "..."}
+        Response: {"id": 780, "message": "Created!"}
+        Idéntico al patrón de create_expediente_rest().
+
+Mapping de campos para colaboradores (confirmado 2026-04-29 legacy + 2026-05-06 REST):
+    campo_1086 → nombre        (REST: "nombre")
+    campo_1080 → Email         (REST: "email")
+    campo_1084 → Nacionalidad  (REST: "nacionalidad", select, "1" = Sin Asignar)
+    campo_1085 → NIF/CIF       (REST: "nif_cif")     ← ojo: nif_cif, no nif
+    campo_1083 → Móvil         (REST: "movil")
+    campo_1090 → Teléfono 1    (REST: "telefono1")   ← ojo: telefono1, no telefono
+    campo_1091 → Teléfono 2    (REST: "telefono2")
+    campo_1079 → Dirección     (REST: "direccion")
+    campo_1089 → Provincia     (REST: "provincia")
+    campo_1088 → Población     (REST: "poblacion")
+    campo_1078 → CP            (REST: "cp")
+    campo_1087 → Notas         (REST: "notas")
 
 Constantes fijas del tenant tnm:
     EV_MMC_SPAIN_ID = "2"   (B65824054 - EV MMC SPAIN, S.L.U.)
@@ -98,6 +105,7 @@ _CC_NUM = "HubspotCollectedFormsWorkaround"
 # Response: 201 "Created!" — idempotente (relaciones existentes no se duplican)
 _REST_BASE = "https://api-crm-commons-pro.sudespacho.biz"
 _REST_RELATION_PATH = "/api/relation_element/{element}/{exp_id}"
+_REST_CREATE_COLABORADOR = "/api/element_register/colaboradores"
 _REST_TIMEOUT = 30
 
 # Rutas de los endpoints (sin el host)
@@ -314,8 +322,175 @@ def find_expediente_judicial_by_referencia(
 
 
 # ---------------------------------------------------------------------------
+# Creación de colaborador — REST (sin PHPSESSID, confirmado 2026-05-06)
+# ---------------------------------------------------------------------------
+
+def _rest_post_colaborador(datos: "NuevoColaborador") -> str:
+    """POST /api/element_register/colaboradores con Bearer JWT.
+
+    Confirmado 2026-05-06 (HAR judicial_648.har, tenant tnm):
+      - Auth: Authorization: Bearer <JWT>
+      - Body: {"nombre": "...", "email": "...", ...}
+      - Response 201: {"id": N, "message": "Created!"}
+      - Idéntico al patrón de _rest_post() en sudespacho_create.py
+
+    Incluye bucle 401 → refresh: si el JWT expira intenta renovarlo y reintenta
+    una sola vez.
+
+    Args:
+        datos: Datos del colaborador a crear.
+
+    Returns:
+        ID numérico del colaborador creado (str).
+
+    Raises:
+        SudespachoRelationsError: HTTP != 201 o error de red.
+        ValueError: SUDESPACHO_LEGACY_JWT no configurado.
+    """
+    jwt = (os.getenv("SUDESPACHO_LEGACY_JWT") or "").strip()
+    if not jwt:
+        raise ValueError(
+            "SUDESPACHO_LEGACY_JWT vacío — renovar token (sidebar Streamlit → 🔄)"
+        )
+
+    # Solo los campos que FeesDefender usa; los opcionales se omiten si están vacíos.
+    payload: dict[str, str] = {"nombre": datos.nombre}
+    if datos.email:
+        payload["email"] = datos.email
+    if datos.movil:
+        payload["movil"] = datos.movil
+    if datos.telefono:
+        payload["telefono1"] = datos.telefono
+    if datos.nif:
+        payload["nif_cif"] = datos.nif
+
+    url = f"{_REST_BASE}{_REST_CREATE_COLABORADOR}"
+    _headers = {
+        "Authorization": f"Bearer {jwt}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
+    }
+
+    for attempt in range(2):  # máx. 2 intentos (original + 1 tras refresh)
+        try:
+            r = httpx.post(url, json=payload, headers=_headers, timeout=_REST_TIMEOUT)
+        except httpx.HTTPError as exc:
+            raise SudespachoRelationsError(
+                f"REST POST {_REST_CREATE_COLABORADOR} falló: {exc}"
+            ) from exc
+
+        if r.status_code == 401 and attempt == 0:
+            new_jwt, refresh_err = try_auto_refresh_jwt()
+            if new_jwt:
+                _headers = {**_headers, "Authorization": f"Bearer {new_jwt}"}
+                continue
+            raise SudespachoRelationsError(
+                f"REST POST {_REST_CREATE_COLABORADOR} → HTTP 401 (JWT expirado). "
+                f"Renovación automática fallida: {refresh_err}"
+            )
+
+        if r.status_code == 201:
+            try:
+                data = r.json()
+                colab_id = str(data.get("id", ""))
+                if colab_id and colab_id.isdigit():
+                    return colab_id
+            except Exception:
+                pass
+            raise SudespachoRelationsError(
+                f"REST POST {_REST_CREATE_COLABORADOR} devolvió 201 pero sin ID. "
+                f"Body: {r.text[:300]}"
+            )
+
+        try:
+            err = r.json()
+            detail = err.get("detail") or err.get("hydra:description") or r.text[:300]
+        except Exception:
+            detail = r.text[:300]
+        raise SudespachoRelationsError(
+            f"REST POST {_REST_CREATE_COLABORADOR} → HTTP {r.status_code}: {detail}"
+        )
+
+    raise SudespachoRelationsError(
+        f"REST POST {_REST_CREATE_COLABORADOR}: máximo de reintentos alcanzado"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Creación de colaborador
 # ---------------------------------------------------------------------------
+
+def _create_colaborador_legacy(
+    datos: NuevoColaborador,
+    client: SudespachoLegacyClient,
+) -> str:
+    """Crea un colaborador vía frontal heredado (PHPSESSID + CSRF).
+
+    Usado como fallback cuando REST no está disponible.
+
+    Args:
+        datos: Datos del colaborador.
+        client: Cliente legacy ya inicializado.
+
+    Returns:
+        ID numérico del colaborador creado (str).
+
+    Raises:
+        SudespachoRelationsError: si la creación falla o no devuelve ID.
+    """
+    csrf = client.get_csrf_token()
+
+    form: list[tuple[str, str]] = [
+        ("campo_1086__colaboradores", datos.nombre),
+        ("campo_1080__colaboradores", datos.email),
+        ("campo_1083__colaboradores", datos.movil),
+        ("campo_1090__colaboradores", datos.telefono),
+        ("campo_1085__colaboradores", datos.nif),
+        # Resto de campos opcionales — vacíos por defecto
+        ("campo_1084__colaboradores", "1"),   # Nacionalidad = Sin Asignar
+        ("campo_1091__colaboradores", ""),
+        ("campo_1081__colaboradores", ""),
+        ("campo_1092__colaboradores", ""),
+        ("campo_1094__colaboradores", ""),
+        ("campo_1079__colaboradores", ""),
+        ("campo_1089__colaboradores", ""),
+        ("campo_1088__colaboradores", ""),
+        ("campo_1078__colaboradores", ""),
+        ("campo_1087__colaboradores", ""),
+    ]
+    for gid in datos.grupos:
+        form.append(("permisos_grupos[]", str(gid)))
+    for uid in datos.usuarios:
+        form.append(("permisos_usuarios[]", str(uid)))
+    form += [
+        ("csrf_token", csrf),
+        ("cc-num", _CC_NUM),
+        ("ajax", "true"),
+        ("csrf_token", csrf),
+        ("validar_formatos_nacionales", "false"),
+        ("csrf_token", csrf),
+    ]
+
+    try:
+        response = client.post_form(_SAVEADD_COLABORADOR_PATH, form)
+    except SudespachoLegacyError as exc:
+        raise SudespachoRelationsError(
+            f"POST {_SAVEADD_COLABORADOR_PATH} falló: {exc}"
+        ) from exc
+
+    colab_id = _extract_id(response)
+    if not colab_id:
+        raise SudespachoRelationsError(
+            f"Colaborador creado pero no se pudo extraer su ID. "
+            f"Respuesta: {str(response)[:400]}"
+        )
+    return colab_id
+
 
 def create_colaborador(
     datos: NuevoColaborador,
@@ -324,72 +499,38 @@ def create_colaborador(
 ) -> str:
     """Crea un nuevo colaborador en sudespacho.net.
 
-    Endpoint: POST /views/saveadd/elemento/colaboradores
-    Response JSON: {"resultado": true, "dato": "{id}"}
+    Estrategia REST-first (desde 2026-05-06):
+      1. Intenta crear vía REST API (/api/element_register/colaboradores).
+         Auth: JWT Bearer — NO requiere PHPSESSID ni CSRF.
+         Confirmado con HAR judicial_648.har, tenant tnm.
+      2. Si REST falla (JWT expirado/ausente o error de red), cae al frontal
+         heredado (PHPSESSID + CSRF), que sigue operativo.
 
     Args:
         datos: Datos del colaborador a crear.
-        client: Cliente legacy reutilizable (opcional).
+        client: Cliente legacy reutilizable (opcional; solo para fallback).
 
     Returns:
         ID numérico del colaborador creado (str).
 
     Raises:
-        SudespachoRelationsError: si la creación falla o no devuelve ID.
+        SudespachoRelationsError: si ambas vías fallan.
     """
+    # 1. Intentar REST (sin PHPSESSID)
+    try:
+        return _rest_post_colaborador(datos)
+    except (SudespachoRelationsError, ValueError) as rest_err:
+        _log.warning(
+            "REST create_colaborador falló (%s) — usando legacy como fallback",
+            rest_err,
+        )
+
+    # 2. Fallback: legacy saveadd (requiere PHPSESSID)
     owns_client = client is None
     if owns_client:
         client = SudespachoLegacyClient()
     try:
-        csrf = client.get_csrf_token()
-
-        form: list[tuple[str, str]] = [
-            ("campo_1086__colaboradores", datos.nombre),
-            ("campo_1080__colaboradores", datos.email),
-            ("campo_1083__colaboradores", datos.movil),
-            ("campo_1090__colaboradores", datos.telefono),
-            ("campo_1085__colaboradores", datos.nif),
-            # Resto de campos opcionales — vacíos por defecto
-            ("campo_1084__colaboradores", "1"),   # Nacionalidad = Sin Asignar
-            ("campo_1091__colaboradores", ""),
-            ("campo_1081__colaboradores", ""),
-            ("campo_1092__colaboradores", ""),
-            ("campo_1094__colaboradores", ""),
-            ("campo_1079__colaboradores", ""),
-            ("campo_1089__colaboradores", ""),
-            ("campo_1088__colaboradores", ""),
-            ("campo_1078__colaboradores", ""),
-            ("campo_1087__colaboradores", ""),
-        ]
-        for gid in datos.grupos:
-            form.append(("permisos_grupos[]", str(gid)))
-        for uid in datos.usuarios:
-            form.append(("permisos_usuarios[]", str(uid)))
-        form += [
-            ("csrf_token", csrf),
-            ("cc-num", _CC_NUM),
-            ("ajax", "true"),
-            ("csrf_token", csrf),
-            ("validar_formatos_nacionales", "false"),
-            ("csrf_token", csrf),
-        ]
-
-        try:
-            response = client.post_form(_SAVEADD_COLABORADOR_PATH, form)
-        except SudespachoLegacyError as exc:
-            raise SudespachoRelationsError(
-                f"POST {_SAVEADD_COLABORADOR_PATH} falló: {exc}"
-            ) from exc
-
-        # Extraer ID de la respuesta
-        colab_id = _extract_id(response)
-        if not colab_id:
-            raise SudespachoRelationsError(
-                f"Colaborador creado pero no se pudo extraer su ID. "
-                f"Respuesta: {str(response)[:400]}"
-            )
-        return colab_id
-
+        return _create_colaborador_legacy(datos, client)
     finally:
         if owns_client:
             try:

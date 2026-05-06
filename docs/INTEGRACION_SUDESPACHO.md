@@ -6,6 +6,45 @@
 
 ---
 
+## 0. Protocolo obligatorio para nuevas integraciones
+
+**Antes de implementar cualquier conexión entre FeesDefender y el CRM, seguir siempre estos dos pasos:**
+
+### 0.1 Leer la spec OAS3
+
+```
+https://api-crm-commons-pro.sudespacho.biz/api/docs
+```
+
+Referencia oficial de todos los endpoints REST disponibles. Confirmar:
+- Si el endpoint `POST /api/element_register/{element}` existe para el slug objetivo.
+- Qué esquema de auth usa (Bearer JWT vs x-api-key).
+- Qué respuesta devuelve (HTTP 201 + `{"id": N}` o diferente).
+
+⚠️ La spec OAS3 es genérica — los `properties` del body son **ejemplos ilustrativos**, no el schema específico del elemento. Para los nombres exactos de propiedades, usar el paso 0.2.
+
+### 0.2 Capturar un HAR del elemento en el CRM
+
+1. Abrir el CRM en Chrome con sesión activa.
+2. DevTools → Network → activar grabación.
+3. Crear un registro de prueba del elemento objetivo (colaborador, cliente, etc.) desde la UI del CRM.
+4. Filtrar las requests por `api-crm-commons-pro.sudespacho.biz`.
+5. Exportar como HAR (`Export HAR...`) y adjuntarlo al chat.
+
+El HAR revela:
+- La URL exacta del POST de creación.
+- El body JSON con los **nombres reales de las propiedades** (ej. `nif_cif` no `nif`, `telefono1` no `telefono`).
+- El esquema de auth real (Bearer JWT en cookie o header).
+- Las vistas auxiliares: `GET /api/view/quick_creation/{element}` y `GET /api/view/complete/{element}` que listan todas las propiedades del elemento.
+
+**Después de la prueba:** borrar el registro de prueba del CRM manualmente.
+
+**Ejemplo documentado:** integración de `colaboradores` (2026-05-06, HAR `judicial_648.har`).  
+Resultado: `POST /api/element_register/colaboradores` → HTTP 201, Bearer JWT, sin PHPSESSID.  
+Properties: `nombre`, `email`, `movil`, `nif_cif`, `telefono1`, `notas`, etc.
+
+---
+
 ## 1. Arquitectura de la plataforma
 
 > **Spec OAS3 auditado 2026-05-06:** `https://api-crm-commons-pro.sudespacho.biz/api/docs.json`
