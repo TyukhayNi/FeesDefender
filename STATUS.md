@@ -55,7 +55,7 @@ git commit -m "<mensaje que Claude propuso>"
 
 | Ítem | Estado |
 |------|--------|
-| Tests | ✅ 147/147 existentes + `test_sudespacho_create_rest.py` añadido (pendiente ejecutar en PS) |
+| Tests | ✅ 178/178 (+31 REST creación extrajudicial/judicial — 2026-05-06) |
 | Pipeline | ✅ Ejecutado end-to-end (BaRR3, 2026-04-28, 9/9 pasos OK, ~9 min) |
 | Primer caso real | ✅ Creado, docs descargados |
 | Taxonomía de casos | ✅ Actualizada en config.py |
@@ -292,10 +292,9 @@ data/CASOS/{case_id}/
 ## Tests — última ejecución
 
 ```
-pytest -q   →   147 passed (2026-05-04)
+pytest -q   →   178 passed (2026-05-06)
 ```
 Módulos cubiertos: `case_manager`, `inventory`, `utils`,
 `sync_sudespacho` (+26 nuevos: REST gdocu), `sync_sudespacho_legacy`,
-`sudespacho_relations` (+8 nuevos: REST colaboradores).
-
-**Pendiente ejecutar en PS (2026-05-06):** `test_sudespacho_create_rest.py` — tests REST creación extrajudicial + judicial.
+`sudespacho_relations` (+8 nuevos: REST colaboradores),
+`sudespacho_create` (+31 nuevos: REST extrajudicial + judicial, tags, payloads, REST-first fallback).

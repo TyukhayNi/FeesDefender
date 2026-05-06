@@ -8,6 +8,10 @@
 
 ## 1. Arquitectura de la plataforma
 
+> **Spec OAS3 auditado 2026-05-06:** `https://api-crm-commons-pro.sudespacho.biz/api/docs.json`
+> 466 paths. Los hallazgos de esa auditoría están integrados en este documento y en
+> `docs/ARQUITECTURA_CRM_SUDESPACHO.md`.
+
 sudespacho.net expone **dos superficies de integración** con comportamientos distintos:
 
 | Superficie | Host | Auth | Uso en FeesDefender |
@@ -94,20 +98,24 @@ document.cookie.split(';').map(c=>c.trim()).filter(c=>c.startsWith('PHPSESSID')|
 |---|---|---|---|
 | GET | `/api/documents?itemsPerPage=1` | Healthcheck efectivo con API key | ✅ Confirmado |
 | GET | `/api/online/current` | Healthcheck nativo (solo sesión web, no API key) | ⚠️ 404 con API key |
-| GET | `/api/element_register/{element}/{id}?properties[]=…` | Metadatos del expediente | ⚠️ Bug 500 en backend |
+| GET | `/api/element_register/{element}/{id}?properties[]=…` | Metadatos del expediente | ⚠️ Bug 500 en backend (properties es required según OAS3, pero el servidor falla al procesar arrays PHP) |
 | GET | `/api/documents/{id}` | Metadatos de un documento (id_carpeta, categoria, etc.) | ✅ Confirmado |
 | GET | `/api/documents` | Listado con filterGroup | ✅ Confirmado |
 | GET | `/api/folders/gdocu/{parent}?related_element=…&related_member=…` | Carpetas Gdocu del expediente | ✅ Confirmado |
 | GET | `/api/documents/{folder_id}/zip/files` | Zip de carpeta Gdocu | ✅ Confirmado |
 | GET | `/api/documents/{id}/downloadUri` | URL de descarga de un documento | ✅ Confirmado |
-| GET | `/api/documents/presigned_urls/s3/download/{documentId}` | URL S3 prefirmada | ✅ Confirmado |
-| GET | `/api/element_registries/{element}?filterGroup[...]=associated&value={id}&property=left.{element}.id` | Listado de cualquier tipo de elemento filtrado por expediente asociado (Gdocu, actuaciones, etc.) **SIN PHPSESSID** | ✅ Confirmado 2026-05-04 |
-| GET | `/api/element_registries/summary/{element}?filterGroup[...]=...` | Agregado/resumen de un tipo de elemento (ej. total cuantía) | ✅ Confirmado 2026-05-04 |
-| GET | `/api/files/presigned_download_url/{doc_id}?relatedElement={element}&relatedId={exp_id}&direction=left` | URL S3 prefirmada para descarga/visualización de documento **SIN PHPSESSID** | ✅ Confirmado 2026-05-04 |
+| GET | `/api/documents/presigned_urls/s3/download/{documentId}` | URL S3 prefirmada (vía OAS3) | ✅ Confirmado |
+| GET | `/api/element_registries/{element}?filterGroup[...]=associated&value={id}&property=left.{element}.id` | Listado de cualquier tipo de elemento filtrado por expediente asociado **SIN PHPSESSID** | ✅ Confirmado 2026-05-04 |
+| GET | `/api/element_registries/summary/{element}?filterGroup[...]=...` | Agregado/resumen de un tipo de elemento | ✅ Confirmado 2026-05-04 |
+| GET | `/api/files/presigned_download_url/{doc_id}?relatedElement={element}&relatedId={exp_id}&direction=left` | URL S3 prefirmada para descarga **SIN PHPSESSID** | ✅ Confirmado 2026-05-04 |
 | GET | `/api/related_registers?id={register_id}` | Relaciones entre registros (extrajudicial↔judicial) | ✅ Confirmado |
-| POST | `/api/expedient/convert/{id}` | Convertir extrajudicial → judicial | ✅ Documentado |
+| GET | `/api/related_register/{element}/{id}` | Relaciones de un elemento (singular, vía OAS3) | ✅ Documentado OAS3 |
 | POST | `/api/element_register/extrajudiciales` | Crear expediente **extrajudicial** — `Authorization: Bearer <JWT>`, JSON plano, HTTP 201 → `{"id": N}` | ✅ Confirmado 2026-05-06 |
 | POST | `/api/element_register/expedientes_judiciales` | Crear expediente **judicial** — `Authorization: Bearer <JWT>`, JSON plano, HTTP 201 → `{"id": N}` | ✅ Confirmado 2026-05-06 |
+| POST | `/api/expedient/convert/{id}?type=CONVERT` | Convertir extrajudicial → judicial — auth: `x-api-key` | 🔬 Pendiente validar en tenant tnm |
+| POST | `/api/relation_element/{element}/{id}` | **Crear relación REST** — body: `["left.X.N","right.Y.M"]` — reemplaza `saveselect` | 🔬 Pendiente validar en tenant tnm |
+| POST | `/api/tags/{element}?field=tags` | **Crear tag REST** — body: `{"label":"...", "colour":"#xxx"}` — reemplaza legacy | 🔬 Pendiente validar |
+| PUT | `/api/relation_element/{element}/{id}` | Actualizar relación existente — body: `{"primary":1,"relation":"left.X.N"}` | 🔬 Pendiente validar |
 | POST | `/api/related_registers` | ❌ 405 — solo acepta GET (ver DEAD_ENDS.md) | ✗ Dead end |
 
 #### Detalle: crear expediente extrajudicial vía REST (confirmado 2026-05-06)
@@ -434,21 +442,38 @@ Pendiente: confirmar payload y respuesta con una conversión real.
 
 ## 8. Gotchas / cosas no obvias
 
-1. **`x-api-key` ≠ `Authorization`**: El OpenAPI oficial declara `Authorization` pero corresponde al JWT de sesión web. La API key va siempre en `x-api-key`.
+1. **`x-api-key` no está en el spec OAS3**: El spec oficial OAS3 solo declara el header
+   `Authorization` como mecanismo de auth (`apiKey` scheme). `x-api-key` es un header
+   paralelo no documentado que funciona empíricamente. En la práctica: usar `x-api-key`
+   para operaciones de lectura y admin, `Authorization: Bearer <JWT>` para crear expedientes.
 
-2. **PHPSESSID caduca**: Por inactividad, no por tiempo fijo. Si `check_legacy` falla, renovar desde DevTools.
+2. **PHPSESSID caduca**: Por inactividad del servidor PHP (~24 min), no por tiempo fijo.
+   Si `check_legacy` falla, renovar desde DevTools → Application → Cookies.
 
-3. **`element_register` bug 500**: `GET /api/element_register/{element}/{id}` devuelve 500 para cualquier combinación de `properties[]`. Bug en el backend de sudespacho. No usarlo hasta que lo corrijan.
+3. **`element_register` GET bug 500 — causa confirmada**: El spec OAS3 marca `properties[]`
+   como **required**. El servidor tiene un bug PHP (`Array to string conversion`) al procesar
+   el parámetro como array. No tiene workaround conocido — no usar este endpoint.
 
-4. ~~**Listado de documentos no está en la API nueva**~~ **CORREGIDO 2026-05-04**: El listado de documentos de un expediente SÍ está disponible vía API REST nueva usando `GET /api/element_registries/gdocu` con filtro `associated` (ver sección 3.1). El endpoint `/api/documents` con `relatedRegisters` como propiedad filtrable era el que no funcionaba — pero `element_registries` sí funciona. PHPSESSID ya no es necesario para listar ni descargar documentos.
+4. ~~**Listado de documentos no está en la API nueva**~~ **CORREGIDO 2026-05-04**: El listado
+   de documentos de un expediente SÍ está disponible vía API REST nueva usando
+   `GET /api/element_registries/gdocu` con filtro `associated`. PHPSESSID no necesario.
 
-5. **URL S3 prefirmada expira en ~5 min**: Resolver y descargar en la misma operación. No cachear la URL.
+5. **URL S3 prefirmada expira en ~600s (REST) / ~5 min (legacy)**: Resolver y descargar
+   en la misma operación. No cachear la URL.
 
-6. **PowerShell Invoke-WebRequest vs Invoke-RestMethod**: El primero devuelve bytes decimales uno por línea. Usar siempre `Invoke-RestMethod` o guardar con `Out-File` y leer con `Read` tool.
+6. **PowerShell Invoke-WebRequest vs Invoke-RestMethod**: El primero devuelve bytes decimales
+   uno por línea. Usar siempre `Invoke-RestMethod` o guardar con `Out-File`.
 
-7. **Mount sync Linux↔Windows**: Archivos escritos por el agente pueden no aparecer inmediatamente en el mount Linux de bash. Verificar existencia con `Read` tool (ruta Windows).
+7. **Mount sync Linux↔Windows**: Archivos escritos por el agente pueden no aparecer
+   inmediatamente en el mount Linux de bash. Verificar existencia con `Read` tool (ruta Windows).
 
-8. **`developers.sudespacho.net`**: Fuera de la allowlist de Cowork. Si se necesita consultar la documentación oficial, el usuario debe acceder directamente o autorizar el dominio en Settings → Capabilities.
+8. **`relation_element` POST — body es array de strings**: A diferencia del PUT (body objeto),
+   el POST para crear relaciones usa un array JSON:
+   `["left.expedientes_judiciales.648", "right.clientes_propios.2"]`
+   Cada string tiene el formato `"{dirección}.{elemento}.{id}"`.
+
+9. **`element_register` POST acepta `relatedElement`+`relatedId`**: Se puede crear un registro
+   y vincularlo en un solo call, sin necesidad de `saveselect` posterior.
 
 ---
 
@@ -675,6 +700,7 @@ BiRS1, BiRS2, SaRS1, SeRS6, SSRR1, SSRS1, VaRS5, BaCS10 (extraj→ID 139), MaRS1
 | 2026-05-04 | **`/api/element_registries/gdocu` elimina dependencia de PHPSESSID para docs**: listado de documentos de un expediente ahora completamente operativo vía REST con solo `x-api-key`. Filtro: `associated` + `property=left.expedientes_judiciales.id`. |
 | 2026-05-04 | **`/api/files/presigned_download_url/{doc_id}`**: descarga de documento vía REST sin PHPSESSID. TTL URL S3: 600s. Mismo endpoint que usa el CRM para visor y botón "Descargar". |
 | 2026-05-04 | Gotcha #4 corregido: `element_registries/gdocu` SÍ lista documentos vía REST. La limitación anterior (`/api/documents?relatedRegisters`) era de ese endpoint concreto. |
+| 2026-05-06 | **Auditoría OAS3** (`/api/docs.json`, 466 paths): `POST /api/relation_element/{element}/{id}` con body array de strings reemplaza `saveselect` (pendiente validar). `x-api-key` no está en el spec oficial — solo `Authorization`. Bug 500 en `element_register` GET confirmado: `properties` es required pero el servidor falla con arrays PHP. `element_register` POST acepta `relatedElement`+`relatedId` para crear y vincular en un call. |
 
 ---
 
