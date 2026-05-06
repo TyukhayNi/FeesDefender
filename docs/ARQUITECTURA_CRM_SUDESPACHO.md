@@ -185,7 +185,8 @@ con un array de `{id, values: [{property: {name}, value}]}`.
 |---|---|---|---|
 | GET | `/api/related_registers?id={register_id}` | x-api-key | ⭐ Relaciones de un registro (plural, empírico) |
 | GET | `/api/related_register/{element}/{id}` | x-api-key | Relaciones de un elemento (singular, oficial) |
-| PUT | `/api/relation_element/{element}/{id}` | x-api-key | **🔬 Crear/actualizar relación REST** (pendiente validar) |
+| POST | `/api/relation_element/{element}/{id}` | Bearer JWT | **⭐ Crear relación REST** (confirmado 2026-05-06 — 201, idempotente, sin PHPSESSID) |
+| PUT | `/api/relation_element/{element}/{id}` | Bearer JWT | Actualizar relación existente (primary, relation) |
 | POST | `/api/related_registers` | — | ❌ Dead end — devuelve 405 |
 | POST | `/{elemento}/saveselect/elemento/{elem}/elemento_relacionado/{elem2}/miembro_relacionado/{id}/...` | PHPSESSID | Legacy: vincular entidad |
 | POST | `/views/saveselectrelacion/elemento/juzgados/elemento_relacion/autos/...` | PHPSESSID | Legacy especial: vincular juzgado (usa `saveselectrelacion`) |
@@ -281,11 +282,11 @@ del spec OAS3** — es un header paralelo no documentado que también funciona.
 | Crear expediente extrajudicial/judicial | REST | ❌ | ✅ | ❌ |
 | Convertir extrajudicial → judicial | REST | ❌ | ❌ | ✅ (pendiente) |
 | Listar expedientes (metadatos) | REST | ❌ | ❌ | ✅ |
-| Crear relación vía `relation_element` | REST | ❌ | ❌ | ✅ (pendiente) |
+| Crear relación vía `relation_element` | REST | ❌ | ✅ | ❌ |
 | Crear tag vía `POST /api/tags/` | REST | ❌ | ❌ | ✅ (pendiente) |
 | Buscar colaborador (autocomplete) | Legacy | ✅ | ✅ | ❌ |
 | Crear colaborador | Legacy | ✅ | ✅ | ❌ |
-| Vincular entidades (`saveselect`) | Legacy | ✅ | ✅ | ❌ |
+| Vincular entidades (`saveselect`) | Legacy (fallback) | ✅ | ✅ | ❌ |
 
 **Conclusión:** El objetivo es usar **solo x-api-key** para todas las operaciones
 excepto la creación de expedientes (que requiere JWT). La dependencia de PHPSESSID
@@ -346,41 +347,49 @@ Estas tres operaciones actualmente requieren PHPSESSID (legacy). La documentaci�
 oficial sugiere alternativas REST que, si funcionan, eliminarían completamente la
 dependencia de PHPSESSID:
 
-### 7.1 [ALTA] Vincular entidades via `relation_element`
+### 7.1 [ALTA] ✅ Vincular entidades via `relation_element` — CONFIRMADO 2026-05-06
 
-El spec OAS3 confirma **DOS operaciones** sobre `/api/relation_element/{element}/{id}`:
+**El endpoint funciona en el tenant `tnm`.** Validado contra los expedientes 591
+(extrajudicial) y 648 (judicial). Implementado en `core/sudespacho_relations.py`
+como REST-first con fallback legacy.
 
-**POST — crear relación nueva (descubrimiento del OAS3):**
+**POST — crear relación nueva (CONFIRMADO):**
 ```
 POST /api/relation_element/{element}/{id}
-x-api-key: <API_KEY>
+Authorization: Bearer <JWT>          ← NO x-api-key; mismo token que create_expediente
 Content-Type: application/json
 
 ["left.expedientes_judiciales.10", "right.clientes_propios.2"]
 ```
-El body es un **array JSON de strings de relación**. La sintaxis es
-`"{dirección}.{elemento_destino}.{id_destino}"`. Se pueden enviar múltiples
-relaciones en una sola llamada.
+El body es un **array JSON de strings de relación**. Sintaxis: `"{dirección}.{slug}.{id}"`.
+Se pueden enviar múltiples relaciones en una sola llamada. Respuesta: `201 "Created!"`.
+
+**Comportamiento verificado:**
+- ✅ Idempotente: relaciones ya existentes devuelven 201 sin crear duplicados
+- ✅ Múltiples relaciones en un solo POST: 201 OK
+- ⚠️ `exp_id` inexistente → 201 sin error (sin validación de FK server-side)
+- ⚠️ Direction inválida → 500 PHP exception (no 400)
+- ❌ Array vacío → 404 "It is necessary to include properties"
+
+**Equivalencia confirmada con saveselect legacy:**
+
+| Operación | Endpoint REST (CONFIRMADO) |
+|---|---|
+| Vincular EV MMC (ID=2) a extrajudicial 600 | `POST /api/relation_element/extrajudiciales/600` body `["right.clientes_propios.2"]` |
+| Vincular colaborador (ID=50) a extrajudicial 600 | `POST /api/relation_element/extrajudiciales/600` body `["right.colaboradores.50"]` |
+| Vincular EV MMC a judicial 648 | `POST /api/relation_element/expedientes_judiciales/648` body `["right.clientes_propios.2"]` |
+| Vincular contrario a judicial 648 | `POST /api/relation_element/expedientes_judiciales/648` body `["right.clientes_contrarios.{id}"]` |
+| Vincular procurador a judicial 648 | `POST /api/relation_element/expedientes_judiciales/648` body `["right.procuradores_propios.{id}"]` |
 
 **PUT — actualizar relación existente:**
 ```
 PUT /api/relation_element/{element}/{id}
-x-api-key: <API_KEY>
-Content-Type: application/json
-
+Authorization: Bearer <JWT>
 {"primary": 1, "relation": "left.facturas.2"}
 ```
 
-**Equivalencia con saveselect legacy:**
-
-| Operación legacy (saveselect) | Equivalente REST (pendiente validar) |
-|---|---|
-| Vincular EV MMC (ID=2) a extrajudicial 600 | `POST /api/relation_element/extrajudiciales/600` body `["right.clientes_propios.2"]` |
-| Vincular colaborador (ID=50) a extrajudicial 600 | `POST /api/relation_element/extrajudiciales/600` body `["right.colaboradores.50"]` |
-| Vincular extrajudicial 591 a judicial 648 | `POST /api/relation_element/expedientes_judiciales/648` body `["left.extrajudiciales.591"]` |
-
-**Cómo validar:** hacer POST con EV MMC a un expediente de prueba. Comprobar en el
-CRM que aparece la relación. Si funciona, reemplaza **todos** los `saveselect` legacy.
+**Estado:** Implementado en `sudespacho_relations.py` — `_link_rest()` + `_link_rest_or_legacy()`.
+Todos los `link_*()` públicos son ahora REST-first con fallback a saveselect legacy.
 
 ### 7.2 [MEDIA] Crear tags via `POST /api/tags/{element}`
 
@@ -447,9 +456,9 @@ No priorizado ahora; la integración directa Python es más fiable y controlable
 
 Para llegar a operación 100% REST sin PHPSESSID:
 
-- [ ] **Validar `relation_element`** — intentar vincular EV MMC (ID=2) a un expediente
-      de prueba via `PUT /api/relation_element/clientes_propios/2` con body
-      `{"relation": "right.extrajudiciales.{test_id}"}`.
+- [x] **Validar `relation_element`** ✅ 2026-05-06 — `POST /api/relation_element/{element}/{id}`
+      con `Authorization: Bearer <JWT>` + body array de strings. HTTP 201 confirmado.
+      Implementado en `sudespacho_relations.py` como REST-first.
 - [ ] **Validar `POST /api/tags/`** — crear un tag de prueba en el grupo extrajudicial.
 - [ ] **Validar `expedient/convert`** — convertir un extrajudicial de prueba a judicial.
 - [ ] **Explorar `element_registries/colaboradores`** para búsqueda de colaboradores

@@ -14,6 +14,8 @@ from core.sudespacho_relations import (
     _autocomplete,
     _extract_id,
     _link_element,
+    _link_rest,
+    _link_rest_or_legacy,
     _list_colaboradores_rest,
     _LINK_CLIENTE_PATH,
     _LINK_COLABORADOR_PATH,
@@ -527,6 +529,170 @@ def test_search_colaboradores_for_ui_termino_corto(monkeypatch):
         result = search_colaboradores_for_ui("a")
     assert result == []
     mock_rest.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# _link_rest (REST sin PHPSESSID, confirmado 2026-05-06)
+# ---------------------------------------------------------------------------
+
+def _mock_httpx_post_201():
+    """Mock de httpx.post que devuelve 201 "Created!"."""
+    r = MagicMock()
+    r.status_code = 201
+    r.text = '"Created!"'
+    return r
+
+
+def test_link_rest_ok(monkeypatch):
+    """_link_rest() envía POST correcto con Bearer JWT y acepta 201."""
+    monkeypatch.setenv("SUDESPACHO_LEGACY_JWT", "test_jwt_token")
+    mock_resp = _mock_httpx_post_201()
+
+    with patch("httpx.post", return_value=mock_resp) as mock_post:
+        _link_rest("extrajudiciales", "600", ["right.clientes_propios.2"])
+
+    mock_post.assert_called_once()
+    call_kwargs = mock_post.call_args
+    # URL correcta
+    assert "relation_element/extrajudiciales/600" in call_kwargs[0][0]
+    # Body correcto
+    assert call_kwargs[1]["json"] == ["right.clientes_propios.2"]
+    # Auth Bearer JWT
+    headers = call_kwargs[1]["headers"]
+    assert headers["Authorization"] == "Bearer test_jwt_token"
+    assert headers["Content-Type"] == "application/json"
+
+
+def test_link_rest_sin_jwt_lanza_value_error(monkeypatch):
+    """Sin SUDESPACHO_LEGACY_JWT, _link_rest() lanza ValueError."""
+    monkeypatch.delenv("SUDESPACHO_LEGACY_JWT", raising=False)
+    with pytest.raises(ValueError, match="SUDESPACHO_LEGACY_JWT"):
+        _link_rest("extrajudiciales", "600", ["right.clientes_propios.2"])
+
+
+def test_link_rest_http_no_201_lanza_error(monkeypatch):
+    """HTTP != 201 de POST relation_element lanza SudespachoRelationsError."""
+    monkeypatch.setenv("SUDESPACHO_LEGACY_JWT", "test_jwt_token")
+    r = MagicMock()
+    r.status_code = 401
+    r.text = '{"code":401,"message":"Expired JWT Token"}'
+
+    with patch("httpx.post", return_value=r):
+        with pytest.raises(SudespachoRelationsError, match="HTTP 401"):
+            _link_rest("extrajudiciales", "600", ["right.clientes_propios.2"])
+
+
+def test_link_rest_error_de_red_lanza_error(monkeypatch):
+    """Error de conexión httpx lanza SudespachoRelationsError."""
+    monkeypatch.setenv("SUDESPACHO_LEGACY_JWT", "test_jwt_token")
+    with patch("httpx.post", side_effect=httpx.ConnectError("timeout")):
+        with pytest.raises(SudespachoRelationsError, match="REST POST relation_element"):
+            _link_rest("extrajudiciales", "600", ["right.clientes_propios.2"])
+
+
+def test_link_rest_multiples_relaciones(monkeypatch):
+    """_link_rest() pasa correctamente un array con múltiples relaciones."""
+    monkeypatch.setenv("SUDESPACHO_LEGACY_JWT", "jwt")
+    mock_resp = _mock_httpx_post_201()
+    relations = ["right.clientes_propios.2", "right.colaboradores.50"]
+
+    with patch("httpx.post", return_value=mock_resp) as mock_post:
+        _link_rest("extrajudiciales", "591", relations)
+
+    assert mock_post.call_args[1]["json"] == relations
+
+
+# ---------------------------------------------------------------------------
+# _link_rest_or_legacy
+# ---------------------------------------------------------------------------
+
+def test_link_rest_or_legacy_rest_wins(monkeypatch):
+    """Si REST devuelve 201, no se llama a _link_element (legacy)."""
+    monkeypatch.setenv("SUDESPACHO_LEGACY_JWT", "jwt_ok")
+    client = _mock_client()
+
+    with patch("core.sudespacho_relations._link_rest") as mock_rest:
+        mock_rest.return_value = None  # REST ok
+        _link_rest_or_legacy(
+            "extrajudiciales", "600",
+            ["right.clientes_propios.2"],
+            _LINK_CLIENTE_PATH, "2", client,
+        )
+
+    mock_rest.assert_called_once_with("extrajudiciales", "600", ["right.clientes_propios.2"])
+    client._post_form.assert_not_called()
+
+
+def test_link_rest_or_legacy_fallback_si_rest_falla(monkeypatch):
+    """Si REST lanza SudespachoRelationsError, se usa legacy saveselect."""
+    monkeypatch.setenv("SUDESPACHO_LEGACY_JWT", "jwt_expirado")
+    client = _mock_client()
+    r = _mock_post_response(200)
+    r.json.return_value = {"resultado": True, "acumulaDatos": {}}
+    client._post_form.return_value = r
+
+    with patch("core.sudespacho_relations._link_rest",
+               side_effect=SudespachoRelationsError("REST falló")):
+        _link_rest_or_legacy(
+            "extrajudiciales", "600",
+            ["right.clientes_propios.2"],
+            _LINK_CLIENTE_PATH, "2", client,
+        )
+
+    client._post_form.assert_called_once()
+
+
+def test_link_rest_or_legacy_fallback_si_no_jwt(monkeypatch):
+    """Si JWT ausente (ValueError), también usa fallback legacy."""
+    monkeypatch.delenv("SUDESPACHO_LEGACY_JWT", raising=False)
+    client = _mock_client()
+    r = _mock_post_response(200)
+    r.json.return_value = {"resultado": True}
+    client._post_form.return_value = r
+
+    _link_rest_or_legacy(
+        "extrajudiciales", "600",
+        ["right.clientes_propios.2"],
+        _LINK_CLIENTE_PATH, "2", client,
+    )
+
+    client._post_form.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# link_ev_mmc — REST-first (2026-05-06)
+# ---------------------------------------------------------------------------
+
+def test_link_ev_mmc_rest_first(monkeypatch):
+    """link_ev_mmc() usa REST cuando JWT está disponible."""
+    monkeypatch.setenv("SUDESPACHO_LEGACY_JWT", "jwt_valido")
+    client = _mock_client()
+
+    with patch("core.sudespacho_relations.SudespachoLegacyClient", return_value=client):
+        with patch("core.sudespacho_relations._link_rest") as mock_rest:
+            mock_rest.return_value = None
+            link_ev_mmc("600")
+
+    mock_rest.assert_called_once_with(
+        "extrajudiciales", "600", [f"right.clientes_propios.{EV_MMC_SPAIN_ID}"]
+    )
+    client._post_form.assert_not_called()
+
+
+def test_link_colaborador_rest_first(monkeypatch):
+    """link_colaborador() usa REST cuando JWT está disponible."""
+    monkeypatch.setenv("SUDESPACHO_LEGACY_JWT", "jwt_valido")
+    client = _mock_client()
+
+    with patch("core.sudespacho_relations.SudespachoLegacyClient", return_value=client):
+        with patch("core.sudespacho_relations._link_rest") as mock_rest:
+            mock_rest.return_value = None
+            link_colaborador("600", "301")
+
+    mock_rest.assert_called_once_with(
+        "extrajudiciales", "600", ["right.colaboradores.301"]
+    )
+    client._post_form.assert_not_called()
 
 
 def test_search_colaboradores_for_ui_sin_resultados(monkeypatch):

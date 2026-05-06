@@ -58,7 +58,9 @@ Constantes fijas del tenant tnm:
 
 from __future__ import annotations
 
+import logging
 import math
+import os
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
@@ -76,6 +78,8 @@ from .sudespacho_create import (
     USUARIOS_DEFAULT,
 )
 
+_log = logging.getLogger(__name__)
+
 
 # ---------------------------------------------------------------------------
 # Constantes
@@ -85,6 +89,15 @@ from .sudespacho_create import (
 EV_MMC_SPAIN_ID = "2"
 
 _CC_NUM = "HubspotCollectedFormsWorkaround"
+
+# REST API — vinculación de relaciones (confirmado 2026-05-06, tenant tnm)
+# POST /api/relation_element/{element}/{exp_id}
+# Auth: Authorization: Bearer <JWT>  (mismo token que create_expediente)
+# Body: array JSON de strings "{dirección}.{slug}.{id}"
+# Response: 201 "Created!" — idempotente (relaciones existentes no se duplican)
+_REST_BASE = "https://api-crm-commons-pro.sudespacho.biz"
+_REST_RELATION_PATH = "/api/relation_element/{element}/{exp_id}"
+_REST_TIMEOUT = 30
 
 # Rutas de los endpoints (sin el host)
 _AUTOCOMPLETE_PATH = "/autocompletar/buscar/elemento/{element}"
@@ -358,7 +371,107 @@ def _extract_id(response: Any) -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# Vinculación de relaciones
+# Vinculación de relaciones — REST (sin PHPSESSID, confirmado 2026-05-06)
+# ---------------------------------------------------------------------------
+
+def _link_rest(
+    element: str,
+    exp_id: str,
+    relations: list[str],
+) -> None:
+    """POST /api/relation_element/{element}/{exp_id} con Bearer JWT.
+
+    Confirmado 2026-05-06 en tenant tnm:
+      - Auth: Authorization: Bearer <JWT>  (mismo token que create_expediente)
+      - Body: array JSON  ["right.clientes_propios.2", ...]
+      - Response 201 "Created!" en éxito
+      - Idempotente: relaciones ya existentes devuelven 201 sin crear duplicados
+      - Independiente de PHPSESSID — elimina la última dependencia legacy
+
+    Comportamiento con datos inválidos (documentado):
+      - Direction inválida  → HTTP 500 (PHP exception sin validar)
+      - Array vacío []      → HTTP 404 "It is necessary to include properties"
+      - exp_id inexistente  → HTTP 201 (sin validación de FK server-side)
+
+    Args:
+        element: Slug del elemento receptor (ej. "extrajudiciales").
+        exp_id: ID del expediente receptor.
+        relations: Lista de strings con sintaxis "{dir}.{slug}.{id}".
+
+    Raises:
+        SudespachoRelationsError: HTTP != 201 o error de red.
+        ValueError: SUDESPACHO_LEGACY_JWT no configurado.
+    """
+    jwt = (os.getenv("SUDESPACHO_LEGACY_JWT") or "").strip()
+    if not jwt:
+        raise ValueError(
+            "SUDESPACHO_LEGACY_JWT vacío — renovar token (sidebar Streamlit → 🔄)"
+        )
+
+    url = f"{_REST_BASE}{_REST_RELATION_PATH.format(element=element, exp_id=exp_id)}"
+    try:
+        r = httpx.post(
+            url,
+            json=relations,
+            headers={
+                "Authorization": f"Bearer {jwt}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/124.0.0.0 Safari/537.36"
+                ),
+            },
+            timeout=_REST_TIMEOUT,
+        )
+    except httpx.HTTPError as exc:
+        raise SudespachoRelationsError(
+            f"REST POST relation_element/{element}/{exp_id} falló: {exc}"
+        ) from exc
+
+    if r.status_code != 201:
+        raise SudespachoRelationsError(
+            f"REST POST relation_element/{element}/{exp_id} "
+            f"→ HTTP {r.status_code}: {r.text[:200]}"
+        )
+
+
+def _link_rest_or_legacy(
+    rest_element: str,
+    exp_id: str,
+    rest_relations: list[str],
+    legacy_path_tpl: str,
+    legacy_related_id: str,
+    client: SudespachoLegacyClient,
+) -> None:
+    """REST-first con fallback legacy para operaciones de vinculación.
+
+    1. Intenta REST (Bearer JWT, sin PHPSESSID).
+    2. Si falla (JWT expirado/ausente), usa legacy saveselect (PHPSESSID).
+
+    Args:
+        rest_element: Slug del elemento en la URL REST (ej. "extrajudiciales").
+        exp_id: ID del expediente.
+        rest_relations: Lista de relaciones para el body REST.
+        legacy_path_tpl: Path template del endpoint saveselect legacy.
+        legacy_related_id: ID del elemento a vincular (para el form legacy).
+        client: Cliente legacy ya inicializado (para el fallback).
+    """
+    try:
+        _link_rest(rest_element, exp_id, rest_relations)
+        return
+    except (SudespachoRelationsError, ValueError) as rest_err:
+        _log.warning(
+            "REST relation_element falló (%s) — usando legacy saveselect como fallback",
+            rest_err,
+        )
+    # Fallback: legacy saveselect (requiere PHPSESSID)
+    _link_element(legacy_path_tpl, exp_id, legacy_related_id, client)
+
+
+# ---------------------------------------------------------------------------
+# Vinculación de relaciones — Legacy (saveselect, requiere PHPSESSID)
 # ---------------------------------------------------------------------------
 
 def _link_element(
@@ -428,21 +541,26 @@ def link_ev_mmc(
 ) -> None:
     """Vincula EV MMC SPAIN, S.L.U. (ID=2) como cliente del expediente.
 
-    Operación idempotente en la práctica: si ya está vinculado el CRM
-    simplemente no añade un duplicado.
+    REST-first (confirmado 2026-05-06): usa POST /api/relation_element/
+    sin PHPSESSID. Fallback a saveselect legacy si JWT no disponible.
+    Operación idempotente: relaciones ya existentes devuelven 201 sin duplicar.
 
     Args:
         exp_id: ID del expediente extrajudicial.
-        client: Cliente legacy reutilizable (opcional).
+        client: Cliente legacy reutilizable (opcional; solo para fallback).
 
     Raises:
-        SudespachoRelationsError: si el vínculo falla.
+        SudespachoRelationsError: si el vínculo falla en ambas vías.
     """
     owns_client = client is None
     if owns_client:
         client = SudespachoLegacyClient()
     try:
-        _link_element(_LINK_CLIENTE_PATH, exp_id, EV_MMC_SPAIN_ID, client)
+        _link_rest_or_legacy(
+            "extrajudiciales", exp_id,
+            [f"right.clientes_propios.{EV_MMC_SPAIN_ID}"],
+            _LINK_CLIENTE_PATH, EV_MMC_SPAIN_ID, client,
+        )
     finally:
         if owns_client:
             try:
@@ -459,19 +577,26 @@ def link_colaborador(
 ) -> None:
     """Vincula un colaborador existente al expediente.
 
+    REST-first (confirmado 2026-05-06): usa POST /api/relation_element/
+    sin PHPSESSID. Fallback a saveselect legacy si JWT no disponible.
+
     Args:
         exp_id: ID del expediente extrajudicial.
         colab_id: ID del colaborador en el CRM.
-        client: Cliente legacy reutilizable (opcional).
+        client: Cliente legacy reutilizable (opcional; solo para fallback).
 
     Raises:
-        SudespachoRelationsError: si el vínculo falla.
+        SudespachoRelationsError: si el vínculo falla en ambas vías.
     """
     owns_client = client is None
     if owns_client:
         client = SudespachoLegacyClient()
     try:
-        _link_element(_LINK_COLABORADOR_PATH, exp_id, colab_id, client)
+        _link_rest_or_legacy(
+            "extrajudiciales", exp_id,
+            [f"right.colaboradores.{colab_id}"],
+            _LINK_COLABORADOR_PATH, colab_id, client,
+        )
     finally:
         if owns_client:
             try:
@@ -560,15 +685,21 @@ def link_ev_mmc_judicial(
 ) -> None:
     """Vincula EV MMC SPAIN, S.L.U. (ID=2) como cliente del expediente judicial.
 
+    REST-first (confirmado 2026-05-06). Fallback a saveselect legacy.
+
     Args:
         exp_id: ID del expediente judicial.
-        client: Cliente legacy reutilizable (opcional).
+        client: Cliente legacy reutilizable (opcional; solo para fallback).
     """
     owns_client = client is None
     if owns_client:
         client = SudespachoLegacyClient()
     try:
-        _link_element(_LINK_CLIENTE_JUDICIAL_PATH, exp_id, EV_MMC_SPAIN_ID, client)
+        _link_rest_or_legacy(
+            "expedientes_judiciales", exp_id,
+            [f"right.clientes_propios.{EV_MMC_SPAIN_ID}"],
+            _LINK_CLIENTE_JUDICIAL_PATH, EV_MMC_SPAIN_ID, client,
+        )
     finally:
         if owns_client:
             try:
@@ -585,16 +716,22 @@ def link_contrario_judicial(
 ) -> None:
     """Vincula un cliente contrario al expediente judicial.
 
+    REST-first (confirmado 2026-05-06). Fallback a saveselect legacy.
+
     Args:
         exp_id: ID del expediente judicial.
         contrario_id: ID del cliente contrario en el CRM (clientes_contrarios).
-        client: Cliente legacy reutilizable (opcional).
+        client: Cliente legacy reutilizable (opcional; solo para fallback).
     """
     owns_client = client is None
     if owns_client:
         client = SudespachoLegacyClient()
     try:
-        _link_element(_LINK_CONTRARIO_JUDICIAL_PATH, exp_id, contrario_id, client)
+        _link_rest_or_legacy(
+            "expedientes_judiciales", exp_id,
+            [f"right.clientes_contrarios.{contrario_id}"],
+            _LINK_CONTRARIO_JUDICIAL_PATH, contrario_id, client,
+        )
     finally:
         if owns_client:
             try:
@@ -611,16 +748,22 @@ def link_procurador_judicial(
 ) -> None:
     """Vincula un procurador propio al expediente judicial.
 
+    REST-first (confirmado 2026-05-06). Fallback a saveselect legacy.
+
     Args:
         exp_id: ID del expediente judicial.
         procurador_id: ID del procurador en el CRM (procuradores_propios).
-        client: Cliente legacy reutilizable (opcional).
+        client: Cliente legacy reutilizable (opcional; solo para fallback).
     """
     owns_client = client is None
     if owns_client:
         client = SudespachoLegacyClient()
     try:
-        _link_element(_LINK_PROCURADOR_JUDICIAL_PATH, exp_id, procurador_id, client)
+        _link_rest_or_legacy(
+            "expedientes_judiciales", exp_id,
+            [f"right.procuradores_propios.{procurador_id}"],
+            _LINK_PROCURADOR_JUDICIAL_PATH, procurador_id, client,
+        )
     finally:
         if owns_client:
             try:
@@ -637,16 +780,22 @@ def link_colaborador_judicial(
 ) -> None:
     """Vincula un colaborador existente al expediente judicial.
 
+    REST-first (confirmado 2026-05-06). Fallback a saveselect legacy.
+
     Args:
         exp_id: ID del expediente judicial.
         colab_id: ID del colaborador en el CRM.
-        client: Cliente legacy reutilizable (opcional).
+        client: Cliente legacy reutilizable (opcional; solo para fallback).
     """
     owns_client = client is None
     if owns_client:
         client = SudespachoLegacyClient()
     try:
-        _link_element(_LINK_COLABORADOR_JUDICIAL_PATH, exp_id, colab_id, client)
+        _link_rest_or_legacy(
+            "expedientes_judiciales", exp_id,
+            [f"right.colaboradores.{colab_id}"],
+            _LINK_COLABORADOR_JUDICIAL_PATH, colab_id, client,
+        )
     finally:
         if owns_client:
             try:

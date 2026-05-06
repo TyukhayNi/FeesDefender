@@ -3,7 +3,7 @@
 > **Fuente de verdad única del proyecto.**
 > Actualizar al cerrar cada sesión con `python -m scripts.session_close`.
 
-**Última actualización:** 2026-05-06 (Auditoría creación expediente confirmada: SPA usa REST `POST /api/element_register/{element}` con `Authorization: Bearer <JWT>` — sin PHPSESSID ni CSRF. `sudespacho_create.py` migrado a REST-first + fallback legacy para extrajudicial Y judicial. `_tag_id_from_token`, `_tags_to_rest`, `_build_rest_payload_*`, `create_expediente_rest`, `create_expediente_judicial_rest`, `_rest_post`. Tests: `test_sudespacho_create_rest.py`. DEAD_ENDS.md: 2 endpoints REST inútiles documentados. INTEGRACION_SUDESPACHO.md: endpoints confirmados + mapping propiedades CamelCase/lowercase.)
+**Última actualización:** 2026-05-06 (Validado `POST /api/relation_element/{element}/{id}` con `Authorization: Bearer <JWT>` en tenant tnm — HTTP 201 confirmado, idempotente, sin PHPSESSID. `sudespacho_relations.py` migrado a REST-first: 6 funciones `link_*` usan `_link_rest()` + fallback automático a `saveselect` legacy si JWT expirado. 12 tests nuevos. `.env` actualizado con JWT fresco. `docs/ARQUITECTURA_CRM_SUDESPACHO.md` sección 7.1 marcada como confirmada + mapa de auth corregido.)
 
 ---
 
@@ -55,7 +55,7 @@ git commit -m "<mensaje que Claude propuso>"
 
 | Ítem | Estado |
 |------|--------|
-| Tests | ✅ 178/178 (+31 REST creación extrajudicial/judicial — 2026-05-06) |
+| Tests | ✅ 190/190 esperado (+12 REST relation_element — 2026-05-06; verificar con pytest) |
 | Pipeline | ✅ Ejecutado end-to-end (BaRR3, 2026-04-28, 9/9 pasos OK, ~9 min) |
 | Primer caso real | ✅ Creado, docs descargados |
 | Taxonomía de casos | ✅ Actualizada en config.py |
@@ -68,7 +68,7 @@ git commit -m "<mensaje que Claude propuso>"
 | `case_manager.get_drive_ev_ids()` | ✅ Lee folder_id del frontmatter de _caso.md (2026-05-04) |
 | UI intake demanda | ✅ Tab Casos — expander upload+unzip ZIP automático (2026-05-04) |
 | UI compartir carpeta | ✅ Tab Casos — expander directo (Drive API) + mensaje solicitud (2026-05-04) |
-| `sudespacho_relations.py` | ✅ Extrajudicial + ✅ Judicial (2026-04-30) — deduplicación, link cliente/contrario/procurador, link colaborador, create_tag |
+| `sudespacho_relations.py` | ✅ REST-first (2026-05-06): 6 `link_*` via `POST /api/relation_element/` sin PHPSESSID; fallback legacy automático |
 | Endpoint saveselect | ✅ Confirmado 2026-04-29 — cliente+colaborador persistidos en exp 600 |
 | `core/intake_drive.py` | ✅ Completo — pull rclone gdrive_ev, marker .pulled, 27 tests |
 | UI Drive E&V | ✅ Integrado en tab Nuevo caso + tab Casos (caso existente) |
@@ -204,7 +204,10 @@ python -m scripts.run_pipeline "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
 17. ~~**[SIGUIENTE-B-COLAB]**~~ ✅ 2026-05-04 — botón 🔍 end-to-end verificado.
 18. **[SIGUIENTE-SHARE]** Probar compartición directa carpeta E&V: tab Casos → expander "Compartir carpeta E&V" → botón "⚡ Compartir directamente". Si falla por token expirado, ejecutar `rclone ls gdrive_ev:` para refrescarlo.
 16. ~~**[SIGUIENTE-J-TESTS]**~~ ✅ 2026-05-06 — `test_sudespacho_create_rest.py` cubre REST extrajudicial + judicial (payloads, tags, REST-first + fallback).
-17. **[SIGUIENTE]** ⬅️ **Ejecutar `pytest -q` en PS** para verificar que los 147 tests existentes siguen en verde y los nuevos de `test_sudespacho_create_rest.py` pasan. Luego commit.
+17. ~~**[SIGUIENTE]** Ejecutar `pytest -q`~~ ✅ 2026-05-06 — 178/178 en verde.
+18. ~~**[SIGUIENTE-REST-RELATIONS]**~~ ✅ 2026-05-06 — ver arriba.
+19. **[SIGUIENTE]** ⬅️ `[SIGUIENTE-SHARE]` Probar compartición directa carpeta E&V: tab Casos → expander "Compartir carpeta E&V" → botón "⚡ Compartir directamente".
+18. ~~**[SIGUIENTE-REST-RELATIONS]**~~ ✅ 2026-05-06 — `POST /api/relation_element/` confirmado HTTP 201 con Bearer JWT. 6 `link_*` migradas a REST-first + fallback legacy. 12 tests nuevos. `.env` actualizado.
 11. ~~**[NIKOLAI]** Conectar cuenta `nikolai.tyukhay@engelvoelkers.com` en Cowork~~ ✅ 2026-04-28 — rclone `gdrive_ev` configurado; Cowork no soporta multi-cuenta, rclone es la solución definitiva.
 12. **[SIGUIENTE-C]** Módulo `core/intake_drive.py`:
    - Inputs: `case_id`, `drive_ev_team_id`, `drive_ev_folder_id` (extraído de URL W-XXXXXX)
@@ -292,9 +295,9 @@ data/CASOS/{case_id}/
 ## Tests — última ejecución
 
 ```
-pytest -q   →   178 passed (2026-05-06)
+pytest -q   →   178 passed (2026-05-06) — ejecutar para confirmar 190/190
 ```
 Módulos cubiertos: `case_manager`, `inventory`, `utils`,
 `sync_sudespacho` (+26 nuevos: REST gdocu), `sync_sudespacho_legacy`,
-`sudespacho_relations` (+8 nuevos: REST colaboradores),
+`sudespacho_relations` (+8 REST colaboradores, +12 REST relation_element),
 `sudespacho_create` (+31 nuevos: REST extrajudicial + judicial, tags, payloads, REST-first fallback).
