@@ -3,7 +3,7 @@
 > **Fuente de verdad única del proyecto.**
 > Actualizar al cerrar cada sesión con `python -m scripts.session_close`.
 
-**Última actualización:** 2026-05-06 (Drive URL al inicio del formulario Nuevo Caso. Auto-fill expandido: ciudad, equipo, dirección e ID GO se infieren automáticamente del driveId devuelto por la Drive API. `DriveFolderInfo` dataclass + `get_drive_folder_info()` en `intake_drive.py`. Bloque auto-fill sin `st.rerun()`. §5 eliminado: resolución Shared Drive ID implícita (API → lookup equipo → expander fallback). 5 tests nuevos para `get_drive_folder_info`. Total: 199 tests.)
+**Última actualización:** 2026-05-06 (UI: aviso `st.info()` cuando auto-fill aplica datos desde Drive; sección "Entorno" eliminada del sidebar; expander cookies manuales colapsado `⚙️ Renovación manual (administrador)` + mensaje amigable para usuarios no técnicos; reordenación flujo Nuevo Caso: local → CRM → pull; `register_drive_ev()` llamado antes del pull para persistir URL en `_caso.md`. Total: 199 tests.)
 
 ---
 
@@ -206,7 +206,7 @@ python -m scripts.run_pipeline "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
 16. ~~**[SIGUIENTE-J-TESTS]**~~ ✅ 2026-05-06 — `test_sudespacho_create_rest.py` cubre REST extrajudicial + judicial (payloads, tags, REST-first + fallback).
 17. ~~**[SIGUIENTE]** Ejecutar `pytest -q`~~ ✅ 2026-05-06 — 178/178 en verde.
 18. ~~**[SIGUIENTE-REST-RELATIONS]**~~ ✅ 2026-05-06 — ver arriba.
-19. **[SIGUIENTE]** ⬅️ Crear caso real pendiente: MaRS15, Devolución de reserva, Madrid. Pegar URL Drive E&V → verificar auto-fill ciudad/equipo/dirección/ID GO → crear. Luego probar `[SIGUIENTE-SHARE]`.
+19. **[SIGUIENTE]** ⬅️ Crear caso real MaRS15 (Pedro Laín Entralgo 4, W-02W4PJ, Devolución reserva). Caso local ya existe en CASOS (ensure_case OK, sin expediente CRM, sin pull). Ir a Nuevo Caso → introducir datos y URL Drive E&V → "⚡ Crear caso + enviar a sudespacho" → verificar orden local → URL guardada → CRM → pull. Luego probar `[SIGUIENTE-SHARE]`.
 18. ~~**[SIGUIENTE-REST-RELATIONS]**~~ ✅ 2026-05-06 — `POST /api/relation_element/` confirmado HTTP 201 con Bearer JWT. 6 `link_*` migradas a REST-first + fallback legacy. 12 tests nuevos. `.env` actualizado.
 11. ~~**[NIKOLAI]** Conectar cuenta `nikolai.tyukhay@engelvoelkers.com` en Cowork~~ ✅ 2026-04-28 — rclone `gdrive_ev` configurado; Cowork no soporta multi-cuenta, rclone es la solución definitiva.
 12. **[SIGUIENTE-C]** Módulo `core/intake_drive.py`:

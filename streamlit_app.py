@@ -359,15 +359,6 @@ def _email_to_nombre(email: str) -> str:
 # ---------------------------------------------------------------------------
 
 with st.sidebar:
-    st.markdown("#### Entorno")
-    st.write(f"**CASOS_ROOT**\n\n`{settings.casos_root}`")
-    st.write(f"**Modelo**: `{settings.ollama_model}` @ `{settings.ollama_host}`")
-    ok = llm.healthcheck()
-    if ok:
-        st.success("Ollama disponible")
-    else:
-        st.warning("Ollama no responde. Ejecuta `ollama pull <modelo>`.")
-
     # Pre-calentamiento de caché de colaboradores — se ejecuta en la carga inicial
     # de la app (primera vez que se renderiza el sidebar) y queda cacheado 1h.
     # Así el primer 🔍 es instantáneo.
@@ -382,9 +373,6 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("#### Sesión CRM")
-    # Inicializar estado del panel manual (persiste entre rerenders)
-    if "show_manual_crm" not in st.session_state:
-        st.session_state.show_manual_crm = False
 
     if st.button(
         "🔄 Renovar sesión CRM",
@@ -396,12 +384,13 @@ with st.sidebar:
         _ok, _result = _renovar_crm()
         if _ok:
             _colabs_cache.clear()
-            st.session_state.show_manual_crm = False
             _keepalive.ping_now()   # fuerza ping inmediato para validar nueva sesión
             st.success("Sesión CRM renovada ✓")
         else:
-            st.session_state.show_manual_crm = True
-            st.error(f"No se pudo renovar automáticamente: {_result}")
+            st.error(
+                "No se pudo renovar la sesión automáticamente. "
+                "Avisa a Nikolai para que renueve las credenciales del sistema."
+            )
 
     # Indicador keep-alive
     _ping = _keepalive.last_ping
@@ -414,8 +403,7 @@ with st.sidebar:
             if _ping["err"]:
                 st.caption(_ping["err"])
 
-    if st.session_state.show_manual_crm:
-        with st.expander("✏️ Pegar cookies manualmente", expanded=True):
+    with st.expander("⚙️ Renovación manual (administrador)", expanded=False):
             st.caption(
                 "Pega los tres valores y pulsa **Guardar** al final. "
                 "Los campos se mantienen mientras no cierres la sesión de Streamlit.\n\n"
@@ -454,7 +442,6 @@ with st.sidebar:
                     _saved.append("@refreshToken")
                 if _saved:
                     _colabs_cache.clear()
-                    st.session_state.show_manual_crm = False
                     st.success(f"Guardado: {', '.join(_saved)} ✓ — recarga la página para aplicar.")
                 else:
                     st.warning("No se introdujo ningún valor.")
@@ -1055,6 +1042,12 @@ with tab_nuevo:
                 if _af_parts:
                     _preview_parts.append("💡 " + " · ".join(_af_parts))
             st.caption(" · ".join(_preview_parts))
+            if st.session_state.get("_nc_drive_autofilled_fid") == _fid_preview and _af_parts:
+                st.info(
+                    "Los campos marcados con 💡 se han rellenado automáticamente a partir "
+                    "de la URL del Drive. Verifica que los datos son correctos antes de continuar.",
+                    icon="ℹ️",
+                )
         except ValueError:
             st.caption("⚠️ URL no reconocida — revisa el formato.")
 
@@ -1326,45 +1319,19 @@ with tab_nuevo:
                 )
             st.success(f"Caso local disponible en `{_path}`")
 
-            # 2. Pull Drive E&V (si el usuario rellenó la URL)
-            _drive_url_val = drive_url_input.strip()
-            _drive_team_val = drive_team_id_resolved
-            if _drive_url_val:
+            # 1b. Persistir IDs del Drive E&V en _caso.md antes del pull
+            # — Si PS se cierra durante el pull, la URL queda guardada y no hay que reintroducirla.
+            _pre_url = drive_url_input.strip()
+            _pre_team = drive_team_id_resolved
+            if _pre_url and _pre_team:
                 try:
-                    _folder_id = parse_drive_url(_drive_url_val)
-                except ValueError as _ve:
-                    st.error(f"URL Drive E&V no válida: {_ve}")
-                else:
-                    if not _drive_team_val:
-                        st.warning(
-                            "⚠️ No se pudo determinar el Shared Drive ID. "
-                            "Introduce el ID manualmente en el expander '⚙️ Shared Drive ID' del formulario."
-                        )
-                    else:
-                        with st.spinner("Descargando documentos del Drive E&V…"):
-                            try:
-                                _dr = pull_drive_ev(
-                                    final_case_id,
-                                    folder_id=_folder_id,
-                                    team_id=_drive_team_val,
-                                )
-                                if _dr.skipped:
-                                    st.info(
-                                        f"Drive E&V ya estaba descargado "
-                                        f"({_dr.files_after} archivo/s en `01_Drive EV/`)."
-                                    )
-                                else:
-                                    st.success(
-                                        f"✅ Drive E&V descargado — "
-                                        f"**{_dr.files_after}** archivo/s en `00_Input/01_Drive EV/`."
-                                    )
-                            except DriveIntakeError as _die:
-                                st.error(
-                                    f"❌ Error al descargar el Drive E&V:  \n"
-                                    + "  \n".join(_die.result.errors)
-                                )
+                    _pre_fid = parse_drive_url(_pre_url)
+                    case_manager.register_drive_ev(final_case_id, team_id=_pre_team, folder_id=_pre_fid)
+                except Exception:
+                    pass  # No bloqueante — el pull lo reintentará si es necesario
 
-            # 3. Crear expediente en sudespacho (solo si se pulsó ese botón)
+            # 2. Crear expediente en sudespacho (solo si se pulsó ese botón)
+            # — Va antes del pull para que un cierre inesperado no impida registrar el expediente en el CRM.
             if btn_sudespacho:
                 # ── Guardia anti-duplicados ─────────────────────────────────
                 # Busca en el CRM si ya existe un expediente con esta referencia.
@@ -1508,6 +1475,45 @@ with tab_nuevo:
                         st.error(f"Error al crear el expediente: {exc}")
                     except Exception as exc:
                         st.error(f"Error inesperado: {exc}")
+
+            # 3. Pull Drive E&V (si el usuario rellenó la URL)
+            # — Va al final: si se interrumpe, el caso local y el expediente CRM ya están creados.
+            _drive_url_val = drive_url_input.strip()
+            _drive_team_val = drive_team_id_resolved
+            if _drive_url_val:
+                try:
+                    _folder_id = parse_drive_url(_drive_url_val)
+                except ValueError as _ve:
+                    st.error(f"URL Drive E&V no válida: {_ve}")
+                else:
+                    if not _drive_team_val:
+                        st.warning(
+                            "⚠️ No se pudo determinar el Shared Drive ID. "
+                            "Introduce el ID manualmente en el expander '⚙️ Shared Drive ID' del formulario."
+                        )
+                    else:
+                        with st.spinner("Descargando documentos del Drive E&V…"):
+                            try:
+                                _dr = pull_drive_ev(
+                                    final_case_id,
+                                    folder_id=_folder_id,
+                                    team_id=_drive_team_val,
+                                )
+                                if _dr.skipped:
+                                    st.info(
+                                        f"Drive E&V ya estaba descargado "
+                                        f"({_dr.files_after} archivo/s en `01_Drive EV/`)."
+                                    )
+                                else:
+                                    st.success(
+                                        f"✅ Drive E&V descargado — "
+                                        f"**{_dr.files_after}** archivo/s en `00_Input/01_Drive EV/`."
+                                    )
+                            except DriveIntakeError as _die:
+                                st.error(
+                                    f"❌ Error al descargar el Drive E&V:  \n"
+                                    + "  \n".join(_die.result.errors)
+                                )
 
 
 # ── TAB: Pipeline ──────────────────────────────────────────────────────────
