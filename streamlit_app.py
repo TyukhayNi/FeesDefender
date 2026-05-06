@@ -12,14 +12,6 @@ from pathlib import Path
 import streamlit as st
 
 from core import case_manager, llm, pipeline, sudespacho_create as _sc
-from core.sync_sudespacho_legacy import (
-    renovar_phpsessid_desde_chrome as _renovar_crm,
-    _update_env_field as _update_crm_env,
-)
-from core import keepalive as _keepalive
-
-# Arrancar keep-alive en cuanto se carga el módulo (idempotente).
-_keepalive.ensure_started()
 from core.intake_drive import (
     DriveIntakeError,
     DriveFolderInfo as _DriveFolderInfo,
@@ -356,97 +348,14 @@ def _email_to_nombre(email: str) -> str:
     return " ".join(p.capitalize() for p in parts if p)
 
 
-# ---------------------------------------------------------------------------
-# Sidebar — estado del entorno
-# ---------------------------------------------------------------------------
-
-with st.sidebar:
-    # Pre-calentamiento de caché de colaboradores — se ejecuta en la carga inicial
-    # de la app (primera vez que se renderiza el sidebar) y queda cacheado 1h.
-    # Así el primer 🔍 es instantáneo.
-    if "_colabs_prewarmed" not in st.session_state:
-        try:
-            with st.spinner("Cargando colaboradores CRM…"):
-                _colabs_cache()
-            st.session_state["_colabs_prewarmed"] = True
-        except Exception:
-            # Si falla (CRM no disponible, creds caducadas), no bloqueamos la UI.
-            st.session_state["_colabs_prewarmed"] = False
-
-    st.markdown("---")
-    st.markdown("#### Sesión CRM")
-
-    if st.button(
-        "🔄 Renovar sesión CRM",
-        use_container_width=True,
-        help="Actualiza las cookies de sesión (PHPSESSID + @token + @refreshToken) "
-             "leyéndolas de Chrome. Úsalo si las sugerencias de email o la creación "
-             "de expedientes falla con error de sesión o E-plan.",
-    ):
-        _ok, _result = _renovar_crm()
-        if _ok:
-            _colabs_cache.clear()
-            _keepalive.ping_now()   # fuerza ping inmediato para validar nueva sesión
-            st.success("Sesión CRM renovada ✓")
-        else:
-            st.error(
-                "No se pudo renovar la sesión automáticamente. "
-                "Avisa a Nikolai para que renueve las credenciales del sistema."
-            )
-
-    # Indicador keep-alive
-    _ping = _keepalive.last_ping
-    if _ping["ts"] is not None:
-        _ts = _ping["ts"].strftime("%H:%M")
-        if _ping["ok"]:
-            st.caption(f"🟢 Sesión PHP activa · último ping {_ts}")
-        else:
-            st.caption(f"🔴 Sesión PHP inactiva · {_ts}")
-            if _ping["err"]:
-                st.caption(_ping["err"])
-
-    with st.expander("⚙️ Renovación manual (administrador)", expanded=False):
-            st.caption(
-                "Pega los tres valores y pulsa **Guardar** al final. "
-                "Los campos se mantienen mientras no cierres la sesión de Streamlit.\n\n"
-                "**Cómo obtenerlos** — Chrome DevTools F12 en tnm.sudespacho.net:\n\n"
-                "**@token y @refreshToken** → pestaña **Application → Cookies → tnm.sudespacho.net** "
-                "→ copiar el valor de la cookie `@token` y `@refreshToken`.\n\n"
-                "**PHPSESSID** → misma pestaña Application → Cookies → copiar el valor de `PHPSESSID`.\n\n"
-                "⚠️ *No usar Console/localStorage — esos tokens son distintos a las cookies PHP.*"
-            )
-            _php = st.text_input(
-                "PHPSESSID",
-                key="_manual_phpsessid",
-                help="DevTools → Application → Cookies → tnm.sudespacho.net → valor de PHPSESSID",
-            )
-            _jwt = st.text_input(
-                "@token (JWT)",
-                key="_manual_jwt",
-                help="DevTools → Application → Cookies → tnm.sudespacho.net → valor de @token",
-            )
-            _ref = st.text_input(
-                "@refreshToken",
-                key="_manual_refresh",
-                help="DevTools → Application → Cookies → tnm.sudespacho.net → valor de @refreshToken",
-            )
-            if st.button("💾 Guardar cookies en .env", key="_save_manual_cookies",
-                         help="Guarda los valores introducidos en .env y recarga la caché."):
-                _saved = []
-                if _php.strip():
-                    _update_crm_env("SUDESPACHO_LEGACY_PHPSESSID", _php.strip())
-                    _saved.append("PHPSESSID")
-                if _jwt.strip():
-                    _update_crm_env("SUDESPACHO_LEGACY_JWT", _jwt.strip())
-                    _saved.append("@token")
-                if _ref.strip():
-                    _update_crm_env("SUDESPACHO_LEGACY_REFRESH_TOKEN", _ref.strip())
-                    _saved.append("@refreshToken")
-                if _saved:
-                    _colabs_cache.clear()
-                    st.success(f"Guardado: {', '.join(_saved)} ✓ — recarga la página para aplicar.")
-                else:
-                    st.warning("No se introdujo ningún valor.")
+# Pre-calentamiento silencioso de caché de colaboradores al arrancar la app.
+# Así el primer 🔍 es instantáneo sin necesidad de sidebar.
+if "_colabs_prewarmed" not in st.session_state:
+    try:
+        _colabs_cache()
+        st.session_state["_colabs_prewarmed"] = True
+    except Exception:
+        st.session_state["_colabs_prewarmed"] = False
 
 # ---------------------------------------------------------------------------
 # Tabs
@@ -750,8 +659,10 @@ with tab_nuevo:
     _EQUIPOS_POR_CIUDAD: dict[str, dict[str, str]] = {
         "Barcelona": {
             "BaRR1  — BCN Residential Rentals 1":  _sc.TAG_ROJO_BaRR1,
+            "BaRR2  — BCN Residential Rentals 2":  _sc.TAG_ROJO_BaRR2,
             "BaRR3  — BCN Residential Rentals 3":  _sc.TAG_ROJO_BaRR3,
             "BaRR4  — BCN Residential Rentals 4":  _sc.TAG_ROJO_BaRR4,
+            "BaRR10 — BCN Residential Rentals 10": _sc.TAG_ROJO_BaRR10,
             "BaRS1  — BCN Residential Sales 1":    _sc.TAG_ROJO_BaRS1,
             "BaRS2  — BCN Residential Sales 2":    _sc.TAG_ROJO_BaRS2,
             "BaRS3  — BCN Residential Sales 3":    _sc.TAG_ROJO_BaRS3,
@@ -765,9 +676,11 @@ with tab_nuevo:
             "BaRS11 — BCN Residential Sales 11":   _sc.TAG_ROJO_BaRS11,
             "BaRS12 — BCN Residential Sales 12":   _sc.TAG_ROJO_BaRS12,
             "BaCR1  — BCN Commercial Rentals 1":   _sc.TAG_ROJO_BaCR1,
+            "BaCR2  — BCN Commercial Rentals 2":   _sc.TAG_ROJO_BaCR2,
             "BaCR10 — BCN Commercial Rentals 10":  _sc.TAG_ROJO_BaCR10,
             "BaCS1  — BCN Commercial Sales 1":     _sc.TAG_ROJO_BaCS1,
             "BaCS10 — BCN Commercial Sales 10":    _sc.TAG_ROJO_BaCS10,
+            "BaDP1  — BCN (Pendiente) 1":          _sc.TAG_ROJO_BaDP1,
         },
         "Bilbao": {
             "BiRS1  — Bilbao Residential Sales 1": _sc.TAG_ROJO_BiRS1,
@@ -787,8 +700,12 @@ with tab_nuevo:
             "MaRS8  — MAD Residential Sales 8":    _sc.TAG_ROJO_MaRS8,
             "MaRS9  — MAD Residential Sales 9":    _sc.TAG_ROJO_MaRS9,
             "MaRS10 — MAD Residential Sales 10":   _sc.TAG_ROJO_MaRS10,
+            "MaRS11 — MAD Residential Sales 11":   _sc.TAG_ROJO_MaRS11,
+            "MaRS12 — MAD Residential Sales 12":   _sc.TAG_ROJO_MaRS12,
             "MaRS13 — MAD Residential Sales 13":   _sc.TAG_ROJO_MaRS13,
             "MaRS14 — MAD Residential Sales 14":   _sc.TAG_ROJO_MaRS14,
+            "MaRS15 — MAD Residential Sales 15":   _sc.TAG_ROJO_MaRS15,
+            "MaPD1  — MAD (Pendiente) 1":          _sc.TAG_ROJO_MaPD1,
         },
         "San Sebastián": {
             "SSRR1  — San Sebastián Residential Rentals 1": _sc.TAG_ROJO_SSRR1,
@@ -803,8 +720,10 @@ with tab_nuevo:
         },
         "Valencia": {
             "VaCR1  — Valencia Commercial Rentals 1":  _sc.TAG_ROJO_VaCR1,
+            "VaCR2  — Valencia Commercial Rentals 2":  _sc.TAG_ROJO_VaCR2,
             "VaPD1  — Valencia (pendiente) 1":         _sc.TAG_ROJO_VaPD1,
             "VaRR1  — Valencia Residential Rentals 1": _sc.TAG_ROJO_VaRR1,
+            "VaRR3  — Valencia Residential Rentals 3": _sc.TAG_ROJO_VaRR3,
             "VaRS1  — Valencia Residential Sales 1":   _sc.TAG_ROJO_VaRS1,
             "VaRS2  — Valencia Residential Sales 2":   _sc.TAG_ROJO_VaRS2,
             "VaRS3  — Valencia Residential Sales 3":   _sc.TAG_ROJO_VaRS3,
@@ -936,6 +855,19 @@ with tab_nuevo:
     _EQUIPOS_ACTIVOS_POR_CIUDAD = _J_EQUIPOS_POR_CIUDAD if es_judicial else _EQUIPOS_POR_CIUDAD
     _EQUIPOS_ACTIVOS            = _J_EQUIPOS            if es_judicial else _EQUIPOS
     _CIUDADES_ACTIVAS           = _J_CIUDADES           if es_judicial else _CIUDADES
+
+    # ------------------------------------------------------------------
+    # Detectar cambio de modo judicial/extrajudicial y limpiar caché
+    # Si el usuario cambia entre Judicial y Extrajudicial, los dicts de
+    # equipos cambian y el auto-fill previo queda inválido. Limpiamos el
+    # estado para que el bloque de auto-fill re-ejecute con el dict correcto.
+    # ------------------------------------------------------------------
+    _prev_judicial = st.session_state.get("_nc_prev_es_judicial")
+    if _prev_judicial is not None and bool(_prev_judicial) != es_judicial:
+        for _k in ("_nc_drive_autofilled_fid", "_nc_autofill_team_id",
+                   "nc_ciudad", "nc_equipo", "nc_dir", "nc_mls"):
+            st.session_state.pop(_k, None)
+    st.session_state["_nc_prev_es_judicial"] = es_judicial
 
     # ------------------------------------------------------------------
     # Helper: driveId → (ciudad_label, equipo_label)

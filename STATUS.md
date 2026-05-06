@@ -3,7 +3,7 @@
 > **Fuente de verdad única del proyecto.**
 > Actualizar al cerrar cada sesión con `python -m scripts.session_close`.
 
-**Última actualización:** 2026-05-06 — Opción A confirmada: `x-api-key` acepta escritura (POST → HTTP 201). Migración completa: `_rest_post()`, `_rest_post_colaborador()`, `_link_rest()` usan `x-api-key` (estática, no caduca) en lugar de `Authorization: Bearer JWT`. Eliminado bucle 401→refresh de los 3 métodos. JWT/refreshToken ahora solo relevantes para fallback al frontal PHP legacy. Sistema 100% estable: flujo nuevo caso no depende de tokens de sesión que caducan. 7 tests de retry 401 eliminados (comportamiento obsoleto). 221 tests. Colaboradores de prueba 781 y 782 borrados del CRM.)
+**Última actualización:** 2026-05-06 — Verificación end-to-end sin JWT/PHPSESSID completada: expediente judicial creado desde Streamlit usando solo x-api-key; colaborador vinculado vía REST. Bug corregido: al cambiar modo Extrajudicial↔Judicial la caché de auto-fill Drive se limpia correctamente. 10 nuevos tags mapeados con IDs CRM verificados: BaRR2 (318), BaRR10 (323), BaDP1 (319), BaCR2 (324), MaRS11 (315), MaRS12 (317), MaRS15 (314), MaPD1 (320), VaCR2 (321), VaRR3 (322). Sidebar de sesión CRM eliminado: imports keepalive y sync_sudespacho_legacy retirados de la UI (flujo 100% x-api-key, sin dependencia de cookies). Tests: 100% verde.
 
 ---
 
@@ -73,9 +73,10 @@ git commit -m "<mensaje que Claude propuso>"
 | `sudespacho_relations.py` | ✅ REST-first (2026-05-06): 6 `link_*` via `POST /api/relation_element/` sin PHPSESSID; fallback legacy automático |
 | Endpoint saveselect | ✅ Confirmado 2026-04-29 — cliente+colaborador persistidos en exp 600 |
 | `core/intake_drive.py` | ✅ Completo — pull rclone gdrive_ev, marker .pulled, `DriveFolderInfo`, `get_drive_folder_info`, 32 tests |
-| UI Drive E&V | ✅ Drive URL al inicio del formulario; auto-fill ciudad + equipo + dirección + ID GO desde driveId |
+| UI Drive E&V | ✅ Drive URL al inicio del formulario; auto-fill ciudad + equipo + dirección + ID GO desde driveId; caché limpia al cambiar modo Judicial↔Extrajudicial (2026-05-06) |
 | Nombres automáticos desde email | ✅ _email_to_nombre() — sin campos manuales |
 | Tooltips UI | ✅ help= en todos los campos interactivos de streamlit_app.py |
+| Sidebar sesión CRM | ✅ Eliminado 2026-05-06 — keepalive y renovación manual retirados; x-api-key no requiere gestión de sesión en UI |
 | Toggle judicial UI | ✅ streamlit_app.py — radio Extrajudicial/Judicial, § 3b con NIG + tipo procedimiento, handler bifurcado (2026-05-04) |
 | browser-cookie3 | ✅ PHPSESSID renovación automática desde Chrome en SudespachoLegacyConfig.from_env() (2026-05-04) |
 | Renovación proactiva JWT (`_proactive_refresh_if_needed`) | ✅ Implementado 2026-05-04 |
@@ -85,7 +86,7 @@ git commit -m "<mensaje que Claude propuso>"
 | Sidebar session_state (expander persistente) | ✅ Fix 2026-05-04 |
 | UI `_email_input_with_crm` + botón 🔍 | ✅ End-to-end verificado 2026-05-04 — fix preset-key, búsqueda REST instantánea tras pre-calentamiento |
 | `run_app.bat` | ✅ Lanzador para usuarios finales (Paola, Ana) |
-| Tags CRM verificados | ✅ 87 extrajudicial (2026-04-28) + 88 judicial con nuevos (2026-05-04) |
+| Tags CRM verificados | ✅ 96 extrajudicial auditados + 10 nuevos mapeados (2026-05-06) |
 | Notas de expediente | ✅ 13 NOTA_* alineadas con Manual 1.1.4 |
 | `session_close.py` | ✅ Simplificado — solo pytest, sin interactividad |
 | `docs/DEAD_ENDS.md` | ✅ 8 callejones documentados (+ SPA login NO crea PHPSESSID, 2026-05-04) |
@@ -213,7 +214,8 @@ python -m scripts.run_pipeline "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
 21. ~~**[SIGUIENTE]** Completar MaRS15: renovar sesión CRM~~  ✅ 2026-05-06 — Expediente judicial creado; EV MMC + 2 colaboradores vinculados. Pendiente: vincular `juanluis.garcia@engelvoelkers.com` manualmente en CRM + pull rclone gdrive_ev.
 22. ~~**[SIGUIENTE]** Migrar creación de colaboradores a REST~~ ✅ 2026-05-06 — `POST /api/element_register/colaboradores` confirmado (HAR). `_rest_post_colaborador()` + REST-first en `create_colaborador()`. 10 tests nuevos. Flujo nuevo caso 100% independiente de PHPSESSID. Colaborador ID=780 pendiente borrar del CRM.
 23. ~~**[SIGUIENTE]**~~ ✅ 2026-05-06 — x-api-key para escritura REST confirmada (Opción A). Migración completa. 221 tests.
-24. **[SIGUIENTE]** ⬅️ `[SIGUIENTE-SHARE]` — Verificar Streamlit end-to-end sin JWT/PHPSESSID: crear expediente de prueba desde UI → confirmar en CRM → borrar. Luego: pull rclone gdrive_ev de MaRS15.
+24. ~~**[SIGUIENTE]**~~ ✅ 2026-05-06 — Verificación end-to-end sin JWT/PHPSESSID confirmada. Auto-fill extrajudicial corregido. 10 tags mapeados. Sidebar eliminado.
+25. **[SIGUIENTE]** ⬅️ Testear creación caso EXTRAJUDICIAL desde UI: pegar URL Drive E&V → verificar auto-fill → crear en CRM → confirmar → borrar. Luego: pull rclone gdrive_ev para MaRS15 (ejecutar `rclone ls gdrive_ev:` primero para refrescar token). Luego: `[SIGUIENTE-SHARE]` probar compartición directa carpeta E&V.
 18. ~~**[SIGUIENTE-REST-RELATIONS]**~~ ✅ 2026-05-06 — `POST /api/relation_element/` confirmado HTTP 201 con Bearer JWT. 6 `link_*` migradas a REST-first + fallback legacy. 12 tests nuevos. `.env` actualizado.
 11. ~~**[NIKOLAI]** Conectar cuenta `nikolai.tyukhay@engelvoelkers.com` en Cowork~~ ✅ 2026-04-28 — rclone `gdrive_ev` configurado; Cowork no soporta multi-cuenta, rclone es la solución definitiva.
 12. **[SIGUIENTE-C]** Módulo `core/intake_drive.py`:
@@ -302,7 +304,7 @@ data/CASOS/{case_id}/
 ## Tests — última ejecución
 
 ```
-pytest -q   →   215 passed (2026-05-06)
+pytest -q   →   100% passed (2026-05-06, sesión 2)
 ```
 Módulos cubiertos: `case_manager`, `inventory`, `utils`,
 `sync_sudespacho` (+26 nuevos: REST gdocu), `sync_sudespacho_legacy` (+8 nuevos: JWT refresh),

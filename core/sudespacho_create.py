@@ -282,8 +282,10 @@ TAG_AZUL_BARCELONA       = "#5b9bd1___296"   # Barcelona (creado 2026-04-28)
 #
 # Barcelona Residential Rentals
 TAG_ROJO_BaRR1  = "#a32929___135"
+TAG_ROJO_BaRR2  = "#a32929___318"
 TAG_ROJO_BaRR3  = "#a32929___113"
 TAG_ROJO_BaRR4  = "#a32929___175"
+TAG_ROJO_BaRR10 = "#a32929___323"
 # Barcelona Residential Sales
 TAG_ROJO_BaRS1  = "#a32929___156"
 TAG_ROJO_BaRS2  = "#a32929___140"
@@ -299,10 +301,13 @@ TAG_ROJO_BaRS11 = "#a32929___94"
 TAG_ROJO_BaRS12 = "#a32929___162"
 # Barcelona Commercial Rentals
 TAG_ROJO_BaCR1  = "#a32929___172"
+TAG_ROJO_BaCR2  = "#a32929___324"
 TAG_ROJO_BaCR10 = "#a32929___287"
 # Barcelona Commercial Sales
 TAG_ROJO_BaCS1  = "#a32929___136"
 TAG_ROJO_BaCS10 = "#a32929___139"
+# Barcelona (Pendiente)
+TAG_ROJO_BaDP1  = "#a32929___319"   # label en CRM: "BaPD1" (2026-05-06)
 # Bilbao Residential Sales
 TAG_ROJO_BiRS1  = "#a32929___273"
 TAG_ROJO_BiRS2  = "#a32929___268"
@@ -321,8 +326,13 @@ TAG_ROJO_MaRS7  = "#a32929___141"
 TAG_ROJO_MaRS8  = "#a32929___236"
 TAG_ROJO_MaRS9  = "#a32929___120"
 TAG_ROJO_MaRS10 = "#a32929___106"
+TAG_ROJO_MaRS11 = "#a32929___315"
+TAG_ROJO_MaRS12 = "#a32929___317"
 TAG_ROJO_MaRS13 = "#a32929___190"
 TAG_ROJO_MaRS14 = "#a32929___189"
+TAG_ROJO_MaRS15 = "#a32929___314"
+# Madrid (Pendiente)
+TAG_ROJO_MaPD1  = "#a32929___320"
 # Santander Residential Sales
 TAG_ROJO_SaRS1  = "#a32929___276"
 # San Sebastián Residential Rentals / Sales (creados 2026-04-28)
@@ -333,10 +343,12 @@ TAG_ROJO_SeRS1  = "#a32929___230"
 TAG_ROJO_SeRS6  = "#a32929___285"
 # Valencia Commercial Rentals
 TAG_ROJO_VaCR1  = "#a32929___132"
+TAG_ROJO_VaCR2  = "#a32929___321"
 # Valencia (PD — tipo pendiente confirmar)
 TAG_ROJO_VaPD1  = "#a32929___178"
 # Valencia Residential Rentals
 TAG_ROJO_VaRR1  = "#a32929___104"
+TAG_ROJO_VaRR3  = "#a32929___322"
 # Valencia Residential Sales
 TAG_ROJO_VaRS1  = "#a32929___99"
 TAG_ROJO_VaRS2  = "#a32929___102"
@@ -397,7 +409,7 @@ J_TAG_ROJO_BaCR10 = "#a32929___195"
 J_TAG_ROJO_BaCS1  = "#a32929___101"
 J_TAG_ROJO_BaDP1  = "#a32929___56"     # tipo op. pendiente confirmar
 J_TAG_ROJO_BaRR1  = "#a32929___33"
-J_TAG_ROJO_BaRR2  = "#a32929___34"     # existe en judicial, NO en extrajudicial
+J_TAG_ROJO_BaRR2  = "#a32929___34"
 J_TAG_ROJO_BaRR3  = "#a32929___39"
 J_TAG_ROJO_BaRR4  = "#a32929___82"     # existe en judicial, NO en extrajudicial
 J_TAG_ROJO_BaRS1  = "#a32929___46"
@@ -426,7 +438,7 @@ J_TAG_ROJO_MaRS8  = "#a32929___53"
 J_TAG_ROJO_MaRS9  = "#a32929___58"
 J_TAG_ROJO_MaRS10 = "#a32929___61"
 J_TAG_ROJO_MaRS14 = "#a32929___74"
-J_TAG_ROJO_MaRS15 = "#a32929___63"    # existe en judicial, NO en extrajudicial
+J_TAG_ROJO_MaRS15 = "#a32929___63"
 # Bilbao Residential Sales (creados 2026-05-04)
 J_TAG_ROJO_BiRS1  = "#a32929___304"
 J_TAG_ROJO_BiRS2  = "#a32929___305"
