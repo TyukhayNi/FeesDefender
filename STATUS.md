@@ -3,7 +3,7 @@
 > **Fuente de verdad única del proyecto.**
 > Actualizar al cerrar cada sesión con `python -m scripts.session_close`.
 
-**Última actualización:** 2026-05-07 — Fix v2 num_expediente judicial: diagnóstico live vía `apiCrm` del SPA reveló que la implementación anterior de `_get_next_num_expediente_judicial()` fallaba siempre (HTTP 500) por 3 bugs simultáneos: (1) `properties[]` es requerido por el endpoint, (2) operador debe ser `equal` no `eq`, (3) clave de respuesta es `totalItems` no `hydra:totalItems`. Estrategia también mejorada: usa `max(num_expediente)+1` en lugar de `count+1` para evitar saltos cuando hay expedientes con número vacío. Tests actualizados con nueva estructura de respuesta + nuevo test `test_ignora_items_con_num_vacio`.
+**Última actualización:** 2026-05-07 — **Absorción del Anonimizador cerrada (Fases 0-4 ejecutadas)**. Los módulos `_herramientas/` de Expedientes Seguros (`anonimizar.py` v3.10, `separar.py` v1.0, `deanonimizar.py`, `imagen_a_pdf.py`, `renombrar.py`) están absorbidos en `core/anon/` de FeesDefender. La fachada `core/anon/api.py` (`anonimizar_caso`, `anonimizar_documento`) integra el motor con el resto del core. Mapa compartido por caso en `06_Anonimizado/_mapa_caso.json`. Step `do_anonimizar` añadido al pipeline general y a la UI Streamlit. Singleton NLP en `core/anon/nlp_engine.py` evita recargar 1.5 GB de modelos en cada documento. Health check completo en `scripts/health_check.py`. 51 tests nuevos verdes (`test_anon_basic.py` 8 + `test_anon_separar.py` 31 + `test_anon_integration.py` 12). Suite global limpia. `procesar_carpeta.py` y `gestionar_expediente.py` quedan obsoletos por diseño.
 
 ---
 
@@ -55,7 +55,11 @@ git commit -m "<mensaje que Claude propuso>"
 
 | Ítem | Estado |
 |------|--------|
-| Tests | ✅ ~222/222 (fix v2 num_expediente: +1 test — verificar con pytest) |
+| Tests | ✅ ~287/287 (Anonimizador absorbido: +51 tests — 2026-05-07) |
+| `core/anon/` | ✅ Absorbido de Expedientes Seguros (2026-05-07) — `anonimizar.py` (4 fases NLP intactas, 300+ palabras excluidas, lista blanca operadores jurídicos), `separar.py` (16 tipos documentales + DEMANDA super-absorbente), `deanonimizar.py`, `imagen_a_pdf.py` (con EXIF transpose), `renombrar.py` (estructura plana), `ocr.py` (NUEVO, wrapper Python ocrmypdf), `mapa_caso.py` (NUEVO, mapa compartido por caso), `nlp_engine.py` (NUEVO, singleton Presidio+spaCy), `api.py` (NUEVO, fachada). |
+| Pipeline `do_anonimizar` | ✅ 2026-05-07 — flag `do_anonimizar: bool = False` en `pipeline.run`; checkbox "Anonimizar" en UI Streamlit (col4); CLI `python -m scripts.anonimizar_caso CASE_ID`. |
+| Output anonimizado | ✅ `06_Anonimizado/<slug>.md` con frontmatter YAML FeesDefender + `_mapa_caso.json`. Idempotencia por SHA-256 del origen. Política `SALTAR`/`REPROCESAR`. Log en `07_AI cowork/_anonimizador_log.md`. |
+| Health check anon | ✅ `scripts/health_check.py` — comprueba deps Python, modelos spaCy, Tesseract+idiomas, Ghostscript, smoke test Presidio. |
 | Pipeline | ✅ Ejecutado end-to-end (BaRR3, 2026-04-28, 9/9 pasos OK, ~9 min) |
 | Primer caso real | ✅ Creado, docs descargados |
 | Taxonomía de casos | ✅ Actualizada en config.py |
@@ -226,8 +230,9 @@ python -m scripts.run_pipeline "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
    - Actualiza `_caso.md` con los IDs y marca `.pulled` en `00_INPUT/manual/`
    - Tests: `test_intake_drive.py` con mock de rclone
    - UI: campo "URL carpeta Drive E&V" en formulario Streamlit "Nuevo Caso" → extrae team_id + folder_id automáticamente
-9. **[Nuevo hilo]** Módulo `core/anonymizer.py` — integrar proyecto externo de anonimización.
+9. ~~**[Nuevo hilo]** Módulo `core/anonymizer.py` — integrar proyecto externo de anonimización.~~ ✅ 2026-05-07 — Absorbido como `core/anon/` (no `core/anonymizer.py`). 5 fases ejecutadas (0-4). Pendiente Fase 5: migración de casos antiguos de Expedientes Seguros (re-procesar vs copiar tal cual — decisión del usuario antes de empezar). Ver `docs/MEJORAS_FUTURAS.md` para los 10 puntos identificados durante la integración (no bloqueantes).
 10. **[Nuevo hilo]** Subida output anonimizado al Drive tyukhay.legal.
+11. ~~**[SIGUIENTE-ANON-FASE5]** Migración de los expedientes ya procesados en `G:\...\Expedientes Seguros\Expedientes\`.~~ ✅ Decisión 2026-05-07: los casos antiguos se borran, no se migran. La nueva fachada `core/anon/api.py` parte de cero. Borrado físico de `G:\...\Expedientes Seguros\` queda como acción manual del usuario.
 11. Configurar Windows Task Scheduler para `scheduled_sync.py` (diario 08:00).
 12. Reforzar `prompts/viabilidad.md` con jurisprudencia sobre nexo causal.
 13. Tests adicionales: `test_linker`, `test_scorer`, `test_pipeline`.

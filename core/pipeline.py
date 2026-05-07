@@ -46,6 +46,9 @@ def run(
     drive_remote_path: str | None = None,
     do_sync: bool = True,
     do_demanda: bool = True,
+    do_anonimizar: bool = False,
+    politica_anonimizar: str = "SALTAR",
+    tipo_proc_anonimizar: str = "Juicio Ordinario",
 ) -> PipelineRun:
     pr = PipelineRun(case_id=case_id)
 
@@ -79,6 +82,23 @@ def run(
 
     if do_demanda:
         pr.steps.append(_safe("demanda.draft", lambda: demanda_generator.draft_demanda(case_id)))
+
+    if do_anonimizar:
+        # Import lazy: el módulo anon carga Presidio + spaCy (~1.5 GB en RAM
+        # con todos los modelos). Solo se importa cuando se solicita.
+        def _anon_step() -> str:
+            from core.anon import anonimizar_caso
+            res = anonimizar_caso(
+                case_id,
+                tipo_proc=tipo_proc_anonimizar,
+                politica=politica_anonimizar,
+            )
+            return (
+                f"{res['n_procesados']} procesados, "
+                f"{res['n_skipped']} saltados, "
+                f"{res['n_errores']} errores"
+            )
+        pr.steps.append(_safe("anon.anonimizar_caso", _anon_step))
 
     pr.steps.append(_safe("linker.crosslink", lambda: f"{linker.crosslink(case_id)} archivos modificados"))
 

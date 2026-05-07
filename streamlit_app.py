@@ -1521,7 +1521,7 @@ with tab_pipeline:
             "Caso", cases,
             help="Caso sobre el que se ejecutará el pipeline completo de análisis.",
         )
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
         with col1:
             do_sync = st.checkbox(
                 "Sincronizar Drive (rclone)", value=False,
@@ -1533,6 +1533,16 @@ with tab_pipeline:
                 help="Incluye el paso de generación del borrador de demanda al final del pipeline. Desactívalo si solo quieres ejecutar el análisis de viabilidad.",
             )
         with col3:
+            do_anonimizar = st.checkbox(
+                "Anonimizar (06_Anonimizado/)", value=False,
+                help=(
+                    "Aplica el motor de anonimización (Presidio + spaCy + reglas "
+                    "contextuales) a los PDFs/DOCX de 00_Input/. Genera .md sin "
+                    "PII en 06_Anonimizado/ y un mapa compartido por caso. La "
+                    "primera ejecución carga ~1.5 GB de modelos NLP (20-40 s)."
+                ),
+            )
+        with col4:
             drive_remote_path = st.text_input(
                 "Remoto rclone (override)",
                 help="Ruta remota rclone alternativa (p. ej. 'gdrive_ev:W-030LFT'). Déjalo vacío para usar la configuración del caso.",
@@ -1546,6 +1556,7 @@ with tab_pipeline:
                     drive_remote_path=drive_remote_path or None,
                     do_sync=do_sync,
                     do_demanda=do_demanda,
+                    do_anonimizar=do_anonimizar,
                 )
             st.write(f"**Inicio:** {pr.started_at} — **Fin:** {pr.finished_at}")
             st.dataframe(

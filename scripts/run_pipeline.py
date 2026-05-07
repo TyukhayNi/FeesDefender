@@ -21,8 +21,18 @@ def main(
     drive: str = typer.Option(None, "--drive"),
     sync: bool = typer.Option(True, "--sync/--no-sync"),
     demanda: bool = typer.Option(True, "--demanda/--no-demanda"),
+    anonimizar: bool = typer.Option(False, "--anonimizar/--no-anonimizar"),
+    politica_anon: str = typer.Option("SALTAR", "--politica-anon",
+                                       help="SALTAR | REPROCESAR"),
 ) -> None:
-    pr = pipeline.run(case_id, drive_remote_path=drive, do_sync=sync, do_demanda=demanda)
+    pr = pipeline.run(
+        case_id,
+        drive_remote_path=drive,
+        do_sync=sync,
+        do_demanda=demanda,
+        do_anonimizar=anonimizar,
+        politica_anonimizar=politica_anon,
+    )
     summary = {
         "case_id": pr.case_id,
         "started_at": pr.started_at,
