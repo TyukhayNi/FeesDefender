@@ -3,7 +3,7 @@
 > **Fuente de verdad única del proyecto.**
 > Actualizar al cerrar cada sesión con `python -m scripts.session_close`.
 
-**Última actualización:** 2026-05-07 — Bug corregido: expedientes judiciales creados desde FeesDefender quedaban con `num_expediente=0` porque el endpoint REST judicial no auto-asigna el correlativo (a diferencia del extrajudicial que sí lo hace). Fix: nueva función `_get_next_num_expediente_judicial(year)` que consulta `GET /api/element_registries/expedientes_judiciales` con filtro `serie_expediente=year` → devuelve `hydra:totalItems + 1`. El payload judicial incluye este número en lugar de `"0"`. Si la consulta falla, omite el campo del payload. Extrajudicial no afectado. 10 tests nuevos; todos los tests judiciales existentes actualizados con mock.
+**Última actualización:** 2026-05-07 — Fix v2 num_expediente judicial: diagnóstico live vía `apiCrm` del SPA reveló que la implementación anterior de `_get_next_num_expediente_judicial()` fallaba siempre (HTTP 500) por 3 bugs simultáneos: (1) `properties[]` es requerido por el endpoint, (2) operador debe ser `equal` no `eq`, (3) clave de respuesta es `totalItems` no `hydra:totalItems`. Estrategia también mejorada: usa `max(num_expediente)+1` en lugar de `count+1` para evitar saltos cuando hay expedientes con número vacío. Tests actualizados con nueva estructura de respuesta + nuevo test `test_ignora_items_con_num_vacio`.
 
 ---
 
@@ -55,7 +55,7 @@ git commit -m "<mensaje que Claude propuso>"
 
 | Ítem | Estado |
 |------|--------|
-| Tests | ✅ 221/221 (migración x-api-key: -7 tests retry 401 obsoletos — 2026-05-06) |
+| Tests | ✅ ~222/222 (fix v2 num_expediente: +1 test — verificar con pytest) |
 | Pipeline | ✅ Ejecutado end-to-end (BaRR3, 2026-04-28, 9/9 pasos OK, ~9 min) |
 | Primer caso real | ✅ Creado, docs descargados |
 | Taxonomía de casos | ✅ Actualizada en config.py |
@@ -216,7 +216,8 @@ python -m scripts.run_pipeline "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
 23. ~~**[SIGUIENTE]**~~ ✅ 2026-05-06 — x-api-key para escritura REST confirmada (Opción A). Migración completa. 221 tests.
 24. ~~**[SIGUIENTE]**~~ ✅ 2026-05-06 — Verificación end-to-end sin JWT/PHPSESSID confirmada. Auto-fill extrajudicial corregido. 10 tags mapeados. Sidebar eliminado.
 25. ~~**[SIGUIENTE]** Fix num_expediente=0 en judiciales~~ ✅ 2026-05-07 — `_get_next_num_expediente_judicial()` implementado; payload judicial usa correlativo real. 10 tests nuevos.
-26. **[SIGUIENTE]** ⬅️ Verificar en CRM que el próximo expediente judicial desde UI tiene número correlativo correcto (≠0). Luego: testear caso EXTRAJUDICIAL desde UI: pegar URL Drive E&V → verificar auto-fill → crear en CRM → confirmar → borrar. Luego: pull rclone gdrive_ev para MaRS15 (ejecutar `rclone ls gdrive_ev:` primero). Luego: `[SIGUIENTE-SHARE]` probar compartición directa carpeta E&V.
+26. ~~**[SIGUIENTE]** Fix v2 num_expediente judicial~~ ✅ 2026-05-07 — Diagnóstico via `apiCrm` SPA: 3 bugs en la función (properties[], equal, totalItems). Fix aplicado + tests actualizados. ~222 tests.
+27. **[SIGUIENTE]** ⬅️ Verificar en CRM que el próximo expediente judicial desde UI tiene número correlativo correcto (≠0). Luego: testear caso EXTRAJUDICIAL desde UI: pegar URL Drive E&V → verificar auto-fill → crear en CRM → confirmar → borrar. Luego: pull rclone gdrive_ev para MaRS15 (ejecutar `rclone ls gdrive_ev:` primero). Luego: `[SIGUIENTE-SHARE]` probar compartición directa carpeta E&V.
 18. ~~**[SIGUIENTE-REST-RELATIONS]**~~ ✅ 2026-05-06 — `POST /api/relation_element/` confirmado HTTP 201 con Bearer JWT. 6 `link_*` migradas a REST-first + fallback legacy. 12 tests nuevos. `.env` actualizado.
 11. ~~**[NIKOLAI]** Conectar cuenta `nikolai.tyukhay@engelvoelkers.com` en Cowork~~ ✅ 2026-04-28 — rclone `gdrive_ev` configurado; Cowork no soporta multi-cuenta, rclone es la solución definitiva.
 12. **[SIGUIENTE-C]** Módulo `core/intake_drive.py`:

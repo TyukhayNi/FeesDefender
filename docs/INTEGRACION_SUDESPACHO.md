@@ -222,8 +222,15 @@ Content-Type: application/json
 
 **Diferencia respecto a extrajudicial:** judicial usa nombres **en minúscula** (`referencia_cliente`, `fecha_alta`) mientras extrajudicial usa **CamelCase** (`Referencia_Cliente`, `Fecha_alta`). Ambos confirmados contra la lista de propiedades devuelta por el servidor ante body inválido (HTTP 500).
 
-**⚠️ `num_expediente` — comportamiento diferente al extrajudicial (confirmado 2026-05-07):**  
-El endpoint judicial **NO auto-asigna** `num_expediente` cuando se envía `"0"` — lo almacena literalmente. A diferencia del extrajudicial (`Numero_Expediente: "0"` → auto-asignado). Fix en `sudespacho_create.py`: `_get_next_num_expediente_judicial(year)` consulta `GET /api/element_registries/expedientes_judiciales` con filtro `serie_expediente=year` y envía `hydra:totalItems + 1` como `num_expediente`. Si la consulta falla, el campo se omite del payload.
+**⚠️ `num_expediente` — comportamiento diferente al extrajudicial (confirmado 2026-05-07, fix v2 2026-05-07):**  
+El endpoint judicial **NO auto-asigna** `num_expediente` — el campo es de tipo `Autoincremental` pero la asignación la gestiona el cliente (el SPA lo envía explícitamente). A diferencia del extrajudicial (`Numero_Expediente: "0"` → auto-asignado por el servidor).
+
+Fix en `sudespacho_create.py`: `_get_next_num_expediente_judicial(year)` consulta `GET /api/element_registries/expedientes_judiciales` con filtro `serie_expediente=year`, extrae el **máximo** `num_expediente` de los items devueltos y envía `max+1` en el payload. Usar max en lugar de count evita saltar números si hay expedientes con `num_expediente` vacío.
+
+**Bugs de implementación descubiertos el 2026-05-07 via diagnóstico live con apiCrm del SPA:**
+- `properties[]` es **requerido** — sin al menos un `properties[N]=campo`, el servidor devuelve HTTP 500 con "properties is required".
+- El operador correcto es `"equal"` (no `"eq"` → HTTP 404 con lista de operadores válidos: `equal, not-equal, not-associated, associated, like, not-like, greater-than-or-equal, less-than-or-equal, is-empty, is-not-empty, in, not-in, between`).
+- La respuesta de `element_registries/expedientes_judiciales` usa `{"totalItems": N, "items": [...]}` (NO `hydra:totalItems`/`hydra:member` — formato diferente al de `gdocu`).
 
 #### Bug conocido: `element_register` devuelve 500
 
@@ -743,6 +750,7 @@ BiRS1, BiRS2, SaRS1, SeRS6, SSRR1, SSRS1, VaRS5, BaCS10 (extraj→ID 139), MaRS1
 | 2026-05-04 | **`/api/files/presigned_download_url/{doc_id}`**: descarga de documento vía REST sin PHPSESSID. TTL URL S3: 600s. Mismo endpoint que usa el CRM para visor y botón "Descargar". |
 | 2026-05-04 | Gotcha #4 corregido: `element_registries/gdocu` SÍ lista documentos vía REST. La limitación anterior (`/api/documents?relatedRegisters`) era de ese endpoint concreto. |
 | 2026-05-06 | **Auditoría OAS3** (`/api/docs.json`, 466 paths): `POST /api/relation_element/{element}/{id}` con body array de strings reemplaza `saveselect` (pendiente validar). `x-api-key` no está en el spec oficial — solo `Authorization`. Bug 500 en `element_register` GET confirmado: `properties` es required pero el servidor falla con arrays PHP. `element_register` POST acepta `relatedElement`+`relatedId` para crear y vincular en un call. |
+| 2026-05-07 | **Fix `num_expediente` judicial v2**: diagnóstico live vía `apiCrm` del SPA reveló 3 bugs en `_get_next_num_expediente_judicial`: (1) `properties[]` requerido (sin él → 500), (2) operador debe ser `equal` no `eq` (→ 404), (3) respuesta usa `items`/`totalItems` (no `hydra:member`/`hydra:totalItems`). Fix aplicado: estrategia max(num_expediente)+1 en lugar de count+1. |
 
 ---
 

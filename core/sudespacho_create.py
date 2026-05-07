@@ -1205,18 +1205,25 @@ def _build_rest_payload_extrajudicial(datos: "NuevoExpedienteExtrajudicial") -> 
 def _get_next_num_expediente_judicial(year: int) -> int | None:
     """Consulta el CRM y devuelve el siguiente número correlativo libre para exp. judiciales.
 
-    Estrategia: cuenta los expedientes judiciales de la serie del año dado via
+    Estrategia: obtiene todos los expedientes judiciales de la serie del año via
     ``GET /api/element_registries/expedientes_judiciales`` con filtro
-    ``serie_expediente=year`` y devuelve ``hydra:totalItems + 1``.
+    ``serie_expediente=year``, extrae el máximo ``num_expediente`` asignado
+    y devuelve ``max + 1``.
+
+    Usar max en lugar de count evita saltar números cuando existen expedientes
+    con ``num_expediente`` vacío (ej. creados antes de este fix).
 
     **Por qué esto es necesario:** el endpoint REST
     ``POST /api/element_register/expedientes_judiciales`` NO auto-asigna
-    ``num_expediente`` cuando se envía ``"0"`` — lo almacena literalmente.
-    A diferencia del endpoint extrajudicial (que sí auto-asigna con
-    ``"Numero_Expediente": "0"``), el judicial requiere que el cliente
-    calcule el siguiente número libre y lo envíe explícitamente.
+    ``num_expediente`` — el campo es de tipo ``Autoincremental`` pero la asignación
+    la gestiona el cliente (el SPA del CRM lo envía explícitamente).
+    A diferencia del endpoint extrajudicial (``Numero_Expediente: "0"`` → auto-asignado).
 
-    Descubierto y corregido el 2026-05-07.
+    Bugs corregidos el 2026-05-07 (v2):
+      - ``properties[]`` es requerido por el endpoint (sin ellos → HTTP 500).
+      - Operador ``eq`` no existe → usar ``equal``.
+      - Clave de respuesta es ``totalItems`` (no ``hydra:totalItems``).
+      - Usar max(num_expediente)+1 en lugar de count+1 para evitar saltos.
 
     Args:
         year: Año de la serie del expediente (ej. 2026).
@@ -1224,25 +1231,27 @@ def _get_next_num_expediente_judicial(year: int) -> int | None:
     Returns:
         Siguiente número disponible (>= 1), o ``None`` si la consulta falla.
         Cuando se devuelve ``None``, ``_build_rest_payload_judicial`` omite
-        el campo ``num_expediente`` del payload para intentar que el servidor
-        lo auto-asigne (comportamiento no confirmado, pero no empeora la
-        situación actual de almacenar 0).
+        el campo ``num_expediente`` del payload.
     """
     try:
         api_key = _get_api_key()
     except ValueError:
-        return None  # API key no configurada — omitir campo en payload
+        return None  # API key no configurada
 
     url = f"{_REST_BASE}/api/element_registries/expedientes_judiciales"
-    # Parámetros como lista para preservar el orden y evitar problemas de encoding
     params: list[tuple[str, str]] = [
-        ("filterGroup[condition]",                                         "AND"),
-        ("filterGroup[filterGroups][0][condition]",                        "AND"),
-        ("filterGroup[filterGroups][0][filters][0][operator]",             "eq"),
-        ("filterGroup[filterGroups][0][filters][0][value]",                str(year)),
-        ("filterGroup[filterGroups][0][filters][0][property]",             "serie_expediente"),
-        ("itemsPerPage",                                                    "1"),
-        ("return_totals",                                                   "true"),
+        # properties[] es requerido — sin él el endpoint devuelve HTTP 500
+        ("properties[0]",                                                   "num_expediente"),
+        ("properties[1]",                                                   "serie_expediente"),
+        ("filterGroup[condition]",                                          "AND"),
+        ("filterGroup[filterGroups][0][condition]",                         "AND"),
+        # IMPORTANTE: el operador es "equal", no "eq" (eq → HTTP 404)
+        ("filterGroup[filterGroups][0][filters][0][operator]",              "equal"),
+        ("filterGroup[filterGroups][0][filters][0][value]",                 str(year)),
+        ("filterGroup[filterGroups][0][filters][0][property]",              "serie_expediente"),
+        # Pedir suficientes items para cubrir la serie anual completa
+        ("itemsPerPage",                                                     "500"),
+        ("return_totals",                                                    "true"),
     ]
     headers = {"x-api-key": api_key, "Accept": "application/json"}
 
@@ -1250,8 +1259,18 @@ def _get_next_num_expediente_judicial(year: int) -> int | None:
         r = httpx.get(url, params=params, headers=headers, timeout=_REST_TIMEOUT)
         if r.status_code == 200:
             data = r.json()
-            total = int(data.get("hydra:totalItems", 0))
-            return total + 1
+            # Respuesta: {"totalItems": N, "items": [{..., "values": [{...}]}, ...]}
+            # (NO usa "hydra:totalItems" / "hydra:member" — estructura propia del endpoint)
+            items = data.get("items", [])
+            max_num = 0
+            for item in items:
+                for val_obj in item.get("values", []):
+                    prop_name = val_obj.get("property", {}).get("name", "")
+                    if prop_name == "num_expediente":
+                        v = str(val_obj.get("value", "")).strip()
+                        if v.isdigit():
+                            max_num = max(max_num, int(v))
+            return max_num + 1
     except Exception:
         pass
 

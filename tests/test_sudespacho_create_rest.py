@@ -255,33 +255,75 @@ class TestGetNextNumExpedienteJudicial:
 
     Esta función corrige el bug por el que el endpoint REST judicial almacenaba
     num_expediente=0 literalmente en lugar de asignar el número correlativo.
+
+    Bugs corregidos en v2 (2026-05-07):
+      - properties[] es requerido por el endpoint (sin ellos → HTTP 500)
+      - Operador correcto es "equal" (no "eq" → HTTP 404)
+      - Clave de respuesta es "totalItems" (no "hydra:totalItems")
+      - Estrategia: max(num_expediente)+1 en lugar de count+1 para evitar saltos
     """
 
-    def test_devuelve_total_mas_uno_cuando_200(self, monkeypatch):
-        """Si el CRM devuelve N expedientes para el año, el siguiente es N+1."""
+    # Respuesta real del endpoint: {"totalItems": N, "items": [{id, values:[{property:{name}, value}]}]}
+    @staticmethod
+    def _make_items(*num_expediente_values):
+        """Construye la lista items con los valores de num_expediente dados."""
+        items = []
+        for v in num_expediente_values:
+            items.append({
+                "id": "999",
+                "values": [{
+                    "property": {"name": "num_expediente"},
+                    "value": str(v) if v is not None else "",
+                }]
+            })
+        return items
+
+    def test_devuelve_max_mas_uno_cuando_200(self, monkeypatch):
+        """Devuelve max(num_expediente)+1, no count+1, para evitar saltos."""
         monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
 
         mock_resp = MagicMock()
         mock_resp.status_code = 200
-        mock_resp.json.return_value = {"hydra:totalItems": 12, "hydra:member": []}
+        # 3 expedientes: nums 10, 12, 33 → siguiente debe ser 34
+        mock_resp.json.return_value = {
+            "totalItems": 3,
+            "items": self._make_items(10, 12, 33),
+        }
 
         with patch("core.sudespacho_create.httpx.get", return_value=mock_resp):
             result = _get_next_num_expediente_judicial(2026)
 
-        assert result == 13
+        assert result == 34
 
     def test_devuelve_uno_cuando_no_hay_expedientes(self, monkeypatch):
-        """Primer expediente del año → total=0 → devuelve 1."""
+        """Primer expediente del año → items vacío → max=0 → devuelve 1."""
         monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
 
         mock_resp = MagicMock()
         mock_resp.status_code = 200
-        mock_resp.json.return_value = {"hydra:totalItems": 0, "hydra:member": []}
+        mock_resp.json.return_value = {"totalItems": 0, "items": []}
 
         with patch("core.sudespacho_create.httpx.get", return_value=mock_resp):
             result = _get_next_num_expediente_judicial(2026)
 
         assert result == 1
+
+    def test_ignora_items_con_num_vacio(self, monkeypatch):
+        """Items con num_expediente vacío (ej. creados antes del fix) no cuentan."""
+        monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        # 3 expedientes: nums 5, "", 7 → ignora el vacío → max=7 → devuelve 8
+        mock_resp.json.return_value = {
+            "totalItems": 3,
+            "items": self._make_items(5, None, 7),
+        }
+
+        with patch("core.sudespacho_create.httpx.get", return_value=mock_resp):
+            result = _get_next_num_expediente_judicial(2026)
+
+        assert result == 8
 
     def test_devuelve_none_cuando_api_error(self, monkeypatch):
         """Si la API devuelve error HTTP, retorna None (no lanza excepción)."""
@@ -312,23 +354,24 @@ class TestGetNextNumExpedienteJudicial:
 
         assert result is None
 
-    def test_usa_filtro_serie_expediente_correcto(self, monkeypatch):
-        """Verifica que la consulta filtra por serie_expediente con el año correcto."""
+    def test_usa_filtro_y_operador_correcto(self, monkeypatch):
+        """Verifica que la consulta usa serie_expediente, operator=equal y properties[]."""
         monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
 
         mock_resp = MagicMock()
         mock_resp.status_code = 200
-        mock_resp.json.return_value = {"hydra:totalItems": 3}
+        mock_resp.json.return_value = {"totalItems": 1, "items": self._make_items(3)}
 
         with patch("core.sudespacho_create.httpx.get", return_value=mock_resp) as mock_get:
             _get_next_num_expediente_judicial(2025)
 
         call_kwargs = mock_get.call_args
-        # Los params se pasan como lista de tuplas — verificar que contienen el año
         params = call_kwargs.kwargs.get("params", call_kwargs.args[1] if len(call_kwargs.args) > 1 else [])
         params_str = str(params)
         assert "2025" in params_str
         assert "serie_expediente" in params_str
+        assert "equal" in params_str          # operador correcto (no "eq")
+        assert "num_expediente" in params_str  # properties[] incluido
 
 
 # ---------------------------------------------------------------------------
