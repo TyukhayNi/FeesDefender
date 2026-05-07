@@ -222,6 +222,9 @@ Content-Type: application/json
 
 **Diferencia respecto a extrajudicial:** judicial usa nombres **en minúscula** (`referencia_cliente`, `fecha_alta`) mientras extrajudicial usa **CamelCase** (`Referencia_Cliente`, `Fecha_alta`). Ambos confirmados contra la lista de propiedades devuelta por el servidor ante body inválido (HTTP 500).
 
+**⚠️ `num_expediente` — comportamiento diferente al extrajudicial (confirmado 2026-05-07):**  
+El endpoint judicial **NO auto-asigna** `num_expediente` cuando se envía `"0"` — lo almacena literalmente. A diferencia del extrajudicial (`Numero_Expediente: "0"` → auto-asignado). Fix en `sudespacho_create.py`: `_get_next_num_expediente_judicial(year)` consulta `GET /api/element_registries/expedientes_judiciales` con filtro `serie_expediente=year` y envía `hydra:totalItems + 1` como `num_expediente`. Si la consulta falla, el campo se omite del payload.
+
 #### Bug conocido: `element_register` devuelve 500
 
 `GET /api/element_register/expedientes_judiciales/{id}?properties[]=id` → HTTP 500 "Array to string conversion". Bug en el backend de sudespacho. No tiene workaround conocido. Usamos el frontal heredado para todo lo que requiera el expediente completo.

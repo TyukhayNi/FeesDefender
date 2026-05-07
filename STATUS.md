@@ -3,7 +3,7 @@
 > **Fuente de verdad única del proyecto.**
 > Actualizar al cerrar cada sesión con `python -m scripts.session_close`.
 
-**Última actualización:** 2026-05-06 — Verificación end-to-end sin JWT/PHPSESSID completada: expediente judicial creado desde Streamlit usando solo x-api-key; colaborador vinculado vía REST. Bug corregido: al cambiar modo Extrajudicial↔Judicial la caché de auto-fill Drive se limpia correctamente. 10 nuevos tags mapeados con IDs CRM verificados: BaRR2 (318), BaRR10 (323), BaDP1 (319), BaCR2 (324), MaRS11 (315), MaRS12 (317), MaRS15 (314), MaPD1 (320), VaCR2 (321), VaRR3 (322). Sidebar de sesión CRM eliminado: imports keepalive y sync_sudespacho_legacy retirados de la UI (flujo 100% x-api-key, sin dependencia de cookies). Tests: 100% verde.
+**Última actualización:** 2026-05-07 — Bug corregido: expedientes judiciales creados desde FeesDefender quedaban con `num_expediente=0` porque el endpoint REST judicial no auto-asigna el correlativo (a diferencia del extrajudicial que sí lo hace). Fix: nueva función `_get_next_num_expediente_judicial(year)` que consulta `GET /api/element_registries/expedientes_judiciales` con filtro `serie_expediente=year` → devuelve `hydra:totalItems + 1`. El payload judicial incluye este número en lugar de `"0"`. Si la consulta falla, omite el campo del payload. Extrajudicial no afectado. 10 tests nuevos; todos los tests judiciales existentes actualizados con mock.
 
 ---
 
@@ -215,7 +215,8 @@ python -m scripts.run_pipeline "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
 22. ~~**[SIGUIENTE]** Migrar creación de colaboradores a REST~~ ✅ 2026-05-06 — `POST /api/element_register/colaboradores` confirmado (HAR). `_rest_post_colaborador()` + REST-first en `create_colaborador()`. 10 tests nuevos. Flujo nuevo caso 100% independiente de PHPSESSID. Colaborador ID=780 pendiente borrar del CRM.
 23. ~~**[SIGUIENTE]**~~ ✅ 2026-05-06 — x-api-key para escritura REST confirmada (Opción A). Migración completa. 221 tests.
 24. ~~**[SIGUIENTE]**~~ ✅ 2026-05-06 — Verificación end-to-end sin JWT/PHPSESSID confirmada. Auto-fill extrajudicial corregido. 10 tags mapeados. Sidebar eliminado.
-25. **[SIGUIENTE]** ⬅️ Testear creación caso EXTRAJUDICIAL desde UI: pegar URL Drive E&V → verificar auto-fill → crear en CRM → confirmar → borrar. Luego: pull rclone gdrive_ev para MaRS15 (ejecutar `rclone ls gdrive_ev:` primero para refrescar token). Luego: `[SIGUIENTE-SHARE]` probar compartición directa carpeta E&V.
+25. ~~**[SIGUIENTE]** Fix num_expediente=0 en judiciales~~ ✅ 2026-05-07 — `_get_next_num_expediente_judicial()` implementado; payload judicial usa correlativo real. 10 tests nuevos.
+26. **[SIGUIENTE]** ⬅️ Verificar en CRM que el próximo expediente judicial desde UI tiene número correlativo correcto (≠0). Luego: testear caso EXTRAJUDICIAL desde UI: pegar URL Drive E&V → verificar auto-fill → crear en CRM → confirmar → borrar. Luego: pull rclone gdrive_ev para MaRS15 (ejecutar `rclone ls gdrive_ev:` primero). Luego: `[SIGUIENTE-SHARE]` probar compartición directa carpeta E&V.
 18. ~~**[SIGUIENTE-REST-RELATIONS]**~~ ✅ 2026-05-06 — `POST /api/relation_element/` confirmado HTTP 201 con Bearer JWT. 6 `link_*` migradas a REST-first + fallback legacy. 12 tests nuevos. `.env` actualizado.
 11. ~~**[NIKOLAI]** Conectar cuenta `nikolai.tyukhay@engelvoelkers.com` en Cowork~~ ✅ 2026-04-28 — rclone `gdrive_ev` configurado; Cowork no soporta multi-cuenta, rclone es la solución definitiva.
 12. **[SIGUIENTE-C]** Módulo `core/intake_drive.py`:

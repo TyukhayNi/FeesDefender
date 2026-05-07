@@ -40,6 +40,7 @@ from core.sudespacho_create import (
     _tags_to_rest,
     _build_rest_payload_extrajudicial,
     _build_rest_payload_judicial,
+    _get_next_num_expediente_judicial,
     create_expediente_rest,
     create_expediente_judicial_rest,
     # Funciones orquestadoras
@@ -180,7 +181,8 @@ class TestBuildRestPayloadExtrajudicial:
 
 class TestBuildRestPayloadJudicial:
     def test_campos_obligatorios_presentes(self, datos_judicial):
-        p = _build_rest_payload_judicial(datos_judicial)
+        with patch("core.sudespacho_create._get_next_num_expediente_judicial", return_value=None):
+            p = _build_rest_payload_judicial(datos_judicial)
         for campo in ("referencia_cliente", "fecha_alta", "tipo_asunto",
                       "tipo_procedimiento", "cuantia", "costas", "intereses",
                       "total", "profesional_asignado", "tags"):
@@ -188,22 +190,145 @@ class TestBuildRestPayloadJudicial:
 
     def test_nombres_en_minusculas(self, datos_judicial):
         """Judicial usa lowercase (diferente de extrajudicial que es CamelCase)."""
-        p = _build_rest_payload_judicial(datos_judicial)
+        with patch("core.sudespacho_create._get_next_num_expediente_judicial", return_value=None):
+            p = _build_rest_payload_judicial(datos_judicial)
         assert "referencia_cliente" in p
         assert "Referencia_Cliente" not in p
 
     def test_fecha_formato_iso(self, datos_judicial):
-        p = _build_rest_payload_judicial(datos_judicial)
+        with patch("core.sudespacho_create._get_next_num_expediente_judicial", return_value=None):
+            p = _build_rest_payload_judicial(datos_judicial)
         assert p["fecha_alta"] == "2026-05-06"
 
     def test_total_suma(self, datos_judicial):
-        p = _build_rest_payload_judicial(datos_judicial)
+        with patch("core.sudespacho_create._get_next_num_expediente_judicial", return_value=None):
+            p = _build_rest_payload_judicial(datos_judicial)
         assert p["total"] == 10000.0
 
     def test_tags_convertidos(self, datos_judicial):
-        p = _build_rest_payload_judicial(datos_judicial)
+        with patch("core.sudespacho_create._get_next_num_expediente_judicial", return_value=None):
+            p = _build_rest_payload_judicial(datos_judicial)
         assert TAG_SENTINEL not in p["tags"]
         assert "130" in p["tags"]
+
+    # -------------------------------------------------------------------
+    # Tests de num_expediente — bug corregido 2026-05-07
+    # -------------------------------------------------------------------
+
+    def test_num_expediente_incluido_cuando_query_exitosa(self, datos_judicial):
+        """Si _get_next_num_expediente_judicial devuelve un número, debe estar en el payload."""
+        with patch("core.sudespacho_create._get_next_num_expediente_judicial", return_value=5):
+            p = _build_rest_payload_judicial(datos_judicial)
+        assert "num_expediente" in p
+        assert p["num_expediente"] == "5"
+
+    def test_num_expediente_omitido_cuando_query_falla(self, datos_judicial):
+        """Si la consulta al CRM falla (devuelve None), num_expediente se omite del payload
+        para que el servidor intente auto-asignar (en lugar de almacenar 0 literalmente)."""
+        with patch("core.sudespacho_create._get_next_num_expediente_judicial", return_value=None):
+            p = _build_rest_payload_judicial(datos_judicial)
+        assert "num_expediente" not in p
+
+    def test_num_expediente_no_es_cero_literal(self, datos_judicial):
+        """Regresión: el payload judicial NUNCA debe incluir num_expediente='0' — eso
+        causaba que el expediente quedara con número 0 en el CRM (bug 2026-05-07)."""
+        with patch("core.sudespacho_create._get_next_num_expediente_judicial", return_value=1):
+            p = _build_rest_payload_judicial(datos_judicial)
+        # Si la query devuelve un número, nunca debe ser la cadena "0"
+        if "num_expediente" in p:
+            assert p["num_expediente"] != "0", (
+                "num_expediente no puede ser '0' — causa bug de número correlativo ausente"
+            )
+
+    def test_serie_expediente_es_anno(self, datos_judicial):
+        with patch("core.sudespacho_create._get_next_num_expediente_judicial", return_value=None):
+            p = _build_rest_payload_judicial(datos_judicial)
+        assert p["serie_expediente"] == "2026"
+
+
+# ---------------------------------------------------------------------------
+# _get_next_num_expediente_judicial
+# ---------------------------------------------------------------------------
+
+class TestGetNextNumExpedienteJudicial:
+    """Tests para la función que consulta el siguiente número correlativo judicial.
+
+    Esta función corrige el bug por el que el endpoint REST judicial almacenaba
+    num_expediente=0 literalmente en lugar de asignar el número correlativo.
+    """
+
+    def test_devuelve_total_mas_uno_cuando_200(self, monkeypatch):
+        """Si el CRM devuelve N expedientes para el año, el siguiente es N+1."""
+        monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"hydra:totalItems": 12, "hydra:member": []}
+
+        with patch("core.sudespacho_create.httpx.get", return_value=mock_resp):
+            result = _get_next_num_expediente_judicial(2026)
+
+        assert result == 13
+
+    def test_devuelve_uno_cuando_no_hay_expedientes(self, monkeypatch):
+        """Primer expediente del año → total=0 → devuelve 1."""
+        monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"hydra:totalItems": 0, "hydra:member": []}
+
+        with patch("core.sudespacho_create.httpx.get", return_value=mock_resp):
+            result = _get_next_num_expediente_judicial(2026)
+
+        assert result == 1
+
+    def test_devuelve_none_cuando_api_error(self, monkeypatch):
+        """Si la API devuelve error HTTP, retorna None (no lanza excepción)."""
+        monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 500
+
+        with patch("core.sudespacho_create.httpx.get", return_value=mock_resp):
+            result = _get_next_num_expediente_judicial(2026)
+
+        assert result is None
+
+    def test_devuelve_none_cuando_sin_api_key(self, monkeypatch):
+        """Sin SUDESPACHO_API_KEY configurado, retorna None sin lanzar excepción."""
+        monkeypatch.delenv("SUDESPACHO_API_KEY", raising=False)
+        result = _get_next_num_expediente_judicial(2026)
+        assert result is None
+
+    def test_devuelve_none_cuando_red_falla(self, monkeypatch):
+        """Si la petición HTTP falla (timeout, etc.), retorna None."""
+        monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
+
+        import httpx as httpx_module
+        with patch("core.sudespacho_create.httpx.get",
+                   side_effect=httpx_module.HTTPError("timeout")):
+            result = _get_next_num_expediente_judicial(2026)
+
+        assert result is None
+
+    def test_usa_filtro_serie_expediente_correcto(self, monkeypatch):
+        """Verifica que la consulta filtra por serie_expediente con el año correcto."""
+        monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"hydra:totalItems": 3}
+
+        with patch("core.sudespacho_create.httpx.get", return_value=mock_resp) as mock_get:
+            _get_next_num_expediente_judicial(2025)
+
+        call_kwargs = mock_get.call_args
+        # Los params se pasan como lista de tuplas — verificar que contienen el año
+        params = call_kwargs.kwargs.get("params", call_kwargs.args[1] if len(call_kwargs.args) > 1 else [])
+        params_str = str(params)
+        assert "2025" in params_str
+        assert "serie_expediente" in params_str
 
 
 # ---------------------------------------------------------------------------
@@ -269,8 +394,10 @@ class TestCreateExpedienteJudicialRest:
         mock_resp.status_code = 201
         mock_resp.json.return_value = {"id": 700, "message": "Created!"}
 
-        with patch("core.sudespacho_create.httpx.post", return_value=mock_resp) as mock_post:
-            eid = create_expediente_judicial_rest(datos_judicial)
+        # Mockear _get_next_num_expediente_judicial para aislar el POST del GET interno
+        with patch("core.sudespacho_create._get_next_num_expediente_judicial", return_value=1):
+            with patch("core.sudespacho_create.httpx.post", return_value=mock_resp) as mock_post:
+                eid = create_expediente_judicial_rest(datos_judicial)
 
         assert eid == "700"
         url_llamado = mock_post.call_args.args[0]
@@ -283,9 +410,10 @@ class TestCreateExpedienteJudicialRest:
         mock_resp.status_code = 422
         mock_resp.text = "Unprocessable"
 
-        with patch("core.sudespacho_create.httpx.post", return_value=mock_resp):
-            with pytest.raises(SudespachoCreateError):
-                create_expediente_judicial_rest(datos_judicial)
+        with patch("core.sudespacho_create._get_next_num_expediente_judicial", return_value=1):
+            with patch("core.sudespacho_create.httpx.post", return_value=mock_resp):
+                with pytest.raises(SudespachoCreateError):
+                    create_expediente_judicial_rest(datos_judicial)
 
 
 # ---------------------------------------------------------------------------
@@ -336,25 +464,27 @@ class TestCreateExpedienteJudicialRestFirst:
         mock_resp.status_code = 201
         mock_resp.json.return_value = {"id": 701}
 
-        with patch("core.sudespacho_create.httpx.post", return_value=mock_resp):
-            eid = create_expediente_judicial(datos_judicial)
+        with patch("core.sudespacho_create._get_next_num_expediente_judicial", return_value=1):
+            with patch("core.sudespacho_create.httpx.post", return_value=mock_resp):
+                eid = create_expediente_judicial(datos_judicial)
 
         assert eid == "701"
 
     def test_fallback_a_legacy_si_rest_falla(self, datos_judicial, monkeypatch):
         monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
 
-        with patch("core.sudespacho_create.httpx.post", side_effect=Exception("network error")):
-            with patch("core.sudespacho_create.SudespachoLegacyClient") as MockClient:
-                mock_client = MagicMock()
-                MockClient.return_value = mock_client
-                mock_client.__enter__ = MagicMock(return_value=mock_client)
-                mock_client.__exit__ = MagicMock(return_value=False)
-                mock_client.get_csrf_token.return_value = "csrf-abc"
-                mock_client.post_form.return_value = {"id": "702"}
+        with patch("core.sudespacho_create._get_next_num_expediente_judicial", return_value=1):
+            with patch("core.sudespacho_create.httpx.post", side_effect=Exception("network error")):
+                with patch("core.sudespacho_create.SudespachoLegacyClient") as MockClient:
+                    mock_client = MagicMock()
+                    MockClient.return_value = mock_client
+                    mock_client.__enter__ = MagicMock(return_value=mock_client)
+                    mock_client.__exit__ = MagicMock(return_value=False)
+                    mock_client.get_csrf_token.return_value = "csrf-abc"
+                    mock_client.post_form.return_value = {"id": "702"}
 
-                with patch("core.sudespacho_create.extract_id_from_response", return_value="702"):
-                    eid = create_expediente_judicial(datos_judicial)
+                    with patch("core.sudespacho_create.extract_id_from_response", return_value="702"):
+                        eid = create_expediente_judicial(datos_judicial)
 
         assert eid == "702"
 

@@ -641,11 +641,17 @@ def build_form_data_judicial(
     tags = list(datos.tags)
     tags_con_sentinel = tags + [TAG_SENTINEL]
 
+    # Número correlativo: consultar el siguiente libre via REST para evitar
+    # almacenar "0" si el backend PHP tampoco auto-asigna (no confirmado).
+    # Si la consulta falla, se envía "0" como antes (fallback heredado).
+    next_num = _get_next_num_expediente_judicial(datos.fecha_apertura.year)
+    num_exp_str = str(next_num) if next_num is not None else "0"
+
     form: list[tuple[str, str]] = [
         # Datos básicos
         ("campo_851__expedientes_judiciales",  fecha_str),
-        ("campo_864__expedientes_judiciales",  "0"),        # num_expediente: auto-asignado
-        ("campo_875__expedientes_judiciales",  año_str),    # serie expediente
+        ("campo_864__expedientes_judiciales",  num_exp_str),  # num_expediente correlativo
+        ("campo_875__expedientes_judiciales",  año_str),      # serie expediente
         ("campo_860__expedientes_judiciales",  datos.NIG),
         # campos ocultos del formulario (valores por defecto observados)
         ("campo_855__expedientes_judiciales",  "No"),       # Historico: No por defecto
@@ -1196,6 +1202,62 @@ def _build_rest_payload_extrajudicial(datos: "NuevoExpedienteExtrajudicial") -> 
     }
 
 
+def _get_next_num_expediente_judicial(year: int) -> int | None:
+    """Consulta el CRM y devuelve el siguiente número correlativo libre para exp. judiciales.
+
+    Estrategia: cuenta los expedientes judiciales de la serie del año dado via
+    ``GET /api/element_registries/expedientes_judiciales`` con filtro
+    ``serie_expediente=year`` y devuelve ``hydra:totalItems + 1``.
+
+    **Por qué esto es necesario:** el endpoint REST
+    ``POST /api/element_register/expedientes_judiciales`` NO auto-asigna
+    ``num_expediente`` cuando se envía ``"0"`` — lo almacena literalmente.
+    A diferencia del endpoint extrajudicial (que sí auto-asigna con
+    ``"Numero_Expediente": "0"``), el judicial requiere que el cliente
+    calcule el siguiente número libre y lo envíe explícitamente.
+
+    Descubierto y corregido el 2026-05-07.
+
+    Args:
+        year: Año de la serie del expediente (ej. 2026).
+
+    Returns:
+        Siguiente número disponible (>= 1), o ``None`` si la consulta falla.
+        Cuando se devuelve ``None``, ``_build_rest_payload_judicial`` omite
+        el campo ``num_expediente`` del payload para intentar que el servidor
+        lo auto-asigne (comportamiento no confirmado, pero no empeora la
+        situación actual de almacenar 0).
+    """
+    try:
+        api_key = _get_api_key()
+    except ValueError:
+        return None  # API key no configurada — omitir campo en payload
+
+    url = f"{_REST_BASE}/api/element_registries/expedientes_judiciales"
+    # Parámetros como lista para preservar el orden y evitar problemas de encoding
+    params: list[tuple[str, str]] = [
+        ("filterGroup[condition]",                                         "AND"),
+        ("filterGroup[filterGroups][0][condition]",                        "AND"),
+        ("filterGroup[filterGroups][0][filters][0][operator]",             "eq"),
+        ("filterGroup[filterGroups][0][filters][0][value]",                str(year)),
+        ("filterGroup[filterGroups][0][filters][0][property]",             "serie_expediente"),
+        ("itemsPerPage",                                                    "1"),
+        ("return_totals",                                                   "true"),
+    ]
+    headers = {"x-api-key": api_key, "Accept": "application/json"}
+
+    try:
+        r = httpx.get(url, params=params, headers=headers, timeout=_REST_TIMEOUT)
+        if r.status_code == 200:
+            data = r.json()
+            total = int(data.get("hydra:totalItems", 0))
+            return total + 1
+    except Exception:
+        pass
+
+    return None
+
+
 def _build_rest_payload_judicial(datos: "NuevoExpedienteJudicial") -> dict:
     """Construye el body JSON para crear un expediente judicial via REST.
 
@@ -1211,27 +1273,41 @@ def _build_rest_payload_judicial(datos: "NuevoExpedienteJudicial") -> dict:
     Nota: judicial usa nombres en minúscula (referencia_cliente, fecha_alta)
     mientras extrajudicial usa CamelCase (Referencia_Cliente, Fecha_alta).
     Ambos verificados contra las listas de propiedades devueltas por el servidor.
+
+    num_expediente (2026-05-07): el endpoint REST judicial NO auto-asigna cuando
+    se envía "0" — a diferencia del extrajudicial. Por eso este builder consulta
+    _get_next_num_expediente_judicial() para obtener el siguiente número correlativo.
+    Si la consulta falla, omite el campo del payload (no empeora el comportamiento).
     """
     total = datos.cuantia + datos.costas + datos.intereses
-    return {
-        "referencia_cliente":   datos.referencia_cliente,
-        "fecha_alta":           datos.fecha_apertura.strftime("%Y-%m-%d"),
-        "tipo_asunto":          datos.tipo_asunto,
-        "tipo_procedimiento":   datos.tipo_procedimiento,
-        "cuantia":              int(round(datos.cuantia)),
-        "costas":               int(round(datos.costas)),
-        "intereses":            int(round(datos.intereses)),
-        "total":                round(total, 2),
-        "profesional_asignado": datos.abogado_principal,
-        "notas":                datos.notas_html,
-        "posicion_procesal":    datos.posicion,
-        "NIG":                  datos.NIG,
+    year = datos.fecha_apertura.year
+
+    payload: dict = {
+        "referencia_cliente":    datos.referencia_cliente,
+        "fecha_alta":            datos.fecha_apertura.strftime("%Y-%m-%d"),
+        "tipo_asunto":           datos.tipo_asunto,
+        "tipo_procedimiento":    datos.tipo_procedimiento,
+        "cuantia":               int(round(datos.cuantia)),
+        "costas":                int(round(datos.costas)),
+        "intereses":             int(round(datos.intereses)),
+        "total":                 round(total, 2),
+        "profesional_asignado":  datos.abogado_principal,
+        "notas":                 datos.notas_html,
+        "posicion_procesal":     datos.posicion,
+        "NIG":                   datos.NIG,
         "referencia_procurador": datos.referencia_procurador,
-        "referencia_propia":    datos.referencia_propia,
-        "serie_expediente":     str(datos.fecha_apertura.year),
-        "num_expediente":       "0",
-        "tags":                 _tags_to_rest(datos.tags),
+        "referencia_propia":     datos.referencia_propia,
+        "serie_expediente":      str(year),
+        "tags":                  _tags_to_rest(datos.tags),
     }
+
+    # Calcular el siguiente número correlativo para la serie del año.
+    # Si la consulta falla → None → campo omitido → el servidor intentará auto-asignar.
+    next_num = _get_next_num_expediente_judicial(year)
+    if next_num is not None:
+        payload["num_expediente"] = str(next_num)
+
+    return payload
 
 
 def _rest_post(endpoint: str, payload: dict) -> str:
