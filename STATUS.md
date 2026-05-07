@@ -3,7 +3,7 @@
 > **Fuente de verdad única del proyecto.**
 > Actualizar al cerrar cada sesión con `python -m scripts.session_close`.
 
-**Última actualización:** 2026-05-07 — **Absorción del Anonimizador cerrada (Fases 0-4 ejecutadas)**. Los módulos `_herramientas/` de Expedientes Seguros (`anonimizar.py` v3.10, `separar.py` v1.0, `deanonimizar.py`, `imagen_a_pdf.py`, `renombrar.py`) están absorbidos en `core/anon/` de FeesDefender. La fachada `core/anon/api.py` (`anonimizar_caso`, `anonimizar_documento`) integra el motor con el resto del core. Mapa compartido por caso en `06_Anonimizado/_mapa_caso.json`. Step `do_anonimizar` añadido al pipeline general y a la UI Streamlit. Singleton NLP en `core/anon/nlp_engine.py` evita recargar 1.5 GB de modelos en cada documento. Health check completo en `scripts/health_check.py`. 51 tests nuevos verdes (`test_anon_basic.py` 8 + `test_anon_separar.py` 31 + `test_anon_integration.py` 12). Suite global limpia. `procesar_carpeta.py` y `gestionar_expediente.py` quedan obsoletos por diseño.
+**Última actualización:** 2026-05-07 — **⚠️ INCIDENCIA CRÍTICA detectada al cierre**: el caso `BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU` tiene asociado el expediente CRM **ID 648** cuando el ID real del caso Roser es **649**. Documentos descargados en `00_Input/sudespacho_648/` NO corresponden a Roser — pertenecen a otro expediente del CRM. Resolver al inicio de la próxima sesión (ver [CRITICO-INTAKE-EXPEDIENTE-INCORRECTO] al inicio de Próximas tareas). **Absorción del Anonimizador cerrada (Fases 0-4 ejecutadas)**. Los módulos `_herramientas/` de Expedientes Seguros (`anonimizar.py` v3.10, `separar.py` v1.0, `deanonimizar.py`, `imagen_a_pdf.py`, `renombrar.py`) están absorbidos en `core/anon/` de FeesDefender. La fachada `core/anon/api.py` (`anonimizar_caso`, `anonimizar_documento`) integra el motor con el resto del core. Mapa compartido por caso en `06_Anonimizado/_mapa_caso.json`. Step `do_anonimizar` añadido al pipeline general y a la UI Streamlit. Singleton NLP en `core/anon/nlp_engine.py` evita recargar 1.5 GB de modelos en cada documento. Health check completo en `scripts/health_check.py`. 51 tests nuevos verdes (`test_anon_basic.py` 8 + `test_anon_separar.py` 31 + `test_anon_integration.py` 12). Suite global limpia. `procesar_carpeta.py` y `gestionar_expediente.py` quedan obsoletos por diseño.
 
 ---
 
@@ -176,8 +176,9 @@ git commit -m "<mensaje que Claude propuso>"
 
 **Case ID:** `BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU`
 **Cliente:** EV MMC SPAIN, S.L.U.
-**Expediente:** 648 (`expedientes_judiciales`)
-**Docs descargados:** 5 archivos, 5,35 MB
+**Expediente CRM REAL:** **649** (`expedientes_judiciales`) ← pendiente intake
+**Expediente erróneamente vinculado:** 648 ← NO es Roser, es otro caso del CRM (a identificar y desvincular)
+**Docs descargados:** 5 archivos, 5,35 MB ← contaminados con expediente 648, BORRAR
 
 **⚠️ Acción pendiente antes de lanzar pipeline:**
 ```powershell
@@ -189,6 +190,48 @@ python -m scripts.run_pipeline "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
 ---
 
 ## Próximas tareas (orden de prioridad)
+
+### ⚠️ MÁXIMA PRIORIDAD — abrir próxima sesión por aquí
+
+**[CRITICO-INTAKE-EXPEDIENTE-INCORRECTO]** (detectado 2026-05-07, fin de sesión)
+
+El caso `BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU` tiene asociado en
+`_caso.md` el expediente CRM **ID 648**, pero el ID real del caso Roser
+en el CRM `tnm.sudespacho.net` es **649**. Los 5 documentos en
+`00_Input/sudespacho_648/` NO pertenecen a Roser — pertenecen a otro
+expediente.
+
+Trabajo a hacer al inicio de próxima sesión:
+
+1. **Identificar el expediente real con ID 648 en el CRM** — abrir
+   `tnm.sudespacho.net` y consultar a qué cliente y referencia
+   corresponde el ID 648. Documentar el resultado.
+2. **Borrar `data/CASOS/BaRR3 - .../00_Input/sudespacho_648/`** — los
+   documentos están contaminados (no son del caso). Limpiar también la
+   entrada `sudespacho_expedientes` del frontmatter de `_caso.md`.
+3. **Investigar la causa raíz**: ¿cómo se asoció 648 al caso Roser?
+   Posibilidades a revisar:
+   - El usuario tecleó el ID a mano al crear el caso (input incorrecto).
+   - Había un mapeo automático `referencia → ID` que ha devuelto el
+     siguiente disponible.
+   - `find_expediente_judicial_by_referencia` en
+     `core/sudespacho_relations.py` no filtró bien al buscar el ID.
+4. **Hacer pull correcto del expediente 649** para Roser via
+   `core/intake_drive.py` o `pull_expediente`. Verificar que los 5
+   documentos descargados son los reales del caso.
+5. **Auditar otros casos** del repositorio: ¿hay más casos con el ID CRM
+   incorrecto? Script ad-hoc que recorra `data/CASOS/*/00_Input/_caso.md`
+   y compruebe la coherencia `referencia ↔ ID` consultando el CRM.
+6. **Si se confirma fallo en la lógica** del intake (no error humano),
+   añadir validación: tras crear / vincular un expediente, leer
+   `referencia` desde el CRM y compararla con la del caso local. Lanzar
+   warning visible en UI si no coinciden.
+
+Bloqueante para usar Anonimizador sobre BaRR3 — los .md anonimizados se
+generarían sobre datos del expediente equivocado.
+
+---
+
 
 1. ~~Capturar POST creación expediente extrajudicial~~ ✅ 2026-04-28
 2. ~~Mapear IDs de tags CRM~~ ✅ 2026-04-28 — 87 tags, `sudespacho_create.py`
@@ -233,6 +276,7 @@ python -m scripts.run_pipeline "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
 9. ~~**[Nuevo hilo]** Módulo `core/anonymizer.py` — integrar proyecto externo de anonimización.~~ ✅ 2026-05-07 — Absorbido como `core/anon/` (no `core/anonymizer.py`). 5 fases ejecutadas (0-4). Pendiente Fase 5: migración de casos antiguos de Expedientes Seguros (re-procesar vs copiar tal cual — decisión del usuario antes de empezar). Ver `docs/MEJORAS_FUTURAS.md` para los 10 puntos identificados durante la integración (no bloqueantes).
 10. **[Nuevo hilo]** Subida output anonimizado al Drive tyukhay.legal.
 11. ~~**[SIGUIENTE-ANON-FASE5]** Migración de los expedientes ya procesados en `G:\...\Expedientes Seguros\Expedientes\`.~~ ✅ Decisión 2026-05-07: los casos antiguos se borran, no se migran. La nueva fachada `core/anon/api.py` parte de cero. Borrado físico de `G:\...\Expedientes Seguros\` queda como acción manual del usuario.
+12. **[SIGUIENTE-ANON-WARMUP]** Decidir si activar warmup proactivo de modelos NLP al arrancar Streamlit. Pendiente de uso real del flujo combinado FeesDefender + Anonimizador. Si la rutina típica del usuario incluye "abrir Streamlit y anonimizar casi siempre", activar el warmup en background (ahorra 20-40 s la primera vez). Si las sesiones Streamlit suelen ser para crear casos / gestionar CRM sin tocar el anonimizador, mantenerlo desactivado (cargar 1.5 GB de RAM por si acaso es desproporcionado). Implementación: 5 líneas al inicio de `streamlit_app.py` justo después de `st.set_page_config`, usando `threading.Thread(target=warmup_nlp, daemon=True).start()`. Decisión tomar tras observar varias sesiones reales en producción.
 11. Configurar Windows Task Scheduler para `scheduled_sync.py` (diario 08:00).
 12. Reforzar `prompts/viabilidad.md` con jurisprudencia sobre nexo causal.
 13. Tests adicionales: `test_linker`, `test_scorer`, `test_pipeline`.
