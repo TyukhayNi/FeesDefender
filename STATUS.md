@@ -3,7 +3,9 @@
 > **Fuente de verdad única del proyecto.**
 > Actualizar al cerrar cada sesión con `python -m scripts.session_close`.
 
-**Última actualización:** 2026-05-08 — Sesión administrativa: borrados los dos casos de prueba `MaRR2 - XXXX - (XXXX) - Bad debt` y `TEST-2026-001` del Drive `EXPEDIENTES - TYUKHAY LEGAL\CASOS\` (CRM ya saneado por usuario antes de la sesión). Las constantes `MaRR2` en `core/sudespacho_create.py`, `core/config.py` y `streamlit_app.py` se mantienen — son tags y folder IDs del equipo "Madrid Residential Rentals 2" del CRM, no referencias al expediente borrado. Estado del proyecto sin cambios respecto a 2026-05-07.
+**Última actualización:** 2026-05-08 (sesión 2) — Planificación completa del **refactor v2 de `00_Input/`** cerrada. Acordados D1–D12 + M1–M10 (memoria persistente: `project_intake_estructura_v2.md`). Estructura nueva: árbol del gestor documental del CRM como `05_CRM/` (subcarpeta fija con ramas `General/`, `Civil/`, `Penal/`); `06_Entrevistas/<fecha>_<rol>_<apellido>/` con grabación + transcripción; `_informe_viabilidad.xlsx` en `02_Analisis/` (copiado condicional según tipo de caso); eliminación de `05_Demanda judicial/` (absorbida en `05_CRM/Civil/.../Demanda/`) y `sudespacho_{id}/` dinámica (absorbida en `05_CRM/`). Estado del pull migra de `.pulled` a frontmatter de `_caso.md` (schema D8: `linked_at` + `documents_total_crm` + `doc_ids` + `by_carpeta` + `errors`); escritura atómica `temp + os.replace`; helper `crm_branch_path()` con normalización tolerante. Mejoras adicionales: dedup cross-source SHA-256 con manifest `_intake_hashes.json` (M9, skip + aliases), log append-only `_intake_log.jsonl` por caso con 13 tipos de evento (M10, selector actor en sidebar Streamlit), fallback `99_Sin categoria/<expediente_id>/` (M5, renombrado de `_Sin categoria/` por filtro de underscore en `core/anon/api.py`). Casos antiguos congelados (D9): detector `is_legacy_intake_v1` bloquea pull v2 sobre `sudespacho_*/`. Verificaciones cerradas: V1 (probes `scripts/probe_gdocu*.py` — label leaf-only, endpoint árbol vacío re-confirmado vs. 2026-04-25, estrategia híbrida `CARPETA_ID_TO_PATH` adoptada con mappings empíricos `1→General` y `307→Civil/1ª Instancia/Declarativo/Demanda`), V2 (anonimizador recursivo OK), V3 (Civil + Penal + General; mercantil/laboral/concursal/contencioso bajo Civil; JVB/ETJ no usados). Implementación pendiente — sesión dedicada.
+
+**Anterior (2026-05-08, sesión 1):** Sesión administrativa: borrados los dos casos de prueba `MaRR2 - XXXX - (XXXX) - Bad debt` y `TEST-2026-001` del Drive `EXPEDIENTES - TYUKHAY LEGAL\CASOS\` (CRM ya saneado por usuario antes de la sesión). Las constantes `MaRR2` en `core/sudespacho_create.py`, `core/config.py` y `streamlit_app.py` se mantienen — son tags y folder IDs del equipo "Madrid Residential Rentals 2" del CRM, no referencias al expediente borrado. Estado del proyecto sin cambios respecto a 2026-05-07.
 
 **Anterior (2026-05-07):** **⚠️ INCIDENCIA CRÍTICA detectada al cierre**: el caso `BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU` tiene asociado el expediente CRM **ID 648** cuando el ID real del caso Roser es **649**. Documentos descargados en `00_Input/sudespacho_648/` NO corresponden a Roser — pertenecen a otro expediente del CRM. Resolver al inicio de la próxima sesión (ver [CRITICO-INTAKE-EXPEDIENTE-INCORRECTO] al inicio de Próximas tareas). **Absorción del Anonimizador cerrada (Fases 0-4 ejecutadas)**. Los módulos `_herramientas/` de Expedientes Seguros (`anonimizar.py` v3.10, `separar.py` v1.0, `deanonimizar.py`, `imagen_a_pdf.py`, `renombrar.py`) están absorbidos en `core/anon/` de FeesDefender. La fachada `core/anon/api.py` (`anonimizar_caso`, `anonimizar_documento`) integra el motor con el resto del core. Mapa compartido por caso en `06_Anonimizado/_mapa_caso.json`. Step `do_anonimizar` añadido al pipeline general y a la UI Streamlit. Singleton NLP en `core/anon/nlp_engine.py` evita recargar 1.5 GB de modelos en cada documento. Health check completo en `scripts/health_check.py`. 51 tests nuevos verdes (`test_anon_basic.py` 8 + `test_anon_separar.py` 31 + `test_anon_integration.py` 12). Suite global limpia. `procesar_carpeta.py` y `gestionar_expediente.py` quedan obsoletos por diseño.
 
@@ -194,6 +196,55 @@ python -m scripts.run_pipeline "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
 ## Próximas tareas (orden de prioridad)
 
 ### ⚠️ MÁXIMA PRIORIDAD — abrir próxima sesión por aquí
+
+**[SIGUIENTE-INTAKE-V2]** (planificación cerrada 2026-05-08, sesión 2)
+
+Implementar el refactor `00_Input/` v2. Toda la planificación está en
+memoria persistente (`project_intake_estructura_v2.md`) — leerla COMPLETA
+antes de tocar código. Resumen ejecutivo:
+
+- Nueva estructura `00_Input/`: `01_Drive EV/`, `02_Whatsapp/`, `03_Email/`,
+  `04_Manual/`, `05_CRM/` (mirroring árbol del gestor documental:
+  `General/`, `Civil/...`, `Penal/...`), `06_Entrevistas/<fecha>_<rol>_<apellido>/`.
+- Nuevo `02_Analisis/_informe_viabilidad.xlsx` (copiado condicional según
+  tipo de caso: NEGATIVA_*, VUELTA, INCUMPLIMIENTO_EXCLUSIVA,
+  RESPONSABILIDAD_PROFESIONAL).
+- Pull CRM deposita en rama exacta vía `crm_branch_path()` con mapping
+  hardcodeado `CARPETA_ID_TO_PATH` + heurística por label + fallback
+  `99_Sin categoria/<expediente_id>/`.
+- Estado del pull migra de `.pulled` a frontmatter de `_caso.md` (schema D8).
+- Escritura atómica `_atomic_write_caso_md` con `temp + os.replace`.
+- Dedup cross-source SHA-256 con manifest `_intake_hashes.json` (skip + aliases).
+- Log append-only `_intake_log.jsonl` con 13 tipos de evento + selector actor
+  en sidebar Streamlit.
+- Detector `is_legacy_intake_v1` bloquea pull v2 sobre casos antiguos
+  (BaRR3, MaRS15) — migración manual via `force-pull` v2.
+
+Orden de implementación:
+
+1. `docs/INTEGRACION_SUDESPACHO.md` — sección árbol gestor documental + estrategia.
+2. `core/config.py` — `CRM_TREE` anidado, `CARPETA_ID_TO_PATH`, `INPUT_SUBDIRS`,
+   `ENTREVISTA_ROLES`, `INFORME_VIABILIDAD_TIPOS`.
+3. `core/case_manager.py` — `CaseMeta` con `direccion` + `id_go`,
+   `_atomic_write_caso_md`, `read_pull_state` / `update_pull_state`,
+   `is_legacy_intake_v1`, `crm_branch_path`.
+4. `core/sync_sudespacho.py` — `pull_expediente()` reescrito sin
+   `sudespacho_{id}/`, deposita en `05_CRM/<rama>/`, dedup M9, log M10.
+5. `core/intake_demanda.py` — adapta destino o se elimina.
+6. `data/_plantillas/informe_viabilidad.xlsx` — extraer + normalizar.
+7. `streamlit_app.py` — selector actor en sidebar (M10), expander upload al
+   árbol CRM, tooltips.
+8. Tests: `test_crm_branch_path`, `test_pull_state_atomic`,
+   `test_dedup_manifest`, `test_intake_log`, `test_legacy_v1_detection`,
+   `test_informe_viabilidad_copia_condicional`.
+9. STATUS.md + commit.
+
+Investigación pendiente NO bloqueante: query correcta del endpoint
+`/api/folders/gdocu/...` para listar el árbol del gestor documental
+(ver `docs/DEAD_ENDS.md`). Si se descubre, migrar `CARPETA_ID_TO_PATH`
+hardcodeado a auto-construcción dinámica.
+
+---
 
 **[CRITICO-INTAKE-EXPEDIENTE-INCORRECTO]** (detectado 2026-05-07, fin de sesión)
 

@@ -40,3 +40,6 @@ desktop.ini
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Probes y sondeos locales del CRM (capturas de respuestas REST)
+data/probes/

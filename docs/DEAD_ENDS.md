@@ -34,8 +34,10 @@
 ### `/api/folders/gdocu/0?related_element=...`
 - **Intentado:** listar carpetas de documentos de un expediente vía API REST
 - **Resultado:** devuelve `[]` para todos los expedientes del tenant tnm
-- **Confirmado:** 2026-04-25
-- **Conclusión:** Las carpetas solo son navegables vía frontal legacy.
+- **Confirmado:** 2026-04-25, **re-confirmado 2026-05-08** (script `scripts/probe_gdocu_tree.py` contra expediente 657 — judicial con docs en `Civil > 1ª Instancia > Declarativo > Demanda` y `General/`; el endpoint devolvió 0 carpetas).
+- **Conclusión:** Las carpetas solo son navegables vía frontal legacy. El árbol del gestor documental no está expuesto vía REST con la query `parent=0`.
+- **Workaround adoptado en refactor intake v2 (2026-05-08):** estrategia híbrida `CARPETA_ID_TO_PATH` hardcodeado + heurística por `id_carpeta_label` + fallback `99_Sin categoria/<expediente_id>/`. Mappings empíricos confirmados a 2026-05-08: `"1"` → `"General"`, `"307"` → `"Civil/1ª Instancia/Declarativo/Demanda"`. Nuevos IDs se descubren progresivamente vía evento `category_unknown` en `_intake_log.jsonl` (M10).
+- **Investigación pendiente (no bloquea):** capturar HAR del gestor documental en Chrome para descubrir la query correcta, o consultar `developers.sudespacho.net`.
 
 ### `origen` + `origen_id` en `/api/documents`
 - **Intentado:** `GET /api/documents?origen=expedientes_judiciales&origen_id=648`
