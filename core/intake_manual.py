@@ -1,23 +1,29 @@
-"""Intake de documentos judiciales subidos manualmente desde la UI.
+"""Intake manual de documentos subidos desde la UI.
 
-Destino local: ``00_Input/05_Demanda judicial/`` dentro del caso.
+Destino local: ``00_Input/04_Manual/`` dentro del caso.
 
-Uso principal: expedientes defensivos (DEVOLUCION_RESERVA, LAU_20,
-RESPONSABILIDAD_PROFESIONAL) en los que la demanda llega por email al
-abogado y se sube manualmente desde la pestaña «Casos» de la UI.
-
-La UI llama a ``save_file()`` con el nombre y los bytes del archivo
-(``UploadedFile.name`` + ``UploadedFile.read()`` en Streamlit), de modo
-que este módulo no depende de Streamlit.
+Cubre cualquier upload manual desde la pestaña «Casos» de la UI: demandas
+judiciales (defensiva), documentos sueltos, paquetes ZIP. La UI llama a
+``save_file`` con el nombre y los bytes del archivo
+(``UploadedFile.name`` + ``UploadedFile.read()`` en Streamlit), de modo que
+este módulo no depende de Streamlit.
 
 Reglas de idempotencia:
-  - ``save_file`` sobreescribe si el archivo ya existe (el abogado puede
-    actualizar una versión de la demanda sin renombrarlo).
-  - ``list_files`` devuelve lista vacía si la carpeta no existe aún.
+
+- ``save_file`` sobreescribe si el archivo ya existe (el equipo puede
+  actualizar una versión sin renombrarlo).
+- ``list_files`` devuelve lista vacía si la carpeta no existe aún.
+
+Histórico: este módulo es la sucesión de ``intake_demanda`` (refactor
+intake v2, 2026-05-08). El destino se cambió de ``05_Demanda judicial/``
+a ``04_Manual/`` por coherencia con la arquitectura v2 (cada fuente con
+su carpeta — el árbol CRM ``05_CRM/`` queda reservado a docs descargados
+del Gestor Documental sudespacho vía ``sync_sudespacho.pull_expediente_v2``).
 """
 
 from __future__ import annotations
 
+import io
 import zipfile
 from pathlib import Path
 
@@ -28,7 +34,7 @@ from .config import caso_path, settings
 # Constantes internas
 # ---------------------------------------------------------------------------
 
-_DEMANDA_SUBDIR = "05_Demanda judicial"
+_MANUAL_SUBDIR = "04_Manual"
 _CONTROL_FILES: frozenset[str] = frozenset({".pulled", "_inventory.json", ".synced"})
 
 
@@ -36,9 +42,9 @@ _CONTROL_FILES: frozenset[str] = frozenset({".pulled", "_inventory.json", ".sync
 # Helpers internos
 # ---------------------------------------------------------------------------
 
-def _demanda_dir(case_id: str) -> Path:
-    """Devuelve la ruta a 00_Input/05_Demanda judicial/ del caso (sin crearla)."""
-    return caso_path(case_id) / "00_Input" / _DEMANDA_SUBDIR
+def _manual_dir(case_id: str) -> Path:
+    """Devuelve la ruta a ``00_Input/04_Manual/`` del caso (sin crearla)."""
+    return caso_path(case_id) / "00_Input" / _MANUAL_SUBDIR
 
 
 # ---------------------------------------------------------------------------
@@ -46,10 +52,11 @@ def _demanda_dir(case_id: str) -> Path:
 # ---------------------------------------------------------------------------
 
 def save_file(case_id: str, filename: str, content: bytes) -> Path:
-    """Guarda un archivo en ``00_Input/05_Demanda judicial/``.
+    """Guarda un archivo en ``00_Input/04_Manual/``.
 
     Crea el directorio si no existe. Si ya existe un archivo con el mismo
-    nombre, lo sobreescribe (el abogado puede subir versiones actualizadas).
+    nombre, lo sobreescribe (versionado por nombre — el equipo puede subir
+    versiones actualizadas sin renombrar).
 
     Args:
         case_id:  Identificador del caso (debe existir en ``casos_root``).
@@ -76,7 +83,7 @@ def save_file(case_id: str, filename: str, content: bytes) -> Path:
             "Llama a ensure_case() antes de save_file()."
         )
 
-    dest_dir = _demanda_dir(case_id)
+    dest_dir = _manual_dir(case_id)
     dest_dir.mkdir(parents=True, exist_ok=True)
 
     dest = dest_dir / filename
@@ -85,7 +92,7 @@ def save_file(case_id: str, filename: str, content: bytes) -> Path:
 
 
 def extract_zip(case_id: str, content: bytes) -> list[Path]:
-    """Extrae un ZIP en ``00_Input/05_Demanda judicial/``.
+    """Extrae un ZIP en ``00_Input/04_Manual/``.
 
     Cada entrada del ZIP se guarda relativa al directorio de destino,
     respetando la estructura interna de carpetas. Las rutas se sanean para
@@ -109,12 +116,11 @@ def extract_zip(case_id: str, content: bytes) -> list[Path]:
             "Llama a ensure_case() antes de extract_zip()."
         )
 
-    dest_dir = _demanda_dir(case_id)
+    dest_dir = _manual_dir(case_id)
     dest_dir.mkdir(parents=True, exist_ok=True)
 
     extracted: list[Path] = []
 
-    import io
     with zipfile.ZipFile(io.BytesIO(content)) as zf:
         for member in zf.infolist():
             # Saltarse directorios puros
@@ -125,7 +131,6 @@ def extract_zip(case_id: str, content: bytes) -> list[Path]:
             # componentes absolutos o caracteres nulos — no se intenta rescatar.
             member_path = Path(member.filename)
             try:
-                # Rechazar si algún componente es peligroso
                 if any(
                     part in ("..", "") or Path(part).is_absolute()
                     for part in member_path.parts
@@ -150,10 +155,12 @@ def extract_zip(case_id: str, content: bytes) -> list[Path]:
 
 
 def list_files(case_id: str) -> list[Path]:
-    """Lista los archivos en ``00_Input/05_Demanda judicial/`` del caso.
+    """Lista los archivos en ``00_Input/04_Manual/`` del caso.
 
     Excluye archivos de control internos (``.pulled``, ``_inventory.json``, etc.).
     Devuelve lista vacía si el directorio no existe o no hay archivos.
+    Solo nivel raíz: si ``extract_zip`` creó subcarpetas, sus archivos no
+    aparecen aquí (el paso 7 de la UI puede mejorarlo si se decide).
 
     Args:
         case_id: Identificador del caso.
@@ -161,7 +168,7 @@ def list_files(case_id: str) -> list[Path]:
     Returns:
         Lista de ``Path`` ordenada alfabéticamente.
     """
-    d = _demanda_dir(case_id)
+    d = _manual_dir(case_id)
     if not d.exists():
         return []
     return sorted(

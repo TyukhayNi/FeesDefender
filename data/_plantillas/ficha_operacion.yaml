@@ -1,0 +1,328 @@
+# Ficha de operación normalizada. La sección `datos_operacion` define
+# 14 hitos con score+fecha+observaciones. Los scores se derivan
+# automáticamente de las respuestas del cuestionario_viabilidad.yaml
+# vía las reglas declaradas en `score.regla_derivacion`. La derivación
+# real la hará core/viabilidad.py (horizonte 3).
+
+version: 1
+ultima_actualizacion: "2026-05-08"
+
+bloques:
+
+  - id: cabecera
+    titulo: INFORME DE VIABILIDAD
+    campos:
+      - {id: ref, etiqueta: REF, tipo: texto_libre,
+         prerrellenar_desde: "<equipo> - <direccion> (<id_go>)"}
+      - {id: fecha, etiqueta: FECHA, tipo: fecha,
+         prerrellenar_desde: fecha_creacion_caso}
+
+  - id: equipo
+    titulo: EQUIPO COMERCIAL
+    campos:
+      - {id: director_captador, etiqueta: DIRECTOR CAPTADOR, tipo: texto_libre}
+      - {id: asesor_captador,   etiqueta: ASESOR CAPTADOR,   tipo: texto_libre}
+      - {id: director_buscador, etiqueta: DIRECTOR BUSCADOR, tipo: texto_libre}
+      - {id: asesor_buscador,   etiqueta: ASESOR BUSCADOR,   tipo: texto_libre}
+
+  - id: contexto
+    titulo: CONTEXTO
+    campos:
+      - {id: observaciones,    etiqueta: OBSERVACIONES,     tipo: texto_libre_multiline}
+      - id: motivos_impago
+        etiqueta: MOTIVOS DE IMPAGO
+        tipo: texto_libre_multiline
+        nota: Aplica a BAD_DEBT y NEGATIVA_*. Vacío en VUELTA / RESP. PROF.
+
+  - id: importes
+    titulo: IMPORTES
+    campos:
+      - {id: precio,                etiqueta: PRECIO,                  tipo: numero}
+      - {id: porcentaje_honorarios, etiqueta: "% HONORARIOS",          tipo: numero, valor_default: 5}
+      - id: total_honorarios
+        etiqueta: TOTAL HONORARIOS (con IVA 21%)
+        tipo: formula
+        formula_excel: "=PRECIO/100*PCT_HONORARIOS*1.21"
+        nota: |
+          Compraventa. Para arrendamiento ajustar a la fórmula del encargo
+          (típicamente una mensualidad o porcentaje sobre la renta anual).
+      - {id: pagos_parciales, etiqueta: PAGOS PARCIALES, tipo: numero, valor_default: 0}
+      - id: total_deuda
+        etiqueta: TOTAL DEUDA
+        tipo: formula
+        formula_excel: "=TOTAL_HONORARIOS-PAGOS_PARCIALES"
+      - {id: propuesta_pago, etiqueta: PROPUESTA DE PAGO, tipo: numero}
+      - id: diferencia
+        etiqueta: DIFERENCIA
+        tipo: formula
+        formula_excel: "=TOTAL_DEUDA-PROPUESTA_PAGO"
+
+  - id: viabilidad
+    titulo: VIABILIDAD
+    descripcion: |
+      Tres dimensiones evaluadas por el abogado con criterio jurídico.
+      El TOTAL del bloque DATOS OPERACIÓN es entrada auxiliar, no salida automática.
+    campos:
+      - {id: viabilidad_juridica, etiqueta: JURÍDICA, tipo: enum,
+         opciones: [verde, amarillo, rojo, pendiente], valor_default: pendiente}
+      - {id: viabilidad_finanzas, etiqueta: FINANZAS, tipo: enum,
+         opciones: [verde, amarillo, rojo, pendiente], valor_default: pendiente}
+      - {id: viabilidad_global,   etiqueta: GLOBAL,   tipo: enum,
+         opciones: [verde, amarillo, rojo, pendiente], valor_default: pendiente}
+    formato_condicional:
+      - {valor: verde,     fondo: "C6EFCE", texto: "006100"}
+      - {valor: amarillo,  fondo: "FFEB9C", texto: "9C5700"}
+      - {valor: rojo,      fondo: "FFC7CE", texto: "9C0006"}
+      - {valor: pendiente, fondo: "D9D9D9", texto: "595959"}
+
+  - id: datos_operacion
+    titulo: DATOS OPERACIÓN
+    descripcion: |
+      Tabla de checks documentales rellenada inicialmente por la
+      Administración (revisión del Drive E&V + CRM). Cada hito tiene
+      SCORE + FECHA + OBSERVACIONES. El TOTAL = SUM(scores no-N/A) es
+      una métrica auxiliar de robustez documental.
+    columnas: [hito, score, fecha, observaciones]
+    hitos:
+
+      - id: cuantia
+        etiqueta: CUANTÍA
+        score:
+          tipo: categorico
+          regla:
+            formula_excel: "=IF(TOTAL_DEUDA<=10000,1,IF(TOTAL_DEUDA<=20000,2,3))"
+            rangos:
+              "≤ 10.000 €": 1
+              "10.001 € – 20.000 €": 2
+              "> 20.000 €": 3
+            nota: Cuantía reclamada (= TOTAL DEUDA del bloque IMPORTES).
+        fecha: false
+        observaciones: true
+
+      - id: encargo
+        etiqueta: ENCARGO
+        score:
+          tipo: booleano_compuesto
+          regla_derivacion:
+            score_1_si_todas:
+              - {pregunta: cap_08,  valor: si}
+              - {pregunta: cap_13,  valor: si}
+              - {pregunta: cap_08b, valor: si}
+              - {pregunta: cap_08c, valor: si}
+              - {pregunta: cap_08d, valor: si}
+            score_0_en_otro_caso: true
+            nota: |
+              Si cap_08d == no_cotejado → score=0 (política conservadora):
+              en juicio una firma sin cotejar es debilidad probatoria.
+        fecha:
+          tipo: fecha
+          fuente: documento_encargo
+        observaciones: true
+
+      - id: identificacion_propietario
+        etiqueta: IDENTIFICACIÓN PROPIETARIO
+        score:
+          tipo: booleano
+          regla_derivacion:
+            score_1_si: {pregunta: cap_17, valor: si}
+            score_0_si: {pregunta: cap_17, valor: no}
+        fecha: false
+        observaciones: true
+
+      - id: titularidad
+        etiqueta: TITULARIDAD
+        score:
+          tipo: booleano
+          regla_derivacion:
+            score_1_si: {pregunta: cap_18a, valor: si}
+            score_0_si: {pregunta: cap_18a, valor: no}
+        fecha:
+          tipo: fecha
+          fuente: pregunta
+          pregunta: cap_18b
+        observaciones: true
+        observaciones_automaticas:
+          - condicion: {pregunta: cap_18c, valor: no}
+            texto: |
+              ATENCIÓN: los titulares de la nota simple no coinciden con
+              los Clientes que firmaron el encargo. Verificar
+              representación o título alternativo.
+
+      - id: hoja_visita
+        etiqueta: HOJA DE VISITA
+        score:
+          tipo: booleano_con_na
+          regla_derivacion:
+            score_na_si:
+              - {pregunta: vis_00, valor: no}
+            score_1_si_todas:
+              - {pregunta: vis_05, valor: si}
+              - {pregunta: vis_06, valor_in: [original, copia]}
+            score_0_en_otro_caso: true
+        fecha:
+          tipo: fecha
+          fuente: documento_hoja_visita
+        observaciones: true
+
+      - id: oferta
+        etiqueta: OFERTA
+        score:
+          tipo: booleano
+          regla_derivacion:
+            score_1_si: {pregunta: ofb_05, valor: si}
+            score_0_si: {pregunta: ofb_05, valor: no}
+        fecha:
+          tipo: fecha
+          fuente: documento_oferta
+        observaciones: true
+
+      - id: identificacion_buscador
+        etiqueta: IDENTIFICACIÓN BUSCADOR
+        score:
+          tipo: booleano
+          regla_derivacion:
+            score_1_si: {pregunta: vis_09, valor: si}
+            score_0_si: {pregunta: vis_09, valor: no}
+        fecha: false
+        observaciones: true
+        observaciones_automaticas:
+          - condicion: {pregunta: vis_10, valor: no}
+            texto: "ATENCIÓN: discrepancia de firmas entre la oferta y el DNI del buscador."
+          - condicion: {pregunta: vis_10, valor: no_cotejado}
+            texto: "Pendiente cotejar firmas oferta vs DNI buscador."
+
+      - id: arras_arrendamiento
+        etiqueta: ARRAS / ARRENDAMIENTO
+        score:
+          tipo: booleano_con_na
+          regla_derivacion:
+            score_1_si:  {pregunta: arr_00, valor: firmadas}
+            score_0_si:  {pregunta: arr_00, valor: intentadas_no_firmadas}
+            score_na_si: {pregunta: arr_00, valor: no_aplica}
+        fecha:
+          tipo: fecha
+          fuente: pregunta
+          pregunta: arr_00_fecha
+        observaciones: true
+
+      - id: reconocimiento_arras
+        etiqueta: RECONOCIMIENTO HONORARIOS — ARRAS
+        score:
+          tipo: booleano_con_na
+          regla_derivacion:
+            score_1_si:  {pregunta: arr_13, valor: si}
+            score_0_si:  {pregunta: arr_13, valor: no}
+            score_na_si: {pregunta: arr_13, valor: no_aplica}
+        fecha:
+          tipo: fecha
+          fuente: pregunta
+          pregunta: arr_13_fecha
+        observaciones: true
+
+      - id: escritura
+        etiqueta: ESCRITURA
+        score:
+          tipo: booleano_con_na
+          regla_derivacion:
+            score_1_si:  {pregunta: esc_01, valor: si}
+            score_0_si:  {pregunta: esc_01, valor: no}
+            score_na_si: {pregunta: esc_01, valor: no_aplica}
+        fecha:
+          tipo: fecha
+          fuente: pregunta
+          pregunta: esc_01_fecha
+        observaciones: true
+        observaciones_automaticas:
+          - condicion:
+              y:
+                - {pregunta: esc_01, valor: si}
+                - {pregunta: esc_02, valor: no}
+            texto: "Confirmar otorgamiento solicitando nota simple actualizada."
+
+      - id: reconocimiento_escritura
+        etiqueta: RECONOCIMIENTO HONORARIOS — ESCRITURA
+        score:
+          tipo: booleano_con_na
+          regla_derivacion:
+            score_1_si:  {pregunta: esc_03, valor: si}
+            score_0_si:  {pregunta: esc_03, valor: no}
+            score_na_si: {pregunta: esc_03, valor: no_aplica}
+        fecha:
+          tipo: fecha
+          fuente: pregunta
+          pregunta: esc_03_fecha
+        observaciones: true
+
+      - id: reclamacion_finanzas
+        etiqueta: RECLAMACIÓN FINANZAS
+        score:
+          tipo: booleano_con_na
+          regla_derivacion:
+            score_1_si:  {pregunta: rec_01, valor: si}
+            score_0_si:  {pregunta: rec_01, valor: no}
+            score_na_si: {pregunta: rec_01, valor: no_aplica}
+        fecha:
+          tipo: fecha
+          fuente: pregunta
+          pregunta: rec_01_fecha
+        observaciones: true
+
+      - id: reclamacion_juridico
+        etiqueta: RECLAMACIÓN JURÍDICO
+        score:
+          tipo: booleano
+          regla_derivacion:
+            score_1_si: {pregunta: rec_02, valor: si}
+            score_0_si: {pregunta: rec_02, valor: no}
+        fecha:
+          tipo: fecha
+          fuente: pregunta
+          pregunta: rec_02_fecha
+        observaciones: true
+
+      - id: respuesta_reclamacion
+        etiqueta: RESPUESTA A LA RECLAMACIÓN
+        score:
+          tipo: booleano_con_na
+          regla_derivacion:
+            score_1_si:  {pregunta: rec_03, valor: si}
+            score_0_si:  {pregunta: rec_03, valor: no}
+            score_na_si: {pregunta: rec_03, valor: en_plazo}
+        fecha:
+          tipo: fecha
+          fuente: pregunta
+          pregunta: rec_03_fecha
+        observaciones: true
+
+      - id: oferta_vinculante_confidencial
+        etiqueta: OFERTA VINCULANTE CONFIDENCIAL
+        score:
+          tipo: booleano_con_na
+          regla_derivacion:
+            score_1_si:  {pregunta: rec_04, valor: si}
+            score_0_si:  {pregunta: rec_04, valor: no}
+            score_na_si: {pregunta: rec_04, valor: no_aplica}
+        fecha:
+          tipo: fecha
+          fuente: pregunta
+          pregunta: rec_04_fecha
+        observaciones: true
+
+    total:
+      etiqueta: TOTAL
+      formula_excel: "=SUM(<rango_columna_score>)"
+      interpretacion: |
+        TOTAL = nº de checks documentales superados (excluyendo N/A).
+        Métrica auxiliar para la decisión de viabilidad. Sin umbrales fijos:
+        el abogado pondera el TOTAL contra las observaciones, la cuantía y
+        el resto del contexto. SUM ignora celdas con texto (N/A), así que
+        N/A no infla ni reduce el total.
+
+  - id: actividades
+    titulo: ACTIVIDADES
+    descripcion: Métricas cuantitativas de la actividad mediadora.
+    campos:
+      - {id: exposes_propiedad, etiqueta: EXPOSÉS — PROPIEDAD, tipo: numero}
+      - {id: visitas_propiedad, etiqueta: VISITAS — PROPIEDAD, tipo: numero}
+      - {id: exposes_buscador,  etiqueta: EXPOSÉS — BUSCADOR,  tipo: numero}
+      - {id: visitas_buscador,  etiqueta: VISITAS — BUSCADOR,  tipo: numero}

@@ -1,14 +1,20 @@
-"""Tests del módulo intake_demanda — sin dependencias externas.
+"""Tests del módulo intake_manual — sin dependencias externas.
 
 Cubre:
-- save_file: guarda en la ruta correcta, crea la carpeta si no existe,
-  sobreescribe si ya existe (idempotencia), rechaza nombres con rutas.
+
+- save_file: guarda en la ruta correcta (``04_Manual/``), crea la carpeta
+  si no existe, sobreescribe si ya existe (idempotencia), rechaza nombres
+  con rutas.
 - extract_zip: extrae archivos planos y con subdirectorios, ignora entradas
   con path traversal, lanza BadZipFile con contenido inválido.
-- list_files: devuelve lista vacía si no hay carpeta, lista archivos ordenados,
-  excluye archivos de control.
+- list_files: devuelve lista vacía si no hay carpeta, lista archivos
+  ordenados, excluye archivos de control.
 - FileNotFoundError si el caso no existe al llamar save_file / extract_zip.
-- ensure_case crea 05_Demanda judicial automáticamente.
+- ensure_case crea ``04_Manual`` automáticamente.
+
+Histórico: tests heredados de ``test_intake_demanda``, adaptados al
+refactor intake v2 (destino ``04_Manual/`` en lugar de
+``05_Demanda judicial/``).
 """
 
 from __future__ import annotations
@@ -21,7 +27,7 @@ import zipfile
 import pytest
 
 from core import case_manager
-from core.intake_demanda import extract_zip, list_files, save_file
+from core.intake_manual import extract_zip, list_files, save_file
 
 
 # ---------------------------------------------------------------------------
@@ -50,11 +56,11 @@ def _reload_config(tmp_casos_root, monkeypatch):
 
 
 @pytest.fixture
-def caso_dem(tmp_casos_root):
+def caso_man(tmp_casos_root):
     """Caso de prueba con estructura completa."""
     importlib.reload(case_manager)
-    case_manager.ensure_case("DEM-2026-001", titulo="Caso demanda judicial test")
-    return "DEM-2026-001"
+    case_manager.ensure_case("MAN-2026-001", titulo="Caso intake manual test")
+    return "MAN-2026-001"
 
 
 # ---------------------------------------------------------------------------
@@ -62,34 +68,32 @@ def caso_dem(tmp_casos_root):
 # ---------------------------------------------------------------------------
 
 class TestSaveFile:
-    def test_guarda_en_ruta_correcta(self, caso_dem, tmp_casos_root):
-        dest = save_file(caso_dem, "demanda.pdf", b"%PDF-test")
+    def test_guarda_en_ruta_correcta(self, caso_man, tmp_casos_root):
+        dest = save_file(caso_man, "demanda.pdf", b"%PDF-test")
         assert dest.exists()
         assert dest.name == "demanda.pdf"
-        assert dest.parent.name == "05_Demanda judicial"
+        assert dest.parent.name == "04_Manual"
         assert dest.read_bytes() == b"%PDF-test"
 
-    def test_crea_directorio_si_no_existe(self, caso_dem, tmp_casos_root):
-        # La carpeta se crea aunque ensure_case no haya sido llamado con el nuevo subdir
-        demanda_dir = tmp_casos_root / caso_dem / "00_Input" / "05_Demanda judicial"
-        # Eliminar la carpeta si existe para probar que save_file la recrea
-        if demanda_dir.exists():
+    def test_crea_directorio_si_no_existe(self, caso_man, tmp_casos_root):
+        manual_dir = tmp_casos_root / caso_man / "00_Input" / "04_Manual"
+        if manual_dir.exists():
             import shutil
-            shutil.rmtree(demanda_dir)
-        save_file(caso_dem, "auto.pdf", b"contenido")
-        assert demanda_dir.exists()
+            shutil.rmtree(manual_dir)
+        save_file(caso_man, "auto.pdf", b"contenido")
+        assert manual_dir.exists()
 
-    def test_sobreescribe_si_existe(self, caso_dem, tmp_casos_root):
-        save_file(caso_dem, "doc.pdf", b"v1")
-        save_file(caso_dem, "doc.pdf", b"v2-actualizado")
-        dest = tmp_casos_root / caso_dem / "00_Input" / "05_Demanda judicial" / "doc.pdf"
+    def test_sobreescribe_si_existe(self, caso_man, tmp_casos_root):
+        save_file(caso_man, "doc.pdf", b"v1")
+        save_file(caso_man, "doc.pdf", b"v2-actualizado")
+        dest = tmp_casos_root / caso_man / "00_Input" / "04_Manual" / "doc.pdf"
         assert dest.read_bytes() == b"v2-actualizado"
 
-    def test_multiples_archivos(self, caso_dem, tmp_casos_root):
-        save_file(caso_dem, "demanda.pdf", b"pdf")
-        save_file(caso_dem, "auto_admision.pdf", b"pdf2")
-        save_file(caso_dem, "notificacion.docx", b"docx")
-        archivos = list_files(caso_dem)
+    def test_multiples_archivos(self, caso_man, tmp_casos_root):
+        save_file(caso_man, "demanda.pdf", b"pdf")
+        save_file(caso_man, "auto_admision.pdf", b"pdf2")
+        save_file(caso_man, "notificacion.docx", b"docx")
+        archivos = list_files(caso_man)
         nombres = [p.name for p in archivos]
         assert "demanda.pdf" in nombres
         assert "auto_admision.pdf" in nombres
@@ -99,13 +103,13 @@ class TestSaveFile:
         with pytest.raises(FileNotFoundError, match="no existe"):
             save_file("CASO-INEXISTENTE", "demanda.pdf", b"datos")
 
-    def test_error_nombre_con_ruta(self, caso_dem, tmp_casos_root):
+    def test_error_nombre_con_ruta(self, caso_man, tmp_casos_root):
         with pytest.raises(ValueError, match="no válido"):
-            save_file(caso_dem, "../escape.pdf", b"datos")
+            save_file(caso_man, "../escape.pdf", b"datos")
 
-    def test_error_nombre_vacio(self, caso_dem, tmp_casos_root):
+    def test_error_nombre_vacio(self, caso_man, tmp_casos_root):
         with pytest.raises(ValueError, match="no válido"):
-            save_file(caso_dem, "", b"datos")
+            save_file(caso_man, "", b"datos")
 
 
 # ---------------------------------------------------------------------------
@@ -114,33 +118,31 @@ class TestSaveFile:
 
 class TestListFiles:
     def test_vacio_si_sin_carpeta(self, tmp_casos_root):
-        # Caso sin carpeta 05_Demanda judicial
         importlib.reload(case_manager)
-        case_manager.ensure_case("SIN-DEMANDA", titulo="Sin demanda")
-        demanda_dir = tmp_casos_root / "SIN-DEMANDA" / "00_Input" / "05_Demanda judicial"
-        if demanda_dir.exists():
+        case_manager.ensure_case("SIN-MANUAL", titulo="Sin manual")
+        manual_dir = tmp_casos_root / "SIN-MANUAL" / "00_Input" / "04_Manual"
+        if manual_dir.exists():
             import shutil
-            shutil.rmtree(demanda_dir)
-        assert list_files("SIN-DEMANDA") == []
+            shutil.rmtree(manual_dir)
+        assert list_files("SIN-MANUAL") == []
 
-    def test_vacio_si_caso_sin_archivos(self, caso_dem):
-        assert list_files(caso_dem) == []
+    def test_vacio_si_caso_sin_archivos(self, caso_man):
+        assert list_files(caso_man) == []
 
-    def test_lista_ordenada(self, caso_dem, tmp_casos_root):
-        save_file(caso_dem, "z_ultimo.pdf", b"z")
-        save_file(caso_dem, "a_primero.pdf", b"a")
-        save_file(caso_dem, "m_medio.pdf", b"m")
-        nombres = [p.name for p in list_files(caso_dem)]
+    def test_lista_ordenada(self, caso_man, tmp_casos_root):
+        save_file(caso_man, "z_ultimo.pdf", b"z")
+        save_file(caso_man, "a_primero.pdf", b"a")
+        save_file(caso_man, "m_medio.pdf", b"m")
+        nombres = [p.name for p in list_files(caso_man)]
         assert nombres == sorted(nombres)
 
-    def test_excluye_archivos_de_control(self, caso_dem, tmp_casos_root):
-        save_file(caso_dem, "real.pdf", b"pdf")
-        demanda_dir = tmp_casos_root / caso_dem / "00_Input" / "05_Demanda judicial"
-        # Crear archivos de control manualmente
-        (demanda_dir / ".pulled").write_text("{}", encoding="utf-8")
-        (demanda_dir / "_inventory.json").write_text("{}", encoding="utf-8")
-        (demanda_dir / ".synced").write_text("", encoding="utf-8")
-        archivos = list_files(caso_dem)
+    def test_excluye_archivos_de_control(self, caso_man, tmp_casos_root):
+        save_file(caso_man, "real.pdf", b"pdf")
+        manual_dir = tmp_casos_root / caso_man / "00_Input" / "04_Manual"
+        (manual_dir / ".pulled").write_text("{}", encoding="utf-8")
+        (manual_dir / "_inventory.json").write_text("{}", encoding="utf-8")
+        (manual_dir / ".synced").write_text("", encoding="utf-8")
+        archivos = list_files(caso_man)
         nombres = [p.name for p in archivos]
         assert nombres == ["real.pdf"]
 
@@ -150,75 +152,75 @@ class TestListFiles:
 # ---------------------------------------------------------------------------
 
 class TestExtractZip:
-    def test_extrae_archivos_planos(self, caso_dem, tmp_casos_root):
+    def test_extrae_archivos_planos(self, caso_man, tmp_casos_root):
         content = _make_zip({
             "demanda.pdf": b"%PDF-1",
             "anexo_1.docx": b"PK...",
         })
-        extracted = extract_zip(caso_dem, content)
+        extracted = extract_zip(caso_man, content)
         nombres = [p.name for p in extracted]
         assert "demanda.pdf" in nombres
         assert "anexo_1.docx" in nombres
         assert len(extracted) == 2
 
-    def test_preserva_subdirectorios(self, caso_dem, tmp_casos_root):
+    def test_preserva_subdirectorios(self, caso_man, tmp_casos_root):
         content = _make_zip({
             "carpeta/auto_admision.pdf": b"auto",
             "carpeta/subcarpeta/diligencia.pdf": b"diligencia",
         })
-        extracted = extract_zip(caso_dem, content)
+        extracted = extract_zip(caso_man, content)
         rutas_rel = [
-            str(p.relative_to(tmp_casos_root / caso_dem / "00_Input" / "05_Demanda judicial"))
+            str(p.relative_to(tmp_casos_root / caso_man / "00_Input" / "04_Manual"))
             for p in extracted
         ]
         assert any("carpeta" in r for r in rutas_rel)
         assert len(extracted) == 2
 
-    def test_contenido_correcto(self, caso_dem, tmp_casos_root):
+    def test_contenido_correcto(self, caso_man, tmp_casos_root):
         content = _make_zip({"demanda.pdf": b"contenido-real"})
-        extracted = extract_zip(caso_dem, content)
+        extracted = extract_zip(caso_man, content)
         assert extracted[0].read_bytes() == b"contenido-real"
 
-    def test_ignora_path_traversal(self, caso_dem, tmp_casos_root):
+    def test_ignora_path_traversal(self, caso_man, tmp_casos_root):
         # Entrada maliciosa con ../
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w") as zf:
             zf.writestr("../escape.txt", b"malicioso")
             zf.writestr("valido.pdf", b"ok")
         content = buf.getvalue()
-        extracted = extract_zip(caso_dem, content)
+        extracted = extract_zip(caso_man, content)
         nombres = [p.name for p in extracted]
         assert "escape.txt" not in nombres
         assert "valido.pdf" in nombres
 
-    def test_sobreescribe_existente(self, caso_dem, tmp_casos_root):
-        save_file(caso_dem, "doc.pdf", b"v1")
+    def test_sobreescribe_existente(self, caso_man, tmp_casos_root):
+        save_file(caso_man, "doc.pdf", b"v1")
         content = _make_zip({"doc.pdf": b"v2-desde-zip"})
-        extract_zip(caso_dem, content)
-        dest = tmp_casos_root / caso_dem / "00_Input" / "05_Demanda judicial" / "doc.pdf"
+        extract_zip(caso_man, content)
+        dest = tmp_casos_root / caso_man / "00_Input" / "04_Manual" / "doc.pdf"
         assert dest.read_bytes() == b"v2-desde-zip"
 
-    def test_error_zip_invalido(self, caso_dem):
+    def test_error_zip_invalido(self, caso_man):
         with pytest.raises(zipfile.BadZipFile):
-            extract_zip(caso_dem, b"esto no es un zip")
+            extract_zip(caso_man, b"esto no es un zip")
 
     def test_error_caso_no_existe(self, tmp_casos_root):
         content = _make_zip({"f.pdf": b"x"})
         with pytest.raises(FileNotFoundError, match="no existe"):
             extract_zip("CASO-INEXISTENTE", content)
 
-    def test_zip_vacio(self, caso_dem):
+    def test_zip_vacio(self, caso_man):
         content = _make_zip({})
-        extracted = extract_zip(caso_dem, content)
+        extracted = extract_zip(caso_man, content)
         assert extracted == []
 
-    def test_devuelve_lista_ordenada(self, caso_dem, tmp_casos_root):
+    def test_devuelve_lista_ordenada(self, caso_man, tmp_casos_root):
         content = _make_zip({
             "z.pdf": b"z",
             "a.pdf": b"a",
             "m.pdf": b"m",
         })
-        extracted = extract_zip(caso_dem, content)
+        extracted = extract_zip(caso_man, content)
         nombres = [p.name for p in extracted]
         assert nombres == sorted(nombres)
 
@@ -227,9 +229,9 @@ class TestExtractZip:
 # Integración con ensure_case
 # ---------------------------------------------------------------------------
 
-class TestEnsureCaseCrea05:
-    def test_ensure_case_crea_carpeta_demanda(self, tmp_casos_root):
+class TestEnsureCaseCrea04Manual:
+    def test_ensure_case_crea_carpeta_manual(self, tmp_casos_root):
         importlib.reload(case_manager)
-        case_manager.ensure_case("NUEVO-J", titulo="Nuevo judicial")
-        demanda_dir = tmp_casos_root / "NUEVO-J" / "00_Input" / "05_Demanda judicial"
-        assert demanda_dir.exists(), "ensure_case debe crear 05_Demanda judicial"
+        case_manager.ensure_case("NUEVO-MAN", titulo="Nuevo manual")
+        manual_dir = tmp_casos_root / "NUEVO-MAN" / "00_Input" / "04_Manual"
+        assert manual_dir.exists(), "ensure_case debe crear 04_Manual"

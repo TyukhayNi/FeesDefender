@@ -11,6 +11,8 @@
 │   sync_sudespacho · sync_sudespacho_legacy
 │   sudespacho_create · sudespacho_relations
 │   intake_drive                       │  ← pull Drive E&V (rclone gdrive_ev)
+│   intake_manual                      │  ← upload manual a 04_Manual/
+│   intake_log · intake_manifest       │  ← refactor v2 (M10 + M9)
 │   extractor · markdown_generator     │
 │   scorer · viability · demanda       │
 │   linker · llm · pipeline            │
@@ -50,6 +52,11 @@ Cada paso es ejecutable de forma aislada. El pipeline es **idempotente**: re-eje
 | `prompts/*.md` | Invalidar frontmatter `prompt_hash` en `.md` generados existentes (re-ejecutar pipeline sobre casos afectados) |
 | `core/pipeline.py` — orden de pasos | `docs/ARQUITECTURA.md` sección "Flujo de un caso", `STATUS.md` sección Pipeline |
 | `core/intake_drive.py` — campos `CaseMeta` | `core/case_manager.py` (`drive_ev_team_id`, `drive_ev_folder_id`), `tests/test_intake_drive.py` |
+| `core/intake_log.py` — `INTAKE_EVENTS` | callers que emiten eventos: `core/sync_sudespacho.pull_expediente_v2`, futuros consumidores en UI Streamlit (paso 7 refactor v2) |
+| `core/intake_manifest.py` — schema o reglas reconcile | `core/sync_sudespacho.pull_expediente_v2`, futuros pulls v2 (intake_drive si se migra) |
+| `core/case_manager.py` — `crm_branch_path` o reglas derivación | `data/_plantillas/ficha_operacion.yaml` (regla_derivacion canónica), `data/_plantillas/cuestionario_viabilidad.yaml` (campo `respalda`), eventual `core/viabilidad.py` (horizonte 3) |
+| `core/config.py` — `CRM_TREE` o `CARPETA_ID_TO_PATH` | `docs/INTEGRACION_SUDESPACHO.md` §13.5 (mappings), `docs/INTEGRACION_SUDESPACHO.md` §13.6 (estructura árbol) |
+| `data/_plantillas/*.yaml` | regenerar XLSX con `python -m scripts.render_plantillas all` y commitear ambos (YAML + XLSX) |
 | Añadir módulo nuevo en `core/` | `core/__init__.py`, `docs/ARQUITECTURA.md` diagrama de capas, `STATUS.md` inventario |
 | Añadir script en `scripts/` | `STATUS.md` sección "Cómo arrancar", `pyproject.toml` si tiene entry point |
 | Añadir prompt en `prompts/` | `STATUS.md` inventario, `core/viability.py` o módulo que lo consume |

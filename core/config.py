@@ -189,8 +189,9 @@ INPUT_SUBDIRS: tuple[str, ...] = (
     "01_Drive EV",        # carpeta W-XXXXXX del Drive engelvoelkers.com (intake automatizado)
     "02_Whatsapp",        # conversaciones exportadas manualmente (automatización pendiente)
     "03_Email",           # hilos de correo exportados manualmente (automatización pendiente)
-    "04_Manual",          # cualquier documento que no proceda de las fuentes anteriores
-    "05_Demanda judicial",  # demanda + docs judiciales subidos manualmente desde la UI
+    "04_Manual",          # uploads manuales desde la UI (incluye demanda defensiva tras refactor v2)
+    "05_CRM",             # árbol del gestor documental sudespacho (CRM_TREE; ver §13 de docs/INTEGRACION_SUDESPACHO.md)
+    "06_Entrevistas",     # <YYYY-MM-DD>_<rol>_<apellido>/ con grabación + transcripción
 )
 
 # Subcarpetas de nivel 3 dentro de 02_Whatsapp/
@@ -213,6 +214,108 @@ EMAIL_SUBDIRS: tuple[str, ...] = (
 def caso_path(case_id: str) -> Path:
     """Devuelve la ruta absoluta a un caso. No lo crea."""
     return settings.casos_root / case_id
+
+
+# ---------------------------------------------------------------------------
+# Refactor intake v2 — árbol del gestor documental + entrevistas + viabilidad
+# ---------------------------------------------------------------------------
+#
+# Decisiones D1–D12 + M1–M10 cerradas (memoria persistente:
+# project_intake_estructura_v2.md). Documentación de la estrategia híbrida y
+# de los mappings empíricos: docs/INTEGRACION_SUDESPACHO.md sección 13.
+#
+# Convenciones:
+#   - Capitalización tipo oración (D3) — siglas se mantienen (M7).
+#   - Separador de paths internos: "/" (forward slash). Coincide con filesystem
+#     y con la salida canónica de crm_branch_path() (D11).
+
+# Subcarpeta CRM dentro de 00_Input/ (constante para evitar literales sueltos).
+CRM_SUBDIR: str = "05_CRM"
+
+# Nombre de la carpeta de fallback dentro de 05_CRM/ cuando crm_branch_path()
+# no resuelve a una rama del árbol (M5-Q2). Prefijo "99_" deliberado: el filtro
+# de core/anon/api.py:330 excluye carpetas con prefijo "_", así que "_Sin
+# categoria/" eliminaría los huérfanos del pipeline de anonimización. "99_"
+# mantiene el orden visual al final del árbol sin chocar con ese filtro.
+CRM_FALLBACK_PATH: str = "99_Sin categoria"
+
+# Subcarpeta de entrevistas dentro de 00_Input/.
+ENTREVISTAS_SUBDIR: str = "06_Entrevistas"
+
+# Árbol del gestor documental — anidado, recorrido recursivo trivial (M4-Q2).
+# Cada nodo terminal es un dict vacío {}. ensure_case() recorre este árbol en
+# eager y crea todas las ramas de todos los casos nuevos (D1).
+#
+# Cualquier cambio aquí debe reflejarse en docs/INTEGRACION_SUDESPACHO.md §13.6.
+CRM_TREE: dict[str, dict] = {
+    "General": {},
+    "Civil": {
+        "1ª Instancia": {
+            "Declarativo": {
+                "Demanda": {},
+                "Oposicion": {},
+            },
+            "Monitorio": {
+                "Demanda": {},
+                "Oposicion": {},
+            },
+            "Documentacion RGPD LOPD": {},
+            "Documentos": {},
+        },
+        "Preliminares": {
+            "Demanda": {},
+        },
+        "Apelacion": {},
+        "Ejecucion": {},
+    },
+    "Penal": {
+        "1ª Instancia": {
+            "Fase oral": {},
+            "Instruccion": {
+                "Denuncia": {},
+            },
+        },
+        "Apelacion": {},
+        "Ejecucion": {},
+    },
+}
+
+# Mapping empírico id_carpeta (string numérico devuelto por
+# /api/element_registries/gdocu) → ruta canónica dentro de 05_CRM/.
+#
+# Mappings cerrados a 2026-05-08 (verificados contra el expediente 657 del
+# tenant tnm con la regla de doble verificación: usuario en CRM UI + Claude
+# vía probe REST). Nuevos IDs se descubren progresivamente vía evento
+# `category_unknown` en _intake_log.jsonl (M10).
+CARPETA_ID_TO_PATH: dict[str, str] = {
+    "1": "General",
+    "307": "Civil/1ª Instancia/Declarativo/Demanda",
+}
+
+# Roles válidos para la subcarpeta 06_Entrevistas/<YYYY-MM-DD>_<rol>_<apellido>/
+# (M2 / P6, set cerrado). Reevaluar si surge un rol no contemplado (perito,
+# tercero, etc.).
+ENTREVISTA_ROLES: frozenset[str] = frozenset({
+    "consultor",
+    "director",
+    "team_leader",
+    "propietario",
+    "buscador",
+})
+
+# Tipos de caso para los que ensure_case() copia la plantilla
+# data/_plantillas/informe_viabilidad.xlsx a 02_Analisis/_informe_viabilidad.xlsx
+# (M1, copiado condicional). BAD_DEBT, LAU_20 y DEVOLUCION_RESERVA quedan fuera
+# por decisión de producto.
+INFORME_VIABILIDAD_TIPOS: frozenset[str] = frozenset({
+    "NEGATIVA_OFERTA",
+    "NEGATIVA_ARRAS",
+    "NEGATIVA_ESCRITURA",
+    "NEGATIVA_CONTRATO_ARRENDAMIENTO",
+    "VUELTA",
+    "INCUMPLIMIENTO_EXCLUSIVA",
+    "RESPONSABILIDAD_PROFESIONAL",
+})
 
 
 # ---------------------------------------------------------------------------

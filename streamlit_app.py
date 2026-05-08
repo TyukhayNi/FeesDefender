@@ -20,7 +20,7 @@ from core.intake_drive import (
     parse_ev_folder_name as _parse_ev_folder_name,
     pull_drive_ev,
 )
-from core import intake_demanda
+from core import intake_manual
 from core import share_drive as _sd
 import zipfile as _zipfile
 from core.sudespacho_relations import (
@@ -467,10 +467,10 @@ with tab_casos:
             )
 
             # ── Archivos ya guardados ──────────────────────────────────────
-            _dem_files = intake_demanda.list_files(_caso_dem)
+            _dem_files = intake_manual.list_files(_caso_dem)
             if _dem_files:
                 st.caption(
-                    f"**{len(_dem_files)}** archivo/s en `05_Demanda judicial/`:"
+                    f"**{len(_dem_files)}** archivo/s en `04_Manual/`:"
                 )
                 for _df in _dem_files:
                     _size_kb = _df.stat().st_size // 1024
@@ -489,7 +489,7 @@ with tab_casos:
                 help=(
                     "Sube la demanda y demás documentos judiciales "
                     "(autos, notificaciones, diligencias…). "
-                    "Se guardan en `00_Input/05_Demanda judicial/`. "
+                    "Se guardan en `00_Input/04_Manual/`. "
                     "Los archivos **ZIP se descomprimen automáticamente** manteniendo "
                     "la estructura de carpetas interna."
                 ),
@@ -507,14 +507,14 @@ with tab_casos:
                     try:
                         _raw = _uf.read()
                         if _uf.name.lower().endswith(".zip"):
-                            _extracted = intake_demanda.extract_zip(_caso_dem, _raw)
+                            _extracted = intake_manual.extract_zip(_caso_dem, _raw)
                             _saved_dem += len(_extracted)
                             st.success(
                                 f"✅ **{_uf.name}** descomprimido — "
                                 f"**{len(_extracted)}** archivo/s extraídos."
                             )
                         else:
-                            intake_demanda.save_file(_caso_dem, _uf.name, _raw)
+                            intake_manual.save_file(_caso_dem, _uf.name, _raw)
                             _saved_dem += 1
                     except _zipfile.BadZipFile:
                         _errors_dem.append(
@@ -527,7 +527,7 @@ with tab_casos:
                     # Mensaje global solo si no hay ZIPs (los ZIPs ya muestran su propio mensaje)
                     st.success(
                         f"✅ **{_saved_dem}** archivo/s guardados "
-                        f"en `05_Demanda judicial/`."
+                        f"en `04_Manual/`."
                     )
                 for _err_dem in _errors_dem:
                     st.error(f"❌ {_err_dem}")

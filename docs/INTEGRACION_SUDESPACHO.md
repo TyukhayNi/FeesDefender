@@ -719,6 +719,145 @@ BiRS1, BiRS2, SaRS1, SeRS6, SSRR1, SSRS1, VaRS5, BaCS10 (extraj→ID 139), MaRS1
 
 ---
 
+## 13. Árbol del gestor documental
+
+> Conocimiento empírico necesario para el refactor intake v2 (`05_CRM/`).
+> Fuente única de los mappings: `core/config.py` (`CARPETA_ID_TO_PATH`).
+> Última actualización: 2026-05-08.
+
+### 13.1 Por qué esta sección existe
+
+El refactor v2 de `00_Input/` (ver memoria persistente `project_intake_estructura_v2.md`)
+deposita cada documento descargado del CRM en la rama exacta del árbol del gestor
+documental dentro de `05_CRM/<rama>/`. Para hacerlo, FeesDefender necesita saber a qué
+rama (`Civil/1ª Instancia/Declarativo/Demanda`, `General`, `Penal/Apelacion`, etc.)
+corresponde cada documento.
+
+El endpoint REST devuelve un identificador de carpeta y un label, pero **no la
+jerarquía completa**. Esta sección documenta: (a) qué llega y qué no, (b) el dead
+end del endpoint que expondría el árbol, y (c) la estrategia híbrida adoptada en
+v1 con sus mappings empíricos.
+
+### 13.2 Lo que sí devuelve el CRM por documento
+
+`GET /api/element_registries/gdocu?...` (ver detalle en sección 3.1) devuelve por
+cada documento, dentro de `values[]`:
+
+| Propiedad | Tipo | Ejemplo | Notas |
+|---|---|---|---|
+| `id_carpeta` | string (entero) | `"307"` | ID numérico de la carpeta del gestor documental |
+| `id_carpeta_label` | string | `"DEMANDA"`, `""` | Solo el **nodo hoja**, no la jerarquía. Puede venir vacío. |
+
+La jerarquía completa (`Civil > 1ª Instancia > Declarativo > Demanda`) **no llega**
+en la respuesta del endpoint `gdocu`. Lo confirma el probe `scripts/probe_gdocu.py`
+ejecutado contra el expediente 657 el 2026-05-08.
+
+### 13.3 Dead end: `/api/folders/gdocu/{parent}` no expone el árbol
+
+El endpoint `GET /api/folders/gdocu/{parent}?related_element=...&related_member=...`
+está documentado como ✅ Confirmado en la tabla 3.1, pero la query exploratoria
+con `parent=0` (raíz) devuelve `[]` para todos los expedientes del tenant tnm.
+
+- Re-confirmado el 2026-05-08 con `scripts/probe_gdocu_tree.py` contra el
+  expediente 657 (judicial con docs en `Civil > 1ª Instancia > Declarativo >
+  Demanda` y `General`): 0 carpetas devueltas.
+- Detalle completo en `docs/DEAD_ENDS.md` → sección «`/api/folders/gdocu/0?related_element=...`».
+
+**Investigación pendiente (no bloquea el refactor):** capturar HAR del gestor
+documental en Chrome o consultar `developers.sudespacho.net` para descubrir la
+query correcta (probable parámetro adicional o `parent` distinto de `0`). Si
+aparece, sustituir el mapping hardcodeado por auto-construcción dinámica.
+
+### 13.4 Estrategia híbrida `crm_branch_path()` v1
+
+Implementación en `core/case_manager.py` (helper) + `core/config.py` (constantes).
+El helper recibe `(case_id, id_carpeta, id_carpeta_label)` y devuelve la `Path`
+local relativa dentro de `05_CRM/`. Tres niveles de resolución, en este orden:
+
+1. **Lookup directo en `CARPETA_ID_TO_PATH`** (mapping hardcodeado por ID numérico).
+2. **Heurística por `id_carpeta_label`** si el ID no está en el mapping pero el
+   label es inequívoco dentro del árbol local v2 (p. ej. label `"DEMANDA"` con
+   ambigüedad entre `Civil/1ª Instancia/Declarativo/Demanda`,
+   `Civil/1ª Instancia/Monitorio/Demanda`, `Civil/Preliminares/Demanda` y
+   `Penal/1ª Instancia/Instruccion/Denuncia` — no se aplica si hay >1 candidato).
+3. **Fallback `05_CRM/99_Sin categoria/<expediente_id>/<filename>`** cuando ni el
+   ID ni el label resuelven a una rama única. Cada caída en fallback escribe un
+   evento `category_unknown` en `_intake_log.jsonl` (M10) con `id_carpeta` +
+   `id_carpeta_label` + `expediente_id` para descubrimiento progresivo.
+
+El nombre `99_Sin categoria/` (no `_Sin categoria/`) es deliberado: el filtro de
+`core/anon/api.py:330` excluye carpetas con prefijo `_`, y los huérfanos deben
+seguir entrando en el pipeline de anonimización. El prefijo `99_` mantiene el
+orden visual al final del árbol sin chocar con ese filtro.
+
+**Normalización tolerante:** el helper acepta `id_carpeta` como string o int, y
+`id_carpeta_label` con cualquier capitalización / con o sin acentos. Devuelve
+siempre la forma canónica tipo oración con separador `/` (p. ej.
+`Civil/1ª Instancia/Declarativo/Demanda`), que coincide 1:1 con el filesystem.
+
+### 13.5 Mappings empíricos confirmados
+
+Constante `CARPETA_ID_TO_PATH` en `core/config.py`. Mappings cerrados a
+2026-05-08 (verificados en producción contra el expediente 657):
+
+| `id_carpeta` | Path local en `05_CRM/` | Origen del mapping |
+|---|---|---|
+| `"1"` | `General` | Raíz del gestor documental — escritos genéricos (apersonación de procurador, escritos a juzgado, etc.). Confirmado empíricamente 2026-05-08. |
+| `"307"` | `Civil/1ª Instancia/Declarativo/Demanda` | Carpeta del expediente 657 (Civil > 1ª Instancia > Declarativo > DEMANDA). Confirmado vía doble verificación: usuario en CRM UI + Claude en `id_carpeta` REST. |
+
+**Nuevos IDs se descubren progresivamente:** cada `id_carpeta` no mapeado cae al
+fallback y escribe un evento `category_unknown` en `_intake_log.jsonl`. La
+sesión de revisión periódica del log permite añadir el ID al mapping una vez
+identificada la rama por el usuario en la UI del CRM (regla de doble
+verificación).
+
+### 13.6 Estructura del árbol local v2 (recordatorio)
+
+El árbol que se crea bajo `00_Input/05_CRM/` en cada caso nuevo (D1 — eager,
+todas las ramas siempre):
+
+```
+05_CRM/
+├── General/
+├── Civil/
+│   ├── 1ª Instancia/
+│   │   ├── Declarativo/{Demanda, Oposicion}/
+│   │   ├── Monitorio/{Demanda, Oposicion}/
+│   │   ├── Documentacion RGPD LOPD/
+│   │   └── Documentos/
+│   ├── Preliminares/Demanda/
+│   ├── Apelacion/
+│   └── Ejecucion/
+└── Penal/
+    ├── 1ª Instancia/
+    │   ├── Fase oral/
+    │   └── Instruccion/Denuncia/
+    ├── Apelacion/
+    └── Ejecucion/
+```
+
+Capitalización tipo oración (D3); siglas se mantienen (`Documentacion RGPD LOPD`,
+M7). Mercantil, Concursal, Laboral y Contencioso-administrativo se tratan
+procesalmente como Civil — si el CRM devolviera categorías tipo `MERCANTIL > ...`
+o `LABORAL > ...`, el helper debe mapearlas a `Civil/...`. JVB y ETJ no se usan
+(M8).
+
+### 13.7 Ámbito y limitaciones de v1
+
+- Solo aplica a casos nuevos (D6). Casos antiguos con estructura v1
+  (`sudespacho_<id>/`) están congelados — el detector
+  `case_manager.is_legacy_intake_v1` bloquea el pull v2 con un mensaje claro en
+  UI. Migración manual: borrar `sudespacho_*/` + `force-pull` v2.
+- El mapping crece manualmente por descubrimiento. No hay sincronización
+  automática contra el CRM.
+- Si el endpoint `/api/folders/gdocu/{parent}` empezara a devolver el árbol con
+  alguna query distinta, el migrar a auto-construcción es trivial:
+  reescribir `core/case_manager.crm_branch_path` para consultar el árbol al
+  inicio de cada pull (cacheado por expediente) y conservar
+  `CARPETA_ID_TO_PATH` solo como fallback.
+
+---
+
 ## 11. Historial de descubrimientos
 
 | Fecha | Descubrimiento |

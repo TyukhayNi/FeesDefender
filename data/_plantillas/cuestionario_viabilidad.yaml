@@ -1,0 +1,725 @@
+# Fuente única del cuestionario de viabilidad. El XLSX se genera desde aquí
+# vía scripts/render_plantillas.py. Editar este fichero, regenerar XLSX, commit.
+#
+# Cada pregunta lleva opcionalmente `respalda: [hito_id, ...]` para indicar
+# qué hito(s) de la ficha de operación contribuye a justificar. La regla
+# canónica de cómo se calcula el score vive en ficha_operacion.yaml.
+
+version: 1
+ultima_actualizacion: "2026-05-08"
+referencia_origen: "Protocolo_Preguntas_Viabilidad_EV - Negativas + Vueltas.docx"
+
+introduccion: |
+  Protocolo de preguntas para análisis de viabilidad de reclamaciones
+  judiciales de honorarios de mediación inmobiliaria (Engel & Völkers).
+  Cada pregunta tiene un objetivo probatorio concreto. Las respuestas
+  alimentan la ficha de operación (scores documentales) y proporcionan
+  el contexto cualitativo para la decisión final del jurista.
+
+tipos_aplicables:
+  - NEGATIVA_OFERTA
+  - NEGATIVA_ARRAS
+  - NEGATIVA_ESCRITURA
+  - NEGATIVA_CONTRATO_ARRENDAMIENTO
+  - VUELTA
+  - INCUMPLIMIENTO_EXCLUSIVA
+  - RESPONSABILIDAD_PROFESIONAL
+
+preambulo:
+  tipos_respuesta:
+    boolean: "Sí / No / Pendiente"
+    fecha: "DD/MM/AAAA o N/A"
+    numero: entero o decimal
+    texto_libre: respuesta abierta
+    enum: lista cerrada definida en `opciones`
+  fuentes_probables_validas:
+    [encargo, oferta, arras, escritura, hoja_visita, exposes, dni,
+     nota_simple, email, whatsapp, entrevista, crm, otros]
+
+secciones:
+
+  # ─────────────────────────────────────────────────────────────────────
+  - id: captacion
+    titulo: "1. Captación del inmueble (encargo)"
+    descripcion: |
+      Identifica prueba documental del título (encargo), su validez,
+      modificaciones y prueba documental disponible.
+    aplica_a_tipos: [NEGATIVA_OFERTA, NEGATIVA_ARRAS, NEGATIVA_ESCRITURA,
+                     NEGATIVA_CONTRATO_ARRENDAMIENTO, VUELTA,
+                     INCUMPLIMIENTO_EXCLUSIVA, RESPONSABILIDAD_PROFESIONAL]
+    preguntas:
+
+      - id: cap_01
+        texto: ¿Cómo conseguiste el contacto con el propietario?
+        objetivo_probatorio: Fuente del lead (contacto privado, web E&V, Idealista...).
+        tipo_respuesta: texto_libre
+        fuente_probable: [encargo, entrevista]
+
+      - id: cap_02
+        texto: ¿Con quién hablaste al inicio? Indica nombre y apellidos.
+        objetivo_probatorio: Identificar interlocutor para localizar emails y WhatsApps.
+        tipo_respuesta: texto_libre
+        fuente_probable: [entrevista, email, whatsapp]
+
+      - id: cap_03
+        texto: ¿Llegaste a conocer en persona a ese interlocutor?
+        objetivo_probatorio: Entender con quién y cómo nos comunicábamos y qué prueba puede existir.
+        tipo_respuesta: boolean
+        fuente_probable: [entrevista]
+
+      - id: cap_04
+        texto: ¿Cómo os comunicabais habitualmente?
+        objetivo_probatorio: Medios y personas (correo, teléfono, WhatsApp, con quién).
+        tipo_respuesta: texto_libre
+        fuente_probable: [entrevista, email, whatsapp]
+
+      - id: cap_05
+        texto: ¿Preparaste una Listing Presentation (PPT de valoración)?
+        objetivo_probatorio: Acreditar actividad pre-encargo y profesionalidad.
+        tipo_respuesta: boolean
+        fuente_probable: [entrevista, email]
+
+      - id: cap_06
+        texto: ¿Adelantaste el encargo antes de firmarlo para que lo revisaran?
+        objetivo_probatorio: Probar información precontractual y validez del consentimiento (LGDCU).
+        tipo_respuesta: boolean
+        fuente_probable: [email, whatsapp, entrevista]
+
+      - id: cap_07
+        texto: ¿Cómo lo adelantaste?
+        objetivo_probatorio: Copia en su casa, e-mail o WhatsApp.
+        tipo_respuesta: enum
+        opciones: [copia_papel, email, whatsapp, no_aplica]
+        fuente_probable: [email, whatsapp, entrevista]
+
+      - id: cap_08
+        texto: ¿Se firmó finalmente el encargo de mediación?
+        objetivo_probatorio: Confirmar que tenemos título en el que fundamentar la reclamación.
+        tipo_respuesta: boolean
+        fuente_probable: [encargo, crm]
+        respalda: [encargo]
+
+      - id: cap_08b
+        texto: ¿El encargo está completo (todas las páginas, todas las cláusulas)?
+        objetivo_probatorio: Sub-check de integridad documental del encargo.
+        tipo_respuesta: boolean
+        fuente_probable: [encargo]
+        respalda: [encargo]
+
+      - id: cap_08c
+        texto: ¿Aparecen las firmas de TODOS los Clientes que figuran como tales en el encargo?
+        objetivo_probatorio: Sub-check de firmas completas.
+        tipo_respuesta: boolean
+        fuente_probable: [encargo]
+        respalda: [encargo]
+
+      - id: cap_08d
+        texto: Las firmas del encargo, ¿coinciden razonablemente con las de los DNI?
+        objetivo_probatorio: Sub-check de cotejo de firmas para prevenir impugnaciones.
+        tipo_respuesta: enum
+        opciones: [si, no, no_cotejado]
+        fuente_probable: [encargo, dni]
+        respalda: [encargo]
+
+      - id: cap_09
+        texto: ¿Se modificaron las condiciones del encargo (honorarios, precio, etc.)?
+        objetivo_probatorio: Si hubo modificación, comprobar si tenemos anexo o instrucciones del propietario.
+        tipo_respuesta: boolean
+        fuente_probable: [encargo, email, whatsapp]
+
+      - id: cap_10
+        texto: ¿Quién firmó el encargo por parte del propietario?
+        objetivo_probatorio: Analizar si hubo representante o mandato verbal.
+        tipo_respuesta: texto_libre
+        fuente_probable: [encargo]
+
+      - id: cap_11
+        texto: ¿Cómo se firmó el encargo?
+        objetivo_probatorio: Identificar tipo de prueba (papel o electrónica vía DocuSign).
+        tipo_respuesta: enum
+        opciones: [presencial_papel, docusign, otra_electronica]
+        fuente_probable: [encargo]
+
+      - id: cap_12
+        texto: ¿Dónde se firmó el encargo y en qué circunstancias?
+        objetivo_probatorio: Valorar aplicación de normativa de consumidores sobre desistimiento.
+        tipo_respuesta: texto_libre
+        fuente_probable: [encargo, entrevista]
+
+      - id: cap_13
+        texto: ¿Tenemos el original firmado del encargo?
+        objetivo_probatorio: Prever posibles impugnaciones de autenticidad.
+        tipo_respuesta: boolean
+        fuente_probable: [encargo, crm]
+        respalda: [encargo]
+
+      - id: cap_14
+        texto: ¿El propietario te dio poderes o autorización para comercializar? ¿Cómo se acredita?
+        objetivo_probatorio: Valorar la suficiencia de la representación.
+        tipo_respuesta: texto_libre
+        fuente_probable: [encargo, email, entrevista]
+
+      - id: cap_15
+        texto: ¿Teníamos llaves del inmueble?
+        objetivo_probatorio: Entender la dinámica de las visitas.
+        tipo_respuesta: boolean
+        fuente_probable: [entrevista, email]
+
+      - id: cap_16
+        texto: ¿El propietario solía estar presente en las visitas?
+        objetivo_probatorio: Valorar si pudo conocer al buscador (relevante para vueltas).
+        tipo_respuesta: boolean
+        fuente_probable: [entrevista, hoja_visita]
+
+      - id: cap_17
+        texto: ¿Disponemos de copia del DNI de todos los Clientes propietarios?
+        objetivo_probatorio: Acreditar identificación documental de los deudores.
+        tipo_respuesta: boolean
+        fuente_probable: [dni, crm]
+        respalda: [identificacion_propietario]
+
+      - id: cap_18a
+        texto: ¿Existe nota simple de la propiedad pedida en la captación?
+        objetivo_probatorio: Acreditar titularidad del inmueble en el momento del encargo.
+        tipo_respuesta: boolean
+        fuente_probable: [nota_simple, crm]
+        respalda: [titularidad]
+
+      - id: cap_18b
+        texto: Fecha de la nota simple de la captación.
+        objetivo_probatorio: Datar el documento de titularidad.
+        tipo_respuesta: fecha
+        fuente_probable: [nota_simple]
+        respalda: [titularidad]
+
+      - id: cap_18c
+        texto: Los titulares de la nota simple, ¿coinciden con los Clientes del encargo?
+        objetivo_probatorio: Detectar problemas de representación o titularidad indirecta.
+        tipo_respuesta: boolean
+        fuente_probable: [nota_simple, encargo]
+        respalda: [titularidad]
+
+  # ─────────────────────────────────────────────────────────────────────
+  - id: comercializacion
+    titulo: "2. Comercialización"
+    descripcion: Acreditar la actividad de la agencia.
+    aplica_a_tipos: [NEGATIVA_OFERTA, NEGATIVA_ARRAS, NEGATIVA_ESCRITURA,
+                     NEGATIVA_CONTRATO_ARRENDAMIENTO, VUELTA,
+                     INCUMPLIMIENTO_EXCLUSIVA, RESPONSABILIDAD_PROFESIONAL]
+    preguntas:
+
+      - id: com_01
+        texto: ¿Cuántas visitas aproximadamente se realizaron al inmueble?
+        objetivo_probatorio: Medir el alcance de la actividad mediadora.
+        tipo_respuesta: numero
+        fuente_probable: [hoja_visita, crm, entrevista]
+
+      - id: com_02
+        texto: ¿Cuántos exposés del inmueble se enviaron?
+        objetivo_probatorio: Medir el alcance de la actividad mediadora.
+        tipo_respuesta: numero
+        fuente_probable: [crm, email, entrevista]
+
+  # ─────────────────────────────────────────────────────────────────────
+  - id: visitas
+    titulo: "3. Visitas"
+    descripcion: Vincular al buscador con la agencia.
+    aplica_a_tipos: [NEGATIVA_OFERTA, NEGATIVA_ARRAS, NEGATIVA_ESCRITURA,
+                     NEGATIVA_CONTRATO_ARRENDAMIENTO, VUELTA,
+                     INCUMPLIMIENTO_EXCLUSIVA, RESPONSABILIDAD_PROFESIONAL]
+    preguntas:
+
+      - id: vis_00
+        texto: ¿La hoja de visita es relevante en este caso?
+        objetivo_probatorio: Determinar si el hito HOJA DE VISITA aplica al expediente.
+        tipo_respuesta: boolean
+        fuente_probable: [entrevista]
+        respalda: [hoja_visita]
+
+      - id: vis_01
+        texto: ¿Cómo llegó el lead del buscador?
+        objetivo_probatorio: Acreditar el origen del contacto (Idealista, web E&V...).
+        tipo_respuesta: texto_libre
+        fuente_probable: [crm, email, entrevista]
+
+      - id: vis_02
+        texto: ¿Con quién tratabas por parte del buscador? Nombre y apellidos.
+        objetivo_probatorio: Identificar pruebas documentales (e-mail, WhatsApp).
+        tipo_respuesta: texto_libre
+        fuente_probable: [hoja_visita, email, whatsapp]
+
+      - id: vis_03
+        texto: ¿Cómo os comunicabais?
+        objetivo_probatorio: Identificar medios de prueba de la gestión.
+        tipo_respuesta: texto_libre
+        fuente_probable: [email, whatsapp, entrevista]
+
+      - id: vis_04
+        texto: ¿Le enviaste el exposé del inmueble? ¿Cómo?
+        objetivo_probatorio: Acreditar actividad mediadora con el buscador.
+        tipo_respuesta: enum
+        opciones: [email, crm_leadhub, whatsapp, no_enviado]
+        fuente_probable: [crm, email, whatsapp]
+
+      - id: vis_05
+        texto: ¿El buscador firmó hoja de visita?
+        objetivo_probatorio: Acreditar la visita.
+        tipo_respuesta: boolean
+        fuente_probable: [hoja_visita]
+        respalda: [hoja_visita]
+
+      - id: vis_06
+        texto: ¿Tenemos copia o el original de la hoja de visita?
+        objetivo_probatorio: Asegurar medio de prueba.
+        tipo_respuesta: enum
+        opciones: [original, copia, ninguno]
+        fuente_probable: [hoja_visita, crm]
+        respalda: [hoja_visita]
+
+      - id: vis_07
+        texto: ¿Cuántas visitas hizo el buscador al inmueble?
+        objetivo_probatorio: Acreditar la intensidad del contacto agencia-buscador.
+        tipo_respuesta: numero
+        fuente_probable: [hoja_visita, entrevista]
+
+      - id: vis_08
+        texto: ¿Quién estuvo presente en las visitas?
+        objetivo_probatorio: Reconstruir las circunstancias.
+        tipo_respuesta: texto_libre
+        fuente_probable: [hoja_visita, entrevista]
+
+      - id: vis_09
+        texto: ¿Disponemos de copia del DNI de todos los Clientes buscadores?
+        objetivo_probatorio: Acreditar identificación documental del buscador.
+        tipo_respuesta: boolean
+        fuente_probable: [dni, crm]
+        respalda: [identificacion_buscador]
+
+      - id: vis_10
+        texto: Las firmas de los buscadores en la oferta, ¿coinciden con las de sus DNI?
+        objetivo_probatorio: Sub-check de cotejo de firmas oferta vs DNI buscador.
+        tipo_respuesta: enum
+        opciones: [si, no, no_cotejado]
+        fuente_probable: [oferta, dni]
+        respalda: [identificacion_buscador]
+
+  # ─────────────────────────────────────────────────────────────────────
+  - id: oferta_buscador
+    titulo: "4. Oferta — buscador"
+    descripcion: Acreditar la existencia de oferta y su documentación.
+    aplica_a_tipos: [NEGATIVA_OFERTA, NEGATIVA_ARRAS, NEGATIVA_ESCRITURA,
+                     NEGATIVA_CONTRATO_ARRENDAMIENTO, VUELTA,
+                     INCUMPLIMIENTO_EXCLUSIVA, RESPONSABILIDAD_PROFESIONAL]
+    preguntas:
+
+      - id: ofb_01
+        texto: ¿Cuántas ofertas hizo el buscador (incluso no formales) y cuál era el precio?
+        objetivo_probatorio: Incluye ofertas verbales o por WhatsApp.
+        tipo_respuesta: texto_libre
+        fuente_probable: [oferta, email, whatsapp, entrevista]
+
+      - id: ofb_02
+        texto: ¿Cuántas se formalizaron por escrito y cuál era el precio?
+        objetivo_probatorio: Formularios de oferta o cualquier documento.
+        tipo_respuesta: texto_libre
+        fuente_probable: [oferta, crm]
+
+      - id: ofb_03
+        texto: ¿Dónde y cómo firmó el buscador la oferta?
+        objetivo_probatorio: Acreditar consentimiento documentado.
+        tipo_respuesta: texto_libre
+        fuente_probable: [oferta, entrevista]
+
+      - id: ofb_04
+        texto: ¿Cómo te envió la oferta?
+        objetivo_probatorio: email, WhatsApp, presencial.
+        tipo_respuesta: enum
+        opciones: [email, whatsapp, presencial, otros]
+        fuente_probable: [email, whatsapp, oferta]
+
+      - id: ofb_05
+        texto: ¿Tenemos el original firmado de la oferta?
+        objetivo_probatorio: Prever impugnaciones de autenticidad. Implica existe + firmada por buscador.
+        tipo_respuesta: boolean
+        fuente_probable: [oferta, crm]
+        respalda: [oferta]
+
+      - id: ofb_06
+        texto: ¿El buscador entregó señal o reserva? ¿Por qué importe?
+        objetivo_probatorio: Normalmente consta en la oferta.
+        tipo_respuesta: texto_libre
+        fuente_probable: [oferta, crm]
+
+      - id: ofb_07
+        texto: ¿Se devolvió esa cantidad? ¿En qué circunstancias?
+        objetivo_probatorio: Documentar destino de la reserva.
+        tipo_respuesta: texto_libre
+        fuente_probable: [crm, email, entrevista]
+
+      - id: ofb_08
+        texto: ¿Firmó compromiso de seriedad de oferta? (solo Madrid)
+        objetivo_probatorio: Documento específico del flujo Madrid.
+        tipo_respuesta: boolean
+        fuente_probable: [oferta, crm]
+
+      - id: ofb_09
+        texto: ¿Tenemos el original del compromiso de seriedad?
+        objetivo_probatorio: Asegurar prueba documental.
+        tipo_respuesta: boolean
+        fuente_probable: [oferta, crm]
+
+  # ─────────────────────────────────────────────────────────────────────
+  - id: comunicacion_interna
+    titulo: "5. Comunicación interna"
+    descripcion: Identificar prueba interna de la mediación y su eficacia.
+    aplica_a_tipos: [NEGATIVA_OFERTA, NEGATIVA_ARRAS, NEGATIVA_ESCRITURA,
+                     NEGATIVA_CONTRATO_ARRENDAMIENTO, VUELTA,
+                     INCUMPLIMIENTO_EXCLUSIVA, RESPONSABILIDAD_PROFESIONAL]
+    preguntas:
+
+      - id: cin_01
+        texto: ¿Se creó un grupo o canal interno (p. ej. WhatsApp)?
+        objetivo_probatorio: Acreditar coordinación interna del equipo.
+        tipo_respuesta: boolean
+        fuente_probable: [whatsapp, email, entrevista]
+
+      - id: cin_02
+        texto: ¿Quién participaba en ese canal?
+        objetivo_probatorio: Identificar potenciales testigos del equipo.
+        tipo_respuesta: texto_libre
+        fuente_probable: [whatsapp, entrevista]
+
+      - id: cin_03
+        texto: ¿Se compartían ofertas y evolución de la operación?
+        objetivo_probatorio: Reconstruir la actividad de coordinación.
+        tipo_respuesta: boolean
+        fuente_probable: [whatsapp, email]
+
+  # ─────────────────────────────────────────────────────────────────────
+  - id: comunicacion_propietario
+    titulo: "6. Comunicación agencia — propietario"
+    descripcion: Acreditar traslado de oferta y aceptación.
+    aplica_a_tipos: [NEGATIVA_OFERTA, NEGATIVA_ARRAS, NEGATIVA_ESCRITURA,
+                     NEGATIVA_CONTRATO_ARRENDAMIENTO, VUELTA,
+                     INCUMPLIMIENTO_EXCLUSIVA, RESPONSABILIDAD_PROFESIONAL]
+    preguntas:
+
+      - id: cap_p_01
+        texto: ¿Cuántas ofertas comunicaste al propietario?
+        objetivo_probatorio: Acreditar diligencia.
+        tipo_respuesta: numero
+        fuente_probable: [email, whatsapp, entrevista]
+
+      - id: cap_p_02
+        texto: ¿Cómo se las enviaste?
+        objetivo_probatorio: Teléfono, email, WhatsApp.
+        tipo_respuesta: enum
+        opciones: [email, whatsapp, telefono, presencial, otros]
+        fuente_probable: [email, whatsapp, entrevista]
+
+      - id: cap_p_03
+        texto: ¿Cómo te comunicó el propietario la aceptación?
+        objetivo_probatorio: Acreditar aceptación.
+        tipo_respuesta: texto_libre
+        fuente_probable: [email, whatsapp, oferta, entrevista]
+
+      - id: cap_p_04
+        texto: ¿Te devolvió la oferta firmada?
+        objetivo_probatorio: Prueba documental de la aceptación.
+        tipo_respuesta: boolean
+        fuente_probable: [oferta, email]
+
+      - id: cap_p_05
+        texto: ¿Quién firmó la oferta por parte del propietario?
+        objetivo_probatorio: Validar capacidad/representación.
+        tipo_respuesta: texto_libre
+        fuente_probable: [oferta]
+
+      - id: cap_p_06
+        texto: ¿Dónde firmó el propietario?
+        objetivo_probatorio: Circunstancias del consentimiento.
+        tipo_respuesta: texto_libre
+        fuente_probable: [oferta, entrevista]
+
+      - id: cap_p_07
+        texto: ¿Tenemos el original firmado por el propietario?
+        objetivo_probatorio: Asegurar medio de prueba.
+        tipo_respuesta: boolean
+        fuente_probable: [oferta, crm]
+
+  # ─────────────────────────────────────────────────────────────────────
+  - id: arras
+    titulo: "7. Arras / Contrato privado"
+    descripcion: Acreditar gestión, aceptación de oferta y desistimiento del propietario.
+    aplica_a_tipos: [NEGATIVA_OFERTA, NEGATIVA_ARRAS, NEGATIVA_ESCRITURA,
+                     NEGATIVA_CONTRATO_ARRENDAMIENTO, VUELTA,
+                     INCUMPLIMIENTO_EXCLUSIVA, RESPONSABILIDAD_PROFESIONAL]
+    preguntas:
+
+      - id: arr_00
+        texto: ¿Se llegaron a preparar/firmar arras o contrato de arrendamiento?
+        objetivo_probatorio: Estado final del contrato de arras.
+        tipo_respuesta: enum
+        opciones: [firmadas, intentadas_no_firmadas, no_aplica]
+        fuente_probable: [arras, email, entrevista]
+        respalda: [arras_arrendamiento]
+
+      - id: arr_00_fecha
+        texto: Fecha de las arras (si firmadas) o de la planificación.
+        objetivo_probatorio: Datar el hito procesal.
+        tipo_respuesta: fecha
+        fuente_probable: [arras, email]
+        respalda: [arras_arrendamiento]
+
+      - id: arr_01
+        texto: ¿Preparasteis borrador de arras o de contrato privado?
+        objetivo_probatorio: Acreditar diligencia post-aceptación.
+        tipo_respuesta: boolean
+        fuente_probable: [arras, email, entrevista]
+
+      - id: arr_02
+        texto: ¿Se envió a los buscadores y cómo?
+        objetivo_probatorio: Documentar traslado del borrador.
+        tipo_respuesta: texto_libre
+        fuente_probable: [email, whatsapp, arras]
+
+      - id: arr_03
+        texto: ¿Se envió a los propietarios y cómo?
+        objetivo_probatorio: Documentar traslado del borrador.
+        tipo_respuesta: texto_libre
+        fuente_probable: [email, whatsapp, arras]
+
+      - id: arr_04
+        texto: ¿Los buscadores dieron su conformidad?
+        objetivo_probatorio: Acreditar acuerdo de partes.
+        tipo_respuesta: boolean
+        fuente_probable: [email, whatsapp, entrevista]
+
+      - id: arr_05
+        texto: ¿Los propietarios dieron su conformidad?
+        objetivo_probatorio: Acreditar acuerdo de partes.
+        tipo_respuesta: boolean
+        fuente_probable: [email, whatsapp, entrevista]
+
+      - id: arr_06
+        texto: ¿Hubo modificaciones de la oferta (fecha de arras u otras condiciones)?
+        objetivo_probatorio: Identificar prueba escrita de modificaciones.
+        tipo_respuesta: boolean
+        fuente_probable: [email, whatsapp, oferta]
+
+      - id: arr_07
+        texto: ¿Se fijó la fecha, hora y lugar de la firma?
+        objetivo_probatorio: Acreditar planificación efectiva.
+        tipo_respuesta: texto_libre
+        fuente_probable: [email, whatsapp, entrevista]
+
+      - id: arr_08
+        texto: ¿Los buscadores confirmaron por escrito su asistencia?
+        objetivo_probatorio: Documentar voluntad de los buscadores.
+        tipo_respuesta: boolean
+        fuente_probable: [email, whatsapp]
+
+      - id: arr_09
+        texto: ¿Los propietarios confirmaron por escrito su asistencia?
+        objetivo_probatorio: Documentar voluntad de los propietarios.
+        tipo_respuesta: boolean
+        fuente_probable: [email, whatsapp]
+
+      - id: arr_10
+        texto: ¿Los buscadores prepararon los medios de pago?
+        objetivo_probatorio: Acreditar diligencia de los buscadores.
+        tipo_respuesta: boolean
+        fuente_probable: [email, whatsapp, entrevista]
+
+      - id: arr_11
+        texto: ¿Cómo comunicó el propietario que no iba a firmar?
+        objetivo_probatorio: Documentar la negativa.
+        tipo_respuesta: texto_libre
+        fuente_probable: [email, whatsapp, entrevista]
+
+      - id: arr_12
+        texto: ¿Qué motivo dio el propietario para no firmar?
+        objetivo_probatorio: Calificar jurídicamente la negativa.
+        tipo_respuesta: texto_libre
+        fuente_probable: [email, whatsapp, entrevista]
+
+      - id: arr_13
+        texto: ¿Existe documento de reconocimiento de honorarios firmado en el momento de las arras?
+        objetivo_probatorio: Acreditar reconocimiento del derecho a honorarios en el hito arras.
+        tipo_respuesta: enum
+        opciones: [si, no, no_aplica]
+        fuente_probable: [arras, crm]
+        respalda: [reconocimiento_arras]
+
+      - id: arr_13_fecha
+        texto: Fecha del reconocimiento de honorarios — arras.
+        objetivo_probatorio: Datar el reconocimiento.
+        tipo_respuesta: fecha
+        fuente_probable: [arras]
+        respalda: [reconocimiento_arras]
+
+  # ─────────────────────────────────────────────────────────────────────
+  - id: vueltas
+    titulo: "8. Preguntas específicas — vueltas"
+    descripcion: Detectar ruptura del nexo causal.
+    aplica_a_tipos: [VUELTA]
+    preguntas:
+
+      - id: vue_01
+        texto: ¿Sabes si intervino otra agencia?
+        objetivo_probatorio: Valorar intervención de tercero.
+        tipo_respuesta: boolean
+        fuente_probable: [entrevista, email]
+
+      - id: vue_02
+        texto: ¿El buscador visitó el inmueble con otra agencia antes o después?
+        objetivo_probatorio: Analizar posible pérdida de causalidad.
+        tipo_respuesta: boolean
+        fuente_probable: [entrevista, hoja_visita]
+
+      - id: vue_03
+        texto: ¿El buscador hizo alguna oferta fuera de Engel & Völkers?
+        objetivo_probatorio: Valorar intervención decisiva de otro.
+        tipo_respuesta: boolean
+        fuente_probable: [entrevista, oferta]
+
+      - id: vue_04
+        texto: ¿Informaste al propietario de la identidad del buscador? ¿Cómo?
+        objetivo_probatorio: Acreditar que el propietario conocía al buscador por la agencia.
+        tipo_respuesta: texto_libre
+        fuente_probable: [email, whatsapp, oferta]
+
+      - id: vue_05
+        texto: Según tu experiencia, ¿cómo crees que el buscador llegó a contactar con el propietario?
+        objetivo_probatorio: Reconstruir la mecánica de la vuelta.
+        tipo_respuesta: texto_libre
+        fuente_probable: [entrevista]
+
+  # ─────────────────────────────────────────────────────────────────────
+  - id: team_leader
+    titulo: "9. Team leader"
+    descripcion: Detectar si el Team Leader tuvo intervención directa.
+    aplica_a_tipos: [NEGATIVA_OFERTA, NEGATIVA_ARRAS, NEGATIVA_ESCRITURA,
+                     NEGATIVA_CONTRATO_ARRENDAMIENTO, VUELTA,
+                     INCUMPLIMIENTO_EXCLUSIVA, RESPONSABILIDAD_PROFESIONAL]
+    preguntas:
+
+      - id: tl_01
+        texto: ¿Qué intervención tuvo el Team Leader en la operación?
+        objetivo_probatorio: Identificar testigo cualificado adicional.
+        tipo_respuesta: texto_libre
+        fuente_probable: [entrevista, email, whatsapp]
+
+  # ─────────────────────────────────────────────────────────────────────
+  - id: escritura
+    titulo: "10. Escritura (post-arras)"
+    descripcion: Acreditar otorgamiento o no de la escritura pública y reconocimiento de honorarios.
+    aplica_a_tipos: [NEGATIVA_OFERTA, NEGATIVA_ARRAS, NEGATIVA_ESCRITURA,
+                     NEGATIVA_CONTRATO_ARRENDAMIENTO, VUELTA,
+                     INCUMPLIMIENTO_EXCLUSIVA, RESPONSABILIDAD_PROFESIONAL]
+    preguntas:
+
+      - id: esc_01
+        texto: ¿Se otorgó finalmente la escritura pública?
+        objetivo_probatorio: Estado final del hito escritura.
+        tipo_respuesta: enum
+        opciones: [si, no, no_aplica]
+        fuente_probable: [escritura, nota_simple, crm]
+        respalda: [escritura]
+
+      - id: esc_01_fecha
+        texto: Fecha del otorgamiento (si aplica).
+        objetivo_probatorio: Datar el hito procesal.
+        tipo_respuesta: fecha
+        fuente_probable: [escritura, nota_simple]
+        respalda: [escritura]
+
+      - id: esc_02
+        texto: ¿Disponemos de nota simple actualizada (post-operación) que confirma el otorgamiento?
+        objetivo_probatorio: Verificar otorgamiento mediante prueba documental independiente.
+        tipo_respuesta: boolean
+        fuente_probable: [nota_simple]
+        respalda: [escritura]
+
+      - id: esc_03
+        texto: ¿Existe documento de reconocimiento de honorarios firmado en el momento de la escritura?
+        objetivo_probatorio: Acreditar reconocimiento del derecho a honorarios en el hito escritura.
+        tipo_respuesta: enum
+        opciones: [si, no, no_aplica]
+        fuente_probable: [escritura, crm]
+        respalda: [reconocimiento_escritura]
+
+      - id: esc_03_fecha
+        texto: Fecha del reconocimiento de honorarios — escritura.
+        objetivo_probatorio: Datar el reconocimiento.
+        tipo_respuesta: fecha
+        fuente_probable: [escritura]
+        respalda: [reconocimiento_escritura]
+
+  # ─────────────────────────────────────────────────────────────────────
+  - id: reclamacion
+    titulo: "11. Reclamación / posventa"
+    descripcion: Hitos de la fase de reclamación previa al juicio.
+    aplica_a_tipos: [NEGATIVA_OFERTA, NEGATIVA_ARRAS, NEGATIVA_ESCRITURA,
+                     NEGATIVA_CONTRATO_ARRENDAMIENTO, VUELTA,
+                     INCUMPLIMIENTO_EXCLUSIVA, RESPONSABILIDAD_PROFESIONAL]
+    preguntas:
+
+      - id: rec_01
+        texto: ¿Se hizo reclamación previa por parte de Finanzas?
+        objetivo_probatorio: Acreditar requerimiento administrativo previo.
+        tipo_respuesta: enum
+        opciones: [si, no, no_aplica]
+        fuente_probable: [crm, email]
+        respalda: [reclamacion_finanzas]
+
+      - id: rec_01_fecha
+        texto: Fecha de la reclamación de Finanzas.
+        objetivo_probatorio: Datar el requerimiento.
+        tipo_respuesta: fecha
+        fuente_probable: [crm, email]
+        respalda: [reclamacion_finanzas]
+
+      - id: rec_02
+        texto: ¿Se ha enviado reclamación jurídica (burofax)?
+        objetivo_probatorio: Acreditar requerimiento jurídico previo (interrupción de prescripción).
+        tipo_respuesta: boolean
+        fuente_probable: [crm, email]
+        respalda: [reclamacion_juridico]
+
+      - id: rec_02_fecha
+        texto: Fecha de envío de la reclamación jurídica (burofax).
+        objetivo_probatorio: Datar la interrupción de prescripción.
+        tipo_respuesta: fecha
+        fuente_probable: [crm, email]
+        respalda: [reclamacion_juridico]
+
+      - id: rec_03
+        texto: ¿Hubo respuesta a la reclamación jurídica?
+        objetivo_probatorio: Documentar la postura del deudor.
+        tipo_respuesta: enum
+        opciones: [si, no, en_plazo]
+        fuente_probable: [crm, email]
+        respalda: [respuesta_reclamacion]
+
+      - id: rec_03_fecha
+        texto: Fecha de la respuesta (si la hubo).
+        objetivo_probatorio: Datar la respuesta.
+        tipo_respuesta: fecha
+        fuente_probable: [crm, email]
+        respalda: [respuesta_reclamacion]
+
+      - id: rec_04
+        texto: ¿Hubo oferta vinculante confidencial del deudor?
+        objetivo_probatorio: Detectar oferta de transacción que pueda condicionar la viabilidad.
+        tipo_respuesta: enum
+        opciones: [si, no, no_aplica]
+        fuente_probable: [crm, email]
+        respalda: [oferta_vinculante_confidencial]
+
+      - id: rec_04_fecha
+        texto: Fecha de la oferta vinculante confidencial (si la hubo).
+        objetivo_probatorio: Datar la oferta de transacción.
+        tipo_respuesta: fecha
+        fuente_probable: [crm, email]
+        respalda: [oferta_vinculante_confidencial]

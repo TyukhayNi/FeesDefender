@@ -60,8 +60,19 @@ from typing import Any, Iterator
 
 import httpx
 
-from .config import caso_path
-from .utils import slugify
+from .case_manager import (
+    crm_branch_path,
+    is_legacy_intake_v1,
+    update_pull_state,
+)
+from .config import CRM_SUBDIR, caso_path
+from .intake_log import append_event as _log_event
+from .intake_manifest import (
+    IntakeManifest,
+    compute_sha256,
+    compute_sha256_bytes,
+)
+from .utils import now_iso, slugify
 
 
 class SudespachoError(RuntimeError):
@@ -1170,6 +1181,296 @@ def pull_expediente(
         )
     finally:
         if owns_api and api_client is not None:
+            api_client.__exit__(None, None, None)
+
+
+# ---------------------------------------------------------------------------
+# Pull v2 — refactor intake: 05_CRM/<rama>/ + dedup M9 + log M10 + estado D8
+# ---------------------------------------------------------------------------
+#
+# Coexiste con pull_expediente() v1 — los CLIs y la UI siguen usando v1 hasta
+# el paso 7 del refactor (project_intake_estructura_v2.md). v2 está pensado
+# para casos nuevos; sobre casos legacy (sudespacho_*/ presente) se bloquea
+# vía is_legacy_intake_v1() (D9).
+
+
+@dataclass
+class PullResultV2:
+    """Resultado del pull v2 — alineado con el schema D8 del pull state.
+
+    Diferencias respecto a PullResult (v1):
+    - No hay `bytes_downloaded`: con dedup M9 la métrica relevante no es lo
+      descargado por la red sino lo escrito a disco; eso lo cuenta
+      `documents_written`.
+    - `documents_total_crm` ≠ `documents_written` por el dedup M9.
+    - `by_carpeta` mapea ruta canónica relativa a `00_Input/05_CRM/` (D11)
+      → conteo lógico (incluye aliases del manifest, M9-Q3).
+    - `kind_distribution` agrega los modos de resolución de
+      `crm_branch_path` (id_mapping / label_heuristic / fallback).
+    """
+    case_id: str
+    expediente_id: str
+    element: str
+    blocked_legacy_v1: bool = False
+    documents_total_crm: int = 0
+    documents_written: int = 0
+    documents_skipped_dedup: int = 0
+    documents_failed: int = 0
+    doc_ids: list[str] = field(default_factory=list)
+    by_carpeta: dict[str, int] = field(default_factory=dict)
+    errors: list[str] = field(default_factory=list)
+    kind_distribution: dict[str, int] = field(default_factory=dict)
+
+
+def _resolve_name_collision(target: Path, sha: str) -> Path:
+    """Defensa en profundidad ante colisión de nombre con hash distinto.
+
+    Si `target` no existe, devuelve `target` tal cual.
+    Si existe con el **mismo** hash, devuelve `target` (sobrescritura segura,
+        es el mismo contenido).
+    Si existe con hash distinto, busca el primer `target__N.<ext>` libre.
+
+    En condiciones normales (manifest sincronizado), esta función nunca
+    aplica el sufijo: el manifest detecta el dup antes de llegar aquí. Es
+    fallback ante manifest perdido o intake mixto sin manifest.
+    """
+    if not target.exists():
+        return target
+    try:
+        existing = compute_sha256(target)
+    except OSError:
+        existing = None
+    if existing == sha:
+        return target
+    stem = target.stem
+    suffix = target.suffix
+    parent = target.parent
+    i = 1
+    while True:
+        cand = parent / f"{stem}__{i}{suffix}"
+        if not cand.exists():
+            return cand
+        i += 1
+
+
+def pull_expediente_v2(
+    case_id: str,
+    expediente_id: str,
+    *,
+    element: str = "expedientes_judiciales",
+    client: SudespachoClient | None = None,
+    actor: str | None = None,
+) -> PullResultV2:
+    """Pull v2 de un expediente CRM al árbol ``00_Input/05_CRM/<rama>/`` del caso.
+
+    Reescritura de :func:`pull_expediente` para el refactor intake v2
+    (memoria persistente: ``project_intake_estructura_v2.md``). Diferencias
+    clave respecto a v1:
+
+    - Deposita los docs en la rama exacta del árbol del gestor documental
+      vía :func:`crm_branch_path` (estrategia híbrida
+      ``CARPETA_ID_TO_PATH`` + heurística por label + fallback
+      ``99_Sin categoria/<expediente_id>/``).
+    - Dedup cross-source SHA-256 vía :class:`IntakeManifest` (M9): un
+      mismo doc que también llega de Drive E&V o email se persiste una sola
+      vez como copia física, registrando aliases.
+    - Estado del pull persistido en frontmatter de ``_caso.md`` vía
+      :func:`update_pull_state` (D8), no en ``.pulled`` JSON suelto.
+    - Eventos M10 emitidos a ``00_Input/_intake_log.jsonl`` (``pull_crm``
+      al cierre, ``category_unknown`` por cada fallback,
+      ``dedup_skipped`` por cada hash duplicado).
+    - Bloqueo de casos legacy v1 (D9): si existe ``sudespacho_*/`` en
+      ``00_Input/`` la función devuelve ``blocked_legacy_v1=True`` sin
+      escribir nada. La UI debe mostrar mensaje de migración manual.
+
+    Idempotencia: re-llamar es seguro y eficiente. El manifest M9 hace
+    skip natural sobre los hashes ya presentes; no se necesita flag
+    ``incremental`` ni ``force``.
+
+    Args:
+        case_id: ID del caso (debe existir y no ser legacy v1).
+        expediente_id: ID del expediente CRM.
+        element: ``"expedientes_judiciales"`` (default) | ``"extrajudiciales"``.
+        client: ``SudespachoClient`` pre-construido. Si None, se construye
+            uno desde ``.env``.
+        actor: Override del actor para los eventos M10. Si None usa
+            :func:`intake_log.get_actor`.
+
+    Returns:
+        :class:`PullResultV2` con resumen del pull.
+    """
+    case_root = caso_path(case_id)
+    input_root = case_root / "00_Input"
+    crm_root = input_root / CRM_SUBDIR
+
+    result = PullResultV2(
+        case_id=case_id,
+        expediente_id=str(expediente_id),
+        element=element,
+    )
+
+    # 1. Bloqueo de casos legacy v1 (D9)
+    if is_legacy_intake_v1(case_id):
+        result.blocked_legacy_v1 = True
+        result.errors.append(
+            "Caso con estructura v1 (sudespacho_*/) — pull v2 bloqueado. "
+            "Migración manual: borrar las carpetas sudespacho_*/ y volver a "
+            "llamar a pull_expediente_v2()."
+        )
+        return result
+
+    # 2. Cliente REST (sin PHPSESSID)
+    api_client = client
+    owns_client = False
+    if api_client is None:
+        try:
+            api_client = SudespachoClient()
+            owns_client = True
+        except SudespachoError as exc:
+            result.errors.append(f"No se pudo construir SudespachoClient: {exc}")
+            return result
+
+    try:
+        # 3. Listado de docs vía REST
+        try:
+            docs = api_client.list_gdocu_docs_rest(
+                str(expediente_id), element=element,
+            )
+        except SudespachoError as exc:
+            result.errors.append(f"list_gdocu_docs_rest: {exc}")
+            return result
+
+        result.documents_total_crm = len(docs)
+
+        if not docs:
+            result.errors.append(
+                f"El Gestor Documental del expediente {expediente_id} está vacío "
+                f"(o el elemento '{element}' no es el correcto)."
+            )
+
+        # 4. Manifest M9 + reconciliación al inicio (M9-Q4)
+        with IntakeManifest(case_id) as manifest:
+            manifest.reconcile()
+
+            for info in docs:
+                # 4.1 Resolver rama destino
+                dest_dir, kind = crm_branch_path(
+                    case_id,
+                    id_carpeta=info.id_carpeta,
+                    id_carpeta_label=info.id_carpeta_label,
+                    expediente_id=str(expediente_id),
+                )
+                result.kind_distribution[kind] = (
+                    result.kind_distribution.get(kind, 0) + 1
+                )
+
+                # Evento `category_unknown` cuando cae en fallback
+                if kind == "fallback":
+                    _log_event(
+                        case_id, "category_unknown",
+                        actor=actor,
+                        details={
+                            "expediente_id": str(expediente_id),
+                            "doc_id": info.doc_id,
+                            "id_carpeta": info.id_carpeta,
+                            "id_carpeta_label": info.id_carpeta_label,
+                        },
+                    )
+
+                # 4.2 Filename final dentro de la rama
+                original = info.filename or f"doc_{info.doc_id}.bin"
+                stem = slugify(Path(original).stem) or f"doc_{info.doc_id}"
+                ext = Path(original).suffix or ".bin"
+                target_file = dest_dir / f"{stem}{ext}"
+
+                # 4.3 Descargar bytes (necesitamos el contenido en memoria
+                #     para hashear antes de escribir, M9-Q2)
+                try:
+                    url = api_client.get_presigned_download_url(
+                        info.doc_id, str(expediente_id), element=element,
+                    )
+                    data = api_client._download_url_raw(url)
+                except SudespachoError as exc:
+                    result.errors.append(f"download doc {info.doc_id}: {exc}")
+                    result.documents_failed += 1
+                    continue
+
+                # 4.4 SHA-256 + register en manifest
+                sha = compute_sha256_bytes(data)
+
+                # Resolver colisión de nombre antes de calcular el rel_path final
+                final_target = _resolve_name_collision(target_file, sha)
+                rel_path = final_target.relative_to(input_root).as_posix()
+
+                action, primary_rel = manifest.register(
+                    sha,
+                    rel_path,
+                    source="crm",
+                    expediente_id=str(expediente_id),
+                    doc_id=info.doc_id,
+                )
+
+                if action == "write":
+                    final_target.parent.mkdir(parents=True, exist_ok=True)
+                    final_target.write_bytes(data)
+                    result.documents_written += 1
+                else:
+                    # Skip físico — primary_rel ya tiene el doc
+                    result.documents_skipped_dedup += 1
+                    _log_event(
+                        case_id, "dedup_skipped",
+                        actor=actor,
+                        details={
+                            "expediente_id": str(expediente_id),
+                            "doc_id": info.doc_id,
+                            "sha256": sha,
+                            "primary_path": primary_rel,
+                            "attempted_path": rel_path,
+                        },
+                    )
+
+                # 4.5 by_carpeta cuenta la rama lógica destino del pull,
+                #     no el primary_path físico (M9-Q3).
+                rel_branch = dest_dir.relative_to(crm_root).as_posix()
+                result.by_carpeta[rel_branch] = (
+                    result.by_carpeta.get(rel_branch, 0) + 1
+                )
+                result.doc_ids.append(info.doc_id)
+
+        # 5. Persistir pull state en frontmatter de _caso.md (D8)
+        try:
+            update_pull_state(
+                case_id,
+                str(expediente_id),
+                element=element,
+                last_sync=now_iso(),
+                documents_total_crm=result.documents_total_crm,
+                doc_ids=result.doc_ids,
+                by_carpeta=result.by_carpeta,
+                errors=result.errors,
+            )
+        except (FileNotFoundError, ValueError) as exc:
+            result.errors.append(f"update_pull_state: {exc}")
+
+        # 6. Evento de cierre `pull_crm` con resumen (M10)
+        _log_event(
+            case_id, "pull_crm",
+            actor=actor,
+            details={
+                "expediente_id": str(expediente_id),
+                "element": element,
+                "documents_total_crm": result.documents_total_crm,
+                "documents_written": result.documents_written,
+                "documents_skipped_dedup": result.documents_skipped_dedup,
+                "documents_failed": result.documents_failed,
+                "kind_distribution": result.kind_distribution,
+                "errors_count": len(result.errors),
+            },
+        )
+
+        return result
+    finally:
+        if owns_client and api_client is not None:
             api_client.__exit__(None, None, None)
 
 
