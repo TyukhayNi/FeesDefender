@@ -43,3 +43,8 @@ desktop.ini
 
 # Probes y sondeos locales del CRM (capturas de respuestas REST)
 data/probes/
+
+# Excel lock files
+~$*.xlsx
+~$*.xls
+~$*.xlsm
