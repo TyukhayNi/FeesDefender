@@ -688,9 +688,10 @@ def _link_element(
 def link_ev_mmc(
     exp_id: str,
     *,
+    cliente_propio_id: str = EV_MMC_SPAIN_ID,
     client: SudespachoLegacyClient | None = None,
 ) -> None:
-    """Vincula EV MMC SPAIN, S.L.U. (ID=2) como cliente del expediente.
+    """Vincula un cliente propio E&V como parte del expediente extrajudicial.
 
     REST-first (confirmado 2026-05-06): usa POST /api/relation_element/
     sin PHPSESSID. Fallback a saveselect legacy si JWT no disponible.
@@ -698,6 +699,9 @@ def link_ev_mmc(
 
     Args:
         exp_id: ID del expediente extrajudicial.
+        cliente_propio_id: ID en tabla clientes_propios. Por defecto
+            EV_MMC_SPAIN_ID ("2"). Para vincular ENGEL & VÖLKERS SPAIN
+            usar "27" (ver `core.config.CLIENTES_PROPIOS_EV`).
         client: Cliente legacy reutilizable (opcional; solo para fallback).
 
     Raises:
@@ -709,8 +713,8 @@ def link_ev_mmc(
     try:
         _link_rest_or_legacy(
             "extrajudiciales", exp_id,
-            [f"right.clientes_propios.{EV_MMC_SPAIN_ID}"],
-            _LINK_CLIENTE_PATH, EV_MMC_SPAIN_ID, client,
+            [f"right.clientes_propios.{cliente_propio_id}"],
+            _LINK_CLIENTE_PATH, cliente_propio_id, client,
         )
     finally:
         if owns_client:
@@ -832,14 +836,18 @@ def ensure_colaborador_vinculado(
 def link_ev_mmc_judicial(
     exp_id: str,
     *,
+    cliente_propio_id: str = EV_MMC_SPAIN_ID,
     client: SudespachoLegacyClient | None = None,
 ) -> None:
-    """Vincula EV MMC SPAIN, S.L.U. (ID=2) como cliente del expediente judicial.
+    """Vincula un cliente propio E&V como parte del expediente judicial.
 
     REST-first (confirmado 2026-05-06). Fallback a saveselect legacy.
 
     Args:
         exp_id: ID del expediente judicial.
+        cliente_propio_id: ID en tabla clientes_propios. Por defecto
+            EV_MMC_SPAIN_ID ("2"). Para vincular ENGEL & VÖLKERS SPAIN
+            usar "27" (ver `core.config.CLIENTES_PROPIOS_EV`).
         client: Cliente legacy reutilizable (opcional; solo para fallback).
     """
     owns_client = client is None
@@ -848,8 +856,8 @@ def link_ev_mmc_judicial(
     try:
         _link_rest_or_legacy(
             "expedientes_judiciales", exp_id,
-            [f"right.clientes_propios.{EV_MMC_SPAIN_ID}"],
-            _LINK_CLIENTE_JUDICIAL_PATH, EV_MMC_SPAIN_ID, client,
+            [f"right.clientes_propios.{cliente_propio_id}"],
+            _LINK_CLIENTE_JUDICIAL_PATH, cliente_propio_id, client,
         )
     finally:
         if owns_client:

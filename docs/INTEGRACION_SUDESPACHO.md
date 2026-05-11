@@ -546,7 +546,24 @@ Expediente judicial:      648  (serie 28, creado 2026-04-13)
 
 | Entidad | ID | Notas |
 |---|---|---|
-| EV MMC SPAIN, S.L.U. | `2` (clientes_propios) | ID 73 = DUPLICADO — nunca usar |
+| EV MMC SPAIN, S.L.U. | `2` (clientes_propios) | ID 73 = DUPLICADO — nunca usar. Default para honorarios. |
+| ENGEL & VÖLKERS SPAIN, S.L.U. | `27` (clientes_propios) | Sociedad matriz. Disponible en el selector "Otros casos" (UI Streamlit, tab Nuevo caso). Confirmado 2026-05-11. |
+
+> **Mapping en código**: `core.config.CLIENTES_PROPIOS_EV` —
+> `"EV_MMC_SPAIN" → "2"`, `"ENGEL_VOLKERS_SPAIN" → "27"`. Default para
+> honorarios: `CLIENTE_PROPIO_DEFAULT = "EV_MMC_SPAIN"`. Las funciones
+> `link_ev_mmc()` y `link_ev_mmc_judicial()` aceptan keyword
+> `cliente_propio_id=` para sobreescribir el default — la UI lo cablea
+> automáticamente cuando el `tipo_caso` es `OTROS` y el usuario elige
+> ENGEL & VÖLKERS SPAIN en el selector "Cliente propio E&V".
+
+> **Tag CRM "OTROS"** (categoría comodín añadida 2026-05-11): cubre casos
+> de E&V no relacionados con defensa o reclamación de honorarios. Sin
+> tag verde de asunto ni tag de valoración por defecto — `tag_defaults_for_tipo_caso("OTROS")`
+> devuelve `[]`. Solo viajan al CRM el tag rojo de equipo, el azul de
+> ciudad y el sentinel `__void__`. Si en el futuro se quiere filtrar por
+> "OTROS" en el frontal, dar de alta el tag manualmente en sudespacho.net
+> (Ajustes → Tags) y añadirlo a `_TIPO_A_TAG_VERDE` / `_TIPO_A_TAG_VERDE_J`.
 
 ### 10.2 Autocomplete de búsqueda
 

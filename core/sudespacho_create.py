@@ -520,15 +520,19 @@ def tag_defaults_for_tipo_caso_judicial(tipo_caso: str) -> list[str]:
 
     asunto_tag = _TIPO_A_TAG_VERDE_J.get(tipo_caso)
 
+    valoracion_tag: str | None
     if posicion_cfg == config.POSICION_ACTORA:
         valoracion_tag = J_TAG_LILA_POSIBILIDAD_50
-    else:
+    elif posicion_cfg == config.POSICION_DEFENSIVA:
         valoracion_tag = J_TAG_LILA_RIESGO_POSIBLE
+    else:  # POSICION_OTROS — sin tag de valoración por defecto
+        valoracion_tag = None
 
     tags: list[str] = []
     if asunto_tag is not None:
         tags.append(asunto_tag)
-    tags.append(valoracion_tag)
+    if valoracion_tag is not None:
+        tags.append(valoracion_tag)
     return tags
 
 
@@ -941,6 +945,10 @@ NOTA_NEGATIVA_CONTRATO_ARR = (
     "El arrendatario, aceptada la oferta de arrendamiento, se ha negado a firmar el "
     "contrato de arrendamiento."
 )
+NOTA_OTROS = (
+    "Caso genérico de Engel & Völkers no relacionado con defensa o reclamación "
+    "de honorarios. Detallar el objeto del encargo en este campo."
+)
 NOTA_FRANQUICIA = (
     "Un asunto relacionado con una empresa franquiciada de Engel & Völkers."
 )
@@ -1004,7 +1012,7 @@ def tag_defaults_for_tipo_caso(tipo_caso: str) -> list[str]:
     """
     from . import config  # import local para evitar ciclo
 
-    # Determinar posición (actora/defensiva)
+    # Determinar posición (actora/defensiva/otros)
     posicion_cfg = config.posicion_de_tipo(tipo_caso)  # lanza ValueError si desconocido
 
     # Tag de asunto (verde para la mayoría; rojo para NEGATIVA_CONTRATO_ARRENDAMIENTO)
@@ -1013,21 +1021,28 @@ def tag_defaults_for_tipo_caso(tipo_caso: str) -> list[str]:
         asunto_tag = None  # tipo conocido pero sin tag CRM aún
 
     # Tag de valoración según posición:
-    #   Actora → azul POSIBILIDAD EXITO=50% (tag #5b9bd1___286, capturado 2026-04-28)
+    #   Actora    → azul POSIBILIDAD EXITO=50% (tag #5b9bd1___286, capturado 2026-04-28)
     #   Defensiva → lila RIESGO_POSIBLE (DEFAULT según Manual escrito)
+    #   Otros     → sin tag de valoración (la categoría comodín no presupone
+    #               posición procesal ni evaluación de éxito; el abogado lo
+    #               añade manualmente al diagnosticar el caso).
     #
     # Nota: en sesión anterior se indicó verbalmente que el default defensiva sería
     # RIESGO_REMOTO; el Manual escrito establece RIESGO_POSIBLE. Se sigue el Manual.
     # Confirmar con el despacho si la instrucción verbal prevalece.
+    valoracion_tag: str | None
     if posicion_cfg == config.POSICION_ACTORA:
         valoracion_tag = TAG_LILA_POSIBILIDAD_50
-    else:
+    elif posicion_cfg == config.POSICION_DEFENSIVA:
         valoracion_tag = TAG_LILA_RIESGO_POSIBLE
+    else:  # POSICION_OTROS
+        valoracion_tag = None
 
     tags: list[str] = []
     if asunto_tag is not None:
         tags.append(asunto_tag)
-    tags.append(valoracion_tag)
+    if valoracion_tag is not None:
+        tags.append(valoracion_tag)
     return tags
 
 

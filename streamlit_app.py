@@ -46,9 +46,13 @@ from core.config import (
     caso_path,
     settings,
     TIPOS_CASO_ALL,
+    TIPOS_CASO_OTROS,
     posicion_de_tipo,
     POSICION_ACTORA,
     DRIVE_EV_TEAM_IDS,
+    CLIENTES_PROPIOS_EV,
+    CLIENTE_PROPIO_DEFAULT,
+    cliente_propio_id,
 )
 
 # ---------------------------------------------------------------------------
@@ -938,6 +942,7 @@ with tab_nuevo:
         "RESPONSABILIDAD_PROFESIONAL":     _sc.NOTA_RESPONSABILIDAD_PROF,
         "DEVOLUCION_RESERVA":              _sc.NOTA_DEVOLUCION_RESERVA,
         "LAU_20":                          _sc.NOTA_LAU_20,
+        "OTROS":                           _sc.NOTA_OTROS,
     }
 
     # Equipos judiciales — grupo 2 (J_TAG_* del módulo sudespacho_create)
@@ -1183,8 +1188,35 @@ with tab_nuevo:
             list(TIPOS_CASO_ALL.keys()),
             format_func=lambda k: TIPOS_CASO_ALL[k][0].capitalize(),
             key="nc_tipo",
-            help="Tipo de incumplimiento o reclamación. Determina los tags CRM, la posición procesal y la nota estándar del expediente.",
+            help=(
+                "Tipo de incumplimiento o reclamación. Determina los tags CRM, "
+                "la posición procesal y la nota estándar del expediente. "
+                "La categoría 'Otros' cubre casos genéricos de E&V no "
+                "relacionados con defensa o reclamación de honorarios."
+            ),
         )
+
+    # ------------------------------------------------------------------
+    # § 1b — Cliente propio E&V (solo para "Otros casos")
+    # ------------------------------------------------------------------
+    # Por defecto, los casos de honorarios (actora + defensiva) se vinculan
+    # a EV MMC SPAIN, S.L.U. (sociedad operativa). Para "Otros casos" puede
+    # interesar vincular a la matriz ENGEL & VÖLKERS SPAIN, S.L.U. — se
+    # ofrece un selector visible solo cuando tipo_caso ∈ TIPOS_CASO_OTROS.
+    if tipo_caso in TIPOS_CASO_OTROS:
+        cliente_propio_clave = st.selectbox(
+            "Cliente propio E&V *",
+            list(CLIENTES_PROPIOS_EV.keys()),
+            format_func=lambda k: CLIENTES_PROPIOS_EV[k][1],
+            key="nc_cliente_propio",
+            help=(
+                "Sociedad del grupo E&V que figura como cliente del expediente. "
+                "EV MMC SPAIN, S.L.U. (operativa, ID=2) o ENGEL & VÖLKERS "
+                "SPAIN, S.L.U. (matriz, ID=27)."
+            ),
+        )
+    else:
+        cliente_propio_clave = CLIENTE_PROPIO_DEFAULT
 
     # ------------------------------------------------------------------
     # § 2 — Equipo comercial (filtrado por ciudad)
@@ -1543,11 +1575,15 @@ with tab_nuevo:
                 # Limpiar flag de confirmación tras pasar la guardia
                 st.session_state.pop(_dup_confirm_key, None)
 
-                # Posición procesal (común a ambos tipos)
+                # Posición procesal (común a ambos tipos).
+                # Para "OTROS" se asume ACTOR por defecto: E&V suele consultar
+                # al despacho desde la posición de cliente que reclama; el
+                # abogado puede cambiarla manualmente en el CRM si procede.
+                _pos_de_tipo = posicion_de_tipo(tipo_caso)
                 _pos = (
-                    _sc.POSICION_ACTOR
-                    if posicion_de_tipo(tipo_caso) == POSICION_ACTORA
-                    else _sc.POSICION_DEMANDADO
+                    _sc.POSICION_DEMANDADO
+                    if _pos_de_tipo == "defensiva"
+                    else _sc.POSICION_ACTOR
                 )
                 # Nota estándar del tipo de caso (común)
                 _nota = _NOTAS.get(tipo_caso, "")
@@ -1643,15 +1679,19 @@ with tab_nuevo:
                                 st.caption(
                                     f"✓ Referencia CRM coincide con caso local."
                                 )
-                        # 3b. Vincular EV MMC SPAIN, S.L.U. como cliente
+                        # 3b. Vincular cliente propio E&V (EV MMC por defecto;
+                        #     ENGEL & VÖLKERS SPAIN para "Otros casos" si el
+                        #     usuario lo eligió en el selector § 1b).
+                        _cli_id = cliente_propio_id(cliente_propio_clave)
+                        _cli_label = CLIENTES_PROPIOS_EV[cliente_propio_clave][1]
                         try:
                             if es_judicial:
-                                link_ev_mmc_judicial(_exp_id)
+                                link_ev_mmc_judicial(_exp_id, cliente_propio_id=_cli_id)
                             else:
-                                link_ev_mmc(_exp_id)
-                            st.success("✅ Cliente **EV MMC SPAIN, S.L.U.** vinculado.")
+                                link_ev_mmc(_exp_id, cliente_propio_id=_cli_id)
+                            st.success(f"✅ Cliente **{_cli_label}** vinculado.")
                         except _SRelError as exc:
-                            st.warning(f"⚠️ No se pudo vincular EV MMC: {exc}")
+                            st.warning(f"⚠️ No se pudo vincular {_cli_label}: {exc}")
 
                         # 3c. Vincular colaboradores del equipo
                         _colaboradores_ui: list[tuple[str, str]] = [

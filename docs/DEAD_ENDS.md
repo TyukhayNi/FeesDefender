@@ -51,6 +51,33 @@
 - **Confirmado:** 2026-04-24
 - **Conclusión:** Usar siempre `x-api-key: <clave>` sin prefijo `Bearer`.
 
+### `GET /api/element_registries/clientes_propios` → HTTP 404
+- **Intentado:** listar / detalle de clientes propios del tenant tnm vía
+  `GET /api/element_registries/clientes_propios` con `properties[]=id`,
+  `filterGroup[id][operator]=equal`, `filterGroup[id][value]=2` (o 27),
+  `itemsPerPage=5`. Auth `x-api-key`.
+- **Resultado:** `HTTP 404 Not Found` para todas las variantes (con y sin
+  filtros). El endpoint no responde — la colección `clientes_propios`
+  **no está expuesta como `element_registries`** en este tenant.
+- **Confirmado:** 2026-05-11 (sesión 9), durante intento de verificación
+  REST del ID 27 (ENGEL & VÖLKERS SPAIN, S.L.U.) vía `scripts/diag_cliente_propio.py`.
+- **Comparativa:** `element_registries/expedientes_judiciales`,
+  `element_registries/extrajudiciales`, `element_registries/gdocu` y
+  `element_registries/colaboradores` **sí** funcionan vía REST.
+  `clientes_propios` es la excepción.
+- **Conclusión:** no usar `element_registries/clientes_propios` para
+  consultar metadatos de clientes propios. El script
+  `scripts/diag_cliente_propio.py` queda como esqueleto roto pendiente
+  de descubrir el endpoint correcto.
+- **Workaround:** consultar el frontal heredado
+  (`https://tnm.sudespacho.net/tnm/ficheros/clientes-propios/{id}`)
+  manualmente. Los IDs conocidos están hardcodeados en
+  `core.config.CLIENTES_PROPIOS_EV` (EV MMC SPAIN=2,
+  ENGEL & VÖLKERS SPAIN=27).
+- **Acción pendiente (no bloquea):** capturar HAR de la SPA navegando
+  por `/ficheros/clientes-propios/` para descubrir el endpoint REST real
+  (probable: `/api/clientes_propios/{id}` o ruta análoga sin `element_registries`).
+
 ### `GET /api/files/presigned_download_url/{doc_id}` → HTTP 400 "Unable to generate an IRI"
 - **Intentado:** descarga de los 26 documentos del expediente judicial 649 vía `pull_expediente_v2` (`download_document_rest` → `presigned_download_url`)
 - **Resultado:** los 26 docs fallan con HTTP 400 y body

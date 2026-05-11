@@ -68,6 +68,7 @@ settings = Settings()
 # Posición procesal del cliente (Engel & Völkers)
 POSICION_ACTORA = "actora"       # Engel reclama
 POSICION_DEFENSIVA = "defensiva"  # Engel es demandado
+POSICION_OTROS = "otros"         # Caso genérico (no honorarios, sin posición procesal fija)
 
 # Tipos de caso — posición actora (Engel reclama honorarios / daños)
 # Formato: clave_interna → (tag_crm, descripción)
@@ -118,10 +119,26 @@ TIPOS_CASO_DEFENSIVA: dict[str, tuple[str, str]] = {
     ),
 }
 
+# Tipos de caso — categoría comodín "Otros casos"
+#
+# Cubre asuntos de E&V no relacionados con defensa/reclamación de honorarios
+# (consultas contractuales, requerimientos varios, mediaciones, dudas legales
+# sobre operaciones, etc.). Sin posición procesal fija — la decide el caso.
+#
+# El tag CRM "OTROS" debe darse de alta en sudespacho.net si se desea filtrar
+# por él en el frontal; mientras tanto se envía como texto libre.
+TIPOS_CASO_OTROS: dict[str, tuple[str, str]] = {
+    "OTROS": (
+        "OTROS",
+        "Caso genérico de E&V no relacionado con defensa o reclamación de honorarios.",
+    ),
+}
+
 # Unión completa (útil para validación y selectores de UI)
 TIPOS_CASO_ALL: dict[str, tuple[str, str]] = {
     **TIPOS_CASO_ACTORA,
     **TIPOS_CASO_DEFENSIVA,
+    **TIPOS_CASO_OTROS,
 }
 
 # Tags CRM válidos (lista plana, para validación)
@@ -130,12 +147,65 @@ TAGS_CRM_VALIDOS: frozenset[str] = frozenset(
 )
 
 
+# ---------------------------------------------------------------------------
+# Clientes propios E&V (sudespacho — tabla clientes_propios)
+# ---------------------------------------------------------------------------
+#
+# Mapping clave_interna → (id_sudespacho, razón social).
+#
+# Por defecto, todos los casos de honorarios (actora + defensiva) se vinculan
+# a EV MMC SPAIN, S.L.U. (ID=2) — la sociedad operativa que firma los encargos.
+# Para "Otros casos" puede ser necesario vincular a ENGEL & VÖLKERS SPAIN,
+# S.L.U. (ID=27) — la sociedad matriz del grupo en España.
+#
+# IDs confirmados:
+#   - EV MMC SPAIN, S.L.U.        → 2  (B65824054)
+#   - ENGEL & VÖLKERS SPAIN, S.L.U. → 27  (sociedad matriz; ver
+#     https://tnm.sudespacho.net/tnm/ficheros/clientes-propios/27)
+#
+# ID 73 = duplicado de EV MMC SPAIN — nunca usar.
+CLIENTES_PROPIOS_EV: dict[str, tuple[str, str]] = {
+    "EV_MMC_SPAIN":      ("2",  "EV MMC SPAIN, S.L.U."),
+    "ENGEL_VOLKERS_SPAIN": ("27", "ENGEL & VÖLKERS SPAIN, S.L.U."),
+}
+
+# Cliente por defecto para casos de honorarios (BAD_DEBT, NEGATIVA_*, VUELTA,
+# INCUMPLIMIENTO_EXCLUSIVA, RESPONSABILIDAD_PROFESIONAL, DEVOLUCION_RESERVA,
+# LAU_20). Para "OTROS" la UI deja elegir.
+CLIENTE_PROPIO_DEFAULT: str = "EV_MMC_SPAIN"
+
+
+def cliente_propio_id(clave: str) -> str:
+    """Devuelve el id_sudespacho de un cliente propio E&V.
+
+    Args:
+        clave: clave interna (p.ej. "EV_MMC_SPAIN", "ENGEL_VOLKERS_SPAIN").
+
+    Raises:
+        ValueError: si la clave no está mapeada.
+    """
+    entry = CLIENTES_PROPIOS_EV.get(clave)
+    if not entry:
+        raise ValueError(f"Cliente propio E&V desconocido: {clave!r}")
+    return entry[0]
+
+
+def cliente_propio_label(clave: str) -> str:
+    """Devuelve la razón social legible de un cliente propio E&V."""
+    entry = CLIENTES_PROPIOS_EV.get(clave)
+    if not entry:
+        raise ValueError(f"Cliente propio E&V desconocido: {clave!r}")
+    return entry[1]
+
+
 def posicion_de_tipo(tipo: str) -> str:
-    """Devuelve POSICION_ACTORA o POSICION_DEFENSIVA dado un tipo de caso."""
+    """Devuelve POSICION_ACTORA, POSICION_DEFENSIVA o POSICION_OTROS dado un tipo de caso."""
     if tipo in TIPOS_CASO_ACTORA:
         return POSICION_ACTORA
     if tipo in TIPOS_CASO_DEFENSIVA:
         return POSICION_DEFENSIVA
+    if tipo in TIPOS_CASO_OTROS:
+        return POSICION_OTROS
     raise ValueError(f"Tipo de caso desconocido: {tipo!r}")
 
 
