@@ -11,6 +11,8 @@ from pathlib import Path
 
 import streamlit as st
 
+import os as _os
+
 from core import case_manager, llm, pipeline, sudespacho_create as _sc
 from core.intake_drive import (
     DriveIntakeError,
@@ -20,6 +22,7 @@ from core.intake_drive import (
     parse_ev_folder_name as _parse_ev_folder_name,
     pull_drive_ev,
 )
+from core import intake_log
 from core import intake_manual
 from core import share_drive as _sd
 import zipfile as _zipfile
@@ -36,7 +39,9 @@ from core.sudespacho_relations import (
     load_all_colaboradores as _load_all_colabs,
 )
 from core.config import (
+    ACTORES_DESPACHO,
     CASO_SUBDIRS,
+    CRM_TREE,
     caso_path,
     settings,
     TIPOS_CASO_ALL,
@@ -65,6 +70,64 @@ st.set_page_config(
     page_icon="🏠",
     layout="wide",
 )
+
+# ---------------------------------------------------------------------------
+# Sidebar — selector de actor (M10)
+# ---------------------------------------------------------------------------
+#
+# El actor identifica quién está usando la app en este momento. Se sincroniza
+# con `intake_log.set_actor` para que cada evento del log forense
+# (`_intake_log.jsonl`) quede etiquetado con la persona responsable. Set
+# cerrado (`ACTORES_DESPACHO`) + escape "Otros…" para becarios o sustitutos.
+
+with st.sidebar:
+    st.markdown("**¿Quién eres?**")
+
+    # Default: si os.getlogin() coincide (substring case-insensitive) con
+    # algún actor, ese; si no, el primero de la lista (Nikolai).
+    try:
+        _login = (_os.getlogin() or "").lower()
+    except (OSError, AttributeError):
+        _login = ""
+    _default_actor = next(
+        (a for a in ACTORES_DESPACHO if _login and _login in a.lower()),
+        ACTORES_DESPACHO[0],
+    )
+
+    _actor_options = list(ACTORES_DESPACHO) + ["Otros…"]
+    _actor_prev = st.session_state.get("_actor_selected", _default_actor)
+    if _actor_prev not in _actor_options:
+        _actor_prev = _default_actor
+    _actor_sel = st.selectbox(
+        "Actor",
+        _actor_options,
+        index=_actor_options.index(_actor_prev),
+        key="_actor_selected",
+        label_visibility="collapsed",
+        help=(
+            "Tu nombre se registra en `00_Input/_intake_log.jsonl` junto a "
+            "cada acción sobre los casos (subir documentos, vincular "
+            "expedientes, hacer pull del CRM, etc.). Sirve para auditoría "
+            "forense — selecciona quién está usando la app."
+        ),
+    )
+
+    if _actor_sel == "Otros…":
+        _actor_custom = st.text_input(
+            "Nombre completo",
+            key="_actor_custom",
+            placeholder="Nombre Apellido",
+            help=(
+                "Becario, sustituto u otro perfil no listado. Usa nombre + "
+                "primer apellido para identificación inequívoca en el log."
+            ),
+        ).strip()
+        _actor_final = _actor_custom or "Otros"
+    else:
+        _actor_final = _actor_sel
+
+    st.session_state["actor"] = _actor_final
+    intake_log.set_actor(_actor_final)
 
 st.markdown(
     """
@@ -531,6 +594,121 @@ with tab_casos:
                     )
                 for _err_dem in _errors_dem:
                     st.error(f"❌ {_err_dem}")
+
+        st.divider()
+        with st.expander("📂 Subir al árbol CRM"):
+            _caso_crm = st.selectbox(
+                "Caso",
+                cases,
+                key="casos_crm_sel",
+                help=(
+                    "Selecciona el caso al que vas a subir documentos "
+                    "procesales organizados por jurisdicción (Civil / Penal / "
+                    "General). Los documentos genéricos recibidos por email "
+                    "siguen yendo al expander «Demanda / documentos judiciales»."
+                ),
+            )
+
+            # ── Selector jerárquico sobre CRM_TREE ─────────────────────────
+            _branch_parts: list[str] = []
+            _cur_tree = CRM_TREE
+            _level = 0
+            while isinstance(_cur_tree, dict) and _cur_tree:
+                _opts = ["—"] + list(_cur_tree.keys())
+                _sel_branch = st.selectbox(
+                    f"Rama (nivel {_level + 1})",
+                    _opts,
+                    key=f"casos_crm_branch_{_level}",
+                    help=(
+                        "Elige la rama del gestor documental sudespacho donde "
+                        "guardar el documento. Selecciona «—» para fijar la "
+                        "rama actual como destino (puedes subir a un nodo "
+                        "intermedio sin bajar más)."
+                    ),
+                )
+                if _sel_branch == "—":
+                    break
+                _branch_parts.append(_sel_branch)
+                _cur_tree = _cur_tree[_sel_branch]
+                _level += 1
+
+            if not _branch_parts:
+                st.caption(
+                    "_Selecciona la rama de destino para activar el uploader._"
+                )
+            else:
+                _branch_path = "/".join(_branch_parts)
+                st.caption(f"Destino: `00_Input/05_CRM/{_branch_path}/`")
+
+                # ── Archivos ya presentes ──────────────────────────────────
+                _existing_crm = intake_manual.list_crm_branch_files(
+                    _caso_crm, _branch_path,
+                )
+                if _existing_crm:
+                    st.caption(
+                        f"**{len(_existing_crm)}** archivo/s en la rama:"
+                    )
+                    for _ef in _existing_crm:
+                        _size_kb = _ef.stat().st_size // 1024
+                        st.caption(f"· {_ef.name}  ({_size_kb} KB)")
+                else:
+                    st.caption("_(rama vacía)_")
+
+                st.divider()
+
+                # ── Uploader ───────────────────────────────────────────────
+                _uploaded_crm = st.file_uploader(
+                    "Subir archivos a la rama seleccionada",
+                    accept_multiple_files=True,
+                    type=[
+                        "pdf", "docx", "doc",
+                        "jpg", "jpeg", "png",
+                        "txt", "eml", "msg",
+                    ],
+                    key="casos_crm_uploader",
+                    help=(
+                        "Sube uno o varios documentos. Se guardan en "
+                        "`00_Input/05_CRM/<rama seleccionada>/`. Los ZIP no "
+                        "se descomprimen — sube los archivos sueltos. Si un "
+                        "archivo con el mismo nombre ya existe en la rama, "
+                        "se sobrescribe."
+                    ),
+                )
+
+                if st.button(
+                    "⬆️ Guardar en rama CRM",
+                    key="casos_crm_btn",
+                    disabled=not _uploaded_crm,
+                    help="Guarda los archivos seleccionados en la rama elegida.",
+                ):
+                    _saved_crm = 0
+                    _errors_crm: list[str] = []
+                    for _uf in _uploaded_crm:
+                        try:
+                            _raw = _uf.read()
+                            intake_manual.save_file_crm_branch(
+                                _caso_crm, _branch_path, _uf.name, _raw,
+                            )
+                            intake_log.append_event(
+                                _caso_crm,
+                                "upload_manual",
+                                details={
+                                    "destination": f"05_CRM/{_branch_path}/{_uf.name}",
+                                    "filename": _uf.name,
+                                    "size_bytes": len(_raw),
+                                },
+                            )
+                            _saved_crm += 1
+                        except Exception as _exc:
+                            _errors_crm.append(f"{_uf.name}: {_exc}")
+
+                    if _saved_crm:
+                        st.success(
+                            f"✅ **{_saved_crm}** archivo/s guardados en "
+                            f"`05_CRM/{_branch_path}/`."
+                        )
+                    for _err in _errors_crm:
+                        st.error(f"❌ {_err}")
 
         st.divider()
         with st.expander("🔗 Compartir carpeta E&V con el equipo"):
@@ -1294,6 +1472,10 @@ with tab_nuevo:
             )
         else:
             # 1. Crear caso local (siempre)
+            # tipo_caso gobierna la copia condicional del cuestionario de
+            # viabilidad (paso 7a). direccion + id_go pre-rellenan el REF de
+            # la ficha de operación si los tres componentes (equipo del
+            # case_id + estos dos) están presentes.
             with st.spinner("Creando caso local…"):
                 _path = case_manager.ensure_case(
                     final_case_id,
@@ -1301,6 +1483,9 @@ with tab_nuevo:
                     referencia_crm=final_case_id,
                     cliente="EV MMC SPAIN, S.L.U.",
                     cuantia=cuantia_nc or None,
+                    tipo_caso=tipo_caso,
+                    direccion=direccion.strip() or None,
+                    id_go=ref_mls.strip() or None,
                 )
             st.success(f"Caso local disponible en `{_path}`")
 

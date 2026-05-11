@@ -303,6 +303,19 @@ ENTREVISTA_ROLES: frozenset[str] = frozenset({
     "buscador",
 })
 
+# Actores del despacho válidos para el selector M10 del sidebar Streamlit.
+# Orden = rol/seniority (display order). Conjunto cerrado para que el log
+# forense quede limpio de typos; la UI ofrece además "Otros…" como escape.
+# Cada upload / pull / link emite un evento en `_intake_log.jsonl` con el
+# actor activo (`intake_log.set_actor` sincroniza desde la UI cada render).
+ACTORES_DESPACHO: tuple[str, ...] = (
+    "Nikolai Tyukhay",          # Abogado Senior (Tyukhay Legal)
+    "Karen Paola Barreto",      # Abogada (Tyukhay Legal)
+    "Sergio Piñol",             # Abogado junior (Tyukhay Legal)
+    "Ana Solange Velastegui",   # Administrativa (Tyukhay Legal)
+    "Marta Reynares",           # Administrativa (Engel & Völkers)
+)
+
 # Tipos de caso para los que ensure_case() copia la plantilla
 # data/_plantillas/informe_viabilidad.xlsx a 02_Analisis/_informe_viabilidad.xlsx
 # (M1, copiado condicional). BAD_DEBT, LAU_20 y DEVOLUCION_RESERVA quedan fuera

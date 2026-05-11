@@ -3,7 +3,9 @@
 > **Fuente de verdad única del proyecto.**
 > Actualizar al cerrar cada sesión con `python -m scripts.session_close`.
 
-**Última actualización:** 2026-05-11 (sesión 4) — **Fix auto-fill Drive E&V para carpetas con sufijo captador.** Causa raíz: `_EV_FOLDER_RE` en `core/intake_drive.py` exigía `\s*$` después del `W-XXXXXX`, lo que rompía nombres con sufijo posterior como `393. Hacienda Vadillo - W-02RRO3 - Natalia Trujillano` (sufijo = nombre del consultor que captó la propiedad, NO del cliente — patrón habitual en los Shared Drives de E&V). El auto-fill resolvía correctamente ciudad y equipo desde `driveId` (`0ABSFVWC_PfdBUk9PVA` → `SeRS6`) pero devolvía `("", "")` para dirección + ID GO en silencio. Fix: regex relajado a `^(.*?)\s*[-–]\s*(W-[A-Z0-9]{5,8})\b` (sin `$`, con `\b` de límite de palabra) — descarta cualquier sufijo posterior. Tests +2 dedicados (`test_parse_folder_sufijo_consultor_captador`, `test_parse_folder_sufijo_con_guion_largo`) en verde. Diagnóstico reproducible con `scripts/diag_drive_autofill.py` (nuevo) — reproduce paso a paso la cadena auto-fill (parse_drive_url → rclone access_token → Drive API v3 → parse_ev_folder_name → lookup DRIVE_EV_TEAM_IDS) y señala dónde rompe. Memoria persistente nueva `reference_nomenclatura_carpetas_drive_ev.md` documenta el patrón real `<dir> - W-XXXXXX [- <captador>]` y la advertencia de no usar el sufijo como dato del cliente ni para auto-rellenar `nc_mail_captador`.
+**Última actualización:** 2026-05-11 (sesión 5) — **Refactor intake v2 paso 7 implementado (7a + 7b)**. **7a**: `core/case_manager.ensure_case` v2 — crea árbol `CRM_TREE` eager bajo `00_Input/05_CRM/`, copia `data/_plantillas/ficha_operacion.xlsx` a `02_Analisis/_ficha_operacion.xlsx` (siempre) y `cuestionario_viabilidad.xlsx` si `tipo_caso ∈ INFORME_VIABILIDAD_TIPOS`, pre-rellena REF (`<equipo> - <direccion> (<id_go>)` solo si los tres están presentes) y FECHA en la ficha. `CaseMeta` con `tipo_caso`; persistencia en `_caso.md` con actualización vía `_atomic_write_caso_md` si el kwarg difiere del persistido (D-7a-4). Idempotencia estricta. Helpers nuevos: `_parse_equipo_from_case_id`, `_ensure_crm_tree_dirs`, `_copy_plantilla`, `_prerellenar_ficha`, `_find_label_row`. `register_expediente` preserva ahora los campos v2 (`drive_ev_team_id/folder_id`, `direccion`, `id_go`, `tipo_caso`) al reconstruir `CaseMeta` (bug latente arreglado de paso). **7b**: `core/config.ACTORES_DESPACHO` (5 personas: Nikolai Tyukhay, Karen Paola Barreto, Sergio Piñol, Ana Solange Velastegui, Marta Reynares). `core/intake_manual.save_file_crm_branch` + `list_crm_branch_files` (saneamiento filename + branch_path + doble check `resolve().relative_to`). `streamlit_app.py` con: sidebar M10 al inicio (selector actor + `intake_log.set_actor` cada render, default por substring match contra `os.getlogin()`), expander "📂 Subir al árbol CRM" en tab Casos (selectores encadenados sobre `CRM_TREE`, opción "—" para fijar nodo intermedio como destino, sin descompresión de ZIPs, evento `upload_manual` con `details.destination 05_CRM/<rama>/<file>`), y cableado `tipo_caso/direccion/id_go` en la llamada a `ensure_case` desde "Nuevo caso". Tests: `tests/test_smoke_paso7.py` 17/17 verde (smoke programático del core: ensure_case con todos los tipos, árbol CRM eager, pre-relleno REF/FECHA con y sin id_go, idempotencia preservando edición del abogado, reclasificación, save_file_crm_branch happy path + General + sobrescritura + path traversal + filename inválido + caso inexistente, list_crm_branch_files, intake_log.append_event upload_manual a 05_CRM con actor, sanity ACTORES_DESPACHO); suite global sigue verde. Decisiones D-7a-1 a D-7a-7 y D-7b-1 a D-7b-9 cerradas en memoria `project_intake_estructura_v2.md` para no redecidir. Pendiente: paso 8 (tests v2 dedicados restantes para `crm_branch_path`, `pull_state_atomic`, `dedup_manifest`, `intake_log` exhaustivo, `legacy_v1_detection`, `pull_expediente_v2`, `render_plantillas`), paso 9 (commit final), smoke manual UI Streamlit (sidebar + expander árbol CRM + flujo Nuevo caso con tipo NEGATIVA_OFERTA — no automatizable sin navegador).
+
+**Anterior (2026-05-11, sesión 4):** **Fix auto-fill Drive E&V para carpetas con sufijo captador.** Causa raíz: `_EV_FOLDER_RE` en `core/intake_drive.py` exigía `\s*$` después del `W-XXXXXX`, lo que rompía nombres con sufijo posterior como `393. Hacienda Vadillo - W-02RRO3 - Natalia Trujillano` (sufijo = nombre del consultor que captó la propiedad, NO del cliente — patrón habitual en los Shared Drives de E&V). El auto-fill resolvía correctamente ciudad y equipo desde `driveId` (`0ABSFVWC_PfdBUk9PVA` → `SeRS6`) pero devolvía `("", "")` para dirección + ID GO en silencio. Fix: regex relajado a `^(.*?)\s*[-–]\s*(W-[A-Z0-9]{5,8})\b` (sin `$`, con `\b` de límite de palabra) — descarta cualquier sufijo posterior. Tests +2 dedicados (`test_parse_folder_sufijo_consultor_captador`, `test_parse_folder_sufijo_con_guion_largo`) en verde. Diagnóstico reproducible con `scripts/diag_drive_autofill.py` (nuevo) — reproduce paso a paso la cadena auto-fill (parse_drive_url → rclone access_token → Drive API v3 → parse_ev_folder_name → lookup DRIVE_EV_TEAM_IDS) y señala dónde rompe. Memoria persistente nueva `reference_nomenclatura_carpetas_drive_ev.md` documenta el patrón real `<dir> - W-XXXXXX [- <captador>]` y la advertencia de no usar el sufijo como dato del cliente ni para auto-rellenar `nc_mail_captador`.
 
 **Anterior (2026-05-08, sesión 3):** **Refactor intake v2 implementado pasos 1-6** (de 9 del plan). **Paso 1**: `docs/INTEGRACION_SUDESPACHO.md` §13 (árbol gestor documental — estrategia híbrida + mappings empíricos + dead end endpoint árbol). **Paso 2**: `core/config.py` — `CRM_TREE` anidado, `CARPETA_ID_TO_PATH` (`"1"→General`, `"307"→Civil/1ª Instancia/Declarativo/Demanda`), `INPUT_SUBDIRS` reescrito (sin `05_Demanda judicial`, con `05_CRM` + `06_Entrevistas`), `ENTREVISTA_ROLES`, `INFORME_VIABILIDAD_TIPOS` (7 tipos), constantes `CRM_SUBDIR`, `CRM_FALLBACK_PATH`, `ENTREVISTAS_SUBDIR`. **Paso 3**: `core/case_manager.py` — `crm_branch_path()` (estrategia híbrida 3 niveles, devuelve `(Path, kind)`), `is_legacy_intake_v1()`, `_atomic_write_caso_md()` (`temp + os.replace`), `read_pull_state()` / `update_pull_state()` (schema D8 — `linked_at`, `last_sync`, `documents_total_crm`, `doc_ids`, `by_carpeta`, `errors`); `CaseMeta` extendido con `direccion` + `id_go`. **Paso 4a**: `core/intake_log.py` — M10 log append-only JSONL con 13 tipos de evento (`link_expediente`, `pull_crm`, `dedup_skipped`, `category_unknown`, etc.), actor singleton thread-safe (`set_actor`/`get_actor`), `flush + os.fsync` por escritura. **Paso 4b**: `core/intake_manifest.py` — M9 dedup cross-source SHA-256 con `IntakeManifest` context manager, `reconcile()` (promueve aliases si primary perdido), política skip + aliases. Manifest en `00_Input/_intake_hashes.json`. **Paso 4c**: `core/sync_sudespacho.pull_expediente_v2()` — REST + `crm_branch_path` + manifest M9 + log M10 + state D8; bloquea casos legacy v1; sin flags `force`/`incremental` (manifest hace dedup natural). `pull_expediente` v1 intacto (compat con tests existentes). **Paso 5**: `core/intake_demanda.py` reescrito como `core/intake_manual.py` (destino `04_Manual/`); shim deprecado y tests del shim eliminados por usuario; `streamlit_app.py` actualizado (7 sustituciones). **Paso 6**: `data/_plantillas/cuestionario_viabilidad.yaml` (11 secciones, 82 entries), `data/_plantillas/ficha_operacion.yaml` (7 bloques, 14 hitos con `regla_derivacion` canónica, observaciones automáticas), `scripts/render_plantillas.py` (Typer YAML→XLSX con `_StrictBoolLoader` para resolver `si`/`no` como string en YAML 1.1); XLSX generados y validados visualmente. Camino 3 (derivación automática cuestionario→ficha) cerrado conceptualmente, infraestructura lista — implementación de derivación = horizonte 3 (`core/viabilidad.py`, no implementado). Detalle en memoria persistente `project_plantillas_viabilidad.md`. Pendiente paso 7 (`ensure_case` con copia condicional de plantillas + UI Streamlit con selector actor M10 + expander upload árbol CRM), paso 8 (tests v2 dedicados), paso 9 (commit final).
 
@@ -234,45 +236,26 @@ en producción.
 
 ### ⚠️ MÁXIMA PRIORIDAD — abrir próxima sesión por aquí
 
-**[SIGUIENTE-INTAKE-V2-PASO-7]** (sesión 3 cerró pasos 1-6 el 2026-05-08)
+**[SIGUIENTE-INTAKE-V2-PASO-8]** (sesión 5 cerró pasos 7a + 7b el 2026-05-11)
 
-Pasos 1-6 implementados (ver "Última actualización" arriba). Quedan los
-pasos 7, 8 y 9 del plan original. La planificación completa sigue en
-memoria persistente `project_intake_estructura_v2.md`. Las decisiones
-del paso 6 (plantillas) están en `project_plantillas_viabilidad.md`.
+Pasos 1-7b implementados. Quedan los pasos 8 y 9 del plan original.
+La planificación completa sigue en memoria persistente
+`project_intake_estructura_v2.md` (decisiones D-7a-* y D-7b-* cerradas,
+no redecidir). Las decisiones del paso 6 (plantillas) están en
+`project_plantillas_viabilidad.md`.
 
-**Paso 7 — subdivisión 7a + 7b:**
-
-**7a. `core/case_manager.ensure_case` — integración estructura v2 + plantillas:**
-
-- Crear todas las ramas del `CRM_TREE` en `00_Input/05_CRM/` (D1 — eager).
-  Recorrido recursivo del árbol anidado, `mkdir(exist_ok=True)` en cada nodo.
-- Crear `00_Input/06_Entrevistas/` (vacía).
-- Si `tipo_caso ∈ INFORME_VIABILIDAD_TIPOS` → copiar
-  `data/_plantillas/cuestionario_viabilidad.xlsx` →
-  `02_Analisis/_cuestionario_viabilidad.xlsx`.
-- Siempre: copiar `data/_plantillas/ficha_operacion.xlsx` →
-  `02_Analisis/_ficha_operacion.xlsx`.
-- Pre-relleno mínimo al copiar (vía openpyxl):
-  · `OPERACION!REF` ← `<equipo> - <direccion> (<id_go>)` parseado del case_id + meta.
-  · `OPERACION!FECHA` ← fecha de creación.
-  · Captador/buscador ← desde `_caso.md` cuando estén disponibles.
-- Idempotencia estricta: si los archivos destino ya existen, NO sobrescribir.
-
-**7b. `streamlit_app.py` — UI v2:**
-
-- **Selector actor en sidebar (M10)**: radio o selectbox `[Nikolai, Paola, Ana, otros]`,
-  persistente en `st.session_state["actor"]`. Llamada `intake_log.set_actor(...)`
-  al inicio de cada request (después de `st.set_page_config`).
-- **Expander "Subir documentos al árbol CRM"** en pestaña "Casos": selector
-  jerárquico (selectbox encadenados) sobre `CRM_TREE`, file uploader con
-  multiples files. Destino: `00_Input/05_CRM/<rama_seleccionada>/`. Cada upload
-  emite evento `upload_manual` o equivalente al log M10.
-- **Tooltips** (`help=`) en todos los campos nuevos.
-- Decisión pendiente: ¿el botón actual de upload manual sigue apuntando solo a
-  `04_Manual/` o se ofrece elección entre `04_Manual/` y árbol CRM?
-
-**Después: paso 8 (tests v2) y paso 9 (commit + STATUS final).**
+**Smoke manual UI pendiente** (no automatizable sin navegador):
+1. Sidebar — aparece "¿Quién eres?" arriba; default = "Nikolai Tyukhay" si
+   `os.getlogin()` no matchea; al cambiar, los eventos del log reflejan el
+   actor seleccionado.
+2. Tab Casos → "📂 Subir al árbol CRM" — selectores encadenados llegan a
+   ramas profundas (Civil → 1ª Instancia → Declarativo → Demanda); el
+   uploader guarda en disco bajo `00_Input/05_CRM/<rama>/`; el log JSONL
+   recibe `upload_manual` con `actor + destination + filename + size_bytes`.
+3. Tab Nuevo caso → crear caso ficticio con tipo NEGATIVA_OFERTA + dirección
+   + ID GO: tras crear, `02_Analisis/_ficha_operacion.xlsx` tiene REF y FECHA
+   pre-rellenadas, `02_Analisis/_cuestionario_viabilidad.xlsx` está presente,
+   y `_caso.md.meta` contiene `tipo_caso`, `direccion`, `id_go`.
 
 **Paso 8 — tests v2 dedicados:**
 

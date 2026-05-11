@@ -27,7 +27,7 @@ import io
 import zipfile
 from pathlib import Path
 
-from .config import caso_path, settings
+from .config import CRM_SUBDIR, caso_path, settings
 
 
 # ---------------------------------------------------------------------------
@@ -152,6 +152,94 @@ def extract_zip(case_id: str, content: bytes) -> list[Path]:
             extracted.append(dest)
 
     return sorted(extracted)
+
+
+def save_file_crm_branch(
+    case_id: str,
+    branch_path: str,
+    filename: str,
+    content: bytes,
+) -> Path:
+    """Guarda un archivo en ``00_Input/05_CRM/<branch_path>/`` (paso 7b).
+
+    Hermano de ``save_file``: misma semántica (sobrescribe si existe,
+    crea el directorio si falta) pero el destino es una rama del árbol
+    del gestor documental CRM. La rama suele haber sido creada eager
+    por ``ensure_case`` (D1), pero ``mkdir(parents=True, exist_ok=True)``
+    cubre llamadas defensivas.
+
+    Args:
+        case_id: Identificador del caso (debe existir en ``casos_root``).
+        branch_path: Ruta canónica con separador ``"/"`` (D11), p. ej.
+            ``"Civil/1ª Instancia/Declarativo/Demanda"`` o ``"General"``.
+            Saneado contra path traversal: cualquier componente ``".."``,
+            absoluto o vacío hace fallar la llamada.
+        filename: Nombre del archivo con extensión (sin separadores).
+        content: Contenido binario del archivo.
+
+    Returns:
+        Ruta absoluta al archivo guardado.
+
+    Raises:
+        FileNotFoundError: si el caso no existe en ``casos_root``.
+        ValueError: si ``filename`` o ``branch_path`` no son válidos.
+    """
+    if not filename or filename != Path(filename).name:
+        raise ValueError(
+            f"Nombre de archivo no válido: {filename!r}. "
+            "Usa solo el nombre del archivo, sin rutas."
+        )
+    if not branch_path or not branch_path.strip():
+        raise ValueError("branch_path no puede estar vacío.")
+
+    branch = Path(branch_path.strip())
+    for part in branch.parts:
+        if part in ("..", "") or Path(part).is_absolute():
+            raise ValueError(
+                f"branch_path inválido (path traversal): {branch_path!r}"
+            )
+
+    case_dir = caso_path(case_id)
+    if not case_dir.exists():
+        raise FileNotFoundError(
+            f"El caso '{case_id}' no existe en {settings.casos_root}. "
+            "Llama a ensure_case() antes de save_file_crm_branch()."
+        )
+
+    dest_dir = case_dir / "00_Input" / CRM_SUBDIR / branch
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    dest = dest_dir / filename
+    # Doble comprobación: el destino resuelto debe seguir dentro de 05_CRM/.
+    crm_root = case_dir / "00_Input" / CRM_SUBDIR
+    try:
+        dest.resolve().relative_to(crm_root.resolve())
+    except ValueError as exc:
+        raise ValueError(
+            f"branch_path escapa de 05_CRM/: {branch_path!r}"
+        ) from exc
+
+    dest.write_bytes(content)
+    return dest
+
+
+def list_crm_branch_files(case_id: str, branch_path: str) -> list[Path]:
+    """Lista archivos en ``00_Input/05_CRM/<branch_path>/`` (nivel raíz).
+
+    Excluye archivos de control internos. Devuelve lista vacía si el
+    directorio no existe.
+    """
+    case_dir = caso_path(case_id)
+    branch = Path(branch_path.strip()) if branch_path else None
+    if branch is None:
+        return []
+    d = case_dir / "00_Input" / CRM_SUBDIR / branch
+    if not d.exists():
+        return []
+    return sorted(
+        p for p in d.iterdir()
+        if p.is_file() and p.name not in _CONTROL_FILES
+    )
 
 
 def list_files(case_id: str) -> list[Path]:

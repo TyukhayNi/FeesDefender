@@ -6,9 +6,13 @@ subcarpetas estándar. Nunca borra contenido del usuario.
 
 from __future__ import annotations
 
+import logging
 import os
+import re
+import shutil
 import unicodedata
 from dataclasses import asdict, dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
@@ -19,12 +23,22 @@ from .config import (
     CRM_SUBDIR,
     CRM_TREE,
     EMAIL_SUBDIRS,
+    INFORME_VIABILIDAD_TIPOS,
     INPUT_SUBDIRS,
     WHATSAPP_SUBDIRS,
     caso_path,
     settings,
 )
 from .utils import now_iso, read_md, write_md
+
+logger = logging.getLogger(__name__)
+
+# Plantillas de viabilidad (paso 7a). Generadas con
+# `python -m scripts.render_plantillas all` desde los YAML canónicos en
+# `data/_plantillas/`.
+_PLANTILLAS_DIR = settings.project_root / "data" / "_plantillas"
+_FICHA_TEMPLATE = _PLANTILLAS_DIR / "ficha_operacion.xlsx"
+_CUESTIONARIO_TEMPLATE = _PLANTILLAS_DIR / "cuestionario_viabilidad.xlsx"
 
 
 @dataclass
@@ -51,6 +65,7 @@ class CaseMeta:
     drive_ev_folder_id: str | None = None  # Folder ID de la carpeta W-XXXXXX
     direccion: str | None = None         # v2: dirección del inmueble (refactor intake v2)
     id_go: str | None = None             # v2: ID GO de Engel & Völkers (p. ej. "BCN-OS-012905")
+    tipo_caso: str | None = None         # v2 paso 7: clave de TIPOS_CASO_ALL (NEGATIVA_OFERTA, BAD_DEBT, …)
     estado: str = "instruccion"          # instruccion | predemanda | demanda | recurso | archivado
     sudespacho_expedientes: list[dict] = None   # lista de ExpedienteLink serializados
     creado_en: str = ""
@@ -160,6 +175,11 @@ def register_expediente(
             cuantia=meta_dict.get("cuantia"),
             drive_link=meta_dict.get("drive_link"),
             drive_remote_path=meta_dict.get("drive_remote_path"),
+            drive_ev_team_id=meta_dict.get("drive_ev_team_id"),
+            drive_ev_folder_id=meta_dict.get("drive_ev_folder_id"),
+            direccion=meta_dict.get("direccion"),
+            id_go=meta_dict.get("id_go"),
+            tipo_caso=meta_dict.get("tipo_caso"),
             estado=meta_dict.get("estado", "instruccion"),
             sudespacho_expedientes=expedientes,
             creado_en=meta_dict.get("creado_en", ""),
@@ -181,15 +201,45 @@ def ensure_case(
     drive_remote_path: str | None = None,
     cuantia: float | None = None,
     organo: str | None = None,
+    direccion: str | None = None,
+    id_go: str | None = None,
+    tipo_caso: str | None = None,
 ) -> Path:
-    """Crea (o asegura) la estructura de un caso. Devuelve la ruta del caso."""
+    """Crea (o asegura) la estructura de un caso. Devuelve la ruta del caso.
+
+    Idempotente. Nunca sobrescribe contenido del usuario.
+
+    Refactor intake v2 — paso 7a:
+    - Crea todas las ramas de ``CRM_TREE`` bajo ``00_Input/05_CRM/`` (D1 eager).
+    - Copia ``data/_plantillas/ficha_operacion.xlsx`` a
+      ``02_Analisis/_ficha_operacion.xlsx`` (siempre).
+    - Si ``tipo_caso ∈ INFORME_VIABILIDAD_TIPOS`` copia además
+      ``data/_plantillas/cuestionario_viabilidad.xlsx`` a
+      ``02_Analisis/_cuestionario_viabilidad.xlsx``.
+    - Pre-rellena REF (``<equipo> - <direccion> (<id_go>)``) y FECHA en la
+      ficha SOLO cuando se acaba de copiar — preserva trabajo del abogado en
+      llamadas posteriores. REF se rellena solo si los tres componentes
+      están disponibles (D-7a-2).
+    - ``tipo_caso``, ``direccion`` e ``id_go`` se persisten en ``_caso.md``.
+      Si el caso ya existe y el kwarg difiere del frontmatter, se actualiza
+      vía ``_atomic_write_caso_md`` (D-7a-4).
+
+    Args:
+        case_id: Identificador del caso.
+        tipo_caso: Clave de ``TIPOS_CASO_ALL``. Gobierna la copia condicional
+            del cuestionario de viabilidad.
+        direccion, id_go: Persisten en ``_caso.md.meta`` y se usan para
+            componer REF de la ficha.
+        (resto): metadatos del caso, opcionales.
+    """
     case_dir = caso_path(case_id)
     case_dir.mkdir(parents=True, exist_ok=True)
 
+    # Subcarpetas estándar (nivel 1)
     for sub in CASO_SUBDIRS:
         (case_dir / sub).mkdir(exist_ok=True)
 
-    # Subcarpetas de intake dentro de 00_Input/ (niveles 2 y 3)
+    # Subcarpetas de intake (niveles 2 y 3)
     for intake_sub in INPUT_SUBDIRS:
         (case_dir / "00_Input" / intake_sub).mkdir(exist_ok=True)
     for sub3 in WHATSAPP_SUBDIRS:
@@ -197,25 +247,82 @@ def ensure_case(
     for sub3 in EMAIL_SUBDIRS:
         (case_dir / "00_Input" / "03_Email" / sub3).mkdir(exist_ok=True)
 
+    # Árbol CRM completo (D1 — eager, todas las ramas para todos los casos)
+    _ensure_crm_tree_dirs(case_dir)
+
     index_path = case_dir / "00_Input" / "_caso.md"
     is_new = not index_path.exists()
 
-    meta = CaseMeta(
-        case_id=case_id,
-        titulo=titulo or case_id,
-        referencia_crm=referencia_crm,
-        cliente=cliente,
-        contraparte=contraparte,
-        drive_link=drive_link,
-        drive_remote_path=drive_remote_path,
-        cuantia=cuantia,
-        organo=organo,
-        creado_en=now_iso() if is_new else "",
-        actualizado_en=now_iso(),
-    )
-
     if is_new:
+        meta = CaseMeta(
+            case_id=case_id,
+            titulo=titulo or case_id,
+            referencia_crm=referencia_crm,
+            cliente=cliente,
+            contraparte=contraparte,
+            drive_link=drive_link,
+            drive_remote_path=drive_remote_path,
+            cuantia=cuantia,
+            organo=organo,
+            direccion=direccion,
+            id_go=id_go,
+            tipo_caso=tipo_caso,
+            creado_en=now_iso(),
+            actualizado_en=now_iso(),
+        )
         _write_case_index(case_dir, meta)
+        tipo_caso_eff = tipo_caso
+        direccion_eff = direccion
+        id_go_eff = id_go
+    else:
+        # Caso existente: resolver valores efectivos vía coalesce kwarg → persisted.
+        try:
+            fm, _ = read_md(index_path)
+            persisted = (fm.get("meta") or {}) if isinstance(fm, dict) else {}
+        except Exception:
+            persisted = {}
+
+        tipo_caso_eff = tipo_caso if tipo_caso is not None else persisted.get("tipo_caso")
+        direccion_eff = direccion if direccion is not None else persisted.get("direccion")
+        id_go_eff = id_go if id_go is not None else persisted.get("id_go")
+
+        # Reescribir frontmatter solo si algún kwarg explícito difiere del persistido (D-7a-4).
+        needs_update = (
+            (tipo_caso is not None and persisted.get("tipo_caso") != tipo_caso_eff)
+            or (direccion is not None and persisted.get("direccion") != direccion_eff)
+            or (id_go is not None and persisted.get("id_go") != id_go_eff)
+        )
+        if needs_update:
+            def _mutate(fm_in: dict) -> dict:
+                meta_in = fm_in.get("meta") or {}
+                if tipo_caso is not None:
+                    meta_in["tipo_caso"] = tipo_caso_eff
+                if direccion is not None:
+                    meta_in["direccion"] = direccion_eff
+                if id_go is not None:
+                    meta_in["id_go"] = id_go_eff
+                fm_in["meta"] = meta_in
+                return fm_in
+            _atomic_write_caso_md(case_id, _mutate)
+
+    # Copia idempotente de plantillas de viabilidad
+    analisis_dir = case_dir / "02_Analisis"
+    ficha_dest = analisis_dir / "_ficha_operacion.xlsx"
+    ficha_copiada = _copy_plantilla(_FICHA_TEMPLATE, ficha_dest)
+
+    if tipo_caso_eff in INFORME_VIABILIDAD_TIPOS:
+        cuestionario_dest = analisis_dir / "_cuestionario_viabilidad.xlsx"
+        _copy_plantilla(_CUESTIONARIO_TEMPLATE, cuestionario_dest)
+
+    # Pre-rellenar SOLO si acabamos de copiar la ficha — preserva trabajo previo.
+    if ficha_copiada:
+        equipo = _parse_equipo_from_case_id(case_id)
+        _prerellenar_ficha(
+            ficha_dest,
+            equipo=equipo,
+            direccion=direccion_eff,
+            id_go=id_go_eff,
+        )
 
     return case_dir
 
@@ -648,3 +755,132 @@ def update_pull_state(
 
     _atomic_write_caso_md(case_id, _mutate)
     return captured["entry"]
+
+
+# ---------------------------------------------------------------------------
+# Refactor intake v2 — paso 7a: scaffolding del caso (CRM_TREE + plantillas)
+# ---------------------------------------------------------------------------
+#
+# Helpers privados que dan soporte a `ensure_case` v2. Decisiones D-7a-1 a
+# D-7a-7 cerradas con el usuario en sesión 2026-05-11.
+
+
+# Coincide con el prefijo de equipo del case_id nuevo:
+# `BaRR3 - Dirección (W-XXXXXX) - Tipo` → "BaRR3".
+_EQUIPO_RE = re.compile(r"^[A-Z][a-zA-Z][A-Z]{2}\d+$")
+
+
+def _parse_equipo_from_case_id(case_id: str) -> str | None:
+    """Extrae el token de equipo del case_id si sigue el formato CRM nuevo.
+
+    Devuelve ``None`` si el case_id usa el formato heredado (``EV-2026-001``)
+    o si el primer token no encaja con el patrón de equipo (dos letras +
+    dos letras + dígitos, p. ej. ``BaRR3``, ``MaRS15``).
+    """
+    if not case_id:
+        return None
+    token = case_id.split(" - ", 1)[0].strip()
+    return token if _EQUIPO_RE.match(token) else None
+
+
+def _ensure_crm_tree_dirs(case_dir: Path) -> None:
+    """Crea todas las ramas de ``CRM_TREE`` bajo ``00_Input/05_CRM/`` (D1 eager).
+
+    Recorrido recursivo (``_walk_crm_tree``); ``mkdir(exist_ok=True)`` en
+    cada nodo. Coste trivial; la uniformidad simplifica el downstream
+    (pull, anonimizador, UI).
+    """
+    base = case_dir / "00_Input" / CRM_SUBDIR
+    base.mkdir(parents=True, exist_ok=True)
+    for _name, full_path in _walk_crm_tree(CRM_TREE):
+        (base / full_path).mkdir(parents=True, exist_ok=True)
+
+
+def _copy_plantilla(origen: Path, destino: Path) -> bool:
+    """Copia una plantilla al destino con idempotencia estricta.
+
+    - Si ``destino`` ya existe → NO sobrescribe (preserva trabajo del
+      abogado) y devuelve ``False``.
+    - Si ``origen`` no existe → log warning y devuelve ``False`` (no
+      aborta ensure_case; podría faltar tras un checkout parcial o un
+      mount intermitente de la unidad de red).
+    - En otro caso, copia con ``shutil.copy2`` (preserva metadatos) y
+      devuelve ``True``.
+    """
+    if destino.exists():
+        return False
+    if not origen.exists():
+        logger.warning("Plantilla no encontrada, se omite copia: %s", origen)
+        return False
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(origen, destino)
+    return True
+
+
+def _find_label_row(
+    ws: Any,
+    label: str,
+    *,
+    column: int = 2,
+    max_rows: int = 200,
+) -> int | None:
+    """Localiza la primera fila cuya celda en ``column`` matchea ``label``.
+
+    Las celdas concretas donde el render escribe REF/FECHA no son
+    estables (dependen del orden de los bloques en el YAML). Localizar
+    por etiqueta es resistente a cambios futuros del template.
+    """
+    for row in range(1, max_rows + 1):
+        value = ws.cell(row=row, column=column).value
+        if value is not None and str(value).strip() == label:
+            return row
+    return None
+
+
+def _prerellenar_ficha(
+    ficha_path: Path,
+    *,
+    equipo: str | None,
+    direccion: str | None,
+    id_go: str | None,
+) -> None:
+    """Pre-rellena REF y FECHA en la ficha de operación recién copiada.
+
+    Localiza ``REF`` y ``FECHA`` en columna B de la hoja ``OPERACION`` y
+    escribe el valor en la columna C de la misma fila. REF se rellena
+    SOLO si los tres componentes están presentes (D-7a-2) — sin
+    placeholders. FECHA siempre se rellena con la fecha actual.
+
+    Silencioso ante errores de openpyxl: una ficha corrupta no debe
+    abortar la creación del caso.
+    """
+    try:
+        from openpyxl import load_workbook
+    except ImportError:
+        logger.warning("openpyxl no disponible; se omite pre-relleno de la ficha")
+        return
+
+    try:
+        wb = load_workbook(ficha_path)
+    except Exception as exc:
+        logger.warning("No se pudo abrir ficha para pre-relleno (%s): %s", ficha_path, exc)
+        return
+
+    if "OPERACION" not in wb.sheetnames:
+        logger.warning("Hoja 'OPERACION' no encontrada en %s", ficha_path)
+        return
+    ws = wb["OPERACION"]
+
+    ref_row = _find_label_row(ws, "REF")
+    if ref_row is not None and equipo and direccion and id_go:
+        ws.cell(row=ref_row, column=3, value=f"{equipo} - {direccion} ({id_go})")
+
+    fecha_row = _find_label_row(ws, "FECHA")
+    if fecha_row is not None:
+        cell = ws.cell(row=fecha_row, column=3, value=date.today())
+        cell.number_format = "dd/mm/yyyy"
+
+    try:
+        wb.save(ficha_path)
+    except Exception as exc:
+        logger.warning("No se pudo guardar ficha tras pre-relleno (%s): %s", ficha_path, exc)
