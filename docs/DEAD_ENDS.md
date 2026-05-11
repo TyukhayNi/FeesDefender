@@ -51,6 +51,19 @@
 - **Confirmado:** 2026-04-24
 - **Conclusión:** Usar siempre `x-api-key: <clave>` sin prefijo `Bearer`.
 
+### `GET /api/files/presigned_download_url/{doc_id}` → HTTP 400 "Unable to generate an IRI"
+- **Intentado:** descarga de los 26 documentos del expediente judicial 649 vía `pull_expediente_v2` (`download_document_rest` → `presigned_download_url`)
+- **Resultado:** los 26 docs fallan con HTTP 400 y body
+  `{"@context":"/api/contexts/Error","@type":"hydra:Error","hydra:title":"An error occurred",`
+  `"hydra:description":"Unable to generate an IRI for \"App\\Upload\\Infrastructure\\ApiPlatform\\DTO\\Download\""`
+  — error del framework API Platform en el backend PHP. Auth x-api-key responde, el listado `gdocu` funciona (devuelve 26 items con metadatos), pero el endpoint de pre-signed URL no genera el IRI del DTO `Download`.
+- **Confirmado:** 2026-05-11 (sesión post-incidencia BaRR3, durante intento de pull v2 del expediente real 649)
+- **Histórico:** este mismo endpoint estaba **operativo el 2026-05-04** (registrado en `reference_sudespacho_api.md` y STATUS sesión 2026-05-04: *"REST elimina PHPSESSID para docs: `/api/element_registries/gdocu` + `/api/files/presigned_download_url/{doc_id}` confirmados sin PHPSESSID"*). Algo ha cambiado server-side entre el 2026-05-04 y el 2026-05-11.
+- **Consecuencia:** ningún caso puede completar pull v2 hasta que se resuelva. El listado funciona; la descarga no.
+- **Causa probable:** el cliente PHP del CRM ha desplegado una refactorización del módulo Upload con una clase `DTO\Download` cuyo `apiResource` no expone `iri` (falta atributo `@ApiResource(iri="...")` o el router de API Platform no la encuentra). Es un bug de configuración del backend, no de nuestro código.
+- **Acción pendiente `[NUEVO-HILO-PRESIGNED-DOWNLOAD-BUG]`:** (1) capturar HAR de la SPA descargando un doc desde sudespacho.net (los usuarios sí descargan desde la web — la SPA usa una ruta distinta o un endpoint nuevo); (2) comparar payload con `download_document_rest`; (3) si la ruta ha cambiado, actualizar `core/sync_sudespacho.py`. Mientras tanto, fallback legacy con PHPSESSID + frontal `/views/gdocu/...` (no implementado en v2).
+- **Workaround temporal:** si necesitas los docs de un caso, descárgalos manualmente desde la SPA y súbelos al árbol `00_Input/05_CRM/<rama>/` con el expander "📂 Subir al árbol CRM" del tab Casos de Streamlit.
+
 ---
 
 ## Google Drive / Google Docs

@@ -3,7 +3,9 @@
 > **Fuente de verdad única del proyecto.**
 > Actualizar al cerrar cada sesión con `python -m scripts.session_close`.
 
-**Última actualización:** 2026-05-11 (sesión 7) — **Paso 8 del refactor intake v2 cerrado** + **rename de nomenclatura "ficha_operacion" → "informe_viabilidad"** (decisión del usuario en la misma sesión). 113 + 9 tests verdes (122 totales del paso 8). Suite global ~441/441. **Rename**: la plantilla `data/_plantillas/ficha_operacion.{yaml,xlsx}` pasa a `informe_viabilidad.{yaml,xlsx}` (rename físico ejecutado en PowerShell). En cada caso nuevo, el destino se llama `Informe viabilidad - <case_id>.xlsx` cuando el case_id sigue formato CRM nuevo (`BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU.xlsx`), o `_informe_viabilidad.xlsx` como fallback para case_ids legacy. Helper `_compose_informe_filename(case_id)` en `core/case_manager.py` + sanitize defensivo de caracteres prohibidos en Windows. Comando CLI: `python -m scripts.render_plantillas informe` (antes `ficha`). Casos ya existentes con `_ficha_operacion.xlsx` en disco se dejan tal cual — no migración automática. 9 tests nuevos en `tests/test_compose_informe_filename.py` + 5 tests adaptados en `test_smoke_paso7.py` + 1 constante renombrada en `test_render_plantillas.py`. Paso 8 (tests v2 originales): Ficheros: `test_crm_branch_path.py` (17 — resolución híbrida 3 niveles, ambigüedad, fallback, normalización Unicode), `test_legacy_v1_detection.py` (10 — guard positivo/negativo, case-sensitivity, fichero vs dir), `test_intake_log.py` (23 — schema M10, validación evento, singleton actor, fsync, líneas corruptas), `test_pull_state_atomic.py` (17 — schema D8, idempotencia, simulación de crash en `os.replace`), `test_dedup_manifest.py` (21 — register, reconcile, context manager con/sin excepción, atomicidad save), `test_render_plantillas.py` (14 — smoke estructural, `_meta` con hash, contrato `_StrictBoolLoader`), `test_pull_expediente_v2.py` (11 — integración happy/fallback/legacy/dedup/idempotencia/errores). Dead end nuevo añadido a `docs/DEAD_ENDS.md`: `importlib.reload(core.sync_sudespacho)` desde fixture rompe los imports top-level cacheados de `tests/test_sync_sudespacho.py` (descubierto al primer run del fichero 7; fix: recargar solo `case_manager` + `intake_log` + `intake_manifest`). Decisiones técnicas de organización de tests, mocking duck-typed (`FakeSudespachoClient`), fixtures locales por fichero — documentadas en docstrings de cada testfile. Pendiente: smoke manual UI Streamlit (sidebar M10 + tab Casos expander árbol CRM + tab Nuevo caso con plantillas pre-rellenadas — no automatizable sin navegador) + commit final.
+**Última actualización:** 2026-05-11 (sesión 8) — **Incidencia BaRR3 cerrada + validación referencia local↔CRM + auditoría preventiva + hallazgo bug presigned_download_url**. Diagnóstico cruzado vía REST + frontmatter + INTEGRACION_SUDESPACHO.md confirmó la causa raíz del caso BaRR3 ← expediente 648: el ID 648 era un expediente **real de BaRR1** (Collserola 53 Bis - Bad Debt, num_expediente=28, fecha_alta=2026-04-13), usado el 2026-04-26 como cobaya para capturar HARs (`judicial_648.har`, `INTEGRACION_SUDESPACHO.md` línea 870: *"Pull real expediente 648: 5 docs, 5,35 MB"*). El pull se ejecutó contra el case_id local BaRR3 (que era el case_id activo en desarrollo); los 5 docs de BaRR1 quedaron en `BaRR3/00_Input/sudespacho_648/`. El expediente real de Roser es **649** (`BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU   `, con trailing whitespace del CRM, tolerado por validator vía `.strip()`). No es bug runtime — es contaminación por testing manual durante desarrollo. **Validación preventiva implementada**: `core/sudespacho_relations.fetch_referencia_cliente` + `verify_expediente_referencia` consultan REST `/api/element_registries/<element>` filtrando por id y comparan `referencia_cliente` del CRM contra la esperada local. Wireadas en `streamlit_app.py` (tab Nuevo caso, post-`register_expediente`) y `scripts/sync_sudespacho.py` (CLI pull, pre-descarga). Nunca lanza; muestra `st.warning`/`typer.echo` si mismatch, `st.info` si crm_unreachable, `st.caption` si match. `_REFERENCIA_PROP_BY_ELEMENT` mapea slug → propiedad (`referencia_cliente` lowercase judicial, `Referencia_Cliente` CamelCase extrajudicial; alias `judiciales`/`extrajudiciales` aceptados). **15 tests** dedicados en `tests/test_verify_referencia.py` (match, mismatch, crm_no_disponible, CamelCase extrajudicial, alias judiciales, sin api_key, HTTP 500, red caída, id_no_aparece, tolerancia a espacios, sensibilidad a mayúsculas, expected_referencia None). **Suite global: 448/448 verde**. **Auditoría preventiva** `scripts/audit_referencias_casos.py` reveló 3 anomalías en el repo: (1) BaRR3 ← 648 (contaminación, ahora limpio); (2) MaRS15 ← 653, 654, 655, 656 (4 IDs fantasma no existentes en CRM — probables residuos de intentos de creación fallidos en sesión 2026-05-06, ahora limpios); (3) MaRS2 ← 597 (drift tipográfico — vínculo correcto, solo difería el espaciado y mayúsculas; resuelto editando `referencia_cliente` en sudespacho.net manualmente + sincronizando `meta.referencia_crm` local). Auditoría final: **0/4 mismatches**. Scripts nuevos: `scripts/diag_expediente_648.py` (con fallback de `properties[]` para tolerar schemas del tenant que rechazan propiedades), `scripts/remove_expediente_link.py` (helper depurador del bloque `sudespacho_expedientes`), `scripts/limpieza_post_audit.py` (orquestador one-shot de la limpieza) y shim `scripts/limpieza_post_audit.ps1` minimal (Python maneja UTF-8 nativo; PS 5.1 sin BOM choca con no-ASCII). **Hallazgo crítico nuevo**: el endpoint REST `GET /api/files/presigned_download_url/{doc_id}` devuelve **HTTP 400 "Unable to generate an IRI for App\\Upload\\Infrastructure\\ApiPlatform\\DTO\\Download"** para los 26 documentos del expediente 649 — bug del backend PHP (API Platform). El listado `gdocu` funciona; la descarga no. Confirmado operativo el 2026-05-04, roto a 2026-05-11. Bloquea pulls v2 hasta resolución. Documentado en `docs/DEAD_ENDS.md`. **Lateral**: namespaces id de `expedientes_judiciales` y `extrajudiciales` son independientes (id=597 existe en ambos, son expedientes distintos).
+
+**Anterior (2026-05-11, sesión 7):** **Paso 8 del refactor intake v2 cerrado** + **rename de nomenclatura "ficha_operacion" → "informe_viabilidad"** (decisión del usuario en la misma sesión). 113 + 9 tests verdes (122 totales del paso 8). Suite global ~441/441. **Rename**: la plantilla `data/_plantillas/ficha_operacion.{yaml,xlsx}` pasa a `informe_viabilidad.{yaml,xlsx}` (rename físico ejecutado en PowerShell). En cada caso nuevo, el destino se llama `Informe viabilidad - <case_id>.xlsx` cuando el case_id sigue formato CRM nuevo (`BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU.xlsx`), o `_informe_viabilidad.xlsx` como fallback para case_ids legacy. Helper `_compose_informe_filename(case_id)` en `core/case_manager.py` + sanitize defensivo de caracteres prohibidos en Windows. Comando CLI: `python -m scripts.render_plantillas informe` (antes `ficha`). Casos ya existentes con `_ficha_operacion.xlsx` en disco se dejan tal cual — no migración automática. 9 tests nuevos en `tests/test_compose_informe_filename.py` + 5 tests adaptados en `test_smoke_paso7.py` + 1 constante renombrada en `test_render_plantillas.py`. Paso 8 (tests v2 originales): Ficheros: `test_crm_branch_path.py` (17 — resolución híbrida 3 niveles, ambigüedad, fallback, normalización Unicode), `test_legacy_v1_detection.py` (10 — guard positivo/negativo, case-sensitivity, fichero vs dir), `test_intake_log.py` (23 — schema M10, validación evento, singleton actor, fsync, líneas corruptas), `test_pull_state_atomic.py` (17 — schema D8, idempotencia, simulación de crash en `os.replace`), `test_dedup_manifest.py` (21 — register, reconcile, context manager con/sin excepción, atomicidad save), `test_render_plantillas.py` (14 — smoke estructural, `_meta` con hash, contrato `_StrictBoolLoader`), `test_pull_expediente_v2.py` (11 — integración happy/fallback/legacy/dedup/idempotencia/errores). Dead end nuevo añadido a `docs/DEAD_ENDS.md`: `importlib.reload(core.sync_sudespacho)` desde fixture rompe los imports top-level cacheados de `tests/test_sync_sudespacho.py` (descubierto al primer run del fichero 7; fix: recargar solo `case_manager` + `intake_log` + `intake_manifest`). Decisiones técnicas de organización de tests, mocking duck-typed (`FakeSudespachoClient`), fixtures locales por fichero — documentadas en docstrings de cada testfile. Pendiente: smoke manual UI Streamlit (sidebar M10 + tab Casos expander árbol CRM + tab Nuevo caso con plantillas pre-rellenadas — no automatizable sin navegador) + commit final.
 
 **Anterior (2026-05-11, sesión 6):** **Fix `Numero_Expediente=0` en creación de expedientes extrajudiciales REST.** Causa raíz: el endpoint `POST /api/element_register/extrajudiciales` auto-asigna `Numero_Expediente` de forma INTERMITENTE — confirmado empíricamente con ID 605 (serie 2026, quedó en 0) vs ID 606 (creado consecutivamente, asignado correctamente a 49). `_build_rest_payload_extrajudicial` enviaba `"Numero_Expediente": "0"` y dependía de la auto-asignación del servidor. Fix: replicada la estrategia que se aplicó al judicial el 2026-05-07 — nueva función `_get_next_num_expediente_extrajudicial(year)` (consulta `/api/element_registries/extrajudiciales` con `properties[]+equal+totalItems`, propiedad `Numero_Expediente` en CamelCase, devuelve `max+1`), invocada antes de construir el payload. Si la consulta falla → mantiene `"0"` (comportamiento previo como fallback, no se empeora). Diagnóstico empírico ejecutado vía `scripts/diag_num_extrajudicial.py` (nuevo) — replica la query y muestra detalle de `Numero_Expediente` por expediente + max+1. Tests +10: 7 dedicados a `_get_next_num_expediente_extrajudicial` (max+1, primer expediente=1, ignora vacíos/0, error API/red/sin key → None, valida `properties[]+equal+CamelCase+endpoint`), 3 al builder (mantiene 0 si query falla, calcula valor si exitosa, regresión "no es 0 si query exitosa"); fixtures autouse mockean la nueva GET en `TestBuildRestPayloadExtrajudicial`, `TestCreateExpedienteRest` y `TestCreateExpedienteRestFirst` para que los tests no hagan red real. Memoria `reference_sudespacho_api.md` actualizada con el caso del endpoint intermitente. Caso real ID 605 corregido manualmente por el usuario a Numero_Expediente=50; futuras creaciones desde la UI ya enviarán correlativo correcto.
 
@@ -69,7 +71,10 @@ git commit -m "<mensaje que Claude propuso>"
 
 | Ítem | Estado |
 |------|--------|
-| Tests | ✅ ~441/441 (Anonimizador absorbido: +51 — 2026-05-07; sufijo captador Drive: +2 — 2026-05-11 s4; Numero_Expediente extrajudicial: +10 — 2026-05-11 s6; tests v2 dedicados paso 8: +113 — 2026-05-11 s7; rename informe_viabilidad: +9 — 2026-05-11 s7) |
+| Tests | ✅ 448/448 (Anonimizador absorbido: +51 — 2026-05-07; sufijo captador Drive: +2 — 2026-05-11 s4; Numero_Expediente extrajudicial: +10 — 2026-05-11 s6; tests v2 dedicados paso 8: +113 — 2026-05-11 s7; rename informe_viabilidad: +9 — 2026-05-11 s7; verify_expediente_referencia: +15 — 2026-05-11 s8) |
+| Validación referencia local↔CRM | ✅ 2026-05-11 s8 — `core/sudespacho_relations.fetch_referencia_cliente` + `verify_expediente_referencia`; wireadas en UI (post-register_expediente) y CLI (pre-pull); 15 tests verdes |
+| Auditoría preventiva | ✅ 2026-05-11 s8 — `scripts/audit_referencias_casos.py`; 0/4 mismatches tras limpieza |
+| BaRR3 — incidencia | ✅ Cerrada 2026-05-11 s8 — 648 era de BaRR1, contaminación limpiada; pull v2 de 649 listó 26 docs pero los downloads fallan (bug backend, ver abajo) |
 | `core/intake_log.py` | ✅ M10 implementado 2026-05-08 — 13 tipos evento JSONL, actor singleton thread-safe |
 | `core/intake_manifest.py` | ✅ M9 implementado 2026-05-08 — manifest SHA-256, IntakeManifest, reconcile, política skip + aliases |
 | `core/intake_manual.py` | ✅ Sucesor de intake_demanda.py (2026-05-08) — destino `04_Manual/` |
@@ -200,16 +205,9 @@ git commit -m "<mensaje que Claude propuso>"
 
 **Case ID:** `BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU`
 **Cliente:** EV MMC SPAIN, S.L.U.
-**Expediente CRM REAL:** **649** (`expedientes_judiciales`) ← pendiente intake
-**Expediente erróneamente vinculado:** 648 ← NO es Roser, es otro caso del CRM (a identificar y desvincular)
-**Docs descargados:** 5 archivos, 5,35 MB ← contaminados con expediente 648, BORRAR
-
-**⚠️ Acción pendiente antes de lanzar pipeline:**
-```powershell
-cd "G:\Unidades compartidas\DESPACHO - PRODUCCION\Base datos expedientes"
-Remove-Item -Recurse -Force "G:\Unidades compartidas\EXPEDIENTES - TYUKHAY LEGAL\CASOS\BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU\00_INPUT\sudespacho"
-python -m scripts.run_pipeline "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
-```
+**Expediente CRM REAL:** **649** (`expedientes_judiciales`) — referencia_cliente en CRM: `BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU   ` (con 3 espacios trailing del CRM; tolerados por `verify_expediente_referencia` vía `.strip()`).
+**Estado intake (2026-05-11 s8):** vinculado y validado en `_caso.md`; árbol `00_Input/05_CRM/` creado; 26 documentos detectados en el gestor documental del CRM pero **download bloqueado** por bug del backend `presigned_download_url` (ver `[CRITICO-PRESIGNED-DOWNLOAD-BUG]` abajo y `docs/DEAD_ENDS.md`).
+**Historial incidencia (cerrada):** el ID 648 estaba mal vinculado en `_caso.md` desde 2026-04-26. Causa raíz: 648 era un expediente **real de BaRR1** (Collserola 53 Bis, Bad Debt) usado como cobaya para capturar HARs de los endpoints judiciales; el pull se ejecutó contra el case_id local BaRR3 y los 5 docs de BaRR1 contaminaron `sudespacho_648/`. Limpiado 2026-05-11 s8 (carpeta borrada, frontmatter saneado).
 
 ---
 
@@ -277,42 +275,74 @@ Investigación pendiente NO bloqueante: query correcta del endpoint
 
 ---
 
-**[CRITICO-INTAKE-EXPEDIENTE-INCORRECTO]** (detectado 2026-05-07, fin de sesión)
+**[CRITICO-PRESIGNED-DOWNLOAD-BUG]** (detectado 2026-05-11 s8, durante pull v2 del expediente 649 de BaRR3)
 
-El caso `BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU` tiene asociado en
-`_caso.md` el expediente CRM **ID 648**, pero el ID real del caso Roser
-en el CRM `tnm.sudespacho.net` es **649**. Los 5 documentos en
-`00_Input/sudespacho_648/` NO pertenecen a Roser — pertenecen a otro
-expediente.
+El endpoint REST `GET /api/files/presigned_download_url/{doc_id}` devuelve
+**HTTP 400** para todos los documentos del expediente 649 (26/26 fallos
+consecutivos) con body:
 
-Trabajo a hacer al inicio de próxima sesión:
+```
+{"@context":"/api/contexts/Error","@type":"hydra:Error",
+ "hydra:title":"An error occurred",
+ "hydra:description":"Unable to generate an IRI for \"App\\Upload\\Infrastructure\\ApiPlatform\\DTO\\Download\""
+```
 
-1. **Identificar el expediente real con ID 648 en el CRM** — abrir
-   `tnm.sudespacho.net` y consultar a qué cliente y referencia
-   corresponde el ID 648. Documentar el resultado.
-2. **Borrar `data/CASOS/BaRR3 - .../00_Input/sudespacho_648/`** — los
-   documentos están contaminados (no son del caso). Limpiar también la
-   entrada `sudespacho_expedientes` del frontmatter de `_caso.md`.
-3. **Investigar la causa raíz**: ¿cómo se asoció 648 al caso Roser?
-   Posibilidades a revisar:
-   - El usuario tecleó el ID a mano al crear el caso (input incorrecto).
-   - Había un mapeo automático `referencia → ID` que ha devuelto el
-     siguiente disponible.
-   - `find_expediente_judicial_by_referencia` en
-     `core/sudespacho_relations.py` no filtró bien al buscar el ID.
-4. **Hacer pull correcto del expediente 649** para Roser via
-   `core/intake_drive.py` o `pull_expediente`. Verificar que los 5
-   documentos descargados son los reales del caso.
-5. **Auditar otros casos** del repositorio: ¿hay más casos con el ID CRM
-   incorrecto? Script ad-hoc que recorra `data/CASOS/*/00_Input/_caso.md`
-   y compruebe la coherencia `referencia ↔ ID` consultando el CRM.
-6. **Si se confirma fallo en la lógica** del intake (no error humano),
-   añadir validación: tras crear / vincular un expediente, leer
-   `referencia` desde el CRM y compararla con la del caso local. Lanzar
-   warning visible en UI si no coinciden.
+Es un error del framework API Platform en el backend PHP (no autenticación,
+no parseo del cliente — el listado `gdocu` funciona perfectamente y
+devuelve los 26 documentos con metadatos). Confirmado **operativo el 2026-05-04**
+en `reference_sudespacho_api.md` y STATUS sesión 2026-05-04 (*"REST elimina
+PHPSESSID para docs: `/api/element_registries/gdocu` + `/api/files/presigned_download_url/{doc_id}` confirmados sin PHPSESSID"*).
+Confirmado **roto el 2026-05-11**.
 
-Bloqueante para usar Anonimizador sobre BaRR3 — los .md anonimizados se
-generarían sobre datos del expediente equivocado.
+**Consecuencia:** ningún caso puede completar pull v2 hasta que se resuelva.
+BaRR3 ha quedado vinculado al expediente correcto 649 pero sin docs locales.
+
+**Trabajo a hacer en próxima sesión (NUEVO HILO):**
+
+1. **Capturar HAR de la SPA descargando un doc del expediente 649** desde
+   sudespacho.net manualmente (Chrome DevTools → Network → click sobre un
+   doc del gestor documental → guardar HAR). El usuario sí puede descargar
+   desde la web — la SPA usa ruta distinta o auth diferente.
+2. **Comparar payload con `download_document_rest`** en `core/sync_sudespacho.py`.
+3. **Si la ruta REST ha cambiado** (renombrado/reorganización del módulo
+   Upload del backend), actualizar el endpoint en `download_document_rest`.
+4. **Si la SPA usa frontal legacy PHP** para descargar (`/views/gdocu/...`),
+   implementar fallback en `pull_expediente_v2` con PHPSESSID (re-introducir
+   la dependencia que habíamos eliminado el 2026-05-04 para listar+descargar,
+   manteniendo la auth REST para crear/vincular).
+
+**Workaround inmediato** mientras no se resuelve: el usuario puede descargar
+los docs manualmente desde la SPA y subirlos al árbol `00_Input/05_CRM/<rama>/`
+usando el expander "📂 Subir al árbol CRM" del tab Casos de Streamlit (paso
+7b del refactor intake v2).
+
+Detalle completo en `docs/DEAD_ENDS.md` → "GET /api/files/presigned_download_url/{doc_id}".
+
+---
+
+**[CRITICO-INTAKE-EXPEDIENTE-INCORRECTO]** ✅ Cerrado 2026-05-11 s8.
+
+- Causa raíz identificada: el ID 648 era un expediente real de **BaRR1**
+  (Collserola 53 Bis, BD), usado el 2026-04-26 como cobaya para capturar
+  HARs de los endpoints judiciales (`judicial_648.har`,
+  `INTEGRACION_SUDESPACHO.md` línea 870). El pull se ejecutó contra el
+  case_id local BaRR3; los 5 docs de BaRR1 contaminaron `sudespacho_648/`.
+  No es bug runtime — es contaminación por testing manual durante el
+  desarrollo del flujo de pull.
+- Limpieza: `BaRR3/00_Input/sudespacho_648/` borrada; entrada 648 eliminada
+  del frontmatter (`scripts/remove_expediente_link.py`, atomic write);
+  expediente correcto 649 vinculado y validado.
+- Auditoría preventiva sobre los 4 casos del repo destapó además: MaRS15
+  con 4 IDs fantasma (653-656, no existen en CRM, probable residuo de
+  intentos fallidos en sesión 2026-05-06 — limpiados) y MaRS2 con drift
+  tipográfico en `referencia_cliente` (resuelto editando el CRM
+  manualmente + sincronizando `meta.referencia_crm` local). Auditoría
+  final: **0/4 mismatches**.
+- Validación preventiva implementada: `verify_expediente_referencia`
+  consulta el CRM tras `register_expediente` y avisa si el case_id local
+  no coincide con `referencia_cliente`. Wireada en UI (Streamlit) y CLI
+  (sync_sudespacho pull). 15 tests verdes. Documentación en commit
+  `3fa7e23` (main).
 
 ---
 
