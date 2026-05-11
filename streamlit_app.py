@@ -1123,15 +1123,16 @@ with tab_nuevo:
         unsafe_allow_html=True,
     )
 
-    _drive_url_label = "URL carpeta W-XXXXXX *" if es_judicial else "URL carpeta W-XXXXXX"
     drive_url_input = st.text_input(
-        _drive_url_label,
+        "URL carpeta W-XXXXXX",
         placeholder="https://drive.google.com/drive/folders/1BxiMV…",
         key="nc_drive_url",
         help=(
-            "Pega la URL de la carpeta de la operación en el Drive engelvoelkers.com. "
-            "Ciudad, equipo, dirección e ID GO se autorellenan automáticamente."
-            + (" Obligatorio para expedientes judiciales: es la fuente de los documentos del procedimiento." if es_judicial else "")
+            "Opcional. Pega la URL de la carpeta de la operación en el Drive "
+            "engelvoelkers.com. Si se rellena, ciudad, equipo, dirección e "
+            "ID GO se autorellenan y los documentos pueden sincronizarse vía "
+            "rclone. Si se deja vacía, se completarán los campos manualmente "
+            "y no habrá pull automático del Drive."
         ),
     )
 
@@ -1485,9 +1486,9 @@ with tab_nuevo:
         elif not _valid_email(mail_captador):
             _missing.append("Mail Consultor Captador — formato inválido")
 
-        # URL Drive E&V (obligatoria para judiciales)
-        if es_judicial and not drive_url_input.strip():
-            _missing.append("URL carpeta Drive E&V (obligatoria para expedientes judiciales)")
+        # URL Drive E&V: opcional para judiciales y extrajudiciales (2026-05-11 s10).
+        # Si se rellena, habilita auto-fill + pull rclone; si se omite, los
+        # campos de operación se rellenan a mano y no hay pull automático.
 
         # Email Consultor Buscador (opcional — solo validar formato si se rellena)
         if mail_buscador.strip() and not _valid_email(mail_buscador):
