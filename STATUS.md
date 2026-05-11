@@ -3,7 +3,9 @@
 > **Fuente de verdad única del proyecto.**
 > Actualizar al cerrar cada sesión con `python -m scripts.session_close`.
 
-**Última actualización:** 2026-05-11 (sesión 6) — **Fix `Numero_Expediente=0` en creación de expedientes extrajudiciales REST.** Causa raíz: el endpoint `POST /api/element_register/extrajudiciales` auto-asigna `Numero_Expediente` de forma INTERMITENTE — confirmado empíricamente con ID 605 (serie 2026, quedó en 0) vs ID 606 (creado consecutivamente, asignado correctamente a 49). `_build_rest_payload_extrajudicial` enviaba `"Numero_Expediente": "0"` y dependía de la auto-asignación del servidor. Fix: replicada la estrategia que se aplicó al judicial el 2026-05-07 — nueva función `_get_next_num_expediente_extrajudicial(year)` (consulta `/api/element_registries/extrajudiciales` con `properties[]+equal+totalItems`, propiedad `Numero_Expediente` en CamelCase, devuelve `max+1`), invocada antes de construir el payload. Si la consulta falla → mantiene `"0"` (comportamiento previo como fallback, no se empeora). Diagnóstico empírico ejecutado vía `scripts/diag_num_extrajudicial.py` (nuevo) — replica la query y muestra detalle de `Numero_Expediente` por expediente + max+1. Tests +10: 7 dedicados a `_get_next_num_expediente_extrajudicial` (max+1, primer expediente=1, ignora vacíos/0, error API/red/sin key → None, valida `properties[]+equal+CamelCase+endpoint`), 3 al builder (mantiene 0 si query falla, calcula valor si exitosa, regresión "no es 0 si query exitosa"); fixtures autouse mockean la nueva GET en `TestBuildRestPayloadExtrajudicial`, `TestCreateExpedienteRest` y `TestCreateExpedienteRestFirst` para que los tests no hagan red real. Memoria `reference_sudespacho_api.md` actualizada con el caso del endpoint intermitente. Caso real ID 605 corregido manualmente por el usuario a Numero_Expediente=50; futuras creaciones desde la UI ya enviarán correlativo correcto.
+**Última actualización:** 2026-05-11 (sesión 7) — **Paso 8 del refactor intake v2 cerrado** + **rename de nomenclatura "ficha_operacion" → "informe_viabilidad"** (decisión del usuario en la misma sesión). 113 + 9 tests verdes (122 totales del paso 8). Suite global ~441/441. **Rename**: la plantilla `data/_plantillas/ficha_operacion.{yaml,xlsx}` pasa a `informe_viabilidad.{yaml,xlsx}` (rename físico ejecutado en PowerShell). En cada caso nuevo, el destino se llama `Informe viabilidad - <case_id>.xlsx` cuando el case_id sigue formato CRM nuevo (`BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU.xlsx`), o `_informe_viabilidad.xlsx` como fallback para case_ids legacy. Helper `_compose_informe_filename(case_id)` en `core/case_manager.py` + sanitize defensivo de caracteres prohibidos en Windows. Comando CLI: `python -m scripts.render_plantillas informe` (antes `ficha`). Casos ya existentes con `_ficha_operacion.xlsx` en disco se dejan tal cual — no migración automática. 9 tests nuevos en `tests/test_compose_informe_filename.py` + 5 tests adaptados en `test_smoke_paso7.py` + 1 constante renombrada en `test_render_plantillas.py`. Paso 8 (tests v2 originales): Ficheros: `test_crm_branch_path.py` (17 — resolución híbrida 3 niveles, ambigüedad, fallback, normalización Unicode), `test_legacy_v1_detection.py` (10 — guard positivo/negativo, case-sensitivity, fichero vs dir), `test_intake_log.py` (23 — schema M10, validación evento, singleton actor, fsync, líneas corruptas), `test_pull_state_atomic.py` (17 — schema D8, idempotencia, simulación de crash en `os.replace`), `test_dedup_manifest.py` (21 — register, reconcile, context manager con/sin excepción, atomicidad save), `test_render_plantillas.py` (14 — smoke estructural, `_meta` con hash, contrato `_StrictBoolLoader`), `test_pull_expediente_v2.py` (11 — integración happy/fallback/legacy/dedup/idempotencia/errores). Dead end nuevo añadido a `docs/DEAD_ENDS.md`: `importlib.reload(core.sync_sudespacho)` desde fixture rompe los imports top-level cacheados de `tests/test_sync_sudespacho.py` (descubierto al primer run del fichero 7; fix: recargar solo `case_manager` + `intake_log` + `intake_manifest`). Decisiones técnicas de organización de tests, mocking duck-typed (`FakeSudespachoClient`), fixtures locales por fichero — documentadas en docstrings de cada testfile. Pendiente: smoke manual UI Streamlit (sidebar M10 + tab Casos expander árbol CRM + tab Nuevo caso con plantillas pre-rellenadas — no automatizable sin navegador) + commit final.
+
+**Anterior (2026-05-11, sesión 6):** **Fix `Numero_Expediente=0` en creación de expedientes extrajudiciales REST.** Causa raíz: el endpoint `POST /api/element_register/extrajudiciales` auto-asigna `Numero_Expediente` de forma INTERMITENTE — confirmado empíricamente con ID 605 (serie 2026, quedó en 0) vs ID 606 (creado consecutivamente, asignado correctamente a 49). `_build_rest_payload_extrajudicial` enviaba `"Numero_Expediente": "0"` y dependía de la auto-asignación del servidor. Fix: replicada la estrategia que se aplicó al judicial el 2026-05-07 — nueva función `_get_next_num_expediente_extrajudicial(year)` (consulta `/api/element_registries/extrajudiciales` con `properties[]+equal+totalItems`, propiedad `Numero_Expediente` en CamelCase, devuelve `max+1`), invocada antes de construir el payload. Si la consulta falla → mantiene `"0"` (comportamiento previo como fallback, no se empeora). Diagnóstico empírico ejecutado vía `scripts/diag_num_extrajudicial.py` (nuevo) — replica la query y muestra detalle de `Numero_Expediente` por expediente + max+1. Tests +10: 7 dedicados a `_get_next_num_expediente_extrajudicial` (max+1, primer expediente=1, ignora vacíos/0, error API/red/sin key → None, valida `properties[]+equal+CamelCase+endpoint`), 3 al builder (mantiene 0 si query falla, calcula valor si exitosa, regresión "no es 0 si query exitosa"); fixtures autouse mockean la nueva GET en `TestBuildRestPayloadExtrajudicial`, `TestCreateExpedienteRest` y `TestCreateExpedienteRestFirst` para que los tests no hagan red real. Memoria `reference_sudespacho_api.md` actualizada con el caso del endpoint intermitente. Caso real ID 605 corregido manualmente por el usuario a Numero_Expediente=50; futuras creaciones desde la UI ya enviarán correlativo correcto.
 
 **Anterior (2026-05-11, sesión 5):** **Refactor intake v2 paso 7 implementado (7a + 7b)**. **7a**: `core/case_manager.ensure_case` v2 — crea árbol `CRM_TREE` eager bajo `00_Input/05_CRM/`, copia `data/_plantillas/ficha_operacion.xlsx` a `02_Analisis/_ficha_operacion.xlsx` (siempre) y `cuestionario_viabilidad.xlsx` si `tipo_caso ∈ INFORME_VIABILIDAD_TIPOS`, pre-rellena REF (`<equipo> - <direccion> (<id_go>)` solo si los tres están presentes) y FECHA en la ficha. `CaseMeta` con `tipo_caso`; persistencia en `_caso.md` con actualización vía `_atomic_write_caso_md` si el kwarg difiere del persistido (D-7a-4). Idempotencia estricta. Helpers nuevos: `_parse_equipo_from_case_id`, `_ensure_crm_tree_dirs`, `_copy_plantilla`, `_prerellenar_ficha`, `_find_label_row`. `register_expediente` preserva ahora los campos v2 (`drive_ev_team_id/folder_id`, `direccion`, `id_go`, `tipo_caso`) al reconstruir `CaseMeta` (bug latente arreglado de paso). **7b**: `core/config.ACTORES_DESPACHO` (5 personas: Nikolai Tyukhay, Karen Paola Barreto, Sergio Piñol, Ana Solange Velastegui, Marta Reynares). `core/intake_manual.save_file_crm_branch` + `list_crm_branch_files` (saneamiento filename + branch_path + doble check `resolve().relative_to`). `streamlit_app.py` con: sidebar M10 al inicio (selector actor + `intake_log.set_actor` cada render, default por substring match contra `os.getlogin()`), expander "📂 Subir al árbol CRM" en tab Casos (selectores encadenados sobre `CRM_TREE`, opción "—" para fijar nodo intermedio como destino, sin descompresión de ZIPs, evento `upload_manual` con `details.destination 05_CRM/<rama>/<file>`), y cableado `tipo_caso/direccion/id_go` en la llamada a `ensure_case` desde "Nuevo caso". Tests: `tests/test_smoke_paso7.py` 17/17 verde (smoke programático del core: ensure_case con todos los tipos, árbol CRM eager, pre-relleno REF/FECHA con y sin id_go, idempotencia preservando edición del abogado, reclasificación, save_file_crm_branch happy path + General + sobrescritura + path traversal + filename inválido + caso inexistente, list_crm_branch_files, intake_log.append_event upload_manual a 05_CRM con actor, sanity ACTORES_DESPACHO); suite global sigue verde. Decisiones D-7a-1 a D-7a-7 y D-7b-1 a D-7b-9 cerradas en memoria `project_intake_estructura_v2.md` para no redecidir. Pendiente: paso 8 (tests v2 dedicados restantes para `crm_branch_path`, `pull_state_atomic`, `dedup_manifest`, `intake_log` exhaustivo, `legacy_v1_detection`, `pull_expediente_v2`, `render_plantillas`), paso 9 (commit final), smoke manual UI Streamlit (sidebar + expander árbol CRM + flujo Nuevo caso con tipo NEGATIVA_OFERTA — no automatizable sin navegador).
 
@@ -67,7 +69,7 @@ git commit -m "<mensaje que Claude propuso>"
 
 | Ítem | Estado |
 |------|--------|
-| Tests | ✅ ~299/299 (Anonimizador absorbido: +51 — 2026-05-07; sufijo captador Drive: +2 — 2026-05-11 s4; Numero_Expediente extrajudicial: +10 — 2026-05-11 s6) |
+| Tests | ✅ ~441/441 (Anonimizador absorbido: +51 — 2026-05-07; sufijo captador Drive: +2 — 2026-05-11 s4; Numero_Expediente extrajudicial: +10 — 2026-05-11 s6; tests v2 dedicados paso 8: +113 — 2026-05-11 s7; rename informe_viabilidad: +9 — 2026-05-11 s7) |
 | `core/intake_log.py` | ✅ M10 implementado 2026-05-08 — 13 tipos evento JSONL, actor singleton thread-safe |
 | `core/intake_manifest.py` | ✅ M9 implementado 2026-05-08 — manifest SHA-256, IntakeManifest, reconcile, política skip + aliases |
 | `core/intake_manual.py` | ✅ Sucesor de intake_demanda.py (2026-05-08) — destino `04_Manual/` |
@@ -234,19 +236,29 @@ primeras 5 carpetas de cada Shared Drive de `DRIVE_EV_TEAM_IDS` y aplique
 `parse_ev_folder_name` revelaría falsos negativos antes de que aparezcan
 en producción.
 
+**[SIGUIENTE-VIABILIDAD-BAD-DEBT]** (decisión del usuario 2026-05-11 s7)
+Incluir BAD_DEBT en `INFORME_VIABILIDAD_TIPOS` para que `ensure_case`
+también copie el cuestionario + ficha de viabilidad al crear casos de
+impago. Hoy el set excluye BAD_DEBT, LAU_20 y DEVOLUCION_RESERVA por
+decisión de producto previa; el usuario rectifica para BAD_DEBT. A
+confirmar antes de implementar: (1) ¿se reutilizan las 11 secciones
+actuales del cuestionario o se adapta a BAD_DEBT (preguntas sobre
+devengo de factura, vencimiento, impagos previos)? (2) ¿LAU_20 y
+DEVOLUCION_RESERVA también? Cambio mínimo si se reutiliza tal cual:
+añadir `"BAD_DEBT"` al `frozenset` en `core/config.py` + test smoke
+específico. Detalle completo en memoria `project_plantillas_viabilidad.md`.
+
 ---
 
 ### ⚠️ MÁXIMA PRIORIDAD — abrir próxima sesión por aquí
 
-**[SIGUIENTE-INTAKE-V2-PASO-8]** (sesión 5 cerró pasos 7a + 7b el 2026-05-11)
+**[SIGUIENTE-INTAKE-V2-SMOKE-UI]** (sesión 7 cerró el paso 8 el 2026-05-11)
 
-Pasos 1-7b implementados. Quedan los pasos 8 y 9 del plan original.
-La planificación completa sigue en memoria persistente
-`project_intake_estructura_v2.md` (decisiones D-7a-* y D-7b-* cerradas,
-no redecidir). Las decisiones del paso 6 (plantillas) están en
-`project_plantillas_viabilidad.md`.
+Pasos 1-8 implementados. 113 tests v2 dedicados verdes (ver "Última
+actualización" arriba). Queda solo el **smoke manual de la UI Streamlit**
+(no automatizable sin navegador) + el commit final (paso 9).
 
-**Smoke manual UI pendiente** (no automatizable sin navegador):
+**Smoke manual UI — abrir Streamlit y verificar:**
 1. Sidebar — aparece "¿Quién eres?" arriba; default = "Nikolai Tyukhay" si
    `os.getlogin()` no matchea; al cambiar, los eventos del log reflejan el
    actor seleccionado.
@@ -258,27 +270,6 @@ no redecidir). Las decisiones del paso 6 (plantillas) están en
    + ID GO: tras crear, `02_Analisis/_ficha_operacion.xlsx` tiene REF y FECHA
    pre-rellenadas, `02_Analisis/_cuestionario_viabilidad.xlsx` está presente,
    y `_caso.md.meta` contiene `tipo_caso`, `direccion`, `id_go`.
-
-**Paso 8 — tests v2 dedicados:**
-
-Tests pendientes en `tests/`:
-- `test_crm_branch_path.py` — id_mapping, label_heuristic (única vs ambigua),
-  fallback con expediente_id, normalización (mayúsculas/acentos).
-- `test_pull_state_atomic.py` — schema D8 vacío→pulled, escritura atómica
-  (simulación crash entre temp y replace), idempotencia, mutación de errors.
-- `test_dedup_manifest.py` — register hash nuevo/duplicado, alias añadido,
-  reconcile con primary perdido, manifest corrupto (recovery).
-- `test_intake_log.py` — append + read, actor por defecto vs set_actor,
-  rechazo de evento desconocido, fsync efectivo (smoke).
-- `test_legacy_v1_detection.py` — detecta `sudespacho_*/`, ignora otras subdirs.
-- `test_pull_expediente_v2.py` — flujo completo con cliente mockeado, bloqueo
-  legacy, dedup, fallback `category_unknown`, integración con `update_pull_state`.
-- `test_render_plantillas.py` — smoke: YAML válido → XLSX se genera sin error,
-  hoja `_meta` con hash; `_StrictBoolLoader` no convierte `si`/`no` a bool.
-- `test_ensure_case_v2.py` — crea árbol CRM, crea `06_Entrevistas/`, copia
-  ficha siempre, copia cuestionario solo si tipo aplicable, idempotencia.
-
-**Paso 9 — STATUS final + commit (Momento 4 del protocolo de cierre).**
 
 Investigación pendiente NO bloqueante: query correcta del endpoint
 `/api/folders/gdocu/...` (ver `docs/DEAD_ENDS.md`). Si se descubre, migrar

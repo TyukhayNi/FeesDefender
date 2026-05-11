@@ -222,6 +222,18 @@
 
 ---
 
+## Tests / pytest — `importlib.reload` sobre módulos con clases re-exportadas
+
+### `importlib.reload(core.sync_sudespacho)` desde un fixture rompe `test_sync_sudespacho.py`
+- **Intentado:** recargar `core.sync_sudespacho` en el fixture `modules` de `tests/test_pull_expediente_v2.py` para asegurar que las funciones internas usaran el `casos_root` del tmp.
+- **Resultado:** los 11 tests de `test_pull_expediente_v2.py` pasaban, pero 7 tests de `tests/test_sync_sudespacho.py` rompían en la suite global. Síntomas: `pytest.raises(SudespachoError)` ya no captura (clases con mismo nombre pero objetos distintos tras el reload); `monkeypatch.setattr(SudespachoClient, "list_gdocu_docs_rest", ...)` no surte efecto porque `pull_expediente` viejo construye instancias de la clase NUEVA, no parcheada.
+- **Confirmado:** 2026-05-11 (sesión 6, paso 8 del refactor intake v2)
+- **Causa raíz:** `tests/test_sync_sudespacho.py` importa `SudespachoError`, `SudespachoClient`, `pull_expediente` al top del fichero (patrón estándar). Tras `importlib.reload(sync_sudespacho)` en otro test, esas referencias quedan apuntando a las clases/funciones VIEJAS, desincronizadas con las versiones nuevas del módulo recargado.
+- **Conclusión:** Si un fixture necesita propagar `tmp_casos_root` a un módulo que depende de `core.config`, recargar **solo los módulos del intake** (`case_manager`, `intake_log`, `intake_manifest`), NO `sync_sudespacho`. Las funciones internas de `pull_expediente_v2` resuelven `caso_path`, `IntakeManifest`, etc. vía las globals de los módulos recargados, así que el `casos_root` del tmp se propaga sin tocar `sync_sudespacho`.
+- **Implementación:** documentado en el docstring del fixture `modules` de `tests/test_pull_expediente_v2.py` para evitar regresión futura.
+
+---
+
 ## Plantilla para nuevas entradas
 
 ```markdown
