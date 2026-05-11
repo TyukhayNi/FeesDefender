@@ -380,6 +380,30 @@ def test_parse_folder_espacios_extra():
     assert m == "W-XYZABC"
 
 
+def test_parse_folder_sufijo_consultor_captador():
+    """Carpeta con sufijo `- <nombre consultor captador>` después del ID GO.
+
+    Caso real Sevilla SeRS6 (W-02RRO3): E&V añade el nombre del consultor
+    que captó la propiedad al final del nombre de la carpeta, tras el
+    W-XXXXXX. NO es el cliente — es un empleado de E&V. El sufijo se
+    descarta para el auto-fill; la dirección debe extraerse igualmente.
+    """
+    d, m = parse_ev_folder_name(
+        "393. Hacienda Vadillo - W-02RRO3 - Natalia Trujillano"
+    )
+    assert d == "393. Hacienda Vadillo"
+    assert m == "W-02RRO3"
+
+
+def test_parse_folder_sufijo_con_guion_largo():
+    """Variante con guion largo (–) tanto antes como después del ID GO."""
+    d, m = parse_ev_folder_name(
+        "Serrano 45, 2º Izq – W-04ABCD – Juan Pérez"
+    )
+    assert d == "Serrano 45, 2º Izq"
+    assert m == "W-04ABCD"
+
+
 # ---------------------------------------------------------------------------
 # get_drive_folder_info
 # ---------------------------------------------------------------------------

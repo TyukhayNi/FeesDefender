@@ -242,10 +242,14 @@ def pull_drive_ev(
 # Resolución de nombre de carpeta E&V
 # ---------------------------------------------------------------------------
 
-# Patrón: "Dirección del inmueble - W-XXXXXX"
+# Patrón: "Dirección del inmueble - W-XXXXXX[ - <consultor captador>]"
 # Acepta guion simple o largo, espacios opcionales alrededor.
+# El sufijo posterior, cuando aparece, es el nombre del CONSULTOR que captó
+# la propiedad (NO el cliente — los Shared Drives de E&V nombran las carpetas
+# así). Se descarta para el auto-fill; no se usa como dato del caso.
+# Ejemplo: "393. Hacienda Vadillo - W-02RRO3 - Natalia Trujillano"
 _EV_FOLDER_RE = re.compile(
-    r"^(.*?)\s*[-–]\s*(W-[A-Z0-9]{5,8})\s*$",
+    r"^(.*?)\s*[-–]\s*(W-[A-Z0-9]{5,8})\b",
     re.IGNORECASE,
 )
 
@@ -265,6 +269,10 @@ def parse_ev_folder_name(folder_name: str) -> tuple[str, str]:
 
         parse_ev_folder_name("Gran Via 40, 3º 1ª – W-030LFT")
         # → ("Gran Via 40, 3º 1ª", "W-030LFT")
+
+        parse_ev_folder_name("393. Hacienda Vadillo - W-02RRO3 - Natalia Trujillano")
+        # → ("393. Hacienda Vadillo", "W-02RRO3")
+        # (el sufijo "Natalia Trujillano" es el consultor captador, no el cliente; se descarta)
     """
     m = _EV_FOLDER_RE.match(folder_name.strip())
     if m:
