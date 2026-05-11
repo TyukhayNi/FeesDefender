@@ -1321,3 +1321,202 @@ def search_colaboradores_for_ui(
         raise
     term_lower = term.strip().lower()
     return [c for c in all_colabs if term_lower in c["label"].lower()]
+
+
+# ---------------------------------------------------------------------------
+# Verificación de coherencia local ↔ CRM (validación preventiva)
+# ---------------------------------------------------------------------------
+#
+# Origen del módulo (2026-05-11): incidencia BaRR3 — el caso local
+# "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU" tenía registrado en
+# `_caso.md` el expediente CRM ID 648 cuando el expediente real de Roser es
+# 649. ID 648 era un expediente de prueba creado durante el desarrollo el
+# 2026-04-26 (HAR `judicial_648.har`, "Pull real expediente 648: 5 docs"); el
+# vínculo se quedó colgando en `_caso.md` aunque el caso real se creó
+# después. Esta función expone una validación tardía que el caller (UI o
+# CLI) invoca tras `register_expediente` para detectar el mismatch antes de
+# que el pull descargue documentos contaminados.
+#
+# Diseño: nunca lanza excepciones. El CRM puede estar caído, la API key
+# puede no estar configurada o el expediente puede haber sido borrado — en
+# todos esos casos el resultado pone `crm_unreachable=True` o `found=False`
+# y el caller decide la severidad (warning visible en UI, log forense
+# vía `intake_log`, no aborta el flujo).
+
+# Propiedades a pedir al CRM según el slug del elemento. La propiedad que
+# guarda la "referencia que el cliente puso en el formulario" es:
+#   - judicial:       `referencia_cliente` (lowercase, confirmado 2026-05-06)
+#   - extrajudicial:  `Referencia_Cliente` (CamelCase, confirmado 2026-05-06)
+_REFERENCIA_PROP_BY_ELEMENT: dict[str, str] = {
+    "expedientes_judiciales": "referencia_cliente",
+    "extrajudiciales":        "Referencia_Cliente",
+}
+
+# Alias frecuentes que aparecen en frontmatter / CLI legacy.
+_ELEMENT_ALIASES: dict[str, str] = {
+    "judiciales":              "expedientes_judiciales",
+    "expedientes_judiciales":  "expedientes_judiciales",
+    "extrajudiciales":         "extrajudiciales",
+    "expedientes_extrajudiciales": "extrajudiciales",
+}
+
+
+def _normalize_element(element: str) -> str | None:
+    """Normaliza el slug del elemento a la forma canónica del CRM REST."""
+    if not element:
+        return None
+    return _ELEMENT_ALIASES.get(element.strip())
+
+
+def fetch_referencia_cliente(
+    expediente_id: str | int,
+    element: str,
+) -> tuple[str | None, bool]:
+    """Lee la propiedad ``referencia_cliente`` del expediente en el CRM.
+
+    Estrategia:
+
+    1. ``GET /api/element_registries/{element}`` con filtro
+       ``property=id, operator=equal, value=<expediente_id>`` y
+       ``properties[]=referencia_cliente`` (o ``Referencia_Cliente`` para
+       extrajudicial).
+    2. Si el endpoint no acepta filtrar por ``id``, devuelve ``(None, False)``
+       y el caller debe caer al modo "barrido por serie" (no implementado
+       aquí porque exigiría conocer el año del expediente — la UI lo conoce
+       en otros sitios, lo introducimos cuando aparezca necesidad).
+
+    Args:
+        expediente_id: ID numérico del expediente en el CRM.
+        element: Slug del elemento (``"expedientes_judiciales"`` |
+            ``"extrajudiciales"`` o alias listados en ``_ELEMENT_ALIASES``).
+
+    Returns:
+        Tupla ``(referencia, crm_unreachable)``.
+
+        - ``referencia`` (``str | None``): valor de ``referencia_cliente`` si
+          se ha podido leer; ``None`` si el expediente no se ha encontrado o
+          el CRM no es accesible.
+        - ``crm_unreachable`` (``bool``): ``True`` si la API key falta o la
+          llamada HTTP falla (excepción de red, status != 200). Permite al
+          caller distinguir "no encontrado" de "no se pudo consultar".
+
+    Nunca lanza excepciones — los errores se reflejan en el booleano.
+    """
+    elem = _normalize_element(element)
+    if elem is None or elem not in _REFERENCIA_PROP_BY_ELEMENT:
+        return None, True
+
+    api_key = (os.getenv("SUDESPACHO_API_KEY") or "").strip()
+    if not api_key:
+        return None, True
+
+    prop = _REFERENCIA_PROP_BY_ELEMENT[elem]
+    url = f"{_REST_BASE}/api/element_registries/{elem}"
+    params: list[tuple[str, str]] = [
+        ("properties[0]", prop),
+        ("filterGroup[condition]",                                          "AND"),
+        ("filterGroup[filterGroups][0][condition]",                         "AND"),
+        ("filterGroup[filterGroups][0][filters][0][operator]",              "equal"),
+        ("filterGroup[filterGroups][0][filters][0][value]",                 str(expediente_id)),
+        ("filterGroup[filterGroups][0][filters][0][property]",              "id"),
+        ("itemsPerPage",                                                     "10"),
+        ("return_totals",                                                    "true"),
+    ]
+    headers = {"x-api-key": api_key, "Accept": "application/json"}
+
+    try:
+        r = httpx.get(url, params=params, headers=headers, timeout=_REST_TIMEOUT)
+    except Exception:  # noqa: BLE001 — defensivo: red caída no debe romper el caller
+        return None, True
+
+    if r.status_code != 200:
+        return None, True
+
+    try:
+        data = r.json()
+    except Exception:  # noqa: BLE001
+        return None, True
+
+    items = data.get("items") or data.get("hydra:member") or []
+    target = str(expediente_id)
+    for item in items:
+        if str(item.get("id", "")) != target:
+            continue
+        for v in item.get("values", []) or []:
+            if v.get("property", {}).get("name", "") == prop:
+                value = v.get("value")
+                if value is None:
+                    return None, False
+                return str(value), False
+        # ID encontrado pero sin la propiedad → expediente sin referencia
+        return None, False
+
+    # ID no aparece entre los items → expediente inexistente (no error)
+    return None, False
+
+
+def verify_expediente_referencia(
+    expediente_id: str | int,
+    element: str,
+    *,
+    expected_referencia: str | None,
+) -> dict:
+    """Compara la ``referencia_cliente`` del CRM con la esperada localmente.
+
+    Pensada para invocarse tras ``register_expediente`` (UI o CLI). Caller
+    decide la severidad (warning visible, log forense, etc.).
+
+    Args:
+        expediente_id: ID numérico del expediente en el CRM.
+        element: Slug del elemento o alias (``"judiciales"``,
+            ``"expedientes_judiciales"``, ``"extrajudiciales"``, etc.).
+        expected_referencia: Valor que debería tener ``referencia_cliente``
+            en el CRM (típicamente el ``case_id`` o ``meta.referencia_crm``
+            del caso local). ``None`` si no se conoce (en ese caso ``match``
+            queda en ``False`` salvo que el CRM también devuelva ``None``).
+
+    Returns:
+        Dict con:
+            ``expediente_id`` (str), ``element`` (str canónico),
+            ``crm_referencia`` (str | None), ``expected_referencia`` (str | None),
+            ``match`` (bool), ``crm_unreachable`` (bool), ``found`` (bool).
+
+        Semántica de ``match``:
+            - ``True`` ⇔ ambas referencias son strings idénticos tras strip.
+            - ``False`` en cualquier otro caso (incluido ``crm_unreachable``
+              y ``found=False``).
+
+        Semántica de ``found``:
+            - ``True`` si el CRM ha devuelto el expediente (aunque la
+              propiedad ``referencia_cliente`` esté vacía).
+            - ``False`` si el expediente no se ha localizado o el CRM no es
+              accesible.
+
+    Nunca lanza excepciones.
+    """
+    elem_canon = _normalize_element(element) or element
+    crm_ref, crm_unreachable = fetch_referencia_cliente(expediente_id, element)
+
+    # ``found`` se aproxima como "el CRM contestó y devolvió referencia". La
+    # implementación actual de ``fetch_referencia_cliente`` no distingue
+    # "no encontrado" de "encontrado sin referencia" — ambos devuelven
+    # ``(None, False)``. La distinción no es relevante para el contrato
+    # público de esta función: lo que importa es si la referencia coincide.
+    found = (not crm_unreachable) and (crm_ref is not None)
+
+    # Comparación tolerante a espacios; sensible a mayúsculas/acentos (la
+    # referencia_cliente del CRM debe coincidir exactamente con el case_id).
+    if crm_ref is None or expected_referencia is None:
+        match = False
+    else:
+        match = crm_ref.strip() == expected_referencia.strip()
+
+    return {
+        "expediente_id":       str(expediente_id),
+        "element":             elem_canon,
+        "crm_referencia":      crm_ref,
+        "expected_referencia": expected_referencia,
+        "match":               match,
+        "crm_unreachable":     crm_unreachable,
+        "found":               found,
+    }

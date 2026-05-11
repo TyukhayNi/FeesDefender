@@ -33,6 +33,7 @@ import json
 import typer
 
 from core import case_manager, pipeline
+from core.sudespacho_relations import verify_expediente_referencia
 from core.sync_sudespacho import (
     SudespachoClient,
     SudespachoError,
@@ -138,6 +139,36 @@ def pull(
 
     # Registrar el expediente en el índice del caso (idempotente)
     case_manager.register_expediente(case, expediente, elem)
+
+    # Validación preventiva — referencia local ↔ CRM (incidencia BaRR3,
+    # sesión 2026-05-11). Pre-pull para que el usuario aborte antes de
+    # descargar documentos contaminados. La validación nunca aborta —
+    # mostramos warning visible y permitimos continuar.
+    # Se usa --referencia si se ha pasado; si no, el case_id como referencia
+    # esperada (es lo que la UI envía como `referencia_cliente` al crear).
+    try:
+        _ref_check = verify_expediente_referencia(
+            expediente, elem,
+            expected_referencia=referencia or case,
+        )
+    except Exception as _ve:  # noqa: BLE001 — defensivo
+        typer.echo(f"ℹ️  Validación referencia CRM no ejecutada: {_ve}")
+    else:
+        if _ref_check["crm_unreachable"]:
+            typer.echo(
+                "ℹ️  Validación referencia CRM omitida — endpoint no accesible."
+            )
+        elif not _ref_check["match"]:
+            _crm_ref = _ref_check.get("crm_referencia") or "(vacía)"
+            _exp_ref = _ref_check.get("expected_referencia") or "(sin referencia local)"
+            typer.echo(
+                f"⚠️  Referencia desalineada CRM ↔ caso local.\n"
+                f"   Expediente CRM ID {expediente}: referencia_cliente = {_crm_ref!r}\n"
+                f"   Caso local {case}: esperado = {_exp_ref!r}\n"
+                "   Si el ID está mal, aborta (Ctrl+C) y revisa _caso.md."
+            )
+        else:
+            typer.echo("✓ Referencia CRM coincide con caso local.")
 
     try:
         result = pull_expediente(

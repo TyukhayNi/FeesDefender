@@ -37,6 +37,7 @@ from core.sudespacho_relations import (
     link_ev_mmc_judicial,
     search_colaboradores_for_ui as _search_colabs,
     load_all_colaboradores as _load_all_colabs,
+    verify_expediente_referencia as _verify_exp_ref,
 )
 from core.config import (
     ACTORES_DESPACHO,
@@ -1605,6 +1606,43 @@ with tab_nuevo:
                             f"✅ Expediente {_label_tipo} creado en sudespacho — **ID: {_exp_id}**  \n"
                             f"Vinculado en `_caso.md`."
                         )
+
+                        # 3a. Validación preventiva — referencia local ↔ CRM.
+                        # Tras el incidente BaRR3 (ID 648 mal vinculado a Roser
+                        # — sesión 2026-05-11): tras vincular un expediente al
+                        # caso local, leemos del CRM su `referencia_cliente` y
+                        # la comparamos con el case_id. Mismatch ≠ aborto: el
+                        # caller decide. Aquí mostramos un st.warning visible.
+                        try:
+                            _ref_check = _verify_exp_ref(
+                                _exp_id,
+                                _tipo_registro,
+                                expected_referencia=final_case_id,
+                            )
+                        except Exception as _ve:  # noqa: BLE001 — nunca debería ocurrir, defensivo
+                            st.info(
+                                f"ℹ️ Validación de referencia CRM no ejecutada: {_ve}"
+                            )
+                        else:
+                            if _ref_check["crm_unreachable"]:
+                                st.info(
+                                    "ℹ️ Validación referencia CRM omitida — "
+                                    "endpoint no accesible (API key vacía o red caída)."
+                                )
+                            elif not _ref_check["match"]:
+                                _crm_ref_str = _ref_check.get("crm_referencia") or "(vacía)"
+                                st.warning(
+                                    f"⚠️ **Referencia desalineada CRM ↔ caso local**.  \n"
+                                    f"Expediente CRM **ID {_exp_id}** tiene `referencia_cliente` = "
+                                    f"`{_crm_ref_str}`, pero el caso local es `{final_case_id}`.  \n"
+                                    "Revisa que el expediente recién creado es el correcto antes "
+                                    "de descargar documentos. Si el ID está mal vinculado, edita "
+                                    "`_caso.md` o desvincula desde sudespacho."
+                                )
+                            else:
+                                st.caption(
+                                    f"✓ Referencia CRM coincide con caso local."
+                                )
                         # 3b. Vincular EV MMC SPAIN, S.L.U. como cliente
                         try:
                             if es_judicial:
