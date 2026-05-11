@@ -41,6 +41,7 @@ from core.sudespacho_create import (
     _build_rest_payload_extrajudicial,
     _build_rest_payload_judicial,
     _get_next_num_expediente_judicial,
+    _get_next_num_expediente_extrajudicial,
     create_expediente_rest,
     create_expediente_judicial_rest,
     # Funciones orquestadoras
@@ -139,6 +140,24 @@ class TestTagsToRest:
 # ---------------------------------------------------------------------------
 
 class TestBuildRestPayloadExtrajudicial:
+    """Tests del builder REST extrajudicial.
+
+    Desde 2026-05-11 el builder llama a ``_get_next_num_expediente_extrajudicial``
+    para calcular max+1 antes del POST (el endpoint REST auto-asigna de forma
+    intermitente y a veces deja ``Numero_Expediente=0``). Mockeamos esa función
+    para que cada test sea hermético respecto a la red.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _mock_next_num(self):
+        """Por defecto la query falla (None) → mantiene Numero_Expediente='0'.
+        Los tests que quieran probar la rama exitosa hacen su propio patch."""
+        with patch(
+            "core.sudespacho_create._get_next_num_expediente_extrajudicial",
+            return_value=None,
+        ):
+            yield
+
     def test_campos_obligatorios_presentes(self, datos_extrajudicial):
         p = _build_rest_payload_extrajudicial(datos_extrajudicial)
         for campo in ("Referencia_Cliente", "Fecha_alta", "Tipo_Asunto",
@@ -170,9 +189,35 @@ class TestBuildRestPayloadExtrajudicial:
         p = _build_rest_payload_extrajudicial(datos_extrajudicial)
         assert p["serie_expediente"] == "2026"
 
-    def test_numero_expediente_es_cero(self, datos_extrajudicial):
+    # -------------------------------------------------------------------
+    # Tests de Numero_Expediente — bug corregido 2026-05-11
+    # -------------------------------------------------------------------
+
+    def test_numero_expediente_mantiene_cero_si_query_falla(self, datos_extrajudicial):
+        """Si _get_next_num_expediente_extrajudicial devuelve None (sin API key,
+        timeout, etc.), Numero_Expediente se mantiene en '0' — comportamiento
+        previo al fix; el servidor podría auto-asignar o no, pero no empeoramos."""
         p = _build_rest_payload_extrajudicial(datos_extrajudicial)
         assert p["Numero_Expediente"] == "0"
+
+    def test_numero_expediente_se_calcula_si_query_exitosa(self, datos_extrajudicial):
+        """Si la consulta CRM devuelve max+1, ese valor reemplaza el '0' inicial."""
+        with patch(
+            "core.sudespacho_create._get_next_num_expediente_extrajudicial",
+            return_value=51,
+        ):
+            p = _build_rest_payload_extrajudicial(datos_extrajudicial)
+        assert p["Numero_Expediente"] == "51"
+
+    def test_numero_expediente_no_es_cero_cuando_query_exitosa(self, datos_extrajudicial):
+        """Regresión del bug: cuando la query funciona, Numero_Expediente NUNCA
+        debe ser '0' (causa expediente con número 0 en el CRM — ID 605 de 2026)."""
+        with patch(
+            "core.sudespacho_create._get_next_num_expediente_extrajudicial",
+            return_value=1,
+        ):
+            p = _build_rest_payload_extrajudicial(datos_extrajudicial)
+        assert p["Numero_Expediente"] != "0"
 
 
 # ---------------------------------------------------------------------------
@@ -375,10 +420,152 @@ class TestGetNextNumExpedienteJudicial:
 
 
 # ---------------------------------------------------------------------------
+# _get_next_num_expediente_extrajudicial
+# ---------------------------------------------------------------------------
+
+class TestGetNextNumExpedienteExtrajudicial:
+    """Tests del cálculo del siguiente correlativo extrajudicial (fix 2026-05-11).
+
+    Patrón idéntico al judicial pero contra ``/api/element_registries/extrajudiciales``
+    y propiedad ``Numero_Expediente`` (CamelCase). Necesario porque el endpoint
+    extrajudicial auto-asigna de forma intermitente (caso real: ID 605 quedó
+    en 0; ID 606 se asignó correctamente a 49).
+    """
+
+    @staticmethod
+    def _make_items(*numero_expediente_values):
+        """Items con la propiedad ``Numero_Expediente`` (CamelCase, no lowercase)."""
+        items = []
+        for v in numero_expediente_values:
+            items.append({
+                "id": "999",
+                "values": [{
+                    "property": {"name": "Numero_Expediente"},
+                    "value": str(v) if v is not None else "",
+                }]
+            })
+        return items
+
+    def test_devuelve_max_mas_uno_cuando_200(self, monkeypatch):
+        """Devuelve max+1, no count+1 (evita saltos cuando hay registros en blanco)."""
+        monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "totalItems": 3,
+            "items": self._make_items(10, 12, 33),
+        }
+
+        with patch("core.sudespacho_create.httpx.get", return_value=mock_resp):
+            result = _get_next_num_expediente_extrajudicial(2026)
+
+        assert result == 34
+
+    def test_devuelve_uno_cuando_no_hay_expedientes(self, monkeypatch):
+        """Primer expediente del año → items vacío → max=0 → devuelve 1."""
+        monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"totalItems": 0, "items": []}
+
+        with patch("core.sudespacho_create.httpx.get", return_value=mock_resp):
+            result = _get_next_num_expediente_extrajudicial(2026)
+
+        assert result == 1
+
+    def test_ignora_items_con_num_vacio_o_cero(self, monkeypatch):
+        """Items con Numero_Expediente vacío o '0' (los anteriores al fix) no
+        cuentan para el max. Es exactamente el caso del ID 605 de 2026."""
+        monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        # 4 expedientes: nums 5, "", "0", 7 → ignora vacío y "0" → max=7 → devuelve 8
+        mock_resp.json.return_value = {
+            "totalItems": 4,
+            "items": self._make_items(5, None, 0, 7),
+        }
+
+        with patch("core.sudespacho_create.httpx.get", return_value=mock_resp):
+            result = _get_next_num_expediente_extrajudicial(2026)
+
+        # "0" tras .isdigit() pasa la comprobación pero max(0, anterior) no afecta.
+        # El resultado funcional sigue siendo max real ignorando vacíos.
+        assert result == 8
+
+    def test_devuelve_none_cuando_api_error(self, monkeypatch):
+        """Si la API devuelve error HTTP, retorna None (no lanza excepción)."""
+        monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 500
+
+        with patch("core.sudespacho_create.httpx.get", return_value=mock_resp):
+            result = _get_next_num_expediente_extrajudicial(2026)
+
+        assert result is None
+
+    def test_devuelve_none_cuando_sin_api_key(self, monkeypatch):
+        """Sin SUDESPACHO_API_KEY configurado, retorna None sin lanzar excepción."""
+        monkeypatch.delenv("SUDESPACHO_API_KEY", raising=False)
+        result = _get_next_num_expediente_extrajudicial(2026)
+        assert result is None
+
+    def test_devuelve_none_cuando_red_falla(self, monkeypatch):
+        """Si la petición HTTP falla (timeout, etc.), retorna None."""
+        monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
+
+        import httpx as httpx_module
+        with patch("core.sudespacho_create.httpx.get",
+                   side_effect=httpx_module.HTTPError("timeout")):
+            result = _get_next_num_expediente_extrajudicial(2026)
+
+        assert result is None
+
+    def test_usa_filtro_y_operador_correcto(self, monkeypatch):
+        """Verifica que la consulta usa serie_expediente, operator=equal y properties[]
+        con la propiedad CamelCase Numero_Expediente (no lowercase como judicial)."""
+        monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"totalItems": 1, "items": self._make_items(3)}
+
+        with patch("core.sudespacho_create.httpx.get", return_value=mock_resp) as mock_get:
+            _get_next_num_expediente_extrajudicial(2025)
+
+        call_kwargs = mock_get.call_args
+        params = call_kwargs.kwargs.get("params", call_kwargs.args[1] if len(call_kwargs.args) > 1 else [])
+        params_str = str(params)
+        assert "2025" in params_str
+        assert "serie_expediente" in params_str
+        assert "equal" in params_str               # operador correcto (no "eq")
+        assert "Numero_Expediente" in params_str   # CamelCase (no lowercase)
+        # Endpoint correcto
+        url_arg = mock_get.call_args.args[0]
+        assert "extrajudiciales" in url_arg
+        assert "expedientes_judiciales" not in url_arg
+
+
+# ---------------------------------------------------------------------------
 # create_expediente_rest (mock httpx)
 # ---------------------------------------------------------------------------
 
 class TestCreateExpedienteRest:
+    """create_expediente_rest llama internamente a _build_rest_payload_extrajudicial,
+    que desde 2026-05-11 hace un GET al CRM para obtener max+1. Mockeamos esa
+    llamada para aislar el POST del GET interno."""
+
+    @pytest.fixture(autouse=True)
+    def _mock_next_num(self):
+        with patch(
+            "core.sudespacho_create._get_next_num_expediente_extrajudicial",
+            return_value=1,
+        ):
+            yield
+
     def test_devuelve_id_cuando_201(self, datos_extrajudicial, monkeypatch):
         monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
 
@@ -464,6 +651,17 @@ class TestCreateExpedienteJudicialRest:
 # ---------------------------------------------------------------------------
 
 class TestCreateExpedienteRestFirst:
+    """Igual que TestCreateExpedienteRest, aislamos el GET interno del cálculo
+    de Numero_Expediente para no hacer red real durante los tests."""
+
+    @pytest.fixture(autouse=True)
+    def _mock_next_num(self):
+        with patch(
+            "core.sudespacho_create._get_next_num_expediente_extrajudicial",
+            return_value=1,
+        ):
+            yield
+
     def test_usa_rest_si_jwt_disponible(self, datos_extrajudicial, monkeypatch):
         monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
 

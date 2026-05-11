@@ -1181,9 +1181,20 @@ def _build_rest_payload_extrajudicial(datos: "NuevoExpedienteExtrajudicial") -> 
         cuantia, costas, intereses, total, Profesional, Notas,
         tnm_posicionprocesal, tnm_siniestro, serie_expediente,
         Numero_Expediente, tags, ...
+
+    Numero_Expediente (2026-05-11): el endpoint REST extrajudicial auto-asigna
+    de forma INTERMITENTE — a veces respeta el "0" enviado por el cliente y el
+    expediente queda con Numero_Expediente=0 (confirmado contra ID 605 vs ID
+    606 de la serie 2026, ambos creados consecutivamente: 605 quedó en 0, 606
+    se asignó correctamente a 49). Para evitar la fuga, replicamos la
+    estrategia del builder judicial: calculamos max(Numero_Expediente)+1 con
+    `_get_next_num_expediente_extrajudicial` y lo enviamos explícitamente. Si
+    la consulta falla → mantenemos "0" (comportamiento previo, no se empeora).
     """
+    year = datos.fecha_apertura.year
     total = datos.cuantia + datos.costas + datos.intereses
-    return {
+
+    payload: dict = {
         "Referencia_Cliente":   datos.referencia_cliente,
         "Fecha_alta":           datos.fecha_apertura.strftime("%Y-%m-%d"),
         "Tipo_Asunto":          datos.materia,
@@ -1196,10 +1207,86 @@ def _build_rest_payload_extrajudicial(datos: "NuevoExpedienteExtrajudicial") -> 
         "Notas":                datos.descripcion_html,
         "tnm_posicionprocesal": datos.posicion,
         "tnm_siniestro":        "0",
-        "serie_expediente":     str(datos.fecha_apertura.year),
+        "serie_expediente":     str(year),
         "Numero_Expediente":    "0",
         "tags":                 _tags_to_rest(datos.tags),
     }
+
+    # Calcular el siguiente correlativo. Si la consulta falla → None → se queda "0".
+    next_num = _get_next_num_expediente_extrajudicial(year)
+    if next_num is not None:
+        payload["Numero_Expediente"] = str(next_num)
+
+    return payload
+
+
+def _get_next_num_expediente_extrajudicial(year: int) -> int | None:
+    """Consulta el CRM y devuelve el siguiente número correlativo libre para exp. extrajudiciales.
+
+    Análoga a :func:`_get_next_num_expediente_judicial` pero contra el endpoint
+    ``/api/element_registries/extrajudiciales`` y la propiedad ``Numero_Expediente``
+    (CamelCase — el endpoint extrajudicial usa CamelCase mientras que el judicial
+    usa minúsculas, ``num_expediente``).
+
+    **Por qué es necesaria:** el endpoint REST extrajudicial auto-asigna el
+    número de forma intermitente. Caso real (2026-05-11): expedientes ID 605
+    (quedó en 0) y 606 (auto-asignado a 49) creados consecutivamente.
+    No podemos confiar en el auto-asign — calculamos max+1 en el cliente.
+
+    Estrategia idéntica a la judicial:
+      - Filtrar por ``serie_expediente=year`` con operador ``equal``.
+      - Pedir ``properties[]`` (sin ellas el endpoint devuelve HTTP 500).
+      - Leer la clave ``totalItems`` (no ``hydra:totalItems``).
+      - Devolver ``max(Numero_Expediente)+1`` para no saltar números cuando
+        existen registros con valor vacío o 0 (los anteriores al fix se quedan
+        en 0 y deben ser corregidos manualmente — pero no rompen el cálculo).
+
+    Args:
+        year: Año de la serie (ej. 2026).
+
+    Returns:
+        Siguiente número disponible (>= 1), o ``None`` si la consulta falla.
+        Cuando se devuelve ``None``, ``_build_rest_payload_extrajudicial``
+        mantiene ``Numero_Expediente="0"`` como antes del fix.
+    """
+    try:
+        api_key = _get_api_key()
+    except ValueError:
+        return None
+
+    url = f"{_REST_BASE}/api/element_registries/extrajudiciales"
+    params: list[tuple[str, str]] = [
+        # properties[] requerido — sin ellas HTTP 500
+        ("properties[0]",                                                   "Numero_Expediente"),
+        ("properties[1]",                                                   "serie_expediente"),
+        ("filterGroup[condition]",                                          "AND"),
+        ("filterGroup[filterGroups][0][condition]",                         "AND"),
+        ("filterGroup[filterGroups][0][filters][0][operator]",              "equal"),
+        ("filterGroup[filterGroups][0][filters][0][value]",                 str(year)),
+        ("filterGroup[filterGroups][0][filters][0][property]",              "serie_expediente"),
+        ("itemsPerPage",                                                     "500"),
+        ("return_totals",                                                    "true"),
+    ]
+    headers = {"x-api-key": api_key, "Accept": "application/json"}
+
+    try:
+        r = httpx.get(url, params=params, headers=headers, timeout=_REST_TIMEOUT)
+        if r.status_code == 200:
+            data = r.json()
+            items = data.get("items", [])
+            max_num = 0
+            for item in items:
+                for val_obj in item.get("values", []):
+                    prop_name = val_obj.get("property", {}).get("name", "")
+                    if prop_name == "Numero_Expediente":
+                        v = str(val_obj.get("value", "")).strip()
+                        if v.isdigit():
+                            max_num = max(max_num, int(v))
+            return max_num + 1
+    except Exception:
+        pass
+
+    return None
 
 
 def _get_next_num_expediente_judicial(year: int) -> int | None:
