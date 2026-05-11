@@ -101,31 +101,33 @@ def test_ensure_case_arbol_crm_eager(reloaded_modules, tmp_casos_root):
         assert (crm_root / rel).is_dir(), f"Falta rama CRM: {rel}"
 
 
-def test_ensure_case_copia_ficha_siempre(reloaded_modules, tmp_casos_root):
-    """La ficha de operación se copia sin importar el tipo_caso."""
+def test_ensure_case_copia_informe_siempre(reloaded_modules, tmp_casos_root):
+    """El informe de viabilidad se copia sin importar el tipo_caso."""
     cm = reloaded_modules["case_manager"]
     case_dir = cm.ensure_case("EV-2026-FICHA-1")
-    assert (case_dir / "02_Analisis" / "_ficha_operacion.xlsx").is_file()
+    # case_id legacy → fallback "_informe_viabilidad.xlsx"
+    assert (case_dir / "02_Analisis" / "_informe_viabilidad.xlsx").is_file()
 
 
 def test_ensure_case_copia_cuestionario_solo_si_aplicable(reloaded_modules):
     """El cuestionario solo se copia si tipo_caso ∈ INFORME_VIABILIDAD_TIPOS."""
     cm = reloaded_modules["case_manager"]
+    informe_legacy = "_informe_viabilidad.xlsx"   # case_ids legacy → fallback
 
     # Tipo aplicable
     cd_neg = cm.ensure_case("EV-2026-NEG", tipo_caso="NEGATIVA_OFERTA")
     assert (cd_neg / "02_Analisis" / "_cuestionario_viabilidad.xlsx").is_file()
-    assert (cd_neg / "02_Analisis" / "_ficha_operacion.xlsx").is_file()
+    assert (cd_neg / "02_Analisis" / informe_legacy).is_file()
 
     # Tipo NO aplicable
     cd_bd = cm.ensure_case("EV-2026-BAD", tipo_caso="BAD_DEBT")
     assert not (cd_bd / "02_Analisis" / "_cuestionario_viabilidad.xlsx").exists()
-    assert (cd_bd / "02_Analisis" / "_ficha_operacion.xlsx").is_file()
+    assert (cd_bd / "02_Analisis" / informe_legacy).is_file()
 
     # Sin tipo_caso
     cd_none = cm.ensure_case("EV-2026-NONE")
     assert not (cd_none / "02_Analisis" / "_cuestionario_viabilidad.xlsx").exists()
-    assert (cd_none / "02_Analisis" / "_ficha_operacion.xlsx").is_file()
+    assert (cd_none / "02_Analisis" / informe_legacy).is_file()
 
 
 def test_ensure_case_prerellena_ref_y_fecha(reloaded_modules):
@@ -140,8 +142,10 @@ def test_ensure_case_prerellena_ref_y_fecha(reloaded_modules):
         direccion="Roger Lluria 38",
         id_go="W-030LFT",
     )
-    ficha = case_dir / "02_Analisis" / "_ficha_operacion.xlsx"
-    wb = load_workbook(ficha)
+    # case_id sigue formato CRM nuevo → nombre del informe con case_id completo
+    informe = case_dir / "02_Analisis" / f"Informe viabilidad - {case_id}.xlsx"
+    assert informe.is_file(), f"Informe no encontrado en {informe}"
+    wb = load_workbook(informe)
     ws = wb["OPERACION"]
 
     # Localizar fila por etiqueta en columna B (mismo patrón que el código real)
@@ -168,14 +172,16 @@ def test_ensure_case_ref_vacio_si_falta_id_go(reloaded_modules):
     cm = reloaded_modules["case_manager"]
     from openpyxl import load_workbook
 
+    case_id = "BaRS1 - Roger Lluria 38 (W-030LFT) - Negativa Oferta"
     case_dir = cm.ensure_case(
-        "BaRS1 - Roger Lluria 38 (W-030LFT) - Negativa Oferta",
+        case_id,
         tipo_caso="NEGATIVA_OFERTA",
         direccion="Roger Lluria 38",
         id_go=None,                    # ← faltante
     )
-    ficha = case_dir / "02_Analisis" / "_ficha_operacion.xlsx"
-    wb = load_workbook(ficha)
+    # case_id sigue formato CRM nuevo → nombre del informe con case_id completo
+    informe = case_dir / "02_Analisis" / f"Informe viabilidad - {case_id}.xlsx"
+    wb = load_workbook(informe)
     ws = wb["OPERACION"]
     for r in range(1, 200):
         if ws.cell(row=r, column=2).value == "REF":
@@ -198,27 +204,28 @@ def test_ensure_case_persiste_tipo_caso_en_caso_md(reloaded_modules):
     assert meta.get("id_go") == "W-TEST01"
 
 
-def test_ensure_case_idempotente_preserva_ficha_editada(reloaded_modules):
-    """D-7a-4: segunda llamada no sobrescribe ficha ni cuestionario."""
+def test_ensure_case_idempotente_preserva_informe_editado(reloaded_modules):
+    """D-7a-4: segunda llamada no sobrescribe informe ni cuestionario."""
     cm = reloaded_modules["case_manager"]
     from openpyxl import load_workbook
 
     case_dir = cm.ensure_case("EV-2026-IDEM", tipo_caso="NEGATIVA_OFERTA")
-    ficha = case_dir / "02_Analisis" / "_ficha_operacion.xlsx"
+    # case_id legacy → fallback "_informe_viabilidad.xlsx"
+    informe = case_dir / "02_Analisis" / "_informe_viabilidad.xlsx"
 
-    # El abogado "edita" la ficha. Uso una celda fuera del layout principal
+    # El abogado "edita" el informe. Uso una celda fuera del layout principal
     # para no chocar con los rangos merged que crea el render (cabeceras de
     # bloque mergean B-E, así que las celdas E de filas de cabecera están
     # bloqueadas para escritura directa).
-    wb = load_workbook(ficha)
+    wb = load_workbook(informe)
     ws = wb["OPERACION"]
     ws.cell(row=50, column=7, value="EDIT DEL ABOGADO")
-    wb.save(ficha)
+    wb.save(informe)
 
     # Segunda llamada de ensure_case
     cm.ensure_case("EV-2026-IDEM", tipo_caso="NEGATIVA_OFERTA")
 
-    wb2 = load_workbook(ficha)
+    wb2 = load_workbook(informe)
     assert wb2["OPERACION"].cell(row=50, column=7).value == "EDIT DEL ABOGADO"
 
 

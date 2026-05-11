@@ -4,7 +4,7 @@ Los YAML de ``data/_plantillas/`` son la fuente única. Este script genera
 los XLSX correspondientes que el equipo abre con Excel:
 
 - ``cuestionario_viabilidad.yaml`` → ``cuestionario_viabilidad.xlsx`` (11 hojas).
-- ``ficha_operacion.yaml`` → ``ficha_operacion.xlsx`` (1 hoja `OPERACION`).
+- ``informe_viabilidad.yaml`` → ``informe_viabilidad.xlsx`` (1 hoja `OPERACION`).
 
 Workflow recomendado:
 
@@ -607,10 +607,10 @@ def cuestionario() -> None:
 
 
 @app.command()
-def ficha() -> None:
-    """Genera ficha_operacion.xlsx desde el YAML."""
-    yaml_p = PLANTILLAS_DIR / "ficha_operacion.yaml"
-    xlsx_p = PLANTILLAS_DIR / "ficha_operacion.xlsx"
+def informe() -> None:
+    """Genera informe_viabilidad.xlsx desde el YAML."""
+    yaml_p = PLANTILLAS_DIR / "informe_viabilidad.yaml"
+    xlsx_p = PLANTILLAS_DIR / "informe_viabilidad.xlsx"
     if not yaml_p.exists():
         raise typer.Exit(code=1)
     render_ficha(yaml_p, xlsx_p)
@@ -621,7 +621,7 @@ def ficha() -> None:
 def render_all() -> None:
     """Genera ambos XLSX."""
     cuestionario()
-    ficha()
+    informe()
 
 
 if __name__ == "__main__":

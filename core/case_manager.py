@@ -37,8 +37,11 @@ logger = logging.getLogger(__name__)
 # `python -m scripts.render_plantillas all` desde los YAML canónicos en
 # `data/_plantillas/`.
 _PLANTILLAS_DIR = settings.project_root / "data" / "_plantillas"
-_FICHA_TEMPLATE = _PLANTILLAS_DIR / "ficha_operacion.xlsx"
+_INFORME_TEMPLATE = _PLANTILLAS_DIR / "informe_viabilidad.xlsx"
 _CUESTIONARIO_TEMPLATE = _PLANTILLAS_DIR / "cuestionario_viabilidad.xlsx"
+
+# Caracteres prohibidos en nombres de fichero en Windows
+_FORBIDDEN_FILENAME_CHARS = '/\\:*?"<>|'
 
 
 @dataclass
@@ -209,16 +212,19 @@ def ensure_case(
 
     Idempotente. Nunca sobrescribe contenido del usuario.
 
-    Refactor intake v2 — paso 7a:
+    Refactor intake v2 — paso 7a (informe renombrado en sesión 7, 2026-05-11):
     - Crea todas las ramas de ``CRM_TREE`` bajo ``00_Input/05_CRM/`` (D1 eager).
-    - Copia ``data/_plantillas/ficha_operacion.xlsx`` a
-      ``02_Analisis/_ficha_operacion.xlsx`` (siempre).
+    - Copia ``data/_plantillas/informe_viabilidad.xlsx`` a
+      ``02_Analisis/<nombre>`` (siempre). El ``<nombre>`` lo decide
+      ``_compose_informe_filename``: ``Informe viabilidad - <case_id>.xlsx``
+      si el case_id sigue el formato CRM nuevo, ``_informe_viabilidad.xlsx``
+      como fallback para casos legacy.
     - Si ``tipo_caso ∈ INFORME_VIABILIDAD_TIPOS`` copia además
       ``data/_plantillas/cuestionario_viabilidad.xlsx`` a
       ``02_Analisis/_cuestionario_viabilidad.xlsx``.
-    - Pre-rellena REF (``<equipo> - <direccion> (<id_go>)``) y FECHA en la
-      ficha SOLO cuando se acaba de copiar — preserva trabajo del abogado en
-      llamadas posteriores. REF se rellena solo si los tres componentes
+    - Pre-rellena REF (``<equipo> - <direccion> (<id_go>)``) y FECHA en el
+      informe SOLO cuando se acaba de copiar — preserva trabajo del abogado
+      en llamadas posteriores. REF se rellena solo si los tres componentes
       están disponibles (D-7a-2).
     - ``tipo_caso``, ``direccion`` e ``id_go`` se persisten en ``_caso.md``.
       Si el caso ya existe y el kwarg difiere del frontmatter, se actualiza
@@ -229,7 +235,7 @@ def ensure_case(
         tipo_caso: Clave de ``TIPOS_CASO_ALL``. Gobierna la copia condicional
             del cuestionario de viabilidad.
         direccion, id_go: Persisten en ``_caso.md.meta`` y se usan para
-            componer REF de la ficha.
+            componer REF del informe.
         (resto): metadatos del caso, opcionales.
     """
     case_dir = caso_path(case_id)
@@ -305,20 +311,24 @@ def ensure_case(
                 return fm_in
             _atomic_write_caso_md(case_id, _mutate)
 
-    # Copia idempotente de plantillas de viabilidad
+    # Copia idempotente de plantillas de viabilidad.
+    # Nombre del informe: ``Informe viabilidad - <case_id>.xlsx`` si el
+    # case_id sigue el formato CRM nuevo; ``_informe_viabilidad.xlsx`` si
+    # no (fallback). Detalle en ``_compose_informe_filename``.
     analisis_dir = case_dir / "02_Analisis"
-    ficha_dest = analisis_dir / "_ficha_operacion.xlsx"
-    ficha_copiada = _copy_plantilla(_FICHA_TEMPLATE, ficha_dest)
+    informe_filename = _compose_informe_filename(case_id)
+    informe_dest = analisis_dir / informe_filename
+    informe_copiado = _copy_plantilla(_INFORME_TEMPLATE, informe_dest)
 
     if tipo_caso_eff in INFORME_VIABILIDAD_TIPOS:
         cuestionario_dest = analisis_dir / "_cuestionario_viabilidad.xlsx"
         _copy_plantilla(_CUESTIONARIO_TEMPLATE, cuestionario_dest)
 
-    # Pre-rellenar SOLO si acabamos de copiar la ficha — preserva trabajo previo.
-    if ficha_copiada:
+    # Pre-rellenar SOLO si acabamos de copiar el informe — preserva trabajo previo.
+    if informe_copiado:
         equipo = _parse_equipo_from_case_id(case_id)
-        _prerellenar_ficha(
-            ficha_dest,
+        _prerellenar_informe(
+            informe_dest,
             equipo=equipo,
             direccion=direccion_eff,
             id_go=id_go_eff,
@@ -783,6 +793,42 @@ def _parse_equipo_from_case_id(case_id: str) -> str | None:
     return token if _EQUIPO_RE.match(token) else None
 
 
+def _sanitize_filename_segment(s: str) -> str:
+    """Sustituye los caracteres prohibidos en nombres de fichero Windows.
+
+    Reemplaza ``/ \\ : * ? " < > |`` por espacios. No toca acentos ni
+    caracteres válidos del case_id (`(`, `)`, `,`, `º`, etc.).
+    """
+    for ch in _FORBIDDEN_FILENAME_CHARS:
+        s = s.replace(ch, " ")
+    return s.strip()
+
+
+def _compose_informe_filename(case_id: str) -> str:
+    """Compone el nombre del fichero del informe de viabilidad.
+
+    Política (decisión del usuario, sesión 7 del 2026-05-11):
+
+    - Si ``case_id`` sigue el formato CRM nuevo (``<equipo> - <dirección>
+      (<id_go>) - <sufijo>``, detectado por ``_parse_equipo_from_case_id``):
+      ``"Informe viabilidad - <case_id>.xlsx"``. El case_id ya contiene
+      equipo + dirección + ID GO + tipo, por lo que sirve como sufijo
+      directo del nombre.
+    - Si ``case_id`` no sigue el formato nuevo (legacy ``EV-2026-001``):
+      ``"_informe_viabilidad.xlsx"`` (fallback con underscore inicial).
+      Mantiene ordenación arriba en el explorador y evita nombres
+      truncados con datos vacíos.
+
+    El nombre se sanea de caracteres prohibidos en Windows (``/ \\ : * ?
+    " < > |``) por defensa, aunque en la práctica el case_id no debería
+    contenerlos.
+    """
+    if _parse_equipo_from_case_id(case_id) is None:
+        return "_informe_viabilidad.xlsx"
+    sanitized = _sanitize_filename_segment(case_id)
+    return f"Informe viabilidad - {sanitized}.xlsx"
+
+
 def _ensure_crm_tree_dirs(case_dir: Path) -> None:
     """Crea todas las ramas de ``CRM_TREE`` bajo ``00_Input/05_CRM/`` (D1 eager).
 
@@ -837,37 +883,37 @@ def _find_label_row(
     return None
 
 
-def _prerellenar_ficha(
-    ficha_path: Path,
+def _prerellenar_informe(
+    informe_path: Path,
     *,
     equipo: str | None,
     direccion: str | None,
     id_go: str | None,
 ) -> None:
-    """Pre-rellena REF y FECHA en la ficha de operación recién copiada.
+    """Pre-rellena REF y FECHA en el informe de viabilidad recién copiado.
 
     Localiza ``REF`` y ``FECHA`` en columna B de la hoja ``OPERACION`` y
     escribe el valor en la columna C de la misma fila. REF se rellena
     SOLO si los tres componentes están presentes (D-7a-2) — sin
     placeholders. FECHA siempre se rellena con la fecha actual.
 
-    Silencioso ante errores de openpyxl: una ficha corrupta no debe
+    Silencioso ante errores de openpyxl: un informe corrupto no debe
     abortar la creación del caso.
     """
     try:
         from openpyxl import load_workbook
     except ImportError:
-        logger.warning("openpyxl no disponible; se omite pre-relleno de la ficha")
+        logger.warning("openpyxl no disponible; se omite pre-relleno del informe")
         return
 
     try:
-        wb = load_workbook(ficha_path)
+        wb = load_workbook(informe_path)
     except Exception as exc:
-        logger.warning("No se pudo abrir ficha para pre-relleno (%s): %s", ficha_path, exc)
+        logger.warning("No se pudo abrir informe para pre-relleno (%s): %s", informe_path, exc)
         return
 
     if "OPERACION" not in wb.sheetnames:
-        logger.warning("Hoja 'OPERACION' no encontrada en %s", ficha_path)
+        logger.warning("Hoja 'OPERACION' no encontrada en %s", informe_path)
         return
     ws = wb["OPERACION"]
 
@@ -881,6 +927,6 @@ def _prerellenar_ficha(
         cell.number_format = "dd/mm/yyyy"
 
     try:
-        wb.save(ficha_path)
+        wb.save(informe_path)
     except Exception as exc:
-        logger.warning("No se pudo guardar ficha tras pre-relleno (%s): %s", ficha_path, exc)
+        logger.warning("No se pudo guardar informe tras pre-relleno (%s): %s", informe_path, exc)
