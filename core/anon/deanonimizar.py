@@ -56,25 +56,109 @@ def deanonimizar_texto(texto: str, mapa: dict[str, str]) -> str:
 # I/O — operación sobre fichero (uso CLI / scripts)
 # ---------------------------------------------------------------------------
 
+#: Nombre canónico de la subcarpeta de output anonimizado en FeesDefender.
+#: Replicado aquí en lugar de importado desde ``core.anon.mapa_caso`` para
+#: mantener este módulo libre de dependencias del resto del core (lo
+#: consume el CLI standalone y los tests rápidos).
+_SUBDIR_ANONIMIZADO = "06_Anonimizado"
+_MAPA_CASO_FILENAME = "_mapa_caso.json"
+
+
 def _localizar_mapa(ruta_md: Path, nombre_base: str) -> Path | None:
-    """Busca el ``_mapa.json`` asociado a un .md anonimizado.
+    """Busca el JSON con el mapa de entidades asociado al .md anonimizado.
 
-    Orden de búsqueda:
-      1. Misma carpeta que el .md (estructura plana de FeesDefender).
-      2. Carpeta hermana ``_anonimizados/`` (estructura legacy de Expedientes
-         Seguros, cuando el .md vive en ``_para_IA/``).
+    Orden de búsqueda (devuelve el primero que existe en disco):
 
-    Devuelve ``None`` si no encuentra el fichero en ninguna ubicación.
+      1. **Legacy adyacente** — ``<ruta_md>.parent / "{nombre_base}_mapa.json"``.
+         Estructura plana del Anonimizador original de Expedientes Seguros:
+         un ``_mapa.json`` por documento, en la misma carpeta que el .md.
+
+      2. **Legacy ``_para_IA``** — carpeta hermana ``_anonimizados/`` cuando
+         el .md vive en ``_para_IA/``. Layout antiguo de Expedientes Seguros.
+
+      3. **Mapa de caso FeesDefender** — ``06_Anonimizado/_mapa_caso.json``
+         del ancestro inmediato. Formato nuevo introducido en la absorción
+         del Anonimizador (2026-05-07): un único mapa compartido por caso,
+         escrito por ``core.anon.api.anonimizar_caso`` vía
+         ``core.anon.mapa_caso.guardar_mapa_caso``.
+
+      4. **Fallback por frontmatter** — si el .md declara ``mapa_caso_path``
+         (o el alias ``mapa_entidades``) en su frontmatter YAML, ese path
+         se usa tal cual. Sirve para cualquier .md que no esté en el árbol
+         canónico ``…/06_Anonimizado/…`` pero quiera referenciar un mapa
+         arbitrario. Acepta rutas absolutas o relativas al directorio del
+         .md.
+
+    Los formatos 1 y 2 tienen prioridad sobre el 3 por retrocompatibilidad
+    estricta: si un .md trae su mapa adyacente, ese manda aunque viva
+    dentro de un caso FeesDefender. El nivel 4 es el último recurso.
+
+    Devuelve ``None`` si ninguno de los cuatro niveles localiza un mapa
+    existente.
     """
-    candidatos = [ruta_md.parent / f"{nombre_base}_mapa.json"]
+    # Nivel 1 — legacy adyacente (estructura plana).
+    legacy_adyacente = ruta_md.parent / f"{nombre_base}_mapa.json"
+    if legacy_adyacente.exists():
+        return legacy_adyacente
+
+    # Nivel 2 — legacy `_para_IA` ↔ `_anonimizados`.
     partes = ruta_md.parts
     for i, p in enumerate(partes):
         if p == "_para_IA":
             nuevas = list(partes)
             nuevas[i] = "_anonimizados"
-            candidatos.append(Path(*nuevas).parent / f"{nombre_base}_mapa.json")
+            candidato = Path(*nuevas).parent / f"{nombre_base}_mapa.json"
+            if candidato.exists():
+                return candidato
             break
-    return next((c for c in candidatos if c.exists()), None)
+
+    # Nivel 3 — `_mapa_caso.json` del ancestro `06_Anonimizado/`.
+    for ancestro in ruta_md.parents:
+        if ancestro.name == _SUBDIR_ANONIMIZADO:
+            candidato = ancestro / _MAPA_CASO_FILENAME
+            if candidato.exists():
+                return candidato
+            break
+
+    # Nivel 4 — fallback por frontmatter del propio .md.
+    candidato_fm = _mapa_desde_frontmatter(ruta_md)
+    if candidato_fm is not None and candidato_fm.exists():
+        return candidato_fm
+
+    return None
+
+
+def _mapa_desde_frontmatter(ruta_md: Path) -> Path | None:
+    """Devuelve el path del mapa declarado en el frontmatter, si lo hay.
+
+    Lee el frontmatter YAML del .md con ``core.utils.read_md`` (import
+    diferido para no acoplar el módulo a ``core.utils`` en el resto de
+    rutas). Acepta dos campos:
+
+      - ``mapa_caso_path``: path absoluto o relativo al directorio del .md.
+      - ``mapa_entidades``: alias semántico (mismo contrato).
+
+    Si la lectura falla por cualquier motivo (fichero inexistente,
+    frontmatter ausente, YAML malformado, etc.), devuelve ``None`` —
+    nunca propaga la excepción, es un fallback opcional.
+    """
+    try:
+        from core.utils import read_md  # import diferido
+        meta, _ = read_md(ruta_md)
+    except Exception:
+        return None
+
+    if not isinstance(meta, dict):
+        return None
+
+    declarado = meta.get("mapa_caso_path") or meta.get("mapa_entidades")
+    if not declarado:
+        return None
+
+    candidato = Path(str(declarado))
+    if not candidato.is_absolute():
+        candidato = (ruta_md.parent / candidato).resolve()
+    return candidato
 
 
 def deanonimizar(ruta_md: str | Path) -> Path:

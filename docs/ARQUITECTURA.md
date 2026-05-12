@@ -57,6 +57,8 @@ Cada paso es ejecutable de forma aislada. El pipeline es **idempotente**: re-eje
 | `core/intake_manifest.py` — schema o reglas reconcile | `core/sync_sudespacho.pull_expediente_v2`, futuros pulls v2 (intake_drive si se migra) |
 | `core/case_manager.py` — `crm_branch_path` o reglas derivación | `data/_plantillas/ficha_operacion.yaml` (regla_derivacion canónica), `data/_plantillas/cuestionario_viabilidad.yaml` (campo `respalda`), eventual `core/viabilidad.py` (horizonte 3) |
 | `core/config.py` — `CRM_TREE` o `CARPETA_ID_TO_PATH` | `docs/INTEGRACION_SUDESPACHO.md` §13.5 (mappings), `docs/INTEGRACION_SUDESPACHO.md` §13.6 (estructura árbol) |
+| `core/anon/mapa_caso.py` — `SUBDIR_ANONIMIZADO` / `MAPA_FILENAME` | `core/anon/deanonimizar.py` (`_SUBDIR_ANONIMIZADO` / `_MAPA_CASO_FILENAME` replicados para evitar acoplar el deanonimizador al resto del core; mantenerlos sincronizados) |
+| `core/anon/api.py` — campos del frontmatter del .md anonimizado | `core/anon/deanonimizar.py::_mapa_desde_frontmatter` (lee `mapa_caso_path` / `mapa_entidades` como fallback); añadir el nuevo nombre si se renombra |
 | `data/_plantillas/*.yaml` | regenerar XLSX con `python -m scripts.render_plantillas all` y commitear ambos (YAML + XLSX) |
 | Añadir módulo nuevo en `core/` | `core/__init__.py`, `docs/ARQUITECTURA.md` diagrama de capas, `STATUS.md` inventario |
 | Añadir script en `scripts/` | `STATUS.md` sección "Cómo arrancar", `pyproject.toml` si tiene entry point |
