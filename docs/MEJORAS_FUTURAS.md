@@ -239,3 +239,57 @@ menos un test que:
 **Prioridad.** Alta — el módulo no es usable sin este fix. Cualquier caso
 que llegue al despacho en papel (volumen estimado ~30% del flujo
 extrajudicial E&V) cae en este path.
+
+---
+
+## 12. Bug latente: `validate_case_id` no admite categoría OTROS
+
+**Detectado.** 2026-05-12 durante el hilo H4 del plan SaRS1 (primera
+ejecución real de `anonimizar_caso` / `anonimizar_documento` sobre un
+caso de categoría OTROS).
+
+**Síntoma.** `core/utils.py::validate_case_id` (regex `_CASE_ID_NEW` en
+L41-43) exige `\(W-[A-Z0-9]+\)` en el grupo de referencia del case_id.
+Para casos de categoría OTROS la convención del despacho es
+`(SIN REFERENCIA)` (no hay referencia W-XXXXXX porque el caso no
+proviene de captación inmobiliaria). Resultado: cualquier case_id como
+`SaRS1 - Castelar, 37-39, Santander - (SIN REFERENCIA) - Otros` revienta
+con `ValueError: Formato de case_id no reconocido`.
+
+**Causa raíz.** La regex no se actualizó cuando la categoría OTROS se
+añadió a `core/config.py::TIPOS_CASO_OTROS` (s9, 2026-05-11). Bug latente
+desde entonces porque ningún caso OTROS había llegado al motor de
+anonimización aún.
+
+**Workaround usado para H4.** Monkey-patch local en el script ad-hoc del
+hilo (`%TEMP%\h4_sars1_anon.py`): sustituir `core.anon.api.validate_case_id`
+por una identidad que solo asegura no-vacío. Sin tocar el código del
+proyecto.
+
+**Solución técnica.** Cambio quirúrgico en `core/utils.py::_CASE_ID_NEW`:
+
+```python
+# Antes:
+_CASE_ID_NEW = re.compile(
+    r"^[A-Z][a-zA-Z][A-Z]{2}\d+\s+-\s+.+\(W-[A-Z0-9]+\)\s+-\s+.+$"
+)
+
+# Después:
+_CASE_ID_NEW = re.compile(
+    r"^[A-Z][a-zA-Z][A-Z]{2}\d+\s+-\s+.+"
+    r"\((?:W-[A-Z0-9]+|SIN\s+REFERENCIA)\)"
+    r"\s+-\s+.+$"
+)
+```
+
+**Test smoke imprescindible.** Añadir a `tests/test_utils.py` (o crear
+si no existe) un caso con case_id de categoría OTROS, verificando que
+`validate_case_id` lo acepta.
+
+**Coste estimado.** 10 minutos (fix + test + verificación suite).
+
+**Prioridad.** Media — afecta a todos los casos OTROS que pasen por el
+motor de anonimización. Hay workaround claro vía script ad-hoc, pero
+romper el comando estándar `python -m scripts.anonimizar_caso` para una
+categoría legítima del proyecto es regresión arquitectónica. Tratar en
+hilo dedicado, no en H4.

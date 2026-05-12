@@ -274,7 +274,7 @@ aceptación, entregables) en `docs/PLAN_SaRS1_anon_pipeline.md`.
 Ruta crítica: H1 → H2 → H4 → H5 → H6 → H7. H3 (adaptación de
 `core/anon/deanonimizar.py` al `_mapa_caso.json`) es paralelizable.
 
-**H1, H2 y H3 cerrados el 2026-05-12.**
+**H1, H2, H3 y H4 cerrados el 2026-05-12.**
 
 - **H1**: `_caso.md` corregido (cliente E&V Spain ID 27 + observación DEMANDADO en
   `meta.observaciones`). `verify_expediente_referencia` → `match: True`. OCR `spa`
@@ -301,14 +301,31 @@ Ruta crítica: H1 → H2 → H4 → H5 → H6 → H7. H3 (adaptación de
   (`tests/test_deanonimizar_mapa_caso.py`) verdes; suite global verde
   (~483 tests). `docs/ARQUITECTURA.md` actualizada con 2 filas de dependencias.
   Sin tocar regex/listas/thresholds del motor.
+- **H4** (sin commit; H4 no toca código del proyecto): **Opción B** del plan
+  (Opción A inviable: `_listar_documentos` en `core/anon/api.py` L318-334 ignora
+  cualquier path con parte que empiece por `_`, incluido `_split/`). Script ad-hoc
+  en `%TEMP%\h4_sars1_anon.py` (no versionado, mismo patrón que el troceo manual
+  de H2) que replica `anonimizar_caso` con listado explícito de las 4 piezas de
+  `_split/` y mapa compartido. **4/4 procesados, 0 errores, ~5 min**. Output en
+  `06_Anonimizado/{01_cedula_emplazamiento_01,02_decreto_01,03_demanda_01,01_doc_anexo_01}.md`
+  + `_mapa_caso.json`. Entidades nuevas: cédula 13, decreto 10, demanda 35, anexo 126.
+  **Side-fix documentado**: destapado segundo bug latente — `core/utils.py::_CASE_ID_NEW`
+  exige `(W-XXXXXX)` y rechaza `(SIN REFERENCIA)` (categoría OTROS introducida en s9).
+  Workaround H4: monkey-patch local en el script ad-hoc. Bug registrado como punto 12
+  en `docs/MEJORAS_FUTURAS.md` para hilo dedicado. 7 notas sueltas categorizadas
+  (1 MAP, 4 FP, 1 OCR, 1 FP regex) anotadas en `07_AI cowork/_revision_anon_SaRS1.md`
+  como input retroactivo para H5.
 
-Próximo hilo a abrir: **H4** (anonimización con `python -m scripts.anonimizar_caso
-"<case_id>" --tipo "Juicio Ordinario" --politica SALTAR` sobre las 4 piezas de
-`_split/`). Tiempo estimado 20-40 min. Produce los `.md` en `06_Anonimizado/` +
-`_mapa_caso.json` listos para la revisión forense de H5. Antes de lanzar, decidir
-en H4 paso 4.1 cómo evitar que el motor procese también los `_ocr/` o los
-`_compressed.pdf` originales (Opción A: mover originales y `_ocr` fuera de
-`00_Input/` temporalmente; Opción B: usar `anonimizar_documento` por pieza).
+Próximo hilo a abrir: **H5** (verificación forense + creación del fixture
+gold-standard `tests/fixtures/anon/SaRS1/`). Detalle completo en §8 del plan
+maestro. Pre-condición: H4 cerrado ✓. Tiempo estimado: 45-90 min. Es el hilo más
+manual del bucle de mejora continua — leer todo el output anonimizado, rellenar
+la tabla del Anexo A categorizando errores (FN/FP/MAP/SPLIT/OCR), corregir
+manualmente el `_mapa_caso.json` para los FP críticos (especialmente el bloque
+N2 detectado en H4: muchas cabeceras jurídicas etiquetadas como nombres),
+alimentar `docs/MEJORAS_FUTURAS.md` con las mejoras detectadas, y fijar el caso
+como primer fixture gold-standard. Decisión inicial en H5 paso 5.1: política del
+directorio `tests/fixtures/anon/SaRS1/` respecto a git (pendiente C1 del plan).
 
 Cada hilo es una sesión nueva de Cowork con ventana de contexto
 limpia: leer `STATUS.md` + sección H<N> de `docs/PLAN_SaRS1_anon_pipeline.md`.
