@@ -54,6 +54,14 @@ from core.config import (
     CLIENTE_PROPIO_DEFAULT,
     cliente_propio_id,
 )
+from core.ciudades import (
+    EQUIPOS_POR_CIUDAD_EXTRAJUDICIAL as _EQUIPOS_POR_CIUDAD_EXT,
+    EQUIPOS_EXTRAJUDICIAL            as _EQUIPOS_EXT,
+    TAG_AZUL_CIUDAD_EXTRAJUDICIAL    as _TAG_AZUL_CIUDAD_EXT,
+    EQUIPOS_POR_CIUDAD_JUDICIAL      as _EQUIPOS_POR_CIUDAD_JUD,
+    EQUIPOS_JUDICIAL                 as _EQUIPOS_JUD,
+    TAG_AZUL_CIUDAD_JUDICIAL         as _TAG_AZUL_CIUDAD_JUD,
+)
 
 # ---------------------------------------------------------------------------
 # Configuración de página + CSS corporativo Engel & Völkers
@@ -837,98 +845,21 @@ with tab_nuevo:
     # ------------------------------------------------------------------
     # Datos maestros
     # ------------------------------------------------------------------
+    #
+    # El catálogo de ciudades y equipos vive en `core/ciudades.py` (única
+    # fuente de verdad). Aquí solo se anteponen los placeholders propios
+    # del `st.selectbox` y se mantiene el dict de notas (no migrado a
+    # `core/ciudades.py` porque no pertenece a la subdivisión por
+    # ciudad — son tags verdes de tipo de operación).
 
-    # Equipos agrupados por ciudad — dict anidado ciudad → {label: tag_rojo}
-    _EQUIPOS_POR_CIUDAD: dict[str, dict[str, str]] = {
-        "Barcelona": {
-            "BaRR1  — BCN Residential Rentals 1":  _sc.TAG_ROJO_BaRR1,
-            "BaRR2  — BCN Residential Rentals 2":  _sc.TAG_ROJO_BaRR2,
-            "BaRR3  — BCN Residential Rentals 3":  _sc.TAG_ROJO_BaRR3,
-            "BaRR4  — BCN Residential Rentals 4":  _sc.TAG_ROJO_BaRR4,
-            "BaRR10 — BCN Residential Rentals 10": _sc.TAG_ROJO_BaRR10,
-            "BaRS1  — BCN Residential Sales 1":    _sc.TAG_ROJO_BaRS1,
-            "BaRS2  — BCN Residential Sales 2":    _sc.TAG_ROJO_BaRS2,
-            "BaRS3  — BCN Residential Sales 3":    _sc.TAG_ROJO_BaRS3,
-            "BaRS4  — BCN Residential Sales 4":    _sc.TAG_ROJO_BaRS4,
-            "BaRS5  — BCN Residential Sales 5":    _sc.TAG_ROJO_BaRS5,
-            "BaRS6  — BCN Residential Sales 6":    _sc.TAG_ROJO_BaRS6,
-            "BaRS7  — BCN Residential Sales 7":    _sc.TAG_ROJO_BaRS7,
-            "BaRS8  — BCN Residential Sales 8":    _sc.TAG_ROJO_BaRS8,
-            "BaRS9  — BCN Residential Sales 9":    _sc.TAG_ROJO_BaRS9,
-            "BaRS10 — BCN Residential Sales 10":   _sc.TAG_ROJO_BaRS10,
-            "BaRS11 — BCN Residential Sales 11":   _sc.TAG_ROJO_BaRS11,
-            "BaRS12 — BCN Residential Sales 12":   _sc.TAG_ROJO_BaRS12,
-            "BaCR1  — BCN Commercial Rentals 1":   _sc.TAG_ROJO_BaCR1,
-            "BaCR2  — BCN Commercial Rentals 2":   _sc.TAG_ROJO_BaCR2,
-            "BaCR10 — BCN Commercial Rentals 10":  _sc.TAG_ROJO_BaCR10,
-            "BaCS1  — BCN Commercial Sales 1":     _sc.TAG_ROJO_BaCS1,
-            "BaCS10 — BCN Commercial Sales 10":    _sc.TAG_ROJO_BaCS10,
-            "BaDP1  — BCN (Pendiente) 1":          _sc.TAG_ROJO_BaDP1,
-        },
-        "Bilbao": {
-            "BiRS1  — Bilbao Residential Sales 1": _sc.TAG_ROJO_BiRS1,
-            "BiRS2  — Bilbao Residential Sales 2": _sc.TAG_ROJO_BiRS2,
-        },
-        "Madrid": {
-            "MaRR1  — MAD Residential Rentals 1":  _sc.TAG_ROJO_MaRR1,
-            "MaRR2  — MAD Residential Rentals 2":  _sc.TAG_ROJO_MaRR2,
-            "MaRR3  — MAD Residential Rentals 3":  _sc.TAG_ROJO_MaRR3,
-            "MaRS1  — MAD Residential Sales 1":    _sc.TAG_ROJO_MaRS1,
-            "MaRS2  — MAD Residential Sales 2":    _sc.TAG_ROJO_MaRS2,
-            "MaRS3  — MAD Residential Sales 3":    _sc.TAG_ROJO_MaRS3,
-            "MaRS4  — MAD Residential Sales 4":    _sc.TAG_ROJO_MaRS4,
-            "MaRS5  — MAD Residential Sales 5":    _sc.TAG_ROJO_MaRS5,
-            "MaRS6  — MAD Residential Sales 6":    _sc.TAG_ROJO_MaRS6,
-            "MaRS7  — MAD Residential Sales 7":    _sc.TAG_ROJO_MaRS7,
-            "MaRS8  — MAD Residential Sales 8":    _sc.TAG_ROJO_MaRS8,
-            "MaRS9  — MAD Residential Sales 9":    _sc.TAG_ROJO_MaRS9,
-            "MaRS10 — MAD Residential Sales 10":   _sc.TAG_ROJO_MaRS10,
-            "MaRS11 — MAD Residential Sales 11":   _sc.TAG_ROJO_MaRS11,
-            "MaRS12 — MAD Residential Sales 12":   _sc.TAG_ROJO_MaRS12,
-            "MaRS13 — MAD Residential Sales 13":   _sc.TAG_ROJO_MaRS13,
-            "MaRS14 — MAD Residential Sales 14":   _sc.TAG_ROJO_MaRS14,
-            "MaRS15 — MAD Residential Sales 15":   _sc.TAG_ROJO_MaRS15,
-            "MaPD1  — MAD (Pendiente) 1":          _sc.TAG_ROJO_MaPD1,
-        },
-        "San Sebastián": {
-            "SSRR1  — San Sebastián Residential Rentals 1": _sc.TAG_ROJO_SSRR1,
-            "SSRS1  — San Sebastián Residential Sales 1":   _sc.TAG_ROJO_SSRS1,
-        },
-        "Santander": {
-            "SaRS1  — Santander Residential Sales 1": _sc.TAG_ROJO_SaRS1,
-        },
-        "Sevilla": {
-            "SeRS1  — Sevilla Residential Sales 1":  _sc.TAG_ROJO_SeRS1,
-            "SeRS6  — Sevilla Residential Sales 6":  _sc.TAG_ROJO_SeRS6,
-        },
-        "Valencia": {
-            "VaCR1  — Valencia Commercial Rentals 1":  _sc.TAG_ROJO_VaCR1,
-            "VaCR2  — Valencia Commercial Rentals 2":  _sc.TAG_ROJO_VaCR2,
-            "VaPD1  — Valencia (pendiente) 1":         _sc.TAG_ROJO_VaPD1,
-            "VaRR1  — Valencia Residential Rentals 1": _sc.TAG_ROJO_VaRR1,
-            "VaRR3  — Valencia Residential Rentals 3": _sc.TAG_ROJO_VaRR3,
-            "VaRS1  — Valencia Residential Sales 1":   _sc.TAG_ROJO_VaRS1,
-            "VaRS2  — Valencia Residential Sales 2":   _sc.TAG_ROJO_VaRS2,
-            "VaRS3  — Valencia Residential Sales 3":   _sc.TAG_ROJO_VaRS3,
-            "VaRS4  — Valencia Residential Sales 4":   _sc.TAG_ROJO_VaRS4,
-            "VaRS5  — Valencia Residential Sales 5":   _sc.TAG_ROJO_VaRS5,
-        },
-    }
+    _PLACEHOLDER_CIUDAD = "— selecciona ciudad —"
 
-    # Dict plano completo (para lookup de tags al construir el expediente)
-    _EQUIPOS: dict[str, str] = {
-        k: v for equipos in _EQUIPOS_POR_CIUDAD.values() for k, v in equipos.items()
-    }
-
-    _CIUDADES: dict[str, str | None] = {
-        "— selecciona ciudad —": None,
-        "Barcelona":     _sc.TAG_AZUL_BARCELONA,
-        "Bilbao":        _sc.TAG_AZUL_BILBAO,
-        "Madrid":        _sc.TAG_AZUL_MADRID,
-        "San Sebastián": _sc.TAG_AZUL_SAN_SEBASTIAN,
-        "Santander":     _sc.TAG_AZUL_SANTANDER,
-        "Sevilla":       _sc.TAG_AZUL_SEVILLA,
-        "Valencia":      _sc.TAG_AZUL_VALENCIA,
+    # Extrajudicial
+    _EQUIPOS_POR_CIUDAD: dict[str, dict[str, str]] = _EQUIPOS_POR_CIUDAD_EXT
+    _EQUIPOS:            dict[str, str]            = _EQUIPOS_EXT
+    _CIUDADES:           dict[str, str | None]     = {
+        _PLACEHOLDER_CIUDAD: None,
+        **_TAG_AZUL_CIUDAD_EXT,
     }
 
     _NOTAS: dict[str, str] = {
@@ -945,94 +876,12 @@ with tab_nuevo:
         "OTROS":                           _sc.NOTA_OTROS,
     }
 
-    # Equipos judiciales — grupo 2 (J_TAG_* del módulo sudespacho_create)
-    _J_EQUIPOS_POR_CIUDAD: dict[str, dict[str, str]] = {
-        "Barcelona": {
-            "BaRR1  — BCN Residential Rentals 1":  _sc.J_TAG_ROJO_BaRR1,
-            "BaRR2  — BCN Residential Rentals 2":  _sc.J_TAG_ROJO_BaRR2,
-            "BaRR3  — BCN Residential Rentals 3":  _sc.J_TAG_ROJO_BaRR3,
-            "BaRR4  — BCN Residential Rentals 4":  _sc.J_TAG_ROJO_BaRR4,
-            "BaRR10 — BCN Residential Rentals 10": _sc.J_TAG_AZUL_BaRR10,
-            "BaRS1  — BCN Residential Sales 1":    _sc.J_TAG_ROJO_BaRS1,
-            "BaRS2  — BCN Residential Sales 2":    _sc.J_TAG_ROJO_BaRS2,
-            "BaRS3  — BCN Residential Sales 3":    _sc.J_TAG_ROJO_BaRS3,
-            "BaRS4  — BCN Residential Sales 4":    _sc.J_TAG_AZUL_BaRS4,
-            "BaRS5  — BCN Residential Sales 5":    _sc.J_TAG_ROJO_BaRS5,
-            "BaRS6  — BCN Residential Sales 6":    _sc.J_TAG_ROJO_BaRS6,
-            "BaRS7  — BCN Residential Sales 7":    _sc.J_TAG_ROJO_BaRS7,
-            "BaRS8  — BCN Residential Sales 8":    _sc.J_TAG_ROJO_BaRS8,
-            "BaRS9  — BCN Residential Sales 9":    _sc.J_TAG_ROJO_BaRS9,
-            "BaRS10 — BCN Residential Sales 10":   _sc.J_TAG_ROJO_BaRS10,
-            "BaRS11 — BCN Residential Sales 11":   _sc.J_TAG_ROJO_BaRS11,
-            "BaRS12 — BCN Residential Sales 12":   _sc.J_TAG_ROJO_BaRS12,
-            "BaCR1  — BCN Commercial Rentals 1":   _sc.J_TAG_ROJO_BaCR1,
-            "BaCR10 — BCN Commercial Rentals 10":  _sc.J_TAG_ROJO_BaCR10,
-            "BaCS1  — BCN Commercial Sales 1":     _sc.J_TAG_ROJO_BaCS1,
-            "BaCS2  — BCN Commercial Sales 2":     _sc.J_TAG_AZUL_BaCS2,
-            "BaDP1  — BCN (pendiente) 1":          _sc.J_TAG_ROJO_BaDP1,
-        },
-        "Bilbao": {
-            "BiRS1  — Bilbao Residential Sales 1": _sc.J_TAG_ROJO_BiRS1,
-            "BiRS2  — Bilbao Residential Sales 2": _sc.J_TAG_ROJO_BiRS2,
-        },
-        "Madrid": {
-            "MaRR1  — MAD Residential Rentals 1":  _sc.J_TAG_ROJO_MaRR1,
-            "MaRR2  — MAD Residential Rentals 2":  _sc.J_TAG_AZUL_MaRR2,
-            "MaRR3  — MAD Residential Rentals 3":  _sc.J_TAG_ROJO_MaRR3,
-            "MaRS1  — MAD Residential Sales 1":    _sc.J_TAG_ROJO_MaRS1,
-            "MaRS2  — MAD Residential Sales 2":    _sc.J_TAG_ROJO_MaRS2,
-            "MaRS3  — MAD Residential Sales 3":    _sc.J_TAG_ROJO_MaRS3,
-            "MaRS4  — MAD Residential Sales 4":    _sc.J_TAG_ROJO_MaRS4,
-            "MaRS5  — MAD Residential Sales 5":    _sc.J_TAG_ROJO_MaRS5,
-            "MaRS6  — MAD Residential Sales 6":    _sc.J_TAG_ROJO_MaRS6,
-            "MaRS7  — MAD Residential Sales 7":    _sc.J_TAG_ROJO_MaRS7,
-            "MaRS8  — MAD Residential Sales 8":    _sc.J_TAG_ROJO_MaRS8,
-            "MaRS9  — MAD Residential Sales 9":    _sc.J_TAG_ROJO_MaRS9,
-            "MaRS10 — MAD Residential Sales 10":   _sc.J_TAG_ROJO_MaRS10,
-            "MaRS11 — MAD Residential Sales 11":   _sc.J_TAG_ROJO_MaRS11,
-            "MaRS12 — MAD Residential Sales 12":   _sc.J_TAG_ROJO_MaRS12,
-            "MaRS13 — MAD Residential Sales 13":   _sc.J_TAG_ROJO_MaRS13,
-            "MaRS14 — MAD Residential Sales 14":   _sc.J_TAG_ROJO_MaRS14,
-            "MaRS15 — MAD Residential Sales 15":   _sc.J_TAG_ROJO_MaRS15,
-            "MaPD1  — MAD (pendiente) 1":          _sc.J_TAG_ROJO_MaPD1,
-        },
-        "San Sebastián": {
-            "SSRR1  — San Sebastián Residential Rentals 1": _sc.J_TAG_ROJO_SSRR1,
-            "SSRS1  — San Sebastián Residential Sales 1":   _sc.J_TAG_ROJO_SSRS1,
-        },
-        "Santander": {
-            "SaRS1  — Santander Residential Sales 1": _sc.J_TAG_ROJO_SaRS1,
-        },
-        "Sevilla": {
-            "SeRS1  — Sevilla Residential Sales 1":  _sc.J_TAG_ROJO_SeRS1,
-            "SeRS6  — Sevilla Residential Sales 6":  _sc.J_TAG_ROJO_SeRS6,
-        },
-        "Valencia": {
-            "VaCR1  — Valencia Commercial Rentals 1":  _sc.J_TAG_ROJO_VaCR1,
-            "VaCR2  — Valencia Commercial Rentals 2":  _sc.J_TAG_ROJO_VaCR2,
-            "VaCS1  — Valencia Commercial Sales 1":    _sc.J_TAG_AZUL_VaCS1,
-            "VaPD1  — Valencia (pendiente) 1":         _sc.J_TAG_ROJO_VaPD1,
-            "VaRR1  — Valencia Residential Rentals 1": _sc.J_TAG_ROJO_VaRR1,
-            "VaRR3  — Valencia Residential Rentals 3": _sc.J_TAG_ROJO_VaRR3,
-            "VaRS1  — Valencia Residential Sales 1":   _sc.J_TAG_ROJO_VaRS1,
-            "VaRS2  — Valencia Residential Sales 2":   _sc.J_TAG_ROJO_VaRS2,
-            "VaRS3  — Valencia Residential Sales 3":   _sc.J_TAG_ROJO_VaRS3,
-            "VaRS4  — Valencia Residential Sales 4":   _sc.J_TAG_ROJO_VaRS4,
-            "VaRS5  — Valencia Residential Sales 5":   _sc.J_TAG_ROJO_VaRS5,
-        },
-    }
-    _J_EQUIPOS: dict[str, str] = {
-        k: v for equipos in _J_EQUIPOS_POR_CIUDAD.values() for k, v in equipos.items()
-    }
-    _J_CIUDADES: dict[str, str | None] = {
-        "— selecciona ciudad —": None,
-        "Barcelona":     _sc.J_TAG_AZUL_CIUDAD_BARCELONA,
-        "Bilbao":        _sc.J_TAG_AZUL_CIUDAD_BILBAO,
-        "Madrid":        _sc.J_TAG_AZUL_CIUDAD_MADRID,
-        "San Sebastián": _sc.J_TAG_AZUL_CIUDAD_SAN_SEBASTIAN,
-        "Santander":     _sc.J_TAG_AZUL_CIUDAD_SANTANDER,
-        "Sevilla":       _sc.J_TAG_AZUL_CIUDAD_SEVILLA,
-        "Valencia":      _sc.J_TAG_AZUL_CIUDAD_VALENCIA,
+    # Judicial
+    _J_EQUIPOS_POR_CIUDAD: dict[str, dict[str, str]] = _EQUIPOS_POR_CIUDAD_JUD
+    _J_EQUIPOS:            dict[str, str]            = _EQUIPOS_JUD
+    _J_CIUDADES:           dict[str, str | None]     = {
+        _PLACEHOLDER_CIUDAD: None,
+        **_TAG_AZUL_CIUDAD_JUD,
     }
 
     # Selección activa según tipo de expediente

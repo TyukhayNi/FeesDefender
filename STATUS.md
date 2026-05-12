@@ -85,8 +85,8 @@ git commit -m "<mensaje que Claude propuso>"
 
 | Ítem | Estado |
 |------|--------|
-| Tests | ✅ 483/483 (Anonimizador absorbido: +51 — 2026-05-07; sufijo captador Drive: +2 — 2026-05-11 s4; Numero_Expediente extrajudicial: +10 — 2026-05-11 s6; tests v2 dedicados paso 8: +113 — 2026-05-11 s7; rename informe_viabilidad: +9 — 2026-05-11 s7; verify_expediente_referencia: +15 — 2026-05-11 s8; categoría OTROS + clientes propios: +22 — 2026-05-11 s9; deanonimizar `_mapa_caso.json` 4 niveles: +13 — 2026-05-12 s11) |
-| Plan subdivisión CASOS_ROOT por ciudades | 📋 2026-05-12 s14 — trazado en `docs/PLAN_SUBDIVISION_CIUDADES.md`; 11 decisiones cerradas; 7 fases (0: extraer `_CIUDADES` → `core/config/ciudades.py`; 1: `case_locator` + refactor call-sites; 2: campo `ciudad` en `_caso.md`; 3: acción "Reasignar ciudad" en UI; 4: migración inicial plan/apply; 5: docs; 6: verificación); implementación pendiente |
+| Tests | ✅ 519/519 (Anonimizador absorbido: +51 — 2026-05-07; sufijo captador Drive: +2 — 2026-05-11 s4; Numero_Expediente extrajudicial: +10 — 2026-05-11 s6; tests v2 dedicados paso 8: +113 — 2026-05-11 s7; rename informe_viabilidad: +9 — 2026-05-11 s7; verify_expediente_referencia: +15 — 2026-05-11 s8; categoría OTROS + clientes propios: +22 — 2026-05-11 s9; deanonimizar `_mapa_caso.json` 4 niveles: +13 — 2026-05-12 s11; subdivisión ciudades Fase 0: +36 — 2026-05-12 s16) |
+| Plan subdivisión CASOS_ROOT por ciudades | 🚧 2026-05-12 s16 — Fase 0 ✅: `core/ciudades.py` extraído (catálogo único + `ciudad_de_equipo` + `es_carpeta_de_sistema`), `streamlit_app.py` refactorizado, 36 tests dedicados verdes. Fase 1 (`case_locator` + refactor call-sites) pendiente. 7 fases trazadas en `docs/PLAN_SUBDIVISION_CIUDADES.md` |
 | SaRS1 — H2 split + troceo manual | ✅ 2026-05-12 s12 — split automático generó 2 piezas vs 4 lógicas (cédula+decreto absorbidos por DEMANDA; PDF2 sin marcadores); troceo manual `pypdf` → 4 piezas (`01_CEDULA_EMPLAZAMIENTO_01.pdf` + `02_DECRETO_01.pdf` + `03_DEMANDA_01.pdf` + `01_DOC_ANEXO_01.pdf`); sanity 74/74; `07_AI cowork/_revision_anon_SaRS1.md` con 2 incidencias SPLIT para H5 |
 | `core/anon/deanonimizar.py` _localizar_mapa 4 niveles | ✅ 2026-05-12 s11 — legacy adyacente + `_para_IA` + `06_Anonimizado/_mapa_caso.json` + fallback frontmatter `mapa_caso_path`/`mapa_entidades`; firma pública y CLI intactas; +13 tests dedicados |
 | URL Drive E&V opcional | ✅ 2026-05-11 s10 — campo ya no bloqueante en judicial ni extrajudicial; auto-fill + pull rclone condicionados a presencia |
@@ -298,32 +298,37 @@ trazabilidad por commits. Detalle completo en memoria
 
 ### ⚠️ MÁXIMA PRIORIDAD — abrir próxima sesión por aquí
 
-**[SIGUIENTE-SUBDIVISION-CIUDADES]** (plan trazado el 2026-05-12 s14)
+**[SIGUIENTE-SUBDIVISION-CIUDADES]** (plan trazado el 2026-05-12 s14; Fase 0 cerrada el 2026-05-12 s16)
 
-Implementar la subdivisión de `CASOS_ROOT` por ciudades según
+Subdivisión de `CASOS_ROOT` por ciudades. Plan en
 `docs/PLAN_SUBDIVISION_CIUDADES.md`. 11 decisiones cerradas, 7 fases.
 
-Arrancar por **Fase 0** (extracción `_CIUDADES` → `core/config/ciudades.py`):
+**Fase 0 cerrada (s16)** — commit en rama `feature/subdivision-ciudades`:
 
-1. Crear rama `feature/subdivision-ciudades`.
-2. Crear `core/config/ciudades.py` con `CIUDADES`,
-   `EQUIPOS_POR_CIUDAD`, `EQUIPOS`, `ciudad_de_equipo(codigo)` y
-   `es_carpeta_de_sistema(nombre)`.
-3. Refactorizar `streamlit_app.py` para importar del nuevo módulo
-   (eliminar duplicación de los diccionarios).
-4. `tests/test_config_ciudades.py`: mapping, derivación prefijo→ciudad
-   para los códigos vivos (BaRR3, MaRS2, MaRS15, MaRR2, SeRS6, SaRS1,
-   más una muestra de Bilbao, San Sebastián y Valencia), regla del
-   guion bajo.
-5. Suite completa verde.
-6. Commit Fase 0.
+- `core/ciudades.py` creado con `CIUDADES`,
+  `TAG_AZUL_CIUDAD_EXTRAJUDICIAL/_JUDICIAL`,
+  `EQUIPOS_POR_CIUDAD_EXTRAJUDICIAL/_JUDICIAL`,
+  `EQUIPOS_EXTRAJUDICIAL/_JUDICIAL`, `ciudad_de_equipo(codigo)`,
+  `es_carpeta_de_sistema(nombre)`.
+- Decisión técnica: ubicación final `core/ciudades.py` (no
+  `core/config/ciudades.py` como decía el plan original) para evitar
+  refactor del paquete `core.config` fuera de scope. Plan actualizado.
+- `streamlit_app.py`: definiciones locales L842-1036 sustituidas por
+  imports (~200 líneas eliminadas; cero cambios funcionales).
+- `tests/test_config_ciudades.py`: 13 funciones (36 casos
+  parametrizados) — catálogo canónico, mappings por contexto,
+  derivación código→ciudad para los 6 casos vivos + 3 ciudades de
+  muestreo + 4 códigos asimétricos extra-only/judicial-only,
+  coherencia cross-context, regla guion bajo. Suite global 519/519 ✓.
 
-Después: **Fase 1** (`case_locator` con tolerancia legacy + refactor
-masivo de call-sites en `core/case_manager.py`,
-`core/sync_sudespacho.py`, `scripts/init_caso.py`,
-`scripts/sync_sudespacho.py`, `scripts/bulk_pull_expedientes.py`,
-`scripts/scheduled_sync.py`, `tests/conftest.py`). Fase 1 es la pesada
-y se merguea antes de tocar una sola carpeta.
+**Próxima sesión — arrancar Fase 1**:
+
+`core/casos/case_locator.py` con tolerancia legacy + refactor masivo
+de call-sites en `core/case_manager.py`, `core/sync_sudespacho.py`,
+`scripts/init_caso.py`, `scripts/sync_sudespacho.py`,
+`scripts/bulk_pull_expedientes.py`, `scripts/scheduled_sync.py`,
+`tests/conftest.py`. Fase 1 es la pesada (estimado: 2 sesiones
+cowork). Detalle en §5 del plan.
 
 Pre-condición antes de Fase 4 (migración real): backup manual de
 `CASOS_ROOT` (snapshot Drive o `rclone copy` a ubicación fría).

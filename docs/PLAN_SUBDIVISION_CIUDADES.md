@@ -49,7 +49,7 @@ En el entorno productivo `CASOS_ROOT` apunta a `G:\Unidades compartidas\EXPEDIEN
 
 Rama: `feature/subdivision-ciudades`.
 
-Extraer constantes desde `streamlit_app.py` a `core/config/ciudades.py`:
+Extraer constantes desde `streamlit_app.py` a `core/ciudades.py` (ubicación final: directamente bajo `core/`, no `core/config/`, para no convertir `core/config.py` en paquete dentro del scope de Fase 0):
 
 - `CIUDADES` (dict ciudad → tag_azul_crm).
 - `EQUIPOS_POR_CIUDAD` (dict anidado).
