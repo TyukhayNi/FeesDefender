@@ -615,3 +615,72 @@ cada path está bajo `caso_path(case_id)` por seguridad.
 **Prioridad.** Media — `anonimizar_caso` es la fachada estándar y se
 usaría en cualquier H4 futuro con piezas de `_split/`. Sin esto, cada
 caso con split manual requiere script ad-hoc.
+
+---
+
+## 23. Frontmatter del motor expone `case_id` literal con PII
+
+**Detectado.** 2026-05-12 (sesión 17) durante el sanity check previo a
+exposición de `08_Para frontier/` en SaRS1 (documentado en
+`07_AI cowork/_revision_anon_SaRS1.md` sección H5b).
+
+**Síntoma.** Los `.md` anonimizados que `core/anon/api.anonimizar_caso`
+escribe en `06_Anonimizado/` incluyen frontmatter YAML con varios campos
+que el motor llena directamente desde `CaseMeta`:
+
+```yaml
+---
+case_id: SaRS1 - Castelar, 37-39, Santander - (SIN REFERENCIA) - Otros
+tipo: documento_anonimizado
+fase: 06_Anonimizado
+slug: 01_cedula_emplazamiento_01
+fecha: '2026-05-12T12:27:58'
+tipo_procedimiento: Juicio Ordinario
+origen: 01_CEDULA_EMPLAZAMIENTO_01.pdf
+origen_sha256: 8059c42206a9550889d1635e826da879ef0bfa4c2e49fecafca9543b260c6b1a
+n_entidades: 13
+alertas: []
+---
+```
+
+El campo **`case_id`** lleva incrustada la dirección literal del caso
+(parte de la convención `<ciudad><equipo><tipo> - <dirección>
+(<referencia>) - <categoría>`). Cuando los `.md` se entregan a un LLM
+externo (Claude frontier en H6 del flujo SaRS1), el frontmatter va con
+ellos y el modelo lee la dirección PII como contexto, rompiendo el
+pilar arquitectónico del proyecto.
+
+**Workaround aplicado en H5b.** Al copiar los `.md` de `06_Anonimizado/`
+a `08_Para frontier/`, sustituir el frontmatter completo por uno
+neutralizado (`case_id: <anonimizado>` + slug + tipo procedimiento). Los
+originales de `06_Anonimizado/` se conservan intactos para uso del
+motor de deanonimización en H7.
+
+**Causa raíz.** `core/anon/api.py::anonimizar_documento` (sección que
+construye el frontmatter, aprox. L380-420) usa `case_meta.case_id` tal
+cual.
+
+**Solución técnica propuesta.** Dos opciones complementarias:
+
+1. **Anonimización del case_id en el frontmatter del motor.** Antes de
+   escribir el `.md`, aplicar el motor de anonimización al propio
+   `case_id` (la dirección literal se sustituye por una etiqueta del
+   mismo mapa, p.ej. `[DIRECCION]`). Recompone como
+   `case_id: <ciudad><equipo><tipo> - [DIRECCION] (<ref>) - <categoría>`.
+   Conserva trazabilidad estructural sin exposición de PII.
+2. **Modo "para frontier" en `anonimizar_caso`.** Flag opcional
+   `frontmatter_neutralizado: bool = False`. Si `True`, escribe un
+   frontmatter mínimo sin `case_id`/`origen`/`sha256` — solo `slug` y
+   `tipo_procedimiento`. Útil para outputs dedicados a LLM externos.
+
+La opción (1) es la correcta para el flujo estándar (sin tocar el flujo
+H6 después). La opción (2) puede convivir como modo explícito.
+
+**Coste estimado.** Opción (1): ~15 líneas en `api.py` + 2 tests
+(verificar que el case_id post-anonimización sigue siendo válido para
+`core.anon.deanonimizar._localizar_mapa`). Opción (2): ~25 líneas + 3
+tests.
+
+**Prioridad.** Alta — bloqueante para automatizar el flujo H6 en casos
+futuros. Sin esta mejora, cada caso que entregue `.md` a LLM externo
+requiere mitigación manual (script tipo `_h5b` que stripea frontmatter).

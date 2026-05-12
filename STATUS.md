@@ -3,7 +3,9 @@
 > **Fuente de verdad única del proyecto.**
 > Actualizar al cerrar cada sesión con `python -m scripts.session_close`.
 
-**Última actualización:** 2026-05-12 (sesión 15) — **Plan de adecuación RIA + RGPD entregado**. Documento `Plan adecuacion FeesDefender - RIA RGPD.docx` (26 pp., A4, formato del despacho — Times New Roman 12, márgenes 2,5 cm, interlineado 1,5, justificado, párrafos numerados, citas 10 pt cursiva con sangría 1 cm) en la raíz del proyecto. Dos partes: (I) Memorando ejecutivo con calificación cerrada — FeesDefender es sistema de IA del art. 3.1 RIA, NO prohibido (art. 5), NO alto riesgo (Anexo III.8.a no aplica — usuario es despacho de abogados, no autoridad judicial; considerando 61 RIA), SÍ sometido a transparencia art. 50 RIA y alfabetización art. 4 RIA (vigente 02/02/2025); despacho = proveedor + responsable del despliegue; Anthropic = proveedor de modelo de uso general (cap. V RIA) + encargado del tratamiento (art. 28 RGPD); transferencia internacional vía DPF + SCCs subsidiarias; supervisión humana significativa → no opera art. 22 RGPD; (II) Documentación base — RAT con dos tratamientos, matriz de obligaciones RIA + RGPD, estructura EIPD, cláusulas modelo arts. 13, 14 y 28, política de gobernanza IA y supervisión humana, régimen de secreto profesional. Plan en cuatro fases con calendario alineado a la aplicación escalonada del RIA (02/02/2025, 02/08/2025, 02/08/2026, 02/08/2027). Acciones del usuario en Fase 0 (fuera del repo): firma DPA Anthropic, verificación DPF, opt-out entrenamiento, sanción formal del plan. Sin cambios de código en esta sesión. Ítem `[SIGUIENTE-CUMPLIMIENTO-RIA-RGPD]` añadido a STATUS.md "Próximas tareas — No bloqueantes" con seis piezas técnicas para sesión dedicada: (1) `docs/CUMPLIMIENTO.md` checklist vivo de la matriz del Anexo B; (2) ampliar `core/intake_log.py` con eventos de cumplimiento (`dpa_renewed`, `formacion_realizada`, `eipd_revisada`, `brecha_detectada`, `prompt_modificado`, `anon_bypass` con justificación obligatoria); (3) banner permanente en UI Streamlit con aviso art. 50.4 RIA; (4) metadato XMP "Generated-By: FeesDefender — Tyukhay Legal" en todos los `.docx` generados (art. 50.2 RIA); (5) `scripts/cumplimiento_check.py` semanal vía Task Scheduler (DPA vigente, formación dentro del año, smoke anonimizador, ACTORES_DESPACHO consistente, sesiones CRM sanas); (6) traslado del `.docx` del plan a `docs/cumplimiento/Plan_Adecuacion_v1.docx` para trazabilidad por commits. Suite sin cambios desde s14 (483/483). Memoria persistente nueva: `project_cumplimiento_ria_rgpd.md` (+ entrada en `MEMORY.md`).
+**Última actualización:** 2026-05-12 (sesión 17) — **H6 paso 6.1 + 6.2 cerrados + reorganización expediente SaRS1 + H5b parche cobertura**. Sesión operativa sobre el caso SaRS1 sin tocar código del proyecto. Cinco bloques: (1) **H6 paso 6.1 cerrado**: 4 piezas split (cédula 2pp + decreto 3pp + demanda 30pp + anexos 39pp) subidas manualmente al gdocu del expediente judicial 659 vía SPA sudespacho.net, todas alojadas en rama raíz `General/` (decisión usuario: simplificación por bajo volumen documental; no se usaron subcarpetas semánticas Civil → 1ª Instancia → Declarativo). Decisión actualizada de tipo subida: **opción (b)** — solo piezas split, sin OCR completos ni originales sin OCR (descarte de duplicados por el usuario tras propuesta inicial opción a). Caveat OCR pp 1-20 del DOC_ANEXO se incluye tal cual en los .md anonimizados con advertencia explícita al frontier en el prompt (**opción a**). Documentos pre-existentes en gdocu (2): `ESCR PROCU-PERSONAMIENTO.pdf` + `JUSTIF APUD-ACTA.PDF` (de personación procesal, no parte de H6). (2) **H6 paso 6.2 preparado**: prompt para Claude frontier redactado en `07_AI cowork/_prompt_frontier_H6.md` con contexto del caso (E&V Spain S.L.U. demandada en juicio ordinario LPH 249.1.8 sobre instalación no autorizada de equipos de aire acondicionado en patio comunitario, cuantía 18.000 €) + 4 .md adjuntos + caveat OCR del anexo + estructura procesal Sala 1ª TS (hechos, fundamentos jurídicos, alegaciones a las pretensiones del actor, suplico) + reglas de honestidad (no inventar jurisprudencia, conservar etiquetas anonimizadas, placeholders `[CITAR JURISPRUDENCIA SOBRE: ...]` y `[VERIFICAR EN EXPEDIENTE: ...]`) + extensión 15-25 pp + formato markdown. (3) **Reorganización del expediente SaRS1**: separación clara de input/output del LLM externo — `08_Borradores/` renombrada a `09_Borradores/` (output frontier + deanonimizados de H7 + .docx final); nueva `08_Para frontier/` como drop zone canónica de input al LLM externo (4 .md anonimizados copiados de `06_Anonimizado/` SIN frontmatter del motor + `_PROMPT.md` + `README.md` con contrato de la carpeta). Por decisión del plan §9.3 ninguna de las dos se cabla en `core/config.py::INPUT_SUBDIRS` (flujo borrador-iterativo no estabilizado). (4) **H5b — Parche cobertura ampliada** (sub-hilo abierto durante H6 por insuficiencia detectada): sanity check de PII residual previo a exposición al frontier detectó **37 hits no cubiertos por H5** — 4 case_id en frontmatter, 3 "Pedro San Martín" FP intencional (avenida del Tribunal de Santander, restaurada por H5 fila 1, aceptable), 30 FN reales (11 variantes "Castelar 37-39" con formatos OCR diversos `CASTELAR, 37-39`, `CASTELAR NÚMERO 37-39`, `Castelar n”37-39`, `Castelar N0 37-39`, `calle Castelar; Este`, etc.; 6 variantes muy degradadas del cliente `Engeléwolkers`, `Engelavólkers`, `Engel %: Vólkers`, `Vólkers` suelto, `[NOMBRE_22] £: VÓLKERS SPAIN`, etc.; 6 emails del despacho actor con `@` corrompido como E/O/G/C — `abogadosEdelriomiera.es`, `ebogadosOdelriomiera.es`, `abogadosGdelriomiera.es`; 2 URLs corporativas no marcadas en H5 — `www.delriomiera.es`, `www.engelvoelkers.com`; 1 "Adelaida Peñil" parcial residual; 2 propietarias **nuevas no detectadas en H5** por compartir primer nombre con personajes ya etiquetados — "Adelaida Gómez Sainz" ≠ procuradora Peñil, "Mercedes Pita Wonenburger" ≠ presidenta Cacho). Script `07_AI cowork/_h5b_sars1_cobertura_completa.py` (no versionado, mismo patrón H2/H4/H5): backup `.bak.h5b` + ampliación mapa (45 etiquetas, +5 entidades nuevas incluyendo **categoría URL nueva** con `[URL]`=delriomiera.es y `[URL_2]`=engelvoelkers.com) + 16 reglas FN_RULES_H5B (operan **solo sobre body**, conservan frontmatter del motor para H7) + regeneración de `08_Para frontier/` con frontmatter neutralizado (case_id literal queda fuera del LLM externo) + verificación final. 35 sustituciones FN aplicadas (1 CED, 3 DEC, 5 DEM, 26 ANX). **1 hit residual línea 708 DEM** cubierto por parche puntual posterior (regla H5b no contemplaba cierre Markdown `**` entre separador `£:` y "VÓLKERS"). Sanity final: **0 hits PII residuales** (excluyendo los 3 "Pedro San Martín" FP intencional documentado). Etiquetas totales en `08_Para frontier/`: **169** (subida desde 101 post-H5). (5) **H6 paso 6.3 pendiente** (no completado en esta sesión): entrega al frontier + recepción borrador. Operativa para próxima sesión: pegar `08_Para frontier/_PROMPT.md` en conversación nueva de Claude.ai web o app/Cowork con perfil distinto del repo FeesDefender (acceso de carpeta solo a `08_Para frontier/`), adjuntar 4 .md, recibir borrador → guardar como `09_Borradores/contestacion_demanda_SaRS1_v1_anonimizado.md`. **Lección operativa** descubierta esta sesión y documentada en `docs/DEAD_ENDS.md`: PowerShell `Add-Content -Value (Get-Content -Raw)` **sin** `-Encoding UTF8` produce double-encoding cuando el sistema usa codificación de página Win-1252 (lee UTF-8 como Win-1252, escribe como UTF-8 → mojibake "decisiÃƒÂ³n" en lugar de "decisión"); fix: usar `[System.IO.File]::ReadAllText/WriteAllText/AppendAllText` con `UTF8Encoding($false)` siempre que se manipulen ficheros UTF-8 desde PowerShell. **Mejora futura** añadida a `docs/MEJORAS_FUTURAS.md`: el motor (`core/anon/api.py`) escribe en el frontmatter de `06_Anonimizado/*.md` un `case_id` literal con la dirección PII; H5b mitigó stripeando frontmatter al copiar a `08_Para frontier/`, pero la mitigación a futuro debería ser anonimizar el case_id en el frontmatter del motor o tener un modo "para frontier". Suite global verde sin cambios (sigue 519/519 desde s16 — Fase 0 subdivisión ciudades). Cero código del proyecto FeesDefender modificado en esta sesión — todo el trabajo de H5b vive en el caso bajo `07_AI cowork/` (ignorado por git al no estar en data/CASOS/ ni en el proyecto). Memoria persistente actualizada: `project_sars1_anon_pipeline.md` con cierre H5b + nueva estructura 08/09; nueva `feedback_powershell_utf8_seguro.md` con la regla del mojibake.
+
+**Anterior (2026-05-12, sesión 15):** **Plan de adecuación RIA + RGPD entregado**. Documento `Plan adecuacion FeesDefender - RIA RGPD.docx` (26 pp., A4, formato del despacho — Times New Roman 12, márgenes 2,5 cm, interlineado 1,5, justificado, párrafos numerados, citas 10 pt cursiva con sangría 1 cm) en la raíz del proyecto. Dos partes: (I) Memorando ejecutivo con calificación cerrada — FeesDefender es sistema de IA del art. 3.1 RIA, NO prohibido (art. 5), NO alto riesgo (Anexo III.8.a no aplica — usuario es despacho de abogados, no autoridad judicial; considerando 61 RIA), SÍ sometido a transparencia art. 50 RIA y alfabetización art. 4 RIA (vigente 02/02/2025); despacho = proveedor + responsable del despliegue; Anthropic = proveedor de modelo de uso general (cap. V RIA) + encargado del tratamiento (art. 28 RGPD); transferencia internacional vía DPF + SCCs subsidiarias; supervisión humana significativa → no opera art. 22 RGPD; (II) Documentación base — RAT con dos tratamientos, matriz de obligaciones RIA + RGPD, estructura EIPD, cláusulas modelo arts. 13, 14 y 28, política de gobernanza IA y supervisión humana, régimen de secreto profesional. Plan en cuatro fases con calendario alineado a la aplicación escalonada del RIA (02/02/2025, 02/08/2025, 02/08/2026, 02/08/2027). Acciones del usuario en Fase 0 (fuera del repo): firma DPA Anthropic, verificación DPF, opt-out entrenamiento, sanción formal del plan. Sin cambios de código en esta sesión. Ítem `[SIGUIENTE-CUMPLIMIENTO-RIA-RGPD]` añadido a STATUS.md "Próximas tareas — No bloqueantes" con seis piezas técnicas para sesión dedicada: (1) `docs/CUMPLIMIENTO.md` checklist vivo de la matriz del Anexo B; (2) ampliar `core/intake_log.py` con eventos de cumplimiento (`dpa_renewed`, `formacion_realizada`, `eipd_revisada`, `brecha_detectada`, `prompt_modificado`, `anon_bypass` con justificación obligatoria); (3) banner permanente en UI Streamlit con aviso art. 50.4 RIA; (4) metadato XMP "Generated-By: FeesDefender — Tyukhay Legal" en todos los `.docx` generados (art. 50.2 RIA); (5) `scripts/cumplimiento_check.py` semanal vía Task Scheduler (DPA vigente, formación dentro del año, smoke anonimizador, ACTORES_DESPACHO consistente, sesiones CRM sanas); (6) traslado del `.docx` del plan a `docs/cumplimiento/Plan_Adecuacion_v1.docx` para trazabilidad por commits. Suite sin cambios desde s14 (483/483). Memoria persistente nueva: `project_cumplimiento_ria_rgpd.md` (+ entrada en `MEMORY.md`).
 
 **Anterior (2026-05-12, sesión 14):** **Plan de subdivisión de `CASOS_ROOT` por ciudades trazado**. Documento completo en `docs/PLAN_SUBDIVISION_CIUDADES.md`: 11 puntos de decisión cerrados con sugerencia razonada en cada uno, 7 fases de implementación (Fase 0 extracción `_CIUDADES` a `core/config/ciudades.py`; Fase 1 `case_locator` con tolerancia legacy + refactor de call-sites; Fase 2 campo `ciudad` en `_caso.md`; Fase 3 acción "Reasignar ciudad" en UI con audit log; Fase 4 migración inicial con script `--plan`/`--apply` y rollback; Fase 5 docs; Fase 6 verificación), inventario de los 6 casos existentes y catálogo aprobado de las 7 ciudades (Barcelona, Bilbao, Madrid, San Sebastián, Santander, Sevilla, Valencia). Decisiones operativas clave: nombres con tilde tal cual (`San Sebastián`), detección prefijo→ciudad derivada de `_EQUIPOS_POR_CIUDAD`, fallback `_Sin clasificar`, regla "prefijo `_` = carpeta de sistema", audit log JSONL en `_audit/relocations.jsonl`, refactor `case_locator` obligatorio antes de migrar nada. Sesión puramente de planificación: cero cambios de código, suite sigue 483/483. Próximo paso: arrancar Fase 0.
 
@@ -88,10 +90,13 @@ git commit -m "<mensaje que Claude propuso>"
 | Tests | ✅ 519/519 (Anonimizador absorbido: +51 — 2026-05-07; sufijo captador Drive: +2 — 2026-05-11 s4; Numero_Expediente extrajudicial: +10 — 2026-05-11 s6; tests v2 dedicados paso 8: +113 — 2026-05-11 s7; rename informe_viabilidad: +9 — 2026-05-11 s7; verify_expediente_referencia: +15 — 2026-05-11 s8; categoría OTROS + clientes propios: +22 — 2026-05-11 s9; deanonimizar `_mapa_caso.json` 4 niveles: +13 — 2026-05-12 s11; subdivisión ciudades Fase 0: +36 — 2026-05-12 s16) |
 | Plan subdivisión CASOS_ROOT por ciudades | 🚧 2026-05-12 s16 — Fase 0 ✅: `core/ciudades.py` extraído (catálogo único + `ciudad_de_equipo` + `es_carpeta_de_sistema`), `streamlit_app.py` refactorizado, 36 tests dedicados verdes. Fase 1 (`case_locator` + refactor call-sites) pendiente. 7 fases trazadas en `docs/PLAN_SUBDIVISION_CIUDADES.md` |
 | SaRS1 — H2 split + troceo manual | ✅ 2026-05-12 s12 — split automático generó 2 piezas vs 4 lógicas (cédula+decreto absorbidos por DEMANDA; PDF2 sin marcadores); troceo manual `pypdf` → 4 piezas (`01_CEDULA_EMPLAZAMIENTO_01.pdf` + `02_DECRETO_01.pdf` + `03_DEMANDA_01.pdf` + `01_DOC_ANEXO_01.pdf`); sanity 74/74; `07_AI cowork/_revision_anon_SaRS1.md` con 2 incidencias SPLIT para H5 |
+| SaRS1 — H5b parche cobertura | ✅ 2026-05-12 s17 — script `_h5b_sars1_cobertura_completa.py` cubre 37 hits PII residuales que H5 dejó (+5 entidades nuevas incluyendo categoría `[URL]`/`[URL_2]`; 16 reglas FN ampliadas; 35 sustituciones automáticas + 1 parche puntual); 169 etiquetas totales en `08_Para frontier/` (+68 vs H5); 0 hits PII residuales tras parche; frontmatter del motor neutralizado en copia al frontier |
+| SaRS1 — H6 pasos 6.1 + 6.2 | ✅ 2026-05-12 s17 — 4 piezas split subidas a gdocu exp 659 rama `General/` (decisión opción b — sin duplicados); prompt frontier redactado en `07_AI cowork/_prompt_frontier_H6.md` con estructura Sala 1ª TS + reglas anti-alucinación; reorganización del expediente: `08_Borradores/`→`09_Borradores/`, nueva `08_Para frontier/` drop zone canónica del LLM externo |
 | `core/anon/deanonimizar.py` _localizar_mapa 4 niveles | ✅ 2026-05-12 s11 — legacy adyacente + `_para_IA` + `06_Anonimizado/_mapa_caso.json` + fallback frontmatter `mapa_caso_path`/`mapa_entidades`; firma pública y CLI intactas; +13 tests dedicados |
 | URL Drive E&V opcional | ✅ 2026-05-11 s10 — campo ya no bloqueante en judicial ni extrajudicial; auto-fill + pull rclone condicionados a presencia |
 | Categoría "Otros casos" | ✅ 2026-05-11 s9 — `TIPOS_CASO_OTROS` + `POSICION_OTROS`; sin tag verde de asunto ni tag lila de valoración por defecto |
 | Clientes propios E&V | ✅ 2026-05-11 s9 — `CLIENTES_PROPIOS_EV` (EV_MMC_SPAIN=2, ENGEL_VOLKERS_SPAIN=27); `link_ev_mmc[_judicial]` parametrizado |
+| Tipo de caso `DEVOLUCION_HONORARIOS` | ✅ 2026-05-12 — Defensivo, cajón general no-LAU (compraventa, intermediación mercantil, encargos no residenciales). Tags CRM ya existían (verde ext #126 + jud #55); ahora cableado en `TIPOS_CASO_DEFENSIVA` + `_NOTAS` UI + tests (`TestDevolucionHonorarios`). Queda fuera de `INFORME_VIABILIDAD_TIPOS` por coherencia con LAU_20/DEVOLUCION_RESERVA. |
 | Validación referencia local↔CRM | ✅ 2026-05-11 s8 — `core/sudespacho_relations.fetch_referencia_cliente` + `verify_expediente_referencia`; wireadas en UI (post-register_expediente) y CLI (pre-pull); 15 tests verdes |
 | Auditoría preventiva | ✅ 2026-05-11 s8 — `scripts/audit_referencias_casos.py`; 0/4 mismatches tras limpieza |
 | BaRR3 — incidencia | ✅ Cerrada 2026-05-11 s8 — 648 era de BaRR1, contaminación limpiada; pull v2 de 649 listó 26 docs pero los downloads fallan (bug backend, ver abajo) |
@@ -233,6 +238,15 @@ git commit -m "<mensaje que Claude propuso>"
 
 ## Próximas tareas (orden de prioridad)
 
+**[SIGUIENTE-COMMIT-DEVOLUCION-HONORARIOS]** (sesión 2026-05-12) Commit del
+cableado de `DEVOLUCION_HONORARIOS` en posición defensiva. Cambios listos en
+working tree: `core/config.py` (entrada en `TIPOS_CASO_DEFENSIVA` + comentarios
+`INFORME_VIABILIDAD_TIPOS` y `CLIENTE_PROPIO_DEFAULT`), `streamlit_app.py`
+(`_NOTAS["DEVOLUCION_HONORARIOS"]`), `tests/test_otros_y_clientes_propios.py`
+(clase `TestDevolucionHonorarios`, 8 tests), `STATUS.md`. Suite completa en
+verde. Mensaje sugerido: `feat(taxonomia): añadir DEVOLUCION_HONORARIOS
+(defensivo, cajón no-LAU)`.
+
 ### No bloqueantes (sesión 4, 2026-05-11)
 
 **[SIGUIENTE-DRIVE-TOKEN]** Renovación proactiva del access_token de
@@ -351,7 +365,7 @@ aceptación, entregables) en `docs/PLAN_SaRS1_anon_pipeline.md`.
 Ruta crítica: H1 → H2 → H4 → H5 → H6 → H7. H3 (adaptación de
 `core/anon/deanonimizar.py` al `_mapa_caso.json`) es paralelizable.
 
-**H1, H2, H3, H4 y H5 cerrados el 2026-05-12.**
+**H1-H5 + H5b cerrados el 2026-05-12. H6 pasos 6.1 y 6.2 cerrados; paso 6.3 pendiente.**
 
 - **H1**: `_caso.md` corregido (cliente E&V Spain ID 27 + observación DEMANDADO en
   `meta.observaciones`). `verify_expediente_referencia` → `match: True`. OCR `spa`
@@ -406,16 +420,45 @@ Ruta crítica: H1 → H2 → H4 → H5 → H6 → H7. H3 (adaptación de
   MAP/OCR + refactor de `anonimizar_caso`; `.gitignore` con regla
   `tests/fixtures/anon/`.
 
-Próximo hilo a abrir: **H6** (subida manual al CRM gdocu del expediente 659 +
-entrega a Claude frontier para borrador de contestación a la demanda).
-Detalle completo en §9 del plan maestro. Pre-condición: H5 cerrado ✓ + usuario
-ha ejecutado los dos scripts ad-hoc de H5 + suite global verde. Tiempo
-estimado: 30-60 min. Operativa: navegador a
-`https://tnm.sudespacho.net/tnm/gestion/expedientes-judiciales/659` →
-gdocu → drag-and-drop PDFs de `00_Input/04_Manual/_ocr/` + `_split/` en la
-rama Civil correspondiente; preparación del prompt para Claude frontier
-(plantilla en §9.2 del plan) con los 4 .md de `06_Anonimizado/` adjuntos;
-borrador recibido se guarda en `08_Borradores/contestacion_demanda_SaRS1_v1_anonimizado.md`.
+- **H5b** (sin commit pendiente — vive en el caso, ignorado por git): sub-hilo
+  abierto durante H6 por insuficiencia detectada en sanity de PII previo a
+  exposición al frontier (37 hits residuales). Script
+  `07_AI cowork/_h5b_sars1_cobertura_completa.py` aplica delta sobre H5:
+  ampliación mapa (+5 entidades incluyendo categoría URL nueva
+  `[URL]`/`[URL_2]`), 16 reglas FN_RULES_H5B (operan solo sobre body,
+  conservan frontmatter del motor para H7), regeneración de
+  `08_Para frontier/` con frontmatter neutralizado. 35 sustituciones FN
+  automáticas + 1 parche puntual (línea 708 DEM, regla no contemplaba `**`
+  Markdown entre separador y "VÓLKERS"). 2 propietarias nuevas detectadas
+  (Adelaida Gómez Sainz, Mercedes Pita Wonenburger) que H5 había pasado
+  por alto por compartir primer nombre con personajes ya etiquetados.
+  Sanity final: 0 hits PII (excluyendo "Pedro San Martín" FP intencional
+  documentado). 169 etiquetas totales en `08_Para frontier/` (+68 vs H5).
+- **H6 paso 6.1** (cerrado 2026-05-12 17:37): 4 piezas split (cédula 2pp +
+  decreto 3pp + demanda 30pp + anexos 39pp) subidas al gdocu del expediente
+  judicial 659, todas en rama raíz `General/` (decisión opción b: solo
+  piezas split, sin OCR completos ni originales sin OCR; descarte de
+  duplicados). Documentos pre-existentes en gdocu (no parte de H6):
+  `ESCR PROCU-PERSONAMIENTO.pdf` (16:47) + `JUSTIF APUD-ACTA.PDF` (16:48).
+- **H6 paso 6.2** (cerrado): prompt frontier redactado en
+  `07_AI cowork/_prompt_frontier_H6.md`. Estructura procesal Sala 1ª TS +
+  reglas anti-alucinación con placeholders explícitos
+  `[CITAR JURISPRUDENCIA SOBRE: ...]` y `[VERIFICAR EN EXPEDIENTE: ...]`.
+- **Reorganización del expediente SaRS1** durante H6: `08_Borradores/`
+  renombrada a `09_Borradores/` (output frontier + deanonimizados); nueva
+  `08_Para frontier/` como drop zone canónica de input al LLM externo (4 .md
+  anonimizados copiados de `06_Anonimizado/` SIN frontmatter del motor +
+  `_PROMPT.md` + `README.md` con contrato de la carpeta). Por decisión del
+  plan §9.3 ninguna de las dos se cabla en
+  `core/config.py::INPUT_SUBDIRS`.
+
+Próximo paso a abrir: **H6 paso 6.3** (entrega al frontier + recepción
+borrador). Operativa: pegar `08_Para frontier/_PROMPT.md` en conversación
+nueva de Claude.ai web o app/Cowork con perfil distinto del repo
+FeesDefender (acceso de carpeta solo a `08_Para frontier/`), adjuntar
+4 .md, recibir borrador → guardar como
+`09_Borradores/contestacion_demanda_SaRS1_v1_anonimizado.md`. Estimación
+30-90 min según iteraciones con el modelo.
 
 Cada hilo es una sesión nueva de Cowork con ventana de contexto
 limpia: leer `STATUS.md` + sección H<N> de `docs/PLAN_SaRS1_anon_pipeline.md`.

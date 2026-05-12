@@ -274,6 +274,29 @@
 
 ---
 
+## PowerShell — `Add-Content` con `Get-Content -Raw` sin `-Encoding` produce mojibake
+
+### Anexar contenido UTF-8 desde un fichero a otro produce double-encoding cuando el sistema usa Win-1252
+- **Intentado:** `Add-Content -Path $destino -Value (Get-Content $origen -Raw)` desde PowerShell 5.1 en Windows con codificación de página por defecto Windows-1252 (locale español/Latino). Sin `-Encoding UTF8` en ninguno de los dos cmdlets.
+- **Resultado:** los caracteres no ASCII del fichero origen UTF-8 quedan en el destino como mojibake double-encoded: "decisión" → "decisiÃƒÂ³n"; "§9.3" → "Ã‚Â§9.3"; "—" → "Ã¢â‚¬â€".
+- **Causa:** `Get-Content` sin `-Encoding` usa la codificación por defecto del sistema (Win-1252). Lee bytes UTF-8 como Win-1252, devolviendo caracteres mal interpretados. Luego `Add-Content` con `-Encoding UTF8` (o por defecto) los re-codifica como UTF-8, fijando el daño.
+- **Confirmado:** 2026-05-12 (sesión 17, durante anotación H6 en `_revision_anon_SaRS1.md`).
+- **Conclusión:** **No usar `Get-Content -Raw` / `Add-Content -Value` ni `Set-Content`** para operaciones de concatenación o reescritura de ficheros UTF-8 desde PowerShell. Usar siempre la API .NET con codificación explícita:
+
+  ```powershell
+  $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+  $content   = [System.IO.File]::ReadAllText($path, [System.Text.Encoding]::UTF8)
+  [System.IO.File]::WriteAllText($path, $content, $utf8NoBom)
+  # o para anexar:
+  [System.IO.File]::AppendAllText($path, $extra, $utf8NoBom)
+  ```
+
+  Esta variante respeta UTF-8 (lee y escribe sin reinterpretación). El `UTF8Encoding($false)` evita BOM, que es el comportamiento estándar de los ficheros del proyecto.
+- **Detección post-hoc:** `Select-String -Path $f -Pattern "ÃƒÂ|Ã¢" -Encoding UTF8` busca firmas de mojibake típicas.
+- **Reparación:** localizar el bloque dañado por marcador de la última línea legítima, truncar con `WriteAllText`, re-anexar con `AppendAllText` (encoding UTF-8 explícito).
+
+---
+
 ## Plantilla para nuevas entradas
 
 ```markdown
