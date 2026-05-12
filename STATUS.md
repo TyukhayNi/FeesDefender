@@ -3,7 +3,11 @@
 > **Fuente de verdad única del proyecto.**
 > Actualizar al cerrar cada sesión con `python -m scripts.session_close`.
 
-**Última actualización:** 2026-05-12 (sesión 13) — **H5 del plan SaRS1 cerrado: verificación forense + primer fixture gold-standard del proyecto**. Sesión más manual del bucle de mejora continua. **Tabla forense completa** en `07_AI cowork/_revision_anon_SaRS1.md` con 63 filas categorizadas (8 FN bloqueantes, 38 FP de cabeceras estructurales y ruido OCR, 8 MAP de variantes consolidables, 2 SPLIT ya resueltos en H2, 2 OCR no recuperables) — eleva las 7 notas sueltas de H4 a entradas formales y añade los FN críticos detectados (dirección actor `Castelar 37-39` sin etiquetar en 12 sitios, variantes OCR del cliente `ENGEL 8 VÖLKERS`, emails con `@` corrompido a `Q`/`O`, variantes parciales del abogado actor + despacho actor). **3 decisiones de apertura fijadas**: D-H5-1 fixture local-only en `.gitignore` (Pendiente C1 §13 cerrado con opción a), D-H5-2 camino quirúrgico vía script auxiliar Python (NO `REPROCESAR` — el motor regeneraría los mismos FP sin tocar regex/listas, regla D8 + memoria `feedback_anon_logica_intacta`), D-H5-3 OCR del PDF2 pp 1-20 marcado "no recuperable en H5" + entrada alta prioridad en `MEJORAS_FUTURAS.md` (opción ii: H5 es bucle de mejora, no rescate de output). **Script ad-hoc** `07_AI cowork/_h5_sars1_corregir_mapa.py` (no versionado, mismo patrón que H2/H4): backup `.bak.h5` + reconstrucción `_mapa_caso.json` (155 → ~50 etiquetas; eliminación FP, consolidación MAP, adición FN) + sustituciones en los 4 `.md` + log `_h5_correccion_log.txt`. Idempotente. **Fixture gold-standard** en `tests/fixtures/anon/SaRS1/` con `input/` (PDFs OCR-izados + piezas split) + `expected/` (snapshot del MOTOR pre-H5 desde los `.bak.h5` — referencia de regresión sin contradicción con D8) + `expected_corregido/` (output post-H5 como documentación de la dirección de mejora, no como assert) + `REVISION.md` (copia del fichero forense). `.gitignore` actualizado con regla `tests/fixtures/anon/`. Script auxiliar `_h5_sars1_crear_fixture.ps1` no versionado. **Test de regresión nuevo** `tests/test_anon_regresion_SaRS1.py` con `pytestmark = pytest.mark.skipif` colectivo si fixture no presente; reproduce H4 (4 piezas con mapa compartido), monkey-patchea `validate_case_id` (workaround bug §12) y `caso_path` (evita contaminación de `data/CASOS/`), compara `.md` por igualdad (normalizando `fecha:`) y mapa filtrando campos volátiles. **`docs/MEJORAS_FUTURAS.md` enriquecido** con 10 entradas nuevas (puntos 13-22): FN regex DIRECCION (13, alta), FN pre-carga variantes clientes propios (14, alta), FN tolerancia `@` corrompido en EMAIL (15, alta), FN coherencia intra-caso de nombres parciales (16, media), FP lista negra de cabeceras procesales (17, alta), FP toponímicos calle/avenida vs personas (18, media), FP regex CUENTA descartar NIG (19, media), MAP deduplicación tolerante a tildes (20, media), OCR política de re-OCR automático ante degradación (21, alta), refactor `anonimizar_caso` admitir listado explícito de documentos (22, media). **Próximo hilo: H6** (subida manual al CRM gdocu del expediente 659 + entrega a Claude frontier para borrador de contestación a la demanda). Pre-condición H6: usuario ejecuta los dos scripts `_h5_sars1_corregir_mapa.py` (Python) y `_h5_sars1_crear_fixture.ps1` (PowerShell) y confirma tests verdes (incluido nuevo `test_anon_regresion_SaRS1` que pasará en skip o verde según fixture local).
+**Última actualización:** 2026-05-12 (sesión 15) — **Plan de adecuación RIA + RGPD entregado**. Documento `Plan adecuacion FeesDefender - RIA RGPD.docx` (26 pp., A4, formato del despacho — Times New Roman 12, márgenes 2,5 cm, interlineado 1,5, justificado, párrafos numerados, citas 10 pt cursiva con sangría 1 cm) en la raíz del proyecto. Dos partes: (I) Memorando ejecutivo con calificación cerrada — FeesDefender es sistema de IA del art. 3.1 RIA, NO prohibido (art. 5), NO alto riesgo (Anexo III.8.a no aplica — usuario es despacho de abogados, no autoridad judicial; considerando 61 RIA), SÍ sometido a transparencia art. 50 RIA y alfabetización art. 4 RIA (vigente 02/02/2025); despacho = proveedor + responsable del despliegue; Anthropic = proveedor de modelo de uso general (cap. V RIA) + encargado del tratamiento (art. 28 RGPD); transferencia internacional vía DPF + SCCs subsidiarias; supervisión humana significativa → no opera art. 22 RGPD; (II) Documentación base — RAT con dos tratamientos, matriz de obligaciones RIA + RGPD, estructura EIPD, cláusulas modelo arts. 13, 14 y 28, política de gobernanza IA y supervisión humana, régimen de secreto profesional. Plan en cuatro fases con calendario alineado a la aplicación escalonada del RIA (02/02/2025, 02/08/2025, 02/08/2026, 02/08/2027). Acciones del usuario en Fase 0 (fuera del repo): firma DPA Anthropic, verificación DPF, opt-out entrenamiento, sanción formal del plan. Sin cambios de código en esta sesión. Ítem `[SIGUIENTE-CUMPLIMIENTO-RIA-RGPD]` añadido a STATUS.md "Próximas tareas — No bloqueantes" con seis piezas técnicas para sesión dedicada: (1) `docs/CUMPLIMIENTO.md` checklist vivo de la matriz del Anexo B; (2) ampliar `core/intake_log.py` con eventos de cumplimiento (`dpa_renewed`, `formacion_realizada`, `eipd_revisada`, `brecha_detectada`, `prompt_modificado`, `anon_bypass` con justificación obligatoria); (3) banner permanente en UI Streamlit con aviso art. 50.4 RIA; (4) metadato XMP "Generated-By: FeesDefender — Tyukhay Legal" en todos los `.docx` generados (art. 50.2 RIA); (5) `scripts/cumplimiento_check.py` semanal vía Task Scheduler (DPA vigente, formación dentro del año, smoke anonimizador, ACTORES_DESPACHO consistente, sesiones CRM sanas); (6) traslado del `.docx` del plan a `docs/cumplimiento/Plan_Adecuacion_v1.docx` para trazabilidad por commits. Suite sin cambios desde s14 (483/483). Memoria persistente nueva: `project_cumplimiento_ria_rgpd.md` (+ entrada en `MEMORY.md`).
+
+**Anterior (2026-05-12, sesión 14):** **Plan de subdivisión de `CASOS_ROOT` por ciudades trazado**. Documento completo en `docs/PLAN_SUBDIVISION_CIUDADES.md`: 11 puntos de decisión cerrados con sugerencia razonada en cada uno, 7 fases de implementación (Fase 0 extracción `_CIUDADES` a `core/config/ciudades.py`; Fase 1 `case_locator` con tolerancia legacy + refactor de call-sites; Fase 2 campo `ciudad` en `_caso.md`; Fase 3 acción "Reasignar ciudad" en UI con audit log; Fase 4 migración inicial con script `--plan`/`--apply` y rollback; Fase 5 docs; Fase 6 verificación), inventario de los 6 casos existentes y catálogo aprobado de las 7 ciudades (Barcelona, Bilbao, Madrid, San Sebastián, Santander, Sevilla, Valencia). Decisiones operativas clave: nombres con tilde tal cual (`San Sebastián`), detección prefijo→ciudad derivada de `_EQUIPOS_POR_CIUDAD`, fallback `_Sin clasificar`, regla "prefijo `_` = carpeta de sistema", audit log JSONL en `_audit/relocations.jsonl`, refactor `case_locator` obligatorio antes de migrar nada. Sesión puramente de planificación: cero cambios de código, suite sigue 483/483. Próximo paso: arrancar Fase 0.
+
+**Anterior (2026-05-12, sesión 13):** **H5 del plan SaRS1 cerrado: verificación forense + primer fixture gold-standard del proyecto**. Sesión más manual del bucle de mejora continua. **Tabla forense completa** en `07_AI cowork/_revision_anon_SaRS1.md` con 63 filas categorizadas (8 FN bloqueantes, 38 FP de cabeceras estructurales y ruido OCR, 8 MAP de variantes consolidables, 2 SPLIT ya resueltos en H2, 2 OCR no recuperables) — eleva las 7 notas sueltas de H4 a entradas formales y añade los FN críticos detectados (dirección actor `Castelar 37-39` sin etiquetar en 12 sitios, variantes OCR del cliente `ENGEL 8 VÖLKERS`, emails con `@` corrompido a `Q`/`O`, variantes parciales del abogado actor + despacho actor). **3 decisiones de apertura fijadas**: D-H5-1 fixture local-only en `.gitignore` (Pendiente C1 §13 cerrado con opción a), D-H5-2 camino quirúrgico vía script auxiliar Python (NO `REPROCESAR` — el motor regeneraría los mismos FP sin tocar regex/listas, regla D8 + memoria `feedback_anon_logica_intacta`), D-H5-3 OCR del PDF2 pp 1-20 marcado "no recuperable en H5" + entrada alta prioridad en `MEJORAS_FUTURAS.md` (opción ii: H5 es bucle de mejora, no rescate de output). **Script ad-hoc** `07_AI cowork/_h5_sars1_corregir_mapa.py` (no versionado, mismo patrón que H2/H4): backup `.bak.h5` + reconstrucción `_mapa_caso.json` (155 → ~50 etiquetas; eliminación FP, consolidación MAP, adición FN) + sustituciones en los 4 `.md` + log `_h5_correccion_log.txt`. Idempotente. **Fixture gold-standard** en `tests/fixtures/anon/SaRS1/` con `input/` (PDFs OCR-izados + piezas split) + `expected/` (snapshot del MOTOR pre-H5 desde los `.bak.h5` — referencia de regresión sin contradicción con D8) + `expected_corregido/` (output post-H5 como documentación de la dirección de mejora, no como assert) + `REVISION.md` (copia del fichero forense). `.gitignore` actualizado con regla `tests/fixtures/anon/`. Script auxiliar `_h5_sars1_crear_fixture.ps1` no versionado. **Test de regresión nuevo** `tests/test_anon_regresion_SaRS1.py` con `pytestmark = pytest.mark.skipif` colectivo si fixture no presente; reproduce H4 (4 piezas con mapa compartido), monkey-patchea `validate_case_id` (workaround bug §12) y `caso_path` (evita contaminación de `data/CASOS/`), compara `.md` por igualdad (normalizando `fecha:`) y mapa filtrando campos volátiles. **`docs/MEJORAS_FUTURAS.md` enriquecido** con 10 entradas nuevas (puntos 13-22): FN regex DIRECCION (13, alta), FN pre-carga variantes clientes propios (14, alta), FN tolerancia `@` corrompido en EMAIL (15, alta), FN coherencia intra-caso de nombres parciales (16, media), FP lista negra de cabeceras procesales (17, alta), FP toponímicos calle/avenida vs personas (18, media), FP regex CUENTA descartar NIG (19, media), MAP deduplicación tolerante a tildes (20, media), OCR política de re-OCR automático ante degradación (21, alta), refactor `anonimizar_caso` admitir listado explícito de documentos (22, media). **Próximo hilo: H6** (subida manual al CRM gdocu del expediente 659 + entrega a Claude frontier para borrador de contestación a la demanda). Pre-condición H6: usuario ejecuta los dos scripts `_h5_sars1_corregir_mapa.py` (Python) y `_h5_sars1_crear_fixture.ps1` (PowerShell) y confirma tests verdes (incluido nuevo `test_anon_regresion_SaRS1` que pasará en skip o verde según fixture local).
 
 **Anterior (2026-05-12, sesión 12):** **H2 del plan SaRS1 cerrado: split + troceo manual de los 2 PDFs OCR**. Commit `3e759e3`. El split automático de `core/anon/separar.py::separar_pdf_pipeline` generó solo **2 piezas** frente a las 4 lógicamente esperadas (cédula, decreto, demanda, anexos): PDF1 → 1 pieza DEMANDA pp 1-35 (con observación "pp 1-5 absorbidas por cuerpo de DEMANDA"); PDF2 → 1 pieza DOCUMENTO pp 1-39 ("sin marcadores detectados"). Causa raíz: (a) el OCR transcribió la cabecera "CÉDULA DE EMPLAZAMIENTO" del PDF1 pp 1 como `"_ 1 Sección Civil del Tribunal de Instancia de Santander..."` (subrayado + espacio reemplazando el título oficial), y la regla `CEDULA_EMPLAZAMIENTO` exige el marcador en las 3 primeras líneas como portada → no matcheó; (b) "DECRETO" en pp 3-5 aparece solo en texto corrido ("Así por este Decreto lo acuerdo, mando y firmo"), no como cabecera oficial; (c) `TIPOS_SUPER_ABSORBENTES` (`DEMANDA, SENTENCIA, CONTESTACION, OPOSICION`) absorbe las páginas previas al primer marcador detectado cuando ese marcador es un super-absorbente, lo que llevó a las pp 1-5 al cuerpo de DEMANDA; (d) en el PDF2 el OCR de pp 1-20 está muy fragmentado (texto invertido en muchas líneas, pp 20-21 saltadas según señales H1), de modo que los marcadores `DOC_ANEXO`/`DOC_EMAIL`/`DOC_PODER_NOTARIAL` no aparecen como portada limpia. **Troceo manual aplicado** con `pypdf.PdfWriter` (script ad-hoc temporal en `%TEMP%`, no versionado): PDF1 → `01_CEDULA_EMPLAZAMIENTO_01.pdf` (pp 1-2) + `02_DECRETO_01.pdf` (pp 3-5) + `03_DEMANDA_01.pdf` (pp 6-35); PDF2 → `01_DOC_ANEXO_01.pdf` (pp 1-39) como **bloque único** (decisión informada y confirmada por el usuario: trocear por DOC numerado sería frágil con OCR pp 1-20 ruidoso; la calidad del output anonimizado no se ve afectada porque el motor opera token a token y el mapa de entidades es compartido entre piezas). Output en `00_Input/04_Manual/_split/Demanda_Std_{1,2}_ocr/`, cada subcarpeta con su `indice.json` (campo `modo: "troceo_manual_H2"` + nota explicativa). Sanity check páginas 74/74 OK. 4 criterios §5.4 marcados. **Esqueleto `07_AI cowork/_revision_anon_SaRS1.md` creado** con plantilla Anexo A (metadatos del caso, sección H1 OCR, sección H2 split con bitácora, placeholder H4 anonimización, tabla forense vacía para H5, sección decisiones, sección resumen para `MEJORAS_FUTURAS.md`); 2 incidencias categoría SPLIT documentadas para retroalimentar H5. Ruta crítica del plan ahora puede saltar directamente a **H4** (H3 ya estaba cerrado en sesión 11). Caso vive en `data/CASOS/` (`.gitignore`) — el split y el fichero de revisión no se versionan; solo se actualiza `docs/PLAN_SaRS1_anon_pipeline.md §14` (trazabilidad).
 
@@ -82,6 +86,7 @@ git commit -m "<mensaje que Claude propuso>"
 | Ítem | Estado |
 |------|--------|
 | Tests | ✅ 483/483 (Anonimizador absorbido: +51 — 2026-05-07; sufijo captador Drive: +2 — 2026-05-11 s4; Numero_Expediente extrajudicial: +10 — 2026-05-11 s6; tests v2 dedicados paso 8: +113 — 2026-05-11 s7; rename informe_viabilidad: +9 — 2026-05-11 s7; verify_expediente_referencia: +15 — 2026-05-11 s8; categoría OTROS + clientes propios: +22 — 2026-05-11 s9; deanonimizar `_mapa_caso.json` 4 niveles: +13 — 2026-05-12 s11) |
+| Plan subdivisión CASOS_ROOT por ciudades | 📋 2026-05-12 s14 — trazado en `docs/PLAN_SUBDIVISION_CIUDADES.md`; 11 decisiones cerradas; 7 fases (0: extraer `_CIUDADES` → `core/config/ciudades.py`; 1: `case_locator` + refactor call-sites; 2: campo `ciudad` en `_caso.md`; 3: acción "Reasignar ciudad" en UI; 4: migración inicial plan/apply; 5: docs; 6: verificación); implementación pendiente |
 | SaRS1 — H2 split + troceo manual | ✅ 2026-05-12 s12 — split automático generó 2 piezas vs 4 lógicas (cédula+decreto absorbidos por DEMANDA; PDF2 sin marcadores); troceo manual `pypdf` → 4 piezas (`01_CEDULA_EMPLAZAMIENTO_01.pdf` + `02_DECRETO_01.pdf` + `03_DEMANDA_01.pdf` + `01_DOC_ANEXO_01.pdf`); sanity 74/74; `07_AI cowork/_revision_anon_SaRS1.md` con 2 incidencias SPLIT para H5 |
 | `core/anon/deanonimizar.py` _localizar_mapa 4 niveles | ✅ 2026-05-12 s11 — legacy adyacente + `_para_IA` + `06_Anonimizado/_mapa_caso.json` + fallback frontmatter `mapa_caso_path`/`mapa_entidades`; firma pública y CLI intactas; +13 tests dedicados |
 | URL Drive E&V opcional | ✅ 2026-05-11 s10 — campo ya no bloqueante en judicial ni extrajudicial; auto-fill + pull rclone condicionados a presencia |
@@ -261,9 +266,74 @@ DEVOLUCION_RESERVA también? Cambio mínimo si se reutiliza tal cual:
 añadir `"BAD_DEBT"` al `frozenset` en `core/config.py` + test smoke
 específico. Detalle completo en memoria `project_plantillas_viabilidad.md`.
 
+**[SIGUIENTE-CUMPLIMIENTO-RIA-RGPD]** (sesión 12, 2026-05-12) Plan de
+adecuación de FeesDefender al Reglamento (UE) 2024/1689 (RIA) y al
+Reglamento (UE) 2016/679 (RGPD) redactado y entregado como
+`Plan adecuacion FeesDefender - RIA RGPD.docx` en la raíz del proyecto.
+26 pp., formato del despacho, dos partes: memorando ejecutivo (calificación
+del sistema bajo RIA — no alto riesgo, sí transparencia art. 50 y
+alfabetización art. 4 — roles RGPD, GAP, hoja de ruta) y documentación
+base (RAT, matriz obligaciones, EIPD, cláusulas arts. 13/14/28,
+política de gobernanza IA, secreto profesional). Conclusión: FeesDefender
+no es sistema de alto riesgo, pero requiere adecuación formal en cuatro
+fases con calendario alineado a la aplicación escalonada del RIA
+(02/02/2025, 02/08/2025, 02/08/2026, 02/08/2027). Acciones del usuario
+(Fase 0, fuera del repo): firma DPA Anthropic, verificación DPF, opt-out
+de entrenamiento. **Implementación técnica pendiente en sesión dedicada**:
+(1) crear `docs/CUMPLIMIENTO.md` como checklist vivo de la matriz del
+Anexo B; (2) ampliar `core/intake_log.py` con eventos de cumplimiento
+(`dpa_renewed`, `formacion_realizada`, `eipd_revisada`, `brecha_detectada`,
+`prompt_modificado`, `anon_bypass` con justificación obligatoria);
+(3) banner permanente en UI Streamlit con aviso art. 50.4 RIA + recordatorio
+de anonimización obligatoria; (4) metadato XMP "Generated-By: FeesDefender —
+Tyukhay Legal" en todos los `.docx` generados (art. 50.2 RIA); (5)
+`scripts/cumplimiento_check.py` semanal vía Task Scheduler (DPA vigente,
+formación dentro del año, smoke anonimizador, ACTORES_DESPACHO consistente,
+sesiones CRM sanas) con output `cumplimiento_<fecha>.md`; (6) mover el
+`.docx` del plan a `docs/cumplimiento/Plan_Adecuacion_v1.docx` para
+trazabilidad por commits. Detalle completo en memoria
+`project_cumplimiento_ria_rgpd.md`.
+
 ---
 
 ### ⚠️ MÁXIMA PRIORIDAD — abrir próxima sesión por aquí
+
+**[SIGUIENTE-SUBDIVISION-CIUDADES]** (plan trazado el 2026-05-12 s14)
+
+Implementar la subdivisión de `CASOS_ROOT` por ciudades según
+`docs/PLAN_SUBDIVISION_CIUDADES.md`. 11 decisiones cerradas, 7 fases.
+
+Arrancar por **Fase 0** (extracción `_CIUDADES` → `core/config/ciudades.py`):
+
+1. Crear rama `feature/subdivision-ciudades`.
+2. Crear `core/config/ciudades.py` con `CIUDADES`,
+   `EQUIPOS_POR_CIUDAD`, `EQUIPOS`, `ciudad_de_equipo(codigo)` y
+   `es_carpeta_de_sistema(nombre)`.
+3. Refactorizar `streamlit_app.py` para importar del nuevo módulo
+   (eliminar duplicación de los diccionarios).
+4. `tests/test_config_ciudades.py`: mapping, derivación prefijo→ciudad
+   para los códigos vivos (BaRR3, MaRS2, MaRS15, MaRR2, SeRS6, SaRS1,
+   más una muestra de Bilbao, San Sebastián y Valencia), regla del
+   guion bajo.
+5. Suite completa verde.
+6. Commit Fase 0.
+
+Después: **Fase 1** (`case_locator` con tolerancia legacy + refactor
+masivo de call-sites en `core/case_manager.py`,
+`core/sync_sudespacho.py`, `scripts/init_caso.py`,
+`scripts/sync_sudespacho.py`, `scripts/bulk_pull_expedientes.py`,
+`scripts/scheduled_sync.py`, `tests/conftest.py`). Fase 1 es la pesada
+y se merguea antes de tocar una sola carpeta.
+
+Pre-condición antes de Fase 4 (migración real): backup manual de
+`CASOS_ROOT` (snapshot Drive o `rclone copy` a ubicación fría).
+
+**Paralelo pendiente:** [SIGUIENTE-SaRS1-PIPELINE] H6 sigue abierto
+(subida manual al CRM gdocu del expediente 659 + entrega a Claude
+frontier). Si bloqueado por bug `presigned_download_url` o por la
+agenda del usuario, dar prioridad a la subdivisión.
+
+---
 
 **[SIGUIENTE-SaRS1-PIPELINE]** (plan trazado el 2026-05-12)
 
