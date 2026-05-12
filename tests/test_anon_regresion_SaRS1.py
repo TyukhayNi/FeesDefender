@@ -165,10 +165,11 @@ def test_anon_regresion_sars1_motor_estable(tmp_path):
 
     # El motor escribe el .md a caso_path(case_id) / "06_Anonimizado".
     # Para no contaminar data/CASOS/ con un fixture, monkey-patcheamos
-    # caso_path para que apunte a un tmp_path. Como api.py importa
-    # `caso_path` con `from core.case_manager import caso_path`, la
-    # referencia vinculada vive en `_api_mod.caso_path` — interceptarla
-    # ahí (no en `core.case_manager`) es suficiente.
+    # caso_path en TODOS los módulos que lo importan vía
+    # `from core.case_manager import caso_path` (vinculan referencia
+    # local). Hoy son al menos `core.anon.api` y `core.anon.mapa_caso`.
+    import core.anon.mapa_caso as _mapa_mod
+
     salida_tmp = tmp_path / "out_caso"
     salida_tmp.mkdir(parents=True, exist_ok=True)
     (salida_tmp / "06_Anonimizado").mkdir()
@@ -176,8 +177,10 @@ def test_anon_regresion_sars1_motor_estable(tmp_path):
     def _caso_path_fake(case_id: str) -> Path:  # noqa: ARG001
         return salida_tmp
 
-    original_caso_path = _api_mod.caso_path
+    original_caso_path_api = _api_mod.caso_path
+    original_caso_path_mapa = _mapa_mod.caso_path
     _api_mod.caso_path = _caso_path_fake
+    _mapa_mod.caso_path = _caso_path_fake
 
     try:
         # Mapa compartido entre piezas (igual que H4).
@@ -203,7 +206,10 @@ def test_anon_regresion_sars1_motor_estable(tmp_path):
             )
 
         # Persistir el mapa al directorio temporal (réplica de H4).
-        ruta_mapa = guardar_mapa_caso(mapa, salida_tmp / "06_Anonimizado")
+        # Firma real: guardar_mapa_caso(case_id, mapa) -> Path. La ruta se
+        # deriva internamente vía caso_path (que monkey-patcheamos arriba),
+        # por lo que el .json acaba en salida_tmp/06_Anonimizado/.
+        ruta_mapa = guardar_mapa_caso(CASE_ID_REGRESION, mapa)
         assert ruta_mapa.is_file()
 
         # ---- Comparación contra expected/ ----
@@ -241,4 +247,5 @@ def test_anon_regresion_sars1_motor_estable(tmp_path):
         )
     finally:
         _api_mod.validate_case_id = original_validate
-        _api_mod.caso_path = original_caso_path
+        _api_mod.caso_path = original_caso_path_api
+        _mapa_mod.caso_path = original_caso_path_mapa
