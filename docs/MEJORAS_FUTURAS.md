@@ -293,3 +293,325 @@ motor de anonimización. Hay workaround claro vía script ad-hoc, pero
 romper el comando estándar `python -m scripts.anonimizar_caso` para una
 categoría legítima del proyecto es regresión arquitectónica. Tratar en
 hilo dedicado, no en H4.
+
+---
+
+## 13. FN — Regex de dirección postal española en `aplicar_regex`
+
+**Detectado.** 2026-05-12 durante el hilo H5 del plan SaRS1 (tabla forense,
+filas 42 y 49).
+
+**Síntoma.** El motor no etiqueta domicilios postales españoles. Sobre el
+caso SaRS1 quedó sin anonimizar el domicilio del actor "Calle Castelar
+37-39, Santander" en sus 12 variantes (`Calle Castelar núm. 37-39`,
+`CALLE CASTELAR NÚMERO 37-39`, `Castelar n*37-39 bajo`, `Castelar N* 37-39`,
+`CAST3ELAR NÚMERO 37-39` — con `3` por `E` por OCR, etc.). Resultado: FN
+bloqueante para confidencialidad.
+
+**Causa raíz.** `core/anon/anonimizar.py::aplicar_regex` no incluye un
+patrón `DIRECCION`. Presidio no detecta direcciones postales españolas
+sin un `PatternRecognizer` dedicado.
+
+**Solución técnica.** Añadir `PatternRecognizer` para `DIRECCION` con
+patrón tolerante: `(?:Avd?\.|Calle|C/|Plaza|Pza\.|Pso\.|Pje\.|Travesía|Tr\.|Avenida)\s+[A-ZÁÉÍÓÚÑa-záéíóúñ\d\s\.\-’'`]+?\s+(?:n[uú]m\.?|n[º°*9o]?)?\s*\d+(?:\s*[\-–_/]\s*\d+)?(?:\s+bajo|BAJO)?`. Tolerancia a typos OCR (`CAST3ELAR` por `CASTELAR`) mediante normalización previa o regex permisivo en consonantes.
+
+**Test smoke.** Añadir a `tests/test_anon_basic.py` casos con
+direcciones reales españolas, incluyendo variantes mayúsculas/minúsculas
+y con/sin separador en el número (37-39, 37/39, 37 - 39).
+
+**Coste estimado.** 30 minutos (patrón + integración + 3-4 tests).
+
+**Prioridad.** **Alta** — la dirección postal es PII recurrente en todo
+expediente civil/inmobiliario. La omisión actual es el bloqueante más
+grave detectado en H5.
+
+---
+
+## 14. FN — Variantes OCR de clientes propios E&V deben pre-cargarse al mapa
+
+**Detectado.** 2026-05-12 durante el hilo H5 del plan SaRS1 (tabla forense,
+filas 43-44; nota N4 de H4).
+
+**Síntoma.** La denominación del cliente "Engel & Völkers" aparece en el
+OCR transcrita con variantes degradadas — `Engel £ Vólkers`, `Engel 4
+Volkers`, `ENGEL 8 VÓLKERS`, `ENGEL 8 VÓLKERS SPAIN, S.L.` — que el
+motor captura en el `mapa_directo` de forma inconsistente o no captura
+en absoluto, dejando "ENGEL 8 VÓLKERS SPAIN, S.L." sin anonimizar en
+cabeceras de cédula y decreto.
+
+**Causa raíz.** El motor descubre el cliente dinámicamente vía Presidio +
+regex, sin información a priori del `_caso.md` (campo `meta.cliente`).
+Las variantes OCR no se consolidan automáticamente.
+
+**Solución técnica.** En `anonimizar_caso`, leer del `_caso.md` los
+campos `meta.cliente` + `meta.cliente_propio_clave` y pre-cargar al
+`MapaEntidades.protegidos` un conjunto de variantes conocidas del
+cliente. Para `ENGEL_VOLKERS_SPAIN`: pre-cargar `["Engel & Völkers",
+"Engel & Volkers", "Engel Völkers", "Engel Volkers", "ENGEL & VÖLKERS",
+"ENGEL Y VÖLKERS", "ENGEL 8 VÖLKERS", "Engel £ Vólkers", "Engel 4
+Volkers"]` todas mapeadas a la misma etiqueta canónica antes de la
+pasada del motor.
+
+**Coste estimado.** ~30 líneas en `core/anon/api.py` + tabla de variantes
+por cliente en `core/config.py::CLIENTES_PROPIOS_EV` + 2 tests.
+
+**Prioridad.** **Alta** — afecta a todos los casos del cliente E&V (~80%
+del flujo). Sin esto, la denominación del cliente filtra a Claude
+frontier en casi todos los expedientes.
+
+---
+
+## 15. FN — Regex de EMAIL debe tolerar `@` corrompido por OCR
+
+**Detectado.** 2026-05-12 durante el hilo H5 del plan SaRS1 (tabla forense,
+filas 46 y 49).
+
+**Síntoma.** El OCR español del despacho transcribe el carácter `@` como
+`Q` o `O` por similitud visual. Sobre SaRS1 quedaron sin anonimizar
+`cubriaQdelriomiera.es` (email abogado actor) y
+`pablo gutierrezOengelvoelkers.com` (email empleado E&V). El regex de
+email actual exige `@` literal y no captura estas variantes.
+
+**Causa raíz.** El regex `_EMAIL` (probablemente algo como `[\w.+-]+@[\w-]+\.[\w.-]+`) no admite alternativa OCR.
+
+**Solución técnica.** Extender el patrón a `[\w.+-]+[@QO][\w-]+\.[\w.-]+`
+**solo cuando** la cadena tiene cola plausible de dominio (`.es`,
+`.com`, `.org`, `.net` etc.) para evitar FP con palabras comunes que
+contengan `O` o `Q` entre letras.
+
+**Test smoke.** Casos con `@` real + casos con `Q` y `O` en posición.
+
+**Coste estimado.** 20 minutos.
+
+**Prioridad.** **Alta** — los emails son PII recurrente y la
+degradación OCR es generalizada en documentos escaneados con tóner
+desgastado.
+
+---
+
+## 16. FN — Coherencia intra-caso: variantes parciales del mismo nombre
+
+**Detectado.** 2026-05-12 durante el hilo H5 del plan SaRS1 (tabla forense,
+filas 45, 50, 51).
+
+**Síntoma.** Cuando el motor mapea "DOÑA ADELAIDA PEÑIL GÓMEZ" como
+`[NOMBRE_11]` en un documento, las variantes "Adelaida Peñil" (sin
+apellido completo), "Sra. Peñil", "Adelaida" en el mismo o en otros
+documentos del caso quedan sin etiquetar. Igual con "Mercedes" (de
+"MERCEDES CACHO PITA") y "Eduardo Saiz" (de "EDUARDO SAIZ LAVID").
+
+**Causa raíz.** El motor no hace post-procesado de coherencia
+intra-caso: no busca substrings/variantes parciales de las entidades
+ya descubiertas.
+
+**Solución técnica.** Tras la primera pasada del motor sobre los
+documentos del caso, segunda pasada que para cada entidad `nombre =
+v1 v2 v3` del `MapaEntidades` busque y etiquete coincidencias parciales
+`v1 v2`, `v2 v3`, `v1`, `v3` (token-aware, no substring crudo) en todos
+los documentos del caso. Configurable por umbral de tokens mínimos.
+
+**Coste estimado.** ~80 líneas en un módulo nuevo
+`core/anon/post_proceso_coherencia.py` + 4-5 tests.
+
+**Prioridad.** Media — afecta a casos con nombres recurrentes en cuerpo
+narrativo (más frecuente en documentos largos como demandas con
+referencias múltiples a las partes).
+
+---
+
+## 17. FP — Detector de mayúsculas captura cabeceras estructurales como nombres
+
+**Detectado.** 2026-05-12 durante el hilo H5 del plan SaRS1 (tabla forense,
+filas 3-39; nota N2 de H4 era el bloque masivo).
+
+**Síntoma.** Cualquier secuencia de 2+ palabras en MAYÚSCULAS dentro de
+documentos procesales es candidata a falso positivo. En SaRS1 el motor
+etiquetó como nombres ~75 cabeceras estructurales: "ORDEN DEL DÍA",
+"COMPETENCIA TERRITORIAL", "LEGITIMACIÓN ACTIVA", "RESPONSABILIDAD
+EXTRACONTRACTUAL", "XII. COSTAS", "PRUEBA DE ENTREGA", "ACTIVIDADES
+MOLESTAS", "PREVENCIONES LEGALES", "ORDENA EMPLAZAR", "VEINTE DÍAS
+HÁBILES", "PLAZO EN QUE DEBE COMPARECER", etc. Resultado: deterioro
+masivo de la legibilidad del borrador que produzca Claude frontier.
+
+**Causa raíz.** El detector NER de Presidio + el filtro de mayúsculas
+en `anonimizar_por_contexto` (o equivalente) considera nombre propio
+cualquier secuencia de mayúsculas con cierta longitud, sin lista negra
+estructural.
+
+**Solución técnica.** Lista negra ampliable de prefijos/sufijos
+estructurales en `core/anon/anonimizar.py` (ampliar `PALABRAS_EXCLUIDAS`
+o crear `CABECERAS_PROCESALES_EXCLUIDAS`). Incluir como mínimo: "HECHOS",
+"FUNDAMENTOS DE DERECHO", "ANTECEDENTES DE HECHO", "PARTE DISPOSITIVA",
+"ACUERDO", "SUPLICO", "OTROSÍ", "ORDEN DEL DÍA", "PREVENCIONES LEGALES",
+"PRIMERO.-", "SEGUNDO.-", ... (hasta DUODÉCIMO o DECIMOQUINTO),
+"COMPETENCIA TERRITORIAL", "COMPETENCIA OBJETIVA", "LEGITIMACIÓN
+ACTIVA", "LEGITIMACIÓN PASIVA", "RESPONSABILIDAD EXTRACONTRACTUAL",
+"COSTAS", "CUANTÍA", "PROCEDIMIENTO ADECUADO". Adicional: regla que
+descarte como nombre cualquier cadena que contenga preposiciones de
+conexión gramatical ("DE", "DEL", "A", "AL", "EN", "POR", "PARA",
+"QUE", "Y", "O") en posición no-final, salvo nombres con
+preposiciones reales ("DE LA CRUZ", "DEL VALLE").
+
+**Coste estimado.** 1-2 h (lista + heurística + 8-10 tests con casos
+reales).
+
+**Prioridad.** **Alta** — la legibilidad del borrador para Claude
+frontier es función directa de este filtro. Sin esto, el output del
+motor es semánticamente confuso.
+
+---
+
+## 18. FP — Toponímicos de calles/avenidas confundidos con personas
+
+**Detectado.** 2026-05-12 durante el hilo H5 del plan SaRS1 (tabla forense,
+fila 1).
+
+**Síntoma.** El motor etiqueta el nombre de la vía pública en la
+cabecera del tribunal — "Pedro San Martín" (avenida pública en
+Santander donde está el órgano judicial) — como `[NOMBRE]`. Análogamente
+ocurriría con "Calle José Ortega y Gasset", "Plaza Antonio Machado",
+etc.
+
+**Causa raíz.** Cuando el detector NER ve un patrón "Nombre Apellido"
+plausible no comprueba si está precedido de marcador de vía
+(`Avd./Calle/Plaza`).
+
+**Solución técnica.** Pre-procesado: localizar todas las cadenas
+matcheando `(?:Avd?\.|Calle|C/|Plaza|Pza\.|Pso\.|Pje\.|Travesía|Tr\.|Avenida)\s+([A-ZÁÉÍÓÚÑa-záéíóúñ\s\.]+?)(?=\s+(?:n[uú]m\.?|n[º°*9o]?|s\/n|S\/N|\d|,|$))` y marcar las capturas como `protegidos`
+antes de pasar al motor NER. Sinergias con mejora 13 (regex DIRECCION).
+
+**Coste estimado.** 30 min.
+
+**Prioridad.** Media — afecta sobre todo a cabeceras de tribunales, no
+al cuerpo narrativo.
+
+---
+
+## 19. FP — Regex de CUENTA/IBAN captura el NIG por longitud numérica
+
+**Detectado.** 2026-05-12 durante el hilo H5 del plan SaRS1 (tabla forense,
+fila 2; nota N6 de H4).
+
+**Síntoma.** El NIG (Número de Identificación General del procedimiento
+judicial) es una cadena de 19 dígitos compactos (en SaRS1:
+`3907542120260004548`). El regex de cuenta/IBAN del motor lo captura
+como `[CUENTA]` por matching de longitud, cuando en realidad no es PII
+bancaria sino un identificador procesal público.
+
+**Causa raíz.** El regex `_CUENTA`/`_IBAN` no distingue por contexto
+previo.
+
+**Solución técnica.** Añadir lookbehind en el regex: descartar la
+captura si los 5 caracteres anteriores contienen `NIG:` o `nig:`
+(case-insensitive). Igual aplicaría a `CCC:`, `código:`, etc.
+
+**Coste estimado.** 15 min.
+
+**Prioridad.** Media — afecta a todos los expedientes judiciales con
+NIG visible en cabecera (la mayoría).
+
+---
+
+## 20. MAP — Consolidación tolerante a tildes/diéresis y a variantes parciales
+
+**Detectado.** 2026-05-12 durante el hilo H5 del plan SaRS1 (tabla forense,
+filas 52-59; nota N1 de H4).
+
+**Síntoma.** Tras la pasada del motor sobre SaRS1, el mismo abogado
+"Juan Cubría Falla" recibió 5 etiquetas distintas (`[NOMBRE_30]`,
+`[NOMBRE_43]`, `[NOMBRE_51]`, `[NOMBRE_133]`, `[NOMBRE_139]`) por
+variantes con/sin tilde + OCR roto. El mismo despacho "José del Río
+Miera" recibió 3 etiquetas (`[NOMBRE_52]`, `[NOMBRE_57]`, `[NOMBRE_60]`).
+La propietaria "TERAN FERNANDEZ" recibió 2 (`[NOMBRE_111]`,
+`[NOMBRE_130]` — variante recortada). El cliente E&V quedó con 1
+etiqueta canónica pero múltiples variantes en `mapa_directo` apuntando
+a ella (correcto), si bien la transcripción canónica "Engel £ Vólkers"
+es subóptima — debería ser "Engel & Völkers".
+
+**Causa raíz.** El `MapaEntidades` no normaliza por diacríticos al
+buscar entidades existentes; cada variante OCR se trata como entidad
+nueva.
+
+**Solución técnica.** Antes de asignar etiqueta nueva, normalizar el
+candidato con `unicodedata.normalize('NFKD').encode('ascii', 'ignore')`
++ `upper()` y comparar contra todas las etiquetas existentes
+normalizadas igual. Si match → reutilizar etiqueta existente y añadir
+al `mapa_directo`. Adicional: post-procesado de detección de variantes
+parciales tras la pasada del motor (sinergia con mejora 16).
+
+**Coste estimado.** ~50 líneas en `core/anon/mapa_caso.py` + 5 tests de
+deduplicación.
+
+**Prioridad.** Media — afecta la legibilidad del borrador (Claude
+frontier ve múltiples etiquetas para la misma persona) pero no la
+confidencialidad.
+
+---
+
+## 21. OCR — Política automática de re-OCR ante degradación detectada
+
+**Detectado.** 2026-05-12 durante el hilo H5 del plan SaRS1 (tabla forense,
+filas 60-61; nota N5 de H4).
+
+**Síntoma.** En SaRS1, las páginas 17-30 del PDF1 (página de firma
+digital del abogado actor con tipografía atípica) y las páginas 1-20
+del PDF2 (escaneados con tóner desgastado o densidad insuficiente)
+producen OCR completamente degradado: secuencias de 2-4 caracteres
+aleatorios sin sentido (`Aenar`, `iOJue E Uey`, `III TOTON JN MIYA OZ`,
+`jieape X`, etc.). El motor captura ~50 de estas secuencias como
+falsos nombres, contaminando el mapa y desperdiciando ciclos de NER.
+Adicionalmente, las páginas con contenido sustantivo perdido (acuse
+de recibo Correos, comprobantes MASC) quedan ilegibles para Claude
+frontier.
+
+**Causa raíz.** El wrapper `core/anon/ocr.py` invoca `ocrmypdf` con
+parámetros conservadores (`-l spa --skip-text --deskew --optimize 1
+--rotate-pages`). No reintenta páginas con calidad baja con parámetros
+agresivos.
+
+**Solución técnica.** Tras la pasada inicial de OCR, métrica por
+página de "calidad probable" basada en: (a) longitud media de palabra
+(<3 chars → degradado), (b) ratio de palabras de diccionario español
+(<30% → degradado), (c) ratio de caracteres no-ASCII (>5% → degradado),
+(d) ratio de líneas con >50% de tokens cortos sueltos. Para páginas
+marcadas como degradadas, segunda pasada con `--oversample 600
+--image-dpi 300 --redo-ocr --tesseract-pagesegmode 6`. Log de
+páginas que siguen degradadas tras el reintento como "OCR irrecuperable
+— revisión humana requerida".
+
+**Coste estimado.** 2-3 h (métrica + segunda pasada + tests de
+integración con PDFs sintéticos degradados).
+
+**Prioridad.** **Alta** — el OCR es la primera línea del pipeline. Una
+degradación silente arrastra ruido a todas las fases siguientes y
+deteriora la calidad del borrador final.
+
+---
+
+## 22. Refactor — `anonimizar_caso` debería admitir listado explícito de documentos
+
+**Detectado.** 2026-05-12 durante el hilo H4 del plan SaRS1 (Opción B
+del plan; documentado en `07_AI cowork/_revision_anon_SaRS1.md` sección
+H4).
+
+**Síntoma.** `core/anon/api.py::_listar_documentos` (L318-334) descarta
+cualquier path donde alguna parte del path relativo empiece por `_`. Esto
+ignora `_ocr/` y `_split/`, lo cual es correcto para la mayoría de
+flujos pero **impide** procesar las piezas separadas manualmente (output
+de `separar_pdf_pipeline` o de troceo `pypdf` ad-hoc). En SaRS1 esto
+obligó a escribir un script ad-hoc en H4 que replica `anonimizar_caso`
+con listado explícito.
+
+**Causa raíz.** No hay parámetro opcional para sobrescribir el listado
+canónico.
+
+**Solución técnica.** Añadir parámetro `documentos: list[Path] | None =
+None` a `anonimizar_caso`. Si `None`, comportamiento actual (vía
+`_listar_documentos`). Si lista explícita, usar esa lista. Validar que
+cada path está bajo `caso_path(case_id)` por seguridad.
+
+**Coste estimado.** ~20 líneas en `api.py` + 3 tests.
+
+**Prioridad.** Media — `anonimizar_caso` es la fachada estándar y se
+usaría en cualquier H4 futuro con piezas de `_split/`. Sin esto, cada
+caso con split manual requiere script ad-hoc.
