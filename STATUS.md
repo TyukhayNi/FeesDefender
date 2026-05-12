@@ -3,7 +3,9 @@
 > **Fuente de verdad única del proyecto.**
 > Actualizar al cerrar cada sesión con `python -m scripts.session_close`.
 
-**Última actualización:** 2026-05-12 (sesión 11) — **H3 del plan SaRS1 cerrado: `deanonimizar.py` reconoce `_mapa_caso.json`**. `core/anon/deanonimizar.py::_localizar_mapa` extendida a **4 niveles** de búsqueda del mapa de entidades: (1) legacy `<base>_mapa.json` adyacente al .md — Expedientes Seguros original, prioridad alta por retrocompatibilidad; (2) legacy `_para_IA` ↔ `_anonimizados` — layout antiguo; (3) **nuevo** `06_Anonimizado/_mapa_caso.json` del ancestro inmediato — formato FeesDefender escrito por `core/anon/api.anonimizar_caso` vía `core/anon/mapa_caso.guardar_mapa_caso`; (4) **nuevo** fallback por frontmatter del propio .md (`mapa_caso_path` o alias `mapa_entidades`, acepta path absoluto o relativo al .md). Helper aislado `_mapa_desde_frontmatter` con import diferido de `core.utils.read_md` para no acoplar el módulo al resto del core. Firma pública (`deanonimizar`, `deanonimizar_texto`) y CLI intactas; cero cambio en el formato JSON consumido (la clave `"mapa": etiqueta→valor` es la misma en legacy `<doc>_mapa.json` y en el nuevo `_mapa_caso.json`). Constantes `_SUBDIR_ANONIMIZADO="06_Anonimizado"` y `_MAPA_CASO_FILENAME="_mapa_caso.json"` replicadas localmente en `deanonimizar.py` (en lugar de importadas desde `core/anon/mapa_caso.py`) — sincronización documentada como dependencia explícita en `docs/ARQUITECTURA.md`. **Tests +13** dedicados en `tests/test_deanonimizar_mapa_caso.py` cubriendo los 4 niveles + edge cases (regresión legacy adyacente, prioridad legacy>caso, `_para_IA`, mapa de caso directo + desde subcarpeta del propio `06_Anonimizado`, frontmatter absoluto/alias/relativo, helper sin frontmatter, None sin mapa, None frontmatter inexistente, round-trip e2e, FileNotFoundError sin mapa); todos rápidos (no cargan Presidio+spaCy), operan sobre `tmp_path`. **Suite global verde** (criterio H3.4 ≥475/475 superado). Sin tocar regex/listas/thresholds del motor (memoria `feedback_anon_logica_intacta`). `docs/PLAN_SaRS1_anon_pipeline.md` §14 actualizada (H3 → Cerrado 2026-05-12). H3 desbloquea H7 (deanonimización del borrador frontier sobre los .md anonimizados de `06_Anonimizado/`).
+**Última actualización:** 2026-05-12 (sesión 12) — **H2 del plan SaRS1 cerrado: split + troceo manual de los 2 PDFs OCR**. Commit `3e759e3`. El split automático de `core/anon/separar.py::separar_pdf_pipeline` generó solo **2 piezas** frente a las 4 lógicamente esperadas (cédula, decreto, demanda, anexos): PDF1 → 1 pieza DEMANDA pp 1-35 (con observación "pp 1-5 absorbidas por cuerpo de DEMANDA"); PDF2 → 1 pieza DOCUMENTO pp 1-39 ("sin marcadores detectados"). Causa raíz: (a) el OCR transcribió la cabecera "CÉDULA DE EMPLAZAMIENTO" del PDF1 pp 1 como `"_ 1 Sección Civil del Tribunal de Instancia de Santander..."` (subrayado + espacio reemplazando el título oficial), y la regla `CEDULA_EMPLAZAMIENTO` exige el marcador en las 3 primeras líneas como portada → no matcheó; (b) "DECRETO" en pp 3-5 aparece solo en texto corrido ("Así por este Decreto lo acuerdo, mando y firmo"), no como cabecera oficial; (c) `TIPOS_SUPER_ABSORBENTES` (`DEMANDA, SENTENCIA, CONTESTACION, OPOSICION`) absorbe las páginas previas al primer marcador detectado cuando ese marcador es un super-absorbente, lo que llevó a las pp 1-5 al cuerpo de DEMANDA; (d) en el PDF2 el OCR de pp 1-20 está muy fragmentado (texto invertido en muchas líneas, pp 20-21 saltadas según señales H1), de modo que los marcadores `DOC_ANEXO`/`DOC_EMAIL`/`DOC_PODER_NOTARIAL` no aparecen como portada limpia. **Troceo manual aplicado** con `pypdf.PdfWriter` (script ad-hoc temporal en `%TEMP%`, no versionado): PDF1 → `01_CEDULA_EMPLAZAMIENTO_01.pdf` (pp 1-2) + `02_DECRETO_01.pdf` (pp 3-5) + `03_DEMANDA_01.pdf` (pp 6-35); PDF2 → `01_DOC_ANEXO_01.pdf` (pp 1-39) como **bloque único** (decisión informada y confirmada por el usuario: trocear por DOC numerado sería frágil con OCR pp 1-20 ruidoso; la calidad del output anonimizado no se ve afectada porque el motor opera token a token y el mapa de entidades es compartido entre piezas). Output en `00_Input/04_Manual/_split/Demanda_Std_{1,2}_ocr/`, cada subcarpeta con su `indice.json` (campo `modo: "troceo_manual_H2"` + nota explicativa). Sanity check páginas 74/74 OK. 4 criterios §5.4 marcados. **Esqueleto `07_AI cowork/_revision_anon_SaRS1.md` creado** con plantilla Anexo A (metadatos del caso, sección H1 OCR, sección H2 split con bitácora, placeholder H4 anonimización, tabla forense vacía para H5, sección decisiones, sección resumen para `MEJORAS_FUTURAS.md`); 2 incidencias categoría SPLIT documentadas para retroalimentar H5. Ruta crítica del plan ahora puede saltar directamente a **H4** (H3 ya estaba cerrado en sesión 11). Caso vive en `data/CASOS/` (`.gitignore`) — el split y el fichero de revisión no se versionan; solo se actualiza `docs/PLAN_SaRS1_anon_pipeline.md §14` (trazabilidad).
+
+**Anterior (2026-05-12, sesión 11):** **H3 del plan SaRS1 cerrado: `deanonimizar.py` reconoce `_mapa_caso.json`**. `core/anon/deanonimizar.py::_localizar_mapa` extendida a **4 niveles** de búsqueda del mapa de entidades: (1) legacy `<base>_mapa.json` adyacente al .md — Expedientes Seguros original, prioridad alta por retrocompatibilidad; (2) legacy `_para_IA` ↔ `_anonimizados` — layout antiguo; (3) **nuevo** `06_Anonimizado/_mapa_caso.json` del ancestro inmediato — formato FeesDefender escrito por `core/anon/api.anonimizar_caso` vía `core/anon/mapa_caso.guardar_mapa_caso`; (4) **nuevo** fallback por frontmatter del propio .md (`mapa_caso_path` o alias `mapa_entidades`, acepta path absoluto o relativo al .md). Helper aislado `_mapa_desde_frontmatter` con import diferido de `core.utils.read_md` para no acoplar el módulo al resto del core. Firma pública (`deanonimizar`, `deanonimizar_texto`) y CLI intactas; cero cambio en el formato JSON consumido (la clave `"mapa": etiqueta→valor` es la misma en legacy `<doc>_mapa.json` y en el nuevo `_mapa_caso.json`). Constantes `_SUBDIR_ANONIMIZADO="06_Anonimizado"` y `_MAPA_CASO_FILENAME="_mapa_caso.json"` replicadas localmente en `deanonimizar.py` (en lugar de importadas desde `core/anon/mapa_caso.py`) — sincronización documentada como dependencia explícita en `docs/ARQUITECTURA.md`. **Tests +13** dedicados en `tests/test_deanonimizar_mapa_caso.py` cubriendo los 4 niveles + edge cases. **Suite global verde** (criterio H3.4 ≥475/475 superado). Sin tocar regex/listas/thresholds del motor (memoria `feedback_anon_logica_intacta`). `docs/PLAN_SaRS1_anon_pipeline.md` §14 actualizada (H3 → Cerrado 2026-05-12). H3 desbloquea H7 (deanonimización del borrador frontier sobre los .md anonimizados de `06_Anonimizado/`).
 
 **Anterior (2026-05-11, sesión 10):** **URL Drive E&V deja de ser obligatoria**. Pequeño fix UX en `streamlit_app.py` tab Nuevo caso: el campo "URL carpeta W-XXXXXX" ya no exige asterisco ni bloquea la creación del expediente cuando está vacío, ni en modo extrajudicial ni en judicial. Comportamiento: si se rellena, sigue habilitando el auto-fill (ciudad/equipo/dirección/ID GO desde el folder ID) y el pull rclone posterior; si se omite, el usuario rellena dirección, ID GO y ciudad manualmente y se omite el pull del Drive. Resto del flujo (`register_drive_ev`, pull rclone) ya estaba blindado con `if _pre_url` y `if _drive_url_val` — sin cambios. Tooltip del campo reescrito para reflejar la opcionalidad. Commit `83f7e67` ya en remoto. Suite global 470/470 verde (sin tests automatizados de la UI; smoke manual pendiente de validación end-to-end por el usuario).
 
@@ -78,6 +80,7 @@ git commit -m "<mensaje que Claude propuso>"
 | Ítem | Estado |
 |------|--------|
 | Tests | ✅ 483/483 (Anonimizador absorbido: +51 — 2026-05-07; sufijo captador Drive: +2 — 2026-05-11 s4; Numero_Expediente extrajudicial: +10 — 2026-05-11 s6; tests v2 dedicados paso 8: +113 — 2026-05-11 s7; rename informe_viabilidad: +9 — 2026-05-11 s7; verify_expediente_referencia: +15 — 2026-05-11 s8; categoría OTROS + clientes propios: +22 — 2026-05-11 s9; deanonimizar `_mapa_caso.json` 4 niveles: +13 — 2026-05-12 s11) |
+| SaRS1 — H2 split + troceo manual | ✅ 2026-05-12 s12 — split automático generó 2 piezas vs 4 lógicas (cédula+decreto absorbidos por DEMANDA; PDF2 sin marcadores); troceo manual `pypdf` → 4 piezas (`01_CEDULA_EMPLAZAMIENTO_01.pdf` + `02_DECRETO_01.pdf` + `03_DEMANDA_01.pdf` + `01_DOC_ANEXO_01.pdf`); sanity 74/74; `07_AI cowork/_revision_anon_SaRS1.md` con 2 incidencias SPLIT para H5 |
 | `core/anon/deanonimizar.py` _localizar_mapa 4 niveles | ✅ 2026-05-12 s11 — legacy adyacente + `_para_IA` + `06_Anonimizado/_mapa_caso.json` + fallback frontmatter `mapa_caso_path`/`mapa_entidades`; firma pública y CLI intactas; +13 tests dedicados |
 | URL Drive E&V opcional | ✅ 2026-05-11 s10 — campo ya no bloqueante en judicial ni extrajudicial; auto-fill + pull rclone condicionados a presencia |
 | Categoría "Otros casos" | ✅ 2026-05-11 s9 — `TIPOS_CASO_OTROS` + `POSICION_OTROS`; sin tag verde de asunto ni tag lila de valoración por defecto |
@@ -271,18 +274,41 @@ aceptación, entregables) en `docs/PLAN_SaRS1_anon_pipeline.md`.
 Ruta crítica: H1 → H2 → H4 → H5 → H6 → H7. H3 (adaptación de
 `core/anon/deanonimizar.py` al `_mapa_caso.json`) es paralelizable.
 
-**H1 cerrado el 2026-05-12.** `_caso.md` corregido (cliente E&V Spain ID 27
-+ observación DEMANDADO en `meta.observaciones`). `verify_expediente_referencia`
-→ `match: True`. OCR `spa` aplicado a los 2 PDFs (35 pp + 39 pp) vía
-`python -m ocrmypdf` por bug latente en wrapper `core/anon/ocr.py`
-(documentado en `docs/MEJORAS_FUTURAS.md §11`). Output en
-`00_Input/04_Manual/_ocr/`. Originales intactos. Señales OCR para H5
-anotadas en tabla §14 del plan.
+**H1, H2 y H3 cerrados el 2026-05-12.**
 
-Próximo hilo a abrir: **H2** (split por tipo documental con
-`core/anon/separar.py` + revisión humana). Tiempo estimado 30-45 min.
-Alternativa en paralelo: **H3** (adaptación `deanonimizar.py` —
-independiente del caso, trabajo de código puro). Tiempo estimado 45-60 min.
+- **H1**: `_caso.md` corregido (cliente E&V Spain ID 27 + observación DEMANDADO en
+  `meta.observaciones`). `verify_expediente_referencia` → `match: True`. OCR `spa`
+  aplicado a los 2 PDFs (35 pp + 39 pp) vía `python -m ocrmypdf` por bug latente en
+  wrapper `core/anon/ocr.py` (documentado en `docs/MEJORAS_FUTURAS.md §11`). Output
+  en `00_Input/04_Manual/_ocr/`. Originales intactos. Señales OCR para H5 anotadas
+  en tabla §14 del plan.
+- **H2** (commit `3e759e3`): split automático insuficiente (2 piezas vs 4 lógicas;
+  el OCR transcribió "CÉDULA DE EMPLAZAMIENTO" como `"_ 1 Sección Civil..."` y la
+  regla `TIPOS_SUPER_ABSORBENTES` absorbió cédula+decreto bajo DEMANDA; PDF2 sin
+  marcadores cayó al fallback `DOCUMENTO`). Troceo manual con `pypdf` (script ad-hoc
+  temporal en `%TEMP%`, no versionado): PDF1 → `01_CEDULA_EMPLAZAMIENTO_01.pdf`
+  (pp 1-2) + `02_DECRETO_01.pdf` (pp 3-5) + `03_DEMANDA_01.pdf` (pp 6-35); PDF2 →
+  `01_DOC_ANEXO_01.pdf` (pp 1-39) como bloque único (OCR muy degradado en pp 1-20;
+  troceo por DOC numerado descartado por riesgo de cortes mal puestos; calidad del
+  output anonimizado no afectada por mapa compartido). Output en
+  `00_Input/04_Manual/_split/Demanda_Std_{1,2}_ocr/`. Sanity 74/74 OK. Esqueleto
+  `07_AI cowork/_revision_anon_SaRS1.md` creado con plantilla Anexo A + bitácora
+  del split + 2 incidencias categoría SPLIT documentadas para H5.
+- **H3** (commit `d22febd`): `core/anon/deanonimizar.py::_localizar_mapa` extendida
+  a 4 niveles (legacy adyacente, legacy `_para_IA`, mapa de caso
+  `06_Anonimizado/_mapa_caso.json`, fallback frontmatter `mapa_caso_path`/
+  `mapa_entidades`). Firma pública y CLI intactas. 13 tests dedicados
+  (`tests/test_deanonimizar_mapa_caso.py`) verdes; suite global verde
+  (~483 tests). `docs/ARQUITECTURA.md` actualizada con 2 filas de dependencias.
+  Sin tocar regex/listas/thresholds del motor.
+
+Próximo hilo a abrir: **H4** (anonimización con `python -m scripts.anonimizar_caso
+"<case_id>" --tipo "Juicio Ordinario" --politica SALTAR` sobre las 4 piezas de
+`_split/`). Tiempo estimado 20-40 min. Produce los `.md` en `06_Anonimizado/` +
+`_mapa_caso.json` listos para la revisión forense de H5. Antes de lanzar, decidir
+en H4 paso 4.1 cómo evitar que el motor procese también los `_ocr/` o los
+`_compressed.pdf` originales (Opción A: mover originales y `_ocr` fuera de
+`00_Input/` temporalmente; Opción B: usar `anonimizar_documento` por pieza).
 
 Cada hilo es una sesión nueva de Cowork con ventana de contexto
 limpia: leer `STATUS.md` + sección H<N> de `docs/PLAN_SaRS1_anon_pipeline.md`.
