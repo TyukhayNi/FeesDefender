@@ -181,3 +181,61 @@ añadamos UI de revisión manual (mejora 7), conviene también:
   de docs reales).
 - Documentar en STATUS.md que se sube a Claude/ChatGPT cada N expedientes
   para análisis y mejora.
+
+---
+
+## 11. Bug latente: wrapper `ocr_pdf` invoca `ocrmypdf.ocr` con firma incorrecta
+
+**Detectado.** 2026-05-12 durante la apertura del hilo H1 del plan SaRS1
+(primera ejecución real del wrapper en producción).
+
+**Síntoma.** `core/anon/ocr.py` L104 invoca `ocrmypdf.ocr(**args)` pasando
+`input_file` y `output_file` como **kwargs**. La API actual de ocrmypdf
+(probado con la versión instalada en el entorno del despacho a
+2026-05-12) exige el input como **primer argumento posicional**
+(`input_file_or_options`). El call site lanza:
+
+```
+TypeError: ocr() missing 1 required positional argument: 'input_file_or_options'
+```
+
+Capturado por el wrapper como `OCRError("Fallo no recuperable de
+ocrmypdf: ...")`.
+
+**Causa raíz.** El wrapper nunca tuvo tests de integración (solo el
+único call site interno, que nunca se ejercitó en CI porque ningún
+fixture de tests contenía PDFs sin capa de texto). Bug latente desde la
+absorción del Anonimizador (2026-05-07).
+
+**Workaround usado para H1.** Invocar `ocrmypdf` por línea de comandos
+directamente (`python -m ocrmypdf -l spa --skip-text --deskew --optimize 1
+--rotate-pages --invalidate-digital-signatures INPUT OUTPUT`), que es
+exactamente como el Anonimizador original lo hacía (ver docstring de
+`core/anon/ocr.py` líneas 3-8).
+
+**Solución técnica.** Cambio quirúrgico en `core/anon/ocr.py` L88-104:
+
+```python
+# Antes:
+args: dict = {"input_file": str(ruta_entrada), "output_file": str(ruta_salida), ...}
+result = ocrmypdf.ocr(**args)
+
+# Después:
+args: dict = {"language": idiomas, ...}  # quitar input_file y output_file
+result = ocrmypdf.ocr(str(ruta_entrada), str(ruta_salida), **args)
+```
+
+**Test smoke imprescindible.** Añadir `tests/test_anon_ocr.py` con al
+menos un test que:
+
+1. Skip si `ocrmypdf` no instalado o `tesseract` no en PATH.
+2. Generar PDF mínimo sin capa de texto (PIL + reportlab) en un
+   `tmp_path`.
+3. Llamar `ocr_pdf(...)` con `idiomas="spa"`.
+4. Asertar que el output existe y `pypdf.PdfReader(output).pages[0].extract_text().strip()` no es vacío.
+
+**Coste estimado.** 20 minutos (fix + test + verificación end-to-end).
+
+**Prioridad.** Alta — el módulo no es usable sin este fix. Cualquier caso
+que llegue al despacho en papel (volumen estimado ~30% del flujo
+extrajudicial E&V) cae en este path.

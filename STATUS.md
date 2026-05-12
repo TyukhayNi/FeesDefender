@@ -257,6 +257,35 @@ específico. Detalle completo en memoria `project_plantillas_viabilidad.md`.
 
 ### ⚠️ MÁXIMA PRIORIDAD — abrir próxima sesión por aquí
 
+**[SIGUIENTE-SaRS1-PIPELINE]** (plan trazado el 2026-05-12)
+
+Desarrollo multi-hilo del procesamiento documental del caso SaRS1
+(Castelar 37-39, Santander) + inauguración del primer fixture
+gold-standard de anonimización. **7 hilos planificados**, cada uno
+autocontenido (contexto, pre-condiciones, comandos, criterios de
+aceptación, entregables) en `docs/PLAN_SaRS1_anon_pipeline.md`.
+
+Ruta crítica: H1 → H2 → H4 → H5 → H6 → H7. H3 (adaptación de
+`core/anon/deanonimizar.py` al `_mapa_caso.json`) es paralelizable.
+
+**H1 cerrado el 2026-05-12.** `_caso.md` corregido (cliente E&V Spain ID 27
++ observación DEMANDADO en `meta.observaciones`). `verify_expediente_referencia`
+→ `match: True`. OCR `spa` aplicado a los 2 PDFs (35 pp + 39 pp) vía
+`python -m ocrmypdf` por bug latente en wrapper `core/anon/ocr.py`
+(documentado en `docs/MEJORAS_FUTURAS.md §11`). Output en
+`00_Input/04_Manual/_ocr/`. Originales intactos. Señales OCR para H5
+anotadas en tabla §14 del plan.
+
+Próximo hilo a abrir: **H2** (split por tipo documental con
+`core/anon/separar.py` + revisión humana). Tiempo estimado 30-45 min.
+Alternativa en paralelo: **H3** (adaptación `deanonimizar.py` —
+independiente del caso, trabajo de código puro). Tiempo estimado 45-60 min.
+
+Cada hilo es una sesión nueva de Cowork con ventana de contexto
+limpia: leer `STATUS.md` + sección H<N> de `docs/PLAN_SaRS1_anon_pipeline.md`.
+
+---
+
 **[SIGUIENTE-INTAKE-V2-SMOKE-UI]** (sesión 7 cerró el paso 8 el 2026-05-11)
 
 Pasos 1-8 implementados. 113 tests v2 dedicados verdes (ver "Última
