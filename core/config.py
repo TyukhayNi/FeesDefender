@@ -117,6 +117,12 @@ TIPOS_CASO_DEFENSIVA: dict[str, tuple[str, str]] = {
         "LAU 20",
         "El arrendatario reclama la devolución de honorarios pagados, al amparo del art. 20.1 LAU.",
     ),
+    "DEVOLUCION_HONORARIOS": (
+        "DEVOLUCION HONORARIOS",
+        "El cliente (comprador, vendedor o arrendatario fuera del art. 20.1 LAU) reclama "
+        "la devolución de los honorarios pagados a la agencia. Cajón general para "
+        "compraventa, intermediación mercantil y encargos no residenciales.",
+    ),
 }
 
 # Tipos de caso — categoría comodín "Otros casos"
@@ -171,7 +177,7 @@ CLIENTES_PROPIOS_EV: dict[str, tuple[str, str]] = {
 
 # Cliente por defecto para casos de honorarios (BAD_DEBT, NEGATIVA_*, VUELTA,
 # INCUMPLIMIENTO_EXCLUSIVA, RESPONSABILIDAD_PROFESIONAL, DEVOLUCION_RESERVA,
-# LAU_20). Para "OTROS" la UI deja elegir.
+# LAU_20, DEVOLUCION_HONORARIOS). Para "OTROS" la UI deja elegir.
 CLIENTE_PROPIO_DEFAULT: str = "EV_MMC_SPAIN"
 
 
@@ -388,8 +394,8 @@ ACTORES_DESPACHO: tuple[str, ...] = (
 
 # Tipos de caso para los que ensure_case() copia la plantilla
 # data/_plantillas/informe_viabilidad.xlsx a 02_Analisis/_informe_viabilidad.xlsx
-# (M1, copiado condicional). BAD_DEBT, LAU_20 y DEVOLUCION_RESERVA quedan fuera
-# por decisión de producto.
+# (M1, copiado condicional). BAD_DEBT, LAU_20, DEVOLUCION_RESERVA y
+# DEVOLUCION_HONORARIOS quedan fuera por decisión de producto.
 INFORME_VIABILIDAD_TIPOS: frozenset[str] = frozenset({
     "NEGATIVA_OFERTA",
     "NEGATIVA_ARRAS",

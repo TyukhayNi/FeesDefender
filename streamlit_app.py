@@ -873,6 +873,7 @@ with tab_nuevo:
         "RESPONSABILIDAD_PROFESIONAL":     _sc.NOTA_RESPONSABILIDAD_PROF,
         "DEVOLUCION_RESERVA":              _sc.NOTA_DEVOLUCION_RESERVA,
         "LAU_20":                          _sc.NOTA_LAU_20,
+        "DEVOLUCION_HONORARIOS":           _sc.NOTA_DEVOLUCION_HONORARIOS,
         "OTROS":                           _sc.NOTA_OTROS,
     }
 
@@ -936,11 +937,17 @@ with tab_nuevo:
     if _drive_url_cached:
         try:
             _fid_cached = parse_drive_url(_drive_url_cached)
+            # Solo intentamos auto-fill si NO se ha resuelto ya para este folder_id
+            # con éxito (sentinel `_nc_drive_autofilled_fid` se marca abajo SOLO
+            # tras éxito — un fallo no queda cacheado y se reintenta en el
+            # siguiente rerun automáticamente).
             if st.session_state.get("_nc_drive_autofilled_fid") != _fid_cached:
                 with st.spinner("Obteniendo metadatos de carpeta…"):
                     _folder_info_top = _get_drive_folder_info(_fid_cached)
-                st.session_state["_nc_drive_autofilled_fid"] = _fid_cached
                 if _folder_info_top:
+                    # Marcar éxito SOLO si la llamada devolvió info útil.
+                    st.session_state["_nc_drive_autofilled_fid"] = _fid_cached
+                    st.session_state.pop("_nc_drive_autofill_failed", None)
                     # Dirección e ID GO
                     _auto_dir_top, _auto_mls_top = _parse_ev_folder_name(_folder_info_top.name)
                     if _auto_dir_top and not st.session_state.get("nc_dir"):
@@ -961,6 +968,10 @@ with tab_nuevo:
                             if st.session_state.get("nc_ciudad", "— selecciona ciudad —") == "— selecciona ciudad —":
                                 st.session_state["nc_ciudad"] = _auto_ciudad
                                 st.session_state["nc_equipo"] = _auto_equipo
+                else:
+                    # Fallo: NO marcar sentinel — así un rerun posterior reintenta.
+                    # Sí marcar flag de fallo para que la UI muestre warning.
+                    st.session_state["_nc_drive_autofill_failed"] = _fid_cached
         except ValueError:
             pass
 
@@ -1016,6 +1027,26 @@ with tab_nuevo:
                     "de la URL del Drive. Verifica que los datos son correctos antes de continuar.",
                     icon="ℹ️",
                 )
+            elif st.session_state.get("_nc_drive_autofill_failed") == _fid_preview:
+                # La llamada a Drive API falló para este folder_id (rate-limit,
+                # token caducado, permisos, etc.). Avisamos al usuario y le
+                # ofrecemos reintentar — el flag no es sticky: en cada rerun
+                # se vuelve a intentar la llamada y, si funciona, este aviso
+                # desaparece.
+                st.warning(
+                    "No se pudieron obtener los metadatos del Drive para esta URL. "
+                    "Causa habitual: cuota de Google Drive API saturada (compartida con "
+                    "otros usuarios de rclone) — suele restablecerse en 1-2 min. "
+                    "También puede ser token caducado de gdrive_ev o falta de permisos "
+                    "sobre la carpeta. Puedes rellenar los campos manualmente o "
+                    "reintentar pulsando el botón.",
+                    icon="⚠️",
+                )
+                if st.button("🔄 Reintentar auto-fill", key="nc_drive_retry_autofill"):
+                    # Limpiar flag de fallo: el bloque de auto-fill se ejecuta
+                    # en el siguiente render y reintentará la llamada.
+                    st.session_state.pop("_nc_drive_autofill_failed", None)
+                    st.rerun()
         except ValueError:
             st.caption("⚠️ URL no reconocida — revisa el formato.")
 

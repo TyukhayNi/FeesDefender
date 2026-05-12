@@ -206,3 +206,69 @@ class TestLinkEvMmcParametrizado:
 
         assert called["payload"] == ["right.clientes_propios.2"]
         assert called["legacy_id"] == "2"
+
+
+# ---------------------------------------------------------------------------
+# Nuevo tipo: DEVOLUCION_HONORARIOS (defensivo, cajón general no-LAU)
+# ---------------------------------------------------------------------------
+
+class TestDevolucionHonorarios:
+    """Cobertura del tipo DEVOLUCION_HONORARIOS.
+
+    Es la contraparte general de LAU_20 para reclamaciones de devolución de
+    honorarios fuera del art. 20.1 LAU (compraventa, intermediación mercantil,
+    encargos no residenciales). La infraestructura CRM (tags judicial y
+    extrajudicial, NOTA, mapeos _TIPO_A_TAG_VERDE) ya estaba tendida desde el
+    descubrimiento de tags 2026-04-28.
+    """
+
+    def test_presente_en_taxonomia(self) -> None:
+        assert "DEVOLUCION_HONORARIOS" in TIPOS_CASO_DEFENSIVA
+        assert "DEVOLUCION_HONORARIOS" in TIPOS_CASO_ALL
+        assert "DEVOLUCION_HONORARIOS" not in TIPOS_CASO_ACTORA
+        assert "DEVOLUCION_HONORARIOS" not in TIPOS_CASO_OTROS
+
+    def test_posicion_es_defensiva(self) -> None:
+        assert posicion_de_tipo("DEVOLUCION_HONORARIOS") == POSICION_DEFENSIVA
+
+    def test_tag_crm(self) -> None:
+        assert tag_crm("DEVOLUCION_HONORARIOS") == "DEVOLUCION HONORARIOS"
+        assert "DEVOLUCION HONORARIOS" in TAGS_CRM_VALIDOS
+
+    def test_tag_defaults_extrajudicial(self) -> None:
+        """Defensivo → [verde_asunto, lila_riesgo_posible]."""
+        from core.sudespacho_create import tag_defaults_for_tipo_caso
+
+        tags = tag_defaults_for_tipo_caso("DEVOLUCION_HONORARIOS")
+        assert len(tags) == 2  # verde + lila
+        # Verde de asunto = TAG_VERDE_DEVOLUCION_HONORARIOS (#528800___126)
+        assert tags[0] == "#528800___126"
+
+    def test_tag_defaults_judicial(self) -> None:
+        from core.sudespacho_create import tag_defaults_for_tipo_caso_judicial
+
+        tags = tag_defaults_for_tipo_caso_judicial("DEVOLUCION_HONORARIOS")
+        assert len(tags) == 2  # verde + lila
+        # Verde de asunto judicial = J_TAG_VERDE_DEVOLUCION_HONORARIOS (#528800___55)
+        assert tags[0] == "#528800___55"
+
+    def test_nota_existe(self) -> None:
+        """NOTA_DEVOLUCION_HONORARIOS está disponible en sudespacho_create."""
+        from core import sudespacho_create as _sc
+
+        assert hasattr(_sc, "NOTA_DEVOLUCION_HONORARIOS")
+        assert "devolución" in _sc.NOTA_DEVOLUCION_HONORARIOS.lower()
+        assert "honorarios" in _sc.NOTA_DEVOLUCION_HONORARIOS.lower()
+
+    def test_fuera_de_informe_viabilidad(self) -> None:
+        """Coherente con LAU_20 y DEVOLUCION_RESERVA: defensivos quedan fuera."""
+        assert "DEVOLUCION_HONORARIOS" not in config.INFORME_VIABILIDAD_TIPOS
+        # Sanity: el resto de defensivos análogos también queda fuera
+        assert "LAU_20" not in config.INFORME_VIABILIDAD_TIPOS
+        assert "DEVOLUCION_RESERVA" not in config.INFORME_VIABILIDAD_TIPOS
+
+    def test_descripcion_distingue_de_lau_20(self) -> None:
+        """La descripción debe explicitar que es el cajón fuera del art. 20.1 LAU."""
+        _, descripcion = TIPOS_CASO_DEFENSIVA["DEVOLUCION_HONORARIOS"]
+        # Mención explícita al art. 20.1 LAU (delimita el alcance frente a LAU_20)
+        assert "20.1" in descripcion or "LAU" in descripcion
