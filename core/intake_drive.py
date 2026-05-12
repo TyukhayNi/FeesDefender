@@ -37,6 +37,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -51,6 +52,12 @@ from .utils import now_iso
 
 _DRIVE_EV_INPUT_SUBDIR = "01_Drive EV"
 _PULL_MARKER = ".pulled"
+
+# Backoff (segundos) para reintentar get_drive_folder_info cuando la Drive API
+# devuelve 403/429 con reason == rateLimitExceeded. La cuota global del OAuth
+# client compartido de rclone (project 202264815644) se reinicia cada minuto;
+# los backoffs cubren ese escenario sin bloquear la UI más de ~17 s en total.
+_RATE_LIMIT_BACKOFF_SECONDS: tuple[float, ...] = (2.0, 5.0, 10.0)
 
 # Regex que cubre los formatos habituales de URL de carpeta Google Drive:
 #   https://drive.google.com/drive/folders/{id}
@@ -308,6 +315,30 @@ def _get_drive_access_token() -> str | None:
     return None
 
 
+def _is_rate_limit_response(resp) -> bool:
+    """Detecta si una respuesta httpx corresponde a un rate-limit de la Drive API.
+
+    Reconoce los códigos de Google API (403/429) cuando el body incluye
+    ``reason == rateLimitExceeded`` (cuota global del OAuth client compartido
+    de rclone) o ``userRateLimitExceeded`` (cuota por usuario). Es defensivo:
+    si el body no parsea como JSON o no tiene la estructura esperada, asume
+    que NO es rate-limit (para no entrar en un bucle de reintentos contra un
+    error permanente como 403 PERMISSION_DENIED legítimo).
+    """
+    if resp.status_code not in (403, 429):
+        return False
+    try:
+        body = resp.json()
+    except Exception:
+        return False
+    errors = body.get("error", {}).get("errors", []) if isinstance(body, dict) else []
+    for err in errors:
+        reason = err.get("reason", "") if isinstance(err, dict) else ""
+        if reason in ("rateLimitExceeded", "userRateLimitExceeded"):
+            return True
+    return False
+
+
 def get_drive_folder_info(folder_id: str) -> DriveFolderInfo | None:
     """Obtiene nombre y Shared Drive ID de una carpeta del Drive E&V.
 
@@ -319,6 +350,12 @@ def get_drive_folder_info(folder_id: str) -> DriveFolderInfo | None:
     si ha caducado, el auto-fill simplemente no se activa (no es un error
     bloqueante).
 
+    **Retry on rate-limit**: cuando la Drive API devuelve 403/429 con
+    ``reason == rateLimitExceeded`` (síntoma típico de la cuota global
+    compartida del OAuth client de rclone), reintenta con backoff exponencial
+    según ``_RATE_LIMIT_BACKOFF_SECONDS``. Si tras agotar los reintentos
+    sigue rate-limited, devuelve None.
+
     Args:
         folder_id: ID de la carpeta Google Drive (extraído de la URL).
 
@@ -329,26 +366,51 @@ def get_drive_folder_info(folder_id: str) -> DriveFolderInfo | None:
     if not access_token:
         return None
 
+    # Secuencia de esperas: 0 (primer intento, sin sleep) + backoffs.
+    attempts = (0.0,) + _RATE_LIMIT_BACKOFF_SECONDS
+
     try:
         import httpx
-        r = httpx.get(
-            f"https://www.googleapis.com/drive/v3/files/{folder_id}",
-            params={
-                "fields": "name,driveId",
-                "supportsAllDrives": "true",
-                "includeItemsFromAllDrives": "true",
-            },
-            headers={"Authorization": f"Bearer {access_token}"},
-            timeout=5,
-        )
+    except ImportError:
+        return None
+
+    last_resp = None
+    for delay in attempts:
+        if delay > 0:
+            time.sleep(delay)
+        try:
+            r = httpx.get(
+                f"https://www.googleapis.com/drive/v3/files/{folder_id}",
+                params={
+                    "fields": "name,driveId",
+                    "supportsAllDrives": "true",
+                    "includeItemsFromAllDrives": "true",
+                },
+                headers={"Authorization": f"Bearer {access_token}"},
+                timeout=5,
+            )
+        except Exception:
+            return None
+
+        last_resp = r
         if r.status_code == 200:
-            data = r.json()
+            try:
+                data = r.json()
+            except Exception:
+                return None
             name = data.get("name", "")
             drive_id = data.get("driveId", "")
             if name:
                 return DriveFolderInfo(name=name, drive_id=drive_id)
-    except Exception:
-        pass
+            return None
+
+        # No-200: si es rate-limit, reintentar; cualquier otro fallo (401, 404,
+        # 500…) es no-recuperable y termina inmediatamente con None.
+        if not _is_rate_limit_response(r):
+            return None
+        # Es rate-limit → seguir al siguiente backoff.
+
+    # Agotados los reintentos sin obtener 200.
     return None
 
 

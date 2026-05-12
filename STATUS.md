@@ -238,15 +238,6 @@ git commit -m "<mensaje que Claude propuso>"
 
 ## Próximas tareas (orden de prioridad)
 
-**[SIGUIENTE-COMMIT-DEVOLUCION-HONORARIOS]** (sesión 2026-05-12) Commit del
-cableado de `DEVOLUCION_HONORARIOS` en posición defensiva. Cambios listos en
-working tree: `core/config.py` (entrada en `TIPOS_CASO_DEFENSIVA` + comentarios
-`INFORME_VIABILIDAD_TIPOS` y `CLIENTE_PROPIO_DEFAULT`), `streamlit_app.py`
-(`_NOTAS["DEVOLUCION_HONORARIOS"]`), `tests/test_otros_y_clientes_propios.py`
-(clase `TestDevolucionHonorarios`, 8 tests), `STATUS.md`. Suite completa en
-verde. Mensaje sugerido: `feat(taxonomia): añadir DEVOLUCION_HONORARIOS
-(defensivo, cajón no-LAU)`.
-
 ### No bloqueantes (sesión 4, 2026-05-11)
 
 **[SIGUIENTE-DRIVE-TOKEN]** Renovación proactiva del access_token de

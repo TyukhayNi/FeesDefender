@@ -482,3 +482,134 @@ class TestGetDriveFolderInfo:
             result = get_drive_folder_info("folderXYZ123456")
 
         assert result is None
+
+
+# ---------------------------------------------------------------------------
+# get_drive_folder_info — retry on rate-limit
+# ---------------------------------------------------------------------------
+
+def _rate_limit_resp(status_code: int = 403, reason: str = "rateLimitExceeded"):
+    """Construye una respuesta httpx mockeada que simula un rate-limit de la
+    Drive API. Estructura idéntica a la del body real (project shared OAuth)."""
+    resp = MagicMock()
+    resp.status_code = status_code
+    resp.json.return_value = {
+        "error": {
+            "code": status_code,
+            "message": (
+                "Quota exceeded for quota metric 'Queries' and limit "
+                "'Queries per minute' of service 'drive.googleapis.com' "
+                "for consumer 'project_number:202264815644'."
+            ),
+            "errors": [
+                {
+                    "message": "Quota exceeded for...",
+                    "domain": "usageLimits",
+                    "reason": reason,
+                }
+            ],
+            "status": "PERMISSION_DENIED",
+        }
+    }
+    return resp
+
+
+def _ok_resp(name: str = "Gran Via 40 - W-030LFT", drive_id: str = "0ABC"):
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.json.return_value = {"name": name, "driveId": drive_id}
+    return resp
+
+
+class TestGetDriveFolderInfoRetry:
+    """Cobertura del retry+backoff frente a rate-limit de la Drive API.
+
+    Mockea time.sleep para que los tests no esperen realmente los 2/5/10 s
+    del backoff. Verifica número exacto de intentos y que la secuencia de
+    delays solicitada sea la documentada en _RATE_LIMIT_BACKOFF_SECONDS.
+    """
+
+    def test_403_rate_limit_reintenta_y_recupera(self, monkeypatch):
+        """403 rateLimitExceeded en primer intento, 200 en segundo → recupera."""
+        _mock_rclone_token(monkeypatch)
+        sleeps: list[float] = []
+        monkeypatch.setattr("core.intake_drive.time.sleep", lambda s: sleeps.append(s))
+
+        responses = [_rate_limit_resp(403), _ok_resp()]
+        with patch("httpx.get", side_effect=responses):
+            info = get_drive_folder_info("folderXYZ123456")
+
+        assert isinstance(info, DriveFolderInfo)
+        assert info.name == "Gran Via 40 - W-030LFT"
+        # Un solo sleep (entre intento 1 fallido e intento 2 exitoso) = 2.0s
+        assert sleeps == [2.0]
+
+    def test_429_user_rate_limit_reintenta_y_recupera(self, monkeypatch):
+        """429 userRateLimitExceeded en intento 1 → 200 en intento 2."""
+        _mock_rclone_token(monkeypatch)
+        sleeps: list[float] = []
+        monkeypatch.setattr("core.intake_drive.time.sleep", lambda s: sleeps.append(s))
+
+        responses = [
+            _rate_limit_resp(429, reason="userRateLimitExceeded"),
+            _ok_resp(),
+        ]
+        with patch("httpx.get", side_effect=responses):
+            info = get_drive_folder_info("folderXYZ123456")
+
+        assert info is not None
+        assert sleeps == [2.0]
+
+    def test_rate_limit_persistente_agota_reintentos(self, monkeypatch):
+        """4 intentos con rate-limit persistente → devuelve None tras 2+5+10s."""
+        _mock_rclone_token(monkeypatch)
+        sleeps: list[float] = []
+        monkeypatch.setattr("core.intake_drive.time.sleep", lambda s: sleeps.append(s))
+
+        # 4 respuestas idénticas de rate-limit (1 primer intento + 3 reintentos)
+        responses = [_rate_limit_resp() for _ in range(4)]
+        with patch("httpx.get", side_effect=responses) as mock_get:
+            result = get_drive_folder_info("folderXYZ123456")
+
+        assert result is None
+        # 4 intentos totales (1 inicial + 3 con backoff)
+        assert mock_get.call_count == 4
+        # 3 sleeps: 2.0, 5.0, 10.0 — la secuencia documentada
+        assert sleeps == [2.0, 5.0, 10.0]
+
+    def test_403_no_rate_limit_no_reintenta(self, monkeypatch):
+        """403 sin reason rateLimitExceeded (permiso real) → None sin reintentos."""
+        _mock_rclone_token(monkeypatch)
+        sleeps: list[float] = []
+        monkeypatch.setattr("core.intake_drive.time.sleep", lambda s: sleeps.append(s))
+
+        resp = MagicMock()
+        resp.status_code = 403
+        resp.json.return_value = {
+            "error": {
+                "errors": [{"reason": "insufficientPermissions"}],
+            }
+        }
+        with patch("httpx.get", return_value=resp) as mock_get:
+            result = get_drive_folder_info("folderXYZ123456")
+
+        assert result is None
+        # Solo 1 intento — no debe reintentar errores no recuperables
+        assert mock_get.call_count == 1
+        assert sleeps == []
+
+    def test_500_no_reintenta(self, monkeypatch):
+        """500 (error de servidor) no es rate-limit → None tras 1 intento."""
+        _mock_rclone_token(monkeypatch)
+        sleeps: list[float] = []
+        monkeypatch.setattr("core.intake_drive.time.sleep", lambda s: sleeps.append(s))
+
+        resp = MagicMock()
+        resp.status_code = 500
+        resp.json.return_value = {"error": "internal"}
+        with patch("httpx.get", return_value=resp) as mock_get:
+            result = get_drive_folder_info("folderXYZ123456")
+
+        assert result is None
+        assert mock_get.call_count == 1
+        assert sleeps == []
