@@ -246,6 +246,49 @@ git commit -m "<mensaje que Claude propuso>"
 
 ### No bloqueantes (sesión 4, 2026-05-11)
 
+**[SIGUIENTE-DRIVE-SHARE-404]** (sesión 21, 2026-05-19) — La función de
+compartir la carpeta del expediente con colaboradores del despacho desde la
+UI falla con **HTTP 404 "File not found"** cuando se invoca contra carpetas
+anidadas dentro de Shared Drives propios del despacho. Caso reproductor:
+`BaRS10 - Diagonal Ponent 22-24 - (W-02J1KW) - Vuelta`, carpeta
+`https://drive.google.com/drive/folders/16ds7GahMmCBe1cbzUAva5GYrT7UqwAXi`,
+intento de compartir con `ana.velastegui@tyukhay.legal`,
+`paola.barreto@tyukhay.legal` y `sergio.pinol@tyukhay.legal` — los tres
+devuelven `HTTP 404: File not found: 16ds7GahMmCBe1cbzUAva5GYrT7UqwAXi`.
+La UI ofrece como fallback "Generar mensaje de solicitud" para los emails
+que fallaron. Hipótesis a verificar en próxima sesión: (a) la llamada a
+`permissions.create` de Drive API no incluye `supportsAllDrives=true`
+y/o `supportsTeamDrives=true` cuando el target vive en Shared Drive
+distinto del de E&V; (b) el OAuth client de `gdrive_ev` no tiene scope
+suficiente sobre el Shared Drive `EXPEDIENTES - TYUKHAY LEGAL` (es un
+drive distinto al de E&V — credencial podría estar autorizada solo para
+los teamDriveIds de E&V); (c) el `folderId` 16ds...wAXi resuelve a un
+shortcut/atajo en lugar de a la carpeta real (improbable porque la URL es
+de carpeta), pero merece sanity check. Diagnóstico mínimo: probar la
+llamada manualmente desde PowerShell con el access_token de `gdrive_ev`
++ `?supportsAllDrives=true` y comparar respuesta. **No resolver en esta
+sesión** — solo registrado para próxima.
+
+~~**[SIGUIENTE-DRIVE-DESKTOP-CORRUPTED]**~~ ✅ 2026-05-19 (sesión 21) —
+`rclone exit 1: corrupted on transfer: sizes differ` reproducido sobre el
+caso BaRS10 (Diagonal Ponent 22-24 - W-02J1KW, Shared Drive
+`EXPEDIENTES - TYUKHAY LEGAL`). 17 ficheros con destino **más grande** que
+origen en deltas variables (+128 B, +268 B…) tras `100%, 11.593 MiB/s, ETA 0s`.
+Causa raíz: el destino vive en un Shared Drive de Tyukhay Legal montado por
+Google Drive for Desktop; rclone lo trata como `Local file system at //?/G:/...`
+pero Drive Desktop intercepta la escritura y al renombrar `.partial → final`
+reescribe metadatos, por lo que `stat()` devuelve un tamaño superior y la
+verificación post-transfer aborta como "corrupted on transfer" pese a que
+los bytes son íntegros. Fix aplicado en `core/intake_drive.py::pull_drive_ev`:
+`--ignore-size --ignore-checksum --inplace --retries 3 --retries-sleep 5s`
+añadidos al comando rclone. `--inplace` evita además el rename intermedio
+que es el evento que más confunde a Drive Desktop. Integridad real
+garantizada extremo a extremo por Drive API + TLS en ambos remotes (no se
+pierde nada al desactivar la verificación local). 1 entrada nueva en
+`docs/DEAD_ENDS.md`. Cierra de paso `[SIGUIENTE-DRIVE-RCLONE-RETRIES]` que
+estaba pendiente. **Pendiente smoke**: re-lanzar pull BaRS10 desde la UI y
+confirmar `rclone_returncode=0` en `.pulled`.
+
 ~~**[SIGUIENTE-PULL-RCLONE-EXIT1]**~~ ✅ 2026-05-19 (sesión 19) —
 Causa raíz confirmada con `rclone -vv` sobre BaRS1 (Tibidabo 8 - W-02VND1):
 **dangling shortcut** en raíz de la carpeta E&V (acceso directo a un fichero
@@ -312,12 +355,11 @@ aperturas no se observa el síntoma.
 Tras revisión sistemática de puntos de fallo del intake Drive, se identifican
 8 mejoras adicionales. Orden recomendado por relación impacto/esfuerzo:
 
-**[SIGUIENTE-DRIVE-RCLONE-RETRIES]** (impacto alto, esfuerzo mínimo)
-Añadir `--retries 3 --retries-sleep 5s` a la lista de flags de `rclone copy`
-en `core/intake_drive.py::pull_drive_ev`. `--low-level-retries` ya cubre
-blips de TCP; los `--retries` cubren errores transitorios de la Drive API
-(500/503/429 sostenidos). Cambio de una línea, sin riesgo. Tests existentes
-no se ven afectados (los mocks ignoran args/kwargs).
+~~**[SIGUIENTE-DRIVE-RCLONE-RETRIES]**~~ ✅ 2026-05-19 (sesión 21) —
+`--retries 3 --retries-sleep 5s` añadidos a `core/intake_drive.py::pull_drive_ev`
+junto al fix de Drive Desktop (siguiente entrada). `--low-level-retries`
+(default) cubre blips de TCP; los nuevos `--retries` cubren errores
+transitorios sostenidos de la Drive API (500/503/429).
 
 **[SIGUIENTE-DRIVE-ERROR-MESSAGES]** (impacto medio, esfuerzo bajo)
 Mensajes de error específicos por status code en `get_drive_folder_info`:
@@ -368,6 +410,28 @@ detectamos en 7 días en vez de cuando un usuario abra el caso correspondiente.
 Output: diff en `data/_audit/team_ids_drift_<fecha>.json` + banner en UI
 si hay deltas.
 
+**[SIGUIENTE-DRIVE-NATIVE-RCLONE]** (impacto alto, esfuerzo medio-alto)
+Migrar `pull_drive_ev` a copia Drive→Drive nativa, eliminando Google Drive
+for Desktop como intermediario. Hoy rclone copia desde `gdrive_ev:` a
+`G:\Unidades compartidas\…`, donde Drive Desktop intercepta cada escritura;
+los flags `--ignore-size --ignore-checksum --inplace` añadidos en s21
+suprimen los falsos positivos de la verificación post-transfer (ver
+`docs/DEAD_ENDS.md`), pero la integridad local depende de la Drive API en
+ambos extremos. Solución limpia: configurar un segundo remote rclone
+`gdrive_tnm` con la cuenta `nikolai.tyukhay@tyukhay.legal` y reescribir el
+comando como `rclone copy gdrive_ev: gdrive_tnm:CASOS/<case_id>/00_Input/01_Drive\ EV/`.
+Beneficios: (a) integridad verificable de extremo a extremo por Drive API,
+(b) elimina el doble ancho de banda (descarga local + reupload de Drive
+Desktop), (c) funciona aunque Drive Desktop esté pausado / desconectado /
+en error de sincronización, (d) los ficheros aparecen en `G:\` por sync de
+Drive Desktop sin intervención. Trabajo: `rclone config` nuevo
+(`gdrive_tnm`), refactor de `pull_drive_ev` (destino remoto en vez de
+local), ajuste de tests (los actuales asumen path local), decidir el
+mapeo `CASOS/<case_id>/…` en el Drive de destino, considerar dependencia
+de cuota OAuth de la cuenta de destino. Combina muy bien con
+`[SIGUIENTE-DRIVE-OAUTH-PROPIO]` (OAuth propio podría usarse para ambos
+remotes).
+
 **[SIGUIENTE-DRIVE-OAUTH-PROPIO]** (impacto MUY alto, esfuerzo medio)
 OAuth client propio en GCP. Hoy rclone usa el `client_id` compartido del
 project `202264815644` — cuota global por minuto repartida entre todos los
@@ -391,6 +455,27 @@ devengo de factura, vencimiento, impagos previos)? (2) ¿LAU_20 y
 DEVOLUCION_RESERVA también? Cambio mínimo si se reutiliza tal cual:
 añadir `"BAD_DEBT"` al `frozenset` en `core/config.py` + test smoke
 específico. Detalle completo en memoria `project_plantillas_viabilidad.md`.
+
+**[SIGUIENTE-VIABILIDAD-LLM]** (plan trazado el 2026-05-19 s22)
+Pre-relleno LLM del informe de viabilidad usando los documentos del Drive
+E&V volcados en el intake. Plan completo en
+`docs/PLAN_PRERELLENO_LLM_VIABILIDAD.md`. **Decisiones cerradas (D1-D5)**:
+camino cuestionario→derivación a ficha; disparo manual vía botón Streamlit;
+clasificador LLM previo sobre el Drive; Claude Haiku (clasificador) +
+Sonnet (extractor) sobre docs anonimizados con el pipeline SaRS1; output
+paralelo `Informe viabilidad LLM - <case_id>.xlsx` que NUNCA sobrescribe
+el informe humano. **Estimación**: 9-12 sesiones (consistente con
+horizonte 3 de `project_plantillas_viabilidad.md`). **Recomendación**:
+arrancar solo por **Fase 1** (pre-procesado del Drive E&V — OCR → MD →
+anonimización en `02_Analisis/_llm/`). Aporta valor independiente del LLM
+(permite llevar manualmente los docs anonimizados a Claude.ai como en
+SaRS1 H6) y desbloquea cualquier Fase 2-5 posterior. **Bloqueado por**
+tres decisiones de Fase 0 que viven en el plan como `[PENDIENTE]`:
+inclusión de BAD_DEBT (mismo pendiente de `[SIGUIENTE-VIABILIDAD-BAD-DEBT]`),
+modelo del clasificador (Haiku vs Ollama vía `.env`) y prioridad de
+arreglar los bugs `MEJORAS_FUTURAS §11` (OCR kwargs) y `§12` (validate_case_id
+rechaza `(SIN REFERENCIA)`). No bloquean Fase 1 si el primer caso de
+validación es uno con OCR ya hecho y con ID GO formal.
 
 **[SIGUIENTE-CUMPLIMIENTO-RIA-RGPD]** (sesión 12, 2026-05-12) Plan de
 adecuación de FeesDefender al Reglamento (UE) 2024/1689 (RIA) y al

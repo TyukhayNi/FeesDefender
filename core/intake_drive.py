@@ -164,17 +164,35 @@ def pull_drive_ev(
 
     marker = target_dir / _PULL_MARKER
 
-    # --- Idempotencia: skip si .pulled existe y no se fuerza ---
+    # --- Idempotencia: skip si .pulled existe, no se fuerza, y el pull
+    # previo terminó OK (rclone_returncode==0). Si el último intento falló
+    # (returncode != 0), reintentamos automáticamente sin que el usuario
+    # tenga que borrar `.pulled` a mano. Esto evita el modo "pull eternamente
+    # bloqueado" cuando un fallo transitorio dejó el marker con un error.
     if marker.exists() and not force:
-        files_after = _count_files(target_dir)
-        return DriveIntakeResult(
-            case_id=case_id,
-            team_id=team_id,
-            folder_id=folder_id,
-            target_dir=target_dir,
-            files_after=files_after,
-            skipped=True,
-        )
+        # Markers legacy sin `rclone_returncode` (p.ej. `{}`) se tratan como
+        # éxito para preservar la idempotencia histórica. Solo se reintenta
+        # cuando el marker registra explícitamente returncode != 0.
+        prev_returncode: int = 0
+        try:
+            prev = json.loads(marker.read_text(encoding="utf-8"))
+            if isinstance(prev, dict):
+                rc = prev.get("rclone_returncode", 0)
+                prev_returncode = int(rc) if isinstance(rc, (int, str)) and str(rc).lstrip("-").isdigit() else 0
+        except (OSError, json.JSONDecodeError):
+            # `.pulled` ilegible / corrupto → tratar como pull previo OK.
+            prev_returncode = 0
+
+        if prev_returncode == 0:
+            files_after = _count_files(target_dir)
+            return DriveIntakeResult(
+                case_id=case_id,
+                team_id=team_id,
+                folder_id=folder_id,
+                target_dir=target_dir,
+                files_after=files_after,
+                skipped=True,
+            )
 
     # --- Ejecutar rclone ---
     # --drive-skip-shortcuts: omite cualquier acceso directo en la jerarquía
@@ -182,6 +200,24 @@ def pull_drive_ev(
     # ficheros que el usuario corporativo ha perdido al rotar de cuenta o
     # al ser borrados; sin este flag, un único dangling shortcut provoca
     # rclone exit 1 aunque el resto de ficheros se haya copiado bien).
+    #
+    # --ignore-size + --ignore-checksum + --inplace: el destino vive en un
+    # Shared Drive montado por Google Drive for Desktop (G:\Unidades
+    # compartidas\…). Drive Desktop intercepta la escritura: cuando rclone
+    # finaliza el `.partial` y lo renombra al fichero final, Drive Desktop
+    # reescribe metadatos y `stat()` devuelve un tamaño ligeramente
+    # superior al del origen (observado +128, +268 bytes en sesión 21,
+    # 2026-05-19, caso BaRS10). Eso dispara "corrupted on transfer: sizes
+    # differ" aunque los bytes se hayan transferido al 100%. La integridad
+    # real está garantizada por TLS de Drive API en ambos extremos; los
+    # tres flags conjuntos suprimen la verificación post-transfer (size +
+    # checksum) y eliminan el rename `.partial → final` que es el evento
+    # que más confunde a Drive Desktop.
+    #
+    # --retries 3 / --retries-sleep 5s: cubre errores transitorios de la
+    # Drive API (rateLimitExceeded, 5xx). --low-level-retries (default 10)
+    # cubre blips de TCP; los --retries cubren el ciclo completo.
+    # Cierra [SIGUIENTE-DRIVE-RCLONE-RETRIES] de STATUS.md.
     remote = settings.drive_ev_remote   # "gdrive_ev" por defecto
     cmd = [
         settings.rclone_binary,
@@ -191,6 +227,11 @@ def pull_drive_ev(
         "--drive-team-drive", team_id,
         "--drive-root-folder-id", folder_id,
         "--drive-skip-shortcuts",
+        "--ignore-size",
+        "--ignore-checksum",
+        "--inplace",
+        "--retries", "3",
+        "--retries-sleep", "5s",
         "--stats-one-line-date",
         "--log-level", "INFO",
     ]
