@@ -277,6 +277,22 @@ primeras 5 carpetas de cada Shared Drive de `DRIVE_EV_TEAM_IDS` y aplique
 `parse_ev_folder_name` revelaría falsos negativos antes de que aparezcan
 en producción.
 
+**[SIGUIENTE-DRIVE-SHORTCUTS-LEGITIMOS]** (sesión 19, 2026-05-19)
+Monitorizar si en las próximas aperturas de expedientes E&V se detectan
+ficheros que existen en el Drive original pero NO en `00_Input/01_Drive EV/`
+tras el pull. El flag `--drive-skip-shortcuts` añadido en s19 omite TODOS
+los accesos directos, no solo los dangling. Hipótesis no validada: E&V usa
+shortcuts dentro del mismo Shared Drive (rclone los recorre igual de forma
+recursiva), pero si algunos consultores usan shortcuts hacia ficheros de
+otros drives o de "Mi unidad" personal, esos ficheros no se traerán al
+caso local. Detección posible: (a) script ad-hoc que compare `_inventory.json`
+post-pull con listado manual del Drive vía Web; (b) reemplazar el flag por
+post-procesamiento del stderr — detectar si todos los errores son
+"dangling shortcut" y, si al menos 1 fichero se transfirió, tratar exit 1
+como éxito (alternativa quirúrgica documentada en `docs/DEAD_ENDS.md`).
+Sin caso confirmado de pérdida en s19 — bajar prioridad si en 10 aperturas
+no se observa el síntoma.
+
 **[SIGUIENTE-VIABILIDAD-BAD-DEBT]** (decisión del usuario 2026-05-11 s7)
 Incluir BAD_DEBT en `INFORME_VIABILIDAD_TIPOS` para que `ensure_case`
 también copie el cuestionario + ficha de viabilidad al crear casos de
