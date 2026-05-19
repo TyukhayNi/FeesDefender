@@ -163,6 +163,11 @@ def pull_drive_ev(
         )
 
     # --- Ejecutar rclone ---
+    # --drive-skip-shortcuts: omite cualquier acceso directo en la jerarquía
+    # de la carpeta (los Shared Drive de E&V suelen contener shortcuts a
+    # ficheros que el usuario corporativo ha perdido al rotar de cuenta o
+    # al ser borrados; sin este flag, un único dangling shortcut provoca
+    # rclone exit 1 aunque el resto de ficheros se haya copiado bien).
     remote = settings.drive_ev_remote   # "gdrive_ev" por defecto
     cmd = [
         settings.rclone_binary,
@@ -171,6 +176,7 @@ def pull_drive_ev(
         str(target_dir),
         "--drive-team-drive", team_id,
         "--drive-root-folder-id", folder_id,
+        "--drive-skip-shortcuts",
         "--stats-one-line-date",
         "--log-level", "INFO",
     ]
@@ -179,10 +185,16 @@ def pull_drive_ev(
     returncode = 0
 
     try:
+        # encoding='utf-8' + errors='replace': los nombres de fichero
+        # catalanes/españoles de las carpetas E&V traen caracteres no
+        # decodificables con cp1252 (default Windows), lo que producía
+        # stderr vacío en los errores de rclone. 'replace' garantiza
+        # captura sin lanzar UnicodeDecodeError.
         result = subprocess.run(
             cmd,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=300,  # 5 min
         )
         returncode = result.returncode
