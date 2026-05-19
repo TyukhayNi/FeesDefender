@@ -113,6 +113,20 @@
 - **Confirmado:** 2026-04-28
 - **Conclusión:** No accesible sin sesión activa. Usar Drive MCP si está en My Drive, o exportación manual si está en Shared Drive.
 
+### `rclone copy` sobre carpeta E&V con dangling shortcut → exit 1 aunque copie todo lo demás
+- **Intentado:** pull desde Streamlit (`core/intake_drive.pull_drive_ev`) sobre la carpeta `1MEu1xV1zPP9meyRHgPYqRwr_6obqW15g` del Shared Drive de BaRS1 (Tibidabo 8 - W-02VND1). 41 ficheros legítimos en raíz + 2 subcarpetas (`Planos/`, `_RECMAMACION/`).
+- **Resultado:** `rclone exit 1` tras 3 reintentos. En el `.pulled` queda `"errors": ["rclone exit 1: "]` con stderr vacío (ver entrada siguiente sobre captura subprocess en Windows). En realidad rclone copia los 41 ficheros correctamente; el exit 1 lo causa un **único** acceso directo de Google Drive en la raíz (`Atles de planòls.pdf`) cuyo target está borrado o sin acceso para `nikolai.tyukhay@engelvoelkers.com` (hay un fichero homónimo *válido* dentro de `Planos/` que sí se copia).
+- **Confirmado:** 2026-05-19 — reproducido con `rclone copy gdrive_ev: ... -vv` que reveló `NOTICE: Dangling shortcut "Atles de planòls.pdf" detected` + `ERROR : Failed to copy: failed to open source object: can't read dangling shortcut`.
+- **Conclusión:** Las carpetas E&V suelen contener accesos directos que el consultor captador creó hacia ficheros de su carpeta personal (rotación de personal → target inaccesible). Sin mitigación, **cualquier** dangling shortcut tumba el pull entero.
+- **Solución aplicada:** flag `--drive-skip-shortcuts` añadido al comando rclone en `core/intake_drive.py::pull_drive_ev`. Trade-off conocido: si E&V usa shortcuts legítimos hacia ficheros fuera del Shared Drive, no se traerán; aceptable porque el uso típico apunta dentro del propio Shared Drive (recorrido recursivo igual los encuentra) o son shortcuts heredados rotos.
+
+### `subprocess.run(..., text=True)` en Windows con stderr no decodificable
+- **Intentado:** capturar stderr de `rclone` en `core/intake_drive.pull_drive_ev` con `subprocess.run(cmd, capture_output=True, text=True, timeout=300)`.
+- **Resultado:** cuando rclone emite a stderr nombres de fichero con caracteres no decodificables en la página de código activa de Windows (cp1252 por defecto) — típico en E&V por tildes catalanas malformadas tipo `pla╠Çnols`, normalización Unicode NFD vs NFC, etc. — el stream se trunca o llega vacío al lado Python. El returncode sí llega bien, pero el `.pulled` queda con `"errors": ["rclone exit 1: "]` sin pista alguna de la causa.
+- **Confirmado:** 2026-05-19 (caso BaRS1).
+- **Conclusión:** No usar `text=True` para subprocesos que emitan stderr con potencial UTF-8 en Windows. Sustituir por `encoding="utf-8", errors="replace"`. La política `errors="replace"` evita además `UnicodeDecodeError` no capturado (el código solo cazaba `TimeoutExpired` y `FileNotFoundError`).
+- **Aplicado:** `core/intake_drive.py::pull_drive_ev` (2026-05-19). Patrón replicable en cualquier otro `subprocess.run` del proyecto que invoque rclone, pdftotext, ocrmypdf o similar.
+
 ### Endpoint `/select/` para vincular elementos — no persiste
 
 - **Intentado:** `POST /clientespropios/select/elemento/clientes_propios/.../elemento_relacion/` y equivalente para colaboradores con body `seleccionado[]=2&csrf_token=...&cc-num=...`
