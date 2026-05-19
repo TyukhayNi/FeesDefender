@@ -39,6 +39,7 @@ import re
 import subprocess
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .case_manager import register_drive_ev
@@ -58,6 +59,12 @@ _PULL_MARKER = ".pulled"
 # client compartido de rclone (project 202264815644) se reinicia cada minuto;
 # los backoffs cubren ese escenario sin bloquear la UI más de ~17 s en total.
 _RATE_LIMIT_BACKOFF_SECONDS: tuple[float, ...] = (2.0, 5.0, 10.0)
+
+# Margen de seguridad antes de la expiración nominal del access_token de
+# `gdrive_ev`. Si el token vence en menos de este intervalo (o ya está
+# vencido), `_get_drive_access_token` fuerza un refresh proactivo vía
+# `rclone about gdrive_ev:` (que usa el refresh_token y reescribe la conf).
+_TOKEN_EXPIRY_MARGIN = timedelta(minutes=5)
 
 # Regex que cubre los formatos habituales de URL de carpeta Google Drive:
 #   https://drive.google.com/drive/folders/{id}
@@ -306,25 +313,144 @@ class DriveFolderInfo:
     drive_id: str       # ID del Shared Drive que contiene la carpeta
 
 
+def _parse_rclone_token_block(stdout: str) -> dict | None:
+    """Extrae el dict JSON de la línea ``token = {...}`` de ``rclone config show``.
+
+    Devuelve None si no encuentra la línea o si el JSON no parsea.
+    """
+    for line in stdout.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("token"):
+            continue
+        parts = stripped.split("=", 1)
+        if len(parts) != 2:
+            continue
+        try:
+            data = json.loads(parts[1].strip())
+        except Exception:
+            return None
+        return data if isinstance(data, dict) else None
+    return None
+
+
+def _parse_iso_expiry(value: str) -> datetime:
+    """Parsea un timestamp ISO 8601 (con offset o ``Z``) a ``datetime`` UTC.
+
+    rclone escribe ``expiry`` con precisión nanosegundo (hasta 9 dígitos en
+    la fracción) y offset numérico, p.ej. ``2026-05-19T10:23:45.123456789+02:00``.
+    Python <3.11 sólo admite hasta 6 dígitos en la fracción y no acepta el
+    sufijo ``Z`` en ``datetime.fromisoformat``; ambos casos se normalizan aquí.
+
+    Raises:
+        ValueError: si el string no parsea como datetime ISO 8601.
+    """
+    raw = value.strip()
+    # Truncar la fracción de segundos a 6 dígitos (microsegundos) preservando
+    # el sufijo de zona horaria si lo hay.
+    if "." in raw:
+        head, _, tail = raw.partition(".")
+        frac, tz = tail, ""
+        for i, ch in enumerate(tail):
+            if not ch.isdigit():
+                frac, tz = tail[:i], tail[i:]
+                break
+        if len(frac) > 6:
+            frac = frac[:6]
+        raw = f"{head}.{frac}{tz}" if frac else f"{head}{tz}"
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    dt = datetime.fromisoformat(raw)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
 def _get_drive_access_token() -> str | None:
-    """Extrae el access_token OAuth del remote gdrive_ev en rclone.conf."""
-    import json as _json
+    """Devuelve un access_token OAuth vigente del remote ``gdrive_ev``.
+
+    Lee el bloque ``token = {...}`` que rclone almacena en ``rclone.conf``
+    para el remote ``gdrive_ev`` y, si el campo ``expiry`` indica que el
+    access_token está caducado o vence dentro de :data:`_TOKEN_EXPIRY_MARGIN`,
+    fuerza un refresh proactivo ejecutando ``rclone about gdrive_ev:``. Esta
+    operación trivial obliga a rclone a usar el ``refresh_token`` para emitir
+    un nuevo access_token y reescribir la conf. Tras el refresh, releemos el
+    bloque y devolvemos el nuevo access_token.
+
+    Comportamiento defensivo:
+
+    - ``expiry`` ausente o malformado → devuelve el access_token tal cual
+      (preserva el comportamiento previo a la renovación proactiva; el
+      keep-alive diario mitiga el riesgo en producción).
+    - Refresh falla (rclone devuelve != 0 o lanza excepción) → ``None``.
+      No devolvemos el access_token caducado: sabemos que dará 401.
+    - Lectura inicial falla → ``None``.
+
+    Esta función NO lanza excepciones — todos los fallos se silencian y se
+    devuelve ``None`` para que el auto-fill (callers como
+    :func:`get_drive_folder_info`) degrade limpiamente.
+    """
+    # --- 1ª lectura del bloque token ---------------------------------------
     try:
         result = subprocess.run(
             ["rclone", "config", "show", "gdrive_ev"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=5,
         )
-        for line in result.stdout.splitlines():
-            stripped = line.strip()
-            if stripped.startswith("token"):
-                parts = stripped.split("=", 1)
-                if len(parts) == 2:
-                    token_json = parts[1].strip()
-                    access_token = _json.loads(token_json).get("access_token")
-                    return access_token or None
     except Exception:
-        pass
-    return None
+        return None
+
+    token_data = _parse_rclone_token_block(result.stdout or "")
+    if not token_data:
+        return None
+
+    access_token = token_data.get("access_token") or None
+    expiry_raw = token_data.get("expiry")
+
+    # --- Sin expiry o malformado: comportamiento legado --------------------
+    if not expiry_raw:
+        return access_token
+    try:
+        expiry_dt = _parse_iso_expiry(expiry_raw)
+    except Exception:
+        return access_token
+
+    # --- Vigente con margen suficiente -------------------------------------
+    now = datetime.now(timezone.utc)
+    if expiry_dt - now > _TOKEN_EXPIRY_MARGIN:
+        return access_token
+
+    # --- Caducado o a punto de caducar: forzar refresh ---------------------
+    try:
+        refresh = subprocess.run(
+            ["rclone", "about", "gdrive_ev:"],
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=10,
+        )
+    except Exception:
+        return None
+    if refresh.returncode != 0:
+        return None
+
+    # --- Releer el bloque tras el refresh ----------------------------------
+    try:
+        result2 = subprocess.run(
+            ["rclone", "config", "show", "gdrive_ev"],
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=5,
+        )
+    except Exception:
+        return None
+
+    token_data2 = _parse_rclone_token_block(result2.stdout or "")
+    if not token_data2:
+        return None
+    return token_data2.get("access_token") or None
 
 
 def _is_rate_limit_response(resp) -> bool:

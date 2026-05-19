@@ -3,7 +3,9 @@
 > **Fuente de verdad única del proyecto.**
 > Actualizar al cerrar cada sesión con `python -m scripts.session_close`.
 
-**Última actualización:** 2026-05-19 (sesión 19) — **Fix `rclone exit 1` por dangling shortcut en carpetas E&V + captura UTF-8 de stderr en Windows**. Cierre de `[SIGUIENTE-PULL-RCLONE-EXIT1]`. Dos cambios mínimos en `core/intake_drive.py::pull_drive_ev`: (1) flag `--drive-skip-shortcuts` añadido al comando rclone — las carpetas W-XXXXXX del Drive E&V contienen accesos directos heredados de consultores rotados cuyo target ha perdido permisos; sin el flag, un único shortcut roto provocaba `rclone exit 1` aunque los demás 40+ ficheros se hubieran copiado bien (la pieza de gestión documental del pipeline quedaba vacía en `.pulled` con `rclone_returncode=1`); con el flag, los shortcuts (válidos o danglers) se omiten silenciosamente y el pull es exitoso para todos los ficheros nativos. Trade-off conocido: shortcuts E&V legítimos hacia ficheros *fuera* del Shared Drive no se traen; aceptable porque el uso típico apunta dentro del mismo drive (rclone los recorre igual de forma recursiva). (2) `subprocess.run` cambia `text=True` por `encoding="utf-8", errors="replace"` — en Windows el `text=True` decodifica con cp1252 del sistema; cuando rclone emite a stderr nombres de fichero con tildes catalanas malformadas (`pla╠Çnols`) o normalización NFD, el stream se truncaba a `""` antes de llegar a Python y el error real se perdía, dejando solo `rclone exit 1: ` en el `.pulled`; con UTF-8 + replace la captura es íntegra y diagnosticable. Diagnóstico reproducible: ejecutar `rclone copy gdrive_ev: <target> --drive-team-drive <id> --drive-root-folder-id <id> -vv` desde PowerShell — revela los `NOTICE: Dangling shortcut "<file>" detected` + `ERROR : Failed to copy: failed to open source object: can't read dangling shortcut`. **Caso real desbloqueado**: BaRS1 - Tibidabo 8 - (W-02VND1) — 41/41 ficheros (137 MiB) bajados manualmente desde `%TEMP%\test_bars1\` a `00_Input/01_Drive EV/` tras saneo de `.pulled` (returncode=0, errors=[]). El shortcut roto en raíz era `Atles de planòls.pdf` (existe homónimo válido dentro de `Planos/`, sí copiado). Pre-existente: solo había `RONCESVALLES Mantenimiento.pdf` + `.pulled` corrupto (Streamlit se cortó tras el primer fichero por el exit 1). **Tests**: `tests/test_intake_drive.py` 43/43 verde sin cambios (los mocks de `subprocess.run` ignoran args/kwargs, el añadido del flag no afecta). Suite global verde. **Entradas nuevas en `docs/DEAD_ENDS.md`**: "rclone copy sobre carpeta E&V con dangling shortcut" + "`subprocess.run(text=True)` en Windows con stderr no decodificable" — ambas con sección Solución aplicada. **Pendiente abierto**: smoke manual end-to-end desde la UI (crear un caso E&V cualquiera, verificar pull terminado con `rclone_returncode=0`) — no automatizable.
+**Última actualización:** 2026-05-19 (sesión 20) — **Renovación proactiva del access_token de `gdrive_ev` + script de auditoría de naming Drive E&V**. Dos entregas que cierran riesgos del intake Drive remanentes de la s19. (1) `core/intake_drive.py::_get_drive_access_token` deja de leer el `access_token` a ciegas del bloque `token = {...}` que rclone almacena en `rclone.conf`: ahora parsea el campo `expiry` (ISO 8601 con offset, tolerando la precisión nanosegundo que escribe rclone), lo normaliza a UTC vía nuevo helper `_parse_iso_expiry` (también nuevo `_parse_rclone_token_block`), y si el token vence dentro de los próximos 5 min (constante `_TOKEN_EXPIRY_MARGIN`) o ya está vencido, fuerza un refresh proactivo lanzando `rclone about gdrive_ev:` — operación trivial que obliga a rclone a usar el `refresh_token` y reescribir la conf. Tras el refresh releemos el bloque y devolvemos el nuevo access_token. Comportamiento defensivo: expiry ausente/malformado → devuelve el access_token tal cual (preserva el comportamiento previo a la renovación); refresh falla → `None` (no propaga un token caducado conocido); cualquier excepción de subprocess → `None`. Aprovechado el cambio para corregir `text=True` → `encoding="utf-8", errors="replace"` (memoria `feedback_subprocess_utf8_windows.md`). **Tests +14** en `tests/test_intake_drive.py`: clase `TestGetDriveAccessToken` (8 casos — vigente, caducado refresca y devuelve nuevo, dentro de margen refresca, refresh returncode≠0 devuelve None, refresh lanza TimeoutExpired devuelve None, expiry malformado defensivo, expiry ausente defensivo, config show falla, token block ausente) + `TestParseIsoExpiry` (5 casos — offset positivo, sufijo Z, precisión nanosegundo truncada a 6 dígitos, naive asumido UTC, string inválido lanza). Suite global verde (~546/546). (2) `scripts/audit_ev_folder_names.py` nuevo: recorre Shared Drives de `DRIVE_EV_TEAM_IDS` deduplicados, consulta Drive API v3 con `q = "mimeType='folder' and trashed=false and name contains 'W-'"` y `pageSize=50`, filtra localmente con regex laxo `_W_ID_PROBE = r"\bW-[A-Z0-9]{5,8}\b"` para descartar carpetas estructurales como `PROPIEDADES`/`S1`/`Otros tutoriales`, toma los primeros N candidatos y aplica `parse_ev_folder_name`. Reutiliza el helper saneado `_get_drive_access_token` + `_is_rate_limit_response` + `_RATE_LIMIT_BACKOFF_SECONDS`. Output tabular ASCII (sin Unicode en separadores, `sys.stdout.reconfigure(encoding="utf-8")` defensivo para PowerShell con `2>&1 |`) y opción `--json` que guarda reporte en `data/_audit/ev_folder_audit_<ts>.json`. CLI: `--team <code>`, `--limit N`, `--json`. **Hallazgo importante** del test rápido sobre BaRS1: las 3 primeras carpetas raíz del Shared Drive (`PROPIEDADES`, `S1`, `Otros tutoriales`) NO son carpetas-expediente — las W-XXXXXX están **anidadas** bajo carpetas estructurales. Esto invalida la hipótesis del briefing inicial ("listar primeras 5 carpetas de la raíz") y motivó el filtro local con regex laxo. La ejecución completa de la auditoría queda pendiente para próxima sesión. **8 mejoras nuevas de robustez del intake Drive** añadidas a "Próximas tareas — No bloqueantes" tras revisión sistemática de puntos de fallo: OAuth client propio en GCP (elimina cuota compartida del project 202264815644), cache `folder_id → (name, drive_id)` en `_caso.md` (reduce llamadas API >80% en producción), `--retries 3 --retries-sleep 5s` en rclone copy, mensajes de error específicos por status code en `get_drive_folder_info`, health-check pre-flight unificado, logging estructurado `data/_audit/drive_intake.jsonl`, alertas keep-alive, validación periódica de `DRIVE_EV_TEAM_IDS`. **Pendientes diferidas a próxima sesión**: ejecución de la auditoría completa sobre los 19 Shared Drives únicos (script ya listo) + validación empírica del flag `--drive-skip-shortcuts` (tarea [SIGUIENTE-DRIVE-SHORTCUTS-LEGITIMOS] sin avance en s20).
+
+**Anterior (2026-05-19, sesión 19):** **Fix `rclone exit 1` por dangling shortcut en carpetas E&V + captura UTF-8 de stderr en Windows**. Cierre de `[SIGUIENTE-PULL-RCLONE-EXIT1]`. Dos cambios mínimos en `core/intake_drive.py::pull_drive_ev`: (1) flag `--drive-skip-shortcuts` añadido al comando rclone — las carpetas W-XXXXXX del Drive E&V contienen accesos directos heredados de consultores rotados cuyo target ha perdido permisos; sin el flag, un único shortcut roto provocaba `rclone exit 1` aunque los demás 40+ ficheros se hubieran copiado bien (la pieza de gestión documental del pipeline quedaba vacía en `.pulled` con `rclone_returncode=1`); con el flag, los shortcuts (válidos o danglers) se omiten silenciosamente y el pull es exitoso para todos los ficheros nativos. Trade-off conocido: shortcuts E&V legítimos hacia ficheros *fuera* del Shared Drive no se traen; aceptable porque el uso típico apunta dentro del mismo drive (rclone los recorre igual de forma recursiva). (2) `subprocess.run` cambia `text=True` por `encoding="utf-8", errors="replace"` — en Windows el `text=True` decodifica con cp1252 del sistema; cuando rclone emite a stderr nombres de fichero con tildes catalanas malformadas (`pla╠Çnols`) o normalización NFD, el stream se truncaba a `""` antes de llegar a Python y el error real se perdía, dejando solo `rclone exit 1: ` en el `.pulled`; con UTF-8 + replace la captura es íntegra y diagnosticable. Diagnóstico reproducible: ejecutar `rclone copy gdrive_ev: <target> --drive-team-drive <id> --drive-root-folder-id <id> -vv` desde PowerShell — revela los `NOTICE: Dangling shortcut "<file>" detected` + `ERROR : Failed to copy: failed to open source object: can't read dangling shortcut`. **Caso real desbloqueado**: BaRS1 - Tibidabo 8 - (W-02VND1) — 41/41 ficheros (137 MiB) bajados manualmente desde `%TEMP%\test_bars1\` a `00_Input/01_Drive EV/` tras saneo de `.pulled` (returncode=0, errors=[]). El shortcut roto en raíz era `Atles de planòls.pdf` (existe homónimo válido dentro de `Planos/`, sí copiado). Pre-existente: solo había `RONCESVALLES Mantenimiento.pdf` + `.pulled` corrupto (Streamlit se cortó tras el primer fichero por el exit 1). **Tests**: `tests/test_intake_drive.py` 43/43 verde sin cambios (los mocks de `subprocess.run` ignoran args/kwargs, el añadido del flag no afecta). Suite global verde. **Entradas nuevas en `docs/DEAD_ENDS.md`**: "rclone copy sobre carpeta E&V con dangling shortcut" + "`subprocess.run(text=True)` en Windows con stderr no decodificable" — ambas con sección Solución aplicada. **Pendiente abierto**: smoke manual end-to-end desde la UI (crear un caso E&V cualquiera, verificar pull terminado con `rclone_returncode=0`) — no automatizable.
 
 **Anterior (2026-05-12, sesión 18):** **Fix auto-fill Drive E&V resiliente a rate-limit de la Drive API**. Tres capas: (1) `core/intake_drive.get_drive_folder_info` añade retry con backoff exponencial 2/5/10 s ante 403/429 cuando el body trae `reason ∈ {rateLimitExceeded, userRateLimitExceeded}` — síntoma típico de la cuota global del OAuth client compartido de rclone (project_number 202264815644). Errores no recuperables (401, 404, 500, 403 sin reason de rate-limit como `insufficientPermissions`) terminan en 1 solo intento. Worst-case añadido a la UI: ~17 s. Helper `_is_rate_limit_response` aislado y defensivo ante JSON malformado (si el body no parsea, asume NO rate-limit para no entrar en bucle de reintentos contra error permanente). (2) En `streamlit_app.py` el bloque de auto-fill solo marca el sentinel `_nc_drive_autofilled_fid` tras éxito — antes lo marcaba siempre, dejando cacheado un intento fallido durante toda la sesión sin retry posible (causa raíz del bug reportado: F5 lo arreglaba porque limpiaba `session_state`). Cuando la llamada falla se setea `_nc_drive_autofill_failed` (no-sticky entre reruns) que dispara un `st.warning` visible con botón "🔄 Reintentar auto-fill". (3) **+5 tests** en `tests/test_intake_drive.py::TestGetDriveFolderInfoRetry` cubriendo recover en 2º intento (403 y 429), agotamiento de los 4 intentos totales (1+3 backoffs), no-retry para 403 con `insufficientPermissions`, no-retry para 500. **Suite global verde (524/524).** **Pendiente abierto en esta sesión**: el auto-fill funciona end-to-end con la URL `https://drive.google.com/drive/u/2/folders/1OReG4jZzwh6-l5j5AKYL_8Jpc5a6fzCX` (Montsant 34 - Montcada i Reixac - W-0466A1, BaRS8), pero el **pull rclone subsiguiente falla con `rclone exit 1`** sin stderr surfaced en la UI. Bug nuevo apuntado en "Próximas tareas — No bloqueantes" como `[SIGUIENTE-PULL-RCLONE-EXIT1]`. Memoria persistente nueva: `feedback_streamlit_cache_solo_en_exito.md` (regla general: nunca marcar sentinel de cache antes de validar éxito del side effect — aplicable a cualquier bloque Streamlit con API/IO).
 
@@ -258,26 +260,36 @@ real BaRS1 desbloqueado manualmente (41/41 ficheros, 137 MiB). 2 entradas
 nuevas en `docs/DEAD_ENDS.md` con el patrón y la mitigación. Tests
 `test_intake_drive.py` 43/43 verde. Smoke end-to-end UI pendiente.
 
-**[SIGUIENTE-DRIVE-TOKEN]** Renovación proactiva del access_token de
-`gdrive_ev` en `core/intake_drive.py::_get_drive_access_token()`. Hoy lee
-el `access_token` tal cual del JSON de `rclone.conf` sin comprobar el
-campo `expiry`. Si pasa >1h sin que rclone ejecute ninguna operación, el
-token está caducado y la Drive API devuelve 401 → el auto-fill falla en
-silencio. Lo salva el keep-alive diario (`scheduled_sync._keepalive_gdrive_ev`),
-pero un fin de semana largo o un Streamlit recién abierto tras inactividad
-prolongada lo rompen. Fix: parsear `expiry` (ISO 8601 con offset), comparar
-con `now()`, si vencido lanzar `rclone about gdrive_ev:` y releer.
+~~**[SIGUIENTE-DRIVE-TOKEN]**~~ ✅ 2026-05-19 (sesión 20) —
+`core/intake_drive.py::_get_drive_access_token` reescrita con renovación
+proactiva basada en `expiry`. Helpers nuevos `_parse_rclone_token_block` y
+`_parse_iso_expiry` (tolera ISO 8601 nanosegundo + sufijo Z). Margen de
+seguridad 5 min antes del vencimiento dispara `rclone about gdrive_ev:`
+para forzar refresh vía `refresh_token` y releer. Defensivo: expiry
+ausente/malformado preserva comportamiento legado; refresh fallido → None
+(no propaga token caducado conocido). `text=True` reemplazado por
+`encoding="utf-8", errors="replace"` (memoria `feedback_subprocess_utf8_windows.md`).
++14 tests dedicados (`TestGetDriveAccessToken` 8 + `TestParseIsoExpiry` 5
++ los existentes intactos). Suite global verde.
 
-**[SIGUIENTE-DRIVE-NAMING-AUDIT]** Auditar `DRIVE_EV_TEAM_IDS` por equipos
-cuyas carpetas siguen un naming distinto del esperado. Hoy hemos visto que
-`SeRS6` añade `- <consultor captador>` al final. Posible que otros equipos
-usen prefijos numéricos (`393.` en Sevilla), abreviaturas distintas, o
-naming sin guion antes del W-XXXXXX. Un script ad-hoc que liste las
-primeras 5 carpetas de cada Shared Drive de `DRIVE_EV_TEAM_IDS` y aplique
-`parse_ev_folder_name` revelaría falsos negativos antes de que aparezcan
-en producción.
+**[SIGUIENTE-DRIVE-NAMING-AUDIT]** (parcial s20, 2026-05-19) — Script
+`scripts/audit_ev_folder_names.py` creado: recorre `DRIVE_EV_TEAM_IDS`
+deduplicados por Shared Drive ID, consulta Drive API v3 con `name contains 'W-'`
++ filtro local `_W_ID_PROBE` (regex laxo `\bW-[A-Z0-9]{5,8}\b`) y aplica
+`parse_ev_folder_name` a los candidatos. Reutiliza el helper saneado de
+`[SIGUIENTE-DRIVE-TOKEN]`. CLI con `--team`, `--limit`, `--json` (reporte
+en `data/_audit/ev_folder_audit_<ts>.json`). **Hallazgo del test rápido
+sobre BaRS1**: las carpetas-expediente NO están en raíz del Shared Drive —
+están **anidadas** bajo carpetas estructurales (PROPIEDADES, S1, Otros
+tutoriales). Hipótesis original del briefing ("listar primeras 5 carpetas
+de la raíz") invalidada; script rediseñado para buscar a cualquier
+profundidad. **Pendiente**: ejecutar `python -m scripts.audit_ev_folder_names --json`
+sobre los 19 Shared Drives únicos y revisar el reporte; si aparecen patrones
+nuevos de naming, ampliar `_EV_FOLDER_RE` + tests dedicados (no tocar regex
+sin evidencia, regla D8 + memoria `feedback_anon_logica_intacta` aplicada
+también aquí por extensión).
 
-**[SIGUIENTE-DRIVE-SHORTCUTS-LEGITIMOS]** (sesión 19, 2026-05-19)
+**[SIGUIENTE-DRIVE-SHORTCUTS-LEGITIMOS]** (sesión 19, 2026-05-19; sin avance en s20)
 Monitorizar si en las próximas aperturas de expedientes E&V se detectan
 ficheros que existen en el Drive original pero NO en `00_Input/01_Drive EV/`
 tras el pull. El flag `--drive-skip-shortcuts` añadido en s19 omite TODOS
@@ -290,8 +302,83 @@ post-pull con listado manual del Drive vía Web; (b) reemplazar el flag por
 post-procesamiento del stderr — detectar si todos los errores son
 "dangling shortcut" y, si al menos 1 fichero se transfirió, tratar exit 1
 como éxito (alternativa quirúrgica documentada en `docs/DEAD_ENDS.md`).
-Sin caso confirmado de pérdida en s19 — bajar prioridad si en 10 aperturas
-no se observa el síntoma.
+Sin caso confirmado de pérdida en s19/s20 — bajar prioridad si en 10
+aperturas no se observa el síntoma.
+
+---
+
+#### Refuerzo del intake Drive E&V — mejoras priorizadas (s20, 2026-05-19)
+
+Tras revisión sistemática de puntos de fallo del intake Drive, se identifican
+8 mejoras adicionales. Orden recomendado por relación impacto/esfuerzo:
+
+**[SIGUIENTE-DRIVE-RCLONE-RETRIES]** (impacto alto, esfuerzo mínimo)
+Añadir `--retries 3 --retries-sleep 5s` a la lista de flags de `rclone copy`
+en `core/intake_drive.py::pull_drive_ev`. `--low-level-retries` ya cubre
+blips de TCP; los `--retries` cubren errores transitorios de la Drive API
+(500/503/429 sostenidos). Cambio de una línea, sin riesgo. Tests existentes
+no se ven afectados (los mocks ignoran args/kwargs).
+
+**[SIGUIENTE-DRIVE-ERROR-MESSAGES]** (impacto medio, esfuerzo bajo)
+Mensajes de error específicos por status code en `get_drive_folder_info`:
+hoy todos los no-200 caen en el mismo `return None`. Distinguir y loguear
+en `.pulled` (campo nuevo `auth_diagnosis`): 401 → token revocado, sugerir
+`rclone config reconnect gdrive_ev:`; 403 + reason `storageQuotaExceeded`
+→ cuenta E&V llena; 403 + reason `insufficientFilePermissions` → folder_id
+sin permiso del usuario corporativo; 404 → folder_id mal escrito; 5xx →
+reintento (ya cubierto). Useful para diagnóstico desde la UI sin reproducir.
+
+**[SIGUIENTE-DRIVE-FOLDER-CACHE]** (impacto alto, esfuerzo bajo)
+Cache de `folder_id → (name, drive_id)` en `_caso.md`. Hoy cada llamada a
+`get_drive_folder_info(folder_id)` golpea la Drive API. Tras la primera
+resolución exitosa, persistir `meta.drive_ev_folder_name` y
+`meta.drive_ev_drive_id` en `_caso.md`; en pulls posteriores leer del
+fichero local. Reduce llamadas a la API en >80% en producción y reduce
+dependencia de la cuota compartida del OAuth client de rclone.
+
+**[SIGUIENTE-DRIVE-INTAKE-LOG]** (impacto bajo runtime, alto post-mortem)
+Logging estructurado `data/_audit/drive_intake.jsonl`. Cada `pull_drive_ev`
+añade una línea con `{timestamp, case_id, team_id, folder_id, returncode,
+files_after, duration_ms, error_summary}`. Sin esto, cualquier caída pasada
+se pierde porque `.pulled` se sobrescribe en cada pull. Append-only, mismo
+patrón que `core/intake_log.py` M10. Útil para correlacionar caídas con
+cambios de cuota / rotaciones de token / horarios.
+
+**[SIGUIENTE-DRIVE-KEEPALIVE-ALERTS]** (impacto bajo, esfuerzo bajo)
+Alertas del keep-alive diario de `gdrive_ev`. Hoy
+`scheduled_sync._keepalive_gdrive_ev` falla en silencio. Si falla 2
+ejecuciones consecutivas → registrar en `data/_audit/keepalive_failures.jsonl`
+y mostrar banner rojo en la UI Streamlit al arrancar. Depende de
+[SIGUIENTE-DRIVE-INTAKE-LOG] como infraestructura común de logging.
+
+**[SIGUIENTE-DRIVE-HEALTH-CHECK]** (impacto medio, esfuerzo bajo)
+Health-check pre-flight unificado: `python -m scripts.health_check_drive`
+que verifique en orden: (1) binario rclone, (2) remote gdrive_ev configurado,
+(3) bloque token presente con expiry parseable, (4) `rclone about gdrive_ev:`
+responde, (5) `drives.list` API responde, (6) los Shared Drive IDs de
+`DRIVE_EV_TEAM_IDS` siguen existiendo (lo cubre [SIGUIENTE-DRIVE-TEAM-IDS-WATCH]
+si se implementa). Reusable desde la UI Streamlit como botón de diagnóstico
+para Paola/Ana.
+
+**[SIGUIENTE-DRIVE-TEAM-IDS-WATCH]** (impacto bajo, esfuerzo bajo)
+Validación periódica de `DRIVE_EV_TEAM_IDS`. Script cron-driven semanal
+que ejecuta `rclone backend drives gdrive_ev:` y compara con el dict
+estático de `core/config.py`. Si E&V crea/elimina/renombra un equipo, lo
+detectamos en 7 días en vez de cuando un usuario abra el caso correspondiente.
+Output: diff en `data/_audit/team_ids_drift_<fecha>.json` + banner en UI
+si hay deltas.
+
+**[SIGUIENTE-DRIVE-OAUTH-PROPIO]** (impacto MUY alto, esfuerzo medio)
+OAuth client propio en GCP. Hoy rclone usa el `client_id` compartido del
+project `202264815644` — cuota global por minuto repartida entre todos los
+usuarios de rclone del mundo. Cuando satura, no hay mitigación desde
+nuestro lado (los backoffs de la s18 alargan, no resuelven). Crear OAuth
+Client ID propio (consola GCP, gratis) y registrarlo en `rclone config`
+elimina la cuota compartida. Lo natural es hacerlo dentro del proyecto GCP
+de E&V (la Service Account pendiente de
+`project_gdrive_ev_auth.md`) o, si E&V demora, un proyecto GCP propio del
+despacho. Es la palanca de mayor impacto sobre la disponibilidad del
+intake Drive a medio plazo.
 
 **[SIGUIENTE-VIABILIDAD-BAD-DEBT]** (decisión del usuario 2026-05-11 s7)
 Incluir BAD_DEBT en `INFORME_VIABILIDAD_TIPOS` para que `ensure_case`
