@@ -816,6 +816,35 @@ Detalle completo en `docs/DEAD_ENDS.md` → "GET /api/files/presigned_download_u
 
 ---
 
+**[SIGUIENTE-BITACORA]** (plan trazado el 2026-05-21 s24)
+
+Bitácora razonada por caso. Cada sesión de trabajo con LLM sobre un
+caso produce un resumen estructurado (qué hicimos, decisiones tomadas,
+dudas pendientes, documentos generados) que se anexa a un único
+`BITACORA.md` en la raíz del caso. No archiva el chat crudo — solo el
+proceso de razonamiento, que es donde está el valor.
+
+Plan completo en `docs/PLAN_BITACORA_CASOS.md`. 10 decisiones cerradas,
+6 fases (3 en ruta crítica, ~3 sesiones cowork estimadas).
+
+**Arrancar por F1**: módulo `core/bitacora/` aislado (fachada
+`generar_entrada(case_id, transcripcion) -> Path`, prompt Haiku
+fijo, atomic write con append en cabeza, tests dedicados con mock
+de la llamada al modelo). F2-F4 (extractor Cowork + slash command +
+hook al `/cierre`) van después.
+
+**Pre-condición F2**: investigación previa sobre el formato JSON
+de sesiones Cowork y cómo identificar la sesión activa (2-4 h sobre
+3-5 sesiones reales recientes).
+
+**Fuera de alcance del plan — apunte para el futuro**: red de seguridad
+opcional consistente en tarea programada que zipea
+`%APPDATA%\Claude\local-agent-mode-sessions\` a una carpeta gitignored
+fuera del proyecto. Anotada en §9 del plan. No es parte del MVP de la
+bitácora.
+
+---
+
 
 1. ~~Capturar POST creación expediente extrajudicial~~ ✅ 2026-04-28
 2. ~~Mapear IDs de tags CRM~~ ✅ 2026-04-28 — 87 tags, `sudespacho_create.py`
