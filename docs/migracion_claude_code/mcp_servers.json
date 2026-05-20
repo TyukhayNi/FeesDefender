@@ -1,0 +1,46 @@
+{
+  "_comment": "Plantilla de MCP servers para Claude Code. NO obligatorio — el desarrollo del core no depende de MCPs.",
+  "_comment_uso": "Copiar a .claude/mcp_servers.json y descomentar/configurar los bloques que necesites. Mantener en .gitignore si tiene secretos.",
+
+  "mcpServers": {
+
+    "_comment_filesystem": "Filesystem MCP — útil si quieres exponer una carpeta específica con permisos elevados (típicamente para skills). FeesDefender no lo necesita porque Edit/Write ya cubren todo el repo.",
+    "filesystem_disabled": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "G:\\Unidades compartidas\\DESPACHO - PRODUCCION\\Base datos expedientes"
+      ]
+    },
+
+    "_comment_sudespacho": "MCP wrapper sobre sudespacho.net — pendiente. Cuando exista, este bloque conecta directamente con el CRM sin pasar por scripts/sync_sudespacho.py.",
+    "sudespacho_pending": {
+      "command": "python",
+      "args": ["-m", "core.mcp.sudespacho_server"],
+      "env": {
+        "SUDESPACHO_API_KEY": "${SUDESPACHO_API_KEY}",
+        "SUDESPACHO_BASE_URL": "https://tnm.sudespacho.net"
+      }
+    },
+
+    "_comment_gdrive": "Google Drive MCP — solo si quieres operar el Drive E&V desde el chat. Alternativa actual: rclone + core/intake_drive.py.",
+    "gdrive_disabled": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-gdrive"],
+      "env": {
+        "GDRIVE_CREDENTIALS_PATH": "C:\\Users\\tnm33\\.config\\gdrive_ev_credentials.json"
+      }
+    },
+
+    "_comment_gmail": "Gmail MCP — solo si vas a redactar/buscar correo del despacho desde Claude Code.",
+    "gmail_disabled": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-gmail"],
+      "env": {
+        "GMAIL_CREDENTIALS_PATH": "C:\\Users\\tnm33\\.config\\gmail_credentials.json"
+      }
+    }
+
+  }
+}
