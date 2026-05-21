@@ -108,7 +108,8 @@ def _keepalive_gdrive_ev(log: logging.Logger) -> None:
 
 def _read_expedientes(case_id: str) -> list[dict]:
     """Lee la lista de expedientes del índice _caso.md."""
-    index = settings.casos_root / case_id / "00_Input" / "_caso.md"
+    from core.config import caso_path
+    index = caso_path(case_id) / "00_Input" / "_caso.md"
     if not index.exists():
         return []
     text = index.read_text(encoding="utf-8")
@@ -124,7 +125,8 @@ def _read_expedientes(case_id: str) -> list[dict]:
 
 def _append_sync_log(case_id: str, entries: list[str]) -> None:
     """Añade una entrada al log de sync del caso en 07_AI cowork/."""
-    log_path = settings.casos_root / case_id / "07_AI cowork" / "_sync_log.md"
+    from core.config import caso_path
+    log_path = caso_path(case_id) / "07_AI cowork" / "_sync_log.md"
     ts = datetime.now().strftime("%Y-%m-%d %H:%M")
     block = f"\n## {ts}\n\n" + "\n".join(f"- {e}" for e in entries) + "\n"
     with log_path.open("a", encoding="utf-8") as f:
@@ -148,10 +150,8 @@ def run(*, run_pipeline: bool = False, log_file: str | None = None) -> int:
     # lo mantiene vivo sin intervención manual.
     _keepalive_gdrive_ev(log)
 
-    casos = sorted(
-        p.name for p in settings.casos_root.iterdir()
-        if p.is_dir() and not p.name.startswith("_")
-    )
+    from core.casos.case_locator import list_cases as _list
+    casos = sorted(p.name for p in _list())
 
     if not casos:
         log.info("No hay casos en %s", settings.casos_root)

@@ -61,6 +61,7 @@ from core.ciudades import (
     EQUIPOS_POR_CIUDAD_JUDICIAL      as _EQUIPOS_POR_CIUDAD_JUD,
     EQUIPOS_JUDICIAL                 as _EQUIPOS_JUD,
     TAG_AZUL_CIUDAD_JUDICIAL         as _TAG_AZUL_CIUDAD_JUD,
+    ciudad_de_equipo                 as _ciudad_de_equipo,
 )
 
 # ---------------------------------------------------------------------------
@@ -1378,18 +1379,54 @@ with tab_nuevo:
         if mail_otros.strip() and not _valid_email(mail_otros):
             _missing.append("Mail Otros implicados — formato inválido")
 
+        # Validación blanda de coherencia prefijo↔ciudad (Fase 2 subdivisión)
+        _ciudad_esperada = _ciudad_de_equipo(_equipo_code_resolved)
+        _prefijo_coherente = (
+            _ciudad_esperada is None
+            or _ciudad_esperada == ciudad_label
+        )
+        _coherencia_key = f"_coherencia_ok_{final_case_id}"
+        if (
+            not _prefijo_coherente
+            and not st.session_state.get(_coherencia_key, False)
+        ):
+            _missing.append(
+                f"El equipo **{_equipo_code_resolved}** pertenece a "
+                f"**{_ciudad_esperada}** pero has seleccionado "
+                f"**{ciudad_label}**"
+            )
+
         if _missing:
             st.error(
                 "Completa o corrige los siguientes campos: **"
                 + "**, **".join(_missing)
                 + "**."
             )
+            if not _prefijo_coherente:
+                _confirm = st.checkbox(
+                    f"Confirmo: crear el caso en **{ciudad_label}** aunque "
+                    f"el equipo {_equipo_code_resolved} sea de "
+                    f"{_ciudad_esperada}",
+                    key=_coherencia_key,
+                )
+                if _confirm:
+                    st.rerun()
         else:
             # 1. Crear caso local (siempre)
             # tipo_caso gobierna la copia condicional del cuestionario de
             # viabilidad (paso 7a). direccion + id_go pre-rellenan el REF de
             # la ficha de operación si los tres componentes (equipo del
             # case_id + estos dos) están presentes.
+            if not _prefijo_coherente:
+                from core.casos.case_locator import append_audit_log
+                append_audit_log({
+                    "operacion": "alta_caso_incoherente",
+                    "case_id": final_case_id,
+                    "ciudad_seleccionada": ciudad_label,
+                    "ciudad_esperada": _ciudad_esperada,
+                    "equipo": _equipo_code_resolved,
+                    "usuario": "streamlit_ui",
+                })
             with st.spinner("Creando caso local…"):
                 _path = case_manager.ensure_case(
                     final_case_id,
@@ -1400,6 +1437,7 @@ with tab_nuevo:
                     tipo_caso=tipo_caso,
                     direccion=direccion.strip() or None,
                     id_go=ref_mls.strip() or None,
+                    ciudad=ciudad_label,
                 )
             st.success(f"Caso local disponible en `{_path}`")
 

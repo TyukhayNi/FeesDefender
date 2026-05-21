@@ -288,8 +288,9 @@ EMAIL_SUBDIRS: tuple[str, ...] = (
 
 
 def caso_path(case_id: str) -> Path:
-    """Devuelve la ruta absoluta a un caso. No lo crea."""
-    return settings.casos_root / case_id
+    """Devuelve la ruta absoluta a un caso. Tolera layout flat y por ciudades."""
+    from core.casos.case_locator import path_for
+    return path_for(case_id)
 
 
 # ---------------------------------------------------------------------------
