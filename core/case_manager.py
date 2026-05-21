@@ -69,6 +69,7 @@ class CaseMeta:
     direccion: str | None = None         # v2: dirección del inmueble (refactor intake v2)
     id_go: str | None = None             # v2: ID GO de Engel & Völkers (p. ej. "BCN-OS-012905")
     tipo_caso: str | None = None         # v2 paso 7: clave de TIPOS_CASO_ALL (NEGATIVA_OFERTA, BAD_DEBT, …)
+    ciudad: str | None = None            # subdivisión por ciudades (Fase 2)
     estado: str = "instruccion"          # instruccion | predemanda | demanda | recurso | archivado
     sudespacho_expedientes: list[dict] = None   # lista de ExpedienteLink serializados
     creado_en: str = ""
@@ -120,6 +121,7 @@ def _write_case_index(case_dir: Path, meta: CaseMeta) -> Path:
         "fase": "00_Input",
         "fecha": meta.creado_en,
         "estado": meta.estado,
+        "ciudad": meta.ciudad,
         "referencia_crm": meta.referencia_crm,
         "sudespacho_expedientes": meta.sudespacho_expedientes,
         "drive": meta.drive_remote_path,
@@ -183,6 +185,7 @@ def register_expediente(
             direccion=meta_dict.get("direccion"),
             id_go=meta_dict.get("id_go"),
             tipo_caso=meta_dict.get("tipo_caso"),
+            ciudad=meta_dict.get("ciudad"),
             estado=meta_dict.get("estado", "instruccion"),
             sudespacho_expedientes=expedientes,
             creado_en=meta_dict.get("creado_en", ""),
@@ -207,6 +210,7 @@ def ensure_case(
     direccion: str | None = None,
     id_go: str | None = None,
     tipo_caso: str | None = None,
+    ciudad: str | None = None,
 ) -> Path:
     """Crea (o asegura) la estructura de un caso. Devuelve la ruta del caso.
 
@@ -239,6 +243,9 @@ def ensure_case(
         (resto): metadatos del caso, opcionales.
     """
     case_dir = caso_path(case_id)
+    if not case_dir.exists() and ciudad:
+        from core.casos.case_locator import path_for_ciudad
+        case_dir = path_for_ciudad(case_id, ciudad)
     case_dir.mkdir(parents=True, exist_ok=True)
 
     # Subcarpetas estándar (nivel 1)
@@ -273,6 +280,7 @@ def ensure_case(
             direccion=direccion,
             id_go=id_go,
             tipo_caso=tipo_caso,
+            ciudad=ciudad,
             creado_en=now_iso(),
             actualizado_en=now_iso(),
         )
@@ -297,6 +305,7 @@ def ensure_case(
             (tipo_caso is not None and persisted.get("tipo_caso") != tipo_caso_eff)
             or (direccion is not None and persisted.get("direccion") != direccion_eff)
             or (id_go is not None and persisted.get("id_go") != id_go_eff)
+            or (ciudad is not None and persisted.get("ciudad") != ciudad)
         )
         if needs_update:
             def _mutate(fm_in: dict) -> dict:
@@ -307,6 +316,9 @@ def ensure_case(
                     meta_in["direccion"] = direccion_eff
                 if id_go is not None:
                     meta_in["id_go"] = id_go_eff
+                if ciudad is not None:
+                    meta_in["ciudad"] = ciudad
+                    fm_in["ciudad"] = ciudad
                 fm_in["meta"] = meta_in
                 return fm_in
             _atomic_write_caso_md(case_id, _mutate)
@@ -448,12 +460,8 @@ def get_case_status(case_id: str) -> dict:
 
 
 def list_cases() -> list[str]:
-    if not settings.casos_root.exists():
-        return []
-    return sorted(
-        p.name for p in settings.casos_root.iterdir()
-        if p.is_dir() and not p.name.startswith("_")
-    )
+    from core.casos.case_locator import list_cases as _list
+    return sorted(p.name for p in _list())
 
 
 # ---------------------------------------------------------------------------

@@ -54,6 +54,15 @@ from core.config import (
     CLIENTE_PROPIO_DEFAULT,
     cliente_propio_id,
 )
+from core.ciudades import (
+    EQUIPOS_POR_CIUDAD_EXTRAJUDICIAL as _EQUIPOS_POR_CIUDAD_EXT,
+    EQUIPOS_EXTRAJUDICIAL            as _EQUIPOS_EXT,
+    TAG_AZUL_CIUDAD_EXTRAJUDICIAL    as _TAG_AZUL_CIUDAD_EXT,
+    EQUIPOS_POR_CIUDAD_JUDICIAL      as _EQUIPOS_POR_CIUDAD_JUD,
+    EQUIPOS_JUDICIAL                 as _EQUIPOS_JUD,
+    TAG_AZUL_CIUDAD_JUDICIAL         as _TAG_AZUL_CIUDAD_JUD,
+    ciudad_de_equipo                 as _ciudad_de_equipo,
+)
 
 # ---------------------------------------------------------------------------
 # Configuración de página + CSS corporativo Engel & Völkers
@@ -820,6 +829,151 @@ with tab_casos:
                 st.code(_email_text, language=None)
                 st.caption("Copia el texto y pégalo en un email a tus compañeros de E&V.")
 
+        st.divider()
+        with st.expander("🏙️ Reasignar ciudad"):
+            from core.casos import case_locator as _cl
+            from core.ciudades import CIUDADES as _ALL_CIUDADES
+
+            _caso_rs = st.selectbox(
+                "Caso",
+                cases,
+                key="casos_reasig_sel",
+                help="Selecciona el caso que quieres mover a otra ciudad.",
+            )
+
+            _path_actual_rs = _cl.path_for(_caso_rs)
+            _ciudad_actual_rs = (
+                _path_actual_rs.parent.name
+                if _path_actual_rs.parent != settings.casos_root
+                else "(raíz)"
+            )
+            st.caption(f"Ciudad actual: **{_ciudad_actual_rs}**")
+
+            _equipo_rs = _caso_rs.split(" - ")[0].strip() if _caso_rs else ""
+            _ciudad_esperada_rs = _ciudad_de_equipo(_equipo_rs)
+            if _ciudad_esperada_rs and _ciudad_esperada_rs != _ciudad_actual_rs:
+                st.warning(
+                    f"El prefijo `{_equipo_rs}` pertenece a "
+                    f"**{_ciudad_esperada_rs}**, pero el caso está en "
+                    f"**{_ciudad_actual_rs}**."
+                )
+
+            _ciudad_destino_rs = st.selectbox(
+                "Ciudad destino",
+                ["— selecciona —"] + list(_ALL_CIUDADES) + ["_Sin clasificar"],
+                key="casos_reasig_dest",
+                help="Catálogo cerrado. Para añadir una ciudad nueva, hablar con Nikolai.",
+            )
+
+            _motivo_rs = st.text_area(
+                "Motivo (mínimo 10 caracteres)",
+                key="casos_reasig_motivo",
+                help=(
+                    "Explica brevemente por qué reasignas el caso. Queda "
+                    "registrado en `_audit/relocations.jsonl` junto a tu actor."
+                ),
+                placeholder="Ej: prefijo SaRS1 asignado por error; el inmueble está en Bilbao",
+            )
+
+            _can_reasig = (
+                _ciudad_destino_rs != "— selecciona —"
+                and _ciudad_destino_rs != _ciudad_actual_rs
+                and len((_motivo_rs or "").strip()) >= 10
+            )
+            if st.button(
+                "🏙️ Reasignar caso",
+                key="casos_reasig_btn",
+                disabled=not _can_reasig,
+                help=(
+                    "Mueve la carpeta a la ciudad destino, actualiza el "
+                    "metadato `ciudad` en `_caso.md` y registra la operación "
+                    "en el audit log. Atómico: si falla la actualización "
+                    "del metadato, revierte el movimiento de carpeta."
+                ),
+            ):
+                with st.spinner("Reasignando…"):
+                    try:
+                        _new_path_rs = _cl.move_to_city(
+                            _caso_rs,
+                            _ciudad_destino_rs,
+                            _motivo_rs.strip(),
+                            _actor_final,
+                        )
+                        try:
+                            _rel_rs = _new_path_rs.relative_to(settings.casos_root)
+                        except ValueError:
+                            _rel_rs = _new_path_rs
+                        st.success(
+                            f"✅ Reasignado a **{_ciudad_destino_rs}** "
+                            f"(`{_rel_rs}`)."
+                        )
+                        st.cache_data.clear()
+                    except FileNotFoundError as _fnf:
+                        st.error(f"❌ Caso no encontrado: {_fnf}")
+                    except ValueError as _ve:
+                        st.error(f"❌ {_ve}")
+                    except Exception as _exc:
+                        st.error(f"❌ Error inesperado: {_exc}")
+
+        # ── Admin: histórico relocations.jsonl (solo Nikolai) ──────────
+        if _actor_final == "Nikolai Tyukhay":
+            st.divider()
+            with st.expander("🔐 Admin — Histórico de reasignaciones"):
+                import json as _json_admin
+
+                _log_path_adm = settings.casos_root / "_audit" / "relocations.jsonl"
+                if not _log_path_adm.exists():
+                    st.caption("_(sin entradas todavía)_")
+                else:
+                    _entries_adm: list[dict] = []
+                    try:
+                        with _log_path_adm.open(encoding="utf-8") as _fadm:
+                            for _line_adm in _fadm:
+                                _line_adm = _line_adm.strip()
+                                if _line_adm:
+                                    _entries_adm.append(_json_admin.loads(_line_adm))
+                    except (OSError, _json_admin.JSONDecodeError) as _exc_adm:
+                        st.error(f"No se pudo leer el log: {_exc_adm}")
+                    else:
+                        st.caption(
+                            f"**{len(_entries_adm)}** entradas en "
+                            f"`_audit/relocations.jsonl`"
+                        )
+                        _col_fa1, _col_fa2 = st.columns(2)
+                        with _col_fa1:
+                            _ops_adm = sorted(
+                                {e.get("operacion", "") for e in _entries_adm}
+                            )
+                            _filter_op_adm = st.selectbox(
+                                "Operación",
+                                ["(todas)"] + _ops_adm,
+                                key="admin_log_filter_op",
+                            )
+                        with _col_fa2:
+                            _filter_case_adm = st.text_input(
+                                "Caso contiene…",
+                                key="admin_log_filter_case",
+                                placeholder="ej: BaRS1",
+                            ).strip().lower()
+                        _filtered_adm = [
+                            e for e in _entries_adm
+                            if (
+                                _filter_op_adm == "(todas)"
+                                or e.get("operacion") == _filter_op_adm
+                            )
+                            and (
+                                not _filter_case_adm
+                                or _filter_case_adm in e.get("case_id", "").lower()
+                            )
+                        ]
+                        if _filtered_adm:
+                            st.dataframe(
+                                list(reversed(_filtered_adm)),
+                                use_container_width=True,
+                            )
+                        else:
+                            st.caption("_(sin coincidencias con los filtros)_")
+
 
 # ── TAB: Nuevo caso ─────────────────────────────────────────────────────────
 with tab_nuevo:
@@ -837,98 +991,21 @@ with tab_nuevo:
     # ------------------------------------------------------------------
     # Datos maestros
     # ------------------------------------------------------------------
+    #
+    # El catálogo de ciudades y equipos vive en `core/ciudades.py` (única
+    # fuente de verdad). Aquí solo se anteponen los placeholders propios
+    # del `st.selectbox` y se mantiene el dict de notas (no migrado a
+    # `core/ciudades.py` porque no pertenece a la subdivisión por
+    # ciudad — son tags verdes de tipo de operación).
 
-    # Equipos agrupados por ciudad — dict anidado ciudad → {label: tag_rojo}
-    _EQUIPOS_POR_CIUDAD: dict[str, dict[str, str]] = {
-        "Barcelona": {
-            "BaRR1  — BCN Residential Rentals 1":  _sc.TAG_ROJO_BaRR1,
-            "BaRR2  — BCN Residential Rentals 2":  _sc.TAG_ROJO_BaRR2,
-            "BaRR3  — BCN Residential Rentals 3":  _sc.TAG_ROJO_BaRR3,
-            "BaRR4  — BCN Residential Rentals 4":  _sc.TAG_ROJO_BaRR4,
-            "BaRR10 — BCN Residential Rentals 10": _sc.TAG_ROJO_BaRR10,
-            "BaRS1  — BCN Residential Sales 1":    _sc.TAG_ROJO_BaRS1,
-            "BaRS2  — BCN Residential Sales 2":    _sc.TAG_ROJO_BaRS2,
-            "BaRS3  — BCN Residential Sales 3":    _sc.TAG_ROJO_BaRS3,
-            "BaRS4  — BCN Residential Sales 4":    _sc.TAG_ROJO_BaRS4,
-            "BaRS5  — BCN Residential Sales 5":    _sc.TAG_ROJO_BaRS5,
-            "BaRS6  — BCN Residential Sales 6":    _sc.TAG_ROJO_BaRS6,
-            "BaRS7  — BCN Residential Sales 7":    _sc.TAG_ROJO_BaRS7,
-            "BaRS8  — BCN Residential Sales 8":    _sc.TAG_ROJO_BaRS8,
-            "BaRS9  — BCN Residential Sales 9":    _sc.TAG_ROJO_BaRS9,
-            "BaRS10 — BCN Residential Sales 10":   _sc.TAG_ROJO_BaRS10,
-            "BaRS11 — BCN Residential Sales 11":   _sc.TAG_ROJO_BaRS11,
-            "BaRS12 — BCN Residential Sales 12":   _sc.TAG_ROJO_BaRS12,
-            "BaCR1  — BCN Commercial Rentals 1":   _sc.TAG_ROJO_BaCR1,
-            "BaCR2  — BCN Commercial Rentals 2":   _sc.TAG_ROJO_BaCR2,
-            "BaCR10 — BCN Commercial Rentals 10":  _sc.TAG_ROJO_BaCR10,
-            "BaCS1  — BCN Commercial Sales 1":     _sc.TAG_ROJO_BaCS1,
-            "BaCS10 — BCN Commercial Sales 10":    _sc.TAG_ROJO_BaCS10,
-            "BaDP1  — BCN (Pendiente) 1":          _sc.TAG_ROJO_BaDP1,
-        },
-        "Bilbao": {
-            "BiRS1  — Bilbao Residential Sales 1": _sc.TAG_ROJO_BiRS1,
-            "BiRS2  — Bilbao Residential Sales 2": _sc.TAG_ROJO_BiRS2,
-        },
-        "Madrid": {
-            "MaRR1  — MAD Residential Rentals 1":  _sc.TAG_ROJO_MaRR1,
-            "MaRR2  — MAD Residential Rentals 2":  _sc.TAG_ROJO_MaRR2,
-            "MaRR3  — MAD Residential Rentals 3":  _sc.TAG_ROJO_MaRR3,
-            "MaRS1  — MAD Residential Sales 1":    _sc.TAG_ROJO_MaRS1,
-            "MaRS2  — MAD Residential Sales 2":    _sc.TAG_ROJO_MaRS2,
-            "MaRS3  — MAD Residential Sales 3":    _sc.TAG_ROJO_MaRS3,
-            "MaRS4  — MAD Residential Sales 4":    _sc.TAG_ROJO_MaRS4,
-            "MaRS5  — MAD Residential Sales 5":    _sc.TAG_ROJO_MaRS5,
-            "MaRS6  — MAD Residential Sales 6":    _sc.TAG_ROJO_MaRS6,
-            "MaRS7  — MAD Residential Sales 7":    _sc.TAG_ROJO_MaRS7,
-            "MaRS8  — MAD Residential Sales 8":    _sc.TAG_ROJO_MaRS8,
-            "MaRS9  — MAD Residential Sales 9":    _sc.TAG_ROJO_MaRS9,
-            "MaRS10 — MAD Residential Sales 10":   _sc.TAG_ROJO_MaRS10,
-            "MaRS11 — MAD Residential Sales 11":   _sc.TAG_ROJO_MaRS11,
-            "MaRS12 — MAD Residential Sales 12":   _sc.TAG_ROJO_MaRS12,
-            "MaRS13 — MAD Residential Sales 13":   _sc.TAG_ROJO_MaRS13,
-            "MaRS14 — MAD Residential Sales 14":   _sc.TAG_ROJO_MaRS14,
-            "MaRS15 — MAD Residential Sales 15":   _sc.TAG_ROJO_MaRS15,
-            "MaPD1  — MAD (Pendiente) 1":          _sc.TAG_ROJO_MaPD1,
-        },
-        "San Sebastián": {
-            "SSRR1  — San Sebastián Residential Rentals 1": _sc.TAG_ROJO_SSRR1,
-            "SSRS1  — San Sebastián Residential Sales 1":   _sc.TAG_ROJO_SSRS1,
-        },
-        "Santander": {
-            "SaRS1  — Santander Residential Sales 1": _sc.TAG_ROJO_SaRS1,
-        },
-        "Sevilla": {
-            "SeRS1  — Sevilla Residential Sales 1":  _sc.TAG_ROJO_SeRS1,
-            "SeRS6  — Sevilla Residential Sales 6":  _sc.TAG_ROJO_SeRS6,
-        },
-        "Valencia": {
-            "VaCR1  — Valencia Commercial Rentals 1":  _sc.TAG_ROJO_VaCR1,
-            "VaCR2  — Valencia Commercial Rentals 2":  _sc.TAG_ROJO_VaCR2,
-            "VaPD1  — Valencia (pendiente) 1":         _sc.TAG_ROJO_VaPD1,
-            "VaRR1  — Valencia Residential Rentals 1": _sc.TAG_ROJO_VaRR1,
-            "VaRR3  — Valencia Residential Rentals 3": _sc.TAG_ROJO_VaRR3,
-            "VaRS1  — Valencia Residential Sales 1":   _sc.TAG_ROJO_VaRS1,
-            "VaRS2  — Valencia Residential Sales 2":   _sc.TAG_ROJO_VaRS2,
-            "VaRS3  — Valencia Residential Sales 3":   _sc.TAG_ROJO_VaRS3,
-            "VaRS4  — Valencia Residential Sales 4":   _sc.TAG_ROJO_VaRS4,
-            "VaRS5  — Valencia Residential Sales 5":   _sc.TAG_ROJO_VaRS5,
-        },
-    }
+    _PLACEHOLDER_CIUDAD = "— selecciona ciudad —"
 
-    # Dict plano completo (para lookup de tags al construir el expediente)
-    _EQUIPOS: dict[str, str] = {
-        k: v for equipos in _EQUIPOS_POR_CIUDAD.values() for k, v in equipos.items()
-    }
-
-    _CIUDADES: dict[str, str | None] = {
-        "— selecciona ciudad —": None,
-        "Barcelona":     _sc.TAG_AZUL_BARCELONA,
-        "Bilbao":        _sc.TAG_AZUL_BILBAO,
-        "Madrid":        _sc.TAG_AZUL_MADRID,
-        "San Sebastián": _sc.TAG_AZUL_SAN_SEBASTIAN,
-        "Santander":     _sc.TAG_AZUL_SANTANDER,
-        "Sevilla":       _sc.TAG_AZUL_SEVILLA,
-        "Valencia":      _sc.TAG_AZUL_VALENCIA,
+    # Extrajudicial
+    _EQUIPOS_POR_CIUDAD: dict[str, dict[str, str]] = _EQUIPOS_POR_CIUDAD_EXT
+    _EQUIPOS:            dict[str, str]            = _EQUIPOS_EXT
+    _CIUDADES:           dict[str, str | None]     = {
+        _PLACEHOLDER_CIUDAD: None,
+        **_TAG_AZUL_CIUDAD_EXT,
     }
 
     _NOTAS: dict[str, str] = {
@@ -942,97 +1019,16 @@ with tab_nuevo:
         "RESPONSABILIDAD_PROFESIONAL":     _sc.NOTA_RESPONSABILIDAD_PROF,
         "DEVOLUCION_RESERVA":              _sc.NOTA_DEVOLUCION_RESERVA,
         "LAU_20":                          _sc.NOTA_LAU_20,
+        "DEVOLUCION_HONORARIOS":           _sc.NOTA_DEVOLUCION_HONORARIOS,
         "OTROS":                           _sc.NOTA_OTROS,
     }
 
-    # Equipos judiciales — grupo 2 (J_TAG_* del módulo sudespacho_create)
-    _J_EQUIPOS_POR_CIUDAD: dict[str, dict[str, str]] = {
-        "Barcelona": {
-            "BaRR1  — BCN Residential Rentals 1":  _sc.J_TAG_ROJO_BaRR1,
-            "BaRR2  — BCN Residential Rentals 2":  _sc.J_TAG_ROJO_BaRR2,
-            "BaRR3  — BCN Residential Rentals 3":  _sc.J_TAG_ROJO_BaRR3,
-            "BaRR4  — BCN Residential Rentals 4":  _sc.J_TAG_ROJO_BaRR4,
-            "BaRR10 — BCN Residential Rentals 10": _sc.J_TAG_AZUL_BaRR10,
-            "BaRS1  — BCN Residential Sales 1":    _sc.J_TAG_ROJO_BaRS1,
-            "BaRS2  — BCN Residential Sales 2":    _sc.J_TAG_ROJO_BaRS2,
-            "BaRS3  — BCN Residential Sales 3":    _sc.J_TAG_ROJO_BaRS3,
-            "BaRS4  — BCN Residential Sales 4":    _sc.J_TAG_AZUL_BaRS4,
-            "BaRS5  — BCN Residential Sales 5":    _sc.J_TAG_ROJO_BaRS5,
-            "BaRS6  — BCN Residential Sales 6":    _sc.J_TAG_ROJO_BaRS6,
-            "BaRS7  — BCN Residential Sales 7":    _sc.J_TAG_ROJO_BaRS7,
-            "BaRS8  — BCN Residential Sales 8":    _sc.J_TAG_ROJO_BaRS8,
-            "BaRS9  — BCN Residential Sales 9":    _sc.J_TAG_ROJO_BaRS9,
-            "BaRS10 — BCN Residential Sales 10":   _sc.J_TAG_ROJO_BaRS10,
-            "BaRS11 — BCN Residential Sales 11":   _sc.J_TAG_ROJO_BaRS11,
-            "BaRS12 — BCN Residential Sales 12":   _sc.J_TAG_ROJO_BaRS12,
-            "BaCR1  — BCN Commercial Rentals 1":   _sc.J_TAG_ROJO_BaCR1,
-            "BaCR10 — BCN Commercial Rentals 10":  _sc.J_TAG_ROJO_BaCR10,
-            "BaCS1  — BCN Commercial Sales 1":     _sc.J_TAG_ROJO_BaCS1,
-            "BaCS2  — BCN Commercial Sales 2":     _sc.J_TAG_AZUL_BaCS2,
-            "BaDP1  — BCN (pendiente) 1":          _sc.J_TAG_ROJO_BaDP1,
-        },
-        "Bilbao": {
-            "BiRS1  — Bilbao Residential Sales 1": _sc.J_TAG_ROJO_BiRS1,
-            "BiRS2  — Bilbao Residential Sales 2": _sc.J_TAG_ROJO_BiRS2,
-        },
-        "Madrid": {
-            "MaRR1  — MAD Residential Rentals 1":  _sc.J_TAG_ROJO_MaRR1,
-            "MaRR2  — MAD Residential Rentals 2":  _sc.J_TAG_AZUL_MaRR2,
-            "MaRR3  — MAD Residential Rentals 3":  _sc.J_TAG_ROJO_MaRR3,
-            "MaRS1  — MAD Residential Sales 1":    _sc.J_TAG_ROJO_MaRS1,
-            "MaRS2  — MAD Residential Sales 2":    _sc.J_TAG_ROJO_MaRS2,
-            "MaRS3  — MAD Residential Sales 3":    _sc.J_TAG_ROJO_MaRS3,
-            "MaRS4  — MAD Residential Sales 4":    _sc.J_TAG_ROJO_MaRS4,
-            "MaRS5  — MAD Residential Sales 5":    _sc.J_TAG_ROJO_MaRS5,
-            "MaRS6  — MAD Residential Sales 6":    _sc.J_TAG_ROJO_MaRS6,
-            "MaRS7  — MAD Residential Sales 7":    _sc.J_TAG_ROJO_MaRS7,
-            "MaRS8  — MAD Residential Sales 8":    _sc.J_TAG_ROJO_MaRS8,
-            "MaRS9  — MAD Residential Sales 9":    _sc.J_TAG_ROJO_MaRS9,
-            "MaRS10 — MAD Residential Sales 10":   _sc.J_TAG_ROJO_MaRS10,
-            "MaRS11 — MAD Residential Sales 11":   _sc.J_TAG_ROJO_MaRS11,
-            "MaRS12 — MAD Residential Sales 12":   _sc.J_TAG_ROJO_MaRS12,
-            "MaRS13 — MAD Residential Sales 13":   _sc.J_TAG_ROJO_MaRS13,
-            "MaRS14 — MAD Residential Sales 14":   _sc.J_TAG_ROJO_MaRS14,
-            "MaRS15 — MAD Residential Sales 15":   _sc.J_TAG_ROJO_MaRS15,
-            "MaPD1  — MAD (pendiente) 1":          _sc.J_TAG_ROJO_MaPD1,
-        },
-        "San Sebastián": {
-            "SSRR1  — San Sebastián Residential Rentals 1": _sc.J_TAG_ROJO_SSRR1,
-            "SSRS1  — San Sebastián Residential Sales 1":   _sc.J_TAG_ROJO_SSRS1,
-        },
-        "Santander": {
-            "SaRS1  — Santander Residential Sales 1": _sc.J_TAG_ROJO_SaRS1,
-        },
-        "Sevilla": {
-            "SeRS1  — Sevilla Residential Sales 1":  _sc.J_TAG_ROJO_SeRS1,
-            "SeRS6  — Sevilla Residential Sales 6":  _sc.J_TAG_ROJO_SeRS6,
-        },
-        "Valencia": {
-            "VaCR1  — Valencia Commercial Rentals 1":  _sc.J_TAG_ROJO_VaCR1,
-            "VaCR2  — Valencia Commercial Rentals 2":  _sc.J_TAG_ROJO_VaCR2,
-            "VaCS1  — Valencia Commercial Sales 1":    _sc.J_TAG_AZUL_VaCS1,
-            "VaPD1  — Valencia (pendiente) 1":         _sc.J_TAG_ROJO_VaPD1,
-            "VaRR1  — Valencia Residential Rentals 1": _sc.J_TAG_ROJO_VaRR1,
-            "VaRR3  — Valencia Residential Rentals 3": _sc.J_TAG_ROJO_VaRR3,
-            "VaRS1  — Valencia Residential Sales 1":   _sc.J_TAG_ROJO_VaRS1,
-            "VaRS2  — Valencia Residential Sales 2":   _sc.J_TAG_ROJO_VaRS2,
-            "VaRS3  — Valencia Residential Sales 3":   _sc.J_TAG_ROJO_VaRS3,
-            "VaRS4  — Valencia Residential Sales 4":   _sc.J_TAG_ROJO_VaRS4,
-            "VaRS5  — Valencia Residential Sales 5":   _sc.J_TAG_ROJO_VaRS5,
-        },
-    }
-    _J_EQUIPOS: dict[str, str] = {
-        k: v for equipos in _J_EQUIPOS_POR_CIUDAD.values() for k, v in equipos.items()
-    }
-    _J_CIUDADES: dict[str, str | None] = {
-        "— selecciona ciudad —": None,
-        "Barcelona":     _sc.J_TAG_AZUL_CIUDAD_BARCELONA,
-        "Bilbao":        _sc.J_TAG_AZUL_CIUDAD_BILBAO,
-        "Madrid":        _sc.J_TAG_AZUL_CIUDAD_MADRID,
-        "San Sebastián": _sc.J_TAG_AZUL_CIUDAD_SAN_SEBASTIAN,
-        "Santander":     _sc.J_TAG_AZUL_CIUDAD_SANTANDER,
-        "Sevilla":       _sc.J_TAG_AZUL_CIUDAD_SEVILLA,
-        "Valencia":      _sc.J_TAG_AZUL_CIUDAD_VALENCIA,
+    # Judicial
+    _J_EQUIPOS_POR_CIUDAD: dict[str, dict[str, str]] = _EQUIPOS_POR_CIUDAD_JUD
+    _J_EQUIPOS:            dict[str, str]            = _EQUIPOS_JUD
+    _J_CIUDADES:           dict[str, str | None]     = {
+        _PLACEHOLDER_CIUDAD: None,
+        **_TAG_AZUL_CIUDAD_JUD,
     }
 
     # Selección activa según tipo de expediente
@@ -1087,11 +1083,17 @@ with tab_nuevo:
     if _drive_url_cached:
         try:
             _fid_cached = parse_drive_url(_drive_url_cached)
+            # Solo intentamos auto-fill si NO se ha resuelto ya para este folder_id
+            # con éxito (sentinel `_nc_drive_autofilled_fid` se marca abajo SOLO
+            # tras éxito — un fallo no queda cacheado y se reintenta en el
+            # siguiente rerun automáticamente).
             if st.session_state.get("_nc_drive_autofilled_fid") != _fid_cached:
                 with st.spinner("Obteniendo metadatos de carpeta…"):
                     _folder_info_top = _get_drive_folder_info(_fid_cached)
-                st.session_state["_nc_drive_autofilled_fid"] = _fid_cached
                 if _folder_info_top:
+                    # Marcar éxito SOLO si la llamada devolvió info útil.
+                    st.session_state["_nc_drive_autofilled_fid"] = _fid_cached
+                    st.session_state.pop("_nc_drive_autofill_failed", None)
                     # Dirección e ID GO
                     _auto_dir_top, _auto_mls_top = _parse_ev_folder_name(_folder_info_top.name)
                     if _auto_dir_top and not st.session_state.get("nc_dir"):
@@ -1112,6 +1114,10 @@ with tab_nuevo:
                             if st.session_state.get("nc_ciudad", "— selecciona ciudad —") == "— selecciona ciudad —":
                                 st.session_state["nc_ciudad"] = _auto_ciudad
                                 st.session_state["nc_equipo"] = _auto_equipo
+                else:
+                    # Fallo: NO marcar sentinel — así un rerun posterior reintenta.
+                    # Sí marcar flag de fallo para que la UI muestre warning.
+                    st.session_state["_nc_drive_autofill_failed"] = _fid_cached
         except ValueError:
             pass
 
@@ -1167,6 +1173,26 @@ with tab_nuevo:
                     "de la URL del Drive. Verifica que los datos son correctos antes de continuar.",
                     icon="ℹ️",
                 )
+            elif st.session_state.get("_nc_drive_autofill_failed") == _fid_preview:
+                # La llamada a Drive API falló para este folder_id (rate-limit,
+                # token caducado, permisos, etc.). Avisamos al usuario y le
+                # ofrecemos reintentar — el flag no es sticky: en cada rerun
+                # se vuelve a intentar la llamada y, si funciona, este aviso
+                # desaparece.
+                st.warning(
+                    "No se pudieron obtener los metadatos del Drive para esta URL. "
+                    "Causa habitual: cuota de Google Drive API saturada (compartida con "
+                    "otros usuarios de rclone) — suele restablecerse en 1-2 min. "
+                    "También puede ser token caducado de gdrive_ev o falta de permisos "
+                    "sobre la carpeta. Puedes rellenar los campos manualmente o "
+                    "reintentar pulsando el botón.",
+                    icon="⚠️",
+                )
+                if st.button("🔄 Reintentar auto-fill", key="nc_drive_retry_autofill"):
+                    # Limpiar flag de fallo: el bloque de auto-fill se ejecuta
+                    # en el siguiente render y reintentará la llamada.
+                    st.session_state.pop("_nc_drive_autofill_failed", None)
+                    st.rerun()
         except ValueError:
             st.caption("⚠️ URL no reconocida — revisa el formato.")
 
@@ -1498,18 +1524,54 @@ with tab_nuevo:
         if mail_otros.strip() and not _valid_email(mail_otros):
             _missing.append("Mail Otros implicados — formato inválido")
 
+        # Validación blanda de coherencia prefijo↔ciudad (Fase 2 subdivisión)
+        _ciudad_esperada = _ciudad_de_equipo(_equipo_code_resolved)
+        _prefijo_coherente = (
+            _ciudad_esperada is None
+            or _ciudad_esperada == ciudad_label
+        )
+        _coherencia_key = f"_coherencia_ok_{final_case_id}"
+        if (
+            not _prefijo_coherente
+            and not st.session_state.get(_coherencia_key, False)
+        ):
+            _missing.append(
+                f"El equipo **{_equipo_code_resolved}** pertenece a "
+                f"**{_ciudad_esperada}** pero has seleccionado "
+                f"**{ciudad_label}**"
+            )
+
         if _missing:
             st.error(
                 "Completa o corrige los siguientes campos: **"
                 + "**, **".join(_missing)
                 + "**."
             )
+            if not _prefijo_coherente:
+                _confirm = st.checkbox(
+                    f"Confirmo: crear el caso en **{ciudad_label}** aunque "
+                    f"el equipo {_equipo_code_resolved} sea de "
+                    f"{_ciudad_esperada}",
+                    key=_coherencia_key,
+                )
+                if _confirm:
+                    st.rerun()
         else:
             # 1. Crear caso local (siempre)
             # tipo_caso gobierna la copia condicional del cuestionario de
             # viabilidad (paso 7a). direccion + id_go pre-rellenan el REF de
             # la ficha de operación si los tres componentes (equipo del
             # case_id + estos dos) están presentes.
+            if not _prefijo_coherente:
+                from core.casos.case_locator import append_audit_log
+                append_audit_log({
+                    "operacion": "alta_caso_incoherente",
+                    "case_id": final_case_id,
+                    "ciudad_seleccionada": ciudad_label,
+                    "ciudad_esperada": _ciudad_esperada,
+                    "equipo": _equipo_code_resolved,
+                    "usuario": "streamlit_ui",
+                })
             with st.spinner("Creando caso local…"):
                 _path = case_manager.ensure_case(
                     final_case_id,
@@ -1520,6 +1582,7 @@ with tab_nuevo:
                     tipo_caso=tipo_caso,
                     direccion=direccion.strip() or None,
                     id_go=ref_mls.strip() or None,
+                    ciudad=ciudad_label,
                 )
             st.success(f"Caso local disponible en `{_path}`")
 

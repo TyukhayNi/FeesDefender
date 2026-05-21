@@ -8,16 +8,20 @@
 ├─────────────────────────────────────┤
 │ Core: pipeline + módulos            │  ← lógica de negocio
 │   case_manager · sync · inventory    │
+│   casos/case_locator                 │  ← resolución de rutas (flat ↔ ciudad)
+│   ciudades                           │  ← catálogo cerrado + prefijo→ciudad
 │   sync_sudespacho · sync_sudespacho_legacy
 │   sudespacho_create · sudespacho_relations
 │   intake_drive                       │  ← pull Drive E&V (rclone gdrive_ev)
 │   intake_manual                      │  ← upload manual a 04_Manual/
 │   intake_log · intake_manifest       │  ← refactor v2 (M10 + M9)
+│   anon/ (api · separar · ocr · …)    │  ← absorbido de Expedientes Seguros
 │   extractor · markdown_generator     │
 │   scorer · viability · demanda       │
 │   linker · llm · pipeline            │
 ├─────────────────────────────────────┤
-│ Datos: data/CASOS/{case_id}/        │  ← fuente de verdad (.md)
+│ Datos: CASOS_ROOT/<Ciudad>/{case_id}/│  ← fuente de verdad (.md)
+│   _audit/relocations.jsonl           │  ← log forense de reasignaciones
 └─────────────────────────────────────┘
 ```
 
@@ -59,6 +63,9 @@ Cada paso es ejecutable de forma aislada. El pipeline es **idempotente**: re-eje
 | `core/config.py` — `CRM_TREE` o `CARPETA_ID_TO_PATH` | `docs/INTEGRACION_SUDESPACHO.md` §13.5 (mappings), `docs/INTEGRACION_SUDESPACHO.md` §13.6 (estructura árbol) |
 | `core/anon/mapa_caso.py` — `SUBDIR_ANONIMIZADO` / `MAPA_FILENAME` | `core/anon/deanonimizar.py` (`_SUBDIR_ANONIMIZADO` / `_MAPA_CASO_FILENAME` replicados para evitar acoplar el deanonimizador al resto del core; mantenerlos sincronizados) |
 | `core/anon/api.py` — campos del frontmatter del .md anonimizado | `core/anon/deanonimizar.py::_mapa_desde_frontmatter` (lee `mapa_caso_path` / `mapa_entidades` como fallback); añadir el nuevo nombre si se renombra |
+| `core/ciudades.py` — catálogo `CIUDADES` o función `ciudad_de_equipo` | `core/casos/case_locator.py` (`_CITY_NAMES` ya lo lee dinámicamente, pero los tests fijan ciudades concretas), `streamlit_app.py` selector ciudad (validación blanda prefijo↔ciudad + expander Reasignar) |
+| `core/casos/case_locator.py` — API de resolución de rutas | Toda llamada que componía `settings.casos_root / case_id` (auditar con grep) — `core/case_manager.list_cases`, `core/config.caso_path`, `scripts/{audit_referencias_casos,scheduled_sync,sync_sudespacho}.py` |
+| Catálogo `CIUDADES` cambia (nueva oficina) | Tests `tests/test_case_locator.py` actualizan expectativas; revisar si los expedientes en `_Sin clasificar/` corresponden a la ciudad nueva y reasignar manualmente con `scripts/migrate_to_city_structure.py` o UI «Reasignar ciudad» |
 | `data/_plantillas/*.yaml` | regenerar XLSX con `python -m scripts.render_plantillas all` y commitear ambos (YAML + XLSX) |
 | Añadir módulo nuevo en `core/` | `core/__init__.py`, `docs/ARQUITECTURA.md` diagrama de capas, `STATUS.md` inventario |
 | Añadir script en `scripts/` | `STATUS.md` sección "Cómo arrancar", `pyproject.toml` si tiene entry point |
@@ -123,6 +130,24 @@ El campo `quality_score` (null por defecto) se rellena manualmente tras revisar 
 ## Aislamiento por caso
 
 `case_id` es la unidad de aislamiento. El core no asume rutas absolutas: todo se compone a partir de `settings.casos_root`. Esto prepara el salto a SaaS multi-tenant: en producción, `CASOS_ROOT` se monta por cliente.
+
+### Jerarquía CASOS_ROOT por ciudades
+
+Desde 2026-05-21 (sesión 25) la raíz está subdividida en carpetas-ciudad: `CASOS_ROOT/<Ciudad>/<case_id>/`. Catálogo cerrado en `core/ciudades.CIUDADES` (Barcelona, Bilbao, Madrid, San Sebastián, Santander, Sevilla, Valencia) + fallback `_Sin clasificar`. Las carpetas con prefijo `_` (`_PLANTILLA`, `_audit`, `_Sin clasificar`) son de sistema — la regla la encapsula `core/ciudades.es_carpeta_de_sistema`.
+
+**`core/casos/case_locator` es la única puerta de entrada para resolver rutas de expedientes.** Nadie en el core compone `settings.casos_root / case_id` directamente; todos pasan por:
+
+- `path_for(case_id)` — busca primero plano en raíz (legacy), luego en cada ciudad del catálogo + `_Sin clasificar`. Devuelve la ruta plana si no encuentra el caso (compat con creación de nuevos).
+- `path_for_ciudad(case_id, ciudad)` — calcula la ruta esperada sin chequear existencia (uso interno y migración).
+- `move_to_city(case_id, ciudad, motivo, usuario)` — atómico: mover carpeta + actualizar campo `ciudad` en `00_Input/_caso.md` + escribir línea en `_audit/relocations.jsonl`. Rollback automático si falla la actualización del metadato.
+- `list_cases(ciudad=None)` — itera todos los expedientes (o los de una ciudad concreta) deduplicando entre raíz plana (legacy) y ciudades.
+- `append_audit_log(entry)` — JSONL append-only en `CASOS_ROOT/_audit/relocations.jsonl` con timestamp UTC auto.
+
+El campo `ciudad` se persiste tanto en `meta.ciudad` como en la raíz del frontmatter de `_caso.md`. La detección automática prefijo→ciudad se hace con `core/ciudades.ciudad_de_equipo(codigo)`.
+
+**Segundo nivel `<Ciudad>/<Equipo>/<case_id>` preparado pero no activado.** `case_locator` tolera el catálogo actual; si en el futuro se decide subdividir además por equipo, el refactor de call-sites ya no será necesario — solo cambiar la composición en `path_for_ciudad`.
+
+Histórico operativo: la migración inicial del 2026-05-21 movió 9 expedientes a 5 ciudades (Barcelona, Madrid, Santander, Sevilla, Valencia). Plan completo en `docs/PLAN_SUBDIVISION_CIUDADES.md`. Snapshot pre-migración persistido en `_audit/snapshot_pre_migration_20260521_013728.json`.
 
 ---
 

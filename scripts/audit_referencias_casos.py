@@ -141,15 +141,13 @@ def _audit_case(case_dir: Path) -> dict:
 
 
 def _list_case_dirs(casos_root: Path, only_case: str | None) -> list[Path]:
+    from core.casos.case_locator import list_cases, path_for
     if not casos_root.exists():
         return []
     if only_case:
-        target = casos_root / only_case
+        target = path_for(only_case)
         return [target] if target.exists() else []
-    return sorted(
-        p for p in casos_root.iterdir()
-        if p.is_dir() and not p.name.startswith("_")
-    )
+    return list(list_cases())
 
 
 def _print_summary(reports: list[dict]) -> None:

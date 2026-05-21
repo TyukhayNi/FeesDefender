@@ -37,7 +37,9 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import time
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .case_manager import register_drive_ev
@@ -51,6 +53,18 @@ from .utils import now_iso
 
 _DRIVE_EV_INPUT_SUBDIR = "01_Drive EV"
 _PULL_MARKER = ".pulled"
+
+# Backoff (segundos) para reintentar get_drive_folder_info cuando la Drive API
+# devuelve 403/429 con reason == rateLimitExceeded. La cuota global del OAuth
+# client compartido de rclone (project 202264815644) se reinicia cada minuto;
+# los backoffs cubren ese escenario sin bloquear la UI más de ~17 s en total.
+_RATE_LIMIT_BACKOFF_SECONDS: tuple[float, ...] = (2.0, 5.0, 10.0)
+
+# Margen de seguridad antes de la expiración nominal del access_token de
+# `gdrive_ev`. Si el token vence en menos de este intervalo (o ya está
+# vencido), `_get_drive_access_token` fuerza un refresh proactivo vía
+# `rclone about gdrive_ev:` (que usa el refresh_token y reescribe la conf).
+_TOKEN_EXPIRY_MARGIN = timedelta(minutes=5)
 
 # Regex que cubre los formatos habituales de URL de carpeta Google Drive:
 #   https://drive.google.com/drive/folders/{id}
@@ -150,17 +164,35 @@ def pull_drive_ev(
 
     marker = target_dir / _PULL_MARKER
 
-    # --- Idempotencia: skip si .pulled existe y no se fuerza ---
+    # --- Idempotencia: skip si .pulled existe, no se fuerza, y el pull
+    # previo terminó OK (rclone_returncode==0). Si el último intento falló
+    # (returncode != 0), reintentamos automáticamente sin que el usuario
+    # tenga que borrar `.pulled` a mano. Esto evita el modo "pull eternamente
+    # bloqueado" cuando un fallo transitorio dejó el marker con un error.
     if marker.exists() and not force:
-        files_after = _count_files(target_dir)
-        return DriveIntakeResult(
-            case_id=case_id,
-            team_id=team_id,
-            folder_id=folder_id,
-            target_dir=target_dir,
-            files_after=files_after,
-            skipped=True,
-        )
+        # Markers legacy sin `rclone_returncode` (p.ej. `{}`) se tratan como
+        # éxito para preservar la idempotencia histórica. Solo se reintenta
+        # cuando el marker registra explícitamente returncode != 0.
+        prev_returncode: int = 0
+        try:
+            prev = json.loads(marker.read_text(encoding="utf-8"))
+            if isinstance(prev, dict):
+                rc = prev.get("rclone_returncode", 0)
+                prev_returncode = int(rc) if isinstance(rc, (int, str)) and str(rc).lstrip("-").isdigit() else 0
+        except (OSError, json.JSONDecodeError):
+            # `.pulled` ilegible / corrupto → tratar como pull previo OK.
+            prev_returncode = 0
+
+        if prev_returncode == 0:
+            files_after = _count_files(target_dir)
+            return DriveIntakeResult(
+                case_id=case_id,
+                team_id=team_id,
+                folder_id=folder_id,
+                target_dir=target_dir,
+                files_after=files_after,
+                skipped=True,
+            )
 
     # --- Ejecutar rclone ---
     # --drive-skip-shortcuts: omite cualquier acceso directo en la jerarquía
@@ -168,6 +200,24 @@ def pull_drive_ev(
     # ficheros que el usuario corporativo ha perdido al rotar de cuenta o
     # al ser borrados; sin este flag, un único dangling shortcut provoca
     # rclone exit 1 aunque el resto de ficheros se haya copiado bien).
+    #
+    # --ignore-size + --ignore-checksum + --inplace: el destino vive en un
+    # Shared Drive montado por Google Drive for Desktop (G:\Unidades
+    # compartidas\…). Drive Desktop intercepta la escritura: cuando rclone
+    # finaliza el `.partial` y lo renombra al fichero final, Drive Desktop
+    # reescribe metadatos y `stat()` devuelve un tamaño ligeramente
+    # superior al del origen (observado +128, +268 bytes en sesión 21,
+    # 2026-05-19, caso BaRS10). Eso dispara "corrupted on transfer: sizes
+    # differ" aunque los bytes se hayan transferido al 100%. La integridad
+    # real está garantizada por TLS de Drive API en ambos extremos; los
+    # tres flags conjuntos suprimen la verificación post-transfer (size +
+    # checksum) y eliminan el rename `.partial → final` que es el evento
+    # que más confunde a Drive Desktop.
+    #
+    # --retries 3 / --retries-sleep 5s: cubre errores transitorios de la
+    # Drive API (rateLimitExceeded, 5xx). --low-level-retries (default 10)
+    # cubre blips de TCP; los --retries cubren el ciclo completo.
+    # Cierra [SIGUIENTE-DRIVE-RCLONE-RETRIES] de STATUS.md.
     remote = settings.drive_ev_remote   # "gdrive_ev" por defecto
     cmd = [
         settings.rclone_binary,
@@ -177,6 +227,11 @@ def pull_drive_ev(
         "--drive-team-drive", team_id,
         "--drive-root-folder-id", folder_id,
         "--drive-skip-shortcuts",
+        "--ignore-size",
+        "--ignore-checksum",
+        "--inplace",
+        "--retries", "3",
+        "--retries-sleep", "5s",
         "--stats-one-line-date",
         "--log-level", "INFO",
     ]
@@ -299,25 +354,168 @@ class DriveFolderInfo:
     drive_id: str       # ID del Shared Drive que contiene la carpeta
 
 
+def _parse_rclone_token_block(stdout: str) -> dict | None:
+    """Extrae el dict JSON de la línea ``token = {...}`` de ``rclone config show``.
+
+    Devuelve None si no encuentra la línea o si el JSON no parsea.
+    """
+    for line in stdout.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("token"):
+            continue
+        parts = stripped.split("=", 1)
+        if len(parts) != 2:
+            continue
+        try:
+            data = json.loads(parts[1].strip())
+        except Exception:
+            return None
+        return data if isinstance(data, dict) else None
+    return None
+
+
+def _parse_iso_expiry(value: str) -> datetime:
+    """Parsea un timestamp ISO 8601 (con offset o ``Z``) a ``datetime`` UTC.
+
+    rclone escribe ``expiry`` con precisión nanosegundo (hasta 9 dígitos en
+    la fracción) y offset numérico, p.ej. ``2026-05-19T10:23:45.123456789+02:00``.
+    Python <3.11 sólo admite hasta 6 dígitos en la fracción y no acepta el
+    sufijo ``Z`` en ``datetime.fromisoformat``; ambos casos se normalizan aquí.
+
+    Raises:
+        ValueError: si el string no parsea como datetime ISO 8601.
+    """
+    raw = value.strip()
+    # Truncar la fracción de segundos a 6 dígitos (microsegundos) preservando
+    # el sufijo de zona horaria si lo hay.
+    if "." in raw:
+        head, _, tail = raw.partition(".")
+        frac, tz = tail, ""
+        for i, ch in enumerate(tail):
+            if not ch.isdigit():
+                frac, tz = tail[:i], tail[i:]
+                break
+        if len(frac) > 6:
+            frac = frac[:6]
+        raw = f"{head}.{frac}{tz}" if frac else f"{head}{tz}"
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    dt = datetime.fromisoformat(raw)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
 def _get_drive_access_token() -> str | None:
-    """Extrae el access_token OAuth del remote gdrive_ev en rclone.conf."""
-    import json as _json
+    """Devuelve un access_token OAuth vigente del remote ``gdrive_ev``.
+
+    Lee el bloque ``token = {...}`` que rclone almacena en ``rclone.conf``
+    para el remote ``gdrive_ev`` y, si el campo ``expiry`` indica que el
+    access_token está caducado o vence dentro de :data:`_TOKEN_EXPIRY_MARGIN`,
+    fuerza un refresh proactivo ejecutando ``rclone about gdrive_ev:``. Esta
+    operación trivial obliga a rclone a usar el ``refresh_token`` para emitir
+    un nuevo access_token y reescribir la conf. Tras el refresh, releemos el
+    bloque y devolvemos el nuevo access_token.
+
+    Comportamiento defensivo:
+
+    - ``expiry`` ausente o malformado → devuelve el access_token tal cual
+      (preserva el comportamiento previo a la renovación proactiva; el
+      keep-alive diario mitiga el riesgo en producción).
+    - Refresh falla (rclone devuelve != 0 o lanza excepción) → ``None``.
+      No devolvemos el access_token caducado: sabemos que dará 401.
+    - Lectura inicial falla → ``None``.
+
+    Esta función NO lanza excepciones — todos los fallos se silencian y se
+    devuelve ``None`` para que el auto-fill (callers como
+    :func:`get_drive_folder_info`) degrade limpiamente.
+    """
+    # --- 1ª lectura del bloque token ---------------------------------------
     try:
         result = subprocess.run(
             ["rclone", "config", "show", "gdrive_ev"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=5,
         )
-        for line in result.stdout.splitlines():
-            stripped = line.strip()
-            if stripped.startswith("token"):
-                parts = stripped.split("=", 1)
-                if len(parts) == 2:
-                    token_json = parts[1].strip()
-                    access_token = _json.loads(token_json).get("access_token")
-                    return access_token or None
     except Exception:
-        pass
-    return None
+        return None
+
+    token_data = _parse_rclone_token_block(result.stdout or "")
+    if not token_data:
+        return None
+
+    access_token = token_data.get("access_token") or None
+    expiry_raw = token_data.get("expiry")
+
+    # --- Sin expiry o malformado: comportamiento legado --------------------
+    if not expiry_raw:
+        return access_token
+    try:
+        expiry_dt = _parse_iso_expiry(expiry_raw)
+    except Exception:
+        return access_token
+
+    # --- Vigente con margen suficiente -------------------------------------
+    now = datetime.now(timezone.utc)
+    if expiry_dt - now > _TOKEN_EXPIRY_MARGIN:
+        return access_token
+
+    # --- Caducado o a punto de caducar: forzar refresh ---------------------
+    try:
+        refresh = subprocess.run(
+            ["rclone", "about", "gdrive_ev:"],
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=10,
+        )
+    except Exception:
+        return None
+    if refresh.returncode != 0:
+        return None
+
+    # --- Releer el bloque tras el refresh ----------------------------------
+    try:
+        result2 = subprocess.run(
+            ["rclone", "config", "show", "gdrive_ev"],
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=5,
+        )
+    except Exception:
+        return None
+
+    token_data2 = _parse_rclone_token_block(result2.stdout or "")
+    if not token_data2:
+        return None
+    return token_data2.get("access_token") or None
+
+
+def _is_rate_limit_response(resp) -> bool:
+    """Detecta si una respuesta httpx corresponde a un rate-limit de la Drive API.
+
+    Reconoce los códigos de Google API (403/429) cuando el body incluye
+    ``reason == rateLimitExceeded`` (cuota global del OAuth client compartido
+    de rclone) o ``userRateLimitExceeded`` (cuota por usuario). Es defensivo:
+    si el body no parsea como JSON o no tiene la estructura esperada, asume
+    que NO es rate-limit (para no entrar en un bucle de reintentos contra un
+    error permanente como 403 PERMISSION_DENIED legítimo).
+    """
+    if resp.status_code not in (403, 429):
+        return False
+    try:
+        body = resp.json()
+    except Exception:
+        return False
+    errors = body.get("error", {}).get("errors", []) if isinstance(body, dict) else []
+    for err in errors:
+        reason = err.get("reason", "") if isinstance(err, dict) else ""
+        if reason in ("rateLimitExceeded", "userRateLimitExceeded"):
+            return True
+    return False
 
 
 def get_drive_folder_info(folder_id: str) -> DriveFolderInfo | None:
@@ -331,6 +529,12 @@ def get_drive_folder_info(folder_id: str) -> DriveFolderInfo | None:
     si ha caducado, el auto-fill simplemente no se activa (no es un error
     bloqueante).
 
+    **Retry on rate-limit**: cuando la Drive API devuelve 403/429 con
+    ``reason == rateLimitExceeded`` (síntoma típico de la cuota global
+    compartida del OAuth client de rclone), reintenta con backoff exponencial
+    según ``_RATE_LIMIT_BACKOFF_SECONDS``. Si tras agotar los reintentos
+    sigue rate-limited, devuelve None.
+
     Args:
         folder_id: ID de la carpeta Google Drive (extraído de la URL).
 
@@ -341,26 +545,51 @@ def get_drive_folder_info(folder_id: str) -> DriveFolderInfo | None:
     if not access_token:
         return None
 
+    # Secuencia de esperas: 0 (primer intento, sin sleep) + backoffs.
+    attempts = (0.0,) + _RATE_LIMIT_BACKOFF_SECONDS
+
     try:
         import httpx
-        r = httpx.get(
-            f"https://www.googleapis.com/drive/v3/files/{folder_id}",
-            params={
-                "fields": "name,driveId",
-                "supportsAllDrives": "true",
-                "includeItemsFromAllDrives": "true",
-            },
-            headers={"Authorization": f"Bearer {access_token}"},
-            timeout=5,
-        )
+    except ImportError:
+        return None
+
+    last_resp = None
+    for delay in attempts:
+        if delay > 0:
+            time.sleep(delay)
+        try:
+            r = httpx.get(
+                f"https://www.googleapis.com/drive/v3/files/{folder_id}",
+                params={
+                    "fields": "name,driveId",
+                    "supportsAllDrives": "true",
+                    "includeItemsFromAllDrives": "true",
+                },
+                headers={"Authorization": f"Bearer {access_token}"},
+                timeout=5,
+            )
+        except Exception:
+            return None
+
+        last_resp = r
         if r.status_code == 200:
-            data = r.json()
+            try:
+                data = r.json()
+            except Exception:
+                return None
             name = data.get("name", "")
             drive_id = data.get("driveId", "")
             if name:
                 return DriveFolderInfo(name=name, drive_id=drive_id)
-    except Exception:
-        pass
+            return None
+
+        # No-200: si es rate-limit, reintentar; cualquier otro fallo (401, 404,
+        # 500…) es no-recuperable y termina inmediatamente con None.
+        if not _is_rate_limit_response(r):
+            return None
+        # Es rate-limit → seguir al siguiente backoff.
+
+    # Agotados los reintentos sin obtener 200.
     return None
 
 

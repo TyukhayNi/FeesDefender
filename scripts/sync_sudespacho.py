@@ -208,7 +208,7 @@ def sync_all(
     Recorre data/CASOS/, lee los expedientes vinculados en _caso.md,
     y ejecuta pull incremental para cada uno. Diseñado para tarea programada.
     """
-    from core.config import settings
+    from core.config import caso_path, settings
     import yaml as _yaml
 
     casos = case_manager.list_cases()
@@ -220,7 +220,7 @@ def sync_all(
     errors_global: list[str] = []
 
     for case_id in casos:
-        index = settings.casos_root / case_id / "00_Input" / "_caso.md"
+        index = caso_path(case_id) / "00_Input" / "_caso.md"
         if not index.exists():
             continue
 

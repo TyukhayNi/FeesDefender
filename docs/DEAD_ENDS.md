@@ -120,6 +120,15 @@
 - **Conclusión:** Las carpetas E&V suelen contener accesos directos que el consultor captador creó hacia ficheros de su carpeta personal (rotación de personal → target inaccesible). Sin mitigación, **cualquier** dangling shortcut tumba el pull entero.
 - **Solución aplicada:** flag `--drive-skip-shortcuts` añadido al comando rclone en `core/intake_drive.py::pull_drive_ev`. Trade-off conocido: si E&V usa shortcuts legítimos hacia ficheros fuera del Shared Drive, no se traerán; aceptable porque el uso típico apunta dentro del propio Shared Drive (recorrido recursivo igual los encuentra) o son shortcuts heredados rotos.
 
+### `rclone copy` con destino en Shared Drive montado por Drive for Desktop → "corrupted on transfer: sizes differ"
+- **Intentado:** pull con `rclone copy gdrive_ev: G:\Unidades compartidas\EXPEDIENTES - TYUKHAY LEGAL\CASOS\BaRS10 - Diagonal Ponent 22-24 - (W-02J1KW) - Vuelta\00_Input\01_Drive EV ...` y verificación post-transfer por defecto (size + checksum). Sin `--ignore-size`.
+- **Resultado:** `Failed to copy with 17 errors: last error was: corrupted on transfer: sizes differ src(Google drive root '') 86400 vs dst(Local file system at //?/G:/Unidades compartidas/...) 86528`. Patrón consistente: el **destino siempre más grande** que el origen, en deltas variables (+128 B, +268 B, …). La línea `163.447 MiB / 163.447 MiB, 100%, 11.593 MiB/s, ETA 0s` justo antes de los errores confirma que la transferencia de bytes completa al 100%.
+- **Confirmado:** 2026-05-19, sesión 21, caso BaRS10 (`.pulled` con stderr completo capturado).
+- **Causa raíz:** el destino vive en un Shared Drive de Tyukhay Legal montado por **Google Drive for Desktop**. rclone trata `G:\` como filesystem local pero Drive Desktop intercepta la escritura. Cuando rclone finaliza el `.partial` y lo renombra al fichero definitivo, Drive Desktop reescribe metadatos y `stat()` devuelve un tamaño ligeramente superior. La verificación post-transfer de rclone (`Size != size`) aborta como "corrupted on transfer" pese a que los bytes son íntegros. El destino no es realmente "local"; el rótulo `Local file system at //?/G:/` de rclone es engañoso.
+- **Conclusión:** **No se puede** confiar en la verificación de tamaño ni de checksum del backend `local` cuando el path apunta a un Shared Drive de Drive Desktop. La integridad ya está garantizada extremo a extremo por la Drive API + TLS de origen y el backend de Google de destino.
+- **Solución aplicada:** flags `--ignore-size --ignore-checksum --inplace` añadidos al `rclone copy` en `core/intake_drive.py::pull_drive_ev` (sesión 21, 2026-05-19). `--inplace` evita además el rename `.partial → final`, que es el evento concreto que más confunde a Drive Desktop. Acumulado con `--drive-skip-shortcuts`, `--retries 3` y `--retries-sleep 5s` (este último cierra `[SIGUIENTE-DRIVE-RCLONE-RETRIES]`).
+- **Alternativa arquitectónica pendiente (no urgente):** configurar un segundo remote rclone `gdrive_tnm` apuntando a la cuenta nikolai.tyukhay@tyukhay.legal y migrar `pull_drive_ev` a copia Drive→Drive (`gdrive_ev: → gdrive_tnm:CASOS/...`). Bypasea Drive Desktop por completo y elimina el doble ancho de banda. Requiere OAuth nuevo y refactor del módulo.
+
 ### `subprocess.run(..., text=True)` en Windows con stderr no decodificable
 - **Intentado:** capturar stderr de `rclone` en `core/intake_drive.pull_drive_ev` con `subprocess.run(cmd, capture_output=True, text=True, timeout=300)`.
 - **Resultado:** cuando rclone emite a stderr nombres de fichero con caracteres no decodificables en la página de código activa de Windows (cp1252 por defecto) — típico en E&V por tildes catalanas malformadas tipo `pla╠Çnols`, normalización Unicode NFD vs NFC, etc. — el stream se trunca o llega vacío al lado Python. El returncode sí llega bien, pero el `.pulled` queda con `"errors": ["rclone exit 1: "]` sin pista alguna de la causa.
@@ -285,6 +294,29 @@
 - **Causa raíz:** `tests/test_sync_sudespacho.py` importa `SudespachoError`, `SudespachoClient`, `pull_expediente` al top del fichero (patrón estándar). Tras `importlib.reload(sync_sudespacho)` en otro test, esas referencias quedan apuntando a las clases/funciones VIEJAS, desincronizadas con las versiones nuevas del módulo recargado.
 - **Conclusión:** Si un fixture necesita propagar `tmp_casos_root` a un módulo que depende de `core.config`, recargar **solo los módulos del intake** (`case_manager`, `intake_log`, `intake_manifest`), NO `sync_sudespacho`. Las funciones internas de `pull_expediente_v2` resuelven `caso_path`, `IntakeManifest`, etc. vía las globals de los módulos recargados, así que el `casos_root` del tmp se propaga sin tocar `sync_sudespacho`.
 - **Implementación:** documentado en el docstring del fixture `modules` de `tests/test_pull_expediente_v2.py` para evitar regresión futura.
+
+---
+
+## PowerShell — `Add-Content` con `Get-Content -Raw` sin `-Encoding` produce mojibake
+
+### Anexar contenido UTF-8 desde un fichero a otro produce double-encoding cuando el sistema usa Win-1252
+- **Intentado:** `Add-Content -Path $destino -Value (Get-Content $origen -Raw)` desde PowerShell 5.1 en Windows con codificación de página por defecto Windows-1252 (locale español/Latino). Sin `-Encoding UTF8` en ninguno de los dos cmdlets.
+- **Resultado:** los caracteres no ASCII del fichero origen UTF-8 quedan en el destino como mojibake double-encoded: "decisión" → "decisiÃƒÂ³n"; "§9.3" → "Ã‚Â§9.3"; "—" → "Ã¢â‚¬â€".
+- **Causa:** `Get-Content` sin `-Encoding` usa la codificación por defecto del sistema (Win-1252). Lee bytes UTF-8 como Win-1252, devolviendo caracteres mal interpretados. Luego `Add-Content` con `-Encoding UTF8` (o por defecto) los re-codifica como UTF-8, fijando el daño.
+- **Confirmado:** 2026-05-12 (sesión 17, durante anotación H6 en `_revision_anon_SaRS1.md`).
+- **Conclusión:** **No usar `Get-Content -Raw` / `Add-Content -Value` ni `Set-Content`** para operaciones de concatenación o reescritura de ficheros UTF-8 desde PowerShell. Usar siempre la API .NET con codificación explícita:
+
+  ```powershell
+  $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+  $content   = [System.IO.File]::ReadAllText($path, [System.Text.Encoding]::UTF8)
+  [System.IO.File]::WriteAllText($path, $content, $utf8NoBom)
+  # o para anexar:
+  [System.IO.File]::AppendAllText($path, $extra, $utf8NoBom)
+  ```
+
+  Esta variante respeta UTF-8 (lee y escribe sin reinterpretación). El `UTF8Encoding($false)` evita BOM, que es el comportamiento estándar de los ficheros del proyecto.
+- **Detección post-hoc:** `Select-String -Path $f -Pattern "ÃƒÂ|Ã¢" -Encoding UTF8` busca firmas de mojibake típicas.
+- **Reparación:** localizar el bloque dañado por marcador de la última línea legítima, truncar con `WriteAllText`, re-anexar con `AppendAllText` (encoding UTF-8 explícito).
 
 ---
 

@@ -139,16 +139,38 @@ botones para forzar / desproteger entidades, y reproceso parcial.
 
 ---
 
-## 8. Modelo NER ruso (`ru_core_news_md`)
+## 8. Modelo NER ruso (`ru_core_news_md`) + desactivación condicional del filtro anti-cirílico
 
 **Estado.** Los nombres en cirílico no se detectan por Presidio (la
-configuración solo carga `es`, `ca`, `en`). En la práctica los documentos
-rusos del despacho llegan transliterados a latín por requisito de la
-administración española, así que no es crítico. Si en el futuro entran
-escrituras notariales rusas originales, conviene añadir el modelo.
+configuración solo carga `es`, `ca`, `en`). Adicionalmente,
+`anonimizar.extraer_texto_pdf` descarta deliberadamente páginas cuyo
+ratio de caracteres legibles < 65 % con el comentario *"descarta cirílico
+u otros alfabetos no latinos"* (aprox. L.386-389). Resultado: un PDF con
+cirílico nativo no solo pierde el etiquetado de nombres — pierde las
+páginas enteras antes de que el motor las vea.
 
-**Coste.** Añadir un entry al `configuration` en `nlp_engine.py` +
-descargar `ru_core_news_md` (~50 MB) + actualizar `health_check.py`.
+**Re-calibración 2026-05-21.** La hipótesis original *"los rusos llegan
+transliterados, no es crítico"* fue revisada tras cruzar el handoff
+externo de diseño de pipeline (memoria
+`project_handoff_anon_20260520.md`) con el perfil real de cliente del
+despacho (mayoritariamente particulares ruso-hablantes y ex-URSS). Es el
+único agujero del pipeline actual que el flujo manual no puede tapar: un
+documento cirílico se pierde en silencio. **Prioridad: alta.**
+
+**Mejora propuesta.** Dos piezas complementarias:
+
+1. **Flag `modo_cirilico: bool = False`** en `anonimizar_documento` /
+   `anonimizar_caso`. Si `True`, desactiva el filtro de ratio en
+   `extraer_texto_pdf` y carga adicionalmente NER ruso. Comportamiento
+   por defecto **inalterado** (cumple `feedback_anon_logica_intacta`).
+2. **Carga condicional del modelo ruso** en `nlp_engine.py`. Opciones:
+   `ru_core_news_md` (~50 MB, spaCy) o DeepPavlov BERT-Russian (más
+   pesado, mejor recall). Empezar por spaCy.
+
+**Coste estimado.** ~25 líneas en `api.py` + ~15 en `nlp_engine.py` +
+~10 en `extraer_texto_pdf` (sin tocar la lógica, solo gating del filtro
+por flag) + descarga del modelo + 4-5 tests + actualización de
+`health_check.py`. 2-3 días de trabajo real.
 
 ---
 
@@ -615,3 +637,151 @@ cada path está bajo `caso_path(case_id)` por seguridad.
 **Prioridad.** Media — `anonimizar_caso` es la fachada estándar y se
 usaría en cualquier H4 futuro con piezas de `_split/`. Sin esto, cada
 caso con split manual requiere script ad-hoc.
+
+---
+
+## 23. Frontmatter del motor expone `case_id` literal con PII
+
+**Detectado.** 2026-05-12 (sesión 17) durante el sanity check previo a
+exposición de `08_Para frontier/` en SaRS1 (documentado en
+`07_AI cowork/_revision_anon_SaRS1.md` sección H5b).
+
+**Síntoma.** Los `.md` anonimizados que `core/anon/api.anonimizar_caso`
+escribe en `06_Anonimizado/` incluyen frontmatter YAML con varios campos
+que el motor llena directamente desde `CaseMeta`:
+
+```yaml
+---
+case_id: SaRS1 - Castelar, 37-39, Santander - (SIN REFERENCIA) - Otros
+tipo: documento_anonimizado
+fase: 06_Anonimizado
+slug: 01_cedula_emplazamiento_01
+fecha: '2026-05-12T12:27:58'
+tipo_procedimiento: Juicio Ordinario
+origen: 01_CEDULA_EMPLAZAMIENTO_01.pdf
+origen_sha256: 8059c42206a9550889d1635e826da879ef0bfa4c2e49fecafca9543b260c6b1a
+n_entidades: 13
+alertas: []
+---
+```
+
+El campo **`case_id`** lleva incrustada la dirección literal del caso
+(parte de la convención `<ciudad><equipo><tipo> - <dirección>
+(<referencia>) - <categoría>`). Cuando los `.md` se entregan a un LLM
+externo (Claude frontier en H6 del flujo SaRS1), el frontmatter va con
+ellos y el modelo lee la dirección PII como contexto, rompiendo el
+pilar arquitectónico del proyecto.
+
+**Workaround aplicado en H5b.** Al copiar los `.md` de `06_Anonimizado/`
+a `08_Para frontier/`, sustituir el frontmatter completo por uno
+neutralizado (`case_id: <anonimizado>` + slug + tipo procedimiento). Los
+originales de `06_Anonimizado/` se conservan intactos para uso del
+motor de deanonimización en H7.
+
+**Causa raíz.** `core/anon/api.py::anonimizar_documento` (sección que
+construye el frontmatter, aprox. L380-420) usa `case_meta.case_id` tal
+cual.
+
+**Solución técnica propuesta.** Dos opciones complementarias:
+
+1. **Anonimización del case_id en el frontmatter del motor.** Antes de
+   escribir el `.md`, aplicar el motor de anonimización al propio
+   `case_id` (la dirección literal se sustituye por una etiqueta del
+   mismo mapa, p.ej. `[DIRECCION]`). Recompone como
+   `case_id: <ciudad><equipo><tipo> - [DIRECCION] (<ref>) - <categoría>`.
+   Conserva trazabilidad estructural sin exposición de PII.
+2. **Modo "para frontier" en `anonimizar_caso`.** Flag opcional
+   `frontmatter_neutralizado: bool = False`. Si `True`, escribe un
+   frontmatter mínimo sin `case_id`/`origen`/`sha256` — solo `slug` y
+   `tipo_procedimiento`. Útil para outputs dedicados a LLM externos.
+
+La opción (1) es la correcta para el flujo estándar (sin tocar el flujo
+H6 después). La opción (2) puede convivir como modo explícito.
+
+**Coste estimado.** Opción (1): ~15 líneas en `api.py` + 2 tests
+(verificar que el case_id post-anonimización sigue siendo válido para
+`core.anon.deanonimizar._localizar_mapa`). Opción (2): ~25 líneas + 3
+tests.
+
+**Prioridad.** Alta — bloqueante para automatizar el flujo H6 en casos
+futuros. Sin esta mejora, cada caso que entregue `.md` a LLM externo
+requiere mitigación manual (script tipo `_h5b` que stripea frontmatter).
+
+---
+
+## 24. Conversor multi-formato a Markdown (`core/anon/conversor.py`)
+
+**Detectado.** 2026-05-21 al cruzar el handoff externo de diseño de
+pipeline (memoria `project_handoff_anon_20260520.md`) con el estado
+actual de `core/anon/api.py::EXTS_PROCESABLES = {".pdf", ".docx"}`.
+
+**Síntoma.** La fachada actual ignora XLSX, PPTX, HTML, MSG, JPG, PNG,
+HEIC y PDFs con layout complejo (escrituras notariales, sentencias con
+columnas múltiples). Los formatos no soportados se quedan fuera del
+pipeline o requieren conversión manual previa
+(`core.anon.imagen_a_pdf.convertir` existe para imágenes pero no está
+integrado en la fachada). En E&V especialmente: cuadros de comisiones
+en XLSX, mails exportados en MSG, fotos de propiedades en JPG.
+
+**Mejora propuesta.** Módulo nuevo `core/anon/conversor.py` como capa
+previa a `extraer_texto`. Routing por extensión:
+
+- **markitdown** (Microsoft, MIT): DOCX, XLSX, PPTX, HTML, MSG, JPG, PNG.
+- **docling** (IBM, MIT): PDFs nativos con layout complejo (escrituras,
+  sentencias, contratos jurídicos largos).
+- **ocrmypdf** (ya integrado): preprocesador para PDFs escaneados antes
+  de docling.
+- **`core.anon.imagen_a_pdf.convertir`** (ya integrado): fallback para
+  imágenes que markitdown no resuelva bien.
+
+Devuelve `.md` intermedio que entra en el extractor actual sin tocarlo.
+Cumple `feedback_anon_logica_intacta` (capa nueva, motor intacto).
+
+**Criterio de disparo.** Implementar cuando aparezca el primer caso
+real con prueba en formato no soportado y la conversión manual previa
+sea costosa. No por completitud de diseño.
+
+**Coste estimado.** 3-5 días: módulo + routing + tests + integración en
+`anonimizar_documento` + actualización de `EXTS_PROCESABLES`.
+
+**Prioridad.** Media — diferido hasta caso real disparador.
+
+---
+
+## 25. Marcado de no-textuales en el `.md` anonimizado
+
+**Detectado.** 2026-05-21 al cruzar el handoff externo de diseño de
+pipeline con el comportamiento actual de `extraer_texto_pdf` y
+`texto_a_markdown` en SaRS1.
+
+**Síntoma.** El motor actual no distingue firmas, sellos, anotaciones a
+mano ni figuras. Las firmas escaneadas aparecen como caracteres OCR
+aleatorios en el `.md`. Los sellos del notario o del juzgado se
+transcriben parcialmente, mezclando datos del protocolo con texto del
+documento. Cuando el `.md` se entrega al frontier, ese ruido reduce la
+calidad del razonamiento del modelo (y consume tokens útilmente).
+
+**Mejora propuesta.** Capa sobre docling (cuando esté integrado vía
+§24) que detecta tipos de elemento no-textual y reescribe en
+`texto_a_markdown` con convención de marcado:
+
+- `[FIRMA]` — firmas detectadas (no transcribir, solo marcar).
+- `[SELLO] ... [/SELLO]` — sellos con texto OCR'd dentro (notario,
+  protocolo, fecha extraídos).
+- `[MANUSCRITO confianza=X]` — anotaciones a mano (TrOCR opcional).
+- `[ILEGIBLE]` — regiones detectadas no transcribibles.
+- `[FIGURA]` — imágenes no textuales (planos, fotos, gráficos).
+
+Implementación por capas: capa 1 (marcado genérico `[FIGURA]`) sale con
+la integración inicial de docling en §24; capa 2 (distinción
+firma/sello/manuscrito) se añade después si el volumen lo justifica.
+
+**Criterio de disparo.** Cuando un caso real produzca ruido importante
+por sellos o firmas mal transcritos y la limpieza manual del `.md` sea
+costosa. SaRS1 no lo disparó (el ruido fue tolerable). Las escrituras
+notariales con sellos múltiples sí lo dispararán.
+
+**Coste estimado.** Capa 1: 2-3 días tras §24. Capa 2: +3-5 días.
+
+**Prioridad.** Baja — diferido. Bloqueado por §24 (depende de docling
+integrado).

@@ -3,7 +3,20 @@
 > **Fuente de verdad única del proyecto.**
 > Actualizar al cerrar cada sesión con `python -m scripts.session_close`.
 
-**Última actualización:** 2026-05-21 (sesión 24, hilo despliegue E&V) — **Plan de hospedaje del Streamlit para E&V redactado** + **script de migración del repo a SSD local listo**. Sesión puramente de planificación: cero cambios de código, suite sin tocar. Dos productos: (1) `docs/PLAN_DESPLIEGUE_EV.md` — arquitectura VPS Hetzner CX22 EU (~€5/mes) + Cloudflare Tunnel (sin puertos expuestos) + Cloudflare Access (auth + MFA gratis ≤50 users); rol nuevo `ev_team_leader` (lectura sobre sus casos + alta de nuevos asuntos vía formulario, queda con tag `pending_review=true`); matriz de permisos por rol (admin / despacho / ev_team_leader) con filtro hermético en el core, no en la UI; migración `data/CASOS` al servidor con backup dual rclone (Drive operativo + Backblaze B2 cifrado en cliente con `rclone crypt`); 6 fases (0 pre-requisitos, 1 infraestructura VPS+Tunnel+Access, 2 datos, 3 dev auth+vista E&V+alta, 4 cumplimiento RGPD/RIA+anexo despacho↔E&V, 5 piloto Marta + apertura 1-2 Team Leaders); calendario tentativo s25-s32; camino crítico no técnico = anexo de tratamiento despacho↔E&V (despacho responsable, E&V destinatario no encargado, qué datos exactos verán, base legal interés legítimo + información en hoja de encargo, plazos, notificación brechas). (2) `scripts/migrate_repo_local.ps1` — automatiza migración del repo de Drive a `C:\Repos\FeesDefender` + push a GitHub privado; 10 pasos idempotentes (pre-checks repo+git+suite, grep rutas hardcoded `G:\Unidades compartidas`, configurar remoto, push, clone, `.venv`, deps, `.env` parcheando `CASOS_ROOT` a Drive en UTF-8 sin BOM, suite verde desde local, resumen siguientes pasos); independiente del despliegue E&V; resuelve lentitud Claude Code/pytest sobre Drive (ortogonal a Fases 0-5). TODO list: 7 tareas creadas (Fase A independiente "Mover repo a local + GitHub privado" + Fases 0-5 del despliegue E&V con dependencias secuenciales y Fase 4 paralela a Fase 3). Memoria persistente nueva: `project_despliegue_ev_streamlit.md` (+ entrada en `MEMORY.md`). Decisión clave: la migración del repo a local (Fase A) y el despliegue E&V (Fases 0-5) son ortogonales; Fase A puede ejecutarse cuando se quiera para ganar velocidad inmediata en Claude Code.
+**Última actualización:** 2026-05-21 (sesión 25) — **Subdivisión `CASOS_ROOT` por ciudades cerrada (Fases 1-4) + paquete migración Cowork → Claude Code aplicado en raíz**. Doble entrega en una sesión. (A) **Fase 1** del plan: `core/casos/case_locator.py` nuevo (paquete `core/casos/` con `__init__.py` vacío) — única puerta de entrada para resolver rutas de expedientes con tolerancia a layout flat (legacy) y por ciudades. API: `path_for(case_id)` (busca primero en raíz, luego en cada ciudad del catálogo + fallback `_Sin clasificar`; devuelve flat si no se encuentra para compat con creación de casos nuevos), `path_for_ciudad(case_id, ciudad)` (sin chequeo de existencia, uso interno y migración), `move_to_city(case_id, ciudad_destino, motivo, usuario)` (atómico: mover carpeta + actualizar `ciudad` en `_caso.md` + audit log; revierte movimiento si falla cualquiera de los dos pasos siguientes; exige motivo ≥10 caracteres), `list_cases(ciudad=None)` (itera todos los expedientes o solo los de una ciudad concreta, deduplica por nombre entre flat y ciudades para evitar contar dos veces), `all_cities_present()` (devuelve ciudades con al menos un expediente), `append_audit_log(entry)` (JSONL en `<CASOS_ROOT>/_audit/relocations.jsonl` con timestamp UTC ISO 8601 auto). Refactor de call-sites: `core/case_manager.list_cases` y `core/config.caso_path` delegan en el locator; `scripts/audit_referencias_casos._list_case_dirs`, `scripts/scheduled_sync.run + _read_expedientes + _append_sync_log`, `scripts/sync_sudespacho.sync_all` actualizados para usar `caso_path` o `case_locator.list_cases`. **Tests +41** en `tests/test_case_locator.py` (resolución flat/ciudad/fallback, move idempotente, motivo corto rechazado, rollback en fallo de metadata, audit log JSONL, list_cases con dedup, all_cities_present). (B) **Fase 2**: campo `ciudad: str | None` añadido a `CaseMeta` y persistido en el frontmatter de `_caso.md`; integración en `register_expediente` (preserva el campo al reconstruir) y `ensure_case` (kwarg `ciudad` opcional — si el caso no existe y se pasa ciudad, se crea bajo `<ciudad>/<case_id>/` en lugar de plano; si existe, se actualiza el campo en frontmatter). (C) **Fase 3**: validación blanda en UI Streamlit tab Nuevo caso de coherencia prefijo↔ciudad — si el equipo seleccionado pertenece a una ciudad distinta de la que el usuario ha marcado, se bloquea la creación y se ofrece checkbox de override; al confirmar override se registra `alta_caso_incoherente` en `_audit/relocations.jsonl` antes de crear el caso. (D) **Fase 4**: `scripts/migrate_to_city_structure.py` nuevo (Typer, dos comandos `plan`/`apply`) — `plan` genera CSV editable en `_audit/migration_plan_<ts>.csv` (columnas `expediente,prefijo,ciudad_detectada,ciudad_final,accion,observaciones` con `accion=mover` por defecto, editable a `omitir`); `apply` lee el CSV + escribe snapshot `_audit/snapshot_pre_migration_<ts>.json` con listado de carpetas en raíz para rollback + exige confirmación interactiva escribiendo literalmente `MIGRAR` (no `-y`/`--yes`) + invoca `move_to_city` con motivo `migracion_inicial (<ts>)`. **Tests +9** en `tests/test_migrate_to_city.py` (plan genera CSV, apply rechaza confirmación errónea, snapshot escrito, casos omitidos respetados, prefijos no reconocidos van a `_Sin clasificar`). **Migración inicial ejecutada** sobre los 9 expedientes flat preexistentes: Barcelona (BaRR3, BaRS1, BaRS10, BaRS8), Madrid (MaRS15, MaRS2), Santander (SaRS1), Sevilla (SeRS6), Valencia (VaRS2). 9/9 movimientos con éxito; registros en `_audit/relocations.jsonl`; snapshot `snapshot_pre_migration_20260521_013728.json` disponible para rollback. (E) **Paquete migración Cowork → Claude Code aplicado en raíz** (s24 lo entregó como docs en `docs/migracion_claude_code/`, s25 lo instaló): `CLAUDE.md` raíz copiado, `.claude/` con `settings.json` (permisos `allow`/`deny`/`ask` + env `PYTHONUTF8=1` + `PYTHONIOENCODING=utf-8`) + 7 slash commands (`/status` `/tests` `/cierre` `/renovar-php` `/pull-rclone` `/health-check` `/sync-crm`) + 6 skills (`preparacion-litigio-civil`, `escritos-judiciales`, `cendoj-descarga`, `docx`, `xlsx`, `pdf`). `.gitignore` ampliado con `.claude/settings.local.json` y `.claude/mcp_servers.json` (overrides personales y MCPs no se versionan, el resto del paquete sí). Rollback: `Remove-Item -Recurse -Force .\.claude` + `Remove-Item .\CLAUDE.md`. **Suite global: 596/596 verde (+50 desde s20)**. Fases 5 (docs) y 6 (verificación) cerradas también en s25 tras petición del usuario de acabar el plan en la misma sesión. **Fase 3 ampliada — UI Reasignar ciudad + pestaña admin del audit log**: expander «🏙️ Reasignar ciudad» en tab Casos (selector caso + ciudad destino + motivo obligatorio ≥10 caracteres + warning si el prefijo no cuadra con la ciudad actual; al ejecutar invoca `case_locator.move_to_city` con el actor del sidebar M10 como `usuario`); expander «🔐 Admin — Histórico de reasignaciones» visible solo cuando `_actor_final == "Nikolai Tyukhay"` que lee `_audit/relocations.jsonl` con filtros por operación y por substring del case_id. **Fase 5 docs**: `docs/ARQUITECTURA.md` — diagrama de capas actualizado con `core/casos/case_locator` y `core/ciudades` + nueva subsección «Jerarquía CASOS_ROOT por ciudades» bajo «Aislamiento por caso» (API mínima, persistencia del campo `ciudad` en frontmatter, regla del prefijo `_` para sistema, segundo nivel `<Ciudad>/<Equipo>` preparado pero no activado) + 3 entradas nuevas en la tabla «Mapa de dependencias» (modificaciones en `core/ciudades.py`, `core/casos/case_locator.py`, cambios del catálogo). `README.md` con bloque «Estructura de un caso» actualizado a `CASOS_ROOT/<Ciudad>/{case_id}/`. **Fase 6 verificación**: `scripts/verify_city_layout.py` nuevo — comprueba dos invariantes (ninguna carpeta-expediente huérfana en raíz; cada `_caso.md` con campo `ciudad` coincidente con la carpeta padre); exit 0/1 y reporte detallado. Ejecutado contra el filesystem real: **0 errores, 0 avisos** sobre los 9 expedientes. Idempotencia del script de migración confirmada: `python -m scripts.migrate_to_city_structure plan` post-migración devuelve `"No hay casos flat en la raíz. Nada que planificar."`. **Smoke E2E manual de UI confirmado por el usuario el 2026-05-21**: reasignación de ciudad ejecutada desde el navegador funciona end-to-end. Plan de subdivisión cerrado al 100 %. Esta sesión también recogió el cierre del corte inesperado de Claude Code que ocurrió justo después de ejecutar la migración: la sesión de respaldo (otro Claude Code abierto en `C:\Users\tnm33`) recuperó el contexto desde el `.jsonl` de la sesión interrumpida, verificó el estado del disco (5 ciudades creadas + 9 expedientes movidos + relocations.jsonl íntegro), corrió la suite (596/596) y cerró los commits.
+
+**Anterior (2026-05-21, sesión 24):** **Paquete de migración Cowork → Claude Code entregado**. Sesión puramente operativa, cero código del proyecto modificado. Motivación: pain point recurrente del flujo Cowork — todo comando PowerShell lo ejecuta manualmente Nikolai (memoria `feedback_powershell_cd.md`), añade fricción significativa en sesiones largas de desarrollo, y el mount Linux del sandbox desfasa lecturas de ficheros recién escritos (gotcha conocido). Decisión operativa: **código del repo se mueve a Claude Code (CLI nativo Windows, PowerShell directo); Cowork queda para trabajo legal — escritos `.docx`, comunicaciones a clientes, investigación CENDOJ, análisis de casos sin tocar código**. Paquete autocontenido en `docs/migracion_claude_code/` (15 ficheros, reversible, no toca el repo hasta que el usuario aplique los pasos): (1) `README.md` con guía paso a paso, equivalencias Cowork↔Claude Code, rollback; (2) `CLAUDE.md` para raíz del repo — reglas duras, gotchas (PHPSESSID, rclone flags obligatorios, UTF-8 en PowerShell y subprocess Windows, Streamlit cache sentinels solo en éxito), arquitectura 3 capas, formato Sala 1ª TS, terminología propietario/buscador, lista de referencias rápidas a `docs/`; (3) `settings/settings.json` versionado con `allow` (tests, scripts, git, edits en `core/`/`scripts/`/`tests/`/`docs/`), `deny` (`data/CASOS/**`, `**/90_NOTAS_PERSONALES/**`, `.env*`, `rm -rf`), `ask` (`git push --force`, `git reset --hard`), `env` (`PYTHONUTF8=1`, `PYTHONIOENCODING=utf-8`); (4) `settings/settings.local.json` plantilla para overrides personales (gitignored); (5) `commands/` con 7 slash commands operativos del día a día — `/status`, `/tests`, `/cierre`, `/renovar-php`, `/pull-rclone` (con flags blindados `--drive-skip-shortcuts --ignore-size --ignore-checksum --inplace --retries 3`), `/health-check`, `/sync-crm` con pre-vuelo PHPSESSID; (6) `skills/copiar_skills.ps1` que copia 6 skills relevantes (`preparacion-litigio-civil`, `escritos-judiciales`, `cendoj-descarga`, `docx`, `xlsx`, `pdf`) desde la instalación local de Cowork a `.claude/skills/` del repo, con fallback `Get-ChildItem $env:APPDATA\Claude -Recurse -Filter SKILL.md` si la ruta canónica ha cambiado; (7) `hooks/README.md` con 3 hooks opcionales propuestos (pre-commit tests si toca `core/`, post-edit warn `data/CASOS/`, pre-tool check PHPSESSID) — recomendación explícita de **no añadirlos al arranque**; (8) `mcp_servers.json` plantilla con bloques `*_disabled` para filesystem, sudespacho (pendiente wrapper), gdrive, gmail — ninguno necesario para arrancar. Suite global verde sin cambios (546/546). Próximo paso operativo cuando el usuario decida aplicar: instalar Claude Code (`npm install -g @anthropic-ai/claude-code`), copiar `CLAUDE.md` a raíz, copiar `.claude/`, ejecutar `copiar_skills.ps1`, añadir `.claude/settings.local.json` y `.claude/mcp_servers.json` al `.gitignore`, `claude` desde PowerShell. Reversible con `Remove-Item -Recurse -Force .\.claude` + `Remove-Item .\CLAUDE.md` (el paquete `docs/migracion_claude_code/` se queda intacto en el repo para volver a aplicar la migración cuando quieras). Cero código del proyecto FeesDefender modificado en esta sesión.
+
+**Anterior (2026-05-21, sesión 23):** **Análisis cruzado del handoff externo de pipeline de anonimización vs estado real de `core/anon/`**. Sesión puramente analítica sin cambios de código. El handoff (conversación previa del 2026-05-20 describiendo un pipeline basado en Presidio + markitdown + docling + ocrmypdf + Piiranha + recognizers ES personalizados + marcado de firmas/sellos/manuscritos) se contrastó con el estado vivo del proyecto. Conclusión: la mayoría ya está en producción (Presidio singleton con es_lg+ca_sm+en_lg, anon sobre Markdown, mapa reversible `_mapa_caso.json`, idempotencia SHA-256, OCR `spa+cat+rus`, recognizers de procedimentales y no-anonimización, fixture gold-standard SaRS1, plan RIA+RGPD entregado en s15). Aportes reales filtrados a `docs/MEJORAS_FUTURAS.md`: (1) **§8 NER ruso re-calibrada a prioridad alta** — incluye desactivación condicional del filtro anti-cirílico de `extraer_texto_pdf` (descarta páginas con ratio < 65 % caracteres legibles, eliminando documentos cirílicos nativos en silencio) vía flag `modo_cirilico=False` que también carga `ru_core_news_md`. Comportamiento por defecto inalterado (cumple `feedback_anon_logica_intacta`). (2) **§24 nueva** — conversor multi-formato `core/anon/conversor.py` (markitdown DOCX/XLSX/PPTX/HTML/MSG/JPG/PNG + docling PDFs complejos), criterio de disparo: primer caso real con prueba en formato no soportado. (3) **§25 nueva** — marcado `[FIRMA]`/`[SELLO]`/`[MANUSCRITO]`/`[ILEGIBLE]`/`[FIGURA]` sobre docling, capa 1 (`[FIGURA]` genérico) con la integración inicial, capa 2 (distinción firma/sello/manuscrito) diferida; bloqueada por §24. **Descartado** del handoff por análisis: Piiranha-v1 (solapa con spaCy_lg, duplica RAM, sin evidencia de mejora), empaquetado Docker (monousuario Windows+Streamlit), split automático "no implementar" (`separar.py` ya existe y se usa en SaRS1 H2), validación independiente sobre muestra (cubierta por fixture SaRS1), OpenAI Privacy Filter (nunca evaluado). Memoria persistente nueva: `project_handoff_anon_20260520.md` con la conclusión cruzada — para que la próxima sesión no me presente el handoff como diseño fresco. Orden de prioridad operativa fijado: primero cerrar SaRS1 H6.3 + H7 (única tarea en vuelo desde s17), luego §8 cirílico (único agujero del pipeline que el flujo manual no puede tapar), §24 y §25 esperan a caso real disparador. Suite global verde sin cambios (546/546 desde s20). Cero código del proyecto modificado en esta sesión.
+
+**Anterior (2026-05-19, sesión 20):** **Renovación proactiva del access_token de `gdrive_ev` + script de auditoría de naming Drive E&V**. Dos entregas que cierran riesgos del intake Drive remanentes de la s19. (1) `core/intake_drive.py::_get_drive_access_token` deja de leer el `access_token` a ciegas del bloque `token = {...}` que rclone almacena en `rclone.conf`: ahora parsea el campo `expiry` (ISO 8601 con offset, tolerando la precisión nanosegundo que escribe rclone), lo normaliza a UTC vía nuevo helper `_parse_iso_expiry` (también nuevo `_parse_rclone_token_block`), y si el token vence dentro de los próximos 5 min (constante `_TOKEN_EXPIRY_MARGIN`) o ya está vencido, fuerza un refresh proactivo lanzando `rclone about gdrive_ev:` — operación trivial que obliga a rclone a usar el `refresh_token` y reescribir la conf. Tras el refresh releemos el bloque y devolvemos el nuevo access_token. Comportamiento defensivo: expiry ausente/malformado → devuelve el access_token tal cual (preserva el comportamiento previo a la renovación); refresh falla → `None` (no propaga un token caducado conocido); cualquier excepción de subprocess → `None`. Aprovechado el cambio para corregir `text=True` → `encoding="utf-8", errors="replace"` (memoria `feedback_subprocess_utf8_windows.md`). **Tests +14** en `tests/test_intake_drive.py`: clase `TestGetDriveAccessToken` (8 casos — vigente, caducado refresca y devuelve nuevo, dentro de margen refresca, refresh returncode≠0 devuelve None, refresh lanza TimeoutExpired devuelve None, expiry malformado defensivo, expiry ausente defensivo, config show falla, token block ausente) + `TestParseIsoExpiry` (5 casos — offset positivo, sufijo Z, precisión nanosegundo truncada a 6 dígitos, naive asumido UTC, string inválido lanza). Suite global verde (~546/546). (2) `scripts/audit_ev_folder_names.py` nuevo: recorre Shared Drives de `DRIVE_EV_TEAM_IDS` deduplicados, consulta Drive API v3 con `q = "mimeType='folder' and trashed=false and name contains 'W-'"` y `pageSize=50`, filtra localmente con regex laxo `_W_ID_PROBE = r"\bW-[A-Z0-9]{5,8}\b"` para descartar carpetas estructurales como `PROPIEDADES`/`S1`/`Otros tutoriales`, toma los primeros N candidatos y aplica `parse_ev_folder_name`. Reutiliza el helper saneado `_get_drive_access_token` + `_is_rate_limit_response` + `_RATE_LIMIT_BACKOFF_SECONDS`. Output tabular ASCII (sin Unicode en separadores, `sys.stdout.reconfigure(encoding="utf-8")` defensivo para PowerShell con `2>&1 |`) y opción `--json` que guarda reporte en `data/_audit/ev_folder_audit_<ts>.json`. CLI: `--team <code>`, `--limit N`, `--json`. **Hallazgo importante** del test rápido sobre BaRS1: las 3 primeras carpetas raíz del Shared Drive (`PROPIEDADES`, `S1`, `Otros tutoriales`) NO son carpetas-expediente — las W-XXXXXX están **anidadas** bajo carpetas estructurales. Esto invalida la hipótesis del briefing inicial ("listar primeras 5 carpetas de la raíz") y motivó el filtro local con regex laxo. La ejecución completa de la auditoría queda pendiente para próxima sesión. **8 mejoras nuevas de robustez del intake Drive** añadidas a "Próximas tareas — No bloqueantes" tras revisión sistemática de puntos de fallo: OAuth client propio en GCP (elimina cuota compartida del project 202264815644), cache `folder_id → (name, drive_id)` en `_caso.md` (reduce llamadas API >80% en producción), `--retries 3 --retries-sleep 5s` en rclone copy, mensajes de error específicos por status code en `get_drive_folder_info`, health-check pre-flight unificado, logging estructurado `data/_audit/drive_intake.jsonl`, alertas keep-alive, validación periódica de `DRIVE_EV_TEAM_IDS`. **Pendientes diferidas a próxima sesión**: ejecución de la auditoría completa sobre los 19 Shared Drives únicos (script ya listo) + validación empírica del flag `--drive-skip-shortcuts` (tarea [SIGUIENTE-DRIVE-SHORTCUTS-LEGITIMOS] sin avance en s20).
+
+**Anterior (2026-05-19, sesión 19):** **Fix `rclone exit 1` por dangling shortcut en carpetas E&V + captura UTF-8 de stderr en Windows**. Cierre de `[SIGUIENTE-PULL-RCLONE-EXIT1]`. Dos cambios mínimos en `core/intake_drive.py::pull_drive_ev`: (1) flag `--drive-skip-shortcuts` añadido al comando rclone — las carpetas W-XXXXXX del Drive E&V contienen accesos directos heredados de consultores rotados cuyo target ha perdido permisos; sin el flag, un único shortcut roto provocaba `rclone exit 1` aunque los demás 40+ ficheros se hubieran copiado bien (la pieza de gestión documental del pipeline quedaba vacía en `.pulled` con `rclone_returncode=1`); con el flag, los shortcuts (válidos o danglers) se omiten silenciosamente y el pull es exitoso para todos los ficheros nativos. Trade-off conocido: shortcuts E&V legítimos hacia ficheros *fuera* del Shared Drive no se traen; aceptable porque el uso típico apunta dentro del mismo drive (rclone los recorre igual de forma recursiva). (2) `subprocess.run` cambia `text=True` por `encoding="utf-8", errors="replace"` — en Windows el `text=True` decodifica con cp1252 del sistema; cuando rclone emite a stderr nombres de fichero con tildes catalanas malformadas (`pla╠Çnols`) o normalización NFD, el stream se truncaba a `""` antes de llegar a Python y el error real se perdía, dejando solo `rclone exit 1: ` en el `.pulled`; con UTF-8 + replace la captura es íntegra y diagnosticable. Diagnóstico reproducible: ejecutar `rclone copy gdrive_ev: <target> --drive-team-drive <id> --drive-root-folder-id <id> -vv` desde PowerShell — revela los `NOTICE: Dangling shortcut "<file>" detected` + `ERROR : Failed to copy: failed to open source object: can't read dangling shortcut`. **Caso real desbloqueado**: BaRS1 - Tibidabo 8 - (W-02VND1) — 41/41 ficheros (137 MiB) bajados manualmente desde `%TEMP%\test_bars1\` a `00_Input/01_Drive EV/` tras saneo de `.pulled` (returncode=0, errors=[]). El shortcut roto en raíz era `Atles de planòls.pdf` (existe homónimo válido dentro de `Planos/`, sí copiado). Pre-existente: solo había `RONCESVALLES Mantenimiento.pdf` + `.pulled` corrupto (Streamlit se cortó tras el primer fichero por el exit 1). **Tests**: `tests/test_intake_drive.py` 43/43 verde sin cambios (los mocks de `subprocess.run` ignoran args/kwargs, el añadido del flag no afecta). Suite global verde. **Entradas nuevas en `docs/DEAD_ENDS.md`**: "rclone copy sobre carpeta E&V con dangling shortcut" + "`subprocess.run(text=True)` en Windows con stderr no decodificable" — ambas con sección Solución aplicada. **Pendiente abierto**: smoke manual end-to-end desde la UI (crear un caso E&V cualquiera, verificar pull terminado con `rclone_returncode=0`) — no automatizable.
+
+**Anterior (2026-05-12, sesión 18):** **Fix auto-fill Drive E&V resiliente a rate-limit de la Drive API**. Tres capas: (1) `core/intake_drive.get_drive_folder_info` añade retry con backoff exponencial 2/5/10 s ante 403/429 cuando el body trae `reason ∈ {rateLimitExceeded, userRateLimitExceeded}` — síntoma típico de la cuota global del OAuth client compartido de rclone (project_number 202264815644). Errores no recuperables (401, 404, 500, 403 sin reason de rate-limit como `insufficientPermissions`) terminan en 1 solo intento. Worst-case añadido a la UI: ~17 s. Helper `_is_rate_limit_response` aislado y defensivo ante JSON malformado (si el body no parsea, asume NO rate-limit para no entrar en bucle de reintentos contra error permanente). (2) En `streamlit_app.py` el bloque de auto-fill solo marca el sentinel `_nc_drive_autofilled_fid` tras éxito — antes lo marcaba siempre, dejando cacheado un intento fallido durante toda la sesión sin retry posible (causa raíz del bug reportado: F5 lo arreglaba porque limpiaba `session_state`). Cuando la llamada falla se setea `_nc_drive_autofill_failed` (no-sticky entre reruns) que dispara un `st.warning` visible con botón "🔄 Reintentar auto-fill". (3) **+5 tests** en `tests/test_intake_drive.py::TestGetDriveFolderInfoRetry` cubriendo recover en 2º intento (403 y 429), agotamiento de los 4 intentos totales (1+3 backoffs), no-retry para 403 con `insufficientPermissions`, no-retry para 500. **Suite global verde (524/524).** **Pendiente abierto en esta sesión**: el auto-fill funciona end-to-end con la URL `https://drive.google.com/drive/u/2/folders/1OReG4jZzwh6-l5j5AKYL_8Jpc5a6fzCX` (Montsant 34 - Montcada i Reixac - W-0466A1, BaRS8), pero el **pull rclone subsiguiente falla con `rclone exit 1`** sin stderr surfaced en la UI. Bug nuevo apuntado en "Próximas tareas — No bloqueantes" como `[SIGUIENTE-PULL-RCLONE-EXIT1]`. Memoria persistente nueva: `feedback_streamlit_cache_solo_en_exito.md` (regla general: nunca marcar sentinel de cache antes de validar éxito del side effect — aplicable a cualquier bloque Streamlit con API/IO).
+
+**Anterior (2026-05-12, sesión 17):** **H6 paso 6.1 + 6.2 cerrados + reorganización expediente SaRS1 + H5b parche cobertura**. Sesión operativa sobre el caso SaRS1 sin tocar código del proyecto. Cinco bloques: (1) **H6 paso 6.1 cerrado**: 4 piezas split (cédula 2pp + decreto 3pp + demanda 30pp + anexos 39pp) subidas manualmente al gdocu del expediente judicial 659 vía SPA sudespacho.net, todas alojadas en rama raíz `General/` (decisión usuario: simplificación por bajo volumen documental; no se usaron subcarpetas semánticas Civil → 1ª Instancia → Declarativo). Decisión actualizada de tipo subida: **opción (b)** — solo piezas split, sin OCR completos ni originales sin OCR (descarte de duplicados por el usuario tras propuesta inicial opción a). Caveat OCR pp 1-20 del DOC_ANEXO se incluye tal cual en los .md anonimizados con advertencia explícita al frontier en el prompt (**opción a**). Documentos pre-existentes en gdocu (2): `ESCR PROCU-PERSONAMIENTO.pdf` + `JUSTIF APUD-ACTA.PDF` (de personación procesal, no parte de H6). (2) **H6 paso 6.2 preparado**: prompt para Claude frontier redactado en `07_AI cowork/_prompt_frontier_H6.md` con contexto del caso (E&V Spain S.L.U. demandada en juicio ordinario LPH 249.1.8 sobre instalación no autorizada de equipos de aire acondicionado en patio comunitario, cuantía 18.000 €) + 4 .md adjuntos + caveat OCR del anexo + estructura procesal Sala 1ª TS (hechos, fundamentos jurídicos, alegaciones a las pretensiones del actor, suplico) + reglas de honestidad (no inventar jurisprudencia, conservar etiquetas anonimizadas, placeholders `[CITAR JURISPRUDENCIA SOBRE: ...]` y `[VERIFICAR EN EXPEDIENTE: ...]`) + extensión 15-25 pp + formato markdown. (3) **Reorganización del expediente SaRS1**: separación clara de input/output del LLM externo — `08_Borradores/` renombrada a `09_Borradores/` (output frontier + deanonimizados de H7 + .docx final); nueva `08_Para frontier/` como drop zone canónica de input al LLM externo (4 .md anonimizados copiados de `06_Anonimizado/` SIN frontmatter del motor + `_PROMPT.md` + `README.md` con contrato de la carpeta). Por decisión del plan §9.3 ninguna de las dos se cabla en `core/config.py::INPUT_SUBDIRS` (flujo borrador-iterativo no estabilizado). (4) **H5b — Parche cobertura ampliada** (sub-hilo abierto durante H6 por insuficiencia detectada): sanity check de PII residual previo a exposición al frontier detectó **37 hits no cubiertos por H5** — 4 case_id en frontmatter, 3 "Pedro San Martín" FP intencional (avenida del Tribunal de Santander, restaurada por H5 fila 1, aceptable), 30 FN reales (11 variantes "Castelar 37-39" con formatos OCR diversos `CASTELAR, 37-39`, `CASTELAR NÚMERO 37-39`, `Castelar n”37-39`, `Castelar N0 37-39`, `calle Castelar; Este`, etc.; 6 variantes muy degradadas del cliente `Engeléwolkers`, `Engelavólkers`, `Engel %: Vólkers`, `Vólkers` suelto, `[NOMBRE_22] £: VÓLKERS SPAIN`, etc.; 6 emails del despacho actor con `@` corrompido como E/O/G/C — `abogadosEdelriomiera.es`, `ebogadosOdelriomiera.es`, `abogadosGdelriomiera.es`; 2 URLs corporativas no marcadas en H5 — `www.delriomiera.es`, `www.engelvoelkers.com`; 1 "Adelaida Peñil" parcial residual; 2 propietarias **nuevas no detectadas en H5** por compartir primer nombre con personajes ya etiquetados — "Adelaida Gómez Sainz" ≠ procuradora Peñil, "Mercedes Pita Wonenburger" ≠ presidenta Cacho). Script `07_AI cowork/_h5b_sars1_cobertura_completa.py` (no versionado, mismo patrón H2/H4/H5): backup `.bak.h5b` + ampliación mapa (45 etiquetas, +5 entidades nuevas incluyendo **categoría URL nueva** con `[URL]`=delriomiera.es y `[URL_2]`=engelvoelkers.com) + 16 reglas FN_RULES_H5B (operan **solo sobre body**, conservan frontmatter del motor para H7) + regeneración de `08_Para frontier/` con frontmatter neutralizado (case_id literal queda fuera del LLM externo) + verificación final. 35 sustituciones FN aplicadas (1 CED, 3 DEC, 5 DEM, 26 ANX). **1 hit residual línea 708 DEM** cubierto por parche puntual posterior (regla H5b no contemplaba cierre Markdown `**` entre separador `£:` y "VÓLKERS"). Sanity final: **0 hits PII residuales** (excluyendo los 3 "Pedro San Martín" FP intencional documentado). Etiquetas totales en `08_Para frontier/`: **169** (subida desde 101 post-H5). (5) **H6 paso 6.3 pendiente** (no completado en esta sesión): entrega al frontier + recepción borrador. Operativa para próxima sesión: pegar `08_Para frontier/_PROMPT.md` en conversación nueva de Claude.ai web o app/Cowork con perfil distinto del repo FeesDefender (acceso de carpeta solo a `08_Para frontier/`), adjuntar 4 .md, recibir borrador → guardar como `09_Borradores/contestacion_demanda_SaRS1_v1_anonimizado.md`. **Lección operativa** descubierta esta sesión y documentada en `docs/DEAD_ENDS.md`: PowerShell `Add-Content -Value (Get-Content -Raw)` **sin** `-Encoding UTF8` produce double-encoding cuando el sistema usa codificación de página Win-1252 (lee UTF-8 como Win-1252, escribe como UTF-8 → mojibake "decisiÃƒÂ³n" en lugar de "decisión"); fix: usar `[System.IO.File]::ReadAllText/WriteAllText/AppendAllText` con `UTF8Encoding($false)` siempre que se manipulen ficheros UTF-8 desde PowerShell. **Mejora futura** añadida a `docs/MEJORAS_FUTURAS.md`: el motor (`core/anon/api.py`) escribe en el frontmatter de `06_Anonimizado/*.md` un `case_id` literal con la dirección PII; H5b mitigó stripeando frontmatter al copiar a `08_Para frontier/`, pero la mitigación a futuro debería ser anonimizar el case_id en el frontmatter del motor o tener un modo "para frontier". Suite global verde sin cambios (sigue 519/519 desde s16 — Fase 0 subdivisión ciudades). Cero código del proyecto FeesDefender modificado en esta sesión — todo el trabajo de H5b vive en el caso bajo `07_AI cowork/` (ignorado por git al no estar en data/CASOS/ ni en el proyecto). Memoria persistente actualizada: `project_sars1_anon_pipeline.md` con cierre H5b + nueva estructura 08/09; nueva `feedback_powershell_utf8_seguro.md` con la regla del mojibake.
+**Anterior (2026-05-21, sesión 24, hilo despliegue E&V):** **Plan de hospedaje del Streamlit para E&V redactado** + **script de migración del repo a SSD local listo**. Sesión puramente de planificación: cero cambios de código, suite sin tocar. Dos productos: (1) `docs/PLAN_DESPLIEGUE_EV.md` — arquitectura VPS Hetzner CX22 EU (~€5/mes) + Cloudflare Tunnel (sin puertos expuestos) + Cloudflare Access (auth + MFA gratis ≤50 users); rol nuevo `ev_team_leader` (lectura sobre sus casos + alta de nuevos asuntos vía formulario, queda con tag `pending_review=true`); matriz de permisos por rol (admin / despacho / ev_team_leader) con filtro hermético en el core, no en la UI; migración `data/CASOS` al servidor con backup dual rclone (Drive operativo + Backblaze B2 cifrado en cliente con `rclone crypt`); 6 fases (0 pre-requisitos, 1 infraestructura VPS+Tunnel+Access, 2 datos, 3 dev auth+vista E&V+alta, 4 cumplimiento RGPD/RIA+anexo despacho↔E&V, 5 piloto Marta + apertura 1-2 Team Leaders); calendario tentativo s25-s32; camino crítico no técnico = anexo de tratamiento despacho↔E&V (despacho responsable, E&V destinatario no encargado, qué datos exactos verán, base legal interés legítimo + información en hoja de encargo, plazos, notificación brechas). (2) `scripts/migrate_repo_local.ps1` — automatiza migración del repo de Drive a `C:\Repos\FeesDefender` + push a GitHub privado; 10 pasos idempotentes (pre-checks repo+git+suite, grep rutas hardcoded `G:\Unidades compartidas`, configurar remoto, push, clone, `.venv`, deps, `.env` parcheando `CASOS_ROOT` a Drive en UTF-8 sin BOM, suite verde desde local, resumen siguientes pasos); independiente del despliegue E&V; resuelve lentitud Claude Code/pytest sobre Drive (ortogonal a Fases 0-5). TODO list: 7 tareas creadas (Fase A independiente "Mover repo a local + GitHub privado" + Fases 0-5 del despliegue E&V con dependencias secuenciales y Fase 4 paralela a Fase 3). Memoria persistente nueva: `project_despliegue_ev_streamlit.md` (+ entrada en `MEMORY.md`). Decisión clave: la migración del repo a local (Fase A) y el despliegue E&V (Fases 0-5) son ortogonales; Fase A puede ejecutarse cuando se quiera para ganar velocidad inmediata en Claude Code.
 
 **Anterior (2026-05-12, sesión 15):** **Plan de adecuación RIA + RGPD entregado**. Documento `Plan adecuacion FeesDefender - RIA RGPD.docx` (26 pp., A4, formato del despacho — Times New Roman 12, márgenes 2,5 cm, interlineado 1,5, justificado, párrafos numerados, citas 10 pt cursiva con sangría 1 cm) en la raíz del proyecto. Dos partes: (I) Memorando ejecutivo con calificación cerrada — FeesDefender es sistema de IA del art. 3.1 RIA, NO prohibido (art. 5), NO alto riesgo (Anexo III.8.a no aplica — usuario es despacho de abogados, no autoridad judicial; considerando 61 RIA), SÍ sometido a transparencia art. 50 RIA y alfabetización art. 4 RIA (vigente 02/02/2025); despacho = proveedor + responsable del despliegue; Anthropic = proveedor de modelo de uso general (cap. V RIA) + encargado del tratamiento (art. 28 RGPD); transferencia internacional vía DPF + SCCs subsidiarias; supervisión humana significativa → no opera art. 22 RGPD; (II) Documentación base — RAT con dos tratamientos, matriz de obligaciones RIA + RGPD, estructura EIPD, cláusulas modelo arts. 13, 14 y 28, política de gobernanza IA y supervisión humana, régimen de secreto profesional. Plan en cuatro fases con calendario alineado a la aplicación escalonada del RIA (02/02/2025, 02/08/2025, 02/08/2026, 02/08/2027). Acciones del usuario en Fase 0 (fuera del repo): firma DPA Anthropic, verificación DPF, opt-out entrenamiento, sanción formal del plan. Sin cambios de código en esta sesión. Ítem `[SIGUIENTE-CUMPLIMIENTO-RIA-RGPD]` añadido a STATUS.md "Próximas tareas — No bloqueantes" con seis piezas técnicas para sesión dedicada: (1) `docs/CUMPLIMIENTO.md` checklist vivo de la matriz del Anexo B; (2) ampliar `core/intake_log.py` con eventos de cumplimiento (`dpa_renewed`, `formacion_realizada`, `eipd_revisada`, `brecha_detectada`, `prompt_modificado`, `anon_bypass` con justificación obligatoria); (3) banner permanente en UI Streamlit con aviso art. 50.4 RIA; (4) metadato XMP "Generated-By: FeesDefender — Tyukhay Legal" en todos los `.docx` generados (art. 50.2 RIA); (5) `scripts/cumplimiento_check.py` semanal vía Task Scheduler (DPA vigente, formación dentro del año, smoke anonimizador, ACTORES_DESPACHO consistente, sesiones CRM sanas); (6) traslado del `.docx` del plan a `docs/cumplimiento/Plan_Adecuacion_v1.docx` para trazabilidad por commits. Suite sin cambios desde s14 (483/483). Memoria persistente nueva: `project_cumplimiento_ria_rgpd.md` (+ entrada en `MEMORY.md`).
 
@@ -87,13 +100,16 @@ git commit -m "<mensaje que Claude propuso>"
 
 | Ítem | Estado |
 |------|--------|
-| Tests | ✅ 483/483 (Anonimizador absorbido: +51 — 2026-05-07; sufijo captador Drive: +2 — 2026-05-11 s4; Numero_Expediente extrajudicial: +10 — 2026-05-11 s6; tests v2 dedicados paso 8: +113 — 2026-05-11 s7; rename informe_viabilidad: +9 — 2026-05-11 s7; verify_expediente_referencia: +15 — 2026-05-11 s8; categoría OTROS + clientes propios: +22 — 2026-05-11 s9; deanonimizar `_mapa_caso.json` 4 niveles: +13 — 2026-05-12 s11) |
-| Plan subdivisión CASOS_ROOT por ciudades | 📋 2026-05-12 s14 — trazado en `docs/PLAN_SUBDIVISION_CIUDADES.md`; 11 decisiones cerradas; 7 fases (0: extraer `_CIUDADES` → `core/config/ciudades.py`; 1: `case_locator` + refactor call-sites; 2: campo `ciudad` en `_caso.md`; 3: acción "Reasignar ciudad" en UI; 4: migración inicial plan/apply; 5: docs; 6: verificación); implementación pendiente |
+| Tests | ✅ 596/596 (Anonimizador absorbido: +51 — 2026-05-07; sufijo captador Drive: +2 — 2026-05-11 s4; Numero_Expediente extrajudicial: +10 — 2026-05-11 s6; tests v2 dedicados paso 8: +113 — 2026-05-11 s7; rename informe_viabilidad: +9 — 2026-05-11 s7; verify_expediente_referencia: +15 — 2026-05-11 s8; categoría OTROS + clientes propios: +22 — 2026-05-11 s9; deanonimizar `_mapa_caso.json` 4 niveles: +13 — 2026-05-12 s11; subdivisión ciudades Fase 0: +36 — 2026-05-12 s16; retry rate-limit Drive API: +5 — 2026-05-12 s18; renovación proactiva access_token gdrive_ev: +14 — 2026-05-19 s20; subdivisión ciudades Fase 1 case_locator: +41 — 2026-05-21 s25; subdivisión ciudades Fase 4 script migración: +9 — 2026-05-21 s25) |
+| Plan subdivisión CASOS_ROOT por ciudades | ✅ 2026-05-21 s25 — Fases 0-6 cerradas. Fase 0 (s16): `core/ciudades.py` extraído. Fase 1 (s25): `core/casos/case_locator.py` + refactor de call-sites en `core/case_manager`, `core/config`, `scripts/{audit_referencias_casos,scheduled_sync,sync_sudespacho}`. Fase 2 (s25): campo `ciudad` en `CaseMeta`/`_caso.md` y en `ensure_case`. Fase 3 (s25): validación blanda prefijo↔ciudad en UI Streamlit (alta) + expander «🏙️ Reasignar ciudad» en tab Casos + pestaña admin con histórico `relocations.jsonl` (visible solo para Nikolai). Fase 4 (s25): `scripts/migrate_to_city_structure.py` + migración inicial ejecutada (9 expedientes en 5 ciudades; audit log + snapshot rollback en `_audit/`). Fase 5 (s25): `docs/ARQUITECTURA.md` y `README.md` actualizados. Fase 6 (s25): `scripts/verify_city_layout.py` (0 errores, 0 avisos sobre los 9 expedientes); idempotencia del script de migración confirmada; smoke manual de UI «Reasignar ciudad» confirmado por el usuario el 2026-05-21. Plan cerrado al 100 %. |
 | SaRS1 — H2 split + troceo manual | ✅ 2026-05-12 s12 — split automático generó 2 piezas vs 4 lógicas (cédula+decreto absorbidos por DEMANDA; PDF2 sin marcadores); troceo manual `pypdf` → 4 piezas (`01_CEDULA_EMPLAZAMIENTO_01.pdf` + `02_DECRETO_01.pdf` + `03_DEMANDA_01.pdf` + `01_DOC_ANEXO_01.pdf`); sanity 74/74; `07_AI cowork/_revision_anon_SaRS1.md` con 2 incidencias SPLIT para H5 |
+| SaRS1 — H5b parche cobertura | ✅ 2026-05-12 s17 — script `_h5b_sars1_cobertura_completa.py` cubre 37 hits PII residuales que H5 dejó (+5 entidades nuevas incluyendo categoría `[URL]`/`[URL_2]`; 16 reglas FN ampliadas; 35 sustituciones automáticas + 1 parche puntual); 169 etiquetas totales en `08_Para frontier/` (+68 vs H5); 0 hits PII residuales tras parche; frontmatter del motor neutralizado en copia al frontier |
+| SaRS1 — H6 pasos 6.1 + 6.2 | ✅ 2026-05-12 s17 — 4 piezas split subidas a gdocu exp 659 rama `General/` (decisión opción b — sin duplicados); prompt frontier redactado en `07_AI cowork/_prompt_frontier_H6.md` con estructura Sala 1ª TS + reglas anti-alucinación; reorganización del expediente: `08_Borradores/`→`09_Borradores/`, nueva `08_Para frontier/` drop zone canónica del LLM externo |
 | `core/anon/deanonimizar.py` _localizar_mapa 4 niveles | ✅ 2026-05-12 s11 — legacy adyacente + `_para_IA` + `06_Anonimizado/_mapa_caso.json` + fallback frontmatter `mapa_caso_path`/`mapa_entidades`; firma pública y CLI intactas; +13 tests dedicados |
 | URL Drive E&V opcional | ✅ 2026-05-11 s10 — campo ya no bloqueante en judicial ni extrajudicial; auto-fill + pull rclone condicionados a presencia |
 | Categoría "Otros casos" | ✅ 2026-05-11 s9 — `TIPOS_CASO_OTROS` + `POSICION_OTROS`; sin tag verde de asunto ni tag lila de valoración por defecto |
 | Clientes propios E&V | ✅ 2026-05-11 s9 — `CLIENTES_PROPIOS_EV` (EV_MMC_SPAIN=2, ENGEL_VOLKERS_SPAIN=27); `link_ev_mmc[_judicial]` parametrizado |
+| Tipo de caso `DEVOLUCION_HONORARIOS` | ✅ 2026-05-12 — Defensivo, cajón general no-LAU (compraventa, intermediación mercantil, encargos no residenciales). Tags CRM ya existían (verde ext #126 + jud #55); ahora cableado en `TIPOS_CASO_DEFENSIVA` + `_NOTAS` UI + tests (`TestDevolucionHonorarios`). Queda fuera de `INFORME_VIABILIDAD_TIPOS` por coherencia con LAU_20/DEVOLUCION_RESERVA. |
 | Validación referencia local↔CRM | ✅ 2026-05-11 s8 — `core/sudespacho_relations.fetch_referencia_cliente` + `verify_expediente_referencia`; wireadas en UI (post-register_expediente) y CLI (pre-pull); 15 tests verdes |
 | Auditoría preventiva | ✅ 2026-05-11 s8 — `scripts/audit_referencias_casos.py`; 0/4 mismatches tras limpieza |
 | BaRR3 — incidencia | ✅ Cerrada 2026-05-11 s8 — 648 era de BaRR1, contaminación limpiada; pull v2 de 649 listó 26 docs pero los downloads fallan (bug backend, ver abajo) |
@@ -237,24 +253,257 @@ git commit -m "<mensaje que Claude propuso>"
 
 ### No bloqueantes (sesión 4, 2026-05-11)
 
-**[SIGUIENTE-DRIVE-TOKEN]** Renovación proactiva del access_token de
-`gdrive_ev` en `core/intake_drive.py::_get_drive_access_token()`. Hoy lee
-el `access_token` tal cual del JSON de `rclone.conf` sin comprobar el
-campo `expiry`. Si pasa >1h sin que rclone ejecute ninguna operación, el
-token está caducado y la Drive API devuelve 401 → el auto-fill falla en
-silencio. Lo salva el keep-alive diario (`scheduled_sync._keepalive_gdrive_ev`),
-pero un fin de semana largo o un Streamlit recién abierto tras inactividad
-prolongada lo rompen. Fix: parsear `expiry` (ISO 8601 con offset), comparar
-con `now()`, si vencido lanzar `rclone about gdrive_ev:` y releer.
+**[SIGUIENTE-DRIVE-SHARE-404]** (sesión 21, 2026-05-19) — La función de
+compartir la carpeta del expediente con colaboradores del despacho desde la
+UI falla con **HTTP 404 "File not found"** cuando se invoca contra carpetas
+anidadas dentro de Shared Drives propios del despacho. Caso reproductor:
+`BaRS10 - Diagonal Ponent 22-24 - (W-02J1KW) - Vuelta`, carpeta
+`https://drive.google.com/drive/folders/16ds7GahMmCBe1cbzUAva5GYrT7UqwAXi`,
+intento de compartir con `ana.velastegui@tyukhay.legal`,
+`paola.barreto@tyukhay.legal` y `sergio.pinol@tyukhay.legal` — los tres
+devuelven `HTTP 404: File not found: 16ds7GahMmCBe1cbzUAva5GYrT7UqwAXi`.
+La UI ofrece como fallback "Generar mensaje de solicitud" para los emails
+que fallaron. Hipótesis a verificar en próxima sesión: (a) la llamada a
+`permissions.create` de Drive API no incluye `supportsAllDrives=true`
+y/o `supportsTeamDrives=true` cuando el target vive en Shared Drive
+distinto del de E&V; (b) el OAuth client de `gdrive_ev` no tiene scope
+suficiente sobre el Shared Drive `EXPEDIENTES - TYUKHAY LEGAL` (es un
+drive distinto al de E&V — credencial podría estar autorizada solo para
+los teamDriveIds de E&V); (c) el `folderId` 16ds...wAXi resuelve a un
+shortcut/atajo en lugar de a la carpeta real (improbable porque la URL es
+de carpeta), pero merece sanity check. Diagnóstico mínimo: probar la
+llamada manualmente desde PowerShell con el access_token de `gdrive_ev`
++ `?supportsAllDrives=true` y comparar respuesta. **No resolver en esta
+sesión** — solo registrado para próxima.
 
-**[SIGUIENTE-DRIVE-NAMING-AUDIT]** Auditar `DRIVE_EV_TEAM_IDS` por equipos
-cuyas carpetas siguen un naming distinto del esperado. Hoy hemos visto que
-`SeRS6` añade `- <consultor captador>` al final. Posible que otros equipos
-usen prefijos numéricos (`393.` en Sevilla), abreviaturas distintas, o
-naming sin guion antes del W-XXXXXX. Un script ad-hoc que liste las
-primeras 5 carpetas de cada Shared Drive de `DRIVE_EV_TEAM_IDS` y aplique
-`parse_ev_folder_name` revelaría falsos negativos antes de que aparezcan
-en producción.
+**[SIGUIENTE-DRIVE-PULL-PARAMETER-INCORRECT]** (sesión 22, 2026-05-20) — Pull
+rclone falla con `exit 1: The parameter is incorrect` sobre el caso
+**VaRS2 - Doctor Angelico, 4 - (W-02V09K) - Devolucion honorarios**. El caso
+se creó localmente OK; el error se produce en el intake del Drive E&V tras
+copiar la mayor parte del contenido (81.802 MiB / 81.802 MiB, 100%). Tres
+síntomas en el log de rclone, los tres reproducibles en los 3 intentos
+(attempts 1/3, 2/3, 3/3):
+
+  1. `NIE Pasaporte Charlotte.jpg: Failed to copy: The parameter is incorrect.`
+  2. `ENCARGO DE VENTA NO EXCLUSIVA + PBC ANEXO 1: Failed to copy: The parameter is incorrect.`
+     (sin extensión visible en el log — sospecha: Google Doc nativo, no descargable
+     como blob salvo con `--drive-export-formats`)
+  3. `CEE/Qualificacio-435039.pdf: Duplicate object found in source - ignoring`
+     (no causa fallo en sí, solo NOTICE; pero indica que la carpeta `CEE/`
+     tiene el mismo fichero referenciado dos veces — posible shortcut
+     legítimo apuntando al original, lo cual entronca con
+     `[SIGUIENTE-DRIVE-SHORTCUTS-LEGITIMOS]`)
+
+Hipótesis a verificar (por orden de probabilidad):
+
+  (a) **Google Doc nativo sin extensión** — `ENCARGO DE VENTA NO EXCLUSIVA + PBC ANEXO 1`
+      es el único item del log sin extensión; encaja con un Google Doc/Sheet/Slide
+      nativo. rclone necesita `--drive-export-formats docx,xlsx,pptx,pdf` para
+      bajarlo como blob; sin el flag falla con "parameter is incorrect" porque
+      intenta copiar bytes que no existen como tal.
+  (b) **Carácter problemático en `NIE Pasaporte Charlotte.jpg`** — visualmente
+      limpio, pero podría contener un non-breaking space (U+00A0) o un combining
+      diacritic invisible en el nombre. Inspeccionar el byte stream del nombre
+      vía Drive API antes de descartar.
+  (c) **Shortcut legítimo** — el flag `--drive-skip-shortcuts` añadido en s19
+      omite TODOS los shortcuts; si E&V usa shortcuts para enlazar documentos
+      compartidos (NIE, PBC), podríamos estar perdiendo ficheros legítimos +
+      generando el error 87 al intentar acceder a una URL en lugar de un blob.
+  (d) **Path largo en destino** — el nombre completo
+      `…ENCARGO DE VENTA NO EXCLUSIVA + PBC ANEXO 1` dentro de un path ya
+      profundo (`G:\Unidades compartidas\…\VaRS2 - Doctor Angelico, 4 - (W-02V09K) - Devolucion honorarios\00_Input\01_Drive EV\…`)
+      podría rozar el límite MAX_PATH=260 de Windows. Improbable porque otros
+      ficheros largos pasan, pero merece sanity check con `\\?\` prefix.
+
+Diagnóstico mínimo para próxima sesión:
+
+  - `rclone lsjson gdrive_ev:<folder-id-VaRS2> --drive-skip-shortcuts=false -R`
+    para ver mimeType + shortcutDetails de los 3 items conflictivos.
+  - Si `mimeType=application/vnd.google-apps.document` confirma hipótesis (a):
+    añadir `--drive-export-formats docx,xlsx,pptx,pdf` al comando de
+    `pull_drive_ev` y test dedicado.
+  - Si aparece `shortcutDetails`: replantear `--drive-skip-shortcuts` —
+    quizá filtrar solo dangling, no todos (cruza con
+    `[SIGUIENTE-DRIVE-SHORTCUTS-LEGITIMOS]`).
+
+**Workaround temporal**: el caso VaRS2 está creado localmente; el intake del
+Drive se completará manualmente o tras el fix. No bloquea la apertura del
+expediente. **No resolver en esta sesión** — solo registrado.
+
+~~**[SIGUIENTE-DRIVE-DESKTOP-CORRUPTED]**~~ ✅ 2026-05-19 (sesión 21) —
+`rclone exit 1: corrupted on transfer: sizes differ` reproducido sobre el
+caso BaRS10 (Diagonal Ponent 22-24 - W-02J1KW, Shared Drive
+`EXPEDIENTES - TYUKHAY LEGAL`). 17 ficheros con destino **más grande** que
+origen en deltas variables (+128 B, +268 B…) tras `100%, 11.593 MiB/s, ETA 0s`.
+Causa raíz: el destino vive en un Shared Drive de Tyukhay Legal montado por
+Google Drive for Desktop; rclone lo trata como `Local file system at //?/G:/...`
+pero Drive Desktop intercepta la escritura y al renombrar `.partial → final`
+reescribe metadatos, por lo que `stat()` devuelve un tamaño superior y la
+verificación post-transfer aborta como "corrupted on transfer" pese a que
+los bytes son íntegros. Fix aplicado en `core/intake_drive.py::pull_drive_ev`:
+`--ignore-size --ignore-checksum --inplace --retries 3 --retries-sleep 5s`
+añadidos al comando rclone. `--inplace` evita además el rename intermedio
+que es el evento que más confunde a Drive Desktop. Integridad real
+garantizada extremo a extremo por Drive API + TLS en ambos remotes (no se
+pierde nada al desactivar la verificación local). 1 entrada nueva en
+`docs/DEAD_ENDS.md`. Cierra de paso `[SIGUIENTE-DRIVE-RCLONE-RETRIES]` que
+estaba pendiente. **Pendiente smoke**: re-lanzar pull BaRS10 desde la UI y
+confirmar `rclone_returncode=0` en `.pulled`.
+
+~~**[SIGUIENTE-PULL-RCLONE-EXIT1]**~~ ✅ 2026-05-19 (sesión 19) —
+Causa raíz confirmada con `rclone -vv` sobre BaRS1 (Tibidabo 8 - W-02VND1):
+**dangling shortcut** en raíz de la carpeta E&V (acceso directo a un fichero
+borrado o sin permisos del consultor captador) — un único shortcut roto
+basta para que rclone devuelva exit 1 aunque los 40+ ficheros restantes se
+hayan copiado correctamente. El stderr llegaba vacío al `.pulled` por un
+bug paralelo: `subprocess.run(text=True)` decodifica con cp1252 en Windows
+y se rompía al encontrar tildes catalanas malformadas (`pla╠Çnols`) en los
+nombres de fichero. Fix aplicado en `core/intake_drive.py::pull_drive_ev`:
+flag `--drive-skip-shortcuts` + `encoding="utf-8", errors="replace"`. Caso
+real BaRS1 desbloqueado manualmente (41/41 ficheros, 137 MiB). 2 entradas
+nuevas en `docs/DEAD_ENDS.md` con el patrón y la mitigación. Tests
+`test_intake_drive.py` 43/43 verde. Smoke end-to-end UI pendiente.
+
+~~**[SIGUIENTE-DRIVE-TOKEN]**~~ ✅ 2026-05-19 (sesión 20) —
+`core/intake_drive.py::_get_drive_access_token` reescrita con renovación
+proactiva basada en `expiry`. Helpers nuevos `_parse_rclone_token_block` y
+`_parse_iso_expiry` (tolera ISO 8601 nanosegundo + sufijo Z). Margen de
+seguridad 5 min antes del vencimiento dispara `rclone about gdrive_ev:`
+para forzar refresh vía `refresh_token` y releer. Defensivo: expiry
+ausente/malformado preserva comportamiento legado; refresh fallido → None
+(no propaga token caducado conocido). `text=True` reemplazado por
+`encoding="utf-8", errors="replace"` (memoria `feedback_subprocess_utf8_windows.md`).
++14 tests dedicados (`TestGetDriveAccessToken` 8 + `TestParseIsoExpiry` 5
++ los existentes intactos). Suite global verde.
+
+**[SIGUIENTE-DRIVE-NAMING-AUDIT]** (parcial s20, 2026-05-19) — Script
+`scripts/audit_ev_folder_names.py` creado: recorre `DRIVE_EV_TEAM_IDS`
+deduplicados por Shared Drive ID, consulta Drive API v3 con `name contains 'W-'`
++ filtro local `_W_ID_PROBE` (regex laxo `\bW-[A-Z0-9]{5,8}\b`) y aplica
+`parse_ev_folder_name` a los candidatos. Reutiliza el helper saneado de
+`[SIGUIENTE-DRIVE-TOKEN]`. CLI con `--team`, `--limit`, `--json` (reporte
+en `data/_audit/ev_folder_audit_<ts>.json`). **Hallazgo del test rápido
+sobre BaRS1**: las carpetas-expediente NO están en raíz del Shared Drive —
+están **anidadas** bajo carpetas estructurales (PROPIEDADES, S1, Otros
+tutoriales). Hipótesis original del briefing ("listar primeras 5 carpetas
+de la raíz") invalidada; script rediseñado para buscar a cualquier
+profundidad. **Pendiente**: ejecutar `python -m scripts.audit_ev_folder_names --json`
+sobre los 19 Shared Drives únicos y revisar el reporte; si aparecen patrones
+nuevos de naming, ampliar `_EV_FOLDER_RE` + tests dedicados (no tocar regex
+sin evidencia, regla D8 + memoria `feedback_anon_logica_intacta` aplicada
+también aquí por extensión).
+
+**[SIGUIENTE-DRIVE-SHORTCUTS-LEGITIMOS]** (sesión 19, 2026-05-19; sin avance en s20)
+Monitorizar si en las próximas aperturas de expedientes E&V se detectan
+ficheros que existen en el Drive original pero NO en `00_Input/01_Drive EV/`
+tras el pull. El flag `--drive-skip-shortcuts` añadido en s19 omite TODOS
+los accesos directos, no solo los dangling. Hipótesis no validada: E&V usa
+shortcuts dentro del mismo Shared Drive (rclone los recorre igual de forma
+recursiva), pero si algunos consultores usan shortcuts hacia ficheros de
+otros drives o de "Mi unidad" personal, esos ficheros no se traerán al
+caso local. Detección posible: (a) script ad-hoc que compare `_inventory.json`
+post-pull con listado manual del Drive vía Web; (b) reemplazar el flag por
+post-procesamiento del stderr — detectar si todos los errores son
+"dangling shortcut" y, si al menos 1 fichero se transfirió, tratar exit 1
+como éxito (alternativa quirúrgica documentada en `docs/DEAD_ENDS.md`).
+Sin caso confirmado de pérdida en s19/s20 — bajar prioridad si en 10
+aperturas no se observa el síntoma.
+
+---
+
+#### Refuerzo del intake Drive E&V — mejoras priorizadas (s20, 2026-05-19)
+
+Tras revisión sistemática de puntos de fallo del intake Drive, se identifican
+8 mejoras adicionales. Orden recomendado por relación impacto/esfuerzo:
+
+~~**[SIGUIENTE-DRIVE-RCLONE-RETRIES]**~~ ✅ 2026-05-19 (sesión 21) —
+`--retries 3 --retries-sleep 5s` añadidos a `core/intake_drive.py::pull_drive_ev`
+junto al fix de Drive Desktop (siguiente entrada). `--low-level-retries`
+(default) cubre blips de TCP; los nuevos `--retries` cubren errores
+transitorios sostenidos de la Drive API (500/503/429).
+
+**[SIGUIENTE-DRIVE-ERROR-MESSAGES]** (impacto medio, esfuerzo bajo)
+Mensajes de error específicos por status code en `get_drive_folder_info`:
+hoy todos los no-200 caen en el mismo `return None`. Distinguir y loguear
+en `.pulled` (campo nuevo `auth_diagnosis`): 401 → token revocado, sugerir
+`rclone config reconnect gdrive_ev:`; 403 + reason `storageQuotaExceeded`
+→ cuenta E&V llena; 403 + reason `insufficientFilePermissions` → folder_id
+sin permiso del usuario corporativo; 404 → folder_id mal escrito; 5xx →
+reintento (ya cubierto). Useful para diagnóstico desde la UI sin reproducir.
+
+**[SIGUIENTE-DRIVE-FOLDER-CACHE]** (impacto alto, esfuerzo bajo)
+Cache de `folder_id → (name, drive_id)` en `_caso.md`. Hoy cada llamada a
+`get_drive_folder_info(folder_id)` golpea la Drive API. Tras la primera
+resolución exitosa, persistir `meta.drive_ev_folder_name` y
+`meta.drive_ev_drive_id` en `_caso.md`; en pulls posteriores leer del
+fichero local. Reduce llamadas a la API en >80% en producción y reduce
+dependencia de la cuota compartida del OAuth client de rclone.
+
+**[SIGUIENTE-DRIVE-INTAKE-LOG]** (impacto bajo runtime, alto post-mortem)
+Logging estructurado `data/_audit/drive_intake.jsonl`. Cada `pull_drive_ev`
+añade una línea con `{timestamp, case_id, team_id, folder_id, returncode,
+files_after, duration_ms, error_summary}`. Sin esto, cualquier caída pasada
+se pierde porque `.pulled` se sobrescribe en cada pull. Append-only, mismo
+patrón que `core/intake_log.py` M10. Útil para correlacionar caídas con
+cambios de cuota / rotaciones de token / horarios.
+
+**[SIGUIENTE-DRIVE-KEEPALIVE-ALERTS]** (impacto bajo, esfuerzo bajo)
+Alertas del keep-alive diario de `gdrive_ev`. Hoy
+`scheduled_sync._keepalive_gdrive_ev` falla en silencio. Si falla 2
+ejecuciones consecutivas → registrar en `data/_audit/keepalive_failures.jsonl`
+y mostrar banner rojo en la UI Streamlit al arrancar. Depende de
+[SIGUIENTE-DRIVE-INTAKE-LOG] como infraestructura común de logging.
+
+**[SIGUIENTE-DRIVE-HEALTH-CHECK]** (impacto medio, esfuerzo bajo)
+Health-check pre-flight unificado: `python -m scripts.health_check_drive`
+que verifique en orden: (1) binario rclone, (2) remote gdrive_ev configurado,
+(3) bloque token presente con expiry parseable, (4) `rclone about gdrive_ev:`
+responde, (5) `drives.list` API responde, (6) los Shared Drive IDs de
+`DRIVE_EV_TEAM_IDS` siguen existiendo (lo cubre [SIGUIENTE-DRIVE-TEAM-IDS-WATCH]
+si se implementa). Reusable desde la UI Streamlit como botón de diagnóstico
+para Paola/Ana.
+
+**[SIGUIENTE-DRIVE-TEAM-IDS-WATCH]** (impacto bajo, esfuerzo bajo)
+Validación periódica de `DRIVE_EV_TEAM_IDS`. Script cron-driven semanal
+que ejecuta `rclone backend drives gdrive_ev:` y compara con el dict
+estático de `core/config.py`. Si E&V crea/elimina/renombra un equipo, lo
+detectamos en 7 días en vez de cuando un usuario abra el caso correspondiente.
+Output: diff en `data/_audit/team_ids_drift_<fecha>.json` + banner en UI
+si hay deltas.
+
+**[SIGUIENTE-DRIVE-NATIVE-RCLONE]** (impacto alto, esfuerzo medio-alto)
+Migrar `pull_drive_ev` a copia Drive→Drive nativa, eliminando Google Drive
+for Desktop como intermediario. Hoy rclone copia desde `gdrive_ev:` a
+`G:\Unidades compartidas\…`, donde Drive Desktop intercepta cada escritura;
+los flags `--ignore-size --ignore-checksum --inplace` añadidos en s21
+suprimen los falsos positivos de la verificación post-transfer (ver
+`docs/DEAD_ENDS.md`), pero la integridad local depende de la Drive API en
+ambos extremos. Solución limpia: configurar un segundo remote rclone
+`gdrive_tnm` con la cuenta `nikolai.tyukhay@tyukhay.legal` y reescribir el
+comando como `rclone copy gdrive_ev: gdrive_tnm:CASOS/<case_id>/00_Input/01_Drive\ EV/`.
+Beneficios: (a) integridad verificable de extremo a extremo por Drive API,
+(b) elimina el doble ancho de banda (descarga local + reupload de Drive
+Desktop), (c) funciona aunque Drive Desktop esté pausado / desconectado /
+en error de sincronización, (d) los ficheros aparecen en `G:\` por sync de
+Drive Desktop sin intervención. Trabajo: `rclone config` nuevo
+(`gdrive_tnm`), refactor de `pull_drive_ev` (destino remoto en vez de
+local), ajuste de tests (los actuales asumen path local), decidir el
+mapeo `CASOS/<case_id>/…` en el Drive de destino, considerar dependencia
+de cuota OAuth de la cuenta de destino. Combina muy bien con
+`[SIGUIENTE-DRIVE-OAUTH-PROPIO]` (OAuth propio podría usarse para ambos
+remotes).
+
+**[SIGUIENTE-DRIVE-OAUTH-PROPIO]** (impacto MUY alto, esfuerzo medio)
+OAuth client propio en GCP. Hoy rclone usa el `client_id` compartido del
+project `202264815644` — cuota global por minuto repartida entre todos los
+usuarios de rclone del mundo. Cuando satura, no hay mitigación desde
+nuestro lado (los backoffs de la s18 alargan, no resuelven). Crear OAuth
+Client ID propio (consola GCP, gratis) y registrarlo en `rclone config`
+elimina la cuota compartida. Lo natural es hacerlo dentro del proyecto GCP
+de E&V (la Service Account pendiente de
+`project_gdrive_ev_auth.md`) o, si E&V demora, un proyecto GCP propio del
+despacho. Es la palanca de mayor impacto sobre la disponibilidad del
+intake Drive a medio plazo.
 
 **[SIGUIENTE-VIABILIDAD-BAD-DEBT]** (decisión del usuario 2026-05-11 s7)
 Incluir BAD_DEBT en `INFORME_VIABILIDAD_TIPOS` para que `ensure_case`
@@ -267,6 +516,27 @@ devengo de factura, vencimiento, impagos previos)? (2) ¿LAU_20 y
 DEVOLUCION_RESERVA también? Cambio mínimo si se reutiliza tal cual:
 añadir `"BAD_DEBT"` al `frozenset` en `core/config.py` + test smoke
 específico. Detalle completo en memoria `project_plantillas_viabilidad.md`.
+
+**[SIGUIENTE-VIABILIDAD-LLM]** (plan trazado el 2026-05-19 s22)
+Pre-relleno LLM del informe de viabilidad usando los documentos del Drive
+E&V volcados en el intake. Plan completo en
+`docs/PLAN_PRERELLENO_LLM_VIABILIDAD.md`. **Decisiones cerradas (D1-D5)**:
+camino cuestionario→derivación a ficha; disparo manual vía botón Streamlit;
+clasificador LLM previo sobre el Drive; Claude Haiku (clasificador) +
+Sonnet (extractor) sobre docs anonimizados con el pipeline SaRS1; output
+paralelo `Informe viabilidad LLM - <case_id>.xlsx` que NUNCA sobrescribe
+el informe humano. **Estimación**: 9-12 sesiones (consistente con
+horizonte 3 de `project_plantillas_viabilidad.md`). **Recomendación**:
+arrancar solo por **Fase 1** (pre-procesado del Drive E&V — OCR → MD →
+anonimización en `02_Analisis/_llm/`). Aporta valor independiente del LLM
+(permite llevar manualmente los docs anonimizados a Claude.ai como en
+SaRS1 H6) y desbloquea cualquier Fase 2-5 posterior. **Bloqueado por**
+tres decisiones de Fase 0 que viven en el plan como `[PENDIENTE]`:
+inclusión de BAD_DEBT (mismo pendiente de `[SIGUIENTE-VIABILIDAD-BAD-DEBT]`),
+modelo del clasificador (Haiku vs Ollama vía `.env`) y prioridad de
+arreglar los bugs `MEJORAS_FUTURAS §11` (OCR kwargs) y `§12` (validate_case_id
+rechaza `(SIN REFERENCIA)`). No bloquean Fase 1 si el primer caso de
+validación es uno con OCR ya hecho y con ID GO formal.
 
 **[SIGUIENTE-CUMPLIMIENTO-RIA-RGPD]** (sesión 12, 2026-05-12) Plan de
 adecuación de FeesDefender al Reglamento (UE) 2024/1689 (RIA) y al
@@ -300,32 +570,37 @@ trazabilidad por commits. Detalle completo en memoria
 
 ### ⚠️ MÁXIMA PRIORIDAD — abrir próxima sesión por aquí
 
-**[SIGUIENTE-SUBDIVISION-CIUDADES]** (plan trazado el 2026-05-12 s14)
+**[SIGUIENTE-SUBDIVISION-CIUDADES]** (plan trazado el 2026-05-12 s14; Fase 0 cerrada el 2026-05-12 s16)
 
-Implementar la subdivisión de `CASOS_ROOT` por ciudades según
+Subdivisión de `CASOS_ROOT` por ciudades. Plan en
 `docs/PLAN_SUBDIVISION_CIUDADES.md`. 11 decisiones cerradas, 7 fases.
 
-Arrancar por **Fase 0** (extracción `_CIUDADES` → `core/config/ciudades.py`):
+**Fase 0 cerrada (s16)** — commit en rama `feature/subdivision-ciudades`:
 
-1. Crear rama `feature/subdivision-ciudades`.
-2. Crear `core/config/ciudades.py` con `CIUDADES`,
-   `EQUIPOS_POR_CIUDAD`, `EQUIPOS`, `ciudad_de_equipo(codigo)` y
-   `es_carpeta_de_sistema(nombre)`.
-3. Refactorizar `streamlit_app.py` para importar del nuevo módulo
-   (eliminar duplicación de los diccionarios).
-4. `tests/test_config_ciudades.py`: mapping, derivación prefijo→ciudad
-   para los códigos vivos (BaRR3, MaRS2, MaRS15, MaRR2, SeRS6, SaRS1,
-   más una muestra de Bilbao, San Sebastián y Valencia), regla del
-   guion bajo.
-5. Suite completa verde.
-6. Commit Fase 0.
+- `core/ciudades.py` creado con `CIUDADES`,
+  `TAG_AZUL_CIUDAD_EXTRAJUDICIAL/_JUDICIAL`,
+  `EQUIPOS_POR_CIUDAD_EXTRAJUDICIAL/_JUDICIAL`,
+  `EQUIPOS_EXTRAJUDICIAL/_JUDICIAL`, `ciudad_de_equipo(codigo)`,
+  `es_carpeta_de_sistema(nombre)`.
+- Decisión técnica: ubicación final `core/ciudades.py` (no
+  `core/config/ciudades.py` como decía el plan original) para evitar
+  refactor del paquete `core.config` fuera de scope. Plan actualizado.
+- `streamlit_app.py`: definiciones locales L842-1036 sustituidas por
+  imports (~200 líneas eliminadas; cero cambios funcionales).
+- `tests/test_config_ciudades.py`: 13 funciones (36 casos
+  parametrizados) — catálogo canónico, mappings por contexto,
+  derivación código→ciudad para los 6 casos vivos + 3 ciudades de
+  muestreo + 4 códigos asimétricos extra-only/judicial-only,
+  coherencia cross-context, regla guion bajo. Suite global 519/519 ✓.
 
-Después: **Fase 1** (`case_locator` con tolerancia legacy + refactor
-masivo de call-sites en `core/case_manager.py`,
-`core/sync_sudespacho.py`, `scripts/init_caso.py`,
-`scripts/sync_sudespacho.py`, `scripts/bulk_pull_expedientes.py`,
-`scripts/scheduled_sync.py`, `tests/conftest.py`). Fase 1 es la pesada
-y se merguea antes de tocar una sola carpeta.
+**Próxima sesión — arrancar Fase 1**:
+
+`core/casos/case_locator.py` con tolerancia legacy + refactor masivo
+de call-sites en `core/case_manager.py`, `core/sync_sudespacho.py`,
+`scripts/init_caso.py`, `scripts/sync_sudespacho.py`,
+`scripts/bulk_pull_expedientes.py`, `scripts/scheduled_sync.py`,
+`tests/conftest.py`. Fase 1 es la pesada (estimado: 2 sesiones
+cowork). Detalle en §5 del plan.
 
 Pre-condición antes de Fase 4 (migración real): backup manual de
 `CASOS_ROOT` (snapshot Drive o `rclone copy` a ubicación fría).
@@ -348,7 +623,7 @@ aceptación, entregables) en `docs/PLAN_SaRS1_anon_pipeline.md`.
 Ruta crítica: H1 → H2 → H4 → H5 → H6 → H7. H3 (adaptación de
 `core/anon/deanonimizar.py` al `_mapa_caso.json`) es paralelizable.
 
-**H1, H2, H3, H4 y H5 cerrados el 2026-05-12.**
+**H1-H5 + H5b cerrados el 2026-05-12. H6 pasos 6.1 y 6.2 cerrados; paso 6.3 pendiente.**
 
 - **H1**: `_caso.md` corregido (cliente E&V Spain ID 27 + observación DEMANDADO en
   `meta.observaciones`). `verify_expediente_referencia` → `match: True`. OCR `spa`
@@ -403,16 +678,45 @@ Ruta crítica: H1 → H2 → H4 → H5 → H6 → H7. H3 (adaptación de
   MAP/OCR + refactor de `anonimizar_caso`; `.gitignore` con regla
   `tests/fixtures/anon/`.
 
-Próximo hilo a abrir: **H6** (subida manual al CRM gdocu del expediente 659 +
-entrega a Claude frontier para borrador de contestación a la demanda).
-Detalle completo en §9 del plan maestro. Pre-condición: H5 cerrado ✓ + usuario
-ha ejecutado los dos scripts ad-hoc de H5 + suite global verde. Tiempo
-estimado: 30-60 min. Operativa: navegador a
-`https://tnm.sudespacho.net/tnm/gestion/expedientes-judiciales/659` →
-gdocu → drag-and-drop PDFs de `00_Input/04_Manual/_ocr/` + `_split/` en la
-rama Civil correspondiente; preparación del prompt para Claude frontier
-(plantilla en §9.2 del plan) con los 4 .md de `06_Anonimizado/` adjuntos;
-borrador recibido se guarda en `08_Borradores/contestacion_demanda_SaRS1_v1_anonimizado.md`.
+- **H5b** (sin commit pendiente — vive en el caso, ignorado por git): sub-hilo
+  abierto durante H6 por insuficiencia detectada en sanity de PII previo a
+  exposición al frontier (37 hits residuales). Script
+  `07_AI cowork/_h5b_sars1_cobertura_completa.py` aplica delta sobre H5:
+  ampliación mapa (+5 entidades incluyendo categoría URL nueva
+  `[URL]`/`[URL_2]`), 16 reglas FN_RULES_H5B (operan solo sobre body,
+  conservan frontmatter del motor para H7), regeneración de
+  `08_Para frontier/` con frontmatter neutralizado. 35 sustituciones FN
+  automáticas + 1 parche puntual (línea 708 DEM, regla no contemplaba `**`
+  Markdown entre separador y "VÓLKERS"). 2 propietarias nuevas detectadas
+  (Adelaida Gómez Sainz, Mercedes Pita Wonenburger) que H5 había pasado
+  por alto por compartir primer nombre con personajes ya etiquetados.
+  Sanity final: 0 hits PII (excluyendo "Pedro San Martín" FP intencional
+  documentado). 169 etiquetas totales en `08_Para frontier/` (+68 vs H5).
+- **H6 paso 6.1** (cerrado 2026-05-12 17:37): 4 piezas split (cédula 2pp +
+  decreto 3pp + demanda 30pp + anexos 39pp) subidas al gdocu del expediente
+  judicial 659, todas en rama raíz `General/` (decisión opción b: solo
+  piezas split, sin OCR completos ni originales sin OCR; descarte de
+  duplicados). Documentos pre-existentes en gdocu (no parte de H6):
+  `ESCR PROCU-PERSONAMIENTO.pdf` (16:47) + `JUSTIF APUD-ACTA.PDF` (16:48).
+- **H6 paso 6.2** (cerrado): prompt frontier redactado en
+  `07_AI cowork/_prompt_frontier_H6.md`. Estructura procesal Sala 1ª TS +
+  reglas anti-alucinación con placeholders explícitos
+  `[CITAR JURISPRUDENCIA SOBRE: ...]` y `[VERIFICAR EN EXPEDIENTE: ...]`.
+- **Reorganización del expediente SaRS1** durante H6: `08_Borradores/`
+  renombrada a `09_Borradores/` (output frontier + deanonimizados); nueva
+  `08_Para frontier/` como drop zone canónica de input al LLM externo (4 .md
+  anonimizados copiados de `06_Anonimizado/` SIN frontmatter del motor +
+  `_PROMPT.md` + `README.md` con contrato de la carpeta). Por decisión del
+  plan §9.3 ninguna de las dos se cabla en
+  `core/config.py::INPUT_SUBDIRS`.
+
+Próximo paso a abrir: **H6 paso 6.3** (entrega al frontier + recepción
+borrador). Operativa: pegar `08_Para frontier/_PROMPT.md` en conversación
+nueva de Claude.ai web o app/Cowork con perfil distinto del repo
+FeesDefender (acceso de carpeta solo a `08_Para frontier/`), adjuntar
+4 .md, recibir borrador → guardar como
+`09_Borradores/contestacion_demanda_SaRS1_v1_anonimizado.md`. Estimación
+30-90 min según iteraciones con el modelo.
 
 Cada hilo es una sesión nueva de Cowork con ventana de contexto
 limpia: leer `STATUS.md` + sección H<N> de `docs/PLAN_SaRS1_anon_pipeline.md`.
@@ -512,6 +816,35 @@ Detalle completo en `docs/DEAD_ENDS.md` → "GET /api/files/presigned_download_u
   no coincide con `referencia_cliente`. Wireada en UI (Streamlit) y CLI
   (sync_sudespacho pull). 15 tests verdes. Documentación en commit
   `3fa7e23` (main).
+
+---
+
+**[SIGUIENTE-BITACORA]** (plan trazado el 2026-05-21 s24)
+
+Bitácora razonada por caso. Cada sesión de trabajo con LLM sobre un
+caso produce un resumen estructurado (qué hicimos, decisiones tomadas,
+dudas pendientes, documentos generados) que se anexa a un único
+`BITACORA.md` en la raíz del caso. No archiva el chat crudo — solo el
+proceso de razonamiento, que es donde está el valor.
+
+Plan completo en `docs/PLAN_BITACORA_CASOS.md`. 10 decisiones cerradas,
+6 fases (3 en ruta crítica, ~3 sesiones cowork estimadas).
+
+**Arrancar por F1**: módulo `core/bitacora/` aislado (fachada
+`generar_entrada(case_id, transcripcion) -> Path`, prompt Haiku
+fijo, atomic write con append en cabeza, tests dedicados con mock
+de la llamada al modelo). F2-F4 (extractor Cowork + slash command +
+hook al `/cierre`) van después.
+
+**Pre-condición F2**: investigación previa sobre el formato JSON
+de sesiones Cowork y cómo identificar la sesión activa (2-4 h sobre
+3-5 sesiones reales recientes).
+
+**Fuera de alcance del plan — apunte para el futuro**: red de seguridad
+opcional consistente en tarea programada que zipea
+`%APPDATA%\Claude\local-agent-mode-sessions\` a una carpeta gitignored
+fuera del proyecto. Anotada en §9 del plan. No es parte del MVP de la
+bitácora.
 
 ---
 

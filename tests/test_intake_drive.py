@@ -25,6 +25,8 @@ from core.intake_drive import (
     DriveIntakeResult,
     _DRIVE_EV_INPUT_SUBDIR,
     _PULL_MARKER,
+    _get_drive_access_token,
+    _parse_iso_expiry,
     get_drive_folder_info,
     parse_drive_url,
     parse_ev_folder_name,
@@ -482,3 +484,339 @@ class TestGetDriveFolderInfo:
             result = get_drive_folder_info("folderXYZ123456")
 
         assert result is None
+
+
+# ---------------------------------------------------------------------------
+# get_drive_folder_info — retry on rate-limit
+# ---------------------------------------------------------------------------
+
+def _rate_limit_resp(status_code: int = 403, reason: str = "rateLimitExceeded"):
+    """Construye una respuesta httpx mockeada que simula un rate-limit de la
+    Drive API. Estructura idéntica a la del body real (project shared OAuth)."""
+    resp = MagicMock()
+    resp.status_code = status_code
+    resp.json.return_value = {
+        "error": {
+            "code": status_code,
+            "message": (
+                "Quota exceeded for quota metric 'Queries' and limit "
+                "'Queries per minute' of service 'drive.googleapis.com' "
+                "for consumer 'project_number:202264815644'."
+            ),
+            "errors": [
+                {
+                    "message": "Quota exceeded for...",
+                    "domain": "usageLimits",
+                    "reason": reason,
+                }
+            ],
+            "status": "PERMISSION_DENIED",
+        }
+    }
+    return resp
+
+
+def _ok_resp(name: str = "Gran Via 40 - W-030LFT", drive_id: str = "0ABC"):
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.json.return_value = {"name": name, "driveId": drive_id}
+    return resp
+
+
+class TestGetDriveFolderInfoRetry:
+    """Cobertura del retry+backoff frente a rate-limit de la Drive API.
+
+    Mockea time.sleep para que los tests no esperen realmente los 2/5/10 s
+    del backoff. Verifica número exacto de intentos y que la secuencia de
+    delays solicitada sea la documentada en _RATE_LIMIT_BACKOFF_SECONDS.
+    """
+
+    def test_403_rate_limit_reintenta_y_recupera(self, monkeypatch):
+        """403 rateLimitExceeded en primer intento, 200 en segundo → recupera."""
+        _mock_rclone_token(monkeypatch)
+        sleeps: list[float] = []
+        monkeypatch.setattr("core.intake_drive.time.sleep", lambda s: sleeps.append(s))
+
+        responses = [_rate_limit_resp(403), _ok_resp()]
+        with patch("httpx.get", side_effect=responses):
+            info = get_drive_folder_info("folderXYZ123456")
+
+        assert isinstance(info, DriveFolderInfo)
+        assert info.name == "Gran Via 40 - W-030LFT"
+        # Un solo sleep (entre intento 1 fallido e intento 2 exitoso) = 2.0s
+        assert sleeps == [2.0]
+
+    def test_429_user_rate_limit_reintenta_y_recupera(self, monkeypatch):
+        """429 userRateLimitExceeded en intento 1 → 200 en intento 2."""
+        _mock_rclone_token(monkeypatch)
+        sleeps: list[float] = []
+        monkeypatch.setattr("core.intake_drive.time.sleep", lambda s: sleeps.append(s))
+
+        responses = [
+            _rate_limit_resp(429, reason="userRateLimitExceeded"),
+            _ok_resp(),
+        ]
+        with patch("httpx.get", side_effect=responses):
+            info = get_drive_folder_info("folderXYZ123456")
+
+        assert info is not None
+        assert sleeps == [2.0]
+
+    def test_rate_limit_persistente_agota_reintentos(self, monkeypatch):
+        """4 intentos con rate-limit persistente → devuelve None tras 2+5+10s."""
+        _mock_rclone_token(monkeypatch)
+        sleeps: list[float] = []
+        monkeypatch.setattr("core.intake_drive.time.sleep", lambda s: sleeps.append(s))
+
+        # 4 respuestas idénticas de rate-limit (1 primer intento + 3 reintentos)
+        responses = [_rate_limit_resp() for _ in range(4)]
+        with patch("httpx.get", side_effect=responses) as mock_get:
+            result = get_drive_folder_info("folderXYZ123456")
+
+        assert result is None
+        # 4 intentos totales (1 inicial + 3 con backoff)
+        assert mock_get.call_count == 4
+        # 3 sleeps: 2.0, 5.0, 10.0 — la secuencia documentada
+        assert sleeps == [2.0, 5.0, 10.0]
+
+    def test_403_no_rate_limit_no_reintenta(self, monkeypatch):
+        """403 sin reason rateLimitExceeded (permiso real) → None sin reintentos."""
+        _mock_rclone_token(monkeypatch)
+        sleeps: list[float] = []
+        monkeypatch.setattr("core.intake_drive.time.sleep", lambda s: sleeps.append(s))
+
+        resp = MagicMock()
+        resp.status_code = 403
+        resp.json.return_value = {
+            "error": {
+                "errors": [{"reason": "insufficientPermissions"}],
+            }
+        }
+        with patch("httpx.get", return_value=resp) as mock_get:
+            result = get_drive_folder_info("folderXYZ123456")
+
+        assert result is None
+        # Solo 1 intento — no debe reintentar errores no recuperables
+        assert mock_get.call_count == 1
+        assert sleeps == []
+
+    def test_500_no_reintenta(self, monkeypatch):
+        """500 (error de servidor) no es rate-limit → None tras 1 intento."""
+        _mock_rclone_token(monkeypatch)
+        sleeps: list[float] = []
+        monkeypatch.setattr("core.intake_drive.time.sleep", lambda s: sleeps.append(s))
+
+        resp = MagicMock()
+        resp.status_code = 500
+        resp.json.return_value = {"error": "internal"}
+        with patch("httpx.get", return_value=resp) as mock_get:
+            result = get_drive_folder_info("folderXYZ123456")
+
+        assert result is None
+        assert mock_get.call_count == 1
+        assert sleeps == []
+
+
+# ---------------------------------------------------------------------------
+# _get_drive_access_token — renovación proactiva con expiry
+# ---------------------------------------------------------------------------
+
+from datetime import datetime, timedelta, timezone  # noqa: E402
+
+
+def _show_token_resp(token_data: dict) -> MagicMock:
+    """Mock de `rclone config show gdrive_ev` que devuelve el bloque indicado."""
+    mock = MagicMock()
+    mock.returncode = 0
+    mock.stdout = f"[gdrive_ev]\ntoken = {json.dumps(token_data)}\n"
+    mock.stderr = ""
+    return mock
+
+
+def _rclone_about_resp(returncode: int = 0, stderr: str = "") -> MagicMock:
+    """Mock de `rclone about gdrive_ev:` con returncode configurable."""
+    mock = MagicMock()
+    mock.returncode = returncode
+    mock.stdout = ""
+    mock.stderr = stderr
+    return mock
+
+
+class TestGetDriveAccessToken:
+    """Renovación proactiva del access_token basada en el campo `expiry`."""
+
+    def test_token_vigente_no_refresca(self, monkeypatch):
+        """expiry > now + 5min: devuelve el token tal cual con UNA sola llamada."""
+        token = {
+            "access_token": "vigente_abc",
+            "refresh_token": "refresh_xyz",
+            "expiry": (
+                datetime.now(timezone.utc) + timedelta(hours=1)
+            ).isoformat(),
+        }
+        runner = MagicMock(side_effect=[_show_token_resp(token)])
+        monkeypatch.setattr("subprocess.run", runner)
+
+        assert _get_drive_access_token() == "vigente_abc"
+        # Sólo una invocación: `rclone config show`. NO debe haber `about`.
+        assert runner.call_count == 1
+        cmd = runner.call_args_list[0].args[0]
+        assert cmd[:3] == ["rclone", "config", "show"]
+
+    def test_token_caducado_refresca_y_devuelve_nuevo(self, monkeypatch):
+        """expiry < now: ejecuta `rclone about`, relee y devuelve el nuevo token."""
+        expired = {
+            "access_token": "viejo_111",
+            "refresh_token": "refresh_xyz",
+            "expiry": (
+                datetime.now(timezone.utc) - timedelta(minutes=10)
+            ).isoformat(),
+        }
+        fresh = {
+            "access_token": "nuevo_222",
+            "refresh_token": "refresh_xyz",
+            "expiry": (
+                datetime.now(timezone.utc) + timedelta(hours=1)
+            ).isoformat(),
+        }
+        runner = MagicMock(side_effect=[
+            _show_token_resp(expired),  # 1ª lectura
+            _rclone_about_resp(0),       # refresh
+            _show_token_resp(fresh),     # 2ª lectura
+        ])
+        monkeypatch.setattr("subprocess.run", runner)
+
+        assert _get_drive_access_token() == "nuevo_222"
+        assert runner.call_count == 3
+        cmds = [c.args[0] for c in runner.call_args_list]
+        assert cmds[0][:3] == ["rclone", "config", "show"]
+        assert cmds[1][:2] == ["rclone", "about"]
+        assert cmds[2][:3] == ["rclone", "config", "show"]
+
+    def test_token_dentro_de_margen_refresca(self, monkeypatch):
+        """expiry dentro del margen de 5min → también dispara refresh."""
+        about_to_expire = {
+            "access_token": "casi_caducado",
+            "expiry": (
+                datetime.now(timezone.utc) + timedelta(minutes=2)
+            ).isoformat(),
+        }
+        fresh = {
+            "access_token": "renovado",
+            "expiry": (
+                datetime.now(timezone.utc) + timedelta(hours=1)
+            ).isoformat(),
+        }
+        runner = MagicMock(side_effect=[
+            _show_token_resp(about_to_expire),
+            _rclone_about_resp(0),
+            _show_token_resp(fresh),
+        ])
+        monkeypatch.setattr("subprocess.run", runner)
+
+        assert _get_drive_access_token() == "renovado"
+        assert runner.call_count == 3
+
+    def test_refresh_falla_devuelve_none(self, monkeypatch):
+        """Si `rclone about` devuelve != 0, devuelve None (no propaga viejo token)."""
+        expired = {
+            "access_token": "viejo_que_no_sirve",
+            "expiry": (
+                datetime.now(timezone.utc) - timedelta(minutes=10)
+            ).isoformat(),
+        }
+        runner = MagicMock(side_effect=[
+            _show_token_resp(expired),
+            _rclone_about_resp(returncode=1, stderr="refresh failed"),
+        ])
+        monkeypatch.setattr("subprocess.run", runner)
+
+        assert _get_drive_access_token() is None
+        assert runner.call_count == 2  # no llega a la segunda lectura
+
+    def test_refresh_lanza_excepcion_devuelve_none(self, monkeypatch):
+        """Si `rclone about` lanza (timeout/no encontrado), devuelve None."""
+        expired = {
+            "access_token": "viejo",
+            "expiry": (
+                datetime.now(timezone.utc) - timedelta(minutes=10)
+            ).isoformat(),
+        }
+
+        def _side_effect(cmd, *args, **kwargs):
+            if cmd[:3] == ["rclone", "config", "show"]:
+                return _show_token_resp(expired)
+            if cmd[:2] == ["rclone", "about"]:
+                raise subprocess.TimeoutExpired(cmd=cmd, timeout=10)
+            raise AssertionError(f"Comando inesperado: {cmd}")
+
+        monkeypatch.setattr("subprocess.run", _side_effect)
+        assert _get_drive_access_token() is None
+
+    def test_expiry_malformado_devuelve_token_tal_cual(self, monkeypatch):
+        """Defensivo: expiry no parseable → devuelve access_token sin refrescar."""
+        token = {
+            "access_token": "tal_cual",
+            "expiry": "esto-no-es-fecha",
+        }
+        runner = MagicMock(side_effect=[_show_token_resp(token)])
+        monkeypatch.setattr("subprocess.run", runner)
+
+        assert _get_drive_access_token() == "tal_cual"
+        assert runner.call_count == 1  # no intenta refresh
+
+    def test_expiry_ausente_devuelve_token_tal_cual(self, monkeypatch):
+        """Defensivo: sin campo expiry → comportamiento legado (devuelve tal cual)."""
+        token = {"access_token": "sin_expiry"}
+        runner = MagicMock(side_effect=[_show_token_resp(token)])
+        monkeypatch.setattr("subprocess.run", runner)
+
+        assert _get_drive_access_token() == "sin_expiry"
+        assert runner.call_count == 1
+
+    def test_config_show_falla_devuelve_none(self, monkeypatch):
+        """Si la 1ª lectura lanza, devuelve None sin tocar refresh."""
+        def _boom(*a, **kw):
+            raise FileNotFoundError("rclone no encontrado")
+        monkeypatch.setattr("subprocess.run", _boom)
+
+        assert _get_drive_access_token() is None
+
+    def test_token_block_ausente_devuelve_none(self, monkeypatch):
+        """Si `rclone config show` no incluye la línea token, devuelve None."""
+        mock = MagicMock()
+        mock.returncode = 0
+        mock.stdout = "[gdrive_ev]\nscope = drive\n"
+        mock.stderr = ""
+        monkeypatch.setattr("subprocess.run", MagicMock(side_effect=[mock]))
+
+        assert _get_drive_access_token() is None
+
+
+class TestParseIsoExpiry:
+    """Cobertura de la normalización ISO 8601 → datetime UTC."""
+
+    def test_offset_positivo(self):
+        dt = _parse_iso_expiry("2026-05-19T10:23:45+02:00")
+        assert dt.tzinfo is not None
+        # 10:23 +02:00 = 08:23 UTC
+        assert dt.hour == 8 and dt.minute == 23
+
+    def test_offset_z(self):
+        """Sufijo Z (UTC) — Python <3.11 no lo admite en fromisoformat sin más."""
+        dt = _parse_iso_expiry("2026-05-19T10:23:45Z")
+        assert dt.hour == 10 and dt.minute == 23
+
+    def test_precision_nanosegundo_se_trunca(self):
+        """rclone escribe hasta 9 dígitos en la fracción; truncamos a 6."""
+        dt = _parse_iso_expiry("2026-05-19T10:23:45.123456789+02:00")
+        assert dt.microsecond == 123456
+
+    def test_naive_se_asume_utc(self):
+        """Datetime sin offset se asume UTC (defensivo)."""
+        dt = _parse_iso_expiry("2026-05-19T10:23:45")
+        assert dt.tzinfo == timezone.utc
+
+    def test_string_invalido_lanza(self):
+        with pytest.raises(ValueError):
+            _parse_iso_expiry("no-es-fecha")
