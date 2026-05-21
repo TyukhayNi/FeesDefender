@@ -54,3 +54,7 @@ data/probes/
 # están presentes. Política decidida en H5 del plan SaRS1 (opción a del
 # Pendiente C1 de docs/PLAN_SaRS1_anon_pipeline.md §13).
 tests/fixtures/anon/
+
+# Claude Code — local
+.claude/settings.local.json
+.claude/mcp_servers.json
