@@ -829,6 +829,151 @@ with tab_casos:
                 st.code(_email_text, language=None)
                 st.caption("Copia el texto y pégalo en un email a tus compañeros de E&V.")
 
+        st.divider()
+        with st.expander("🏙️ Reasignar ciudad"):
+            from core.casos import case_locator as _cl
+            from core.ciudades import CIUDADES as _ALL_CIUDADES
+
+            _caso_rs = st.selectbox(
+                "Caso",
+                cases,
+                key="casos_reasig_sel",
+                help="Selecciona el caso que quieres mover a otra ciudad.",
+            )
+
+            _path_actual_rs = _cl.path_for(_caso_rs)
+            _ciudad_actual_rs = (
+                _path_actual_rs.parent.name
+                if _path_actual_rs.parent != settings.casos_root
+                else "(raíz)"
+            )
+            st.caption(f"Ciudad actual: **{_ciudad_actual_rs}**")
+
+            _equipo_rs = _caso_rs.split(" - ")[0].strip() if _caso_rs else ""
+            _ciudad_esperada_rs = _ciudad_de_equipo(_equipo_rs)
+            if _ciudad_esperada_rs and _ciudad_esperada_rs != _ciudad_actual_rs:
+                st.warning(
+                    f"El prefijo `{_equipo_rs}` pertenece a "
+                    f"**{_ciudad_esperada_rs}**, pero el caso está en "
+                    f"**{_ciudad_actual_rs}**."
+                )
+
+            _ciudad_destino_rs = st.selectbox(
+                "Ciudad destino",
+                ["— selecciona —"] + list(_ALL_CIUDADES) + ["_Sin clasificar"],
+                key="casos_reasig_dest",
+                help="Catálogo cerrado. Para añadir una ciudad nueva, hablar con Nikolai.",
+            )
+
+            _motivo_rs = st.text_area(
+                "Motivo (mínimo 10 caracteres)",
+                key="casos_reasig_motivo",
+                help=(
+                    "Explica brevemente por qué reasignas el caso. Queda "
+                    "registrado en `_audit/relocations.jsonl` junto a tu actor."
+                ),
+                placeholder="Ej: prefijo SaRS1 asignado por error; el inmueble está en Bilbao",
+            )
+
+            _can_reasig = (
+                _ciudad_destino_rs != "— selecciona —"
+                and _ciudad_destino_rs != _ciudad_actual_rs
+                and len((_motivo_rs or "").strip()) >= 10
+            )
+            if st.button(
+                "🏙️ Reasignar caso",
+                key="casos_reasig_btn",
+                disabled=not _can_reasig,
+                help=(
+                    "Mueve la carpeta a la ciudad destino, actualiza el "
+                    "metadato `ciudad` en `_caso.md` y registra la operación "
+                    "en el audit log. Atómico: si falla la actualización "
+                    "del metadato, revierte el movimiento de carpeta."
+                ),
+            ):
+                with st.spinner("Reasignando…"):
+                    try:
+                        _new_path_rs = _cl.move_to_city(
+                            _caso_rs,
+                            _ciudad_destino_rs,
+                            _motivo_rs.strip(),
+                            _actor_final,
+                        )
+                        try:
+                            _rel_rs = _new_path_rs.relative_to(settings.casos_root)
+                        except ValueError:
+                            _rel_rs = _new_path_rs
+                        st.success(
+                            f"✅ Reasignado a **{_ciudad_destino_rs}** "
+                            f"(`{_rel_rs}`)."
+                        )
+                        st.cache_data.clear()
+                    except FileNotFoundError as _fnf:
+                        st.error(f"❌ Caso no encontrado: {_fnf}")
+                    except ValueError as _ve:
+                        st.error(f"❌ {_ve}")
+                    except Exception as _exc:
+                        st.error(f"❌ Error inesperado: {_exc}")
+
+        # ── Admin: histórico relocations.jsonl (solo Nikolai) ──────────
+        if _actor_final == "Nikolai Tyukhay":
+            st.divider()
+            with st.expander("🔐 Admin — Histórico de reasignaciones"):
+                import json as _json_admin
+
+                _log_path_adm = settings.casos_root / "_audit" / "relocations.jsonl"
+                if not _log_path_adm.exists():
+                    st.caption("_(sin entradas todavía)_")
+                else:
+                    _entries_adm: list[dict] = []
+                    try:
+                        with _log_path_adm.open(encoding="utf-8") as _fadm:
+                            for _line_adm in _fadm:
+                                _line_adm = _line_adm.strip()
+                                if _line_adm:
+                                    _entries_adm.append(_json_admin.loads(_line_adm))
+                    except (OSError, _json_admin.JSONDecodeError) as _exc_adm:
+                        st.error(f"No se pudo leer el log: {_exc_adm}")
+                    else:
+                        st.caption(
+                            f"**{len(_entries_adm)}** entradas en "
+                            f"`_audit/relocations.jsonl`"
+                        )
+                        _col_fa1, _col_fa2 = st.columns(2)
+                        with _col_fa1:
+                            _ops_adm = sorted(
+                                {e.get("operacion", "") for e in _entries_adm}
+                            )
+                            _filter_op_adm = st.selectbox(
+                                "Operación",
+                                ["(todas)"] + _ops_adm,
+                                key="admin_log_filter_op",
+                            )
+                        with _col_fa2:
+                            _filter_case_adm = st.text_input(
+                                "Caso contiene…",
+                                key="admin_log_filter_case",
+                                placeholder="ej: BaRS1",
+                            ).strip().lower()
+                        _filtered_adm = [
+                            e for e in _entries_adm
+                            if (
+                                _filter_op_adm == "(todas)"
+                                or e.get("operacion") == _filter_op_adm
+                            )
+                            and (
+                                not _filter_case_adm
+                                or _filter_case_adm in e.get("case_id", "").lower()
+                            )
+                        ]
+                        if _filtered_adm:
+                            st.dataframe(
+                                list(reversed(_filtered_adm)),
+                                use_container_width=True,
+                            )
+                        else:
+                            st.caption("_(sin coincidencias con los filtros)_")
+
 
 # ── TAB: Nuevo caso ─────────────────────────────────────────────────────────
 with tab_nuevo:

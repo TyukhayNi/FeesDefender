@@ -49,7 +49,7 @@ Base datos expedientes/
 ## Estructura de un caso
 
 ```
-data/CASOS/{case_id}/
+CASOS_ROOT/<Ciudad>/{case_id}/
 ├── 00_INPUT/                   # docs originales (sincronizados desde Drive)
 ├── 01_PROCESADO/               # texto extraído + .md por documento
 ├── 02_ANALISIS/                # hechos_atomicos.md, prueba_indexada.md, contradicciones.md
@@ -59,6 +59,8 @@ data/CASOS/{case_id}/
 ├── 06_AI_COWORK/               # notas y prompts ad-hoc del abogado con LLM
 └── 90_NOTAS_PERSONALES/        # zona del abogado, no tocada por el sistema
 ```
+
+`<Ciudad>` ∈ catálogo cerrado de `core/ciudades.CIUDADES`. La detección automática del prefijo del `case_id` → ciudad usa `ciudad_de_equipo()`. Toda resolución de rutas pasa por `core/casos/case_locator` — ver `docs/ARQUITECTURA.md` para detalles.
 
 Cada `.md` lleva frontmatter YAML con `case_id`, `fase`, `fecha`, `fuente` y
 `hash` para trazabilidad.
