@@ -10,6 +10,9 @@
       "Bash(git add *)",
       "Bash(git commit *)",
       "Bash(git push)",
+      "Bash(git push *)",
+      "Bash(pytest)",
+      "Bash(pytest *)",
       "Bash(python -m pytest *)",
       "Bash(python -m scripts.*)",
       "Bash(python scripts\\*)",
@@ -58,6 +61,8 @@
     ],
     "ask": [
       "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git push --delete*)",
       "Bash(git reset --hard*)",
       "Bash(git checkout -- *)"
     ]
