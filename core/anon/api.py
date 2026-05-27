@@ -209,6 +209,7 @@ def anonimizar_documento(
     log: logging.Logger | None = None,
     politica: str = "SALTAR",
     auto_ocr: bool = False,
+    variantes_cliente: list[str] | None = None,
 ) -> dict:
     """Anonimiza un único documento (PDF o DOCX) ya extractable.
 
@@ -320,8 +321,10 @@ def anonimizar_documento(
             "error": str(e),
         }
 
-    # Anonimización (4 fases) sobre el mapa compartido
-    texto_anon, _ = anonimizar_texto(texto_original, mapa=mapa_caso, log=log)
+    # Anonimización (fase 0 variantes cliente + 4 fases) sobre el mapa compartido
+    texto_anon, _ = anonimizar_texto(
+        texto_original, mapa=mapa_caso, log=log, variantes_conocidas=variantes_cliente
+    )
 
     n_entidades_nuevas = len(mapa_caso.mapa) - n_entidades_antes
 
@@ -353,6 +356,41 @@ def anonimizar_documento(
 # ---------------------------------------------------------------------------
 # anonimizar_caso — pipeline completo del caso
 # ---------------------------------------------------------------------------
+
+def _derivar_variantes_cliente(case_id: str) -> list[str]:
+    """Devuelve las variantes OCR conocidas del cliente del caso (§14).
+
+    Lee ``00_Input/_caso.md`` y resuelve la clave de cliente propio (E&V) a
+    partir de ``meta.cliente_propio_clave`` o, en su defecto, detectando
+    "engel"/"völkers"/"mmc" en ``meta.cliente``. Si no hay caso/índice o no se
+    reconoce el cliente, devuelve ``[]`` (comportamiento actual sin cambios).
+    """
+    from core.config import VARIANTES_OCR_CLIENTE
+
+    index = caso_path(case_id) / SUBDIR_INPUT / "_caso.md"
+    if not index.exists():
+        return []
+    try:
+        meta_fm, _ = read_md(index)
+    except Exception:
+        return []
+    meta = (meta_fm.get("meta") or {}) if isinstance(meta_fm, dict) else {}
+
+    claves: list[str] = []
+    clave = meta.get("cliente_propio_clave")
+    if clave in VARIANTES_OCR_CLIENTE:
+        claves.append(clave)
+    else:
+        cliente = str(meta.get("cliente") or "").lower()
+        if any(t in cliente for t in ("engel", "völkers", "volkers", "mmc")):
+            # Cliente E&V: cargar ambas denominaciones (matriz + operativa).
+            claves = ["ENGEL_VOLKERS_SPAIN", "EV_MMC_SPAIN"]
+
+    variantes: list[str] = []
+    for k in claves:
+        variantes.extend(VARIANTES_OCR_CLIENTE.get(k, ()))
+    return variantes
+
 
 def _listar_documentos(case_id: str) -> list[Path]:
     """Recorre ``00_Input/`` recursivamente y devuelve los .pdf/.docx.
@@ -407,6 +445,7 @@ def anonimizar_caso(
     on_progress: ProgressCallback | None = None,
     log: logging.Logger | None = None,
     auto_ocr: bool = False,
+    variantes_cliente: list[str] | None = None,
 ) -> dict:
     """Pipeline completo del anonimizador sobre un caso.
 
@@ -439,6 +478,11 @@ def anonimizar_caso(
         if not log.handlers:
             log.addHandler(logging.NullHandler())
 
+    # §14: si no se pasan variantes explícitas, derivar las del cliente del
+    # caso desde _caso.md (todas las cadenas conocidas → etiqueta canónica).
+    if variantes_cliente is None:
+        variantes_cliente = _derivar_variantes_cliente(case_id)
+
     documentos = _listar_documentos(case_id)
     total = len(documentos)
     log.info(f"Caso {case_id}: {total} documento(s) procesables en 00_Input/")
@@ -468,6 +512,7 @@ def anonimizar_caso(
             log=log,
             politica=politica,
             auto_ocr=auto_ocr,
+            variantes_cliente=variantes_cliente,
         )
         rel = doc.relative_to(caso_path(case_id))
         if res["skipped"]:

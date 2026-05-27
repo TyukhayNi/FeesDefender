@@ -1720,10 +1720,43 @@ def procesar(ruta_archivo: str, tipo_forzado: str = None, revision_auto: str = N
 # API PURA EN MEMORIA (FeesDefender — Fase 1)
 # ══════════════════════════════════════════════════════════════════════════════
 
+def anonimizar_variantes_conocidas(
+    texto: str,
+    mapa: "MapaEntidades",
+    variantes: "list[str] | tuple[str, ...] | None",
+    log: "logging.Logger",
+) -> str:
+    """Reemplaza variantes conocidas (p. ej. degradaciones OCR del nombre del
+    cliente) por una **única etiqueta canónica**. Ver MEJORAS_FUTURAS §14.
+
+    Precisión alta: solo sustituye cadenas literales conocidas (case-insensitive),
+    de mayor a menor longitud para no dejar fragmentos. Todas las variantes
+    comparten etiqueta para que el borrador al frontier no filtre el cliente.
+    """
+    if not variantes:
+        return texto
+    canonica: str | None = None
+    n = 0
+    for v in sorted({x for x in variantes if x}, key=len, reverse=True):
+        patron = re.compile(re.escape(v), re.IGNORECASE)
+        if not patron.search(texto):
+            continue
+        if canonica is None:
+            canonica = mapa.registrar_dato(v, "EMPRESA")
+        elif v not in mapa.mapa:
+            mapa.mapa[v] = canonica  # traza para deanonimización
+        texto = patron.sub(canonica, texto)
+        n += 1
+    if n:
+        log.info(f"Variantes conocidas del cliente anonimizadas: {n}")
+    return texto
+
+
 def anonimizar_texto(
     texto: str,
     mapa: "MapaEntidades | None" = None,
     log: "logging.Logger | None" = None,
+    variantes_conocidas: "list[str] | tuple[str, ...] | None" = None,
 ) -> "tuple[str, MapaEntidades]":
     """Aplica las 4 fases de anonimización sobre texto plano.
 
@@ -1752,6 +1785,9 @@ def anonimizar_texto(
         if not log.handlers:
             log.addHandler(logging.NullHandler())
 
+    # Fase 0 (§14): variantes conocidas del cliente → etiqueta canónica única,
+    # antes de las pasadas heurísticas (que respetan las etiquetas ya puestas).
+    texto = anonimizar_variantes_conocidas(texto, mapa, variantes_conocidas, log)
     texto = anonimizar_con_presidio(texto, mapa, log)
     texto = anonimizar_por_contexto(texto, mapa, log)
     texto = aplicar_regex(texto, mapa, log)

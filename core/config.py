@@ -181,6 +181,40 @@ CLIENTES_PROPIOS_EV: dict[str, tuple[str, str]] = {
 CLIENTE_PROPIO_DEFAULT: str = "EV_MMC_SPAIN"
 
 
+# ---------------------------------------------------------------------------
+# Variantes OCR conocidas del cliente (anonimización — MEJORAS_FUTURAS §14)
+# ---------------------------------------------------------------------------
+#
+# El OCR degrada la denominación del cliente ("Engel & Völkers" → "Engel £
+# Vólkers", "ENGEL 8 VÖLKERS"...) y el motor las deja sin anonimizar de forma
+# inconsistente. El pipeline pre-carga estas variantes para mapearlas todas a
+# una única etiqueta canónica antes de las pasadas del motor. Ampliar según
+# aparezcan nuevas degradaciones en casos reales.
+VARIANTES_OCR_CLIENTE: dict[str, tuple[str, ...]] = {
+    "ENGEL_VOLKERS_SPAIN": (
+        "ENGEL & VÖLKERS SPAIN, S.L.U.",
+        "ENGEL & VÖLKERS SPAIN, S.L.",
+        "Engel & Völkers Spain",
+        "Engel & Völkers",
+        "Engel & Volkers",
+        "Engel Völkers",
+        "Engel Volkers",
+        "ENGEL & VÖLKERS",
+        "ENGEL Y VÖLKERS",
+        "ENGEL 8 VÖLKERS SPAIN, S.L.",
+        "ENGEL 8 VÖLKERS",
+        "ENGEL 8 VOLKERS",
+        "Engel £ Vólkers",
+        "Engel 4 Volkers",
+    ),
+    "EV_MMC_SPAIN": (
+        "EV MMC SPAIN, S.L.U.",
+        "EV MMC SPAIN",
+        "EV MMC",
+    ),
+}
+
+
 def cliente_propio_id(clave: str) -> str:
     """Devuelve el id_sudespacho de un cliente propio E&V.
 

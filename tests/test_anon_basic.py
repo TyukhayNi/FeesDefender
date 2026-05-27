@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 
 import pytest
@@ -112,6 +113,27 @@ class TestRoundTrip:
         # Round-trip exacto: anonimizar → deanonimizar recupera el original
         recuperado = deanonimizar_texto(anonimizado, mapa.mapa_inverso)
         assert recuperado == original
+
+    def test_variantes_cliente_a_etiqueta_unica(self) -> None:
+        """§14: variantes OCR del cliente E&V se anonimizan todas a la misma
+        etiqueta canónica, aunque el motor no las detecte por sí solo."""
+        from core.anon.anonimizar import MapaEntidades, anonimizar_variantes_conocidas
+        from core.config import VARIANTES_OCR_CLIENTE
+
+        texto = (
+            "Demanda de ENGEL & VÖLKERS SPAIN, S.L. contra el propietario. "
+            "La mercantil Engel £ Vólkers actuó como mediadora; "
+            "ENGEL 8 VÖLKERS gestionó la operación."
+        )
+        mapa = MapaEntidades()
+        variantes = VARIANTES_OCR_CLIENTE["ENGEL_VOLKERS_SPAIN"]
+        out = anonimizar_variantes_conocidas(texto, mapa, variantes, _logger_silencioso())
+
+        # Ninguna variante sobrevive literal.
+        assert "VÖLKERS" not in out and "Vólkers" not in out
+        # Todas comparten una única etiqueta canónica [EMPRESA...].
+        etiquetas = set(re.findall(r"\[EMPRESA(?:_\d+)?\]", out))
+        assert len(etiquetas) == 1
 
     def test_email_ocr_arroba_corrompida(self) -> None:
         """§15: emails con '@' transcrito como Q/O por OCR deben anonimizarse."""
