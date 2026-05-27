@@ -690,6 +690,17 @@ PATRONES_REGEX = [
     (r'\b\d{16,19}\b',                                                  "CUENTA"),
 ]
 
+# §15: email con '@' transcrito por OCR como un glifo MAYÚSCULO (Q/O/G/E…).
+# Compilado CASE-SENSITIVE (a diferencia del resto de PATRONES_REGEX, que van
+# con IGNORECASE): el separador debe ser una única letra mayúscula entre dos
+# tramos en minúscula + TLD conocido. Así se capturan "cubriaQdelriomiera.es"
+# o "gutierrezOengelvoelkers.com" sin tragar URLs públicas en minúscula
+# (www.engelvoelkers.com, sedejudicial.cantabria.es).
+_PATRON_EMAIL_OCR = re.compile(
+    r'\b[a-z][a-z0-9._+-]*[A-Z][a-z][a-z0-9.-]*'
+    r'\.(?:es|com|org|net|cat|eu|gob|gov|edu|info|biz)\b'
+)
+
 
 def _offsets_nombre_limpio(captura: str, nombre: str, base_start: int) -> tuple[int, int] | None:
     """Localiza el ``nombre`` ya limpiado dentro de la ``captura`` original.
@@ -1223,6 +1234,17 @@ def aplicar_regex(texto: str, mapa: MapaEntidades, log) -> str:
             etiqueta = mapa.registrar_dato(valor, tipo)
             texto = texto[:m.start()] + etiqueta + texto[m.end():]
             detectados += 1
+
+    # §15: pasada case-sensitive para emails con '@' corrompido por OCR.
+    emails_ocr = [
+        m for m in _PATRON_EMAIL_OCR.finditer(texto)
+        if not (m.group(0).startswith('[') and m.group(0).endswith(']'))
+    ]
+    for m in reversed(emails_ocr):
+        etiqueta = mapa.registrar_dato(m.group(0), "EMAIL")
+        texto = texto[:m.start()] + etiqueta + texto[m.end():]
+        detectados += 1
+
     log.info(f"Regex: {detectados} entidades detectadas")
     return texto
 

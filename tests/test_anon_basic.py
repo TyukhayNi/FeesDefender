@@ -113,6 +113,18 @@ class TestRoundTrip:
         recuperado = deanonimizar_texto(anonimizado, mapa.mapa_inverso)
         assert recuperado == original
 
+    def test_email_ocr_arroba_corrompida(self) -> None:
+        """§15: emails con '@' transcrito como Q/O por OCR deben anonimizarse."""
+        original = (
+            "Contacto: cubriaQdelriomiera.es y "
+            "gutierrezOengelvoelkers.com. Texto normal con Oviedo y Quito."
+        )
+        anonimizado, _ = _anonimizar_sin_presidio(original)
+        assert "cubriaQdelriomiera.es" not in anonimizado
+        assert "gutierrezOengelvoelkers.com" not in anonimizado
+        # No debe romper palabras corrientes con O/Q sin cola de dominio.
+        assert "Oviedo" in anonimizado and "Quito" in anonimizado
+
     def test_nig_no_se_anonimiza_como_cuenta(self) -> None:
         """§19: el NIG (19 dígitos) es un identificador procesal público, no
         PII bancaria. No debe capturarse como [CUENTA]."""
