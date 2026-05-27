@@ -85,10 +85,12 @@ def ocr_pdf(
     if on_progress:
         on_progress(f"Iniciando OCR: {ruta_entrada.name}")
 
+    # La API de ocrmypdf exige el input como primer argumento POSICIONAL
+    # (`input_file_or_options`), no como kwarg; y `language` espera un iterable
+    # de códigos (`["spa", "cat", "rus"]`), no la cadena "spa+cat+rus" (un str
+    # se iteraría por caracteres). Ver docs/MEJORAS_FUTURAS.md §11.
     args: dict = {
-        "input_file":   str(ruta_entrada),
-        "output_file":  str(ruta_salida),
-        "language":     idiomas,
+        "language":     idiomas.split("+"),
         "deskew":       deskew,
         "rotate_pages": rotate_pages,
         "optimize":     optimize,
@@ -101,7 +103,7 @@ def ocr_pdf(
         args["skip_text"] = True
 
     try:
-        result = ocrmypdf.ocr(**args)
+        result = ocrmypdf.ocr(str(ruta_entrada), str(ruta_salida), **args)
         # ExitCode IntEnum: 0 (OK) y 6 (PRIOR_OCR_FOUND_SKIP) se aceptan
         rc = int(result) if result is not None else 0
         if rc not in (0, 6):
