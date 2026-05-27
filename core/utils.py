@@ -37,9 +37,13 @@ def now_iso() -> str:
 _WIN_FORBIDDEN = re.compile(r'[\\/:*?"<>|]')
 
 # Formato nuevo: BaRR3 - Dirección (W-XXXXXX) - Tipo
+# Categoría OTROS no proviene de captación inmobiliaria → su referencia es
+# "(SIN REFERENCIA)" en lugar de "(W-XXXXXX)". Ver MEJORAS_FUTURAS.md §12.
 # Formato heredado (tests/desarrollo): EV-2026-001
 _CASE_ID_NEW = re.compile(
-    r"^[A-Z][a-zA-Z][A-Z]{2}\d+\s+-\s+.+\(W-[A-Z0-9]+\)\s+-\s+.+$"
+    r"^[A-Z][a-zA-Z][A-Z]{2}\d+\s+-\s+.+"
+    r"\((?:W-[A-Z0-9]+|SIN\s+REFERENCIA)\)"
+    r"\s+-\s+.+$"
 )
 _CASE_ID_LEGACY = re.compile(r"^[A-Z]{2,6}-\d{4}-\d{3}$")
 
