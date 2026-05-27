@@ -570,6 +570,24 @@ trazabilidad por commits. Detalle completo en memoria
 
 ### ⚠️ MÁXIMA PRIORIDAD — abrir próxima sesión por aquí
 
+**[SIGUIENTE-ORGANIZADOR-UI]** (planificado 2026-05-27 s26) — **TAREA DE LA PRÓXIMA SESIÓN.** Botón "🤖 Organizar localmente" en Streamlit para el organizador local (`core/local_organizer.py`, ya implementado y testeado por CLI en s26). La lógica vive en el core; la UI solo orquesta (arquitectura 3 capas).
+
+Alcance:
+- **Ubicación**: página del caso, sección de análisis/intake.
+- **Validaciones previas** (deshabilitar el botón si fallan, con mensaje claro):
+  - Caso pulled: `00_Input/01_Drive EV/` con documentos.
+  - `06_Anonimizado/` poblado (si no, enlazar a "Anonimizar" primero).
+  - `core.llm_local.health_check()` True. Si Ollama está down, mostrar aviso accionable (`ollama serve` + `ollama pull qwen2.5:14b-instruct-q4_K_M`) y deshabilitar.
+- **Flujo en 2 pasos** (refleja el CLI `--plan` → `--execute`):
+  1. "Proponer" → `local_organizer.planificar(case_id)`. Spinner por fase. Resumen: nº docs, % alta confianza (≥0.80), pendientes, confianza media. Enlace para abrir `07_AI cowork/_plan_reorganizacion.md` (revisión humana editable).
+  2. "Aplicar" → `local_organizer.ejecutar_plan(case_id)`. Resumen de acciones (COPY/MOVED/SKIP_UNCHANGED), correcciones registradas, enlace `computer://` para abrir `00_Input/01_Drive EV/_organizado/`.
+- **Disclaimer fijo**: la vista `_organizado/` contiene PII (copias de originales) — material interno, no compartir con externos.
+- **Coste**: 0 (LLM local). No mostrar estimación de coste API.
+- **Regla del proyecto**: todo control Streamlit lleva `help=` con descripción del comportamiento (feedback_ui_tooltips).
+- **Tests**: smoke test de que el handler invoca `planificar`/`ejecutar_plan` con el `case_id` correcto (mock del core).
+
+Referencia: handoff de Cowork "organizador local con Ollama" Fase 5 (UI) + memoria `project_organizador_local_ollama.md`. Modos avanzados del CLI (`--refresh/--rebuild/--renumerar`) pueden quedar fuera del MVP del botón.
+
 **[SIGUIENTE-SUBDIVISION-CIUDADES]** (plan trazado el 2026-05-12 s14; Fase 0 cerrada el 2026-05-12 s16)
 
 Subdivisión de `CASOS_ROOT` por ciudades. Plan en
