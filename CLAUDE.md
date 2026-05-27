@@ -179,13 +179,23 @@ Criterios formales de la Sala 1ª del TS (admisión de recursos de casación):
 Para generación automática de escritos `.docx`, usar la skill
 `escritos-judiciales` (en `.claude/skills/escritos-judiciales/`).
 
-## Cuándo NO usar Claude Code para algo
+## División Claude Code vs. Cowork (tras separar repo de Drive, 2026-05-27)
 
-Estos trabajos son más cómodos en Cowork — mantenerlos allí:
+Desde la migración, el reparto es estricto porque **el código vive en disco local
+(`C:\Users\tnm33\Dev\FeesDefender`) y Cowork NO puede acceder a él** (Cowork solo
+ve Google Drive).
 
+**Claude Code (aquí, local) → todo lo que toque CÓDIGO:**
+- Cambios en `core/`, `scripts/`, `tests/`, `streamlit_app.py`, etc.
+- Git (commit, push), pytest, ejecución de la app.
+
+**Cowork (nube/móvil) → trabajo jurídico, sin tocar código:**
 - Redacción de escritos procesales `.docx` (preview + Save button).
 - Comunicaciones a clientes vía Gmail / Drive (MCPs preinstalados).
 - Investigación CENDOJ (Chrome MCP listo).
 - Análisis de un caso concreto sin tocar código.
+- Lectura del estado del proyecto en la bitácora de Drive
+  (`...\Proyectos\FeesDefender\ESTADO.md`).
 
-Para el resto: usar Claude Code.
+Cowork NO debe trabajar la carpeta obsoleta de Drive
+(`...\Base datos expedientes _OBSOLETO_borrar_tras_2026-06-10`).
