@@ -5,7 +5,7 @@ Hipotesis: POST /api/element_register/colaboradores acepta x-api-key
 en lugar de Authorization: Bearer JWT, igual que los endpoints GET.
 
 Ejecutar desde PowerShell:
-    cd "G:\Unidades compartidas\DESPACHO - PRODUCCION\Base datos expedientes"
+    cd "C:\Users\tnm33\Dev\FeesDefender"
     python -m scripts.test_apikey_write
 
 El script lee SUDESPACHO_API_KEY del .env. No imprime la clave.

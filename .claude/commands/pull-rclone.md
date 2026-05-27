@@ -17,7 +17,7 @@ Pasos:
 3. Lanza rclone con los flags obligatorios:
 
 ```powershell
-cd "G:\Unidades compartidas\DESPACHO - PRODUCCION\Base datos expedientes"
+cd "C:\Users\tnm33\Dev\FeesDefender"
 rclone copy gdrive_ev: "data\CASOS\<ciudad>\<case_id>\00_Input\01_Drive EV" `
   --drive-team-drive <team_id> `
   --drive-root-folder-id <folder_id> `
@@ -39,7 +39,7 @@ Flags obligatorios y por qué (NO omitir nunca):
 5. Si termina OK, lista los ficheros descargados:
 
 ```powershell
-cd "G:\Unidades compartidas\DESPACHO - PRODUCCION\Base datos expedientes"
+cd "C:\Users\tnm33\Dev\FeesDefender"
 Get-ChildItem -Path "data\CASOS\<ciudad>\<case_id>\00_Input\01_Drive EV" -Recurse | Measure-Object Length -Sum
 ```
 
@@ -48,6 +48,6 @@ y devuelve un resumen: N ficheros, X MiB totales.
 Si no tienes claro el team_id o folder_id, consúltalo con el helper:
 
 ```powershell
-cd "G:\Unidades compartidas\DESPACHO - PRODUCCION\Base datos expedientes"
+cd "C:\Users\tnm33\Dev\FeesDefender"
 python scripts\diag_drive_autofill.py "<URL o folder ID>"
 ```

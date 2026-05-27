@@ -57,7 +57,7 @@
 Ejecutar siempre antes de empezar a trabajar:
 
 ```powershell
-cd "G:\Unidades compartidas\DESPACHO - PRODUCCION\Base datos expedientes"
+cd "C:\Users\tnm33\Dev\FeesDefender"
 git log --oneline -5                             # ¿qué cambió desde la última sesión?
 python -m pytest -q --tb=no                     # ¿sigue verde?
 python -m scripts.sync_sudespacho check-legacy  # ¿PHPSESSID válida? (Claude la renueva automáticamente)
@@ -87,7 +87,7 @@ Claude revisa y comunica:
 **Momento 4 — Usuario pega una sola línea en PowerShell:**
 
 ```powershell
-cd "G:\Unidades compartidas\DESPACHO - PRODUCCION\Base datos expedientes"
+cd "C:\Users\tnm33\Dev\FeesDefender"
 python -m scripts.session_close
 # Si los tests pasan:
 git add -A
@@ -913,15 +913,20 @@ bitácora.
 
 ---
 
-## Estructura de carpetas en Google Drive (reorganizada 2026-04-28)
+## Estructura de carpetas (repo separado de Drive 2026-05-27)
 
 ```
+C:\Users\tnm33\Dev\
+└── FeesDefender\                  ← código FeesDefender (git → GitHub TyukhayNi/FeesDefender)
+    ├── core/  scripts/  tests/  prompts/  docs/
+    ├── streamlit_app.py
+    └── .env                       ← local, nunca a GitHub
+
 G:\Unidades compartidas\
 ├── DESPACHO - PRODUCCION\
-│   └── Base datos expedientes\    ← código FeesDefender (git → GitHub TyukhayNi/FeesDefender)
-│       ├── core/  scripts/  tests/  prompts/  docs/
-│       ├── streamlit_app.py
-│       └── .env                   ← local, nunca a GitHub
+│   └── Proyectos\FeesDefender\    ← bitácora/docs en Drive (acceso móvil vía MCP)
+│       ├── bitacora/  docs/  decisiones/
+│       └── ESTADO.md              ← export automático del cierre de sesión
 │
 └── EXPEDIENTES - TYUKHAY LEGAL\
     └── CASOS\                     ← expedientes reales (acceso equipo: Paola, Ana)

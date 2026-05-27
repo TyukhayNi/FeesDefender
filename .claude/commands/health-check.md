@@ -6,7 +6,7 @@ allowed-tools: Bash
 Ejecuta el health check completo del proyecto:
 
 ```powershell
-cd "G:\Unidades compartidas\DESPACHO - PRODUCCION\Base datos expedientes"
+cd "C:\Users\tnm33\Dev\FeesDefender"
 python -m scripts.health_check
 ```
 

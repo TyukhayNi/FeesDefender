@@ -8,7 +8,7 @@ los XLSX correspondientes que el equipo abre con Excel:
 
 Workflow recomendado:
 
-    cd "G:\\Unidades compartidas\\DESPACHO - PRODUCCION\\Base datos expedientes"
+    cd "C:\\Users\\tnm33\\Dev\\FeesDefender"
     python -m scripts.render_plantillas all
 
 El XLSX generado lleva una hoja oculta ``_meta`` con la versión del YAML

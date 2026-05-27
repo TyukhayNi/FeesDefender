@@ -21,6 +21,24 @@ de carpetas y el checklist de apertura con los comandos exactos.
 
 Ruta: `STATUS.md` en la raíz del repo (este directorio).
 
+## Bitácora y documentación (Drive, acceso móvil)
+
+Código y bitácora viven **separados** desde la migración de 2026-05-27:
+
+- **Código**: este directorio (`C:\Users\tnm33\Dev\FeesDefender`), versionado
+  en Git → `github.com/TyukhayNi/FeesDefender`. Disco local, sin latencia de Drive.
+- **Bitácora/docs**: en Google Drive, en
+  `G:\Unidades compartidas\DESPACHO - PRODUCCION\Proyectos\FeesDefender\`
+  (subcarpetas `bitacora/`, `docs/`, `decisiones/`), sincronizada para consulta
+  desde el móvil vía MCP de Drive.
+
+`STATUS.md` (en este repo) sigue siendo la **fuente de verdad única**. El cierre
+de sesión exporta un resumen a `...\Proyectos\FeesDefender\ESTADO.md` (no editar
+a mano: se sobrescribe). El hook `post-commit` registra cada commit en
+`...\Proyectos\FeesDefender\bitacora\commits.log`.
+
+No mezclar dominios: código en local, bitácora en Drive.
+
 ## Reglas que nunca se rompen
 
 - Arquitectura 3 capas: UI → Core (`core/`) → Datos (`data/CASOS/`). La lógica
@@ -40,7 +58,7 @@ Ruta: `STATUS.md` en la raíz del repo (este directorio).
 ## Entorno de ejecución
 
 - Sistema: **Windows + PowerShell**. Todo comando shell debe empezar con
-  `cd "G:\Unidades compartidas\DESPACHO - PRODUCCION\Base datos expedientes"`.
+  `cd "C:\Users\tnm33\Dev\FeesDefender"`.
 - Python: venv local en `.venv/`. Activar con `.\.venv\Scripts\Activate.ps1`
   o usar `python -m ...` directamente desde la raíz del repo.
 - Git: nativo Windows. Commits desde PowerShell.
@@ -84,7 +102,7 @@ Ruta: `STATUS.md` en la raíz del repo (este directorio).
 ### Apertura de sesión
 
 ```powershell
-cd "G:\Unidades compartidas\DESPACHO - PRODUCCION\Base datos expedientes"
+cd "C:\Users\tnm33\Dev\FeesDefender"
 git log --oneline -5                              # qué cambió desde la última sesión
 python -m pytest -q --tb=no                       # suite verde
 python -m scripts.sync_sudespacho check-legacy    # PHPSESSID válida

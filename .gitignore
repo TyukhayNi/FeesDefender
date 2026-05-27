@@ -10,10 +10,13 @@ venv/
 htmlcov/
 .mypy_cache/
 .ruff_cache/
+build/
+dist/
 
 # Entorno
 .env
-.env.local
+.env.*
+!.env.example
 
 # Datos sensibles — NUNCA versionar expedientes
 data/CASOS/*

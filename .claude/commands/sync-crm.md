@@ -17,14 +17,14 @@ Pasos:
 3. Lanza el pull:
 
 ```powershell
-cd "G:\Unidades compartidas\DESPACHO - PRODUCCION\Base datos expedientes"
+cd "C:\Users\tnm33\Dev\FeesDefender"
 python -m scripts.sync_sudespacho pull "$ARGUMENTS"
 ```
 
 Si el usuario pasa `--dry-run`:
 
 ```powershell
-cd "G:\Unidades compartidas\DESPACHO - PRODUCCION\Base datos expedientes"
+cd "C:\Users\tnm33\Dev\FeesDefender"
 python -m scripts.sync_sudespacho pull "$ARGUMENTS" --dry-run
 ```
 

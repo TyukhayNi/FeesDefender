@@ -9,14 +9,14 @@ Ejecuta los tests del proyecto.
 Si recibes argumento, ejecuta solo esa ruta:
 
 ```powershell
-cd "G:\Unidades compartidas\DESPACHO - PRODUCCION\Base datos expedientes"
+cd "C:\Users\tnm33\Dev\FeesDefender"
 python -m pytest -q --tb=short $ARGUMENTS
 ```
 
 Si no hay argumento, ejecuta la suite completa:
 
 ```powershell
-cd "G:\Unidades compartidas\DESPACHO - PRODUCCION\Base datos expedientes"
+cd "C:\Users\tnm33\Dev\FeesDefender"
 python -m pytest -q --tb=no
 ```
 

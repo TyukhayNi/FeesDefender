@@ -10,7 +10,7 @@ Pasos:
 1. Verifica primero si las cookies actuales aún funcionan:
 
 ```powershell
-cd "G:\Unidades compartidas\DESPACHO - PRODUCCION\Base datos expedientes"
+cd "C:\Users\tnm33\Dev\FeesDefender"
 python -m scripts.sync_sudespacho check-legacy
 ```
 

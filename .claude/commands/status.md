@@ -10,17 +10,17 @@ Pasos:
 1. Ejecuta los 3 comandos del checklist de apertura (cada uno en una llamada Bash separada para que la salida sea legible):
 
 ```powershell
-cd "G:\Unidades compartidas\DESPACHO - PRODUCCION\Base datos expedientes"
+cd "C:\Users\tnm33\Dev\FeesDefender"
 git log --oneline -5
 ```
 
 ```powershell
-cd "G:\Unidades compartidas\DESPACHO - PRODUCCION\Base datos expedientes"
+cd "C:\Users\tnm33\Dev\FeesDefender"
 python -m pytest -q --tb=no
 ```
 
 ```powershell
-cd "G:\Unidades compartidas\DESPACHO - PRODUCCION\Base datos expedientes"
+cd "C:\Users\tnm33\Dev\FeesDefender"
 python -m scripts.sync_sudespacho check-legacy
 ```
 

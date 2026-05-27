@@ -4,7 +4,7 @@ FeesDefender — Verificación de tests pre-commit
 =================================================
 Ejecutar como parte del cierre de sesión desde PowerShell:
 
-    cd "G:\\Unidades compartidas\\DESPACHO - PRODUCCION\\Base datos expedientes"
+    cd "C:\\Users\\tnm33\\Dev\\FeesDefender"
     python -m scripts.session_close && git add -A && git commit -m "<mensaje>"
 
 El mensaje de commit lo proporciona Claude en el chat antes de que el usuario
