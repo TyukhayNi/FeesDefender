@@ -1213,6 +1213,13 @@ def aplicar_regex(texto: str, mapa: MapaEntidades, log) -> str:
         # Sustituir en orden inverso para preservar offsets
         for m in reversed(matches):
             valor = m.group(0)
+            # §19: el NIG (19 dígitos compactos) no es PII bancaria sino un
+            # identificador procesal público. Si la captura CUENTA/IBAN viene
+            # precedida del rótulo "NIG", no anonimizar.
+            if tipo in ("CUENTA", "IBAN"):
+                prefijo = texto[max(0, m.start() - 8):m.start()].upper()
+                if "NIG" in prefijo:
+                    continue
             etiqueta = mapa.registrar_dato(valor, tipo)
             texto = texto[:m.start()] + etiqueta + texto[m.end():]
             detectados += 1

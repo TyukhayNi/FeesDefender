@@ -113,6 +113,18 @@ class TestRoundTrip:
         recuperado = deanonimizar_texto(anonimizado, mapa.mapa_inverso)
         assert recuperado == original
 
+    def test_nig_no_se_anonimiza_como_cuenta(self) -> None:
+        """§19: el NIG (19 dígitos) es un identificador procesal público, no
+        PII bancaria. No debe capturarse como [CUENTA]."""
+        original = (
+            "NIG: 3907542120260004548\n"
+            "Cuenta de consignaciones: 12345678901234567890"
+        )
+        anonimizado, _ = _anonimizar_sin_presidio(original)
+        # El NIG sobrevive literal; la cuenta de 20 dígitos sí se anonimiza.
+        assert "3907542120260004548" in anonimizado
+        assert "12345678901234567890" not in anonimizado
+
     def test_partes_comprimidas_sin_puntuacion(self) -> None:
         """§3+§4: en formato comprimido sin punto entre partes, anonimizar
         no debe engullir la palabra 'Demandado' de la línea siguiente."""
