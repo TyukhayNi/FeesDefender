@@ -11,7 +11,14 @@ Orden por prioridad operativa (no técnica).
 
 ## 1. OCR automático en `anonimizar_caso`
 
-**Estado actual.** Si un PDF de `00_Input/` carece de capa de texto,
+**✅ RESUELTO 2026-05-27 (s26).** Implementado el flag `auto_ocr: bool = False`
+en `anonimizar_documento` / `anonimizar_caso` + `--auto-ocr` en el CLI. Ante
+`PDFSinTextoError`, aplica `ocr_pdf` sobre una copia temporal y reintenta la
+extracción sin tocar el original. Test de integración en `tests/test_anon_ocr.py`.
+Verificado sobre BaRS1 (de 14 PDFs `OCR_REQUERIDO` → 5, todos planos/catastro
+sin texto real).
+
+**Estado actual (histórico).** Si un PDF de `00_Input/` carece de capa de texto,
 `anonimizar_documento` devuelve `ok=False` con `alertas=["OCR_REQUERIDO"]`
 y el documento queda pendiente. El usuario debe ejecutar `core.anon.ocr_pdf`
 manualmente y reintentar.
@@ -207,6 +214,11 @@ añadamos UI de revisión manual (mejora 7), conviene también:
 ---
 
 ## 11. Bug latente: wrapper `ocr_pdf` invoca `ocrmypdf.ocr` con firma incorrecta
+
+**✅ RESUELTO 2026-05-27 (s26).** Fix quirúrgico en `core/anon/ocr.py`: input/output
+como argumentos posicionales y `language` como lista (`idiomas.split("+")`), no
+la cadena `"spa+cat+rus"`. Smoke test en `tests/test_anon_ocr.py`. Verificado
+end-to-end sobre PDF escaneado real de BaRS1 (865 caracteres extraídos).
 
 **Detectado.** 2026-05-12 durante la apertura del hilo H1 del plan SaRS1
 (primera ejecución real del wrapper en producción).
