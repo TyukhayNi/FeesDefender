@@ -20,6 +20,7 @@ chardet>=5.2
 # Tablas / datos
 pandas>=2.2
 openpyxl>=3.1
+scikit-learn>=1.4        # few-shot por similaridad TF-IDF (core/local_organizer.py)
 
 # Utilidades
 rich>=13.7

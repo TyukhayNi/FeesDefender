@@ -294,6 +294,52 @@ def caso_path(case_id: str) -> Path:
 
 
 # ---------------------------------------------------------------------------
+# Organizador local (core/local_organizer.py — Sprint 2)
+# ---------------------------------------------------------------------------
+#
+# Clasifica los documentos en bruto del Drive E&V (00_Input/01_Drive EV/) y
+# produce una vista humana navegable en una subcarpeta `_organizado/` con la
+# taxonomía estándar interna del cliente. El prefijo "_" garantiza que el
+# motor de anonimización (core/anon/api.py) ignore esa subcarpeta.
+
+# Taxonomía estándar E&V — set cerrado. El clasificador local debe devolver
+# exactamente uno de estos valores en el campo `categoria`.
+TAXONOMIA_EV: tuple[str, ...] = (
+    "00. FOTOS",
+    "01. ACTIVACIÓN",
+    "03. OFERTAS",
+    "04. ARRAS - ARRENDAMIENTOS",
+    "05. FACTURACIÓN - FINANZAS",
+    "06. PBC",
+    "07. RECLAMACIONES",
+    "08. PENDIENTE DE CLASIFICAR",
+)
+
+# Criterio de ordenación de documentos dentro de cada categoría.
+ORDEN_POR_CATEGORIA: dict[str, str] = {
+    "00. FOTOS": "exif_o_alfabetico",
+    "01. ACTIVACIÓN": "cronologico",
+    "03. OFERTAS": "cronologico",
+    "04. ARRAS - ARRENDAMIENTOS": "cronologico",
+    "05. FACTURACIÓN - FINANZAS": "cronologico",
+    "06. PBC": "tipo_documento",
+    "07. RECLAMACIONES": "cronologico",
+    "08. PENDIENTE DE CLASIFICAR": "alfabetico",
+}
+
+# Subcarpeta de la vista organizada, bajo 00_Input/01_Drive EV/.
+ORGANIZADO_SUBDIR: str = "_organizado"
+
+# Confianza mínima para mover un documento automáticamente en --refresh.
+# Por debajo, va a "08. PENDIENTE DE CLASIFICAR" para revisión humana.
+UMBRAL_CONFIANZA_AUTOMOVE: float = 0.80
+
+# Nº de documentos en una categoría a partir del cual se evalúa subdividir
+# en subcarpetas (si además hay subgrupos sugeridos por el clasificador).
+UMBRAL_VOLUMEN_SUBCARPETAS: int = 5
+
+
+# ---------------------------------------------------------------------------
 # Refactor intake v2 — árbol del gestor documental + entrevistas + viabilidad
 # ---------------------------------------------------------------------------
 #
