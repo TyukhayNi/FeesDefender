@@ -34,6 +34,8 @@ Notas de alcance MVP (Fase 3):
 from __future__ import annotations
 
 import logging
+import shutil
+import tempfile
 from pathlib import Path
 from typing import Callable, Iterable
 
@@ -57,6 +59,7 @@ from core.anon.exceptions import (
     AnonError,
     DocxVacioError,
     FormatoNoSoportadoError,
+    OCRError,
     PDFSinTextoError,
 )
 from core.anon.mapa_caso import (
@@ -168,6 +171,35 @@ def _md_ya_actualizado(ruta_md: Path, origen_sha256: str) -> bool:
 # anonimizar_documento — procesa un solo documento
 # ---------------------------------------------------------------------------
 
+def _ocr_y_extraer(ruta_origen: Path, log: logging.Logger) -> str | None:
+    """Aplica OCR a una copia temporal del PDF y extrae su texto.
+
+    Nunca toca el original (cadena de custodia): el OCR escribe en un PDF
+    temporal que se elimina al terminar. Devuelve el texto extraído, o
+    ``None`` si ocrmypdf no está disponible o el OCR/extracción falla (el
+    caller lo trata entonces como ``OCR_REQUERIDO``).
+    """
+    try:
+        from core.anon.ocr import ocr_disponible, ocr_pdf
+    except ImportError:
+        return None
+    if not ocr_disponible():
+        log.warning(f"[auto_ocr] ocrmypdf no disponible; {ruta_origen.name} queda OCR_REQUERIDO")
+        return None
+
+    tmp_dir = Path(tempfile.mkdtemp(prefix="anon_ocr_"))
+    tmp_pdf = tmp_dir / f"{slugify(ruta_origen.stem)}_ocr.pdf"
+    try:
+        log.info(f"[auto_ocr] aplicando OCR a {ruta_origen.name}")
+        ocr_pdf(ruta_origen, tmp_pdf)
+        return extraer_texto(tmp_pdf, log)
+    except (OCRError, PDFSinTextoError, AnonError) as e:
+        log.warning(f"[auto_ocr] OCR/extracción falló para {ruta_origen.name}: {e}")
+        return None
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
 def anonimizar_documento(
     case_id: str,
     ruta_origen: Path,
@@ -176,6 +208,7 @@ def anonimizar_documento(
     mapa_caso: MapaEntidades | None = None,
     log: logging.Logger | None = None,
     politica: str = "SALTAR",
+    auto_ocr: bool = False,
 ) -> dict:
     """Anonimiza un único documento (PDF o DOCX) ya extractable.
 
@@ -261,15 +294,21 @@ def anonimizar_documento(
     try:
         texto_original = extraer_texto(ruta_origen, log)
     except PDFSinTextoError as e:
-        log.warning(f"[OCR_REQUERIDO] {ruta_origen.name}: {e}")
-        return {
-            "ok": False,
-            "ruta_md": None,
-            "skipped": False,
-            "n_entidades": 0,
-            "alertas": ["OCR_REQUERIDO"],
-            "error": str(e),
-        }
+        # Sin capa de texto. Si auto_ocr está activo, intentar OCR sobre una
+        # copia temporal y reintentar la extracción (sin tocar el original).
+        texto_original = None
+        if auto_ocr and ruta_origen.suffix.lower() == ".pdf":
+            texto_original = _ocr_y_extraer(ruta_origen, log)
+        if texto_original is None:
+            log.warning(f"[OCR_REQUERIDO] {ruta_origen.name}: {e}")
+            return {
+                "ok": False,
+                "ruta_md": None,
+                "skipped": False,
+                "n_entidades": 0,
+                "alertas": ["OCR_REQUERIDO"],
+                "error": str(e),
+            }
     except (DocxVacioError, FormatoNoSoportadoError, AnonError) as e:
         log.error(f"[error] {ruta_origen.name}: {e}")
         return {
@@ -367,6 +406,7 @@ def anonimizar_caso(
     politica: str = "SALTAR",
     on_progress: ProgressCallback | None = None,
     log: logging.Logger | None = None,
+    auto_ocr: bool = False,
 ) -> dict:
     """Pipeline completo del anonimizador sobre un caso.
 
@@ -413,7 +453,7 @@ def anonimizar_caso(
     errores: list[dict] = []
     log_lineas: list[str] = [
         f"Documentos detectados: **{total}**",
-        f"Política: `{politica}` · Tipo procedimiento: `{tipo_proc}`",
+        f"Política: `{politica}` · Tipo procedimiento: `{tipo_proc}` · auto_ocr: `{auto_ocr}`",
         "",
     ]
 
@@ -427,6 +467,7 @@ def anonimizar_caso(
             mapa_caso=mapa,
             log=log,
             politica=politica,
+            auto_ocr=auto_ocr,
         )
         rel = doc.relative_to(caso_path(case_id))
         if res["skipped"]:

@@ -34,9 +34,14 @@ def main(
         "SALTAR", "--politica", "-p",
         help="SALTAR (idempotente, default) o REPROCESAR (ignora skip).",
     ),
+    auto_ocr: bool = typer.Option(
+        False, "--auto-ocr",
+        help="Si un PDF no tiene capa de texto, aplica OCR a una copia temporal "
+             "y reintenta (no modifica el original). Requiere ocrmypdf + tesseract.",
+    ),
 ) -> None:
     typer.echo(f"▶ Anonimizando caso {case_id}...")
-    res = anonimizar_caso(case_id, tipo_proc=tipo, politica=politica)
+    res = anonimizar_caso(case_id, tipo_proc=tipo, politica=politica, auto_ocr=auto_ocr)
 
     summary = {
         "case_id":        res["case_id"],
