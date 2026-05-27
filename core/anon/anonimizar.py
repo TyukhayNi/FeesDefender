@@ -206,6 +206,9 @@ PALABRAS_EXCLUIDAS = {
     'JUZGADO','INSTRUCCION','CIVIL','PENAL','MERCANTIL','SOCIAL',
     'PROCEDIMIENTO','ORDINARIO','VERBAL','PREVIAS','DILIGENCIAS','ABREVIADO',
     'PARTE','DEMANDANTE','DEMANDADA','EJECUTANTE','EJECUTADA',
+    # §4: variantes masculinas (faltaban; agravaban el bug §3 al no recortarse)
+    'DEMANDADO','EJECUTADO','QUERELLADO','QUERELLANTE','INVESTIGADO',
+    'ACUSADO','RECURRIDO','RECURRENTE','APELADO','APELANTE',
     'PROCURADOR','PROCURADORA','ABOGADO','ABOGADA','LETRADO','LETRADA',
     'MAGISTRADO','MAGISTRADA','JUEZ','JUEZA','SECRETARIO','SECRETARIA',
     'MINISTERIO','FISCAL','NOTARIO','NOTARIA','PERITO','PERITOS',
@@ -688,6 +691,23 @@ PATRONES_REGEX = [
 ]
 
 
+def _offsets_nombre_limpio(captura: str, nombre: str, base_start: int) -> tuple[int, int] | None:
+    """Localiza el ``nombre`` ya limpiado dentro de la ``captura`` original.
+
+    Devuelve ``(inicio_abs, fin_abs)`` o ``None`` si el nombre limpio no es un
+    substring literal de la captura (entonces el caller usa el span completo).
+    Resuelve el bug §3: tras ``limpiar_nombre`` el nombre puede ser más corto
+    que el grupo capturado; usar ``m.end(1)`` borraría las palabras recortadas
+    (p. ej. la siguiente parte procesal en documentos sin puntuación).
+    """
+    if not nombre:
+        return None
+    idx = captura.find(nombre)
+    if idx == -1:
+        return None
+    return base_start + idx, base_start + idx + len(nombre)
+
+
 def limpiar_nombre(nombre: str) -> str:
     """Limpia un nombre detectado."""
     nombre = nombre.strip()
@@ -1121,9 +1141,11 @@ def anonimizar_por_contexto(texto: str, mapa: MapaEntidades, log) -> str:
                 continue
             etiqueta = mapa.registrar(nombre, rol)
             if etiqueta != nombre:
-                # Usar el span exacto del grupo capturado para evitar
-                # reemplazar ocurrencias parciales en el texto
-                texto = texto[:m.start(1)] + etiqueta + texto[m.end(1):]
+                # §3: recortar el span al nombre limpio (no al grupo completo)
+                # para no borrar palabras que limpiar_nombre haya descartado.
+                off = _offsets_nombre_limpio(m.group(1), nombre, m.start(1))
+                ini, fin = off if off is not None else (m.start(1), m.end(1))
+                texto = texto[:ini] + etiqueta + texto[fin:]
                 # Reiniciar búsqueda desde el inicio tras modificar el texto
                 break
             detectados += 1
@@ -1138,7 +1160,9 @@ def anonimizar_por_contexto(texto: str, mapa: MapaEntidades, log) -> str:
             if nombre.startswith('[') and nombre.endswith(']'): continue
             etiqueta = mapa.registrar(nombre, rol)
             if etiqueta != nombre:
-                texto = texto[:m.start(1)] + etiqueta + texto[m.end(1):]
+                off = _offsets_nombre_limpio(m.group(1), nombre, m.start(1))
+                ini, fin = off if off is not None else (m.start(1), m.end(1))
+                texto = texto[:ini] + etiqueta + texto[fin:]
                 detectados += 1
     log.info(f"Deteccion contextual: {detectados} entidades")
     return texto

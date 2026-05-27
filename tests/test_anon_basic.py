@@ -113,6 +113,23 @@ class TestRoundTrip:
         recuperado = deanonimizar_texto(anonimizado, mapa.mapa_inverso)
         assert recuperado == original
 
+    def test_partes_comprimidas_sin_puntuacion(self) -> None:
+        """§3+§4: en formato comprimido sin punto entre partes, anonimizar
+        no debe engullir la palabra 'Demandado' de la línea siguiente."""
+        original = (
+            "Demandante: DON IVAN PETROV SOKOLOV\n"
+            "Demandado: DOÑA MARIA GARCIA LOPEZ"
+        )
+        anonimizado, mapa = _anonimizar_sin_presidio(original)
+
+        assert "IVAN PETROV SOKOLOV" not in anonimizado
+        assert "MARIA GARCIA LOPEZ" not in anonimizado
+        # La etiqueta estructural 'Demandado:' debe sobrevivir (no borrarse).
+        assert "Demandado" in anonimizado
+        # Round-trip exacto.
+        recuperado = deanonimizar_texto(anonimizado, mapa.mapa_inverso)
+        assert recuperado == original
+
     def test_procurador_no_se_anonimiza(self) -> None:
         """Los operadores jurídicos (procurador, magistrado, juez, LAJ, ...)
         están en la lista blanca del Anonimizador y NO se anonimizan por
