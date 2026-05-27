@@ -678,6 +678,14 @@ PATRON_NOMBRE_MAYUSCULAS = re.compile(
 )
 
 PATRONES_REGEX = [
+    # §13: dirección postal española. Marcador de vía (con \b para no casar
+    # dentro de palabras como "emPLAZA") + nombre que empieza por letra (1-5
+    # palabras, tolerante a typos OCR) + número (con rango opcional 37-39). La
+    # dirección del domicilio de una parte es PII recurrente en expedientes.
+    (r'\b(?:c/|calle|avda?\.?|avenida|avinguda|plaza|pza\.?|paseo|pso\.?|passeig|carrer|ronda|rda\.?|traves[ií]a|glorieta|gran\s+v[ií]a|camino)\s+'
+     r'[A-Za-zÁÉÍÓÚÑáéíóúñÜü][A-Za-zÁÉÍÓÚÑáéíóúñÜü0-9.\'’\-]*(?:\s+[A-Za-zÁÉÍÓÚÑáéíóúñÜü0-9.\'’\-]+){0,4}?'
+     r'[\s,]*(?:n[uú]m\.?|n[º°ªo\*9]\.?|n[uú]mero)?\s*\d{1,4}(?:\s*[-–/]\s*\d{1,4})?',
+     "DIRECCION"),
     (r'\bES\s*\d{2}[\s]?\d{4}[\s]?\d{4}[\s]?\d{2}[\s]?\d{10}\b',    "IBAN"),
     (r'\b[A-Z]{2}\d{2}(?:[\s]?\d{4}){3,5}\b',                        "IBAN"),
     (r'\b\d{8}[A-ZÁÉÍÓÚÜÑ]\b',                                        "DNI"),

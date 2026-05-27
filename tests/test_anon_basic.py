@@ -114,6 +114,22 @@ class TestRoundTrip:
         recuperado = deanonimizar_texto(anonimizado, mapa.mapa_inverso)
         assert recuperado == original
 
+    def test_direccion_postal_se_anonimiza(self) -> None:
+        """§13: direcciones postales españolas se etiquetan como [DIRECCION]."""
+        from core.anon.anonimizar import MapaEntidades, aplicar_regex
+        casos = [
+            "Calle Castelar 37-39",
+            "CALLE CASTELAR NÚMERO 37-39",
+            "Avda Pedro San Martín 5",
+            "Paseo de Gracia, 92",
+        ]
+        for c in casos:
+            r = aplicar_regex(c, MapaEntidades(), _logger_silencioso())
+            assert "[DIRECCION]" in r, f"No anonimizó: {c!r} → {r!r}"
+        # No debe tocar texto sin dirección.
+        normal = aplicar_regex("el plazo de veinte días", MapaEntidades(), _logger_silencioso())
+        assert "[DIRECCION]" not in normal
+
     def test_variantes_cliente_a_etiqueta_unica(self) -> None:
         """§14: variantes OCR del cliente E&V se anonimizan todas a la misma
         etiqueta canónica, aunque el motor no las detecte por sí solo."""
