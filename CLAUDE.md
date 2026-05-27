@@ -39,6 +39,22 @@ a mano: se sobrescribe). El hook `post-commit` registra cada commit en
 
 No mezclar dominios: código en local, bitácora en Drive.
 
+### Planificación compartida con el móvil (PLAN.md)
+
+El usuario planifica desde el móvil (Cowork/Drive) escribiendo en
+`...\Proyectos\FeesDefender\PLAN.md`. Por tanto:
+
+- **Al iniciar sesión**: leer `PLAN.md` además de `STATUS.md`. Los puntos que el
+  usuario haya añadido en "Próximos pasos"/"Prioridades" son entrada directa de
+  trabajo. Si hay "Decisiones pendientes" sin resolver, plantearlas antes de avanzar.
+- **Al completar un punto**: marcarlo `[x]` en `PLAN.md` y anotar el hash del commit.
+- **Al cerrar sesión**: dejar `PLAN.md` al día (lo hecho marcado, lo nuevo añadido)
+  para que el usuario lo vea desde el móvil. `ESTADO.md` lo sigue generando el
+  cierre automático.
+
+Flujo: móvil escribe `PLAN.md` → Code ejecuta y marca progreso → móvil ve avances
+en `PLAN.md` + `ESTADO.md` + `commits.log`.
+
 ## Reglas que nunca se rompen
 
 - Arquitectura 3 capas: UI → Core (`core/`) → Datos (`data/CASOS/`). La lógica
