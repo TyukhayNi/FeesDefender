@@ -549,6 +549,54 @@ def _verificar_precondiciones(case_id: str, *, check_ollama: bool) -> None:
         )
 
 
+@dataclass
+class Precondiciones:
+    """Estado de las precondiciones del organizador para un caso.
+
+    Pensado para que la UI deshabilite el botón y muestre mensajes claros
+    *antes* de invocar ``planificar``/``ejecutar_plan`` (que de todos modos
+    revalidan y lanzan ``OrganizadorError`` si algo falta).
+    """
+
+    drive_ok: bool          # hay documentos en 00_Input/01_Drive EV/
+    n_docs: int
+    anon_ok: bool           # 06_Anonimizado/ poblado
+    ollama_ok: bool         # core.llm_local.health_check()
+    plan_existe: bool       # ya hay un _plan_reorganizacion.md editable
+    modelo: str
+
+    @property
+    def listo_para_planificar(self) -> bool:
+        return self.drive_ok and self.anon_ok and self.ollama_ok
+
+
+def estado_precondiciones(case_id: str) -> Precondiciones:
+    """Inspecciona (sin efectos secundarios) si el caso puede organizarse.
+
+    Las tres comprobaciones de fichero son baratas (listados de carpeta). El
+    ``health_check`` de Ollama solo se invoca si Drive y anonimizado están
+    listos, para no golpear el servicio cuando el caso todavía no es candidato.
+    """
+    docs = _listar_documentos(case_id)
+    drive_ok = bool(docs)
+
+    anon = _anonimizado_dir(case_id)
+    anon_ok = anon.is_dir() and bool(list(anon.glob("*.md")))
+
+    ollama_ok = llm_local.health_check() if (drive_ok and anon_ok) else False
+
+    plan_existe = (_aicowork_dir(case_id) / PLAN_REORGANIZACION).exists()
+
+    return Precondiciones(
+        drive_ok=drive_ok,
+        n_docs=len(docs),
+        anon_ok=anon_ok,
+        ollama_ok=ollama_ok,
+        plan_existe=plan_existe,
+        modelo=llm_local.configured_model(),
+    )
+
+
 def _clasificar_todos(case_id: str, docs_paths: list[Path]) -> list[DocPlan]:
     anon_index = _build_anon_index(case_id)
     reglas = _cargar_reglas()

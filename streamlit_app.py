@@ -14,6 +14,8 @@ import streamlit as st
 import os as _os
 
 from core import case_manager, llm, pipeline, sudespacho_create as _sc
+from core import local_organizer as _org
+from core.local_organizer import OrganizadorError as _OrgError
 from core.intake_drive import (
     DriveIntakeError,
     DriveFolderInfo as _DriveFolderInfo,
@@ -723,6 +725,133 @@ with tab_casos:
                         )
                     for _err in _errors_crm:
                         st.error(f"❌ {_err}")
+
+        st.divider()
+        with st.expander("🤖 Organizar localmente"):
+            st.caption(
+                "Clasifica y reordena los documentos del Drive E&V con IA local "
+                "(Ollama) — **coste 0** y sin que ningún dato salga del equipo. "
+                "Genera una vista navegable en `00_Input/01_Drive EV/_organizado/`. "
+                "Los originales nunca se mueven ni se modifican."
+            )
+
+            _caso_org = st.selectbox(
+                "Caso",
+                cases,
+                key="casos_org_sel",
+                help="Selecciona el caso cuyos documentos quieres organizar.",
+            )
+
+            _pre = _org.estado_precondiciones(_caso_org)
+
+            # ── Semáforo de precondiciones ─────────────────────────────────
+            if _pre.drive_ok:
+                st.caption(f"✅ Drive E&V: **{_pre.n_docs}** documento(s) descargados.")
+            else:
+                st.warning(
+                    "Faltan documentos en `00_Input/01_Drive EV/`. "
+                    "Descárgalos primero desde «📥 Pull Drive E&V»."
+                )
+
+            if _pre.anon_ok:
+                st.caption("✅ Material anonimizado (`06_Anonimizado/`) disponible.")
+            else:
+                st.warning(
+                    "Falta el material anonimizado (`06_Anonimizado/`). "
+                    "Ejecútalo primero desde la pestaña «Pipeline» marcando "
+                    "«Anonimizar», o con `python -m scripts.anonimizar_caso`."
+                )
+
+            if _pre.drive_ok and _pre.anon_ok:
+                if _pre.ollama_ok:
+                    st.caption(f"✅ IA local lista (modelo `{_pre.modelo}`).")
+                else:
+                    st.warning(
+                        "La IA local (Ollama) no está disponible. Arráncala y "
+                        "descarga el modelo desde una terminal:\n\n"
+                        f"```\nollama serve\nollama pull {_pre.modelo}\n```"
+                    )
+
+            st.divider()
+
+            # ── Paso 1: Proponer ───────────────────────────────────────────
+            st.markdown("**Paso 1 — Proponer organización**")
+            if st.button(
+                "🔍 Proponer organización",
+                key="casos_org_plan_btn",
+                disabled=not _pre.listo_para_planificar,
+                help=(
+                    "La IA local clasifica cada documento y escribe una propuesta "
+                    "editable en `07_AI cowork/_plan_reorganizacion.md`. No mueve "
+                    "ni copia nada todavía. La primera ejecución puede tardar un "
+                    "poco mientras se carga el modelo en memoria."
+                ),
+            ):
+                with st.spinner("Clasificando documentos con la IA local…"):
+                    try:
+                        _res_plan = _org.planificar(_caso_org)
+                    except _OrgError as _oe:
+                        st.error(f"❌ {_oe}")
+                    except Exception as _exc:
+                        st.error(f"❌ Error inesperado al planificar: {_exc}")
+                    else:
+                        _c1, _c2, _c3, _c4 = st.columns(4)
+                        _c1.metric("Documentos", _res_plan["n_documentos"])
+                        _c2.metric("Alta confianza", _res_plan["n_alta_confianza"])
+                        _c3.metric("Pendientes", _res_plan["n_pendientes"])
+                        _c4.metric("Confianza media", f"{_res_plan['confianza_media']:.0%}")
+                        st.success(
+                            "✅ Propuesta generada. Revísala y corrige las columnas "
+                            "**Categoría**, **Subgrupo** y **Nombre** si hace falta; "
+                            "luego pulsa «Aplicar» abajo."
+                        )
+                        st.caption("Abre este archivo en tu editor para revisarlo:")
+                        st.code(_res_plan["plan_reorganizacion"], language=None)
+
+            # ── Paso 2: Aplicar ────────────────────────────────────────────
+            st.markdown("**Paso 2 — Aplicar organización**")
+            if not _pre.plan_existe:
+                st.caption("_(Genera primero una propuesta en el Paso 1.)_")
+            if st.button(
+                "✅ Aplicar organización",
+                key="casos_org_exec_btn",
+                disabled=not _pre.plan_existe,
+                help=(
+                    "Materializa la vista organizada en `_organizado/` a partir de "
+                    "la propuesta (ya revisada). Copia los documentos con nombre "
+                    "limpio — los originales quedan intactos. Es idempotente: "
+                    "aplicarlo dos veces no duplica nada. Tus correcciones "
+                    "alimentan el aprendizaje del clasificador."
+                ),
+            ):
+                with st.spinner("Aplicando la organización…"):
+                    try:
+                        _res_exec = _org.ejecutar_plan(_caso_org)
+                    except _OrgError as _oe:
+                        st.error(f"❌ {_oe}")
+                    except Exception as _exc:
+                        st.error(f"❌ Error inesperado al aplicar: {_exc}")
+                    else:
+                        _acc = _res_exec["acciones"]
+                        _resumen_acc = "  ·  ".join(
+                            f"**{_n}** {_a}" for _a, _n in sorted(_acc.items())
+                        ) or "_(sin cambios)_"
+                        st.success(
+                            f"✅ Organización aplicada — {_res_exec['n_documentos']} "
+                            f"documento(s).  \n{_resumen_acc}"
+                        )
+                        if _res_exec["correcciones_registradas"]:
+                            st.caption(
+                                f"📝 {_res_exec['correcciones_registradas']} corrección/es "
+                                "registrada(s) para el aprendizaje del clasificador."
+                            )
+                        st.caption("Vista organizada (ábrela en el explorador de archivos):")
+                        st.code(_res_exec["organizado_dir"], language=None)
+                        st.info(
+                            "⚠️ La carpeta `_organizado/` contiene **copias con datos "
+                            "personales** (PII) de los originales. Es material interno "
+                            "del despacho — no la compartas con terceros."
+                        )
 
         st.divider()
         with st.expander("🔗 Compartir carpeta E&V con el equipo"):

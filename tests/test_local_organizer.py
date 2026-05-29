@@ -287,3 +287,69 @@ def test_organizado_ignored_by_anonimizador(case, monkeypatch):
     assert all(org.ORGANIZADO_SUBDIR not in d.relative_to(input_root).parts for d in docs)
     # Sanity: el original sí se ve; la copia organizada no.
     assert any(d.name == "encargo.pdf" for d in docs)
+
+
+# ---------------------------------------------------------------------------
+# Precondiciones (semáforo de la UI)
+# ---------------------------------------------------------------------------
+
+def test_precondiciones_todo_ok(case):
+    case.set_ollama(_resp_activacion)
+    case.doc("encargo.pdf")
+
+    pre = org.estado_precondiciones(case.case_id)
+
+    assert pre.drive_ok and pre.anon_ok and pre.ollama_ok
+    assert pre.n_docs == 1
+    assert pre.listo_para_planificar
+    assert not pre.plan_existe
+
+
+def test_precondiciones_sin_documentos(case, monkeypatch):
+    # Drive vacío: ni siquiera se debe consultar a Ollama.
+    llamado = {"health": False}
+    monkeypatch.setattr(
+        org.llm_local, "health_check",
+        lambda: llamado.__setitem__("health", True) or True,
+    )
+
+    pre = org.estado_precondiciones(case.case_id)
+
+    assert not pre.drive_ok
+    assert pre.n_docs == 0
+    assert not pre.ollama_ok          # no se evalúa si falta el Drive
+    assert not pre.listo_para_planificar
+    assert llamado["health"] is False  # health_check NO se invocó
+
+
+def test_precondiciones_sin_anonimizado(case):
+    case.set_ollama(_resp_activacion)
+    case.doc("sin_ocr.pdf", cuerpo=None)  # documento sin .md anonimizado
+
+    pre = org.estado_precondiciones(case.case_id)
+
+    assert pre.drive_ok and pre.n_docs == 1
+    assert not pre.anon_ok
+    assert not pre.listo_para_planificar
+
+
+def test_precondiciones_ollama_caido(case, monkeypatch):
+    case.set_ollama(_resp_activacion)
+    case.doc("encargo.pdf")
+    monkeypatch.setattr(org.llm_local, "health_check", lambda: False)
+
+    pre = org.estado_precondiciones(case.case_id)
+
+    assert pre.drive_ok and pre.anon_ok
+    assert not pre.ollama_ok
+    assert not pre.listo_para_planificar
+
+
+def test_precondiciones_plan_existe_tras_planificar(case):
+    case.set_ollama(_resp_activacion)
+    case.doc("encargo.pdf")
+    assert not org.estado_precondiciones(case.case_id).plan_existe
+
+    org.planificar(case.case_id)
+
+    assert org.estado_precondiciones(case.case_id).plan_existe
