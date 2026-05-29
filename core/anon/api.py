@@ -191,9 +191,13 @@ def _ocr_y_extraer(ruta_origen: Path, log: logging.Logger) -> str | None:
     tmp_pdf = tmp_dir / f"{slugify(ruta_origen.stem)}_ocr.pdf"
     try:
         log.info(f"[auto_ocr] aplicando OCR a {ruta_origen.name}")
-        ocr_pdf(ruta_origen, tmp_pdf)
-        return extraer_texto(tmp_pdf, log)
-    except (OCRError, PDFSinTextoError, AnonError) as e:
+        # ocr_pdf devuelve tmp_pdf solo si realmente generó OCR (rc=0). Si el PDF
+        # ya tenía capa OCR (rc=6 / PriorOcrFound) devuelve el ORIGINAL y NO crea
+        # tmp_pdf; hay que extraer de la ruta devuelta, no de tmp_pdf (que no
+        # existiría → FileNotFoundError no capturado abortaba el caso entero).
+        ruta_ocr = ocr_pdf(ruta_origen, tmp_pdf)
+        return extraer_texto(ruta_ocr, log)
+    except (OCRError, PDFSinTextoError, AnonError, FileNotFoundError) as e:
         log.warning(f"[auto_ocr] OCR/extracción falló para {ruta_origen.name}: {e}")
         return None
     finally:
@@ -321,10 +325,26 @@ def anonimizar_documento(
             "error": str(e),
         }
 
-    # Anonimización (fase 0 variantes cliente + 4 fases) sobre el mapa compartido
-    texto_anon, _ = anonimizar_texto(
-        texto_original, mapa=mapa_caso, log=log, variantes_conocidas=variantes_cliente
-    )
+    # Anonimización (fase 0 variantes cliente + 4 fases) sobre el mapa compartido.
+    # Envuelto en try/except: un fallo aquí (p. ej. Presidio cae a media tanda)
+    # NO debe (a) propagarse y abortar el caso entero dejando el mapa sin guardar,
+    # ni (b) escribir un .md a medias. Se devuelve error estructurado y, crítico,
+    # se DESCARTAN las entidades que este documento hubiera añadido al mapa
+    # compartido, para no contaminarlo con un estado parcial.
+    try:
+        texto_anon, _ = anonimizar_texto(
+            texto_original, mapa=mapa_caso, log=log, variantes_conocidas=variantes_cliente
+        )
+    except Exception as e:
+        log.error(f"[error] {ruta_origen.name}: anonimización falló: {e}")
+        return {
+            "ok": False,
+            "ruta_md": None,
+            "skipped": False,
+            "n_entidades": 0,
+            "alertas": ["ANONIMIZACION_FALLIDA"],
+            "error": str(e),
+        }
 
     n_entidades_nuevas = len(mapa_caso.mapa) - n_entidades_antes
 
@@ -501,40 +521,51 @@ def anonimizar_caso(
         "",
     ]
 
-    for i, doc in enumerate(documentos, 1):
-        if on_progress:
-            on_progress("anonimizar", i, total)
-        res = anonimizar_documento(
-            case_id,
-            doc,
-            tipo_proc=tipo_proc,
-            mapa_caso=mapa,
-            log=log,
-            politica=politica,
-            auto_ocr=auto_ocr,
-            variantes_cliente=variantes_cliente,
-        )
-        rel = doc.relative_to(caso_path(case_id))
-        if res["skipped"]:
-            n_skip += 1
-            log_lineas.append(f"⏭ `{rel}` — sin cambios desde último run")
-        elif res["ok"]:
-            n_proc += 1
-            log_lineas.append(
-                f"✅ `{rel}` → `{res['ruta_md'].name}` "
-                f"({res['n_entidades']} entidades nuevas)"
+    # try/finally: el mapa (etiqueta → PII real) DEBE persistir aunque algo
+    # escape del bucle. Cada .md anonimizado se escribe en el acto; si el mapa
+    # solo se guardara al final y el proceso muriera a media tanda, quedarían
+    # .md con etiquetas y ningún mapa para revertirlas → datos irrecuperables.
+    # Además se reguarda tras cada documento procesado, reduciendo a un único
+    # documento la ventana de pérdida ante un corte abrupto (p. ej. apagón).
+    mapa_path = None
+    try:
+        for i, doc in enumerate(documentos, 1):
+            if on_progress:
+                on_progress("anonimizar", i, total)
+            res = anonimizar_documento(
+                case_id,
+                doc,
+                tipo_proc=tipo_proc,
+                mapa_caso=mapa,
+                log=log,
+                politica=politica,
+                auto_ocr=auto_ocr,
+                variantes_cliente=variantes_cliente,
             )
-        else:
-            errores.append({
-                "documento": str(rel),
-                "alertas":   res["alertas"],
-                "error":     res["error"],
-            })
-            tag = ", ".join(res["alertas"]) or "ERROR"
-            log_lineas.append(f"❌ `{rel}` — [{tag}] {res['error']}")
+            rel = doc.relative_to(caso_path(case_id))
+            if res["skipped"]:
+                n_skip += 1
+                log_lineas.append(f"⏭ `{rel}` — sin cambios desde último run")
+            elif res["ok"]:
+                n_proc += 1
+                log_lineas.append(
+                    f"✅ `{rel}` → `{res['ruta_md'].name}` "
+                    f"({res['n_entidades']} entidades nuevas)"
+                )
+                # Persistir el mapa en cuanto se escribe el .md correspondiente.
+                guardar_mapa_caso(case_id, mapa)
+            else:
+                errores.append({
+                    "documento": str(rel),
+                    "alertas":   res["alertas"],
+                    "error":     res["error"],
+                })
+                tag = ", ".join(res["alertas"]) or "ERROR"
+                log_lineas.append(f"❌ `{rel}` — [{tag}] {res['error']}")
+    finally:
+        # Escritura final garantizada del mapa compartido.
+        mapa_path = guardar_mapa_caso(case_id, mapa)
 
-    # Persistir el mapa compartido al final (una sola escritura)
-    mapa_path = guardar_mapa_caso(case_id, mapa)
     log_lineas.append("")
     log_lineas.append(f"Mapa de caso guardado en `{mapa_path.name}`")
     log_lineas.append(

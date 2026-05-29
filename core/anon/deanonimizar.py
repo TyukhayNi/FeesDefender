@@ -194,6 +194,26 @@ def deanonimizar(ruta_md: str | Path) -> Path:
     texto = ruta.read_text(encoding="utf-8")
     texto = deanonimizar_texto(texto, mapa)
 
+    # Salvaguarda: si tras sustituir quedan etiquetas sin resolver, el mapa está
+    # vacío, incompleto o no corresponde a este documento. Antes se escribía
+    # igualmente un fichero con la cabecera "Documento deanonimizado" que en
+    # realidad seguía lleno de etiquetas (caso típico: el JSON no traía la clave
+    # 'mapa', o estaba truncado) — el usuario recibía un fichero falsamente
+    # restaurado sin ningún aviso.
+    restantes = re.findall(r'\[[A-Z_0-9]+\]', texto)
+    if restantes:
+        unicas = sorted(set(restantes))
+        msg = (
+            f"{ruta.name}: quedan {len(restantes)} etiqueta(s) sin resolver "
+            f"({', '.join(unicas[:5])}{'…' if len(unicas) > 5 else ''}). "
+            f"El mapa {ruta_mapa.name} está vacío, incompleto o no corresponde."
+        )
+        if not mapa:
+            # Caso claro de mapa perdido/vacío: NO generar un fichero
+            # falsamente 'deanonimizado'.
+            raise AnonError(msg)
+        print(f"  ⚠ {msg}")
+
     # Actualizar cabecera del .md
     texto = re.sub(
         r'> \*\*Documento anonimizado\*\*.*\n',

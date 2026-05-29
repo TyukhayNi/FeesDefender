@@ -113,6 +113,7 @@ from collections import defaultdict
 # el orquestador (Streamlit / pipeline FeesDefender) pueda capturarlas en
 # lugar de matar el proceso. Ver `core/anon/exceptions.py`.
 from core.anon.exceptions import (
+    AnonError,
     DocxVacioError,
     FormatoNoSoportadoError,
     PDFSinTextoError,
@@ -360,17 +361,48 @@ def detectar_nombres_protegidos(texto: str) -> set:
     return protegidos
 
 
+# Tratamientos honoríficos que preceden a un nombre pero NO forman parte de él.
+# Se separan antes de comparar con la lista de operadores protegidos (que ya se
+# almacenan sin tratamiento) para que la coincidencia exacta funcione aunque la
+# captura arrastre el "DON"/"SR." (p. ej. la fase de mayúsculas captura
+# "DON JUAN MARTINEZ RUIZ" entero).
+_TRATAMIENTOS = {
+    'DON', 'DOÑA', 'DÑA', 'DÑ', 'DOÑ', 'D', 'Dª', 'Dª',
+    'SR', 'SRA', 'SRES', 'SRAS', 'SRTA', 'STA', 'STO',
+    'ILMO', 'ILMA', 'ILTMO', 'ILTMA', 'EXCMO', 'EXCMA',
+    'DR', 'DRA',
+}
+
+
+def _norm_nombre_protegido(s: str) -> str:
+    """Normaliza un nombre para comparar con la lista de protegidos: mayúsculas,
+    espacios colapsados y sin tratamientos honoríficos iniciales."""
+    palabras = s.upper().split()
+    while palabras and palabras[0].rstrip('.') in _TRATAMIENTOS:
+        palabras.pop(0)
+    return " ".join(palabras)
+
+
 def esta_protegido(fragmento: str, protegidos: set) -> bool:
-    """Comprueba si un fragmento coincide con un nombre protegido."""
-    fragmento_limpio = fragmento.strip()
-    # Coincidencia exacta
-    if fragmento_limpio in protegidos:
-        return True
-    # Coincidencia parcial (el fragmento es parte de un nombre protegido)
-    for protegido in protegidos:
-        if fragmento_limpio in protegido or protegido in fragmento_limpio:
-            return True
-    return False
+    """Comprueba si un fragmento corresponde a un operador jurídico protegido.
+
+    Coincidencia EXACTA, normalizada (mayúsculas, espacios y tratamientos
+    honoríficos). NO se usa coincidencia por subcadena: protegía de más y
+    filtraba PII. Con la comparación bidireccional anterior, un nombre de PARTE
+    que contuviera el de un operador ("ELENA HORNOS" protegida → "ELENA HORNOS
+    GARCÍA" parte) se daba por protegido y se entregaba en claro. Ahora, si solo
+    se captura parte del nombre de un operador, este se anonimizará
+    (sobre-redacción inocua), pero nunca se dejará una parte sin anonimizar.
+
+    Los nombres protegidos siempre tienen ≥2 palabras (los detecta _NOMBRE), así
+    que separar el tratamiento no abre la puerta a proteger un apellido suelto.
+    """
+    if not fragmento:
+        return False
+    frag_norm = _norm_nombre_protegido(fragmento)
+    if not frag_norm:
+        return False
+    return any(frag_norm == _norm_nombre_protegido(p) for p in protegidos)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -673,6 +705,12 @@ PATRONES_CONTEXTO = [
     (r'(?:nom\s+del\s+pare|nom\s+de\s+la\s+mare)\s*:\s*(' + _WORD + r'(?:\s+' + _WORD + r'){0,2})(?:\s*$|\s*\n)', "nombre"),
 ]
 
+# Precompilado UNA sola vez (antes se recompilaban en cada documento, dos veces
+# por el bucle duplicado de anonimizar_por_contexto).
+PATRONES_CONTEXTO_COMPILADOS = [
+    (re.compile(p, re.IGNORECASE | re.MULTILINE), rol) for p, rol in PATRONES_CONTEXTO
+]
+
 PATRON_NOMBRE_MAYUSCULAS = re.compile(
     r'\b([A-ZÁÉÍÓÚÜÑÀÈÌÒÙÇ]{2,}(?:\s+[A-ZÁÉÍÓÚÜÑÀÈÌÒÙÇ]{2,}){1,4})\b'
 )
@@ -689,13 +727,25 @@ PATRONES_REGEX = [
     (r'\bES\s*\d{2}[\s]?\d{4}[\s]?\d{4}[\s]?\d{2}[\s]?\d{10}\b',    "IBAN"),
     (r'\b[A-Z]{2}\d{2}(?:[\s]?\d{4}){3,5}\b',                        "IBAN"),
     (r'\b\d{8}[A-ZÁÉÍÓÚÜÑ]\b',                                        "DNI"),
+    # #7: DNI partido por un salto de línea (maquetación OCR a dos columnas).
+    # Exige el \n real para no anonimizar "12345678 E." en la misma línea.
+    (r'\b\d{8}[ \t]*\n[ \t]*[A-ZÁÉÍÓÚÜÑ]\b',                          "DNI"),
     (r'\b[XYZ]\d{7}[A-ZÁÉÍÓÚÜÑ]\b',                                   "NIE"),
     (r'\b[ABCDEFGHJKLMNPQRSUVW]\d{7}[0-9A-J]\b',                      "NIF"),
     (r'\b(?:\+34[\s.-]?)?[6789]\d{2}[\s.-]?\d{3}[\s.-]?\d{3}\b',     "TELEFONO"),
     (r'\b(?:\+34[\s.-]?)?9[0-9]{2}[\s.-]?\d{3}[\s.-]?\d{3}\b',       "TELEFONO"),
-    (r'\b[\w.+-]+@[\w-]+\.[\w.]+\b',                                   "EMAIL"),
+    # #7: tolera espacios/saltos de línea alrededor de '@' y de los puntos del
+    # dominio, para capturar emails partidos por el OCR ("juan@\ngmail.com").
+    # Sigue exigiendo al menos un punto de dominio, así que no traga texto suelto.
+    (r'[\w.+-]+\s*@\s*[\w-]+(?:\s*\.\s*[\w]+)+',                      "EMAIL"),
     (r'\b\d{20}\b',                                                     "CUENTA"),
     (r'\b\d{16,19}\b',                                                  "CUENTA"),
+]
+
+# Precompilado UNA sola vez a nivel de módulo (antes se recompilaban en cada
+# documento dentro de aplicar_regex → trabajo desperdiciado en casos grandes).
+PATRONES_REGEX_COMPILADOS = [
+    (re.compile(p, re.IGNORECASE), tipo) for p, tipo in PATRONES_REGEX
 ]
 
 # §15: email con '@' transcrito por OCR como un glifo MAYÚSCULO (Q/O/G/E…).
@@ -886,22 +936,18 @@ class MapaEntidades:
         if nombre in self.mapa:
             return self.mapa[nombre]
 
-        # Coincidencia parcial: el nombre nuevo es subconjunto de uno ya registrado
-        # o contiene a uno ya registrado (misma persona, distinta forma de escritura)
-        nombre_upper = nombre.upper()
-        for registrado, etiqueta in self.mapa.items():
-            reg_upper = registrado.upper()
-            # Solo comparar cadenas que parecen nombres (no datos estructurados)
-            if not re.match(r'^\[', registrado):
-                if nombre_upper in reg_upper or reg_upper in nombre_upper:
-                    # Usar la etiqueta del nombre más largo (más completo)
-                    if len(nombre) > len(registrado):
-                        # El nuevo es más largo: actualizar el mapa inverso
-                        self.mapa[nombre] = etiqueta
-                        self.mapa_inverso[etiqueta] = nombre  # reemplazar por versión más completa
-                    else:
-                        self.mapa[nombre] = etiqueta
-                    return etiqueta
+        # NOTA: se eliminó la fusión por subcadena (antes v3.3). Provocaba dos
+        # fallos graves:
+        #   1. Dos personas DISTINTAS que comparten un fragmento de nombre
+        #      ("JUAN PÉREZ" y "JUAN PÉREZ LÓPEZ", o que comparten un apellido)
+        #      acababan con la MISMA etiqueta → al deanonimizar se atribuían las
+        #      declaraciones de una a la otra.
+        #   2. Al ver la variante "más larga" se sobrescribía mapa_inverso, de
+        #      modo que una aparición previa se restituía con el nombre EQUIVOCADO.
+        # Cada forma distinta recibe ahora su propia etiqueta: nunca se fusionan
+        # identidades y el round-trip es exacto. Las variantes OCR del nombre del
+        # CLIENTE se unifican aparte, de forma explícita y controlada, en
+        # anonimizar_variantes_conocidas().
 
         # Determinar tipo de etiqueta
         if es_empresa(nombre):
@@ -983,6 +1029,23 @@ class MapaEntidades:
 # ANONIMIZACION
 # ══════════════════════════════════════════════════════════════════════════════
 
+# Constantes del post-procesado de fragmentos PERSON de Presidio. Definidas a
+# nivel de módulo (antes se reconstruían como literales en cada entidad de cada
+# documento, dentro del bucle de anonimizar_con_presidio).
+_PREFIJOS_PRESIDIO = {
+    'NOMBRE', 'NOM', 'SEXE', 'SEXO', 'FECHA', 'DATA',
+    'TIPO', 'TIPUS', 'CLASE', 'CLASSE', 'RESULTADO',
+    'REPRESENTADO', 'REPRESENTAT', 'INVESTIGAT', 'INVESTIGADO',
+    'DIRECCIÓN', 'DIRECCION', 'ADREÇA', 'ADRESA',
+    'DEL', 'DE', 'LA', 'EL', 'LAS', 'LOS',
+}
+_SEP_CAMPO_PRESIDIO = {
+    'NOMBRE', 'NOM', 'FECHA', 'DATA', 'DIRECCIÓN', 'DIRECCION',
+    'ADREÇA', 'TELEFONO', 'TELÉFONO', 'CLASE', 'CLASSE',
+}
+_PARTICULAS_PRESIDIO = {'DE', 'DEL', 'VAN', 'VON', 'DER', 'DI', 'DU', 'LA', 'LAS', 'LOS'}
+
+
 def anonimizar_con_presidio(texto: str, mapa: MapaEntidades, log) -> str:
     try:
         # FeesDefender 2026-05-07: motor cargado vía singleton.
@@ -1022,13 +1085,7 @@ def anonimizar_con_presidio(texto: str, mapa: MapaEntidades, log) -> str:
                 # v3.10: limpiar prefijos/sufijos de contexto ANTES de filtrar
                 # por minúsculas, porque "Nombre Saydou Balde" tiene minúsculas
                 # pero es un nombre válido precedido de contexto.
-                _PREFIJOS_CONTEXTO = {
-                    'NOMBRE', 'NOM', 'SEXE', 'SEXO', 'FECHA', 'DATA',
-                    'TIPO', 'TIPUS', 'CLASE', 'CLASSE', 'RESULTADO',
-                    'REPRESENTADO', 'REPRESENTAT', 'INVESTIGAT', 'INVESTIGADO',
-                    'DIRECCIÓN', 'DIRECCION', 'ADREÇA', 'ADRESA',
-                    'DEL', 'DE', 'LA', 'EL', 'LAS', 'LOS',
-                }
+                _PREFIJOS_CONTEXTO = _PREFIJOS_PRESIDIO
                 palabras_frag = fragmento.strip().split()
                 # Quitar palabras del inicio/final que son prefijos de contexto
                 while palabras_frag and palabras_frag[0].upper() in _PREFIJOS_CONTEXTO:
@@ -1038,11 +1095,8 @@ def anonimizar_con_presidio(texto: str, mapa: MapaEntidades, log) -> str:
                 # Cortar en separador de campo; mantener partículas de apellido
                 # compuesto (DE LORENZO, VAN DER, etc.) si la siguiente palabra
                 # también empieza en mayúscula y no es un separador.
-                _SEP_CAMPO = {
-                    'NOMBRE','NOM','FECHA','DATA','DIRECCIÓN','DIRECCION',
-                    'ADREÇA','TELEFONO','TELÉFONO','CLASE','CLASSE',
-                }
-                _PARTICULAS = {'DE','DEL','VAN','VON','DER','DI','DU','LA','LAS','LOS'}
+                _SEP_CAMPO = _SEP_CAMPO_PRESIDIO
+                _PARTICULAS = _PARTICULAS_PRESIDIO
                 palabras_cortadas = []
                 i = 0
                 while i < len(palabras_frag):
@@ -1117,9 +1171,17 @@ def anonimizar_con_presidio(texto: str, mapa: MapaEntidades, log) -> str:
         log.warning("Presidio no instalado. Fase 1 omitida. Instala: pip install presidio-analyzer presidio-anonymizer")
         return texto
     except Exception as e:
-        log.warning(f"Presidio fallo inesperadamente (Fase 1 omitida): {e}")
-        log.warning("Verifica que los modelos spaCy esten instalados: python -m spacy download es_core_news_lg")
-        return texto
+        # FALLAR EN CERRADO: Presidio es el detector principal de nombres en
+        # prosa libre. Antes, cualquier excepción aquí devolvía el texto SIN
+        # anonimizar y el pipeline lo marcaba como éxito (✅) → fuga de PII
+        # presentada como anonimización correcta. Ahora se propaga como error
+        # para que el documento se registre como fallido (ok=False) y NO se
+        # escriba un .md falsamente "anonimizado".
+        log.error(f"Presidio falló inesperadamente: {e}")
+        log.error("Verifica que los modelos spaCy estén instalados: python -m spacy download es_core_news_lg")
+        raise AnonError(
+            f"Anonimización incompleta: el motor NER (Presidio) falló: {e}"
+        ) from e
 
 
 _PREFIJOS_NOMBRE_CTX = {
@@ -1147,8 +1209,9 @@ def anonimizar_por_contexto(texto: str, mapa: MapaEntidades, log) -> str:
     v3.10e: aplicar limpiar_prefijos_nombre() para eliminar contexto capturado.
     """
     detectados = 0
-    for patron_str, rol in PATRONES_CONTEXTO:
-        patron = re.compile(patron_str, re.IGNORECASE | re.MULTILINE)
+    for patron, rol in PATRONES_CONTEXTO_COMPILADOS:
+        # Recopilar (ini, fin, etiqueta) sobre el texto ACTUAL de esta pasada.
+        reemplazos = []
         for m in patron.finditer(texto):
             nombre = limpiar_prefijos_nombre(limpiar_nombre(m.group(1)))
             if not nombre or not es_nombre_valido(nombre):
@@ -1159,30 +1222,20 @@ def anonimizar_por_contexto(texto: str, mapa: MapaEntidades, log) -> str:
             if nombre.startswith('[') and nombre.endswith(']'):
                 continue
             etiqueta = mapa.registrar(nombre, rol)
-            if etiqueta != nombre:
-                # §3: recortar el span al nombre limpio (no al grupo completo)
-                # para no borrar palabras que limpiar_nombre haya descartado.
-                off = _offsets_nombre_limpio(m.group(1), nombre, m.start(1))
-                ini, fin = off if off is not None else (m.start(1), m.end(1))
-                texto = texto[:ini] + etiqueta + texto[fin:]
-                # Reiniciar búsqueda desde el inicio tras modificar el texto
-                break
+            if etiqueta == nombre:
+                continue
+            # §3: recortar el span al nombre limpio (no al grupo completo) para
+            # no borrar palabras que limpiar_nombre haya descartado.
+            off = _offsets_nombre_limpio(m.group(1), nombre, m.start(1))
+            ini, fin = off if off is not None else (m.start(1), m.end(1))
+            reemplazos.append((ini, fin, etiqueta))
+        # Sustituir en orden inverso para preservar offsets (igual que
+        # aplicar_regex). Antes había un segundo bucle duplicado que ya había
+        # derivado (omitía limpiar_prefijos_nombre) y mutaba el texto mientras
+        # iteraba sobre offsets obsoletos → corrupción / nombres sin anonimizar.
+        for ini, fin, etiqueta in sorted(reemplazos, reverse=True):
+            texto = texto[:ini] + etiqueta + texto[fin:]
             detectados += 1
-        # Re-ejecutar el patrón si hubo modificaciones
-        else:
-            continue
-        patron2 = re.compile(patron_str, re.IGNORECASE | re.MULTILINE)
-        for m in patron2.finditer(texto):
-            nombre = limpiar_nombre(m.group(1))
-            if not nombre or not es_nombre_valido(nombre): continue
-            if esta_protegido(nombre, mapa.protegidos): continue
-            if nombre.startswith('[') and nombre.endswith(']'): continue
-            etiqueta = mapa.registrar(nombre, rol)
-            if etiqueta != nombre:
-                off = _offsets_nombre_limpio(m.group(1), nombre, m.start(1))
-                ini, fin = off if off is not None else (m.start(1), m.end(1))
-                texto = texto[:ini] + etiqueta + texto[fin:]
-                detectados += 1
     log.info(f"Deteccion contextual: {detectados} entidades")
     return texto
 
@@ -1222,8 +1275,7 @@ def aplicar_regex(texto: str, mapa: MapaEntidades, log) -> str:
     mutaciones sucesivas desplacen posiciones y dejen ocurrencias sin anonimizar.
     """
     detectados = 0
-    for patron_str, tipo in PATRONES_REGEX:
-        patron = re.compile(patron_str, re.IGNORECASE)
+    for patron, tipo in PATRONES_REGEX_COMPILADOS:
         # Recopilar todos los matches sobre el texto actual (inmutable en esta pasada)
         matches = [
             m for m in patron.finditer(texto)
@@ -1259,135 +1311,6 @@ def aplicar_regex(texto: str, mapa: MapaEntidades, log) -> str:
 
 # ══════════════════════════════════════════════════════════════════════════════
 # MODO REVISION INTERACTIVO
-# ══════════════════════════════════════════════════════════════════════════════
-
-def revisar_interactivo(texto: str, mapa: MapaEntidades, log) -> str:
-    """Muestra fragmentos dudosos y permite al usuario corregirlos.
-    
-    Mejoras v3.1:
-    - Opcion [7] para introducir un rol personalizado
-    - Propagacion automatica: si confirmas un fragmento, se sustituye
-      en TODAS sus apariciones y se excluye de futuras preguntas
-    """
-    print("\n" + "="*55)
-    print("  MODO REVISION")
-    print("  Revisando fragmentos que podrian contener datos personales...")
-    print("  Nota: al confirmar un fragmento se aplicara a todas sus")
-    print("  apariciones en el documento automaticamente.")
-    print("="*55)
-
-    patron_sospechoso = re.compile(
-        r'\b([A-Z][a-z]{2,}\s+[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})?)\b'
-    )
-
-    # Recopilar todos los fragmentos unicos pendientes de revision
-    fragmentos_pendientes = []
-    vistos = set()
-    for m in patron_sospechoso.finditer(texto):
-        fragmento = m.group(1)
-        if fragmento in vistos:
-            continue
-        vistos.add(fragmento)
-        if fragmento in mapa.mapa:
-            continue
-        if esta_protegido(fragmento, mapa.protegidos):
-            continue
-        palabras = fragmento.split()
-        if any(p.upper() in PALABRAS_EXCLUIDAS for p in palabras):
-            continue
-        fragmentos_pendientes.append(fragmento)
-
-    total = len(fragmentos_pendientes)
-    print(f"\n  Total de fragmentos a revisar: {total}")
-
-    # Conjunto de fragmentos ya confirmados como NO personales (ignorar)
-    ignorados = set()
-
-    fragmentos_revisados = 0
-
-    for i, fragmento in enumerate(fragmentos_pendientes, 1):
-        # Si ya fue anonimizado en una iteracion anterior (propagacion)
-        if fragmento in mapa.mapa:
-            continue
-        # Si es un operador juridico protegido
-        if esta_protegido(fragmento, mapa.protegidos):
-            continue
-        # Si fue marcado como ignorado
-        if fragmento in ignorados:
-            continue
-
-        # Contar apariciones en el texto actual
-        n_apariciones = texto.count(fragmento)
-
-        # Mostrar contexto de la primera aparicion
-        pos = texto.find(fragmento)
-        inicio = max(0, pos - 60)
-        fin = min(len(texto), pos + len(fragmento) + 60)
-        contexto = texto[inicio:fin].replace('\n', ' ')
-
-        print(f"\n  [{i}/{total}] Fragmento: \"{fragmento}\"")
-        print(f"  Apariciones en documento: {n_apariciones}")
-        print(f"  Contexto: ...{contexto}...")
-        print()
-        print("  [1] Actor / Demandante / Denunciante")
-        print("  [2] Demandado / Investigado / Denunciado")
-        print("  [3] Procurador")
-        print("  [4] Letrado / Abogado")
-        print("  [5] Empresa / Persona juridica")
-        print("  [6] No es un dato personal (ignorar siempre)")
-        print("  [7] Rol personalizado")
-        print("  [Enter] Saltar (no anonimizar ahora)")
-
-        respuesta = input("  Seleccion: ").strip()
-
-        roles_predefinidos = {
-            "1": "actor",
-            "2": "demandado",
-            "3": "procurador",
-            "4": "letrado",
-            "5": "empresa",
-        }
-
-        if respuesta == "6":
-            # Marcar como ignorado — no se volvera a preguntar
-            ignorados.add(fragmento)
-            print(f"  -> Ignorado (no se volvera a preguntar)")
-
-        elif respuesta == "7":
-            # Rol personalizado
-            rol_custom = input("  Escribe el rol (ej: ARRENDADOR, VICTIMA, FIADOR): ").strip().upper()
-            if rol_custom:
-                # Corrección v3.2: usar registrar_dato para pasar por _siguiente_etiqueta
-                # correctamente y evitar colisión si el mismo rol se usa más de una vez.
-                etiqueta = mapa.registrar_dato(fragmento, rol_custom)
-                # Propagar a todas las apariciones
-                texto = texto.replace(fragmento, etiqueta)
-                print(f"  -> Anonimizado como {etiqueta} ({n_apariciones} aparicion/es)")
-                fragmentos_revisados += 1
-            else:
-                print("  -> Rol vacio. Fragmento saltado.")
-
-        elif respuesta in roles_predefinidos:
-            rol = roles_predefinidos[respuesta]
-            etiqueta = mapa.registrar(fragmento, rol)
-            # Propagar a TODAS las apariciones del documento
-            texto = texto.replace(fragmento, etiqueta)
-            print(f"  -> Anonimizado como {etiqueta} ({n_apariciones} aparicion/es sustituidas)")
-            fragmentos_revisados += 1
-
-        else:
-            # Enter u opcion no reconocida: saltar sin registrar
-            print("  -> Saltado")
-
-    log.info(f"Revision interactiva: {fragmentos_revisados} fragmentos confirmados")
-    print(f"\n  Revision completada.")
-    print(f"  Fragmentos anonimizados: {fragmentos_revisados}")
-    print(f"  Fragmentos ignorados:    {len(ignorados)}")
-    return texto
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# VALIDACION DE CALIDAD
 # ══════════════════════════════════════════════════════════════════════════════
 
 
@@ -1492,11 +1415,14 @@ def validar_calidad(texto_original: str, texto_anonimizado: str, mapa: MapaEntid
     n_etiquetas = len(etiquetas_en_texto)
     n_entidades_mapa = len(mapa.mapa)
 
-    # Buscar posibles datos no anonimizados
-    posibles_dni = re.findall(r'\b\d{8}[A-Z]\b', texto_anonimizado)
-    posibles_iban = re.findall(r'\bES\s*\d{2}[\s]?\d{4}', texto_anonimizado)
-    posibles_email = re.findall(r'\b[\w.+-]+@[\w-]+\.[\w.]+\b', texto_anonimizado)
-    posibles_tel = re.findall(r'\b[6789]\d{8}\b', texto_anonimizado)
+    # Buscar posibles datos no anonimizados. El validador debe ser AL MENOS tan
+    # amplio como el redactor (IGNORECASE, letras acentuadas y tolerancia a
+    # saltos de línea); si no, declararía "todo limpio" sobre datos que el
+    # propio anonimizador habría debido capturar.
+    posibles_dni = re.findall(r'\b\d{8}[ \t]*\n?[ \t]*[A-ZÁÉÍÓÚÜÑ]\b', texto_anonimizado, re.IGNORECASE)
+    posibles_iban = re.findall(r'\bES\s*\d{2}[\s]?\d{4}', texto_anonimizado, re.IGNORECASE)
+    posibles_email = re.findall(r'[\w.+-]+\s*@\s*[\w-]+(?:\s*\.\s*[\w]+)+', texto_anonimizado, re.IGNORECASE)
+    posibles_tel = re.findall(r'\b[6789]\d{2}[\s.-]?\d{3}[\s.-]?\d{3}\b', texto_anonimizado)
 
     print("\n" + "="*55)
     print("  INFORME DE CALIDAD")
@@ -1746,7 +1672,10 @@ def anonimizar_variantes_conocidas(
     canonica: str | None = None
     n = 0
     for v in sorted({x for x in variantes if x}, key=len, reverse=True):
-        patron = re.compile(re.escape(v), re.IGNORECASE)
+        # #8: límite de palabra por lookarounds (no \b, porque la variante puede
+        # empezar/acabar en signos como '&' o '.'). Evita que una variante corta
+        # ("ROCA") reescriba el interior de palabras ajenas ("BARROCA").
+        patron = re.compile(r'(?<!\w)' + re.escape(v) + r'(?!\w)', re.IGNORECASE)
         if not patron.search(texto):
             continue
         if canonica is None:
