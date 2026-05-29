@@ -33,6 +33,7 @@ Notas de alcance MVP (Fase 3):
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import shutil
 import tempfile
@@ -168,6 +169,81 @@ def _md_ya_actualizado(ruta_md: Path, origen_sha256: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Colisión de slug — desambiguación determinista
+# ---------------------------------------------------------------------------
+
+def _origen_rel(case_id: str, ruta_origen: Path) -> str:
+    """Identidad estable del origen para desambiguar colisiones de slug.
+
+    Devuelve la ruta del origen relativa a ``00_Input/`` del caso (en formato
+    POSIX, estable entre máquinas y ejecuciones). Si el origen está fuera de
+    ese árbol (p. ej. invocación directa con una ruta arbitraria), cae al
+    nombre del fichero. Esta cadena alimenta el sufijo determinista: el mismo
+    origen produce siempre el mismo sufijo, y por tanto el mismo nombre de .md.
+    """
+    try:
+        raiz = caso_path(case_id) / SUBDIR_INPUT
+        return ruta_origen.relative_to(raiz).as_posix()
+    except ValueError:
+        return ruta_origen.name
+
+
+def _resolver_ruta_md(
+    dir_anon: Path,
+    slug: str,
+    ruta_origen: Path,
+    case_id: str,
+    log: logging.Logger,
+) -> Path:
+    """Resuelve el .md de salida evitando que dos orígenes con el mismo slug
+    se pisen silenciosamente.
+
+    Dos documentos de ``00_Input/`` distintos pueden producir el mismo slug
+    (acentos/puntuación que ``slugify`` normaliza, o el mismo stem con distinta
+    extensión). Sin desambiguar, el segundo sobrescribe el .md del primero y se
+    pierde una salida anonimizada sin aviso.
+
+    Comportamiento:
+      - Si ``{slug}.md`` no existe → se usa tal cual (caso normal; salida sin
+        cambios respecto a la versión previa, no rompe el fixture de regresión).
+      - Si existe y su frontmatter ``origen`` es ESTE mismo fichero → se reusa
+        (re-run idempotente; nombre estable, respeta ``_md_ya_actualizado``).
+      - Si existe pero pertenece a OTRO origen → colisión: sufijo corto y
+        determinista derivado del SHA-256 de la ruta relativa del origen. El
+        mismo origen produce siempre el mismo nombre entre ejecuciones.
+
+    Limitación conocida: la comparación usa el campo ``origen`` del frontmatter,
+    que almacena solo el nombre del fichero. Dos ficheros con idéntico nombre en
+    subcarpetas distintas que además colisionen de slug no se distinguen aquí
+    (seguirían pisándose). No es uno de los casos que dispara este bug
+    (normalización de slug), y cubrirlo exigiría persistir la ruta relativa en
+    el frontmatter (rompería la regresión byte-a-byte de todos los .md).
+    """
+    ruta_md = dir_anon / f"{slug}.md"
+    if not ruta_md.exists():
+        return ruta_md
+
+    try:
+        meta, _ = read_md(ruta_md)
+        origen_prev = meta.get("origen")
+    except Exception:
+        origen_prev = None
+
+    if origen_prev == ruta_origen.name:
+        return ruta_md  # mismo origen → re-run normal, nombre estable
+
+    sufijo = hashlib.sha256(
+        _origen_rel(case_id, ruta_origen).encode("utf-8")
+    ).hexdigest()[:8]
+    ruta_desambig = dir_anon / f"{slug}-{sufijo}.md"
+    log.warning(
+        f"[colisión-slug] '{slug}.md' ya pertenece a {origen_prev!r}; "
+        f"{ruta_origen.name} → {ruta_desambig.name}"
+    )
+    return ruta_desambig
+
+
+# ---------------------------------------------------------------------------
 # anonimizar_documento — procesa un solo documento
 # ---------------------------------------------------------------------------
 
@@ -272,7 +348,8 @@ def anonimizar_documento(
     slug = slugify(ruta_origen.stem)
     dir_anon = caso_path(case_id) / SUBDIR_ANONIMIZADO
     dir_anon.mkdir(parents=True, exist_ok=True)
-    ruta_md = dir_anon / f"{slug}.md"
+    # Resuelve el nombre evitando que dos orígenes con el mismo slug se pisen.
+    ruta_md = _resolver_ruta_md(dir_anon, slug, ruta_origen, case_id, log)
 
     origen_sha = file_sha256(ruta_origen)
 

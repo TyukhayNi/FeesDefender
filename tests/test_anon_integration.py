@@ -314,3 +314,97 @@ class TestMapaCompartido:
         assert directo["12121212A"] != directo["99999999X"]
         # Y el contador refleja 2 DNIs distintos
         assert datos["contadores"]["DNI"] == 2
+
+
+# ---------------------------------------------------------------------------
+# Colisión de slug: dos orígenes distintos que normalizan al mismo nombre
+# ---------------------------------------------------------------------------
+
+class TestColisionSlug:
+    """Regresión del bug: dos documentos de 00_Input/ que producen el mismo
+    slug (acentos/puntuación normalizados por ``slugify``, o el mismo stem con
+    distinta extensión) escribían en el MISMO .md y el segundo sobrescribía al
+    primero silenciosamente. La desambiguación debe ser determinista.
+    """
+
+    # "Demanda 1ª" y "Demanda 1a" → ambos slug "demanda_1a" (ª → a).
+    NOMBRE_A = "Demanda 1ª.pdf"
+    NOMBRE_B = "Demanda 1a.pdf"
+    SLUG = "demanda_1a"
+
+    def _preparar(self, case_dir, mock_extractor):
+        a = case_dir / "00_Input" / self.NOMBRE_A
+        b = case_dir / "00_Input" / self.NOMBRE_B
+        a.write_bytes(b"contenido A")
+        b.write_bytes(b"contenido B")
+        mock_extractor[self.NOMBRE_A] = "DNI 11111111A."
+        mock_extractor[self.NOMBRE_B] = "DNI 22222222B."
+        return a, b
+
+    def test_dos_origenes_mismo_slug_no_se_pisan(self, caso_aislado, mock_extractor):
+        case_id, case_dir = caso_aislado
+        a, b = self._preparar(case_dir, mock_extractor)
+
+        mapa = MapaEntidades()
+        res_a = anonimizar_documento(case_id, a, mapa_caso=mapa)
+        res_b = anonimizar_documento(case_id, b, mapa_caso=mapa)
+
+        assert res_a["ok"] and res_b["ok"]
+        # El segundo NO sobrescribe al primero: dos .md distintos coexisten.
+        assert res_a["ruta_md"] != res_b["ruta_md"]
+        assert res_a["ruta_md"].exists()
+        assert res_b["ruta_md"].exists()
+
+        # El primero conserva el slug base; el segundo lleva sufijo desambiguador.
+        assert res_a["ruta_md"].name == f"{self.SLUG}.md"
+        assert res_b["ruta_md"].name.startswith(f"{self.SLUG}-")
+        assert res_b["ruta_md"].name.endswith(".md")
+
+        # Cada .md apunta a su propio origen (no se cruzó el contenido).
+        meta_a, _ = read_md(res_a["ruta_md"])
+        meta_b, _ = read_md(res_b["ruta_md"])
+        assert meta_a["origen"] == self.NOMBRE_A
+        assert meta_b["origen"] == self.NOMBRE_B
+
+        # Exactamente 2 salidas en 06_Anonimizado/.
+        outputs = sorted((case_dir / "06_Anonimizado").glob("*.md"))
+        assert len(outputs) == 2
+
+    def test_nombre_estable_entre_ejecuciones(self, caso_aislado, mock_extractor):
+        """Mismo origen → mismo nombre en re-runs (no rompe idempotencia)."""
+        case_id, case_dir = caso_aislado
+        a, b = self._preparar(case_dir, mock_extractor)
+
+        mapa = MapaEntidades()
+        nombre_a1 = anonimizar_documento(case_id, a, mapa_caso=mapa)["ruta_md"].name
+        nombre_b1 = anonimizar_documento(case_id, b, mapa_caso=mapa)["ruta_md"].name
+
+        # Reproceso forzado: los nombres deben ser idénticos (deterministas).
+        nombre_a2 = anonimizar_documento(
+            case_id, a, mapa_caso=mapa, politica="REPROCESAR"
+        )["ruta_md"].name
+        nombre_b2 = anonimizar_documento(
+            case_id, b, mapa_caso=mapa, politica="REPROCESAR"
+        )["ruta_md"].name
+
+        assert nombre_a1 == nombre_a2
+        assert nombre_b1 == nombre_b2
+        # No proliferan ficheros: siguen siendo exactamente 2.
+        outputs = sorted((case_dir / "06_Anonimizado").glob("*.md"))
+        assert len(outputs) == 2
+
+    def test_idempotencia_skip_sobre_fichero_desambiguado(self, caso_aislado, mock_extractor):
+        """El .md con sufijo también es idempotente bajo SALTAR."""
+        case_id, case_dir = caso_aislado
+        a, b = self._preparar(case_dir, mock_extractor)
+
+        mapa = MapaEntidades()
+        anonimizar_documento(case_id, a, mapa_caso=mapa)
+        r1 = anonimizar_documento(case_id, b, mapa_caso=mapa)
+        assert not r1["skipped"]
+
+        # Segunda pasada sobre B (política SALTAR por defecto): se salta y
+        # devuelve el MISMO fichero desambiguado.
+        r2 = anonimizar_documento(case_id, b, mapa_caso=mapa)
+        assert r2["skipped"] is True
+        assert r2["ruta_md"].name == r1["ruta_md"].name
