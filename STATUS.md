@@ -941,15 +941,13 @@ C:\Users\tnm33\Dev\
     └── .env                       ← local, nunca a GitHub
 
 G:\Unidades compartidas\
-├── DESPACHO - PRODUCCION\
-│   └── Proyectos\FeesDefender\    ← bitácora/docs en Drive (acceso móvil vía MCP)
-│       ├── bitacora/  docs/  decisiones/
-│       └── ESTADO.md              ← export automático del cierre de sesión
-│
 └── EXPEDIENTES - TYUKHAY LEGAL\
     └── CASOS\                     ← expedientes reales (acceso equipo: Paola, Ana)
         ├── _PLANTILLA/
         └── {case_id}/
+
+(Bitácora y planificación: PLAN.md + STATUS.md en el repo. Historial: git log.
+ La carpeta Drive Proyectos\FeesDefender\ quedó archivada el 2026-05-29.)
 ```
 
 **Variables de entorno afectadas:**

@@ -21,39 +21,28 @@ de carpetas y el checklist de apertura con los comandos exactos.
 
 Ruta: `STATUS.md` en la raíz del repo (este directorio).
 
-## Bitácora y documentación (Drive, acceso móvil)
+## Planificación y estado
 
-Código y bitácora viven **separados** desde la migración de 2026-05-27:
+Desde 2026-05-29 la bitácora vive en el **repo como única fuente de verdad**
+(antes en Drive; abandonado por divergencia PC→nube y por duplicados del conector
+de Cowork, que solo soporta create). Drive queda solo para expedientes jurídicos
+(`CASOS_ROOT`) y entregables a cliente.
 
-- **Código**: este directorio (`C:\Users\tnm33\Dev\FeesDefender`), versionado
-  en Git → `github.com/TyukhayNi/FeesDefender`. Disco local, sin latencia de Drive.
-- **Bitácora/docs**: en Google Drive, en
-  `G:\Unidades compartidas\DESPACHO - PRODUCCION\Proyectos\FeesDefender\`
-  (subcarpetas `bitacora/`, `docs/`, `decisiones/`), sincronizada para consulta
-  desde el móvil vía MCP de Drive.
+- `PLAN.md` (raíz del repo): planificación compartida. Cowork (PC) y Claude Code
+  lo editan ambos. Cowork móvil queda fuera del lazo hasta que exista un conector
+  MCP de GitHub.
+- `STATUS.md` (raíz del repo): estado del proyecto y bitácora de cierre de sesión.
+  Lo escribe Claude Code en cada cierre; Cowork lo lee.
+- Historial: `git log`. No se mantiene `commits.log` como artefacto separado.
+- Acceso móvil: app de GitHub (lectura). Edición ocasional vía GitHub web.
 
-`STATUS.md` (en este repo) sigue siendo la **fuente de verdad única**. El cierre
-de sesión exporta un resumen a `...\Proyectos\FeesDefender\ESTADO.md` (no editar
-a mano: se sobrescribe). El hook `post-commit` registra cada commit en
-`...\Proyectos\FeesDefender\bitacora\commits.log`.
+**Al iniciar sesión**: leer `PLAN.md` además de `STATUS.md`; los puntos en la cola
+de prioridad son entrada directa de trabajo, y las "Decisiones pendientes" sin
+resolver se plantean antes de avanzar. **Al completar un punto**: marcarlo `[x]` en
+`PLAN.md` y anotar el hash del commit. **Al cerrar sesión**: dejar `PLAN.md` al día.
 
-No mezclar dominios: código en local, bitácora en Drive.
-
-### Planificación compartida con el móvil (PLAN.md)
-
-El usuario planifica desde el móvil (Cowork/Drive) escribiendo en
-`...\Proyectos\FeesDefender\PLAN.md`. Por tanto:
-
-- **Al iniciar sesión**: leer `PLAN.md` además de `STATUS.md`. Los puntos que el
-  usuario haya añadido en "Próximos pasos"/"Prioridades" son entrada directa de
-  trabajo. Si hay "Decisiones pendientes" sin resolver, plantearlas antes de avanzar.
-- **Al completar un punto**: marcarlo `[x]` en `PLAN.md` y anotar el hash del commit.
-- **Al cerrar sesión**: dejar `PLAN.md` al día (lo hecho marcado, lo nuevo añadido)
-  para que el usuario lo vea desde el móvil. `ESTADO.md` lo sigue generando el
-  cierre automático.
-
-Flujo: móvil escribe `PLAN.md` → Code ejecuta y marca progreso → móvil ve avances
-en `PLAN.md` + `ESTADO.md` + `commits.log`.
+Código: este directorio (`C:\Users\tnm33\Dev\FeesDefender`), versionado en Git →
+`github.com/TyukhayNi/FeesDefender`. Disco local, sin latencia de Drive.
 
 ## Reglas que nunca se rompen
 
@@ -210,8 +199,8 @@ ve Google Drive).
 - Comunicaciones a clientes vía Gmail / Drive (MCPs preinstalados).
 - Investigación CENDOJ (Chrome MCP listo).
 - Análisis de un caso concreto sin tocar código.
-- Lectura del estado del proyecto en la bitácora de Drive
-  (`...\Proyectos\FeesDefender\ESTADO.md`).
+- Lectura del estado del proyecto y la planificación en el repo (`STATUS.md`,
+  `PLAN.md`); desde el móvil, vía app de GitHub.
 
 Cowork NO debe trabajar la carpeta obsoleta de Drive
 (`...\Base datos expedientes _OBSOLETO_borrar_tras_2026-06-10`).
