@@ -27,5 +27,15 @@ class FormatoNoSoportadoError(AnonError):
     """Extensión de archivo no soportada por el extractor."""
 
 
+class PDFVacioError(AnonError):
+    """El PDF de entrada no tiene páginas, o ningún segmento detectado abarca
+    páginas reales.
+
+    Se lanza en `separar_pdf` / `separar_pdf_pipeline` para no emitir PDFs
+    vacíos ni registrarlos en `indice.json` como documentos inexistentes
+    (antes un PDF de 0 páginas producía un segmento '1-0' con un PDF vacío).
+    """
+
+
 class OCRError(AnonError):
     """Fallo no recuperable de ocrmypdf."""

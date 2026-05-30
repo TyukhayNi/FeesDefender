@@ -29,6 +29,8 @@ from datetime import datetime
 from collections import defaultdict
 from typing import Callable
 
+from core.anon.exceptions import PDFVacioError
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TIPOS DE DOCUMENTO Y SUS MARCADORES
@@ -214,36 +216,22 @@ PATRON_NUM_DOC = re.compile(
 # ══════════════════════════════════════════════════════════════════════════════
 
 def extraer_primeras_lineas(pagina, n=5, tol_y=3.0, tol_x=8.0):
-    """Extrae las primeras N líneas de texto de una página via LTChar."""
-    from pdfminer.layout import LTChar
+    """Extrae las primeras N líneas de texto de una página via LTChar.
 
-    def recoger_chars(contenedor, chars):
-        for elem in contenedor:
-            if isinstance(elem, LTChar):
-                chars.append(elem)
-            elif hasattr(elem, '__iter__'):
-                recoger_chars(elem, chars)
+    La recogida de ``LTChar`` y la agrupación en líneas viven en
+    ``core.anon.pdf_lineas`` (compartido con ``anonimizar.extraer_texto_pdf``).
+    Aquí solo nos quedamos con las primeras N líneas de portada de longitud
+    suficiente (>= 3 caracteres) para alimentar a ``detectar_tipo``.
+    """
+    from core.anon.pdf_lineas import agrupar_en_lineas, recoger_chars
 
-    chars = []
+    chars: list = []
     recoger_chars(pagina, chars)
     if not chars:
         return []
 
-    grupos = defaultdict(list)
-    for c in chars:
-        grupos[round(c.y0 / tol_y) * tol_y].append(c)
-
     lineas = []
-    for y, grupo in sorted(grupos.items(), key=lambda x: -x[0]):
-        grupo.sort(key=lambda c: c.x0)
-        texto = ""
-        x_prev = None
-        for c in grupo:
-            if x_prev is not None and c.x0 - x_prev > tol_x:
-                texto += " "
-            texto += c.get_text()
-            x_prev = c.x1
-        texto = texto.strip()
+    for _y, texto in agrupar_en_lineas(chars, tol_y, tol_x):
         if len(texto) >= 3:
             lineas.append(texto)
         if len(lineas) >= n:
@@ -363,22 +351,32 @@ def detectar_segmentos(ruta_pdf, log, *, on_page: "Callable[[int, int], None] | 
     FeesDefender 2026-05-07: añadido callback ``on_page(num_pag, total_pag)``
     opcional para reportar progreso en UI sin acoplar a Streamlit.
     """
+    from contextlib import closing
+
     from pdfminer.high_level import extract_pages
     from pypdf import PdfReader
 
     log.info(f"Analizando estructura: {ruta_pdf.name}")
 
-    reader    = PdfReader(str(ruta_pdf))
-    total_pag = len(reader.pages)
+    # pypdf lee el PDF a memoria, pero usamos el context manager para cerrar
+    # de forma explícita y no depender del GC (en Windows un handle abierto
+    # bloquea el origen y rompe cualquier mover/borrar posterior).
+    with PdfReader(str(ruta_pdf)) as reader:
+        total_pag = len(reader.pages)
 
-    # Primera pasada: etiquetar cada página
+    # Primera pasada: etiquetar cada página.
+    # ``extract_pages`` es un generador que mantiene el PDF ABIERTO hasta
+    # agotarlo; si el bucle se interrumpe por una excepción, en Windows el
+    # origen queda bloqueado. ``closing`` cierra el generador (y su handle)
+    # también en la ruta de error.
     etiquetas = []  # [(num_pag, tipo, num_doc, lineas)]
-    for num_pag, pagina in enumerate(extract_pages(str(ruta_pdf)), 1):
-        lineas = extraer_primeras_lineas(pagina, n=5)
-        tipo, prio, num_doc = detectar_tipo(lineas)
-        etiquetas.append((num_pag, tipo, num_doc, lineas))
-        if on_page is not None:
-            on_page(num_pag, total_pag)
+    with closing(extract_pages(str(ruta_pdf))) as paginas:
+        for num_pag, pagina in enumerate(paginas, 1):
+            lineas = extraer_primeras_lineas(pagina, n=5)
+            tipo, prio, num_doc = detectar_tipo(lineas)
+            etiquetas.append((num_pag, tipo, num_doc, lineas))
+            if on_page is not None:
+                on_page(num_pag, total_pag)
 
     # Segunda pasada: construir segmentos agrupando páginas consecutivas
     segmentos = []
@@ -503,35 +501,70 @@ def nombre_archivo(segmento, indice):
 
 
 def separar_pdf(ruta_pdf, segmentos, carpeta_salida, log):
-    """Genera un PDF por segmento en la carpeta de salida."""
+    """Genera un PDF por segmento en la carpeta de salida.
+
+    Escritura defensiva:
+    - Cada PDF se escribe a un temporal ``.tmp`` y se promueve con ``replace``
+      (atómico). Si ``writer.write`` falla a mitad, no queda un PDF truncado
+      con su nombre definitivo.
+    - Si un segmento no abarca ninguna página (``fin <= inicio``) se lanza
+      ``PDFVacioError`` en vez de emitir un PDF vacío.
+    - Ante cualquier error se borra el conjunto parcial ya escrito, para no
+      dejar PDFs sueltos sin su ``indice.json``.
+    """
     from pypdf import PdfReader, PdfWriter
 
-    reader = PdfReader(str(ruta_pdf))
-    total_pags = len(reader.pages)
-
     resultados = []
-    for i, seg in enumerate(segmentos, 1):
-        inicio = seg["pagina_inicio"] - 1  # 0-indexed
-        fin    = min(seg["pagina_fin"], total_pags)  # 0-indexed exclusive
+    escritos: list[Path] = []   # rutas finales ya promovidas (para limpiar en error)
+    tmp: Path | None = None
+    try:
+        with PdfReader(str(ruta_pdf)) as reader:
+            total_pags = len(reader.pages)
 
-        writer = PdfWriter()
-        for p in range(inicio, fin):
-            writer.add_page(reader.pages[p])
+            for i, seg in enumerate(segmentos, 1):
+                inicio = seg["pagina_inicio"] - 1  # 0-indexed
+                fin    = min(seg["pagina_fin"], total_pags)  # 0-indexed exclusive
 
-        nombre = nombre_archivo(seg, i)
-        ruta_salida = carpeta_salida / nombre
+                if fin <= inicio:
+                    # Segmento sin páginas reales (p. ej. PDF de 0 págs o rango
+                    # degenerado). No emitir un PDF vacío.
+                    raise PDFVacioError(
+                        f"Segmento {i} [{seg['tipo']}] no abarca ninguna página "
+                        f"(rango {seg['pagina_inicio']}-{seg['pagina_fin']} sobre "
+                        f"{total_pags} págs): {ruta_pdf.name}"
+                    )
 
-        with open(ruta_salida, "wb") as f:
-            writer.write(f)
+                writer = PdfWriter()
+                for p in range(inicio, fin):
+                    writer.add_page(reader.pages[p])
 
-        n_pags = fin - inicio
-        log.info(f"  {nombre}: págs {seg['pagina_inicio']}-{seg['pagina_fin']} ({n_pags} pág{'s' if n_pags>1 else ''})")
-        resultados.append({
-            "archivo": nombre,
-            "tipo": seg["tipo"],
-            "paginas": f"{seg['pagina_inicio']}-{seg['pagina_fin']}",
-            "n_paginas": n_pags,
-        })
+                nombre = nombre_archivo(seg, i)
+                ruta_salida = carpeta_salida / nombre
+                tmp = carpeta_salida / (nombre + ".tmp")
+
+                # Escritura atómica: temporal + replace.
+                with open(tmp, "wb") as f:
+                    writer.write(f)
+                tmp.replace(ruta_salida)
+                tmp = None
+                escritos.append(ruta_salida)
+
+                n_pags = fin - inicio
+                log.info(f"  {nombre}: págs {seg['pagina_inicio']}-{seg['pagina_fin']} ({n_pags} pág{'s' if n_pags>1 else ''})")
+                resultados.append({
+                    "archivo": nombre,
+                    "tipo": seg["tipo"],
+                    "paginas": f"{seg['pagina_inicio']}-{seg['pagina_fin']}",
+                    "n_paginas": n_pags,
+                })
+    except Exception:
+        # Limpieza: no dejar un temporal truncado ni un set parcial de PDFs
+        # sin su indice.json.
+        if tmp is not None:
+            tmp.unlink(missing_ok=True)
+        for r in escritos:
+            r.unlink(missing_ok=True)
+        raise
 
     return resultados
 
@@ -620,7 +653,15 @@ def separar_pdf_pipeline(
     if not segmentos:
         # Fallback gracious: PDF sin marcadores → documento único.
         from pypdf import PdfReader
-        total_pag = len(PdfReader(str(ruta_pdf)).pages)
+        with PdfReader(str(ruta_pdf)) as reader:
+            total_pag = len(reader.pages)
+        if total_pag == 0:
+            # PDF de 0 páginas: sin esta guarda se generaba un segmento '1-0'
+            # → range(0, 0) → un PDF vacío registrado como documento real.
+            raise PDFVacioError(
+                f"PDF sin páginas (0 págs): {ruta_pdf.name}. "
+                "No se puede separar ni emitir ningún documento."
+            )
         log.info(f"Sin marcadores detectados. Documento único ({total_pag} págs).")
         segmentos = [{
             "tipo":          "DOCUMENTO",
@@ -790,7 +831,11 @@ def procesar(ruta_archivo):
         # Esto es el caso habitual de sentencias o escritos sin portada con
         # marcadores claros; mejor que fallar.
         from pypdf import PdfReader
-        total_pag = len(PdfReader(str(ruta)).pages)
+        with PdfReader(str(ruta)) as reader:
+            total_pag = len(reader.pages)
+        if total_pag == 0:
+            print(f"ERROR: el PDF no tiene páginas: {ruta.name}")
+            sys.exit(1)
         log.info(f"Sin marcadores detectados. Tratando como documento unico ({total_pag}p)")
         segmentos = [{
             "tipo":          "DOCUMENTO",

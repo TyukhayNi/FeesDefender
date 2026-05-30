@@ -11,6 +11,7 @@ Para tests con PDFs reales (separar_pdf_pipeline end-to-end), usar
 
 from __future__ import annotations
 
+import logging
 from datetime import date
 from pathlib import Path
 
@@ -23,6 +24,7 @@ from core.anon import (
     renombrar_carpeta,
     separar_pdf_pipeline,
 )
+from core.anon.exceptions import PDFVacioError
 from core.anon.separar import (
     MAX_PAGINAS_SIN_MARCADOR,
     PATRON_NUM_DOC,
@@ -30,8 +32,66 @@ from core.anon.separar import (
     TIPOS_ABSORBE_SIN_NUMERO,
     TIPOS_DOCUMENTO,
     TIPOS_SUPER_ABSORBENTES,
+    detectar_segmentos,
     detectar_tipo,
+    separar_pdf,
 )
+
+
+# ---------------------------------------------------------------------------
+# Helpers para construir PDFs de prueba con capa de texto real
+# ---------------------------------------------------------------------------
+
+_LOG_MUDO = logging.getLogger("test_separar")
+_LOG_MUDO.addHandler(logging.NullHandler())
+
+
+def _build_pdf(path: Path, pages: list[list[str]]) -> Path:
+    """Construye un PDF con una página por sublista; cada string es una línea.
+
+    Usa fpdf2 (dependencia ya presente) para generar una capa de texto real
+    que pdfminer puede extraer, sin necesidad de fixtures binarios.
+    """
+    from fpdf import FPDF
+
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=False)
+    for lineas in pages:
+        pdf.add_page()
+        pdf.set_font("helvetica", size=14)
+        y = 20
+        for ln in lineas:
+            pdf.set_xy(15, y)
+            pdf.cell(0, 8, ln)
+            y += 12
+    pdf.output(str(path))
+    return path
+
+
+def _build_pdf_vacio(path: Path) -> Path:
+    """Construye un PDF válido pero de 0 páginas."""
+    from pypdf import PdfWriter
+
+    with open(path, "wb") as f:
+        PdfWriter().write(f)
+    return path
+
+
+def _origen_no_bloqueado(path: Path) -> bool:
+    """True si el PDF de origen puede renombrarse (no hay handle abierto).
+
+    En Windows, un PDF con un handle de fichero abierto no se puede renombrar
+    ni borrar: ésta es exactamente la operación que un paso posterior del
+    pipeline (mover/sobrescribir el origen) haría y que fallaba con
+    PermissionError cuando se filtraba un handle.
+    """
+    tmp = path.with_suffix(path.suffix + ".movecheck")
+    try:
+        path.replace(tmp)
+        tmp.replace(path)
+        return True
+    except PermissionError:
+        return False
 from core.anon.renombrar import (
     mejor_fecha,
     quitar_sufijo_anonimizado,
@@ -304,3 +364,169 @@ class TestSepararPipelineExport:
 class TestOcrPdfImport:
     def test_funcion_es_callable(self) -> None:
         assert callable(ocr_pdf)
+
+
+# ---------------------------------------------------------------------------
+# Pipeline end-to-end sobre PDFs reales generados al vuelo (Fixes de revisión)
+# ---------------------------------------------------------------------------
+
+class TestSepararPipelineHappyPath:
+    def test_genera_pdfs_e_indice(self, tmp_path: Path) -> None:
+        src = _build_pdf(tmp_path / "exp.pdf", [
+            ["CEDULA DE EMPLAZAMIENTO", "Juzgado de Primera Instancia"],
+            ["DOC 1", "FACTURA"],
+        ])
+        out = tmp_path / "salida"
+
+        resultados = separar_pdf_pipeline(src, out, log=_LOG_MUDO)
+
+        # Dos documentos detectados, cada uno su PDF + el índice
+        assert len(resultados) == 2
+        tipos = {r["tipo"] for r in resultados}
+        assert tipos == {"CEDULA_EMPLAZAMIENTO", "DOC_FACTURA"}
+        pdfs = sorted(out.glob("*.pdf"))
+        assert len(pdfs) == 2
+        assert (out / "indice.json").exists()
+        assert (out / "indice.txt").exists()
+        # No debe quedar ningún temporal de la escritura atómica
+        assert list(out.glob("*.tmp")) == []
+        # Rangos de página correctos (1 página cada uno)
+        assert all(r["n_paginas"] == 1 for r in resultados)
+
+    def test_documento_unico_sin_marcadores(self, tmp_path: Path) -> None:
+        # PDF de texto corrido sin ninguna portada → documento único
+        src = _build_pdf(tmp_path / "plano.pdf", [
+            ["texto corrido sin ninguna portada reconocible"],
+            ["segunda pagina igualmente neutra de contenido"],
+        ])
+        out = tmp_path / "salida"
+        resultados = separar_pdf_pipeline(src, out, log=_LOG_MUDO)
+        assert len(resultados) == 1
+        assert resultados[0]["tipo"] == "DOCUMENTO"
+        assert resultados[0]["n_paginas"] == 2
+
+
+class TestNoFugaDeHandles:
+    """El origen no queda bloqueado tras el análisis (Windows PermissionError)."""
+
+    def test_origen_liberado_tras_pipeline(self, tmp_path: Path) -> None:
+        src = _build_pdf(tmp_path / "exp.pdf", [
+            ["DEMANDA DE JUICIO ORDINARIO", "AL JUZGADO DE PRIMERA INSTANCIA"],
+            ["Hechos y fundamentos de la demanda"],
+        ])
+        separar_pdf_pipeline(src, tmp_path / "salida", log=_LOG_MUDO)
+        assert _origen_no_bloqueado(src)
+
+    def test_origen_liberado_si_falla_el_analisis(self, tmp_path: Path, monkeypatch) -> None:
+        # Simula una excepción a mitad del bucle de extract_pages: el generador
+        # de pdfminer mantiene el PDF abierto y, sin closing(), el origen
+        # quedaría bloqueado en Windows.
+        src = _build_pdf(tmp_path / "exp.pdf", [
+            ["CEDULA DE EMPLAZAMIENTO"],
+            ["DOC 1", "FACTURA"],
+            ["DOC 2", "FACTURA"],
+        ])
+
+        llamadas = {"n": 0}
+        real = detectar_segmentos.__globals__["extraer_primeras_lineas"]
+
+        def _explota(pagina, n=5):
+            llamadas["n"] += 1
+            if llamadas["n"] == 2:
+                raise RuntimeError("fallo simulado a mitad del análisis")
+            return real(pagina, n)
+
+        monkeypatch.setattr(
+            "core.anon.separar.extraer_primeras_lineas", _explota
+        )
+
+        with pytest.raises(RuntimeError):
+            detectar_segmentos(src, _LOG_MUDO)
+
+        assert _origen_no_bloqueado(src)
+
+
+class TestPDFVacio:
+    """Un PDF de 0 páginas no debe emitir un documento vacío."""
+
+    def test_pipeline_pdf_cero_paginas(self, tmp_path: Path) -> None:
+        src = _build_pdf_vacio(tmp_path / "vacio.pdf")
+        out = tmp_path / "salida"
+
+        with pytest.raises(PDFVacioError):
+            separar_pdf_pipeline(src, out, log=_LOG_MUDO)
+
+        # No se generó ningún PDF ni índice fantasma '1-0'
+        assert list(out.glob("*.pdf")) == []
+        assert not (out / "indice.json").exists()
+
+    def test_separar_pdf_segmento_sin_paginas(self, tmp_path: Path) -> None:
+        # Segmento degenerado (pagina_fin < pagina_inicio) sobre un PDF real
+        src = _build_pdf(tmp_path / "exp.pdf", [["FACTURA", "DOC 1"]])
+        out = tmp_path / "salida"
+        out.mkdir()
+        seg_malo = [{
+            "tipo": "DOCUMENTO", "num_doc": 1,
+            "pagina_inicio": 1, "pagina_fin": 0, "lineas_inicio": [],
+        }]
+        with pytest.raises(PDFVacioError):
+            separar_pdf(src, seg_malo, out, _LOG_MUDO)
+        assert list(out.glob("*.pdf")) == []
+
+
+class TestEscrituraAtomica:
+    """Si writer.write falla a mitad, no quedan PDFs truncados ni índice."""
+
+    def test_limpieza_si_falla_a_mitad(self, tmp_path: Path, monkeypatch) -> None:
+        src = _build_pdf(tmp_path / "exp.pdf", [
+            ["CEDULA DE EMPLAZAMIENTO"],
+            ["DOC 1", "FACTURA"],
+        ])
+        out = tmp_path / "salida"
+
+        from pypdf import PdfWriter
+
+        write_real = PdfWriter.write
+        estado = {"n": 0}
+
+        def _write_falla(self, stream):
+            estado["n"] += 1
+            if estado["n"] == 2:
+                raise OSError("disco lleno simulado")
+            return write_real(self, stream)
+
+        monkeypatch.setattr(PdfWriter, "write", _write_falla)
+
+        with pytest.raises(OSError):
+            separar_pdf_pipeline(src, out, log=_LOG_MUDO)
+
+        # El primer PDF promovido se limpió; no hay temporales ni índice
+        assert list(out.glob("*.pdf")) == []
+        assert list(out.glob("*.tmp")) == []
+        assert not (out / "indice.json").exists()
+
+
+class TestHelperLineasCompartido:
+    """El helper de reconstrucción de líneas se comparte entre los dos módulos."""
+
+    def test_separar_y_anonimizar_usan_pdf_lineas(self) -> None:
+        import core.anon.pdf_lineas as pl
+
+        assert callable(pl.recoger_chars)
+        assert callable(pl.agrupar_en_lineas)
+
+    def test_agrupar_en_lineas_reconstruye_portada(self, tmp_path: Path) -> None:
+        from pdfminer.high_level import extract_pages
+
+        from core.anon.pdf_lineas import agrupar_en_lineas, recoger_chars
+
+        src = _build_pdf(tmp_path / "x.pdf", [
+            ["CEDULA DE EMPLAZAMIENTO", "Segunda linea de la portada"],
+        ])
+        pagina = next(extract_pages(str(src)))
+        chars: list = []
+        recoger_chars(pagina, chars)
+        lineas = [t for _y, t in agrupar_en_lineas(chars)]
+
+        assert lineas[0] == "CEDULA DE EMPLAZAMIENTO"
+        assert "Segunda linea de la portada" in lineas

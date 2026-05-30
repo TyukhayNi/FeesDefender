@@ -30,6 +30,7 @@ from core.anon.exceptions import (
     FormatoNoSoportadoError,
     OCRError,
     PDFSinTextoError,
+    PDFVacioError,
 )
 from core.anon.imagen_a_pdf import convertir as imagen_a_pdf
 from core.anon.mapa_caso import (
@@ -68,4 +69,5 @@ __all__ = [
     "DocxVacioError",
     "FormatoNoSoportadoError",
     "OCRError",
+    "PDFVacioError",
 ]

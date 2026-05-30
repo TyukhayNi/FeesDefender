@@ -423,19 +423,15 @@ def extraer_texto_pdf(ruta: Path, log) -> str:
        alfabetos no latinos (páginas giradas, sellos, etc.)
     2. Líneas de menos de 2 caracteres: descartadas.
     """
-    from pdfminer.high_level import extract_pages
-    from pdfminer.layout import LTChar
     from collections import defaultdict
 
-    log.info(f"Extrayendo texto de PDF (modo LTChar v3.8): {ruta.name}")
+    from pdfminer.high_level import extract_pages
 
-    def recoger_chars(contenedor, chars):
-        """Recoge recursivamente todos los LTChar del contenedor."""
-        for elem in contenedor:
-            if isinstance(elem, LTChar):
-                chars.append(elem)
-            elif hasattr(elem, '__iter__'):
-                recoger_chars(elem, chars)
+    # recoger_chars / agrupar_en_lineas viven en core.anon.pdf_lineas
+    # (compartido con separar.extraer_primeras_lineas) para no divergir.
+    from core.anon.pdf_lineas import agrupar_en_lineas, recoger_chars
+
+    log.info(f"Extrayendo texto de PDF (modo LTChar v3.8): {ruta.name}")
 
     def pagina_girada(chars) -> bool:
         """Detecta páginas de resguardo/exhorto giradas que generan ruido OCR.
@@ -468,24 +464,15 @@ def extraer_texto_pdf(ruta: Path, log) -> str:
         return False
 
     def chars_a_lineas(chars, pagina_y1, tolerancia_y=3.0, tolerancia_x=8.0):
-        """Agrupa LTChar en líneas por Y y reconstruye texto con espacios."""
-        if not chars:
-            return []
-        grupos = defaultdict(list)
-        for c in chars:
-            y_key = round(c.y0 / tolerancia_y) * tolerancia_y
-            grupos[y_key].append(c)
+        """Agrupa LTChar en líneas por Y y reconstruye texto con espacios.
+
+        La agrupación/reconstrucción cruda la hace ``agrupar_en_lineas``; aquí
+        se aplican los filtros propios del anonimizador (normalización de
+        guiones OCR y ratio de legibilidad) y se convierte la Y a distancia
+        top-down respecto a ``pagina_y1``.
+        """
         resultado = []
-        for y, grupo in sorted(grupos.items(), key=lambda x: -x[0]):
-            grupo.sort(key=lambda c: c.x0)
-            texto = ""
-            x_prev = None
-            for c in grupo:
-                if x_prev is not None and c.x0 - x_prev > tolerancia_x:
-                    texto += " "
-                texto += c.get_text()
-                x_prev = c.x1
-            texto = texto.strip()
+        for y, texto in agrupar_en_lineas(chars, tolerancia_y, tolerancia_x):
             # v3.10e: normalizar guiones de separación silábica OCR
             texto = re.sub(r'([A-ZÁÉÍÓÚÜÑ])[_-]([A-ZÁÉÍÓÚÜÑ])', r'\1\2', texto)
             if len(texto) < 2:
