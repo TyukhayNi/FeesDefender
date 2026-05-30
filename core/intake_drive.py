@@ -11,6 +11,9 @@ Comando rclone ejecutado:
     rclone copy "gdrive_ev:" "{destino}" \\
         --drive-team-drive {team_id} \\
         --drive-root-folder-id {folder_id} \\
+        --drive-skip-shortcuts --ignore-size --ignore-checksum --inplace \\
+        --local-encoding {_LOCAL_ENCODING} \\
+        --retries 3 --retries-sleep 5s \\
         --stats-one-line-date --log-level INFO
 
 Destino local: `00_Input/01_Drive EV/` dentro del caso.
@@ -53,6 +56,26 @@ from .utils import now_iso
 
 _DRIVE_EV_INPUT_SUBDIR = "01_Drive EV"
 _PULL_MARKER = ".pulled"
+
+# Encoding del backend local de rclone para el destino (montaje de Google
+# Drive for Desktop en G:\). Es el conjunto estándar de Windows MÁS LeftSpace
+# y LeftPeriod: las carpetas E&V contienen ficheros cuyo nombre empieza por un
+# espacio (p.ej. " NIE Pasaporte Charlotte.jpg", " ENCARGO DE VENTA NO
+# EXCLUSIVA + PBC ANEXO 1.pdf" en VaRS2 - Doctor Angelico 4 - W-02V09K). El
+# default de rclone NO codifica el espacio/punto inicial, así que el sistema
+# de ficheros virtual de Drive Desktop rechaza la escritura con "The parameter
+# is incorrect" (error 87 de Windows) y un único fichero así provoca
+# `rclone exit 1` aunque el resto se haya copiado bien. Con LeftSpace/LeftPeriod
+# rclone codifica el carácter inicial a su forma visible segura (U+2420 ␠ para
+# el espacio) y lo decodifica al releer, de modo que el fichero se crea y
+# round-trip-ea correctamente. NOTA: --local-encoding SUSTITUYE al default por
+# completo; por eso esta cadena replica el set Windows entero antes de añadir
+# los dos tokens nuevos. Cierra [SIGUIENTE-DRIVE-PULL-PARAMETER-INCORRECT].
+_LOCAL_ENCODING = (
+    "Slash,BackSlash,Colon,Question,Asterisk,Pipe,DoubleQuote,Dot,"
+    "SquareBracket,LtGt,Ctl,RightSpace,RightPeriod,InvalidUtf8,"
+    "LeftSpace,LeftPeriod"
+)
 
 # Backoff (segundos) para reintentar get_drive_folder_info cuando la Drive API
 # devuelve 403/429 con reason == rateLimitExceeded. La cuota global del OAuth
@@ -230,6 +253,7 @@ def pull_drive_ev(
         "--ignore-size",
         "--ignore-checksum",
         "--inplace",
+        "--local-encoding", _LOCAL_ENCODING,
         "--retries", "3",
         "--retries-sleep", "5s",
         "--stats-one-line-date",

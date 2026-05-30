@@ -24,6 +24,7 @@ from core.intake_drive import (
     DriveFolderInfo,
     DriveIntakeResult,
     _DRIVE_EV_INPUT_SUBDIR,
+    _LOCAL_ENCODING,
     _PULL_MARKER,
     _get_drive_access_token,
     _parse_iso_expiry,
@@ -235,6 +236,37 @@ def test_pull_exitoso_devuelve_files_after(caso_ev, tmp_casos_root, monkeypatch)
     result = pull_drive_ev(caso_ev, folder_id="folderW030", team_id="teamBarcelona")
 
     assert result.files_after == 3  # .pulled no se cuenta
+
+
+def test_pull_comando_incluye_local_encoding_leftspace(caso_ev, tmp_casos_root, monkeypatch):
+    """El comando rclone debe pasar --local-encoding con LeftSpace/LeftPeriod.
+
+    Regresión de [SIGUIENTE-DRIVE-PULL-PARAMETER-INCORRECT]: ficheros E&V cuyo
+    nombre empieza por un espacio (p.ej. ' NIE Pasaporte Charlotte.jpg') hacían
+    fallar rclone con "The parameter is incorrect" al escribir en el montaje de
+    Google Drive for Desktop. El default de rclone no codifica el espacio
+    inicial; LeftSpace lo codifica a su forma visible segura y round-trip-ea.
+    """
+    captured = {}
+
+    def _capture(cmd, *a, **kw):
+        captured["cmd"] = cmd
+        mock = MagicMock(spec=subprocess.CompletedProcess)
+        mock.returncode = 0
+        mock.stdout = ""
+        mock.stderr = ""
+        return mock
+
+    monkeypatch.setattr("subprocess.run", _capture)
+
+    pull_drive_ev(caso_ev, folder_id="folderW030", team_id="teamBarcelona")
+
+    cmd = captured["cmd"]
+    assert "--local-encoding" in cmd
+    enc = cmd[cmd.index("--local-encoding") + 1]
+    assert enc == _LOCAL_ENCODING
+    assert "LeftSpace" in enc
+    assert "LeftPeriod" in enc
 
 
 # ---------------------------------------------------------------------------

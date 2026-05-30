@@ -278,12 +278,23 @@ llamada manualmente desde PowerShell con el access_token de `gdrive_ev`
 + `?supportsAllDrives=true` y comparar respuesta. **No resolver en esta
 sesión** — solo registrado para próxima.
 
-**[SIGUIENTE-DRIVE-PULL-PARAMETER-INCORRECT]** (sesión 22, 2026-05-20) — Pull
-rclone falla con `exit 1: The parameter is incorrect` sobre el caso
-**VaRS2 - Doctor Angelico, 4 - (W-02V09K) - Devolucion honorarios**. El caso
-se creó localmente OK; el error se produce en el intake del Drive E&V tras
-copiar la mayor parte del contenido (81.802 MiB / 81.802 MiB, 100%). Tres
-síntomas en el log de rclone, los tres reproducibles en los 3 intentos
+~~**[SIGUIENTE-DRIVE-PULL-PARAMETER-INCORRECT]**~~ ✅ 2026-05-30 (sesión 29) —
+**Causa raíz confirmada con `rclone lsjson -R`: espacio inicial en el nombre
+del fichero**, NO un Google Doc nativo (la hipótesis (a) queda descartada).
+Los 2 ficheros que fallaban eran ` NIE Pasaporte Charlotte.jpg` (image/jpeg) y
+` ENCARGO DE VENTA NO EXCLUSIVA + PBC ANEXO 1.pdf` (application/pdf), ambos con
+un espacio al principio del nombre. El encoding por defecto del backend `local`
+de rclone codifica el espacio/punto FINAL (`RightSpace`/`RightPeriod`) pero no
+el INICIAL, y el FS virtual de Google Drive for Desktop (destino `G:\`) rechaza
+crear un nombre con espacio inicial con error 87 de Windows. **Fix aplicado en
+`core/intake_drive.py::pull_drive_ev`**: flag `--local-encoding` con el set
+Windows completo + `LeftSpace,LeftPeriod` (constante `_LOCAL_ENCODING`). rclone
+codifica el espacio inicial a `␠` (U+2420) de forma reversible. Validado por
+dry-run + ejecución real (4 ficheros, RC=0); caso VaRS2 desbloqueado y `.pulled`
+saneado a returncode 0. +1 test de regresión
+(`test_pull_comando_incluye_local_encoding_leftspace`). Entrada nueva en
+`docs/DEAD_ENDS.md`. **Histórico del diagnóstico previo** (s22, 2026-05-20):
+tres síntomas en el log de rclone, reproducibles en los 3 intentos
 (attempts 1/3, 2/3, 3/3):
 
   1. `NIE Pasaporte Charlotte.jpg: Failed to copy: The parameter is incorrect.`
