@@ -19,14 +19,22 @@ def _estimate_tokens(text: str) -> int:
     return max(1, len(text) // 4)
 
 
-def build(case_id: str, results: list[ExtractionResult]) -> list[Path]:
+def build(
+    case_id: str, results: list[ExtractionResult], *, force: bool = False
+) -> list[Path]:
     out_dir = caso_path(case_id) / "01_Procesado"
     out_dir.mkdir(parents=True, exist_ok=True)
     paths: list[Path] = []
 
     for r in results:
-        text = r.output_path.read_text(encoding="utf-8")
         slug = slugify(Path(r.rel_path).stem)
+        out = out_dir / f"{slug}.md"
+        # Skip incremental: si la extracción reutilizó el .txt (no cambió) y
+        # el .md ya existe, no se regenera.
+        if not force and r.skipped and out.exists():
+            paths.append(out)
+            continue
+        text = r.output_path.read_text(encoding="utf-8")
         meta = {
             "case_id": case_id,
             "tipo": "documento_procesado",
@@ -44,7 +52,6 @@ def build(case_id: str, results: list[ExtractionResult]) -> list[Path]:
             f"---\n\n"
             f"{text.strip()}\n"
         )
-        out = out_dir / f"{slug}.md"
         write_md(out, meta, body)
         paths.append(out)
 

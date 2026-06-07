@@ -15,6 +15,7 @@ con frontmatter.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -23,6 +24,14 @@ import chardet
 from .config import caso_path
 from .inventory import load as load_inventory
 from .utils import slugify
+
+
+# Versión lógica del extractor. Súbela cuando cambie la lógica de extracción
+# (p. ej. el backend Docling) para invalidar el cache de skip incremental y
+# forzar una reextracción de todos los documentos en la próxima corrida.
+EXTRACTOR_VERSION = 1
+
+_STATE_FILENAME = "_extract_state.json"
 
 
 class ExtractionError(RuntimeError):
@@ -35,6 +44,7 @@ class ExtractionResult:
     output_path: Path
     chars: int
     method: str
+    skipped: bool = False  # True si se reutilizó el .txt previo (no se reextrajo)
 
 
 # --- Backends opcionales ----------------------------------------------------
@@ -152,31 +162,94 @@ def _extract_one(path: Path) -> tuple[str, str]:
     raise ExtractionError(f"No hay extractor disponible para {path.name} ({ext})")
 
 
-def extract_all(case_id: str) -> list[ExtractionResult]:
+def _load_state(state_path: Path) -> dict:
+    """Estado de extracción previo, por `rel_path`. Vacío si no existe o si
+    la versión del extractor cambió (invalida todo el cache)."""
+    if not state_path.exists():
+        return {}
+    try:
+        data = json.loads(state_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    if data.get("extractor_version") != EXTRACTOR_VERSION:
+        return {}
+    return data.get("files", {})
+
+
+def _save_state(state_path: Path, files: dict) -> None:
+    payload = {"extractor_version": EXTRACTOR_VERSION, "files": files}
+    state_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+def extract_all(case_id: str, *, force: bool = False) -> list[ExtractionResult]:
+    """Extrae el texto de los archivos de `00_Input/` a `01_Procesado/raw_text/`.
+
+    Skip incremental: si el hash del origen no cambió desde la última
+    extracción (y la versión del extractor es la misma), reutiliza el `.txt`
+    ya generado en lugar de reextraer —el OCR vía Docling es el paso caro—.
+    `force=True` ignora el skip y reextrae todo.
+
+    Cada `ExtractionResult` lleva `skipped=True` cuando se reutilizó el `.txt`
+    previo, para que el paso de markdown solo regenere lo realmente reextraído.
+    """
     inv = load_inventory(case_id)
     case_dir = caso_path(case_id)
     out_dir = case_dir / "01_Procesado" / "raw_text"
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    state_path = out_dir / _STATE_FILENAME
+    prev = {} if force else _load_state(state_path)
+
     input_dir = case_dir / "00_Input"
     results: list[ExtractionResult] = []
+    new_state: dict = {}
 
     for f in inv["files"]:
-        src = input_dir / f["rel_path"]
+        rel = f["rel_path"]
+        src = input_dir / rel
         if not src.exists():
             continue
+        slug = slugify(Path(rel).stem)
+        out = out_dir / f"{slug}.txt"
+        src_sha = f.get("sha256", "")
+
+        cached = prev.get(rel)
+        if (
+            not force
+            and src_sha
+            and cached is not None
+            and cached.get("source_sha256") == src_sha
+            and out.exists()
+        ):
+            results.append(ExtractionResult(
+                rel_path=rel,
+                output_path=out,
+                chars=cached.get("chars", 0),
+                method=cached.get("method", "cache"),
+                skipped=True,
+            ))
+            new_state[rel] = cached
+            continue
+
         try:
             text, method = _extract_one(src)
         except ExtractionError:
             continue
-        slug = slugify(Path(f["rel_path"]).stem)
-        out = out_dir / f"{slug}.txt"
         out.write_text(text, encoding="utf-8")
         results.append(ExtractionResult(
-            rel_path=f["rel_path"],
+            rel_path=rel,
             output_path=out,
             chars=len(text),
             method=method,
+            skipped=False,
         ))
+        new_state[rel] = {
+            "source_sha256": src_sha,
+            "method": method,
+            "chars": len(text),
+        }
 
+    _save_state(state_path, new_state)
     return results
