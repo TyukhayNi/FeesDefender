@@ -44,6 +44,7 @@ from core.case_manager import caso_path
 from core.utils import (
     build_frontmatter,
     file_sha256,
+    neutralizar_case_id,
     now_iso,
     read_md,
     slugify,
@@ -138,7 +139,10 @@ def _build_md_anonimizado(
     cuerpo_limpio = _quitar_cabecera_legacy(cuerpo_md)
 
     fm = build_frontmatter({
-        "case_id":            case_id,
+        # §23: el case_id lleva el domicilio literal del caso; los .md de
+        # 06_Anonimizado/ pueden entregarse a un LLM externo (H6). Neutralizamos
+        # la dirección en el frontmatter conservando la estructura del id.
+        "case_id":            neutralizar_case_id(case_id),
         "tipo":               "documento_anonimizado",
         "fase":               SUBDIR_ANONIMIZADO,
         "slug":               slug,

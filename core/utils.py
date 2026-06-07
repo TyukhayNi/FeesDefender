@@ -72,6 +72,45 @@ def validate_case_id(case_id: str) -> str:
     )
 
 
+# Formato nuevo descompuesto en grupos, para neutralizar el segmento de
+# dirección (el único tramo con PII). El prefijo, la referencia y la categoría
+# son estructurales y no se tocan. La dirección es todo lo que va entre
+# "<prefijo> - " y la referencia "(W-XXXXXX)"/"(SIN REFERENCIA)" (captura
+# perezosa: el primer paréntesis de referencia cierra el tramo).
+_CASE_ID_NEW_PARTES = re.compile(
+    r"^(?P<prefijo>[A-Z][a-zA-Z][A-Z]{2}\d+)\s+-\s+"
+    r"(?P<direccion>.+?)\s*"
+    r"(?P<ref>\((?:W-[A-Z0-9]+|SIN\s+REFERENCIA)\))\s+-\s+"
+    r"(?P<categoria>.+)$"
+)
+
+
+def neutralizar_case_id(case_id: str) -> str:
+    """Sustituye el segmento de dirección del ``case_id`` por ``[DIRECCION]``.
+
+    El ``case_id`` del despacho (formato nuevo
+    ``<prefijo> - <dirección> (<ref>) - <categoría>``) lleva incrustado el
+    domicilio literal del caso. Ese valor viaja en el frontmatter de los ``.md``
+    de ``06_Anonimizado/``, que pueden entregarse a un LLM externo (flujo H6):
+    sin esta neutralización, el modelo leería la dirección PII como contexto,
+    rompiendo el pilar de confidencialidad del proyecto (MEJORAS_FUTURAS.md §23).
+
+    Conserva prefijo, referencia y categoría (no son PII) y la estructura, de
+    modo que el resultado sigue siendo un ``case_id`` válido para
+    ``validate_case_id``. El formato heredado (``EV-2026-001``) o cualquier
+    cadena no reconocida se devuelve sin tocar (no contienen dirección).
+    """
+    if not case_id:
+        return case_id
+    m = _CASE_ID_NEW_PARTES.match(case_id.strip())
+    if not m:
+        return case_id
+    return (
+        f"{m.group('prefijo')} - [DIRECCION] "
+        f"{m.group('ref')} - {m.group('categoria')}"
+    )
+
+
 # --- Frontmatter ------------------------------------------------------------
 
 _FM_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)

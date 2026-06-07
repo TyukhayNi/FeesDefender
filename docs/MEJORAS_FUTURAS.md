@@ -57,7 +57,13 @@ en `anonimizar_caso`.
 
 ## 3. Bug latente: span de sustitución en `anonimizar_por_contexto`
 
-**Síntoma.** En docs comprimidos (cédula con partes procesales en líneas
+**✅ RESUELTO 2026-05-27 (s27).** Implementado `_offsets_nombre_limpio` en
+`core/anon/anonimizar.py`: tras `limpiar_nombre`, el span de sustitución se
+recalcula localizando el nombre limpio dentro de la captura original, en lugar
+de usar `m.end(1)` (que borraba las palabras recortadas). Validado contra el
+fixture gold SaRS1.
+
+**Síntoma (histórico).** En docs comprimidos (cédula con partes procesales en líneas
 contiguas sin puntuación), el regex contextual `_NOMBRE` con
 `re.IGNORECASE` puede capturar hasta 4 palabras incluyendo la primera
 palabra de la siguiente parte:
@@ -89,7 +95,12 @@ puntos al test (formato realista de cédulas).
 
 ## 4. Asimetría masculino/femenino en `PALABRAS_EXCLUIDAS`
 
-**Síntoma.** El conjunto incluye `DEMANDANTE` y `DEMANDADA` (femenino)
+**✅ RESUELTO 2026-05-27 (s27).** Añadidas las variantes masculinas
+(`DEMANDADO`, `EJECUTADO`, `QUERELLADO`, `INVESTIGADO`, `ACUSADO`, `RECURRIDO`,
+`APELADO`…) a `PALABRAS_EXCLUIDAS` en `core/anon/anonimizar.py` (≈L211-212).
+Combinado con el fix de §3.
+
+**Síntoma (histórico).** El conjunto incluye `DEMANDANTE` y `DEMANDADA` (femenino)
 pero NO `DEMANDADO` (masculino). Idem `EJECUTANTE`/`EJECUTADA` sin
 `EJECUTADO`. En docs reales, `limpiar_nombre` no elimina la palabra
 masculina del final del nombre capturado, lo que **agrava** el bug 3
@@ -278,6 +289,9 @@ extrajudicial E&V) cae en este path.
 
 ## 12. Bug latente: `validate_case_id` no admite categoría OTROS
 
+**✅ RESUELTO 2026-05-27 (s27).** `_CASE_ID_NEW` en `core/utils.py` acepta ahora
+`(SIN REFERENCIA)` además de `(W-XXXXXX)`. Test en `tests/test_utils.py`.
+
 **Detectado.** 2026-05-12 durante el hilo H4 del plan SaRS1 (primera
 ejecución real de `anonimizar_caso` / `anonimizar_documento` sobre un
 caso de categoría OTROS).
@@ -332,6 +346,11 @@ hilo dedicado, no en H4.
 
 ## 13. FN — Regex de dirección postal española en `aplicar_regex`
 
+**✅ RESUELTO 2026-05-27 (s27).** Añadido el patrón `DIRECCION` a
+`PATRONES_REGEX` en `core/anon/anonimizar.py` (≈L706-713): marcador de vía
+(`calle/avda/plaza/…` con `\b`) + nombre (1-5 palabras, tolerante a typos OCR) +
+número con rango opcional (`37-39`). Validado contra el fixture gold SaRS1.
+
 **Detectado.** 2026-05-12 durante el hilo H5 del plan SaRS1 (tabla forense,
 filas 42 y 49).
 
@@ -362,6 +381,11 @@ grave detectado en H5.
 ---
 
 ## 14. FN — Variantes OCR de clientes propios E&V deben pre-cargarse al mapa
+
+**✅ RESUELTO 2026-05-27 (s27).** Tabla `VARIANTES_OCR_CLIENTE` en
+`core/config.py` + `_derivar_variantes_cliente(case_id)` en `core/anon/api.py`
+(L461): lee el cliente del `_caso.md` y pre-carga las variantes OCR conocidas a
+la fase 0 del motor (`variantes_conocidas`), mapeándolas a la etiqueta canónica.
 
 **Detectado.** 2026-05-12 durante el hilo H5 del plan SaRS1 (tabla forense,
 filas 43-44; nota N4 de H4).
@@ -396,6 +420,12 @@ frontier en casi todos los expedientes.
 ---
 
 ## 15. FN — Regex de EMAIL debe tolerar `@` corrompido por OCR
+
+**✅ RESUELTO 2026-05-27 (s27).** Patrón `_PATRON_EMAIL_OCR` en
+`core/anon/anonimizar.py` (≈L744), pasada **case-sensitive** dentro de
+`aplicar_regex` (≈L1285): captura el `@` transcrito como una mayúscula suelta
+(`cubriaQdelriomiera.es`) exigiendo TLD conocido, sin tragar URLs públicas en
+minúscula. Validado contra el fixture gold SaRS1.
 
 **Detectado.** 2026-05-12 durante el hilo H5 del plan SaRS1 (tabla forense,
 filas 46 y 49).
@@ -522,6 +552,10 @@ al cuerpo narrativo.
 ---
 
 ## 19. FP — Regex de CUENTA/IBAN captura el NIG por longitud numérica
+
+**✅ RESUELTO 2026-05-27 (s27).** En `aplicar_regex` (`core/anon/anonimizar.py`
+≈L1274-1280), las capturas `CUENTA`/`IBAN` precedidas del rótulo `NIG` (en los 8
+caracteres previos) ya no se anonimizan. Validado contra el fixture gold SaRS1.
 
 **Detectado.** 2026-05-12 durante el hilo H5 del plan SaRS1 (tabla forense,
 fila 2; nota N6 de H4).
@@ -653,6 +687,17 @@ caso con split manual requiere script ad-hoc.
 ---
 
 ## 23. Frontmatter del motor expone `case_id` literal con PII
+
+**✅ RESUELTO 2026-06-07 (s31).** Adoptada la opción (1): `neutralizar_case_id`
+en `core/utils.py` sustituye el segmento de dirección del case_id por
+`[DIRECCION]` conservando prefijo/referencia/categoría (sigue siendo un case_id
+válido para `validate_case_id`). `core/anon/api.py::_build_md_anonimizado` la
+aplica al escribir el frontmatter, de modo que los `.md` de `06_Anonimizado/`
+ya no llevan el domicilio literal. La deanonimización no consume el `case_id`
+del frontmatter (localiza el mapa por ruta/`mapa_caso_path`), así que el flujo
+H6 deja de requerir el parche manual tipo `_h5b`. Tests en `tests/test_utils.py`
+(`TestNeutralizarCaseId`, 9 casos) + fixture gold SaRS1 regenerado (solo cambia
+la línea `case_id:` de los 4 `.md`; el `_mapa_caso.json` no cambia).
 
 **Detectado.** 2026-05-12 (sesión 17) durante el sanity check previo a
 exposición de `08_Para frontier/` en SaRS1 (documentado en
@@ -797,3 +842,131 @@ notariales con sellos múltiples sí lo dispararán.
 
 **Prioridad.** Baja — diferido. Bloqueado por §24 (depende de docling
 integrado).
+
+---
+
+## 26. Intake dedicado de entrevistas (transcripción Meet) en `06_Entrevistas/`
+
+**Detectado.** 2026-06-07, al revisar el estado del intake de entrevistas
+frente al flujo real (grabación en Google Meet con transcripción automática
+en Google Doc).
+
+**Síntoma.** El andamiaje existe pero está sin cablear: `ensure_case` crea
+`00_Input/06_Entrevistas/` (`tests/test_legacy_v1_detection.py` L88-94);
+`ENTREVISTA_ROLES` (`core/config.py` L455) y la convención
+`<YYYY-MM-DD>_<rol>_<apellido>/` (comentario en `core/config.py` L304) están
+definidas pero ningún código las consume ni valida; el evento
+`upload_entrevista` (`core/intake_log.py` L50) y el source `"entrevista"`
+(`core/intake_manifest.py` L260) están declarados pero nunca se emiten. No hay
+subida dedicada: hoy la entrevista solo entra si el abogado deja manualmente la
+transcripción como `.txt`/`.docx`/`.pdf` dentro de la carpeta, y aun así sin
+subcarpeta normalizada, sin validación de rol y sin traza en el log. Además, la
+transcripción de Meet vive como **Google Doc en Drive**, formato que el
+extractor no lee directamente (requiere exportación previa a `.docx`/`.txt`).
+
+**Causa raíz.** El refactor intake v2 (sesiones 2-7, mayo 2026) cerró las
+decisiones de estructura (carpeta + roles + evento + source) pero la
+implementación del path de entrevistas quedó fuera del paso 7, que solo cableó
+el expander de subida a `05_CRM`. La pieza de entrevistas nunca se conectó.
+
+**Solución técnica.** No requiere transcripción local (Whisper): Meet ya
+entrega texto. Dos piezas:
+
+1. **Función de ingesta** (`core/intake_entrevista.py` nuevo, o ampliación de
+   `core/intake_manual.py`): dado rol ∈ `ENTREVISTA_ROLES`, apellido, fecha y
+   el Doc de Meet, crea `06_Entrevistas/<YYYY-MM-DD>_<rol>_<apellido>/`, coloca
+   la transcripción exportada a `.docx`/`.txt`, la registra en el manifest con
+   `source="entrevista"` y emite el evento `upload_entrevista`. Validar rol
+   contra `ENTREVISTA_ROLES`; saneamiento de path como en
+   `save_file_crm_branch`.
+2. **Exportación del Google Doc**: vía conector de Drive (descargar el Doc como
+   `.docx`/`.txt`) antes de colocarlo. Arranque manual: el abogado exporta el
+   Doc (Archivo → Descargar → Word) y lo arrastra a la carpeta.
+
+Una vez el `.docx`/`.txt` está en `00_Input/06_Entrevistas/`, el pipeline
+genérico (inventory → extractor → markdown → anon) ya lo procesa y anonimiza
+sin cambios. La sensibilidad del habla espontánea queda cubierta por la
+anonimización general del pipeline (no es un gap adicional).
+
+**Coste estimado.** ~60-90 líneas (ingesta + validación de rol + emisión de
+evento) + expander UI en Streamlit (~40 líneas) + 3-4 tests. La exportación
+automática del Google Doc vía conector Drive: +1 día.
+
+**Prioridad.** Media — el flujo manual (exportar Doc + arrastrar a la carpeta)
+ya desbloquea el caso hoy; el cableado dedicado aporta normalización de nombre,
+validación de rol y traza forense en el log, valioso pero no bloqueante.
+
+---
+
+## 27. Política de retención y cifrado del material en claro (`01_Procesado/` + nombres de fichero con PII)
+
+**Detectado.** 2026-06-07, en revisión de arquitectura: material con PII en
+claro persiste en disco sin política de retención ni constancia de cifrado.
+
+**Síntoma.** `core/extractor.py` (L158-174) escribe el texto extraído en claro
+a `01_Procesado/raw_text/{slug}.txt` y **nunca lo borra**: no hay paso de purga
+tras generar el `.md` anonimizado. `core/inventory.py` (L61-74) preserva el
+nombre de fichero original en `name`/`rel_path` y lo propaga a `_inventory.json`
+— los nombres pueden contener PII. `.gitignore` (L21-24) excluye `data/CASOS/*`
+de git, pero eso no es cifrado en reposo ni política de retención. Resultado:
+PII en claro persiste indefinidamente en el disco de trabajo, fuera del control
+del flujo de anonimización.
+
+**Causa raíz.** El pipeline se diseñó para producir el material anonimizado,
+sin un paso de ciclo de vida del crudo. La capa de cumplimiento (`CUMPLIMIENTO.md`,
+RIA/RGPD) está pendiente y todavía no cubre retención ni cifrado del crudo local.
+
+**Solución técnica.** (1) Política explícita de retención: tras generar el `.md`
+anonimizado y su `_mapa_caso.json`, ofrecer purga (o purga automática
+configurable) de `01_Procesado/raw_text/`, y documentar el plazo de
+conservación del crudo. (2) Saneamiento de nombres de fichero con PII (slug
+neutro) o exclusión del nombre original del `_inventory.json` expuesto a fases
+posteriores. (3) Constancia del requisito de cifrado en reposo y control de
+acceso del disco de trabajo local.
+
+Matiz de alcance: el crudo lo genera `core/extractor.py`, no `core/anon/`; esta
+mejora es transversal al pipeline. La pieza de cifrado en reposo / control de
+acceso se solapa con `docs/PLAN_DESPLIEGUE_EV.md` (backup off-site cifrado con
+`rclone crypt`, retención de logs de acceso) y pertenece en parte al plan de
+cumplimiento RIA/RGPD pendiente; aquí se documenta el delta técnico
+(retención/purga del crudo + PII en nombres de fichero).
+
+**Coste estimado.** ~30-50 líneas (paso de purga configurable + saneamiento de
+nombres) + 2-3 tests. La parte de cifrado / control de acceso es
+organizativa/documental (no código).
+
+**Prioridad.** Alta — PII en claro sin política de retención en disco es
+exposición GDPR directa; coherente con la prioridad de las entradas que tocan
+confidencialidad (#13, #14, #23).
+
+---
+
+## 28. Fecha del documento en el nombre en formato ISO (AAAA-MM-DD) + ensamblado con remitente/tipo
+
+**Detectado.** 2026-06-07, en revisión de arquitectura.
+
+**Síntoma.** `core/anon/renombrar.py` produce un prefijo de fecha `YYYYMMDD`
+**sin guiones** (`strftime("%Y%m%d")`, L135 y L252) y ensambla solo
+`<YYYYMMDD> - <stem>`, sin remitente ni tipo de documento. `tiene_prefijo_fecha`
+valida el formato sin guiones (`^\d{8}\s*-\s*`, L106). El motor de detección de
+fecha (`extraer_fechas`, `mejor_fecha`) ya existe y funciona.
+
+**Causa raíz.** El renombrador se portó de Expedientes Seguros con su formato
+de prefijo original; nunca se adoptó el formato ISO con guiones ni se amplió el
+ensamblado del nombre con otras piezas (remitente/tipo).
+
+**Solución técnica.** (1) Cambiar el formato del prefijo a ISO con guiones
+(`strftime("%Y-%m-%d")`) y actualizar `tiene_prefijo_fecha` al patrón
+`^\d{4}-\d{2}-\d{2}\s*-\s*`. (2) Opcional: componer el nombre final como
+`<AAAA-MM-DD> - <remitente> - <tipo> - <stem>` cuando esos campos estén
+disponibles. Cumple `feedback_anon_logica_intacta`: solo toca el formato de
+nombre en `renombrar.py`, no la lógica de detección (regex/listas/thresholds
+del Anonimizador). No cruza con #2 (separar_pdf, troceo a nivel de contenido)
+ni con #14 (variantes de cliente en el mapa).
+
+**Coste estimado.** ~10-15 líneas (cambio de formato + regex) + migración
+opcional de nombres ya generados con el formato antiguo + 2 tests. El ensamblado
+remitente/tipo: +30-40 líneas si se implementa.
+
+**Prioridad.** Baja — mejora organizativa/cosmética; no afecta confidencialidad.
+Coherente con la prioridad de #9 y #25.
