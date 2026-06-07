@@ -95,7 +95,7 @@ def _fixture_disponible() -> bool:
 
 # Skip colectivo del módulo si el fixture no está localmente disponible.
 # Política decidida en H5 (D-H5-1 / Pendiente C1 §13 del plan).
-pytestmark = pytest.mark.skipif(
+pytestmark = [pytest.mark.slow, pytest.mark.skipif(
     not _fixture_disponible(),
     reason=(
         "Fixture gold-standard SaRS1 no presente localmente. "
@@ -103,7 +103,7 @@ pytestmark = pytest.mark.skipif(
         "Ver docs/PLAN_SaRS1_anon_pipeline.md §8 (H5) y REVISION.md "
         "del fixture para reconstruirlo."
     ),
-)
+)]
 
 
 # ---------------------------------------------------------------------------

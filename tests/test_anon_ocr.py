@@ -18,10 +18,13 @@ import pytest
 from core.anon.ocr import ocr_disponible, ocr_pdf
 
 _TESSERACT = shutil.which("tesseract") is not None
-pytestmark = pytest.mark.skipif(
-    not (ocr_disponible() and _TESSERACT),
-    reason="Requiere ocrmypdf + tesseract instalados.",
-)
+pytestmark = [
+    pytest.mark.slow,
+    pytest.mark.skipif(
+        not (ocr_disponible() and _TESSERACT),
+        reason="Requiere ocrmypdf + tesseract instalados.",
+    ),
+]
 
 
 def _pdf_sin_texto(destino: Path, palabra_clave: str = "FACTURA") -> Path:

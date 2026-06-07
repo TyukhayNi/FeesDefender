@@ -10,6 +10,9 @@ authors = [{ name = "Nikolai Tyukhay" }]
 testpaths = ["tests"]
 addopts = "-ra -q"
 pythonpath = ["."]
+markers = [
+    "slow: test lento (Presidio/spaCy/OCR real o PDF pesado de core/anon/). Omitido salvo --runslow.",
+]
 
 [tool.ruff]
 line-length = 100

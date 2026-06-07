@@ -27,6 +27,9 @@ from core.anon import (
 )
 from core.utils import read_md
 
+# Carga el motor NLP real (Presidio + spaCy). Lento; solo con --runslow.
+pytestmark = pytest.mark.slow
+
 
 # ---------------------------------------------------------------------------
 # Fixtures

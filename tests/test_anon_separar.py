@@ -37,6 +37,9 @@ from core.anon.separar import (
     separar_pdf,
 )
 
+# Genera y procesa PDFs reales (core/anon). Lento; solo con --runslow.
+pytestmark = pytest.mark.slow
+
 
 # ---------------------------------------------------------------------------
 # Helpers para construir PDFs de prueba con capa de texto real
