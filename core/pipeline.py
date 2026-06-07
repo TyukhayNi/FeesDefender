@@ -66,15 +66,24 @@ def run(
         pr.steps.append(StepResult("sync.pull", ok=True, detail="omitido"))
 
     pr.steps.append(_safe("inventory.scan", lambda: inventory.scan(case_id)))
-    pr.steps.append(_safe(
-        "extractor.extract_all",
-        lambda: f"{len(extractor.extract_all(case_id))} archivos",
-    ))
+
+    # La extracción (OCR vía Docling) es el único paso caro del pipeline.
+    # Se ejecuta UNA sola vez y el resultado se reutiliza en el paso de
+    # markdown, en lugar de re-extraer. Si la extracción falla, `extraction`
+    # queda vacío y el paso de markdown no produce nada (el error real ya
+    # queda registrado en el paso `extractor.extract_all`).
+    extraction: list[extractor.ExtractionResult] = []
+
+    def _extract_step() -> str:
+        nonlocal extraction
+        extraction = extractor.extract_all(case_id)
+        return f"{len(extraction)} archivos"
+
+    pr.steps.append(_safe("extractor.extract_all", _extract_step))
 
     def _markdown_step() -> str:
-        results = extractor.extract_all(case_id)
-        markdown_generator.build(case_id, results)
-        return f"{len(results)} .md"
+        markdown_generator.build(case_id, extraction)
+        return f"{len(extraction)} .md"
 
     pr.steps.append(_safe("markdown_generator.build", _markdown_step))
     pr.steps.append(_safe("scorer.score", lambda: scorer.score(case_id)))
