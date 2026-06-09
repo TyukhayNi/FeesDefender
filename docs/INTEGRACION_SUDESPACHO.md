@@ -1021,3 +1021,101 @@ El Manual define plantillas de texto para el campo `descripcion_html` del expedi
 ### 11.6 Nota sobre discrepancia en default lila para defensiva
 
 El Manual establece `RIESGO_POSIBLE` como el default para todos los asuntos defensiva, con `RIESGO_REMOTO` reservado para situaciones específicas (acuerdo o inactividad prolongada). En sesión de trabajo anterior se indicó verbalmente que el default sería `RIESGO_REMOTO`. **La función `tag_defaults_for_tipo_caso()` sigue el Manual escrito** (`RIESGO_POSIBLE`). Consultar con el despacho si la instrucción verbal prevalece.
+
+---
+
+## 14. Referencia común sudespacho — permisos, enums y patrón genérico de elementos
+
+> **Fuente única de verdad (agnóstica de proyecto):**
+> [`../../ElContable/docs/REFERENCIA_SUDESPACHO_API_PERMISOS.md`](../../ElContable/docs/REFERENCIA_SUDESPACHO_API_PERMISOS.md)
+> — la redacta Cowork y la comparten El Contable, El Auditor y FeesDefender. Esta sección **fusiona** sus
+> §1 (Auth), §2 (API de elementos), §3 (Permisos) y §5 (Enums/trampas) en este documento **sin duplicar**
+> lo ya cubierto arriba: para auth y endpoints se cross-referencian las secciones existentes; **permisos y
+> enums son contenido nuevo**. Verificado en navegador 2026-06-01/02 (F0) y 2026-06-08 (facturación).
+
+### 14.1 Auth y hosts — *delta* sobre §2
+
+Ya documentado arriba: `x-api-key` vs `Authorization: Bearer <JWT>` (§2.1), PHPSESSID + `@token` +
+`@refreshToken` del frontal heredado (§2.2–§2.3), y "escrituras Bearer JWT sin PHPSESSID" (§1). **Añade
+la referencia común:**
+
+- **Host de calendario/eventos:** `api-calendar-commons-pro.sudespacho.biz` (distinto del host REST
+  `api-crm-commons-pro.sudespacho.biz`).
+- En la SPA `https://tnm.sudespacho.net/...` el token JWT vive en `localStorage['token']`.
+- Preflight `OPTIONS` antes de cada llamada CORS (normal).
+
+### 14.2 API REST de elementos (genérica) — *formaliza* §3
+
+sudespacho expone casi todo como "elementos" con un patrón uniforme. FeesDefender ya usa partes de esto
+(listado `element_registries` con `filterGroup` §3.1/§5.1, bug 500 del singular `element_register` §8.3,
+`relation_element` POST como array §8.8). La referencia común lo **consolida**:
+
+| Operación | Endpoint |
+|---|---|
+| Listar | `GET /api/element_registries/{element}?page&itemsPerPage&sort[..]&properties[..]&filterGroup[..]` |
+| Totales | `GET /api/element_registries/summary/{element}?properties[..]&filterGroup[..]` |
+| Detalle | `GET /api/element_register/{element}/{id}?properties=a,b,c` (¡singular `element_register`! — ⚠️ bug 500 conocido, ver §8.3) |
+| Relacionar | `POST /api/relation_element/{element}/{id}` con body `["left|right.<element>.<id>", ...]` |
+
+- **`properties[]`** hay que pedirlas explícitamente; sin ellas muchas devuelven **500**. Soportan
+  relaciones `left.<element>.<campo>` / `right.<element>.<campo>` y agregados `sum(campo)`.
+- **`filterGroup` (gramática anidada):**
+  `filterGroup[condition]=AND|OR` → `filterGroups[i][condition]` →
+  `filterGroups[i][filterGroups][j][filters][k]` con `[operator] [property] [value]`
+  (valores `in`/`between` usan `[value][0]`, `[value][1]`). Operadores: `in`, `not-in`, `equal`,
+  `between`, `is-empty`, `is-not-empty`, `associated`.
+- **Forma de respuesta (listado):**
+  `{ totalItems, currentPage, itemsPerPage, items:[ { id, isPrimary, values:[ {property:{name}, value, label?} ] } ] }`.
+- **Relación many-to-many:** desde A, el relacionado es `right.<B>` (o `left.<B>`); se filtra con
+  `operator=associated, property=right.<B>.id, value=<id>`. El CRM puede auto-añadir relaciones
+  implícitas (p. ej. extrajudicial+cliente); **excluir una = omitirla del array**.
+
+### 14.3 Permisos de usuario — **(nuevo en FeesDefender)**
+
+- **Pantalla:** `https://tnm.sudespacho.net/tnm/settings/users/{id}?tab=permissions`.
+- **Modelo:** matriz **elemento × {Ver propio, Ver grupo, Actualizar, Borrar, Crear}**. Cada toggle es un
+  `input.el-switch__input` con `data-testid="{elemento}-{Read|ReadGroup|Update|Delete|Create}"` y
+  `aria-checked`. ~198 elementos. (`Read`=Ver propio, `ReadGroup`=Ver grupo, `Update`=Actualizar,
+  `Delete`=Borrar, `Create`=Crear.)
+- **Auditar la matriz (read-only, JS en consola):** recorrer `input.el-switch__input`, leer el
+  `data-testid` del ancestro y `aria-checked` → volcar el estado completo o solo lo activado.
+- **Datos económicos / personales:** **no** hay toggle por-campo en esta matriz. Leer importes
+  (`total`, `duracion`, conceptos, facturas) parece bastar con el `Read` del elemento *(pendiente: test
+  definitivo con el token del usuario API)*. "Sin Datos Personales" (F0) se refiere a confidencialidad de
+  contactos, no a estas cifras.
+- **Tarifa por usuario:** *Configuración personal → "Precio tarifa hora"* (+ "Coste diario bruto").
+  Nombre de propiedad API *(pendiente)*.
+
+**Presets de mínimo privilegio por rol** (un usuario API por función, distinto del humano):
+
+| Elemento | El Contable (facturación) | El Auditor | bot.contable (gastos, F0) |
+|---|---|---|---|
+| `actuaciones` | Read | Read | Read + Create (actuación+evento) |
+| `conceptos_honorario` | Read + **Create** | Read | — |
+| `conceptos_gasto` / `conceptos_suplido` | — | Read | Read + Create/Update |
+| `facturas_proforma` | Read + **Create** | Read | — |
+| `facturas` | Read · **Create OFF** 🔒 | Read | — |
+| `clientes_propios` · `extrajudiciales` · `expedientes_judiciales` | Read | Read | Read |
+| `catalogo_conceptos_honorario` | Read | Read | — |
+| `usuarios` | Read (para tarifa) | Read | — |
+| documentos / carpetas | — | Read | Read + subir |
+| **Borrar (Delete)** | **OFF en todo** | **OFF en todo** | **OFF en todo** |
+
+- **`facturas-Create` siempre OFF** salvo para quien emita facturas reales (hoy: nadie automático):
+  cerrojo anti-emisión; aunque el código mandara `invoice_type:"factura"`, el permiso lo impide.
+- **El Auditor = solo lectura, sin ningún `Create/Update/Delete`.** La credencial read-only **es** la
+  garantía de "detecta y reporta, no corrige".
+- **Nunca `Delete`** para usuarios automáticos: los borrados los hace una persona.
+- **Licencias (límite 4):** confirmar si un usuario API consume licencia *(pendiente; aparentemente no)*.
+
+### 14.4 Enums y trampas — **(nuevo en FeesDefender)**
+
+- `conceptos_honorario_motivo_exencion`: `NULL`="No exenta IVA", `E1..E6`=exenciones
+  (art. 20/21/22/24/25/otra). Honorario abogacía → vacío/NULL.
+- Otros enums: `conceptos_iva_propio`, `conceptos_irpf_propio`, `facturas_serie_factura`,
+  `facturas_estado_cobro`.
+- **⚠️ Colisión `E1`:** en `invoices.tipo_operaciones_iva`, `E1`="Operaciones interiores **SUJETAS** a
+  IVA"; en `conceptos_honorario_motivo_exencion`, `E1`="**EXENTA** art. 20". **Mismo código, sentido
+  opuesto. No confundir.**
+- **Formatos:** `duracion` en **segundos**; importes string con punto decimal; fechas `YYYY-MM-DD`
+  (algunas datetime `YYYY-MM-DD HH:MM:SS`).

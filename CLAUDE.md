@@ -148,7 +148,9 @@ Atajo: `/tests` ejecuta la suite completa.
 
 - **Estado y tareas**: `STATUS.md` (raíz del proyecto)
 - **Arquitectura y deps**: `docs/ARQUITECTURA.md`
-- **API sudespacho**: `docs/INTEGRACION_SUDESPACHO.md`
+- **API sudespacho**: `docs/INTEGRACION_SUDESPACHO.md` (su §14 fusiona la **referencia común sudespacho**)
+- **Referencia común sudespacho** (fuente única agnóstica: auth, API de elementos, permisos + presets por
+  rol, enums; compartida con El Contable / El Auditor): [`../ElContable/docs/REFERENCIA_SUDESPACHO_API_PERMISOS.md`](../ElContable/docs/REFERENCIA_SUDESPACHO_API_PERMISOS.md)
 - **Callejones sin salida**: `docs/DEAD_ENDS.md` ← consultar antes de reintentar algo
 - **Plan subdivisión ciudades**: `docs/PLAN_SUBDIVISION_CIUDADES.md`
 - **Plan SaRS1 anon**: `docs/PLAN_SaRS1_anon_pipeline.md`
