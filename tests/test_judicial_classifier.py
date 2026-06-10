@@ -108,6 +108,29 @@ def test_cero_candidatos_status_none():
     assert res.contestacion.status == "none"
 
 
+# ---- Demanda por tipo de procedimiento (aprendizajes del exp. 444) --------
+
+def test_demanda_juicio_ordinario():
+    """La demanda suele titularse por el juicio: 'ORDINARIO - ...'."""
+    res = classify([_doc("31287", "ORDINARIO - VUELTA VENDEDOR - VALLDAURA.pdf")])
+    assert res.demanda.status == "ok"
+    assert res.demanda.selected.doc_id == "31287"
+
+
+def test_escrito_alegaciones_no_es_demanda():
+    """'ESCRTIO ALEGACIONES - PRESENTADA DEMANDA' es alegaciones, no la demanda."""
+    res = classify([
+        _doc("33279", "ESCRTIO_ALEGACIONES_-_PRESENTADA_DEMANDA__SOLICITAR_DEVOLUCION_CAUCION.pdf"),
+    ])
+    assert res.demanda.status == "none"
+
+
+def test_justificante_just_escr_no_es_contestacion():
+    """'JUST ESCR - CONTESTACION NULIDAD' es un justificante, no la contestación."""
+    res = classify([_doc("34386", "JUST ESCR - CONTESTACION NULIDAD PRESENT.pdf")])
+    assert res.contestacion.status == "none"
+
+
 # ---- Etiqueta de carpeta como señal (doc escaneado sin nombre útil) ------
 
 def test_label_carpeta_no_dispara_clasificacion():

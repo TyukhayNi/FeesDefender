@@ -64,22 +64,29 @@ _NEG_COMUN: tuple[str, ...] = (
     "notificac",       # notificación
     "cedula",          # cédula de emplazamiento
     "emplazamiento",
-    "justif", "ptacion", "presentacion",   # justificante de presentación procurador
+    "justif", "justificante", "just escr",  # justificante de presentación procurador
+    "ptacion", "presentacion",
     "apersonad", "personacion",
     "diligencia", "providencia", "decreto",
     "factura", "minuta", "fra ",
 )
 
+# Marcadores POSITIVOS de demanda: la palabra "demanda" o el nombre del tipo de
+# procedimiento (la demanda suele titularse por el juicio: "ORDINARIO ...",
+# "VERBAL ...", petición inicial de "MONITORIO ..."). Confirmado contra el
+# expediente 444, donde la demanda es "ORDINARIO - VUELTA VENDEDOR - VALLDAURA".
+_DEMANDA_POS: tuple[str, ...] = ("demanda", "ordinario", "verbal", "monitorio")
+
 # Tokens que, presentes en el nombre, descartan que sea la DEMANDA
-# (típicamente porque es la contestación/oposición o un derivado).
+# (es la contestación/oposición/reconvención, un escrito de alegaciones, etc.).
 _NEG_DEMANDA: tuple[str, ...] = _NEG_COMUN + (
     "oposicion", "contestacion", "contestada", "contesta dda", "contesta demanda",
-    "ampliacion", "reconvencion",
+    "alegacion", "ampliacion", "reconvencion",
 )
 
 
 def _is_demanda(norm: str) -> bool:
-    if "demanda" not in norm:
+    if not any(pos in norm for pos in _DEMANDA_POS):
         return False
     return not any(neg in norm for neg in _NEG_DEMANDA)
 
