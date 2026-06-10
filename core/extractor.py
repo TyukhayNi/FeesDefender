@@ -15,6 +15,7 @@ con frontmatter.
 
 from __future__ import annotations
 
+import gc
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -49,17 +50,46 @@ class ExtractionResult:
 
 # --- Backends opcionales ----------------------------------------------------
 
+def _docling_converter():
+    """``DocumentConverter`` con el modelo de estructura de tablas DESACTIVADO.
+
+    El modelo TableFormer de Docling es el componente más pesado en memoria y,
+    en equipos con poca RAM libre, provoca OOM y mata el proceso (visto en el
+    exp. 444: ``Unable to allocate ... Stage table failed``). Desactivar
+    ``do_table_structure`` **no pierde el texto** de las tablas —se sigue
+    capturando vía OCR/texto—, solo deja de reconstruir la rejilla de celdas en
+    markdown, irrelevante para la anonimización y el análisis. Reduce
+    drásticamente el pico de memoria.
+    """
+    from docling.datamodel.base_models import InputFormat  # type: ignore
+    from docling.datamodel.pipeline_options import PdfPipelineOptions  # type: ignore
+    from docling.document_converter import (  # type: ignore
+        DocumentConverter,
+        PdfFormatOption,
+    )
+
+    opts = PdfPipelineOptions()
+    opts.do_table_structure = False
+    return DocumentConverter(
+        format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=opts)}
+    )
+
+
 def _try_docling(path: Path) -> str | None:
     try:
-        from docling.document_converter import DocumentConverter  # type: ignore
+        conv = _docling_converter()
     except Exception:
         return None
     try:
-        conv = DocumentConverter()
         result = conv.convert(str(path))
         return result.document.export_to_markdown()
     except Exception:
         return None
+    finally:
+        # Liberar modelos/imágenes entre documentos: en equipos con poca RAM la
+        # acumulación entre docs es lo que termina disparando el OOM.
+        del conv
+        gc.collect()
 
 
 def _try_pypdf(path: Path) -> str | None:
@@ -231,6 +261,7 @@ def extract_all(case_id: str, *, force: bool = False) -> list[ExtractionResult]:
                 skipped=True,
             ))
             new_state[rel] = cached
+            _save_state(state_path, new_state)
             continue
 
         try:
@@ -250,6 +281,12 @@ def extract_all(case_id: str, *, force: bool = False) -> list[ExtractionResult]:
             "method": method,
             "chars": len(text),
         }
+        # Persistir el estado tras CADA documento: el OCR es caro y el proceso
+        # puede morir (OOM en equipos con poca RAM). Guardar incrementalmente
+        # hace la extracción reanudable —un relanzamiento salta lo ya hecho en
+        # lugar de empezar de cero—. El fichero de estado es pequeño; el coste
+        # de reescribirlo por doc es despreciable frente al del OCR.
+        _save_state(state_path, new_state)
 
     _save_state(state_path, new_state)
     return results
