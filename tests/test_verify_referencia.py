@@ -283,9 +283,9 @@ def test_validacion_match_es_tolerante_a_espacios():
     assert result["match"] is True
 
 
-def test_validacion_match_es_sensible_a_mayusculas():
-    """``"barr3"`` ↔ ``"BaRR3"`` NO debe matchear — la referencia es un
-    identificador, no texto libre. Si el CRM la cambia, queremos saberlo."""
+def test_validacion_match_tolera_diferencia_de_case():
+    """``"barr3"`` ↔ ``"BaRR3"`` DEBE matchear tras normalización — la guarda
+    de dedup robusto colapsa mayúsculas/acentos/espacios para evitar duplicados."""
     payload = _build_items_response(
         649,
         prop=_REFERENCIA_PROP_BY_ELEMENT["expedientes_judiciales"],
@@ -299,7 +299,7 @@ def test_validacion_match_es_sensible_a_mayusculas():
             649, "expedientes_judiciales",
             expected_referencia="BaRR3 - Roser 39",
         )
-    assert result["match"] is False
+    assert result["match"] is True
 
 
 def test_validacion_expected_none_no_matchea_aunque_crm_valida():

@@ -1549,7 +1549,8 @@ def verify_expediente_referencia(
             ``match`` (bool), ``crm_unreachable`` (bool), ``found`` (bool).
 
         Semántica de ``match``:
-            - ``True`` ⇔ ambas referencias son strings idénticos tras strip.
+            - ``True`` ⇔ ambas referencias coinciden tras normalización
+              (espacios colapsados, sin acentos, lowercase).
             - ``False`` en cualquier otro caso (incluido ``crm_unreachable``
               y ``found=False``).
 

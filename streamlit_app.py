@@ -1705,9 +1705,9 @@ with tab_nuevo:
             for e in _exp_existentes
         )
         st.warning(
-            f"⚠️ Este caso ya tiene expediente/s registrado/s en el CRM: {_exp_resumen}. "
-            "Al enviar a sudespacho solo se actualizarán relaciones y se hará el pull "
-            "(no se creará un expediente duplicado).",
+            f"⚠️ Este caso ya tiene expediente/s registrado/s **localmente**: {_exp_resumen}. "
+            "Al enviar a sudespacho se verificará primero en el CRM si ya existe un "
+            "expediente con esta referencia.",
             icon="🗂️",
         )
         _confirmar_crm = st.checkbox(
