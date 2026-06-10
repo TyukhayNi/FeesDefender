@@ -209,7 +209,15 @@ def intake_judicial(
                                    "dejando 05_CRM físicamente completo. La clasificación pasa a "
                                    "ser etiquetado: los roles ambiguos se avisan pero no bloquean."),
     run_pipeline: bool = typer.Option(False, "--run-pipeline/--no-run-pipeline",
-                                      help="Encadena el pipeline (anon → MD → frontier) tras el intake"),
+                                      help="Encadena el pipeline (OCR → MD → anon) sobre el caso completo "
+                                           "tras el intake. Incremental por hash: solo procesa los docs nuevos."),
+    anonimizar: bool = typer.Option(True, "--anonimizar/--no-anonimizar",
+                                    help="Al encadenar el pipeline, anonimiza el caso completo "
+                                         "(deja el resultado en 06_Anonimizado/). Activo por defecto."),
+    politica: str = typer.Option("SALTAR", "--politica",
+                                 help="Política de anonimización (p. ej. SALTAR)."),
+    tipo_proc: str = typer.Option("Juicio Ordinario", "--tipo-proc",
+                                  help="Tipo de procedimiento para la anonimización."),
 ) -> None:
     """Intake del expediente judicial en el árbol del caso.
 
@@ -273,8 +281,18 @@ def intake_judicial(
             "Súbelos a mano con el expander «📂 Subir al árbol CRM» si procede."
         )
 
-    if run_pipeline and result.pull and result.pull.documents_written:
-        pr = pipeline.run(case, do_sync=False, do_demanda=True)
+    if run_pipeline and result.pull and (
+        result.pull.documents_written or result.pull.documents_overlap
+    ):
+        # OCR (incremental por hash) → MD → anonimización del caso COMPLETO.
+        # No se regenera la demanda (do_demanda=False): el intake judicial no
+        # produce borrador, solo deja el expediente procesado y anonimizado.
+        pr = pipeline.run(
+            case, do_sync=False, do_demanda=False,
+            do_anonimizar=anonimizar,
+            politica_anonimizar=politica,
+            tipo_proc_anonimizar=tipo_proc,
+        )
         for s in pr.steps:
             typer.echo(f"  {'✅' if s.ok else '❌'} {s.name}: {s.detail or s.artifact or ''}")
 

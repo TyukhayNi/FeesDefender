@@ -116,7 +116,20 @@ demanda+contestación, y el dedup M9 puede dejar `05_CRM` incompleto.
   expediente completo (no solo demanda+contestación)"** → pasa `full=True`.
   Mostrar conteo total/escritos/solapamientos en el resultado.
 
-## Paso 2 — OCR / markdown / anonimización (SIN código nuevo)
+## Paso 2 — OCR / markdown / anonimización (ENTREGADO 2026-06-10)
+
+> **Estado: ENTREGADO.** Cableado del pipeline existente (sin lógica de negocio
+> nueva). `intake-judicial --run-pipeline` ahora llama a
+> `pipeline.run(case, do_sync=False, do_demanda=False, do_anonimizar=anonimizar,
+> politica_anonimizar=politica, tipo_proc_anonimizar=tipo_proc)`. Nuevos flags
+> CLI: `--anonimizar/--no-anonimizar` (default ON), `--politica` (default
+> `SALTAR`), `--tipo-proc` (default `Juicio Ordinario`). El gate dispara también
+> con `documents_overlap` (no solo `documents_written`). Streamlit: el checkbox
+> «Encadenar pipeline» ahora ejecuta con `do_anonimizar=True, do_demanda=False`
+> (antes llamaba `do_demanda=True` SIN anon — bug corregido). `inventory.scan`
+> ya excluye `90_NOTAS_PERSONALES/` por construcción: solo recorre `00_Input/` y
+> esa carpeta es hermana en la raíz del caso, nunca se escanea (sin cambio).
+> Suite verde; gold fixture SaRS1 intacto (no se tocó el motor de anon).
 
 Tras el pull completo, ejecutar el pipeline existente:
 

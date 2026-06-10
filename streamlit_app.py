@@ -839,9 +839,12 @@ with tab_casos:
                             st.caption(f"⚠️ {_eij_err}")
 
                         if _pipe_ij and (_written or _overlap):
-                            with st.spinner("Ejecutando pipeline…"):
+                            with st.spinner("Ejecutando pipeline (OCR → MD → anon)…"):
                                 _prij = pipeline.run(
-                                    _caso_ij, do_sync=False, do_demanda=True,
+                                    _caso_ij, do_sync=False, do_demanda=False,
+                                    do_anonimizar=True,
+                                    politica_anonimizar="SALTAR",
+                                    tipo_proc_anonimizar="Juicio Ordinario",
                                 )
                             for _s in _prij.steps:
                                 st.write(
