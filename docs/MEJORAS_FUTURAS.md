@@ -970,3 +970,54 @@ remitente/tipo: +30-40 líneas si se implementa.
 
 **Prioridad.** Baja — mejora organizativa/cosmética; no afecta confidencialidad.
 Coherente con la prioridad de #9 y #25.
+
+**Decisión 2026-06-10 (Cowork, aprobada por Nikolai).** Se confirma el cambio a
+ISO con guiones (D1). **Alcance acotado (D2):** el prefijo de fecha y el
+ensamblado con remitente/tipo se aplican **solo** en `06_Anonimizado/` y en
+vistas derivadas (`INDICE.md`); **nunca** en `01_Procesado/` ni en ningún nombre
+de fichero con PII en claro (cruza con #27 — un nombre con remitente real es PII).
+La **identidad** del documento es `id_doc`/`hash` del catálogo
+`indice_documental.yaml`, no el nombre: renombrar es seguro porque ningún
+consumidor de identidad depende del nombre (el slug del pipeline es stem-only,
+`extractor.py:214` / `markdown_generator.py:30`; el organizador Ollama que
+indexaba por slug quedó descartado). Bundles en #29. Registro completo en
+`PLAN.md` → `[SIGUIENTE-REORG-05CRM]`.
+
+---
+
+## 29. Bundles cabecera-anexo por metadato (`parent_id` en `indice_documental.yaml`)
+
+**Detectado / decidido.** 2026-06-10 (Cowork, aprobado por Nikolai). Hoy **no
+existe** modelado de la relación cabecera↔anexo en ningún sitio: no hay
+`parent_id`, `role_in_bundle` ni equivalente en código ni en frontmatter (grep
+repo-wide vacío; los `parent_id` que aparecen son del árbol de carpetas del CRM,
+concepto distinto). `separar.py` trocea un PDF concatenado en segmentos
+**hermanos** por tipo (incluido `DOC_ANEXO`) sin relación padre-hijo;
+`linker.py` enlaza por coincidencia de stem en el cuerpo (wikilinks),
+insuficiente y semánticamente débil para expresar jerarquía probatoria.
+
+**Solución decidida.** Modelar el bundle como **metadato, no como subcarpeta
+física**: añadir al esquema de `indice_documental.yaml` los campos `parent_id`
+(id_doc de la cabecera; `null` si el documento es suelto) y `orden_en_bundle`
+(int, orden de aparición/relación, no alfabético). El `INDICE.md` derivado
+renderiza los anexos indentados bajo su cabecera. Razones: (i) el catálogo ya es
+la fuente de verdad canónica decidida (`[SIGUIENTE-CATALOGO-DOCUMENTAL]`); (ii)
+ancla por `id_doc`/hash → **sobrevive a renombrado y a la anonimización**; (iii)
+no toca la separación funcional crudo/anonimizado que protege el secreto
+profesional; (iv) una subcarpeta física rompería idempotencia, colisionaría
+stems en `linker`, y mezclaría fechas (un anexo de febrero metido en la carpeta
+de una cabecera de marzo descoloca a `renombrar.py`, que fecha por contenido —
+la unidad probatoria pesa más que la fecha individual del anexo).
+
+**Relación con el detector de conjunto.** La asignación de `parent_id` la puede
+**proponer automáticamente** el detector de conjunto descrito en `PLAN.md`
+→ `[SIGUIENTE-REORG-05CRM]` (lote por timestamp de modificación del CRM +
+nomenclatura tipo `D NN`); los clústeres de baja confianza →
+`pendiente_revision`, sin adivinar.
+
+**Coste estimado.** Esquema + render: ~40-60 líneas + 2-3 tests. La autodetección
+(detector de conjunto) se contabiliza aparte y tiene su propio requisito previo
+(traer la fecha de modificación del CRM, hoy no disponible — ver `PLAN.md`).
+
+**Prioridad.** Media — habilita navegación por unidad probatoria; depende del
+catálogo `indice_documental.yaml`. Implementación: Claude Code.

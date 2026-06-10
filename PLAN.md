@@ -296,3 +296,148 @@ compartida.
 - Granularidad del span: ¿párrafo entero, oración, o N caracteres alrededor del hecho? Inclinación: oración completa por defecto, ampliable a párrafo si el hecho es relacional.
 
 **Dependencia con la migración Drive → repo**: ninguna. Pueden ejecutarse en paralelo.
+
+---
+
+## [SIGUIENTE-REORG-05CRM] Aplanado de `05_CRM` por buckets procesales + detector de conjunto
+*Añadido 2026-06-10 (sesión Cowork). 15 decisiones aprobadas por Nikolai. Implementación: Claude Code. Capa de nombrado/bundles (D1-D3) documentada en `docs/MEJORAS_FUTURAS.md` #28-#29.*
+
+> **✅ PRIMERA TANDA COMPLETADA 2026-06-10 (Claude Code).**
+> - [x] **Paso 0 / D8** — `CARPETA_ID_TO_PATH` poblado: `308`→Declarativo/Oposicion,
+>   `380`→Preliminares/Demanda. Descubiertos vía `category_unknown`, doble
+>   verificación UI (Nikolai) + REST. Solo había 2 IDs no mapeados en toda la
+>   data real. El endpoint de árbol es dead end (§13.3); rama ambigua se cierra en UI.
+> - [x] **D6** — `_bucket_for(rama_canonica)` (pura) + exclusión Preliminares,
+>   aplicada en `crm_branch_path` (`core/case_manager.py`). Routing por rama
+>   completa, no por etiqueta-hoja.
+> - [x] **D7** — andamiaje *lazy*: `_ensure_crm_tree_dirs` crea solo `05_CRM/`;
+>   los buckets se materializan al escribir. **D15** documentado (05_Procedimiento).
+> - [x] **D12-D13** — `scripts/migrate_05crm_buckets.py` (in situ, sin re-bajar
+>   ni re-OCR; re-llave manifest + extract_state; colisión de stem; by_carpeta;
+>   journal + .bak). **Expediente 444 migrado**: 96 docs → {01_Demanda:23,
+>   05_Diligencias_Preliminares:31, 99_Otros:42}, 0 colisiones, 0 re-OCR.
+> - [x] **D14** — `test_crm_branch_path.py` reescrito (buckets + anti-sobrecaptura
+>   + unit de `_bucket_for`), `test_pull_expediente_v2.py` y `test_smoke_paso7.py`
+>   actualizados, `test_migrate_05crm_buckets.py` nuevo. `test_dedup_manifest.py`
+>   y `test_judicial_intake.py` revisados (agnósticos a ruta, sin cambios).
+>   Suite verde; gold SaRS1 intacto.
+>
+> **Pendiente (SEGUNDA TANDA):** D9 (detector de conjunto) + D10 (fecha de
+> modificación del CRM, su requisito) + D11 (override local doc_id→bucket).
+>
+> **Follow-up detectado (fuera de las 15 decisiones, decisión de Nikolai):** el
+> intake **manual** (`intake_manual.save_file_crm_branch` + `list_crm_branch_files`
+> + selector `CRM_TREE` en `streamlit_app.py:630`) sigue escribiendo a la rama
+> profunda elegida en la UI; convendría bucketizarlo también (vía `_bucket_for`)
+> para no recrear el árbol profundo que la migración elimina. No se tocó por
+> estar fuera del alcance de la primera tanda (ripple a UI + ~6 tests de
+> `test_smoke_paso7.py` no listados en D14).
+
+**Objetivo.** Sustituir el árbol profundo del CRM en `00_Input/05_CRM/` (hasta 4
+niveles + ~20 carpetas vacías de andamiaje) por una estructura plana de un nivel
+con buckets procesales. Motivos: límite de ruta de Windows (260 car.) sobre un
+Drive ya largo, y desorden de carpetas vacías. La estructura de `05_CRM` es
+**solo navegación humana del input**: el pipeline (`extractor` →
+`markdown_generator` → `anon`) aplana a un output por documento con slug
+stem-only (`extractor.py:214`), independiente de la subcarpeta de origen.
+
+**Árbol confirmado (D5).**
+
+```
+05_CRM/
+├── 01_Demanda/                  ← Declarativo/Demanda (demanda + su prueba documental)
+├── 02_Contestacion/             ← Declarativo/Oposicion (un solo bucket aunque haya varios demandados — D5b)
+├── 03_Monitorio_Demanda/        ← Monitorio/Demanda (petición inicial + docs)
+├── 04_Monitorio_Oposicion/      ← Monitorio/Oposicion (+ docs)
+├── 05_Diligencias_Preliminares/ ← Preliminares/Demanda (solicitud de DP + docs)
+├── 99_Otros/                    ← resto PLANO por fecha (procesales, resoluciones, Apelación, Ejecución, General, Documentos, RGPD/LOPD, Penal…)
+└── 99_Sin categoria/<exp>/      ← fallback cuando id_carpeta no resuelve (ya existe hoy)
+```
+
+**Decisiones aprobadas (registro).**
+
+- **D5 — Aplanar a 1 nivel** con el árbol de arriba. Cada bucket mapea 1:1 a una
+  hoja real de `CRM_TREE`; se aplana el andamiaje intermedio
+  (`Civil/1ª Instancia/Declarativo/…`), no las hojas con significado.
+- **D6 — Routing por rama canónica completa, no por etiqueta-hoja.** Función pura
+  `_bucket_for(rama_canónica)` aplicada en `crm_branch_path` (`case_manager.py:524`,
+  único punto de routing, invocado en `sync_sudespacho.py:1444`). `Preliminares`
+  en **lista de exclusión explícita**: su "demanda" (solicitud de DP) **nunca**
+  cae en `01_Demanda` → va a `05_Diligencias_Preliminares`. Etiqueta-hoja pura
+  sobre-captura (`"Demanda"` casa 3 ramas, `"Oposicion"` 2 → hoy ambas caen a
+  fallback, confirmado por `test_crm_branch_path.py`).
+- **D7 — Cambiar también el andamiaje** (`_scaffold_crm_tree`,
+  `case_manager.py:841`): crear solo los buckets en uso o ir *lazy*
+  (crear-al-escribir). Tocar solo el routing dejaría las carpetas vacías.
+- **D8 — Requisito previo (paso 0): poblar `CARPETA_ID_TO_PATH`** con los
+  `id_carpeta` reales del tenant para las ramas procesales (hoy solo 2 IDs
+  mapeados; las etiquetas son ambiguas → casi todo cae a `99_Sin categoria`).
+  Descubrimiento progresivo vía evento `category_unknown` ya existente. **Sin
+  esto, aplanar es cosmética.** Doble verificación UI + API.
+- **D9 — Detector de conjunto** para reagrupar cabecera + prueba **mal archivadas**:
+  clúster por *timestamp de modificación del CRM idéntico* (subida en lote) ∩
+  *patrón de nomenclatura* `D\s*\d+\s*-` (numeración de prueba del despacho; admite
+  sub-índice `22-C`/`22-D`). Se ancla cada lote a su cabecera (`DEMANDA…`/
+  `CONTESTACION…`) por cercanía temporal y se asigna al bucket de la cabecera.
+  Clústeres de baja confianza → `pendiente_revision`, sin adivinar. La relación
+  se persiste como `parent_id` en `indice_documental.yaml` (MEJORAS #29) →
+  sobrevive aunque los ficheros queden físicamente dispersos.
+- **D10 — Requisito previo de D9: traer la fecha de modificación del CRM.** Hoy
+  NO se pide: la query REST solo trae `nombrefinal`/`mime`/`tamano`/`id_carpeta`
+  (`sync_sudespacho.py:649-653`) y `GdocuDocInfo` no tiene campo de fecha
+  (`:297-303`). Descubrir el índice de esa propiedad y añadir el campo al DTO.
+- **D11 — Override local `doc_id → bucket`** editable por el letrado (en
+  `_caso.md` o YAML del caso), respetado por encima de la carpeta del CRM, **sin
+  tocar el CRM remoto**. Parche inmediato para el mal archivo.
+- **D12 — Migrar in situ, NO re-bajar.** El re-pull no migra limpiamente: el
+  dedup es por hash (`IntakeManifest.register`), así que un re-pull sin resetear
+  manifest devuelve el `primary_path` viejo → con `physical_complete=True`
+  duplica (copia vieja + nueva), con `False` no mueve. Migración: mover ficheros
+  + reescribir `00_Input/_intake_hashes.json` (rel viejo→nuevo, o borrarlo y dejar
+  que `reconcile()` reconstruya desde disco) + re-llavear
+  `01_Procesado/raw_text/_extract_state.json` (clave = `rel_path`,
+  `extractor.py:218`; los `.txt` NO se mueven, slug = stem) + `inventory.scan`.
+  Así `extract_all` hace skip y **no re-OCRiza** los 96 docs del 444. Script
+  puntual, no feature.
+- **D13 — Pre-migración:** detectar **colisiones de stem** entre ramas que
+  confluyan al mismo bucket (forzarían `__1` vía `_resolve_name_collision` →
+  cambio de slug → re-OCR; o renombrar también el `.txt`). Refrescar `by_carpeta`
+  en el frontmatter de `_caso.md` (queda rancio tras migrar).
+- **D14 — Tests.** Asumir cambio de semántica de conteos (`documents_overlap`
+  baja, `documents_skipped_dedup` sube — no es bug). Reescribir
+  `test_crm_branch_path.py` (expectativas profundas → buckets + tests
+  anti-sobrecaptura: `Preliminares/Demanda`→`05_…`, `Declarativo/Oposicion`→
+  `02_…`, `Monitorio/Demanda`→`03_…`); actualizar `test_pull_expediente_v2.py` y
+  `test_dedup_manifest.py` (claves `by_carpeta` + conteos); revisar
+  `test_judicial_intake.py` (mayormente agnóstico a ruta). Añadir unit de
+  `_bucket_for()` y test del script de migración (idempotencia + preservación de
+  cache OCR + colisión de stem). El gold fixture **SaRS1 no se toca** (es upstream
+  del anon; confirmar ejecutando la suite).
+- **D15 — `05_Procedimiento`** (carpeta funcional de fase, hoy inerte: nadie
+  escribe en ella; solo la crea el scaffolding y la barre `linker.py:19`).
+  Mantener su rol semántico de **work-product del letrado para el litigio en
+  curso**, diferenciado del espejo crudo del CRM (`00_Input/05_CRM/`). Documentar
+  su propósito (hoy no consta). Aplicarle el criterio *lazy* de D7. Anotar la
+  duplicidad del "05" (`00_Input/05_CRM` vs `05_Procedimiento`) como cosmética de
+  baja prioridad.
+
+**Capa de nombrado/bundles (D1-D3) → `docs/MEJORAS_FUTURAS.md`:** D1 (prefijo ISO
+`AAAA-MM-DD`) y D2 (alcance solo `06_Anonimizado`/`INDICE.md`, identidad =
+`id_doc`/hash) amplían #28; D3 (bundles cabecera-anexo por `parent_id` en el
+catálogo, no subcarpeta física) es #29. D4: fuente única de verdad documental;
+no se parchea el motor de anonimización (D8 histórico / `feedback_anon_logica_intacta`).
+
+**Lo que NO se toca (F):** motor de anonimización, `separar.py`, `linker.py`,
+independencia de `01_Procesado`/`06_Anonimizado` respecto a `05_CRM`, y la
+decisión ya cerrada de descartar el organizador Ollama / vista `_organizado/`.
+
+**Orden de ejecución recomendado.** Paso 0 (D8 descubrir IDs del tenant) →
+routing `_bucket_for` + exclusión Preliminares (D6) + andamiaje lazy (D7) →
+migración in situ del 444 preservando OCR (D12-D13) → tests (D14). El detector de
+conjunto (D9) y su requisito (D10) y el override (D11) pueden ir en una segunda
+tanda. Medir antes la ruta más larga real del 444: aplanar `05_CRM` solo ahorra
+~30 car.; si no basta para cruzar 260, combinar con rutas largas `\\?\` o acortar
+el ensamblado de nombre.
+
+**Pregunta abierta (no bloquea):** confirmar contra una carpeta de contestación
+real si el **demandado usa el mismo prefijo `D NN`** u otro, para afinar D9.

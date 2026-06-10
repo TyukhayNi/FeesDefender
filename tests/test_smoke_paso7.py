@@ -72,33 +72,34 @@ def _read_caso_meta(caso_md_path: Path) -> dict:
     return fm.get("meta") or {}
 
 
-def test_ensure_case_arbol_crm_eager(reloaded_modules, tmp_casos_root):
-    """D1 — todas las ramas de CRM_TREE deben existir tras ensure_case."""
+def test_ensure_case_crm_base_lazy(reloaded_modules, tmp_casos_root):
+    """D7 (reorg 2026-06-10) — andamiaje lazy: ensure_case crea solo la base
+    ``05_CRM/``, NO el árbol profundo ni los buckets (se materializan al
+    escribir). Deroga el antiguo D1 eager.
+    """
     cm = reloaded_modules["case_manager"]
     cfg = reloaded_modules["cfg"]
 
     case_dir = cm.ensure_case("EV-2026-CRM-TREE")
     crm_root = case_dir / "00_Input" / cfg.CRM_SUBDIR
 
-    # Comprobaciones puntuales sobre nodos hoja conocidos
-    expected = [
-        "General",
+    # La base existe…
+    assert crm_root.is_dir()
+    # …pero NINGÚN bucket ni rama profunda se pre-crea (no carpetas vacías).
+    assert list(crm_root.iterdir()) == [], (
+        f"05_CRM no debería tener subcarpetas tras ensure_case: "
+        f"{[p.name for p in crm_root.iterdir()]}"
+    )
+    # Ni las ramas profundas heredadas ni los buckets nuevos.
+    for rel in (
         "Civil/1ª Instancia/Declarativo/Demanda",
-        "Civil/1ª Instancia/Declarativo/Oposicion",
-        "Civil/1ª Instancia/Monitorio/Demanda",
-        "Civil/1ª Instancia/Monitorio/Oposicion",
-        "Civil/1ª Instancia/Documentacion RGPD LOPD",
-        "Civil/1ª Instancia/Documentos",
         "Civil/Preliminares/Demanda",
-        "Civil/Apelacion",
-        "Civil/Ejecucion",
-        "Penal/1ª Instancia/Fase oral",
-        "Penal/1ª Instancia/Instruccion/Denuncia",
-        "Penal/Apelacion",
-        "Penal/Ejecucion",
-    ]
-    for rel in expected:
-        assert (crm_root / rel).is_dir(), f"Falta rama CRM: {rel}"
+        "General",
+        "01_Demanda",
+        "05_Diligencias_Preliminares",
+        "99_Otros",
+    ):
+        assert not (crm_root / rel).exists(), f"No debería existir aún: {rel}"
 
 
 def test_ensure_case_copia_informe_siempre(reloaded_modules, tmp_casos_root):

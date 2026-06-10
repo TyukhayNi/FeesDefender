@@ -165,17 +165,16 @@ def test_pull_v2_un_doc_con_id_canonico_se_escribe_y_loggea(
     assert result.kind_distribution == {"id_mapping": 1}
     assert result.errors == []
 
-    # Fichero físico en la rama esperada
+    # Fichero físico en el bucket esperado (reorg D5/D6: 307 → 01_Demanda)
     expected_dir = (
-        tmp_casos_root / "PV2-1" / "00_Input" / "05_CRM"
-        / "Civil" / "1ª Instancia" / "Declarativo" / "Demanda"
+        tmp_casos_root / "PV2-1" / "00_Input" / "05_CRM" / "01_Demanda"
     )
     files = list(expected_dir.glob("*.pdf"))
     assert len(files) == 1
     assert files[0].read_bytes() == content
 
-    # by_carpeta usa ruta canónica relativa a 05_CRM
-    assert result.by_carpeta == {"Civil/1ª Instancia/Declarativo/Demanda": 1}
+    # by_carpeta usa el bucket plano relativo a 05_CRM
+    assert result.by_carpeta == {"01_Demanda": 1}
 
     # Evento pull_crm con resumen
     events = _read_log_events(modules, "PV2-1")
@@ -235,10 +234,8 @@ def test_pull_v2_dos_docs_en_ramas_distintas(modules, tmp_casos_root):
 
     assert result.documents_written == 2
     assert result.kind_distribution == {"id_mapping": 2}
-    assert set(result.by_carpeta.keys()) == {
-        "Civil/1ª Instancia/Declarativo/Demanda",
-        "General",
-    }
+    # 307 → 01_Demanda, 1 (General) → 99_Otros (reorg D5/D6)
+    assert set(result.by_carpeta.keys()) == {"01_Demanda", "99_Otros"}
     assert all(v == 1 for v in result.by_carpeta.values())
 
 
@@ -364,8 +361,7 @@ def test_pull_v2_hash_en_manifest_emite_dedup_skipped(modules, tmp_casos_root):
     assert result.documents_skipped_dedup == 1
     # El fichero físico NO se escribió en la rama CRM destino
     crm_demanda = (
-        tmp_casos_root / "PV2-6" / "00_Input" / "05_CRM"
-        / "Civil" / "1ª Instancia" / "Declarativo" / "Demanda"
+        tmp_casos_root / "PV2-6" / "00_Input" / "05_CRM" / "01_Demanda"
     )
     assert list(crm_demanda.glob("*.pdf")) == []
 
@@ -418,8 +414,7 @@ def test_pull_v2_physical_complete_escribe_overlap_y_loggea(modules, tmp_casos_r
 
     # El fichero físico SÍ está en la rama CRM destino.
     crm_demanda = (
-        tmp_casos_root / "PV2-OVL" / "00_Input" / "05_CRM"
-        / "Civil" / "1ª Instancia" / "Declarativo" / "Demanda"
+        tmp_casos_root / "PV2-OVL" / "00_Input" / "05_CRM" / "01_Demanda"
     )
     pdfs = list(crm_demanda.glob("*.pdf"))
     assert len(pdfs) == 1
@@ -476,8 +471,7 @@ def test_pull_v2_physical_complete_false_sigue_saltando(modules, tmp_casos_root)
     assert result.documents_skipped_dedup == 1
     assert result.documents_overlap == 0
     crm_demanda = (
-        tmp_casos_root / "PV2-NOOVL" / "00_Input" / "05_CRM"
-        / "Civil" / "1ª Instancia" / "Declarativo" / "Demanda"
+        tmp_casos_root / "PV2-NOOVL" / "00_Input" / "05_CRM" / "01_Demanda"
     )
     assert list(crm_demanda.glob("*.pdf")) == []
     events = _read_log_events(modules, "PV2-NOOVL")
@@ -545,7 +539,7 @@ def test_pull_v2_actualiza_pull_state_con_schema_d8(modules):
     assert state["element"] == "expedientes_judiciales"
     assert state["doc_ids"] == ["4001"]
     assert state["documents_total_crm"] == 1
-    assert state["by_carpeta"] == {"Civil/1ª Instancia/Declarativo/Demanda": 1}
+    assert state["by_carpeta"] == {"01_Demanda": 1}
     assert state["errors"] == []
     assert "linked_at" in state and state["linked_at"]
     assert "last_sync" in state and state["last_sync"]

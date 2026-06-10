@@ -264,6 +264,17 @@ def tag_crm(tipo: str) -> str:
 # El orden importa: refleja el flujo procesal del abogado.
 # Anonimizado (06) va antes de AI cowork (07): primero se elimina la PII,
 # luego se trabaja con LLMs externos sobre material ya limpio.
+#
+# Nota sobre el doble "05" (D15, reorg 2026-06-10): existe `05_Procedimiento`
+# (aquí, nivel caso) y `00_Input/05_CRM/` (espejo crudo del Gestor Documental).
+# Son cosas distintas y la duplicidad del prefijo "05" es cosmética (baja
+# prioridad). `05_Procedimiento` es el **work-product del letrado** para el
+# litigio en curso (escritos de trámite, notas de vista, providencias
+# trabajadas), NO un espejo del CRM. Hoy es funcionalmente inerte: solo lo
+# crea este scaffolding y lo barre `linker.py`; ningún módulo escribe en él
+# automáticamente. Su creación sigue siendo eager dentro de CASO_SUBDIRS
+# (patrón establecido del caso); el criterio *lazy* de D7 se aplicó solo al
+# árbol de `05_CRM/`.
 CASO_SUBDIRS: tuple[str, ...] = (
     "00_Input",
     "01_Procesado",
@@ -396,6 +407,20 @@ CRM_SUBDIR: str = "05_CRM"
 # mantiene el orden visual al final del árbol sin chocar con ese filtro.
 CRM_FALLBACK_PATH: str = "99_Sin categoria"
 
+# Buckets procesales planos de 05_CRM (D5 — reorg 2026-06-10). La estructura
+# de 05_CRM es solo navegación humana del input; el pipeline aplana a un output
+# por documento con slug stem-only (extractor.py), independiente de la
+# subcarpeta de origen. Cada bucket mapea 1:1 a una hoja real de CRM_TREE; el
+# andamiaje intermedio (Civil/1ª Instancia/Declarativo/…) se aplana. La
+# resolución rama-canónica → bucket vive en case_manager._bucket_for (D6).
+# Motivo: límite de ruta de Windows (260 car.) + desorden de carpetas vacías.
+CRM_BUCKET_DEMANDA: str = "01_Demanda"                     # ← Declarativo/Demanda
+CRM_BUCKET_CONTESTACION: str = "02_Contestacion"           # ← Declarativo/Oposicion (un solo bucket — D5b)
+CRM_BUCKET_MONITORIO_DEMANDA: str = "03_Monitorio_Demanda" # ← Monitorio/Demanda
+CRM_BUCKET_MONITORIO_OPOSICION: str = "04_Monitorio_Oposicion"  # ← Monitorio/Oposicion
+CRM_BUCKET_PRELIMINARES: str = "05_Diligencias_Preliminares"    # ← Preliminares/* (NUNCA 01_Demanda — D6)
+CRM_BUCKET_OTROS: str = "99_Otros"                         # ← resto, plano por fecha
+
 # Subcarpeta de entrevistas dentro de 00_Input/.
 ENTREVISTAS_SUBDIR: str = "06_Entrevistas"
 
@@ -440,13 +465,25 @@ CRM_TREE: dict[str, dict] = {
 # Mapping empírico id_carpeta (string numérico devuelto por
 # /api/element_registries/gdocu) → ruta canónica dentro de 05_CRM/.
 #
-# Mappings cerrados a 2026-05-08 (verificados contra el expediente 657 del
-# tenant tnm con la regla de doble verificación: usuario en CRM UI + Claude
-# vía probe REST). Nuevos IDs se descubren progresivamente vía evento
-# `category_unknown` en _intake_log.jsonl (M10).
+# El id_carpeta es una taxonomía GLOBAL del tenant (no es por-expediente): el
+# mismo ID aparece en expedientes distintos (p. ej. 307 se observó en 657 y en
+# 444). Por eso un mapping estático es válido. La etiqueta-hoja (DEMANDA,
+# OPOSICION…) es ambigua entre ramas, así que el ID es la única clave fiable.
+#
+# Mappings cerrados con la regla de doble verificación (usuario en CRM UI +
+# Claude vía REST):
+#   - 2026-05-08: 1, 307 (expediente 657).
+#   - 2026-06-10: 308, 380 (descubiertos vía evento `category_unknown`;
+#     confirmados en UI). El endpoint de árbol `/api/folders/gdocu/{parent}`
+#     NO devuelve la jerarquía (dead end, §13.3), por lo que la rama de una
+#     hoja ambigua solo se cierra por verificación en UI.
+# Nuevos IDs se descubren progresivamente vía evento `category_unknown` en
+# _intake_log.jsonl (M10) + verificación UI.
 CARPETA_ID_TO_PATH: dict[str, str] = {
     "1": "General",
     "307": "Civil/1ª Instancia/Declarativo/Demanda",
+    "308": "Civil/1ª Instancia/Declarativo/Oposicion",
+    "380": "Civil/Preliminares/Demanda",
 }
 
 # Roles válidos para la subcarpeta 06_Entrevistas/<YYYY-MM-DD>_<rol>_<apellido>/

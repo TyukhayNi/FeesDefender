@@ -1,26 +1,23 @@
-"""Tests dedicados v2 — paso 8 del refactor intake v2.
+"""Tests dedicados — routing del CRM a buckets planos (reorg 2026-06-10, D5/D6).
 
-Función bajo test: ``core.case_manager.crm_branch_path``.
+Funciones bajo test:
 
-Resuelve la ruta destino dentro de ``00_Input/05_CRM/`` para un documento
-del CRM mediante estrategia híbrida de 3 niveles (ver §13.4 de
-``docs/INTEGRACION_SUDESPACHO.md``):
+- ``core.case_manager._bucket_for``: función pura rama-canónica → bucket plano,
+  con exclusión explícita de ``Preliminares`` y anti-sobrecaptura de la
+  etiqueta-hoja ``Demanda``/``Oposicion``.
+- ``core.case_manager.crm_branch_path``: resuelve la ruta destino dentro de
+  ``00_Input/05_CRM/`` con estrategia híbrida de 3 niveles (id_mapping →
+  label_heuristic → fallback) y aplana la rama resuelta con ``_bucket_for``.
 
-    1. Lookup directo en ``CARPETA_ID_TO_PATH`` por ``id_carpeta``.
-    2. Heurística por ``id_carpeta_label`` si la coincidencia en
-       ``CRM_TREE`` es única.
-    3. Fallback ``05_CRM/99_Sin categoria/<expediente_id>/``.
-
-Estos tests fijan el contrato. No tocan disco más allá de la creación de
-la carpeta del caso vía ``ensure_case`` (necesaria para tener un
-``case_dir`` real bajo el que comparar paths). ``crm_branch_path`` por sí
-misma NO debe materializar nada — eso queda como sanity check explícito.
+Antes de la reorg el destino era la rama profunda (``Civil/1ª Instancia/
+Declarativo/Demanda``); ahora es un bucket plano de un nivel (``01_Demanda``).
+``crm_branch_path`` por sí misma NO debe materializar nada — sanity check
+explícito al final.
 """
 
 from __future__ import annotations
 
 import importlib
-from pathlib import Path
 
 import pytest
 
@@ -31,13 +28,7 @@ import pytest
 
 @pytest.fixture
 def cm(tmp_casos_root):
-    """Devuelve ``core.case_manager`` recargado tras el reload de config.
-
-    ``tmp_casos_root`` ya recarga ``core.config``; recargamos también
-    ``case_manager`` por simetría con el patrón establecido en
-    ``test_smoke_paso7.py`` (defensa frente a capturas accidentales en
-    import-time).
-    """
+    """Devuelve ``core.case_manager`` recargado tras el reload de config."""
     from core import case_manager as _cm
 
     importlib.reload(_cm)
@@ -45,36 +36,99 @@ def cm(tmp_casos_root):
 
 
 # ---------------------------------------------------------------------------
-# 1. Lookup directo por id_carpeta (CARPETA_ID_TO_PATH)
+# 0. _bucket_for — función pura rama-canónica → bucket (D6)
 # ---------------------------------------------------------------------------
 
-def test_id_mapping_307_devuelve_demanda_civil(cm, tmp_casos_root):
-    """id_carpeta="307" → Civil/1ª Instancia/Declarativo/Demanda."""
+@pytest.mark.parametrize(
+    "rama, bucket",
+    [
+        # Ramas con bucket dedicado
+        ("Civil/1ª Instancia/Declarativo/Demanda", "01_Demanda"),
+        ("Civil/1ª Instancia/Declarativo/Oposicion", "02_Contestacion"),
+        ("Civil/1ª Instancia/Monitorio/Demanda", "03_Monitorio_Demanda"),
+        ("Civil/1ª Instancia/Monitorio/Oposicion", "04_Monitorio_Oposicion"),
+        # Preliminares — exclusión explícita (hoja + rama intermedia)
+        ("Civil/Preliminares/Demanda", "05_Diligencias_Preliminares"),
+        ("Civil/Preliminares", "05_Diligencias_Preliminares"),
+        # Resto → 99_Otros
+        ("General", "99_Otros"),
+        ("Civil", "99_Otros"),
+        ("Civil/1ª Instancia", "99_Otros"),
+        ("Civil/1ª Instancia/Declarativo", "99_Otros"),
+        ("Civil/1ª Instancia/Documentacion RGPD LOPD", "99_Otros"),
+        ("Civil/1ª Instancia/Documentos", "99_Otros"),
+        ("Civil/Apelacion", "99_Otros"),
+        ("Civil/Ejecucion", "99_Otros"),
+        ("Penal/1ª Instancia/Instruccion/Denuncia", "99_Otros"),
+        ("Penal/Apelacion", "99_Otros"),
+    ],
+)
+def test_bucket_for_mapea_rama_a_bucket(cm, rama, bucket):
+    assert cm._bucket_for(rama) == bucket
+
+
+def test_bucket_for_preliminares_demanda_no_va_a_01(cm):
+    """Anti-sobrecaptura clave (D6): la "demanda" de Preliminares NUNCA es 01_Demanda."""
+    assert cm._bucket_for("Civil/Preliminares/Demanda") == "05_Diligencias_Preliminares"
+    assert cm._bucket_for("Civil/Preliminares/Demanda") != "01_Demanda"
+
+
+def test_bucket_for_tolera_acentos_y_capitalizacion(cm):
+    """``_normalize_label`` neutraliza acentos/mayúsculas en la rama."""
+    assert cm._bucket_for("CIVIL/1ª Instancia/DECLARATIVO/DEMANDA") == "01_Demanda"
+    assert cm._bucket_for("Civil/Preliminares/DEMANDA") == "05_Diligencias_Preliminares"
+
+
+def test_bucket_for_demanda_solo_declarativo_va_a_01(cm):
+    """Solo Declarativo/Demanda → 01; Monitorio/Demanda → 03 (no sobre-captura)."""
+    assert cm._bucket_for("Civil/1ª Instancia/Declarativo/Demanda") == "01_Demanda"
+    assert cm._bucket_for("Civil/1ª Instancia/Monitorio/Demanda") == "03_Monitorio_Demanda"
+
+
+# ---------------------------------------------------------------------------
+# 1. Lookup directo por id_carpeta (CARPETA_ID_TO_PATH) → bucket
+# ---------------------------------------------------------------------------
+
+def test_id_mapping_307_va_a_01_demanda(cm, tmp_casos_root):
+    """id_carpeta="307" (Declarativo/Demanda) → bucket 01_Demanda."""
     cm.ensure_case("EV-2026-CRM-1")
-
     path, kind = cm.crm_branch_path("EV-2026-CRM-1", id_carpeta="307")
-
     expected = (
-        tmp_casos_root
-        / "EV-2026-CRM-1"
-        / "00_Input"
-        / "05_CRM"
-        / "Civil"
-        / "1ª Instancia"
-        / "Declarativo"
-        / "Demanda"
+        tmp_casos_root / "EV-2026-CRM-1" / "00_Input" / "05_CRM" / "01_Demanda"
     )
     assert path == expected
     assert kind == "id_mapping"
 
 
-def test_id_mapping_1_devuelve_general(cm, tmp_casos_root):
-    """id_carpeta="1" → General (nivel 1 sin hijos)."""
+def test_id_mapping_308_va_a_02_contestacion(cm, tmp_casos_root):
+    """id_carpeta="308" (Declarativo/Oposicion) → bucket 02_Contestacion."""
+    cm.ensure_case("EV-2026-CRM-308")
+    path, kind = cm.crm_branch_path("EV-2026-CRM-308", id_carpeta="308")
+    expected = (
+        tmp_casos_root / "EV-2026-CRM-308" / "00_Input" / "05_CRM" / "02_Contestacion"
+    )
+    assert path == expected
+    assert kind == "id_mapping"
+
+
+def test_id_mapping_380_va_a_05_preliminares(cm, tmp_casos_root):
+    """id_carpeta="380" (Preliminares/Demanda) → 05_Diligencias_Preliminares, NO 01_Demanda."""
+    cm.ensure_case("EV-2026-CRM-380")
+    path, kind = cm.crm_branch_path("EV-2026-CRM-380", id_carpeta="380")
+    expected = (
+        tmp_casos_root / "EV-2026-CRM-380" / "00_Input" / "05_CRM"
+        / "05_Diligencias_Preliminares"
+    )
+    assert path == expected
+    assert kind == "id_mapping"
+    assert path.name != "01_Demanda"
+
+
+def test_id_mapping_1_va_a_99_otros(cm, tmp_casos_root):
+    """id_carpeta="1" (General) → bucket 99_Otros."""
     cm.ensure_case("EV-2026-CRM-2")
-
     path, kind = cm.crm_branch_path("EV-2026-CRM-2", id_carpeta="1")
-
-    expected = tmp_casos_root / "EV-2026-CRM-2" / "00_Input" / "05_CRM" / "General"
+    expected = tmp_casos_root / "EV-2026-CRM-2" / "00_Input" / "05_CRM" / "99_Otros"
     assert path == expected
     assert kind == "id_mapping"
 
@@ -82,10 +136,8 @@ def test_id_mapping_1_devuelve_general(cm, tmp_casos_root):
 def test_id_mapping_acepta_int(cm):
     """id_carpeta puede venir como int — se normaliza con str()."""
     cm.ensure_case("EV-2026-CRM-3")
-
     path_int, kind_int = cm.crm_branch_path("EV-2026-CRM-3", id_carpeta=307)
     path_str, kind_str = cm.crm_branch_path("EV-2026-CRM-3", id_carpeta="307")
-
     assert path_int == path_str
     assert kind_int == "id_mapping"
     assert kind_str == "id_mapping"
@@ -94,79 +146,59 @@ def test_id_mapping_acepta_int(cm):
 def test_id_mapping_normaliza_whitespace(cm):
     """id_carpeta=" 307 " (con whitespace) → mismo resultado que "307"."""
     cm.ensure_case("EV-2026-CRM-4")
-
-    path_padded, kind_padded = cm.crm_branch_path(
-        "EV-2026-CRM-4", id_carpeta=" 307 "
-    )
+    path_padded, kind_padded = cm.crm_branch_path("EV-2026-CRM-4", id_carpeta=" 307 ")
     path_clean, _ = cm.crm_branch_path("EV-2026-CRM-4", id_carpeta="307")
-
     assert path_padded == path_clean
     assert kind_padded == "id_mapping"
 
 
 # ---------------------------------------------------------------------------
-# 2. Heurística por label (única vs ambigua, normalización)
+# 2. Heurística por label (única vs ambigua, normalización) → bucket
 # ---------------------------------------------------------------------------
 
-def test_label_heuristic_unica_denuncia(cm, tmp_casos_root):
-    """"Denuncia" aparece una sola vez en CRM_TREE → label_heuristic gana."""
+def test_label_heuristic_unica_denuncia_va_a_99_otros(cm, tmp_casos_root):
+    """"Denuncia" es único en CRM_TREE → label_heuristic; Penal → 99_Otros."""
     cm.ensure_case("EV-2026-CRM-5")
-
     path, kind = cm.crm_branch_path(
-        "EV-2026-CRM-5",
-        id_carpeta=None,
-        id_carpeta_label="Denuncia",
+        "EV-2026-CRM-5", id_carpeta=None, id_carpeta_label="Denuncia",
     )
-
     expected = (
-        tmp_casos_root
-        / "EV-2026-CRM-5"
-        / "00_Input"
-        / "05_CRM"
-        / "Penal"
-        / "1ª Instancia"
-        / "Instruccion"
-        / "Denuncia"
+        tmp_casos_root / "EV-2026-CRM-5" / "00_Input" / "05_CRM" / "99_Otros"
     )
     assert path == expected
     assert kind == "label_heuristic"
 
 
-def test_label_heuristic_case_insensitive(cm, tmp_casos_root):
-    """label="DENUNCIA" debe matchear igual que "Denuncia"."""
+def test_label_heuristic_preliminares_va_a_05(cm, tmp_casos_root):
+    """label "Preliminares" (único nodo intermedio) → 05_Diligencias_Preliminares."""
+    cm.ensure_case("EV-2026-CRM-PRE")
+    path, kind = cm.crm_branch_path("EV-2026-CRM-PRE", id_carpeta_label="Preliminares")
+    expected = (
+        tmp_casos_root / "EV-2026-CRM-PRE" / "00_Input" / "05_CRM"
+        / "05_Diligencias_Preliminares"
+    )
+    assert path == expected
+    assert kind == "label_heuristic"
+
+
+def test_label_heuristic_case_insensitive(cm):
+    """label="DENUNCIA" debe matchear igual que "Denuncia" (mismo bucket)."""
     cm.ensure_case("EV-2026-CRM-6")
-
-    path_upper, kind_upper = cm.crm_branch_path(
-        "EV-2026-CRM-6", id_carpeta_label="DENUNCIA"
-    )
-    path_lower, _ = cm.crm_branch_path(
-        "EV-2026-CRM-6", id_carpeta_label="denuncia"
-    )
-    path_title, _ = cm.crm_branch_path(
-        "EV-2026-CRM-6", id_carpeta_label="Denuncia"
-    )
-
+    path_upper, kind_upper = cm.crm_branch_path("EV-2026-CRM-6", id_carpeta_label="DENUNCIA")
+    path_lower, _ = cm.crm_branch_path("EV-2026-CRM-6", id_carpeta_label="denuncia")
+    path_title, _ = cm.crm_branch_path("EV-2026-CRM-6", id_carpeta_label="Denuncia")
     assert path_upper == path_lower == path_title
     assert kind_upper == "label_heuristic"
 
 
-def test_label_heuristic_normaliza_acentos(cm, tmp_casos_root):
-    """label="Documentación RGPD LOPD" (acento) → matchea "Documentacion RGPD LOPD"."""
+def test_label_heuristic_normaliza_acentos_va_a_99_otros(cm, tmp_casos_root):
+    """label="Documentación RGPD LOPD" (acento) → matchea rama única → 99_Otros."""
     cm.ensure_case("EV-2026-CRM-7")
-
     path, kind = cm.crm_branch_path(
-        "EV-2026-CRM-7",
-        id_carpeta_label="Documentación RGPD LOPD",
+        "EV-2026-CRM-7", id_carpeta_label="Documentación RGPD LOPD",
     )
-
     expected = (
-        tmp_casos_root
-        / "EV-2026-CRM-7"
-        / "00_Input"
-        / "05_CRM"
-        / "Civil"
-        / "1ª Instancia"
-        / "Documentacion RGPD LOPD"
+        tmp_casos_root / "EV-2026-CRM-7" / "00_Input" / "05_CRM" / "99_Otros"
     )
     assert path == expected
     assert kind == "label_heuristic"
@@ -175,47 +207,47 @@ def test_label_heuristic_normaliza_acentos(cm, tmp_casos_root):
 def test_label_heuristic_ambigua_apelacion_cae_a_fallback(cm, tmp_casos_root):
     """"Apelacion" aparece en Civil y Penal → ambigua → fallback."""
     cm.ensure_case("EV-2026-CRM-8")
-
     path, kind = cm.crm_branch_path(
-        "EV-2026-CRM-8",
-        id_carpeta_label="Apelacion",
-        expediente_id="999",
+        "EV-2026-CRM-8", id_carpeta_label="Apelacion", expediente_id="999",
     )
-
     expected = (
-        tmp_casos_root
-        / "EV-2026-CRM-8"
-        / "00_Input"
-        / "05_CRM"
-        / "99_Sin categoria"
-        / "999"
+        tmp_casos_root / "EV-2026-CRM-8" / "00_Input" / "05_CRM"
+        / "99_Sin categoria" / "999"
     )
     assert path == expected
     assert kind == "fallback"
 
 
 def test_label_heuristic_ambigua_demanda_cae_a_fallback(cm):
-    """"Demanda" aparece 3 veces (Declarativo, Monitorio, Preliminares)."""
+    """"Demanda" aparece 3 veces (Declarativo, Monitorio, Preliminares) → fallback.
+
+    La etiqueta-hoja pura sobre-captura: por eso el routing es por ID, no por
+    label, para las ramas con bucket dedicado.
+    """
     cm.ensure_case("EV-2026-CRM-9")
-
     path, kind = cm.crm_branch_path(
-        "EV-2026-CRM-9",
-        id_carpeta_label="Demanda",
-        expediente_id="777",
+        "EV-2026-CRM-9", id_carpeta_label="Demanda", expediente_id="777",
     )
-
     assert "99_Sin categoria" in path.as_posix()
     assert path.name == "777"
     assert kind == "fallback"
 
 
+def test_label_heuristic_ambigua_oposicion_cae_a_fallback(cm):
+    """"Oposicion" aparece 2 veces (Declarativo, Monitorio) → fallback."""
+    cm.ensure_case("EV-2026-CRM-OPO")
+    path, kind = cm.crm_branch_path(
+        "EV-2026-CRM-OPO", id_carpeta_label="Oposicion", expediente_id="778",
+    )
+    assert kind == "fallback"
+    assert path.name == "778"
+
+
 def test_label_heuristic_label_vacio_cae_a_fallback(cm):
     """label="" o None → no se intenta heurística → fallback."""
     cm.ensure_case("EV-2026-CRM-10")
-
     p1, k1 = cm.crm_branch_path("EV-2026-CRM-10", id_carpeta_label="", expediente_id="1")
     p2, k2 = cm.crm_branch_path("EV-2026-CRM-10", id_carpeta_label=None, expediente_id="1")
-
     assert k1 == "fallback"
     assert k2 == "fallback"
     assert p1 == p2
@@ -224,33 +256,23 @@ def test_label_heuristic_label_vacio_cae_a_fallback(cm):
 def test_label_heuristic_label_desconocido_cae_a_fallback(cm):
     """Un label que NO existe en CRM_TREE → fallback (no heurística)."""
     cm.ensure_case("EV-2026-CRM-11")
-
     _, kind = cm.crm_branch_path(
-        "EV-2026-CRM-11",
-        id_carpeta_label="EsteLabelNoExiste",
-        expediente_id="42",
+        "EV-2026-CRM-11", id_carpeta_label="EsteLabelNoExiste", expediente_id="42",
     )
-
     assert kind == "fallback"
 
 
 # ---------------------------------------------------------------------------
-# 3. Fallback (con y sin expediente_id)
+# 3. Fallback (con y sin expediente_id) — sin cambios respecto a v1
 # ---------------------------------------------------------------------------
 
 def test_fallback_con_expediente_id(cm, tmp_casos_root):
     """Sin id ni label → fallback bajo 99_Sin categoria/<expediente_id>."""
     cm.ensure_case("EV-2026-CRM-12")
-
     path, kind = cm.crm_branch_path("EV-2026-CRM-12", expediente_id="648")
-
     expected = (
-        tmp_casos_root
-        / "EV-2026-CRM-12"
-        / "00_Input"
-        / "05_CRM"
-        / "99_Sin categoria"
-        / "648"
+        tmp_casos_root / "EV-2026-CRM-12" / "00_Input" / "05_CRM"
+        / "99_Sin categoria" / "648"
     )
     assert path == expected
     assert kind == "fallback"
@@ -259,15 +281,9 @@ def test_fallback_con_expediente_id(cm, tmp_casos_root):
 def test_fallback_sin_expediente_id(cm, tmp_casos_root):
     """expediente_id=None → fallback a 99_Sin categoria sin subcarpeta."""
     cm.ensure_case("EV-2026-CRM-13")
-
     path, kind = cm.crm_branch_path("EV-2026-CRM-13")
-
     expected = (
-        tmp_casos_root
-        / "EV-2026-CRM-13"
-        / "00_Input"
-        / "05_CRM"
-        / "99_Sin categoria"
+        tmp_casos_root / "EV-2026-CRM-13" / "00_Input" / "05_CRM" / "99_Sin categoria"
     )
     assert path == expected
     assert kind == "fallback"
@@ -278,24 +294,14 @@ def test_fallback_sin_expediente_id(cm, tmp_casos_root):
 # ---------------------------------------------------------------------------
 
 def test_id_desconocido_label_unico_usa_label_heuristic(cm, tmp_casos_root):
-    """id="9999" no en mapping + label único → label_heuristic gana."""
+    """id="9999" no en mapping + label único ("Fase oral", Penal) → 99_Otros."""
     cm.ensure_case("EV-2026-CRM-14")
-
     path, kind = cm.crm_branch_path(
-        "EV-2026-CRM-14",
-        id_carpeta="9999",
-        id_carpeta_label="Fase oral",
+        "EV-2026-CRM-14", id_carpeta="9999", id_carpeta_label="Fase oral",
         expediente_id="50",
     )
-
     expected = (
-        tmp_casos_root
-        / "EV-2026-CRM-14"
-        / "00_Input"
-        / "05_CRM"
-        / "Penal"
-        / "1ª Instancia"
-        / "Fase oral"
+        tmp_casos_root / "EV-2026-CRM-14" / "00_Input" / "05_CRM" / "99_Otros"
     )
     assert path == expected
     assert kind == "label_heuristic"
@@ -304,14 +310,10 @@ def test_id_desconocido_label_unico_usa_label_heuristic(cm, tmp_casos_root):
 def test_id_desconocido_label_ambiguo_cae_a_fallback(cm):
     """id no en mapping + label ambiguo → fallback (id_mapping NO gana)."""
     cm.ensure_case("EV-2026-CRM-15")
-
     path, kind = cm.crm_branch_path(
-        "EV-2026-CRM-15",
-        id_carpeta="9999",
-        id_carpeta_label="Apelacion",
+        "EV-2026-CRM-15", id_carpeta="9999", id_carpeta_label="Apelacion",
         expediente_id="123",
     )
-
     assert kind == "fallback"
     assert path.name == "123"
 
@@ -324,46 +326,53 @@ def test_path_siempre_bajo_05_crm(cm, tmp_casos_root):
     """En todos los kinds el path queda bajo <case>/00_Input/05_CRM/."""
     cm.ensure_case("EV-2026-CRM-16")
     crm_root = tmp_casos_root / "EV-2026-CRM-16" / "00_Input" / "05_CRM"
-
     casos = [
         cm.crm_branch_path("EV-2026-CRM-16", id_carpeta="307"),
+        cm.crm_branch_path("EV-2026-CRM-16", id_carpeta="308"),
+        cm.crm_branch_path("EV-2026-CRM-16", id_carpeta="380"),
         cm.crm_branch_path("EV-2026-CRM-16", id_carpeta="1"),
         cm.crm_branch_path("EV-2026-CRM-16", id_carpeta_label="Denuncia"),
         cm.crm_branch_path("EV-2026-CRM-16", expediente_id="999"),
         cm.crm_branch_path("EV-2026-CRM-16"),  # sin nada
     ]
-
     for path, _kind in casos:
-        # Path debe estar bajo crm_root (resolve para neutralizar . y ..)
         try:
             path.resolve().relative_to(crm_root.resolve())
         except ValueError:
             pytest.fail(f"Path fuera de 05_CRM/: {path}")
 
 
-def test_crm_branch_path_no_crea_directorios(cm, tmp_casos_root):
-    """``crm_branch_path`` es resolución pura — no debe crear nada en disco.
+def test_buckets_son_de_un_solo_nivel(cm, tmp_casos_root):
+    """Los destinos resueltos por ID/label son buckets planos (un segmento)."""
+    cm.ensure_case("EV-2026-CRM-FLAT")
+    crm_root = tmp_casos_root / "EV-2026-CRM-FLAT" / "00_Input" / "05_CRM"
+    for idc in ("307", "308", "380", "1"):
+        path, _ = cm.crm_branch_path("EV-2026-CRM-FLAT", id_carpeta=idc)
+        rel = path.relative_to(crm_root)
+        assert len(rel.parts) == 1, f"bucket no plano para id {idc}: {rel}"
 
-    (La creación física de la rama de fallback ocurre en pull_expediente_v2
-    cuando vaya a escribir un fichero; aquí solo se computa el path.)
-    """
+
+def test_crm_branch_path_no_crea_directorios(cm, tmp_casos_root):
+    """``crm_branch_path`` es resolución pura — no debe crear nada en disco."""
     cm.ensure_case("EV-2026-CRM-17")
     fallback_dir = (
-        tmp_casos_root
-        / "EV-2026-CRM-17"
-        / "00_Input"
-        / "05_CRM"
-        / "99_Sin categoria"
-        / "NUEVO-EXP-ID"
+        tmp_casos_root / "EV-2026-CRM-17" / "00_Input" / "05_CRM"
+        / "99_Sin categoria" / "NUEVO-EXP-ID"
     )
     assert not fallback_dir.exists()
-
-    path, kind = cm.crm_branch_path(
-        "EV-2026-CRM-17", expediente_id="NUEVO-EXP-ID"
-    )
-
+    path, kind = cm.crm_branch_path("EV-2026-CRM-17", expediente_id="NUEVO-EXP-ID")
     assert kind == "fallback"
     assert path == fallback_dir
-    # El path computado existe (la subcarpeta del expediente) NO debe haberse
-    # materializado por la llamada.
     assert not fallback_dir.exists()
+
+
+def test_id_mapping_no_crea_bucket(cm, tmp_casos_root):
+    """Resolver a bucket por ID tampoco materializa el directorio (lazy)."""
+    cm.ensure_case("EV-2026-CRM-18")
+    bucket_dir = (
+        tmp_casos_root / "EV-2026-CRM-18" / "00_Input" / "05_CRM" / "01_Demanda"
+    )
+    path, kind = cm.crm_branch_path("EV-2026-CRM-18", id_carpeta="307")
+    assert path == bucket_dir
+    assert kind == "id_mapping"
+    assert not bucket_dir.exists()

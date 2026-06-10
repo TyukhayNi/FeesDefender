@@ -19,6 +19,12 @@ from typing import Any, Callable, Iterator
 from .config import (
     CARPETA_ID_TO_PATH,
     CASO_SUBDIRS,
+    CRM_BUCKET_CONTESTACION,
+    CRM_BUCKET_DEMANDA,
+    CRM_BUCKET_MONITORIO_DEMANDA,
+    CRM_BUCKET_MONITORIO_OPOSICION,
+    CRM_BUCKET_OTROS,
+    CRM_BUCKET_PRELIMINARES,
     CRM_FALLBACK_PATH,
     CRM_SUBDIR,
     CRM_TREE,
@@ -217,7 +223,9 @@ def ensure_case(
     Idempotente. Nunca sobrescribe contenido del usuario.
 
     Refactor intake v2 — paso 7a (informe renombrado en sesión 7, 2026-05-11):
-    - Crea todas las ramas de ``CRM_TREE`` bajo ``00_Input/05_CRM/`` (D1 eager).
+    - Crea solo la base ``00_Input/05_CRM/`` (D7 — andamiaje *lazy* tras la
+      reorg 2026-06-10; los buckets se materializan al escribir). Antes creaba
+      todas las ramas de ``CRM_TREE`` en eager (D1, derogado).
     - Copia ``data/_plantillas/informe_viabilidad.xlsx`` a
       ``02_Analisis/<nombre>`` (siempre). El ``<nombre>`` lo decide
       ``_compose_informe_filename``: ``Informe viabilidad - <case_id>.xlsx``
@@ -260,7 +268,7 @@ def ensure_case(
     for sub3 in EMAIL_SUBDIRS:
         (case_dir / "00_Input" / "03_Email" / sub3).mkdir(exist_ok=True)
 
-    # Árbol CRM completo (D1 — eager, todas las ramas para todos los casos)
+    # Base 05_CRM (D7 — andamiaje lazy; los buckets se crean al escribir)
     _ensure_crm_tree_dirs(case_dir)
 
     index_path = case_dir / "00_Input" / "_caso.md"
@@ -521,6 +529,52 @@ def _find_branches_by_label(label: str) -> list[str]:
     return matches
 
 
+def _bucket_for(rama_canonica: str) -> str:
+    """Aplana una rama canónica de ``CRM_TREE`` al bucket procesal plano (D5/D6).
+
+    Routing por **rama completa**, no por etiqueta-hoja: la hoja ``"Demanda"``
+    aparece en tres ramas distintas (Declarativo, Monitorio, Preliminares) y
+    ``"Oposicion"`` en dos, así que solo la rama completa desambigua.
+
+    ``Preliminares`` está en **lista de exclusión explícita** y se comprueba
+    ANTES del match genérico de ``Demanda``/``Oposicion``: la "demanda" de
+    diligencias preliminares (solicitud de DP) **nunca** cae en ``01_Demanda``
+    → va a ``05_Diligencias_Preliminares``.
+
+    El resto de ramas (``General``, ``Civil``, ``1ª Instancia``, ``Documentos``,
+    ``Documentacion RGPD LOPD``, ``Apelacion``, ``Ejecucion``, ``Penal/*``…)
+    cae al bucket plano ``99_Otros``.
+
+    Args:
+        rama_canonica: ruta con separador ``"/"`` tal como la almacena
+            ``CARPETA_ID_TO_PATH`` o la devuelve ``_find_branches_by_label``
+            (p. ej. ``"Civil/1ª Instancia/Declarativo/Demanda"``). Tolerante a
+            acentos/capitalización vía ``_normalize_label``.
+
+    Returns:
+        Nombre del bucket (un solo segmento), p. ej. ``"01_Demanda"``.
+    """
+    norm = [_normalize_label(p) for p in rama_canonica.split("/") if p]
+
+    # Exclusión explícita: cualquier rama bajo Preliminares → 05 (D6).
+    if "preliminares" in norm:
+        return CRM_BUCKET_PRELIMINARES
+
+    leaf = norm[-1] if norm else ""
+    parent = norm[-2] if len(norm) >= 2 else ""
+
+    if parent == "declarativo" and leaf == "demanda":
+        return CRM_BUCKET_DEMANDA
+    if parent == "declarativo" and leaf == "oposicion":
+        return CRM_BUCKET_CONTESTACION
+    if parent == "monitorio" and leaf == "demanda":
+        return CRM_BUCKET_MONITORIO_DEMANDA
+    if parent == "monitorio" and leaf == "oposicion":
+        return CRM_BUCKET_MONITORIO_OPOSICION
+
+    return CRM_BUCKET_OTROS
+
+
 def crm_branch_path(
     case_id: str,
     *,
@@ -530,11 +584,15 @@ def crm_branch_path(
 ) -> tuple[Path, str]:
     """Resuelve la ruta destino dentro de ``00_Input/05_CRM/`` para un documento del CRM.
 
-    Estrategia híbrida (M4 + M5; ver §13.4 de docs/INTEGRACION_SUDESPACHO.md):
+    Estrategia híbrida (M4 + M5; ver §13.4 de docs/INTEGRACION_SUDESPACHO.md).
+    Tras la reorg 2026-06-10 (D5/D6) el destino es un **bucket plano** de un
+    nivel, no la rama profunda: se resuelve la rama canónica y se aplana con
+    ``_bucket_for``.
 
-    1. Lookup directo en ``CARPETA_ID_TO_PATH`` por ``id_carpeta``.
-    2. Heurística por ``id_carpeta_label`` si la coincidencia en
-       ``CRM_TREE`` es única (ambigüedad → fallback).
+    1. Lookup directo en ``CARPETA_ID_TO_PATH`` por ``id_carpeta`` → rama →
+       ``_bucket_for`` → bucket.
+    2. Heurística por ``id_carpeta_label`` si la coincidencia en ``CRM_TREE``
+       es única (ambigüedad → fallback) → rama → ``_bucket_for`` → bucket.
     3. Fallback ``05_CRM/99_Sin categoria/<expediente_id>/``. El caller debe
        escribir un evento ``category_unknown`` en ``_intake_log.jsonl`` (M10)
        cuando ``kind == "fallback"`` para descubrimiento progresivo de IDs.
@@ -549,21 +607,22 @@ def crm_branch_path(
     Returns:
         Tupla ``(path, kind)`` donde ``kind`` ∈ ``{"id_mapping",
         "label_heuristic", "fallback"}``. El path siempre está bajo
-        ``<casos_root>/<case_id>/00_Input/05_CRM/``.
+        ``<casos_root>/<case_id>/00_Input/05_CRM/`` y apunta a un bucket plano
+        (o al fallback ``99_Sin categoria/<exp>``).
     """
     base = caso_path(case_id) / "00_Input" / CRM_SUBDIR
 
-    # 1. Lookup directo por ID
+    # 1. Lookup directo por ID → rama canónica → bucket
     if id_carpeta is not None:
         key = str(id_carpeta).strip()
         if key in CARPETA_ID_TO_PATH:
-            return base / CARPETA_ID_TO_PATH[key], "id_mapping"
+            return base / _bucket_for(CARPETA_ID_TO_PATH[key]), "id_mapping"
 
-    # 2. Heurística por label — solo si hay un único candidato
+    # 2. Heurística por label — solo si hay un único candidato → bucket
     if id_carpeta_label:
         candidates = _find_branches_by_label(id_carpeta_label)
         if len(candidates) == 1:
-            return base / candidates[0], "label_heuristic"
+            return base / _bucket_for(candidates[0]), "label_heuristic"
 
     # 3. Fallback
     fallback = base / CRM_FALLBACK_PATH
@@ -838,16 +897,19 @@ def _compose_informe_filename(case_id: str) -> str:
 
 
 def _ensure_crm_tree_dirs(case_dir: Path) -> None:
-    """Crea todas las ramas de ``CRM_TREE`` bajo ``00_Input/05_CRM/`` (D1 eager).
+    """Crea solo la base ``00_Input/05_CRM/`` (D7 — andamiaje *lazy*).
 
-    Recorrido recursivo (``_walk_crm_tree``); ``mkdir(exist_ok=True)`` en
-    cada nodo. Coste trivial; la uniformidad simplifica el downstream
-    (pull, anonimizador, UI).
+    Tras el aplanado a buckets planos (D5/D6, reorg 2026-06-10) ya NO se
+    pre-crea el árbol profundo del CRM: los buckets se materializan al
+    escribir el primer documento. Tanto el pull (``pull_expediente_v2`` hace
+    ``dest.parent.mkdir(parents=True, exist_ok=True)`` antes de cada
+    ``write_bytes``) como el intake manual (``save_file_crm_branch``) crean su
+    bucket on-write. Esto evita el bosque de ~20 carpetas vacías del
+    andamiaje eager anterior (D1) y los problemas de longitud de ruta en
+    Windows sobre el Drive.
     """
     base = case_dir / "00_Input" / CRM_SUBDIR
     base.mkdir(parents=True, exist_ok=True)
-    for _name, full_path in _walk_crm_tree(CRM_TREE):
-        (base / full_path).mkdir(parents=True, exist_ok=True)
 
 
 def _copy_plantilla(origen: Path, destino: Path) -> bool:

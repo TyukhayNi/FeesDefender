@@ -814,50 +814,58 @@ siempre la forma canónica tipo oración con separador `/` (p. ej.
 
 ### 13.5 Mappings empíricos confirmados
 
-Constante `CARPETA_ID_TO_PATH` en `core/config.py`. Mappings cerrados a
-2026-05-08 (verificados en producción contra el expediente 657):
+Constante `CARPETA_ID_TO_PATH` en `core/config.py`. El `id_carpeta` es una
+taxonomía **global del tenant** (no por-expediente): el mismo ID aparece en
+expedientes distintos (307 se observó en 657 y en 444), por lo que un mapping
+estático es válido y la etiqueta-hoja (DEMANDA, OPOSICION…) es ambigua entre
+ramas — el ID es la única clave fiable.
 
-| `id_carpeta` | Path local en `05_CRM/` | Origen del mapping |
-|---|---|---|
-| `"1"` | `General` | Raíz del gestor documental — escritos genéricos (apersonación de procurador, escritos a juzgado, etc.). Confirmado empíricamente 2026-05-08. |
-| `"307"` | `Civil/1ª Instancia/Declarativo/Demanda` | Carpeta del expediente 657 (Civil > 1ª Instancia > Declarativo > DEMANDA). Confirmado vía doble verificación: usuario en CRM UI + Claude en `id_carpeta` REST. |
+| `id_carpeta` | Rama canónica en `CRM_TREE` | Bucket (D5) | Origen del mapping |
+|---|---|---|---|
+| `"1"` | `General` | `99_Otros` | Raíz del gestor documental — escritos genéricos. Confirmado 2026-05-08. |
+| `"307"` | `Civil/1ª Instancia/Declarativo/Demanda` | `01_Demanda` | Expediente 657. Doble verificación UI + REST (2026-05-08). |
+| `"308"` | `Civil/1ª Instancia/Declarativo/Oposicion` | `02_Contestacion` | Expediente 649 (doc «OPOSICION DEMANDA CALLE ROSER»). ID contiguo a 307. Descubierto vía `category_unknown`; doble verificación UI + REST (2026-06-10). |
+| `"380"` | `Civil/Preliminares/Demanda` | `05_Diligencias_Preliminares` | Expediente 444 (doc «D 17 - REQUERIMIENTO PAGO»). NO es 01_Demanda (exclusión Preliminares, D6). Descubierto vía `category_unknown`; verificado en UI (2026-06-10). |
 
 **Nuevos IDs se descubren progresivamente:** cada `id_carpeta` no mapeado cae al
 fallback y escribe un evento `category_unknown` en `_intake_log.jsonl`. La
 sesión de revisión periódica del log permite añadir el ID al mapping una vez
 identificada la rama por el usuario en la UI del CRM (regla de doble
-verificación).
+verificación). El endpoint de árbol `/api/folders/gdocu/{parent}` NO devuelve la
+jerarquía (dead end, §13.3) ni `/api/documents/{id}` trae `categoria`/parent
+para una hoja ambigua, así que la rama de una hoja ambigua **solo** se cierra en
+la UI.
 
-### 13.6 Estructura del árbol local v2 (recordatorio)
+### 13.6 Estructura del árbol local — buckets planos (reorg 2026-06-10, D5/D6)
 
-El árbol que se crea bajo `00_Input/05_CRM/` en cada caso nuevo (D1 — eager,
-todas las ramas siempre):
+Tras la reorg `[SIGUIENTE-REORG-05CRM]` (PLAN.md), `00_Input/05_CRM/` ya NO
+replica el árbol profundo del CRM: es un conjunto de **buckets planos de un
+nivel**, creados *lazy* (al escribir el primer documento — D7), no en eager.
+El pipeline (extractor → markdown → anon) aplana a un output por documento con
+slug stem-only, así que la estructura de `05_CRM/` es solo navegación humana
+del input.
 
 ```
 05_CRM/
-├── General/
-├── Civil/
-│   ├── 1ª Instancia/
-│   │   ├── Declarativo/{Demanda, Oposicion}/
-│   │   ├── Monitorio/{Demanda, Oposicion}/
-│   │   ├── Documentacion RGPD LOPD/
-│   │   └── Documentos/
-│   ├── Preliminares/Demanda/
-│   ├── Apelacion/
-│   └── Ejecucion/
-└── Penal/
-    ├── 1ª Instancia/
-    │   ├── Fase oral/
-    │   └── Instruccion/Denuncia/
-    ├── Apelacion/
-    └── Ejecucion/
+├── 01_Demanda/                  ← Declarativo/Demanda (id 307)
+├── 02_Contestacion/             ← Declarativo/Oposicion (id 308; un solo bucket aunque haya varios demandados, D5b)
+├── 03_Monitorio_Demanda/        ← Monitorio/Demanda
+├── 04_Monitorio_Oposicion/      ← Monitorio/Oposicion
+├── 05_Diligencias_Preliminares/ ← Preliminares/* (id 380; su "demanda" NUNCA va a 01_Demanda, D6)
+├── 99_Otros/                    ← resto plano (General, Documentos, RGPD/LOPD, Apelación, Ejecución, Penal…)
+└── 99_Sin categoria/<exp>/      ← fallback cuando id_carpeta no resuelve
 ```
 
-Capitalización tipo oración (D3); siglas se mantienen (`Documentacion RGPD LOPD`,
-M7). Mercantil, Concursal, Laboral y Contencioso-administrativo se tratan
-procesalmente como Civil — si el CRM devolviera categorías tipo `MERCANTIL > ...`
-o `LABORAL > ...`, el helper debe mapearlas a `Civil/...`. JVB y ETJ no se usan
-(M8).
+El routing rama-canónica → bucket vive en la función pura
+`core/case_manager._bucket_for` (D6), aplicada dentro de `crm_branch_path` (id
+mapping y label heuristic). El árbol canónico de referencia (qué rama existe)
+sigue siendo `core/config.CRM_TREE`; `_bucket_for` lo aplana. Capitalización
+tipo oración (D3). Mercantil, Concursal, Laboral y Contencioso-administrativo se
+tratan procesalmente como Civil. JVB y ETJ no se usan (M8).
+
+Migración de casos heredados (árbol profundo → buckets) **in situ**, sin
+re-bajar ni re-OCR: `scripts/migrate_05crm_buckets.py` (D12-D13). El expediente
+444 se migró el 2026-06-10 (96 docs; 0 colisiones).
 
 ### 13.7 Ámbito y limitaciones de v1
 
