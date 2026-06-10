@@ -188,6 +188,34 @@ def test_pull_v2_un_doc_con_id_canonico_se_escribe_y_loggea(
 
 
 # ---------------------------------------------------------------------------
+# 1b. Extensión derivada del MIME cuando el nombre del CRM no la trae
+# ---------------------------------------------------------------------------
+
+def test_pull_v2_extension_desde_mime_cuando_falta_en_nombre(modules, tmp_casos_root):
+    """Doc del CRM sin extensión en el nombre (p. ej. 'ESCRITO CONTESTACION
+    CRIO') se deposita con la extensión derivada del MIME, no como .bin."""
+    cm = modules["case_manager"]
+    ss = modules["sync_sudespacho"]
+    cm.ensure_case("PV2-EXT")
+
+    # _make_doc fija mime="application/pdf"; filename SIN extensión.
+    doc = _make_doc(modules, "33640", filename="ESCRITO CONTESTACION CRIO",
+                    id_carpeta="1")
+    client = FakeSudespachoClient(
+        docs=[doc], docs_content={"33640": b"%PDF-1.4 contestacion"},
+    )
+
+    result = ss.pull_expediente_v2("PV2-EXT", "444", client=client)
+
+    assert result.documents_written == 1
+    crm = tmp_casos_root / "PV2-EXT" / "00_Input" / "05_CRM"
+    pdfs = list(crm.rglob("*.pdf"))
+    assert len(pdfs) == 1
+    assert pdfs[0].name == "escrito_contestacion_crio.pdf"
+    assert not list(crm.rglob("*.bin"))
+
+
+# ---------------------------------------------------------------------------
 # 2. Dos docs en ramas distintas
 # ---------------------------------------------------------------------------
 

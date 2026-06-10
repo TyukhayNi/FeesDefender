@@ -76,6 +76,22 @@ con dedup (M9) y log (M10, `_intake_log.jsonl`).
   **Sin LLM** — la ambigüedad va a revisión del letrado (RGPD-local).
 - Disparo: **CLI + botón Streamlit**.
 
+**Mejora futura derivada — `[SIGUIENTE-DEDUP-GUARD-ROBUSTO]`:** las guardas
+anti-duplicado son frágiles a variaciones tipográficas de la referencia/nombre.
+Detectado 2026-06-10: el botón «Crear caso + enviar a sudespacho» NO bloquea el
+expediente 444 porque su `referencia_cliente` en el CRM tiene un **doble espacio**
+(`(W-02NV4W)  - Vuelta`) y el case_id estándar lleva uno solo → la búsqueda exacta
+`find_expediente_judicial_by_referencia` devuelve `None` → crearía un expediente
+duplicado. Arreglar la comparación para que sea **insensible a espacios
+repetidos, acentos y mayúsculas** (normalización tipo `_normalize_label`), en
+**dos sitios**: (1) guarda CRM — `core/sudespacho_relations.py`
+(`find_expediente_*_by_referencia` / `verify_expediente_referencia`); (2) guarda
+Drive — el emparejamiento caso↔carpeta E&V por nombre/referencia en
+`core/intake_drive.py` (revisar). Además, el aviso de la UI («no se creará un
+expediente duplicado», `streamlit_app.py` ~L1675) es engañoso: ese aviso mira el
+`_caso.md` local y NO impide la creación; la única protección real es la búsqueda
+en el CRM. Riesgo: duplicados en el CRM, caros de deshacer.
+
 ---
 
 ## Aparcado mientras el bloque crítico no se cierre

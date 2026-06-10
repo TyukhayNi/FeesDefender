@@ -176,6 +176,35 @@ DOC_FIELDS = {
     "subject":         "asunto",
 }
 
+# Mapa MIME → extensión para documentos del CRM cuyo nombre no la trae
+# (frecuente: los escritos suben sin extensión, p. ej. "ESCRITO CONTESTACION
+# CRIO"). Sin esto el pull los guardaba como `.bin`, ilegibles para el pipeline.
+_MIME_EXT: dict[str, str] = {
+    "application/pdf": ".pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+    "application/msword": ".doc",
+    "application/rtf": ".rtf",
+    "text/rtf": ".rtf",
+    "application/vnd.oasis.opendocument.text": ".odt",
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/tiff": ".tiff",
+    "text/plain": ".txt",
+    "message/rfc822": ".eml",
+}
+
+
+def _ext_from_mime(mime: str | None) -> str:
+    """Extensión de archivo a partir del MIME. Fallback `.bin` si se desconoce."""
+    if not mime:
+        return ".bin"
+    m = mime.split(";")[0].strip().lower()
+    if m in _MIME_EXT:
+        return _MIME_EXT[m]
+    import mimetypes
+    return mimetypes.guess_extension(m) or ".bin"
+
+
 # Propiedades mínimas a solicitar al leer un expediente como elemento.
 EXPEDIENTE_DEFAULT_PROPERTIES: tuple[str, ...] = (
     "id", "referencia", "asunto", "estado",
@@ -1031,7 +1060,7 @@ def pull_expediente(
                 # Renombrar con el nombre del archivo según el CRM
                 original = info.filename or f"doc_{info.doc_id}.bin"
                 stem = slugify(Path(original).stem) or f"doc_{info.doc_id}"
-                ext = Path(original).suffix or ".bin"
+                ext = Path(original).suffix or _ext_from_mime(info.mime)
                 final = doc_dir / f"{stem}{ext}"
                 i = 1
                 while final.exists() and final != tmp:
@@ -1398,7 +1427,7 @@ def pull_expediente_v2(
                 # 4.2 Filename final dentro de la rama
                 original = info.filename or f"doc_{info.doc_id}.bin"
                 stem = slugify(Path(original).stem) or f"doc_{info.doc_id}"
-                ext = Path(original).suffix or ".bin"
+                ext = Path(original).suffix or _ext_from_mime(info.mime)
                 target_file = dest_dir / f"{stem}{ext}"
 
                 # 4.3 Descargar bytes (necesitamos el contenido en memoria

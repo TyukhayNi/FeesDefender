@@ -27,8 +27,27 @@ from core.sync_sudespacho import (
     SudespachoClient,
     SudespachoConfig,
     SudespachoError,
+    _ext_from_mime,
     pull_expediente,
 )
+
+
+# ---- Extensión a partir del MIME (docs del CRM sin extensión en el nombre) --
+
+def test_ext_from_mime_tipos_comunes():
+    assert _ext_from_mime("application/pdf") == ".pdf"
+    assert _ext_from_mime("application/pdf; charset=binary") == ".pdf"
+    assert _ext_from_mime("APPLICATION/PDF") == ".pdf"
+    assert _ext_from_mime(
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    ) == ".docx"
+    assert _ext_from_mime("image/jpeg") == ".jpg"
+
+
+def test_ext_from_mime_desconocido_o_vacio():
+    assert _ext_from_mime(None) == ".bin"
+    assert _ext_from_mime("") == ".bin"
+    assert _ext_from_mime("application/x-cosa-rara") == ".bin"
 
 
 # ---- Configuración --------------------------------------------------------
