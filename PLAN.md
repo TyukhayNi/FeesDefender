@@ -83,21 +83,28 @@ dedup M9 lo deje incompleto) + OCR/markdown/anonimización con el pipeline actua
 en extracción" merece construirse, que queda APLAZADO). Plan fino autocontenido
 para hilo nuevo: **`docs/PLAN_INTAKE_CRM_COMPLETO.md`**.
 
-**Mejora futura derivada — `[SIGUIENTE-DEDUP-GUARD-ROBUSTO]`:** las guardas
-anti-duplicado son frágiles a variaciones tipográficas de la referencia/nombre.
-Detectado 2026-06-10: el botón «Crear caso + enviar a sudespacho» NO bloquea el
-expediente 444 porque su `referencia_cliente` en el CRM tiene un **doble espacio**
-(`(W-02NV4W)  - Vuelta`) y el case_id estándar lleva uno solo → la búsqueda exacta
-`find_expediente_judicial_by_referencia` devuelve `None` → crearía un expediente
-duplicado. Arreglar la comparación para que sea **insensible a espacios
-repetidos, acentos y mayúsculas** (normalización tipo `_normalize_label`), en
-**dos sitios**: (1) guarda CRM — `core/sudespacho_relations.py`
-(`find_expediente_*_by_referencia` / `verify_expediente_referencia`); (2) guarda
-Drive — el emparejamiento caso↔carpeta E&V por nombre/referencia en
-`core/intake_drive.py` (revisar). Además, el aviso de la UI («no se creará un
-expediente duplicado», `streamlit_app.py` ~L1675) es engañoso: ese aviso mira el
-`_caso.md` local y NO impide la creación; la única protección real es la búsqueda
-en el CRM. Riesgo: duplicados en el CRM, caros de deshacer.
+**Siguiente acordado — `[SIGUIENTE-DEDUP-GUARD-ROBUSTO]` (apuntado 2026-06-10):**
+guarda para **no duplicar expedientes ni en el CRM ni en el Drive** al crear un
+caso. Hoy es frágil a variaciones tipográficas de la referencia/nombre.
+
+- **Problema detectado (2026-06-10):** el botón «Crear caso + enviar a sudespacho»
+  NO bloquea el expediente 444 porque su `referencia_cliente` en el CRM tiene un
+  **doble espacio** (`(W-02NV4W)  - Vuelta`) y el case_id estándar lleva uno solo
+  → la búsqueda exacta `find_expediente_judicial_by_referencia` devuelve `None` →
+  **crearía un expediente duplicado**.
+- **Qué hacer:**
+  1. **Guarda CRM** (`core/sudespacho_relations.py`,
+     `find_expediente_*_by_referencia` / `verify_expediente_referencia`):
+     comparar referencias **normalizadas** (espacios repetidos colapsados, sin
+     acentos, sin distinción de mayúsculas; reutilizar `_normalize_label`).
+  2. **Guarda Drive** (`core/intake_drive.py`): aplicar la misma normalización al
+     emparejar caso ↔ carpeta E&V por nombre/referencia, para no crear/pullar a
+     una carpeta duplicada (revisar dónde se hace el match).
+  3. **UI** (`streamlit_app.py` ~L1675): el aviso «no se creará un expediente
+     duplicado» es **engañoso** — mira el `_caso.md` local y NO impide la
+     creación; la única protección real es la búsqueda en el CRM. Corregir el
+     texto y/o hacer que la guarda CRM realmente bloquee.
+- **Riesgo si no se hace:** expedientes/carpetas duplicados, caros de deshacer.
 
 ---
 

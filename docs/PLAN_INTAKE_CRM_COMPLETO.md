@@ -179,3 +179,13 @@ de `05_CRM` en fase procesal.
   con `\` o rutas tipo `/download` puede disparar un guard).
 - **RGPD**: nada de LLM en la nube con datos de caso, ni metadatos/nombres de
   fichero (memoria `feedback_no_llm_cloud_pii`).
+
+## Relacionado (fuera del alcance de este plan)
+
+`[SIGUIENTE-DEDUP-GUARD-ROBUSTO]` (en `PLAN.md`): guarda para **no duplicar
+expedientes ni en el CRM ni en el Drive** al crear un caso (la búsqueda por
+referencia es frágil a espacios/acentos; un doble espacio coló un duplicado del
+exp. 444). Es un asunto distinto de este plan —aquí deduplicamos *documentos* en
+el intake; allí se evitan *expedientes/carpetas* duplicados al crear el caso—
+pero conviene tenerlo presente porque toca las mismas integraciones (CRM +
+Drive).
