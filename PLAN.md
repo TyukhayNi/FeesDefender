@@ -76,6 +76,13 @@ con dedup (M9) y log (M10, `_intake_log.jsonl`).
   **Sin LLM** — la ambigüedad va a revisión del letrado (RGPD-local).
 - Disparo: **CLI + botón Streamlit**.
 
+**Siguiente acordado — `[SIGUIENTE-INTAKE-CRM-COMPLETO]` (sesión 2026-06-10):**
+bajar TODO el expediente del CRM a `05_CRM` físicamente completo (sin que el
+dedup M9 lo deje incompleto) + OCR/markdown/anonimización con el pipeline actual
++ contador de solapamientos byte-idénticos (para decidir con datos si el "dedup
+en extracción" merece construirse, que queda APLAZADO). Plan fino autocontenido
+para hilo nuevo: **`docs/PLAN_INTAKE_CRM_COMPLETO.md`**.
+
 **Mejora futura derivada — `[SIGUIENTE-DEDUP-GUARD-ROBUSTO]`:** las guardas
 anti-duplicado son frágiles a variaciones tipográficas de la referencia/nombre.
 Detectado 2026-06-10: el botón «Crear caso + enviar a sudespacho» NO bloquea el
