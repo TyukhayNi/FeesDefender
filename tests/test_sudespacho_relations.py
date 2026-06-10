@@ -31,6 +31,7 @@ from core.sudespacho_relations import (
     link_colaborador,
     link_ev_mmc,
     load_all_colaboradores,
+    normalize_referencia,
     search_colaboradores_for_ui,
 )
 
@@ -862,3 +863,35 @@ def test_search_colaboradores_for_ui_sin_resultados(monkeypatch):
     with patch("core.sudespacho_relations._list_colaboradores_rest", return_value=colabs):
         result = search_colaboradores_for_ui("xyz_no_existe")
     assert result == []
+
+
+# ---------------------------------------------------------------------------
+# normalize_referencia
+# ---------------------------------------------------------------------------
+
+
+class TestNormalizeReferencia:
+    def test_collapses_double_space(self):
+        assert normalize_referencia("(W-02NV4W)  - Vuelta") == normalize_referencia("(W-02NV4W) - Vuelta")
+
+    def test_strips_whitespace(self):
+        assert normalize_referencia("  hello  ") == "hello"
+
+    def test_removes_accents(self):
+        assert normalize_referencia("María García") == "maria garcia"
+
+    def test_lowercase(self):
+        assert normalize_referencia("BaRS1 - Tibidabo") == "bars1 - tibidabo"
+
+    def test_combined(self):
+        assert normalize_referencia("  BaRS1  - Tibidabo  (W-02VND1)  - Vuelta ") == "bars1 - tibidabo (w-02vnd1) - vuelta"
+
+    def test_empty_string(self):
+        assert normalize_referencia("") == ""
+
+    def test_preserves_n_tilde(self):
+        # ñ → n after NFKD + stripping Mn category
+        assert normalize_referencia("Peña") == "pena"
+
+    def test_tabs_and_newlines(self):
+        assert normalize_referencia("a\t\tb\nc") == "a b c"

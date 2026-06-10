@@ -68,6 +68,8 @@ from __future__ import annotations
 import logging
 import math
 import os
+import re
+import unicodedata
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
@@ -236,6 +238,22 @@ def _autocomplete(
         return r.json()
     except Exception:
         return []
+
+
+def normalize_referencia(s: str) -> str:
+    """Normaliza una referencia de expediente para comparación tolerante.
+
+    Colapsa espacios, quita acentos, lowercase. Útil para detectar duplicados
+    cuando la referencia en el CRM difiere tipográficamente del case_id local
+    (ej. doble espacio, mayúsculas, acentos).
+    """
+    if not s:
+        return ""
+    s = s.strip()
+    s = re.sub(r"\s+", " ", s)
+    nfkd = unicodedata.normalize("NFKD", s)
+    s = "".join(c for c in nfkd if unicodedata.category(c) != "Mn")
+    return s.lower()
 
 
 def find_expediente_by_referencia(
