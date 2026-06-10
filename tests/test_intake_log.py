@@ -13,7 +13,7 @@ línea ``upload_manual`` happy path):
 - ``log_path`` no crea el archivo.
 - ``os.fsync`` se invoca en cada ``append_event`` (resiliencia a crashes
   según M10-Q4).
-- ``INTAKE_EVENTS`` sanity (16 eventos documentados).
+- ``INTAKE_EVENTS`` sanity (17 eventos documentados).
 """
 
 from __future__ import annotations
@@ -176,7 +176,7 @@ def test_append_event_rechaza_evento_desconocido(il, cm):
 
 
 def test_append_event_acepta_todos_los_eventos_canonicos(il, cm):
-    """Smoke: cada uno de los 16 ``INTAKE_EVENTS`` se puede escribir."""
+    """Smoke: cada uno de los 17 ``INTAKE_EVENTS`` se puede escribir."""
     cm.ensure_case("LOG-7")
     for event in il.INTAKE_EVENTS:
         il.append_event("LOG-7", event)
@@ -329,9 +329,9 @@ def test_append_event_invoca_fsync_por_cada_escritura(il, cm, monkeypatch):
 # INTAKE_EVENTS — sanity
 # ---------------------------------------------------------------------------
 
-def test_intake_events_es_frozenset_con_16_eventos(il):
+def test_intake_events_es_frozenset_con_17_eventos(il):
     assert isinstance(il.INTAKE_EVENTS, frozenset)
-    assert len(il.INTAKE_EVENTS) == 16
+    assert len(il.INTAKE_EVENTS) == 17
 
 
 def test_intake_events_contiene_los_canonicos(il):
@@ -358,5 +358,6 @@ def test_intake_events_contiene_los_canonicos(il):
         "intake_judicial",
         "pendiente_revision",
         "cross_source_overlap",
+        "conjunto_detectado",
     }
     assert il.INTAKE_EVENTS == expected

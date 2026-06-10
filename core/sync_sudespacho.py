@@ -64,6 +64,7 @@ import httpx
 from .case_manager import (
     crm_branch_path,
     is_legacy_intake_v1,
+    read_bucket_overrides,
     update_pull_state,
 )
 from .config import CRM_SUBDIR, caso_path
@@ -293,6 +294,11 @@ class GdocuDocInfo:
         mime            MIME type o None.
         size            Tamaño en bytes o None.
         raw             Dict original devuelto por la API (para debug).
+        modified_at     Fecha de modificación en el CRM (campo
+                        ``fechamodificacion``, ISO-8601 con offset, ej.
+                        ``2026-06-08T16:21:33.000+02:00``) o None. Requisito
+                        de D9 (detector de conjunto): permite clusterizar los
+                        documentos subidos en lote por timestamp idéntico.
     """
     doc_id: str
     filename: str
@@ -301,6 +307,7 @@ class GdocuDocInfo:
     mime: str | None
     size: int | None
     raw: dict[str, Any]
+    modified_at: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -632,6 +639,12 @@ class SudespachoClient:
             4  → mime
             9  → tamano       (tamaño en bytes)
             11 → id_carpeta   (carpeta Gdocu, con label si disponible)
+            12 → fechamodificacion  (fecha de modificación en el CRM, D10)
+
+        El índice del slot ``properties[N]`` es solo posición de array (el
+        CRM lo resuelve por el NOMBRE de la propiedad, no por el número);
+        ``fechamodificacion`` confirmada en vivo contra el 444
+        (scripts/probe_gdocu_fecha.py).
 
         Args:
             expediente_id: ID del expediente en el CRM.
@@ -651,6 +664,7 @@ class SudespachoClient:
             "properties[4]":  "mime",
             "properties[9]":  "tamano",
             "properties[11]": "id_carpeta",
+            "properties[12]": "fechamodificacion",
             "filterGroup[condition]":                                        "AND",
             "filterGroup[filterGroups][0][filters][0][operator]":            "associated",
             "filterGroup[filterGroups][0][filters][0][value]":               str(expediente_id),
@@ -701,6 +715,8 @@ class SudespachoClient:
                     size: int | None = int(size_raw) if size_raw is not None else None
                 except (ValueError, TypeError):
                     size = None
+                modified_raw = values_map.get("fechamodificacion", {}).get("value")
+                modified_at = str(modified_raw) if modified_raw else None
 
                 results.append(GdocuDocInfo(
                     doc_id=doc_id,
@@ -710,6 +726,7 @@ class SudespachoClient:
                     mime=mime,
                     size=size,
                     raw=member,
+                    modified_at=modified_at,
                 ))
 
             # Paginación: continuar si hay más páginas
@@ -1435,17 +1452,23 @@ def pull_expediente_v2(
         if only_doc_ids is not None:
             docs = [d for d in docs if d.doc_id in only_doc_ids]
 
+        # Override local doc_id→bucket del letrado (D11) — leído una sola vez
+        # para evitar I/O por-documento dentro del bucle.
+        bucket_overrides = read_bucket_overrides(case_id)
+
         # 4. Manifest M9 + reconciliación al inicio (M9-Q4)
         with IntakeManifest(case_id) as manifest:
             manifest.reconcile()
 
             for info in docs:
-                # 4.1 Resolver rama destino
+                # 4.1 Resolver rama destino (override D11 → id → label → fallback)
                 dest_dir, kind = crm_branch_path(
                     case_id,
                     id_carpeta=info.id_carpeta,
                     id_carpeta_label=info.id_carpeta_label,
                     expediente_id=str(expediente_id),
+                    doc_id=info.doc_id,
+                    overrides=bucket_overrides,
                 )
                 result.kind_distribution[kind] = (
                     result.kind_distribution.get(kind, 0) + 1

@@ -492,6 +492,99 @@ def test_list_gdocu_docs_rest_usa_element_correcto(monkeypatch):
     assert captured_params.get(value_key) == "648"
 
 
+# ---- D10: fecha de modificación del CRM en el listado ---------------------
+
+def test_list_gdocu_docs_rest_solicita_fechamodificacion(monkeypatch):
+    """La query REST pide la propiedad ``fechamodificacion`` (D10).
+
+    Nombre de propiedad confirmado en vivo contra el expediente 444
+    (scripts/probe_gdocu_fecha.py): el CRM la devuelve como ISO-8601 con
+    offset. El índice del slot ``properties[N]`` es solo posición de array.
+    """
+    client = _make_client_rest()
+    captured_params = {}
+
+    def fake_get_json(self, path, **params):
+        captured_params.update(params)
+        return {"hydra:totalItems": 0, "hydra:member": []}
+
+    monkeypatch.setattr(SudespachoClient, "_get_json", fake_get_json)
+    monkeypatch.setattr(
+        SudespachoClient, "cfg",
+        SudespachoConfig(base_url="https://x", api_key="k"),
+        raising=False,
+    )
+
+    client.list_gdocu_docs_rest("444")
+    assert "fechamodificacion" in captured_params.values()
+
+
+def test_list_gdocu_docs_rest_parsea_fechamodificacion(monkeypatch):
+    """El valor de ``fechamodificacion`` se vuelca al campo modified_at del DTO."""
+    client = _make_client_rest()
+
+    def fake_get_json(self, path, **params):
+        if params.get("page", 1) != 1:
+            return {"hydra:totalItems": 1, "hydra:member": []}
+        return {
+            "hydra:totalItems": 1,
+            "hydra:member": [
+                {
+                    "id": 41407,
+                    "values": [
+                        {"property": {"name": "nombrefinal"}, "value": "PROV.pdf"},
+                        {"property": {"name": "id_carpeta"}, "value": "1", "label": ""},
+                        {
+                            "property": {"name": "fechamodificacion"},
+                            "value": "2026-06-08T16:21:33.000+02:00",
+                        },
+                    ],
+                }
+            ],
+        }
+
+    monkeypatch.setattr(SudespachoClient, "_get_json", fake_get_json)
+    monkeypatch.setattr(
+        SudespachoClient, "cfg",
+        SudespachoConfig(base_url="https://x", api_key="k"),
+        raising=False,
+    )
+
+    docs = client.list_gdocu_docs_rest("444")
+    assert len(docs) == 1
+    assert docs[0].modified_at == "2026-06-08T16:21:33.000+02:00"
+
+
+def test_list_gdocu_docs_rest_sin_fechamodificacion(monkeypatch):
+    """Si la respuesta no trae fechamodificacion, modified_at es None (defensivo)."""
+    client = _make_client_rest()
+
+    def fake_get_json(self, path, **params):
+        return {
+            "hydra:totalItems": 1,
+            "hydra:member": [
+                {
+                    "id": 40060,
+                    "values": [
+                        {"property": {"name": "nombrefinal"}, "value": "doc.pdf"},
+                        {"property": {"name": "id_carpeta"}, "value": "99"},
+                    ],
+                }
+            ],
+        }
+
+    monkeypatch.setattr(SudespachoClient, "_get_json", fake_get_json)
+    monkeypatch.setattr(
+        SudespachoClient, "cfg",
+        SudespachoConfig(base_url="https://x", api_key="k"),
+        raising=False,
+    )
+
+    docs = client.list_gdocu_docs_rest("648")
+    assert len(docs) == 1
+    assert docs[0].modified_at is None
+
+
 # ---- get_presigned_download_url ------------------------------------------
 
 class _FakeHTTPResponse:

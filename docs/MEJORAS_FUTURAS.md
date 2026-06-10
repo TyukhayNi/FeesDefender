@@ -1028,3 +1028,14 @@ nomenclatura tipo `D NN`); los clústeres de baja confianza →
 
 **Prioridad.** Media — habilita navegación por unidad probatoria; depende del
 catálogo `indice_documental.yaml`. Implementación: Claude Code.
+
+**Estado 2026-06-10 (sesión 35, segunda tanda de `[SIGUIENTE-REORG-05CRM]`).**
+El **detector de conjunto (D9)** ya está implementado (`core/conjunto_detector.py`):
+clusteriza por `modified_at` idéntico ∩ patrón de prueba `D NN`, ancla a la
+cabecera (odd-one-out sin patrón) y propone bucket. Por ahora **solo emite
+propuestas** (eventos `conjunto_detectado` / `pendiente_revision`); la
+**persistencia de `parent_id`/`orden_en_bundle` queda diferida a este #29 + el
+catálogo `[SIGUIENTE-CATALOGO-DOCUMENTAL]`** (decisión de Nikolai: no construir
+el catálogo a medias). Cuando exista `indice_documental.yaml`, conectar
+`log_bundle_proposals` → escritura de `parent_id` para las propuestas de alta
+confianza.

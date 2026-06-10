@@ -881,6 +881,37 @@ re-bajar ni re-OCR: `scripts/migrate_05crm_buckets.py` (D12-D13). El expediente
   inicio de cada pull (cacheado por expediente) y conservar
   `CARPETA_ID_TO_PATH` solo como fallback.
 
+### 13.8 Segunda tanda de la reorg — D9/D10/D11 (2026-06-10)
+
+- **D10 — fecha de modificación del CRM en el listado.** La query
+  `list_gdocu_docs_rest` (`sync_sudespacho.py`) ahora pide también
+  `properties[12] = "fechamodificacion"`; el DTO `GdocuDocInfo` gana el campo
+  `modified_at` (ISO-8601 con offset, p. ej. `2026-06-08T16:21:33.000+02:00`).
+  El nombre de propiedad y el formato se confirmaron **en vivo** contra el 444
+  (`scripts/probe_gdocu_fecha.py`): el 500 del CRM ante un nombre inválido
+  enumera las propiedades válidas (`asunto,carpeta,categoria,…,fechamodificacion,
+  fechaenvio,fechaexpiracion,…`). El índice del slot `properties[N]` es solo
+  posición de array — el CRM resuelve por el nombre, no por el número.
+- **D9 — detector de conjunto** (`core/conjunto_detector.py`). Clúster por
+  `modified_at` idéntico (subida en lote) ∩ patrón de prueba `\bD\s*\d+…-`
+  (numeración de la actora; el demandado NO numera así — confirmado en el 444).
+  Cabecera = el doc del lote **sin** patrón de prueba (*odd-one-out*); en el 444
+  es `ORDINARIO - VUELTA VENDEDOR - VALLDAURA.doc` (NO se llama "DEMANDA", así
+  que el keyword procesal es solo desempate secundario). Bucket = el de la
+  cabecera (`resolve_bucket`) o consenso unánime de los miembros. Baja confianza
+  → `pendiente_revision`, sin adivinar. **Solo emite propuestas** (eventos
+  `conjunto_detectado` / `pendiente_revision`); la persistencia de la relación
+  cabecera↔anexo (`parent_id`) se difiere a `[SIGUIENTE-CATALOGO-DOCUMENTAL]`
+  (`indice_documental.yaml` aún no existe — MEJORAS #29). Ejecutable on-demand:
+  `scripts/detectar_conjuntos.py --expediente <id>` (dry-run; `--log --case`
+  para emitir eventos). NO toca el CRM remoto ni mueve ficheros.
+- **D11 — override local `doc_id → bucket`.** El letrado fuerza el bucket de un
+  doc mal archivado editando el campo `bucket_override` (mapa `doc_id: bucket`)
+  del frontmatter de `00_Input/_caso.md`. `crm_branch_path` lo consulta **antes**
+  que la carpeta del CRM (nuevo `kind == "override"`), sin tocar el CRM remoto.
+  Solo se honran buckets válidos. El pull (`pull_expediente_v2`) lee el mapa una
+  vez por corrida y lo pasa por documento.
+
 ---
 
 ## 11. Historial de descubrimientos

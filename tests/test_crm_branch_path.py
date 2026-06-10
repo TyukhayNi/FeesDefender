@@ -319,6 +319,85 @@ def test_id_desconocido_label_ambiguo_cae_a_fallback(cm):
 
 
 # ---------------------------------------------------------------------------
+# 4b. Override local doc_id → bucket (D11) — por encima de la carpeta del CRM
+# ---------------------------------------------------------------------------
+
+def _write_override(cm, case_id: str, mapping: dict) -> None:
+    """Escribe un frontmatter mínimo con ``bucket_override`` en _caso.md."""
+    import yaml as _yaml
+    idx = cm.caso_path(case_id) / "00_Input" / "_caso.md"
+    idx.parent.mkdir(parents=True, exist_ok=True)
+    fm = {"bucket_override": mapping}
+    idx.write_text(
+        "---\n" + _yaml.safe_dump(fm, allow_unicode=True) + "---\n# Caso\n",
+        encoding="utf-8",
+    )
+
+
+def test_read_bucket_overrides_lee_mapa(cm):
+    cm.ensure_case("EV-OV-1")
+    _write_override(cm, "EV-OV-1", {"40020": "02_Contestacion", "40021": "01_Demanda"})
+    ov = cm.read_bucket_overrides("EV-OV-1")
+    assert ov == {"40020": "02_Contestacion", "40021": "01_Demanda"}
+
+
+def test_read_bucket_overrides_ignora_bucket_invalido(cm):
+    """Un bucket que no existe se descarta (no crearía una carpeta espuria)."""
+    cm.ensure_case("EV-OV-2")
+    _write_override(cm, "EV-OV-2", {"1": "carpeta_inventada", "2": "01_Demanda"})
+    ov = cm.read_bucket_overrides("EV-OV-2")
+    assert ov == {"2": "01_Demanda"}
+
+
+def test_read_bucket_overrides_vacio_sin_campo(cm):
+    cm.ensure_case("EV-OV-3")
+    assert cm.read_bucket_overrides("EV-OV-3") == {}
+
+
+def test_override_gana_a_la_carpeta_del_crm(cm, tmp_casos_root):
+    """doc_id en el override → su bucket, AUNQUE id_carpeta resolviera a otro."""
+    cm.ensure_case("EV-OV-4")
+    _write_override(cm, "EV-OV-4", {"40020": "02_Contestacion"})
+    # id_carpeta=307 resolvería a 01_Demanda; el override manda.
+    path, kind = cm.crm_branch_path(
+        "EV-OV-4", id_carpeta="307", doc_id="40020",
+    )
+    expected = (
+        tmp_casos_root / "EV-OV-4" / "00_Input" / "05_CRM" / "02_Contestacion"
+    )
+    assert path == expected
+    assert kind == "override"
+
+
+def test_override_acepta_doc_id_int(cm):
+    cm.ensure_case("EV-OV-5")
+    _write_override(cm, "EV-OV-5", {"40020": "01_Demanda"})
+    p_int, k_int = cm.crm_branch_path("EV-OV-5", id_carpeta="308", doc_id=40020)
+    assert k_int == "override"
+    assert p_int.name == "01_Demanda"
+
+
+def test_sin_override_resolucion_normal(cm):
+    """doc_id no presente en el override → resolución estándar por id_carpeta."""
+    cm.ensure_case("EV-OV-6")
+    _write_override(cm, "EV-OV-6", {"99999": "01_Demanda"})
+    path, kind = cm.crm_branch_path("EV-OV-6", id_carpeta="308", doc_id="40020")
+    assert kind == "id_mapping"
+    assert path.name == "02_Contestacion"
+
+
+def test_override_con_dict_preleido(cm, tmp_casos_root):
+    """El caller puede pasar el mapa ya leído (evita I/O por-doc en el pull)."""
+    cm.ensure_case("EV-OV-7")
+    path, kind = cm.crm_branch_path(
+        "EV-OV-7", id_carpeta="307", doc_id="500",
+        overrides={"500": "99_Otros"},
+    )
+    assert kind == "override"
+    assert path.name == "99_Otros"
+
+
+# ---------------------------------------------------------------------------
 # 5. Invariantes generales
 # ---------------------------------------------------------------------------
 

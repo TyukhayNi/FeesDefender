@@ -317,8 +317,40 @@ Implementada la malla de referencias cruzadas y regla de promoción:
 >   y `test_judicial_intake.py` revisados (agnósticos a ruta, sin cambios).
 >   Suite verde; gold SaRS1 intacto.
 >
-> **Pendiente (SEGUNDA TANDA):** D9 (detector de conjunto) + D10 (fecha de
-> modificación del CRM, su requisito) + D11 (override local doc_id→bucket).
+> **✅ SEGUNDA TANDA COMPLETADA 2026-06-10 (Claude Code, sesión 35).**
+> - [x] **D10** — `fechamodificacion` traída al listado REST
+>   (`properties[12]`) + campo `modified_at` en el DTO `GdocuDocInfo`.
+>   Nombre/formato confirmados **en vivo** contra el 444
+>   (`scripts/probe_gdocu_fecha.py`; 97/97 docs con fecha). ISO-8601 con offset.
+> - [x] **D9** — detector de conjunto (`core/conjunto_detector.py`): clúster por
+>   `modified_at` idéntico ∩ patrón `\bD\s*\d+…-`; cabecera = odd-one-out sin
+>   patrón (en el 444 es `ORDINARIO…VALLDAURA.doc`, **no** "DEMANDA" → keyword
+>   solo como desempate); bucket por cabecera o consenso; baja confianza →
+>   `pendiente_revision`. **Solo emite propuestas** (eventos `conjunto_detectado`
+>   / `pendiente_revision`); **persistencia de `parent_id` DIFERIDA** a
+>   `[SIGUIENTE-CATALOGO-DOCUMENTAL]` (catálogo `indice_documental.yaml` **no
+>   existe** — decisión de Nikolai: no construirlo a medias). Validado contra el
+>   444 real (3 lotes, 0 misrouting). CLI on-demand
+>   `scripts/detectar_conjuntos.py`. Nuevo evento `conjunto_detectado` (INTAKE_EVENTS 16→17).
+> - [x] **D11** — override local `doc_id→bucket` en `bucket_override` del
+>   frontmatter de `_caso.md`, respetado por `crm_branch_path` por encima de la
+>   carpeta del CRM (`kind == "override"`), sin tocar el CRM remoto. Cableado en
+>   el pull (lectura única por corrida). Refactor: `resolve_bucket` como fuente
+>   única de la resolución carpeta→bucket (compartida con el detector).
+> - **Pregunta abierta resuelta:** confirmado contra el 444 que **solo la prueba
+>   de la actora usa `D NN`**; cabecera y contestación NO → la cabecera se
+>   detecta como el doc sin patrón.
+> - **Tests:** +3 D10, +~13 D9 (`test_conjunto_detector` nuevo), +7 D11,
+>   `test_intake_log` (17 eventos). **Suite: 652 passed, 58 skipped** (verja
+>   rápida, EXCLUYENDO `test_sudespacho_relations.py` — ver ⚠️). Gold SaRS1 intacto.
+> - **⚠️ Ajeno a esta tanda:** `core/sudespacho_relations.py` + su test están
+>   modificados en el working tree por trabajo concurrente (no por esta sesión;
+>   al inicio NO estaban modificados) y rompen la colección de pytest por import
+>   circular. No se tocaron ni commitearon — revisar aparte.
+>
+> **Pendiente (TERCERA TANDA / futuro):** persistencia `parent_id` de D9 cuando
+> exista `[SIGUIENTE-CATALOGO-DOCUMENTAL]`. Follow-up del intake manual (abajo)
+> sigue sin abordar (requiere OK de Nikolai por ripple a UI).
 >
 > **Follow-up detectado (fuera de las 15 decisiones, decisión de Nikolai):** el
 > intake **manual** (`intake_manual.save_file_crm_branch` + `list_crm_branch_files`
