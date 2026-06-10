@@ -26,6 +26,8 @@ from core.intake_drive import (
 )
 from core import intake_log
 from core import intake_manual
+from core.judicial_intake import intake_demanda_contestacion as _intake_judicial
+from core.sync_sudespacho import SudespachoError as _SudespachoError
 from core import share_drive as _sd
 import zipfile as _zipfile
 from core.sudespacho_relations import (
@@ -725,6 +727,99 @@ with tab_casos:
                         )
                     for _err in _errors_crm:
                         st.error(f"❌ {_err}")
+
+        st.divider()
+        with st.expander("⚖️ Intake judicial automático (demanda + contestación)"):
+            st.caption(
+                "Localiza, clasifica y deposita **solo** la demanda y la "
+                "contestación del expediente judicial en el árbol CRM del caso "
+                "(con dedup y registro). No baja el resto del expediente. "
+                "Los roles ambiguos se marcan para tu revisión, sin adivinar."
+            )
+            _caso_ij = st.selectbox(
+                "Caso", cases, key="casos_ij_sel",
+                help="Caso local al que pertenece el expediente judicial.",
+            )
+            _exp_ij = st.text_input(
+                "ID del expediente judicial en sudespacho",
+                key="casos_ij_exp",
+                placeholder="649",
+                help="ID numérico del expediente JUDICIAL en el CRM (no el extrajudicial).",
+            ).strip()
+            _pipe_ij = st.checkbox(
+                "Encadenar pipeline (anon → MD → frontier) tras el intake",
+                key="casos_ij_pipe",
+                value=False,
+            )
+
+            if st.button(
+                "⚖️ Traer demanda + contestación",
+                key="casos_ij_btn",
+                disabled=not _exp_ij,
+                help="Descarga únicamente los dos documentos procesales clave.",
+            ):
+                if case_manager.is_legacy_intake_v1(_caso_ij):
+                    st.error(
+                        "⛔ Este caso tiene estructura antigua (`sudespacho_*/`). "
+                        "El intake v2 está bloqueado hasta migrarlo manualmente."
+                    )
+                else:
+                    case_manager.register_expediente(
+                        _caso_ij, _exp_ij, "expedientes_judiciales",
+                    )
+                    with st.spinner("Localizando, clasificando y descargando…"):
+                        try:
+                            _rij = _intake_judicial(
+                                _caso_ij, _exp_ij, element="expedientes_judiciales",
+                            )
+                        except _SudespachoError as _eij:
+                            _rij = None
+                            st.error(f"❌ {_eij}")
+
+                    if _rij is not None:
+                        _written = _rij.pull.documents_written if _rij.pull else 0
+                        if _written:
+                            st.success(
+                                f"✅ **{_written}** documento(s) depositados en "
+                                f"`00_Input/05_CRM/`."
+                            )
+                        if _rij.classification:
+                            for _rr in (
+                                _rij.classification.demanda,
+                                _rij.classification.contestacion,
+                            ):
+                                if _rr.status == "ok":
+                                    st.write(f"✅ **{_rr.role}**: `{_rr.selected.filename}`")
+                                elif _rr.status == "ambiguous":
+                                    st.warning(
+                                        f"⚠️ **{_rr.role}** ambigua — "
+                                        f"[PENDIENTE revisión letrado]. Candidatos:"
+                                    )
+                                    for _c in _rr.candidates:
+                                        st.caption(f"· {_c.doc_id}: {_c.filename}")
+                                else:
+                                    st.info(
+                                        f"— **{_rr.role}**: no encontrada por nombre "
+                                        "[PENDIENTE revisión letrado]."
+                                    )
+                        if _rij.pendientes:
+                            st.caption(
+                                "Sube los documentos pendientes a mano con el "
+                                "expander «📂 Subir al árbol CRM» si procede."
+                            )
+                        for _eij_err in _rij.errors:
+                            st.caption(f"⚠️ {_eij_err}")
+
+                        if _pipe_ij and _written:
+                            with st.spinner("Ejecutando pipeline…"):
+                                _prij = pipeline.run(
+                                    _caso_ij, do_sync=False, do_demanda=True,
+                                )
+                            for _s in _prij.steps:
+                                st.write(
+                                    f"{'✅' if _s.ok else '❌'} {_s.name}: "
+                                    f"{_s.detail or _s.artifact or ''}"
+                                )
 
         st.divider()
         with st.expander("🤖 Organizar localmente"):

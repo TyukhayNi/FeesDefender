@@ -53,6 +53,8 @@ INTAKE_EVENTS: frozenset[str] = frozenset({
     "overwrite_doc",        # sobrescritura de un fichero existente
     "delete_doc",           # borrado explícito de un fichero
     "migrate_v1_v2",        # migración manual de un caso v1 (sudespacho_*/) a v2
+    "intake_judicial",      # intake acotado demanda+contestación (resumen)
+    "pendiente_revision",   # rol (demanda/contestación) no resuelto → revisión letrado
 })
 
 

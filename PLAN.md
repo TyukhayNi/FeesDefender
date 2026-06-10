@@ -52,25 +52,29 @@ con dedup (M9) y log (M10, `_intake_log.jsonl`).
   el endpoint vivo es `GET /api/documents/{id}/downloadUri` → `presignedDownloadUrl`.
   `get_presigned_download_url` reescrito, `docs/DEAD_ENDS.md` actualizado.
   Cierre cumplido: **31/31** docs del expediente 649 (creció desde 26) ✓.
-- **Fase 1 — identificación.** Clasificador demanda/contestación sobre la salida
-  de `list_gdocu_docs_rest`, source-locked (anclado a `filename`/`id_carpeta_label`
-  reales). Casos límite (0 / múltiples / escaneado sin nombre) → `[PENDIENTE
-  revisión letrado]`, nunca adivinar.
-- **Fase 2 — routing + pipeline.** Depósito en `00_Input/05_CRM/<rama>` con dedup
-  + `_intake_log.jsonl` (reutilizar `intake_manual`/`intake_log`); encadenar
-  `core/pipeline.py`. Respetar idempotencia (no mutar `00_Input/`; `--force`).
-- **Fase 3 — disparo.** CLI en `scripts/sync_sudespacho.py` acotado a
-  demanda+contestación (no todo el expediente), p.ej.
-  `intake-judicial --case "<ref>" --expediente <id>`.
-- **Fase 4 — tests y cierre.** Regresión sobre expediente 649 (26/26, identificación
-  correcta, depósito con dedup/log) + tests del clasificador. Actualizar `STATUS.md`
-  y `PLAN.md` (mover el bug crítico a Resuelto si procede), `git`.
+- **Fase 1 — identificación.** ✅ HECHA. `core/judicial_classifier.py`:
+  heurística regex source-locked **solo por `filename`** (la `id_carpeta_label`
+  resultó demasiado gruesa — las carpetas DEMANDA/OPOSICION del CRM contienen
+  toda la prueba; descubierto en el e2e del 649). Colapso de duplicados
+  .pdf/.docx. Casos 0/múltiples → `[PENDIENTE revisión letrado]`, nunca adivina.
+  Hook `llm_fn` inyectable pero **sin LLM por defecto** (decisión de Nikolai;
+  RGPD: ningún nombre con PII sale del entorno).
+- **Fase 2 — routing + pipeline.** ✅ HECHA. `core/judicial_intake.py`
+  reutiliza `pull_expediente_v2` (nuevo param `only_doc_ids`) → dedup M9, log
+  M10, routing `crm_branch_path`, estado D8. Solo baja demanda+contestación;
+  `documents_total_crm` sigue siendo el total real. Pipeline encadenado por el
+  caller (`--run-pipeline` / checkbox).
+- **Fase 3 — disparo.** ✅ HECHA. CLI `intake-judicial --case --expediente
+  [--run-pipeline]` + **botón** en el tab Casos de Streamlit
+  («⚖️ Intake judicial automático»).
+- **Fase 4 — tests y cierre.** ✅ HECHA. Tests del clasificador (con etiquetas
+  reales del 649 como regresión) + orquestador. E2E real: demanda 40022
+  auto-depositada, contestación marcada pendiente (2 candidatos). Suite verde.
 
-**Decisiones a cerrar antes de implementar:**
-- Clasificación: heurística por `filename`/`id_carpeta_label` con fallback LLM
-  (Haiku) solo en ambigüedad. *(Inclinación Cowork: sí; confirmar con Nikolai.)*
-- Disparo: ¿solo CLI o también botón en el tab Casos de Streamlit? Hoy no hay
-  botón de pull en la UI. *(Pendiente de Nikolai.)*
+**Decisiones cerradas (2026-06-10, con Nikolai):**
+- Clasificación: heurística por `filename` (la etiqueta de carpeta NO dispara).
+  **Sin LLM** — la ambigüedad va a revisión del letrado (RGPD-local).
+- Disparo: **CLI + botón Streamlit**.
 
 ---
 

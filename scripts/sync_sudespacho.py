@@ -33,6 +33,7 @@ import json
 import typer
 
 from core import case_manager, pipeline
+from core.judicial_intake import intake_demanda_contestacion
 from core.sudespacho_relations import verify_expediente_referencia
 from core.sync_sudespacho import (
     SudespachoClient,
@@ -192,6 +193,78 @@ def pull(
     }, ensure_ascii=False, indent=2))
 
     if run_pipeline:
+        pr = pipeline.run(case, do_sync=False, do_demanda=True)
+        for s in pr.steps:
+            typer.echo(f"  {'✅' if s.ok else '❌'} {s.name}: {s.detail or s.artifact or ''}")
+
+
+@app.command()
+def intake_judicial(
+    case: str = typer.Option(..., "--case", help="case_id local (ej. 'BaRR3 - Roser 39 (W-030LFT) - Art 20 LAU')"),
+    expediente: str = typer.Option(..., "--expediente", help="ID del expediente JUDICIAL en sudespacho"),
+    element: str = typer.Option("expedientes_judiciales", "--element"),
+    referencia: str = typer.Option(None, "--referencia", help="Referencia CRM (validación preventiva)"),
+    run_pipeline: bool = typer.Option(False, "--run-pipeline/--no-run-pipeline",
+                                      help="Encadena el pipeline (anon → MD → frontier) tras el intake"),
+) -> None:
+    """Intake acotado: localiza, clasifica y deposita SOLO la demanda y la
+    contestación del expediente judicial en el árbol del caso.
+
+    A diferencia de `pull` (que baja todo el expediente), este comando descarga
+    únicamente los dos documentos procesales clave, identificados por heurística
+    sobre el nombre/etiqueta del CRM. Los roles ambiguos (0 o varios candidatos)
+    se marcan para revisión del letrado y NO se descargan.
+    """
+    case_manager.ensure_case(
+        case,
+        titulo=f"Expediente judicial sudespacho {expediente}",
+        referencia_crm=referencia,
+    )
+    case_manager.register_expediente(case, expediente, element)
+
+    try:
+        result = intake_demanda_contestacion(
+            case, expediente, element=element,
+        )
+    except SudespachoError as exc:
+        typer.echo(f"❌ {exc}")
+        raise typer.Exit(code=1)
+
+    if result.blocked_legacy_v1:
+        typer.echo("⛔ Caso con estructura v1 (sudespacho_*/) — intake bloqueado.")
+        for e in result.errors:
+            typer.echo(f"   {e}")
+        raise typer.Exit(code=2)
+
+    typer.echo(json.dumps({
+        "case_id": result.case_id,
+        "expediente_id": result.expediente_id,
+        "demanda_doc_id": result.demanda_doc_id,
+        "contestacion_doc_id": result.contestacion_doc_id,
+        "pendientes_revision": result.pendientes,
+        "documents_written": result.pull.documents_written if result.pull else 0,
+        "documents_skipped_dedup": result.pull.documents_skipped_dedup if result.pull else 0,
+        "errors": result.errors,
+    }, ensure_ascii=False, indent=2))
+
+    # Detalle legible de cada rol
+    if result.classification:
+        for rr in (result.classification.demanda, result.classification.contestacion):
+            icon = "✅" if rr.status == "ok" else ("⚠️" if rr.status == "ambiguous" else "—")
+            sel = rr.selected.filename if rr.selected else "(sin selección)"
+            typer.echo(f"  {icon} {rr.role}: {rr.status} → {sel}")
+            if rr.status != "ok" and rr.candidates:
+                for c in rr.candidates:
+                    typer.echo(f"       · candidato {c.doc_id}: {c.filename}")
+
+    if result.pendientes:
+        typer.echo(
+            f"\n📋 {len(result.pendientes)} rol(es) [PENDIENTE revisión letrado]: "
+            f"{', '.join(result.pendientes)}. "
+            "Súbelos a mano con el expander «📂 Subir al árbol CRM» si procede."
+        )
+
+    if run_pipeline and result.pull and result.pull.documents_written:
         pr = pipeline.run(case, do_sync=False, do_demanda=True)
         for s in pr.steps:
             typer.echo(f"  {'✅' if s.ok else '❌'} {s.name}: {s.detail or s.artifact or ''}")

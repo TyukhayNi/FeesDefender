@@ -329,13 +329,17 @@ def test_append_event_invoca_fsync_por_cada_escritura(il, cm, monkeypatch):
 # INTAKE_EVENTS — sanity
 # ---------------------------------------------------------------------------
 
-def test_intake_events_es_frozenset_con_13_eventos(il):
+def test_intake_events_es_frozenset_con_15_eventos(il):
     assert isinstance(il.INTAKE_EVENTS, frozenset)
-    assert len(il.INTAKE_EVENTS) == 13
+    assert len(il.INTAKE_EVENTS) == 15
 
 
 def test_intake_events_contiene_los_canonicos(il):
-    """Los 13 eventos documentados en project_intake_estructura_v2.md (M10-Q1)."""
+    """Eventos documentados en project_intake_estructura_v2.md (M10-Q1).
+
+    Los dos últimos (intake_judicial, pendiente_revision) se añadieron con
+    el intake judicial automático (2026-06-10).
+    """
     expected = {
         "link_expediente",
         "unlink_expediente",
@@ -350,5 +354,7 @@ def test_intake_events_contiene_los_canonicos(il):
         "overwrite_doc",
         "delete_doc",
         "migrate_v1_v2",
+        "intake_judicial",
+        "pendiente_revision",
     }
     assert il.INTAKE_EVENTS == expected

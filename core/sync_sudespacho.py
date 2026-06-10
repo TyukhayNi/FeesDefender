@@ -1268,6 +1268,7 @@ def pull_expediente_v2(
     element: str = "expedientes_judiciales",
     client: SudespachoClient | None = None,
     actor: str | None = None,
+    only_doc_ids: set[str] | None = None,
 ) -> PullResultV2:
     """Pull v2 de un expediente CRM al árbol ``00_Input/05_CRM/<rama>/`` del caso.
 
@@ -1303,6 +1304,10 @@ def pull_expediente_v2(
             uno desde ``.env``.
         actor: Override del actor para los eventos M10. Si None usa
             :func:`intake_log.get_actor`.
+        only_doc_ids: si se indica, solo se descargan/depositan los documentos
+            cuyo ``doc_id`` esté en el conjunto (intake acotado, p. ej.
+            demanda+contestación). ``documents_total_crm`` sigue reflejando el
+            total real del expediente en el CRM.
 
     Returns:
         :class:`PullResultV2` con resumen del pull.
@@ -1355,6 +1360,11 @@ def pull_expediente_v2(
                 f"El Gestor Documental del expediente {expediente_id} está vacío "
                 f"(o el elemento '{element}' no es el correcto)."
             )
+
+        # Intake acotado (Fase intake judicial): procesar solo los doc_ids
+        # indicados, manteniendo documents_total_crm = total real del CRM.
+        if only_doc_ids is not None:
+            docs = [d for d in docs if d.doc_id in only_doc_ids]
 
         # 4. Manifest M9 + reconciliación al inicio (M9-Q4)
         with IntakeManifest(case_id) as manifest:
