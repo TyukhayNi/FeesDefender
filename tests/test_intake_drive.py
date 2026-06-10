@@ -367,6 +367,102 @@ def test_register_drive_ev_no_falla_si_caso_no_existe(tmp_casos_root):
 
 
 # ---------------------------------------------------------------------------
+# cache_drive_folder_info / get_cached_drive_folder_info
+# ---------------------------------------------------------------------------
+
+def test_cache_drive_folder_info_roundtrip(caso_ev, tmp_casos_root):
+    """Guardar y leer folder_name + drive_id del cache en _caso.md."""
+    from core.case_manager import cache_drive_folder_info, get_cached_drive_folder_info
+
+    cache_drive_folder_info(caso_ev, "Tibidabo 8 - W-02VND1", "0APKz123")
+
+    name, drive_id = get_cached_drive_folder_info(caso_ev)
+    assert name == "Tibidabo 8 - W-02VND1"
+    assert drive_id == "0APKz123"
+
+
+def test_cache_drive_folder_info_idempotente(caso_ev, tmp_casos_root):
+    """Llamar dos veces con los mismos valores no reescribe el fichero."""
+    from core.case_manager import cache_drive_folder_info
+    import yaml
+
+    cache_drive_folder_info(caso_ev, "Carpeta X", "driveABC")
+    index = tmp_casos_root / caso_ev / "00_Input" / "_caso.md"
+    mtime_1 = index.stat().st_mtime
+
+    cache_drive_folder_info(caso_ev, "Carpeta X", "driveABC")
+    mtime_2 = index.stat().st_mtime
+
+    assert mtime_1 == mtime_2
+
+
+def test_get_cached_drive_folder_info_miss(caso_ev, tmp_casos_root):
+    """Sin cache previo devuelve (None, None)."""
+    from core.case_manager import get_cached_drive_folder_info
+
+    name, drive_id = get_cached_drive_folder_info(caso_ev)
+    assert name is None
+    assert drive_id is None
+
+
+def test_get_drive_folder_info_cached_hit(caso_ev, tmp_casos_root, monkeypatch):
+    """Con cache, no llama a la Drive API."""
+    from core.case_manager import cache_drive_folder_info
+
+    cache_drive_folder_info(caso_ev, "Cached Folder", "driveXYZ")
+
+    api_called = []
+    original = get_drive_folder_info
+
+    def _spy(fid):
+        api_called.append(fid)
+        return original(fid)
+
+    monkeypatch.setattr("core.intake_drive.get_drive_folder_info", _spy)
+
+    from core.intake_drive import get_drive_folder_info_cached
+    info = get_drive_folder_info_cached("some_folder_id", case_id=caso_ev)
+
+    assert info is not None
+    assert info.name == "Cached Folder"
+    assert info.drive_id == "driveXYZ"
+    assert api_called == [], "No debería haber llamado a la Drive API"
+
+
+def test_get_drive_folder_info_cached_miss_calls_api(caso_ev, tmp_casos_root, monkeypatch):
+    """Sin cache, llama a la API y persiste el resultado."""
+    from core.intake_drive import DriveFolderInfo, get_drive_folder_info_cached
+    from core.case_manager import get_cached_drive_folder_info
+
+    monkeypatch.setattr(
+        "core.intake_drive.get_drive_folder_info",
+        lambda fid: DriveFolderInfo(name="API Folder", drive_id="driveAPI"),
+    )
+
+    info = get_drive_folder_info_cached("folder123", case_id=caso_ev)
+
+    assert info.name == "API Folder"
+    assert info.drive_id == "driveAPI"
+
+    name, drive_id = get_cached_drive_folder_info(caso_ev)
+    assert name == "API Folder"
+    assert drive_id == "driveAPI"
+
+
+def test_get_drive_folder_info_cached_no_case_id(monkeypatch):
+    """Sin case_id, se comporta como get_drive_folder_info normal."""
+    from core.intake_drive import DriveFolderInfo, get_drive_folder_info_cached
+
+    monkeypatch.setattr(
+        "core.intake_drive.get_drive_folder_info",
+        lambda fid: DriveFolderInfo(name="Direct", drive_id="d1"),
+    )
+
+    info = get_drive_folder_info_cached("folder123", case_id=None)
+    assert info.name == "Direct"
+
+
+# ---------------------------------------------------------------------------
 # parse_ev_folder_name
 # ---------------------------------------------------------------------------
 

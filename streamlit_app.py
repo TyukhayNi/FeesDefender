@@ -1348,6 +1348,7 @@ with tab_nuevo:
                 if _folder_info_top:
                     # Marcar éxito SOLO si la llamada devolvió info útil.
                     st.session_state["_nc_drive_autofilled_fid"] = _fid_cached
+                    st.session_state["_nc_autofill_folder_name"] = _folder_info_top.name
                     st.session_state.pop("_nc_drive_autofill_failed", None)
                     # Dirección e ID GO
                     _auto_dir_top, _auto_mls_top = _parse_ev_folder_name(_folder_info_top.name)
@@ -1849,6 +1850,10 @@ with tab_nuevo:
                 try:
                     _pre_fid = parse_drive_url(_pre_url)
                     case_manager.register_drive_ev(final_case_id, team_id=_pre_team, folder_id=_pre_fid)
+                    _af_name = st.session_state.get("_nc_autofill_folder_name")
+                    _af_drive_id = st.session_state.get("_nc_autofill_team_id")
+                    if _af_name and _af_drive_id:
+                        case_manager.cache_drive_folder_info(final_case_id, _af_name, _af_drive_id)
                 except Exception:
                     pass  # No bloqueante — el pull lo reintentará si es necesario
 

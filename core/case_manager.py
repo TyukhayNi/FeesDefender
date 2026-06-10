@@ -72,6 +72,8 @@ class CaseMeta:
     drive_remote_path: str | None = None
     drive_ev_team_id: str | None = None   # Shared Drive ID de la carpeta E&V (gdrive_ev)
     drive_ev_folder_id: str | None = None  # Folder ID de la carpeta W-XXXXXX
+    drive_ev_folder_name: str | None = None  # Nombre de la carpeta W-XXXXXX (cache de la Drive API)
+    drive_ev_drive_id: str | None = None     # Shared Drive ID resuelto por la Drive API (cache)
     direccion: str | None = None         # v2: dirección del inmueble (refactor intake v2)
     id_go: str | None = None             # v2: ID GO de Engel & Völkers (p. ej. "BCN-OS-012905")
     tipo_caso: str | None = None         # v2 paso 7: clave de TIPOS_CASO_ALL (NEGATIVA_OFERTA, BAD_DEBT, …)
@@ -433,6 +435,79 @@ def get_drive_ev_ids(case_id: str) -> tuple[str | None, str | None]:
     return meta.get("drive_ev_team_id"), meta.get("drive_ev_folder_id")
 
 
+def get_cached_drive_folder_info(
+    case_id: str,
+) -> tuple[str | None, str | None]:
+    """Devuelve ``(folder_name, drive_id)`` cacheados en ``_caso.md``.
+
+    Returns ``(None, None)`` si no hay cache.
+    """
+    import yaml as _yaml
+
+    index = caso_path(case_id) / "00_Input" / "_caso.md"
+    if not index.exists():
+        return None, None
+    text = index.read_text(encoding="utf-8")
+    if not text.startswith("---"):
+        return None, None
+    try:
+        _, fm_raw, _ = text.split("---", 2)
+        fm = _yaml.safe_load(fm_raw) or {}
+    except Exception:
+        return None, None
+    meta = fm.get("meta") or {}
+    name = meta.get("drive_ev_folder_name")
+    drive_id = meta.get("drive_ev_drive_id")
+    if name:
+        return name, drive_id
+    return None, None
+
+
+def cache_drive_folder_info(
+    case_id: str,
+    folder_name: str,
+    drive_id: str,
+) -> None:
+    """Persiste nombre y Shared Drive ID de la carpeta E&V en ``_caso.md``.
+
+    Idempotente: si los valores ya coinciden, no reescribe.
+    """
+    import yaml as _yaml
+
+    index = caso_path(case_id) / "00_Input" / "_caso.md"
+    if not index.exists():
+        return
+
+    text = index.read_text(encoding="utf-8")
+    if text.startswith("---"):
+        _, fm_raw, _ = text.split("---", 2)
+        fm = _yaml.safe_load(fm_raw) or {}
+    else:
+        fm = {}
+
+    meta_dict = fm.get("meta") or {}
+
+    if (
+        meta_dict.get("drive_ev_folder_name") == folder_name
+        and meta_dict.get("drive_ev_drive_id") == drive_id
+    ):
+        return
+
+    meta_dict["drive_ev_folder_name"] = folder_name
+    meta_dict["drive_ev_drive_id"] = drive_id
+
+    from dataclasses import fields as _dc_fields
+
+    known = {f.name for f in _dc_fields(CaseMeta)}
+    kwargs = {k: v for k, v in meta_dict.items() if k in known}
+    kwargs.setdefault("case_id", case_id)
+    kwargs.setdefault("titulo", case_id)
+    kwargs["actualizado_en"] = now_iso()
+
+    meta = CaseMeta(**kwargs)
+    _write_case_index(caso_path(case_id), meta)
+
+
 def get_case_status(case_id: str) -> dict:
     """Comprueba el estado local del caso.
 
@@ -575,12 +650,95 @@ def _bucket_for(rama_canonica: str) -> str:
     return CRM_BUCKET_OTROS
 
 
+def resolve_bucket(
+    id_carpeta: str | int | None = None,
+    id_carpeta_label: str | None = None,
+) -> tuple[str | None, str]:
+    """Resuelve un documento del CRM a su bucket plano (sin ruta de caso).
+
+    Fuente única de verdad de la resolución carpeta→bucket, compartida por
+    ``crm_branch_path`` (que añade la ruta del caso) y por el detector de
+    conjunto (D9), que necesita el bucket de un doc sin construir la ruta.
+
+    Args:
+        id_carpeta: ID numérico de la carpeta Gdocu (string o int).
+        id_carpeta_label: label leaf-only (puede venir vacío).
+
+    Returns:
+        Tupla ``(bucket, kind)``: ``bucket`` es el nombre del bucket plano
+        (p. ej. ``"01_Demanda"``) o ``None`` si ni el ID ni el label resuelven
+        a una rama única; ``kind`` ∈ ``{"id_mapping", "label_heuristic",
+        "fallback"}``.
+    """
+    if id_carpeta is not None:
+        key = str(id_carpeta).strip()
+        if key in CARPETA_ID_TO_PATH:
+            return _bucket_for(CARPETA_ID_TO_PATH[key]), "id_mapping"
+
+    if id_carpeta_label:
+        candidates = _find_branches_by_label(id_carpeta_label)
+        if len(candidates) == 1:
+            return _bucket_for(candidates[0]), "label_heuristic"
+
+    return None, "fallback"
+
+
+_VALID_BUCKETS: frozenset[str] = frozenset({
+    CRM_BUCKET_DEMANDA,
+    CRM_BUCKET_CONTESTACION,
+    CRM_BUCKET_MONITORIO_DEMANDA,
+    CRM_BUCKET_MONITORIO_OPOSICION,
+    CRM_BUCKET_PRELIMINARES,
+    CRM_BUCKET_OTROS,
+})
+
+
+def read_bucket_overrides(case_id: str) -> dict[str, str]:
+    """Lee el override local ``doc_id → bucket`` del frontmatter de ``_caso.md`` (D11).
+
+    El letrado puede forzar el bucket de un documento mal archivado en el CRM
+    editando a mano el campo ``bucket_override`` (mapa ``doc_id: bucket``) del
+    frontmatter de ``00_Input/_caso.md``. El override se respeta **por encima**
+    de la carpeta del CRM y **sin tocar el CRM remoto** — es un parche local.
+
+    Solo se devuelven entradas cuyo bucket sea uno de los buckets válidos
+    (``_VALID_BUCKETS``): un valor inválido se descarta en silencio para no
+    materializar una carpeta espuria. Las claves se normalizan a ``str``.
+
+    Returns:
+        Mapa ``{doc_id: bucket}`` (vacío si no hay caso, índice o campo).
+    """
+    import yaml as _yaml
+
+    index = caso_path(case_id) / "00_Input" / "_caso.md"
+    if not index.exists():
+        return {}
+    text = index.read_text(encoding="utf-8")
+    if not text.startswith("---"):
+        return {}
+    try:
+        _, fm_raw, _ = text.split("---", 2)
+        fm = _yaml.safe_load(fm_raw) or {}
+    except Exception:
+        return {}
+    raw = fm.get("bucket_override")
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        str(k).strip(): v
+        for k, v in raw.items()
+        if isinstance(v, str) and v in _VALID_BUCKETS
+    }
+
+
 def crm_branch_path(
     case_id: str,
     *,
     id_carpeta: str | int | None = None,
     id_carpeta_label: str | None = None,
     expediente_id: str | int | None = None,
+    doc_id: str | int | None = None,
+    overrides: dict[str, str] | None = None,
 ) -> tuple[Path, str]:
     """Resuelve la ruta destino dentro de ``00_Input/05_CRM/`` para un documento del CRM.
 
@@ -589,6 +747,9 @@ def crm_branch_path(
     nivel, no la rama profunda: se resuelve la rama canónica y se aplana con
     ``_bucket_for``.
 
+    0. **Override local del letrado (D11)**: si ``doc_id`` está en el mapa
+       ``bucket_override`` de ``_caso.md`` (o en ``overrides`` si se pasa
+       pre-leído), ese bucket manda **por encima** de la carpeta del CRM.
     1. Lookup directo en ``CARPETA_ID_TO_PATH`` por ``id_carpeta`` → rama →
        ``_bucket_for`` → bucket.
     2. Heurística por ``id_carpeta_label`` si la coincidencia en ``CRM_TREE``
@@ -603,26 +764,32 @@ def crm_branch_path(
             (acepta string o int — se normaliza con ``str().strip()``).
         id_carpeta_label: label leaf-only del mismo endpoint (puede venir vacío).
         expediente_id: ID del expediente CRM, usado solo para el fallback.
+        doc_id: ID del documento, para consultar el override local (D11).
+        overrides: mapa ``doc_id → bucket`` ya leído. Si es ``None`` y se pasa
+            ``doc_id``, se lee de ``_caso.md`` con ``read_bucket_overrides``;
+            el caller de un bucle (pull) debe leerlo una vez y pasarlo para
+            evitar I/O por-documento.
 
     Returns:
-        Tupla ``(path, kind)`` donde ``kind`` ∈ ``{"id_mapping",
+        Tupla ``(path, kind)`` donde ``kind`` ∈ ``{"override", "id_mapping",
         "label_heuristic", "fallback"}``. El path siempre está bajo
         ``<casos_root>/<case_id>/00_Input/05_CRM/`` y apunta a un bucket plano
         (o al fallback ``99_Sin categoria/<exp>``).
     """
     base = caso_path(case_id) / "00_Input" / CRM_SUBDIR
 
-    # 1. Lookup directo por ID → rama canónica → bucket
-    if id_carpeta is not None:
-        key = str(id_carpeta).strip()
-        if key in CARPETA_ID_TO_PATH:
-            return base / _bucket_for(CARPETA_ID_TO_PATH[key]), "id_mapping"
+    # 0. Override local del letrado (D11) — por encima de la carpeta del CRM.
+    if doc_id is not None:
+        ov_map = overrides if overrides is not None else read_bucket_overrides(case_id)
+        ov_bucket = ov_map.get(str(doc_id).strip())
+        if ov_bucket in _VALID_BUCKETS:
+            return base / ov_bucket, "override"
 
-    # 2. Heurística por label — solo si hay un único candidato → bucket
-    if id_carpeta_label:
-        candidates = _find_branches_by_label(id_carpeta_label)
-        if len(candidates) == 1:
-            return base / _bucket_for(candidates[0]), "label_heuristic"
+    # 1+2. Resolución carpeta→bucket (id_mapping / label_heuristic) — fuente
+    # única en resolve_bucket.
+    bucket, kind = resolve_bucket(id_carpeta, id_carpeta_label)
+    if bucket is not None:
+        return base / bucket, kind
 
     # 3. Fallback
     fallback = base / CRM_FALLBACK_PATH

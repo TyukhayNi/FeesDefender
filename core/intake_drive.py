@@ -617,11 +617,39 @@ def get_drive_folder_info(folder_id: str) -> DriveFolderInfo | None:
     return None
 
 
+def get_drive_folder_info_cached(
+    folder_id: str,
+    case_id: str | None = None,
+) -> DriveFolderInfo | None:
+    """Como :func:`get_drive_folder_info`, pero lee primero del cache en ``_caso.md``.
+
+    Si *case_id* se proporciona, intenta leer ``drive_ev_folder_name`` y
+    ``drive_ev_drive_id`` del frontmatter del caso. En caso de hit, devuelve
+    sin llamar a la Drive API. En caso de miss o si *case_id* es None, llama
+    a la API y, si tiene éxito y *case_id* fue proporcionado, persiste el
+    resultado en ``_caso.md`` para futuros pulls.
+    """
+    if case_id:
+        from core.case_manager import get_cached_drive_folder_info, cache_drive_folder_info
+
+        cached_name, cached_drive_id = get_cached_drive_folder_info(case_id)
+        if cached_name:
+            return DriveFolderInfo(name=cached_name, drive_id=cached_drive_id or "")
+
+    info = get_drive_folder_info(folder_id)
+
+    if info and case_id:
+        from core.case_manager import cache_drive_folder_info
+        cache_drive_folder_info(case_id, info.name, info.drive_id)
+
+    return info
+
+
 def get_drive_folder_name(folder_id: str) -> str | None:
     """Obtiene el nombre de una carpeta de Drive E&V dado su folder_id.
 
     .. deprecated::
-        Usar :func:`get_drive_folder_info` que también devuelve el driveId.
+        Usar :func:`get_drive_folder_info` o :func:`get_drive_folder_info_cached`.
 
     Returns:
         Nombre de la carpeta, o None si no se pudo obtener.
