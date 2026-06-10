@@ -157,7 +157,7 @@ def test_autocomplete_error_http():
 def test_find_expediente_encontrado(monkeypatch):
     client = _mock_client()
     client._client.get.return_value = _mock_get_response(
-        [{"id": 1, "label": "49 - 2026", "value": "600", "data": []}]
+        [{"id": 1, "label": "TEST-CAPTURA-FEESDEFENDER", "value": "600", "data": []}]
     )
     with patch("core.sudespacho_relations.SudespachoLegacyClient", return_value=client):
         result = find_expediente_by_referencia("TEST-CAPTURA-FEESDEFENDER")
@@ -176,7 +176,7 @@ def test_find_expediente_con_client_externo():
     """Si se pasa client externo, no se llama a SudespachoLegacyClient()."""
     client = _mock_client()
     client._client.get.return_value = _mock_get_response(
-        [{"id": 1, "label": "x", "value": "777", "data": []}]
+        [{"id": 1, "label": "ref", "value": "777", "data": []}]
     )
     result = find_expediente_by_referencia("ref", client=client)
     assert result == "777"
@@ -190,7 +190,7 @@ def test_find_expediente_con_client_externo():
 def test_find_expediente_judicial_encontrado(monkeypatch):
     client = _mock_client()
     client._client.get.return_value = _mock_get_response(
-        [{"id": 1, "label": "648 - 2026", "value": "648", "data": []}]
+        [{"id": 1, "label": "MaRS2 - Gran Via 40 - (W-0001) - Dev. Reserva", "value": "648", "data": []}]
     )
     with patch("core.sudespacho_relations.SudespachoLegacyClient", return_value=client):
         result = find_expediente_judicial_by_referencia("MaRS2 - Gran Via 40 - (W-0001) - Dev. Reserva")
@@ -212,7 +212,7 @@ def test_find_expediente_judicial_con_client_externo():
     """Si se pasa client externo, no se llama a SudespachoLegacyClient()."""
     client = _mock_client()
     client._client.get.return_value = _mock_get_response(
-        [{"id": 1, "label": "x", "value": "999", "data": []}]
+        [{"id": 1, "label": "ref", "value": "999", "data": []}]
     )
     result = find_expediente_judicial_by_referencia("ref", client=client)
     assert result == "999"
@@ -924,3 +924,113 @@ class TestExtractWCode:
 
     def test_w_code_at_start(self):
         assert _extract_w_code("W-0466A1 es el codigo") == "W-0466A1"
+
+
+# ---------------------------------------------------------------------------
+# Robust find_expediente — normalized matching + W-code search
+# ---------------------------------------------------------------------------
+
+
+class TestFindExpedienteRobust:
+    """Tests for the dual-search (W-code + full ref) with normalized label matching."""
+
+    def test_double_space_in_crm_label_matches(self):
+        """The real bug: CRM has double space, local has single -> should match."""
+        client = _mock_client()
+        client._client.get.return_value = _mock_get_response([
+            {"id": 1, "label": "BaRS6 - Addr - (W-02NV4W)  - Vuelta", "value": "444", "data": []},
+        ])
+        result = find_expediente_judicial_by_referencia(
+            "BaRS6 - Addr - (W-02NV4W) - Vuelta", client=client,
+        )
+        assert result == "444"
+
+    def test_accent_difference_matches(self):
+        """CRM has accent, local doesn't (or vice versa)."""
+        client = _mock_client()
+        client._client.get.return_value = _mock_get_response([
+            {"id": 1, "label": "MaRS2 - Gran Vía 40 - (W-0001) - Vuelta", "value": "500", "data": []},
+        ])
+        result = find_expediente_by_referencia(
+            "MaRS2 - Gran Via 40 - (W-0001) - Vuelta", client=client,
+        )
+        assert result == "500"
+
+    def test_case_difference_matches(self):
+        client = _mock_client()
+        client._client.get.return_value = _mock_get_response([
+            {"id": 1, "label": "bars1 - tibidabo - (W-02VND1) - vuelta", "value": "100", "data": []},
+        ])
+        result = find_expediente_by_referencia(
+            "BaRS1 - Tibidabo - (W-02VND1) - Vuelta", client=client,
+        )
+        assert result == "100"
+
+    def test_no_match_in_results_returns_none(self):
+        """Autocomplete returns results but none match normalized -> None."""
+        client = _mock_client()
+        client._client.get.return_value = _mock_get_response([
+            {"id": 1, "label": "Completely Different Case", "value": "999", "data": []},
+        ])
+        result = find_expediente_by_referencia(
+            "BaRS1 - Tibidabo - (W-02VND1) - Vuelta", client=client,
+        )
+        assert result is None
+
+    def test_empty_autocomplete_returns_none(self):
+        client = _mock_client()
+        client._client.get.return_value = _mock_get_response([])
+        result = find_expediente_by_referencia("Whatever", client=client)
+        assert result is None
+
+    def test_no_w_code_falls_back_to_full_ref(self):
+        """Legacy case_id without W-code: searches with full referencia only."""
+        client = _mock_client()
+        client._client.get.return_value = _mock_get_response([
+            {"id": 1, "label": "EV-2026-001", "value": "200", "data": []},
+        ])
+        result = find_expediente_by_referencia("EV-2026-001", client=client)
+        assert result == "200"
+
+    def test_w_code_search_finds_match_on_first_try(self):
+        """W-code search succeeds -> no second autocomplete call needed."""
+        client = _mock_client()
+        call_count = 0
+
+        def counting_get(url):
+            nonlocal call_count
+            call_count += 1
+            return _mock_get_response([
+                {"id": 1, "label": "BaRS1 - X - (W-02VND1) - Vuelta", "value": "100", "data": []},
+            ])
+
+        client._client.get = counting_get
+        result = find_expediente_judicial_by_referencia(
+            "BaRS1 - X - (W-02VND1) - Vuelta", client=client,
+        )
+        assert result == "100"
+        assert call_count == 1
+
+    def test_w_code_search_misses_falls_back(self):
+        """W-code search returns no match -> falls back to full ref search."""
+        client = _mock_client()
+        call_count = 0
+
+        def two_phase_get(url):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return _mock_get_response([
+                    {"id": 1, "label": "Other thing with W-02VND1", "value": "999", "data": []},
+                ])
+            else:
+                return _mock_get_response([
+                    {"id": 1, "label": "BaRS1 - X - (W-02VND1) - Vuelta", "value": "100", "data": []},
+                ])
+
+        client._client.get = two_phase_get
+        result = find_expediente_judicial_by_referencia(
+            "BaRS1 - X - (W-02VND1) - Vuelta", client=client,
+        )
+        assert result == "100"
+        assert call_count == 2

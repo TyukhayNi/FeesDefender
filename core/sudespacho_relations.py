@@ -265,6 +265,40 @@ def _extract_w_code(case_id: str) -> str | None:
     return m.group(1) if m else None
 
 
+def _match_in_results(
+    results: list[dict[str, Any]],
+    referencia_cliente: str,
+) -> str | None:
+    """Devuelve el ID del primer resultado cuya label matchee normalizada."""
+    target = normalize_referencia(referencia_cliente)
+    for r in results:
+        if normalize_referencia(r.get("label", "")) == target:
+            return str(r["value"])
+    return None
+
+
+def _find_expediente_robust(
+    element: str,
+    referencia_cliente: str,
+    client: SudespachoLegacyClient,
+) -> str | None:
+    """Búsqueda robusta de expediente: W-code primero, luego referencia completa.
+
+    Compara las labels de los resultados de autocomplete con normalización
+    tolerante (espacios, acentos, case) para evitar falsos negativos por
+    variaciones tipográficas en la referencia_cliente del CRM.
+    """
+    w_code = _extract_w_code(referencia_cliente)
+    if w_code:
+        results = _autocomplete(element, w_code, client)
+        match = _match_in_results(results, referencia_cliente)
+        if match:
+            return match
+
+    results = _autocomplete(element, referencia_cliente, client)
+    return _match_in_results(results, referencia_cliente)
+
+
 def find_expediente_by_referencia(
     referencia_cliente: str,
     *,
@@ -272,6 +306,7 @@ def find_expediente_by_referencia(
 ) -> str | None:
     """Busca un expediente extrajudicial por su referencia_cliente (case_id).
 
+    Búsqueda dual (W-code + referencia completa) con comparación normalizada.
     Útil para detectar duplicados antes de crear un nuevo expediente.
 
     Args:
@@ -292,10 +327,7 @@ def find_expediente_by_referencia(
     if owns_client:
         client = SudespachoLegacyClient()
     try:
-        results = _autocomplete("extrajudiciales", referencia_cliente, client)
-        if results:
-            return str(results[0]["value"])
-        return None
+        return _find_expediente_robust("extrajudiciales", referencia_cliente, client)
     except SudespachoLegacyError as exc:
         raise SudespachoRelationsError(str(exc)) from exc
     finally:
@@ -313,6 +345,7 @@ def find_expediente_judicial_by_referencia(
 ) -> str | None:
     """Busca un expediente judicial por su referencia_cliente (case_id).
 
+    Búsqueda dual (W-code + referencia completa) con comparación normalizada.
     Útil para detectar duplicados antes de crear un nuevo expediente judicial.
 
     Args:
@@ -333,10 +366,9 @@ def find_expediente_judicial_by_referencia(
     if owns_client:
         client = SudespachoLegacyClient()
     try:
-        results = _autocomplete("expedientes_judiciales", referencia_cliente, client)
-        if results:
-            return str(results[0]["value"])
-        return None
+        return _find_expediente_robust(
+            "expedientes_judiciales", referencia_cliente, client,
+        )
     except SudespachoLegacyError as exc:
         raise SudespachoRelationsError(str(exc)) from exc
     finally:
