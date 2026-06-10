@@ -33,6 +33,7 @@ from core.sudespacho_relations import (
     load_all_colaboradores,
     normalize_referencia,
     search_colaboradores_for_ui,
+    _extract_w_code,
 )
 
 
@@ -895,3 +896,31 @@ class TestNormalizeReferencia:
 
     def test_tabs_and_newlines(self):
         assert normalize_referencia("a\t\tb\nc") == "a b c"
+
+
+# ---------------------------------------------------------------------------
+# _extract_w_code
+# ---------------------------------------------------------------------------
+
+
+class TestExtractWCode:
+    def test_standard_case_id(self):
+        assert _extract_w_code("BaRS1 - Tibidabo 8 - (W-02VND1) - Vuelta") == "W-02VND1"
+
+    def test_no_w_code(self):
+        assert _extract_w_code("MaRS2 - Gran Via 40 - Vuelta") is None
+
+    def test_lowercase_w_code(self):
+        assert _extract_w_code("(w-02nv4w)") == "w-02nv4w"
+
+    def test_w_code_with_5_chars(self):
+        assert _extract_w_code("(W-ABCDE)") == "W-ABCDE"
+
+    def test_w_code_with_8_chars(self):
+        assert _extract_w_code("(W-ABCDEF12)") == "W-ABCDEF12"
+
+    def test_empty_string(self):
+        assert _extract_w_code("") is None
+
+    def test_w_code_at_start(self):
+        assert _extract_w_code("W-0466A1 es el codigo") == "W-0466A1"

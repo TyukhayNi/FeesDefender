@@ -256,6 +256,15 @@ def normalize_referencia(s: str) -> str:
     return s.lower()
 
 
+_W_CODE_RE = re.compile(r"\b(W-[A-Za-z0-9]{5,8})\b", re.IGNORECASE)
+
+
+def _extract_w_code(case_id: str) -> str | None:
+    """Extrae el código W-XXXXXX de un case_id, o None si no tiene."""
+    m = _W_CODE_RE.search(case_id)
+    return m.group(1) if m else None
+
+
 def find_expediente_by_referencia(
     referencia_cliente: str,
     *,
