@@ -379,6 +379,113 @@ def test_pull_v2_hash_en_manifest_emite_dedup_skipped(modules, tmp_casos_root):
 
 
 # ---------------------------------------------------------------------------
+# 6b. physical_complete=True — overlap cross-source: se escribe igualmente
+# ---------------------------------------------------------------------------
+
+def test_pull_v2_physical_complete_escribe_overlap_y_loggea(modules, tmp_casos_root):
+    """Con ``physical_complete=True``, un doc cuyo SHA ya está en el manifest
+    bajo otra fuente (p. ej. Drive E&V) se escribe IGUALMENTE en su rama CRM:
+    ``05_CRM`` queda físicamente completo. Cuenta como ``documents_overlap``,
+    emite ``cross_source_overlap`` y el alias queda registrado."""
+    cm = modules["case_manager"]
+    ss = modules["sync_sudespacho"]
+    im = modules["intake_manifest"]
+    cm.ensure_case("PV2-OVL")
+
+    # El SHA ya existe en el manifest, primary en Drive E&V (otra fuente).
+    content = b"contrato identico cross-source"
+    sha = hashlib.sha256(content).hexdigest()
+    im.manifest_path("PV2-OVL").write_text(
+        json.dumps(
+            {sha: {"primary_path": "01_Drive EV/contrato.pdf", "aliases": []}},
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    doc = _make_doc(modules, "8001", filename="contrato.pdf", id_carpeta="307")
+    client = FakeSudespachoClient(docs=[doc], docs_content={"8001": content})
+
+    result = ss.pull_expediente_v2(
+        "PV2-OVL", "648", client=client, physical_complete=True,
+        actor="Nikolai Tyukhay",
+    )
+
+    # No se "salta": se escribe como overlap.
+    assert result.documents_written == 0
+    assert result.documents_skipped_dedup == 0
+    assert result.documents_overlap == 1
+
+    # El fichero físico SÍ está en la rama CRM destino.
+    crm_demanda = (
+        tmp_casos_root / "PV2-OVL" / "00_Input" / "05_CRM"
+        / "Civil" / "1ª Instancia" / "Declarativo" / "Demanda"
+    )
+    pdfs = list(crm_demanda.glob("*.pdf"))
+    assert len(pdfs) == 1
+    assert pdfs[0].read_bytes() == content
+
+    # Evento cross_source_overlap con primary y written.
+    events = _read_log_events(modules, "PV2-OVL")
+    ovl = [e for e in events if e["event"] == "cross_source_overlap"]
+    assert len(ovl) == 1
+    assert ovl[0]["actor"] == "Nikolai Tyukhay"
+    assert ovl[0]["details"]["sha256"] == sha
+    assert ovl[0]["details"]["primary_path"] == "01_Drive EV/contrato.pdf"
+    assert ovl[0]["details"]["written_path"].endswith("contrato.pdf")
+    assert ovl[0]["details"]["doc_id"] == "8001"
+    # NO se emite dedup_skipped en este modo.
+    assert [e for e in events if e["event"] == "dedup_skipped"] == []
+
+    # El alias quedó registrado en el manifest.
+    with im.IntakeManifest("PV2-OVL") as manifest:
+        entry = manifest.lookup(sha)
+    assert entry["primary_path"] == "01_Drive EV/contrato.pdf"
+    alias_paths = {a["path"] for a in entry["aliases"]}
+    assert any(p.endswith("contrato.pdf") for p in alias_paths)
+
+    # pull_crm reporta documents_overlap.
+    pull = [e for e in events if e["event"] == "pull_crm"][0]
+    assert pull["details"]["documents_overlap"] == 1
+
+
+def test_pull_v2_physical_complete_false_sigue_saltando(modules, tmp_casos_root):
+    """Regresión: con el default (``physical_complete=False``), el mismo
+    escenario sigue produciendo skip físico (``dedup_skipped``), no overlap."""
+    cm = modules["case_manager"]
+    ss = modules["sync_sudespacho"]
+    im = modules["intake_manifest"]
+    cm.ensure_case("PV2-NOOVL")
+
+    content = b"contrato identico cross-source"
+    sha = hashlib.sha256(content).hexdigest()
+    im.manifest_path("PV2-NOOVL").write_text(
+        json.dumps(
+            {sha: {"primary_path": "01_Drive EV/contrato.pdf", "aliases": []}},
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    doc = _make_doc(modules, "8002", filename="contrato.pdf", id_carpeta="307")
+    client = FakeSudespachoClient(docs=[doc], docs_content={"8002": content})
+
+    result = ss.pull_expediente_v2("PV2-NOOVL", "648", client=client)
+
+    assert result.documents_written == 0
+    assert result.documents_skipped_dedup == 1
+    assert result.documents_overlap == 0
+    crm_demanda = (
+        tmp_casos_root / "PV2-NOOVL" / "00_Input" / "05_CRM"
+        / "Civil" / "1ª Instancia" / "Declarativo" / "Demanda"
+    )
+    assert list(crm_demanda.glob("*.pdf")) == []
+    events = _read_log_events(modules, "PV2-NOOVL")
+    assert len([e for e in events if e["event"] == "dedup_skipped"]) == 1
+    assert [e for e in events if e["event"] == "cross_source_overlap"] == []
+
+
+# ---------------------------------------------------------------------------
 # 7. Idempotencia — segundo run, sobrescritura de documents_total_crm
 # ---------------------------------------------------------------------------
 

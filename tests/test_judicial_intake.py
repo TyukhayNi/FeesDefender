@@ -63,7 +63,9 @@ class FakeClient:
         return f"https://fake-s3.example/{doc_id}"
 
     def _download_url_raw(self, url):
-        return self._content.get(url.rsplit("/", 1)[-1], b"%PDF-1.4 x")
+        # Bytes distintos por doc_id → SHA distinto (evita dedup espurio entre docs).
+        doc_id = url.rsplit("/", 1)[-1]
+        return self._content.get(doc_id, f"%PDF-1.4 {doc_id}".encode())
 
 
 def _doc(modules, doc_id, filename, *, id_carpeta=None, label=None):
@@ -186,3 +188,71 @@ def test_intake_nada_clasificable(modules, tmp_casos_root):
     assert sorted(res.pendientes) == ["contestacion", "demanda"]
     assert res.pull is None
     assert len(_events(modules, "JUD-4", "pendiente_revision")) == 2
+
+
+# ---------------------------------------------------------------------------
+# 5. full=True — baja TODO el expediente, etiqueta, pendientes informativos
+# ---------------------------------------------------------------------------
+
+def test_intake_full_baja_todo_aunque_haya_ambiguedad(modules, tmp_casos_root):
+    """Con ``full=True`` se baja el expediente completo (no solo demanda+
+    contestación). La clasificación etiqueta los roles claros; los ambiguos
+    siguen yendo a ``pendiente_revision`` como AVISO, pero NO bloquean: todo
+    el expediente se descarga igualmente."""
+    ji = modules["judicial_intake"]
+    modules["case_manager"].ensure_case("JUD-FULL")
+
+    docs = [
+        _doc(modules, "40022", "02_DEMANDA_01.pdf", id_carpeta="307"),
+        # Contestación ambigua: dos candidatos
+        _doc(modules, "40625", "OPOSICION_DEMANDA_CALLE_ROSER_-_ARTICULO_20_LAU.pdf", id_carpeta="1"),
+        _doc(modules, "40405", "OPOSICION_DEMANDA_-_ARTICULO_20_LAU.docx", id_carpeta="1"),
+        # Ruido procesal que en modo acotado NO se bajaría
+        _doc(modules, "41289", "FRA PROCU ORDINARIO.pdf", id_carpeta="1"),
+        _doc(modules, "40020", "CEDULA DE EMPLAZAMIENTO.pdf", id_carpeta="1"),
+    ]
+    client = FakeClient(docs)
+
+    res = ji.intake_demanda_contestacion("JUD-FULL", "649", client=client, full=True)
+
+    assert res.full is True
+    # La demanda se etiqueta; la contestación queda pendiente (informativo).
+    assert res.demanda_doc_id == "40022"
+    assert res.contestacion_doc_id is None
+    assert res.pendientes == ["contestacion"]
+    # Pero se baja TODO el expediente, no solo los seleccionados.
+    assert res.pull is not None
+    assert res.pull.documents_total_crm == 5
+    assert set(res.pull.doc_ids) == {"40022", "40625", "40405", "41289", "40020"}
+    assert res.pull.documents_written == 5
+    assert res.documents_overlap == res.pull.documents_overlap == 0
+
+    # El pendiente se emite como aviso aunque el pull haya bajado todo.
+    pend = _events(modules, "JUD-FULL", "pendiente_revision")
+    assert len(pend) == 1
+    assert pend[0]["details"]["role"] == "contestacion"
+
+    sumario = _events(modules, "JUD-FULL", "intake_judicial")[0]
+    assert sumario["details"]["full"] is True
+    assert sumario["details"]["documents_overlap"] == 0
+
+
+def test_intake_no_full_es_el_default_acotado(modules, tmp_casos_root):
+    """Sin ``full`` (default), se mantiene el intake acotado: solo demanda+
+    contestación, el ruido NO se baja, y ``full`` queda en False."""
+    ji = modules["judicial_intake"]
+    modules["case_manager"].ensure_case("JUD-NOFULL")
+
+    docs = [
+        _doc(modules, "40022", "02_DEMANDA_01.pdf", id_carpeta="307"),
+        _doc(modules, "40405", "OPOSICION_DEMANDA_-_ARTICULO_20_LAU.pdf", id_carpeta="1"),
+        _doc(modules, "41289", "FRA PROCU ORDINARIO.pdf", id_carpeta="1"),
+    ]
+    client = FakeClient(docs)
+
+    res = ji.intake_demanda_contestacion("JUD-NOFULL", "649", client=client)
+
+    assert res.full is False
+    assert res.pull.documents_total_crm == 3
+    assert set(res.pull.doc_ids) == {"40022", "40405"}  # ruido NO bajado
+    assert res.pull.documents_written == 2

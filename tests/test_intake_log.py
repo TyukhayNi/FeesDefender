@@ -13,7 +13,7 @@ línea ``upload_manual`` happy path):
 - ``log_path`` no crea el archivo.
 - ``os.fsync`` se invoca en cada ``append_event`` (resiliencia a crashes
   según M10-Q4).
-- ``INTAKE_EVENTS`` sanity (13 eventos documentados).
+- ``INTAKE_EVENTS`` sanity (16 eventos documentados).
 """
 
 from __future__ import annotations
@@ -176,7 +176,7 @@ def test_append_event_rechaza_evento_desconocido(il, cm):
 
 
 def test_append_event_acepta_todos_los_eventos_canonicos(il, cm):
-    """Smoke: cada uno de los 13 ``INTAKE_EVENTS`` se puede escribir."""
+    """Smoke: cada uno de los 16 ``INTAKE_EVENTS`` se puede escribir."""
     cm.ensure_case("LOG-7")
     for event in il.INTAKE_EVENTS:
         il.append_event("LOG-7", event)
@@ -329,16 +329,17 @@ def test_append_event_invoca_fsync_por_cada_escritura(il, cm, monkeypatch):
 # INTAKE_EVENTS — sanity
 # ---------------------------------------------------------------------------
 
-def test_intake_events_es_frozenset_con_15_eventos(il):
+def test_intake_events_es_frozenset_con_16_eventos(il):
     assert isinstance(il.INTAKE_EVENTS, frozenset)
-    assert len(il.INTAKE_EVENTS) == 15
+    assert len(il.INTAKE_EVENTS) == 16
 
 
 def test_intake_events_contiene_los_canonicos(il):
     """Eventos documentados en project_intake_estructura_v2.md (M10-Q1).
 
     Los dos últimos (intake_judicial, pendiente_revision) se añadieron con
-    el intake judicial automático (2026-06-10).
+    el intake judicial automático (2026-06-10). ``cross_source_overlap`` se
+    añadió con el intake CRM completo (physical_complete, 2026-06-10).
     """
     expected = {
         "link_expediente",
@@ -356,5 +357,6 @@ def test_intake_events_contiene_los_canonicos(il):
         "migrate_v1_v2",
         "intake_judicial",
         "pendiente_revision",
+        "cross_source_overlap",
     }
     assert il.INTAKE_EVENTS == expected

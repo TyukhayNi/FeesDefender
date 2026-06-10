@@ -6,7 +6,7 @@ quién hizo qué, cuándo y con qué efecto sobre el repositorio del caso.
 
 Decisiones cerradas (memoria persistente: ``project_intake_estructura_v2.md``):
 
-- M10-Q1: 13 tipos de evento permitidos (constante ``INTAKE_EVENTS``).
+- M10-Q1: 16 tipos de evento permitidos (constante ``INTAKE_EVENTS``).
 - M10-Q2: schema común ``{ts, actor, event, case_id, details}`` con
   ``details`` específico por evento.
 - M10-Q3: actor resuelto desde un singleton thread-safe (``set_actor`` /
@@ -55,6 +55,7 @@ INTAKE_EVENTS: frozenset[str] = frozenset({
     "migrate_v1_v2",        # migración manual de un caso v1 (sudespacho_*/) a v2
     "intake_judicial",      # intake acotado demanda+contestación (resumen)
     "pendiente_revision",   # rol (demanda/contestación) no resuelto → revisión letrado
+    "cross_source_overlap", # doc byte-idéntico a otro ya presente, escrito igualmente (physical_complete)
 })
 
 

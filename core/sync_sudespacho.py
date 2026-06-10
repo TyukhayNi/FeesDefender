@@ -1240,6 +1240,11 @@ class PullResultV2:
       descargado por la red sino lo escrito a disco; eso lo cuenta
       `documents_written`.
     - `documents_total_crm` ≠ `documents_written` por el dedup M9.
+    - `documents_overlap` cuenta los docs byte-idénticos a otro ya presente
+      (otra fuente o rama) que, con `physical_complete=True`, se escriben
+      físicamente igualmente para dejar `05_CRM` completo. Con el default
+      (`physical_complete=False`) ese caso se contabiliza en
+      `documents_skipped_dedup` y no se escribe.
     - `by_carpeta` mapea ruta canónica relativa a `00_Input/05_CRM/` (D11)
       → conteo lógico (incluye aliases del manifest, M9-Q3).
     - `kind_distribution` agrega los modos de resolución de
@@ -1252,6 +1257,7 @@ class PullResultV2:
     documents_total_crm: int = 0
     documents_written: int = 0
     documents_skipped_dedup: int = 0
+    documents_overlap: int = 0
     documents_failed: int = 0
     doc_ids: list[str] = field(default_factory=list)
     by_carpeta: dict[str, int] = field(default_factory=dict)
@@ -1298,6 +1304,7 @@ def pull_expediente_v2(
     client: SudespachoClient | None = None,
     actor: str | None = None,
     only_doc_ids: set[str] | None = None,
+    physical_complete: bool = False,
 ) -> PullResultV2:
     """Pull v2 de un expediente CRM al árbol ``00_Input/05_CRM/<rama>/`` del caso.
 
@@ -1337,6 +1344,15 @@ def pull_expediente_v2(
             cuyo ``doc_id`` esté en el conjunto (intake acotado, p. ej.
             demanda+contestación). ``documents_total_crm`` sigue reflejando el
             total real del expediente en el CRM.
+        physical_complete: si ``True``, deja ``05_CRM`` físicamente completo:
+            un doc cuyo SHA ya existe en el manifest bajo OTRA ruta (otra
+            fuente como Drive E&V, u otra rama) se escribe IGUALMENTE como
+            copia física en su rama destino, en vez de saltarse. Cuenta en
+            ``documents_overlap`` y emite ``cross_source_overlap``. El re-pull
+            idempotente del mismo path (``rel_path == primary``) NO se escribe
+            ni cuenta como overlap (es el mismo doc en su sitio). Con el
+            default (``False``) el comportamiento es el dedup clásico (skip
+            físico + ``dedup_skipped``).
 
     Returns:
         :class:`PullResultV2` con resumen del pull.
@@ -1461,8 +1477,30 @@ def pull_expediente_v2(
                     final_target.parent.mkdir(parents=True, exist_ok=True)
                     final_target.write_bytes(data)
                     result.documents_written += 1
+                elif physical_complete and rel_path != primary_rel:
+                    # Solapamiento cross-source real: el SHA ya existe bajo otra
+                    # ruta (otra fuente/rama). Con physical_complete escribimos
+                    # la copia física igualmente para dejar 05_CRM completo.
+                    # El alias ya lo registró manifest.register().
+                    final_target.parent.mkdir(parents=True, exist_ok=True)
+                    final_target.write_bytes(data)
+                    result.documents_overlap += 1
+                    _log_event(
+                        case_id, "cross_source_overlap",
+                        actor=actor,
+                        details={
+                            "expediente_id": str(expediente_id),
+                            "doc_id": info.doc_id,
+                            "sha256": sha,
+                            "primary_path": primary_rel,
+                            "written_path": rel_path,
+                        },
+                    )
                 else:
-                    # Skip físico — primary_rel ya tiene el doc
+                    # Skip físico — primary_rel ya tiene el doc. Cubre el dedup
+                    # clásico (physical_complete=False) y el re-pull idempotente
+                    # del mismo path (rel_path == primary_rel), que no se cuenta
+                    # como overlap porque es el mismo doc en su sitio.
                     result.documents_skipped_dedup += 1
                     _log_event(
                         case_id, "dedup_skipped",
@@ -1509,6 +1547,7 @@ def pull_expediente_v2(
                 "documents_total_crm": result.documents_total_crm,
                 "documents_written": result.documents_written,
                 "documents_skipped_dedup": result.documents_skipped_dedup,
+                "documents_overlap": result.documents_overlap,
                 "documents_failed": result.documents_failed,
                 "kind_distribution": result.kind_distribution,
                 "errors_count": len(result.errors),

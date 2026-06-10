@@ -204,16 +204,22 @@ def intake_judicial(
     expediente: str = typer.Option(..., "--expediente", help="ID del expediente JUDICIAL en sudespacho"),
     element: str = typer.Option("expedientes_judiciales", "--element"),
     referencia: str = typer.Option(None, "--referencia", help="Referencia CRM (validación preventiva)"),
+    full: bool = typer.Option(False, "--full/--no-full",
+                              help="Baja el expediente COMPLETO (no solo demanda+contestación), "
+                                   "dejando 05_CRM físicamente completo. La clasificación pasa a "
+                                   "ser etiquetado: los roles ambiguos se avisan pero no bloquean."),
     run_pipeline: bool = typer.Option(False, "--run-pipeline/--no-run-pipeline",
                                       help="Encadena el pipeline (anon → MD → frontier) tras el intake"),
 ) -> None:
-    """Intake acotado: localiza, clasifica y deposita SOLO la demanda y la
-    contestación del expediente judicial en el árbol del caso.
+    """Intake del expediente judicial en el árbol del caso.
 
-    A diferencia de `pull` (que baja todo el expediente), este comando descarga
-    únicamente los dos documentos procesales clave, identificados por heurística
-    sobre el nombre/etiqueta del CRM. Los roles ambiguos (0 o varios candidatos)
-    se marcan para revisión del letrado y NO se descargan.
+    Por defecto (intake acotado) descarga únicamente la demanda y la
+    contestación, identificadas por heurística sobre el nombre/etiqueta del
+    CRM; los roles ambiguos se marcan para revisión y NO se descargan.
+
+    Con ``--full`` descarga el expediente COMPLETO (todo el gestor documental),
+    dejando ``05_CRM`` físicamente completo; la clasificación se usa solo como
+    etiquetado y los roles ambiguos se avisan sin bloquear la descarga.
     """
     case_manager.ensure_case(
         case,
@@ -224,7 +230,7 @@ def intake_judicial(
 
     try:
         result = intake_demanda_contestacion(
-            case, expediente, element=element,
+            case, expediente, element=element, full=full,
         )
     except SudespachoError as exc:
         typer.echo(f"❌ {exc}")
@@ -239,11 +245,14 @@ def intake_judicial(
     typer.echo(json.dumps({
         "case_id": result.case_id,
         "expediente_id": result.expediente_id,
+        "full": result.full,
         "demanda_doc_id": result.demanda_doc_id,
         "contestacion_doc_id": result.contestacion_doc_id,
         "pendientes_revision": result.pendientes,
+        "documents_total_crm": result.pull.documents_total_crm if result.pull else 0,
         "documents_written": result.pull.documents_written if result.pull else 0,
         "documents_skipped_dedup": result.pull.documents_skipped_dedup if result.pull else 0,
+        "documents_overlap": result.pull.documents_overlap if result.pull else 0,
         "errors": result.errors,
     }, ensure_ascii=False, indent=2))
 

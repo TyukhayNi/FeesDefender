@@ -731,10 +731,12 @@ with tab_casos:
         st.divider()
         with st.expander("⚖️ Intake judicial automático (demanda + contestación)"):
             st.caption(
-                "Localiza, clasifica y deposita **solo** la demanda y la "
-                "contestación del expediente judicial en el árbol CRM del caso "
-                "(con dedup y registro). No baja el resto del expediente. "
-                "Los roles ambiguos se marcan para tu revisión, sin adivinar."
+                "Localiza, clasifica y deposita los documentos procesales del "
+                "expediente judicial en el árbol CRM del caso (con dedup y "
+                "registro). Por defecto baja **solo** la demanda y la "
+                "contestación; marca la casilla de abajo para bajar el "
+                "expediente completo. Los roles ambiguos se marcan para tu "
+                "revisión, sin adivinar."
             )
             _caso_ij = st.selectbox(
                 "Caso", cases, key="casos_ij_sel",
@@ -746,6 +748,16 @@ with tab_casos:
                 placeholder="649",
                 help="ID numérico del expediente JUDICIAL en el CRM (no el extrajudicial).",
             ).strip()
+            _full_ij = st.checkbox(
+                "Descargar expediente completo (no solo demanda+contestación)",
+                key="casos_ij_full",
+                value=False,
+                help="Baja TODO el gestor documental del expediente, dejando "
+                     "`05_CRM` físicamente completo. La demanda y la contestación "
+                     "se etiquetan igualmente; los roles ambiguos se avisan sin "
+                     "bloquear la descarga. Útil para tener todos los procesales "
+                     "(p. ej. de cara al juicio).",
+            )
             _pipe_ij = st.checkbox(
                 "Encadenar pipeline (anon → MD → frontier) tras el intake",
                 key="casos_ij_pipe",
@@ -753,10 +765,14 @@ with tab_casos:
             )
 
             if st.button(
-                "⚖️ Traer demanda + contestación",
+                "⚖️ Traer expediente completo" if _full_ij else "⚖️ Traer demanda + contestación",
                 key="casos_ij_btn",
                 disabled=not _exp_ij,
-                help="Descarga únicamente los dos documentos procesales clave.",
+                help=(
+                    "Descarga todo el expediente del CRM."
+                    if _full_ij else
+                    "Descarga únicamente los dos documentos procesales clave."
+                ),
             ):
                 if case_manager.is_legacy_intake_v1(_caso_ij):
                     st.error(
@@ -771,6 +787,7 @@ with tab_casos:
                         try:
                             _rij = _intake_judicial(
                                 _caso_ij, _exp_ij, element="expedientes_judiciales",
+                                full=_full_ij,
                             )
                         except _SudespachoError as _eij:
                             _rij = None
@@ -778,11 +795,22 @@ with tab_casos:
 
                     if _rij is not None:
                         _written = _rij.pull.documents_written if _rij.pull else 0
-                        if _written:
-                            st.success(
+                        _total_crm = _rij.pull.documents_total_crm if _rij.pull else 0
+                        _overlap = _rij.pull.documents_overlap if _rij.pull else 0
+                        if _written or _overlap:
+                            _msg = (
                                 f"✅ **{_written}** documento(s) depositados en "
-                                f"`00_Input/05_CRM/`."
+                                f"`00_Input/05_CRM/`"
                             )
+                            if _rij.full:
+                                _msg += f" (de **{_total_crm}** en el CRM)"
+                            if _overlap:
+                                _msg += (
+                                    f". **{_overlap}** copia(s) byte-idéntica(s) a "
+                                    "documentos ya presentes, escritas igualmente "
+                                    "para dejar el expediente completo"
+                                )
+                            st.success(_msg + ".")
                         if _rij.classification:
                             for _rr in (
                                 _rij.classification.demanda,
@@ -810,7 +838,7 @@ with tab_casos:
                         for _eij_err in _rij.errors:
                             st.caption(f"⚠️ {_eij_err}")
 
-                        if _pipe_ij and _written:
+                        if _pipe_ij and (_written or _overlap):
                             with st.spinner("Ejecutando pipeline…"):
                                 _prij = pipeline.run(
                                     _caso_ij, do_sync=False, do_demanda=True,

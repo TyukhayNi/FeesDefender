@@ -43,6 +43,8 @@ class IntakeJudicialResult:
     contestacion_doc_id: str | None = None
     pendientes: list[str] = field(default_factory=list)   # roles para revisión
     pull: PullResultV2 | None = None
+    full: bool = False
+    documents_overlap: int = 0
     errors: list[str] = field(default_factory=list)
 
 
@@ -68,8 +70,9 @@ def intake_demanda_contestacion(
     client: SudespachoClient | None = None,
     actor: str | None = None,
     llm_fn=None,
+    full: bool = False,
 ) -> IntakeJudicialResult:
-    """Localiza, clasifica y deposita demanda + contestación del expediente.
+    """Localiza, clasifica y deposita los documentos procesales del expediente.
 
     Args:
         case_id: ID del caso (no debe ser legacy v1).
@@ -80,12 +83,20 @@ def intake_demanda_contestacion(
         actor: override del actor para los eventos M10.
         llm_fn: hook de desempate para el clasificador. Default None
             (heurística pura; la ambigüedad va a revisión del letrado).
+        full: si ``True``, baja el expediente COMPLETO (no solo demanda+
+            contestación). La clasificación se usa solo como etiquetado: los
+            roles ambiguos siguen emitiendo ``pendiente_revision`` como AVISO
+            pero NO bloquean — todo el expediente se descarga igualmente y
+            ``05_CRM`` queda físicamente completo (``physical_complete=True``).
+            Con el default (``False``) se mantiene el intake acotado a los dos
+            documentos procesales resueltos.
 
     Returns:
         :class:`IntakeJudicialResult`.
     """
     result = IntakeJudicialResult(
         case_id=case_id, expediente_id=str(expediente_id), element=element,
+        full=full,
     )
 
     # 1. Bloqueo de casos legacy v1 (D9) — mismo criterio que pull_expediente_v2.
@@ -142,22 +153,42 @@ def intake_demanda_contestacion(
                     details={"expediente_id": str(expediente_id), **_role_detail(rr)},
                 )
 
-        # 6. Descargar+depositar solo demanda+contestación resueltas.
-        selected = {
-            d for d in (result.demanda_doc_id, result.contestacion_doc_id) if d
-        }
-        if selected:
+        # 6. Descargar+depositar.
+        #   - full=True: el expediente COMPLETO (only_doc_ids=None), físicamente
+        #     completo. La ambigüedad de roles es informativa, no bloquea.
+        #   - default: solo demanda+contestación resueltas (intake acotado).
+        if full:
             try:
                 result.pull = pull_expediente_v2(
                     case_id, str(expediente_id),
                     element=element,
                     client=api_client,
                     actor=actor,
-                    only_doc_ids=selected,
+                    only_doc_ids=None,
+                    physical_complete=True,
                 )
                 result.errors.extend(result.pull.errors)
             except SudespachoError as exc:
-                result.errors.append(f"pull demanda+contestación: {exc}")
+                result.errors.append(f"pull expediente completo: {exc}")
+        else:
+            selected = {
+                d for d in (result.demanda_doc_id, result.contestacion_doc_id) if d
+            }
+            if selected:
+                try:
+                    result.pull = pull_expediente_v2(
+                        case_id, str(expediente_id),
+                        element=element,
+                        client=api_client,
+                        actor=actor,
+                        only_doc_ids=selected,
+                    )
+                    result.errors.extend(result.pull.errors)
+                except SudespachoError as exc:
+                    result.errors.append(f"pull demanda+contestación: {exc}")
+
+        if result.pull:
+            result.documents_overlap = result.pull.documents_overlap
 
         # 7. Evento resumen del intake judicial (M10).
         _log_event(
@@ -166,6 +197,7 @@ def intake_demanda_contestacion(
             details={
                 "expediente_id": str(expediente_id),
                 "element": element,
+                "full": full,
                 "demanda_doc_id": result.demanda_doc_id,
                 "contestacion_doc_id": result.contestacion_doc_id,
                 "pendientes": result.pendientes,
@@ -173,6 +205,7 @@ def intake_demanda_contestacion(
                 "documents_skipped_dedup": (
                     result.pull.documents_skipped_dedup if result.pull else 0
                 ),
+                "documents_overlap": result.documents_overlap,
                 "errors_count": len(result.errors),
             },
         )
