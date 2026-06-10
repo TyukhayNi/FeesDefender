@@ -33,6 +33,7 @@ from core.sudespacho_relations import (
     load_all_colaboradores,
     normalize_referencia,
     search_colaboradores_for_ui,
+    verify_expediente_referencia,
     _extract_w_code,
 )
 
@@ -1034,3 +1035,69 @@ class TestFindExpedienteRobust:
         )
         assert result == "100"
         assert call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# verify_expediente_referencia — normalized comparison
+# ---------------------------------------------------------------------------
+
+
+class TestVerifyNormalized:
+    """verify_expediente_referencia uses normalized comparison."""
+
+    @patch("core.sudespacho_relations.fetch_referencia_cliente")
+    def test_double_space_matches(self, mock_fetch):
+        mock_fetch.return_value = ("(W-02NV4W)  - Vuelta", False)
+        result = verify_expediente_referencia(
+            "444", "expedientes_judiciales",
+            expected_referencia="(W-02NV4W) - Vuelta",
+        )
+        assert result["match"] is True
+        assert result["found"] is True
+
+    @patch("core.sudespacho_relations.fetch_referencia_cliente")
+    def test_accent_difference_matches(self, mock_fetch):
+        mock_fetch.return_value = ("Gran Vía 40", False)
+        result = verify_expediente_referencia(
+            "500", "extrajudiciales",
+            expected_referencia="Gran Via 40",
+        )
+        assert result["match"] is True
+
+    @patch("core.sudespacho_relations.fetch_referencia_cliente")
+    def test_case_difference_matches(self, mock_fetch):
+        mock_fetch.return_value = ("bars1 - tibidabo", False)
+        result = verify_expediente_referencia(
+            "100", "extrajudiciales",
+            expected_referencia="BaRS1 - Tibidabo",
+        )
+        assert result["match"] is True
+
+    @patch("core.sudespacho_relations.fetch_referencia_cliente")
+    def test_genuinely_different_does_not_match(self, mock_fetch):
+        mock_fetch.return_value = ("Completely Different", False)
+        result = verify_expediente_referencia(
+            "100", "extrajudiciales",
+            expected_referencia="Not The Same",
+        )
+        assert result["match"] is False
+
+    @patch("core.sudespacho_relations.fetch_referencia_cliente")
+    def test_none_crm_ref_does_not_match(self, mock_fetch):
+        mock_fetch.return_value = (None, False)
+        result = verify_expediente_referencia(
+            "100", "extrajudiciales",
+            expected_referencia="Something",
+        )
+        assert result["match"] is False
+        assert result["found"] is False
+
+    @patch("core.sudespacho_relations.fetch_referencia_cliente")
+    def test_crm_unreachable(self, mock_fetch):
+        mock_fetch.return_value = (None, True)
+        result = verify_expediente_referencia(
+            "100", "extrajudiciales",
+            expected_referencia="Something",
+        )
+        assert result["match"] is False
+        assert result["crm_unreachable"] is True

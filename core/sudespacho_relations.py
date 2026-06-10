@@ -1571,12 +1571,11 @@ def verify_expediente_referencia(
     # público de esta función: lo que importa es si la referencia coincide.
     found = (not crm_unreachable) and (crm_ref is not None)
 
-    # Comparación tolerante a espacios; sensible a mayúsculas/acentos (la
-    # referencia_cliente del CRM debe coincidir exactamente con el case_id).
+    # Comparación normalizada: colapsa espacios, quita acentos, lowercase.
     if crm_ref is None or expected_referencia is None:
         match = False
     else:
-        match = crm_ref.strip() == expected_referencia.strip()
+        match = normalize_referencia(crm_ref) == normalize_referencia(expected_referencia)
 
     return {
         "expediente_id":       str(expediente_id),
