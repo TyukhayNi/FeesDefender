@@ -118,6 +118,18 @@ def test_extract_url_from_doc_no_url():
     assert SudespachoClient._extract_url_from_doc([1, 2]) is None
 
 
+def test_extract_url_from_doc_campo_presigned_download_url():
+    """La respuesta de /api/documents/{id}/downloadUri trae la URL S3 en el
+    campo `presignedDownloadUrl` (confirmado 2026-06-10 contra exp. 649)."""
+    payload = {
+        "customFilename": "Demanda.pdf",
+        "mimeType": "application/pdf",
+        "presignedDownloadUrl": "https://api-crm-tmp.s3.eu-west-1.amazonaws.com/u/x.pdf?sig=1",
+    }
+    assert SudespachoClient._extract_url_from_doc(payload) == \
+        "https://api-crm-tmp.s3.eu-west-1.amazonaws.com/u/x.pdf?sig=1"
+
+
 # ---- Aplanado de metadatos del documento ---------------------------------
 
 def _make_client_no_init() -> SudespachoClient:
@@ -539,6 +551,47 @@ def test_get_presigned_download_url_sin_url_en_json(monkeypatch):
 
     with pytest.raises(SudespachoError):
         client.get_presigned_download_url("40054", "648")
+
+
+def test_get_presigned_download_url_usa_downloaduri(monkeypatch):
+    """Tras la rotura server-side de los endpoints presigned (2026-05-11),
+    get_presigned_download_url usa GET /api/documents/{id}/downloadUri y
+    extrae el campo `presignedDownloadUrl` del JSON real del CRM.
+
+    Regresión de `[CRITICO-PRESIGNED-DOWNLOAD-BUG]`: confirmado 2026-06-10
+    contra el expediente 649 que /api/files/presigned_download_url y
+    /api/documents/presigned_urls/s3/download están rotos (400/500) y que
+    downloadUri es la ruta viva.
+    """
+    import json as _json
+    client = _make_client_rest()
+    captured: dict[str, str] = {}
+    s3_url = (
+        "https://api-crm-tmp.s3.eu-west-1.amazonaws.com/uuid/Demanda.pdf"
+        "?response-content-disposition=attachment&X-Amz-Expires=600"
+    )
+    real_shape = _json.dumps({
+        "customFilename": "Demanda.pdf",
+        "originalFilename": "raw.pdf",
+        "mimeType": "application/pdf",
+        "origin": "fuploaders3",
+        "presignedDownloadUrl": s3_url,
+    })
+
+    def fake_get(self, path, **params):
+        captured["path"] = path
+        return _FakeHTTPResponse(200, real_shape, "application/json")
+
+    monkeypatch.setattr(SudespachoClient, "_get", fake_get)
+    monkeypatch.setattr(
+        SudespachoClient, "cfg",
+        SudespachoConfig(base_url="https://x", api_key="k"),
+        raising=False,
+    )
+
+    url = client.get_presigned_download_url("40054", "648")
+    assert captured["path"] == "/api/documents/40054/downloadUri"
+    assert url == s3_url
 
 
 # ---- download_document_rest -----------------------------------------------

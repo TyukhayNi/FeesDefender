@@ -10,69 +10,75 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 
 ## ⚠️ MÁXIMA PRIORIDAD — abrir la próxima sesión por aquí
 
-### [CRITICO-PRESIGNED-DOWNLOAD-BUG] Arreglar descarga del Gestor Documental del CRM
+### ✅ [CRITICO-PRESIGNED-DOWNLOAD-BUG] RESUELTO 2026-06-10 — descarga del Gestor Documental
 
-**Detectado:** 2026-05-11 (s8), durante pull v2 del expediente 649 de BaRR3.
-**Estado:** abierto, **bloquea pull v2 en todos los casos**.
-**Subido a máxima prioridad:** 2026-05-28 a petición de Nikolai (sesión Cowork).
-**Detalle completo:** `STATUS.md` líneas 769-810 y `docs/DEAD_ENDS.md`
-→ "GET /api/files/presigned_download_url/{doc_id}".
+La descarga REST está arreglada (era la **Fase 0** de
+`[SIGUIENTE-INTAKE-JUDICIAL-AUTO]`, abajo). Causa raíz: el CRM redesplegó el
+módulo `App\Upload` y rompió **ambos** endpoints de presigned-URL
+(`/api/files/presigned_download_url` → 400 IRI; `/api/documents/presigned_urls/s3/download`
+→ 500 controlador no registrado). Endpoint vivo: `GET /api/documents/{id}/downloadUri`
+→ campo `presignedDownloadUrl`. `get_presigned_download_url` reescrito; 31/31 docs
+del exp. 649 verificados byte a byte. Detalle completo y diagnóstico en
+`docs/DEAD_ENDS.md` (entrada marcada ✅ RESUELTO). **Próximo paso real:** Fases 1-4
+de `[SIGUIENTE-INTAKE-JUDICIAL-AUTO]`.
 
-#### Síntoma
+---
 
-El endpoint REST `GET /api/files/presigned_download_url/{doc_id}` devuelve
-HTTP 400 para todos los documentos del expediente 649 (26/26 fallos
-consecutivos). Body:
+## [SIGUIENTE-INTAKE-JUDICIAL-AUTO] Intake automático de demanda y contestación desde el CRM
+*Añadido 2026-06-10 (sesión Cowork). Implementación: Claude Code. Engloba y resuelve `[CRITICO-PRESIGNED-DOWNLOAD-BUG]` como su Fase 0.*
 
-    {"@context":"/api/contexts/Error","@type":"hydra:Error",
-     "hydra:title":"An error occurred",
-     "hydra:description":"Unable to generate an IRI for \"App\\Upload\\Infrastructure\\ApiPlatform\\DTO\\Download\""
+**Objetivo:** intake end-to-end de los dos documentos judiciales clave de un
+expediente —demanda y contestación— desde el Gestor Documental del CRM hasta el
+árbol del caso, sin el workaround manual (descarga SPA + expander Streamlit).
+Flujo: localizar expediente judicial → identificar demanda y contestación →
+descargar → depositar en cajón CRM → encadenar pipeline (anon → MD → frontier)
+con dedup (M9) y log (M10, `_intake_log.jsonl`).
 
-Es un error del framework API Platform del backend PHP de sudespacho.
-El listado `/api/element_registries/gdocu` funciona y devuelve los 26 docs
-con metadatos. Solo la descarga está rota.
+**Contexto verificado (sesión Cowork 2026-06-10, lectura de `core/sync_sudespacho.py`):**
+- Listado OK: `list_gdocu_docs_rest` (`GET /api/element_registries/gdocu`) →
+  `GdocuDocInfo(doc_id, filename, id_carpeta, id_carpeta_label, mime, size, raw)`;
+  `id_carpeta_label` trae etiquetas tipo `"CIVIL"`.
+- Descarga ROTA: `get_presigned_download_url` usa `ENDPOINTS["presigned_download_url"]`
+  = `/api/files/presigned_download_url/{doc_id}` → HTTP 400. Es el bug crítico.
+- PISTA: existe declarado pero **sin usar** `ENDPOINTS["presigned_download"]` =
+  `/api/documents/presigned_urls/{service}/download/{documentId}` (`service="s3"`),
+  mencionado en el docstring de cabecera → primer candidato a probar.
+- Demanda/contestación viven en namespace `expedientes_judiciales` (ids no
+  comparables con `expedientes_extrajudiciales`). Banco de pruebas: expediente 649 (BaRR3, 26 docs).
 
-Confirmado **operativo el 2026-05-04**, confirmado **roto el 2026-05-11**.
+**Fases:**
+- **Fase 0 (bloqueante) — desbloquear descarga.** ✅ HECHA (2026-06-10). La ruta
+  alternativa del plan (`presigned_urls/s3/download`) **también estaba rota** (500);
+  el endpoint vivo es `GET /api/documents/{id}/downloadUri` → `presignedDownloadUrl`.
+  `get_presigned_download_url` reescrito, `docs/DEAD_ENDS.md` actualizado.
+  Cierre cumplido: **31/31** docs del expediente 649 (creció desde 26) ✓.
+- **Fase 1 — identificación.** Clasificador demanda/contestación sobre la salida
+  de `list_gdocu_docs_rest`, source-locked (anclado a `filename`/`id_carpeta_label`
+  reales). Casos límite (0 / múltiples / escaneado sin nombre) → `[PENDIENTE
+  revisión letrado]`, nunca adivinar.
+- **Fase 2 — routing + pipeline.** Depósito en `00_Input/05_CRM/<rama>` con dedup
+  + `_intake_log.jsonl` (reutilizar `intake_manual`/`intake_log`); encadenar
+  `core/pipeline.py`. Respetar idempotencia (no mutar `00_Input/`; `--force`).
+- **Fase 3 — disparo.** CLI en `scripts/sync_sudespacho.py` acotado a
+  demanda+contestación (no todo el expediente), p.ej.
+  `intake-judicial --case "<ref>" --expediente <id>`.
+- **Fase 4 — tests y cierre.** Regresión sobre expediente 649 (26/26, identificación
+  correcta, depósito con dedup/log) + tests del clasificador. Actualizar `STATUS.md`
+  y `PLAN.md` (mover el bug crítico a Resuelto si procede), `git`.
 
-#### Consecuencia
-
-Ningún caso puede completar pull v2 hasta resolverlo. BaRR3 vinculado al
-expediente correcto 649 pero sin docs locales. Workaround actualmente en
-uso: descarga manual desde la SPA sudespacho.net + subida vía el expander
-"📂 Subir al árbol CRM" del tab Casos de Streamlit (paso 7b refactor
-intake v2).
-
-#### Pasos a ejecutar en la próxima sesión de Claude Code
-
-1. Capturar HAR de la SPA descargando un doc del expediente 649 desde
-   sudespacho.net manualmente: Chrome DevTools → Network → click sobre
-   un doc del Gestor Documental → guardar HAR. El usuario sí puede
-   descargar desde la web, luego la SPA usa ruta distinta o auth diferente.
-2. Comparar el payload con `download_document_rest` en
-   `core/sync_sudespacho.py`.
-3. Si la ruta REST ha cambiado (renombrado / reorganización del módulo
-   Upload del backend), actualizar el endpoint en `download_document_rest`.
-4. Si la SPA usa frontal legacy PHP para descargar (`/views/gdocu/...`),
-   implementar fallback en `pull_expediente_v2` con PHPSESSID
-   (re-introducir la dependencia eliminada el 2026-05-04 para listar +
-   descargar, manteniendo la auth REST para crear/vincular).
-5. Tests de regresión sobre el expediente 649 hasta lograr 26/26 ✓.
-
-#### Criterios de cierre
-
-- `python -m scripts.sync_sudespacho pull --case <caso BaRR3> --expediente 649 --force`
-  baja los 26 documentos sin errores.
-- El intake v2 deposita los docs en `00_Input/05_CRM/<rama canónica>/` con
-  dedup M9 y log M10 operativos.
-- `docs/DEAD_ENDS.md` actualizado con la resolución (causa raíz +
-  endpoint definitivo).
+**Decisiones a cerrar antes de implementar:**
+- Clasificación: heurística por `filename`/`id_carpeta_label` con fallback LLM
+  (Haiku) solo en ambigüedad. *(Inclinación Cowork: sí; confirmar con Nikolai.)*
+- Disparo: ¿solo CLI o también botón en el tab Casos de Streamlit? Hoy no hay
+  botón de pull en la UI. *(Pendiente de Nikolai.)*
 
 ---
 
 ## Aparcado mientras el bloque crítico no se cierre
 
-- `[SIGUIENTE-ORGANIZADOR-UI]` — botón "Organizar localmente" en
-  Streamlit (organizador local Ollama).
+- `[SIGUIENTE-ORGANIZADOR-UI]` — **DESCARTADO 2026-06-07** (Ollama demasiado
+  lento e impreciso). Sustituido por `[SIGUIENTE-CATALOGO-DOCUMENTAL]`;
+  ver "Notas de la sesión Cowork 2026-06-07" abajo.
 - `[SIGUIENTE-SUBDIVISION-CIUDADES]` — refactor `CASOS_ROOT` por ciudades
   (Fase 1).
 - `[SIGUIENTE-SaRS1-PIPELINE]` H6 — subida manual gdocu expediente 659 +
@@ -139,6 +145,91 @@ máxima prioridad, y hubo que rescatarlo a mano el 2026-05-28.
 - Apuntado `[CRITICO-FUENTES-VERDAD-PLANIFICACION]` — auditoría meta del
   proceso de desarrollo, motivada por la observación de Nikolai de que
   conviven demasiadas fuentes de verdad. **Resuelto el 2026-05-29** (ver arriba).
+
+## Notas de la sesión Cowork 2026-06-07
+
+### Decisión — Organización documental por caso
+
+**1. Organizador local con Ollama → DESCARTADO** (`[SIGUIENTE-ORGANIZADOR-UI]`).
+Ollama (Qwen 2.5 14B) demasiado lento e impreciso para esta tarea. La ventaja
+de "local" (privacidad/coste) no compensa aquí: ya se anonimiza antes y ya hay
+LLM cloud en el pipeline; nombres y estructura no son el payload sensible.
+Coste de mantenimiento alto para usuarias no técnicas (fallos silenciosos) y la
+vista `_organizado/` duplica almacenamiento.
+
+**2. Sustituto → `[SIGUIENTE-CATALOGO-DOCUMENTAL]`: catálogo YAML canónico +
+`INDICE.md` derivado.**
+
+- `indice_documental.yaml` en la raíz del caso = fuente de verdad canónica,
+  propiedad del código. Lo consumen pipeline, sync CRM, bitácora y (futuro)
+  El Auditor.
+- `INDICE.md` auto-renderizado desde ese YAML, de **solo lectura** (cabecera
+  "no editar a mano"), para humanos (Paola, Ana, Marta E&V).
+- Las ediciones entran por UI/pipeline, **nunca tocando el YAML a mano** (evita
+  mojibake/encoding y conflictos de escritura concurrente).
+- **Excluir siempre `90_NOTAS_PERSONALES/`** del indexado. El YAML convive con
+  la nomenclatura de carpetas, no la sustituye.
+- Esquema mínimo por entrada: `id_doc`, `ruta_relativa`, `nombre_original`,
+  `tipo_documental`, `fecha_doc`, `parte` (propietario/buscador/tercero),
+  `fuente` (E&V/cliente/juzgado), `estado` (original/anonimizado/borrador),
+  `hash`, `fecha_indexado`.
+- El desorden de carpetas heredado, si es masivo, se trata con un **script de
+  migración puntual**, no con una feature permanente.
+
+Patrón YAML→render coherente con el renderer YAML→XLSX de plantillas de
+viabilidad. Implementación: Claude Code.
+
+### Idea técnica — `[IDEA-SKIP-INCREMENTAL-EXTRACCION]`
+
+**Origen**: consulta de Nikolai (sesión Cowork 2026-06-07) sobre qué pasa al
+relanzar el pipeline con intake ya parcialmente OCRizado/markdowneado/anonimizado.
+
+**Hallazgos al leer el código**:
+- `extractor.extract_all` y `markdown_generator.build` **no son idempotentes**:
+  reprocesan y sobrescriben todo `01_Procesado/` en cada corrida, exista o no.
+  Solo `core/anon` salta por hash (`origen_sha256` en frontmatter, política
+  `SALTAR`/`REPROCESAR`).
+- **Bug de eficiencia**: `core/pipeline.py` llama a `extract_all` **dos veces**
+  por corrida — paso `extractor.extract_all` y de nuevo dentro de
+  `_markdown_step`. El OCR (Docling, el único paso caro) se ejecuta el doble de
+  lo necesario, se toquen o no los documentos.
+
+**TODO para Claude Code** (por orden de valor/riesgo, de mayor a menor):
+
+- [ ] **1. Arreglar la doble llamada a `extract_all`** en `core/pipeline.py`
+  (gana 50 % de OCR, riesgo cero). Cachear el resultado y pasárselo a
+  `markdown_generator.build` en vez de reextraer. **Hacerlo aunque se descarte
+  el resto.**
+- [ ] **2. Skip incremental en extracción** por `sha256` del origen + versión de
+  extractor (invalidar si cambia el backend Docling), reutilizando el patrón de
+  `core/anon`, con `--force`.
+- [ ] **3. Markdown que siga a la extracción**: regenerar solo el `.md` de los
+  archivos realmente reextraídos. Trivial una vez la extracción devuelve cuáles
+  saltó.
+
+**Matiz de coherencia**: la regla de `CLAUDE.md` "Pipeline idempotente:
+re-ejecutar nunca toca `00_Input/`" significa "no muta inputs", no "salta lo ya
+hecho". El skip refuerza esa idempotencia, no la rompe. Implementación: Claude Code.
+
+### Idea de gobernanza documental — `[IDEA-GOBERNANZA-DOCS]`
+
+**Origen**: misma sesión 2026-06-07. Al revisar cómo se relacionan `CLAUDE.md`,
+`PLAN.md` y `docs/MEJORAS_FUTURAS.md` se constató que el conocimiento es **radial**
+(todo cuelga de `CLAUDE.md`), no en malla: `PLAN.md` y `MEJORAS_FUTURAS.md` **no
+se referencian entre sí** y no existe camino definido para "promover" una idea de
+`MEJORAS_FUTURAS.md` (backlog técnico, hoy acotado a `anon`) a `PLAN.md` (cola
+priorizada accionable).
+
+**Propuesta**:
+- Añadir referencia cruzada explícita entre `PLAN.md` y `MEJORAS_FUTURAS.md`.
+- Decidir el alcance de `MEJORAS_FUTURAS.md`: ¿sigue siendo solo de `core/anon`
+  (entonces `[IDEA-SKIP-INCREMENTAL-EXTRACCION]` vive en `PLAN.md`) o se amplía a
+  backlog técnico de todo el repo?
+- Definir en `CLAUDE.md` una regla de promoción idea→tarea (cuándo y cómo una
+  entrada de `MEJORAS_FUTURAS.md` entra en la cola de `PLAN.md`).
+
+Implementación (edición de `CLAUDE.md`/docs): Claude Code. Edición de `PLAN.md`:
+compartida.
 
 ## TODO — Refactor de `hechos_atomicos`: extractor source-locked
 *Sesión Cowork 2026-05-29*

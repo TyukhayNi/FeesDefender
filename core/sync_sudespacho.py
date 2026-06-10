@@ -506,8 +506,12 @@ class SudespachoClient:
     def _extract_url_from_doc(payload: Any) -> str | None:
         if not isinstance(payload, dict):
             return None
-        # Documents schema: campo `doc`
-        for key in (DOC_FIELDS["url"], "url", "downloadUrl", "fileUrl"):
+        # Documents schema: campo `doc`. `downloadUri` usa `presignedDownloadUrl`.
+        for key in (
+            DOC_FIELDS["url"], "url",
+            "presignedDownloadUrl", "presignedUrl", "presigned_url",
+            "downloadUrl", "fileUrl",
+        ):
             v = payload.get(key)
             if isinstance(v, str) and v.startswith(("http://", "https://")):
                 return v
@@ -673,14 +677,27 @@ class SudespachoClient:
     ) -> str:
         """Obtiene la URL S3 prefirmada para descargar un documento vía REST.
 
-        Endpoint: GET /api/files/presigned_download_url/{doc_id}
-        Auth: solo x-api-key — SIN PHPSESSID. Confirmado 2026-05-04.
-        TTL de la URL S3: 600 segundos. Descargar inmediatamente.
+        Endpoint: GET /api/documents/{id}/downloadUri
+        Auth: solo x-api-key — SIN PHPSESSID. TTL de la URL S3: ~600 s;
+        descargar inmediatamente.
+
+        Historia (ver docs/DEAD_ENDS.md, `[CRITICO-PRESIGNED-DOWNLOAD-BUG]`):
+        hasta 2026-05-04 la descarga se hacía vía
+        ``/api/files/presigned_download_url/{doc_id}``. El backend del CRM
+        redesplegó el módulo Upload (~2026-05-11) y ese endpoint —junto con
+        ``/api/documents/presigned_urls/s3/download/{id}``— quedó roto
+        server-side (400 "Unable to generate an IRI for ...DTO\\Download" /
+        500 "controller not registered"). ``downloadUri`` sí sigue operativo
+        y devuelve la URL S3 en el campo ``presignedDownloadUrl``. Confirmado
+        empíricamente contra el expediente 649 el 2026-06-10
+        (``scripts/diag_presigned_download.py``).
 
         Args:
             doc_id: ID del documento en el CRM.
-            expediente_id: ID del expediente al que pertenece.
-            element: Tipo de expediente (default: cfg.element).
+            expediente_id: ID del expediente (se conserva por compatibilidad
+                de firma con los call-sites; ``downloadUri`` solo necesita
+                ``doc_id``).
+            element: Tipo de expediente (idem; no usado por este endpoint).
 
         Returns:
             URL S3 prefirmada como string.
@@ -688,46 +705,37 @@ class SudespachoClient:
         Raises:
             SudespachoError: si la llamada falla o no se puede extraer la URL.
         """
-        elem = element or self.cfg.element
-        path = ENDPOINTS["presigned_download_url"].format(doc_id=doc_id)
+        path = ENDPOINTS["document_download_uri"].format(id=doc_id)
 
         try:
-            r = self._get(
-                path,
-                relatedElement=elem,
-                relatedId=str(expediente_id),
-                direction="left",
-            )
+            r = self._get(path)
             r.raise_for_status()
         except httpx.HTTPStatusError as exc:
             raise SudespachoError(
-                f"presigned_download_url doc {doc_id} → HTTP {exc.response.status_code}: "
+                f"downloadUri doc {doc_id} → HTTP {exc.response.status_code}: "
                 f"{exc.response.text[:300]}"
             ) from exc
 
-        # La respuesta puede ser: URL directa (text/plain) o JSON {"url": "..."}
+        # Respuesta esperada: JSON con `presignedDownloadUrl`. Conservamos
+        # fallbacks (texto plano, otras claves) por robustez ante variaciones.
+        try:
+            payload = r.json()
+        except Exception:
+            payload = None
+
+        if isinstance(payload, dict):
+            url = self._extract_url_from_doc(payload)
+            if url:
+                return url
+        if isinstance(payload, str) and payload.startswith("http"):
+            return payload
+
         text = r.text.strip().strip('"')
         if text.startswith("http"):
             return text
 
-        try:
-            payload = r.json()
-        except Exception:
-            raise SudespachoError(
-                f"presigned_download_url doc {doc_id}: respuesta no parseable. "
-                f"Inicio: {r.text[:300]}"
-            )
-
-        if isinstance(payload, str) and payload.startswith("http"):
-            return payload
-        if isinstance(payload, dict):
-            for key in ("url", "downloadUrl", "presignedUrl", "presigned_url", "doc"):
-                val = payload.get(key)
-                if isinstance(val, str) and val.startswith("http"):
-                    return val
-
         raise SudespachoError(
-            f"presigned_download_url doc {doc_id}: no se pudo extraer URL S3. "
+            f"downloadUri doc {doc_id}: no se pudo extraer URL S3. "
             f"Respuesta: {r.text[:300]}"
         )
 
