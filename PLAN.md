@@ -4,6 +4,10 @@ Bitácora de planificación compartida entre Nikolai y Cowork (PC). Edición de
 código: solo Claude Code. Aquí van prioridades, decisiones e ideas.
 
 Estado del proyecto y bitácora de cierre de sesión: ver `STATUS.md` (repo).
+Backlog técnico (ideas, bugs latentes, mejoras diferidas): ver
+`docs/MEJORAS_FUTURAS.md`. Las entradas se promueven aquí cuando tienen
+disparador concreto (caso real, bug bloqueante o decisión de Nikolai),
+con referencia al número original (`MEJORAS #NN`).
 Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 
 ---
@@ -245,25 +249,16 @@ relanzar el pipeline con intake ya parcialmente OCRizado/markdowneado/anonimizad
 re-ejecutar nunca toca `00_Input/`" significa "no muta inputs", no "salta lo ya
 hecho". El skip refuerza esa idempotencia, no la rompe. Implementación: Claude Code.
 
-### Idea de gobernanza documental — `[IDEA-GOBERNANZA-DOCS]`
+### ✅ Idea de gobernanza documental — `[IDEA-GOBERNANZA-DOCS]` RESUELTO 2026-06-10
 
-**Origen**: misma sesión 2026-06-07. Al revisar cómo se relacionan `CLAUDE.md`,
-`PLAN.md` y `docs/MEJORAS_FUTURAS.md` se constató que el conocimiento es **radial**
-(todo cuelga de `CLAUDE.md`), no en malla: `PLAN.md` y `MEJORAS_FUTURAS.md` **no
-se referencian entre sí** y no existe camino definido para "promover" una idea de
-`MEJORAS_FUTURAS.md` (backlog técnico, hoy acotado a `anon`) a `PLAN.md` (cola
-priorizada accionable).
-
-**Propuesta**:
-- Añadir referencia cruzada explícita entre `PLAN.md` y `MEJORAS_FUTURAS.md`.
-- Decidir el alcance de `MEJORAS_FUTURAS.md`: ¿sigue siendo solo de `core/anon`
-  (entonces `[IDEA-SKIP-INCREMENTAL-EXTRACCION]` vive en `PLAN.md`) o se amplía a
-  backlog técnico de todo el repo?
-- Definir en `CLAUDE.md` una regla de promoción idea→tarea (cuándo y cómo una
-  entrada de `MEJORAS_FUTURAS.md` entra en la cola de `PLAN.md`).
-
-Implementación (edición de `CLAUDE.md`/docs): Claude Code. Edición de `PLAN.md`:
-compartida.
+Implementada la malla de referencias cruzadas y regla de promoción:
+- `docs/MEJORAS_FUTURAS.md` retitulado a "backlog técnico" (alcance: todo el repo).
+- Cabecera de `MEJORAS_FUTURAS.md` con referencia a `PLAN.md` y convención
+  `[PROMOVIDO → PLAN.md]`.
+- Cabecera de `PLAN.md` con referencia a `docs/MEJORAS_FUTURAS.md` y convención
+  `MEJORAS #NN`.
+- Regla de promoción documentada en `CLAUDE.md` §"Planificación y estado":
+  disparador concreto (caso real, bug bloqueante, decisión de Nikolai).
 
 ## TODO — Refactor de `hechos_atomicos`: extractor source-locked
 *Sesión Cowork 2026-05-29*

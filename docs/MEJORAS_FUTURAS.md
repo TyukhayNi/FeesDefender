@@ -1,11 +1,18 @@
-# Mejoras futuras del módulo `core/anon/`
+# Mejoras futuras — backlog técnico
 
-Bugs latentes y mejoras detectadas durante la absorción del Anonimizador
-de Expedientes Seguros (2026-05-07). Ninguna es bloqueante para
-producción; todas se identificaron y dejaron documentadas durante la
-integración para no introducir cambios al margen del refactor.
+Backlog técnico del proyecto. Originalmente limitado a `core/anon/`
+(absorción del Anonimizador, 2026-05-07); ampliado a todo el repo desde
+que las entradas #26-#29 cubrieron pipeline, intake y política de datos.
 
-Orden por prioridad operativa (no técnica).
+Orden por prioridad operativa (no técnica). Ninguna entrada es bloqueante
+para producción salvo que se indique.
+
+> **Relación con `PLAN.md`**: las entradas de este fichero son backlog
+> (ideas, bugs latentes, mejoras diferidas). Cuando una entrada tiene
+> disparador concreto (caso real, bug bloqueante o decisión de Nikolai),
+> se **promueve** a `PLAN.md` como tarea accionable. Al promoverla:
+> marcar aquí con `[PROMOVIDO → PLAN.md]` y crear entrada en `PLAN.md`
+> referenciando el número original (`MEJORAS #NN`).
 
 ---
 

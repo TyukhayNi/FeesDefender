@@ -33,8 +33,17 @@ de Cowork, que solo soporta create). Drive queda solo para expedientes jurídico
   MCP de GitHub.
 - `STATUS.md` (raíz del repo): estado del proyecto y bitácora de cierre de sesión.
   Lo escribe Claude Code en cada cierre; Cowork lo lee.
+- `docs/MEJORAS_FUTURAS.md`: backlog técnico (ideas, bugs latentes, mejoras
+  diferidas). Cubre todo el repo, no solo `core/anon/`.
 - Historial: `git log`. No se mantiene `commits.log` como artefacto separado.
 - Acceso móvil: app de GitHub (lectura). Edición ocasional vía GitHub web.
+
+**Regla de promoción backlog → cola**: una entrada de `docs/MEJORAS_FUTURAS.md`
+se promueve a `PLAN.md` cuando tiene **disparador concreto**: caso real que lo
+necesita, bug bloqueante que lo activa, o decisión explícita de Nikolai. Al
+promover: (1) marcar en `MEJORAS_FUTURAS.md` con `[PROMOVIDO → PLAN.md]`;
+(2) crear entrada en `PLAN.md` con referencia `MEJORAS #NN`. No promover por
+completitud de diseño ni por anticipación — solo por necesidad demostrada.
 
 **Al iniciar sesión**: leer `PLAN.md` además de `STATUS.md`; los puntos en la cola
 de prioridad son entrada directa de trabajo, y las "Decisiones pendientes" sin
