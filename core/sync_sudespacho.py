@@ -53,6 +53,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import re
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -203,6 +204,33 @@ def _ext_from_mime(mime: str | None) -> str:
         return _MIME_EXT[m]
     import mimetypes
     return mimetypes.guess_extension(m) or ".bin"
+
+
+# Una extensión "real" es un punto seguido de 1-8 caracteres alfanuméricos.
+# Cualquier otra cosa que `Path.suffix` capture (espacios, ':', nombres largos)
+# es basura de un nombre del CRM sin extensión verdadera.
+_VALID_EXT_RE = re.compile(r"^\.[A-Za-z0-9]{1,8}$")
+
+
+def _safe_stem_ext(original: str, mime: str | None, doc_id: str) -> tuple[str, str]:
+    """Deriva un ``(stem, ext)`` seguros para el sistema de ficheros de Windows.
+
+    El nombre que llega del CRM puede no tener extensión real pero sí puntos
+    intermedios (p. ej. ``dior_12_11.2024 09:30  NEUS GASCON``): en ese caso
+    ``Path.suffix`` captura basura con caracteres ilegales en Windows
+    (``\\ / : * ? " < > |``) que reventarían ``write_bytes`` con
+    ``FileNotFoundError``. Solo se respeta la extensión del original si parece
+    una extensión de verdad; en caso contrario el **nombre completo** se
+    slugifica (preservando fechas/nombres) y la extensión se deriva del MIME.
+    """
+    p = Path(original)
+    if _VALID_EXT_RE.match(p.suffix):
+        stem = slugify(p.stem) or f"doc_{doc_id}"
+        ext = p.suffix.lower()
+    else:
+        stem = slugify(p.name) or f"doc_{doc_id}"
+        ext = _ext_from_mime(mime)
+    return stem, ext
 
 
 # Propiedades mínimas a solicitar al leer un expediente como elemento.
@@ -575,9 +603,7 @@ class SudespachoClient:
         for info in zf.infolist():
             if info.is_dir():
                 continue
-            original = Path(info.filename)
-            stem = slugify(original.stem) or "documento"
-            ext = original.suffix or ".bin"
+            stem, ext = _safe_stem_ext(info.filename, None, "documento")
             target = target_dir / f"{stem}{ext}"
             i = 1
             while target.exists():
@@ -1059,8 +1085,7 @@ def pull_expediente(
 
                 # Renombrar con el nombre del archivo según el CRM
                 original = info.filename or f"doc_{info.doc_id}.bin"
-                stem = slugify(Path(original).stem) or f"doc_{info.doc_id}"
-                ext = Path(original).suffix or _ext_from_mime(info.mime)
+                stem, ext = _safe_stem_ext(original, info.mime, info.doc_id)
                 final = doc_dir / f"{stem}{ext}"
                 i = 1
                 while final.exists() and final != tmp:
@@ -1163,8 +1188,7 @@ def pull_expediente(
                         continue
 
                     original = result.filename_in_disposition or f"doc_{doc_id}.bin"
-                    stem = slugify(Path(original).stem) or f"doc_{doc_id}"
-                    ext = Path(original).suffix or ".bin"
+                    stem, ext = _safe_stem_ext(original, None, doc_id)
                     final = doc_dir / f"{stem}{ext}"
                     i = 1
                     while final.exists() and final != tmp:
@@ -1442,8 +1466,7 @@ def pull_expediente_v2(
 
                 # 4.2 Filename final dentro de la rama
                 original = info.filename or f"doc_{info.doc_id}.bin"
-                stem = slugify(Path(original).stem) or f"doc_{info.doc_id}"
-                ext = Path(original).suffix or _ext_from_mime(info.mime)
+                stem, ext = _safe_stem_ext(original, info.mime, info.doc_id)
                 target_file = dest_dir / f"{stem}{ext}"
 
                 # 4.3 Descargar bytes (necesitamos el contenido en memoria

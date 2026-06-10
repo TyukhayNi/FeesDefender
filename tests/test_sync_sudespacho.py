@@ -28,6 +28,7 @@ from core.sync_sudespacho import (
     SudespachoConfig,
     SudespachoError,
     _ext_from_mime,
+    _safe_stem_ext,
     pull_expediente,
 )
 
@@ -47,6 +48,41 @@ def test_ext_from_mime_tipos_comunes():
 def test_ext_from_mime_desconocido_o_vacio():
     assert _ext_from_mime(None) == ".bin"
     assert _ext_from_mime("") == ".bin"
+
+
+# ---- _safe_stem_ext: nombres del CRM con caracteres ilegales en Windows -----
+
+def test_safe_stem_ext_nombre_con_dos_puntos_y_punto_intermedio():
+    """Regresión: un nombre del CRM sin extensión real pero con un punto
+    intermedio (``11.2024``) hacía que ``Path.suffix`` capturara basura con
+    ``:`` (ilegal en Windows) → ``FileNotFoundError`` al escribir. Ahora el
+    nombre completo se slugifica y la extensión se deriva del MIME."""
+    stem, ext = _safe_stem_ext(
+        "dior_12_11.2024 09:30  ENRIQUE JIMENEZ VILLA - NEUS GASCON ROCHE EXHIB DOC",
+        "application/pdf", "41407",
+    )
+    assert ext == ".pdf"
+    # El stem no contiene ningún carácter prohibido por Windows.
+    assert not set(stem) & set(r'\/:*?"<>|')
+    assert " " not in stem
+    # Preserva información del nombre original (fecha, nombres).
+    assert "2024" in stem and "neus_gascon" in stem
+
+
+def test_safe_stem_ext_respeta_extension_real():
+    assert _safe_stem_ext("demanda.PDF", "application/pdf", "1") == ("demanda", ".pdf")
+    assert _safe_stem_ext("ESCR_VISTA.rtf", None, "2") == ("escr_vista", ".rtf")
+    assert _safe_stem_ext("SOLICITUD PRUEBA -.doc", None, "3") == ("solicitud_prueba", ".doc")
+
+
+def test_safe_stem_ext_sin_extension_usa_mime():
+    assert _safe_stem_ext("ESC-PIDE CAUCION DTE", "application/pdf", "4") == (
+        "esc_pide_caucion_dte", ".pdf",
+    )
+    # Sin mime → .bin
+    assert _safe_stem_ext("informe final", None, "5") == ("informe_final", ".bin")
+    # Nombre vacío → fallback con doc_id
+    assert _safe_stem_ext("", None, "9") == ("doc_9", ".bin")
     assert _ext_from_mime("application/x-cosa-rara") == ".bin"
 
 
