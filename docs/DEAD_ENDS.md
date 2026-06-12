@@ -14,6 +14,14 @@
 - **Causa probable:** El elemento `colaboradores` no está indexado en el endpoint de autocomplete del tenant, o requiere contexto de formulario que la petición directa no aporta
 - **Solución:** `POST /views/menu/elemento/colaboradores` con `cadBusqueda=<term>` → respuesta HTML con tabla. Celdas: [3]=nombre, [5]=email. Filas: `id="fila_colaboradores_{id}"`. Implementado en `_search_colaboradores_html()` en `sudespacho_relations.py` (2026-05-04).
 
+### `GET /autocompletar/buscar/elemento/{expedientes_judiciales|extrajudiciales}?term=...` — body vacío
+- **Intentado:** GET con `term` = W-code (`W-02MA0R`), nombre de finca (`Torrent`, `Roser`), equipo (`BaRS3`) y referencia parcial, con slugs `expedientes_judiciales`, `judiciales`, `extrajudiciales`. Todos → HTTP 200 body vacío (0 resultados), pese a existir los expedientes (p. ej. #487, #649).
+- **Confirmado:** 2026-06-12 contra tenant tnm (PHPSESSID válida; `fetch_referencia_cliente` por REST sí devuelve los mismos expedientes).
+- **Impacto:** `find_expediente_by_referencia` / `find_expediente_judicial_by_referencia` (antes `_find_expediente_robust` → `_autocomplete`) **no funcionaban contra el CRM real**; sus tests pasaban solo porque mockeaban la respuesta del autocomplete.
+- **Solución:** buscar por referencia vía REST `GET /api/element_registries/{element}` con filtro `operator=like, property=<referencia>, value=<W-code>` (x-api-key, sin PHPSESSID). El operador `contains` da 404; `like` funciona.
+- **✅ RESUELTO (2026-06-12):** `find_expediente_by_referencia` (extrajudicial, property `Referencia_Cliente` CamelCase) y `find_expediente_judicial_by_referencia` (judicial, `referencia_cliente`) migradas al helper REST común `_rest_search_expedientes()` (devuelven el candidato con match exacto normalizado; `client` ignorado por compat, ya no lanzan: CRM caído → `None`). `list_expedientes_judiciales_candidatos()` delega también en él (devuelve TODOS los candidatos del W-code). Tests reescritos para mockear `httpx.get`. `_find_expediente_robust` retirado; `_autocomplete` se conserva (lo usa `procurador_search.search_expedientes`, ver nota siguiente).
+- **⚠️ Pendiente relacionado:** `core.procurador_search.search_expedientes` (combobox F2 §18.6) sigue usando `_autocomplete` sobre expedientes → afectado por el MISMO body-vacío. Migrar a `_rest_search_expedientes` cuando se aborde la UI de F2.
+
 ---
 
 ## API sudespacho.net

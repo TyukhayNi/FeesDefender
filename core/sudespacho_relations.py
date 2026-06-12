@@ -2,9 +2,11 @@
 
 Endpoints confirmados el 2026-04-29 contra el tenant tnm.sudespacho.net:
 
-    1. Buscar expediente extrajudicial por referencia_cliente (deduplicación)
-       GET /autocompletar/buscar/elemento/extrajudiciales?term={term}&
-       → [{id, label, value: "{exp_id}", data}]
+    1. Buscar expediente (extra)judicial por referencia_cliente (deduplicación)
+       Desde 2026-06-12 vía REST: GET /api/element_registries/{element} con
+       filtro operator=like sobre la property de referencia (x-api-key, sin
+       PHPSESSID). El autocomplete legacy devolvía body vacío contra el CRM
+       real (DEAD_ENDS, "Frontal heredado"). Ver _rest_search_expedientes().
 
     2. Buscar colaborador por email/nombre
        GET /autocompletar/buscar/elemento/colaboradores?term={term}&
@@ -265,6 +267,25 @@ def _extract_w_code(case_id: str) -> str | None:
     return m.group(1) if m else None
 
 
+def wcode_match(ref_a: str | None, ref_b: str | None) -> bool:
+    """True si ambas referencias contienen el MISMO W-code (case-insensitive).
+
+    Ancla la identidad del inmueble en el W-code, no en el nombre completo: es
+    tolerante a divergencias de sufijo entre Drive y CRM (p. ej. la misma finca
+    dada de alta como ``… - Bad debt`` en local y ``… - Vuelta - COMPRADOR`` en
+    el CRM). Devuelve ``False`` si a alguna de las dos le falta el W-code.
+
+    Pensada como guard previo a descargar un expediente: si los W-codes NO
+    coinciden, el ID tecleado pertenece a otra finca (caso del 649 → W-030LFT
+    cuando se esperaba W-02MA0R).
+    """
+    wa = _extract_w_code(ref_a or "")
+    wb = _extract_w_code(ref_b or "")
+    if not wa or not wb:
+        return False
+    return wa.upper() == wb.upper()
+
+
 def _match_in_results(
     results: list[dict[str, Any]],
     referencia_cliente: str,
@@ -277,25 +298,86 @@ def _match_in_results(
     return None
 
 
-def _find_expediente_robust(
-    element: str,
-    referencia_cliente: str,
-    client: SudespachoLegacyClient,
-) -> str | None:
-    """Búsqueda robusta de expediente: W-code primero, luego referencia completa.
+def _rest_search_expedientes(element: str, referencia: str) -> list[dict[str, str]]:
+    """Busca expedientes por referencia vía REST (filtro ``like`` sobre el W-code).
 
-    Compara las labels de los resultados de autocomplete con normalización
-    tolerante (espacios, acentos, case) para evitar falsos negativos por
-    variaciones tipográficas en la referencia_cliente del CRM.
+    Generaliza la búsqueda REST a cualquier elemento con la referencia indexada
+    en :data:`_REFERENCIA_PROP_BY_ELEMENT` (judicial usa ``referencia_cliente``
+    lowercase; extrajudicial ``Referencia_Cliente`` CamelCase — confirmado
+    2026-05-06). Consulta ``GET /api/element_registries/{element}`` con
+    ``x-api-key`` (sin PHPSESSID), el mismo endpoint que
+    :func:`fetch_referencia_cliente`.
+
+    Sustituye al autocomplete legacy (``_autocomplete``) para expedientes, que
+    devuelve body vacío contra el CRM real (DEAD_ENDS, "Frontal heredado",
+    2026-06-12). El operador ``contains`` da 404; ``like`` funciona.
+
+    Args:
+        element: Slug canónico (``"expedientes_judiciales"`` |
+            ``"extrajudiciales"``).
+        referencia: ``case_id`` o ``referencia_crm`` local. Si contiene W-code
+            se filtra por él; si no, por el texto completo (fallback).
+
+    Returns:
+        Lista de ``{"id", "label"}`` (``label`` = referencia del CRM), con
+        TODOS los candidatos cuya referencia contiene el término. Nunca lanza:
+        si el ``element`` es desconocido, falta la API key, el CRM no responde
+        o no hay coincidencias, devuelve ``[]``.
     """
-    w_code = _extract_w_code(referencia_cliente)
-    if w_code:
-        results = _autocomplete(element, w_code, client)
-        match = _match_in_results(results, referencia_cliente)
-        if match:
-            return match
+    prop = _REFERENCIA_PROP_BY_ELEMENT.get(element)
+    if prop is None:
+        return []
+    term = _extract_w_code(referencia) or (referencia or "").strip()
+    if not term:
+        return []
+    api_key = (os.getenv("SUDESPACHO_API_KEY") or "").strip()
+    if not api_key:
+        return []
 
-    results = _autocomplete(element, referencia_cliente, client)
+    url = f"{_REST_BASE}/api/element_registries/{element}"
+    params: list[tuple[str, str]] = [
+        ("properties[0]",                                       prop),
+        ("filterGroup[condition]",                              "AND"),
+        ("filterGroup[filterGroups][0][condition]",             "AND"),
+        ("filterGroup[filterGroups][0][filters][0][operator]",  "like"),
+        ("filterGroup[filterGroups][0][filters][0][value]",     term),
+        ("filterGroup[filterGroups][0][filters][0][property]",  prop),
+        ("itemsPerPage",                                        "50"),
+        ("return_totals",                                       "true"),
+    ]
+    headers = {"x-api-key": api_key, "Accept": "application/json"}
+    try:
+        r = httpx.get(url, params=params, headers=headers, timeout=_REST_TIMEOUT)
+    except Exception:  # noqa: BLE001 — red caída no debe romper el caller
+        return []
+    if r.status_code != 200:
+        return []
+    try:
+        data = r.json()
+    except Exception:  # noqa: BLE001
+        return []
+
+    items = data.get("items") or data.get("hydra:member") or []
+    out: list[dict[str, str]] = []
+    for it in items:
+        ref = None
+        for v in it.get("values", []) or []:
+            if v.get("property", {}).get("name", "") == prop:
+                ref = v.get("value")
+        out.append({"id": str(it.get("id", "")), "label": str(ref or "")})
+    return out
+
+
+def _find_expediente_rest(element: str, referencia_cliente: str) -> str | None:
+    """Devuelve el ID del expediente cuya referencia coincide EXACTAMENTE.
+
+    Busca por REST (W-code, ``like``) y, entre los candidatos, devuelve el
+    primero cuya referencia coincide con ``referencia_cliente`` tras
+    normalización tolerante (espacios/acentos/case). ``None`` si ninguno
+    coincide o el CRM no es accesible.
+    """
+    candidatos = _rest_search_expedientes(element, referencia_cliente)
+    results = [{"label": c["label"], "value": c["id"]} for c in candidatos]
     return _match_in_results(results, referencia_cliente)
 
 
@@ -306,16 +388,25 @@ def find_expediente_by_referencia(
 ) -> str | None:
     """Busca un expediente extrajudicial por su referencia_cliente (case_id).
 
-    Búsqueda dual (W-code + referencia completa) con comparación normalizada.
     Útil para detectar duplicados antes de crear un nuevo expediente.
+
+    Desde 2026-06-12 usa REST (``element_registries/extrajudiciales`` con
+    filtro ``like`` sobre el W-code, property ``Referencia_Cliente``), NO el
+    autocomplete legacy, que devuelve body vacío contra el CRM real
+    (DEAD_ENDS, "Frontal heredado"). Filtra por el W-code en servidor y, entre
+    los candidatos, devuelve el que coincide EXACTAMENTE con la referencia tras
+    normalización (espacios/acentos/case).
 
     Args:
         referencia_cliente: El case_id de FeesDefender (ej. "MaRS2 - ...").
-            Coincide exactamente con campo_1740 del formulario.
-        client: Cliente legacy reutilizable (opcional).
+            Coincide con campo_1740 del formulario / ``Referencia_Cliente``
+            en el CRM.
+        client: Ignorado — la búsqueda es REST. Se conserva por compatibilidad
+            con llamadas existentes.
 
     Returns:
-        ID del expediente si existe, None si no hay coincidencia.
+        ID del expediente si existe, None si no hay coincidencia o el CRM no
+        es accesible. Nunca lanza.
 
     Example::
 
@@ -323,19 +414,7 @@ def find_expediente_by_referencia(
         if exp_id:
             print(f"Ya existe: expediente #{exp_id}")
     """
-    owns_client = client is None
-    if owns_client:
-        client = SudespachoLegacyClient()
-    try:
-        return _find_expediente_robust("extrajudiciales", referencia_cliente, client)
-    except SudespachoLegacyError as exc:
-        raise SudespachoRelationsError(str(exc)) from exc
-    finally:
-        if owns_client:
-            try:
-                client.__exit__(None, None, None)
-            except Exception:
-                pass
+    return _find_expediente_rest("extrajudiciales", referencia_cliente)
 
 
 def find_expediente_judicial_by_referencia(
@@ -345,16 +424,24 @@ def find_expediente_judicial_by_referencia(
 ) -> str | None:
     """Busca un expediente judicial por su referencia_cliente (case_id).
 
-    Búsqueda dual (W-code + referencia completa) con comparación normalizada.
     Útil para detectar duplicados antes de crear un nuevo expediente judicial.
+
+    Desde 2026-06-12 usa REST (``element_registries/expedientes_judiciales``
+    con filtro ``like`` sobre el W-code, property ``referencia_cliente``), NO
+    el autocomplete legacy (DEAD_ENDS, "Frontal heredado"). Mismo mecanismo
+    que :func:`list_expedientes_judiciales_candidatos`, pero devolviendo solo
+    el candidato cuya referencia coincide EXACTAMENTE tras normalización
+    (no la lista completa de candidatos del W-code).
 
     Args:
         referencia_cliente: El case_id de FeesDefender (ej. "MaRS2 - ...").
-            Coincide con campo_867 del formulario judicial.
-        client: Cliente legacy reutilizable (opcional).
+            Coincide con campo_867 del formulario judicial /
+            ``referencia_cliente`` en el CRM.
+        client: Ignorado — la búsqueda es REST. Se conserva por compatibilidad.
 
     Returns:
-        ID del expediente si existe, None si no hay coincidencia.
+        ID del expediente si existe, None si no hay coincidencia o el CRM no
+        es accesible. Nunca lanza.
 
     Example::
 
@@ -362,21 +449,33 @@ def find_expediente_judicial_by_referencia(
         if exp_id:
             print(f"Ya existe expediente judicial #{exp_id}")
     """
-    owns_client = client is None
-    if owns_client:
-        client = SudespachoLegacyClient()
-    try:
-        return _find_expediente_robust(
-            "expedientes_judiciales", referencia_cliente, client,
-        )
-    except SudespachoLegacyError as exc:
-        raise SudespachoRelationsError(str(exc)) from exc
-    finally:
-        if owns_client:
-            try:
-                client.__exit__(None, None, None)
-            except Exception:
-                pass
+    return _find_expediente_rest("expedientes_judiciales", referencia_cliente)
+
+
+def list_expedientes_judiciales_candidatos(referencia: str) -> list[dict[str, str]]:
+    """Lista expedientes JUDICIALES candidatos por el W-code de ``referencia``.
+
+    A diferencia de :func:`find_expediente_judicial_by_referencia` —que exige
+    coincidencia EXACTA de la referencia completa— aquí se devuelven TODOS los
+    candidatos cuya referencia contiene el W-code, para que el letrado confirme
+    cuál bajar. Resuelve el caso real de una finca con varios expedientes, o
+    con el sufijo de la referencia distinto entre Drive (``… - Bad debt``) y
+    CRM (``… - Vuelta - COMPRADOR``).
+
+    Comparte el mecanismo REST (:func:`_rest_search_expedientes`,
+    ``element_registries`` + filtro ``like``, x-api-key) con las funciones de
+    dedup; aquí no se filtra por match exacto.
+
+    Args:
+        referencia: ``case_id`` o ``referencia_crm`` local. Si contiene W-code,
+            se busca por él; si no, por el texto completo (fallback).
+
+    Returns:
+        Lista de ``{"id": str, "label": str}`` (posiblemente vacía). Nunca
+        lanza: si falta la API key, el CRM no responde o no hay coincidencias,
+        devuelve ``[]``.
+    """
+    return _rest_search_expedientes("expedientes_judiciales", referencia)
 
 
 # ---------------------------------------------------------------------------

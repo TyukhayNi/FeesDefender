@@ -19,8 +19,10 @@ from core.sudespacho_relations import (
     _link_rest_or_legacy,
     _list_colaboradores_rest,
     _rest_post_colaborador,
+    _rest_search_expedientes,
     _LINK_CLIENTE_PATH,
     _LINK_COLABORADOR_PATH,
+    _REFERENCIA_PROP_BY_ELEMENT,
     _REST_CREATE_COLABORADOR,
     _SAVEADD_COLABORADOR_PATH,
     create_colaborador,
@@ -28,6 +30,8 @@ from core.sudespacho_relations import (
     find_colaborador_by_email,
     find_expediente_by_referencia,
     find_expediente_judicial_by_referencia,
+    list_expedientes_judiciales_candidatos,
+    wcode_match,
     link_colaborador,
     link_ev_mmc,
     load_all_colaboradores,
@@ -152,83 +156,298 @@ def test_autocomplete_error_http():
 
 
 # ---------------------------------------------------------------------------
-# find_expediente_by_referencia
+# find_expediente_by_referencia / find_expediente_judicial_by_referencia
+#
+# Desde 2026-06-12 ambas usan REST (element_registries + filtro like sobre el
+# W-code), NO el autocomplete legacy (que devuelve body vacío contra el CRM
+# real — ver docs/DEAD_ENDS.md "Frontal heredado"). Los tests mockean
+# httpx.get (patrón de tests/test_verify_referencia.py).
 # ---------------------------------------------------------------------------
 
-def test_find_expediente_encontrado(monkeypatch):
-    client = _mock_client()
-    client._client.get.return_value = _mock_get_response(
-        [{"id": 1, "label": "TEST-CAPTURA-FEESDEFENDER", "value": "600", "data": []}]
+@pytest.fixture
+def _api_key(monkeypatch):
+    monkeypatch.setenv("SUDESPACHO_API_KEY", "test_key_abc")
+
+
+def _rest_items_prop(prop: str, *rows: tuple[str, str | None]) -> dict:
+    """Respuesta REST element_registries con (id, <prop>) por fila."""
+    items = []
+    for eid, ref in rows:
+        vals = []
+        if ref is not None:
+            vals.append({"property": {"name": prop}, "value": ref})
+        items.append({"id": str(eid), "values": vals})
+    return {"totalItems": len(items), "items": items}
+
+
+def test_find_expediente_extrajudicial_match_exacto(_api_key):
+    """REST devuelve el candidato con referencia exacta → su id."""
+    ref = "MaRS2 - Gran Via 40 - (W-0001) - Dev. Reserva"
+    payload = _rest_items_prop(
+        _REFERENCIA_PROP_BY_ELEMENT["extrajudiciales"], ("600", ref),
     )
-    with patch("core.sudespacho_relations.SudespachoLegacyClient", return_value=client):
-        result = find_expediente_by_referencia("TEST-CAPTURA-FEESDEFENDER")
+    with patch("core.sudespacho_relations.httpx.get",
+               return_value=_mock_get_response(payload)):
+        result = find_expediente_by_referencia(ref)
     assert result == "600"
 
 
-def test_find_expediente_no_encontrado(monkeypatch):
-    client = _mock_client()
-    client._client.get.return_value = _mock_get_response([])
-    with patch("core.sudespacho_relations.SudespachoLegacyClient", return_value=client):
-        result = find_expediente_by_referencia("Caso Que No Existe")
+def test_find_expediente_extrajudicial_usa_property_camelcase(_api_key):
+    """El filtro extrajudicial usa la property CamelCase Referencia_Cliente."""
+    ref = "MaRS2 - Gran Via 40 - (W-02NV4W) - Vuelta"
+    captured: dict = {}
+
+    def _capturing_get(url, *, params, headers, timeout):
+        captured["url"] = url
+        captured["params"] = params
+        return _mock_get_response(
+            _rest_items_prop("Referencia_Cliente", ("500", ref))
+        )
+
+    with patch("core.sudespacho_relations.httpx.get", side_effect=_capturing_get):
+        result = find_expediente_by_referencia(ref)
+    assert result == "500"
+    assert "element_registries/extrajudiciales" in captured["url"]
+    assert "expedientes_judiciales" not in captured["url"]
+    assert ("properties[0]", "Referencia_Cliente") in captured["params"]
+    assert ("filterGroup[filterGroups][0][filters][0][property]",
+            "Referencia_Cliente") in captured["params"]
+    # filtra por el W-code con operador like
+    assert ("filterGroup[filterGroups][0][filters][0][value]", "W-02NV4W") in captured["params"]
+    assert ("filterGroup[filterGroups][0][filters][0][operator]", "like") in captured["params"]
+
+
+def test_find_expediente_judicial_usa_property_lowercase_y_slug(_api_key):
+    """El filtro judicial usa referencia_cliente (lowercase) y el slug judicial."""
+    ref = "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
+    captured: dict = {}
+
+    def _capturing_get(url, *, params, headers, timeout):
+        captured["url"] = url
+        captured["params"] = params
+        return _mock_get_response(
+            _rest_items_prop("referencia_cliente", ("649", ref))
+        )
+
+    with patch("core.sudespacho_relations.httpx.get", side_effect=_capturing_get):
+        result = find_expediente_judicial_by_referencia(ref)
+    assert result == "649"
+    assert "element_registries/expedientes_judiciales" in captured["url"]
+    assert ("properties[0]", "referencia_cliente") in captured["params"]
+    assert ("filterGroup[filterGroups][0][filters][0][value]", "W-030LFT") in captured["params"]
+
+
+def test_find_expediente_no_encontrado_devuelve_none(_api_key):
+    """REST no devuelve candidatos → None."""
+    payload = _rest_items_prop(_REFERENCIA_PROP_BY_ELEMENT["extrajudiciales"])
+    with patch("core.sudespacho_relations.httpx.get",
+               return_value=_mock_get_response(payload)):
+        result = find_expediente_by_referencia("Caso (W-99999) Que No Existe")
     assert result is None
 
 
-def test_find_expediente_con_client_externo():
-    """Si se pasa client externo, no se llama a SudespachoLegacyClient()."""
-    client = _mock_client()
-    client._client.get.return_value = _mock_get_response(
-        [{"id": 1, "label": "ref", "value": "777", "data": []}]
+def test_find_expediente_candidato_mismo_wcode_pero_no_exacto_es_none(_api_key):
+    """Candidatos que comparten W-code pero con referencia distinta NO son
+    el mismo expediente → None (evita falso positivo de duplicado)."""
+    payload = _rest_items_prop(
+        _REFERENCIA_PROP_BY_ELEMENT["expedientes_judiciales"],
+        ("487", "BaRS3 - Torrent 41 - (W-02MA0R) - Vuelta - COMPRADOR"),
+        ("488", "BaRS3 - Torrent 41 - (W-02MA0R) - Bad debt"),
     )
-    result = find_expediente_by_referencia("ref", client=client)
+    with patch("core.sudespacho_relations.httpx.get",
+               return_value=_mock_get_response(payload)):
+        result = find_expediente_judicial_by_referencia(
+            "BaRS3 - Torrent 41 - (W-02MA0R) - Otra cosa distinta"
+        )
+    assert result is None
+
+
+def test_find_expediente_match_tolera_doble_espacio_acento_y_case(_api_key):
+    """El match es normalizado: doble espacio / acento / mayúsculas casan
+    igual (valor real de la guarda de dedup)."""
+    payload = _rest_items_prop(
+        _REFERENCIA_PROP_BY_ELEMENT["expedientes_judiciales"],
+        ("444", "bars6 - Gran Vía 8 - (W-02NV4W)  - vuelta"),
+    )
+    with patch("core.sudespacho_relations.httpx.get",
+               return_value=_mock_get_response(payload)):
+        result = find_expediente_judicial_by_referencia(
+            "BaRS6 - Gran Via 8 - (W-02NV4W) - Vuelta"
+        )
+    assert result == "444"
+
+
+def test_find_expediente_sin_wcode_usa_texto_completo(_api_key):
+    """Sin W-code, filtra por el texto completo (fallback)."""
+    captured: dict = {}
+
+    def _capturing_get(url, *, params, headers, timeout):
+        captured["params"] = params
+        return _mock_get_response(
+            _rest_items_prop("Referencia_Cliente", ("200", "EV-2026-001"))
+        )
+
+    with patch("core.sudespacho_relations.httpx.get", side_effect=_capturing_get):
+        result = find_expediente_by_referencia("EV-2026-001")
+    assert result == "200"
+    assert ("filterGroup[filterGroups][0][filters][0][value]", "EV-2026-001") in captured["params"]
+
+
+def test_find_expediente_sin_api_key_devuelve_none(monkeypatch):
+    """Sin SUDESPACHO_API_KEY → None, sin lanzar."""
+    monkeypatch.setenv("SUDESPACHO_API_KEY", "")
+    result = find_expediente_by_referencia("Caso (W-02MA0R)")
+    assert result is None
+
+
+def test_find_expediente_red_caida_devuelve_none(_api_key):
+    """Red caída → None, sin lanzar (degrada como list_expedientes_*)."""
+    with patch("core.sudespacho_relations.httpx.get",
+               side_effect=httpx.ConnectError("timeout")):
+        result = find_expediente_judicial_by_referencia("Caso (W-02MA0R)")
+    assert result is None
+
+
+def test_find_expediente_ignora_client_legacy(_api_key):
+    """El parámetro `client` se conserva por compatibilidad pero se ignora:
+    la búsqueda es REST y NO toca el cliente legacy."""
+    legacy = _mock_client()
+    ref = "MaRS2 - X - (W-0001) - Vuelta"
+    payload = _rest_items_prop("Referencia_Cliente", ("777", ref))
+    with patch("core.sudespacho_relations.httpx.get",
+               return_value=_mock_get_response(payload)):
+        result = find_expediente_by_referencia(ref, client=legacy)
     assert result == "777"
-    client.__exit__.assert_not_called()  # cliente externo no se cierra
+    legacy._client.get.assert_not_called()
+    legacy.__exit__.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
-# find_expediente_judicial_by_referencia
+# _rest_search_expedientes — helper REST genérico
 # ---------------------------------------------------------------------------
 
-def test_find_expediente_judicial_encontrado(monkeypatch):
-    client = _mock_client()
-    client._client.get.return_value = _mock_get_response(
-        [{"id": 1, "label": "MaRS2 - Gran Via 40 - (W-0001) - Dev. Reserva", "value": "648", "data": []}]
+def test_rest_search_expedientes_element_desconocido_devuelve_vacio(_api_key):
+    assert _rest_search_expedientes("elemento_inexistente", "Caso (W-0001)") == []
+
+
+def test_rest_search_expedientes_parsea_label_de_la_property(_api_key):
+    """El label devuelto es el valor de la property de referencia del CRM."""
+    payload = _rest_items_prop(
+        "referencia_cliente",
+        ("487", "BaRS3 - Torrent 41 - (W-02MA0R) - Vuelta - COMPRADOR"),
+        ("488", "BaRS3 - Torrent 41 - (W-02MA0R) - Bad debt"),
     )
-    with patch("core.sudespacho_relations.SudespachoLegacyClient", return_value=client):
-        result = find_expediente_judicial_by_referencia("MaRS2 - Gran Via 40 - (W-0001) - Dev. Reserva")
-    assert result == "648"
-    # Verifica que se usó el slug correcto de judiciales
-    call_url = client._client.get.call_args[0][0]
-    assert "expedientes_judiciales" in call_url
+    with patch("core.sudespacho_relations.httpx.get",
+               return_value=_mock_get_response(payload)):
+        out = _rest_search_expedientes(
+            "expedientes_judiciales",
+            "BaRS3 - Torrent de les Flors 41 - (W-02MA0R) - Bad debt",
+        )
+    assert out == [
+        {"id": "487", "label": "BaRS3 - Torrent 41 - (W-02MA0R) - Vuelta - COMPRADOR"},
+        {"id": "488", "label": "BaRS3 - Torrent 41 - (W-02MA0R) - Bad debt"},
+    ]
 
 
-def test_find_expediente_judicial_no_encontrado(monkeypatch):
-    client = _mock_client()
-    client._client.get.return_value = _mock_get_response([])
-    with patch("core.sudespacho_relations.SudespachoLegacyClient", return_value=client):
-        result = find_expediente_judicial_by_referencia("Caso Que No Existe")
-    assert result is None
+# ---------------------------------------------------------------------------
+# wcode_match
+# ---------------------------------------------------------------------------
+
+def test_wcode_match_mismo_wcode_distinto_sufijo():
+    """Misma finca (W-02MA0R), sufijo divergente Drive vs CRM → match."""
+    assert wcode_match(
+        "BaRS3 - Torrent de les Flors 41 - (W-02MA0R) - Bad debt",
+        "BaRS3 - Torrent de les Flors 41 - (W-02MA0R) - Vuelta - COMPRADOR",
+    ) is True
 
 
-def test_find_expediente_judicial_con_client_externo():
-    """Si se pasa client externo, no se llama a SudespachoLegacyClient()."""
-    client = _mock_client()
-    client._client.get.return_value = _mock_get_response(
-        [{"id": 1, "label": "ref", "value": "999", "data": []}]
-    )
-    result = find_expediente_judicial_by_referencia("ref", client=client)
-    assert result == "999"
-    client.__exit__.assert_not_called()
+def test_wcode_match_distinto_wcode():
+    """Caso del 649: W-030LFT (Roser) ≠ W-02MA0R (Torrent) → NO match."""
+    assert wcode_match(
+        "BaRS3 - Torrent de les Flors 41 - (W-02MA0R) - Bad debt",
+        "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU",
+    ) is False
 
 
-def test_find_expediente_judicial_no_usa_slug_extrajudicial(monkeypatch):
-    """Garantiza que la búsqueda judicial NO consulta el endpoint extrajudicial."""
-    client = _mock_client()
-    client._client.get.return_value = _mock_get_response([])
-    with patch("core.sudespacho_relations.SudespachoLegacyClient", return_value=client):
-        find_expediente_judicial_by_referencia("cualquier referencia")
-    call_url = client._client.get.call_args[0][0]
-    assert "extrajudiciales" not in call_url
-    assert "expedientes_judiciales" in call_url
+def test_wcode_match_case_insensitive():
+    assert wcode_match("ref (w-02ma0r)", "otra (W-02MA0R)") is True
+
+
+def test_wcode_match_falta_wcode():
+    assert wcode_match("sin codigo", "tampoco tiene") is False
+    assert wcode_match("(W-02MA0R)", None) is False
+    assert wcode_match(None, None) is False
+
+
+# ---------------------------------------------------------------------------
+# list_expedientes_judiciales_candidatos
+# ---------------------------------------------------------------------------
+
+def _rest_items(*rows: tuple[str, str | None]) -> dict:
+    """Respuesta REST element_registries con (id, referencia_cliente) por fila."""
+    items = []
+    for eid, ref in rows:
+        vals = []
+        if ref is not None:
+            vals.append({"property": {"name": "referencia_cliente"}, "value": ref})
+        items.append({"id": str(eid), "values": vals})
+    return {"totalItems": len(items), "items": items}
+
+
+def test_candidatos_judiciales_por_wcode(monkeypatch):
+    """Busca por W-code vía REST (like) y devuelve TODOS los candidatos."""
+    monkeypatch.setenv("SUDESPACHO_API_KEY", "test_key_abc")
+    captured: dict = {}
+
+    def _capturing_get(url, *, params, headers, timeout):
+        captured["url"] = url
+        captured["params"] = params
+        return _mock_get_response(_rest_items(
+            ("487", "BaRS3 - Torrent 41 - (W-02MA0R) - Vuelta - COMPRADOR"),
+            ("488", "BaRS3 - Torrent 41 - (W-02MA0R) - Bad debt"),
+        ))
+
+    with patch("core.sudespacho_relations.httpx.get", side_effect=_capturing_get):
+        out = list_expedientes_judiciales_candidatos(
+            "BaRS3 - Torrent de les Flors 41 - (W-02MA0R) - Bad debt"
+        )
+    assert out == [
+        {"id": "487", "label": "BaRS3 - Torrent 41 - (W-02MA0R) - Vuelta - COMPRADOR"},
+        {"id": "488", "label": "BaRS3 - Torrent 41 - (W-02MA0R) - Bad debt"},
+    ]
+    # filtró por el W-code (no por la referencia completa) sobre el endpoint judicial
+    assert "expedientes_judiciales" in captured["url"]
+    assert ("filterGroup[filterGroups][0][filters][0][value]", "W-02MA0R") in captured["params"]
+    assert ("filterGroup[filterGroups][0][filters][0][operator]", "like") in captured["params"]
+
+
+def test_candidatos_judiciales_sin_api_key_devuelve_vacio(monkeypatch):
+    monkeypatch.setenv("SUDESPACHO_API_KEY", "")
+    out = list_expedientes_judiciales_candidatos("Caso (W-99999)")
+    assert out == []
+
+
+def test_candidatos_judiciales_red_caida_devuelve_vacio(monkeypatch):
+    monkeypatch.setenv("SUDESPACHO_API_KEY", "test_key_abc")
+    with patch("core.sudespacho_relations.httpx.get",
+               side_effect=httpx.ConnectError("timeout")):
+        out = list_expedientes_judiciales_candidatos("Caso (W-02MA0R)")
+    assert out == []
+
+
+def test_candidatos_judiciales_sin_wcode_usa_texto_completo(monkeypatch):
+    """Sin W-code, busca por el texto completo (fallback)."""
+    monkeypatch.setenv("SUDESPACHO_API_KEY", "test_key_abc")
+    captured: dict = {}
+
+    def _capturing_get(url, *, params, headers, timeout):
+        captured["params"] = params
+        return _mock_get_response(_rest_items())
+
+    with patch("core.sudespacho_relations.httpx.get", side_effect=_capturing_get):
+        out = list_expedientes_judiciales_candidatos("Caso sin codigo W")
+    assert out == []
+    assert ("filterGroup[filterGroups][0][filters][0][value]", "Caso sin codigo W") in captured["params"]
 
 
 # ---------------------------------------------------------------------------
@@ -925,116 +1144,6 @@ class TestExtractWCode:
 
     def test_w_code_at_start(self):
         assert _extract_w_code("W-0466A1 es el codigo") == "W-0466A1"
-
-
-# ---------------------------------------------------------------------------
-# Robust find_expediente — normalized matching + W-code search
-# ---------------------------------------------------------------------------
-
-
-class TestFindExpedienteRobust:
-    """Tests for the dual-search (W-code + full ref) with normalized label matching."""
-
-    def test_double_space_in_crm_label_matches(self):
-        """The real bug: CRM has double space, local has single -> should match."""
-        client = _mock_client()
-        client._client.get.return_value = _mock_get_response([
-            {"id": 1, "label": "BaRS6 - Addr - (W-02NV4W)  - Vuelta", "value": "444", "data": []},
-        ])
-        result = find_expediente_judicial_by_referencia(
-            "BaRS6 - Addr - (W-02NV4W) - Vuelta", client=client,
-        )
-        assert result == "444"
-
-    def test_accent_difference_matches(self):
-        """CRM has accent, local doesn't (or vice versa)."""
-        client = _mock_client()
-        client._client.get.return_value = _mock_get_response([
-            {"id": 1, "label": "MaRS2 - Gran Vía 40 - (W-0001) - Vuelta", "value": "500", "data": []},
-        ])
-        result = find_expediente_by_referencia(
-            "MaRS2 - Gran Via 40 - (W-0001) - Vuelta", client=client,
-        )
-        assert result == "500"
-
-    def test_case_difference_matches(self):
-        client = _mock_client()
-        client._client.get.return_value = _mock_get_response([
-            {"id": 1, "label": "bars1 - tibidabo - (W-02VND1) - vuelta", "value": "100", "data": []},
-        ])
-        result = find_expediente_by_referencia(
-            "BaRS1 - Tibidabo - (W-02VND1) - Vuelta", client=client,
-        )
-        assert result == "100"
-
-    def test_no_match_in_results_returns_none(self):
-        """Autocomplete returns results but none match normalized -> None."""
-        client = _mock_client()
-        client._client.get.return_value = _mock_get_response([
-            {"id": 1, "label": "Completely Different Case", "value": "999", "data": []},
-        ])
-        result = find_expediente_by_referencia(
-            "BaRS1 - Tibidabo - (W-02VND1) - Vuelta", client=client,
-        )
-        assert result is None
-
-    def test_empty_autocomplete_returns_none(self):
-        client = _mock_client()
-        client._client.get.return_value = _mock_get_response([])
-        result = find_expediente_by_referencia("Whatever", client=client)
-        assert result is None
-
-    def test_no_w_code_falls_back_to_full_ref(self):
-        """Legacy case_id without W-code: searches with full referencia only."""
-        client = _mock_client()
-        client._client.get.return_value = _mock_get_response([
-            {"id": 1, "label": "EV-2026-001", "value": "200", "data": []},
-        ])
-        result = find_expediente_by_referencia("EV-2026-001", client=client)
-        assert result == "200"
-
-    def test_w_code_search_finds_match_on_first_try(self):
-        """W-code search succeeds -> no second autocomplete call needed."""
-        client = _mock_client()
-        call_count = 0
-
-        def counting_get(url):
-            nonlocal call_count
-            call_count += 1
-            return _mock_get_response([
-                {"id": 1, "label": "BaRS1 - X - (W-02VND1) - Vuelta", "value": "100", "data": []},
-            ])
-
-        client._client.get = counting_get
-        result = find_expediente_judicial_by_referencia(
-            "BaRS1 - X - (W-02VND1) - Vuelta", client=client,
-        )
-        assert result == "100"
-        assert call_count == 1
-
-    def test_w_code_search_misses_falls_back(self):
-        """W-code search returns no match -> falls back to full ref search."""
-        client = _mock_client()
-        call_count = 0
-
-        def two_phase_get(url):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                return _mock_get_response([
-                    {"id": 1, "label": "Other thing with W-02VND1", "value": "999", "data": []},
-                ])
-            else:
-                return _mock_get_response([
-                    {"id": 1, "label": "BaRS1 - X - (W-02VND1) - Vuelta", "value": "100", "data": []},
-                ])
-
-        client._client.get = two_phase_get
-        result = find_expediente_judicial_by_referencia(
-            "BaRS1 - X - (W-02VND1) - Vuelta", client=client,
-        )
-        assert result == "100"
-        assert call_count == 2
 
 
 # ---------------------------------------------------------------------------

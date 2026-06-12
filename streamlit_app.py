@@ -42,6 +42,8 @@ from core.sudespacho_relations import (
     search_colaboradores_for_ui as _search_colabs,
     load_all_colaboradores as _load_all_colabs,
     verify_expediente_referencia as _verify_exp_ref,
+    list_expedientes_judiciales_candidatos as _list_exp_judicial_candidatos,
+    wcode_match as _wcode_match,
 )
 from core.config import (
     ACTORES_DESPACHO,
@@ -742,11 +744,51 @@ with tab_casos:
                 "Caso", cases, key="casos_ij_sel",
                 help="Caso local al que pertenece el expediente judicial.",
             )
+
+            # --- Resolución del expediente por referencia (W-code) ------------
+            # El sufijo de la referencia puede divergir entre Drive y CRM
+            # (p. ej. «… - Bad debt» vs «… - Vuelta - COMPRADOR»); se buscan
+            # candidatos por W-code y el letrado confirma cuál bajar, en lugar
+            # de teclear un ID a ciegas (que arriesga bajar OTRA finca).
+            if st.button(
+                "🔎 Buscar expediente en el CRM por la referencia del caso",
+                key="casos_ij_buscar",
+                help="Lista los expedientes judiciales del CRM cuya referencia "
+                     "comparte el W-code de este caso.",
+            ):
+                try:
+                    with st.spinner("Buscando en el CRM…"):
+                        st.session_state["casos_ij_cands"] = (
+                            _list_exp_judicial_candidatos(_caso_ij)
+                        )
+                except _SRelError as _eb:
+                    st.session_state["casos_ij_cands"] = []
+                    st.error(f"❌ No se pudo buscar en el CRM: {_eb}")
+
+            _cands = st.session_state.get("casos_ij_cands") or []
+            if _cands:
+                _opts = {f"#{c['id']} — {c['label']}": c["id"] for c in _cands}
+                _sel_label = st.radio(
+                    "Candidatos en el CRM (elige y pulsa «usar»):",
+                    list(_opts.keys()),
+                    key="casos_ij_cand_sel",
+                )
+                if st.button("📥 Usar este ID", key="casos_ij_cand_use"):
+                    st.session_state["casos_ij_exp"] = _opts[_sel_label]
+                    st.rerun()
+            elif "casos_ij_cands" in st.session_state:
+                st.caption(
+                    "Sin expedientes judiciales en el CRM con el W-code de este "
+                    "caso. Comprueba la referencia o introduce el ID a mano."
+                )
+
             _exp_ij = st.text_input(
                 "ID del expediente judicial en sudespacho",
                 key="casos_ij_exp",
-                placeholder="649",
-                help="ID numérico del expediente JUDICIAL en el CRM (no el extrajudicial).",
+                placeholder="p. ej. 487",
+                help="ID numérico del expediente JUDICIAL en el CRM (no el "
+                     "extrajudicial). Usa «Buscar» arriba para resolverlo desde "
+                     "la referencia del caso y no teclear un ID equivocado.",
             ).strip()
             _full_ij = st.checkbox(
                 "Descargar expediente completo (no solo demanda+contestación)",
@@ -763,6 +805,21 @@ with tab_casos:
                 key="casos_ij_pipe",
                 value=False,
             )
+            _force_ij = st.checkbox(
+                "He verificado el ID a mano — descargar aunque el W-code no coincida",
+                key="casos_ij_force",
+                value=False,
+                help="Solo para casos excepcionales en que la referencia del CRM "
+                     "no incluye el W-code del caso. Por defecto, si no coincide, "
+                     "la descarga se bloquea para no mezclar expedientes de fincas "
+                     "distintas.",
+            )
+
+            if not _exp_ij:
+                st.caption(
+                    "✏️ Escribe o resuelve (botón «Buscar» arriba) el ID del "
+                    "expediente para activar la descarga."
+                )
 
             if st.button(
                 "⚖️ Traer expediente completo" if _full_ij else "⚖️ Traer demanda + contestación",
@@ -780,18 +837,60 @@ with tab_casos:
                         "El intake v2 está bloqueado hasta migrarlo manualmente."
                     )
                 else:
-                    case_manager.register_expediente(
-                        _caso_ij, _exp_ij, "expedientes_judiciales",
+                    # --- Guard: el ID debe pertenecer a ESTE caso -------------
+                    # Verifica contra el CRM que el expediente tecleado comparte
+                    # el W-code del caso. Evita el fallo del 649 (que era otra
+                    # finca, W-030LFT) que se bajó sin avisar.
+                    _chk = _verify_exp_ref(
+                        _exp_ij, "expedientes_judiciales",
+                        expected_referencia=_caso_ij,
                     )
-                    with st.spinner("Localizando, clasificando y descargando…"):
-                        try:
-                            _rij = _intake_judicial(
-                                _caso_ij, _exp_ij, element="expedientes_judiciales",
-                                full=_full_ij,
+                    _crm_ref = _chk["crm_referencia"]
+                    _proceed = True
+                    if _chk["crm_unreachable"]:
+                        if not _force_ij:
+                            _proceed = False
+                            st.error(
+                                "⛔ No se pudo verificar el expediente en el CRM "
+                                "(¿PHPSESSID caducada? renuévala con `/renovar-php`). "
+                                "Marca el override solo si estás seguro del ID."
                             )
-                        except _SudespachoError as _eij:
-                            _rij = None
-                            st.error(f"❌ {_eij}")
+                    elif not _chk["found"]:
+                        if not _force_ij:
+                            _proceed = False
+                            st.error(
+                                f"⛔ El expediente #{_exp_ij} no existe (o no tiene "
+                                "referencia) en el CRM judicial. Revisa el ID."
+                            )
+                    elif not (_chk["match"] or _wcode_match(_crm_ref, _caso_ij)):
+                        if not _force_ij:
+                            _proceed = False
+                            st.error(
+                                f"⛔ El expediente #{_exp_ij} es **«{_crm_ref}»**, que "
+                                f"NO corresponde a este caso (`{_caso_ij}`). "
+                                "Descargarlo mezclaría fincas distintas. Si es "
+                                "intencional, marca el override y reintenta."
+                            )
+                    elif not _chk["match"]:
+                        st.info(
+                            f"ℹ️ El nombre en el CRM («{_crm_ref}») difiere del caso "
+                            "local, pero el W-code coincide: misma finca. Se descarga."
+                        )
+
+                    _rij = None
+                    if _proceed:
+                        case_manager.register_expediente(
+                            _caso_ij, _exp_ij, "expedientes_judiciales",
+                        )
+                        with st.spinner("Localizando, clasificando y descargando…"):
+                            try:
+                                _rij = _intake_judicial(
+                                    _caso_ij, _exp_ij, element="expedientes_judiciales",
+                                    full=_full_ij,
+                                )
+                            except _SudespachoError as _eij:
+                                _rij = None
+                                st.error(f"❌ {_eij}")
 
                     if _rij is not None:
                         _written = _rij.pull.documents_written if _rij.pull else 0
