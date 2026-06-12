@@ -177,7 +177,13 @@ def test_log_bundle_proposals_emite_eventos(tmp_casos_root):
     importlib.reload(cfg)
     importlib.reload(cm)
     importlib.reload(il)
-    importlib.reload(cd)
+    # OJO: NO recargar `cd` (core.conjunto_detector). log_bundle_proposals importa
+    # intake_log de forma perezosa (respeta el reload de il de arriba) y no usa el
+    # resolve_bucket de nivel de módulo, así que el reload era innecesario. Además,
+    # recargar cd muta su __dict__ in situ y reasigna la clase BundleProposal: los
+    # tests de este fichero que importaron BundleProposal/detect_bundles a nivel de
+    # módulo se quedarían con la clase vieja y su isinstance fallaría según el orden
+    # de ejecución (bug de aislamiento bajo pytest-randomly).
     cm.ensure_case("CASO1")
 
     proposals = [
