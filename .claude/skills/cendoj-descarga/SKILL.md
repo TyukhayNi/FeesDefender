@@ -153,6 +153,30 @@ cp /sessions/<id>/mnt/Downloads/SAP_*.pdf .
 
 Requiere `mcp__cowork__request_cowork_directory ~/Downloads` previo si no se ha montado.
 
+### Paso 7-bis — Registro en el expediente (solo si la jurisprudencia es de un asunto)
+
+Si la descarga se hace **para un expediente concreto** (el letrado indica la carpeta del asunto o existe `00_Input/_caso.md`), además de entregarla:
+
+1. Copia el PDF a `<case>/05_Procedimiento/Jurisprudencia/` (créala si no existe).
+2. Regístralo con el helper bundleado:
+
+   ```bash
+   python scripts/registrar_outputs.py "<case_dir>" outputs.json
+   ```
+
+   con una entrada por sentencia:
+
+   ```json
+   [{"fichero": "SAP_Madrid_281-2018_02-07-2018_ROJ_SAP_M_8959-2018.pdf",
+     "tipo": "jurisprudencia", "perspectiva": "",
+     "destino": "05_Procedimiento/Jurisprudencia",
+     "fuentes": ["ROJ: SAP M 8959/2018"],
+     "meta": {"ecli": "ES:APM:2018:8959"},
+     "estado": "descargado"}]
+   ```
+
+`fuentes` lleva el ROJ y `meta.ecli` el ECLI oficial del PDF (no los de la base privada). El registro es *best-effort*. Si la descarga **no** corresponde a un expediente (consulta suelta), omite este paso y entrega solo por `outputs/`.
+
 ### Paso 8 — Verificación
 
 Cada PDF de CENDOJ trae en su primera página un bloque de metadatos. Validar con:
@@ -279,4 +303,5 @@ Al terminar, reportar al usuario una tabla con los datos oficiales extraídos de
 - [ ] Nombrado siguiendo el patrón `TIPO_Provincia_NºRes_fecha_ROJ.pdf`
 - [ ] Archivos copiados a `outputs/` y enlazados con `computer://`
 - [ ] Tabla resumen con los 6 metadatos oficiales (Tribunal/Sección, Fecha, Nº Res, ROJ, ECLI, Ponente)
+- [ ] Si es de un expediente: PDF en `05_Procedimiento/Jurisprudencia/` y registrado (Paso 7-bis)
 - [ ] Si alguno no se ha localizado: aviso explícito al usuario con la causa
