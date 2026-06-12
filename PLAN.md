@@ -28,6 +28,44 @@ de `[SIGUIENTE-INTAKE-JUDICIAL-AUTO]`.
 
 ---
 
+## [SIGUIENTE-SALA-LECTURA-01] Sala de lectura y organización de `01_Procesado`
+*Diseño cerrado con Nikolai 2026-06-12 (sesión Cowork, HANDOFF). Plan fino autocontenido: `docs/PLAN_SALA_LECTURA_01_PROCESADO.md` (incluye §0 con notas de Claude Code sobre el estado del repo). Implementación: Claude Code.*
+
+**Objetivo.** Capa humana sobre `01_Procesado`: una **sala de lectura** (documentos
+en claro y en orden, por fuente y narrativa) + una **capa de texto** (`MD/`) para
+búsqueda. Índices `INDICE.md`/`CRONOLOGIA.md` de solo lectura. Clasificador/fechador
+**híbrido** (reglas deterministas → LLM Scaleway solo para el residuo). `00_Input`
+intacto; ningún camino de IA accede a `01`. Primera fase = ficheros en
+`01_Procesado`; Streamlit y artifact Cowork **diferidos**.
+
+**Acoplamientos detectados al leer el repo (doc §0, fijan la secuencia — no bloquean):**
+- **#1 (cimiento):** la sala de lectura **es** `[SIGUIENTE-CATALOGO-DOCUMENTAL]`.
+  `INDICE.md`/`CRONOLOGIA.md` se renderizan desde `indice_documental.yaml`, que
+  **no existe** (Nikolai: "no construirlo a medias"). Construir la sala obliga a
+  construir el catálogo. Falta añadirle `parent_id`/`orden_en_bundle` (D9 / MEJORAS #29).
+- **#2:** el `_manifiesto.jsonl` del handoff solapa con `00_Input/_intake_hashes.json`
+  (`IntakeManifest`) ya existente. Decisión: ¿catálogo único o tres artefactos?
+  Inclinación: **catálogo único**.
+- **#3:** el clasificador (Tarea 7) lee documento en claro → **misma excepción RGPD
+  acotada** que el intake de procuradores (Scaleway UE). Maximizar reglas
+  deterministas (filename, `id_carpeta_label`, `modified_at` ya en el DTO por D10).
+  **Bloqueante solo de Tarea 7:** DPA Scaleway.
+- **Menor:** apoyarse en `[IDEA-SKIP-INCREMENTAL-EXTRACCION]` #1 (doble `extract_all`)
+  para cumplir el criterio de idempotencia; el grifo de MD (Tarea 2) toca el mismo flujo.
+
+**Secuencia propuesta (doc §0.F):** (0) cerrar doble `extract_all` → (1) catálogo
+`indice_documental.yaml` → (2) scaffolding `Sala lectura/`+`MD/`+`_revisar/` →
+(3) grifo de MD en claro a `01_Procesado/MD/` → (4) copiador organizado + bundles
+(consumiendo `conjunto_detector`) → (5) render de índices → (6) clasificador híbrido
+(tras DPA). Cada fase con tests y suite verde.
+
+**Decisiones abiertas a cerrar con Nikolai antes de Fase 1 (doc §0.G):** catálogo
+único vs manifiesto aparte · ¿promover formalmente `[SIGUIENTE-CATALOGO-DOCUMENTAL]`
+a cola? · taxonomía documental (la redacta Cowork; bloquea afinar el clasificador,
+no el cimiento) · DPA Scaleway (bloquea solo Tarea 7) · correspondencia suelta.
+
+---
+
 ## [SIGUIENTE-INTAKE-PROCURADORES-EMAIL] Intake automático de correos de procuradores → Sudespacho
 *Diseño cerrado con Nikolai 2026-06-12. Plan fino autocontenido: `docs/PLAN_INTAKE_PROCURADORES_EMAIL.md`. Implementación: Claude Code.*
 
