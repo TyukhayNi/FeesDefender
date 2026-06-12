@@ -3,16 +3,16 @@
 Lógica de core que la pestaña Streamlit «Bandeja de correos» orquesta para
 reasignar el expediente de un correo 🟡/🔴 y refrescar los checks verdes 🟢.
 
-Dos clientes (ya existentes): el **autocomplete** del CRM usa el cliente *legacy*
-(PHPSESSID); la lectura de campos por id usa el cliente **REST** (x-api-key), el
-mismo que el matcher F1. Ambos inyectables → tests sin red.
-
+Dos vías de lectura (ambas REST x-api-key, inyectables vía mock de ``httpx``):
+el **combobox** busca con ``_rest_search_por_texto`` / ``_rest_search_num_serie``
+(``sudespacho_relations``); la lectura de campos por id usa ``SudespachoClient``.
 Solo lectura: NO escribe en el CRM (la escritura es F3).
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from .procurador_intake import (
@@ -21,16 +21,23 @@ from .procurador_intake import (
     _check_signal_matches,
 )
 from .sudespacho_relations import (
-    SudespachoLegacyClient,
-    SudespachoRelationsError,
-    _autocomplete,
+    _SEARCH_PROPS_BY_ELEMENT,
+    _normalize_element,
+    _rest_search_num_serie,
+    _rest_search_por_texto,
 )
 from .sync_sudespacho import SudespachoClient
 
 logger = logging.getLogger("feesdefender.procurador_search")
 
-# Elementos CRM buscables desde el combobox (🔴 ofrece los tres).
-ELEMENTOS_BUSCABLES = ("expedientes_judiciales", "expedientes_extrajudiciales", "clientes")
+# Elementos CRM buscables desde el combobox. `clientes` se retiró (2026-06-12):
+# no tiene property de referencia ni alimenta recompute_coincidencias.
+ELEMENTOS_BUSCABLES = ("expedientes_judiciales", "expedientes_extrajudiciales")
+
+# Nº interno del despacho citado por procuradores: "63/2024" (num/AÑO). El año
+# (19xx/20xx) va DETRÁS, lo que lo distingue de refs de procurador "AÑO/nº"
+# (p. ej. "2025/7449"), que van a la búsqueda por texto.
+_NUM_SERIE_RE = re.compile(r"^\s*(\d{1,4})\s*/\s*((?:19|20)\d{2})\s*$")
 
 # Campos de IntakeSignals que `_check_signal_matches` compara (reconstrucción).
 _SIGNAL_KEYS = (
@@ -44,46 +51,48 @@ def search_expedientes(
     term: str,
     *,
     element: str = "expedientes_judiciales",
-    client: SudespachoLegacyClient | None = None,
+    client: object | None = None,
 ) -> list[dict[str, str]]:
     """Busca expedientes en el CRM por texto libre → ``[{"id", "label"}]``.
 
-    Reutiliza el autocomplete del CRM (``_autocomplete``). El id del expediente es
-    el campo ``value`` del autocomplete (no ``id``, que es el índice de la fila).
+    Vía REST (x-api-key), no el autocomplete legacy (que devuelve body vacío
+    contra el CRM real — ver docs/DEAD_ENDS.md "Frontal heredado"). Busca en
+    paralelo por:
+
+    - **texto libre** (OR-``like``): nombre del caso (``referencia_cliente``) y
+      ref del procurador (``referencia_procurador``) en judicial; solo
+      ``Referencia_Cliente`` en extrajudicial.
+    - **nº interno del despacho** (``num_expediente``/serie): solo si ``term``
+      casa ``nº/AÑO`` y el elemento es judicial. Se fusiona sin duplicar.
 
     Args:
-        term: texto libre (referencia, contrario, cliente, autos).
-        element: ``expedientes_judiciales`` (default) | ``expedientes_extrajudiciales`` | ``clientes``.
-        client: cliente legacy reutilizable (tests / sesión de la UI).
+        term: texto libre (nombre del caso, ref del procurador, o ``nº/AÑO``).
+        element: ``expedientes_judiciales`` (default) |
+            ``expedientes_extrajudiciales``.
+        client: ignorado — la búsqueda es REST. Se conserva por compatibilidad
+            de firma con el resto del módulo / la UI.
+
+    Nunca lanza: ``[]`` ante término vacío / elemento no buscable / CRM no
+    accesible / api-key ausente.
     """
-    if not term or not term.strip():
+    term = (term or "").strip()
+    if not term:
         return []
-    owns = client is None
-    if owns:
-        client = SudespachoLegacyClient()
-    try:
-        rows = _autocomplete(element, term.strip(), client)
-    except SudespachoRelationsError as exc:
-        logger.warning("search_expedientes(%r) falló: %s", term, exc)
+    elem = _normalize_element(element)
+    if elem not in _SEARCH_PROPS_BY_ELEMENT:
         return []
-    finally:
-        if owns:
-            try:
-                client.__exit__(None, None, None)
-            except Exception:
-                pass
-    return [
-        {"id": str(r.get("value", "")), "label": str(r.get("label", ""))}
-        for r in rows
-        if r.get("value")
-    ]
 
+    resultados = _rest_search_por_texto(elem, term)
 
-# ---------------------------------------------------------------------------
-# Stubs para Tasks 3-4 — se implementarán en esas entregas.
-# Declarados aquí para que el módulo importe completo desde el primer commit
-# y los tests de Tasks 3-4 puedan importarlos.
-# ---------------------------------------------------------------------------
+    m = _NUM_SERIE_RE.match(term)
+    if m and elem == "expedientes_judiciales":
+        vistos = {r["id"] for r in resultados}
+        for r in _rest_search_num_serie(m.group(1), m.group(2)):
+            if r["id"] not in vistos:
+                resultados.append(r)
+                vistos.add(r["id"])
+    return resultados
+
 
 def fetch_expediente_datos(
     expediente_id: int | str,

@@ -4,18 +4,19 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from core.procurador_search import (
+    ELEMENTOS_BUSCABLES,
     fetch_expediente_datos,
     recompute_coincidencias,
     search_expedientes,
 )
 
 
-def _mock_legacy_client():
-    client = MagicMock()
-    client._check_session = MagicMock()
-    client.__exit__ = MagicMock(return_value=False)
-    return client
+@pytest.fixture
+def _api_key(monkeypatch):
+    monkeypatch.setenv("SUDESPACHO_API_KEY", "test_key_abc")
 
 
 def _mock_get(json_data, status=200):
@@ -25,36 +26,91 @@ def _mock_get(json_data, status=200):
     return r
 
 
-def test_search_expedientes_mapea_value_a_id():
-    """El id del expediente es el campo `value` del autocomplete; label se conserva."""
-    client = _mock_legacy_client()
-    client._client.get.return_value = _mock_get(
-        [{"id": 1, "label": "13 - 2026 · ACME", "value": "532", "data": []},
-         {"id": 2, "label": "14 - 2026 · OTRO", "value": "533", "data": []}]
-    )
-    out = search_expedientes("ACME", client=client)
-    assert out == [
-        {"id": "532", "label": "13 - 2026 · ACME"},
-        {"id": "533", "label": "14 - 2026 · OTRO"},
-    ]
+def _items_multi(*rows):
+    items = []
+    for eid, props in rows:
+        vals = [{"property": {"name": k}, "value": v} for k, v in props.items()]
+        items.append({"id": str(eid), "values": vals})
+    return {"totalItems": len(items), "items": items}
 
 
-def test_search_expedientes_element_judicial_por_defecto():
-    """Por defecto busca en expedientes_judiciales (el caso de procuradores)."""
-    client = _mock_legacy_client()
-    client._client.get.return_value = _mock_get([])
-    search_expedientes("algo", client=client)
-    url = client._client.get.call_args[0][0]
-    assert "expedientes_judiciales" in url
+def test_clientes_fuera_de_elementos_buscables():
+    """`clientes` se retiró: no tiene referencia ni alimenta recompute."""
+    assert "clientes" not in ELEMENTOS_BUSCABLES
+    assert "expedientes_judiciales" in ELEMENTOS_BUSCABLES
 
 
-def test_search_expedientes_element_override():
-    """Se puede buscar en extrajudiciales / clientes (🔴 toggle)."""
-    client = _mock_legacy_client()
-    client._client.get.return_value = _mock_get([])
-    search_expedientes("algo", element="clientes", client=client)
-    url = client._client.get.call_args[0][0]
-    assert "clientes" in url
+def test_search_termino_vacio_no_toca_red(_api_key):
+    with patch("core.sudespacho_relations.httpx.get") as g:
+        assert search_expedientes("   ") == []
+        g.assert_not_called()
+
+
+def test_search_por_texto_mapea_id_y_label(_api_key):
+    """Búsqueda libre → REST OR-like; devuelve [{id,label}] con ref del procurador."""
+    with patch("core.sudespacho_relations.httpx.get",
+               return_value=_mock_get(_items_multi(
+                   ("487", {"referencia_cliente": "BaRS3 - Torrent 41 (W-02MA0R)",
+                            "referencia_procurador": "P-2025/3447"}),
+               ))):
+        out = search_expedientes("Torrent")
+    assert out == [{"id": "487",
+                    "label": "BaRS3 - Torrent 41 (W-02MA0R)  ·  P-2025/3447"}]
+
+
+def test_search_num_serie_dispara_rama_numerica_y_fusiona(_api_key):
+    """'63/2024' → texto (sin hits) + num/serie (hit 487), fusionado sin duplicar."""
+    def _get(url, *, params, headers, timeout):
+        es_num = ("filterGroup[filterGroups][0][filters][0][property]",
+                  "num_expediente") in params
+        if es_num:
+            return _mock_get(_items_multi(
+                ("487", {"num_expediente": "63", "serie_expediente": "2024",
+                         "referencia_cliente": "BaRS3 - Torrent 41 (W-02MA0R)"}),
+            ))
+        return _mock_get(_items_multi())  # la búsqueda por texto no encuentra "63/2024"
+
+    with patch("core.sudespacho_relations.httpx.get", side_effect=_get):
+        out = search_expedientes("63/2024")
+    assert out == [{"id": "487", "label": "BaRS3 - Torrent 41 (W-02MA0R)"}]
+
+
+def test_search_ano_barra_num_no_dispara_rama_numerica(_api_key):
+    """'2025/7449' (ref de procurador, año delante) NO va a num/serie, solo texto."""
+    llamadas: list = []
+
+    def _get(url, *, params, headers, timeout):
+        llamadas.append(params)
+        return _mock_get(_items_multi(
+            ("487", {"referencia_cliente": "BaRS3 - Torrent 41 (W-02MA0R)",
+                     "referencia_procurador": "2025/7449"}),
+        ))
+
+    with patch("core.sudespacho_relations.httpx.get", side_effect=_get):
+        out = search_expedientes("2025/7449")
+    # Solo una llamada (texto); ninguna con equal num_expediente
+    assert len(llamadas) == 1
+    assert all(("filterGroup[filterGroups][0][filters][0][property]",
+                "num_expediente") not in p for p in llamadas)
+    assert out == [{"id": "487",
+                    "label": "BaRS3 - Torrent 41 (W-02MA0R)  ·  2025/7449"}]
+
+
+def test_search_alias_extrajudicial_normaliza_slug(_api_key):
+    captured: dict = {}
+
+    def _get(url, *, params, headers, timeout):
+        captured["url"] = url
+        return _mock_get(_items_multi())
+
+    with patch("core.sudespacho_relations.httpx.get", side_effect=_get):
+        search_expedientes("algo", element="expedientes_extrajudiciales")
+    assert "element_registries/extrajudiciales" in captured["url"]
+
+
+def test_search_sin_api_key_devuelve_vacio(monkeypatch):
+    monkeypatch.setenv("SUDESPACHO_API_KEY", "")
+    assert search_expedientes("Torrent") == []
 
 
 def test_fetch_expediente_datos_parsea_values_por_id():
