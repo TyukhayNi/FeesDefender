@@ -32,6 +32,13 @@ logger = logging.getLogger("feesdefender.procurador_search")
 # Elementos CRM buscables desde el combobox (🔴 ofrece los tres).
 ELEMENTOS_BUSCABLES = ("expedientes_judiciales", "expedientes_extrajudiciales", "clientes")
 
+# Campos de IntakeSignals que `_check_signal_matches` compara (reconstrucción).
+_SIGNAL_KEYS = (
+    "su_ref", "num_expediente", "serie_expediente", "contrario", "cliente",
+    "juzgado", "num_asunto", "tipo_procedimiento", "tipo_actuacion",
+    "fecha_actuacion",
+)
+
 
 def search_expedientes(
     term: str,
@@ -129,8 +136,18 @@ def fetch_expediente_datos(
 
 
 def recompute_coincidencias(
-    signals: IntakeSignals,
-    expediente_datos: dict[str, Any],
-) -> dict[str, bool]:
-    """Stub — recalcula checks 🟢/🔴 para un expediente elegido manualmente."""
-    raise NotImplementedError("recompute_coincidencias se implementa en Task 4")
+    signals_dict: dict[str, Any],
+    datos_expediente: dict[str, Any],
+) -> list[str]:
+    """Recomputa los checks verdes 🟢 tras reasignar expediente en el combobox.
+
+    Reconstruye un ``IntakeSignals`` desde el dict persistido en la cola y delega
+    en ``_check_signal_matches`` (la misma comparación tolerante que usa el
+    matcher F1: juzgado por tokens, num_asunto normalizado, etc.).
+    """
+    if not datos_expediente:
+        return []
+    kwargs = {k: signals_dict.get(k) for k in _SIGNAL_KEYS}
+    kwargs["es_ruido"] = bool(signals_dict.get("es_ruido", False))
+    signals = IntakeSignals(**kwargs)
+    return _check_signal_matches(signals, datos_expediente)

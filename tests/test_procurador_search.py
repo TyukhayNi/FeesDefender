@@ -93,3 +93,35 @@ def test_fetch_expediente_datos_http_no_200():
     client.__exit__ = MagicMock(return_value=False)
     client._client.get.return_value = _mock_get({}, status=404)
     assert fetch_expediente_datos(999, client=client) == {}
+
+
+def test_recompute_coincidencias_delega_en_check_signal_matches():
+    """Reconstruye IntakeSignals desde el dict persistido y recomputa coincidencias."""
+    signals_dict = {
+        "num_expediente": 13, "serie_expediente": "2026",
+        "juzgado": "Juzgado de Primera Instancia nº 4 de Valencia",
+        "num_asunto": "123/2025", "tipo_procedimiento": "ordinario",
+    }
+    datos_expediente = {
+        "id": 532, "num_expediente": 13, "serie_expediente": "2026",
+        # Token-match: comparte 'juzgado','primera','instancia','valencia' (4/4 ≥ 70%)
+        "juzgado": "Juzgado Primera Instancia 4 Valencia",
+        "num_asunto": "123 / 2025",
+        "tipo_procedimiento": "Juicio ordinario",
+    }
+    out = recompute_coincidencias(signals_dict, datos_expediente)
+    assert set(out) == {"num_expediente", "serie_expediente", "juzgado",
+                        "num_asunto", "tipo_procedimiento"}
+
+
+def test_recompute_coincidencias_parcial():
+    """Solo num/serie coinciden → solo esos dos."""
+    signals_dict = {"num_expediente": 13, "serie_expediente": "2026", "juzgado": "X"}
+    datos = {"num_expediente": 13, "serie_expediente": "2026", "juzgado": "Y distinto"}
+    out = recompute_coincidencias(signals_dict, datos)
+    assert set(out) == {"num_expediente", "serie_expediente"}
+
+
+def test_recompute_coincidencias_sin_datos():
+    """datos_expediente vacío → sin coincidencias (no rompe)."""
+    assert recompute_coincidencias({"num_expediente": 13}, {}) == []
