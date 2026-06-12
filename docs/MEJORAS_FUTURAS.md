@@ -1071,5 +1071,5 @@ mejora la lectura del expediente desde el core. Implementación: Claude Code.
 
 ## 31. Combobox F2 — búsqueda por contrario y por nº de autos (`num_asunto`)
 
-- **Combobox F2 — búsqueda por contrario:** bloqueada por API (sin ruta REST inversa contrario→expedientes, 405; ver DEAD_ENDS). Reabrir solo si aparece endpoint inverso o se decide scraping del frontal legacy. Disparador: caso real que lo necesite.
+- **Combobox F2 — búsqueda por contrario:** no resuelta por las vías REST probadas (relación inversa contrario→expedientes; ver DEAD_ENDS). Punto de reentrada: tantear `GET /api/related_registers` (sin probar; la entrada de DEAD_ENDS indica que acepta GET para "listado de relaciones"). Si no devuelve el inverso, quedaría scraping del frontal legacy. Disparador: caso real que lo necesite.
 - **Combobox F2 — búsqueda por nº de autos (`num_asunto`):** trivial de añadir a `_SEARCH_PROPS_BY_ELEMENT` cuando el campo deje de estar vacío en el tenant. Disparador: que se empiece a poblar `num_asunto`.
