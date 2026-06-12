@@ -195,6 +195,16 @@ Criterios formales de la Sala 1ª del TS (admisión de recursos de casación):
 Para generación automática de escritos `.docx`, usar la skill
 `escritos-judiciales` (en `.claude/skills/escritos-judiciales/`).
 
+### Fuente única de verdad de las skills del despacho
+
+**Las skills del despacho se editan SIEMPRE en `.claude/skills/`** de este repo (más
+helpers canónicos en `.claude/skills/_shared/`, sincronizados con
+`scripts/sync_skill_helpers.py`). Es la fuente única de desarrollo desde 2026-06-12.
+El repo externo `despacho-skills` quedó **archivado/deprecado** (no editar ahí; solo
+conserva `SKILL_AUTHORING.md` como guía de autoría). La ejecución sigue en el SERVIDOR
+(Cowork/claude.ai): tras editar, empaquetar con `scripts/package_skill.py` y re-importar
+el `.skill`. Detalle en `docs/MEJORA_CONTINUA_SKILLS.md`.
+
 ## División Claude Code vs. Cowork (tras separar repo de Drive, 2026-05-27)
 
 Desde la migración, el reparto es estricto porque **el código vive en disco local

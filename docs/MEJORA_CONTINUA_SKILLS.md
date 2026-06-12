@@ -4,6 +4,12 @@ Gobernanza del sistema que (Parte I) hace que las skills procesales **guarden y
 registren** sus outputs en el expediente, y (Parte II) hace que **aprendan de su
 uso real**. Implementa el plan v3 (`PLAN_skills_registro_y_mejora_v3`).
 
+> **Fuente única de verdad (desde 2026-06-12):** todas las skills del despacho se
+> versionan y editan en **`.claude/skills/`** de este repo. El repo externo
+> `despacho-skills` quedó **archivado** (no editar ahí; solo conserva
+> `SKILL_AUTHORING.md`). La fuente de **ejecución** es el SERVIDOR (Cowork/claude.ai):
+> editar aquí → `scripts/package_skill.py` → re-importar el `.skill`.
+
 ## Skills en alcance
 
 `escritos-judiciales`, `cendoj-descarga`, `preparacion-audiencia-previa`,
