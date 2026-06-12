@@ -275,3 +275,101 @@ def transicionar(item: ReviewItem, accion: str, *, motivo: str | None = None) ->
     nuevo_estado = permitidas[accion]
     nuevo_motivo = motivo if nuevo_estado == "descartado" else None
     return replace(item, estado=nuevo_estado, motivo_descarte=nuevo_motivo)
+
+
+# ---------------------------------------------------------------------------
+# F2.3a — store de la cola (persistir / cargar ReviewItems)
+# ---------------------------------------------------------------------------
+
+def queue_store_path() -> Path:
+    """Store global de la cola de la bandeja (PII → gitignored).
+
+    Append-only: cada ``upsert`` añade un snapshot del item; ``load_queue`` pliega
+    a la última versión por ``email_id`` (crash-safe + dedup §4). El store de
+    decisiones (``audit_log_path``) sigue siendo el registro forense de la terna;
+    este es el estado operativo de la cola.
+    """
+    return settings.project_root / "data" / "_aprendizaje" / "intake_cola.jsonl"
+
+
+def upsert_queue_item(item: ReviewItem, *, store_path: Path | str | None = None) -> Path:
+    """Persiste (o actualiza) un item de la cola.
+
+    Anti-duplicado §4: re-persistir el mismo ``email_id`` no duplica — ``load_queue``
+    se queda con el último snapshot. Útil tras cada transición de estado.
+    """
+    path = Path(store_path) if store_path is not None else queue_store_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    line = json.dumps(asdict(item), ensure_ascii=False)
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(line + "\n")
+        f.flush()
+        os.fsync(f.fileno())
+    return path
+
+
+def _item_from_dict(d: dict[str, Any]) -> ReviewItem:
+    """Reconstruye un ``ReviewItem`` (con su ``RobotProposal`` anidado) desde el JSON."""
+    prop = d.get("proposal") or {}
+    proposal = RobotProposal(
+        email_id=prop.get("email_id", d.get("email_id", "")),
+        expediente_id=prop.get("expediente_id"),
+        confianza=prop.get("confianza", "ninguna"),
+        carpeta_id=prop.get("carpeta_id"),
+        carpeta=prop.get("carpeta"),
+        attachment_names=prop.get("attachment_names") or {},
+    )
+    return ReviewItem(
+        email_id=d.get("email_id", ""),
+        proposal=proposal,
+        estado=d.get("estado", "pendiente"),
+        motivo_descarte=d.get("motivo_descarte"),
+        remitente=d.get("remitente"),
+        asunto=d.get("asunto"),
+        fecha=d.get("fecha"),
+    )
+
+
+def load_queue(
+    *,
+    estado: str | None = None,
+    store_path: Path | str | None = None,
+) -> list[ReviewItem]:
+    """Carga la cola plegada a la última versión por ``email_id``.
+
+    Args:
+        estado: si se indica, filtra por estado ("pendiente" para la bandeja
+            principal; "descartado" para la vista Descartados §6).
+        store_path: override del store (tests).
+
+    Returns:
+        Items en orden de primera aparición. Store inexistente → [].
+    """
+    path = Path(store_path) if store_path is not None else queue_store_path()
+    if not path.exists():
+        return []
+
+    by_id: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+    with open(path, encoding="utf-8") as f:
+        for raw in f:
+            line = raw.strip()
+            if not line:
+                continue
+            try:
+                d = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(d, dict):
+                continue
+            eid = d.get("email_id")
+            if not eid:
+                continue
+            if eid not in by_id:
+                order.append(eid)
+            by_id[eid] = d
+
+    items = [_item_from_dict(by_id[eid]) for eid in order]
+    if estado is not None:
+        items = [i for i in items if i.estado == estado]
+    return items

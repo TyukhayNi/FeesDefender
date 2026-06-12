@@ -35,6 +35,8 @@ scripts/intake_batch_dataset*.json
 data/_aprendizaje/intake_eval_*.json
 # F2 — log de auditoría de la bandeja (terna §18.9: correos, expedientes, nombres)
 data/_aprendizaje/intake_audit.jsonl
+# F2 — cola operativa de la bandeja (snapshots de correos en revisión)
+data/_aprendizaje/intake_cola.jsonl
 
 # Logs
 logs/

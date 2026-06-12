@@ -24,9 +24,11 @@ from core.procurador_review import (
     TransicionInvalida,
     compute_divergence,
     from_intake_proposal,
+    load_queue,
     read_decisions,
     record_decision,
     transicionar,
+    upsert_queue_item,
 )
 
 
@@ -241,3 +243,59 @@ def test_descartado_no_va_directo_a_confirmado():
     descartado = ReviewItem(email_id="m1", proposal=_proposal_alta(), estado="descartado")
     with pytest.raises(TransicionInvalida):
         transicionar(descartado, "confirmar")
+
+
+# ---------------------------------------------------------------------------
+# F2.3a — store de la cola (persistir/cargar ReviewItems)
+# ---------------------------------------------------------------------------
+
+def test_upsert_y_load_reconstruye_review_item(tmp_path):
+    """Persistir un item y cargarlo lo reconstruye como ReviewItem con su RobotProposal."""
+    store = tmp_path / "cola.jsonl"
+    item = ReviewItem(
+        email_id="m1", proposal=_proposal_alta(), estado="pendiente",
+        remitente="proc-f@colegio-proc.example", asunto="Notificación", fecha="2026-06-12",
+    )
+    upsert_queue_item(item, store_path=store)
+
+    cola = load_queue(store_path=store)
+    assert len(cola) == 1
+    cargado = cola[0]
+    assert isinstance(cargado, ReviewItem)
+    assert isinstance(cargado.proposal, RobotProposal)
+    assert cargado.email_id == "m1"
+    assert cargado.estado == "pendiente"
+    assert cargado.proposal.expediente_id == 532
+    assert cargado.remitente == "proc-f@colegio-proc.example"
+
+
+def test_upsert_mismo_email_id_no_duplica_y_gana_el_ultimo(tmp_path):
+    """Anti-duplicado §4: re-upsert del mismo email_id actualiza, no duplica."""
+    store = tmp_path / "cola.jsonl"
+    item = ReviewItem(email_id="m1", proposal=_proposal_alta(), estado="pendiente")
+    upsert_queue_item(item, store_path=store)
+    # tras una transición, se vuelve a persistir el mismo correo
+    upsert_queue_item(transicionar(item, "confirmar"), store_path=store)
+
+    cola = load_queue(store_path=store)
+    assert len(cola) == 1
+    assert cola[0].estado == "confirmado"
+
+
+def test_load_queue_filtra_por_estado(tmp_path):
+    """La bandeja principal carga pendientes; la vista Descartados, descartados."""
+    store = tmp_path / "cola.jsonl"
+    upsert_queue_item(ReviewItem(email_id="a", proposal=_proposal_alta(), estado="pendiente"), store_path=store)
+    upsert_queue_item(ReviewItem(email_id="b", proposal=_proposal_alta(), estado="descartado", motivo_descarte="ruido_llm"), store_path=store)
+    upsert_queue_item(ReviewItem(email_id="c", proposal=_proposal_alta(), estado="pendiente"), store_path=store)
+
+    pendientes = load_queue(estado="pendiente", store_path=store)
+    descartados = load_queue(estado="descartado", store_path=store)
+    assert {i.email_id for i in pendientes} == {"a", "c"}
+    assert {i.email_id for i in descartados} == {"b"}
+    assert descartados[0].motivo_descarte == "ruido_llm"
+
+
+def test_load_queue_store_inexistente(tmp_path):
+    """Cargar una cola que no existe → lista vacía."""
+    assert load_queue(store_path=tmp_path / "no.jsonl") == []
