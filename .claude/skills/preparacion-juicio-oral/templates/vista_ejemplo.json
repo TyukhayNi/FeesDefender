@@ -1,0 +1,19 @@
+{
+  "ref": "W-EJEMPLO",
+  "encabezado_pagina": "PO 000/0000 - JPI XX - W-EJEMPLO - Orden de vista",
+  "autor": "Despacho",
+  "procedimiento": "PO 000/0000",
+  "organo": "JPI XX",
+  "fecha_juicio": "AAAA-MM-DD HH:MM",
+  "sala": "Sala X",
+  "documentos_mano": [ "Carpeta del expediente.", "D X, D Y para exhibicion rapida.", "Bloc de protestas." ],
+  "orden_testigos": [
+    { "n": 1, "testigo": "Testigo 1", "rol": "directo", "tiempo": "10 min", "notas": "Testigo propio." },
+    { "n": 2, "testigo": "Testigo 2", "rol": "cruzado", "tiempo": "15 min", "notas": "Testigo adverso." }
+  ],
+  "razon_orden": "Justificacion estrategica.",
+  "protestas_previsibles": [ "Protesta por denegacion de prueba X." ],
+  "riesgos": [ "Sesgo del juez sobre Z." ],
+  "conclusiones_orales_bullets": [ "Bullet 1.", "Bullet 2." ],
+  "recordatorios": [ "Solicitar conclusiones por escrito si procede." ]
+}

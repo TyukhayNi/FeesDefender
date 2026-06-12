@@ -1,0 +1,133 @@
+{
+  "ref": "W-EJEMPLO",
+  "procedimiento": "PO 000/2024",
+  "organo": "JPI nº 0 de Ciudad Ejemplo",
+  "encabezado_pagina": "PO 000/2024 — JPI 0 Ciudad Ejemplo — W-EJEMPLO — Esquema de conclusiones",
+  "autor": "Despacho",
+  "fecha_juicio": "2099-01-15",
+  "ap": {
+    "fecha": "2098-09-10",
+    "fichero": "0000-00-00-00-00-00_0000000-2024_CP_EJEMPLO"
+  },
+  "hechos_no_controvertidos": [
+    {
+      "n": 1,
+      "hecho": "Suscripción del contrato de mediación de 01-01-2096 sobre el inmueble de calle Ficticia 1, 2º A. Comisión 5 % + IVA. Régimen de no exclusiva. Precio de venta autorizado 500.000 €.",
+      "posicion_demandado": "Conforme. Insiste en el régimen de no exclusiva.",
+      "prueba": "D 2",
+      "estado": "No controvertido",
+      "cita_ap": [
+        {
+          "timestamp": "11:00",
+          "atribucion": "Letrado actora",
+          "texto": "El primer hecho es la vigencia y validez del contrato de mediación entre las partes, documento número dos."
+        },
+        {
+          "timestamp": "12:08",
+          "atribucion": "Letrado demandada",
+          "texto": "El contrato es el que firma mi representado, sin discusión sobre su existencia."
+        }
+      ]
+    },
+    {
+      "n": 2,
+      "hecho": "Despliegue efectivo de las gestiones de comercialización por la agencia: 100 envíos de exposé, 200 actividades CRM, 20 visitas, 10 hojas firmadas.",
+      "posicion_demandado": "Conforme («las gestiones se hicieron»). Matiz: no exclusiva.",
+      "prueba": "D 7-9",
+      "estado": "No controvertido",
+      "cita_ap": [
+        {
+          "timestamp": "13:03",
+          "atribucion": "Letrado demandada",
+          "texto": "Las gestiones se hicieron, esta parte no las ha discutido, pero insistimos en que no eran en exclusiva."
+        }
+      ]
+    },
+    {
+      "n": 3,
+      "hecho": "Firma del demandado sobre la oferta de compra de 480.000 € de fecha 10-03-2096.",
+      "posicion_demandado": "Admitido expresamente en sala.",
+      "prueba": "D 16",
+      "estado": "No controvertido",
+      "cita_ap": [
+        {
+          "timestamp": "13:10",
+          "atribucion": "Letrado actora",
+          "texto": "Un tercer hecho es la aceptación por el demandado, la firma de la oferta de compra."
+        }
+      ]
+    },
+    {
+      "n": 4,
+      "hecho": "No firma del contrato privado de compraventa ni del contrato de arras (D 17) por ninguna de las partes.",
+      "posicion_demandado": "Admitido en sala.",
+      "prueba": "D 17",
+      "estado": "No controvertido",
+      "cita_ap": [
+        {
+          "timestamp": "12:39",
+          "atribucion": "Magistrado",
+          "texto": "Consta que ni el contrato privado de compraventa ni el de arras llegaron a firmarse."
+        }
+      ]
+    },
+    {
+      "n": 5,
+      "hecho": "Apoderamiento de Dña. Ana Pérez Ejemplo para vender en nombre del demandado.",
+      "posicion_demandado": "Conforme.",
+      "prueba": "D 5",
+      "estado": "No controvertido"
+    },
+    {
+      "n": 6,
+      "hecho": "Burofax de requerimiento extrajudicial de 01-06-2096.",
+      "posicion_demandado": "No discute la emisión.",
+      "prueba": "D 25",
+      "estado": "No controvertido"
+    }
+  ],
+  "hechos_controvertidos": {
+    "intro": "Hecho controvertido fijado por el Magistrado en términos literales en la audiencia previa de 10-09-2098.",
+    "filas": [
+      {
+        "n": 1,
+        "hecho": "Causa de la no formalización del contrato privado de compraventa con entrega de arras.",
+        "tesis_actora": "Imputabilidad del vendedor: aceptación dentro de plazo y disponibilidad de la compradora acreditada en la documental.",
+        "tesis_demandada": "Caducidad de la oferta por inacción común al transcurrir el plazo pactado.",
+        "fuente_probatoria": "Testifical Sr. Testigo Uno y Sra. Testigo Dos; D 16, D 17 (no impugnados).",
+        "cita_ap": [
+          {
+            "timestamp": "13:36",
+            "atribucion": "Magistrado",
+            "texto": "Ese será el objeto de controversia."
+          },
+          {
+            "timestamp": "14:45",
+            "atribucion": "Magistrado",
+            "texto": "Esa es la controversia: si la firma de la oferta genera o no el derecho al cobro de los honorarios."
+          }
+        ]
+      }
+    ]
+  },
+  "conclusiones": [
+    {
+      "head": "1. EL RÉGIMEN DE NO EXCLUSIVA DEL ENCARGO NO ENERVA EL DEVENGO DE LA COMISIÓN.",
+      "body": [
+        "El régimen de no exclusiva afecta a la concurrencia con terceros mediadores, no al supuesto en que la operación se cierra precisamente con el cliente aportado por la agencia."
+      ]
+    },
+    {
+      "head": "2. LA ACEPTACIÓN DE LA OFERTA PERFECCIONÓ LA COMPRAVENTA Y DEVENGÓ LA COMISIÓN.",
+      "body": [
+        "La aceptación escrita por el comprador, dentro del plazo pactado, perfecciona el contrato a los efectos del devengo de honorarios de mediación.",
+        "STS de [fecha] (rec. [nº]): «[doctrina aplicable sobre devengo de honorarios de mediación]»."
+      ]
+    }
+  ],
+  "petitum": [
+    "(i) 30.000,00 € — honorarios devengados (cláusula de comisión).",
+    "(ii) Intereses legales desde la fecha del requerimiento + 2 puntos desde sentencia (art. 576 LEC).",
+    "(iii) Costas (art. 394 LEC)."
+  ]
+}

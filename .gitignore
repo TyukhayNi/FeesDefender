@@ -13,6 +13,9 @@ htmlcov/
 build/
 dist/
 
+# Node — dependencias locales de los generadores .docx de las skills
+node_modules/
+
 # Entorno
 .env
 .env.*

@@ -1,0 +1,17 @@
+{
+  "ref": "W-EJEMPLO",
+  "encabezado_pagina": "PO 000/0000 - JPI XX - W-EJEMPLO",
+  "fecha_juicio": "AAAA-MM-DD",
+  "autor": "Despacho",
+  "ap": { "fecha": "AAAA-MM-DD" },
+  "filas": [
+    {
+      "n": 1, "hecho": "Hecho 1.", "posicion_demandado": "Conforme.", "prueba": "D X", "estado": "No controvertido",
+      "cita_ap": [ { "timestamp": "11:00", "atribucion": "Letrado actora", "texto": "..." } ]
+    },
+    {
+      "n": 2, "hecho": "Hecho controvertido.", "posicion_demandado": "Negado.", "prueba": "Testifical X", "estado": "Controvertido"
+    }
+  ],
+  "conclusion_operativa": "Resumen breve sobre el estado probatorio."
+}

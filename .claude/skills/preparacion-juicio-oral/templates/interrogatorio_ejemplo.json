@@ -1,0 +1,25 @@
+{
+  "ref": "W-EJEMPLO",
+  "encabezado_pagina": "PO 000/0000 - JPI XX - W-EJEMPLO - Apellido",
+  "fecha_juicio": "AAAA-MM-DD",
+  "autor": "Despacho",
+  "testigo": {
+    "tratamiento": "D.",
+    "nombre": "NOMBRE COMPLETO DEL TESTIGO",
+    "rol": "directo"
+  },
+  "generar_version_testigo": true,
+  "intro": "Testigo propio. Estilo mixto abierta/cerrada; reservar 'Diga si es cierto' para anclajes documentales.",
+  "bloques": [
+    {
+      "titulo": "I. Identificacion",
+      "preguntas": [
+        { "n": 1, "texto": "Pregunta abierta de identificacion.", "RE": "Respuesta esperada.", "Nota": "Observacion operativa." },
+        { "n": 2, "texto": "Reconoce este documento?", "exhibir": "Documento No X", "RE": "Si.", "RD": "Si esquiva, exhibir el documento." }
+      ]
+    }
+  ],
+  "anticipacion": [
+    { "label": "Nota", "texto": "Si pregunta por [tema], respuesta de retirada: [texto]." }
+  ]
+}
