@@ -54,7 +54,8 @@ Nuevo módulo sugerido: `core/procurador_intake.py` + UI en `streamlit_app.py`.
 
 0. **Disparador:** cada X minutos sobre correos entrantes no procesados.
 1. **Filtro:** quedarse con notificaciones de procuradores + contestaciones a
-   correos del CRM; descartar ruido.
+   correos del CRM. Lo demás (ruido, remitente desconocido) **no se borra**: se
+   enruta a la vista **"Descartados"** que revisa la secretaria (§6, §16.11).
 2. **Anti-duplicado (antes de tocar nada):** comprobar si el correo ya está
    relacionado (`GET /api/mail/element_registries`). Los enviados desde el
    expediente ya constan → no se duplican. El mismo correo en los 4 buzones de los
@@ -112,6 +113,27 @@ procurador, buscador), opción de **confirmar en bloque** los de confianza alta
   (Su ref, contrario, juzgado, autos, tipo) para ayudar a localizarlo. Buscador
   vacío (judicial / extrajudicial / clientes). Carpeta y "Asignar y confirmar"
   **deshabilitados** hasta elegir expediente.
+
+**Vista de "Descartados" (revisión de la secretaria) — APROBADO 2026-06-12:**
+El filtro del paso 1 (§4) y la detección de ruido **NO hacen hard-drop**. Todo
+correo que el robot descarte (clasificado como ruido, remitente no reconocido, o
+sin actuación a archivar) **no desaparece**: se enruta a una **vista secundaria
+"Descartados"** —pestaña aparte de la bandeja principal, colapsada y de baja
+prioridad— para que **la secretaria la revise** y rescate cualquier falso
+descarte (botón "Recuperar → enviar a bandeja", que reabre el triaje normal de
+3 tarjetas sobre ese correo). Cada fila muestra remitente, asunto, fecha y
+**motivo del descarte** (p. ej. "marcado ruido por LLM", "remitente no es
+procurador conocido", "sin Su ref ni hilo"). El objetivo es que **ningún correo
+se pierda sin posibilidad de auditarlo**, sin saturar la bandeja principal con
+ruido.
+
+*Motivo (s39, 2026-06-12):* al medir F1 sobre correos reales se detectó un
+**falso positivo de `es_ruido`** que habría descartado silenciosamente una
+actuación real. Se mitigó haciendo `es_ruido` **advisory** en el matching (no
+bloquea la búsqueda si hay Su ref resoluble; viaja como señal `es_ruido_advisory`),
+pero el filtro del paso 1 sigue siendo una decisión automática con poder de
+descarte → de ahí esta vista de seguridad. Regla: el descarte automático es
+**reversible y auditable**, nunca definitivo.
 
 **Buscador-selector (combobox) de expediente:** prerrelleno con el match; al
 escribir busca en el CRM por referencia/contrario/cliente/autos y lista
@@ -306,10 +328,16 @@ Las grabaciones de vistas llegan como **enlace** en el cuerpo
 8. FeesDefender conserva la experiencia de renombrado (aprendizaje persistente).
 9. Motor LLM = Mistral (UE), conector intercambiable.
 10. RGPD: excepción acotada SOLO a este flujo.
+11. **Descarte reversible y auditable (2026-06-12):** el filtro/ruido no hace
+    hard-drop; lo descartado va a una **vista "Descartados"** que revisa la
+    secretaria, con "Recuperar → bandeja". Ningún correo se pierde sin auditar
+    (ver §6). `es_ruido` es advisory, no veredicto.
 
 ## 17. Pendientes / a decidir
 
 - ¿Confirmar en bloque los de confianza alta de inicio, o revisar todo al principio?
+  (El descarte automático ya está resuelto: vista "Descartados" revisable por la
+  secretaria — §6 y §16.11.)
 - ¿Auth de nest-mail (x-api-key vs JWT)?
 - Límite de tamaño del CRM para grabaciones (¿Drive + enlace?).
 - Catálogo de carpetas: ir cerrando `CARPETA_ID_TO_PATH` con descubrimiento.
