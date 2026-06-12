@@ -368,6 +368,107 @@ def _rest_search_expedientes(element: str, referencia: str) -> list[dict[str, st
     return out
 
 
+# ---------------------------------------------------------------------------
+# Búsqueda para el combobox F2 §18.6 (texto libre + nº/serie del despacho)
+# ---------------------------------------------------------------------------
+#
+# A diferencia de _rest_search_expedientes (dedup: extrae W-code, match exacto),
+# el combobox busca por TEXTO LITERAL en varias properties con OR-like, y por el
+# número interno del despacho (num_expediente/serie). Confirmado contra tenant
+# tnm el 2026-06-12: like sobre referencia_cliente y referencia_procurador
+# funciona; num_asunto (autos) está vacío y contrario no tiene ruta REST inversa
+# (ver docs/DEAD_ENDS.md).
+
+# Properties sobre las que el combobox hace OR-like (texto del usuario). Judicial
+# añade referencia_procurador (lo que el procurador cita en su correo, p. ej.
+# "P-2025/3447"); extrajudicial no tiene procurador.
+_SEARCH_PROPS_BY_ELEMENT: dict[str, tuple[str, ...]] = {
+    "expedientes_judiciales": ("referencia_cliente", "referencia_procurador"),
+    "extrajudiciales":        ("Referencia_Cliente",),
+}
+
+
+def _rest_get_items(url: str, params: list[tuple[str, str]]) -> list[dict[str, Any]]:
+    """GET REST element_registries → lista de items.
+
+    Nunca lanza: devuelve ``[]`` ante api-key ausente, red caída, status != 200
+    o JSON inválido. Centraliza el bloque HTTP+parseo de las búsquedas REST.
+    """
+    api_key = (os.getenv("SUDESPACHO_API_KEY") or "").strip()
+    if not api_key:
+        return []
+    headers = {"x-api-key": api_key, "Accept": "application/json"}
+    try:
+        r = httpx.get(url, params=params, headers=headers, timeout=_REST_TIMEOUT)
+    except Exception:  # noqa: BLE001 — red caída no debe romper el caller
+        return []
+    if r.status_code != 200:
+        return []
+    try:
+        data = r.json()
+    except Exception:  # noqa: BLE001
+        return []
+    return data.get("items") or data.get("hydra:member") or []
+
+
+def _values_dict(item: dict) -> dict[str, Any]:
+    """Aplana ``item["values"]`` a ``{property_name: value}``."""
+    return {
+        (v.get("property") or {}).get("name", ""): v.get("value")
+        for v in item.get("values", []) or []
+    }
+
+
+def _label_expediente(vals: dict[str, Any]) -> str:
+    """Etiqueta para la UI: nombre del caso, con la ref del procurador si la hay."""
+    ref = str(vals.get("referencia_cliente") or vals.get("Referencia_Cliente") or "")
+    proc = str(vals.get("referencia_procurador") or "")
+    if ref and proc:
+        return f"{ref}  ·  {proc}"
+    return ref or proc
+
+
+def _rest_search_por_texto(element: str, term: str, *, limit: int = 50) -> list[dict[str, str]]:
+    """Busca expedientes por TEXTO LIBRE (literal) vía REST OR-like.
+
+    Filtra ``like`` sobre el término literal en TODAS las properties buscables
+    del elemento (``_SEARCH_PROPS_BY_ELEMENT``), combinadas con OR. Para el
+    combobox de reasignación F2 §18.6.
+
+    Returns:
+        Lista ``[{"id","label"}]``. Nunca lanza: ``[]`` ante elemento
+        desconocido / api-key ausente / término vacío / CRM no accesible.
+    """
+    elem = _normalize_element(element)
+    props = _SEARCH_PROPS_BY_ELEMENT.get(elem) if elem else None
+    if not props:
+        return []
+    term = (term or "").strip()
+    if not term:
+        return []
+
+    url = f"{_REST_BASE}/api/element_registries/{elem}"
+    params: list[tuple[str, str]] = [
+        (f"properties[{i}]", p) for i, p in enumerate(props)
+    ]
+    params += [
+        ("filterGroup[condition]", "AND"),
+        ("filterGroup[filterGroups][0][condition]", "OR"),
+    ]
+    for i, p in enumerate(props):
+        params += [
+            (f"filterGroup[filterGroups][0][filters][{i}][operator]", "like"),
+            (f"filterGroup[filterGroups][0][filters][{i}][value]", term),
+            (f"filterGroup[filterGroups][0][filters][{i}][property]", p),
+        ]
+    params += [("itemsPerPage", str(limit)), ("return_totals", "true")]
+
+    return [
+        {"id": str(it.get("id", "")), "label": _label_expediente(_values_dict(it))}
+        for it in _rest_get_items(url, params)
+    ]
+
+
 def _find_expediente_rest(element: str, referencia_cliente: str) -> str | None:
     """Devuelve el ID del expediente cuya referencia coincide EXACTAMENTE.
 

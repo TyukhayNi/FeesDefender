@@ -39,6 +39,7 @@ from core.sudespacho_relations import (
     search_colaboradores_for_ui,
     verify_expediente_referencia,
     _extract_w_code,
+    _rest_search_por_texto,
 )
 
 
@@ -1210,3 +1211,103 @@ class TestVerifyNormalized:
         )
         assert result["match"] is False
         assert result["crm_unreachable"] is True
+
+
+# --- _rest_search_por_texto (combobox F2 §18.6) --------------------------
+
+def _items_multi(*rows: tuple[str, dict]) -> dict:
+    """Respuesta REST con (id, {prop: value, ...}) por fila."""
+    items = []
+    for eid, props in rows:
+        vals = [{"property": {"name": k}, "value": v} for k, v in props.items()]
+        items.append({"id": str(eid), "values": vals})
+    return {"totalItems": len(items), "items": items}
+
+
+def test_rest_texto_judicial_or_like_dos_properties(_api_key):
+    captured: dict = {}
+
+    def _capturing_get(url, *, params, headers, timeout):
+        captured["url"] = url
+        captured["params"] = params
+        return _mock_get_response(_items_multi(
+            ("487", {"referencia_cliente": "BaRS3 - Torrent 41 - (W-02MA0R)",
+                     "referencia_procurador": "P-2025/3447"}),
+        ))
+
+    with patch("core.sudespacho_relations.httpx.get", side_effect=_capturing_get):
+        out = _rest_search_por_texto("expedientes_judiciales", "3447")
+
+    assert out == [{"id": "487",
+                    "label": "BaRS3 - Torrent 41 - (W-02MA0R)  ·  P-2025/3447"}]
+    assert "element_registries/expedientes_judiciales" in captured["url"]
+    p = captured["params"]
+    assert ("filterGroup[filterGroups][0][condition]", "OR") in p
+    assert ("filterGroup[filterGroups][0][filters][0][operator]", "like") in p
+    assert ("filterGroup[filterGroups][0][filters][0][value]", "3447") in p
+    assert ("filterGroup[filterGroups][0][filters][0][property]", "referencia_cliente") in p
+    assert ("filterGroup[filterGroups][0][filters][1][property]", "referencia_procurador") in p
+    assert ("filterGroup[filterGroups][0][filters][1][value]", "3447") in p
+
+
+def test_rest_texto_extrajudicial_solo_referencia_camelcase(_api_key):
+    captured: dict = {}
+
+    def _capturing_get(url, *, params, headers, timeout):
+        captured["url"] = url
+        captured["params"] = params
+        return _mock_get_response(_items_multi(
+            ("500", {"Referencia_Cliente": "MaRS2 - Gran Via 40 - (W-0001)"}),
+        ))
+
+    with patch("core.sudespacho_relations.httpx.get", side_effect=_capturing_get):
+        out = _rest_search_por_texto("extrajudiciales", "Gran Via")
+
+    assert out == [{"id": "500", "label": "MaRS2 - Gran Via 40 - (W-0001)"}]
+    assert "element_registries/extrajudiciales" in captured["url"]
+    p = captured["params"]
+    assert ("filterGroup[filterGroups][0][filters][0][property]", "Referencia_Cliente") in p
+    # extrajudicial NO busca por referencia_procurador
+    assert all(v != "referencia_procurador" for (_k, v) in p)
+
+
+def test_rest_texto_normaliza_alias_extrajudicial(_api_key):
+    captured: dict = {}
+
+    def _capturing_get(url, *, params, headers, timeout):
+        captured["url"] = url
+        captured["params"] = params
+        return _mock_get_response(_items_multi())
+
+    with patch("core.sudespacho_relations.httpx.get", side_effect=_capturing_get):
+        _rest_search_por_texto("expedientes_extrajudiciales", "algo")
+
+    assert "element_registries/extrajudiciales" in captured["url"]
+
+
+def test_rest_texto_label_cae_a_procurador_si_no_hay_referencia(_api_key):
+    with patch("core.sudespacho_relations.httpx.get",
+               return_value=_mock_get_response(_items_multi(
+                   ("9", {"referencia_procurador": "SP-3599"}),
+               ))):
+        out = _rest_search_por_texto("expedientes_judiciales", "SP-3599")
+    assert out == [{"id": "9", "label": "SP-3599"}]
+
+
+def test_rest_texto_sin_api_key_devuelve_vacio(monkeypatch):
+    monkeypatch.setenv("SUDESPACHO_API_KEY", "")
+    assert _rest_search_por_texto("expedientes_judiciales", "x") == []
+
+
+def test_rest_texto_elemento_desconocido_devuelve_vacio(_api_key):
+    assert _rest_search_por_texto("clientes", "x") == []
+
+
+def test_rest_texto_termino_vacio_devuelve_vacio(_api_key):
+    assert _rest_search_por_texto("expedientes_judiciales", "   ") == []
+
+
+def test_rest_texto_http_500_devuelve_vacio(_api_key):
+    with patch("core.sudespacho_relations.httpx.get",
+               return_value=_mock_get_response({}, status=500)):
+        assert _rest_search_por_texto("expedientes_judiciales", "x") == []
