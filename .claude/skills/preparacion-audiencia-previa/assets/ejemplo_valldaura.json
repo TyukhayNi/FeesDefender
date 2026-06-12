@@ -1,0 +1,105 @@
+{
+  "cabecera": {
+    "lineas": [
+      "Procedimiento Ordinario 100/2025 — Juzgado de 1ª Instancia nº 1 de Ejemplo",
+      "EV MMC SPAIN, S.L.U. (actora) c. D. Juan Propietario Ejemplo y Dña. Ana Propietaria Modelo",
+      "Audiencia previa: 11/06/2026, 09:30 — Cuantía: 43.076 €"
+    ]
+  },
+  "bloques": [
+    {
+      "num": "1", "titulo": "CONCILIACIÓN", "articulo": "art. 415 LEC", "leer": true,
+      "items": [
+        {"texto": "**1.1.** ➤ No hay propuesta de la otra parte.", "nivel": 0},
+        {"texto": "**1.2.** ➤ **Mantenemos la reclamación entera: 43.076 €.**", "nivel": 0},
+        {"texto": "**1.3.** ➤ Ya intentamos el acuerdo antes de demandar (burofax y requerimiento). No contestaron.", "nivel": 0},
+        {"texto": "**1.4.** ➤ Seguimos abiertos a pactar, **pero solo si reconocen que se debían los honorarios.**", "nivel": 0}
+      ]
+    },
+    {
+      "num": "2", "titulo": "CUESTIONES PROCESALES", "articulo": "art. 416 LEC", "leer": true,
+      "items": [
+        {"texto": "**2.1.** ➤ Por nuestra parte, **ninguna.** El pleito puede resolverse sobre el fondo.", "nivel": 0},
+        {"texto": "**2.2.** ➤ La otra parte dice que la cláusula es nula… **pero no dice por qué.** No concreta en qué supuesto del art. 82 TRLGDCU encaja.", "nivel": 0},
+        {"texto": "**2.3.** ➤ Así no podemos defendernos bien. _(Falta de precisión de su nulidad, no defecto de nuestra demanda.)_", "nivel": 0}
+      ]
+    },
+    {
+      "num": "3", "titulo": "ALEGACIONES COMPLEMENTARIAS", "articulo": "art. 426 LEC", "leer": true,
+      "items": [
+        {"texto": "**3.1. ▸ Cómo se cobra, según el contrato que él firmó (causa de pedir).**", "nivel": 0, "sub": true},
+        {"texto": "➤ La cláusula 12.a: se cobra **automáticamente** si la casa se vende a un comprador de E&V, **aunque el contrato ya haya terminado.**", "nivel": 1},
+        {"texto": "➤ \"Comprador\" = _todas aquellas personas que hayan visitado el inmueble física o virtualmente con E&V o hayan recibido información relevante para la adquisición._", "nivel": 1},
+        {"texto": "➤ Por tanto, **la responsabilidad del vendedor es objetiva. No hay que probar relación de causa-efecto.**", "nivel": 1},
+        {"texto": "➤ Nos basta **un hecho**: el comprador **recibió el exposé el 12/9/2022** y **visitó la casa el 20/9/2022.**", "nivel": 1},
+        {"texto": "➤ Y eso **nadie lo discute.** Lo demás —vecinos, tiempo, que trabajamos poco— **da igual** bajo este contrato.", "nivel": 1},
+        {"texto": "**3.2. ▸ Él conocía la cláusula (transparencia).**", "nivel": 0, "sub": true},
+        {"texto": "➤ El 23/5/2022 le pasamos el borrador para repasar, y **a petición suya cambiamos la cláusula 12.b.** Quien negocia la cláusula 12, la entiende.", "nivel": 1},
+        {"texto": "**3.3. ▸ La mala fe: la \"vuelta\".**", "nivel": 0, "sub": true},
+        {"texto": "➤ El **9/1/2023** le mandamos la lista con el nombre del comprador y le pedimos que mirara si era alguno nuestro. **Dijo que no era ninguno.** Vendió a ese comprador el **30/1/2023**.", "nivel": 1},
+        {"texto": "**3.4. ▸ La base de cálculo.**", "nivel": 0, "sub": true},
+        {"texto": "➤ El precio **autorizado en el encargo era 920.000 €, y no se discute.** Reclamamos sobre **890.000 €** — menos. Quien puede lo más, puede lo menos.", "nivel": 1}
+      ]
+    },
+    {
+      "num": "4", "titulo": "HECHOS NUEVOS O DE NUEVA NOTICIA", "articulo": "art. 426.4 LEC",
+      "items": [{"texto": "**4.1.** Sin alegaciones por ahora (reservar para lo que surja).", "nivel": 0}]
+    },
+    {
+      "num": "5", "titulo": "IMPUGNACIÓN Y APORTACIÓN DE DOCUMENTOS", "articulo": "art. 427 LEC",
+      "items": [
+        {"texto": "**5.1.** No impugnamos autenticidad; sí pertinencia (terreno ajeno; correos del Doc. 3 no acreditan desistimiento).", "nivel": 0},
+        {"texto": "**5.2.** **Aportación del Doc. 9-a** (chat WhatsApp), designado y citado en la demanda y no incorporado:", "nivel": 0},
+        {"texto": "**5.2.1.** Subsanación (art. 231 LEC): no es documento nuevo, ya designado e identificado; sin preclusión (art. 269).", "nivel": 1},
+        {"texto": "**5.2.2.** Subsidiariamente, art. 426.5 en relación con 265.3 LEC, por la relevancia tras la negación de la visita y la causalidad.", "nivel": 1},
+        {"texto": "**5.2.3.** Protesta reservada (art. 285.2) si se inadmite.", "nivel": 1}
+      ]
+    },
+    {
+      "num": "6", "titulo": "FIJACIÓN DE LOS HECHOS", "articulo": "art. 428 LEC",
+      "tablas": [
+        {
+          "titulo": "TABLA I — HECHOS NO CONTROVERTIDOS",
+          "cabecera": ["Nº", "Hecho", "Soporte"],
+          "anchos_cm": [1.0, 10.5, 4.0], "size": 11,
+          "filas": [
+            ["1", "Suscripción del encargo de venta en exclusiva el 24/5/2022; autenticidad no discutida", "Doc. 2 demanda"],
+            ["2", "Condición de consumidores de los demandados", "Contestación, H. 3º"],
+            ["3", "El encargo se documentó sobre un modelo de condiciones generales predispuesto por E&V", "Doc. 2; contestación"],
+            ["4", "Honorarios pactados: 4% + IVA (cláusula 8)", "Doc. 2 demanda"],
+            ["5", "El precio de venta autorizado constaba en el encargo firmado por los demandados", "Doc. 2 demanda"],
+            ["6", "E&V desplegó actividad de comercialización (anuncio, exposé, visitas)", "Docs. exposé y report; chat"],
+            ["7", "La compraventa se consumó por escritura de 30/1/2023, por 780.000 €", "Doc. 20 demanda"],
+            ["8", "**Los compradores recibieron información relevante de E&V (exposé, 12/9/2022) y visitaron el inmueble** _(hecho decisivo: activa el devengo automático de la 12.a)_", "Exposé 12/9/2022; report (Doc. 7); chat (Doc. 9-a)"]
+          ]
+        },
+        {
+          "titulo": "TABLA II — HECHOS CONTROVERTIDOS",
+          "cabecera": ["Nº", "Hecho controvertido", "Posición de EV (actora)", "Posición del demandado", "Prueba EV"],
+          "anchos_cm": [0.8, 3.2, 4.6, 3.4, 3.5], "size": 10,
+          "filas": [
+            ["1", "Validez de la cláusula 12.a", "Define el objeto principal; supera transparencia → no cabe abusividad (art. 4.2 Dir. 93/13). El vendedor **negoció y modificó cláusulas** (12.b, 2.b)", "Nula por falta de transparencia y abusiva (art. 82 TRLGDCU)", "Doc. 2; WhatsApp 23/5/2022 (Doc. 9-a); STS 241/2013; STJUE 10/6/2021"],
+            ["2", "Cumplimiento / incumplimiento de E&V", "Cumplió (≈65 visitas, seguimiento, llaves). **Además, bajo la 12.a el devengo es objetivo**", "Incumplimiento: desentendimiento, \"ni una sola visita\", rotación, sobrevaloración", "Chat; report (Doc. 7); testifical; correo (llaves)"],
+            ["3", "Base de cálculo de la comisión", "4% sobre precio autorizado; los 920.000 € no se discuten y reclamamos sobre 890.000 €", "4% sobre precio escriturado de 780.000 € (= 31.200 €)", "Doc. 2 (cláusulas 8 y 12.a)"],
+            ["4", "Enriquecimiento injusto", "Inexistente; subsidiariamente mandato (art. 1711 CC) y costumbre (art. 1287 CC)", "E&V cobraría sin haber logrado la venta", "Contestación nulidad; SAP Alicante 5/7/2012; oficio Colegio API"]
+          ]
+        }
+      ],
+      "nota": "_Cuestión jurídica, no fáctica:_ la causalidad que invoca el contrario (vecinos, tiempo, diligencia, vigencia) **no es un hecho a probar**: la 12.a configura un devengo objetivo; se resuelve por interpretación literal del contrato (art. 1281 CC)."
+    },
+    {
+      "num": "7", "titulo": "PROPOSICIÓN DE PRUEBA", "articulo": "art. 429 LEC",
+      "items": [
+        {"texto": "**7.1. Documental** — por reproducida; **e incorporación del Doc. 9-a** (punto 5.2).", "nivel": 0},
+        {"texto": "**7.2. Más documental**: encargo (Doc. 2) y su modificación, exposé, report, chats, escritura (Doc. 20).", "nivel": 0},
+        {"texto": "**7.3. Interrogatorio del demandado**, D. Juan Propietario Ejemplo (art. 301 LEC).", "nivel": 0},
+        {"texto": "**7.4. Testifical:** Consultora Primera; Consultora Segunda (visita); Consultora Tercera (fase previa).", "nivel": 0},
+        {"texto": "**7.5. Oficio al Colegio de API** (costumbre de la plaza) — subsidiario.", "nivel": 0}
+      ]
+    },
+    {
+      "num": "8", "titulo": "SEÑALAMIENTO DEL JUICIO", "articulo": "art. 429.2 LEC",
+      "items": [{"texto": "**8.1.** Interesar el señalamiento conforme al art. 429.2 LEC.", "nivel": 0}]
+    }
+  ]
+}

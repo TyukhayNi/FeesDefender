@@ -1,0 +1,84 @@
+{
+  "_nota": "Ejemplo CIVIL GENÉRICO (no E&V): reclamación de cantidad por obra impagada. Terminología neutra (actor/demandado). Modo civil genérico: sin 05_Procedimiento ni registro de intake.",
+  "cabecera": {
+    "lineas": [
+      "Procedimiento Ordinario 250/2025 — Juzgado de 1ª Instancia nº 3 de Ejemplo",
+      "REFORMAS EJEMPLO, S.L. (actora) c. D. Cliente Demandado Modelo",
+      "Audiencia previa: 15/09/2026, 10:00 — Cuantía: 28.500 €"
+    ]
+  },
+  "bloques": [
+    {
+      "num": "1", "titulo": "CONCILIACIÓN", "articulo": "art. 415 LEC", "leer": true,
+      "items": [
+        {"texto": "**1.1.** ➤ No hay acuerdo; el demandado niega la deuda.", "nivel": 0},
+        {"texto": "**1.2.** ➤ **Mantenemos la reclamación: 28.500 €** (saldo de la obra ejecutada).", "nivel": 0},
+        {"texto": "**1.3.** ➤ Abiertos a un calendario de pago si reconoce el principal.", "nivel": 0}
+      ]
+    },
+    {
+      "num": "2", "titulo": "CUESTIONES PROCESALES", "articulo": "art. 416 LEC", "leer": true,
+      "items": [
+        {"texto": "**2.1.** ➤ Por nuestra parte, **ninguna.**", "nivel": 0},
+        {"texto": "**2.2.** ➤ Si el demandado plantea pluspetición, se resuelve como cuestión de fondo (cuantía), no como óbice procesal.", "nivel": 0}
+      ]
+    },
+    {
+      "num": "3", "titulo": "ALEGACIONES COMPLEMENTARIAS", "articulo": "art. 426 LEC", "leer": true,
+      "items": [
+        {"texto": "**3.1. ▸ La obra se ejecutó y se entregó.**", "nivel": 0, "sub": true},
+        {"texto": "➤ Contrato de obra firmado y certificaciones aceptadas; la entrega consta en el acta.", "nivel": 1},
+        {"texto": "**3.2. ▸ La exceptio non rite adimpleti contractus no procede.**", "nivel": 0, "sub": true},
+        {"texto": "➤ Los defectos que alega son menores y no impiden el uso; la carga de probarlos es suya (art. 217 LEC).", "nivel": 1}
+      ]
+    },
+    {
+      "num": "4", "titulo": "HECHOS NUEVOS O DE NUEVA NOTICIA", "articulo": "art. 426.4 LEC",
+      "items": [{"texto": "**4.1.** Sin alegaciones por ahora.", "nivel": 0}]
+    },
+    {
+      "num": "5", "titulo": "IMPUGNACIÓN Y APORTACIÓN DE DOCUMENTOS", "articulo": "art. 427 LEC",
+      "items": [
+        {"texto": "**5.1.** Impugnamos el presupuesto de reparación aportado de contrario por no estar firmado ni fechado.", "nivel": 0}
+      ]
+    },
+    {
+      "num": "6", "titulo": "FIJACIÓN DE LOS HECHOS", "articulo": "art. 428 LEC",
+      "tablas": [
+        {
+          "titulo": "TABLA I — HECHOS NO CONTROVERTIDOS",
+          "cabecera": ["Nº", "Hecho", "Soporte"],
+          "anchos_cm": [1.0, 10.5, 4.0], "size": 11,
+          "filas": [
+            ["1", "Existencia del contrato de obra de 10/1/2025", "Doc. 1 demanda"],
+            ["2", "Ejecución y entrega de la obra", "Acta de entrega (Doc. 4)"],
+            ["3", "Importe total facturado y abonos parciales", "Facturas y recibos (Docs. 5-8)"]
+          ]
+        },
+        {
+          "titulo": "TABLA II — HECHOS CONTROVERTIDOS",
+          "cabecera": ["Nº", "Hecho controvertido", "Posición de la actora", "Posición del demandado", "Prueba actora"],
+          "anchos_cm": [0.8, 3.2, 4.6, 3.4, 3.5], "size": 10,
+          "filas": [
+            ["1", "Existencia de defectos en la obra", "Inexistentes o menores; no impiden el uso", "Defectos que justifican impago", "Pericial; acta de entrega; testifical del jefe de obra"],
+            ["2", "Cuantía adeudada (28.500 €)", "Saldo conforme a certificaciones aceptadas", "Pluspetición / compensación por reparaciones", "Certificaciones (Doc. 3); facturas (Docs. 5-8)"]
+          ]
+        }
+      ],
+      "nota": "_Carga de la prueba (art. 217 LEC):_ acreditada por la actora la ejecución y entrega, corresponde al demandado probar los defectos y su entidad para enervar el pago."
+    },
+    {
+      "num": "7", "titulo": "PROPOSICIÓN DE PRUEBA", "articulo": "art. 429 LEC",
+      "items": [
+        {"texto": "**7.1. Documental** — por reproducida la de demanda y contestación.", "nivel": 0},
+        {"texto": "**7.2. Interrogatorio del demandado** (art. 301 LEC).", "nivel": 0},
+        {"texto": "**7.3. Testifical** del jefe de obra y del aparejador.", "nivel": 0},
+        {"texto": "**7.4. Pericial** de arquitecto técnico sobre el estado de la obra.", "nivel": 0}
+      ]
+    },
+    {
+      "num": "8", "titulo": "SEÑALAMIENTO DEL JUICIO", "articulo": "art. 429.2 LEC",
+      "items": [{"texto": "**8.1.** Interesar el señalamiento conforme al art. 429.2 LEC.", "nivel": 0}]
+    }
+  ]
+}

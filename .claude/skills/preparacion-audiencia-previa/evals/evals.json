@@ -1,0 +1,19 @@
+{
+  "skill_name": "preparacion-audiencia-previa",
+  "evals": [
+    {
+      "id": 0,
+      "name": "preparar_ap_completa_actora",
+      "prompt": "Tengo la audiencia previa de W-EJEMPLO01 (Calle Ejemplo 10) y necesito prepararla. El expediente está en la carpeta del caso que te indico. Prepárame la minuta de la audiencia previa y la solicitud de prueba, y déjalas en su sitio dentro del expediente.",
+      "expected_output": "MINUTA_AP_*.docx y SOLICITUD_PRUEBA_*.docx en 05_Procedimiento/, registrados en _index.md y en la Navegación de _caso.md. Minuta con 8 bloques (415-429) y dos tablas de hechos; solicitud como escrito procesal con testifical (Consultora Primera, Consultora Segunda, Consultora Tercera), más documental del Doc. 9-a y SUPLICO. No debe leer 90_Notas personales.",
+      "files": []
+    },
+    {
+      "id": 1,
+      "name": "cuadro_hechos_ap",
+      "prompt": "Para la audiencia previa de W-EJEMPLO01, dame el cuadro de hechos no controvertidos y el de hechos controvertidos, con la posición de cada parte y la prueba con la que sostenemos cada hecho. Somos la actora (E&V).",
+      "expected_output": "Dos cuadros: no controvertidos (suscripción del encargo, consumidores, predisposición, 4%, precio autorizado, comercialización, consumación 30/1/2023 a 780.000, visita/información a través de E&V) y controvertidos (validez 12.a, cumplimiento/incumplimiento, base de cálculo 890.000 vs 780.000, enriquecimiento injusto). La causalidad debe tratarse como cuestión jurídica, no como hecho a probar.",
+      "files": []
+    }
+  ]
+}

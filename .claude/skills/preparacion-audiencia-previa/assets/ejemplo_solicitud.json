@@ -1,0 +1,18 @@
+{
+  "ref": "10/2025",
+  "ref_procurador": "000000",
+  "juzgado": "JUZGADO DE PRIMERA INSTANCIA Nº 1 DE EJEMPLO",
+  "procedimiento": "PROCEDIMIENTO ORDINARIO - 100/2025",
+  "procurador": "DOÑA PROCURADORA EJEMPLO",
+  "cliente": "EV MMC SPAIN, S.L.U.",
+  "pruebas": [
+    {"tipo": "documental", "texto": "a fin de que se tengan por reproducidos los documentos que acompañan al escrito de demanda y de contestación."},
+    {"tipo": "mas_documental", "etiqueta": "MÁS DOCUMENTAL 1", "texto": "consistente en el chat de WhatsApp entre la Sra. CONSULTORA PRIMERA y los vendedores demandados. Se aporta a la vista de la alegación complementaria que consiste en el incumplimiento por parte de mi representada consistente en la falta de intensidad del trabajo de mediación."},
+    {"tipo": "testigo", "nombre": "DOÑA CONSULTORA PRIMERA", "dni": "00000001A", "descripcion": "consultora de mi representada, persona que intervino en la operación de venta acompañando al Deudor", "citacion": "C/ Ejemplo 1, 08000 Ciudad", "movil": "+34 600 000 001", "email": "consultora.primera@ejemplo.com"},
+    {"tipo": "testigo", "nombre": "DOÑA CONSULTORA SEGUNDA", "dni": "00000002B", "descripcion": "consultora de mi representada, persona que intervino en la visita al inmueble, acompañando al cliente comprador", "citacion": "C/ Ejemplo 2, 08000 Ciudad", "movil": "+34 600 000 002", "email": "consultora.segunda@ejemplo.com"},
+    {"tipo": "testigo", "nombre": "DOÑA CONSULTORA TERCERA", "dni": "00000003C", "descripcion": "consultora de mi representada, persona que intervino en la operación de venta, acompañando al cliente comprador", "citacion": "C/ Ejemplo 3, 08000 Ciudad", "movil": "+34 600 000 003", "email": "consultora.tercera@ejemplo.com"}
+  ],
+  "fecha": "23-01-2026",
+  "letrado": "LETRADO EJEMPLO",
+  "procurador_firma": "DOÑA PROCURADORA EJEMPLO"
+}
