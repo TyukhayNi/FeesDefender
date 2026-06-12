@@ -1,6 +1,7 @@
 ---
 name: escritos-judiciales
 description: "Usar siempre que se genere un escrito procesal civil español en formato .docx: demandas, contestaciones, recursos, requerimientos, escritos de trámite. Produce documentos Word con el formato estándar del despacho, listo para firma."
+version: "1.0"
 ---
 
 # Escritos Judiciales Civiles — Formato Estándar
@@ -47,6 +48,15 @@ python scripts/registrar_outputs.py "<case_dir>" outputs.json
 ```
 
 `perspectiva` (`actora` | `defensiva`) la aporta el contexto del asunto; `wikilink` por defecto es el *stem* del fichero. El registro es *best-effort*: si falla, avisa pero **no invalida** el `.docx`. En modo ad-hoc **no se registra**.
+
+**Telemetría (mejora continua).** Tras generar, registra el uso para que la skill mejore con el tiempo:
+
+```bash
+python scripts/registrar_uso.py escritos-judiciales "<ref>" generar_escrito \
+  --archivos DEMANDA_W-XXXXXX.docx --metricas '{"tipo": "demanda", "hechos": 7}'
+```
+
+Es *best-effort* (no rompe la generación) y escribe en el store central; nunca en el `.skill`.
 
 ---
 
@@ -464,3 +474,12 @@ function seccion(text) {
 - [ ] Suplico en cascada coherente con los Hechos-motivo (en juicio verbal con esa arquitectura)
 - [ ] Cita literal única por sentencia + remisión en repeticiones
 - [ ] En civil: "desestimar", nunca "absolver"
+
+---
+
+## Changelog
+
+- **1.0** — Fase 0 (detección de expediente), guardado y registro en
+  `<destino>/` con `registrar_outputs.py`, y telemetría de uso con
+  `registrar_uso.py`. Cada mejora promovida desde el motor de mejora citará
+  aquí su evidencia (log/delta).

@@ -19,7 +19,44 @@ const fs = require("fs");
 const path = require("path");
 
 const SKILL = "preparacion-juicio-oral";
-const LOGS_DIR = path.join(__dirname, "..", "logs");
+
+// Resolución del directorio de logs (espejo de _shared/registrar_uso.py):
+//   1. FEESDEFENDER_SKILL_LOGS -> <base>/<skill>
+//   2. repo detectado (pyproject.toml subiendo) -> <repo>/data/_skill_logs/<skill>
+//   3. fallback portable -> ../logs de la propia skill
+function resolveLogsDir() {
+  const env = process.env.FEESDEFENDER_SKILL_LOGS;
+  if (env) return path.join(env, SKILL);
+  let dir = __dirname;
+  for (let i = 0; i < 8; i++) {
+    if (fs.existsSync(path.join(dir, "pyproject.toml"))) {
+      return path.join(dir, "data", "_skill_logs", SKILL);
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return path.join(__dirname, "..", "logs");
+}
+
+const LOGS_DIR = resolveLogsDir();
+
+// Lee `version:` del frontmatter de ../SKILL.md (def. "0.0").
+function readVersion() {
+  try {
+    const txt = fs.readFileSync(path.join(__dirname, "..", "SKILL.md"), "utf8");
+    let inFm = false;
+    for (const line of txt.split(/\r?\n/)) {
+      if (line.trim() === "---") { if (inFm) break; inFm = true; continue; }
+      if (inFm && /^version:/i.test(line)) {
+        return line.split(":")[1].trim().replace(/^["']|["']$/g, "") || "0.0";
+      }
+    }
+  } catch (e) { /* best-effort */ }
+  return "0.0";
+}
+
+const VERSION = readVersion();
 
 function ensureLogsDir() {
   if (!fs.existsSync(LOGS_DIR)) {
@@ -33,7 +70,7 @@ function logTo(file, entry) {
   try {
     ensureLogsDir();
     const record = Object.assign(
-      { ts: new Date().toISOString(), skill: SKILL },
+      { ts: new Date().toISOString(), skill: SKILL, version: VERSION },
       entry || {}
     );
     fs.appendFileSync(path.join(LOGS_DIR, file), JSON.stringify(record) + "\n", "utf8");

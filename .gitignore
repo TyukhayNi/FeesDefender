@@ -34,6 +34,11 @@ data/CASOS/*
 logs/
 *.log
 
+# Telemetría y deltas de mejora continua de las skills — datos de expediente
+# (referencias reales, texto de escritos en los deltas). Store local, NUNCA
+# se versiona ni se empaqueta en el .skill (política RGPD del despacho).
+data/_skill_logs/
+
 # Sistema
 .DS_Store
 Thumbs.db

@@ -1,6 +1,7 @@
 ---
 name: cendoj-descarga
 description: "Usar siempre que se necesite localizar y/o descargar sentencias o autos del CENDOJ (Centro de Documentación Judicial del CGPJ). Activar cuando el usuario aporte referencias procedentes de Sepin, Lefebvre El Derecho, vLex, Iberley o cualquier base privada, o cuando facilite metadatos parciales (tribunal, sección, fecha, ROJ, ECLI, número de resolución). Produce los PDFs oficiales del CGPJ con nombre normalizado y verificación de coincidencia temática."
+version: "1.0"
 ---
 
 # Descarga de Sentencias desde CENDOJ
@@ -305,3 +306,19 @@ Al terminar, reportar al usuario una tabla con los datos oficiales extraídos de
 - [ ] Tabla resumen con los 6 metadatos oficiales (Tribunal/Sección, Fecha, Nº Res, ROJ, ECLI, Ponente)
 - [ ] Si es de un expediente: PDF en `05_Procedimiento/Jurisprudencia/` y registrado (Paso 7-bis)
 - [ ] Si alguno no se ha localizado: aviso explícito al usuario con la causa
+
+---
+
+## Telemetría (mejora continua)
+
+Al terminar una descarga, registra el uso (*best-effort*, store central, nunca en el `.skill`):
+
+```bash
+python scripts/registrar_uso.py cendoj-descarga "<ref>" descarga \
+  --archivos SAP_Madrid_281-2018_...pdf --metricas '{"encontradas": 3, "no_localizadas": 0}'
+```
+
+## Changelog
+
+- **1.0** — Paso 7-bis (registro de jurisprudencia en `05_Procedimiento/Jurisprudencia`)
+  y telemetría de uso con `registrar_uso.py`.

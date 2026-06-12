@@ -1,6 +1,7 @@
 ---
 name: preparacion-litigio-civil
 description: Fase estratégica previa a la redacción de escritos procesales civiles españoles. Úsala siempre que el usuario abra un asunto nuevo, inicie la preparación de una demanda, contestación, recurso, requerimiento extrajudicial o escrito de trámite, o mencione referencias internas de expediente (W-XXXXX, REF-XXXX). También cuando hable de «preparar», «iniciar», «empezar», «abrir expediente» o «redactar» cualquier escrito procesal civil, incluso si no lo dice explícitamente. Esta skill monta la estructura de carpetas del expediente, inicializa los documentos maestros (PREPARACION_X.md y HECHOS_X.md), pre-carga las decisiones cerradas estándar del despacho, y guía la toma de decisiones estratégicas antes de pasar a la redacción formal. NO redacta el .docx final — para eso encadena con la skill `escritos-judiciales`.
+version: "1.0"
 ---
 
 # Preparación de escritos procesales civiles
@@ -145,3 +146,9 @@ Cuando el `PREPARACION_X.md` no tenga decisiones marcadas como `[PENDIENTE]` y l
 ## Relación con `escritos-judiciales`
 
 Esta skill termina donde empieza `escritos-judiciales`. La frontera es la generación del .docx. Antes: aquí. Después: allí. Si el usuario pide directamente «redacta la demanda en Word», no saltes la preparación: verifica si `PREPARACION_X.md` está completo y, si no, recorre los pasos 1-8 antes de delegar en `escritos-judiciales`.
+
+## Changelog
+
+- **1.0** — Scaffolding alineado a `CASO_SUBDIRS` + `_caso.md` mínimo
+  (`tipo_expediente: particular`) vía el scaffolder canónico compartido
+  `scaffold_caso.py` (común con el core E&V); maestros en `02_Analisis/`.
