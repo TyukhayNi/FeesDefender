@@ -35,13 +35,39 @@ if TYPE_CHECKING:
 
 @dataclass
 class RobotProposal:
-    """La pata *propuesta-del-robot* de la terna: lo que F1 propuso para un correo."""
+    """La pata *propuesta-del-robot* de la terna: lo que F1 propuso para un correo.
+
+    Lleva además el **contexto de la tarjeta** (§18.6) congelado en el snapshot,
+    para que la bandeja Streamlit lo renderice sin volver a llamar al CRM:
+    - ``signals``: señales crudas del correo (sin ``raw_llm``).
+    - ``datos_expediente``: campos del expediente emparejado.
+    - ``coincidencias``: campos que coinciden (checks verdes 🟢).
+    """
     email_id: str
     expediente_id: int | None
     confianza: str                       # "alta" | "dudosa" | "ninguna"
     carpeta_id: int | None
     carpeta: str | None
     attachment_names: dict[str, str] = field(default_factory=dict)
+    signals: dict[str, Any] = field(default_factory=dict)
+    datos_expediente: dict[str, Any] = field(default_factory=dict)
+    coincidencias: list[str] = field(default_factory=list)
+
+
+# Campos de señal que la tarjeta muestra/compara (sin raw_llm, que infla el store).
+_SIGNAL_FIELDS = (
+    "su_ref", "num_expediente", "serie_expediente", "contrario", "cliente",
+    "juzgado", "num_asunto", "tipo_procedimiento", "tipo_actuacion",
+    "fecha_actuacion", "es_ruido",
+)
+
+# Nombres de campo que cuentan como "dato que coincide" (checks verdes 🟢).
+# Subconjunto de senales_usadas; el resto son tokens de control (su_ref,
+# su_ref_multiple, es_ruido_advisory, sin_su_ref, ...) que NO son coincidencias.
+_FIELD_COINCIDENCIAS = frozenset({
+    "num_expediente", "serie_expediente", "juzgado", "num_asunto",
+    "tipo_procedimiento",
+})
 
 
 def from_intake_proposal(email_id: str, proposal: IntakeProposal) -> RobotProposal:
@@ -50,6 +76,12 @@ def from_intake_proposal(email_id: str, proposal: IntakeProposal) -> RobotPropos
     Es el contrato F1→F2: lo que el matcher propone se congela como snapshot para
     la terna, antes de que el humano actúe en la bandeja.
     """
+    signals_dict = {
+        k: getattr(proposal.signals, k, None) for k in _SIGNAL_FIELDS
+    }
+    coincidencias = [
+        s for s in proposal.match.senales_usadas if s in _FIELD_COINCIDENCIAS
+    ]
     return RobotProposal(
         email_id=email_id,
         expediente_id=proposal.match.expediente_id,
@@ -59,6 +91,9 @@ def from_intake_proposal(email_id: str, proposal: IntakeProposal) -> RobotPropos
         attachment_names={
             a.original_filename: a.proposed_name for a in proposal.attachments
         },
+        signals=signals_dict,
+        datos_expediente=dict(proposal.match.datos_expediente),
+        coincidencias=coincidencias,
     )
 
 
@@ -318,6 +353,9 @@ def _item_from_dict(d: dict[str, Any]) -> ReviewItem:
         carpeta_id=prop.get("carpeta_id"),
         carpeta=prop.get("carpeta"),
         attachment_names=prop.get("attachment_names") or {},
+        signals=prop.get("signals") or {},
+        datos_expediente=prop.get("datos_expediente") or {},
+        coincidencias=prop.get("coincidencias") or [],
     )
     return ReviewItem(
         email_id=d.get("email_id", ""),

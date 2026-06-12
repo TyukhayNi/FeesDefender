@@ -299,3 +299,81 @@ def test_load_queue_filtra_por_estado(tmp_path):
 def test_load_queue_store_inexistente(tmp_path):
     """Cargar una cola que no existe → lista vacía."""
     assert load_queue(store_path=tmp_path / "no.jsonl") == []
+
+
+# ---------------------------------------------------------------------------
+# Contexto de la tarjeta persistido en la cola (§18.6)
+# ---------------------------------------------------------------------------
+
+def test_from_intake_proposal_copia_contexto_de_la_tarjeta():
+    """from_intake_proposal congela señales + datos_expediente + coincidencias."""
+    signals = IntakeSignals(
+        su_ref="13/2026", num_expediente=13, serie_expediente="2026",
+        contrario="ACME S.L.", juzgado="JPI nº 4 de Valencia",
+        num_asunto="123/2025", tipo_procedimiento="ordinario",
+        tipo_actuacion="auto",
+    )
+    match = MatchResult(
+        expediente_id=532, confianza="alta",
+        datos_expediente={"id": 532, "num_expediente": 13, "serie_expediente": "2026",
+                          "juzgado": "JPI 4 Valencia"},
+        senales_usadas=["su_ref", "num_expediente", "serie_expediente"],
+    )
+    proposal = IntakeProposal(signals=signals, match=match, attachments=[],
+                              carpeta_sugerida="General", carpeta_id=1)
+
+    robot = from_intake_proposal("m1", proposal)
+
+    assert robot.signals["su_ref"] == "13/2026"
+    assert robot.signals["contrario"] == "ACME S.L."
+    assert "raw_llm" not in robot.signals          # no se persiste el JSON del LLM
+    assert robot.datos_expediente["num_expediente"] == 13
+    # coincidencias = solo los nombres de campo (sin tokens de control "su_ref")
+    assert set(robot.coincidencias) == {"num_expediente", "serie_expediente"}
+
+
+def test_robot_proposal_contexto_default_vacio():
+    """Construir un RobotProposal sin contexto → dicts/listas vacías (retrocompat)."""
+    robot = RobotProposal(email_id="m9", expediente_id=None, confianza="ninguna",
+                          carpeta_id=None, carpeta=None)
+    assert robot.signals == {}
+    assert robot.datos_expediente == {}
+    assert robot.coincidencias == []
+
+
+def test_cola_round_trip_conserva_contexto(tmp_path):
+    """upsert + load preserva señales/datos/coincidencias del snapshot."""
+    store = tmp_path / "cola.jsonl"
+    robot = RobotProposal(
+        email_id="m1", expediente_id=532, confianza="alta", carpeta_id=1,
+        carpeta="General",
+        signals={"su_ref": "13/2026", "contrario": "ACME S.L."},
+        datos_expediente={"id": 532, "juzgado": "JPI 4 Valencia"},
+        coincidencias=["num_expediente"],
+    )
+    item = ReviewItem(email_id="m1", proposal=robot, estado="pendiente",
+                      remitente="p@x.com", asunto="13/2026", fecha="2026-06-12")
+    upsert_queue_item(item, store_path=store)
+
+    loaded = load_queue(store_path=store)
+    assert len(loaded) == 1
+    p = loaded[0].proposal
+    assert p.signals["contrario"] == "ACME S.L."
+    assert p.datos_expediente["juzgado"] == "JPI 4 Valencia"
+    assert p.coincidencias == ["num_expediente"]
+
+
+def test_cola_load_item_viejo_sin_contexto(tmp_path):
+    """Un item persistido SIN los campos nuevos se relee con defaults vacíos."""
+    store = tmp_path / "cola.jsonl"
+    # Línea "vieja": proposal sin signals/datos_expediente/coincidencias.
+    store.write_text(
+        '{"email_id": "m1", "estado": "pendiente", "proposal": '
+        '{"email_id": "m1", "expediente_id": 5, "confianza": "alta", '
+        '"carpeta_id": 1, "carpeta": "General", "attachment_names": {}}}\n',
+        encoding="utf-8",
+    )
+    loaded = load_queue(store_path=store)
+    assert loaded[0].proposal.signals == {}
+    assert loaded[0].proposal.datos_expediente == {}
+    assert loaded[0].proposal.coincidencias == []
