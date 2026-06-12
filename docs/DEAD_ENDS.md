@@ -295,6 +295,17 @@
 
 ---
 
+## REST API — `element_registries` no soporta el operador `contains`
+
+### `GET /api/element_registries/{element}` con `filterGroup[...][operator]=contains` → HTTP 404
+- **Intentado:** filtrar expedientes por un campo con match parcial/difuso server-side (p. ej. `referencia_procurador` o `serie_expediente`) usando `operator=contains`.
+- **Resultado:** **HTTP 404** — `"The <contains> value is not an operator, accepted values: equal, not-equal, ..."`. Solo se admite igualdad exacta.
+- **Confirmado:** 2026-06-12 (s39, intake procuradores F1).
+- **Causa raíz:** la API de `element_registries` no expone operadores de subcadena/like; solo `equal`/`not-equal` (y comparadores numéricos). Problema real: `serie_expediente` guarda el sufijo de subserie de forma INCONSISTENTE en el CRM (`"2023-n"`, `"2021-p"`, pero también `"2022 - n"` con espacios), así que un `equal` exacto sobre el valor esperado falla.
+- **Conclusión:** para casar campos con formato inconsistente, filtrar server-side por el campo exacto y estable disponible (aquí `num_expediente`, equal int — devuelve pocas filas, una por año) y **comparar el resto en cliente con normalización** (`core.procurador_intake._norm_serie`: minúscula + sin espacios). Implementado en `_search_by_num_serie`.
+
+---
+
 ## Tests / pytest — `importlib.reload` sobre módulos con clases re-exportadas
 
 ### `importlib.reload(core.sync_sudespacho)` desde un fixture rompe `test_sync_sudespacho.py`
