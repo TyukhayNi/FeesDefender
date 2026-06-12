@@ -25,6 +25,7 @@ from .sudespacho_relations import (
     SudespachoRelationsError,
     _autocomplete,
 )
+from .sync_sudespacho import SudespachoClient
 
 logger = logging.getLogger("feesdefender.procurador_search")
 
@@ -78,12 +79,50 @@ def search_expedientes(
 # ---------------------------------------------------------------------------
 
 def fetch_expediente_datos(
-    expediente_id: str,
+    expediente_id: int | str,
     *,
-    client: Any = None,
+    element: str = "expedientes_judiciales",
+    client: SudespachoClient | None = None,
 ) -> dict[str, Any]:
-    """Stub — lee campos del expediente por id desde la API REST del CRM."""
-    raise NotImplementedError("fetch_expediente_datos se implementa en Task 3")
+    """Lee los ``_MATCH_PROPERTIES`` de un expediente por id (REST x-api-key).
+
+    Mismo patrón de parseo de ``values`` que ``_search_by_num_serie``. Devuelve
+    ``{}`` si no hay resultado o el CRM responde != 200 (la tarjeta degrada, no
+    rompe). Solo lectura.
+    """
+    owns = client is None
+    if owns:
+        client = SudespachoClient()
+    try:
+        path = f"/api/element_registries/{element}"
+        params: list[tuple[str, str]] = [
+            (f"properties[{i}]", p) for i, p in enumerate(_MATCH_PROPERTIES)
+        ] + [
+            ("filterGroup[condition]", "AND"),
+            ("filterGroup[filterGroups][0][condition]", "AND"),
+            ("filterGroup[filterGroups][0][filters][0][operator]", "equal"),
+            ("filterGroup[filterGroups][0][filters][0][value]", str(expediente_id)),
+            ("filterGroup[filterGroups][0][filters][0][property]", "id"),
+            ("itemsPerPage", "1"),
+        ]
+        r = client._client.get(path, params=params)
+        if r.status_code != 200:
+            logger.warning("fetch_expediente_datos(%s) → HTTP %d", expediente_id, r.status_code)
+            return {}
+        data = r.json()
+        items = data.get("hydra:member", data.get("items", []))
+        if not items:
+            return {}
+        item = items[0]
+        out: dict[str, Any] = {"id": item.get("id")}
+        for val_obj in item.get("values", []):
+            name = (val_obj.get("property") or {}).get("name", "")
+            if name in _MATCH_PROPERTIES:
+                out[name] = val_obj.get("value")
+        return out
+    finally:
+        if owns:
+            client.__exit__(None, None, None)
 
 
 def recompute_coincidencias(

@@ -55,3 +55,33 @@ def test_search_expedientes_element_override():
     search_expedientes("algo", element="clientes", client=client)
     url = client._client.get.call_args[0][0]
     assert "clientes" in url
+
+
+def test_fetch_expediente_datos_parsea_values_por_id():
+    """Lee los _MATCH_PROPERTIES del expediente vía element_registries (REST)."""
+    client = MagicMock()
+    client.__exit__ = MagicMock(return_value=False)
+    client._client.get.return_value = _mock_get({
+        "hydra:member": [{
+            "id": 532,
+            "values": [
+                {"property": {"name": "num_expediente"}, "value": 13},
+                {"property": {"name": "serie_expediente"}, "value": "2026"},
+                {"property": {"name": "juzgado"}, "value": "JPI 4 Valencia"},
+                {"property": {"name": "ignorada"}, "value": "x"},
+            ],
+        }]
+    })
+    datos = fetch_expediente_datos(532, client=client)
+    assert datos["id"] == 532
+    assert datos["num_expediente"] == 13
+    assert datos["juzgado"] == "JPI 4 Valencia"
+    assert "ignorada" not in datos                 # solo _MATCH_PROPERTIES
+
+
+def test_fetch_expediente_datos_sin_resultado():
+    """Expediente inexistente / HTTP no-200 → dict vacío (no rompe la tarjeta)."""
+    client = MagicMock()
+    client.__exit__ = MagicMock(return_value=False)
+    client._client.get.return_value = _mock_get({"hydra:member": []}, status=200)
+    assert fetch_expediente_datos(999, client=client) == {}
