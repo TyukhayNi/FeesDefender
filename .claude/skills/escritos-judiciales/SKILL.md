@@ -477,9 +477,26 @@ function seccion(text) {
 
 ---
 
+## Mejora continua
+
+La skill aprende de su uso real (mismo patrón que `preparacion-audiencia-previa` y `preparacion-juicio-oral`):
+
+- **Checklist previo** (`templates/checklist_pre.md`): objetivo, tipo, frentes, riesgos, prueba clave → `<ref>_pre.jsonl` al iniciar.
+- **Telemetría** (`scripts/registrar_uso.py`): cada generación deja una línea en `uso.jsonl` (store central).
+- **Revisión programada** (`scripts/programar_revision.py`): al generar un escrito, programa la revisión a **presentación + 15 días** (o al detectar la versión `_FIRMADO`):
+
+  ```bash
+  python scripts/programar_revision.py escritos-judiciales "<ref>" --tipo-acto escrito \
+    --fecha <YYYY-MM-DD presentación> --borrador "<case>/05_Procedimiento/DEMANDA_....docx"
+  ```
+
+  La tarea (vía skill `schedule`) pedirá rellenar el **checklist post** (`templates/checklist_post.md`) y correr `scripts/capturar_delta.py` sobre el borrador y su `_FIRMADO`.
+- **Cierre del bucle.** Con 5+ usos reales con su `post`, el `motor_mejora.py` agrega uso+deltas+post y propone cambios a este `SKILL.md` (handoff a Claude Code).
+
 ## Changelog
 
 - **1.0** — Fase 0 (detección de expediente), guardado y registro en
-  `<destino>/` con `registrar_outputs.py`, y telemetría de uso con
-  `registrar_uso.py`. Cada mejora promovida desde el motor de mejora citará
-  aquí su evidencia (log/delta).
+  `<destino>/` con `registrar_outputs.py`, telemetría de uso con
+  `registrar_uso.py`, checklists pre/post y revisión programada
+  (`programar_revision.py`, escrito +15 días). Cada mejora promovida desde el
+  motor de mejora citará aquí su evidencia (log/delta).
