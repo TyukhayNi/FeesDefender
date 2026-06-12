@@ -85,16 +85,23 @@ serie=año). **RGPD — excepción acotada SOLO a este flujo:** usa LLM cloud UE
   ~€0.10/mes. Tests +77; suite **853 passed, 58 skipped**. **Commits `f904d72`,
   `6a811ef`** (F1 base + fix match por su_ref con sufijo de subserie y `es_ruido`
   advisory).
-- **F2 — Bandeja (Streamlit).** 🔶 BACKEND ✅ / UI ⬜. **Backend completo (s40, dry-run, TDD):**
+- **F2 — Bandeja (Streamlit).** ✅ BACKEND ✅ / UI ✅. **Backend (s40, dry-run, TDD):**
   `core/procurador_review.py` (terna §18.9 + divergencia + log auditoría + máquina de
   estados de cola + store de cola), `core/procurador_runner.py` (process_email +
   run_intake, enrutado §6, dedup §4), `core/gmail_source.py` (adaptador Gmail
   verificado live read-only). Commits `a80afeb`/`00ee3b8`/`7b03759`/`3bedb22`/`95082f1`.
   El **requisito duro §18.9** quedó cumplido: la terna se captura en `record_decision`.
-  **Pendiente:** la **UI Streamlit** (pestaña "Bandeja": 3 tarjetas 🟢/🟡/🔴 + login por
-  persona `set_actor` + acciones→`transicionar`/`record_decision`/`upsert_queue_item` +
-  vista Descartados) — orquesta el core, sin lógica nueva. Y un CLI/scheduler thin que
-  llame a `fetch_and_run` periódicamente (§3).
+  **UI + CLI completados** (branch `feat/intake-procuradores-f2-ui`, plan/spec en
+  `docs/superpowers/`): contexto de tarjeta persistido en la cola (`9490eca`),
+  `fetch_expediente_datos`/`recompute_coincidencias` (`945030b`/`15df2f2`), CLI thin
+  `scripts/intake_procuradores.py` sobre `fetch_and_run` (`1f336dc`), pestaña Streamlit
+  «Bandeja de correos» (3 tarjetas 🟢/🟡/🔴 + login `set_actor` + acciones→
+  `transicionar`/`record_decision`/`upsert_queue_item` + combobox de reasignación +
+  vista Descartados) (`cbfafba`/`3b24f45`). **`search_expedientes` migrado a REST**
+  (`feat/search-expedientes-rest`, fusionado): el probe contra el CRM real demostró que
+  el autocomplete legacy devuelve body vacío (`DEAD_ENDS.md`); búsqueda por
+  `referencia_cliente`+`referencia_procurador`+nº/serie, sin `clientes`; búsqueda por
+  contrario/autos fuera de alcance (`MEJORAS_FUTURAS.md` §31). Suite **935 passed**.
 - **F3 — Escritura en el CRM.** ⬜ Resolver auth nest-mail (x-api-key vs JWT);
   relate + adjuntar en expediente de prueba. Mismo requisito de traza que F2.
 - **F4 — Renombrado + OCR + aprendizaje.** ⬜ Contenido del adjunto → nombre; store

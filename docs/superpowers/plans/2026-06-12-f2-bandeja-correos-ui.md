@@ -10,6 +10,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-06-12-f2-bandeja-correos-ui-design.md`
 
+> **✅ EJECUTADO (2026-06-12, subagent-driven).** T1 `9490eca` · T2 superada por REST (`feat/search-expedientes-rest`, fusionada) · T3 `945030b`+`1300719` · T4 `15df2f2` · T5 `1f336dc`+`c3bc790` · T6 `cbfafba`+`3b24f45` (fix bug crítico de estado del combobox) · T7 planificación. Suite **935 passed, 58 skipped**. Cada tarea revisada (spec + calidad) por subagentes.
+
 ---
 
 ## File Structure
@@ -220,6 +222,8 @@ git commit -m "feat(intake-procuradores): persistir contexto de tarjeta en la co
 ---
 
 ## Task 2: `search_expedientes` (combobox del CRM)
+
+> **[x] HECHA — superada por la implementación REST en `feat/search-expedientes-rest` (fusionada a esta rama por fast-forward, 2026-06-12).** El probe contra el CRM real demostró que el autocomplete legacy devuelve body vacío para expedientes (`DEAD_ENDS.md` "Frontal heredado"), así que la versión legacy de esta tarea quedó obsoleta y fue reescrita a REST (`/api/element_registries` + `like`, x-api-key). Contrato vigente: `search_expedientes(term, *, element="expedientes_judiciales", client=None) -> list[{"id","label"}]`; `ELEMENTOS_BUSCABLES = ("expedientes_judiciales", "expedientes_extrajudiciales")` (sin `clientes`); `client` se ignora (REST, sin gotcha PHPSESSID); nunca lanza (`[]` ante error). `fetch_expediente_datos` (T3) y `recompute_coincidencias` (T4) se conservan. **La Task 6 consume este contrato.**
 
 **Files:**
 - Create: `core/procurador_search.py`

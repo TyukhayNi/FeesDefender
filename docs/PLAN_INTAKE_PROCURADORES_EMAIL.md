@@ -298,7 +298,11 @@ Las grabaciones de vistas llegan como **enlace** en el cuerpo
 - **F1 — Matcher (read-only):** dado un correo, Mistral + búsqueda por referencia
   → expediente + confianza + carpeta sugerida + nombres propuestos. Sin escribir
   nada. Validar contra correos reales (vía `gmail-ro` para el set de prueba).
-- **F2 — Bandeja (Streamlit):** las 3 tarjetas + login + log de auditoría.
+- **F2 — Bandeja (Streamlit): ✅ COMPLETA** (2026-06-12, branch
+  `feat/intake-procuradores-f2-ui`). Las 3 tarjetas 🟢/🟡/🔴 + login por persona
+  (`set_actor`) + combobox de reasignación (REST) + vista Descartados con Recuperar,
+  orquestando el core. CLI thin `scripts/intake_procuradores.py` sobre `fetch_and_run`.
+  `search_expedientes` migrado a REST (autocomplete legacy vacío en CRM real, `DEAD_ENDS.md`).
   Confirmaciones simuladas (dry-run). **⚠️ Requisito duro de diseño (ver §18.9):**
   el log de auditoría debe capturar **desde F2** la terna *propuesta-del-robot vs.
   acción-confirmada vs. quién-y-cuándo* por cada ítem. Sin ese registro el check 2
