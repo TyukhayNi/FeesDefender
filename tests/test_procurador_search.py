@@ -40,7 +40,7 @@ def test_clientes_fuera_de_elementos_buscables():
     assert "expedientes_judiciales" in ELEMENTOS_BUSCABLES
 
 
-def test_search_termino_vacio_no_toca_red(_api_key):
+def test_search_termino_vacio_no_toca_red():
     with patch("core.sudespacho_relations.httpx.get") as g:
         assert search_expedientes("   ") == []
         g.assert_not_called()
@@ -56,6 +56,21 @@ def test_search_por_texto_mapea_id_y_label(_api_key):
         out = search_expedientes("Torrent")
     assert out == [{"id": "487",
                     "label": "BaRS3 - Torrent 41 (W-02MA0R)  ·  P-2025/3447"}]
+
+
+def test_search_num_serie_dedup_id_en_ambas_ramas(_api_key):
+    """Un id que aparece por texto Y por num/serie sale UNA sola vez."""
+    def _get(url, *, params, headers, timeout):
+        # Ambas ramas (texto y num/serie) devuelven el MISMO expediente 487.
+        return _mock_get(_items_multi(
+            ("487", {"num_expediente": "63", "serie_expediente": "2024",
+                     "referencia_cliente": "BaRS3 - Torrent 41 (W-02MA0R)"}),
+        ))
+
+    with patch("core.sudespacho_relations.httpx.get", side_effect=_get):
+        out = search_expedientes("63/2024")
+    assert out == [{"id": "487", "label": "BaRS3 - Torrent 41 (W-02MA0R)"}]
+    assert len(out) == 1
 
 
 def test_search_num_serie_dispara_rama_numerica_y_fusiona(_api_key):

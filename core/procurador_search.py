@@ -33,6 +33,9 @@ logger = logging.getLogger("feesdefender.procurador_search")
 # Elementos CRM buscables desde el combobox. `clientes` se retiró (2026-06-12):
 # no tiene property de referencia ni alimenta recompute_coincidencias.
 ELEMENTOS_BUSCABLES = ("expedientes_judiciales", "expedientes_extrajudiciales")
+# Nota: la forma larga de aquí se normaliza al slug canónico (extrajudiciales)
+# vía _normalize_element dentro de search_expedientes; el combobox puede pasar
+# directamente cualquier valor de esta tupla.
 
 # Nº interno del despacho citado por procuradores: "63/2024" (num/AÑO). El año
 # (19xx/20xx) va DETRÁS, lo que lo distingue de refs de procurador "AÑO/nº"
