@@ -1,70 +1,41 @@
-# Estructura de carpetas tipo — Expediente de litigio civil
+# Estructura de carpetas — Expediente de litigio civil (particular)
+
+El expediente de un particular usa **la misma estructura que un asunto E&V**
+(`CASO_SUBDIRS`), montada por el scaffolder canónico compartido `scaffold_caso.py`.
+La diferencia es solo el `_caso.md` (mínimo, `tipo_expediente: particular`, sin
+campos E&V) y que `00_Input` no lleva las subcarpetas de intake automático de E&V
+(solo intake manual). Las skills procesales no distinguen E&V de particular: leen
+y escriben igual.
 
 ## Árbol base
 
 ```
-[REF_INTERNA] - [TIPO_ESCRITO] - [OBJETO] - [CLIENTE]/
-├── 00_PREPARACION/
-│   ├── PREPARACION_[TIPO_ESCRITO].md
-│   └── HECHOS_[TIPO_ESCRITO].md
-├── 01_[FASE_PROCESAL_PREVIA]/
-├── 02_[ACTUACION_CONTRARIA]/
-├── 03_PRUEBA/
-│   ├── DOC_01_[descriptor].pdf
-│   ├── DOC_02_[descriptor].pdf
-│   └── ...
-├── 04_INTERNO/
-│   ├── transcripcion_call_viabilidad.md
-│   ├── modelo_despacho_[tipo].docx
-│   └── notas_estrategia.md
-└── 05_BORRADORES/
-    ├── PREVIO_v1.docx
-    ├── PREVIO_v2.docx
-    ├── [TIPO_ESCRITO]_v1.docx
-    └── ...
+<ruta destino>/
+├── 00_Input/
+│   └── _caso.md            ← maestro del expediente (tipo_expediente: particular)
+├── 01_Procesado/           ← documental tratada / extraída
+├── 02_Analisis/
+│   ├── PREPARACION_[TIPO].md   ← maestro estratégico (única fuente de verdad)
+│   └── HECHOS_[TIPO].md        ← redacción literal por Hecho
+├── 03_Decision/
+├── 04_Output predemanda/   ← requerimientos extrajudiciales
+├── 05_Procedimiento/       ← escritos generados (demanda, contestación…); se registran en _caso.md
+├── 06_Anonimizado/
+├── 07_AI cowork/
+└── 90_Notas personales/    ← work-product interno; NUNCA se aporta ni se registra
 ```
 
 ## Reglas
 
-1. **Numeración por origen documental, no por tema.** Cada `0X_` corresponde a una fase procesal o fuente probatoria distinta.
-2. **Documental con `DOC_NN_descriptor`.** Numeración correlativa coincidente con la del índice documental del escrito.
-3. **Carpeta 04_INTERNO no se aporta nunca.** Reservada a borradores, transcripciones, modelos y notas.
-4. **Borradores con versionado correlativo** (`v1`, `v2`, `v3`). Nunca sobrescribir versiones cerradas.
-5. **Cliente trabajando en un documento del despacho**: conservar la versión de partida (p. ej. `PREVIO_v3.docx`) y reservar las posteriores al cliente.
+1. **`_caso.md` es el maestro del expediente.** Lo crea el scaffolder; los escritos generados se registran en su sección `## Navegación` y en `05_Procedimiento/_index.md` (vía `registrar_outputs.py`).
+2. **Maestros estratégicos en `02_Analisis/`.** `PREPARACION_[TIPO].md` (decisiones) y `HECHOS_[TIPO].md` (redacción literal por Hecho).
+3. **Documental con `DOC_NN_descriptor`.** Numeración correlativa coincidente con el índice documental del escrito; intake en `00_Input/`, tratada en `01_Procesado/`.
+4. **`90_Notas personales/` no se aporta nunca** y no se registra: borradores, transcripciones, modelos y notas internas.
+5. **Escritos en `05_Procedimiento/`** con versionado correlativo si procede (`_v2`, …); nunca sobrescribir una versión cerrada (Word bloquea el fichero abierto → guardar `_v2` y avisar).
 
-## Variantes habituales por tipo de escrito
+## Sobre la fase procesal previa
 
-### Demanda con monitorio previo
-```
-01_MONITORIO/
-02_OPOSICION/
-03_PRUEBA/
-```
-
-### Contestación a demanda
-```
-01_DEMANDA/
-02_REQUERIMIENTOS_PREVIOS/
-03_PRUEBA/
-```
-
-### Recurso (apelación, casación)
-```
-01_PRIMERA_INSTANCIA/
-02_SENTENCIA/
-03_PRUEBA_ADICIONAL/
-```
-
-### Procedimiento iniciado sin antecedente procesal
-```
-01_REQUERIMIENTO_EXTRAJUDICIAL/
-02_RESPUESTA_CONTRARIA/
-03_PRUEBA/
-```
-
-### Requerimiento extrajudicial
-```
-01_ANTECEDENTES/
-02_INTERCAMBIO_PREVIO/
-03_PRUEBA/
-```
+La estructura es fija (no se renombran carpetas por fase). El antecedente procesal
+—monitorio previo, requerimiento extrajudicial, sentencia de primera instancia en
+apelación, etc.— se archiva como documental en `00_Input/` (intake manual) y se
+referencia desde `PREPARACION_[TIPO].md`, no mediante carpetas `01_/02_` renombradas.

@@ -38,8 +38,8 @@ Si falta cualquiera de estos datos, pídelo antes de seguir.
 
 Comprueba si el expediente ya existe en el sistema de archivos.
 
-- **Si existe**: confirma con el usuario la ruta y navega a ella.
-- **Si no existe**: usa el script `scripts/scaffold_expediente.py` para crear el árbol completo de carpetas y los documentos maestros inicializados. Ejemplo:
+- **Si existe** (hay `00_Input/_caso.md`): confirma la ruta y navega a ella; **no recrees** la estructura. Ubica/actualiza los maestros en `02_Analisis/`.
+- **Si no existe**: usa `scripts/scaffold_expediente.py` para crear el expediente. Ejemplo:
 
 ```bash
 python scripts/scaffold_expediente.py \
@@ -51,23 +51,25 @@ python scripts/scaffold_expediente.py \
   --contraparte "PEDRO GÓMEZ"
 ```
 
-El script genera:
+El script monta el **mismo árbol que un expediente E&V** (`CASO_SUBDIRS`), un `_caso.md` mínimo (`tipo_expediente: particular`, sin campos E&V, Navegación vacía) y los maestros en `02_Analisis/`:
 
 ```
 <ruta destino>/
-├── 00_PREPARACION/
+├── 00_Input/
+│   └── _caso.md            ← maestro del expediente (tipo_expediente: particular)
+├── 01_Procesado/
+├── 02_Analisis/
 │   ├── PREPARACION_[TIPO].md
 │   └── HECHOS_[TIPO].md
-├── 01_ANTECEDENTES/
-├── 02_ACTUACION_CONTRARIA/
-├── 03_PRUEBA/
-├── 04_INTERNO/
-└── 05_BORRADORES/
+├── 03_Decision/
+├── 04_Output predemanda/
+├── 05_Procedimiento/        ← escritos generados (se registran en _caso.md)
+├── 06_Anonimizado/
+├── 07_AI cowork/
+└── 90_Notas personales/
 ```
 
-Las subcarpetas se renombran según el caso concreto (p. ej. `01_MONITORIO`, `02_OPOSICION`). El script admite un flag `--fase-previa` para automatizar este renombrado.
-
-Consulta `reference/estructura_carpetas.md` para la convención completa y las variantes habituales.
+El árbol y el formato de `_caso.md` los produce el scaffolder canónico compartido `scaffold_caso.py`, común con el core E&V (garantía de no divergencia). `00_Input` no lleva subcarpetas E&V: solo intake manual. Consulta `reference/estructura_carpetas.md` para la convención completa.
 
 ### 3. Cargar las decisiones cerradas estándar
 

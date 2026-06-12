@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 """
-Scaffolding de expedientes de litigio civil.
+Scaffolding de expedientes de litigio civil (escenario B — particulares).
 
-Crea el árbol de carpetas estándar del despacho y los documentos maestros
-inicializados (PREPARACION_X.md y HECHOS_X.md), pre-cargados con la cabecera
-del asunto y con las decisiones cerradas permanentes del despacho.
+Monta el **mismo árbol** que el core E&V (``CASO_SUBDIRS``) y un ``_caso.md``
+mínimo (``tipo_expediente: particular``, sin campos E&V, Navegación vacía) usando
+el scaffolder canónico compartido ``scaffold_caso.py`` (bundleado en este mismo
+``scripts/``). Después inicializa los documentos maestros (PREPARACION_X.md y
+HECHOS_X.md) en ``02_Analisis/``, pre-cargados con la cabecera del asunto.
+
+La función común con el core garantiza que ambos caminos de apertura producen el
+mismo árbol y el mismo formato de ``_caso.md`` (no divergencia; ver
+``tests/test_scaffold_particular.py``).
 
 Uso:
 
@@ -15,7 +21,6 @@ Uso:
         --parte-representada "JUAN PÉREZ GARCÍA" \\
         --posicion actor \\
         --contraparte "PEDRO GÓMEZ LÓPEZ" \\
-        [--fase-previa monitorio] \\
         [--procedimiento ordinario] \\
         [--juzgado "Juzgado de 1ª Instancia nº 3 de Madrid"] \\
         [--cuantia "12.345,67 €"] \\
@@ -30,6 +35,11 @@ import datetime as _dt
 import sys
 from pathlib import Path
 
+# Scaffolder canónico compartido (copia bundleada en este mismo scripts/).
+from scaffold_caso import CASO_SUBDIRS, scaffold
+
+# Subcarpeta de los documentos maestros estratégicos (decisión #3 del plan v3).
+SUBDIR_MAESTROS = "02_Analisis"
 
 TIPOS_ESCRITO_VALIDOS = {
     "demanda",
@@ -47,20 +57,10 @@ POSICIONES_VALIDAS = {
     "remitente",
 }
 
-# Mapeo de fase previa a etiqueta de carpeta 01_ y 02_.
-# Si no se pasa --fase-previa, se usan etiquetas genéricas.
-FASE_PREVIA_MAP = {
-    "monitorio": ("01_MONITORIO", "02_OPOSICION"),
-    "demanda": ("01_DEMANDA", "02_REQUERIMIENTOS_PREVIOS"),
-    "primera_instancia": ("01_PRIMERA_INSTANCIA", "02_SENTENCIA"),
-    "requerimiento": ("01_REQUERIMIENTO_EXTRAJUDICIAL", "02_RESPUESTA_CONTRARIA"),
-    "extrajudicial": ("01_ANTECEDENTES", "02_INTERCAMBIO_PREVIO"),
-}
-
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Crea el árbol de carpetas y los documentos maestros de un expediente civil.",
+        description="Crea el árbol CASO_SUBDIRS, el _caso.md mínimo y los maestros de un expediente civil.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--base-dir", required=True, help="Ruta donde se creará el expediente.")
@@ -87,42 +87,12 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="Nombre completo de la contraparte (sin DON/DOÑA).",
     )
-    parser.add_argument(
-        "--fase-previa",
-        choices=sorted(FASE_PREVIA_MAP),
-        default=None,
-        help="Identifica la fase procesal previa para renombrar carpetas 01_ y 02_.",
-    )
     parser.add_argument("--procedimiento", default="", help="Procedimiento (ordinario, verbal, monitorio, etc.).")
     parser.add_argument("--juzgado", default="", help="Juzgado, si se conoce.")
     parser.add_argument("--cuantia", default="", help="Cuantía del procedimiento.")
     parser.add_argument("--objeto", default="", help="Descripción breve del objeto del asunto.")
     parser.add_argument("--cliente", default="", help="Nombre del cliente (puede coincidir con parte representada).")
     return parser.parse_args()
-
-
-def crear_arbol(base: Path, fase_previa: str | None) -> dict[str, Path]:
-    """Crea el árbol de carpetas y devuelve un dict con las rutas relevantes."""
-    if fase_previa:
-        carpeta_01, carpeta_02 = FASE_PREVIA_MAP[fase_previa]
-    else:
-        carpeta_01, carpeta_02 = "01_ANTECEDENTES", "02_ACTUACION_CONTRARIA"
-
-    subcarpetas = [
-        "00_PREPARACION",
-        carpeta_01,
-        carpeta_02,
-        "03_PRUEBA",
-        "04_INTERNO",
-        "05_BORRADORES",
-    ]
-
-    rutas: dict[str, Path] = {}
-    for nombre in subcarpetas:
-        ruta = base / nombre
-        ruta.mkdir(parents=True, exist_ok=True)
-        rutas[nombre] = ruta
-    return rutas
 
 
 def construir_preparacion(args: argparse.Namespace) -> str:
@@ -312,23 +282,33 @@ _texto pendiente_
 def main() -> int:
     args = parse_args()
 
-    base = Path(args.base_dir).expanduser().resolve()
-    base.mkdir(parents=True, exist_ok=True)
+    # Árbol CASO_SUBDIRS + _caso.md mínimo (mismo formato que el core E&V).
+    base = scaffold(
+        args.base_dir,
+        titulo=args.objeto or f"{args.tipo_escrito.capitalize()} — {args.referencia}",
+        case_id=args.referencia,
+        tipo_expediente="particular",
+        cliente=args.cliente or args.parte_representada,
+        contraparte=args.contraparte,
+        organo=args.juzgado,
+        cuantia=args.cuantia,
+    )
 
-    rutas = crear_arbol(base, args.fase_previa)
+    # Documentos maestros en 02_Analisis/ (no se sobrescriben si ya existen).
+    analisis = base / SUBDIR_MAESTROS
+    preparacion = analisis / f"PREPARACION_{args.tipo_escrito.upper()}.md"
+    hechos = analisis / f"HECHOS_{args.tipo_escrito.upper()}.md"
 
-    preparacion = rutas["00_PREPARACION"] / f"PREPARACION_{args.tipo_escrito.upper()}.md"
-    hechos = rutas["00_PREPARACION"] / f"HECHOS_{args.tipo_escrito.upper()}.md"
-
-    preparacion.write_text(construir_preparacion(args), encoding="utf-8")
-    hechos.write_text(construir_hechos(args), encoding="utf-8")
+    if not preparacion.exists():
+        preparacion.write_text(construir_preparacion(args), encoding="utf-8")
+    if not hechos.exists():
+        hechos.write_text(construir_hechos(args), encoding="utf-8")
 
     print(f"[OK] Expediente creado en: {base}")
+    print(f"[OK] Árbol: {', '.join(s + '/' for s in CASO_SUBDIRS)}")
     print(f"[OK] Maestro estratégico: {preparacion.relative_to(base)}")
     print(f"[OK] Maestro de Hechos:   {hechos.relative_to(base)}")
-    print("[OK] Subcarpetas:")
-    for nombre, ruta in rutas.items():
-        print(f"        - {ruta.relative_to(base)}/")
+    print(f"[OK] _caso.md (tipo_expediente: particular): {(base / '00_Input' / '_caso.md').relative_to(base)}")
     return 0
 
 
