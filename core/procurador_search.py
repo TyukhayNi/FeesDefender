@@ -122,7 +122,10 @@ def fetch_expediente_datos(
         return out
     finally:
         if owns:
-            client.__exit__(None, None, None)
+            try:
+                client.__exit__(None, None, None)
+            except Exception:
+                pass
 
 
 def recompute_coincidencias(

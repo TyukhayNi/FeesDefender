@@ -85,3 +85,11 @@ def test_fetch_expediente_datos_sin_resultado():
     client.__exit__ = MagicMock(return_value=False)
     client._client.get.return_value = _mock_get({"hydra:member": []}, status=200)
     assert fetch_expediente_datos(999, client=client) == {}
+
+
+def test_fetch_expediente_datos_http_no_200():
+    """HTTP != 200 → dict vacío (degrada, no rompe la tarjeta)."""
+    client = MagicMock()
+    client.__exit__ = MagicMock(return_value=False)
+    client._client.get.return_value = _mock_get({}, status=404)
+    assert fetch_expediente_datos(999, client=client) == {}
