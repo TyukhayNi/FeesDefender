@@ -444,8 +444,8 @@ if "_colabs_prewarmed" not in st.session_state:
 # Tabs
 # ---------------------------------------------------------------------------
 
-tab_nuevo, tab_casos, tab_pipeline, tab_visor = st.tabs(
-    ["Nuevo caso", "Casos", "Pipeline", "Visor"]
+tab_nuevo, tab_casos, tab_pipeline, tab_visor, tab_bandeja = st.tabs(
+    ["Nuevo caso", "Casos", "Pipeline", "Visor", "Bandeja de correos"]
 )
 
 
@@ -2285,3 +2285,154 @@ with tab_visor:
             target = sub_dir / sel
             st.markdown(f"`{target}`")
             st.markdown(target.read_text(encoding="utf-8"))
+
+
+# ── TAB: Bandeja de correos (F2 §18.6) ──────────────────────────────────────
+with tab_bandeja:
+    from core import procurador_review as _pr
+    from core import procurador_search as _ps
+    from core.intake_log import set_actor, get_actor
+
+    st.subheader("Bandeja de correos de procuradores")
+    st.caption("Dry-run: confirmar registra la decision (terna §18.9); NO escribe en el CRM (eso es F3).")
+
+    # Login ligero por persona (alimenta el "quien confirmo").
+    _actor = st.radio("Yo soy", ["Nikolai", "Paola", "Ana"], horizontal=True,
+                      key="bandeja_actor",
+                      help="Tu nombre queda en el log de auditoria de cada decision.")
+    set_actor(_actor)
+
+    pendientes = _pr.load_queue(estado="pendiente")
+    descartados = _pr.load_queue(estado="descartado")
+
+    # Cabecera de triaje: recuentos por confianza.
+    n_alta = sum(1 for i in pendientes if i.proposal.confianza == "alta")
+    n_dud = sum(1 for i in pendientes if i.proposal.confianza == "dudosa")
+    n_sin = sum(1 for i in pendientes if i.proposal.confianza == "ninguna")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("🟢 Alta", n_alta)
+    c2.metric("🟡 Dudosa", n_dud)
+    c3.metric("🔴 Sin expediente", n_sin)
+
+    # Filtro por procurador (remitente).
+    remitentes = sorted({i.remitente or "(desconocido)" for i in pendientes})
+    filtro = st.selectbox("Filtrar por procurador", ["(todos)"] + remitentes,
+                          key="bandeja_filtro")
+    st.checkbox("Confirmar en bloque las de alta", value=False, disabled=True,
+                key="bandeja_bloque",
+                help="Desactivado de inicio: empezar revisando todo (plan §6).")
+
+    st.divider()
+
+    if not pendientes:
+        st.info("No hay correos pendientes en la cola. Lanza la ingesta: "
+                "`python -m scripts.intake_procuradores`.")
+
+    _ICONO = {"alta": "🟢", "dudosa": "🟡", "ninguna": "🔴"}
+
+    for item in pendientes:
+        if filtro != "(todos)" and (item.remitente or "(desconocido)") != filtro:
+            continue
+        prop = item.proposal
+        icono = _ICONO.get(prop.confianza, "🔴")
+        with st.expander(f"{icono} {item.asunto or '(sin asunto)'} — {item.remitente or ''}",
+                         expanded=(prop.confianza != "alta")):
+            st.caption(f"Recibido: {item.fecha or 's/f'} · email_id `{item.email_id}`")
+
+            # --- Datos detectados en el correo (siempre visibles, util en 🔴) ---
+            sig = prop.signals or {}
+            if sig:
+                detectados = {k: v for k, v in sig.items() if v not in (None, "", False)}
+                if detectados:
+                    st.markdown("**Datos detectados en el correo**")
+                    st.json(detectados, expanded=False)
+
+            # --- Expediente + checks verdes ---
+            exp_id = prop.expediente_id
+            datos = dict(prop.datos_expediente or {})
+            coincidencias = list(prop.coincidencias or [])
+
+            if prop.confianza == "alta" and exp_id:
+                st.success(f"Expediente #{exp_id} — {len(coincidencias)} datos coinciden")
+                for campo in ("num_expediente", "serie_expediente", "juzgado",
+                              "num_asunto", "tipo_procedimiento"):
+                    if campo in datos:
+                        check = "✅" if campo in coincidencias else "▫️"
+                        st.write(f"{check} {campo}: {datos.get(campo)}")
+                cambiar = st.toggle("Cambiar expediente", key=f"chg_{item.email_id}")
+            else:
+                if prop.confianza == "dudosa":
+                    st.warning("Match debil — VERIFICA el expediente antes de confirmar.")
+                else:
+                    st.error("Sin expediente. Busca y asignalo abajo.")
+                cambiar = True
+
+            # --- Combobox de busqueda (reasignacion) — REST x-api-key, no caduca ---
+            sel_exp_id = exp_id
+            if cambiar:
+                elemento = st.selectbox(
+                    "Buscar en", _ps.ELEMENTOS_BUSCABLES,
+                    key=f"elem_{item.email_id}",
+                )
+                term = st.text_input(
+                    "Buscar expediente (nombre del caso / ref del procurador / nº/AÑO)",
+                    key=f"term_{item.email_id}",
+                )
+                if term:
+                    candidatos = _ps.search_expedientes(term, element=elemento)
+                    if candidatos:
+                        etiqueta = st.selectbox(
+                            "Candidatos", candidatos,
+                            format_func=lambda c: f"{c['label']} (#{c['id']})",
+                            key=f"cand_{item.email_id}",
+                        )
+                        if st.button("Usar este expediente", key=f"use_{item.email_id}"):
+                            sel_exp_id = int(etiqueta["id"])
+                            datos = _ps.fetch_expediente_datos(sel_exp_id, element=elemento)
+                            coincidencias = _ps.recompute_coincidencias(sig, datos)
+                            st.success(f"Expediente #{sel_exp_id}: {len(coincidencias)} coinciden")
+                    else:
+                        st.caption("Sin candidatos para ese termino (o CRM no disponible).")
+
+            # --- Carpeta destino ---
+            carpeta_id = st.number_input("Carpeta destino (id)", value=int(prop.carpeta_id or 0),
+                                         step=1, key=f"carp_{item.email_id}")
+
+            # --- Acciones ---
+            puede_confirmar = sel_exp_id is not None
+            col_ok, col_no = st.columns(2)
+            if col_ok.button("Confirmar", key=f"ok_{item.email_id}",
+                             disabled=not puede_confirmar, type="primary"):
+                action = _pr.HumanAction(
+                    tipo="confirmar",
+                    expediente_id=(sel_exp_id if sel_exp_id != exp_id else None),
+                    carpeta_id=(int(carpeta_id) if int(carpeta_id) != (prop.carpeta_id or 0) else None),
+                )
+                _pr.record_decision(prop, action, quien=get_actor())
+                nuevo = _pr.transicionar(item, "confirmar")
+                _pr.upsert_queue_item(nuevo)
+                st.toast(f"Confirmado (dry-run): {item.email_id}")
+                st.rerun()
+            if col_no.button("Descartar", key=f"no_{item.email_id}"):
+                action = _pr.HumanAction(tipo="descartar")
+                _pr.record_decision(prop, action, quien=get_actor())
+                nuevo = _pr.transicionar(item, "descartar", motivo="descartado_humano")
+                _pr.upsert_queue_item(nuevo)
+                st.toast(f"Descartado: {item.email_id}")
+                st.rerun()
+
+    # --- Vista Descartados (baja prioridad, colapsada) ---
+    st.divider()
+    with st.expander(f"Descartados ({len(descartados)})", expanded=False):
+        if not descartados:
+            st.caption("Nada descartado.")
+        for item in descartados:
+            cols = st.columns([3, 2, 2, 1])
+            cols[0].write(item.asunto or "(sin asunto)")
+            cols[1].write(item.remitente or "")
+            cols[2].write(item.motivo_descarte or "")
+            if cols[3].button("Recuperar", key=f"rec_{item.email_id}"):
+                nuevo = _pr.transicionar(item, "recuperar")
+                _pr.upsert_queue_item(nuevo)
+                st.toast(f"Recuperado a bandeja: {item.email_id}")
+                st.rerun()
