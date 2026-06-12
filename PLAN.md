@@ -28,6 +28,45 @@ de `[SIGUIENTE-INTAKE-JUDICIAL-AUTO]`.
 
 ---
 
+## [SIGUIENTE-INTAKE-PROCURADORES-EMAIL] Intake automático de correos de procuradores → Sudespacho
+*Diseño cerrado con Nikolai 2026-06-12. Plan fino autocontenido: `docs/PLAN_INTAKE_PROCURADORES_EMAIL.md`. Implementación: Claude Code.*
+
+**Objetivo.** Sentido inverso del intake actual: archivar en el CRM los correos de
+procuradores (y contestaciones a correos del despacho), relacionarlos con su
+expediente y subir adjuntos con nombre legible, con red de seguridad humana antes
+de escribir. Llave de emparejamiento = *Su ref* (= `num_expediente/serie`,
+serie=año). **RGPD — excepción acotada SOLO a este flujo:** usa LLM cloud UE
+(Scaleway/Mistral Small 3.2); no deroga la regla general del resto del repo.
+
+**Estado por fases (detalle en el doc §15):**
+- **F1 — Matcher (read-only).** ✅ HECHA (s39, 2026-06-12). `core/llm_cloud.py`
+  (conector LLM cloud intercambiable) + `core/procurador_intake.py` (señales LLM +
+  match por num/serie vía REST + propuesta de nombres). Validado e2e contra correos
+  reales (ProcuradoraF 21/25→exp #532, Castañeda 33/2024→exp #455, ambos confianza
+  ALTA). API `element_registries` usa `hydra:member`. Volumen ~7 correos/día,
+  ~€0.10/mes. Tests +77; suite **853 passed, 58 skipped**. **Commits `f904d72`,
+  `6a811ef`** (F1 base + fix match por su_ref con sufijo de subserie y `es_ruido`
+  advisory).
+- **F2 — Bandeja (Streamlit).** ⬜ SIGUIENTE. Las 3 tarjetas (🟢 alta / 🟡 dudoso /
+  🔴 sin expediente) + login por persona + log de auditoría; confirmaciones dry-run.
+  **⚠️ Requisito duro (doc §18.9):** el log debe nacer capturando la terna
+  *propuesta-robot vs. acción-confirmada vs. quién-y-cuándo* por ítem — es lo que
+  alimenta el check 2 (F6). Diseñarlo en el modelo de datos, no atornillarlo después.
+- **F3 — Escritura en el CRM.** ⬜ Resolver auth nest-mail (x-api-key vs JWT);
+  relate + adjuntar en expediente de prueba. Mismo requisito de traza que F2.
+- **F4 — Renombrado + OCR + aprendizaje.** ⬜ Contenido del adjunto → nombre; store
+  de correcciones few-shot (§10).
+- **F5 — Grabaciones.** ⬜ Descarga de enlaces (WeTransfer caduca) + fallback manual.
+- **F6 — Control de calidad del archivo (check 2).** ⬜ Capa de auditoría por
+  excepción (auto-chequeo determinista + cola de Paola + resumen semanal a Nikolai).
+  **Diseño cerrado 2026-06-12, doc §18.** Depende de F2/F3 (consume la terna de traza).
+
+**Pendientes de decisión (doc §17 + §18.11):** ¿confirmar en bloque las de alta de
+inicio? · auth nest-mail · plazos de escalado de la cola por tipo · tamaño de muestra
+(default 10%) · lista de "tipos con plazo".
+
+---
+
 ## [SIGUIENTE-INTAKE-JUDICIAL-AUTO] Intake automático de demanda y contestación desde el CRM
 *Añadido 2026-06-10 (sesión Cowork). Implementación: Claude Code. Engloba y resuelve `[CRITICO-PRESIGNED-DOWNLOAD-BUG]` como su Fase 0.*
 
@@ -109,6 +148,41 @@ caso. Hoy es frágil a variaciones tipográficas de la referencia/nombre.
      creación; la única protección real es la búsqueda en el CRM. Corregir el
      texto y/o hacer que la guarda CRM realmente bloquee.
 - **Riesgo si no se hace:** expedientes/carpetas duplicados, caros de deshacer.
+
+---
+
+## [SIGUIENTE-INTAKE-ENTREVISTAS] Intake dedicado de entrevistas (transcripción Meet) en `06_Entrevistas/`
+*Promovido 2026-06-10 (sesión Cowork) por decisión de Nikolai. `MEJORAS #26`. Implementación: Claude Code.*
+
+**Objetivo.** Cablear la subida de la entrevista de viabilidad (grabada en Google
+Meet, transcripción automática) al árbol del caso, hoy sin conectar.
+
+**Estado verificado (repo, 2026-06-10).** El andamiaje existe pero está muerto:
+`ensure_case` crea `00_Input/06_Entrevistas/`; `ENTREVISTA_ROLES`
+(`core/config.py`) y la convención `<AAAA-MM-DD>_<rol>_<apellido>/` están
+definidas pero **ningún código las consume ni valida**; el evento
+`upload_entrevista` (`core/intake_log.py`) y el source `"entrevista"`
+(`core/intake_manifest.py`) están declarados pero **nunca se emiten**. No existe
+`core/intake_entrevista*.py` ni uploader en Streamlit. El paso 7 del refactor v2
+solo cableó el expander de subida a `05_CRM`. Hoy la entrevista solo entra si el
+letrado deja manualmente la transcripción en la carpeta, sin dedup ni traza.
+
+**Solución (ya recogida en `docs/MEJORAS_FUTURAS.md` §26).** No requiere
+transcripción local (Whisper): Meet ya entrega texto. Dos piezas:
+
+1. **Función de ingesta** (`core/intake_entrevista.py` nuevo o ampliación de
+   `core/intake_manual.py`): dado rol ∈ `ENTREVISTA_ROLES`, apellido, fecha y el
+   Doc de Meet, crea `06_Entrevistas/<AAAA-MM-DD>_<rol>_<apellido>/`, coloca la
+   transcripción exportada a `.docx`/`.txt`, la registra en el manifest con
+   `source="entrevista"` y emite el evento `upload_entrevista`. Validar rol contra
+   `ENTREVISTA_ROLES` y sanear el path como en `save_file_crm_branch`.
+2. **Disparo en la UI** (expander/botón en el tab Casos de Streamlit), análogo al
+   de `05_CRM`.
+
+Una vez el `.docx`/`.txt` está en `00_Input/06_Entrevistas/`, el pipeline genérico
+(inventory → extractor → markdown → anon) ya lo procesa. La 2ª pasada de
+`viabilidad-prerelleno` (leer la transcripción para cerrar huecos testificales)
+queda fuera de alcance de este bloque.
 
 ---
 
