@@ -288,6 +288,40 @@ function pCita(text) {
 
 ---
 
+### Citas de jurisprudencia a pie de página (OBLIGATORIO)
+
+**Regla del despacho.** Toda cita de una resolución judicial (STS, SAP, STSJ, SAN, ATS…) se hace en **dos planos**:
+
+1. **En el cuerpo del escrito:** identificación abreviada con el ECLI inline, p. ej. *«(STS, Sala 1.ª, núm. 791/2011, de 11 de noviembre)»*, seguida de una **llamada de nota al pie** (`FootnoteReferenceRun`).
+2. **A pie de página:** nota completa con identificación oficial **y enlace clicable al CENDOJ para descarga directa**, siguiendo EXACTAMENTE este patrón:
+
+```
+{TIPO} (Sala/Sección) núm. {NºRes}/{año}, de {fecha literal}. ROJ: {ROJ}. ECLI:{ECLI}. Texto íntegro y descarga directa en CENDOJ (CGPJ): {URL_openDocument}
+```
+
+Ejemplos reales (formato de referencia):
+
+```
+STS (Sala 1.ª) núm. 791/2011, de 11 de noviembre. ROJ: STS 9282/2011. ECLI:ES:TS:2011:9282. Texto íntegro y descarga directa en CENDOJ (CGPJ): https://www.poderjudicial.es/search/AN/openDocument/6d2ff30b2fa96ee0/20120220
+STS (Sala 1.ª) núm. 824/2011, de 15 de noviembre. ROJ: STS 7365/2011. ECLI:ES:TS:2011:7365. Texto íntegro y descarga directa en CENDOJ (CGPJ): https://www.poderjudicial.es/search/AN/openDocument/b885cd88e4055bc1/20111128
+STS (Sala 1.ª) núm. 305/2011, de 27 de junio. ROJ: STS 5089/2011. ECLI:ES:TS:2011:5089. Texto íntegro y descarga directa en CENDOJ (CGPJ): https://www.poderjudicial.es/search/AN/openDocument/b55c27b773cd7856/20110805
+```
+
+**Reglas.** Una nota por resolución, numeración correlativa. La URL es la del visor `openDocument/{hash}/{fecha}` del CENDOJ (obtenida con la skill `cendoj-descarga`) y debe insertarse como **hipervínculo clicable** (`ExternalHyperlink`). El ECLI y el ROJ se toman del PDF oficial del CGPJ, no de bases privadas. La nota al pie va en TNR 8pt (SZ8=16).
+
+```javascript
+// Document({ footnotes: { 1: fnJuris("STS (Sala 1.ª) núm. 791/2011, de 11 de noviembre. ROJ: STS 9282/2011. ECLI:ES:TS:2011:9282.", URL1), 2: ... } })
+function fnJuris(meta, url) {
+  return { children: [ new Paragraph({ spacing: { line: 240 }, children: [
+    new TextRun({ text: meta + " Texto íntegro y descarga directa en CENDOJ (CGPJ): ", font: TNR, size: 16 }),
+    new ExternalHyperlink({ link: url, children: [ new TextRun({ text: url, font: TNR, size: 16, style: "Hyperlink" }) ] }),
+  ] }) ] };
+}
+// En el cuerpo: ...núm. 791/2011, de 11 de noviembre"), new FootnoteReferenceRun(1), r(").")
+```
+
+---
+
 ## Variantes territoriales y condicionales
 
 **Principio.** Las variantes —territoriales (Cataluña, otros), condicionales (factura/no factura), alternativas (modelo de contrato según oficina)— se incluyen en el escrito **activadas por defecto**, con marcadores visuales que permiten al letrado **eliminar** el bloque cuando no aplique. Asimetría deliberada: borrar es seguro, insertar requiere reinjertar coherencia.
@@ -495,8 +529,4 @@ La skill aprende de su uso real (mismo patrón que `preparacion-audiencia-previa
 
 ## Changelog
 
-- **1.0** — Fase 0 (detección de expediente), guardado y registro en
-  `<destino>/` con `registrar_outputs.py`, telemetría de uso con
-  `registrar_uso.py`, checklists pre/post y revisión programada
-  (`programar_revision.py`, escrito +15 días). Cada mejora promovida desde el
-  motor de mejora citará aquí su evidencia (log/delta).
+Ver [`CHANGELOG.md`](CHANGELOG.md). Cada mejora promovida desde el motor de mejora cita ahí su evidencia (log/delta).

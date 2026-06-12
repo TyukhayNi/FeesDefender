@@ -128,7 +128,7 @@ def construir_preparacion(args: argparse.Namespace) -> str:
 ## 2. Decisiones estratégicas cerradas
 
 > Cada punto cerrado se marca con `[CERRADO]`. Lo abierto, con `[PENDIENTE]`.
-> Las decisiones de los bloques 2.6 y 2.7 son convenciones permanentes del despacho — no se renegocian.
+> Las decisiones de los bloques 2.6, 2.7 y 2.8 son convenciones permanentes del despacho — no se renegocian.
 
 ### 2.1. Arquitectura del escrito
 
@@ -171,7 +171,13 @@ def construir_preparacion(args: argparse.Namespace) -> str:
 
 - [CERRADO] Sin aportar correspondencia entre letrados (art. 21 EGAE, art. 5 CDCGAE). Revisión obligatoria del índice documental antes del cierre.
 
-### 2.8. Decisiones específicas del asunto
+### 2.8. Anclaje a fuente y verificación (cerrado por convención del despacho)
+
+- [CERRADO] Anclaje a fuente obligatorio en la fijación de Hechos (convivencia con `verificacion-anclada-fuente`). Cada Hecho con estado 🟢/🟡/🔴; sin inferencias no marcadas.
+- [CERRADO] Hechos 🟡 (pendientes de soporte) admisibles, con medio de prueba previsto y registrados en el mapa de prueba (sección 7).
+- [CERRADO] Jurisprudencia a citar verificada en CENDOJ antes del cierre; referencias de bases privadas contrastadas contra el CGPJ (encadenar `cendoj-descarga`).
+
+### 2.9. Decisiones específicas del asunto
 
 - [PENDIENTE] _añadir según necesidad_
 
@@ -206,6 +212,8 @@ OTROSÍES
 |-------|-------|------------------------|
 |       |       | DOC_NN                 |
 
+> Las filas sin `DOC_NN` corresponden a hechos pendientes de soporte: indicar el medio de prueba previsto y reflejarlas en el mapa de prueba (sección 7).
+
 ---
 
 ## 5. Personas clave
@@ -228,13 +236,23 @@ OTROSÍES
 
 ---
 
-## 7. Pendientes operativos
+## 7. Mapa de prueba (hechos pendientes de soporte)
+
+> Hechos alegados aún sin documento cerrado (estado 🟡 en `HECHOS_X.md`). Convivencia con `verificacion-anclada-fuente`. Cada fila debe tener un medio de prueba previsto antes de pasar a redacción. Ningún hecho en estado 🔴 (inferencia no soportada) puede figurar como Hecho.
+
+| Hecho | Enunciado breve | Medio de prueba previsto | Estado |
+|-------|-----------------|--------------------------|--------|
+|       |                 |                          | por recabar / propuesto / admitido |
+
+---
+
+## 8. Pendientes operativos
 
 - [ ] _por añadir_
 
 ---
 
-## 8. Histórico de decisiones reabiertas
+## 9. Histórico de decisiones reabiertas
 
 | Fecha | Decisión reabierta | Motivo | Nueva redacción |
 |-------|---------------------|--------|------------------|
@@ -248,12 +266,14 @@ def construir_hechos(args: argparse.Namespace) -> str:
 
 > Redacción literal aprobada por Hecho. Fuente de verdad textual para el escrito final.
 > Cada Hecho es un módulo cerrado: título + texto. Se traspasa literal al .docx.
+> **Anclaje obligatorio** (convivencia con `verificacion-anclada-fuente`). Cada Hecho lleva un estado: 🟢 anclado (con cita al documento), 🟡 pendiente de soporte (indicar medio de prueba previsto), 🔴 vetado (inferencia no soportada — reformular o descartar). Los Hechos 🟡 se vuelcan al mapa de prueba del `PREPARACION_X.md`.
 
 ---
 
 ## HECHO PRIMERO. — _por completar_
 
 **Estado:** [BORRADOR]
+**Anclaje:** [🟢 anclado — [Doc. NN, p. X] / 🟡 pendiente — prueba prevista: ___ / 🔴 vetado]
 
 _texto pendiente_
 
@@ -262,6 +282,7 @@ _texto pendiente_
 ## HECHO SEGUNDO. — _por completar_
 
 **Estado:** [BORRADOR]
+**Anclaje:** [🟢 anclado — [Doc. NN, p. X] / 🟡 pendiente — prueba prevista: ___ / 🔴 vetado]
 
 _texto pendiente_
 

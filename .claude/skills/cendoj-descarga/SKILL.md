@@ -143,16 +143,26 @@ Desde una pestaña activa en `poderjudicial.es` (cualquier ruta del dominio), ej
 - **Verificación tras 5 s.** Usar `Glob` sobre `~/Downloads/PATRÓN*.pdf` para confirmar. Si no aparece, reintentar el ciclo click + JS en una pestaña nueva del mismo origen.
 - **Si Chrome muestra el PDF en el visor de Acrobat** en lugar de descargar, el flujo `fetch + blob + download attribute` lo evita siempre. No navegar nunca directamente a la URL del PDF.
 
-### Paso 7 — Copiar a la carpeta de salida
+### Paso 7 — Guardar SIEMPRE en la carpeta del expediente (regla del despacho)
 
-Las descargas caen siempre en `~/Downloads`. Para entregárselas al usuario por enlace `computer://`, copiar a la carpeta `outputs/` del sandbox:
+**Regla fija.** Las sentencias descargadas del CENDOJ deben guardarse **siempre en la carpeta del expediente del caso en curso**, no solo en `~/Downloads` ni únicamente en `outputs/`. El usuario trabaja por expedientes y necesita la documental archivada en la carpeta del caso. No basta con localizar o citar: hay que descargar el PDF oficial y dejarlo en el expediente.
 
-```bash
-cd /sessions/<id>/mnt/outputs/
-cp /sessions/<id>/mnt/Downloads/SAP_*.pdf .
-```
+Las descargas caen primero en `~/Downloads`. Desde ahí:
 
-Requiere `mcp__cowork__request_cowork_directory ~/Downloads` previo si no se ha montado.
+1. **Destino principal — carpeta del expediente.** Copiar los PDF (con nombre normalizado) a la carpeta del caso activo. Es la carpeta conectada del expediente que el usuario tiene montada para el caso (la raíz del expediente o una subcarpeta tipo `_ocr`, `05_Procedimiento`, `Jurisprudencia`…). Si hay varias subcarpetas candidatas y el destino no es obvio, **preguntar al usuario** en qué subcarpeta archivarlas.
+
+   ```bash
+   # La carpeta del caso aparece montada en /sessions/<id>/mnt/<carpeta_caso>/
+   cp /sessions/<id>/mnt/Downloads/STS_*.pdf "/sessions/<id>/mnt/<carpeta_caso>/"
+   ```
+
+2. **Destino secundario — `outputs/`** (para poder enlazar/presentar al usuario con `mcp__cowork__present_files`):
+
+   ```bash
+   cp /sessions/<id>/mnt/Downloads/STS_*.pdf /sessions/<id>/mnt/outputs/
+   ```
+
+Requiere `mcp__cowork__request_cowork_directory ~/Downloads` previo si Descargas no está montado (y, en su caso, el montaje de la carpeta del expediente). Confirmar al usuario la ruta final dentro del expediente.
 
 ### Paso 7-bis — Registro en el expediente (solo si la jurisprudencia es de un asunto)
 
@@ -320,5 +330,4 @@ python scripts/registrar_uso.py cendoj-descarga "<ref>" descarga \
 
 ## Changelog
 
-- **1.0** — Paso 7-bis (registro de jurisprudencia en `05_Procedimiento/Jurisprudencia`)
-  y telemetría de uso con `registrar_uso.py`.
+Ver [`CHANGELOG.md`](CHANGELOG.md).

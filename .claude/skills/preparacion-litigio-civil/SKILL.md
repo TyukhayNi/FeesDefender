@@ -109,6 +109,14 @@ Construye la tabla cronológica de hechos con respaldo documental (`DOC_NN`) y l
 
 Cada Hecho se redacta como módulo cerrado en `HECHOS_X.md`, con título y texto literal. Esta es la fuente de verdad para el escrito final. La redacción de Hechos no es responsabilidad de esta skill; es responsabilidad del flujo conjunto entre letrado y cliente. Esta skill solo garantiza que exista el documento, que esté estructurado y que cada Hecho tenga su entrada.
 
+**Anclaje a fuente obligatorio (convivencia con `verificacion-anclada-fuente`).** Cada Hecho lleva un estado de anclaje:
+
+- a) 🟢 **anclado** — respaldado por documental aportada o fuente verificada, con cita precisa (`[Doc. NN, p. X / cláusula / antecedente]`);
+- b) 🟡 **pendiente de soporte** — alegado pero sin documento cerrado todavía; obligatorio anotar el medio de prueba previsto (testifical, pericial, documento a recabar, interrogatorio). Legítimo en lo civil, pero se registra en el mapa de prueba del `PREPARACION_X.md` (sección 7);
+- c) 🔴 **vetado** — inferencia que el documento no sostiene (parentescos, intenciones, causalidad). No se alega como hecho: se reformula o se descarta.
+
+Ningún Hecho se cierra sin estado de anclaje. Los huecos se mantienen visibles, nunca se rellenan con inferencia. Detalle de la disciplina evidencial: skill `verificacion-anclada-fuente`.
+
 ### 8. Revisión deontológica del índice documental
 
 Antes de cerrar la fase de preparación, revisa el índice documental para verificar que no se aporta correspondencia entre letrados sin consentimiento expreso (art. 21 EGAE, art. 5 CDCGAE). Marca esta revisión como ejecutada en `PREPARACION_X.md`.
@@ -121,9 +129,12 @@ Cuando el `PREPARACION_X.md` no tenga decisiones marcadas como `[PENDIENTE]` y l
 - Invoca la skill `escritos-judiciales` para generar el .docx aplicando los criterios formales TS Sala 1.ª.
 - Una vez generado el borrador, recorre el `CHECKLIST_DECISIONES.md` (template en `templates/`) como verificación previa a firma.
 
+**Hechos pendientes de soporte (🟡) y anclaje.** La existencia de Hechos 🟡 NO impide cerrar la preparación —es normal alegar hechos que se probarán después—, pero antes de pasar a redacción: (a) cada Hecho 🟡 debe tener su medio de prueba previsto anotado; (b) el mapa de prueba del `PREPARACION_X.md` (sección 7) debe estar revisado con el letrado; (c) ningún Hecho puede quedar en estado 🔴. Además, la jurisprudencia que se vaya a citar se verifica en CENDOJ antes del cierre (encadenar con `cendoj-descarga`).
+
 ## Principios transversales
 
 - **El maestro es la única fuente de verdad.** Cualquier decisión que se tome en conversación debe quedar reflejada en `PREPARACION_X.md`. Si no está ahí, no existe.
+- **Anclaje a fuente (source-locked).** La fijación de Hechos opera en convivencia obligatoria con `verificacion-anclada-fuente`: cada Hecho anclado a documental o fuente verificada, sin inferencias no marcadas. Los hechos sin documento cerrado se etiquetan 🟡 y se listan en el mapa de prueba; nunca se ocultan ni se rellenan por suposición.
 - **Decisiones cerradas no se reabren.** Salvo cambio expreso, las decisiones marcadas `[CERRADO]` se respetan sin pedir confirmación de nuevo.
 - **Listas y subdivisiones**: aplicar formato a), b), c) en segundo nivel y numeración 1., 1.1., 1.1.1. en jerárquica.
 - **Personas**: DON/DOÑA + nombre completo en MAYÚSCULAS NEGRITA en toda mención.
@@ -149,6 +160,4 @@ Esta skill termina donde empieza `escritos-judiciales`. La frontera es la genera
 
 ## Changelog
 
-- **1.0** — Scaffolding alineado a `CASO_SUBDIRS` + `_caso.md` mínimo
-  (`tipo_expediente: particular`) vía el scaffolder canónico compartido
-  `scaffold_caso.py` (común con el core E&V); maestros en `02_Analisis/`.
+Ver [`CHANGELOG.md`](CHANGELOG.md).

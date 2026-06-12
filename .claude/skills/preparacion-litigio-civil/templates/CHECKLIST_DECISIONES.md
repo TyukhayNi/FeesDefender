@@ -61,3 +61,12 @@
 - [ ] Índice documental coincidente con anexos físicos.
 - [ ] Datos personales y procesales verificados.
 - [ ] Sin referencias internas pendientes (`[XXX]`, `[pendiente]`, `{{...}}`, etc.).
+
+## 9. Anclaje a fuente y prueba (convivencia con `verificacion-anclada-fuente`)
+
+- [ ] Cada Hecho de `HECHOS_X.md` tiene estado de anclaje (🟢 / 🟡 / 🔴).
+- [ ] Ningún Hecho queda en estado 🔴 (inferencia no soportada).
+- [ ] Cada Hecho 🟡 (pendiente de soporte) tiene su medio de prueba previsto anotado.
+- [ ] Mapa de prueba del `PREPARACION_X.md` revisado con el Letrado.
+- [ ] Hechos 🟢 con cita precisa al documento (`[Doc. NN, p. X / cláusula / antecedente]`).
+- [ ] Jurisprudencia a citar verificada en CENDOJ; referencias de bases privadas (Lefebvre, vLex, Iberley, Sepin) contrastadas contra el CGPJ.

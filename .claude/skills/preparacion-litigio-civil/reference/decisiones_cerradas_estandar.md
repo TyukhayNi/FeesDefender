@@ -51,6 +51,18 @@
 - Si hay material útil de origen letrado, recabar consentimiento o sustituir por fuente alternativa (acta notarial, correo cruzado con la parte directamente, etc.).
 - Revisión obligatoria del índice documental antes de cerrar cualquier escrito.
 
+## Anclaje a fuente (source-locked) y verificación
+
+> Convivencia obligatoria con la skill `verificacion-anclada-fuente` en la fijación de Hechos.
+
+- Anclaje a fuente OBLIGATORIO en la fijación de Hechos. Ningún Hecho se afirma como cierto si no consta en la documental aportada o en fuente verificada. Prohibido inferir parentescos, relaciones, intenciones, conocimiento o relación causal que el documento no sostenga literalmente.
+- Cada Hecho lleva un estado de anclaje:
+  - a) 🟢 **anclado** — con cita precisa al documento (`[Doc. NN, p. X / cláusula / antecedente]`);
+  - b) 🟡 **pendiente de soporte** — alegado pero sin documento cerrado todavía; obligatorio indicar el medio de prueba previsto (testifical, pericial, documento a recabar, interrogatorio);
+  - c) 🔴 **vetado** — inferencia no soportada; se reformula o se descarta, no se alega como hecho.
+- Los Hechos 🟡 son legítimos en lo civil (se prueban después), pero quedan a la vista en el mapa de prueba del `PREPARACION_X.md`; nunca ocultos.
+- Jurisprudencia: toda resolución que se vaya a citar se verifica en CENDOJ antes de cerrar la preparación. Las referencias de bases privadas (Lefebvre El Derecho, vLex, Iberley, Sepin) se contrastan contra el texto oficial del CGPJ (encadenar con `cendoj-descarga`).
+
 ## Comunicaciones con clientes
 
 - Ruso para clientes de origen ex-URSS (Federación Rusa, Kazajistán, Ucrania, países Bálticos, etc.) salvo indicación contraria.

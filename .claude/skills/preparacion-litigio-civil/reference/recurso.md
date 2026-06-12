@@ -53,6 +53,10 @@ OTROSÍES
 - **Formato**: criterios formales Sala 1.ª TS (los mismos del despacho como estándar general).
 - **Extensión**: el TS ha endurecido el control. Máximo recomendable real: 25 páginas, con justificación si se excede.
 
+## Anclaje a fuente en recurso
+
+En recurso no se introducen hechos nuevos: los hechos vienen fijados por las actuaciones y por la resolución recurrida. El anclaje a fuente (convivencia con `verificacion-anclada-fuente`) se refiere aquí a la **sentencia recurrida, los autos y el acta** —no a documental de parte de nueva aportación—, por lo que el estado 🟡 (pendiente de soporte) prácticamente no aplica, salvo la prueba excepcional admisible en segunda instancia ex art. 460 LEC. La jurisprudencia que se cite (la propia y la invocada en la resolución recurrida) se verifica en CENDOJ antes del cierre (encadenar `cendoj-descarga`).
+
 ## Riesgos típicos
 
 - **Motivos confundidos con argumentos**: cada motivo es una causa autónoma; no agrupar.
