@@ -40,6 +40,7 @@ from core.sudespacho_relations import (
     verify_expediente_referencia,
     _extract_w_code,
     _rest_search_por_texto,
+    _rest_search_num_serie,
 )
 
 
@@ -1306,6 +1307,51 @@ def test_rest_texto_elemento_desconocido_devuelve_vacio(_api_key):
 
 def test_rest_texto_termino_vacio_devuelve_vacio(_api_key):
     assert _rest_search_por_texto("expedientes_judiciales", "   ") == []
+
+
+# --- _rest_search_num_serie (nº interno del despacho "63/2024") ----------
+
+def test_rest_num_serie_equal_y_casa_serie(_api_key):
+    captured: dict = {}
+
+    def _capturing_get(url, *, params, headers, timeout):
+        captured["params"] = params
+        # El CRM devuelve los expedientes con num=63 (uno por serie).
+        return _mock_get_response(_items_multi(
+            ("605", {"num_expediente": "63", "serie_expediente": "2025",
+                     "referencia_cliente": "SaRS1 - Pérez Galdós (W-02ET8N)"}),
+            ("487", {"num_expediente": "63", "serie_expediente": "2024",
+                     "referencia_cliente": "BaRS3 - Torrent 41 (W-02MA0R)",
+                     "referencia_procurador": "P-2025/3447"}),
+            ("406", {"num_expediente": "63", "serie_expediente": "2023-n",
+                     "referencia_cliente": "MaRS1 - Velazquez 54 (W-02PLYH)"}),
+        ))
+
+    with patch("core.sudespacho_relations.httpx.get", side_effect=_capturing_get):
+        out = _rest_search_num_serie("63", "2024")
+
+    p = captured["params"]
+    assert ("filterGroup[filterGroups][0][filters][0][operator]", "equal") in p
+    assert ("filterGroup[filterGroups][0][filters][0][value]", "63") in p
+    assert ("filterGroup[filterGroups][0][filters][0][property]", "num_expediente") in p
+    assert out == [{"id": "487",
+                    "label": "BaRS3 - Torrent 41 (W-02MA0R)  ·  P-2025/3447"}]
+
+
+def test_rest_num_serie_tolera_sufijo_de_serie(_api_key):
+    """El usuario teclea el año; el CRM guarda '2023-n' → casa por prefijo."""
+    with patch("core.sudespacho_relations.httpx.get",
+               return_value=_mock_get_response(_items_multi(
+                   ("406", {"num_expediente": "63", "serie_expediente": "2023-n",
+                            "referencia_cliente": "MaRS1 - Velazquez (W-02PLYH)"}),
+               ))):
+        out = _rest_search_num_serie("63", "2023")
+    assert out == [{"id": "406", "label": "MaRS1 - Velazquez (W-02PLYH)"}]
+
+
+def test_rest_num_serie_sin_api_key_vacio(monkeypatch):
+    monkeypatch.setenv("SUDESPACHO_API_KEY", "")
+    assert _rest_search_num_serie("63", "2024") == []
 
 
 def test_rest_texto_http_500_devuelve_vacio(_api_key):

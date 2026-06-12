@@ -452,6 +452,57 @@ def _rest_search_por_texto(element: str, term: str, *, limit: int = 50) -> list[
     ]
 
 
+def _norm_serie_local(s: Any) -> str:
+    """Normaliza una serie para comparar: sin espacios, minúscula.
+
+    El CRM guarda el sufijo de subserie de forma inconsistente ('2023-n',
+    '2022 - p'); el usuario teclea el año a secas. (Misma semántica que
+    ``procurador_intake._norm_serie``, reimplementada aquí para evitar el ciclo
+    de import procurador_intake ↔ sudespacho_relations.)
+    """
+    return re.sub(r"\s+", "", str(s)).lower()
+
+
+def _rest_search_num_serie(num: str, serie: str, *, limit: int = 50) -> list[dict[str, str]]:
+    """Busca expedientes JUDICIALES por nº interno del despacho (num/serie).
+
+    El ``num_expediente`` se repite por serie (uno por año), así que se filtra
+    ``equal num_expediente`` en servidor y se casa la serie en cliente
+    (normalizada, por prefijo: el CRM guarda '2023-n', el usuario teclea '2023').
+    Para el combobox F2.
+
+    Returns:
+        Lista ``[{"id","label"}]``. Nunca lanza ([] ante api-key ausente / CRM
+        no accesible).
+    """
+    num = str(num).strip()
+    if not num:
+        return []
+    url = f"{_REST_BASE}/api/element_registries/expedientes_judiciales"
+    params: list[tuple[str, str]] = [
+        ("properties[0]", "referencia_cliente"),
+        ("properties[1]", "referencia_procurador"),
+        ("properties[2]", "num_expediente"),
+        ("properties[3]", "serie_expediente"),
+        ("filterGroup[condition]", "AND"),
+        ("filterGroup[filterGroups][0][condition]", "AND"),
+        ("filterGroup[filterGroups][0][filters][0][operator]", "equal"),
+        ("filterGroup[filterGroups][0][filters][0][value]", num),
+        ("filterGroup[filterGroups][0][filters][0][property]", "num_expediente"),
+        ("itemsPerPage", str(limit)),
+        ("return_totals", "true"),
+    ]
+    target = _norm_serie_local(serie)
+    out: list[dict[str, str]] = []
+    for it in _rest_get_items(url, params):
+        vals = _values_dict(it)
+        crm_serie = _norm_serie_local(vals.get("serie_expediente", ""))
+        if target and not crm_serie.startswith(target):
+            continue
+        out.append({"id": str(it.get("id", "")), "label": _label_expediente(vals)})
+    return out
+
+
 def _find_expediente_rest(element: str, referencia_cliente: str) -> str | None:
     """Devuelve el ID del expediente cuya referencia coincide EXACTAMENTE.
 
