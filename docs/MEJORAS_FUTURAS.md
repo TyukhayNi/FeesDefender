@@ -1066,3 +1066,10 @@ solicitud_prueba, conclusiones, interrogatorio, orden_vista, cuadro_hechos); y
 
 **Prioridad.** Media — el registro ya funciona end-to-end desde las skills; esto
 mejora la lectura del expediente desde el core. Implementación: Claude Code.
+
+---
+
+## 31. Combobox F2 — búsqueda por contrario y por nº de autos (`num_asunto`)
+
+- **Combobox F2 — búsqueda por contrario:** bloqueada por API (sin ruta REST inversa contrario→expedientes, 405; ver DEAD_ENDS). Reabrir solo si aparece endpoint inverso o se decide scraping del frontal legacy. Disparador: caso real que lo necesite.
+- **Combobox F2 — búsqueda por nº de autos (`num_asunto`):** trivial de añadir a `_SEARCH_PROPS_BY_ELEMENT` cuando el campo deje de estar vacío en el tenant. Disparador: que se empiece a poblar `num_asunto`.

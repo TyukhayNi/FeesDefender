@@ -20,7 +20,7 @@
 - **Impacto:** `find_expediente_by_referencia` / `find_expediente_judicial_by_referencia` (antes `_find_expediente_robust` → `_autocomplete`) **no funcionaban contra el CRM real**; sus tests pasaban solo porque mockeaban la respuesta del autocomplete.
 - **Solución:** buscar por referencia vía REST `GET /api/element_registries/{element}` con filtro `operator=like, property=<referencia>, value=<W-code>` (x-api-key, sin PHPSESSID). El operador `contains` da 404; `like` funciona.
 - **✅ RESUELTO (2026-06-12):** `find_expediente_by_referencia` (extrajudicial, property `Referencia_Cliente` CamelCase) y `find_expediente_judicial_by_referencia` (judicial, `referencia_cliente`) migradas al helper REST común `_rest_search_expedientes()` (devuelven el candidato con match exacto normalizado; `client` ignorado por compat, ya no lanzan: CRM caído → `None`). `list_expedientes_judiciales_candidatos()` delega también en él (devuelve TODOS los candidatos del W-code). Tests reescritos para mockear `httpx.get`. `_find_expediente_robust` retirado; `_autocomplete` se conserva (lo usa `procurador_search.search_expedientes`, ver nota siguiente).
-- **⚠️ Pendiente relacionado:** `core.procurador_search.search_expedientes` (combobox F2 §18.6) sigue usando `_autocomplete` sobre expedientes → afectado por el MISMO body-vacío. Migrar a `_rest_search_expedientes` cuando se aborde la UI de F2.
+- **✅ Resuelto (2026-06-12):** `core.procurador_search.search_expedientes` migrado a REST (`_rest_search_por_texto` + `_rest_search_num_serie`). Ver plan `docs/superpowers/plans/2026-06-12-search-expedientes-rest.md`.
 
 ---
 
@@ -311,6 +311,10 @@
 - **Confirmado:** 2026-06-12 (s39, intake procuradores F1).
 - **Causa raíz:** la API de `element_registries` no expone operadores de subcadena/like; solo `equal`/`not-equal` (y comparadores numéricos). Problema real: `serie_expediente` guarda el sufijo de subserie de forma INCONSISTENTE en el CRM (`"2023-n"`, `"2021-p"`, pero también `"2022 - n"` con espacios), así que un `equal` exacto sobre el valor esperado falla.
 - **Conclusión:** para casar campos con formato inconsistente, filtrar server-side por el campo exacto y estable disponible (aquí `num_expediente`, equal int — devuelve pocas filas, una por año) y **comparar el resto en cliente con normalización** (`core.procurador_intake._norm_serie`: minúscula + sin espacios). Implementado en `_search_by_num_serie`.
+
+### Búsqueda de expedientes por `num_asunto` (autos) y por contrario — sin datos / sin ruta
+- **`num_asunto` (nº de autos):** el operador `like` se acepta (HTTP 200) pero el campo está **vacío en todo el tenant** (total=0 incluso con `like ~ "20"`, probe 2026-06-12). Buscar por autos no devuelve nada hoy. El día que se pueble, `_rest_search_por_texto` podría añadirlo a `_SEARCH_PROPS_BY_ELEMENT["expedientes_judiciales"]`.
+- **Contrario → expedientes (relación inversa):** el contrario es elemento relacionado (`clientes_contrarios`), NO property del expediente. `element_registries/clientes_contrarios` con `properties[0]=nombre` sí lista (total=1083), pero NO hay ruta REST para ir del contrario a sus expedientes: `GET /api/relation_element/...` → 405 (solo POST/PUT/DELETE); el JSON del expediente no trae relaciones embebidas. Buscar por contrario exigiría frontal legacy (roto: autocomplete vacío) o un endpoint inverso inexistente. **Confirmado 2026-06-12.**
 
 ---
 
