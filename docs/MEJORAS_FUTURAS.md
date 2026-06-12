@@ -1039,3 +1039,30 @@ catálogo `[SIGUIENTE-CATALOGO-DOCUMENTAL]`** (decisión de Nikolai: no construi
 el catálogo a medias). Cuando exista `indice_documental.yaml`, conectar
 `log_bundle_proposals` → escritura de `parent_id` para las propuestas de alta
 confianza.
+
+---
+
+## 30. El core reconoce el manifiesto `<subdir>/_index.md` y resuelve los wikilinks de Navegación
+
+**Disparador.** Las skills procesales (`escritos-judiciales`, `cendoj-descarga`,
+`preparacion-audiencia-previa`, `preparacion-juicio-oral`) ya escriben work-product
+en las subcarpetas del expediente y lo registran con el helper canónico
+`.claude/skills/_shared/registrar_outputs.py`: (a) un manifiesto `<destino>/_index.md`
+(p. ej. `05_Procedimiento/_index.md`, `05_Procedimiento/Jurisprudencia/_index.md`,
+`04_Output predemanda/_index.md`) y (b) wikilinks en la sección `## Navegación` de
+`00_Input/_caso.md`. Hoy el core (`case_manager`/`linker`) **no lee** esos manifiestos
+ni resuelve esos wikilinks de forma general.
+
+**Pendiente.** Que el core: (i) reconozca y liste `<subdir>/_index.md` al inventariar
+el expediente (no solo `05_Procedimiento`, sino cualquier subdir de `CASO_SUBDIRS`);
+(ii) resuelva los wikilinks de `## Navegación` para todos los `tipo` registrados
+(demanda, contestación, recurso, requerimiento, jurisprudencia, minuta_ap,
+solicitud_prueba, conclusiones, interrogatorio, orden_vista, cuadro_hechos); y
+(iii) decida si el manifiesto se normaliza a `_index.json` para consumo programático.
+
+**Relación.** Generaliza el aviso de la skill de audiencia previa
+(`references/manifiesto_y_registro.md`), que ya pedía esto solo para
+`05_Procedimiento`. Sustituye/absorbe ese aviso puntual.
+
+**Prioridad.** Media — el registro ya funciona end-to-end desde las skills; esto
+mejora la lectura del expediente desde el core. Implementación: Claude Code.
