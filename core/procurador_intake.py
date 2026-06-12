@@ -69,7 +69,7 @@ class IntakeSignals:
     """Señales extraídas de un correo por el LLM."""
     su_ref: str | None = None          # "13/2026" → num_expediente/serie
     num_expediente: int | None = None  # extraído de su_ref
-    serie_expediente: int | None = None
+    serie_expediente: str | None = None  # año, con sufijo de subserie si lo hay ("2023-n")
     contrario: str | None = None
     cliente: str | None = None
     juzgado: str | None = None
@@ -221,23 +221,38 @@ Campos:
   diligencia de ordenación, providencia, cédula, oficio, mandamiento, escrito,
   recurso, acta, tasación de costas, testimonio, notificación, grabación, otros).
 - fecha_actuacion: fecha de la actuación/resolución en formato ISO (YYYY-MM-DD).
-- es_ruido: true si el correo NO contiene ninguna actuación ni documento
-  procesal que archivar (recordatorios genéricos, publicidad, alertas automáticas).
+- es_ruido: true SOLO si el correo no tiene contenido procesal en absoluto
+  (publicidad, newsletters, alertas automáticas de Google/sistemas, cortesía sin
+  trámite). Cualquier comunicación que reporte un trámite, resolución o documento
+  (auto, sentencia, decreto, diligencia, providencia, traslado, acuse, escrito,
+  justificante, notificación, requerimiento) NO es ruido, AUNQUE el trámite sea
+  negativo o meramente informativo (p. ej. "traslado del acuse negativo", "se
+  remite al nuevo domicilio", "resguardo de presentación").
 
 Responde SOLO con JSON, sin texto adicional."""
 
 
-def _parse_su_ref(su_ref: str | None) -> tuple[int | None, int | None]:
-    """Extrae num_expediente y serie_expediente de una Su ref como '13/2026'."""
+def _parse_su_ref(su_ref: str | None) -> tuple[int | None, str | None]:
+    """Extrae num_expediente y serie_expediente de una Su ref como '13/2026'.
+
+    La serie puede llevar sufijo de subserie ('-N', '-P', '-E'). El CRM lo
+    almacena DENTRO de serie_expediente, en minúscula (p. ej. '2023-n'), así que
+    se conserva: si se descartara, el match por num+serie devolvería 0 (la
+    búsqueda exacta no encontraría '2023' cuando el valor real es '2023-n').
+    Devuelve la serie como string en el formato del CRM.
+    """
     if not su_ref:
         return None, None
-    m = re.match(r"(\d+)\s*/\s*(\d{2,4})", su_ref.strip())
+    m = re.match(r"(\d+)\s*/\s*(\d{2,4})\s*(-\s*[A-Za-z])?", su_ref.strip())
     if not m:
         return None, None
     num = int(m.group(1))
-    serie = int(m.group(2))
-    if serie < 100:
-        serie += 2000
+    year = int(m.group(2))
+    if year < 100:
+        year += 2000
+    serie = str(year)
+    if m.group(3):
+        serie += m.group(3).replace(" ", "").lower()
     return num, serie
 
 
@@ -351,7 +366,7 @@ def _check_signal_matches(
     matches = []
     if signals.num_expediente and str(signals.num_expediente) == str(exp_data.get("num_expediente", "")):
         matches.append("num_expediente")
-    if signals.serie_expediente and str(signals.serie_expediente) == str(exp_data.get("serie_expediente", "")):
+    if signals.serie_expediente and str(signals.serie_expediente).lower() == str(exp_data.get("serie_expediente", "")).lower():
         matches.append("serie_expediente")
     if signals.juzgado and exp_data.get("juzgado"):
         if _juzgado_match(signals.juzgado, str(exp_data["juzgado"])):
@@ -401,11 +416,14 @@ def match_expediente(
 
     Estrategia:
     1. Si hay su_ref → buscar por num+serie. Match único = alta.
-    2. Si no hay su_ref o falla → resultado 'ninguna' (respaldo multi-señal futuro).
-    """
-    if signals.es_ruido:
-        return MatchResult(confianza="ninguna", senales_usadas=["es_ruido"])
+    2. Si no hay su_ref → 'ninguna' (es_ruido si el LLM lo marcó, si no sin_su_ref).
 
+    `es_ruido` es ADVISORY, no un bloqueo: si hay una su_ref que resuelve a un
+    expediente, el correo pertenece a él (basta relacionarlo) y la red de
+    seguridad lo confirma a mano. Solo suprime cuando NO hay su_ref utilizable
+    (recordatorios sin documento, publicidad). Así un falso positivo de ruido no
+    descarta silenciosamente un correo con su_ref válida.
+    """
     owns_client = sudo_client is None
     if owns_client:
         sudo_client = SudespachoClient()
@@ -420,11 +438,14 @@ def match_expediente(
             if len(results) == 1:
                 exp = results[0]
                 matches = _check_signal_matches(signals, exp)
+                senales = ["su_ref"] + matches
+                if signals.es_ruido:
+                    senales.append("es_ruido_advisory")
                 return MatchResult(
                     expediente_id=exp["id"],
                     confianza="alta",
                     datos_expediente=exp,
-                    senales_usadas=["su_ref"] + matches,
+                    senales_usadas=senales,
                 )
             elif len(results) > 1:
                 return MatchResult(
@@ -438,6 +459,9 @@ def match_expediente(
                     senales_usadas=["su_ref_sin_match"],
                 )
 
+        # Sin su_ref utilizable
+        if signals.es_ruido:
+            return MatchResult(confianza="ninguna", senales_usadas=["es_ruido"])
         return MatchResult(confianza="ninguna", senales_usadas=["sin_su_ref"])
     finally:
         if owns_client:

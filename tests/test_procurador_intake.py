@@ -67,16 +67,23 @@ class TestIsProcuradorEmail:
 
 class TestParseSuRef:
     def test_standard(self):
-        assert _parse_su_ref("13/2026") == (13, 2026)
+        assert _parse_su_ref("13/2026") == (13, "2026")
 
     def test_short_year(self):
-        assert _parse_su_ref("19/25") == (19, 2025)
+        assert _parse_su_ref("19/25") == (19, "2025")
 
     def test_spaces(self):
-        assert _parse_su_ref("  13 / 2026  ") == (13, 2026)
+        assert _parse_su_ref("  13 / 2026  ") == (13, "2026")
 
     def test_suffix(self):
-        assert _parse_su_ref("152/2021-P") == (152, 2021)
+        # El sufijo de subserie va DENTRO de serie, en minúscula (formato CRM)
+        assert _parse_su_ref("152/2021-P") == (152, "2021-p")
+
+    def test_suffix_short_year(self):
+        assert _parse_su_ref("34/23-N") == (34, "2023-n")
+
+    def test_suffix_with_spaces(self):
+        assert _parse_su_ref("23 / 2023 - N") == (23, "2023-n")
 
     def test_none(self):
         assert _parse_su_ref(None) == (None, None)
@@ -86,7 +93,7 @@ class TestParseSuRef:
 
     def test_three_digit_year(self):
         # Caso improbable pero no rompe
-        assert _parse_su_ref("5/026") == (5, 2026)
+        assert _parse_su_ref("5/026") == (5, "2026")
 
 
 # ---------------------------------------------------------------------------
@@ -216,7 +223,7 @@ class TestLooksLikeLogo:
 class TestCheckSignalMatches:
     def test_full_match(self):
         signals = IntakeSignals(
-            num_expediente=13, serie_expediente=2026,
+            num_expediente=13, serie_expediente="2026",
             juzgado="Juzgado 1ª Instancia nº 3 Barcelona",
             num_asunto="456/2025",
             tipo_procedimiento="ordinario",
@@ -236,12 +243,19 @@ class TestCheckSignalMatches:
         assert "tipo_procedimiento" in matches
 
     def test_partial_match(self):
-        signals = IntakeSignals(num_expediente=13, serie_expediente=2026)
+        signals = IntakeSignals(num_expediente=13, serie_expediente="2026")
         exp_data = {"num_expediente": "13", "serie_expediente": "2026"}
         matches = _check_signal_matches(signals, exp_data)
         assert "num_expediente" in matches
         assert "serie_expediente" in matches
         assert "juzgado" not in matches
+
+    def test_serie_con_sufijo(self):
+        # serie con subserie debe casar contra el valor del CRM ('2023-n')
+        signals = IntakeSignals(num_expediente=34, serie_expediente="2023-n")
+        exp_data = {"num_expediente": "34", "serie_expediente": "2023-n"}
+        matches = _check_signal_matches(signals, exp_data)
+        assert "serie_expediente" in matches
 
 
 # ---------------------------------------------------------------------------
@@ -265,7 +279,7 @@ class TestExtractSignals:
         signals = extract_signals("Notificación exp 13/2026", "Cuerpo del correo")
         assert signals.su_ref == "13/2026"
         assert signals.num_expediente == 13
-        assert signals.serie_expediente == 2026
+        assert signals.serie_expediente == "2026"
         assert signals.contrario == "PEREZ GARCIA"
         assert not signals.es_ruido
 
@@ -294,7 +308,7 @@ class TestExtractSignals:
 class TestMatchExpediente:
     def test_alta_confianza(self):
         signals = IntakeSignals(
-            su_ref="13/2026", num_expediente=13, serie_expediente=2026,
+            su_ref="13/2026", num_expediente=13, serie_expediente="2026",
         )
         mock_client = MagicMock()
         mock_response = MagicMock()
@@ -316,7 +330,7 @@ class TestMatchExpediente:
 
     def test_sin_match(self):
         signals = IntakeSignals(
-            su_ref="99/2099", num_expediente=99, serie_expediente=2099,
+            su_ref="99/2099", num_expediente=99, serie_expediente="2099",
         )
         mock_client = MagicMock()
         mock_response = MagicMock()
@@ -328,11 +342,59 @@ class TestMatchExpediente:
         assert result.confianza == "ninguna"
         assert result.expediente_id is None
 
-    def test_ruido_skip(self):
+    def test_ruido_sin_su_ref(self):
+        # es_ruido SIN su_ref utilizable → ninguna (no se busca en CRM)
         signals = IntakeSignals(es_ruido=True)
         result = match_expediente(signals, sudo_client=MagicMock())
         assert result.confianza == "ninguna"
-        assert "es_ruido" in result.senales_usadas
+        assert result.senales_usadas == ["es_ruido"]
+
+    def test_ruido_advisory_con_su_ref(self):
+        # es_ruido es ADVISORY: si hay su_ref que resuelve, igual da ALTA
+        signals = IntakeSignals(
+            su_ref="13/2026", num_expediente=13, serie_expediente="2026",
+            es_ruido=True,
+        )
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "items": [{
+                "id": 444,
+                "values": [
+                    {"property": {"name": "num_expediente"}, "value": "13"},
+                    {"property": {"name": "serie_expediente"}, "value": "2026"},
+                ],
+            }],
+        }
+        mock_client._client.get.return_value = mock_response
+        result = match_expediente(signals, sudo_client=mock_client)
+        assert result.confianza == "alta"
+        assert result.expediente_id == 444
+        assert "es_ruido_advisory" in result.senales_usadas
+
+    def test_suffix_serie_match(self):
+        # su_ref con sufijo: busca por serie '2023-n' y casa el expediente real
+        signals = IntakeSignals(
+            su_ref="34/2023-N", num_expediente=34, serie_expediente="2023-n",
+        )
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "items": [{
+                "id": 376,
+                "values": [
+                    {"property": {"name": "num_expediente"}, "value": "34"},
+                    {"property": {"name": "serie_expediente"}, "value": "2023-n"},
+                ],
+            }],
+        }
+        mock_client._client.get.return_value = mock_response
+        result = match_expediente(signals, sudo_client=mock_client)
+        assert result.confianza == "alta"
+        assert result.expediente_id == 376
+        assert "serie_expediente" in result.senales_usadas
 
     def test_sin_su_ref(self):
         signals = IntakeSignals()
