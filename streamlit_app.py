@@ -2347,10 +2347,14 @@ with tab_bandeja:
                     st.markdown("**Datos detectados en el correo**")
                     st.json(detectados, expanded=False)
 
-            # --- Expediente + checks verdes ---
+            # --- Expediente + checks verdes (persistiendo la reasignacion del combobox) ---
             exp_id = prop.expediente_id
-            datos = dict(prop.datos_expediente or {})
-            coincidencias = list(prop.coincidencias or [])
+            _kexp = f"sel_exp_{item.email_id}"
+            _kdat = f"sel_datos_{item.email_id}"
+            _kco = f"sel_coin_{item.email_id}"
+            sel_exp_id = st.session_state.get(_kexp, exp_id)
+            datos = st.session_state.get(_kdat, dict(prop.datos_expediente or {}))
+            coincidencias = st.session_state.get(_kco, list(prop.coincidencias or []))
 
             if prop.confianza == "alta" and exp_id:
                 st.success(f"Expediente #{exp_id} — {len(coincidencias)} datos coinciden")
@@ -2368,11 +2372,11 @@ with tab_bandeja:
                 cambiar = True
 
             # --- Combobox de busqueda (reasignacion) — REST x-api-key, no caduca ---
-            sel_exp_id = exp_id
             if cambiar:
                 elemento = st.selectbox(
                     "Buscar en", _ps.ELEMENTOS_BUSCABLES,
                     key=f"elem_{item.email_id}",
+                    help="Tipo de expediente donde buscar: judicial (lo habitual) o extrajudicial.",
                 )
                 term = st.text_input(
                     "Buscar expediente (nombre del caso / ref del procurador / nº/AÑO)",
@@ -2387,16 +2391,19 @@ with tab_bandeja:
                             key=f"cand_{item.email_id}",
                         )
                         if st.button("Usar este expediente", key=f"use_{item.email_id}"):
-                            sel_exp_id = int(etiqueta["id"])
-                            datos = _ps.fetch_expediente_datos(sel_exp_id, element=elemento)
-                            coincidencias = _ps.recompute_coincidencias(sig, datos)
-                            st.success(f"Expediente #{sel_exp_id}: {len(coincidencias)} coinciden")
+                            _new = int(etiqueta["id"])
+                            _ndatos = _ps.fetch_expediente_datos(_new, element=elemento)
+                            st.session_state[_kexp] = _new
+                            st.session_state[_kdat] = _ndatos
+                            st.session_state[_kco] = _ps.recompute_coincidencias(sig, _ndatos)
+                            st.rerun()
                     else:
                         st.caption("Sin candidatos para ese termino (o CRM no disponible).")
 
             # --- Carpeta destino ---
             carpeta_id = st.number_input("Carpeta destino (id)", value=int(prop.carpeta_id or 0),
-                                         step=1, key=f"carp_{item.email_id}")
+                                         step=1, key=f"carp_{item.email_id}",
+                                         help="Id de la carpeta del gestor documental donde se archivara (0 = por defecto).")
 
             # --- Acciones ---
             puede_confirmar = sel_exp_id is not None
@@ -2412,6 +2419,8 @@ with tab_bandeja:
                 nuevo = _pr.transicionar(item, "confirmar")
                 _pr.upsert_queue_item(nuevo)
                 st.toast(f"Confirmado (dry-run): {item.email_id}")
+                for _k in (_kexp, _kdat, _kco):
+                    st.session_state.pop(_k, None)
                 st.rerun()
             if col_no.button("Descartar", key=f"no_{item.email_id}"):
                 action = _pr.HumanAction(tipo="descartar")
@@ -2419,6 +2428,8 @@ with tab_bandeja:
                 nuevo = _pr.transicionar(item, "descartar", motivo="descartado_humano")
                 _pr.upsert_queue_item(nuevo)
                 st.toast(f"Descartado: {item.email_id}")
+                for _k in (_kexp, _kdat, _kco):
+                    st.session_state.pop(_k, None)
                 st.rerun()
 
     # --- Vista Descartados (baja prioridad, colapsada) ---
@@ -2427,11 +2438,12 @@ with tab_bandeja:
         if not descartados:
             st.caption("Nada descartado.")
         for item in descartados:
-            cols = st.columns([3, 2, 2, 1])
+            cols = st.columns([3, 2, 2, 2, 1])
             cols[0].write(item.asunto or "(sin asunto)")
             cols[1].write(item.remitente or "")
-            cols[2].write(item.motivo_descarte or "")
-            if cols[3].button("Recuperar", key=f"rec_{item.email_id}"):
+            cols[2].write(item.fecha or "")
+            cols[3].write(item.motivo_descarte or "")
+            if cols[4].button("Recuperar", key=f"rec_{item.email_id}"):
                 nuevo = _pr.transicionar(item, "recuperar")
                 _pr.upsert_queue_item(nuevo)
                 st.toast(f"Recuperado a bandeja: {item.email_id}")

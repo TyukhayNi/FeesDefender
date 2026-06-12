@@ -109,6 +109,7 @@ def fetch_expediente_datos(
     ``{}`` si no hay resultado o el CRM responde != 200 (la tarjeta degrada, no
     rompe). Solo lectura.
     """
+    element = _normalize_element(element)
     owns = client is None
     if owns:
         client = SudespachoClient()

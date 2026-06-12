@@ -196,3 +196,14 @@ def test_recompute_coincidencias_parcial():
 def test_recompute_coincidencias_sin_datos():
     """datos_expediente vacío → sin coincidencias (no rompe)."""
     assert recompute_coincidencias({"num_expediente": 13}, {}) == []
+
+
+def test_fetch_expediente_datos_normaliza_element():
+    """element 'expedientes_extrajudiciales' se normaliza al slug del registry."""
+    client = MagicMock()
+    client.__exit__ = MagicMock(return_value=False)
+    client._client.get.return_value = _mock_get({"hydra:member": []})
+    fetch_expediente_datos(5, element="expedientes_extrajudiciales", client=client)
+    path = client._client.get.call_args[0][0]
+    assert "extrajudiciales" in path
+    assert "expedientes_extrajudiciales" not in path
