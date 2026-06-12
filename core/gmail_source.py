@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from .procurador_intake import extract_signals, match_expediente
-from .procurador_runner import EmailMessage, run_intake
+from .procurador_runner import EmailMessage, ReviewItem, run_intake
 
 # Tokens del MCP gmail-ro (reutilizados; formato google-auth).
 GMAIL_TOKENS_DIR = Path.home() / ".gmail-mcp" / "tokens"
@@ -160,13 +160,14 @@ def fetch_and_run(
     match_fn=match_expediente,
     llm_config=None,
     sudo_client=None,
-) -> list[EmailMessage]:
+) -> list[ReviewItem]:
     """Robot de ingesta (§3): trae de todos los buzones, combina y puebla la cola.
 
     Combina los correos de todas las cuentas en un único lote y llama a
     ``run_intake`` UNA vez, de modo que el dedup §4 colapsa el mismo Message-ID
     recibido en varios buzones. **Dry-run:** no toca el CRM.
 
+    Devuelve los ``ReviewItem`` producidos por ``run_intake`` en esta ejecución.
     ``fetch_fn`` se inyecta en tests; en producción es ``fetch_emails`` (red).
     """
     todos: list[EmailMessage] = []

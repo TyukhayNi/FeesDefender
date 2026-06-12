@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from core.procurador_runner import EmailMessage, ReviewItem
+from core.procurador_runner import ReviewItem
 from core.procurador_review import RobotProposal
 from scripts.intake_procuradores import resumen_recuentos
 
