@@ -47,11 +47,16 @@ serie=año). **RGPD — excepción acotada SOLO a este flujo:** usa LLM cloud UE
   ~€0.10/mes. Tests +77; suite **853 passed, 58 skipped**. **Commits `f904d72`,
   `6a811ef`** (F1 base + fix match por su_ref con sufijo de subserie y `es_ruido`
   advisory).
-- **F2 — Bandeja (Streamlit).** ⬜ SIGUIENTE. Las 3 tarjetas (🟢 alta / 🟡 dudoso /
-  🔴 sin expediente) + login por persona + log de auditoría; confirmaciones dry-run.
-  **⚠️ Requisito duro (doc §18.9):** el log debe nacer capturando la terna
-  *propuesta-robot vs. acción-confirmada vs. quién-y-cuándo* por ítem — es lo que
-  alimenta el check 2 (F6). Diseñarlo en el modelo de datos, no atornillarlo después.
+- **F2 — Bandeja (Streamlit).** 🔶 BACKEND ✅ / UI ⬜. **Backend completo (s40, dry-run, TDD):**
+  `core/procurador_review.py` (terna §18.9 + divergencia + log auditoría + máquina de
+  estados de cola + store de cola), `core/procurador_runner.py` (process_email +
+  run_intake, enrutado §6, dedup §4), `core/gmail_source.py` (adaptador Gmail
+  verificado live read-only). Commits `a80afeb`/`00ee3b8`/`7b03759`/`3bedb22`/`95082f1`.
+  El **requisito duro §18.9** quedó cumplido: la terna se captura en `record_decision`.
+  **Pendiente:** la **UI Streamlit** (pestaña "Bandeja": 3 tarjetas 🟢/🟡/🔴 + login por
+  persona `set_actor` + acciones→`transicionar`/`record_decision`/`upsert_queue_item` +
+  vista Descartados) — orquesta el core, sin lógica nueva. Y un CLI/scheduler thin que
+  llame a `fetch_and_run` periódicamente (§3).
 - **F3 — Escritura en el CRM.** ⬜ Resolver auth nest-mail (x-api-key vs JWT);
   relate + adjuntar en expediente de prueba. Mismo requisito de traza que F2.
 - **F4 — Renombrado + OCR + aprendizaje.** ⬜ Contenido del adjunto → nombre; store
