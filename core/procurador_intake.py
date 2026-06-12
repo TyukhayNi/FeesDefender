@@ -243,7 +243,7 @@ def _parse_su_ref(su_ref: str | None) -> tuple[int | None, str | None]:
     """
     if not su_ref:
         return None, None
-    m = re.match(r"(\d+)\s*/\s*(\d{2,4})\s*(-\s*[A-Za-z])?", su_ref.strip())
+    m = re.match(r"(\d+)\s*/\s*(\d{2,4})(.*)$", su_ref.strip(), re.DOTALL)
     if not m:
         return None, None
     num = int(m.group(1))
@@ -251,8 +251,11 @@ def _parse_su_ref(su_ref: str | None) -> tuple[int | None, str | None]:
     if year < 100:
         year += 2000
     serie = str(year)
-    if m.group(3):
-        serie += m.group(3).replace(" ", "").lower()
+    # Sufijo de subserie: una sola letra tras el año, separada por guion y/o
+    # espacios ('-N', ' N', ' - N'). Se canoniza a 'aaaa-x' (minúscula).
+    sm = re.match(r"\s*-?\s*([A-Za-z])(?![A-Za-z])", m.group(3))
+    if sm:
+        serie += "-" + sm.group(1).lower()
     return num, serie
 
 
@@ -310,14 +313,30 @@ _MATCH_PROPERTIES = (
 )
 
 
+def _norm_serie(s: Any) -> str:
+    """Normaliza una serie para comparar: minúscula, sin espacios.
+
+    El CRM guarda el sufijo de subserie de forma INCONSISTENTE ('2023-n',
+    '2021-p', pero también '2022 - n' con espacios). Y los procuradores lo
+    escriben '-N', ' N', ' - N'. Normalizar ambos lados a 'aaaa-x' permite casar.
+    """
+    return re.sub(r"\s+", "", str(s)).lower()
+
+
 def _search_by_num_serie(
     num: int,
-    serie: int,
+    serie: str,
     *,
     client: SudespachoClient,
     element: str = "expedientes_judiciales",
 ) -> list[dict[str, Any]]:
-    """Busca expedientes por num_expediente + serie_expediente vía element_registries."""
+    """Busca expedientes por num_expediente y casa la serie en cliente.
+
+    La API solo soporta `equal`/`not-equal` (no `contains`), y el CRM guarda la
+    serie con sufijo de forma inconsistente ('2022 - n'). Por eso se filtra por
+    num_expediente en el servidor (pocas filas: una por año) y se compara la
+    serie normalizada en cliente (ver `_norm_serie`).
+    """
     path = f"/api/element_registries/{element}"
     params: list[tuple[str, str]] = [
         ("properties[0]", "num_expediente"),
@@ -331,21 +350,19 @@ def _search_by_num_serie(
         ("filterGroup[filterGroups][0][filters][0][operator]", "equal"),
         ("filterGroup[filterGroups][0][filters][0][value]", str(num)),
         ("filterGroup[filterGroups][0][filters][0][property]", "num_expediente"),
-        ("filterGroup[filterGroups][0][filters][1][operator]", "equal"),
-        ("filterGroup[filterGroups][0][filters][1][value]", str(serie)),
-        ("filterGroup[filterGroups][0][filters][1][property]", "serie_expediente"),
-        ("itemsPerPage", "10"),
+        ("itemsPerPage", "50"),
         ("return_totals", "true"),
     ]
 
     r = client._client.get(path, params=params)
     if r.status_code != 200:
-        logger.warning("Búsqueda num/serie %d/%d → HTTP %d", num, serie, r.status_code)
+        logger.warning("Búsqueda num %s → HTTP %d", num, r.status_code)
         return []
 
     data = r.json()
     items = data.get("hydra:member", data.get("items", []))
 
+    target = _norm_serie(serie)
     results = []
     for item in items:
         exp_id = item.get("id")
@@ -354,7 +371,9 @@ def _search_by_num_serie(
             prop_name = (val_obj.get("property") or {}).get("name", "")
             if prop_name in _MATCH_PROPERTIES:
                 vals[prop_name] = val_obj.get("value")
-        results.append(vals)
+        # Filtro de serie en cliente (normalizado): tolera '2022 - n' vs '2022-n'
+        if _norm_serie(vals.get("serie_expediente", "")) == target:
+            results.append(vals)
     return results
 
 
@@ -366,7 +385,7 @@ def _check_signal_matches(
     matches = []
     if signals.num_expediente and str(signals.num_expediente) == str(exp_data.get("num_expediente", "")):
         matches.append("num_expediente")
-    if signals.serie_expediente and str(signals.serie_expediente).lower() == str(exp_data.get("serie_expediente", "")).lower():
+    if signals.serie_expediente and _norm_serie(signals.serie_expediente) == _norm_serie(exp_data.get("serie_expediente", "")):
         matches.append("serie_expediente")
     if signals.juzgado and exp_data.get("juzgado"):
         if _juzgado_match(signals.juzgado, str(exp_data["juzgado"])):

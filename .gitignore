@@ -31,7 +31,7 @@ data/CASOS/*
 *.anonmap.json
 
 # Intake procuradores — datasets/resultados con PII real (correos, contrarios)
-scripts/intake_batch_dataset.json
+scripts/intake_batch_dataset*.json
 data/_aprendizaje/intake_eval_*.json
 
 # Logs

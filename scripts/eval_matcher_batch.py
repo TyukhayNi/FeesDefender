@@ -28,8 +28,10 @@ from core.procurador_intake import (
 from core.sync_sudespacho import SudespachoClient
 
 ROOT = Path(__file__).resolve().parent.parent
-DATASET = ROOT / "scripts" / "intake_batch_dataset.json"
+# Dataset por defecto; admite override por argv[1] (p. ej. el lote dirigido B)
+DATASET = ROOT / "scripts" / (sys.argv[1] if len(sys.argv) > 1 else "intake_batch_dataset.json")
 OUT_DIR = ROOT / "data" / "_aprendizaje"
+OUT_TAG = sys.argv[2] if len(sys.argv) > 2 else "2026-06-12"
 
 
 def _su_ref_num_serie_ok(signals, em) -> bool:
@@ -152,11 +154,11 @@ def main() -> int:
 
     # --- Persistir ---
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    out = OUT_DIR / "intake_eval_2026-06-12.json"
+    out = OUT_DIR / f"intake_eval_{OUT_TAG}.json"
     out.write_text(
         json.dumps(
             {
-                "fecha": "2026-06-12",
+                "fecha": OUT_TAG,
                 "modelo": "mistral-small-3.2-24b-instruct-2506",
                 "n": n,
                 "alta": alta, "dudosa": dudosa, "ninguna": ninguna, "error": error,

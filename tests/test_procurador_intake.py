@@ -85,6 +85,14 @@ class TestParseSuRef:
     def test_suffix_with_spaces(self):
         assert _parse_su_ref("23 / 2023 - N") == (23, "2023-n")
 
+    def test_suffix_space_separated(self):
+        # AMS escribe el sufijo separado por espacio, sin guion
+        assert _parse_su_ref("1/2022 N") == (1, "2022-n")
+
+    def test_no_false_suffix(self):
+        # texto tras la referencia no debe capturarse como sufijo
+        assert _parse_su_ref("33/2024 NEXOLUB") == (33, "2024")
+
     def test_none(self):
         assert _parse_su_ref(None) == (None, None)
 
@@ -395,6 +403,55 @@ class TestMatchExpediente:
         assert result.confianza == "alta"
         assert result.expediente_id == 376
         assert "serie_expediente" in result.senales_usadas
+
+    def test_serie_crm_con_espacios(self):
+        # CRM guarda '2022 - n' (con espacios); su_ref '1/2022 N' → serie '2022-n'.
+        # El filtro de serie en cliente debe casar pese al formato inconsistente.
+        signals = IntakeSignals(
+            su_ref="1/2022 N", num_expediente=1, serie_expediente="2022-n",
+        )
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "items": [{
+                "id": 356,
+                "values": [
+                    {"property": {"name": "num_expediente"}, "value": "1"},
+                    {"property": {"name": "serie_expediente"}, "value": "2022 - n"},
+                ],
+            }],
+        }
+        mock_client._client.get.return_value = mock_response
+        result = match_expediente(signals, sudo_client=mock_client)
+        assert result.confianza == "alta"
+        assert result.expediente_id == 356
+        assert "serie_expediente" in result.senales_usadas
+
+    def test_num_distinto_serie_descartado(self):
+        # Búsqueda por num devuelve varios años; solo casa la serie correcta.
+        signals = IntakeSignals(
+            su_ref="1/2026", num_expediente=1, serie_expediente="2026",
+        )
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "items": [
+                {"id": 356, "values": [
+                    {"property": {"name": "num_expediente"}, "value": "1"},
+                    {"property": {"name": "serie_expediente"}, "value": "2022 - n"},
+                ]},
+                {"id": 700, "values": [
+                    {"property": {"name": "num_expediente"}, "value": "1"},
+                    {"property": {"name": "serie_expediente"}, "value": "2026"},
+                ]},
+            ],
+        }
+        mock_client._client.get.return_value = mock_response
+        result = match_expediente(signals, sudo_client=mock_client)
+        assert result.confianza == "alta"
+        assert result.expediente_id == 700
 
     def test_sin_su_ref(self):
         signals = IntakeSignals()
