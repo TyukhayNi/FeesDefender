@@ -9,7 +9,44 @@ description: "Usar siempre que se genere un escrito procesal civil español en f
 
 - **Lenguaje:** Node.js
 - **Librería:** `docx` (npm install -g docx, v9+)
-- **Salida:** `.docx` → `/mnt/user-data/outputs/`
+- **Salida:** `.docx` → carpeta del expediente (ver «Fase 0» y «Guardado y registro»); copia a `outputs/` para entrega.
+
+---
+
+## Fase 0 — Detección de expediente
+
+Antes de generar nada, decide el modo según la estructura (no según el cliente):
+
+1. Localiza `00_Input/_caso.md` subiendo desde la carpeta de trabajo del asunto.
+2. **Existe** → modo **expediente estructurado**: guarda en la subcarpeta del expediente y registra (ver abajo).
+3. **No existe** → modo **ad-hoc**: pregunta al letrado la carpeta destino; guarda allí; **sin registro de intake**.
+
+No inventes la ruta del expediente: si no localizas `_caso.md` y el letrado no la indica, trabaja en ad-hoc.
+
+## Guardado y registro
+
+En modo estructurado, la salida primaria va a `<case>/<destino>/` y se deja una copia en `outputs/` (para entrega/`present_files`). El destino depende del tipo de escrito:
+
+| Tipo de escrito | `tipo` | `destino` |
+|---|---|---|
+| demanda, contestación, reconvención, recurso, escrito de trámite | `demanda` / `contestacion` / `reconvencion` / `recurso` / `escrito_tramite` | `05_Procedimiento` |
+| requerimiento extrajudicial | `requerimiento` | `04_Output predemanda` |
+
+Tras guardar, **registra** con el helper bundleado (doble registro: manifiesto `<destino>/_index.md` + Navegación de `_caso.md`):
+
+```bash
+python scripts/registrar_outputs.py "<case_dir>" outputs.json
+```
+
+`outputs.json` (una entrada por `.docx` generado):
+
+```json
+[{"fichero": "DEMANDA_W-XXXXXX.docx", "tipo": "demanda", "perspectiva": "actora",
+  "destino": "05_Procedimiento", "fuentes": ["informe_viabilidad", "encargo"],
+  "wikilink": "DEMANDA_W-XXXXXX", "estado": "borrador"}]
+```
+
+`perspectiva` (`actora` | `defensiva`) la aporta el contexto del asunto; `wikilink` por defecto es el *stem* del fichero. El registro es *best-effort*: si falla, avisa pero **no invalida** el `.docx`. En modo ad-hoc **no se registra**.
 
 ---
 
