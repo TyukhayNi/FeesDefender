@@ -1,0 +1,26 @@
+SPDX-License-Identifier: AGPL-3.0-only
+
+This work is a derivative adaptation of "Source Locked Verification"
+by Larissa Meredith-Flister, originally published at
+https://lawve.ai/en/skills/source-locked-verification-larissa-meredith-flister
+under the GNU Affero General Public License version 3.0 (AGPL-3.0).
+
+In accordance with section 5 of the AGPL-3.0, this derivative work is
+licensed under the same terms. The full text of the AGPL-3.0 license is
+available at:
+
+  https://www.gnu.org/licenses/agpl-3.0.txt
+
+If this skill is redistributed, the complete and corresponding source
+code (including this SKILL.md and the NOTICE file) must be made
+available under AGPL-3.0, and the present LICENSE and NOTICE files must
+travel with the work.
+
+If this skill is deployed as part of a network-accessible service (AGPL
+section 13), the operator of that service must offer all users
+interacting with it remotely the opportunity to receive the complete
+corresponding source code of this skill under AGPL-3.0.
+
+Copyright (c) 2026 Larissa Meredith-Flister (original work).
+Copyright (c) 2026 Nikolai Tyukhay / Despacho Tyukhay Legal (adaptation
+to Spanish civil jurisdiction, dated 2026-05-27).

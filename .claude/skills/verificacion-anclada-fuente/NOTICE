@@ -1,0 +1,49 @@
+verificacion-anclada-fuente
+===========================
+
+Adaptación al derecho civil español de la skill "Source Locked
+Verification" de Larissa Meredith-Flister.
+
+Obra original
+-------------
+Título:          Source Locked Verification
+Autora:          Larissa Meredith-Flister
+Publicación:     Lawvable (https://lawve.ai)
+URL canónica:    https://lawve.ai/en/skills/source-locked-verification-larissa-meredith-flister
+Versión base:    2026-05-13
+Licencia:        AGPL-3.0
+
+Modificaciones introducidas en esta adaptación
+----------------------------------------------
+1. Traducción íntegra al español.
+2. Sustitución de la jerarquía de fuentes UK (BAILII, legislation.gov.uk,
+   CPR, FCA, ICO, etc.) por la jerarquía española:
+   BOE.es → CENDOJ → TC/TJUE/TEDH → reguladores nacionales →
+   vLex / Lefebvre El Derecho → Iberley / Sepin → doctrina.
+3. Reescritura de los seis ejemplos prácticos con supuestos de derecho
+   español (LAU, Código Civil, LEC, jurisprudencia STS y STC).
+4. Adición de la sección "Integración con las skills del despacho" que
+   articula la activación cruzada con:
+      - cendoj-descarga
+      - preparacion-litigio-civil
+      - escritos-judiciales
+5. Adaptación de las reglas de cómputo de plazos a la regulación
+   española (art. 5 CC, arts. 130 y 133 LEC).
+6. Adaptación de la regla 8 (prohibición de citas inventadas) a las
+   referencias propias del sistema español: ROJ, ECLI, número de
+   recurso, antecedentes de hecho, fundamentos jurídicos, hechos
+   probados.
+
+Lo demás (estructura, reglas, filosofía, prioridad de fidelidad
+evidencial) se conserva fielmente respecto al original.
+
+Adaptación realizada por
+-------------------------
+Nikolai Tyukhay (Despacho Tyukhay Legal)
+nikolai.tyukhay@tyukhay.legal
+Fecha: 27 de mayo de 2026
+
+Licencia de esta adaptación
+---------------------------
+GNU Affero General Public License v3.0 (AGPL-3.0).
+Véase el archivo LICENSE incluido en este paquete.

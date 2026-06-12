@@ -1,0 +1,55 @@
+{
+  "skill_name": "engel-volkers",
+  "description": "Evals de COBERTURA: comprueban que la skill aporta el contexto de cliente E&V que debe en las 4 áreas — (1) identidad/estructura societaria, (2) tipologías CRM, (3) criterios de redacción/trato, (4) reglas operativas/nomenclatura. Baseline = mismo prompt sin skill.",
+  "evals": [
+    {
+      "id": 0,
+      "name": "identidad-sociedad-y-via",
+      "prompt": "Me entra un asunto de Engel & Völkers: reclamación de honorarios impagados (un BAD DEBT) de 9.500 € por una intermediación de venta en Barcelona. Dime quién es la sociedad cliente por defecto con su NIF e ID de CRM, por qué vía procesal iría y cuál es el umbral mínimo del despacho para reclamar judicialmente.",
+      "files": [],
+      "assertions": [
+        {"text": "Identifica EV MMC SPAIN, S.L.U. como sociedad cliente por defecto en honorarios"},
+        {"text": "Aporta el NIF B65824054 y el ID de CRM 2 de EV MMC SPAIN"},
+        {"text": "Indica vía declarativa verbal (cuantía < 15.000 €) y descarta expresamente el monitorio"},
+        {"text": "Menciona el umbral mínimo del despacho de 2.500 € (IVA incluido) para reclamar judicialmente"},
+        {"text": "No revela tarifas, mínimos ni porcentajes de honorarios concretos (datos confidenciales)"}
+      ]
+    },
+    {
+      "id": 1,
+      "name": "tipologia-defensiva-lau20",
+      "prompt": "Nos llega una demanda contra E&V: un arrendatario reclama la devolución de los honorarios al amparo del art. 20.1 LAU. Encuádrame el asunto: qué tipología del CRM es, qué postura procesal adopta el despacho, y qué matiz introdujo la Ley 12/2023 que deba tener presente.",
+      "files": [],
+      "assertions": [
+        {"text": "Identifica la tipología como LAU_20 (defensiva)"},
+        {"text": "Indica que la postura del despacho en defensivas es siempre oponerse (contestación/oposición)"},
+        {"text": "Señala que tras la Ley 12/2023 el art. 20.1 LAU aplica tanto a arrendador persona física como jurídica, con régimen transitorio caso a caso"},
+        {"text": "No inventa jurisprudencia ni ejes argumentales (la skill no los contiene; los aportan las skills genéricas)"}
+      ]
+    },
+    {
+      "id": 2,
+      "name": "redaccion-trato-y-memo-interno",
+      "prompt": "Voy a circular a Engel & Völkers un borrador de contestación a una demanda. ¿Qué criterios de formato y de trato sigo, dónde coloco los puntos débiles y riesgos del asunto, y qué debo cuidar si genero además una versión anonimizada para un tercero?",
+      "files": [],
+      "assertions": [
+        {"text": "Indica el formato de la Sala 1.ª del TS (p. ej. Times New Roman 12, interlineado 1,5, márgenes 2,5 cm, máximo 25 páginas)"},
+        {"text": "Señala registro corporativo/premium y la regla de lengua (castellano; ruso con clientes finales rusos)"},
+        {"text": "Exige que los puntos débiles y riesgos vayan en una sección de MEMO INTERNO separada, nunca en el cuerpo del escrito que ve la contraparte o el juzgado"},
+        {"text": "Sobre la versión anonimizada: usar «mi representada» y no describir la marca ni rasgos que la identifiquen"}
+      ]
+    },
+    {
+      "id": 3,
+      "name": "market-center-y-nomenclatura",
+      "prompt": "Tengo el expediente W-021ABC del equipo MaRS3 de E&V. ¿Qué significa ese código de equipo, qué patrón de referencia y qué estructura de carpetas usa el despacho para el expediente, y cómo se nombra la documental aportada?",
+      "files": [],
+      "assertions": [
+        {"text": "Decodifica MaRS3 como Madrid (Ma) · Residential Sales (RS) · equipo 3"},
+        {"text": "Indica el patrón de referencia de expediente W-XXXXXX"},
+        {"text": "Describe la estructura de carpetas del caso (00_Input, 01_Procesado ... 90_Notas personales)"},
+        {"text": "Indica la nomenclatura de documental aportada «D XX - nombre.pdf»"}
+      ]
+    }
+  ]
+}
