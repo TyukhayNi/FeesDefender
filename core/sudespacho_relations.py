@@ -330,10 +330,6 @@ def _rest_search_expedientes(element: str, referencia: str) -> list[dict[str, st
     term = _extract_w_code(referencia) or (referencia or "").strip()
     if not term:
         return []
-    api_key = (os.getenv("SUDESPACHO_API_KEY") or "").strip()
-    if not api_key:
-        return []
-
     url = f"{_REST_BASE}/api/element_registries/{element}"
     params: list[tuple[str, str]] = [
         ("properties[0]",                                       prop),
@@ -345,21 +341,8 @@ def _rest_search_expedientes(element: str, referencia: str) -> list[dict[str, st
         ("itemsPerPage",                                        "50"),
         ("return_totals",                                       "true"),
     ]
-    headers = {"x-api-key": api_key, "Accept": "application/json"}
-    try:
-        r = httpx.get(url, params=params, headers=headers, timeout=_REST_TIMEOUT)
-    except Exception:  # noqa: BLE001 — red caída no debe romper el caller
-        return []
-    if r.status_code != 200:
-        return []
-    try:
-        data = r.json()
-    except Exception:  # noqa: BLE001
-        return []
-
-    items = data.get("items") or data.get("hydra:member") or []
     out: list[dict[str, str]] = []
-    for it in items:
+    for it in _rest_get_items(url, params):
         ref = None
         for v in it.get("values", []) or []:
             if v.get("property", {}).get("name", "") == prop:

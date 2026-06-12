@@ -1280,8 +1280,9 @@ def test_rest_texto_normaliza_alias_extrajudicial(_api_key):
         return _mock_get_response(_items_multi())
 
     with patch("core.sudespacho_relations.httpx.get", side_effect=_capturing_get):
-        _rest_search_por_texto("expedientes_extrajudiciales", "algo")
+        out = _rest_search_por_texto("expedientes_extrajudiciales", "algo")
 
+    assert out == []
     assert "element_registries/extrajudiciales" in captured["url"]
 
 
