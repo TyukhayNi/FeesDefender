@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -207,3 +207,71 @@ def read_decisions(store_path: Path | str | None = None) -> list[dict[str, Any]]
             if isinstance(entry, dict):
                 out.append(entry)
     return out
+
+
+# ---------------------------------------------------------------------------
+# F2.2 — máquina de estados de la cola de revisión
+# ---------------------------------------------------------------------------
+
+ESTADOS_COLA: frozenset[str] = frozenset({"pendiente", "confirmado", "descartado"})
+
+# Motivos de descarte (plan §6). El robot auto-descarta a la vista "Descartados"
+# sin hard-drop; el humano también puede descartar desde el triaje.
+MOTIVOS_DESCARTE: frozenset[str] = frozenset({
+    "ruido_llm",                 # el LLM lo marcó es_ruido
+    "remitente_no_procurador",   # remitente no reconocido
+    "sin_su_ref_ni_hilo",        # sin señal para emparejar
+    "descartado_humano",         # la persona lo descartó en el triaje
+})
+
+
+class TransicionInvalida(ValueError):
+    """Transición de estado no permitida por la máquina de estados de la cola."""
+
+
+@dataclass
+class ReviewItem:
+    """Un correo en la cola de la bandeja: propuesta del robot + estado de revisión.
+
+    ``estado`` ∈ ``ESTADOS_COLA``. ``motivo_descarte`` solo tiene sentido en
+    ``descartado`` (de dónde vino → vista "Descartados", §6). Los campos de
+    cabecera (remitente/asunto/fecha) son para mostrar en la tarjeta.
+    """
+    email_id: str
+    proposal: RobotProposal
+    estado: str = "pendiente"
+    motivo_descarte: str | None = None
+    remitente: str | None = None
+    asunto: str | None = None
+    fecha: str | None = None
+
+
+# Transiciones permitidas: estado actual → {acción: nuevo estado}. ``confirmado``
+# es terminal; ``descartado`` solo sale por ``recuperar`` (reabre el triaje, §6),
+# nunca directo a ``confirmado``.
+_TRANSICIONES: dict[str, dict[str, str]] = {
+    "pendiente": {"confirmar": "confirmado", "descartar": "descartado"},
+    "descartado": {"recuperar": "pendiente"},
+    "confirmado": {},
+}
+
+
+def transicionar(item: ReviewItem, accion: str, *, motivo: str | None = None) -> ReviewItem:
+    """Aplica una transición de estado y devuelve un ``ReviewItem`` nuevo (puro).
+
+    Args:
+        item: item de la cola.
+        accion: "confirmar" | "descartar" | "recuperar".
+        motivo: motivo de descarte (solo al descartar; se ignora en el resto).
+
+    Raises:
+        TransicionInvalida: si la acción no está permitida desde ``item.estado``.
+    """
+    permitidas = _TRANSICIONES.get(item.estado, {})
+    if accion not in permitidas:
+        raise TransicionInvalida(
+            f"Transición no permitida: {item.estado!r} --{accion}--> ?"
+        )
+    nuevo_estado = permitidas[accion]
+    nuevo_motivo = motivo if nuevo_estado == "descartado" else None
+    return replace(item, estado=nuevo_estado, motivo_descarte=nuevo_motivo)

@@ -7,6 +7,8 @@ ese registro el check-2 (F6) no tiene contra qué comparar.
 
 from __future__ import annotations
 
+import pytest
+
 from core.intake_log import set_actor
 from core.procurador_intake import (
     AttachmentProposal,
@@ -17,11 +19,14 @@ from core.procurador_intake import (
 from core.procurador_review import (
     HumanAction,
     ReviewDecision,
+    ReviewItem,
     RobotProposal,
+    TransicionInvalida,
     compute_divergence,
     from_intake_proposal,
     read_decisions,
     record_decision,
+    transicionar,
 )
 
 
@@ -176,3 +181,63 @@ def test_from_intake_proposal_mapea_los_campos():
     assert robot.carpeta_id == 1
     assert robot.carpeta == "General"
     assert robot.attachment_names == {"adj.pdf": "2026-06-12 - Auto - nombramiento.pdf"}
+
+
+# ---------------------------------------------------------------------------
+# F2.2 — máquina de estados de la cola de revisión
+# ---------------------------------------------------------------------------
+
+def _item_pendiente() -> ReviewItem:
+    return ReviewItem(email_id="m1", proposal=_proposal_alta(), estado="pendiente")
+
+
+def test_item_nace_pendiente_por_defecto():
+    """Un correo que el robot conserva entra a la bandeja como pendiente."""
+    item = ReviewItem(email_id="m1", proposal=_proposal_alta())
+    assert item.estado == "pendiente"
+    assert item.motivo_descarte is None
+
+
+def test_pendiente_a_confirmado():
+    """Confirmar mueve pendiente → confirmado (estado terminal)."""
+    item = transicionar(_item_pendiente(), "confirmar")
+    assert item.estado == "confirmado"
+
+
+def test_pendiente_a_descartado_con_motivo():
+    """Descartar mueve pendiente → descartado y guarda el motivo (vista Descartados)."""
+    item = transicionar(_item_pendiente(), "descartar", motivo="descartado_humano")
+    assert item.estado == "descartado"
+    assert item.motivo_descarte == "descartado_humano"
+
+
+def test_descartado_a_pendiente_por_recuperar():
+    """La secretaria recupera un descartado → vuelve a pendiente (§6) y limpia el motivo."""
+    descartado = ReviewItem(
+        email_id="m1", proposal=_proposal_alta(),
+        estado="descartado", motivo_descarte="ruido_llm",
+    )
+    item = transicionar(descartado, "recuperar")
+    assert item.estado == "pendiente"
+    assert item.motivo_descarte is None
+
+
+def test_transicionar_no_muta_el_original():
+    """La transición es pura: devuelve un item nuevo, no muta el de entrada."""
+    original = _item_pendiente()
+    transicionar(original, "confirmar")
+    assert original.estado == "pendiente"
+
+
+def test_confirmado_es_terminal():
+    """No se puede salir de confirmado."""
+    confirmado = ReviewItem(email_id="m1", proposal=_proposal_alta(), estado="confirmado")
+    with pytest.raises(TransicionInvalida):
+        transicionar(confirmado, "descartar")
+
+
+def test_descartado_no_va_directo_a_confirmado():
+    """Un descartado debe recuperarse antes de poder confirmarse (reabre triaje, §6)."""
+    descartado = ReviewItem(email_id="m1", proposal=_proposal_alta(), estado="descartado")
+    with pytest.raises(TransicionInvalida):
+        transicionar(descartado, "confirmar")
