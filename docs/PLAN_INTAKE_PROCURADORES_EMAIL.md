@@ -167,6 +167,16 @@ El módulo de correo del CRM es **Roundcube**, servido por un microservicio apar
 - **PENDIENTE confirmar al construir:** ¿`nest-mail` acepta `x-api-key` o exige
   el JWT de sesión web (`api-auth-commons-pro/api/authenticate/refresh`)? Si exige
   JWT, resolver el flujo de auth para ese microservicio.
+- **Candidato detectado (s44, 2026-06-15, SIN confirmar):** en el swagger de
+  `api-crm-commons-pro` (estilo API-Platform) existe el recurso **`MailRoundcube`**
+  con CRUD completo (POST/GET/PUT/DEL/PATCH). Es el espejo probable del correo de
+  Roundcube en la API REST y el lugar natural de la vinculación. **Antes de F3,
+  confirmar:** (1) el *body schema* del `PUT`/`PATCH` — ¿expone `mailRelations`
+  `[{element, elementId, mail}]` y `attachmentGdocu` `[{identifier}]`?; (2) la ruta
+  exacta (p. ej. `/api/mail_roundcubes/{id}`) y el host (`api-crm-commons` vs
+  `nest-mail-commons`) → decide el auth. Descartados como auxiliares (no vinculan):
+  `AccountLinks`, `DownloadAttachment` (solo bajada de bytes), `MailPermissions`,
+  `MailRecipients`, `Mail` (GET).
 
 ## 8. Carpetas del gestor documental
 
