@@ -1,7 +1,7 @@
 ---
 name: cendoj-descarga
 description: "Usar siempre que se necesite localizar y/o descargar sentencias o autos del CENDOJ (Centro de Documentación Judicial del CGPJ). Activar cuando el usuario aporte referencias procedentes de Sepin, Lefebvre El Derecho, vLex, Iberley o cualquier base privada, o cuando facilite metadatos parciales (tribunal, sección, fecha, ROJ, ECLI, número de resolución). Produce los PDFs oficiales del CGPJ con nombre normalizado y verificación de coincidencia temática."
-version: "1.0"
+version: "1.1"
 ---
 
 # Descarga de Sentencias desde CENDOJ
@@ -20,7 +20,7 @@ Las bases privadas (Sepin, Lefebvre, vLex, Iberley) no permiten descarga sin sus
 | Visor de documento | `https://www.poderjudicial.es/search/AN/openDocument/{hash}/{fecha_yyyymmdd}` |
 | PDF directo | `https://www.poderjudicial.es/search/contenidos.action?action=accessToPDF&publicinterface=true&tab=AN&reference={hash}&encode=true&optimize={fecha_yyyymmdd}&databasematch=AN` |
 
-El `{hash}` es un identificador hexadecimal de 16 caracteres que CENDOJ asigna a cada documento; se obtiene del atributo `href` del enlace en la página de resultados. `{fecha_yyyymmdd}` es la fecha de indexación interna, también extraíble de la URL del resultado.
+El `{hash}` es un identificador hexadecimal de 32 caracteres que CENDOJ asigna a cada documento; se obtiene del atributo `href` del enlace en la página de resultados. **Extraer SIEMPRE el `href` completo con `querySelectorAll`; un hash truncado genera un `fetch` con tamaño aparentemente correcto pero documento equivocado.** `{fecha_yyyymmdd}` es la fecha de indexación interna, también extraíble de la URL del resultado.
 
 ---
 
@@ -94,6 +94,8 @@ Palabras clave útiles según materia, en orden decreciente de precisión:
 
 Si no se conoce la materia exacta, partir del título descriptivo que aporta la base privada y reducirlo a tres sustantivos clave.
 
+**Nota sobre referencias privadas como LEADS.** Las referencias de Sepin, Lefebvre, vLex e Iberley son LEADS a verificar y corregir contra CENDOJ. Prevalecen siempre el ROJ, ECLI, fecha y ponente extraídos del PDF oficial del CGPJ. Si la doctrina buscada solo existe como Auto de inadmisión (ECLI con sufijo `A`), ofrecer el ATS si su razonamiento sirve, o declarar NO LOCALIZADA — nunca descargar una «aproximada».
+
 ### Paso 4 — Extraer los hashes
 
 Una vez en la página de resultados, extraer todos los `href` de los documentos:
@@ -124,24 +126,34 @@ Desde una pestaña activa en `poderjudicial.es` (cualquier ruta del dominio), ej
 (async () => {
   const url = `/search/contenidos.action?action=accessToPDF&publicinterface=true&tab=AN&reference=HASH&encode=true&optimize=FECHA&databasematch=AN`;
   const r = await fetch(url);
+  const ct = (r.headers.get('content-type') || '');
   const blob = await r.blob();
+  // Si no es PDF (probable HTML de CAPTCHA) o el blob es minúsculo, abortar sin descargar
+  if (!(ct.includes('pdf') || blob.size > 20000)) return 'NO-PDF ct=' + ct + ' size=' + blob.size;
   const u = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = u;
-  a.download = 'NOMBRE_NORMALIZADO.pdf';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
+  a.href = u; a.download = 'NOMBRE_NORMALIZADO.pdf';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
   return 'ok ' + blob.size;
 })()
 ```
 
 **Reglas operativas críticas para la descarga:**
 
-- **Una descarga por turno.** Chrome bloquea descargas múltiples desde el mismo origen sin gesto adicional. Disparar la siguiente solo tras confirmar que la anterior está en disco (`Glob C:\Users\<usuario>\Downloads\PATRÓN`).
+- **Una descarga por turno.** Chrome bloquea descargas múltiples desde el mismo origen sin gesto adicional. Disparar la siguiente solo tras confirmar que la anterior está en disco.
 - **Click previo en el viewport.** Antes de cada `javascript_tool`, ejecutar `computer.left_click` sobre cualquier área neutra de la página (ej. coord. 780, 400). Esto reinyecta el user-activation flag que Chrome exige para `a.click()` con `download`.
-- **Verificación tras 5 s.** Usar `Glob` sobre `~/Downloads/PATRÓN*.pdf` para confirmar. Si no aparece, reintentar el ciclo click + JS en una pestaña nueva del mismo origen.
+- **Verificación por ruta exacta (no glob).** `ls`/`Glob` sobre `~/Downloads` falla de forma intermitente (montaje VirtioFS del sandbox). Verificar por ruta completa exacta: `test -f "/ruta/exacta/Archivo.pdf"` o `stat "/ruta/exacta/Archivo.pdf"`. Si no aparece tras 5 s, reintentar el ciclo click + JS en una pestaña nueva del mismo origen.
 - **Si Chrome muestra el PDF en el visor de Acrobat** en lugar de descargar, el flujo `fetch + blob + download attribute` lo evita siempre. No navegar nunca directamente a la URL del PDF.
+- **Validación de contenido.** El JS devuelve `'NO-PDF ct=...'` si recibe HTML (probable CAPTCHA) o un blob pequeño. En ese caso, ver el Paso 6-bis.
+
+### Paso 6-bis — CAPTCHA «Control > Descargas masivas»
+
+CENDOJ activa un CAPTCHA de imagen (`captcha.jsp?prevaction=accessToPDF...`) cuando detecta descargas intensivas, especialmente sin sesión autenticada. Suele aparecer tras varias descargas `fetch + blob` seguidas.
+
+- **Prohibido resolverlo.** Resolver CAPTCHAs está fuera de mandato (política anti-bot). Hay que PARAR y devolver el control al usuario.
+- **Handoff al usuario:** abrir o refrescar la pestaña visible del buscador (`navigate` sobre la pestaña del grupo MCP) para que el usuario la localice; pedirle que teclee EL CÓDIGO QUE VE en la imagen (no el pre-rellenado) y pulse «Acceder».
+- **Iniciar sesión NO siempre lo desactiva** una vez disparado. Lo que funciona: pestaña nueva + el usuario resuelve el CAPTCHA una vez → permite un puñado de descargas antes de reaparecer.
+- **Prevención:** descargas de una en una, volumen moderado por sesión; confirmar cada descarga en disco antes de la siguiente; si reaparece a mitad, nuevo handoff.
 
 ### Paso 7 — Guardar SIEMPRE en la carpeta del expediente (regla del despacho)
 
@@ -163,6 +175,14 @@ Las descargas caen primero en `~/Downloads`. Desde ahí:
    ```
 
 Requiere `mcp__cowork__request_cowork_directory ~/Downloads` previo si Descargas no está montado (y, en su caso, el montaje de la carpeta del expediente). Confirmar al usuario la ruta final dentro del expediente.
+
+**Nota opcional — subida automática a Drive por tamaño.** No sustituye al archivado en el expediente ni al registro del Paso 7-bis; es un atajo para dejar copia en la carpeta de Drive del caso *si el conector de Drive está disponible* en el entorno:
+
+- **PDF <150 KB** → subida automática por el conector (rápida).
+- **PDF 150-300 KB** → ofrecer al usuario esperar la subida automática o arrastrar manualmente desde Descargas (suele ser más rápido).
+- **PDF >300 KB** → arrastrar manualmente desde Descargas (la subida automática suele agotar el tiempo).
+
+Los `.md` (conversiones del Paso 8-bis y consolidado del Paso 9) son pequeños y pueden subirse siempre de forma automática. Si el conector falla, volver al método manual (arrastrar) y verificar la llegada por ruta exacta (`stat`).
 
 ### Paso 7-bis — Registro en el expediente (solo si la jurisprudencia es de un asunto)
 
@@ -201,6 +221,14 @@ done
 
 Confirmar coincidencia de: Roj, ECLI, Id Cendoj, Órgano, Sede, Sección, Fecha, Nº Recurso, Nº Resolución, Ponente.
 
+**Nota sobre encoding CIDFont.** `pdftotext` puede devolver 0 coincidencias aunque el PDF sea correcto (encoding CIDFont propio de CENDOJ). No declarar el PDF inválido por eso: usar los metadatos de cabecera para la identidad, el resumen oficial de CENDOJ para la materia y, opcionalmente, OCR (`pdftoppm` + Tesseract). Estado a reportar: «identidad verificada; FJ no verificable por encoding».
+
+**Contrastar materia.** ROJ correcto ≠ materia correcta. Comparar el resumen de CENDOJ con la materia esperada; si no coinciden, declararlo. No descargar «la más parecida».
+
+**Verificar holding y vigencia.** No basta con que la resolución exista. Comprobar el régimen temporal aplicable (p. ej. doctrina de la LEC 1881, superada bajo la LEC 2000). Enlazar con `verificacion-anclada-fuente`. Marcar las resoluciones superadas/contrarias y para qué sirven.
+
+**ROJ vs año.** El año del ROJ (publicación) puede diferir del nº/año de resolución (ej.: nº res. 769/2014, ROJ STS 254/2015). Reconciliar por **ECLI**; documentar la divergencia; no «corregir» el dato bueno.
+
 Adicionalmente, verificar que la materia es la esperada:
 
 ```bash
@@ -209,6 +237,35 @@ for f in SAP_*.pdf; do
   pdftotext "$f" - 2>/dev/null | grep -iE "PALABRA_CLAVE_1|PALABRA_CLAVE_2" | head -3
 done
 ```
+
+### Paso 8-bis — Conversión automática PDF → Markdown (opcional)
+
+Para facilitar la lectura sin visor PDF —y para sortear el encoding CIDFont—, convertir cada documento descargado a Markdown legible con el helper bundleado:
+
+```bash
+bash scripts/batch_pdf_to_md.sh <dir_pdfs> <dir_salida>
+```
+
+Equivale, documento a documento, a:
+
+```bash
+pdftotext -layout "$pdf" "${pdf%.pdf}.txt"
+python scripts/parse_pdf_to_md.py "${pdf%.pdf}.txt" "${pdf%.pdf}.md"
+```
+
+Para cada `SAP_Madrid_281-2018.pdf` se genera `SAP_Madrid_281-2018.md` con cabecera (ROJ, ECLI, tribunal, fecha, ponente), hechos, ratio decidendi (fundamentos) y fallo. Si el texto sale vacío/ilegible, el `.md` lleva una nota de encoding CIDFont recomendando OCR. La conversión es *best-effort*: ante dudas, prevalece el PDF oficial.
+
+### Paso 9 — Consolidado final: índice único de búsqueda (opcional)
+
+Cuando la búsqueda agrupa varias resoluciones (p. ej. para un expediente), generar un único Markdown que las aglutine y facilite la clasificación:
+
+```bash
+python scripts/consolidate_search_results.py \
+  --pdf-dir <dir_pdfs> \
+  --output-file "00_INDICE_busqueda-CENDOJ_<tema>_<AAAA-MM-DD>.md"
+```
+
+El consolidado incluye: cabecera de la búsqueda (tema, órgano/sección, período, criterios), tabla resumen (tribunal, fecha, ROJ, ECLI, ponente, tamaño), clasificación por uso (✅ favorable / 📚 doctrinal / ⚠️ adversa / ❌ descartar), tabla de verificación (metadatos, encoding, materia, vigencia) y enlaces a PDFs y MDs. La clasificación por uso la completa el letrado: el script deja los documentos bajo «Sin clasificar» con las celdas listas.
 
 ---
 
@@ -278,12 +335,22 @@ Para el TS: `STS XXXX/YYYY` con ECLI `ES:TS:YYYY:NNNN`. Sala 1.ª civil = ECLI `
 | `bash: curl: exit code 56` sobre poderjudicial.es | Proxy del sandbox bloquea el dominio | No intentar bash + curl; usar el navegador del usuario |
 | Free text search sin resultados | Texto demasiado específico o tildes | Probar sinónimos: `mediación / corretaje / intermediación`. Sin comillas. Sin tildes si no funciona |
 | Resultado de la búsqueda incluye Autos no deseados | Filtro insuficiente | `Tipo res. = Sentencia` en el formulario, o filtrar manualmente por sufijo `A` en ECLI |
+| CAPTCHA «Control > Descargas masivas» (`captcha.jsp`) | Descargas intensivas o sin sesión | NO resolverlo (política anti-bot). Parar, abrir/refrescar la pestaña visible y pedir al usuario que lo resuelva. Espaciar las descargas (ver Paso 6-bis) |
+| `cp` no aparece en la carpeta real del usuario | Montaje del sandbox aislado | Descargar a Descargas y que el usuario arrastre a Drive; verificar por ruta exacta |
+| `ls`/`find` del montaje muestra la carpeta vacía | El listado del montaje no refleja el FS real | Acceder por ruta completa exacta; `pdftotext`/`stat` sí funcionan |
+| Un resultado parece on-point pero no lo es | Fiarse del snippet/resumen del buscador | Abrir el PDF y leer hechos + ratio antes de clasificar |
 
 ---
 
 ## Plantilla de informe final
 
-Al terminar, reportar al usuario una tabla con los datos oficiales extraídos del PDF (no de la base privada), seguida de los enlaces `computer://` a los archivos en `outputs/`:
+Al terminar, reportar al usuario:
+
+1. **Consolidado único** (si se generó, Paso 9): `00_INDICE_busqueda-CENDOJ_...md` con tabla resumen, clasificación (favorable/doctrinal/adversa/descartar), estado de verificación y enlaces a PDFs y MDs.
+2. **PDFs descargados**: datos oficiales extraídos del PDF (no de la base privada), tamaño y confirmación de archivado en el expediente.
+3. **MDs** (si se generaron, Paso 8-bis): listado de documentos convertidos.
+
+Tabla mínima de metadatos oficiales, seguida de los enlaces `computer://` a los archivos en `outputs/`:
 
 ```markdown
 | Tribunal | Fecha | Nº Res | ROJ | ECLI | Ponente |
@@ -303,6 +370,7 @@ Al terminar, reportar al usuario una tabla con los datos oficiales extraídos de
 - **Caducidad de los hashes.** Los hashes `openDocument/{hash}` son estables a largo plazo, pero la fecha de indexación cambia si CENDOJ reindexa. Para almacenamiento a largo plazo, guardar siempre el ROJ y el ECLI; el hash es solo de tránsito.
 - **Verificación cruzada con bases privadas.** Si la referencia procede de Sepin/Lefebvre/vLex y aporta ponente o número de recurso, contrastar con el PDF oficial. Si no coincide, la base privada se equivocó (sucede): prevalecen los metadatos del CENDOJ.
 - **Resoluciones no publicadas en CENDOJ.** No todas las resoluciones llegan a CENDOJ (algunas SJPI, alguna AP menor). Si tras agotar todas las estrategias no aparece, comunicarlo al usuario sin insistir; ofrecer la cita por los datos parciales y proponer redactar el escrito sin el PDF.
+- **Verificación sobre el PDF, no sobre el extracto.** Los resúmenes del buscador (y de agentes auxiliares) inducen a error: una candidata puede parecer análoga por el snippet y resultar fuera de caso (p. ej. una «hija» que es compradora, no representante) o incluso ADVERSA. Abrir el PDF, leer el supuesto de hecho y la ratio decidendi, y solo entonces clasificar (favorable / doctrinal / adversa / descartar).
 
 ---
 

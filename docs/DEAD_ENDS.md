@@ -6,6 +6,17 @@
 
 ---
 
+## Tooling — skill-creator / evals de triggering
+
+### `run_eval.py` / `run_loop.py` de skill-creator — no funcionan en Windows
+- **Intentado:** correr el bucle de triggering de skill-creator (`python -m scripts.run_loop --skill-path .claude/skills/cendoj-descarga ...`) y `run_eval.py` en single-worker foreground.
+- **Resultado:** `Warning: query failed: [WinError 10038] ... no es un socket`; TODA query (incluidas should-trigger inequívocas) lee `trigger_rate=0` → precision=100% / recall=0% (artefacto, no medición real).
+- **Causa:** `run_eval.py:108` usa `select.select()` sobre el *pipe* de `claude -p`. En Windows `select` solo admite sockets, no pipes/fds de subprocess → `WinError 10038`. El paralelismo con `ProcessPoolExecutor` (IPC con stdio redirigido) lo agrava.
+- **Confirmado:** 2026-06-15. El CLI `claude -p` anidado SÍ funciona (devuelve OK); no es problema de la skill ni de su `description`.
+- **Solución:** (a) correr los evals en el entorno server-side (Cowork/claude.ai, Linux), que es donde la skill se ejecuta de todos modos; o (b) verificar a mano: `claude -p "<query>" --output-format stream-json --include-partial-messages`, capturar el stream COMPLETO (sin `select`) y mirar el input del tool_use `Skill` (qué skill invoca). El eval set queda en `_skills_drafts/cendoj-descarga-workspace/trigger-eval.json`.
+
+---
+
 ## Frontal heredado — colaboradores
 
 ### `GET /autocompletar/buscar/elemento/colaboradores?term=...` — devuelve siempre body vacío
