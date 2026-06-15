@@ -103,7 +103,9 @@ exports reales iOS y Android en español.
 ## 5. `core/whatsapp_intake.py` — glue de depósito (source-locked)
 
 Capa de pegamento; **no depende de Streamlit** (recibe bytes + nombre, como
-`intake_manual`).
+`intake_manual`). Procesa **una entrega (un chat) por llamada**; la subida de
+varios chats a la vez (§6) es un bucle de la UI sobre esta función, una llamada
+por export.
 
 ### 5.1. Depósito
 
@@ -151,13 +153,21 @@ del intake de procuradores), fuera de alcance.
 Expander «📲 Importar chat de WhatsApp» en el tab Casos, gemelo del de intake
 manual:
 
-1. Subir `.zip` (o `_chat.txt` + media sueltos).
-2. Elegir **caso** (existente o nuevo) y **subcarpeta de rol** (`WHATSAPP_SUBDIRS`).
-3. **Previsualización** de los mensajes parseados: nº de mensajes, rango de fechas
-   detectado, conteo de adjuntos presentes, conteo de adjuntos faltantes (§5.2),
-   conteo de audios pendientes de transcripción (§5.5).
-4. (Opcional) rango de fechas para `_chat_recortado.txt`.
-5. **Confirmar** → depósito (§5).
+1. Subir **uno o varios** `.zip` (`accept_multiple_files=True`) — o un
+   `_chat.txt` + media sueltos para el caso de un solo chat.
+2. Elegir **caso** (existente o nuevo) — uno para todo el lote.
+3. **Previsualización por chat**: una tarjeta por export con nº de mensajes,
+   rango de fechas detectado, conteo de adjuntos presentes, conteo de adjuntos
+   faltantes (§5.2), conteo de audios pendientes de transcripción (§5.5), y un
+   desplegable propio de **subcarpeta de rol** (`WHATSAPP_SUBDIRS`) — porque cada
+   chat va a su rol (propietario / buscador / grupo / otros).
+4. (Opcional, por chat) rango de fechas para `_chat_recortado.txt`.
+5. **Confirmar** → depósito de todos los chats (§5), cada uno en su carpeta
+   `<chat>/`.
+
+Subida múltiple: la UI itera sobre los ficheros y llama una vez al glue por
+export. El dedup por hash de zip (§5.3) actúa por fichero, así que un export
+repetido dentro del mismo lote se salta sin duplicar.
 
 Dry-run + confirmación humana, como el resto del intake. La UI solo orquesta; toda
 la lógica vive en el core.
@@ -189,6 +199,8 @@ la lógica vive en el core.
 - Se conserva el **`.zip` original** como artefacto de procedencia; su hash es la
   llave de dedup de importación.
 - Conversación **entera** como fuente; recorte por fechas solo opcional y aditivo.
+- **Subida múltiple** de varios chats a la vez: un caso por lote, **rol por chat**,
+  cada chat en su propia carpeta; dedup por hash de zip por fichero.
 - **Detección y aviso** de adjuntos que WhatsApp omitió en el export.
 - Audio **diferido** (sin transcripción en Fase A).
 
