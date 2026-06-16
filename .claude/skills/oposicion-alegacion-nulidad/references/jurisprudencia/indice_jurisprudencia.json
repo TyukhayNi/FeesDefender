@@ -1,0 +1,744 @@
+{
+  "_meta": {
+    "descripcion": "Índice de control de artefactos jurisprudenciales de la skill oposicion-alegacion-nulidad.",
+    "generado": "2026-06-16",
+    "total": 37,
+    "campos": {
+      "aplica": "si|no|parcial",
+      "tipo_md": "verbatim|ficha",
+      "verificacion": "cendoj|eurlex|derivado_roj|descartado"
+    },
+    "nota": "Fuente única de verdad; el README.md se genera/valida contra este índice."
+  },
+  "resoluciones": [
+    {
+      "id": "STS_214-2005",
+      "tribunal": "TS",
+      "sala_seccion": "Sala 1.ª",
+      "num_resolucion": "214/2005",
+      "fecha": "2005-03-31",
+      "ecli": "ECLI:ES:TS:2005:1953",
+      "roj_celex": "ROJ STS 1953/2005",
+      "tema": "Nulidad radical por acción o excepción; anulabilidad/vicios solo por acción (FJ 9).",
+      "aplica": "si",
+      "tipo_md": "verbatim",
+      "archivo_oficial": "sentencias_oficiales/STS_TS_Sala1_214-2005_31-03-2005_ROJ_STS_1953-2005.pdf",
+      "archivo_md": "sentencias_md/STS_TS_Sala1_214-2005_31-03-2005_ROJ_STS_1953-2005.md",
+      "enlace_oficial": null,
+      "usado_en": [
+        "Regla 1",
+        "estructura 1.2"
+      ],
+      "verificacion": "cendoj"
+    },
+    {
+      "id": "STS_843-2006",
+      "tribunal": "TS",
+      "sala_seccion": "Sala 1.ª",
+      "num_resolucion": "843/2006",
+      "fecha": "2006-09-06",
+      "ecli": "ECLI:ES:TS:2006:5734",
+      "roj_celex": "ROJ STS 5734/2006",
+      "tema": "Prescripción art. 1301 CC; pasaje acción/excepción no es ratio autónoma.",
+      "aplica": "no",
+      "tipo_md": "verbatim",
+      "archivo_oficial": "sentencias_oficiales/STS_TS_Sala1_843-2006_06-09-2006_ROJ_STS_5734-2006.pdf",
+      "archivo_md": "sentencias_md/STS_TS_Sala1_843-2006_06-09-2006_ROJ_STS_5734-2006.md",
+      "enlace_oficial": null,
+      "usado_en": [],
+      "verificacion": "descartado"
+    },
+    {
+      "id": "STS_241-2013",
+      "tribunal": "TS",
+      "sala_seccion": "Sala 1.ª (Pleno)",
+      "num_resolucion": "241/2013",
+      "fecha": "2013-05-09",
+      "ecli": "ECLI:ES:TS:2013:1916",
+      "roj_celex": "ROJ STS 1916/2013",
+      "tema": "Doble control de transparencia; cláusula suelo (objeto principal).",
+      "aplica": "si",
+      "tipo_md": "verbatim",
+      "archivo_oficial": "sentencias_oficiales/STS_Sala1_241-2013_09-05-2013_ROJ_STS_1916-2013.pdf",
+      "archivo_md": "sentencias_md/STS_Sala1_241-2013_09-05-2013_ROJ_STS_1916-2013.md",
+      "enlace_oficial": null,
+      "usado_en": [
+        "Via D",
+        "Regla 3",
+        "estructura QUINTO"
+      ],
+      "verificacion": "cendoj"
+    },
+    {
+      "id": "STS_840-2013",
+      "tribunal": "TS",
+      "sala_seccion": "Sala 1.ª (Pleno)",
+      "num_resolucion": "840/2013",
+      "fecha": "2014-01-20",
+      "ecli": "ECLI:ES:TS:2014:354",
+      "roj_celex": "ROJ STS 354/2014",
+      "tema": "Error vicio por incumplimiento de deberes de información (swap).",
+      "aplica": "si",
+      "tipo_md": "verbatim",
+      "archivo_oficial": "sentencias_oficiales/STS_Sala1_840-2013_20-01-2014_ROJ_STS_354-2014.pdf",
+      "archivo_md": "sentencias_md/STS_Sala1_840-2013_20-01-2014_ROJ_STS_354-2014.md",
+      "enlace_oficial": null,
+      "usado_en": [
+        "Via B",
+        "estructura TERCERO"
+      ],
+      "verificacion": "cendoj"
+    },
+    {
+      "id": "STS_367-2017",
+      "tribunal": "TS",
+      "sala_seccion": "Sala 1.ª",
+      "num_resolucion": "367/2017",
+      "fecha": "2017-06-08",
+      "ecli": "ECLI:ES:TS:2017:2244",
+      "roj_celex": "ROJ STS 2244/2017",
+      "tema": "Aplica la doctrina de transparencia de 241/2013 a la acción individual.",
+      "aplica": "si",
+      "tipo_md": "verbatim",
+      "archivo_oficial": "sentencias_oficiales/STS_Sala1_367-2017_08-06-2017_ROJ_STS_2244-2017.pdf",
+      "archivo_md": "sentencias_md/STS_Sala1_367-2017_08-06-2017_ROJ_STS_2244-2017.md",
+      "enlace_oficial": null,
+      "usado_en": [
+        "Via D",
+        "estructura QUINTO"
+      ],
+      "verificacion": "cendoj"
+    },
+    {
+      "id": "STS_707-2012",
+      "tribunal": "TS",
+      "sala_seccion": "Sala 1.ª",
+      "num_resolucion": "707/2012",
+      "fecha": "2012-11-27",
+      "ecli": "ECLI:ES:TS:2012:8862",
+      "roj_celex": "ROJ STS 8862/2012",
+      "tema": "Representación aparente / mandato tácito / ratificación (1259, 1710 CC).",
+      "aplica": "si",
+      "tipo_md": "verbatim",
+      "archivo_oficial": "sentencias_oficiales/STS_Sala1_707-2012_27-11-2012_ROJ_STS_8862-2012.pdf",
+      "archivo_md": "sentencias_md/STS_Sala1_707-2012_27-11-2012_ROJ_STS_8862-2012.md",
+      "enlace_oficial": null,
+      "usado_en": [
+        "estructura TERCERO",
+        "modulo"
+      ],
+      "verificacion": "cendoj"
+    },
+    {
+      "id": "STS_30-09-1992",
+      "tribunal": "TS",
+      "sala_seccion": "Sala 1.ª",
+      "num_resolucion": "(s/n) 30-09-1992",
+      "fecha": "1992-09-30",
+      "ecli": "ECLI:ES:TS:1992:17756",
+      "roj_celex": "ROJ STS 17756/1992",
+      "tema": "Mandato tácito vs. mera apariencia (API). Citable 'a distinguir'.",
+      "aplica": "si",
+      "tipo_md": "verbatim",
+      "archivo_oficial": "sentencias_oficiales/STS_Sala1_30-09-1992_ROJ_STS_17756-1992.pdf",
+      "archivo_md": "sentencias_md/STS_Sala1_30-09-1992_ROJ_STS_17756-1992.md",
+      "enlace_oficial": null,
+      "usado_en": [
+        "estructura TERCERO",
+        "modulo"
+      ],
+      "verificacion": "cendoj"
+    },
+    {
+      "id": "STS_266-2008",
+      "tribunal": "TS",
+      "sala_seccion": "Sala 1.ª",
+      "num_resolucion": "266/2008",
+      "fecha": "2008-04-14",
+      "ecli": "ECLI:ES:TS:2008:4148",
+      "roj_celex": "ROJ STS 4148/2008",
+      "tema": "Representación aparente por actos concluyentes.",
+      "aplica": "si",
+      "tipo_md": "verbatim",
+      "archivo_oficial": "sentencias_oficiales/STS_Sala1_266-2008_14-04-2008_ROJ_STS_4148-2008.pdf",
+      "archivo_md": "sentencias_md/STS_Sala1_266-2008_14-04-2008_ROJ_STS_4148-2008.md",
+      "enlace_oficial": null,
+      "usado_en": [
+        "estructura TERCERO",
+        "modulo"
+      ],
+      "verificacion": "cendoj"
+    },
+    {
+      "id": "STS_503-2014",
+      "tribunal": "TS",
+      "sala_seccion": "Sala 1.ª",
+      "num_resolucion": "503/2014",
+      "fecha": "2014-10-07",
+      "ecli": "ECLI:ES:TS:2014:4241",
+      "roj_celex": "ROJ STS 4241/2014",
+      "tema": "Mandato aparente; cita STS 707/2012 y 266/2008.",
+      "aplica": "si",
+      "tipo_md": "verbatim",
+      "archivo_oficial": "sentencias_oficiales/STS_Sala1_503-2014_07-10-2014_ROJ_STS_4241-2014.pdf",
+      "archivo_md": "sentencias_md/STS_Sala1_503-2014_07-10-2014_ROJ_STS_4241-2014.md",
+      "enlace_oficial": null,
+      "usado_en": [
+        "estructura TERCERO",
+        "modulo"
+      ],
+      "verificacion": "cendoj"
+    },
+    {
+      "id": "STS_560-2014",
+      "tribunal": "TS",
+      "sala_seccion": "Sala 1.ª",
+      "num_resolucion": "560/2014",
+      "fecha": "2014-10-22",
+      "ecli": "ECLI:ES:TS:2014:4248",
+      "roj_celex": "ROJ STS 4248/2014",
+      "tema": "Heteroeficacia de la representación directa.",
+      "aplica": "si",
+      "tipo_md": "verbatim",
+      "archivo_oficial": "sentencias_oficiales/STS_Sala1_560-2014_22-10-2014_ROJ_STS_4248-2014.pdf",
+      "archivo_md": "sentencias_md/STS_Sala1_560-2014_22-10-2014_ROJ_STS_4248-2014.md",
+      "enlace_oficial": null,
+      "usado_en": [
+        "estructura TERCERO",
+        "modulo"
+      ],
+      "verificacion": "cendoj"
+    },
+    {
+      "id": "STS_123-2020",
+      "tribunal": "TS",
+      "sala_seccion": "Sala 1.ª",
+      "num_resolucion": "123/2020",
+      "fecha": "2020-02-25",
+      "ecli": "ECLI:ES:TS:2020:608",
+      "roj_celex": "ROJ STS 608/2020",
+      "tema": "Propiedad horizontal / fachada. NO es doctrina de representación.",
+      "aplica": "no",
+      "tipo_md": "verbatim",
+      "archivo_oficial": "sentencias_oficiales/STS_Sala1_123-2020_25-02-2020_ROJ_STS_608-2020.pdf",
+      "archivo_md": "sentencias_md/STS_Sala1_123-2020_25-02-2020_ROJ_STS_608-2020.md",
+      "enlace_oficial": null,
+      "usado_en": [],
+      "verificacion": "cendoj"
+    },
+    {
+      "id": "SAP_Madrid_50-2014",
+      "tribunal": "AP Madrid",
+      "sala_seccion": "Secc. 11.ª",
+      "num_resolucion": "50/2014",
+      "fecha": "2014-02-10",
+      "ecli": "ECLI:ES:APM:2014:1874",
+      "roj_celex": "ROJ SAP M 1874/2014",
+      "tema": "Mediación inmobiliaria / mandato verbal (no representación aparente técnica).",
+      "aplica": "parcial",
+      "tipo_md": "verbatim",
+      "archivo_oficial": "sentencias_oficiales/SAP_Madrid_50-2014_10-02-2014_ROJ_SAP_M_1874-2014.pdf",
+      "archivo_md": "sentencias_md/SAP_Madrid_50-2014_10-02-2014_ROJ_SAP_M_1874-2014.md",
+      "enlace_oficial": null,
+      "usado_en": [
+        "estructura TERCERO",
+        "modulo"
+      ],
+      "verificacion": "cendoj"
+    },
+    {
+      "id": "SAP_Valencia_248-2005",
+      "tribunal": "AP Valencia",
+      "sala_seccion": "Secc. 9.ª",
+      "num_resolucion": "248/2005",
+      "fecha": "2005-05-27",
+      "ecli": "ECLI:ES:APV:2005:2680",
+      "roj_celex": "ROJ SAP V 2680/2005",
+      "tema": "El idioma per se no vicia el consentimiento (a contrario: sin traductor no cabe presumirlo).",
+      "aplica": "si",
+      "tipo_md": "verbatim",
+      "archivo_oficial": "sentencias_oficiales/SAP_Valencia_248-2005_27-05-2005_ROJ_SAP_V_2680-2005.pdf",
+      "archivo_md": "sentencias_md/SAP_Valencia_248-2005_27-05-2005_ROJ_SAP_V_2680-2005.md",
+      "enlace_oficial": null,
+      "usado_en": [
+        "estructura TERCERO"
+      ],
+      "verificacion": "cendoj"
+    },
+    {
+      "id": "STS_1001-2001",
+      "tribunal": "TS",
+      "sala_seccion": "Sala 1.ª",
+      "num_resolucion": "1001/2001",
+      "fecha": "2001-11-02",
+      "ecli": "ECLI:ES:TS:2001:8534",
+      "roj_celex": "ROJ STS 8534/2001",
+      "tema": "Cabeza de serie: anulabilidad exige reconvención (FJ 3).",
+      "aplica": "si",
+      "tipo_md": "verbatim",
+      "archivo_oficial": "sentencias_oficiales/STS_1001-2001_02-11-2001_ROJ_STS_8534-2001.pdf",
+      "archivo_md": "sentencias_md/STS_1001-2001_02-11-2001_ROJ_STS_8534-2001_texto-verificado.md",
+      "enlace_oficial": null,
+      "usado_en": [
+        "Regla 1",
+        "estructura 1.2"
+      ],
+      "verificacion": "cendoj"
+    },
+    {
+      "id": "STS_1296-2006",
+      "tribunal": "TS",
+      "sala_seccion": "Sala 1.ª",
+      "num_resolucion": "1296/2006",
+      "fecha": "2006-12-05",
+      "ecli": "ECLI:ES:TS:2006:7602",
+      "roj_celex": "ROJ STS 7602/2006",
+      "tema": "Error/dolo por vía de acción, no de excepción (FJ 2).",
+      "aplica": "si",
+      "tipo_md": "verbatim",
+      "archivo_oficial": "sentencias_oficiales/STS_1296-2006_05-12-2006_ROJ_STS_7602-2006.pdf",
+      "archivo_md": "sentencias_md/STS_1296-2006_05-12-2006_ROJ_STS_7602-2006_texto-verificado.md",
+      "enlace_oficial": null,
+      "usado_en": [
+        "Regla 1",
+        "estructura 1.2"
+      ],
+      "verificacion": "cendoj"
+    },
+    {
+      "id": "STS_172-2018",
+      "tribunal": "TS",
+      "sala_seccion": "Sala 1.ª",
+      "num_resolucion": "172/2018",
+      "fecha": "2018-03-23",
+      "ecli": "ECLI:ES:TS:2018:1110",
+      "roj_celex": "ROJ STS 1110/2018",
+      "tema": "Directa sobre art. 408 LEC; mapa de vías; exceptio non adimpleti.",
+      "aplica": "si",
+      "tipo_md": "verbatim",
+      "archivo_oficial": "sentencias_oficiales/STS_172-2018_23-03-2018_ROJ_STS_1110-2018.pdf",
+      "archivo_md": "sentencias_md/STS_172-2018_23-03-2018_ROJ_STS_1110-2018_texto-verificado.md",
+      "enlace_oficial": null,
+      "usado_en": [
+        "Regla 1",
+        "Regla 1 ter",
+        "estructura 1.2",
+        "deslindes"
+      ],
+      "verificacion": "cendoj"
+    },
+    {
+      "id": "STS_224-1999",
+      "tribunal": "TS",
+      "sala_seccion": "Sala 1.ª",
+      "num_resolucion": "224/1999",
+      "fecha": "1999-03-18",
+      "ecli": "ECLI:ES:TS:1999:1908",
+      "roj_celex": "ROJ STS 1908/1999",
+      "tema": "Reconvención implícita: requisitos para tenerla por formulada.",
+      "aplica": "si",
+      "tipo_md": "verbatim",
+      "archivo_oficial": "sentencias_oficiales/STS_224-1999_18-03-1999_ROJ_STS_1908-1999.pdf",
+      "archivo_md": "sentencias_md/STS_224-1999_18-03-1999_ROJ_STS_1908-1999_texto-verificado.md",
+      "enlace_oficial": null,
+      "usado_en": [
+        "Regla 1 ter"
+      ],
+      "verificacion": "cendoj"
+    },
+    {
+      "id": "STS_339-2016",
+      "tribunal": "TS",
+      "sala_seccion": "Sala 1.ª",
+      "num_resolucion": "339/2016",
+      "fecha": "2016-05-24",
+      "ecli": "ECLI:ES:TS:2016:2133",
+      "roj_celex": "ROJ STS 2133/2016",
+      "tema": "Dies a quo art. 1301 CC en contratos no complejos = recepción de la prestación esencial.",
+      "aplica": "si",
+      "tipo_md": "verbatim",
+      "archivo_oficial": "sentencias_oficiales/STS_339-2016_24-05-2016_ROJ_STS_2133-2016.pdf",
+      "archivo_md": "sentencias_md/STS_339-2016_24-05-2016_ROJ_STS_2133-2016_texto-verificado.md",
+      "enlace_oficial": null,
+      "usado_en": [
+        "Regla 1 quater",
+        "estructura TERCERO",
+        "modulo"
+      ],
+      "verificacion": "cendoj"
+    },
+    {
+      "id": "STS_558-2019",
+      "tribunal": "TS",
+      "sala_seccion": "Sala 1.ª",
+      "num_resolucion": "558/2019",
+      "fecha": "2019-10-23",
+      "ecli": "ECLI:ES:TS:2019:3377",
+      "roj_celex": "ROJ STS 3377/2019",
+      "tema": "La infracción de normas no determina por sí nulidad radical (art. 6.3 CC).",
+      "aplica": "si",
+      "tipo_md": "verbatim",
+      "archivo_oficial": "sentencias_oficiales/STS_558-2019_23-10-2019_ROJ_STS_3377-2019.pdf",
+      "archivo_md": "sentencias_md/STS_558-2019_23-10-2019_ROJ_STS_3377-2019_texto-verificado.md",
+      "enlace_oficial": null,
+      "usado_en": [
+        "Regla 1"
+      ],
+      "verificacion": "cendoj"
+    },
+    {
+      "id": "STS_769-2014",
+      "tribunal": "TS",
+      "sala_seccion": "Sala 1.ª (Pleno)",
+      "num_resolucion": "769/2014",
+      "fecha": "2015-01-12",
+      "ecli": "ECLI:ES:TS:2015:254",
+      "roj_celex": "ROJ STS 254/2015",
+      "tema": "Dies a quo en productos complejos (matiz, distinguible de la regla general).",
+      "aplica": "si",
+      "tipo_md": "verbatim",
+      "archivo_oficial": "sentencias_oficiales/STS_769-2014_12-01-2015_ROJ_STS_254-2015.pdf",
+      "archivo_md": "sentencias_md/STS_769-2014_12-01-2015_ROJ_STS_254-2015_texto-verificado.md",
+      "enlace_oficial": null,
+      "usado_en": [
+        "Regla 1 quater",
+        "estructura TERCERO",
+        "modulo"
+      ],
+      "verificacion": "cendoj"
+    },
+    {
+      "id": "SAP_Oviedo_189-2018",
+      "tribunal": "AP Oviedo",
+      "sala_seccion": "Secc. 7.ª",
+      "num_resolucion": "189/2018",
+      "fecha": "2018-04-19",
+      "ecli": "ECLI:ES:APO:2018:1147",
+      "roj_celex": "ROJ SAP O 1147/2018",
+      "tema": "Honorarios de mediación inmobiliaria.",
+      "aplica": "si",
+      "tipo_md": "verbatim",
+      "archivo_oficial": "sentencias_oficiales/SAP_Oviedo_Sec7_189-2018_19-04-2018_ROJ_SAP_O_1147-2018.pdf",
+      "archivo_md": "sentencias_md/SAP_Oviedo_Sec7_189-2018_19-04-2018_ROJ_SAP_O_1147-2018_texto-verificado.md",
+      "enlace_oficial": null,
+      "usado_en": [
+        "modulo"
+      ],
+      "verificacion": "cendoj"
+    },
+    {
+      "id": "SAP_Cantabria_242-2019",
+      "tribunal": "AP Cantabria",
+      "sala_seccion": "Secc. 2.ª",
+      "num_resolucion": "242/2019",
+      "fecha": "2019-05-02",
+      "ecli": "ECLI:ES:APS:2019:267",
+      "roj_celex": "ROJ SAP S 267/2019",
+      "tema": "Honorarios de mediación + transparencia de cláusula.",
+      "aplica": "si",
+      "tipo_md": "verbatim",
+      "archivo_oficial": "sentencias_oficiales/SAP_Cantabria_Sec2_242-2019_02-05-2019_ROJ_SAP_S_267-2019.pdf",
+      "archivo_md": "sentencias_md/SAP_Cantabria_Sec2_242-2019_02-05-2019_ROJ_SAP_S_267-2019_texto-verificado.md",
+      "enlace_oficial": null,
+      "usado_en": [
+        "modulo"
+      ],
+      "verificacion": "cendoj"
+    },
+    {
+      "id": "SAP_Granada_68-2018",
+      "tribunal": "AP Granada",
+      "sala_seccion": "Secc. 4.ª",
+      "num_resolucion": "68/2018",
+      "fecha": "2018-03-02",
+      "ecli": "ECLI:ES:APGR:2018:329",
+      "roj_celex": "ROJ SAP GR 329/2018",
+      "tema": "Mediación / comisión.",
+      "aplica": "si",
+      "tipo_md": "verbatim",
+      "archivo_oficial": "sentencias_oficiales/SAP_Granada_Sec4_68-2018_02-03-2018_ROJ_SAP_GR_329-2018.pdf",
+      "archivo_md": "sentencias_md/SAP_Granada_Sec4_68-2018_02-03-2018_ROJ_SAP_GR_329-2018_texto-verificado.md",
+      "enlace_oficial": null,
+      "usado_en": [
+        "modulo"
+      ],
+      "verificacion": "cendoj"
+    },
+    {
+      "id": "SAP_Madrid_281-2018",
+      "tribunal": "AP Madrid",
+      "sala_seccion": "Secc. 13.ª",
+      "num_resolucion": "281/2018",
+      "fecha": "2018-07-02",
+      "ecli": "ECLI:ES:APM:2018:8959",
+      "roj_celex": "ROJ SAP M 8959/2018",
+      "tema": "Honorarios / cláusula de mediación.",
+      "aplica": "si",
+      "tipo_md": "verbatim",
+      "archivo_oficial": "sentencias_oficiales/SAP_Madrid_Sec13_281-2018_02-07-2018_ROJ_SAP_M_8959-2018.pdf",
+      "archivo_md": "sentencias_md/SAP_Madrid_Sec13_281-2018_02-07-2018_ROJ_SAP_M_8959-2018_texto-verificado.md",
+      "enlace_oficial": null,
+      "usado_en": [
+        "modulo"
+      ],
+      "verificacion": "cendoj"
+    },
+    {
+      "id": "TJUE_C-618-10",
+      "tribunal": "TJUE",
+      "sala_seccion": "Sala Primera",
+      "num_resolucion": "C-618-10",
+      "fecha": "2012-06-14",
+      "ecli": "ECLI:EU:C:2012:349",
+      "roj_celex": "CELEX 62010CJ0618",
+      "tema": "No integración de la cláusula abusiva (autoridad).",
+      "aplica": "si",
+      "tipo_md": "verbatim",
+      "archivo_oficial": null,
+      "archivo_md": "sentencias_md/TJUE_C-618-10_Banco_Espanol_de_Credito_2012-06-14_ECLI_EU_C_2012_349.md",
+      "enlace_oficial": "https://eur-lex.europa.eu/legal-content/ES/TXT/HTML/?uri=CELEX:62010CJ0618",
+      "usado_en": [
+        "Via D",
+        "estructura SEXTO"
+      ],
+      "verificacion": "eurlex"
+    },
+    {
+      "id": "TJUE_C-488-11",
+      "tribunal": "TJUE",
+      "sala_seccion": "Sala Primera",
+      "num_resolucion": "C-488-11",
+      "fecha": "2013-05-30",
+      "ecli": "ECLI:EU:C:2013:341",
+      "roj_celex": "CELEX 62011CJ0488",
+      "tema": "No integración (autoridad).",
+      "aplica": "si",
+      "tipo_md": "verbatim",
+      "archivo_oficial": null,
+      "archivo_md": "sentencias_md/TJUE_C-488-11_Asbeek_Brusse_2013-05-30_ECLI_EU_C_2013_341.md",
+      "enlace_oficial": "https://eur-lex.europa.eu/legal-content/ES/TXT/HTML/?uri=CELEX:62011CJ0488",
+      "usado_en": [
+        "Via D",
+        "estructura SEXTO"
+      ],
+      "verificacion": "eurlex"
+    },
+    {
+      "id": "TJUE_C-26-13",
+      "tribunal": "TJUE",
+      "sala_seccion": "Sala Cuarta",
+      "num_resolucion": "C-26-13",
+      "fecha": "2014-04-30",
+      "ecli": "ECLI:EU:C:2014:282",
+      "roj_celex": "CELEX 62013CJ0026",
+      "tema": "Excepción a la no integración (sustitución por norma dispositiva).",
+      "aplica": "si",
+      "tipo_md": "verbatim",
+      "archivo_oficial": null,
+      "archivo_md": "sentencias_md/TJUE_C-26-13_Kasler_2014-04-30_ECLI_EU_C_2014_282.md",
+      "enlace_oficial": "https://eur-lex.europa.eu/legal-content/ES/TXT/HTML/?uri=CELEX:62013CJ0026",
+      "usado_en": [
+        "Via D",
+        "estructura SEXTO"
+      ],
+      "verificacion": "eurlex"
+    },
+    {
+      "id": "TJUE_C-415-11",
+      "tribunal": "TJUE",
+      "sala_seccion": "Sala Primera",
+      "num_resolucion": "C-415-11",
+      "fecha": "2013-03-14",
+      "ecli": "ECLI:EU:C:2013:164",
+      "roj_celex": "CELEX 62011CJ0415",
+      "tema": "Control de oficio + criterios de abusividad (art. 3.1).",
+      "aplica": "si",
+      "tipo_md": "ficha",
+      "archivo_oficial": null,
+      "archivo_md": "sentencias_md/TJUE_C-415-11_Aziz_2013-03-14_ECLI_EU_C_2013_164_FICHA.md",
+      "enlace_oficial": "https://eur-lex.europa.eu/legal-content/ES/TXT/HTML/?uri=CELEX:62011CJ0415",
+      "usado_en": [
+        "Regla 1 bis",
+        "Via D"
+      ],
+      "verificacion": "eurlex"
+    },
+    {
+      "id": "TJUE_C-186-16",
+      "tribunal": "TJUE",
+      "sala_seccion": "Sala Segunda",
+      "num_resolucion": "C-186-16",
+      "fecha": "2017-09-20",
+      "ecli": "ECLI:EU:C:2017:703",
+      "roj_celex": "CELEX 62016CJ0186",
+      "tema": "Transparencia material; falta de transparencia no equivale a abusividad automática.",
+      "aplica": "si",
+      "tipo_md": "ficha",
+      "archivo_oficial": null,
+      "archivo_md": "sentencias_md/TJUE_C-186-16_Andriciuc_2017-09-20_ECLI_EU_C_2017_703_FICHA.md",
+      "enlace_oficial": "https://eur-lex.europa.eu/legal-content/ES/TXT/HTML/?uri=CELEX:62016CJ0186",
+      "usado_en": [
+        "Via D",
+        "Regla 3",
+        "estructura QUINTO"
+      ],
+      "verificacion": "eurlex"
+    },
+    {
+      "id": "TJUE_C-484-08",
+      "tribunal": "TJUE",
+      "sala_seccion": "Sala Primera",
+      "num_resolucion": "C-484-08",
+      "fecha": "2010-06-03",
+      "ecli": "ECLI:EU:C:2010:309",
+      "roj_celex": "CELEX 62008CJ0484",
+      "tema": "Objeto principal (art. 4.2); admisible control nacional más estricto.",
+      "aplica": "si",
+      "tipo_md": "ficha",
+      "archivo_oficial": null,
+      "archivo_md": "sentencias_md/TJUE_C-484-08_Caja_de_Ahorros_Ausbanc_2010-06-03_ECLI_EU_C_2010_309_FICHA.md",
+      "enlace_oficial": "https://eur-lex.europa.eu/legal-content/ES/TXT/HTML/?uri=CELEX:62008CJ0484",
+      "usado_en": [
+        "Via D",
+        "Regla 3",
+        "estructura QUINTO"
+      ],
+      "verificacion": "eurlex"
+    },
+    {
+      "id": "TJUE_C-621-17",
+      "tribunal": "TJUE",
+      "sala_seccion": "Sala Tercera",
+      "num_resolucion": "C-621-17",
+      "fecha": "2019-10-03",
+      "ecli": "ECLI:EU:C:2019:820",
+      "roj_celex": "CELEX 62017CJ0621",
+      "tema": "Transparencia de cláusulas de comisión.",
+      "aplica": "si",
+      "tipo_md": "ficha",
+      "archivo_oficial": null,
+      "archivo_md": "sentencias_md/TJUE_C-621-17_Gyula_Kiss_2019-10-03_ECLI_EU_C_2019_820_FICHA.md",
+      "enlace_oficial": "https://eur-lex.europa.eu/legal-content/ES/TXT/HTML/?uri=CELEX:62017CJ0621",
+      "usado_en": [
+        "Via D",
+        "modulo",
+        "estructura QUINTO"
+      ],
+      "verificacion": "eurlex"
+    },
+    {
+      "id": "TJUE_C-511-17",
+      "tribunal": "TJUE",
+      "sala_seccion": "Sala Tercera",
+      "num_resolucion": "C-511-17",
+      "fecha": "2020-03-11",
+      "ecli": "ECLI:EU:C:2020:188",
+      "roj_celex": "CELEX 62017CJ0511",
+      "tema": "Límite del control de oficio (cláusulas del objeto del litigio).",
+      "aplica": "si",
+      "tipo_md": "ficha",
+      "archivo_oficial": null,
+      "archivo_md": "sentencias_md/TJUE_C-511-17_Lintner_2020-03-11_ECLI_EU_C_2020_188_FICHA.md",
+      "enlace_oficial": "https://eur-lex.europa.eu/legal-content/ES/TXT/HTML/?uri=CELEX:62017CJ0511",
+      "usado_en": [
+        "Regla 1 bis"
+      ],
+      "verificacion": "eurlex"
+    },
+    {
+      "id": "TJUE_C-240-98",
+      "tribunal": "TJUE",
+      "sala_seccion": "Pleno",
+      "num_resolucion": "C-240-98",
+      "fecha": "2000-06-27",
+      "ecli": "ECLI:EU:C:2000:346",
+      "roj_celex": "CELEX 61998CJ0240",
+      "tema": "Origen del control de oficio.",
+      "aplica": "si",
+      "tipo_md": "ficha",
+      "archivo_oficial": null,
+      "archivo_md": "sentencias_md/TJUE_C-240-98_Oceano_Grupo_Editorial_2000-06-27_ECLI_EU_C_2000_346_FICHA.md",
+      "enlace_oficial": "https://eur-lex.europa.eu/legal-content/ES/TXT/HTML/?uri=CELEX:61998CJ0240",
+      "usado_en": [
+        "Regla 1 bis"
+      ],
+      "verificacion": "eurlex"
+    },
+    {
+      "id": "TJUE_C-243-08",
+      "tribunal": "TJUE",
+      "sala_seccion": "Sala Cuarta",
+      "num_resolucion": "C-243-08",
+      "fecha": "2009-06-04",
+      "ecli": "ECLI:EU:C:2009:350",
+      "roj_celex": "CELEX 62008CJ0243",
+      "tema": "Deber de control de oficio + opción del consumidor de conservar la cláusula.",
+      "aplica": "si",
+      "tipo_md": "ficha",
+      "archivo_oficial": null,
+      "archivo_md": "sentencias_md/TJUE_C-243-08_Pannon_GSM_2009-06-04_ECLI_EU_C_2009_350_FICHA.md",
+      "enlace_oficial": "https://eur-lex.europa.eu/legal-content/ES/TXT/HTML/?uri=CELEX:62008CJ0243",
+      "usado_en": [
+        "Regla 1 bis"
+      ],
+      "verificacion": "eurlex"
+    },
+    {
+      "id": "TJUE_C-473-00",
+      "tribunal": "TJUE",
+      "sala_seccion": "Sala Quinta",
+      "num_resolucion": "C-473-00",
+      "fecha": "2002-11-21",
+      "ecli": "ECLI:EU:C:2002:705",
+      "roj_celex": "CELEX 62000CJ0473",
+      "tema": "No preclusión por plazo nacional frente a la abusividad.",
+      "aplica": "si",
+      "tipo_md": "ficha",
+      "archivo_oficial": null,
+      "archivo_md": "sentencias_md/TJUE_C-473-00_Cofidis_2002-11-21_ECLI_EU_C_2002_705_FICHA.md",
+      "enlace_oficial": "https://eur-lex.europa.eu/legal-content/ES/TXT/HTML/?uri=CELEX:62000CJ0473",
+      "usado_en": [
+        "Regla 1 bis"
+      ],
+      "verificacion": "eurlex"
+    },
+    {
+      "id": "TJUE_C-472-11",
+      "tribunal": "TJUE",
+      "sala_seccion": "Sala Primera",
+      "num_resolucion": "C-472-11",
+      "fecha": "2013-02-21",
+      "ecli": "ECLI:EU:C:2013:88",
+      "roj_celex": "CELEX 62011CJ0472",
+      "tema": "Contradicción/audiencia previa antes de inaplicar la cláusula.",
+      "aplica": "si",
+      "tipo_md": "ficha",
+      "archivo_oficial": null,
+      "archivo_md": "sentencias_md/TJUE_C-472-11_Banif_Plus_Bank_2013-02-21_ECLI_EU_C_2013_88_FICHA.md",
+      "enlace_oficial": "https://eur-lex.europa.eu/legal-content/ES/TXT/HTML/?uri=CELEX:62011CJ0472",
+      "usado_en": [
+        "Regla 1 bis"
+      ],
+      "verificacion": "eurlex"
+    },
+    {
+      "id": "TJUE_C-421-14",
+      "tribunal": "TJUE",
+      "sala_seccion": "Sala Primera",
+      "num_resolucion": "C-421-14",
+      "fecha": "2017-01-26",
+      "ecli": "ECLI:EU:C:2017:60",
+      "roj_celex": "CELEX 62014CJ0421",
+      "tema": "Juego del control de oficio con la cosa juzgada/preclusión.",
+      "aplica": "si",
+      "tipo_md": "ficha",
+      "archivo_oficial": null,
+      "archivo_md": "sentencias_md/TJUE_C-421-14_Banco_Primus_2017-01-26_ECLI_EU_C_2017_60_FICHA.md",
+      "enlace_oficial": "https://eur-lex.europa.eu/legal-content/ES/TXT/HTML/?uri=CELEX:62014CJ0421",
+      "usado_en": [
+        "Regla 1 bis"
+      ],
+      "verificacion": "eurlex"
+    }
+  ]
+}

@@ -75,7 +75,7 @@ sincronizado en `00_Input/`. Si no consta, **pregunta** al letrado; no lo invent
 
 1. Compón el JSON de datos según `formato_minuta.md` (la prueba del bloque 7 = la aprobada en Fase 3).
 2. `python scripts/gen_minuta.py datos.json "05_Procedimiento/MINUTA_AP_<REF>.docx"`.
-3. Registra el uso (`scripts/log_uso.py`).
+3. Registra el uso (`scripts/registrar_uso.py`).
 
 ## Fase 6 — Generar la solicitud de prueba
 

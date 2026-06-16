@@ -1,26 +1,29 @@
-// log_uso.js — auto-instrumentación de la skill (EVOLUCION.md, Fase 1).
+// log_uso.js — shim de telemetría: delega en el helper canónico registrar_uso.py.
 //
-// Módulo helper que cada generador invoca al finalizar para dejar una línea
-// estructurada de telemetría en logs/uso.jsonl. También sirve a los formularios
-// pre/post-juicio para escribir en logs/<ref>_pre.jsonl y logs/<ref>_post.jsonl.
+// Antes esta skill tenía su propio logger JS (esquema + versión + escritura
+// duplicados respecto a _shared/registrar_uso.py). Ahora la telemetría se unifica
+// en registrar_uso.py (bundleado en este scripts/), fuente única del esquema y del
+// store central data/_skill_logs/<skill>/. Este módulo conserva la API previa
+// (log / logTo) para no tocar los generadores ni schedule_post_juicio.js, pero
+// reenvía cada evento al helper Python vía child_process.
 //
-// Diseño:
-//   - log(entry)            -> añade una línea a logs/uso.jsonl
-//   - logTo(file, entry)    -> añade una línea al archivo .jsonl indicado
-//   - El timestamp `ts` (ISO 8601 UTC) se inyecta automáticamente si el caller
-//     no lo aporta; `skill` se rellena por defecto si falta.
-//   - El directorio logs/ se crea si no existe.
-//   - Es best-effort: si el log falla, avisa por stderr pero NUNCA lanza, para
-//     no romper la generación del .docx (la telemetría no debe degradar el output).
+// Sigue exportando LOGS_DIR — schedule_post_juicio.js lo usa para escribir el
+// descriptor <ref>_schedule.json, que no es telemetría y registrar_uso.py no
+// emite — y SKILL. Es best-effort: si el registro falla, avisa por stderr pero
+// NUNCA lanza (la telemetría no debe degradar la generación del .docx).
 //
-// El esquema de cada archivo está documentado en logs/README.md.
+// Esquema de cada archivo: ver logs/README.md (las métricas específicas de cada
+// evento viajan dentro de `metricas`).
 
 const fs = require("fs");
 const path = require("path");
+const { spawnSync } = require("child_process");
 
 const SKILL = "preparacion-juicio-oral";
+const REGISTRAR = path.join(__dirname, "registrar_uso.py");
 
-// Resolución del directorio de logs (espejo de _shared/registrar_uso.py):
+// Resolución del store central (espejo de registrar_uso.log_dir, necesaria aquí
+// porque schedule_post_juicio.js escribe <ref>_schedule.json en este directorio):
 //   1. FEESDEFENDER_SKILL_LOGS -> <base>/<skill>
 //   2. repo detectado (pyproject.toml subiendo) -> <repo>/data/_skill_logs/<skill>
 //   3. fallback portable -> ../logs de la propia skill
@@ -41,49 +44,63 @@ function resolveLogsDir() {
 
 const LOGS_DIR = resolveLogsDir();
 
-// Lee `version:` del frontmatter de ../SKILL.md (def. "0.0").
-function readVersion() {
-  try {
-    const txt = fs.readFileSync(path.join(__dirname, "..", "SKILL.md"), "utf8");
-    let inFm = false;
-    for (const line of txt.split(/\r?\n/)) {
-      if (line.trim() === "---") { if (inFm) break; inFm = true; continue; }
-      if (inFm && /^version:/i.test(line)) {
-        return line.split(":")[1].trim().replace(/^["']|["']$/g, "") || "0.0";
-      }
-    }
-  } catch (e) { /* best-effort */ }
-  return "0.0";
-}
-
-const VERSION = readVersion();
-
-function ensureLogsDir() {
-  if (!fs.existsSync(LOGS_DIR)) {
-    fs.mkdirSync(LOGS_DIR, { recursive: true });
+// Lanza `python registrar_uso.py <skill> <ref> <accion> [--archivos ...]
+// [--metricas JSON] --fase <fase>`. Prueba intérpretes hasta dar con uno
+// disponible (python3 en el servidor, python en Windows). Best-effort.
+function delegar(ref, accion, archivos, metricas, fase) {
+  const args = [REGISTRAR, SKILL, ref == null ? "" : String(ref), accion || "uso"];
+  if (Array.isArray(archivos) && archivos.length) {
+    args.push("--archivos", ...archivos.map(String));
   }
+  if (metricas && Object.keys(metricas).length) {
+    args.push("--metricas", JSON.stringify(metricas));
+  }
+  args.push("--fase", fase);
+  for (const py of ["python3", "python"]) {
+    const r = spawnSync(py, args, { encoding: "utf8" });
+    if (r.error && r.error.code === "ENOENT") continue; // intérprete ausente: prueba el siguiente
+    if (r.status !== 0) {
+      process.stderr.write("[log_uso] aviso: registrar_uso.py salió con código " + r.status + "\n");
+    }
+    return r.status === 0;
+  }
+  process.stderr.write("[log_uso] aviso: no se encontró intérprete de Python para la telemetría\n");
+  return false;
 }
 
-// Añade una línea JSON al archivo .jsonl indicado dentro de logs/.
-// Devuelve true si escribió, false si hubo error (best-effort).
-function logTo(file, entry) {
+// Separa el evento {ref, accion, archivos, ...resto} en los argumentos del CLI;
+// `resto` se convierte en el objeto `metricas` del esquema canónico.
+function partir(entry) {
+  const { ref = null, accion = null, archivos = null, ...metricas } = entry || {};
+  return { ref, accion, archivos, metricas };
+}
+
+// API previa: log(entry) -> evento de uso (uso.jsonl).
+function log(entry) {
   try {
-    ensureLogsDir();
-    const record = Object.assign(
-      { ts: new Date().toISOString(), skill: SKILL, version: VERSION },
-      entry || {}
-    );
-    fs.appendFileSync(path.join(LOGS_DIR, file), JSON.stringify(record) + "\n", "utf8");
-    return true;
+    const { ref, accion, archivos, metricas } = partir(entry);
+    return delegar(ref, accion, archivos, metricas, "uso");
   } catch (e) {
     process.stderr.write("[log_uso] aviso: no se pudo registrar telemetría (" + e.message + ")\n");
     return false;
   }
 }
 
-// Atajo para el log de uso general (uso.jsonl).
-function log(entry) {
-  return logTo("uso.jsonl", entry);
+// API previa: logTo("<ref>_pre.jsonl" | "<ref>_post.jsonl", entry) -> checklist
+// pre/post. La fase y, si falta, la ref se derivan del nombre de archivo.
+function logTo(file, entry) {
+  try {
+    const { ref, accion, archivos, metricas } = partir(entry);
+    const base = path.basename(file || "");
+    let fase = "uso";
+    let refDeArchivo = base.replace(/\.jsonl$/i, "");
+    if (/_post\.jsonl$/i.test(base)) { fase = "post"; refDeArchivo = base.replace(/_post\.jsonl$/i, ""); }
+    else if (/_pre\.jsonl$/i.test(base)) { fase = "pre"; refDeArchivo = base.replace(/_pre\.jsonl$/i, ""); }
+    return delegar(ref || refDeArchivo, accion || "checklist", archivos, metricas, fase);
+  } catch (e) {
+    process.stderr.write("[log_uso] aviso: no se pudo registrar telemetría (" + e.message + ")\n");
+    return false;
+  }
 }
 
 module.exports = { log, logTo, LOGS_DIR, SKILL };

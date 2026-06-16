@@ -1,0 +1,18 @@
+{
+  "_meta": {
+    "descripcion": "IDs de Google Drive (Shared Drive DESPACHO - PRODUCCION) para el push de cosecha de la skill oposicion-alegacion-nulidad.",
+    "via": "conector Google Drive (create_file con parentId). No depende de montar G:.",
+    "shared_drive": "DESPACHO - PRODUCCION",
+    "actualizado": "2026-06-16"
+  },
+  "shared_drive_id": "0AF8V1CgyRzLQUk9PVA",
+  "biblioteca_skills_folder_id": "11ZkcoPF6RUvFLpNSOZShYRE97DJLMUvY",
+  "skill_folder_id": "18h2Vb_TkxFZsOFrOyYxP7NnkLCIq1_aE",
+  "cosecha_folder_id": "1Sx5VdwIN8j9B86tmGzwTWHVvROCIZLhQ",
+  "candidatas_verbatim_folder_id": "1CxBbF0reyb4vrebqnz26X4KQDRjCwWsS",
+  "rutas_drive_for_desktop": {
+    "_nota": "Equivalente por si algun equipo usa G: en vez del conector.",
+    "cosecha": "G:\\Unidades compartidas\\DESPACHO - PRODUCCION\\Biblioteca_Skills\\oposicion-alegacion-nulidad\\cosecha",
+    "candidatas_verbatim": "G:\\Unidades compartidas\\DESPACHO - PRODUCCION\\Biblioteca_Skills\\oposicion-alegacion-nulidad\\candidatas_verbatim"
+  }
+}

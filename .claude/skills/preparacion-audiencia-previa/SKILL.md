@@ -1,6 +1,6 @@
 ---
 name: preparacion-audiencia-previa
-version: "1.0"
+version: "1.0.1"
 description: >-
   Prepara el acto de AUDIENCIA PREVIA de cualquier juicio ordinario civil español (arts. 415-429 LEC),
   en posición actora o demandada. Produce dos entregables con el formato del despacho: la MINUTA de
@@ -158,8 +158,8 @@ Esta skill se auto-instrumenta para mejorar con el uso (mismo patrón que `prepa
 
 - **Checklist previo** (`templates/checklist_pre_ap.md`): objetivo del acto, perspectiva, frentes
   prioritarios, flancos, prueba clave. Se rellena al iniciar y se vuelca a `logs/<ref>_pre.jsonl`.
-- **Registro de uso** (`scripts/log_uso.py`, ahora *shim* del helper común
-  `scripts/registrar_uso.py`): cada generación de `.docx` registra `ref`, acción, archivos, nº de
+- **Registro de uso** (helper canónico `scripts/registrar_uso.py`): cada generación de `.docx`
+  registra `ref`, acción, archivos, nº de
   hechos no controvertidos/controvertidos y testigos. Escribe en el **store central**
   `data/_skill_logs/preparacion-audiencia-previa/uso.jsonl` (no en el bundle). Es *best-effort*: si
   el log falla, avisa por stderr pero **nunca** rompe la generación del documento.

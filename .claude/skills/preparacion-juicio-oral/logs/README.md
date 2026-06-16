@@ -4,28 +4,38 @@ Este directorio recoge la auto-instrumentación definida en la **Fase 1** de
 `EVOLUCION.md`. Es el insumo de las fases 2-5 (corpus golden, eval, LLM-as-judge,
 subagente editor). Sin estos datos, esas fases calibrarían sobre vacío.
 
-**Privacidad / versionado:** los `.jsonl` y los `.json` de este directorio contienen
-referencias internas de asuntos reales y **no se versionan ni se empaquetan en el
-`.skill`** (ver `.gitignore`). Lo único que viaja con la skill es este `README.md`,
-que documenta el esquema. Todos los timestamps `ts` son ISO 8601 en UTC y los inyecta
-`scripts/log_uso.js` automáticamente, igual que el campo `skill`.
+**Dónde se escribe.** La telemetría (`uso.jsonl`, `<ref>_pre/post.jsonl`) la emite
+el helper canónico `scripts/registrar_uso.py`: `scripts/log_uso.js` es un *shim*
+que conserva la API `log`/`logTo` y delega en él. Escribe en el **store central**
+`data/_skill_logs/preparacion-juicio-oral/`, no en esta carpeta `logs/`. El
+descriptor `<ref>_schedule.json` lo sigue escribiendo `scripts/schedule_post_juicio.js`
+directamente en ese mismo store (vía `log_uso.LOGS_DIR`).
+
+**Privacidad / versionado:** estos ficheros contienen referencias internas de
+asuntos reales y **no se versionan ni se empaquetan en el `.skill`**
+(`data/_skill_logs/` está git-ignorado). Lo único que viaja con la skill es este
+`README.md`. Los `ts` son ISO 8601 UTC y, junto con `skill` y `version`, los inyecta
+`registrar_uso.py` automáticamente.
 
 ---
 
 ## `uso.jsonl` — registro de ejecuciones
 
 Una línea JSON por cada generación de `.docx`. La escribe cada `gen_*.js` al
-finalizar, vía `log_uso.log({...})`. Campos comunes:
+finalizar, vía `log_uso.log({...})` (shim → `registrar_uso.py`). Esquema unificado
+del despacho:
 
 | Campo     | Tipo     | Descripción                                            |
 |-----------|----------|--------------------------------------------------------|
 | `ts`      | string   | Timestamp ISO 8601 UTC (automático).                   |
 | `skill`   | string   | `"preparacion-juicio-oral"` (automático).              |
+| `version` | string   | `version:` del frontmatter del `SKILL.md` (automático).|
 | `ref`     | string   | Referencia interna del asunto (W-XXXXX), o `null`.     |
 | `accion`  | string   | Generador que emitió la línea (ver abajo).             |
 | `archivos`| string[] | Nombres de los `.docx` producidos en esa ejecución.    |
+| `metricas`| object   | Métricas específicas por `accion` (ver abajo).         |
 
-Campos específicos por `accion`:
+Claves **dentro de `metricas`**, por `accion`:
 
 - **`gen_conclusiones`**: `hechos_no_ctrv` (nº), `hechos_ctrv` (nº), `conclusiones` (nº), `petitum` (nº).
 - **`gen_interrogatorio`**: `testigo` (nombre), `rol` (`directo`|`cruzado`|`neutro`|`problematico`), `version_testigo` (bool), `bloques` (nº), `preguntas` (nº), `anticipacion` (nº de ítems).
@@ -36,8 +46,7 @@ Campos específicos por `accion`:
 Ejemplo:
 
 ```jsonl
-{"ts":"2026-05-30T08:00:00.000Z","skill":"preparacion-juicio-oral","ref":"W-EJEMPLO","accion":"gen_conclusiones","archivos":["CONCLUSIONES_EJEMPLO.docx"],"hechos_no_ctrv":6,"hechos_ctrv":1,"conclusiones":2,"petitum":3}
-{"ts":"2026-05-30T08:00:01.000Z","skill":"preparacion-juicio-oral","ref":"W-EJEMPLO","accion":"gen_interrogatorio","archivos":["PREGUNTAS_Testigo_letrado.docx","PREGUNTAS_Testigo_testigo.docx"],"testigo":"Sr. Testigo","rol":"directo","version_testigo":true,"bloques":4,"preguntas":18,"anticipacion":2}
+{"ts":"2026-05-30T08:00:00.000000+00:00","skill":"preparacion-juicio-oral","version":"1.0","ref":"W-EJEMPLO","accion":"gen_conclusiones","archivos":["CONCLUSIONES_EJEMPLO.docx"],"metricas":{"hechos_no_ctrv":6,"hechos_ctrv":1,"conclusiones":2,"petitum":3}}
 ```
 
 ---
@@ -46,13 +55,12 @@ Ejemplo:
 
 Una línea JSON con la intención estratégica de partida (formulario
 `templates/checklist_pre_juicio.md`). La escribe el agente vía
-`log_uso.logTo("<ref>_pre.jsonl", {...})` al iniciar la preparación.
+`log_uso.logTo("<ref>_pre.jsonl", {...})` al iniciar la preparación; la fase
+(`pre`) la encoda el nombre del fichero, no un campo. Los campos propios del
+checklist viajan **dentro de `metricas`**:
 
-| Campo                  | Tipo       | Descripción                                         |
+| Campo en `metricas`    | Tipo       | Descripción                                         |
 |------------------------|------------|-----------------------------------------------------|
-| `ts`, `skill`          | string     | Automáticos.                                        |
-| `ref`                  | string     | Referencia del asunto.                              |
-| `fase`                 | string     | `"pre"`.                                            |
 | `objetivo_tactico`     | string     | Resultado concreto perseguido.                      |
 | `frentes_prioritarios` | string[]   | 1-3 ejes argumentales por orden.                    |
 | `riesgos`              | string[]   | Riesgos identificados de partida.                   |
@@ -65,13 +73,11 @@ Una línea JSON con la intención estratégica de partida (formulario
 Una línea JSON con la observación tras el acto (formulario
 `templates/checklist_post_juicio.md`), disparada ~7 días después de `fecha_juicio`
 por `scripts/schedule_post_juicio.js`. La escribe el agente vía
-`log_uso.logTo("<ref>_post.jsonl", {...})`.
+`log_uso.logTo("<ref>_post.jsonl", {...})`; la fase (`post`) la encoda el nombre
+del fichero. Los campos propios del checklist viajan **dentro de `metricas`**:
 
-| Campo                   | Tipo     | Descripción                                          |
+| Campo en `metricas`     | Tipo     | Descripción                                          |
 |-------------------------|----------|------------------------------------------------------|
-| `ts`, `skill`           | string   | Automáticos.                                         |
-| `ref`                   | string   | Referencia del asunto.                               |
-| `fase`                  | string   | `"post"`.                                            |
 | `fecha_juicio`          | string   | Fecha del acto (AAAA-MM-DD).                         |
 | `entregables_usados`    | string[] | Entregables realmente usados en sala.               |
 | `pregunta_no_prevista`  | string   | Pregunta que salió y no estaba prevista.             |

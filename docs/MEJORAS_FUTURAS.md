@@ -1073,3 +1073,29 @@ mejora la lectura del expediente desde el core. Implementación: Claude Code.
 
 - **Combobox F2 — búsqueda por contrario:** no resuelta por las vías REST probadas (relación inversa contrario→expedientes; ver DEAD_ENDS). Punto de reentrada: tantear `GET /api/related_registers` (sin probar; la entrada de DEAD_ENDS indica que acepta GET para "listado de relaciones"). Si no devuelve el inverso, quedaría scraping del frontal legacy. Disparador: caso real que lo necesite.
 - **Combobox F2 — búsqueda por nº de autos (`num_asunto`):** trivial de añadir a `_SEARCH_PROPS_BY_ELEMENT` cuando el campo deje de estar vacío en el tenant. Disparador: que se empiece a poblar `num_asunto`.
+
+## 32. Gobernanza de skills — superestructura diferida (Ola 1 ejecutada 2026-06-16)
+
+Tras la homogeneización de skills (PLAN.md, «Alcance REVISADO 2026-06-16»), se
+ejecutaron solo corrección (Ola 1) + mínimo reutilizable (plantilla +
+`validate_skills.py` modo aviso). Lo siguiente queda **diferido**; **disparador
+para reabrir**: más skills, más manos, o una inconsistencia que cueste algo real.
+
+- **Charter** `_shared/ARQUITECTURA_SKILLS.md` (referencia, no duplica `MEJORA_CONTINUA_SKILLS.md`).
+- **`scripts/new_skill.py`** (scaffolder que instancia `_shared/_plantilla-skill/`).
+- **`inventario_skills.json` + `INVENTARIO.md`** (termómetro de conformidad).
+- **`validate_skills.py` en modo bloqueante** (pre-commit + CI) y regla blanda en `CLAUDE.md`.
+- **Retrofit masivo de identidad** (`metadata` con ejes `rol`/`naturaleza` + `license`) de las 7 skills sin él (`cendoj-descarga`, `escritos-judiciales`, `preparacion-litigio-civil`, `preparacion-audiencia-previa`, `preparacion-juicio-oral`, `engel-volkers`, `viabilidad-prerelleno`). Se alinean **al tocar cada una**, no en barrido. Estado medible con `python scripts/validate_skills.py`.
+- **Generalizar jurisprudencia+cosecha a `_shared/`**: se queda en `oposicion-alegacion-nulidad` hasta que una 2.ª skill lo necesite.
+- **Salvaguarda ACL** (decisión 3 del PLAN): verificar **una vez** que el Shared Drive `Biblioteca_Skills/` excluye de hecho a los miembros de E&V (p. ej. Marta Reynares). Si los incluye, mover a carpeta restringida.
+
+## 33. Bug latente: frontmatter YAML inválido en `preparacion-juicio-oral`
+
+Detectado por `scripts/validate_skills.py` (2026-06-16). La `description` del
+frontmatter es un escalar **sin comillas** que contiene `(no escritos procesales):
+documento` — el `:` interno la hace **YAML inválida** para un parser estricto
+(`mapping values are not allowed here`). El cargador de skills lo tolera (la skill
+está en uso), pero cualquier herramienta que parsee el frontmatter con PyYAML
+falla. Arreglo: entrecomillar la `description` o pasarla a bloque `>-`. Se aplica
+**al hacer el retrofit de identidad de esa skill** (#32) o antes si una herramienta
+lo necesita.

@@ -1,6 +1,6 @@
 ---
 name: preparacion-juicio-oral
-version: "1.0"
+version: "1.0.1"
 description: Preparación del acto de juicio civil español tras la audiencia previa. Produce herramientas de soporte interno para el letrado (no escritos procesales): documento único de conclusiones (con hechos no controvertidos y controvertidos en tablas, citas literales de AP con timestamps, conclusiones jurídicas y petitum) e interrogatorios por testigo (versión letrado completa + versión testigo orientativa cuando aplica). Se usa cuando el usuario dice «preparar juicio», «preparar testifical», «cuadro de hechos», «hechos controvertidos», «interrogatorio testigo», «banco de preguntas», «esquema de conclusiones», «el juicio es mañana», o cuando menciona referencias internas (W-XXXXX, REF-XXXX) en un asunto con audiencia previa ya celebrada. No redacta demandas, contestaciones ni escritos de trámite; se encadena con `escritos-judiciales` y con la skill de cliente que corresponda. Predecesora natural: `preparacion-litigio-civil`.
 ---
 
@@ -84,7 +84,7 @@ Se considera madura cuando se haya aplicado a un asunto piloto (W-EJEMPLO) y a u
 
 La skill se auto-instrumenta conforme a la **Fase 1** de `EVOLUCION.md`. Esta sección documenta el mecanismo; no altera ninguna de las 12 decisiones metodológicas anteriores, solo registra su ejecución.
 
-- **`scripts/log_uso.js`** — módulo helper. Expone `log(entry)` (escribe en `logs/uso.jsonl`) y `logTo(file, entry)` (para `logs/<ref>_pre.jsonl` y `logs/<ref>_post.jsonl`). Inyecta `ts` (ISO 8601 UTC) y `skill` automáticamente, crea `logs/` si no existe y es *best-effort*: si el log falla, avisa por stderr pero **nunca** rompe la generación del `.docx`.
+- **`scripts/log_uso.js`** — *shim* que conserva la API previa (`log(entry)` y `logTo(file, entry)`) pero delega en el helper canónico `scripts/registrar_uso.py`, fuente única del esquema. Escribe en el **store central** `data/_skill_logs/preparacion-juicio-oral/` (no en el bundle); las métricas del evento viajan dentro de `metricas`. Inyecta `ts`, `skill` y `version` automáticamente y es *best-effort*: si el log falla, avisa por stderr pero **nunca** rompe la generación del `.docx`.
 
 - **Generadores instrumentados.** Los cuatro `gen_*.js` (`gen_conclusiones`, `gen_interrogatorio`, `gen_cuadro_hechos`, `gen_orden_vista`) llaman a `log_uso.log({...})` justo después de escribir cada `.docx`, registrando `ref`, `accion`, `archivos` producidos y métricas relevantes (hechos no controvertidos/controvertidos, testigos, preguntas, etc.).
 

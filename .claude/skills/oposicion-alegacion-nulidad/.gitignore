@@ -1,0 +1,4 @@
+# Telemetría con referencias de asuntos reales: no versionar ni empaquetar.
+logs/*.jsonl
+logs/*.json
+!logs/README.md

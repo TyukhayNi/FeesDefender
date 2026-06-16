@@ -1,0 +1,5 @@
+# Telemetría y datos sensibles: nunca se versionan ni viajan en el .skill.
+logs/*
+!logs/README.md
+__pycache__/
+*.pyc
