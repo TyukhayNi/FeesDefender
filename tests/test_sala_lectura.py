@@ -320,6 +320,28 @@ def test_poblar_sin_crm_docs_degrada_a_plano(tmp_casos_root):
     assert any(crm_dir.glob("*.pdf"))  # copia plana, sin subcarpeta de bundle
 
 
+def test_cli_organizar_se_detiene_con_residuo(tmp_casos_root):
+    cm, inv, cat, sl = _reload()
+    case_id, case_dir = _caso_con_docs(cm, inv, cat, [
+        ("01_Drive EV", "ambiguo.pdf", b"%PDF-2"),
+    ])
+    res = sl.organizar(case_id)
+    assert res["detenido_por_residuo"] is True
+    assert res["n_residuo"] == 1
+    assert not (case_dir / "01_Procesado" / "Sala lectura" / "Drive E&V").exists()
+
+
+def test_organizar_completo_sin_residuo(tmp_casos_root):
+    cm, inv, cat, sl = _reload()
+    case_id, case_dir = _caso_con_docs(cm, inv, cat, [
+        ("01_Drive EV", "Factura honorarios.pdf", b"%PDF-1"),
+    ])
+    res = sl.organizar(case_id)
+    assert res["detenido_por_residuo"] is False
+    assert (case_dir / "01_Procesado" / "Sala lectura" / "INDICE.md").exists()
+    assert any((case_dir / "01_Procesado" / "Sala lectura" / "Drive E&V").glob("*.pdf"))
+
+
 def test_poblar_bundles_idempotente(tmp_casos_root):
     cm, inv, cat, sl = _reload()
     from core.sync_sudespacho import GdocuDocInfo

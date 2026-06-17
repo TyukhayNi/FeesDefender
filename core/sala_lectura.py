@@ -394,3 +394,21 @@ def poblar_sala_lectura(case_id: str, *, crm_docs=None) -> dict:
     catalogo_documental.save_catalog(case_id, entries)
     return {"case_id": case_id, "acciones": acciones,
             "n_bundles": len({v[0] for v in bundles.values()})}
+
+
+# ---------------------------------------------------------------------------
+# Task 11: organizar — orquestador F4–F6
+# ---------------------------------------------------------------------------
+
+
+def organizar(case_id: str, *, crm_docs=None) -> dict:
+    """Orquestador: clasificar -> (si hay residuo, parar) -> render -> poblar."""
+    clasif = clasificar_caso(case_id)
+    if clasif["n_residuo"] > 0:
+        return {"case_id": case_id, "detenido_por_residuo": True,
+                "n_residuo": clasif["n_residuo"],
+                "worklist": str(_revisar_dir(case_id) / WORKLIST_NAME)}
+    render_indices(case_id)
+    pob = poblar_sala_lectura(case_id, crm_docs=crm_docs)
+    return {"case_id": case_id, "detenido_por_residuo": False,
+            "n_residuo": 0, "acciones": pob["acciones"]}
