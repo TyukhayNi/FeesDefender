@@ -193,3 +193,26 @@ def test_aplicar_ignora_filas_sin_tipo_o_tipo_invalido(tmp_casos_root):
     res = sl.aplicar_clasificacion(case_id)
     assert cat.load_catalog(case_id)[0].tipo_documental is None
     assert res["n_aplicadas"] == 0
+
+
+# --- Task 7: render_indices ---
+
+
+def test_render_indices(tmp_casos_root):
+    cm, inv, cat, sl = _reload()
+    case_id, case_dir = _caso_con_docs(cm, inv, cat, [
+        ("01_Drive EV", "Factura.pdf", b"%PDF-1"),
+        ("05_CRM/01_Demanda", "Burofax.pdf", b"%PDF-2"),
+    ])
+    sl.clasificar_caso(case_id)  # ambas casan por keyword
+    paths = sl.render_indices(case_id)
+
+    indice = case_dir / "01_Procesado" / "Sala lectura" / "INDICE.md"
+    crono = case_dir / "01_Procesado" / "Sala lectura" / "CRONOLOGIA.md"
+    assert indice in paths and crono in paths
+    txt_i = indice.read_text(encoding="utf-8")
+    assert "no editar a mano" in txt_i.lower()
+    assert "drive_ev" in txt_i.lower() or "drive e&v" in txt_i.lower()
+    assert "Factura.pdf" in txt_i
+    txt_c = crono.read_text(encoding="utf-8")
+    assert "Burofax.pdf" in txt_c

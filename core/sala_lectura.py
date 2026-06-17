@@ -16,6 +16,7 @@ from pathlib import Path
 from core import catalogo_documental
 from core.config import TAXONOMIA_EV, UMBRAL_CONFIANZA_AUTOMOVE, caso_path
 from core.local_organizer import _exif_o_mtime, _sanitize
+from core.utils import now_iso, slugify
 
 # Categoría → tokens del nombre de fichero (orden de prioridad de la tupla).
 # Las primeras que casen ganan; el orden de TAXONOMIA fija desempates.
@@ -203,3 +204,81 @@ def aplicar_clasificacion(case_id: str) -> dict:
         aplicadas += 1
     catalogo_documental.save_catalog(case_id, entries)
     return {"case_id": case_id, "n_aplicadas": aplicadas}
+
+
+# ---------------------------------------------------------------------------
+# Task 7: render_indices — INDICE.md por fuente→tipo + CRONOLOGIA.md por fecha
+# ---------------------------------------------------------------------------
+
+_SALA = "Sala lectura"
+FUENTE_LABEL = {
+    "drive_ev": "Drive E&V", "crm": "CRM", "whatsapp": "WhatsApp",
+    "entrevistas": "Entrevistas", "email": "Email", "manual": "Manual",
+}
+_CABECERA_RO = (
+    "<!-- GENERADO AUTOMÁTICAMENTE — NO EDITAR A MANO. "
+    "Se regenera desde indice_documental.yaml. -->"
+)
+
+
+def _sala_dir(case_id: str) -> Path:
+    return caso_path(case_id) / "01_Procesado" / _SALA
+
+
+def _link_original(e) -> str:
+    # Enlace relativo desde Sala lectura/ al original en 00_Input/.
+    return f"../../00_Input/{e.ruta_relativa}"
+
+
+def _link_md(e) -> str | None:
+    if Path(e.nombre_original).suffix.lower() == ".md":
+        return None
+    return f"../MD/{slugify(Path(e.ruta_relativa).stem)}.md"
+
+
+def render_indices(case_id: str) -> list[Path]:
+    entries = catalogo_documental.load_catalog(case_id)
+    out = _sala_dir(case_id)
+    out.mkdir(parents=True, exist_ok=True)
+
+    # --- INDICE.md: por fuente -> tipo ---
+    por_fuente: dict[str, list] = {}
+    for e in entries:
+        por_fuente.setdefault(e.fuente, []).append(e)
+    li = [_CABECERA_RO, "", f"# Índice del expediente — {case_id}", "",
+          f"Generado: {now_iso()}.", ""]
+    for fuente in sorted(por_fuente):
+        li.append(f"## {FUENTE_LABEL.get(fuente, fuente)}")
+        li.append("")
+        por_tipo: dict[str, list] = {}
+        for e in por_fuente[fuente]:
+            por_tipo.setdefault(e.tipo_documental or "Sin clasificar", []).append(e)
+        for tipo in sorted(por_tipo):
+            li.append(f"### {tipo}")
+            for e in sorted(por_tipo[tipo], key=lambda x: (x.fecha_doc or "", x.nombre_original)):
+                md = _link_md(e)
+                ver_texto = f" · [ver texto]({md})" if md else ""
+                fecha = e.fecha_doc or "s/f"
+                li.append(f"- {fecha} — [{e.nombre_original}]({_link_original(e)}){ver_texto}")
+            li.append("")
+    indice = out / "INDICE.md"
+    indice.write_text("\n".join(li), encoding="utf-8")
+
+    # --- CRONOLOGIA.md: por fecha ascendente, sin fecha al final ---
+    lc = [_CABECERA_RO, "", f"# Cronología — {case_id}", "",
+          f"Generado: {now_iso()}.", "",
+          "| Fecha | Fuente | Tipo | Documento |", "|---|---|---|---|"]
+
+    def _key(e):
+        return (e.fecha_doc is None, e.fecha_doc or "", e.nombre_original)
+
+    for e in sorted(entries, key=_key):
+        lc.append(
+            f"| {e.fecha_doc or 's/f'} | {FUENTE_LABEL.get(e.fuente, e.fuente)} "
+            f"| {e.tipo_documental or 'Sin clasificar'} "
+            f"| [{e.nombre_original}]({_link_original(e)}) |"
+        )
+    lc.append("")
+    crono = out / "CRONOLOGIA.md"
+    crono.write_text("\n".join(lc), encoding="utf-8")
+    return [indice, crono]
