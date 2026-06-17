@@ -79,6 +79,28 @@ def _split_author(rest: str) -> tuple[str | None, str]:
     return rest[:idx], rest[idx + 2 :]
 
 
+# ---------------------------------------------------------------------------
+# Detección de adjuntos
+# ---------------------------------------------------------------------------
+
+_RE_ADJ_IOS = re.compile(r"^‎?<adjunto:\s*(.+?)>\s*$", re.IGNORECASE)
+_RE_ADJ_ANDROID = re.compile(r"^(.+?)\s*\(archivo adjunto\)\s*$", re.IGNORECASE)
+
+
+def _adjunto_ref(texto_linea: str) -> str | None:
+    """Extrae el nombre del adjunto referenciado en una línea, si lo hay."""
+    for rx in (_RE_ADJ_IOS, _RE_ADJ_ANDROID):
+        m = rx.match(texto_linea)
+        if m:
+            return m.group(1).strip()
+    return None
+
+
+# ---------------------------------------------------------------------------
+# parse_chat
+# ---------------------------------------------------------------------------
+
+
 def parse_chat(texto: str) -> list[WhatsAppMessage]:
     """Parsea el contenido de un ``_chat.txt`` → lista de mensajes."""
     msgs: list[WhatsAppMessage] = []
@@ -95,8 +117,39 @@ def parse_chat(texto: str) -> list[WhatsAppMessage]:
             timestamp=_parse_dt(date_str, time_str),
             autor=autor,
             texto=texto_msg,
-            adjunto_ref=None,
+            adjunto_ref=_adjunto_ref(texto_msg),
             es_sistema=autor is None,
         )
         msgs.append(cur)
     return msgs
+
+
+# ---------------------------------------------------------------------------
+# Funciones públicas auxiliares
+# ---------------------------------------------------------------------------
+
+
+def referencias_adjuntos(msgs: list[WhatsAppMessage]) -> list[str]:
+    """Nombres de fichero referenciados como adjunto, en orden de aparición."""
+    return [m.adjunto_ref for m in msgs if m.adjunto_ref]
+
+
+def filter_by_date_range(
+    msgs: list[WhatsAppMessage],
+    desde: datetime | None = None,
+    hasta: datetime | None = None,
+) -> list[WhatsAppMessage]:
+    """Devuelve los mensajes con timestamp dentro de [desde, hasta] (inclusive).
+
+    Los mensajes sin timestamp se descartan (no se puede ubicarlos en el rango).
+    """
+    out: list[WhatsAppMessage] = []
+    for m in msgs:
+        if m.timestamp is None:
+            continue
+        if desde is not None and m.timestamp < desde:
+            continue
+        if hasta is not None and m.timestamp > hasta:
+            continue
+        out.append(m)
+    return out

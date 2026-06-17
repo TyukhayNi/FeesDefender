@@ -75,3 +75,47 @@ class TestParseIosMultilineaSistema:
         texto = "8/1/24, 1:05 p. m. - Juan: Tarde"
         msgs = parse_chat(texto)
         assert msgs[0].timestamp == datetime(2024, 1, 8, 13, 5)
+
+
+from core.whatsapp_export import filter_by_date_range, referencias_adjuntos
+
+
+class TestAdjuntosYFiltro:
+    def test_adjunto_android(self):
+        texto = "8/1/24, 10:32 - Juan: IMG-20240108-WA0001.jpg (archivo adjunto)"
+        msgs = parse_chat(texto)
+        assert msgs[0].adjunto_ref == "IMG-20240108-WA0001.jpg"
+
+    def test_adjunto_ios(self):
+        texto = "[8/1/24 10:32:05] Juan: ‎<adjunto: 00000042-PHOTO-2024.jpg>"
+        msgs = parse_chat(texto)
+        assert msgs[0].adjunto_ref == "00000042-PHOTO-2024.jpg"
+
+    def test_adjunto_con_caption_multilinea(self):
+        texto = (
+            "8/1/24, 10:32 - Juan: IMG-20240108-WA0001.jpg (archivo adjunto)\n"
+            "Mira esta foto"
+        )
+        msgs = parse_chat(texto)
+        assert msgs[0].adjunto_ref == "IMG-20240108-WA0001.jpg"
+        assert msgs[0].texto.endswith("Mira esta foto")
+
+    def test_referencias_adjuntos(self):
+        texto = (
+            "8/1/24, 10:32 - Juan: IMG-1.jpg (archivo adjunto)\n"
+            "8/1/24, 10:33 - Juan: Hola\n"
+            "8/1/24, 10:34 - Juan: DOC-2.pdf (archivo adjunto)"
+        )
+        assert referencias_adjuntos(parse_chat(texto)) == ["IMG-1.jpg", "DOC-2.pdf"]
+
+    def test_filter_by_date_range(self):
+        texto = (
+            "8/1/24, 10:00 - Juan: A\n"
+            "9/1/24, 10:00 - Juan: B\n"
+            "10/1/24, 10:00 - Juan: C"
+        )
+        msgs = parse_chat(texto)
+        out = filter_by_date_range(
+            msgs, desde=datetime(2024, 1, 9), hasta=datetime(2024, 1, 9, 23, 59)
+        )
+        assert [m.texto for m in out] == ["B"]
