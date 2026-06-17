@@ -143,3 +143,53 @@ def test_clasificar_caso_deterministas_y_residuo(tmp_casos_root):
     assert "Factura honorarios.pdf" not in contenido
     assert resumen["n_residuo"] == 1
     assert resumen["n_deterministas"] == 2
+
+
+# --- Task 6: aplicar_clasificacion ---
+
+
+def test_aplicar_clasificacion_vuelca_worklist(tmp_casos_root):
+    cm, inv, cat, sl = _reload()
+    case_id, case_dir = _caso_con_docs(cm, inv, cat, [
+        ("01_Drive EV", "Documento ambiguo.pdf", b"%PDF-2"),
+    ])
+    sl.clasificar_caso(case_id)
+    h = cat.load_catalog(case_id)[0].hash
+
+    worklist = case_dir / "01_Procesado" / "_revisar" / "_clasificar.md"
+    filas = [
+        "# Worklist", "",
+        "| Hash | Origen | Fuente | Tipo | Fecha | Parte | Descripcion |",
+        "|---|---|---|---|---|---|---|",
+        f"| {h} | Documento ambiguo.pdf | drive_ev | 01. ACTIVACIÓN | 2025-03-01 | propietario | Acuerdo marco |",
+        "",
+    ]
+    worklist.write_text("\n".join(filas), encoding="utf-8")
+
+    res = sl.aplicar_clasificacion(case_id)
+    e = cat.load_catalog(case_id)[0]
+    assert e.tipo_documental == "01. ACTIVACIÓN"
+    assert e.fecha_doc == "2025-03-01"
+    assert e.parte == "propietario"
+    assert e.descripcion == "Acuerdo marco"
+    assert e.confianza == 1.0
+    assert res["n_aplicadas"] == 1
+
+
+def test_aplicar_ignora_filas_sin_tipo_o_tipo_invalido(tmp_casos_root):
+    cm, inv, cat, sl = _reload()
+    case_id, case_dir = _caso_con_docs(cm, inv, cat, [
+        ("01_Drive EV", "ambiguo.pdf", b"%PDF-2"),
+    ])
+    sl.clasificar_caso(case_id)
+    h = cat.load_catalog(case_id)[0].hash
+    worklist = case_dir / "01_Procesado" / "_revisar" / "_clasificar.md"
+    filas = [
+        "| Hash | Origen | Fuente | Tipo | Fecha | Parte | Descripcion |",
+        "|---|---|---|---|---|---|---|",
+        f"| {h} | ambiguo.pdf | drive_ev | TIPO INVENTADO | 2025-03-01 |  |  |",
+    ]
+    worklist.write_text("\n".join(filas), encoding="utf-8")
+    res = sl.aplicar_clasificacion(case_id)
+    assert cat.load_catalog(case_id)[0].tipo_documental is None
+    assert res["n_aplicadas"] == 0

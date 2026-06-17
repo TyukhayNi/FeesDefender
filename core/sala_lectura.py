@@ -158,3 +158,48 @@ def clasificar_caso(case_id: str) -> dict:
     _write_worklist(case_id, residuo)
     return {"case_id": case_id, "n_total": len(entries),
             "n_deterministas": n_det, "n_residuo": len(residuo)}
+
+
+# ---------------------------------------------------------------------------
+# Task 6: aplicar_clasificacion — vuelca la worklist rellena al catálogo
+# ---------------------------------------------------------------------------
+
+
+def _parse_worklist(text: str) -> list[dict]:
+    filas = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line.startswith("|"):
+            continue
+        celdas = [c.strip() for c in line.strip("|").split("|")]
+        if len(celdas) != len(_WL_COLS):
+            continue
+        if celdas[0] == "Hash" or set(celdas[0]) <= {"-"}:
+            continue
+        filas.append(dict(zip(_WL_COLS, celdas)))
+    return filas
+
+
+def aplicar_clasificacion(case_id: str) -> dict:
+    path = _revisar_dir(case_id) / WORKLIST_NAME
+    if not path.exists():
+        return {"case_id": case_id, "n_aplicadas": 0}
+    filas = {f["Hash"]: f for f in _parse_worklist(path.read_text(encoding="utf-8"))}
+    entries = catalogo_documental.load_catalog(case_id)
+    aplicadas = 0
+    for e in entries:
+        fila = filas.get(e.hash)
+        if not fila:
+            continue
+        tipo = fila["Tipo"].strip()
+        if tipo not in TAXONOMIA_EV:
+            continue  # sin tipo válido → sigue pendiente
+        e.tipo_documental = tipo
+        e.fecha_doc = fila["Fecha"].strip() or e.fecha_doc
+        e.fecha_fuente = e.fecha_fuente or "contenido"
+        e.parte = fila["Parte"].strip() or None
+        e.descripcion = fila["Descripcion"].strip() or None
+        e.confianza = 1.0
+        aplicadas += 1
+    catalogo_documental.save_catalog(case_id, entries)
+    return {"case_id": case_id, "n_aplicadas": aplicadas}
