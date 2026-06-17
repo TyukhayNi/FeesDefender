@@ -57,3 +57,19 @@ def test_load_catalog_tolera_claves_desconocidas(tmp_casos_root):
     path.write_text(yaml.dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
     entries = cat.load_catalog(case_id)  # no debe lanzar
     assert len(entries) == 1
+
+
+# --- Task 2: save_catalog ---
+
+
+def test_save_catalog_roundtrip(tmp_casos_root):
+    from core import case_manager as cm, inventory as inv, catalogo_documental as cat
+    importlib.reload(cm); importlib.reload(inv); importlib.reload(cat)
+    case_id, _ = _caso_con_docs(cm, inv, cat, [("01_Drive EV", "x.txt", "hola")])
+    entries = cat.load_catalog(case_id)
+    entries[0].tipo_documental = "05. FACTURACIÓN - FINANZAS"
+    entries[0].confianza = 0.9
+    cat.save_catalog(case_id, entries)
+    reloaded = cat.load_catalog(case_id)
+    assert reloaded[0].tipo_documental == "05. FACTURACIÓN - FINANZAS"
+    assert reloaded[0].confianza == 0.9

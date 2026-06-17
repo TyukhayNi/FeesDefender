@@ -74,6 +74,21 @@ def load_catalog(case_id: str) -> list[CatalogEntry]:
     return [CatalogEntry(**{k: v for k, v in entry.items() if k in known}) for entry in data]
 
 
+def save_catalog(case_id: str, entries: list[CatalogEntry]) -> Path:
+    path = _catalog_path(case_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        yaml.dump(
+            [asdict(e) for e in entries],
+            allow_unicode=True,
+            default_flow_style=False,
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
 def build_catalog(case_id: str) -> Path:
     inv = load_inventory(case_id)
     path = _catalog_path(case_id)
@@ -99,14 +114,4 @@ def build_catalog(case_id: str) -> Path:
             fecha_indexado=now,
         ))
 
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        yaml.dump(
-            [asdict(e) for e in entries],
-            allow_unicode=True,
-            default_flow_style=False,
-            sort_keys=False,
-        ),
-        encoding="utf-8",
-    )
-    return path
+    return save_catalog(case_id, entries)
