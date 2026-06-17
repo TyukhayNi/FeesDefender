@@ -1301,6 +1301,32 @@ with tab_casos:
                 st.caption("Copia el texto y pégalo en un email a tus compañeros de E&V.")
 
         st.divider()
+        with st.expander("📚 Sala de lectura"):
+            st.caption(
+                "Clasifica los documentos de `01_Procesado/` en el árbol de "
+                "la sala de lectura. Si quedan documentos sin clasificar se "
+                "detiene y muestra un aviso."
+            )
+            _caso_sl = st.selectbox(
+                "Caso",
+                cases,
+                key="casos_sl_sel",
+                help="Selecciona el caso cuya sala de lectura quieres organizar.",
+            )
+            if st.button("📚 Organizar sala de lectura", key=f"sala_{_caso_sl}"):
+                from core import sala_lectura
+                with st.spinner("Clasificando y organizando…"):
+                    res = sala_lectura.organizar(_caso_sl)
+                if res["detenido_por_residuo"]:
+                    st.warning(
+                        f"⏸ Quedan {res['n_residuo']} documento(s) sin clasificar en "
+                        f"`01_Procesado/_revisar/_clasificar.md`. Pídele a Claude que "
+                        f"los resuelva en una sesión y vuelve a pulsar el botón."
+                    )
+                else:
+                    st.success(f"✓ Sala de lectura organizada: {res['acciones']}")
+
+        st.divider()
         with st.expander("🏙️ Reasignar ciudad"):
             from core.casos import case_locator as _cl
             from core.ciudades import CIUDADES as _ALL_CIUDADES
