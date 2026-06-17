@@ -11,6 +11,7 @@ Excepción RGPD temporal autorizada por Nikolai (spec
 from __future__ import annotations
 
 import re
+import shutil
 from pathlib import Path
 
 from core import catalogo_documental
@@ -307,3 +308,46 @@ def _nombre_canonico(entry) -> str:
     desc_src = entry.descripcion or Path(entry.nombre_original).stem
     desc = slugify(_sanitize(desc_src), max_length=50)
     return f"{fecha}_{tipo}_{desc}{ext}"
+
+
+# ---------------------------------------------------------------------------
+# Task 9: poblar_sala_lectura — copia idempotente + dedup + renombrado
+# ---------------------------------------------------------------------------
+
+
+def poblar_sala_lectura(case_id: str) -> dict:
+    entries = catalogo_documental.load_catalog(case_id)
+    acciones: dict[str, int] = {}
+    vistos_hash: set[str] = set()
+
+    for e in entries:
+        if e.hash and e.hash in vistos_hash:
+            acciones["SKIP_DEDUP"] = acciones.get("SKIP_DEDUP", 0) + 1
+            continue
+        src = _input_path(case_id, e.ruta_relativa)
+        if not src.exists():
+            acciones["MISSING_SRC"] = acciones.get("MISSING_SRC", 0) + 1
+            continue
+        fuente_dir = FUENTE_LABEL.get(e.fuente, e.fuente)
+        dst_rel = f"{_SALA}/{fuente_dir}/{_nombre_canonico(e)}"
+        dst = caso_path(case_id) / "01_Procesado" / dst_rel
+
+        prev = e.ruta_sala_lectura
+        if prev == dst_rel and dst.exists():
+            acciones["SKIP_UNCHANGED"] = acciones.get("SKIP_UNCHANGED", 0) + 1
+        else:
+            if prev and prev != dst_rel:
+                old = caso_path(case_id) / "01_Procesado" / prev
+                if old.exists():
+                    old.unlink()
+                acciones["MOVED"] = acciones.get("MOVED", 0) + 1
+            else:
+                acciones["COPY"] = acciones.get("COPY", 0) + 1
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+            e.ruta_sala_lectura = dst_rel
+        if e.hash:
+            vistos_hash.add(e.hash)
+
+    catalogo_documental.save_catalog(case_id, entries)
+    return {"case_id": case_id, "acciones": acciones}

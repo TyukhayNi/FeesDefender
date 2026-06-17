@@ -239,3 +239,38 @@ def test_nombre_canonico():
     n2 = sl._nombre_canonico(e2)
     assert n2.startswith("0000-00-00_doc_")
     assert n2.endswith(".pdf")
+
+
+# --- Task 9: poblar_sala_lectura ---
+
+
+def test_poblar_sala_lectura_copia_idempotente(tmp_casos_root):
+    cm, inv, cat, sl = _reload()
+    case_id, case_dir = _caso_con_docs(cm, inv, cat, [
+        ("01_Drive EV", "Factura honorarios.pdf", b"%PDF-FACTURA"),
+    ])
+    sl.clasificar_caso(case_id)
+    r1 = sl.poblar_sala_lectura(case_id)
+
+    sala = case_dir / "01_Procesado" / "Sala lectura" / "Drive E&V"
+    copias = list(sala.glob("*.pdf"))
+    assert len(copias) == 1
+    assert copias[0].read_bytes() == b"%PDF-FACTURA"
+    assert (case_dir / "00_Input" / "01_Drive EV" / "Factura honorarios.pdf").exists()
+    assert cat.load_catalog(case_id)[0].ruta_sala_lectura is not None
+
+    r2 = sl.poblar_sala_lectura(case_id)
+    assert len(list(sala.glob("*.pdf"))) == 1
+    assert r2["acciones"].get("SKIP_UNCHANGED", 0) >= 1
+
+
+def test_poblar_dedup_por_hash(tmp_casos_root):
+    cm, inv, cat, sl = _reload()
+    case_id, case_dir = _caso_con_docs(cm, inv, cat, [
+        ("01_Drive EV", "Factura.pdf", b"%PDF-IGUAL"),
+        ("05_CRM/01_Demanda", "Factura copia.pdf", b"%PDF-IGUAL"),
+    ])
+    sl.clasificar_caso(case_id)
+    sl.poblar_sala_lectura(case_id)
+    todas = list((case_dir / "01_Procesado" / "Sala lectura").rglob("*.pdf"))
+    assert len(todas) == 1
