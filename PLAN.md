@@ -76,8 +76,9 @@ original + IntakeManifest dedup por hash + evento `upload_whatsapp`) + expander
 «📲 Importar chat de WhatsApp» en el tab Casos de `streamlit_app.py` (multi-zip,
 rol por chat, previsualización, aviso de adjuntos faltantes/audios diferidos).
 Commits: `3734dcb` → `8b5bb42` → `2db5617` → `1a64fb4` → `aa4904f` → `6963ec5`
-→ `3e64dd5`. Tests: +22 (13 parser + 9 glue). Suite: **952 passed, 58 skipped**
-(5 fallos preexistentes en `test_sudespacho_relations.py` — ajenos).
+→ `3e64dd5` → `cf26b2a` (spec review fix). Tests: +25 (16 parser + 9 glue).
+Suite: **955 passed, 58 skipped** (5 fallos preexistentes en
+`test_sudespacho_relations.py` — ajenos).
 
 **Fase B (email) y transcripción de audio diferidas** — fuera de alcance de Fase A,
 reutilizan el parser sin cambios.
