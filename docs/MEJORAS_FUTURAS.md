@@ -1099,3 +1099,33 @@ está en uso), pero cualquier herramienta que parsee el frontmatter con PyYAML
 falla. Arreglo: entrecomillar la `description` o pasarla a bloque `>-`. Se aplica
 **al hacer el retrofit de identidad de esa skill** (#32) o antes si una herramienta
 lo necesita.
+
+## 34. Sala de lectura como skill-Cowork multiusuario (autonomía Paola/Ana)
+
+**Anotado 2026-06-17** (brainstorming sala de lectura F4–F6, decisión de Nikolai
+de dejar la idea registrada). La organización de la sala de lectura se construye
+ahora como `core/sala_lectura.py` **Python local** (spec
+`docs/superpowers/specs/2026-06-17-sala-lectura-f4f6-design.md`), disparable por
+Nikolai vía CLI + sesión Claude Code y por un botón Streamlit que **no cierra el
+residuo sin una sesión de Claude**. Consecuencia: hoy **solo Nikolai** puede
+disparar la organización completa (Claude Code corre en su PC, contra el disco
+local; Paola/Ana solo usan Streamlit y Cowork no ve el disco local).
+
+**Idea diferida.** Para que Paola/Ana disparen el equivalente a la "opción 1" de
+forma autónoma, reescribir la organización como una **skill que corre en Cowork**
+(servidor claude.ai), con los ficheros del caso accesibles desde **Google Drive**
+(donde ya viven los expedientes jurídicos, `CASOS_ROOT`). El despacho ya ejecuta
+skills así (`viabilidad-prerelleno`, `escritos-judiciales`, etc.).
+
+**Coste / por qué no se hace ya:** (i) hay que llevar la lógica probada del `core/`
+(dedup por hash, idempotencia, skip OCR, catálogo YAML) dentro de la skill y
+correrla en el sandbox de Cowork trayendo los ficheros desde Drive — más lento y
+frágil; (ii) **extiende la excepción RGPD** (lectura en claro por LLM) de "solo
+Nikolai" a varias personas y más volumen → la conversación del DPA pasa a ser la
+pieza seria; (iii) bifurca la arquitectura (core local para Nikolai + skill para
+Cowork, o migración completa).
+
+**Disparador para reabrir:** el DPA resuelto **y** una necesidad real de que
+Paola/Ana organicen casos sin intervención de Nikolai. Relacionado con la fase
+"clasificador por conector" del spec (Scaleway/Claude API sustituyendo a
+Claude-en-sesión para el residuo).
