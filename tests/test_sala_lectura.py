@@ -216,3 +216,26 @@ def test_render_indices(tmp_casos_root):
     assert "Factura.pdf" in txt_i
     txt_c = crono.read_text(encoding="utf-8")
     assert "Burofax.pdf" in txt_c
+
+
+# --- Task 8: _nombre_canonico ---
+
+
+def test_nombre_canonico():
+    from core import sala_lectura as sl
+    importlib.reload(sl)
+    from core.catalogo_documental import CatalogEntry
+    e = CatalogEntry(
+        id_doc="abc", ruta_relativa="01_Drive EV/x.pdf", nombre_original="x.pdf",
+        tipo_documental="01. ACTIVACIÓN", fecha_doc="2025-07-12",
+        descripcion="Hoja de captación firmada", hash="abc123",
+    )
+    nombre = sl._nombre_canonico(e)
+    assert nombre.startswith("2025-07-12_activacion_")
+    assert nombre.endswith(".pdf")
+
+    e2 = CatalogEntry(id_doc="d", ruta_relativa="a/y.pdf", nombre_original="y.pdf", hash="d")
+    # Sin tipo/fecha/desc -> fallback: fecha 0000-00-00, tipo 'doc', desc del stem original.
+    n2 = sl._nombre_canonico(e2)
+    assert n2.startswith("0000-00-00_doc_")
+    assert n2.endswith(".pdf")

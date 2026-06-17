@@ -282,3 +282,28 @@ def render_indices(case_id: str) -> list[Path]:
     crono = out / "CRONOLOGIA.md"
     crono.write_text("\n".join(lc), encoding="utf-8")
     return [indice, crono]
+
+
+# ---------------------------------------------------------------------------
+# Task 8: _nombre_canonico — nombre normalizado fecha_tipo_descripcion
+# ---------------------------------------------------------------------------
+
+_TIPO_SLUG = {
+    "00. FOTOS": "foto",
+    "01. ACTIVACIÓN": "activacion",
+    "03. OFERTAS": "oferta",
+    "04. ARRAS - ARRENDAMIENTOS": "arras",
+    "05. FACTURACIÓN - FINANZAS": "factura",
+    "06. PBC": "pbc",
+    "07. RECLAMACIONES": "reclamacion",
+    "08. PENDIENTE DE CLASIFICAR": "pendiente",
+}
+
+
+def _nombre_canonico(entry) -> str:
+    ext = Path(entry.nombre_original).suffix.lower()
+    fecha = entry.fecha_doc or "0000-00-00"
+    tipo = _TIPO_SLUG.get(entry.tipo_documental or "", "doc")
+    desc_src = entry.descripcion or Path(entry.nombre_original).stem
+    desc = slugify(_sanitize(desc_src), max_length=50)
+    return f"{fecha}_{tipo}_{desc}{ext}"
