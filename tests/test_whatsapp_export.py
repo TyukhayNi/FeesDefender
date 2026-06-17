@@ -100,6 +100,21 @@ class TestAdjuntosYFiltro:
         assert msgs[0].adjunto_ref == "IMG-20240108-WA0001.jpg"
         assert msgs[0].texto.endswith("Mira esta foto")
 
+    def test_media_omitted_android(self):
+        texto = "8/1/24, 10:32 - Juan: <Media omitted>"
+        msgs = parse_chat(texto)
+        assert msgs[0].adjunto_ref == "<Media omitted>"
+
+    def test_multimedia_omitido_es(self):
+        texto = "8/1/24, 10:32 - Juan: Multimedia omitido"
+        msgs = parse_chat(texto)
+        assert msgs[0].adjunto_ref == "<Media omitted>"
+
+    def test_archivo_adjunto_bare_ios(self):
+        texto = "[8/1/24 10:32:05] Juan: ‎<archivo adjunto>"
+        msgs = parse_chat(texto)
+        assert msgs[0].adjunto_ref == "<archivo adjunto>"
+
     def test_referencias_adjuntos(self):
         texto = (
             "8/1/24, 10:32 - Juan: IMG-1.jpg (archivo adjunto)\n"

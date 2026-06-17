@@ -85,6 +85,12 @@ def _split_author(rest: str) -> tuple[str | None, str]:
 
 _RE_ADJ_IOS = re.compile(r"^‎?<adjunto:\s*(.+?)>\s*$", re.IGNORECASE)
 _RE_ADJ_ANDROID = re.compile(r"^(.+?)\s*\(archivo adjunto\)\s*$", re.IGNORECASE)
+# iOS bare attachment marker (no filename): ‎<archivo adjunto>
+_RE_ADJ_BARE = re.compile(r"^‎?<archivo adjunto>\s*$", re.IGNORECASE)
+# Media omitted by WhatsApp: <Media omitted> / Multimedia omitido
+_RE_MEDIA_OMITTED = re.compile(
+    r"^‎?(?:<Media omitted>|Multimedia omitido)\s*$", re.IGNORECASE
+)
 
 
 def _adjunto_ref(texto_linea: str) -> str | None:
@@ -93,6 +99,10 @@ def _adjunto_ref(texto_linea: str) -> str | None:
         m = rx.match(texto_linea)
         if m:
             return m.group(1).strip()
+    if _RE_ADJ_BARE.match(texto_linea):
+        return "<archivo adjunto>"
+    if _RE_MEDIA_OMITTED.match(texto_linea):
+        return "<Media omitted>"
     return None
 
 

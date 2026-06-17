@@ -673,6 +673,35 @@ with tab_casos:
                     _wa_roles,
                     key=f"casos_wa_rol_{_i}",
                 )
+                _wa_date_range = None
+                _wa_use_range = st.checkbox(
+                    "Recortar por rango de fechas",
+                    key=f"casos_wa_range_{_i}",
+                    help=(
+                        "Genera un _chat_recortado.txt adicional con solo "
+                        "los mensajes del rango. El original se conserva íntegro."
+                    ),
+                )
+                if _wa_use_range and _prev.rango_fechas:
+                    _c1, _c2 = st.columns(2)
+                    with _c1:
+                        _wa_desde = st.date_input(
+                            "Desde",
+                            value=_prev.rango_fechas[0].date(),
+                            key=f"casos_wa_desde_{_i}",
+                        )
+                    with _c2:
+                        _wa_hasta = st.date_input(
+                            "Hasta",
+                            value=_prev.rango_fechas[1].date(),
+                            key=f"casos_wa_hasta_{_i}",
+                        )
+                    from datetime import datetime as _dt_cls
+
+                    _wa_date_range = (
+                        _dt_cls.combine(_wa_desde, _dt_cls.min.time()),
+                        _dt_cls.combine(_wa_hasta, _dt_cls.max.time()),
+                    )
 
                 if st.button(
                     f"⬆️ Importar «{_prev.chat_name}»",
@@ -680,7 +709,11 @@ with tab_casos:
                 ):
                     try:
                         _res = whatsapp_intake.deposit_export(
-                            _caso_wa, _rol_wa, _raw_wa, zip_name=_uf_wa.name
+                            _caso_wa,
+                            _rol_wa,
+                            _raw_wa,
+                            zip_name=_uf_wa.name,
+                            date_range=_wa_date_range,
                         )
                         if _res.skipped_dedup:
                             st.info(
