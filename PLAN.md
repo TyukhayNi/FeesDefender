@@ -53,16 +53,23 @@ intacto; ningún camino de IA accede a `01`. Primera fase = ficheros en
 - **Menor:** apoyarse en `[IDEA-SKIP-INCREMENTAL-EXTRACCION]` #1 (doble `extract_all`)
   para cumplir el criterio de idempotencia; el grifo de MD (Tarea 2) toca el mismo flujo.
 
-**Secuencia propuesta (doc §0.F):** (0) cerrar doble `extract_all` → (1) catálogo
-`indice_documental.yaml` → (2) scaffolding `Sala lectura/`+`MD/`+`_revisar/` →
-(3) grifo de MD en claro a `01_Procesado/MD/` → (4) copiador organizado + bundles
-(consumiendo `conjunto_detector`) → (5) render de índices → (6) clasificador híbrido
-(tras DPA). Cada fase con tests y suite verde.
+**Secuencia propuesta (doc §0.F):**
+> - [x] **(0) cerrar doble `extract_all`** — ya cerrado s32; verificado s48.
+> - [x] **(1) catálogo `indice_documental.yaml`** — `core/catalogo_documental.py` (`f253a84`).
+>   Artefacto independiente; reconciliación con `_intake_hashes.json` **diferida**.
+> - [x] **(2) scaffolding `Sala lectura/`+`MD/`+`_revisar/`** — en `ensure_case` (`f253a84`).
+> - [x] **(3) grifo de MD en claro a `01_Procesado/MD/`** — `markdown_generator.build` +
+>   consumidores `scorer.py`/`viability.py` (`f253a84`).
+> - [ ] (4) copiador organizado + bundles (consumiendo `conjunto_detector`)
+> - [ ] (5) render de índices
+> - [ ] (6) clasificador híbrido (tras DPA)
+>
+> Cada fase con tests y suite verde.
 
-**Decisiones abiertas a cerrar con Nikolai antes de Fase 1 (doc §0.G):** catálogo
-único vs manifiesto aparte · ¿promover formalmente `[SIGUIENTE-CATALOGO-DOCUMENTAL]`
-a cola? · taxonomía documental (la redacta Cowork; bloquea afinar el clasificador,
-no el cimiento) · DPA Scaleway (bloquea solo Tarea 7) · correspondencia suelta.
+**Decisiones abiertas (doc §0.G):** catálogo
+único vs manifiesto aparte (diferida) · taxonomía documental (la redacta Cowork;
+bloquea afinar el clasificador, no el cimiento) · DPA Scaleway (bloquea solo
+Tarea 7) · correspondencia suelta.
 
 ---
 
