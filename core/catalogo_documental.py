@@ -7,6 +7,7 @@ tiene exactamente una entrada.
 
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -42,6 +43,12 @@ class CatalogEntry:
     fecha_indexado: str = ""
     parent_id: str | None = None
     orden_en_bundle: int | None = None
+    # F6/F4 (sala de lectura)
+    descripcion: str | None = None
+    fecha_fuente: str | None = None          # contenido | crm_mtime | exif | mtime | desconocida
+    confianza: float | None = None
+    nombre_canonico: str | None = None
+    ruta_sala_lectura: str | None = None
 
 
 def _catalog_path(case_id: str) -> Path:
@@ -52,6 +59,10 @@ def _map_source(inventory_source: str) -> str:
     return _SOURCE_MAP.get(inventory_source, inventory_source)
 
 
+def _entry_fields() -> set[str]:
+    return {f.name for f in dataclasses.fields(CatalogEntry)}
+
+
 def load_catalog(case_id: str) -> list[CatalogEntry]:
     path = _catalog_path(case_id)
     if not path.exists():
@@ -59,7 +70,23 @@ def load_catalog(case_id: str) -> list[CatalogEntry]:
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not data:
         return []
-    return [CatalogEntry(**entry) for entry in data]
+    known = _entry_fields()
+    return [CatalogEntry(**{k: v for k, v in entry.items() if k in known}) for entry in data]
+
+
+def save_catalog(case_id: str, entries: list[CatalogEntry]) -> Path:
+    path = _catalog_path(case_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        yaml.dump(
+            [asdict(e) for e in entries],
+            allow_unicode=True,
+            default_flow_style=False,
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    return path
 
 
 def build_catalog(case_id: str) -> Path:
@@ -87,14 +114,4 @@ def build_catalog(case_id: str) -> Path:
             fecha_indexado=now,
         ))
 
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        yaml.dump(
-            [asdict(e) for e in entries],
-            allow_unicode=True,
-            default_flow_style=False,
-            sort_keys=False,
-        ),
-        encoding="utf-8",
-    )
-    return path
+    return save_catalog(case_id, entries)
