@@ -358,6 +358,7 @@ def test_poblar_bundles_idempotente(tmp_casos_root):
         GdocuDocInfo("3", "D 02 - oferta.pdf", "307", "Demanda", "application/pdf", 1, {}, ts),
     ]
     sl.poblar_sala_lectura(case_id, crm_docs=crm_docs)
+    assert all(e.nombre_canonico for e in cat.load_catalog(case_id))
     snap1 = {e.nombre_original: (e.parent_id, e.orden_en_bundle, e.ruta_sala_lectura)
              for e in cat.load_catalog(case_id)}
     r2 = sl.poblar_sala_lectura(case_id, crm_docs=crm_docs)

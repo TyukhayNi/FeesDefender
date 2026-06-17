@@ -359,6 +359,7 @@ def poblar_sala_lectura(case_id: str, *, crm_docs=None) -> dict:
             continue
         fuente_dir = FUENTE_LABEL.get(e.fuente, e.fuente)
         nombre = _nombre_canonico(e)
+        e.nombre_canonico = nombre
 
         b = bundles.get(e.hash)
         if b:

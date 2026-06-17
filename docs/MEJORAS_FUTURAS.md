@@ -1129,3 +1129,28 @@ Cowork, o migración completa).
 Paola/Ana organicen casos sin intervención de Nikolai. Relacionado con la fase
 "clasificador por conector" del spec (Scaleway/Claude API sustituyendo a
 Claude-en-sesión para el residuo).
+
+## 35. Bundles de WhatsApp en la sala de lectura (chat + media/)
+
+**Detectado 2026-06-17** (review final sala-lectura F4–F6). El spec
+`docs/superpowers/specs/2026-06-17-sala-lectura-f4f6-design.md` §7 prevé que en
+la sala de lectura los chats de WhatsApp se agrupen como bundle (chat `.txt`/`.md`
++ multimedia en subcarpeta `media/`). La implementación de F4 (`core/sala_lectura.py::poblar_sala_lectura`)
+solo materializa bundles para el CRM (vía `conjunto_detector.detect_bundles`, que
+opera sobre `GdocuDocInfo`). Los chats de WhatsApp y su multimedia se copian
+**planos** a `Sala lectura/WhatsApp/`. Funcional, pero no agrupa chat↔media.
+**Disparador:** un caso real con export de WhatsApp + adjuntos que moleste navegar
+plano. **Solución:** detector análogo para WhatsApp (el chat es la cabecera, los
+ficheros de media sus adjuntos), reaprovechando el patrón de `_bundle_map`.
+
+## 36. Guarda de colisión de nombre canónico en la sala de lectura
+
+**Detectado 2026-06-17** (review Task 9 sala-lectura). `poblar_sala_lectura`
+copia con `nombre_canonico` = `<fecha>_<tipo>_<descripcion><ext>`. Dos documentos
+DISTINTOS (distinto hash) que produzcan el mismo nombre canónico (misma fecha,
+mismo tipo, descripción que sluga igual a 50 car.) colisionan en el mismo destino
+y el segundo `shutil.copy2` **sobrescribe** al primero silenciosamente. El dedup
+por hash NO protege (solo cubre contenido idéntico). Raro pero posible. **Solución:**
+guarda de colisión en `poblar_sala_lectura` (sufijo `_2`/`_3` por destino ya usado
+en la corrida, determinista respetando idempotencia) o fragmento de hash en el
+nombre. **Disparador:** primera colisión observada en un caso real.
