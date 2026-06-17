@@ -3,6 +3,10 @@
 > Registro de cambios de la skill, en orden cronológico inverso (lo más reciente arriba).
 > Formato ligero: fecha (AAAA-MM-DD) + qué cambió, una línea por cambio.
 
+## 2026-06-17 — Estilo de la casa (enganche)
+
+- Puntero al contrato `data/_estilo/contrato_estilo.md` (capa 1) en la Fase 5 (redacción ordinal por ordinal) + pase de `pase-de-estilo` (capa 2) integrado en la revisión por subagente de la Fase 6. *Evidencia*: `[ESTILO-DE-LA-CASA]` (PLAN.md / STATUS.md), commit `f65f371`.
+
 ## 2026-06-16 — Telemetría canónica + drift de vías (v1.5.2)
 
 - **Telemetría unificada**: retirado el logger bespoke `scripts/log_uso.py`; la skill pasa a usar el helper canónico `scripts/registrar_uso.py` (store central `data/_skill_logs/`, esquema con métricas dentro de `metricas`). Skill añadida al tuple `_TARGETS` de `scripts/sync_skill_helpers.py` → recibe los 4 helpers canónicos. *Evidencia*: handoff de homogeneización de skills (PLAN.md, Ola 1).

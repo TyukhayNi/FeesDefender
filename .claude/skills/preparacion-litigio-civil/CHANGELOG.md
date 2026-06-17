@@ -3,6 +3,10 @@
 > Registro de cambios de la skill, en orden cronológico inverso (lo más reciente arriba).
 > Formato ligero: fecha (AAAA-MM-DD) + qué cambió, una línea por cambio.
 
+## 2026-06-17 — Estilo de la casa (enganche)
+
+- Recordatorio en §9 (transición a la redacción formal): el estilo lo aplican `escritos-judiciales` (contrato `data/_estilo/contrato_estilo.md`, capa 1) y `pase-de-estilo` (capa 2); los Hechos literales (paso 7) se redactan ya con ese criterio. *Evidencia*: `[ESTILO-DE-LA-CASA]` (PLAN.md / STATUS.md), commit `f65f371`.
+
 ## 2026-06-12 — Alineación con el expediente del despacho
 
 - Scaffolding alineado a **`CASO_SUBDIRS`** + **`_caso.md` mínimo** (`tipo_expediente: particular`, sin campos E&V) vía el scaffolder canónico compartido `scaffold_caso.py`, común con el core E&V (no divergencia, garantizada por test). Maestros `PREPARACION_/HECHOS_` ahora en `02_Analisis/`.

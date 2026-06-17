@@ -1,5 +1,9 @@
 # CHANGELOG — `preparacion-juicio-oral`
 
+## 2026-06-17 — Estilo de la casa (enganche)
+
+- Gotcha nuevo: al redactar conclusiones e interrogatorios, aplicar el contrato `data/_estilo/contrato_estilo.md` (capa 1); si las conclusiones se leen en sala, pasarlas por `pase-de-estilo` (capa 2). Son herramientas internas, no escritos firmados. *Evidencia*: `[ESTILO-DE-LA-CASA]` (PLAN.md / STATUS.md), commit `f65f371`.
+
 ## 2026-06-16 — Telemetría unificada (v1.0.1)
 
 - `scripts/log_uso.js` deja de ser una implementación JS propia y pasa a ser un **shim** que conserva la API `log`/`logTo` pero delega en el helper canónico `scripts/registrar_uso.py` (fuente única del esquema y del store central `data/_skill_logs/`). Se elimina la doble telemetría JS/Python; las métricas del evento viajan dentro de `metricas`. Sin cambios en los generadores ni en `schedule_post_juicio.js` (sigue usando `log_uso.LOGS_DIR`). `logs/README.md` y `SKILL.md` actualizados. *Evidencia*: handoff de homogeneización de skills (PLAN.md, Ola 1).
