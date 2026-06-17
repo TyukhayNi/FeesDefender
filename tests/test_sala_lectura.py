@@ -106,3 +106,14 @@ def test_clasificar_tolera_guiones_bajos():
     from core import sala_lectura
     importlib.reload(sala_lectura)
     assert sala_lectura._categoria_por_nombre("justificante_de_pago_2025.pdf") == "05. FACTURACIÓN - FINANZAS"
+
+
+# --- Task 4: fecha determinista — patrón en nombre ---
+
+
+def test_fecha_desde_nombre_iso():
+    from core import sala_lectura
+    importlib.reload(sala_lectura)
+    assert sala_lectura._fecha_desde_nombre("2025-07-12 oferta.pdf") == ("2025-07-12", "contenido")
+    assert sala_lectura._fecha_desde_nombre("oferta 12-07-2025.pdf") == ("2025-07-12", "contenido")
+    assert sala_lectura._fecha_desde_nombre("sin fecha.pdf") == (None, None)

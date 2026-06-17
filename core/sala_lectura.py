@@ -29,6 +29,27 @@ _KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
 
 _IMG_EXTS = {".jpg", ".jpeg", ".png", ".heic", ".heif", ".webp", ".gif", ".bmp", ".tiff", ".tif"}
 
+_FECHA_ISO_RE = re.compile(r"(?<!\d)(\d{4})-(\d{2})-(\d{2})(?!\d)")
+_FECHA_DMY_RE = re.compile(r"(?<!\d)(\d{2})[-/.](\d{2})[-/.](\d{4})(?!\d)")
+
+
+def _fecha_desde_nombre(nombre: str) -> tuple[str | None, str | None]:
+    """Extrae fecha ISO (YYYY-MM-DD) del nombre de fichero.
+
+    Reconoce dos patrones:
+    - ISO: ``YYYY-MM-DD`` → devuelve ``(fecha, "contenido")``.
+    - DMY: ``DD-MM-YYYY``, ``DD/MM/YYYY`` o ``DD.MM.YYYY`` → normaliza a ISO.
+
+    Devuelve ``(None, None)`` si no hay patrón reconocible.
+    """
+    m = _FECHA_ISO_RE.search(nombre)
+    if m:
+        return f"{m.group(1)}-{m.group(2)}-{m.group(3)}", "contenido"
+    m = _FECHA_DMY_RE.search(nombre)
+    if m:
+        return f"{m.group(3)}-{m.group(2)}-{m.group(1)}", "contenido"
+    return None, None
+
 
 def _es_imagen(ext: str) -> bool:
     """`ext` es el sufijo con punto (p. ej. `.jpg`), como `Path.suffix`."""
