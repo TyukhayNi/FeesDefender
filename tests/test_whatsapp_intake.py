@@ -172,3 +172,21 @@ class TestDepositExport:
         recortado = res.chat_dir / "_chat_recortado.txt"
         assert recortado.exists()
         assert (res.chat_dir / "_chat.txt").read_bytes() == _CHAT_TXT
+
+    def test_reimportar_mismo_zip_se_salta(self):
+        from core import whatsapp_intake
+
+        importlib.reload(whatsapp_intake)
+        case_id = self._ensure_case()
+
+        content = _make_zip({"_chat.txt": _CHAT_TXT, "IMG-1.jpg": b"jpgdata"})
+        first = whatsapp_intake.deposit_export(
+            case_id, "03_Otros", content, zip_name="dup.zip"
+        )
+        assert first.skipped_dedup is False
+
+        second = whatsapp_intake.deposit_export(
+            case_id, "03_Otros", content, zip_name="dup.zip"
+        )
+        assert second.skipped_dedup is True
+        assert second.files_written == []
