@@ -4,6 +4,8 @@ from __future__ import annotations
 import importlib
 from pathlib import Path
 
+import pytest
+
 
 def _reload():
     from core import case_manager, catalogo_documental, inventory, sala_lectura
@@ -73,3 +75,28 @@ def test_save_catalog_roundtrip(tmp_casos_root):
     reloaded = cat.load_catalog(case_id)
     assert reloaded[0].tipo_documental == "05. FACTURACIÓN - FINANZAS"
     assert reloaded[0].confianza == 0.9
+
+
+# --- Task 3: reglas deterministas — categoría por keyword e imagen ---
+
+
+@pytest.mark.parametrize("nombre, esperado", [
+    ("Factura honorarios 2025.pdf", "05. FACTURACIÓN - FINANZAS"),
+    ("Burofax requerimiento de pago.pdf", "07. RECLAMACIONES"),
+    ("Hoja de encargo en exclusiva.pdf", "01. ACTIVACIÓN"),
+    ("Oferta del comprador.pdf", "03. OFERTAS"),
+    ("Contrato de arras penitenciales.pdf", "04. ARRAS - ARRENDAMIENTOS"),
+    ("Nota simple registral.pdf", "06. PBC"),
+    ("Documento sin pistas.pdf", None),
+])
+def test_clasificar_por_keyword(nombre, esperado):
+    from core import sala_lectura
+    importlib.reload(sala_lectura)
+    assert sala_lectura._categoria_por_nombre(nombre) == esperado
+
+
+def test_categoria_imagen():
+    from core import sala_lectura
+    importlib.reload(sala_lectura)
+    assert sala_lectura._es_imagen(".jpg") is True
+    assert sala_lectura._es_imagen(".pdf") is False
