@@ -26,6 +26,7 @@ from core.intake_drive import (
 )
 from core import intake_log
 from core import intake_manual
+from core import whatsapp_intake
 from core.judicial_intake import intake_demanda_contestacion as _intake_judicial
 from core.sync_sudespacho import SudespachoError as _SudespachoError
 from core import share_drive as _sd
@@ -614,6 +615,89 @@ with tab_casos:
                     )
                 for _err_dem in _errors_dem:
                     st.error(f"❌ {_err_dem}")
+
+        st.divider()
+        with st.expander("📲 Importar chat de WhatsApp"):
+            _caso_wa = st.selectbox(
+                "Caso",
+                cases,
+                key="casos_wa_sel",
+                help="Caso al que se asociarán los chats de WhatsApp.",
+            )
+            _uploaded_wa = st.file_uploader(
+                "Subir export(s) de WhatsApp",
+                accept_multiple_files=True,
+                type=["zip"],
+                key="casos_wa_uploader",
+                help=(
+                    "Usa «Exportar chat → incluir multimedia» en WhatsApp y sube "
+                    "el/los .zip resultantes. Se guardan en `00_Input/02_Whatsapp/`."
+                ),
+            )
+
+            _wa_roles = [
+                "00_Consultor propietario",
+                "01_Consultor buscador",
+                "02_Grupo operacion",
+                "03_Otros",
+            ]
+
+            for _i, _uf_wa in enumerate(_uploaded_wa or []):
+                _raw_wa = _uf_wa.read()
+                try:
+                    _prev = whatsapp_intake.analyze(_raw_wa, zip_name=_uf_wa.name)
+                except Exception as _exc_wa:
+                    st.error(f"❌ **{_uf_wa.name}**: {_exc_wa}")
+                    continue
+
+                st.markdown(f"**{_prev.chat_name}**")
+                _rango = (
+                    f"{_prev.rango_fechas[0]:%d/%m/%Y} – {_prev.rango_fechas[1]:%d/%m/%Y}"
+                    if _prev.rango_fechas
+                    else "—"
+                )
+                st.caption(
+                    f"· {_prev.n_mensajes} mensajes · rango {_rango} · "
+                    f"{len(_prev.adjuntos_presentes)} adjuntos · "
+                    f"{len(_prev.audios)} audios (transcripción diferida)"
+                )
+                if _prev.adjuntos_faltantes:
+                    st.warning(
+                        f"⚠️ Faltan {len(_prev.adjuntos_faltantes)} adjuntos que "
+                        f"WhatsApp no incluyó en el export "
+                        f"(p. ej. {', '.join(_prev.adjuntos_faltantes[:3])}…). "
+                        "Pide un re-export o los ficheros sueltos si son relevantes."
+                    )
+                _rol_wa = st.selectbox(
+                    "Rol / subcarpeta",
+                    _wa_roles,
+                    key=f"casos_wa_rol_{_i}",
+                )
+
+                if st.button(
+                    f"⬆️ Importar «{_prev.chat_name}»",
+                    key=f"casos_wa_btn_{_i}",
+                ):
+                    try:
+                        _res = whatsapp_intake.deposit_export(
+                            _caso_wa, _rol_wa, _raw_wa, zip_name=_uf_wa.name
+                        )
+                        if _res.skipped_dedup:
+                            st.info(
+                                f"↩️ «{_prev.chat_name}» ya estaba importado "
+                                "(mismo export). No se ha duplicado."
+                            )
+                        else:
+                            st.success(
+                                f"✅ «{_prev.chat_name}» importado en "
+                                f"`02_Whatsapp/{_rol_wa}/` "
+                                f"({len(_res.files_written)} ficheros)."
+                            )
+                    except Exception as _exc_dep:
+                        st.error(
+                            f"❌ Error importando «{_prev.chat_name}»: {_exc_dep}"
+                        )
+                st.divider()
 
         st.divider()
         with st.expander("📂 Subir al árbol CRM"):
