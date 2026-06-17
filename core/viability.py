@@ -24,7 +24,7 @@ def _gather_top_context(case_id: str) -> tuple[str, list[str]]:
         return "", []
     _, body = read_md(top_path)
     slugs = _LINK_RE.findall(body)
-    proc_dir = caso_path(case_id) / "01_Procesado"
+    proc_dir = caso_path(case_id) / "01_Procesado" / "MD"
 
     chunks: list[str] = []
     used: list[str] = []

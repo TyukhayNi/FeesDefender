@@ -262,6 +262,10 @@ def ensure_case(
     for sub in CASO_SUBDIRS:
         (case_dir / sub).mkdir(exist_ok=True)
 
+    # Subestructura de 01_Procesado (sala de lectura + MD + cuarentena)
+    for sub01 in ("Sala lectura", "MD", "_revisar"):
+        (case_dir / "01_Procesado" / sub01).mkdir(exist_ok=True)
+
     # Subcarpetas de intake (niveles 2 y 3)
     for intake_sub in INPUT_SUBDIRS:
         (case_dir / "00_Input" / intake_sub).mkdir(exist_ok=True)

@@ -104,7 +104,7 @@ def _llm_score(case_id: str, md_path: Path, text: str) -> tuple[float, list[str]
 
 
 def _iter_processed(case_id: str):
-    proc = caso_path(case_id) / "01_Procesado"
+    proc = caso_path(case_id) / "01_Procesado" / "MD"
     for md in sorted(proc.glob("*.md")):
         meta, body = read_md(md)
         if meta.get("tipo") != "documento_procesado":
