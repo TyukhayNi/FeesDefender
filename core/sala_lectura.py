@@ -16,6 +16,7 @@ from pathlib import Path
 
 from core import catalogo_documental
 from core.config import TAXONOMIA_EV, UMBRAL_CONFIANZA_AUTOMOVE, caso_path
+from core.conjunto_detector import detect_bundles
 from core.local_organizer import _exif_o_mtime, _sanitize
 from core.utils import now_iso, slugify
 
@@ -316,14 +317,14 @@ def _nombre_canonico(entry) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _bundle_map(case_id: str, entries: list, crm_docs) -> dict:
-    """Devuelve {hash: (bundle_slug, rol, header_hash)} para los miembros de
+def _bundle_map(entries: list, crm_docs) -> dict:
+    """Devuelve {hash: (bundle_slug, rol, header_hash, orden)} para los miembros de
     bundles CRM de alta confianza. rol in {'cabecera', 'adjunto'}. Une
-    CRM<->catalogo por filename."""
+    CRM<->catálogo solo contra entradas de fuente CRM. orden es el índice del
+    doc_id dentro de prop.member_doc_ids (estable entre corridas)."""
     if not crm_docs:
         return {}
-    from core.conjunto_detector import detect_bundles
-    by_filename = {e.nombre_original: e for e in entries}
+    by_filename = {e.nombre_original: e for e in entries if e.fuente == "crm"}
     id_to_filename = {d.doc_id: d.filename for d in crm_docs}
     out: dict = {}
     for prop in detect_bundles(crm_docs):
@@ -333,21 +334,20 @@ def _bundle_map(case_id: str, entries: list, crm_docs) -> dict:
         header_e = by_filename.get(id_to_filename.get(header_id, "")) if header_id else None
         slug_src = header_e.nombre_original if header_e else f"bundle-{prop.timestamp}"
         bundle_slug = slugify(_sanitize(Path(slug_src).stem), max_length=50)
-        for doc_id in prop.member_doc_ids:
+        for idx, doc_id in enumerate(prop.member_doc_ids):
             e = by_filename.get(id_to_filename.get(doc_id, ""))
             if not e:
                 continue
             rol = "cabecera" if doc_id == header_id else "adjunto"
-            out[e.hash] = (bundle_slug, rol, header_e.hash if header_e else None)
+            out[e.hash] = (bundle_slug, rol, header_e.hash if header_e else None, idx)
     return out
 
 
 def poblar_sala_lectura(case_id: str, *, crm_docs=None) -> dict:
     entries = catalogo_documental.load_catalog(case_id)
-    bundles = _bundle_map(case_id, entries, crm_docs)
+    bundles = _bundle_map(entries, crm_docs)
     acciones: dict[str, int] = {}
     vistos_hash: set[str] = set()
-    orden_bundle: dict[str, int] = {}
 
     for e in entries:
         if e.hash and e.hash in vistos_hash:
@@ -362,15 +362,14 @@ def poblar_sala_lectura(case_id: str, *, crm_docs=None) -> dict:
 
         b = bundles.get(e.hash)
         if b:
-            bundle_slug, rol, header_hash = b
+            bundle_slug, rol, header_hash, orden = b
             if rol == "cabecera":
                 dst_rel = f"{_SALA}/{fuente_dir}/{bundle_slug}/{nombre}"
                 e.parent_id = None
             else:
                 dst_rel = f"{_SALA}/{fuente_dir}/{bundle_slug}/adjuntos/{nombre}"
                 e.parent_id = header_hash
-                orden_bundle[bundle_slug] = orden_bundle.get(bundle_slug, 0) + 1
-                e.orden_en_bundle = orden_bundle[bundle_slug]
+                e.orden_en_bundle = orden
         else:
             dst_rel = f"{_SALA}/{fuente_dir}/{nombre}"
 

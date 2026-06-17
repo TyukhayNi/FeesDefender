@@ -318,3 +318,29 @@ def test_poblar_sin_crm_docs_degrada_a_plano(tmp_casos_root):
     sl.poblar_sala_lectura(case_id)  # sin crm_docs
     crm_dir = case_dir / "01_Procesado" / "Sala lectura" / "CRM"
     assert any(crm_dir.glob("*.pdf"))  # copia plana, sin subcarpeta de bundle
+
+
+def test_poblar_bundles_idempotente(tmp_casos_root):
+    cm, inv, cat, sl = _reload()
+    from core.sync_sudespacho import GdocuDocInfo
+    case_id, case_dir = _caso_con_docs(cm, inv, cat, [
+        ("05_CRM/01_Demanda", "ORDINARIO VUELTA VENDEDOR.pdf", b"%PDF-CAB"),
+        ("05_CRM/01_Demanda", "D 01 - encargo.pdf", b"%PDF-D1"),
+        ("05_CRM/01_Demanda", "D 02 - oferta.pdf", b"%PDF-D2"),
+    ])
+    sl.clasificar_caso(case_id)
+    ts = "2025-01-01T10:00:00+01:00"
+    crm_docs = [
+        GdocuDocInfo("1", "ORDINARIO VUELTA VENDEDOR.pdf", "307", "Demanda", "application/pdf", 1, {}, ts),
+        GdocuDocInfo("2", "D 01 - encargo.pdf", "307", "Demanda", "application/pdf", 1, {}, ts),
+        GdocuDocInfo("3", "D 02 - oferta.pdf", "307", "Demanda", "application/pdf", 1, {}, ts),
+    ]
+    sl.poblar_sala_lectura(case_id, crm_docs=crm_docs)
+    snap1 = {e.nombre_original: (e.parent_id, e.orden_en_bundle, e.ruta_sala_lectura)
+             for e in cat.load_catalog(case_id)}
+    r2 = sl.poblar_sala_lectura(case_id, crm_docs=crm_docs)
+    snap2 = {e.nombre_original: (e.parent_id, e.orden_en_bundle, e.ruta_sala_lectura)
+             for e in cat.load_catalog(case_id)}
+    assert snap1 == snap2  # parent_id/orden/ruta estables entre corridas
+    # 2ª corrida no recopia
+    assert r2["acciones"].get("COPY", 0) == 0
