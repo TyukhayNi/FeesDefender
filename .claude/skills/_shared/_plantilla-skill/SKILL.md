@@ -44,6 +44,16 @@ Pasos como procedimiento, no como menú de opciones. Defaults claros. Solo lo qu
 el modelo no sabe ya; mantén el `SKILL.md` por debajo de 500 líneas y mueve el
 detalle a `references/` cargado bajo demanda (progressive disclosure).
 
+<!-- Estilo de la casa + verificación (módulo ESTILO + VERIFICACIÓN, ver _LEEME.md):
+     - Si esta skill REDACTA texto (escritos, comunicaciones): cita el contrato
+       `data/_estilo/contrato_estilo.md` (capa 1) en tu fase de redacción y pasa el
+       borrador por `pase-de-estilo` (capa 2).
+     - Si MANEJA hechos, cifras o citas: encadena con `verificacion-anclada-fuente`
+       (source-locked); no inventes ni rellenes huecos.
+     - Declara los que apliquen en `metadata.requires`.
+     Borra este comentario si la skill no redacta ni cita. -->
+
+
 ## Gotchas
 
 Avisos no obvios y validation loops para las partes frágiles.

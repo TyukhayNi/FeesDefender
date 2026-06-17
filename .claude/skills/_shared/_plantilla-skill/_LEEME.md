@@ -29,6 +29,7 @@ una skill ejecutable: es un molde. Carpeta ignorada por `sync_skill_helpers.py`
 | **OPERACIÓN** | la skill produce outputs en un expediente | helpers canónicos en `scripts/` (`registrar_outputs.py`, `registrar_uso.py`, `programar_revision.py`, `scaffold_caso.py`) vía `scripts/sync_skill_helpers.py`, y el bucle de `docs/MEJORA_CONTINUA_SKILLS.md`. Añade la carpeta al tuple `_TARGETS` del sincronizador. |
 | **EVOLUCIÓN** | la skill quiere mejora asistida por uso | `EVOLUCION.md` con las cinco fases. |
 | **JURISPRUDENCIA + COSECHA** | la skill cita y cosecha jurisprudencia | índice por ECLI + consolidador + `drive_config.json` (hoy solo en `oposicion-alegacion-nulidad`). |
+| **ESTILO + VERIFICACIÓN** | la skill **redacta texto** y/o **maneja hechos, cifras o citas** | Texto: puntero al contrato `data/_estilo/contrato_estilo.md` (capa 1) en la fase de redacción + `pase-de-estilo` final (capa 2). Hechos/citas: encadena con `verificacion-anclada-fuente` (source-locked). Declara ambos en `metadata.requires`. No aplica a skills que no redactan ni citan (descarga, hoja de cálculo, scaffolding). |
 
 `verificacion-anclada-fuente` (transversal) y `engel-volkers` (cliente) no llevan
 módulos OPERACIÓN/EVOLUCIÓN: solo núcleo + identidad.

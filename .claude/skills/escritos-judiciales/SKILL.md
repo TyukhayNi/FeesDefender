@@ -145,6 +145,18 @@ function rNomen(nomen) {
 
 ## Patrones lingüísticos obligatorios
 
+**Estilo de la casa (capa 1).** Estos patrones concretan el contrato de estilo
+`data/_estilo/contrato_estilo.md`, fuente única del estilo del despacho. Antes de
+redactar, aplícalo: claridad (frase corta con variación, voz activa, lo importante
+primero), persuasión (enmarcar en vez de resumir, ordenar por fuerza, cerrar con
+idea-fuerza) y sin marcas de IA (cero em dash, muletillas ni tríadas). La precisión
+jurídica y las citas verificadas prevalecen; el estilo opera dentro del formato
+Sala 1ª TS.
+
+**`verificacion-anclada-fuente` (convivencia obligatoria).** Antes de hornear cita,
+cifra, fecha o afirmación jurídica en el `.docx`, ánclala a fuente verificada
+(source-locked). La cita no localizable se retira; no se inventa.
+
 **Trimembración a binomio.** Eliminar el tercer adjetivo cuando es sinónimo:
 
 - *libre, voluntario y consciente* → *libre e informado*
@@ -508,6 +520,7 @@ function seccion(text) {
 - [ ] Suplico en cascada coherente con los Hechos-motivo (en juicio verbal con esa arquitectura)
 - [ ] Cita literal única por sentencia + remisión en repeticiones
 - [ ] En civil: "desestimar", nunca "absolver"
+- [ ] Pasado por `pase-de-estilo` (capa 2): claridad + persuasión + sin tics de IA (em dash, muletillas, tríadas), sin tocar fondo, datos ni citas
 
 ---
 

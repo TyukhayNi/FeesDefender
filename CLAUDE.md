@@ -195,6 +195,16 @@ Criterios formales de la Sala 1ª del TS (admisión de recursos de casación):
 Para generación automática de escritos `.docx`, usar la skill
 `escritos-judiciales` (en `.claude/skills/escritos-judiciales/`).
 
+### Estilo de la casa (claridad + persuasión + no-IA)
+
+Todo output del despacho (escritos, contratos, comunicaciones a cliente y a E&V) se
+redacta en el **estilo de la casa**, definido en el contrato canónico
+`data/_estilo/contrato_estilo.md` (fuente única; capa 1): claro, persuasivo y sin
+marcas de IA, con la voz del despacho. Antes de guardar o firmar, revísalo con la
+skill `pase-de-estilo` (capa 2). **Regla de oro: la precisión jurídica y las citas
+verificadas prevalecen sobre cualquier regla de estilo; el estilo opera dentro del
+formato Sala 1ª TS, no lo sustituye.**
+
 ### Fuente única de verdad de las skills del despacho
 
 **Las skills del despacho se editan SIEMPRE en `.claude/skills/`** de este repo (más

@@ -204,6 +204,10 @@ prueba; objeto principal del art. 4.2 Dir. 93/13).
 
 ### Fase 5 — Redacción ordinal por ordinal
 
+**Estilo de la casa (capa 1):** aplica el contrato `data/_estilo/contrato_estilo.md`
+al redactar cada ordinal (claridad + persuasión + sin marcas de IA). La precisión y
+las citas verificadas prevalecen.
+
 1. Redacta **un ordinal por turno**, volcando en el esqueleto y proponiéndolo por
    chat antes de fijarlo.
 2. Inserta las citas de documentos directamente en el cuerpo cuando el formato lo
@@ -219,7 +223,9 @@ prueba; objeto principal del art. 4.2 Dir. 93/13).
    oficial). Las **no localizables se retiran**, dejando el apartado anclado solo
    en lo sólido (texto del precepto del BOE).
 2. **Revisión por subagente** del `.docx` completo: numeración, remisiones
-   cruzadas, exactitud de preceptos, consistencia de datos e importes, y SUPLICO.
+   cruzadas, exactitud de preceptos, consistencia de datos e importes, SUPLICO, y un
+   **pase de estilo** (skill `pase-de-estilo`: claridad + persuasión + no-IA, sin
+   tocar fondo ni citas).
 3. **Notas al pie** con cita íntegra (nº, fecha, ROJ/ECLI) + enlace de descarga
    clicable (CENDOJ `openDocument` / EUR-Lex). python-docx no soporta notas al
    pie de serie: hay que inyectar la parte XML (`footnotes.xml` + relación +

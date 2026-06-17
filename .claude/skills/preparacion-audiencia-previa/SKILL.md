@@ -152,6 +152,12 @@ rellena el JSON y ejecuta el script. El formato sigue las convenciones de `escri
 [references/solicitud_prueba.md](references/solicitud_prueba.md); ejemplo completo en
 `assets/ejemplo_solicitud.json`.
 
+**Estilo de la casa.** Al escribir los campos de texto libre del JSON (hechos,
+fundamentos de la pertinencia de la prueba, guion de la minuta), aplica el contrato
+`data/_estilo/contrato_estilo.md` (capa 1: claridad + persuasión + sin marcas de IA).
+La solicitud de prueba es un escrito procesal: antes de darla por lista, pásala por
+`pase-de-estilo` (capa 2), sin tocar datos, citas ni formato.
+
 ## Mejora continua
 
 Esta skill se auto-instrumenta para mejorar con el uso (mismo patrón que `preparacion-juicio-oral`):

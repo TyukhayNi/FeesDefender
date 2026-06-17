@@ -128,6 +128,7 @@ Cuando el `PREPARACION_X.md` no tenga decisiones marcadas como `[PENDIENTE]` y l
 - Anuncia al usuario que la fase de preparación está completa.
 - Invoca la skill `escritos-judiciales` para generar el .docx aplicando los criterios formales TS Sala 1.ª.
 - Una vez generado el borrador, recorre el `CHECKLIST_DECISIONES.md` (template en `templates/`) como verificación previa a firma.
+- El estilo lo aplican `escritos-judiciales` (contrato `data/_estilo/contrato_estilo.md`, capa 1) y el `pase-de-estilo` final (capa 2). Al consolidar los Hechos literales (paso 7), redáctalos ya con ese criterio: claridad, voz activa, sin marcas de IA; la precisión y las citas prevalecen.
 
 **Hechos pendientes de soporte (🟡) y anclaje.** La existencia de Hechos 🟡 NO impide cerrar la preparación —es normal alegar hechos que se probarán después—, pero antes de pasar a redacción: (a) cada Hecho 🟡 debe tener su medio de prueba previsto anotado; (b) el mapa de prueba del `PREPARACION_X.md` (sección 7) debe estar revisado con el letrado; (c) ningún Hecho puede quedar en estado 🔴. Además, la jurisprudencia que se vaya a citar se verifica en CENDOJ antes del cierre (encadenar con `cendoj-descarga`).
 

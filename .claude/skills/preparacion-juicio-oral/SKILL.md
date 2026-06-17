@@ -75,6 +75,7 @@ Avisos no obvios que, sin esta nota, el agente pasaría por alto. Léelos antes 
 - **Interrogatorios íntegramente cerrados irritan a algunos jueces.** La forma «Diga si es cierto que» se reserva para anclajes documentales y bloques nucleares; el resto, preguntas abiertas (Decisión 10).
 - **La caja de anticipación a repreguntas solo se lee si el adversario abre el frente.** Es contención, no guion de exposición (Decisión 12).
 - **Sin invención de contenido jurídico.** Jurisprudencia y calificaciones vienen de los inputs o de skills de cliente, nunca del modelo.
+- **Estilo de la casa.** Al redactar conclusiones e interrogatorios, aplica el contrato `data/_estilo/contrato_estilo.md` (claridad + sin marcas de IA). Son herramientas internas; si las conclusiones se leerán en sala, pásalas por `pase-de-estilo`. La precisión y las citas verificadas prevalecen.
 
 ## Validación
 
