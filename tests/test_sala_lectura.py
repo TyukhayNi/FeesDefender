@@ -117,3 +117,29 @@ def test_fecha_desde_nombre_iso():
     assert sala_lectura._fecha_desde_nombre("2025-07-12 oferta.pdf") == ("2025-07-12", "contenido")
     assert sala_lectura._fecha_desde_nombre("oferta 12-07-2025.pdf") == ("2025-07-12", "contenido")
     assert sala_lectura._fecha_desde_nombre("sin fecha.pdf") == (None, None)
+
+
+# --- Task 5: clasificar_caso ---
+
+
+def test_clasificar_caso_deterministas_y_residuo(tmp_casos_root):
+    cm, inv, cat, sl = _reload()
+    case_id, case_dir = _caso_con_docs(cm, inv, cat, [
+        ("01_Drive EV", "Factura honorarios.pdf", b"%PDF-1"),
+        ("01_Drive EV", "Documento ambiguo.pdf", b"%PDF-2"),
+        ("01_Drive EV", "foto fachada.jpg", b"\xff\xd8\xff\xe0jpg"),
+    ])
+    resumen = sl.clasificar_caso(case_id)
+
+    entries = {e.nombre_original: e for e in cat.load_catalog(case_id)}
+    assert entries["Factura honorarios.pdf"].tipo_documental == "05. FACTURACIÓN - FINANZAS"
+    assert entries["foto fachada.jpg"].tipo_documental == "00. FOTOS"
+    assert entries["Documento ambiguo.pdf"].tipo_documental is None
+
+    worklist = case_dir / "01_Procesado" / "_revisar" / "_clasificar.md"
+    assert worklist.exists()
+    contenido = worklist.read_text(encoding="utf-8")
+    assert "Documento ambiguo.pdf" in contenido
+    assert "Factura honorarios.pdf" not in contenido
+    assert resumen["n_residuo"] == 1
+    assert resumen["n_deterministas"] == 2
