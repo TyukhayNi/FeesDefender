@@ -30,12 +30,20 @@ _RE_ANDROID = re.compile(
     re.IGNORECASE,
 )
 
+# Cabecera iOS:  [d/m/yy[,] HH:MM[:SS][ am/pm]] resto  (puede ir precedida de U+200E)
+_RE_IOS = re.compile(
+    r"^‎?\[(\d{1,2}/\d{1,2}/\d{2,4}),?\s+"
+    r"(\d{1,2}:\d{2}(?::\d{2})?(?:\s*[ap]\.?\s*m\.?)?)\]\s*(.*)$",
+    re.IGNORECASE,
+)
+
 
 def _parse_header(line: str) -> tuple[str, str, str] | None:
     """Si la línea abre un mensaje, devuelve (fecha, hora, resto). Si no, None."""
-    m = _RE_ANDROID.match(line)
-    if m:
-        return m.group(1), m.group(2), m.group(3)
+    for rx in (_RE_IOS, _RE_ANDROID):
+        m = rx.match(line)
+        if m:
+            return m.group(1), m.group(2), m.group(3)
     return None
 
 
