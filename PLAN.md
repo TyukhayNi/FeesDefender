@@ -73,6 +73,25 @@ Tarea 7) · correspondencia suelta.
 
 ---
 
+## ✅ [INTAKE-WHATSAPP-FASE-A] Intake de chats de WhatsApp — Fase A (UI Streamlit)
+*Diseño aprobado 2026-06-15. Spec: `docs/superpowers/specs/2026-06-15-intake-whatsapp-design.md`. Plan: `docs/superpowers/plans/2026-06-15-intake-whatsapp-fase-a.md`. Implementación: Claude Code, rama `feat/whatsapp-faseA`.*
+
+**Fase A COMPLETA (2026-06-17).** Parser puro `core/whatsapp_export.py` (iOS/Android,
+2/4 cifras, 12/24h, multilínea, sistema, adjuntos, filtro por fechas) + glue
+`core/whatsapp_intake.py` (analyze + deposit_export, depósito verbatim + zip
+original + IntakeManifest dedup por hash + evento `upload_whatsapp`) + expander
+«📲 Importar chat de WhatsApp» en el tab Casos de `streamlit_app.py` (multi-zip,
+rol por chat, previsualización, aviso de adjuntos faltantes/audios diferidos).
+Commits: `3734dcb` → `8b5bb42` → `2db5617` → `1a64fb4` → `aa4904f` → `6963ec5`
+→ `3e64dd5` → `cf26b2a` (spec review fix). Tests: +25 (16 parser + 9 glue).
+Suite: **955 passed, 58 skipped** (5 fallos preexistentes en
+`test_sudespacho_relations.py` — ajenos).
+
+**Fase B (email) y transcripción de audio diferidas** — fuera de alcance de Fase A,
+reutilizan el parser sin cambios.
+
+---
+
 ## [SIGUIENTE-INTAKE-PROCURADORES-EMAIL] Intake automático de correos de procuradores → Sudespacho
 *Diseño cerrado con Nikolai 2026-06-12. Plan fino autocontenido: `docs/PLAN_INTAKE_PROCURADORES_EMAIL.md`. Implementación: Claude Code.*
 
