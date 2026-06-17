@@ -13,8 +13,10 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
+from . import intake_log
 from .config import WHATSAPP_SUBDIRS, caso_path, settings
-from .whatsapp_export import parse_chat, referencias_adjuntos
+from .intake_manifest import IntakeManifest, compute_sha256_bytes
+from .whatsapp_export import filter_by_date_range, parse_chat, referencias_adjuntos
 
 _WHATSAPP_SUBDIR = "02_Whatsapp"
 _AUDIO_EXTS = frozenset({".opus", ".ogg", ".m4a", ".aac", ".mp3"})
@@ -109,4 +111,102 @@ def analyze(content: bytes, *, zip_name: str) -> ChatPreview:
         adjuntos_presentes=presentes,
         adjuntos_faltantes=faltantes,
         audios=audios,
+    )
+
+
+def deposit_export(
+    case_id: str,
+    rol_subdir: str,
+    content: bytes,
+    *,
+    zip_name: str,
+    date_range: tuple[datetime | None, datetime | None] | None = None,
+) -> DepositResult:
+    """Deposita un export de WhatsApp en ``00_Input/02_Whatsapp/<rol>/<chat>/``.
+
+    Verbatim: escribe el ``_chat.txt`` + todos los media + el zip original.
+    Dedup por hash de zip: si ese export ya se importó, no escribe nada y
+    devuelve ``skipped_dedup=True``.  Registra cada fichero en el manifest y
+    emite el evento ``upload_whatsapp``.
+    """
+    if rol_subdir not in WHATSAPP_SUBDIRS:
+        raise ValueError(
+            f"rol_subdir inválido: {rol_subdir!r}. "
+            f"Válidos: {WHATSAPP_SUBDIRS}"
+        )
+    case_dir = caso_path(case_id)
+    if not case_dir.exists():
+        raise FileNotFoundError(
+            f"El caso '{case_id}' no existe en {settings.casos_root}. "
+            "Llama a ensure_case() antes de deposit_export()."
+        )
+
+    preview = analyze(content, zip_name=zip_name)
+    chat_dir = case_dir / "00_Input" / _WHATSAPP_SUBDIR / rol_subdir / preview.chat_name
+    zip_sha = compute_sha256_bytes(content)
+    members = _read_members(content)
+    chat_txt_name, texto = _find_chat_txt(members)
+
+    files_written: list[Path] = []
+    with IntakeManifest(case_id) as manifest:
+        if manifest.lookup(zip_sha) is not None:
+            return DepositResult(
+                chat_dir=chat_dir, preview=preview, skipped_dedup=True
+            )
+
+        chat_dir.mkdir(parents=True, exist_ok=True)
+
+        rel_base = f"{_WHATSAPP_SUBDIR}/{rol_subdir}/{preview.chat_name}"
+        for name, data in members.items():
+            dest = chat_dir / name
+            dest.write_bytes(data)
+            files_written.append(dest)
+            manifest.register(
+                compute_sha256_bytes(data),
+                f"{rel_base}/{name}",
+                source="whatsapp",
+                chat=preview.chat_name,
+            )
+
+        zip_dest = chat_dir / _ORIGINAL_ZIP_NAME
+        zip_dest.write_bytes(content)
+        files_written.append(zip_dest)
+        manifest.register(
+            zip_sha,
+            f"{rel_base}/{_ORIGINAL_ZIP_NAME}",
+            source="whatsapp",
+            chat=preview.chat_name,
+            es_zip_origen=True,
+        )
+
+        if date_range is not None:
+            desde, hasta = date_range
+            recortados = filter_by_date_range(parse_chat(texto), desde, hasta)
+            lineas = [
+                f"[{m.timestamp}] {m.autor or '(sistema)'}: {m.texto}"
+                for m in recortados
+            ]
+            rec_dest = chat_dir / "_chat_recortado.txt"
+            rec_dest.write_text("\n".join(lineas), encoding="utf-8")
+            files_written.append(rec_dest)
+
+    intake_log.append_event(
+        case_id,
+        "upload_whatsapp",
+        details={
+            "chat": preview.chat_name,
+            "rol": rol_subdir,
+            "n_mensajes": preview.n_mensajes,
+            "adjuntos_presentes": len(preview.adjuntos_presentes),
+            "adjuntos_faltantes": preview.adjuntos_faltantes,
+            "audios": len(preview.audios),
+            "zip_sha256": zip_sha,
+        },
+    )
+
+    return DepositResult(
+        chat_dir=chat_dir,
+        preview=preview,
+        files_written=files_written,
+        skipped_dedup=False,
     )

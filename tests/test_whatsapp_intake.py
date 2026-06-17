@@ -75,3 +75,100 @@ def test_analyze_sin_chat_txt_falla():
     content = _make_zip({"IMG-1.jpg": b"x"})
     with pytest.raises(ValueError, match="_chat.txt"):
         whatsapp_intake.analyze(content, zip_name="chat.zip")
+
+
+# ---------------------------------------------------------------------------
+# deposit_export
+# ---------------------------------------------------------------------------
+from datetime import datetime
+
+from core.config import caso_path
+
+
+class TestDepositExport:
+    def _ensure_case(self):
+        importlib.reload(case_manager)
+        case_manager.ensure_case("WA-2026-001", titulo="Caso WhatsApp test")
+        return "WA-2026-001"
+
+    def test_deposita_verbatim_y_conserva_zip(self):
+        from core import whatsapp_intake
+
+        importlib.reload(whatsapp_intake)
+        case_id = self._ensure_case()
+
+        content = _make_zip({"_chat.txt": _CHAT_TXT, "IMG-1.jpg": b"jpgdata"})
+        res = whatsapp_intake.deposit_export(
+            case_id, "02_Grupo operacion", content, zip_name="Grupo Valldaura.zip"
+        )
+
+        assert res.skipped_dedup is False
+        chat_dir = (
+            caso_path(case_id)
+            / "00_Input"
+            / "02_Whatsapp"
+            / "02_Grupo operacion"
+            / "Grupo Valldaura"
+        )
+        assert res.chat_dir == chat_dir
+        assert (chat_dir / "_chat.txt").read_bytes() == _CHAT_TXT
+        assert (chat_dir / "IMG-1.jpg").read_bytes() == b"jpgdata"
+        assert (chat_dir / "_export_original.zip").exists()
+
+    def test_rol_invalido_falla(self):
+        from core import whatsapp_intake
+
+        importlib.reload(whatsapp_intake)
+        case_id = self._ensure_case()
+        content = _make_zip({"_chat.txt": _CHAT_TXT})
+        with pytest.raises(ValueError, match="rol"):
+            whatsapp_intake.deposit_export(
+                case_id, "99_Inexistente", content, zip_name="x.zip"
+            )
+
+    def test_caso_inexistente_falla(self):
+        from core import whatsapp_intake
+
+        importlib.reload(whatsapp_intake)
+        content = _make_zip({"_chat.txt": _CHAT_TXT})
+        with pytest.raises(FileNotFoundError):
+            whatsapp_intake.deposit_export(
+                "NO-EXISTE", "03_Otros", content, zip_name="x.zip"
+            )
+
+    def test_registra_manifest_y_emite_evento(self):
+        from core import whatsapp_intake, intake_log
+        from core.intake_manifest import IntakeManifest, compute_sha256_bytes
+
+        importlib.reload(whatsapp_intake)
+        case_id = self._ensure_case()
+
+        content = _make_zip({"_chat.txt": _CHAT_TXT, "IMG-1.jpg": b"jpgdata"})
+        whatsapp_intake.deposit_export(
+            case_id, "00_Consultor propietario", content, zip_name="Juan.zip"
+        )
+
+        with IntakeManifest(case_id) as m:
+            assert m.lookup(compute_sha256_bytes(content)) is not None
+            assert m.lookup(compute_sha256_bytes(b"jpgdata")) is not None
+
+        eventos = intake_log.read_events(case_id)
+        assert any(e["event"] == "upload_whatsapp" for e in eventos)
+
+    def test_rango_fechas_genera_recortado(self):
+        from core import whatsapp_intake
+
+        importlib.reload(whatsapp_intake)
+        case_id = self._ensure_case()
+
+        content = _make_zip({"_chat.txt": _CHAT_TXT})
+        res = whatsapp_intake.deposit_export(
+            case_id,
+            "03_Otros",
+            content,
+            zip_name="c.zip",
+            date_range=(datetime(2024, 1, 9), datetime(2024, 1, 9, 23, 59)),
+        )
+        recortado = res.chat_dir / "_chat_recortado.txt"
+        assert recortado.exists()
+        assert (res.chat_dir / "_chat.txt").read_bytes() == _CHAT_TXT
