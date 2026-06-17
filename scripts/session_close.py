@@ -86,6 +86,20 @@ def main() -> None:
         sys.exit(1)
     print("\n[OK] Tests verdes - puedes continuar con git add / commit.")
 
+    # Chequeo de skills (modo AVISO, no bloquea el cierre): CHANGELOG sin
+    # actualizar, .skill caducado, drift de helpers, identidad incompleta.
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "check_skills", ROOT / "scripts" / "check_skills.py"
+        )
+        cs = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cs)
+        print("\n" + "-" * 40)
+        cs.report(repackage=False)
+    except Exception as e:  # el chequeo nunca debe romper el cierre
+        print(f"[aviso] no se pudo correr check_skills: {e}")
+
 
 if __name__ == "__main__":
     main()
