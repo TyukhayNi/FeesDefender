@@ -100,3 +100,9 @@ def test_categoria_imagen():
     importlib.reload(sala_lectura)
     assert sala_lectura._es_imagen(".jpg") is True
     assert sala_lectura._es_imagen(".pdf") is False
+
+
+def test_clasificar_tolera_guiones_bajos():
+    from core import sala_lectura
+    importlib.reload(sala_lectura)
+    assert sala_lectura._categoria_por_nombre("justificante_de_pago_2025.pdf") == "05. FACTURACIÓN - FINANZAS"

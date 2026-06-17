@@ -31,11 +31,12 @@ _IMG_EXTS = {".jpg", ".jpeg", ".png", ".heic", ".heif", ".webp", ".gif", ".bmp",
 
 
 def _es_imagen(ext: str) -> bool:
+    """`ext` es el sufijo con punto (p. ej. `.jpg`), como `Path.suffix`."""
     return ext.lower() in _IMG_EXTS
 
 
 def _categoria_por_nombre(nombre: str) -> str | None:
-    low = nombre.lower()
+    low = nombre.lower().replace("_", " ")
     for categoria, tokens in _KEYWORDS:
         if any(t in low for t in tokens):
             return categoria
