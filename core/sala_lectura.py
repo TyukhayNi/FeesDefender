@@ -311,14 +311,43 @@ def _nombre_canonico(entry) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Task 9: poblar_sala_lectura — copia idempotente + dedup + renombrado
+# Task 9+10: _bundle_map + poblar_sala_lectura — copia idempotente + dedup
+#            + renombrado + bundles CRM con degradación a plano
 # ---------------------------------------------------------------------------
 
 
-def poblar_sala_lectura(case_id: str) -> dict:
+def _bundle_map(case_id: str, entries: list, crm_docs) -> dict:
+    """Devuelve {hash: (bundle_slug, rol, header_hash)} para los miembros de
+    bundles CRM de alta confianza. rol in {'cabecera', 'adjunto'}. Une
+    CRM<->catalogo por filename."""
+    if not crm_docs:
+        return {}
+    from core.conjunto_detector import detect_bundles
+    by_filename = {e.nombre_original: e for e in entries}
+    id_to_filename = {d.doc_id: d.filename for d in crm_docs}
+    out: dict = {}
+    for prop in detect_bundles(crm_docs):
+        if prop.confidence != "alta":
+            continue
+        header_id = prop.header_doc_id
+        header_e = by_filename.get(id_to_filename.get(header_id, "")) if header_id else None
+        slug_src = header_e.nombre_original if header_e else f"bundle-{prop.timestamp}"
+        bundle_slug = slugify(_sanitize(Path(slug_src).stem), max_length=50)
+        for doc_id in prop.member_doc_ids:
+            e = by_filename.get(id_to_filename.get(doc_id, ""))
+            if not e:
+                continue
+            rol = "cabecera" if doc_id == header_id else "adjunto"
+            out[e.hash] = (bundle_slug, rol, header_e.hash if header_e else None)
+    return out
+
+
+def poblar_sala_lectura(case_id: str, *, crm_docs=None) -> dict:
     entries = catalogo_documental.load_catalog(case_id)
+    bundles = _bundle_map(case_id, entries, crm_docs)
     acciones: dict[str, int] = {}
     vistos_hash: set[str] = set()
+    orden_bundle: dict[str, int] = {}
 
     for e in entries:
         if e.hash and e.hash in vistos_hash:
@@ -329,9 +358,23 @@ def poblar_sala_lectura(case_id: str) -> dict:
             acciones["MISSING_SRC"] = acciones.get("MISSING_SRC", 0) + 1
             continue
         fuente_dir = FUENTE_LABEL.get(e.fuente, e.fuente)
-        dst_rel = f"{_SALA}/{fuente_dir}/{_nombre_canonico(e)}"
-        dst = caso_path(case_id) / "01_Procesado" / dst_rel
+        nombre = _nombre_canonico(e)
 
+        b = bundles.get(e.hash)
+        if b:
+            bundle_slug, rol, header_hash = b
+            if rol == "cabecera":
+                dst_rel = f"{_SALA}/{fuente_dir}/{bundle_slug}/{nombre}"
+                e.parent_id = None
+            else:
+                dst_rel = f"{_SALA}/{fuente_dir}/{bundle_slug}/adjuntos/{nombre}"
+                e.parent_id = header_hash
+                orden_bundle[bundle_slug] = orden_bundle.get(bundle_slug, 0) + 1
+                e.orden_en_bundle = orden_bundle[bundle_slug]
+        else:
+            dst_rel = f"{_SALA}/{fuente_dir}/{nombre}"
+
+        dst = caso_path(case_id) / "01_Procesado" / dst_rel
         prev = e.ruta_sala_lectura
         if prev == dst_rel and dst.exists():
             acciones["SKIP_UNCHANGED"] = acciones.get("SKIP_UNCHANGED", 0) + 1
@@ -350,4 +393,5 @@ def poblar_sala_lectura(case_id: str) -> dict:
             vistos_hash.add(e.hash)
 
     catalogo_documental.save_catalog(case_id, entries)
-    return {"case_id": case_id, "acciones": acciones}
+    return {"case_id": case_id, "acciones": acciones,
+            "n_bundles": len({v[0] for v in bundles.values()})}
