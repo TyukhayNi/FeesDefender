@@ -1154,3 +1154,55 @@ por hash NO protege (solo cubre contenido idéntico). Raro pero posible. **Soluc
 guarda de colisión en `poblar_sala_lectura` (sufijo `_2`/`_3` por destino ya usado
 en la corrida, determinista respetando idempotencia) o fragmento de hash en el
 nombre. **Disparador:** primera colisión observada en un caso real.
+
+## 37. Clasificador LLM del residuo de intake (autorrelleno de la worklist `_clasificar.md`)
+
+**Disparador.** 2026-06-18, petición de Nikolai (Cowork): poder dejar documentos
+sueltos en una carpeta e ir "procesándolos y clasificándolos con un prompt", al no
+verse práctico el intake vía uploader de Streamlit.
+
+**Estado actual (no es un gap de carpeta).** La carpeta de drop manual **ya existe**:
+`00_Input/04_Manual` (mapeada a `fuente: manual` en `core/catalogo_documental.py`
+`_SOURCE_MAP`). El patrón "soltar en carpeta + procesar" tampoco depende del uploader:
+el orquestador headless (`scripts/run_pipeline.py` → `core/sala_lectura.py`) hace
+inventario de `00_Input` → catálogo (`indice_documental.yaml`, una entrada/doc con
+hash) → `clasificar_caso` (clasificación **determinista**: por nombre de fichero
+`_categoria_por_nombre` + detección de imágenes, con `UMBRAL_CONFIANZA_AUTOMOVE`) →
+el residuo no resuelto se vuelca a `01_Procesado/_revisar/_clasificar.md` (worklist
+que hoy rellena el letrado a mano) → `aplicar_clasificacion` la vuelca al catálogo.
+El uploader de Streamlit es solo **una** forma de disparar esto.
+
+**Gap real.** El hueco que Nikolai quiere automatizar es justo el paso humano: rellenar
+la worklist del residuo. Hoy todo lo que el clasificador determinista no resuelve por
+nombre exige intervención manual del letrado.
+
+**Solución propuesta.** Paso opcional `clasificar_residuo_llm(case_id)` que, sobre las
+entradas en residuo, lea el `.md`/texto extraído de cada documento y **autorrellene**
+las columnas de `_clasificar.md` (tipo documental, fecha, parte, descripción) con
+criterio LLM, dejando al letrado solo validar antes de `aplicar_clasificacion`.
+Respeta la arquitectura: la lógica vive en el core, el LLM ocupa exactamente el slot
+humano de la worklist (no inventa estructura nueva), y `aplicar_clasificacion` sigue
+siendo el único camino al catálogo canónico. El prompt clasifica solo lo que ve
+(regla de la casa: no inventar). Infraestructura ya disponible: `core/llm_cloud.py`
+y el `docs/PLAN_PRERELLENO_LLM_VIABILIDAD.md`.
+
+**Descartado.** Generar un índice/clasificación paralelo desde Cowork al margen de
+`indice_documental.yaml` reproduce la divergencia PC↔nube que el proyecto ya eliminó
+al sacar la bitácora de Drive (dos fuentes de verdad documentales que se contradicen).
+
+**Restricciones.** (i) Implementación en **Claude Code** (toca `core/`, no se puede
+desde Cowork). (ii) Cowork solo monta `04_Manual` + el repo, no la raíz del caso ni
+`01_Procesado`, así que el disparo y la escritura del catálogo ocurren en local.
+(iii) Extiende la **excepción RGPD** de lectura en claro por LLM (cruza con #34 y #27):
+si se corre vía conector/API en vez de Claude-en-sesión, la conversación del DPA es
+la pieza seria.
+
+**Coste estimado.** ~60-90 líneas (`clasificar_residuo_llm` + prompt + parseo a las
+columnas de la worklist) + 3-4 tests. Reaprovecha `llm_cloud.py` y el esquema de
+worklist ya existente en `sala_lectura.py`.
+
+**Prioridad.** Media — el flujo manual (drop en `04_Manual` + `run_pipeline` +
+rellenar worklist) ya desbloquea el caso hoy; el autorrelleno LLM ahorra el paso
+manual del residuo. Relacionado con #34 (sala de lectura multiusuario / DPA) y con la
+fase "clasificador por conector" del spec
+`docs/superpowers/specs/2026-06-17-sala-lectura-f4f6-design.md`. Implementación: Claude Code.
