@@ -1235,3 +1235,27 @@ requiere propagar `fecha_fuente` a la worklist o un marcador de "fecha provision
 
 **Prioridad.** Baja — el `mtime` es un fallback razonable y el letrado puede corregir
 la fecha en la worklist antes de `aplicar_clasificacion`.
+
+---
+
+## 39. Robustez/rendimiento del OCR (Docling/RapidOCR)
+
+**Contexto.** 2026-06-18, BaRS1: `extractor.extract_all` segfaulteaba (`std::bad_alloc`
+en RapidOCR) al OCR-izar un PDF largo. Resuelto **parcialmente** (`2eeec1a`): pypdf
+primero para PDFs con capa de texto, OCR solo para escaneados con guarda
+`MAX_OCR_PAGINAS`. Quedan dos flecos:
+
+**(1) Robustez (el crash no capturable).** Un PDF **escaneado** con una página de
+muy alta resolución puede disparar `bad_alloc` aunque esté dentro del límite de
+páginas (el OOM es por tamaño de imagen, no solo por nº de páginas). Al ser un crash
+de C++, no lo captura `try/except` y mata `extract_all`. **Fix robusto:** ejecutar
+Docling en un **subproceso** con límite de tiempo/memoria; si crashea, el padre lo
+captura, marca el doc (`OCR_REQUERIDO`) y continúa. Complemento: bajar `images_scale`
+/ cap de resolución en `PdfPipelineOptions`.
+
+**(2) Rendimiento.** Los docs que sí necesitan OCR son lentos en CPU (BaRS1: 12 docs
+≈60 min). Opciones: paralelizar por proceso, bajar DPI, o GPU.
+
+**Prioridad.** Media — el crash observado ya no ocurre con el flujo real; el riesgo
+residual es un escaneado de una sola página gigante. La lentitud del OCR es molesta
+en casos con muchos escaneados.
