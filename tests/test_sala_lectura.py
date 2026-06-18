@@ -367,3 +367,196 @@ def test_poblar_bundles_idempotente(tmp_casos_root):
     assert snap1 == snap2  # parent_id/orden/ruta estables entre corridas
     # 2ª corrida no recopia
     assert r2["acciones"].get("COPY", 0) == 0
+
+
+# --- MEJORAS #37: clasificar_residuo_llm (autorrelleno LLM del residuo) ---
+
+
+def _crear_md_del_residuo(case_id, cat, sl, texto="Texto extraído del documento."):
+    """Crea 01_Procesado/MD/<slug>.md para cada entrada del residuo (sin tipo)."""
+    creados = {}
+    for e in cat.load_catalog(case_id):
+        if e.tipo_documental:
+            continue
+        md = sl._md_path(case_id, e)
+        md.parent.mkdir(parents=True, exist_ok=True)
+        md.write_text(texto, encoding="utf-8")
+        creados[e.hash] = md
+    return creados
+
+
+def _worklist_path(case_dir, sl):
+    return case_dir / "01_Procesado" / "_revisar" / sl.WORKLIST_NAME
+
+
+def test_clasificar_residuo_llm_rellena_residuo(tmp_casos_root):
+    cm, inv, cat, sl = _reload()
+    case_id, case_dir = _caso_con_docs(cm, inv, cat, [
+        ("01_Drive EV", "Documento ambiguo.pdf", b"%PDF-2"),
+    ])
+    sl.clasificar_caso(case_id)
+    _crear_md_del_residuo(case_id, cat, sl)
+    h = cat.load_catalog(case_id)[0].hash
+
+    llamadas = []
+
+    def fake_chat_fn(doc):
+        llamadas.append(doc)
+        return {"tipo": "01. ACTIVACIÓN", "fecha": "2025-03-01",
+                "parte": "propietario", "descripcion": "Acuerdo marco",
+                "confianza": 0.95}
+
+    res = sl.clasificar_residuo_llm(case_id, chat_fn=fake_chat_fn)
+    assert res["n_docs"] == 1
+    assert res["n_celdas"] >= 1
+    # el chat_fn recibió el material esperado (incl. texto del MD)
+    assert llamadas[0]["hash"] == h
+    assert "Texto extraído" in llamadas[0]["md_text"]
+
+    # la worklist tiene Tipo/Parte/Descripcion rellenos; aplicar lo vuelca al catálogo
+    res_ap = sl.aplicar_clasificacion(case_id)
+    assert res_ap["n_aplicadas"] == 1
+    e = cat.load_catalog(case_id)[0]
+    assert e.tipo_documental == "01. ACTIVACIÓN"
+    assert e.parte == "propietario"
+    assert e.descripcion == "Acuerdo marco"
+
+
+def test_clasificar_residuo_llm_baja_confianza_no_rellena(tmp_casos_root):
+    cm, inv, cat, sl = _reload()
+    case_id, case_dir = _caso_con_docs(cm, inv, cat, [
+        ("01_Drive EV", "Documento ambiguo.pdf", b"%PDF-2"),
+    ])
+    sl.clasificar_caso(case_id)
+    _crear_md_del_residuo(case_id, cat, sl)
+
+    def fake_chat_fn(doc):
+        return {"tipo": "01. ACTIVACIÓN", "confianza": 0.3}  # por debajo del umbral
+
+    res = sl.clasificar_residuo_llm(case_id, chat_fn=fake_chat_fn)
+    assert res["n_baja_confianza"] == 1
+    assert res["n_celdas"] == 0
+    # sigue en residuo: aplicar no clasifica nada
+    assert sl.aplicar_clasificacion(case_id)["n_aplicadas"] == 0
+    assert cat.load_catalog(case_id)[0].tipo_documental is None
+
+
+def test_clasificar_residuo_llm_idempotente(tmp_casos_root):
+    cm, inv, cat, sl = _reload()
+    case_id, case_dir = _caso_con_docs(cm, inv, cat, [
+        ("01_Drive EV", "Documento ambiguo.pdf", b"%PDF-2"),
+    ])
+    sl.clasificar_caso(case_id)
+    _crear_md_del_residuo(case_id, cat, sl)
+
+    contador = {"n": 0}
+
+    def fake_chat_fn(doc):
+        contador["n"] += 1
+        return {"tipo": "06. PBC", "confianza": 0.9}
+
+    sl.clasificar_residuo_llm(case_id, chat_fn=fake_chat_fn)
+    contenido1 = _worklist_path(case_dir, sl).read_text(encoding="utf-8")
+    llamadas_tras_1 = contador["n"]
+
+    # 2ª corrida: la fila ya tiene Tipo → deja de ser residuo → chat_fn no se llama
+    res2 = sl.clasificar_residuo_llm(case_id, chat_fn=fake_chat_fn)
+    contenido2 = _worklist_path(case_dir, sl).read_text(encoding="utf-8")
+    assert res2["n_docs"] == 0
+    assert contador["n"] == llamadas_tras_1  # no se vuelve a llamar
+    assert contenido1 == contenido2  # worklist estable
+
+
+def test_rellenar_worklist_no_pisa_celdas_rellenas(tmp_casos_root):
+    cm, inv, cat, sl = _reload()
+    case_id, case_dir = _caso_con_docs(cm, inv, cat, [
+        ("01_Drive EV", "ambiguo.pdf", b"%PDF-2"),
+    ])
+    sl.clasificar_caso(case_id)
+    h = cat.load_catalog(case_id)[0].hash
+    # worklist con Parte ya puesta por un humano, Tipo aún vacío
+    filas = [
+        "| Hash | Origen | Fuente | Tipo | Fecha | Parte | Descripcion |",
+        "|---|---|---|---|---|---|---|",
+        f"| {h} | ambiguo.pdf | drive_ev |  | 2025-01-01 | buscador |  |",
+    ]
+    _worklist_path(case_dir, sl).write_text("\n".join(filas), encoding="utf-8")
+
+    res = sl.rellenar_worklist(case_id, {h: {
+        "Tipo": "06. PBC", "Parte": "propietario",
+        "Descripcion": "Nota simple", "confianza": 0.9}})
+    contenido = _worklist_path(case_dir, sl).read_text(encoding="utf-8")
+    assert "06. PBC" in contenido          # Tipo vacío → se rellena
+    assert "| buscador |" in contenido     # Parte humana → NO se pisa
+    assert "propietario" not in contenido
+    assert "Nota simple" in contenido      # Descripcion vacía → se rellena
+    assert res["n_celdas"] == 2
+
+
+def test_rellenar_worklist_tipo_y_parte_invalidos_no_se_escriben(tmp_casos_root):
+    cm, inv, cat, sl = _reload()
+    case_id, case_dir = _caso_con_docs(cm, inv, cat, [
+        ("01_Drive EV", "ambiguo.pdf", b"%PDF-2"),
+    ])
+    sl.clasificar_caso(case_id)
+    h = cat.load_catalog(case_id)[0].hash
+    filas = [
+        "| Hash | Origen | Fuente | Tipo | Fecha | Parte | Descripcion |",
+        "|---|---|---|---|---|---|---|",
+        f"| {h} | ambiguo.pdf | drive_ev |  |  |  |  |",
+    ]
+    _worklist_path(case_dir, sl).write_text("\n".join(filas), encoding="utf-8")
+
+    sl.rellenar_worklist(case_id, {h: {
+        "Tipo": "TIPO INVENTADO", "Parte": "vendedor",
+        "Descripcion": "ok", "confianza": 0.99}})
+    contenido = _worklist_path(case_dir, sl).read_text(encoding="utf-8")
+    assert "TIPO INVENTADO" not in contenido
+    assert "vendedor" not in contenido
+    assert "ok" in contenido  # la descripción válida sí se escribe
+
+
+def test_clasificar_residuo_llm_omite_doc_sin_md(tmp_casos_root):
+    cm, inv, cat, sl = _reload()
+    case_id, case_dir = _caso_con_docs(cm, inv, cat, [
+        ("01_Drive EV", "Documento ambiguo.pdf", b"%PDF-2"),
+    ])
+    sl.clasificar_caso(case_id)
+    # NO se crea el MD → no hay texto que leer
+
+    def fake_chat_fn(doc):  # no debería llamarse
+        raise AssertionError("no debe clasificar sin texto")
+
+    res = sl.clasificar_residuo_llm(case_id, chat_fn=fake_chat_fn)
+    assert res["n_docs"] == 0
+    assert res["n_sin_texto"] == 1
+
+
+def test_clasificar_residuo_llm_requiere_chat_fn(tmp_casos_root):
+    cm, inv, cat, sl = _reload()
+    case_id, _ = _caso_con_docs(cm, inv, cat, [
+        ("01_Drive EV", "ambiguo.pdf", b"%PDF-2"),
+    ])
+    sl.clasificar_caso(case_id)
+    with pytest.raises(ValueError):
+        sl.clasificar_residuo_llm(case_id)  # sin chat_fn → no hay default de pago
+
+
+def test_make_llm_cloud_chat_fn_construye_mensajes(monkeypatch, tmp_casos_root):
+    cm, inv, cat, sl = _reload()
+    capturado = {}
+
+    def fake_chat_json(messages, *, config=None, json_schema=None, **kw):
+        capturado["messages"] = messages
+        capturado["schema"] = json_schema
+        return {"tipo": "05. FACTURACIÓN - FINANZAS", "fecha": "2025-02-02",
+                "parte": "tercero", "descripcion": "Factura", "confianza": 0.9}
+
+    monkeypatch.setattr("core.llm_cloud.chat_json", fake_chat_json)
+    chat_fn = sl.make_llm_cloud_chat_fn()
+    out = chat_fn({"hash": "abc", "nombre_original": "f.pdf", "fuente": "manual",
+                   "fecha_pista": "", "md_text": "honorarios de la operación"})
+    assert out["tipo"] == "05. FACTURACIÓN - FINANZAS"
+    assert capturado["messages"][0]["role"] == "system"
+    assert "honorarios" in capturado["messages"][1]["content"]
+    assert capturado["schema"] is not None

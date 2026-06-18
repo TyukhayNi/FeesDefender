@@ -44,6 +44,54 @@ def poblar(case: str = typer.Option(..., "--case")):
     typer.echo(f"Acciones: {r['acciones']}")
 
 
+@app.command("preparar-residuo")
+def preparar_residuo(case: str = typer.Option(..., "--case")):
+    """Lista el residuo y la ruta de su texto extraído (MD/) para que Claude-en-sesión
+    lo clasifique y rellene la worklist. Lectura pura: no llama a ningún LLM ni
+    escribe nada (modo por defecto del despacho, sin coste de API)."""
+    docs = sala_lectura.preparar_residuo(case)
+    if not docs:
+        typer.echo("Sin residuo con texto extraído. Nada que preparar.")
+        return
+    typer.echo(f"{len(docs)} doc(s) en residuo. Lee cada MD y rellena la worklist:")
+    for d in docs:
+        typer.echo(f"  - [{d['hash'][:8]}] {d['nombre_original']}  →  {d['md_path']}")
+    typer.echo(
+        f"\nWorklist: 01_Procesado/_revisar/{sala_lectura.WORKLIST_NAME}\n"
+        "Tras rellenar, corre 'aplicar'."
+    )
+
+
+@app.command("clasificar-residuo")
+def clasificar_residuo(
+    case: str = typer.Option(..., "--case"),
+    connector: bool = typer.Option(
+        False, "--connector",
+        help="OPT-IN: usa el conector LLM cloud (Scaleway/Mistral) — coste de API "
+             "y tratamiento sujeto a DPA. Apagado por defecto.",
+    ),
+):
+    """Autorrellena la worklist del residuo con un clasificador LLM.
+
+    Sin --connector NO llama a ningún API: el modo por defecto es Claude-en-sesión
+    (corre primero 'preparar-residuo'). Con --connector usa core/llm_cloud.py."""
+    if not connector:
+        typer.echo(
+            "Modo por defecto: Claude-en-sesión (sin coste de API).\n"
+            "Corre 'preparar-residuo --case ...', clasifica leyendo los MD y rellena "
+            "la worklist; luego 'aplicar'.\n"
+            "Para el conector programático de pago añade --connector."
+        )
+        raise typer.Exit(code=0)
+    chat_fn = sala_lectura.make_llm_cloud_chat_fn()
+    r = sala_lectura.clasificar_residuo_llm(case, chat_fn=chat_fn)
+    typer.echo(
+        f"Docs procesados: {r['n_docs']} | celdas rellenadas: {r['n_celdas']} | "
+        f"baja confianza: {r['n_baja_confianza']} | sin texto: {r['n_sin_texto']}. "
+        f"Valida la worklist y corre 'aplicar'."
+    )
+
+
 @app.command()
 def organizar(case: str = typer.Option(..., "--case")):
     r = sala_lectura.organizar(case)

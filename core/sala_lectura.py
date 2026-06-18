@@ -13,6 +13,7 @@ from __future__ import annotations
 import re
 import shutil
 from pathlib import Path
+from typing import Callable
 
 from core import catalogo_documental
 from core.config import TAXONOMIA_EV, UMBRAL_CONFIANZA_AUTOMOVE, caso_path
@@ -206,6 +207,255 @@ def aplicar_clasificacion(case_id: str) -> dict:
         aplicadas += 1
     catalogo_documental.save_catalog(case_id, entries)
     return {"case_id": case_id, "n_aplicadas": aplicadas}
+
+
+# ---------------------------------------------------------------------------
+# MEJORAS #37: clasificar_residuo_llm — autorrelleno LLM de la worklist del residuo
+#
+# Opera SOLO sobre el residuo (filas de `_clasificar.md` SIN Tipo). Lee el texto
+# extraído en claro de `01_Procesado/MD/<slug>.md` y autorrellena las columnas
+# vacías (Tipo, Fecha, Parte, Descripcion). NO pisa celdas ya rellenas (por humano
+# o por una corrida previa) → idempotente y respeta lo ya clasificado. Lo de baja
+# confianza se deja sin rellenar (sigue en residuo), no se adivina.
+# `aplicar_clasificacion` sigue siendo el ÚNICO camino al catálogo canónico.
+#
+# Modo de operación por defecto (decisión de Nikolai, 2026-06-18): Claude-en-sesión
+# resuelve el residuo bajo la excepción RGPD §2 (spec 2026-06-17-sala-lectura-f4f6),
+# SIN coste de API externa: `preparar_residuo` reúne el material, Claude lo clasifica
+# y escribe con `rellenar_worklist`. El parámetro `chat_fn` de `clasificar_residuo_llm`
+# es el camino de conector programático (p. ej. `make_llm_cloud_chat_fn` sobre
+# `core/llm_cloud.py`), OPT-IN y reservado al futuro DPA: no hay default que llame a
+# un API de pago.
+# ---------------------------------------------------------------------------
+
+# Columnas de la worklist que el LLM puede autorrellenar.
+_COLS_LLM = ("Tipo", "Fecha", "Parte", "Descripcion")
+_PARTES_VALIDAS = {"propietario", "buscador", "tercero"}
+
+
+def _md_path(case_id: str, entry) -> Path:
+    """Ruta del texto extraído en claro de un documento (01_Procesado/MD/)."""
+    return (caso_path(case_id) / "01_Procesado" / "MD"
+            / f"{slugify(Path(entry.ruta_relativa).stem)}.md")
+
+
+def _filas_worklist(case_id: str) -> list[dict]:
+    path = _revisar_dir(case_id) / WORKLIST_NAME
+    if not path.exists():
+        return []
+    return _parse_worklist(path.read_text(encoding="utf-8"))
+
+
+def _hashes_residuo(case_id: str) -> list[str]:
+    """Hashes de las filas del worklist SIN Tipo (residuo aún sin resolver)."""
+    return [f["Hash"] for f in _filas_worklist(case_id) if not f["Tipo"].strip()]
+
+
+def preparar_residuo(case_id: str) -> list[dict]:
+    """Reúne el material del residuo para clasificarlo (Claude-en-sesión o conector).
+
+    Devuelve, por cada doc del residuo CON texto legible, un dict:
+    ``{hash, nombre_original, fuente, fecha_pista, md_text, md_path}``. Omite los
+    que no tienen `.md` extraído (no se clasifica lo que no se ve). Este es el
+    material que Claude-en-sesión lee para rellenar la worklist sin API de pago.
+    """
+    residuo = set(_hashes_residuo(case_id))
+    if not residuo:
+        return []
+    by_hash = {e.hash: e for e in catalogo_documental.load_catalog(case_id)}
+    pistas = {f["Hash"]: f["Fecha"].strip() for f in _filas_worklist(case_id)}
+    out: list[dict] = []
+    for h in residuo:
+        e = by_hash.get(h)
+        if not e:
+            continue
+        md = _md_path(case_id, e)
+        if not md.exists():
+            continue
+        out.append({
+            "hash": h,
+            "nombre_original": e.nombre_original,
+            "fuente": e.fuente,
+            "fecha_pista": pistas.get(h, ""),
+            "md_text": md.read_text(encoding="utf-8", errors="replace"),
+            "md_path": str(md),
+        })
+    return out
+
+
+def _es_fila_datos(celdas: list[str]) -> bool:
+    return (len(celdas) == len(_WL_COLS)
+            and celdas[0] != "Hash"
+            and not set(celdas[0]) <= {"-"})
+
+
+def rellenar_worklist(
+    case_id: str,
+    clasificaciones: dict[str, dict],
+    *,
+    umbral: float = UMBRAL_CONFIANZA_AUTOMOVE,
+) -> dict:
+    """Vuelca clasificaciones a las celdas VACÍAS de la worklist, por hash.
+
+    `clasificaciones`: ``{hash: {Tipo, Fecha, Parte, Descripcion, confianza}}``.
+    No pisa celdas ya rellenas (humano o corrida previa) → idempotente. Una fila
+    con ``confianza < umbral`` se deja intacta (sigue en residuo). Por celda valida:
+    Tipo ∈ ``TAXONOMIA_EV`` y Parte ∈ {propietario, buscador, tercero}; lo que no
+    valide se deja en blanco (revisión humana), nunca se adivina.
+    Devuelve ``{n_filas_tocadas, n_celdas, n_baja_confianza}``.
+    """
+    path = _revisar_dir(case_id) / WORKLIST_NAME
+    if not path.exists():
+        return {"n_filas_tocadas": 0, "n_celdas": 0, "n_baja_confianza": 0}
+    lineas = path.read_text(encoding="utf-8").splitlines()
+    col_idx = {c: i for i, c in enumerate(_WL_COLS)}
+    n_filas = n_celdas = n_baja = 0
+    for li, line in enumerate(lineas):
+        s = line.strip()
+        if not s.startswith("|"):
+            continue
+        celdas = [c.strip() for c in s.strip("|").split("|")]
+        if not _es_fila_datos(celdas):
+            continue
+        cl = clasificaciones.get(celdas[col_idx["Hash"]])
+        if not cl:
+            continue
+        try:
+            conf = float(cl.get("confianza", 0) or 0)
+        except (TypeError, ValueError):
+            conf = 0.0
+        if conf < umbral:
+            n_baja += 1
+            continue
+        tocada = False
+        for col in _COLS_LLM:
+            val = _celda(cl.get(col))
+            if not val:
+                continue
+            if col == "Tipo" and val not in TAXONOMIA_EV:
+                continue
+            if col == "Parte" and val.lower() not in _PARTES_VALIDAS:
+                continue
+            idx = col_idx[col]
+            if celdas[idx]:  # ya rellena → no pisar
+                continue
+            celdas[idx] = val
+            n_celdas += 1
+            tocada = True
+        if tocada:
+            n_filas += 1
+            lineas[li] = "| " + " | ".join(celdas) + " |"
+    texto = "\n".join(lineas)
+    if not texto.endswith("\n"):
+        texto += "\n"
+    path.write_text(texto, encoding="utf-8")
+    return {"n_filas_tocadas": n_filas, "n_celdas": n_celdas,
+            "n_baja_confianza": n_baja}
+
+
+def clasificar_residuo_llm(
+    case_id: str,
+    *,
+    chat_fn: "Callable[[dict], dict] | None" = None,
+    umbral: float = UMBRAL_CONFIANZA_AUTOMOVE,
+) -> dict:
+    """Autorrellena la worklist del residuo con un clasificador LLM inyectado.
+
+    ``chat_fn(doc) -> dict`` recibe ``{hash, nombre_original, fuente, fecha_pista,
+    md_text, md_path}`` y devuelve ``{tipo, fecha, parte, descripcion, confianza}``.
+    Es OBLIGATORIO: no hay default que llame a un API de pago (decisión de Nikolai,
+    2026-06-18). El modo por defecto del despacho es Claude-en-sesión vía
+    ``preparar_residuo`` + ``rellenar_worklist`` (sin coste). Para el conector
+    programático (futuro DPA) usar ``make_llm_cloud_chat_fn()``.
+
+    Solo rellena celdas vacías de las filas del residuo; no pisa lo ya clasificado;
+    baja confianza se deja sin rellenar. No toca la clasificación determinista ni el
+    esquema de la worklist; `aplicar_clasificacion` sigue siendo el único camino al
+    catálogo.
+    """
+    if chat_fn is None:
+        raise ValueError(
+            "clasificar_residuo_llm requiere chat_fn (callable). El modo por "
+            "defecto es Claude-en-sesión vía preparar_residuo + rellenar_worklist, "
+            "sin API de pago. Para el conector programático usa make_llm_cloud_chat_fn()."
+        )
+    docs = preparar_residuo(case_id)
+    n_residuo = len(_hashes_residuo(case_id))
+    clasif: dict[str, dict] = {}
+    for doc in docs:
+        raw = chat_fn(doc) or {}
+        clasif[doc["hash"]] = {
+            "Tipo": raw.get("tipo") or "",
+            "Fecha": raw.get("fecha") or "",
+            "Parte": raw.get("parte") or "",
+            "Descripcion": raw.get("descripcion") or "",
+            "confianza": raw.get("confianza", 0),
+        }
+    res = rellenar_worklist(case_id, clasif, umbral=umbral)
+    res.update({"case_id": case_id, "n_docs": len(docs),
+                "n_sin_texto": max(0, n_residuo - len(docs))})
+    return res
+
+
+# Esquema y prompt del conector programático (OPT-IN; futuro DPA, no es el default).
+_SCHEMA_RESIDUO: dict = {
+    "type": "object",
+    "properties": {
+        "tipo": {"type": "string", "enum": list(TAXONOMIA_EV)},
+        "fecha": {"type": "string"},
+        "parte": {"type": "string", "enum": ["propietario", "buscador", "tercero", ""]},
+        "descripcion": {"type": "string"},
+        "confianza": {"type": "number"},
+    },
+    "required": ["tipo", "confianza"],
+}
+
+
+def _sistema_clasifica_residuo() -> str:
+    return (
+        "Eres un clasificador documental de un despacho de abogados. Clasificas un "
+        "documento de un expediente inmobiliario LEYENDO SOLO el texto que se te da. "
+        "NO inventes: si el texto no permite decidir con seguridad, baja la confianza.\n\n"
+        "Devuelve SOLO JSON con estas claves:\n"
+        "- tipo: exactamente uno de la taxonomía: " + " · ".join(TAXONOMIA_EV) + "\n"
+        "- fecha: fecha del documento en formato YYYY-MM-DD si aparece en el texto; "
+        "si no, cadena vacía.\n"
+        "- parte: 'propietario', 'buscador' o 'tercero' según a quién se refiera el "
+        "documento; cadena vacía si no se deduce.\n"
+        "- descripcion: descripción funcional neutra, máx. 60 caracteres, sin datos "
+        "personales.\n"
+        "- confianza: número 0–1. Usa < 0.8 cuando no estés seguro (se dejará sin "
+        "clasificar para revisión humana).\n\n"
+        "Responde SOLO con el JSON, sin texto adicional."
+    )
+
+
+def make_llm_cloud_chat_fn(*, llm_config=None, max_chars: int = 6000):
+    """Adaptador OPT-IN sobre ``core/llm_cloud.py`` (conector programático).
+
+    Devuelve un ``chat_fn`` para `clasificar_residuo_llm` que clasifica vía la API
+    cloud (Scaleway/Mistral por defecto). Reservado al futuro DPA: implica enviar el
+    texto en claro a un proveedor externo y, por tanto, coste y tratamiento sujeto a
+    contrato. El modo por defecto del despacho NO usa esto (Claude-en-sesión).
+    """
+    from core.llm_cloud import chat_json  # import perezoso: no forzar httpx en el flujo Claude-en-sesión
+
+    def _chat_fn(doc: dict) -> dict:
+        texto = (doc.get("md_text") or "")[:max_chars]
+        user = (
+            f"Nombre de fichero: {doc.get('nombre_original')}\n"
+            f"Fuente: {doc.get('fuente')}\n"
+            f"Pista de fecha (del nombre/metadato): {doc.get('fecha_pista') or '(ninguna)'}\n\n"
+            f"Texto extraído del documento:\n{texto}"
+        )
+        messages = [
+            {"role": "system", "content": _sistema_clasifica_residuo()},
+            {"role": "user", "content": user},
+        ]
+        return chat_json(messages, config=llm_config, temperature=0.0,
+                         json_schema=_SCHEMA_RESIDUO)
+
+    return _chat_fn
 
 
 # ---------------------------------------------------------------------------
