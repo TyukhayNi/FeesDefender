@@ -10,13 +10,34 @@ if str(ROOT) not in sys.path:
 
 import typer  # noqa: E402
 
-from core import sala_lectura  # noqa: E402
+from core import catalogo_documental, inventory, sala_lectura  # noqa: E402
 
 app = typer.Typer(help="Organiza la sala de lectura de 01_Procesado.")
 
 
 @app.command()
+def catalogo(case: str = typer.Option(..., "--case")):
+    """(Re)construye indice_documental.yaml desde 00_Input (inventario + catálogo).
+
+    Idempotente: preserva por hash lo ya clasificado y solo añade documentos
+    nuevos. No necesita OCR ni MD/ — es el primer paso de la sala de lectura."""
+    inventory.scan(case)
+    catalogo_documental.build_catalog(case)
+    n = len(catalogo_documental.load_catalog(case))
+    typer.echo(f"Catálogo: {n} entradas")
+
+
+@app.command()
 def clasificar(case: str = typer.Option(..., "--case")):
+    # Guarda: sin catálogo poblado, clasificar_caso escribiría una worklist
+    # vacía silenciosamente. Si está vacío, se (re)construye primero.
+    if not catalogo_documental.load_catalog(case):
+        inventory.scan(case)
+        catalogo_documental.build_catalog(case)
+        typer.echo(
+            f"Catálogo vacío → construido: "
+            f"{len(catalogo_documental.load_catalog(case))} entradas."
+        )
     r = sala_lectura.clasificar_caso(case)
     typer.echo(f"Deterministas: {r['n_deterministas']} | Residuo: {r['n_residuo']}")
     if r["n_residuo"]:

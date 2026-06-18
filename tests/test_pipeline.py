@@ -44,3 +44,35 @@ def test_extract_all_se_ejecuta_una_sola_vez(tmp_casos_root, monkeypatch):
     by_name = {s.name: s for s in pr.steps}
     assert by_name["extractor.extract_all"].ok
     assert by_name["markdown_generator.build"].ok
+
+
+def test_pipeline_construye_catalogo(tmp_casos_root, monkeypatch):
+    """El pipeline (re)construye el catálogo tras inventory.scan. Antes, nadie
+    llamaba a build_catalog → indice_documental.yaml quedaba en [] y la sala de
+    lectura producía una worklist vacía silenciosamente."""
+    from core import pipeline
+    importlib.reload(pipeline)
+
+    calls = {"build_catalog": 0}
+
+    def fake_build_catalog(case_id):
+        calls["build_catalog"] += 1
+        return "ruta/indice_documental.yaml"
+
+    monkeypatch.setattr(pipeline.catalogo_documental, "build_catalog", fake_build_catalog)
+    monkeypatch.setattr(pipeline.catalogo_documental, "load_catalog", lambda c: [object(), object()])
+    monkeypatch.setattr(pipeline.case_manager, "ensure_case", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline.inventory, "scan", lambda *a, **k: 0)
+    monkeypatch.setattr(pipeline.extractor, "extract_all", lambda *a, **k: [])
+    monkeypatch.setattr(pipeline.markdown_generator, "build", lambda *a, **k: [])
+    monkeypatch.setattr(pipeline.scorer, "score", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline.viability, "analyze", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline.linker, "crosslink", lambda *a, **k: 0)
+
+    pr = pipeline.run("EV-2026-TEST", do_sync=False, do_demanda=False)
+
+    by_name = {s.name: s for s in pr.steps}
+    assert "catalogo.build" in by_name
+    assert by_name["catalogo.build"].ok
+    assert calls["build_catalog"] == 1
+    assert by_name["catalogo.build"].artifact == "2 docs"

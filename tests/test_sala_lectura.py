@@ -560,3 +560,73 @@ def test_make_llm_cloud_chat_fn_construye_mensajes(monkeypatch, tmp_casos_root):
     assert capturado["messages"][0]["role"] == "system"
     assert "honorarios" in capturado["messages"][1]["content"]
     assert capturado["schema"] is not None
+
+
+# --- Fix de cableado: build_catalog (prerrequisito de la sala de lectura) ---
+
+
+def test_clasificar_caso_sin_catalogo_es_trampa_y_build_catalog_la_resuelve(tmp_casos_root):
+    """Antes del fix: nadie poblaba el catálogo, así que clasificar_caso sobre un
+    catálogo vacío escribía una worklist vacía silenciosamente. build_catalog es
+    el eslabón que faltaba."""
+    cm, inv, cat, sl = _reload()
+    case_id = "EV-2026-TEST"
+    case_dir = cm.ensure_case(case_id)
+    for name in ("Factura honorarios.pdf", "Documento ambiguo.pdf"):
+        p = case_dir / "00_Input" / "01_Drive EV" / name
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(b"%PDF-x")
+    inv.scan(case_id)
+
+    # Sin build_catalog: catálogo vacío → clasificar no ve nada (la trampa)
+    assert cat.load_catalog(case_id) == []
+    trampa = sl.clasificar_caso(case_id)
+    assert trampa["n_total"] == 0 and trampa["n_residuo"] == 0
+
+    # Con build_catalog: el catálogo se puebla y clasificar ya produce residuo
+    cat.build_catalog(case_id)
+    assert len(cat.load_catalog(case_id)) == 2
+    res = sl.clasificar_caso(case_id)
+    assert res["n_total"] == 2
+    assert res["n_deterministas"] == 1   # "Factura honorarios" → FACTURACIÓN
+    assert res["n_residuo"] == 1         # "Documento ambiguo" → residuo
+
+
+def _setup_case_cli(case_id="EV-2026-TEST", docs=("Factura honorarios.pdf", "Documento ambiguo.pdf")):
+    """Crea un caso con docs en 00_Input SIN construir el catálogo (para los
+    tests de CLI; no usa _reload para no alterar los bindings del app typer)."""
+    from core import case_manager
+    case_dir = case_manager.ensure_case(case_id)
+    for name in docs:
+        p = case_dir / "00_Input" / "01_Drive EV" / name
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(b"%PDF-x")
+    return case_id, case_dir
+
+
+def test_cli_catalogo_construye_indice(tmp_casos_root):
+    from typer.testing import CliRunner
+    from scripts.sala_lectura import app
+    from core import catalogo_documental as cat
+
+    case_id, _ = _setup_case_cli()
+    result = CliRunner().invoke(app, ["catalogo", "--case", case_id])
+    assert result.exit_code == 0
+    assert "entradas" in result.output
+    assert len(cat.load_catalog(case_id)) == 2
+
+
+def test_cli_clasificar_autoconstruye_catalogo_vacio(tmp_casos_root):
+    """La guarda del CLI: clasificar con catálogo vacío lo construye antes en vez
+    de escribir [] y una worklist vacía."""
+    from typer.testing import CliRunner
+    from scripts.sala_lectura import app
+    from core import catalogo_documental as cat
+
+    case_id, _ = _setup_case_cli()
+    assert cat.load_catalog(case_id) == []
+    result = CliRunner().invoke(app, ["clasificar", "--case", case_id])
+    assert result.exit_code == 0
+    assert "Catálogo vacío" in result.output
+    assert len(cat.load_catalog(case_id)) == 2
+    assert "Residuo: 1" in result.output
