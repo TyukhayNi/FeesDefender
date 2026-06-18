@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from . import case_manager, catalogo_documental, demanda_generator, extractor, inventory, linker
+from . import case_manager, demanda_generator, extractor, inventory, linker
 from . import markdown_generator, scorer, sync, viability
 from .config import caso_path
 from .utils import now_iso, write_md
@@ -66,16 +66,6 @@ def run(
         pr.steps.append(StepResult("sync.pull", ok=True, detail="omitido"))
 
     pr.steps.append(_safe("inventory.scan", lambda: inventory.scan(case_id)))
-
-    # Catálogo documental (indice_documental.yaml). Se (re)construye desde el
-    # inventario en cada corrida: idempotente, preserva por hash lo ya
-    # clasificado y solo añade documentos nuevos. Es el SSOT que consume la sala
-    # de lectura (clasificar_caso / clasificar_residuo_llm).
-    def _catalogo_step() -> str:
-        catalogo_documental.build_catalog(case_id)
-        return f"{len(catalogo_documental.load_catalog(case_id))} docs"
-
-    pr.steps.append(_safe("catalogo.build", _catalogo_step))
 
     # La extracción (OCR vía Docling) es el único paso caro del pipeline.
     # Se ejecuta UNA sola vez y el resultado se reutiliza en el paso de

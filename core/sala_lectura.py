@@ -1,4 +1,12 @@
-"""Sala de lectura de 01_Procesado (F4–F6).
+"""[DEPRECADO 2026-06-18] El camino de sala de lectura del motor (clasificar_caso/
+aplicar_clasificacion/render_indices/poblar_sala_lectura/clasificar_residuo_llm) queda
+SUPERSEDIDO por la skill `organizar-sala-lectura` (sala única plana sobre todo 00_Input;
+ver docs/superpowers/specs/2026-06-18-sala-lectura-unica-design.md). No ampliar; se
+conserva temporalmente. El pipeline confidencial (extractor/MD/anon) NO depende de esto.
+
+---
+
+Sala de lectura de 01_Procesado (F4–F6).
 
 Clasificador/fechador híbrido + copiador organizado + render de índices.
 El catálogo `indice_documental.yaml` es la única fuente de verdad. El residuo
