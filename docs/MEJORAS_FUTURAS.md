@@ -1209,3 +1209,29 @@ rellenar worklist) ya desbloquea el caso hoy; el autorrelleno LLM ahorra el paso
 manual del residuo. Relacionado con #34 (sala de lectura multiusuario / DPA) y con la
 fase "clasificador por conector" del spec
 `docs/superpowers/specs/2026-06-17-sala-lectura-f4f6-design.md`. Implementación: Claude Code.
+
+---
+
+## 38. `clasificar_residuo_llm`: permitir sobrescribir la fecha de baja calidad (`mtime`)
+
+**Detectado.** 2026-06-18, al probar #37 sobre el caso real BaRS1 (Tibidabo 8).
+
+**Síntoma.** `clasificar_caso` pre-rellena la columna **Fecha** de la worklist del
+residuo con el `mtime` del fichero (`fecha_fuente=mtime`) cuando no hay fecha en el
+nombre. Como `rellenar_worklist` **no pisa celdas no vacías** (regla correcta: no
+machacar lo ya puesto), la fecha de **contenido** que el LLM/Claude extrae del
+documento (más fiable) **nunca se aplica**: el catálogo queda con la fecha `mtime`.
+Observado en BaRS1: "TITULAR REAL 2021" (acta de 2021-09-29) quedó fechado
+2024-06-04 (mtime de Drive).
+
+**Solución propuesta.** Permitir que el autorrelleno **sobrescriba la Fecha solo
+cuando su origen sea `mtime`/`desconocida`** (baja calidad) y el LLM aporte una fecha
+de contenido con confianza suficiente; **nunca** pisar una fecha de contenido ya
+puesta (humano o regla ISO del nombre). Alternativa más simple: que `clasificar_caso`
+**no** pre-rellene la Fecha del residuo (dejarla vacía) y que la ponga el LLM/humano;
+requiere propagar `fecha_fuente` a la worklist o un marcador de "fecha provisional".
+
+**Coste estimado.** ~10-15 líneas + 1-2 tests.
+
+**Prioridad.** Baja — el `mtime` es un fallback razonable y el letrado puede corregir
+la fecha en la worklist antes de `aplicar_clasificacion`.
