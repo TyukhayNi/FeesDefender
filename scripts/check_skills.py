@@ -36,6 +36,12 @@ _REPO = _HERE.parent
 _SKILLS = _REPO / ".claude" / "skills"
 _DIST = _REPO / "dist" / "skills"
 
+# Permite `import scripts.*` tanto en `python -m scripts.check_skills` como en
+# `python scripts/check_skills.py` (sin el guard, esta segunda forma crashea en
+# taxonomia_drift al importar scripts.sync_taxonomia_skills).
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
+
 # Genericas de terceros (Anthropic): no las gobierna el estandar del despacho.
 _GENERICAS = {"docx", "pdf", "xlsx", "pptx"}
 
