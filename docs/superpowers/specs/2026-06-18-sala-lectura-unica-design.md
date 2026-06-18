@@ -173,10 +173,19 @@ hash), respetando idempotencia.
 
 ## 10. Lectores de la sala
 
-- **`triaje-viabilidad`:** repuntar su "Entrada" (hoy `02_Sala lectura/`) a la sala
-  unificada `01_Procesado/Sala lectura/`. Lee la categoría desde `INDICE.md`. NO se fusiona
-  con `viabilidad-prerelleno` (son secuencia, no duplicado).
+- **`triaje-viabilidad`:** repuntar su "Entrada" (hoy `02_Sala lectura/`) a **`00_Input`
+  directo** (como `viabilidad-prerelleno`), **no** a la sala. Razón: el triaje es un go/no-go
+  jurídico y no debe **heredar errores de clasificación** de la sala (un encargo mal
+  clasificado a `08. PENDIENTE` se le escaparía si solo mirase categorías); leyendo
+  `00_Input` ve todo y busca sus 6 factores (encargo firmado, nexo causal, obligado al
+  pago, prueba, importe/base, prescripción) por lectura dirigida — que no duplica la
+  clasificación de 8 categorías de `organizar`. Opcional: si la sala existe, usar
+  `INDICE.md` como **pista de navegación**, pero la **fuente de verdad es `00_Input`**. NO
+  se fusiona con `viabilidad-prerelleno` (son secuencia, no duplicado).
 - **`viabilidad-prerelleno`:** **no se toca** (lee `00_Input` directo).
+- **Consecuencia:** la sala **no tiene lectores que dependan de ella**; es una capa humana
+  de lectura + la base que produce `organizar`. Esto desacopla el triaje del orden de
+  ejecución (no exige correr `organizar` antes).
 
 ## 11. Deprecación y migración
 
@@ -220,7 +229,8 @@ hash), respetando idempotencia.
 - Bundles CRM perfectos desde Cowork (sin `modified_at`): mejor esfuerzo; afinado futuro.
 - Copia física plana de export en bloque: solo si surge necesidad real (hoy la vista plana
   ES la física).
-- Redesign de `triaje-viabilidad`/`viabilidad-prerelleno` más allá de repuntar la entrada.
+- Redesign de `triaje-viabilidad`/`viabilidad-prerelleno` más allá de repuntar la entrada
+  de triaje a `00_Input` (ambas leen `00_Input` directo; la sala no es su fuente).
 
 ## 15. Referencias
 

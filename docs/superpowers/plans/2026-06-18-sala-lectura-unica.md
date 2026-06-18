@@ -555,31 +555,46 @@ git commit -m "feat(skill): organizar-sala-lectura v1.3 — Paso 0, bundles, fec
 
 ---
 
-## Fase 4 — Repuntar `triaje-viabilidad`
+## Fase 4 — Repuntar `triaje-viabilidad` a `00_Input`
 
-### Task 7: Entrada de triaje → sala unificada
+### Task 7: Entrada de triaje → `00_Input` directo
 
 **Files:**
 - Modify: `.claude/skills/triaje-viabilidad/SKILL.md`
 
-- [ ] **Step 1: Localizar la referencia** a `02_Sala lectura/`
+- [ ] **Step 1: Localizar la referencia** a `02_Sala lectura/` (y cualquier "Sala lectura")
+  en `SKILL.md` (buscar `02_Sala lectura` / `Sala lectura`).
 
-Run: `python -m pytest -q` no aplica; usar: buscar `02_Sala lectura` y `Sala lectura` en `SKILL.md`.
+- [ ] **Step 2: Reescribir la "Entrada"** para que lea **`00_Input/` directo** (todas las
+  fuentes, como `viabilidad-prerelleno`), **no** la sala. El triaje busca sus 6 factores
+  (encargo firmado, nexo causal, obligado al pago, prueba de la intermediación, importe/base,
+  prescripción) por **lectura dirigida** del contenido; **no hereda** la clasificación de la
+  sala (un doc mal clasificado a `08. PENDIENTE` no debe escaparse del dictamen). Texto a
+  incorporar:
 
-- [ ] **Step 2: Sustituir** la "Entrada" para que lea `01_Procesado/Sala lectura/` (sala
-  unificada plana) y tome la **categoría desde `INDICE.md`** (no de carpetas). Si la sala
-  no existe, sugiere correr `organizar-sala-lectura`. No fusionar con `viabilidad-prerelleno`.
+```markdown
+## Entrada
+Lee `00_Input/` del expediente (todas las fuentes), igual que `viabilidad-prerelleno`.
+La fuente de verdad es el crudo: el triaje localiza sus factores leyendo el contenido,
+sin depender de la clasificación de la sala de lectura. **Opcional:** si existe
+`01_Procesado/Sala lectura/INDICE.md`, úsalo solo como **pista de navegación** (atajo para
+encontrar candidatos), pero verifica siempre contra `00_Input`. NO requiere haber corrido
+`organizar-sala-lectura` antes.
+```
 
-- [ ] **Step 3: Validar**
+- [ ] **Step 3: Quitar/ajustar** cualquier instrucción que dijera "si la sala no existe,
+  corre organizar-sala-lectura" (ya no es prerrequisito). No fusionar con `viabilidad-prerelleno`.
+
+- [ ] **Step 4: Validar**
 
 Run: `python scripts/validate_skills.py`
 Expected: sin errores.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add ".claude/skills/triaje-viabilidad/SKILL.md"
-git commit -m "fix(skill): triaje-viabilidad lee la sala unificada 01_Procesado/Sala lectura/"
+git commit -m "fix(skill): triaje-viabilidad lee 00_Input directo (no hereda clasificación de la sala)"
 ```
 
 ---
