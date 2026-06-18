@@ -464,4 +464,27 @@ git commit -m "feat(skill): organizar-sala-lectura + triaje-viabilidad listas (v
 - Spec §9 (errores: ilegible, sin fecha, idempotencia, carpeta enorme) → Task 2 + Task 9.
 - Spec §10 (pruebas = eval manual) → Task 9.
 - Spec §11 (empaquetado/distribución) → Tasks 4, 8, 10.
+
+---
+
+## Seguimiento (post-v1.0, acordado 2026-06-18)
+
+**Decisión: NO fusionar `triaje-viabilidad` con `viabilidad-prerelleno`.** Comparten
+dominio pero son momentos distintos (pre-screen go/no-go vs prefill del informe
+formal), con output y peso distintos. Es una secuencia, no un duplicado:
+`triaje-viabilidad` → abrir expediente + organizar → `viabilidad-prerelleno` →
+`informe-viabilidad-ev`. Fusionarlas rompería la atomicidad y metería la maquinaria
+pesada (xlsx, 88 preguntas, scripts) en el pre-screen ligero de Cowork.
+
+**Pero sí hay que resolver la duplicación de criterios** (fuente única, sin drift):
+- [ ] Anclar `triaje-viabilidad/references/criterios_triaje.md` al cuestionario
+  canónico `data/_plantillas/cuestionario_viabilidad.yaml` (vista **condensada
+  generada**, no escrita a mano), igual que `viabilidad-prerelleno` genera su vista
+  con `sync_cuestionario_from_canon.py`. Así los criterios no divergen entre skills.
+- [ ] Dejar escrito el **encadenamiento triaje → prerelleno** en ambos `SKILL.md`
+  (qué va antes, que no se solapan), para que el modelo no confunda cuándo usar cada una.
+
+(05_Procedimiento — pendiente de la conversación previa: que el output del triaje
+vaya a `05_Procedimiento/Triaje viabilidad/` con fallback a la raíz del caso si no
+hay expediente. Sin cerrar el fallback (a) crear vs (b) raíz.)
 ```
