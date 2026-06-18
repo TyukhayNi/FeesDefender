@@ -9,6 +9,9 @@
 - **Autonomía:** sin preguntas de permiso por-fichero; el diálogo por-llamada es ajuste
   del cliente Cowork. Un solo gate (la propuesta).
 - **Enlaces:** la propuesta enlaza al original; los índices, a la copia canónica.
+- **Re-aplicación solo-añade:** al re-correr (goteo de intake), compara por sha256,
+  salta lo ya copiado y conserva la clasificación previa de lo conocido; **nunca
+  borra**. Cambio de reglas de clasificación = vaciado manual + recorrido limpio.
 - (Slug de tipo en el nombre canónico: verificado que es decorativo; decisión de
   quitarlo pendiente de OK, no aplicada.)
 

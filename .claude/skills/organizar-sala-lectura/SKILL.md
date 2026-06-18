@@ -128,10 +128,22 @@ e. **Botones:** «Aprobar y ejecutar» / «Quiero ajustar algo».
 Regla de enlaces: en la **propuesta** se enlaza al **original**; en los **índices**
 (tras ejecutar) se enlaza a la **copia canónica**.
 
-## Idempotencia
+## Re-aplicación (solo añade; nunca borra)
 
-Si `01_Procesado/Sala lectura Drive EV/` ya existe, **no re-dupliques**: compara por
-**sha256** (y nombre canónico), salta lo ya copiado y reporta qué saltó.
+La skill se re-corre cada vez que entran documentos nuevos del Drive (p. ej. antes de
+preparar la demanda). En cada re-corrida:
+
+- **Solo añade.** Compara por **sha256**: lo ya copiado se salta; solo se clasifican y
+  copian los documentos **nuevos**. Reporta qué saltó.
+- **Conserva la clasificación previa** de los documentos ya conocidos (por sha256,
+  según el `_MANIFIESTO.md`): NO los re-clasifica, para que la sala no "baile" entre
+  corridas por la varianza del modelo.
+- **Nunca borra.** No elimina copias antiguas ni nada de la sala (riesgo en Drive
+  compartido + el conector puede no soportar borrado). El crudo de `00_Input` jamás se
+  toca.
+- **Cambio de reglas de clasificación** (p. ej. nueva taxonomía): es el ÚNICO caso que
+  deja copias en carpetas obsoletas. **No se automatiza** — vacía a mano
+  `01_Procesado/Sala lectura Drive EV/` (el crudo está intacto) y re-corre desde cero.
 
 ## Gotchas
 
