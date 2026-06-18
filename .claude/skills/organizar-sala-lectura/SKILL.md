@@ -87,8 +87,11 @@ eso la salida va a `01_Procesado/` (zona de output), igual que el motor local.
    - `INDICE.md` — agrupado por tipo; cada entrada con enlace y mapeo nombre
      original ↔ canónico.
    - `CRONOLOGIA.md` — por fecha ascendente, los `s/f` al final.
-   - `_MANIFIESTO.md` — tabla: original · canónico · tipo · fecha · checksum (si el
-     conector lo expone).
+   - `_MANIFIESTO.md` — tabla por documento: **sha256** · ruta original
+     (`00_Input/01_Drive EV/…`) · nombre canónico · tipo · fecha. El `sha256` se
+     **calcula leyendo los bytes** del fichero (el `md5` nativo de Drive NO sirve: la
+     traza del caso —catálogo, intake-manifest— llavea por **sha256**; guardar ese
+     hash es lo que deja abierto el puente de reconciliación con el catálogo).
    Los tres con cabecera `<!-- GENERADO — NO EDITAR A MANO -->`.
 5. **Reporta** al usuario: nº por categoría, nº a `08. PENDIENTE DE CLASIFICAR`,
    duplicados detectados.
@@ -96,8 +99,7 @@ eso la salida va a `01_Procesado/` (zona de output), igual que el motor local.
 ## Idempotencia
 
 Si `01_Procesado/Sala lectura Drive EV/` ya existe, **no re-dupliques**: compara por
-nombre canónico (y por checksum si el conector lo expone), salta lo ya copiado y
-reporta qué saltó.
+**sha256** (y por nombre canónico), salta lo ya copiado y reporta qué saltó.
 
 ## Gotchas
 
@@ -106,6 +108,10 @@ reporta qué saltó.
   borres el crudo.**
 - **Sin PII en nombres:** es el delator más fácil; revisa la `descripcion` antes de
   copiar.
+- **sha256, no md5:** el `_MANIFIESTO.md` debe guardar el **sha256** calculado desde
+  los bytes (el conector de Drive da `md5`, que no casa con la traza del caso). Ese
+  hash es lo que permitirá reconciliar la sala con `indice_documental.yaml` el día que
+  se construya el catálogo único; sin él habría que rehacer la sala.
 - **Solo `01_Drive EV`:** no proceses `04_Manual` ni otras fuentes en esta corrida
   (decisión de alcance). Si el caso las necesita, es otra decisión, no esta skill.
 - **Colisión con el motor local:** el pipeline local escribe su propia sala en

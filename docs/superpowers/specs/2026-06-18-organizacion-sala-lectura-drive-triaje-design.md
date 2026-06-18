@@ -9,6 +9,7 @@
 > - **Destino:** `01_Procesado/Sala lectura Drive EV/` (tipo oración), **fuera de `00_Input`** para no ser re-ingerida por `inventory.scan` (rglob) ni pisada por re-pulls. Carpeta propia (por tipo) distinta de la del motor local (`01_Procesado/Sala lectura/`, por fuente) → sin colisión.
 > - **Per-fuente** a este nivel (carpeta nombrada por la fuente), no sala unificada — al revés que la disposición *interna*, que es por tipo.
 > - Requiere montar la **raíz del expediente** en Cowork (la salida vive fuera de `00_Input`).
+> - **`_MANIFIESTO.md` guarda sha256 + ruta original por documento.** El `sha256` se calcula de los bytes (no el `md5` del conector): es la llave de la traza del caso (catálogo, intake-manifest) y deja abierto el puente de reconciliación con el catálogo único (`[SIGUIENTE-CATALOGO-DOCUMENTAL]`) sin tener que rehacer la sala. Orden acordado: **skill ahora → catálogo después → puente al final** (el skill no depende del catálogo; solo se tocan en el puente, que es YAGNI hasta que la vista huérfana moleste).
 > - Esto deroga, para la implementación, la estructura `01_Raw`/`02_Sala lectura` de §3-§4 de abajo (diseño previo).
 
 ## 1. Problema y objetivo
