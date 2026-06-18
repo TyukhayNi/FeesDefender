@@ -15,7 +15,7 @@ devolver EXACTAMENTE una:
 - `05. FACTURACIÓN - FINANZAS` — factura, honorarios, abono, minuta, justificante de pago.
 - `06. PBC` — DNI, NIE, pasaporte, nota simple, titularidad, prevención de blanqueo.
 - `07. RECLAMACIONES` — burofax, requerimiento, reclamación, incumplimiento.
-- `08. PENDIENTE` — todo lo ambiguo o ilegible. NUNCA forzar a otra categoría.
+- `08. PENDIENTE DE CLASIFICAR` — todo lo ambiguo o ilegible. NUNCA forzar a otra categoría.
 
 (No existe `02`; se respeta la numeración de E&V.)
 
