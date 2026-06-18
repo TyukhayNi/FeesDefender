@@ -132,6 +132,28 @@ def package_stale(skills: list[Path], dist_dir: Path, incluir) -> list[str]:
     return stale
 
 
+# --- 5. Drift de taxonomía ---------------------------------------------------
+
+def taxonomia_drift(destinos=None) -> list[str]:
+    """Devuelve los destinos cuya taxonomía generada NO coincide con la copia en disco
+    (alguien editó la copia a mano en vez del canon). Aviso, no bloqueante."""
+    import scripts.sync_taxonomia_skills as sync
+    from pathlib import Path
+    objetivos = destinos if destinos is not None else sync.DESTINOS
+    drift: list[str] = []
+    for d in objetivos:
+        d = Path(d)
+        actual = d.read_text(encoding="utf-8") if d.exists() else None
+        # Generar en un temporal hermano para comparar sin tocar el real
+        tmp = d.with_suffix(d.suffix + ".sync_check")
+        sync.generar(tmp)
+        esperado = tmp.read_text(encoding="utf-8")
+        tmp.unlink()
+        if actual != esperado:
+            drift.append(str(d))
+    return drift
+
+
 # --- informe -----------------------------------------------------------------
 
 def report(repackage: bool = False) -> int:
@@ -154,18 +176,25 @@ def report(repackage: bool = False) -> int:
         if (avisos := vs.validar_skill(d, helpers, operacion))
     }
 
+    tax_drift = taxonomia_drift()
+    if tax_drift:
+        print("AVISO taxonomía desincronizada (corre scripts/sync_taxonomia_skills.py):")
+        for d in tax_drift:
+            print(f"  - {d}")
+
     print("Chequeo de skills (modo AVISO) - no bloquea.\n")
     print(f"  CHANGELOG sin actualizar : {', '.join(cl_stale) or 'ninguna'}")
     print(f"  .skill caducado          : {', '.join(pkg_stale) or 'ninguna'}")
     print(f"  Drift de helpers         : {len(drift)} fichero(s)")
     print(f"  Identidad incompleta     : {', '.join(id_gaps) or 'ninguna'}")
+    print(f"  Drift de taxonomía       : {len(tax_drift)} fichero(s)")
 
     if repackage and pkg_stale:
         print("\n  Reempaquetando .skill caducados:")
         for name in pkg_stale:
             pk.package(_SKILLS / name, _DIST)
 
-    total = len(cl_stale) + len(pkg_stale) + len(drift) + len(id_gaps)
+    total = len(cl_stale) + len(pkg_stale) + len(drift) + len(id_gaps) + len(tax_drift)
     if total:
         print(f"\n{total} aviso(s). Detalle de identidad: python scripts/validate_skills.py")
     else:
