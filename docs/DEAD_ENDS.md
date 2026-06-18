@@ -6,6 +6,17 @@
 
 ---
 
+## Rendimiento — sala de lectura por el conector de Drive (Cowork)
+
+### Organizar la sala vía conector de Drive en Cowork = inviablemente lento para I/O masivo
+- **Intentado:** correr la skill `organizar-sala-lectura` (v1.3) en Cowork sobre el caso real BaRS1/Tibidabo (61 ficheros) — clasificar + copiar a `01_Procesado/Sala lectura/` + subir índices, todo por el conector de Drive.
+- **Resultado:** **~53 minutos.** El conector hace **una llamada API por fichero**: leer contenido (~60) + copiar server-side (60, en lotes, con stalls de permiso) + subir índices de uno en uno = 120+ round-trips con latencia. Inaceptable para que lo use Paola.
+- **Causa:** la API REST de Drive es per-fichero; no hay copia en lote. Cowork (nube) **no tiene** el filesystem local, así que no puede usar el montaje Drive for Desktop.
+- **Confirmado:** 2026-06-18 (corrida real BaRS1).
+- **Solución (camino rápido):** ejecutar la MISMA lógica **en local sobre el montaje Drive for Desktop (`G:`)** — filesystem instantáneo + sync en bloque en segundo plano. Disparo local: CLI `scripts/sala_lectura.py` / botón Streamlit / skill en Claude Code local. La vía Cowork/conector queda solo como **fallback puro-nube** (sin montaje), asumiendo su lentitud. Pivote a "motor local plano primario" PENDIENTE de decisión (¿tiene el equipo el montaje `G:`?); ver `PLAN.md` `[SIGUIENTE-SALA-UNICA-PLANA]`.
+
+---
+
 ## Tooling — skill-creator / evals de triggering
 
 ### `run_eval.py` / `run_loop.py` de skill-creator — no funcionan en Windows
