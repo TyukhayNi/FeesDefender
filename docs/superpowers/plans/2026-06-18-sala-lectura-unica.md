@@ -4,7 +4,7 @@
 
 **Goal:** Unificar las dos salas de lectura en UNA sola, **plana**, alimentada por la skill `organizar-sala-lectura` ampliada a **todo `00_Input`**; con catálogo SSOT derivado por helper, taxonomía DRY desde el canon, y deprecación del camino de sala del core.
 
-**Architecture:** La skill (prompt-driven, Cowork/local) clasifica leyendo contenido y escribe `01_Procesado/Sala lectura/` PLANA (`AAAA-MM-DD_descripcion.ext`; compuestos = subcarpeta fechada) + `_MANIFIESTO.md`. Un helper Python determinista deriva `indice_documental.yaml` del manifiesto. La taxonomía/criterios viven en un canon (`core/config.py::TAXONOMIA_EV` + `data/_prompts/clasificador_ev.md`) y se generan a la skill con `sync_taxonomia_skills.py`, con gate anti-drift en `check_skills.py`. El pipeline confidencial (extractor→MD→anon→frontier) NO se toca; el camino de sala del core se deprecna.
+**Architecture:** La skill (prompt-driven, Cowork/local) clasifica leyendo contenido y escribe `01_Procesado/Sala lectura/` PLANA (`AAAA-MM-DD_descripcion.ext`; compuestos = subcarpeta fechada) + `_MANIFIESTO.md`. Un helper Python determinista deriva `indice_documental.yaml` del manifiesto. La taxonomía/criterios viven en un canon (`core/config.py::TAXONOMIA_EV` + `data/_prompts/criterio_clasificacion_ev.md`) y se generan a la skill con `sync_taxonomia_skills.py`, con gate anti-drift en `check_skills.py`. El pipeline confidencial (extractor→MD→anon→frontier) NO se toca; el camino de sala del core se deprecna.
 
 **Tech Stack:** Python 3 (stdlib + `pyyaml`), pytest, Windows/PowerShell, UTF-8 sin BOM. Skills markdown + `scripts/package_skill.py`/`validate_skills.py`/`check_skills.py`. Spec: `docs/superpowers/specs/2026-06-18-sala-lectura-unica-design.md`.
 
@@ -14,10 +14,10 @@
 
 ## Fase 1 — Canon de criterios + DRY de taxonomía + gate anti-drift
 
-### Task 1: Canon de criterios `clasificador_ev.md`
+### Task 1: Canon de criterios `criterio_clasificacion_ev.md`
 
 **Files:**
-- Create: `data/_prompts/clasificador_ev.md`
+- Create: `data/_prompts/criterio_clasificacion_ev.md`
 
 - [ ] **Step 1: Escribir el canon** (fuente única de criterios; la lista de 8 categorías sigue siendo `core/config.py::TAXONOMIA_EV`, este doc añade enrutado PBC-por-parte + jerarquía de fecha + naming)
 
@@ -52,8 +52,8 @@ El tipo NO va en el nombre (la categoría vive en `INDICE.md`, no en carpetas).
 - [ ] **Step 2: Commit**
 
 ```bash
-git add data/_prompts/clasificador_ev.md
-git commit -m "feat(canon): clasificador_ev.md — criterio único de clasificación E&V (PBC por parte + fecha + naming)"
+git add data/_prompts/criterio_clasificacion_ev.md
+git commit -m "feat(canon): criterio_clasificacion_ev.md — criterio único de clasificación E&V (PBC por parte + fecha + naming)"
 ```
 
 ### Task 2: Generador `sync_taxonomia_skills.py`
@@ -105,7 +105,7 @@ Expected: FAIL (`ModuleNotFoundError: scripts.sync_taxonomia_skills`).
 # scripts/sync_taxonomia_skills.py
 """Genera la referencia de taxonomía de las skills desde el canon.
 
-Fuente: core/config.py::TAXONOMIA_EV (lista cerrada) + data/_prompts/clasificador_ev.md
+Fuente: core/config.py::TAXONOMIA_EV (lista cerrada) + data/_prompts/criterio_clasificacion_ev.md
 (enrutado PBC por parte + jerarquía de fecha + naming). Destino: la copia en cada skill
 (p. ej. .claude/skills/organizar-sala-lectura/references/taxonomia_ev.md). NO editar la
 copia a mano: edita el canon y re-genera. El gate de check_skills detecta el drift.
@@ -121,7 +121,7 @@ if str(ROOT) not in sys.path:
 
 from core.config import TAXONOMIA_EV  # noqa: E402
 
-_CANON = ROOT / "data" / "_prompts" / "clasificador_ev.md"
+_CANON = ROOT / "data" / "_prompts" / "criterio_clasificacion_ev.md"
 # Skills cuya referencia de taxonomía se sincroniza desde el canon.
 DESTINOS = [
     ROOT / ".claude" / "skills" / "organizar-sala-lectura" / "references" / "taxonomia_ev.md",
@@ -132,7 +132,7 @@ def _render() -> str:
     cats = "\n".join(f"- `{c}`" for c in TAXONOMIA_EV)
     canon = _CANON.read_text(encoding="utf-8")
     return (
-        "<!-- GENERADO desde data/_prompts/clasificador_ev.md + core/config.py::TAXONOMIA_EV "
+        "<!-- GENERADO desde data/_prompts/criterio_clasificacion_ev.md + core/config.py::TAXONOMIA_EV "
         "por scripts/sync_taxonomia_skills.py — NO EDITAR A MANO -->\n\n"
         "# Taxonomía E&V + criterio de clasificación (generado)\n\n"
         "## Las categorías (set cerrado = `TAXONOMIA_EV`)\n\n"

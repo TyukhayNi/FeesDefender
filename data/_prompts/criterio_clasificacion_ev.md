@@ -1,20 +1,3 @@
-<!-- GENERADO desde data/_prompts/criterio_clasificacion_ev.md + core/config.py::TAXONOMIA_EV por scripts/sync_taxonomia_skills.py — NO EDITAR A MANO -->
-
-# Taxonomía E&V + criterio de clasificación (generado)
-
-## Las categorías (set cerrado = `TAXONOMIA_EV`)
-
-- `00. FOTOS`
-- `01. ACTIVACIÓN`
-- `03. OFERTAS`
-- `04. ARRAS - ARRENDAMIENTOS`
-- `05. FACTURACIÓN - FINANZAS`
-- `06. PBC`
-- `07. RECLAMACIONES`
-- `08. PENDIENTE DE CLASIFICAR`
-
-(No existe el `02`; se respeta la numeración de E&V.)
-
 # Criterio de clasificación E&V — canon (fuente única)
 
 > Canon consumido por `scripts/sync_taxonomia_skills.py` para generar la sección

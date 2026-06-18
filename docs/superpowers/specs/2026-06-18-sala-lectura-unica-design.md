@@ -93,7 +93,7 @@ sobre el Drive del despacho, sin Python local ni dependencia del PC de Nikolai.
    `_MANIFIESTO.md`. Determinista, idempotente.
 3. **Helper `sync_taxonomia_skills.py`** (scripts/): genera la sección de taxonomía/criterios
    de la skill desde el canon (§6). Gate anti-drift en `scripts/check_skills.py`.
-4. **Canon de criterios** `data/_prompts/clasificador_ev.md`: PBC-por-parte + jerarquía de
+4. **Canon de criterios** `data/_prompts/criterio_clasificacion_ev.md`: PBC-por-parte + jerarquía de
    fecha + regla ambiguo→08. (La lista de categorías sigue en `core/config.py::TAXONOMIA_EV`.)
 
 ### 4.1 Scaffolding objetivo
@@ -145,7 +145,7 @@ Carpeta-bundle solo si hay **≥1 anexo**; documento solo → fichero plano.
   **excepción** anexos 1 y 2 del vendedor → `06. PBC` (la carpeta sobrevive solo para eso);
   identidad/KYC del **COMPRADOR** → `03. OFERTAS` (subcarpeta por oferta si hay varias).
   La parte se decide **leyendo** el documento.
-- **DRY:** fuente única = `TAXONOMIA_EV` (`core/config.py`) + `data/_prompts/clasificador_ev.md`
+- **DRY:** fuente única = `TAXONOMIA_EV` (`core/config.py`) + `data/_prompts/criterio_clasificacion_ev.md`
   (PBC-por-parte + jerarquía de fecha + ambiguo→08). `scripts/sync_taxonomia_skills.py`
   genera la sección de clasificación de la skill desde ese canon; `scripts/check_skills.py`
   gate anti-drift (igual que `sync_cuestionario_from_canon.py` en `viabilidad-prerelleno`).
@@ -210,7 +210,7 @@ hash), respetando idempotencia.
 - **Core:** marcar deprecado `core/sala_lectura.py` + paso `catalogo.build` en `pipeline.py`.
 - **Scripts:** `sync_taxonomia_skills.py` (nuevo) + gate en `check_skills.py`;
   `package_skill.py`/`validate_skills.py` (empaquetado/validación).
-- **Canon:** `data/_prompts/clasificador_ev.md` (criterios) + `core/config.py::TAXONOMIA_EV`.
+- **Canon:** `data/_prompts/criterio_clasificacion_ev.md` (criterios) + `core/config.py::TAXONOMIA_EV`.
 - **MEJORAS:** #34 (resuelto por esta vía), #35 (bundle WhatsApp), #36 (colisión), #38
   (fecha cuerpo); #37/#39 → deprecación/reevaluar.
 
