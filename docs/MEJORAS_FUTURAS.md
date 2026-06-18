@@ -1155,7 +1155,10 @@ guarda de colisión en `poblar_sala_lectura` (sufijo `_2`/`_3` por destino ya us
 en la corrida, determinista respetando idempotencia) o fragmento de hash en el
 nombre. **Disparador:** primera colisión observada en un caso real.
 
-## 37. Clasificador LLM del residuo de intake (autorrelleno de la worklist `_clasificar.md`)
+## 37. Clasificador LLM del residuo de intake (autorrelleno de la worklist `_clasificar.md`) [PROMOVIDO → PLAN.md]
+
+> **[PROMOVIDO → PLAN.md] 2026-06-18.** Disparador concreto (petición de Nikolai).
+> Tarea accionable en `PLAN.md` → `[SIGUIENTE-RESIDUO-LLM]` (`MEJORAS #37`).
 
 **Disparador.** 2026-06-18, petición de Nikolai (Cowork): poder dejar documentos
 sueltos en una carpeta e ir "procesándolos y clasificándolos con un prompt", al no
