@@ -38,8 +38,8 @@ La identidad/PBC **no va toda a `06. PBC`**. Se enruta según a qué parte perte
 ```
 03. OFERTAS/
 ├── Oferta 1/
-│   ├── 2024-05-02_oferta_oferta-de-compra.pdf
-│   └── 2024-05-02_oferta_kyc-comprador.pdf      ← identidad del comprador de esa oferta
+│   ├── 2024-05-02_oferta-de-compra.pdf
+│   └── 2024-05-02_kyc-comprador.pdf      ← identidad del comprador de esa oferta
 └── Oferta 2/
     └── ...
 ```
@@ -54,13 +54,17 @@ La identidad/PBC **no va toda a `06. PBC`**. Se enruta según a qué parte perte
 
 ## Nombre canónico
 
-`AAAA-MM-DD_tipo_descripcion.ext`
+`AAAA-MM-DD_descripcion.ext`
 
-- `tipo` (slug): foto · activacion · oferta · arras · factura · pbc · reclamacion · pendiente.
+El **tipo NO va en el nombre**: ya lo indica la carpeta canónica donde se archiva el
+fichero (`01. ACTIVACIÓN/`, `07. RECLAMACIONES/`, …), así que repetirlo en el nombre
+sería redundante.
+
 - `descripcion`: slug ≤50 car., minúsculas, guiones, **SIN PII** (sin nombres de
   personas, DNI/NIE, direcciones). Describe el documento, no a las partes
   (p. ej. `hoja-encargo`, `nota-mercantil`, `titular-real`, `kyc-comprador`, `burofax`).
 - `AAAA-MM-DD`: fecha del documento; si no consta, `0000-00-00`.
 
-Ejemplos: `2024-03-12_activacion_hoja-encargo.pdf`, `2024-05-02_reclamacion_burofax.pdf`,
-`2024-04-10_activacion_nota-mercantil.pdf` (identidad del vendedor → activación).
+Ejemplos (cada uno dentro de su carpeta de tipo): `2024-03-12_hoja-encargo.pdf` (en
+`01. ACTIVACIÓN/`), `2024-05-02_burofax.pdf` (en `07. RECLAMACIONES/`),
+`2024-04-10_nota-mercantil.pdf` (identidad del vendedor → `01. ACTIVACIÓN/`).

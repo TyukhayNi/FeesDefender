@@ -1,5 +1,12 @@
 # Changelog — organizar-sala-lectura
 
+## 1.2 — 2026-06-18
+- Nombre canónico **sin slug de tipo**: `AAAA-MM-DD_descripcion.ext` (el tipo ya lo
+  indica la carpeta canónica → el slug era redundante en la disposición por tipo).
+  Solo afecta a esta skill; el motor local (`core/`, disposición por fuente) conserva
+  el slug a propósito (allí sí informa). Verificado: el slug era decorativo, sin
+  acoplamientos funcionales.
+
 ## 1.1 — 2026-06-18
 - Enrutado de identidad/PBC **por parte**: vendedor → `01. ACTIVACIÓN`; comprador →
   `03. OFERTAS` (subcarpeta por oferta si hay varias). `06. PBC` sobrevive **solo**

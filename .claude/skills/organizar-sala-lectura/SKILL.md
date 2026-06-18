@@ -6,7 +6,7 @@ description: >-
   carpetas canónicas de Engel & Völkers (activación, ofertas, arras, facturación,
   PBC, reclamaciones, fotos, pendiente de clasificar), presenta una propuesta para
   tu visto bueno y, tras aprobarla, los copia con nombre canónico
-  fecha_tipo_descripcion a 01_Procesado/Sala lectura Drive EV, sin tocar el crudo,
+  fecha_descripcion a 01_Procesado/Sala lectura Drive EV, sin tocar el crudo,
   más INDICE.md, CRONOLOGIA.md y _MANIFIESTO.md. Úsala cuando el usuario diga
   "organiza esta carpeta", "ordena el intake", "monta la sala de lectura",
   "prepara los ficheros para leer" de un caso. NO valora viabilidad (eso es
@@ -17,7 +17,7 @@ metadata:
   naturaleza: atomica
   jurisdiction: ES
   area: [civil, procesal]
-  version: "1.1"
+  version: "1.2"
   author: "Nikolai Tyukhay"
   organization: "Tyukhay Legal"
   contact: "nikolai.tyukhay@tyukhay.legal"
@@ -97,7 +97,7 @@ la skill.
    a presentar. **Solo con OK explícito** pasas al paso 4.
 4. **(tras OK) Ejecuta de una pasada:** crea las carpetas canónicas y **copia** cada
    fichero a `01_Procesado/Sala lectura Drive EV/<tipo>/` (o a la subcarpeta de oferta)
-   con **nombre canónico** `AAAA-MM-DD_tipo_descripcion.ext` (`descripcion` ≤50 car.,
+   con **nombre canónico** `AAAA-MM-DD_descripcion.ext` (`descripcion` ≤50 car.,
    **sin PII**). Sin más preguntas.
 5. **Escribe los índices** en `01_Procesado/Sala lectura Drive EV/`:
    - `INDICE.md` — por tipo; cada entrada enlaza a la **copia canónica** + mapeo a
