@@ -2,15 +2,16 @@
 name: triaje-viabilidad
 description: >-
   Check BÁSICO de viabilidad de una reclamación de honorarios de mediación
-  inmobiliaria (cliente Engel & Völkers), antes del análisis formal. Lee la sala
-  de lectura ya organizada de un caso y devuelve un semáforo verde/amarillo/rojo
-  con los factores nucleares (hoja de encargo firmada, nexo causal con la operación
-  cerrada, obligado al pago, prueba de la intermediación, importe y base de cálculo,
-  prescripción), anclando cada conclusión a documento y marcando lo que falta.
-  Úsala cuando el usuario diga "haz un triaje de viabilidad", "¿este caso se
-  aguanta?", "check rápido de viabilidad", "¿cogemos este caso?". NO sustituye el
-  informe formal de viabilidad (viabilidad-prerelleno) NI organiza ficheros
-  (organizar-sala-lectura).
+  inmobiliaria (cliente Engel & Völkers), antes del análisis formal. Lee
+  directamente `00_Input/` del expediente (todas las fuentes) y devuelve un
+  semáforo verde/amarillo/rojo con los factores nucleares (hoja de encargo
+  firmada, nexo causal con la operación cerrada, obligado al pago, prueba de la
+  intermediación, importe y base de cálculo, prescripción), anclando cada
+  conclusión a documento y marcando lo que falta. No requiere haber corrido
+  `organizar-sala-lectura` antes. Úsala cuando el usuario diga "haz un triaje de
+  viabilidad", "¿este caso se aguanta?", "check rápido de viabilidad", "¿cogemos
+  este caso?". NO sustituye el informe formal de viabilidad (viabilidad-prerelleno)
+  NI organiza ficheros (organizar-sala-lectura).
 metadata:
   rol: fase
   naturaleza: atomica
@@ -28,8 +29,8 @@ license: "Proprietary — Tyukhay Legal (todos los derechos reservados)"
 # triaje-viabilidad
 
 Check **básico** de viabilidad de una reclamación de honorarios de mediación
-inmobiliaria (E&V), antes del análisis formal. Lee la **sala de lectura ya
-organizada** y devuelve un semáforo 🟢/🟡/🔴 con los factores nucleares, cada uno
+inmobiliaria (E&V), antes del análisis formal. Lee **`00_Input/` directo** del
+expediente y devuelve un semáforo 🟢/🟡/🔴 con los factores nucleares, cada uno
 anclado a documento o marcado como faltante. Orienta la decisión de coger el caso;
 **no la toma ni sustituye el informe formal**.
 
@@ -45,9 +46,12 @@ anclado a documento o marcado como faltante. Orienta la decisión de coger el ca
 
 ## Entrada
 
-La carpeta `02_Sala lectura/` ya organizada de un caso. Si no existe, sugiere correr
-antes `organizar-sala-lectura`. Lee `INDICE.md`/`CRONOLOGIA.md` para orientarte y
-luego los documentos relevantes.
+Lee `00_Input/` del expediente (todas las fuentes), igual que `viabilidad-prerelleno`.
+La fuente de verdad es el crudo: el triaje localiza sus factores leyendo el contenido,
+sin depender de la clasificación de la sala de lectura. **Opcional:** si existe
+`01_Procesado/Sala lectura/INDICE.md`, úsalo solo como **pista de navegación** (atajo para
+encontrar candidatos), pero verifica siempre contra `00_Input`. NO requiere haber corrido
+`organizar-sala-lectura` antes.
 
 ## Reglas de oro (innegociables)
 
