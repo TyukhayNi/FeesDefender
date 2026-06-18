@@ -1,23 +1,26 @@
 ---
 name: organizar-sala-lectura
 description: >-
-  Organiza el intake de Drive de un expediente FeesDefender en una "sala de
-  lectura" legible: lee 00_Input/01_Drive EV, clasifica cada fichero en las
-  carpetas canónicas de Engel & Völkers (activación, ofertas, arras, facturación,
-  PBC, reclamaciones, fotos, pendiente de clasificar), presenta una propuesta para
-  tu visto bueno y, tras aprobarla, los copia con nombre canónico
-  fecha_descripcion a 01_Procesado/Sala lectura Drive EV, sin tocar el crudo,
-  más INDICE.md, CRONOLOGIA.md y _MANIFIESTO.md. Úsala cuando el usuario diga
-  "organiza esta carpeta", "ordena el intake", "monta la sala de lectura",
-  "prepara los ficheros para leer" de un caso. NO valora viabilidad (eso es
-  triaje-viabilidad) NI genera el informe formal (eso es viabilidad-prerelleno) NI
-  mueve/borra el crudo.
+  Organiza el intake de un expediente FeesDefender en una "sala de lectura"
+  legible: lee TODO 00_Input (01_Drive EV, 02_Whatsapp, 03_Email, 04_Manual,
+  05_CRM, 06_Entrevistas; excluye 90_Notas personales), clasifica cada fichero
+  por las categorías canónicas de Engel & Völkers (activación, ofertas, arras,
+  facturación, PBC, reclamaciones, fotos, pendiente de clasificar), presenta una
+  propuesta para tu visto bueno y, tras aprobarla, los copia con nombre canónico
+  AAAA-MM-DD_descripcion a 01_Procesado/Sala lectura, en estructura PLANA (la
+  categoría vive en INDICE.md, no en carpetas; los documentos compuestos van en
+  subcarpeta fechada), sin tocar el crudo, más INDICE.md, CRONOLOGIA.md,
+  _MANIFIESTO.md e indice_documental.yaml. Úsala cuando el usuario diga "organiza
+  esta carpeta", "ordena el intake", "monta la sala de lectura", "prepara los
+  ficheros para leer" de un caso. NO valora viabilidad (eso es triaje-viabilidad)
+  NI genera el informe formal (eso es viabilidad-prerelleno) NI mueve/borra el
+  crudo.
 metadata:
   rol: output
   naturaleza: atomica
   jurisdiction: ES
   area: [civil, procesal]
-  version: "1.2"
+  version: "1.3"
   author: "Nikolai Tyukhay"
   organization: "Tyukhay Legal"
   contact: "nikolai.tyukhay@tyukhay.legal"
@@ -28,13 +31,14 @@ license: "Proprietary — Tyukhay Legal (todos los derechos reservados)"
 
 # organizar-sala-lectura
 
-Convierte el intake de Drive de un expediente FeesDefender (desordenado) en una
-**sala de lectura** legible: documentos clasificados por las carpetas canónicas de
-E&V, con nombre canónico, más índices de navegación. Versión **prompt-driven** del
-primer paso de la sala de lectura del motor local (misma taxonomía, mismos nombres),
-para correr en claude.ai/Cowork sin instalar nada. **No destructivo: copia, nunca
-mueve ni borra el crudo.** Presenta **una propuesta para tu visto bueno** antes de
-copiar nada.
+Convierte el intake de un expediente FeesDefender (desordenado, de todas las
+fuentes de `00_Input`) en una **sala de lectura ÚNICA y plana**: documentos con
+nombre canónico `AAAA-MM-DD_descripcion`, clasificados por las categorías canónicas
+de E&V **en `INDICE.md`** (no en carpetas), más índices de navegación y un catálogo
+máquina. Es el **único constructor** de la sala (el camino de sala del motor local
+quedó deprecado). Corre en claude.ai/Cowork o en Claude Code local, leyendo vía el
+conector de Drive, sin instalar nada. **No destructivo: copia, nunca mueve ni borra
+el crudo.** Presenta **una propuesta para tu visto bueno** antes de copiar nada.
 
 ## Cuándo se activa
 
@@ -46,41 +50,53 @@ copiar nada.
 - Hay que **valorar la viabilidad** del caso → `triaje-viabilidad`.
 - Hay que producir el **informe formal de viabilidad** → `viabilidad-prerelleno`.
 
+**Modelo:** ejecútese con **Sonnet o Haiku** (clasificación atómica + visto bueno
+humano); **no requiere Opus**. El grueso de la velocidad lo da el skip incremental
+por `sha256` (la 2ª pasada solo toca lo nuevo).
+
 ## Entrada y montaje
 
 - Trabaja sobre el **expediente en el Drive del despacho** (no el de Engel).
-- **Lee** de `00_Input/01_Drive EV/`. Las demás fuentes (`04_Manual`, `05_CRM`, etc.)
-  quedan **fuera de alcance**.
-- **Escribe** en `01_Procesado/Sala lectura Drive EV/`. Cowork debe tener montada la
-  **raíz del expediente** (la salida vive fuera de `00_Input`).
+- **Lee** de **TODO `00_Input/`** (`01_Drive EV`, `02_Whatsapp`, `03_Email`,
+  `04_Manual`, `05_CRM`, `06_Entrevistas`), **excluyendo `90_Notas personales`**
+  (zona del abogado: ningún módulo la lee ni la escribe).
+- **Escribe** en `01_Procesado/Sala lectura/`. Cowork debe tener montada la **raíz
+  del expediente** (la salida vive fuera de `00_Input`).
 
 ## Por qué fuera de 00_Input
 
-`00_Input/` es zona de intake: el pipeline local la escanea entera y los re-pulls del
-Drive de Engel la sobrescriben. Si la sala viviera ahí, las copias se re-ingerirían
-como intake nuevo (duplicados, re-OCR) y un re-pull las pisaría. Por eso la salida va
-a `01_Procesado/`, igual que el motor local.
+`00_Input/` es zona de intake: el pipeline confidencial la escanea entera
+(`inventory.scan` hace `rglob` sobre `00_Input`) y los re-pulls del Drive de Engel
+la sobrescriben. Si la sala viviera ahí, las copias se re-ingerirían como intake
+nuevo (duplicados, re-OCR) y un re-pull las pisaría. Por eso la salida va a
+`01_Procesado/`.
 
 ## Qué produce
 
 ```
 <Expediente (Drive del despacho)>/
-├── 00_Input/01_Drive EV/         ← crudo, nombres originales, NO se toca
+├── 00_Input/                       ← crudo (todas las fuentes), NO se toca
 └── 01_Procesado/
-    └── Sala lectura Drive EV/
-        ├── INDICE.md · CRONOLOGIA.md · _MANIFIESTO.md
-        └── <carpetas canónicas E&V>/   (ver references/taxonomia_ev.md)
+    └── Sala lectura/
+        ├── INDICE.md · CRONOLOGIA.md · _MANIFIESTO.md · indice_documental.yaml
+        ├── AAAA-MM-DD_descripcion.ext                 (documento suelto)
+        └── AAAA-MM-DD_descripcion/                    (documento compuesto)
+            ├── AAAA-MM-DD_descripcion.ext             (principal)
+            └── AAAA-MM-DD_descripcion_anexo_N_x.ext   (anexos)
 ```
+
+Estructura **PLANA**: la categoría E&V vive en `INDICE.md`, no en carpetas (ver
+`references/taxonomia_ev.md` para el set cerrado y los criterios).
 
 ## Autonomía y gate único
 
 La skill **no inserta preguntas de aclaración** ni pide permiso fichero a fichero.
 Tiene **un solo gate humano**: la propuesta del Paso 2.5. Tras tu OK, ejecuta todo de
 una pasada **sin más preguntas**. Por defecto asume autorización para crear y copiar
-en `01_Procesado/Sala lectura Drive EV/` (el crudo de `00_Input` no se toca ni se
-borra; siempre **copia** server-side). El diálogo de permiso por-llamada del conector
-es ajuste del **cliente Cowork** ("Permitir siempre" en el conector de Drive), no de
-la skill.
+en `01_Procesado/Sala lectura/` (el crudo de `00_Input` no se toca ni se borra;
+siempre **copia** server-side). El diálogo de permiso por-llamada del conector se
+neutraliza en el **Paso 0** ("Permitir siempre" en el conector de Drive), no en la
+skill.
 
 ## Procedimiento
 
