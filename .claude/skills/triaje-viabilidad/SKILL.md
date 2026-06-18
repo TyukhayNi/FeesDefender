@@ -72,7 +72,8 @@ Ver `references/criterios_triaje.md` (cárgalo al empezar): los 8 factores, cuá
 
 1. **Detecta el tipo de caso** (BAD_DEBT, NEGATIVA_*, VUELTA, etc. — lista en
    `references/criterios_triaje.md`); orienta qué factores pesan.
-2. **Evalúa cada factor:** busca en la sala el documento que lo acredita y márcalo
+2. **Evalúa cada factor:** busca en `00_Input` el documento que lo acredita (usa
+   `INDICE.md` de la sala como atajo de navegación si existe) y márcalo
    **acreditado** (con cita), **débil** (existe pero con problema: firma sin cotejar,
    copia, ilegible) o **falta**.
 3. **Calcula el semáforo** según las reglas de `references/criterios_triaje.md`.
@@ -89,7 +90,7 @@ documentación a recabar.
 
 - **Semáforo conservador:** si falta un factor **nuclear**, es 🔴 aunque el resto
   esté acreditado.
-- **Sala casi vacía:** no rellenes el veredicto a la fuerza; di que falta
-  documentación para poder triar.
+- **Documental escasa:** no rellenes el veredicto a la fuerza; di que falta
+  documentación en `00_Input` para poder triar.
 - **No es el informe formal:** para el `.xlsx` de viabilidad, los 14 hitos y el
   recuadro CFO, encadena con `viabilidad-prerelleno`.

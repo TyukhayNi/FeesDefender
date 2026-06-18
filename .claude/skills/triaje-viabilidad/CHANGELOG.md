@@ -6,6 +6,8 @@
   NO hereda la clasificación de la sala de lectura (un doc mal clasificado a
   `08. PENDIENTE` ya no se le escapa). La sala (`INDICE.md`) queda como pista
   opcional de navegación; ya no es prerrequisito correr `organizar-sala-lectura`.
+- Coherencia: el paso 2 del procedimiento y el gotcha de documental escasa se
+  alinean a `00_Input` como fuente (antes decían "la sala").
 
 ## 1.0 — 2026-06-18
 - Versión inicial. Triaje semáforo de viabilidad de honorarios de mediación E&V
