@@ -30,9 +30,18 @@ from .utils import slugify
 # Versión lógica del extractor. Súbela cuando cambie la lógica de extracción
 # (p. ej. el backend Docling) para invalidar el cache de skip incremental y
 # forzar una reextracción de todos los documentos en la próxima corrida.
-EXTRACTOR_VERSION = 1
+# v2: PDFs con capa de texto se extraen con pypdf (sin Docling/OCR) para evitar
+#     el OOM/segfault de RapidOCR en PDFs largos (visto en BaRS1, Atles de
+#     plànols.pdf, 128 págs). Docling/OCR solo para escaneados, con guarda de
+#     nº de páginas.
+EXTRACTOR_VERSION = 2
 
 _STATE_FILENAME = "_extract_state.json"
+
+# Nº máximo de páginas que se enviarán a Docling/OCR para un PDF escaneado.
+# Por encima, se omite el OCR (se marca como sin texto) en lugar de arriesgar un
+# OOM/segfault de RapidOCR. Los escaneados reales del flujo son cortos.
+MAX_OCR_PAGINAS = 30
 
 
 class ExtractionError(RuntimeError):
@@ -104,6 +113,30 @@ def _try_pypdf(path: Path) -> str | None:
         return None
 
 
+def _pdf_num_paginas(path: Path) -> int | None:
+    """Nº de páginas de un PDF (pypdf). None si no se puede leer."""
+    try:
+        from pypdf import PdfReader  # type: ignore
+        return len(PdfReader(str(path)).pages)
+    except Exception:
+        return None
+
+
+def _texto_suficiente(text: str | None, n_pags: int | None) -> bool:
+    """¿La capa de texto de pypdf basta (PDF con texto, no escaneado)?
+
+    Heurística conservadora: al menos 100 caracteres y, si se conoce el nº de
+    páginas, una densidad mínima (~40 char/pág) que descarta los PDFs escaneados
+    (capa de texto vacía o residual) sin descartar PDFs de texto reales.
+    """
+    t = (text or "").strip()
+    if len(t) < 100:
+        return False
+    if n_pags and n_pags > 0:
+        return (len(t) / n_pags) >= 40
+    return True
+
+
 def _try_docx(path: Path) -> str | None:
     try:
         import docx  # type: ignore
@@ -166,13 +199,27 @@ def _try_email(path: Path) -> str | None:
 def _extract_one(path: Path) -> tuple[str, str]:
     ext = path.suffix.lower()
 
-    if ext in {".pdf", ".docx", ".html", ".htm", ".pptx"}:
+    if ext == ".pdf":
+        # pypdf primero: si el PDF trae capa de texto suficiente, se usa y se
+        # EVITA Docling/OCR (cuyo RapidOCR revienta con bad_alloc/segfault en
+        # PDFs largos — no es excepción Python, mata el proceso). Solo se OCR-iza
+        # lo escaneado (capa de texto vacía/residual), y con guarda de páginas.
+        pytext = _try_pypdf(path)
+        npags = _pdf_num_paginas(path)
+        if pytext and _texto_suficiente(pytext, npags):
+            return pytext, "pypdf"
+        if npags is None or npags <= MAX_OCR_PAGINAS:
+            if (text := _try_docling(path)):
+                return text, "docling"
+        # Escaneado demasiado largo para OCR seguro, o Docling no disponible:
+        # devolver lo que diera pypdf (aunque sea poco); si nada, marcar vacío.
+        if pytext:
+            return pytext, "pypdf"
+        return "", "sin_texto"
+
+    if ext in {".docx", ".html", ".htm", ".pptx"}:
         if (text := _try_docling(path)):
             return text, "docling"
-
-    if ext == ".pdf":
-        if (text := _try_pypdf(path)):
-            return text, "pypdf"
 
     if ext == ".docx":
         if (text := _try_docx(path)):
