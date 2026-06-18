@@ -1,5 +1,32 @@
 # Changelog — organizar-sala-lectura
 
+## 1.3 — 2026-06-18
+- **Alcance ampliado a TODO `00_Input`**: lee las seis fuentes (`01_Drive EV`,
+  `02_Whatsapp`, `03_Email`, `04_Manual`, `05_CRM`, `06_Entrevistas`); antes
+  solo `01_Drive EV`.
+- **Salida PLANA**: `01_Procesado/Sala lectura/` (antes `Sala lectura Drive EV/`
+  con subcarpetas por categoría). La categoría vive en `INDICE.md`, no en
+  carpetas.
+- **Paso 0 (bloqueante)**: carga el conector de Drive vía ToolSearch, acepta URL
+  del expediente o de subcarpeta de `00_Input`, y solicita "Permitir siempre"
+  para cero diálogos durante la ejecución.
+- **Documentos compuestos (bundles)**: WhatsApp, `.eml` y lotes CRM agrupados en
+  subcarpeta fechada (`AAAA-MM-DD_descripcion/`); sueltos solo si hay convención
+  `_anexo_N` o PDF troceado.
+- **Fecha por jerarquía del cuerpo**: (a) otorgamiento/firma → (b) fecha del
+  contenido → (c) nombre del fichero → (d) `0000-00-00`; `mtime` solo como
+  aproximación marcada `(*)`.
+- **Índices**: `INDICE.md` (por categoría, fecha DESC) + `CRONOLOGIA.md` (ASC;
+  sin-fecha al final) + `_MANIFIESTO.md` (tabla sha256 + metadatos por fila;
+  cabecera GENERADO).
+- **Catálogo `indice_documental.yaml`** derivado por el helper
+  `scripts/manifiesto_a_catalogo.py` (el LLM NO escribe YAML). SSOT máquina.
+- **Taxonomía DRY desde el canon**: `references/taxonomia_ev.md` generado por
+  `scripts/sync_taxonomia_skills.py` desde `core/config.py::TAXONOMIA_EV` +
+  `data/_prompts/criterio_clasificacion_ev.md`; gate anti-drift en
+  `check_skills.py`.
+- **Nota de modelo**: ejecútese con Sonnet o Haiku; no requiere Opus.
+
 ## 1.2 — 2026-06-18
 - Nombre canónico **sin slug de tipo**: `AAAA-MM-DD_descripcion.ext` (el tipo ya lo
   indica la carpeta canónica → el slug era redundante en la disposición por tipo).
