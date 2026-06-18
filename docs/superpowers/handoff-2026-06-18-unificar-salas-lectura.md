@@ -52,8 +52,11 @@ Cowork/Drive, SIN core/, sin Docling), versión actual **v1.2**:
   (`_intake_hashes.json` M9, `_inventory.json`, `indice_documental.yaml`). El puente
   entre la sala y la traza del caso es el sha256 (el conector da md5 → calcular sha256 de
   los bytes). "Catálogo único" es la dirección ya elegida del proyecto (`PLAN.md`
-  acoplamiento #2; `[SIGUIENTE-CATALOGO-DOCUMENTAL]`); `build_catalog` NO está cableado
-  en el pipeline.
+  acoplamiento #2; `[SIGUIENTE-CATALOGO-DOCUMENTAL]`). **Actualización 2026-06-18
+  (sesión concurrente, `45dd5ad`):** `build_catalog` **YA está cableado** en
+  `core/pipeline.py` (tras `inventory.scan`, idempotente) + subcomando `catalogo` en
+  `scripts/sala_lectura.py`; y #37 (residuo por Claude-en-sesión) validado sobre el
+  caso real BaRS1/Tibidabo.
 - **NO destructivo:** el crudo de `00_Input` NUNCA se toca ni se borra. Copia server-side.
 - **TAXONOMÍA E&V canónica** = `core/config.py` `TAXONOMIA_EV` (8 cats, incl
   `08. PENDIENTE DE CLASIFICAR`). **PBC POR PARTE** (decidido sobre Tibidabo): identidad
