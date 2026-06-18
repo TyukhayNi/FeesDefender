@@ -17,7 +17,7 @@ metadata:
   naturaleza: atomica
   jurisdiction: ES
   area: [civil, mercantil, consumo]
-  version: "1.0"
+  version: "1.1"
   author: "Nikolai Tyukhay"
   organization: "Tyukhay Legal"
   contact: "nikolai.tyukhay@tyukhay.legal"
