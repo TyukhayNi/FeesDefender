@@ -269,3 +269,139 @@ def test_export_label_dedup_dentro_de_la_corrida(tmp_path):
     rep = ee.export_label("c@engelvoelkers.com", _ETIQUETA, tmp_path, service=svc)
     assert rep.written == 1
     assert rep.skipped == 1
+
+
+# ---------------------------------------------------------------------------
+# Traza forense — manifest (SHA-256) + evento upload_email (con case_id)
+# ---------------------------------------------------------------------------
+
+def _setup_caso(case_id: str):
+    import importlib
+
+    from core import case_manager, config as cfg
+
+    importlib.reload(cfg)
+    importlib.reload(case_manager)
+    case_manager.ensure_case(case_id, titulo="Caso email export test")
+    return case_id
+
+
+def test_export_label_emite_traza_forense(tmp_casos_root):
+    from core import intake_log
+    from core.intake_manifest import IntakeManifest
+
+    case_id = _setup_caso("EMAIL-2026-001")
+    raws = {
+        "g1": _build_raw(
+            message_id="<conadj@x>",
+            subject="Con adjunto",
+            attachments=[("contrato.pdf", "application/pdf", b"%PDF datos")],
+        ),
+        "g2": _build_raw(message_id="<plano@x>", subject="Plano"),
+    }
+    pages = [{"messages": [{"id": "g1"}, {"id": "g2"}]}]
+    svc = _FakeService(labels=_LABELS, pages=pages, raws=raws)
+    dest = ee.email_dest_dir(case_id)
+
+    rep = ee.export_label("c@engelvoelkers.com", _ETIQUETA, dest, service=svc, case_id=case_id)
+
+    assert rep.written == 2
+    assert rep.intake_logged is True
+
+    # Evento upload_email único, con el mapeo Message-ID → sha → ruta.
+    eventos = [e for e in intake_log.read_events(case_id) if e["event"] == "upload_email"]
+    assert len(eventos) == 1
+    det = eventos[0]["details"]
+    assert det["registrados_eml"] == 2
+    assert det["registrados_adjuntos"] == 1
+    assert det["label"] == _ETIQUETA
+    mids = {m["message_id"] for m in det["mensajes"]}
+    assert mids == {"conadj@x", "plano@x"}
+    assert all(m["sha256"] for m in det["mensajes"])
+
+    # Manifest: SHA-256 de los 3 ficheros físicos (2 .eml + 1 adjunto).
+    man = IntakeManifest(case_id)
+    man.load()
+    rutas = man.all_paths()
+    assert any(p.endswith("contrato.pdf") for p in rutas)
+    assert sum(1 for p in rutas if p.endswith(".eml")) == 2
+
+
+def test_export_label_traza_idempotente(tmp_casos_root):
+    """2ª corrida sin correos nuevos: ni evento ni cambios; intake_logged False."""
+    from core import intake_log
+
+    case_id = _setup_caso("EMAIL-2026-002")
+    raws = {"g1": _build_raw(message_id="<m1@x>", subject="Uno")}
+    pages = [{"messages": [{"id": "g1"}]}]
+    dest = ee.email_dest_dir(case_id)
+
+    rep1 = ee.export_label(
+        "c@engelvoelkers.com", _ETIQUETA, dest,
+        service=_FakeService(labels=_LABELS, pages=pages, raws=raws), case_id=case_id,
+    )
+    assert rep1.written == 1 and rep1.intake_logged is True
+
+    rep2 = ee.export_label(
+        "c@engelvoelkers.com", _ETIQUETA, dest,
+        service=_FakeService(labels=_LABELS, pages=pages, raws=raws), case_id=case_id,
+    )
+    assert rep2.written == 0
+    assert rep2.skipped == 1
+    assert rep2.intake_logged is False
+
+    eventos = [e for e in intake_log.read_events(case_id) if e["event"] == "upload_email"]
+    assert len(eventos) == 1  # solo el de la 1ª corrida
+
+
+def test_export_label_traza_backfill_de_corrida_previa(tmp_casos_root):
+    """Exportado antes SIN case_id (sin traza); al re-exportar CON case_id, la traza
+    registra los ficheros ya presentes y emite el evento (caso real W-02VND1)."""
+    from core import intake_log
+    from core.intake_manifest import IntakeManifest
+
+    case_id = _setup_caso("EMAIL-2026-003")
+    raws = {
+        "g1": _build_raw(
+            message_id="<a@x>", subject="Con adjunto",
+            attachments=[("doc.pdf", "application/pdf", b"%PDF x")],
+        ),
+        "g2": _build_raw(message_id="<b@x>", subject="Plano"),
+    }
+    pages = [{"messages": [{"id": "g1"}, {"id": "g2"}]}]
+    dest = ee.email_dest_dir(case_id)
+
+    # 1ª corrida: SIN case_id → escribe los ficheros pero NO emite traza.
+    rep0 = ee.export_label(
+        "c@engelvoelkers.com", _ETIQUETA, dest,
+        service=_FakeService(labels=_LABELS, pages=pages, raws=raws),
+    )
+    assert rep0.written == 2 and rep0.intake_logged is False
+    assert intake_log.read_events(case_id) == []
+
+    # 2ª corrida: CON case_id → 0 descargados (idempotente) pero traza de lo presente.
+    rep1 = ee.export_label(
+        "c@engelvoelkers.com", _ETIQUETA, dest,
+        service=_FakeService(labels=_LABELS, pages=pages, raws=raws), case_id=case_id,
+    )
+    assert rep1.written == 0           # nada nuevo que descargar
+    assert rep1.intake_logged is True  # pero sí se trazó lo ya depositado
+
+    eventos = [e for e in intake_log.read_events(case_id) if e["event"] == "upload_email"]
+    assert len(eventos) == 1
+    det = eventos[0]["details"]
+    assert det["descargados_esta_corrida"] == 0
+    assert det["registrados_eml"] == 2
+    assert det["registrados_adjuntos"] == 1
+
+    man = IntakeManifest(case_id)
+    man.load()
+    assert any(p.endswith("doc.pdf") for p in man.all_paths())
+
+    # 3ª corrida: ya todo registrado → no re-emite.
+    rep2 = ee.export_label(
+        "c@engelvoelkers.com", _ETIQUETA, dest,
+        service=_FakeService(labels=_LABELS, pages=pages, raws=raws), case_id=case_id,
+    )
+    assert rep2.intake_logged is False
+    assert len([e for e in intake_log.read_events(case_id) if e["event"] == "upload_email"]) == 1

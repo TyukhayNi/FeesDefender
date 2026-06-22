@@ -37,7 +37,9 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any, Iterable
 
+from . import intake_log
 from .gmail_source import _build_service, _load_credentials
+from .intake_manifest import IntakeManifest, compute_sha256_bytes
 
 # ---------------------------------------------------------------------------
 # Capa pura — base64url, cabeceras, nombre canónico, partición del .eml
@@ -250,6 +252,7 @@ class ExportReport:
     attachments: int = 0
     files: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    intake_logged: bool = False
 
     def resumen(self) -> str:
         return (
@@ -265,6 +268,7 @@ def export_label(
     dest_dir: Path | str,
     *,
     service: Any = None,
+    case_id: str | None = None,
 ) -> ExportReport:
     """Exporta TODOS los mensajes de una etiqueta a ``dest_dir`` como ``.eml`` fieles.
 
@@ -272,6 +276,15 @@ def export_label(
     a una subcarpeta fechada con el ``.eml`` y los adjuntos extraídos. Regenera
     ``INDICE.md``/``CRONOLOGIA.md`` al final. ``service`` se inyecta en tests; en
     producción se construye desde el token OAuth de la cuenta.
+
+    Si se pasa ``case_id``, emite **traza forense** (mismo estándar que el intake de
+    WhatsApp/manual): registra el SHA-256 de cada ``.eml``/adjunto presente en el
+    ``IntakeManifest`` (``source="email"``, dedup cross-source) y emite un evento
+    ``upload_email`` en ``_intake_log.jsonl`` con el mapeo Message-ID → sha → ruta.
+    La traza se deriva del disco (no solo de lo recién descargado), así que **cubre
+    también** ficheros depositados en corridas previas sin traza; es idempotente
+    (sin nada nuevo que registrar no emite evento). ``dest_dir`` debe estar bajo el
+    ``00_Input/`` de ese caso.
     """
     dest = Path(dest_dir)
     dest.mkdir(parents=True, exist_ok=True)
@@ -311,24 +324,96 @@ def export_label(
             if adjuntos:
                 carpeta = _dir_unico(dest, Path(nombre_eml).stem)
                 carpeta.mkdir(parents=True, exist_ok=True)
-                (carpeta / nombre_eml).write_bytes(eml_bytes)
+                eml_path = carpeta / nombre_eml
+                eml_path.write_bytes(eml_bytes)
                 for idx, (fn, _mime, datos) in enumerate(adjuntos, start=1):
                     seguro = _sanea_nombre_fichero(fn, fallback=f"adjunto_{idx}")
-                    destino_adj = _ruta_unica(carpeta, seguro)
-                    destino_adj.write_bytes(datos)
+                    _ruta_unica(carpeta, seguro).write_bytes(datos)
                     report.attachments += 1
-                report.files.append(str((carpeta / nombre_eml).relative_to(dest)))
             else:
-                destino = _ruta_unica(dest, nombre_eml)
-                destino.write_bytes(eml_bytes)
-                report.files.append(str(destino.relative_to(dest)))
+                eml_path = _ruta_unica(dest, nombre_eml)
+                eml_path.write_bytes(eml_bytes)
 
+            report.files.append(str(eml_path.relative_to(dest)))
             report.written += 1
         except Exception as exc:  # noqa: BLE001 — un fallo no aborta la corrida
             report.errors.append(f"{gmail_id}: {exc}")
 
     write_indices(dest)
+
+    if case_id:
+        _emit_traza(case_id, dest, account, label, report)
+
     return report
+
+
+_INDICES_NOMBRES = frozenset({"INDICE.md", "CRONOLOGIA.md"})
+
+
+def _emit_traza(
+    case_id: str,
+    dest: Path,
+    account: str,
+    label: str,
+    report: ExportReport,
+) -> None:
+    """Traza forense derivada del disco: registra hashes + evento ``upload_email``.
+
+    Recorre los ficheros presentes en ``dest`` (``.eml`` + adjuntos, excluyendo los
+    índices generados) y registra en el ``IntakeManifest`` los que aún no constan
+    (por ruta relativa). Emite UN evento ``upload_email`` con el mapeo
+    Message-ID → sha → ruta de los ``.eml`` recién registrados; si no hay nada nuevo
+    no emite (idempotente). ``dest`` está bajo ``00_Input/``, así que su padre es el
+    root de rutas relativas del manifest.
+    """
+    input_root = dest.parent  # 00_Input/
+    nuevos_eml: list[dict[str, Any]] = []
+    nuevos_adjuntos = 0
+
+    with IntakeManifest(case_id) as manifest:
+        ya_registrados = manifest.all_paths()
+        for fichero in sorted(dest.rglob("*")):
+            if not fichero.is_file() or fichero.name in _INDICES_NOMBRES:
+                continue
+            try:
+                rel = fichero.relative_to(input_root).as_posix()
+            except ValueError:
+                rel = fichero.name
+            if rel in ya_registrados:
+                continue
+            try:
+                data = fichero.read_bytes()
+            except OSError as exc:
+                report.errors.append(f"traza {rel}: {exc}")
+                continue
+            sha = compute_sha256_bytes(data)
+            if fichero.suffix.lower() == ".eml":
+                mid = message_id_of(data)
+                manifest.register(sha, rel, source="email", message_id=mid, kind="email")
+                nuevos_eml.append({"message_id": mid, "sha256": sha, "path": rel})
+            else:
+                manifest.register(
+                    sha, rel, source="email", kind="attachment", filename=fichero.name
+                )
+                nuevos_adjuntos += 1
+
+    if not nuevos_eml and not nuevos_adjuntos:
+        return  # nada nuevo que trazar
+
+    intake_log.append_event(
+        case_id,
+        "upload_email",
+        details={
+            "account": account,
+            "label": label,
+            "total_in_label": report.total_in_label,
+            "descargados_esta_corrida": report.written,
+            "registrados_eml": len(nuevos_eml),
+            "registrados_adjuntos": nuevos_adjuntos,
+            "mensajes": nuevos_eml,
+        },
+    )
+    report.intake_logged = True
 
 
 # ---------------------------------------------------------------------------

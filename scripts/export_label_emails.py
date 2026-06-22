@@ -42,8 +42,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     dest = email_dest_dir(args.ref)
-    report = export_label(args.account, args.label, dest)
+    report = export_label(args.account, args.label, dest, case_id=args.ref)
     _print_report(report, dest)
+    if report.intake_logged:
+        print("[export-label] traza forense: evento upload_email + hashes en el manifest.")
     return 1 if report.errors and report.written == 0 else 0
 
 

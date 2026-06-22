@@ -775,7 +775,8 @@ with tab_casos:
                     with st.spinner("Exportando correos de la etiqueta…"):
                         try:
                             _rep_em = _email_export.export_label(
-                                _cuenta_em.strip(), _label_em.strip(), _dest_em
+                                _cuenta_em.strip(), _label_em.strip(), _dest_em,
+                                case_id=_caso_em,
                             )
                         except Exception as _exc_em:
                             st.error(f"❌ Error exportando: {_exc_em}")
