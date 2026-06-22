@@ -27,6 +27,7 @@ from core.intake_drive import (
 from core import intake_log
 from core import intake_manual
 from core import whatsapp_intake
+from core import email_export as _email_export
 from core.judicial_intake import intake_demanda_contestacion as _intake_judicial
 from core.sync_sudespacho import SudespachoError as _SudespachoError
 from core import share_drive as _sd
@@ -731,6 +732,72 @@ with tab_casos:
                             f"❌ Error importando «{_prev.chat_name}»: {_exc_dep}"
                         )
                 st.divider()
+
+        st.divider()
+        with st.expander("✉️ Exportar correos por etiqueta"):
+            st.caption(
+                "Vuelca TODOS los mensajes de una etiqueta Gmail al expediente como "
+                "`.eml` fieles + adjuntos, en `00_Input/03_Email/`. Idempotente "
+                "(no duplica). Solo lectura: no marca como leído."
+            )
+            _caso_em = st.selectbox(
+                "Caso",
+                cases,
+                key="casos_email_sel",
+                help="Caso a cuyo `00_Input/03_Email/` se exportarán los correos.",
+            )
+            _cuenta_em = st.text_input(
+                "Cuenta Gmail",
+                value="nikolai.tyukhay@engelvoelkers.com",
+                key="casos_email_cuenta",
+                help=(
+                    "Cuenta donde vive la etiqueta. Las etiquetas de casos E&V están "
+                    "en la cuenta @engelvoelkers. Debe tener token en ~/.gmail-mcp/tokens/."
+                ),
+            )
+            _label_em = st.text_input(
+                "Etiqueta (ruta completa)",
+                key="casos_email_label",
+                placeholder="01. CONTING/01. EXTRAJUD/01. BARCELONA/BaRS1 - … - (W-XXXXX)",
+                help="Nombre EXACTO de la etiqueta, con la ruta anidada completa.",
+            )
+            if st.button(
+                "✉️ Exportar correos",
+                key="casos_email_btn",
+                help="Descarga la etiqueta al expediente. Corre en este PC (token + acceso a G:).",
+            ):
+                if not _cuenta_em.strip():
+                    st.error("Introduce la cuenta de Gmail.")
+                elif not _label_em.strip():
+                    st.error("Introduce la etiqueta.")
+                else:
+                    _dest_em = _email_export.email_dest_dir(_caso_em)
+                    with st.spinner("Exportando correos de la etiqueta…"):
+                        try:
+                            _rep_em = _email_export.export_label(
+                                _cuenta_em.strip(), _label_em.strip(), _dest_em
+                            )
+                        except Exception as _exc_em:
+                            st.error(f"❌ Error exportando: {_exc_em}")
+                        else:
+                            if _rep_em.label_id is None:
+                                st.error(
+                                    "❌ " + (_rep_em.errors[0] if _rep_em.errors
+                                             else "Etiqueta no encontrada.")
+                                )
+                            else:
+                                st.success(
+                                    f"✅ {_rep_em.total_in_label} mensajes · "
+                                    f"{_rep_em.written} escritos · "
+                                    f"{_rep_em.skipped} ya presentes · "
+                                    f"{_rep_em.attachments} adjuntos extraídos "
+                                    "en `00_Input/03_Email/`."
+                                )
+                                if _rep_em.errors:
+                                    st.warning(
+                                        f"{len(_rep_em.errors)} error(es): "
+                                        + "; ".join(_rep_em.errors[:3])
+                                    )
 
         st.divider()
         with st.expander("📂 Subir al árbol CRM"):

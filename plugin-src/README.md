@@ -1,10 +1,11 @@
 # Plugin `feesdefender`
 
 Plugin del despacho Tyukhay Legal: **conector `expedientes-xl`** (depósito de ficheros
-al expediente, server-side) + **skill `intake-expediente`** (intake con trazabilidad).
-Esto es la **SSOT de metadatos** del plugin; el conector y la skill viven en sus propias
-ubicaciones (`plugins/expedientes_xl/`, `.claude/skills/intake-expediente/`) y se ensamblan
-con el build.
+al expediente, server-side) + **skill `intake-expediente`** (intake con trazabilidad) +
+**skill `exportar-correos-etiqueta`** (vuelca una etiqueta Gmail al expediente como `.eml`
+fieles + adjuntos; motor local `core.email_export`). Esto es la **SSOT de metadatos** del
+plugin; el conector y las skills viven en sus propias ubicaciones
+(`plugins/expedientes_xl/`, `.claude/skills/<skill>/`) y se ensamblan con el build.
 
 ## Build (reproducible)
 ```

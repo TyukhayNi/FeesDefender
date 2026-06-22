@@ -6,7 +6,7 @@
     {
       "name": "feesdefender",
       "source": "./feesdefender",
-      "description": "Conector expedientes-xl + skill intake-expediente."
+      "description": "Conector expedientes-xl + skills intake-expediente y exportar-correos-etiqueta."
     }
   ]
 }

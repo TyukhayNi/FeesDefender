@@ -1,7 +1,8 @@
 """Ensambla el plugin `feesdefender` en dist/plugin/ desde la SSOT.
 
-Copia: plugin-src/ (metadatos) + plugins/expedientes_xl/ (conector) +
-.claude/skills/intake-expediente/ (skill). Salida gitignored y reproducible.
+Copia: plugin-src/ (metadatos) + plugins/expedientes_xl/ (conector) + las skills
+del despacho que se distribuyen con el plugin (intake-expediente,
+exportar-correos-etiqueta). Salida gitignored y reproducible.
 Uso: python -m scripts.package_plugin
 """
 from __future__ import annotations
@@ -12,7 +13,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "plugin-src"
 CONECTOR = ROOT / "plugins" / "expedientes_xl"
-SKILL = ROOT / ".claude" / "skills" / "intake-expediente"
+SKILLS_DIR = ROOT / ".claude" / "skills"
+# Skills empaquetadas en el plugin (SSOT en .claude/skills/).
+SKILLS = ("intake-expediente", "exportar-correos-etiqueta")
 OUT = ROOT / "dist" / "plugin"
 PLUGIN = OUT / "feesdefender"
 
@@ -36,8 +39,9 @@ def build() -> Path:
     shutil.copy2(SRC / ".mcp.json", PLUGIN / ".mcp.json")
     # conector -> dist/plugin/feesdefender/expedientes_xl/
     _copytree(CONECTOR, PLUGIN / "expedientes_xl")
-    # skill -> dist/plugin/feesdefender/skills/intake-expediente/
-    _copytree(SKILL, PLUGIN / "skills" / "intake-expediente")
+    # skills -> dist/plugin/feesdefender/skills/<skill>/
+    for skill in SKILLS:
+        _copytree(SKILLS_DIR / skill, PLUGIN / "skills" / skill)
     return OUT
 
 
