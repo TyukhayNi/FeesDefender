@@ -45,3 +45,26 @@ def build_upload_event(
         "details": {"count": len(files), "files": files},
     }
     return json.dumps(entry, ensure_ascii=False) + "\n"
+
+
+def is_duplicate(log_text: str, sha256: str) -> bool:
+    """True si `sha256` ya aparece en algún evento de depósito del log JSONL.
+
+    Tolerante a líneas corruptas (las salta), como core.intake_log.read_events.
+    """
+    if not sha256:
+        return False
+    for raw in log_text.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(entry, dict):
+            continue
+        for f in entry.get("details", {}).get("files", []):
+            if isinstance(f, dict) and f.get("sha256") == sha256:
+                return True
+    return False
