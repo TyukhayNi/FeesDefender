@@ -17,7 +17,7 @@ metadata:
   naturaleza: atomica
   jurisdiction: ES
   area: [civil, procesal]
-  version: "1.0"
+  version: "1.1"
   author: "Nikolai Tyukhay"
   organization: "Tyukhay Legal"
   contact: "nikolai.tyukhay@tyukhay.legal"
@@ -46,18 +46,38 @@ se construye con el helper puro `scripts/traza.py` y se escribe con `append_text
 WhatsApp→`upload_whatsapp`, email→`upload_email`, entrevista→`upload_entrevista`, resto
 manual→`upload_manual`.
 
+## Autonomía y gate único
+
+La skill **no inserta preguntas de aclaración** ni pide permiso fichero a fichero. Tiene
+**un solo gate humano**: la **propuesta de clasificación** (Paso 2). Tras tu OK ejecuta
+todo de una pasada **sin más preguntas**.
+
+- **Defaults (no se preguntan):** el original en `_ingest/` se **deja intacto** y se reporta
+  (el crudo no se toca ni se borra; para retirarlo, pídelo aparte). Los **duplicados**
+  (sha256 ya en el log) y los ficheros de **0 bytes** se **señalan en la propuesta** —antes
+  de copiar—, no se pregunta a mitad de ejecución.
+- **El diálogo de permiso por-llamada del conector MCP** (que en Cowork salta por cada tool)
+  es ajuste del **cliente**, no de la skill: actívalo **una vez** ("Permitir siempre" en
+  Claude Desktop/Cowork) para cero diálogos durante la ejecución.
+
 ## Procedimiento
-1. **Resuelve el caso y la fuente.** Confirma la subcarpeta destino de `00_Input/`.
-2. **Deposita (server-side):** `.zip`/`.tar` → `extract_archive(archivo, 00_Input/<fuente>/)`;
-   fichero suelto → `copy_path`; binario pequeño solo en el chat → `write_file_base64`.
-3. **Hashea** cada fichero depositado con `hash_path` (SHA-256 server-side).
-4. **Dedup (aviso, no bloqueo):** lee `00_Input/_intake_log.jsonl` (si existe) y, con
-   `traza.is_duplicate(log, sha)`, marca los que ya constaban. No re-deposita el crudo.
-5. **Dispara la traza:** ejecuta `traza.build_upload_event(case_id, event, files=[{path,
-   sha256}…], actor, ts)` (el `path` relativo a `00_Input/`, posix; `ts` ISO; `actor` =
-   quien sube) → te devuelve la línea JSONL → escríbela con `append_text` a
-   `00_Input/_intake_log.jsonl`.
-6. **Reporta:** ficheros depositados por fuente, hashes, duplicados marcados.
+
+1. **Prepara (sin copiar nada).** Resuelve el caso. Para cada fichero de `_ingest/` decide
+   **fuente** (`00_Input/<sub>`), **evento** `upload_*` y **nombre canónico**
+   (`AAAA-MM-DD_descripcion`). Calcula su **sha256** con `hash_path` (server-side) para
+   detectar **duplicados** (vs `00_Input/_intake_log.jsonl`, con `traza.is_duplicate`) y
+   **0 bytes**. NO deposites todavía.
+2. **(GATE) Propón la clasificación y ESPERA.** Tabla por fichero:
+   `fichero → fuente (00_Input/<sub>) → nombre canónico → evento`, marcando **duplicado**,
+   **0 bytes** y **sin fecha**. Cabecera: «nada copiado aún». **Espera OK explícito.** Si
+   piden ajustes, reclasifica y vuelve a proponer.
+3. **(tras OK) Ejecuta de una pasada, sin más preguntas:** deposita server-side
+   (`.zip`/`.tar` → `extract_archive`; suelto → `copy_path`; binario pequeño atrapado en el
+   chat → `write_file_base64`) en `00_Input/<fuente>/`; **salta** los duplicados; construye
+   la línea con `traza.build_upload_event(case_id, event, files=[{path, sha256}…], actor,
+   ts)` (`path` relativo a `00_Input/`, posix; `ts` ISO; `actor` = quien sube) y escríbela
+   con `append_text` en `00_Input/_intake_log.jsonl`.
+4. **Reporta:** depositados por fuente, hashes, duplicados saltados, 0-byte avisados.
 
 ## Qué NO hace (límites de capa)
 - **NO** escribe el `_intake_hashes.json` (IntakeManifest): esa dedup pesada (aliases/
