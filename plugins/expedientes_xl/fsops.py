@@ -6,6 +6,7 @@ El saneado anti path-traversal replica el patrón de
 """
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 
@@ -35,3 +36,16 @@ def resolve_within(allowed_dirs: list[Path], target: str | Path) -> Path:
         except ValueError:
             continue
     raise OutsideSandbox(f"Ruta fuera del sandbox: {target!r}")
+
+
+_CHUNK = 1024 * 1024  # 1 MiB
+
+
+def sha256_file(allowed_dirs: list[Path], path: str | Path) -> str:
+    """SHA-256 del fichero, calculado server-side. Devuelve solo el digest."""
+    target = resolve_within(allowed_dirs, path)
+    h = hashlib.sha256()
+    with open(target, "rb") as fh:
+        for chunk in iter(lambda: fh.read(_CHUNK), b""):
+            h.update(chunk)
+    return h.hexdigest()
