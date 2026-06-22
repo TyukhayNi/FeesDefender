@@ -229,24 +229,26 @@ def test_paridad_eventos_subconjunto_de_core():
 
 
 def test_paridad_shape_con_core(tmp_path, monkeypatch):
-    """La línea de traza tiene las MISMAS claves que core.append_event escribe."""
+    """La línea de traza tiene las MISMAS claves que core.append_event escribe.
+
+    `caso_path` delega en case_locator; para aislar el test de esa maquinaria,
+    parcheamos `intake_log.log_path` para que escriba en tmp_path directamente.
+    """
     import json as _json
-    from core import config, intake_log
+    from core import intake_log
 
-    monkeypatch.setattr(config, "_settings", None, raising=False)
-    monkeypatch.setenv("FEESDEFENDER_CASOS_ROOT", str(tmp_path))
-    case_id = "CASO_PARIDAD"
-    (tmp_path / case_id / "00_Input").mkdir(parents=True)
+    logf = tmp_path / "_intake_log.jsonl"
+    monkeypatch.setattr(intake_log, "log_path", lambda case_id: logf)
 
-    core_path = intake_log.append_event(
-        case_id, "upload_manual",
+    intake_log.append_event(
+        "CASO_PARIDAD", "upload_manual",
         details={"count": 1, "files": [{"path": "04_Manual/a.pdf", "sha256": "H"}]},
         actor="a", ts="t",
     )
-    core_entry = _json.loads(core_path.read_text(encoding="utf-8").splitlines()[0])
+    core_entry = _json.loads(logf.read_text(encoding="utf-8").splitlines()[0])
 
     traza_entry = _json.loads(traza.build_upload_event(
-        case_id=case_id, event="upload_manual",
+        case_id="CASO_PARIDAD", event="upload_manual",
         files=[{"path": "04_Manual/a.pdf", "sha256": "H"}], actor="a", ts="t",
     ))
 
@@ -258,11 +260,11 @@ def test_paridad_shape_con_core(tmp_path, monkeypatch):
 - [ ] **Step 2: Ejecutar y verificar que FALLA o PASA**
 
 Run: `python -m pytest tests/test_intake_traza.py -k paridad -v`
-Expected: If it FAILS, the failure pinpoints the exact schema divergence (key set or env-var name). FIRST verify how `core.config` resolves the casos root (read `core/config.py`): the env var / setter name may differ from `FEESDEFENDER_CASOS_ROOT`. Adjust the monkeypatch to whatever `core.config` actually uses to point at `tmp_path` (do NOT change `traza.py` to force a pass unless the divergence is a real schema mismatch in `traza.py`). Once the harness points core at tmp_path, the assertion compares real shapes.
+Expected: PASS if `traza.py` matches core's schema. If it FAILS on the assertion, the failure pinpoints a REAL schema divergence in `traza.py` → fix `traza.py` to match `core.intake_log.append_event`'s output exactly. (The harness is already isolated via the `log_path` monkeypatch, so a failure means a genuine mismatch, not test wiring.)
 
 - [ ] **Step 3: Make it pass**
 
-If the assertion reveals a real divergence in `traza.py` (different keys/structure than core), fix `traza.py` to match core's `append_event` output exactly, then re-run. If it was only the test harness (casos-root wiring), fixing the monkeypatch suffices.
+If the assertion reveals a real divergence in `traza.py` (different keys/structure than core), fix `traza.py` to match core's `append_event` output exactly, then re-run.
 
 - [ ] **Step 4: Verde**
 
