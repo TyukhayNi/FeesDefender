@@ -151,3 +151,21 @@ def write_base64(
     dst.parent.mkdir(parents=True, exist_ok=True)
     dst.write_bytes(data)
     return len(data)
+
+
+def append_text(allowed_dirs: list[Path], path: str | Path, text: str) -> Path:
+    """Anexa texto UTF-8 a un fichero (lo crea si falta). Para .jsonl."""
+    dst = resolve_within(allowed_dirs, path)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    with open(dst, "a", encoding="utf-8", newline="") as fh:
+        fh.write(text)
+    return dst
+
+
+def delete_path(allowed_dirs: list[Path], path: str | Path) -> None:
+    """Borra un fichero o árbol dentro del sandbox."""
+    target = resolve_within(allowed_dirs, path)
+    if target.is_dir():
+        shutil.rmtree(target)
+    else:
+        target.unlink(missing_ok=True)

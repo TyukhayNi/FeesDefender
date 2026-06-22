@@ -110,3 +110,27 @@ def test_write_base64_rechaza_sobre_tope(tmp_path):
     b64 = base64.b64encode(data).decode("ascii")
     with pytest.raises(fsops.TooLarge):
         fsops.write_base64([tmp_path], str(tmp_path / "big.bin"), b64, max_bytes=100)
+
+
+def test_append_text_crea_y_anexa(tmp_path):
+    dst = tmp_path / "log.jsonl"
+    fsops.append_text([tmp_path], str(dst), '{"a":1}\n')
+    fsops.append_text([tmp_path], str(dst), '{"b":2}\n')
+    assert dst.read_text(encoding="utf-8") == '{"a":1}\n{"b":2}\n'
+
+
+def test_append_text_rechaza_fuera(tmp_path):
+    with pytest.raises(fsops.OutsideSandbox):
+        fsops.append_text([tmp_path], str(tmp_path / ".." / "x.txt"), "y")
+
+
+def test_delete_path_borra_dentro(tmp_path):
+    f = tmp_path / "borrame.txt"
+    f.write_text("x", encoding="utf-8")
+    fsops.delete_path([tmp_path], str(f))
+    assert f.exists() is False
+
+
+def test_delete_path_rechaza_fuera(tmp_path):
+    with pytest.raises(fsops.OutsideSandbox):
+        fsops.delete_path([tmp_path], "C:\\Windows\\system32")
