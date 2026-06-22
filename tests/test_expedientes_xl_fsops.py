@@ -36,3 +36,30 @@ def test_sha256_file_coincide_con_hashlib(tmp_path):
 def test_sha256_file_rechaza_fuera_de_sandbox(tmp_path):
     with pytest.raises(fsops.OutsideSandbox):
         fsops.sha256_file([tmp_path], "C:\\Windows\\notepad.exe")
+
+
+def test_copy_file_copia_no_destructivo(tmp_path):
+    src = tmp_path / "orig.bin"
+    src.write_bytes(b"\x00\x01datos")
+    dst = tmp_path / "dest" / "copia.bin"
+    out = fsops.copy_file([tmp_path], str(src), str(dst))
+    assert out == dst.resolve()
+    assert dst.read_bytes() == b"\x00\x01datos"
+    assert src.exists()  # no destructivo
+
+
+def test_copy_file_rechaza_destino_fuera(tmp_path):
+    src = tmp_path / "orig.bin"
+    src.write_bytes(b"x")
+    with pytest.raises(fsops.OutsideSandbox):
+        fsops.copy_file([tmp_path], str(src), str(tmp_path / ".." / "fuera.bin"))
+
+
+def test_copy_tree_recursivo(tmp_path):
+    src = tmp_path / "arbol"
+    (src / "a").mkdir(parents=True)
+    (src / "a" / "f.txt").write_text("hola", encoding="utf-8")
+    dst = tmp_path / "copia_arbol"
+    out = fsops.copy_tree([tmp_path], str(src), str(dst))
+    assert out == dst.resolve()
+    assert (dst / "a" / "f.txt").read_text(encoding="utf-8") == "hola"

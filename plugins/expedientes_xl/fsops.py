@@ -7,6 +7,7 @@ El saneado anti path-traversal replica el patrón de
 from __future__ import annotations
 
 import hashlib
+import shutil
 from pathlib import Path
 
 
@@ -49,3 +50,20 @@ def sha256_file(allowed_dirs: list[Path], path: str | Path) -> str:
         for chunk in iter(lambda: fh.read(_CHUNK), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def copy_file(allowed_dirs: list[Path], src: str | Path, dst: str | Path) -> Path:
+    """Copia un fichero (no destructivo). src y dst dentro del sandbox."""
+    src_p = resolve_within(allowed_dirs, src)
+    dst_p = resolve_within(allowed_dirs, dst)
+    dst_p.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src_p, dst_p)
+    return dst_p
+
+
+def copy_tree(allowed_dirs: list[Path], src: str | Path, dst: str | Path) -> Path:
+    """Copia recursiva de un árbol de directorios dentro del sandbox."""
+    src_p = resolve_within(allowed_dirs, src)
+    dst_p = resolve_within(allowed_dirs, dst)
+    shutil.copytree(src_p, dst_p, dirs_exist_ok=True)
+    return dst_p
