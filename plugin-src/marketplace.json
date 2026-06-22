@@ -1,0 +1,12 @@
+{
+  "name": "despacho-tyukhay",
+  "description": "Marketplace de plugins del despacho Tyukhay Legal.",
+  "owner": { "name": "Tyukhay Legal" },
+  "plugins": [
+    {
+      "name": "feesdefender",
+      "source": "./feesdefender",
+      "description": "Conector expedientes-xl + skill intake-expediente."
+    }
+  ]
+}

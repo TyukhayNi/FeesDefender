@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "expedientes-xl": {
+      "command": "python",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/expedientes_xl/server.py",
+        "G:\\Unidades compartidas\\EXPEDIENTES - TYUKHAY LEGAL"
+      ]
+    }
+  }
+}
