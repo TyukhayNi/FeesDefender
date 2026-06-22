@@ -44,6 +44,25 @@ def resolve_within(allowed_dirs: list[Path], target: str | Path) -> Path:
 
 _CHUNK = 1024 * 1024  # 1 MiB
 
+DEFAULT_MAX_EXTRACT_BYTES = 2 * 1024 * 1024 * 1024  # 2 GiB
+
+
+def _stream_member(src, dest: Path, budget: list[int]) -> None:
+    """Vuelca el file-like `src` a `dest` en chunks, descontando de budget[0].
+
+    Si la descompresión supera el presupuesto, borra el parcial y lanza TooLarge.
+    """
+    try:
+        with open(dest, "wb") as out:
+            for chunk in iter(lambda: src.read(_CHUNK), b""):
+                budget[0] -= len(chunk)
+                if budget[0] < 0:
+                    raise TooLarge("La descompresión supera el tope de tamaño")
+                out.write(chunk)
+    except TooLarge:
+        dest.unlink(missing_ok=True)
+        raise
+
 
 def sha256_file(allowed_dirs: list[Path], path: str | Path) -> str:
     """SHA-256 del fichero, calculado server-side. Devuelve solo el digest."""
@@ -68,7 +87,7 @@ def copy_tree(allowed_dirs: list[Path], src: str | Path, dst: str | Path) -> Pat
     """Copia recursiva de un árbol de directorios dentro del sandbox."""
     src_p = resolve_within(allowed_dirs, src)
     dst_p = resolve_within(allowed_dirs, dst)
-    shutil.copytree(src_p, dst_p, dirs_exist_ok=True)
+    shutil.copytree(src_p, dst_p, dirs_exist_ok=True, symlinks=True)
     return dst_p
 
 
@@ -93,17 +112,23 @@ def _safe_member_dest(dest_dir: Path, member_name: str) -> Path | None:
 
 
 def extract_archive(
-    allowed_dirs: list[Path], archive: str | Path, dest_dir: str | Path
+    allowed_dirs: list[Path],
+    archive: str | Path,
+    dest_dir: str | Path,
+    max_total_bytes: int = DEFAULT_MAX_EXTRACT_BYTES,
 ) -> list[Path]:
     """Descomprime .zip o .tar(.gz/.bz2) en dest_dir, ambos dentro del sandbox.
 
     Saneado anti path-traversal por miembro: las entradas peligrosas se
-    descartan (no se intenta rescatarlas). Devuelve los ficheros extraídos.
+    descartan (no se intenta rescatarlas). La descompresión se vuelca en
+    streaming con un presupuesto global `max_total_bytes` (defensa anti
+    zip-bomb): si se supera, lanza TooLarge. Devuelve los ficheros extraídos.
     """
     archive_p = resolve_within(allowed_dirs, archive)
     dest_p = resolve_within(allowed_dirs, dest_dir)
     dest_p.mkdir(parents=True, exist_ok=True)
     extracted: list[Path] = []
+    budget = [max_total_bytes]
 
     if zipfile.is_zipfile(archive_p):
         with zipfile.ZipFile(archive_p) as zf:
@@ -114,7 +139,8 @@ def extract_archive(
                 if dest is None:
                     continue
                 dest.parent.mkdir(parents=True, exist_ok=True)
-                dest.write_bytes(zf.read(member))
+                with zf.open(member) as src:
+                    _stream_member(src, dest, budget)
                 extracted.append(dest)
     elif tarfile.is_tarfile(archive_p):
         with tarfile.open(archive_p) as tf:
@@ -128,7 +154,7 @@ def extract_archive(
                 if src is None:
                     continue
                 dest.parent.mkdir(parents=True, exist_ok=True)
-                dest.write_bytes(src.read())
+                _stream_member(src, dest, budget)
                 extracted.append(dest)
     else:
         raise ValueError(f"No es un archivo zip ni tar: {archive!r}")
@@ -144,7 +170,8 @@ def write_base64(
     Comprueba el tamaño ANTES de escribir; si supera max_bytes lanza TooLarge.
     Devuelve el número de bytes escritos.
     """
-    data = base64.b64decode(content_b64, validate=True)
+    cleaned = "".join(content_b64.split())
+    data = base64.b64decode(cleaned, validate=True)
     if len(data) > max_bytes:
         raise TooLarge(f"{len(data)} bytes supera el tope {max_bytes}")
     dst = resolve_within(allowed_dirs, path)
@@ -165,6 +192,9 @@ def append_text(allowed_dirs: list[Path], path: str | Path, text: str) -> Path:
 def delete_path(allowed_dirs: list[Path], path: str | Path) -> None:
     """Borra un fichero o árbol dentro del sandbox."""
     target = resolve_within(allowed_dirs, path)
+    for base in allowed_dirs:
+        if target == Path(base).resolve():
+            raise OutsideSandbox("No se permite borrar la raíz del sandbox")
     if target.is_dir():
         shutil.rmtree(target)
     else:

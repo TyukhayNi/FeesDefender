@@ -18,7 +18,8 @@ except ImportError:  # ejecutado como script suelto (python server.py): su dir e
 DEFAULT_MAX_B64 = 8 * 1024 * 1024  # 8 MiB
 
 
-def build_server(allowed_dirs: list[Path], max_b64_bytes: int = DEFAULT_MAX_B64) -> FastMCP:
+def build_server(allowed_dirs: list[Path], max_b64_bytes: int = DEFAULT_MAX_B64,
+                 max_extract_bytes: int = fsops.DEFAULT_MAX_EXTRACT_BYTES) -> FastMCP:
     mcp = FastMCP("expedientes-xl")
 
     @mcp.tool()
@@ -39,7 +40,7 @@ def build_server(allowed_dirs: list[Path], max_b64_bytes: int = DEFAULT_MAX_B64)
     @mcp.tool()
     def extract_archive(archive_path: str, dest_dir: str) -> list[str]:
         """Descomprime zip/tar en dest_dir. Devuelve los ficheros extraídos."""
-        return [str(p) for p in fsops.extract_archive(allowed_dirs, archive_path, dest_dir)]
+        return [str(p) for p in fsops.extract_archive(allowed_dirs, archive_path, dest_dir, max_extract_bytes)]
 
     @mcp.tool()
     def write_file_base64(path: str, content_b64: str) -> int:

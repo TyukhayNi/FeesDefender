@@ -1,6 +1,7 @@
 import base64
 import hashlib
 import io
+import tarfile
 import zipfile
 from pathlib import Path
 
@@ -134,3 +135,92 @@ def test_delete_path_borra_dentro(tmp_path):
 def test_delete_path_rechaza_fuera(tmp_path):
     with pytest.raises(fsops.OutsideSandbox):
         fsops.delete_path([tmp_path], "C:\\Windows\\system32")
+
+
+def _tar_bytes(entries: dict[str, bytes]) -> bytes:
+    import io as _io
+    buf = _io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as tf:
+        for name, data in entries.items():
+            info = tarfile.TarInfo(name=name)
+            info.size = len(data)
+            tf.addfile(info, _io.BytesIO(data))
+    return buf.getvalue()
+
+
+def test_extract_archive_tar_extrae(tmp_path):
+    archive = tmp_path / "e.tar"
+    archive.write_bytes(_tar_bytes({"a/f.txt": b"uno", "g.txt": b"dos"}))
+    dest = tmp_path / "out"
+    out = fsops.extract_archive([tmp_path], str(archive), str(dest))
+    assert (dest / "a" / "f.txt").read_bytes() == b"uno"
+    assert sorted(p.name for p in out) == ["f.txt", "g.txt"]
+
+
+def test_extract_archive_tar_descarta_traversal(tmp_path):
+    archive = tmp_path / "mal.tar"
+    archive.write_bytes(_tar_bytes({"../escape.txt": b"malo", "ok.txt": b"bien"}))
+    dest = tmp_path / "out"
+    out = fsops.extract_archive([tmp_path], str(archive), str(dest))
+    assert (tmp_path / "escape.txt").exists() is False
+    assert [p.name for p in out] == ["ok.txt"]
+
+
+def test_extract_archive_zip_bomb_supera_tope(tmp_path):
+    archive = tmp_path / "bomb.zip"
+    archive.write_bytes(_zip_bytes({"big.bin": b"A" * 5000}))
+    dest = tmp_path / "out"
+    with pytest.raises(fsops.TooLarge):
+        fsops.extract_archive([tmp_path], str(archive), str(dest), max_total_bytes=1000)
+
+
+def test_extract_archive_no_es_archivo(tmp_path):
+    f = tmp_path / "plano.txt"
+    f.write_text("no soy archivo", encoding="utf-8")
+    with pytest.raises(ValueError):
+        fsops.extract_archive([tmp_path], str(f), str(tmp_path / "out"))
+
+
+def test_resolve_within_rechaza_nulo(tmp_path):
+    with pytest.raises(fsops.OutsideSandbox):
+        fsops.resolve_within([tmp_path], str(tmp_path / "f\x00.txt"))
+
+
+def test_resolve_within_multi_allowed_dir(tmp_path):
+    a = tmp_path / "A"
+    b = tmp_path / "B"
+    a.mkdir()
+    b.mkdir()
+    target = b / "x.txt"
+    assert fsops.resolve_within([a, b], str(target)) == target.resolve()
+
+
+def test_write_base64_acepta_wrapped(tmp_path):
+    import base64 as _b64
+    data = b"binario de prueba" * 10
+    wrapped = "\n".join(
+        _b64.b64encode(data).decode("ascii")[i : i + 8]
+        for i in range(0, len(_b64.b64encode(data).decode("ascii")), 8)
+    )
+    dst = tmp_path / "w.bin"
+    n = fsops.write_base64([tmp_path], str(dst), wrapped, max_bytes=10000)
+    assert n == len(data)
+    assert dst.read_bytes() == data
+
+
+def test_write_base64_frontera_exacta(tmp_path):
+    import base64 as _b64
+    data = b"x" * 100
+    b64 = _b64.b64encode(data).decode("ascii")
+    # exactamente en el tope: permitido
+    assert fsops.write_base64([tmp_path], str(tmp_path / "ok.bin"), b64, max_bytes=100) == 100
+    # uno por encima: rechazado
+    data2 = b"x" * 101
+    b64_2 = _b64.b64encode(data2).decode("ascii")
+    with pytest.raises(fsops.TooLarge):
+        fsops.write_base64([tmp_path], str(tmp_path / "no.bin"), b64_2, max_bytes=100)
+
+
+def test_delete_path_rechaza_raiz_sandbox(tmp_path):
+    with pytest.raises(fsops.OutsideSandbox):
+        fsops.delete_path([tmp_path], str(tmp_path))
