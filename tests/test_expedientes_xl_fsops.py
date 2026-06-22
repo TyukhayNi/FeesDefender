@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import io
 import zipfile
@@ -93,3 +94,19 @@ def test_extract_archive_descarta_miembro_traversal(tmp_path):
     assert (tmp_path / "escape.txt").exists() is False  # no escapó
     assert (dest / "ok.txt").read_bytes() == b"bien"
     assert [p.name for p in out] == ["ok.txt"]
+
+
+def test_write_base64_escribe_binario(tmp_path):
+    data = b"\x89PNG\r\n\x1a\n binario"
+    b64 = base64.b64encode(data).decode("ascii")
+    dst = tmp_path / "img.png"
+    n = fsops.write_base64([tmp_path], str(dst), b64, max_bytes=1000)
+    assert n == len(data)
+    assert dst.read_bytes() == data
+
+
+def test_write_base64_rechaza_sobre_tope(tmp_path):
+    data = b"x" * 200
+    b64 = base64.b64encode(data).decode("ascii")
+    with pytest.raises(fsops.TooLarge):
+        fsops.write_base64([tmp_path], str(tmp_path / "big.bin"), b64, max_bytes=100)

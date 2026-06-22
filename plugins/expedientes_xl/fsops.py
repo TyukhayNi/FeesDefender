@@ -6,6 +6,7 @@ El saneado anti path-traversal replica el patrón de
 """
 from __future__ import annotations
 
+import base64
 import hashlib
 import shutil
 import tarfile
@@ -133,3 +134,20 @@ def extract_archive(
         raise ValueError(f"No es un archivo zip ni tar: {archive!r}")
 
     return sorted(extracted)
+
+
+def write_base64(
+    allowed_dirs: list[Path], path: str | Path, content_b64: str, max_bytes: int
+) -> int:
+    """Escribe un binario desde base64, con tope DURO de tamaño.
+
+    Comprueba el tamaño ANTES de escribir; si supera max_bytes lanza TooLarge.
+    Devuelve el número de bytes escritos.
+    """
+    data = base64.b64decode(content_b64, validate=True)
+    if len(data) > max_bytes:
+        raise TooLarge(f"{len(data)} bytes supera el tope {max_bytes}")
+    dst = resolve_within(allowed_dirs, path)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    dst.write_bytes(data)
+    return len(data)
