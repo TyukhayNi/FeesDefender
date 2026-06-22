@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import hashlib
 import shutil
+import tarfile
+import zipfile
 from pathlib import Path
 
 
@@ -67,3 +69,67 @@ def copy_tree(allowed_dirs: list[Path], src: str | Path, dst: str | Path) -> Pat
     dst_p = resolve_within(allowed_dirs, dst)
     shutil.copytree(src_p, dst_p, dirs_exist_ok=True)
     return dst_p
+
+
+def _safe_member_dest(dest_dir: Path, member_name: str) -> Path | None:
+    """Devuelve el destino saneado de un miembro, o None si debe descartarse.
+
+    Descarta toda entrada con "..", componente absoluto o nulo; doble check
+    de que el destino resuelto queda dentro de dest_dir (patrón extract_zip).
+    """
+    member_path = Path(member_name)
+    if any(
+        part in ("..", "") or "\x00" in part or Path(part).is_absolute()
+        for part in member_path.parts
+    ):
+        return None
+    dest = dest_dir / member_path
+    try:
+        dest.resolve().relative_to(dest_dir.resolve())
+    except ValueError:
+        return None
+    return dest
+
+
+def extract_archive(
+    allowed_dirs: list[Path], archive: str | Path, dest_dir: str | Path
+) -> list[Path]:
+    """Descomprime .zip o .tar(.gz/.bz2) en dest_dir, ambos dentro del sandbox.
+
+    Saneado anti path-traversal por miembro: las entradas peligrosas se
+    descartan (no se intenta rescatarlas). Devuelve los ficheros extraídos.
+    """
+    archive_p = resolve_within(allowed_dirs, archive)
+    dest_p = resolve_within(allowed_dirs, dest_dir)
+    dest_p.mkdir(parents=True, exist_ok=True)
+    extracted: list[Path] = []
+
+    if zipfile.is_zipfile(archive_p):
+        with zipfile.ZipFile(archive_p) as zf:
+            for member in zf.infolist():
+                if member.is_dir():
+                    continue
+                dest = _safe_member_dest(dest_p, member.filename)
+                if dest is None:
+                    continue
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(zf.read(member))
+                extracted.append(dest)
+    elif tarfile.is_tarfile(archive_p):
+        with tarfile.open(archive_p) as tf:
+            for member in tf.getmembers():
+                if not member.isfile():
+                    continue
+                dest = _safe_member_dest(dest_p, member.name)
+                if dest is None:
+                    continue
+                src = tf.extractfile(member)
+                if src is None:
+                    continue
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(src.read())
+                extracted.append(dest)
+    else:
+        raise ValueError(f"No es un archivo zip ni tar: {archive!r}")
+
+    return sorted(extracted)

@@ -1,4 +1,6 @@
 import hashlib
+import io
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -63,3 +65,31 @@ def test_copy_tree_recursivo(tmp_path):
     out = fsops.copy_tree([tmp_path], str(src), str(dst))
     assert out == dst.resolve()
     assert (dst / "a" / "f.txt").read_text(encoding="utf-8") == "hola"
+
+
+def _zip_bytes(entries: dict[str, bytes]) -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        for name, data in entries.items():
+            zf.writestr(name, data)
+    return buf.getvalue()
+
+
+def test_extract_archive_extrae_estructura(tmp_path):
+    archive = tmp_path / "e.zip"
+    archive.write_bytes(_zip_bytes({"a/f.txt": b"uno", "g.txt": b"dos"}))
+    dest = tmp_path / "out"
+    out = fsops.extract_archive([tmp_path], str(archive), str(dest))
+    assert (dest / "a" / "f.txt").read_bytes() == b"uno"
+    assert (dest / "g.txt").read_bytes() == b"dos"
+    assert sorted(p.name for p in out) == ["f.txt", "g.txt"]
+
+
+def test_extract_archive_descarta_miembro_traversal(tmp_path):
+    archive = tmp_path / "mal.zip"
+    archive.write_bytes(_zip_bytes({"../escape.txt": b"malo", "ok.txt": b"bien"}))
+    dest = tmp_path / "out"
+    out = fsops.extract_archive([tmp_path], str(archive), str(dest))
+    assert (tmp_path / "escape.txt").exists() is False  # no escapó
+    assert (dest / "ok.txt").read_bytes() == b"bien"
+    assert [p.name for p in out] == ["ok.txt"]
