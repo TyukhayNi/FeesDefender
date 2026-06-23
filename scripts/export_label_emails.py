@@ -20,7 +20,8 @@ from __future__ import annotations
 
 import argparse
 
-from core.email_export import ExportReport, email_dest_dir, export_label
+from core.casos.case_locator import path_for, resolve_ref
+from core.email_export import ExportReport, export_label
 
 
 def _print_report(report: ExportReport, dest) -> None:
@@ -36,13 +37,22 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Exporta una etiqueta Gmail al expediente (.eml fieles + adjuntos)."
     )
-    parser.add_argument("--ref", required=True, help="Referencia del caso (p. ej. W-02VND1).")
+    parser.add_argument("--ref", required=True,
+                        help="case_id del caso o W-code (p. ej. W-02VND1); se resuelve al case_id canónico.")
     parser.add_argument("--account", required=True, help="Cuenta Gmail (p. ej. ...@engelvoelkers.com).")
     parser.add_argument("--label", required=True, help="Nombre EXACTO de la etiqueta (ruta completa).")
+    parser.add_argument("--extraer-adjuntos", dest="extraer_adjuntos", action="store_true",
+                        help="Extrae los adjuntos a subcarpetas fechadas (por defecto: plano, solo .eml).")
     args = parser.parse_args(argv)
 
-    dest = email_dest_dir(args.ref)
-    report = export_label(args.account, args.label, dest, case_id=args.ref)
+    case_id = resolve_ref(args.ref)
+    if case_id != args.ref:
+        print(f"[export-label] ref '{args.ref}' resuelta al caso '{case_id}'.")
+    dest = path_for(case_id) / "00_Input" / "03_Email"
+    report = export_label(
+        args.account, args.label, dest,
+        case_id=case_id, extract_attachments=args.extraer_adjuntos,
+    )
     _print_report(report, dest)
     if report.intake_logged:
         print("[export-label] traza forense: evento upload_email + hashes en el manifest.")

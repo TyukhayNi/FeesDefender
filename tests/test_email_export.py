@@ -230,7 +230,10 @@ def test_export_label_adjuntos_en_subcarpeta_fechada(tmp_path):
     }
     svc = _FakeService(labels=_LABELS, pages=[{"messages": [{"id": "g1"}]}], raws=raws)
 
-    rep = ee.export_label("nikolai@engelvoelkers.com", _ETIQUETA, tmp_path, service=svc)
+    rep = ee.export_label(
+        "nikolai@engelvoelkers.com", _ETIQUETA, tmp_path,
+        service=svc, extract_attachments=True,
+    )
 
     assert rep.written == 1
     assert rep.attachments == 1
@@ -238,6 +241,26 @@ def test_export_label_adjuntos_en_subcarpeta_fechada(tmp_path):
     assert carpeta.is_dir()
     assert (carpeta / "2026-06-12_con_adjunto.eml").exists()
     assert (carpeta / "contrato.pdf").read_bytes() == b"%PDF datos"
+
+
+def test_export_label_plano_por_defecto_no_extrae_adjuntos(tmp_path):
+    """Por defecto: .eml plano en la raíz, sin subcarpeta ni adjuntos sueltos."""
+    raws = {
+        "g1": _build_raw(
+            message_id="<conadj@x>",
+            subject="Con adjunto",
+            attachments=[("contrato.pdf", "application/pdf", b"%PDF datos")],
+        ),
+    }
+    svc = _FakeService(labels=_LABELS, pages=[{"messages": [{"id": "g1"}]}], raws=raws)
+
+    rep = ee.export_label("nikolai@engelvoelkers.com", _ETIQUETA, tmp_path, service=svc)
+
+    assert rep.written == 1
+    assert rep.attachments == 0
+    assert (tmp_path / "2026-06-12_con_adjunto.eml").exists()
+    assert [p.name for p in tmp_path.iterdir() if p.is_dir()] == []  # sin subcarpetas
+    assert not list(tmp_path.glob("*.pdf"))
 
 
 def test_export_label_idempotente(tmp_path):
@@ -303,7 +326,10 @@ def test_export_label_emite_traza_forense(tmp_casos_root):
     svc = _FakeService(labels=_LABELS, pages=pages, raws=raws)
     dest = ee.email_dest_dir(case_id)
 
-    rep = ee.export_label("c@engelvoelkers.com", _ETIQUETA, dest, service=svc, case_id=case_id)
+    rep = ee.export_label(
+        "c@engelvoelkers.com", _ETIQUETA, dest,
+        service=svc, case_id=case_id, extract_attachments=True,
+    )
 
     assert rep.written == 2
     assert rep.intake_logged is True
@@ -375,6 +401,7 @@ def test_export_label_traza_backfill_de_corrida_previa(tmp_casos_root):
     rep0 = ee.export_label(
         "c@engelvoelkers.com", _ETIQUETA, dest,
         service=_FakeService(labels=_LABELS, pages=pages, raws=raws),
+        extract_attachments=True,
     )
     assert rep0.written == 2 and rep0.intake_logged is False
     assert intake_log.read_events(case_id) == []
@@ -383,6 +410,7 @@ def test_export_label_traza_backfill_de_corrida_previa(tmp_casos_root):
     rep1 = ee.export_label(
         "c@engelvoelkers.com", _ETIQUETA, dest,
         service=_FakeService(labels=_LABELS, pages=pages, raws=raws), case_id=case_id,
+        extract_attachments=True,
     )
     assert rep1.written == 0           # nada nuevo que descargar
     assert rep1.intake_logged is True  # pero sí se trazó lo ya depositado
@@ -405,3 +433,55 @@ def test_export_label_traza_backfill_de_corrida_previa(tmp_casos_root):
     )
     assert rep2.intake_logged is False
     assert len([e for e in intake_log.read_events(case_id) if e["event"] == "upload_email"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# resolve_ref — case_id canónico desde W-code (id_go)
+# ---------------------------------------------------------------------------
+
+def _crear_caso_con_id_go(root, ciudad, nombre, id_go):
+    caso = root / ciudad / nombre / "00_Input"
+    caso.mkdir(parents=True)
+    (caso / "_caso.md").write_text(
+        f"---\ncase_id: {nombre}\nmeta:\n  id_go: {id_go}\n---\n# {nombre}\n",
+        encoding="utf-8",
+    )
+
+
+def test_resolve_ref_wcode_a_case_id(tmp_casos_root):
+    import importlib
+
+    from core.casos import case_locator
+    importlib.reload(case_locator)
+
+    _crear_caso_con_id_go(
+        tmp_casos_root, "Barcelona", "BaRS1 - Tibidabo 8 - (W-02VND1) - Vuelta", "W-02VND1"
+    )
+
+    # W-code → nombre de carpeta canónico.
+    assert case_locator.resolve_ref("W-02VND1") == "BaRS1 - Tibidabo 8 - (W-02VND1) - Vuelta"
+    # case_id exacto → se devuelve tal cual.
+    assert (
+        case_locator.resolve_ref("BaRS1 - Tibidabo 8 - (W-02VND1) - Vuelta")
+        == "BaRS1 - Tibidabo 8 - (W-02VND1) - Vuelta"
+    )
+    # Desconocido → fallback al propio ref.
+    assert case_locator.resolve_ref("W-NOEXISTE") == "W-NOEXISTE"
+
+
+def test_resolve_ref_ignora_carpeta_fantasma_sin_caso_md(tmp_casos_root):
+    """Una carpeta llamada como el W-code pero SIN _caso.md (creada por error) no
+    eclipsa al caso real: la resolución usa id_go y devuelve el caso canónico."""
+    import importlib
+
+    from core.casos import case_locator
+    importlib.reload(case_locator)
+
+    # Caso real (con _caso.md e id_go) bajo ciudad.
+    _crear_caso_con_id_go(
+        tmp_casos_root, "Barcelona", "BaRS1 - Tibidabo 8 - (W-02VND1) - Vuelta", "W-02VND1"
+    )
+    # Carpeta fantasma plana con el nombre del W-code, SIN _caso.md.
+    (tmp_casos_root / "W-02VND1" / "00_Input" / "03_Email").mkdir(parents=True)
+
+    assert case_locator.resolve_ref("W-02VND1") == "BaRS1 - Tibidabo 8 - (W-02VND1) - Vuelta"

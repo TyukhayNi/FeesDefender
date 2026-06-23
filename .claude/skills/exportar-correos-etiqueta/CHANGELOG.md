@@ -1,5 +1,14 @@
 # Changelog — exportar-correos-etiqueta
 
+## 1.1 (2026-06-23)
+- Motor implementado y validado en Claude Code (`core/email_export.py` + CLI + botón
+  Streamlit + plugin v0.2.0). Corrida real W-02VND1: 122 `.eml` + adjuntos.
+- **Estructura plana por defecto** (solo `.eml`, con adjuntos embebidos); extracción
+  de adjuntos a subcarpetas pasa a ser opcional (`--extraer-adjuntos` / checkbox).
+- La `ref` acepta el **W-code** (`meta.id_go`), que se resuelve al case_id canónico
+  (nombre de carpeta) — evita crear carpetas erróneas al pasar el W-code.
+- **Traza forense:** registra SHA-256 en `IntakeManifest` + evento `upload_email`.
+
 ## 1.0 (2026-06-22) — borrador
 - Alta de la skill (rol:input, atomica). Redactada en Cowork (hilo BaRS1 Tibidabo 8).
 - Orquesta el motor local `core/email_export.py` + CLI `scripts/export_label_emails.py`

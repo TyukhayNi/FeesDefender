@@ -269,13 +269,16 @@ def export_label(
     *,
     service: Any = None,
     case_id: str | None = None,
+    extract_attachments: bool = False,
 ) -> ExportReport:
     """Exporta TODOS los mensajes de una etiqueta a ``dest_dir`` como ``.eml`` fieles.
 
-    Idempotente (salta ``Message-ID`` ya presentes). Los mensajes con adjuntos van
-    a una subcarpeta fechada con el ``.eml`` y los adjuntos extraídos. Regenera
-    ``INDICE.md``/``CRONOLOGIA.md`` al final. ``service`` se inyecta en tests; en
-    producción se construye desde el token OAuth de la cuenta.
+    Idempotente (salta ``Message-ID`` ya presentes). **Estructura plana por defecto:**
+    un ``.eml`` por mensaje en la raíz de ``dest_dir`` (el ``.eml`` ya contiene sus
+    adjuntos embebidos). Con ``extract_attachments=True``, los mensajes con adjuntos
+    van a una subcarpeta fechada con el ``.eml`` + los adjuntos extraídos como
+    ficheros. Regenera ``INDICE.md``/``CRONOLOGIA.md`` al final. ``service`` se
+    inyecta en tests; en producción se construye desde el token OAuth de la cuenta.
 
     Si se pasa ``case_id``, emite **traza forense** (mismo estándar que el intake de
     WhatsApp/manual): registra el SHA-256 de cada ``.eml``/adjunto presente en el
@@ -321,7 +324,7 @@ def export_label(
             eml_bytes, adjuntos = split_eml(raw_bytes)
             nombre_eml = eml_filename(headers)
 
-            if adjuntos:
+            if adjuntos and extract_attachments:
                 carpeta = _dir_unico(dest, Path(nombre_eml).stem)
                 carpeta.mkdir(parents=True, exist_ok=True)
                 eml_path = carpeta / nombre_eml
@@ -331,6 +334,7 @@ def export_label(
                     _ruta_unica(carpeta, seguro).write_bytes(datos)
                     report.attachments += 1
             else:
+                # Estructura plana: solo el .eml (con sus adjuntos embebidos).
                 eml_path = _ruta_unica(dest, nombre_eml)
                 eml_path.write_bytes(eml_bytes)
 
@@ -477,7 +481,11 @@ def write_indices(dest_dir: Path | str) -> None:
 
 
 def email_dest_dir(case_id: str) -> Path:
-    """Carpeta de destino canónica de los correos de un caso: ``00_Input/03_Email``."""
-    from .casos.case_locator import path_for
+    """Carpeta de destino canónica de los correos de un caso: ``00_Input/03_Email``.
 
-    return path_for(case_id) / "00_Input" / "03_Email"
+    Resuelve ``case_id`` (acepta case_id canónico o W-code ``id_go``) al nombre de
+    carpeta real antes de construir la ruta.
+    """
+    from .casos.case_locator import path_for, resolve_ref
+
+    return path_for(resolve_ref(case_id)) / "00_Input" / "03_Email"

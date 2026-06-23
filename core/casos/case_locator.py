@@ -43,6 +43,56 @@ def path_for(case_id: str) -> Path:
     return flat
 
 
+def _id_go_of(case_dir: Path) -> str | None:
+    """Lee ``meta.id_go`` (el W-code) del ``_caso.md`` de un caso, o ``None``."""
+    import yaml
+
+    caso_md = case_dir / "00_Input" / "_caso.md"
+    if not caso_md.is_file():
+        return None
+    try:
+        text = caso_md.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    if not text.startswith("---"):
+        return None
+    parts = text.split("---", 2)
+    if len(parts) < 3:
+        return None
+    try:
+        fm = yaml.safe_load(parts[1]) or {}
+    except yaml.YAMLError:
+        return None
+    meta = fm.get("meta") if isinstance(fm, dict) else None
+    if isinstance(meta, dict) and meta.get("id_go"):
+        return str(meta["id_go"]).strip()
+    return None
+
+
+def resolve_ref(ref: str) -> str:
+    """Resuelve una referencia al ``case_id`` canónico (nombre de la carpeta).
+
+    Acepta el ``case_id`` exacto (nombre de carpeta) o el **W-code** (``meta.id_go``
+    del ``_caso.md``). Si hay un caso cuyo nombre coincide con ``ref``, lo devuelve;
+    si no, busca un caso cuyo ``id_go`` sea ``ref`` y devuelve su nombre canónico. Si
+    no encuentra nada, devuelve ``ref`` tal cual (creación de casos nuevos / fallback).
+    """
+    ref = (ref or "").strip()
+    if not ref:
+        return ref
+    cases = list(list_cases())
+    # Coincidencia exacta por nombre, pero solo si es un caso REAL (tiene _caso.md):
+    # así una carpeta fantasma (creada por error, sin _caso.md) no eclipsa al caso real.
+    for case_dir in cases:
+        if case_dir.name == ref and (case_dir / "00_Input" / "_caso.md").is_file():
+            return ref
+    # W-code (meta.id_go) → nombre de carpeta canónico.
+    for case_dir in cases:
+        if _id_go_of(case_dir) == ref:
+            return case_dir.name
+    return ref
+
+
 def path_for_ciudad(case_id: str, ciudad: str) -> Path:
     """Calcula la ruta esperada de un expediente en una ciudad concreta.
 

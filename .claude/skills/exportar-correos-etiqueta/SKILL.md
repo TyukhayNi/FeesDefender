@@ -17,7 +17,7 @@ metadata:
   naturaleza: atomica
   jurisdiction: ES
   area: [civil, procesal]
-  version: "1.0"
+  version: "1.1"
   author: "Nikolai Tyukhay"
   organization: "Tyukhay Legal"
   contact: "nikolai.tyukhay@tyukhay.legal"
@@ -47,12 +47,18 @@ Falsos amigos (NO activar):
 
 ## Qué produce
 
-En `…/<EXPEDIENTE>/00_Input/03_Email/` (resuelto desde la ref del caso):
-- Un `.eml` fiel por mensaje, nombre `AAAA-MM-DD_descripcion.eml`.
-- Los mensajes con adjuntos van en **subcarpeta fechada** `AAAA-MM-DD_descripcion/`
-  con el `.eml` y los adjuntos extraídos (PDF/imágenes) como ficheros reales.
+En `…/<EXPEDIENTE>/00_Input/03_Email/` (resuelto desde la ref del caso; la `ref`
+acepta el case_id canónico o el **W-code** `id_go`, que se resuelve al nombre de
+carpeta real):
+- Un `.eml` fiel por mensaje, nombre `AAAA-MM-DD_descripcion.eml`, **plano** en la
+  raíz (el `.eml` ya contiene sus adjuntos embebidos).
+- Opcional (`--extraer-adjuntos` / checkbox): los mensajes con adjuntos van en
+  **subcarpeta fechada** `AAAA-MM-DD_descripcion/` con el `.eml` + los adjuntos
+  extraídos (PDF/imágenes) como ficheros reales.
 - `INDICE.md` y `CRONOLOGIA.md` del conjunto.
 - **Idempotente:** re-ejecutar no duplica (dedup por `Message-ID`).
+- **Traza forense:** registra el SHA-256 de cada `.eml` en el `IntakeManifest` y
+  emite el evento `upload_email` en `_intake_log.jsonl` (mapeo Message-ID→sha→ruta).
 
 ## Procedimiento
 

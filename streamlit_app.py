@@ -761,6 +761,16 @@ with tab_casos:
                 placeholder="01. CONTING/01. EXTRAJUD/01. BARCELONA/BaRS1 - … - (W-XXXXX)",
                 help="Nombre EXACTO de la etiqueta, con la ruta anidada completa.",
             )
+            _extraer_adj_em = st.checkbox(
+                "Extraer adjuntos a subcarpetas",
+                value=False,
+                key="casos_email_extraer",
+                help=(
+                    "Por defecto los correos se guardan planos (.eml con sus adjuntos "
+                    "embebidos). Marca esto para extraer además los adjuntos como "
+                    "ficheros sueltos en subcarpetas fechadas."
+                ),
+            )
             if st.button(
                 "✉️ Exportar correos",
                 key="casos_email_btn",
@@ -777,6 +787,7 @@ with tab_casos:
                             _rep_em = _email_export.export_label(
                                 _cuenta_em.strip(), _label_em.strip(), _dest_em,
                                 case_id=_caso_em,
+                                extract_attachments=_extraer_adj_em,
                             )
                         except Exception as _exc_em:
                             st.error(f"❌ Error exportando: {_exc_em}")
