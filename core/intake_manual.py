@@ -23,11 +23,10 @@ del Gestor Documental sudespacho vía ``sync_sudespacho.pull_expediente_v2``).
 
 from __future__ import annotations
 
-import io
-import zipfile
 from pathlib import Path
 
 from .config import CRM_SUBDIR, caso_path, settings
+from .intake_utils import safe_zip_extract
 
 
 # ---------------------------------------------------------------------------
@@ -119,39 +118,7 @@ def extract_zip(case_id: str, content: bytes) -> list[Path]:
     dest_dir = _manual_dir(case_id)
     dest_dir.mkdir(parents=True, exist_ok=True)
 
-    extracted: list[Path] = []
-
-    with zipfile.ZipFile(io.BytesIO(content)) as zf:
-        for member in zf.infolist():
-            # Saltarse directorios puros
-            if member.filename.endswith("/"):
-                continue
-
-            # Sanear la ruta: descartar TODA la entrada si contiene "..",
-            # componentes absolutos o caracteres nulos — no se intenta rescatar.
-            member_path = Path(member.filename)
-            try:
-                if any(
-                    part in ("..", "") or Path(part).is_absolute()
-                    for part in member_path.parts
-                ):
-                    continue
-                safe_rel = member_path
-            except Exception:
-                continue
-
-            dest = dest_dir / safe_rel
-            # Doble comprobación: el destino resuelto debe seguir dentro de dest_dir
-            try:
-                dest.resolve().relative_to(dest_dir.resolve())
-            except ValueError:
-                continue
-
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_bytes(zf.read(member))
-            extracted.append(dest)
-
-    return sorted(extracted)
+    return sorted(safe_zip_extract(content, dest_dir))
 
 
 def save_file_crm_branch(

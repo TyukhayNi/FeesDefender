@@ -35,6 +35,7 @@ from .config import (
     caso_path,
     settings,
 )
+from .intake_utils import sanitize_filename as _sanitize_filename_util
 from .utils import now_iso, read_md, write_md
 
 logger = logging.getLogger(__name__)
@@ -1037,9 +1038,7 @@ def _sanitize_filename_segment(s: str) -> str:
     Reemplaza ``/ \\ : * ? " < > |`` por espacios. No toca acentos ni
     caracteres válidos del case_id (`(`, `)`, `,`, `º`, etc.).
     """
-    for ch in _FORBIDDEN_FILENAME_CHARS:
-        s = s.replace(ch, " ")
-    return s.strip()
+    return _sanitize_filename_util(s, mode="segment")
 
 
 def _compose_informe_filename(case_id: str) -> str:

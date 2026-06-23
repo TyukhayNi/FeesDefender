@@ -7,8 +7,6 @@ el zip original como artefacto de procedencia, registra en ``IntakeManifest``
 """
 from __future__ import annotations
 
-import io
-import zipfile
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -16,6 +14,7 @@ from pathlib import Path
 from . import intake_log
 from .config import WHATSAPP_SUBDIRS, caso_path, settings
 from .intake_manifest import IntakeManifest, compute_sha256_bytes
+from .intake_utils import safe_zip_members, sanitize_filename
 from .whatsapp_export import filter_by_date_range, parse_chat, referencias_adjuntos
 
 _WHATSAPP_SUBDIR = "02_Whatsapp"
@@ -51,25 +50,12 @@ def _sanitize_name(nombre: str) -> str:
     base = nombre
     if base.lower().endswith(".zip"):
         base = base[:-4]
-    base = base.replace("\\", "_").replace("/", "_")
-    for ch in ':*?"<>|':
-        base = base.replace(ch, "_")
-    base = base.replace("..", "_").strip().strip(".")
-    return base or "chat"
+    return sanitize_filename(base, mode="folder", fallback="chat")
 
 
 def _read_members(content: bytes) -> dict[str, bytes]:
     """Lee un zip en memoria → {nombre_saneado: bytes}.  Saneo anti path-traversal."""
-    members: dict[str, bytes] = {}
-    with zipfile.ZipFile(io.BytesIO(content)) as zf:
-        for info in zf.infolist():
-            if info.filename.endswith("/"):
-                continue
-            parts = Path(info.filename).parts
-            if any(p in ("..", "") or Path(p).is_absolute() for p in parts):
-                continue
-            members[Path(info.filename).name] = zf.read(info)
-    return members
+    return safe_zip_members(content)
 
 
 def _find_chat_txt(members: dict[str, bytes]) -> tuple[str, str]:

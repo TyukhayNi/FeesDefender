@@ -23,6 +23,7 @@ from typing import Any
 
 import httpx
 
+from .intake_utils import sanitize_filename as _sanitize_filename_util
 from .llm_cloud import LLMCloudConfig, LLMCloudError, chat_json
 from .sync_sudespacho import SudespachoClient, SudespachoConfig, SudespachoError
 
@@ -150,12 +151,9 @@ def normalize_descripcion(text: str, max_chars: int = 40) -> str:
     return result.strip()
 
 
-_FORBIDDEN_CHARS = re.compile(r'[\\/:*?"<>|]')
-
-
 def sanitize_filename(name: str) -> str:
     """Elimina caracteres prohibidos en Windows."""
-    return _FORBIDDEN_CHARS.sub("_", name).strip()
+    return _sanitize_filename_util(name, mode="file", fallback=name or "_")
 
 
 # ---------------------------------------------------------------------------

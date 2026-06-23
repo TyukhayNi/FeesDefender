@@ -19,10 +19,10 @@ RGPD: excepción acotada SOLO a este flujo. Los tokens nunca pasan por el LLM.
 
 from __future__ import annotations
 
-import base64
 from pathlib import Path
 from typing import Any
 
+from .intake_utils import decode_base64url
 from .procurador_intake import extract_signals, match_expediente
 from .procurador_runner import EmailMessage, ReviewItem, run_intake
 
@@ -53,10 +53,7 @@ def _headers_dict(payload: dict[str, Any]) -> dict[str, str]:
 
 def _decode_b64url(data: str) -> str:
     """Decodifica el body base64url de Gmail (con padding tolerante)."""
-    if not data:
-        return ""
-    pad = "=" * (-len(data) % 4)
-    return base64.urlsafe_b64decode(data + pad).decode("utf-8", errors="replace")
+    return decode_base64url(data)
 
 
 def _extract_text_plain(payload: dict[str, Any]) -> str:

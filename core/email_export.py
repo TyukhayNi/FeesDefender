@@ -26,8 +26,8 @@ alta nueva). **Solo lectura:** no marca mensajes como leídos ni escribe en Gmai
 
 from __future__ import annotations
 
-import base64
 import email
+import json
 import re
 import unicodedata
 from dataclasses import dataclass, field
@@ -40,6 +40,7 @@ from typing import Any, Iterable
 from . import intake_log
 from .gmail_source import _build_service, _load_credentials
 from .intake_manifest import IntakeManifest, compute_sha256_bytes
+from .intake_utils import decode_base64url, sanitize_filename
 
 # ---------------------------------------------------------------------------
 # Capa pura — base64url, cabeceras, nombre canónico, partición del .eml
@@ -47,19 +48,17 @@ from .intake_manifest import IntakeManifest, compute_sha256_bytes
 
 _RE_PREFIJO_ASUNTO = re.compile(r"^\s*(re|rv|fwd?|fw|aw|wg)\s*:\s*", re.IGNORECASE)
 _RE_NO_SLUG = re.compile(r"[^a-zA-Z0-9]+")
-# Caracteres no admitidos en nombres de fichero de Windows (+ control).
-_RE_FS_INVALIDO = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 _SIN_FECHA = "0000-00-00"
 _MAXLEN_DESCRIPCION = 60
 
 
 def decode_b64url_bytes(data: str) -> bytes:
-    """Decodifica base64url de Gmail a bytes, con padding tolerante."""
-    if not data:
-        return b""
-    pad = "=" * (-len(data) % 4)
-    return base64.urlsafe_b64decode(data + pad)
+    """Decodifica base64url de Gmail a bytes, con padding tolerante.
+
+    .. deprecated:: Usar :func:`core.intake_utils.decode_base64url` con ``as_bytes=True``.
+    """
+    return decode_base64url(data, as_bytes=True)
 
 
 def _parse_message(raw: bytes) -> Message:
@@ -126,8 +125,7 @@ def eml_filename(headers: dict[str, str]) -> str:
 
 def _sanea_nombre_fichero(nombre: str, *, fallback: str) -> str:
     """Nombre de fichero seguro en Windows (sin caracteres prohibidos ni control)."""
-    limpio = _RE_FS_INVALIDO.sub("_", nombre or "").strip().strip(".").strip()
-    return limpio or fallback
+    return sanitize_filename(nombre or "", mode="file", fallback=fallback)
 
 
 def split_eml(raw: bytes) -> tuple[bytes, list[tuple[str, str, bytes]]]:
@@ -270,6 +268,8 @@ def export_label(
     service: Any = None,
     case_id: str | None = None,
     extract_attachments: bool = False,
+    max_workers: int = 8,
+    force: bool = False,
 ) -> ExportReport:
     """Exporta TODOS los mensajes de una etiqueta a ``dest_dir`` como ``.eml`` fieles.
 
@@ -279,6 +279,14 @@ def export_label(
     van a una subcarpeta fechada con el ``.eml`` + los adjuntos extraídos como
     ficheros. Regenera ``INDICE.md``/``CRONOLOGIA.md`` al final. ``service`` se
     inyecta en tests; en producción se construye desde el token OAuth de la cuenta.
+
+    **Rendimiento:**
+
+    - ``max_workers`` (>1, solo en producción): baja los mensajes en paralelo con un
+      pool de hilos (cada hilo su propio cliente Gmail). Acelera la 1ª corrida.
+    - **Índice persistente** ``_exported_ids.json`` (por cuenta): las re-corridas
+      **saltan la descarga** de los ``gmail_id`` ya exportados → casi instantáneas.
+      ``force=True`` lo ignora y vuelve a bajar todo (útil si se borraron ficheros).
 
     Si se pasa ``case_id``, emite **traza forense** (mismo estándar que el intake de
     WhatsApp/manual): registra el SHA-256 de cada ``.eml``/adjunto presente en el
@@ -292,8 +300,10 @@ def export_label(
     dest = Path(dest_dir)
     dest.mkdir(parents=True, exist_ok=True)
 
+    creds = None
     if service is None:
-        service = _build_service(_load_credentials(account))
+        creds = _load_credentials(account)
+        service = _build_service(creds)
 
     report = ExportReport(account=account, label=label)
     report.label_id = resolve_label_id(service, label)
@@ -304,44 +314,41 @@ def export_label(
         )
         return report
 
-    vistos = existing_message_ids(dest)
     msg_ids = list_label_message_ids(service, report.label_id)
     report.total_in_label = len(msg_ids)
-    msgs = service.users().messages()
 
-    for gmail_id in msg_ids:
-        try:
-            raw_msg = msgs.get(userId="me", id=gmail_id, format="raw").execute()
-            raw_bytes = decode_b64url_bytes(raw_msg.get("raw", ""))
+    # B — índice persistente: saltar la descarga de los gmail_id ya exportados.
+    index = _load_export_index(dest)
+    ya_gids: set[str] = set() if force else set(index.get(account, []))
+    candidates = [g for g in msg_ids if g not in ya_gids]
+    report.skipped += len(msg_ids) - len(candidates)
+
+    if candidates:
+        # Dedup por Message-ID (correctness): solo si hay algo que bajar (evita el
+        # escaneo de disco en re-corridas que no descargan nada).
+        vistos = existing_message_ids(dest)
+        nuevos_gids: list[str] = []
+        for gid, raw_bytes in _iter_raws(
+            candidates, service=service, creds=creds, max_workers=max_workers, report=report
+        ):
             mid = message_id_of(raw_bytes)
             if mid and mid in vistos:
                 report.skipped += 1
+                nuevos_gids.append(gid)  # bajado y resuelto (duplicado): no re-bajar
                 continue
             if mid:
                 vistos.add(mid)
-
-            headers = parse_headers(raw_bytes)
-            eml_bytes, adjuntos = split_eml(raw_bytes)
-            nombre_eml = eml_filename(headers)
-
-            if adjuntos and extract_attachments:
-                carpeta = _dir_unico(dest, Path(nombre_eml).stem)
-                carpeta.mkdir(parents=True, exist_ok=True)
-                eml_path = carpeta / nombre_eml
-                eml_path.write_bytes(eml_bytes)
-                for idx, (fn, _mime, datos) in enumerate(adjuntos, start=1):
-                    seguro = _sanea_nombre_fichero(fn, fallback=f"adjunto_{idx}")
-                    _ruta_unica(carpeta, seguro).write_bytes(datos)
-                    report.attachments += 1
-            else:
-                # Estructura plana: solo el .eml (con sus adjuntos embebidos).
-                eml_path = _ruta_unica(dest, nombre_eml)
-                eml_path.write_bytes(eml_bytes)
-
+            try:
+                eml_path = _escribe_mensaje(dest, raw_bytes, extract_attachments, report)
+            except Exception as exc:  # noqa: BLE001 — un fallo no aborta la corrida
+                report.errors.append(f"{gid}: {exc}")
+                continue
             report.files.append(str(eml_path.relative_to(dest)))
             report.written += 1
-        except Exception as exc:  # noqa: BLE001 — un fallo no aborta la corrida
-            report.errors.append(f"{gmail_id}: {exc}")
+            nuevos_gids.append(gid)
+
+        index[account] = sorted(ya_gids | set(nuevos_gids))
+        _save_export_index(dest, index)
 
     write_indices(dest)
 
@@ -351,7 +358,102 @@ def export_label(
     return report
 
 
-_INDICES_NOMBRES = frozenset({"INDICE.md", "CRONOLOGIA.md"})
+def _escribe_mensaje(
+    dest: Path, raw_bytes: bytes, extract_attachments: bool, report: ExportReport
+) -> Path:
+    """Escribe un mensaje en ``dest`` y devuelve la ruta del ``.eml``."""
+    headers = parse_headers(raw_bytes)
+    eml_bytes, adjuntos = split_eml(raw_bytes)
+    nombre_eml = eml_filename(headers)
+    if adjuntos and extract_attachments:
+        carpeta = _dir_unico(dest, Path(nombre_eml).stem)
+        carpeta.mkdir(parents=True, exist_ok=True)
+        eml_path = carpeta / nombre_eml
+        eml_path.write_bytes(eml_bytes)
+        for idx, (fn, _mime, datos) in enumerate(adjuntos, start=1):
+            seguro = _sanea_nombre_fichero(fn, fallback=f"adjunto_{idx}")
+            _ruta_unica(carpeta, seguro).write_bytes(datos)
+            report.attachments += 1
+        return eml_path
+    # Estructura plana: solo el .eml (con sus adjuntos embebidos).
+    eml_path = _ruta_unica(dest, nombre_eml)
+    eml_path.write_bytes(eml_bytes)
+    return eml_path
+
+
+# ---------------------------------------------------------------------------
+# Descarga — secuencial o en paralelo (A) + índice de exportados (B)
+# ---------------------------------------------------------------------------
+
+_EXPORT_INDEX_NAME = "_exported_ids.json"
+
+
+def _load_export_index(dest: Path) -> dict[str, list[str]]:
+    """Carga el índice ``_exported_ids.json`` (``{cuenta: [gmail_id, …]}``)."""
+    p = dest / _EXPORT_INDEX_NAME
+    if not p.is_file():
+        return {}
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _save_export_index(dest: Path, index: dict[str, list[str]]) -> None:
+    (dest / _EXPORT_INDEX_NAME).write_text(
+        json.dumps(index, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8"
+    )
+
+
+def _fetch_raw(service: Any, gmail_id: str) -> bytes:
+    """Baja un mensaje ``format='raw'`` y lo decodifica a bytes RFC822."""
+    msg = service.users().messages().get(userId="me", id=gmail_id, format="raw").execute()
+    return decode_b64url_bytes(msg.get("raw", ""))
+
+
+def _iter_raws(
+    candidates: list[str],
+    *,
+    service: Any,
+    creds: Any,
+    max_workers: int,
+    report: ExportReport,
+):
+    """Itera ``(gmail_id, raw_bytes)`` en el orden de ``candidates``.
+
+    Secuencial cuando ``service`` está inyectado (tests) o ``max_workers<=1``; en
+    producción (``creds`` disponible) baja en paralelo con un pool de hilos —cada
+    hilo construye su propio cliente Gmail (httplib2 no es thread-safe)—, preservando
+    el orden y tolerando errores por mensaje (se registran en ``report.errors``).
+    """
+    if creds is None or max_workers <= 1 or len(candidates) <= 1:
+        for gid in candidates:
+            try:
+                yield gid, _fetch_raw(service, gid)
+            except Exception as exc:  # noqa: BLE001
+                report.errors.append(f"{gid}: {exc}")
+        return
+
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    local = threading.local()
+
+    def worker(gid: str) -> bytes:
+        svc = getattr(local, "svc", None)
+        if svc is None:
+            svc = _build_service(creds)
+            local.svc = svc
+        return _fetch_raw(svc, gid)
+
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futures = [ex.submit(worker, gid) for gid in candidates]
+        for gid, fut in zip(candidates, futures):
+            try:
+                yield gid, fut.result()
+            except Exception as exc:  # noqa: BLE001
+                report.errors.append(f"{gid}: {exc}")
 
 
 def _emit_traza(
@@ -377,7 +479,13 @@ def _emit_traza(
     with IntakeManifest(case_id) as manifest:
         ya_registrados = manifest.all_paths()
         for fichero in sorted(dest.rglob("*")):
-            if not fichero.is_file() or fichero.name in _INDICES_NOMBRES:
+            if not fichero.is_file():
+                continue
+            es_eml = fichero.suffix.lower() == ".eml"
+            en_subcarpeta = fichero.parent != dest
+            # Solo .eml o ficheros dentro de subcarpetas (adjuntos extraídos). Los
+            # ficheros sueltos en la raíz (índices, _exported_ids.json) NO se trazan.
+            if not es_eml and not en_subcarpeta:
                 continue
             try:
                 rel = fichero.relative_to(input_root).as_posix()
@@ -391,7 +499,7 @@ def _emit_traza(
                 report.errors.append(f"traza {rel}: {exc}")
                 continue
             sha = compute_sha256_bytes(data)
-            if fichero.suffix.lower() == ".eml":
+            if es_eml:
                 mid = message_id_of(data)
                 manifest.register(sha, rel, source="email", message_id=mid, kind="email")
                 nuevos_eml.append({"message_id": mid, "sha256": sha, "path": rel})
