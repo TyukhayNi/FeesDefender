@@ -6,6 +6,12 @@
         "${CLAUDE_PLUGIN_ROOT}/expedientes_xl/server.py",
         "G:\\Unidades compartidas\\EXPEDIENTES - TYUKHAY LEGAL"
       ]
+    },
+    "email-export": {
+      "command": "python",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/email_export_mcp/server.py"
+      ]
     }
   }
 }

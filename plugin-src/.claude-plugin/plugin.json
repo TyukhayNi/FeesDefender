@@ -1,7 +1,7 @@
 {
   "name": "feesdefender",
-  "version": "0.2.0",
-  "description": "Despacho Tyukhay Legal — depósito de ficheros al expediente (conector expedientes-xl) + skill de intake con trazabilidad + exportación de etiquetas Gmail al expediente como .eml fieles.",
+  "version": "0.3.0",
+  "description": "Despacho Tyukhay Legal — depósito de ficheros al expediente (conector expedientes-xl) + exportación de etiquetas Gmail al expediente como .eml fieles (conector email-export, requiere core/) + skills de intake y exportación.",
   "author": { "name": "Tyukhay Legal", "email": "nikolai.tyukhay@tyukhay.legal" },
   "license": "Proprietary"
 }

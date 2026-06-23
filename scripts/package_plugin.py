@@ -12,10 +12,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "plugin-src"
-CONECTOR = ROOT / "plugins" / "expedientes_xl"
 SKILLS_DIR = ROOT / ".claude" / "skills"
 # Skills empaquetadas en el plugin (SSOT en .claude/skills/).
 SKILLS = ("intake-expediente", "exportar-correos-etiqueta")
+# Conectores MCP: (carpeta_fuente, nombre_destino)
+CONECTORES = (
+    ("expedientes_xl", "expedientes_xl"),
+    ("email_export_mcp", "email_export_mcp"),
+)
 OUT = ROOT / "dist" / "plugin"
 PLUGIN = OUT / "feesdefender"
 
@@ -37,8 +41,9 @@ def build() -> Path:
     shutil.copy2(SRC / ".claude-plugin" / "plugin.json", PLUGIN / ".claude-plugin" / "plugin.json")
     # .mcp.json -> dist/plugin/feesdefender/
     shutil.copy2(SRC / ".mcp.json", PLUGIN / ".mcp.json")
-    # conector -> dist/plugin/feesdefender/expedientes_xl/
-    _copytree(CONECTOR, PLUGIN / "expedientes_xl")
+    # conectores -> dist/plugin/feesdefender/<conector>/
+    for src_name, dst_name in CONECTORES:
+        _copytree(ROOT / "plugins" / src_name, PLUGIN / dst_name)
     # skills -> dist/plugin/feesdefender/skills/<skill>/
     for skill in SKILLS:
         _copytree(SKILLS_DIR / skill, PLUGIN / "skills" / skill)
