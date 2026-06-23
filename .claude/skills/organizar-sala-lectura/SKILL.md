@@ -20,7 +20,7 @@ metadata:
   naturaleza: atomica
   jurisdiction: ES
   area: [civil, procesal]
-  version: "1.3"
+  version: "1.5"
   author: "Nikolai Tyukhay"
   organization: "Tyukhay Legal"
   contact: "nikolai.tyukhay@tyukhay.legal"
@@ -36,9 +36,11 @@ fuentes de `00_Input`) en una **sala de lectura ÚNICA y plana**: documentos con
 nombre canónico `AAAA-MM-DD_descripcion`, clasificados por las categorías canónicas
 de E&V **en `INDICE.md`** (no en carpetas), más índices de navegación y un catálogo
 máquina. Es el **único constructor** de la sala (el camino de sala del motor local
-quedó deprecado). Corre en claude.ai/Cowork o en Claude Code local, leyendo vía el
-conector de Drive, sin instalar nada. **No destructivo: copia, nunca mueve ni borra
-el crudo.** Presenta **una propuesta para tu visto bueno** antes de copiar nada.
+quedó deprecado). Corre en claude.ai/Cowork o en Claude Code local, por **dos modos de
+acceso** (ver "Modos de acceso"): **local** (MCP de filesystem sobre el Drive montado en
+disco — rápido) o **conector** de Drive (nube — fallback), sin instalar nada. **No
+destructivo: copia, nunca mueve ni borra el crudo.** Presenta **una propuesta para tu
+visto bueno** antes de copiar nada.
 
 ## Cuándo se activa
 
@@ -62,6 +64,33 @@ por `sha256` (la 2ª pasada solo toca lo nuevo).
   (zona del abogado: ningún módulo la lee ni la escribe).
 - **Escribe** en `01_Procesado/Sala lectura/`. Cowork debe tener montada la **raíz
   del expediente** (la salida vive fuera de `00_Input`).
+
+## Modos de acceso
+
+La skill accede a los ficheros por uno de dos modos, decidido en el **Paso 0**. **Prefiere
+SIEMPRE el local si está disponible** (≈velocidad de disco; el conector es per-fichero y
+puede tardar decenas de minutos en un expediente grande).
+
+- **Modo local (preferente):** MCP de filesystem `expedientes` sobre el Drive del despacho
+  montado en disco, acotado a `G:/Unidades compartidas/EXPEDIENTES - TYUKHAY LEGAL/`. Los
+  casos cuelgan de `CASOS/<ciudad>/<caso>/` (subdivididos por ciudad: Barcelona, Madrid…).
+  Disponible cuando ese MCP está conectado (Claude Code local, o Cowork en un PC con el
+  montaje y el server en `claude_desktop_config.json`). Lee bytes → **sha256 real**. Se le
+  indica el caso por **nombre de carpeta** (lo resuelve buscando bajo `CASOS/`) **o** por
+  **ruta `G:/…` completa** pegada. **Copia — límite por entorno (ver Gotchas):** en Claude
+  Code local copia binarios con el filesystem real (`shutil`); en Cowork el MCP `expedientes`
+  (`server-filesystem`) **solo escribe TEXTO** (índices, `.md`/`.txt`/`.yaml`) — `write_file`
+  no es binario y no hay `copy_file`, `move_file` es destructivo. Desde Cowork, por tanto,
+  **la copia de binarios (PDF, fotos, vídeos, `.xlsx`) la hace el motor local**; Cowork solo
+  amplía la sala en texto.
+- **Modo conector (fallback):** conector de Drive (nube). Único camino en Cowork puro-nube
+  (móvil/navegador) o en PC sin el montaje. Trabaja con `folderId`/URL; el conector da
+  `md5` (no sha256 — ver Gotchas) y copia server-side. **Aviso:** el `copy_file` server-side
+  solo escribe binarios si el conector apunta a la **Drive del despacho**; el conector de E&V
+  (`@engelvoelkers.com`) NO la ve y no puede escribir en la sala (ver Gotchas).
+
+Todo lo demás (clasificación, taxonomía, gate, índices, catálogo, bundles) es **idéntico**
+en ambos modos.
 
 ## Por qué fuera de 00_Input
 
@@ -94,21 +123,30 @@ La skill **no inserta preguntas de aclaración** ni pide permiso fichero a fiche
 Tiene **un solo gate humano**: la propuesta del Paso 2.5. Tras tu OK, ejecuta todo de
 una pasada **sin más preguntas**. Por defecto asume autorización para crear y copiar
 en `01_Procesado/Sala lectura/` (el crudo de `00_Input` no se toca ni se borra;
-siempre **copia** server-side). El diálogo de permiso por-llamada del conector se
-neutraliza en el **Paso 0** ("Permitir siempre" en el conector de Drive), no en la
-skill.
+siempre **copia**). En **modo conector**, el diálogo de permiso por-llamada se neutraliza
+en el **Paso 0** ("Permitir siempre"), no en la skill; en **modo local** no hay tal
+diálogo.
 
 ## Procedimiento
 
-0. **Montaje (bloqueante).** Carga el conector de Drive (ToolSearch). Acepta una URL de
-   carpeta pegada en el chat: resuelve `folderId` y DETECTA nivel — si la URL es la raíz
-   del expediente, baja a `00_Input/`; si ya es una subcarpeta de `00_Input`, úsala.
-   Pide activar **"Permitir siempre"** en el conector de Drive (CERO diálogos durante la
-   ejecución). Disparador: "organiza esta carpeta <url>".
+0. **Montaje (bloqueante). Elige modo (ver "Modos de acceso"):**
+   - **Intenta primero el modo local:** comprueba si el MCP `expedientes` está disponible
+     (ToolSearch por sus tools de filesystem). Si lo está, **úsalo**. Resuelve el
+     expediente desde lo que dé el usuario: **ruta `G:/…` completa** pegada → úsala; **solo
+     el nombre del caso** → búscalo bajo `G:/Unidades compartidas/EXPEDIENTES - TYUKHAY
+     LEGAL/CASOS/` (subdividido por ciudad: `CASOS/<ciudad>/<caso>/` — lista las ciudades y
+     casa el nombre; no asumas profundidad fija). Baja a `00_Input/`. En local **no hay
+     diálogo de permiso del conector**.
+   - **Si el MCP local NO está:** cae al **modo conector**. Carga el conector de Drive
+     (ToolSearch). Acepta una URL de carpeta pegada: resuelve `folderId` y DETECTA nivel —
+     raíz del expediente → baja a `00_Input/`; subcarpeta de `00_Input` → úsala. Pide
+     activar **"Permitir siempre"** en el conector (CERO diálogos durante la ejecución).
+   - Disparadores: "organiza esta carpeta <nombre|ruta G:|url>".
 1. **Lista** **TODO `00_Input/`** (`01_Drive EV`, `02_Whatsapp`, `03_Email`,
    `04_Manual`, `05_CRM`, `06_Entrevistas`), **excluyendo `90_Notas personales`**. Para
-   cada fichero, calcula **sha256** de los bytes y **salta** (sin leer ni copiar) lo que
-   ya conste en `_MANIFIESTO.md` (ver "Re-aplicación").
+   cada fichero, calcula **sha256** de los bytes (modo local: lee los bytes; modo conector:
+   ver Gotchas) y **salta** (sin leer ni copiar) lo que ya conste en `_MANIFIESTO.md` (ver
+   "Re-aplicación").
 2. **Clasifica cada fichero NUEVO** leyendo su contenido:
    - **Categoría** — una de las 8 de `references/taxonomia_ev.md`. La **identidad/PBC se
      enruta POR PARTE**: vendedor → `01. ACTIVACIÓN` (con los Anexos 1 y 2 del vendedor a
@@ -118,6 +156,15 @@ skill.
      fecha inequívoca del contenido → (c) fecha del nombre del fichero → (d) `0000-00-00`.
      `mtime` **no** es fuente; si se usa como aproximación, márcala `(*)` en
      `CRONOLOGIA.md` y `_MANIFIESTO.md`.
+   - **Anexo de WhatsApp — fecha de ENVÍO (no de la carpeta madre):** cada adjunto del
+     chat lleva la fecha del **mensaje del `_chat.txt` que lo referencia** — la línea
+     `‎<adjunto: <fichero>>` (iOS) o `<fichero> (archivo adjunto)` (Android), cuyo
+     `[DD/MM/AAAA, HH:MM]` es la fecha de envío. Esta regla **prevalece** sobre (a)–(c)
+     para los anexos de WhatsApp: NUNCA heredan la fecha del chat ni la del principal.
+     ⚠️ No confundir con la fecha **incrustada en el nombre** del adjunto (`PHOTO-2024-10-30…`,
+     `VIDEO-2024-11-29…`): esa es la de **captura** del medio, no la de envío. Fallback
+     solo si el adjunto **no** aparece referenciado en el `_chat.txt`: (i) fecha incrustada
+     en el nombre, marcada `(*)`; (ii) fecha del chat, marcada `(*)`.
    - **Descripción** ≤50 car., minúsculas, **guiones_bajos**, **sin PII**.
    - **Bundle:** detecta si el fichero es parte de un documento compuesto (ver
      "Documentos compuestos").
@@ -128,8 +175,9 @@ skill.
 4. **(tras OK) Ejecuta de una pasada (PLANO):** **copia** cada fichero a
    `01_Procesado/Sala lectura/` (raíz) con **nombre canónico**
    `AAAA-MM-DD_descripcion.ext`; los documentos compuestos a su **subcarpeta fechada**
-   `AAAA-MM-DD_descripcion/`. **Guarda de colisión:** si el nombre destino ya se usó en
-   la corrida, añade sufijo `_2`/`_3`. Sin más preguntas.
+   `AAAA-MM-DD_descripcion/`. Copia según el modo: **local** con las tools de escritura del
+   MCP `expedientes`; **conector** con la copia server-side de Drive. **Guarda de colisión:**
+   si el nombre destino ya se usó en la corrida, añade sufijo `_2`/`_3`. Sin más preguntas.
 5. **Escribe los índices** en `01_Procesado/Sala lectura/`:
    - `_MANIFIESTO.md` — tabla por documento, una fila por fichero, columnas:
      `sha256 | ruta_original | nombre_canonico | tipo | fecha | parte | parent_id`. El
@@ -159,6 +207,11 @@ agrupan SOLO con señal determinista:
 
 Nombre: carpeta `AAAA-MM-DD_descripcion/`; principal `AAAA-MM-DD_descripcion.ext`; anexos
 `AAAA-MM-DD_descripcion_anexo_N_x.ext`. `parent_id`/`orden` van al `_MANIFIESTO.md`.
+La carpeta y el principal se fechan por el inicio del documento (en WhatsApp, la fecha
+del chat); **el `AAAA-MM-DD` de cada anexo es su PROPIA fecha** (en WhatsApp, la de envío
+del mensaje que lo adjunta — ver la jerarquía de fecha arriba), por lo que distintos
+anexos del mismo bundle pueden llevar fechas distintas. La pertenencia al bundle la
+preserva la subcarpeta + el `parent_id`/`orden` del `_MANIFIESTO.md`, no el prefijo de fecha.
 
 ## Propuesta visual (Paso 2.5)
 
@@ -173,12 +226,13 @@ c. **Panel "Requiere tu visto bueno":** SOLO decisiones a revisar — reclasific
    `08. PENDIENTE` con motivo, doc(s) destacado(s). 1 línea/icono.
 d. **Listado por fecha DESCENDENTE:** una línea por documento
    `fecha · nombre-canónico · [categoría]` (la categoría es etiqueta, no carpeta).
-   **Cada fila enlaza al ORIGINAL** en Drive (`viewUrl` de `00_Input/…`) para revisar
-   antes de aprobar.
+   **Cada fila identifica el ORIGINAL** para revisar antes de aprobar: modo conector →
+   enlace `viewUrl` de `00_Input/…`; modo local → **ruta relativa** del original bajo el
+   caso (no hay `viewUrl`).
 e. **Botones:** «Aprobar y ejecutar» / «Quiero ajustar algo».
 
-Regla de enlaces: en la **propuesta** se enlaza al **original**; en los **índices**
-(tras ejecutar) se enlaza a la **copia canónica**.
+Regla de enlaces: en la **propuesta** se apunta al **original** (enlace o ruta según modo);
+en los **índices** (tras ejecutar) se enlaza a la **copia canónica**.
 
 ## Re-aplicación (solo añade; nunca borra)
 
@@ -202,9 +256,20 @@ de preparar la demanda). En cada re-corrida:
 - **Identidad/PBC por parte:** no mandes la identidad a `06. PBC` por defecto;
   vendedor → `01. ACTIVACIÓN`, comprador → `03. OFERTAS`. `06. PBC` sobrevive **solo**
   para los Anexos 1 y 2 del vendedor. La parte se decide **leyendo** el documento.
-- **sha256, no md5:** el `_MANIFIESTO.md` guarda el sha256 de los bytes (el conector da
-  md5, que no casa con la traza del caso).
+- **sha256, no md5:** el `_MANIFIESTO.md` guarda el sha256 de los bytes. En **modo local**
+  se leen los bytes directamente → sha256 real. En **modo conector**, el conector da `md5`
+  (que NO casa con la traza del caso); calcula sha256 descargando los bytes, no uses el md5.
 - **Sin PII en nombres:** revisa la `descripcion` antes de copiar.
 - **Estructura plana:** la categoría vive en `INDICE.md`, **no** en carpetas. La sala es
   un único directorio; solo los documentos compuestos abren subcarpeta fechada.
 - **Carpeta enorme:** avisa y procesa por lotes; deja constancia de lo cubierto.
+- **Copia de binarios desde Cowork = NO (usa el motor local):** el MCP local `expedientes`
+  (`@modelcontextprotocol/server-filesystem`) **no copia binarios** — `write_file` es solo
+  texto (UTF-8), no hay `copy_file` y `move_file` es destructivo; volcar `read_media_file`
+  (base64) con `write_file` corrompe. El conector de Drive en la nube de Cowork es la cuenta
+  **E&V** (`@engelvoelkers.com`), que NO ve la Drive del despacho «EXPEDIENTES - TYUKHAY
+  LEGAL», así que su `copy_file` tampoco escribe en la sala. **Conclusión:** desde Cowork la
+  sala solo crece en TEXTO (índices, `.md`/`.txt`/`.rtf`, transcripciones); los **binarios**
+  (PDF, fotos, vídeos, `.xlsx`) los copia el **motor local** (Claude Code/Python sobre `G:`).
+  Para volver Cowork constructor completo: dar copia binaria al MCP `expedientes` (backlog en
+  `docs/MEJORAS_FUTURAS.md`). Confirmado en BaRS1/Tibidabo, 2026-06-22.

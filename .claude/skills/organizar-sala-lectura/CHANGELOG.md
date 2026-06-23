@@ -1,5 +1,35 @@
 # Changelog — organizar-sala-lectura
 
+## 1.5 — 2026-06-22
+- **Anexos de WhatsApp con fecha de ENVÍO, no de la carpeta madre**: cada adjunto del
+  chat se fecha por el `[DD/MM/AAAA, HH:MM]` del mensaje del `_chat.txt` que lo referencia
+  (`‎<adjunto: …>` iOS / `… (archivo adjunto)` Android), regla que prevalece sobre la
+  jerarquía general (a)–(c) para anexos de WhatsApp. Antes todos los anexos heredaban la
+  fecha del chat (la del principal). Aviso explícito: la fecha de **envío** (chat.txt) ≠ la
+  **incrustada en el nombre** (`PHOTO-2024-10-30…` = fecha de **captura**); el nombre solo es
+  fallback marcado `(*)` cuando el adjunto no aparece referenciado en el `_chat.txt`.
+- **Nombrado de bundles**: el prefijo `AAAA-MM-DD` de cada anexo es su propia fecha (distintos
+  anexos del mismo bundle pueden llevar fechas distintas); la pertenencia al bundle la
+  preserva la subcarpeta + `parent_id`/`orden`, no el prefijo de fecha. Carpeta y principal
+  siguen fechándose por el inicio del documento (en WhatsApp, la fecha del chat).
+
+## 1.4 — 2026-06-22
+- **Dos modos de acceso a ficheros** (nueva sección "Modos de acceso"), elegidos en el
+  Paso 0: **local** (MCP de filesystem `expedientes` sobre el Drive montado en disco,
+  `G:/…/CASOS/<caso>/`) **preferente**, y **conector** de Drive como **fallback** (Cowork
+  puro-nube / PC sin montaje). Motivo: el conector es per-fichero (una corrida real tardó
+  ~53 min); el modo local lee a velocidad de disco. Verificado que Cowork (Claude Desktop
+  en el PC con el montaje) alcanza el MCP local.
+- **Paso 0**: intenta primero el MCP local (ToolSearch por sus tools); identifica el caso
+  por **nombre de carpeta** (resuelto bajo `CASOS/`) **o** por **ruta `G:/…` completa**. Si
+  el MCP no está, cae al conector (URL + "Permitir siempre", como antes).
+- **sha256 real en modo local**: lee los bytes directamente (cierra el gotcha del `md5` del
+  conector). En modo conector se mantiene la salvedad: calcular sha256 de los bytes, no usar
+  el md5.
+- **Copia** según modo (tools del MCP en local; server-side en conector) y **enlaces** de la
+  propuesta según modo (`viewUrl` en conector; ruta relativa en local).
+- Clasificación, taxonomía, gate único, índices, catálogo y bundles: **sin cambios**.
+
 ## 1.3 — 2026-06-18
 - **Alcance ampliado a TODO `00_Input`**: lee las seis fuentes (`01_Drive EV`,
   `02_Whatsapp`, `03_Email`, `04_Manual`, `05_CRM`, `06_Entrevistas`); antes
