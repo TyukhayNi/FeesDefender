@@ -43,6 +43,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--label", required=True, help="Nombre EXACTO de la etiqueta (ruta completa).")
     parser.add_argument("--extraer-adjuntos", dest="extraer_adjuntos", action="store_true",
                         help="Extrae los adjuntos a subcarpetas fechadas (por defecto: plano, solo .eml).")
+    parser.add_argument("--workers", type=int, default=8,
+                        help="Descargas en paralelo (default 8; 1 = secuencial).")
+    parser.add_argument("--force", action="store_true",
+                        help="Ignora el índice _exported_ids.json y vuelve a bajar todo.")
     args = parser.parse_args(argv)
 
     case_id = resolve_ref(args.ref)
@@ -52,6 +56,7 @@ def main(argv: list[str] | None = None) -> int:
     report = export_label(
         args.account, args.label, dest,
         case_id=case_id, extract_attachments=args.extraer_adjuntos,
+        max_workers=args.workers, force=args.force,
     )
     _print_report(report, dest)
     if report.intake_logged:

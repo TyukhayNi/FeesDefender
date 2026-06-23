@@ -485,3 +485,72 @@ def test_resolve_ref_ignora_carpeta_fantasma_sin_caso_md(tmp_casos_root):
     (tmp_casos_root / "W-02VND1" / "00_Input" / "03_Email").mkdir(parents=True)
 
     assert case_locator.resolve_ref("W-02VND1") == "BaRS1 - Tibidabo 8 - (W-02VND1) - Vuelta"
+
+
+# ---------------------------------------------------------------------------
+# Rendimiento — índice persistente (B) + descarga en paralelo (A)
+# ---------------------------------------------------------------------------
+
+def test_indice_salta_descarga_en_recorrida(tmp_path):
+    """B: 2ª corrida no vuelve a bajar los gmail_id ya exportados (0 gets)."""
+    raws = {
+        "g1": _build_raw(message_id="<m1@x>", subject="Uno"),
+        "g2": _build_raw(message_id="<m2@x>", subject="Dos"),
+    }
+    pages = [{"messages": [{"id": "g1"}, {"id": "g2"}]}]
+    rep1 = ee.export_label(
+        "c@engelvoelkers.com", _ETIQUETA, tmp_path,
+        service=_FakeService(labels=_LABELS, pages=pages, raws=raws),
+    )
+    assert rep1.written == 2
+    assert (tmp_path / "_exported_ids.json").exists()
+
+    svc2 = _FakeService(labels=_LABELS, pages=pages, raws=raws)
+    rep2 = ee.export_label("c@engelvoelkers.com", _ETIQUETA, tmp_path, service=svc2)
+    assert rep2.written == 0
+    assert rep2.skipped == 2
+    assert svc2._users._messages.got_formats == []  # ni un solo get de red
+
+
+def test_force_ignora_indice_y_rebaja(tmp_path):
+    """force=True ignora el índice y vuelve a bajar; el .eml ya en disco se dedup."""
+    raws = {"g1": _build_raw(message_id="<m1@x>", subject="Uno")}
+    pages = [{"messages": [{"id": "g1"}]}]
+    ee.export_label(
+        "c@engelvoelkers.com", _ETIQUETA, tmp_path,
+        service=_FakeService(labels=_LABELS, pages=pages, raws=raws),
+    )
+    svc2 = _FakeService(labels=_LABELS, pages=pages, raws=raws)
+    rep = ee.export_label(
+        "c@engelvoelkers.com", _ETIQUETA, tmp_path, service=svc2, force=True
+    )
+    assert svc2._users._messages.got_formats == ["raw"]  # sí re-bajó
+    assert rep.written == 0   # pero el Message-ID ya está en disco → dedup
+    assert rep.skipped == 1
+
+
+def test_descarga_paralela_escribe_todo_en_orden(tmp_path, monkeypatch):
+    """A: con service=None y max_workers>1 baja en paralelo (cada hilo su cliente)."""
+    raws = {
+        "g1": _build_raw(message_id="<m1@x>", subject="Asunto 1",
+                         date="Thu, 11 Jun 2026 10:00:00 +0200"),
+        "g2": _build_raw(message_id="<m2@x>", subject="Asunto 2",
+                         date="Thu, 12 Jun 2026 10:00:00 +0200"),
+        "g3": _build_raw(message_id="<m3@x>", subject="Asunto 3",
+                         date="Thu, 13 Jun 2026 10:00:00 +0200"),
+    }
+    pages = [{"messages": [{"id": "g1"}, {"id": "g2"}, {"id": "g3"}]}]
+    # Sin red: cada construcción de cliente devuelve un fake con los mismos datos.
+    monkeypatch.setattr(ee, "_load_credentials", lambda account, **k: object())
+    monkeypatch.setattr(ee, "_build_service",
+                        lambda creds: _FakeService(labels=_LABELS, pages=pages, raws=raws))
+
+    rep = ee.export_label(
+        "c@engelvoelkers.com", _ETIQUETA, tmp_path, service=None, max_workers=4
+    )
+    assert rep.written == 3
+    assert sorted(p.name for p in tmp_path.glob("*.eml")) == [
+        "2026-06-11_asunto_1.eml",
+        "2026-06-12_asunto_2.eml",
+        "2026-06-13_asunto_3.eml",
+    ]
