@@ -91,6 +91,17 @@ class TestAdjuntosYFiltro:
         msgs = parse_chat(texto)
         assert msgs[0].adjunto_ref == "00000042-PHOTO-2024.jpg"
 
+    def test_adjunto_ios_documento_con_preambulo(self):
+        # iOS exporta los DOCUMENTOS con preámbulo (nombre + páginas) antes del
+        # tag <adjunto: ...>, que por tanto NO va al inicio de la línea. Las fotos
+        # sí empiezan por el tag. El parser debe localizarlo igualmente.
+        texto = (
+            "[11/10/24, 11:05:02] Toni: T_11_202405243584_V01_TAS.PDF • "
+            "‎34 páginas ‎<adjunto: 00000017-T_11_202405243584_V01_TAS.pdf>"
+        )
+        msgs = parse_chat(texto)
+        assert msgs[0].adjunto_ref == "00000017-T_11_202405243584_V01_TAS.pdf"
+
     def test_adjunto_con_caption_multilinea(self):
         texto = (
             "8/1/24, 10:32 - Juan: IMG-20240108-WA0001.jpg (archivo adjunto)\n"

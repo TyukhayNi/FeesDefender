@@ -83,7 +83,10 @@ def _split_author(rest: str) -> tuple[str | None, str]:
 # Detección de adjuntos
 # ---------------------------------------------------------------------------
 
-_RE_ADJ_IOS = re.compile(r"^‎?<adjunto:\s*(.+?)>\s*$", re.IGNORECASE)
+# El tag iOS puede ir precedido de un preámbulo (los DOCUMENTOS se exportan como
+# `nombre.PDF • N páginas ‎<adjunto: ...>`), así que se busca sin anclar al inicio.
+# Las fotos/vídeos empiezan por el tag; ambos casos quedan cubiertos.
+_RE_ADJ_IOS = re.compile(r"<adjunto:\s*(.+?)>", re.IGNORECASE)
 _RE_ADJ_ANDROID = re.compile(r"^(.+?)\s*\(archivo adjunto\)\s*$", re.IGNORECASE)
 # iOS bare attachment marker (no filename): ‎<archivo adjunto>
 _RE_ADJ_BARE = re.compile(r"^‎?<archivo adjunto>\s*$", re.IGNORECASE)
@@ -95,10 +98,12 @@ _RE_MEDIA_OMITTED = re.compile(
 
 def _adjunto_ref(texto_linea: str) -> str | None:
     """Extrae el nombre del adjunto referenciado en una línea, si lo hay."""
-    for rx in (_RE_ADJ_IOS, _RE_ADJ_ANDROID):
-        m = rx.match(texto_linea)
-        if m:
-            return m.group(1).strip()
+    m = _RE_ADJ_IOS.search(texto_linea)  # sin anclar: cubre documentos con preámbulo
+    if m:
+        return m.group(1).strip()
+    m = _RE_ADJ_ANDROID.match(texto_linea)
+    if m:
+        return m.group(1).strip()
     if _RE_ADJ_BARE.match(texto_linea):
         return "<archivo adjunto>"
     if _RE_MEDIA_OMITTED.match(texto_linea):
