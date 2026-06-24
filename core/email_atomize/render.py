@@ -59,8 +59,26 @@ def render_md(m: RegistroMensaje) -> str:
         fm.append("charset_recuperado: true")
     if m.mojibake_marcado:
         fm.append("mojibake: true")
+    # --- Layer B ---
+    if m.reconstruido_desde_cita:
+        fm.append("reconstruido_desde_cita: true")
+    if m.reconstruido_de:
+        fm.append(f"reconstruido_de: {m.reconstruido_de}")
+    if m.fecha_inferida:
+        fm.append("fecha_inferida: true")
+    if m.ambiguedad_profundidad:
+        fm.append("ambiguedad_profundidad: true")
+    if m.en_revision:
+        fm.append("en_revision: true")
+    if m.fingerprint:
+        fm.append(f"fingerprint: {m.fingerprint}")
     fm.append("---")
-    return _GEN_MD + "\n".join(fm) + "\n\n" + m.cuerpo.strip() + "\n"
+    banner = ""
+    if m.capa == "B":
+        banner = ("> RECONSTRUIDO DESDE CITA — remitente verificado por cabecera inline\n\n"
+                  if m.confianza == "alta-reconstruida"
+                  else "> AUTORÍA POR RECONSTRUIR — sin verificar\n\n")
+    return _GEN_MD + "\n".join(fm) + "\n\n" + banner + m.cuerpo.strip() + "\n"
 
 
 _GEN_VIEW = "<!-- GENERADO por core.email_atomize — NO editar a mano. -->\n"
@@ -80,7 +98,12 @@ def render_correos_lectura(mensajes: list[RegistroMensaje]) -> str:
     for m in ms:
         out.append(f'<a id="{_ancla(m.msg_id)}"></a>')
         out.append(f"### {m.fecha_iso} · {m.hora} — {m.asunto or '(sin asunto)'}\n")
-        out.append(f"**De:** {m.de_nombre or m.de} <{m.de}>  ")
+        if m.capa == "B":
+            out.append(f"**De (reconstruido):** {m.de_nombre or m.de} <{m.de}>  ")
+            out.append("_Mensaje recuperado de una cita; remitente verificado por cabecera "
+                       f"(Ref. {m.reconstruido_de or '—'})_  ")
+        else:
+            out.append(f"**De:** {m.de_nombre or m.de} <{m.de}>  ")
         out.append(f"**Para:** {', '.join(m.para) or '—'}  ")
         if m.cc:
             out.append(f"**CC:** {', '.join(m.cc)}  ")
@@ -96,6 +119,42 @@ def render_correos_lectura(mensajes: list[RegistroMensaje]) -> str:
         out.append(f"\n<sub>Ref. {m.msg_id}</sub>\n")
         out.append("\n---\n")
     return "\n".join(out) + "\n"
+
+
+def render_revision(mensajes_b: list[RegistroMensaje], punteros: list, watched=None) -> dict:
+    """Colas de revisión Layer B: ``cola.md`` (punteros media/baja), ``casi_duplicados.md``
+    (upgrades/near-dups), ``del_burgo.md`` (autoría vigilada). Regenerado cada corrida
+    (determinista → idempotente)."""
+    if watched is None:
+        from . import inline
+        watched = inline.IDENTIDADES_VIGILADAS
+
+    cola = [_GEN_VIEW, "# Cola de revisión Layer B (media/baja)\n",
+            "| Portador | Estilo | Prof | Confianza | Motivo | De | Extracto |",
+            "| --- | --- | --- | --- | --- | --- | --- |"]
+    for p in punteros:
+        ext = (p.extracto or "").replace("|", " ").replace("\n", " ").strip()[:120]
+        cola.append(f"| {p.portador_msg_id} | {p.estilo} | {p.profundidad} | {p.confianza} | "
+                    f"{p.motivo} | {p.de} | {ext} |")
+
+    casi = [_GEN_VIEW, "# Casi-duplicados / upgrades de fidelidad Layer B\n",
+            "Eventos de colapso inline↔MIME y near-dups por cuerpo. La verdad del puente "
+            "vive en `_registro.json` (`alias`/`mensajes_fp`).\n",
+            "| MSG-B | De | Fecha | Fingerprint |", "| --- | --- | --- | --- |"]
+    for m in mensajes_b:
+        casi.append(f"| {m.msg_id} | {m.de} | {m.fecha_iso} | {m.fingerprint} |")
+
+    db = [_GEN_VIEW, "# Autoría vigilada (PersonaUno) — revisión probatoria\n",
+          "| MSG | De | Fecha | Confianza | Reconstruido de |",
+          "| --- | --- | --- | --- | --- |"]
+    for m in mensajes_b:
+        if m.de in watched:
+            db.append(f"| {m.msg_id} | {m.de} | {m.fecha_iso} | {m.confianza} | "
+                      f"{m.reconstruido_de} |")
+
+    return {"cola.md": "\n".join(cola) + "\n",
+            "casi_duplicados.md": "\n".join(casi) + "\n",
+            "del_burgo.md": "\n".join(db) + "\n"}
 
 
 def render_indice_adjuntos(adjuntos: list[AdjuntoUnico]) -> str:

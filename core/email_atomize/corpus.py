@@ -39,6 +39,9 @@ def _fila(m: RegistroMensaje) -> dict:
         "idioma": m.idioma,
         "sha256": m.sha256,
         "fuente": m.fuente,
+        "fingerprint": m.fingerprint,
+        "reconstruido_desde_cita": m.reconstruido_desde_cita,
+        "en_revision": m.en_revision,
         "ruta_md": "mensajes/" + _nombre_md_lazy(m),
     }
 

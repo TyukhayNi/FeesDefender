@@ -19,10 +19,14 @@ from .model import RegistroMensaje, SegmentoEnterrado
 
 _TZ = ZoneInfo("Europe/Madrid")
 
-# Identidades vigiladas (hook Fase 3; vacío en Fase 2 = no-op). Para identidades.yaml:
-#   PersonaUno = {per01a@example.invalid, per01c@example.invalid}; per01b@example.invalid = CANDIDATO (tope media,
-#   no se confirma aquí); ignacio@despacho-ab.example = parte relacionada, persona DISTINTA.
-IDENTIDADES_VIGILADAS: set[str] = set()
+# Identidades vigiladas (doble control probatorio → _revision/del_burgo.md). Fase 3 moverá
+# esto a un `identidades.yaml` por caso; aquí se siembra con las identidades CONFIRMADAS de
+# PersonaUno para el piloto W-02VND1. NO incluye:
+#   - per01b@example.invalid = CANDIDATO (decisión Nikolai 2026-06-25: tope `media`, NO se
+#     auto-promociona ni se vigila como confirmada hasta validarlo en Fase 3);
+#   - ignacio@despacho-ab.example = parte relacionada (su despacho), persona DISTINTA.
+# El mecanismo es genérico (un set de direcciones); solo el contenido del set es del caso.
+IDENTIDADES_VIGILADAS: set[str] = {"per01a@example.invalid", "per01c@example.invalid"}
 
 _MIN_CUERPO = 24   # cuerpos normalizados < 24 chars nunca dirigen colapso/upgrade
 
