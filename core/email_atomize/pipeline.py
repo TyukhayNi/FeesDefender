@@ -21,7 +21,7 @@ from . import headers as H
 from . import ids as IDS
 from . import inline as INL
 from . import render as R
-from .model import AdjuntoRef, AdjuntoUnico, RegistroMensaje
+from .model import AdjuntoRef, AdjuntoUnico, RegistroMensaje, SegmentoEnterrado
 
 
 @dataclass
@@ -122,7 +122,12 @@ def _pase_layer_b(reg, mensajes, carriers, report):
         except Exception as exc:  # noqa: BLE001 — un portador no aborta la corrida
             report.errores.append(f"{m_a.msg_id}: reconstruir inline falló: {exc}")
             continue
-        m_a.respuesta_intercalada = m_a.respuesta_intercalada or res.intercalada
+        # NO se muta el .md del portador (Capa A byte-idéntica). La intercalada HTML —donde
+        # conservadoramente NO segmentamos— se anota en la cola de revisión, no en el portador.
+        if res.intercalada:
+            punteros.append(SegmentoEnterrado(
+                portador_msg_id=m_a.msg_id, estilo="intercalada", confianza="info",
+                motivo="intercalada_no_segmentada", extracto=""))
         candidatos.extend(res.candidatos)
         punteros.extend(res.punteros)
 
