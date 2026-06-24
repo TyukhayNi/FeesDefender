@@ -15,6 +15,7 @@ from email.utils import parseaddr, parsedate_to_datetime
 from zoneinfo import ZoneInfo
 
 from core.email_export import _slug_descripcion
+from .model import RegistroMensaje, SegmentoEnterrado
 
 _TZ = ZoneInfo("Europe/Madrid")
 
@@ -194,8 +195,8 @@ def parsear_anclaje(texto: str, estilo: str) -> "Anclaje | None":
     """Sender/date/subject SOLO desde el bloque de cabecera del segmento (nunca de prosa)."""
     if not texto:
         return None
-    if estilo in ("apple_es", "apple_en", "gmail_attr"):
-        return _parse_apple(texto)
+    if estilo in ("apple_es", "apple_en", "gmail_attr", "html_quote"):
+        return _parse_apple(texto) or _parse_label(texto)
     return _parse_label(texto)
 
 
@@ -512,3 +513,98 @@ def clasificar(
     if discrepancia:
         motivos.append("discrepancia_html_plano")
     return "media", ",".join(motivos) or "media"
+
+
+# ---------------------------------------------------------------------------
+# Orquestador: reconstruir + índice Capa A + construir_b (DD §6, §7, §9)
+# ---------------------------------------------------------------------------
+
+_RE_INLINE_MID = re.compile(r"(?im)^\s*message-id\s*:\s*<([^>]+)>")
+
+
+@dataclass
+class ReconResult:
+    intercalada: bool = False
+    candidatos: list = field(default_factory=list)   # Segmento (alta-reconstruida)
+    punteros: list = field(default_factory=list)      # SegmentoEnterrado (media/baja)
+
+
+class Indice:
+    """Índice de Capa A para el puente de fidelidad: cuerpo_sha→msg_id y rfc_mid→msg_id."""
+
+    def __init__(self) -> None:
+        self._sha: dict[str, str] = {}
+        self._mid: dict[str, str] = {}
+
+    def por_cuerpo_sha(self, cuerpo_norm: str) -> str | None:
+        return self._sha.get(cuerpo_sha_de(cuerpo_norm))
+
+    def por_mid(self, rfc_message_id: str) -> str | None:
+        return self._mid.get((rfc_message_id or "").strip())
+
+    def resolver(self, seg: "Segmento") -> str | None:
+        if seg.rfc_message_id:
+            hit = self._mid.get(seg.rfc_message_id.strip())
+            if hit:
+                return hit
+        norm = normaliza_cuerpo(seg.texto)
+        if es_cuerpo_colapsable(norm):
+            return self._sha.get(cuerpo_sha_de(norm))
+        return None
+
+
+def indice_layer_a(mensajes: list) -> Indice:
+    idx = Indice()
+    for m in mensajes:
+        norm = normaliza_cuerpo(m.cuerpo)
+        if es_cuerpo_colapsable(norm):
+            idx._sha.setdefault(cuerpo_sha_de(norm), m.msg_id)
+        if m.rfc_message_id:
+            idx._mid.setdefault(m.rfc_message_id.strip(), m.msg_id)
+    return idx
+
+
+def reconstruir(m_a, raw: bytes) -> ReconResult:
+    """Segmenta el portador, atribuye/clasifica cada cita y separa candidatos (alta) de
+    punteros (media/baja → revisión). NO asigna MSG-id (eso lo hace el pipeline)."""
+    seg_total = segmentar(raw)
+    res = ReconResult(intercalada=seg_total.respuesta_intercalada)
+    for seg in seg_total.ancestros:
+        anc = parsear_anclaje(seg.anclaje_texto or "", seg.estilo)
+        if anc is None:
+            anc = parsear_anclaje(seg.texto, "outlook_es")  # cabecera-en-cuerpo (Outlook HTML/fwd)
+        conf, motivo = clasificar(anc, m_a.fecha_iso, estructural=seg.estructural, ambigua=False)
+        cuerpo_norm = normaliza_cuerpo(seg.texto)
+        seg.de = anc.de if anc else ""
+        seg.de_nombre = anc.de_nombre if anc else ""
+        seg.fecha_iso = anc.fecha_iso if anc else "0000-00-00"
+        seg.asunto = anc.asunto if anc else ""
+        seg.confianza = conf
+        seg.motivo = motivo
+        seg.cuerpo_sha = cuerpo_sha_de(cuerpo_norm)
+        seg.fingerprint = fingerprint_b(anc, cuerpo_norm)
+        seg.portador_msg_id = m_a.msg_id
+        mm = _RE_INLINE_MID.search(seg.texto)
+        seg.rfc_message_id = mm.group(1).strip() if mm else ""
+        watched = bool(seg.de) and seg.de in IDENTIDADES_VIGILADAS
+        seg.en_revision = watched or conf in ("media", "baja")
+        if conf == "alta-reconstruida":
+            res.candidatos.append(seg)
+        else:
+            res.punteros.append(SegmentoEnterrado(
+                portador_msg_id=m_a.msg_id, estilo=seg.estilo, profundidad=seg.profundidad,
+                de=seg.de, fecha_iso=seg.fecha_iso, confianza=conf, motivo=motivo,
+                extracto=(seg.texto or "")[:200], fingerprint=seg.fingerprint))
+    return res
+
+
+def construir_b(seg: "Segmento", seg_msg_id: str, m_portador) -> RegistroMensaje:
+    return RegistroMensaje(
+        msg_id=seg_msg_id, rfc_message_id=seg.rfc_message_id, fecha_iso=seg.fecha_iso,
+        de=seg.de, de_nombre=seg.de_nombre, asunto=seg.asunto, cuerpo=seg.texto,
+        capa="B", confianza=seg.confianza, reconstruido_desde_cita=True,
+        reconstruido_de=m_portador.msg_id, fingerprint=seg.fingerprint,
+        procedencia=[{"citado_en": m_portador.msg_id, "profundidad": seg.profundidad}],
+        en_revision=seg.en_revision, fuente="email",
+        fecha_inferida=(seg.fecha_iso == "0000-00-00"),
+    )

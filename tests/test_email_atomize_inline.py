@@ -161,3 +161,53 @@ def test_clasifica_sin_estructura_o_ambigua_demota_a_media():
 def test_clasifica_email_invalido_no_promueve():
     anc = I.Anclaje(de="no-es-email", fecha_iso="2020-01-01")
     assert I.clasificar(anc, "2020-02-01", estructural=True, ambigua=False)[0] in ("media", "baja")
+
+
+# ---------------------------------------------------------------------------
+# T9 — orquestador reconstruir + indice Capa A + watched-list
+# ---------------------------------------------------------------------------
+from email.message import EmailMessage
+from core.email_atomize.model import RegistroMensaje
+
+
+def _ra(**kw):
+    base = dict(msg_id="MSG-00042", rfc_message_id="p@x", fecha_iso="2026-06-01",
+                asunto="Asunto", de="c@x", cuerpo="autor", capa="A", confianza="alta")
+    base.update(kw)
+    return RegistroMensaje(**base)
+
+
+def _eml_cita_gmail(autor, de_cita, fecha_attr, cuerpo_cita):
+    m = EmailMessage()
+    m["Message-ID"] = "<carrier@x>"; m["Subject"] = "RV"; m["From"] = "c@x"; m["To"] = "d@x"
+    m["Date"] = "Mon, 01 Jun 2026 10:00:00 +0200"
+    m.set_content(autor)
+    html = (f'<div>{autor}</div><div class="gmail_quote">'
+            f'<div class="gmail_attr">El {fecha_attr}, Jaime &lt;{de_cita}&gt; escribió:</div>'
+            f'<blockquote>{cuerpo_cita}</blockquote></div>')
+    m.add_alternative(html, subtype="html")
+    return m.as_bytes()
+
+
+def test_reconstruir_promueve_del_burgo_inline():
+    raw = _eml_cita_gmail("Te reenvío.", "per01a@example.invalid", "1 de mayo de 2020",
+                          "contenido suficientemente largo para fingerprint y promocion")
+    res = I.reconstruir(_ra(fecha_iso="2026-06-01"), raw)
+    altas = [s for s in res.candidatos if s.confianza == "alta-reconstruida"]
+    assert any(s.de == "per01a@example.invalid" for s in altas)
+
+
+def test_reconstruir_watched_va_a_del_burgo_queue(monkeypatch):
+    monkeypatch.setattr(I, "IDENTIDADES_VIGILADAS", {"per01a@example.invalid"})
+    raw = _eml_cita_gmail("x", "per01a@example.invalid", "1 de mayo de 2020",
+                          "cuerpo largo de prueba suficiente para todo")
+    res = I.reconstruir(_ra(), raw)
+    db = [s for s in res.candidatos if s.de == "per01a@example.invalid"]
+    assert db and db[0].en_revision is True   # doble control sobre identidad vigilada
+
+
+def test_indice_layer_a_resuelve_por_cuerpo_sha():
+    m = _ra(cuerpo="cuerpo identico bastante largo para superar el floor", de="z@x",
+            fecha_iso="2020-05-01", asunto="t")
+    idx = I.indice_layer_a([m])
+    assert idx.por_cuerpo_sha(I.normaliza_cuerpo(m.cuerpo)) == "MSG-00042"
