@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 
 from core.email_export import _slug_descripcion
-from .model import RegistroMensaje
+from .model import RegistroMensaje, AdjuntoUnico
 
 _GEN_MD = "# GENERADO por core.email_atomize — NO editar (fuente de verdad regenerable).\n"
 
@@ -61,3 +61,49 @@ def render_md(m: RegistroMensaje) -> str:
         fm.append("mojibake: true")
     fm.append("---")
     return _GEN_MD + "\n".join(fm) + "\n\n" + m.cuerpo.strip() + "\n"
+
+
+_GEN_VIEW = "<!-- GENERADO por core.email_atomize — NO editar a mano. -->\n"
+
+
+def _ancla(msg_id: str) -> str:
+    return msg_id.lower()
+
+
+def render_correos_lectura(mensajes: list[RegistroMensaje]) -> str:
+    ms = sorted(mensajes, key=lambda x: (x.fecha_iso, x.hora, x.msg_id))
+    out = [_GEN_VIEW, f"# Correos — lectura ({len(ms)} mensajes)\n", "## Índice\n"]
+    for m in ms:
+        out.append(f"- [{m.fecha_iso} {m.hora} — {m.asunto or '(sin asunto)'}]"
+                   f"(#{_ancla(m.msg_id)})")
+    out.append("\n---\n")
+    for m in ms:
+        out.append(f'<a id="{_ancla(m.msg_id)}"></a>')
+        out.append(f"### {m.fecha_iso} · {m.hora} — {m.asunto or '(sin asunto)'}\n")
+        out.append(f"**De:** {m.de_nombre or m.de} <{m.de}>  ")
+        out.append(f"**Para:** {', '.join(m.para) or '—'}  ")
+        if m.cc:
+            out.append(f"**CC:** {', '.join(m.cc)}  ")
+        if m.cco:
+            out.append(f"**CCO:** {', '.join(m.cco)}  ")
+        if m.adjuntos:
+            nombres = ", ".join(a.nombre for a in m.adjuntos)
+            out.append(f"**Adjuntos:** {nombres}  ")
+        if m.emisor_dispositivo and "iphone" in m.emisor_dispositivo.lower():
+            out.append("_Enviado desde iPhone_  ")
+        out.append("")
+        out.append(m.cuerpo.strip())
+        out.append(f"\n<sub>Ref. {m.msg_id}</sub>\n")
+        out.append("\n---\n")
+    return "\n".join(out) + "\n"
+
+
+def render_indice_adjuntos(adjuntos: list[AdjuntoUnico]) -> str:
+    out = [_GEN_VIEW, f"# Índice de adjuntos ({len(adjuntos)} únicos)\n",
+           "| ATT | Nombre | Tipo | 1ª aparición | Mensajes |",
+           "| --- | --- | --- | --- | --- |"]
+    for a in sorted(adjuntos, key=lambda x: x.att_id):
+        msgs = ", ".join(a.mensajes)
+        out.append(f"| {a.att_id} | {a.nombre_original} | {a.tipo} | "
+                   f"{a.primera_aparicion} | {msgs} |")
+    return "\n".join(out) + "\n"
