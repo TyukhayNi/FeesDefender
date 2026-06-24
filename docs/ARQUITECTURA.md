@@ -56,7 +56,8 @@ Cada paso es ejecutable de forma aislada. El pipeline es **idempotente**: re-eje
 | `prompts/*.md` | Invalidar frontmatter `prompt_hash` en `.md` generados existentes (re-ejecutar pipeline sobre casos afectados) |
 | `core/pipeline.py` — orden de pasos | `docs/ARQUITECTURA.md` sección "Flujo de un caso", `STATUS.md` sección Pipeline |
 | `core/intake_drive.py` — campos `CaseMeta` | `core/case_manager.py` (`drive_ev_team_id`, `drive_ev_folder_id`), `tests/test_intake_drive.py` |
-| `core/intake_log.py` — `INTAKE_EVENTS` | callers que emiten eventos: `core/sync_sudespacho.pull_expediente_v2`, `streamlit_app.py` (expander "📂 Subir al árbol CRM" emite `upload_manual` con `details.destination 05_CRM/...`) |
+| `core/intake_drive.py` — `get_drive_file_info` / `download_drive_media` (Drive REST a nivel de fichero) | `core/email_export.py` (`_rescata_file`/`_resuelve_enlaces`, rescate de enlaces a Drive — Parte 2), `tests/test_intake_drive.py` |
+| `core/intake_log.py` — `INTAKE_EVENTS` | callers que emiten eventos: `core/sync_sudespacho.pull_expediente_v2`, `streamlit_app.py` (expander "📂 Subir al árbol CRM" emite `upload_manual` con `details.destination 05_CRM/...`), `core/email_export.py` (emite `upload_email` y `upload_drive_link`) |
 | `core/intake_manual.py` — `save_file_crm_branch` / `list_crm_branch_files` | `streamlit_app.py` (expander "📂 Subir al árbol CRM" en tab Casos), `core/config.py` (`CRM_TREE`, `CRM_SUBDIR`) si cambia el árbol |
 | `core/intake_manifest.py` — schema o reglas reconcile | `core/sync_sudespacho.pull_expediente_v2`, futuros pulls v2 (intake_drive si se migra) |
 | `core/case_manager.py` — `crm_branch_path` o reglas derivación | `data/_plantillas/ficha_operacion.yaml` (regla_derivacion canónica), `data/_plantillas/cuestionario_viabilidad.yaml` (campo `respalda`), eventual `core/viabilidad.py` (horizonte 3) |
