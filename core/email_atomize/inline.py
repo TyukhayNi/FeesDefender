@@ -192,6 +192,157 @@ def _parse_apple(texto: str) -> "Anclaje | None":
 
 def parsear_anclaje(texto: str, estilo: str) -> "Anclaje | None":
     """Sender/date/subject SOLO desde el bloque de cabecera del segmento (nunca de prosa)."""
+    if not texto:
+        return None
     if estilo in ("apple_es", "apple_en", "gmail_attr"):
         return _parse_apple(texto)
     return _parse_label(texto)
+
+
+# ---------------------------------------------------------------------------
+# Segmentación de texto plano (DD §2.0, §2.2)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class Segmento:
+    texto: str = ""
+    anclaje_texto: str | None = None
+    profundidad: int = 0
+    estilo: str = ""
+    estructural: bool = False
+    # rellenados por reconstruir(): confianza/motivo/de/fecha/fingerprint/cuerpo_sha/en_revision
+    confianza: str = ""
+    motivo: str = ""
+    de: str = ""
+    de_nombre: str = ""
+    fecha_iso: str = "0000-00-00"
+    asunto: str = ""
+    fingerprint: str = ""
+    cuerpo_sha: str = ""
+    en_revision: bool = False
+    portador_msg_id: str = ""
+    rfc_message_id: str = ""
+
+
+@dataclass
+class Segmentacion:
+    autor: str = ""
+    ancestros: list = field(default_factory=list)
+    respuesta_intercalada: bool = False
+    motivo: str = ""
+
+_RE_FWD_LINE = re.compile(
+    r"(?i)^\s*-{2,}\s*(forwarded message|mensaje reenviado|reenviado|begin forwarded message"
+    r"|original message|mensaje original)")
+_RE_APPLE_ES_LINE = re.compile(r"(?i)^\s*el\s+.+?\s+(?:escribi[oó]|va\s+escriure)\s*:\s*$")
+_RE_APPLE_EN_LINE = re.compile(r"(?i)^\s*on\s+.+?\s+wrote\s*:\s*$")
+_RE_DEFROM_LINE = re.compile(r"(?i)^\s*(?:de|from)\s*:\s*\S")
+_RE_2ND_LABEL = re.compile(
+    r"(?i)^\s*(enviado|sent|fecha|date|para|to|asunto|subject|cc|cco|bcc)\s*:")
+_RE_ANYLABEL = re.compile(
+    r"(?i)^\s*(de|from|enviado|sent|fecha|date|para|to|asunto|subject|cc|cco|bcc)\s*:")
+
+
+def _es_quote(l: str) -> bool:
+    return l.lstrip().startswith(">")
+
+
+def _quote_depth(l: str) -> int:
+    pref = re.match(r"^[\s>]*", l).group()
+    return pref.count(">")
+
+
+def _marca_linea(lines: list[str], i: int) -> str | None:
+    l = lines[i]
+    if _RE_FWD_LINE.match(l):
+        return "fwd_line"
+    if _RE_APPLE_ES_LINE.match(l):
+        return "apple_es"
+    if _RE_APPLE_EN_LINE.match(l):
+        return "apple_en"
+    if _RE_DEFROM_LINE.match(l):
+        for j in range(i + 1, min(i + 5, len(lines))):
+            if _RE_2ND_LABEL.match(lines[j]):
+                return "outlook_es"
+    return None
+
+
+def _intercalada_plain(texto: str) -> bool:
+    """Autor escribió ENTRE citas (sándwich): texto de autor no etiqueta/marcador entre dos
+    líneas citadas. La cola de autor tras la última cita (firma) no cuenta."""
+    lines = texto.splitlines()
+    qi = [i for i, l in enumerate(lines) if _es_quote(l)]
+    if not qi:
+        return False
+    for i in range(qi[0] + 1, qi[-1]):
+        l = lines[i]
+        if (l.strip() and not _es_quote(l) and _marca_linea(lines, i) is None
+                and _RE_ANYLABEL.match(l) is None):
+            return True
+    return False
+
+
+def _pasada_segmentos(texto: str) -> tuple[list[Segmento], str]:
+    lines = texto.splitlines()
+    segs: list[dict] = []
+    autor_lines: list[str] = []
+    cur: dict | None = None
+    header_depth = 0
+    i, n = 0, len(lines)
+
+    def _flush() -> None:
+        nonlocal cur
+        if cur is not None:
+            segs.append(cur)
+            cur = None
+
+    while i < n:
+        l = lines[i]
+        estilo = _marca_linea(lines, i)
+        if estilo:
+            _flush()
+            header_depth += 1
+            anclaje = [l]
+            j = i + 1
+            if estilo in ("outlook_es", "fwd_line"):
+                while j < n and _RE_ANYLABEL.match(lines[j]):
+                    anclaje.append(lines[j])
+                    j += 1
+            cur = {"estilo": estilo, "depth": header_depth, "estructural": False,
+                   "anclaje": "\n".join(anclaje), "body": list(anclaje)}
+            i = j
+            continue
+        if _es_quote(l):
+            if cur is not None and cur["estilo"] != "quote_gt":
+                cur["body"].append(l)                  # cita dentro de un bloque de cabecera
+            else:
+                d = _quote_depth(l)
+                if not (cur is not None and cur["estilo"] == "quote_gt" and cur["depth"] == d):
+                    _flush()
+                    cur = {"estilo": "quote_gt", "depth": d, "estructural": True,
+                           "anclaje": None, "body": []}
+                cur["body"].append(l)
+            i += 1
+            continue
+        if cur is None:
+            autor_lines.append(l)
+        else:
+            cur["body"].append(l)
+        i += 1
+    _flush()
+
+    ancestros = [
+        Segmento(texto="\n".join(s["body"]).strip(), anclaje_texto=s["anclaje"],
+                 profundidad=s["depth"], estilo=s["estilo"], estructural=s["estructural"])
+        for s in segs
+    ]
+    return ancestros, "\n".join(autor_lines).strip()
+
+
+def segmentar_texto(texto: str) -> Segmentacion:
+    """Segmenta un cuerpo de texto plano en autor + ancestros (DD §2.2). Guarda intercalada
+    primero: si el autor escribió entre citas, NO se segmenta (cero misatribución)."""
+    if _intercalada_plain(texto):
+        return Segmentacion(autor=texto.strip(), ancestros=[], respuesta_intercalada=True)
+    ancestros, autor = _pasada_segmentos(texto)
+    return Segmentacion(autor=autor, ancestros=ancestros, respuesta_intercalada=False)

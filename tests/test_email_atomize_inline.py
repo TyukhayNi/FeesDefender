@@ -62,3 +62,38 @@ def test_anclaje_display_name_sin_addr_no_inventa():
 def test_anclaje_sin_fecha_parseable():
     anc = I.parsear_anclaje("De: x@y.com\nAsunto: z\nPara: w", "outlook_es")
     assert anc.de == "x@y.com" and anc.fecha_iso == "0000-00-00"
+
+
+# ---------------------------------------------------------------------------
+# T6 — segmentación texto plano
+# ---------------------------------------------------------------------------
+
+def test_seg_plain_un_outlook():
+    s = I.segmentar_texto("Mi nota.\nDe: Y <y@z.com>\nEnviado: 1 ene 2020\nAsunto: Z\nPara: w\n> cuerpo citado")
+    assert s.autor.startswith("Mi nota")
+    assert len(s.ancestros) == 1 and s.ancestros[0].estilo == "outlook_es"
+
+
+def test_seg_plain_multimarcador_orden_documental():
+    txt = ("Top.\n"
+           "El 2 feb 2020, a las 9:00, A <a@x> escribió:\n"
+           "> uno\n"
+           "-----Mensaje original-----\nDe: B <b@x>\nAsunto: q\nEnviado: 1 feb 2020\n")
+    s = I.segmentar_texto(txt)
+    assert [a.estilo for a in s.ancestros] == ["apple_es", "fwd_line"]
+
+
+def test_seg_plain_quote_gt_depth():
+    s = I.segmentar_texto("Hola\n> n1\n>> n2\n>> n2b\n> n1b")
+    profs = sorted({a.profundidad for a in s.ancestros})
+    assert profs and max(profs) >= 2 and all(a.estructural for a in s.ancestros)
+
+
+def test_seg_stray_de_no_segmenta():
+    s = I.segmentar_texto("Te escribo. De: acuerdo con lo que dices sobre el asunto.")
+    assert s.ancestros == []
+
+
+def test_seg_plain_intercalada_no_segmenta():
+    s = I.segmentar_texto("> pregunta uno\nrespuesta del autor entre citas\n> pregunta dos\n")
+    assert s.respuesta_intercalada is True and s.ancestros == []
