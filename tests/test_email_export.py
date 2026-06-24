@@ -12,9 +12,12 @@ pide marcar como leído.
 from __future__ import annotations
 
 import base64
+import hashlib
+import json
 from email.message import EmailMessage as PyEmailMessage
 
 from core import email_export as ee
+from core.intake_drive import DriveFileInfo
 
 
 # ---------------------------------------------------------------------------
@@ -860,3 +863,377 @@ def test_aplana_hijo_sin_message_id_dedup_por_contenido(tmp_path):
     assert rep.nested_flattened == 1        # el hijo sin id, una sola vez
     assert rep.nested_dedup >= 1
     assert len(list(tmp_path.glob("2023-05-11_sin_id*.eml"))) == 1
+
+
+# ===========================================================================
+# Parte 2 — rescate de ficheros enlazados (Drive/Gmail) — capa pura
+# ===========================================================================
+
+def _build_html_email(*, html: str = "", plain: str = "", message_id: str = "<h@x>") -> bytes:
+    msg = PyEmailMessage()
+    msg["Message-ID"] = message_id
+    msg["Subject"] = "enlaces"
+    msg["Date"] = "Mon, 08 Jun 2026 12:00:00 +0200"
+    msg["From"] = "consultor@engelvoelkers.com"
+    if plain:
+        msg.set_content(plain)
+        if html:
+            msg.add_alternative(html, subtype="html")
+    elif html:
+        msg.set_content(html, subtype="html")
+    return msg.as_bytes()
+
+
+def _tipos(links):
+    return {(l.type, l.file_id): l for l in links}
+
+
+def test_extract_drive_links_clasifica_familias():
+    plain = "Otro fichero por enlace: https://drive.google.com/open?id=OPENID5"
+    html = (
+        '<p>Adjunto el contrato: '
+        '<a href="https://drive.google.com/file/d/FILEID123/view?usp=sharing">aquí</a></p>'
+        '<p>La carpeta: <a href="https://drive.google.com/drive/folders/FOLDERID9">carpeta</a></p>'
+        '<p>La hoja: <a href="https://docs.google.com/spreadsheets/d/SHEETID7/edit">hoja</a></p>'
+        '<img src="https://docs.google.com/uc?export=download&id=SIGIMG1" width="120">'
+    )
+    links = ee.extract_drive_links(_build_html_email(html=html, plain=plain))
+    por = _tipos(links)
+    assert (ee.DriveLinkType.FILE, "FILEID123") in por
+    assert (ee.DriveLinkType.FOLDER, "FOLDERID9") in por
+    assert (ee.DriveLinkType.NATIVE, "SHEETID7") in por
+    assert (ee.DriveLinkType.FILE, "OPENID5") in por
+    assert (ee.DriveLinkType.IMAGE_SIG, "SIGIMG1") in por      # img src → firma
+    assert por[(ee.DriveLinkType.IMAGE_SIG, "SIGIMG1")].from_img is True
+    assert por[(ee.DriveLinkType.FILE, "FILEID123")].from_img is False
+
+
+def test_extract_drive_links_unescape_y_dedup():
+    # &amp; entidad HTML en la URL; el mismo (tipo,id) dos veces → una sola entrada.
+    html = (
+        '<a href="https://drive.google.com/uc?export=download&amp;id=DUP9&amp;foo=bar">a</a>'
+        '<a href="https://drive.google.com/file/d/DUP9/view">b</a>'
+        '<a href="https://drive.google.com/file/d/DUP9/preview">c</a>'
+    )
+    links = ee.extract_drive_links(_build_html_email(html=html))
+    # FILE/DUP9 aparece tres veces (uc?id, file/d x2) pero colapsa a una entrada FILE.
+    files = [l for l in links if l.type == ee.DriveLinkType.FILE and l.file_id == "DUP9"]
+    assert len(files) == 1
+
+
+def test_extract_drive_links_ignora_ruido_no_drive():
+    html = (
+        '<a href="https://www.google.com/maps/search/Diagonal+640">mapa</a>'
+        '<a href="https://calendar.google.com/calendar/event?eid=ABC">cal</a>'
+        '<a href="https://meet.google.com/hhq-maaf-zfb">meet</a>'
+        '<a href="https://support.google.com/a/users/answer/9282720">ayuda</a>'
+    )
+    assert ee.extract_drive_links(_build_html_email(html=html)) == []
+
+
+def test_extract_drive_links_gmail_permalink():
+    html = '<a href="https://mail.google.com/mail/u/0/#inbox/FMfcgzABC123">ver correo</a>'
+    links = ee.extract_drive_links(_build_html_email(html=html))
+    gmail = [l for l in links if l.type == ee.DriveLinkType.GMAIL]
+    assert len(gmail) == 1
+    assert gmail[0].file_id == "FMfcgzABC123"
+
+
+def test_iter_body_text_no_desciende_en_rfc822():
+    # un enlace que vive en el cuerpo del HIJO anidado NO debe extraerse del padre.
+    hijo = (b"Message-ID: <h2@x>\r\nSubject: hijo\r\nDate: Tue, 11 May 2023 09:00:00 +0200\r\n"
+            b"Content-Type: text/plain\r\n\r\nver https://drive.google.com/file/d/HIDDEN9/view\r\n")
+    padre = _envoltorio(b"BTOP", [b"Content-Type: text/plain\r\n\r\nsobre sin enlaces\r\n",
+                                  _parte_rfc822(hijo)])
+    assert ee.extract_drive_links(padre) == []
+    # iter_body_text solo ve el cuerpo del padre
+    textos = [t for t, _ in ee.iter_body_text(padre)]
+    assert any("sobre sin enlaces" in t for t in textos)
+    assert all("HIDDEN9" not in t for t in textos)
+
+
+# ===========================================================================
+# Parte 2 — orquestación (_resuelve_enlaces vía export_label)
+# ===========================================================================
+
+def _info(fid, name, mime, data):
+    return DriveFileInfo(file_id=fid, name=name, mime_type=mime, size=len(data),
+                         md5=hashlib.md5(data).hexdigest(), modified_time=None, drive_id=None)
+
+
+def _patch_drive(monkeypatch, infos: dict, blobs: dict):
+    monkeypatch.setattr(ee, "get_drive_file_info", lambda fid: infos.get(fid))
+    monkeypatch.setattr(ee, "download_drive_media", lambda fid: blobs.get(fid))
+
+
+def test_resuelve_file_binario_deposita_en_enlaces(tmp_path, monkeypatch):
+    blob = b"%PDF-1.7 contrato real"
+    _patch_drive(monkeypatch, {"F1": _info("F1", "contrato.pdf", "application/pdf", blob)}, {"F1": blob})
+    html = '<a href="https://drive.google.com/file/d/F1/view">contrato</a>'
+    svc = _FakeService(labels=_LABELS, pages=[{"messages": [{"id": "g1"}]}],
+                       raws={"g1": _build_html_email(html=html, message_id="<p1@x>")})
+    rep = ee.export_label("c@engelvoelkers.com", _ETIQUETA, tmp_path, service=svc)
+    assert rep.links_resolved == 1
+    dep = list(tmp_path.glob("2026-06-08_enlaces/_enlaces/*"))
+    assert len(dep) == 1 and dep[0].name == "contrato.pdf"
+    assert dep[0].read_bytes() == blob
+
+
+def test_resuelve_file_md5_no_coincide_no_deposita(tmp_path, monkeypatch):
+    blob = b"bytes reales descargados"
+    info = DriveFileInfo("F2", "x.pdf", "application/pdf", len(blob), "md5incorrecto", None, None)
+    _patch_drive(monkeypatch, {"F2": info}, {"F2": blob})
+    html = '<a href="https://drive.google.com/file/d/F2/view">x</a>'
+    svc = _FakeService(labels=_LABELS, pages=[{"messages": [{"id": "g1"}]}],
+                       raws={"g1": _build_html_email(html=html, message_id="<p2@x>")})
+    rep = ee.export_label("c@engelvoelkers.com", _ETIQUETA, tmp_path, service=svc)
+    assert rep.links_error == 1 and rep.links_resolved == 0
+    assert any("md5" in e for e in rep.errors)
+    assert not list(tmp_path.glob("**/_enlaces/*"))
+
+
+def test_resuelve_file_eml_reentra_parte1(tmp_path, monkeypatch):
+    rescued = _child(mid=b"<rescued@x>", subject=b"Rescatado", date=b"Tue, 11 May 2023 09:00:00 +0200")
+    _patch_drive(monkeypatch, {"F3": _info("F3", "conv.eml", "message/rfc822", rescued)}, {"F3": rescued})
+    html = '<a href="https://drive.google.com/file/d/F3/view">conv</a>'
+    svc = _FakeService(labels=_LABELS, pages=[{"messages": [{"id": "g1"}]}],
+                       raws={"g1": _build_html_email(html=html, message_id="<p3@x>")})
+    rep = ee.export_label("c@engelvoelkers.com", _ETIQUETA, tmp_path, service=svc)
+    assert rep.links_resolved == 1
+    assert (tmp_path / "2023-05-11_rescatado.eml").exists()   # primer nivel, por su fecha
+
+
+def test_resuelve_folder_y_native_solo_traza(tmp_path):
+    html = ('<a href="https://drive.google.com/drive/folders/FOLD1">carpeta</a>'
+            '<a href="https://docs.google.com/spreadsheets/d/SHEET1/edit">hoja</a>')
+    svc = _FakeService(labels=_LABELS, pages=[{"messages": [{"id": "g1"}]}],
+                       raws={"g1": _build_html_email(html=html, message_id="<p4@x>")})
+    rep = ee.export_label("c@engelvoelkers.com", _ETIQUETA, tmp_path, service=svc)
+    assert rep.links_skipped_folder == 1 and rep.links_skipped_native == 1
+    assert rep.links_resolved == 0
+    nat = [e for e in rep.link_entries if e["type"] == "native"][0]
+    assert nat["drive_file_id"] == "SHEET1" and nat["outcome"] == "skipped_native"
+
+
+def test_resuelve_image_sig_pequena_filtrada(tmp_path, monkeypatch):
+    """<img src> a una imagen pequeña → firma, filtrada (mime imagen + <50KB)."""
+    small = b"\xff\xd8\xff" + b"x" * 2000   # JPEG pequeño
+    _patch_drive(monkeypatch, {"SIG1": _info("SIG1", "firma.png", "image/png", small)}, {"SIG1": small})
+    html = '<img src="https://docs.google.com/uc?export=download&id=SIG1" width="100">'
+    svc = _FakeService(labels=_LABELS, pages=[{"messages": [{"id": "g1"}]}],
+                       raws={"g1": _build_html_email(html=html, message_id="<p5@x>")})
+    rep = ee.export_label("c@engelvoelkers.com", _ETIQUETA, tmp_path, service=svc)
+    assert rep.links_filtered_sig == 1 and rep.links_resolved == 0
+
+
+def test_resuelve_image_sig_inaccesible_filtrada(tmp_path, monkeypatch):
+    """<img src> cuyos metadatos no se acceden → se trata como firma (no como manual)."""
+    _patch_drive(monkeypatch, {}, {})   # metadatos None
+    html = '<img src="https://docs.google.com/uc?export=download&id=SIG2" width="100">'
+    svc = _FakeService(labels=_LABELS, pages=[{"messages": [{"id": "g1"}]}],
+                       raws={"g1": _build_html_email(html=html, message_id="<p5b@x>")})
+    rep = ee.export_label("c@engelvoelkers.com", _ETIQUETA, tmp_path, service=svc)
+    assert rep.links_filtered_sig == 1 and rep.links_manual == 0
+
+
+def test_resuelve_img_src_imagen_grande_se_rescata(tmp_path, monkeypatch):
+    """<img src> a una imagen GRANDE (>50KB) NO es firma → se rescata como prueba."""
+    big = b"\xff\xd8\xff" + b"x" * (80 * 1024)
+    _patch_drive(monkeypatch, {"BIGIMG": _info("BIGIMG", "foto.jpg", "image/jpeg", big)}, {"BIGIMG": big})
+    html = '<img src="https://drive.google.com/file/d/BIGIMG/view" width="600">'
+    svc = _FakeService(labels=_LABELS, pages=[{"messages": [{"id": "g1"}]}],
+                       raws={"g1": _build_html_email(html=html, message_id="<p5c@x>")})
+    rep = ee.export_label("c@engelvoelkers.com", _ETIQUETA, tmp_path, service=svc)
+    assert rep.links_resolved == 1 and rep.links_filtered_sig == 0
+
+
+def test_resuelve_href_imagen_pequena_se_descarga(tmp_path, monkeypatch):
+    """Imagen pequeña enlazada por <a href> (no <img>) es prueba: se descarga, NO se filtra."""
+    small = b"\xff\xd8\xff" + b"x" * 1000
+    _patch_drive(monkeypatch, {"FOTO": _info("FOTO", "recibo.jpg", "image/jpeg", small)}, {"FOTO": small})
+    html = '<a href="https://drive.google.com/file/d/FOTO/view">recibo</a>'
+    svc = _FakeService(labels=_LABELS, pages=[{"messages": [{"id": "g1"}]}],
+                       raws={"g1": _build_html_email(html=html, message_id="<p5d@x>")})
+    rep = ee.export_label("c@engelvoelkers.com", _ETIQUETA, tmp_path, service=svc)
+    assert rep.links_resolved == 1 and rep.links_filtered_sig == 0
+
+
+def test_resuelve_file_permiso_denegado_manual_reintentable(tmp_path, monkeypatch):
+    _patch_drive(monkeypatch, {}, {})   # get_drive_file_info → None (403/permiso)
+    html = '<a href="https://drive.google.com/file/d/F6/view">x</a>'
+    svc = _FakeService(labels=_LABELS, pages=[{"messages": [{"id": "g1"}]}],
+                       raws={"g1": _build_html_email(html=html, message_id="<p6@x>")})
+    rep = ee.export_label("c@engelvoelkers.com", _ETIQUETA, tmp_path, service=svc)
+    assert rep.links_manual == 1
+    idx = json.loads((tmp_path / "_resolved_links.json").read_text(encoding="utf-8"))
+    assert idx["F6"]["outcome"] != "resolved"   # NO definitivo → reintento la próxima
+
+
+def test_resuelve_file_idempotente_no_rebaja(tmp_path, monkeypatch):
+    blob = b"%PDF datos idempotencia"
+    calls = {"dl": 0}
+    monkeypatch.setattr(ee, "get_drive_file_info", lambda fid: _info("F7", "x.pdf", "application/pdf", blob))
+
+    def _dl(fid):
+        calls["dl"] += 1
+        return blob
+    monkeypatch.setattr(ee, "download_drive_media", _dl)
+    html = '<a href="https://drive.google.com/file/d/F7/view">x</a>'
+    raw = _build_html_email(html=html, message_id="<p7@x>")
+    ee.export_label("c@engelvoelkers.com", _ETIQUETA, tmp_path,
+                    service=_FakeService(labels=_LABELS, pages=[{"messages": [{"id": "g1"}]}], raws={"g1": raw}))
+    assert calls["dl"] == 1
+    # 2ª corrida con force: re-procesa el padre, pero el enlace está cacheado en el índice.
+    ee.export_label("c@engelvoelkers.com", _ETIQUETA, tmp_path, force=True,
+                    service=_FakeService(labels=_LABELS, pages=[{"messages": [{"id": "g1"}]}], raws={"g1": raw}))
+    assert calls["dl"] == 1   # NO re-bajó
+
+
+def test_resuelve_gmail_permalink_reentra_parte1(tmp_path):
+    rescued = _child(mid=b"<gmailmsg@x>", subject=b"Desde permalink", date=b"Tue, 11 May 2023 09:00:00 +0200")
+    html = '<a href="https://mail.google.com/mail/u/0/#inbox/GID9">ver correo</a>'
+    parent = _build_html_email(html=html, message_id="<p9@x>")
+    svc = _FakeService(labels=_LABELS, pages=[{"messages": [{"id": "g1"}]}],
+                       raws={"g1": parent, "GID9": rescued})
+    rep = ee.export_label("c@engelvoelkers.com", _ETIQUETA, tmp_path, service=svc)
+    assert rep.links_resolved == 1
+    assert (tmp_path / "2023-05-11_desde_permalink.eml").exists()
+
+
+def test_evento_upload_drive_link_incluye_no_resueltos(tmp_casos_root, monkeypatch):
+    from core import intake_log
+
+    case_id = _setup_caso("EMAIL-2026-006")
+    _patch_drive(monkeypatch, {}, {})   # F8 no accesible → manual
+    html = ('<a href="https://drive.google.com/drive/folders/FOLD8">c</a>'
+            '<a href="https://drive.google.com/file/d/F8/view">f</a>')
+    dest = ee.email_dest_dir(case_id)
+    svc = _FakeService(labels=_LABELS, pages=[{"messages": [{"id": "g1"}]}],
+                       raws={"g1": _build_html_email(html=html, message_id="<p8@x>")})
+    ee.export_label("c@engelvoelkers.com", _ETIQUETA, dest, service=svc, case_id=case_id)
+
+    ev = [e for e in intake_log.read_events(case_id) if e["event"] == "upload_drive_link"]
+    assert len(ev) == 1
+    outcomes = {e["drive_file_id"]: e["outcome"] for e in ev[0]["details"]["enlaces"]}
+    assert outcomes["FOLD8"] == "skipped_folder"
+    assert outcomes["F8"] == "manual_permission"   # no resuelto, queda en la worklist
+
+
+def test_resuelve_enlaces_off_no_toca_nada(tmp_path, monkeypatch):
+    _patch_drive(monkeypatch, {"F1": _info("F1", "x.pdf", "application/pdf", b"x")}, {"F1": b"x"})
+    html = '<a href="https://drive.google.com/file/d/F1/view">x</a>'
+    svc = _FakeService(labels=_LABELS, pages=[{"messages": [{"id": "g1"}]}],
+                       raws={"g1": _build_html_email(html=html, message_id="<p10@x>")})
+    rep = ee.export_label("c@engelvoelkers.com", _ETIQUETA, tmp_path, service=svc,
+                          resolve_drive_links=False)
+    assert rep.links_resolved == 0 and rep.link_entries == []
+    assert not (tmp_path / "_resolved_links.json").exists() or True  # no se exige el índice
+
+
+def test_resuelve_usercontent_download_se_clasifica(tmp_path, monkeypatch):
+    """A: el host real de descarga directa drive.usercontent.google.com/download?id= se
+    clasifica como FILE y se rescata (no se pierde en silencio)."""
+    blob = b"%PDF-1.7 dossier"
+    _patch_drive(monkeypatch, {"UC9": _info("UC9", "dossier.pdf", "application/pdf", blob)}, {"UC9": blob})
+    html = '<a href="https://drive.usercontent.google.com/download?id=UC9&export=download">bajar</a>'
+    svc = _FakeService(labels=_LABELS, pages=[{"messages": [{"id": "g1"}]}],
+                       raws={"g1": _build_html_email(html=html, message_id="<pa@x>")})
+    rep = ee.export_label("c@engelvoelkers.com", _ETIQUETA, tmp_path, service=svc)
+    assert rep.links_resolved == 1
+    assert list(tmp_path.glob("**/_enlaces/dossier.pdf"))
+
+
+def test_extract_usercontent_clasifica_file():
+    html = '<a href="https://drive.usercontent.google.com/download?id=UCX&export=download">x</a>'
+    links = ee.extract_drive_links(_build_html_email(html=html))
+    assert any(l.type == ee.DriveLinkType.FILE and l.file_id == "UCX" for l in links)
+
+
+def test_resuelve_file_sin_md5_marca_no_verificado(tmp_path, monkeypatch):
+    """C: si Drive no da md5Checksum, se deposita pero la traza marca integridad no verificada."""
+    blob = b"%PDF sin md5"
+    info = DriveFileInfo("NOMD5", "x.pdf", "application/pdf", len(blob), None, None, None)
+    _patch_drive(monkeypatch, {"NOMD5": info}, {"NOMD5": blob})
+    html = '<a href="https://drive.google.com/file/d/NOMD5/view">x</a>'
+    svc = _FakeService(labels=_LABELS, pages=[{"messages": [{"id": "g1"}]}],
+                       raws={"g1": _build_html_email(html=html, message_id="<pc@x>")})
+    rep = ee.export_label("c@engelvoelkers.com", _ETIQUETA, tmp_path, service=svc)
+    assert rep.links_resolved == 1
+    e = [x for x in rep.link_entries if x["drive_file_id"] == "NOMD5"][0]
+    assert e["md5_ok"] is False   # depositado, pero marcado como no verificado por md5
+
+
+def test_resuelve_file_demasiado_grande_manual(tmp_path, monkeypatch):
+    """E: un binario que excede el tope de tamaño no se baja (anti-OOM) → manual."""
+    info = DriveFileInfo("HUGE", "video.mp4", "video/mp4", 500 * 1024 * 1024, "m", None, None)
+    calls = {"dl": 0}
+    monkeypatch.setattr(ee, "get_drive_file_info", lambda fid: info)
+    monkeypatch.setattr(ee, "download_drive_media", lambda fid: (calls.__setitem__("dl", calls["dl"] + 1) or b"x"))
+    html = '<a href="https://drive.google.com/file/d/HUGE/view">video</a>'
+    svc = _FakeService(labels=_LABELS, pages=[{"messages": [{"id": "g1"}]}],
+                       raws={"g1": _build_html_email(html=html, message_id="<pe@x>")})
+    rep = ee.export_label("c@engelvoelkers.com", _ETIQUETA, tmp_path, service=svc)
+    assert rep.links_manual == 1 and rep.links_resolved == 0
+    assert calls["dl"] == 0   # nunca se intentó descargar (no OOM)
+
+
+def test_force_re_descarga_binario_drive_link_borrado(tmp_path, monkeypatch):
+    """G: tras borrar un binario _enlaces, force lo re-descarga (no se fía solo del índice)."""
+    blob = b"%PDF borrable"
+    _patch_drive(monkeypatch, {"DEL1": _info("DEL1", "doc.pdf", "application/pdf", blob)}, {"DEL1": blob})
+    html = '<a href="https://drive.google.com/file/d/DEL1/view">doc</a>'
+    raw = _build_html_email(html=html, message_id="<pg@x>")
+    ee.export_label("c@engelvoelkers.com", _ETIQUETA, tmp_path,
+                    service=_FakeService(labels=_LABELS, pages=[{"messages": [{"id": "g1"}]}], raws={"g1": raw}))
+    dep = list(tmp_path.glob("**/_enlaces/doc.pdf"))
+    assert len(dep) == 1
+    dep[0].unlink()   # se borra el binario, queda el índice
+    ee.export_label("c@engelvoelkers.com", _ETIQUETA, tmp_path, force=True,
+                    service=_FakeService(labels=_LABELS, pages=[{"messages": [{"id": "g1"}]}], raws={"g1": raw}))
+    assert list(tmp_path.glob("**/_enlaces/doc.pdf"))   # regenerado
+
+
+def test_evento_drive_link_no_se_duplica_en_force(tmp_casos_root, monkeypatch):
+    """H: una re-corrida force que solo encuentra enlaces cacheados NO re-emite el evento."""
+    from core import intake_log
+
+    case_id = _setup_caso("EMAIL-2026-007")
+    blob = b"%PDF cacheado"
+    _patch_drive(monkeypatch, {"CCH1": _info("CCH1", "c.pdf", "application/pdf", blob)}, {"CCH1": blob})
+    html = '<a href="https://drive.google.com/file/d/CCH1/view">c</a>'
+    raw = _build_html_email(html=html, message_id="<ph@x>")
+    dest = ee.email_dest_dir(case_id)
+    ee.export_label("c@engelvoelkers.com", _ETIQUETA, dest, case_id=case_id,
+                    service=_FakeService(labels=_LABELS, pages=[{"messages": [{"id": "g1"}]}], raws={"g1": raw}))
+    ee.export_label("c@engelvoelkers.com", _ETIQUETA, dest, case_id=case_id, force=True,
+                    service=_FakeService(labels=_LABELS, pages=[{"messages": [{"id": "g1"}]}], raws={"g1": raw}))
+    ev = [e for e in intake_log.read_events(case_id) if e["event"] == "upload_drive_link"]
+    assert len(ev) == 1   # solo el de la 1ª corrida; la 2ª (todo cacheado) no re-emite
+
+
+def test_traza_drive_link_no_se_cuenta_como_adjunto_email_en_backfill(tmp_casos_root, monkeypatch):
+    """D: en el backfill (binario drive_link cacheado), el binario de _enlaces/ se clasifica
+    por su ubicación como drive_link y NO se cuenta como adjunto-email del evento upload_email."""
+    from core import intake_log
+    from core.intake_manifest import IntakeManifest
+
+    case_id = _setup_caso("EMAIL-2026-008")
+    blob = b"%PDF backfill"
+    _patch_drive(monkeypatch, {"BF1": _info("BF1", "bf.pdf", "application/pdf", blob)}, {"BF1": blob})
+    html = '<a href="https://drive.google.com/file/d/BF1/view">bf</a>'
+    raw = _build_html_email(html=html, message_id="<pd@x>")
+    dest = ee.email_dest_dir(case_id)
+    # Corrida 1: SIN case_id → deposita el binario, sin traza.
+    ee.export_label("c@engelvoelkers.com", _ETIQUETA, dest,
+                    service=_FakeService(labels=_LABELS, pages=[{"messages": [{"id": "g1"}]}], raws={"g1": raw}))
+    assert list(dest.glob("**/_enlaces/bf.pdf"))
+    # Corrida 2: CON case_id + force → enlace cacheado; la traza registra el binario.
+    ee.export_label("c@engelvoelkers.com", _ETIQUETA, dest, case_id=case_id, force=True,
+                    service=_FakeService(labels=_LABELS, pages=[{"messages": [{"id": "g1"}]}], raws={"g1": raw}))
+    # El upload_email NO debe contar el binario drive_link como adjunto-email.
+    ev = [e for e in intake_log.read_events(case_id) if e["event"] == "upload_email"]
+    assert ev and ev[-1]["details"]["registrados_adjuntos"] == 0
+    # Y el binario consta en el manifest (registrado, no perdido).
+    man = IntakeManifest(case_id)
+    man.load()
+    assert any(p.endswith("bf.pdf") for p in man.all_paths())

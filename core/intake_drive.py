@@ -378,6 +378,18 @@ class DriveFolderInfo:
     drive_id: str       # ID del Shared Drive que contiene la carpeta
 
 
+@dataclass
+class DriveFileInfo:
+    """Metadatos básicos de un fichero de Google Drive (Parte 2 — rescate de enlaces)."""
+    file_id: str
+    name: str
+    mime_type: str
+    size: int | None
+    md5: str | None
+    modified_time: str | None
+    drive_id: str | None
+
+
 def _parse_rclone_token_block(stdout: str) -> dict | None:
     """Extrae el dict JSON de la línea ``token = {...}`` de ``rclone config show``.
 
@@ -656,6 +668,99 @@ def get_drive_folder_name(folder_id: str) -> str | None:
     """
     info = get_drive_folder_info(folder_id)
     return info.name if info else None
+
+
+# ---------------------------------------------------------------------------
+# Drive REST a nivel de FICHERO (Parte 2 — rescate de enlaces a Drive)
+# ---------------------------------------------------------------------------
+
+def get_drive_file_info(file_id: str) -> "DriveFileInfo | None":
+    """Metadatos de un fichero del Drive E&V (``files.get``), o ``None`` si falla.
+
+    Reutiliza el access_token de ``gdrive_ev`` (refresh + rate-limit ya resueltos en
+    :func:`_get_drive_access_token`). Degradación limpia: ``None`` ante 401/403/404,
+    red caída, token ausente o ``httpx`` no disponible. Reintenta con backoff solo ante
+    rate-limit (cuota compartida del OAuth client de rclone).
+    """
+    access_token = _get_drive_access_token()
+    if not access_token:
+        return None
+    try:
+        import httpx
+    except ImportError:
+        return None
+
+    for delay in (0.0,) + _RATE_LIMIT_BACKOFF_SECONDS:
+        if delay > 0:
+            time.sleep(delay)
+        try:
+            r = httpx.get(
+                f"https://www.googleapis.com/drive/v3/files/{file_id}",
+                params={
+                    "fields": "id,name,mimeType,size,md5Checksum,modifiedTime,driveId",
+                    "supportsAllDrives": "true",
+                },
+                headers={"Authorization": f"Bearer {access_token}"},
+                timeout=10,
+            )
+        except Exception:
+            return None
+        if r.status_code == 200:
+            try:
+                d = r.json()
+            except Exception:
+                return None
+            raw_size = d.get("size")
+            try:
+                size = int(raw_size) if raw_size is not None else None
+            except (TypeError, ValueError):
+                size = None
+            return DriveFileInfo(
+                file_id=d.get("id", file_id),
+                name=d.get("name", ""),
+                mime_type=d.get("mimeType", ""),
+                size=size,
+                md5=d.get("md5Checksum"),
+                modified_time=d.get("modifiedTime"),
+                drive_id=d.get("driveId"),
+            )
+        if not _is_rate_limit_response(r):
+            return None  # 401/404/permiso/5xx no recuperable
+    return None
+
+
+def download_drive_media(file_id: str) -> bytes | None:
+    """Descarga byte-fiel del contenido de un fichero Drive (``files.get?alt=media``).
+
+    Solo para binarios (un doc nativo de Google devuelve error; no se llama para esos).
+    Devuelve los bytes, o ``None`` ante cualquier fallo (mismo patrón de degradación y
+    retry de rate-limit que :func:`get_drive_file_info`). Timeout amplio: ficheros grandes.
+    """
+    access_token = _get_drive_access_token()
+    if not access_token:
+        return None
+    try:
+        import httpx
+    except ImportError:
+        return None
+
+    for delay in (0.0,) + _RATE_LIMIT_BACKOFF_SECONDS:
+        if delay > 0:
+            time.sleep(delay)
+        try:
+            r = httpx.get(
+                f"https://www.googleapis.com/drive/v3/files/{file_id}",
+                params={"alt": "media", "supportsAllDrives": "true"},
+                headers={"Authorization": f"Bearer {access_token}"},
+                timeout=60,
+            )
+        except Exception:
+            return None
+        if r.status_code == 200:
+            return r.content
+        if not _is_rate_limit_response(r):
+            return None
+    return None
 
 
 # ---------------------------------------------------------------------------

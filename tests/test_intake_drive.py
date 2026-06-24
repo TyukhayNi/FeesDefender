@@ -21,6 +21,7 @@ import pytest
 from core import case_manager
 from core.intake_drive import (
     DriveIntakeError,
+    DriveFileInfo,
     DriveFolderInfo,
     DriveIntakeResult,
     _DRIVE_EV_INPUT_SUBDIR,
@@ -28,6 +29,8 @@ from core.intake_drive import (
     _PULL_MARKER,
     _get_drive_access_token,
     _parse_iso_expiry,
+    download_drive_media,
+    get_drive_file_info,
     get_drive_folder_info,
     parse_drive_url,
     parse_ev_folder_name,
@@ -948,3 +951,66 @@ class TestParseIsoExpiry:
     def test_string_invalido_lanza(self):
         with pytest.raises(ValueError):
             _parse_iso_expiry("no-es-fecha")
+
+
+# ---------------------------------------------------------------------------
+# get_drive_file_info / download_drive_media (Parte 2 — rescate de enlaces)
+# ---------------------------------------------------------------------------
+
+class TestGetDriveFileInfo:
+    def test_ok_devuelve_metadatos(self, monkeypatch):
+        _mock_rclone_token(monkeypatch)
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {
+            "id": "FID1", "name": "offer.pdf", "mimeType": "application/pdf",
+            "size": "12345", "md5Checksum": "abc123", "modifiedTime": "2025-07-23T10:00:00Z",
+            "driveId": "0DRIVE",
+        }
+        with patch("httpx.get", return_value=resp):
+            info = get_drive_file_info("FID1")
+        assert isinstance(info, DriveFileInfo)
+        assert info.file_id == "FID1"
+        assert info.name == "offer.pdf"
+        assert info.mime_type == "application/pdf"
+        assert info.size == 12345
+        assert info.md5 == "abc123"
+        assert info.drive_id == "0DRIVE"
+
+    def test_sin_token_devuelve_none(self, monkeypatch):
+        mock = MagicMock(); mock.returncode = 0
+        mock.stdout = "[gdrive_ev]\nscope = drive\n"; mock.stderr = ""
+        monkeypatch.setattr("subprocess.run", lambda *a, **kw: mock)
+        with patch("httpx.get") as mget:
+            assert get_drive_file_info("FID1") is None
+        mget.assert_not_called()
+
+    def test_404_devuelve_none(self, monkeypatch):
+        _mock_rclone_token(monkeypatch)
+        resp = MagicMock(); resp.status_code = 404
+        with patch("httpx.get", return_value=resp):
+            assert get_drive_file_info("FID1") is None
+
+
+class TestDownloadDriveMedia:
+    def test_ok_devuelve_bytes(self, monkeypatch):
+        _mock_rclone_token(monkeypatch)
+        resp = MagicMock(); resp.status_code = 200; resp.content = b"%PDF-1.7 bytes"
+        with patch("httpx.get", return_value=resp):
+            data = download_drive_media("FID1")
+        assert data == b"%PDF-1.7 bytes"
+
+    def test_403_devuelve_none(self, monkeypatch):
+        _mock_rclone_token(monkeypatch)
+        resp = MagicMock(); resp.status_code = 403; resp.text = "permiso"
+        resp.json.return_value = {"error": {"errors": [{"reason": "insufficientPermissions"}]}}
+        with patch("httpx.get", return_value=resp):
+            assert download_drive_media("FID1") is None
+
+    def test_sin_token_devuelve_none(self, monkeypatch):
+        mock = MagicMock(); mock.returncode = 0
+        mock.stdout = "[gdrive_ev]\nscope = drive\n"; mock.stderr = ""
+        monkeypatch.setattr("subprocess.run", lambda *a, **kw: mock)
+        with patch("httpx.get") as mget:
+            assert download_drive_media("FID1") is None
+        mget.assert_not_called()

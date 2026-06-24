@@ -51,6 +51,10 @@ def main(argv: list[str] | None = None) -> int:
                         action="store_false", default=True,
                         help="No aplanar los emails reenviados como .eml adjunto "
                              "(por defecto SÍ se aplanan a primer nivel).")
+    parser.add_argument("--no-resolver-enlaces", dest="resolver_enlaces",
+                        action="store_false", default=True,
+                        help="No rescatar ficheros enlazados a Drive/Gmail en el cuerpo "
+                             "(por defecto SÍ se rescatan los binarios de descarga directa).")
     args = parser.parse_args(argv)
 
     case_id = resolve_ref(args.ref)
@@ -62,6 +66,7 @@ def main(argv: list[str] | None = None) -> int:
         case_id=case_id, extract_attachments=args.extraer_adjuntos,
         max_workers=args.workers, force=args.force,
         flatten_nested_emails=args.aplanar,
+        resolve_drive_links=args.resolver_enlaces,
     )
     _print_report(report, dest)
     if report.intake_logged:

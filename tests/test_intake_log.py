@@ -13,7 +13,7 @@ línea ``upload_manual`` happy path):
 - ``log_path`` no crea el archivo.
 - ``os.fsync`` se invoca en cada ``append_event`` (resiliencia a crashes
   según M10-Q4).
-- ``INTAKE_EVENTS`` sanity (17 eventos documentados).
+- ``INTAKE_EVENTS`` sanity (18 eventos documentados).
 """
 
 from __future__ import annotations
@@ -176,7 +176,7 @@ def test_append_event_rechaza_evento_desconocido(il, cm):
 
 
 def test_append_event_acepta_todos_los_eventos_canonicos(il, cm):
-    """Smoke: cada uno de los 17 ``INTAKE_EVENTS`` se puede escribir."""
+    """Smoke: cada uno de los ``INTAKE_EVENTS`` se puede escribir."""
     cm.ensure_case("LOG-7")
     for event in il.INTAKE_EVENTS:
         il.append_event("LOG-7", event)
@@ -329,9 +329,9 @@ def test_append_event_invoca_fsync_por_cada_escritura(il, cm, monkeypatch):
 # INTAKE_EVENTS — sanity
 # ---------------------------------------------------------------------------
 
-def test_intake_events_es_frozenset_con_17_eventos(il):
+def test_intake_events_es_frozenset_con_18_eventos(il):
     assert isinstance(il.INTAKE_EVENTS, frozenset)
-    assert len(il.INTAKE_EVENTS) == 17
+    assert len(il.INTAKE_EVENTS) == 18
 
 
 def test_intake_events_contiene_los_canonicos(il):
@@ -340,6 +340,8 @@ def test_intake_events_contiene_los_canonicos(il):
     Los dos últimos (intake_judicial, pendiente_revision) se añadieron con
     el intake judicial automático (2026-06-10). ``cross_source_overlap`` se
     añadió con el intake CRM completo (physical_complete, 2026-06-10).
+    ``upload_drive_link`` se añadió con el rescate de enlaces a Drive (Parte 2,
+    2026-06-24).
     """
     expected = {
         "link_expediente",
@@ -348,6 +350,7 @@ def test_intake_events_contiene_los_canonicos(il):
         "pull_drive_ev",
         "upload_manual",
         "upload_email",
+        "upload_drive_link",
         "upload_whatsapp",
         "upload_entrevista",
         "dedup_skipped",

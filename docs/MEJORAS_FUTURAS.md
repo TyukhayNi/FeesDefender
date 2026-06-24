@@ -1431,3 +1431,46 @@ comportamiento previo.
 
 **Prioridad.** Muy baja — ninguna observada en datos reales; ninguna implica pérdida de
 prueba (a lo sumo duplicación o copia re-serializada marcada para revisión).
+
+---
+
+## 45. Rescate de enlaces a Drive (Parte 2): residuales tras revisión adversarial
+
+**Contexto (2026-06-24, Parte 2 del rescate de correos).**
+`core.email_export` (capa pura `extract_drive_links` + glue `_resuelve_enlaces`) descarga
+byte-fieles los binarios enlazados a Drive en el cuerpo del correo. Una revisión
+adversarial (3 lentes) encontró 1 HIGH + 3 MEDIUM + varios LOW/NIT; **todas se corrigieron
+en el mismo commit con tests** salvo los dos residuales de abajo.
+
+**✅ RESUELTAS en el commit:** host de descarga directa `drive.usercontent.google.com/
+download?id=` clasificado (antes se perdía en silencio); filtro de firma conjuntivo §4
+(`<img src>` AND imagen AND pequeña/inaccesible; las imágenes por `<a href>` nunca se
+filtran como firma); `md5Checksum` ausente → se deposita con `md5_ok=False` +
+`integridad="sin_md5_drive"` (transparencia forense); binario `drive_link` se clasifica por
+su ubicación `_enlaces/` también en el backfill (no se reclasifica como adjunto-email); tope
+anti-OOM por tamaño declarado (`_MAX_DOWNLOAD_BYTES=200 MB` → manual); `_es_eml_bytes`
+endurecido (exige `Message-ID` y descarta magics binarios para no confundir `.txt`/`.csv`
+con correo); `force` re-descarga un binario `_enlaces` borrado (verifica que el cache sigue
+en disco); evento `upload_drive_link` idempotente (no re-emite si todo viene cacheado);
+`links_resolved` no se infla en dedup de `.eml`.
+
+**Residuales aceptados:**
+
+**45.1 — URL de Drive hard-wrapped en `text/plain` (salto de línea real, no soft-break QP)
+trunca el `file_id`.** El soft-break QP se resuelve (policy.default lo decodifica antes del
+regex); pero un cliente que parte una URL larga con un `\n` literal en `text/plain` deja
+`_RE_PLAIN_URL` capturando solo el prefijo del id. *No se pierde la prueba:* el id parcial va
+a `get_drive_file_info` → 404 → `manual_permission` → queda en la worklist del evento
+`upload_drive_link` para revisión manual. *No se aborda* porque reensamblar URLs partidas en
+texto plano es heurístico y arriesgado (podría unir líneas no relacionadas). Poco frecuente
+(el plano asume HTML+QP como vía principal).
+
+**45.2 — `download_drive_media` carga el fichero entero en memoria (`r.content`).** El tope
+`_MAX_DOWNLOAD_BYTES` (45.✅) ya evita el OOM rechazando binarios enormes a manual, pero los
+ficheros por debajo del tope aún se materializan en RAM (y el pool `max_workers=8` puede
+solapar varios). *Mejora si se materializa:* `httpx.stream('GET', …)` volcando por chunks a
+un temporal con md5/sha256 incrementales, en vez de `.content`. Refactor de ~30-40 líneas;
+no urgente con el tope en su sitio.
+
+**Prioridad.** Baja — ninguna implica pérdida silenciosa de prueba (45.1 cae a worklist;
+45.2 está acotada por el tope de tamaño).

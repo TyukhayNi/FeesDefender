@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import base64
 import email
+import hashlib
 import json
 import quopri
 import re
@@ -36,11 +37,14 @@ from dataclasses import dataclass, field
 from email import policy
 from email.message import Message
 from email.utils import parsedate_to_datetime
+from enum import Enum
+from html import unescape
 from pathlib import Path
 from typing import Any, Iterable, Iterator
 
 from . import intake_log
 from .gmail_source import _build_service, _load_credentials
+from .intake_drive import download_drive_media, get_drive_file_info
 from .intake_manifest import IntakeManifest, compute_sha256_bytes
 from .intake_utils import decode_base64url, sanitize_filename
 
@@ -357,6 +361,420 @@ def _aplana_anidados(
 
 
 # ---------------------------------------------------------------------------
+# Capa pura — detección de enlaces a Drive/Gmail en el cuerpo del padre (Parte 2)
+# ---------------------------------------------------------------------------
+
+class DriveLinkType(Enum):
+    FOLDER = "folder"            # /drive/folders/<id>             → no bajar
+    NATIVE = "native"            # /spreadsheets|document|... /d/  → no capturar, nota
+    FILE = "file"                # /file/d/<id>, uc?id=, open?id=  → descargar (por mimeType)
+    IMAGE_SIG = "image_sig"      # <img src=…>                      → firma, filtrar
+    GMAIL = "gmail"              # mail.google.com permalink        → Gmail API (reentra P1)
+
+
+@dataclass(frozen=True)
+class DriveLink:
+    raw_url: str
+    type: DriveLinkType
+    file_id: str
+    from_img: bool               # True si proviene de <img src>, no de <a href>/plano
+
+
+# Patrones de URL de Drive/Docs/Gmail. ``[a-zA-Z0-9_-]`` cubre los IDs de Drive.
+_RE_DRIVE_FOLDER = re.compile(
+    r"drive\.google\.com/drive/(?:u/\d+/)?folders/([a-zA-Z0-9_-]+)", re.IGNORECASE
+)
+_RE_DRIVE_NATIVE = re.compile(
+    r"(?:docs|drive)\.google\.com/(?:spreadsheets|document|presentation)/d/([a-zA-Z0-9_-]+)",
+    re.IGNORECASE,
+)
+_RE_DRIVE_FILE_D = re.compile(
+    r"(?:docs|drive)\.google\.com/file/d/([a-zA-Z0-9_-]+)", re.IGNORECASE
+)
+# uc?id= / open?id= (docs|drive.google.com) y el host real de descarga directa
+# drive.usercontent.google.com/download?id= (al que Drive redirige el clic de "descargar").
+_RE_DRIVE_ID_PARAM = re.compile(
+    r"(?:(?:docs|drive)\.google\.com/(?:uc|open)|drive\.usercontent\.google\.com/download)"
+    r"\b[^\s\"'<>]*?[?&]id=([a-zA-Z0-9_-]+)",
+    re.IGNORECASE,
+)
+_RE_GMAIL_PERMALINK = re.compile(
+    r"mail\.google\.com/mail/[^\s\"'<>]*#[^\s\"'<>]*/([a-zA-Z0-9_-]+)", re.IGNORECASE
+)
+# Atributos href/src de HTML que apuntan a *.google.com.
+_RE_HTML_ATTR = re.compile(
+    r"""(href|src)\s*=\s*["']([^"']*google\.com/[^"']+)["']""", re.IGNORECASE
+)
+# URLs sueltas en text/plain.
+_RE_PLAIN_URL = re.compile(
+    r"https?://[a-zA-Z0-9.\-]*google\.com/[^\s\"'<>)\]]+", re.IGNORECASE
+)
+
+
+def iter_body_text(raw: bytes) -> Iterator[tuple[str, bool]]:
+    """``(texto_decodificado, es_html)`` por cada parte ``text/*`` hoja del PADRE.
+
+    NO desciende en ``message/rfc822`` (eso es la Parte 1). ``policy.default`` decodifica
+    QP/base64 + charset en ``get_content()``.
+    """
+    msg = _parse_message(raw)
+    for parte in _iter_partes_hoja(msg):
+        if parte.get_content_type() == "message/rfc822":
+            continue
+        if parte.get_content_maintype() != "text":
+            continue
+        try:
+            texto = parte.get_content()
+        except Exception:  # noqa: BLE001 — una parte de texto ilegible no aborta el resto
+            continue
+        yield texto, parte.get_content_subtype() == "html"
+
+
+def _classify_drive_url(url: str, *, from_img: bool) -> tuple[DriveLinkType, str] | None:
+    """Clasifica una URL google → ``(tipo, file_id)``, o ``None`` si no es relevante.
+
+    Una referencia google dentro de ``<img src>`` es una imagen embebida
+    (firma/logo/inline) → ``IMAGE_SIG``. El resto se clasifica por el patrón de URL.
+    """
+    u = url.strip()
+    if from_img:
+        for rx in (_RE_DRIVE_FILE_D, _RE_DRIVE_ID_PARAM, _RE_DRIVE_FOLDER, _RE_DRIVE_NATIVE):
+            m = rx.search(u)
+            if m:
+                return DriveLinkType.IMAGE_SIG, m.group(1)
+        return None
+    for rx, tipo in (
+        (_RE_DRIVE_FOLDER, DriveLinkType.FOLDER),
+        (_RE_DRIVE_NATIVE, DriveLinkType.NATIVE),
+        (_RE_DRIVE_FILE_D, DriveLinkType.FILE),
+        (_RE_DRIVE_ID_PARAM, DriveLinkType.FILE),
+        (_RE_GMAIL_PERMALINK, DriveLinkType.GMAIL),
+    ):
+        m = rx.search(u)
+        if m:
+            return tipo, m.group(1)
+    return None
+
+
+def _registra_link(acc: dict[tuple[DriveLinkType, str], DriveLink], url: str, *, from_img: bool) -> None:
+    clasif = _classify_drive_url(url, from_img=from_img)
+    if clasif is None:
+        return
+    tipo, fid = clasif
+    acc.setdefault((tipo, fid), DriveLink(raw_url=url, type=tipo, file_id=fid, from_img=from_img))
+
+
+def extract_drive_links(raw: bytes) -> list[DriveLink]:
+    """Enlaces Drive/Gmail del cuerpo del padre, clasificados y deduplicados por (tipo, id).
+
+    En HTML lee los atributos ``href``/``src`` (para distinguir ``<a>`` de ``<img>``,
+    firma); en ``text/plain`` lee las URLs sueltas. Desescapa entidades HTML antes de
+    clasificar.
+    """
+    encontrados: dict[tuple[DriveLinkType, str], DriveLink] = {}
+    for texto, es_html in iter_body_text(raw):
+        if es_html:
+            for attr, url in _RE_HTML_ATTR.findall(texto):
+                _registra_link(encontrados, unescape(url), from_img=(attr.lower() == "src"))
+        else:
+            for url in _RE_PLAIN_URL.findall(texto):
+                _registra_link(encontrados, unescape(url), from_img=False)
+    return list(encontrados.values())
+
+
+# ---------------------------------------------------------------------------
+# Glue — rescate de ficheros enlazados a Drive/Gmail (Parte 2)
+# ---------------------------------------------------------------------------
+
+_FIRMA_MAX_BYTES = 50 * 1024            # imágenes < 50 KB → se tratan como firma
+_MAX_DOWNLOAD_BYTES = 200 * 1024 * 1024  # tope anti-OOM; binarios mayores → manual (worklist)
+_GOOGLE_APPS_PREFIX = "application/vnd.google-apps"
+_RESOLVED_LINKS_NAME = "_resolved_links.json"
+
+
+def _load_resolved_links(dest: Path) -> dict[str, Any]:
+    """Índice de idempotencia ``_resolved_links.json`` (``{file_id: {...}}``)."""
+    p = dest / _RESOLVED_LINKS_NAME
+    if not p.is_file():
+        return {}
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _save_resolved_links(dest: Path, index: dict[str, Any]) -> None:
+    (dest / _RESOLVED_LINKS_NAME).write_text(
+        json.dumps(index, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8"
+    )
+
+
+_BINARIO_MAGICS = (b"%PDF", b"PK\x03\x04", b"\xff\xd8\xff", b"\x89PNG", b"GIF8", b"\x1f\x8b")
+
+
+def _es_eml_bytes(data: bytes, info: Any) -> bool:
+    """¿El binario descargado es un email (.eml / message/rfc822)?
+
+    Señal fuerte primero (mimeType / nombre); si no, sniff por bytes endurecido: solo
+    cuando el mime es de texto/desconocido, el contenido NO empieza por una firma binaria
+    conocida, y trae ``Message-ID`` (para no confundir un .txt/.csv con un correo y
+    ensuciar la cronología — ver revisión Parte 2).
+    """
+    if info is not None:
+        if getattr(info, "mime_type", "") == "message/rfc822":
+            return True
+        if (getattr(info, "name", "") or "").lower().endswith(".eml"):
+            return True
+        mt = getattr(info, "mime_type", "") or ""
+        if mt and not (mt.startswith("text/") or mt == "application/octet-stream"):
+            return False  # Drive declara un mime no-texto concreto: no es un email
+    if any(data.startswith(m) for m in _BINARIO_MAGICS):
+        return False
+    head = data[:8192]
+    return b"Message-ID:" in head and (b"From:" in head or b"Subject:" in head)
+
+
+def _deposita_mensaje_rescatado(
+    dest: Path, msg_bytes: bytes, vistos: set[str], procedencia: dict[str, str],
+    report: "ExportReport",
+) -> Path | None:
+    """Deposita un ``.eml`` rescatado a primer nivel (dedup Message-ID) + aplana anidados.
+
+    Reentra en la Parte 1: dedup por ``Message-ID`` (respaldo SHA-256), nombre canónico,
+    y aplanado recursivo de los anidados que traiga. Devuelve la ruta, o ``None`` si ya
+    estaba presente (deduplicado).
+    """
+    mid = message_id_of(msg_bytes)
+    clave = mid or "sha256:" + compute_sha256_bytes(msg_bytes)
+    if clave in vistos:
+        return None
+    vistos.add(clave)
+    ruta = _ruta_unica(dest, eml_filename(parse_headers(msg_bytes)))
+    ruta.write_bytes(msg_bytes)
+    report.files.append(str(ruta.relative_to(dest)))
+    _aplana_anidados(dest, msg_bytes, vistos, procedencia, report)
+    return ruta
+
+
+def _rescata_gmail(
+    link: DriveLink, entry: dict[str, Any], dest: Path, vistos: set[str],
+    procedencia: dict[str, str], report: "ExportReport", gmail_service: Any,
+) -> None:
+    """Resuelve un permalink de Gmail vía ``messages.get(format='raw')`` → reentra P1.
+
+    Best-effort: el ``id`` del fragmento del permalink puede no ser un id de la API; ante
+    cualquier fallo se marca como manual (reintentable), nunca se aborta.
+    """
+    if gmail_service is None:
+        report.links_manual += 1
+        entry["outcome"] = "manual_permission"
+        entry["reason"] = "sin servicio Gmail para resolver el permalink"
+        return
+    try:
+        msg = gmail_service.users().messages().get(
+            userId="me", id=link.file_id, format="raw"
+        ).execute()
+        data = decode_b64url_bytes(msg.get("raw", "")) if msg else b""
+    except Exception as exc:  # noqa: BLE001
+        report.links_manual += 1
+        entry["outcome"] = "manual_permission"
+        entry["reason"] = f"permalink Gmail no resuelto: {exc}"
+        return
+    if not data:
+        report.links_manual += 1
+        entry["outcome"] = "manual_permission"
+        entry["reason"] = "permalink Gmail devolvió vacío"
+        return
+    ruta = _deposita_mensaje_rescatado(dest, data, vistos, procedencia, report)
+    entry["resolved_as"] = "email"
+    if ruta is None:
+        entry["outcome"] = "resolved"
+        entry["dedup"] = True   # ya presente por Message-ID; no infla links_resolved
+        return
+    report.links_resolved += 1
+    entry["outcome"] = "resolved"
+    entry["path"] = str(ruta.relative_to(dest)).replace("\\", "/")
+
+
+def _rescata_file(
+    link: DriveLink, entry: dict[str, Any], dest: Path, parent_stem: str,
+    vistos: set[str], procedencia: dict[str, str], index: dict[str, Any],
+    report: "ExportReport", *, from_img: bool = False,
+) -> None:
+    """Resuelve un enlace FILE/IMAGE_SIG: metadatos → routing por mimeType → descarga byte-fiel.
+
+    ``from_img`` indica que el enlace venía de ``<img src>`` (candidato a firma). El filtro
+    de firma es conjuntivo (§4): proviene de ``<img>`` **y** es imagen **y** es pequeña (o de
+    tamaño desconocido / inaccesible). Una imagen enlazada por ``<a href>`` NUNCA se filtra
+    como firma (es prueba). Idempotencia por ``_resolved_links.json``, reintentando fallos.
+    """
+    fid = link.file_id
+    prev = index.get(fid)
+    if isinstance(prev, dict) and prev.get("outcome") == "resolved":
+        cached_path = prev.get("path")
+        # Solo fiarse del cache si el fichero sigue en disco (force debe restaurar borrados).
+        if not cached_path or (dest / cached_path).exists():
+            entry["outcome"] = "resolved"
+            entry["cached"] = True
+            entry["sha256"] = prev.get("sha256")
+            entry["path"] = cached_path
+            return
+
+    info = get_drive_file_info(fid)
+    if info is None:
+        if from_img:   # imagen inline inaccesible → tratada como firma (no como worklist)
+            report.links_filtered_sig += 1
+            entry["outcome"] = "filtered_signature"
+            entry["reason"] = "imagen inline inaccesible (tratada como firma)"
+            return
+        report.links_manual += 1
+        entry["outcome"] = "manual_permission"
+        entry["reason"] = "metadatos no accesibles (permiso/expiración/red)"
+        index[fid] = {"outcome": "manual_permission"}     # NO definitivo → reintento
+        return
+    entry["name"] = info.name
+    entry["mime_type"] = info.mime_type
+
+    if info.mime_type == _GOOGLE_APPS_PREFIX + ".folder":
+        report.links_skipped_folder += 1
+        entry["outcome"] = "skipped_folder"
+        return
+    if info.mime_type.startswith(_GOOGLE_APPS_PREFIX):
+        report.links_skipped_native += 1
+        entry["outcome"] = "skipped_native"
+        return
+    # Firma (§4): de <img src> AND imagen AND pequeña/tamaño-desconocido. Las de <a href> no.
+    if from_img and info.mime_type.startswith("image/") and (info.size is None or info.size < _FIRMA_MAX_BYTES):
+        report.links_filtered_sig += 1
+        entry["outcome"] = "filtered_signature"
+        return
+    # Tope anti-OOM por tamaño declarado: binarios enormes → manual (worklist).
+    if info.size is not None and info.size > _MAX_DOWNLOAD_BYTES:
+        report.links_manual += 1
+        entry["outcome"] = "manual_permission"
+        entry["reason"] = f"binario demasiado grande ({info.size} bytes) → descarga manual"
+        index[fid] = {"outcome": "manual_permission"}
+        return
+
+    data = download_drive_media(fid)
+    if data is None:
+        report.links_manual += 1
+        entry["outcome"] = "manual_permission"
+        entry["reason"] = "descarga fallida (permiso/expiración/red)"
+        index[fid] = {"outcome": "manual_permission"}
+        return
+    if info.md5:
+        got = hashlib.md5(data).hexdigest()
+        if got != info.md5:
+            report.links_error += 1
+            entry["outcome"] = "error"
+            entry["reason"] = f"md5 no coincide (esperado {info.md5}, obtenido {got})"
+            report.errors.append(f"enlace {fid}: md5 no coincide; no se deposita")
+            return  # NO depositar bytes corruptos
+        entry["md5_ok"] = True
+    else:
+        # Drive no dio md5Checksum: se deposita igual pero la traza lo marca como NO
+        # verificado contra Drive (la integridad propia queda en el SHA-256 del manifest).
+        entry["md5_ok"] = False
+        entry["integridad"] = "sin_md5_drive"
+
+    # .eml rescatado → reentra Parte 1 (primer nivel, dedup Message-ID).
+    if _es_eml_bytes(data, info):
+        ruta = _deposita_mensaje_rescatado(dest, data, vistos, procedencia, report)
+        entry["resolved_as"] = "email"
+        if ruta is None:
+            entry["outcome"] = "resolved"
+            entry["dedup"] = True   # ya presente por Message-ID; no infla ni cachea path None
+            return
+        report.links_resolved += 1
+        entry["outcome"] = "resolved"
+        entry["path"] = str(ruta.relative_to(dest)).replace("\\", "/")
+        index[fid] = {"outcome": "resolved", "md5": info.md5, "resolved_as": "email",
+                      "path": entry["path"]}
+        return
+
+    # Otro binario → subcarpeta _enlaces/ del padre; dedup SHA cross-source en _emit_traza.
+    enlaces_dir = dest / parent_stem / "_enlaces"
+    enlaces_dir.mkdir(parents=True, exist_ok=True)
+    ruta = _ruta_unica(enlaces_dir, _sanea_nombre_fichero(info.name or fid, fallback=fid))
+    ruta.write_bytes(data)
+    sha = compute_sha256_bytes(data)
+    rel = str(ruta.relative_to(dest)).replace("\\", "/")
+    report.drive_link_paths.add(rel)
+    report.links_resolved += 1
+    entry["outcome"] = "resolved"
+    entry["resolved_as"] = "binary"
+    entry["sha256"] = sha
+    entry["path"] = rel
+    index[fid] = {"outcome": "resolved", "md5": info.md5, "sha256": sha,
+                  "resolved_as": "binary", "path": rel}
+
+
+def _resuelve_enlaces(
+    dest: Path, raw_bytes: bytes, *, parent_mid: str, vistos: set[str],
+    procedencia: dict[str, str], index: dict[str, Any], report: "ExportReport",
+    gmail_service: Any = None,
+) -> None:
+    """Rescata los ficheros enlazados a Drive/Gmail en el cuerpo del padre (Parte 2).
+
+    Carpetas y docs nativos: solo nota en traza. Binarios de descarga directa:
+    byte-fieles, verificados por md5, filtrando firmas; los ``.eml`` reentran en la
+    Parte 1. Un enlace problemático no aborta el resto (try/except por enlace).
+    """
+    parent_stem = Path(eml_filename(parse_headers(raw_bytes))).stem
+    for link in extract_drive_links(raw_bytes):
+        entry: dict[str, Any] = {
+            "parent_message_id": parent_mid or None, "raw_url": link.raw_url,
+            "type": link.type.value, "drive_file_id": link.file_id, "from_img": link.from_img,
+        }
+        try:
+            if link.type is DriveLinkType.FOLDER:
+                report.links_skipped_folder += 1
+                entry["outcome"] = "skipped_folder"
+            elif link.type is DriveLinkType.NATIVE:
+                report.links_skipped_native += 1
+                entry["outcome"] = "skipped_native"
+            elif link.type is DriveLinkType.GMAIL:
+                _rescata_gmail(link, entry, dest, vistos, procedencia, report, gmail_service)
+            else:  # FILE o IMAGE_SIG: resolución unificada por metadatos (filtro de firma §4)
+                _rescata_file(
+                    link, entry, dest, parent_stem, vistos, procedencia, index, report,
+                    from_img=link.from_img,
+                )
+        except Exception as exc:  # noqa: BLE001 — un enlace problemático no aborta el resto
+            report.links_error += 1
+            entry.setdefault("outcome", "error")
+            entry["reason"] = str(exc)
+            report.errors.append(f"enlace {link.file_id}: {exc}")
+        report.link_entries.append(entry)
+
+
+def _emit_traza_enlaces(case_id: str, account: str, label: str, report: "ExportReport") -> None:
+    """Emite el evento ``upload_drive_link`` con una entrada por enlace (incl. no resueltos).
+
+    Idempotente: si todos los enlaces de esta corrida vienen cacheados del índice (re-corrida
+    con ``force`` sin novedad), no re-emite el evento (evita duplicados en la traza)."""
+    if not report.link_entries or all(e.get("cached") for e in report.link_entries):
+        return
+    intake_log.append_event(
+        case_id,
+        "upload_drive_link",
+        details={
+            "account": account,
+            "label": label,
+            "resueltos": report.links_resolved,
+            "skipped_folder": report.links_skipped_folder,
+            "skipped_native": report.links_skipped_native,
+            "filtrados_firma": report.links_filtered_sig,
+            "manuales": report.links_manual,
+            "errores": report.links_error,
+            "enlaces": report.link_entries,
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
 # Idempotencia — Message-ID ya presentes en destino
 # ---------------------------------------------------------------------------
 
@@ -454,17 +872,31 @@ class ExportReport:
     attachments: int = 0
     nested_flattened: int = 0   # emails anidados extraídos a primer nivel
     nested_dedup: int = 0       # emails anidados saltados por Message-ID duplicado
+    links_resolved: int = 0         # binarios de Drive descargados (o .eml rescatados)
+    links_skipped_folder: int = 0   # enlaces a carpeta (no se bajan)
+    links_skipped_native: int = 0   # docs nativos de Google (no se capturan)
+    links_filtered_sig: int = 0     # imágenes de firma filtradas
+    links_manual: int = 0           # no resueltos (permiso/expiración) → worklist, reintentable
+    links_error: int = 0            # error duro (md5 no coincide, etc.)
     files: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    link_entries: list[dict[str, Any]] = field(default_factory=list)  # traza por enlace
+    drive_link_paths: set[str] = field(default_factory=set)           # rel paths source="drive_link"
     intake_logged: bool = False
 
     def resumen(self) -> str:
+        enlaces = (
+            f"{self.links_resolved} enlaces rescatados "
+            f"({self.links_skipped_folder} carpetas, {self.links_skipped_native} nativos, "
+            f"{self.links_filtered_sig} firmas, {self.links_manual} manuales, "
+            f"{self.links_error} con error)"
+        )
         return (
             f"etiqueta {self.label!r} ({self.account}): {self.total_in_label} mensajes; "
             f"{self.written} escritos, {self.skipped} ya presentes, "
             f"{self.attachments} adjuntos extraídos, "
             f"{self.nested_flattened} emails anidados aplanados ({self.nested_dedup} dup), "
-            f"{len(self.errors)} errores"
+            f"{enlaces}, {len(self.errors)} errores"
         )
 
 
@@ -479,6 +911,7 @@ def export_label(
     max_workers: int = 8,
     force: bool = False,
     flatten_nested_emails: bool = True,
+    resolve_drive_links: bool = True,
 ) -> ExportReport:
     """Exporta TODOS los mensajes de una etiqueta a ``dest_dir`` como ``.eml`` fieles.
 
@@ -543,6 +976,7 @@ def export_label(
         # Dedup por Message-ID (correctness): solo si hay algo que bajar (evita el
         # escaneo de disco en re-corridas que no descargan nada).
         vistos = existing_message_ids(dest)
+        link_index = _load_resolved_links(dest)
         nuevos_gids: list[str] = []
 
         def _flatten_safe(gid: str, raw: bytes) -> None:
@@ -555,6 +989,18 @@ def export_label(
             except Exception as exc:  # noqa: BLE001 — un fallo de aplanado no aborta la corrida
                 report.errors.append(f"{gid}: aplanado de anidados falló: {exc}")
 
+        def _links_safe(gid: str, raw: bytes, mid: str) -> None:
+            """Rescata enlaces a Drive/Gmail sin que un fallo aborte la corrida."""
+            if not resolve_drive_links:
+                return
+            try:
+                _resuelve_enlaces(
+                    dest, raw, parent_mid=mid, vistos=vistos, procedencia=procedencia,
+                    index=link_index, report=report, gmail_service=service,
+                )
+            except Exception as exc:  # noqa: BLE001
+                report.errors.append(f"{gid}: resolución de enlaces falló: {exc}")
+
         for gid, raw_bytes in _iter_raws(
             candidates, service=service, creds=creds, max_workers=max_workers, report=report
         ):
@@ -562,10 +1008,11 @@ def export_label(
             if mid and mid in vistos:
                 report.skipped += 1
                 nuevos_gids.append(gid)  # bajado y resuelto (duplicado): no re-bajar
-                # El padre ya está en disco, pero sus hijos anidados pueden faltar
-                # (p. ej. tras borrar un hijo y re-exportar con force): reconciliarlos.
-                # _aplana_anidados es idempotente (dedup por Message-ID + _ruta_unica).
+                # El padre ya está en disco, pero sus hijos anidados / enlaces pueden
+                # faltar (p. ej. tras borrar un hijo y re-exportar con force):
+                # reconciliarlos. Ambos pasos son idempotentes.
                 _flatten_safe(gid, raw_bytes)
+                _links_safe(gid, raw_bytes, mid)
                 continue
             if mid:
                 vistos.add(mid)
@@ -578,14 +1025,17 @@ def export_label(
             report.written += 1
             nuevos_gids.append(gid)
             _flatten_safe(gid, raw_bytes)
+            _links_safe(gid, raw_bytes, mid)
 
         index[account] = sorted(ya_gids | set(nuevos_gids))
         _save_export_index(dest, index)
+        _save_resolved_links(dest, link_index)
 
     write_indices(dest)
 
     if case_id:
         _emit_traza(case_id, dest, account, label, report, procedencia)
+        _emit_traza_enlaces(case_id, account, label, report)
 
     return report
 
@@ -744,7 +1194,16 @@ def _emit_traza(
                     if cmid and parent_mid:
                         disk_proc.setdefault(cmid, parent_mid)
             sha = compute_sha256_bytes(data)
-            if es_eml:
+            # Un binario rescatado de un enlace a Drive (Parte 2) se identifica por su
+            # ubicación (subcarpeta ``_enlaces/``) además de por ``drive_link_paths`` de
+            # la corrida — así el backfill de un binario CACHEADO (que no repuebla
+            # ``drive_link_paths``) NO se reclasifica como adjunto-email. Dedup cross-source
+            # SHA-256; no entra en CRONOLOGIA (no es .eml) ni cuenta como adjunto-email.
+            if rel in report.drive_link_paths or fichero.parent.name == "_enlaces":
+                manifest.register(
+                    sha, rel, source="drive_link", kind="drive_link", filename=fichero.name
+                )
+            elif es_eml:
                 mid = message_id_of(data)
                 manifest.register(sha, rel, source="email", message_id=mid, kind="email")
                 nuevos_eml.append({"message_id": mid, "sha256": sha, "path": rel})
