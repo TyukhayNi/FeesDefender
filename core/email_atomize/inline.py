@@ -465,3 +465,50 @@ def segmentar(raw: bytes) -> Segmentacion:
         return segmentar_html(html)
     c = extraer_cuerpo(raw, conservar_resto=True)
     return segmentar_texto(c.base_sin_recortar or c.texto)
+
+
+# ---------------------------------------------------------------------------
+# Clasificación de confianza + guardas anti-misatribución (DD §4)
+# ---------------------------------------------------------------------------
+
+_RE_EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _email_valido(s: str) -> bool:
+    return bool(_RE_EMAIL.match((s or "").strip()))
+
+
+def clasificar(
+    anc: "Anclaje | None", fecha_portador_iso: str, *, estructural: bool, ambigua: bool,
+    discrepancia: bool = False, mojibake: bool = False,
+) -> tuple[str, str]:
+    """``(confianza, motivo)``. Prime directive: cualquier predicado fallido demota un
+    nivel, NUNCA redondea hacia arriba. ``alta-reconstruida`` reservada a atribución de
+    cabecera verificada y estructural; lo demás → revisión."""
+    if anc is None or not (anc.de or (anc.fecha_iso and anc.fecha_iso != "0000-00-00")
+                           or anc.asunto):
+        return "baja", "sin_cabecera"
+    if mojibake:
+        return "baja", "mojibake"
+    email_ok = _email_valido(anc.de)
+    fecha_ok = bool(anc.fecha_iso and anc.fecha_iso != "0000-00-00")
+    # Guarda dura: fecha de la cita POSTERIOR al portador → imposible, nunca alta.
+    if (fecha_ok and fecha_portador_iso and fecha_portador_iso != "0000-00-00"
+            and anc.fecha_iso > fecha_portador_iso):
+        return "media", "fecha_incoherente"
+    if not email_ok and not fecha_ok:
+        return "baja", "sin_remitente_ni_fecha"
+    if email_ok and fecha_ok and estructural and not ambigua and not discrepancia:
+        return "alta-reconstruida", "ok"
+    motivos = []
+    if not email_ok:
+        motivos.append("sin_email")
+    if not fecha_ok:
+        motivos.append("sin_fecha")
+    if not estructural:
+        motivos.append("no_estructural")
+    if ambigua:
+        motivos.append("ambiguedad_profundidad")
+    if discrepancia:
+        motivos.append("discrepancia_html_plano")
+    return "media", ",".join(motivos) or "media"

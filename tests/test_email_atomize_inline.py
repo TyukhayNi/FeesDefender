@@ -129,3 +129,35 @@ def test_seg_html_intercalada_no_segmenta():
 def test_seg_html_token_conservacion_no_inventa():
     s = I.segmentar_html("<blockquote>" + "x " * 5 + "</blockquote>")
     assert isinstance(s.respuesta_intercalada, bool)
+
+
+# ---------------------------------------------------------------------------
+# T8 — clasificación de confianza + guardas anti-misatribución
+# ---------------------------------------------------------------------------
+
+def test_clasifica_alta_reconstruida_requiere_todo():
+    anc = I.Anclaje(de="a@x.com", fecha_iso="2020-01-01")
+    conf, motivo = I.clasificar(anc, "2020-02-01", estructural=True, ambigua=False)
+    assert conf == "alta-reconstruida"
+
+
+def test_clasifica_fecha_posterior_al_portador_no_alta():
+    anc = I.Anclaje(de="a@x.com", fecha_iso="2020-03-01")
+    conf, motivo = I.clasificar(anc, "2020-02-01", estructural=True, ambigua=False)
+    assert conf == "media" and "fecha_incoherente" in motivo
+
+
+def test_clasifica_headerless_es_baja_sin_remitente():
+    conf, motivo = I.clasificar(None, "2020-02-01", estructural=False, ambigua=False)
+    assert conf == "baja"
+
+
+def test_clasifica_sin_estructura_o_ambigua_demota_a_media():
+    anc = I.Anclaje(de="a@x.com", fecha_iso="2020-01-01")
+    assert I.clasificar(anc, "2020-02-01", estructural=False, ambigua=False)[0] == "media"
+    assert I.clasificar(anc, "2020-02-01", estructural=True, ambigua=True)[0] == "media"
+
+
+def test_clasifica_email_invalido_no_promueve():
+    anc = I.Anclaje(de="no-es-email", fecha_iso="2020-01-01")
+    assert I.clasificar(anc, "2020-02-01", estructural=True, ambigua=False)[0] in ("media", "baja")
