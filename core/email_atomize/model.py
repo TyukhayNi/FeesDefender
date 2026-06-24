@@ -71,3 +71,25 @@ class RegistroMensaje:
     charset_recuperado: bool = False
     mojibake_marcado: bool = False
     raw: bytes = b""                   # bytes verbatim del mensaje (para sha y verbatim)
+    # --- Layer B (reconstrucción inline) ---
+    fingerprint: str = ""              # "fp:…" identidad de contenido (mensajes sin Message-ID)
+    reconstruido_desde_cita: bool = False
+    fecha_inferida: bool = False
+    ambiguedad_profundidad: bool = False
+    en_revision: bool = False
+    reconstruido_de: str = ""          # MSG-id del portador del que se reconstruyó
+
+
+@dataclass
+class SegmentoEnterrado:
+    """Fila de la cola de revisión / puntero a un segmento citado NO promovido."""
+
+    portador_msg_id: str = ""
+    estilo: str = ""               # outlook_es | apple_es | fwd_line | html_quote | quote_gt
+    profundidad: int = 0
+    de: str = ""
+    fecha_iso: str = "0000-00-00"
+    confianza: str = ""            # media | baja
+    motivo: str = ""               # sin_cabecera | quote_only | discrepancia_html_plano | …
+    extracto: str = ""             # primeras ~200 chars del segmento
+    fingerprint: str = ""
