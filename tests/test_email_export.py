@@ -554,3 +554,309 @@ def test_descarga_paralela_escribe_todo_en_orden(tmp_path, monkeypatch):
         "2026-06-12_asunto_2.eml",
         "2026-06-13_asunto_3.eml",
     ]
+
+
+# ===========================================================================
+# Parte 1 — aplanado byte-fiel de emails anidados (message/rfc822)
+# ===========================================================================
+#
+# Construye MIME crudo a mano: la fidelidad al bit exige controlar los bytes
+# exactos (as_bytes() normaliza CRLF→LF y repliega cabeceras, así que no sirve).
+
+def _envoltorio(boundary: bytes, partes: list[bytes], *, mid: bytes = b"<padre@ev>") -> bytes:
+    cab = (b"Message-ID: " + mid + b"\r\nSubject: RV bloque\r\n"
+           b"Date: Mon, 08 Jun 2026 12:00:00 +0200\r\nFrom: consultor@engelvoelkers.com\r\n"
+           b"MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=\"" + boundary + b"\"\r\n\r\n")
+    cuerpo = b""
+    for p in partes:
+        cuerpo += b"--" + boundary + b"\r\n" + p
+    return cab + cuerpo + b"--" + boundary + b"--\r\n"
+
+
+def _parte_rfc822(eml: bytes, *, b64: bool = False) -> bytes:
+    if b64:
+        return (b"Content-Type: message/rfc822\r\nContent-Transfer-Encoding: base64\r\n\r\n"
+                + base64.encodebytes(eml))
+    return (b"Content-Type: message/rfc822\r\nContent-Disposition: attachment; "
+            b"filename=\"c.eml\"\r\n\r\n" + eml)
+
+
+def _child(*, mid: bytes, subject: bytes, date: bytes, body: bytes = b"Cuerpo.\r\n") -> bytes:
+    """Construye los bytes RFC822 de un .eml hijo con cabeceras propias."""
+    return (b"Message-ID: " + mid + b"\r\nSubject: " + subject + b"\r\nDate: " + date
+            + b"\r\nFrom: contacto@externo.com\r\n"
+            b"Content-Type: text/plain; charset=\"utf-8\"\r\n\r\n" + body)
+
+
+# --- Capa pura (unitarios literales del plano §5) --------------------------
+
+def test_nested_original_byte_fiel_7bit_y_nombre():
+    inner = (b"Message-ID: <leaf@x>\r\nSubject: RE: consulado\r\n"
+             b"Date: Tue, 11 May 2023 09:00:00 +0200\r\nFrom: per01a@example.invalid\r\n"
+             b"Content-Type: text/plain; charset=\"utf-8\"\r\n\r\nCuerpo jardin.\tfin\r\n")
+    raw = _envoltorio(b"BTOP", [b"Content-Type: text/plain\r\n\r\nhola\r\n", _parte_rfc822(inner)])
+    res = list(ee.iter_nested_originals(raw))
+    assert len(res) == 1
+    child, parent_mid = res[0]
+    assert child == inner[:-2]                  # byte-original (el CRLF final es del delimitador)
+    assert parent_mid == "padre@ev"
+    assert ee.eml_filename(ee.parse_headers(child)) == "2023-05-11_consulado.eml"
+
+
+def test_nested_original_base64():
+    inner = b"Subject: hijo b64\r\nDate: Wed, 01 Jan 2025 00:00:00 +0100\r\n\r\nbody\xc3\xb1\r\n"
+    raw = _envoltorio(b"BTOP", [_parte_rfc822(inner, b64=True)])
+    res = list(ee.iter_nested_originals(raw))
+    assert len(res) == 1 and res[0][0] == inner
+
+
+def test_nested_original_recursivo_nieto_y_provenance_encadenada():
+    nieto = (b"Message-ID: <nieto@x>\r\nSubject: nieto\r\n"
+             b"Date: Mon, 02 Feb 2022 00:00:00 +0100\r\n\r\nz\r\n")
+    medio = _envoltorio(b"BMED", [_parte_rfc822(nieto)], mid=b"<medio@x>")   # boundary distinto
+    raw = _envoltorio(b"BTOP", [_parte_rfc822(medio)])
+    mids = {ee.message_id_of(b): p for b, p in ee.iter_nested_originals(raw)}
+    assert set(mids) == {"medio@x", "nieto@x"}
+    assert mids["medio@x"] == "padre@ev"
+    assert mids["nieto@x"] == "medio@x"
+
+
+def test_nested_original_lf_only():
+    inner = b"Subject: lf\nDate: Tue, 11 May 2023 09:00:00 +0200\n\ncuerpo\n"
+    raw = (b"Content-Type: multipart/mixed; boundary=\"B\"\n\n--B\n"
+           b"Content-Type: message/rfc822\n\n" + inner + b"--B--\n")
+    res = list(ee.iter_nested_originals(raw))
+    assert len(res) == 1 and res[0][0] == inner[:-1]
+
+
+def test_fallback_reserializa_y_avisa(monkeypatch):
+    padre = PyEmailMessage()
+    padre["Message-ID"] = "<p5@ev>"; padre["Subject"] = "padre"
+    padre["Date"] = "Mon, 08 Jun 2026 12:00:00 +0200"; padre.set_content("x")
+    hijo = PyEmailMessage()
+    hijo["Subject"] = "hijo"; hijo["Date"] = "Tue, 11 May 2023 09:00:00 +0200"; hijo.set_content("y")
+    padre.add_attachment(hijo, filename="c.eml")
+
+    monkeypatch.setattr(ee, "iter_nested_originals", lambda raw: iter(()))   # fuerza el disparador
+    rep = ee.ExportReport(account="c@ev", label="L")
+    got = ee._nested_con_fallback(padre.as_bytes(), rep)
+    assert len(got) == 1
+    assert len(rep.errors) == 1 and "p5@ev" in rep.errors[0]
+    assert ee.eml_filename(ee.parse_headers(got[0][0])) == "2023-05-11_hijo.eml"
+
+
+def test_split_eml_salta_rfc822_y_no_explota_pdf_interno():
+    hijo = PyEmailMessage()
+    hijo["Subject"] = "h"; hijo["Date"] = "Tue, 11 May 2023 09:00:00 +0200"; hijo.set_content("z")
+    hijo.add_attachment(b"%PDF in", maintype="application", subtype="pdf", filename="int.pdf")
+    padre = PyEmailMessage()
+    padre["Subject"] = "p"; padre["Date"] = "Mon, 08 Jun 2026 12:00:00 +0200"; padre.set_content("x")
+    padre.add_attachment(hijo, filename="c.eml")
+    padre.add_attachment(b"%PDF dir", maintype="application", subtype="pdf", filename="dir.pdf")
+    _, adjuntos = ee.split_eml(padre.as_bytes())
+    assert {fn for fn, _m, _d in adjuntos} == {"dir.pdf"}
+
+
+# --- End-to-end con _FakeService (export_label) ----------------------------
+
+def test_export_label_aplana_anidados_a_primer_nivel(tmp_path):
+    """(a) padre + N hijos → N+1 .eml a primer nivel, nested_flattened==N."""
+    h1 = _child(mid=b"<leaf1@x>", subject=b"Conversacion uno", date=b"Tue, 11 May 2023 09:00:00 +0200")
+    h2 = _child(mid=b"<leaf2@x>", subject=b"Conversacion dos", date=b"Sat, 02 Mar 2024 12:00:00 +0200")
+    padre = _envoltorio(b"BTOP", [b"Content-Type: text/plain\r\n\r\nsobre\r\n",
+                                  _parte_rfc822(h1), _parte_rfc822(h2)])
+    raws = {"g1": padre}
+    svc = _FakeService(labels=_LABELS, pages=[{"messages": [{"id": "g1"}]}], raws=raws)
+    rep = ee.export_label("c@engelvoelkers.com", _ETIQUETA, tmp_path, service=svc)
+
+    assert rep.written == 1
+    assert rep.nested_flattened == 2
+    assert rep.nested_dedup == 0
+    nombres = sorted(p.name for p in tmp_path.glob("*.eml"))
+    assert nombres == [
+        "2023-05-11_conversacion_uno.eml",
+        "2024-03-02_conversacion_dos.eml",
+        "2026-06-08_rv_bloque.eml",
+    ]
+
+
+def test_export_label_dedup_hijo_en_dos_padres(tmp_path):
+    """(b) mismo hijo (Message-ID) en dos padres → una sola copia, nested_dedup>=1."""
+    hijo = _child(mid=b"<comun@x>", subject=b"Compartida", date=b"Tue, 11 May 2023 09:00:00 +0200")
+    p1 = _envoltorio(b"BTOPA", [_parte_rfc822(hijo)], mid=b"<p1@ev>")
+    p2 = _envoltorio(b"BTOPB", [_parte_rfc822(hijo)], mid=b"<p2@ev>")
+    raws = {"g1": p1, "g2": p2}
+    svc = _FakeService(labels=_LABELS, pages=[{"messages": [{"id": "g1"}, {"id": "g2"}]}], raws=raws)
+    rep = ee.export_label("c@engelvoelkers.com", _ETIQUETA, tmp_path, service=svc)
+
+    assert rep.written == 2                # los dos padres
+    assert rep.nested_flattened == 1       # el hijo, una vez
+    assert rep.nested_dedup >= 1           # la 2ª aparición, colapsada
+    assert len(list(tmp_path.glob("*.eml"))) == 3   # 2 padres + 1 hijo
+    assert len(list(tmp_path.glob("2023-05-11_compartida*.eml"))) == 1
+
+
+def test_export_label_cronologia_ordena_hijo_por_su_fecha(tmp_path):
+    """(c) CRONOLOGIA.md ordena el hijo por SU fecha (anterior al padre)."""
+    hijo = _child(mid=b"<viejo@x>", subject=b"Antiguo", date=b"Tue, 11 May 2023 09:00:00 +0200")
+    padre = _envoltorio(b"BTOP", [_parte_rfc822(hijo)])
+    svc = _FakeService(labels=_LABELS, pages=[{"messages": [{"id": "g1"}]}], raws={"g1": padre})
+    ee.export_label("c@engelvoelkers.com", _ETIQUETA, tmp_path, service=svc)
+
+    crono = (tmp_path / "CRONOLOGIA.md").read_text(encoding="utf-8")
+    assert crono.index("2023-05-11") < crono.index("2026-06-08")   # hijo antes que padre
+
+
+def test_export_label_no_aplanar_solo_el_padre(tmp_path):
+    """(d) flatten_nested_emails=False → solo el padre a primer nivel."""
+    hijo = _child(mid=b"<leaf@x>", subject=b"Hijo", date=b"Tue, 11 May 2023 09:00:00 +0200")
+    padre = _envoltorio(b"BTOP", [_parte_rfc822(hijo)])
+    svc = _FakeService(labels=_LABELS, pages=[{"messages": [{"id": "g1"}]}], raws={"g1": padre})
+    rep = ee.export_label("c@engelvoelkers.com", _ETIQUETA, tmp_path, service=svc,
+                          flatten_nested_emails=False)
+
+    assert rep.nested_flattened == 0
+    assert sorted(p.name for p in tmp_path.glob("*.eml")) == ["2026-06-08_rv_bloque.eml"]
+
+
+def test_export_label_traza_forwarded_in(tmp_casos_root):
+    """(e) el evento upload_email lleva forwarded_in con el Message-ID del padre."""
+    from core import intake_log
+
+    case_id = _setup_caso("EMAIL-2026-004")
+    hijo = _child(mid=b"<leaf@x>", subject=b"Hijo reenviado", date=b"Tue, 11 May 2023 09:00:00 +0200")
+    padre = _envoltorio(b"BTOP", [_parte_rfc822(hijo)])
+    dest = ee.email_dest_dir(case_id)
+    svc = _FakeService(labels=_LABELS, pages=[{"messages": [{"id": "g1"}]}], raws={"g1": padre})
+    rep = ee.export_label("c@engelvoelkers.com", _ETIQUETA, dest, service=svc, case_id=case_id)
+
+    assert rep.intake_logged is True
+    eventos = [e for e in intake_log.read_events(case_id) if e["event"] == "upload_email"]
+    assert len(eventos) == 1
+    por_mid = {m["message_id"]: m for m in eventos[0]["details"]["mensajes"]}
+    assert por_mid["leaf@x"]["forwarded_in"] == "padre@ev"
+    assert por_mid["padre@ev"]["forwarded_in"] is None
+
+
+# ---------------------------------------------------------------------------
+# Parte 1 — correcciones de la revisión adversarial (robustez/fidelidad/traza)
+# ---------------------------------------------------------------------------
+
+def test_nested_boundary_como_contenido_no_trunca_ni_pierde():
+    """A: un `--<boundary>` que aparece como CONTENIDO (no a inicio de línea) en el
+    cuerpo de un hijo NO debe truncarlo ni descartar los hijos siguientes."""
+    h1 = _child(mid=b"<c1@x>", subject=b"Uno", date=b"Tue, 11 May 2023 09:00:00 +0200",
+                body=b"texto con --BTOP-- citado en medio, no es delimitador\r\n")
+    h2 = _child(mid=b"<c2@x>", subject=b"Dos", date=b"Sat, 02 Mar 2024 12:00:00 +0200")
+    raw = _envoltorio(b"BTOP", [_parte_rfc822(h1), _parte_rfc822(h2)])
+    res = list(ee.iter_nested_originals(raw))
+    assert [ee.message_id_of(b) for b, _ in res] == ["c1@x", "c2@x"]   # ambos, en orden
+    assert res[0][0] == h1[:-2]    # byte-fiel: c1 conserva el `--BTOP--` citado completo
+    assert res[1][0] == h2[:-2]
+
+
+def test_split_headers_body_elige_separador_mas_temprano():
+    """D: padre con separador de cabeceras LF (\\n\\n) que transporta un hijo con
+    separadores CRLF (\\r\\n\\r\\n) → debe partir por el \\n\\n del padre (el primero),
+    no por el \\r\\n\\r\\n del hijo (posterior)."""
+    inner = b"Message-ID: <crlf@x>\r\nSubject: hijo crlf\r\nDate: Tue, 11 May 2023 09:00:00 +0200\r\n\r\ncuerpo\r\n"
+    raw = (b"Content-Type: multipart/mixed; boundary=\"B\"\n\n--B\n"
+           b"Content-Type: message/rfc822\n\n" + inner + b"--B--\n")
+    res = list(ee.iter_nested_originals(raw))
+    assert len(res) == 1
+    assert ee.message_id_of(res[0][0]) == "crlf@x"
+
+
+def test_export_label_aplana_anidados_excepcion_no_aborta_corrida(tmp_path, monkeypatch):
+    """B: una excepción en _aplana_anidados se registra y NO aborta el resto de la corrida."""
+    h = _child(mid=b"<leaf@x>", subject=b"Hijo", date=b"Tue, 11 May 2023 09:00:00 +0200")
+    padre = _envoltorio(b"BTOP", [_parte_rfc822(h)])
+    simple = _build_raw(message_id="<simple@x>", subject="Suelto")
+    raws = {"g1": padre, "g2": simple}
+    pages = [{"messages": [{"id": "g1"}, {"id": "g2"}]}]
+
+    def boom(*a, **k):
+        raise OSError("disco lleno simulado")
+    monkeypatch.setattr(ee, "_aplana_anidados", boom)
+
+    svc = _FakeService(labels=_LABELS, pages=pages, raws=raws)
+    rep = ee.export_label("c@engelvoelkers.com", _ETIQUETA, tmp_path, service=svc)
+
+    assert rep.written == 2                              # ambos padres escritos
+    assert any("disco lleno" in e for e in rep.errors)   # el fallo se registró
+    assert (tmp_path / "INDICE.md").exists()             # los índices se regeneraron
+    assert (tmp_path / "2026-06-08_rv_bloque.eml").exists()
+    assert (tmp_path / "0000-00-00_suelto.eml").exists() or len(list(tmp_path.glob("*.eml"))) == 2
+
+
+def test_force_re_aplana_hijo_borrado(tmp_path):
+    """C: tras borrar SOLO un hijo aplanado (padre intacto), force=True lo regenera."""
+    hijo = _child(mid=b"<leaf@x>", subject=b"Hijo Borrado", date=b"Tue, 11 May 2023 09:00:00 +0200")
+    padre = _envoltorio(b"BTOP", [_parte_rfc822(hijo)])
+    svc1 = _FakeService(labels=_LABELS, pages=[{"messages": [{"id": "g1"}]}], raws={"g1": padre})
+    ee.export_label("c@engelvoelkers.com", _ETIQUETA, tmp_path, service=svc1)
+
+    hijo_path = tmp_path / "2023-05-11_hijo_borrado.eml"
+    assert hijo_path.exists()
+    hijo_path.unlink()                                   # se borra solo el hijo
+
+    svc2 = _FakeService(labels=_LABELS, pages=[{"messages": [{"id": "g1"}]}], raws={"g1": padre})
+    rep = ee.export_label("c@engelvoelkers.com", _ETIQUETA, tmp_path, service=svc2, force=True)
+
+    assert hijo_path.exists()              # regenerado
+    assert rep.nested_flattened == 1
+
+
+def test_traza_forwarded_in_backfill_desde_disco(tmp_casos_root):
+    """E: en el backfill (export sin case_id, luego con case_id y candidates vacío),
+    forwarded_in se reconstruye desde el disco (no queda None)."""
+    from core import intake_log
+
+    case_id = _setup_caso("EMAIL-2026-005")
+    hijo = _child(mid=b"<leaf@x>", subject=b"Hijo BF", date=b"Tue, 11 May 2023 09:00:00 +0200")
+    padre = _envoltorio(b"BTOP", [_parte_rfc822(hijo)])
+    dest = ee.email_dest_dir(case_id)
+
+    # Corrida 1: SIN case_id → escribe padre + hijo, sin traza.
+    ee.export_label("c@engelvoelkers.com", _ETIQUETA, dest,
+                    service=_FakeService(labels=_LABELS, pages=[{"messages": [{"id": "g1"}]}], raws={"g1": padre}))
+    # Corrida 2: CON case_id → candidates vacío (índice persistente) → traza backfill.
+    rep = ee.export_label("c@engelvoelkers.com", _ETIQUETA, dest, case_id=case_id,
+                          service=_FakeService(labels=_LABELS, pages=[{"messages": [{"id": "g1"}]}], raws={"g1": padre}))
+
+    assert rep.written == 0
+    assert rep.intake_logged is True
+    eventos = [e for e in intake_log.read_events(case_id) if e["event"] == "upload_email"]
+    por_mid = {m["message_id"]: m for m in eventos[-1]["details"]["mensajes"]}
+    assert por_mid["leaf@x"]["forwarded_in"] == "padre@ev"   # reconstruido desde disco
+    assert por_mid["padre@ev"]["forwarded_in"] is None
+
+
+def test_boundary_reusado_entre_niveles_cae_a_fallback_con_aviso():
+    """44.1: si un hijo reutiliza el MISMO boundary que el padre, el rebanado byte-fiel
+    puede truncar sin avisar (mismo conteo). Se detecta el reuso de boundary y se cae al
+    fallback re-serializado del parser + aviso en report.errors (nunca truncado silencioso)."""
+    hijo = _envoltorio(b"B", [b"Content-Type: text/plain\r\n\r\ncuerpo interno largo del hijo\r\n"],
+                       mid=b"<reuse@x>")
+    padre = _envoltorio(b"B", [_parte_rfc822(hijo)])     # MISMO boundary "B" en padre e hijo
+    rep = ee.ExportReport(account="c@ev", label="L")
+    got = ee._nested_con_fallback(padre, rep)
+    assert any(ee.message_id_of(b) == "reuse@x" for b, _ in got)         # el hijo se recupera
+    assert rep.errors and any("boundary" in e.lower() or "reutiliz" in e.lower() for e in rep.errors)
+
+
+def test_aplana_hijo_sin_message_id_dedup_por_contenido(tmp_path):
+    """44.2: un hijo SIN Message-ID idéntico, reenviado en dos padres en la misma corrida,
+    colapsa en un fichero por dedup de respaldo por SHA-256 (no se multiplica)."""
+    hijo = (b"Subject: sin id\r\nDate: Tue, 11 May 2023 09:00:00 +0200\r\n"
+            b"Content-Type: text/plain; charset=\"utf-8\"\r\n\r\ncuerpo identico del hijo\r\n")
+    p1 = _envoltorio(b"BA", [_parte_rfc822(hijo)], mid=b"<pa@x>")
+    p2 = _envoltorio(b"BB", [_parte_rfc822(hijo)], mid=b"<pb@x>")
+    svc = _FakeService(labels=_LABELS, pages=[{"messages": [{"id": "g1"}, {"id": "g2"}]}],
+                       raws={"g1": p1, "g2": p2})
+    rep = ee.export_label("c@engelvoelkers.com", _ETIQUETA, tmp_path, service=svc)
+
+    assert rep.written == 2                 # los dos padres
+    assert rep.nested_flattened == 1        # el hijo sin id, una sola vez
+    assert rep.nested_dedup >= 1
+    assert len(list(tmp_path.glob("2023-05-11_sin_id*.eml"))) == 1

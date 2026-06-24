@@ -26,8 +26,10 @@ alta nueva). **Solo lectura:** no marca mensajes como leídos ni escribe en Gmai
 
 from __future__ import annotations
 
+import base64
 import email
 import json
+import quopri
 import re
 import unicodedata
 from dataclasses import dataclass, field
@@ -35,7 +37,7 @@ from email import policy
 from email.message import Message
 from email.utils import parsedate_to_datetime
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Iterator
 
 from . import intake_log
 from .gmail_source import _build_service, _load_credentials
@@ -128,18 +130,48 @@ def _sanea_nombre_fichero(nombre: str, *, fallback: str) -> str:
     return sanitize_filename(nombre or "", mode="file", fallback=fallback)
 
 
+def _payload_message(parte: Message) -> Message | None:
+    """El ``Message`` anidado de una parte ``message/rfc822``, o ``None``."""
+    payload = parte.get_payload()
+    if isinstance(payload, list):
+        payload = payload[0] if payload else None
+    return payload if isinstance(payload, Message) else None
+
+
+def _iter_partes_hoja(msg: Message) -> Iterator[Message]:
+    """Itera partes hoja tratando ``message/rfc822`` como hoja (NO desciende en ella).
+
+    Lo usa :func:`split_eml` para extraer adjuntos binarios sin explotar los PDF
+    que viajan DENTRO de un email anidado (esos se quedan embebidos en su ``.eml``).
+    """
+    if msg.get_content_type() == "message/rfc822":
+        yield msg
+        return
+    if msg.get_content_maintype() == "multipart":
+        for sub in msg.iter_parts():
+            yield from _iter_partes_hoja(sub)
+        return
+    yield msg
+
+
 def split_eml(raw: bytes) -> tuple[bytes, list[tuple[str, str, bytes]]]:
     """Parte el mensaje crudo en ``(eml_fiel, [(filename, mime, bytes)])``.
 
     El primer elemento son los bytes RFC822 **tal cual** (el ``.eml`` fiel). El
     segundo, los adjuntos decodificados (partes con disposición ``attachment`` o
-    con nombre de fichero).
+    con nombre de fichero). Las partes ``message/rfc822`` (emails anidados) NO se
+    devuelven como adjuntos: las gestiona el aplanado (:func:`_aplana_anidados`).
+
+    .. note:: Cambio frente a la versión basada en ``msg.walk()``: ``message/rfc822``
+       se trata como hoja, así que los adjuntos que viajan DENTRO de un email anidado
+       ya no se extraen sueltos por aquí (se obtienen aplanando el ``.eml`` hijo, que
+       los lleva embebidos). Ver ``docs/MEJORAS_FUTURAS.md`` §44.5.
     """
     msg = _parse_message(raw)
     adjuntos: list[tuple[str, str, bytes]] = []
-    for parte in msg.walk():
-        if parte.get_content_maintype() == "multipart":
-            continue
+    for parte in _iter_partes_hoja(msg):
+        if parte.get_content_type() == "message/rfc822":
+            continue  # los emails anidados los gestiona el aplanado, no split_eml
         filename = parte.get_filename()
         disposicion = parte.get_content_disposition()
         if disposicion != "attachment" and not filename:
@@ -150,6 +182,178 @@ def split_eml(raw: bytes) -> tuple[bytes, list[tuple[str, str, bytes]]]:
         nombre = _sanea_nombre_fichero(filename or "", fallback="adjunto")
         adjuntos.append((nombre, parte.get_content_type(), payload))
     return raw, adjuntos
+
+
+# ---------------------------------------------------------------------------
+# Capa pura — aplanado byte-fiel de emails anidados (message/rfc822)
+# ---------------------------------------------------------------------------
+
+def _split_headers_body(block: bytes) -> tuple[bytes, bytes]:
+    """Parte un bloque MIME en (cabeceras, cuerpo) por el separador en blanco.
+
+    Elige el separador por la POSICIÓN más temprana, no por el orden de la lista: un
+    bloque con line-endings mezclados (un padre con ``\\n\\n`` que transporta un hijo
+    con ``\\r\\n\\r\\n``) debe partir por el separador REAL (el primero del bloque), no
+    por el primer patrón que se pruebe. En empate (imposible entre estos dos) prima
+    ``\\r\\n\\r\\n``.
+    """
+    candidatos = [
+        (i, sep)
+        for i, sep in ((block.find(b"\r\n\r\n"), b"\r\n\r\n"), (block.find(b"\n\n"), b"\n\n"))
+        if i != -1
+    ]
+    if not candidatos:
+        return block, b""
+    i, sep = min(candidatos, key=lambda t: (t[0], 0 if t[1] == b"\r\n\r\n" else 1))
+    return block[:i], block[i + len(sep):]
+
+
+def _split_mime_parts(body: bytes, boundary: bytes) -> list[bytes]:
+    """Trozos del cuerpo entre delimitadores ``--boundary`` ANCLADOS a inicio de línea.
+
+    RFC 2046: el delimitador es una línea completa (al inicio del cuerpo o precedido de
+    CRLF/LF). Anclar a inicio de línea evita partir por un ``--boundary`` que aparezca
+    como CONTENIDO citado dentro del cuerpo de una parte (p. ej. el MIME crudo de otro
+    mensaje en una cadena de reenvío), que con un ``split`` ingenuo truncaba el ``.eml``
+    y podía descartar las partes siguientes sin avisar. Cada trozo conserva, como en un
+    ``split`` ingenuo, el CRLF inicial del delimitador y el CRLF final que precede al
+    delimitador siguiente (el caller los recorta). Preámbulo y epílogo se descartan.
+    """
+    delim = b"--" + boundary
+    chunks: list[bytes] = []
+    start: int | None = None
+    i = body.find(delim)
+    while i != -1:
+        if i == 0 or body[i - 1:i] in (b"\n", b"\r"):       # delimitador a inicio de línea
+            if start is not None:
+                chunks.append(body[start:i])
+            start = i + len(delim)
+        i = body.find(delim, i + len(delim))
+    return chunks
+
+
+def _iter_raw_rfc822(block: bytes) -> Iterator[tuple[bytes, str]]:
+    """``(cuerpo_verbatim, transfer_encoding)`` por cada parte ``message/rfc822``.
+
+    Trata ``rfc822`` como hoja (no desciende). El cuerpo es el byte MIME tal cual,
+    rebanado del crudo (sin pasar por el parser, que normaliza CRLF).
+    """
+    headers, body = _split_headers_body(block)
+    m = _parse_message(headers + b"\r\n\r\n")
+    if m.get_content_type() == "message/rfc822":
+        yield body, (m.get("content-transfer-encoding") or "").strip().lower()
+        return
+    if m.get_content_maintype() == "multipart":
+        boundary = m.get_boundary()
+        if not boundary:
+            return
+        for ch in _split_mime_parts(body, boundary.encode()):
+            ch = ch[2:] if ch.startswith(b"\r\n") else ch[1:] if ch[:1] in (b"\n", b"\r") else ch
+            if ch.endswith(b"\r\n"):                        # el CRLF final es del delimitador
+                ch = ch[:-2]
+            elif ch[-1:] in (b"\n", b"\r"):
+                ch = ch[:-1]
+            yield from _iter_raw_rfc822(ch)
+
+
+def _decode_cte(body: bytes, cte: str) -> bytes:
+    if cte == "base64":
+        return base64.b64decode(body)
+    if cte == "quoted-printable":
+        return quopri.decodestring(body)
+    return body                                            # 7bit/8bit/binary → verbatim
+
+
+def iter_nested_originals(raw: bytes) -> Iterator[tuple[bytes, str]]:
+    """``(eml_original_bytes, parent_message_id)`` por cada email anidado, recursivo.
+
+    Byte-fiel: rebana el crudo y decodifica el transfer-encoding → el ``.eml`` hijo
+    EXACTO como viajó. Desciende a las hojas (email dentro de email dentro de email).
+    """
+    parent_mid = message_id_of(raw)
+    for body, cte in _iter_raw_rfc822(raw):
+        try:
+            child = _decode_cte(body, cte)
+        except Exception:  # noqa: BLE001 — un transfer-encoding corrupto no aborta el resto
+            continue
+        if not child.strip():
+            continue
+        yield child, parent_mid
+        yield from iter_nested_originals(child)             # nietos, también byte-originales
+
+
+def _nested_con_fallback(raw: bytes, report: "ExportReport") -> list[tuple[bytes, str]]:
+    """Emails anidados byte-originales, con red de seguridad.
+
+    Camino feliz (boundaries únicos por nivel): devuelve el rebanado byte-fiel. Cae al
+    fallback re-serializado del parser (``as_bytes()``) + aviso en ``report.errors`` en
+    dos casos: (a) el rebanado no halla nada pero el parser sí ve ``message/rfc822``;
+    (b) un ``boundary`` se **reutiliza entre niveles** de anidamiento — ahí el rebanado
+    por bytes puede truncar el ``.eml`` sin avisar (mismo conteo, contenido cortado),
+    mientras que el parser lo resuelve con su pila de boundaries. Nunca trunca en
+    silencio: en el peor caso, copia re-serializada marcada para revisión.
+    """
+    found = list(iter_nested_originals(raw))
+    # Pre-filtro barato: sin partes message/rfc822 no hay anidados ni coste de parse.
+    if b"message/rfc822" not in raw:
+        return found
+    msg = _parse_message(raw)
+    boundaries = [
+        b for b in (p.get_boundary() for p in msg.walk() if p.get_content_maintype() == "multipart")
+        if b
+    ]
+    boundary_reuse = len(boundaries) != len(set(boundaries))
+    if found and not boundary_reuse:
+        return found  # byte-fiel y sin colisión de boundary entre niveles
+    pmid = message_id_of(raw)
+    fb: list[tuple[bytes, str]] = []
+    for parte in msg.walk():
+        if parte.get_content_type() == "message/rfc822":
+            inner = _payload_message(parte)
+            if inner is not None:
+                fb.append((inner.as_bytes(), pmid))
+    if fb and boundary_reuse:
+        report.errors.append(
+            f"boundary reutilizado entre niveles en {pmid or '(sin id)'}; "
+            f"{len(fb)} email(s) re-serializados (no byte-fieles, revisar)."
+        )
+    elif fb:
+        report.errors.append(
+            f"aplanado byte-fiel falló para {pmid or '(sin id)'}; "
+            f"{len(fb)} email(s) guardados re-serializados (revisar)."
+        )
+    return fb if fb else found
+
+
+def _aplana_anidados(
+    dest: Path,
+    raw_bytes: bytes,
+    vistos: set[str],
+    procedencia: dict[str, str],
+    report: "ExportReport",
+) -> None:
+    """Extrae a primer nivel cada email anidado (byte-original), dedup por Message-ID.
+
+    Dedup por ``Message-ID``; cuando falta (raro: ``.eml`` viejos o clientes que lo
+    omiten), respaldo por SHA-256 del contenido byte-original, de modo que el mismo
+    bloque reenviado por dos vías en una corrida no se multiplique. La clave (mid o
+    ``sha256:…``) se guarda en ``vistos``, que solo se reconstruye intra-corrida desde
+    los ``Message-ID`` del disco; la idempotencia cross-corrida para hijos sin
+    Message-ID no está garantizada (ver ``docs/MEJORAS_FUTURAS.md`` §44.3)."""
+    for inner_bytes, parent_mid in _nested_con_fallback(raw_bytes, report):
+        mid = message_id_of(inner_bytes)
+        clave = mid or "sha256:" + compute_sha256_bytes(inner_bytes)
+        if clave in vistos:
+            report.nested_dedup += 1
+            continue
+        vistos.add(clave)
+        if mid and parent_mid:
+            procedencia[mid] = parent_mid
+        nombre = eml_filename(parse_headers(inner_bytes))
+        ruta = _ruta_unica(dest, nombre)
+        ruta.write_bytes(inner_bytes)
+        report.files.append(str(ruta.relative_to(dest)))
+        report.nested_flattened += 1
 
 
 # ---------------------------------------------------------------------------
@@ -248,6 +452,8 @@ class ExportReport:
     written: int = 0
     skipped: int = 0
     attachments: int = 0
+    nested_flattened: int = 0   # emails anidados extraídos a primer nivel
+    nested_dedup: int = 0       # emails anidados saltados por Message-ID duplicado
     files: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     intake_logged: bool = False
@@ -256,7 +462,9 @@ class ExportReport:
         return (
             f"etiqueta {self.label!r} ({self.account}): {self.total_in_label} mensajes; "
             f"{self.written} escritos, {self.skipped} ya presentes, "
-            f"{self.attachments} adjuntos extraídos, {len(self.errors)} errores"
+            f"{self.attachments} adjuntos extraídos, "
+            f"{self.nested_flattened} emails anidados aplanados ({self.nested_dedup} dup), "
+            f"{len(self.errors)} errores"
         )
 
 
@@ -270,6 +478,7 @@ def export_label(
     extract_attachments: bool = False,
     max_workers: int = 8,
     force: bool = False,
+    flatten_nested_emails: bool = True,
 ) -> ExportReport:
     """Exporta TODOS los mensajes de una etiqueta a ``dest_dir`` como ``.eml`` fieles.
 
@@ -287,6 +496,12 @@ def export_label(
     - **Índice persistente** ``_exported_ids.json`` (por cuenta): las re-corridas
       **saltan la descarga** de los ``gmail_id`` ya exportados → casi instantáneas.
       ``force=True`` lo ignora y vuelve a bajar todo (útil si se borraron ficheros).
+
+    **Emails anidados** (``flatten_nested_emails=True`` por defecto): los ``.eml`` que
+    viajan como adjunto ``message/rfc822`` dentro de un correo padre se extraen
+    byte-fieles a primer nivel de ``dest_dir``, nombrados por SU propia fecha (se
+    integran en la cronología real), con dedup por ``Message-ID`` y procedencia
+    (``forwarded_in``) en la traza. Recursivo hasta las hojas. ``False`` lo desactiva.
 
     Si se pasa ``case_id``, emite **traza forense** (mismo estándar que el intake de
     WhatsApp/manual): registra el SHA-256 de cada ``.eml``/adjunto presente en el
@@ -323,11 +538,23 @@ def export_label(
     candidates = [g for g in msg_ids if g not in ya_gids]
     report.skipped += len(msg_ids) - len(candidates)
 
+    procedencia: dict[str, str] = {}
     if candidates:
         # Dedup por Message-ID (correctness): solo si hay algo que bajar (evita el
         # escaneo de disco en re-corridas que no descargan nada).
         vistos = existing_message_ids(dest)
         nuevos_gids: list[str] = []
+
+        def _flatten_safe(gid: str, raw: bytes) -> None:
+            """Aplana los anidados sin que un fallo aborte la corrida (un email
+            problemático entre 125 no debe tumbar el resto)."""
+            if not flatten_nested_emails:
+                return
+            try:
+                _aplana_anidados(dest, raw, vistos, procedencia, report)
+            except Exception as exc:  # noqa: BLE001 — un fallo de aplanado no aborta la corrida
+                report.errors.append(f"{gid}: aplanado de anidados falló: {exc}")
+
         for gid, raw_bytes in _iter_raws(
             candidates, service=service, creds=creds, max_workers=max_workers, report=report
         ):
@@ -335,6 +562,10 @@ def export_label(
             if mid and mid in vistos:
                 report.skipped += 1
                 nuevos_gids.append(gid)  # bajado y resuelto (duplicado): no re-bajar
+                # El padre ya está en disco, pero sus hijos anidados pueden faltar
+                # (p. ej. tras borrar un hijo y re-exportar con force): reconciliarlos.
+                # _aplana_anidados es idempotente (dedup por Message-ID + _ruta_unica).
+                _flatten_safe(gid, raw_bytes)
                 continue
             if mid:
                 vistos.add(mid)
@@ -346,6 +577,7 @@ def export_label(
             report.files.append(str(eml_path.relative_to(dest)))
             report.written += 1
             nuevos_gids.append(gid)
+            _flatten_safe(gid, raw_bytes)
 
         index[account] = sorted(ya_gids | set(nuevos_gids))
         _save_export_index(dest, index)
@@ -353,7 +585,7 @@ def export_label(
     write_indices(dest)
 
     if case_id:
-        _emit_traza(case_id, dest, account, label, report)
+        _emit_traza(case_id, dest, account, label, report, procedencia)
 
     return report
 
@@ -462,6 +694,7 @@ def _emit_traza(
     account: str,
     label: str,
     report: ExportReport,
+    procedencia: dict[str, str] | None = None,
 ) -> None:
     """Traza forense derivada del disco: registra hashes + evento ``upload_email``.
 
@@ -472,9 +705,11 @@ def _emit_traza(
     no emite (idempotente). ``dest`` está bajo ``00_Input/``, así que su padre es el
     root de rutas relativas del manifest.
     """
+    procedencia = dict(procedencia or {})
     input_root = dest.parent  # 00_Input/
     nuevos_eml: list[dict[str, Any]] = []
     nuevos_adjuntos = 0
+    disk_proc: dict[str, str] = {}     # hijo_mid → padre_mid reconstruido del disco
 
     with IntakeManifest(case_id) as manifest:
         ya_registrados = manifest.all_paths()
@@ -498,6 +733,16 @@ def _emit_traza(
             except OSError as exc:
                 report.errors.append(f"traza {rel}: {exc}")
                 continue
+            # Procedencia desde disco: si este .eml transporta anidados, mapear cada
+            # hijo → su padre. Es determinista (no depende del orden en que Gmail listó
+            # padre vs. correo suelto) y cubre el backfill (re-export con case_id sin
+            # descarga, donde ``procedencia`` de la corrida está vacío). Rebanado crudo,
+            # sin parse completo; el pre-filtro evita escanear los .eml hoja.
+            if es_eml and b"message/rfc822" in data:
+                for child_bytes, parent_mid in iter_nested_originals(data):
+                    cmid = message_id_of(child_bytes)
+                    if cmid and parent_mid:
+                        disk_proc.setdefault(cmid, parent_mid)
             sha = compute_sha256_bytes(data)
             if es_eml:
                 mid = message_id_of(data)
@@ -508,6 +753,12 @@ def _emit_traza(
                     sha, rel, source="email", kind="attachment", filename=fichero.name
                 )
                 nuevos_adjuntos += 1
+
+    # forwarded_in: la procedencia de la corrida tiene prioridad; el resto se completa
+    # desde el escaneo de disco (parents con anidados presentes).
+    fuente_proc = {**disk_proc, **procedencia}
+    for m in nuevos_eml:
+        m["forwarded_in"] = fuente_proc.get(m["message_id"])
 
     if not nuevos_eml and not nuevos_adjuntos:
         return  # nada nuevo que trazar

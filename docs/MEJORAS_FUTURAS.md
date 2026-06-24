@@ -1259,3 +1259,175 @@ captura, marca el doc (`OCR_REQUERIDO`) y continúa. Complemento: bajar `images_
 **Prioridad.** Media — el crash observado ya no ocurre con el flujo real; el riesgo
 residual es un escaneado de una sola página gigante. La lentitud del OCR es molesta
 en casos con muchos escaneados.
+
+## 40. Copia binaria desde Cowork → volver Cowork constructor completo de la sala
+
+**✅ RESUELTO 2026-06-23 (vía 1, conector `expedientes-xl`).** Confirmado end-to-end en el
+intake del zip W-01VG51 (5 PDFs, 11 MB) al expediente W-02VND1 desde Cowork: `extract_archive`
+(zip), `copy_path`/`copy_dir` (binarios de 5 MB), `hash_path` (sha256), `delete_path`,
+`append_text` y `write_file_base64` operan server-side sobre `G:\…\EXPEDIENTES - TYUKHAY LEGAL`.
+Cowork ya deposita binarios y, en principio, puede montar la sala completa sin Claude Code.
+**Residuo abierto:** no hay extracción de texto/OCR de PDF server-side (datar escaneados sigue
+siendo del pipeline local) → ver #42.
+
+**Problema (confirmado 2026-06-22, re-aplicación BaRS1/Tibidabo; ver `DEAD_ENDS.md`).**
+Desde Cowork no se pueden copiar binarios (PDF, fotos, vídeos, `.xlsx`) a la Sala lectura
+del despacho. El MCP local `expedientes` (`@modelcontextprotocol/server-filesystem`) no
+expone copia: `write_file` es solo texto, no hay `copy_file` y `move_file` es destructivo;
+y el conector de Drive en la nube disponible en Cowork es la cuenta de E&V
+(`@engelvoelkers.com`), que no ve la Drive del despacho «EXPEDIENTES - TYUKHAY LEGAL». Hoy,
+por tanto, Cowork solo amplía la sala en TEXTO; los binarios los copia el motor local
+(Claude Code / `scripts/sala_lectura.py` sobre `G:` vía `shutil`).
+
+**Vías (cualquiera vuelve Cowork constructor completo, sin Claude Code):**
+1. **Dar copia binaria al MCP `expedientes`**: sustituir/extender el `server-filesystem`
+   por uno que exponga una herramienta `copy_file` (copia byte a byte dentro de `G:`).
+   Es la opción limpia: Cowork-en-PC leería rápido y copiaría binarios en el mismo Drive.
+2. **MCP a medida mínimo** con una sola tool `copy_path(src, dst)` sobre `G:`.
+3. **Conector de Drive del despacho** (no el de E&V) montado en Cowork: su `copy_file`
+   server-side copiaría binarios por `fileId` — pero es per-fichero (lento) y duplica el
+   acceso que ya da el MCP local.
+
+**Disparador de promoción a `PLAN.md`:** que el equipo (Paola/Ana) necesite montar/ampliar
+salas con binarios desde Cowork sin pasar por Claude Code, o decisión explícita de Nikolai.
+
+**Prioridad.** Media. Hoy el motor local cubre el caso; esto es comodidad/autonomía de
+equipo. Relacionado: #34 (sala como skill-Cowork multiusuario).
+
+## 41. Plugin nativo de Cowork para empaquetar las skills del despacho
+
+**Idea (anotada 2026-06-22).** Cowork no carga los plugins de Claude Code (sistemas de
+plugins separados, verificado: un plugin instalado por CLI se ve en el tab Code, no en
+Cowork). Hoy las skills entran en Cowork por **re-import manual del `.skill`**, una a una.
+Un **`.plugin` nativo de Cowork** (tooling `create-cowork-plugin`) empaquetaría varias
+skills del despacho como **un único bloque versionado**, instalable de una vez.
+
+**Ventajas (escalan con nº de skills × nº de usuarios Cowork):**
+- Una instalación/actualización **versionada** en vez de N imports manuales.
+- Más simple para **Paola/Ana** (instalar un plugin vs navegar la UI de importación de skills).
+- **Menos drift** de versiones entre el equipo; actualización **atómica** de todo el set.
+
+**NO resuelve (para no sobrevenderlo):**
+- El conector `expedientes-xl` **sigue yendo por `claude_desktop_config.json`** (host-side;
+  un plugin de Cowork no alcanza el disco local). Los prerequisitos por máquina (Drive
+  montado + `pip install mcp`) son irreductibles.
+- Es un **tercer formato a mantener** (junto al plugin de Claude Code en `despacho-plugins`
+  y los `.skill` sueltos).
+
+**Disparador de promoción a `PLAN.md`:** ≥3 skills activas en Cowork usadas de forma
+habitual por el equipo (Paola/Ana) Y que los imports manuales + el drift de versiones
+empiecen a doler; o decisión explícita de Nikolai.
+
+**Prioridad.** Baja-media. Hoy (1 skill nueva, sobre todo Nikolai) es marginal. Relacionado:
+#34 (sala como skill-Cowork multiusuario) y #40 (copia binaria desde Cowork — ya cubierta
+por el conector `expedientes-xl` de la sesión 2026-06-22).
+
+## 42. Extracción de texto/OCR de PDF server-side en `expedientes-xl`
+
+**Contexto (2026-06-23, intake Tibidabo W-02VND1).** Con #40 resuelto, Cowork ya mueve
+binarios al Drive, pero **no puede leer el contenido de un PDF**: `expedientes` `read_media_file`
+acepta solo image/audio (rechaza PDF), y el shell está aislado del Drive (no hay `pdftotext`
+sobre el mount). Consecuencia: al hacer intake de PDFs **escaneados** no se pueden datar ni
+indexar en Cowork; se depositan `sin-fecha_...` y la datación queda para el pipeline local /
+`organizar-sala-lectura`. En el intake del zip W-01VG51 esto dejó 5 PDFs sin fecha (incluido
+`Z02NT34N`, núcleo probatorio de comercialización previa).
+
+**Mejora propuesta.** Añadir a `expedientes-xl` una tool server-side de extracción de texto
+que **no pase bytes por el modelo**: `extract_pdf_text(path) -> str` (capa de texto vía pypdf)
+y, para escaneados, `ocr_pdf(path, idiomas) -> str` (reusar `core/anon/ocr.py` /
+`extractor`). Devuelve solo el texto necesario para datar/clasificar. Así el intake y la sala
+de Cowork podrían fijar `AAAA-MM-DD` e identificar el documento sin Claude Code.
+
+**Disparador de promoción a `PLAN.md`:** que el volumen de intake desde Cowork con escaneados
+sin datar empiece a doler, o decisión explícita de Nikolai. Relacionado: #28 (fecha ISO en el
+nombre), #39 (robustez OCR), #1/#11/#21 (OCR del pipeline), #40.
+
+**Prioridad.** Media — hoy el pipeline local cubre la datación; esto da autonomía a Cowork.
+
+## 43. `intake-expediente`: pasada única y gate sin rama de OCR  [PROMOVIDO → PLAN.md]
+
+*Promovido 2026-06-23 por decisión de Nikolai (Cowork): agilizar el intake y reducir los
+diálogos de permiso por-llamada del conector. Ver `PLAN.md` → `[SIGUIENTE-INTAKE-EXPEDIENTE-AGIL]`.*
+
+**Contexto (2026-06-23, mismo intake).** El flujo gastó llamadas y un round-trip evitables:
+(a) extraje a un tmp de inspección y luego copié los originales **uno a uno**; (b) copié los
+PDFs al mount para leerlos con `pdftotext` — imposible, mount aislado (ver `DEAD_ENDS.md`);
+(c) el gate ofreció "extraer fechas", rama fuera de capa e inviable en Cowork. Cada `copy_path`/
+`hash_path`/`delete_path` dispara además, si no se ha activado "Permitir siempre", un **diálogo
+de permiso** en Cowork: menos llamadas = menos diálogos.
+
+**Mejora propuesta (skill `.claude/skills/intake-expediente/`).**
+1. **Una pasada**: extraer a staging para listar/`hash_path`, y tras el OK copiar con
+   `copy_dir` cuando todo va a una misma `<fuente>` (en vez de N `copy_path`).
+2. **Gate sin OCR**: para escaneados, proponer `sin-fecha_...` por defecto y **no** ofrecer
+   datación/OCR en Cowork; remitir la datación al pipeline local (hasta que exista #42).
+3. **Regla dura**: nunca copiar binarios al mount para leerlos con bash (no se ven).
+
+Cambios de texto en la skill (descripción de procedimiento + gotchas); sin tocar `traza.py`.
+Editar en `.claude/skills/` (fuente única) y re-empaquetar el `.skill`.
+
+**Prioridad.** Media-baja — calidad/coste del intake; no bloqueante.
+
+---
+
+## 44. Aplanado de emails anidados: revisión adversarial y residuales
+
+**Contexto (2026-06-24, Parte 1 del rescate de correos).**
+`core.email_export.iter_nested_originals` recupera los `.eml` que viajan como adjunto
+`message/rfc822` **rebanando los bytes crudos** (no `as_bytes()`, que normaliza CRLF→LF
+y repliega cabeceras), para que el hijo sea byte-original. Una revisión adversarial
+(3 lentes) sobre el aplanado encontró 3 HIGH + 2 MEDIUM + varios LOW/NIT; **todas las
+HIGH/MEDIUM y las LOW 44.1/44.2 se corrigieron en el mismo commit** (con tests). Lo que
+sigue son los residuales aceptados (44.3–44.5).
+
+**✅ RESUELTAS en el commit (referencia):**
+- *Split anclado a inicio de línea* (`_split_mime_parts`, RFC 2046): un `--boundary`
+  citado a mitad de línea ya NO trunca el `.eml` ni descarta hijos posteriores.
+- *Separador de cabeceras por posición* (`_split_headers_body`): tolera line-endings
+  mezclados (padre `\n\n` con hijo `\r\n\r\n`).
+- *Robustez*: una excepción en `_aplana_anidados` se registra en `report.errors` y NO
+  aborta la corrida (un email entre 125 no la tumba).
+- *`force=True` re-aplana* los hijos borrados aunque el padre siga en disco.
+- *Procedencia (`forwarded_in`) reconstruida desde disco* en `_emit_traza`: determinista
+  (independiente del orden en que Gmail listó padre vs. suelto) y cubre el backfill.
+- **44.1 (boundary reusado entre niveles)**: `_nested_con_fallback` detecta cuando un
+  `boundary` se repite entre niveles de anidamiento y cae al fallback re-serializado del
+  parser + aviso en `report.errors`, en vez de devolver un rebanado posiblemente truncado
+  en silencio. (Con boundaries aleatorios de Gmail nunca ocurre: medido cero colisiones en
+  el fixture real W-02VND1, 13,9 MB → 13 anidados byte-fieles.)
+- **44.2 (hijo sin `Message-ID`)**: dedup de respaldo por SHA-256 del contenido
+  byte-original dentro de `_aplana_anidados`, de modo que el mismo bloque sin `Message-ID`
+  reenviado por dos vías en una corrida no se multiplique.
+
+**Residuales aceptados (no abordados):**
+
+**44.3 — Padre SIN `Message-ID` + `force=True` no es idempotente.** Si el correo padre
+carece de `Message-ID` (los mensajes de Gmail siempre lo traen, así que es casi imposible
+en producción) y se re-exporta con `force=True`, el padre se reescribe vía `_ruta_unica`
+(`_2`, `_3`…) y re-dispara el aplanado en cada corrida. Es comportamiento preexistente del
+`export_label` para cualquier mensaje sin `Message-ID`. La dedup de respaldo por SHA (44.2)
+colapsa los **hijos** sin `Message-ID` dentro de una misma corrida, pero `vistos` se
+reconstruye cada corrida solo desde los `Message-ID` del disco (no desde SHAs), así que
+cross-corrida + `force=True` un hijo sin `Message-ID` puede reescribirse. En la práctica no
+ocurre: los mensajes de Gmail siempre traen `Message-ID`. *Mitigación si se materializa:*
+gatear por el `gmail_id` del índice persistente (estable), o sembrar `vistos` también con
+SHAs de los `.eml` sin `Message-ID` ya en disco.
+
+**44.4 — Pico de memoria ~12× el tamaño del padre.** El rebanado hace copias sucesivas
+(`split`, `headers + b"\r\n\r\n"`, `b64decode`) y recursiona; un padre de ~13 MB midió un
+pico de ~165 MB. Tolerable para un padre, pero `export_label` baja en paralelo
+(`max_workers=8`): varios padres grandes simultáneos multiplican el pico. *Mitigación si
+aparece presión de memoria:* serializar `_aplana_anidados` fuera del pool de descarga y/o
+liberar `raw_bytes` antes de recursionar.
+
+**44.5 — `split_eml` ya no extrae sueltos los adjuntos internos de un `.eml` anidado.**
+Cambio de comportamiento vs. la versión `msg.walk()`: ahora `message/rfc822` se trata como
+hoja, así que un PDF que viaja DENTRO de un email anidado NO se extrae como fichero suelto
+por `split_eml`. Con el aplanado por defecto (`flatten_nested_emails=True`) el hijo se
+deposita a primer nivel con su PDF embebido (ningún byte se pierde). Solo con
+`--no-aplanar-emails` + `--extraer-adjuntos` el PDF interno queda únicamente embebido en el
+padre. Intencional (decisiones del plano); se documenta por si alguien dependía del
+comportamiento previo.
+
+**Prioridad.** Muy baja — ninguna observada en datos reales; ninguna implica pérdida de
+prueba (a lo sumo duplicación o copia re-serializada marcada para revisión).
