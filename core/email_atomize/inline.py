@@ -346,3 +346,122 @@ def segmentar_texto(texto: str) -> Segmentacion:
         return Segmentacion(autor=texto.strip(), ancestros=[], respuesta_intercalada=True)
     ancestros, autor = _pasada_segmentos(texto)
     return Segmentacion(autor=autor, ancestros=ancestros, respuesta_intercalada=False)
+
+
+# ---------------------------------------------------------------------------
+# Segmentación HTML (DD §2.1, §2.0, §2.4) — stdlib html.parser, sin deps
+# ---------------------------------------------------------------------------
+
+from html.parser import HTMLParser  # noqa: E402
+
+
+class _QuoteHTMLParser(HTMLParser):
+    """Detecta contenedores de cita (blockquote + Outlook divRplyFwdMsg) y su anidamiento.
+
+    gmail_quote/gmail_attr/OutlookMessageHeader NO cuentan como nivel: su texto fluye como
+    autor/anclaje (el ``pending`` previo a un contenedor es su atribución).
+    """
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.qdepth = 0
+        self.author_parts: list[str] = []
+        self.segments: list[dict] = []
+        self.seg_stack: list[dict] = []
+        self.pending = ""
+        self.seq: list[str] = []          # "Q"/"A" para el test de sándwich (intercalada)
+        self._tags: list[tuple[str, bool]] = []
+
+    @staticmethod
+    def _is_container(tag: str, attrs: list) -> bool:
+        if tag == "blockquote":
+            return True
+        d = dict(attrs)
+        return "divrplyfwdmsg" in (d.get("id") or "").lower()
+
+    def handle_starttag(self, tag: str, attrs: list) -> None:
+        cont = self._is_container(tag, attrs)
+        self._tags.append((tag, cont))
+        if cont:
+            self.qdepth += 1
+            self.seq.append("Q")
+            seg = {"depth": self.qdepth, "anchor": self.pending.strip() or None, "body": []}
+            self.segments.append(seg)
+            self.seg_stack.append(seg)
+            self.pending = ""
+
+    def handle_startendtag(self, tag: str, attrs: list) -> None:
+        pass  # void elements (br/hr/img) no abren contenedor
+
+    def handle_endtag(self, tag: str) -> None:
+        for k in range(len(self._tags) - 1, -1, -1):
+            t, cont = self._tags[k]
+            if t == tag:
+                del self._tags[k]
+                if cont:
+                    self.qdepth = max(0, self.qdepth - 1)
+                    if self.seg_stack:
+                        self.seg_stack.pop()
+                break
+
+    def handle_data(self, data: str) -> None:
+        if not data.strip():
+            return
+        if self.qdepth == 0:
+            self.author_parts.append(data)
+            self.seq.append("A")
+            self.pending = data
+        else:
+            self.seg_stack[-1]["body"].append(data)
+            self.pending = data
+
+
+def _sandwich(seq: list[str]) -> bool:
+    """¿Hay texto de autor (A) ENTRE dos citas (Q)? = respuesta intercalada en HTML."""
+    seen_q = seen_a_after_q = False
+    for t in seq:
+        if t == "Q":
+            if seen_a_after_q:
+                return True
+            seen_q = True
+        elif t == "A" and seen_q:
+            seen_a_after_q = True
+    return False
+
+
+def segmentar_html(html: str) -> Segmentacion:
+    from .bodies import _html_a_texto
+    p = _QuoteHTMLParser()
+    try:
+        p.feed(html)
+        p.close()
+    except Exception:  # noqa: BLE001 — HTML malformado → fallback a plano
+        return segmentar_texto(_html_a_texto(html))
+    if _sandwich(p.seq):
+        return Segmentacion(autor=_html_a_texto(html), ancestros=[], respuesta_intercalada=True)
+    autor = "\n".join(t.strip() for t in p.author_parts).strip()
+    ancestros = [
+        Segmento(texto="\n".join(t.strip() for t in s["body"]).strip(),
+                 anclaje_texto=s["anchor"], profundidad=s["depth"], estilo="html_quote",
+                 estructural=True)
+        for s in p.segments
+    ]
+    return Segmentacion(autor=autor, ancestros=ancestros, respuesta_intercalada=False)
+
+
+def _html_part(raw: bytes) -> str:
+    from core.email_export import iter_body_text
+    for texto, es_html in iter_body_text(raw):
+        if es_html:
+            return texto
+    return ""
+
+
+def segmentar(raw: bytes) -> Segmentacion:
+    """Punto de entrada: HTML si existe (caso dominante 120/138), si no texto plano."""
+    from .bodies import extraer_cuerpo
+    html = _html_part(raw)
+    if html.strip():
+        return segmentar_html(html)
+    c = extraer_cuerpo(raw, conservar_resto=True)
+    return segmentar_texto(c.base_sin_recortar or c.texto)

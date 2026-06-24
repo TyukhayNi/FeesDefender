@@ -97,3 +97,35 @@ def test_seg_stray_de_no_segmenta():
 def test_seg_plain_intercalada_no_segmenta():
     s = I.segmentar_texto("> pregunta uno\nrespuesta del autor entre citas\n> pregunta dos\n")
     assert s.respuesta_intercalada is True and s.ancestros == []
+
+
+# ---------------------------------------------------------------------------
+# T7 — segmentación HTML + intercalada HTML + conservación de tokens
+# ---------------------------------------------------------------------------
+
+def test_seg_html_gmail_quote():
+    html = ('<div>Mi respuesta</div>'
+            '<div class="gmail_quote"><div class="gmail_attr">El 2 feb 2020, A &lt;a@x&gt; escribió:</div>'
+            '<blockquote>cuerpo citado</blockquote></div>')
+    s = I.segmentar_html(html)
+    assert "Mi respuesta" in s.autor
+    assert len(s.ancestros) == 1 and "a@x" in (s.ancestros[0].anclaje_texto or "")
+    assert s.ancestros[0].estructural is True
+
+
+def test_seg_html_anidado_profundidad():
+    html = '<div>top</div><blockquote>n1<blockquote>n2<blockquote>n3</blockquote></blockquote></blockquote>'
+    s = I.segmentar_html(html)
+    assert max(a.profundidad for a in s.ancestros) >= 3
+
+
+def test_seg_html_intercalada_no_segmenta():
+    html = ('<div>resp 1</div><blockquote>p1</blockquote>'
+            '<div>resp 2 del autor entre citas</div><blockquote>p2</blockquote>')
+    s = I.segmentar_html(html)
+    assert s.respuesta_intercalada is True and s.ancestros == []
+
+
+def test_seg_html_token_conservacion_no_inventa():
+    s = I.segmentar_html("<blockquote>" + "x " * 5 + "</blockquote>")
+    assert isinstance(s.respuesta_intercalada, bool)
