@@ -25,6 +25,10 @@ class Registro:
         self.base_dir = base_dir
         self.mensajes: dict[str, dict] = data.get("mensajes", {})   # mid -> {"id","sha256"}
         self.adjuntos: dict[str, dict] = data.get("adjuntos", {})   # sha -> {"id"}
+        # Layer B (aparte del path congelado de Capa A): fp -> {"id","cuerpo_sha"} y
+        # alias rfc_message_id -> fp (puente del upgrade de fidelidad).
+        self.mensajes_fp: dict[str, dict] = data.get("mensajes_fp", {})
+        self.alias: dict[str, str] = data.get("alias", {})
         self.procesados: list[str] = list(data.get("eml_procesados", []))
         cont = data.get("_contadores", {})
         self._next_msg = int(cont.get("msg", 0))
@@ -40,6 +44,26 @@ class Registro:
         nuevo = f"MSG-{self._next_msg:05d}"
         self.mensajes[key] = {"id": nuevo, "sha256": sha}
         return nuevo
+
+    def msg_id_for_fp(self, fp: str, *, cuerpo_sha: str) -> str:
+        """ID congelado para un mensaje inline sin Message-ID, keyed por fingerprint.
+
+        Comparte el contador ``_next_msg`` con :meth:`msg_id_for` (numeración global única),
+        pero vive en ``mensajes_fp`` aparte: NO toca el path congelado de Capa A.
+        """
+        entry = self.mensajes_fp.get(fp)
+        if entry is not None:
+            return entry["id"]
+        self._next_msg += 1
+        nuevo = f"MSG-{self._next_msg:05d}"
+        self.mensajes_fp[fp] = {"id": nuevo, "cuerpo_sha": cuerpo_sha}
+        return nuevo
+
+    def registrar_alias(self, rfc_message_id: str, fp: str) -> None:
+        self.alias[_norm_mid(rfc_message_id)] = fp
+
+    def resolver_alias(self, rfc_message_id: str) -> str | None:
+        return self.alias.get(_norm_mid(rfc_message_id))
 
     def att_id_for(self, sha: str) -> str:
         entry = self.adjuntos.get(sha)
@@ -58,9 +82,11 @@ class Registro:
         payload = {
             "_README": _README,
             "_no_editar": True,
-            "version": 1,
+            "version": 2,
             "_contadores": {"msg": self._next_msg, "att": self._next_att},
             "mensajes": self.mensajes,
+            "mensajes_fp": self.mensajes_fp,
+            "alias": self.alias,
             "adjuntos": self.adjuntos,
             "eml_procesados": sorted(self.procesados),
         }
