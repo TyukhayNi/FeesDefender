@@ -19,6 +19,7 @@ from . import dedup as D
 from . import extract as E
 from . import headers as H
 from . import ids as IDS
+from . import inline as INL
 from . import render as R
 from .model import AdjuntoRef, AdjuntoUnico, RegistroMensaje
 
@@ -28,10 +29,15 @@ class AtomizeReport:
     mensajes: int = 0
     adjuntos_unicos: int = 0
     adjuntos_decorativos: int = 0
+    reconstruidos_b: int = 0          # mensajes capa B promovidos (alta-reconstruida)
+    citas_a_revision: int = 0         # punteros media/baja a _revision/cola.md
+    upgrades: int = 0                 # citas resueltas a una copia limpia de Capa A
     errores: list[str] = field(default_factory=list)
 
     def resumen(self) -> str:
-        return (f"{self.mensajes} mensajes atómicos, {self.adjuntos_unicos} adjuntos únicos "
+        return (f"{self.mensajes} mensajes atómicos ({self.reconstruidos_b} reconstruidos B), "
+                f"{self.citas_a_revision} citas a revisión, {self.upgrades} upgrades; "
+                f"{self.adjuntos_unicos} adjuntos únicos "
                 f"({self.adjuntos_decorativos} decorativos filtrados), "
                 f"{len(self.errores)} errores")
 
@@ -62,6 +68,7 @@ def atomize_dir(src_dir: Path | str, out_dir: Path | str) -> AtomizeReport:
 
     unicos: dict[str, AdjuntoUnico] = {}      # sha -> AdjuntoUnico
     mensajes: list[RegistroMensaje] = []
+    carriers: list[tuple[RegistroMensaje, bytes]] = []
     for col in colapsados:
         try:
             m = _construir_mensaje(col, reg, apariciones, unicos, report)
@@ -69,11 +76,18 @@ def atomize_dir(src_dir: Path | str, out_dir: Path | str) -> AtomizeReport:
             report.errores.append(f"{col.message_id or '(sin id)'}: {exc}")
             continue
         mensajes.append(m)
+        carriers.append((m, col.raw))
         reg.marcar_procesado(col.eml_origen)
+
+    # --- Pase Layer B (tras congelar TODOS los IDs de Capa A) ---
+    mensajes_b, punteros = _pase_layer_b(reg, mensajes, carriers, report)
+    mensajes.extend(mensajes_b)
 
     for m in mensajes:
         (out / "mensajes" / R.nombre_md(m)).write_text(R.render_md(m), encoding="utf-8")
     report.mensajes = len(mensajes)
+    report.reconstruidos_b = len(mensajes_b)
+    report.citas_a_revision = len(punteros)
 
     for att in unicos.values():
         _escribe_adjunto(out, att)
@@ -84,8 +98,48 @@ def atomize_dir(src_dir: Path | str, out_dir: Path | str) -> AtomizeReport:
         R.render_correos_lectura(mensajes), encoding="utf-8")
     (out / "INDICE_ADJUNTOS.md").write_text(
         R.render_indice_adjuntos(list(unicos.values())), encoding="utf-8")
+
+    revision = out / "_revision"
+    revision.mkdir(exist_ok=True)
+    for nombre, contenido in R.render_revision(mensajes_b, punteros).items():
+        (revision / nombre).write_text(contenido, encoding="utf-8")
+
     reg.save()
     return report
+
+
+def _pase_layer_b(reg, mensajes, carriers, report):
+    """Reconstruye autoría inline: segmenta cada portador, atribuye/clasifica, resuelve
+    duplicados contra Capa A (upgrade) y acuña IDs fp en orden determinista. Devuelve
+    ``(mensajes_b, punteros)``. Idempotente: re-ejecutar no renumera (fp congelados)."""
+    idx = INL.indice_layer_a(mensajes)
+    por_id = {m.msg_id: m for m in mensajes}
+    candidatos = []
+    punteros = []
+    for m_a, raw in carriers:
+        try:
+            res = INL.reconstruir(m_a, raw)
+        except Exception as exc:  # noqa: BLE001 — un portador no aborta la corrida
+            report.errores.append(f"{m_a.msg_id}: reconstruir inline falló: {exc}")
+            continue
+        m_a.respuesta_intercalada = m_a.respuesta_intercalada or res.intercalada
+        candidatos.extend(res.candidatos)
+        punteros.extend(res.punteros)
+
+    mensajes_b = []
+    for seg in sorted(candidatos, key=lambda s: s.fingerprint):  # orden determinista
+        destino = idx.resolver(seg)
+        if destino:
+            # la cita es copia de menor fidelidad de un mensaje limpio de Capa A: no acuñar
+            por_id[destino].procedencia.append(
+                {"citado_en": seg.portador_msg_id, "profundidad": seg.profundidad})
+            if seg.rfc_message_id:
+                reg.registrar_alias(seg.rfc_message_id, seg.fingerprint)
+            report.upgrades += 1
+            continue
+        seg_msg_id = reg.msg_id_for_fp(seg.fingerprint, cuerpo_sha=seg.cuerpo_sha)
+        mensajes_b.append(INL.construir_b(seg, seg_msg_id, por_id[seg.portador_msg_id]))
+    return mensajes_b, punteros
 
 
 def _construir_mensaje(col, reg, apariciones, unicos, report) -> RegistroMensaje:
