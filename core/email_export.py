@@ -287,44 +287,44 @@ def iter_nested_originals(raw: bytes) -> Iterator[tuple[bytes, str]]:
 
 
 def _nested_con_fallback(raw: bytes, report: "ExportReport") -> list[tuple[bytes, str]]:
-    """Emails anidados byte-originales, con red de seguridad.
+    """Emails anidados byte-originales, con red de seguridad anclada al parser.
 
-    Camino feliz (boundaries únicos por nivel): devuelve el rebanado byte-fiel. Cae al
-    fallback re-serializado del parser (``as_bytes()``) + aviso en ``report.errors`` en
-    dos casos: (a) el rebanado no halla nada pero el parser sí ve ``message/rfc822``;
-    (b) un ``boundary`` se **reutiliza entre niveles** de anidamiento — ahí el rebanado
-    por bytes puede truncar el ``.eml`` sin avisar (mismo conteo, contenido cortado),
-    mientras que el parser lo resuelve con su pila de boundaries. Nunca trunca en
-    silencio: en el peor caso, copia re-serializada marcada para revisión.
+    Devuelve el rebanado byte-fiel cuando recupera **exactamente el mismo multiset de
+    ``Message-ID``** que ve el parser de Python (``msg.walk()``, autoridad estructural).
+    Esa coincidencia confirma que el rebanado no perdió ni añadió mensajes — incluso con
+    ``boundary`` repetidos entre mensajes anidados de distintos clientes (Apple Mail,
+    Outlook, Nodemailer reutilizan tokens; verificado en datos reales que el rebanado
+    sigue siendo correcto). Solo cae al fallback re-serializado (``as_bytes()``) + aviso
+    cuando el rebanado **difiere** del parser (no halla nada, o pierde/añade mensajes):
+    nunca se pierde un email; en el peor caso, copia re-serializada marcada para revisión.
+
+    Residual conocido (``docs/MEJORAS_FUTURAS.md`` §44.1): si un anidado reutilizara el
+    ``boundary`` de un ANCESTRO directo, el rebanado podría truncar el cuerpo conservando
+    el ``Message-ID`` (la coincidencia de mids no lo detectaría). No observado en datos
+    reales (los boundaries colisionan entre mensajes primos, no ancestro↔descendiente).
     """
     found = list(iter_nested_originals(raw))
     # Pre-filtro barato: sin partes message/rfc822 no hay anidados ni coste de parse.
     if b"message/rfc822" not in raw:
         return found
     msg = _parse_message(raw)
-    boundaries = [
-        b for b in (p.get_boundary() for p in msg.walk() if p.get_content_maintype() == "multipart")
-        if b
+    parser_inners = [
+        inner for inner in (_payload_message(p) for p in msg.walk()
+                            if p.get_content_type() == "message/rfc822")
+        if inner is not None
     ]
-    boundary_reuse = len(boundaries) != len(set(boundaries))
-    if found and not boundary_reuse:
-        return found  # byte-fiel y sin colisión de boundary entre niveles
+    parser_mids = sorted((m.get("message-id") or "").strip().strip("<>").strip()
+                         for m in parser_inners)
+    found_mids = sorted(message_id_of(b) for b, _ in found)
+    if found and found_mids == parser_mids:
+        return found  # byte-fiel: recupera EXACTAMENTE los Message-ID que ve el parser
     pmid = message_id_of(raw)
-    fb: list[tuple[bytes, str]] = []
-    for parte in msg.walk():
-        if parte.get_content_type() == "message/rfc822":
-            inner = _payload_message(parte)
-            if inner is not None:
-                fb.append((inner.as_bytes(), pmid))
-    if fb and boundary_reuse:
+    fb = [(inner.as_bytes(), pmid) for inner in parser_inners]
+    if fb:
         report.errors.append(
-            f"boundary reutilizado entre niveles en {pmid or '(sin id)'}; "
-            f"{len(fb)} email(s) re-serializados (no byte-fieles, revisar)."
-        )
-    elif fb:
-        report.errors.append(
-            f"aplanado byte-fiel falló para {pmid or '(sin id)'}; "
-            f"{len(fb)} email(s) guardados re-serializados (revisar)."
+            f"aplanado byte-fiel inconsistente para {pmid or '(sin id)'} "
+            f"(rebanado {len(found)} vs parser {len(fb)} Message-ID); "
+            f"{len(fb)} email(s) re-serializados (revisar)."
         )
     return fb if fb else found
 

@@ -1390,11 +1390,20 @@ sigue son los residuales aceptados (44.3–44.5).
 - *`force=True` re-aplana* los hijos borrados aunque el padre siga en disco.
 - *Procedencia (`forwarded_in`) reconstruida desde disco* en `_emit_traza`: determinista
   (independiente del orden en que Gmail listó padre vs. suelto) y cubre el backfill.
-- **44.1 (boundary reusado entre niveles)**: `_nested_con_fallback` detecta cuando un
-  `boundary` se repite entre niveles de anidamiento y cae al fallback re-serializado del
-  parser + aviso en `report.errors`, en vez de devolver un rebanado posiblemente truncado
-  en silencio. (Con boundaries aleatorios de Gmail nunca ocurre: medido cero colisiones en
-  el fixture real W-02VND1, 13,9 MB → 13 anidados byte-fieles.)
+- **44.1 (red de seguridad anclada al parser)**: `_nested_con_fallback` devuelve el
+  rebanado byte-fiel cuando recupera **el mismo multiset de `Message-ID`** que ve el parser
+  (`msg.walk()`); solo cae al fallback re-serializado + aviso si difieren. **Corregido tras
+  la reextracción real de W-02VND1 (2026-06-24):** el primer intento usaba "boundary
+  repetido entre niveles" como disparador, pero eso resultó **demasiado agresivo** — el
+  `boundary` SÍ se repite en datos reales (3 padres `jdb_*`, 126 anidados de Apple Mail/
+  Outlook/Nodemailer, que reutilizan tokens entre mensajes **primos**), y el rebanado
+  byte-fiel los recuperaba CORRECTAMENTE (mids idénticos al parser, 0 ilegibles), pero el
+  trigger los re-serializaba sin necesidad. La coincidencia de mids es el disparador
+  correcto. *Residual:* si un anidado reutilizara el `boundary` de un **ancestro directo**,
+  el rebanado podría truncar el cuerpo conservando el `Message-ID` (la coincidencia de mids
+  no lo detectaría); no observado en datos reales (las colisiones son entre primos, no
+  ancestro↔descendiente). Fix completo si se materializa: parser con pila de boundaries por
+  nivel de anidamiento.
 - **44.2 (hijo sin `Message-ID`)**: dedup de respaldo por SHA-256 del contenido
   byte-original dentro de `_aplana_anidados`, de modo que el mismo bloque sin `Message-ID`
   reenviado por dos vías en una corrida no se multiplique.

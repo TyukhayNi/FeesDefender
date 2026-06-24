@@ -835,17 +835,42 @@ def test_traza_forwarded_in_backfill_desde_disco(tmp_casos_root):
     assert por_mid["padre@ev"]["forwarded_in"] is None
 
 
-def test_boundary_reusado_entre_niveles_cae_a_fallback_con_aviso():
-    """44.1: si un hijo reutiliza el MISMO boundary que el padre, el rebanado byte-fiel
-    puede truncar sin avisar (mismo conteo). Se detecta el reuso de boundary y se cae al
-    fallback re-serializado del parser + aviso en report.errors (nunca truncado silencioso)."""
-    hijo = _envoltorio(b"B", [b"Content-Type: text/plain\r\n\r\ncuerpo interno largo del hijo\r\n"],
-                       mid=b"<reuse@x>")
-    padre = _envoltorio(b"B", [_parte_rfc822(hijo)])     # MISMO boundary "B" en padre e hijo
+def _multipart_eml(mid: bytes, boundary: bytes) -> bytes:
+    """Un .eml multipart/mixed con una parte de texto y el boundary dado."""
+    return (b"Message-ID: " + mid + b"\r\nSubject: m\r\nDate: Tue, 11 May 2023 09:00:00 +0200\r\n"
+            b"MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=\"" + boundary + b"\"\r\n\r\n"
+            b"--" + boundary + b"\r\nContent-Type: text/plain\r\n\r\ncuerpo\r\n"
+            b"--" + boundary + b"--\r\n")
+
+
+def test_boundary_reusado_entre_primos_se_recupera_byte_fiel():
+    """44.1 (datos reales W-02VND1): dos anidados PRIMOS reutilizan el mismo token de
+    boundary (Apple Mail/Outlook/Nodemailer los repiten). El rebanado byte-fiel los
+    recupera correctamente —los Message-ID coinciden con el parser— y NO cae al fallback
+    re-serializado (la red de seguridad se ancla a la coincidencia de mids, no a la mera
+    repetición de boundary)."""
+    c1 = _multipart_eml(b"<c1@x>", b"SHARED")
+    c2 = _multipart_eml(b"<c2@x>", b"SHARED")     # MISMO boundary que c1 (primos)
+    padre = _envoltorio(b"BTOP", [_parte_rfc822(c1), _parte_rfc822(c2)])
     rep = ee.ExportReport(account="c@ev", label="L")
     got = ee._nested_con_fallback(padre, rep)
-    assert any(ee.message_id_of(b) == "reuse@x" for b, _ in got)         # el hijo se recupera
-    assert rep.errors and any("boundary" in e.lower() or "reutiliz" in e.lower() for e in rep.errors)
+    assert sorted(ee.message_id_of(b) for b, _ in got) == ["c1@x", "c2@x"]
+    assert rep.errors == []                       # byte-fiel: sin fallback ni aviso
+    assert any(b == c1[:-2] for b, _ in got)      # byte-original (sin el CRLF del delimitador)
+
+
+def test_rebanado_descuadrado_vs_parser_cae_a_fallback(monkeypatch):
+    """Si el rebanado byte-fiel pierde un mensaje que el parser SÍ ve (mids no coinciden),
+    cae al fallback re-serializado + aviso (nunca pérdida silenciosa)."""
+    c1 = _child(mid=b"<a@x>", subject=b"Uno", date=b"Tue, 11 May 2023 09:00:00 +0200")
+    c2 = _child(mid=b"<b@x>", subject=b"Dos", date=b"Sat, 02 Mar 2024 12:00:00 +0200")
+    padre = _envoltorio(b"BTOP", [_parte_rfc822(c1), _parte_rfc822(c2)], mid=b"<pp@ev>")
+    # Simula un rebanado que solo recupera UNO de los dos anidados (descuadre).
+    monkeypatch.setattr(ee, "iter_nested_originals", lambda raw: iter([(c1, "pp@ev")]))
+    rep = ee.ExportReport(account="c@ev", label="L")
+    got = ee._nested_con_fallback(padre, rep)
+    assert sorted(ee.message_id_of(b) for b, _ in got) == ["a@x", "b@x"]   # fallback recupera ambos
+    assert len(rep.errors) == 1 and "inconsistente" in rep.errors[0]
 
 
 def test_aplana_hijo_sin_message_id_dedup_por_contenido(tmp_path):
