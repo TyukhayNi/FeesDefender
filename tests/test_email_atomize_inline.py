@@ -376,7 +376,7 @@ def test_reconstruir_dos_cabeceras_apiladas_no_promueve():
 
 # ---------------------------------------------------------------------------
 # T10 — body-scan de remitente desde el CUERPO de la cita (it. 2)
-#       Función pura _atribucion_en_cuerpo (spec §5 tests 1-10). Prime directive:
+#       Función pura atribucion_en_cuerpo (spec §5 tests 1-10). Prime directive:
 #       cero misatribución — un remitente solo se afirma desde un <addr> literal.
 # ---------------------------------------------------------------------------
 
@@ -384,7 +384,7 @@ def test_bodyscan_a_apple_en_linea():
     # §5.1 — (a) Apple, <addr> en la misma línea.
     texto = ("El 27 may 2024, a las 10:49, PersonaCinco <persona.cinco@engelvoelkers.com> escribió:\n"
              "cuerpo citado suficientemente largo para superar el floor")
-    anc = I._atribucion_en_cuerpo(texto)
+    anc = I.atribucion_en_cuerpo(texto)
     assert anc is not None
     assert anc.de == "persona.cinco@engelvoelkers.com" and anc.fecha_iso == "2024-05-27"
 
@@ -395,7 +395,7 @@ def test_bodyscan_b_addr_envuelto():
              "persona.cuatro@engelvoelkers.com\n"
              "> escribió:\n"
              "cuerpo citado suficientemente largo para superar el floor")
-    anc = I._atribucion_en_cuerpo(texto)
+    anc = I.atribucion_en_cuerpo(texto)
     assert anc is not None
     assert anc.de == "persona.cuatro@engelvoelkers.com" and anc.fecha_iso == "2024-10-04"
 
@@ -410,7 +410,7 @@ def test_bodyscan_c_bloque_envuelto_con_intro():
              "27 de mayo de 2024, 10:38:07 CEST\n"
              'Para: "PersonaCinco, Isabel" <persona.cinco@engelvoelkers.com>\n'
              "Asunto: x")
-    anc = I._atribucion_en_cuerpo(texto)
+    anc = I.atribucion_en_cuerpo(texto)
     assert anc is not None
     assert anc.de == "per03@example.invalid", "debe coger el De:, NUNCA el <addr> del Para:"
     assert anc.fecha_iso == "2024-05-27"
@@ -423,7 +423,7 @@ def test_bodyscan_g5_robo_destinatario_solo_nombre_de():
              "Fecha: 27 de mayo de 2024\n"
              "Para: Toni <per03@example.invalid>\n"
              "Asunto: x")
-    anc = I._atribucion_en_cuerpo(texto)
+    anc = I.atribucion_en_cuerpo(texto)
     assert anc is None, "De: sin <addr> propio + Para: con <addr> → cola, NUNCA el addr del Para"
 
 
@@ -439,7 +439,7 @@ def test_bodyscan_g3_apilamiento_envuelto():
              "Fecha:\n"
              "2 de mayo de 2024\n"
              "cuerpo")
-    anc = I._atribucion_en_cuerpo(texto)
+    anc = I.atribucion_en_cuerpo(texto)
     assert anc is None, "dos De: envueltos apilados → AMBIGUO → cola"
 
 
@@ -448,13 +448,13 @@ def test_bodyscan_g3_conteo_apple_correcto():
     # DOS atribuciones Apple apiladas → None.
     una = ("El 27 may 2024, a las 10:49, Isabel <persona.cinco@engelvoelkers.com> escribió:\n"
            "cuerpo citado suficientemente largo")
-    anc1 = I._atribucion_en_cuerpo(una)
+    anc1 = I.atribucion_en_cuerpo(una)
     assert anc1 is not None and anc1.de == "persona.cinco@engelvoelkers.com", \
         "UNA forma (a) bien formada debe recuperar, no caer por conteo"
     dos = ("El 27 may 2024, a las 10:49, Isabel <persona.cinco@engelvoelkers.com> escribió:\n"
            "El 28 may 2024, a las 11:00, Toni <per03@example.invalid> escribió:\n"
            "cuerpo")
-    anc2 = I._atribucion_en_cuerpo(dos)
+    anc2 = I.atribucion_en_cuerpo(dos)
     assert anc2 is None, "dos atribuciones Apple apiladas → AMBIGUO → cola"
 
 
@@ -463,7 +463,7 @@ def test_bodyscan_g4_dos_addr_en_linea_apple():
     texto = ("El 27 may 2024, a las 10:49, Isabel <persona.cinco@engelvoelkers.com> a Toni "
              "<per03@example.invalid> escribió:\n"
              "cuerpo")
-    anc = I._atribucion_en_cuerpo(texto)
+    anc = I.atribucion_en_cuerpo(texto)
     assert anc is None, "dos <addr> en la línea de atribución Apple → cola (no se puede ligar el de)"
 
 
@@ -473,7 +473,7 @@ def test_bodyscan_g2_ventana_atribucion_tardia():
     texto = (prosa + "\n"
              "El 27 may 2024, a las 10:49, Isabel <persona.cinco@engelvoelkers.com> escribió:\n"
              "cuerpo")
-    anc = I._atribucion_en_cuerpo(texto)
+    anc = I.atribucion_en_cuerpo(texto)
     assert anc is None, "atribución fuera de la ventana del inicio → cola (no se escanea el cuerpo entero)"
 
 
@@ -484,7 +484,7 @@ def test_bodyscan_g1_los_48_sin_addr():
              "Para: Toni Angeri\n"
              "Asunto: x\n"
              "cuerpo")
-    anc = I._atribucion_en_cuerpo(texto)
+    anc = I.atribucion_en_cuerpo(texto)
     assert anc is None, "sin <addr> literal en ninguna etiqueta → cola (prime directive)"
 
 
@@ -492,7 +492,7 @@ def test_bodyscan_sin_estructura_prosa_suelta():
     # §5.10 — email suelto en prosa, sin El…/escribió: ni De: → None (aunque haya un <addr>).
     texto = ("Hola, te paso mi correo <persona.cinco@engelvoelkers.com> por si lo necesitas.\n"
              "Un saludo y hablamos pronto.")
-    anc = I._atribucion_en_cuerpo(texto)
+    anc = I.atribucion_en_cuerpo(texto)
     assert anc is None, "prosa suelta sin estructura de atribución → cola"
 
 
@@ -500,7 +500,7 @@ def test_bodyscan_g4_addr_extraviado_antes_de_atribucion_apple():
     # Un <addr> suelto (pie/aviso legal) ANTES de una atribución Apple terminal NO debe robar el remitente.
     txt = ("Aviso legal. Contacto: dpo <dpo@bufete.com>\n"
            "El 27 may 2024, a las 10:49, PersonaCinco <persona.cinco@engelvoelkers.com> escribió:")
-    anc = I._atribucion_en_cuerpo(txt)
+    anc = I.atribucion_en_cuerpo(txt)
     assert anc is not None and anc.de == "persona.cinco@engelvoelkers.com"
 
 
@@ -508,14 +508,14 @@ def test_bodyscan_g4_addr_extraviado_con_addr_envuelto():
     # Igual pero con el <addr> del remitente envuelto (forma b): debe seguir recuperando al remitente real.
     txt = ("> firma vieja: soporte <soporte@otra.com>\n"
            "El 4 oct 2024, a las 11:48, PersonaCuatro, Eva <\npersona.cuatro@engelvoelkers.com\n> escribió:")
-    anc = I._atribucion_en_cuerpo(txt)
+    anc = I.atribucion_en_cuerpo(txt)
     assert anc is not None and anc.de == "persona.cuatro@engelvoelkers.com"
 
 
 def test_bodyscan_g4_dos_addr_en_la_unidad_apple_es_ambiguo():
     # Dos <addr> DENTRO de la unidad de atribución (remitente+cc) → ambiguo → None.
     txt = "El 4 oct 2024, Eva <eva@x.com> con copia a Bob <bob@y.com> escribió:"
-    assert I._atribucion_en_cuerpo(txt) is None
+    assert I.atribucion_en_cuerpo(txt) is None
 
 
 # ---------------------------------------------------------------------------
@@ -912,3 +912,12 @@ def test_interior_reenviado_apple_form_fuera_de_alcance():
              "El lun, 7 jul 2025 a las 19:44, Eva\n<\neva@x.com\n>\nescribió:\n"
              "Cuerpo del interior con sustancia suficiente.")
     assert I._interior_reenviado(texto) is None
+
+
+def test_atribucion_en_cuerpo_es_api_publica():
+    from core.email_atomize import inline
+    assert hasattr(inline, "atribucion_en_cuerpo")
+    texto = "El 14 may 2024, a las 10:00, Juan <juan@ej.com> escribió:\n\nHola"
+    anc = inline.atribucion_en_cuerpo(texto)
+    assert anc is not None and anc.de == "juan@ej.com"
+    assert inline.atribucion_en_cuerpo("solo prosa sin direccion") is None

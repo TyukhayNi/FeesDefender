@@ -262,7 +262,7 @@ def parsear_anclaje(texto: str, estilo: str) -> "Anclaje | None":
     return _parse_label(texto)
 
 
-def _atribucion_en_cuerpo(texto: str) -> "Anclaje | None":
+def atribucion_en_cuerpo(texto: str) -> "Anclaje | None":
     """Body-scan de remitente: levanta una atribución (Apple "El …/On … escribió:" o bloque
     De:/Fecha:/Asunto: envueltos) desde la CABEZA del cuerpo de una cita (spec §1.2).
 
@@ -959,7 +959,7 @@ def reconstruir(m_a, raw: bytes, identidades: "Identidades | None" = None) -> Re
         # disyunción (anc is None OR not anc.de) → cubre el anclaje vacío Y el estructural que
         # parseó solo fecha. Nunca pisa una atribución que ya dio ``de`` (gana el anchor legítimo).
         if (anc is None or not anc.de) and seg.texto:
-            anc_body = _atribucion_en_cuerpo(seg.texto)
+            anc_body = atribucion_en_cuerpo(seg.texto)
             if anc_body is not None:
                 anc = anc_body
                 levantada_del_cuerpo = True   # gobierna confianza (§3) y ambigüedad
