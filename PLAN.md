@@ -28,6 +28,284 @@ de `[SIGUIENTE-INTAKE-JUDICIAL-AUTO]`.
 
 ---
 
+## ✅ [SIGUIENTE-EMAIL-APLANADO-ANIDADOS] Aplanado byte-fiel de emails anidados en el export de etiquetas
+*Decisión Nikolai 2026-06-24 (hilo Cowork BaRS1 Tibidabo 8). Disparador concreto: en `03_Email` del caso W-02VND1 no aparecen los emails que viajan adjuntos dentro de otro (p. ej. los del padre `2026-06-08_mails_consulado`). Extiende `[SIGUIENTE-EXPORT-ETIQUETA-EMAIL]` (abajo, ✅).*
+
+> **✅ HECHO 2026-06-24 — Parte 1 (`c492b70`) + Parte 2 (`911bf39`) + fix red de seguridad (`5cbb6eb`).**
+> Ambas partes implementadas por TDD, cada una con revisión adversarial (3 lentes) cuyos
+> hallazgos HIGH/MEDIUM/LOW se corrigieron en el mismo commit. Suite 1215 verde.
+>
+> **Reextracción real W-02VND1 EJECUTADA** (`--force --extraer-adjuntos`): 125 → **277 `.eml`**
+> a primer nivel; **37 ficheros rescatados** de enlaces (PDFs `Nota simple`/`Nota mercantil`/
+> poderes + grabación de la call de 193 MB; 3 carpetas y 11 nativos anotados; 14 firmas
+> filtradas; 1 manual). La corrida destapó que el **boundary reusado entre niveles SÍ ocurre**
+> (3 padres `jdb_*`, 126 anidados de Apple Mail/Outlook/Nodemailer): el trigger inicial
+> (boundary repetido) era demasiado agresivo y los re-serializaba aunque el rebanado byte-fiel
+> era correcto → **fix `5cbb6eb`** ancla la red de seguridad a la coincidencia de Message-IDs
+> con el parser (byte-fiel si coinciden). **Decisión Nikolai:** los 126 ya almacenados se
+> **aceptan re-serializados** (contenido íntegro; el byte-original sigue embebido en el `.eml`
+> padre, re-extraíble a demanda); sin rebuild. Residuales en `MEJORAS #44`/`#45`.
+> **Pendiente menor:** si el flag afecta a la interfaz, re-empaquetar/re-importar la skill
+> `exportar-correos-etiqueta`.
+
+> **Plano completo y listo para ejecutar: `docs/PLAN_email_aplanado_anidados.md`.**
+> Todo el código de producción y el bloque de tests están **verificados en sandbox
+> (7/7 verde)** antes de redactar el plano. Es la **Parte 1 de 2**.
+
+**Causa raíz.** En `core/email_export.py`, `split_eml` descarta las partes
+`message/rfc822` porque `get_payload(decode=True)` devuelve `None` para ellas
+(`if payload is None: continue`). Los `.eml` adjuntos quedan solo embebidos en el
+padre, sin extraer.
+
+**Qué hay que hacer (resumen; detalle en el plano).** Extraer cada email anidado a
+**primer nivel** de `03_Email`, **byte-original** (rebanando los bytes crudos +
+decodificando el transfer-encoding; `as_bytes()` NO sirve, normaliza CRLF), nombrado
+por sus propias cabeceras, **recursivo** a hojas, **deduplicado** por `Message-ID`,
+con el padre conservado en la cronología y la **procedencia** (`forwarded_in`) en el
+evento `upload_email` de `_intake_log.jsonl`. Aplanado **por defecto**
+(`--no-aplanar-emails` para opt-out). **Red de seguridad:** si el rebanado crudo no
+halla nada pero el parser sí ve `message/rfc822`, caer a `as_bytes()` y avisar (nunca
+se pierde un email).
+
+**Ficheros.** `core/email_export.py` (nuevas `iter_nested_originals`/`_iter_raw_rfc822`/
+`_decode_cte`/`_iter_partes_hoja`/`_payload_message`/`_nested_con_fallback`/
+`_aplana_anidados`; reescribir `split_eml`; `ExportReport` +2 contadores; `export_label`
++flag; `_emit_traza` +procedencia) · `scripts/export_label_emails.py` (flag CLI) ·
+`tests/test_email_export.py` (bloque verificado + e2e con `_FakeService`).
+
+**Pendiente operativo al cerrar.** Anotar la limitación del *boundary* compartido en
+`docs/MEJORAS_FUTURAS.md`; reextraer W-02VND1 con `--force`; dejar `STATUS.md`/`PLAN.md`
+al día con el hash del commit; re-empaquetar/re-importar la skill/plugin si el flag
+afecta a la interfaz expuesta.
+
+**Parte 2 (✅ HECHA, `911bf39`; plano `docs/PLAN_email_enlaces_drive.md`).** Emails/ficheros
+que el consultor reenvía **como enlace a Drive/Gmail** en vez de `.eml` adjunto: se rescatan
+byte-fieles vía Drive REST v3 (token `gdrive_ev`). Carpetas y docs nativos solo se anotan en
+traza; binarios de descarga directa se descargan verificados por md5 (filtrando firmas); los
+`.eml` reentran la Parte 1; otros binarios van a `_enlaces/` del padre (`source="drive_link"`).
+Permalinks Gmail vía `format=raw`. Evento forense `upload_drive_link`. Scope `drive` del
+remote confirmado en Fase 0. La instrucción operativa a los consultores (reenviar como
+adjunto) sigue vigente para el flujo nuevo; la Parte 2 rescata el backlog histórico por enlace.
+
+---
+
+## [SIGUIENTE-EMAIL-ATOMIZE] Motor de atomización de correo (`core/email_atomize/`)
+*Diseño aprobado por Nikolai 2026-06-24/25. Spec: `docs/superpowers/specs/2026-06-24-email-atomize-design.md`. Plan Fase 1: `docs/superpowers/plans/2026-06-24-email-atomize-fase1.md`. Implementación: Claude Code.*
+
+Descompone `00_Input/03_Email/*.eml` a nivel de **mensaje atómico** → `01_Procesado/Emails/`
+(`.md` por mensaje + frontmatter, adjuntos dedup sha256 + ficha, `corpus.jsonl`, `_registro.json`
+con IDs congelados, `CORREOS_LECTURA.md`, `INDICE_ADJUNTOS.md`). Fin: recuperar la autoría
+enterrada de PersonaUno (levantar el velo de Tibidabo 8 S.L.). Reutiliza `core.email_export`.
+
+- [x] **Fase 1 — IDs + Capa A (MIME) + salidas.** Paquete `core/email_atomize/` (ids/headers/
+  extract/dedup/bodies/attachments/render/corpus/pipeline) + CLI `scripts/atomize_emails.py`.
+  +24 tests. **Corrida real W-02VND1: 277 mensajes, 162 adjuntos únicos (72 decorativos), 0
+  errores, 0 mojibake, idempotente.** Commits `f468a55`→`04901ba` (spec `e9681c1`, plan `88439a2`).
+- [x] **Fase 2 — Capa B (reenvíos/citas INLINE).** Diseño sintetizado por workflow adversarial +
+  **revisión adversarial de código** (14 hallazgos confirmados, 8 HIGH, TODOS corregidos). `inline.py`
+  + `_segmenter.py` (autoridad única autor/cita); segmentación HTML+plano, atribución SOLO desde
+  cabecera contigua parseable (ES+CA+EN), confianza alta-reconstruida/media/baja con guardas
+  anti-misatribución (ambigüedad, fecha-coherente, candidata→media, conservación de tokens),
+  fingerprint día-granular, upgrade de fidelidad sin tocar Capa A, poda de huérfanos, cola `_revision/`.
+  +53 tests. **Corrida real W-02VND1: 277 Capa A BYTE-IDÉNTICOS, +89 Capa B alta (0 misatribuciones
+  auditadas), 84 a revisión, 6 upgrades, idempotente; PersonaUno 12 directos + 13 inline PROMOVIDOS
+  (autoría enterrada recuperada).** Un bug de fecha enmascaraba el payoff (antes 14/0 → 89/13).
+  Spec/plan `2026-06-25-email-atomize-layerb-{design,fase2}.md`.
+- [ ] **Fase 3 — capa de caso.** `identidades.yaml` (mover `IDENTIDADES_VIGILADAS`; set de PersonaUno
+  `per01a@example.invalid`/`per01c@example.invalid` confirmados, `per01b@example.invalid` candidato→tope media,
+  `ignacio@despacho-ab.example` parte DISTINTA), mejor parser de fechas ES/CA + niveles
+  profundos (subir recall PersonaUno), vistas temáticas (`dossier_del_burgo`, `vista_nexo_causal`),
+  `_entregas/` selladas. OCR de adjuntos = posterior.
+
+---
+
+## [SIGUIENTE-CRONOLOGIA-UNIFICADA] Cronología Unificada de Prueba (capa por encima de los atomizadores)
+*Diseño aportado por Nikolai 2026-06-25 (hilo Cowork). Spec: `docs/superpowers/specs/2026-06-25-cronologia-unificada-design.md`. Banco de pruebas de diseño: W-02VND1 (Tibidabo 8). **Naturaleza: documento de DISEÑO, NO construcción.** Disciplina rectora: skill `verificacion-anclada-fuente`. Implementación futura: Claude Code en `core/`.*
+
+**Objetivo.** Fusionar todas las fuentes de prueba de un expediente (correo, WhatsApp,
+CRM, entrevistas, documental, registros) en **UNA sola línea de tiempo**, separando lo
+que **consta** en la prueba (capa canónica, anclada con pinpoint, estatus A/B) de lo que
+se **infiere** de ella (capa derivada: hechos, relato, nexo causal, presunciones 385/386).
+Vive **por encima** de los atomizadores por fuente (el motor `core/email_atomize/`,
+**congelado**, es el primer adaptador) y **por encima** de `organizar-sala-lectura`
+(nivel fichero); no los duplica ni los modifica.
+
+**Decisiones de diseño cerradas (D1–D6 en el spec):**
+- **D1 — átomo:** acto datado anclado a fuente (Modelo B, PROV-O Activity/Entity/Agent);
+  nunca un hecho del mundo inferido. Confianza en 3 ejes (anclaje A–E · credibilidad ·
+  fiabilidad de fuente).
+- **D2 — almacén:** híbrido delgado (verbatim **en la fuente**, relación temporal en el
+  almacén canónico) + pinpoint doble + `eventos.jsonl` regenerable + `_registro_cronologia.json`
+  no-derivable. Salida prevista: `01_Procesado/Cronologia/`.
+- **D3 — tres fichas:** Acto · Enlace (primitivo único, absorbe la correlación y las
+  contradicciones) · Hecho derivado (alimenta `HECHOS_X.md` con semáforo 🟢🟡🔴 calculado del grafo).
+- **D4 — IDs:** dos regímenes — congelados por contenido (`EVT-`/`ATT-`) y asignados/persistidos
+  (`ENL-`/`HD-`/`ACT-`/`HIP-`); idempotentes, opacos, 5 dígitos.
+- **D5 — actor:** formaliza `identidades.yaml` (identidad única + roles que cuelgan;
+  calificaciones del velo = hechos derivados, no flags).
+- **D6 — tipología:** categorías de alto nivel CERRADAS; hojas SEMILLA extensibles con gobernanza.
+
+**Estado (DISEÑO).**
+- [x] Fase 0 — inventario de fuentes.
+- [x] Fase 1 — esquema del evento (D1, D2, D3, D4, D6).
+- [x] Fase 2 — identidades (D5).
+- [ ] Fase 3 — correlación vs dedup entre fuentes (algoritmo y reglas; el enlace ya absorbe buena parte).
+- [ ] Fase 4 — tiempo heterogéneo.
+- [ ] Fase 5 — arquitectura de ingesta: un atomizador por fuente. **Precondición:** cada
+  fuente debe exponer átomos con ID estable (un `_chat.txt` crudo no los tiene → necesita su atomizador).
+- [ ] Fase 6 — vistas, entregable humano + custodia (work-product ≠ prueba).
+- [ ] Fase 7 — alcance piloto (correo + WhatsApp).
+
+**Build — NO empezar aún.** En `core/` de FeesDefender, incremental (correo + WhatsApp
+primero), **solo tras cerrar al menos la Fase 3 de diseño y con el motor de correo
+terminado** (hoy `[SIGUIENTE-EMAIL-ATOMIZE]` está en Fase 3). La cronología **consume** las
+salidas del motor de correo (`mensajes/*.md`, `corpus.jsonl`, `_registro.json`) y **no lo
+toca** (spec congelado).
+
+---
+
+## [SIGUIENTE-SALA-UNICA-PLANA] Sala de lectura única, plana y prompt-driven (todo `00_Input`)
+*Decisión cerrada con Nikolai 2026-06-18 (este hilo). RGPD aprobado por el responsable del tratamiento. Spec + plan de implementación DIFERIDOS (Nikolai aportará más contexto desde otro hilo). Enlaces: `MEJORAS #34` (vehículo: skill-Cowork multiusuario), `#35` (bundle WhatsApp chat+media), `#36` (guarda de colisión), `#38` (fecha de contenido vs mtime), `#37`/`#39` (deprecación).*
+
+> **[IMPLEMENTADO y MERGEADO 2026-06-18 — pero con PIVOTE PENDIENTE]** Spec
+> `docs/superpowers/specs/2026-06-18-sala-lectura-unica-design.md` + plan
+> `docs/superpowers/plans/2026-06-18-sala-lectura-unica.md`. Feature mergeada a `main`
+> por FF (13 commits `a53ca42`→`51b6653`, sin push): skill `organizar-sala-lectura`
+> v1.3 (plana, todo `00_Input`) + `triaje-viabilidad` v1.1 + canon/sync/gate + helper
+> de catálogo + core de sala deprecado. Revisor final APPROVED; suite verde.
+> **⚠️ La corrida real en Cowork (BaRS1) tardó ~53 min** — el conector de Drive es
+> per-fichero (ver `DEAD_ENDS.md`). **DECISIÓN ABIERTA (manda sobre el resto):** pivotar
+> a **motor local plano primario** sobre el montaje `G:` (Drive for Desktop) —filesystem,
+> disparo por CLI/Streamlit/skill en Claude Code local—, dejando la skill de Cowork como
+> **fallback puro-nube**. **Bloqueado por:** ¿el equipo (Paola incl.) trabaja con el
+> montaje `G:`? Si sí → des-deprecar el motor y portar `poblar_sala_lectura` a la
+> estructura plana. **Pendiente operativo:** re-import `.skill` v1.3/v1.1 en Cowork.
+>
+> **✅ Vía rápida lado Claude Code lista (2026-06-22):** MCP filesystem local
+> **`expedientes`** sobre `G:\Unidades compartidas\EXPEDIENTES - TYUKHAY LEGAL`
+> (`@modelcontextprotocol/server-filesystem`, global + `cmd /c`, modo Mirror = todo en
+> disco). Lectura a velocidad de disco (~1,1 s un caso de 928 ficheros, vs ~53 min por
+> el conector). **Permite ya** correr la skill `organizar-sala-lectura` **prompt-driven
+> en Claude Code local** sobre el Drive sin el conector per-fichero — desbloquea el lado
+> Code del pivote SIN portar todavía el motor Python. NO escribe nada que no se le pida,
+> pero el server-filesystem **sí puede escribir/borrar** en `G:` (incluida `90_Notas
+> personales` + riesgo de duplicados por el sync de Drive): se asume, no se limitó a
+> solo-lectura (decisión de Nikolai 2026-06-22). Montaje
+> documentado en `DEAD_ENDS.md` y memoria `reference-expedientes-filesystem-mcp`.
+>
+> **⚠️ CORRECCIÓN 2026-06-22 — Cowork TAMBIÉN puede usar el MCP local (se creía que no):**
+> añadido el mismo server al `mcpServers` de `%APPDATA%\Claude\claude_desktop_config.json`,
+> **Cowork cargó la integración `expedientes` y listó 273 ficheros de BaRS1 en segundos.**
+> El supuesto "Cowork solo ve Google Drive" era FALSO: **Claude Desktop (app local) hace de
+> puente** y lanza los stdio MCP locales en el PC. Los ~53 min fueron por usar el **conector
+> remoto** de Drive, no por falta de acceso al disco. **Implicación para este pivote:** la
+> sala puede correr rápido en Cowork **en el PC de Nikolai** apuntando la skill al MCP local
+> `expedientes` en vez del conector — sin portar el motor Python ni montar servidor remoto.
+> **Límite que persiste:** solo donde Claude Desktop corre en el PC con el montaje `G:`;
+> Cowork móvil/navegador o las PC de Paola/Ana sin montaje+`mcpServers` seguirían necesitando
+> un MCP **remoto** en servidor (ahí sí queda la fase aparte).
+
+**Decisión.** Unificar las **dos** salas de lectura hoy convivientes en `01_Procesado/`
+(la `Sala lectura Drive EV` de la skill Cowork —solo Drive EV, por categoría— y la
+`Sala lectura` del motor —todo `00_Input`, por fuente—) en **UNA sola `Sala lectura`**,
+poseída por la **skill (Cowork, prompt-driven) aplicada a TODO `00_Input`**. El motor
+deja de poblar la sala (es un artefacto-hoja: **nada del core la lee**; el pipeline
+confidencial extractor→`MD/`→anon→`06`→frontier es independiente y se mantiene).
+Resuelve `MEJORAS #34`: Paola y cualquiera la ejecutan desde Cowork sobre el Drive,
+sin Python local ni dependencia del PC de Nikolai.
+
+**Estructura canónica (fijada).** Plana, sin slug de categoría, cronológica:
+- Fichero: `<AAAA-MM-DD>_<descripcion_guiones_bajos>.ext` (fecha ISO + descripción
+  legible, sin PII, sin prefijo de categoría).
+- **Documento compuesto** (con anexos) = **subcarpeta** con el mismo nombre del
+  principal (`<AAAA-MM-DD>_<descripcion>/`, fecha ISO en la carpeta → se intercala
+  cronológicamente), conteniendo el principal + sus anexos (`<principal>_anexo_<N>_…`).
+  Documentos sueltos → ficheros planos en la raíz.
+- La **taxonomía E&V deja de vivir en las carpetas** y pasa a `INDICE.md` (vista por
+  categoría) + `CRONOLOGIA.md` (ascendente) + `_MANIFIESTO.md` (sha256 · original ·
+  canónico · categoría · fecha). La **fuente** se conserva en el manifiesto/catálogo
+  e índices (no se pierde al quitar las carpetas por fuente).
+
+**Decisiones cerradas (Nikolai, este hilo):**
+- **RGPD:** APROBADO que la skill lea **todo `00_Input` en claro** (incl. WhatsApp,
+  email, entrevistas), vía Cowork/Claude, ejecutado por Paola y otros. Extiende la
+  excepción de `MEJORAS #34` (más fuentes y usuarios); autorizado por el responsable.
+- **Catálogo:** se **conserva** `indice_documental.yaml` como SSOT, escrito por un
+  helper de la skill (evita la doble verdad con `_MANIFIESTO.md`; deja la puerta a El
+  Auditor y a la persistencia de bundles `parent_id`).
+- **Bundles:** estructurales en la skill (WhatsApp chat+`media/` `#35`; email
+  cuerpo+adjuntos por MIME); los **CRM** quedan "mejor esfuerzo" (Cowork no ve el
+  `modified_at` del CRM que usa `conjunto_detector`).
+- **Modelo:** la skill se ejecuta con **Sonnet/Haiku, NO Opus** (clasificación atómica;
+  hay visto bueno humano y lo ambiguo→`08. PENDIENTE`). Nota de uso en la skill +
+  prompt ligero. El grueso de la velocidad lo da el skip incremental (abajo).
+- **2ª pasada idempotente (sin duplicar trabajo):** skip por **`md5Checksum`** en
+  `_MANIFIESTO.md` (hash de contenido, no nombre). Coste ∝ documentos **nuevos**; si
+  no hay nada nuevo → casi instantánea (listar + comparar hashes + re-render índices).
+  Respeta ajustes manuales (no pisa lo ya colocado). Incluir el fix de `#38` (la fecha
+  de contenido de actos fechados —escrituras, poderes, contratos, burofax— prevalece
+  sobre `mtime`, que queda como último recurso marcado).
+- **Deprecación:** el camino de sala en el core —`clasificar_caso`/`aplicar_clasificacion`/
+  `render_indices`/`poblar_sala_lectura` y **`clasificar_residuo_llm` (`#37`)**— queda
+  **superado por la skill** (marcar deprecado, no borrar de golpe). Se conservan los
+  fixes de esta sesión (`build_catalog` `45dd5ad`, OCR-OOM `2eeec1a`) porque sirven al
+  pipeline confidencial. Reevaluar `#39` (OCR local) ya que la skill esquiva el OCR
+  local para la sala (usa la extracción del conector de Drive).
+
+**Lectores de la sala:** `triaje-viabilidad` (la lee; corregir su referencia interna
+`02_Sala lectura/` → sala única). `viabilidad-prerelleno` **no se toca** (lee `00_Input`
+directo). 
+
+**Reemplaza** el enfoque core de `[SIGUIENTE-SALA-LECTURA-01]` y `[SIGUIENTE-RESIDUO-LLM]`
+para la población de la sala (esos quedan como histórico del prototipo que validó el
+enfoque y destapó los dos bugs corregidos).
+
+- [ ] **Pendiente:** spec de diseño (`docs/superpowers/specs/`) + plan de implementación
+  de la skill. **En espera del contexto adicional de Nikolai (otro hilo).** No empezar hasta entonces.
+
+---
+
+## [SIGUIENTE-RESIDUO-LLM] Clasificador LLM del residuo de intake (`MEJORAS #37`)
+*Promovido 2026-06-18 por petición de Nikolai (Cowork). `MEJORAS #37`. Implementación: Claude Code.*
+
+**Objetivo.** Cerrar el único paso humano que queda en la sala de lectura: rellenar
+la worklist del residuo `01_Procesado/_revisar/_clasificar.md`. Paso **opcional**
+`clasificar_residuo_llm(case_id)` que, SOLO sobre las entradas en residuo (las que
+`clasificar_caso` no resolvió por nombre/imagen), lee el `.md` del texto extraído de
+cada documento y autorrellena las columnas de la worklist (tipo documental, fecha,
+parte, descripción). El letrado valida antes de `aplicar_clasificacion`, que sigue
+siendo el **único** camino al catálogo canónico `indice_documental.yaml`.
+
+**Restricciones (heredadas de la arquitectura).** La lógica vive en el core; el LLM
+ocupa exactamente el slot humano de la worklist (no inventa estructura). Clasifica
+solo lo que ve (regla de la casa: no inventar); lo de baja confianza se deja sin
+rellenar (marcado para revisión), no se adivina. No toca la clasificación
+determinista ni el esquema de la worklist. Idempotente; no pisa lo ya clasificado
+por humano. Reutiliza `core/llm_cloud.py`.
+
+**RGPD (cruza con #34/#27).** Extiende la excepción de lectura en claro por LLM. La
+posición concreta (proveedor + qué texto lee + exposición en Streamlit) la fija
+Nikolai al abrir el hilo de implementación (decisión abierta, ver hilo de Claude
+Code).
+
+**Decisión de Nikolai (2026-06-18):** resolver el residuo **desde Claude-en-sesión**
+(ya pagado), **sin API externa de pago** (ni Scaleway ni Claude API) y **sin botón
+Streamlit**. Encaja con la excepción RGPD §2 ya autorizada (Claude lee `MD/` en
+claro); no abre terreno RGPD nuevo. El conector de pago (`make_llm_cloud_chat_fn`
+sobre `core/llm_cloud.py`) queda OPT-IN para el futuro DPA.
+
+- [x] Implementación (`preparar_residuo` + `rellenar_worklist` +
+  `clasificar_residuo_llm` con `chat_fn` inyectable obligatorio + adaptador
+  `make_llm_cloud_chat_fn` opt-in) + disparo headless (`preparar-residuo` /
+  `clasificar-residuo [--connector]` en `scripts/sala_lectura.py`). `742e35a`.
+  (No se cabló en `run_pipeline.py` ni Streamlit: forzaría el camino de API,
+  contrario a la decisión.)
+- [x] Tests (+9, LLM mockeado): residuo rellenado, baja confianza sin rellenar,
+  idempotencia, no se pisa celda humana, Tipo/Parte inválidos, doc sin MD omitido,
+  chat_fn obligatorio, adaptador llm_cloud. Suite 1008 passed / 58 skipped. `742e35a`.
+
+---
+
 ## [SIGUIENTE-SALA-LECTURA-01] Sala de lectura y organización de `01_Procesado`
 *Diseño cerrado con Nikolai 2026-06-12 (sesión Cowork, HANDOFF). Plan fino autocontenido: `docs/PLAN_SALA_LECTURA_01_PROCESADO.md` (incluye §0 con notas de Claude Code sobre el estado del repo). Implementación: Claude Code.*
 
@@ -89,6 +367,30 @@ Suite: **955 passed, 58 skipped** (5 fallos preexistentes en
 
 **Fase B (email) y transcripción de audio diferidas** — fuera de alcance de Fase A,
 reutilizan el parser sin cambios.
+
+---
+
+## ✅ [ESTILO-DE-LA-CASA] Infraestructura de escritura del despacho (claridad + persuasión + no-IA)
+*Plano: `PLANO_Code_skill_estilo_casa.md`. Decisiones de Nikolai + recomendaciones de Code. Implementación: Claude Code, 2026-06-17.*
+
+**COMPLETA (2026-06-17).** Dos capas. **Capa 1:** contrato canónico
+`data/_estilo/contrato_estilo.md` (instrucción para modelo; 3 capas + regla de oro
+claridad ⟂ precisión —gana la precisión— + opera dentro del formato Sala 1ª TS).
+**Capa 2:** skill `pase-de-estilo` (`transversal`/`atomica`, núcleo + identidad, sin
+módulos ni telemetría; valida OK; references `claridad_es.md` + `tics_ia_es.md` (81
+patrones) + `persuasion_es.md` (34 técnicas) + `registros.md` placeholder; versión
+final + tabla de cambios + traza; guardarraíl de reordenación afinado —frase
+intra-fundamento permitida, esqueleto solo propuesto—; cita vaga remitida a
+`verificacion-anclada-fuente`, no inventa). Test lean con-skill vs baseline:
+guardarraíles OK. **Enganche (prosa):** puntero capa 1 + `pase-de-estilo` capa 2 en
+las 5 procesales (`escritos-judiciales` —+ línea nueva `verificacion-anclada-fuente`,
+único hueco—, `oposicion`, `preparacion-litigio-civil`/`-audiencia-previa`/`-juicio-oral`);
+línea always-on en `CLAUDE.md`; módulo **ESTILO + VERIFICACIÓN** en `_plantilla-skill`
+(las skills nuevas nacen con ambos concerns en `requires`). `.skill` en `dist/skills/`.
+**Pendiente:** reimport en servidor (manual, Cowork/claude.ai); corpus de voz real
+(`registros.md`, Fase E, lo aporta Nikolai). **Diferido:** `requires` en las 5 skills
+viejas (prosa ahora, retrofit de identidad único futuro); enforcement en
+`validate_skills.py`.
 
 ---
 
@@ -259,6 +561,37 @@ Una vez el `.docx`/`.txt` está en `00_Input/06_Entrevistas/`, el pipeline gené
 (inventory → extractor → markdown → anon) ya lo procesa. La 2ª pasada de
 `viabilidad-prerelleno` (leer la transcripción para cerrar huecos testificales)
 queda fuera de alcance de este bloque.
+
+---
+
+## [SIGUIENTE-INTAKE-EXPEDIENTE-AGIL] `intake-expediente` más ágil y con menos diálogos de permiso
+*Promovido 2026-06-23 (sesión Cowork) por decisión de Nikolai. `MEJORAS #43`. Implementación: Claude Code (edición de la skill en `.claude/skills/intake-expediente/` + re-empaquetado del `.skill`).*
+
+**Objetivo.** Que el intake desde Cowork (vía `expedientes-xl`) sea más rápido y dispare
+menos diálogos de permiso por-llamada. Disparador: intake real del zip W-01VG51 → W-02VND1
+(2026-06-23), donde el flujo hizo ~10 llamadas evitables y un round-trip muerto.
+
+**Dos palancas (una es código, la otra es ajuste del cliente):**
+
+1. **Skill (código) — menos llamadas al Drive:**
+   - **Una sola pasada**: extraer a staging solo para listar/`hash_path`; tras el OK, copiar
+     con **`copy_dir`** cuando todo va a una misma `<fuente>` (en vez de N `copy_path`).
+   - **Gate sin OCR**: para escaneados, proponer `sin-fecha_...` por defecto y **no** ofrecer
+     extraer fechas en Cowork (rama fuera de capa e inviable; la datación es del pipeline
+     local hasta que exista `MEJORAS #42`).
+   - **Regla dura**: nunca copiar binarios al mount para leerlos con bash (mount aislado del
+     Drive; ver `DEAD_ENDS.md`).
+   - Efecto colateral: menos operaciones sobre el Drive ⇒ menos diálogos de permiso si el
+     usuario no ha activado "Permitir siempre".
+
+2. **Cliente (NO código) — eliminar los diálogos de raíz:** activar **"Permitir siempre"**
+   para el conector `expedientes-xl` en Claude Desktop/Cowork **una vez** → cero diálogos
+   durante la ejecución. Es el arreglo definitivo del permiso; ningún cambio de skill lo
+   sustituye (la propia skill ya lo documenta como ajuste del cliente). **Acción de Nikolai**,
+   no de Claude Code.
+
+- [ ] (1) Editar la skill `intake-expediente` (procedimiento + gotchas) e re-empaquetar `.skill`.
+- [ ] (2) Activar "Permitir siempre" para `expedientes-xl` (acción manual de Nikolai).
 
 ---
 
@@ -618,3 +951,199 @@ el ensamblado de nombre.
 
 **Pregunta abierta (no bloquea):** confirmar contra una carpeta de contestación
 real si el **demandado usa el mismo prefijo `D NN`** u otro, para afinar D9.
+
+## [SIGUIENTE-HOMOGENIZACION-SKILLS] Charter + enforcement + retrofit de skills
+
+> Handoff Cowork→Claude Code (2026-06-16). Diseño aprobado por el letrado. **Lo
+> ejecuta Claude Code** (Cowork solo planifica). Objetivo: que todas las skills
+> —actuales y futuras— compartan lo mejor del estándar y que las mejoras futuras
+> se propaguen solas. **NO duplica `docs/MEJORA_CONTINUA_SKILLS.md`: lo
+> referencia.** Estado verificado en disco el 2026-06-16.
+>
+> **ALCANCE REDUCIDO 2026-06-16 (tras crítica de ROI, aprobado por el letrado):**
+> no hay escala que justifique la superestructura de gobernanza. Solo se ejecuta
+> **corrección + mínimo reutilizable**; el resto se difiere. Ver «Alcance
+> revisado» más abajo — manda esa sección sobre el «Plan por fases» original.
+
+### Decisiones del letrado (cerradas)
+
+1. **CHANGELOG.md separado** por skill (no sección `## Changelog` dentro del
+   `SKILL.md`). Actualizar el paso 4 de `MEJORA_CONTINUA_SKILLS.md` para que
+   apunte a `CHANGELOG.md`.
+2. **Biblioteca de jurisprudencia compartida** en `_shared/jurisprudencia/`,
+   referida por ECLI (no per-skill: evita N copias del mismo fallo). Migrar la de
+   `oposicion`. Tradeoff asumido: menor autonomía de empaquetado.
+   **(Ejecución DIFERIDA — ver Alcance: se queda en `oposicion` hasta que una 2.ª
+   skill la necesite.)**
+3. **Cosecha: se mantiene el modelo actual** (un fichero por sesión, push por
+   conector al Drive del despacho; lo ven solo los abogados, no E&V).
+   **SALVAGUARDA pendiente:** verificar **una vez** que el ACL de
+   `Biblioteca_Skills/` excluye de hecho a los miembros de E&V (p. ej. Marta
+   Reynares); en un Shared Drive los miembros heredan acceso a todo. Si los
+   incluye, mover a carpeta restringida o a un drive separado.
+4. **AGPL — `verificacion-anclada-fuente` se mantiene PURAMENTE INTERNA.**
+   (a) conservar licencia + atribución actuales y añadir un `LICENSE` con el texto
+   íntegro de la AGPL-3.0 + nota de "modificado por Tyukhay Legal";
+   (b) **nunca co-empaquetarla** con skills propietarias (cada skill, su `.skill`);
+   (c) **no exponerla por red** en el despliegue E&V (la cláusula §13 obligaría a
+   publicar la versión adaptada). Si en el futuro se necesita exponerla, reabrir
+   decisión: publicar la adaptada o reescribir una skill propia.
+5. **Taxonomía `type` en dos ejes** (hoy mezclados): `rol`
+   (transversal | fase | cliente | output) y `naturaleza`
+   (atomica | orquestadora).
+6. **Gobernanza: bus factor 1** (Nikolai, único aprobador de versiones, tags y
+   promoción de jurisprudencia). El gate de calidad es el validador automático,
+   no un segundo humano.
+
+### Anatomía canónica (modular: núcleo + módulos por rol)
+
+- **Núcleo (toda skill propia):** `SKILL.md` con frontmatter estándar,
+  `CHANGELOG.md`, `LICENSE`, `.gitignore` (excluye telemetría).
+- **Módulo OPERACIÓN** (skills que producen outputs en expediente: las 5
+  procesales + `viabilidad-prerelleno`): helpers canónicos
+  (`registrar_outputs.py`, `registrar_uso.py`, `programar_revision.py`,
+  `scaffold_caso.py`) + bucle de `MEJORA_CONTINUA_SKILLS.md`.
+- **Módulo EVOLUCIÓN:** `EVOLUCION.md` de 5 fases (plantilla en el charter).
+- **Módulo JURISPRUDENCIA + COSECHA** (`oposicion`; candidatas `escritos`,
+  `preparacion-*`): índice ECLI como SSOT en `_shared/jurisprudencia/` +
+  consolidador + `drive_config.json`.
+- **No aplican módulos** a `verificacion-anclada-fuente` (comportamiento
+  transversal) ni `engel-volkers` (contexto de cliente): solo núcleo + identidad.
+
+### Frontmatter estándar (esquema)
+
+`name` (==carpeta), `description` (disparadores + "NO usar cuando…"), y bloque
+`metadata`: `rol`, `naturaleza`, `jurisdiction`, `area` (lista), `version`
+(semver entre comillas), `author`, `organization`, `contact`, `status`
+(vigente | deprecada | experimental), `charter_version`, `orchestrates` (lista),
+`requires` (lista), `evolucion_fase`. Más `license` de primer nivel. Para
+**adaptadas de tercero**: añadir `author_original`, `adapted_by`,
+`base_skill_url` y la licencia de origen (no relicenciar nunca a la baja).
+`orchestrates`/`requires` hacen el **mapa de relaciones derivable y validable**
+(no prosa que se pudre).
+
+### Alcance REVISADO 2026-06-16 (manda sobre el «Plan por fases» original)
+
+Tras crítica de ROI: 9 skills, un autor, uso bajo (ni 5 usos reales aún). No se
+construye la superestructura de gobernanza. Solo **corrección** + **mínimo
+reutilizable**. Lo demás, diferido a `docs/MEJORAS_FUTURAS.md` hasta que lo pidan
+los datos.
+
+**AHORA — valor inmediato:**
+
+- **Ola 1 (correcciones), verifica el estado real en disco:**
+  - Reconciliar `oposicion-alegacion-nulidad` a los helpers canónicos: su
+    `scripts/log_uso.py` → `registrar_uso.py` (vías dentro de `metricas`);
+    sincronizar helpers.
+  - Retirar la **doble telemetría**: `preparacion-audiencia-previa/scripts/log_uso.py`
+    y `preparacion-juicio-oral/scripts/log_uso.js`.
+  - **Corregir el drift de vías** (3 vías viejas → 4 actuales: A nulidad absoluta ·
+    B vicio del consentimiento · C incorporación · D contenido/abusividad) en el
+    logger, en `EVOLUCION.md` (Fase 1) y en `logs/README.md` de `oposicion`.
+  - **AGPL `verificacion-anclada-fuente`:** añadir `LICENSE` con el texto íntegro
+    de AGPL-3.0 + nota de modificación (conservar atribución; no co-empaquetar con
+    propietarias). Higiene legal barata.
+- **Mínimo reutilizable:**
+  - `_shared/_plantilla-skill/` — plantilla para que las skills **nuevas** nazcan
+    iguales (frontmatter ligero con los dos ejes `rol`/`naturaleza` + módulos).
+    Ahorra tiempo real en cada alta.
+  - `scripts/validate_skills.py` en **modo AVISO** — se corre a mano, informa de
+    no conformidades, **no bloquea** commits. Sin hook, sin CI.
+
+**DIFERIDO a `docs/MEJORAS_FUTURAS.md`** (no construir hasta que los datos lo pidan):
+
+- Charter `_shared/ARQUITECTURA_SKILLS.md`.
+- `scripts/new_skill.py` (scaffolder).
+- `inventario_skills.json` + `INVENTARIO.md` (termómetro de conformidad).
+- `validate_skills.py` en modo **bloqueante** (pre-commit + CI) y la regla blanda
+  en `CLAUDE.md`.
+- **Retrofit masivo de identidad** (`metadata`+`license`) de las 7 skills (antiguas
+  Olas 2-3): se alinean **al tocar cada una**, no en barrido.
+- **Generalizar jurisprudencia+cosecha a `_shared/`**: se queda en `oposicion`
+  hasta que una 2.ª skill lo necesite.
+
+**Disparador para reabrir lo diferido:** más skills, más manos, o una
+inconsistencia que cueste algo real.
+
+**Cierre:** `python scripts/sync_skill_helpers.py` + `python scripts/package_skill.py <skill_dir>`
++ `git commit`/`tag` + re-import en el servidor. Corre la suite (incl.
+`test_skill_helpers_sync.py`).
+
+Encaja con el **retrofit diferido** ya decidido (alinear al tocar cada skill),
+salvo la **Ola 1**, que conviene ejecutar ya.
+
+### Matriz de conformidad (verificada 2026-06-16)
+
+| Skill | metadata | license | helpers canónicos | bespoke a retirar |
+|---|---|---|---|---|
+| oposicion-alegacion-nulidad | sí | sí | **NO** | `log_uso.py` → canónico |
+| verificacion-anclada-fuente | sí (AGPL) | sí | n/a | — |
+| cendoj-descarga | falta | falta | sí | — |
+| escritos-judiciales | falta | falta | sí | — |
+| preparacion-litigio-civil | falta | falta | sí | — |
+| preparacion-audiencia-previa | falta | falta | sí | `log_uso.py` (doble) |
+| preparacion-juicio-oral | falta | falta | sí | `log_uso.js` (doble) |
+| engel-volkers | falta (`status` suelto, `version` sin comillas) | falta | n/a | — |
+| viabilidad-prerelleno | falta (sin `version`) | falta | **NO** | — |
+
+### Reconciliación documental (evitar el tercer doc solapado)
+
+**(Aplica cuando se construya el charter, hoy diferido.)** El charter
+**referencia** `MEJORA_CONTINUA_SKILLS.md` (dueño del bucle) y
+`EVOLUCION.md` (instancia del módulo). Marcar `despacho-skills/SKILL_AUTHORING.md`
+como **superado** por el charter (idealmente, sacar ese repo obsoleto del árbol de
+trabajo para que no contamine).
+
+---
+
+## ✅ [SIGUIENTE-EXPORT-ETIQUETA-EMAIL] Exportar etiqueta Gmail → expediente (motor + Streamlit + CLI + skill)
+*Decisión Nikolai 2026-06-22 (hilo Cowork BaRS1 Tibidabo 8). Disparador concreto: el volcado de los correos de una etiqueta al expediente es lentísimo vía Cowork (conector solo-texto, sin binarios, tope de tamaño por contexto). Se necesita herramienta reutilizable para TODOS los casos y usable por Paola y Ana.*
+
+> **✅ HITOS 1 y 2 COMPLETOS (2026-06-22, Claude Code).** Motor `core/email_export.py`
+> (capa pura `eml_filename`/`split_eml`/dedup `Message-ID` + glue `export_label`) + CLI
+> `scripts/export_label_emails.py` + `tests/test_email_export.py` (+14). **Corrida real
+> W-02VND1: 122 `.eml` + 348 adjuntos, idempotente (2ª corrida 0/122).** Hito 2: botón
+> Streamlit «✉️ Exportar correos por etiqueta» + skill `exportar-correos-etiqueta`
+> empaquetada en el plugin (`package_plugin.py`), versión 0.1.0→0.2.0,
+> descripciones actualizadas. Suite verde (exit 0). Commit `5088e27` (main, sin push).
+> **✅ Hito 3 COMPLETO (2026-06-23, Claude Code).** Conector `email-export` en
+> `plugins/email_export_mcp/server.py` (FastMCP, tool `export_label_emails`, inyección
+> de deps). Plugin v0.2.0→0.3.0. Tests: `tests/test_email_export_mcp_server.py` (6 verdes).
+> Snippet `claude_desktop_config.json` en `plugin-src/README.md`. Commit `b58497f`.
+> **Pendiente Nikolai:** copiar snippet al `claude_desktop_config.json` de Cowork y reiniciar Claude Desktop.
+
+**Objetivo.** Dada una etiqueta Gmail de un caso, volcar TODOS sus mensajes como `.eml` fieles (cualquier tamaño) + adjuntos extraídos, organizados cronológicamente con la nomenclatura del despacho (`AAAA-MM-DD_descripcion`), en `00_Input/03_Email/`. Idempotente.
+
+**Arquitectura (UI → Core → Datos; lógica solo en core):**
+- `core/email_export.py` — MOTOR. Reutiliza el OAuth de `gmail_source` (`_load_credentials`/`_build_service`; tokens `~/.gmail-mcp/`, sin alta nueva). `labels().list`→labelId; `messages().list(labelIds=[…])` paginado; `messages().get(format='raw')`→`.eml`; capa pura `split_eml(raw)->(.eml,[adjuntos])` + `eml_filename(headers)`; subcarpeta fechada si hay adjuntos; dedup por `Message-ID`; idempotente.
+- Streamlit — página/botón "Exportar correos por etiqueta" para **Paola y Ana** (eligen caso+etiqueta y pulsan; corre en el PC con token y `G:`). La UI solo orquesta.
+- `scripts/export_label_emails.py` — CLI (`--ref W-XXXXX`, `--account`, `--label`); destino vía `case_locator.path_for`; genera `INDICE.md`/`CRONOLOGIA.md`.
+- `.claude/skills/exportar-correos-etiqueta/` — skill (rol:input, atomica) para Cowork/Claude Code; NO confundir con `intake-expediente` (subir sueltos) ni `organizar-sala-lectura`. Empaquetar con `package_skill.py` + re-import.
+- `tests/test_email_export.py` — capa pura (nombre canónico, extracción de adjuntos, dedup, idempotencia).
+
+**Validación inicial.** Correr para W-02VND1, etiqueta `01. CONTING/01. EXTRAJUD/01. BARCELONA/BaRS1 - Tibidabo 8 - (W-02VND1)` (cuenta engelvoelkers) → todos los correos organizados en `03_Email`.
+
+**Ejecución/commit/empaquetado:** Claude Code (pytest + token local + git). El OAuth ya está resuelto.
+
+**Estado provisional dejado hoy (2026-06-22, Cowork):** en el Drive de engelvoelkers se creó `00_Originales (W-02VND1)` con 40 `.eml` (los adjuntos de las 8 remesas de Eva/Isabel) + `03_Email/04_Correos organizados (W-02VND1)/INDICE.md` y `CRONOLOGIA.md`. Es provisional y queda sustituido por el export por etiqueta cuando exista.
+
+**Secuencia de entrega (añadido 2026-06-22).**
+- **✅ Fase 1 — que funcione para Nikolai en W-02VND1 (PRIORITARIA):** `core/email_export.py` + CLI `scripts/export_label_emails.py` + `tests/test_email_export.py`. Criterio de aceptación: ejecutar el CLI para W-02VND1 deja TODOS los correos de la etiqueta como `.eml` + adjuntos organizados en `00_Input/03_Email/`, idempotente y con la suite verde. Con esto el intake ya es operativo para el abogado. **HECHA — 122 `.eml` + 348 adjuntos, idempotencia verificada.**
+- **✅ Fase 2 — usable por Paola y Ana:** página/botón Streamlit sobre el mismo motor + empaquetado de la skill `exportar-correos-etiqueta` y re-import del `.skill`. **HECHA (botón + empaquetado; re-import del `.skill` lo hace Nikolai).**
+- El conector `expedientes-xl` NO interviene en este motor (el script escribe en `G:` por filesystem local). Producir `.eml` fieles de toda la etiqueta requiere Gmail API local `format=raw`; por eso la implementación/ejecución es Claude Code.
+
+**Criterio de aceptación / orden (ajuste 2026-06-22):** PRIMERO que funcione para
+**Nikolai en W-02VND1 (Tibidabo 8)** — `core/email_export.py` + CLI + corrida real
+dejando todos los correos de la etiqueta en su `03_Email` (Hito 1). DESPUÉS, botón
+Streamlit para Paola/Ana, skill empaquetada y tests completos (Hito 2). El motor es
+el mismo; la UI solo orquesta.
+
+**Distribución = plugin `feesdefender` (decisión 2026-06-22).** La capacidad se entrega
+dentro del plugin existente (no uno nuevo): se añade la skill `exportar-correos-etiqueta`
+al empaquetado (`scripts/package_plugin.py` copia también esa skill), se sube versión en
+`plugin-src/.claude-plugin/plugin.json` (0.1.0→0.2.0) y se actualizan
+`marketplace.json`/`README`. Así es instalable y reutilizable en TODOS los casos
+(parametrizado por `--ref`/etiqueta). Evolución opcional (Hito 3): exponer el motor como
+**herramienta MCP** del plugin (análogo a `expedientes_xl/server.py`, que corre local con
+acceso al token `~/.gmail-mcp` y a `G:`) → usable también desde Cowork de escritorio, no
+solo Claude Code.
