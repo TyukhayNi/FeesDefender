@@ -6,6 +6,16 @@ from .model import AtomEnterrado, RegistroMensajeWA
 _GEN = "<!-- Generado por core.whatsapp_atomize — NO editar a mano. -->\n\n"
 
 
+def _href(dest: str) -> str:
+    """Destino de enlace markdown robusto a espacios y paréntesis (CommonMark angle-bracket).
+
+    Los nombres de chat reales llevan espacios y paréntesis ("PersonaUno (suiza)"); un
+    destino inline sin <...> con espacios es inválido en CommonMark y no se renderiza como
+    enlace. Envolver en <...> es válido (no contienen `<`/`>`/saltos de línea).
+    """
+    return f"<{dest}>"
+
+
 def _autor_visible(m: RegistroMensajeWA) -> str:
     if m.rol:
         return f"{m.autor_export} [{m.rol}]"
@@ -31,7 +41,7 @@ def render_chat_lectura(chat_id, mensajes, enterrados, por_ref) -> str:
         lineas.append(cab)
         lineas.append(f"\n{m.texto.strip()}\n")
         for a in ent_por_portador.get(m.msg_id, []):
-            lineas.append(f"> ↪ enterrado promovido: [{a.enterrado_id}](enterrados/{a.enterrado_id}.md)\n")
+            lineas.append(f"> ↪ enterrado promovido: [{a.enterrado_id}]({_href('enterrados/' + a.enterrado_id + '.md')})\n")
     return "\n".join(lineas) + "\n"
 
 
@@ -52,7 +62,7 @@ def render_indice(chats: dict[str, int]) -> str:
     """chats: {chat_id: n_mensajes}."""
     lineas = [_GEN, "# Índice de chats de WhatsApp\n"]
     for chat_id, n in sorted(chats.items()):
-        lineas.append(f"- **{chat_id}** — {n} mensajes — [{chat_id}__LECTURA.md]({chat_id}__LECTURA.md)")
+        lineas.append(f"- **{chat_id}** — {n} mensajes — [{chat_id}__LECTURA.md]({_href(chat_id + '__LECTURA.md')})")
     return "\n".join(lineas) + "\n"
 
 

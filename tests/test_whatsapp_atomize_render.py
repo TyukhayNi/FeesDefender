@@ -25,6 +25,14 @@ def test_enterrado_lleva_banner_por_verificar():
     assert "MSG-00002" in md
 
 
+def test_indice_enlace_robusto_a_espacios_y_parentesis():
+    # Bug destapado por la corrida real (chats "PersonaUno (suiza)" etc.): un destino
+    # de enlace markdown con espacios sin <...> es inválido en CommonMark. Debe ir envuelto.
+    from core.whatsapp_atomize.render import render_indice
+    md = render_indice({"PersonaUno (suiza)": 16})
+    assert "(<PersonaUno (suiza)__LECTURA.md>)" in md
+
+
 def test_indice_adjuntos_lista_fichas():
     from core.email_atomize.model import AdjuntoUnico
     from core.whatsapp_atomize.render import render_indice_adjuntos
