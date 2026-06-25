@@ -31,7 +31,7 @@ def test_render_revision_tres_colas():
     punteros = [SegmentoEnterrado(portador_msg_id="MSG-1", estilo="quote_gt",
                                   confianza="baja", motivo="sin_cabecera", extracto="...")]
     msgs_b = [_b(en_revision=True)]
-    out = R.render_revision(msgs_b, punteros)
+    out = R.render_revision(msgs_b, punteros, watched=frozenset({"per01a@example.invalid"}))
     assert "cola.md" in out and "casi_duplicados.md" in out and "del_burgo.md" in out
     assert "MSG-1" in out["cola.md"]
     assert "per01a@example.invalid" in out["del_burgo.md"]

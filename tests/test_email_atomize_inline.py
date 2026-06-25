@@ -197,11 +197,12 @@ def test_reconstruir_promueve_del_burgo_inline():
     assert any(s.de == "per01a@example.invalid" for s in altas)
 
 
-def test_reconstruir_watched_va_a_del_burgo_queue(monkeypatch):
-    monkeypatch.setattr(I, "IDENTIDADES_VIGILADAS", {"per01a@example.invalid"})
+def test_reconstruir_watched_va_a_del_burgo_queue():
+    from core.email_atomize.identidades import Identidades
+    ident = Identidades(vigiladas=frozenset({"per01a@example.invalid"}))
     raw = _eml_cita_gmail("x", "per01a@example.invalid", "1 de mayo de 2020",
                           "cuerpo largo de prueba suficiente para todo")
-    res = I.reconstruir(_ra(), raw)
+    res = I.reconstruir(_ra(), raw, ident)
     db = [s for s in res.candidatos if s.de == "per01a@example.invalid"]
     assert db and db[0].en_revision is True   # doble control sobre identidad vigilada
 

@@ -20,10 +20,16 @@ def _gmail(mid, autor, de_cita, fecha_attr, cuerpo):
 def test_gmail_del_burgo_en_del_burgo_md(tmp_path):
     """Cita ESTRUCTURAL de PersonaUno → alta-reconstruida → aparece en del_burgo.md."""
     src = tmp_path / "03_Email"; out = tmp_path / "Emails"; src.mkdir()
+    (tmp_path / "identidades.yaml").write_text(
+        "personas:\n"
+        "  - id: persona_uno\n"
+        "    vigilada: true\n"
+        "    direcciones: [ { email: per01a@example.invalid, estado: confirmada } ]\n",
+        encoding="utf-8")
     (src / "a.eml").write_bytes(_gmail(
         "<c@x>", "Te reenvío.", "per01a@example.invalid", "1 de mayo de 2020",
         "contenido citado suficientemente largo para fingerprint PersonaUno"))
-    P.atomize_dir(src, out)
+    P.atomize_dir(src, out, case_dir=tmp_path)
     db = (out / "_revision" / "del_burgo.md").read_text(encoding="utf-8")
     assert "per01a@example.invalid" in db
 

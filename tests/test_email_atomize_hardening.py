@@ -66,9 +66,12 @@ def test_prosa_from_dispersa_no_promueve():
 
 def test_candidato_outlook_capped_media():
     """per01b@example.invalid (candidato) NUNCA llega a alta; va a revisión."""
+    from core.email_atomize.identidades import Identidades
+    ident = Identidades(candidatas=frozenset({"per01b@example.invalid"}))
     res = I.reconstruir(_ra(fecha_iso="2026-06-01"),
                         _eml_gmail("per01b@example.invalid", "1 de mayo de 2020",
-                                   "cuerpo largo de prueba suficiente para fingerprint"))
+                                   "cuerpo largo de prueba suficiente para fingerprint"),
+                        ident)
     assert all(s.de != "per01b@example.invalid" for s in res.candidatos)
     assert any(p.de == "per01b@example.invalid" and "candidata" in p.motivo
                for p in res.punteros)

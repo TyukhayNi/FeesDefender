@@ -19,6 +19,7 @@ from . import dedup as D
 from . import extract as E
 from . import headers as H
 from . import ids as IDS
+from . import identidades as ID
 from . import inline as INL
 from . import render as R
 from .model import AdjuntoRef, AdjuntoUnico, RegistroMensaje, SegmentoEnterrado
@@ -51,9 +52,12 @@ def _idioma(texto: str) -> str:
     return max((("ca", ca), ("en", en), ("es", es)), key=lambda x: x[1])[0]
 
 
-def atomize_dir(src_dir: Path | str, out_dir: Path | str) -> AtomizeReport:
+def atomize_dir(src_dir: Path | str, out_dir: Path | str, *, case_dir: Path | str | None = None) -> AtomizeReport:
     src = Path(src_dir)
     out = Path(out_dir)
+    if case_dir is None:
+        case_dir = out.parent.parent          # <caso>/01_Procesado/Emails → <caso>
+    ident = ID.cargar_identidades(case_dir)
     (out / "mensajes").mkdir(parents=True, exist_ok=True)
     (out / "adjuntos").mkdir(parents=True, exist_ok=True)
     report = AtomizeReport()
@@ -80,7 +84,7 @@ def atomize_dir(src_dir: Path | str, out_dir: Path | str) -> AtomizeReport:
         reg.marcar_procesado(col.eml_origen)
 
     # --- Pase Layer B (tras congelar TODOS los IDs de Capa A) ---
-    mensajes_b, punteros, upgrades = _pase_layer_b(reg, mensajes, carriers, report)
+    mensajes_b, punteros, upgrades = _pase_layer_b(reg, mensajes, carriers, report, ident)
     mensajes.extend(mensajes_b)
 
     for m in mensajes:
@@ -107,14 +111,14 @@ def atomize_dir(src_dir: Path | str, out_dir: Path | str) -> AtomizeReport:
 
     revision = out / "_revision"
     revision.mkdir(exist_ok=True)
-    for nombre, contenido in R.render_revision(mensajes_b, punteros, upgrades=upgrades).items():
+    for nombre, contenido in R.render_revision(mensajes_b, punteros, watched=ident.vigiladas, upgrades=upgrades).items():
         (revision / nombre).write_text(contenido, encoding="utf-8")
 
     reg.save()
     return report
 
 
-def _pase_layer_b(reg, mensajes, carriers, report):
+def _pase_layer_b(reg, mensajes, carriers, report, identidades):
     """Reconstruye autoría inline: segmenta cada portador, atribuye/clasifica, resuelve
     duplicados contra Capa A (upgrade) y acuña IDs fp en orden determinista. Devuelve
     ``(mensajes_b, punteros)``. Idempotente: re-ejecutar no renumera (fp congelados)."""
@@ -124,7 +128,7 @@ def _pase_layer_b(reg, mensajes, carriers, report):
     punteros = []
     for m_a, raw in carriers:
         try:
-            res = INL.reconstruir(m_a, raw)
+            res = INL.reconstruir(m_a, raw, identidades)
         except Exception as exc:  # noqa: BLE001 — un portador no aborta la corrida
             report.errores.append(f"{m_a.msg_id}: reconstruir inline falló: {exc}")
             continue

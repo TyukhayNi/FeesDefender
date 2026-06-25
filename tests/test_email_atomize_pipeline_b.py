@@ -22,10 +22,16 @@ def _carrier_gmail(mid, autor, de_cita, fecha_attr, asunto_cita, cuerpo_cita):
 
 def test_layerb_promueve_y_no_renumera_capaA(tmp_path):
     src = tmp_path / "03_Email"; out = tmp_path / "Emails"; src.mkdir()
+    (tmp_path / "identidades.yaml").write_text(
+        "personas:\n"
+        "  - id: persona_uno\n"
+        "    vigilada: true\n"
+        "    direcciones: [ { email: per01a@example.invalid, estado: confirmada } ]\n",
+        encoding="utf-8")
     (src / "2026-06-01_carrier.eml").write_bytes(_carrier_gmail(
         "<carrier@x>", "Te reenvío.", "per01a@example.invalid", "1 de mayo de 2020", "Tibidabo",
         "contenido citado suficientemente largo para superar el floor de 24"))
-    rep = P.atomize_dir(src, out)
+    rep = P.atomize_dir(src, out, case_dir=tmp_path)
     # Capa A: 1 portador; Capa B: 1 reconstruida (PersonaUno)
     mds = sorted((out / "mensajes").glob("*.md"))
     assert len(mds) == 2
@@ -36,7 +42,7 @@ def test_layerb_promueve_y_no_renumera_capaA(tmp_path):
     assert "per01a@example.invalid" in db
     assert rep.reconstruidos_b == 1
     # idempotencia: re-run no renumera ni duplica
-    P.atomize_dir(src, out)
+    P.atomize_dir(src, out, case_dir=tmp_path)
     reg2 = json.loads((out / "_registro.json").read_text(encoding="utf-8"))
     assert reg2["mensajes_fp"] == reg["mensajes_fp"]
     assert len(sorted((out / "mensajes").glob("*.md"))) == 2

@@ -15,22 +15,10 @@ from email.utils import parseaddr, parsedate_to_datetime
 from zoneinfo import ZoneInfo
 
 from core.email_export import _slug_descripcion
+from .identidades import Identidades
 from .model import RegistroMensaje, SegmentoEnterrado
 
 _TZ = ZoneInfo("Europe/Madrid")
-
-# Identidades vigiladas (doble control probatorio → _revision/del_burgo.md). Fase 3 moverá
-# esto a un `identidades.yaml` por caso; aquí se siembra con las identidades CONFIRMADAS de
-# PersonaUno para el piloto W-02VND1. NO incluye:
-#   - per01b@example.invalid = CANDIDATO (decisión Nikolai 2026-06-25: tope `media`, NO se
-#     auto-promociona ni se vigila como confirmada hasta validarlo en Fase 3);
-#   - ignacio@despacho-ab.example = parte relacionada (su despacho), persona DISTINTA.
-# El mecanismo es genérico (un set de direcciones); solo el contenido del set es del caso.
-IDENTIDADES_VIGILADAS: set[str] = {"per01a@example.invalid", "per01c@example.invalid"}
-
-# Identidades CANDIDATAS (no confirmadas): nunca se promocionan a alta-reconstruida; se topan en
-# `media` y van a revisión. Decisión Nikolai 2026-06-25 para per01b@example.invalid.
-IDENTIDADES_CANDIDATAS: set[str] = {"per01b@example.invalid"}
 
 _MIN_CUERPO = 24   # cuerpos normalizados < 24 chars nunca dirigen colapso/upgrade
 
@@ -667,9 +655,14 @@ def indice_layer_a(mensajes: list) -> Indice:
     return idx
 
 
-def reconstruir(m_a, raw: bytes) -> ReconResult:
+def reconstruir(m_a, raw: bytes, identidades: "Identidades | None" = None) -> ReconResult:
     """Segmenta el portador, atribuye/clasifica cada cita y separa candidatos (alta) de
-    punteros (media/baja → revisión). NO asigna MSG-id (eso lo hace el pipeline)."""
+    punteros (media/baja → revisión). NO asigna MSG-id (eso lo hace el pipeline).
+
+    ``identidades`` aporta las identidades del caso (vigiladas/candidatas). Sin él → genérico.
+    """
+    if identidades is None:
+        identidades = Identidades()
     seg_total = segmentar(raw)
     res = ReconResult(intercalada=seg_total.respuesta_intercalada)
     if seg_total.motivo:   # p.ej. conservacion_tokens → portador entero a revisión, sin segmentar
@@ -691,7 +684,7 @@ def reconstruir(m_a, raw: bytes) -> ReconResult:
         ambigua = levantada_del_cuerpo and _n_cabeceras(seg.texto) > 1
         conf, motivo = clasificar(anc, m_a.fecha_iso, estructural=seg.estructural, ambigua=ambigua)
         # Identidad candidata (no confirmada) → nunca alta (decisión Nikolai).
-        if conf == "alta-reconstruida" and anc and anc.de in IDENTIDADES_CANDIDATAS:
+        if conf == "alta-reconstruida" and anc and anc.de in identidades.candidatas:
             conf, motivo = "media", "identidad_candidata"
         cuerpo_norm = normaliza_cuerpo(seg.texto)
         seg.de = anc.de if anc else ""
@@ -705,7 +698,7 @@ def reconstruir(m_a, raw: bytes) -> ReconResult:
         seg.portador_msg_id = m_a.msg_id
         mm = _RE_INLINE_MID.search(seg.texto)
         seg.rfc_message_id = mm.group(1).strip() if mm else ""
-        watched = bool(seg.de) and seg.de in IDENTIDADES_VIGILADAS
+        watched = bool(seg.de) and seg.de in identidades.vigiladas
         seg.en_revision = watched or conf in ("media", "baja")
         if conf == "alta-reconstruida":
             res.candidatos.append(seg)

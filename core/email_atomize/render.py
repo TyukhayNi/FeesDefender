@@ -125,10 +125,8 @@ def render_revision(mensajes_b: list[RegistroMensaje], punteros: list, watched=N
                     upgrades: list | None = None) -> dict:
     """Colas de revisión Layer B: ``cola.md`` (punteros media/baja), ``casi_duplicados.md``
     (upgrades de fidelidad: cita inline resuelta a una copia limpia de Capa A), ``del_burgo.md``
-    (autoría vigilada). Regenerado cada corrida (determinista → idempotente)."""
-    if watched is None:
-        from . import inline
-        watched = inline.IDENTIDADES_VIGILADAS
+    (identidades vigiladas del caso; sin caso → vacío). Regenerado cada corrida (determinista → idempotente)."""
+    watched = frozenset(watched) if watched is not None else frozenset()
     upgrades = upgrades or []
 
     cola = [_GEN_VIEW, "# Cola de revisión Layer B (media/baja)\n",
