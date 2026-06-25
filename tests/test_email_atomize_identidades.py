@@ -47,6 +47,10 @@ def test_unificacion_y_persona_distinta(tmp_path):
     # persona DISTINTA: nunca se funde con PersonaUno
     assert ident.persona_de("ignacio@despacho-ab.example") == "persona_dos"
     assert ident.estado_de("per01b@example.invalid") == "candidata"
+    assert ident.estado_de("per01a@example.invalid") == "confirmada"
+    p = ident.persona("persona_uno")
+    assert p is not None and p.nombre == "PersonaUno"
+    assert p.emails() == {"per01a@example.invalid", "per01c@example.invalid", "per01b@example.invalid"}
 
 
 def test_sin_fichero_es_generico(tmp_path):
@@ -77,6 +81,26 @@ personas:
   - id: a
     vigilada: true
     direcciones: [ { email: x@y.com, estado: dudosa } ]
+"""
+    (tmp_path / "identidades.yaml").write_text(yml, encoding="utf-8")
+    with pytest.raises(ValueError):
+        ID.cargar_identidades(tmp_path)
+
+
+def test_personas_no_lista_es_error(tmp_path):
+    (tmp_path / "identidades.yaml").write_text("personas: no-soy-lista\n", encoding="utf-8")
+    with pytest.raises(ValueError):
+        ID.cargar_identidades(tmp_path)
+
+
+def test_email_duplicado_misma_persona_es_error(tmp_path):
+    yml = """
+personas:
+  - id: a
+    vigilada: false
+    direcciones:
+      - { email: x@y.com, estado: confirmada }
+      - { email: x@y.com, estado: candidata }
 """
     (tmp_path / "identidades.yaml").write_text(yml, encoding="utf-8")
     with pytest.raises(ValueError):

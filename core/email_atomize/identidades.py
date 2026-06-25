@@ -31,7 +31,16 @@ class Identidades:
     vigiladas: frozenset[str] = frozenset()
     candidatas: frozenset[str] = frozenset()
     personas: dict[str, Persona] = field(default_factory=dict)
-    _por_email: dict[str, str] = field(default_factory=dict)
+    # Índice inverso email→persona_id: DERIVADO de `personas`, nunca inyectable (invariante
+    # imposible de romper desde fuera). Se reconstruye en __post_init__.
+    _por_email: dict[str, str] = field(init=False, repr=False, default_factory=dict)
+
+    def __post_init__(self) -> None:
+        idx: dict[str, str] = {}
+        for pid, persona in self.personas.items():
+            for email, _estado in persona.direcciones:
+                idx[email] = pid
+        self._por_email = idx
 
     def persona_de(self, email: str) -> str | None:
         return self._por_email.get((email or "").strip().lower())
@@ -51,12 +60,19 @@ class Identidades:
 
 
 def desde_dict(data: dict) -> Identidades:
-    """Construye Identidades desde un dict ya parseado. Valida invariantes (§4.1)."""
+    """Construye Identidades desde un dict ya parseado. Valida invariantes (§4.1):
+    id presente y único, dirección con email, estado ∈ {confirmada, candidata}, y cada email
+    aparece una sola vez en todo el registro (no se repite ni dentro ni entre personas)."""
+    personas_raw = (data or {}).get("personas", []) or []
+    if not isinstance(personas_raw, list):
+        raise ValueError("identidades.yaml: 'personas' debe ser una lista")
     personas: dict[str, Persona] = {}
     por_email: dict[str, str] = {}
     vigiladas: set[str] = set()
     candidatas: set[str] = set()
-    for raw in (data or {}).get("personas", []) or []:
+    for raw in personas_raw:
+        if not isinstance(raw, dict):
+            raise ValueError("identidades.yaml: cada persona debe ser un mapa")
         pid = str(raw.get("id") or "").strip()
         if not pid:
             raise ValueError("identidades.yaml: persona sin 'id'")
@@ -72,10 +88,10 @@ def desde_dict(data: dict) -> Identidades:
             if estado not in _ESTADOS:
                 raise ValueError(
                     f"identidades.yaml: estado inválido {estado!r} en {email} ({pid!r})")
-            if email in por_email and por_email[email] != pid:
+            if email in por_email:
                 raise ValueError(
-                    f"identidades.yaml: email {email} en dos personas "
-                    f"({por_email[email]!r} y {pid!r})")
+                    f"identidades.yaml: email {email} repetido "
+                    f"(ya asignado a {por_email[email]!r}; ahora en {pid!r})")
             por_email[email] = pid
             direcciones.append((email, estado))
             if estado == "candidata":
@@ -87,7 +103,7 @@ def desde_dict(data: dict) -> Identidades:
             direcciones=direcciones, rol=str(raw.get("rol") or ""),
             notas=str(raw.get("notas") or ""))
     return Identidades(vigiladas=frozenset(vigiladas), candidatas=frozenset(candidatas),
-                       personas=personas, _por_email=por_email)
+                       personas=personas)
 
 
 def cargar_identidades(case_dir: Path | str) -> Identidades:
