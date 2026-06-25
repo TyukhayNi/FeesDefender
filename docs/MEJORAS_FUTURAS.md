@@ -1130,7 +1130,12 @@ Paola/Ana organicen casos sin intervención de Nikolai. Relacionado con la fase
 "clasificador por conector" del spec (Scaleway/Claude API sustituyendo a
 Claude-en-sesión para el residuo).
 
-## 35. Bundles de WhatsApp en la sala de lectura (chat + media/)
+## 35. Bundles de WhatsApp en la sala de lectura (chat + media/) — [SUPERADO 2026-06-25 por `core/whatsapp_atomize`]
+
+> **SUPERADO 2026-06-25.** El motor `core/whatsapp_atomize` (spec
+> `docs/superpowers/specs/2026-06-25-whatsapp-atomize-design.md`) produce la sala de WhatsApp
+> con creces: chat numerado citable + atoms de enterrados + adjuntos dedup por sha256 con ficha
+> (`INDICE_ADJUNTOS.md`) + CRONOLOGIA cross-chat + corpus. Sustituye la idea del bundle plano.
 
 **Detectado 2026-06-17** (review final sala-lectura F4–F6). El spec
 `docs/superpowers/specs/2026-06-17-sala-lectura-f4f6-design.md` §7 prevé que en
