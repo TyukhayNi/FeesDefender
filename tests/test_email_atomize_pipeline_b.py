@@ -188,3 +188,21 @@ def test_layerb_enviado_el_promueve_media_reconstruida(tmp_path):
     assert rep.reconstruidos_media == 1
     md = b_mds[0].read_text(encoding="utf-8")
     assert "alguien@x.com" in md and "2024-10-04" in md
+
+
+def test_layerb_remitente_apellido_coma_promueve(tmp_path):
+    src = tmp_path / "03_Email"; out = tmp_path / "Emails"; src.mkdir()
+    m = EmailMessage()
+    m["Message-ID"] = "<carrier-coma@x>"; m["Subject"] = "RV: offer letter"
+    m["Date"] = "Mon, 01 Jun 2026 10:00:00 +0200"; m["From"] = "c@x"; m["To"] = "d@x"
+    m.set_content("Te reenvio:\n\n-----Mensaje original-----\n"
+                  "De: PersonaCuatro, Eva <persona.cuatro@engelvoelkers.com>\n"
+                  "Enviado el: lunes, 7 de julio de 2025 19:44\nPara: x@y\nAsunto: Re: offer letter\n"
+                  "contenido citado suficientemente largo para superar el floor de 24 chars\n")
+    (src / "2026-06-01_coma.eml").write_bytes(m.as_bytes())
+    rep = P.atomize_dir(src, out, case_dir=tmp_path)
+    b = [p for p in (out/"mensajes").glob("*.md")
+         if "confianza: media-reconstruida" in p.read_text(encoding="utf-8")]
+    assert len(b) == 1
+    md = b[0].read_text(encoding="utf-8")
+    assert "de: persona.cuatro@engelvoelkers.com" in md and "2025-07-07" in md

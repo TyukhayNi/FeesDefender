@@ -59,6 +59,27 @@ def test_anclaje_display_name_sin_addr_no_inventa():
     assert anc.de == "" and "Jaime" in anc.de_nombre  # nombre sí, dirección NO inventada
 
 
+def test_anclaje_apellido_coma_nombre_extrae_addr():
+    # Display-name "Apellido, Nombre" rompía parseaddr por la coma → de="". Debe extraer el <addr>.
+    blk = ("De: PersonaCuatro, Eva <persona.cuatro@engelvoelkers.com>\n"
+           "Enviado: 7 de julio de 2025\nPara: x@y\nAsunto: Re: offer letter")
+    anc = I.parsear_anclaje(blk, "outlook_es")
+    assert anc.de == "persona.cuatro@engelvoelkers.com"
+    assert "PersonaCuatro, Eva" in anc.de_nombre and anc.fecha_iso == "2025-07-07"
+
+
+def test_anclaje_sin_coma_sigue_igual():
+    blk = "De: Eva <eva@x.com>\nEnviado: 7 de julio de 2025\nPara: w\nAsunto: z"
+    anc = I.parsear_anclaje(blk, "outlook_es")
+    assert anc.de == "eva@x.com" and anc.de_nombre == "Eva"
+
+
+def test_anclaje_addr_desnuda_sigue_igual():
+    blk = "De: eva@x.com\nEnviado: 7 de julio de 2025\nPara: w\nAsunto: z"
+    anc = I.parsear_anclaje(blk, "outlook_es")
+    assert anc.de == "eva@x.com"
+
+
 def test_anclaje_sin_fecha_parseable():
     anc = I.parsear_anclaje("De: x@y.com\nAsunto: z\nPara: w", "outlook_es")
     assert anc.de == "x@y.com" and anc.fecha_iso == "0000-00-00"

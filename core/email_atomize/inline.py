@@ -176,12 +176,20 @@ def _parse_fecha(s: str) -> tuple[str, object | None]:
 
 
 def _addr_o_nombre(raw: str) -> tuple[str, str]:
-    """``(de, de_nombre)`` desde un valor De:/From:. Nunca inventa una dirección."""
-    nombre, addr = parseaddr(raw or "")
+    """``(de, de_nombre)`` desde un valor De:/From:. Nunca inventa una dirección.
+    Prefiere el <addr> literal: robusto ante display-names con coma ("Apellido, Nombre <addr>"),
+    que rompen parseaddr (interpreta la coma como separador de direcciones). Sin <addr> → parseaddr."""
+    raw = raw or ""
+    m = _RE_ADDR.search(raw)
+    if m:
+        addr = m.group(1).lower()
+        nombre = raw[: m.start()].strip().strip('"').strip().rstrip("<").strip()
+        return addr, nombre
+    nombre, addr = parseaddr(raw)
     if "@" in addr:
         return addr.lower(), (nombre or "").strip()
     # sin dirección real: conservar el display, dirección vacía
-    return "", (nombre or addr or raw or "").strip()
+    return "", (nombre or addr or raw).strip()
 
 
 def _parse_label(texto: str) -> "Anclaje | None":
