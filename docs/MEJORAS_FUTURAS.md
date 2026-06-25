@@ -1557,3 +1557,25 @@ aditivo, prime directive intacto, 126 tests del motor verdes. **Corrida en vivo 
 —"[PAIS_EXTRANJERO]", "CAPEX_for_His_Excellency" al [MINISTERIO_EXTRANJERO] de [PAIS_EXTRANJERO]—, 1 `per01c@example.invalid`, 3 PersonaTres); cola
 84→78; Capa A byte-idéntica (0 cambiados, +6 añadidos); idempotente. Pendiente del gap aguas arriba:
 los **76 `sin_cabecera`** (extracción de remitente en gmail_quote/apple) — sigue fuera de alcance.
+
+**Iteración 1 del gap `sin_cabecera` (remitente coma) — HECHA pero 0 recuperados en W-02VND1**
+(2026-06-25, spec `2026-06-25-email-atomize-remitente-coma-fix-design.md`, commit `10a022f`). Fix
+correcto y blindaje válido (`_addr_o_nombre` prefiere el `<addr>` literal → robusto a "Apellido,
+Nombre <addr>"; 130 tests motor verdes, Capa A byte-idéntica), **pero la corrida en vivo añadió 0
+atoms**: las citas E&V bloqueadas NO tienen forma de coma en una línea. **Causa raíz real del grueso
+(diagnóstico verificado):** son segmentos `html_quote` con `de=''` donde la cabecera del remitente
+está **dentro del CUERPO del quote**, no en el anclaje ni al inicio: (a) atribución Apple "El <fecha>,
+<Nombre> <addr> escribió:" embebida en el cuerpo; (b) "Inicio del mensaje reenviado:" + "De: … Fecha:
+… CEST" (Apple Mail); (c) valores envueltos (`De:` ↵ nombre ↵ `<` ↵ email ↵ `>`). El motor solo
+atribuye desde el anclaje del segmento o un bloque `De:/From:` AL INICIO del cuerpo. **Lección: medir
+la FORMA de las citas bloqueadas antes de elegir el fix** (la iteración 1 se eligió sin verificar la
+forma → 0 rendimiento, aunque el fix es correcto).
+
+**Iteración 2 (el filón real, PENDIENTE):** escanear el cuerpo del `html_quote` en busca de (a) una
+línea de atribución Apple y (b) un bloque de cabecera de reenvío que no esté en posición 0 (tras
+"Inicio del mensaje reenviado:" / "---------- Mensaje reenviado ----------") + reparar valores
+envueltos. **Es el vector de MAYOR riesgo de misatribución** (el spec original de Layer B ya lo
+señaló) → exige diseño adversarial + verificación sobre los 277. Recupera la mayoría de los ~70
+`sin_cabecera` (incl. PersonaUno "Rescisión/[PAIS_EXTRANJERO] docs/FYI/Fin [PAIS_EXTRANJERO]/Estudio acciones penales" y los
+consultores E&V) y, con la iteración 3 (Gap 2, recursión), el correo interior de MSG-00305
+(Eva→Consulado [PAIS_EXTRANJERO], "Contraoferta").
