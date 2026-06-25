@@ -326,8 +326,9 @@ def _cuerpo_sin_cabecera(texto: str) -> str:
     encabezado. Si el texto no arranca por un bloque de cabecera, se devuelve tal cual.
     El anclaje, ``_n_cabeceras`` y ``_cabecera_head`` siguen leyendo ``seg.texto`` íntegro:
     esta limpieza solo alimenta el contenido, no la atribución ni la guarda de ambigüedad."""
+    texto = texto or ""
     if _cabecera_head(texto) is None:
-        return (texto or "").strip()
+        return texto.strip()
     lines = texto.splitlines()
     i = 0
     while i < len(lines) and not lines[i].strip():

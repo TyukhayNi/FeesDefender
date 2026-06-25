@@ -132,6 +132,4 @@ def test_layerb_media_reconstruida_dedup_contra_capa_a(tmp_path):
     # NO se acuña un .md B nuevo: solo el .md de Capa A del mensaje limpio.
     b_mds = [p for p in mds if "confianza: media-reconstruida" in p.read_text(encoding="utf-8")]
     assert b_mds == [], "una cita que reproduce un .eml limpio NO debe acuñar un B nuevo"
-    assert rep.upgrades >= 1
-    casi = (out / "_revision" / "casi_duplicados.md").read_text(encoding="utf-8")
-    assert "<carrier-plano@x>" in casi or "limpio" in casi.lower() or rep.upgrades >= 1
+    assert rep.upgrades >= 1   # el puente de fidelidad disparó (la cita es copia de un .eml limpio)

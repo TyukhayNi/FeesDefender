@@ -40,7 +40,8 @@ class AtomizeReport:
     errores: list[str] = field(default_factory=list)
 
     def resumen(self) -> str:
-        return (f"{self.mensajes} mensajes atómicos ({self.reconstruidos_b} reconstruidos B), "
+        return (f"{self.mensajes} mensajes atómicos ({self.reconstruidos_b} reconstruidos B, "
+                f"de ellos {self.reconstruidos_media} media-reconstruida), "
                 f"{self.citas_a_revision} citas a revisión, {self.upgrades} upgrades; "
                 f"{self.adjuntos_unicos} adjuntos únicos "
                 f"({self.adjuntos_decorativos} decorativos filtrados), "
