@@ -58,3 +58,80 @@ def test_layerb_headerless_no_promueve_va_a_cola(tmp_path):
     assert len(sorted((out / "mensajes").glob("*.md"))) == 1   # no se promueve nada
     assert (out / "_revision" / "cola.md").exists()
     assert "MSG-00001" in (out / "_revision" / "cola.md").read_text(encoding="utf-8")
+
+
+def _carrier_outlook_plano(mid, de_cita, fecha_label, asunto_cita, cuerpo_cita):
+    """Portador de TEXTO PLANO con bloque outlook_es (De:/Enviado:/Para:/Asunto:), SIN
+    blockquote → estructural=False → promovible a media-reconstruida."""
+    m = EmailMessage()
+    m["Message-ID"] = mid
+    m["Subject"] = "RV: " + asunto_cita
+    m["Date"] = "Mon, 01 Jun 2026 10:00:00 +0200"
+    m["From"] = "c@x"
+    m["To"] = "d@x"
+    cuerpo = (f"Te reenvio el correo de abajo.\n\n"
+              f"De: Jaime <{de_cita}>\nEnviado: {fecha_label}\nPara: x@y\n"
+              f"Asunto: {asunto_cita}\n{cuerpo_cita}\n")
+    m.set_content(cuerpo)
+    return m.as_bytes()
+
+
+def test_layerb_outlook_plano_promueve_media_reconstruida(tmp_path):
+    src = tmp_path / "03_Email"; out = tmp_path / "Emails"; src.mkdir()
+    (src / "2026-06-01_carrier_plano.eml").write_bytes(_carrier_outlook_plano(
+        "<carrier-plano@x>", "alguien@x.com", "1 de mayo de 2020", "Tibidabo",
+        "contenido citado suficientemente largo para superar el floor de 24 chars"))
+    rep = P.atomize_dir(src, out, case_dir=tmp_path)
+    # Capa A: 1 portador; Capa B: 1 media-reconstruida
+    mds = sorted((out / "mensajes").glob("*.md"))
+    assert len(mds) == 2
+    # Aislar el atom B por su contenido (no por nombre de fichero):
+    b_mds = [p for p in mds if "confianza: media-reconstruida" in p.read_text(encoding="utf-8")]
+    assert len(b_mds) == 1
+    contenido_b = b_mds[0].read_text(encoding="utf-8")
+    assert "confianza: media-reconstruida" in contenido_b
+    assert "en_revision: true" in contenido_b
+    # reconstruidos.md + reconstruidos.jsonl existen y listan el atom:
+    assert (out / "_revision" / "reconstruidos.md").exists()
+    assert (out / "_revision" / "reconstruidos.jsonl").exists()
+    rec = (out / "_revision" / "reconstruidos.md").read_text(encoding="utf-8")
+    assert "alguien@x.com" in rec and "2020-05-01" in rec
+    jl = [l for l in (out / "_revision" / "reconstruidos.jsonl").read_text(
+        encoding="utf-8").splitlines() if l.strip()]
+    assert len(jl) == 1 and json.loads(jl[0])["de"] == "alguien@x.com"
+    # Contadores:
+    assert rep.reconstruidos_b == 1
+    assert rep.reconstruidos_media == 1
+    # Idempotencia: re-run no renumera ni duplica
+    reg = json.loads((out / "_registro.json").read_text(encoding="utf-8"))
+    P.atomize_dir(src, out, case_dir=tmp_path)
+    reg2 = json.loads((out / "_registro.json").read_text(encoding="utf-8"))
+    assert reg2["mensajes_fp"] == reg["mensajes_fp"]
+    assert len(sorted((out / "mensajes").glob("*.md"))) == 2
+
+
+def _eml_limpio(mid, de, fecha_rfc, asunto, cuerpo):
+    """Mensaje limpio de Capa A (autor directo) cuyo cuerpo será luego citado por un portador."""
+    m = EmailMessage()
+    m["Message-ID"] = mid; m["Subject"] = asunto
+    m["Date"] = fecha_rfc; m["From"] = de; m["To"] = "x@y"
+    m.set_content(cuerpo)
+    return m.as_bytes()
+
+
+def test_layerb_media_reconstruida_dedup_contra_capa_a(tmp_path):
+    # El cuerpo citado en el portador plano REPRODUCE el de un .eml limpio ya presente:
+    cuerpo = "contenido identico citado suficientemente largo para superar el floor de 24 chars"
+    src = tmp_path / "03_Email"; out = tmp_path / "Emails"; src.mkdir()
+    (src / "2020-05-01_limpio.eml").write_bytes(_eml_limpio(
+        "<limpio@x>", "alguien@x.com", "Fri, 01 May 2020 09:00:00 +0200", "Tibidabo", cuerpo))
+    (src / "2026-06-01_carrier_plano.eml").write_bytes(_carrier_outlook_plano(
+        "<carrier-plano@x>", "alguien@x.com", "1 de mayo de 2020", "Tibidabo", cuerpo))
+    rep = P.atomize_dir(src, out, case_dir=tmp_path)
+    mds = sorted((out / "mensajes").glob("*.md"))
+    # NO se acuña un .md B nuevo: solo el .md de Capa A del mensaje limpio.
+    b_mds = [p for p in mds if "confianza: media-reconstruida" in p.read_text(encoding="utf-8")]
+    assert b_mds == [], "una cita que reproduce un .eml limpio NO debe acuñar un B nuevo"
+    assert rep.upgrades >= 1
+    casi = (out / "_revision" / "casi_duplicados.md").read_text(encoding="utf-8")
+    assert "<carrier-plano@x>" in casi or "limpio" in casi.lower() or rep.upgrades >= 1

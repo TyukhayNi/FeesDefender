@@ -316,6 +316,27 @@ def _cabecera_head(texto: str) -> str | None:
     return "\n".join(head)
 
 
+def _cuerpo_sin_cabecera(texto: str) -> str:
+    """Cuerpo citado SIN el bloque de cabecera contiguo al inicio (De:/Enviado:/…).
+
+    En la segmentación de texto plano (``outlook_es``/``fwd_line``/apple) las líneas-etiqueta
+    quedan en ``seg.texto`` además de en el anclaje, a diferencia de la rama HTML —donde el
+    ``<blockquote>`` ya es cuerpo puro—. Para que el puente de fidelidad (cuerpo_sha) y el
+    fingerprint del segmento usen el MISMO cuerpo que un .eml limpio de Capa A, se retira ese
+    encabezado. Si el texto no arranca por un bloque de cabecera, se devuelve tal cual.
+    El anclaje, ``_n_cabeceras`` y ``_cabecera_head`` siguen leyendo ``seg.texto`` íntegro:
+    esta limpieza solo alimenta el contenido, no la atribución ni la guarda de ambigüedad."""
+    if _cabecera_head(texto) is None:
+        return (texto or "").strip()
+    lines = texto.splitlines()
+    i = 0
+    while i < len(lines) and not lines[i].strip():
+        i += 1
+    while i < len(lines) and _RE_ANYLABEL.match(lines[i]):
+        i += 1
+    return "\n".join(lines[i:]).strip()
+
+
 def _n_cabeceras(texto: str) -> int:
     """Nº de bloques de cabecera (De/From + 2ª etiqueta en ≤4 líneas) en el texto. >1 = varios
     reenvíos apilados → atribución AMBIGUA (no se puede ligar el cuerpo a un único remitente)."""
@@ -692,6 +713,14 @@ def reconstruir(m_a, raw: bytes, identidades: "Identidades | None" = None) -> Re
         # Identidad candidata (no confirmada) → nunca alta (decisión Nikolai).
         if conf == "alta-reconstruida" and anc and anc.de in identidades.candidatas:
             conf, motivo = "media", "identidad_candidata"
+        # El cuerpo de CONTENIDO es la cita sin su bloque de cabecera contiguo. En texto plano
+        # ese encabezado quedaba en seg.texto (a diferencia del <blockquote> HTML, ya puro); sin
+        # retirarlo, cuerpo_sha/fingerprint no casarían nunca con un .eml limpio de Capa A y el
+        # puente de fidelidad (upgrade/dedup) jamás dispararía. La ambigüedad y el anclaje ya se
+        # resolvieron arriba sobre seg.texto íntegro; el inline Message-ID se busca antes de podar.
+        mm = _RE_INLINE_MID.search(seg.texto)
+        seg.rfc_message_id = mm.group(1).strip() if mm else ""
+        seg.texto = _cuerpo_sin_cabecera(seg.texto)
         cuerpo_norm = normaliza_cuerpo(seg.texto)
         seg.de = anc.de if anc else ""
         seg.de_nombre = anc.de_nombre if anc else ""
@@ -702,8 +731,6 @@ def reconstruir(m_a, raw: bytes, identidades: "Identidades | None" = None) -> Re
         seg.cuerpo_sha = cuerpo_sha_de(cuerpo_norm)
         seg.fingerprint = fingerprint_b(anc, cuerpo_norm)
         seg.portador_msg_id = m_a.msg_id
-        mm = _RE_INLINE_MID.search(seg.texto)
-        seg.rfc_message_id = mm.group(1).strip() if mm else ""
         watched = bool(seg.de) and seg.de in identidades.vigiladas
         seg.en_revision = watched or conf in ("media", "baja", "media-reconstruida")
         if conf in ("alta-reconstruida", "media-reconstruida"):

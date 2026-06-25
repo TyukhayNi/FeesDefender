@@ -31,7 +31,8 @@ class AtomizeReport:
     mensajes: int = 0
     adjuntos_unicos: int = 0
     adjuntos_decorativos: int = 0
-    reconstruidos_b: int = 0          # mensajes capa B promovidos (alta-reconstruida)
+    reconstruidos_b: int = 0          # mensajes capa B promovidos (alta + media reconstruida)
+    reconstruidos_media: int = 0      # de los anteriores, los media-reconstruida (no estructural)
     citas_a_revision: int = 0         # punteros media/baja a _revision/cola.md
     upgrades: int = 0                 # citas resueltas a una copia limpia de Capa A
     vistas_generadas: int = 0
@@ -112,6 +113,7 @@ def atomize_dir(src_dir: Path | str, out_dir: Path | str, *, case_dir: Path | st
             p.unlink()
     report.mensajes = len(mensajes)
     report.reconstruidos_b = len(mensajes_b)
+    report.reconstruidos_media = sum(1 for m in mensajes_b if m.confianza == "media-reconstruida")
     report.citas_a_revision = len(punteros)
 
     for att in unicos.values():
