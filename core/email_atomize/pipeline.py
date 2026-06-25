@@ -269,7 +269,7 @@ def atomize_case(case_id: str) -> AtomizeReport:
     return atomize_dir(emails_src_dir(case_id), emails_out_dir(case_id))
 
 
-def sellar_entrega(out_dir, descr: str):
+def sellar_entrega(out_dir: Path | str, descr: str) -> Path:
     """Sella una entrega del set entregable en <out_dir>/_entregas/. Acción manual."""
     from . import entregas as ENT
     return ENT.sellar(out_dir, descr)

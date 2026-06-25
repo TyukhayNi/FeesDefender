@@ -21,7 +21,6 @@ def test_cli_con_src_y_out_explicitos(tmp_path, capsys):
 
 
 def test_cli_entrega_invoca_sellar(monkeypatch, tmp_path, capsys):
-    import scripts.atomize_emails as CLI
     from core.email_atomize import pipeline as P
     from core.email_atomize.pipeline import AtomizeReport
 
@@ -42,7 +41,7 @@ def test_cli_entrega_invoca_sellar(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(P, "emails_out_dir", fake_out_dir)
     monkeypatch.setattr(P, "sellar_entrega", fake_sellar)
 
-    rc = CLI.main(["--ref", "W-02VND1", "--entrega", "entrega instructora"])
+    rc = cli.main(["--ref", "W-02VND1", "--entrega", "entrega instructora"])
     assert rc == 0
     assert llamadas["descr"] == "entrega instructora"
     assert llamadas["out_dir"] == tmp_path / "Emails"
