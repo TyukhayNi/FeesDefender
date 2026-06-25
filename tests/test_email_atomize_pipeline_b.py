@@ -152,9 +152,10 @@ def test_capa_a_md_no_gana_campos_layer_b(tmp_path):
     mds = sorted((out / "mensajes").glob("*.md"))
     assert len(mds) == 1                                  # solo el atom de Capa A
     md = mds[0].read_text(encoding="utf-8")
-    assert "capa: A" in md and "confianza: alta" in md
+    assert "capa: A" in md and "confianza: alta\n" in md
     # El frontmatter de Capa A NO gana campos de Layer B ni banner:
     for marca in ("reconstruido_desde_cita: true", "reconstruido_de:", "en_revision: true",
+                  "fecha_inferida: true", "ambiguedad_profundidad: true", "fingerprint:",
                   "confianza: media-reconstruida", "> AUTORÍA POR VERIFICAR",
                   "> RECONSTRUIDO DESDE CITA", "> AUTORÍA POR RECONSTRUIR"):
         assert marca not in md, f"Capa A no debe contener: {marca!r}"
