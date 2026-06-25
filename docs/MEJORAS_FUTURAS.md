@@ -1613,7 +1613,10 @@ hueco de poda). **Solo `inline.py` + 2 tests; Capa A byte-idéntica; +26 tests, 
 **Auditoría read-only sobre W-02VND1: 12 interiores distintos, todos con `<addr>` LITERAL, 0 inventados**
 — PersonaUno ×5 (CAPEX/[PAIS_EXTRANJERO] docs/Rescisión/Estudio acciones penales/FYI), PersonaDos ×2 (Referencia
 + Acuerdo Transaccional), **Eva→Consulado [PAIS_EXTRANJERO] 7-jul "Contraoferta" (testigo MSG-00305) RECUPERADO**,
-PersonaTres, Nikolai ×2, Marta. Corrida en vivo sobre G: PENDIENTE de autorización de Nikolai.
+PersonaTres, Nikolai ×2, Marta. **Corrida en vivo sobre G: HECHA (2026-06-25, autorizada): 403→413 atoms,
+media-reconstruida 37→47, 8 upgrades, 0 errores; Capa A 277 byte-idéntica (hash before/after), 0 fp
+renumerados; idempotente (2ª corrida = 0 cambios); 12 interiores literales, 0 inventados; testigo MSG-00305
++ PersonaUno ×4 + Ignacio "Referencia" presentes en el corpus.**
 
 **Residuales de it.3 (no bloqueantes):**
 - **Duplicado cross-path (over-count, NO misatribución).** Si un correo aparece como atom `fwd_line` de
@@ -1625,3 +1628,46 @@ PersonaTres, Nikolai ×2, Marta. Corrida en vivo sobre G: PENDIENTE de autorizac
   como atribución de primer nivel.
 - Los ~43 restantes en cola son mayormente `sin_cabecera` sin `<addr>` (no recuperables sin inventar — prime
   directive).
+
+---
+
+## 47. Bug latente: colisión de slug en `raw_text/` y `MD/` (stem-only)
+
+**Síntoma (corrección).** El extractor escribe la salida como `01_Procesado/raw_text/{slug}.txt`
+y el generador de markdown como `01_Procesado/MD/{slug}.md`, donde
+`slug = slugify(Path(rel_path).stem)` — **solo el nombre base, sin la carpeta de origen**
+([extractor.py:291](../core/extractor.py:291), [markdown_generator.py:30](../core/markdown_generator.py:30)).
+En cambio, el caché de extracción `_extract_state.json` se indexa por `rel_path` completo (único).
+Resultado: dos ficheros de origen distintos con el mismo *stem* (mismo nombre en carpetas distintas, o
+el mismo documento espejado en `01_Drive EV/` y en `05_CRM/`) colapsan al **mismo** `{slug}.txt`/`{slug}.md`
+y se **pisan en silencio**: solo sobrevive el último escrito.
+
+**Evidencia empírica.** Reproceso de `BaRS1 - Tibidabo 8 - (W-02VND1)` el 2026-06-25:
+`_extract_state.json` registra **487 documentos** pero en disco quedan **477 `.txt`** → ~10 colisiones.
+(Los `.eml` no colisionan porque la atomización los numera `MSG-XXXXX`; las colisiones vienen de PDFs/otros
+con stems repetidos entre carpetas.)
+
+**Dos consecuencias, ambas de corrección.**
+1. **Pérdida de datos.** El texto de un documento sobrescribe el de otro; los consumidores
+   (`scorer`, `viability`, `sala_lectura`) leen `MD/` y obtienen el contenido equivocado o pierden uno.
+2. **Envenenamiento del caché.** En la corrida siguiente, el doc A pasa el skip (su SHA coincide y
+   `out.exists()` es `True`), pero `out` contiene el texto de B → A queda servido con el contenido de B
+   de forma permanente, sin reextraer nunca.
+
+**Mejora propuesta.** Hacer el nombre de salida libre de colisiones de forma determinista. Opción
+preferida: sufijar el slug con un prefijo del SHA-256 del origen, `{slug}__{sha8}.txt` / `.md`. Es estable,
+corto (esquiva el límite de 260 caracteres de ruta de Windows, a diferencia de slugificar el `rel_path`
+entero) y ata la salida a la identidad del origen. Alternativa más simple: detectar colisión al escribir y
+desambiguar con contador.
+
+**Consumidores a tocar si se cambia el naming.** `sala_lectura._md_path` deriva la ruta por
+`slugify(stem)` ([sala_lectura.py:244](../core/sala_lectura.py:244)) — mismo defecto, hay que alinearlo.
+`scorer`/`viability` recorren `MD/` por *glob* (tolerantes al nombre, no hay que tocarlos). Hace falta una
+migración puntual de las salidas ya generadas (renombrado) o aceptar una reextracción.
+
+**Justificación de no aplicarlo ahora.** No bloquea: los ~10 documentos pisados conservan *algún* texto y
+el expediente lo leen personas; el material crítico (los `.eml` atomizados) no colisiona. Pero es un bug de
+corrección que conviene cerrar **antes** de apoyar análisis automatizado sobre `MD/`.
+
+**Coste estimado.** ~15-20 líneas (helper de slug compartido en `extractor`/`markdown_generator` +
+`sala_lectura`) + migración de salidas existentes + 1 test de colisión.
