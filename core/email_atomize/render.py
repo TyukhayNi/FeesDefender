@@ -102,7 +102,11 @@ def render_correos_lectura(mensajes: list[RegistroMensaje]) -> str:
     for m in ms:
         out.append(f'<a id="{_ancla(m.msg_id)}"></a>')
         out.append(f"### {m.fecha_iso} · {m.hora} — {m.asunto or '(sin asunto)'}\n")
-        if m.capa == "B":
+        if m.capa == "B" and m.confianza == "media-reconstruida":
+            out.append(f"**De (reconstruido, por verificar):** {m.de_nombre or m.de} <{m.de}>  ")
+            out.append("_Mensaje reconstruido de una cita; remitente por cabecera, sin autenticar "
+                       f"(Ref. {m.reconstruido_de or '—'})_  ")
+        elif m.capa == "B":
             out.append(f"**De (reconstruido):** {m.de_nombre or m.de} <{m.de}>  ")
             out.append("_Mensaje recuperado de una cita; remitente verificado por cabecera "
                        f"(Ref. {m.reconstruido_de or '—'})_  ")

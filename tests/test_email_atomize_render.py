@@ -64,3 +64,18 @@ def test_render_md_banner_media_reconstruida():
 def test_render_md_banner_alta_reconstruida_sin_cambio():
     md = R.render_md(_mb("alta-reconstruida"))
     assert "> RECONSTRUIDO DESDE CITA — remitente verificado por cabecera inline" in md
+    assert "AUTORÍA POR VERIFICAR" not in md
+
+
+def test_render_lectura_de_media_reconstruida_por_verificar():
+    vista = R.render_correos_lectura([_mb("media-reconstruida")])
+    assert "**De (reconstruido, por verificar):**" in vista
+    assert "sin autenticar" in vista or "sin verificar" in vista
+    # No usa el rótulo de alta (verificado por cabecera) para un media-reconstruida:
+    assert "remitente verificado por cabecera" not in vista
+
+
+def test_render_lectura_de_alta_reconstruida_sin_cambio():
+    vista = R.render_correos_lectura([_mb("alta-reconstruida")])
+    assert "**De (reconstruido):**" in vista
+    assert "remitente verificado por cabecera" in vista
