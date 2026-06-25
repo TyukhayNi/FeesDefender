@@ -120,7 +120,7 @@ enterrada de PersonaUno (levantar el velo de Tibidabo 8 S.L.). Reutiliza `core.e
 ---
 
 ## [SIGUIENTE-CRONOLOGIA-UNIFICADA] Cronología Unificada de Prueba (capa por encima de los atomizadores)
-*Diseño aportado por Nikolai 2026-06-25 (hilo Cowork). Spec: `docs/superpowers/specs/2026-06-25-cronologia-unificada-design.md`. Banco de pruebas de diseño: W-02VND1 (Tibidabo 8). **Naturaleza: documento de DISEÑO, NO construcción.** Disciplina rectora: skill `verificacion-anclada-fuente`. Implementación futura: Claude Code en `core/`.*
+*Diseño aportado por Nikolai 2026-06-25 (hilo Cowork). Spec **v3**: `docs/superpowers/specs/2026-06-25-cronologia-unificada-design.md` (Fases 0–3 de diseño cerradas). Banco de pruebas de diseño: W-02VND1 (Tibidabo 8). **Naturaleza: documento de DISEÑO, NO construcción.** Disciplina rectora: skill `verificacion-anclada-fuente`. Implementación futura: Claude Code en `core/`.*
 
 **Objetivo.** Fusionar todas las fuentes de prueba de un expediente (correo, WhatsApp,
 CRM, entrevistas, documental, registros) en **UNA sola línea de tiempo**, separando lo
@@ -145,22 +145,32 @@ Vive **por encima** de los atomizadores por fuente (el motor `core/email_atomize
   calificaciones del velo = hechos derivados, no flags).
 - **D6 — tipología:** categorías de alto nivel CERRADAS; hojas SEMILLA extensibles con gobernanza.
 
+**Decisiones de Fase 3 cerradas (correlación entre fuentes — F3.D1–D5; §7 del spec).** Regla rectora: **intra-fuente DEDUP, inter-fuente CORRELACIÓN (nunca fusión).**
+- **F3.D1 — desenlaces:** dos planos ortogonales (actos: Colapso/Correlación/Reconstrucción/Sin relación · artefactos §2.5); **sin nodo `EventoMaterial`** (sería puerta trasera de inferencia); corroboración de CONTENIDO vs CIRCULACIÓN se computan distinto.
+- **F3.D2 — señales (S0–S5):** confianza de emparejamiento explicable ≠ fuerza probatoria; peso por rareza/diagnosticidad; bloqueo duro (ancla compartida) + blando (solo candidatea a revisión); flag `riesgo_tergiversacion`. **★ no-fuga:** el semáforo solo usa enlaces `confirmado`.
+- **F3.D3 — enrutamiento:** AUTOENLACE (solo S0a-formal + hash idéntico) / COLA (recall-bias, tiers) / NO-PROPUESTO; la contradicción NUNCA se autoenlaza pero salta la compuerta; decisión humana **sticky y persistida** (en `_registro_cronologia.json`).
+- **F3.D4 — fórmula del 🟢🟡🔴:** regla **estructural categórica** (no suma ponderada); independencia en 3 grados; diagnosticidad condicional (ACH); cadenas `min` por ruta + convergencia; topes por rival seria/credibilidad/386; salida **propuesta** que el letrado cura.
+- **F3.D5 — contradicción:** el sistema **no resuelve**, representa el conflicto (versiones rivales bajo punto controvertido); tres dianas según `matiz_contradiccion` (contenido/credibilidad/autenticidad); degradación una sola vez en el nodo; resolución = evento nuevo.
+
+**Material build-ready:** pseudocódigo de F3.D3/D4/D5 (`calcular_estatus_soporte`, `procesar_contradiccion`) + tablas de decisión en los handoffs de stress-test.
+
 **Estado (DISEÑO).**
 - [x] Fase 0 — inventario de fuentes.
 - [x] Fase 1 — esquema del evento (D1, D2, D3, D4, D6).
 - [x] Fase 2 — identidades (D5).
-- [ ] Fase 3 — correlación vs dedup entre fuentes (algoritmo y reglas; el enlace ya absorbe buena parte).
-- [ ] Fase 4 — tiempo heterogéneo.
+- [x] **Fase 3 — correlación entre fuentes (F3.D1–D5).** Algoritmo y reglas cerrados (§7 del spec); ver bloque de decisiones arriba.
+- [ ] Fase 4 — tiempo heterogéneo (EDTF; fecha-hecho vs fecha-declaración vs fecha-registro; orden de eventos difusos).
 - [ ] Fase 5 — arquitectura de ingesta: un atomizador por fuente. **Precondición:** cada
   fuente debe exponer átomos con ID estable (un `_chat.txt` crudo no los tiene → necesita su atomizador).
 - [ ] Fase 6 — vistas, entregable humano + custodia (work-product ≠ prueba).
 - [ ] Fase 7 — alcance piloto (correo + WhatsApp).
 
 **Build — NO empezar aún.** En `core/` de FeesDefender, incremental (correo + WhatsApp
-primero), **solo tras cerrar al menos la Fase 3 de diseño y con el motor de correo
-terminado** (hoy `[SIGUIENTE-EMAIL-ATOMIZE]` está en Fase 3). La cronología **consume** las
-salidas del motor de correo (`mensajes/*.md`, `corpus.jsonl`, `_registro.json`) y **no lo
-toca** (spec congelado).
+primero), **tras cerrar el diseño (Fases 4–7 aún pendientes) y con el motor de correo
+terminado** (hoy `[SIGUIENTE-EMAIL-ATOMIZE]` está en Fase 3). El diseño de la Fase 3
+(correlación) ya está cerrado y hay material build-ready, pero el build espera al resto del
+diseño. La cronología **consume** las salidas del motor de correo (`mensajes/*.md`,
+`corpus.jsonl`, `_registro.json`) y **no lo toca** (spec congelado).
 
 ---
 
