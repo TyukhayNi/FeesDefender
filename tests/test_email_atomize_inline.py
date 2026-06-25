@@ -64,6 +64,27 @@ def test_anclaje_sin_fecha_parseable():
     assert anc.de == "x@y.com" and anc.fecha_iso == "0000-00-00"
 
 
+def test_anclaje_outlook_enviado_el_parsea_fecha():
+    # Outlook ES real usa "Enviado el:" (no "Enviado:") — debe parsear la fecha igual.
+    blk = ("De: PersonaTres <per03@example.invalid>\nEnviado el: viernes, 4 de octubre de 2024 11:40\n"
+           "Para: x@y\nAsunto: RV: Tibidabo")
+    anc = I.parsear_anclaje(blk, "outlook_es")
+    assert anc.de == "per03@example.invalid" and anc.fecha_iso == "2024-10-04" and "Tibidabo" in anc.asunto
+
+
+def test_anclaje_enviat_el_catalan_parsea_fecha():
+    blk = "De: Toni <per03@example.invalid>\nEnviat el: 3 de febrer de 2020\nPara: y@z\nAsunto: x"
+    anc = I.parsear_anclaje(blk, "outlook_es")
+    assert anc.de == "per03@example.invalid" and anc.fecha_iso == "2020-02-03"
+
+
+def test_anclaje_enviado_sin_el_sigue_parseando():
+    # Regresión: el caso sin " el" sigue funcionando idéntico.
+    blk = "De: X <x@y.com>\nEnviado: lunes, 3 de febrero de 2020 18:42\nPara: w\nAsunto: z"
+    anc = I.parsear_anclaje(blk, "outlook_es")
+    assert anc.de == "x@y.com" and anc.fecha_iso == "2020-02-03"
+
+
 # ---------------------------------------------------------------------------
 # T6 — segmentación texto plano
 # ---------------------------------------------------------------------------
@@ -97,6 +118,17 @@ def test_seg_stray_de_no_segmenta():
 def test_seg_plain_intercalada_no_segmenta():
     s = I.segmentar_texto("> pregunta uno\nrespuesta del autor entre citas\n> pregunta dos\n")
     assert s.respuesta_intercalada is True and s.ancestros == []
+
+
+def test_seg_anclaje_no_se_trunca_con_enviado_el():
+    # El bloque "Enviado el:" NO debe cortar la acumulación del anclaje: Enviado/Para/Asunto
+    # deben quedar dentro del anclaje del segmento (regresión de la cascada).
+    txt = ("Mi nota.\n-----Mensaje original-----\nDe: Antoni <per03@example.invalid>\n"
+           "Enviado el: viernes, 4 de octubre de 2024 11:40\nPara: x@y\nAsunto: Z\ncuerpo citado")
+    s = I.segmentar_texto(txt)
+    assert len(s.ancestros) == 1 and s.ancestros[0].estilo == "fwd_line"
+    anc = I.parsear_anclaje(s.ancestros[0].anclaje_texto or "", s.ancestros[0].estilo)
+    assert anc.de == "per03@example.invalid" and anc.fecha_iso == "2024-10-04" and "Z" in anc.asunto
 
 
 # ---------------------------------------------------------------------------

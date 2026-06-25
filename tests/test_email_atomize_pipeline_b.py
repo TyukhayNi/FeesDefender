@@ -170,3 +170,21 @@ def test_capa_a_md_byte_identico_entre_corridas(tmp_path):
     P.atomize_dir(src, out, case_dir=tmp_path)
     md2 = sorted((out / "mensajes").glob("*.md"))[0].read_bytes()
     assert md1 == md2                                     # byte-idéntico entre corridas
+
+
+def test_layerb_enviado_el_promueve_media_reconstruida(tmp_path):
+    src = tmp_path / "03_Email"; out = tmp_path / "Emails"; src.mkdir()
+    m = EmailMessage()
+    m["Message-ID"] = "<carrier-el@x>"; m["Subject"] = "RV: Tibidabo"
+    m["Date"] = "Mon, 01 Jun 2026 10:00:00 +0200"; m["From"] = "c@x"; m["To"] = "d@x"
+    m.set_content("Te reenvio:\n\n-----Mensaje original-----\nDe: Jaime <alguien@x.com>\n"
+                  "Enviado el: viernes, 4 de octubre de 2024 11:40\nPara: x@y\nAsunto: Tibidabo\n"
+                  "contenido citado suficientemente largo para superar el floor de 24 chars\n")
+    (src / "2026-06-01_carrier_el.eml").write_bytes(m.as_bytes())
+    rep = P.atomize_dir(src, out, case_dir=tmp_path)
+    b_mds = [p for p in (out/"mensajes").glob("*.md")
+             if "confianza: media-reconstruida" in p.read_text(encoding="utf-8")]
+    assert len(b_mds) == 1, "el bloque 'Enviado el:' con remitente válido debe promover ahora"
+    assert rep.reconstruidos_media == 1
+    md = b_mds[0].read_text(encoding="utf-8")
+    assert "alguien@x.com" in md and "2024-10-04" in md

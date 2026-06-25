@@ -111,7 +111,8 @@ _RE_FECHA = re.compile(r"(\d{1,2})\s+([a-z]+)\.?\s+(\d{4})")           # DMY: 14
 _RE_FECHA_MDY = re.compile(r"([a-z]+)\.?\s+(\d{1,2}),?\s+(\d{4})")     # MDY: May 10, 2024
 _RE_FECHA_NUM = re.compile(r"(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{2,4})")
 _RE_LABEL = re.compile(
-    r"(?im)^\s*(de|from|enviado|sent|fecha|date|para|to|asunto|subject|cc|cco|bcc)\s*:\s*(.*)$"
+    r"(?im)^\s*(de|from|enviado|enviat|sent|fecha|date|para|to|asunto|subject|cc|cco|bcc)"
+    r"(?:\s+el)?\s*:\s*(.*)$"
 )
 _RE_ADDR = re.compile(r"<\s*([^<>\s]+@[^<>\s]+)\s*>")
 _RE_APPLE = re.compile(r"(?i)^\s*(?:el|on)\s+(.+?)(?:,|\s+a\s+las\s+|\s+a\s+les\s+|\s+at\s+)")
@@ -184,8 +185,8 @@ def _parse_label(texto: str) -> "Anclaje | None":
     for k, v in _RE_LABEL.findall(texto):
         labels.setdefault(k.lower(), v.strip())
     de_raw = labels.get("de") or labels.get("from") or ""
-    fecha_raw = (labels.get("enviado") or labels.get("sent") or labels.get("fecha")
-                 or labels.get("date") or "")
+    fecha_raw = (labels.get("enviado") or labels.get("enviat") or labels.get("sent")
+                 or labels.get("fecha") or labels.get("date") or "")
     asunto = labels.get("asunto") or labels.get("subject") or ""
     if not (de_raw or fecha_raw or asunto):
         return None
@@ -265,9 +266,9 @@ _RE_APPLE_ES_LINE = re.compile(r"(?i)^\s*el\s+.+?\s+(?:escribi[oó]|va\s+escriur
 _RE_APPLE_EN_LINE = re.compile(r"(?i)^\s*on\s+.+?\s+wrote\s*:\s*$")
 _RE_DEFROM_LINE = re.compile(r"(?i)^\s*(?:de|from)\s*:\s*\S")
 _RE_2ND_LABEL = re.compile(
-    r"(?i)^\s*(enviado|sent|fecha|date|para|to|asunto|subject|cc|cco|bcc)\s*:")
+    r"(?i)^\s*(enviado|enviat|sent|fecha|date|para|to|asunto|subject|cc|cco|bcc)(?:\s+el)?\s*:")
 _RE_ANYLABEL = re.compile(
-    r"(?i)^\s*(de|from|enviado|sent|fecha|date|para|to|asunto|subject|cc|cco|bcc)\s*:")
+    r"(?i)^\s*(de|from|enviado|enviat|sent|fecha|date|para|to|asunto|subject|cc|cco|bcc)(?:\s+el)?\s*:")
 
 
 def _es_quote(l: str) -> bool:
