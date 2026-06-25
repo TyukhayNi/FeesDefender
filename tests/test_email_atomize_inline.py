@@ -194,6 +194,13 @@ def test_clasifica_estructural_completo_sigue_alta_reconstruida():
     assert conf == "alta-reconstruida"
 
 
+def test_clasifica_no_estructural_pero_ambigua_no_promueve():
+    # estructural=False + ambigua=True (varias cabeceras apiladas) → media, NUNCA media-reconstruida.
+    anc = I.Anclaje(de="a@x.com", fecha_iso="2020-01-01")
+    conf, _ = I.clasificar(anc, "2020-02-01", estructural=False, ambigua=True)
+    assert conf == "media" and conf != "media-reconstruida"
+
+
 # ---------------------------------------------------------------------------
 # T9 — orquestador reconstruir + indice Capa A + watched-list
 # ---------------------------------------------------------------------------

@@ -621,7 +621,7 @@ _RE_INLINE_MID = re.compile(r"(?im)^\s*message-id\s*:\s*<([^>]+)>")
 @dataclass
 class ReconResult:
     intercalada: bool = False
-    candidatos: list = field(default_factory=list)   # Segmento (alta-reconstruida)
+    candidatos: list = field(default_factory=list)   # Segmento (alta-reconstruida | media-reconstruida)
     punteros: list = field(default_factory=list)      # SegmentoEnterrado (media/baja)
 
 
