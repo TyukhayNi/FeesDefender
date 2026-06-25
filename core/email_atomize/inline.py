@@ -217,6 +217,12 @@ _RE_FWD_INTRO = re.compile(
     r"|---+\s*(?:mensaje reenviado|forwarded message|mensaje original|original message))\s*:?\s*$")
 _RE_DE_LABEL_ANY = re.compile(r"(?im)^\s*(?:de|from)(?:\s+el)?\s*:")  # ve 'De:' AUNQUE el valor vaya envuelto
 _RE_APPLE_FIN_M = re.compile(r"(?im)(?:escrib(?:i[oó])|wrote|va\s+escriure)\s*:\s*$")  # conteo correcto (re.M)
+# La UNIDAD de atribución Apple: desde un "El/On" a inicio de línea hasta el terminus
+# ("escribió:/wrote:/va escriure:"), DOTALL no-greedy (absorbe el <addr> envuelto en varias
+# líneas). Liga el <addr> del remitente a esta unidad, no a toda la cabeza: un <addr> extraviado
+# ANTES del "El" (firma/aviso legal) queda fuera y no roba el remitente.
+_RE_APPLE_UNIDAD = re.compile(
+    r"(?is)(?:^|\n)[ \t]*(?:el|on)\b.*?(?:escrib(?:i[oó])|wrote|va\s+escriure)[ \t]*:")
 _MAX_LINEAS_SCAN = 16  # ventana del INICIO; (c) con cabecera completa envuelta cabe (ver §6 calibración)
 
 
@@ -282,12 +288,18 @@ def _atribucion_en_cuerpo(texto: str) -> "Anclaje | None":
         return None  # varias atribuciones apiladas → AMBIGUO → cola
     # Distinguir forma y parsear (orden importa; replica parsear_anclaje sobre la cabeza acotada).
     anc = None
-    # (a)/(b) — Apple. G4: >1 <addr> en la línea de atribución → cola (remitente+destinatario).
+    # (a)/(b) — Apple. Ligar el <addr> del remitente a la UNIDAD de atribución (del "El/On" al
+    # "escribió:/wrote:"), no a toda la cabeza: un <addr> extraviado ANTES del "El" (firma/aviso
+    # legal) no debe robar el remitente. La forma (b) (addr envuelto) cabe: la unidad es DOTALL.
     if _RE_APPLE.search(cabeza) or _RE_ATTR_FIN.search(cabeza.strip()):
-        linea_attr = _linea_atribucion_apple(cabeza)
-        if linea_attr is not None and len(_RE_ADDR.findall(linea_attr)) > 1:
-            return None  # G4 — ADVERSARIAL 2
-        anc = _parse_apple(cabeza)
+        unidades = list(_RE_APPLE_UNIDAD.finditer(cabeza))
+        if unidades:
+            unidad = unidades[-1].group(0)  # la atribución terminal (la más cercana al cuerpo)
+            # G4 (re-ligada a la UNIDAD, no a la línea): exactamente 1 <addr> en la unidad. 0 = sin
+            # remitente en la atribución; >1 = remitente+destinatario ambiguo → cola. Más estricta.
+            if len(_RE_ADDR.findall(unidad)) != 1:
+                return None
+            anc = _parse_apple(unidad)
     # (c) — bloque De:/Fecha:/Asunto:. El <addr> sale SOLO de la clave de/from (G5).
     if anc is None:
         anc = _parse_label(cabeza)
@@ -295,15 +307,6 @@ def _atribucion_en_cuerpo(texto: str) -> "Anclaje | None":
     if anc is None or not anc.de:
         return None
     return anc
-
-
-def _linea_atribucion_apple(cabeza: str) -> str | None:
-    """La línea de la cabeza que contiene la atribución Apple ("El …/On …" o que acaba en
-    "escribió:/wrote:"). Para la guarda G4 (contar <addr> en la unidad de atribución)."""
-    for linea in cabeza.splitlines():
-        if _RE_APPLE.search(linea) or _RE_ATTR_FIN.search(linea.strip()):
-            return linea
-    return None
 
 
 # ---------------------------------------------------------------------------

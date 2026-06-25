@@ -468,6 +468,28 @@ def test_bodyscan_sin_estructura_prosa_suelta():
     assert anc is None, "prosa suelta sin estructura de atribución → cola"
 
 
+def test_bodyscan_g4_addr_extraviado_antes_de_atribucion_apple():
+    # Un <addr> suelto (pie/aviso legal) ANTES de una atribución Apple terminal NO debe robar el remitente.
+    txt = ("Aviso legal. Contacto: dpo <dpo@bufete.com>\n"
+           "El 27 may 2024, a las 10:49, PersonaCinco <persona.cinco@engelvoelkers.com> escribió:")
+    anc = I._atribucion_en_cuerpo(txt)
+    assert anc is not None and anc.de == "persona.cinco@engelvoelkers.com"
+
+
+def test_bodyscan_g4_addr_extraviado_con_addr_envuelto():
+    # Igual pero con el <addr> del remitente envuelto (forma b): debe seguir recuperando al remitente real.
+    txt = ("> firma vieja: soporte <soporte@otra.com>\n"
+           "El 4 oct 2024, a las 11:48, PersonaCuatro, Eva <\npersona.cuatro@engelvoelkers.com\n> escribió:")
+    anc = I._atribucion_en_cuerpo(txt)
+    assert anc is not None and anc.de == "persona.cuatro@engelvoelkers.com"
+
+
+def test_bodyscan_g4_dos_addr_en_la_unidad_apple_es_ambiguo():
+    # Dos <addr> DENTRO de la unidad de atribución (remitente+cc) → ambiguo → None.
+    txt = "El 4 oct 2024, Eva <eva@x.com> con copia a Bob <bob@y.com> escribió:"
+    assert I._atribucion_en_cuerpo(txt) is None
+
+
 # ---------------------------------------------------------------------------
 # T10 (integración) — enganche del body-scan en reconstruir (spec §5 tests 11-14)
 # ---------------------------------------------------------------------------
