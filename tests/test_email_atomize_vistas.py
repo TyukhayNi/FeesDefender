@@ -80,3 +80,29 @@ def test_vista_tipo_desconocido_se_omite_con_nota():
 
 def test_cargar_vistas_sin_fichero_es_vacio(tmp_path):
     assert V.cargar_vistas(tmp_path) == []
+
+
+def test_render_vistas_lista_vacia_no_crashea():
+    ident = _ident_db()
+    dp = V.DefVista(id="dossier_del_burgo", tipo="persona", persona="persona_uno")
+    dt = V.DefVista(id="nexo_causal", tipo="tematica", palabras_clave=["tibidabo"])
+    salidas, notas = V.render_vistas([], ident, [dp, dt])
+    assert "dossier_del_burgo.md" in salidas and "nexo_causal.md" in salidas
+    assert notas == []
+
+
+def test_tematica_sin_palabras_clave_no_incluye_nada():
+    ident = _ident_db()
+    mensajes = [_m("MSG-1", asunto="Tibidabo arras"), _m("MSG-2", cuerpo="lo que sea")]
+    d = V.DefVista(id="nexo_causal", tipo="tematica", palabras_clave=[])
+    salidas, _notas = V.render_vistas(mensajes, ident, [d])
+    doc = salidas["nexo_causal.md"]
+    assert "MSG-1" not in doc and "MSG-2" not in doc   # sin keywords → no casa nada
+
+
+def test_vista_persona_normaliza_de_en_mayusculas():
+    ident = _ident_db()
+    mensajes = [_m("MSG-1", de="per01a@example.invalid", asunto="autor mayusculas")]
+    d = V.DefVista(id="dossier_del_burgo", tipo="persona", persona="persona_uno")
+    salidas, _notas = V.render_vistas(mensajes, ident, [d])
+    assert "MSG-1" in salidas["dossier_del_burgo.md"]   # de en mayúsculas SÍ casa

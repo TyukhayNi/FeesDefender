@@ -107,7 +107,7 @@ def _render_persona(d, p, filas):
            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
     for m, rol, estado in filas:
         out.append(f"| {m.fecha_iso} | {m.hora or '----'} | {_celda(m.asunto) or '(sin asunto)'} "
-                   f"| {m.msg_id} | {rol} | {m.de} | {m.capa} | {m.confianza} | {estado or '—'} "
+                   f"| {m.msg_id} | {rol} | {_celda(m.de)} | {m.capa} | {m.confianza} | {estado or '—'} "
                    f"| {m.reconstruido_de or '—'} |")
     return "\n".join(out) + "\n"
 
@@ -119,7 +119,7 @@ def _render_tematica(d, mensajes):
            "| --- | --- | --- | --- | --- | --- | --- |"]
     for m in mensajes:
         out.append(f"| {m.fecha_iso} | {m.hora or '----'} | {_celda(m.asunto) or '(sin asunto)'} "
-                   f"| {m.msg_id} | {m.de} | {m.capa} | {m.confianza} |")
+                   f"| {m.msg_id} | {_celda(m.de)} | {m.capa} | {m.confianza} |")
     return "\n".join(out) + "\n"
 
 
