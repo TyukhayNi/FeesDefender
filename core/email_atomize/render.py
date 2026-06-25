@@ -169,9 +169,30 @@ def render_revision(mensajes_b: list[RegistroMensaje], punteros: list, watched=N
             db.append(f"| (cita) | {p.de} | {p.fecha_iso} | {p.confianza} | "
                       f"{p.portador_msg_id} | revisar |")
 
+    medias = sorted((m for m in mensajes_b if m.confianza == "media-reconstruida"),
+                    key=lambda m: (m.msg_id, m.fingerprint))   # determinista → idempotente
+    rec = [_GEN_VIEW, "# Reconstruidos (media-reconstruida) — checklist de verificación\n",
+           "Atoms capa B promovidos desde una cita NO estructural: remitente por cabecera "
+           "(fiable), límite de cuerpo por adyacencia (por verificar). Cotejar cada uno contra "
+           "su `.eml` portador.\n",
+           "| Ref | De | Fecha | Asunto | Portador | Extracto |",
+           "| --- | --- | --- | --- | --- | --- |"]
+    rec_jsonl = []
+    for m in medias:
+        ext = (m.cuerpo or "").replace("|", " ").replace("\n", " ").strip()[:120]
+        asu = (m.asunto or "").replace("|", " ").replace("\n", " ").strip()
+        rec.append(f"| {m.msg_id} | {m.de} | {m.fecha_iso} | {asu} | "
+                   f"{m.reconstruido_de} | {ext} |")
+        rec_jsonl.append(json.dumps(
+            {"msg_id": m.msg_id, "de": m.de, "fecha_iso": m.fecha_iso, "asunto": m.asunto,
+             "reconstruido_de": m.reconstruido_de, "fingerprint": m.fingerprint},
+            ensure_ascii=False, sort_keys=True))
+
     return {"cola.md": "\n".join(cola) + "\n",
             "casi_duplicados.md": "\n".join(casi) + "\n",
-            "del_burgo.md": "\n".join(db) + "\n"}
+            "del_burgo.md": "\n".join(db) + "\n",
+            "reconstruidos.md": "\n".join(rec) + "\n",
+            "reconstruidos.jsonl": ("\n".join(rec_jsonl) + "\n") if rec_jsonl else ""}
 
 
 def render_indice_adjuntos(adjuntos: list[AdjuntoUnico]) -> str:

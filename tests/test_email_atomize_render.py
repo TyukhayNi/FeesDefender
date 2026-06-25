@@ -1,4 +1,5 @@
 from __future__ import annotations
+import json
 from core.email_atomize.model import RegistroMensaje, AdjuntoRef
 from core.email_atomize import render as R
 
@@ -79,3 +80,28 @@ def test_render_lectura_de_alta_reconstruida_sin_cambio():
     vista = R.render_correos_lectura([_mb("alta-reconstruida")])
     assert "**De (reconstruido):**" in vista
     assert "remitente verificado por cabecera" in vista
+
+
+def test_render_revision_emite_reconstruidos_md_y_jsonl():
+    mb_media = _mb("media-reconstruida")
+    mb_alta = RegistroMensaje(
+        msg_id="MSG-09002", capa="B", confianza="alta-reconstruida", de="b@x.com",
+        fecha_iso="2020-06-01", asunto="Otro", cuerpo="otro cuerpo",
+        reconstruido_desde_cita=True, reconstruido_de="MSG-00008", fingerprint="fp:def456")
+    d = R.render_revision([mb_media, mb_alta], [], watched=None)
+    # Mantiene las claves existentes + las dos nuevas:
+    assert set(d) == {"cola.md", "casi_duplicados.md", "del_burgo.md",
+                      "reconstruidos.md", "reconstruidos.jsonl"}
+    rec = d["reconstruidos.md"]
+    # Lista SOLO los media-reconstruida, con sus columnas:
+    assert "MSG-09001" in rec and "a@x.com" in rec and "2020-05-01" in rec
+    assert "Tibidabo" in rec and "MSG-00007" in rec
+    # NO incluye el alta-reconstruida:
+    assert "MSG-09002" not in rec
+    # El espejo .jsonl: una línea JSON parseable por cada media-reconstruida, y solo esos:
+    lineas = [l for l in d["reconstruidos.jsonl"].splitlines() if l.strip()]
+    assert len(lineas) == 1
+    fila = json.loads(lineas[0])
+    assert fila["msg_id"] == "MSG-09001" and fila["de"] == "a@x.com"
+    assert fila["fecha_iso"] == "2020-05-01" and fila["reconstruido_de"] == "MSG-00007"
+    assert fila["fingerprint"] == "fp:abc123"
