@@ -206,6 +206,29 @@ def _try_rtf(path: Path) -> str | None:
         return None
 
 
+def _try_ics(path: Path) -> str | None:
+    """Resumen estructurado de un .ics (stdlib, sin dependencias).
+
+    Desdobla líneas continuadas (RFC 5545: empiezan con espacio/tab) y vuelca
+    los campos relevantes de cada VEVENT.
+    """
+    try:
+        raw = _read_text_file(path)
+    except Exception:
+        return None
+    unfolded = raw.replace("\r\n", "\n").replace("\n ", "").replace("\n\t", "")
+    campos = ("SUMMARY", "DTSTART", "DTEND", "LOCATION", "ORGANIZER", "ATTENDEE", "DESCRIPTION")
+    lineas: list[str] = []
+    for linea in unfolded.split("\n"):
+        if ":" not in linea:
+            continue
+        nombre = linea.split(":", 1)[0].split(";", 1)[0].strip().upper()
+        if nombre in campos:
+            valor = linea.split(":", 1)[1].strip()
+            lineas.append(f"{nombre}: {valor}")
+    return "\n".join(lineas) if lineas else None
+
+
 # --- Orquestador ------------------------------------------------------------
 
 def _extract_one(path: Path) -> tuple[str, str]:
@@ -240,7 +263,7 @@ def _extract_one(path: Path) -> tuple[str, str]:
     if ext in {".txt", ".md", ".html", ".htm"}:
         return _read_text_file(path), "raw"
 
-    if ext in {".csv", ".xlsx", ".xls"}:
+    if ext in {".csv", ".xlsx", ".xls", ".xlsm"}:
         if (text := _try_pandas_table(path)) is not None:
             return text, "pandas"
 
@@ -251,6 +274,10 @@ def _extract_one(path: Path) -> tuple[str, str]:
     if ext == ".rtf":
         if (text := _try_rtf(path)) is not None:
             return text, "rtf"
+
+    if ext == ".ics":
+        if (text := _try_ics(path)) is not None:
+            return text, "ics"
 
     raise ExtractionError(f"No hay extractor disponible para {path.name} ({ext})")
 
