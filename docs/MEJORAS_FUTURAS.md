@@ -1483,3 +1483,46 @@ no urgente con el tope en su sitio.
 
 **Prioridad.** Baja — ninguna implica pérdida silenciosa de prueba (45.1 cae a worklist;
 45.2 está acotada por el tope de tamaño).
+
+---
+
+## 46. email_atomize Fase 4 (`media-reconstruida`): residuales tras revisión final
+
+**Contexto (2026-06-25).** Se añadió el peldaño `media-reconstruida` a `core/email_atomize`
+(promueve a atom capa B propio las citas con `De:`+fecha legibles pero sin estructura DOM/`>`,
+marcadas "por verificar"). Spec: `docs/superpowers/specs/2026-06-25-email-atomize-media-reconstruida-design.md`;
+plan: `docs/superpowers/plans/2026-06-25-email-atomize-media-reconstruida.md`. Implementado vía
+subagentes con doble revisión por tarea + revisión final holística (SHIP). Dos desviaciones TDD
+ya integradas (endurecimiento de la guarda de ambigüedad multi-cabecera; `_cuerpo_sin_cabecera`
+que alinea el cuerpo de la cita en texto plano con el path HTML para que dispare el dedup). Estos
+residuales quedaron como follow-up no bloqueante:
+
+**46.1 — Helper de saneado de celda Markdown (DRY).** El patrón
+`(x or "").replace("|"," ").replace("\n"," ").strip()[:N]` se repite en `render.py` (cola.md
+línea ~144; reconstruidos.md ext/asunto líneas ~182-183). Extraer `_celda(txt, limit=None)` para
+centralizar y evitar deriva (una columna futura que olvide escapar `|` rompería la tabla).
+
+**46.2 — `candidata` `media-reconstruida` ausente de `del_burgo.md`.** Una cita atribuida a una
+identidad *candidata* (no vigilada; p.ej. `per01b@example.invalid`) se promueve y queda
+`en_revision`, pero `render_revision` filtra `del_burgo.md` solo por `watched`/vigiladas, así que
+no aparece en la vista probatoria. Decidir si `del_burgo.md` debe listar `watched ∪ candidatas`.
+*Disparador:* un atom candidata real en W-02VND1 que haya que revisar. (Documentado en el plan.)
+
+**46.3 — `_pasada_segmentos` siembra `body=list(anclaje)`.** Los segmentos `outlook_es`/`fwd_line`
+en texto plano llevan las líneas de cabecera dentro de `seg.texto`, a diferencia del path HTML
+(blockquote ya puro). `_cuerpo_sin_cabecera` lo corrige en tiempo de reconstrucción; el arreglo
+limpio a largo plazo es no sembrar `body` con las etiquetas del anclaje en el segmentador plano
+(elimina el re-strip downstream). Diferido: el puente actual funciona y está cubierto por tests.
+
+**46.4 — Ramas de banner inalcanzables.** Tras la Fase 4, `"> AUTORÍA POR RECONSTRUIR — sin
+verificar"` (`render.py` ~84) y el `else` de la línea `De` de lectura (~111) son inalcanzables
+para todo atom acuñado (capa B solo lleva `alta-reconstruida` o `media-reconstruida`). Son
+fallbacks defensivos pre-existentes; documentarlos como intencionales o añadir un assert
+`confianza ∈ {alta-reconstruida, media-reconstruida}` para capa B.
+
+**Pendiente de verificación (no es mejora, es gate §9 de la spec):** la verificación adversarial
+sobre datos reales de W-02VND1 (re-ejecutar `atomize_case`, auditar cada `media-reconstruida`
+contra su `.eml`, reconciliar los 36 del informe, PersonaUno/Ignacio) sigue **fuera de alcance**
+hasta autorización para escribir en `G:`. El código del motor ya promueve; falta la corrida real.
+
+**Prioridad.** Baja (46.1/46.3/46.4 son limpieza; 46.2 espera disparador).
