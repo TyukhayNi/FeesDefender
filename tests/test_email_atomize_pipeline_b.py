@@ -133,3 +133,39 @@ def test_layerb_media_reconstruida_dedup_contra_capa_a(tmp_path):
     b_mds = [p for p in mds if "confianza: media-reconstruida" in p.read_text(encoding="utf-8")]
     assert b_mds == [], "una cita que reproduce un .eml limpio NO debe acuñar un B nuevo"
     assert rep.upgrades >= 1   # el puente de fidelidad disparó (la cita es copia de un .eml limpio)
+
+
+def _carrier_solo_capa_a(mid):
+    """Portador SIN cita promovible: cuerpo de autor, sin bloque De:/Enviado: ni blockquote.
+    Su único atom es Capa A (confianza alta), no debe ganar campos Layer B."""
+    m = EmailMessage()
+    m["Message-ID"] = mid; m["Subject"] = "Nota interna"
+    m["Date"] = "Mon, 01 Jun 2026 10:00:00 +0200"; m["From"] = "c@x"; m["To"] = "d@x"
+    m.set_content("Esta es una nota de autor sin citas ni cabeceras reenviadas.\nSaludos.\n")
+    return m.as_bytes()
+
+
+def test_capa_a_md_no_gana_campos_layer_b(tmp_path):
+    src = tmp_path / "03_Email"; out = tmp_path / "Emails"; src.mkdir()
+    (src / "2026-06-01_nota.eml").write_bytes(_carrier_solo_capa_a("<nota@x>"))
+    P.atomize_dir(src, out, case_dir=tmp_path)
+    mds = sorted((out / "mensajes").glob("*.md"))
+    assert len(mds) == 1                                  # solo el atom de Capa A
+    md = mds[0].read_text(encoding="utf-8")
+    assert "capa: A" in md and "confianza: alta" in md
+    # El frontmatter de Capa A NO gana campos de Layer B ni banner:
+    for marca in ("reconstruido_desde_cita: true", "reconstruido_de:", "en_revision: true",
+                  "confianza: media-reconstruida", "> AUTORÍA POR VERIFICAR",
+                  "> RECONSTRUIDO DESDE CITA", "> AUTORÍA POR RECONSTRUIR"):
+        assert marca not in md, f"Capa A no debe contener: {marca!r}"
+
+
+def test_capa_a_md_byte_identico_entre_corridas(tmp_path):
+    # Mismo portador Capa A; el .md debe ser idéntico tras dos corridas (idempotencia + no churn).
+    src = tmp_path / "03_Email"; out = tmp_path / "Emails"; src.mkdir()
+    (src / "2026-06-01_nota.eml").write_bytes(_carrier_solo_capa_a("<nota@x>"))
+    P.atomize_dir(src, out, case_dir=tmp_path)
+    md1 = sorted((out / "mensajes").glob("*.md"))[0].read_bytes()
+    P.atomize_dir(src, out, case_dir=tmp_path)
+    md2 = sorted((out / "mensajes").glob("*.md"))[0].read_bytes()
+    assert md1 == md2                                     # byte-idéntico entre corridas
