@@ -71,3 +71,16 @@ def test_poda_vista_huerfana(tmp_path):
     (case / "vistas.yaml").write_text("vistas: []\n", encoding="utf-8")
     P.atomize_dir(src, out)
     assert not (out / "vistas" / "v1.md").exists()
+
+
+def test_vista_persona_inexistente_puebla_notas(tmp_path):
+    case, src, out = _caso(tmp_path)
+    (case / "identidades.yaml").write_text(
+        "personas:\n  - id: p\n    vigilada: false\n"
+        "    direcciones: [ { email: a@x.com, estado: confirmada } ]\n", encoding="utf-8")
+    (case / "vistas.yaml").write_text(
+        "vistas:\n  - id: rota\n    tipo: persona\n    persona: no_existe\n", encoding="utf-8")
+    (src / "a.eml").write_bytes(_eml("<a@x>", "a@x.com", "z@y.com", "hola", "cuerpo"))
+    rep = P.atomize_dir(src, out)
+    assert rep.vistas_generadas == 0
+    assert any("no_existe" in n for n in rep.notas)
