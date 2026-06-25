@@ -111,7 +111,7 @@ enterrada de PersonaUno (levantar el velo de Tibidabo 8 S.L.). Reutiliza `core.e
   auditadas), 84 a revisión, 6 upgrades, idempotente; PersonaUno 12 directos + 13 inline PROMOVIDOS
   (autoría enterrada recuperada).** Un bug de fecha enmascaraba el payoff (antes 14/0 → 89/13).
   Spec/plan `2026-06-25-email-atomize-layerb-{design,fase2}.md`.
-- [ ] **Fase 3 — capa de caso.** `identidades.yaml` (mover `IDENTIDADES_VIGILADAS`; set de PersonaUno
+- [x] **Fase 3 — capa de caso.** _CÓDIGO COMPLETO en `origin/main` (`14d8743`→`5b566ea`), vía subagent-driven + revisión adversarial=SHIP; suite 1255 verde. PENDIENTES (no parte de F3 / siguiente sesión): **Task 7** verificación EN VIVO sobre W-02VND1 en `G:` (nada escrito aún; necesita keywords del `nexo_causal` + autorización) y, en spec/plan SEPARADO, el **recall MSG-00018** + OCR de adjuntos._ `identidades.yaml` (mover `IDENTIDADES_VIGILADAS`; set de PersonaUno
   `per01a@example.invalid`/`per01c@example.invalid` confirmados, `per01b@example.invalid` candidato→tope media,
   `ignacio@despacho-ab.example` parte DISTINTA), mejor parser de fechas ES/CA + niveles
   profundos (subir recall PersonaUno), vistas temáticas (`dossier_del_burgo`, `vista_nexo_causal`),
