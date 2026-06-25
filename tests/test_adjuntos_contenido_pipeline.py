@@ -84,3 +84,12 @@ def test_pipeline_poda_huerfanos(tmp_path: Path):
     assert rep.podados == 1
     assert not huerfano.exists()
     assert (adj / "2024-01-01_burofax_ATT-00001.contenido.md").exists()
+
+
+def test_api_publica_expone_simbolos():
+    import core.adjuntos_contenido as ac
+    assert hasattr(ac, "procesar_caso")
+    assert hasattr(ac, "aplicar_resumenes")
+    assert hasattr(ac, "Resumidor")
+    assert hasattr(ac, "ResumidorNoop")
+    assert hasattr(ac, "ContenidoReport")
