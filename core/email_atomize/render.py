@@ -121,13 +121,15 @@ def render_correos_lectura(mensajes: list[RegistroMensaje]) -> str:
     return "\n".join(out) + "\n"
 
 
-def render_revision(mensajes_b: list[RegistroMensaje], punteros: list, watched=None) -> dict:
+def render_revision(mensajes_b: list[RegistroMensaje], punteros: list, watched=None,
+                    upgrades: list | None = None) -> dict:
     """Colas de revisión Layer B: ``cola.md`` (punteros media/baja), ``casi_duplicados.md``
-    (upgrades/near-dups), ``del_burgo.md`` (autoría vigilada). Regenerado cada corrida
-    (determinista → idempotente)."""
+    (upgrades de fidelidad: cita inline resuelta a una copia limpia de Capa A), ``del_burgo.md``
+    (autoría vigilada). Regenerado cada corrida (determinista → idempotente)."""
     if watched is None:
         from . import inline
         watched = inline.IDENTIDADES_VIGILADAS
+    upgrades = upgrades or []
 
     cola = [_GEN_VIEW, "# Cola de revisión Layer B (media/baja)\n",
             "| Portador | Estilo | Prof | Confianza | Motivo | De | Extracto |",
@@ -138,19 +140,28 @@ def render_revision(mensajes_b: list[RegistroMensaje], punteros: list, watched=N
                     f"{p.motivo} | {p.de} | {ext} |")
 
     casi = [_GEN_VIEW, "# Casi-duplicados / upgrades de fidelidad Layer B\n",
-            "Eventos de colapso inline↔MIME y near-dups por cuerpo. La verdad del puente "
-            "vive en `_registro.json` (`alias`/`mensajes_fp`).\n",
-            "| MSG-B | De | Fecha | Fingerprint |", "| --- | --- | --- | --- |"]
-    for m in mensajes_b:
-        casi.append(f"| {m.msg_id} | {m.de} | {m.fecha_iso} | {m.fingerprint} |")
+            "Citas inline resueltas a una copia LIMPIA de Capa A (no se acuña mensaje nuevo; "
+            "el .md de Capa A NO se muta). La verdad del puente vive en `_registro.json` "
+            "(`alias`/`mensajes_fp`).\n",
+            "| Mensaje Capa A | Citado en | Profundidad | Fingerprint |",
+            "| --- | --- | --- | --- |"]
+    for u in upgrades:
+        casi.append(f"| {u.get('msg_a')} | {u.get('citado_en')} | {u.get('profundidad')} | "
+                    f"{u.get('fingerprint')} |")
 
     db = [_GEN_VIEW, "# Autoría vigilada (PersonaUno) — revisión probatoria\n",
-          "| MSG | De | Fecha | Confianza | Reconstruido de |",
-          "| --- | --- | --- | --- | --- |"]
+          "Toda cita atribuida a una identidad vigilada: promovidas (mensaje B propio) y "
+          "las que quedaron en revisión (media/baja). Cada una, a verificar contra la fuente.\n",
+          "| Ref | De | Fecha | Confianza | Portador | Estado |",
+          "| --- | --- | --- | --- | --- | --- |"]
     for m in mensajes_b:
         if m.de in watched:
             db.append(f"| {m.msg_id} | {m.de} | {m.fecha_iso} | {m.confianza} | "
-                      f"{m.reconstruido_de} |")
+                      f"{m.reconstruido_de} | promovido |")
+    for p in punteros:
+        if p.de in watched:
+            db.append(f"| (cita) | {p.de} | {p.fecha_iso} | {p.confianza} | "
+                      f"{p.portador_msg_id} | revisar |")
 
     return {"cola.md": "\n".join(cola) + "\n",
             "casi_duplicados.md": "\n".join(casi) + "\n",

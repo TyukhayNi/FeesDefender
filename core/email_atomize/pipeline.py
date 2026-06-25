@@ -80,7 +80,7 @@ def atomize_dir(src_dir: Path | str, out_dir: Path | str) -> AtomizeReport:
         reg.marcar_procesado(col.eml_origen)
 
     # --- Pase Layer B (tras congelar TODOS los IDs de Capa A) ---
-    mensajes_b, punteros = _pase_layer_b(reg, mensajes, carriers, report)
+    mensajes_b, punteros, upgrades = _pase_layer_b(reg, mensajes, carriers, report)
     mensajes.extend(mensajes_b)
 
     for m in mensajes:
@@ -101,7 +101,7 @@ def atomize_dir(src_dir: Path | str, out_dir: Path | str) -> AtomizeReport:
 
     revision = out / "_revision"
     revision.mkdir(exist_ok=True)
-    for nombre, contenido in R.render_revision(mensajes_b, punteros).items():
+    for nombre, contenido in R.render_revision(mensajes_b, punteros, upgrades=upgrades).items():
         (revision / nombre).write_text(contenido, encoding="utf-8")
 
     reg.save()
@@ -122,7 +122,7 @@ def _pase_layer_b(reg, mensajes, carriers, report):
         except Exception as exc:  # noqa: BLE001 — un portador no aborta la corrida
             report.errores.append(f"{m_a.msg_id}: reconstruir inline falló: {exc}")
             continue
-        # NO se muta el .md del portador (Capa A byte-idéntica). La intercalada HTML —donde
+        # NUNCA se muta el .md del portador (Capa A byte-idéntica). La intercalada HTML —donde
         # conservadoramente NO segmentamos— se anota en la cola de revisión, no en el portador.
         if res.intercalada:
             punteros.append(SegmentoEnterrado(
@@ -131,20 +131,31 @@ def _pase_layer_b(reg, mensajes, carriers, report):
         candidatos.extend(res.candidatos)
         punteros.extend(res.punteros)
 
-    mensajes_b = []
+    mensajes_b: list[RegistroMensaje] = []
+    b_por_fp: dict[str, RegistroMensaje] = {}
+    upgrades: list[dict] = []
     for seg in sorted(candidatos, key=lambda s: s.fingerprint):  # orden determinista
         destino = idx.resolver(seg)
         if destino:
-            # la cita es copia de menor fidelidad de un mensaje limpio de Capa A: no acuñar
-            por_id[destino].procedencia.append(
-                {"citado_en": seg.portador_msg_id, "profundidad": seg.profundidad})
+            # La cita es copia de menor fidelidad de un mensaje limpio de Capa A. NO se muta
+            # ese .md: el cruce se registra en casi_duplicados.md + alias (DD §6).
+            upgrades.append({"msg_a": destino, "citado_en": seg.portador_msg_id,
+                             "profundidad": seg.profundidad, "fingerprint": seg.fingerprint})
             if seg.rfc_message_id:
                 reg.registrar_alias(seg.rfc_message_id, seg.fingerprint)
             report.upgrades += 1
             continue
+        existente = b_por_fp.get(seg.fingerprint)
+        if existente is not None:
+            # misma cita reconstruida en otro portador → un solo mensaje B, varias procedencias
+            existente.procedencia.append(
+                {"citado_en": seg.portador_msg_id, "profundidad": seg.profundidad})
+            continue
         seg_msg_id = reg.msg_id_for_fp(seg.fingerprint, cuerpo_sha=seg.cuerpo_sha)
-        mensajes_b.append(INL.construir_b(seg, seg_msg_id, por_id[seg.portador_msg_id]))
-    return mensajes_b, punteros
+        mb = INL.construir_b(seg, seg_msg_id, por_id[seg.portador_msg_id])
+        b_por_fp[seg.fingerprint] = mb
+        mensajes_b.append(mb)
+    return mensajes_b, punteros, upgrades
 
 
 def _construir_mensaje(col, reg, apariciones, unicos, report) -> RegistroMensaje:
