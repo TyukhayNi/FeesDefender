@@ -129,20 +129,24 @@ def atomize_dir(src_dir: Path | str, out_dir: Path | str, *, case_dir: Path | st
     for nombre, contenido in R.render_revision(mensajes_b, punteros, watched=ident.vigiladas, upgrades=upgrades).items():
         (revision / nombre).write_text(contenido, encoding="utf-8")
 
-    # --- Vistas temáticas (capa de caso; solo-lectura, no toca ningún .md) ---
-    defs = V.cargar_vistas(case_dir)
-    salidas, notas = V.render_vistas(mensajes, ident, defs)
-    report.notas.extend(notas)
-    vistas_dir = out / "vistas"
-    if salidas:
-        vistas_dir.mkdir(exist_ok=True)
-        for nombre, contenido in salidas.items():
-            (vistas_dir / nombre).write_text(contenido, encoding="utf-8")
-    if vistas_dir.exists():           # poda huérfanos (idempotencia)
-        for p in vistas_dir.glob("*.md"):
-            if p.name not in salidas:
-                p.unlink()
-    report.vistas_generadas = len(salidas)
+    # --- Vistas temáticas (capa de caso; contenida: un vistas.yaml inválido NO aborta la
+    # corrida ni descarta reg.save(); el fallo se reporta en errores) ---
+    try:
+        defs = V.cargar_vistas(case_dir)
+        salidas, notas = V.render_vistas(mensajes, ident, defs)
+        report.notas.extend(notas)
+        vistas_dir = out / "vistas"
+        if salidas:
+            vistas_dir.mkdir(exist_ok=True)
+            for nombre, contenido in salidas.items():
+                (vistas_dir / nombre).write_text(contenido, encoding="utf-8")
+        if vistas_dir.exists():           # poda huérfanos (idempotencia)
+            for p in vistas_dir.glob("*.md"):
+                if p.name not in salidas:
+                    p.unlink()
+        report.vistas_generadas = len(salidas)
+    except Exception as exc:  # noqa: BLE001 — config de vistas inválida no aborta la atomización
+        report.errores.append(f"vistas: {exc}")
 
     reg.save()
     return report

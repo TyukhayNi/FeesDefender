@@ -84,3 +84,18 @@ def test_vista_persona_inexistente_puebla_notas(tmp_path):
     rep = P.atomize_dir(src, out)
     assert rep.vistas_generadas == 0
     assert any("no_existe" in n for n in rep.notas)
+
+
+def test_vistas_yaml_malformado_no_aborta_la_corrida(tmp_path):
+    case, src, out = _caso(tmp_path)
+    # palabras_clave: 5 → list(5) revienta dentro de cargar_vistas
+    (case / "vistas.yaml").write_text(
+        "vistas:\n  - id: v1\n    tipo: tematica\n    palabras_clave: 5\n", encoding="utf-8")
+    (src / "a.eml").write_bytes(_eml("<a@x>", "a@x.com", "z@y.com", "hola", "cuerpo"))
+    rep = P.atomize_dir(src, out)
+    # la atomización completa pese al vistas.yaml corrupto
+    assert (out / "mensajes").exists() and list((out / "mensajes").glob("*.md"))
+    assert (out / "corpus.jsonl").exists()
+    assert (out / "_registro.json").exists()      # reg.save() se alcanzó
+    assert any("vistas" in e for e in rep.errores)
+    assert rep.vistas_generadas == 0

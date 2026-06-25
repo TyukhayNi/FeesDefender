@@ -105,3 +105,17 @@ personas:
     (tmp_path / "identidades.yaml").write_text(yml, encoding="utf-8")
     with pytest.raises(ValueError):
         ID.cargar_identidades(tmp_path)
+
+
+def test_direcciones_no_lista_es_error(tmp_path):
+    (tmp_path / "identidades.yaml").write_text(
+        "personas:\n  - id: a\n    vigilada: false\n    direcciones: oops\n", encoding="utf-8")
+    with pytest.raises(ValueError):
+        ID.cargar_identidades(tmp_path)
+
+
+def test_direccion_no_mapa_es_error(tmp_path):
+    (tmp_path / "identidades.yaml").write_text(
+        "personas:\n  - id: a\n    vigilada: false\n    direcciones: [ foo ]\n", encoding="utf-8")
+    with pytest.raises(ValueError):
+        ID.cargar_identidades(tmp_path)

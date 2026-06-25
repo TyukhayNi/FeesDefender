@@ -79,8 +79,13 @@ def desde_dict(data: dict) -> Identidades:
         if pid in personas:
             raise ValueError(f"identidades.yaml: id duplicado {pid!r}")
         vigilada = bool(raw.get("vigilada", False))
+        dirs_raw = raw.get("direcciones", []) or []
+        if not isinstance(dirs_raw, list):
+            raise ValueError(f"identidades.yaml: 'direcciones' de {pid!r} debe ser una lista")
         direcciones: list[tuple[str, str]] = []
-        for d in raw.get("direcciones", []) or []:
+        for d in dirs_raw:
+            if not isinstance(d, dict):
+                raise ValueError(f"identidades.yaml: dirección no-mapa en {pid!r}")
             email = str(d.get("email") or "").strip().lower()
             estado = str(d.get("estado") or "").strip().lower()
             if not email:
