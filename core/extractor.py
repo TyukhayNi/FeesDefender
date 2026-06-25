@@ -24,7 +24,7 @@ import chardet
 
 from .config import caso_path
 from .inventory import load as load_inventory
-from .utils import slugify
+from .utils import output_slug, slugify
 
 
 # Versión lógica del extractor. Súbela cuando cambie la lógica de extracción
@@ -303,6 +303,29 @@ def _save_state(state_path: Path, files: dict) -> None:
     )
 
 
+def _migrate_legacy_slugs(out_dir: Path, inv_files: list[dict]) -> None:
+    """Renombra los `.txt` del naming antiguo (slug del stem) al nuevo (con
+    sufijo SHA-8) cuando el stem es INEQUÍVOCO, preservando el cache de OCR sin
+    re-extraer (#47). Los stems colisionados (varios orígenes → un único `.txt`
+    antiguo ambiguo) NO se tocan: se re-extraen, porque no se puede saber a qué
+    documento pertenece el contenido del fichero viejo. Idempotente."""
+    by_old: dict[str, list[dict]] = {}
+    for f in inv_files:
+        by_old.setdefault(slugify(Path(f["rel_path"]).stem), []).append(f)
+    for old_slug, group in by_old.items():
+        if len(group) != 1:
+            continue  # colisión de stem: ambiguo → no migrar
+        f = group[0]
+        sha = f.get("sha256", "")
+        if not sha:
+            continue
+        old_path = out_dir / f"{old_slug}.txt"
+        new_path = out_dir / f"{output_slug(f['rel_path'], sha)}.txt"
+        if old_path == new_path or new_path.exists() or not old_path.exists():
+            continue
+        old_path.rename(new_path)
+
+
 def extract_all(case_id: str, *, force: bool = False) -> list[ExtractionResult]:
     """Extrae el texto de los archivos de `00_Input/` a `01_Procesado/raw_text/`.
 
@@ -321,6 +344,8 @@ def extract_all(case_id: str, *, force: bool = False) -> list[ExtractionResult]:
 
     state_path = out_dir / _STATE_FILENAME
     prev = {} if force else _load_state(state_path)
+    if not force:
+        _migrate_legacy_slugs(out_dir, inv["files"])
 
     input_dir = case_dir / "00_Input"
     results: list[ExtractionResult] = []
@@ -331,9 +356,8 @@ def extract_all(case_id: str, *, force: bool = False) -> list[ExtractionResult]:
         src = input_dir / rel
         if not src.exists():
             continue
-        slug = slugify(Path(rel).stem)
-        out = out_dir / f"{slug}.txt"
         src_sha = f.get("sha256", "")
+        out = out_dir / f"{output_slug(rel, src_sha)}.txt"
 
         cached = prev.get(rel)
         if (

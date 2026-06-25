@@ -1633,6 +1633,13 @@ renumerados; idempotente (2ª corrida = 0 cambios); 12 interiores literales, 0 i
 
 ## 47. Bug latente: colisión de slug en `raw_text/` y `MD/` (stem-only)
 
+**✅ RESUELTO 2026-06-25.** `output_slug(rel, sha)` = `slug__SHA8` en `core/utils.py`
+(usado por `extractor`, `markdown_generator` y `sala_lectura`) + `_migrate_legacy_slugs`
+en `extractor` (renombra cachés viejas de stem único sin re-OCR; los colisionados se
+re-extraen). 7 tests en `tests/test_extractor_slug_colision.py`. Migración del caso vivo
+W-02VND1 hecha: 487 MD, 0 colisiones, **los 4 chats de WhatsApp recuperados** (3 estaban
+ausentes). Detalle en `STATUS.md`.
+
 **Síntoma (corrección).** El extractor escribe la salida como `01_Procesado/raw_text/{slug}.txt`
 y el generador de markdown como `01_Procesado/MD/{slug}.md`, donde
 `slug = slugify(Path(rel_path).stem)` — **solo el nombre base, sin la carpeta de origen**
@@ -1643,9 +1650,18 @@ el mismo documento espejado en `01_Drive EV/` y en `05_CRM/`) colapsan al **mism
 y se **pisan en silencio**: solo sobrevive el último escrito.
 
 **Evidencia empírica.** Reproceso de `BaRS1 - Tibidabo 8 - (W-02VND1)` el 2026-06-25:
-`_extract_state.json` registra **487 documentos** pero en disco quedan **477 `.txt`** → ~10 colisiones.
-(Los `.eml` no colisionan porque la atomización los numera `MSG-XXXXX`; las colisiones vienen de PDFs/otros
-con stems repetidos entre carpetas.)
+`_extract_state.json` registra **491 documentos** pero en disco quedan **481 `.md`/`.txt`** → 8 slugs
+colisionados que afectan a 18 documentos. (Los `.eml` no colisionan porque la atomización los numera
+`MSG-XXXXX`.) De las 8 colisiones, 7 son benignas (mismo documento en dos formatos `.docx`+`.pdf` /
+`.html`+`.md`, o el mismo PDF duplicado entre `01_Drive EV/` y `03_Email/.../_enlaces/`: Nota simple,
+Nota mercantil, Poderes PersonaTres, Poderes Jaime, Contrato honorarios, INDICE_PRUEBAS, BORME Gasteiz).
+
+**Colisión GRAVE con pérdida de prueba — el disparador real.** Los cuatro exports de WhatsApp se llaman
+`_chat.txt` (`02_Whatsapp/.../<parte>/_chat.txt`), y `slugify("_chat") == "chat"` para todos → colapsan
+al **mismo `chat.md`**. En W-02VND1 son 4 conversaciones distintas y nucleares (PersonaUno, Toni
+PersonaTres, PersonaOcho, PersonaSiete); **solo 1 sobrevive en la sala de lectura, las otras 3 desaparecen**. El
+defecto no es teórico: hoy está ocultando prueba en un caso real. Esto lo convierte en candidato a
+**promoción a `PLAN.md`** (disparador = caso real, regla de promoción del proyecto).
 
 **Dos consecuencias, ambas de corrección.**
 1. **Pérdida de datos.** El texto de un documento sobrescribe el de otro; los consumidores

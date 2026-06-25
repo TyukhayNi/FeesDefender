@@ -11,7 +11,7 @@ from pathlib import Path
 
 from .config import caso_path
 from .extractor import ExtractionResult
-from .utils import now_iso, slugify, text_sha256, write_md
+from .utils import now_iso, text_sha256, write_md
 
 
 def _estimate_tokens(text: str) -> int:
@@ -27,8 +27,9 @@ def build(
     paths: list[Path] = []
 
     for r in results:
-        slug = slugify(Path(r.rel_path).stem)
-        out = out_dir / f"{slug}.md"
+        # El nombre del .md SIGUE al del .txt (output_slug, con sufijo SHA) para
+        # que coincidan exactamente y no recolisionen por stem (#47).
+        out = out_dir / f"{r.output_path.stem}.md"
         # Skip incremental: si la extracción reutilizó el .txt (no cambió) y
         # el .md ya existe, no se regenera.
         if not force and r.skipped and out.exists():

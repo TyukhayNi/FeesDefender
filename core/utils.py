@@ -29,6 +29,21 @@ def slugify(value: str, max_length: int = 80) -> str:
     return _slugify(value, max_length=max_length, lowercase=True, separator="_")
 
 
+def output_slug(rel_path: str, sha256: str = "") -> str:
+    """Nombre de salida (sin extensión) libre de colisiones para `raw_text/`/`MD/`.
+
+    El slug del *stem* solo no basta: dos documentos distintos con el mismo
+    nombre base (p. ej. los `_chat.txt` de varias conversaciones de WhatsApp)
+    colapsan al mismo fichero y se pisan en silencio (#47). Se sufija con los
+    primeros 8 caracteres del SHA-256 del origen: distinto contenido → nombre
+    distinto; copias byte-idénticas (mismo SHA) → mismo nombre (dedup
+    deliberado). Sin SHA, degrada al slug del stem (compatibilidad)."""
+    stem_slug = slugify(Path(rel_path).stem)
+    if not sha256:
+        return stem_slug
+    return f"{stem_slug}__{sha256[:8]}"
+
+
 def now_iso() -> str:
     return datetime.now().isoformat(timespec="seconds")
 

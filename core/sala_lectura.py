@@ -27,7 +27,7 @@ from core import catalogo_documental
 from core.config import TAXONOMIA_EV, UMBRAL_CONFIANZA_AUTOMOVE, caso_path
 from core.conjunto_detector import detect_bundles
 from core.local_organizer import _exif_o_mtime, _sanitize
-from core.utils import now_iso, slugify
+from core.utils import now_iso, output_slug, slugify
 
 # Categoría → tokens del nombre de fichero (orden de prioridad de la tupla).
 # Las primeras que casen ganan; el orden de TAXONOMIA fija desempates.
@@ -244,7 +244,7 @@ _PARTES_VALIDAS = {"propietario", "buscador", "tercero"}
 def _md_path(case_id: str, entry) -> Path:
     """Ruta del texto extraído en claro de un documento (01_Procesado/MD/)."""
     return (caso_path(case_id) / "01_Procesado" / "MD"
-            / f"{slugify(Path(entry.ruta_relativa).stem)}.md")
+            / f"{output_slug(entry.ruta_relativa, entry.hash)}.md")
 
 
 def _filas_worklist(case_id: str) -> list[dict]:
@@ -493,7 +493,7 @@ def _link_original(e) -> str:
 def _link_md(e) -> str | None:
     if Path(e.nombre_original).suffix.lower() == ".md":
         return None
-    return f"../MD/{slugify(Path(e.ruta_relativa).stem)}.md"
+    return f"../MD/{output_slug(e.ruta_relativa, e.hash)}.md"
 
 
 def render_indices(case_id: str) -> list[Path]:
