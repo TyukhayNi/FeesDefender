@@ -1571,11 +1571,30 @@ atribuye desde el anclaje del segmento o un bloque `De:/From:` AL INICIO del cue
 la FORMA de las citas bloqueadas antes de elegir el fix** (la iteración 1 se eligió sin verificar la
 forma → 0 rendimiento, aunque el fix es correcto).
 
-**Iteración 2 (el filón real, PENDIENTE):** escanear el cuerpo del `html_quote` en busca de (a) una
-línea de atribución Apple y (b) un bloque de cabecera de reenvío que no esté en posición 0 (tras
-"Inicio del mensaje reenviado:" / "---------- Mensaje reenviado ----------") + reparar valores
-envueltos. **Es el vector de MAYOR riesgo de misatribución** (el spec original de Layer B ya lo
-señaló) → exige diseño adversarial + verificación sobre los 277. Recupera la mayoría de los ~70
-`sin_cabecera` (incl. PersonaUno "Rescisión/[PAIS_EXTRANJERO] docs/FYI/Fin [PAIS_EXTRANJERO]/Estudio acciones penales" y los
-consultores E&V) y, con la iteración 3 (Gap 2, recursión), el correo interior de MSG-00305
-(Eva→Consulado [PAIS_EXTRANJERO], "Contraoferta").
+**Iteración 2 (body-scan de remitente) — HECHA y verificada en vivo** (2026-06-25, spec
+`2026-06-25-email-atomize-bodyscan-remitente-design.md`, commits `5d01efa`+`1bdb30c`+`bcf3712`).
+Diseño por workflow adversarial (3 diseños + 3 jueces); base minimal-hook + grafts. Función pura
+`_atribucion_en_cuerpo` (escanea el INICIO del cuerpo: atribución Apple / bloque De: tras "Inicio
+del mensaje reenviado:" / valores envueltos) con guardas G1-G5 (sin `<addr>`→cola; >1 atribución→cola;
+unidad Apple con !=1 `<addr>`→cola); tope `media-reconstruida` a todo lo levantado del cuerpo.
+**Dos huecos de misatribución HALLADOS por revisión adversarial y cerrados** (el `<addr>` debe ligarse
+a la UNIDAD de atribución `El…escribió:`, no al primer `<addr>` del cuerpo — afectaba tanto a
+`_atribucion_en_cuerpo` como al `_parse_apple` compartido del path HTML/alta, **hueco pre-existente**).
+Verificación final adversarial = SHIP (27 ataques, 0 misatribución). **Corrida en vivo W-02VND1:
+372→403 atoms, media-reconstruida 6→37 (+31), cola 78→43, Capa A byte-idéntica, las 89 alta intactas,
+idempotente.** Recuperados: PersonaUno (6)+per01c, PersonaCuatro (11), PersonaTres (11), Marta
+PersonaSeis (3), Nikolai (3), Isabel, Tecnitasa.
+
+**CORRECCIÓN CLAVE sobre el "listado de 36" (la auditoría sobre-contaba):** reconciliado por asunto,
+**la mayoría de los 36 YA EXISTÍAN como atoms Capa A** — correos directos de los consultores E&V
+(Eva/Marta/Nikolai/Isabel) que REENVIABAN a PersonaUno (p.ej. "Rescisión de contrato"=MSG-00131 de=eva;
+"[PAIS_EXTRANJERO] docs"=MSG-00144/5/6; "Estudio acciones penales"=MSG-00161/2/3; "Fin [PAIS_EXTRANJERO]"=MSG-00180/1/3;
+"Primer ofendido"=MSG-00191/215). `audit_correos_no_separados.py` detectaba la CITA de PersonaUno dentro
+y cruzaba por `(de=PersonaUno, día)` → no hallaba atom de PersonaUno ese día → falso "no separado"; pero el
+PORTADOR sí es atom (de=consultor). Lo "no separado" era la autoría de PersonaUno CITADA dentro, que la
+iteración 2 ahora extrae como atom propio donde hay `<addr>` verificable. Único genuinamente ausente:
+"Firmada para C. & Lucas Fox" (PersonaUno 2024-11-02, solo cita, sin `<addr>` → cola).
+
+**Pendiente (iteración 3, Gap 2):** desanidar citas DENTRO de reconstrucciones (correo interior de
+MSG-00305 Eva→Consulado [PAIS_EXTRANJERO] "Contraoferta"; forma c' nombre+`<addr>` envuelto). Los ~43 restantes en
+cola son mayormente `sin_cabecera` sin `<addr>` (no recuperables sin inventar — prime directive).
