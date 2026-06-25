@@ -53,6 +53,17 @@ def _idioma(texto: str) -> str:
 
 
 def atomize_dir(src_dir: Path | str, out_dir: Path | str, *, case_dir: Path | str | None = None) -> AtomizeReport:
+    """Atomiza todos los .eml de *src_dir* y escribe los artefactos en *out_dir*.
+
+    Args:
+        src_dir: directorio con los .eml de entrada.
+        out_dir: directorio de salida (se crea si no existe).
+        case_dir: raíz del caso donde se busca ``identidades.yaml``/``vistas.yaml``.
+            Por defecto ``out.parent.parent`` (layout estándar
+            ``<caso>/01_Procesado/Emails``). En tests u otros layouts donde *out*
+            no cuelgue de ``01_Procesado/Emails``, pasar *case_dir* explícitamente;
+            si no se encuentra el YAML, el comportamiento es genérico (sets vacíos).
+    """
     src = Path(src_dir)
     out = Path(out_dir)
     if case_dir is None:

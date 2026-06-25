@@ -41,3 +41,12 @@ def test_corpus_incluye_fingerprint_y_capa_b():
     fila = json.loads(C.corpus_jsonl([_b()]).strip().splitlines()[1])
     assert fila["capa"] == "B" and fila["fingerprint"] == "fp:abc"
     assert fila["en_revision"] is False
+
+
+def test_render_revision_sin_watched_produce_del_burgo_vacio():
+    out = R.render_revision([], [], watched=None)
+    assert "del_burgo.md" in out
+    # sin watched → del_burgo.md solo cabecera, ninguna fila de dirección
+    filas = [l for l in out["del_burgo.md"].splitlines()
+             if l.startswith("|") and "---" not in l and "Ref" not in l]
+    assert filas == []

@@ -190,6 +190,8 @@ def _eml_cita_gmail(autor, de_cita, fecha_attr, cuerpo_cita):
 
 
 def test_reconstruir_promueve_del_burgo_inline():
+    # Ruta genérica (sin identidades inyectadas): PersonaUno no está vigilado ni es candidato,
+    # por lo que una cita estructural con fecha+email válidos SÍ promociona a alta-reconstruida.
     raw = _eml_cita_gmail("Te reenvío.", "per01a@example.invalid", "1 de mayo de 2020",
                           "contenido suficientemente largo para fingerprint y promocion")
     res = I.reconstruir(_ra(fecha_iso="2026-06-01"), raw)
