@@ -20,6 +20,7 @@ docling>=1.0.0           # extracción robusta de PDF/DOCX/XLSX/HTML
 pypdf>=4.0               # fallback ligero para PDF
 python-docx>=1.1         # lectura/escritura DOCX
 chardet>=5.2
+striprtf>=0.0.26         # extracción de texto de RTF (burofax) — fase 2 de adjuntos
 
 # Tablas / datos
 pandas>=2.2
