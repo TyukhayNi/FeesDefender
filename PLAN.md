@@ -120,7 +120,7 @@ enterrada de PersonaUno (levantar el velo de Tibidabo 8 S.L.). Reutiliza `core.e
 ---
 
 ## [SIGUIENTE-CRONOLOGIA-UNIFICADA] Cronología Unificada de Prueba (capa por encima de los atomizadores)
-*Diseño aportado por Nikolai 2026-06-25 (hilo Cowork). Spec **v3**: `docs/superpowers/specs/2026-06-25-cronologia-unificada-design.md` (Fases 0–3 de diseño cerradas). Banco de pruebas de diseño: W-02VND1 (Tibidabo 8). **Naturaleza: documento de DISEÑO, NO construcción.** Disciplina rectora: skill `verificacion-anclada-fuente`. Implementación futura: Claude Code en `core/`.*
+*Diseño aportado por Nikolai 2026-06-25 (hilo Cowork). Spec **v7 — DISEÑO COMPLETO (8 fases, 0–7)**: `docs/superpowers/specs/2026-06-25-cronologia-unificada-design.md`. Banco de pruebas de diseño: W-02VND1 (Tibidabo 8). **Naturaleza: documento de DISEÑO, NO construcción.** Disciplina rectora: skill `verificacion-anclada-fuente`. Implementación: Claude Code en `core/` — **siguiente paso = BUILD, no más diseño.***
 
 **Objetivo.** Fusionar todas las fuentes de prueba de un expediente (correo, WhatsApp,
 CRM, entrevistas, documental, registros) en **UNA sola línea de tiempo**, separando lo
@@ -152,25 +152,31 @@ Vive **por encima** de los atomizadores por fuente (el motor `core/email_atomize
 - **F3.D4 — fórmula del 🟢🟡🔴:** regla **estructural categórica** (no suma ponderada); independencia en 3 grados; diagnosticidad condicional (ACH); cadenas `min` por ruta + convergencia; topes por rival seria/credibilidad/386; salida **propuesta** que el letrado cura.
 - **F3.D5 — contradicción:** el sistema **no resuelve**, representa el conflicto (versiones rivales bajo punto controvertido); tres dianas según `matiz_contradiccion` (contenido/credibilidad/autenticidad); degradación una sola vez en el nodo; resolución = evento nuevo.
 
-**Material build-ready:** pseudocódigo de F3.D3/D4/D5 (`calcular_estatus_soporte`, `procesar_contradiccion`) + tablas de decisión en los handoffs de stress-test.
+**Decisiones de Fases 4–7 cerradas (v7 — DISEÑO COMPLETO; §8–§11 del spec).**
+- **F4 — tiempo heterogéneo (§8):** la línea ancla el **tiempo del HECHO** (3 tiempos deslindados: no declarativo / narrativo→reconstruido subsidiario / performativo; el tiempo de REGISTRO = procedencia, nunca posición). Cronología = **ORDEN PARCIAL**: proyección a intervalo `[suelo, techo]` EDTF, 5 relaciones derivadas (antes/después/contiene/contenido_en/indeterminado), propagación TCN segura sobre constraints anclados (nunca muta `cuando.fecha`); consumo en prescripción (rango argumental, nunca fecha única), 386 (`requiere_precedencia` bloquea/degrada) y S4. Campos nuevos: solo `requiere_precedencia` + diagnóstico `inconsistencia_temporal_de_fuente`.
+- **F5 — arquitectura de ingesta (§9):** **3 capas con frontera tajante** — ATOMIZADOR (por fuente, dueño de bytes; el motor de correo congelado ES el de "correo") · ADAPTADOR/PROYECTOR (delgado, mapea átomo→ficha de acto, emite tokens de actor sin elegir ganador, defaults deterministas nunca inferencia) · NÚCLEO AGNÓSTICO (asigna EVT-id, resuelve identidad, dedup/correla/tiempo/enlaces/vistas). El adaptador **nunca** asigna ids ni correlaciona. Anclaje **al crudo de `00_Input`+hash** (sala de lectura = pista débil); staging multi-fuente; llegadas tardías idempotentes; `90_Notas personales` = prohibición absoluta (ni listar).
+- **F6 — vistas y custodia (§10):** entregable humano = `CRONOLOGIA_ACTOS` regenerable **"índice de lectura — NO prueba"** (una entrada/acto, extracto con ventana de contexto, cita = fuente+pinpoint, etiquetas separadas corroboración-de-contenido vs circulación, dossiers temáticos con bloque anti-sesgo); sellado de entrega a `_entregas/<fecha>/` en 3 bloques (prueba aportable con SHA-256 · apoyos demostrativos · manifiesto de custodia transversal), inmutable e incremental; work-product ≠ prueba, nunca mezclados.
+- **F7 — alcance del piloto (§11):** primer build = **correo + WhatsApp y nada más** (atomizador+adaptador de WhatsApp para `02_Whatsapp`); objetivo = validar el núcleo agnóstico end-to-end; éxito = 3 hechos-test (correlación-no-fusión por dos canales · identidad atada por teléfono · punto controvertido de contenido y de fecha sin resolver). Ejecución: Claude Code local.
+
+**Material build-ready:** pseudocódigo de F3.D3/D4/D5 (`calcular_estatus_soporte`, `procesar_contradiccion`) + tablas/reglas de decisión en los handoffs de stress-test (F3.D4/D5, F4.D1/D2, F5.D1/D2, F6.D1).
 
 **Estado (DISEÑO).**
 - [x] Fase 0 — inventario de fuentes.
 - [x] Fase 1 — esquema del evento (D1, D2, D3, D4, D6).
 - [x] Fase 2 — identidades (D5).
 - [x] **Fase 3 — correlación entre fuentes (F3.D1–D5).** Algoritmo y reglas cerrados (§7 del spec); ver bloque de decisiones arriba.
-- [ ] Fase 4 — tiempo heterogéneo (EDTF; fecha-hecho vs fecha-declaración vs fecha-registro; orden de eventos difusos).
-- [ ] Fase 5 — arquitectura de ingesta: un atomizador por fuente. **Precondición:** cada
-  fuente debe exponer átomos con ID estable (un `_chat.txt` crudo no los tiene → necesita su atomizador).
-- [ ] Fase 6 — vistas, entregable humano + custodia (work-product ≠ prueba).
-- [ ] Fase 7 — alcance piloto (correo + WhatsApp).
+- [x] **Fase 4 — tiempo heterogéneo (F4.D1–D2).** Tres tiempos del evento + orden parcial / intervalos EDTF (§8 del spec).
+- [x] **Fase 5 — arquitectura de ingesta (F5.D1–D2).** Atomizador / adaptador / núcleo agnóstico; anclaje al crudo (§9 del spec).
+- [x] **Fase 6 — vistas, entregable humano + custodia (F6.D1–D2).** `CRONOLOGIA_ACTOS` + sellado de entrega (§10 del spec).
+- [x] **Fase 7 — alcance del piloto (F7.D1).** Correo + WhatsApp; 3 hechos-test (§11 del spec).
 
-**Build — NO empezar aún.** En `core/` de FeesDefender, incremental (correo + WhatsApp
-primero), **tras cerrar el diseño (Fases 4–7 aún pendientes) y con el motor de correo
-terminado** (hoy `[SIGUIENTE-EMAIL-ATOMIZE]` está en Fase 3). El diseño de la Fase 3
-(correlación) ya está cerrado y hay material build-ready, pero el build espera al resto del
-diseño. La cronología **consume** las salidas del motor de correo (`mensajes/*.md`,
-`corpus.jsonl`, `_registro.json`) y **no lo toca** (spec congelado).
+**Siguiente paso = BUILD (diseño COMPLETO).** Cerradas las 8 fases de diseño (0–7), el
+siguiente paso ya no es diseñar sino **construir** en `core/` de FeesDefender (Claude Code,
+local), incremental (correo + WhatsApp primero), con el motor de correo congelado como
+primer adaptador. **Dependencia operativa:** conviene tener el motor de correo terminado
+(hoy `[SIGUIENTE-EMAIL-ATOMIZE]` está en Fase 3) antes de arrancar el piloto. La cronología
+**consume** sus salidas (`mensajes/*.md`, `corpus.jsonl`, `_registro.json`) y **no lo toca**
+(spec congelado). Material build-ready (pseudocódigo + tablas de decisión) ya disponible.
 
 ---
 
