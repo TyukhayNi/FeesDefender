@@ -194,6 +194,18 @@ def _try_email(path: Path) -> str | None:
         return None
 
 
+def _try_rtf(path: Path) -> str | None:
+    try:
+        from striprtf.striprtf import rtf_to_text  # type: ignore
+    except Exception:
+        return None
+    try:
+        raw = path.read_bytes().decode("latin-1", errors="replace")
+        return rtf_to_text(raw)
+    except Exception:
+        return None
+
+
 # --- Orquestador ------------------------------------------------------------
 
 def _extract_one(path: Path) -> tuple[str, str]:
@@ -235,6 +247,10 @@ def _extract_one(path: Path) -> tuple[str, str]:
     if ext in {".eml", ".msg"}:
         if (text := _try_email(path)):
             return text, "email"
+
+    if ext == ".rtf":
+        if (text := _try_rtf(path)) is not None:
+            return text, "rtf"
 
     raise ExtractionError(f"No hay extractor disponible para {path.name} ({ext})")
 
