@@ -576,7 +576,10 @@ def clasificar(
 ) -> tuple[str, str]:
     """``(confianza, motivo)``. Prime directive: cualquier predicado fallido demota un
     nivel, NUNCA redondea hacia arriba. ``alta-reconstruida`` reservada a atribución de
-    cabecera verificada y estructural; lo demás → revisión."""
+    cabecera verificada y estructural; lo demás → revisión. Matiz: un bloque completo no
+    estructural (``email_ok`` + ``fecha_ok``, sin ambigüedad ni discrepancia) devuelve
+    ``media-reconstruida`` (peldaño intermedio, autoría por verificar), de modo que el
+    «lo demás → revisión» ya no es absoluto."""
     if anc is None or not (anc.de or (anc.fecha_iso and anc.fecha_iso != "0000-00-00")
                            or anc.asunto):
         return "baja", "sin_cabecera"
