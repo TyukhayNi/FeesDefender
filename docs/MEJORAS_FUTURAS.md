@@ -1546,3 +1546,14 @@ endurecer el parseo de fecha de los bloques `fwd_line` "Enviado el:"** (+ a futu
 remitente en gmail_quote/apple para reducir los 76). Spec aparte; F4 ya está bien y no es el cuello
 de botella. **Lección (otra vez): verificar SIEMPRE sobre datos reales** — la auditoría tolerante
 prometió 36; el motor estricto, correctamente, promueve 0.
+
+**✅ RESUELTO el filón de PersonaUno (F4.1, 2026-06-25, commits `ddd67e0`+`1c87d72`; spec
+`2026-06-25-email-atomize-enviado-el-fix-design.md`).** Depuración sistemática: las 3 regex de
+etiqueta casaban `enviado\s*:` pero Outlook ES emite **"Enviado el:"** → `_RE_LABEL` no parseaba la
+fecha Y `_RE_ANYLABEL` truncaba el anclaje (Enviado/Para/Asunto se perdían tras `De:`). Fix: sufijo
+opcional `(?:\s+el)?` + `enviat` (CA) en las 3 regex + `enviat` en el lookup de `_parse_label`;
+aditivo, prime directive intacto, 126 tests del motor verdes. **Corrida en vivo F4.1 sobre W-02VND1:
+366→372 atoms, los 6 `fwd_line` promovieron a `media-reconstruida`** (2 directos `per01a@example.invalid`
+—"[PAIS_EXTRANJERO]", "CAPEX_for_His_Excellency" al [MINISTERIO_EXTRANJERO] de [PAIS_EXTRANJERO]—, 1 `per01c@example.invalid`, 3 PersonaTres); cola
+84→78; Capa A byte-idéntica (0 cambiados, +6 añadidos); idempotente. Pendiente del gap aguas arriba:
+los **76 `sin_cabecera`** (extracción de remitente en gmail_quote/apple) — sigue fuera de alcance.
