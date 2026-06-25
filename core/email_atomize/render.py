@@ -75,9 +75,13 @@ def render_md(m: RegistroMensaje) -> str:
     fm.append("---")
     banner = ""
     if m.capa == "B":
-        banner = ("> RECONSTRUIDO DESDE CITA — remitente verificado por cabecera inline\n\n"
-                  if m.confianza == "alta-reconstruida"
-                  else "> AUTORÍA POR RECONSTRUIR — sin verificar\n\n")
+        if m.confianza == "alta-reconstruida":
+            banner = "> RECONSTRUIDO DESDE CITA — remitente verificado por cabecera inline\n\n"
+        elif m.confianza == "media-reconstruida":
+            banner = ("> AUTORÍA POR VERIFICAR — reconstruida de una cita; "
+                      "remitente por cabecera, sin autenticar\n\n")
+        else:
+            banner = "> AUTORÍA POR RECONSTRUIR — sin verificar\n\n"
     return _GEN_MD + "\n".join(fm) + "\n\n" + banner + m.cuerpo.strip() + "\n"
 
 

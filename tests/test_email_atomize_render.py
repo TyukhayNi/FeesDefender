@@ -43,3 +43,24 @@ def test_render_marca_flags_solo_si_true():
     md_con = R.render_md(_msg(respuesta_intercalada=True, mojibake_marcado=True))
     assert "respuesta_intercalada: true" in md_con
     assert "mojibake: true" in md_con
+
+
+def _mb(confianza):
+    # Helper de capa B reconstruida — reutilizado por Tasks 3, 4 y 5.
+    return RegistroMensaje(
+        msg_id="MSG-09001", capa="B", confianza=confianza, de="a@x.com", de_nombre="Ana",
+        fecha_iso="2020-05-01", asunto="Tibidabo", cuerpo="cuerpo del mensaje reconstruido",
+        reconstruido_desde_cita=True, reconstruido_de="MSG-00007", en_revision=True,
+        fingerprint="fp:abc123", fuente="email")
+
+
+def test_render_md_banner_media_reconstruida():
+    md = R.render_md(_mb("media-reconstruida"))
+    assert "> AUTORÍA POR VERIFICAR — reconstruida de una cita; remitente por cabecera, sin autenticar" in md
+    assert "AUTORÍA POR RECONSTRUIR" not in md          # ya no usa la rama genérica antigua
+    assert "RECONSTRUIDO DESDE CITA" not in md          # ni la de alta
+
+
+def test_render_md_banner_alta_reconstruida_sin_cambio():
+    md = R.render_md(_mb("alta-reconstruida"))
+    assert "> RECONSTRUIDO DESDE CITA — remitente verificado por cabecera inline" in md
