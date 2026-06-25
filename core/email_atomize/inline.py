@@ -110,6 +110,10 @@ _RE_FECHA_DE = re.compile(r"(\d{1,2})\s+de\s+([a-z]+)\s+de\s+(\d{4})")
 _RE_FECHA = re.compile(r"(\d{1,2})\s+([a-z]+)\.?\s+(\d{4})")           # DMY: 14 may 2024
 _RE_FECHA_MDY = re.compile(r"([a-z]+)\.?\s+(\d{1,2}),?\s+(\d{4})")     # MDY: May 10, 2024
 _RE_FECHA_NUM = re.compile(r"(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{2,4})")
+# (?:\s+el)? — Outlook ES/CA emite la etiqueta de fecha como "Enviado el:" / "Enviat el:";
+# el sufijo (NO capturador) deja el grupo 1 como la etiqueta desnuda. Aplica a toda etiqueta
+# (inocuo: " el:" solo aparece tras Enviado/Enviat). No quitar — rompe el parseo de fecha y
+# trunca el anclaje (ver spec 2026-06-25-email-atomize-enviado-el-fix-design.md).
 _RE_LABEL = re.compile(
     r"(?im)^\s*(de|from|enviado|enviat|sent|fecha|date|para|to|asunto|subject|cc|cco|bcc)"
     r"(?:\s+el)?\s*:\s*(.*)$"
@@ -265,8 +269,10 @@ _RE_FWD_LINE = re.compile(
 _RE_APPLE_ES_LINE = re.compile(r"(?i)^\s*el\s+.+?\s+(?:escribi[oó]|va\s+escriure)\s*:\s*$")
 _RE_APPLE_EN_LINE = re.compile(r"(?i)^\s*on\s+.+?\s+wrote\s*:\s*$")
 _RE_DEFROM_LINE = re.compile(r"(?i)^\s*(?:de|from)\s*:\s*\S")
+# ver nota en _RE_LABEL sobre (?:\s+el)?
 _RE_2ND_LABEL = re.compile(
     r"(?i)^\s*(enviado|enviat|sent|fecha|date|para|to|asunto|subject|cc|cco|bcc)(?:\s+el)?\s*:")
+# ver nota en _RE_LABEL sobre (?:\s+el)?
 _RE_ANYLABEL = re.compile(
     r"(?i)^\s*(de|from|enviado|enviat|sent|fecha|date|para|to|asunto|subject|cc|cco|bcc)(?:\s+el)?\s*:")
 
