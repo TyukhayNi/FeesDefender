@@ -70,6 +70,38 @@ de Tibidabo 8 S.L.
 
 5. **(Posterior)** OCR de adjuntos.
 
+## Caso de prueba de recall conocido — reenvío Outlook-escritorio ES (`MSG-00018`)
+
+Diagnosticado 2026-06-25 sobre el piloto. **Úsalo como caso de regresión nombrado del item 4
+(subir recall).** Es un fallo de **recall/atomización, no de pérdida de datos ni de misatribución.**
+
+- Fuente: `…/00_Input/03_Email/2024-05-13_reconocimiento_de_cliente.eml` → produce
+  `…/01_Procesado/Emails/mensajes/2024-05-13_1658_reconocimiento_de_cliente_MSG-00018.md`.
+- MSG-00018 (Ignacio PersonaCinco, nota de 1 línea) **reenvía** el correo de **PersonaTres**
+  (`per03@example.invalid` → Ignacio, *"Apreciado Nacho…"*). Deberían ser 2 mensajes atómicos; el de
+  Antoni **no se reconstruye** (en la corrida actual: `reconstruir()` → 0 candidatos, 0 punteros;
+  su texto queda verbatim dentro del cuerpo de MSG-00018, sin atribuir).
+- **Tres causas acumuladas (reenvíos de Outlook de escritorio en español):**
+  1. El `.eml` tiene parte HTML → `segmentar()` usa la vía HTML, pero ese reenvío en HTML **no usa
+     `<blockquote>` ni `divRplyFwdMsg`** (es texto en `<div>`/`<p>` con "De:/Enviado el:/Para:/Asunto:").
+     `segmentar_html` solo reconoce esos contenedores → 0 segmentos. → **Hay que detectar bloques de
+     cabecera Outlook en HTML aunque no haya contenedor de cita, o caer a la segmentación de texto
+     plano sobre el HTML aplanado cuando no hay contenedores pero sí bloques de cabecera.**
+  2. La etiqueta **`"Enviado el:"`** (Outlook escritorio ES) **no la reconocen las regex de etiquetas**
+     (`_RE_ANYLABEL`/`_RE_2ND_LABEL`/`_RE_LABEL` y `_segmenter._RE_CITA_HDR` esperan `"Enviado:"`). → date
+     perdida + anclaje truncado a la línea `De:` + `cortar_autor` no recorta el reenvío del cuerpo de
+     Capa A. **Hay que aceptar `enviado(\s+el)?\s*:` (y variantes).**
+  3. Aun con fecha, un bloque Outlook en **texto plano es `estructural=False`** → topa en `media`.
+     **Decidir si un bloque Outlook contiguo y COMPLETO (De+Enviado+Para+Asunto) cuenta como
+     estructural-equivalente para `alta`, o se queda en `media`** (cerrar en brainstorming; respetar la
+     directriz de cero misatribución).
+- **Criterio de éxito del fix:** tras corregir, el correo de Antoni (`per03@example.invalid`, 2024-05-13)
+  aparece como **mensaje atómico propio** (Capa B, con fecha) reconstruido desde MSG-00018; y el cuerpo
+  de MSG-00018 se recorta a la nota de Ignacio. **Re-verificar que los 277 Capa A siguen byte-idénticos
+  o, si este recorte los cambia legítimamente, documentar el cambio de garantía** (es un trim correcto
+  que antes se omitía) y rehacer la línea base de hashes. Confirmar 0 misatribuciones nuevas con la
+  revisión adversarial.
+
 ## Reglas duras que NO se rompen (verificar tras cada cambio)
 
 - Los **277 `.md` de Capa A** deben quedar **BYTE-IDÉNTICOS** (comparar hashes antes/después).
