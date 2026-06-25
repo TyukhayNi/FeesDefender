@@ -307,3 +307,89 @@ def test_layerb_regresion_estructural_anchor_completo_sigue_alta(tmp_path):
     md = a_mds[0].read_text(encoding="utf-8")
     assert "de: per01a@example.invalid" in md
     assert "atribucion_cuerpo" not in md, "no es atribucion_cuerpo: el de vino del anclaje"
+
+
+# ---------------------------------------------------------------------------
+# it.3 — interior reenviado + parse c′ a nivel pipeline (dedup, idempotencia, Capa A byte-idéntica)
+# ---------------------------------------------------------------------------
+
+def _carrier_con_interior(mid, attr, bq, frm="persona.seis@engelvoelkers.com", fecha="Thu, 24 Jul 2025 10:00:00 +0200"):
+    m = EmailMessage()
+    m["Message-ID"] = mid; m["Subject"] = "Fwd: [PAIS_EXTRANJERO] docs"; m["Date"] = fecha
+    m["From"] = frm; m["To"] = "nikolai@x"
+    m.set_content("Os reenvío lo de Jaime.")
+    html = (f'<div>Os reenvío.</div><div class="gmail_quote">'
+            f'<div class="gmail_attr">{attr}</div><blockquote>{bq}</blockquote></div>')
+    m.add_alternative(html, subtype="html")
+    return m.as_bytes()
+
+
+_BQ_DELBURGO_WRAP = (
+    "---------- Forwarded message ---------<br>"
+    "De:<br>PersonaUno<br>&lt;<br>per01a@example.invalid<br>&gt;<br>"
+    "Date: mié, 23 jul 2025 a las 12:37<br>Subject: [PAIS_EXTRANJERO] docs<br>"
+    "To: Eva &lt;<br>persona.cuatro@engelvoelkers.com<br>&gt;<br>"
+    "Os passo els documents de [PAIS_EXTRANJERO] amb prou substancia per al cos del missatge.")
+_BQ_DELBURGO_INLINE = (
+    "---------- Forwarded message ---------<br>"
+    "De: PersonaUno &lt;per01a@example.invalid&gt;<br>"
+    "Date: mié, 23 jul 2025 a las 12:37<br>Subject: [PAIS_EXTRANJERO] docs<br>"
+    "To: Eva &lt;persona.cuatro@engelvoelkers.com&gt;<br>"
+    "Os passo els documents de [PAIS_EXTRANJERO] amb prou substancia per al cos del missatge.")
+
+
+def test_layerb_interior_dedup_multi_portador(tmp_path):
+    # el MISMO interior c′ (PersonaUno "[PAIS_EXTRANJERO] docs") citado en 2 portadores con wrap distinto
+    # → UN solo atom B (mismo fingerprint), con procedencia len>=2. Poda consistente entre wraps.
+    src = tmp_path / "03_Email"; out = tmp_path / "Emails"; src.mkdir()
+    (src / "2025-07-24_a.eml").write_bytes(_carrier_con_interior(
+        "<a@x>", "El mié, 23 jul 2025 a las 13:00, PersonaSeis &lt;persona.seis@engelvoelkers.com&gt; escribió:",
+        _BQ_DELBURGO_WRAP))
+    (src / "2025-07-24_b.eml").write_bytes(_carrier_con_interior(
+        "<b@x>", "El mié, 23 jul 2025 a las 14:00, Eva &lt;persona.cuatro@engelvoelkers.com&gt; escribió:",
+        _BQ_DELBURGO_INLINE, frm="persona.cuatro@engelvoelkers.com"))
+    P.atomize_dir(src, out, case_dir=tmp_path)
+    corpus = [json.loads(l) for l in (out / "corpus.jsonl").read_text(encoding="utf-8").splitlines()
+              if l.strip() and not l.startswith("#")]
+    interiores = [d for d in corpus if d.get("de") == "per01a@example.invalid"
+                  and (d.get("asunto") or "").startswith("[PAIS_EXTRANJERO]")]
+    assert len(interiores) == 1, "el mismo interior c′ en 2 portadores → UN solo atom B (dedup por fp)"
+    assert len(interiores[0].get("procedencia") or []) >= 2, "con >=2 procedencias"
+    assert interiores[0]["confianza"] == "media-reconstruida"
+
+
+def test_layerb_interior_idempotente_y_capaA_byte_identico(tmp_path):
+    import hashlib
+    src = tmp_path / "03_Email"; out = tmp_path / "Emails"; src.mkdir()
+    bq = (
+        "Sent from Gmail Mobile<br>---------- Mensaje reenviado ---------<br>"
+        "De:<br>PersonaCuatro, Eva<br>&lt;<br>persona.cuatro@engelvoelkers.com<br>&gt;<br>"
+        "Fecha: El lun, 7 jul 2025 a las 19:44<br>Asunto: Re: offer letter TIBIDABO 8<br>"
+        "Para: Consulado de [PAIS_EXTRANJERO] &lt;<br>contacto@org-qa.example<br>&gt;<br>"
+        "Estimada PersonaSiete, adjunto remito la Contraoferta con sustancia suficiente.")
+    (src / "2025-07-23_c.eml").write_bytes(_carrier_con_interior(
+        "<c@x>", "On Wed, 23 Jul 2025 at 17:09, PersonaCuatro, Eva &lt;persona.cuatro@engelvoelkers.com&gt; wrote:",
+        bq, frm="persona.cuatro@engelvoelkers.com", fecha="Wed, 23 Jul 2025 17:24:00 +0200"))
+
+    def capa_a_hashes():
+        h = {}
+        for p in (out / "mensajes").glob("*.md"):
+            t = p.read_text(encoding="utf-8")
+            if "capa: A" in t:
+                h[p.name] = hashlib.sha256(p.read_bytes()).hexdigest()
+        return h
+
+    P.atomize_dir(src, out, case_dir=tmp_path)
+    # el interior Eva 7-jul (Contraoferta) emergió como atom B media-reconstruida net-new
+    corpus = [json.loads(l) for l in (out / "corpus.jsonl").read_text(encoding="utf-8").splitlines()
+              if l.strip() and not l.startswith("#")]
+    inte = [d for d in corpus if (d.get("fecha") or "")[:10] == "2025-07-07"
+            and d.get("de") == "persona.cuatro@engelvoelkers.com"]
+    assert inte and inte[0]["confianza"] == "media-reconstruida"
+    before = capa_a_hashes()
+    reg1 = json.loads((out / "_registro.json").read_text(encoding="utf-8"))
+    P.atomize_dir(src, out, case_dir=tmp_path)            # 2ª corrida
+    after = capa_a_hashes()
+    reg2 = json.loads((out / "_registro.json").read_text(encoding="utf-8"))
+    assert before == after, "Capa A byte-idéntica entre corridas (el interior no la toca)"
+    assert reg1["mensajes_fp"] == reg2["mensajes_fp"], "fp estables: re-ejecutar no renumera"

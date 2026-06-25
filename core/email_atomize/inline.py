@@ -316,6 +316,133 @@ def _atribucion_en_cuerpo(texto: str) -> "Anclaje | None":
     return anc
 
 
+# --- it.3: promoción del INTERIOR REENVIADO + parse c′ (spec
+# 2026-06-25-email-atomize-interior-reenviado-cprime-design.md §1). Cero misatribución: el <addr>
+# del remitente del interior se afirma SOLO desde la franja De:→primera-etiqueta, con tope
+# obligatorio + unicidad + guarda de delegación; cualquier duda → ("","") → el interior no se promueve. ---
+# Marcador de reenvío EXPLÍCITO, line-anchored, tolerante a guiones/nbsp de cierre y forma bare
+# (el _RE_FWD_INTRO de it.2 FALLA con "---------- Forwarded message ---------" por los guiones de cierre).
+_RE_FWD_MARK = re.compile(
+    r"(?im)^[\s\-]*(?:inicio del mensaje reenviado|begin forwarded message|forwarded message"
+    r"|mensaje reenviado|mensaje original|original message)[\s\-:]*$")
+# Etiqueta GENÉRICA (incluye Reply-To/Responder a/Destinatario/…): cierra la franja del remitente.
+# Acotada a 1-30 chars de "palabra" + ':' para no tragar el cuerpo prosa.
+_RE_GEN_LABEL = re.compile(r"(?im)^\s*[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9 ._-]{0,30}:")
+# Fórmula de delegación/relay: el <addr> NO es del autor nombrado → no se afirma remitente.
+# Incluye p.p. (per procura) / p.o. (por orden) y 'vía' con tilde (verificación adversarial it.3).
+_RE_DELEGACION = re.compile(
+    r"(?i)(?:\ben nombre de\b|\bon behalf of\b|\bv[ií]a\b|\bpor orden de\b|\bp\.\s*p\.|\bp\.\s*o\.)")
+
+
+def _addr_remitente_cprime(lines: "list[str]", de_idx: int) -> "tuple[str, str]":
+    """Liga el ``<addr>`` del REMITENTE a la franja ``De:``→primera-etiqueta (forma c′: el valor del
+    ``De:`` es un nombre/bare y el ``<addr>`` va envuelto en líneas siguientes). Devuelve
+    ``(de, de_nombre)``; ``("", "")`` ante cualquier duda (prime directive: cero misatribución)."""
+    # tope = primera línea POSTERIOR al De: que sea una etiqueta genérica (incl. Reply-To/Para/Fecha…).
+    tope = de_idx + 1
+    while tope < len(lines) and not _RE_GEN_LABEL.match(lines[tope]):
+        tope += 1
+    if tope == len(lines):
+        return "", ""                       # sin etiqueta de cierre → la franja tragaría el cuerpo
+    franja = "\n".join(lines[de_idx:tope])
+    if _RE_DELEGACION.search(franja):
+        return "", ""                       # delegación/relay: el <addr> no es del autor nombrado
+    addrs = _RE_ADDR.findall(franja)
+    if len(addrs) != 1:
+        return "", ""                       # 0 = solo nombre; >1 = ambiguo (remitente+otro)
+    de = addrs[0].lower()
+    m = _RE_ADDR.search(franja)
+    prev = re.sub(r"(?i)^\s*(?:de|from)(?:\s+el)?\s*:", "", franja[: m.start()], count=1)
+    de_nombre = prev.replace("<", " ").strip().strip('"').strip().rstrip(",").strip()
+    return de, de_nombre
+
+
+_RE_EMAIL_FRAG = re.compile(r"^[<>,\s]*[^@\s<>]+@[^@\s<>]+[>,\s]*$")
+
+
+def _cuerpo_interior(lines: "list[str]", de_idx: int) -> str:
+    """Cuerpo del interior reenviado SIN su cabecera c′ (De:/Fecha:/Asunto:/Para:/Cc: + valores
+    envueltos). Poda con etiquetas CONOCIDAS (``_RE_ANYLABEL``, no genéricas — para no tragar
+    saludos que terminan en ':') + fragmentos de envoltura. Poda CONSISTENTE entre wraps distintos
+    del mismo interior → ``cuerpo_sha`` estable (dedup entre portadores redundantes)."""
+    i, n = de_idx, len(lines)
+    while i < n:
+        l = lines[i]
+        s = l.strip()
+        if _RE_ANYLABEL.match(l):                         # etiqueta conocida (De/Fecha/Asunto/Para/Cc/…)
+            i += 1
+            continue
+        if s in ("<", ">", "<,", ">,") or s.endswith("<"):  # fragmento de envoltura / dest. partido
+            i += 1
+            continue
+        if _RE_ADDR.search(l) or _RE_EMAIL_FRAG.match(s):    # email bare/bracketed (valor envuelto)
+            i += 1
+            continue
+        # línea de NOMBRE (display) entre etiqueta y <addr>: ≤6 palabras, sin '.'/'!'/'?' final, y
+        # seguida INMEDIATAMENTE (≤2 líneas) por un '<' SOLO o un <addr> envuelto → parte del valor
+        # De:/destinatario. Exigir el wrap real (no un '@' cualquiera) evita comerse un saludo corto
+        # cuyo cuerpo mencione un email poco después (hallazgo de la verificación adversarial it.3).
+        if (s and len(s.split()) <= 6 and s[-1] not in ".!?"
+                and any(lines[k].strip() == "<" or _RE_EMAIL_FRAG.match(lines[k].strip())
+                        for k in range(i + 1, min(i + 3, n)))):
+            i += 1
+            continue
+        break                                              # primera línea de prosa = inicio del cuerpo
+    return "\n".join(lines[i:]).strip()
+
+
+def _interior_reenviado(texto: str) -> "tuple[Anclaje, str] | None":
+    """Desanida UN interior reenviado del cuerpo de un segmento ya reconstruido (spec §1.4).
+    Acotado por marcador de reenvío EXPLÍCITO (``_RE_FWD_MARK``); UN solo nivel (no recursión).
+    Devuelve ``(Anclaje_del_interior, cuerpo_del_interior)`` o ``None``. El remitente se afirma SOLO
+    desde un ``<addr>`` literal ligado al ``De:`` del interior (Apple unidad o franja c′)."""
+    if not texto:
+        return None
+    mk = _RE_FWD_MARK.search(texto)
+    if mk is None:
+        return None                                   # G-MARK: marcador de reenvío explícito obligatorio
+    post = texto[mk.end():].splitlines()
+    i = 0
+    while i < len(post) and not post[i].strip():
+        i += 1
+    post = post[i:]
+    if not post:
+        return None
+    vent = post[: _MAX_LINEAS_SCAN]                    # ventana solo para apilamiento + parseo de cabecera
+    cab = "\n".join(vent)
+    # G-APILAMIENTO: >1 atribución en la ventana → ambiguo → cola (garantiza 1 nivel, no recursión).
+    if len(_RE_APPLE_FIN_M.findall(cab)) + len(_RE_DE_LABEL_ANY.findall(cab)) > 1:
+        return None
+    # Solo interiores con bloque De:/Fecha:/Asunto: (incl. forma c′). Los interiores en forma Apple
+    # ("El…escribió:") tras un marcador NO se desanidan (no ocurren en el corpus real; §6) → cola:
+    # evita el hueco de poda de la cabecera Apple con <addr> envuelto.
+    de_idx = next((k for k, ln in enumerate(vent) if _RE_DE_LABEL_ANY.match(ln)), None)
+    if de_idx is None:
+        return None
+    # G-DELEGACION (unificada, ambas ramas inline+c′): franja De:→primera-etiqueta; si trae fórmula
+    # de delegación/relay ("en nombre de"/"on behalf of"/"vía"/"por orden de"/"p.p."/"p.o.") → cola.
+    # Cierra el hueco hallado por la verificación adversarial: el path inline (<addr> en la línea De:)
+    # pasaba por _parse_label/_addr_o_nombre SIN guarda de delegación → afirmaba el relay.
+    tope = de_idx + 1
+    while tope < len(vent) and not _RE_GEN_LABEL.match(vent[tope]):
+        tope += 1
+    if _RE_DELEGACION.search("\n".join(vent[de_idx:tope])):
+        return None
+    anc = _parse_label(cab)
+    if anc is None:
+        return None
+    if not anc.de:                                    # forma c′: <addr> envuelto → lookahead acotado
+        de, de_nombre = _addr_remitente_cprime(vent, de_idx)
+        if de:
+            anc.de, anc.de_nombre = de, de_nombre
+    if not anc.de:
+        return None                                   # G5: nunca se afirma remitente sin <addr> literal
+    cuerpo = _cuerpo_interior(post, de_idx)            # poda la cabecera c′ propia (cuerpo_sha estable)
+    if not cuerpo.strip():
+        return None
+    return anc, cuerpo
+
+
 # ---------------------------------------------------------------------------
 # Segmentación de texto plano (DD §2.0, §2.2)
 # ---------------------------------------------------------------------------
@@ -774,6 +901,36 @@ def indice_layer_a(mensajes: list) -> Indice:
     return idx
 
 
+def _emitir_interior(texto_exterior_original, seg, m_a, identidades) -> "Segmento | None":
+    """it.3 §1.5 — desanida UN interior reenviado del cuerpo del exterior (acotado por marcador
+    explícito) y devuelve un ``Segmento`` sintético, o ``None``. Lee SIEMPRE el texto del exterior
+    pre-poda. El interior topa a ``media-reconstruida`` (límite de cuerpo no autenticado por DOM)."""
+    inter = _interior_reenviado(texto_exterior_original or "")
+    if inter is None:
+        return None
+    anc_i, cuerpo_i = inter
+    # G-NO-DUP-EXT: el interior no es el MISMO mensaje que el exterior (identidad de mensaje de+fecha,
+    # NO de-inequality — que mataría el testigo: Eva reenvía su propio correo del 7-jul el 23-jul).
+    if anc_i.de == seg.de and anc_i.fecha_iso == seg.fecha_iso:
+        return None
+    ambigua_i = _n_cabeceras(cuerpo_i) > 1                       # G-AMBIGUA-INTERIOR (hereda G6)
+    conf_i, mot_i = clasificar(anc_i, m_a.fecha_iso, estructural=False, ambigua=ambigua_i)
+    if conf_i in ("media-reconstruida", "alta-reconstruida"):   # estructural=False ⇒ jamás alta; defensivo
+        conf_i, mot_i = "media-reconstruida", "interior_reenviado"
+    # Identidad candidata (no confirmada) → cap a media + ruta del_burgo (routing heredado).
+    if anc_i.de in identidades.candidatas and conf_i == "media-reconstruida":
+        conf_i, mot_i = "media", "identidad_candidata"
+    cuerpo_norm_i = normaliza_cuerpo(cuerpo_i)
+    mm_i = _RE_INLINE_MID.search(cuerpo_i)
+    return Segmento(
+        texto=cuerpo_i, estilo="interior_reenviado", estructural=False,
+        profundidad=seg.profundidad + 1, de=anc_i.de, de_nombre=anc_i.de_nombre,
+        fecha_iso=anc_i.fecha_iso, asunto=anc_i.asunto, confianza=conf_i, motivo=mot_i,
+        cuerpo_sha=cuerpo_sha_de(cuerpo_norm_i), fingerprint=fingerprint_b(anc_i, cuerpo_norm_i),
+        portador_msg_id=m_a.msg_id, rfc_message_id=(mm_i.group(1).strip() if mm_i else ""),
+        en_revision=True)
+
+
 def reconstruir(m_a, raw: bytes, identidades: "Identidades | None" = None) -> ReconResult:
     """Segmenta el portador, atribuye/clasifica cada cita y separa candidatos (alta) de
     punteros (media/baja → revisión). NO asigna MSG-id (eso lo hace el pipeline).
@@ -789,6 +946,7 @@ def reconstruir(m_a, raw: bytes, identidades: "Identidades | None" = None) -> Re
             portador_msg_id=m_a.msg_id, estilo="carrier", confianza="info",
             motivo=seg_total.motivo, extracto=""))
     for seg in seg_total.ancestros:
+        texto_exterior_original = seg.texto   # [G-CAPTURA] it.3: copia pre-poda para desanidar el interior
         anc = parsear_anclaje(seg.anclaje_texto or "", seg.estilo)
         levantada_del_cuerpo = False
         if anc is None:
@@ -847,6 +1005,18 @@ def reconstruir(m_a, raw: bytes, identidades: "Identidades | None" = None) -> Re
                 portador_msg_id=m_a.msg_id, estilo=seg.estilo, profundidad=seg.profundidad,
                 de=seg.de, fecha_iso=seg.fecha_iso, confianza=conf, motivo=motivo,
                 extracto=(seg.texto or "")[:200], fingerprint=seg.fingerprint))
+        # it.3 — desanidar UN interior reenviado del cuerpo del exterior (atom ADICIONAL; el exterior
+        # NO se toca). Acotado por marcador explícito; dedup por fingerprint en el pipeline.
+        seg_i = _emitir_interior(texto_exterior_original, seg, m_a, identidades)
+        if seg_i is not None:
+            if seg_i.confianza in ("alta-reconstruida", "media-reconstruida"):
+                res.candidatos.append(seg_i)
+            else:
+                res.punteros.append(SegmentoEnterrado(
+                    portador_msg_id=m_a.msg_id, estilo=seg_i.estilo, profundidad=seg_i.profundidad,
+                    de=seg_i.de, fecha_iso=seg_i.fecha_iso, confianza=seg_i.confianza,
+                    motivo=seg_i.motivo, extracto=(seg_i.texto or "")[:200],
+                    fingerprint=seg_i.fingerprint))
     return res
 
 

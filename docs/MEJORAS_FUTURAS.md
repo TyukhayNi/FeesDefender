@@ -1595,6 +1595,33 @@ PORTADOR sí es atom (de=consultor). Lo "no separado" era la autoría de Persona
 iteración 2 ahora extrae como atom propio donde hay `<addr>` verificable. Único genuinamente ausente:
 "Firmada para C. & Lucas Fox" (PersonaUno 2024-11-02, solo cita, sin `<addr>` → cola).
 
-**Pendiente (iteración 3, Gap 2):** desanidar citas DENTRO de reconstrucciones (correo interior de
-MSG-00305 Eva→Consulado [PAIS_EXTRANJERO] "Contraoferta"; forma c' nombre+`<addr>` envuelto). Los ~43 restantes en
-cola son mayormente `sin_cabecera` sin `<addr>` (no recuperables sin inventar — prime directive).
+**Iteración 3 (Gap 2 — interior reenviado + parse c′) — HECHA** (2026-06-25, spec
+`2026-06-25-email-atomize-interior-reenviado-cprime-design.md`). Promueve a atom propio (capa B
+`media-reconstruida`, motivo `interior_reenviado`, `en_revision`) el correo REENVIADO enterrado en el
+CUERPO de un segmento ya reconstruido, acotado por marcador EXPLÍCITO (`_RE_FWD_MARK`, tolerante a
+guiones/nbsp de cierre que el `_RE_FWD_INTRO` de it.2 no captaba), parseando la **forma c′** (`De:`
+nombre/bare + `<addr>` envuelto) con un lookahead acotado a la franja `De:`→primera-etiqueta
+(`_addr_remitente_cprime`) + poda dedicada del cuerpo (`_cuerpo_interior`). Guardas: G-MARK, G-FRANJA
+(tope obligatorio), G-UNICIDAD (1 `<addr>` en la franja), G-DELEGACION, G-APILAMIENTO (1 nivel, no
+recursión), G-NO-DUP-EXT (de+fecha, no de-inequality — preserva el testigo Eva-reenvía-su-propio-correo).
+Diseño vía **workflow adversarial** (3 diseños × 3 jueces, todos REWORK → síntesis con grafts) +
+**verificación adversarial** (2 revisores + 5 ataques sobre el motor real). **El ataque `delegacion-relay`
+ROMPIÓ la atribución y se CORRIGIÓ:** `_RE_DELEGACION` solo cubría el path c′, no el inline (`De: X en
+nombre de Y <relay>` afirmaba el relay) → guarda unificada sobre la franja en `_interior_reenviado` +
+`p.p.`/`p.o.`/`vía` añadidos. Retirada la rama Apple del desanidado (no ocurre en el corpus; evitaba un
+hueco de poda). **Solo `inline.py` + 2 tests; Capa A byte-idéntica; +26 tests, 179 `email_atomize` verdes.**
+**Auditoría read-only sobre W-02VND1: 12 interiores distintos, todos con `<addr>` LITERAL, 0 inventados**
+— PersonaUno ×5 (CAPEX/[PAIS_EXTRANJERO] docs/Rescisión/Estudio acciones penales/FYI), PersonaDos ×2 (Referencia
++ Acuerdo Transaccional), **Eva→Consulado [PAIS_EXTRANJERO] 7-jul "Contraoferta" (testigo MSG-00305) RECUPERADO**,
+PersonaTres, Nikolai ×2, Marta. Corrida en vivo sobre G: PENDIENTE de autorización de Nikolai.
+
+**Residuales de it.3 (no bloqueantes):**
+- **Duplicado cross-path (over-count, NO misatribución).** Si un correo aparece como atom `fwd_line` de
+  texto plano (cuerpo Layer-B con cabecera embebida) Y como interior `html_quote` (cuerpo limpio), los
+  `cuerpo_sha` difieren → 2 atoms (verificado: PersonaUno CAPEX). Ambos correctos + `en_revision`. Dedup
+  cross-path exige tocar `_pase_layer_b` (pipeline) → diferido. Coherente con near-dups preexistentes de it.2.
+- **Delegación del EXTERIOR/anchor** (no del interior) sigue sin filtrar — comportamiento preexistente del
+  path Layer B (`_parse_apple`/`_parse_label`), fuera de alcance de it.3. Disparador: caso real con relay
+  como atribución de primer nivel.
+- Los ~43 restantes en cola son mayormente `sin_cabecera` sin `<addr>` (no recuperables sin inventar — prime
+  directive).

@@ -621,3 +621,294 @@ def test_reconstruir_html_anchor_addr_extraviado_no_misatribuye():
     res = I.reconstruir(_ra(fecha_iso="2026-06-01"), m.as_bytes())
     malos = [s for s in res.candidatos if s.de == "dpo@bufete.com"]
     assert not malos, "no debe atribuir el <addr> extraviado del pie como remitente"
+
+
+# ---------------------------------------------------------------------------
+# T-it3 — interior reenviado + parse c′ (lookahead De:→siguiente-etiqueta).
+# Spec docs/superpowers/specs/2026-06-25-email-atomize-interior-reenviado-cprime-design.md §1.2
+# Fixtures literales de W-02VND1. Cero misatribución: el <addr> del remitente se afirma SOLO
+# desde la franja De:→primera-etiqueta, con tope obligatorio + unicidad + guarda de delegación.
+# ---------------------------------------------------------------------------
+
+def test_cprime_delburgo_addr_envuelto():
+    # forma c′(1) real (PersonaUno "[PAIS_EXTRANJERO] docs"): De: bare, NOMBRE en línea propia, <addr> envuelto.
+    lines = ["De:", "PersonaUno", "<", "per01a@example.invalid", ">",
+             "Date: mié, 23 jul 2025 a las 12:37", "Subject: [PAIS_EXTRANJERO] docs",
+             "To: Eva <", "persona.cuatro@engelvoelkers.com", ">"]
+    de, nombre = I._addr_remitente_cprime(lines, 0)
+    assert de == "per01a@example.invalid"
+    assert "PersonaUno" in nombre
+
+
+def test_cprime_eva_no_roba_destinatario_qatar():
+    # testigo MSG-00305: eva sale de la franja De:→Fecha:; el <addr> de [PAIS_EXTRANJERO] (Para/Cc) queda FUERA.
+    lines = ["De:", "PersonaCuatro, Eva", "<", "persona.cuatro@engelvoelkers.com", ">",
+             "Fecha: El lun, 7 jul 2025 a las 19:44", "Asunto: Re: offer letter TIBIDABO 8",
+             "Para: General Consulate of the State of [PAIS_EXTRANJERO] in Barcelona <",
+             "contacto@org-qa.example", ">"]
+    de, nombre = I._addr_remitente_cprime(lines, 0)
+    assert de == "persona.cuatro@engelvoelkers.com"
+    assert "org-qa.example" not in de
+
+
+def test_cprime_addr_en_misma_linea_de():
+    # forma c con <addr> en la propia línea De: (Tecnitasa) → de correcto + de_nombre.
+    lines = ["De: Avisos Tecnitasa (no contestar) <tasadora@tasadora.example>",
+             "Enviado el: viernes, 11 de octubre de 2024 10:21", "Para: x"]
+    de, nombre = I._addr_remitente_cprime(lines, 0)
+    assert de == "tasadora@tasadora.example"
+
+
+def test_cprime_solo_nombre_sin_addr_devuelve_vacio():
+    # G-UNICIDAD: De: solo nombre (sin <addr> en la franja); Para: con <addr> → "" (no roba el Para).
+    lines = ["De:", "PersonaCinco", "Fecha: 27 may 2024", "Para: Toni <per03@example.invalid>"]
+    de, nombre = I._addr_remitente_cprime(lines, 0)
+    assert de == ""
+
+
+def test_cprime_etiqueta_intermedia_cierra_franja():
+    # G-FRANJA: Reply-To: entre De: y el <addr> cierra la franja antes del addr → "".
+    lines = ["De:", "Nombre Sospechoso", "Reply-To: <relay@evil.com>", "<",
+             "addr@real.com", ">", "Fecha: 1 ene 2025"]
+    de, nombre = I._addr_remitente_cprime(lines, 0)
+    assert de == "", "una etiqueta intermedia cierra la franja; el addr tras ella no es del De:"
+
+
+def test_cprime_delegacion_rechaza():
+    # G-DELEGACION: "en nombre de" en la franja → "" (el <addr> no es del autor nombrado).
+    lines = ["De: Secretaría en nombre de PersonaDos <", "secretaria@x.com", ">",
+             "Fecha: 1 ene 2025"]
+    de, nombre = I._addr_remitente_cprime(lines, 0)
+    assert de == ""
+
+
+def test_cprime_sin_tope_rechaza():
+    # G-FRANJA tope obligatorio: sin etiqueta que cierre la franja → "" (no tragar el cuerpo).
+    lines = ["De:", "PersonaUno", "<", "per01a@example.invalid", ">"]
+    de, nombre = I._addr_remitente_cprime(lines, 0)
+    assert de == ""
+
+
+def test_cprime_dos_addr_en_franja_ambiguo():
+    # G-UNICIDAD: dos <addr> en la franja De:→etiqueta → "" (ambiguo).
+    lines = ["De:", "Fulano <a@x.com> y Mengano <b@y.com>", "Fecha: 1 ene 2025"]
+    de, nombre = I._addr_remitente_cprime(lines, 0)
+    assert de == ""
+
+
+def test_cuerpo_interior_poda_cabecera_cprime():
+    # poda la cabecera c′ (De:/nombre/</addr/>/Fecha/Asunto/Para/Cc + valores envueltos) y deja el cuerpo.
+    lines = ["De:", "PersonaUno", "<", "per01a@example.invalid", ">",
+             "Fecha: El mar, 29 jul 2025 a las 19:54", "Asunto: Estudio acciones penales",
+             "Para: Eva <", "persona.cuatro@engelvoelkers.com", ">, PersonaSeis <",
+             "persona.seis@engelvoelkers.com", ">",
+             "Muy Sras mías:", "He tenido conocimiento de su burofax."]
+    cuerpo = I._cuerpo_interior(lines, 0)
+    assert cuerpo.startswith("Muy Sras mías:")
+    assert "per01a@example.invalid" not in cuerpo
+    assert "Asunto:" not in cuerpo
+    assert "persona.cuatro@engelvoelkers.com" not in cuerpo   # destinatario fuera del cuerpo
+
+
+def test_cuerpo_interior_consistente_entre_wraps():
+    # dos variantes de wrap del MISMO interior → normaliza_cuerpo idéntico (dedup estable entre portadores).
+    v1 = ["De:", "PersonaUno", "<", "per01a@example.invalid", ">", "Fecha: 1 jul 2025",
+          "Asunto: X", "Para: Eva <", "eva@x.com", ">",
+          "Cuerpo del mensaje aqui con sustancia suficiente."]
+    v2 = ["De: PersonaUno <per01a@example.invalid>", "Fecha: 1 jul 2025", "Asunto: X",
+          "Para: Eva <eva@x.com>", "Cuerpo del mensaje aqui con sustancia suficiente."]
+    c1 = I.normaliza_cuerpo(I._cuerpo_interior(v1, 0))
+    c2 = I.normaliza_cuerpo(I._cuerpo_interior(v2, 0))
+    assert c1 == c2 == I.normaliza_cuerpo("Cuerpo del mensaje aqui con sustancia suficiente.")
+
+
+def test_cuerpo_interior_no_come_saludo_con_dos_puntos():
+    # un saludo que termina en ':' ("Buenas tardes:") NO es etiqueta conocida → es cuerpo, no se poda.
+    lines = ["De:", "PersonaDos", "<", "ignacio@despacho-ab.example", ">",
+             "Fecha: El dom, 17 ago 2025 a las 19:50", "Asunto: Referencia BaRS1",
+             "Para: PersonaTres <", "per03@example.invalid", ">",
+             "Buenas tardes:", "Adjunto escrito de honorarios."]
+    cuerpo = I._cuerpo_interior(lines, 0)
+    assert cuerpo.startswith("Buenas tardes:")
+    assert "ignacio@despacho-ab.example" not in cuerpo
+
+
+def test_interior_reenviado_delburgo_cprime():
+    # PersonaUno "[PAIS_EXTRANJERO] docs": marcador + cabecera c′ → interior con de/fecha/asunto correctos + cuerpo.
+    texto = ("Texto del reenviador.\n"
+             "---------- Forwarded message ---------\n"
+             "De:\nJAIME PersonaUno\n<\nper01a@example.invalid\n>\n"
+             "Date: mié, 23 jul 2025 a las 12:37\nSubject: [PAIS_EXTRANJERO] docs\n"
+             "To: Eva <\npersona.cuatro@engelvoelkers.com\n>\n"
+             "Os passo els documents de [PAIS_EXTRANJERO] per la operacio.")
+    out = I._interior_reenviado(texto)
+    assert out is not None
+    anc, cuerpo = out
+    assert anc.de == "per01a@example.invalid"
+    assert anc.fecha_iso == "2025-07-23"
+    assert anc.asunto == "[PAIS_EXTRANJERO] docs"
+    assert cuerpo.startswith("Os passo")
+    assert "per01a@example.invalid" not in cuerpo
+
+
+def test_interior_reenviado_testigo_eva_7jul():
+    # testigo MSG-00305: el interior (Eva 7-jul → [PAIS_EXTRANJERO]) sale con de=eva, NUNCA el <addr> de [PAIS_EXTRANJERO] (Para).
+    texto = ("Sent from Gmail Mobile\n"
+             "---------- Mensaje reenviado ---------\n"
+             "De:\nPrat Padrós, Eva\n<\npersona.cuatro@engelvoelkers.com\n>\n"
+             "Fecha: El lun, 7 jul 2025 a las 19:44\n"
+             "Asunto: Re: offer letter TIBIDABO 8\n"
+             "Para: General Consulate of the State of [PAIS_EXTRANJERO] in Barcelona <\ncontacto@org-qa.example\n>\n"
+             "Estimada PersonaSiete, adjunto remito la Contraoferta.")
+    out = I._interior_reenviado(texto)
+    assert out is not None
+    anc, cuerpo = out
+    assert anc.de == "persona.cuatro@engelvoelkers.com"
+    assert anc.fecha_iso == "2025-07-07"
+    assert "org-qa.example" not in anc.de
+    assert "Contraoferta" in cuerpo
+
+
+def test_interior_reenviado_sin_marcador_none():
+    # G-MARK: cabecera c′ pero SIN marcador de reenvío explícito → None.
+    texto = "De:\nJAIME PersonaUno\n<\nper01a@example.invalid\n>\nFecha: 1 jul 2025\nAsunto: X\nCuerpo."
+    assert I._interior_reenviado(texto) is None
+
+
+def test_interior_reenviado_apilamiento_none():
+    # G-APILAMIENTO: dos bloques De: en la ventana → ambiguo → None (1 nivel, no recursión).
+    texto = ("---------- Forwarded message ---------\n"
+             "De:\nUno\n<\nuno@x.com\n>\nFecha: 1 jul 2025\nAsunto: A\n"
+             "De:\nDos\n<\ndos@x.com\n>\nFecha: 2 jul 2025\nAsunto: B\nCuerpo.")
+    assert I._interior_reenviado(texto) is None
+
+
+def test_interior_reenviado_marcador_guiones_nbsp():
+    # _RE_FWD_MARK capta "----\xa0Mensaje reenviado\xa0---------" (guiones de cierre + nbsp) que _RE_FWD_INTRO NO.
+    texto = ("Algo\n----\xa0Mensaje reenviado\xa0---------\n"
+             "De:\nJAIME PersonaUno\n<\nper01a@example.invalid\n>\nFecha: 1 jul 2025\nAsunto: X\n"
+             "Cuerpo del mensaje con sustancia.")
+    out = I._interior_reenviado(texto)
+    assert out is not None and out[0].de == "per01a@example.invalid"
+
+
+def test_interior_reenviado_solo_nombre_sin_addr_none():
+    # G5/G-UNICIDAD: De: sin <addr> propio + Para: con <addr> → None (jamás roba el destinatario).
+    texto = ("---------- Forwarded message ---------\n"
+             "De: PersonaCinco\nFecha: 1 jul 2025\nPara: Toni <per03@example.invalid>\nCuerpo.")
+    assert I._interior_reenviado(texto) is None
+
+
+def _html_carrier(attr, blockquote_inner, frm="persona.cuatro@engelvoelkers.com",
+                  fecha="Wed, 23 Jul 2025 17:24:00 +0200", asunto="Fwd: x"):
+    m = EmailMessage()
+    m["Message-ID"] = "<carrier-int@x>"; m["Subject"] = asunto; m["From"] = frm; m["To"] = "nikolai@x"
+    m["Date"] = fecha
+    m.set_content("Os reenvío.")
+    html = (f'<div>Os reenvío.</div><div class="gmail_quote">'
+            f'<div class="gmail_attr">{attr}</div>'
+            f'<blockquote>{blockquote_inner}</blockquote></div>')
+    m.add_alternative(html, subtype="html")
+    return m
+
+
+_BQ_TESTIGO = (
+    "Sent from Gmail Mobile<br>"
+    "---------- Mensaje reenviado ---------<br>"
+    "De:<br>PersonaCuatro, Eva<br>&lt;<br>persona.cuatro@engelvoelkers.com<br>&gt;<br>"
+    "Fecha: El lun, 7 jul 2025 a las 19:44<br>"
+    "Asunto: Re: offer letter TIBIDABO 8<br>"
+    "Para: General Consulate of the State of [PAIS_EXTRANJERO] in Barcelona &lt;<br>contacto@org-qa.example<br>&gt;<br>"
+    "Estimada PersonaSiete, adjunto remito la Contraoferta con sustancia suficiente.")
+
+
+def test_reconstruir_interior_reenviado_testigo_msg305():
+    # Testigo MSG-00305: exterior Eva 23-jul (anchor) INTACTO + interior Eva 7-jul (Contraoferta) NUEVO.
+    m = _html_carrier(
+        "On Wed, 23 Jul 2025 at 17:09, PersonaCuatro, Eva &lt;persona.cuatro@engelvoelkers.com&gt; wrote:",
+        _BQ_TESTIGO)
+    res = I.reconstruir(_ra(fecha_iso="2025-07-23"), m.as_bytes())
+    ext = [s for s in res.candidatos if s.fecha_iso == "2025-07-23"
+           and s.de == "persona.cuatro@engelvoelkers.com"]
+    inte = [s for s in res.candidatos if s.fecha_iso == "2025-07-07"
+            and s.de == "persona.cuatro@engelvoelkers.com"]
+    assert ext, "el exterior (Eva 23-jul) sigue presente"
+    assert inte, "el interior reenviado (Eva 7-jul Contraoferta) emerge como atom propio"
+    i = inte[0]
+    assert i.confianza == "media-reconstruida"
+    assert i.motivo == "interior_reenviado"
+    assert i.en_revision is True
+    assert i.asunto == "Re: offer letter TIBIDABO 8"
+    assert "Contraoferta" in i.texto
+    assert i.de == "persona.cuatro@engelvoelkers.com"   # NUNCA el <addr> de [PAIS_EXTRANJERO] (Para/Cc)
+
+
+def test_reconstruir_interior_delburgo_media_reconstruida():
+    bq = ("---------- Forwarded message ---------<br>"
+          "De:<br>PersonaUno<br>&lt;<br>per01a@example.invalid<br>&gt;<br>"
+          "Date: mié, 23 jul 2025 a las 12:37<br>Subject: [PAIS_EXTRANJERO] docs<br>"
+          "To: Eva &lt;<br>persona.cuatro@engelvoelkers.com<br>&gt;<br>"
+          "Os passo els documents de [PAIS_EXTRANJERO] per la operacio amb sustancia.")
+    m = _html_carrier(
+        "El mié, 23 jul 2025 a las 13:00, PersonaSeis &lt;persona.seis@engelvoelkers.com&gt; escribió:",
+        bq, frm="persona.seis@engelvoelkers.com")
+    res = I.reconstruir(_ra(fecha_iso="2025-07-24"), m.as_bytes())
+    inte = [s for s in res.candidatos if s.de == "per01a@example.invalid"]
+    assert inte, "el interior c′ de PersonaUno emerge como atom propio"
+    assert inte[0].confianza == "media-reconstruida"
+    assert inte[0].motivo == "interior_reenviado"
+    assert inte[0].fecha_iso == "2025-07-23"
+
+
+def test_reconstruir_interior_no_duplica_exterior():
+    # G-NO-DUP-EXT: si el interior ES el mismo mensaje que el exterior (de+fecha) → no se emite 2º atom.
+    bq = ("---------- Mensaje reenviado ---------<br>"
+          "De:<br>Jaime<br>&lt;<br>jaime@x.com<br>&gt;<br>"
+          "Fecha: El lun, 1 jul 2025 a las 10:00<br>Asunto: Z<br>"
+          "Cuerpo del mensaje con sustancia suficiente.")
+    m = _html_carrier(
+        "El lun, 1 jul 2025 a las 10:00, Jaime &lt;jaime@x.com&gt; escribió:", bq,
+        frm="otro@x.com")
+    res = I.reconstruir(_ra(fecha_iso="2025-07-02"), m.as_bytes())
+    interiores = [s for s in res.candidatos if getattr(s, "motivo", "") == "interior_reenviado"]
+    assert not interiores, "exterior e interior son el MISMO mensaje (de+fecha) → no se duplica"
+
+
+# --- Correcciones de la verificación adversarial final (it.3) ---
+
+def test_interior_reenviado_delegacion_inline_rechaza():
+    # CRÍTICO (hallado por la verificación adversarial): la guarda de delegación DEBE aplicar también
+    # al De: con <addr> INLINE (no solo a la forma c′). Un relay/delegado → None (jamás se afirma).
+    for de_line in [
+            "De: Eva Martínez en nombre de Sistema <noreply@relay.example.com>",
+            "De: Secretaria por orden de Eva <secretaria@bufete.example>",
+            "De: Eva via DocuSign <dse_na3@docusign.net>",
+            "De: Secretaria p.p. Eva Martínez <secretaria@bufete.example>",
+            "De: Auxiliar p.o. Eva Martínez <aux@bufete.example>"]:
+        texto = ("---------- Forwarded message ---------\n" + de_line +
+                 "\nFecha: 1 ene 2025\nAsunto: X\nCuerpo del mensaje con sustancia suficiente.")
+        assert I._interior_reenviado(texto) is None, de_line
+
+
+def test_cprime_delegacion_via_con_tilde():
+    # 'vía' con tilde (grafía natural en castellano) también es delegación/relay → "".
+    lines = ["De: Eva vía DocuSign <", "dse@docusign.net", ">", "Fecha: 1 ene 2025"]
+    de, _ = I._addr_remitente_cprime(lines, 0)
+    assert de == ""
+
+
+def test_cuerpo_interior_no_come_saludo_con_email_cercano():
+    # ALTO (verificación): un saludo corto seguido de un cuerpo que MENCIONA un email no debe podarse.
+    lines = ["De: Juan <juan@x.com>", "Fecha: 1 ene 2025", "Para: a@b.com",
+             "Estimados:", "Contacten con info@empresa.com para la oferta."]
+    cuerpo = I._cuerpo_interior(lines, 0)
+    assert cuerpo.startswith("Estimados:"), "el saludo no se poda aunque el cuerpo mencione un email"
+
+
+def test_interior_reenviado_apple_form_fuera_de_alcance():
+    # Los interiores en forma Apple ("El…escribió:") tras un marcador NO se desanidan (§6) → cola.
+    # (Evita el hueco de poda de cabecera Apple; no ocurren en el corpus real.)
+    texto = ("---------- Mensaje reenviado ---------\n"
+             "El lun, 7 jul 2025 a las 19:44, Eva\n<\neva@x.com\n>\nescribió:\n"
+             "Cuerpo del interior con sustancia suficiente.")
+    assert I._interior_reenviado(texto) is None
