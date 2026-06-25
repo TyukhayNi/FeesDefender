@@ -22,6 +22,7 @@ from . import ids as IDS
 from . import identidades as ID
 from . import inline as INL
 from . import render as R
+from . import vistas as V
 from .model import AdjuntoRef, AdjuntoUnico, RegistroMensaje, SegmentoEnterrado
 
 
@@ -33,6 +34,8 @@ class AtomizeReport:
     reconstruidos_b: int = 0          # mensajes capa B promovidos (alta-reconstruida)
     citas_a_revision: int = 0         # punteros media/baja a _revision/cola.md
     upgrades: int = 0                 # citas resueltas a una copia limpia de Capa A
+    vistas_generadas: int = 0
+    notas: list[str] = field(default_factory=list)
     errores: list[str] = field(default_factory=list)
 
     def resumen(self) -> str:
@@ -40,6 +43,7 @@ class AtomizeReport:
                 f"{self.citas_a_revision} citas a revisión, {self.upgrades} upgrades; "
                 f"{self.adjuntos_unicos} adjuntos únicos "
                 f"({self.adjuntos_decorativos} decorativos filtrados), "
+                f"{self.vistas_generadas} vistas, "
                 f"{len(self.errores)} errores")
 
 
@@ -124,6 +128,21 @@ def atomize_dir(src_dir: Path | str, out_dir: Path | str, *, case_dir: Path | st
     revision.mkdir(exist_ok=True)
     for nombre, contenido in R.render_revision(mensajes_b, punteros, watched=ident.vigiladas, upgrades=upgrades).items():
         (revision / nombre).write_text(contenido, encoding="utf-8")
+
+    # --- Vistas temáticas (capa de caso; solo-lectura, no toca ningún .md) ---
+    defs = V.cargar_vistas(case_dir)
+    salidas, notas = V.render_vistas(mensajes, ident, defs)
+    report.notas.extend(notas)
+    vistas_dir = out / "vistas"
+    if salidas:
+        vistas_dir.mkdir(exist_ok=True)
+        for nombre, contenido in salidas.items():
+            (vistas_dir / nombre).write_text(contenido, encoding="utf-8")
+    if vistas_dir.exists():           # poda huérfanos (idempotencia)
+        for p in vistas_dir.glob("*.md"):
+            if p.name not in salidas:
+                p.unlink()
+    report.vistas_generadas = len(salidas)
 
     reg.save()
     return report
