@@ -683,10 +683,11 @@ def reconstruir(m_a, raw: bytes, identidades: "Identidades | None" = None) -> Re
             head = _cabecera_head(seg.texto)
             anc = _parse_label(head) if head else None
             levantada_del_cuerpo = anc is not None
-        # Ambigüedad SOLO si la cabecera se LEVANTÓ del cuerpo y hay VARIAS apiladas (no se puede
-        # ligar el cuerpo a un único remitente). Con un anclaje de atribución limpio (gmail_attr,
-        # "El … escribió:"), citas anidadas más profundas en el cuerpo no lo hacen ambiguo (DD §2.1).
-        ambigua = levantada_del_cuerpo and _n_cabeceras(seg.texto) > 1
+        # Ambigüedad: varias cabeceras apiladas en el bloque de anclaje → no se puede ligar el
+        # cuerpo a UN remitente. Cubre tanto la cabecera levantada del cuerpo como un bloque no
+        # estructural que parsear_anclaje resolvió al primer "De:" (evita fabricar remitente con
+        # el routing de media-reconstruida). En lo estructural la profundidad ya separa mensajes.
+        ambigua = _n_cabeceras(seg.texto) > 1 and (levantada_del_cuerpo or not seg.estructural)
         conf, motivo = clasificar(anc, m_a.fecha_iso, estructural=seg.estructural, ambigua=ambigua)
         # Identidad candidata (no confirmada) → nunca alta (decisión Nikolai).
         if conf == "alta-reconstruida" and anc and anc.de in identidades.candidatas:
@@ -704,8 +705,8 @@ def reconstruir(m_a, raw: bytes, identidades: "Identidades | None" = None) -> Re
         mm = _RE_INLINE_MID.search(seg.texto)
         seg.rfc_message_id = mm.group(1).strip() if mm else ""
         watched = bool(seg.de) and seg.de in identidades.vigiladas
-        seg.en_revision = watched or conf in ("media", "baja")
-        if conf == "alta-reconstruida":
+        seg.en_revision = watched or conf in ("media", "baja", "media-reconstruida")
+        if conf in ("alta-reconstruida", "media-reconstruida"):
             res.candidatos.append(seg)
         else:
             res.punteros.append(SegmentoEnterrado(

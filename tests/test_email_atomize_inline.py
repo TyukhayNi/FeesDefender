@@ -245,3 +245,42 @@ def test_indice_layer_a_resuelve_por_cuerpo_sha():
             fecha_iso="2020-05-01", asunto="t")
     idx = I.indice_layer_a([m])
     assert idx.por_cuerpo_sha(I.normaliza_cuerpo(m.cuerpo)) == "MSG-00042"
+
+
+def _eml_carrier_plano(de_cita, fecha_label, asunto_cita, cuerpo_cita):
+    # .eml de TEXTO PLANO con bloque outlook_es (De:/Enviado:/Para:/Asunto:) NO estructural.
+    m = EmailMessage()
+    m["Message-ID"] = "<carrier-plano@x>"; m["Subject"] = "RV"; m["From"] = "c@x"; m["To"] = "d@x"
+    m["Date"] = "Mon, 01 Jun 2026 10:00:00 +0200"
+    cuerpo = (f"Te reenvio esto abajo.\n\n"
+              f"De: Jaime <{de_cita}>\nEnviado: {fecha_label}\nPara: x@y\nAsunto: {asunto_cita}\n"
+              f"{cuerpo_cita}\n")
+    m.set_content(cuerpo)
+    return m.as_bytes()
+
+
+def test_reconstruir_media_reconstruida_va_a_candidatos_y_en_revision():
+    raw = _eml_carrier_plano("alguien@x.com", "1 de mayo de 2020", "Tibidabo",
+                             "contenido citado suficientemente largo para superar el floor de 24")
+    res = I.reconstruir(_ra(fecha_iso="2026-06-01"), raw)
+    medias = [s for s in res.candidatos if s.confianza == "media-reconstruida"]
+    assert medias, "media-reconstruida debe enrutarse a candidatos, no a punteros"
+    assert medias[0].de == "alguien@x.com"
+    assert medias[0].en_revision is True   # los media-reconstruida SIEMPRE entran en revisión
+    # No queda como puntero de cola:
+    assert not any(getattr(p, "confianza", "") == "media-reconstruida" for p in res.punteros)
+
+
+def test_reconstruir_dos_cabeceras_apiladas_no_promueve():
+    # Spec §8 test 6: dos bloques De:/Enviado: apilados levantados del cuerpo → ambigua=True
+    # → NO va a candidatos (queda en punteros/cola), NO se fabrica remitente.
+    m = EmailMessage()
+    m["Message-ID"] = "<carrier-apilado@x>"; m["Subject"] = "RV"; m["From"] = "c@x"; m["To"] = "d@x"
+    m["Date"] = "Mon, 01 Jun 2026 10:00:00 +0200"
+    cuerpo = ("Reenvio esto:\n\n"
+              "De: Uno <uno@x.com>\nEnviado: 1 de mayo de 2020\nPara: x@y\nAsunto: A\n"
+              "De: Dos <dos@x.com>\nEnviado: 2 de mayo de 2020\nPara: x@y\nAsunto: B\n"
+              "cuerpo citado suficientemente largo para superar el floor de 24 chars\n")
+    m.set_content(cuerpo)
+    res = I.reconstruir(_ra(fecha_iso="2026-06-01"), m.as_bytes())
+    assert not any(getattr(s, "confianza", "") == "media-reconstruida" for s in res.candidatos)
