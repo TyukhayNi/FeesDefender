@@ -1,4 +1,5 @@
 from __future__ import annotations
+import hashlib
 from datetime import datetime
 from core.email_atomize import entregas as E
 
@@ -29,7 +30,6 @@ def test_sella_copia_y_manifiesto(tmp_path):
     assert "commit_motor: abc123" in sello
     assert "mensajes/m1.md" in sello
     # sha256 de "uno"
-    import hashlib
     assert hashlib.sha256(b"uno").hexdigest() in sello
 
 
@@ -40,3 +40,12 @@ def test_append_only_segunda_entrega_no_pisa(tmp_path):
     assert d1 != d2
     assert d1.exists() and d2.exists()
     assert d2.name == "2026-06-25_x_2"
+
+
+def test_sella_directorio_vacio(tmp_path):
+    out = tmp_path / "Emails"
+    out.mkdir()
+    dest = E.sellar(out, "vacia", commit="c", ahora=datetime(2026, 6, 25, 9, 0, 0))
+    assert dest.exists()
+    sello = (dest / "_SELLO.md").read_text(encoding="utf-8")
+    assert "n_ficheros: 0" in sello

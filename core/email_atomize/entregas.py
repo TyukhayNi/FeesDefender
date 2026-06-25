@@ -40,6 +40,7 @@ def sellar(out_dir, descr: str, *, commit: str | None = None,
     out = Path(out_dir)
     ahora = ahora or datetime.now()
     commit = commit if commit is not None else _git_commit()
+    # _slug_descripcion ya saca un slug no vacío; "entrega" es red de seguridad. replace _→- para legibilidad del nombre de carpeta.
     slug = (_slug_descripcion(descr) or "entrega").replace("_", "-")
     dest = _destino_unico(out / "_entregas" / f"{ahora.strftime('%Y-%m-%d')}_{slug}")
     dest.mkdir(parents=True)
