@@ -206,3 +206,104 @@ def test_layerb_remitente_apellido_coma_promueve(tmp_path):
     assert len(b) == 1
     md = b[0].read_text(encoding="utf-8")
     assert "de: persona.cuatro@engelvoelkers.com" in md and "2025-07-07" in md
+
+
+# ---------------------------------------------------------------------------
+# Body-scan de remitente desde el cuerpo de la cita (it. 2) — glue (spec §5 15-18)
+# ---------------------------------------------------------------------------
+
+def _carrier_html_apple_en_cuerpo(mid, autor, attr_line, cuerpo_cita):
+    """Portador HTML: anclaje previo = prosa; atribución Apple = 1ª línea del blockquote.
+    El de NO está en el anclaje → lo levanta el body-scan → media-reconstruida (atribucion_cuerpo)."""
+    m = EmailMessage()
+    m["Message-ID"] = mid; m["Subject"] = "RV: Tibidabo"
+    m["Date"] = "Mon, 01 Jun 2026 10:00:00 +0200"; m["From"] = "c@x"; m["To"] = "d@x"
+    m.set_content(autor)
+    html = (f"<div>{autor}</div>"
+            f"<blockquote>{attr_line}<br>{cuerpo_cita}</blockquote>")
+    m.add_alternative(html, subtype="html")
+    return m.as_bytes()
+
+
+def test_layerb_bodyscan_apple_promueve_media_reconstruida(tmp_path):
+    # §5.15 — pipeline completo, portador forma (a) Apple en el cuerpo → atom B media-reconstruida
+    # con de correcto; corpus.jsonl con motivo=atribucion_cuerpo; aparece en reconstruidos.md.
+    src = tmp_path / "03_Email"; out = tmp_path / "Emails"; src.mkdir()
+    attr = "El 27 may 2024, a las 10:49, Isabel &lt;persona.cinco@engelvoelkers.com&gt; escribió:"
+    (src / "2026-06-01_apple_body.eml").write_bytes(_carrier_html_apple_en_cuerpo(
+        "<carrier-apple-body@x>", "Te reenvío esto.", attr,
+        "contenido citado suficientemente largo para superar el floor de 24 chars"))
+    rep = P.atomize_dir(src, out, case_dir=tmp_path)
+    b_mds = [p for p in (out / "mensajes").glob("*.md")
+             if "confianza: media-reconstruida" in p.read_text(encoding="utf-8")]
+    assert len(b_mds) == 1, "la atribución Apple del cuerpo debe promover a media-reconstruida"
+    md = b_mds[0].read_text(encoding="utf-8")
+    assert "de: persona.cinco@engelvoelkers.com" in md and "2024-05-27" in md
+    assert "en_revision: true" in md
+    assert rep.reconstruidos_media == 1
+    # Trazabilidad del media-reconstruida: lista en reconstruidos.md + reconstruidos.jsonl,
+    # y el atom B aparece en corpus.jsonl con su de/confianza (el motivo atribucion_cuerpo se
+    # afirma a nivel Segmento — ver test unitario; el schema de corpus/reconstruidos no lo expone).
+    rec = (out / "_revision" / "reconstruidos.md").read_text(encoding="utf-8")
+    assert "persona.cinco@engelvoelkers.com" in rec
+    jl = [json.loads(l) for l in (out / "_revision" / "reconstruidos.jsonl").read_text(
+        encoding="utf-8").splitlines() if l.strip()]
+    assert any(r["de"] == "persona.cinco@engelvoelkers.com" for r in jl)
+    corpus = (out / "corpus.jsonl")
+    if corpus.exists():
+        lineas = [json.loads(l) for l in corpus.read_text(encoding="utf-8").splitlines()
+                  if l.strip() and not l.startswith('{"_README"')]
+        b_recs = [r for r in lineas if r.get("de") == "persona.cinco@engelvoelkers.com"]
+        assert b_recs and all(r.get("confianza") == "media-reconstruida" for r in b_recs), \
+            "el atom B body-lifted aparece en corpus.jsonl como media-reconstruida"
+
+
+def test_layerb_bodyscan_idempotente_277_capaA_byte_identico(tmp_path):
+    # §5.17 — dos corridas: 0 renumerados, fp estables (Capa A byte-idéntica para los portadores).
+    src = tmp_path / "03_Email"; out = tmp_path / "Emails"; src.mkdir()
+    attr = "El 27 may 2024, a las 10:49, Isabel &lt;persona.cinco@engelvoelkers.com&gt; escribió:"
+    (src / "2026-06-01_apple_body.eml").write_bytes(_carrier_html_apple_en_cuerpo(
+        "<carrier-apple-body@x>", "Te reenvío esto.", attr,
+        "contenido citado suficientemente largo para superar el floor de 24 chars"))
+    P.atomize_dir(src, out, case_dir=tmp_path)
+    md_a1 = [p for p in (out / "mensajes").glob("*.md")
+             if "capa: A" in p.read_text(encoding="utf-8")]
+    bytes_a1 = {p.name: p.read_bytes() for p in md_a1}
+    reg = json.loads((out / "_registro.json").read_text(encoding="utf-8"))
+    P.atomize_dir(src, out, case_dir=tmp_path)
+    reg2 = json.loads((out / "_registro.json").read_text(encoding="utf-8"))
+    assert reg2["mensajes_fp"] == reg["mensajes_fp"], "fp estables entre corridas"
+    md_a2 = [p for p in (out / "mensajes").glob("*.md")
+             if "capa: A" in p.read_text(encoding="utf-8")]
+    bytes_a2 = {p.name: p.read_bytes() for p in md_a2}
+    assert bytes_a1 == bytes_a2, "Capa A byte-idéntica entre corridas (cero churn)"
+
+
+def _carrier_html_anchor_completo(mid, de_cita, fecha_attr, cuerpo_cita):
+    """Portador HTML con gmail_attr que YA lleva de+fecha en el anclaje (NO levantada del cuerpo).
+    Debe seguir alta-reconstruida: el graft solo topa lo levantado del cuerpo (§5.18)."""
+    m = EmailMessage()
+    m["Message-ID"] = mid; m["Subject"] = "RV: Tibidabo"
+    m["Date"] = "Mon, 01 Jun 2026 10:00:00 +0200"; m["From"] = "c@x"; m["To"] = "d@x"
+    m.set_content("Te reenvío.")
+    html = (f'<div>Te reenvío.</div><div class="gmail_quote">'
+            f'<div class="gmail_attr">El {fecha_attr}, Jaime &lt;{de_cita}&gt; escribió:</div>'
+            f'<blockquote>{cuerpo_cita}</blockquote></div>')
+    m.add_alternative(html, subtype="html")
+    return m.as_bytes()
+
+
+def test_layerb_regresion_estructural_anchor_completo_sigue_alta(tmp_path):
+    # §5.18 — REGRESIÓN del peldaño alto: estructural + cabecera completa en anclaje_texto
+    # (NO levantada del cuerpo) sigue alta-reconstruida. El graft solo topa lo del cuerpo.
+    src = tmp_path / "03_Email"; out = tmp_path / "Emails"; src.mkdir()
+    (src / "2026-06-01_anchor.eml").write_bytes(_carrier_html_anchor_completo(
+        "<carrier-anchor@x>", "per01a@example.invalid", "1 de mayo de 2020",
+        "contenido citado suficientemente largo para superar el floor de 24 chars"))
+    P.atomize_dir(src, out, case_dir=tmp_path)
+    a_mds = [p for p in (out / "mensajes").glob("*.md")
+             if "confianza: alta-reconstruida" in p.read_text(encoding="utf-8")]
+    assert len(a_mds) == 1, "el anchor completo estructural debe seguir alta-reconstruida"
+    md = a_mds[0].read_text(encoding="utf-8")
+    assert "de: per01a@example.invalid" in md
+    assert "atribucion_cuerpo" not in md, "no es atribucion_cuerpo: el de vino del anclaje"

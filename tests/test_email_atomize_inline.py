@@ -344,3 +344,215 @@ def test_reconstruir_dos_cabeceras_apiladas_no_promueve():
     m.set_content(cuerpo)
     res = I.reconstruir(_ra(fecha_iso="2026-06-01"), m.as_bytes())
     assert not any(getattr(s, "confianza", "") == "media-reconstruida" for s in res.candidatos)
+
+
+# ---------------------------------------------------------------------------
+# T10 — body-scan de remitente desde el CUERPO de la cita (it. 2)
+#       Función pura _atribucion_en_cuerpo (spec §5 tests 1-10). Prime directive:
+#       cero misatribución — un remitente solo se afirma desde un <addr> literal.
+# ---------------------------------------------------------------------------
+
+def test_bodyscan_a_apple_en_linea():
+    # §5.1 — (a) Apple, <addr> en la misma línea.
+    texto = ("El 27 may 2024, a las 10:49, PersonaCinco <persona.cinco@engelvoelkers.com> escribió:\n"
+             "cuerpo citado suficientemente largo para superar el floor")
+    anc = I._atribucion_en_cuerpo(texto)
+    assert anc is not None
+    assert anc.de == "persona.cinco@engelvoelkers.com" and anc.fecha_iso == "2024-05-27"
+
+
+def test_bodyscan_b_addr_envuelto():
+    # §5.2 — (b) <addr> envuelto en <\n...\n>; _RE_ADDR ya lo des-envuelve.
+    texto = ("El 4 oct 2024, a las 11:48, PersonaCuatro, Eva <\n"
+             "persona.cuatro@engelvoelkers.com\n"
+             "> escribió:\n"
+             "cuerpo citado suficientemente largo para superar el floor")
+    anc = I._atribucion_en_cuerpo(texto)
+    assert anc is not None
+    assert anc.de == "persona.cuatro@engelvoelkers.com" and anc.fecha_iso == "2024-10-04"
+
+
+def test_bodyscan_c_bloque_envuelto_con_intro():
+    # §5.3 — (c) bloque De:/Fecha:/Para:/Asunto: con valores envueltos, tras intro de reenvío.
+    # de = el del De: (envuelto), NUNCA el <addr> del Para:.
+    texto = ("Inicio del mensaje reenviado:\n\n"
+             "De:\n"
+             "per03@example.invalid\n"
+             "Fecha:\n"
+             "27 de mayo de 2024, 10:38:07 CEST\n"
+             'Para: "PersonaCinco, Isabel" <persona.cinco@engelvoelkers.com>\n'
+             "Asunto: x")
+    anc = I._atribucion_en_cuerpo(texto)
+    assert anc is not None
+    assert anc.de == "per03@example.invalid", "debe coger el De:, NUNCA el <addr> del Para:"
+    assert anc.fecha_iso == "2024-05-27"
+
+
+def test_bodyscan_g5_robo_destinatario_solo_nombre_de():
+    # §5.4 — G5: De: solo-nombre (sin <addr>), Para: con <addr> → None (jamás roba el Para:).
+    texto = ("Inicio del mensaje reenviado:\n\n"
+             "De: PersonaCinco\n"
+             "Fecha: 27 de mayo de 2024\n"
+             "Para: Toni <per03@example.invalid>\n"
+             "Asunto: x")
+    anc = I._atribucion_en_cuerpo(texto)
+    assert anc is None, "De: sin <addr> propio + Para: con <addr> → cola, NUNCA el addr del Para"
+
+
+def test_bodyscan_g3_apilamiento_envuelto():
+    # §5.5 — G3 (fix fallo latente veredicto 1): dos bloques De:\nvalor envueltos apilados → None.
+    # _RE_DE_LABEL_ANY debe VER los De: aunque el valor vaya envuelto en la línea siguiente.
+    texto = ("De:\n"
+             "uno@x.com\n"
+             "Fecha:\n"
+             "1 de mayo de 2024\n"
+             "De:\n"
+             "dos@x.com\n"
+             "Fecha:\n"
+             "2 de mayo de 2024\n"
+             "cuerpo")
+    anc = I._atribucion_en_cuerpo(texto)
+    assert anc is None, "dos De: envueltos apilados → AMBIGUO → cola"
+
+
+def test_bodyscan_g3_conteo_apple_correcto():
+    # §5.6 — fix bug conteo D1: UNA forma (a) bien formada NO se descarta (recupera);
+    # DOS atribuciones Apple apiladas → None.
+    una = ("El 27 may 2024, a las 10:49, Isabel <persona.cinco@engelvoelkers.com> escribió:\n"
+           "cuerpo citado suficientemente largo")
+    anc1 = I._atribucion_en_cuerpo(una)
+    assert anc1 is not None and anc1.de == "persona.cinco@engelvoelkers.com", \
+        "UNA forma (a) bien formada debe recuperar, no caer por conteo"
+    dos = ("El 27 may 2024, a las 10:49, Isabel <persona.cinco@engelvoelkers.com> escribió:\n"
+           "El 28 may 2024, a las 11:00, Toni <per03@example.invalid> escribió:\n"
+           "cuerpo")
+    anc2 = I._atribucion_en_cuerpo(dos)
+    assert anc2 is None, "dos atribuciones Apple apiladas → AMBIGUO → cola"
+
+
+def test_bodyscan_g4_dos_addr_en_linea_apple():
+    # §5.7 — G4 (ADVERSARIAL 2): remitente + destinatario en la MISMA línea Apple → None.
+    texto = ("El 27 may 2024, a las 10:49, Isabel <persona.cinco@engelvoelkers.com> a Toni "
+             "<per03@example.invalid> escribió:\n"
+             "cuerpo")
+    anc = I._atribucion_en_cuerpo(texto)
+    assert anc is None, "dos <addr> en la línea de atribución Apple → cola (no se puede ligar el de)"
+
+
+def test_bodyscan_g2_ventana_atribucion_tardia():
+    # §5.8 — G2: atribución válida más allá de la ventana del inicio (precedida de prosa larga) → None.
+    prosa = "\n".join(f"linea de prosa numero {i} sin atribucion" for i in range(20))
+    texto = (prosa + "\n"
+             "El 27 may 2024, a las 10:49, Isabel <persona.cinco@engelvoelkers.com> escribió:\n"
+             "cuerpo")
+    anc = I._atribucion_en_cuerpo(texto)
+    assert anc is None, "atribución fuera de la ventana del inicio → cola (no se escanea el cuerpo entero)"
+
+
+def test_bodyscan_g1_los_48_sin_addr():
+    # §5.9 — G1: bloque con De: solo-nombre, sin <addr> en NINGUNA etiqueta → None (los 48).
+    texto = ("De: PersonaCinco\n"
+             "Fecha: 27 de mayo de 2024\n"
+             "Para: Toni Angeri\n"
+             "Asunto: x\n"
+             "cuerpo")
+    anc = I._atribucion_en_cuerpo(texto)
+    assert anc is None, "sin <addr> literal en ninguna etiqueta → cola (prime directive)"
+
+
+def test_bodyscan_sin_estructura_prosa_suelta():
+    # §5.10 — email suelto en prosa, sin El…/escribió: ni De: → None (aunque haya un <addr>).
+    texto = ("Hola, te paso mi correo <persona.cinco@engelvoelkers.com> por si lo necesitas.\n"
+             "Un saludo y hablamos pronto.")
+    anc = I._atribucion_en_cuerpo(texto)
+    assert anc is None, "prosa suelta sin estructura de atribución → cola"
+
+
+# ---------------------------------------------------------------------------
+# T10 (integración) — enganche del body-scan en reconstruir (spec §5 tests 11-14)
+# ---------------------------------------------------------------------------
+
+def _eml_html_apple_en_cuerpo(autor, attr_line, cuerpo_cita):
+    """Portador HTML: anclaje previo es PROSA; la atribución Apple es la 1ª línea del blockquote."""
+    m = EmailMessage()
+    m["Message-ID"] = "<carrier-apple-body@x>"; m["Subject"] = "RV"
+    m["From"] = "c@x"; m["To"] = "d@x"
+    m["Date"] = "Mon, 01 Jun 2026 10:00:00 +0200"
+    m.set_content(autor)
+    html = (f'<div>{autor}</div>'
+            f'<blockquote>{attr_line}<br>{cuerpo_cita}</blockquote>')
+    m.add_alternative(html, subtype="html")
+    return m.as_bytes()
+
+
+def test_reconstruir_bodyscan_apple_en_blockquote_topa_media():
+    # §5.11 — (a) Apple DENTRO del blockquote, anclaje previo es prosa → media-reconstruida
+    # (atribucion_cuerpo), NO sube a alta pese a ser estructural. Verifica el graft de confianza.
+    attr = "El 27 may 2024, a las 10:49, Isabel &lt;persona.cinco@engelvoelkers.com&gt; escribió:"
+    raw = _eml_html_apple_en_cuerpo(
+        "Te reenvío esto.", attr,
+        "contenido citado suficientemente largo para superar el floor de 24 chars")
+    res = I.reconstruir(_ra(fecha_iso="2026-06-01"), raw)
+    rec = [s for s in res.candidatos if s.de == "persona.cinco@engelvoelkers.com"]
+    assert rec, "el body-scan debe recuperar el de Apple del interior del blockquote"
+    assert rec[0].confianza == "media-reconstruida", "NO sube a alta pese a ser estructural"
+    assert rec[0].motivo == "atribucion_cuerpo"
+    assert rec[0].en_revision is True
+
+
+def test_reconstruir_bodyscan_trigger_por_disyuncion_solo_fecha():
+    # §5.12 — anclaje estructural que parseó SOLO fecha (de="", anc is not None) + <addr> en el
+    # cuerpo → body-scan dispara y recupera el de (recall hole de un trigger 'anc is None' solo).
+    m = EmailMessage()
+    m["Message-ID"] = "<carrier-disy@x>"; m["Subject"] = "RV"
+    m["From"] = "c@x"; m["To"] = "d@x"
+    m["Date"] = "Mon, 01 Jun 2026 10:00:00 +0200"
+    m.set_content("Te reenvío.")
+    # gmail_attr con SOLO fecha (sin <addr>): anc is not None pero de="". El <addr> real va dentro.
+    html = ('<div>Te reenvío.</div><div class="gmail_quote">'
+            '<div class="gmail_attr">El 27 may 2024 escribió:</div>'
+            '<blockquote>El 27 may 2024, a las 10:49, Isabel '
+            '&lt;persona.cinco@engelvoelkers.com&gt; escribió:<br>'
+            'contenido citado suficientemente largo para superar el floor</blockquote></div>')
+    m.add_alternative(html, subtype="html")
+    res = I.reconstruir(_ra(fecha_iso="2026-06-01"), m.as_bytes())
+    rec = [s for s in res.candidatos if s.de == "persona.cinco@engelvoelkers.com"]
+    assert rec, "trigger por disyunción (anc con solo fecha) debe disparar el body-scan"
+
+
+def test_reconstruir_prioridad_anchor_gmail_attr_con_de_gana():
+    # §5.13 — gmail_attr con de válido + atribución en el cuerpo → gana el anchor, body-scan NO se
+    # invoca → la cita estructural sube a alta-reconstruida con el de del anchor (no el del cuerpo).
+    m = EmailMessage()
+    m["Message-ID"] = "<carrier-prio@x>"; m["Subject"] = "RV"
+    m["From"] = "c@x"; m["To"] = "d@x"
+    m["Date"] = "Mon, 01 Jun 2026 10:00:00 +0200"
+    m.set_content("Te reenvío.")
+    html = ('<div>Te reenvío.</div><div class="gmail_quote">'
+            '<div class="gmail_attr">El 1 may 2020, Jaime &lt;per01a@example.invalid&gt; escribió:</div>'
+            '<blockquote>El 27 may 2024, a las 10:49, Otro '
+            '&lt;otro@x.com&gt; escribió:<br>'
+            'contenido citado suficientemente largo para superar el floor</blockquote></div>')
+    m.add_alternative(html, subtype="html")
+    res = I.reconstruir(_ra(fecha_iso="2026-06-01"), m.as_bytes())
+    altas = [s for s in res.candidatos if s.confianza == "alta-reconstruida"]
+    assert any(s.de == "per01a@example.invalid" for s in altas), "gana el anchor gmail_attr (alta)"
+    assert not any(s.de == "otro@x.com" for s in res.candidatos), "el de del cuerpo NO se usa"
+
+
+def test_reconstruir_bodyscan_g3_dos_cabeceras_envueltas_no_promueve():
+    # §5.14 — dos cabeceras De: envueltas apiladas en el cuerpo → no promueve (punteros).
+    m = EmailMessage()
+    m["Message-ID"] = "<carrier-g3body@x>"; m["Subject"] = "RV"
+    m["From"] = "c@x"; m["To"] = "d@x"
+    m["Date"] = "Mon, 01 Jun 2026 10:00:00 +0200"
+    m.set_content("Te reenvío.")
+    html = ('<div>Te reenvío.</div>'
+            '<blockquote>De:<br>uno@x.com<br>Fecha:<br>1 de mayo de 2024<br>'
+            'De:<br>dos@x.com<br>Fecha:<br>2 de mayo de 2024<br>'
+            'cuerpo citado suficientemente largo para superar el floor</blockquote>')
+    m.add_alternative(html, subtype="html")
+    res = I.reconstruir(_ra(fecha_iso="2026-06-01"), m.as_bytes())
+    assert not any(getattr(s, "confianza", "") in ("media-reconstruida", "alta-reconstruida")
+                   and getattr(s, "de", "") in ("uno@x.com", "dos@x.com")
+                   for s in res.candidatos), "dos cabeceras envueltas apiladas → cola, no promueve"

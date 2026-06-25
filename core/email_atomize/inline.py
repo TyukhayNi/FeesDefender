@@ -209,6 +209,16 @@ def _parse_label(texto: str) -> "Anclaje | None":
 
 _RE_ATTR_FIN = re.compile(r"(?i)(escrib(?:i[oó])|wrote|va\s+escriure)\s*:\s*$")
 
+# --- body-scan de remitente desde el CUERPO de la cita (it. 2; spec
+# 2026-06-25-email-atomize-bodyscan-remitente-design.md §1.2). Cero misatribución:
+# un remitente se afirma SOLO desde un <addr> literal de la cabeza acotada del cuerpo. ---
+_RE_FWD_INTRO = re.compile(
+    r"(?im)^\s*(?:inicio del mensaje reenviado|begin forwarded message"
+    r"|---+\s*(?:mensaje reenviado|forwarded message|mensaje original|original message))\s*:?\s*$")
+_RE_DE_LABEL_ANY = re.compile(r"(?im)^\s*(?:de|from)(?:\s+el)?\s*:")  # ve 'De:' AUNQUE el valor vaya envuelto
+_RE_APPLE_FIN_M = re.compile(r"(?im)(?:escrib(?:i[oó])|wrote|va\s+escriure)\s*:\s*$")  # conteo correcto (re.M)
+_MAX_LINEAS_SCAN = 16  # ventana del INICIO; (c) con cabecera completa envuelta cabe (ver §6 calibración)
+
 
 def _parse_apple(texto: str) -> "Anclaje | None":
     # Exigir ESTRUCTURA de atribución ("El/On …" o línea que acaba en "escribió:/wrote:")
@@ -237,6 +247,63 @@ def parsear_anclaje(texto: str, estilo: str) -> "Anclaje | None":
     if estilo in ("apple_es", "apple_en", "gmail_attr", "html_quote"):
         return _parse_apple(texto) or _parse_label(texto)
     return _parse_label(texto)
+
+
+def _atribucion_en_cuerpo(texto: str) -> "Anclaje | None":
+    """Body-scan de remitente: levanta una atribución (Apple "El …/On … escribió:" o bloque
+    De:/Fecha:/Asunto: envueltos) desde la CABEZA del cuerpo de una cita (spec §1.2).
+
+    Vector de máxima misatribución del motor: por eso es deliberadamente conservador.
+    Un remitente se afirma SOLO desde un <addr> literal ligado a la clave ``de``/``from`` o a
+    la unidad de atribución Apple; cualquier ambigüedad → ``None`` → el segmento sigue en cola.
+    """
+    # G1 — pre-filtro: sin <addr> literal → jamás (aborta los 48 antes de toda inferencia).
+    if not _RE_ADDR.search(texto or ""):
+        return None
+    # G2 — acotar al INICIO: saltar blancos + UNA sola línea-intro de reenvío + blancos que la
+    # sigan; escanear solo la ventana _MAX_LINEAS_SCAN. Nunca el cuerpo entero (evita cazar la
+    # atribución de un mensaje citado más profundo más abajo).
+    lines = (texto or "").splitlines()
+    i = 0
+    while i < len(lines) and not lines[i].strip():
+        i += 1
+    if i < len(lines) and _RE_FWD_INTRO.match(lines[i]):
+        i += 1
+        while i < len(lines) and not lines[i].strip():
+            i += 1
+    cabeza = "\n".join(lines[i : i + _MAX_LINEAS_SCAN])
+    if not cabeza.strip():
+        return None
+    # G3 — unicidad / anti-apilamiento PRIMERO, sobre la vista des-envuelta. _RE_DE_LABEL_ANY ve
+    # los 'De:' envueltos que _n_cabeceras NO ve; _RE_APPLE_FIN_M cuenta atribuciones Apple (re.M).
+    n_apple = len(_RE_APPLE_FIN_M.findall(cabeza))
+    n_de = len(_RE_DE_LABEL_ANY.findall(cabeza))
+    if (n_apple + n_de) > 1:
+        return None  # varias atribuciones apiladas → AMBIGUO → cola
+    # Distinguir forma y parsear (orden importa; replica parsear_anclaje sobre la cabeza acotada).
+    anc = None
+    # (a)/(b) — Apple. G4: >1 <addr> en la línea de atribución → cola (remitente+destinatario).
+    if _RE_APPLE.search(cabeza) or _RE_ATTR_FIN.search(cabeza.strip()):
+        linea_attr = _linea_atribucion_apple(cabeza)
+        if linea_attr is not None and len(_RE_ADDR.findall(linea_attr)) > 1:
+            return None  # G4 — ADVERSARIAL 2
+        anc = _parse_apple(cabeza)
+    # (c) — bloque De:/Fecha:/Asunto:. El <addr> sale SOLO de la clave de/from (G5).
+    if anc is None:
+        anc = _parse_label(cabeza)
+    # G5/G1 — exigir remitente real: el body-scan NUNCA devuelve un Anclaje sin ``de``.
+    if anc is None or not anc.de:
+        return None
+    return anc
+
+
+def _linea_atribucion_apple(cabeza: str) -> str | None:
+    """La línea de la cabeza que contiene la atribución Apple ("El …/On …" o que acaba en
+    "escribió:/wrote:"). Para la guarda G4 (contar <addr> en la unidad de atribución)."""
+    for linea in cabeza.splitlines():
+        if _RE_APPLE.search(linea) or _RE_ATTR_FIN.search(linea.strip()):
+            return linea
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -720,12 +787,26 @@ def reconstruir(m_a, raw: bytes, identidades: "Identidades | None" = None) -> Re
             head = _cabecera_head(seg.texto)
             anc = _parse_label(head) if head else None
             levantada_del_cuerpo = anc is not None
+        # Body-scan acotado (it. 2): SOLO si seguimos sin REMITENTE atribuible. Trigger por
+        # disyunción (anc is None OR not anc.de) → cubre el anclaje vacío Y el estructural que
+        # parseó solo fecha. Nunca pisa una atribución que ya dio ``de`` (gana el anchor legítimo).
+        if (anc is None or not anc.de) and seg.texto:
+            anc_body = _atribucion_en_cuerpo(seg.texto)
+            if anc_body is not None:
+                anc = anc_body
+                levantada_del_cuerpo = True   # gobierna confianza (§3) y ambigüedad
         # Ambigüedad: varias cabeceras apiladas en el bloque de anclaje → no se puede ligar el
         # cuerpo a UN remitente. Cubre tanto la cabecera levantada del cuerpo como un bloque no
         # estructural que parsear_anclaje resolvió al primer "De:" (evita fabricar remitente con
         # el routing de media-reconstruida). En lo estructural la profundidad ya separa mensajes.
         ambigua = _n_cabeceras(seg.texto) > 1 and (levantada_del_cuerpo or not seg.estructural)
         conf, motivo = clasificar(anc, m_a.fecha_iso, estructural=seg.estructural, ambigua=ambigua)
+        # Atribución levantada del cuerpo: el límite de cuerpo no está autenticado por estructura
+        # DOM. Nunca alta-reconstruida; tope media-reconstruida (cierra el hueco blockquote-DOM-con-
+        # cita-interior). Subsume el fallback _cabecera_head preexistente: todo lo levantado del
+        # cuerpo topa a media-reconstruida (coherente y más seguro).
+        if levantada_del_cuerpo and conf == "alta-reconstruida":
+            conf, motivo = "media-reconstruida", "atribucion_cuerpo"
         # Identidad candidata (no confirmada) → nunca alta (decisión Nikolai).
         if conf == "alta-reconstruida" and anc and anc.de in identidades.candidatas:
             conf, motivo = "media", "identidad_candidata"
