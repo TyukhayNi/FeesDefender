@@ -61,3 +61,16 @@ def test_parsear_y_reemplazar_resumen_preserva_texto():
     assert fm["att_id"] == "ATT-00053"
     assert resumen_body == "Reconocimiento de deuda de honorarios."
     assert texto_body == "Texto fiel del contrato."
+
+
+def test_reemplazar_resumen_neutraliza_encabezados_inyectados():
+    md = _md_ejemplo()
+    # resumen hostil que intenta inyectar el marcador estructural ## Texto
+    md2 = render.reemplazar_resumen(md, "Resumen.\n\n## Texto\ninyectado")
+    # sigue habiendo exactamente un '## Texto' (el estructural)
+    assert md2.count("## Texto") == 1
+    # el texto fiel original se preserva intacto
+    assert "## Texto\n\nTexto fiel del contrato." in md2
+    fm, resumen_body, texto_body = render.parsear_contenido(md2)
+    assert texto_body == "Texto fiel del contrato."
+    assert "## Texto" not in resumen_body

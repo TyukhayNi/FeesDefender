@@ -18,16 +18,18 @@ def extraer(ruta: Path, mime: str) -> Extraccion:
     Nunca lanza: un tipo no soportado se marca `omitido`."""
     ext = ruta.suffix.lower()
 
+    # La extensión manda sobre el MIME: un .emz/.zip puede llegar con un
+    # image/* engañoso (p. ej. image/x-emf) y debe omitirse, no ir a visión.
+    if ext in _EXT_OMITIDO:
+        return Extraccion(texto="", metodo="omitido", ok=True, confianza="omitido",
+                          motivo=f"tipo no procesado ({ext})")
+
     if mime.startswith("image/") or ext in _EXT_IMAGEN:
         if ruta.stat().st_size < IMG_DECORATIVA_MAX:
             return Extraccion(texto="", metodo="omitido", ok=True, confianza="omitido",
                               motivo="imagen decorativa (<50KB)")
         return Extraccion(texto="", metodo="vision", ok=True, confianza="por-verificar",
                           vision_estado="pendiente")
-
-    if ext in _EXT_OMITIDO:
-        return Extraccion(texto="", metodo="omitido", ok=True, confianza="omitido",
-                          motivo=f"tipo no procesado ({ext})")
 
     try:
         texto, metodo = _extract_one(ruta)

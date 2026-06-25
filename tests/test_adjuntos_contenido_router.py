@@ -29,6 +29,15 @@ def test_emz_y_zip_omitidos(tmp_path: Path):
         assert ext.ok is True
 
 
+def test_emz_con_mime_imagen_es_omitido(tmp_path: Path):
+    # .emz puede llegar con un image/* engañoso; la extensión manda → omitido
+    p = tmp_path / "image005.emz"
+    p.write_bytes(b"x" * (60 * 1024))
+    ext = extraer(p, "image/x-emf")
+    assert ext.metodo == "omitido"
+    assert ext.vision_estado == "n/a"
+
+
 def test_no_soportado_es_omitido_sin_excepcion(tmp_path: Path):
     p = tmp_path / "raro.xyz"
     p.write_bytes(b"contenido")

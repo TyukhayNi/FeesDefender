@@ -37,10 +37,23 @@ def render_contenido(*, att_id: str, nombre_original: str, tipo: str, sha256: st
     )
 
 
+def _sanea_resumen(texto: str) -> str:
+    """Demota cualquier encabezado markdown del resumen a texto plano.
+
+    Un resumen es texto libre (potencialmente de un LLM); sin esto, un resumen
+    que contuviera la línea ``## Texto`` o ``## Resumen`` inyectaría un marcador
+    estructural y corrompería el documento (el texto fiel se preserva igualmente,
+    pero el .md quedaría malformado)."""
+    return "\n".join(
+        re.sub(r"^\s*#{1,6}\s+", "", linea) for linea in texto.splitlines()
+    ).strip()
+
+
 def reemplazar_resumen(md: str, nuevo_resumen: str) -> str:
     """Sustituye el cuerpo de `## Resumen` preservando el resto byte a byte."""
+    nuevo = _sanea_resumen(nuevo_resumen)
     patron = re.compile(r"(## Resumen\n\n).*?(\n\n## Texto)", re.DOTALL)
-    return patron.sub(lambda m: m.group(1) + nuevo_resumen.strip() + m.group(2), md, count=1)
+    return patron.sub(lambda m: m.group(1) + nuevo + m.group(2), md, count=1)
 
 
 def set_frontmatter(md: str, clave: str, valor: str) -> str:
