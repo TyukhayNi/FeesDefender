@@ -254,6 +254,34 @@ def test_clasifica_no_estructural_pero_ambigua_no_promueve():
     assert conf == "media" and conf != "media-reconstruida"
 
 
+# --- _parse_apple compartido: liga el remitente a la UNIDAD de atribución Apple.
+#     Cierra la misatribución por <addr> extraviado en el path HTML/alta (parsear_anclaje). ---
+def test_parse_apple_addr_extraviado_no_roba_remitente():
+    # Stray <addr> ANTES de la atribución Apple → no debe ser el remitente.
+    blk = ("Aviso legal. Contacto: dpo <dpo@bufete.com>.\n"
+           "El 27 may 2024, a las 10:49, PersonaCinco <persona.cinco@engelvoelkers.com> escribió:")
+    anc = I._parse_apple(blk)
+    assert anc is not None and anc.de == "persona.cinco@engelvoelkers.com"
+
+
+def test_parse_apple_dos_addr_en_unidad_es_ambiguo():
+    # Remitente + destinatario en la propia atribución → ambiguo → sin remitente.
+    blk = "El 4 oct 2024, Isabel <isabel@x.com> para Bob <bob@y.com> escribió:"
+    anc = I._parse_apple(blk)
+    assert anc is None or anc.de == ""
+
+
+def test_parse_apple_limpio_sin_cambio():
+    # Caso limpio (1 addr en la unidad) → de correcto (regresión: no romper los alta existentes).
+    anc = I._parse_apple("El 1 de mayo de 2020, Jaime <per01a@example.invalid> escribió:")
+    assert anc is not None and anc.de == "per01a@example.invalid"
+
+
+def test_parse_apple_solo_nombre_sin_addr():
+    anc = I._parse_apple("El 1 may 2020, PersonaUno escribió:")
+    assert anc is None or anc.de == ""
+
+
 # ---------------------------------------------------------------------------
 # T9 — orquestador reconstruir + indice Capa A + watched-list
 # ---------------------------------------------------------------------------
@@ -578,3 +606,18 @@ def test_reconstruir_bodyscan_g3_dos_cabeceras_envueltas_no_promueve():
     assert not any(getattr(s, "confianza", "") in ("media-reconstruida", "alta-reconstruida")
                    and getattr(s, "de", "") in ("uno@x.com", "dos@x.com")
                    for s in res.candidatos), "dos cabeceras envueltas apiladas → cola, no promueve"
+
+
+def test_reconstruir_html_anchor_addr_extraviado_no_misatribuye():
+    # Path HTML dominante (gmail_attr → parsear_anclaje → _parse_apple): un <addr> extraviado
+    # (pie/aviso legal) ANTES de la atribución Apple NO debe robar el remitente, ni siquiera en alta.
+    m = EmailMessage(); m["Message-ID"] = "<c@x>"; m["Subject"] = "RV"; m["From"] = "c@x"; m["To"] = "d@x"
+    m["Date"] = "Mon, 01 Jun 2026 10:00:00 +0200"; m.set_content("autor")
+    html = ('<div>Te respondo.</div><div class="gmail_quote">'
+            '<div class="gmail_attr">Aviso legal. Contacto: dpo &lt;dpo@bufete.com&gt;. '
+            'El 27 may 2024, a las 10:49, PersonaCinco &lt;persona.cinco@engelvoelkers.com&gt; escribió:</div>'
+            '<blockquote>Cuerpo original con sustancia suficiente para colapsar el segmento.</blockquote></div>')
+    m.add_alternative(html, subtype="html")
+    res = I.reconstruir(_ra(fecha_iso="2026-06-01"), m.as_bytes())
+    malos = [s for s in res.candidatos if s.de == "dpo@bufete.com"]
+    assert not malos, "no debe atribuir el <addr> extraviado del pie como remitente"

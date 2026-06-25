@@ -232,11 +232,18 @@ def _parse_apple(texto: str) -> "Anclaje | None":
     m_date = _RE_APPLE.search(texto)
     if m_date is None and not _RE_ATTR_FIN.search((texto or "").strip()):
         return None
-    m_addr = _RE_ADDR.search(texto)
-    de = m_addr.group(1).lower() if m_addr else ""
+    # Ligar el remitente a la UNIDAD de atribución (del "El/On" al "escribió:/wrote:"), no a todo
+    # el texto: un <addr> extraviado ANTES del "El" (firma/aviso legal) no debe robar el remitente.
+    # Selección con guarda de multiplicidad: el <addr> del remitente se afirma SOLO si la unidad
+    # contiene EXACTAMENTE 1 dirección. 0 = solo display-name; >1 = remitente+destinatario ambiguo.
+    mu = list(_RE_APPLE_UNIDAD.finditer(texto or ""))
+    unidad = mu[-1].group(0) if mu else (texto or "")
+    addrs = _RE_ADDR.findall(unidad)
+    de = addrs[0].lower() if len(addrs) == 1 else ""
     de_nombre = ""
-    if m_addr:
-        prev = texto[: m_addr.start()].rstrip()
+    if de:
+        m_addr = _RE_ADDR.search(unidad)
+        prev = unidad[: m_addr.start()].rstrip()
         de_nombre = prev.split(",")[-1].strip()
     # Buscar la fecha en TODA la atribución (salta el día de la semana: "El mar, 14 may 2024…",
     # "On Fri, May 10, 2024…") en vez de quedarse con el primer fragmento antes de la coma.
