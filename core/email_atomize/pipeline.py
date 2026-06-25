@@ -85,6 +85,12 @@ def atomize_dir(src_dir: Path | str, out_dir: Path | str) -> AtomizeReport:
 
     for m in mensajes:
         (out / "mensajes" / R.nombre_md(m)).write_text(R.render_md(m), encoding="utf-8")
+    # Idempotencia: eliminar .md huérfanos (p. ej. un mensaje B superado por un upgrade en una
+    # re-corrida) que ya no están en el conjunto esperado. Solo toca *.md de mensajes/.
+    esperados = {R.nombre_md(m) for m in mensajes}
+    for p in (out / "mensajes").glob("*.md"):
+        if p.name not in esperados:
+            p.unlink()
     report.mensajes = len(mensajes)
     report.reconstruidos_b = len(mensajes_b)
     report.citas_a_revision = len(punteros)
@@ -141,8 +147,6 @@ def _pase_layer_b(reg, mensajes, carriers, report):
             # ese .md: el cruce se registra en casi_duplicados.md + alias (DD §6).
             upgrades.append({"msg_a": destino, "citado_en": seg.portador_msg_id,
                              "profundidad": seg.profundidad, "fingerprint": seg.fingerprint})
-            if seg.rfc_message_id:
-                reg.registrar_alias(seg.rfc_message_id, seg.fingerprint)
             report.upgrades += 1
             continue
         existente = b_por_fp.get(seg.fingerprint)

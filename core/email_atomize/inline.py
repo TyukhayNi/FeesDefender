@@ -28,6 +28,10 @@ _TZ = ZoneInfo("Europe/Madrid")
 # El mecanismo es genérico (un set de direcciones); solo el contenido del set es del caso.
 IDENTIDADES_VIGILADAS: set[str] = {"per01a@example.invalid", "per01c@example.invalid"}
 
+# Identidades CANDIDATAS (no confirmadas): nunca se promocionan a alta-reconstruida; se topan en
+# `media` y van a revisión. Decisión Nikolai 2026-06-25 para per01b@example.invalid.
+IDENTIDADES_CANDIDATAS: set[str] = {"per01b@example.invalid"}
+
 _MIN_CUERPO = 24   # cuerpos normalizados < 24 chars nunca dirigen colapso/upgrade
 
 
@@ -100,16 +104,23 @@ def cuerpo_sha_de(cuerpo_norm: str) -> str:
 
 # Meses ES+CA (claves ascii-folded, minúscula): full + abreviaturas.
 _MESES = {
+    # ES (full + abreviaturas)
     "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6, "julio": 7,
     "agosto": 8, "septiembre": 9, "setiembre": 9, "octubre": 10, "noviembre": 11, "diciembre": 12,
     "ene": 1, "feb": 2, "mar": 3, "abr": 4, "may": 5, "jun": 6, "jul": 7, "ago": 8,
     "sep": 9, "sept": 9, "oct": 10, "nov": 11, "dic": 12,
+    # CA (full + abreviaturas)
     "gener": 1, "febrer": 2, "marc": 3, "maig": 5, "juny": 6, "juliol": 7, "agost": 8,
     "setembre": 9, "novembre": 11, "desembre": 12,
     "gen": 1, "mai": 5, "set": 9, "des": 12,
+    # EN (full + abreviaturas) — gmail/Outlook en inglés
+    "january": 1, "february": 2, "march": 3, "april": 4, "june": 6, "july": 7, "august": 8,
+    "september": 9, "october": 10, "november": 11, "december": 12,
+    "jan": 1, "apr": 4, "aug": 8, "dec": 12,
 }
 _RE_FECHA_DE = re.compile(r"(\d{1,2})\s+de\s+([a-z]+)\s+de\s+(\d{4})")
-_RE_FECHA = re.compile(r"(\d{1,2})\s+([a-z]+)\.?\s+(\d{4})")
+_RE_FECHA = re.compile(r"(\d{1,2})\s+([a-z]+)\.?\s+(\d{4})")           # DMY: 14 may 2024
+_RE_FECHA_MDY = re.compile(r"([a-z]+)\.?\s+(\d{1,2}),?\s+(\d{4})")     # MDY: May 10, 2024
 _RE_FECHA_NUM = re.compile(r"(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{2,4})")
 _RE_LABEL = re.compile(
     r"(?im)^\s*(de|from|enviado|sent|fecha|date|para|to|asunto|subject|cc|cco|bcc)\s*:\s*(.*)$"
@@ -136,16 +147,31 @@ def _parse_fecha(s: str) -> tuple[str, object | None]:
                     return f"{year:04d}-{mon:02d}-{day:02d}", dt
                 except ValueError:
                     pass
+    m = _RE_FECHA_MDY.search(f)   # inglés "May 10, 2024"
+    if m:
+        mon = _MESES.get(m.group(1))
+        if mon:
+            day, year = int(m.group(2)), int(m.group(3))
+            try:
+                dt = datetime(year, mon, day, tzinfo=_TZ)
+                return f"{year:04d}-{mon:02d}-{day:02d}", dt
+            except ValueError:
+                pass
     m = _RE_FECHA_NUM.search(f)
     if m:
         d, mo, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
         if y < 100:
             y += 2000
-        try:
-            dt = datetime(y, mo, d, tzinfo=_TZ)
-            return f"{y:04d}-{mo:02d}-{d:02d}", dt
-        except ValueError:
-            pass
+        # Solo aceptar numérico cuando el ORDEN día/mes es inequívoco (día>12 = dd/mm europeo).
+        # Si ambos ≤12 es ambiguo → NO se trata como fecha verificada (no debe dirigir alta).
+        if d > 12 and mo <= 12:
+            try:
+                dt = datetime(y, mo, d, tzinfo=_TZ)
+                return f"{y:04d}-{mo:02d}-{d:02d}", dt
+            except ValueError:
+                pass
+        else:
+            return "0000-00-00", None  # fecha numérica ambigua → sin verificar
     try:
         dt = parsedate_to_datetime(s)
     except (TypeError, ValueError, IndexError):
@@ -180,16 +206,24 @@ def _parse_label(texto: str) -> "Anclaje | None":
     return Anclaje(de=de, de_nombre=de_nombre, fecha_iso=fecha_iso, fecha_dt=fecha_dt, asunto=asunto)
 
 
+_RE_ATTR_FIN = re.compile(r"(?i)(escrib(?:i[oó])|wrote|va\s+escriure)\s*:\s*$")
+
+
 def _parse_apple(texto: str) -> "Anclaje | None":
+    # Exigir ESTRUCTURA de atribución ("El/On …" o línea que acaba en "escribió:/wrote:")
+    # antes de fiarse de un <addr>: un email suelto en una cita NO es una atribución.
+    m_date = _RE_APPLE.search(texto)
+    if m_date is None and not _RE_ATTR_FIN.search((texto or "").strip()):
+        return None
     m_addr = _RE_ADDR.search(texto)
     de = m_addr.group(1).lower() if m_addr else ""
     de_nombre = ""
     if m_addr:
-        # nombre = texto antes de <addr>, tras la última coma
         prev = texto[: m_addr.start()].rstrip()
         de_nombre = prev.split(",")[-1].strip()
-    m_date = _RE_APPLE.search(texto)
-    fecha_iso, fecha_dt = _parse_fecha(m_date.group(1)) if m_date else ("0000-00-00", None)
+    # Buscar la fecha en TODA la atribución (salta el día de la semana: "El mar, 14 may 2024…",
+    # "On Fri, May 10, 2024…") en vez de quedarse con el primer fragmento antes de la coma.
+    fecha_iso, fecha_dt = _parse_fecha(texto)
     if not de and fecha_iso == "0000-00-00":
         return None
     return Anclaje(de=de, de_nombre=de_nombre, fecha_iso=fecha_iso, fecha_dt=fecha_dt, asunto="")
@@ -270,6 +304,42 @@ def _marca_linea(lines: list[str], i: int) -> str | None:
             if _RE_2ND_LABEL.match(lines[j]):
                 return "outlook_es"
     return None
+
+
+def _cabecera_head(texto: str) -> str | None:
+    """Bloque de cabecera CONTIGUO al inicio del texto (tras blancos): solo si arranca con un
+    run de líneas-etiqueta que contiene De/From + una 2ª etiqueta. None si el inicio es prosa.
+
+    Evita la fabricación de remitente desde 'De:'/'From:' dispersos en mitad del cuerpo (la
+    vía de misatribución que destapó la revisión adversarial)."""
+    lines = texto.splitlines()
+    i = 0
+    while i < len(lines) and not lines[i].strip():
+        i += 1
+    head = []
+    j = i
+    while j < len(lines) and _RE_ANYLABEL.match(lines[j]):
+        head.append(lines[j])
+        j += 1
+    if not head or not any(_RE_DEFROM_LINE.match(h) for h in head):
+        return None
+    if not any(_RE_2ND_LABEL.match(h) for h in head):
+        return None
+    return "\n".join(head)
+
+
+def _n_cabeceras(texto: str) -> int:
+    """Nº de bloques de cabecera (De/From + 2ª etiqueta en ≤4 líneas) en el texto. >1 = varios
+    reenvíos apilados → atribución AMBIGUA (no se puede ligar el cuerpo a un único remitente)."""
+    lines = texto.splitlines()
+    n = 0
+    for i, l in enumerate(lines):
+        if _RE_DEFROM_LINE.match(l):
+            for j in range(i + 1, min(i + 5, len(lines))):
+                if _RE_2ND_LABEL.match(lines[j]):
+                    n += 1
+                    break
+    return n
 
 
 def _intercalada_plain(texto: str) -> bool:
@@ -367,15 +437,24 @@ class _QuoteHTMLParser(HTMLParser):
     autor/anclaje (el ``pending`` previo a un contenedor es su atribución).
     """
 
+    _MAX_DEPTH = 8                      # tope de anidamiento (DD §2.1)
+    _SKIP_TAGS = {"style", "script", "head"}
+    # Elementos de bloque: marcan frontera de párrafo → el anclaje es el ÚLTIMO bloque previo
+    # al contenedor (p. ej. el div.gmail_attr), no la suma de todos los párrafos del autor.
+    _BLOCK_TAGS = {"div", "p", "table", "tr", "td", "ul", "ol", "li",
+                   "h1", "h2", "h3", "h4", "h5", "h6"}
+
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.qdepth = 0
         self.author_parts: list[str] = []
         self.segments: list[dict] = []
         self.seg_stack: list[dict] = []
-        self.pending = ""
-        self.seq: list[str] = []          # "Q"/"A" para el test de sándwich (intercalada)
+        self._pending_parts: list[str] = []   # texto previo a un contenedor (anclaje), acumulado
+        self.seq: list[str] = []              # "Q"/"A" para el test de sándwich (intercalada)
         self._tags: list[tuple[str, bool]] = []
+        self._skip = 0                        # >0 dentro de <style>/<script>/<head>
+        self.tokens_total = 0                 # tokens de texto enrutado (chequeo conservación)
 
     @staticmethod
     def _is_container(tag: str, attrs: list) -> bool:
@@ -384,16 +463,27 @@ class _QuoteHTMLParser(HTMLParser):
         d = dict(attrs)
         return "divrplyfwdmsg" in (d.get("id") or "").lower()
 
+    def _anchor_actual(self) -> str | None:
+        return " ".join(p.strip() for p in self._pending_parts).strip() or None
+
     def handle_starttag(self, tag: str, attrs: list) -> None:
+        if tag in self._SKIP_TAGS:
+            self._skip += 1
+            self._tags.append((tag, False))
+            return
         cont = self._is_container(tag, attrs)
+        if cont and self.qdepth >= self._MAX_DEPTH:
+            cont = False  # tope de profundidad: absorbe el contenido en el segmento actual
         self._tags.append((tag, cont))
         if cont:
             self.qdepth += 1
             self.seq.append("Q")
-            seg = {"depth": self.qdepth, "anchor": self.pending.strip() or None, "body": []}
+            seg = {"depth": self.qdepth, "anchor": self._anchor_actual(), "body": []}
             self.segments.append(seg)
             self.seg_stack.append(seg)
-            self.pending = ""
+            self._pending_parts = []
+        elif tag in self._BLOCK_TAGS:
+            self._pending_parts = []   # nuevo bloque → el anclaje es solo el bloque anterior
 
     def handle_startendtag(self, tag: str, attrs: list) -> None:
         pass  # void elements (br/hr/img) no abren contenedor
@@ -403,22 +493,25 @@ class _QuoteHTMLParser(HTMLParser):
             t, cont = self._tags[k]
             if t == tag:
                 del self._tags[k]
-                if cont:
+                if t in self._SKIP_TAGS:
+                    self._skip = max(0, self._skip - 1)
+                elif cont:
                     self.qdepth = max(0, self.qdepth - 1)
                     if self.seg_stack:
                         self.seg_stack.pop()
+                    self._pending_parts = []   # texto tras una cita cerrada no es anclaje de la anterior
                 break
 
     def handle_data(self, data: str) -> None:
-        if not data.strip():
+        if self._skip or not data.strip():
             return
-        if self.qdepth == 0:
+        self.tokens_total += len(data.split())
+        if self.qdepth == 0 or not self.seg_stack:   # guard: nunca se cae texto al vacío
             self.author_parts.append(data)
             self.seq.append("A")
-            self.pending = data
         else:
             self.seg_stack[-1]["body"].append(data)
-            self.pending = data
+        self._pending_parts.append(data)
 
 
 def _sandwich(seq: list[str]) -> bool:
@@ -451,6 +544,12 @@ def segmentar_html(html: str) -> Segmentacion:
                  estructural=True)
         for s in p.segments
     ]
+    # Conservación de tokens (DD §2.4): todo texto enrutado debe repartirse entre autor y
+    # segmentos. Si diverge (bug de enrutado), NO segmentar: portador entero a revisión.
+    repartidos = len(autor.split()) + sum(len(a.texto.split()) for a in ancestros)
+    if p.tokens_total and abs(repartidos - p.tokens_total) > 0.05 * p.tokens_total:
+        return Segmentacion(autor=_html_a_texto(html), ancestros=[],
+                            motivo="conservacion_tokens")
     return Segmentacion(autor=autor, ancestros=ancestros, respuesta_intercalada=False)
 
 
@@ -573,11 +672,27 @@ def reconstruir(m_a, raw: bytes) -> ReconResult:
     punteros (media/baja → revisión). NO asigna MSG-id (eso lo hace el pipeline)."""
     seg_total = segmentar(raw)
     res = ReconResult(intercalada=seg_total.respuesta_intercalada)
+    if seg_total.motivo:   # p.ej. conservacion_tokens → portador entero a revisión, sin segmentar
+        res.punteros.append(SegmentoEnterrado(
+            portador_msg_id=m_a.msg_id, estilo="carrier", confianza="info",
+            motivo=seg_total.motivo, extracto=""))
     for seg in seg_total.ancestros:
         anc = parsear_anclaje(seg.anclaje_texto or "", seg.estilo)
+        levantada_del_cuerpo = False
         if anc is None:
-            anc = parsear_anclaje(seg.texto, "outlook_es")  # cabecera-en-cuerpo (Outlook HTML/fwd)
-        conf, motivo = clasificar(anc, m_a.fecha_iso, estructural=seg.estructural, ambigua=False)
+            # Fallback cabecera-en-cuerpo: SOLO el bloque contiguo al inicio del segmento
+            # (nunca 'De:'/'From:' dispersos por el cuerpo → evita fabricar remitente).
+            head = _cabecera_head(seg.texto)
+            anc = _parse_label(head) if head else None
+            levantada_del_cuerpo = anc is not None
+        # Ambigüedad SOLO si la cabecera se LEVANTÓ del cuerpo y hay VARIAS apiladas (no se puede
+        # ligar el cuerpo a un único remitente). Con un anclaje de atribución limpio (gmail_attr,
+        # "El … escribió:"), citas anidadas más profundas en el cuerpo no lo hacen ambiguo (DD §2.1).
+        ambigua = levantada_del_cuerpo and _n_cabeceras(seg.texto) > 1
+        conf, motivo = clasificar(anc, m_a.fecha_iso, estructural=seg.estructural, ambigua=ambigua)
+        # Identidad candidata (no confirmada) → nunca alta (decisión Nikolai).
+        if conf == "alta-reconstruida" and anc and anc.de in IDENTIDADES_CANDIDATAS:
+            conf, motivo = "media", "identidad_candidata"
         cuerpo_norm = normaliza_cuerpo(seg.texto)
         seg.de = anc.de if anc else ""
         seg.de_nombre = anc.de_nombre if anc else ""
