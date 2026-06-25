@@ -158,7 +158,7 @@ Vive **por encima** de los atomizadores por fuente (el motor `core/email_atomize
 - **F6 — vistas y custodia (§10):** entregable humano = `CRONOLOGIA_ACTOS` regenerable **"índice de lectura — NO prueba"** (una entrada/acto, extracto con ventana de contexto, cita = fuente+pinpoint, etiquetas separadas corroboración-de-contenido vs circulación, dossiers temáticos con bloque anti-sesgo); sellado de entrega a `_entregas/<fecha>/` en 3 bloques (prueba aportable con SHA-256 · apoyos demostrativos · manifiesto de custodia transversal), inmutable e incremental; work-product ≠ prueba, nunca mezclados.
 - **F7 — alcance del piloto (§11):** primer build = **correo + WhatsApp y nada más** (atomizador+adaptador de WhatsApp para `02_Whatsapp`); objetivo = validar el núcleo agnóstico end-to-end; éxito = 3 hechos-test (correlación-no-fusión por dos canales · identidad atada por teléfono · punto controvertido de contenido y de fecha sin resolver). Ejecución: Claude Code local.
 
-**Material build-ready:** pseudocódigo de F3.D3/D4/D5 (`calcular_estatus_soporte`, `procesar_contradiccion`) + tablas/reglas de decisión en los handoffs de stress-test (F3.D4/D5, F4.D1/D2, F5.D1/D2, F6.D1).
+**Material build-ready (handoffs de stress-test) — registrado en el repo 2026-06-25:** `docs/superpowers/specs/cronologia-handoffs/` contiene **F4.D1, F4.D2, F5.D1, F5.D2, F6.D1** verbatim (son los PROMPTS de revisión adversarial que validaron el diseño; las decisiones sintetizadas viven en el spec §7–§11). ⚠️ **FALTAN `handoff_F3D4` y `handoff_F3D5`** — los que llevan el pseudocódigo `calcular_estatus_soporte` (semáforo 🟢🟡🔴) y `procesar_contradiccion`, citados en §7.4/§7.5: hasta que Nikolai los aporte, ese pseudocódigo NO está en el repo.
 
 **Estado (DISEÑO).**
 - [x] Fase 0 — inventario de fuentes.
@@ -176,7 +176,17 @@ local), incremental (correo + WhatsApp primero), con el motor de correo congelad
 primer adaptador. **Dependencia operativa:** conviene tener el motor de correo terminado
 (hoy `[SIGUIENTE-EMAIL-ATOMIZE]` está en Fase 3) antes de arrancar el piloto. La cronología
 **consume** sus salidas (`mensajes/*.md`, `corpus.jsonl`, `_registro.json`) y **no lo toca**
-(spec congelado). Material build-ready (pseudocódigo + tablas de decisión) ya disponible.
+(spec congelado).
+
+**Prompt de arranque del BUILD** (registrado 2026-06-25): `docs/superpowers/plans/2026-06-25-cronologia-build-arranque.md`.
+**Orden de build** (incremental, con tests en cada paso): (1) motor de correo = primer
+atomizador en `core/`, con pasada de medición previa sobre datos reales; (2) esqueleto del
+núcleo agnóstico (ficha del acto §3.1, `_registro_cronologia.json`, IDs `EVT-/ATT-/ENL-/HD-/ACT-/HIP-`,
+resolución de identidad contra `identidades.yaml`, contrato de staging); (3) adaptador-lector
+de correo (solo lectura sobre el motor congelado); (4) atomizador + adaptador de WhatsApp
+(`00_Input/02_Whatsapp`, formato iOS); (5) piloto end-to-end correo + WhatsApp → `CRONOLOGIA_ACTOS`
++ dossier del velo, validando los 3 hechos-test (F7.D1). *El arranque cita el spec como
+`PLAN_CRONOLOGIA_UNIFICADA.md`; en el repo es `docs/superpowers/specs/2026-06-25-cronologia-unificada-design.md`.*
 
 ---
 
