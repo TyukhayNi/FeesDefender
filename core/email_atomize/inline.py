@@ -590,8 +590,10 @@ def clasificar(
         return "media", "fecha_incoherente"
     if not email_ok and not fecha_ok:
         return "baja", "sin_remitente_ni_fecha"
-    if email_ok and fecha_ok and estructural and not ambigua and not discrepancia:
-        return "alta-reconstruida", "ok"
+    if email_ok and fecha_ok and not ambigua and not discrepancia:
+        if estructural:
+            return "alta-reconstruida", "ok"
+        return "media-reconstruida", "no_estructural"
     motivos = []
     if not email_ok:
         motivos.append("sin_email")

@@ -154,13 +154,44 @@ def test_clasifica_headerless_es_baja_sin_remitente():
 
 def test_clasifica_sin_estructura_o_ambigua_demota_a_media():
     anc = I.Anclaje(de="a@x.com", fecha_iso="2020-01-01")
-    assert I.clasificar(anc, "2020-02-01", estructural=False, ambigua=False)[0] == "media"
+    # No estructural pero completo y no ambiguo → ahora PROMUEVE a media-reconstruida (nuevo peldaño).
+    assert I.clasificar(anc, "2020-02-01", estructural=False, ambigua=False)[0] == "media-reconstruida"
+    # Ambigua (varias cabeceras apiladas levantadas del cuerpo) → sigue topada a media (no promueve).
     assert I.clasificar(anc, "2020-02-01", estructural=True, ambigua=True)[0] == "media"
 
 
 def test_clasifica_email_invalido_no_promueve():
     anc = I.Anclaje(de="no-es-email", fecha_iso="2020-01-01")
     assert I.clasificar(anc, "2020-02-01", estructural=True, ambigua=False)[0] in ("media", "baja")
+
+
+def test_clasifica_media_reconstruida_no_estructural_con_email_y_fecha():
+    # No estructural pero con remitente válido + fecha coherente + no ambigua + no discrepancia
+    # → PROMUEVE a media-reconstruida (nuevo peldaño).
+    anc = I.Anclaje(de="a@x.com", fecha_iso="2020-01-01")
+    conf, motivo = I.clasificar(anc, "2020-02-01", estructural=False, ambigua=False)
+    assert conf == "media-reconstruida" and motivo == "no_estructural"
+
+
+def test_clasifica_media_reconstruida_solo_nombre_no_promueve():
+    # Display name sin <addr> → email inválido → NO promueve (queda en media/baja).
+    anc = I.Anclaje(de="", de_nombre="PersonaUno", fecha_iso="2020-01-01")
+    conf, _ = I.clasificar(anc, "2020-02-01", estructural=False, ambigua=False)
+    assert conf in ("media", "baja") and conf != "media-reconstruida"
+
+
+def test_clasifica_media_reconstruida_sin_fecha_no_promueve():
+    # Email válido pero sin fecha coherente → NO promueve.
+    anc = I.Anclaje(de="a@x.com", fecha_iso="0000-00-00")
+    conf, _ = I.clasificar(anc, "2020-02-01", estructural=False, ambigua=False)
+    assert conf in ("media", "baja") and conf != "media-reconstruida"
+
+
+def test_clasifica_estructural_completo_sigue_alta_reconstruida():
+    # Regresión del peldaño alto: estructural + email + fecha → alta-reconstruida (sin cambio).
+    anc = I.Anclaje(de="a@x.com", fecha_iso="2020-01-01")
+    conf, _ = I.clasificar(anc, "2020-02-01", estructural=True, ambigua=False)
+    assert conf == "alta-reconstruida"
 
 
 # ---------------------------------------------------------------------------
