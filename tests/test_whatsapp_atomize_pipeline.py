@@ -38,6 +38,7 @@ def test_atomize_genera_salida_y_no_toca_input(tmp_path, monkeypatch):
     assert resumen["enterrados"] >= 1
     assert any((out / "enterrados").glob("ENT-*.md"))
     assert (caso / "00_Input" / "02_Whatsapp" / "02_Buscador" / "chat-x" / "_chat.txt").read_text(encoding="utf-8") == input_antes
+    assert (out / "CRONOLOGIA.md").exists()
 
 
 def test_idempotente(tmp_path, monkeypatch):

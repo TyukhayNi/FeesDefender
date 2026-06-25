@@ -116,6 +116,8 @@ def atomize_whatsapp_case(case_id: str) -> dict:
     (out_dir / "INDICE.md").write_text(render_mod.render_indice(chats_meta), encoding="utf-8")
     (out_dir / "INDICE_ADJUNTOS.md").write_text(
         render_mod.render_indice_adjuntos(list(adjuntos_unicos.values())), encoding="utf-8")
+    (out_dir / "CRONOLOGIA.md").write_text(
+        render_mod.render_cronologia(todos_msgs), encoding="utf-8")
     (out_dir / "corpus.jsonl").write_text(corpus_mod.corpus_jsonl_wa(todos_msgs), encoding="utf-8")
     registro.save()
 

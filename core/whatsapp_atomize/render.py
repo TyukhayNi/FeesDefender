@@ -22,7 +22,11 @@ def render_chat_lectura(chat_id, mensajes, enterrados, por_ref) -> str:
         adj = ""
         if m.adjunto is not None:
             info = por_ref.get(m.adjunto.nombre, {})
-            adj = f" · 📎 {m.adjunto.nombre}" + (" (ausente)" if info.get("ausente") else "")
+            if info.get("ausente"):
+                adj = f" · 📎 {m.adjunto.nombre} (ausente)"
+            else:
+                att = info.get("att_id") or ""
+                adj = f" · 📎 [{m.adjunto.nombre}](INDICE_ADJUNTOS.md) ({att})"
         cab = f"**{m.msg_id}** · {m.fecha_iso} {m.hora} · {_autor_visible(m)}{marca}{adj}"
         lineas.append(cab)
         lineas.append(f"\n{m.texto.strip()}\n")
@@ -57,4 +61,15 @@ def render_indice_adjuntos(adjuntos) -> str:
     lineas = [_GEN, "# Índice de adjuntos\n"]
     for a in sorted(adjuntos, key=lambda x: x.att_id):
         lineas.append(f"- **{a.att_id}** · `{a.nombre_original}` · sha256 `{a.sha256}`")
+    return "\n".join(lineas) + "\n"
+
+
+def render_cronologia(mensajes) -> str:
+    """Timeline cross-chat: todos los mensajes ordenados por fecha/hora/msg_id."""
+    lineas = [_GEN, "# Cronología (todos los chats)\n"]
+    for m in sorted(mensajes, key=lambda x: (x.fecha_iso, x.hora, x.msg_id)):
+        extracto = (m.texto or "").strip().replace("\n", " ")[:80]
+        lineas.append(
+            f"- {m.fecha_iso} {m.hora} · **{m.msg_id}** ({m.chat_id}) · "
+            f"{_autor_visible(m)}: {extracto}")
     return "\n".join(lineas) + "\n"
