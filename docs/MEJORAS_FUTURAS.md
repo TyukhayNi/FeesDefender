@@ -1526,3 +1526,23 @@ contra su `.eml`, reconciliar los 36 del informe, PersonaUno/Ignacio) sigue **fu
 hasta autorización para escribir en `G:`. El código del motor ya promueve; falta la corrida real.
 
 **Prioridad.** Baja (46.1/46.3/46.4 son limpieza; 46.2 espera disparador).
+
+**RESULTADO DE LA CORRIDA EN VIVO sobre W-02VND1 (2026-06-25, autorizada por Nikolai).**
+`atomize_case('W-02VND1')` corrió limpio e idempotente (2 corridas → 0 cambios; `_registro.json`
+estable, `mensajes_fp`=103). **Capa A byte-idéntica** (verificado contra manifiesto SHA-256 previo
+de los 277). Efecto único F3→F4: **13 atoms Capa B `alta-reconstruida` mejoraron su cuerpo** —
+`_cuerpo_sin_cabecera` podó la cabecera Outlook embebida en el blockquote (incl. PersonaUno
+MSG-00315, etc.); contenido íntegro, solo se quitó el prefacio De:/Enviado:. **Pero 0
+`media-reconstruida` promovidos.** Diagnóstico (de la propia `cola.md`, 84 no promovidos): **el
+binding constraint es el PARSEO DE ANCLAJE, no la regla F4** — (a) **76 segmentos `sin_cabecera`
+con remitente vacío**: el parser HTML gmail_quote/apple del motor no extrae remitente → se niega
+correctamente a inventarlo (prime directive; son los "~77 headerless" del spec). La auditoría
+tolerante `audit_correos_no_separados.py` **sobre-atribuyó** remitentes con regex que el motor
+rechaza → su "36" era optimista (reconciliado: 7 ya eran atoms, 29 sin atom pero bloqueados aguas
+arriba). (b) **6 segmentos `fwd_line` con remitente válido extraído (`per01c@example.invalid`, `per01a@example.invalid`,
+`per03@example.invalid`) pero `sin_fecha`** → el único filón recuperable: si `_parse_fecha` parsease su
+fecha ("Enviado el: …"), promoverían a `media-reconstruida`. **Follow-up de mayor valor (PersonaUno):
+endurecer el parseo de fecha de los bloques `fwd_line` "Enviado el:"** (+ a futuro, extracción de
+remitente en gmail_quote/apple para reducir los 76). Spec aparte; F4 ya está bien y no es el cuello
+de botella. **Lección (otra vez): verificar SIEMPRE sobre datos reales** — la auditoría tolerante
+prometió 36; el motor estricto, correctamente, promueve 0.
