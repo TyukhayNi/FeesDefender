@@ -1692,3 +1692,123 @@ corrección que conviene cerrar **antes** de apoyar análisis automatizado sobre
 
 **Coste estimado.** ~15-20 líneas (helper de slug compartido en `extractor`/`markdown_generator` +
 `sala_lectura`) + migración de salidas existentes + 1 test de colisión.
+
+---
+
+## 48. Endurecimiento del robot CENDOJ (`cendoj-descarga`)
+
+**Disparador.** Petición de Nikolai (2026-06-30) de mejorar el robot de búsqueda
+en CENDOJ; rama dedicada `claude/cendoj-search-robot-yt67sz`. Se registran como
+backlog cuatro sub-frentes con disparador propio; cada uno es promovible a
+`PLAN.md` por separado (referencia `MEJORAS #48.X`). El techo del **CAPTCHA**
+«Control > Descargas masivas» es estructural (política anti-bot, no se resuelve);
+ninguna mejora lo elimina, solo reducen el volumen de descargas que lo dispara y
+mejoran la recuperación cuando aparece.
+
+Estado de partida: skill `cendoj-descarga` v1.1 (`SKILL.md` como manual operativo)
++ subagente `cendoj-bot.md` (model sonnet) + 7 helpers en `scripts/`. Todo sobre
+`mcp__Claude_in_Chrome` (el sandbox bash no alcanza `poderjudicial.es`).
+
+### 48.A — Sustituir clics por coordenadas fijas por selectores/JS (robustez)
+
+**Síntoma.** El flujo navega por **coordenadas absolutas**: cierre del modal de
+aviso legal (`coord. ≈ 1002, 47`, [SKILL.md:50](../.claude/skills/cendoj-descarga/SKILL.md))
+y apertura del desplegable jerárquico `Localización` (`coord. ≈ 550-890, 357`,
+[SKILL.md:64-68](../.claude/skills/cendoj-descarga/SKILL.md)). Cualquier cambio de
+resolución, zoom del navegador o reflow del layout de CENDOJ desplaza el objetivo y
+el clic cae en vacío o en el control equivocado — **fallo silencioso**: el robot
+sigue como si hubiera filtrado por provincia cuando no lo ha hecho, y devuelve
+resultados de toda España. El botón `Buscar` ya se migró a
+`document.querySelector('button[type="submit"]').click()`
+([SKILL.md:74-78](../.claude/skills/cendoj-descarga/SKILL.md)); el modal y el
+dropdown siguen por coordenadas.
+
+**Mejora propuesta.** Reescribir cierre de modal y selección de localización/sección
+con localizadores estables por DOM (`querySelector` sobre `id`/`name`/texto del
+`label`, `.click()` sobre el checkbox de la provincia, expandir CCAA por el nodo del
+árbol que contiene el texto). Patrón ya validado en el submit. Documentar en el
+manual la regla general «cero coordenadas para acciones de formulario; coordenadas
+solo como último recurso para el gesto de user-activation previo a la descarga»
+(ese clic neutro en viewport, [SKILL.md:144](../.claude/skills/cendoj-descarga/SKILL.md),
+sí debe seguir siendo posicional). Añadir verificación post-condición: tras filtrar,
+leer por JS el estado del checkbox/campo y abortar con mensaje claro si no quedó
+aplicado, en vez de continuar a ciegas.
+
+**Coste estimado.** Edición de `SKILL.md` (Pasos 2-3) + snippets JS; sin código
+Python. El subagente ejecuta JS, no hay test automatizable salvo en sesión real.
+
+### 48.B — Discriminar candidatos por JS del listado, sin abrir PDFs
+
+**Síntoma.** Cuando hay varios resultados con la misma fecha, el Paso 5
+([SKILL.md:111-119](../.claude/skills/cendoj-descarga/SKILL.md)) propone *abrir cada
+PDF* para leer hechos/ratio (caro, lento y **dispara el CAPTCHA** porque consume
+descargas) o relanzar una búsqueda de texto libre. Pero la propia página de
+resultados ya muestra en el listado, bajo cada ROJ, los metadatos discriminantes:
+`ECLI`, `Nº Resolución`, `Ponente`, `Nº Recurso`.
+
+**Mejora propuesta.** Extender el JS de extracción (hoy solo captura `roj` + `href`,
+[SKILL.md:103-107](../.claude/skills/cendoj-descarga/SKILL.md)) para que recoja
+también ese bloque de metadatos por resultado, y casarlo programáticamente contra el
+*lead* (la referencia privada) por ECLI > Nº Recurso > Nº Res + Ponente, antes de
+descargar nada. Solo se baja el hash que casa. Reduce descargas (→ menos CAPTCHA),
+elimina la apertura especulativa de PDFs y deja traza del criterio de match. Mantener
+la apertura del PDF únicamente como desempate final cuando el listado no basta.
+
+**Coste estimado.** Edición de `SKILL.md` (Pasos 4-5) con el JS ampliado; sin Python.
+
+### 48.C — Verificación automatizada metadatos-vs-lead (helper nuevo)
+
+**Síntoma.** La verificación (Paso 8, [SKILL.md:211-239](../.claude/skills/cendoj-descarga/SKILL.md))
+es `pdftotext | grep` **a ojo**: el operador compara mentalmente ROJ/ECLI/Nº Res/
+Ponente del PDF contra lo pedido. Es el paso donde se cuela el error «parece la
+buena y no lo es», precisamente el que rompe el rigor de cita en un escrito
+procesal. Además choca con el encoding CIDFont (ver 48.D), que vacía el `grep`.
+
+**Mejora propuesta.** Helper nuevo `scripts/verificar_sentencia.py` que reciba la
+referencia esperada (ROJ/ECLI/Nº Res/fecha/ponente) y el PDF descargado, parsee el
+**bloque de cabecera de metadatos** que CENDOJ imprime en la primera página (es texto
+seleccionable aunque el cuerpo sea CIDFont) y emita un informe por campo:
+`PASS` / `FAIL` / `DIVERGENCIA` (esta última para el caso legítimo ROJ-año ≠ Nº-res-año,
+[SKILL.md:230](../.claude/skills/cendoj-descarga/SKILL.md), que se reconcilia por ECLI
+y se documenta, no se «corrige»). Reutiliza el parser de cabecera de
+`parse_pdf_to_md.py`. Salida apta para volcar al consolidado (Paso 9) y al ledger
+(48.D). No sustituye la lectura humana de hechos+ratio (Paso 5 / nota
+[SKILL.md:373](../.claude/skills/cendoj-descarga/SKILL.md)): verifica **identidad**,
+no idoneidad temática.
+
+**Coste estimado.** ~80-120 líneas Python + tests con PDFs de muestra (los ya
+presentes en `oposicion-alegacion-nulidad/references/jurisprudencia/`) + edición del
+Paso 8 del manual para invocarlo.
+
+### 48.D — OCR fallback ante CIDFont + ledger de lote reanudable
+
+**Síntoma (dos partes).**
+1. **CIDFont.** `pdftotext` devuelve 0 coincidencias con el encoding propio de CENDOJ
+   ([SKILL.md:224](../.claude/skills/cendoj-descarga/SKILL.md)); el manual sugiere OCR
+   «opcionalmente» pero `batch_pdf_to_md.sh` no lo aplica solo, así que la conversión
+   a `.md` y el `grep` de materia quedan vacíos sin aviso accionable.
+2. **Sin estado de lote.** Las referencias entran como texto libre y no hay *ledger*
+   de progreso. Si el CAPTCHA corta a mitad de un lote de 15 (Paso 6-bis,
+   [SKILL.md:149-156](../.claude/skills/cendoj-descarga/SKILL.md)), se pierde el rastro
+   de qué quedó localizado/descargado/pendiente; al reanudar se re-trabaja a mano.
+
+**Mejora propuesta.**
+1. En `batch_pdf_to_md.sh`: detectar texto vacío/ilegible tras `pdftotext` y disparar
+   automáticamente OCR (`ocrmypdf` o `pdftoppm` + Tesseract, ya en el entorno) sobre
+   copia temporal antes de `parse_pdf_to_md.py`; marcar en el `.md` si el contenido
+   proviene de OCR. (Relacionado con #1 y #39, mismo patrón de OCR-bajo-demanda.)
+2. Un *ledger* JSON por encargo (`_cendoj_lote.json`): una fila por referencia con
+   estado (`pendiente`/`localizada`/`descargada`/`verificada`/`no_localizada`), ROJ/ECLI
+   resueltos y ruta del PDF. El subagente lo escribe incrementalmente; al reanudar tras
+   CAPTCHA, retoma solo las `pendiente`. Conecta con la telemetría existente
+   (`registrar_uso.py`) y con el consolidado (Paso 9).
+
+**Coste estimado.** ~15 líneas en `batch_pdf_to_md.sh` (rama OCR) + ~60-80 líneas para
+el ledger + edición de Pasos 6-bis/8-bis/9 del manual. Idempotencia: el ledger nunca
+re-descarga lo ya `verificado`.
+
+**Justificación de no aplicarlo ahora (toda la #48).** Decisión de Nikolai (2026-06-30):
+en esta sesión solo se documenta el backlog; la implementación se aborda después,
+priorizando 48.A y 48.B (mayor retorno: matan fallos silenciosos y bajan el volumen
+que dispara el CAPTCHA) y luego 48.C (blinda el rigor de cita). 48.D es el de menor
+urgencia salvo que un encargo grande haga del CAPTCHA un cuello real.
