@@ -1787,6 +1787,14 @@ no idoneidad temática.
 presentes en `oposicion-alegacion-nulidad/references/jurisprudencia/`) + edición del
 Paso 8 del manual para invocarlo.
 
+> **Referencia de diseño (2026-06-30):** `ricardodevis/verificador-legal` (Apache-2.0,
+> plugin Cowork / Claude Managed Agents) implementa justo este patrón a mayor escala:
+> auditor multi-agente que verifica ECLI/ROJ/ponente/fecha contra fuentes oficiales,
+> **detecta alucinaciones** (fecha imposible, ponente que no consta en nóminas públicas)
+> y **valida la cita literal entrecomillada** contra el texto oficial. No es drop-in
+> (la descarga de PDF figura como roadmap v2.0) pero es el modelo conceptual de 48.C y
+> encaja con `verificacion-anclada-fuente`. Estudiarlo al construir el helper.
+
 ### 48.D — OCR fallback ante CIDFont + ledger de lote reanudable
 
 **Síntoma (dos partes).**
@@ -1798,6 +1806,15 @@ Paso 8 del manual para invocarlo.
    de progreso. Si el CAPTCHA corta a mitad de un lote de 15 (Paso 6-bis,
    [SKILL.md:149-156](../.claude/skills/cendoj-descarga/SKILL.md)), se pierde el rastro
    de qué quedó localizado/descargado/pendiente; al reanudar se re-trabaja a mano.
+
+> **Intel externa (2026-06-30, no verificada por nosotros):** el README de
+> `DerechoVirtual/mcp-cendoj-sentencias` (MIT) afirma que el control «Descargas masivas»
+> del CENDOJ es **por sesión (no por IP) y salta sobre la 6.ª-7.ª descarga**. Si se
+> confirma en sesión real, afina la regla de ritmo: mantener **≤5 descargas por sesión**
+> y, llegado el límite, abrir sesión nueva (no esperar) reinicia el contador. ⚠️ Ese
+> repo logra «sin CAPTCHA» con **multi-sesión paralela + tool `resolver_captcha()`** —
+> evasión que el despacho **NO adopta** (política anti-bot, [SKILL.md:153](../.claude/skills/cendoj-descarga/SKILL.md));
+> aquí solo se aprovecha el dato del umbral para espaciar mejor, no para esquivar.
 
 **Mejora propuesta.**
 1. En `batch_pdf_to_md.sh`: detectar texto vacío/ilegible tras `pdftotext` y disparar
@@ -1899,6 +1916,15 @@ puede ser la propia salida del actor y la verificación contrasta el PDF oficial
 ROJ/ECLI/Nº recurso ya estructurados. **48.D sigue aplicando** a los PDFs que se bajen
 y al estado del lote. El robot pasa de «navegador frágil» a **híbrido: descubrimiento
 por actor → descarga + verificación del PDF oficial → archivado en expediente**.
+
+**Convergencia de diseño (señal a favor).** Un servidor MCP independiente,
+`DerechoVirtual/mcp-cendoj-sentencias` (MIT), expone tools (`buscar_por_cita` por
+ECLI/ROJ, `leer_sentencias` con `parrafos`/`terminos`/`guardar_pdf`) que **coinciden en
+forma** con el Input/Output del actor de Apify y con el modo párrafos — dos
+implementaciones distintas llegando al mismo diseño refuerza que es la forma correcta.
+Diferencia clave: ese MCP «resuelve» el CAPTCHA (multi-sesión + tool `resolver_captcha`),
+vía que el despacho **descarta**; el actor de Apify respeta el no-descarga-masiva, así
+que está **mejor alineado** con la política del despacho que el MCP más capaz del topic.
 
 **Coste estimado.** Sin código Python nuevo de búsqueda (lo hace el actor). Trabajo:
 (a) configurar el conector MCP de Apify en Cowork (token personal); (b) reescribir
