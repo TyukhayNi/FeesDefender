@@ -1838,8 +1838,10 @@ scrapeado — y reconfigura los frentes #48.A/B.
 **Qué es.** Actor de Apify (MCP `https://mcp.apify.com/`) que automatiza la búsqueda en
 CENDOJ server-side y devuelve un dataset JSON estructurado. Mantenedor de comunidad
 (Miguel González); muy activo (modificado pocas horas antes de la consulta); 157
-usuarios totales, 9 activos/mes; precio `$1.00 / 1.000 resultados`; máx. **200
-resultados** y **4 términos** por ejecución. Forma parte de una familia legaltech
+usuarios totales, 9 activos/mes; máx. **200 resultados** y **4 términos** por
+ejecución. **Coste de dos vectores**: `$1.00 / 1.000 resultados` de búsqueda **+ proxy
+residencial ES facturado por GB** al extraer texto (CENDOJ bloquea las IP de datacenter,
+así que el proxy residencial no es opcional). Forma parte de una familia legaltech
 (`tribunal-constitucional`, `tjue`, `aepd`).
 
 **Lo que resuelve (y por qué cambia #48).**
@@ -1857,6 +1859,10 @@ resultados** y **4 términos** por ejecución. Forma parte de una familia legalt
 - **Extracción de texto bajo demanda** en 2.ª ejecución (`pdfUrls`, máx. 50) para
   leer/analizar sin descarga manual. El actor **respeta el no-descarga-masiva** del
   CGPJ (solo metadatos + texto selectivo).
+- **Modo párrafos** (`paragraphs` 1-20 + `paragraphTerms`): en vez del texto íntegro,
+  devuelve solo N pasajes relevantes priorizando los **Fundamentos de Derecho**. Pensado
+  para análisis con LLM con menos tokens; encaja con el triaje y la lectura inicial del
+  despacho (no sustituye la lectura del PDF oficial para citar).
 
 **Caveats que NO desaparecen (rigor del despacho).**
 1. **El artefacto de cita sigue siendo el PDF oficial.** Se usa `pdfUrl` para bajar el
@@ -1875,9 +1881,10 @@ resultados** y **4 términos** por ejecución. Forma parte de una familia legalt
 4. **Dependencia de terceros / bus factor.** Mantenedor único de comunidad, 9 usuarios
    activos/mes. Conservar el robot de navegador (skill actual) como **fallback** si el
    actor cae o cambia su API.
-5. **Deontológico.** El actor scrapea con proxy residencial (España). Mitiga que
+5. **Deontológico + coste de proxy.** CENDOJ bloquea las IP de datacenter, así que el
+   actor scrapea por **proxy residencial ES obligatorio**, facturado por GB. Mitiga que
    devuelve URLs oficiales y respeta el no-masivo, pero es una decisión consciente del
-   despacho, no un detalle técnico.
+   despacho (no un detalle técnico) y añade un coste por GB al precio por resultado.
 6. **Gotcha MCP `&amp;`.** El `pdfUrl` llega con los `&` escapados al leerlo por MCP;
    para enlaces clicables usar `documentUrl`; para reenviar a `pdfUrls`, pasar el
    `pdfUrl` tal cual (el actor lo decodifica).
