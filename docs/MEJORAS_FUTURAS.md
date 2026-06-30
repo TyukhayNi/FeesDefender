@@ -1737,6 +1737,9 @@ aplicado, en vez de continuar a ciegas.
 **Coste estimado.** Edición de `SKILL.md` (Pasos 2-3) + snippets JS; sin código
 Python. El subagente ejecuta JS, no hay test automatizable salvo en sesión real.
 
+> **Posiblemente superado por #49 (vía Apify):** si se adopta el actor `legaltech/cendoj`,
+> desaparece el navegador y, con él, los clics por coordenadas — esta entrada quedaría sin objeto.
+
 ### 48.B — Discriminar candidatos por JS del listado, sin abrir PDFs
 
 **Síntoma.** Cuando hay varios resultados con la misma fecha, el Paso 5
@@ -1755,6 +1758,10 @@ elimina la apertura especulativa de PDFs y deja traza del criterio de match. Man
 la apertura del PDF únicamente como desempate final cuando el listado no basta.
 
 **Coste estimado.** Edición de `SKILL.md` (Pasos 4-5) con el JS ampliado; sin Python.
+
+> **Posiblemente superado por #49 (vía Apify):** el dataset del actor ya trae
+> `roj`/`ecli`/`resolutionNumber`/`appealNumber`/`summary` por resultado, lista la discriminación
+> sin scrapear el listado a mano (con el matiz de que `ponente` llega anonimizado a iniciales).
 
 ### 48.C — Verificación automatizada metadatos-vs-lead (helper nuevo)
 
@@ -1812,3 +1819,89 @@ en esta sesión solo se documenta el backlog; la implementación se aborda despu
 priorizando 48.A y 48.B (mayor retorno: matan fallos silenciosos y bajan el volumen
 que dispara el CAPTCHA) y luego 48.C (blinda el rigor de cita). 48.D es el de menor
 urgencia salvo que un encargo grande haga del CAPTCHA un cuello real.
+
+> **Actualización 2026-06-30:** investigado el actor de Apify `legaltech/cendoj` (ver
+> #49). Pasa la prueba decisiva (devuelve la URL del PDF **oficial** del CGPJ). Si se
+> adopta, **supera 48.A y 48.B** y reordena la prioridad: la vía Apify pasa a ser el
+> descubrimiento primario y el navegador queda como fallback. 48.C y 48.D siguen vigentes.
+
+---
+
+## 49. Vía Apify MCP (`legaltech/cendoj`) como capa de descubrimiento del robot CENDOJ
+
+**Disparador.** Nikolai aporta (2026-06-30) el actor de Apify `legaltech/cendoj` (vía
+MCP) como alternativa a la navegación real, a raíz de un tutorial de
+legaltechnologybootcamp. Investigada su ficha técnica (Input/Output/Pricing): **pasa la
+prueba decisiva** — devuelve la URL del **PDF oficial del CGPJ**, no un sustituto
+scrapeado — y reconfigura los frentes #48.A/B.
+
+**Qué es.** Actor de Apify (MCP `https://mcp.apify.com/`) que automatiza la búsqueda en
+CENDOJ server-side y devuelve un dataset JSON estructurado. Mantenedor de comunidad
+(Miguel González); muy activo (modificado pocas horas antes de la consulta); 157
+usuarios totales, 9 activos/mes; precio `$1.00 / 1.000 resultados`; máx. **200
+resultados** y **4 términos** por ejecución. Forma parte de una familia legaltech
+(`tribunal-constitucional`, `tjue`, `aepd`).
+
+**Lo que resuelve (y por qué cambia #48).**
+- **Input estructurado**: `searchTerms` con booleanos `AND/OR/NOT/NEARn` (sintaxis EN o
+  CENDOJ, traducción automática) + filtros `jurisdictions`, `organoTypes` (códigos
+  opacos, p. ej. `11`=Sala Civil TS, `37`=AP, `42`=JPI; la ficha trae **tabla de
+  referencia completa**), `resolutionTypes`, `locations`, `dateFrom/dateTo`,
+  `sortOrder`, `maxResults`. → **Obsoleta 48.A** (cero navegador, cero coordenadas) y
+  supera la cascada de texto libre del manual actual.
+- **Output por resolución**: `roj`, `ecli`, `resolutionNumber`, `appealNumber`,
+  `municipality`, `organo`, `resolutionDateISO`, `summary`, **`pdfUrl` (PDF oficial del
+  CGPJ, `action=contentpdf`)** y `documentUrl` (visor estable `openDocument`, sin `&`).
+  → **Resuelve 48.B**: discriminación por metadatos casables (ECLI/ROJ/Nº recurso/Nº
+  res) sin abrir PDFs.
+- **Extracción de texto bajo demanda** en 2.ª ejecución (`pdfUrls`, máx. 50) para
+  leer/analizar sin descarga manual. El actor **respeta el no-descarga-masiva** del
+  CGPJ (solo metadatos + texto selectivo).
+
+**Caveats que NO desaparecen (rigor del despacho).**
+1. **El artefacto de cita sigue siendo el PDF oficial.** Se usa `pdfUrl` para bajar el
+   PDF del CGPJ y se mantienen la verificación (Paso 8) y el archivado en expediente
+   (Pasos 7/7-bis). El `summary` y el `text` del actor son ayudas de descubrimiento,
+   **no** fuente de cita.
+2. **Anonimización forzada del actor.** El campo `ponente` llega como iniciales
+   («P.J.V.T.») y el `text` extraído anonimiza ponente/letrados/procuradores —**más**
+   que el propio PDF del CGPJ. Consecuencia: el `ponente` deja de ser clave de
+   discriminación fiable (usar ECLI/ROJ/Nº recurso/Nº res, que sí llegan completos); y
+   el `text` no sirve para citar literal (para eso, el PDF oficial vía `pdfUrl`).
+3. **CAPTCHA no eliminado, pero mitigado.** La búsqueda no descarga; al bajar los PDFs
+   oficiales al expediente sigues ante el muro anti-bot, pero con el `pdfUrl`/ROJ
+   exactos bajas muchos menos y más certeros → menos CAPTCHA. Para muchos análisis, el
+   `text` (máx. 50) evita descargar.
+4. **Dependencia de terceros / bus factor.** Mantenedor único de comunidad, 9 usuarios
+   activos/mes. Conservar el robot de navegador (skill actual) como **fallback** si el
+   actor cae o cambia su API.
+5. **Deontológico.** El actor scrapea con proxy residencial (España). Mitiga que
+   devuelve URLs oficiales y respeta el no-masivo, pero es una decisión consciente del
+   despacho, no un detalle técnico.
+6. **Gotcha MCP `&amp;`.** El `pdfUrl` llega con los `&` escapados al leerlo por MCP;
+   para enlaces clicables usar `documentUrl`; para reenviar a `pdfUrls`, pasar el
+   `pdfUrl` tal cual (el actor lo decodifica).
+7. **Encaje organizativo.** Es capacidad de **Cowork/claude.ai** (la investigación
+   CENDOJ es tarea Cowork por `CLAUDE.md`, y el conector MCP de Apify vive server-side),
+   no de Claude Code local. El token personal de Apify se gestiona **fuera del repo y
+   fuera del chat** (regla de secretos del proyecto).
+
+**Relación con #48.** Si se adopta: **48.A y 48.B quedan superados** (no hay navegador
+que endurecer; la discriminación viene en el dataset). **48.C gana valor**: el «lead»
+puede ser la propia salida del actor y la verificación contrasta el PDF oficial contra
+ROJ/ECLI/Nº recurso ya estructurados. **48.D sigue aplicando** a los PDFs que se bajen
+y al estado del lote. El robot pasa de «navegador frágil» a **híbrido: descubrimiento
+por actor → descarga + verificación del PDF oficial → archivado en expediente**.
+
+**Coste estimado.** Sin código Python nuevo de búsqueda (lo hace el actor). Trabajo:
+(a) configurar el conector MCP de Apify en Cowork (token personal); (b) reescribir
+Pasos 2-5 de `cendoj-descarga/SKILL.md` (vía Apify primaria + navegador como fallback)
+e incorporar al manual la tabla de `organoTypes` y la guía de operadores booleanos;
+(c) dejar intactos los Pasos 7-8 (descarga oficial + verificación + archivado).
+
+**Justificación de no aplicarlo ahora.** Sesión de solo-propuesta. Antes de integrar:
+(1) **decisión deontológica explícita** de Nikolai sobre el proxy residencial; (2)
+**prueba real en Cowork** de 1-2 consultas de un caso vivo comparando actor vs.
+navegador (cobertura, exactitud de metadatos, que el `pdfUrl` baje el PDF oficial
+correcto); (3) confirmar la gestión del token Apify. Promovible a `PLAN.md` cuando esas
+tres se cierren.
