@@ -18,8 +18,13 @@
   parte del escrito (cuerpo, encabezamiento, índice, notas al pie, otrosíes);
   capa dura al generar, `pase-de-estilo` solo como segunda red. + ítem de checklist.
 - **Eliminada la tabla de cabecera** («Mi ref.» / «Juzgado»): el escrito arranca
-  directamente con «AL JUZGADO DE PRIMERA INSTANCIA…». No reintroducir desde
-  modelos antiguos.
+  directamente con el encabezamiento al órgano. No reintroducir desde modelos
+  antiguos.
+- **Nomenclatura del órgano alineada con `CONVENCIONES_DESPACHO.md` §9** (reforma
+  de Tribunales de Instancia): el encabezamiento nombra la **Sección** del
+  Tribunal de Instancia (Civil por defecto en honorarios; puede ser Civil y de
+  Instrucción, o cualquier otra sección por materia), no «JUZGADO DE PRIMERA
+  INSTANCIA». + ítem de checklist.
 - Frontmatter `version: "1.1"`. *Evidencia*: HANDOFF Cowork 2026-07-03.
 
 ## 2026-06-17 — Estilo de la casa (enganche)

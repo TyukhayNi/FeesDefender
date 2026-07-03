@@ -105,10 +105,27 @@ footers: { default: new Footer({ children: [
 
 ## Inicio del escrito
 
-El escrito **arranca directamente** con el encabezamiento al órgano judicial
-(*«AL JUZGADO DE PRIMERA INSTANCIA…»*). **No** se incluye tabla de cabecera con
-«Mi ref.» / «Juzgado» ni recuadro equivalente. Instrucción expresa: no
-reintroducir esa tabla desde modelos antiguos.
+El escrito **arranca directamente** con el encabezamiento al órgano judicial.
+**No** se incluye tabla de cabecera con «Mi ref.» / «Juzgado» ni recuadro
+equivalente. Instrucción expresa: no reintroducir esa tabla desde modelos
+antiguos.
+
+**Nomenclatura del órgano** (tras la reforma de Tribunales de Instancia; fuente
+`docs/CONVENCIONES_DESPACHO.md` §9). **No** usar la forma pre-reforma «AL JUZGADO
+DE PRIMERA INSTANCIA Nº N DE [CIUDAD]». El encabezamiento nombra la **Sección**
+del Tribunal de Instancia, que varía según la materia:
+
+```
+A LA SECCIÓN CIVIL DEL TRIBUNAL DE INSTANCIA DE [CIUDAD]. PLAZA Nº [N]
+```
+
+En partidos pequeños puede ser «SECCIÓN CIVIL Y DE INSTRUCCIÓN». El Tribunal de
+Instancia tiene además otras secciones según la materia: Instrucción; Familia,
+Infancia y Capacidad; Penal; Violencia sobre la Mujer; Social;
+Contencioso-Administrativo; Mercantil; Menores; Vigilancia Penitenciaria. Elegir
+la que corresponda. Para los escritos civiles del despacho (honorarios), por
+defecto **Sección Civil**. En segunda instancia: «AUDIENCIA PROVINCIAL DE
+[CIUDAD], SECCIÓN CIVIL Nº [N]».
 
 ---
 
@@ -525,6 +542,7 @@ function seccion(text) {
 - [ ] Firmas sin nº colegiado
 - [ ] Índice documental tras salto de página
 - [ ] Sin líneas separadoras en encabezado ni pie
+- [ ] Encabezamiento nombra la Sección del Tribunal de Instancia (§9), no "JUZGADO DE PRIMERA INSTANCIA" (Sección Civil por defecto en honorarios)
 - [ ] "Nº" sin punto (nunca "N.º")
 - [ ] Sin guion largo «—» ni doble guion «--» en ninguna parte (cuerpo, encabezamiento, índice documental, notas al pie, otrosíes)
 - [ ] Alias de la representada propagado en el cuerpo, sin residuos de "mi representada" fuera de la comparecencia
