@@ -140,11 +140,16 @@ por memoria — se conserva el texto, se pierde la rejilla.
    ├─ imagen foto-de-documento → imagen_a_pdf → OCR         │
    ├─ imagen foto-de-escena    → cola de visión             │
    └─ pdf ─────────────────────► 1. OCR (un motor, spa+cat+rus, salida = PDF BUSCABLE)
+                                    │        └─ persiste → 01_Procesado/OCR/{id}.pdf
                                     → 2. split/merge (separar + conjunto_detector)
+                                    │        └─ persiste → 01_Procesado/Documentos/{id}.pdf (+ índice)
                                     → 3. MD (lectura plana, sin OCR) ◄┘
-   → scorer → viability → [anon reutiliza] → linker
-   (registro de cobertura + control de calidad transversales)
+                                             └─ persiste → 01_Procesado/MD/{id}.md
+   → scorer → viability → [anon reutiliza el PDF buscable] → linker
+   (registro de cobertura en indice_documental.yaml + control de calidad, transversales)
 ```
+Cada etapa **persiste su producto** como artefacto de primera clase (ver §G); nada es
+efímero y todo es regenerable sin re-tocar `00_Input/`.
 
 Principios rectores:
 - **El OCR produce un PDF buscable**, no un `.txt` suelto → el texto viaja en el artefacto y
@@ -156,6 +161,63 @@ Motor OCR único candidato: **OCRmyPDF** — el único de los tres que produce P
 maneja `spa+cat+rus` y, al ir página-a-página con Tesseract, es más estable en memoria (la
 idea del subproceso aislado se absorbe aquí y el tope de 30pp desaparece). RapidOCR/Docling
 quedarían como reserva para PDFs que Tesseract lea mal.
+
+---
+
+## G. Persistencia de artefactos por etapa
+
+Principio rector: **cada etapa guarda su producto como artefacto de primera clase,
+derivado y regenerable**, bajo `01_Procesado/` (nunca `00_Input/`; toda la ruta
+`data/CASOS/*` está gitignored, así que ningún artefacto con PII sale del disco).
+
+### G.1 Layout por etapa
+```
+01_Procesado/
+  OCR/          ← PDFs buscables            [NUEVO — hoy el OCR es efímero]
+  Documentos/   ← split/merge: 1 PDF por documento lógico + índice de segmentación  [NUEVO]
+  raw_text/     ← texto extraído            (ya existe; [extractor.py:342](../core/extractor.py:342))
+  MD/           ← .md por documento         (ya existe; [markdown_generator.py:25](../core/markdown_generator.py:25))
+  indice_documental.yaml  ← registro de cobertura (ya existe; se amplía)
+```
+`ensure_case` crea hoy eager `01_Procesado/{Sala lectura, MD, _revisar}`
+([case_manager.py:267](../core/case_manager.py:267)); `raw_text/` la crea el extractor
+bajo demanda. `OCR/` y `Documentos/` seguirían ese mismo patrón (creación bajo demanda
+por la etapa que las escribe). Elegido **layout por etapa** (no por documento): encaja con
+"el producto de cada proceso", reutiliza `MD/`/`raw_text/` y resuelve limpio el 1→N del split.
+
+### G.2 Victoria barata (primer paso de código — fase F3)
+Persistir el PDF del OCR. Hoy [`api._ocr_y_extraer`](../core/anon/api.py:254) escribe el PDF
+buscable en `tempfile.mkdtemp` y lo borra con `shutil.rmtree` (`api.py:270,283-284`).
+[`anon/ocr.py::ocr_pdf`](../core/anon/ocr.py:30) **ya acepta ruta de salida explícita** y crea
+su carpeta → basta apuntarla a `01_Procesado/OCR/{id}.pdf` en vez del tempdir. Efecto: el PDF
+buscable queda guardado, la anonimización y el resto lo **reutilizan**, y se acaba el doble OCR.
+Máximo retorno por el menor cambio.
+
+### G.3 Identidad única de documento
+Hoy fragmentada: `output_slug` = `slug__sha8` ([utils.py:32](../core/utils.py:32)) en
+extractor/MD; `id_doc = sha[:12]` en el catálogo ([catalogo_documental.py:109](../core/catalogo_documental.py:109));
+`slugify(stem)` + sha8 distinto en anon ([api.py:239-242](../core/anon/api.py:239)). Unificar en
+**un solo id** para que `OCR/{id}.pdf`, `Documentos/{id}.pdf`, `raw_text/{id}.txt` y `MD/{id}.md`
+compartan raíz y un documento se pueda seguir entre etapas por el nombre.
+
+### G.4 Registro de cobertura = ampliar `indice_documental.yaml`
+[`core/catalogo_documental.py`](../core/catalogo_documental.py) (dataclass `CatalogEntry`) ya tiene
+entrada por documento, dedup por SHA y `parent_id`/`orden_en_bundle`. Ampliarla con, por etapa:
+`{etapa, motor, ruta_artefacto, chars, confianza, avisos}`. Así los artefactos guardados se vuelven
+**consultables** (§E.13) y nada se cae en silencio (§D.1). Una sola fuente de verdad, no artefactos
+sueltos por carpetas.
+
+### G.5 Estado / idempotencia por etapa
+Consolidar el estado en el propio ledger (o un `_stage_state.json`) con SHA de origen + versión de
+motor, siguiendo el patrón de `_extract_state.json`
+([extractor.py:39,299-303](../core/extractor.py:299)): re-ejecutar salta lo no cambiado y jamás
+re-toca `00_Input/`.
+
+### G.6 Split 1→N y merge N→1
+Un bundle produce N documentos; un merge junta N ficheros en 1. Los PDFs lógicos resultantes van a
+`Documentos/`; la relación con el bundle se expresa con `parent_id`/`orden_en_bundle` del catálogo
+(no con subcarpetas). El índice de segmentación de [`separar.py`](../core/anon/separar.py) (`indice.json`)
+se integra en el ledger.
 
 ---
 

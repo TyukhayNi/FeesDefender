@@ -41,9 +41,9 @@ script manual · OCRmyPDF en anon), hueco de escaneados >30pp que salen vacíos,
 
 **Orden de ejecución (fases).**
 - [ ] **F0 — saneamiento barato:** alinear umbrales, corregir docstring/etiqueta de `extractor.py`, unificar set de extensiones de imagen + HEIC.
-- [ ] **F1 — registro de cobertura por documento** (cimiento de observabilidad; hoy todo falla en silencio).
+- [ ] **F1 — registro de cobertura por documento** (cimiento de observabilidad; hoy todo falla en silencio) + **campos por etapa en `indice_documental.yaml`** (etapa/motor/ruta_artefacto/chars/confianza/avisos) + **id de documento unificado** entre etapas.
 - [ ] **F2 — fachada única** `procesar_expediente(entrada, salida) → informe` + desacople de rutas + salida estructurada JSON.
-- [ ] **F3 — motor OCR único** (OCRmyPDF → PDF buscable) y reordenar split→MD sobre él.
+- [ ] **F3 — motor OCR único** (OCRmyPDF → PDF buscable) y reordenar split→MD sobre él. **Persistir por etapa:** PDF buscable en `01_Procesado/OCR/` (dejar de borrarlo en anon — hoy `_ocr_y_extraer` lo escribe en tempdir y hace `rmtree`) y `01_Procesado/Documentos/` para el split/merge. Ver §G de `docs/PLAN_MOTOR_DOCUMENTAL.md`.
 - [ ] **F4 — conector MCP + empaquetado en el plugin** (preflight de capacidades, aislamiento por subproceso, versión/modelos pinneados, sin fuga de datos, preservar `core/anon`).
 - [ ] **F5 — faltas restantes** (calidad OCR, clasificación, multi-parte, protegidos, tablas, idioma, revisión humana, audio/vídeo) según disparador.
 
