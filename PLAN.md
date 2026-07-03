@@ -39,11 +39,14 @@ script manual · OCRmyPDF en anon), hueco de escaneados >30pp que salen vacíos,
 (100 vs 50 chars), imágenes con tres tratos incompatibles (las `.heic` se caen en el inventario), y
 `separar.py` desenganchado del pipeline. Detalle con `file:line` en el doc.
 
+**Decisiones de organización (fijadas 2026-07-03, informadas por Vassal Litigator — ver §G/§H/§I del doc):**
+`01_Procesado/01_Sala de lectura/` (humano) + `01_Procesado/02_Sala de máquina/` (máquina, productos numerados `01_OCR/02_Documentos/03_MD`) · id **dual** (`sha8` interno + `doc-NNN` legible) · **registro ÚNICO de caso** estilo Vassal `index.yaml` (vistas humanas derivadas) · **reocr condicional** por `ocr_quality`.
+
 **Orden de ejecución (fases).**
-- [ ] **F0 — saneamiento barato:** alinear umbrales, corregir docstring/etiqueta de `extractor.py`, unificar set de extensiones de imagen + HEIC.
-- [ ] **F1 — registro de cobertura por documento** (cimiento de observabilidad; hoy todo falla en silencio) + **campos por etapa en `indice_documental.yaml`** (etapa/motor/ruta_artefacto/chars/confianza/avisos) + **id de documento unificado** entre etapas.
+- [ ] **F0 — saneamiento + layout:** renombrar `Sala lectura` → `01_Sala de lectura`, crear `02_Sala de máquina/`, **migrar W-02VND1** (MD planos → espejo numerado); alinear umbrales, corregir docstring/etiqueta de `extractor.py`, unificar set de extensiones de imagen + HEIC.
+- [ ] **F1 — registro ÚNICO de caso** (elevar+extender `indice_documental.yaml` a ámbito caso, esquema estilo Vassal `index.yaml`) + **id dual** (`sha8` + `doc-NNN`) + **vistas humanas derivadas** (INDICE/CRONOLOGIA/.xlsx). Cimiento de observabilidad.
 - [ ] **F2 — fachada única** `procesar_expediente(entrada, salida) → informe` + desacople de rutas + salida estructurada JSON.
-- [ ] **F3 — motor OCR único** (OCRmyPDF → PDF buscable) y reordenar split→MD sobre él. **Persistir por etapa:** PDF buscable en `01_Procesado/OCR/` (dejar de borrarlo en anon — hoy `_ocr_y_extraer` lo escribe en tempdir y hace `rmtree`) y `01_Procesado/Documentos/` para el split/merge. Ver §G de `docs/PLAN_MOTOR_DOCUMENTAL.md`.
+- [ ] **F3 — motor OCR único + reocr + espejos:** OCRmyPDF → PDF buscable; **reocr condicional** por `ocr_quality` (el `ocr_per_page` pasa a etapa disparada por calidad, no manual); persistir en `02_Sala de máquina/{01_OCR,02_Documentos,03_MD}` con **espejo de la jerarquía de `00_Input/`**. Dejar de borrar el PDF del OCR en anon (`_ocr_y_extraer` hoy hace `rmtree`). Ver §G de `docs/PLAN_MOTOR_DOCUMENTAL.md`.
 - [ ] **F4 — conector MCP + empaquetado en el plugin** (preflight de capacidades, aislamiento por subproceso, versión/modelos pinneados, sin fuga de datos, preservar `core/anon`).
 - [ ] **F5 — faltas restantes** (calidad OCR, clasificación, multi-parte, protegidos, tablas, idioma, revisión humana, audio/vídeo) según disparador.
 

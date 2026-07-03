@@ -140,13 +140,15 @@ por memoria — se conserva el texto, se pierde la rejilla.
    ├─ imagen foto-de-documento → imagen_a_pdf → OCR         │
    ├─ imagen foto-de-escena    → cola de visión             │
    └─ pdf ─────────────────────► 1. OCR (un motor, spa+cat+rus, salida = PDF BUSCABLE)
-                                    │        └─ persiste → 01_Procesado/OCR/{id}.pdf
+                                    │        ├─ persiste → 02_Sala de máquina/01_OCR/{ruta espejo}/{slug__sha8}.pdf
+                                    │        └─ si ocr_quality low/empty → reocr automático (ver §G.7)
                                     → 2. split/merge (separar + conjunto_detector)
-                                    │        └─ persiste → 01_Procesado/Documentos/{id}.pdf (+ índice)
+                                    │        └─ persiste → 02_Sala de máquina/02_Documentos/…/{slug__sha8}.pdf (+ índice)
                                     → 3. MD (lectura plana, sin OCR) ◄┘
-                                             └─ persiste → 01_Procesado/MD/{id}.md
+                                             └─ persiste → 02_Sala de máquina/03_MD/…/{slug__sha8}.md (ESPEJO)
    → scorer → viability → [anon reutiliza el PDF buscable] → linker
-   (registro de cobertura en indice_documental.yaml + control de calidad, transversales)
+   (registro ÚNICO de caso index.yaml + control de calidad, transversales — ver §H)
+   01_Sala de lectura = vista DERIVADA del registro (INDICE/CRONOLOGIA/.xlsx), para el humano
 ```
 Cada etapa **persiste su producto** como artefacto de primera clase (ver §G); nada es
 efímero y todo es regenerable sin re-tocar `00_Input/`.
@@ -170,20 +172,36 @@ Principio rector: **cada etapa guarda su producto como artefacto de primera clas
 derivado y regenerable**, bajo `01_Procesado/` (nunca `00_Input/`; toda la ruta
 `data/CASOS/*` está gitignored, así que ningún artefacto con PII sale del disco).
 
-### G.1 Layout por etapa
+### G.1 Layout: Sala de lectura (humano) vs Sala de máquina (pipeline) — DECIDIDO
 ```
 01_Procesado/
-  OCR/          ← PDFs buscables            [NUEVO — hoy el OCR es efímero]
-  Documentos/   ← split/merge: 1 PDF por documento lógico + índice de segmentación  [NUEVO]
-  raw_text/     ← texto extraído            (ya existe; [extractor.py:342](../core/extractor.py:342))
-  MD/           ← .md por documento         (ya existe; [markdown_generator.py:25](../core/markdown_generator.py:25))
-  indice_documental.yaml  ← registro de cobertura (ya existe; se amplía)
+  01_Sala de lectura/   ← HUMANO. Vista DERIVADA del registro (§H): INDICE.md, CRONOLOGIA.md, .xlsx
+  02_Sala de máquina/   ← MÁQUINA (pipeline). En claro CON PII, gitignored. Productos numerados:
+     01_OCR/            PDFs buscables            [NUEVO — hoy el OCR es efímero]
+     02_Documentos/     split/merge: 1 PDF lógico por documento + índice de segmentación  [NUEVO]
+     03_MD/             espejos markdown — ESPEJAN la jerarquía de 00_Input/  (hoy MD/ es plano)
+        (raw_text = sub-artefacto de la etapa MD, no etapa de primera clase)
+  _revisar/             worklist de residuo (se mantiene)
 ```
-`ensure_case` crea hoy eager `01_Procesado/{Sala lectura, MD, _revisar}`
-([case_manager.py:267](../core/case_manager.py:267)); `raw_text/` la crea el extractor
-bajo demanda. `OCR/` y `Documentos/` seguirían ese mismo patrón (creación bajo demanda
-por la etapa que las escribe). Elegido **layout por etapa** (no por documento): encaja con
-"el producto de cada proceso", reutiliza `MD/`/`raw_text/` y resuelve limpio el 1→N del split.
+- **Tres audiencias, no dos:** humano → `01_Sala de lectura` (en claro, ordenado); pipeline/máquina
+  interna → `02_Sala de máquina` (en claro, **con PII**, gitignored); **LLM externo → `06_Anonimizado`**
+  (tapado). La "Sala de máquina" es el taller determinista del pipeline, NO lo que lee el LLM externo:
+  el muro claro(`01`)/tapado(`06`) del proyecto se mantiene intacto.
+- `ensure_case` hoy crea eager `01_Procesado/{Sala lectura, MD, _revisar}`
+  ([case_manager.py:267](../core/case_manager.py:267)). La migración renombra `Sala lectura` →
+  `01_Sala de lectura` y crea `02_Sala de máquina/` (fase F0). Cada subcarpeta de producto se crea
+  bajo demanda por la etapa que la escribe, como hoy hace el extractor con `raw_text/`.
+- Naming "tipo oración" respetado; numeración `01_`/`02_` como el resto del árbol del caso.
+
+### G.1bis Espejos (mirror) — los productos replican la jerarquía de origen
+Hoy `MD/` es **plano** ([markdown_generator.py:25](../core/markdown_generator.py:25)); el espejar
+quedó pendiente (`docs/PLAN_SALA_LECTURA_01_PROCESADO.md:164-168`). Decisión: cada producto vive en la
+**misma ruta relativa que su fuente en `00_Input/`**, dentro de su carpeta de etapa. Beneficios:
+navegación en paralelo al origen y **resuelve de raíz el bug #47** (los cuatro `_chat.txt` que se
+pisaban dejan de colisionar al colgar de rutas distintas). Cuidado con el límite de 260 chars de ruta
+en Windows → nombre de fichero por `{slug}__{sha8}` (corto). Frontmatter del espejo, estilo Vassal:
+`id (doc-NNN), sha, source, type, date, pages, extraction_method` + **`mirror_stale`** (idempotencia:
+marca el espejo como desactualizado si cambió el origen).
 
 ### G.2 Victoria barata (primer paso de código — fase F3)
 Persistir el PDF del OCR. Hoy [`api._ocr_y_extraer`](../core/anon/api.py:254) escribe el PDF
@@ -193,19 +211,21 @@ su carpeta → basta apuntarla a `01_Procesado/OCR/{id}.pdf` en vez del tempdir.
 buscable queda guardado, la anonimización y el resto lo **reutilizan**, y se acaba el doble OCR.
 Máximo retorno por el menor cambio.
 
-### G.3 Identidad única de documento
-Hoy fragmentada: `output_slug` = `slug__sha8` ([utils.py:32](../core/utils.py:32)) en
+### G.3 Identidad de documento — DUAL (decidido)
+Hoy fragmentada en 4-5 esquemas: `output_slug` = `slug__sha8` ([utils.py:32](../core/utils.py:32)) en
 extractor/MD; `id_doc = sha[:12]` en el catálogo ([catalogo_documental.py:109](../core/catalogo_documental.py:109));
-`slugify(stem)` + sha8 distinto en anon ([api.py:239-242](../core/anon/api.py:239)). Unificar en
-**un solo id** para que `OCR/{id}.pdf`, `Documentos/{id}.pdf`, `raw_text/{id}.txt` y `MD/{id}.md`
-compartan raíz y un documento se pueda seguir entre etapas por el nombre.
+`slugify(stem)` + sha8 distinto en anon ([api.py:239-242](../core/anon/api.py:239)); el nombre del split
+por tipo procesal; y el nombre canónico legible `AAAA-MM-DD_descripción`. Decisión: **id dual**.
+- **`sha8`** (interno, estable, atado al contenido): dedup automática, resuelve #47. Nombre de fichero
+  de artefacto = `slug__sha8` (reutiliza `output_slug`), regenerable y dedup-safe.
+- **`doc-NNN`** (legible, estilo Vassal): asa humana en el registro y en referencias.
+- El registro (§H) **mapea `doc-NNN ↔ sha8 ↔ rutas`**; el nombre canónico legible se reserva a la
+  vista de la Sala de lectura, no a los ficheros del pipeline.
 
-### G.4 Registro de cobertura = ampliar `indice_documental.yaml`
-[`core/catalogo_documental.py`](../core/catalogo_documental.py) (dataclass `CatalogEntry`) ya tiene
-entrada por documento, dedup por SHA y `parent_id`/`orden_en_bundle`. Ampliarla con, por etapa:
-`{etapa, motor, ruta_artefacto, chars, confianza, avisos}`. Así los artefactos guardados se vuelven
-**consultables** (§E.13) y nada se cae en silencio (§D.1). Una sola fuente de verdad, no artefactos
-sueltos por carpetas.
+### G.4 Registro de cobertura → registro ÚNICO de caso (ver §H)
+El registro de cobertura deja de ser de fase y se eleva a **ámbito CASO** (decisión), consolidando los
+registros que hoy solapan. Diseño completo en **§H**. Sigue siendo la respuesta a §E.13 (consultable) y
+§D.1 (nada se cae en silencio).
 
 ### G.5 Estado / idempotencia por etapa
 Consolidar el estado en el propio ledger (o un `_stage_state.json`) con SHA de origen + versión de
@@ -215,21 +235,75 @@ re-toca `00_Input/`.
 
 ### G.6 Split 1→N y merge N→1
 Un bundle produce N documentos; un merge junta N ficheros en 1. Los PDFs lógicos resultantes van a
-`Documentos/`; la relación con el bundle se expresa con `parent_id`/`orden_en_bundle` del catálogo
-(no con subcarpetas). El índice de segmentación de [`separar.py`](../core/anon/separar.py) (`indice.json`)
-se integra en el ledger.
+`02_Sala de máquina/02_Documentos/`; la relación con el bundle se expresa con `parent_id`/`role_in_bundle`
+del registro (no con subcarpetas). El índice de segmentación de [`separar.py`](../core/anon/separar.py)
+(`indice.json`) se integra en el registro.
+
+### G.7 reocr condicional por calidad — DECIDIDO (funde el hueco de >30pp)
+En vez del rescate manual actual (`scripts/ocr_textless_pdfs.py`, invocado a mano), el OCR escribe en el
+registro `ocr_quality` (`ok | low | empty`) + `ocr_quality_reason`; si es `low`/`empty`, se dispara un
+**reocr automático**. El motor por página con subproceso aislado que ya existe
+([`core/ocr_per_page.py`](../core/ocr_per_page.py)) pasa a ser esa etapa `reocr`, disparada por **calidad**,
+no por un comando manual (patrón tomado de Vassal, §I). Marca `ocr_reattempted` en el registro. Esto
+**funde en un solo mecanismo**: el hueco de >30pp (§B.2), la banda muerta de umbrales 100 vs 50 (§B.3,
+ahora un único campo `ocr_quality`) y el control de calidad del OCR (§D.2).
+
+---
+
+## H. Registro único de caso (estilo Vassal `index.yaml`)
+
+Hoy el único registro de ámbito-caso es `00_Input/_caso.md` (solo metadatos); los demás son de fase
+(`_inventory.json`, `indice_documental.yaml`, `_MANIFIESTO.md`, `_intake_log.jsonl`) y **solapan** en el
+dedup por hash (el propio repo lo reconoce sin resolver). Decisión: **un registro único de caso**,
+tomando el modelo de Vassal.
+
+- **Elevar+extender `indice_documental.yaml`** ([`core/catalogo_documental.py`](../core/catalogo_documental.py),
+  `CatalogEntry`) a **ámbito CASO** (raíz del caso, p. ej. `<caso>/_indice_documental.yaml`), consolidando
+  los registros que hoy solapan.
+- **Campos por documento** (unión de los actuales + Vassal `index.yaml`):
+  `id (doc-NNN), sha, file, mirror, type, title, date, parties, summary, source, seal, signature,
+  completeness (full|partial|fragment), quality, pages, ocr_quality, ocr_quality_reason, ocr_reattempted,
+  mirror_stale, filing_status, filing_folder, tags, bundle_id, parent_id, role_in_bundle (head|attachment)`.
+  Los campos de OCR-calidad y `mirror_stale` habilitan §G.7 y la idempotencia; `bundle_id/parent_id/role_in_bundle`
+  cubren el 1→N del split (§G.6).
+- **Las vistas humanas se DERIVAN del registro**, no se mantienen a mano: `01_Sala de lectura/INDICE.md`,
+  `CRONOLOGIA.md` y un **`.xlsx`** (reutilizar la skill `xlsx`), igual que Vassal genera su `.xlsx` desde
+  `index.yaml` (`catalog` → `scripts/generate_table.py`).
+
+## I. Aprendizajes de Vassal Litigator
+
+Referencia: `https://github.com/strigov/vassal-litigator` — plugin de Claude Cowork para litigio (14 skills,
+espejos MD, registro único `index.yaml`, `reocr` condicional). Es la dirección de FeesDefender.
+
+**Qué se adopta:**
+| Idea de Vassal | Aplicación en FeesDefender |
+|---|---|
+| `mirrors/` con frontmatter | Espejos MD en `03_MD/` que espejan la jerarquía de origen (§G.1bis) |
+| `index.yaml` único de caso | Registro único de caso (§H) |
+| `mirror_stale` | Idempotencia del espejo (§G.1bis/§H) |
+| `reocr` disparado por `ocr_quality` | Etapa reocr automática (§G.7) |
+| Preview→Apply + `history.md` | Confirmación humana antes de aplicar + auditoría de acciones a nivel de caso |
+| Vista `.xlsx` derivada del índice | Sala de lectura derivada del registro (§H) |
+
+**Qué NO se copia literal:**
+- El `.vassal/` **oculto** que agrupa todo lo de máquina: FeesDefender ya usa carpetas numeradas
+  top-level (`00_Input`…`07_AI cowork`) y una "Sala de máquina" **visible** numerada (decisión de Nikolai,
+  mejor para audiencia mixta). Se adopta el *principio* (zona de máquina clara + registro único), no la estructura.
+- Vassal **no anonimiza**; FeesDefender mantiene `06_Anonimizado` como capa tapada para el LLM externo.
 
 ---
 
 ## Orden de ejecución sugerido (trabajo futuro)
 
-1. **Saneamiento barato y no disruptivo:** alinear umbrales (B.3), corregir docstring/etiqueta
-   (B.4, B.5), unificar el set de extensiones de imagen + HEIC (C).
-2. **Registro de cobertura (D.1)** — el cimiento de observabilidad; habilita todo lo demás.
-3. **Fachada única (E.10)** + desacople de rutas (E.11) + salida estructurada (E.13).
-4. **Motor OCR único** (OCRmyPDF, produce PDF buscable) y **reordenar** split→MD sobre él.
-5. **Conector MCP** + empaquetado en el plugin (E.12/14/15/16).
-6. Faltas restantes (D.2–D.9) según disparador real.
+1. **Saneamiento barato y layout (F0):** renombrar `Sala lectura` → `01_Sala de lectura`, crear
+   `02_Sala de máquina/`, migrar W-02VND1; alinear umbrales (B.3), corregir docstring/etiqueta (B.4, B.5),
+   unificar el set de extensiones de imagen + HEIC (C).
+2. **Registro único de caso (F1)** — §H, con id dual (§G.3); cimiento de observabilidad + vistas derivadas.
+3. **Fachada única (F2)** (E.10) + desacople de rutas (E.11) + salida estructurada (E.13).
+4. **Motor OCR único + reocr por calidad + espejos (F3)** — OCRmyPDF (PDF buscable), reocr §G.7,
+   persistir en `02_Sala de máquina/{01_OCR,02_Documentos,03_MD}`, reordenar split→MD.
+5. **Conector MCP + empaquetado en el plugin (F4)** (E.12/14/15/16).
+6. **Faltas restantes (F5)** (D.2–D.9) según disparador real.
 
 ## Fuera de alcance de este documento
 

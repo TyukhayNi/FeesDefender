@@ -1724,6 +1724,12 @@ subproceso, versión/modelos pinneados, sin fuga de datos + preservar `core/anon
 **Disparador de promoción.** Decisión explícita de Nikolai de empaquetar el motor como plugin
 (regla de promoción del proyecto). Tarea accionable en `PLAN.md` → `[SIGUIENTE-MOTOR-DOCUMENTAL]`.
 
+**Ampliación 2026-07-03 (aprendizajes de Vassal Litigator).** Diseño de organización ampliado con
+`github.com/strigov/vassal-litigator`: registro ÚNICO de caso estilo `index.yaml`, espejos MD que
+replican la jerarquía de origen (con `mirror_stale`), y `reocr` condicional por `ocr_quality` (funde el
+hueco de >30pp). Decisiones de layout: `01_Procesado/01_Sala de lectura/` (humano) + `02_Sala de máquina/`
+(máquina, productos numerados) e id **dual** (`sha8` + `doc-NNN`). Ver §G/§H/§I de `PLAN_MOTOR_DOCUMENTAL.md`.
+
 **Justificación de no aplicarlo ahora.** Es un refactor arquitectónico grande; primero se
 memoriza el diseño. El orden sugerido de ejecución (saneamiento barato → registro de cobertura →
 fachada → motor OCR único → conector → resto de faltas) está en el doc.
