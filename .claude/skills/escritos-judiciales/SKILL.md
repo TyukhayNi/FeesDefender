@@ -1,7 +1,7 @@
 ---
 name: escritos-judiciales
 description: "Usar siempre que se genere un escrito procesal civil español en formato .docx: demandas, contestaciones, recursos, requerimientos, escritos de trámite. Produce documentos Word con el formato estándar del despacho, listo para firma."
-version: "1.0"
+version: "1.1"
 ---
 
 # Escritos Judiciales Civiles — Formato Estándar
@@ -103,14 +103,12 @@ footers: { default: new Footer({ children: [
 
 ---
 
-## Tabla de cabecera del escrito
+## Inicio del escrito
 
-Siempre al inicio del documento. Dos filas: **Mi ref.** y **Juzgado**.
-
-```javascript
-const borde = { style: BorderStyle.SINGLE, size: 4, color: "000000" };
-// columnWidths: [1800, 7526], total: 9326 DXA
-```
+El escrito **arranca directamente** con el encabezamiento al órgano judicial
+(*«AL JUZGADO DE PRIMERA INSTANCIA…»*). **No** se incluye tabla de cabecera con
+«Mi ref.» / «Juzgado» ni recuadro equivalente. Instrucción expresa: no
+reintroducir esa tabla desde modelos antiguos.
 
 ---
 
@@ -140,6 +138,15 @@ function rNomen(nomen) {
 }
 // Ejemplo: ...la finca sita en... (en adelante, «el Inmueble»)
 ```
+
+### Prohibido el guion largo (em dash «—»)
+
+**Regla universal.** Nunca usar el guion largo «—» ni el doble guion «--» en
+**ninguna** parte del escrito: cuerpo, encabezamiento, índice documental, notas
+al pie y otrosíes. Sustituir siempre por dos puntos, coma, paréntesis, o punto y
+frase nueva, según lo que pida el sentido. Es **capa dura** al generar el
+`.docx` (no emitir el carácter); `pase-de-estilo` (capa 2) actúa solo como
+segunda red, no como primera defensa.
 
 ---
 
@@ -220,8 +227,12 @@ PRIMERO.- DE LAS PARTES.-   ← negrita, justificado
 ### Subapartados — lista decimal continua
 - **Referencia única** `hechos-cont` para todo el apartado de Hechos
 - La numeración **no reinicia** entre distintos Hechos
-- **Sangría francesa:** `left: 0, hanging: 425` (DXA) — 0,75 cm
-- El número cuelga 0,75 cm a la izquierda del texto
+- **Número volado alineado por el punto:** `lvlJc=right` + `suff=tab` + sangría
+  `left: 0, hanging: 113` (DXA, 0,2 cm). El número se alinea por su punto final,
+  no por la izquierda: así el hueco número→texto queda constante con ordinales de
+  1, 2 o 3 cifras (la francesa fija se rompía al llegar a 3 cifras).
+- Aplicar el esquema en el nivel de `numbering.xml` **y** en el `pPr` de cada
+  párrafo (el `indent` del Paragraph reafirma el del nivel).
 
 ```javascript
 // NUMBERING_CONFIG — referencia "hechos-cont"
@@ -229,13 +240,14 @@ PRIMERO.- DE LAS PARTES.-   ← negrita, justificado
   reference: "hechos-cont",
   levels: [{
     level: 0, format: LevelFormat.DECIMAL, text: "%1.",
-    alignment: AlignmentType.LEFT,
+    alignment: AlignmentType.RIGHT,   // lvlJc=right: número alineado por el punto
+    suffix: LevelSuffix.TAB,          // suff=tab entre número y texto
     style: {
       run: { font: TNR, size: SZ },
       paragraph: {
         alignment: AlignmentType.JUSTIFIED,
         spacing: { line: 360, before: 120, after: 0 },
-        indent: { left: 425, hanging: 425 }, // se sobreescribe en el Paragraph
+        indent: { left: 0, hanging: 113 }, // 0,2 cm; se reafirma en el Paragraph
       },
     },
   }],
@@ -248,7 +260,7 @@ function sub(content) {
     numbering: { reference: "hechos-cont", level: 0 },
     alignment: AlignmentType.JUSTIFIED,
     spacing: { line: 360, before: 120, after: 0 },
-    indent: { left: 0, hanging: 425 }, // left=0, hanging=425 DXA
+    indent: { left: 0, hanging: 113 }, // left=0, hanging=113 DXA (0,2 cm)
     children,
   });
 }
@@ -274,7 +286,7 @@ function pDoc(n, descripcion, primera = false) {
     numbering: { reference: "hechos-cont", level: 0 },
     alignment: AlignmentType.JUSTIFIED,
     spacing: { line: 360, before: 120, after: 0 },
-    indent: { left: 0, hanging: 425 },
+    indent: { left: 0, hanging: 113 },
     children: [
       r("Se acompaña como "),
       rDoc(n, primera),
@@ -397,7 +409,8 @@ def setup_numbering(doc, num_id="99"):
     numbering = doc.part.numbering_part.element
     abstract = OxmlElement('w:abstractNum')
     abstract.set(qn('w:abstractNumId'), num_id)
-    # ... lvl con format decimal, text "%1.", indent left=425 hanging=425 ...
+    # ... lvl con format decimal, text "%1.", <w:lvlJc w:val="right"/>,
+    #     <w:suff w:val="tab"/>, indent left=0 hanging=113 (0,2 cm) ...
     numbering.append(abstract)
     num = OxmlElement('w:num')
     num.set(qn('w:numId'), num_id)
@@ -433,17 +446,21 @@ DON IVÁN PÉREZ MARTÍNEZ          DON ALEKSANDR VOLKOV PETROV
 ## Índice documental
 
 - Separado del cuerpo por un **salto de página explícito**
-- Lista decimal con referencia `idx-docs`, sangría francesa left=425 hanging=425
-- `DOCUMENTO Nº XX` siempre en **negrita + subrayado**, seguido de descripción en texto normal
+- Lista decimal con referencia `idx-docs`, **mismo esquema volado que los Hechos**:
+  `lvlJc=right` + `suff=tab` + sangría `left: 0, hanging: 113` (0,2 cm), en el
+  nivel de `numbering.xml` y en el `pPr` de cada entrada
+- `DOCUMENTO Nº XX` siempre en **negrita + subrayado**, seguido de dos puntos
+  (`: `) y la descripción en texto normal
 
 ```javascript
 function rDocIdx(n) {
   return r(`DOCUMENTO Nº ${n}`, { bold: true, underline: { type: UnderlineType.SINGLE } });
 }
 
-// Cada entrada:
+// Cada entrada (mismo esquema volado que hechos-cont):
 new Paragraph({
   numbering: { reference: "idx-docs", level: 0 },
+  indent: { left: 0, hanging: 113 },
   children: [rDocIdx(n), r(": " + descripcion)],
 })
 ```
@@ -500,7 +517,8 @@ function seccion(text) {
 - [ ] DIGO: / DEMANDA / cuantías en negrita
 - [ ] Nomens primera vez en negrita «»
 - [ ] Numeración de Hechos continua (no reinicia)
-- [ ] pDoc() usa referencia hechos-cont y sangría left=0 hanging=425
+- [ ] pDoc() usa referencia hechos-cont y esquema volado (lvlJc=right, suff=tab, left=0 hanging=113)
+- [ ] Número de párrafo volado alineado por el punto: verificado visualmente renderizando ordinales de 1, 2 y 3 cifras (hueco número→texto constante)
 - [ ] Primera mención de cada DOCUMENTO Nº XX: negrita+subrayado
 - [ ] Fundamentos en romano, dos listas independientes (arquitectura tradicional) o una única procesal (arquitectura motivos como Hechos)
 - [ ] Suplico en párrafo único
@@ -508,6 +526,7 @@ function seccion(text) {
 - [ ] Índice documental tras salto de página
 - [ ] Sin líneas separadoras en encabezado ni pie
 - [ ] "Nº" sin punto (nunca "N.º")
+- [ ] Sin guion largo «—» ni doble guion «--» en ninguna parte (cuerpo, encabezamiento, índice documental, notas al pie, otrosíes)
 - [ ] Alias de la representada propagado en el cuerpo, sin residuos de "mi representada" fuera de la comparecencia
 - [ ] Sin trimembraciones gratuitas (binomio o adjetivo único)
 - [ ] Sin hedge phrases prohibidas (consultar lista cerrada en sección «Patrones lingüísticos»)
