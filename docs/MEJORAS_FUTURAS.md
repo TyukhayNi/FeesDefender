@@ -1692,3 +1692,38 @@ corrección que conviene cerrar **antes** de apoyar análisis automatizado sobre
 
 **Coste estimado.** ~15-20 líneas (helper de slug compartido en `extractor`/`markdown_generator` +
 `sala_lectura`) + migración de salidas existentes + 1 test de colisión.
+
+## 48. Motor documental unificado (split/OCR/MD) + empaquetado como conector  [PROMOVIDO → PLAN.md]
+
+**Desarrollo completo en [`docs/PLAN_MOTOR_DOCUMENTAL.md`](PLAN_MOTOR_DOCUMENTAL.md).** Entrada
+paraguas que consolida el diagnóstico del flujo split/OCR/MD y fija el objetivo rector de
+**empaquetar el motor como un conector reutilizable** por el despacho.
+
+**Qué consolida (entradas relacionadas, no duplicar).** #21 (re-OCR por degradación), #24
+(conversor multi-formato a MD), #39 (robustez OCR Docling/RapidOCR), #42 (OCR server-side en
+`expedientes-xl`), #43 (intake sin rama de OCR), #41 (plugin de skills). Este #48 es la vista
+arquitectónica única de la que esas son piezas.
+
+**Diagnóstico (resumen; detalle y `file:line` en el doc).**
+- **Incoherencias:** tres motores de OCR desacoplados con idiomas distintos (Docling interno en
+  el pipeline · RapidOCR por página solo vía script manual · OCRmyPDF `spa+cat+rus` en la
+  anonimización, que re-OCR-iza el original); **hueco de >30pp** (escaneados largos salen
+  vacíos y se rescatan a mano); **banda muerta de umbrales** (100 en extractor vs 50 en el
+  script → nadie OCR-iza los de 50–99 chars); docstring de `extractor.py` contradice el código;
+  `separar.py` desenganchado del pipeline.
+- **Imágenes:** tres tratos incompatibles (tirada / cola de visión / ignorada) según el módulo;
+  las de iPhone (`.heic`) se caen ya en el inventario (`inventory._RELEVANT_EXTS` no las lista).
+- **Faltas:** registro de cobertura por documento (la clave — hoy falla en silencio), control de
+  calidad del OCR, clasificación documental, reensamblado multi-parte, PDFs protegidos/firmados,
+  tablas, detección de idioma, punto de revisión humano, transcripción de audio/vídeo.
+
+**Prerrequisitos de empaquetado.** Fachada única (`procesar_expediente(entrada, salida) → informe`),
+desacople de rutas/entorno, preflight de capacidades, salida estructurada JSON, aislamiento por
+subproceso, versión/modelos pinneados, sin fuga de datos + preservar `core/anon`.
+
+**Disparador de promoción.** Decisión explícita de Nikolai de empaquetar el motor como plugin
+(regla de promoción del proyecto). Tarea accionable en `PLAN.md` → `[SIGUIENTE-MOTOR-DOCUMENTAL]`.
+
+**Justificación de no aplicarlo ahora.** Es un refactor arquitectónico grande; primero se
+memoriza el diseño. El orden sugerido de ejecución (saneamiento barato → registro de cobertura →
+fachada → motor OCR único → conector → resto de faltas) está en el doc.

@@ -28,6 +28,27 @@ de `[SIGUIENTE-INTAKE-JUDICIAL-AUTO]`.
 
 ---
 
+## [SIGUIENTE-MOTOR-DOCUMENTAL] Motor documental unificado (split/OCR/MD) + empaquetado como conector (`MEJORAS #48`)
+*Decisión Nikolai 2026-07-03. Disparador concreto: Nikolai quiere empaquetar el motor OCR→split→MD como un conector/plugin reutilizable por los compañeros. Un motor fragmentado y que falla en silencio no se puede empaquetar bien → sanear + fachada + registro de cobertura es la preparación del plugin.*
+
+> **Plano completo y memoria de diagnóstico: [`docs/PLAN_MOTOR_DOCUMENTAL.md`](docs/PLAN_MOTOR_DOCUMENTAL.md).**
+> Consolida `MEJORAS #21/#24/#39/#42/#43/#41`. **Solo diseño escrito; sin código todavía.**
+
+**Diagnóstico (resumen).** Tres motores de OCR desacoplados (Docling interno · RapidOCR por página vía
+script manual · OCRmyPDF en anon), hueco de escaneados >30pp que salen vacíos, banda muerta de umbrales
+(100 vs 50 chars), imágenes con tres tratos incompatibles (las `.heic` se caen en el inventario), y
+`separar.py` desenganchado del pipeline. Detalle con `file:line` en el doc.
+
+**Orden de ejecución (fases).**
+- [ ] **F0 — saneamiento barato:** alinear umbrales, corregir docstring/etiqueta de `extractor.py`, unificar set de extensiones de imagen + HEIC.
+- [ ] **F1 — registro de cobertura por documento** (cimiento de observabilidad; hoy todo falla en silencio).
+- [ ] **F2 — fachada única** `procesar_expediente(entrada, salida) → informe` + desacople de rutas + salida estructurada JSON.
+- [ ] **F3 — motor OCR único** (OCRmyPDF → PDF buscable) y reordenar split→MD sobre él.
+- [ ] **F4 — conector MCP + empaquetado en el plugin** (preflight de capacidades, aislamiento por subproceso, versión/modelos pinneados, sin fuga de datos, preservar `core/anon`).
+- [ ] **F5 — faltas restantes** (calidad OCR, clasificación, multi-parte, protegidos, tablas, idioma, revisión humana, audio/vídeo) según disparador.
+
+**Decisión pendiente.** Confirmar OCRmyPDF como motor único (candidato: produce PDF buscable, ya `spa+cat+rus`, estable en memoria) antes de arrancar F3.
+
 ## ✅ [SIGUIENTE-EMAIL-APLANADO-ANIDADOS] Aplanado byte-fiel de emails anidados en el export de etiquetas
 *Decisión Nikolai 2026-06-24 (hilo Cowork BaRS1 Tibidabo 8). Disparador concreto: en `03_Email` del caso W-02VND1 no aparecen los emails que viajan adjuntos dentro de otro (p. ej. los del padre `2026-06-08_mails_consulado`). Extiende `[SIGUIENTE-EXPORT-ETIQUETA-EMAIL]` (abajo, ✅).*
 
