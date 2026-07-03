@@ -1,0 +1,27 @@
+[PLANTILLA DEL MOTIVO 4 — ARRENDAMIENTO DE TEMPORADA. Insertar como Hecho en la
+posición que corresponda tras la renumeración; ajustar el ordinal (aquí «N») y
+los números de documento. Solo se incluye si la temporalidad está documentada.]
+
+N.- SUBSIDIARIAMENTE Y EN TODO CASO: EL CONTRATO ES UN ARRENDAMIENTO DE TEMPORADA AL QUE NO RESULTA APLICABLE EL ARTÍCULO 20.1 LAU (ARTÍCULO 4 LAU).
+
+N.1. Tesis del motivo.
+
+Subsidiariamente, si el Juzgador entra en la calificación del contrato, el de autos es un arrendamiento para uso distinto del de vivienda, de temporada (artículo 3 LAU). El artículo 20.1 LAU se ubica en el Título II de la Ley, «De los arrendamientos de vivienda», y por virtud del artículo 4 LAU no rige los arrendamientos para uso distinto del de vivienda. Aun entrando en el fondo de la calificación, la prohibición del artículo 20.1 LAU no resulta, por tanto, aplicable al contrato.
+
+N.2. Soporte fáctico.
+
+El propio contrato de arrendamiento (Documento nº [X]) se califica en sus expositivos como arrendamiento de temporada. El expositivo [--] declara que el arrendatario precisa residir en el Inmueble «[MOTIVO TEMPORAL DECLARADO: por motivo de trabajo / estudios / …]» durante la temporada pactada, del [FECHA INICIO] al [FECHA FIN]; el expositivo [--] lo califica de arrendamiento «para uso distinto de vivienda, conforme establece el artículo 3 de la Ley 29/1994», y hace constar que el domicilio habitual y permanente del arrendatario radica en [LOCALIDAD DEL DOMICILIO PERMANENTE], no en el Inmueble.
+
+El horizonte temporal lo fijó el propio actor desde su primer contacto con la Agencia. En el mensaje que dirigió a través del portal [PORTAL INMOBILIARIO], cuyo contenido se dio traslado a la consultora al asignarse el lead del Inmueble y que obra en el Documento nº [X], aquí dado por reproducido, el actor manifestó:
+
+«[CITA LITERAL DEL MENSAJE DEL ACTOR EN SU LENGUA ORIGINAL]» (traducción de esta parte: «[TRADUCCIÓN AL CASTELLANO]»).
+
+El propio actor anudó, así, su necesidad de ocupación del Inmueble a [CAUSA TEMPORAL: la escolarización / el desplazamiento laboral / …] y a la duración de [HORIZONTE DECLARADO], y no a una necesidad permanente de vivienda. [SI CONSTA CONDUCTA POSTERIOR:] Su conducta posterior lo confirma: abandonó el Inmueble a los [N] meses, suscribió el documento de resolución de mutuo acuerdo y celebró de inmediato un nuevo contrato de arrendamiento (documentos [--] y [--] de la propia demanda).
+
+N.3. Soporte normativo y jurisprudencial.
+
+El artículo 3 LAU define el arrendamiento para uso distinto del de vivienda, y comprende el celebrado por temporada. El artículo 4 LAU distribuye el régimen aplicable: los arrendamientos de vivienda se rigen, en su defecto, por el Título II, mientras que los arrendamientos para uso distinto del de vivienda se rigen por la voluntad de las partes y, en su defecto, por el Título III y, supletoriamente, por el Código Civil. El artículo 20.1 LAU pertenece al Título II. De ahí que su prohibición de repercutir al arrendatario los gastos de gestión y formalización no alcance a un arrendamiento de temporada, que queda fuera del Título II por mandato del artículo 4 LAU.
+
+A ello se añade la doctrina de los actos propios, que veda venir contra los propios actos y se anuda a la buena fe del artículo 7.1 CC. La conducta del actor, que pidió un plazo de [DURACIÓN] para cubrir [CAUSA TEMPORAL], declaró en el contrato su domicilio permanente en un inmueble distinto [Y, EN SU CASO:] y abandonó el Inmueble a los [N] meses para arrendar otro, es incompatible con la voluntad de vivienda habitual y permanente que ahora sostiene, y confirma la naturaleza temporal del arrendamiento.
+
+Procede, por ello, desestimar la pretensión actora también por este motivo, al no resultar aplicable el artículo 20.1 LAU a un arrendamiento de temporada, con imposición de costas a la actora.

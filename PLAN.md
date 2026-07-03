@@ -1122,6 +1122,18 @@ trabajo para que no contamine).
 
 ---
 
+## ✅ [SKILL-CONTESTACION-ART20-LAU] Nueva skill `contestacion-honorarios-art20-lau` — entregada e integrada en el repo
+*Creada en Cowork (v1.1.0, playbook del asunto W-02THLJ) y distribuida al equipo como `.skill`. Handoff Cowork→Claude Code 2026-07-03. Integración en el repo: Claude Code.*
+
+> **✅ HECHA 2026-07-03 (Claude Code).** La skill se **importó a `.claude/skills/contestacion-honorarios-art20-lau/`** (fuente única de desarrollo, regla CLAUDE.md; antes vivía solo como `.skill` fuera del repo). Integración completa:
+> - **Helpers canónicos (task 1):** añadida a `_TARGETS` de `scripts/sync_skill_helpers.py`. El sincronizador la promueve a módulo **OPERACIÓN** y le copia los 4 helpers (`registrar_uso.py` —ya venía byte-idéntico—, `registrar_outputs.py`, `programar_revision.py`, `scaffold_caso.py`), en paridad con `oposicion-alegacion-nulidad`. `sync --check` OK (byte-idénticos); `test_skill_helpers_sync.py` verde.
+> - **Telemetría (task 2):** el patrón de detección del helper (`pyproject.toml` hacia arriba) resuelve a `data/_skill_logs/contestacion-honorarios-art20-lau/` (verificado); `uso.jsonl` se crea a demanda en el primer `log()`. Ruta ya cubierta por `.gitignore` (no se versiona telemetría con refs reales). Se añadió `.gitignore` propio a la skill (excluye `logs/*.jsonl|*.json`, conserva `README.md`).
+> - **Homogeneización / validador AVISO (task 3):** al vivir en `.claude/skills/`, entra automáticamente en el alcance de `scripts/validate_skills.py`. Único aviso: `metadata.rol`/`metadata.naturaleza` ausentes (usa el eje viejo `type: workflow`) — mismo estado que las demás skills bajo el **retrofit de identidad diferido**; license, version y helpers conformes.
+> - **PENDIENTE (v1.1.1, lo hace Cowork cuando Nikolai aporte el PDF):** incorporar **SJPI nº 10 de Barcelona 69/2025 anonimizada** a `references/jurisprudencia/` (+ fila en `INDICE.md`).
+> - Observación (fuera de alcance, pre-existente): `registrar_uso.skill_version` no lee `metadata.version` anidado → registra `"0.0"` para esta skill y para `oposicion` por igual. No se toca aquí.
+
+---
+
 ## ✅ [SIGUIENTE-EXPORT-ETIQUETA-EMAIL] Exportar etiqueta Gmail → expediente (motor + Streamlit + CLI + skill)
 *Decisión Nikolai 2026-06-22 (hilo Cowork BaRS1 Tibidabo 8). Disparador concreto: el volcado de los correos de una etiqueta al expediente es lentísimo vía Cowork (conector solo-texto, sin binarios, tope de tamaño por contexto). Se necesita herramienta reutilizable para TODOS los casos y usable por Paola y Ana.*
 

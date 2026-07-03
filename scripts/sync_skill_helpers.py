@@ -33,6 +33,7 @@ _TARGETS: tuple[str, ...] = (
     ".claude/skills/preparacion-juicio-oral/scripts",
     ".claude/skills/preparacion-audiencia-previa/scripts",
     ".claude/skills/oposicion-alegacion-nulidad/scripts",
+    ".claude/skills/contestacion-honorarios-art20-lau/scripts",
 )
 
 
