@@ -293,6 +293,58 @@ espejos MD, registro único `index.yaml`, `reocr` condicional). Es la dirección
 
 ---
 
+## J. Botón "Reorganizar caso" (migración de casos antiguos a la estructura nueva)
+
+Los casos antiguos tienen otra estructura (MD plano, `Sala lectura` sin numerar, sin `02_Sala de máquina`
+ni registro único). Se necesita un botón repetible para llevarlos al layout nuevo, seguro y por flota.
+
+- **Idea rectora:** la Sala de máquina es **regenerable desde `00_Input/`** → migrar ≈ (a) renombrar
+  `Sala lectura` → `01_Sala de lectura`, (b) crear `02_Sala de máquina/`, (c) re-ejecutar el pipeline en
+  el layout nuevo (regenera `01_OCR/02_Documentos/03_MD` como espejos) + reconstruir el registro único
+  (§H). **Nunca** se tocan `00_Input/` ni `90_Notas personales/`.
+- **Reutilizar el patrón existente** (no inventar): `plan`/`apply` con artefacto revisable + **journal
+  reversible + backups `.bak`** de [`scripts/migrate_05crm_buckets.py`](../scripts/migrate_05crm_buckets.py)
+  (re-llavea `_intake_hashes.json` y `_extract_state.json` para preservar dedup y cache OCR); gate humano
+  con confirmación literal como [`scripts/migrate_to_city_structure.py`](../scripts/migrate_to_city_structure.py);
+  verificador post tipo [`scripts/verify_city_layout.py`](../scripts/verify_city_layout.py).
+- **Pieza nueva — sello `layout_version` (decisión):** añadir `layout_version: N` a `00_Input/_caso.md`
+  (análogo de `EXTRACTOR_VERSION`, [extractor.py:37](../core/extractor.py:37)). Hoy **no existe** un sello
+  de versión de layout por caso — el estado se infiere del filesystem, frágil para una flota. Con el sello,
+  el botón lee la versión, sabe qué pasos aplicar, migra hacia delante y re-sella; y habilita un modo
+  **"reorganizar todos"** que recorre la flota y reporta casos atrasados.
+- **Cablear `--force`:** hoy `run_pipeline`/`pipeline.run` **no** tienen `--force` (solo
+  [`extractor.extract_all(force=)`](../core/extractor.py:329), sin cablear). Hace falta para forzar la
+  regeneración en el layout nuevo.
+- **Dónde vive:** CLI `scripts/reorganizar_caso.py` (`plan`/`apply`, por caso y `--todos`) + botón Streamlit;
+  ejecución local. Fase **F0**.
+
+## K. Botón "Reformar plugin/skills" + mantenimiento continuo
+
+Al cambiar el código que afecta a los procesos (nombres de carpeta, taxonomía, rutas), las skills y
+conectores del plugin deben reconstruirse. Se necesita un botón que lo haga y avise de lo que queda desalineado.
+
+- **Orquestador `scripts/rebuild_plugin.py` (un clic):** encadena la cadena que **ya existe** →
+  [`sync_skill_helpers`](../scripts/sync_skill_helpers.py) → [`sync_taxonomia_skills`](../scripts/sync_taxonomia_skills.py)
+  → [`validate_skills`](../scripts/validate_skills.py) → [`check_skills`](../scripts/check_skills.py) (drift)
+  → [`package_skill --all`](../scripts/package_skill.py) + [`package_plugin`](../scripts/package_plugin.py)
+  → imprime "qué cambió / qué re-importar en el servidor".
+- **Frontera honesta (decisión), dos capas:**
+  - *Mecánica* (automatizable a un clic): helpers `_shared`, taxonomía (`TAXONOMIA_EV`), constantes de
+    carpetas (`CASO_SUBDIRS`), repackage, frescura del `.skill`.
+  - *Semántica* (detectar+señalar, **no** reescribir): la prosa de las skills que menciona rutas/procesos
+    (p. ej. `02_Sala de máquina`, `index.yaml`). El botón **lista** las skills afectadas por el cambio de
+    proceso → handoff a Claude Code para editar el `SKILL.md` (mismo modelo de handoff que
+    [`motor_mejora.py`](../scripts/motor_mejora.py) / `docs/MEJORA_CONTINUA_SKILLS.md`).
+- **Drift no-silencioso (decisión):** enganchar `check_skills --strict` a un **hook** (skill
+  `session-start-hook`, o pre-commit) para que el sistema avise solo al tocar código que afecta procesos,
+  en vez de depender de correrlo a mano al cerrar sesión (hoy todo es "modo AVISO").
+- **Disparador concreto:** el propio refactor de este documento (renombrar a `01_Sala de lectura`, crear
+  `02_Sala de máquina`, registro `index.yaml`) **romperá la prosa** de varias de las ~18 skills que citan
+  rutas viejas → el botón K es lo que permite aterrizar el refactor limpio por toda la biblioteca. Fase **F4**
+  (+ mantenimiento continuo).
+
+---
+
 ## Orden de ejecución sugerido (trabajo futuro)
 
 1. **Saneamiento barato y layout (F0):** renombrar `Sala lectura` → `01_Sala de lectura`, crear

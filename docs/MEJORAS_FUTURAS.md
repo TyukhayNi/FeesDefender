@@ -1730,6 +1730,11 @@ replican la jerarquía de origen (con `mirror_stale`), y `reocr` condicional por
 hueco de >30pp). Decisiones de layout: `01_Procesado/01_Sala de lectura/` (humano) + `02_Sala de máquina/`
 (máquina, productos numerados) e id **dual** (`sha8` + `doc-NNN`). Ver §G/§H/§I de `PLAN_MOTOR_DOCUMENTAL.md`.
 
+**Ampliación 2026-07-03 (dos botones de operación).** `reorganizar_caso` (migración de casos antiguos al
+layout nuevo, por flota, con sello `layout_version` + `--force` del pipeline, patrón `plan`/`apply` con
+journal reversible) y `rebuild_plugin` (repackage mecánico de skills/conectores + señalización semántica de
+skills con prosa afectada + hook de drift no-silencioso). Ver §J/§K de `PLAN_MOTOR_DOCUMENTAL.md`.
+
 **Justificación de no aplicarlo ahora.** Es un refactor arquitectónico grande; primero se
 memoriza el diseño. El orden sugerido de ejecución (saneamiento barato → registro de cobertura →
 fachada → motor OCR único → conector → resto de faltas) está en el doc.
