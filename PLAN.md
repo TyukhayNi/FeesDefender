@@ -31,6 +31,12 @@ de `[SIGUIENTE-INTAKE-JUDICIAL-AUTO]`.
 ## [SIGUIENTE-MOTOR-DOCUMENTAL] Motor documental unificado (split/OCR/MD) + empaquetado como conector (`MEJORAS #48`)
 *Decisión Nikolai 2026-07-03. Disparador concreto: Nikolai quiere empaquetar el motor OCR→split→MD como un conector/plugin reutilizable por los compañeros. Un motor fragmentado y que falla en silencio no se puede empaquetar bien → sanear + fachada + registro de cobertura es la preparación del plugin.*
 
+> **⏸️ APARCADO (2026-07-04).** Nikolai pausa el motor/refactor completo. **Foco actual: skills con código**
+> (vía lean — skill que orquesta y llama a motores existentes, p. ej. `ocr-a-md`, sobre el scaffold actual).
+> El diseño queda de referencia para retomarlo. Estudio de mercado 2026 + opciones de motor (OSS local
+> Docling(MIT)>MinerU(AGPL) / **Mistral OCR cloud+ZDR+DPA como opción de fase de construcción** / Azure
+> contenedor para manuscrito, post-anonimización) en §F del doc.
+
 > **Plano completo y memoria de diagnóstico: [`docs/PLAN_MOTOR_DOCUMENTAL.md`](docs/PLAN_MOTOR_DOCUMENTAL.md).**
 > Consolida `MEJORAS #21/#24/#39/#42/#43/#41`. **Solo diseño escrito; sin código todavía.**
 

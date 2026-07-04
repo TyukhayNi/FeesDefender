@@ -4,6 +4,12 @@
 > (promovido a `PLAN.md`). Norte: **empaquetar el motor OCR→split→MD como conector/plugin**
 > reutilizable por el despacho. Este documento consolida el diagnóstico; el refactor y el
 > empaquetado son trabajo posterior.
+>
+> **⏸️ APARCADO (2026-07-04).** Decisión de Nikolai: este plan (el motor/refactor completo) queda
+> en pausa. **Foco actual: skills con código** (vía lean — una skill que orquesta y llama a motores
+> existentes, p. ej. `ocr-a-md`, sobre el scaffold actual). Este doc queda como diseño de referencia
+> para retomar el motor cuando proceda. Opciones de motor evaluadas (OSS local / Mistral cloud+ZDR /
+> Azure contenedor) en §F.
 
 ## 0. Por qué existe este documento
 
@@ -177,6 +183,23 @@ y se decide con datos** (bake-off), no en papel.
 **Gate antes de adoptar MinerU (F3):** (a) que el modo CPU no dé OOM en la máquina real; (b) calidad en
 **catalán** (Paddle lista 109 idiomas pero no lo cita explícito); (c) revisar la **licencia** "MinerU
 personalizada (base Apache 2.0)" para uso del despacho.
+
+**Opciones de motor — estudio de mercado 2026 (no hay turnkey que cumpla RGPD-local + es/ca/ru + presupuesto):**
+- **OSS local (por defecto cuando el muro PII esté puesto):** OCRmyPDF (PDF buscable) + **Docling** para
+  extractor→MD. **Corrección de licencia:** preferir **Docling (MIT)** sobre MinerU (**AGPL-3.0**, copyleft
+  fuerte, riesgo para software propietario/distribuido) y Marker/Surya (GPL-3.0 + licencia comercial de pesos).
+  Split = lógica en `separar.py` + corte con pikepdf/qpdf. `.heic`→pillow-heif; `.eml`/WhatsApp = texto nativo (sin OCR).
+- **OPCIÓN para la fase de construcción — Mistral OCR (cloud, UE/Francia) + ZDR + DPA:** colapsa OCR+MD en una
+  API (MD/JSON con tablas, es/ca/ru, ~$1-2/1.000 pág.). Coste irrelevante; **el único punto es RGPD**: el
+  documento crudo (máxima PII) transita Mistral → exige **ZDR activado** (sin retención; evita subprocesador
+  GCP-EE.UU. de feb-2025) + DPA firmado. Decisión de secreto profesional del responsable. Encaja con el muro
+  relajado de la fase de construcción; reevaluar al reinstaurar el muro.
+- **Cola dura (manuscrito/tablas imposibles):** en vez de Claude visión → **Azure Document Intelligence en
+  contenedor DESCONECTADO** (on-prem, manuscrito 99%, ~$1,50/1.000) o **Mistral self-host**, y **solo
+  post-anonimización** sobre el subconjunto difícil. Orden correcto: OCR local → anonimización → (opcional) cloud.
+- **Mantener el audit `ocr_quality` con cualquier motor** (Mistral es ML → puede alucinar cifras).
+- Categoría legal-tech ES (Aranzadi/Kleos, LexON, sudespacho…): su OCR es accesorio → sirven como capa
+  CRM/expediente donde depositar el resultado, no como motor.
 
 ---
 

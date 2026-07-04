@@ -1747,6 +1747,13 @@ decisión **aplazada e intercambiable**: Caja 1 (PDF buscable) = OCRmyPDF fijado
 bake-off en F3 con **MinerU** (opendatalab, local/CPU/determinista, tablas+manuscrito, sin PII) como favorito
 frente a Docling, con gate hardware/catalán/licencia. Si MinerU cumple, elimina la necesidad de Claude visión. Ver §F.
 
+**Estudio de mercado 2026 + aparcado (2026-07-04).** No hay turnkey que cumpla RGPD-local + es/ca/ru +
+presupuesto. Corrección de licencia: **Docling (MIT)** por defecto sobre MinerU (AGPL-3.0) para el
+extractor→MD. Añadida **opción Mistral OCR cloud (UE) + ZDR + DPA** como motor de la fase de construcción
+(coste irrelevante ~$1-2/1.000; el punto es RGPD del crudo). Cola dura (manuscrito) → Azure contenedor
+desconectado / Mistral self-host, post-anonimización. **Este plan queda APARCADO**; foco actual: skills con
+código (`ocr-a-md` sobre el scaffold). Ver §F de `PLAN_MOTOR_DOCUMENTAL.md`.
+
 **Justificación de no aplicarlo ahora.** Es un refactor arquitectónico grande; primero se
 memoriza el diseño. El orden sugerido de ejecución (saneamiento barato → registro de cobertura →
 fachada → motor OCR único → conector → resto de faltas) está en el doc.
