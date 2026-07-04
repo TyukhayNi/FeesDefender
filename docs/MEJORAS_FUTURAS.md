@@ -1735,6 +1735,13 @@ layout nuevo, por flota, con sello `layout_version` + `--force` del pipeline, pa
 journal reversible) y `rebuild_plugin` (repackage mecánico de skills/conectores + señalización semántica de
 skills con prosa afectada + hook de drift no-silencioso). Ver §J/§K de `PLAN_MOTOR_DOCUMENTAL.md`.
 
+**Decisiones estratégicas + principios (2026-07-04).** (1) plugin-first (Streamlit parqueado, distribución
+vía plugin); (2) Ollama/LLM local descartado → motor OCR **OCRmyPDF + `ocr_per_page` torch** como reocr;
+(3) regla PII relajada temporalmente, anonimización resecuenciada al **último eslabón** con **gate de
+reinstauración del muro `06`**. Además **9 principios rectores de ejecución** (M1–M9): golden fixture,
+registro-primero, walking skeleton, fachada, `00_Input` intocable, medir-antes, Preview→Apply, preflight y
+doctor de dependencias. Roadmap resecuenciado F(-1)→F-final. Ver §L/§M de `PLAN_MOTOR_DOCUMENTAL.md`.
+
 **Justificación de no aplicarlo ahora.** Es un refactor arquitectónico grande; primero se
 memoriza el diseño. El orden sugerido de ejecución (saneamiento barato → registro de cobertura →
 fachada → motor OCR único → conector → resto de faltas) está en el doc.

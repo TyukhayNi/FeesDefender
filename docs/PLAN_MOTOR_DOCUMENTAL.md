@@ -159,10 +159,11 @@ Principios rectores:
 - **OCR obligatorio en su etapa**, no un rescate manual → cierra el hueco de >30pp.
 - **Los no-PDF** (docx, email, txt) saltan OCR y split y van directos a MD.
 
-Motor OCR único candidato: **OCRmyPDF** — el único de los tres que produce PDF buscable, ya
-maneja `spa+cat+rus` y, al ir página-a-página con Tesseract, es más estable en memoria (la
-idea del subproceso aislado se absorbe aquí y el tope de 30pp desaparece). RapidOCR/Docling
-quedarían como reserva para PDFs que Tesseract lea mal.
+Motor OCR único **FIJADO (decisión 2026-07-04, §L): OCRmyPDF** — el único de los tres que produce PDF
+buscable, ya maneja `spa+cat+rus` y, al ir página-a-página con Tesseract, es más estable en memoria (la
+idea del subproceso aislado se absorbe aquí y el tope de 30pp desaparece). El **reocr** por calidad usa
+`core/ocr_per_page.py` (torch, por página) como reintento anti-OOM. **Ollama / visión local descartado**
+(hardware no viable); **visión cloud descartada** para material en claro (muro PII). Todo local y determinista.
 
 ---
 
@@ -186,7 +187,9 @@ derivado y regenerable**, bajo `01_Procesado/` (nunca `00_Input/`; toda la ruta
 - **Tres audiencias, no dos:** humano → `01_Sala de lectura` (en claro, ordenado); pipeline/máquina
   interna → `02_Sala de máquina` (en claro, **con PII**, gitignored); **LLM externo → `06_Anonimizado`**
   (tapado). La "Sala de máquina" es el taller determinista del pipeline, NO lo que lee el LLM externo:
-  el muro claro(`01`)/tapado(`06`) del proyecto se mantiene intacto.
+  el muro claro(`01`)/tapado(`06`) es el **estado final objetivo**. **Nota interina (§L, decisión 2026-07-04):**
+  la regla PII está relajada temporalmente — hoy el LLM lee en claro; es deuda consciente con gate de
+  reinstauración. La anonimización es el último eslabón, no el primero.
 - `ensure_case` hoy crea eager `01_Procesado/{Sala lectura, MD, _revisar}`
   ([case_manager.py:267](../core/case_manager.py:267)). La migración renombra `Sala lectura` →
   `01_Sala de lectura` y crea `02_Sala de máquina/` (fase F0). Cada subcarpeta de producto se crea
@@ -315,8 +318,8 @@ ni registro único). Se necesita un botón repetible para llevarlos al layout nu
 - **Cablear `--force`:** hoy `run_pipeline`/`pipeline.run` **no** tienen `--force` (solo
   [`extractor.extract_all(force=)`](../core/extractor.py:329), sin cablear). Hace falta para forzar la
   regeneración en el layout nuevo.
-- **Dónde vive:** CLI `scripts/reorganizar_caso.py` (`plan`/`apply`, por caso y `--todos`) + botón Streamlit;
-  ejecución local. Fase **F0**.
+- **Dónde vive:** CLI `scripts/reorganizar_caso.py` (`plan`/`apply`, por caso y `--todos`) + **skill/comando
+  del plugin** (Streamlit **parqueado**, §L); ejecución local. Fase **F0**.
 
 ## K. Botón "Reformar plugin/skills" + mantenimiento continuo
 
@@ -345,17 +348,63 @@ conectores del plugin deben reconstruirse. Se necesita un botón que lo haga y a
 
 ---
 
-## Orden de ejecución sugerido (trabajo futuro)
+## L. Restricciones y secuencia (decisiones 2026-07-04)
 
-1. **Saneamiento barato y layout (F0):** renombrar `Sala lectura` → `01_Sala de lectura`, crear
-   `02_Sala de máquina/`, migrar W-02VND1; alinear umbrales (B.3), corregir docstring/etiqueta (B.4, B.5),
-   unificar el set de extensiones de imagen + HEIC (C).
-2. **Registro único de caso (F1)** — §H, con id dual (§G.3); cimiento de observabilidad + vistas derivadas.
-3. **Fachada única (F2)** (E.10) + desacople de rutas (E.11) + salida estructurada (E.13).
-4. **Motor OCR único + reocr por calidad + espejos (F3)** — OCRmyPDF (PDF buscable), reocr §G.7,
-   persistir en `02_Sala de máquina/{01_OCR,02_Documentos,03_MD}`, reordenar split→MD.
-5. **Conector MCP + empaquetado en el plugin (F4)** (E.12/14/15/16).
-6. **Faltas restantes (F5)** (D.2–D.9) según disparador real.
+1. **Plugin de Claude primero; Streamlit parqueado** (no descartado, no prioritario). Coste asumido: sin
+   acceso cero-instalación — usar el plugin exige Claude + entorno. **Distribución al despacho = vía plugin.**
+2. **Ollama / LLM local NO viable** (hardware). Motor OCR **FIJADO: OCRmyPDF + `ocr_per_page` (torch) como
+   reocr**; visión local y visión cloud descartadas (§F).
+3. **Regla "el LLM no toca PII" relajada TEMPORALMENTE, consciente.** Prioridad: resultados tangibles ya
+   (pipeline→MD, sala de máquina, sala de lectura, intake). La **anonimización es el último eslabón**; correr
+   a ella ahora = sin resultados tangibles + producto no fiable.
+   - Sin LLM local, cualquier paso con LLM va a la nube → relajar la regla es lo que desbloquea tener análisis
+     funcionando ahora. La arquitectura no cambia (muro `01`-claro/`06`-tapado sigue siendo el objetivo);
+     cambia la **secuencia**.
+   - **Gate de reinstauración del muro `06`:** se retoma cuando estén ✔ pipeline→MD, ✔ sala de máquina,
+     ✔ sala de lectura, ✔ intake. Deuda **fechada y con criterio de salida**, no abierta.
+   - **Mitigación interina sugerida** (no obliga): desarrollar sobre casos de prueba y/o usar proveedor LLM
+     con DPA / sin entrenamiento para los pasos que tocan datos.
+
+## M. Principios rectores de ejecución
+
+- **M1 · Golden fixture antes de tocar código** — congelar una foto end-to-end de W-02VND1 (patrón
+  [`scripts/regen_fixture_sars1.py`](../scripts/regen_fixture_sars1.py)); cada fase demuestra equivalencia
+  salvo los cambios buscados. Antídoto al fallo silencioso.
+- **M2 · Registro `index.yaml` primero (piedra angular)** — todo deriva de él (vistas, espejos, `ocr_quality`,
+  botones). Antes que lo cosmético.
+- **M3 · Walking skeleton** — un documento real de punta a punta (OCR→PDF buscable→split→espejo→registro→vista)
+  antes de escalar a la flota.
+- **M4 · Fachada `procesar_expediente()` desde el día uno** — la costura única a la que se enchufa todo; hace
+  el conector MCP (plugin) casi gratis en F4.
+- **M5 · `00_Input/` y `90_Notas personales/` intocables — invariante FORZADO** (guard/test que falla si algo
+  intenta escribir ahí), no una convención. Confianza forense + regeneración sin miedo.
+- **M6 · Medir el "antes"** — auditoría (patrón `audit_*`) que cuenta documentos hoy ciegos (MD vacío/pobre,
+  >30pp, banda muerta, imágenes, `.heic`). Métrica de éxito ("de N a 0") + prioriza qué casos migrar.
+- **M7 · Preview→Apply obligatorio** en todo lo masivo/destructivo (migraciones, botones) — regla que ninguna
+  herramienta futura puede saltarse. "El sistema propone, el jurista dispone."
+- **M8 · Preflight por capacidades, centralizado** — extender [`scripts/health_check.py`](../scripts/health_check.py)
+  con checks nombrados (`ocr`, `nlp`, `crm`, `drive`, `pipeline`); **read-only**, gate antes de cada operación,
+  falla en voz alta. Gemelo de entrada del registro de cobertura (§D.1). Caso crítico: **PHPSESSID** del CRM
+  (`check-legacy`).
+- **M9 · Doctor/instalador + manifiesto único de dependencias** — `feesdefender doctor`/`setup` **separado** del
+  preflight, instala lo que falta **por capas y con consentimiento** (pip/modelos auto; binarios nativos
+  —Tesseract/Ghostscript— propuestos por SO; credenciales aparte). Preflight y doctor leen el **mismo
+  manifiesto**. **No instalar al cargar el plugin**; entorno web → hook `SessionStart` (skill `session-start-hook`).
+
+---
+
+## Orden de ejecución sugerido (resecuenciado — decisiones §L + principios §M)
+
+- **F(-1) · Fundaciones sin riesgo:** golden fixture de W-02VND1 (M1) + auditoría "antes" de documentos ciegos (M6).
+- **F1 · Registro único de caso** (§H, piedra angular M2) + id dual (§G.3) + **fachada fina** `procesar_expediente()` (M4).
+- **F0 · Layout:** renombrar `Sala lectura` → `01_Sala de lectura`, crear `02_Sala de máquina/`, **botón
+  `reorganizar_caso`** + `layout_version` (§J), migrar W-02VND1; alinear umbrales (B.3), corregir
+  docstring/etiqueta (B.4, B.5), unificar extensiones de imagen + HEIC (C).
+- **F3 · Motor OCR + reocr + espejos:** OCRmyPDF + `ocr_per_page` torch (§F/§G.7), persistir en
+  `02_Sala de máquina/{01_OCR,02_Documentos,03_MD}`, reordenar split→MD; **validado antes con walking skeleton (M3)**.
+- **F4 · Conector MCP + empaquetado** (§K) con **preflight (M8) + doctor/manifiesto (M9)**.
+- **F-final · Anonimización + reinstauración del muro `06`** (gate PII §L) — último eslabón.
+- **Transversales en todas las fases:** Preview→Apply (M7) y guard `00_Input` (M5).
 
 ## Fuera de alcance de este documento
 
