@@ -28,6 +28,26 @@ de `[SIGUIENTE-INTAKE-JUDICIAL-AUTO]`.
 
 ---
 
+## [SIGUIENTE-SKILL-EXPEDIENTE-A-MD] Skill `expediente-a-md` — vía lean (retorno inmediato)
+*Decisión Nikolai 2026-07-04. El motor completo queda aparcado; foco en esta skill que orquesta motores existentes y da resultado tangible: hacer legible y organizado un expediente.*
+
+> **Diseño CERRADO** (apéndice de `docs/PLAN_MOTOR_DOCUMENTAL.md`). **Aún NO construida** — arranque de la próxima sesión.
+
+**Qué hace (orquestador de 3 pasos, 3 salidas):**
+- [1] `01_Procesado/OCR/` — PDFs **buscables** con **OCRmyPDF** (local, sin PII a la nube).
+- [2] `01_Procesado/MD/` — 1 `.md` por documento (del PDF buscable / texto nativo del 50% digital).
+- [3] `01_Procesado/Sala lectura/` — **encadena la skill existente `organizar-sala-lectura`**.
+- `_revisar/_cobertura.md` (dudosos + cifras a verificar). `00_Input` intocable. Idempotente.
+
+**Motor:** OCRmyPDF base (obligatorio para el PDF buscable — Claude visión no lo genera); **Claude visión (Sonnet 5 / Opus 4.8) = refuerzo OPCIONAL** del MD en páginas duras (manuscrito/tablas).
+
+**Reutiliza:** `core/anon/ocr.py::ocr_pdf` · `imagen_a_pdf` · `extractor` · `markdown_generator` · `catalogo_documental` · `intake_log` · `utils.output_slug` · `pypdfium2` · skill `organizar-sala-lectura`.
+
+**Prerrequisitos para arrancar:**
+- [ ] Instalar **OCRmyPDF + Tesseract `spa/cat/rus`** en el PC (imprescindible para [1]).
+- [ ] Aportar **un caso real** (o unos PDFs) para el E2E.
+- [ ] Build: `render`(pypdfium2) + `SKILL.md` + tests (transcripción mockeada) + `CHANGELOG` + sync helpers `_shared`.
+
 ## [SIGUIENTE-MOTOR-DOCUMENTAL] Motor documental unificado (split/OCR/MD) + empaquetado como conector (`MEJORAS #48`)
 *Decisión Nikolai 2026-07-03. Disparador concreto: Nikolai quiere empaquetar el motor OCR→split→MD como un conector/plugin reutilizable por los compañeros. Un motor fragmentado y que falla en silencio no se puede empaquetar bien → sanear + fachada + registro de cobertura es la preparación del plugin.*
 

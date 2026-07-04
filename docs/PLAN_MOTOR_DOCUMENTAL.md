@@ -451,3 +451,29 @@ conectores del plugin deben reconstruirse. Se necesita un botón que lo haga y a
 - El refactor real del código (fachada, motor único, reordenación).
 - La construcción del conector MCP y su empaquetado.
 - El cierre de las faltas D.1–D.9.
+
+---
+
+## Apéndice — Skill `expediente-a-md` (vía lean, diseño CERRADO 2026-07-04; build en próxima sesión)
+
+Mientras el motor completo está aparcado, la **vía lean** es una skill que orquesta motores existentes y da
+**retorno inmediato**: hacer legible y organizado un expediente. **Orquestador de 3 pasos, 3 salidas:**
+
+```
+01_Procesado/
+├── OCR/            [1] PDFs BUSCABLES (OCRmyPDF; local, sin PII a la nube)
+│   └── {slug__sha8}.pdf
+├── MD/             [2] 1 .md por documento (del PDF buscable / texto nativo)
+│   └── {slug__sha8}.md
+├── Sala lectura/   [3] encadena la skill EXISTENTE `organizar-sala-lectura`
+│   └── INDICE.md · CRONOLOGIA.md · _MANIFIESTO.md · indice_documental.yaml · <docs nombre canónico>
+└── _revisar/_cobertura.md   (dudosos + cifras/fechas a verificar)
+```
+
+- **Motor:** **OCRmyPDF base** (obligatorio para [1] — Claude visión NO genera PDF buscable, solo texto);
+  **Claude visión (Sonnet 5 / Opus 4.8) = refuerzo OPCIONAL** del MD en páginas duras (manuscrito/tablas).
+- **Enrutado:** PDF con texto → pypdf; escaneado/imagen/`.heic` → OCRmyPDF (+ visión si sale mal); `.eml`/WhatsApp/docx → texto nativo (sin OCR).
+- **Reutiliza:** `core/anon/ocr.py::ocr_pdf` · `core/anon/imagen_a_pdf` · `extractor` · `markdown_generator` · `catalogo_documental` · `intake_log` · `utils.output_slug` · `pypdfium2` (render) · skill `organizar-sala-lectura`.
+- **Honra:** `00_Input` intocable · idempotente · SHA forense · flag de calidad (sin fallo silencioso) · Preview→Apply.
+- **Prerrequisito aceptado:** instalar **OCRmyPDF + Tesseract `spa/cat/rus`** en el PC (imprescindible para [1]).
+- **Estado:** diseño cerrado; **no construido**. Tarea de arranque en `PLAN.md` → `[SIGUIENTE-SKILL-EXPEDIENTE-A-MD]`.
