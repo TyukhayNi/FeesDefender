@@ -159,11 +159,24 @@ Principios rectores:
 - **OCR obligatorio en su etapa**, no un rescate manual → cierra el hueco de >30pp.
 - **Los no-PDF** (docx, email, txt) saltan OCR y split y van directos a MD.
 
-Motor OCR único **FIJADO (decisión 2026-07-04, §L): OCRmyPDF** — el único de los tres que produce PDF
-buscable, ya maneja `spa+cat+rus` y, al ir página-a-página con Tesseract, es más estable en memoria (la
-idea del subproceso aislado se absorbe aquí y el tope de 30pp desaparece). El **reocr** por calidad usa
-`core/ocr_per_page.py` (torch, por página) como reintento anti-OOM. **Ollama / visión local descartado**
-(hardware no viable); **visión cloud descartada** para material en claro (muro PII). Todo local y determinista.
+**Dos cajas distintas, no confundir:** (1) **producir el PDF buscable** (custodia/split/humano) y
+(2) **extraer→MD** (el texto estructurado). El motor de cada caja es una **decisión aislada tras la junta**
+(registro + `ocr_quality`, §H): se puede elegir/cambiar sin tocar el resto del sistema, así que **se aplaza a F3
+y se decide con datos** (bake-off), no en papel.
+
+- **Caja 1 — PDF buscable:** **OCRmyPDF** (local, determinista, `spa+cat+rus`, página a página → sin OOM ni
+  tope de 30pp). Es el único que produce PDF buscable nativo; se mantiene.
+- **Caja 2 — extractor→MD:** hoy Docling (capado). **Candidato favorito a evaluar: MinerU** (opendatalab) —
+  local, corre en **CPU/16 GB** (modo pipeline, determinista), hace **tablas→HTML y manuscrito** (los dos
+  techos de Tesseract) **sin tocar PII**. Si gana el bake-off, **probablemente elimina la necesidad de Claude
+  visión**.
+- **Descartados:** Ollama/visión local (hardware) y visión cloud sobre material en claro (muro PII). Claude
+  visión queda solo como último recurso hipotético, gateado por PII — y posiblemente innecesario si MinerU cumple.
+- **Reocr** por `ocr_quality`: el motor de reintento se decide junto con la Caja 2 (MinerU o `ocr_per_page`).
+
+**Gate antes de adoptar MinerU (F3):** (a) que el modo CPU no dé OOM en la máquina real; (b) calidad en
+**catalán** (Paddle lista 109 idiomas pero no lo cita explícito); (c) revisar la **licencia** "MinerU
+personalizada (base Apache 2.0)" para uso del despacho.
 
 ---
 
@@ -352,8 +365,10 @@ conectores del plugin deben reconstruirse. Se necesita un botón que lo haga y a
 
 1. **Plugin de Claude primero; Streamlit parqueado** (no descartado, no prioritario). Coste asumido: sin
    acceso cero-instalación — usar el plugin exige Claude + entorno. **Distribución al despacho = vía plugin.**
-2. **Ollama / LLM local NO viable** (hardware). Motor OCR **FIJADO: OCRmyPDF + `ocr_per_page` (torch) como
-   reocr**; visión local y visión cloud descartadas (§F).
+2. **Ollama / LLM local NO viable** (hardware). Motores en **dos cajas tras la junta** (§F): **PDF buscable =
+   OCRmyPDF** (fijado); **extractor→MD = decisión APLAZADA a F3** con **MinerU como favorito** a bake-off
+   (local/CPU/determinista, tablas+manuscrito, sin PII). Visión local y visión cloud sobre material en claro
+   descartadas; Claude visión solo último recurso gateado, posiblemente innecesario si MinerU cumple.
 3. **Regla "el LLM no toca PII" relajada TEMPORALMENTE, consciente.** Prioridad: resultados tangibles ya
    (pipeline→MD, sala de máquina, sala de lectura, intake). La **anonimización es el último eslabón**; correr
    a ella ahora = sin resultados tangibles + producto no fiable.
@@ -400,8 +415,10 @@ conectores del plugin deben reconstruirse. Se necesita un botón que lo haga y a
 - **F0 · Layout:** renombrar `Sala lectura` → `01_Sala de lectura`, crear `02_Sala de máquina/`, **botón
   `reorganizar_caso`** + `layout_version` (§J), migrar W-02VND1; alinear umbrales (B.3), corregir
   docstring/etiqueta (B.4, B.5), unificar extensiones de imagen + HEIC (C).
-- **F3 · Motor OCR + reocr + espejos:** OCRmyPDF + `ocr_per_page` torch (§F/§G.7), persistir en
-  `02_Sala de máquina/{01_OCR,02_Documentos,03_MD}`, reordenar split→MD; **validado antes con walking skeleton (M3)**.
+- **F3 · Motor OCR + reocr + espejos:** OCRmyPDF para el PDF buscable; **bake-off del extractor→MD
+  (MinerU vs Docling)** sobre el fixture + casos duros (escritura, catalán, ruso, tabla, manuscrito),
+  con gate hardware/catalán/licencia (§F); persistir en `02_Sala de máquina/{01_OCR,02_Documentos,03_MD}`,
+  reordenar split→MD; **validado antes con walking skeleton (M3)**.
 - **F4 · Conector MCP + empaquetado** (§K) con **preflight (M8) + doctor/manifiesto (M9)**.
 - **F-final · Anonimización + reinstauración del muro `06`** (gate PII §L) — último eslabón.
 - **Transversales en todas las fases:** Preview→Apply (M7) y guard `00_Input` (M5).
