@@ -629,8 +629,13 @@ scaffolding, s. 2026-07-05). Extiende, sin contradecir,
 (2026-06-10): la planificación ya está unificada; falta el drift de hechos que la
 prosa copia del código.
 
-- [ ] **Fase 1** (riesgo cero): README FeesGuard→FeesDefender + poda de la cola de
-  prioridad en `STATUS.md` (enlazar a `PLAN.md`) + `_skills_drafts/` → `_skills_ARCHIVO/`.
+- [x] **Fase 1** (riesgo cero) — **HECHA 2026-07-05**: README reescrito para orientar
+  (FeesGuard→FeesDefender + banner a las fuentes canónicas; sin transcribir estructura/pipeline);
+  cola de prioridad de `STATUS.md` archivada en `docs/bitacora/STATUS_cola_historica_pre_2026-07.md`
+  (`estado: histórico`) + puntero a `PLAN.md` (STATUS 1117→442 líneas); `_skills_drafts/`→`_skills_ARCHIVO/`
+  (`git mv`) + `scripts/package_skill.py` deja de empaquetar ese root. NOTA: `core/__init__.py`
+  (`__product__ = "FeesGuard"`) sigue pendiente — es cambio de código, va en una fase con tests;
+  las apariciones `FeesGuard/0.1` en `sync_sudespacho_legacy.py`/`DEAD_ENDS.md` son User-Agent HTTP real, NO tocar.
 - [ ] **Fase 2**: prosa→puntero al código (taxonomía/estructura solo en `config.py`)
   + test guard `tests/test_docs_no_duplican_taxonomia.py`.
 - [ ] **Fase 3** (decisión de Nikolai): un solo hogar para specs (`docs/superpowers/`
