@@ -621,6 +621,23 @@ menos diálogos de permiso por-llamada. Disparador: intake real del zip W-01VG51
 
 ---
 
+## [SIGUIENTE-GOBERNANZA-FUENTES-VERDAD] Unificar fuentes de verdad (estructura/taxonomía/arquitectura)
+
+Propuesta completa en `docs/GOBERNANZA_FUENTES_VERDAD.md` (disparador: revisión de
+scaffolding, s. 2026-07-05). Extiende, sin contradecir,
+`[CRITICO-FUENTES-VERDAD-PLANIFICACION]` (2026-05-29) e `[IDEA-GOBERNANZA-DOCS]`
+(2026-06-10): la planificación ya está unificada; falta el drift de hechos que la
+prosa copia del código.
+
+- [ ] **Fase 1** (riesgo cero): README FeesGuard→FeesDefender + poda de la cola de
+  prioridad en `STATUS.md` (enlazar a `PLAN.md`) + `_skills_drafts/` → `_skills_ARCHIVO/`.
+- [ ] **Fase 2**: prosa→puntero al código (taxonomía/estructura solo en `config.py`)
+  + test guard `tests/test_docs_no_duplican_taxonomia.py`.
+- [ ] **Fase 3** (decisión de Nikolai): un solo hogar para specs (`docs/superpowers/`
+  vs `docs/PLAN_*.md`) + vendorizar la referencia común de sudespacho.
+- [ ] **Gobernanza ligera**: rotación de `STATUS.md` a `docs/bitacora/YYYY.md`;
+  invariantes en `session_close`; frontmatter `estado:`/`dueño:` + `docs/INDICE.md`.
+
 ## Aparcado mientras el bloque crítico no se cierre
 
 - `[SIGUIENTE-ORGANIZADOR-UI]` — **DESCARTADO 2026-06-07** (Ollama demasiado
