@@ -686,9 +686,10 @@ prosa copia del código.
   (FeesGuard→FeesDefender + banner a las fuentes canónicas; sin transcribir estructura/pipeline);
   cola de prioridad de `STATUS.md` archivada en `docs/bitacora/STATUS_cola_historica_pre_2026-07.md`
   (`estado: histórico`) + puntero a `PLAN.md` (STATUS 1117→442 líneas); `_skills_drafts/`→`_skills_ARCHIVO/`
-  (`git mv`) + `scripts/package_skill.py` deja de empaquetar ese root. NOTA: `core/__init__.py`
-  (`__product__ = "FeesGuard"`) sigue pendiente — es cambio de código, va en una fase con tests;
-  las apariciones `FeesGuard/0.1` en `sync_sudespacho_legacy.py`/`DEAD_ENDS.md` son User-Agent HTTP real, NO tocar.
+  (`git mv`) + `scripts/package_skill.py` deja de empaquetar ese root. **`core/__init__.py`
+  (`__product__`/`__product_long__`/docstring) FeesGuard→FeesDefender — HECHO 2026-07-06** (no lo
+  importa ni testea nadie; verificado). Las apariciones `FeesGuard/0.1` en
+  `sync_sudespacho_legacy.py`/`DEAD_ENDS.md` son User-Agent HTTP real, **NO tocar** (se dejan).
 - [x] **Fase 2** — **HECHA 2026-07-05**: en `STATUS.md`, tabla de taxonomía y estructura
   de carpetas del caso reemplazadas por punteros a `core/config.py` (`TIPOS_CASO_*`,
   `CASO_SUBDIRS`); regla añadida al mapa de dependencias de `docs/ARQUITECTURA.md` (marca

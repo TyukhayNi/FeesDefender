@@ -53,7 +53,7 @@ fecha: 2026-07-05
 | `PLAN_PRERELLENO_LLM_VIABILIDAD.md` | vigente | Pre-relleno LLM del informe de viabilidad. |
 | `PLAN_SaRS1_anon_pipeline.md` | vigente | Pipeline SaRS1 multi-hilo; H6 aún abierto. |
 | `PLAN_MOTOR_DOCUMENTAL.md` | aparcado | Motor OCR→split→MD como conector (⏸️ 2026-07-04; `MEJORAS #48`). |
-| `PLAN_BITACORA_CASOS.md` | revisar | Bitácora razonada por caso; sin señal clara de implementación. |
+| `PLAN_BITACORA_CASOS.md` | aparcado | Bitácora razonada por caso (planificada s24, 2026-05-21); nunca implementada y fuera de la cola viva — recuperar si se decide. |
 | `PLAN_SUBDIVISION_CIUDADES.md` | historico | Implementado (`core/ciudades` + `case_locator`; migración 2026-05-21). |
 | `PLAN_SALA_LECTURA_01_PROCESADO.md` | historico | Superado por la sala única (`[SIGUIENTE-SALA-UNICA-PLANA]` + skill). |
 | `PLAN_email_aplanado_anidados.md` | historico | Implementado ✅ (Parte 1 — emails `.eml` anidados). |
