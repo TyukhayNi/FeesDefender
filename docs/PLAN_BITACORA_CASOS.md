@@ -1,3 +1,8 @@
+---
+estado: revisar
+dueño: Nikolai Tyukhay
+---
+
 # Plan — Bitácora razonada por caso
 
 > Trazado el 2026-05-21 (sesión 24).

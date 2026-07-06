@@ -1,3 +1,8 @@
+---
+estado: historico
+dueño: Nikolai Tyukhay
+---
+
 # Plan — Subdivisión de `CASOS_ROOT` por ciudades
 
 **Trazado:** 2026-05-12 (sesión 14, planificación).

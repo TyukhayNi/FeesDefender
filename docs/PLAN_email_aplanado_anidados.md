@@ -1,3 +1,8 @@
+---
+estado: historico
+dueño: Nikolai Tyukhay
+---
+
 # PLAN — Aplanado byte-fiel de emails anidados en el export de etiquetas Gmail
 
 > **Parte 1 de 2.** Esta parte cubre los emails que viajan **como `.eml` adjunto**

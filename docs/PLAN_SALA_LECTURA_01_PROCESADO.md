@@ -1,3 +1,8 @@
+---
+estado: historico
+dueño: Nikolai Tyukhay
+---
+
 # PLAN — Sala de lectura y organización de `01_Procesado`
 
 > **Origen:** HANDOFF de sesión de planificación Cowork, 2026-06-12 (aprobado por

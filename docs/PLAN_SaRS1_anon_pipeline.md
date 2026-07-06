@@ -1,3 +1,8 @@
+---
+estado: vigente
+dueño: Nikolai Tyukhay
+---
+
 # Plan multi-hilo — SaRS1 (Castelar 37-39, Santander) / Procesamiento documental + bucle de mejora continua
 
 > Documento maestro de un desarrollo distribuido en 7 hilos de Cowork. Cada hilo es autocontenido: incluye contexto mínimo, pre-condiciones, pasos, comandos, criterios de aceptación y entregables. Al abrir un hilo nuevo, leer **§3 Bibliografía de apertura** y el hilo correspondiente. No es necesario releer hilos previos si los criterios de aceptación quedaron marcados.

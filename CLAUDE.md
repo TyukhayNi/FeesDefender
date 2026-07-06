@@ -156,6 +156,7 @@ Atajo: `/tests` ejecuta la suite completa.
 ## Referencias rápidas
 
 - **Estado y tareas**: `STATUS.md` (raíz del proyecto)
+- **Índice de `docs/` + ciclo de vida**: `docs/INDICE.md`
 - **Arquitectura y deps**: `docs/ARQUITECTURA.md`
 - **Relaciones código/plugin/skills + SSOT**: `docs/ARQUITECTURA_RELACIONES.md`
 - **API sudespacho**: `docs/INTEGRACION_SUDESPACHO.md` (su §14 fusiona la **referencia común sudespacho**)

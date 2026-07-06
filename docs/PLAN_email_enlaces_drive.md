@@ -1,3 +1,8 @@
+---
+estado: historico
+dueño: Nikolai Tyukhay
+---
+
 # PLAN — Rescate de ficheros enlazados (Drive/Gmail) en el export de etiquetas Gmail
 
 > **Parte 2 de 2.** La **Parte 1** (`docs/PLAN_email_aplanado_anidados.md`) cubre los

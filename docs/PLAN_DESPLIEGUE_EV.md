@@ -1,3 +1,8 @@
+---
+estado: vigente
+dueño: Nikolai Tyukhay
+---
+
 # PLAN_DESPLIEGUE_EV — Hospedaje del Streamlit y apertura a Engel & Völkers
 
 > Plan de despliegue del Streamlit de FeesDefender en VPS dedicado para dar acceso a

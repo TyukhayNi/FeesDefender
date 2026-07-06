@@ -1,3 +1,8 @@
+---
+estado: aparcado
+dueño: Nikolai Tyukhay
+---
+
 # PLAN — Motor documental unificado (split/OCR/MD) y empaquetado como conector
 
 > **Estado:** diseño / memoria de diagnóstico. No implementado. Backlog: `MEJORAS #48`
