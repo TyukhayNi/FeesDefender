@@ -1,3 +1,8 @@
+---
+estado: vigente
+dueño: Nikolai Tyukhay
+---
+
 # Plan — Pre-relleno LLM del informe de viabilidad
 
 > **Estado**: planificación cerrada, implementación pendiente.

@@ -1,3 +1,8 @@
+---
+estado: vigente
+dueño: Nikolai Tyukhay
+---
+
 # PLAN — Intake automático de correos de procuradores → Sudespacho
 
 > **Para retomar en un hilo nuevo. Documento autocontenido.** Diseño cerrado con

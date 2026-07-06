@@ -1,3 +1,8 @@
+---
+estado: vigente
+dueño: Nikolai Tyukhay
+---
+
 # PLAN — Intake CRM completo a `05_CRM` + OCR/anon + contador de solapamientos
 
 > **Para retomar en un hilo nuevo.** Documento autocontenido. Decisión cerrada

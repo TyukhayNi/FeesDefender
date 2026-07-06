@@ -44,7 +44,7 @@ taxonomía y arquitectura**, donde hoy quedan copias que se contradicen.
 | Taxonomía de tipos de caso | `core/config.py::TIPOS_CASO_*` | STATUS enlaza; se borra la tabla en prosa |
 | Arquitectura y mapa de dependencias | `docs/ARQUITECTURA.md` | STATUS borra "Arquitectura v2" y enlaza |
 | Decisiones cerradas / callejones | `PLAN.md` (Resuelto) + `docs/DEAD_ENDS.md` | — |
-| Specs y planes de fase | un solo directorio (recomendado: `docs/superpowers/`) | los `docs/PLAN_*.md` vivos se migran o se marcan `[HISTÓRICO]` |
+| Specs y planes de fase | `docs/superpowers/{specs,plans}/` (hogar de los nuevos) | los `docs/PLAN_*.md` legacy se quedan donde están, etiquetados con `estado:` e indexados en `docs/INDICE.md` (no se migran) |
 | Convenciones jurídicas / estilo | `docs/CONVENCIONES_DESPACHO.md` + `data/_estilo/contrato_estilo.md` | — |
 | Referencia sudespacho común | copia canónica congelada **dentro** de este repo | `INTEGRACION_SUDESPACHO.md` enlaza a la copia local |
 | Skills del despacho | `.claude/skills/` (ya decidido) | `_skills_drafts/` → `_skills_ARCHIVO/` o borrar |
@@ -68,11 +68,26 @@ taxonomía y arquitectura**, donde hoy quedan copias que se contradicen.
 5. Test guard `tests/test_docs_no_duplican_taxonomia.py` que falle si las claves
    `TIPOS_CASO_*` aparecen literales en `.md`.
 
-**Fase 3 — consolidación (decisión de Nikolai)**
+**Fase 3 — consolidación (decisión de Nikolai) — HECHA/REVISADA 2026-07-05**
 
-6. Elegir un solo hogar para specs/planes; migrar o marcar `[HISTÓRICO]` los
-   `docs/PLAN_*.md`.
-7. Vendorizar la referencia común de sudespacho dentro del repo.
+6. **Specs/planes — decisión: etiquetar, no mover.** Migrar físicamente los 11
+   `docs/PLAN_*.md` a `docs/superpowers/` es puro *churn* y rompe enlaces, así que
+   se descartó. En su lugar: (a) frontmatter `estado:` en cada `PLAN_*.md`
+   (`vigente`/`historico`/`aparcado`/`revisar`); (b) `docs/INDICE.md` como índice
+   único de ciclo de vida; (c) regla fijada — **los specs nuevos nacen en
+   `docs/superpowers/{specs,plans}/`**; los `PLAN_*.md` son legacy y no se crean más.
+7. **Vendorizar la referencia sudespacho — DESCARTADO.** El SSOT del equipo
+   (`docs/ARQUITECTURA_RELACIONES.md`) define esa referencia como **fuente externa
+   compartida** con El Contable y El Auditor (`../ElContable/docs/REFERENCIA_SUDESPACHO_API_PERMISOS.md`),
+   fusionada en `docs/INTEGRACION_SUDESPACHO.md §14`. Meterla dentro de este repo
+   rompería esa decisión cross-proyecto deliberada. Se mantiene externa.
+
+> **Reconciliación con `docs/ARQUITECTURA_RELACIONES.md` (SSOT):** ese documento,
+> creado en paralelo, es el **mapa canónico SSOT** del proyecto (código, plugin,
+> skills, estado, sudespacho). Este documento (gobernanza) aporta el *diagnóstico
+> de drift*, el plan por fases y las recomendaciones ligeras; para "dónde vive cada
+> artefacto", la referencia es la tabla SSOT de `ARQUITECTURA_RELACIONES.md`. No se
+> duplican: se complementan.
 
 ## Enforcement
 

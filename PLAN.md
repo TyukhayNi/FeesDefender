@@ -701,10 +701,15 @@ prosa copia del código.
   falsos positivos → se descartó a favor del anclaje en código (nombre `test_docs_no_duplican_taxonomia.py`
   del plan original abandonado por eso). Suite NO ejecutada aquí (entorno remoto sin venv; lógica
   del guard validada importando `config`).
-- [ ] **Fase 3** (decisión de Nikolai): un solo hogar para specs (`docs/superpowers/`
-  vs `docs/PLAN_*.md`) + vendorizar la referencia común de sudespacho.
-- [ ] **Gobernanza ligera**: rotación de `STATUS.md` a `docs/bitacora/YYYY.md`;
-  invariantes en `session_close`; frontmatter `estado:`/`dueño:` + `docs/INDICE.md`.
+- [x] **Fase 3** — **HECHA 2026-07-05**. (a) Specs: decisión de Nikolai = **etiquetar, no mover**
+  → frontmatter `estado:` en los 11 `PLAN_*.md`, `docs/INDICE.md` como índice único de ciclo de
+  vida, regla fijada (specs nuevos nacen en `docs/superpowers/`). (b) Vendorizar la referencia
+  sudespacho: **DESCARTADO** — el SSOT (`docs/ARQUITECTURA_RELACIONES.md`, creado en paralelo) la
+  define como fuente externa compartida con El Contable/El Auditor; se mantiene fuera. (c)
+  `GOBERNANZA_FUENTES_VERDAD.md` reconciliado con el SSOT (se complementan, no se duplican).
+- [ ] **Gobernanza ligera** (recomendaciones, pendientes de arrancar): rotación de `STATUS.md` a
+  `docs/bitacora/YYYY.md` (parcial: cola histórica ya archivada en Fase 1); invariantes en
+  `session_close`; frontmatter `estado:`/`dueño:` + `docs/INDICE.md` (✅ índice creado en Fase 3).
 
 ## Aparcado mientras el bloque crítico no se cierre
 

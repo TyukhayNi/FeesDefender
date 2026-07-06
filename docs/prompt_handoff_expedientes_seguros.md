@@ -1,3 +1,8 @@
+---
+estado: historico
+dueño: Nikolai Tyukhay
+---
+
 
 # PROMPT PARA EXPEDIENTES SEGUROS — HANDOFF DE ABSORCIÓN EN FEESDEFENDER
 
