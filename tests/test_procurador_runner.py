@@ -13,9 +13,21 @@ Reglas de estado (plan §6):
 
 from __future__ import annotations
 
+import pytest
+
 from core.procurador_intake import IntakeSignals, MatchResult
 from core.procurador_review import load_queue
 from core.procurador_runner import EmailMessage, process_email, run_intake
+
+
+@pytest.fixture(autouse=True)
+def _allowlist_procuradores(monkeypatch):
+    # La allowlist real vive en config gitignored; el test es autónomo con
+    # placeholders (independiente de que exista el YAML local del despacho).
+    import core.procurador_intake as PI
+
+    monkeypatch.setattr(PI, "PROCURADOR_EMAILS", {"proc-f@colegio-proc.example"})
+    monkeypatch.setattr(PI, "PROCURADOR_DOMAINS", {"colegio-proc.example"})
 
 
 def _no_llm(*_a, **_k):

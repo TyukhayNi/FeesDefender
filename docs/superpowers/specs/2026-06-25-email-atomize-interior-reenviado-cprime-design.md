@@ -327,7 +327,7 @@ con el `<addr>` que aparece **LITERAL** en su `.eml` fuente; **ninguno** sale co
   `cuerpo_sha` difieren → dos atoms del mismo correo (verificado: PersonaUno `CAPEX_for_His_Excellency`). Ambos
   van `media-reconstruida` + `en_revision` y atribuidos correctamente; **es redundancia, no misatribución**.
   Deduplicarlos exige una poda cross-path o dedup laxa en `_pase_layer_b` (toca el pipeline) → fuera de alcance.
-  Coherente con near-dups preexistentes (it.2) del mismo origen (p.ej. aangerri "RV: Plànols" ×2, sin relación
+  Coherente con near-dups preexistentes (it.2) del mismo origen (p.ej. per03 "RV: Plànols" ×2, sin relación
   con it.3). Pendiente: MEJORAS.
 - **Delegación del EXTERIOR.** `_RE_DELEGACION` se aplica al `De:` del **interior** (ambas ramas inline + c′);
   la misma fórmula en la atribución de un **exterior/anchor** (`_parse_apple`/`_parse_label` del path Layer B

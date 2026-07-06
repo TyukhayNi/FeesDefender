@@ -159,7 +159,7 @@ Routing y capping de identidad **sin cambios**: línea 730 (candidata→media), 
 
 **Puros — `tests/test_email_atomize_inline.py`** (fixtures con el texto literal de las 3 formas; patrón §14 de la casa). Sobre `_atribucion_en_cuerpo` directamente:
 
-1. **(a) Apple en línea:** `"El 27 may 2024, a las 10:49, PersonaCinco <persona.cinco@engelvoelkers.com> escribió:\ncuerpo…"` → `de="isabel.escofet@…"`, `fecha_iso="2024-05-27"`.
+1. **(a) Apple en línea:** `"El 27 may 2024, a las 10:49, PersonaCinco <persona.cinco@engelvoelkers.com> escribió:\ncuerpo…"` → `de="persona.cinco@…"`, `fecha_iso="2024-05-27"`.
 2. **(b) `<addr>` envuelto:** `"El 4 oct 2024, a las 11:48, PersonaCuatro, Eva <\npersona.cuatro@engelvoelkers.com\n> escribió:\ncuerpo…"` → `de="eva.pratpadros@…"`, `fecha_iso="2024-10-04"`.
 3. **(c) bloque envuelto con intro:** `"Inicio del mensaje reenviado:\n\nDe:\nper03@example.invalid\nFecha:\n27 de mayo de 2024, 10:38:07 CEST\nPara: \"PersonaCinco, Isabel\" <persona.cinco@engelvoelkers.com>\nAsunto: x"` → `de="per03@example.invalid"` (**NO** el del `Para:`), `fecha_iso="2024-05-27"`.
 4. **G5 robo de destinatario:** (c) cuyo `De:` no lleva `<addr>` (solo nombre) pero `Para:` sí → `None`.
