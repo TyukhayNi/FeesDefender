@@ -711,6 +711,13 @@ prosa copia del código.
 - [ ] **Gobernanza ligera** (recomendaciones, pendientes de arrancar): rotación de `STATUS.md` a
   `docs/bitacora/YYYY.md` (parcial: cola histórica ya archivada en Fase 1); invariantes en
   `session_close`; frontmatter `estado:`/`dueño:` + `docs/INDICE.md` (✅ índice creado en Fase 3).
+- [ ] **Higiene de PII en la bitácora** (recomendación nº4, propuesta 2026-07-06 en
+  `GOBERNANZA_FUENTES_VERDAD.md §4`). Regla: la bitácora referencia por código `W-xxxxx`, sin correos
+  ni nombres de terceros ni direcciones (el dato sensible vive en `data/CASOS/`, fuera del repo).
+  Huella medida en tracked docs: correos de terceros de casos reales (PersonaUno, PersonaTres, Prat,
+  PersonaCinco…) mezclados con sintéticos de test. **Dos piezas separadas:** (1) regla going-forward +
+  check opcional en `session_close`; (2) **saneamiento retroactivo del historial** (`git filter-repo`)
+  = DECISIÓN DE NIKOLAI, disruptiva, no automática; su urgencia depende de si el repo es público.
 
 ## Aparcado mientras el bloque crítico no se cierre
 

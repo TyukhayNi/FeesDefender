@@ -132,3 +132,34 @@ deprecar no se borra: se marca. El problema no es que sobren docs, es que no se
 distingue el vivo del muerto. *Guardarraíl:* un campo de frontmatter y un índice
 de una tabla; nada de sitio de documentación. Si acaso, el índice lo autorrenderiza
 el mismo patrón YAML→render de las plantillas.
+
+### 4. Higiene de PII en la bitácora del repo
+
+**Diagnóstico.** Los expedientes reales están fuera del repo (`data/CASOS/`
+gitignored). Pero la **bitácora** (`STATUS.md`, `PLAN.md`, `docs/`) —que sí vive en
+el repo por la decisión del 2026-05-29— acumula **datos personales de terceros de
+casos reales**: correos de contrapartes y sus letrados, de agentes de E&V,
+direcciones de inmuebles y nombres. No es la prueba (los documentos), pero es dato
+personal RGPD, mezclado además con correos sintéticos de test (`a@x.com`).
+
+**Regla (going-forward).** La bitácora referencia los asuntos por **código interno**
+(`W-xxxxx`) y **no incorpora dato personal de terceros** que no sea imprescindible
+para el registro: nada de correos, nombres completos de contrapartes ni direcciones
+de inmuebles en `STATUS.md`/`PLAN.md`/`docs/`. Si hace falta identificar algo, el
+código del expediente basta; el dato sensible vive en `data/CASOS/` (fuera del repo).
+Los correos del **equipo** (`@tyukhay.legal`) son riesgo bajo, pero mejor evitarlos
+salvo necesidad operativa.
+
+**Guardarraíl (opcional, barato).** Un check en `scripts/session_close` que avise si
+un fichero de bitácora *staged* contiene un patrón de correo de tercero (regex
+`@` que no sea `@tyukhay.legal` ni dominio de ejemplo). Aviso, no bloqueo.
+
+**Caveats honestos:**
+- El **alcance del riesgo depende de que el repo sea privado.** Si es o pasa a ser
+  público, esto es un problema RGPD real y urgente; si es privado (modelo asumido),
+  es higiene preventiva.
+- **Limpiar los ficheros no borra el historial.** El PII ya committeado sigue en
+  `git log`. Una limpieza *de verdad* exige reescribir historial (`git filter-repo`),
+  que es disruptivo y coordinado — **decisión aparte de Nikolai**, no parte de esta
+  regla. La regla evita que siga *acumulándose*; el saneamiento retroactivo es otro
+  proyecto.
