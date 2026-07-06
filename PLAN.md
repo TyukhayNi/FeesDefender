@@ -14,6 +14,27 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 
 ## ⚠️ MÁXIMA PRIORIDAD — abrir la próxima sesión por aquí
 
+### [SIGUIENTE-SANEADO-PII-FASE-2] Saneado de PII — Fase 2 (nombres del despacho en prosa + reescritura del historial git)
+*2026-07-06. La Fase 1 (árbol actual) está HECHA y en `origin/main` (`7c27ec5`); ver memoria `project-saneado-pii-repo`. Esta Fase 2 saca la PII del HISTORIAL (sigue en commits antiguos del remoto privado) y opcionalmente barre los nombres del despacho en prosa. **Es una sesión DEDICADA: el rewrite es destructivo (force-push) y hoy hubo un incidente de concurrencia.***
+
+**Ya preparado (no destructivo, hecho 2026-07-06):**
+- `git-filter-repo 2.47.0` **instalado** — se invoca `python -m git_filter_repo` (el `.exe` no quedó en PATH).
+- `data/_saneado/replacements.txt` **generado** (67 reglas, gitignored) desde `data/_saneado/mapa_pii.json`, formato `--replace-text` (literales para emails/dominios; regex `(?i)\b…(?![\w@])` para nombres/slugs). **BORRADOR: re-generar** (`scratchpad/gen_replacements.py`) si se amplía el mapa con los nombres del despacho (Fase 2a).
+
+**Gates HUMANOS antes de tocar el historial (solo Nikolai; me son imposibles):**
+1. **Restaurar los deltas perdidos** por el `git checkout` del incidente (VS Code → Timeline): `PLAN.md`, `docs/DEAD_ENDS.md`, `docs/MEJORAS_FUTURAS.md`, `docs/PLAN_PRERELLENO_LLM_VIABILIDAD.md`, plantillas viabilidad → luego re-sanear (script idempotente).
+2. **ROTAR los secretos expuestos** (lo más urgente, independiente del rewrite): el HAR desversionado tenía `x-api-key`/`bearer`/`@refreshToken`; siguen en el historial y estuvieron en el árbol → **revocar/regenerar** (el `PHPSESSID` caduca solo; el `x-api-key` no).
+3. **Parar/coordinar las sesiones cloud** y decidir el destino de las **6 ramas `origin/claude/*`** (el rewrite + force-push las desincroniza; mergearlas/cerrarlas antes o aceptar rehacerlas).
+
+**Pasos de la sesión dedicada (puedo ejecutarlos yo, con tu autorización explícita para el force-push):**
+- Fase 2a (opcional, no destructivo): mapa de **nombres del despacho** distinguiendo **prosa (sustituir)** vs **config FUNCIONAL (conservar)** — `core/config.py ABOGADOS`, `sudespacho_create.abogado_principal`, firma `share_drive.py`, `LICENSE`/`NOTICE`. Aplicar con el flujo de Fase 1 (dry-run→apply→suite→grep→commit acotado).
+- Rewrite: (a) **desactivar el hook `post-commit`** (primer paso); (b) **backup fresco** (`git clone --mirror` / `git bundle`); (c) `python -m git_filter_repo --invert-paths --path docs/_descubrimiento/ --path data/_audit/…` para **purgar los blobs binarios** (HAR/JSON) de todo el historial; (d) `python -m git_filter_repo --replace-text data/_saneado/replacements.txt` para el texto; (e) verificar (suite + `git log -p | grep` de residual); (f) **force-push coordinado**; (g) reactivar el hook; (h) avisar a colaboradores/Cowork de **re-clonar** (los SHAs cambian).
+- Decisión de alcance: ¿desde el inicio del historial o desde un punto? ¿Fase 2a en la misma pasada?
+
+**Fallo pre-existente a cerrar de baseline:** `test_helpers_sin_drift` (heredado de `origin/main`) → `python scripts/sync_skill_helpers.py` (dominio de la sesión de skills).
+
+---
+
 ### ✅ [CRITICO-PRESIGNED-DOWNLOAD-BUG] RESUELTO 2026-06-10 — descarga del Gestor Documental
 
 La descarga REST está arreglada (era la **Fase 0** de
