@@ -157,6 +157,7 @@ Atajo: `/tests` ejecuta la suite completa.
 
 - **Estado y tareas**: `STATUS.md` (raíz del proyecto)
 - **Arquitectura y deps**: `docs/ARQUITECTURA.md`
+- **Relaciones código/plugin/skills + SSOT**: `docs/ARQUITECTURA_RELACIONES.md`
 - **API sudespacho**: `docs/INTEGRACION_SUDESPACHO.md` (su §14 fusiona la **referencia común sudespacho**)
 - **Referencia común sudespacho** (fuente única agnóstica: auth, API de elementos, permisos + presets por
   rol, enums; compartida con El Contable / El Auditor): [`../ElContable/docs/REFERENCIA_SUDESPACHO_API_PERMISOS.md`](../ElContable/docs/REFERENCIA_SUDESPACHO_API_PERMISOS.md)
@@ -166,6 +167,7 @@ Atajo: `/tests` ejecuta la suite completa.
 - **Plan pre-relleno LLM**: `docs/PLAN_PRERELLENO_LLM_VIABILIDAD.md`
 - **Motor documental (split/OCR/MD) + empaquetado**: `docs/PLAN_MOTOR_DOCUMENTAL.md` (`MEJORAS #48`)
 - **Mejoras futuras**: `docs/MEJORAS_FUTURAS.md`
+- **Gobernanza de fuentes de verdad**: `docs/GOBERNANZA_FUENTES_VERDAD.md`
 - **Convenciones del despacho**: `docs/CONVENCIONES_DESPACHO.md`
 
 ## Estilo de respuesta
