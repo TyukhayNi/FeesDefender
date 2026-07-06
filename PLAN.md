@@ -621,6 +621,28 @@ menos diálogos de permiso por-llamada. Disparador: intake real del zip W-01VG51
 
 ---
 
+## [SIGUIENTE-GOBERNANZA-FUENTES-VERDAD] Unificar fuentes de verdad (estructura/taxonomía/arquitectura)
+
+Propuesta completa en `docs/GOBERNANZA_FUENTES_VERDAD.md` (disparador: revisión de
+scaffolding, s. 2026-07-05). Extiende, sin contradecir,
+`[CRITICO-FUENTES-VERDAD-PLANIFICACION]` (2026-05-29) e `[IDEA-GOBERNANZA-DOCS]`
+(2026-06-10): la planificación ya está unificada; falta el drift de hechos que la
+prosa copia del código.
+
+- [x] **Fase 1** (riesgo cero) — **HECHA 2026-07-05**: README reescrito para orientar
+  (FeesGuard→FeesDefender + banner a las fuentes canónicas; sin transcribir estructura/pipeline);
+  cola de prioridad de `STATUS.md` archivada en `docs/bitacora/STATUS_cola_historica_pre_2026-07.md`
+  (`estado: histórico`) + puntero a `PLAN.md` (STATUS 1117→442 líneas); `_skills_drafts/`→`_skills_ARCHIVO/`
+  (`git mv`) + `scripts/package_skill.py` deja de empaquetar ese root. NOTA: `core/__init__.py`
+  (`__product__ = "FeesGuard"`) sigue pendiente — es cambio de código, va en una fase con tests;
+  las apariciones `FeesGuard/0.1` en `sync_sudespacho_legacy.py`/`DEAD_ENDS.md` son User-Agent HTTP real, NO tocar.
+- [ ] **Fase 2**: prosa→puntero al código (taxonomía/estructura solo en `config.py`)
+  + test guard `tests/test_docs_no_duplican_taxonomia.py`.
+- [ ] **Fase 3** (decisión de Nikolai): un solo hogar para specs (`docs/superpowers/`
+  vs `docs/PLAN_*.md`) + vendorizar la referencia común de sudespacho.
+- [ ] **Gobernanza ligera**: rotación de `STATUS.md` a `docs/bitacora/YYYY.md`;
+  invariantes en `session_close`; frontmatter `estado:`/`dueño:` + `docs/INDICE.md`.
+
 ## Aparcado mientras el bloque crítico no se cierre
 
 - `[SIGUIENTE-ORGANIZADOR-UI]` — **DESCARTADO 2026-06-07** (Ollama demasiado
