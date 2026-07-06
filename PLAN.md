@@ -14,24 +14,20 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 
 ## ⚠️ MÁXIMA PRIORIDAD — abrir la próxima sesión por aquí
 
-### [SIGUIENTE-SANEADO-PII-FASE-2] Saneado de PII — Fase 2 (nombres del despacho en prosa + reescritura del historial git)
-*2026-07-06. La Fase 1 (árbol actual) está HECHA y en `origin/main` (`7c27ec5`); ver memoria `project-saneado-pii-repo`. Esta Fase 2 saca la PII del HISTORIAL (sigue en commits antiguos del remoto privado) y opcionalmente barre los nombres del despacho en prosa. **Es una sesión DEDICADA: el rewrite es destructivo (force-push) y hoy hubo un incidente de concurrencia.***
+### ✅ [SANEADO-PII-FASE-2] HECHA 2026-07-06 — Historial git reescrito + repo GitHub recreado (scrub total)
+*La Fase 1 (árbol actual) estaba en el `7c27ec5` original; ver memoria `project-saneado-pii-repo`. Esta Fase 2 sacó la PII del HISTORIAL (HAR 22 MB + `data/_audit/` desde el commit inicial `d6051f4`).*
 
-**Ya preparado (no destructivo, hecho 2026-07-06):**
-- `git-filter-repo 2.47.0` **instalado** — se invoca `python -m git_filter_repo` (el `.exe` no quedó en PATH).
-- `data/_saneado/replacements.txt` **generado** (67 reglas, gitignored) desde `data/_saneado/mapa_pii.json`, formato `--replace-text` (literales para emails/dominios; regex `(?i)\b…(?![\w@])` para nombres/slugs). **BORRADOR: re-generar** (`scratchpad/gen_replacements.py`) si se amplía el mapa con los nombres del despacho (Fase 2a).
+**Ejecutado:**
+- [x] Rewrite con `python -m git_filter_repo` sobre **clon `--mirror` aparte** (`~/Dev/fd-rewrite.git`; backup íntegro con PII en `~/Dev/fd-backup.git`): `--force --invert-paths --path docs/_descubrimiento/ --path data/_audit/ --replace-text data/_saneado/replacements.txt` (67 reglas). Nuevo `main` = **`a40b27f`** (494 commits). Verificado: HAR/audit fuera del historial, 0 JWT, 0 PII alta-ID como palabra, pseudónimos presentes. Único cambio de árbol en HEAD vs Fase 1: 2 líneas de prosa meta en `PLAN.md`/`STATUS.md` (mejora).
+- [x] **Gate que el plan no cubría (detectado en sesión):** `push --force origin main` NO limpia GitHub — los `refs/pull/*` (10 PRs, server-managed) + la rama `feat` siguen anclando los objetos viejos. **Decisión Nikolai: SCRUB TOTAL = borrar + recrear el repo** (token sin scope `delete_repo`, `gh` no instalado → Nikolai lo hizo en la UI web).
+- [x] Push selectivo al repo recreado: `main` (`a40b27f`) + `feat/intake-procuradores-f2-ui` (`58ffaeb`) + `feat/intake-email-consultores` (esta era **local-only sin respaldo** → se reescribió también y se subió limpia como `71f8fee`). Las 6 ramas cloud (todas mergeadas) desaparecen por no re-subirlas. **Remoto final: solo esas 3 ramas, 0 refs de PR, 0 HAR/PII/JWT.**
+- [x] Worktrees re-sincronizadas (`reset --hard origin/…` — lo corre Nikolai, está en deny-rule) + `reflog expire`/`gc --prune=now` para purgar la PII del `.git` local (incl. la worktree enlazada `FeesDefender-email`).
 
-**Gates HUMANOS antes de tocar el historial (solo Nikolai; me son imposibles):**
-1. **Deltas perdidos — DESCARTADO (decisión Nikolai 2026-07-06).** No se restauran (probablemente cubiertos por la reescritura de gobernanza de `origin/main`). No es gate.
-2. **Secretos — VERIFICADO 2026-07-06: NO hay que rotar nada.** Inspección del HAR histórico (blob del commit inicial `d6051f4`, 2026-04-28): **`x-api-key` NO aparece (0)**, PHPSESSID 0; solo hay **JWT `@token`/`refreshToken` de sesión, ya caducados** (de abril; ninguno coincide con el `.env` actual, que tiene placeholders) y `password` ×484 = ruido de JS minificado (0 valores reales). Nada vivo expuesto. El rewrite purgará esos tokens muertos al eliminar el blob del HAR. (Zero-trust opcional: ciclar el refresh-token; innecesario.)
-3. **Ramas cloud — VERIFICADO 2026-07-06: las 6 `origin/claude/*` están TODAS mergeadas en `main` → borrables sin pérdida** (`git push origin --delete <rama>`; se puede en la propia sesión del rewrite). **Único gate real que queda:** una **ventana sin sesiones cloud empujando** durante el rewrite (siguen activas — el push se rechazó 2 veces esta sesión y hubo que rebasar).
+**Pendiente (opcional, cosmético — Fase 2a):** barrer nombres del despacho en PROSA distinguiendo prosa (sustituir) de config FUNCIONAL a conservar (`core/config.py ABOGADOS`, `sudespacho_create.abogado_principal`, firma `share_drive.py`, `LICENSE`). En gran parte inútil (el nombre persiste en git author + CRM). Sin disparador → no promovido.
 
-**Pasos de la sesión dedicada (puedo ejecutarlos yo, con tu autorización explícita para el force-push):**
-- Fase 2a (opcional, no destructivo): mapa de **nombres del despacho** distinguiendo **prosa (sustituir)** vs **config FUNCIONAL (conservar)** — `core/config.py ABOGADOS`, `sudespacho_create.abogado_principal`, firma `share_drive.py`, `LICENSE`/`NOTICE`. Aplicar con el flujo de Fase 1 (dry-run→apply→suite→grep→commit acotado).
-- Rewrite: (a) **desactivar el hook `post-commit`** (primer paso); (b) **backup fresco** (`git clone --mirror` / `git bundle`); (c) `python -m git_filter_repo --invert-paths --path docs/_descubrimiento/ --path data/_audit/…` para **purgar los blobs binarios** (HAR/JSON) de todo el historial; (d) `python -m git_filter_repo --replace-text data/_saneado/replacements.txt` para el texto; (e) verificar (suite + `git log -p | grep` de residual); (f) **force-push coordinado**; (g) reactivar el hook; (h) avisar a colaboradores/Cowork de **re-clonar** (los SHAs cambian).
-- Decisión de alcance: ¿desde el inicio del historial o desde un punto? ¿Fase 2a en la misma pasada?
+**Avisos post-recreación:** re-invitar colaboradores + reconfigurar branch protection (se pierden al recrear); cualquier otro clon/Cowork debe **re-clonar** (SHAs sin ancestro común); `fd-backup.git` borrable al confirmar el resultado.
 
-**Fallo pre-existente a cerrar de baseline:** `test_helpers_sin_drift` (heredado de `origin/main`) → `python scripts/sync_skill_helpers.py` (dominio de la sesión de skills).
+**Fallo pre-existente a cerrar de baseline:** `test_helpers_sin_drift` (heredado) → `python scripts/sync_skill_helpers.py` (dominio de la sesión de skills).
 
 ---
 
