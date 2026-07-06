@@ -201,7 +201,7 @@ Esta skill registra su propio uso para alimentar el plan de mejora del despacho 
 **Al usar esta skill en un asunto real**, añade una línea a `logs/uso.jsonl` dentro de la carpeta de esta skill. En PowerShell, rellenando los valores del asunto:
 
 ```powershell
-$dir = "C:\Users\tnm33\despacho-skills\engel-volkers"   # ajusta si la skill está instalada en otra ruta
+$dir = "C:\Users\tnm33\Dev\FeesDefender\.claude\skills\engel-volkers"   # ajusta si la skill está instalada en otra ruta
 if (-not (Test-Path "$dir\logs")) { New-Item -ItemType Directory "$dir\logs" -Force | Out-Null }
 $rec = @{ ts=[DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"); skill="engel-volkers";
           ref="W-XXXXXX"; sociedad="EV_MMC_SPAIN"; tipologia="BAD_DEBT"; posicion="actora";

@@ -166,6 +166,7 @@ Atajo: `/tests` ejecuta la suite completa.
 - **Plan SaRS1 anon**: `docs/PLAN_SaRS1_anon_pipeline.md`
 - **Plan pre-relleno LLM**: `docs/PLAN_PRERELLENO_LLM_VIABILIDAD.md`
 - **Mejoras futuras**: `docs/MEJORAS_FUTURAS.md`
+- **Gobernanza de fuentes de verdad**: `docs/GOBERNANZA_FUENTES_VERDAD.md`
 - **Convenciones del despacho**: `docs/CONVENCIONES_DESPACHO.md`
 
 ## Estilo de respuesta

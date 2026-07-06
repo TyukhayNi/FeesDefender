@@ -1,8 +1,9 @@
 # EVOLUCION.md — plan de evolución asistida de `engel-volkers`
 
-Documento estándar de toda skill del despacho (ver el `README.md` del repo
-`despacho-skills`). Define las cinco fases del plan de mejora y el criterio objetivo
-para activar cada una. Acompaña al `SKILL.md` y se entrega siempre con la skill.
+Documento estándar de toda skill del despacho (ver `docs/MEJORA_CONTINUA_SKILLS.md`
+en el repo; el antiguo `despacho-skills` quedó archivado/deprecado). Define las cinco
+fases del plan de mejora y el criterio objetivo para activar cada una. Acompaña al
+`SKILL.md` y se entrega siempre con la skill.
 
 `engel-volkers` es una **skill de contexto de cliente** (aporta identidad societaria,
 Market Centers, tipologías y reglas de trato; no genera escritos ni `.docx`). El modelo
