@@ -47,8 +47,8 @@ Cada paso es ejecutable de forma aislada. El pipeline es **idempotente**: re-eje
 
 | Si modificas... | También actualiza... |
 |---|---|
-| `core/config.py` — tipos de caso (`TIPO_*`) | `core/sudespacho_create.py` (constantes `TAG_VERDE_*`, `NOTA_*`, `tag_defaults_for_tipo_caso`), `core/scorer.py` (`KEYWORD_WEIGHTS`), `prompts/scoring.md` |
-| `core/config.py` — `CASO_SUBDIRS` | `tests/test_case_manager.py`, `docs/ARQUITECTURA.md` (sección estructura de carpetas) |
+| `core/config.py` — taxonomía de casos (`TIPOS_CASO_*`) **[FUENTE ÚNICA]** | `tests/test_gobernanza_taxonomia.py` (guard: fija el modelo canónico), `core/sudespacho_create.py` (constantes `TAG_VERDE_*`, `NOTA_*`, `tag_defaults_for_tipo_caso`), `core/scorer.py` (`KEYWORD_WEIGHTS`), `prompts/scoring.md`, y los **espejos documentales** que necesitan la taxonomía inline (corren en servidor, no importan `config`): `docs/INTEGRACION_SUDESPACHO.md` §8, `docs/CONVENCIONES_DESPACHO.md`, `.claude/skills/engel-volkers/SKILL.md`, `.claude/skills/preparacion-audiencia-previa/references/actora_defensiva.md`, `.claude/skills/triaje-viabilidad/references/criterios_triaje.md`. **`STATUS.md` y `README.md` NO transcriben — apuntan a `config.py`.** |
+| `core/config.py` — `CASO_SUBDIRS` **[FUENTE ÚNICA]** | `tests/test_gobernanza_taxonomia.py` (guard), `tests/test_case_manager.py`. La estructura de carpetas del expediente **solo** se enumera aquí; `STATUS.md`/`README.md` apuntan a la constante, no la copian. |
 | `core/sudespacho_create.py` — campos CRM o endpoints | `docs/INTEGRACION_SUDESPACHO.md` (secciones afectadas) |
 | `core/sudespacho_create.py` — constantes `NOTA_*` | `docs/INTEGRACION_SUDESPACHO.md` sección 10 (notas de expediente) |
 | `core/sudespacho_create.py` — constantes `TAG_*` | `docs/INTEGRACION_SUDESPACHO.md` sección 8 (sistema de tags) |

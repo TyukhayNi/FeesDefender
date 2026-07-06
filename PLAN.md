@@ -28,6 +28,59 @@ de `[SIGUIENTE-INTAKE-JUDICIAL-AUTO]`.
 
 ---
 
+## [SIGUIENTE-SKILL-EXPEDIENTE-A-MD] Skill `expediente-a-md` — vía lean (retorno inmediato)
+*Decisión Nikolai 2026-07-04. El motor completo queda aparcado; foco en esta skill que orquesta motores existentes y da resultado tangible: hacer legible y organizado un expediente.*
+
+> **Diseño CERRADO** (apéndice de `docs/PLAN_MOTOR_DOCUMENTAL.md`). **Aún NO construida** — arranque de la próxima sesión.
+
+**Qué hace (orquestador de 3 pasos, 3 salidas):**
+- [1] `01_Procesado/OCR/` — PDFs **buscables** con **OCRmyPDF** (local, sin PII a la nube).
+- [2] `01_Procesado/MD/` — 1 `.md` por documento (del PDF buscable / texto nativo del 50% digital).
+- [3] `01_Procesado/Sala lectura/` — **encadena la skill existente `organizar-sala-lectura`**.
+- `_revisar/_cobertura.md` (dudosos + cifras a verificar). `00_Input` intocable. Idempotente.
+
+**Motor:** OCRmyPDF base (obligatorio para el PDF buscable — Claude visión no lo genera); **Claude visión (Sonnet 5 / Opus 4.8) = refuerzo OPCIONAL** del MD en páginas duras (manuscrito/tablas).
+
+**Reutiliza:** `core/anon/ocr.py::ocr_pdf` · `imagen_a_pdf` · `extractor` · `markdown_generator` · `catalogo_documental` · `intake_log` · `utils.output_slug` · `pypdfium2` · skill `organizar-sala-lectura`.
+
+**Prerrequisitos para arrancar:**
+- [ ] Instalar **OCRmyPDF + Tesseract `spa/cat/rus`** en el PC (imprescindible para [1]).
+- [ ] Aportar **un caso real** (o unos PDFs) para el E2E.
+- [ ] Build: `render`(pypdfium2) + `SKILL.md` + tests (transcripción mockeada) + `CHANGELOG` + sync helpers `_shared`.
+
+## [SIGUIENTE-MOTOR-DOCUMENTAL] Motor documental unificado (split/OCR/MD) + empaquetado como conector (`MEJORAS #48`)
+*Decisión Nikolai 2026-07-03. Disparador concreto: Nikolai quiere empaquetar el motor OCR→split→MD como un conector/plugin reutilizable por los compañeros. Un motor fragmentado y que falla en silencio no se puede empaquetar bien → sanear + fachada + registro de cobertura es la preparación del plugin.*
+
+> **⏸️ APARCADO (2026-07-04).** Nikolai pausa el motor/refactor completo. **Foco actual: skills con código**
+> (vía lean — skill que orquesta y llama a motores existentes, p. ej. `ocr-a-md`, sobre el scaffold actual).
+> El diseño queda de referencia para retomarlo. Estudio de mercado 2026 + opciones de motor (OSS local
+> Docling(MIT)>MinerU(AGPL) / **Mistral OCR cloud+ZDR+DPA como opción de fase de construcción** / Azure
+> contenedor para manuscrito, post-anonimización) en §F del doc.
+
+> **Plano completo y memoria de diagnóstico: [`docs/PLAN_MOTOR_DOCUMENTAL.md`](docs/PLAN_MOTOR_DOCUMENTAL.md).**
+> Consolida `MEJORAS #21/#24/#39/#42/#43/#41`. **Solo diseño escrito; sin código todavía.**
+
+**Diagnóstico (resumen).** Tres motores de OCR desacoplados (Docling interno · RapidOCR por página vía
+script manual · OCRmyPDF en anon), hueco de escaneados >30pp que salen vacíos, banda muerta de umbrales
+(100 vs 50 chars), imágenes con tres tratos incompatibles (las `.heic` se caen en el inventario), y
+`separar.py` desenganchado del pipeline. Detalle con `file:line` en el doc.
+
+**Decisiones de organización (fijadas 2026-07-03, informadas por Vassal Litigator — ver §G/§H/§I del doc):**
+`01_Procesado/01_Sala de lectura/` (humano) + `01_Procesado/02_Sala de máquina/` (máquina, productos numerados `01_OCR/02_Documentos/03_MD`) · id **dual** (`sha8` interno + `doc-NNN` legible) · **registro ÚNICO de caso** estilo Vassal `index.yaml` (vistas humanas derivadas) · **reocr condicional** por `ocr_quality`.
+
+**Decisiones estratégicas (fijadas 2026-07-04 — §L del doc):** (1) **plugin primero, Streamlit parqueado** — distribución vía plugin; (2) **Ollama/LLM local descartado** → motor OCR **FIJADO: OCRmyPDF + `ocr_per_page` torch como reocr** (visión local/cloud fuera); (3) **regla PII relajada temporalmente** — anonimización = **último eslabón**, con **gate de reinstauración del muro `06`** (condiciones: pipeline→MD ✔, sala de máquina ✔, sala de lectura ✔, intake ✔). Resultados tangibles primero.
+
+**Principios rectores (M1–M9 — §M del doc):** M1 golden fixture antes de tocar código · M2 registro primero · M3 walking skeleton · M4 fachada `procesar_expediente()` desde el día uno · M5 `00_Input` intocable (guard/test) · M6 medir el "antes" (documentos ciegos) · M7 Preview→Apply obligatorio · M8 preflight por capacidades (centralizado en `health_check`) · M9 doctor/manifiesto de dependencias.
+
+**Orden de ejecución (fases, resecuenciado §L+§M).**
+- [ ] **F(-1) — fundaciones sin riesgo:** golden fixture de W-02VND1 (M1) + auditoría "antes" de documentos ciegos (M6).
+- [ ] **F1 — registro ÚNICO de caso** (elevar+extender `indice_documental.yaml` a ámbito caso, esquema estilo Vassal `index.yaml`) + **id dual** (`sha8`+`doc-NNN`) + **fachada fina** `procesar_expediente()` (M4) + vistas humanas derivadas. Piedra angular.
+- [ ] **F0 — layout + botón reorganizar:** renombrar `Sala lectura` → `01_Sala de lectura`, crear `02_Sala de máquina/`; **botón `reorganizar_caso`** (`plan`/`apply`, `--todos`, journal reversible estilo `migrate_05crm_buckets`); sello **`layout_version`**; **cablear `--force`**; alinear umbrales, docstring/etiqueta, extensiones + HEIC. Ver §J.
+- [ ] **F3 — motor OCR + reocr + espejos:** **OCRmyPDF** → PDF buscable (fijado). **Extractor→MD = decisión aplazada tras la junta; bake-off MinerU vs Docling** sobre fixture + casos duros (escritura/catalán/ruso/tabla/manuscrito), gate hardware(CPU/OOM)/catalán/licencia — MinerU favorito (local, CPU, determinista, tablas+manuscrito, sin PII; si cumple, elimina Claude visión). Persistir en `02_Sala de máquina/{01_OCR,02_Documentos,03_MD}` con espejo de `00_Input/`; dejar de borrar el PDF del OCR en anon. **Validado antes con walking skeleton (M3).** Ver §F/§G.
+- [ ] **F4 — conector MCP + empaquetado + botón reformar plugin** (aislamiento por subproceso, versión/modelos pinneados, sin fuga de datos, preservar `core/anon`) + **preflight (M8)** + **doctor/manifiesto (M9)**. **Botón `rebuild_plugin`** mecánico + señalización semántica (handoff `motor_mejora`) + hook de drift (`session-start-hook`). Ver §K.
+- [ ] **F-final — anonimización + reinstauración del muro `06`** (gate PII §L) — último eslabón; + faltas restantes (D.2–D.9) según disparador.
+- **Transversales:** Preview→Apply (M7) y guard `00_Input` (M5) en todas las fases.
+
 ## ✅ [SIGUIENTE-EMAIL-APLANADO-ANIDADOS] Aplanado byte-fiel de emails anidados en el export de etiquetas
 *Decisión Nikolai 2026-06-24 (hilo Cowork BaRS1 Tibidabo 8). Disparador concreto: en `03_Email` del caso W-02VND1 no aparecen los emails que viajan adjuntos dentro de otro (p. ej. los del padre `2026-06-08_mails_consulado`). Extiende `[SIGUIENTE-EXPORT-ETIQUETA-EMAIL]` (abajo, ✅).*
 
@@ -636,8 +689,18 @@ prosa copia del código.
   (`git mv`) + `scripts/package_skill.py` deja de empaquetar ese root. NOTA: `core/__init__.py`
   (`__product__ = "FeesGuard"`) sigue pendiente — es cambio de código, va en una fase con tests;
   las apariciones `FeesGuard/0.1` en `sync_sudespacho_legacy.py`/`DEAD_ENDS.md` son User-Agent HTTP real, NO tocar.
-- [ ] **Fase 2**: prosa→puntero al código (taxonomía/estructura solo en `config.py`)
-  + test guard `tests/test_docs_no_duplican_taxonomia.py`.
+- [x] **Fase 2** — **HECHA 2026-07-05**: en `STATUS.md`, tabla de taxonomía y estructura
+  de carpetas del caso reemplazadas por punteros a `core/config.py` (`TIPOS_CASO_*`,
+  `CASO_SUBDIRS`); regla añadida al mapa de dependencias de `docs/ARQUITECTURA.md` (marca
+  `[FUENTE ÚNICA]` + lista de espejos documentales legítimos). **Test guard**:
+  `tests/test_gobernanza_taxonomia.py` (8 tests, verdes) — **ancla el código como fuente de
+  verdad** (fija ACTORA=7, DEFENSIVA=4, OTROS=1, `CASO_SUBDIRS`, mapeo de posición); habría
+  cazado el drift real que tenía STATUS ("3 tipos defensivos" cuando el código ya tenía 4).
+  HALLAZGO que cambió el diseño: la taxonomía vive legítimamente en ~9 `.md` (skills LLM que
+  corren en servidor + referencia CRM + bitácora en prosa), así que un escáner de `.md` daría
+  falsos positivos → se descartó a favor del anclaje en código (nombre `test_docs_no_duplican_taxonomia.py`
+  del plan original abandonado por eso). Suite NO ejecutada aquí (entorno remoto sin venv; lógica
+  del guard validada importando `config`).
 - [ ] **Fase 3** (decisión de Nikolai): un solo hogar para specs (`docs/superpowers/`
   vs `docs/PLAN_*.md`) + vendorizar la referencia común de sudespacho.
 - [ ] **Gobernanza ligera**: rotación de `STATUS.md` a `docs/bitacora/YYYY.md`;
