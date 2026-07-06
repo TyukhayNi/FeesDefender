@@ -56,7 +56,7 @@ def test_anclaje_catalan_date():
 
 def test_anclaje_display_name_sin_addr_no_inventa():
     anc = I.parsear_anclaje("De: PersonaUno\nEnviado: 3 feb 2020\nAsunto: x", "outlook_es")
-    assert anc.de == "" and "Jaime" in anc.de_nombre  # nombre sí, dirección NO inventada
+    assert anc.de == "" and "PersonaUno" in anc.de_nombre  # nombre sí, dirección NO inventada
 
 
 def test_anclaje_apellido_coma_nombre_extrae_addr():
@@ -630,7 +630,7 @@ def test_reconstruir_html_anchor_addr_extraviado_no_misatribuye():
 # desde la franja De:→primera-etiqueta, con tope obligatorio + unicidad + guarda de delegación.
 # ---------------------------------------------------------------------------
 
-def test_cprime_delburgo_addr_envuelto():
+def test_cprime_per01_addr_envuelto():
     # forma c′(1) real (PersonaUno "[PAIS_EXTRANJERO] docs"): De: bare, NOMBRE en línea propia, <addr> envuelto.
     lines = ["De:", "PersonaUno", "<", "per01a@example.invalid", ">",
              "Date: mié, 23 jul 2025 a las 12:37", "Subject: [PAIS_EXTRANJERO] docs",
@@ -733,7 +733,7 @@ def test_cuerpo_interior_no_come_saludo_con_dos_puntos():
     assert "ignacio@despacho-ab.example" not in cuerpo
 
 
-def test_interior_reenviado_delburgo_cprime():
+def test_interior_reenviado_per01_cprime():
     # PersonaUno "[PAIS_EXTRANJERO] docs": marcador + cabecera c′ → interior con de/fecha/asunto correctos + cuerpo.
     texto = ("Texto del reenviador.\n"
              "---------- Forwarded message ---------\n"
@@ -843,7 +843,7 @@ def test_reconstruir_interior_reenviado_testigo_msg305():
     assert i.de == "persona.cuatro@engelvoelkers.com"   # NUNCA el <addr> de [PAIS_EXTRANJERO] (Para/Cc)
 
 
-def test_reconstruir_interior_delburgo_media_reconstruida():
+def test_reconstruir_interior_per01_media_reconstruida():
     bq = ("---------- Forwarded message ---------<br>"
           "De:<br>PersonaUno<br>&lt;<br>per01a@example.invalid<br>&gt;<br>"
           "Date: mié, 23 jul 2025 a las 12:37<br>Subject: [PAIS_EXTRANJERO] docs<br>"

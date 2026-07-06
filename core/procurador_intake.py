@@ -19,6 +19,7 @@ import logging
 import re
 import unicodedata
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -33,19 +34,37 @@ logger = logging.getLogger("feesdefender.procurador_intake")
 # ---------------------------------------------------------------------------
 # Dominios / emails de procuradores conocidos (ampliable)
 # ---------------------------------------------------------------------------
+# La lista real son datos personales de procuradores → NO se versiona.
+# Vive en data/_config/procuradores_conocidos.yaml (gitignored); el repo solo
+# trae el .example con placeholders. Sin fichero → sets vacíos: is_procurador_email
+# devuelve False (la heurística se degrada, no rompe el import ni el flujo).
 
-PROCURADOR_DOMAINS: set[str] = {
-    "procuradores-a.example",
-    "procuradores-b.example",
-    "procuradores-c.example",
-    "procuradores-d.example",
-    "procuradores-e.example",
-}
+_CONFIG_PROCURADORES = (
+    Path(__file__).resolve().parents[1] / "data" / "_config" / "procuradores_conocidos.yaml"
+)
 
-PROCURADOR_EMAILS: set[str] = {
-    "proc-a@example.invalid",
-    "proc-f@colegio-proc.example",
-}
+
+def cargar_procuradores_conocidos(
+    path: Path = _CONFIG_PROCURADORES,
+) -> tuple[set[str], set[str]]:
+    """Carga (dominios, emails) de procuradores del YAML gitignored.
+
+    Ausente o ilegible → (set(), set()). Emails/dominios en minúsculas.
+    """
+    if not path.exists():
+        return set(), set()
+    try:
+        import yaml  # dependencia ya presente (identidades.yaml de las skills)
+
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except Exception:  # noqa: BLE001 — config ausente/ilegible nunca debe romper el import
+        return set(), set()
+    dominios = {str(d).strip().lower() for d in (data.get("dominios") or []) if str(d).strip()}
+    emails = {str(e).strip().lower() for e in (data.get("emails") or []) if str(e).strip()}
+    return dominios, emails
+
+
+PROCURADOR_DOMAINS, PROCURADOR_EMAILS = cargar_procuradores_conocidos()
 
 
 def is_procurador_email(from_addr: str) -> bool:

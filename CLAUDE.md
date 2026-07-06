@@ -237,5 +237,24 @@ ve Google Drive).
 - Lectura del estado del proyecto y la planificación en el repo (`STATUS.md`,
   `PLAN.md`); desde el móvil, vía app de GitHub.
 
+**Constructor de la sala de lectura — reparto real (corregido 2026-06-22):**
+**Cowork ES el organizador de la sala.** Por el MCP local `expedientes` (puente
+Claude Desktop) lee la Drive del despacho a velocidad de disco y **escribe texto**:
+crea la estructura plana, clasifica y nombra canónicamente, copia los **documentos
+de texto** (chats `_chat.txt` de WhatsApp, transcripciones, `.md`/`.txt`/`.rtf`,
+informes) y genera los índices (`INDICE.md`, `CRONOLOGIA.md`, `_MANIFIESTO.md`,
+`indice_documental.yaml`). El **único residuo** es volcar los **bytes de los
+binarios** (PDF, fotos, vídeos, `.xlsx`): el MCP `expedientes` no expone copia
+(`write_file` es solo texto — escribe el base64 de `read_media_file` como texto, no
+lo decodifica; `move_file` es destructivo), y el conector de Drive en la nube de
+Cowork es la **cuenta de Engel & Völkers** (`nikolai.tyukhay@engelvoelkers.com`), que
+no ve la Drive del despacho «EXPEDIENTES - TYUKHAY LEGAL». Por eso ese volcado lo
+cierra un **paso local mecánico** (`scripts/sala_lectura.py` / botón Streamlit / skill
+en Claude Code sobre `G:`, vía `shutil`), guiado por el `_MANIFIESTO` que deja Cowork
+(filas binarias marcadas `PENDIENTE_VOLCADO_LOCAL`): no reclasifica, solo copia bytes.
+Para que Cowork cierre también los binarios basta dar copia binaria al MCP
+`expedientes`; vía en `docs/MEJORAS_FUTURAS.md` #40. Detalle empírico en
+`docs/DEAD_ENDS.md`.
+
 Cowork NO debe trabajar la carpeta obsoleta de Drive
 (`...\Base datos expedientes _OBSOLETO_borrar_tras_2026-06-10`).

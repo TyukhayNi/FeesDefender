@@ -1,0 +1,10 @@
+# Plantilla de la allowlist de procuradores conocidos.
+# Copiar a procuradores_conocidos.yaml (gitignored) y rellenar con los valores
+# REALES del despacho. La consume core.procurador_intake.is_procurador_email:
+# un remitente cuyo dominio o email figure aquí se marca como procurador.
+#
+# NUNCA pongas datos personales reales en este .example (se versiona).
+dominios:
+  - procuradores-ejemplo.example
+emails:
+  - despacho@procuradores-ejemplo.example

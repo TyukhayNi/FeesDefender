@@ -63,6 +63,24 @@ desktop.ini
 # Probes y sondeos locales del CRM (capturas de respuestas REST)
 data/probes/
 
+# Capturas de depuración del CRM (HAR/JSON/HTML) — contienen tokens de auth
+# (bearer/PHPSESSID/x-api-key) y PII real de expedientes. NUNCA versionar.
+docs/_descubrimiento/
+docs/captura/
+*.har
+~$*.har
+
+# Saneado de PII — mapa real→pseudónimo (local-only, reversible). NUNCA versionar.
+data/_saneado/
+
+# Allowlist real de procuradores (datos personales) — local-only. El repo solo
+# versiona el .example con placeholders.
+data/_config/procuradores_conocidos.yaml
+
+# Auditorías del Drive E&V (data/_audit/*.json) — volcados con nombres,
+# direcciones y refs de MUCHOS expedientes (PII transversal). Solo artefacto.
+data/_audit/
+
 # Excel lock files
 ~$*.xlsx
 ~$*.xls

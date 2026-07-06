@@ -324,13 +324,13 @@ def _carrier_con_interior(mid, attr, bq, frm="persona.seis@engelvoelkers.com", f
     return m.as_bytes()
 
 
-_BQ_DELBURGO_WRAP = (
+_BQ_PER01_WRAP = (
     "---------- Forwarded message ---------<br>"
     "De:<br>PersonaUno<br>&lt;<br>per01a@example.invalid<br>&gt;<br>"
     "Date: mié, 23 jul 2025 a las 12:37<br>Subject: [PAIS_EXTRANJERO] docs<br>"
     "To: Eva &lt;<br>persona.cuatro@engelvoelkers.com<br>&gt;<br>"
     "Os passo els documents de [PAIS_EXTRANJERO] amb prou substancia per al cos del missatge.")
-_BQ_DELBURGO_INLINE = (
+_BQ_PER01_INLINE = (
     "---------- Forwarded message ---------<br>"
     "De: PersonaUno &lt;per01a@example.invalid&gt;<br>"
     "Date: mié, 23 jul 2025 a las 12:37<br>Subject: [PAIS_EXTRANJERO] docs<br>"
@@ -344,10 +344,10 @@ def test_layerb_interior_dedup_multi_portador(tmp_path):
     src = tmp_path / "03_Email"; out = tmp_path / "Emails"; src.mkdir()
     (src / "2025-07-24_a.eml").write_bytes(_carrier_con_interior(
         "<a@x>", "El mié, 23 jul 2025 a las 13:00, PersonaSeis &lt;persona.seis@engelvoelkers.com&gt; escribió:",
-        _BQ_DELBURGO_WRAP))
+        _BQ_PER01_WRAP))
     (src / "2025-07-24_b.eml").write_bytes(_carrier_con_interior(
         "<b@x>", "El mié, 23 jul 2025 a las 14:00, Eva &lt;persona.cuatro@engelvoelkers.com&gt; escribió:",
-        _BQ_DELBURGO_INLINE, frm="persona.cuatro@engelvoelkers.com"))
+        _BQ_PER01_INLINE, frm="persona.cuatro@engelvoelkers.com"))
     P.atomize_dir(src, out, case_dir=tmp_path)
     corpus = [json.loads(l) for l in (out / "corpus.jsonl").read_text(encoding="utf-8").splitlines()
               if l.strip() and not l.startswith("#")]

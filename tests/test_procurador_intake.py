@@ -30,11 +30,26 @@ from core.sync_sudespacho import SudespachoClient
 # ---------------------------------------------------------------------------
 
 class TestIsProcuradorEmail:
+    @pytest.fixture(autouse=True)
+    def _allowlist(self, monkeypatch):
+        # La allowlist real vive en config gitignored; el test es autónomo
+        # con placeholders (no depende de que exista el YAML local).
+        import core.procurador_intake as PI
+
+        monkeypatch.setattr(PI, "PROCURADOR_DOMAINS", {
+            "procuradores-a.example", "procuradores-b.example",
+            "procuradores-c.example", "procuradores-d.example",
+            "procuradores-e.example",
+        })
+        monkeypatch.setattr(PI, "PROCURADOR_EMAILS", {
+            "proc-a@example.invalid", "proc-f@colegio-proc.example",
+        })
+
     def test_known_domain(self):
         assert is_procurador_email("ana@procuradores-a.example")
 
     def test_known_domain_uppercase(self):
-        assert is_procurador_email("ANA@AMSPROCURADOR.COM")
+        assert is_procurador_email("ANA@PROCURADORES-A.EXAMPLE")
 
     def test_known_email(self):
         assert is_procurador_email("proc-a@example.invalid")
@@ -45,19 +60,19 @@ class TestIsProcuradorEmail:
     def test_unknown(self):
         assert not is_procurador_email("random@gmail.com")
 
-    def test_castaneda(self):
+    def test_dominio_b(self):
         assert is_procurador_email("info@procuradores-b.example")
 
-    def test_pilar(self):
+    def test_email_f(self):
         assert is_procurador_email("proc-f@colegio-proc.example")
 
-    def test_viudez(self):
+    def test_dominio_d(self):
         assert is_procurador_email("eva@procuradores-d.example")
 
-    def test_varon(self):
+    def test_dominio_e(self):
         assert is_procurador_email("oficina@procuradores-e.example")
 
-    def test_campuzano(self):
+    def test_dominio_c(self):
         assert is_procurador_email("despacho@procuradores-c.example")
 
 
