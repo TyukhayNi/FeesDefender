@@ -1,5 +1,5 @@
 ---
-estado: revisar
+estado: aparcado
 dueño: Nikolai Tyukhay
 ---
 
