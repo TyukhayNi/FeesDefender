@@ -621,6 +621,28 @@ menos diálogos de permiso por-llamada. Disparador: intake real del zip W-01VG51
 
 ---
 
+## [SIGUIENTE-GOBERNANZA-FUENTES-VERDAD] Unificar fuentes de verdad (estructura/taxonomía/arquitectura)
+
+Propuesta completa en `docs/GOBERNANZA_FUENTES_VERDAD.md` (disparador: revisión de
+scaffolding, s. 2026-07-05). Extiende, sin contradecir,
+`[CRITICO-FUENTES-VERDAD-PLANIFICACION]` (2026-05-29) e `[IDEA-GOBERNANZA-DOCS]`
+(2026-06-10): la planificación ya está unificada; falta el drift de hechos que la
+prosa copia del código.
+
+- [x] **Fase 1** (riesgo cero) — **HECHA 2026-07-05**: README reescrito para orientar
+  (FeesGuard→FeesDefender + banner a las fuentes canónicas; sin transcribir estructura/pipeline);
+  cola de prioridad de `STATUS.md` archivada en `docs/bitacora/STATUS_cola_historica_pre_2026-07.md`
+  (`estado: histórico`) + puntero a `PLAN.md` (STATUS 1117→442 líneas); `_skills_drafts/`→`_skills_ARCHIVO/`
+  (`git mv`) + `scripts/package_skill.py` deja de empaquetar ese root. NOTA: `core/__init__.py`
+  (`__product__ = "FeesGuard"`) sigue pendiente — es cambio de código, va en una fase con tests;
+  las apariciones `FeesGuard/0.1` en `sync_sudespacho_legacy.py`/`DEAD_ENDS.md` son User-Agent HTTP real, NO tocar.
+- [ ] **Fase 2**: prosa→puntero al código (taxonomía/estructura solo en `config.py`)
+  + test guard `tests/test_docs_no_duplican_taxonomia.py`.
+- [ ] **Fase 3** (decisión de Nikolai): un solo hogar para specs (`docs/superpowers/`
+  vs `docs/PLAN_*.md`) + vendorizar la referencia común de sudespacho.
+- [ ] **Gobernanza ligera**: rotación de `STATUS.md` a `docs/bitacora/YYYY.md`;
+  invariantes en `session_close`; frontmatter `estado:`/`dueño:` + `docs/INDICE.md`.
+
 ## Aparcado mientras el bloque crítico no se cierre
 
 - `[SIGUIENTE-ORGANIZADOR-UI]` — **DESCARTADO 2026-06-07** (Ollama demasiado
@@ -1119,6 +1141,18 @@ salvo la **Ola 1**, que conviene ejecutar ya.
 `EVOLUCION.md` (instancia del módulo). Marcar `despacho-skills/SKILL_AUTHORING.md`
 como **superado** por el charter (idealmente, sacar ese repo obsoleto del árbol de
 trabajo para que no contamine).
+
+---
+
+## ✅ [SKILL-CONTESTACION-ART20-LAU] Nueva skill `contestacion-honorarios-art20-lau` — entregada e integrada en el repo
+*Creada en Cowork (v1.1.0, playbook del asunto W-02THLJ) y distribuida al equipo como `.skill`. Handoff Cowork→Claude Code 2026-07-03. Integración en el repo: Claude Code.*
+
+> **✅ HECHA 2026-07-03 (Claude Code).** La skill se **importó a `.claude/skills/contestacion-honorarios-art20-lau/`** (fuente única de desarrollo, regla CLAUDE.md; antes vivía solo como `.skill` fuera del repo). Integración completa:
+> - **Helpers canónicos (task 1):** añadida a `_TARGETS` de `scripts/sync_skill_helpers.py`. El sincronizador la promueve a módulo **OPERACIÓN** y le copia los 4 helpers (`registrar_uso.py` —ya venía byte-idéntico—, `registrar_outputs.py`, `programar_revision.py`, `scaffold_caso.py`), en paridad con `oposicion-alegacion-nulidad`. `sync --check` OK (byte-idénticos); `test_skill_helpers_sync.py` verde.
+> - **Telemetría (task 2):** el patrón de detección del helper (`pyproject.toml` hacia arriba) resuelve a `data/_skill_logs/contestacion-honorarios-art20-lau/` (verificado); `uso.jsonl` se crea a demanda en el primer `log()`. Ruta ya cubierta por `.gitignore` (no se versiona telemetría con refs reales). Se añadió `.gitignore` propio a la skill (excluye `logs/*.jsonl|*.json`, conserva `README.md`).
+> - **Homogeneización / validador AVISO (task 3):** al vivir en `.claude/skills/`, entra automáticamente en el alcance de `scripts/validate_skills.py`. Único aviso: `metadata.rol`/`metadata.naturaleza` ausentes (usa el eje viejo `type: workflow`) — mismo estado que las demás skills bajo el **retrofit de identidad diferido**; license, version y helpers conformes.
+> - **PENDIENTE (v1.1.1, lo hace Cowork cuando Nikolai aporte el PDF):** incorporar **SJPI nº 10 de Barcelona 69/2025 anonimizada** a `references/jurisprudencia/` (+ fila en `INDICE.md`).
+> - Observación (fuera de alcance, pre-existente): `registrar_uso.skill_version` no lee `metadata.version` anidado → registra `"0.0"` para esta skill y para `oposicion` por igual. No se toca aquí.
 
 ---
 

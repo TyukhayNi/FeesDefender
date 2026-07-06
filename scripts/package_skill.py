@@ -28,10 +28,10 @@ from pathlib import Path
 _REPO = Path(__file__).resolve().parents[1]
 _DEFAULT_OUT = _REPO / "dist" / "skills"
 
-# Dirs candidatos cuando se usa --all.
+# Dir de skills cuando se usa --all. Fuente única de desarrollo (CLAUDE.md);
+# `_skills_ARCHIVO/` queda deliberadamente fuera (drafts archivados, no se empaquetan).
 _SKILL_ROOTS = (
     _REPO / ".claude" / "skills",
-    _REPO / "_skills_drafts",
 )
 
 _EXCLUDE_DIRS = {"node_modules", "__pycache__", ".git", ".pytest_cache"}
