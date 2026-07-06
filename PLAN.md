@@ -636,8 +636,18 @@ prosa copia del código.
   (`git mv`) + `scripts/package_skill.py` deja de empaquetar ese root. NOTA: `core/__init__.py`
   (`__product__ = "FeesGuard"`) sigue pendiente — es cambio de código, va en una fase con tests;
   las apariciones `FeesGuard/0.1` en `sync_sudespacho_legacy.py`/`DEAD_ENDS.md` son User-Agent HTTP real, NO tocar.
-- [ ] **Fase 2**: prosa→puntero al código (taxonomía/estructura solo en `config.py`)
-  + test guard `tests/test_docs_no_duplican_taxonomia.py`.
+- [x] **Fase 2** — **HECHA 2026-07-05**: en `STATUS.md`, tabla de taxonomía y estructura
+  de carpetas del caso reemplazadas por punteros a `core/config.py` (`TIPOS_CASO_*`,
+  `CASO_SUBDIRS`); regla añadida al mapa de dependencias de `docs/ARQUITECTURA.md` (marca
+  `[FUENTE ÚNICA]` + lista de espejos documentales legítimos). **Test guard**:
+  `tests/test_gobernanza_taxonomia.py` (8 tests, verdes) — **ancla el código como fuente de
+  verdad** (fija ACTORA=7, DEFENSIVA=4, OTROS=1, `CASO_SUBDIRS`, mapeo de posición); habría
+  cazado el drift real que tenía STATUS ("3 tipos defensivos" cuando el código ya tenía 4).
+  HALLAZGO que cambió el diseño: la taxonomía vive legítimamente en ~9 `.md` (skills LLM que
+  corren en servidor + referencia CRM + bitácora en prosa), así que un escáner de `.md` daría
+  falsos positivos → se descartó a favor del anclaje en código (nombre `test_docs_no_duplican_taxonomia.py`
+  del plan original abandonado por eso). Suite NO ejecutada aquí (entorno remoto sin venv; lógica
+  del guard validada importando `config`).
 - [ ] **Fase 3** (decisión de Nikolai): un solo hogar para specs (`docs/superpowers/`
   vs `docs/PLAN_*.md`) + vendorizar la referencia común de sudespacho.
 - [ ] **Gobernanza ligera**: rotación de `STATUS.md` a `docs/bitacora/YYYY.md`;

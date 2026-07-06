@@ -3,7 +3,9 @@
 > **Fuente de verdad única del proyecto.**
 > Actualizar al cerrar cada sesión con `python -m scripts.session_close`.
 
-**Última actualización:** 2026-07-05, **PROPUESTA DE GOBERNANZA DE FUENTES DE VERDAD (revisión de scaffolding) — documentada, promovida y en PR draft.** Sesión de **solo documentación** en la rama `claude/feesdefender-scaffolding-review-y7l2o2`. **Entregado:** `docs/GOBERNANZA_FUENTES_VERDAD.md` — principio «un hecho, un hogar; el resto enlaza, no copia»; **drift detectado** (README dice «FeesGuard» y describe un stack ya pivotado; taxonomía de casos y estructura de carpetas duplicadas en prosa vs `core/config.py`; cola de prioridad en `STATUS.md` además de `PLAN.md`; specs en dos hogares `docs/PLAN_*.md` + `docs/superpowers/`); **modelo objetivo** «un hecho → un hogar»; **3 fases** (Fase 1 = riesgo cero); **3 recomendaciones ligeras** (rotación de `STATUS.md` a `docs/bitacora/YYYY.md`; automatizar solo los invariantes que más duelen enganchados a `session_close`; ciclo de vida de docs con frontmatter `estado:`/`dueño:` + `docs/INDICE.md`). **Promovido** en `PLAN.md` como `[SIGUIENTE-GOBERNANZA-FUENTES-VERDAD]` (fases como checklist) y enlazado en «Referencias rápidas» de `CLAUDE.md`. **Extiende sin contradecir** `[CRITICO-FUENTES-VERDAD-PLANIFICACION]` (2026-05-29) e `[IDEA-GOBERNANZA-DOCS]` (2026-06-10): la planificación ya estaba unificada; esto ataca el drift de hechos que la prosa copia del código. Commit `4c3ddae`; **PR #4 draft** → `main` (repo sin CI; 0 checks, 0 comentarios). Doc de propuesta sin cambios de código. **FASE 1 EJECUTADA (misma sesión, riesgo cero):** README reescrito para **orientar** (FeesGuard→FeesDefender + banner a las fuentes canónicas; deja de transcribir estructura/pipeline); **cola de prioridad de STATUS archivada** en `docs/bitacora/STATUS_cola_historica_pre_2026-07.md` (`estado: histórico`) + puntero a `PLAN.md` (STATUS **1117→442 líneas**); **`_skills_drafts/`→`_skills_ARCHIVO/`** (`git mv`) + único cambio de código: `scripts/package_skill.py` deja de listar ese root (test `test_package_and_e2e` no lo usa → no afectado). **PENDIENTE (código, fase con tests):** `core/__init__.py` (`__product__="FeesGuard"`); las apariciones `FeesGuard/0.1` en `sync_sudespacho_legacy.py`/`DEAD_ENDS.md` son **User-Agent HTTP real → NO tocar**. **Fases 2-3 esperan tu visto bueno. Suite NO ejecutada** (entorno remoto sin venv; validar pytest en el PC).
+**Última actualización:** 2026-07-05, **GOBERNANZA FASE 2 — prosa→puntero al código + test guard.** Rama rearrancada desde `main` (Fase 1 ya fusionada, PR #4). En `STATUS.md`: **tabla de taxonomía** y **estructura de carpetas del caso** reemplazadas por punteros a `core/config.py` (`TIPOS_CASO_*`, `CASO_SUBDIRS`) — el código es la fuente única; las menciones sueltas de tipos en la bitácora histórica se dejan (prosa, no tabla). En `docs/ARQUITECTURA.md`: regla añadida al mapa de dependencias con marca **`[FUENTE ÚNICA]`** + lista de los **espejos documentales legítimos** (skills LLM que corren en servidor + referencia CRM). **Test guard `tests/test_gobernanza_taxonomia.py`** (8 tests, verdes al validar importando `config`): ancla el modelo canónico (ACTORA=7, DEFENSIVA=4, OTROS=1, `CASO_SUBDIRS`, mapeo de posición) — habría cazado el drift real que tenía esta tabla («3 tipos defensivos» vs 4 en código). **Hallazgo que cambió el diseño:** la taxonomía vive en ~9 `.md` por necesidad (skills LLM + CRM + bitácora) → un escáner de `.md` daría falsos positivos, se descartó a favor del anclaje en código. **Suite NO ejecutada** (entorno remoto sin venv; solo se validó la lógica del guard). **Fase 3 (specs + referencia sudespacho) esperando tu visto bueno.** Nuevo PR (Fase 1 ya está en `main`).
+
+**Anterior (2026-07-05, propuesta + Fase 1 gobernanza, PR #4 fusionado):** **PROPUESTA DE GOBERNANZA DE FUENTES DE VERDAD (revisión de scaffolding).** Sesión de **solo documentación** en la rama `claude/feesdefender-scaffolding-review-y7l2o2`. **Entregado:** `docs/GOBERNANZA_FUENTES_VERDAD.md` — principio «un hecho, un hogar; el resto enlaza, no copia»; **drift detectado** (README dice «FeesGuard» y describe un stack ya pivotado; taxonomía de casos y estructura de carpetas duplicadas en prosa vs `core/config.py`; cola de prioridad en `STATUS.md` además de `PLAN.md`; specs en dos hogares `docs/PLAN_*.md` + `docs/superpowers/`); **modelo objetivo** «un hecho → un hogar»; **3 fases** (Fase 1 = riesgo cero); **3 recomendaciones ligeras** (rotación de `STATUS.md` a `docs/bitacora/YYYY.md`; automatizar solo los invariantes que más duelen enganchados a `session_close`; ciclo de vida de docs con frontmatter `estado:`/`dueño:` + `docs/INDICE.md`). **Promovido** en `PLAN.md` como `[SIGUIENTE-GOBERNANZA-FUENTES-VERDAD]` (fases como checklist) y enlazado en «Referencias rápidas» de `CLAUDE.md`. **Extiende sin contradecir** `[CRITICO-FUENTES-VERDAD-PLANIFICACION]` (2026-05-29) e `[IDEA-GOBERNANZA-DOCS]` (2026-06-10): la planificación ya estaba unificada; esto ataca el drift de hechos que la prosa copia del código. Commit `4c3ddae`; **PR #4 draft** → `main` (repo sin CI; 0 checks, 0 comentarios). Doc de propuesta sin cambios de código. **FASE 1 EJECUTADA (misma sesión, riesgo cero):** README reescrito para **orientar** (FeesGuard→FeesDefender + banner a las fuentes canónicas; deja de transcribir estructura/pipeline); **cola de prioridad de STATUS archivada** en `docs/bitacora/STATUS_cola_historica_pre_2026-07.md` (`estado: histórico`) + puntero a `PLAN.md` (STATUS **1117→442 líneas**); **`_skills_drafts/`→`_skills_ARCHIVO/`** (`git mv`) + único cambio de código: `scripts/package_skill.py` deja de listar ese root (test `test_package_and_e2e` no lo usa → no afectado). **PENDIENTE (código, fase con tests):** `core/__init__.py` (`__product__="FeesGuard"`); las apariciones `FeesGuard/0.1` en `sync_sudespacho_legacy.py`/`DEAD_ENDS.md` son **User-Agent HTTP real → NO tocar**. **Fases 2-3 esperan tu visto bueno. Suite NO ejecutada** (entorno remoto sin venv; validar pytest en el PC).
 
 **Anterior (2026-07-03, skill contestación art. 20.1 LAU):** **NUEVA SKILL `contestacion-honorarios-art20-lau` (contestación art. 20.1 LAU, defensa de la agencia) IMPORTADA AL REPO E INTEGRADA.** Creada en Cowork (v1.1.0, playbook del asunto W-02THLJ) y entregada al equipo como `.skill`; handoff Cowork→Claude Code. Se trae a `.claude/skills/` como **fuente única de desarrollo** (regla CLAUDE.md; antes solo vivía como `.skill` fuera del repo — sin eso, las tareas de infra no podían surtir efecto). **Integración completa:** (1) **helpers canónicos** — añadida a `_TARGETS` de `scripts/sync_skill_helpers.py` → promovida a módulo **OPERACIÓN**, recibe los 4 helpers canónicos en paridad con `oposicion` (`registrar_uso.py` ya venía byte-idéntico; +`registrar_outputs`/`programar_revision`/`scaffold_caso`); `sync --check` OK. (2) **telemetría** — detección `pyproject.toml`→`data/_skill_logs/contestacion-honorarios-art20-lau/` verificada (creado a demanda en el primer `log()`; ruta ya gitignored) + `.gitignore` propio de la skill (excluye `logs/*.jsonl|*.json`, conserva README). (3) **validador AVISO** `validate_skills.py` — entra en alcance automático; único aviso `metadata.rol`/`naturaleza` ausentes (usa el eje viejo `type: workflow`, = retrofit de identidad diferido, igual que el resto). **PENDIENTE (v1.1.1, lo hace Cowork con el PDF):** SJPI nº 10 de Barcelona 69/2025 anonimizada → `references/jurisprudencia/`. **Bug pre-existente detectado (fuera de alcance):** `registrar_uso.skill_version` no lee `metadata.version` anidado → registra `"0.0"` (igual para `oposicion`). Suite **verde** (solo skips lentos esperados); `test_skill_helpers_sync` + 32 tests `-k skill` verdes. **Commit acotado** (solo ficheros de esta tarea; el árbol tenía cambios de otras sesiones sin tocar, incl. commits nuevos de una sesión concurrente).
 
@@ -318,27 +320,9 @@ git commit -m "<mensaje que Claude propuso>"
 
 ---
 
-## Taxonomía de casos (confirmada 2026-04-28)
+## Taxonomía de casos → ver `core/config.py`
 
-### Posición actora — Engel reclama (7 tipos)
-
-| Clave interna | Tag CRM | Descripción |
-|---------------|---------|-------------|
-| BAD_DEBT | BAD DEBT | Impago de factura de honorarios |
-| NEGATIVA_OFERTA | NEGATIVA OFERTA | Cliente rechaza la oferta en condiciones del encargo |
-| NEGATIVA_ARRAS | NEGATIVA ARRAS | Cliente rechaza firmar arras tras aceptar oferta |
-| NEGATIVA_ESCRITURA | NEGATIVA ESCRITURA | Cliente rechaza firmar escritura tras firmar arras |
-| NEGATIVA_CONTRATO_ARRENDAMIENTO | NEGATIVA CONTRATO ARRENDAMIENTO | Cliente rechaza formalizar contrato de arrendamiento |
-| VUELTA | VUELTA | Cliente cierra la operación sin la agencia aprovechando su gestión |
-| INCUMPLIMIENTO_EXCLUSIVA | INCUMPLIMIENTO EXCLUSIVA | Cliente incumple pacto de exclusividad del encargo |
-
-### Posición defensiva — Engel demandado (3 tipos)
-
-| Clave interna | Tag CRM | Descripción |
-|---------------|---------|-------------|
-| RESPONSABILIDAD_PROFESIONAL | RESPONSABILIDAD PROFESIONAL | Cliente reclama daños por negligencia de la agencia |
-| DEVOLUCION_RESERVA | DEVOLUCION RESERVA | Cliente reclama devolución de reserva o compromiso de seriedad |
-| LAU_20 | LAU 20 | Arrendatario reclama devolución honorarios (art. 20.1 LAU) |
+La taxonomía canónica de tipos de caso vive en `core/config.py`: `TIPOS_CASO_ACTORA` (Engel reclama) y `TIPOS_CASO_DEFENSIVA` (Engel demandado), cada entrada `clave_interna → (tag_crm, descripción)`, más el mapeo de posición procesal (`POSICION_ACTORA`/`DEFENSIVA`/`OTROS`). No se transcribe aquí para no duplicar la verdad: la prosa se desincroniza sola (esta tabla llegó a listar 3 tipos defensivos cuando el código ya tenía 4). Los documentos que sí espejan la taxonomía por necesidad (referencia CRM y skills LLM) están listados en el mapa de dependencias de `docs/ARQUITECTURA.md`.
 
 ---
 
@@ -409,23 +393,9 @@ Move-Item "G:\Unidades compartidas\DESPACHO - PRODUCCION\CASOS" "G:\Unidades com
 
 ---
 
-## Estructura de carpetas de un caso (v2 — con anonimizado)
+## Estructura de carpetas de un caso → ver `core/config.py`
 
-```
-data/CASOS/{case_id}/
-├── 00_INPUT/
-│   ├── _caso.md
-│   ├── sudespacho_{id}/      ← pull desde CRM
-│   └── manual/               ← docs subidos manualmente / intake Drive
-├── 01_PROCESADO/
-├── 02_ANALISIS/
-├── 03_DECISION/
-├── 04_OUTPUT_PREDEMANDA/
-├── 05_PROCEDIMIENTO/
-├── 06_AI_COWORK/
-├── 07_ANONIMIZADO/           ← Markdown sin PII → Drive tyukhay.legal → LLMs online
-└── 90_NOTAS_PERSONALES/      ← zona del abogado, intocable
-```
+Las subcarpetas canónicas de cada expediente están en `core/config.CASO_SUBDIRS` (`00_Input`, `01_Procesado`, … `06_Anonimizado`, `07_AI cowork`, `90_Notas personales`) y su detalle (fuentes de intake, terminología propietario/buscador) documentado junto a la constante. Convención de nombres: tipo oración (`06_Anonimizado`, no `06_ANONIMIZADO`). No se transcribe aquí: esta sección llegó a listar `07_ANONIMIZADO` en mayúsculas, una estructura que el código ya no usa.
 
 ---
 
