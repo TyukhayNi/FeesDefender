@@ -715,9 +715,19 @@ prosa copia del código.
   `GOBERNANZA_FUENTES_VERDAD.md §4`). Regla: la bitácora referencia por código `W-xxxxx`, sin correos
   ni nombres de terceros ni direcciones (el dato sensible vive en `data/CASOS/`, fuera del repo).
   Huella medida en tracked docs: correos de terceros de casos reales (PersonaUno, PersonaTres, Prat,
-  PersonaCinco…) mezclados con sintéticos de test. **Dos piezas separadas:** (1) regla going-forward +
-  check opcional en `session_close`; (2) **saneamiento retroactivo del historial** (`git filter-repo`)
-  = DECISIÓN DE NIKOLAI, disruptiva, no automática; su urgencia depende de si el repo es público.
+  PersonaCinco…) mezclados con sintéticos de test, y también en **tests/core** (`email_atomize`/`whatsapp_atomize`),
+  no solo en la bitácora. **Piezas:** (1) regla going-forward + check opcional en `session_close`;
+  (2) **saneamiento retroactivo del historial** (`git filter-repo`).
+  - **2026-07-06: repo puesto en PRIVADO** (corta exposición en curso — era público).
+  - **Runbook + mapa de redacción entregados a Nikolai** (fuera del repo: contienen la PII a purgar).
+    Ejecuta él en su PC (backup → clon fresco → filter-repo → grep+pytest verde → force-push →
+    ticket a GitHub Support para cachés/commits colgados + revisar forks).
+  - [ ] **TIER 1 (PRIMERO): purgar lo más sensible** — correos, nombres de personas, teléfonos reales.
+    Mapa activo. Pendiente de que Nikolai lo ejecute.
+  - [ ] **TIER 2 (SEGUNDO PASE, pendiente): direcciones de inmuebles** — incrustadas en case_ids y
+    nombres de fichero de fixtures → mayor riesgo de romper tests. Se hace tras validar Tier 1.
+  - [ ] **Fixtures sintéticas** para `email_atomize`/`whatsapp_atomize` (nacieron de un caso real) —
+    tarea aparte, para que la PII no vuelva a entrar de raíz.
 
 ## Aparcado mientras el bloque crítico no se cierre
 
