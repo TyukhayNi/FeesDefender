@@ -12,7 +12,7 @@ Formulario brevísimo que el asistente ofrece **al cerrar el trabajo de un asunt
 Con la respuesta, el asistente escribe **una línea** en `logs/<ref>_post.jsonl` (esquema en `logs/README.md`). En PowerShell:
 
 ```powershell
-$dir = "C:\Users\tnm33\despacho-skills\engel-volkers"   # ajusta si está en otra ruta
+$dir = "C:\Users\tnm33\Dev\FeesDefender\.claude\skills\engel-volkers"   # ajusta si está en otra ruta
 $ref = "W-XXXXXX"
 $rec = @{ ts=[DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"); skill="engel-volkers";
           ref=$ref; fase="post"; contexto_correcto=$true; "faltó"=""; "activó_cuando_debía"=$true;

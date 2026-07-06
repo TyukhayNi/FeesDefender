@@ -1692,3 +1692,313 @@ corrección que conviene cerrar **antes** de apoyar análisis automatizado sobre
 
 **Coste estimado.** ~15-20 líneas (helper de slug compartido en `extractor`/`markdown_generator` +
 `sala_lectura`) + migración de salidas existentes + 1 test de colisión.
+
+## 48. Motor documental unificado (split/OCR/MD) + empaquetado como conector  [PROMOVIDO → PLAN.md]
+
+**Desarrollo completo en [`docs/PLAN_MOTOR_DOCUMENTAL.md`](PLAN_MOTOR_DOCUMENTAL.md).** Entrada
+paraguas que consolida el diagnóstico del flujo split/OCR/MD y fija el objetivo rector de
+**empaquetar el motor como un conector reutilizable** por el despacho.
+
+**Qué consolida (entradas relacionadas, no duplicar).** #21 (re-OCR por degradación), #24
+(conversor multi-formato a MD), #39 (robustez OCR Docling/RapidOCR), #42 (OCR server-side en
+`expedientes-xl`), #43 (intake sin rama de OCR), #41 (plugin de skills). Este #48 es la vista
+arquitectónica única de la que esas son piezas.
+
+**Diagnóstico (resumen; detalle y `file:line` en el doc).**
+- **Incoherencias:** tres motores de OCR desacoplados con idiomas distintos (Docling interno en
+  el pipeline · RapidOCR por página solo vía script manual · OCRmyPDF `spa+cat+rus` en la
+  anonimización, que re-OCR-iza el original); **hueco de >30pp** (escaneados largos salen
+  vacíos y se rescatan a mano); **banda muerta de umbrales** (100 en extractor vs 50 en el
+  script → nadie OCR-iza los de 50–99 chars); docstring de `extractor.py` contradice el código;
+  `separar.py` desenganchado del pipeline.
+- **Imágenes:** tres tratos incompatibles (tirada / cola de visión / ignorada) según el módulo;
+  las de iPhone (`.heic`) se caen ya en el inventario (`inventory._RELEVANT_EXTS` no las lista).
+- **Faltas:** registro de cobertura por documento (la clave — hoy falla en silencio), control de
+  calidad del OCR, clasificación documental, reensamblado multi-parte, PDFs protegidos/firmados,
+  tablas, detección de idioma, punto de revisión humano, transcripción de audio/vídeo.
+
+**Prerrequisitos de empaquetado.** Fachada única (`procesar_expediente(entrada, salida) → informe`),
+desacople de rutas/entorno, preflight de capacidades, salida estructurada JSON, aislamiento por
+subproceso, versión/modelos pinneados, sin fuga de datos + preservar `core/anon`.
+
+**Disparador de promoción.** Decisión explícita de Nikolai de empaquetar el motor como plugin
+(regla de promoción del proyecto). Tarea accionable en `PLAN.md` → `[SIGUIENTE-MOTOR-DOCUMENTAL]`.
+
+**Ampliación 2026-07-03 (aprendizajes de Vassal Litigator).** Diseño de organización ampliado con
+`github.com/strigov/vassal-litigator`: registro ÚNICO de caso estilo `index.yaml`, espejos MD que
+replican la jerarquía de origen (con `mirror_stale`), y `reocr` condicional por `ocr_quality` (funde el
+hueco de >30pp). Decisiones de layout: `01_Procesado/01_Sala de lectura/` (humano) + `02_Sala de máquina/`
+(máquina, productos numerados) e id **dual** (`sha8` + `doc-NNN`). Ver §G/§H/§I de `PLAN_MOTOR_DOCUMENTAL.md`.
+
+**Ampliación 2026-07-03 (dos botones de operación).** `reorganizar_caso` (migración de casos antiguos al
+layout nuevo, por flota, con sello `layout_version` + `--force` del pipeline, patrón `plan`/`apply` con
+journal reversible) y `rebuild_plugin` (repackage mecánico de skills/conectores + señalización semántica de
+skills con prosa afectada + hook de drift no-silencioso). Ver §J/§K de `PLAN_MOTOR_DOCUMENTAL.md`.
+
+**Decisiones estratégicas + principios (2026-07-04).** (1) plugin-first (Streamlit parqueado, distribución
+vía plugin); (2) Ollama/LLM local descartado → motor OCR **OCRmyPDF + `ocr_per_page` torch** como reocr;
+(3) regla PII relajada temporalmente, anonimización resecuenciada al **último eslabón** con **gate de
+reinstauración del muro `06`**. Además **9 principios rectores de ejecución** (M1–M9): golden fixture,
+registro-primero, walking skeleton, fachada, `00_Input` intocable, medir-antes, Preview→Apply, preflight y
+doctor de dependencias. Roadmap resecuenciado F(-1)→F-final. Ver §L/§M de `PLAN_MOTOR_DOCUMENTAL.md`.
+
+**Motor en dos cajas + MinerU (2026-07-04).** El motor vive tras la junta (registro+`ocr_quality`), así que es
+decisión **aplazada e intercambiable**: Caja 1 (PDF buscable) = OCRmyPDF fijado; Caja 2 (extractor→MD) =
+bake-off en F3 con **MinerU** (opendatalab, local/CPU/determinista, tablas+manuscrito, sin PII) como favorito
+frente a Docling, con gate hardware/catalán/licencia. Si MinerU cumple, elimina la necesidad de Claude visión. Ver §F.
+
+**Estudio de mercado 2026 + aparcado (2026-07-04).** No hay turnkey que cumpla RGPD-local + es/ca/ru +
+presupuesto. Corrección de licencia: **Docling (MIT)** por defecto sobre MinerU (AGPL-3.0) para el
+extractor→MD. Añadida **opción Mistral OCR cloud (UE) + ZDR + DPA** como motor de la fase de construcción
+(coste irrelevante ~$1-2/1.000; el punto es RGPD del crudo). Cola dura (manuscrito) → Azure contenedor
+desconectado / Mistral self-host, post-anonimización. **Este plan queda APARCADO**; foco actual: skills con
+código (`ocr-a-md` sobre el scaffold). Ver §F de `PLAN_MOTOR_DOCUMENTAL.md`.
+
+**Justificación de no aplicarlo ahora.** Es un refactor arquitectónico grande; primero se
+memoriza el diseño. El orden sugerido de ejecución (saneamiento barato → registro de cobertura →
+fachada → motor OCR único → conector → resto de faltas) está en el doc.
+---
+
+## 48. Endurecimiento del robot CENDOJ (`cendoj-descarga`)
+
+**Disparador.** Petición de Nikolai (2026-06-30) de mejorar el robot de búsqueda
+en CENDOJ; rama dedicada `claude/cendoj-search-robot-yt67sz`. Se registran como
+backlog cuatro sub-frentes con disparador propio; cada uno es promovible a
+`PLAN.md` por separado (referencia `MEJORAS #48.X`). El techo del **CAPTCHA**
+«Control > Descargas masivas» es estructural (política anti-bot, no se resuelve);
+ninguna mejora lo elimina, solo reducen el volumen de descargas que lo dispara y
+mejoran la recuperación cuando aparece.
+
+Estado de partida: skill `cendoj-descarga` v1.1 (`SKILL.md` como manual operativo)
++ subagente `cendoj-bot.md` (model sonnet) + 7 helpers en `scripts/`. Todo sobre
+`mcp__Claude_in_Chrome` (el sandbox bash no alcanza `poderjudicial.es`).
+
+### 48.A — Sustituir clics por coordenadas fijas por selectores/JS (robustez)
+
+**Síntoma.** El flujo navega por **coordenadas absolutas**: cierre del modal de
+aviso legal (`coord. ≈ 1002, 47`, [SKILL.md:50](../.claude/skills/cendoj-descarga/SKILL.md))
+y apertura del desplegable jerárquico `Localización` (`coord. ≈ 550-890, 357`,
+[SKILL.md:64-68](../.claude/skills/cendoj-descarga/SKILL.md)). Cualquier cambio de
+resolución, zoom del navegador o reflow del layout de CENDOJ desplaza el objetivo y
+el clic cae en vacío o en el control equivocado — **fallo silencioso**: el robot
+sigue como si hubiera filtrado por provincia cuando no lo ha hecho, y devuelve
+resultados de toda España. El botón `Buscar` ya se migró a
+`document.querySelector('button[type="submit"]').click()`
+([SKILL.md:74-78](../.claude/skills/cendoj-descarga/SKILL.md)); el modal y el
+dropdown siguen por coordenadas.
+
+**Mejora propuesta.** Reescribir cierre de modal y selección de localización/sección
+con localizadores estables por DOM (`querySelector` sobre `id`/`name`/texto del
+`label`, `.click()` sobre el checkbox de la provincia, expandir CCAA por el nodo del
+árbol que contiene el texto). Patrón ya validado en el submit. Documentar en el
+manual la regla general «cero coordenadas para acciones de formulario; coordenadas
+solo como último recurso para el gesto de user-activation previo a la descarga»
+(ese clic neutro en viewport, [SKILL.md:144](../.claude/skills/cendoj-descarga/SKILL.md),
+sí debe seguir siendo posicional). Añadir verificación post-condición: tras filtrar,
+leer por JS el estado del checkbox/campo y abortar con mensaje claro si no quedó
+aplicado, en vez de continuar a ciegas.
+
+**Coste estimado.** Edición de `SKILL.md` (Pasos 2-3) + snippets JS; sin código
+Python. El subagente ejecuta JS, no hay test automatizable salvo en sesión real.
+
+> **Posiblemente superado por #49 (vía Apify):** si se adopta el actor `legaltech/cendoj`,
+> desaparece el navegador y, con él, los clics por coordenadas — esta entrada quedaría sin objeto.
+
+### 48.B — Discriminar candidatos por JS del listado, sin abrir PDFs
+
+**Síntoma.** Cuando hay varios resultados con la misma fecha, el Paso 5
+([SKILL.md:111-119](../.claude/skills/cendoj-descarga/SKILL.md)) propone *abrir cada
+PDF* para leer hechos/ratio (caro, lento y **dispara el CAPTCHA** porque consume
+descargas) o relanzar una búsqueda de texto libre. Pero la propia página de
+resultados ya muestra en el listado, bajo cada ROJ, los metadatos discriminantes:
+`ECLI`, `Nº Resolución`, `Ponente`, `Nº Recurso`.
+
+**Mejora propuesta.** Extender el JS de extracción (hoy solo captura `roj` + `href`,
+[SKILL.md:103-107](../.claude/skills/cendoj-descarga/SKILL.md)) para que recoja
+también ese bloque de metadatos por resultado, y casarlo programáticamente contra el
+*lead* (la referencia privada) por ECLI > Nº Recurso > Nº Res + Ponente, antes de
+descargar nada. Solo se baja el hash que casa. Reduce descargas (→ menos CAPTCHA),
+elimina la apertura especulativa de PDFs y deja traza del criterio de match. Mantener
+la apertura del PDF únicamente como desempate final cuando el listado no basta.
+
+**Coste estimado.** Edición de `SKILL.md` (Pasos 4-5) con el JS ampliado; sin Python.
+
+> **Posiblemente superado por #49 (vía Apify):** el dataset del actor ya trae
+> `roj`/`ecli`/`resolutionNumber`/`appealNumber`/`summary` por resultado, lista la discriminación
+> sin scrapear el listado a mano (con el matiz de que `ponente` llega anonimizado a iniciales).
+
+### 48.C — Verificación automatizada metadatos-vs-lead (helper nuevo)
+
+**Síntoma.** La verificación (Paso 8, [SKILL.md:211-239](../.claude/skills/cendoj-descarga/SKILL.md))
+es `pdftotext | grep` **a ojo**: el operador compara mentalmente ROJ/ECLI/Nº Res/
+Ponente del PDF contra lo pedido. Es el paso donde se cuela el error «parece la
+buena y no lo es», precisamente el que rompe el rigor de cita en un escrito
+procesal. Además choca con el encoding CIDFont (ver 48.D), que vacía el `grep`.
+
+**Mejora propuesta.** Helper nuevo `scripts/verificar_sentencia.py` que reciba la
+referencia esperada (ROJ/ECLI/Nº Res/fecha/ponente) y el PDF descargado, parsee el
+**bloque de cabecera de metadatos** que CENDOJ imprime en la primera página (es texto
+seleccionable aunque el cuerpo sea CIDFont) y emita un informe por campo:
+`PASS` / `FAIL` / `DIVERGENCIA` (esta última para el caso legítimo ROJ-año ≠ Nº-res-año,
+[SKILL.md:230](../.claude/skills/cendoj-descarga/SKILL.md), que se reconcilia por ECLI
+y se documenta, no se «corrige»). Reutiliza el parser de cabecera de
+`parse_pdf_to_md.py`. Salida apta para volcar al consolidado (Paso 9) y al ledger
+(48.D). No sustituye la lectura humana de hechos+ratio (Paso 5 / nota
+[SKILL.md:373](../.claude/skills/cendoj-descarga/SKILL.md)): verifica **identidad**,
+no idoneidad temática.
+
+**Coste estimado.** ~80-120 líneas Python + tests con PDFs de muestra (los ya
+presentes en `oposicion-alegacion-nulidad/references/jurisprudencia/`) + edición del
+Paso 8 del manual para invocarlo.
+
+> **Referencia de diseño (2026-06-30):** `ricardodevis/verificador-legal` (Apache-2.0,
+> plugin Cowork / Claude Managed Agents) implementa justo este patrón a mayor escala:
+> auditor multi-agente que verifica ECLI/ROJ/ponente/fecha contra fuentes oficiales,
+> **detecta alucinaciones** (fecha imposible, ponente que no consta en nóminas públicas)
+> y **valida la cita literal entrecomillada** contra el texto oficial. No es drop-in
+> (la descarga de PDF figura como roadmap v2.0) pero es el modelo conceptual de 48.C y
+> encaja con `verificacion-anclada-fuente`. Estudiarlo al construir el helper.
+
+### 48.D — OCR fallback ante CIDFont + ledger de lote reanudable
+
+**Síntoma (dos partes).**
+1. **CIDFont.** `pdftotext` devuelve 0 coincidencias con el encoding propio de CENDOJ
+   ([SKILL.md:224](../.claude/skills/cendoj-descarga/SKILL.md)); el manual sugiere OCR
+   «opcionalmente» pero `batch_pdf_to_md.sh` no lo aplica solo, así que la conversión
+   a `.md` y el `grep` de materia quedan vacíos sin aviso accionable.
+2. **Sin estado de lote.** Las referencias entran como texto libre y no hay *ledger*
+   de progreso. Si el CAPTCHA corta a mitad de un lote de 15 (Paso 6-bis,
+   [SKILL.md:149-156](../.claude/skills/cendoj-descarga/SKILL.md)), se pierde el rastro
+   de qué quedó localizado/descargado/pendiente; al reanudar se re-trabaja a mano.
+
+> **Intel externa (2026-06-30, no verificada por nosotros):** el README de
+> `DerechoVirtual/mcp-cendoj-sentencias` (MIT) afirma que el control «Descargas masivas»
+> del CENDOJ es **por sesión (no por IP) y salta sobre la 6.ª-7.ª descarga**. Si se
+> confirma en sesión real, afina la regla de ritmo: mantener **≤5 descargas por sesión**
+> y, llegado el límite, abrir sesión nueva (no esperar) reinicia el contador. ⚠️ Ese
+> repo logra «sin CAPTCHA» con **multi-sesión paralela + tool `resolver_captcha()`** —
+> evasión que el despacho **NO adopta** (política anti-bot, [SKILL.md:153](../.claude/skills/cendoj-descarga/SKILL.md));
+> aquí solo se aprovecha el dato del umbral para espaciar mejor, no para esquivar.
+
+**Mejora propuesta.**
+1. En `batch_pdf_to_md.sh`: detectar texto vacío/ilegible tras `pdftotext` y disparar
+   automáticamente OCR (`ocrmypdf` o `pdftoppm` + Tesseract, ya en el entorno) sobre
+   copia temporal antes de `parse_pdf_to_md.py`; marcar en el `.md` si el contenido
+   proviene de OCR. (Relacionado con #1 y #39, mismo patrón de OCR-bajo-demanda.)
+2. Un *ledger* JSON por encargo (`_cendoj_lote.json`): una fila por referencia con
+   estado (`pendiente`/`localizada`/`descargada`/`verificada`/`no_localizada`), ROJ/ECLI
+   resueltos y ruta del PDF. El subagente lo escribe incrementalmente; al reanudar tras
+   CAPTCHA, retoma solo las `pendiente`. Conecta con la telemetría existente
+   (`registrar_uso.py`) y con el consolidado (Paso 9).
+
+**Coste estimado.** ~15 líneas en `batch_pdf_to_md.sh` (rama OCR) + ~60-80 líneas para
+el ledger + edición de Pasos 6-bis/8-bis/9 del manual. Idempotencia: el ledger nunca
+re-descarga lo ya `verificado`.
+
+**Justificación de no aplicarlo ahora (toda la #48).** Decisión de Nikolai (2026-06-30):
+en esta sesión solo se documenta el backlog; la implementación se aborda después,
+priorizando 48.A y 48.B (mayor retorno: matan fallos silenciosos y bajan el volumen
+que dispara el CAPTCHA) y luego 48.C (blinda el rigor de cita). 48.D es el de menor
+urgencia salvo que un encargo grande haga del CAPTCHA un cuello real.
+
+> **Actualización 2026-06-30:** investigado el actor de Apify `legaltech/cendoj` (ver
+> #49). Pasa la prueba decisiva (devuelve la URL del PDF **oficial** del CGPJ). Si se
+> adopta, **supera 48.A y 48.B** y reordena la prioridad: la vía Apify pasa a ser el
+> descubrimiento primario y el navegador queda como fallback. 48.C y 48.D siguen vigentes.
+
+---
+
+## 49. Vía Apify MCP (`legaltech/cendoj`) como capa de descubrimiento del robot CENDOJ
+
+**Disparador.** Nikolai aporta (2026-06-30) el actor de Apify `legaltech/cendoj` (vía
+MCP) como alternativa a la navegación real, a raíz de un tutorial de
+legaltechnologybootcamp. Investigada su ficha técnica (Input/Output/Pricing): **pasa la
+prueba decisiva** — devuelve la URL del **PDF oficial del CGPJ**, no un sustituto
+scrapeado — y reconfigura los frentes #48.A/B.
+
+**Qué es.** Actor de Apify (MCP `https://mcp.apify.com/`) que automatiza la búsqueda en
+CENDOJ server-side y devuelve un dataset JSON estructurado. Mantenedor de comunidad
+(Miguel González); muy activo (modificado pocas horas antes de la consulta); 157
+usuarios totales, 9 activos/mes; máx. **200 resultados** y **4 términos** por
+ejecución. **Coste de dos vectores**: `$1.00 / 1.000 resultados` de búsqueda **+ proxy
+residencial ES facturado por GB** al extraer texto (CENDOJ bloquea las IP de datacenter,
+así que el proxy residencial no es opcional). Forma parte de una familia legaltech
+(`tribunal-constitucional`, `tjue`, `aepd`).
+
+**Lo que resuelve (y por qué cambia #48).**
+- **Input estructurado**: `searchTerms` con booleanos `AND/OR/NOT/NEARn` (sintaxis EN o
+  CENDOJ, traducción automática) + filtros `jurisdictions`, `organoTypes` (códigos
+  opacos, p. ej. `11`=Sala Civil TS, `37`=AP, `42`=JPI; la ficha trae **tabla de
+  referencia completa**), `resolutionTypes`, `locations`, `dateFrom/dateTo`,
+  `sortOrder`, `maxResults`. → **Obsoleta 48.A** (cero navegador, cero coordenadas) y
+  supera la cascada de texto libre del manual actual.
+- **Output por resolución**: `roj`, `ecli`, `resolutionNumber`, `appealNumber`,
+  `municipality`, `organo`, `resolutionDateISO`, `summary`, **`pdfUrl` (PDF oficial del
+  CGPJ, `action=contentpdf`)** y `documentUrl` (visor estable `openDocument`, sin `&`).
+  → **Resuelve 48.B**: discriminación por metadatos casables (ECLI/ROJ/Nº recurso/Nº
+  res) sin abrir PDFs.
+- **Extracción de texto bajo demanda** en 2.ª ejecución (`pdfUrls`, máx. 50) para
+  leer/analizar sin descarga manual. El actor **respeta el no-descarga-masiva** del
+  CGPJ (solo metadatos + texto selectivo).
+- **Modo párrafos** (`paragraphs` 1-20 + `paragraphTerms`): en vez del texto íntegro,
+  devuelve solo N pasajes relevantes priorizando los **Fundamentos de Derecho**. Pensado
+  para análisis con LLM con menos tokens; encaja con el triaje y la lectura inicial del
+  despacho (no sustituye la lectura del PDF oficial para citar).
+
+**Caveats que NO desaparecen (rigor del despacho).**
+1. **El artefacto de cita sigue siendo el PDF oficial.** Se usa `pdfUrl` para bajar el
+   PDF del CGPJ y se mantienen la verificación (Paso 8) y el archivado en expediente
+   (Pasos 7/7-bis). El `summary` y el `text` del actor son ayudas de descubrimiento,
+   **no** fuente de cita.
+2. **Anonimización forzada del actor.** El campo `ponente` llega como iniciales
+   («P.J.V.T.») y el `text` extraído anonimiza ponente/letrados/procuradores —**más**
+   que el propio PDF del CGPJ. Consecuencia: el `ponente` deja de ser clave de
+   discriminación fiable (usar ECLI/ROJ/Nº recurso/Nº res, que sí llegan completos); y
+   el `text` no sirve para citar literal (para eso, el PDF oficial vía `pdfUrl`).
+3. **CAPTCHA no eliminado, pero mitigado.** La búsqueda no descarga; al bajar los PDFs
+   oficiales al expediente sigues ante el muro anti-bot, pero con el `pdfUrl`/ROJ
+   exactos bajas muchos menos y más certeros → menos CAPTCHA. Para muchos análisis, el
+   `text` (máx. 50) evita descargar.
+4. **Dependencia de terceros / bus factor.** Mantenedor único de comunidad, 9 usuarios
+   activos/mes. Conservar el robot de navegador (skill actual) como **fallback** si el
+   actor cae o cambia su API.
+5. **Deontológico + coste de proxy.** CENDOJ bloquea las IP de datacenter, así que el
+   actor scrapea por **proxy residencial ES obligatorio**, facturado por GB. Mitiga que
+   devuelve URLs oficiales y respeta el no-masivo, pero es una decisión consciente del
+   despacho (no un detalle técnico) y añade un coste por GB al precio por resultado.
+6. **Gotcha MCP `&amp;`.** El `pdfUrl` llega con los `&` escapados al leerlo por MCP;
+   para enlaces clicables usar `documentUrl`; para reenviar a `pdfUrls`, pasar el
+   `pdfUrl` tal cual (el actor lo decodifica).
+7. **Encaje organizativo.** Es capacidad de **Cowork/claude.ai** (la investigación
+   CENDOJ es tarea Cowork por `CLAUDE.md`, y el conector MCP de Apify vive server-side),
+   no de Claude Code local. El token personal de Apify se gestiona **fuera del repo y
+   fuera del chat** (regla de secretos del proyecto).
+
+**Relación con #48.** Si se adopta: **48.A y 48.B quedan superados** (no hay navegador
+que endurecer; la discriminación viene en el dataset). **48.C gana valor**: el «lead»
+puede ser la propia salida del actor y la verificación contrasta el PDF oficial contra
+ROJ/ECLI/Nº recurso ya estructurados. **48.D sigue aplicando** a los PDFs que se bajen
+y al estado del lote. El robot pasa de «navegador frágil» a **híbrido: descubrimiento
+por actor → descarga + verificación del PDF oficial → archivado en expediente**.
+
+**Convergencia de diseño (señal a favor).** Un servidor MCP independiente,
+`DerechoVirtual/mcp-cendoj-sentencias` (MIT), expone tools (`buscar_por_cita` por
+ECLI/ROJ, `leer_sentencias` con `parrafos`/`terminos`/`guardar_pdf`) que **coinciden en
+forma** con el Input/Output del actor de Apify y con el modo párrafos — dos
+implementaciones distintas llegando al mismo diseño refuerza que es la forma correcta.
+Diferencia clave: ese MCP «resuelve» el CAPTCHA (multi-sesión + tool `resolver_captcha`),
+vía que el despacho **descarta**; el actor de Apify respeta el no-descarga-masiva, así
+que está **mejor alineado** con la política del despacho que el MCP más capaz del topic.
+
+**Coste estimado.** Sin código Python nuevo de búsqueda (lo hace el actor). Trabajo:
+(a) configurar el conector MCP de Apify en Cowork (token personal); (b) reescribir
+Pasos 2-5 de `cendoj-descarga/SKILL.md` (vía Apify primaria + navegador como fallback)
+e incorporar al manual la tabla de `organoTypes` y la guía de operadores booleanos;
+(c) dejar intactos los Pasos 7-8 (descarga oficial + verificación + archivado).
+
+**Justificación de no aplicarlo ahora.** Sesión de solo-propuesta. Antes de integrar:
+(1) **decisión deontológica explícita** de Nikolai sobre el proxy residencial; (2)
+**prueba real en Cowork** de 1-2 consultas de un caso vivo comparando actor vs.
+navegador (cobertura, exactitud de metadatos, que el `pdfUrl` baje el PDF oficial
+correcto); (3) confirmar la gestión del token Apify. Promovible a `PLAN.md` cuando esas
+tres se cierren.
