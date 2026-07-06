@@ -165,6 +165,7 @@ Atajo: `/tests` ejecuta la suite completa.
 - **Plan subdivisión ciudades**: `docs/PLAN_SUBDIVISION_CIUDADES.md`
 - **Plan SaRS1 anon**: `docs/PLAN_SaRS1_anon_pipeline.md`
 - **Plan pre-relleno LLM**: `docs/PLAN_PRERELLENO_LLM_VIABILIDAD.md`
+- **Motor documental (split/OCR/MD) + empaquetado**: `docs/PLAN_MOTOR_DOCUMENTAL.md` (`MEJORAS #48`)
 - **Mejoras futuras**: `docs/MEJORAS_FUTURAS.md`
 - **Gobernanza de fuentes de verdad**: `docs/GOBERNANZA_FUENTES_VERDAD.md`
 - **Convenciones del despacho**: `docs/CONVENCIONES_DESPACHO.md`

@@ -1693,6 +1693,70 @@ corrección que conviene cerrar **antes** de apoyar análisis automatizado sobre
 **Coste estimado.** ~15-20 líneas (helper de slug compartido en `extractor`/`markdown_generator` +
 `sala_lectura`) + migración de salidas existentes + 1 test de colisión.
 
+## 48. Motor documental unificado (split/OCR/MD) + empaquetado como conector  [PROMOVIDO → PLAN.md]
+
+**Desarrollo completo en [`docs/PLAN_MOTOR_DOCUMENTAL.md`](PLAN_MOTOR_DOCUMENTAL.md).** Entrada
+paraguas que consolida el diagnóstico del flujo split/OCR/MD y fija el objetivo rector de
+**empaquetar el motor como un conector reutilizable** por el despacho.
+
+**Qué consolida (entradas relacionadas, no duplicar).** #21 (re-OCR por degradación), #24
+(conversor multi-formato a MD), #39 (robustez OCR Docling/RapidOCR), #42 (OCR server-side en
+`expedientes-xl`), #43 (intake sin rama de OCR), #41 (plugin de skills). Este #48 es la vista
+arquitectónica única de la que esas son piezas.
+
+**Diagnóstico (resumen; detalle y `file:line` en el doc).**
+- **Incoherencias:** tres motores de OCR desacoplados con idiomas distintos (Docling interno en
+  el pipeline · RapidOCR por página solo vía script manual · OCRmyPDF `spa+cat+rus` en la
+  anonimización, que re-OCR-iza el original); **hueco de >30pp** (escaneados largos salen
+  vacíos y se rescatan a mano); **banda muerta de umbrales** (100 en extractor vs 50 en el
+  script → nadie OCR-iza los de 50–99 chars); docstring de `extractor.py` contradice el código;
+  `separar.py` desenganchado del pipeline.
+- **Imágenes:** tres tratos incompatibles (tirada / cola de visión / ignorada) según el módulo;
+  las de iPhone (`.heic`) se caen ya en el inventario (`inventory._RELEVANT_EXTS` no las lista).
+- **Faltas:** registro de cobertura por documento (la clave — hoy falla en silencio), control de
+  calidad del OCR, clasificación documental, reensamblado multi-parte, PDFs protegidos/firmados,
+  tablas, detección de idioma, punto de revisión humano, transcripción de audio/vídeo.
+
+**Prerrequisitos de empaquetado.** Fachada única (`procesar_expediente(entrada, salida) → informe`),
+desacople de rutas/entorno, preflight de capacidades, salida estructurada JSON, aislamiento por
+subproceso, versión/modelos pinneados, sin fuga de datos + preservar `core/anon`.
+
+**Disparador de promoción.** Decisión explícita de Nikolai de empaquetar el motor como plugin
+(regla de promoción del proyecto). Tarea accionable en `PLAN.md` → `[SIGUIENTE-MOTOR-DOCUMENTAL]`.
+
+**Ampliación 2026-07-03 (aprendizajes de Vassal Litigator).** Diseño de organización ampliado con
+`github.com/strigov/vassal-litigator`: registro ÚNICO de caso estilo `index.yaml`, espejos MD que
+replican la jerarquía de origen (con `mirror_stale`), y `reocr` condicional por `ocr_quality` (funde el
+hueco de >30pp). Decisiones de layout: `01_Procesado/01_Sala de lectura/` (humano) + `02_Sala de máquina/`
+(máquina, productos numerados) e id **dual** (`sha8` + `doc-NNN`). Ver §G/§H/§I de `PLAN_MOTOR_DOCUMENTAL.md`.
+
+**Ampliación 2026-07-03 (dos botones de operación).** `reorganizar_caso` (migración de casos antiguos al
+layout nuevo, por flota, con sello `layout_version` + `--force` del pipeline, patrón `plan`/`apply` con
+journal reversible) y `rebuild_plugin` (repackage mecánico de skills/conectores + señalización semántica de
+skills con prosa afectada + hook de drift no-silencioso). Ver §J/§K de `PLAN_MOTOR_DOCUMENTAL.md`.
+
+**Decisiones estratégicas + principios (2026-07-04).** (1) plugin-first (Streamlit parqueado, distribución
+vía plugin); (2) Ollama/LLM local descartado → motor OCR **OCRmyPDF + `ocr_per_page` torch** como reocr;
+(3) regla PII relajada temporalmente, anonimización resecuenciada al **último eslabón** con **gate de
+reinstauración del muro `06`**. Además **9 principios rectores de ejecución** (M1–M9): golden fixture,
+registro-primero, walking skeleton, fachada, `00_Input` intocable, medir-antes, Preview→Apply, preflight y
+doctor de dependencias. Roadmap resecuenciado F(-1)→F-final. Ver §L/§M de `PLAN_MOTOR_DOCUMENTAL.md`.
+
+**Motor en dos cajas + MinerU (2026-07-04).** El motor vive tras la junta (registro+`ocr_quality`), así que es
+decisión **aplazada e intercambiable**: Caja 1 (PDF buscable) = OCRmyPDF fijado; Caja 2 (extractor→MD) =
+bake-off en F3 con **MinerU** (opendatalab, local/CPU/determinista, tablas+manuscrito, sin PII) como favorito
+frente a Docling, con gate hardware/catalán/licencia. Si MinerU cumple, elimina la necesidad de Claude visión. Ver §F.
+
+**Estudio de mercado 2026 + aparcado (2026-07-04).** No hay turnkey que cumpla RGPD-local + es/ca/ru +
+presupuesto. Corrección de licencia: **Docling (MIT)** por defecto sobre MinerU (AGPL-3.0) para el
+extractor→MD. Añadida **opción Mistral OCR cloud (UE) + ZDR + DPA** como motor de la fase de construcción
+(coste irrelevante ~$1-2/1.000; el punto es RGPD del crudo). Cola dura (manuscrito) → Azure contenedor
+desconectado / Mistral self-host, post-anonimización. **Este plan queda APARCADO**; foco actual: skills con
+código (`ocr-a-md` sobre el scaffold). Ver §F de `PLAN_MOTOR_DOCUMENTAL.md`.
+
+**Justificación de no aplicarlo ahora.** Es un refactor arquitectónico grande; primero se
+memoriza el diseño. El orden sugerido de ejecución (saneamiento barato → registro de cobertura →
+fachada → motor OCR único → conector → resto de faltas) está en el doc.
 ---
 
 ## 48. Endurecimiento del robot CENDOJ (`cendoj-descarga`)
