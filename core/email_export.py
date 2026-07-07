@@ -1299,11 +1299,15 @@ def write_indices(dest_dir: Path | str) -> None:
 
 
 def email_dest_dir(case_id: str) -> Path:
-    """Carpeta de destino canónica de los correos de un caso: ``00_Input/03_Email``.
+    """Carpeta de destino de escritura de los correos de un caso: ``00_Input/03_Email``.
 
     Resuelve ``case_id`` (acepta case_id canónico o W-code ``id_go``) al nombre de
-    carpeta real antes de construir la ruta.
+    carpeta real. Aplica el guard de escritura (DISEÑO_V2 §6): si el caso está
+    prestado/conflicto devuelve la ruta dentro de ``_pendiente_checkin/email/…``
+    (con evento); si está disponible, la ruta normal. Es el punto de destino de
+    escritura del export — no un resolver de lectura.
     """
-    from .casos.case_locator import path_for, resolve_ref
+    from .case_manager import dir_intake
+    from .casos.case_locator import resolve_ref
 
-    return path_for(resolve_ref(case_id)) / "00_Input" / "03_Email"
+    return dir_intake(resolve_ref(case_id), "00_Input/03_Email", "email")

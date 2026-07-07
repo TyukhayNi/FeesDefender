@@ -63,11 +63,12 @@ import httpx
 
 from .case_manager import (
     crm_branch_path,
+    guard_escritura,
     is_legacy_intake_v1,
     read_bucket_overrides,
     update_pull_state,
 )
-from .config import CRM_SUBDIR, caso_path
+from .config import CRM_SUBDIR, PENDIENTE_CHECKIN_SUBDIR, caso_path
 from .intake_log import append_event as _log_event
 from .intake_manifest import (
     IntakeManifest,
@@ -1456,6 +1457,18 @@ def pull_expediente_v2(
         # para evitar I/O por-documento dentro del bucle.
         bucket_overrides = read_bucket_overrides(case_id)
 
+        # Guard de escritura (DISEÑO_V2 §6): si el caso está prestado/conflicto,
+        # las escrituras del pull se redirigen a _pendiente_checkin/crm/... (un
+        # evento). El rel_path/manifest se mantienen en la ruta intencionada
+        # (05_CRM/...): es donde CP10 dejará los ficheros al integrar la bandeja.
+        _pull_guard = guard_escritura(case_id, f"00_Input/{CRM_SUBDIR}", "crm")
+        _desviar_pull = _pull_guard.desviar
+
+        def _target_efectivo(ft):
+            if not _desviar_pull:
+                return ft
+            return case_root / PENDIENTE_CHECKIN_SUBDIR / "crm" / ft.relative_to(case_root)
+
         # 4. Manifest M9 + reconciliación al inicio (M9-Q4)
         with IntakeManifest(case_id) as manifest:
             manifest.reconcile()
@@ -1520,16 +1533,18 @@ def pull_expediente_v2(
                 )
 
                 if action == "write":
-                    final_target.parent.mkdir(parents=True, exist_ok=True)
-                    final_target.write_bytes(data)
+                    _wt = _target_efectivo(final_target)
+                    _wt.parent.mkdir(parents=True, exist_ok=True)
+                    _wt.write_bytes(data)
                     result.documents_written += 1
                 elif physical_complete and rel_path != primary_rel:
                     # Solapamiento cross-source real: el SHA ya existe bajo otra
                     # ruta (otra fuente/rama). Con physical_complete escribimos
                     # la copia física igualmente para dejar 05_CRM completo.
                     # El alias ya lo registró manifest.register().
-                    final_target.parent.mkdir(parents=True, exist_ok=True)
-                    final_target.write_bytes(data)
+                    _wt = _target_efectivo(final_target)
+                    _wt.parent.mkdir(parents=True, exist_ok=True)
+                    _wt.write_bytes(data)
                     result.documents_overlap += 1
                     _log_event(
                         case_id, "cross_source_overlap",

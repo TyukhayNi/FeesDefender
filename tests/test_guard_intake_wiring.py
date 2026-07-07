@@ -71,3 +71,76 @@ def test_whatsapp_prestado_desvia_a_bandeja(tmp_casos_root):
     assert not any(vivo.rglob("*.txt")) if vivo.exists() else True
     # Evento de desvío registrado.
     assert any(e["event"] == "pendiente_checkin" for e in intake_log.read_events(case_id))
+
+
+# ---------------------------------------------------------------------------
+# Email (email_dest_dir es el resolver de destino de escritura)
+# ---------------------------------------------------------------------------
+
+def test_email_dest_dir_disponible_normal(tmp_casos_root):
+    from core import email_export
+    importlib.reload(email_export)
+    case_manager.ensure_case("EV-2026-001", titulo="x")
+    d = email_export.email_dest_dir("EV-2026-001")
+    assert d.as_posix().endswith("00_Input/03_Email")
+    assert "_pendiente_checkin" not in d.as_posix()
+
+
+def test_email_dest_dir_prestado_desvia(tmp_casos_root):
+    from core import email_export, intake_log
+    importlib.reload(intake_log); importlib.reload(email_export)
+    case_id = _caso_prestado()
+    d = email_export.email_dest_dir(case_id)
+    assert d.as_posix().endswith("_pendiente_checkin/email/00_Input/03_Email")
+    assert any(e["event"] == "pendiente_checkin" for e in intake_log.read_events(case_id))
+
+
+# ---------------------------------------------------------------------------
+# CRM pull (sync_sudespacho.pull_expediente_v2) — cliente fake inyectado
+# ---------------------------------------------------------------------------
+
+class _FakeCRMClient:
+    """Cliente REST mínimo para ejercitar el pull sin red."""
+    def __init__(self, ss):
+        self._ss = ss
+
+    def list_gdocu_docs_rest(self, expediente_id, element=None):
+        return [self._ss.GdocuDocInfo(
+            doc_id="1", filename="doc.pdf", id_carpeta="1",
+            id_carpeta_label="General", mime="application/pdf", size=3, raw={})]
+
+    def get_presigned_download_url(self, doc_id, expediente_id, element=None):
+        return "http://fake/url"
+
+    def _download_url_raw(self, url):
+        return b"pdf"
+
+
+def test_crm_pull_prestado_desvia_a_bandeja(tmp_casos_root):
+    from core import sync_sudespacho as ss, intake_log
+    importlib.reload(intake_log); importlib.reload(ss)
+    case_id = _caso_prestado()
+    from core.config import caso_path
+    res = ss.pull_expediente_v2(case_id, "648", client=_FakeCRMClient(ss))
+    assert res.documents_written == 1
+    caso = caso_path(case_id)
+    # El doc está en la bandeja, no en el árbol vivo 05_CRM/.
+    bandeja_crm = caso / "_pendiente_checkin" / "crm" / "00_Input" / "05_CRM"
+    assert any(bandeja_crm.rglob("*.pdf"))
+    vivo_crm = caso / "00_Input" / "05_CRM"
+    pdfs_vivos = [p for p in vivo_crm.rglob("*.pdf")] if vivo_crm.exists() else []
+    assert not pdfs_vivos
+    assert any(e["event"] == "pendiente_checkin" for e in intake_log.read_events(case_id))
+
+
+def test_crm_pull_disponible_escribe_en_arbol_vivo(tmp_casos_root):
+    from core import sync_sudespacho as ss, intake_log
+    importlib.reload(intake_log); importlib.reload(ss)
+    case_id = "EV-2026-001"
+    case_manager.ensure_case(case_id, titulo="x")
+    from core.config import caso_path
+    res = ss.pull_expediente_v2(case_id, "648", client=_FakeCRMClient(ss))
+    assert res.documents_written == 1
+    caso = caso_path(case_id)
+    assert any((caso / "00_Input" / "05_CRM").rglob("*.pdf"))
+    assert not (caso / "_pendiente_checkin").exists()
