@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from core.extractor import ExtractionError, _extract_one
+from core import extractor
+from core.extractor import _extract_one
 
 from .model import Extraccion
 
@@ -33,7 +34,10 @@ def extraer(ruta: Path, mime: str) -> Extraccion:
 
     try:
         texto, metodo = _extract_one(ruta)
-    except ExtractionError:
+    # Cualificado por módulo (no `from ... import ExtractionError`): si un test recarga
+    # `core.extractor` (importlib.reload), la clase capturada debe ser la vigente, no
+    # una referencia vieja atada al importar — si no, la excepción se escaparía.
+    except extractor.ExtractionError:
         return Extraccion(texto="", metodo="omitido", ok=True, confianza="omitido",
                           motivo=f"sin extractor ({ext})")
 

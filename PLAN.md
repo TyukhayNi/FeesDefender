@@ -37,7 +37,7 @@ Estado (según la tabla doctrina→mecanismo de `SEGURIDAD_DATOS.md`):
 
 **Avisos post-recreación:** re-invitar colaboradores + reconfigurar branch protection (se pierden al recrear); cualquier otro clon/Cowork debe **re-clonar** (SHAs sin ancestro común); `fd-backup.git` borrable al confirmar el resultado.
 
-**Fallo pre-existente a cerrar de baseline:** `test_helpers_sin_drift` (heredado) → `python scripts/sync_skill_helpers.py` (dominio de la sesión de skills).
+**Fallos de baseline — RESUELTOS 2026-07-07:** `test_helpers_sin_drift` (drift de helpers → `sync_skill_helpers.py`); `test_adjuntos_contenido_router` (aislamiento por `reload(extractor)` → captura de `ExtractionError` cualificada por módulo en `router.py`); 2 módulos MCP sin colección (`mcp` instalado + `importorskip`). **Suite `1418 passed, 58 skipped`, verde.**
 
 ---
 

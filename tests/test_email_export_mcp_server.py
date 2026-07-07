@@ -12,6 +12,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+pytest.importorskip("mcp")  # el server importa mcp.server.fastmcp; skip si no está
+
 from plugins.email_export_mcp import server as srv
 
 
