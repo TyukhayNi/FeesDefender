@@ -81,7 +81,7 @@ empujar la detección **a la izquierda**: al momento del `commit`, no al del des
 |---|---|---|---|
 | 1 dato/código | `.gitignore` (frontera dura) + frontera de capas | `.gitignore`, `ARQUITECTURA_RELACIONES.md §1` | vigente |
 | 2 capturas radiactivas | gitignore de rutas de captura + límite de tamaño de blob | `.gitignore` (`*.har`, `docs/_descubrimiento/`, `data/_audit/`); `check-added-large-files` (maxkb=2048) | **vigente** |
-| 3 fixtures sintéticas | fixtures inventadas + test-guard que falle ante PII en `tests/` | `tests/`, `tests/test_no_pii_en_tests.py` | **pendiente** |
+| 3 fixtures sintéticas | fixtures inventadas (ya pseudonimizadas en Fase 1) + test-guard que falla ante PII en `tests/`+`core/` | `tests/test_no_pii_en_tests.py` (reutiliza `escanear`) | **vigente** |
 | 4 secretos mínimos/efímeros | inyección por entorno + rotación documentada | `.env` (gitignored), este doc §Runbook | vigente |
 | 5 barrera automática | `pre-commit` (gitleaks + `check-added-large-files` + `leak-guard`) en `pre-commit` y `pre-push` | `.pre-commit-config.yaml`, `scripts/precommit_leak_guard.py` (+ test) | **vigente** |
 | 6 doble barrera | CI de escaneo de fugas + gate de merge en `main` | `.github/workflows/leak-scan.yml` + branch protection (check `leak-scan` obligatorio, PR requerido, `enforce_admins`) | **vigente** (prevención server-side activa desde 2026-07-07, Pro) |
