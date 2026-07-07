@@ -83,6 +83,19 @@ class CaseMeta:
     sudespacho_expedientes: list[dict] = None   # lista de ExpedienteLink serializados
     creado_en: str = ""
     actualizado_en: str = ""
+    # Biblioteca de casos — lock de checkout/checkin (DISEÑO_V2 §2.3).
+    # Retrocompatibles: un _caso.md preexistente sin estos campos se lee con
+    # estos defaults (estado_repositorio → "disponible"). La ruta local COMPLETA
+    # NUNCA vive aquí (visible para E&V); solo el hostname. La ruta va al
+    # _intake_log.jsonl (§2.2 / gobernanza §3).
+    estado_repositorio: str = "disponible"      # disponible | prestado | conflicto
+    checkout_user: str | None = None
+    checkout_timestamp: str | None = None       # ISO 8601 con zona
+    checkout_nonce: str | None = None
+    checkout_maquina: str | None = None         # hostname, NO ruta
+    checkout_notas: str | None = None
+    ultimo_checkin_timestamp: str | None = None
+    ultimo_checkin_auditlog: str | None = None  # nombre del AUDITLOG en Drive
 
     def __post_init__(self):
         if self.sudespacho_expedientes is None:
@@ -175,31 +188,22 @@ def register_expediente(
             "element": element,
             "input_dir": input_dir_name,
         })
-        # Re-escribir el índice con el nuevo expediente
+        # Re-escribir el índice con el nuevo expediente. Se usa el patrón
+        # "known fields" (como register_drive_ev) en lugar de kwargs explícitos:
+        # así se preservan TODOS los campos de CaseMeta —incluidos los del lock
+        # de checkout (estado_repositorio, checkout_*)— y no se resetean al
+        # reescribir el índice de un caso que pudiera estar prestado.
+        from dataclasses import fields as _dc_fields
+
         meta_dict = (fm.get("meta") or {})
         meta_dict["sudespacho_expedientes"] = expedientes
-        meta = CaseMeta(
-            case_id=case_id,
-            titulo=meta_dict.get("titulo", case_id),
-            referencia_crm=meta_dict.get("referencia_crm"),
-            cliente=meta_dict.get("cliente"),
-            contraparte=meta_dict.get("contraparte"),
-            jurisdiccion=meta_dict.get("jurisdiccion", "civil"),
-            organo=meta_dict.get("organo"),
-            cuantia=meta_dict.get("cuantia"),
-            drive_link=meta_dict.get("drive_link"),
-            drive_remote_path=meta_dict.get("drive_remote_path"),
-            drive_ev_team_id=meta_dict.get("drive_ev_team_id"),
-            drive_ev_folder_id=meta_dict.get("drive_ev_folder_id"),
-            direccion=meta_dict.get("direccion"),
-            id_go=meta_dict.get("id_go"),
-            tipo_caso=meta_dict.get("tipo_caso"),
-            ciudad=meta_dict.get("ciudad"),
-            estado=meta_dict.get("estado", "instruccion"),
-            sudespacho_expedientes=expedientes,
-            creado_en=meta_dict.get("creado_en", ""),
-            actualizado_en=now_iso(),
-        )
+        known = {f.name for f in _dc_fields(CaseMeta)}
+        kwargs = {k: v for k, v in meta_dict.items() if k in known}
+        kwargs["case_id"] = case_id
+        kwargs.setdefault("titulo", case_id)
+        kwargs["sudespacho_expedientes"] = expedientes
+        kwargs["actualizado_en"] = now_iso()
+        meta = CaseMeta(**kwargs)
         _write_case_index(caso_path(case_id), meta)
 
     return input_dir_name
@@ -550,6 +554,166 @@ def get_case_status(case_id: str) -> dict:
 def list_cases() -> list[str]:
     from core.casos.case_locator import list_cases as _list
     return sorted(p.name for p in _list())
+
+
+# ---------------------------------------------------------------------------
+# Biblioteca de casos — lock de checkout/checkin (DISEÑO_V2 §2)
+# ---------------------------------------------------------------------------
+#
+# El "hecho vigente" del lock vive en `_caso.md` (autoridad única). Estas
+# funciones operan sobre el `_caso.md` del árbol local (`caso_path`); el frontal
+# (CLI/skill) las aplica sobre la copia del Drive tras leerla por API. La
+# mutación usa `_atomic_write_caso_md` (preserva TODO el frontmatter y solo toca
+# `meta`), nunca `_write_case_index` (que reconstruye y podría descartar campos
+# no-CaseMeta como `bucket_override`).
+#
+# Cero I/O contra Drive aquí tampoco: solo el fichero local. La validación de
+# transición, la tabla de estados y la MUTACIÓN del lock (fm→fm) viven en
+# `core.repository_checkout` (cerebro puro): estas funciones solo hacen el I/O
+# (leer/escribir `_caso.md`) y delegan la lógica. El frontal CLI reutiliza los
+# mismos mutadores puros sobre el `_caso.md` del Drive (pull → mutar → push).
+
+
+def _read_fm(case_id: str) -> dict:
+    """Devuelve el frontmatter completo de `_caso.md` (o {} si no hay/no parsea)."""
+    index = caso_path(case_id) / "00_Input" / "_caso.md"
+    if not index.exists():
+        return {}
+    try:
+        fm, _ = read_md(index)
+    except Exception:
+        return {}
+    return fm if isinstance(fm, dict) else {}
+
+
+def leer_estado_repositorio(case_id: str) -> str:
+    """Estado del lock del caso. `"disponible"` por defecto (retrocompatible)."""
+    from .repository_checkout import estado_de_fm
+    return estado_de_fm(_read_fm(case_id))
+
+
+def leer_lock(case_id: str) -> dict[str, Any]:
+    """Devuelve los campos del lock con defaults (nunca lanza).
+
+    Un `_caso.md` sin los campos nuevos se lee como caso disponible sin
+    checkout activo.
+    """
+    from .repository_checkout import leer_lock_de_fm
+    return leer_lock_de_fm(_read_fm(case_id))
+
+
+def escribir_lock(
+    case_id: str,
+    *,
+    user: str,
+    timestamp: str,
+    nonce: str,
+    maquina: str | None = None,
+    notas: str | None = None,
+) -> dict[str, Any]:
+    """Adquiere el lock: transición `disponible → prestado` y escribe los campos.
+
+    Valida la transición contra el estado vigente (rechaza el doble checkout:
+    `prestado → prestado` lanza `TransicionInvalida`). Escribe `checkout_user`,
+    `checkout_timestamp` (ISO con zona), `checkout_nonce`, y opcionalmente
+    `checkout_maquina` (hostname) y `checkout_notas`. NO escribe ruta local
+    (§2.2). Devuelve el lock resultante.
+
+    El write-then-verify con nonce (releer el Drive y confirmar el ganador) lo
+    orquesta el frontal con `repository_checkout.verificar_nonce`.
+    """
+    from .config import ESTADO_REPO_PRESTADO
+    from .repository_checkout import aplicar_lock_prestado, validar_transicion
+
+    validar_transicion(leer_estado_repositorio(case_id), ESTADO_REPO_PRESTADO)
+    _atomic_write_caso_md(case_id, lambda fm: aplicar_lock_prestado(
+        fm, user=user, timestamp=timestamp, nonce=nonce, maquina=maquina, notas=notas))
+    return leer_lock(case_id)
+
+
+def liberar_lock(
+    case_id: str,
+    *,
+    timestamp: str,
+    auditlog: str | None = None,
+) -> dict[str, Any]:
+    """Libera el lock: transición `→ disponible` tras un checkin verificado.
+
+    Limpia los campos `checkout_*` y fija `ultimo_checkin_timestamp` /
+    `ultimo_checkin_auditlog`. Valida la transición (desde `prestado` o
+    `conflicto`).
+    """
+    from .config import ESTADO_REPO_DISPONIBLE
+    from .repository_checkout import aplicar_lock_liberado, validar_transicion
+
+    validar_transicion(leer_estado_repositorio(case_id), ESTADO_REPO_DISPONIBLE)
+    _atomic_write_caso_md(case_id, lambda fm: aplicar_lock_liberado(
+        fm, timestamp=timestamp, auditlog=auditlog))
+    return leer_lock(case_id)
+
+
+def cancelar_checkout(case_id: str, *, timestamp: str) -> dict[str, Any]:
+    """Cancela el checkout descartando el trabajo local (runbook §7.1).
+
+    Transición `→ disponible` SIN registrar checkin (no hubo merge). Limpia el
+    lock. El aviso «el trabajo local se descarta» lo da el frontal antes de
+    llamar; el evento `checkout_cancelado` lo emite el frontal en el log. El
+    parámetro `timestamp` se acepta para simetría de la API y trazabilidad del
+    frontal, aunque el estado resultante no lo persiste.
+    """
+    from .config import ESTADO_REPO_DISPONIBLE
+    from .repository_checkout import aplicar_lock_cancelado, validar_transicion
+
+    validar_transicion(leer_estado_repositorio(case_id), ESTADO_REPO_DISPONIBLE)
+    _atomic_write_caso_md(case_id, aplicar_lock_cancelado)
+    return leer_lock(case_id)
+
+
+def marcar_conflicto(case_id: str) -> dict[str, Any]:
+    """Transición `prestado → conflicto` (checkin con conflictos; local SE CONSERVA)."""
+    from .config import ESTADO_REPO_CONFLICTO
+    from .repository_checkout import aplicar_estado, validar_transicion
+
+    validar_transicion(leer_estado_repositorio(case_id), ESTADO_REPO_CONFLICTO)
+    _atomic_write_caso_md(case_id, lambda fm: aplicar_estado(fm, ESTADO_REPO_CONFLICTO))
+    return leer_lock(case_id)
+
+
+def guard_escritura(
+    case_id: str,
+    ruta_relativa: str,
+    origen: str,
+    *,
+    es_protocolo: bool = False,
+    emitir_evento: bool = True,
+):
+    """Guard de escritura del pipeline/UI/intake (DISEÑO_V2 §6).
+
+    Todo punto que escriba en un caso del Drive DEBE llamar aquí antes de
+    escribir. Lee el estado_repositorio vigente y decide (vía el cerebro puro
+    ``decidir_escritura``) si la escritura procede o se desvía a la bandeja
+    ``_pendiente_checkin/<origen>/<ruta>``. Cuando desvía, emite un evento
+    ``pendiente_checkin`` en ``_intake_log.jsonl`` (salvo ``emitir_evento=False``).
+    El propio PROTOCOLO (lock/log/bandeja) está exento con ``es_protocolo=True``.
+
+    Uso típico::
+
+        d = guard_escritura(case_id, rel, "intake")
+        destino = (caso_path(case_id) / d.ruta_bandeja) if d.desviar \
+                  else (caso_path(case_id) / rel)
+
+    Returns:
+        ``repository_checkout.DecisionEscritura``.
+    """
+    from .intake_log import append_event
+    from .repository_checkout import decidir_escritura, evento_pendiente_details
+
+    estado = leer_estado_repositorio(case_id)
+    decision = decidir_escritura(estado, ruta_relativa, origen, es_protocolo=es_protocolo)
+    if decision.desviar and emitir_evento and decision.evento:
+        append_event(case_id, decision.evento, details=evento_pendiente_details(
+            origen=origen, ruta_bandeja=decision.ruta_bandeja, ruta_original=ruta_relativa))
+    return decision
 
 
 # ---------------------------------------------------------------------------

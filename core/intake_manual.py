@@ -82,10 +82,18 @@ def save_file(case_id: str, filename: str, content: bytes) -> Path:
             "Llama a ensure_case() antes de save_file()."
         )
 
-    dest_dir = _manual_dir(case_id)
-    dest_dir.mkdir(parents=True, exist_ok=True)
+    # Guard de escritura (DISEÑO_V2 §6): si el caso está prestado/conflicto, el
+    # fichero va a la bandeja _pendiente_checkin/manual/ (con evento en el log),
+    # nunca a 04_Manual. Si está disponible, escritura normal.
+    from .case_manager import guard_escritura
 
-    dest = dest_dir / filename
+    rel = f"00_Input/{_MANUAL_SUBDIR}/{filename}"
+    decision = guard_escritura(case_id, rel, "manual")
+    if decision.desviar:
+        dest = case_dir / decision.ruta_bandeja
+    else:
+        dest = _manual_dir(case_id) / filename
+    dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_bytes(content)
     return dest
 
@@ -172,6 +180,18 @@ def save_file_crm_branch(
             f"El caso '{case_id}' no existe en {settings.casos_root}. "
             "Llama a ensure_case() antes de save_file_crm_branch()."
         )
+
+    # Guard de escritura (DISEÑO_V2 §6): si el caso está prestado/conflicto, el
+    # fichero va a la bandeja _pendiente_checkin/crm_manual/ con evento en el log.
+    from .case_manager import guard_escritura
+
+    rel = f"00_Input/{CRM_SUBDIR}/{branch.as_posix()}/{filename}"
+    decision = guard_escritura(case_id, rel, "crm_manual")
+    if decision.desviar:
+        dest = case_dir / decision.ruta_bandeja
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(content)
+        return dest
 
     dest_dir = case_dir / "00_Input" / CRM_SUBDIR / branch
     dest_dir.mkdir(parents=True, exist_ok=True)

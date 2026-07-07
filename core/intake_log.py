@@ -58,6 +58,11 @@ INTAKE_EVENTS: frozenset[str] = frozenset({
     "pendiente_revision",   # rol (demanda/contestación) no resuelto → revisión letrado
     "cross_source_overlap", # doc byte-idéntico a otro ya presente, escrito igualmente (physical_complete)
     "conjunto_detectado",   # D9: lote cabecera+prueba detectado por timestamp ∩ patrón D NN (alta confianza)
+    # Biblioteca de casos (checkout/checkin, DISEÑO_V2 merge+biblioteca):
+    "case_checkout",        # adquisición del lock + copia Drive→local (§3)
+    "case_checkin",         # merge Desktop→Drive completado y verificado (§4)
+    "checkout_cancelado",   # cancelación de checkout: local descartado (§2, §7.1)
+    "pendiente_checkin",    # guard §6: escritura desviada a _pendiente_checkin/ (caso prestado)
 })
 
 

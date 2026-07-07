@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -46,6 +46,34 @@ def output_slug(rel_path: str, sha256: str = "") -> str:
 
 def now_iso() -> str:
     return datetime.now().isoformat(timespec="seconds")
+
+
+def now_iso_utc() -> str:
+    """Timestamp ISO-8601 en UTC con sufijo ``Z`` (p. ej. ``2026-07-07T09:45:12Z``).
+
+    El sistema de biblioteca (checkout/checkin) exige timestamps completos con
+    zona para nombrar artefactos sin colisión intra-día y para el lock
+    (DISEÑO_V2 §8). ``now_iso()`` (naïve, hora local) se mantiene para el resto
+    del proyecto; este helper es el que usan el protocolo y los nombres de
+    ``AUDITLOG_MERGE_*``, ``_snapshot/*`` y ``MANIFEST_BORRADO_*``.
+    """
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def ts_compacto(iso_utc: str | None = None) -> str:
+    """Compacta un timestamp ISO-UTC a ``AAAA-MM-DDTHHMMZ`` para nombres de fichero.
+
+    Windows no admite ``:`` en nombres de fichero, así que los artefactos con
+    marca temporal (``AUDITLOG_MERGE_<TS>.jsonl``, ``_snapshot/<TS>/``) usan la
+    forma compacta sin segundos-con-dos-puntos. Si no se pasa ``iso_utc`` usa el
+    instante actual.
+    """
+    src = iso_utc or now_iso_utc()
+    # "2026-07-07T09:45:12Z" -> "2026-07-07T0945Z"
+    fecha, _, resto = src.partition("T")
+    hora = resto.rstrip("Z").replace(":", "")
+    hhmm = hora[:4] if len(hora) >= 4 else hora
+    return f"{fecha}T{hhmm}Z"
 
 
 # Caracteres prohibidos en rutas de Windows
