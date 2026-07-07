@@ -42,6 +42,8 @@ import json
 import socket
 import subprocess
 import sys
+import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -210,13 +212,30 @@ def build_copyto_cmd(*, origen: str, destino: str) -> list[str]:
     return [_rclone_bin(), "copyto", origen, destino, "--drive-skip-shortcuts"]
 
 
+def build_moveto_cmd(*, origen: str, destino: str) -> list[str]:
+    """Comando ``rclone moveto`` de un fichero (borrado/renombrado → backup-dir).
+
+    ``rclone copy`` NO borra en el destino; los borrados (caso 5) y el origen de
+    los renombrados (caso 9) se propagan moviendo el fichero al ``--backup-dir``
+    (queda recuperable, D2) — nunca con un borrado ciego ni con ``sync``.
+    """
+    return [_rclone_bin(), "moveto", origen, destino, "--drive-skip-shortcuts"]
+
+
 def nombre_auditlog(ts: str) -> str:
     return f"AUDITLOG_MERGE_{ts}.jsonl"
 
 
-def backup_dir_arg(remote: str, wcode: str, ts: str) -> str:
-    """Ruta del ``--backup-dir`` (fuera del árbol de destino, hallazgo/lección 10)."""
-    return f"{remote}:_merge_backups/{wcode}_{ts}"
+def backup_dir_arg(remote: str, wcode: str, ts: str, team_drive: str | None = None) -> str:
+    """Ruta del ``--backup-dir`` (fuera del árbol de destino, lección 10).
+
+    Debe estar en el MISMO remote que el destino: si el destino usa la cadena de
+    conexión ``remote,team_drive=ID:`` (Shared Drive), el backup-dir tiene que
+    llevar el mismo ``team_drive`` o rclone falla ("has to be on the same
+    remote as destination").
+    """
+    prefijo = f"{remote},team_drive={team_drive}" if team_drive else remote
+    return f"{prefijo}:_merge_backups/{wcode}_{ts}"
 
 
 # ---------------------------------------------------------------------------
@@ -314,9 +333,10 @@ def cmd_checkout(args: argparse.Namespace) -> int:
     print(f"[checkout] {args.case_id}")
     print(f"  remote : {destino}")
     print(f"  local  : {local}")
+    work = _tmp_dir()
 
-    # CP: leer el lock del Drive (pull _caso.md) y comprobar disponibilidad.
-    fm_drive = _pull_caso_md(destino, local.parent)
+    # CP0: leer el lock del Drive (pull _caso.md) y comprobar disponibilidad.
+    fm_drive = _pull_caso_md(destino, work)
     estado = rc.estado_de_fm(fm_drive)
     if estado != "disponible":
         lock = rc.leer_lock_de_fm(fm_drive)
@@ -324,39 +344,66 @@ def cmd_checkout(args: argparse.Namespace) -> int:
               f"lo tiene {lock.get('checkout_user')}). Abortado.")
         return 2
 
-    # Adquirir lock: escribir prestado + nonce, esperar sync, releer, verificar.
+    if args.dry_run:
+        print("  [dry-run] disponible → se adquiriría el lock y se copiaría "
+              "Drive→local (excluyendo protocolo/notas). Nada escrito.")
+        return 0
+
+    # Adquirir lock (§2.2): escribir prestado + nonce, esperar el sync lag,
+    # releer por API y confirmar que el nonce ganador es el propio.
     nonce = _nonce()
     rc.validar_transicion(estado, "prestado")
     rc.aplicar_lock_prestado(fm_drive, user=user, timestamp=ts, nonce=nonce,
                              maquina=maquina, notas=args.notas)
-    _push_caso_md(fm_drive, destino, local.parent)
-    print("  lock escrito; verificar nonce tras el sync lag del Drive "
-          "(el frontal debe releer por API con rc.verificar_nonce).")
+    _push_caso_md(fm_drive, destino, work)
+    time.sleep(_SYNC_LAG_S)
+    fm_check = _pull_caso_md(destino, work)
+    if not rc.verificar_nonce(fm_check, nonce):
+        ganador = rc.leer_lock_de_fm(fm_check).get("checkout_user")
+        print(f"  ✗ Otro checkout ganó la carrera del lock (usuario={ganador}). "
+              f"Abortado sin copiar.")
+        return 2
+    print(f"  ✓ lock adquirido (nonce {nonce[:6]}…).")
 
-    # Copiar Drive→local (excluyendo protocolo + notas, §3/§5).
-    log_file = str(local.parent / f"checkout_{ts_compacto(ts)}.log")
+    # Copiar Drive→local (excluyendo protocolo + notas, §3/§5). El log va al dir
+    # temporal (el destino local puede no existir aún → rclone no crearía el log ahí).
+    local.mkdir(parents=True, exist_ok=True)
+    log_file = str(work / f"checkout_{ts_compacto(ts)}.log")
     cmd = [
         _rclone_bin(), "copy", destino, str(local),
         "--checksum", "--drive-skip-shortcuts", "--transfers", "4",
         *_exclusiones_rclone(),
         "--log-level", "INFO", "--log-file", log_file,
     ]
-    if args.dry_run:
-        print("  [dry-run] " + " ".join(cmd))
-        return 0
     res = run_rclone(cmd)
     if res.returncode != 0:
-        print(f"  ✗ rclone copy falló (rc={res.returncode}). Ver {log_file}")
+        # Rollback del lock: no dejar el caso 'prestado' sin copia local útil
+        # (evita el estado atascado del runbook §7.1). La re-ejecución converge.
+        rc.aplicar_lock_cancelado(fm_check)
+        _push_caso_md(fm_check, destino, work)
+        print(f"  ✗ rclone copy falló (rc={res.returncode}). Lock revertido a "
+              f"disponible. Ver {log_file}\n{res.stderr[-500:] if res.stderr else ''}")
         return 1
 
-    # Baseline: MANIFEST_CHECKOUT.json desde el inventario local.
+    # Baseline: MANIFEST_CHECKOUT.json desde el inventario local + subida al Drive
+    # (debe sobrevivir a la muerte del Desktop, §3.3).
     inv = inventario_local(local)
     manifest = {"generado": ts, "n_ficheros": len(inv), "inventario": inv}
     manifest_path = local / "MANIFEST_CHECKOUT.json"
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2),
                              encoding="utf-8")
-    print(f"  ✓ MANIFEST_CHECKOUT.json ({len(inv)} ficheros). "
-          f"Subirlo al Drive y registrar case_checkout en _intake_log.jsonl.")
+    run_rclone(build_copyto_cmd(
+        origen=str(manifest_path),
+        destino=_remoto(destino, "MANIFEST_CHECKOUT.json")))
+
+    # Evento forense case_checkout en el _intake_log.jsonl del Drive.
+    _append_evento_drive(destino, work, case_id=args.case_id,
+                         event="case_checkout", actor=user,
+                         details=rc.evento_checkout_details(
+                             user=user, timestamp=ts, nonce=nonce, maquina=maquina,
+                             ruta_local=str(local), n_ficheros=len(inv),
+                             manifest_hash=_md5(manifest_path)))
+    print(f"  ✓ MANIFEST_CHECKOUT.json ({len(inv)} ficheros) subido + case_checkout registrado.")
     return 0
 
 
@@ -373,6 +420,7 @@ def cmd_checkin(args: argparse.Namespace) -> int:
         print(f"  ✗ Ruta local inexistente: {local} (runbook §7.1: señalar nueva "
               f"ruta o cancelar checkout).")
         return 2
+    work = _tmp_dir()
 
     # CP1: inventarios L / D / B (validados por contenido).
     inv_local = inventario_local(local)
@@ -384,11 +432,15 @@ def cmd_checkin(args: argparse.Namespace) -> int:
         return 1
     inv_base = _leer_manifest(local)
 
-    # CP3: plan de merge 3 vías → DELTA_PREVIO.md.
+    # CP3: plan de merge 3 vías → DELTA_PREVIO.md. Se escribe en el dir temporal
+    # (NO en el caso): así los artefactos del protocolo no contaminan el
+    # inventario del propio merge ni el de checkins posteriores.
     plan = rc.plan_merge(inv_local, inv_drive, inv_base)
-    (local / "DELTA_PREVIO.md").write_text(render_delta(plan), encoding="utf-8")
+    delta_path = work / "DELTA_PREVIO.md"
+    delta_path.write_text(render_delta(plan), encoding="utf-8")
     resumen = rc.resumen_plan(plan)
     print("  plan:", resumen)
+    print(f"  DELTA: {delta_path}")
 
     borrados = [a for a in plan if a.accion == rc.ACCION_DELETE_DRIVE]
     conflictos = [a for a in plan if a.accion == rc.ACCION_CONFLICT]
@@ -399,21 +451,45 @@ def cmd_checkin(args: argparse.Namespace) -> int:
 
     # Gate humano (CP3): borrados requieren confirmación explícita (--yes).
     if borrados and not args.yes:
-        print(f"  ⚠ {len(borrados)} borrado(s) propuesto(s). Revisa DELTA_PREVIO.md "
+        print(f"  ⚠ {len(borrados)} borrado(s) propuesto(s). Revisa el DELTA "
               f"y relanza con --yes para confirmar. Nada tocado.")
         return 3
 
-    # CP4/CP5/CP6: copia + backup + borrados (a papelera vía backup-dir).
-    backup = backup_dir_arg(remote, args.wcode or args.case_id, tsc)
-    log_file = str(local / nombre_auditlog(tsc))
+    # CP4/CP5/CP6: copia + backup + borrados (a papelera vía backup-dir). El
+    # backup-dir va en el MISMO remote (con team_drive) que el destino.
+    backup = backup_dir_arg(remote, args.wcode or args.case_id, tsc, team_drive=team)
+    log_file = str(work / nombre_auditlog(tsc))
     copia = run_rclone(build_copy_cmd(
         origen=str(local), destino=destino, backup_dir=backup, log_file=log_file))
     copia_fallo = copia.returncode != 0
 
+    # CP6: propagar borrados (caso 5) y origen de renombrados (caso 9). rclone
+    # copy no borra: se mueve el fichero al backup-dir (recuperable, D2). Solo
+    # los confirmados por el gate --yes. NUNCA si la copia falló (no borrar sobre
+    # un merge incompleto): abortar y dejar que la re-ejecución converja.
+    borrado_fallo = False
+    if copia_fallo:
+        print(f"  ✗ rclone copy falló (rc={copia.returncode}); NO se borra nada. "
+              f"Re-ejecuta el checkin (converge). Ver {log_file}")
+        return 1
+    for a in plan:
+        origen_borrado = None
+        if a.accion == rc.ACCION_DELETE_DRIVE:
+            origen_borrado = a.ruta
+        elif a.accion == rc.ACCION_RENAME and a.ruta_origen:
+            origen_borrado = a.ruta_origen
+        if origen_borrado:
+            mv = run_rclone(build_moveto_cmd(
+                origen=_remoto(destino, origen_borrado),
+                destino=f"{backup}/{origen_borrado}"))
+            if mv.returncode != 0:
+                borrado_fallo = True
+                print(f"  ⚠ no se pudo mover a backup: {origen_borrado} (rc={mv.returncode})")
+
     # CP8: verificación por hash (no por exit code).
-    check_log = str(local / f"check_{tsc}.log")
+    check_log = str(work / f"check_{tsc}.log")
     chk = run_rclone(build_check_cmd(local=str(local), destino=destino, log_file=check_log))
-    verificacion_limpia = chk.returncode == 0
+    verificacion_limpia = chk.returncode == 0 and not borrado_fallo
 
     semaforo = clasificar_semaforo(
         conflictos=len(conflictos),
@@ -423,15 +499,40 @@ def cmd_checkin(args: argparse.Namespace) -> int:
     print(f"  semáforo: {semaforo.upper()}")
 
     if semaforo != "verde":
-        print("  NO se libera el lock ni se borra nada. "
-              "Conflictos → estado 'conflicto' (local se conserva). "
-              f"Revisa {log_file} / {check_log}.")
+        # CP7: si hay conflictos → estado 'conflicto' (el local SE CONSERVA);
+        # el AMARILLO no libera el lock. El ROJO tampoco.
+        if conflictos:
+            fm = _pull_caso_md(destino, work)
+            rc.aplicar_estado(fm, "conflicto")
+            _push_caso_md(fm, destino, work)
+            print(f"  → estado 'conflicto' escrito en el Drive; el local se conserva. "
+                  f"Resolver los {len(conflictos)} conflicto(s) (ver DELTA_PREVIO.md) "
+                  f"y reintentar el checkin.")
+        print(f"  NO se libera el lock. Revisa {log_file} / {check_log}.")
         return 0 if semaforo == "amarillo" else 1
 
-    # CP9/CP11: (frontal) subir AUDITLOG + liberar lock en el Drive +
-    # registrar case_checkin en _intake_log.jsonl.
-    print(f"  ✓ VERDE. Subir {nombre_auditlog(tsc)} al Drive, liberar el lock "
-          f"(rc.aplicar_lock_liberado) y registrar case_checkin.")
+    # CP9: subir el AUDITLOG (último artefacto) a 07_AI cowork/merge_<TS>/.
+    _upload_evidencia(destino, tsc, [log_file, check_log])
+
+    # Evento forense case_checkin en el _intake_log.jsonl del Drive.
+    _append_evento_drive(destino, work, case_id=args.case_id, event="case_checkin",
+                         actor=args.user or _usuario_por_defecto(),
+                         details=rc.evento_checkin_details(
+                             user=args.user or _usuario_por_defecto(), timestamp=ts,
+                             copiados=resumen[rc.ACCION_COPY_LOCAL],
+                             preservados=resumen[rc.ACCION_PRESERVE_DRIVE],
+                             borrados=resumen[rc.ACCION_DELETE_DRIVE],
+                             conflictos=0, renombrados=resumen[rc.ACCION_RENAME],
+                             resultado="verde", auditlog=nombre_auditlog(tsc)))
+
+    # CP11: liberar el lock en el Drive (prestado → disponible).
+    fm = _pull_caso_md(destino, work)
+    estado_actual = rc.estado_de_fm(fm)
+    rc.validar_transicion(estado_actual, "disponible")
+    rc.aplicar_lock_liberado(fm, timestamp=ts, auditlog=nombre_auditlog(tsc))
+    _push_caso_md(fm, destino, local)
+    print(f"  ✓ VERDE. AUDITLOG subido, case_checkin registrado, lock liberado "
+          f"(estado → disponible).")
     return 0
 
 
@@ -439,10 +540,71 @@ def cmd_checkin(args: argparse.Namespace) -> int:
 # Helpers de I/O del lock del Drive (pull/push de _caso.md)
 # ---------------------------------------------------------------------------
 
+# Espera del write-then-verify del lock (sync lag conocido del Drive, §2.2).
+_SYNC_LAG_S = 4
+
+
+def _tmp_dir() -> Path:
+    """Directorio temporal para los ficheros transitorios del protocolo.
+
+    El pull/push de `_caso.md` y `_intake_log.jsonl` NO debe dejar residuos en
+    la carpeta del caso (contaminarían el inventario del próximo checkin).
+    """
+    return Path(tempfile.mkdtemp(prefix="fd_biblio_"))
+
+
+def _remoto(destino: str, relpath: str) -> str:
+    """Compone una ruta remota bajo `destino` (respetando el `:` del remote)."""
+    base = destino if destino.endswith("/") or destino.endswith(":") else destino + "/"
+    return base + relpath
+
+
 def _caso_md_remoto(destino: str) -> str:
     """Ruta remota del `_caso.md` (bajo `00_Input/`) para copyto."""
-    base = destino if destino.endswith("/") or destino.endswith(":") else destino + "/"
-    return base + "00_Input/_caso.md"
+    return _remoto(destino, "00_Input/_caso.md")
+
+
+def _upload_evidencia(destino: str, tsc: str, files: list[str]) -> None:
+    """Sube los logs de evidencia a `07_AI cowork/merge_<TS>/` (CP9)."""
+    for f in files:
+        p = Path(f)
+        if p.exists():
+            run_rclone(build_copyto_cmd(
+                origen=str(p), destino=_remoto(destino, f"07_AI cowork/merge_{tsc}/{p.name}")))
+
+
+def _append_evento_drive(
+    destino: str,
+    work_dir: Path,
+    *,
+    case_id: str,
+    event: str,
+    details: dict,
+    actor: str | None = None,
+) -> None:
+    """Añade un evento al `_intake_log.jsonl` del Drive por unión (pull→append→push).
+
+    El log es append-only. Como el checkin/checkout ostenta el lock, es el único
+    escritor: pull del log actual, append de la línea nueva (schema
+    ``{ts, actor, event, case_id, details}``, igual que ``intake_log``), push.
+    """
+    log_remoto = _remoto(destino, "00_Input/_intake_log.jsonl")
+    tmp_in = work_dir / f"_log_pull_{ts_compacto()}.jsonl"
+    run_rclone(build_copyto_cmd(origen=log_remoto, destino=str(tmp_in)))
+    lineas: list[str] = []
+    if tmp_in.exists():
+        lineas = [ln for ln in tmp_in.read_text(encoding="utf-8", errors="replace").splitlines() if ln.strip()]
+    entry = {
+        "ts": now_iso_utc(),
+        "actor": actor or _usuario_por_defecto(),
+        "event": event,
+        "case_id": case_id,
+        "details": details,
+    }
+    lineas.append(json.dumps(entry, ensure_ascii=False))
+    tmp_out = work_dir / f"_log_push_{ts_compacto()}.jsonl"
+    tmp_out.write_text("\n".join(lineas) + "\n", encoding="utf-8")
+    run_rclone(build_copyto_cmd(origen=str(tmp_out), destino=log_remoto))
 
 
 def _pull_caso_md(destino: str, work_dir: Path) -> dict:
