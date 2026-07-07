@@ -24,6 +24,27 @@ Estado (según la tabla doctrina→mecanismo de `SEGURIDAD_DATOS.md`):
 - [x] **Fixtures sintéticas / test-guard — HECHO (2026-07-07).** Al descubrir: el `leak-guard` con la blocklist real halló **0 PII en TODO el árbol trackeado** — Fase 1 ya había pseudonimizado los tests. Los emails de `tests/` son sintéticos (`x.com`, `example.invalid`, `*.example`) o nombres inventados sobre dominios realistas. Deliverable real = el guard anti-regresión `tests/test_no_pii_en_tests.py` (reutiliza `escanear` sobre `tests/`+`core/`; se salta si no hay blocklist, p. ej. CI sin secret). Suite del guard 10 verde.
 - Instalar el hook en cada clon/worktree: `pre-commit install && pre-commit install --hook-type pre-push` (incl. la worktree `FeesDefender-email`).
 
+### [BIBLIOTECA-CHECKOUT] Paso 2 (código) — HECHO, pendiente commit/PR
+*2026-07-07. Disparador: diseño v2 congelado (`~/DISEÑO_V2_20260707_MERGE_BIBLIOTECA.md`) + piloto validado en W-02VND1/W-02THLJ. Implementa el sistema de checkout/checkin Desktop↔Drive (biblioteca de casos).*
+
+Rama de trabajo: **`feat/repository-checkout`** (worktree `~/Dev/fd-repo-checkout`, base `main`). Sin commitear aún (a la espera de OK de Nikolai → commit + PR con check `leak-scan`).
+
+- [x] `core/config.py`: `ESTADOS_REPOSITORIO`, `TRANSICIONES_PERMITIDAS`, `MERGE_EXCLUSIONS`, `DERIVADOS_REGENERABLES`, `PENDIENTE_CHECKIN_SUBDIR`, `RCLONE_REMOTE_TL`/`TEAM_DRIVE_TL` (SSOT de definición, §2/§5).
+- [x] `core/repository_checkout.py` **PURO** (cero I/O Drive): `validar_transicion`, `plan_merge` (tabla canónica 9 casos §4.1 + derivados §4.2 + Google-native + renombrado por hash), `decidir_escritura` (guard §6), mutadores puros del lock (fm→fm), `verificar_nonce`, constructores de eventos.
+- [x] `core/case_manager.py`: campos de lock en `CaseMeta` (§2.3, retrocompatibles) + helpers `escribir_lock`/`liberar_lock`/`cancelar_checkout`/`marcar_conflicto`/`leer_estado_repositorio`/`leer_lock` (delegan en el cerebro) + `guard_escritura` (guard §6 integrado, emite `pendiente_checkin`). Fix latente: `register_expediente` ahora preserva todos los campos (no resetea el lock).
+- [x] `core/intake_log.py`: eventos `case_checkout`/`case_checkin`/`checkout_cancelado`/`pendiente_checkin` (INTAKE_EVENTS 18→22).
+- [x] `core/utils.py`: `now_iso_utc()` + `ts_compacto()` (timestamps ISO-UTC con zona para artefactos, §8).
+- [x] CLI `scripts/repository_cli.py`: `checkout`/`checkin` orquestando cerebro + rclone (`gdrive_tl` + `team_drive`, subprocess UTF-8 sin pipes, `--checksum`/`--backup-dir`/`--fast-list`, inventario validado por contenido, semáforo). Codifica los 9 hallazgos del piloto.
+- [x] Tests `tests/test_repository_checkout.py` (65) + `tests/test_repository_cli.py` (15): transiciones válidas/inválidas, tabla 9 casos, doble checkout rechazado, convergencia (idempotencia), round-trip `_caso.md`, bandeja, guard, parseo lsjson, semáforo, comandos rclone. **Suite completa verde (1556 tests).**
+- [x] Guard §6 **cableado** en los writers de intake con destino propio: `intake_manual` (`save_file`→`manual`, `save_file_crm_branch`→`crm_manual`), `whatsapp_intake.deposit_export`→`whatsapp`, `intake_drive.pull_drive_ev`→`drive_ev`. Helper reutilizable `case_manager.dir_intake(case_id, rel_base, origen)` (testeado) → devuelve dir efectivo (bandeja o normal) + evento; cualquier writer lo adopta en 1 línea. Retrocompatible (disponible → normal).
+- [x] **CP10 — integración de la bandeja** en el checkin del CLI: `planificar_integracion_bandeja` (puro, testeado) + `_integrar_bandeja` (mueve cada `_pendiente_checkin/<origen>/<rel>` a `<rel>`, o a `_reingesta_<base>` si colisiona — nunca sobrescribe; §6) + `rmdirs` de la bandeja vacía. Se ejecuta antes de CP11.
+- [ ] Guard §6 en `email_export` y `sync_sudespacho` (pull CRM): pendiente — computan destino por-caller/por-documento vía resolvers compartidos; requieren trazar callers para no over-trigger en lecturas. Cola acotada (mismo `dir_intake`).
+- [x] Revisión skill `checkin-caso` (`~/checkin-caso-skill/`, editada la copia local): exclusiones de protocolo COMPLETAS en `.cmd`, evento canónico `case_checkin`, liberación del lock CP11, paridad con la CLI, baseline 3-vías, +2 lecciones, eval 0 actualizado. Cowork re-ejecuta evals antes de instalar.
+
+**Decisiones (Nikolai: "SÍ A TODO", 2026-07-07):** commit + PR ✓; guard cableado en intake_manual ✓ (resto de puntos de escritura —pull CRM/Drive/email/whatsapp— quedan como follow-up sobre el mismo `guard_escritura`); reconciliación `90_Notas personales` = copia ciega de cortesía como no-op ✓; ESTADO.md del Drive la actualiza Cowork.
+
+Diferidos (sin cambios): skill `checkout-caso`, alertas de timeout (tarea programada), sección STATUS.md como vista derivada, UI Streamlit.
+
 ### ✅ [SANEADO-PII-FASE-2] HECHA 2026-07-06 — Historial git reescrito + repo GitHub recreado (scrub total)
 *La Fase 1 (árbol actual) estaba en el `7c27ec5` original; ver memoria `project-saneado-pii-repo`. Esta Fase 2 sacó la PII del HISTORIAL (HAR 22 MB + `data/_audit/` desde el commit inicial `d6051f4`).*
 

@@ -128,7 +128,14 @@ def deposit_export(
         )
 
     preview = analyze(content, zip_name=zip_name)
-    chat_dir = case_dir / "00_Input" / _WHATSAPP_SUBDIR / rol_subdir / preview.chat_name
+
+    # Guard de escritura (DISEÑO_V2 §6): si el caso está prestado/conflicto, todo
+    # el export se desvía a _pendiente_checkin/whatsapp/... (con evento), no al
+    # árbol vivo. Si está disponible, escritura normal.
+    from .case_manager import dir_intake
+
+    chat_dir = dir_intake(
+        case_id, f"00_Input/{_WHATSAPP_SUBDIR}/{rol_subdir}/{preview.chat_name}", "whatsapp")
     zip_sha = compute_sha256_bytes(content)
     members = _read_members(content)
     chat_txt_name, texto = _find_chat_txt(members)

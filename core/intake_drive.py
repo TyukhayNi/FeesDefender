@@ -182,7 +182,12 @@ def pull_drive_ev(
             "Llama a ensure_case() antes de pull_drive_ev()."
         )
 
-    target_dir = case_dir / "00_Input" / _DRIVE_EV_INPUT_SUBDIR
+    # Guard de escritura (DISEÑO_V2 §6): si el caso está prestado/conflicto, el
+    # pull se desvía a _pendiente_checkin/drive_ev/... (con evento) en vez del
+    # árbol vivo. Si está disponible, destino normal.
+    from .case_manager import dir_intake
+
+    target_dir = dir_intake(case_id, f"00_Input/{_DRIVE_EV_INPUT_SUBDIR}", "drive_ev")
     target_dir.mkdir(parents=True, exist_ok=True)
 
     marker = target_dir / _PULL_MARKER

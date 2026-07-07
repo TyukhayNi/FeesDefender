@@ -258,6 +258,83 @@ def tag_crm(tipo: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Biblioteca de casos — máquina de estados del repositorio (DISEÑO_V2 §2)
+# ---------------------------------------------------------------------------
+#
+# SSOT de DEFINICIÓN del sistema de checkout/checkin (Merge Desktop→Drive).
+# El "hecho vigente" del lock vive en `_caso.md` del Drive (única autoridad);
+# la "historia" en `_intake_log.jsonl`. Aquí solo la definición.
+#
+# Doctrina y decisiones congeladas: DISEÑO_V2_20260707_MERGE_BIBLIOTECA.md.
+# Cerebro (lógica pura): core/repository_checkout.py. Músculo: rclone.
+
+ESTADO_REPO_DISPONIBLE = "disponible"   # en Drive, nadie lo tiene
+ESTADO_REPO_PRESTADO = "prestado"       # checked out, copia de trabajo local
+ESTADO_REPO_CONFLICTO = "conflicto"     # checkin detectó conflicto; local SE CONSERVA
+
+ESTADOS_REPOSITORIO: tuple[str, ...] = (
+    ESTADO_REPO_DISPONIBLE,
+    ESTADO_REPO_PRESTADO,
+    ESTADO_REPO_CONFLICTO,
+)
+
+# Estado por defecto de un caso sin lock (retrocompatibilidad: un `_caso.md`
+# preexistente sin el campo `estado_repositorio` se lee como disponible).
+ESTADO_REPO_DEFAULT = ESTADO_REPO_DISPONIBLE
+
+# Transiciones permitidas (DISEÑO_V2 §2). Las condiciones adjuntas (checkin
+# verificado, cancelación con confirmación, resolución registrada) las valida
+# el cerebro/CLI, no solo esta tabla.
+TRANSICIONES_PERMITIDAS: dict[str, tuple[str, ...]] = {
+    ESTADO_REPO_DISPONIBLE: (ESTADO_REPO_PRESTADO,),
+    ESTADO_REPO_PRESTADO: (ESTADO_REPO_DISPONIBLE, ESTADO_REPO_CONFLICTO),
+    ESTADO_REPO_CONFLICTO: (ESTADO_REPO_PRESTADO, ESTADO_REPO_DISPONIBLE),
+}
+
+# Exclusiones del merge (DISEÑO_V2 §5): ficheros/carpetas gestionados por el
+# PROTOCOLO, nunca por el sync genérico. `plan_merge` los omite; el checkout no
+# los copia a local. Patrones estilo rclone `--exclude`:
+#   - sin "/": casa por BASENAME en cualquier nivel (p. ej. "00_Input/_caso.md").
+#   - "x/**": casa cualquier ruta bajo el directorio x.
+#
+# NOTA de reconciliación con el diseño: el diseño escribió la carpeta reservada
+# como "90_NOTAS_PERSONALES/**"; la realidad en disco (CASO_SUBDIRS) y el script
+# validado en el piloto usan "90_Notas personales/**" (capitalización tipo
+# oración, regla del despacho). Se conserva el nombre REAL para que la exclusión
+# case efectivamente contra las rutas del árbol.
+MERGE_EXCLUSIONS: tuple[str, ...] = (
+    "_caso.md",                  # lock: solo lo escribe el protocolo (§2)
+    "_intake_log.jsonl",         # forense append-only: solo eventos del protocolo
+    "MANIFEST_CHECKOUT.json",    # baseline del checkout
+    "AUDITLOG_MERGE_*.jsonl",    # subida controlada en CP9
+    "_snapshot/**",              # backup selectivo (--backup-dir)
+    "_pendiente_checkin/**",     # bandeja: integración controlada en CP10
+    "90_Notas personales/**",    # D5: zona reservada, fuera del checkout por completo
+)
+
+# Derivados regenerables (DISEÑO_V2 §4.2): local gana (COPY_LOCAL directo)
+# SALVO que Drive cambiara durante el préstamo (hash D != base) → CONFLICT.
+# Se identifican por BASENAME. `identidades.yaml` NO está aquí: es MAESTRO y va
+# por la tabla general de 3 vías (§4.1).
+DERIVADOS_REGENERABLES: frozenset[str] = frozenset({
+    "INDICE.md",
+    "CRONOLOGIA.md",
+    "_MANIFIESTO.md",
+    "_TRIAJE_VIABILIDAD.docx",
+})
+
+# Carpeta de la bandeja del guard de escritura (DISEÑO_V2 §6). Dentro del caso.
+PENDIENTE_CHECKIN_SUBDIR = "_pendiente_checkin"
+
+# Remote rclone canónico de la biblioteca (cuenta del despacho, Shared Drive
+# EXPEDIENTES - TYUKHAY LEGAL). NO es `gdrive_ev` (cuenta E&V, otro Drive).
+# Hallazgo del piloto (INFORME_PILOTO 2026-07-07 §2): usar IDs de carpeta antes
+# que rutas por nombre.
+RCLONE_REMOTE_TL = os.getenv("RCLONE_REMOTE_TL", "gdrive_tl")
+TEAM_DRIVE_TL = os.getenv("TEAM_DRIVE_TL", "0AAhcjDaZBWe6Uk9PVA")
+
+
+# ---------------------------------------------------------------------------
 # Estructura de carpetas de un caso
 # ---------------------------------------------------------------------------
 
