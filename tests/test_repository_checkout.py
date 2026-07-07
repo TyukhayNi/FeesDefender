@@ -567,6 +567,23 @@ def test_guard_escritura_prestado_desvia_y_registra_evento(cm, il):
     assert pend[0]["details"]["ruta_original"] == "00_Input/04_Manual/x.pdf"
 
 
+def test_dir_intake_disponible_devuelve_ruta_normal(cm):
+    from core.config import caso_path
+    case_id = _crear_caso(cm)
+    d = cm.dir_intake(case_id, "00_Input/02_Whatsapp/03_Otros/chat", "whatsapp")
+    assert d == caso_path(case_id) / "00_Input/02_Whatsapp/03_Otros/chat"
+
+
+def test_dir_intake_prestado_devuelve_bandeja_y_registra(cm, il):
+    from core.config import caso_path
+    case_id = _crear_caso(cm)
+    cm.escribir_lock(case_id, user="Nikolai Tyukhay",
+                     timestamp="2026-07-07T09:45:12Z", nonce="n")
+    d = cm.dir_intake(case_id, "00_Input/02_Whatsapp/03_Otros/chat", "whatsapp")
+    assert d == caso_path(case_id) / "_pendiente_checkin/whatsapp/00_Input/02_Whatsapp/03_Otros/chat"
+    assert any(e["event"] == "pendiente_checkin" for e in il.read_events(case_id))
+
+
 def test_guard_escritura_protocolo_exento(cm, il):
     case_id = _crear_caso(cm)
     cm.escribir_lock(case_id, user="Nikolai Tyukhay",

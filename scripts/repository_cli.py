@@ -49,6 +49,7 @@ from typing import Any
 
 from core import repository_checkout as rc
 from core.config import (
+    PENDIENTE_CHECKIN_SUBDIR,
     RCLONE_REMOTE_TL,
     TEAM_DRIVE_TL,
     settings,
@@ -224,6 +225,40 @@ def build_moveto_cmd(*, origen: str, destino: str) -> list[str]:
 
 def nombre_auditlog(ts: str) -> str:
     return f"AUDITLOG_MERGE_{ts}.jsonl"
+
+
+def planificar_integracion_bandeja(paths) -> list[dict]:
+    """Plan PURO de integración de la bandeja `_pendiente_checkin/` (CP10, §6).
+
+    Dada la lista de rutas del Drive, para cada fichero de la bandeja
+    (``_pendiente_checkin/<origen>/<rel...>``) calcula su destino ``<rel>``. Si
+    ``<rel>`` ya existe (recién mergeado), se trata como intake NUEVO y va a
+    ``<padre>/_reingesta_<base>`` (nunca sobrescribe, §6). Ignora lo que no es
+    bandeja. Determinista: mismo input → mismo plan.
+
+    Returns:
+        Lista de ``{"origen": ruta_bandeja, "destino": rel, "colision": bool}``.
+    """
+    pref = PENDIENTE_CHECKIN_SUBDIR + "/"
+    bandeja = sorted(p for p in paths if p.startswith(pref))
+    ocupados = {p for p in paths if not p.startswith(pref)}
+    plan: list[dict] = []
+    for p in bandeja:
+        partes = p.split("/")
+        # p = _pendiente_checkin/<origen>/<rel...>  → rel = partes[2:]
+        if len(partes) < 3:
+            continue
+        target_rel = "/".join(partes[2:])
+        if target_rel in ocupados:
+            padre, _, base = target_rel.rpartition("/")
+            destino_rel = f"{padre}/_reingesta_{base}" if padre else f"_reingesta_{base}"
+            colision = True
+        else:
+            destino_rel = target_rel
+            colision = False
+        ocupados.add(destino_rel)
+        plan.append({"origen": p, "destino": destino_rel, "colision": colision})
+    return plan
 
 
 def backup_dir_arg(remote: str, wcode: str, ts: str, team_drive: str | None = None) -> str:
@@ -525,12 +560,19 @@ def cmd_checkin(args: argparse.Namespace) -> int:
                              conflictos=0, renombrados=resumen[rc.ACCION_RENAME],
                              resultado="verde", auditlog=nombre_auditlog(tsc)))
 
+    # CP10: integrar la bandeja _pendiente_checkin/ (escrituras del pipeline
+    # durante el préstamo) y vaciarla (§6).
+    integrados, colisiones = _integrar_bandeja(destino)
+    if integrados:
+        print(f"  ✓ bandeja integrada: {integrados} fichero(s)"
+              + (f", {colisiones} como _reingesta_ (colisión, sin sobrescribir)" if colisiones else ""))
+
     # CP11: liberar el lock en el Drive (prestado → disponible).
     fm = _pull_caso_md(destino, work)
     estado_actual = rc.estado_de_fm(fm)
     rc.validar_transicion(estado_actual, "disponible")
     rc.aplicar_lock_liberado(fm, timestamp=ts, auditlog=nombre_auditlog(tsc))
-    _push_caso_md(fm, destino, local)
+    _push_caso_md(fm, destino, work)
     print(f"  ✓ VERDE. AUDITLOG subido, case_checkin registrado, lock liberado "
           f"(estado → disponible).")
     return 0
@@ -562,6 +604,36 @@ def _remoto(destino: str, relpath: str) -> str:
 def _caso_md_remoto(destino: str) -> str:
     """Ruta remota del `_caso.md` (bajo `00_Input/`) para copyto."""
     return _remoto(destino, "00_Input/_caso.md")
+
+
+def _integrar_bandeja(destino: str) -> tuple[int, int]:
+    """CP10: integra la bandeja `_pendiente_checkin/` del Drive y la vacía (§6).
+
+    Mueve cada fichero de la bandeja a su ruta original (o a ``_reingesta_*`` si
+    colisiona, sin sobrescribir), según ``planificar_integracion_bandeja``, y
+    limpia los directorios vacíos. Devuelve ``(integrados, colisiones)``.
+    """
+    ls = run_rclone(build_lsjson_cmd(destino))
+    try:
+        inv = parse_inventario_lsjson(ls.stdout)
+    except (json.JSONDecodeError, TypeError):
+        return (0, 0)
+    plan = planificar_integracion_bandeja(set(inv))
+    integrados = colisiones = 0
+    for item in plan:
+        mv = run_rclone(build_moveto_cmd(
+            origen=_remoto(destino, item["origen"]),
+            destino=_remoto(destino, item["destino"])))
+        if mv.returncode == 0:
+            colisiones += int(item["colision"])
+            integrados += 1
+        else:
+            print(f"  ⚠ no se pudo integrar de la bandeja: {item['origen']} (rc={mv.returncode})")
+    if plan:
+        # Limpiar los directorios vacíos de la bandeja.
+        run_rclone([_rclone_bin(), "rmdirs", _remoto(destino, PENDIENTE_CHECKIN_SUBDIR),
+                    "--drive-skip-shortcuts"])
+    return (integrados, colisiones)
 
 
 def _upload_evidencia(destino: str, tsc: str, files: list[str]) -> None:

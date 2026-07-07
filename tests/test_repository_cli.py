@@ -167,3 +167,49 @@ def test_nombre_auditlog_y_snapshot_usan_ts_compacto(cli):
     assert cli.nombre_auditlog(ts) == "AUDITLOG_MERGE_2026-07-07T0945Z.jsonl"
     assert cli.backup_dir_arg("gdrive_tl", "W-XXXXX", ts) == \
         "gdrive_tl:_merge_backups/W-XXXXX_2026-07-07T0945Z"
+
+
+def test_backup_dir_arg_con_team_drive_usa_misma_cadena_de_remote(cli):
+    # El backup-dir debe ir en el MISMO remote (con team_drive) que el destino.
+    ts = "2026-07-07T0945Z"
+    assert cli.backup_dir_arg("gdrive_tl", "W-X", ts, team_drive="0AAh") == \
+        "gdrive_tl,team_drive=0AAh:_merge_backups/W-X_2026-07-07T0945Z"
+
+
+# ---------------------------------------------------------------------------
+# CP10 — integración de la bandeja _pendiente_checkin/ (planificador puro)
+# ---------------------------------------------------------------------------
+
+def test_integrar_bandeja_sin_colision_va_a_ruta_original(cli):
+    paths = {
+        "_pendiente_checkin/manual/00_Input/04_Manual/nuevo.pdf",
+        "00_Input/04_Manual/otro.pdf",
+    }
+    plan = cli.planificar_integracion_bandeja(paths)
+    assert len(plan) == 1
+    assert plan[0]["origen"] == "_pendiente_checkin/manual/00_Input/04_Manual/nuevo.pdf"
+    assert plan[0]["destino"] == "00_Input/04_Manual/nuevo.pdf"
+    assert plan[0]["colision"] is False
+
+
+def test_integrar_bandeja_colision_no_sobrescribe(cli):
+    # El fichero de la bandeja coincide con uno ya presente → reingesta, sin pisar.
+    paths = {
+        "_pendiente_checkin/manual/00_Input/04_Manual/x.pdf",
+        "00_Input/04_Manual/x.pdf",  # ya existe (recién mergeado)
+    }
+    plan = cli.planificar_integracion_bandeja(paths)
+    assert len(plan) == 1
+    assert plan[0]["colision"] is True
+    assert plan[0]["destino"] == "00_Input/04_Manual/_reingesta_x.pdf"
+
+
+def test_integrar_bandeja_ignora_no_bandeja(cli):
+    paths = {"00_Input/04_Manual/a.pdf", "01_Procesado/INDICE.md"}
+    assert cli.planificar_integracion_bandeja(paths) == []
+
+
+def test_integrar_bandeja_preserva_rel_anidado(cli):
+    paths = {"_pendiente_checkin/crm_manual/00_Input/05_CRM/General/d.pdf"}
+    plan = cli.planificar_integracion_bandeja(paths)
+    assert plan[0]["destino"] == "00_Input/05_CRM/General/d.pdf"

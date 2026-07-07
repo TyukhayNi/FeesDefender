@@ -716,6 +716,29 @@ def guard_escritura(
     return decision
 
 
+def dir_intake(
+    case_id: str,
+    rel_base: str,
+    origen: str,
+    *,
+    es_protocolo: bool = False,
+) -> Path:
+    """Directorio de intake efectivo bajo el caso, aplicando el guard §6.
+
+    Envoltura ergonómica de :func:`guard_escritura` para los puntos de intake
+    que escriben en un **directorio base** (WhatsApp, Drive EV, email, CRM): si
+    el caso está prestado/conflicto devuelve la ruta dentro de
+    ``_pendiente_checkin/<origen>/<rel_base>`` (y registra el desvío); si está
+    disponible, devuelve ``caso/<rel_base>``. El caller solo tiene que usar el
+    Path devuelto como base de sus escrituras.
+    """
+    base = caso_path(case_id)
+    decision = guard_escritura(case_id, rel_base, origen, es_protocolo=es_protocolo)
+    if decision.desviar:
+        return base / decision.ruta_bandeja
+    return base / rel_base
+
+
 # ---------------------------------------------------------------------------
 # Refactor intake v2 — helpers
 # ---------------------------------------------------------------------------
