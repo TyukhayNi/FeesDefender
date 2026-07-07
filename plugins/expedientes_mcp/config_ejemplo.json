@@ -1,0 +1,12 @@
+{
+  "_nota": "Copia de referencia del bloque mcpServers.expedientes tras instalar el wrapper poll-until-mount. claude_desktop_config.json NO esta versionado y lo reescribe el instalador de Claude Desktop: si tras reinstalar/actualizar vuelve 'expedientes failed', reaplica ESTE bloque en %APPDATA%\\Claude\\claude_desktop_config.json. Detalle en docs/DEAD_ENDS.md.",
+  "mcpServers": {
+    "expedientes": {
+      "command": "cmd",
+      "args": [
+        "/c",
+        "C:\\Users\\tnm33\\Dev\\FeesDefender\\plugins\\expedientes_mcp\\run_server.bat"
+      ]
+    }
+  }
+}

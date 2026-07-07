@@ -37,6 +37,8 @@ data/_aprendizaje/intake_eval_*.json
 data/_aprendizaje/intake_audit.jsonl
 # F2 — cola operativa de la bandeja (snapshots de correos en revisión)
 data/_aprendizaje/intake_cola.jsonl
+# Métrica derivada de aprendizaje (lleva nombre de caso real) — artefacto runtime
+data/_aprendizaje/metricas.json
 
 # Logs
 logs/
@@ -55,6 +57,19 @@ desktop.ini
 # IDE
 .vscode/
 .idea/
+
+# Triaje 2026-07-07 — artefactos regenerables y workspace de sesión (no versionar).
+# Paquetes .skill (regenerables con scripts/package_skill.py), borradores/evals
+# de skills, placeholder de worktree experimental y scripts de diagnóstico one-off.
+dist_skills/
+_skills_drafts/
+.claire/
+scripts/_audit_interiores.py
+scripts/_diag_gap2.py
+scripts/_verify_live_it3.py
+scripts/debug_search.py
+scripts/debug_search2.py
+scripts/test_llm_connection.py
 *.swp
 
 # Streamlit
