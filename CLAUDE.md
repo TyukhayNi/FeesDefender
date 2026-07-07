@@ -63,6 +63,10 @@ Código: este directorio (`C:\Users\tnm33\Dev\FeesDefender`), versionado en Git 
   solo por entorno (`.env`/`$env:`), nunca en el árbol ni en el chat; en docs/bitácora/
   commits se referencia por `W-XXXXX`, no por nombre/email/dirección de tercero. Doctrina,
   controles y runbook: `docs/SEGURIDAD_DATOS.md`.
+- **`main` protegida (branch protection, desde 2026-07-07):** NO se pushea directo a
+  `main`. El trabajo va en **rama + PR**, que debe pasar el check `leak-scan` para poder
+  mergear (cubre todas las máquinas y Cowork). El auto-push `post-commit` ya no existe.
+  Instalar en cada clon/worktree: `pre-commit install && pre-commit install --hook-type pre-push`.
 - `90_NOTAS_PERSONALES/` en cada caso es zona del abogado — ningún módulo
   del core la lee ni la escribe.
 - Los prompts nunca inventan jurisprudencia. Solo citan lo que está en contexto.

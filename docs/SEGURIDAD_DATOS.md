@@ -84,7 +84,7 @@ empujar la detección **a la izquierda**: al momento del `commit`, no al del des
 | 3 fixtures sintéticas | fixtures inventadas + test-guard que falle ante PII en `tests/` | `tests/`, `tests/test_no_pii_en_tests.py` | **pendiente** |
 | 4 secretos mínimos/efímeros | inyección por entorno + rotación documentada | `.env` (gitignored), este doc §Runbook | vigente |
 | 5 barrera automática | `pre-commit` (gitleaks + `check-added-large-files` + `leak-guard`) en `pre-commit` y `pre-push` | `.pre-commit-config.yaml`, `scripts/precommit_leak_guard.py` (+ test) | **vigente** |
-| 6 doble barrera | CI de escaneo de fugas en cada push | `.github/workflows/leak-scan.yml` | **vigente (detección)** · gate obligatorio en `main` requiere GitHub Pro |
+| 6 doble barrera | CI de escaneo de fugas + gate de merge en `main` | `.github/workflows/leak-scan.yml` + branch protection (check `leak-scan` obligatorio, PR requerido, `enforce_admins`) | **vigente** (prevención server-side activa desde 2026-07-07, Pro) |
 | 7 referenciar por código | escaneo de nombres/emails de tercero en el contenido (blocklist gitignored) | `leak-guard` en pre-commit + CI (con secret `PII_BLOCKLIST`) | **vigente** (donde exista la blocklist) |
 | 8 pseudónimo reversible | mapa inyectivo fuera del árbol | `data/_saneado/mapa_pii.json` (gitignored) | vigente (patrón) |
 
