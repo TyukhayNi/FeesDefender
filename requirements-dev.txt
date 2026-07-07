@@ -1,3 +1,5 @@
 # Dependencias de desarrollo (no de runtime). Instalar: pip install -r requirements-dev.txt
 # Barrera local anti-fugas — ver docs/SEGURIDAD_DATOS.md
 pre-commit>=4.6
+# Requerido por los tests de los servers MCP (plugins/*_mcp, plugins/expedientes_xl)
+mcp>=1.28

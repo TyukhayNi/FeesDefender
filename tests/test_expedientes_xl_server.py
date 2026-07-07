@@ -1,5 +1,9 @@
 import asyncio
 
+import pytest
+
+pytest.importorskip("mcp")  # el server importa mcp.server.fastmcp; skip si no está
+
 from plugins.expedientes_xl import server as srv
 
 
