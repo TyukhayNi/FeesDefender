@@ -166,6 +166,17 @@ def _exclusiones_rclone() -> list[str]:
     return args
 
 
+def rutas_a_copiar(plan) -> list[str]:
+    """Rutas que el checkin SUBE a Drive: solo ``COPY_LOCAL`` y destino de ``RENAME``.
+
+    El merge honra el plan por-fichero: ``PRESERVE_DRIVE`` y ``CONFLICT`` NO se
+    suben (el Drive conserva su versión). Se usa como ``--files-from`` del copy y
+    del check — así una copia en bloque no pisa lo que el plan decidió preservar
+    ni auto-resuelve conflictos.
+    """
+    return [a.ruta for a in plan if a.accion in (rc.ACCION_COPY_LOCAL, rc.ACCION_RENAME)]
+
+
 def build_copy_cmd(
     *,
     origen: str,
@@ -173,16 +184,30 @@ def build_copy_cmd(
     backup_dir: str,
     log_file: str,
     transfers: int = 4,
+    files_from: str | None = None,
 ) -> list[str]:
-    """Comando ``rclone copy`` local→Drive con los flags validados en el piloto."""
-    return [
+    """Comando ``rclone copy`` local→Drive con los flags validados en el piloto.
+
+    Con ``files_from`` (lista de rutas del plan) la copia se acota a esos
+    ficheros — honra el merge de 3 vías por-fichero.
+    """
+    cmd = [
         _rclone_bin(), "copy", origen, destino,
         "--checksum", "--drive-skip-shortcuts",
         "--transfers", str(transfers),
-        *_exclusiones_rclone(),
+    ]
+    # rclone RECHAZA --files-from junto con --exclude/--include/--filter ("file
+    # filtering rules cannot be used with --files-from"). Con files_from la lista
+    # ya es exacta y autoritativa → no se añaden exclusiones.
+    if files_from:
+        cmd += ["--files-from", files_from]
+    else:
+        cmd += _exclusiones_rclone()
+    cmd += [
         "--backup-dir", backup_dir,
         "--log-level", "INFO", "--log-file", log_file,
     ]
+    return cmd
 
 
 def build_check_cmd(
@@ -190,14 +215,25 @@ def build_check_cmd(
     local: str,
     destino: str,
     log_file: str,
+    files_from: str | None = None,
 ) -> list[str]:
-    """Comando ``rclone check --one-way --fast-list`` (verificación por hash)."""
-    return [
+    """Comando ``rclone check --one-way --fast-list`` (verificación por hash).
+
+    Con ``files_from`` verifica SOLO los ficheros subidos (los COPY_LOCAL/RENAME):
+    los ``PRESERVE_DRIVE`` difieren de local a propósito y no deben marcar
+    diferencia.
+    """
+    cmd = [
         _rclone_bin(), "check", local, destino,
         "--one-way", "--drive-skip-shortcuts", "--fast-list",
-        *_exclusiones_rclone(),
-        "--log-level", "INFO", "--log-file", log_file,
     ]
+    # --files-from no admite --exclude (ver build_copy_cmd).
+    if files_from:
+        cmd += ["--files-from", files_from]
+    else:
+        cmd += _exclusiones_rclone()
+    cmd += ["--log-level", "INFO", "--log-file", log_file]
+    return cmd
 
 
 def build_lsjson_cmd(destino: str) -> list[str]:
@@ -490,13 +526,26 @@ def cmd_checkin(args: argparse.Namespace) -> int:
               f"y relanza con --yes para confirmar. Nada tocado.")
         return 3
 
-    # CP4/CP5/CP6: copia + backup + borrados (a papelera vía backup-dir). El
+    # CP4/CP5: copia por PLAN — solo COPY_LOCAL + destino de RENAME (--files-from).
+    # PRESERVE_DRIVE y CONFLICT NO se suben: el Drive conserva su versión (no se
+    # auto-resuelve el conflicto ni se pisa lo que solo cambió en Drive). El
     # backup-dir va en el MISMO remote (con team_drive) que el destino.
     backup = backup_dir_arg(remote, args.wcode or args.case_id, tsc, team_drive=team)
     log_file = str(work / nombre_auditlog(tsc))
-    copia = run_rclone(build_copy_cmd(
-        origen=str(local), destino=destino, backup_dir=backup, log_file=log_file))
-    copia_fallo = copia.returncode != 0
+    a_copiar = rutas_a_copiar(plan)
+    copia_fallo = False
+    files_from = None
+    if a_copiar:
+        files_from = str(work / f"copiar_{tsc}.txt")
+        Path(files_from).write_text("\n".join(a_copiar) + "\n", encoding="utf-8")
+        copia = run_rclone(build_copy_cmd(
+            origen=str(local), destino=destino, backup_dir=backup,
+            log_file=log_file, files_from=files_from))
+        copia_fallo = copia.returncode != 0
+    else:
+        # Nada que subir (solo preservar/conflicto/skip). Log mínimo para CP9.
+        Path(log_file).write_text("sin ficheros que copiar (plan sin COPY_LOCAL/RENAME)\n",
+                                  encoding="utf-8")
 
     # CP6: propagar borrados (caso 5) y origen de renombrados (caso 9). rclone
     # copy no borra: se mueve el fichero al backup-dir (recuperable, D2). Solo
@@ -521,10 +570,16 @@ def cmd_checkin(args: argparse.Namespace) -> int:
                 borrado_fallo = True
                 print(f"  ⚠ no se pudo mover a backup: {origen_borrado} (rc={mv.returncode})")
 
-    # CP8: verificación por hash (no por exit code).
+    # CP8: verificación por hash de lo SUBIDO (no por exit code). Solo los
+    # COPY_LOCAL/RENAME: los PRESERVE_DRIVE difieren de local a propósito.
     check_log = str(work / f"check_{tsc}.log")
-    chk = run_rclone(build_check_cmd(local=str(local), destino=destino, log_file=check_log))
-    verificacion_limpia = chk.returncode == 0 and not borrado_fallo
+    if a_copiar:
+        chk = run_rclone(build_check_cmd(local=str(local), destino=destino,
+                                         log_file=check_log, files_from=files_from))
+        verificacion_limpia = chk.returncode == 0 and not borrado_fallo
+    else:
+        Path(check_log).write_text("sin ficheros que verificar\n", encoding="utf-8")
+        verificacion_limpia = not borrado_fallo
 
     semaforo = clasificar_semaforo(
         conflictos=len(conflictos),
