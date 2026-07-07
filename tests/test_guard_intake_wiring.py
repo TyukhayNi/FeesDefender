@@ -78,8 +78,9 @@ def test_whatsapp_prestado_desvia_a_bandeja(tmp_casos_root):
 # ---------------------------------------------------------------------------
 
 def test_email_dest_dir_disponible_normal(tmp_casos_root):
+    # NO se recarga email_export: contaminaría a test_email_export (liga nombres
+    # al importar). dir_intake/caso_path resuelven contra los settings actuales.
     from core import email_export
-    importlib.reload(email_export)
     case_manager.ensure_case("EV-2026-001", titulo="x")
     d = email_export.email_dest_dir("EV-2026-001")
     assert d.as_posix().endswith("00_Input/03_Email")
@@ -88,7 +89,6 @@ def test_email_dest_dir_disponible_normal(tmp_casos_root):
 
 def test_email_dest_dir_prestado_desvia(tmp_casos_root):
     from core import email_export, intake_log
-    importlib.reload(intake_log); importlib.reload(email_export)
     case_id = _caso_prestado()
     d = email_export.email_dest_dir(case_id)
     assert d.as_posix().endswith("_pendiente_checkin/email/00_Input/03_Email")
@@ -117,8 +117,10 @@ class _FakeCRMClient:
 
 
 def test_crm_pull_prestado_desvia_a_bandeja(tmp_casos_root):
+    # NO se recarga sync_sudespacho: contaminaría a test_sync_sudespacho (liga
+    # nombres al importar y no se re-recarga). caso_path resuelve contra los
+    # settings actuales (mismo mecanismo que usan sus propios tests).
     from core import sync_sudespacho as ss, intake_log
-    importlib.reload(intake_log); importlib.reload(ss)
     case_id = _caso_prestado()
     from core.config import caso_path
     res = ss.pull_expediente_v2(case_id, "648", client=_FakeCRMClient(ss))
@@ -135,7 +137,6 @@ def test_crm_pull_prestado_desvia_a_bandeja(tmp_casos_root):
 
 def test_crm_pull_disponible_escribe_en_arbol_vivo(tmp_casos_root):
     from core import sync_sudespacho as ss, intake_log
-    importlib.reload(intake_log); importlib.reload(ss)
     case_id = "EV-2026-001"
     case_manager.ensure_case(case_id, titulo="x")
     from core.config import caso_path

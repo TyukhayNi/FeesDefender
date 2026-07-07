@@ -154,6 +154,38 @@ def test_build_check_cmd_one_way_fast_list(cli):
     assert "--drive-skip-shortcuts" in cmd
 
 
+def test_rutas_a_copiar_solo_copy_local_y_rename(cli):
+    from core import repository_checkout as rc
+    plan = [
+        rc.AccionMerge("a.pdf", rc.ACCION_COPY_LOCAL, "cambió local", caso_tabla=2),
+        rc.AccionMerge("b.pdf", rc.ACCION_PRESERVE_DRIVE, "solo Drive", caso_tabla=3),
+        rc.AccionMerge("c.pdf", rc.ACCION_CONFLICT, "ambos", caso_tabla=4),
+        rc.AccionMerge("nuevo.pdf", rc.ACCION_RENAME, "renombrado", caso_tabla=9,
+                       ruta_origen="viejo.pdf"),
+        rc.AccionMerge("d.pdf", rc.ACCION_DELETE_DRIVE, "borrado", caso_tabla=5),
+    ]
+    # Solo se suben los COPY_LOCAL y el destino del RENAME; PRESERVE_DRIVE y
+    # CONFLICT NO se tocan (se quedan como están en el Drive).
+    assert cli.rutas_a_copiar(plan) == ["a.pdf", "nuevo.pdf"]
+
+
+def test_build_copy_cmd_con_files_from(cli):
+    cmd = cli.build_copy_cmd(origen="L", destino="D", backup_dir="B",
+                             log_file="log", files_from="lista.txt")
+    assert "--files-from" in cmd
+    i = cmd.index("--files-from")
+    assert cmd[i + 1] == "lista.txt"
+    # rclone rechaza --files-from junto con --exclude → no debe haber excludes.
+    assert "--exclude" not in cmd
+
+
+def test_build_check_cmd_con_files_from(cli):
+    cmd = cli.build_check_cmd(local="L", destino="D", log_file="log",
+                              files_from="lista.txt")
+    assert "--files-from" in cmd
+    assert "--exclude" not in cmd
+
+
 def test_build_lsjson_cmd_recursivo_con_hash_y_fast_list(cli):
     cmd = cli.build_lsjson_cmd("gdrive_tl,team_drive=ID:CASOS/x")
     assert "lsjson" in cmd
