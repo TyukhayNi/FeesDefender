@@ -42,6 +42,12 @@ data/_aprendizaje/intake_cola.jsonl
 logs/
 *.log
 
+# Salidas de depuración/sondeo (OCR, pytest, volcados de auditoría de correos).
+# Texto volcado que arrastra PII real — el residuo de correos/OCR del 2026-07-07
+# cayó justo aquí (fuera de rutas vetadas). NUNCA versionar. Ver docs/SEGURIDAD_DATOS.md.
+/_*.txt
+_out_*.md
+
 # Telemetría y deltas de mejora continua de las skills — datos de expediente
 # (referencias reales, texto de escritos en los deltas). Store local, NUNCA
 # se versiona ni se empaqueta en el .skill (política RGPD del despacho).

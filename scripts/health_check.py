@@ -155,7 +155,7 @@ def _check_presidio_smoke(verbose: bool) -> int:
         analyzer = get_analyzer()
         # Análisis trivial para confirmar que el motor está operativo
         resultados = analyzer.analyze(
-            text="Don Pedro Lopez con DNI 12345678A.",
+            text="Don Pedro Lopez con DNI 12345678A.",  # leak-guard:allow (DNI sintético de prueba)
             language="es",
             score_threshold=0.35,
         )
