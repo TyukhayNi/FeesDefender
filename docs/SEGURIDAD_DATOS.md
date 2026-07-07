@@ -85,8 +85,27 @@ empujar la detección **a la izquierda**: al momento del `commit`, no al del des
 | 4 secretos mínimos/efímeros | inyección por entorno + rotación documentada | `.env` (gitignored), este doc §Runbook | vigente |
 | 5 barrera automática | `pre-commit` (gitleaks + `check-added-large-files` + `leak-guard`) en `pre-commit` y `pre-push` | `.pre-commit-config.yaml`, `scripts/precommit_leak_guard.py` (+ test) | **vigente** |
 | 6 doble barrera | CI de escaneo de fugas + gate de merge en `main` | `.github/workflows/leak-scan.yml` + branch protection (check `leak-scan` obligatorio, PR requerido, `enforce_admins`) | **vigente** (prevención server-side activa desde 2026-07-07, Pro) |
-| 7 referenciar por código | escaneo de nombres/emails de tercero en el contenido (blocklist gitignored) | `leak-guard` en pre-commit + CI (con secret `PII_BLOCKLIST`) | **vigente** (donde exista la blocklist) |
+| 7 referenciar por código | escaneo de nombres/emails de tercero en el contenido (blocklist gitignored) | `leak-guard` (`escanear`) en pre-commit + CI (con secret `PII_BLOCKLIST`) | **vigente** (CI exige el secret: el job `leak-scan` falla si no está definido) |
+| 7-bis PII por forma (cualquier caso) | detección por PATRÓN, no por valor: DNI/NIE/IBAN bloquean, email de tercero avisa; reutiliza `core/anon` | `leak-guard` (`escanear_formas`) en pre-commit + CI | **vigente** (independiente de la blocklist) |
 | 8 pseudónimo reversible | mapa inyectivo fuera del árbol | `data/_saneado/mapa_pii.json` (gitignored) | vigente (patrón) |
+
+> **Blocklist (por valor) vs. shape-detection (por forma).** La blocklist es una
+> *denylist*: solo caza PII ya enumerada (la que pasó por el anonimizador). No cubre
+> un caso nuevo cuyos nombres/emails nadie ha listado. El *shape-detection*
+> (`escanear_formas`) cierra ese hueco para los **identificadores estructurados**
+> (DNI/NIE/IBAN) de cualquier expediente, sin depender de lista alguna. Para
+> **nombres y direcciones** de casos nuevos no hay detector barato por forma; ahí la
+> defensa sigue siendo el principio 1 (el dato de caso no entra al repo). El
+> shape-detection se salta zonas curadas con ejemplos sintéticos (`tests/`, `docs/`,
+> `.claude/`, `*.example`) y admite la anotación de línea `leak-guard:allow` para
+> valores sintéticos legítimos; el NIF/CIF queda fuera por ser dato público de
+> registro (p. ej. el CIF de la clienta en `core/config`).
+>
+> **Punto ciego conocido (binarios).** El escaneo de contenido (por valor y por forma)
+> solo mira ficheros de texto: PDF/DOCX/XLSX/imágenes se omiten (tienen `\x00`). Un
+> documento binario con PII en una ruta NO vetada no se inspecciona por contenido; su
+> red es la ruta vetada + el límite de tamaño. Extraer texto de binarios en el hook
+> queda como mejora futura (coste alto, valor incremental bajo).
 
 > La **implementación de los pendientes** es un punto de `PLAN.md` (disparador
 > concreto: el incidente de la Fase 2), por la regla de promoción backlog→cola.

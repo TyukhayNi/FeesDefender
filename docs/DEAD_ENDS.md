@@ -51,6 +51,25 @@ Gotchas confirmados en la implementación + validación en vivo del sistema de c
 - **Confirmado:** 2026-06-18 (corrida real BaRS1).
 - **Solución (camino rápido):** ejecutar la MISMA lógica **en local sobre el montaje Drive for Desktop (`G:`)** — filesystem instantáneo + sync en bloque en segundo plano. Disparo local: CLI `scripts/sala_lectura.py` / botón Streamlit / skill en Claude Code local. La vía Cowork/conector queda solo como **fallback puro-nube** (sin montaje), asumiendo su lentitud. Pivote a "motor local plano primario" PENDIENTE de decisión (¿tiene el equipo el montaje `G:`?); ver `PLAN.md` `[SIGUIENTE-SALA-UNICA-PLANA]`.
 
+### Benchmark de vías de copia al Drive (medido, 2026-07-07)
+Cuantifica y matiza el hallazgo anterior con mediciones reales desde Cowork (wall-clock, incluye overhead de turno). **La conclusión rectora: el cuello de botella es el NÚMERO de operaciones MCP, no los bytes.** Cada llamada cuesta ~10-15 s fijos; el tamaño del fichero es irrelevante (202 MB tarda lo mismo que 24 KB).
+
+| Vía | Prueba | Tiempo | Escala |
+|---|---|---|---|
+| Conector Drive `create_file` (bytes por el modelo) | texto 19 KB | ~88 s | Lineal (~0,2 KB/s). >1 MB inviable |
+| Conector Drive `copy_file` (server-side nube→nube) | 24 KB / 2 MB / 23 MB / 202 MB | ~14-15 s cada uno | **Plana: independiente del tamaño** |
+| `expedientes-xl` `hash_path` (23 MB) | lectura server-side | ~12 s | — |
+| `expedientes-xl` `copy_path` (23 MB) | copia en `G:` local | ~26 s | Independiente del tamaño |
+| `expedientes-xl` `copy_dir` (árbol completo) | carpeta con varios ficheros | ~60 s **una sola llamada** | **Por lote, no por fichero** |
+| Sync PC→nube tras copia en `G:` | zip 23 MB | visible en nube <30 s, hash íntegro | — |
+
+- **Regla de diseño:** SIEMPRE por lote — `copy_dir`, `extract_archive`, `rclone` en un solo proceso. **Nunca** bucles fichero-a-fichero vía MCP (eso es lo que produjo los ~53 min de la sala). `create_file` con bytes por el modelo queda descartado para cualquier cosa >1 MB.
+- **Integridad:** SHA-256 idéntico origen↔copia verificado vía `hash_path`.
+- **`expedientes-xl` opera a velocidad de disco** sobre `G:/Unidades compartidas/EXPEDIENTES - TYUKHAY LEGAL/` (Drive for Desktop del PC de Nikolai); Drive sube en background (<30 s en la prueba). Rutas con prefijo completo; acepta `/` y `\`; rechaza todo lo demás («Ruta fuera del sandbox»).
+- **El conector de Drive de Cowork NO tiene delete/update** (reconfirmado): la limpieza de restos en «Mi unidad» la hace el usuario a mano.
+- **Permisos Cowork (resuelto 2026-07-07):** el toggle de organización «Permitir "Permitir siempre" para herramientas de conector» desbloquea `copy_file`/`create_file` sin aprobación por uso (requiere reiniciar la app). Los intakes dirigidos desde Cowork ya corren sin diálogos.
+- **Confirmado:** 2026-07-07 (benchmark real con ficheros del Drive, sesión Cowork). Origen: `HANDOFF_benchmark_vias_drive_2026-07-07.md`.
+
 ---
 
 ## Tooling — skill-creator / evals de triggering

@@ -40,5 +40,8 @@ jobs:
           if [ -n "$PII_BLOCKLIST" ]; then
             mkdir -p data/_config
             printf '%s' "$PII_BLOCKLIST" > data/_config/pii_blocklist.txt
+          else
+            echo "::error title=leak-scan::PII_BLOCKLIST no configurado — el escaneo de PII en CONTENIDO no puede correr. La barrera server-side de PII queda inactiva. Crea el secret PII_BLOCKLIST (ver docs/SEGURIDAD_DATOS.md)."
+            exit 1
           fi
           git ls-files -z | xargs -0 -r python scripts/precommit_leak_guard.py

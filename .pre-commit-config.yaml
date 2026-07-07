@@ -10,7 +10,7 @@ repos:
     rev: v8.30.0
     hooks:
       - id: gitleaks
-        stages: [pre-commit]
+        stages: [pre-commit, pre-push]
 
   # 2) Ficheros grandes — corta capturas pesadas (el HAR de 22 MB cae por aquí).
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -18,7 +18,7 @@ repos:
     hooks:
       - id: check-added-large-files
         args: ["--maxkb=2048"]
-        stages: [pre-commit]
+        stages: [pre-commit, pre-push]
 
   # 3) Guarda propia — rutas de captura vetadas + PII en contenido (lista real gitignored).
   - repo: local

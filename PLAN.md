@@ -62,6 +62,19 @@ Diferidos (sin cambios): skill `checkout-caso`, alertas de timeout (tarea progra
 
 ---
 
+## 🧭 PRINCIPIO TRANSVERSAL — copia al Drive por lote (hidratar→procesar→devolver)
+*Fijado 2026-07-07 sobre benchmark medido (Cowork). Fuente: `HANDOFF_benchmark_vias_drive_2026-07-07.md` (integrado y borrable). Números y tabla en `docs/DEAD_ENDS.md` §"Benchmark de vías de copia al Drive". Confirma —no reabre— las decisiones del diseño V2 (merge + biblioteca, doc en Cowork/Drive, no trackeado aquí).*
+
+**Hallazgo rector:** el cuello de botella de trabajar contra el Drive es el **número de operaciones MCP** (~10-15 s fijos cada una), **no los bytes** (202 MB tarda lo mismo que 24 KB). Los ~53 min de la sala fueron 120+ round-trips per-fichero, no volumen.
+
+Tres reglas que gobiernan TODO pipeline de procesado (aplican a `[SIGUIENTE-MOTOR-DOCUMENTAL]`, `[SIGUIENTE-SKILL-EXPEDIENTE-A-MD]`, `[SIGUIENTE-EMAIL-ATOMIZE]`, `[SIGUIENTE-CRONOLOGIA-UNIFICADA]`, `[SIGUIENTE-SALA-UNICA-PLANA]`):
+
+- **(b) REQUISITO de diseño — hidratar→procesar→devolver.** Todo procesado masivo (OCR/MD/anonimizador, atomizadores) se diseña: **copia masiva previa a disco local en un viaje** (`rclone copy` / `copy_dir`, no bucle) → pipeline **contra disco local** → **subida de resultados en un solo lote**. **Nunca** lanzar OCR/lectura contra `G:` en streaming (cada `open()` descarga bajo demanda, con relecturas), ni bucles fichero-a-fichero vía MCP. `create_file` con bytes por el modelo queda descartado para >1 MB.
+- **(a) CONTRAINDICACIÓN — el checkout de biblioteca NO acelera sesiones de Cowork.** El overhead por llamada de Cowork se paga igual esté el caso donde esté; el checkout de la biblioteca (diseño V2) aporta a **humanos, pipeline local y trabajo offline**, no a la latencia de Cowork. No justificar el checkout por "acelerar Cowork". *(Offline refuerza el V2: la vuelta de un periodo sin conexión es el caso central del merge 3-vías con baseline; el pin "disponible sin conexión" de Drive for Desktop sincroniza sin lock ni baseline → resuelve por última-escritura o duplicación silenciosa, inaceptable con trazabilidad forense.)*
+- **(c) PARCHE PROVISIONAL (hasta que exista el piloto de biblioteca).** Para procesar un caso HOY: `rclone copy` manual del caso a local antes del pipeline y de vuelta al terminar (válido solo si **un único usuario** toca el caso), o **pin offline** de la carpeta antes de procesar.
+
+---
+
 ### ✅ [CRITICO-PRESIGNED-DOWNLOAD-BUG] RESUELTO 2026-06-10 — descarga del Gestor Documental
 
 La descarga REST está arreglada (era la **Fase 0** de
