@@ -1,0 +1,31 @@
+# Barrera LOCAL anti-fugas de PII/secretos — ver docs/SEGURIDAD_DATOS.md
+# Instalar (una vez por clon):  pre-commit install && pre-commit install --hook-type pre-push
+# Correr a mano sobre todo:     pre-commit run --all-files
+#
+# Modelo: pre-commit = gate al hacer `git commit`; pre-push = red por si se hizo
+# `git commit --no-verify` (bloquea antes de que nada salga de la máquina).
+repos:
+  # 1) Secretos (tokens, claves, JWT, credenciales) — detección por entropía y reglas.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.0
+    hooks:
+      - id: gitleaks
+        stages: [pre-commit]
+
+  # 2) Ficheros grandes — corta capturas pesadas (el HAR de 22 MB cae por aquí).
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+        args: ["--maxkb=2048"]
+        stages: [pre-commit]
+
+  # 3) Guarda propia — rutas de captura vetadas + PII en contenido (lista real gitignored).
+  - repo: local
+    hooks:
+      - id: leak-guard
+        name: leak-guard (capturas + PII en contenido)
+        entry: python scripts/precommit_leak_guard.py
+        language: system
+        pass_filenames: true
+        stages: [pre-commit, pre-push]

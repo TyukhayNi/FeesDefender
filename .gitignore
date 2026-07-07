@@ -76,6 +76,8 @@ data/_saneado/
 # Allowlist real de procuradores (datos personales) — local-only. El repo solo
 # versiona el .example con placeholders.
 data/_config/procuradores_conocidos.yaml
+# Blocklist de PII para el leak-guard (nombres/emails reales) — local-only.
+data/_config/pii_blocklist.txt
 
 # Auditorías del Drive E&V (data/_audit/*.json) — volcados con nombres,
 # direcciones y refs de MUCHOS expedientes (PII transversal). Solo artefacto.

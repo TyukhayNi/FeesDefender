@@ -1,0 +1,43 @@
+# Escaneo de fugas en servidor (secretos + rutas vetadas + PII opcional).
+# Red de seguridad para lo que empuje una máquina/Cowork SIN el hook local.
+# Detección siempre; para que además PREVENGA (bloquee el merge a main), activar
+# branch protection en main con este check como obligatorio — requiere GitHub Pro
+# en repos privados. Ver docs/SEGURIDAD_DATOS.md.
+name: leak-scan
+
+on:
+  push:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  leak-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # historia completa: gitleaks escanea los commits del evento
+
+      - name: gitleaks (secretos)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: leak-guard (rutas vetadas + PII si hay blocklist)
+        env:
+          # Opcional: define el secret PII_BLOCKLIST (nombres/emails reales, uno por
+          # línea) para que el CI escanee PII sin que la lista viva en el repo.
+          PII_BLOCKLIST: ${{ secrets.PII_BLOCKLIST }}
+        run: |
+          if [ -n "$PII_BLOCKLIST" ]; then
+            mkdir -p data/_config
+            printf '%s' "$PII_BLOCKLIST" > data/_config/pii_blocklist.txt
+          fi
+          git ls-files -z | xargs -0 -r python scripts/precommit_leak_guard.py

@@ -17,11 +17,12 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 ### [SIGUIENTE-CONTROLES-ANTIFUGA] Implementar los controles de `SEGURIDAD_DATOS.md`
 *2026-07-07. Disparador concreto: el incidente de fugas de la Fase 2 (HAR + PII en el historial → una sesión entera de rewrite). La doctrina ya está escrita y cableada (`docs/SEGURIDAD_DATOS.md`, hogar canónico; cableado en el mapa SSOT, INDICE, GOBERNANZA §4 y CLAUDE.md). Falta convertir los principios en controles que corran solos.*
 
-Pendientes (según la tabla doctrina→mecanismo de `SEGURIDAD_DATOS.md`):
-- [ ] **pre-commit** (`.pre-commit-config.yaml`): gitleaks (secretos) + `check-added-large-files` (corta el HAR de 22 MB por tamaño) + hook local que rechace rutas vetadas (`*.har`, `docs/_descubrimiento/`, `data/_audit/`) y patrones de PII/emails de tercero en ficheros *staged*. **Barrera principal.**
-- [ ] **CI en servidor** (`.github/workflows/leak-scan.yml`): repite el escaneo en cada push y **bloquea** (no saltable con `--no-verify`). Activar *push protection* de GitHub si el plan lo permite.
-- [ ] **Fixtures sintéticas** para los atomizadores + test-guard `tests/test_no_pii_en_tests.py` que falle si aparece PII bajo `tests/`.
-- Reconciliación con `GOBERNANZA §2` (session_close vs pre-commit) ya documentada en el doc: para fugas, pre-commit + CI, NO session_close (llega tarde: el `post-commit` ya pusheó).
+Estado (según la tabla doctrina→mecanismo de `SEGURIDAD_DATOS.md`):
+- [x] **pre-commit local** — `.pre-commit-config.yaml`: gitleaks (secretos; verificado que pilla JWT) + `check-added-large-files` (maxkb=2048, corta el HAR de 22 MB) + `scripts/precommit_leak_guard.py` (rutas vetadas + PII de la blocklist gitignored, con test `tests/test_precommit_leak_guard.py`, 9 verde). Instalado en `pre-commit` y `pre-push`. **Auto-push `post-commit` eliminado** (chocaba con el flujo PR). Commit: (esta tanda).
+- [x] **CI** — `.github/workflows/leak-scan.yml`: gitleaks + leak-guard en cada push/PR. Detección garantizada aunque el push venga de una máquina sin el hook. Opción: secret `PII_BLOCKLIST` para escaneo de PII server-side sin que la lista viva en el repo.
+- [ ] **Prevención server-side de verdad (requiere GitHub Pro):** flujo PR + branch protection en `main` con `leak-scan` como check OBLIGATORIO. Bloquea el merge desde CUALQUIER máquina. **Pendiente de que Nikolai suba a Pro** (~4$/mes; en free+privado GitHub no ofrece branch protection). En cuanto esté Pro, se activa por API.
+- [ ] **Fixtures sintéticas** para los atomizadores + test-guard `tests/test_no_pii_en_tests.py`. Follow-up separado (toca los tests de los atomizadores; dejar que el leak-guard señale primero qué ficheros de `tests/` tienen PII).
+- Instalar el hook en cada clon/worktree: `pre-commit install && pre-commit install --hook-type pre-push` (incl. la worktree `FeesDefender-email`).
 
 ### ✅ [SANEADO-PII-FASE-2] HECHA 2026-07-06 — Historial git reescrito + repo GitHub recreado (scrub total)
 *La Fase 1 (árbol actual) estaba en el `7c27ec5` original; ver memoria `project-saneado-pii-repo`. Esta Fase 2 sacó la PII del HISTORIAL (HAR 22 MB + `data/_audit/` desde el commit inicial `d6051f4`).*
