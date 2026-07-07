@@ -6,6 +6,15 @@
 
 ---
 
+## pytest — la línea de resumen (`N passed`) no se captura en Git Bash (Windows)
+
+- **Intentado:** leer el conteo final de pytest (`N passed, M skipped`) con `pytest -q | tail`, `| grep passed`, o PowerShell `Select-String` a través del Bash tool en Windows.
+- **Resultado:** la línea final de resumen no aparece por **ninguna** vía de texto (un carácter especial de esa línea la trunca al pasar por la tubería en Git Bash cp1252). `tail` solo muestra las líneas `SKIPPED`; `grep passed` no devuelve nada **aunque la suite pase en verde**. Engaña: parece que no hubo resultado.
+- **Confirmado:** 2026-07-07.
+- **Solución:** leer los totales del **JUnit XML** en vez de la terminal: `pytest --junit-xml=<tmp>/r.xml` y parsear los atributos `tests`/`failures`/`errors`/`skipped` del nodo `<testsuite>` con `xml.etree`. Fiable e independiente de la terminal. (El estado verde/rojo sí se ve en la barra de progreso: `.`=pasa, `F`=falla, `E`=error, `s`=saltado.)
+
+---
+
 ## Biblioteca de casos — rclone / checkin (Merge Desktop↔Drive)
 
 Gotchas confirmados en la implementación + validación en vivo del sistema de checkout/checkin (2026-07-07). Ver `core/repository_checkout.py`, `scripts/repository_cli.py`, memoria `project-biblioteca-checkout-checkin`.
