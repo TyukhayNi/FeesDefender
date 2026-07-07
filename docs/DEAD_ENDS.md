@@ -6,6 +6,42 @@
 
 ---
 
+## Biblioteca de casos — rclone / checkin (Merge Desktop↔Drive)
+
+Gotchas confirmados en la implementación + validación en vivo del sistema de checkout/checkin (2026-07-07). Ver `core/repository_checkout.py`, `scripts/repository_cli.py`, memoria `project-biblioteca-checkout-checkin`.
+
+### `rclone --files-from` NO admite `--exclude` / `--include` / `--filter`
+- **Intentado:** `rclone copy L D --files-from lista.txt --exclude "_caso.md" ...` en el checkin por-plan.
+- **Resultado:** rc=1 inmediato, sin transferir, sin escribir el `--log-file`: `Failed to load filters: file filtering rules cannot be used with --files-from`.
+- **Confirmado:** 2026-07-07 (corrida en vivo, caso desechable).
+- **Solución:** con `--files-from` la lista ya es exacta → NO añadir exclusiones. En la CLI: `build_copy_cmd`/`build_check_cmd` omiten `_exclusiones_rclone()` cuando reciben `files_from`.
+
+### `rclone --backup-dir` debe ir en la MISMA cadena de remote que el destino
+- **Intentado:** destino `gdrive_tl,team_drive=ID:CASOS/x` con `--backup-dir "gdrive_tl:_merge_backups/..."` (remote «plano»).
+- **Resultado:** `parameter to --backup-dir has to be on the same remote as destination` → rc=1. rclone compara la **cadena** del remote, no el destino resuelto (`gdrive_tl:` y `gdrive_tl,team_drive=ID:` apuntan al mismo Shared Drive, pero los trata como remotes distintos).
+- **Confirmado:** 2026-07-07.
+- **Solución:** el backup-dir usa la misma forma con `team_drive` que el destino (`backup_dir_arg(..., team_drive=...)`).
+
+### `rclone --log-file` a un directorio inexistente → rc=1 al arrancar
+- **Intentado:** `--log-file <LOCAL>/checkout_TS.log` cuando `<LOCAL>` aún no existe (checkout crea el destino en la propia copia).
+- **Resultado:** rc=1 sin log (rclone no crea el dir del log).
+- **Confirmado:** 2026-07-07.
+- **Solución:** los artefactos/logs del protocolo van a un directorio temporal que YA existe, no dentro del destino que se está creando.
+
+### `rclone copy` NO borra — los borrados/renombrados necesitan `moveto`
+- **Intentado:** confiar en `rclone copy --checksum` para propagar un borrado local (caso 5) o un renombrado (caso 9) al Drive.
+- **Resultado:** `copy` solo añade/actualiza; el fichero borrado/renombrado-origen **persiste** en el Drive. El `check --one-way local→Drive` NO lo caza (solo mira que lo local exista en Drive) → «verde» falso.
+- **Confirmado:** 2026-07-07.
+- **Solución:** propagar los borrados y el origen de los renombrados con `rclone moveto <origen> <backup-dir>/<rel>` (recuperable, D2). Nunca borrado ciego ni `sync`.
+
+### checkout + checkin ENCADENADOS en una sola llamada → >3 min (timeout)
+- **Intentado:** correr `checkout` y `checkin` en el mismo comando tras sembrar un caso.
+- **Resultado:** timeout de 3 min (latencia de la API de Drive + `--fast-list` tras muchas operaciones).
+- **Confirmado:** 2026-07-07.
+- **Solución:** correr checkout y checkin en **llamadas separadas** con timeout holgado. Bonus: un checkin matado a mitad y re-lanzado **converge** (idempotencia §4.4 validada).
+
+---
+
 ## Rendimiento — sala de lectura por el conector de Drive (Cowork)
 
 ### Organizar la sala vía conector de Drive en Cowork = inviablemente lento para I/O masivo
