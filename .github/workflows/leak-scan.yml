@@ -5,10 +5,11 @@
 # en repos privados. Ver docs/SEGURIDAD_DATOS.md.
 name: leak-scan
 
+# Solo en push: la gitleaks-action revienta en contexto `pull_request` (llama a
+# /pulls/N/commits y falla). El check del evento push se reporta sobre el head SHA
+# del PR, así que satisface igual el gate de branch protection al mergear.
 on:
   push:
-  pull_request:
-    branches: [main]
 
 permissions:
   contents: read
