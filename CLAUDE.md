@@ -58,6 +58,11 @@ Código: este directorio (`C:\Users\tnm33\Dev\FeesDefender`), versionado en Git 
 - Arquitectura 3 capas: UI → Core (`core/`) → Datos (`data/CASOS/`). La lógica
   vive en el core, la UI solo orquesta. Nunca mover lógica a Streamlit.
 - `data/CASOS/` está en `.gitignore`. Nunca a GitHub. Contiene expedientes reales.
+- **Higiene de datos y secretos (nunca se rompe):** el dato real vive fuera del repo;
+  las capturas de depuración (HAR, dumps, exports) **nunca se commitean**; los secretos
+  solo por entorno (`.env`/`$env:`), nunca en el árbol ni en el chat; en docs/bitácora/
+  commits se referencia por `W-XXXXX`, no por nombre/email/dirección de tercero. Doctrina,
+  controles y runbook: `docs/SEGURIDAD_DATOS.md`.
 - `90_NOTAS_PERSONALES/` en cada caso es zona del abogado — ningún módulo
   del core la lee ni la escribe.
 - Los prompts nunca inventan jurisprudencia. Solo citan lo que está en contexto.
@@ -169,6 +174,7 @@ Atajo: `/tests` ejecuta la suite completa.
 - **Motor documental (split/OCR/MD) + empaquetado**: `docs/PLAN_MOTOR_DOCUMENTAL.md` (`MEJORAS #48`)
 - **Mejoras futuras**: `docs/MEJORAS_FUTURAS.md`
 - **Gobernanza de fuentes de verdad**: `docs/GOBERNANZA_FUENTES_VERDAD.md`
+- **Seguridad de datos (fugas PII/secretos)**: `docs/SEGURIDAD_DATOS.md`
 - **Convenciones del despacho**: `docs/CONVENCIONES_DESPACHO.md`
 
 ## Estilo de respuesta

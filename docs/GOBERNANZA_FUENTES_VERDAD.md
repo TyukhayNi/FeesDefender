@@ -133,33 +133,20 @@ distingue el vivo del muerto. *Guardarraíl:* un campo de frontmatter y un índi
 de una tabla; nada de sitio de documentación. Si acaso, el índice lo autorrenderiza
 el mismo patrón YAML→render de las plantillas.
 
-### 4. Higiene de PII en la bitácora del repo
+### 4. Higiene de PII en la bitácora del repo → movido a `SEGURIDAD_DATOS.md`
 
-**Diagnóstico.** Los expedientes reales están fuera del repo (`data/CASOS/`
-gitignored). Pero la **bitácora** (`STATUS.md`, `PLAN.md`, `docs/`) —que sí vive en
-el repo por la decisión del 2026-05-29— acumula **datos personales de terceros de
-casos reales**: correos de contrapartes y sus letrados, de agentes de E&V,
-direcciones de inmuebles y nombres. No es la prueba (los documentos), pero es dato
-personal RGPD, mezclado además con correos sintéticos de test (`a@x.com`).
+**Diagnóstico (que originó esta recomendación).** La bitácora (`STATUS.md`, `PLAN.md`,
+`docs/`), que vive en el repo desde 2026-05-29, acumulaba **dato personal de terceros**
+(correos de contrapartes/letrados/agentes, direcciones, nombres) mezclado con
+sintéticos de test. No es la prueba (fuera, en `data/CASOS/`), pero es dato RGPD.
 
-**Regla (going-forward).** La bitácora referencia los asuntos por **código interno**
-(`W-xxxxx`) y **no incorpora dato personal de terceros** que no sea imprescindible
-para el registro: nada de correos, nombres completos de contrapartes ni direcciones
-de inmuebles en `STATUS.md`/`PLAN.md`/`docs/`. Si hace falta identificar algo, el
-código del expediente basta; el dato sensible vive en `data/CASOS/` (fuera del repo).
-Los correos del **equipo** (`@tyukhay.legal`) son riesgo bajo, pero mejor evitarlos
-salvo necesidad operativa.
+**La regla ya no vive aquí.** Su hogar canónico es ahora
+[`docs/SEGURIDAD_DATOS.md`](SEGURIDAD_DATOS.md) (principio 7: *referenciar por
+`W-XXXXX`, no reproducir*), junto con el resto de la doctrina de fugas de PII/secretos,
+los controles y el runbook. Este §4 solo apunta.
 
-**Guardarraíl (opcional, barato).** Un check en `scripts/session_close` que avise si
-un fichero de bitácora *staged* contiene un patrón de correo de tercero (regex
-`@` que no sea `@tyukhay.legal` ni dominio de ejemplo). Aviso, no bloqueo.
-
-**Caveats honestos:**
-- El **alcance del riesgo depende de que el repo sea privado.** Si es o pasa a ser
-  público, esto es un problema RGPD real y urgente; si es privado (modelo asumido),
-  es higiene preventiva.
-- **Limpiar los ficheros no borra el historial.** El PII ya committeado sigue en
-  `git log`. Una limpieza *de verdad* exige reescribir historial (`git filter-repo`),
-  que es disruptivo y coordinado — **decisión aparte de Nikolai**, no parte de esta
-  regla. La regla evita que siga *acumulándose*; el saneamiento retroactivo es otro
-  proyecto.
+**Caveats — resueltos.** Ambos quedaron cerrados el 2026-07-06/07:
+- El riesgo dependía de que el repo fuera público → **puesto en privado**.
+- La limpieza retroactiva del historial (`git filter-repo`) —que aquí se dejaba como
+  "decisión aparte"— **se ejecutó** (Fase 2 del saneado: purga del HAR + `data/_audit/`,
+  pseudonimización, repo recreado). Ver `PLAN.md [SANEADO-PII-FASE-2]`.

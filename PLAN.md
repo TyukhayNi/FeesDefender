@@ -14,6 +14,15 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 
 ## ⚠️ MÁXIMA PRIORIDAD — abrir la próxima sesión por aquí
 
+### [SIGUIENTE-CONTROLES-ANTIFUGA] Implementar los controles de `SEGURIDAD_DATOS.md`
+*2026-07-07. Disparador concreto: el incidente de fugas de la Fase 2 (HAR + PII en el historial → una sesión entera de rewrite). La doctrina ya está escrita y cableada (`docs/SEGURIDAD_DATOS.md`, hogar canónico; cableado en el mapa SSOT, INDICE, GOBERNANZA §4 y CLAUDE.md). Falta convertir los principios en controles que corran solos.*
+
+Pendientes (según la tabla doctrina→mecanismo de `SEGURIDAD_DATOS.md`):
+- [ ] **pre-commit** (`.pre-commit-config.yaml`): gitleaks (secretos) + `check-added-large-files` (corta el HAR de 22 MB por tamaño) + hook local que rechace rutas vetadas (`*.har`, `docs/_descubrimiento/`, `data/_audit/`) y patrones de PII/emails de tercero en ficheros *staged*. **Barrera principal.**
+- [ ] **CI en servidor** (`.github/workflows/leak-scan.yml`): repite el escaneo en cada push y **bloquea** (no saltable con `--no-verify`). Activar *push protection* de GitHub si el plan lo permite.
+- [ ] **Fixtures sintéticas** para los atomizadores + test-guard `tests/test_no_pii_en_tests.py` que falle si aparece PII bajo `tests/`.
+- Reconciliación con `GOBERNANZA §2` (session_close vs pre-commit) ya documentada en el doc: para fugas, pre-commit + CI, NO session_close (llega tarde: el `post-commit` ya pusheó).
+
 ### ✅ [SANEADO-PII-FASE-2] HECHA 2026-07-06 — Historial git reescrito + repo GitHub recreado (scrub total)
 *La Fase 1 (árbol actual) estaba en el `7c27ec5` original; ver memoria `project-saneado-pii-repo`. Esta Fase 2 sacó la PII del HISTORIAL (HAR 22 MB + `data/_audit/` desde el commit inicial `d6051f4`).*
 

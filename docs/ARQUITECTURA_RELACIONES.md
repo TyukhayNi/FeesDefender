@@ -21,6 +21,7 @@ un test que impide el *drift*.
 | Helpers de skills | `.claude/skills/_shared/*.py` | `scripts/` de cada skill (copia byte a byte) | `scripts/sync_skill_helpers.py` | `tests/test_skill_helpers_sync.py` |
 | Estado / plan | repo: `STATUS.md`, `PLAN.md` | — (Drive abandonado por divergencia) | — | — |
 | Auth/API sudespacho | `../ElContable/docs/REFERENCIA_SUDESPACHO_API_PERMISOS.md` | `docs/INTEGRACION_SUDESPACHO.md §14` | — | — |
+| Higiene de datos y secretos | `docs/SEGURIDAD_DATOS.md` (doctrina) | `CLAUDE.md §Reglas`, `GOBERNANZA §4` (enlazan) | — | `pre-commit` + CI de escaneo de fugas |
 
 ## 1. Código — arquitectura de 3 capas
 
