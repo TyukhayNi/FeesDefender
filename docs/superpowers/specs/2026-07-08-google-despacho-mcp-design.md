@@ -211,3 +211,52 @@ disparador concreto.
 - Molde local: `~/Dev/Gmail MCP Desktop/` (`gmail_auth.py`, `server.py`, `gmail_cli.py`, `dxt-build/manifest.json`).
 - Patrón lógica-pura/wrapper y saneado: `plugins/expedientes_xl/`.
 - Patrón de inyección de dependencias para tests: `plugins/email_export_mcp/server.py`.
+
+## 11. Ajustes de revisión (2026-07-08)
+
+Revisión del spec tras el primer borrador. Estos ajustes prevalecen sobre las
+secciones §2–§6 donde discrepen.
+
+**R1 — `import_drive_folder`: destino y log forense (APROBADO).**
+- `dst_expediente` = **W-code**, resuelto contra la **carpeta canónica del caso en
+  la unidad compartida «EXPEDIENTES - TYUKHAY LEGAL»** (búsqueda por nombre/patrón
+  del W-code → `folder_id` de destino en TL).
+- `_intake_log.jsonl` se escribe **en esa misma carpeta de Drive** (leer-modificar-
+  subir vía `update_file_content`/`create_file`), para que la traza forense viaje
+  con el expediente. (No en local.)
+
+**R3 — `download_file_content` no devuelve bytes por el modelo (APROBADO).**
+- `download_file_content` **escribe a una ruta local** acotada por un DL-root
+  (patrón `GMAIL_DL_ROOT`/`_resolve_dest` del molde Gmail); nunca base64 al modelo.
+- Solo `read_file_content` devuelve **texto** (Docs exportados a texto / ficheros
+  planos). Con esto se sostiene el principio §5 "bytes masivos nunca por el modelo".
+
+**R4 — diferidos (APROBADO).** Scopes exactos de ACL/settings de Calendar: pinchar
+en F4, no ahora. Cachear el objeto `service` por cuenta dentro del proceso (evita
+reconstruir credenciales en cada llamada).
+
+**R2 — credenciales por-cuenta / caduca-7-días (DECISIÓN PENDIENTE de Nikolai).**
+- Diseño de código acordado (coste casi nulo): `google_auth.py` mapea **cada cuenta
+  → su fichero de credenciales** (`credentials_tl.json` / `credentials_ev.json`),
+  con *fallback* a un `credentials.json` único compartido. Que el fichero de TL sea
+  de un proyecto **Internal** o **External** es config de consola, no cambia código.
+- Config **recomendada**: **TL Internal** (Workspace `tyukhay.legal`, que Nikolai
+  administra → sin recautenticación) / **EV External+Testing** (org
+  `engelvoelkers.com` ajena + scope restricted → recautenticación semanal
+  inevitable, statu quo de Gmail; EV es sobre todo origen de lectura).
+- **Comprobación que falta hacer Nikolai** (2 min): `console.cloud.google.com`
+  como `@tyukhay.legal` → *Pantalla de consentimiento OAuth* → ¿"User type:
+  **Internal**" seleccionable? Si sí → split TL-Internal/EV-External. Si solo hay
+  **External** → *fallback*: ambas External+Testing, un solo cliente, sin cambio de
+  código.
+- **Fundamento:** el caduca-7-días es tope de modo Testing en apps External; la
+  actividad no lo resetea; Internal (solo en Workspace, solo usuarios de la org) no
+  lo tiene. Bajar el scope de EV no escapa: leer ficheros existentes exige
+  `drive.readonly`, también *restricted*.
+
+## 12. Próximo paso
+
+1. Nikolai: comprobación R2 (¿Internal disponible en `tyukhay.legal`?).
+2. Cerrar R2 en este spec.
+3. Encadenar la skill `writing-plans` para desglosar **F1** (lectura cross-cuenta)
+   en plan de implementación.
