@@ -50,6 +50,17 @@ de prioridad son entrada directa de trabajo, y las "Decisiones pendientes" sin
 resolver se plantean antes de avanzar. **Al completar un punto**: marcarlo `[x]` en
 `PLAN.md` y anotar el hash del commit. **Al cerrar sesión**: dejar `PLAN.md` al día.
 
+**Hogar único del estado de un ítem (regla, tras el drift de `[BIBLIOTECA-CHECKOUT]`
+2026-07-08):** el *estado de ciclo de vida* de un ítem de trabajo (pendiente / en curso /
+`✅` completado + hash del PR) vive **solo en `PLAN.md`** — es su hogar autoritativo. El
+bloque de sesión de `STATUS.md` es un **log cronológico** que narra y enlaza por etiqueta,
+no el sitio donde se lee "en qué punto está X". Y a la inversa: **`PLAN.md` no restata
+hechos que son de git** (nombre de rama, ruta de worktree, "sin commitear", "pendiente
+commit/PR"): git es el hogar de esos hechos. Al cerrar un ítem se pone `✅` + hash del PR
+y se retira la prosa de rama/worktree. `scripts/session_close` avisa (no bloquea) si
+`PLAN.md` marca trabajo pendiente en una rama que git ya no conoce. Fundamento y modelo
+completo: `docs/GOBERNANZA_FUENTES_VERDAD.md` (Drift #5).
+
 Código: este directorio (`C:\Users\tnm33\Dev\FeesDefender`), versionado en Git →
 `github.com/TyukhayNi/FeesDefender`. Disco local, sin latencia de Drive.
 
