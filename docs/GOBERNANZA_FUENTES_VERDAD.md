@@ -29,7 +29,7 @@ taxonomía y arquitectura**, donde hoy quedan copias que se contradicen.
 | 2 | Pipeline y stack | README: Ollama/`llama3`, 9 pasos, `00_INPUT` | Describe un MVP ya pivotado (intake CRM + atomización + skills). Contradice `STATUS.md` y `ARQUITECTURA.md` |
 | 3 | Estructura de carpetas del caso | README + `ARQUITECTURA.md` + `STATUS.md` (×2) + `config.CASO_SUBDIRS` | 4 prosas + el código. Además choca la convención: README `00_INPUT`, real `00_Input` (regla CLAUDE.md: tipo oración) |
 | 4 | Taxonomía de tipos de caso | `core/config.py` (`TIPOS_CASO_*`) **y** `STATUS.md` en prosa | El código es canónico; la prosa se desincroniza sola |
-| 5 | Cola de prioridad / "MÁXIMA PRIORIDAD" | `PLAN.md` **y** `STATUS.md` (×2) | Es el fallo que perdió el `[CRITICO-PRESIGNED-DOWNLOAD-BUG]`: vivía en STATUS pero no en la cola de PLAN |
+| 5 | Cola de prioridad / "MÁXIMA PRIORIDAD" + estado de ítems | `PLAN.md` **y** `STATUS.md` (×2) | Perdió el `[CRITICO-PRESIGNED-DOWNLOAD-BUG]` (vivía en STATUS, no en la cola de PLAN). **Reincidió 2026-07-08** con `[BIBLIOTECA-CHECKOUT]`: STATUS decía "mergeada", PLAN seguía en "sin commitear" → Cowork leyó el estado obsoleto. Cerrado con hogar único (arriba) + guardarraíl en `session_close` (ver Enforcement) |
 | 6 | Specs y planes de diseño | `docs/PLAN_*.md` (11) **y** `docs/superpowers/{specs,plans}` (45) | Dos hogares para lo mismo; un spec nuevo no sabe dónde nacer |
 | 7 | Referencia sudespacho común | `INTEGRACION_SUDESPACHO.md` §14 apunta a **otro repo** (`../ElContable/...`) | Fuente de verdad cross-repo sin garantía de que el vecino exista |
 
@@ -39,6 +39,8 @@ taxonomía y arquitectura**, donde hoy quedan copias que se contradicen.
 |---|---|---|
 | Estado fáctico + bitácora de cierre | `STATUS.md` | — |
 | Cola priorizada de trabajo | `PLAN.md` | STATUS borra "Próximas tareas" / "MÁXIMA PRIORIDAD" y enlaza |
+| **Estado de ciclo de vida de un ítem** (pendiente / en curso / `✅` + hash del PR) | `PLAN.md` | STATUS narra por sesión y enlaza por etiqueta, **no** es donde se lee el estado actual |
+| Rama, worktree, "sin commitear", "mergeado" | **git** (`git log`, `for-each-ref`) | `PLAN.md`/`STATUS.md` **no** los restatan como prosa; al cerrar un ítem se cita solo el hash del PR |
 | Backlog técnico | `docs/MEJORAS_FUTURAS.md` | (ya cableado) |
 | Estructura de carpetas del caso | `core/config.py::CASO_SUBDIRS` | README + ARQUITECTURA + STATUS enlazan; ningún `.md` la transcribe |
 | Taxonomía de tipos de caso | `core/config.py::TIPOS_CASO_*` | STATUS enlaza; se borra la tabla en prosa |
@@ -96,6 +98,13 @@ taxonomía y arquitectura**, donde hoy quedan copias que se contradicen.
   enlazan."*
 - El test guard de la Fase 2 convierte la regla en algo verificable, no en buena
   voluntad.
+- **Guardarraíl de coherencia PLAN.md ↔ git (2026-07-08, cierra el Drift #5).**
+  `scripts/session_close._avisar_plan_desfasado` (con la lógica pura
+  `_plan_items_desfasados`, testeada en `tests/test_session_close_aviso.py`) avisa
+  al cerrar —sin bloquear— si `PLAN.md` afirma trabajo pendiente (`sin commitear`,
+  `rama de trabajo`, `a la espera de OK`…) en una rama que git ya no conoce
+  (mergeada + podada). Convierte "acuérdate de actualizar PLAN.md al mergear" en
+  una comprobación que corre sola en el cierre.
 
 ---
 

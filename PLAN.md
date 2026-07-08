@@ -12,22 +12,27 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 
 ---
 
-## ⚠️ MÁXIMA PRIORIDAD — abrir la próxima sesión por aquí
+## ✅ MÁXIMA PRIORIDAD — CERRADA (ambos ítems completados 2026-07-07)
 
-### [SIGUIENTE-CONTROLES-ANTIFUGA] Implementar los controles de `SEGURIDAD_DATOS.md`
-*2026-07-07. Disparador concreto: el incidente de fugas de la Fase 2 (HAR + PII en el historial → una sesión entera de rewrite). La doctrina ya está escrita y cableada (`docs/SEGURIDAD_DATOS.md`, hogar canónico; cableado en el mapa SSOT, INDICE, GOBERNANZA §4 y CLAUDE.md). Falta convertir los principios en controles que corran solos.*
+> Los dos bloques que abrían aquí (`[SIGUIENTE-CONTROLES-ANTIFUGA]` y `[BIBLIOTECA-CHECKOUT]`)
+> están **completados y mergeados**. **No hay tarea de código en cola** (lo confirma `STATUS.md`
+> [SIGUIENTE]). La próxima sesión elige el siguiente frente de las secciones `[SIGUIENTE-…]` de
+> abajo según prioridad de Nikolai. Se conservan aquí marcados ✅ (patrón del repo).
+
+### ✅ [SIGUIENTE-CONTROLES-ANTIFUGA] COMPLETA 2026-07-07 — controles de `SEGURIDAD_DATOS.md` implementados
+*2026-07-07. Disparador concreto: el incidente de fugas de la Fase 2 (HAR + PII en el historial → una sesión entera de rewrite). La doctrina ya está escrita y cableada (`docs/SEGURIDAD_DATOS.md`, hogar canónico; cableado en el mapa SSOT, INDICE, GOBERNANZA §4 y CLAUDE.md). Todos los controles corren solos: barrera local (`51ecf24`), CI + shape-detection (#1 `48c790f`, #3 `e1ff182`) y prevención server-side ACTIVA (`a79ba90`).*
 
 Estado (según la tabla doctrina→mecanismo de `SEGURIDAD_DATOS.md`):
-- [x] **pre-commit local** — `.pre-commit-config.yaml`: gitleaks (secretos; verificado que pilla JWT) + `check-added-large-files` (maxkb=2048, corta el HAR de 22 MB) + `scripts/precommit_leak_guard.py` (rutas vetadas + PII de la blocklist gitignored, con test `tests/test_precommit_leak_guard.py`, 9 verde). Instalado en `pre-commit` y `pre-push`. **Auto-push `post-commit` eliminado** (chocaba con el flujo PR). Commit: (esta tanda).
+- [x] **pre-commit local** — `.pre-commit-config.yaml`: gitleaks (secretos; verificado que pilla JWT) + `check-added-large-files` (maxkb=2048, corta el HAR de 22 MB) + `scripts/precommit_leak_guard.py` (rutas vetadas + PII de la blocklist gitignored, con test `tests/test_precommit_leak_guard.py`, 9 verde). Instalado en `pre-commit` y `pre-push`. **Auto-push `post-commit` eliminado** (chocaba con el flujo PR). Commit: `51ecf24`.
 - [x] **CI** — `.github/workflows/leak-scan.yml`: gitleaks + leak-guard en cada push/PR. Detección garantizada aunque el push venga de una máquina sin el hook. Opción: secret `PII_BLOCKLIST` para escaneo de PII server-side sin que la lista viva en el repo.
 - [x] **Prevención server-side de verdad — ACTIVA (2026-07-07, Nikolai subió a Pro):** branch protection en `main` con `leak-scan` como check OBLIGATORIO + PR requerido + `enforce_admins` + force-push/borrado bloqueados. **Ya no se pushea directo a `main`: rama + PR.** Cubre todas las máquinas y Cowork.
 - [x] **Fixtures sintéticas / test-guard — HECHO (2026-07-07).** Al descubrir: el `leak-guard` con la blocklist real halló **0 PII en TODO el árbol trackeado** — Fase 1 ya había pseudonimizado los tests. Los emails de `tests/` son sintéticos (`x.com`, `example.invalid`, `*.example`) o nombres inventados sobre dominios realistas. Deliverable real = el guard anti-regresión `tests/test_no_pii_en_tests.py` (reutiliza `escanear` sobre `tests/`+`core/`; se salta si no hay blocklist, p. ej. CI sin secret). Suite del guard 10 verde.
 - Instalar el hook en cada clon/worktree: `pre-commit install && pre-commit install --hook-type pre-push` (incl. la worktree `FeesDefender-email`).
 
-### [BIBLIOTECA-CHECKOUT] Paso 2 (código) — HECHO, pendiente commit/PR
+### ✅ [BIBLIOTECA-CHECKOUT] COMPLETA, MERGEADA y VALIDADA EN VIVO 2026-07-07
 *2026-07-07. Disparador: diseño v2 congelado (`~/DISEÑO_V2_20260707_MERGE_BIBLIOTECA.md`) + piloto validado en W-02VND1/W-02THLJ. Implementa el sistema de checkout/checkin Desktop↔Drive (biblioteca de casos).*
 
-Rama de trabajo: **`feat/repository-checkout`** (worktree `~/Dev/fd-repo-checkout`, base `main`). Sin commitear aún (a la espera de OK de Nikolai → commit + PR con check `leak-scan`).
+**MERGEADA a `main` vía 3 PRs** (+ docs): **#4 `061d99e`** (cerebro puro + CLI + guard §6 + CP10 + campos de lock en `CaseMeta` + 4 eventos), **#5 `b67f46d`** (guard §6 en `email_export`/`sync_sudespacho`), **#6 `8dd138c`** (checkin honra el plan por-fichero vía `--files-from`) y **#7 `16cbb54`** (STATUS.md al estado final + gotchas de rclone/checkin en `DEAD_ENDS.md`). Rama `feat/repository-checkout` y worktree `~/Dev/fd-repo-checkout` ya podados. **Validada EN VIVO** contra el Drive real (`gdrive_tl`, casos desechables purgados): checkout, checkin (copia + borrado + renombrado + conflicto→resolución→disponible), bandeja/CP10, write-then-verify del lock, idempotencia. Estado final en `STATUS.md` (bloque «BIBLIOTECA DE CASOS — COMPLETA, MERGEADA y VALIDADA EN VIVO»).
 
 - [x] `core/config.py`: `ESTADOS_REPOSITORIO`, `TRANSICIONES_PERMITIDAS`, `MERGE_EXCLUSIONS`, `DERIVADOS_REGENERABLES`, `PENDIENTE_CHECKIN_SUBDIR`, `RCLONE_REMOTE_TL`/`TEAM_DRIVE_TL` (SSOT de definición, §2/§5).
 - [x] `core/repository_checkout.py` **PURO** (cero I/O Drive): `validar_transicion`, `plan_merge` (tabla canónica 9 casos §4.1 + derivados §4.2 + Google-native + renombrado por hash), `decidir_escritura` (guard §6), mutadores puros del lock (fm→fm), `verificar_nonce`, constructores de eventos.
@@ -38,12 +43,13 @@ Rama de trabajo: **`feat/repository-checkout`** (worktree `~/Dev/fd-repo-checkou
 - [x] Tests `tests/test_repository_checkout.py` (65) + `tests/test_repository_cli.py` (15): transiciones válidas/inválidas, tabla 9 casos, doble checkout rechazado, convergencia (idempotencia), round-trip `_caso.md`, bandeja, guard, parseo lsjson, semáforo, comandos rclone. **Suite completa verde (1556 tests).**
 - [x] Guard §6 **cableado** en los writers de intake con destino propio: `intake_manual` (`save_file`→`manual`, `save_file_crm_branch`→`crm_manual`), `whatsapp_intake.deposit_export`→`whatsapp`, `intake_drive.pull_drive_ev`→`drive_ev`. Helper reutilizable `case_manager.dir_intake(case_id, rel_base, origen)` (testeado) → devuelve dir efectivo (bandeja o normal) + evento; cualquier writer lo adopta en 1 línea. Retrocompatible (disponible → normal).
 - [x] **CP10 — integración de la bandeja** en el checkin del CLI: `planificar_integracion_bandeja` (puro, testeado) + `_integrar_bandeja` (mueve cada `_pendiente_checkin/<origen>/<rel>` a `<rel>`, o a `_reingesta_<base>` si colisiona — nunca sobrescribe; §6) + `rmdirs` de la bandeja vacía. Se ejecuta antes de CP11.
-- [ ] Guard §6 en `email_export` y `sync_sudespacho` (pull CRM): pendiente — computan destino por-caller/por-documento vía resolvers compartidos; requieren trazar callers para no over-trigger en lecturas. Cola acotada (mismo `dir_intake`).
+- [x] Guard §6 en `email_export` y `sync_sudespacho` (pull CRM): **HECHO en PR #5 `b67f46d`** — el guard §6 queda cableado en **TODOS** los writers de intake (manual, whatsapp, drive_ev, email, crm) vía `case_manager.dir_intake`.
 - [x] Revisión skill `checkin-caso` (`~/checkin-caso-skill/`, editada la copia local): exclusiones de protocolo COMPLETAS en `.cmd`, evento canónico `case_checkin`, liberación del lock CP11, paridad con la CLI, baseline 3-vías, +2 lecciones, eval 0 actualizado. Cowork re-ejecuta evals antes de instalar.
+- [x] Skills **`checkin-caso` (revisada) + `checkout-caso` (nueva)** empaquetadas (`dist_skills/*.skill`, raíz canónica). Cowork las re-importa (skills sueltos, no bundle de plugin).
 
-**Decisiones (Nikolai: "SÍ A TODO", 2026-07-07):** commit + PR ✓; guard cableado en intake_manual ✓ (resto de puntos de escritura —pull CRM/Drive/email/whatsapp— quedan como follow-up sobre el mismo `guard_escritura`); reconciliación `90_Notas personales` = copia ciega de cortesía como no-op ✓; ESTADO.md del Drive la actualiza Cowork.
+**Decisiones (Nikolai: "SÍ A TODO", 2026-07-07):** commit + PR ✓; guard cableado en TODOS los writers de intake ✓; reconciliación `90_Notas personales` = copia ciega de cortesía como no-op ✓; ESTADO.md del Drive la actualiza Cowork.
 
-Diferidos (sin cambios): skill `checkout-caso`, alertas de timeout (tarea programada), sección STATUS.md como vista derivada, UI Streamlit.
+Diferidos: alertas de préstamo >7 días (tarea programada), sección STATUS.md como vista derivada, UI Streamlit; instalar las skills en Cowork.
 
 ### ✅ [SANEADO-PII-FASE-2] HECHA 2026-07-06 — Historial git reescrito + repo GitHub recreado (scrub total)
 *La Fase 1 (árbol actual) estaba en el `7c27ec5` original; ver memoria `project-saneado-pii-repo`. Esta Fase 2 sacó la PII del HISTORIAL (HAR 22 MB + `data/_audit/` desde el commit inicial `d6051f4`).*

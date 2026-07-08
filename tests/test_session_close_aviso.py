@@ -87,3 +87,68 @@ def test_aviso_sin_pendientes_dice_todo_publicado(monkeypatch, capsys):
 
     assert "main" in salida
     assert "sin commits sin publicar" in salida.lower() or "nada que llevar" in salida.lower()
+
+
+# --- Coherencia PLAN.md <-> git: item pendiente que cita una rama fantasma ---
+
+def test_plan_flag_rama_fantasma_en_bloque_pendiente():
+    # El item describe trabajo PENDIENTE en una rama que git ya no conoce.
+    texto = (
+        "### [FOO] algo\n"
+        "Rama de trabajo: `feat/foo` (worktree ~/Dev/x). Sin commitear aún.\n"
+        "- [x] hecho\n"
+    )
+    filas = sc._plan_items_desfasados(texto, {"main"})
+    assert filas == [("[FOO] algo", ["feat/foo"])]
+
+
+def test_plan_no_flag_si_la_rama_existe():
+    # La rama sigue viva en git -> el item es coherente, no se avisa.
+    texto = "### [FOO]\nRama de trabajo: `feat/foo`. Sin commitear aún.\n"
+    filas = sc._plan_items_desfasados(texto, {"feat/foo", "main"})
+    assert filas == []
+
+
+def test_plan_no_flag_item_completado_aunque_la_rama_este_podada():
+    # Item ✅ sin frase de pendiente: cita una rama podada, pero no es drift.
+    texto = (
+        "### ✅ [FOO] COMPLETA\n"
+        "MERGEADA a main. Rama `feat/foo` y worktree ya podados.\n"
+    )
+    filas = sc._plan_items_desfasados(texto, {"main"})
+    assert filas == []
+
+
+def test_plan_no_flag_rama_futura_sin_frase_de_pendiente():
+    # Menciona una rama que aun no existe, pero no afirma trabajo en curso.
+    texto = "### [FOO]\nEn el futuro se usara la rama `feat/foo`.\n"
+    filas = sc._plan_items_desfasados(texto, {"main"})
+    assert filas == []
+
+
+def test_aviso_plan_desfasado_lista_las_ramas_fantasma(monkeypatch, capsys, tmp_path):
+    (tmp_path / "PLAN.md").write_text("contenido", encoding="utf-8")
+    monkeypatch.setattr(sc, "ROOT", tmp_path)
+    monkeypatch.setattr(sc, "_ramas_conocidas", lambda: {"main"})
+    monkeypatch.setattr(
+        sc, "_plan_items_desfasados", lambda t, r: [("[FOO] algo", ["feat/foo"])]
+    )
+
+    sc._avisar_plan_desfasado()
+    salida = capsys.readouterr().out
+
+    assert "feat/foo" in salida
+    assert "PLAN.md" in salida
+
+
+def test_aviso_plan_coherente_no_alarma(monkeypatch, capsys, tmp_path):
+    (tmp_path / "PLAN.md").write_text("contenido", encoding="utf-8")
+    monkeypatch.setattr(sc, "ROOT", tmp_path)
+    monkeypatch.setattr(sc, "_ramas_conocidas", lambda: {"main"})
+    monkeypatch.setattr(sc, "_plan_items_desfasados", lambda t, r: [])
+
+    sc._avisar_plan_desfasado()
+    salida = capsys.readouterr().out
+
+    assert "PLAN.md" in salida
+    assert "[!]" not in salida

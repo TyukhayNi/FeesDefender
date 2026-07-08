@@ -23,6 +23,7 @@ Ver STATUS.md seccion "Protocolo de cierre de sesion".
 """
 
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -30,6 +31,24 @@ from sys import executable as PYTHON
 
 ROOT = Path(__file__).resolve().parent.parent
 _ANON_PREFIX = "core/anon/"
+
+# Un item de PLAN.md que contenga una de estas frases (minusculas) afirma
+# trabajo EN CURSO/sin publicar. Los items completados las reescriben en
+# pasado ("mergeada", "podados", "✅"), asi que su presencia + una rama que
+# git ya no conoce = drift PLAN.md <-> git (lo que paso con [BIBLIOTECA-CHECKOUT]).
+_FRASES_PENDIENTE = (
+    "sin commitear",
+    "sin comitear",
+    "pendiente commit",
+    "pendiente de commit",
+    "rama de trabajo",
+    "a la espera de ok",
+    "espera ok de",
+)
+# Tokens con pinta de rama git: prefijo convencional + resto del nombre.
+_RE_RAMA = re.compile(
+    r"\b(?:feat|fix|docs|chore|refactor|test|hotfix|release)/[A-Za-z0-9._\-/]+"
+)
 
 
 def _git_lines(args: list[str]) -> list[str]:
@@ -118,6 +137,83 @@ def _avisar_publicacion() -> None:
     print("Publica con: rama + PR (debe pasar 'leak-scan' antes de fusionar).")
 
 
+def _ramas_conocidas() -> set[str]:
+    """Nombres de rama que git conoce (locales + remotas, sin prefijo origin/)."""
+    ramas: set[str] = set()
+    for ln in _git_lines(
+        ["for-each-ref", "--format=%(refname:short)", "refs/heads", "refs/remotes"]
+    ):
+        if ln.startswith("origin/"):
+            ln = ln[len("origin/"):]
+        if ln and ln != "HEAD":
+            ramas.add(ln)
+    return ramas
+
+
+def _plan_items_desfasados(
+    texto: str, ramas_conocidas: set[str]
+) -> list[tuple[str, list[str]]]:
+    """Items de PLAN.md que afirman trabajo pendiente en una rama fantasma.
+
+    Puro y testeable. Trocea PLAN.md por encabezados (`#`); para cada bloque que
+    contenga una frase de pendiente (`_FRASES_PENDIENTE`), extrae los tokens con
+    pinta de rama y devuelve los que git YA NO conoce. Los items completados no
+    usan esas frases, asi que no se marcan aunque citen una rama podada.
+
+    Devuelve [(titulo_del_item, [ramas_fantasma_ordenadas]), ...].
+    """
+    filas: list[tuple[str, list[str]]] = []
+    titulo = ""
+    buf: list[str] = []
+
+    def _cerrar(titulo: str, contenido: str) -> None:
+        low = contenido.lower()
+        if not any(frase in low for frase in _FRASES_PENDIENTE):
+            return
+        ramas = {m.rstrip("./") for m in _RE_RAMA.findall(contenido)}
+        fantasmas = sorted(r for r in ramas if r not in ramas_conocidas)
+        if fantasmas:
+            filas.append((titulo, fantasmas))
+
+    for ln in texto.splitlines():
+        if ln.lstrip().startswith("#"):
+            if buf:
+                _cerrar(titulo, "\n".join(buf))
+            titulo = ln.lstrip("#").strip()
+            buf = [ln]
+        else:
+            buf.append(ln)
+    if buf:
+        _cerrar(titulo, "\n".join(buf))
+    return filas
+
+
+def _avisar_plan_desfasado() -> None:
+    """AVISO no bloqueante: PLAN.md afirma trabajo pendiente en ramas fantasma.
+
+    Cierra el agujero que dejo [BIBLIOTECA-CHECKOUT] desfasado: PLAN decia
+    "sin commitear en feat/repository-checkout" cuando la rama ya estaba
+    mergeada y podada. Solo consultas locales a git; sin red.
+    """
+    plan = ROOT / "PLAN.md"
+    print("\n" + "-" * 40)
+    print("Coherencia PLAN.md <-> git")
+    if not plan.exists():
+        print("PLAN.md no encontrado - nada que comprobar.")
+        return
+    texto = plan.read_text(encoding="utf-8")
+    filas = _plan_items_desfasados(texto, _ramas_conocidas())
+    if not filas:
+        print("PLAN.md: sin items pendientes que citen ramas que git ya no conoce.")
+        return
+    print("[!] PLAN.md marca trabajo PENDIENTE en ramas que git ya no conoce")
+    print("    (probable: mergeadas y podadas -> el item deberia estar cerrado):")
+    for titulo, fantasmas in filas:
+        print(f"  -> {titulo}: {', '.join(fantasmas)}")
+    print("Si ya esta en main: marca el item [x]/✅ con el hash del PR y")
+    print("quita la prosa de rama/worktree (git es el hogar de ese hecho).")
+
+
 def main() -> None:
     force_slow = "--runslow" in sys.argv or os.getenv("RUN_SLOW") == "1"
     runslow = force_slow or _anon_tocado()
@@ -160,6 +256,12 @@ def main() -> None:
         _avisar_publicacion()
     except Exception as e:  # el aviso nunca debe romper el cierre
         print(f"[aviso] no se pudo comprobar trabajo sin publicar: {e}")
+
+    # Aviso de PLAN.md desfasado respecto a git (modo AVISO, no bloquea).
+    try:
+        _avisar_plan_desfasado()
+    except Exception as e:  # el aviso nunca debe romper el cierre
+        print(f"[aviso] no se pudo comprobar coherencia de PLAN.md: {e}")
 
 
 if __name__ == "__main__":
