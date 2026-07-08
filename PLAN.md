@@ -19,6 +19,25 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 > [SIGUIENTE]). La próxima sesión elige el siguiente frente de las secciones `[SIGUIENTE-…]` de
 > abajo según prioridad de Nikolai. Se conservan aquí marcados ✅ (patrón del repo).
 
+---
+
+## [SIGUIENTE-GOOGLE-MCP] Diseño cerrado (brainstorming 2026-07-08) — pendiente 1 dato + plan
+
+*Disparador: encargo de Nikolai (`ENCARGO_MCP_Google_despacho.md`, fuera del repo). MCP propio
+`google-despacho` (Drive + Calendar, multicuenta EV+TL) que suple la mono-cuenta del Drive nativo.*
+
+- Spec APROBADO + revisado: `docs/superpowers/specs/2026-07-08-google-despacho-mcp-design.md`
+  (commits `cce2d08` + `f879c59`, rama `feat/google-despacho-mcp`).
+- Decisiones cerradas: **un MCP por fases F1(lectura)→F2(escritura+permisos)→F3(lote+intake)→F4(Calendar)**;
+  entrega **stdio local + `.dxt` + puente de escritorio** (verificado en vivo que así llega Gmail a Cowork,
+  sin túnel/hosting); **`expedientes` se queda** (solo candidato a retirar el Drive nativo); OAuth reutiliza
+  el proyecto Cloud de Gmail; ubicación `plugins/google_despacho_mcp/`; revisión R1/R3/R4 plegada.
+- [ ] **BLOQUEA-PLAN — Nikolai (2 min):** comprobar en `console.cloud.google.com` (sesión `@tyukhay.legal`)
+  si "User type: **Internal**" es seleccionable → decide R2 (split TL-Internal / EV-External vs. ambas
+  External+Testing). Ver §11 R2 del spec.
+- [ ] Cerrar R2 en el spec.
+- [ ] Encadenar skill `writing-plans` para desglosar **F1** en plan de implementación.
+
 ### ✅ [SIGUIENTE-CONTROLES-ANTIFUGA] COMPLETA 2026-07-07 — controles de `SEGURIDAD_DATOS.md` implementados
 *2026-07-07. Disparador concreto: el incidente de fugas de la Fase 2 (HAR + PII en el historial → una sesión entera de rewrite). La doctrina ya está escrita y cableada (`docs/SEGURIDAD_DATOS.md`, hogar canónico; cableado en el mapa SSOT, INDICE, GOBERNANZA §4 y CLAUDE.md). Todos los controles corren solos: barrera local (`51ecf24`), CI + shape-detection (#1 `48c790f`, #3 `e1ff182`) y prevención server-side ACTIVA (`a79ba90`).*
 
