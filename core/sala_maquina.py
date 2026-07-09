@@ -201,29 +201,37 @@ def ejecutar(case_dir: Path, plan: list[DocPlan], *, case_id: str,
     for d in plan:
         if d.skip:
             continue
-        src = case_dir / "00_Input" / d.rel_path
-        if d.ruta == "pdf":
-            texto = _try_pypdf(src) or ""
-            npags = _pdf_num_paginas(src)
-            if texto and _texto_suficiente(texto, npags):
-                estado, nota = ocr_quality(texto, npags)
-                _escribir_md(case_dir, case_id, d.slug, d.rel_path, texto, "pypdf", False, estado)
-                cobertura.append(DocCobertura(d.slug, d.rel_path, "pypdf", estado, len(texto), False, nota))
-                continue
-            # escaneado → OCRmyPDF (sin tope de páginas)
-            ocr_out = destino_seguro(sm_dir / "01_OCR" / f"{d.slug}.pdf", case_dir)
-            try:
-                buscable = ocr_pdf(src, ocr_out)
-            except Exception as e:  # OCRError incl. cifrado/corrupto/firmado
-                cobertura.append(DocCobertura(d.slug, d.rel_path, "ocr", "empty", 0, True, f"OCR falló: {e}"))
-                continue
-            texto = _try_pypdf(buscable) or ""
-            estado, nota = ocr_quality(texto, _pdf_num_paginas(buscable))
-            _escribir_md(case_dir, case_id, d.slug, d.rel_path, texto, "ocr", True, estado)
-            cobertura.append(DocCobertura(d.slug, d.rel_path, "ocr", estado, len(texto), True, nota))
-        else:
-            # imagen/nativo/sin_soporte → F2
-            cobertura.append(DocCobertura(d.slug, d.rel_path, "sin_soporte", "sin_soporte", 0, False, "ruta F2"))
+        # spec §9: aislar el fallo por documento. Un error en uno (lock ~$ de
+        # Office, disco lleno, PDF corrupto que revienta pypdf) se registra en
+        # cobertura y NO aborta el lote — así apply() siempre llega a escribir
+        # _cobertura.md, el estado y el evento de log.
+        try:
+            src = case_dir / "00_Input" / d.rel_path
+            if d.ruta == "pdf":
+                texto = _try_pypdf(src) or ""
+                npags = _pdf_num_paginas(src)
+                if texto and _texto_suficiente(texto, npags):
+                    estado, nota = ocr_quality(texto, npags)
+                    _escribir_md(case_dir, case_id, d.slug, d.rel_path, texto, "pypdf", False, estado)
+                    cobertura.append(DocCobertura(d.slug, d.rel_path, "pypdf", estado, len(texto), False, nota))
+                    continue
+                # escaneado → OCRmyPDF (sin tope de páginas)
+                ocr_out = destino_seguro(sm_dir / "01_OCR" / f"{d.slug}.pdf", case_dir)
+                try:
+                    buscable = ocr_pdf(src, ocr_out)
+                except Exception as e:  # OCRError incl. cifrado/corrupto/firmado
+                    cobertura.append(DocCobertura(d.slug, d.rel_path, "ocr", "empty", 0, True, f"OCR falló: {e}"))
+                    continue
+                texto = _try_pypdf(buscable) or ""
+                estado, nota = ocr_quality(texto, _pdf_num_paginas(buscable))
+                _escribir_md(case_dir, case_id, d.slug, d.rel_path, texto, "ocr", True, estado)
+                cobertura.append(DocCobertura(d.slug, d.rel_path, "ocr", estado, len(texto), True, nota))
+            else:
+                # imagen/nativo/sin_soporte → F2
+                cobertura.append(DocCobertura(d.slug, d.rel_path, "sin_soporte", "sin_soporte", 0, False, "ruta F2"))
+        except Exception as e:  # cualquier fallo del documento: no tumbar el lote
+            cobertura.append(DocCobertura(d.slug, d.rel_path, "error", "empty", 0, False, f"fallo al procesar: {e}"))
+            continue
     return cobertura
 
 

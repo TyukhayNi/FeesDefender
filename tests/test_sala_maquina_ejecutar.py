@@ -76,6 +76,45 @@ def test_ejecutar_pdf_escaneado_llama_ocr_y_persiste(tmp_path, monkeypatch):
     assert cob[0].metodo == "ocr" and cob[0].ocr is True and cob[0].estado == "ok"
 
 
+def test_ejecutar_aisla_fallo_por_documento(tmp_path, monkeypatch):
+    # spec §9: un fallo en un documento no aborta el lote — se registra en
+    # cobertura y se sigue con el resto. Simula el gotcha real de los lock
+    # files ~$ de Office que hacen fallar la reescritura del MD.
+    case = tmp_path / "EV-2026-001"
+    (case / "00_Input" / "01_Drive EV").mkdir(parents=True)
+    src1 = case / "00_Input" / "01_Drive EV" / "primero.pdf"
+    src2 = case / "00_Input" / "01_Drive EV" / "segundo.pdf"
+    _pdf_con_texto(src1)
+    _pdf_con_texto(src2)
+    sha1, sha2 = sm_file_sha(src1), sm_file_sha(src2)
+
+    real_write_md = sm.write_md
+
+    def _flaky(path, meta, body):
+        if "primero" in str(path):
+            raise OSError("~$ lock de Office bloquea la reescritura")
+        return real_write_md(path, meta, body)
+
+    monkeypatch.setattr(sm, "write_md", _flaky)
+
+    docs = [
+        sm.DocPlan(rel_path="01_Drive EV/primero.pdf", sha256=sha1, ext=".pdf",
+                   ruta="pdf", slug=f"primero__{sha1[:8]}"),
+        sm.DocPlan(rel_path="01_Drive EV/segundo.pdf", sha256=sha2, ext=".pdf",
+                   ruta="pdf", slug=f"segundo__{sha2[:8]}"),
+    ]
+    cob = sm.ejecutar(case, docs, case_id="EV-2026-001")
+
+    # el segundo documento SÍ se procesa pese al fallo del primero
+    md2 = case / "01_Procesado" / "02_Sala de máquina" / "03_MD" / f"segundo__{sha2[:8]}.md"
+    assert md2.exists()
+    assert len(cob) == 2
+    by_slug = {c.slug: c for c in cob}
+    assert by_slug[f"primero__{sha1[:8]}"].estado == "empty"
+    assert "lock de Office" in by_slug[f"primero__{sha1[:8]}"].nota
+    assert by_slug[f"segundo__{sha2[:8]}"].estado == "ok"
+
+
 def test_inventariar_lista_00_input_con_sha(tmp_path):
     case = tmp_path / "EV-2026-001"
     (case / "00_Input" / "01_Drive EV").mkdir(parents=True)
