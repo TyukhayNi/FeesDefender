@@ -93,7 +93,7 @@ class DocCobertura:
     slug: str
     rel_path: str
     metodo: str          # pypdf | ocr | nativo | sin_soporte | error
-    estado: str          # ok | low | empty | sin_texto | sin_soporte
+    estado: str          # ok | low | empty | sin_soporte
     chars: int = 0
     ocr: bool = False
     nota: str = ""
@@ -135,7 +135,7 @@ def _celda(valor: str) -> str:
 
 def render_cobertura(cobertura: list[DocCobertura]) -> str:
     """Puro: Markdown de _cobertura.md. Dudosos (estado != ok) primero."""
-    orden = {"empty": 0, "sin_texto": 0, "sin_soporte": 1, "low": 2, "ok": 3}
+    orden = {"empty": 0, "sin_soporte": 1, "low": 2, "ok": 3}
     filas = sorted(cobertura, key=lambda d: (orden.get(d.estado, 0), d.slug))
     lineas = [
         "<!-- GENERADO — NO EDITAR A MANO -->",

@@ -333,3 +333,13 @@ embebido `<!-- ECOSISTEMA:... -->` se añadirá cuando #50 aterrice. **No** se e
 4. **`rapidocr` como reocr-torch automático** — motor §G.7; aquí OCRmyPDF basta.
 5. **Empaquetado como conector (Cowork ejecutor)** — motor F4.
 6. **Registro único `index.yaml` / id `doc-NNN` / split** — motor F1/G.6.
+7. **Aislamiento por documento: `try/except` en proceso, NO subproceso OS.** El §3.1/§9/§14
+   describen "aislamiento por subproceso por documento (patrón `ocr_textless_pdfs.py`)". La
+   implementación real de `ejecutar()` aísla cada documento con un `try/except` **en el mismo
+   proceso**: protege de excepciones Python (OCRError, lock `~$` de Office, PDF que revienta
+   pypdf), que es el grueso de los fallos reales, pero **no** de un segfault/OOM nativo (p. ej.
+   `pypdfium2` en `--vision` sobre un PDF corrupto tumbaría el intérprete). Riesgo bajo tras
+   abandonar RapidOCR/Docling (los motores que segfaulteaban); OCRmyPDF corre en su propio
+   proceso vía su CLI. El **aislamiento por subproceso OS** (relanzar cada documento en un
+   worker y cosechar el que muera) se **difiere al motor completo**, donde el volumen y los
+   motores pesados lo justifican.
