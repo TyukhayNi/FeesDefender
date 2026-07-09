@@ -1,0 +1,20 @@
+{
+ "skill_name": "checkin-caso",
+ "evals": [
+  {
+   "id": 0,
+   "prompt": "Quiero hacer checkin del caso W-03QRST al Drive del despacho. La carpeta local es C:\\Users\\tnm33\\Desktop\\MaRS2 - Serrano 21, 3º - (W-03QRST) - Bad Debt (unos 2 GB) y en Drive el caso vive en CASOS/Madrid/MaRS2 - Serrano 21, 3º - (W-03QRST) - Bad Debt dentro de la unidad EXPEDIENTES - TYUKHAY LEGAL. Es un ensayo de diseño: NO toques ningún Drive real ni ejecutes rclone — genera el script .cmd de merge que me darías, dime dónde lo guardarías y explícame el flujo completo y qué pasa después según el semáforo.",
+   "expected_output": "Script .cmd con chcp 65001, rclone copy --checksum --backup-dir gdrive_tl:_merge_backups, exclusiones de protocolo COMPLETAS (_caso.md, _intake_log.jsonl, MANIFEST_CHECKOUT.json, AUDITLOG_MERGE_*.jsonl, _snapshot/**, _pendiente_checkin/**, 90_Notas personales/**) tanto en la copia como en el check, copia ciega de notas, rclone check --one-way --fast-list, semáforo VERDE/AMARILLO/ROJO, y explicación del flujo: auditoría de logs, cierre forense con evento canónico case_checkin + liberación del lock (estado_repositorio → disponible en _caso.md del Drive, CP11), retirada opcional del local. Menciona la paridad con la CLI python -m scripts.repository_cli checkin.",
+   "files": []
+  },
+  {
+   "id": 1,
+   "prompt": "Ayer sincronicé a mano un caso al Drive con rclone y quiero que audites si fue bien antes de borrar la copia local. Te dejo los ficheros en la carpeta de entrada: lista_copiar.txt (lo que había que subir) y auditlog_copia.log (el log de rclone). El comando terminó sin errores (0 ERROR) así que en principio todo bien, ¿no? ¿Puedo borrar ya la carpeta local?",
+   "expected_output": "Detecta que solo se copiaron 7 de 10 ficheros; los 3 ausentes tienen nombres corruptos por UTF-8/CP850 (├│ en la lista) — típico de tubería PowerShell. NO autoriza el borrado; explica la causa y cómo regenerar la lista (redirección CMD) y re-ejecutar con --checksum.",
+   "files": [
+    "lista_copiar.txt",
+    "auditlog_copia.log"
+   ]
+  }
+ ]
+}
