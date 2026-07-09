@@ -17,6 +17,15 @@ def test_clasificar_ruta_por_extension():
     assert sm.clasificar_ruta(".mp4") == "sin_soporte"
 
 
+def test_extensiones_nativas_sin_doble_fuente_de_verdad():
+    # _EXTS_NATIVO (lo que clasificar_ruta enruta como "nativo") debe coincidir
+    # EXACTAMENTE con las extensiones que _extraer_nativo sabe manejar. Si alguien
+    # añade una a una lista y olvida la otra, un documento nativo saldría como texto
+    # vacío ("" -> empty), indistinguible de un sin-texto real: fallo silencioso.
+    manejadas = set(sm._NATIVO_EXTRACTORES) | sm._NATIVO_TEXTO_PLANO
+    assert sm._EXTS_NATIVO == manejadas
+
+
 def test_ocr_quality_texto_limpio_es_ok():
     texto = ("El arrendatario reclama la devolución de los honorarios de "
              "intermediación conforme al artículo veinte de la Ley de "
