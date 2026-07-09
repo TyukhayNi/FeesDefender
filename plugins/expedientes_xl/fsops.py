@@ -144,7 +144,7 @@ def _common_top_level(names: list[str]) -> str | None:
     tops: set[str] = set()
     for n in names:
         parts = Path(n).parts
-        if len(parts) < 2:
+        if len(parts) < 2 or parts[0] in ("..", "."):
             return None
         tops.add(parts[0])
     return tops.pop() if len(tops) == 1 else None

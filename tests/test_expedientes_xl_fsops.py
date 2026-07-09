@@ -288,3 +288,27 @@ def test_extract_strip_no_actua_con_fichero_en_raiz(tmp_path):
     extracted = fsops.extract_archive([tmp_path], str(z), str(dest), strip_top_level=True)
     rels = sorted(p.relative_to(dest.resolve()).as_posix() for p in extracted)
     assert rels == ["Wrapper/x.pdf", "suelto.pdf"]  # hay fichero en raíz → no hay wrapper único
+
+
+def test_extract_strip_top_level_sigue_rechazando_traversal(tmp_path):
+    z = tmp_path / "malicioso.zip"
+    _make_zip(z, {"Wrapper/ok.txt": b"ok", "Wrapper/../escape.txt": b"bad"})
+    dest = tmp_path / "out"
+    extracted = fsops.extract_archive([tmp_path], str(z), str(dest), strip_top_level=True)
+    rels = sorted(p.relative_to(dest.resolve()).as_posix() for p in extracted)
+    assert rels == ["ok.txt"]                      # el miembro con .. se descarta
+    assert not (tmp_path / "escape.txt").exists()  # nada escapó del sandbox
+
+
+def test_hash_tree_salta_symlinks(tmp_path):
+    (tmp_path / "real.txt").write_bytes(b"real")
+    secreto = tmp_path.parent / "secreto_fuera.txt"
+    secreto.write_bytes(b"secreto")
+    link = tmp_path / "link.txt"
+    try:
+        link.symlink_to(secreto)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks no disponibles (Windows sin privilegio)")
+    out = fsops.hash_tree([tmp_path], str(tmp_path))
+    assert "link.txt" not in out          # el symlink no se hashea/lista
+    assert out == {"real.txt": hashlib.sha256(b"real").hexdigest()}
