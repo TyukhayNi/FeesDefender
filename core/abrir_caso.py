@@ -7,7 +7,7 @@ reconciliación por hash y construcción del payload CRM. Los orquestadores
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from core import config
 
@@ -20,6 +20,8 @@ FUENTE_A_EVENTO = {
     "whatsapp": "upload_whatsapp", "email": "upload_email", "entrevista": "upload_entrevista",
 }
 
+# Ancla en la forma literal "(W-...)" para no confundir con un segmento de
+# dirección entre paréntesis con pinta numérica, p.ej. "(08860)".
 _W_CODE_EN_NOMBRE = re.compile(r"\((W-[A-Z0-9]+)\)")
 
 
@@ -44,6 +46,7 @@ class Identidad:
     sufijo: str
     case_id: str
     posicion: str
+    tipo_caso: str
     w_code_duplicado: bool
     codigo_duplicado: bool
     requiere_confirmacion: bool
@@ -94,7 +97,7 @@ def resolver_identidad(
 
     return Identidad(
         codigo=codigo, direccion=direccion, w_code=w_code, sufijo=sufijo,
-        case_id=case_id, posicion=posicion,
+        case_id=case_id, posicion=posicion, tipo_caso=tipo_caso,
         w_code_duplicado=w_dup, codigo_duplicado=cod_dup,
         requiere_confirmacion=requiere_confirmacion,
         colisiones=tuple(dict.fromkeys(colisiones_w + colisiones_cod)),
@@ -199,7 +202,7 @@ def reconcile(plan: PlanIntake, hashes_destino: dict[str, str]) -> Reconciliacio
     return Reconciliacion(ok=ok, faltantes=faltantes, mismatches=mismatches, extras=extras)
 
 
-def crm_payload(identidad: Identidad, *, tipo_caso: str, cuantia: float = 0.0):
+def crm_payload(identidad: Identidad, *, cuantia: float = 0.0):
     """Construye el DTO NuevoExpedienteExtrajudicial para sudespacho.
 
     Import local de sudespacho_create para no arrastrar sus deps de red al
@@ -216,6 +219,6 @@ def crm_payload(identidad: Identidad, *, tipo_caso: str, cuantia: float = 0.0):
     return sc.NuevoExpedienteExtrajudicial(
         referencia_cliente=identidad.case_id,
         cuantia=cuantia,
-        tags=sc.tag_defaults_for_tipo_caso(tipo_caso),
+        tags=sc.tag_defaults_for_tipo_caso(identidad.tipo_caso),
         posicion=posicion_crm,
     )

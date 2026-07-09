@@ -127,7 +127,7 @@ def test_crm_payload_extrajudicial_actora():
         **_ident(codigo="BaRS11", w_code="W-02Z2NR"),
         nombres_existentes=[], force=False,
     )
-    dto = abrir_caso.crm_payload(ident, tipo_caso="VUELTA", cuantia=15000.0)
+    dto = abrir_caso.crm_payload(ident, cuantia=15000.0)
     from core import sudespacho_create as sc
     assert isinstance(dto, sc.NuevoExpedienteExtrajudicial)
     assert dto.referencia_cliente == ident.case_id
@@ -142,6 +142,35 @@ def test_crm_payload_defensiva_mapea_demandado():
         **_ident(codigo="BaRS11", w_code="W-02Z2NR", tipo_caso="LAU_20"),
         nombres_existentes=[], force=False,
     )
-    dto = abrir_caso.crm_payload(ident, tipo_caso="LAU_20", cuantia=0.0)
+    dto = abrir_caso.crm_payload(ident, cuantia=0.0)
     from core import sudespacho_create as sc
     assert dto.posicion == sc.POSICION_DEMANDADO
+
+
+def test_plan_intake_sha_none_no_se_marca_dup():
+    inventario = [_inv("foto.jpg", None, 100)]
+    log_existente = [
+        {"event": "pull_drive_ev", "details": {"files": [{"path": "01_Drive EV/x", "sha256": None}]}},
+    ]
+    plan = abrir_caso.plan_intake(inventario, log_existente, "drive_ev")
+    item = plan.items[0]
+    assert item.sha256 is None
+    assert item.dup is False
+
+
+def test_crm_payload_otros_mapea_actor():
+    ident = abrir_caso.resolver_identidad(
+        **_ident(codigo="BaRS11", w_code="W-02Z2NR", sufijo="Alta", tipo_caso="OTROS"),
+        nombres_existentes=[], force=False,
+    )
+    dto = abrir_caso.crm_payload(ident, cuantia=0.0)
+    from core import sudespacho_create as sc
+    assert dto.posicion == sc.POSICION_ACTOR
+
+
+def test_resolver_identidad_tipo_caso_desconocido_lanza():
+    with pytest.raises(ValueError):
+        abrir_caso.resolver_identidad(
+            **_ident(tipo_caso="NO_EXISTE"),
+            nombres_existentes=[], force=False,
+        )
