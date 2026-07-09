@@ -204,13 +204,16 @@ def _extraer_nativo(src: Path, ext: str) -> str:
     return fn(src) or ""
 
 
+_VISION_RENDER_SCALE = 2   # factor de render pypdfium2 → ~144 dpi (72·2), legible para visión
+
+
 def _renderizar_paginas(pdf_path: Path):
     """Renderiza cada página de un PDF a imagen PIL (para el refuerzo `--vision`)."""
     import pypdfium2 as pdfium
 
     doc = pdfium.PdfDocument(str(pdf_path))
     try:
-        return [pagina.render(scale=2).to_pil() for pagina in doc]
+        return [pagina.render(scale=_VISION_RENDER_SCALE).to_pil() for pagina in doc]
     finally:
         doc.close()
 
@@ -244,7 +247,23 @@ def _reforzar_con_vision(pdf_path: Path, texto: str, estado: str, nota: str) -> 
         return texto, estado, nota
     nuevo_texto = f"{texto}\n\n{extra}".strip() if texto.strip() else extra
     nuevo_estado, nuevo_nota = ocr_quality(nuevo_texto, _pdf_num_paginas(pdf_path))
-    return nuevo_texto, nuevo_estado, nuevo_nota or "reforzado con vision"
+    if nuevo_estado == "ok":
+        return nuevo_texto, nuevo_estado, nuevo_nota or "reforzado con vision"
+    # sigue dudoso tras el refuerzo: deja constancia de que SÍ se intentó visión
+    # (si no, la cobertura no distingue "no se intentó" de "se intentó y no bastó").
+    sufijo = "reforzado con vision, sigue dudoso"
+    return nuevo_texto, nuevo_estado, f"{nuevo_nota} · {sufijo}" if nuevo_nota else sufijo
+
+
+def _aplicar_vision(fuente_render: Path, texto: str, estado: str, nota: str,
+                    vision: bool) -> tuple[str, str, str]:
+    """Gate ÚNICO del refuerzo `--vision`: refuerza solo si está activado y el
+    documento salió dudoso (`low`/`empty`). Usado por AMBOS caminos (OCR y
+    pypdf-digital) para no duplicar la condición.
+    """
+    if vision and estado in ("low", "empty"):
+        return _reforzar_con_vision(fuente_render, texto, estado, nota)
+    return texto, estado, nota
 
 
 def _escribir_md(case_dir, case_id, slug, rel_path, texto, metodo, ocr, estado):
@@ -276,8 +295,7 @@ def _ocr_y_extraer(case_dir: Path, sm_dir: Path, case_id: str, d: DocPlan,
         return DocCobertura(d.slug, d.rel_path, "ocr", "empty", 0, True, f"OCR falló: {e}", d.sha256)
     texto = _try_pypdf(buscable) or ""
     estado, nota = ocr_quality(texto, _pdf_num_paginas(buscable))
-    if vision and estado in ("low", "empty"):
-        texto, estado, nota = _reforzar_con_vision(buscable, texto, estado, nota)
+    texto, estado, nota = _aplicar_vision(buscable, texto, estado, nota, vision)
     _escribir_md(case_dir, case_id, d.slug, d.rel_path, texto, "ocr", True, estado)
     return DocCobertura(d.slug, d.rel_path, "ocr", estado, len(texto), True, nota, d.sha256)
 
@@ -312,8 +330,7 @@ def ejecutar(case_dir: Path, docs: list[DocPlan], *, case_id: str,
                 npags = _pdf_num_paginas(src)
                 if texto and _texto_suficiente(texto, npags):
                     estado, nota = ocr_quality(texto, npags)
-                    if vision and estado in ("low", "empty"):
-                        texto, estado, nota = _reforzar_con_vision(src, texto, estado, nota)
+                    texto, estado, nota = _aplicar_vision(src, texto, estado, nota, vision)
                     _escribir_md(case_dir, case_id, d.slug, d.rel_path, texto, "pypdf", False, estado)
                     cobertura.append(DocCobertura(d.slug, d.rel_path, "pypdf", estado, len(texto), False, nota, d.sha256))
                     continue

@@ -316,6 +316,40 @@ def test_ejecutar_vision_refuerza_documento_empty(tmp_path, monkeypatch):
     assert cob[0].estado in ("ok", "low")   # mejoró respecto a empty
 
 
+def test_ejecutar_vision_refuerza_pdf_digital_gibberish(tmp_path, monkeypatch):
+    # Task 12: la rama pypdf-digital TAMBIÉN pasa por el gate de visión. Un PDF con
+    # capa de texto suficiente (pasa _texto_suficiente por longitud/densidad) pero
+    # gibberish (ocr_quality -> low) + vision=True se refuerza. ocr_pdf NO se llama
+    # (es un PDF digital: nunca se OCR-iza).
+    case = tmp_path / "EV-2026-001"
+    (case / "00_Input" / "01_Drive EV").mkdir(parents=True)
+    src = case / "00_Input" / "01_Drive EV" / "digital_ruidoso.pdf"
+    src.write_bytes(b"%PDF-1.4\n% da igual: _try_pypdf esta mockeado\n")
+    sha = sm_file_sha(src)
+
+    gibberish = "xkq zzt brrr wgh nkk xcv " * 40  # >=100 chars, densidad alta, low
+    transcrito = ("Encargo de mediacion inmobiliaria firmado por el propietario "
+                  "el dia indicado, con honorarios pactados. " * 3)
+
+    def _boom_ocr(*a, **k):
+        raise AssertionError("no debe OCR-izar un PDF con capa de texto suficiente")
+
+    monkeypatch.setattr(sm, "ocr_pdf", _boom_ocr)
+    monkeypatch.setattr(sm, "_try_pypdf", lambda p: gibberish)
+    monkeypatch.setattr(sm, "_pdf_num_paginas", lambda p: 1)
+    monkeypatch.setattr(sm, "_renderizar_paginas", lambda p: ["pagina-fake"])
+    monkeypatch.setattr(sm, "_transcribir_vision", lambda imgs: transcrito)
+
+    docs = [sm.DocPlan(rel_path="01_Drive EV/digital_ruidoso.pdf", sha256=sha, ext=".pdf",
+                       ruta="pdf", slug=f"digital__{sha[:8]}")]
+    cob = sm.ejecutar(case, docs, case_id="EV-2026-001", vision=True)
+
+    md = case / "01_Procesado" / "02_Sala de máquina" / "03_MD" / f"digital__{sha[:8]}.md"
+    contenido = md.read_text(encoding="utf-8")
+    assert "Encargo de mediacion" in contenido      # el MD quedó reforzado con la transcripción
+    assert cob[0].metodo == "pypdf" and cob[0].ocr is False
+
+
 def test_ejecutar_sin_vision_no_llama_transcribir(tmp_path, monkeypatch):
     # --vision es off por defecto: un doc empty se queda empty, sin tocar vision.
     case = tmp_path / "EV-2026-001"
