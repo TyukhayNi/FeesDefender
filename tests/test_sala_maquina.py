@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 
+from core import intake_log
 from core import sala_maquina as sm
 
 
@@ -103,3 +104,7 @@ def test_destino_seguro_admite_sala_maquina():
     case = Path("C:/casos/EV-2026-001")
     dst = case / "01_Procesado" / "02_Sala de máquina" / "03_MD" / "x.md"
     assert sm.destino_seguro(dst, case) == dst
+
+
+def test_evento_procesado_sala_maquina_registrado():
+    assert "procesado_sala_maquina" in intake_log.INTAKE_EVENTS
