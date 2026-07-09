@@ -1,3 +1,5 @@
+import hashlib
+
 import pytest
 
 from core import abrir_caso, config
@@ -177,6 +179,24 @@ def test_reconcile_dup_en_disco_no_es_extra():
                                  sha256="bbb", size=100, dup=True, zero=False)
     plan = abrir_caso.PlanIntake(items=(dep, dup), fuente="drive_ev")
     rec = abrir_caso.reconcile(plan, {"01_Drive EV/a.pdf": "aaa", "01_Drive EV/b.pdf": "bbb"})
+    assert rec.ok is True
+    assert rec.extras == ()
+
+
+def test_reconcile_cero_byte_no_es_extra():
+    """§9 skip, don't abort: en el front local el inventario en disco incluye
+    los 0-byte, así que un 0-byte presente en disco NO debe marcarse extra
+    (bug: esperados_en_disco los excluía)."""
+    dep = abrir_caso.ItemIntake(relpath="a.pdf", dst="01_Drive EV/a.pdf", evento="pull_drive_ev",
+                                 sha256="aaa", size=100, dup=False, zero=False)
+    sha_vacio = hashlib.sha256(b"").hexdigest()
+    cero = abrir_caso.ItemIntake(relpath="vacio.txt", dst="01_Drive EV/vacio.txt", evento="pull_drive_ev",
+                                  sha256=sha_vacio, size=0, dup=False, zero=True)
+    plan = abrir_caso.PlanIntake(items=(dep, cero), fuente="drive_ev")
+    rec = abrir_caso.reconcile(plan, {
+        "01_Drive EV/a.pdf": "aaa",
+        "01_Drive EV/vacio.txt": sha_vacio,
+    })
     assert rec.ok is True
     assert rec.extras == ()
 

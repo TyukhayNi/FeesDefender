@@ -193,9 +193,12 @@ def reconcile(plan: PlanIntake, hashes_destino: dict[str, str]) -> Reconciliacio
     extras se comparan contra depositables ∪ dups (ver `esperados_en_disco`).
     """
     depositables = {i.dst: i.sha256 for i in plan.depositables}
-    # ficheros que DEBEN estar en disco = depositables + dups (ya depositados en pasadas
-    # previas); los 0-byte no. Un dup presente en disco NO es un extra (reentrancia §8).
-    esperados_en_disco = {i.dst for i in plan.items if not i.zero}
+    # ficheros que DEBEN estar en disco = TODOS los items del plan (depositables +
+    # dups + 0-byte): en el front local el inventario en disco incluye los 0-byte,
+    # así que un 0-byte presente NO es un extra (§9 "skip, don't abort" — los
+    # 0-byte simplemente no se loguean, no se tratan como sobrantes). Un dup
+    # presente en disco tampoco es un extra (reentrancia §8).
+    esperados_en_disco = {i.dst for i in plan.items}
     faltantes = tuple(sorted(d for d in depositables if d not in hashes_destino))
     mismatches = tuple(sorted(
         d for d, s in depositables.items()

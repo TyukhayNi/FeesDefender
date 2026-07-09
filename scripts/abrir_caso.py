@@ -17,6 +17,7 @@ import typer
 from core import abrir_caso as brain
 from core import case_manager, intake_drive, intake_log, sudespacho_create
 from core.casos import case_locator
+from core.ciudades import CIUDADES
 from core.utils import file_sha256
 
 app = typer.Typer(add_completion=False, help="Abrir un expediente E&V en una pasada")
@@ -34,6 +35,8 @@ def hash_tree_local(root: Path, *, prefijo: str) -> dict[str, str]:
     out: dict[str, str] = {}
     for p in sorted(root.rglob("*")):
         if not p.is_file():
+            continue
+        if p.name in intake_drive.CONTROL_FILES:
             continue
         rel = p.relative_to(root).as_posix()
         out[f"{prefijo}/{rel}"] = file_sha256(p)
@@ -99,6 +102,10 @@ def main(
     dry_run: bool = typer.Option(False, "--dry-run"),
     yes: bool = typer.Option(False, "--yes", help="auto-confirma el gate CRM"),
 ) -> None:
+    if ciudad not in CIUDADES:
+        typer.echo(f"[ERROR] Ciudad desconocida: {ciudad}", err=True)
+        raise typer.Exit(code=1)
+
     # 5.1 identidad + colisión
     nombres = [p.name for p in case_locator.list_cases(ciudad)]
     try:
@@ -134,6 +141,8 @@ def main(
     ]
     plan = brain.plan_intake(inventario, intake_log.read_events(ident.case_id), "drive_ev")
     if dry_run:
+        typer.echo(f"[dry-run] esqueleto creado en {case_dir} y carpeta Drive descargada; "
+                   "se omiten el registro en el log de intake y el alta en el CRM")
         typer.echo(f"[dry-run] {len(plan.depositables)} depositables, "
                    f"{len(plan.items) - len(plan.depositables)} omitidos")
         raise typer.Exit(code=0)

@@ -29,12 +29,14 @@ def drive_temporal(tmp_path, monkeypatch):
     root.mkdir()
     monkeypatch.setattr(case_locator, "_root", lambda: root)
 
-    # Mock del pull: deposita 2 ficheros en 00_Input/01_Drive EV y devuelve un stub
+    # Mock del pull: deposita 2 ficheros en 00_Input/01_Drive EV (+ el marcador
+    # de control .pulled, como haría pull_drive_ev de verdad) y devuelve un stub
     def fake_pull(case_id, folder_id, team_id, *, force=False):
         dest = case_locator.path_for(case_id) / "00_Input" / "01_Drive EV" / "ACTIVACION"
         dest.mkdir(parents=True, exist_ok=True)
         (dest / "hoja.pdf").write_bytes(b"contenido-1")
         (dest.parent / "oferta.pdf").write_bytes(b"contenido-2")
+        (dest.parent / ".pulled").write_text('{"team_id": "TID"}', encoding="utf-8")
         return type("R", (), {"count": 2})()
 
     monkeypatch.setattr("core.intake_drive.pull_drive_ev", fake_pull)
@@ -150,3 +152,93 @@ def test_cli_colision_sin_force_exit_1(drive_temporal):
     assert r2.exit_code == 1
     assert "[ERROR]" in r2.output
     assert "ya existe" in r2.output
+
+
+def test_hash_tree_local_excluye_ficheros_de_control(tmp_path: Path):
+    """IMPORTANT 2: .pulled / _inventory.json / .synced no son documento."""
+    root = tmp_path / "01_Drive EV"
+    root.mkdir(parents=True)
+    (root / "a.txt").write_bytes(b"hola")
+    (root / ".pulled").write_text('{"team_id": "TID"}', encoding="utf-8")
+    (root / "_inventory.json").write_text("{}", encoding="utf-8")
+    (root / ".synced").write_text("", encoding="utf-8")
+
+    hashes = cli.hash_tree_local(root, prefijo="01_Drive EV")
+
+    assert list(hashes) == ["01_Drive EV/a.txt"]
+
+
+def test_cli_excluye_pulled_del_ledger(drive_temporal):
+    """IMPORTANT 2: `.pulled` (escrito por pull_drive_ev) no debe colarse en
+    el evento pull_drive_ev del log forense ni contar como depositable."""
+    result = CliRunner().invoke(cli.app, _args())
+    assert result.exit_code == 0, result.output
+
+    case_id = "BaRS11 - Passeig Marítim 30 (W-02Z2NR) - Vuelta"
+    eventos = intake_log.read_events(case_id)
+    pulls = [e for e in eventos if e["event"] == "pull_drive_ev"]
+    assert pulls
+    files = pulls[-1]["details"]["files"]
+    assert not any(f["path"].endswith(".pulled") for f in files)
+    # solo hoja.pdf + oferta.pdf: el .pulled del fixture queda excluido
+    assert len(files) == 2
+
+
+def test_cli_ciudad_desconocida_exit_1(drive_temporal):
+    result = CliRunner().invoke(cli.app, _args(ciudad="Atlantis"))
+    assert result.exit_code == 1
+    assert "[ERROR]" in result.output
+    assert "Ciudad desconocida" in result.output
+
+
+def test_cli_dry_run_es_honesto_sobre_lo_ejecutado(drive_temporal, monkeypatch):
+    """MINOR 2: dry-run SÍ crea el esqueleto y SÍ ejecuta el pull (el plan
+    necesita el inventario); solo se omiten el log de intake y el alta CRM."""
+    llamadas = {"crm": 0}
+    monkeypatch.setattr(
+        "core.sudespacho_create.create_expediente",
+        lambda dto, **kw: llamadas.__setitem__("crm", llamadas["crm"] + 1) or "9999",
+    )
+    result = CliRunner().invoke(cli.app, _args() + ["--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert llamadas["crm"] == 0
+
+    case_id = "BaRS11 - Passeig Marítim 30 (W-02Z2NR) - Vuelta"
+    case_dir = case_locator.path_for(case_id)
+    assert case_dir.is_dir()
+    assert (case_dir / "00_Input" / "01_Drive EV" / "ACTIVACION" / "hoja.pdf").is_file()
+
+    eventos = intake_log.read_events(case_id)
+    pulls = [e for e in eventos if e["event"] == "pull_drive_ev"]
+    assert pulls == []
+
+
+def _sin_yes(**over) -> list[str]:
+    return [a for a in _args(**over) if a != "--yes"]
+
+
+def test_cli_codigo_duplicado_declina_confirmacion_exit_1(drive_temporal):
+    """MINOR 3: colisión de código (§ requiere_confirmacion) declinada por el
+    usuario (input 'n') debe abortar con exit 1."""
+    case_manager.ensure_case(
+        "BaRS11 - Otra (W-VIEJO1) - Vuelta",
+        titulo="x", tipo_caso="VUELTA", ciudad="Barcelona", direccion="Otra",
+    )
+    result = CliRunner().invoke(cli.app, _sin_yes(), input="n\n")
+    assert result.exit_code == 1
+    assert "[AVISO]" in result.output
+    assert "ya existe" in result.output
+
+
+def test_cli_crm_gate_declinado_exit_0(drive_temporal, monkeypatch):
+    """MINOR 3: gate CRM declinado (input 'n') no llama a create_expediente y
+    termina en exit 0 (Drive + intake ya completados)."""
+    llamadas = {"crm": 0}
+    monkeypatch.setattr(
+        "core.sudespacho_create.create_expediente",
+        lambda dto, **kw: llamadas.__setitem__("crm", llamadas["crm"] + 1) or "9999",
+    )
+    result = CliRunner().invoke(cli.app, _sin_yes(), input="n\n")
+    assert result.exit_code == 0, result.output
+    assert llamadas["crm"] == 0
+    assert "declinado" in result.output
