@@ -1,3 +1,7 @@
+from pathlib import Path
+
+import pytest
+
 from core import sala_maquina as sm
 
 
@@ -85,3 +89,17 @@ def test_render_cobertura_marca_generado_y_ordena_dudosos_primero():
     # los dudosos (no-ok) van primero para que salten a la vista
     assert md.index("b__2") < md.index("a__1")
     assert "empty" in md and "sin texto" in md
+
+
+def test_destino_seguro_rechaza_00_input_y_notas():
+    case = Path("C:/casos/EV-2026-001")
+    with pytest.raises(ValueError):
+        sm.destino_seguro(case / "00_Input" / "x.md", case)
+    with pytest.raises(ValueError):
+        sm.destino_seguro(case / "90_Notas personales" / "x.md", case)
+
+
+def test_destino_seguro_admite_sala_maquina():
+    case = Path("C:/casos/EV-2026-001")
+    dst = case / "01_Procesado" / "02_Sala de máquina" / "03_MD" / "x.md"
+    assert sm.destino_seguro(dst, case) == dst

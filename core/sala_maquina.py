@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from core.utils import output_slug
 
@@ -132,3 +133,22 @@ def render_cobertura(cobertura: list[DocCobertura]) -> str:
     dudosos = [d for d in filas if d.estado != "ok"]
     lineas += ["", f"**{len(dudosos)} de {len(filas)} documentos requieren tu revisión.**", ""]
     return "\n".join(lineas) + "\n"
+
+
+_ZONAS_VETADAS = ("00_Input", "90_Notas personales")
+
+
+def destino_seguro(dst: Path, case_dir: Path) -> Path:
+    """Devuelve dst si es un destino de escritura permitido; si no, ValueError.
+
+    Invariante del proyecto (M5): jamás escribir en 00_Input/ ni en
+    90_Notas personales/. Se comprueba por los componentes de la ruta relativa.
+    """
+    dst = Path(dst)
+    try:
+        partes = dst.relative_to(case_dir).parts
+    except ValueError:
+        raise ValueError(f"Destino fuera del caso: {dst}")
+    if partes and partes[0] in _ZONAS_VETADAS:
+        raise ValueError(f"Destino en zona vetada {partes[0]!r}: {dst}")
+    return dst
