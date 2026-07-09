@@ -72,3 +72,16 @@ def test_plan_excluye_90_notas_personales():
     ]
     plan = sm.plan(inventario, estado_previo=set())
     assert [d.sha256 for d in plan] == ["e2"]
+
+
+def test_render_cobertura_marca_generado_y_ordena_dudosos_primero():
+    cob = [
+        sm.DocCobertura(slug="a__1", rel_path="x/a.pdf", metodo="pypdf", estado="ok", chars=1200),
+        sm.DocCobertura(slug="b__2", rel_path="x/b.pdf", metodo="ocr", estado="empty",
+                        chars=0, ocr=True, nota="sin texto o residual"),
+    ]
+    md = sm.render_cobertura(cob)
+    assert md.startswith("<!-- GENERADO — NO EDITAR A MANO -->")
+    # los dudosos (no-ok) van primero para que salten a la vista
+    assert md.index("b__2") < md.index("a__1")
+    assert "empty" in md and "sin texto" in md
