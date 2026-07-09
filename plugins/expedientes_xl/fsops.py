@@ -74,6 +74,29 @@ def sha256_file(allowed_dirs: list[Path], path: str | Path) -> str:
     return h.hexdigest()
 
 
+def hash_tree(allowed_dirs: list[Path], root: str | Path) -> dict[str, str]:
+    """SHA-256 recursivo server-side de todos los ficheros bajo `root`.
+
+    Devuelve {relpath_posix: sha256hex}, relpath relativo a `root`. Determinista
+    (el dict se construye en orden ordenado). Salta directorios y **symlinks**
+    (defensa: un symlink podría apuntar fuera del sandbox). Si `root` no existe
+    o no es directorio, devuelve {}.
+    """
+    root_p = resolve_within(allowed_dirs, root)
+    out: dict[str, str] = {}
+    if not root_p.is_dir():
+        return out
+    for p in sorted(root_p.rglob("*")):
+        if p.is_symlink() or not p.is_file():
+            continue
+        h = hashlib.sha256()
+        with open(p, "rb") as fh:
+            for chunk in iter(lambda: fh.read(_CHUNK), b""):
+                h.update(chunk)
+        out[p.relative_to(root_p).as_posix()] = h.hexdigest()
+    return out
+
+
 def copy_file(allowed_dirs: list[Path], src: str | Path, dst: str | Path) -> Path:
     """Copia un fichero (no destructivo). src y dst dentro del sandbox."""
     src_p = resolve_within(allowed_dirs, src)

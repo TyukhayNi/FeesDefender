@@ -224,3 +224,25 @@ def test_write_base64_frontera_exacta(tmp_path):
 def test_delete_path_rechaza_raiz_sandbox(tmp_path):
     with pytest.raises(fsops.OutsideSandbox):
         fsops.delete_path([tmp_path], str(tmp_path))
+
+
+def test_hash_tree_mapea_relpath_posix_a_sha(tmp_path):
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "a.txt").write_bytes(b"hola")
+    (tmp_path / "sub" / "b.txt").write_bytes(b"mundo")
+    out = fsops.hash_tree([tmp_path], str(tmp_path))
+    assert out == {
+        "a.txt": hashlib.sha256(b"hola").hexdigest(),
+        "sub/b.txt": hashlib.sha256(b"mundo").hexdigest(),
+    }
+
+
+def test_hash_tree_salta_directorios_y_root_inexistente(tmp_path):
+    vacio = tmp_path / "vacia"
+    vacio.mkdir()
+    assert fsops.hash_tree([tmp_path], str(vacio)) == {}
+
+
+def test_hash_tree_rechaza_fuera_de_sandbox(tmp_path):
+    with pytest.raises(fsops.OutsideSandbox):
+        fsops.hash_tree([tmp_path], "C:\\Windows")

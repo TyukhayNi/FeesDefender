@@ -28,6 +28,11 @@ def build_server(allowed_dirs: list[Path], max_b64_bytes: int = DEFAULT_MAX_B64,
         return fsops.sha256_file(allowed_dirs, path)
 
     @mcp.tool()
+    def hash_tree(root: str) -> dict[str, str]:
+        """SHA-256 (hex) recursivo de un árbol. {relpath_posix: sha256}."""
+        return fsops.hash_tree(allowed_dirs, root)
+
+    @mcp.tool()
     def copy_path(src: str, dst: str) -> str:
         """Copia un fichero (no destructivo). Devuelve la ruta destino."""
         return str(fsops.copy_file(allowed_dirs, src, dst))
