@@ -99,6 +99,12 @@ def main(
                    f"{len(plan.items) - len(plan.depositables)} omitidos")
         raise typer.Exit(code=0)
 
+    # 5.9 (reporte) §9 "Duplicados / 0-byte → saltar y reportar"
+    n_dup = sum(1 for i in plan.items if i.dup)
+    n_zero = sum(1 for i in plan.items if i.zero)
+    typer.echo(f"Intake: {len(plan.depositables)} depositables, "
+               f"{n_dup} duplicados omitidos, {n_zero} de 0 bytes omitidos")
+
     # 5.6 reconcile
     rec = brain.reconcile(plan, hashes)
     if not rec.ok:
@@ -111,15 +117,33 @@ def main(
         intake_log.append_event(ident.case_id, "pull_drive_ev",
                                 details={"count": len(plan.con_sha), "files": plan.con_sha})
 
-    # 5.9 alta CRM con gate
+    # 5.9 alta CRM con gate + idempotencia (§8: no re-dar de alta si ya hay un
+    # extrajudicial registrado para este caso) + tolerancia a caída (§9)
     if crm == "api":
-        payload = brain.crm_payload(ident, cuantia=cuantia)  # lee ident.tipo_caso (fd7a39f)
-        typer.echo(f"CRM -> alta extrajudicial ref={payload.referencia_cliente} "
-                   f"posicion={payload.posicion} tags={payload.tags} cuantia={payload.cuantia}")
-        if yes or typer.confirm("¿Dar de alta en el CRM?"):
-            exp_id = sudespacho_create.create_expediente(payload)
-            case_manager.register_expediente(ident.case_id, exp_id, _ELEMENT_EXTRAJUDICIAL)
-            typer.echo(f"OK CRM id={exp_id}")
+        fm = case_manager._read_fm(ident.case_id)
+        ya_registrado = any(
+            isinstance(e, dict) and e.get("element") == _ELEMENT_EXTRAJUDICIAL
+            for e in (fm.get("sudespacho_expedientes") or [])
+        )
+        if ya_registrado:
+            typer.echo(
+                f"CRM ya registrado (element={_ELEMENT_EXTRAJUDICIAL}), "
+                "no se re-da de alta"
+            )
+        else:
+            payload = brain.crm_payload(ident, cuantia=cuantia)  # lee ident.tipo_caso (fd7a39f)
+            typer.echo(f"CRM -> alta extrajudicial ref={payload.referencia_cliente} "
+                       f"posicion={payload.posicion} tags={payload.tags} cuantia={payload.cuantia}")
+            if yes or typer.confirm("¿Dar de alta en el CRM?"):
+                try:
+                    exp_id = sudespacho_create.create_expediente(payload)
+                    case_manager.register_expediente(ident.case_id, exp_id, _ELEMENT_EXTRAJUDICIAL)
+                    typer.echo(f"OK CRM id={exp_id}")
+                except Exception as exc:
+                    typer.echo(
+                        f"[AVISO] Alta CRM falló ({exc!r}): Drive+intake ya completados, "
+                        "referencia_crm queda pendiente + TODO."
+                    )
     else:
         typer.echo("CRM omitido (--crm skip): referencia pendiente + TODO")
 

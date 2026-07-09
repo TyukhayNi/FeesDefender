@@ -76,21 +76,38 @@ def test_cli_pasada_completa_crea_intake_log_y_crm(drive_temporal):
 
 
 def test_cli_idempotente_no_dobla_intake_ni_crm(drive_temporal, monkeypatch):
+    """§8: una segunda pasada completa (mismo w_code, --force para superar la
+    guarda de colisión) no debe volver a dar de alta en el CRM ni duplicar el
+    evento de intake. --force es necesario porque, sin él, la segunda pasada
+    ni siquiera llega a la fase de CRM (se corta en ColisionCaso); con él,
+    ejerce de verdad la guarda de idempotencia del §8 (Fix B)."""
     llamadas = {"crm": 0}
     def contando(dto, **kw):
         llamadas["crm"] += 1
         return "9999"
     monkeypatch.setattr("core.sudespacho_create.create_expediente", contando)
 
-    CliRunner().invoke(cli.app, _args())
-    CliRunner().invoke(cli.app, _args())
+    r1 = CliRunner().invoke(cli.app, _args())
+    assert r1.exit_code == 0, r1.output
+    r2 = CliRunner().invoke(cli.app, _args() + ["--force"])
+    assert r2.exit_code == 0, r2.output
+
+    # create_expediente se llamó exactamente una vez en las dos corridas: la
+    # guarda de idempotencia del CLI (Fix B) evitó la re-alta en la 2ª pasada.
+    assert llamadas["crm"] == 1
 
     case_id = "BaRS11 - Passeig Marítim 30 (W-02Z2NR) - Vuelta"
-    fm_txt = (case_locator.path_for(case_id) / "00_Input" / "_caso.md").read_text(encoding="utf-8")
+    case_dir = case_locator.path_for(case_id)
+    fm_txt = (case_dir / "00_Input" / "_caso.md").read_text(encoding="utf-8")
     import yaml
     fm = yaml.safe_load(fm_txt.split("---")[1])
-    # una sola entrada CRM pese a dos corridas (register_expediente es idempotente)
+    # una sola entrada CRM pese a dos corridas
     assert len(fm["meta"]["sudespacho_expedientes"]) == 1
+
+    # la 2ª pasada no tiene depositables nuevos (todo dup) → no nuevo evento
+    eventos = intake_log.read_events(case_id)
+    pulls = [e for e in eventos if e["event"] == "pull_drive_ev"]
+    assert len(pulls) == 1
 
 
 def test_cli_dry_run_no_escribe_crm(drive_temporal, monkeypatch):
