@@ -13,7 +13,9 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from core.utils import output_slug
+from core.extractor import _try_pypdf, _pdf_num_paginas, _texto_suficiente
+from core.anon.ocr import ocr_pdf
+from core.utils import now_iso, output_slug, text_sha256, write_md
 
 _EXTS_IMAGEN = {".jpg", ".jpeg", ".png", ".tiff", ".tif", ".heic", ".heif", ".webp", ".bmp", ".gif"}
 _EXTS_NATIVO = {".eml", ".txt", ".md", ".rtf", ".ics", ".csv", ".xlsx", ".xls", ".docx", ".html", ".htm"}
@@ -152,3 +154,63 @@ def destino_seguro(dst: Path, case_dir: Path) -> Path:
     if partes and partes[0] in _ZONAS_VETADAS:
         raise ValueError(f"Destino en zona vetada {partes[0]!r}: {dst}")
     return dst
+
+
+def _sala_maquina_dir(case_dir: Path) -> Path:
+    return case_dir / "01_Procesado" / "02_Sala de máquina"
+
+
+def _escribir_md(case_dir, case_id, slug, rel_path, texto, metodo, ocr, estado):
+    sm_dir = _sala_maquina_dir(case_dir)
+    md_path = destino_seguro(sm_dir / "03_MD" / f"{slug}.md", case_dir)
+    raw_path = destino_seguro(sm_dir / "raw_text" / f"{slug}.txt", case_dir)
+    raw_path.parent.mkdir(parents=True, exist_ok=True)
+    raw_path.write_text(texto, encoding="utf-8")
+    meta = {
+        "case_id": case_id, "tipo": "documento_procesado", "fase": "01_Procesado",
+        "fecha": now_iso(), "source_path": rel_path, "extractor": metodo,
+        "chars": len(texto), "ocr": ocr, "ocr_quality": estado,
+        "text_sha256": text_sha256(texto),
+    }
+    write_md(md_path, meta, texto)
+
+
+def ejecutar(case_dir: Path, plan: list[DocPlan], *, case_id: str,
+             vision: bool = False) -> list[DocCobertura]:
+    """Recorre el plan escribiendo 01_OCR/, raw_text/, 03_MD/. Devuelve cobertura.
+
+    Rutas PDF (F1): pypdf si hay capa de texto suficiente; si no, OCRmyPDF →
+    PDF buscable persistido en 01_OCR/ → texto del PDF buscable → MD.
+    imagen/nativo se implementan en F2 (aquí producen 'sin_soporte' provisional).
+    """
+    case_dir = Path(case_dir)
+    sm_dir = _sala_maquina_dir(case_dir)
+    cobertura: list[DocCobertura] = []
+
+    for d in plan:
+        if d.skip:
+            continue
+        src = case_dir / "00_Input" / d.rel_path
+        if d.ruta == "pdf":
+            texto = _try_pypdf(src) or ""
+            npags = _pdf_num_paginas(src)
+            if texto and _texto_suficiente(texto, npags):
+                estado, nota = ocr_quality(texto, npags)
+                _escribir_md(case_dir, case_id, d.slug, d.rel_path, texto, "pypdf", False, estado)
+                cobertura.append(DocCobertura(d.slug, d.rel_path, "pypdf", estado, len(texto), False, nota))
+                continue
+            # escaneado → OCRmyPDF (sin tope de páginas)
+            ocr_out = destino_seguro(sm_dir / "01_OCR" / f"{d.slug}.pdf", case_dir)
+            try:
+                buscable = ocr_pdf(src, ocr_out)
+            except Exception as e:  # OCRError incl. cifrado/corrupto/firmado
+                cobertura.append(DocCobertura(d.slug, d.rel_path, "ocr", "empty", 0, True, f"OCR falló: {e}"))
+                continue
+            texto = _try_pypdf(buscable) or ""
+            estado, nota = ocr_quality(texto, _pdf_num_paginas(buscable))
+            _escribir_md(case_dir, case_id, d.slug, d.rel_path, texto, "ocr", True, estado)
+            cobertura.append(DocCobertura(d.slug, d.rel_path, "ocr", estado, len(texto), True, nota))
+        else:
+            # imagen/nativo/sin_soporte → F2
+            cobertura.append(DocCobertura(d.slug, d.rel_path, "sin_soporte", "sin_soporte", 0, False, "ruta F2"))
+    return cobertura
