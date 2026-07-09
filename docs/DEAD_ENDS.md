@@ -15,6 +15,32 @@
 
 ---
 
+## Conector MCP local → Cowork: una entrada en `claude_desktop_config.json` NO basta (hay que `.dxt`)
+
+Confirmado empíricamente cableando el MCP `google-despacho` a Cowork (2026-07-09).
+
+### Una entrada cruda en `mcpServers` sale como "Local dev" y NO llega a la nube de Cowork
+- **Intentado:** añadir el server a `%APPDATA%\Claude\claude_desktop_config.json` (`mcpServers`) y usar sus tools desde una sesión de Cowork (claude.ai por el puente de Claude Desktop).
+- **Resultado:** el conector aparece en Ajustes→Conectores como **"Escritorio · Local dev"** y habilitado (✓), hace el handshake `ListToolsRequest` en su log LOCAL, **pero Cowork nunca invoca sus tools** — en el log del server **jamás aparece un `CallToolRequest`** (diagnóstico decisivo: `%APPDATA%\Claude\logs\mcp-server-<display_name>.log`). Cowork acaba usando otro conector (p.ej. el Google Drive nativo) o dice que la tool "no existe".
+- **Confirmado:** 2026-07-09.
+- **Solución:** **empaquetar el server como `.dxt` e instalarlo** por la UI (Ajustes→**Extensiones**, no Conectores; a veces tras "Ajustes avanzados", o doble-clic al `.dxt`). Solo los `.dxt` instalados se puentean a Cowork — así se entregó Gmail. Molde `~/Dev/Gmail MCP Desktop/dxt-build/manifest.json` (`manifest_version 0.3`; `server.mcp_config.command/args` con rutas **absolutas** al intérprete y al `server.py` del repo + `env`). El `.dxt` es un zip con `manifest.json` en la raíz; no necesita empaquetar venv/deps porque `mcp_config` apunta a rutas absolutas del repo. Artefacto en `plugins/google_despacho_mcp/dxt-build/`.
+
+### Claude Desktop reescribe `claude_desktop_config.json` al cerrarse
+- **Intentado:** añadir/editar una entrada `mcpServers` con la app **abierta**.
+- **Resultado:** al reiniciar, la app **sobrescribe el fichero con su versión en memoria** y la edición **desaparece** (el server nunca arranca). Además, un `Get-Content $cfg | ConvertFrom-Json` sobre el fichero bloqueado por la app a medio arrancar devuelve `$null` sin cortar el script → un `WriteAllText($cfg, ($j|ConvertTo-Json))` posterior puede dejar `null` en el config.
+- **Confirmado:** 2026-07-09.
+- **Solución:** editar el config **con la app cerrada** (el **cierre forzado** `Stop-Process -Name claude -Force` no dispara la reescritura). Verificar siempre con `ConvertFrom-Json` que el JSON sigue válido.
+
+### `.dxt` instalado + entrada cruda del config con el MISMO nombre = colisión
+- **Resultado:** dos servers registrados con el mismo `name` (`google-despacho`) → el puente se confunde y Cowork no resuelve el bueno; la entrada cruda además puede quedar en "failed / Server disconnected".
+- **Solución:** tras instalar el `.dxt`, **borrar la entrada cruda del config** (quedarse solo con el `.dxt`).
+
+### Otros
+- **"VM service not running / no se pudo iniciar el espacio de trabajo de Claude"**: tumba TODO el runtime de tools de Cowork (ni la nuestra ni ninguna) → reiniciar Claude / el PC.
+- **`list_accounts` está en Gmail-despacho Y en google-despacho** → para probar el de Drive usar una tool exclusiva (`list_shared_drives`), no `list_accounts`.
+
+---
+
 ## Biblioteca de casos — rclone / checkin (Merge Desktop↔Drive)
 
 Gotchas confirmados en la implementación + validación en vivo del sistema de checkout/checkin (2026-07-07). Ver `core/repository_checkout.py`, `scripts/repository_cli.py`, memoria `project-biblioteca-checkout-checkin`.

@@ -78,8 +78,19 @@ flowchart LR
 - **`email-export`**: **depende de `core/`** → solo corre en el PC del abogado
   (repo clonado + token OAuth `~/.gmail-mcp/` + Drive en `G:`). No funciona en
   móvil, navegador ni Cowork en la nube.
-- El plugin **no carga nativo en Cowork**: se replican los servers en
-  `claude_desktop_config.json`.
+- **`google-despacho`** (`plugins/google_despacho_mcp/`, fuera del bundle del plugin
+  `feesdefender`): conector propio de **Google Drive multicuenta** (cuentas TL + EV a
+  la vez, con unidades compartidas) que suple la mono-cuenta del Drive nativo. F1 =
+  solo lectura (`drive.readonly`, 9 tools); OAuth por cuenta en `~/.google-despacho/`.
+  Se entrega a Cowork como **`.dxt`** (ver abajo). Fases futuras: F2 escritura+permisos,
+  F3 lote+intake, F4 Calendar (`calendar_ops.py`).
+- **Cómo llega un conector local a Cowork (verificado 2026-07-09):** el plugin/los
+  servers locales **no cargan nativos en Cowork**. Una entrada en
+  `claude_desktop_config.json` (`mcpServers`) queda como **"Local dev"** y funciona en
+  Claude Desktop/Code en local, pero **sus tools NO se exponen a la nube de Cowork**.
+  Para Cowork hay que **empaquetar el server como `.dxt` e instalarlo** (Ajustes→
+  Extensiones) — así llegan `Gmail despacho` y `google-despacho`. Detalle y gotchas
+  (config-clobber, colisión de nombre) en `docs/DEAD_ENDS.md`.
 
 ## 3. Skills — SSOT en `.claude/skills/`, tres tipos de relación
 
