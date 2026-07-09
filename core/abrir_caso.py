@@ -189,15 +189,21 @@ def reconcile(plan: PlanIntake, hashes_destino: dict[str, str]) -> Reconciliacio
     """Verifica el depósito contra el plan (puro).
 
     hashes_destino: {relpath_desde_00_Input: sha256} de lo realmente en disco.
-    Compara solo los depositables del plan.
+    faltantes/mismatches se comparan solo contra los depositables del plan;
+    extras se comparan contra depositables ∪ dups (§8: un dup ya depositado
+    en una pasada anterior sigue en disco en las pasadas siguientes y no debe
+    marcarse como extra — de lo contrario la reentrancia rompe el pipeline).
     """
-    esperados = {i.dst: i.sha256 for i in plan.depositables}
-    faltantes = tuple(sorted(d for d in esperados if d not in hashes_destino))
+    depositables = {i.dst: i.sha256 for i in plan.depositables}
+    # ficheros que DEBEN estar en disco = depositables + dups (ya depositados en pasadas
+    # previas); los 0-byte no. Un dup presente en disco NO es un extra (reentrancia §8).
+    esperados_en_disco = {i.dst for i in plan.items if not i.zero}
+    faltantes = tuple(sorted(d for d in depositables if d not in hashes_destino))
     mismatches = tuple(sorted(
-        d for d, s in esperados.items()
+        d for d, s in depositables.items()
         if d in hashes_destino and s is not None and hashes_destino[d] != s
     ))
-    extras = tuple(sorted(d for d in hashes_destino if d not in esperados))
+    extras = tuple(sorted(d for d in hashes_destino if d not in esperados_en_disco))
     ok = not (faltantes or mismatches or extras)
     return Reconciliacion(ok=ok, faltantes=faltantes, mismatches=mismatches, extras=extras)
 

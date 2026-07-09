@@ -168,6 +168,19 @@ def test_crm_payload_otros_mapea_actor():
     assert dto.posicion == sc.POSICION_ACTOR
 
 
+def test_reconcile_dup_en_disco_no_es_extra():
+    """§8 reentrancia: un dup ya depositado en pasadas previas sigue en disco
+    y NO debe marcarse como extra (bug: reconcile solo miraba depositables)."""
+    dep = abrir_caso.ItemIntake(relpath="a.pdf", dst="01_Drive EV/a.pdf", evento="pull_drive_ev",
+                                 sha256="aaa", size=100, dup=False, zero=False)
+    dup = abrir_caso.ItemIntake(relpath="b.pdf", dst="01_Drive EV/b.pdf", evento="pull_drive_ev",
+                                 sha256="bbb", size=100, dup=True, zero=False)
+    plan = abrir_caso.PlanIntake(items=(dep, dup), fuente="drive_ev")
+    rec = abrir_caso.reconcile(plan, {"01_Drive EV/a.pdf": "aaa", "01_Drive EV/b.pdf": "bbb"})
+    assert rec.ok is True
+    assert rec.extras == ()
+
+
 def test_resolver_identidad_tipo_caso_desconocido_lanza():
     with pytest.raises(ValueError):
         abrir_caso.resolver_identidad(
