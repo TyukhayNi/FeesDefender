@@ -63,6 +63,7 @@ INTAKE_EVENTS: frozenset[str] = frozenset({
     "case_checkin",         # merge Desktop→Drive completado y verificado (§4)
     "checkout_cancelado",   # cancelación de checkout: local descartado (§2, §7.1)
     "pendiente_checkin",    # guard §6: escritura desviada a _pendiente_checkin/ (caso prestado)
+    "procesado_sala_maquina",  # OCR+MD escritos en 01_Procesado/02_Sala de máquina/
 })
 
 

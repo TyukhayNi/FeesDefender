@@ -3,3 +3,5 @@
 pre-commit>=4.6
 # Requerido por los tests de los servers MCP (plugins/*_mcp, plugins/expedientes_xl)
 mcp>=1.28
+# Requerido por tests/test_sala_maquina_ejecutar.py para generar un PDF con capa de texto
+reportlab>=4.0
