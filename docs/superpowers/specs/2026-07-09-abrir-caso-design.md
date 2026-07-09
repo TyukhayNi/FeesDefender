@@ -300,7 +300,45 @@ El borrador v0.1 se equivocaba en este punto.
 
 ---
 
-## 12. Tests
+## 12. Relación con el ecosistema de skills
+
+`abrir-caso` es el **eslabón que hoy falta al principio** del flujo del despacho: produce el
+caso con `00_Input/` poblado y `_caso.md`, y todo lo demás lo **consume**.
+
+```
+abrir-caso ──► organizar-sala-máquina ──► organizar-sala-lectura ──► viabilidad-prerelleno
+ (crea +        (OCR/MD, procesado         (vista humana)              (informe)
+  intake +       máquina — NUEVA,
+  CRM)           en construcción)
+     └──► triaje-viabilidad (lee 00_Input directo, sin sala) ──► preparacion-litigio-civil
+                 ──► escritos-judiciales ──► preparacion-audiencia-previa / -juicio-oral
+```
+
+**Handoff (no bloqueante).** Al terminar, `abrir-caso` **sugiere** como siguiente paso
+`organizar-sala-máquina` sobre el caso recién creado (paso atómico + puntero, no encadenado
+a la fuerza; igual que `expediente-a-md` sugiere `organizar-sala-lectura`, un eslabón antes).
+⚠️ **Nombre provisional:** `organizar-sala-máquina` se está construyendo en otra sesión —
+confirmar nombre e interfaz antes de cablear el handoff en F2.
+
+**Solapes.**
+- `intake-expediente` — `abrir-caso` **envuelve** su intake (depósito + log forense vía
+  `expedientes-xl`) para el escenario "caso nuevo". `intake-expediente` **se queda** para su
+  caso propio: añadir ficheros a un caso **ya existente**.
+- `preparacion-litigio-civil` — **paralela**, para expedientes de **particulares** (no E&V,
+  sin CRM); comparte el scaffolder declarativo (`scaffold_caso.py`), no el `_caso.md`.
+
+**Infraestructura compartida.** Conector `expedientes-xl` · log `_intake_log.jsonl`
+(`intake_log.append_event`) · `_plantilla-skill` (`requires` de estilo/verificación) ·
+registro de la relación en `docs/ARQUITECTURA_RELACIONES.md`.
+
+**Nota de gobernanza.** Esta sección es la primera instancia de un patrón que Nikolai quiere
+en **todas** las skills del flujo; el diseño robusto (grafo único + generación + guardarraíl,
+para evitar drift bidireccional) está en `docs/MEJORAS_FUTURAS.md` #50, como trabajo de otra
+sesión.
+
+---
+
+## 13. Tests
 
 - **Unit (core, puro):** naming/colisión (`ask`, `--force`, w_code dup); `plan_intake`
   (dedup, 0-byte, mapeo fuente→subcarpeta, evento correcto); `reconcile` (mismatch, count,
@@ -314,7 +352,7 @@ El borrador v0.1 se equivocaba en este punto.
 
 ---
 
-## 13. Pseudocódigo del orquestador local
+## 14. Pseudocódigo del orquestador local
 
 ```python
 def abrir_caso(args):
@@ -339,7 +377,7 @@ def abrir_caso(args):
 
 ---
 
-## 14. Decisiones diferidas (no bloquean F1)
+## 15. Decisiones diferidas (no bloquean F1)
 
 1. Mapeo fino de `tipo_asunto`/`tipo_procedimiento` para tipos de caso poco frecuentes: se
    completa sobre casos reales (los defaults de `tag_defaults_for_tipo_caso` cubren el común).
