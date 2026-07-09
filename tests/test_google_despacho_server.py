@@ -53,3 +53,31 @@ def test_resolve_accounts_todas_si_omitido():
 def test_resolve_accounts_sin_cuentas_da_error():
     with pytest.raises(RuntimeError):
         srv._resolve_accounts(None, lambda: [])
+
+
+def test_search_files_taggea_cada_cuenta_sin_contaminar():
+    # Aunque el service devuelva el MISMO objeto dict, cada resultado debe quedar
+    # etiquetado con SU cuenta. Acceso a .fn: API privada de mcp (1.28.0);
+    # puede requerir ajuste al subir de versión de mcp.
+    shared = FakeService(files={"list": {"files": [{"id": "f1", "name": "a.pdf"}]}})
+    mcp = srv.build_server(
+        service_factory=lambda e: shared,
+        account_lister=lambda: ["a@tyukhay.legal", "b@engelvoelkers.com"],
+    )
+    fn = mcp._tool_manager._tools["search_files"].fn
+    out = fn(query="x")
+    assert sorted(r["account"] for r in out) == ["a@tyukhay.legal", "b@engelvoelkers.com"]
+
+
+def test_resolve_dest_rechaza_symlink_que_escapa(tmp_path, monkeypatch):
+    root = tmp_path / "dl_root"
+    outside = tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    try:
+        (root / "escape").symlink_to(outside, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks no soportados en este entorno")
+    monkeypatch.setenv("GOOGLE_DESPACHO_DL_ROOT", str(root))
+    with pytest.raises(ValueError):
+        srv._resolve_dest(str(root / "escape" / "evil.bin"))

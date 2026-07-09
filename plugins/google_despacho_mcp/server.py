@@ -44,12 +44,18 @@ def _resolve_accounts(account: Optional[str], lister: Callable[[], list[str]]) -
 
 def _resolve_dest(dest_path: str) -> str:
     """Resuelve y valida la ruta de descarga; si GOOGLE_DESPACHO_DL_ROOT está
-    definida, el destino debe quedar dentro de esa raíz."""
-    dest = os.path.abspath(os.path.expanduser(dest_path))
+    definida, el destino debe quedar dentro de esa raíz. Se resuelven symlinks/
+    junctions (realpath) antes de comparar, para que un enlace dentro de la raíz
+    no permita escapar de ella."""
+    dest = os.path.realpath(os.path.expanduser(dest_path))
     root = os.environ.get("GOOGLE_DESPACHO_DL_ROOT")
     if root:
-        root_abs = os.path.abspath(os.path.expanduser(root))
-        if os.path.commonpath([root_abs, dest]) != root_abs:
+        root_abs = os.path.realpath(os.path.expanduser(root))
+        try:
+            inside = os.path.commonpath([root_abs, dest]) == root_abs
+        except ValueError:
+            inside = False  # p.ej. unidades distintas en Windows
+        if not inside:
             raise ValueError(f"Destino fuera de GOOGLE_DESPACHO_DL_ROOT ({root_abs}): {dest}")
     return dest
 
@@ -97,9 +103,7 @@ def build_server(
             found = drive_ops.search_files(
                 service_factory(acc), query, drive_id=drive_id, max_results=max_results
             )
-            for f in found:
-                f["account"] = acc
-            results.extend(found)
+            results.extend({**f, "account": acc} for f in found)
         return results
 
     @mcp.tool()
@@ -108,9 +112,7 @@ def build_server(
         results: list[dict] = []
         for acc in _resolve_accounts(account, account_lister):
             found = drive_ops.list_recent_files(service_factory(acc), page_size=max_results)
-            for f in found:
-                f["account"] = acc
-            results.extend(found)
+            results.extend({**f, "account": acc} for f in found)
         return results
 
     @mcp.tool()
