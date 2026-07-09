@@ -117,3 +117,36 @@ def test_cli_dry_run_no_escribe_crm(drive_temporal, monkeypatch):
     result = CliRunner().invoke(cli.app, _args() + ["--dry-run"])
     assert result.exit_code == 0
     assert llamadas["crm"] == 0
+
+
+def test_cli_crm_falla_no_rompe_pipeline(drive_temporal, monkeypatch):
+    """§9: si el alta CRM revienta, Drive+intake ya completados no se pierden;
+    el CLI termina en exit 0 y avisa de la referencia pendiente."""
+    def revienta(dto, **kw):
+        raise RuntimeError("CRM 500")
+    monkeypatch.setattr("core.sudespacho_create.create_expediente", revienta)
+
+    result = CliRunner().invoke(cli.app, _args())
+    assert result.exit_code == 0, result.output
+    assert "AVISO" in result.output
+    assert "referencia_crm queda pendiente" in result.output
+
+
+def test_cli_crm_skip(drive_temporal, monkeypatch):
+    llamadas = {"crm": 0}
+    monkeypatch.setattr("core.sudespacho_create.create_expediente",
+                        lambda dto, **kw: llamadas.__setitem__("crm", llamadas["crm"] + 1) or "9999")
+    result = CliRunner().invoke(cli.app, _args(crm="skip"))
+    assert result.exit_code == 0, result.output
+    assert llamadas["crm"] == 0
+    assert "CRM omitido" in result.output
+
+
+def test_cli_colision_sin_force_exit_1(drive_temporal):
+    r1 = CliRunner().invoke(cli.app, _args())
+    assert r1.exit_code == 0, r1.output
+
+    r2 = CliRunner().invoke(cli.app, _args())
+    assert r2.exit_code == 1
+    assert "[ERROR]" in r2.output
+    assert "ya existe" in r2.output

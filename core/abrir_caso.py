@@ -190,9 +190,7 @@ def reconcile(plan: PlanIntake, hashes_destino: dict[str, str]) -> Reconciliacio
 
     hashes_destino: {relpath_desde_00_Input: sha256} de lo realmente en disco.
     faltantes/mismatches se comparan solo contra los depositables del plan;
-    extras se comparan contra depositables ∪ dups (§8: un dup ya depositado
-    en una pasada anterior sigue en disco en las pasadas siguientes y no debe
-    marcarse como extra — de lo contrario la reentrancia rompe el pipeline).
+    extras se comparan contra depositables ∪ dups (ver `esperados_en_disco`).
     """
     depositables = {i.dst: i.sha256 for i in plan.depositables}
     # ficheros que DEBEN estar en disco = depositables + dups (ya depositados en pasadas

@@ -10,7 +10,6 @@ Uso:
 """
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 
 import typer
@@ -18,6 +17,7 @@ import typer
 from core import abrir_caso as brain
 from core import case_manager, intake_drive, intake_log, sudespacho_create
 from core.casos import case_locator
+from core.utils import file_sha256
 
 app = typer.Typer(add_completion=False, help="Abrir un expediente E&V en una pasada")
 
@@ -35,13 +35,52 @@ def hash_tree_local(root: Path, *, prefijo: str) -> dict[str, str]:
     for p in sorted(root.rglob("*")):
         if not p.is_file():
             continue
-        h = hashlib.sha256()
-        with open(p, "rb") as f:
-            for chunk in iter(lambda: f.read(1024 * 1024), b""):
-                h.update(chunk)
         rel = p.relative_to(root).as_posix()
-        out[f"{prefijo}/{rel}"] = h.hexdigest()
+        out[f"{prefijo}/{rel}"] = file_sha256(p)
     return out
+
+
+def _alta_crm(
+    ident: "brain.Identidad",
+    *,
+    cuantia: float,
+    crm_mode: str,
+    yes: bool,
+) -> None:
+    """5.9 alta CRM con gate + idempotencia (§8: no re-dar de alta si ya hay un
+    extrajudicial registrado para este caso) + tolerancia a caída (§9)."""
+    if crm_mode != "api":
+        typer.echo("CRM omitido (--crm skip): referencia pendiente + TODO")
+        return
+
+    expedientes = case_manager.get_case_status(ident.case_id)["expedientes"]
+    ya_registrado = any(
+        isinstance(e, dict) and e.get("element") == _ELEMENT_EXTRAJUDICIAL
+        for e in expedientes
+    )
+    if ya_registrado:
+        typer.echo(
+            f"CRM ya registrado (element={_ELEMENT_EXTRAJUDICIAL}), "
+            "no se re-da de alta"
+        )
+        return
+
+    payload = brain.crm_payload(ident, cuantia=cuantia)  # lee ident.tipo_caso (fd7a39f)
+    typer.echo(f"CRM -> alta extrajudicial ref={payload.referencia_cliente} "
+               f"posicion={payload.posicion} tags={payload.tags} cuantia={payload.cuantia}")
+    if not (yes or typer.confirm("¿Dar de alta en el CRM?")):
+        typer.echo("CRM omitido (declinado por el usuario): referencia pendiente + TODO")
+        return
+
+    try:
+        exp_id = sudespacho_create.create_expediente(payload)
+        case_manager.register_expediente(ident.case_id, exp_id, _ELEMENT_EXTRAJUDICIAL)
+        typer.echo(f"OK CRM id={exp_id}")
+    except Exception as exc:
+        typer.echo(
+            f"[AVISO] Alta CRM falló ({exc!r}): Drive+intake ya completados, "
+            "referencia_crm queda pendiente + TODO."
+        )
 
 
 @app.command()
@@ -52,8 +91,8 @@ def main(
     codigo_caso: str = typer.Option(..., "--codigo-caso"),
     sufijo: str = typer.Option(..., "--sufijo"),
     direccion: str = typer.Option(..., "--direccion"),
-    folder_id: str = typer.Option(None, "--folder-id"),
-    team_id: str = typer.Option(None, "--team-id"),
+    folder_id: str | None = typer.Option(None, "--folder-id"),
+    team_id: str | None = typer.Option(None, "--team-id"),
     cuantia: float = typer.Option(0.0, "--cuantia"),
     crm: str = typer.Option("api", "--crm", help="api|skip"),
     force: bool = typer.Option(False, "--force"),
@@ -68,7 +107,7 @@ def main(
             tipo_caso=tipo_caso, nombres_existentes=nombres, force=force,
         )
     except brain.ColisionCaso as exc:
-        typer.echo(f"[ERROR] {exc}")
+        typer.echo(f"[ERROR] {exc}", err=True)
         raise typer.Exit(code=1)
     if ident.requiere_confirmacion and not force:
         typer.echo(f"[AVISO] El código {ident.codigo} ya existe: {ident.colisiones}")
@@ -109,7 +148,7 @@ def main(
     rec = brain.reconcile(plan, hashes)
     if not rec.ok:
         typer.echo(f"[ERROR] Reconciliación falló: faltan={rec.faltantes} "
-                   f"mismatch={rec.mismatches} extra={rec.extras}")
+                   f"mismatch={rec.mismatches} extra={rec.extras}", err=True)
         raise typer.Exit(code=1)
 
     # 5.7 log forense con sha256
@@ -117,35 +156,7 @@ def main(
         intake_log.append_event(ident.case_id, "pull_drive_ev",
                                 details={"count": len(plan.con_sha), "files": plan.con_sha})
 
-    # 5.9 alta CRM con gate + idempotencia (§8: no re-dar de alta si ya hay un
-    # extrajudicial registrado para este caso) + tolerancia a caída (§9)
-    if crm == "api":
-        fm = case_manager._read_fm(ident.case_id)
-        ya_registrado = any(
-            isinstance(e, dict) and e.get("element") == _ELEMENT_EXTRAJUDICIAL
-            for e in (fm.get("sudespacho_expedientes") or [])
-        )
-        if ya_registrado:
-            typer.echo(
-                f"CRM ya registrado (element={_ELEMENT_EXTRAJUDICIAL}), "
-                "no se re-da de alta"
-            )
-        else:
-            payload = brain.crm_payload(ident, cuantia=cuantia)  # lee ident.tipo_caso (fd7a39f)
-            typer.echo(f"CRM -> alta extrajudicial ref={payload.referencia_cliente} "
-                       f"posicion={payload.posicion} tags={payload.tags} cuantia={payload.cuantia}")
-            if yes or typer.confirm("¿Dar de alta en el CRM?"):
-                try:
-                    exp_id = sudespacho_create.create_expediente(payload)
-                    case_manager.register_expediente(ident.case_id, exp_id, _ELEMENT_EXTRAJUDICIAL)
-                    typer.echo(f"OK CRM id={exp_id}")
-                except Exception as exc:
-                    typer.echo(
-                        f"[AVISO] Alta CRM falló ({exc!r}): Drive+intake ya completados, "
-                        "referencia_crm queda pendiente + TODO."
-                    )
-    else:
-        typer.echo("CRM omitido (--crm skip): referencia pendiente + TODO")
+    _alta_crm(ident, cuantia=cuantia, crm_mode=crm, yes=yes)
 
     typer.echo(f"OK Caso abierto: {ident.case_id}")
 
