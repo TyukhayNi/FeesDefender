@@ -121,16 +121,18 @@ de `[SIGUIENTE-INTAKE-JUDICIAL-AUTO]`.
 
 ---
 
-## [SIGUIENTE-SKILL-EXPEDIENTE-A-MD] Skill `expediente-a-md` — vía lean (retorno inmediato)
-*Decisión Nikolai 2026-07-04. El motor completo queda aparcado; foco en esta skill que orquesta motores existentes y da resultado tangible: hacer legible y organizado un expediente.*
+## ✅ [SIGUIENTE-SKILL-EXPEDIENTE-A-MD] Skill `organizar-sala-maquina` (ex `expediente-a-md`) — COMPLETA 2026-07-09
+*Decisión Nikolai 2026-07-04 (vía lean). CONSTRUIDA y validada 2026-07-09 en rama `feat/organizar-sala-maquina` (PR pendiente de merge → sustituir por hash del squash al mergear). Renombrada `expediente-a-md`→`organizar-sala-maquina` para alinear con el grafo de ecosistema de `abrir-caso` (paraleliza `organizar-sala-lectura`).*
 
-> **Diseño CERRADO** (apéndice de `docs/PLAN_MOTOR_DOCUMENTAL.md`). **Aún NO construida** — arranque de la próxima sesión.
+> **HECHA.** Spec `docs/superpowers/specs/2026-07-09-organizar-sala-maquina-design.md` · plan `docs/superpowers/plans/2026-07-09-organizar-sala-maquina.md`. Cerebro `core/sala_maquina.py` + CLI `scripts/sala_maquina.py` + skill `.claude/skills/organizar-sala-maquina/`. 51 tests verdes; revisión adversarial por subagentes (cazó fallo de aislamiento por documento, hueco de custodia `01_OCR/` con `PriorOcrFound`, estado `--force` obsoleto). **Task 14 (corrida real W-02VND1): 668 docs, 0 crashes, 531 `ok`**; los `empty` = 90 fotos + 6 PDFs (candidatos `--vision`), todos en `_cobertura.md` (cero caída silenciosa).
 
-**Qué hace (orquestador de 3 pasos, 3 salidas):**
-- [1] `01_Procesado/OCR/` — PDFs **buscables** con **OCRmyPDF** (local, sin PII a la nube).
-- [2] `01_Procesado/MD/` — 1 `.md` por documento (del PDF buscable / texto nativo del 50% digital).
-- [3] `01_Procesado/Sala lectura/` — **encadena la skill existente `organizar-sala-lectura`**.
-- `_revisar/_cobertura.md` (dudosos + cifras a verificar). `00_Input` intocable. Idempotente.
+**Qué hace (2 pasos + handoff):**
+- [1] `01_Procesado/02_Sala de máquina/01_OCR/` — PDFs **buscables** con **OCRmyPDF** (local, sin tope de páginas).
+- [2] `01_Procesado/02_Sala de máquina/03_MD/` — 1 `.md` por documento (+ `raw_text/` intermedio, idempotencia).
+- **Handoff:** SUGIERE `organizar-sala-lectura` (puntero atómico, NO encadena).
+- `_revisar/_cobertura.md` (red de calidad: densidad+gibberish+idioma). `00_Input`/`90_Notas personales` intocables (guard). Idempotente por sha256.
+
+**Desviaciones vs diseño lean 2026-07-04 (cerradas con Nikolai):** escribe en `02_Sala de máquina/` (no plano) · NO renombra `Sala lectura` (eso es motor F0) · handoff SUGIERE (no encadena) · NO usa `pipeline.run`/Docling (OCRmyPDF aguas arriba → cierra el hueco de >30 pp). Integración de ecosistema diferida al patrón grafo-único (`MEJORAS #50`, otra sesión).
 
 **Motor:** OCRmyPDF base (obligatorio para el PDF buscable — Claude visión no lo genera); **Claude visión (Sonnet 5 / Opus 4.8) = refuerzo OPCIONAL** del MD en páginas duras (manuscrito/tablas).
 
