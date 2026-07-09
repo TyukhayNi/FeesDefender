@@ -105,3 +105,31 @@ def list_recent_files(service, *, page_size: int = 20) -> list[dict]:
 def about_get(service, *,
               fields: str = "user(displayName, emailAddress), storageQuota") -> dict:
     return service.about().get(fields=fields).execute()
+
+
+def get_file_metadata(service, file_id: str, *, fields: str | None = None) -> dict:
+    return service.files().get(
+        fileId=file_id,
+        fields=fields or FILE_FIELDS,
+        supportsAllDrives=True,
+    ).execute()
+
+
+def get_file_permissions(service, file_id: str) -> list[dict]:
+    perms: list[dict] = []
+    page_token = None
+    while True:
+        params = {
+            "fileId": file_id,
+            "supportsAllDrives": True,
+            "pageSize": 100,
+            "fields": f"nextPageToken, {PERM_FIELDS}",
+        }
+        if page_token:
+            params["pageToken"] = page_token
+        resp = service.permissions().list(**params).execute()
+        perms.extend(resp.get("permissions", []))
+        page_token = resp.get("nextPageToken")
+        if not page_token:
+            break
+    return perms

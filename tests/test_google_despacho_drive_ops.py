@@ -65,3 +65,25 @@ def test_about_get():
     svc = FakeService(about={"get": {"user": {"emailAddress": "n@tyukhay.legal"}}})
     out = drive_ops.about_get(svc)
     assert out["user"]["emailAddress"] == "n@tyukhay.legal"
+
+
+def test_get_file_metadata_pide_supports_alldrives():
+    svc = FakeService(files={"get": {"id": "f1", "name": "x.pdf", "mimeType": "application/pdf"}})
+    out = drive_ops.get_file_metadata(svc, "f1")
+    assert out["id"] == "f1"
+    _, kw = svc.recorded("files")[0]
+    assert kw["fileId"] == "f1"
+    assert kw["supportsAllDrives"] is True
+    assert "sha256Checksum" in kw["fields"]
+
+
+def test_get_file_permissions_pagina():
+    svc = FakeService(permissions={"list": [
+        {"permissions": [{"id": "p1", "type": "user", "role": "writer"}], "nextPageToken": "T"},
+        {"permissions": [{"id": "p2", "type": "anyone", "role": "reader"}]},
+    ]})
+    out = drive_ops.get_file_permissions(svc, "f1")
+    assert [p["id"] for p in out] == ["p1", "p2"]
+    _, kw0 = svc.recorded("permissions")[0]
+    assert kw0["fileId"] == "f1"
+    assert kw0["supportsAllDrives"] is True
