@@ -29,6 +29,7 @@ class Identidad:
     w_code: str            # "W-02Z2NR" (con prefijo W-)
     sufijo: str
     case_id: str           # "<codigo> - <direccion> (<w_code>) - <sufijo>"
+    tipo_caso: str         # clave de TIPOS_CASO_ALL (añadido en fd7a39f, code review)
     posicion: str          # config.POSICION_ACTORA|DEFENSIVA|OTROS
     w_code_duplicado: bool
     codigo_duplicado: bool
@@ -560,6 +561,11 @@ git commit -m "feat(abrir-caso): reconcile (faltantes/mismatch/extras por hash)"
 
 ### Task 5: `crm_payload` — DTO extrajudicial
 
+> **Nota post-code-review (`fd7a39f`):** la firma final es `crm_payload(identidad, *, cuantia=0.0)` —
+> lee `identidad.tipo_caso` internamente (se añadió ese campo a `Identidad`), en vez de recibir
+> `tipo_caso` como parámetro suelto. Las llamadas de test omiten el kwarg `tipo_caso=`. El bloque de
+> código de abajo es la versión original del plan; el implementado ya incorpora este ajuste.
+
 **Files:**
 - Modify: `core/abrir_caso.py`
 - Test: `tests/test_abrir_caso.py`
@@ -920,7 +926,7 @@ def main(
 
     # 5.9 alta CRM con gate
     if crm == "api":
-        payload = brain.crm_payload(ident, tipo_caso=tipo_caso, cuantia=cuantia)
+        payload = brain.crm_payload(ident, cuantia=cuantia)  # lee ident.tipo_caso (fd7a39f)
         typer.echo(f"CRM → alta extrajudicial ref={payload.referencia_cliente} "
                    f"posicion={payload.posicion} tags={payload.tags} cuantia={payload.cuantia}")
         if yes or typer.confirm("¿Dar de alta en el CRM?"):
