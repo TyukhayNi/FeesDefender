@@ -187,19 +187,21 @@ def _escribir_md(case_dir, case_id, slug, rel_path, texto, metodo, ocr, estado):
     write_md(md_path, meta, texto)
 
 
-def ejecutar(case_dir: Path, plan: list[DocPlan], *, case_id: str,
+def ejecutar(case_dir: Path, docs: list[DocPlan], *, case_id: str,
              vision: bool = False) -> list[DocCobertura]:
     """Recorre el plan escribiendo 01_OCR/, raw_text/, 03_MD/. Devuelve cobertura.
 
     Rutas PDF (F1): pypdf si hay capa de texto suficiente; si no, OCRmyPDF →
     PDF buscable persistido en 01_OCR/ → texto del PDF buscable → MD.
     imagen/nativo se implementan en F2 (aquí producen 'sin_soporte' provisional).
+
+    (`docs`, no `plan`: evita tapar la función pública `plan()` del módulo.)
     """
     case_dir = Path(case_dir)
     sm_dir = _sala_maquina_dir(case_dir)
     cobertura: list[DocCobertura] = []
 
-    for d in plan:
+    for d in docs:
         if d.skip:
             continue
         # spec §9: aislar el fallo por documento. Un error en uno (lock ~$ de

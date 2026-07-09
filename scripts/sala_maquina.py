@@ -60,7 +60,6 @@ def apply(case_id: str, vision: bool = False, force: bool = False):
     p = _construir_plan(case_dir, force=force)
     cob = sm.ejecutar(case_dir, p, case_id=case_id, vision=vision)
 
-    sm_dir = sm._sala_maquina_dir(case_dir)
     revisar = case_dir / "01_Procesado" / "_revisar"
     revisar.mkdir(parents=True, exist_ok=True)
     (revisar / "_cobertura.md").write_text(sm.render_cobertura(cob), encoding="utf-8")
