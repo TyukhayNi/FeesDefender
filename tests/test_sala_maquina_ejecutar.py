@@ -181,3 +181,49 @@ def test_inventariar_lista_00_input_con_sha(tmp_path):
     assert len(inv) == 1
     assert inv[0]["rel_path"] == "01_Drive EV/a.pdf"
     assert len(inv[0]["sha256"]) == 64 and inv[0]["ext"] == ".pdf"
+
+
+# --- FASE F2 -----------------------------------------------------------------
+
+def test_ejecutar_nativo_eml_y_txt_producen_md(tmp_path):
+    # Task 10: ruta nativa reutiliza los helpers SANOS de extractor por extensión.
+    case = tmp_path / "EV-2026-001"
+    (case / "00_Input" / "03_Email").mkdir(parents=True)
+    (case / "00_Input" / "04_Manual").mkdir(parents=True)
+
+    eml = case / "00_Input" / "03_Email" / "hilo.eml"
+    eml.write_bytes(
+        b"From: propietario@example.com\r\n"
+        b"To: agencia@example.com\r\n"
+        b"Subject: Encargo de mediacion\r\n"
+        b"Date: Mon, 1 Jun 2026 10:00:00 +0200\r\n"
+        b"Content-Type: text/plain; charset=utf-8\r\n\r\n"
+        b"Confirmamos el encargo de mediacion inmobiliaria firmado ayer por el propietario."
+    )
+    txt = case / "00_Input" / "04_Manual" / "notas.txt"
+    txt.write_text(
+        "Reunion con el buscador para revisar las condiciones del contrato de arras.",
+        encoding="utf-8",
+    )
+    sha_eml, sha_txt = sm_file_sha(eml), sm_file_sha(txt)
+
+    docs = [
+        sm.DocPlan(rel_path="03_Email/hilo.eml", sha256=sha_eml, ext=".eml",
+                   ruta="nativo", slug=f"hilo__{sha_eml[:8]}"),
+        sm.DocPlan(rel_path="04_Manual/notas.txt", sha256=sha_txt, ext=".txt",
+                   ruta="nativo", slug=f"notas__{sha_txt[:8]}"),
+    ]
+    cob = sm.ejecutar(case, docs, case_id="EV-2026-001")
+
+    sm_dir = case / "01_Procesado" / "02_Sala de máquina"
+    md_eml = sm_dir / "03_MD" / f"hilo__{sha_eml[:8]}.md"
+    md_txt = sm_dir / "03_MD" / f"notas__{sha_txt[:8]}.md"
+    assert "mediacion" in md_eml.read_text(encoding="utf-8")
+    assert "arras" in md_txt.read_text(encoding="utf-8")
+
+    by_slug = {c.slug: c for c in cob}
+    assert by_slug[f"hilo__{sha_eml[:8]}"].metodo == "nativo"
+    assert by_slug[f"hilo__{sha_eml[:8]}"].ocr is False
+    assert by_slug[f"notas__{sha_txt[:8]}"].metodo == "nativo"
+    # nativo no toca 01_OCR/
+    assert not (sm_dir / "01_OCR").exists()

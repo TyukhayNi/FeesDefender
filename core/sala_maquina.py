@@ -13,7 +13,10 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from core.extractor import _try_pypdf, _pdf_num_paginas, _texto_suficiente
+from core.extractor import (
+    _try_pypdf, _pdf_num_paginas, _texto_suficiente,
+    _try_email, _try_rtf, _try_ics, _try_pandas_table, _try_docx, _read_text_file,
+)
 from core.anon.ocr import ocr_pdf
 from core.utils import file_sha256, now_iso, output_slug, text_sha256, write_md
 
@@ -172,6 +175,33 @@ def _sala_maquina_dir(case_dir: Path) -> Path:
     return case_dir / "01_Procesado" / "02_Sala de máquina"
 
 
+_NATIVO_EXTRACTORES = {
+    ".eml": _try_email,
+    ".rtf": _try_rtf,
+    ".ics": _try_ics,
+    ".csv": _try_pandas_table,
+    ".xlsx": _try_pandas_table,
+    ".xls": _try_pandas_table,
+    ".docx": _try_docx,
+}
+_NATIVO_TEXTO_PLANO = {".txt", ".md", ".html", ".htm"}
+
+
+def _extraer_nativo(src: Path, ext: str) -> str:
+    """Texto de un fichero nativo, por extensión (helpers SANOS de extractor).
+
+    Nunca la rama Docling/30pp de `extractor._extract_one` (spec §5.1) — solo los
+    `_try_*` deterministas y `_read_text_file` para texto plano.
+    """
+    e = ext.lower()
+    if e in _NATIVO_TEXTO_PLANO:
+        return _read_text_file(src)
+    fn = _NATIVO_EXTRACTORES.get(e)
+    if fn is None:
+        return ""
+    return fn(src) or ""
+
+
 def _escribir_md(case_dir, case_id, slug, rel_path, texto, metodo, ocr, estado):
     sm_dir = _sala_maquina_dir(case_dir)
     md_path = destino_seguro(sm_dir / "03_MD" / f"{slug}.md", case_dir)
@@ -193,7 +223,9 @@ def ejecutar(case_dir: Path, docs: list[DocPlan], *, case_id: str,
 
     Rutas PDF (F1): pypdf si hay capa de texto suficiente; si no, OCRmyPDF →
     PDF buscable persistido en 01_OCR/ → texto del PDF buscable → MD.
-    imagen/nativo se implementan en F2 (aquí producen 'sin_soporte' provisional).
+    Nativo (`.eml`/`.docx`/`.txt`/...): helpers deterministas de `extractor`,
+    sin tocar 01_OCR/. imagen/`.heic`/`--vision` se implementan a continuación
+    en esta misma fase F2 (aquí producen 'sin_soporte' provisional).
 
     (`docs`, no `plan`: evita tapar la función pública `plan()` del módulo.)
     """
@@ -229,8 +261,13 @@ def ejecutar(case_dir: Path, docs: list[DocPlan], *, case_id: str,
                 estado, nota = ocr_quality(texto, _pdf_num_paginas(buscable))
                 _escribir_md(case_dir, case_id, d.slug, d.rel_path, texto, "ocr", True, estado)
                 cobertura.append(DocCobertura(d.slug, d.rel_path, "ocr", estado, len(texto), True, nota, d.sha256))
+            elif d.ruta == "nativo":
+                texto = _extraer_nativo(src, d.ext) or ""
+                estado, nota = ocr_quality(texto, None)
+                _escribir_md(case_dir, case_id, d.slug, d.rel_path, texto, "nativo", False, estado)
+                cobertura.append(DocCobertura(d.slug, d.rel_path, "nativo", estado, len(texto), False, nota, d.sha256))
             else:
-                # imagen/nativo/sin_soporte → F2
+                # imagen/sin_soporte → resto de F2
                 cobertura.append(DocCobertura(d.slug, d.rel_path, "sin_soporte", "sin_soporte", 0, False, "ruta F2", d.sha256))
         except Exception as e:  # cualquier fallo del documento: no tumbar el lote
             cobertura.append(DocCobertura(d.slug, d.rel_path, "error", "empty", 0, False, f"fallo al procesar: {e}", d.sha256))
