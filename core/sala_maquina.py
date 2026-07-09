@@ -87,11 +87,12 @@ class DocPlan:
 class DocCobertura:
     slug: str
     rel_path: str
-    metodo: str          # pypdf | ocr | nativo | sin_soporte
+    metodo: str          # pypdf | ocr | nativo | sin_soporte | error
     estado: str          # ok | low | empty | sin_texto | sin_soporte
     chars: int = 0
     ocr: bool = False
     nota: str = ""
+    sha256: str = ""     # sha del origen: cadena de custodia (spec §7/§10) + estado idempotente
 
 
 def plan(inventario: list[dict], estado_previo: set[str]) -> list[DocPlan]:
@@ -213,24 +214,24 @@ def ejecutar(case_dir: Path, plan: list[DocPlan], *, case_id: str,
                 if texto and _texto_suficiente(texto, npags):
                     estado, nota = ocr_quality(texto, npags)
                     _escribir_md(case_dir, case_id, d.slug, d.rel_path, texto, "pypdf", False, estado)
-                    cobertura.append(DocCobertura(d.slug, d.rel_path, "pypdf", estado, len(texto), False, nota))
+                    cobertura.append(DocCobertura(d.slug, d.rel_path, "pypdf", estado, len(texto), False, nota, d.sha256))
                     continue
                 # escaneado → OCRmyPDF (sin tope de páginas)
                 ocr_out = destino_seguro(sm_dir / "01_OCR" / f"{d.slug}.pdf", case_dir)
                 try:
                     buscable = ocr_pdf(src, ocr_out)
                 except Exception as e:  # OCRError incl. cifrado/corrupto/firmado
-                    cobertura.append(DocCobertura(d.slug, d.rel_path, "ocr", "empty", 0, True, f"OCR falló: {e}"))
+                    cobertura.append(DocCobertura(d.slug, d.rel_path, "ocr", "empty", 0, True, f"OCR falló: {e}", d.sha256))
                     continue
                 texto = _try_pypdf(buscable) or ""
                 estado, nota = ocr_quality(texto, _pdf_num_paginas(buscable))
                 _escribir_md(case_dir, case_id, d.slug, d.rel_path, texto, "ocr", True, estado)
-                cobertura.append(DocCobertura(d.slug, d.rel_path, "ocr", estado, len(texto), True, nota))
+                cobertura.append(DocCobertura(d.slug, d.rel_path, "ocr", estado, len(texto), True, nota, d.sha256))
             else:
                 # imagen/nativo/sin_soporte → F2
-                cobertura.append(DocCobertura(d.slug, d.rel_path, "sin_soporte", "sin_soporte", 0, False, "ruta F2"))
+                cobertura.append(DocCobertura(d.slug, d.rel_path, "sin_soporte", "sin_soporte", 0, False, "ruta F2", d.sha256))
         except Exception as e:  # cualquier fallo del documento: no tumbar el lote
-            cobertura.append(DocCobertura(d.slug, d.rel_path, "error", "empty", 0, False, f"fallo al procesar: {e}"))
+            cobertura.append(DocCobertura(d.slug, d.rel_path, "error", "empty", 0, False, f"fallo al procesar: {e}", d.sha256))
             continue
     return cobertura
 

@@ -65,11 +65,16 @@ def apply(case_id: str, vision: bool = False, force: bool = False):
     revisar.mkdir(parents=True, exist_ok=True)
     (revisar / "_cobertura.md").write_text(sm.render_cobertura(cob), encoding="utf-8")
 
-    procesados = _estado_previo(case_dir) | {d.sha256 for d in p if not d.skip}
+    # El estado idempotente solo cuenta lo que produjo salida real (ok/low): un
+    # PDF cifrado/bloqueado NO se marca "resuelto", así se reintenta en la
+    # siguiente corrida normal de apply (sin --force).
+    exitosos = {c.sha256 for c in cob if c.estado in ("ok", "low")}
+    procesados = _estado_previo(case_dir) | exitosos
     _guardar_estado(case_dir, procesados)
     append_event(case_id, "procesado_sala_maquina", details={
         "count": len(cob),
-        "files": [{"path": c.rel_path, "slug": c.slug, "metodo": c.metodo, "estado": c.estado} for c in cob],
+        "files": [{"path": c.rel_path, "sha256": c.sha256, "slug": c.slug,
+                   "metodo": c.metodo, "estado": c.estado} for c in cob],
     })
     dudosos = [c for c in cob if c.estado != "ok"]
     typer.echo(f"Sala de máquina actualizada: {len(cob)} documentos, {len(dudosos)} a revisar.")

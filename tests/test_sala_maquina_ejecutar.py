@@ -2,8 +2,11 @@ from pathlib import Path
 from core import sala_maquina as sm
 
 
-def _pdf_con_texto(path: Path):
-    """Escribe un PDF mínimo con capa de texto usng reportlab si está; si no, pypdf."""
+def _pdf_con_texto(path: Path, extra: str = ""):
+    """Escribe un PDF mínimo con capa de texto usng reportlab si está; si no, pypdf.
+
+    `extra` permite variar el contenido para obtener sha256 distintos entre PDFs.
+    """
     from reportlab.pdfgen import canvas          # dep de test (ya en el entorno docling)
     c = canvas.Canvas(str(path))
     # NOTA autorrevisión: el literal del plan (99 chars) queda por debajo del
@@ -12,7 +15,7 @@ def _pdf_con_texto(path: Path):
     # Se alarga el texto manteniendo la intención (PDF digital con texto real).
     c.drawString(72, 720, "Encargo de mediación firmado por el propietario. "
                           "Honorarios de intermediación del cinco por ciento "
-                          "sobre el precio final.")
+                          "sobre el precio final." + extra)
     c.showPage()
     c.save()
 
@@ -113,6 +116,60 @@ def test_ejecutar_aisla_fallo_por_documento(tmp_path, monkeypatch):
     assert by_slug[f"primero__{sha1[:8]}"].estado == "empty"
     assert "lock de Office" in by_slug[f"primero__{sha1[:8]}"].nota
     assert by_slug[f"segundo__{sha2[:8]}"].estado == "ok"
+
+
+def test_ejecutar_cobertura_lleva_sha256_del_plan(tmp_path, monkeypatch):
+    case = tmp_path / "EV-2026-001"
+    (case / "00_Input" / "01_Drive EV").mkdir(parents=True)
+    src = case / "00_Input" / "01_Drive EV" / "encargo.pdf"
+    _pdf_con_texto(src)
+    sha = sm_file_sha(src)
+    monkeypatch.setattr(sm, "ocr_pdf", lambda *a, **k: (_ for _ in ()).throw(AssertionError()))
+    docs = [sm.DocPlan(rel_path="01_Drive EV/encargo.pdf", sha256=sha, ext=".pdf",
+                       ruta="pdf", slug=f"encargo__{sha[:8]}")]
+    cob = sm.ejecutar(case, docs, case_id="EV-2026-001")
+    assert cob[0].sha256 == sha
+
+
+def test_apply_estado_y_log_solo_exitos_con_sha256(tmp_path, monkeypatch):
+    import scripts.sala_maquina as cli
+
+    case = tmp_path / "EV-2026-001"
+    (case / "00_Input" / "01_Drive EV").mkdir(parents=True)
+    src_ok = case / "00_Input" / "01_Drive EV" / "ok.pdf"
+    src_fail = case / "00_Input" / "01_Drive EV" / "fail.pdf"
+    _pdf_con_texto(src_ok, extra=" Documento correcto.")
+    _pdf_con_texto(src_fail, extra=" Documento que fallará al escribir el MD.")
+    sha_ok, sha_fail = sm_file_sha(src_ok), sm_file_sha(src_fail)
+    assert sha_ok != sha_fail
+
+    monkeypatch.setattr(cli, "caso_path", lambda cid: case)
+    eventos = []
+    monkeypatch.setattr(cli, "append_event",
+                        lambda cid, ev, *, details=None: eventos.append((ev, details)))
+
+    real_write_md = sm.write_md
+
+    def _flaky(path, meta, body):
+        if "fail__" in str(path):
+            raise OSError("~$ lock de Office")
+        return real_write_md(path, meta, body)
+
+    monkeypatch.setattr(sm, "write_md", _flaky)
+
+    cli.apply("EV-2026-001")
+
+    # el evento de custodia lleva sha256 por fichero (spec §7/§10)
+    assert len(eventos) == 1
+    ev, details = eventos[0]
+    assert ev == "procesado_sala_maquina"
+    assert {f["sha256"] for f in details["files"]} == {sha_ok, sha_fail}
+
+    # el estado idempotente cuenta SOLO los éxitos (ok/low), no los fallidos
+    import json as _json
+    state = sm._sala_maquina_dir(case) / "_sala_maquina_state.json"
+    procesados = set(_json.loads(state.read_text(encoding="utf-8"))["procesados"])
+    assert procesados == {sha_ok}
 
 
 def test_inventariar_lista_00_input_con_sha(tmp_path):
