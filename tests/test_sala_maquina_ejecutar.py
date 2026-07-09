@@ -283,3 +283,63 @@ def test_ejecutar_imagen_conversion_fallida_es_sin_soporte(tmp_path, monkeypatch
 
     assert cob[0].metodo == "sin_soporte" and cob[0].estado == "sin_soporte"
     assert "convers" in cob[0].nota.lower()
+
+
+def test_ejecutar_vision_refuerza_documento_empty(tmp_path, monkeypatch):
+    # Task 12: con --vision, un doc empty se refuerza con la transcripcion mockeada.
+    case = tmp_path / "EV-2026-001"
+    (case / "00_Input" / "01_Drive EV").mkdir(parents=True)
+    src = case / "00_Input" / "01_Drive EV" / "escaneado.pdf"
+    src.write_bytes(b"%PDF-1.4\n% escaneado sin capa de texto\n")
+    sha = sm_file_sha(src)
+
+    def _fake_ocr(entrada, salida, **k):
+        Path(salida).parent.mkdir(parents=True, exist_ok=True)
+        Path(salida).write_bytes(b"%PDF buscable pero vacio")
+        return Path(salida)
+
+    transcrito = ("Encargo de mediacion firmado por el propietario, "
+                  "segun se lee en la imagen de la pagina. " * 2)
+
+    monkeypatch.setattr(sm, "ocr_pdf", _fake_ocr)
+    monkeypatch.setattr(sm, "_try_pypdf", lambda p: "")           # OCR no sacó nada -> empty
+    monkeypatch.setattr(sm, "_pdf_num_paginas", lambda p: 1)
+    monkeypatch.setattr(sm, "_renderizar_paginas", lambda p: ["pagina-fake"])
+    monkeypatch.setattr(sm, "_transcribir_vision", lambda imgs: transcrito)
+
+    docs = [sm.DocPlan(rel_path="01_Drive EV/escaneado.pdf", sha256=sha, ext=".pdf",
+                       ruta="pdf", slug=f"escaneado__{sha[:8]}")]
+    cob = sm.ejecutar(case, docs, case_id="EV-2026-001", vision=True)
+
+    md = case / "01_Procesado" / "02_Sala de máquina" / "03_MD" / f"escaneado__{sha[:8]}.md"
+    assert "Encargo de mediacion" in md.read_text(encoding="utf-8")
+    assert cob[0].estado in ("ok", "low")   # mejoró respecto a empty
+
+
+def test_ejecutar_sin_vision_no_llama_transcribir(tmp_path, monkeypatch):
+    # --vision es off por defecto: un doc empty se queda empty, sin tocar vision.
+    case = tmp_path / "EV-2026-001"
+    (case / "00_Input" / "01_Drive EV").mkdir(parents=True)
+    src = case / "00_Input" / "01_Drive EV" / "escaneado.pdf"
+    src.write_bytes(b"%PDF-1.4\n% escaneado sin capa de texto\n")
+    sha = sm_file_sha(src)
+
+    def _fake_ocr(entrada, salida, **k):
+        Path(salida).parent.mkdir(parents=True, exist_ok=True)
+        Path(salida).write_bytes(b"%PDF buscable pero vacio")
+        return Path(salida)
+
+    def _boom(imgs):
+        raise AssertionError("vision no debe llamarse si vision=False")
+
+    monkeypatch.setattr(sm, "ocr_pdf", _fake_ocr)
+    monkeypatch.setattr(sm, "_try_pypdf", lambda p: "")
+    monkeypatch.setattr(sm, "_pdf_num_paginas", lambda p: 1)
+    monkeypatch.setattr(sm, "_transcribir_vision", _boom)
+
+    docs = [sm.DocPlan(rel_path="01_Drive EV/escaneado.pdf", sha256=sha, ext=".pdf",
+                       ruta="pdf", slug=f"escaneado__{sha[:8]}")]
+    cob = sm.ejecutar(case, docs, case_id="EV-2026-001")  # vision=False (default)
+
+    assert cob[0].estado == "empty"
+

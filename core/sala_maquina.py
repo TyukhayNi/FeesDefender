@@ -204,6 +204,49 @@ def _extraer_nativo(src: Path, ext: str) -> str:
     return fn(src) or ""
 
 
+def _renderizar_paginas(pdf_path: Path):
+    """Renderiza cada página de un PDF a imagen PIL (para el refuerzo `--vision`)."""
+    import pypdfium2 as pdfium
+
+    doc = pdfium.PdfDocument(str(pdf_path))
+    try:
+        return [pagina.render(scale=2).to_pil() for pagina in doc]
+    finally:
+        doc.close()
+
+
+def _transcribir_vision(imgs) -> str:
+    """Punto de inyección del refuerzo `--vision` (Claude). Sin llamada real aquí:
+
+    quien active `--vision` debe monkeypatchear esta función (test) o cablearla al
+    modelo (CLI/skill) — nunca se llama a ningún modelo desde este módulo (spec §5,
+    D3: off por defecto, sin llamadas reales embebidas en el cerebro).
+    """
+    raise NotImplementedError(
+        "Refuerzo de vision no cableado: monkeypatchear sala_maquina._transcribir_vision"
+    )
+
+
+def _reforzar_con_vision(pdf_path: Path, texto: str, estado: str, nota: str) -> tuple[str, str, str]:
+    """Si `estado` es dudoso, intenta mejorar `texto` con transcripción de visión.
+
+    Nunca lanza: un fallo de render o de transcripción deja el documento tal cual
+    (con nota) — el refuerzo es un extra opcional, no debe tumbar el documento
+    (aislamiento por documento, spec §9).
+    """
+    try:
+        imgs = _renderizar_paginas(pdf_path)
+        extra = (_transcribir_vision(imgs) or "").strip()
+    except Exception as e:
+        motivo = f"refuerzo vision falló: {e}"
+        return texto, estado, f"{nota} · {motivo}" if nota else motivo
+    if not extra:
+        return texto, estado, nota
+    nuevo_texto = f"{texto}\n\n{extra}".strip() if texto.strip() else extra
+    nuevo_estado, nuevo_nota = ocr_quality(nuevo_texto, _pdf_num_paginas(pdf_path))
+    return nuevo_texto, nuevo_estado, nuevo_nota or "reforzado con vision"
+
+
 def _escribir_md(case_dir, case_id, slug, rel_path, texto, metodo, ocr, estado):
     sm_dir = _sala_maquina_dir(case_dir)
     md_path = destino_seguro(sm_dir / "03_MD" / f"{slug}.md", case_dir)
@@ -220,7 +263,7 @@ def _escribir_md(case_dir, case_id, slug, rel_path, texto, metodo, ocr, estado):
 
 
 def _ocr_y_extraer(case_dir: Path, sm_dir: Path, case_id: str, d: DocPlan,
-                    entrada: Path) -> DocCobertura:
+                    entrada: Path, vision: bool) -> DocCobertura:
     """OCRmyPDF sobre `entrada` → PDF buscable persistido en 01_OCR/ → texto → MD.
 
     Compartido por el camino PDF escaneado y el camino imagen/`.heic` (ambos
@@ -233,6 +276,8 @@ def _ocr_y_extraer(case_dir: Path, sm_dir: Path, case_id: str, d: DocPlan,
         return DocCobertura(d.slug, d.rel_path, "ocr", "empty", 0, True, f"OCR falló: {e}", d.sha256)
     texto = _try_pypdf(buscable) or ""
     estado, nota = ocr_quality(texto, _pdf_num_paginas(buscable))
+    if vision and estado in ("low", "empty"):
+        texto, estado, nota = _reforzar_con_vision(buscable, texto, estado, nota)
     _escribir_md(case_dir, case_id, d.slug, d.rel_path, texto, "ocr", True, estado)
     return DocCobertura(d.slug, d.rel_path, "ocr", estado, len(texto), True, nota, d.sha256)
 
@@ -244,8 +289,8 @@ def ejecutar(case_dir: Path, docs: list[DocPlan], *, case_id: str,
     Rutas (spec §5): PDF con capa de texto → pypdf sin OCR; PDF escaneado o
     imagen/`.heic` → `imagen_a_pdf` (si aplica) → OCRmyPDF → PDF buscable
     persistido en 01_OCR/ → texto; nativo (`.eml`/`.docx`/`.txt`/...) → helpers
-    deterministas de `extractor`, sin tocar 01_OCR/. `--vision` se implementa a
-    continuación en esta misma fase F2 (aquí el flag aún no tiene efecto).
+    deterministas de `extractor`, sin tocar 01_OCR/. `--vision` (opcional, off
+    por defecto) refuerza `low`/`empty` renderizando páginas con pypdfium2.
 
     (`docs`, no `plan`: evita tapar la función pública `plan()` del módulo.)
     """
@@ -267,11 +312,13 @@ def ejecutar(case_dir: Path, docs: list[DocPlan], *, case_id: str,
                 npags = _pdf_num_paginas(src)
                 if texto and _texto_suficiente(texto, npags):
                     estado, nota = ocr_quality(texto, npags)
+                    if vision and estado in ("low", "empty"):
+                        texto, estado, nota = _reforzar_con_vision(src, texto, estado, nota)
                     _escribir_md(case_dir, case_id, d.slug, d.rel_path, texto, "pypdf", False, estado)
                     cobertura.append(DocCobertura(d.slug, d.rel_path, "pypdf", estado, len(texto), False, nota, d.sha256))
                     continue
                 # escaneado → OCRmyPDF (sin tope de páginas)
-                cobertura.append(_ocr_y_extraer(case_dir, sm_dir, case_id, d, src))
+                cobertura.append(_ocr_y_extraer(case_dir, sm_dir, case_id, d, src, vision))
             elif d.ruta == "imagen":
                 # imagen/.heic → PDF intermedio (no persistido: solo el buscable
                 # tras OCR va a 01_OCR/, spec §5) → mismo camino OCR que un escaneado.
@@ -284,7 +331,7 @@ def ejecutar(case_dir: Path, docs: list[DocPlan], *, case_id: str,
                             d.slug, d.rel_path, "sin_soporte", "sin_soporte", 0, False,
                             f"conversión a PDF falló: {e}", d.sha256))
                         continue
-                    cobertura.append(_ocr_y_extraer(case_dir, sm_dir, case_id, d, intermedio))
+                    cobertura.append(_ocr_y_extraer(case_dir, sm_dir, case_id, d, intermedio, vision))
             elif d.ruta == "nativo":
                 texto = _extraer_nativo(src, d.ext) or ""
                 estado, nota = ocr_quality(texto, None)
