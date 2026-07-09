@@ -343,3 +343,32 @@ def test_ejecutar_sin_vision_no_llama_transcribir(tmp_path, monkeypatch):
 
     assert cob[0].estado == "empty"
 
+
+def test_ejecutar_no_toca_00_input_ni_notas_personales(tmp_path):
+    # Task 13: guard e2e — 00_Input/ (incl. 90_Notas personales/) sale intacto.
+    case = tmp_path / "EV-2026-001"
+    (case / "00_Input" / "01_Drive EV").mkdir(parents=True)
+    (case / "00_Input" / "90_Notas personales").mkdir(parents=True)
+    src = case / "00_Input" / "01_Drive EV" / "encargo.pdf"
+    _pdf_con_texto(src)
+    (case / "00_Input" / "90_Notas personales" / "privado.txt").write_text(
+        "nota privada del abogado", encoding="utf-8"
+    )
+
+    def _snapshot(root: Path) -> dict:
+        return {
+            str(p.relative_to(root)): (p.stat().st_mtime_ns, p.stat().st_size)
+            for p in sorted(root.rglob("*")) if p.is_file()
+        }
+
+    input_root = case / "00_Input"
+    antes = _snapshot(input_root)
+
+    inventario = sm.inventariar(case)
+    docs = sm.plan(inventario, estado_previo=set())
+    assert all("90_Notas personales" not in d.rel_path for d in docs)  # excluido, Task 3
+
+    sm.ejecutar(case, docs, case_id="EV-2026-001")
+
+    despues = _snapshot(input_root)
+    assert antes == despues
