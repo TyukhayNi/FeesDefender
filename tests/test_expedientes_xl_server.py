@@ -1,5 +1,7 @@
 import asyncio
 import hashlib
+import zipfile
+from pathlib import Path
 
 import pytest
 
@@ -39,3 +41,23 @@ def test_hash_tree_tool_devuelve_dict_esperado(tmp_path):
         "a.txt": hashlib.sha256(b"hola").hexdigest(),
         "sub/b.txt": hashlib.sha256(b"mundo").hexdigest(),
     }
+
+
+def test_extract_archive_tool_strip_top_level_quita_wrapper(tmp_path):
+    archive = tmp_path / "export.zip"
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("Wrapper/ACTIVACION/hoja.pdf", b"A")
+        zf.writestr("Wrapper/oferta.pdf", b"B")
+    dest = tmp_path / "out"
+
+    mcp = srv.build_server([tmp_path], max_b64_bytes=1000)
+
+    async def _call():
+        return await mcp.call_tool(
+            "extract_archive",
+            {"archive_path": str(archive), "dest_dir": str(dest), "strip_top_level": True},
+        )
+
+    _content, structured = asyncio.run(_call())
+    rels = sorted(Path(p).relative_to(dest.resolve()).as_posix() for p in structured["result"])
+    assert rels == ["ACTIVACION/hoja.pdf", "oferta.pdf"]

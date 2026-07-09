@@ -43,9 +43,10 @@ def build_server(allowed_dirs: list[Path], max_b64_bytes: int = DEFAULT_MAX_B64,
         return str(fsops.copy_tree(allowed_dirs, src, dst))
 
     @mcp.tool()
-    def extract_archive(archive_path: str, dest_dir: str) -> list[str]:
-        """Descomprime zip/tar en dest_dir. Devuelve los ficheros extraídos."""
-        return [str(p) for p in fsops.extract_archive(allowed_dirs, archive_path, dest_dir, max_extract_bytes)]
+    def extract_archive(archive_path: str, dest_dir: str, strip_top_level: bool = False) -> list[str]:
+        """Descomprime zip/tar en dest_dir. `strip_top_level` quita el wrapper único. Devuelve los ficheros."""
+        return [str(p) for p in fsops.extract_archive(
+            allowed_dirs, archive_path, dest_dir, max_extract_bytes, strip_top_level=strip_top_level)]
 
     @mcp.tool()
     def write_file_base64(path: str, content_b64: str) -> int:
