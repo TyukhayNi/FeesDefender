@@ -1,0 +1,164 @@
+#!/usr/bin/env python3
+"""Servidor MCP `google-despacho` — F1: LECTURA de Drive multicuenta.
+
+Doble restricción (calcada de Gmail-despacho): scope OAuth drive.readonly +
+solo se registran tools de LECTURA. Ninguna operación de escritura/borrado/
+permisos existe en F1.
+
+Selección de cuenta: las tools aceptan `account` (email). En búsquedas/listados
+se puede omitir para consultar TODAS las cuentas conectadas (cada resultado se
+etiqueta con su cuenta). Las tools por-fichero exigen `account` explícito.
+
+download_file_content escribe a disco (confinable con GOOGLE_DESPACHO_DL_ROOT);
+nunca devuelve bytes por el modelo.
+"""
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+from typing import Callable, Optional
+
+from mcp.server.fastmcp import FastMCP
+
+# Import dual-modo: como paquete (tests) o standalone (Claude Desktop).
+try:
+    from . import drive_ops, google_auth
+except ImportError:  # ejecución directa: python server.py
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import drive_ops  # type: ignore  # noqa: E402
+    import google_auth  # type: ignore  # noqa: E402
+
+
+def _resolve_accounts(account: Optional[str], lister: Callable[[], list[str]]) -> list[str]:
+    if account:
+        return [account]
+    accounts = lister()
+    if not accounts:
+        raise RuntimeError(
+            "No hay cuentas conectadas. Añade alguna con: "
+            "python plugins/google_despacho_mcp/google_cli.py add"
+        )
+    return accounts
+
+
+def _resolve_dest(dest_path: str) -> str:
+    """Resuelve y valida la ruta de descarga; si GOOGLE_DESPACHO_DL_ROOT está
+    definida, el destino debe quedar dentro de esa raíz. Se resuelven symlinks/
+    junctions (realpath) antes de comparar, para que un enlace dentro de la raíz
+    no permita escapar de ella."""
+    dest = os.path.realpath(os.path.expanduser(dest_path))
+    root = os.environ.get("GOOGLE_DESPACHO_DL_ROOT")
+    if root:
+        root_abs = os.path.realpath(os.path.expanduser(root))
+        try:
+            inside = os.path.commonpath([root_abs, dest]) == root_abs
+        except ValueError:
+            inside = False  # p.ej. unidades distintas en Windows
+        if not inside:
+            raise ValueError(f"Destino fuera de GOOGLE_DESPACHO_DL_ROOT ({root_abs}): {dest}")
+    return dest
+
+
+def build_server(
+    *,
+    service_factory: Callable[[str], object] | None = None,
+    account_lister: Callable[[], list[str]] | None = None,
+) -> FastMCP:
+    """Construye el servidor. `service_factory`/`account_lister` son puntos de
+    inyección para tests; en producción se toman de google_auth."""
+    if service_factory is None:
+        service_factory = google_auth.build_service
+    if account_lister is None:
+        account_lister = google_auth.list_account_emails
+
+    mcp = FastMCP("google-despacho")
+
+    @mcp.tool()
+    def list_accounts() -> list[str]:
+        """Lista las cuentas de Google conectadas a este servidor."""
+        return account_lister()
+
+    @mcp.tool()
+    def list_shared_drives(account: Optional[str] = None) -> dict:
+        """Lista las unidades compartidas accesibles por cada cuenta."""
+        out: dict[str, list[dict]] = {}
+        for acc in _resolve_accounts(account, account_lister):
+            out[acc] = drive_ops.list_shared_drives(service_factory(acc))
+        return out
+
+    @mcp.tool()
+    def search_files(
+        query: str,
+        account: Optional[str] = None,
+        drive_id: Optional[str] = None,
+        max_results: int = 50,
+    ) -> list[dict]:
+        """Busca ficheros con la sintaxis de query de Drive v3 (abarca unidades
+        compartidas). `query` p.ej. "name contains 'arras' and trashed = false".
+        Omite `account` para buscar en TODAS las cuentas. `drive_id` acota a una
+        unidad compartida concreta."""
+        results: list[dict] = []
+        for acc in _resolve_accounts(account, account_lister):
+            found = drive_ops.search_files(
+                service_factory(acc), query, drive_id=drive_id, max_results=max_results
+            )
+            results.extend({**f, "account": acc} for f in found)
+        return results
+
+    @mcp.tool()
+    def list_recent_files(account: Optional[str] = None, max_results: int = 20) -> list[dict]:
+        """Ficheros modificados recientemente (por cuenta)."""
+        results: list[dict] = []
+        for acc in _resolve_accounts(account, account_lister):
+            found = drive_ops.list_recent_files(service_factory(acc), page_size=max_results)
+            results.extend({**f, "account": acc} for f in found)
+        return results
+
+    @mcp.tool()
+    def get_file_metadata(file_id: str, account: str) -> dict:
+        """Metadatos de un fichero (incluye sha256Checksum si es binario)."""
+        return drive_ops.get_file_metadata(service_factory(account), file_id)
+
+    @mcp.tool()
+    def get_file_permissions(file_id: str, account: str) -> list[dict]:
+        """Lista los permisos (ACL) de un fichero: type/role/emailAddress/domain."""
+        return drive_ops.get_file_permissions(service_factory(account), file_id)
+
+    @mcp.tool()
+    def read_file_content(file_id: str, account: str, max_bytes: int = 5_000_000) -> dict:
+        """Devuelve el TEXTO de un Doc nativo (exportado) o de un fichero de
+        texto. Los binarios se rechazan: usa download_file_content."""
+        return drive_ops.read_file_content(service_factory(account), file_id, max_bytes=max_bytes)
+
+    @mcp.tool()
+    def download_file_content(
+        file_id: str,
+        account: str,
+        dest_path: str,
+        max_bytes: int = 100_000_000,
+        keep_editable: bool = False,
+    ) -> dict:
+        """Descarga un fichero a disco local (Doc nativo → PDF por defecto;
+        keep_editable → Office). Confinable con GOOGLE_DESPACHO_DL_ROOT. Nunca
+        devuelve los bytes por el modelo; devuelve ruta, tamaño y sha256."""
+        dest = _resolve_dest(dest_path)
+        return drive_ops.download_file_content(
+            service_factory(account), file_id, dest,
+            max_bytes=max_bytes, keep_editable=keep_editable,
+        )
+
+    @mcp.tool()
+    def about_get(account: str) -> dict:
+        """Info de la cuenta y cuota de almacenamiento (about.get)."""
+        return drive_ops.about_get(service_factory(account))
+
+    return mcp
+
+
+def main() -> None:
+    build_server().run()
+
+
+if __name__ == "__main__":
+    main()

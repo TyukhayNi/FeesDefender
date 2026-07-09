@@ -19,6 +19,32 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 > [SIGUIENTE]). La próxima sesión elige el siguiente frente de las secciones `[SIGUIENTE-…]` de
 > abajo según prioridad de Nikolai. Se conservan aquí marcados ✅ (patrón del repo).
 
+---
+
+## [SIGUIENTE-GOOGLE-MCP] F1 (lectura cross-cuenta) — CÓDIGO COMPLETO + validado en vivo; falta merge del PR
+
+*Disparador: encargo de Nikolai (`ENCARGO_MCP_Google_despacho.md`, fuera del repo). MCP propio
+`google-despacho` (Drive + Calendar, multicuenta EV+TL) que suple la mono-cuenta del Drive nativo.*
+
+- Spec APROBADO + revisado: `docs/superpowers/specs/2026-07-08-google-despacho-mcp-design.md`.
+  Plan de F1: `docs/superpowers/plans/2026-07-09-google-despacho-mcp-f1.md`. Rama `feat/google-despacho-mcp`.
+- Decisiones cerradas: **un MCP por fases F1(lectura)→F2(escritura+permisos)→F3(lote+intake)→F4(Calendar)**;
+  entrega **stdio local + `.dxt` + puente de escritorio**; **`expedientes` se queda** (solo candidato a
+  retirar el Drive nativo); OAuth reutiliza el proyecto Cloud de Gmail; ubicación `plugins/google_despacho_mcp/`.
+- [x] **R2 CERRADA (2026-07-09):** app ya `En producción` (no `Testing`) → caduca-7-días **no aplica**.
+  Decisión: **un solo cliente OAuth, External + Producción, SIN split, NO marcar Internal**. §11 R2 del spec.
+- [x] **F1 CÓDIGO COMPLETO (2026-07-09, subagent-driven + revisión adversarial):** `plugins/google_despacho_mcp/`
+  (`google_auth` scope `drive.readonly`, `drive_ops` puro, `server` FastMCP con 9 tools de lectura + DL-root,
+  `google_cli`, `run_server.bat`, README). **29 tests; suite completa 1570 verde.** La revisión adversarial
+  cazó y cerró: bypass de DL-root vía symlink (`_resolve_dest` ahora usa `realpath`), mis-atribución de
+  procedencia en el fan-out (`{**f, "account": acc}`), hueco de `max_bytes` post-fetch, import-safety en `.venv`.
+- [x] **F1 VALIDADA EN VIVO (2026-07-09):** ambas cuentas conectadas (`~/.google-despacho/tokens/`); humo real =
+  105 unidades compartidas EV / 10 TL (incl. «EXPEDIENTES - TYUKHAY LEGAL»), recientes, `about.get`, descarga
+  (`get_media`→bytes+sha256) y confinamiento DL-root. Cableado en `claude_desktop_config.json`.
+- [ ] **Merge del PR** de `feat/google-despacho-mcp` → `main` (pasa `leak-scan`). ← **siguiente**
+- [ ] Verificar `list_accounts` desde Cowork por el puente (tras reiniciar Claude Desktop).
+- Después: **F2** (escritura CRUD + guardarraíl de permisos §5), **F3** (lote + `import_drive_folder`), **F4** (Calendar).
+
 ### ✅ [SIGUIENTE-CONTROLES-ANTIFUGA] COMPLETA 2026-07-07 — controles de `SEGURIDAD_DATOS.md` implementados
 *2026-07-07. Disparador concreto: el incidente de fugas de la Fase 2 (HAR + PII en el historial → una sesión entera de rewrite). La doctrina ya está escrita y cableada (`docs/SEGURIDAD_DATOS.md`, hogar canónico; cableado en el mapa SSOT, INDICE, GOBERNANZA §4 y CLAUDE.md). Todos los controles corren solos: barrera local (`51ecf24`), CI + shape-detection (#1 `48c790f`, #3 `e1ff182`) y prevención server-side ACTIVA (`a79ba90`).*
 
