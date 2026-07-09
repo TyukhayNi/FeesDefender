@@ -172,3 +172,28 @@ def plan_intake(inventario: list[dict], log_existente: list[dict], fuente: str) 
             zero=size == 0,
         ))
     return PlanIntake(items=tuple(items), fuente=fuente)
+
+
+@dataclass(frozen=True)
+class Reconciliacion:
+    ok: bool
+    faltantes: tuple[str, ...]
+    mismatches: tuple[str, ...]
+    extras: tuple[str, ...]
+
+
+def reconcile(plan: PlanIntake, hashes_destino: dict[str, str]) -> Reconciliacion:
+    """Verifica el depósito contra el plan (puro).
+
+    hashes_destino: {relpath_desde_00_Input: sha256} de lo realmente en disco.
+    Compara solo los depositables del plan.
+    """
+    esperados = {i.dst: i.sha256 for i in plan.depositables}
+    faltantes = tuple(sorted(d for d in esperados if d not in hashes_destino))
+    mismatches = tuple(sorted(
+        d for d, s in esperados.items()
+        if d in hashes_destino and s is not None and hashes_destino[d] != s
+    ))
+    extras = tuple(sorted(d for d in hashes_destino if d not in esperados))
+    ok = not (faltantes or mismatches or extras)
+    return Reconciliacion(ok=ok, faltantes=faltantes, mismatches=mismatches, extras=extras)

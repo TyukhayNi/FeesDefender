@@ -94,3 +94,29 @@ def test_plan_intake_mapea_drive_ev_y_marca_dup_y_cero():
 def test_plan_intake_fuente_desconocida():
     with pytest.raises(ValueError):
         abrir_caso.plan_intake([], [], "inexistente")
+
+
+def _plan_una(dst="01_Drive EV/ACTIVACION/hoja.pdf", sha="aaa"):
+    item = abrir_caso.ItemIntake(relpath="ACTIVACION/hoja.pdf", dst=dst, evento="pull_drive_ev",
+                                 sha256=sha, size=100, dup=False, zero=False)
+    return abrir_caso.PlanIntake(items=(item,), fuente="drive_ev")
+
+
+def test_reconcile_ok():
+    plan = _plan_una()
+    rec = abrir_caso.reconcile(plan, {"01_Drive EV/ACTIVACION/hoja.pdf": "aaa"})
+    assert rec.ok is True
+    assert rec.faltantes == () and rec.mismatches == () and rec.extras == ()
+
+
+def test_reconcile_mismatch_y_faltante_y_extra():
+    plan = _plan_una()
+    rec = abrir_caso.reconcile(plan, {"01_Drive EV/ACTIVACION/hoja.pdf": "ZZZ",
+                                      "01_Drive EV/extra.pdf": "qqq"})
+    assert rec.ok is False
+    assert "01_Drive EV/ACTIVACION/hoja.pdf" in rec.mismatches
+    assert "01_Drive EV/extra.pdf" in rec.extras
+
+    rec2 = abrir_caso.reconcile(plan, {})
+    assert rec2.ok is False
+    assert "01_Drive EV/ACTIVACION/hoja.pdf" in rec2.faltantes
