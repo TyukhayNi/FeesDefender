@@ -133,3 +133,71 @@ def get_file_permissions(service, file_id: str) -> list[dict]:
         if not page_token:
             break
     return perms
+
+
+def read_file_content(service, file_id: str, *, max_bytes: int = 5_000_000) -> dict:
+    """Devuelve el TEXTO de un fichero: Doc nativo exportado a texto, o fichero
+    de texto plano. Los binarios se rechazan (usa download_file_content)."""
+    meta = get_file_metadata(service, file_id, fields="id, name, mimeType, size")
+    mime = meta.get("mimeType", "")
+    name = meta.get("name", "")
+    if mime.startswith(GOOGLE_NATIVE_PREFIX):
+        export_mime = _EXPORT_TEXT.get(mime)
+        if not export_mime:
+            raise ValueError(
+                f"El Doc nativo {mime!r} no es exportable a texto; "
+                f"usa download_file_content."
+            )
+        data = service.files().export_media(fileId=file_id, mimeType=export_mime).execute()
+    else:
+        if not (mime.startswith("text/") or mime in _TEXTUAL_MIMES):
+            raise ValueError(
+                f"El fichero {mime!r} no es de texto; usa download_file_content."
+            )
+        size = int(meta.get("size") or 0)
+        if max_bytes and size > max_bytes:
+            raise ValueError(f"{size} bytes supera max_bytes ({max_bytes}).")
+        data = service.files().get_media(fileId=file_id, supportsAllDrives=True).execute()
+    if isinstance(data, (bytes, bytearray)):
+        if max_bytes and len(data) > max_bytes:
+            raise ValueError(f"{len(data)} bytes supera max_bytes ({max_bytes}).")
+        text = bytes(data).decode("utf-8", "replace")
+    else:
+        text = str(data)
+    return {"id": file_id, "name": name, "mime_type": mime, "text": text}
+
+
+def download_file_content(service, file_id: str, dest_path: str, *,
+                          max_bytes: int = 100_000_000,
+                          keep_editable: bool = False) -> dict:
+    """Descarga a `dest_path` (ruta absoluta ya saneada por el server). Doc
+    nativo → export (default PDF; keep_editable → Office). Devuelve path,
+    bytes y sha256 del artefacto realmente guardado."""
+    meta = get_file_metadata(
+        service, file_id, fields="id, name, mimeType, size, sha256Checksum"
+    )
+    mime = meta.get("mimeType", "")
+    if mime.startswith(GOOGLE_NATIVE_PREFIX):
+        table = _EXPORT_OFFICE if keep_editable else _EXPORT_PDF
+        export_mime = table.get(mime)
+        if not export_mime:
+            raise ValueError(f"El Doc nativo {mime!r} no tiene export soportado.")
+        data = service.files().export_media(fileId=file_id, mimeType=export_mime).execute()
+    else:
+        size = int(meta.get("size") or 0)
+        if max_bytes and size > max_bytes:
+            raise ValueError(f"{size} bytes supera max_bytes ({max_bytes}).")
+        data = service.files().get_media(fileId=file_id, supportsAllDrives=True).execute()
+    if not isinstance(data, (bytes, bytearray)):
+        raise TypeError("La API no devolvió bytes al descargar.")
+    if max_bytes and len(data) > max_bytes:
+        raise ValueError(f"{len(data)} bytes supera max_bytes ({max_bytes}).")
+    dest = Path(dest_path)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(data)
+    return {
+        "path": str(dest),
+        "bytes": len(data),
+        "mime_type": mime,
+        "sha256": hashlib.sha256(bytes(data)).hexdigest(),
+    }

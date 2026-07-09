@@ -87,3 +87,81 @@ def test_get_file_permissions_pagina():
     _, kw0 = svc.recorded("permissions")[0]
     assert kw0["fileId"] == "f1"
     assert kw0["supportsAllDrives"] is True
+
+
+def test_read_file_content_doc_nativo_exporta_texto():
+    svc = FakeService(files={
+        "get": {"id": "g1", "name": "Nota", "mimeType": "application/vnd.google-apps.document"},
+        "export_media": b"hola mundo",
+    })
+    out = drive_ops.read_file_content(svc, "g1")
+    assert out["text"] == "hola mundo"
+    assert out["mime_type"] == "application/vnd.google-apps.document"
+    _, kw = svc.recorded("files")[-1]
+    assert kw["mimeType"] == "text/plain"
+
+
+def test_read_file_content_texto_plano():
+    svc = FakeService(files={
+        "get": {"id": "t1", "name": "a.txt", "mimeType": "text/plain", "size": "5"},
+        "get_media": b"plano",
+    })
+    out = drive_ops.read_file_content(svc, "t1")
+    assert out["text"] == "plano"
+
+
+def test_read_file_content_binario_rechaza():
+    svc = FakeService(files={
+        "get": {"id": "b1", "name": "x.pdf", "mimeType": "application/pdf", "size": "10"},
+    })
+    with pytest.raises(ValueError):
+        drive_ops.read_file_content(svc, "b1")
+
+
+def test_download_file_content_binario_escribe_y_hashea(tmp_path):
+    import hashlib as _h
+    data = b"binario-de-prueba"
+    svc = FakeService(files={
+        "get": {"id": "b1", "name": "x.bin", "mimeType": "application/octet-stream", "size": str(len(data))},
+        "get_media": data,
+    })
+    dest = tmp_path / "sub" / "x.bin"
+    out = drive_ops.download_file_content(svc, "b1", str(dest))
+    assert dest.read_bytes() == data
+    assert out["bytes"] == len(data)
+    assert out["sha256"] == _h.sha256(data).hexdigest()
+
+
+def test_download_file_content_doc_nativo_default_pdf(tmp_path):
+    svc = FakeService(files={
+        "get": {"id": "g1", "name": "Doc", "mimeType": "application/vnd.google-apps.document"},
+        "export_media": b"%PDF-1.4 fake",
+    })
+    dest = tmp_path / "doc.pdf"
+    drive_ops.download_file_content(svc, "g1", str(dest))
+    _, kw = svc.recorded("files")[-1]
+    assert kw["mimeType"] == "application/pdf"
+    assert dest.read_bytes() == b"%PDF-1.4 fake"
+
+
+def test_download_file_content_keep_editable_office(tmp_path):
+    svc = FakeService(files={
+        "get": {"id": "g1", "name": "Doc", "mimeType": "application/vnd.google-apps.document"},
+        "export_media": b"docx-bytes",
+    })
+    dest = tmp_path / "doc.docx"
+    drive_ops.download_file_content(svc, "g1", str(dest), keep_editable=True)
+    _, kw = svc.recorded("files")[-1]
+    assert kw["mimeType"] == (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+
+
+def test_download_file_content_supera_max_bytes(tmp_path):
+    data = b"x" * 100
+    svc = FakeService(files={
+        "get": {"id": "b1", "name": "x.bin", "mimeType": "application/octet-stream", "size": "100"},
+        "get_media": data,
+    })
+    with pytest.raises(ValueError):
+        drive_ops.download_file_content(svc, "b1", str(tmp_path / "x.bin"), max_bytes=10)
