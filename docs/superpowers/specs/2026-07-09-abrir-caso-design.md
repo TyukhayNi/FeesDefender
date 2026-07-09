@@ -201,9 +201,11 @@ Ya escrito por `ensure_case` (5.2). Reentrante: si existe, no recrea.
 
 ### 5.9 Alta CRM — **gate de confirmación (D3)**
 Si `--crm api`: `crm_payload(...)` → **mostrar** el payload → esperar OK →
-`create_expediente[_judicial]()` (REST `x-api-key`). Volcar `id`, `num`, `serie` a
-`_caso.md` vía `register_expediente()` (el escritor de metadata local) +
-`_atomic_write_caso_md`. `--crm skip` ⇒ `referencia_crm` pendiente + TODO.
+`create_expediente[_judicial]()` (REST `x-api-key`), que devuelve **solo el `id`** (string).
+Volcar ese `id` a `_caso.md` vía `register_expediente(case_id, id, element)` (el escritor de
+metadata local; `element` = `extrajudiciales`|`expedientes_judiciales` según la rama del
+payload). `num`/`serie` no vienen en la respuesta de alta: si se quieren en `_caso.md`, un
+`pull_crm` posterior los trae (fuera de F1). `--crm skip` ⇒ `referencia_crm` pendiente + TODO.
 
 ### 5.10 Limpieza y reporte
 Cowork: `delete_path(_ingest/_extract_<w_code>)` (el zip crudo en `_ingest` **intacto**).
@@ -370,8 +372,8 @@ def abrir_caso(args):
     if args.crm == "api":                                                                   # 5.9
         payload = core.abrir_caso.crm_payload(ident, args)
         if confirmar(payload):                     # gate D3
-            r = sudespacho_create.create_expediente(payload)
-            case_manager.register_expediente(ident.case_id, r.id, r.element)  # metadata local
+            exp_id = sudespacho_create.create_expediente(payload)   # -> str (id)
+            case_manager.register_expediente(ident.case_id, exp_id, element_de(payload))  # metadata local
     return core.abrir_caso.report(...)                                                       # 5.10
 ```
 
