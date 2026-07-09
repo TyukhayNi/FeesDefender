@@ -46,3 +46,29 @@ def test_ocr_quality_baja_densidad_es_low():
         n_pags=10,
     )
     assert estado == "low"
+
+
+def test_plan_enruta_y_marca_skip():
+    inventario = [
+        {"rel_path": "01_Drive EV/encargo.pdf", "sha256": "aaaa1111", "ext": ".pdf"},
+        {"rel_path": "03_Email/hilo.eml", "sha256": "bbbb2222", "ext": ".eml"},
+        {"rel_path": "01_Drive EV/foto.heic", "sha256": "cccc3333", "ext": ".heic"},
+        {"rel_path": "01_Drive EV/video.mp4", "sha256": "dddd4444", "ext": ".mp4"},
+    ]
+    plan = sm.plan(inventario, estado_previo={"bbbb2222"})
+    by_sha = {d.sha256: d for d in plan}
+    assert by_sha["aaaa1111"].ruta == "pdf"
+    assert by_sha["aaaa1111"].slug == "encargo__aaaa1111"
+    assert by_sha["bbbb2222"].skip is True          # ya procesado
+    assert by_sha["cccc3333"].ruta == "imagen"
+    assert by_sha["dddd4444"].ruta == "sin_soporte"
+    assert by_sha["aaaa1111"].skip is False
+
+
+def test_plan_excluye_90_notas_personales():
+    inventario = [
+        {"rel_path": "90_Notas personales/borrador.pdf", "sha256": "e1", "ext": ".pdf"},
+        {"rel_path": "01_Drive EV/ok.pdf", "sha256": "e2", "ext": ".pdf"},
+    ]
+    plan = sm.plan(inventario, estado_previo=set())
+    assert [d.sha256 for d in plan] == ["e2"]

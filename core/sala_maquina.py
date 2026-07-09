@@ -12,6 +12,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from core.utils import output_slug
+
 _EXTS_IMAGEN = {".jpg", ".jpeg", ".png", ".tiff", ".tif", ".heic", ".heif", ".webp", ".bmp", ".gif"}
 _EXTS_NATIVO = {".eml", ".txt", ".md", ".rtf", ".ics", ".csv", ".xlsx", ".xls", ".docx", ".html", ".htm"}
 
@@ -63,3 +65,49 @@ def ocr_quality(text: str, n_pags: int | None) -> tuple[str, str]:
     if n_pags and n_pags > 0 and (len(t) / n_pags) < _MIN_DENSIDAD:
         return "low", f"densidad baja ({len(t) // max(n_pags,1)} char/pág)"
     return "ok", ""
+
+
+_EXCLUIR_PREFIJOS = ("90_Notas personales/", "90_Notas personales\\")
+
+
+@dataclass
+class DocPlan:
+    rel_path: str
+    sha256: str
+    ext: str
+    ruta: str            # pdf | imagen | nativo | sin_soporte
+    slug: str            # output_slug (slug__sha8)
+    skip: bool = False
+
+
+@dataclass
+class DocCobertura:
+    slug: str
+    rel_path: str
+    metodo: str          # pypdf | ocr | nativo | sin_soporte
+    estado: str          # ok | low | empty | sin_texto | sin_soporte
+    chars: int = 0
+    ocr: bool = False
+    nota: str = ""
+
+
+def plan(inventario: list[dict], estado_previo: set[str]) -> list[DocPlan]:
+    """Puro: enruta cada fichero y marca skip si su sha ya fue procesado.
+
+    Excluye 90_Notas personales/ (zona del abogado, invariante del proyecto).
+    """
+    out: list[DocPlan] = []
+    for f in inventario:
+        rel = f["rel_path"]
+        if rel.startswith(_EXCLUIR_PREFIJOS):
+            continue
+        sha = f["sha256"]
+        out.append(DocPlan(
+            rel_path=rel,
+            sha256=sha,
+            ext=f["ext"],
+            ruta=clasificar_ruta(f["ext"]),
+            slug=output_slug(rel, sha),
+            skip=sha in estado_previo,
+        ))
+    return out
