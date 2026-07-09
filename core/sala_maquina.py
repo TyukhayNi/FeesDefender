@@ -293,11 +293,22 @@ def _ocr_y_extraer(case_dir: Path, sm_dir: Path, case_id: str, d: DocPlan,
         buscable = ocr_pdf(entrada, ocr_out)
     except Exception as e:  # OCRError incl. cifrado/corrupto/firmado
         return DocCobertura(d.slug, d.rel_path, "ocr", "empty", 0, True, f"OCR falló: {e}", d.sha256)
+    # Contrato de ocr_pdf: si el PDF ya tenía capa de texto (rc=6 / PriorOcrFound),
+    # devuelve la ENTRADA sin escribir ocr_out → no hay artefacto de custodia en
+    # 01_OCR/. No afirmamos una custodia que no existe: el texto se extrae igual de
+    # la capa previa, pero se refleja como pypdf (ocr=False) con nota explícita.
+    persistido = Path(buscable) == ocr_out and ocr_out.exists()
     texto = _try_pypdf(buscable) or ""
     estado, nota = ocr_quality(texto, _pdf_num_paginas(buscable))
     texto, estado, nota = _aplicar_vision(buscable, texto, estado, nota, vision)
-    _escribir_md(case_dir, case_id, d.slug, d.rel_path, texto, "ocr", True, estado)
-    return DocCobertura(d.slug, d.rel_path, "ocr", estado, len(texto), True, nota, d.sha256)
+    if persistido:
+        metodo, ocr = "ocr", True
+    else:
+        metodo, ocr = "pypdf", False
+        aviso = "OCRmyPDF no regeneró (PDF ya tenía texto); sin artefacto en 01_OCR"
+        nota = f"{nota} · {aviso}" if nota else aviso
+    _escribir_md(case_dir, case_id, d.slug, d.rel_path, texto, metodo, ocr, estado)
+    return DocCobertura(d.slug, d.rel_path, metodo, estado, len(texto), ocr, nota, d.sha256)
 
 
 def ejecutar(case_dir: Path, docs: list[DocPlan], *, case_id: str,

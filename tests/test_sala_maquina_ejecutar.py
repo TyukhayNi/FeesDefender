@@ -79,6 +79,51 @@ def test_ejecutar_pdf_escaneado_llama_ocr_y_persiste(tmp_path, monkeypatch):
     assert cob[0].metodo == "ocr" and cob[0].ocr is True and cob[0].estado == "ok"
 
 
+def test_ejecutar_ocr_sin_regenerar_no_afirma_custodia(tmp_path, monkeypatch):
+    # IMPORTANTE 2: ocr_pdf devuelve la ENTRADA (rc=6, el PDF ya tenía texto) SIN
+    # crear el buscable en 01_OCR/. No se debe afirmar custodia inexistente:
+    # metodo != "ocr", ocr=False, y la nota deja constancia. Sin excepción.
+    case = tmp_path / "EV-2026-001"
+    (case / "00_Input" / "01_Drive EV").mkdir(parents=True)
+    src = case / "00_Input" / "01_Drive EV" / "con_texto_previo.pdf"
+    src.write_bytes(b"%PDF-1.4\n% ya tiene capa de texto\n")
+    sha = sm_file_sha(src)
+
+    ocr_dir = case / "01_Procesado" / "02_Sala de máquina" / "01_OCR"
+
+    def _fake_ocr_prior(entrada, salida, **k):
+        # simula rc=6 / PriorOcrFoundError: devuelve la entrada, NO crea la salida
+        return Path(entrada)
+
+    # 1ª llamada (en ejecutar, sobre src) = texto insuficiente -> entra a la rama OCR;
+    # 2ª llamada (en _ocr_y_extraer, sobre el buscable=src) = texto de la capa previa.
+    llamadas = {"n": 0}
+
+    def _fake_pypdf(path):
+        llamadas["n"] += 1
+        if llamadas["n"] == 1:
+            return "corto"                       # < 100 chars -> _texto_suficiente False
+        return "Contrato de mediacion inmobiliaria entre las partes firmantes. " * 3
+
+    monkeypatch.setattr(sm, "ocr_pdf", _fake_ocr_prior)
+    monkeypatch.setattr(sm, "_try_pypdf", _fake_pypdf)
+    monkeypatch.setattr(sm, "_pdf_num_paginas", lambda p: 1)
+
+    plan = [sm.DocPlan(rel_path="01_Drive EV/con_texto_previo.pdf", sha256=sha, ext=".pdf",
+                       ruta="pdf", slug=f"prev__{sha[:8]}")]
+    cob = sm.ejecutar(case, plan, case_id="EV-2026-001")
+
+    # NO se creó artefacto de custodia en 01_OCR/
+    assert not (ocr_dir / f"prev__{sha[:8]}.pdf").exists()
+    # el MD sí se escribe (el texto de la capa previa se extrae igualmente)
+    md = case / "01_Procesado" / "02_Sala de máquina" / "03_MD" / f"prev__{sha[:8]}.md"
+    assert "mediacion" in md.read_text(encoding="utf-8")
+    # no se miente: metodo no afirma custodia OCR, ocr=False, y la nota lo explica
+    assert cob[0].metodo != "ocr"
+    assert cob[0].ocr is False
+    assert "01_OCR" in cob[0].nota
+
+
 def test_ejecutar_aisla_fallo_por_documento(tmp_path, monkeypatch):
     # spec §9: un fallo en un documento no aborta el lote — se registra en
     # cobertura y se sigue con el resto. Simula el gotcha real de los lock
