@@ -72,7 +72,8 @@ Preview→Apply; y **sugerir** `organizar-sala-lectura` como siguiente paso.
 | D2 | **Layout** | Escribe en **`01_Procesado/02_Sala de máquina/{01_OCR, 03_MD, raw_text}`**. Crea la carpeta; **no** renombra `Sala lectura` (ver D6). |
 | D3 | **Motor OCR** | **OCRmyPDF** (fijado) — página a página, sin tope de 30 pp, `spa+cat+rus`. **Claude visión = refuerzo OPCIONAL** (off por defecto) para páginas duras. |
 | D4 | **Handoff a sala de lectura** | **Sugerir (puntero atómico)**, no encadenar. Alinea con el modelo del ecosistema de `abrir-caso`. |
-| D5 | **Cobertura** | `_revisar/_cobertura.md`: una fila por documento con estado (`ok`/`low`/`empty`/`sin_texto`), método y chars. **Sin fallo silencioso.** |
+| D5 | **Red de seguridad de calidad** | `ocr_quality` = **densidad char/pág + ratio de gibberish + check de idioma `spa/cat/rus`** (no solo conteo de chars: caza la basura legible que un umbral de longitud deja pasar). `_revisar/_cobertura.md` = **worklist de revisión humana** (lista `low`/`empty`/`gibberish` con motivo). **Sin fallo silencioso.** El reocr automático + audit completo es del motor (§D.2/§G.7), diferido. |
+| D5b | **NO se usa `pipeline.run()`** | La skill **no** invoca el orquestador actual **ni la rama OCR (Docling, tope 30 pp) del extractor** — la pieza diagnosticada como no-óptima (§B del motor). Reutiliza solo los **helpers deterministas sanos** del extractor + OCRmyPDF aguas arriba (ver §5.1). |
 | D6 | **Renombrado `Sala lectura`→`01_Sala de lectura`** | **Fuera de alcance.** Los casos existentes ya tienen `Sala lectura/` con contenido en el Drive; renombrar solo en código deja las dos carpetas (drift). Exige la migración de flota (`reorganizar_caso`+`layout_version`) = **motor F0**. |
 | D7 | **raw_text** | Se **conserva** como sub-artefacto **sin numerar** dentro de `02_Sala de máquina/` (ancla de idempotencia + debug), no como producto de cabecera. |
 | D8 | **Integración en el ecosistema** | Cliente futuro del patrón **grafo único** (`MEJORAS #50`, otra sesión). Ahora solo la **descripción disambiguada** del frontmatter; **no** se hand-escribe sección de ecosistema. |
@@ -144,6 +145,43 @@ un **anticipo compatible**, no scaffolding que haya que migrar.
   (manuscrito/tablas), refuerza el MD con Claude visión (Sonnet 5/Opus 4.8) renderizando la
   página con `pypdfium2`. **No** genera PDF buscable (eso solo OCRmyPDF). Gateado por la regla
   PII relajada temporalmente (§10).
+
+### 5.1 Qué se reutiliza y qué NO (por qué no el `pipeline.run()` actual)
+
+El flujo actual (`core/pipeline.py::run`) enruta los PDF escaneados por **Docling con tope de
+`MAX_OCR_PAGINAS = 30`** (`extractor._extract_one`, líneas 246-247) — la pieza diagnosticada
+como **no-óptima** (§B del motor: OOM/segfault de RapidOCR, hueco >30 pp → `.md` vacío, fallo
+silencioso). `organizar-sala-maquina` **no lo usa**:
+
+- **NO invoca** `pipeline.run()` ni `extractor._extract_one` (que embebe la rama Docling/30 pp).
+- **SÍ reutiliza los helpers deterministas SANOS** de `extractor`: `_try_pypdf` +
+  `_texto_suficiente` (enrutado del PDF digital), `_try_email`/`_try_rtf`/`_try_ics`/
+  `_try_pandas_table`/`_try_docx`/`_read_text_file` (nativos), y `markdown_generator.build`
+  (envoltura MD con frontmatter).
+- El **OCR va aguas arriba con OCRmyPDF** (`anon.ocr.ocr_pdf`, página a página, sin tope) →
+  produce el **PDF buscable** en `01_OCR/` → el texto se extrae de ese PDF ya buscable con
+  `_try_pypdf`. **Docling queda completamente fuera del camino.**
+
+Así se cierra el hueco de >30 pp y se elimina el doble OCR sin heredar la orquestación viciada.
+La unificación definitiva (una sola fachada `procesar_expediente()`) es del motor (F1), fuera
+de alcance.
+
+### 5.2 Red de seguridad de calidad (`ocr_quality`)
+
+Por cada documento OCR-izado se computa un `ocr_quality ∈ {ok, low, empty}` con **tres señales**
+(no solo conteo de chars, que deja pasar la basura legible):
+
+1. **Densidad** char/pág (reutiliza el umbral de `_texto_suficiente`).
+2. **Ratio de gibberish** — fracción de tokens sin vocal / secuencias no-léxicas; alto ⇒ OCR
+   ruidoso aunque haya muchos chars.
+3. **Idioma** — el texto es mayoritariamente palabras reales en `spa/cat/rus` (heurística
+   ligera, sin modelo pesado); si no casa ⇒ sospecha de gibberish/idioma no soportado.
+
+`low`/`empty`/gibberish **no abortan**: se persisten igual, se marcan en `_cobertura.md` como
+**worklist de revisión humana** (con motivo), y el reporte final dice "N documentos requieren tu
+revisión / candidatos a `--vision`". Es **marca-y-expón para el humano**, no garantía automática:
+el **reocr automático por calidad** (motor §G.7) y el **audit completo** (motor §D.2) quedan
+diferidos.
 
 ---
 
@@ -270,7 +308,9 @@ embebido `<!-- ECOSISTEMA:... -->` se añadirá cuando #50 aterrice. **No** se e
 
 - **Unit (core, puro):** `plan` (enrutado por extensión, dedup por sha, skip incremental,
   destino `slug__sha8`); `render_cobertura` (estados, orden estable); guard de `00_Input`
-  (falla si un destino cae bajo `00_Input`/`90_Notas personales`).
+  (falla si un destino cae bajo `00_Input`/`90_Notas personales`); **`ocr_quality`** sobre
+  fixtures — texto limpio `spa/cat/rus` ⇒ `ok`; gibberish denso (pasa el umbral de chars pero
+  sin vocales/no-léxico) ⇒ `low`; vacío/residual ⇒ `empty`; idioma no soportado ⇒ marcado.
 - **Integración:** PDF escaneado real/mock → PDF buscable persistido + MD + cobertura;
   PDF digital → pypdf sin OCR; `.heic`/imagen → OCR; nativo → texto; >30 pp no se cae;
   reejecución idempotente (skip por sha); `--force` regenera; OOM aislado marca `empty` sin
