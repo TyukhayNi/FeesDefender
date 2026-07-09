@@ -137,7 +137,11 @@ def get_file_permissions(service, file_id: str) -> list[dict]:
 
 def read_file_content(service, file_id: str, *, max_bytes: int = 5_000_000) -> dict:
     """Devuelve el TEXTO de un fichero: Doc nativo exportado a texto, o fichero
-    de texto plano. Los binarios se rechazan (usa download_file_content)."""
+    de texto plano. Los binarios se rechazan (usa download_file_content).
+
+    El texto se decodifica como UTF-8 con reemplazo (`errors='replace'`): un
+    fichero de texto en otra codificación (p.ej. cp1252) puede mostrar
+    caracteres de reemplazo. Para fidelidad de bytes usa download_file_content."""
     meta = get_file_metadata(service, file_id, fields="id, name, mimeType, size")
     mime = meta.get("mimeType", "")
     name = meta.get("name", "")

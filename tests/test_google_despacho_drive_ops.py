@@ -165,3 +165,23 @@ def test_download_file_content_supera_max_bytes(tmp_path):
     })
     with pytest.raises(ValueError):
         drive_ops.download_file_content(svc, "b1", str(tmp_path / "x.bin"), max_bytes=10)
+
+
+def test_download_file_content_export_supera_max_bytes(tmp_path):
+    # Doc nativo: el tamaño real solo se conoce tras exportar → cubre el check post-fetch
+    svc = FakeService(files={
+        "get": {"id": "g1", "name": "Doc", "mimeType": "application/vnd.google-apps.document"},
+        "export_media": b"x" * 100,
+    })
+    with pytest.raises(ValueError):
+        drive_ops.download_file_content(svc, "g1", str(tmp_path / "doc.pdf"), max_bytes=10)
+
+
+def test_read_file_content_export_supera_max_bytes():
+    # Doc nativo exportado a texto: cubre el check post-fetch de max_bytes
+    svc = FakeService(files={
+        "get": {"id": "g1", "name": "Doc", "mimeType": "application/vnd.google-apps.document"},
+        "export_media": b"x" * 100,
+    })
+    with pytest.raises(ValueError):
+        drive_ops.read_file_content(svc, "g1", max_bytes=10)
