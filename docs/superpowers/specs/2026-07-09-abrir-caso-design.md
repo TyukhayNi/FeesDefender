@@ -92,7 +92,9 @@ cerebro puro + orquestadores finos + músculo de I/O).
 ### 3.1 `core/abrir_caso.py` — CEREBRO PURO (cero I/O)
 
 - `resolver_identidad(args, listado_ciudad, cfg) -> Identidad`
-  - `case_folder = "{codigo} - {direccion_corta} - ({w_code}) - {sufijo}"`.
+  - `case_id = "{codigo} - {direccion} ({w_code}) - {sufijo}"` — formato **canónico**
+    que valida `core.utils.validate_case_id` (la dirección va pegada al paréntesis de la
+    referencia, **sin** guion previo; p. ej. `BaRS1 - Tibidabo 8 (W-02VND1) - Vuelta`).
   - Busca en el listado de `CASOS/<ciudad>/` prefijos `{codigo}` y `{w_code}`.
   - **Colisión (D2):** `w_code` duplicado ⇒ error (mismo caso ya existe) salvo `--force`.
     `codigo` duplicado + `w_code` nuevo ⇒ marca `requiere_confirmacion` (política `ask`);
