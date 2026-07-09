@@ -197,3 +197,25 @@ def reconcile(plan: PlanIntake, hashes_destino: dict[str, str]) -> Reconciliacio
     extras = tuple(sorted(d for d in hashes_destino if d not in esperados))
     ok = not (faltantes or mismatches or extras)
     return Reconciliacion(ok=ok, faltantes=faltantes, mismatches=mismatches, extras=extras)
+
+
+def crm_payload(identidad: Identidad, *, tipo_caso: str, cuantia: float = 0.0):
+    """Construye el DTO NuevoExpedienteExtrajudicial para sudespacho.
+
+    Import local de sudespacho_create para no arrastrar sus deps de red al
+    importar el cerebro.
+    """
+    from core import sudespacho_create as sc
+
+    posicion_crm = {
+        config.POSICION_ACTORA: sc.POSICION_ACTOR,
+        config.POSICION_DEFENSIVA: sc.POSICION_DEMANDADO,
+        config.POSICION_OTROS: sc.POSICION_ACTOR,
+    }[identidad.posicion]
+
+    return sc.NuevoExpedienteExtrajudicial(
+        referencia_cliente=identidad.case_id,
+        cuantia=cuantia,
+        tags=sc.tag_defaults_for_tipo_caso(tipo_caso),
+        posicion=posicion_crm,
+    )

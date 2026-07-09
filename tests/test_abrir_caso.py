@@ -120,3 +120,28 @@ def test_reconcile_mismatch_y_faltante_y_extra():
     rec2 = abrir_caso.reconcile(plan, {})
     assert rec2.ok is False
     assert "01_Drive EV/ACTIVACION/hoja.pdf" in rec2.faltantes
+
+
+def test_crm_payload_extrajudicial_actora():
+    ident = abrir_caso.resolver_identidad(
+        **_ident(codigo="BaRS11", w_code="W-02Z2NR"),
+        nombres_existentes=[], force=False,
+    )
+    dto = abrir_caso.crm_payload(ident, tipo_caso="VUELTA", cuantia=15000.0)
+    from core import sudespacho_create as sc
+    assert isinstance(dto, sc.NuevoExpedienteExtrajudicial)
+    assert dto.referencia_cliente == ident.case_id
+    assert dto.cuantia == 15000.0
+    assert dto.posicion == sc.POSICION_ACTOR           # actora → ACTOR
+    # tags base del tipo de caso presentes
+    assert dto.tags == sc.tag_defaults_for_tipo_caso("VUELTA")
+
+
+def test_crm_payload_defensiva_mapea_demandado():
+    ident = abrir_caso.resolver_identidad(
+        **_ident(codigo="BaRS11", w_code="W-02Z2NR", tipo_caso="LAU_20"),
+        nombres_existentes=[], force=False,
+    )
+    dto = abrir_caso.crm_payload(ident, tipo_caso="LAU_20", cuantia=0.0)
+    from core import sudespacho_create as sc
+    assert dto.posicion == sc.POSICION_DEMANDADO
