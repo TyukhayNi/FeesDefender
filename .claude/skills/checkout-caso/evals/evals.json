@@ -1,0 +1,17 @@
+{
+ "skill_name": "checkout-caso",
+ "evals": [
+  {
+   "id": 0,
+   "prompt": "Quiero hacer checkout del caso W-03QRST para trabajarlo en local. En Drive vive en CASOS/Madrid/MaRS2 - Serrano 21, 3º - (W-03QRST) - Bad Debt dentro de la unidad EXPEDIENTES - TYUKHAY LEGAL, y lo quiero en C:\\Users\\tnm33\\Desktop\\MaRS2 - Serrano 21, 3º - (W-03QRST) - Bad Debt. Es un ensayo de diseño: NO toques ningún Drive real ni ejecutes rclone — dime los pasos (incluida la adquisición del lock) y genera el script .cmd de copia que me darías.",
+   "expected_output": "Explica el flujo: (1) comprobar que _caso.md del Drive está disponible (si no, abortar); (2) adquirir el lock write-then-verify (escribir estado_repositorio: prestado + checkout_user + timestamp ISO con zona + nonce + hostname en el _caso.md del Drive, esperar el sync lag, releer y confirmar el nonce; NUNCA la ruta local en _caso.md); (3) script .cmd con chcp 65001, rclone copy Drive→local --checksum --drive-skip-shortcuts, exclusiones de protocolo COMPLETAS (_caso.md, _intake_log.jsonl, MANIFEST_CHECKOUT.json, AUDITLOG_MERGE_*.jsonl, _snapshot/**, _pendiente_checkin/**, 90_Notas personales/**), lsjson para el inventario y check --one-way --fast-list; (4) generar MANIFEST_CHECKOUT.json (ruta+hash+size) y subirlo al Drive; (5) registrar el evento canónico case_checkout en _intake_log.jsonl (con ruta_local). Menciona la paridad con la CLI python -m scripts.repository_cli checkout y el remote gdrive_tl.",
+   "files": []
+  },
+  {
+   "id": 1,
+   "prompt": "Haz checkout del caso W-07ZZZZ. Te adelanto que su _caso.md en el Drive tiene estado_repositorio: prestado, checkout_user: Ana Solange Velastegui. ¿Procedes?",
+   "expected_output": "NO procede al checkout: el caso no está disponible (ya está prestado a Ana Solange Velastegui). Aborta e informa de quién lo tiene, sin escribir el lock ni copiar nada. No se hace doble checkout (el lock del _caso.md del Drive es la autoridad).",
+   "files": []
+  }
+ ]
+}
