@@ -10,6 +10,7 @@ extractor. Ver docs/superpowers/specs/2026-07-09-organizar-sala-maquina-design.m
 from __future__ import annotations
 
 import re
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from core.extractor import (
     _try_email, _try_rtf, _try_ics, _try_pandas_table, _try_docx, _read_text_file,
 )
 from core.anon.ocr import ocr_pdf
+from core.anon.imagen_a_pdf import convertir as convertir_imagen
 from core.utils import file_sha256, now_iso, output_slug, text_sha256, write_md
 
 _EXTS_IMAGEN = {".jpg", ".jpeg", ".png", ".tiff", ".tif", ".heic", ".heif", ".webp", ".bmp", ".gif"}
@@ -217,15 +219,33 @@ def _escribir_md(case_dir, case_id, slug, rel_path, texto, metodo, ocr, estado):
     write_md(md_path, meta, texto)
 
 
+def _ocr_y_extraer(case_dir: Path, sm_dir: Path, case_id: str, d: DocPlan,
+                    entrada: Path) -> DocCobertura:
+    """OCRmyPDF sobre `entrada` → PDF buscable persistido en 01_OCR/ → texto → MD.
+
+    Compartido por el camino PDF escaneado y el camino imagen/`.heic` (ambos
+    terminan en "aplícale OCR a un PDF"; solo cambia de dónde sale ese PDF).
+    """
+    ocr_out = destino_seguro(sm_dir / "01_OCR" / f"{d.slug}.pdf", case_dir)
+    try:
+        buscable = ocr_pdf(entrada, ocr_out)
+    except Exception as e:  # OCRError incl. cifrado/corrupto/firmado
+        return DocCobertura(d.slug, d.rel_path, "ocr", "empty", 0, True, f"OCR falló: {e}", d.sha256)
+    texto = _try_pypdf(buscable) or ""
+    estado, nota = ocr_quality(texto, _pdf_num_paginas(buscable))
+    _escribir_md(case_dir, case_id, d.slug, d.rel_path, texto, "ocr", True, estado)
+    return DocCobertura(d.slug, d.rel_path, "ocr", estado, len(texto), True, nota, d.sha256)
+
+
 def ejecutar(case_dir: Path, docs: list[DocPlan], *, case_id: str,
              vision: bool = False) -> list[DocCobertura]:
     """Recorre el plan escribiendo 01_OCR/, raw_text/, 03_MD/. Devuelve cobertura.
 
-    Rutas PDF (F1): pypdf si hay capa de texto suficiente; si no, OCRmyPDF →
-    PDF buscable persistido en 01_OCR/ → texto del PDF buscable → MD.
-    Nativo (`.eml`/`.docx`/`.txt`/...): helpers deterministas de `extractor`,
-    sin tocar 01_OCR/. imagen/`.heic`/`--vision` se implementan a continuación
-    en esta misma fase F2 (aquí producen 'sin_soporte' provisional).
+    Rutas (spec §5): PDF con capa de texto → pypdf sin OCR; PDF escaneado o
+    imagen/`.heic` → `imagen_a_pdf` (si aplica) → OCRmyPDF → PDF buscable
+    persistido en 01_OCR/ → texto; nativo (`.eml`/`.docx`/`.txt`/...) → helpers
+    deterministas de `extractor`, sin tocar 01_OCR/. `--vision` se implementa a
+    continuación en esta misma fase F2 (aquí el flag aún no tiene efecto).
 
     (`docs`, no `plan`: evita tapar la función pública `plan()` del módulo.)
     """
@@ -251,24 +271,27 @@ def ejecutar(case_dir: Path, docs: list[DocPlan], *, case_id: str,
                     cobertura.append(DocCobertura(d.slug, d.rel_path, "pypdf", estado, len(texto), False, nota, d.sha256))
                     continue
                 # escaneado → OCRmyPDF (sin tope de páginas)
-                ocr_out = destino_seguro(sm_dir / "01_OCR" / f"{d.slug}.pdf", case_dir)
-                try:
-                    buscable = ocr_pdf(src, ocr_out)
-                except Exception as e:  # OCRError incl. cifrado/corrupto/firmado
-                    cobertura.append(DocCobertura(d.slug, d.rel_path, "ocr", "empty", 0, True, f"OCR falló: {e}", d.sha256))
-                    continue
-                texto = _try_pypdf(buscable) or ""
-                estado, nota = ocr_quality(texto, _pdf_num_paginas(buscable))
-                _escribir_md(case_dir, case_id, d.slug, d.rel_path, texto, "ocr", True, estado)
-                cobertura.append(DocCobertura(d.slug, d.rel_path, "ocr", estado, len(texto), True, nota, d.sha256))
+                cobertura.append(_ocr_y_extraer(case_dir, sm_dir, case_id, d, src))
+            elif d.ruta == "imagen":
+                # imagen/.heic → PDF intermedio (no persistido: solo el buscable
+                # tras OCR va a 01_OCR/, spec §5) → mismo camino OCR que un escaneado.
+                with tempfile.TemporaryDirectory() as tmp:
+                    intermedio = Path(tmp) / f"{d.slug}__imagen.pdf"
+                    try:
+                        convertir_imagen(src, intermedio)
+                    except Exception as e:  # Pillow/pillow-heif ausente, imagen corrupta...
+                        cobertura.append(DocCobertura(
+                            d.slug, d.rel_path, "sin_soporte", "sin_soporte", 0, False,
+                            f"conversión a PDF falló: {e}", d.sha256))
+                        continue
+                    cobertura.append(_ocr_y_extraer(case_dir, sm_dir, case_id, d, intermedio))
             elif d.ruta == "nativo":
                 texto = _extraer_nativo(src, d.ext) or ""
                 estado, nota = ocr_quality(texto, None)
                 _escribir_md(case_dir, case_id, d.slug, d.rel_path, texto, "nativo", False, estado)
                 cobertura.append(DocCobertura(d.slug, d.rel_path, "nativo", estado, len(texto), False, nota, d.sha256))
             else:
-                # imagen/sin_soporte → resto de F2
-                cobertura.append(DocCobertura(d.slug, d.rel_path, "sin_soporte", "sin_soporte", 0, False, "ruta F2", d.sha256))
+                cobertura.append(DocCobertura(d.slug, d.rel_path, "sin_soporte", "sin_soporte", 0, False, "sin soporte para esta extensión", d.sha256))
         except Exception as e:  # cualquier fallo del documento: no tumbar el lote
             cobertura.append(DocCobertura(d.slug, d.rel_path, "error", "empty", 0, False, f"fallo al procesar: {e}", d.sha256))
             continue

@@ -227,3 +227,59 @@ def test_ejecutar_nativo_eml_y_txt_producen_md(tmp_path):
     assert by_slug[f"notas__{sha_txt[:8]}"].metodo == "nativo"
     # nativo no toca 01_OCR/
     assert not (sm_dir / "01_OCR").exists()
+
+
+def test_ejecutar_imagen_convierte_y_ocr(tmp_path, monkeypatch):
+    # Task 11: imagen -> PDF intermedio (imagen_a_pdf) -> mismo camino OCR.
+    from PIL import Image
+
+    case = tmp_path / "EV-2026-001"
+    (case / "00_Input" / "01_Drive EV").mkdir(parents=True)
+    src = case / "00_Input" / "01_Drive EV" / "foto.png"
+    Image.new("RGB", (50, 50), (0, 128, 255)).save(src)
+    sha = sm_file_sha(src)
+
+    def _fake_ocr(entrada, salida, **k):
+        Path(salida).parent.mkdir(parents=True, exist_ok=True)
+        Path(salida).write_bytes(b"%PDF buscable con texto")
+        return Path(salida)
+
+    def _fake_pypdf(path):
+        return "Fotografia del inmueble objeto de la mediacion inmobiliaria. " * 3 \
+            if "01_OCR" in str(path) else ""
+
+    monkeypatch.setattr(sm, "ocr_pdf", _fake_ocr)
+    monkeypatch.setattr(sm, "_try_pypdf", _fake_pypdf)
+    monkeypatch.setattr(sm, "_pdf_num_paginas", lambda p: 1)
+
+    docs = [sm.DocPlan(rel_path="01_Drive EV/foto.png", sha256=sha, ext=".png",
+                       ruta="imagen", slug=f"foto__{sha[:8]}")]
+    cob = sm.ejecutar(case, docs, case_id="EV-2026-001")
+
+    ocr_dir = case / "01_Procesado" / "02_Sala de máquina" / "01_OCR"
+    assert (ocr_dir / f"foto__{sha[:8]}.pdf").exists()
+    md = case / "01_Procesado" / "02_Sala de máquina" / "03_MD" / f"foto__{sha[:8]}.md"
+    assert "inmobiliaria" in md.read_text(encoding="utf-8")
+    assert cob[0].metodo == "ocr" and cob[0].ocr is True and cob[0].estado == "ok"
+    # el intermedio de imagen_a_pdf NO queda persistido en 01_OCR (solo el buscable)
+    assert list(ocr_dir.glob("*__imagen.pdf")) == []
+
+
+def test_ejecutar_imagen_conversion_fallida_es_sin_soporte(tmp_path, monkeypatch):
+    # .heic corrupto/ilegible: la conversión falla -> sin_soporte, sin llamar a OCR.
+    case = tmp_path / "EV-2026-001"
+    (case / "00_Input" / "01_Drive EV").mkdir(parents=True)
+    src = case / "00_Input" / "01_Drive EV" / "foto.heic"
+    src.write_bytes(b"no es una imagen real")
+    sha = sm_file_sha(src)
+
+    def _boom(*a, **k):
+        raise AssertionError("no debe OCR-izar si la conversion a PDF fallo")
+    monkeypatch.setattr(sm, "ocr_pdf", _boom)
+
+    docs = [sm.DocPlan(rel_path="01_Drive EV/foto.heic", sha256=sha, ext=".heic",
+                       ruta="imagen", slug=f"foto__{sha[:8]}")]
+    cob = sm.ejecutar(case, docs, case_id="EV-2026-001")
+
+    assert cob[0].metodo == "sin_soporte" and cob[0].estado == "sin_soporte"
+    assert "convers" in cob[0].nota.lower()
