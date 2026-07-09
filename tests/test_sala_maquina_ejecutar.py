@@ -74,3 +74,14 @@ def test_ejecutar_pdf_escaneado_llama_ocr_y_persiste(tmp_path, monkeypatch):
     md = case / "01_Procesado" / "02_Sala de máquina" / "03_MD" / f"escaneado__{sha[:8]}.md"
     assert "arras" in md.read_text(encoding="utf-8")
     assert cob[0].metodo == "ocr" and cob[0].ocr is True and cob[0].estado == "ok"
+
+
+def test_inventariar_lista_00_input_con_sha(tmp_path):
+    case = tmp_path / "EV-2026-001"
+    (case / "00_Input" / "01_Drive EV").mkdir(parents=True)
+    (case / "00_Input" / "01_Drive EV" / "a.pdf").write_bytes(b"%PDF-1.4 x")
+    (case / "00_Input" / "_intake_log.jsonl").write_text("{}", encoding="utf-8")  # control: ignorar
+    inv = sm.inventariar(case)
+    assert len(inv) == 1
+    assert inv[0]["rel_path"] == "01_Drive EV/a.pdf"
+    assert len(inv[0]["sha256"]) == 64 and inv[0]["ext"] == ".pdf"

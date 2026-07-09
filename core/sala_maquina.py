@@ -15,7 +15,7 @@ from pathlib import Path
 
 from core.extractor import _try_pypdf, _pdf_num_paginas, _texto_suficiente
 from core.anon.ocr import ocr_pdf
-from core.utils import now_iso, output_slug, text_sha256, write_md
+from core.utils import file_sha256, now_iso, output_slug, text_sha256, write_md
 
 _EXTS_IMAGEN = {".jpg", ".jpeg", ".png", ".tiff", ".tif", ".heic", ".heif", ".webp", ".bmp", ".gif"}
 _EXTS_NATIVO = {".eml", ".txt", ".md", ".rtf", ".ics", ".csv", ".xlsx", ".xls", ".docx", ".html", ".htm"}
@@ -214,3 +214,25 @@ def ejecutar(case_dir: Path, plan: list[DocPlan], *, case_id: str,
             # imagen/nativo/sin_soporte → F2
             cobertura.append(DocCobertura(d.slug, d.rel_path, "sin_soporte", "sin_soporte", 0, False, "ruta F2"))
     return cobertura
+
+
+_IGNORAR = {"_intake_log.jsonl", "_inventory.json", ".pulled", ".synced"}
+
+
+def inventariar(case_dir: Path) -> list[dict]:
+    """Lista 00_Input/ (recursivo) con sha256 y ext. Ignora ficheros de control.
+
+    NO excluye 90_Notas personales aquí (lo hace plan(), único punto de verdad),
+    pero sí los ficheros de control del intake.
+    """
+    root = Path(case_dir) / "00_Input"
+    out: list[dict] = []
+    for p in sorted(root.rglob("*")):
+        if not p.is_file() or p.name in _IGNORAR:
+            continue
+        out.append({
+            "rel_path": p.relative_to(root).as_posix(),
+            "sha256": file_sha256(p),
+            "ext": p.suffix.lower(),
+        })
+    return out
