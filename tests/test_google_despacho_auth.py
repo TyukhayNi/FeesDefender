@@ -5,8 +5,6 @@ Se aísla el HOME con la variable GOOGLE_DESPACHO_HOME apuntando a un tmp_path.
 """
 from __future__ import annotations
 
-import importlib
-
 import pytest
 
 from plugins.google_despacho_mcp import google_auth
@@ -15,8 +13,6 @@ from plugins.google_despacho_mcp import google_auth
 @pytest.fixture
 def auth_home(tmp_path, monkeypatch):
     monkeypatch.setenv("GOOGLE_DESPACHO_HOME", str(tmp_path))
-    # recargar para que config_home relea la variable si hubiera cache de módulo
-    importlib.reload(google_auth)
     return tmp_path
 
 
@@ -45,3 +41,14 @@ def test_list_account_emails_vacio_y_ordenado(auth_home):
 def test_load_credentials_sin_token_da_error(auth_home):
     with pytest.raises(FileNotFoundError):
         google_auth.load_credentials("nadie@tyukhay.legal")
+
+
+def test_remove_account_borra_existente_y_devuelve_true(auth_home):
+    token = google_auth.tokens_dir() / "a@tyukhay.legal.json"
+    token.write_text("{}")
+    assert google_auth.remove_account("a@tyukhay.legal") is True
+    assert not token.exists()
+
+
+def test_remove_account_inexistente_devuelve_false(auth_home):
+    assert google_auth.remove_account("nadie@tyukhay.legal") is False
