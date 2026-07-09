@@ -331,7 +331,7 @@ def test_append_event_invoca_fsync_por_cada_escritura(il, cm, monkeypatch):
 
 def test_intake_events_es_frozenset_con_22_eventos(il):
     assert isinstance(il.INTAKE_EVENTS, frozenset)
-    assert len(il.INTAKE_EVENTS) == 22
+    assert len(il.INTAKE_EVENTS) == 23
 
 
 def test_intake_events_contiene_los_canonicos(il):
@@ -340,10 +340,11 @@ def test_intake_events_contiene_los_canonicos(il):
     intake_judicial y pendiente_revision se añadieron con el intake judicial
     automático (2026-06-10). ``cross_source_overlap`` se añadió con el intake
     CRM completo (physical_complete, 2026-06-10). ``upload_drive_link`` con el
-    rescate de enlaces a Drive (Parte 2, 2026-06-24). Los cuatro últimos
-    (``case_checkout``, ``case_checkin``, ``checkout_cancelado``,
-    ``pendiente_checkin``) con la biblioteca de casos (checkout/checkin,
-    DISEÑO_V2 merge+biblioteca, 2026-07-07).
+    rescate de enlaces a Drive (Parte 2, 2026-06-24). Los cuatro (``case_checkout``,
+    ``case_checkin``, ``checkout_cancelado``, ``pendiente_checkin``) con la
+    biblioteca de casos (checkout/checkin, DISEÑO_V2 merge+biblioteca,
+    2026-07-07). ``procesado_sala_maquina`` con la skill organizar-sala-maquina
+    (OCR+MD, 2026-07-09).
     """
     expected = {
         "link_expediente",
@@ -368,5 +369,6 @@ def test_intake_events_contiene_los_canonicos(il):
         "case_checkin",
         "checkout_cancelado",
         "pendiente_checkin",
+        "procesado_sala_maquina",
     }
     assert il.INTAKE_EVENTS == expected
