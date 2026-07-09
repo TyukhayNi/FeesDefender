@@ -78,14 +78,18 @@ es el único que toca OAuth/tokens.
   + Calendar API y añadir los scopes a la pantalla de consentimiento. Reutiliza el
   mismo `credentials.json` (secreto de cliente OAuth de tipo App de escritorio).
 - **Scopes** (fijados en `google_auth.py`, no parametrizados, para que ampliarlos
-  exija edición consciente):
-  - `https://www.googleapis.com/auth/drive` (completo — justificado por escritura/mover/borrar/permisos)
-  - `https://www.googleapis.com/auth/calendar.events`
-  - scopes de ACL/settings de Calendar según se necesiten en F4
-- **Modo External + Testing** → el refresh token de scopes sensibles/restricted
-  **caduca a los 7 días**. Se acepta la recautenticación periódica (`google_cli.py add`),
-  misma cadencia que Gmail. Pasar a Producción exigiría auditoría CASA (scope `drive`
-  es restricted) — no se hace.
+  exija edición consciente). **CORREGIDO por R2 (§11) y por la decisión de scope de F1
+  (2026-07-09):**
+  - **F1 (implementada):** `https://www.googleapis.com/auth/drive.readonly` (mínimo
+    privilegio; doble restricción con la ausencia de tools de escritura).
+  - **F2 ampliará** a `https://www.googleapis.com/auth/drive` completo (edición
+    consciente de `google_auth.SCOPES` + una reautorización).
+  - `https://www.googleapis.com/auth/calendar.events` y ACL/settings: en F4.
+- **Modo External + `En producción`** (R2, §11): el caduca-7-días **NO aplica** (era
+  tope de modo `Testing`). Ambas cuentas funcionan sin reautenticación semanal —
+  verificado en vivo el 2026-07-09 (la cuenta EV `engelvoelkers.com` autorizó con el
+  aviso normal de app-sin-verificar, sin bloqueo de organización). **Este párrafo
+  supera la redacción original «External+Testing / caduca 7 días / no Producción».**
 - Ambas cuentas como **test users** (ya lo son para Gmail; el admin de
   engelvoelkers.com no bloquea apps sin verificar — verificado empíricamente).
 - Token por cuenta en `~/.google-despacho/tokens/<email>.json`; refresco perezoso
