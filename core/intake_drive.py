@@ -57,6 +57,12 @@ from .utils import now_iso
 _DRIVE_EV_INPUT_SUBDIR = "01_Drive EV"
 _PULL_MARKER = ".pulled"
 
+# Ficheros de control del intake que NUNCA son documento (marcadores de
+# idempotencia / inventario interno). Pública: la consumen otros módulos
+# (p.ej. scripts.abrir_caso.hash_tree_local) para excluirlos del ledger
+# forense (_intake_log.jsonl) sin duplicar el literal.
+CONTROL_FILES: frozenset[str] = frozenset({_PULL_MARKER, "_inventory.json", ".synced"})
+
 # Encoding del backend local de rclone para el destino (montaje de Google
 # Drive for Desktop en G:\). Es el conjunto estándar de Windows MÁS LeftSpace
 # y LeftPeriod: las carpetas E&V contienen ficheros cuyo nombre empieza por un
@@ -787,9 +793,8 @@ class DriveIntakeError(RuntimeError):
 
 def _count_files(directory: Path) -> int:
     """Cuenta archivos en `directory` (no recursivo), excluyendo archivos de control."""
-    _CONTROL = {_PULL_MARKER, "_inventory.json", ".synced"}
     return sum(
         1
         for p in directory.iterdir()
-        if p.is_file() and p.name not in _CONTROL
+        if p.is_file() and p.name not in CONTROL_FILES
     )

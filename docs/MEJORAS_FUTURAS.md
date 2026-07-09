@@ -2002,3 +2002,52 @@ e incorporar al manual la tabla de `organoTypes` y la guía de operadores boolea
 navegador (cobertura, exactitud de metadatos, que el `pdfUrl` baje el PDF oficial
 correcto); (3) confirmar la gestión del token Apify. Promovible a `PLAN.md` cuando esas
 tres se cierren.
+
+## 50. Sección "Relación con el ecosistema" en TODAS las skills del despacho (grafo único + generación)
+
+**Disparador.** Decisión de Nikolai (2026-07-09), a raíz del spec de `abrir-caso`
+(`docs/superpowers/specs/2026-07-09-abrir-caso-design.md`), que estrena una sección
+"Relación con el ecosistema de skills" (posición en el flujo, solapes, infra compartida,
+handoff sugerido). Nikolai quiere que **todas** las skills del flujo la tengan.
+
+**Problema que ataca.** Hoy la relación entre skills es tácita → solapes confusos
+(el caso vivo: `intake-expediente` vs `abrir-caso`) y handoffs que Claude no ve. Pero
+escribir esa sección **a mano en cada `SKILL.md`** es una trampa de drift: relaciones
+bidireccionales copiadas en N ficheros = N sitios que envejecen — justo lo que combate
+`docs/GOBERNANZA_FUENTES_VERDAD.md` ("un hecho, un hogar").
+
+**Propuesta (robusta + eficiente) — grafo único + secciones generadas.** Reutiliza el
+patrón que el repo ya tiene para el drift de helpers (`sync_skill_helpers.py`) y de
+taxonomía (`test_gobernanza_taxonomia.py`):
+
+1. **SSOT del grafo:** `docs/ecosistema_skills.yaml` (o bloque estructurado en
+   `docs/ARQUITECTURA_RELACIONES.md`). Cada skill declara **solo sus aristas salientes**:
+   `precede`, `solapa_con`, `comparte_infra`, `delega_en`. El inverso (`sigue_a`) lo
+   **deriva el generador** — nunca se escribe dos veces.
+2. **Generador** `scripts/sync_skill_ecosistema.py` (gemelo de `sync_skill_helpers.py`):
+   inyecta un bloque `## Relación con el ecosistema` en cada `SKILL.md` entre centinelas
+   `<!-- ECOSISTEMA:START/END -->`, idempotente y byte-estable (aristas ordenadas); las
+   ediciones fuera del bloque sobreviven.
+3. **Guardarraíl** `--check` + test `tests/test_skill_ecosistema_sync.py`, cableado a
+   pre-commit/CI (como el drift de helpers). Se salta si no hay grafo (como el guard de PII).
+4. **Plantilla:** añadir el bloque-centinela a `_plantilla-skill` → las skills nuevas lo
+   heredan por defecto (encaja con el `requires` de estilo/verificación).
+5. **Bonus:** el generador puede renderizar un Mermaid del grafo entero para
+   `ARQUITECTURA_RELACIONES.md`.
+
+**Por qué embebido y no referencia.** El bloque va **dentro** del `SKILL.md` (no un enlace
+al doc del repo) para que viaje dentro del `.skill` a Cowork, donde no hay repo en runtime.
+
+**Alcance (eficiencia).** El grafo cubre las skills del **flujo del despacho** (abrir-caso,
+organizar-sala-máquina, organizar-sala-lectura, triaje-viabilidad, viabilidad-prerelleno,
+preparacion-litigio-civil, escritos-judiciales, preparacion-audiencia-previa,
+preparacion-juicio-oral, oposicion-alegacion-nulidad, contestacion-honorarios-art20-lau).
+Las utilidades transversales (`docx`, `pdf`, `xlsx`, `cendoj-descarga`, `pase-de-estilo`,
+`verificacion-anclada-fuente`) llevan a lo sumo una etiqueta "utilidad transversal" o
+quedan fuera — no forzar aristas donde no las hay.
+
+**Orden de trabajo (otra sesión).** (1) esquema de nodo cerrado → (2) `ecosistema_skills.yaml`
+→ (3) generador + `--check` → (4) bloque en `_plantilla-skill` → (5) guard + wiring
+pre-commit/CI + AVISO en `validate_skills` → (6) regenerar workflow-skills + Mermaid → (7)
+re-empaquetar los `.skill`. **Promovible a `PLAN.md`** por decisión de Nikolai (ya hay
+disparador); pendiente solo de agendar la sesión.
