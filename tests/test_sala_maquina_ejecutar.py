@@ -172,6 +172,38 @@ def test_apply_estado_y_log_solo_exitos_con_sha256(tmp_path, monkeypatch):
     assert procesados == {sha_ok}
 
 
+def test_apply_force_no_arrastra_estado_resuelto_obsoleto(tmp_path, monkeypatch):
+    # IMPORTANTE 1: con --force, si un documento antes resuelto FALLA ahora (p. ej.
+    # tras cambiar el motor OCR), su sha NO debe sobrevivir en el estado por la union
+    # con el estado stale en disco. --force no saltó nada: el estado nuevo refleja
+    # SOLO los exitos de esta corrida.
+    import scripts.sala_maquina as cli
+
+    case = tmp_path / "EV-2026-001"
+    (case / "00_Input" / "01_Drive EV").mkdir(parents=True)
+    src = case / "00_Input" / "01_Drive EV" / "doc.pdf"
+    _pdf_con_texto(src)
+    sha = sm_file_sha(src)
+
+    # estado previo: sha ya marcado "resuelto" en una corrida anterior
+    cli._guardar_estado(case, {sha})
+
+    monkeypatch.setattr(cli, "caso_path", lambda cid: case)
+    monkeypatch.setattr(cli, "append_event", lambda *a, **k: None)
+    # ejecutar devuelve el doc como FALLIDO ahora (empty) — no exito
+    monkeypatch.setattr(cli.sm, "ejecutar", lambda *a, **k: [
+        sm.DocCobertura(f"doc__{sha[:8]}", "01_Drive EV/doc.pdf", "ocr", "empty",
+                        0, True, "OCR falló: motor nuevo", sha),
+    ])
+
+    cli.apply("EV-2026-001", force=True)
+
+    import json as _json
+    state = sm._sala_maquina_dir(case) / "_sala_maquina_state.json"
+    procesados = set(_json.loads(state.read_text(encoding="utf-8"))["procesados"])
+    assert sha not in procesados   # el fallo bajo --force NO deja el sha resuelto
+
+
 def test_inventariar_lista_00_input_con_sha(tmp_path):
     case = tmp_path / "EV-2026-001"
     (case / "00_Input" / "01_Drive EV").mkdir(parents=True)

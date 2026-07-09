@@ -67,8 +67,14 @@ def apply(case_id: str, vision: bool = False, force: bool = False):
     # El estado idempotente solo cuenta lo que produjo salida real (ok/low): un
     # PDF cifrado/bloqueado NO se marca "resuelto", así se reintenta en la
     # siguiente corrida normal de apply (sin --force).
+    #
+    # Con --force el plan trae TODOS los documentos (nada se saltó), así que el
+    # estado nuevo debe reflejar SOLO los éxitos de esta corrida: no se une con el
+    # estado en disco, que puede marcar "resuelto" un documento que ahora falla
+    # (p. ej. tras cambiar el motor OCR) → si se uniera, la siguiente corrida
+    # normal lo saltaría, contradiciendo "un fallo se reintenta sin --force".
     exitosos = {c.sha256 for c in cob if c.estado in ("ok", "low")}
-    procesados = _estado_previo(case_dir) | exitosos
+    procesados = exitosos if force else (_estado_previo(case_dir) | exitosos)
     _guardar_estado(case_dir, procesados)
     append_event(case_id, "procesado_sala_maquina", details={
         "count": len(cob),
