@@ -74,6 +74,29 @@ def sha256_file(allowed_dirs: list[Path], path: str | Path) -> str:
     return h.hexdigest()
 
 
+def hash_tree(allowed_dirs: list[Path], root: str | Path) -> dict[str, str]:
+    """SHA-256 recursivo server-side de todos los ficheros bajo `root`.
+
+    Devuelve {relpath_posix: sha256hex}, relpath relativo a `root`. Determinista
+    (el dict se construye en orden ordenado). Salta directorios y **symlinks**
+    (defensa: un symlink podría apuntar fuera del sandbox). Si `root` no existe
+    o no es directorio, devuelve {}.
+    """
+    root_p = resolve_within(allowed_dirs, root)
+    out: dict[str, str] = {}
+    if not root_p.is_dir():
+        return out
+    for p in sorted(root_p.rglob("*")):
+        if p.is_symlink() or not p.is_file():
+            continue
+        h = hashlib.sha256()
+        with open(p, "rb") as fh:
+            for chunk in iter(lambda: fh.read(_CHUNK), b""):
+                h.update(chunk)
+        out[p.relative_to(root_p).as_posix()] = h.hexdigest()
+    return out
+
+
 def copy_file(allowed_dirs: list[Path], src: str | Path, dst: str | Path) -> Path:
     """Copia un fichero (no destructivo). src y dst dentro del sandbox."""
     src_p = resolve_within(allowed_dirs, src)
@@ -111,18 +134,35 @@ def _safe_member_dest(dest_dir: Path, member_name: str) -> Path | None:
     return dest
 
 
+def _common_top_level(names: list[str]) -> str | None:
+    """Único directorio de primer nivel común a TODOS los nombres, o None.
+
+    Devuelve None si algún miembro está en la raíz del archivo (sin carpeta) o
+    si hay más de un directorio de primer nivel: en esos casos no hay un wrapper
+    inequívoco que quitar.
+    """
+    tops: set[str] = set()
+    for n in names:
+        parts = Path(n).parts
+        if len(parts) < 2 or parts[0] in ("..", "."):
+            return None
+        tops.add(parts[0])
+    return tops.pop() if len(tops) == 1 else None
+
+
 def extract_archive(
     allowed_dirs: list[Path],
     archive: str | Path,
     dest_dir: str | Path,
     max_total_bytes: int = DEFAULT_MAX_EXTRACT_BYTES,
+    strip_top_level: bool = False,
 ) -> list[Path]:
     """Descomprime .zip o .tar(.gz/.bz2) en dest_dir, ambos dentro del sandbox.
 
-    Saneado anti path-traversal por miembro: las entradas peligrosas se
-    descartan (no se intenta rescatarlas). La descompresión se vuelca en
-    streaming con un presupuesto global `max_total_bytes` (defensa anti
-    zip-bomb): si se supera, lanza TooLarge. Devuelve los ficheros extraídos.
+    Saneado anti path-traversal por miembro; presupuesto global `max_total_bytes`
+    (anti zip-bomb). Si `strip_top_level` y el archivo tiene un ÚNICO directorio de
+    primer nivel que envuelve a todos los ficheros, se quita ese wrapper de las
+    rutas extraídas. Devuelve los ficheros extraídos (ordenados).
     """
     archive_p = resolve_within(allowed_dirs, archive)
     dest_p = resolve_within(allowed_dirs, dest_dir)
@@ -130,12 +170,21 @@ def extract_archive(
     extracted: list[Path] = []
     budget = [max_total_bytes]
 
+    def _dest_name(name: str, prefix: str | None) -> str | None:
+        if prefix is None:
+            return name
+        rel = Path(name).parts[1:]  # quitar el wrapper
+        return str(Path(*rel)) if rel else None
+
     if zipfile.is_zipfile(archive_p):
         with zipfile.ZipFile(archive_p) as zf:
-            for member in zf.infolist():
-                if member.is_dir():
+            file_members = [m for m in zf.infolist() if not m.is_dir()]
+            prefix = _common_top_level([m.filename for m in file_members]) if strip_top_level else None
+            for member in file_members:
+                name = _dest_name(member.filename, prefix)
+                if name is None:
                     continue
-                dest = _safe_member_dest(dest_p, member.filename)
+                dest = _safe_member_dest(dest_p, name)
                 if dest is None:
                     continue
                 dest.parent.mkdir(parents=True, exist_ok=True)
@@ -144,10 +193,13 @@ def extract_archive(
                 extracted.append(dest)
     elif tarfile.is_tarfile(archive_p):
         with tarfile.open(archive_p) as tf:
-            for member in tf.getmembers():
-                if not member.isfile():
+            file_members = [m for m in tf.getmembers() if m.isfile()]
+            prefix = _common_top_level([m.name for m in file_members]) if strip_top_level else None
+            for member in file_members:
+                name = _dest_name(member.name, prefix)
+                if name is None:
                     continue
-                dest = _safe_member_dest(dest_p, member.name)
+                dest = _safe_member_dest(dest_p, name)
                 if dest is None:
                     continue
                 src = tf.extractfile(member)

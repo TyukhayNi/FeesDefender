@@ -224,3 +224,91 @@ def test_write_base64_frontera_exacta(tmp_path):
 def test_delete_path_rechaza_raiz_sandbox(tmp_path):
     with pytest.raises(fsops.OutsideSandbox):
         fsops.delete_path([tmp_path], str(tmp_path))
+
+
+def test_hash_tree_mapea_relpath_posix_a_sha(tmp_path):
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "a.txt").write_bytes(b"hola")
+    (tmp_path / "sub" / "b.txt").write_bytes(b"mundo")
+    out = fsops.hash_tree([tmp_path], str(tmp_path))
+    assert out == {
+        "a.txt": hashlib.sha256(b"hola").hexdigest(),
+        "sub/b.txt": hashlib.sha256(b"mundo").hexdigest(),
+    }
+
+
+def test_hash_tree_salta_directorios_y_root_inexistente(tmp_path):
+    vacio = tmp_path / "vacia"
+    vacio.mkdir()
+    assert fsops.hash_tree([tmp_path], str(vacio)) == {}
+
+
+def test_hash_tree_rechaza_fuera_de_sandbox(tmp_path):
+    with pytest.raises(fsops.OutsideSandbox):
+        fsops.hash_tree([tmp_path], "C:\\Windows")
+
+
+def _make_zip(path, names_to_bytes):
+    with zipfile.ZipFile(path, "w") as zf:
+        for name, data in names_to_bytes.items():
+            zf.writestr(name, data)
+
+
+def test_extract_strip_top_level_quita_wrapper(tmp_path):
+    z = tmp_path / "export.zip"
+    _make_zip(z, {"Wrapper/ACTIVACION/hoja.pdf": b"A", "Wrapper/oferta.pdf": b"B"})
+    dest = tmp_path / "out"
+    extracted = fsops.extract_archive([tmp_path], str(z), str(dest), strip_top_level=True)
+    rels = sorted(p.relative_to(dest.resolve()).as_posix() for p in extracted)
+    assert rels == ["ACTIVACION/hoja.pdf", "oferta.pdf"]
+
+
+def test_extract_sin_strip_conserva_wrapper(tmp_path):
+    z = tmp_path / "export.zip"
+    _make_zip(z, {"Wrapper/ACTIVACION/hoja.pdf": b"A"})
+    dest = tmp_path / "out"
+    extracted = fsops.extract_archive([tmp_path], str(z), str(dest))
+    rels = [p.relative_to(dest.resolve()).as_posix() for p in extracted]
+    assert rels == ["Wrapper/ACTIVACION/hoja.pdf"]
+
+
+def test_extract_strip_no_actua_con_multiples_raices(tmp_path):
+    z = tmp_path / "export.zip"
+    _make_zip(z, {"A/x.pdf": b"1", "B/y.pdf": b"2"})
+    dest = tmp_path / "out"
+    extracted = fsops.extract_archive([tmp_path], str(z), str(dest), strip_top_level=True)
+    rels = sorted(p.relative_to(dest.resolve()).as_posix() for p in extracted)
+    assert rels == ["A/x.pdf", "B/y.pdf"]  # sin único wrapper → no se toca
+
+
+def test_extract_strip_no_actua_con_fichero_en_raiz(tmp_path):
+    z = tmp_path / "export.zip"
+    _make_zip(z, {"suelto.pdf": b"1", "Wrapper/x.pdf": b"2"})
+    dest = tmp_path / "out"
+    extracted = fsops.extract_archive([tmp_path], str(z), str(dest), strip_top_level=True)
+    rels = sorted(p.relative_to(dest.resolve()).as_posix() for p in extracted)
+    assert rels == ["Wrapper/x.pdf", "suelto.pdf"]  # hay fichero en raíz → no hay wrapper único
+
+
+def test_extract_strip_top_level_sigue_rechazando_traversal(tmp_path):
+    z = tmp_path / "malicioso.zip"
+    _make_zip(z, {"Wrapper/ok.txt": b"ok", "Wrapper/../escape.txt": b"bad"})
+    dest = tmp_path / "out"
+    extracted = fsops.extract_archive([tmp_path], str(z), str(dest), strip_top_level=True)
+    rels = sorted(p.relative_to(dest.resolve()).as_posix() for p in extracted)
+    assert rels == ["ok.txt"]                      # el miembro con .. se descarta
+    assert not (tmp_path / "escape.txt").exists()  # nada escapó del sandbox
+
+
+def test_hash_tree_salta_symlinks(tmp_path):
+    (tmp_path / "real.txt").write_bytes(b"real")
+    secreto = tmp_path.parent / "secreto_fuera.txt"
+    secreto.write_bytes(b"secreto")
+    link = tmp_path / "link.txt"
+    try:
+        link.symlink_to(secreto)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks no disponibles (Windows sin privilegio)")
+    out = fsops.hash_tree([tmp_path], str(tmp_path))
+    assert "link.txt" not in out          # el symlink no se hashea/lista
+    assert out == {"real.txt": hashlib.sha256(b"real").hexdigest()}
