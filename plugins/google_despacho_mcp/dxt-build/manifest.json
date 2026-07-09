@@ -1,0 +1,21 @@
+{
+  "manifest_version": "0.3",
+  "name": "google-despacho",
+  "display_name": "Google despacho (Drive multicuenta, solo lectura)",
+  "version": "1.0.0",
+  "description": "Lectura de Google Drive sobre las cuentas del despacho (tyukhay.legal + engelvoelkers.com), incluidas unidades compartidas, sin reautenticar al cambiar de cuenta. Solo lectura (F1): buscar, listar unidades/ficheros recientes, metadatos, permisos, leer/descargar contenido.",
+  "author": {
+    "name": "Tyukhay Legal"
+  },
+  "server": {
+    "type": "python",
+    "entry_point": "server.py",
+    "mcp_config": {
+      "command": "C:\\Users\\tnm33\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
+      "args": ["C:\\Users\\tnm33\\Dev\\FeesDefender\\plugins\\google_despacho_mcp\\server.py"],
+      "env": {
+        "GOOGLE_DESPACHO_HOME": "C:\\Users\\tnm33\\.google-despacho"
+      }
+    }
+  }
+}
