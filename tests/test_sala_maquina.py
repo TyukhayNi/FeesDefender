@@ -108,3 +108,17 @@ def test_destino_seguro_admite_sala_maquina():
 
 def test_evento_procesado_sala_maquina_registrado():
     assert "procesado_sala_maquina" in intake_log.INTAKE_EVENTS
+
+
+def test_render_cobertura_sanea_pipe_en_nota_sin_romper_columnas():
+    # Una nota con "|" (p.ej. un mensaje de excepción de OCR) no debe añadir
+    # una columna extra a la fila de la tabla Markdown.
+    cob = [
+        sm.DocCobertura(slug="a__1", rel_path="x/a.pdf", metodo="ocr", estado="empty",
+                        chars=0, ocr=True, nota="OCR falló: rc=16 | firmado"),
+    ]
+    md = sm.render_cobertura(cob)
+    header = next(l for l in md.splitlines() if l.startswith("| documento"))
+    fila = next(l for l in md.splitlines() if l.startswith("| a__1"))
+    assert len(fila.split("|")) == len(header.split("|"))
+    assert "rc=16 / firmado" in fila

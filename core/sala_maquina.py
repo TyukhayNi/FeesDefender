@@ -10,7 +10,7 @@ extractor. Ver docs/superpowers/specs/2026-07-09-organizar-sala-maquina-design.m
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from core.extractor import _try_pypdf, _pdf_num_paginas, _texto_suficiente
@@ -116,6 +116,17 @@ def plan(inventario: list[dict], estado_previo: set[str]) -> list[DocPlan]:
     return out
 
 
+def _celda(valor: str) -> str:
+    """Sanea '|' para que no rompa el nº de columnas de una fila Markdown.
+
+    Se sustituye por '/' en vez de escapar con '\\|': el escape depende de que
+    el renderer de tablas Markdown lo respete, y cualquier parseo naive por
+    '|' (incl. el de este propio módulo si algo relee `_cobertura.md`) seguiría
+    contando una columna de más.
+    """
+    return str(valor).replace("|", "/")
+
+
 def render_cobertura(cobertura: list[DocCobertura]) -> str:
     """Puro: Markdown de _cobertura.md. Dudosos (estado != ok) primero."""
     orden = {"empty": 0, "sin_texto": 0, "sin_soporte": 1, "low": 2, "ok": 3}
@@ -129,8 +140,8 @@ def render_cobertura(cobertura: list[DocCobertura]) -> str:
     ]
     for d in filas:
         lineas.append(
-            f"| {d.slug} | {d.rel_path} | {d.metodo} | {d.estado} | "
-            f"{d.chars} | {'sí' if d.ocr else '—'} | {d.nota} |"
+            f"| {_celda(d.slug)} | {_celda(d.rel_path)} | {d.metodo} | {d.estado} | "
+            f"{d.chars} | {'sí' if d.ocr else '—'} | {_celda(d.nota)} |"
         )
     dudosos = [d for d in filas if d.estado != "ok"]
     lineas += ["", f"**{len(dudosos)} de {len(filas)} documentos requieren tu revisión.**", ""]
