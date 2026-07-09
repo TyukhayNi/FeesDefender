@@ -99,3 +99,76 @@ def resolver_identidad(
         requiere_confirmacion=requiere_confirmacion,
         colisiones=tuple(dict.fromkeys(colisiones_w + colisiones_cod)),
     )
+
+
+@dataclass(frozen=True)
+class ItemIntake:
+    relpath: str
+    dst: str
+    evento: str
+    sha256: str | None
+    size: int
+    dup: bool
+    zero: bool
+
+
+@dataclass(frozen=True)
+class PlanIntake:
+    items: tuple[ItemIntake, ...]
+    fuente: str
+
+    @property
+    def depositables(self) -> tuple[ItemIntake, ...]:
+        return tuple(i for i in self.items if not i.dup and not i.zero)
+
+    @property
+    def con_sha(self) -> list[dict]:
+        return [{"path": i.dst, "sha256": i.sha256} for i in self.depositables]
+
+    @property
+    def categorias(self) -> tuple[str, ...]:
+        out: list[str] = []
+        for i in self.depositables:
+            partes = i.dst.split("/")
+            base = partes[0]
+            if base not in out:
+                out.append(base)
+        return tuple(out)
+
+
+def _shas_en_log(log_existente: list[dict]) -> set[str]:
+    shas: set[str] = set()
+    for ev in log_existente:
+        for f in (ev.get("details") or {}).get("files") or []:
+            s = f.get("sha256")
+            if s:
+                shas.add(s)
+    return shas
+
+
+def plan_intake(inventario: list[dict], log_existente: list[dict], fuente: str) -> PlanIntake:
+    """Construye el plan de depósito (puro). Sin tocar bytes.
+
+    inventario: [{"relpath": posix, "sha256": str|None, "size": int}, ...].
+    """
+    if fuente not in FUENTE_A_SUBDIR:
+        raise ValueError(f"Fuente desconocida: {fuente!r}. Válidas: {sorted(FUENTE_A_SUBDIR)}")
+    subdir = FUENTE_A_SUBDIR[fuente]
+    evento = FUENTE_A_EVENTO[fuente]
+    shas_previos = _shas_en_log(log_existente)
+
+    items: list[ItemIntake] = []
+    for entry in inventario:
+        rel = entry["relpath"]
+        sha = entry.get("sha256")
+        size = int(entry.get("size", 0))
+        items.append(ItemIntake(
+            relpath=rel,
+            dst=f"{subdir}/{rel}",
+            evento=evento,
+            sha256=sha,
+            size=size,
+            dup=bool(sha) and sha in shas_previos,
+            zero=size == 0,
+        ))
+    return PlanIntake(items=tuple(items), fuente=fuente)

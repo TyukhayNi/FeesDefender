@@ -60,3 +60,37 @@ def test_resolver_identidad_codigo_duplicado_requiere_confirmacion():
     assert ident.codigo_duplicado is True
     assert ident.requiere_confirmacion is True
     assert "BaRS1 - Otra (W-VIEJO1) - Vuelta" in ident.colisiones
+
+
+def _inv(relpath, sha, size):
+    return {"relpath": relpath, "sha256": sha, "size": size}
+
+
+def test_plan_intake_mapea_drive_ev_y_marca_dup_y_cero():
+    inventario = [
+        _inv("ACTIVACION/hoja.pdf", "aaa", 100),
+        _inv("OFERTAS/oferta.pdf", "bbb", 200),   # duplicado (ya en log)
+        _inv("vacio.txt", "e3b0c4", 0),           # 0-byte
+    ]
+    # log con un evento previo cuyo fichero tenía sha "bbb"
+    log_existente = [
+        {"event": "pull_drive_ev", "details": {"files": [{"path": "01_Drive EV/x", "sha256": "bbb"}]}},
+    ]
+    plan = abrir_caso.plan_intake(inventario, log_existente, "drive_ev")
+
+    assert plan.fuente == "drive_ev"
+    by_rel = {i.relpath: i for i in plan.items}
+    assert by_rel["ACTIVACION/hoja.pdf"].dst == "01_Drive EV/ACTIVACION/hoja.pdf"
+    assert by_rel["ACTIVACION/hoja.pdf"].evento == "pull_drive_ev"
+    assert by_rel["OFERTAS/oferta.pdf"].dup is True
+    assert by_rel["vacio.txt"].zero is True
+
+    # depositables = ni dup ni 0-byte
+    assert {i.relpath for i in plan.depositables} == {"ACTIVACION/hoja.pdf"}
+    assert plan.con_sha == [{"path": "01_Drive EV/ACTIVACION/hoja.pdf", "sha256": "aaa"}]
+    assert plan.categorias == ("01_Drive EV",)
+
+
+def test_plan_intake_fuente_desconocida():
+    with pytest.raises(ValueError):
+        abrir_caso.plan_intake([], [], "inexistente")
