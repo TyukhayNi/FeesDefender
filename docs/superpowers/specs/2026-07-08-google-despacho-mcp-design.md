@@ -235,28 +235,37 @@ secciones §2–§6 donde discrepen.
 en F4, no ahora. Cachear el objeto `service` por cuenta dentro del proceso (evita
 reconstruir credenciales en cada llamada).
 
-**R2 — credenciales por-cuenta / caduca-7-días (DECISIÓN PENDIENTE de Nikolai).**
-- Diseño de código acordado (coste casi nulo): `google_auth.py` mapea **cada cuenta
-  → su fichero de credenciales** (`credentials_tl.json` / `credentials_ev.json`),
-  con *fallback* a un `credentials.json` único compartido. Que el fichero de TL sea
-  de un proyecto **Internal** o **External** es config de consola, no cambia código.
-- Config **recomendada**: **TL Internal** (Workspace `tyukhay.legal`, que Nikolai
-  administra → sin recautenticación) / **EV External+Testing** (org
-  `engelvoelkers.com` ajena + scope restricted → recautenticación semanal
-  inevitable, statu quo de Gmail; EV es sobre todo origen de lectura).
-- **Comprobación que falta hacer Nikolai** (2 min): `console.cloud.google.com`
-  como `@tyukhay.legal` → *Pantalla de consentimiento OAuth* → ¿"User type:
-  **Internal**" seleccionable? Si sí → split TL-Internal/EV-External. Si solo hay
-  **External** → *fallback*: ambas External+Testing, un solo cliente, sin cambio de
-  código.
-- **Fundamento:** el caduca-7-días es tope de modo Testing en apps External; la
-  actividad no lo resetea; Internal (solo en Workspace, solo usuarios de la org) no
-  lo tiene. Bajar el scope de EV no escapa: leer ficheros existentes exige
-  `drive.readonly`, también *restricted*.
+**R2 — credenciales por-cuenta / caduca-7-días (CERRADA 2026-07-09).**
+- **Decisión: un solo cliente OAuth, `External` + `En producción`, SIN split. NO
+  marcar el proyecto como `Internal`.** Se reutiliza el proyecto Cloud de Gmail
+  (`Gmail MCP Despacho`), que ya está `En producción`. Un `credentials.json` único
+  para ambas cuentas (TL + EV).
+- **Fundamento (dato nuevo de la comprobación):** al mirar la consola se vio que la
+  app **ya está `En producción`**, no en `Testing`. El caduca-7-días del refresh
+  token es un tope **exclusivo del modo `Testing`**; en `Producción` no aplica — ni
+  para TL ni para la cuenta EV (`engelvoelkers.com`, org ajena). Luego desaparece la
+  única motivación del split.
+- **Por qué NO Internal (aunque el botón "Marcar como interno" SÍ estaba disponible,
+  confirmando que `tyukhay.legal` es Workspace):** una app `Internal` solo autoriza
+  usuarios de su propia organización. Marcarla `Internal` **expulsaría la cuenta EV**
+  (org distinta), que es justo la que se necesita. El split habría sido
+  contraproducente.
+- **Diseño de código:** el mapeo por-cuenta (`google_auth.py`: cuenta → fichero de
+  credenciales, con *fallback* a `credentials.json` único) se **conserva** como
+  capacidad, pero en la práctica ambas cuentas comparten el `credentials.json` único.
+  Internal-vs-External era config de consola, no código → el cierre no altera el diseño.
+- **Residuo para F1 (no de OAuth):** la consola avisa *"Tu app requiere una
+  verificación"* y hay tope de **5/100 usuarios** para scopes sensibles/restringidos
+  sin aprobar. Con 2 usuarios sobra; con la app sin verificar, Drive funciona
+  mostrando el aviso *"app no verificada"* al autorizar. Al añadir `drive.readonly`
+  (restricted) se decide en F1 si se asume ese aviso o se acota scope. Nota colateral:
+  estar en `Producción` probablemente también resuelve el viejo `invalid_grant` de
+  7 días del propio Gmail MCP.
 
 ## 12. Próximo paso
 
-1. Nikolai: comprobación R2 (¿Internal disponible en `tyukhay.legal`?).
-2. Cerrar R2 en este spec.
+1. ~~Nikolai: comprobación R2 (¿Internal disponible en `tyukhay.legal`?).~~ HECHA
+   2026-07-09: Internal disponible pero app ya `En producción` → R2 cerrada sin split.
+2. ~~Cerrar R2 en este spec.~~ HECHA.
 3. Encadenar la skill `writing-plans` para desglosar **F1** (lectura cross-cuenta)
-   en plan de implementación.
+   en plan de implementación. ← **siguiente**

@@ -21,7 +21,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 
 ---
 
-## [SIGUIENTE-GOOGLE-MCP] Diseño cerrado (brainstorming 2026-07-08) — pendiente 1 dato + plan
+## [SIGUIENTE-GOOGLE-MCP] Diseño cerrado — R2 resuelta 2026-07-09, listo para plan de F1
 
 *Disparador: encargo de Nikolai (`ENCARGO_MCP_Google_despacho.md`, fuera del repo). MCP propio
 `google-despacho` (Drive + Calendar, multicuenta EV+TL) que suple la mono-cuenta del Drive nativo.*
@@ -32,11 +32,12 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
   entrega **stdio local + `.dxt` + puente de escritorio** (verificado en vivo que así llega Gmail a Cowork,
   sin túnel/hosting); **`expedientes` se queda** (solo candidato a retirar el Drive nativo); OAuth reutiliza
   el proyecto Cloud de Gmail; ubicación `plugins/google_despacho_mcp/`; revisión R1/R3/R4 plegada.
-- [ ] **BLOQUEA-PLAN — Nikolai (2 min):** comprobar en `console.cloud.google.com` (sesión `@tyukhay.legal`)
-  si "User type: **Internal**" es seleccionable → decide R2 (split TL-Internal / EV-External vs. ambas
-  External+Testing). Ver §11 R2 del spec.
-- [ ] Cerrar R2 en el spec.
-- [ ] Encadenar skill `writing-plans` para desglosar **F1** en plan de implementación.
+- [x] **R2 CERRADA (2026-07-09):** comprobación en consola → app ya `En producción` (no `Testing`) →
+  el caduca-7-días **no aplica** a ninguna cuenta. Decisión: **un solo cliente OAuth, External +
+  Producción, SIN split, NO marcar Internal** (Internal expulsaría la cuenta EV). Fundamento y residuo
+  de verificación de scopes en §11 R2 del spec.
+- [ ] Encadenar skill `writing-plans` para desglosar **F1** (lectura cross-cuenta) en plan de implementación.
+  ← **siguiente**
 
 ### ✅ [SIGUIENTE-CONTROLES-ANTIFUGA] COMPLETA 2026-07-07 — controles de `SEGURIDAD_DATOS.md` implementados
 *2026-07-07. Disparador concreto: el incidente de fugas de la Fase 2 (HAR + PII en el historial → una sesión entera de rewrite). La doctrina ya está escrita y cableada (`docs/SEGURIDAD_DATOS.md`, hogar canónico; cableado en el mapa SSOT, INDICE, GOBERNANZA §4 y CLAUDE.md). Todos los controles corren solos: barrera local (`51ecf24`), CI + shape-detection (#1 `48c790f`, #3 `e1ff182`) y prevención server-side ACTIVA (`a79ba90`).*
