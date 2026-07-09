@@ -17,10 +17,9 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
+# Los paquetes de Google se importan de forma perezosa dentro de las funciones
+# (patrón de core/gmail_source.py) para que el módulo sea importable sin ellos
+# (tests bajo .venv).
 
 # Alcance deliberadamente restringido a SOLO LECTURA (F1). F2 lo amplía a
 # "https://www.googleapis.com/auth/drive" con edición consciente + reautorización.
@@ -52,6 +51,9 @@ def list_account_emails() -> list[str]:
 
 
 def load_credentials(email: str) -> Credentials:
+    from google.auth.transport.requests import Request
+    from google.oauth2.credentials import Credentials
+
     path = _token_path(email)
     if not path.exists():
         raise FileNotFoundError(
@@ -72,6 +74,8 @@ def load_credentials(email: str) -> Credentials:
 
 def build_service(email: str):
     """Construye el cliente de la API de Drive v3 para una cuenta."""
+    from googleapiclient.discovery import build
+
     creds = load_credentials(email)
     return build("drive", "v3", credentials=creds, cache_discovery=False)
 
@@ -83,6 +87,9 @@ def add_account() -> str:
 
     Devuelve la dirección de correo autenticada (resuelta vía about.get).
     """
+    from google_auth_oauthlib.flow import InstalledAppFlow
+    from googleapiclient.discovery import build
+
     creds_file = credentials_path()
     if not creds_file.exists():
         raise FileNotFoundError(
