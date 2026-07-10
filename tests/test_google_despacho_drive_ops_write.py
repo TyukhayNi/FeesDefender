@@ -51,3 +51,45 @@ def test_upload_file_hashea_los_bytes_del_disco(tmp_path):
     assert kw["body"]["name"] == "doc.pdf"
     assert kw["body"]["parents"] == ["P1"]
     assert "media_body" in kw
+
+
+FOLDER_MIME = "application/vnd.google-apps.folder"
+
+
+def test_create_folder():
+    svc = FakeService(files={"create": {"id": "c1", "name": "06_Entrevistas",
+                                        "mimeType": FOLDER_MIME}})
+    out = drive_ops.create_folder(svc, name="06_Entrevistas", parent_id="P1")
+    assert out["id"] == "c1"
+    _, kw = svc.recorded("files")[0]
+    assert kw["body"]["mimeType"] == FOLDER_MIME
+    assert kw["body"]["parents"] == ["P1"]
+
+
+def test_ensure_folder_path_crea_solo_lo_que_falta():
+    # "A/B": A ya existe (list la encuentra), B no (list vacío -> create)
+    svc = FakeService(files={
+        "list": [
+            {"files": [{"id": "A1", "name": "A", "mimeType": FOLDER_MIME}]},  # busca A
+            {"files": []},                                                    # busca B bajo A1
+        ],
+        "create": {"id": "B1", "name": "B", "mimeType": FOLDER_MIME},
+    })
+    out = drive_ops.ensure_folder_path(svc, path="A/B", parent_id="ROOT")
+    assert out["id"] == "B1"
+    creates = [c for c in svc.recorded("files") if c[0] == "create"]
+    assert len(creates) == 1
+    assert creates[0][1]["body"]["parents"] == ["A1"]
+
+
+def test_ensure_folder_path_todo_existe_no_crea():
+    svc = FakeService(files={
+        "list": [
+            {"files": [{"id": "A1", "name": "A", "mimeType": FOLDER_MIME}]},
+            {"files": [{"id": "B1", "name": "B", "mimeType": FOLDER_MIME}]},
+        ],
+    })
+    out = drive_ops.ensure_folder_path(svc, path="A/B", parent_id="ROOT")
+    assert out["id"] == "B1"
+    creates = [c for c in svc.recorded("files") if c[0] == "create"]
+    assert creates == []

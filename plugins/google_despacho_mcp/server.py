@@ -192,6 +192,19 @@ def build_server(
         return drive_ops.upload_file(
             service_factory(account), local_path=src, parent_id=parent_id, name=name)
 
+    @mcp.tool()
+    def create_folder(name: str, parent_id: str, account: str) -> dict:
+        """Crea una carpeta bajo `parent_id`. Para estructura anidada idempotente
+        usa ensure_folder_path."""
+        return drive_ops.create_folder(service_factory(account), name=name, parent_id=parent_id)
+
+    @mcp.tool()
+    def ensure_folder_path(path: str, parent_id: str, account: str) -> dict:
+        """Crea los segmentos de `path` (p. ej. '01_Procesado/Sala lectura') que no
+        existan bajo `parent_id` y devuelve el id de la carpeta final. IDEMPOTENTE:
+        no duplica carpetas existentes (Drive permite duplicados; esto lo evita)."""
+        return drive_ops.ensure_folder_path(service_factory(account), path=path, parent_id=parent_id)
+
     return mcp
 
 

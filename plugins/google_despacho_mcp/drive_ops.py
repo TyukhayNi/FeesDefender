@@ -261,3 +261,45 @@ def upload_file(service, *, local_path: str, parent_id: str,
         "web_view_link": created.get("webViewLink"),
         "sha256": hashlib.sha256(data).hexdigest(),
     }
+
+
+FOLDER_MIME = "application/vnd.google-apps.folder"
+
+
+def create_folder(service, *, name: str, parent_id: str) -> dict:
+    body = {"name": name, "mimeType": FOLDER_MIME, "parents": [parent_id]}
+    created = service.files().create(
+        body=body, fields="id, name, mimeType, parents, webViewLink",
+        supportsAllDrives=True,
+    ).execute()
+    return {"id": created.get("id"), "name": created.get("name"),
+            "web_view_link": created.get("webViewLink")}
+
+
+def _find_child_folder(service, name: str, parent_id: str) -> dict | None:
+    safe = name.replace("\\", "\\\\").replace("'", "\\'")
+    q = (f"name = '{safe}' and '{parent_id}' in parents "
+         f"and mimeType = '{FOLDER_MIME}' and trashed = false")
+    resp = service.files().list(
+        q=q, fields="files(id, name, mimeType)",
+        includeItemsFromAllDrives=True, supportsAllDrives=True,
+        corpora="allDrives", spaces="drive", pageSize=2,
+    ).execute()
+    found = resp.get("files", [])
+    return found[0] if found else None
+
+
+def ensure_folder_path(service, *, path: str, parent_id: str) -> dict:
+    """Crea los segmentos de `path` que no existan bajo `parent_id` y devuelve el
+    id de la carpeta final. Idempotente. Los segmentos vacíos se ignoran."""
+    current = parent_id
+    last = {"id": parent_id, "name": None, "web_view_link": None}
+    for segment in [s for s in path.replace("\\", "/").split("/") if s]:
+        existing = _find_child_folder(service, segment, current)
+        if existing:
+            last = {"id": existing["id"], "name": existing.get("name"),
+                    "web_view_link": None}
+        else:
+            last = create_folder(service, name=segment, parent_id=current)
+        current = last["id"]
+    return last
