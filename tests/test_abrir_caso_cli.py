@@ -358,3 +358,50 @@ def test_cli_crm_gate_declinado_exit_0(drive_temporal, monkeypatch):
     assert result.exit_code == 0, result.output
     assert llamadas["crm"] == 0
     assert "declinado" in result.output
+
+
+def test_cli_whatsapp_delega_en_deposit_export(drive_temporal, tmp_path, monkeypatch):
+    z = tmp_path / "chat.zip"
+    z.write_bytes(b"PK\x03\x04fake")
+    llamadas = {}
+
+    def spy(case_id, rol_subdir, content, *, zip_name, **kw):
+        llamadas.update(case_id=case_id, rol=rol_subdir, n=len(content), zip_name=zip_name)
+        return type("R", (), {"skipped_dedup": False, "chat_dir": tmp_path})()
+
+    monkeypatch.setattr("core.whatsapp_intake.deposit_export", spy)
+    result = CliRunner().invoke(
+        cli.app,
+        _args_min(fuente="whatsapp", src=str(z), rol="00_Consultor propietario") + ["--crm", "skip"],
+    )
+    assert result.exit_code == 0, result.output
+    assert llamadas["rol"] == "00_Consultor propietario"
+    assert llamadas["case_id"] == "BaRS11 - Passeig Marítim 30 (W-02Z2NR) - Vuelta"
+    assert llamadas["n"] > 0
+    # el orquestador NO emite un segundo evento (lo hace deposit_export, aquí mockeado)
+    eventos = intake_log.read_events(llamadas["case_id"])
+    assert [e for e in eventos if e["event"] == "upload_whatsapp"] == []
+
+
+def test_cli_whatsapp_dry_run_no_llama(drive_temporal, tmp_path, monkeypatch):
+    z = tmp_path / "chat.zip"
+    z.write_bytes(b"PK")
+    llamado = {"v": False}
+    monkeypatch.setattr("core.whatsapp_intake.deposit_export",
+                        lambda *a, **k: llamado.__setitem__("v", True))
+    result = CliRunner().invoke(
+        cli.app, _args_min(fuente="whatsapp", src=str(z), rol="03_Otros") + ["--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert llamado["v"] is False
+
+
+def test_cli_whatsapp_dedup_reporta(drive_temporal, tmp_path, monkeypatch):
+    z = tmp_path / "chat.zip"
+    z.write_bytes(b"PKdup")
+    monkeypatch.setattr(
+        "core.whatsapp_intake.deposit_export",
+        lambda *a, **k: type("R", (), {"skipped_dedup": True, "chat_dir": tmp_path})())
+    result = CliRunner().invoke(
+        cli.app, _args_min(fuente="whatsapp", src=str(z), rol="03_Otros") + ["--crm", "skip"])
+    assert result.exit_code == 0, result.output
+    assert "dedup" in result.output.lower() or "ya importado" in result.output.lower()

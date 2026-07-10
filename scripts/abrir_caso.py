@@ -20,6 +20,7 @@ import typer
 from core import abrir_caso as brain
 from core import (
     case_manager, config, intake_drive, intake_log, intake_manual, sudespacho_create,
+    whatsapp_intake,
 )
 from core.casos import case_locator
 from core.ciudades import CIUDADES
@@ -160,6 +161,22 @@ def _intake_manual(ident, case_dir: Path, src_str: str, *, dry_run: bool) -> Non
     _intake_generico(case_dir, ident.case_id, "manual", hashes, dry_run=False)
 
 
+def _intake_whatsapp(ident, src_str: str, rol: str, *, dry_run: bool) -> None:
+    src = Path(src_str)
+    if not src.is_file():
+        typer.echo(f"[ERROR] --src no existe: {src}", err=True)
+        raise typer.Exit(code=1)
+    if dry_run:
+        typer.echo(f"[dry-run] whatsapp: se depositaría {src.name} en rol {rol} (sin ejecutar)")
+        return
+    res = whatsapp_intake.deposit_export(
+        ident.case_id, rol, src.read_bytes(), zip_name=src.name)
+    if getattr(res, "skipped_dedup", False):
+        typer.echo("WhatsApp: export ya importado (dedup), nada nuevo")
+    else:
+        typer.echo(f"WhatsApp depositado en {getattr(res, 'chat_dir', '?')}")
+
+
 def _validar_flags(fuente, *, folder_id, team_id, src, rol, cuenta, label) -> None:
     """Exige los flags propios de la fuente y rechaza los ajenos (fail-fast)."""
     requeridos = {
@@ -200,6 +217,8 @@ def _despachar_intake(fuente, ident, case_dir, *, folder_id, team_id, src, rol,
         _intake_drive_ev(ident, case_dir, folder_id, team_id, dry_run=dry_run)
     elif fuente == "manual":
         _intake_manual(ident, case_dir, src, dry_run=dry_run)
+    elif fuente == "whatsapp":
+        _intake_whatsapp(ident, src, rol, dry_run=dry_run)
     else:
         raise typer.Exit(code=1)  # ramas whatsapp/email: tareas posteriores
 
