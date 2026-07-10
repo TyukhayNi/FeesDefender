@@ -3,6 +3,7 @@ inyectado (sin API viva ni tokens). Comprueba enrutado account→service,
 delegación a drive_ops y saneado del DL-root."""
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -81,3 +82,29 @@ def test_resolve_dest_rechaza_symlink_que_escapa(tmp_path, monkeypatch):
     monkeypatch.setenv("GOOGLE_DESPACHO_DL_ROOT", str(root))
     with pytest.raises(ValueError):
         srv._resolve_dest(str(root / "escape" / "evil.bin"))
+
+
+def test_resolve_upload_dentro_de_root(tmp_path, monkeypatch):
+    root = tmp_path / "up"
+    root.mkdir()
+    f = root / "doc.pdf"
+    f.write_bytes(b"x")
+    monkeypatch.setenv("GOOGLE_DESPACHO_UPLOAD_ROOT", str(root))
+    out = srv._resolve_upload(str(f))
+    assert out == os.path.realpath(str(f))
+
+
+def test_resolve_upload_fuera_de_root_rechaza(tmp_path, monkeypatch):
+    root = tmp_path / "up"
+    root.mkdir()
+    fuera = tmp_path / "otro.pdf"
+    fuera.write_bytes(b"x")
+    monkeypatch.setenv("GOOGLE_DESPACHO_UPLOAD_ROOT", str(root))
+    with pytest.raises(ValueError):
+        srv._resolve_upload(str(fuera))
+
+
+def test_resolve_upload_fichero_inexistente_rechaza(tmp_path, monkeypatch):
+    monkeypatch.delenv("GOOGLE_DESPACHO_UPLOAD_ROOT", raising=False)
+    with pytest.raises(FileNotFoundError):
+        srv._resolve_upload(str(tmp_path / "no_existe.pdf"))

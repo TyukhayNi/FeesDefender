@@ -60,6 +60,25 @@ def _resolve_dest(dest_path: str) -> str:
     return dest
 
 
+def _resolve_upload(local_path: str) -> str:
+    """Resuelve y valida la ruta de ORIGEN de una subida. Si
+    GOOGLE_DESPACHO_UPLOAD_ROOT está definida, el origen debe quedar dentro de esa
+    raíz (realpath contra symlink-escape). El fichero debe existir."""
+    src = os.path.realpath(os.path.expanduser(local_path))
+    if not os.path.isfile(src):
+        raise FileNotFoundError(f"No existe el fichero a subir: {src}")
+    root = os.environ.get("GOOGLE_DESPACHO_UPLOAD_ROOT")
+    if root:
+        root_abs = os.path.realpath(os.path.expanduser(root))
+        try:
+            inside = os.path.commonpath([root_abs, src]) == root_abs
+        except ValueError:
+            inside = False  # unidades distintas en Windows
+        if not inside:
+            raise ValueError(f"Origen fuera de GOOGLE_DESPACHO_UPLOAD_ROOT ({root_abs}): {src}")
+    return src
+
+
 def build_server(
     *,
     service_factory: Callable[[str], object] | None = None,
