@@ -99,9 +99,8 @@ def _inventario_local(src: Path) -> list[dict]:
     if src.is_dir():
         for p in sorted(src.rglob("*")):
             if p.is_file():
-                data = p.read_bytes()
                 items.append({"relpath": p.relative_to(src).as_posix(),
-                              "sha256": hashlib.sha256(data).hexdigest(), "size": len(data)})
+                              "sha256": file_sha256(p), "size": p.stat().st_size})
     elif zipfile.is_zipfile(src):
         with zipfile.ZipFile(src) as zf:
             for m in zf.infolist():
@@ -131,7 +130,7 @@ def _depositar_manual(case_id: str, src: Path) -> list[str]:
             rel = p.relative_to(src)
             dest = manual_dir / rel
             dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_bytes(p.read_bytes())
+            shutil.copy2(p, dest)
             depositados.append(rel.as_posix())
         return depositados
     raise FileNotFoundError(f"--src no es carpeta ni .zip: {src}")
