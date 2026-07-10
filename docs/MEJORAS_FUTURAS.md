@@ -2051,3 +2051,28 @@ quedan fuera — no forzar aristas donde no las hay.
 pre-commit/CI + AVISO en `validate_skills` → (6) regenerar workflow-skills + Mermaid → (7)
 re-empaquetar los `.skill`. **Promovible a `PLAN.md`** por decisión de Nikolai (ya hay
 disparador); pendiente solo de agendar la sesión.
+
+## 51. Bug latente: `download_file_content` devuelve el mime de origen tras exportar un Doc nativo
+
+**Descubierto 2026-07-10** durante el mapeo del ecosistema para la (aparcada) F3 de
+`google-despacho`; independiente de F3.
+
+**Síntoma.** `plugins/google_despacho_mcp/drive_ops.py` (`download_file_content`, línea ~209)
+devuelve `"mime_type": mime` donde `mime` es el `mimeType` de **origen** (p. ej.
+`application/vnd.google-apps.document`). Cuando el fichero es un Doc nativo y se ha **exportado**
+(a PDF por defecto, o a Office con `keep_editable`), el campo devuelto NO refleja el artefacto
+realmente escrito (que es `application/pdf` o el Office correspondiente). Además la función escribe
+en `dest_path` tal cual, sin añadir la extensión del formato exportado.
+
+**Impacto hoy.** Latente: el único consumidor que se habría fiado de ese campo era el
+`import_drive_folder` de F3, que quedó **APARCADO** (spec §14, PR #27). Ningún flujo vivo lo
+consume mal ahora. El `sha256` que devuelve la función SÍ es correcto (se calcula sobre los bytes
+escritos).
+
+**Fix propuesto (~2 líneas + test).** Cuando `mime` es nativo (`GOOGLE_NATIVE_PREFIX`), devolver el
+`export_mime` efectivo (derivado de `_EXPORT_PDF`/`_EXPORT_OFFICE` según `keep_editable`) en lugar
+del nativo; opcionalmente ajustar la extensión de `dest_path` con `_EXPORT_EXT`. Test: exportar un
+Doc nativo fake y asertar `mime_type == "application/pdf"` (y `.docx` con `keep_editable`).
+
+**Disparador de promoción.** Que cualquier consumidor nuevo (reapertura de F3, o un flujo que
+descargue Docs nativos y ramifique por `mime_type`) lo necesite. Hasta entonces, backlog.
