@@ -17,6 +17,12 @@ Uso:
   python -m scripts.init_caso "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
   python -m scripts.init_caso "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU" \\
       --cliente "EV MMC SPAIN, S.L.U." --contraparte "MARTÍNEZ GARCÍA, LAURA"
+
+Relación con `abrir_caso`: `init_caso` es el atajo LIGERO — solo monta el
+esqueleto (validate_case_id + ensure_case), sin intake ni alta CRM.
+`scripts/abrir_caso.py` es el flujo COMPLETO (esqueleto + intake por fuente +
+CRM) en una pasada. Usa `init_caso` cuando solo quieras la carpeta; `abrir_caso`
+cuando quieras abrir el caso de verdad.
 """
 
 from __future__ import annotations
