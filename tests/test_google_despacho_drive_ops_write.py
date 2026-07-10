@@ -130,3 +130,35 @@ def test_update_file_metadata_renombra():
     _, kw = svc.recorded("files")[0]
     assert kw["body"] == {"name": "nuevo.pdf"}
     assert kw["fileId"] == "f1"
+
+
+def test_move_file_calcula_remove_parents():
+    svc = FakeService(files={
+        "get": {"id": "f1", "parents": ["OLD"]},
+        "update": {"id": "f1", "name": "x", "parents": ["NEW"]},
+    })
+    out = drive_ops.move_file(svc, "f1", dst_folder_id="NEW")
+    assert out["id"] == "f1"
+    upd = [c for c in svc.recorded("files") if c[0] == "update"][0][1]
+    assert upd["addParents"] == "NEW"
+    assert upd["removeParents"] == "OLD"
+    assert upd["fileId"] == "f1"
+
+
+def test_copy_file_con_nuevo_nombre():
+    svc = FakeService(files={"copy": {"id": "c1", "name": "copia.pdf",
+                                      "webViewLink": "https://drive/c1"}})
+    out = drive_ops.copy_file(svc, "f1", dst_folder_id="DST", new_name="copia.pdf")
+    assert out["id"] == "c1"
+    _, kw = svc.recorded("files")[0]
+    assert kw["fileId"] == "f1"
+    assert kw["body"]["parents"] == ["DST"]
+    assert kw["body"]["name"] == "copia.pdf"
+    assert kw["supportsAllDrives"] is True
+
+
+def test_copy_file_sin_nombre_no_pone_name():
+    svc = FakeService(files={"copy": {"id": "c1"}})
+    drive_ops.copy_file(svc, "f1", dst_folder_id="DST")
+    _, kw = svc.recorded("files")[0]
+    assert "name" not in kw["body"]

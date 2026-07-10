@@ -221,6 +221,19 @@ def build_server(
         """Renombra un fichero. Devuelve id, nombre y web_view_link."""
         return drive_ops.update_file_metadata(service_factory(account), file_id, name=name)
 
+    @mcp.tool()
+    def move_file(file_id: str, dst_folder_id: str, account: str) -> dict:
+        """Mueve un fichero a otra carpeta (addParents/removeParents)."""
+        return drive_ops.move_file(service_factory(account), file_id, dst_folder_id=dst_folder_id)
+
+    @mcp.tool()
+    def copy_file(file_id: str, dst_folder_id: str, account: str,
+                  new_name: Optional[str] = None) -> dict:
+        """Copia un fichero a otra carpeta (files.copy interno de Drive), con
+        renombrado opcional."""
+        return drive_ops.copy_file(service_factory(account), file_id,
+                                   dst_folder_id=dst_folder_id, new_name=new_name)
+
     return mcp
 
 

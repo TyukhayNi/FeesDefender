@@ -340,3 +340,35 @@ def update_file_metadata(service, file_id: str, *, name: str) -> dict:
     ).execute()
     return {"id": updated.get("id"), "name": updated.get("name"),
             "web_view_link": updated.get("webViewLink")}
+
+
+def move_file(service, file_id: str, *, dst_folder_id: str) -> dict:
+    """Mueve un fichero a otra carpeta: lee los parents actuales (files.get) y
+    los sustituye por `dst_folder_id` (addParents/removeParents)."""
+    meta = service.files().get(
+        fileId=file_id, fields="id, parents", supportsAllDrives=True,
+    ).execute()
+    prev_parents = ",".join(meta.get("parents", []))
+    updated = service.files().update(
+        fileId=file_id, addParents=dst_folder_id, removeParents=prev_parents,
+        fields="id, name, parents, webViewLink", supportsAllDrives=True,
+    ).execute()
+    return {"id": updated.get("id"), "name": updated.get("name"),
+            "parents": updated.get("parents"),
+            "web_view_link": updated.get("webViewLink")}
+
+
+def copy_file(service, file_id: str, *, dst_folder_id: str,
+              new_name: str | None = None) -> dict:
+    """Copia un fichero a otra carpeta (files.copy interno de Drive), con
+    renombrado opcional."""
+    body: dict = {"parents": [dst_folder_id]}
+    if new_name:
+        body["name"] = new_name
+    copied = service.files().copy(
+        fileId=file_id, body=body,
+        fields="id, name, mimeType, webViewLink", supportsAllDrives=True,
+    ).execute()
+    return {"id": copied.get("id"), "name": copied.get("name"),
+            "mime_type": copied.get("mimeType"),
+            "web_view_link": copied.get("webViewLink")}
