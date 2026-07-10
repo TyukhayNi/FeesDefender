@@ -343,6 +343,23 @@ def build_server(
         """Revoca un permiso (ACL) de un fichero."""
         return drive_ops.delete_permission(service_factory(account), file_id, permission_id)
 
+    @mcp.tool()
+    def list_folder(folder_id: str, account: str, max_results: int = 200) -> list[dict]:
+        """Lista los hijos DIRECTOS de una carpeta (navegación tipo explorador, sin
+        escribir queries). No recursivo."""
+        return drive_ops.list_folder(service_factory(account), folder_id, page_size=max_results)
+
+    @mcp.tool()
+    def list_trash(account: str, max_results: int = 100) -> list[dict]:
+        """Lista los ficheros en la papelera de la cuenta (recuperables con
+        restore_file)."""
+        return drive_ops.list_trash(service_factory(account), page_size=max_results)
+
+    @mcp.tool()
+    def get_folder_path(folder_id: str, account: str) -> dict:
+        """Miga de pan / ruta completa de una carpeta (raíz→hoja)."""
+        return drive_ops.get_folder_path(service_factory(account), folder_id)
+
     return mcp
 
 

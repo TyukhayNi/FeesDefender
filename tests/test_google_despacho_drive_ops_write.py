@@ -302,3 +302,34 @@ def test_get_permission():
     assert kw["fileId"] == "f1"
     assert kw["permissionId"] == "p1"
     assert kw["supportsAllDrives"] is True
+
+
+def test_list_folder_hijos_directos():
+    svc = FakeService(files={"list": {"files": [
+        {"id": "a", "name": "00_Input", "mimeType": FOLDER_MIME},
+        {"id": "b", "name": "doc.pdf", "mimeType": "application/pdf"}]}})
+    out = drive_ops.list_folder(svc, "P1")
+    assert [f["id"] for f in out] == ["a", "b"]
+    _, kw = svc.recorded("files")[0]
+    assert "'P1' in parents" in kw["q"]
+    assert "trashed = false" in kw["q"]
+
+
+def test_list_trash():
+    svc = FakeService(files={"list": {"files": [{"id": "t1", "name": "viejo"}]}})
+    out = drive_ops.list_trash(svc)
+    assert out[0]["id"] == "t1"
+    _, kw = svc.recorded("files")[0]
+    assert kw["q"] == "trashed = true"
+
+
+def test_get_folder_path_sube_hasta_raiz():
+    # C -> B -> A -> (sin parents)
+    svc = FakeService(files={"get": [
+        {"id": "C", "name": "Sala lectura", "parents": ["B"]},
+        {"id": "B", "name": "01_Procesado", "parents": ["A"]},
+        {"id": "A", "name": "W-02352", "parents": []},
+    ]})
+    out = drive_ops.get_folder_path(svc, "C")
+    assert out["names"] == ["W-02352", "01_Procesado", "Sala lectura"]
+    assert out["path"] == "W-02352/01_Procesado/Sala lectura"

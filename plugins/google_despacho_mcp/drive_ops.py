@@ -520,3 +520,32 @@ def delete_permission(service, file_id: str, permission_id: str) -> dict:
         fileId=file_id, permissionId=permission_id, supportsAllDrives=True,
     ).execute()
     return {"file_id": file_id, "permission_id": permission_id, "deleted": True}
+
+
+def list_folder(service, folder_id: str, *, page_size: int = 200) -> list[dict]:
+    """Hijos directos de una carpeta (name/id/mimeType/...). No recursivo."""
+    q = f"'{folder_id}' in parents and trashed = false"
+    return search_files(service, q, page_size=page_size)
+
+
+def list_trash(service, *, page_size: int = 100) -> list[dict]:
+    """Ficheros en la papelera (para recuperar con restore_file)."""
+    return search_files(service, "trashed = true", page_size=page_size)
+
+
+def get_folder_path(service, folder_id: str, *, max_depth: int = 50) -> dict:
+    """Miga de pan: sube por `parents` hasta la raíz. Devuelve names (raíz→hoja)
+    y path unido por '/'. Si hay varios parents, sigue el primero."""
+    names: list[str] = []
+    current = folder_id
+    for _ in range(max_depth):
+        meta = service.files().get(
+            fileId=current, fields="id, name, parents", supportsAllDrives=True,
+        ).execute()
+        names.append(meta.get("name", ""))
+        parents = meta.get("parents") or []
+        if not parents:
+            break
+        current = parents[0]
+    names.reverse()
+    return {"names": names, "path": "/".join(names)}
