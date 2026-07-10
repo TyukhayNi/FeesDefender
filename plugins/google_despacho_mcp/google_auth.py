@@ -1,8 +1,7 @@
 """Autenticación OAuth y gestión de cuentas para el MCP google-despacho.
 
-SCOPE F1: drive.readonly. SOLO LECTURA. El alcance se fija aquí y NO se
-parametriza, para que ampliarlo (F2: escritura) exija una edición consciente
-de este fichero.
+SCOPE F2: drive (lectura + escritura). El alcance se fija aquí y NO se
+parametriza, para que ampliarlo exija una edición consciente de este fichero.
 
 Config (por defecto ~/.google-despacho, override GOOGLE_DESPACHO_HOME):
     $GOOGLE_DESPACHO_HOME/
@@ -21,9 +20,12 @@ from pathlib import Path
 # (patrón de core/gmail_source.py) para que el módulo sea importable sin ellos
 # (tests bajo .venv).
 
-# Alcance deliberadamente restringido a SOLO LECTURA (F1). F2 lo amplía a
-# "https://www.googleapis.com/auth/drive" con edición consciente + reautorización.
-SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
+# Alcance F2: Drive completo (lectura + escritura + permisos). `drive` subsume
+# `drive.readonly`, así que las tools de lectura de F1 siguen funcionando. Se fija
+# aquí y NO se parametriza: ampliarlo exige edición consciente + reautorización de
+# cada cuenta. `drive.file` NO sirve (solo ficheros creados por la app; F2 toca
+# expedientes existentes).
+SCOPES = ["https://www.googleapis.com/auth/drive"]
 
 
 def config_home() -> Path:

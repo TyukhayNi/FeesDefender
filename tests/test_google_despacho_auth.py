@@ -22,10 +22,8 @@ def test_config_home_crea_estructura(auth_home):
     assert (auth_home / "tokens").is_dir()
 
 
-def test_scope_es_solo_lectura(auth_home):
-    assert google_auth.SCOPES == [
-        "https://www.googleapis.com/auth/drive.readonly"
-    ]
+def test_scope_es_drive_completo(auth_home):
+    assert google_auth.SCOPES == ["https://www.googleapis.com/auth/drive"]
 
 
 def test_list_account_emails_vacio_y_ordenado(auth_home):
@@ -52,3 +50,8 @@ def test_remove_account_borra_existente_y_devuelve_true(auth_home):
 
 def test_remove_account_inexistente_devuelve_false(auth_home):
     assert google_auth.remove_account("nadie@tyukhay.legal") is False
+
+
+def test_scope_es_drive_completo_f2():
+    from plugins.google_despacho_mcp import google_auth
+    assert google_auth.SCOPES == ["https://www.googleapis.com/auth/drive"]
