@@ -700,8 +700,9 @@ para hilo nuevo: **`docs/PLAN_INTAKE_CRM_COMPLETO.md`**.
 - **Paso 1 (bajar todo + `physical_complete` + contador `documents_overlap`) HECHO
   en código** (`pull_expediente_v2`, `intake_demanda_contestacion(full=…)`,
   `intake-judicial --full`); falta cierre formal (`✅` + hash del PR).
-- **Paso 2 (procesado) SUPERSEDIDO** por `[SIGUIENTE-INTAKE-CRM-A-LLM]` (abajo): el
-  procesado del CRM se reconsidera sobre las salas nuevas, no sobre `pipeline.run`.
+- **Paso 2 (procesado) SUPERSEDIDO** por las salas nuevas (no `pipeline.run`); la
+  reconsideración formal del motor/ejes queda **aparcada** en
+  `[APARCADO-INTAKE-CRM-A-LLM]` (abajo).
 
 **Siguiente acordado — `[SIGUIENTE-DEDUP-GUARD-ROBUSTO]` (apuntado 2026-06-10):**
 guarda para **no duplicar expedientes ni en el CRM ni en el Drive** al crear un
@@ -728,44 +729,34 @@ caso. Hoy es frágil a variaciones tipográficas de la referencia/nombre.
 
 ---
 
-## [SIGUIENTE-INTAKE-CRM-A-LLM] Cadena CRM Gdocu → salas → registros → LLM
-*Abierto 2026-07-10 (Nikolai). Brainstorming + runbook: `docs/superpowers/specs/2026-07-10-intake-crm-a-llm-design.md`.*
+## [APARCADO-INTAKE-CRM-A-LLM] Cadena CRM Gdocu → salas → registros → LLM
+*Abierto 2026-07-10 (Nikolai); **APARCADO 2026-07-10** tras re-brainstorming con superpowers.
+Doc: `docs/superpowers/specs/2026-07-10-intake-crm-a-llm-design.md` (banner APARCADO, mergeado
+PR #19). Detalle del re-brainstorming en el comentario del PR #19.*
 
-**Objetivo.** Encadenar, para la fuente CRM, el ciclo completo: bajada del gestor
-documental a `05_CRM` (ya hecha) → sala de máquina (OCR/MD) → sala de lectura
-(clasificación + índices) → registros del caso → LLM. Reconciliar el motor de
-procesado y decidir la estrategia de consumo LLM por niveles.
+**Estado: APARCADA la construcción de los ejes** (decisión de Nikolai). Motivo: el proceso
+(intake CRM → sala de máquina → sala de lectura → registros) **no está rodado** para decidir
+sobre datos reales; el ROI en €/tiempo del doc (§5.3/§8) es estimación **sin medir**. No se
+promueve a plan de implementación.
 
-**Entregable de esta iteración:** documento (runbook + brainstorming). Sin código. El doc
-incluye ya el **mapa de tareas de intake por fuente** (§2.0), la estimación de tiempo con
-pipeline + robustez % (§5.3), una **simulación de referencia** de `viabilidad-prerelleno`
-sobre el Drive de E&V (§7, caso ficticio `NEGATIVA_ESCRITURA`) y una **§8 ROI** (trabajo
-mecánico vs de criterio, arbitraje de tarifas €20/€60, efecto del intake, embudo de gasto,
-caso real W-02VND1 ~€315→~€70).
+**Qué conserva valor (mergeado, no se retoca):** el runbook end-to-end y el mapa de estado
+verificado del flujo (§1–3 del doc). El §4–8 queda archivado como brainstorming.
 
-**⚠️ APROBACIÓN REVERTIDA 2026-07-10 — EN REVISIÓN.** La aprobación previa (motor A2, ejes
-E2+E3+E4) se retira: se adoptó sin el brainstorming de superpowers y sobre ROI no medido. Las
-decisiones vuelven a estar **abiertas**. Antes de adoptar nada: **medir un caso real** (ataca
-el ROI estimado) y **confirmar el supuesto de recurso €20/h** + delegabilidad de la
-clasificación. El re-brainstorming se hace en una sesión de Code con el plugin `superpowers`
-cargado (en esta sesión el índice de skills quedó congelado sin él). Recomendaciones (A2,
-E2+E3+E4, E5 diferido) se conservan como punto de partida, no como acuerdo.
+**Hallazgos (si se reabre, no re-derivar):** "eficiencia de tokens" no es objetivo (Claude-en-
+sesión: solo muerde por caber en contexto); `scorer`→`viability` es **código muerto** sobre el
+MD viejo (el flujo vivo es la skill leyendo crudo `00_Input/`); dolor único confirmado =
+babysitting de casos grandes, **0 decisiones malas observadas**; de los ejes, **E2 (leer MD) es
+el portante**, E3 marginal + gate extra, E4 no toca el babysitting (reutilización aguas abajo),
+E5 descartado; anti-correlación sospechada (grandes = testificales, document-dependent =
+pequeños y ya caben).
 
-**Decisiones abiertas (cerrar con Nikolai antes de implementar):**
-1. **Motor (§4 del doc):** A1 salas-only / A2 híbrido (salas + anon del pipeline viejo)
-   / A3 solo documentar. *Recomendación de arranque: A2.* Deprecar el
-   `intake-judicial --run-pipeline` viejo depende de esto.
-2. **Ejes de consumo LLM (§5):** catálogo E1–E7 documentado con matriz y estimación de
-   tiempo (crudo ~45–90 min con babysitting vs ~8–15 min desatendido en caso medio). El
-   trío **E2 (niveles MD→OCR→crudo) + E3 (recuperación selectiva por catálogo) + E4
-   (ficha de hechos en una pasada, JSON anclado) se BARAJA como prioritario, pero NO está
-   adoptado**; E5 (RAG local) diferido. Pendiente: adopción, y si `viabilidad-prerelleno`
-   cambia su fuente primaria a MD (N1) o se ofrece opt-in. Invariante innegociable:
-   preservar la cita verbatim (anclaje re-localizable en el PDF OCR). RGPD: en claro solo
-   para LLM local/Claude-en-sesión; cloud → `06_Anonimizado`.
-3. Cerrar formalmente el Paso 1 de `[SIGUIENTE-INTAKE-CRM-COMPLETO]` (hecho en código).
+**Si se reabre:** probar **E2-sola, opt-in, disparada por tamaño** — NO el trío E2+E3+E4.
+**Disparadores:** (a) un go/no-go real poco fiable por desbordar; (b) volumen suficiente para
+medir la distribución de tamaños de caso; (c) haber cronometrado UNA corrida local (intake +
+`sala_maquina apply` + lectura).
 
-**Al cerrar §4 y §5:** promover a un plan de implementación en `docs/superpowers/plans/`.
+**Higiene independiente (sigue pendiente, NO aparcada):** cerrar formalmente el Paso 1 de
+`[SIGUIENTE-INTAKE-CRM-COMPLETO]` (hecho en código, falta `✅` + hash).
 
 ---
 
