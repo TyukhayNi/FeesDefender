@@ -19,8 +19,8 @@ import typer
 
 from core import abrir_caso as brain
 from core import (
-    case_manager, config, intake_drive, intake_log, intake_manual, sudespacho_create,
-    whatsapp_intake,
+    case_manager, config, email_export, intake_drive, intake_log, intake_manual,
+    sudespacho_create, whatsapp_intake,
 )
 from core.casos import case_locator
 from core.ciudades import CIUDADES
@@ -177,6 +177,17 @@ def _intake_whatsapp(ident, src_str: str, rol: str, *, dry_run: bool) -> None:
         typer.echo(f"WhatsApp depositado en {getattr(res, 'chat_dir', '?')}")
 
 
+def _intake_email(ident, case_dir: Path, cuenta: str, label: str, *, dry_run: bool) -> None:
+    dest = case_dir / "00_Input" / brain.FUENTE_A_SUBDIR["email"]
+    if dry_run:
+        typer.echo(f"[dry-run] email: se exportaría la etiqueta {label!r} de {cuenta} "
+                   f"a {dest} (sin ejecutar)")
+        return
+    dest.mkdir(parents=True, exist_ok=True)
+    email_export.export_label(cuenta, label, dest, case_id=ident.case_id)
+    typer.echo(f"Email: etiqueta {label!r} exportada a {dest}")
+
+
 def _validar_flags(fuente, *, folder_id, team_id, src, rol, cuenta, label) -> None:
     """Exige los flags propios de la fuente y rechaza los ajenos (fail-fast)."""
     requeridos = {
@@ -219,8 +230,10 @@ def _despachar_intake(fuente, ident, case_dir, *, folder_id, team_id, src, rol,
         _intake_manual(ident, case_dir, src, dry_run=dry_run)
     elif fuente == "whatsapp":
         _intake_whatsapp(ident, src, rol, dry_run=dry_run)
+    elif fuente == "email":
+        _intake_email(ident, case_dir, cuenta, label, dry_run=dry_run)
     else:
-        raise typer.Exit(code=1)  # ramas whatsapp/email: tareas posteriores
+        raise typer.Exit(code=1)  # red de seguridad: _FUENTES_CLI ya filtra el valor
 
 
 def _alta_crm(

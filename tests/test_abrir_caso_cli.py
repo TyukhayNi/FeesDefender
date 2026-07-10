@@ -395,6 +395,39 @@ def test_cli_whatsapp_dry_run_no_llama(drive_temporal, tmp_path, monkeypatch):
     assert llamado["v"] is False
 
 
+def test_cli_email_delega_en_export_label(drive_temporal, monkeypatch):
+    llamadas = {}
+
+    def spy(account, label, dest_dir, *, case_id=None, **kw):
+        llamadas.update(account=account, label=label, dest=str(dest_dir), case_id=case_id)
+        return type("R", (), {})()
+
+    monkeypatch.setattr("core.email_export.export_label", spy)
+    result = CliRunner().invoke(
+        cli.app,
+        _args_min(fuente="email", cuenta="mails@x.example", label="Caso W") + ["--crm", "skip"],
+    )
+    assert result.exit_code == 0, result.output
+    case_id = "BaRS11 - Passeig Marítim 30 (W-02Z2NR) - Vuelta"
+    assert llamadas["account"] == "mails@x.example"
+    assert llamadas["label"] == "Caso W"
+    assert llamadas["case_id"] == case_id
+    assert llamadas["dest"].replace("\\", "/").endswith("00_Input/03_Email")
+    # el orquestador NO emite un segundo evento (lo hace export_label, aquí mockeado)
+    eventos = intake_log.read_events(case_id)
+    assert [e for e in eventos if e["event"] == "upload_email"] == []
+
+
+def test_cli_email_dry_run_no_llama(drive_temporal, monkeypatch):
+    llamado = {"v": False}
+    monkeypatch.setattr("core.email_export.export_label",
+                        lambda *a, **k: llamado.__setitem__("v", True))
+    result = CliRunner().invoke(
+        cli.app, _args_min(fuente="email", cuenta="a@x.example", label="L") + ["--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert llamado["v"] is False
+
+
 def test_cli_whatsapp_dedup_reporta(drive_temporal, tmp_path, monkeypatch):
     z = tmp_path / "chat.zip"
     z.write_bytes(b"PKdup")
