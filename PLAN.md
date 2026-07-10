@@ -738,8 +738,10 @@ procesado y decidir la estrategia de consumo LLM por niveles.
 
 **Entregable de esta iteración:** documento (runbook + brainstorming). Sin código. El doc
 incluye ya el **mapa de tareas de intake por fuente** (§2.0), la estimación de tiempo con
-pipeline + robustez % (§5.3) y una **simulación de referencia** de `viabilidad-prerelleno`
-sobre el Drive de E&V (§7, caso ficticio `NEGATIVA_ESCRITURA`).
+pipeline + robustez % (§5.3), una **simulación de referencia** de `viabilidad-prerelleno`
+sobre el Drive de E&V (§7, caso ficticio `NEGATIVA_ESCRITURA`) y una **§8 ROI** (trabajo
+mecánico vs de criterio, arbitraje de tarifas €20/€60, efecto del intake, embudo de gasto,
+caso real W-02VND1 ~€315→~€70). Decisión de ejes (E2+E3+E4) sigue **barajada, no adoptada**.
 
 **Decisiones abiertas (cerrar con Nikolai antes de implementar):**
 1. **Motor (§4 del doc):** A1 salas-only / A2 híbrido (salas + anon del pipeline viejo)

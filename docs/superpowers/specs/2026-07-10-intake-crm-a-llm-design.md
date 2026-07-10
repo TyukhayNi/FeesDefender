@@ -382,3 +382,81 @@ filtrar. Con **ejes**, lee el **MD** de las 3–4 categorías que cada hito nece
 (`ACTIVACIÓN/OFERTAS/ARRAS/RECLAMACIONES`) y salta las fotos (`empty` en `_cobertura.md`).
 Ganancia y robustez, en la tabla de §5.3. **RGPD:** todo en claro bajo la excepción §2
 (Claude-en-sesión, sin API externa); para un LLM cloud habría que anonimizar antes.
+
+## 8. ROI — cómo enfocar los estudios de viabilidad
+
+> Objetivo de esta sección: decidir **dónde y cómo** invertir el estudio de viabilidad para
+> maximizar el retorno, con el tiempo de abogado como recurso escaso.
+
+### 8.1 La idea, sin jerga
+
+No importa tanto *cuánto* se tarda, sino **quién pone cada minuto**. Hay dos clases de trabajo:
+
+- **Mecánico** (juntar documentos = intake, OCR, ordenar/clasificar): sin criterio jurídico
+  → lo hace la **máquina** o alguien de **€20/h**.
+- **De criterio** (decidir si el caso se aguanta): solo el letrado → **€60/h**.
+
+El **intake** (juntar todo en `00_Input/`) es mecánico y **se paga igual** leas crudo o por
+ejes (es coste común). El **crudo** obliga a que el letrado (€60/h) haga casi todo, porque un
+montón desordenado **no se puede delegar**. Los **ejes** parten el trabajo en fases limpias →
+lo mecánico baja a €20/h o a la máquina, y el letrado **solo decide**.
+
+### 8.2 Efecto de meter el intake en el ROI
+
+Mirando **solo la lectura**, los ejes iban ~6× más rápidos. Al sumar el intake (mismos
+minutos en ambos caminos), la ventaja de **velocidad** se diluye a ~1,8×. Por eso el argumento
+correcto **no es la velocidad — es el coste y quién paga cada minuto**: los ejes habilitan
+pagar €20/h (o €0) por el ~75 % del tiempo que es mecánico y reservar €60/h para la decisión.
+
+### 8.3 Caso real — W-02VND1 (VUELTA, Barcelona)
+
+Recuentos **reales** (medidos): 668 documentos; 531 con MD `ok`; 90 fotos vacías; 277 correos
+`.eml` + 162 adjuntos; la sala de lectura en Cowork tardó ~53 min (conector Drive per-fichero).
+Minutos y euros **estimados** (senior €60/h = €1/min; mecánico €20/h = €0,33/min):
+
+| Tarea | Crudo (senior todo) | Ejes (senior todo) | Ejes bien montado |
+|---|---|---|---|
+| Intake (juntar 668 docs) | €75 | €75 | €25 (@€20) |
+| OCR sala de máquina (desatendido) | — | €0 | €0 |
+| Clasificación / sala de lectura (gate) | — | €45 | €15 (@€20) |
+| Leer y **decidir** | €240 (≈4 h, desborda) | €30 | €30 (@€60) |
+| **Total** | **≈ €315** | **≈ €150** (−52 %) | **≈ €70** (−78 %) |
+
+Robustez del caso: crudo ~55 % (desborda → resume → omite; 90 fotos sin ver) vs ejes ~86 %.
+En un caso grande, el crudo no es solo caro: es **poco fiable**.
+
+**Matiz VUELTA:** se gana por **testimonio** (nexo causal), no por papeles → el trabajo
+documental tiene techo. Su misión es **anclar los hitos y marcar los huecos** para el guion de
+entrevista; el letrado debe parar ahí, no exprimir el documento 669.
+
+### 8.4 Palancas de ROI (de mayor a menor impacto)
+
+1. **Embudo de gasto (antes que nada):** no estudiar a fondo lo que no lo merece.
+   (a) **Filtro de tipo** — solo `INFORME_VIABILIDAD_TIPOS` (las `NEGATIVA_*`, `VUELTA`,
+   `INCUMPLIMIENTO_EXCLUSIVA`, `RESPONSABILIDAD_PROFESIONAL`); `BAD_DEBT`/`LAU_20`/`DEVOLUCION_*`
+   → sin estudio, vía de cantidad, todo a €20/h. (b) **Filtro de cuantía** — <2.500 € no se
+   litiga; escala la profundidad con el importe. (c) **Triaje barato primero**
+   (`triaje-viabilidad`, semáforo) → solo los verde/ámbar escalan al prerelleno completo.
+2. **Arbitraje de tarifas (lo que más rinde, y solo los ejes lo habilitan):** el ~75 % del
+   tiempo (intake + clasificación) es mecánico → €20/h o máquina; el letrado €60/h **solo**
+   en la decisión. En crudo pagas €60/h por trabajo de becario.
+3. **Automatizar el intake** (coste común): terminar de automatizar WhatsApp/manual para bajar
+   los ~30–75 min atendidos; cada minuto ahorrado cuenta **en los dos** caminos.
+4. **Enfocar los hitos load-bearing** (ENCARGO, nexo causal, cuantía, prescripción) y **mandar
+   los huecos a la entrevista**; no leer más allá de lo que mueve el semáforo (techo testifical).
+
+### 8.5 Conclusiones
+
+- El ahorro grande **no es de tokens ni de segundos**: es **tiempo de abogado** (~4× en el caso
+  medio) y **robustez** (~68 % → ~87 %; y hasta ~55 % → ~86 % en casos grandes como W-02VND1).
+- **El embudo va antes que los ejes:** decide *si* hay estudio; los ejes optimizan el coste
+  *dentro* del estudio.
+- **Orden de adopción de los ejes:** E2 (leer MD con gate, barato) → E3 (recuperación por
+  catálogo, el que más enfoca) → E4 (ficha de hechos una pasada, anclaje + reutilización).
+  E5 (RAG) diferido.
+- **Regla de oro:** que la hora de €60 solo toque la decisión; todo lo demás, máquina o €20/h.
+- **Calibrar con W-02VND1:** cronometrar una corrida local (intake + `sala_maquina apply` +
+  lectura) convierte estos rangos en cifras exactas del despacho.
+
+> Cifras de euros y minutos: **estimaciones** con supuestos explícitos (30–75 min de intake,
+> tarifas €20/€60), no benchmarks. Los recuentos de W-02VND1 sí son reales.
