@@ -21,7 +21,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 
 ---
 
-## [abrir-caso] ✅ F1 + F2a mergeadas; F3-(A+C) en PR; F2b (skill Cowork) y F3-judicial pendientes
+## [abrir-caso] ✅ F1 + F2a + F3-(A+C) mergeadas; F2b APARCADA; F3-judicial pendiente
 
 *Disparador: encargo de Nikolai (spec v0.1 `SPEC_ABRIR_CASO.md`, fuera del repo). Abrir un expediente
 E&V en una pasada (alta + intake + CRM), uniendo piezas ya existentes. Patrón «biblioteca»: cerebro
@@ -36,17 +36,20 @@ puro + orquestadores finos. Spec: `docs/superpowers/specs/2026-07-09-abrir-caso-
 - [x] **F2a — primitivas del conector — MERGEADA** (PR #16, squash `a66bc3b`). `hash_tree` +
   `strip_top_level` en `plugins/expedientes_xl/` (`fsops.py`+`server.py`+tests). Plan
   `docs/superpowers/plans/2026-07-09-abrir-caso-f2a-conector.md`.
-- [ ] **F2b** — skill Cowork `abrir-caso` (reutiliza el cerebro + conector F2a, empaquetado `.skill`).
-  Handoff sugerido al terminar = skill **`organizar-sala-maquina`** (YA mergeada, PR #15 `1144a30`; va
-  ANTES de `organizar-sala-lectura`) — interfaz ya confirmada, cablear el puntero.
-- [ ] **F3-(A+C) — fuentes no-Drive + init_caso — EN PR** (rama `feat/abrir-caso-f3-fuentes`, ver git).
+- [x] **F3-(A+C) — fuentes no-Drive + init_caso — MERGEADA** (PR #22, squash `e68f59e`).
   CLI `--fuente manual|whatsapp|email` por delegación a los escritores nativos (`intake_manual`,
   `whatsapp_intake.deposit_export`, `email_export.export_label`), custodia forense uniforme (evento
   `upload_manual` cierra el hueco de que el intake manual no hasheaba). Regla: whatsapp/email auto-logean;
   drive_ev/manual los logea el orquestador (`_intake_generico`). Una fuente por invocación, reentrante.
   **`init_caso.py` se CONSERVA** (atajo ligero solo-esqueleto; sin disparador de deprecación, decisión
   Nikolai). Spec `docs/superpowers/specs/2026-07-10-abrir-caso-f3-fuentes-design.md` · plan
-  `docs/superpowers/plans/2026-07-10-abrir-caso-f3-fuentes.md`.
+  `docs/superpowers/plans/2026-07-10-abrir-caso-f3-fuentes.md`. +12 tests, leak-scan verde.
+- [~] **F2b — skill Cowork `abrir-caso` — APARCADA** 2026-07-10 (decisión Nikolai tras red-team
+  adversarial). Bajo ROI (CRM no corre en Cowork, la CLI local ya hace todo, el intake duplicaría
+  `intake-expediente`) + huecos de viabilidad (Cowork sin listado/lectura-de-log; handoff exigiría
+  tocar `core/`). Hallazgos reutilizables (esp. **`_caso.md` es de dos niveles con el lock en `meta`**)
+  en `docs/superpowers/specs/2026-07-10-abrir-caso-f2b-skill-cowork-design.md` (estado: aparcado).
+  Reabrir solo con necesidad real de abrir un caso desde Cowork/móvil.
 - [ ] **F3-judicial (parte B, diferida)** — expediente **judicial** en el CRM (`NuevoExpedienteJudicial`
   / `create_expediente_judicial` / element `expedientes_judiciales`): superficie grande (juzgado propiedad
   no-relación → 404, autos, procedimiento, partes M2M). Frente propio con disparador de caso judicial real.
