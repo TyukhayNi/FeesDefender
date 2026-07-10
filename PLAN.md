@@ -743,11 +743,13 @@ sobre el Drive de E&V (§7, caso ficticio `NEGATIVA_ESCRITURA`) y una **§8 ROI*
 mecánico vs de criterio, arbitraje de tarifas €20/€60, efecto del intake, embudo de gasto,
 caso real W-02VND1 ~€315→~€70).
 
-**✅ SPEC APROBADA 2026-07-10.** Decisiones adoptadas: motor **A2** (híbrido), ejes
-**E2+E3+E4** (E5 diferido). Orden de implementación **E2 → E3 → E4**. Siguiente artefacto:
-plan en `docs/superpowers/plans/` (E2 primero, el más barato y sin prerrequisito de
-clasificación). Sub-decisiones a cerrar en el plan: fuente primaria de `viabilidad-prerelleno`
-(MD/N1 vs opt-in) y manifiesto de niveles en `indice_documental.yaml`.
+**⚠️ APROBACIÓN REVERTIDA 2026-07-10 — EN REVISIÓN.** La aprobación previa (motor A2, ejes
+E2+E3+E4) se retira: se adoptó sin el brainstorming de superpowers y sobre ROI no medido. Las
+decisiones vuelven a estar **abiertas**. Antes de adoptar nada: **medir un caso real** (ataca
+el ROI estimado) y **confirmar el supuesto de recurso €20/h** + delegabilidad de la
+clasificación. El re-brainstorming se hace en una sesión de Code con el plugin `superpowers`
+cargado (en esta sesión el índice de skills quedó congelado sin él). Recomendaciones (A2,
+E2+E3+E4, E5 diferido) se conservan como punto de partida, no como acuerdo.
 
 **Decisiones abiertas (cerrar con Nikolai antes de implementar):**
 1. **Motor (§4 del doc):** A1 salas-only / A2 híbrido (salas + anon del pipeline viejo)
