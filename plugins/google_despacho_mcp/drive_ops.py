@@ -462,3 +462,23 @@ def append_text(service, file_id: str, text: str, *,
     ).execute()
     return {"id": updated.get("id"), "name": updated.get("name"),
             "sha256": hashlib.sha256(new_bytes).hexdigest()}
+
+
+SHORTCUT_MIME = "application/vnd.google-apps.shortcut"
+
+
+def create_shortcut(service, *, target_id: str, dst_folder_id: str,
+                    name: str | None = None) -> dict:
+    """Crea un acceso directo a `target_id` dentro de `dst_folder_id` (sin duplicar
+    bytes). Si no se da `name`, Drive usa el del destino."""
+    body = {"mimeType": SHORTCUT_MIME, "parents": [dst_folder_id],
+            "shortcutDetails": {"targetId": target_id}}
+    if name:
+        body["name"] = name
+    created = service.files().create(
+        body=body, fields="id, name, mimeType, shortcutDetails, webViewLink",
+        supportsAllDrives=True,
+    ).execute()
+    return {"id": created.get("id"), "name": created.get("name"),
+            "target_id": (created.get("shortcutDetails") or {}).get("targetId"),
+            "web_view_link": created.get("webViewLink")}

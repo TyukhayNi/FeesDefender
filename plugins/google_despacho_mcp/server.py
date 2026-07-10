@@ -263,6 +263,15 @@ def build_server(
         sha256 del resultado."""
         return drive_ops.append_text(service_factory(account), file_id, text)
 
+    @mcp.tool()
+    def create_shortcut(target_id: str, dst_folder_id: str, account: str,
+                        name: Optional[str] = None) -> dict:
+        """Crea un acceso directo a `target_id` en `dst_folder_id`: enlaza un doc en
+        varias carpetas sin duplicar bytes (fuente única)."""
+        return drive_ops.create_shortcut(
+            service_factory(account), target_id=target_id,
+            dst_folder_id=dst_folder_id, name=name)
+
     return mcp
 
 

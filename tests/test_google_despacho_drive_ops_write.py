@@ -248,3 +248,20 @@ def test_export_to_drive_no_nativo_rechaza():
     })
     with pytest.raises(ValueError):
         drive_ops.export_to_drive(svc, "b1")
+
+
+SHORTCUT_MIME = "application/vnd.google-apps.shortcut"
+
+
+def test_create_shortcut():
+    svc = FakeService(files={"create": {
+        "id": "s1", "name": "Escrito (acceso directo)", "mimeType": SHORTCUT_MIME,
+        "shortcutDetails": {"targetId": "T1"}, "webViewLink": "https://drive/s1"}})
+    out = drive_ops.create_shortcut(svc, target_id="T1", dst_folder_id="DST",
+                                    name="Escrito (acceso directo)")
+    assert out["id"] == "s1"
+    assert out["target_id"] == "T1"
+    _, kw = svc.recorded("files")[0]
+    assert kw["body"]["mimeType"] == SHORTCUT_MIME
+    assert kw["body"]["shortcutDetails"]["targetId"] == "T1"
+    assert kw["body"]["parents"] == ["DST"]
