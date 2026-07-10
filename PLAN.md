@@ -21,7 +21,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 
 ---
 
-## [abrir-caso] ✅ F1 MERGEADA 2026-07-09 (PR #13 `9fb0757`); F2/F3 pendientes
+## [abrir-caso] ✅ F1 + F2a mergeadas; F3-(A+C) en PR; F2b (skill Cowork) y F3-judicial pendientes
 
 *Disparador: encargo de Nikolai (spec v0.1 `SPEC_ABRIR_CASO.md`, fuera del repo). Abrir un expediente
 E&V en una pasada (alta + intake + CRM), uniendo piezas ya existentes. Patrón «biblioteca»: cerebro
@@ -33,12 +33,23 @@ puro + orquestadores finos. Spec: `docs/superpowers/specs/2026-07-09-abrir-caso-
   + CLI Typer `scripts/abrir_caso.py` (gate CRM, hash SHA-256 local, `--dry-run/--force/--yes/--crm skip`).
   Promovió `intake_drive.CONTROL_FILES`. +29 tests; suite 1599 verde. Decisiones: ambos frentes,
   colisión `ask`, CRM con gate, hash tras el pull, CLI en módulo nuevo.
-- [ ] **F2** — primitivas `hash_tree` + `strip_top_level` en `plugins/expedientes_xl/` (+tests) + skill
-  Cowork `abrir-caso` (reutiliza el cerebro, empaquetado `.skill`). Handoff sugerido al terminar =
-  skill **`organizar-sala-maquina`** (en construcción, rama `feat/organizar-sala-maquina`; va ANTES de
-  `organizar-sala-lectura`) — confirmar nombre/interfaz antes de cablear.
-- [ ] **F3** — fuentes `manual`/`whatsapp`/`email` en `plan_intake` + expediente judicial + evaluar
-  plegar/deprecar `init_caso.py`.
+- [x] **F2a — primitivas del conector — MERGEADA** (PR #16, squash `a66bc3b`). `hash_tree` +
+  `strip_top_level` en `plugins/expedientes_xl/` (`fsops.py`+`server.py`+tests). Plan
+  `docs/superpowers/plans/2026-07-09-abrir-caso-f2a-conector.md`.
+- [ ] **F2b** — skill Cowork `abrir-caso` (reutiliza el cerebro + conector F2a, empaquetado `.skill`).
+  Handoff sugerido al terminar = skill **`organizar-sala-maquina`** (YA mergeada, PR #15 `1144a30`; va
+  ANTES de `organizar-sala-lectura`) — interfaz ya confirmada, cablear el puntero.
+- [ ] **F3-(A+C) — fuentes no-Drive + init_caso — EN PR** (rama `feat/abrir-caso-f3-fuentes`, ver git).
+  CLI `--fuente manual|whatsapp|email` por delegación a los escritores nativos (`intake_manual`,
+  `whatsapp_intake.deposit_export`, `email_export.export_label`), custodia forense uniforme (evento
+  `upload_manual` cierra el hueco de que el intake manual no hasheaba). Regla: whatsapp/email auto-logean;
+  drive_ev/manual los logea el orquestador (`_intake_generico`). Una fuente por invocación, reentrante.
+  **`init_caso.py` se CONSERVA** (atajo ligero solo-esqueleto; sin disparador de deprecación, decisión
+  Nikolai). Spec `docs/superpowers/specs/2026-07-10-abrir-caso-f3-fuentes-design.md` · plan
+  `docs/superpowers/plans/2026-07-10-abrir-caso-f3-fuentes.md`.
+- [ ] **F3-judicial (parte B, diferida)** — expediente **judicial** en el CRM (`NuevoExpedienteJudicial`
+  / `create_expediente_judicial` / element `expedientes_judiciales`): superficie grande (juzgado propiedad
+  no-relación → 404, autos, procedimiento, partes M2M). Frente propio con disparador de caso judicial real.
 - Relacionado: `docs/MEJORAS_FUTURAS.md` **#50** (sección "Relación con el ecosistema" en todas las skills).
 
 ## [SIGUIENTE-GOOGLE-MCP] F1 (lectura cross-cuenta) — CÓDIGO COMPLETO + validado en vivo; falta merge del PR
