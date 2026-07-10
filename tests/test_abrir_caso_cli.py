@@ -56,6 +56,15 @@ def _args(**over):
     return base
 
 
+def test_cli_fuente_drive_ev_explicita_equivale_a_default(drive_temporal):
+    """--fuente drive_ev explícito da el mismo resultado que el default."""
+    result = CliRunner().invoke(cli.app, _args(fuente="drive_ev"))
+    assert result.exit_code == 0, result.output
+    case_id = "BaRS11 - Passeig Marítim 30 (W-02Z2NR) - Vuelta"
+    eventos = intake_log.read_events(case_id)
+    assert any(e["event"] == "pull_drive_ev" for e in eventos)
+
+
 def test_cli_pasada_completa_crea_intake_log_y_crm(drive_temporal):
     result = CliRunner().invoke(cli.app, _args())
     assert result.exit_code == 0, result.output
