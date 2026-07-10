@@ -49,7 +49,8 @@ fecha: 2026-07-05
 | Documento | Estado | Qué es |
 |---|---|---|
 | `PLAN_DESPLIEGUE_EV.md` | vigente | Despliegue del Streamlit en VPS + apertura a E&V (futuro). |
-| `PLAN_INTAKE_CRM_COMPLETO.md` | vigente | Intake CRM completo a `05_CRM` (`[SIGUIENTE-INTAKE-CRM-COMPLETO]`). |
+| `PLAN_INTAKE_CRM_COMPLETO.md` | vigente | Intake CRM completo a `05_CRM` (`[SIGUIENTE-INTAKE-CRM-COMPLETO]`); su Paso 2 (procesado) queda supersedido por el diseño de 2026-07-10 (abajo). |
+| `superpowers/specs/2026-07-10-intake-crm-a-llm-design.md` | revisar | Bajada CRM → salas → registros → LLM + ejes de eficiencia + ROI (`[SIGUIENTE-INTAKE-CRM-A-LLM]`); aprobación revertida 2026-07-10, en re-brainstorming (decisiones abiertas). |
 | `PLAN_INTAKE_PROCURADORES_EMAIL.md` | vigente | Intake procuradores→CRM; F1/F2 hechas, F3 pendiente. |
 | `PLAN_PRERELLENO_LLM_VIABILIDAD.md` | vigente | Pre-relleno LLM del informe de viabilidad. |
 | `PLAN_SaRS1_anon_pipeline.md` | vigente | Pipeline SaRS1 multi-hilo; H6 aún abierto. |

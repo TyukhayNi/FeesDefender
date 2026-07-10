@@ -697,6 +697,11 @@ dedup M9 lo deje incompleto) + OCR/markdown/anonimización con el pipeline actua
 + contador de solapamientos byte-idénticos (para decidir con datos si el "dedup
 en extracción" merece construirse, que queda APLAZADO). Plan fino autocontenido
 para hilo nuevo: **`docs/PLAN_INTAKE_CRM_COMPLETO.md`**.
+- **Paso 1 (bajar todo + `physical_complete` + contador `documents_overlap`) HECHO
+  en código** (`pull_expediente_v2`, `intake_demanda_contestacion(full=…)`,
+  `intake-judicial --full`); falta cierre formal (`✅` + hash del PR).
+- **Paso 2 (procesado) SUPERSEDIDO** por `[SIGUIENTE-INTAKE-CRM-A-LLM]` (abajo): el
+  procesado del CRM se reconsidera sobre las salas nuevas, no sobre `pipeline.run`.
 
 **Siguiente acordado — `[SIGUIENTE-DEDUP-GUARD-ROBUSTO]` (apuntado 2026-06-10):**
 guarda para **no duplicar expedientes ni en el CRM ni en el Drive** al crear un
@@ -720,6 +725,47 @@ caso. Hoy es frágil a variaciones tipográficas de la referencia/nombre.
      creación; la única protección real es la búsqueda en el CRM. Corregir el
      texto y/o hacer que la guarda CRM realmente bloquee.
 - **Riesgo si no se hace:** expedientes/carpetas duplicados, caros de deshacer.
+
+---
+
+## [SIGUIENTE-INTAKE-CRM-A-LLM] Cadena CRM Gdocu → salas → registros → LLM
+*Abierto 2026-07-10 (Nikolai). Brainstorming + runbook: `docs/superpowers/specs/2026-07-10-intake-crm-a-llm-design.md`.*
+
+**Objetivo.** Encadenar, para la fuente CRM, el ciclo completo: bajada del gestor
+documental a `05_CRM` (ya hecha) → sala de máquina (OCR/MD) → sala de lectura
+(clasificación + índices) → registros del caso → LLM. Reconciliar el motor de
+procesado y decidir la estrategia de consumo LLM por niveles.
+
+**Entregable de esta iteración:** documento (runbook + brainstorming). Sin código. El doc
+incluye ya el **mapa de tareas de intake por fuente** (§2.0), la estimación de tiempo con
+pipeline + robustez % (§5.3), una **simulación de referencia** de `viabilidad-prerelleno`
+sobre el Drive de E&V (§7, caso ficticio `NEGATIVA_ESCRITURA`) y una **§8 ROI** (trabajo
+mecánico vs de criterio, arbitraje de tarifas €20/€60, efecto del intake, embudo de gasto,
+caso real W-02VND1 ~€315→~€70).
+
+**⚠️ APROBACIÓN REVERTIDA 2026-07-10 — EN REVISIÓN.** La aprobación previa (motor A2, ejes
+E2+E3+E4) se retira: se adoptó sin el brainstorming de superpowers y sobre ROI no medido. Las
+decisiones vuelven a estar **abiertas**. Antes de adoptar nada: **medir un caso real** (ataca
+el ROI estimado) y **confirmar el supuesto de recurso €20/h** + delegabilidad de la
+clasificación. El re-brainstorming se hace en una sesión de Code con el plugin `superpowers`
+cargado (en esta sesión el índice de skills quedó congelado sin él). Recomendaciones (A2,
+E2+E3+E4, E5 diferido) se conservan como punto de partida, no como acuerdo.
+
+**Decisiones abiertas (cerrar con Nikolai antes de implementar):**
+1. **Motor (§4 del doc):** A1 salas-only / A2 híbrido (salas + anon del pipeline viejo)
+   / A3 solo documentar. *Recomendación de arranque: A2.* Deprecar el
+   `intake-judicial --run-pipeline` viejo depende de esto.
+2. **Ejes de consumo LLM (§5):** catálogo E1–E7 documentado con matriz y estimación de
+   tiempo (crudo ~45–90 min con babysitting vs ~8–15 min desatendido en caso medio). El
+   trío **E2 (niveles MD→OCR→crudo) + E3 (recuperación selectiva por catálogo) + E4
+   (ficha de hechos en una pasada, JSON anclado) se BARAJA como prioritario, pero NO está
+   adoptado**; E5 (RAG local) diferido. Pendiente: adopción, y si `viabilidad-prerelleno`
+   cambia su fuente primaria a MD (N1) o se ofrece opt-in. Invariante innegociable:
+   preservar la cita verbatim (anclaje re-localizable en el PDF OCR). RGPD: en claro solo
+   para LLM local/Claude-en-sesión; cloud → `06_Anonimizado`.
+3. Cerrar formalmente el Paso 1 de `[SIGUIENTE-INTAKE-CRM-COMPLETO]` (hecho en código).
+
+**Al cerrar §4 y §5:** promover a un plan de implementación en `docs/superpowers/plans/`.
 
 ---
 
