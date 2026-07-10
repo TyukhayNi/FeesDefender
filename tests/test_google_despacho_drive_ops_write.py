@@ -290,3 +290,15 @@ def test_delete_permission():
     _, kw = svc.recorded("permissions")[0]
     assert kw["fileId"] == "f1"
     assert kw["permissionId"] == "p1"
+
+
+def test_get_permission():
+    svc = FakeService(permissions={"get": {"id": "p1", "type": "user",
+                                           "role": "reader",
+                                           "emailAddress": "x@gmail.com"}})
+    out = drive_ops.get_permission(svc, "f1", "p1")
+    assert out["emailAddress"] == "x@gmail.com"
+    _, kw = svc.recorded("permissions")[0]
+    assert kw["fileId"] == "f1"
+    assert kw["permissionId"] == "p1"
+    assert kw["supportsAllDrives"] is True

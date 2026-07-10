@@ -80,23 +80,30 @@ def _resolve_upload(local_path: str) -> str:
 
 
 INTERNAL_DOMAINS = {"tyukhay.legal", "engelvoelkers.com"}
+_ALLOWED_PERM_TYPES = {"anyone", "user", "group", "domain"}
 
 
 def _guard_external_share(*, perm_type: str, role: str,
                           email_address: Optional[str], domain: Optional[str],
                           allow_external: bool) -> None:
-    """Guardarraíl §5. Lanza ValueError si la compartición es externa sin
-    allow_external, o si pide role=owner (siempre prohibido)."""
-    if role == "owner":
+    """Guardarraíl §5. Lanza ValueError si role=owner (siempre prohibido), si el
+    perm_type es desconocido (fail-closed), o si la compartición es externa sin
+    allow_external. Normaliza type/role (strip+lower) para no depender de que Drive
+    rechace enums mal escritos."""
+    if (role or "").strip().lower() == "owner":
         raise ValueError("role=owner nunca se concede automáticamente por el MCP.")
+    ptype = (perm_type or "").strip().lower()
+    if ptype not in _ALLOWED_PERM_TYPES:
+        raise ValueError(f"perm_type desconocido: {perm_type!r} "
+                         f"(esperado uno de {sorted(_ALLOWED_PERM_TYPES)}).")
     external = False
-    if perm_type == "anyone":
+    if ptype == "anyone":
         external = True
-    elif perm_type in ("user", "group"):
-        dom = (email_address or "").rsplit("@", 1)[-1].lower()
+    elif ptype in ("user", "group"):
+        dom = (email_address or "").strip().rsplit("@", 1)[-1].lower()
         external = dom not in INTERNAL_DOMAINS
-    elif perm_type == "domain":
-        external = (domain or "").lower() not in INTERNAL_DOMAINS
+    elif ptype == "domain":
+        external = (domain or "").strip().lower() not in INTERNAL_DOMAINS
     if external and not allow_external:
         raise ValueError(
             "Compartición EXTERNA bloqueada (type/dominio ajeno a "
@@ -307,22 +314,29 @@ def build_server(
         role: reader|commenter|writer (owner PROHIBIDO). Compartir con externos
         (anyone o dominio ajeno a tyukhay.legal/engelvoelkers.com) exige
         allow_external=true. No envía email de aviso salvo send_notification_email."""
-        _guard_external_share(perm_type=perm_type, role=role,
+        ptype = (perm_type or "").strip().lower()
+        nrole = (role or "").strip().lower()
+        _guard_external_share(perm_type=ptype, role=nrole,
                               email_address=email_address, domain=domain,
                               allow_external=allow_external)
         return drive_ops.create_permission(
-            service_factory(account), file_id, perm_type=perm_type, role=role,
+            service_factory(account), file_id, perm_type=ptype, role=nrole,
             email_address=email_address, domain=domain,
             send_notification_email=send_notification_email)
 
     @mcp.tool()
     def update_permission(file_id: str, permission_id: str, role: str,
-                          account: str) -> dict:
-        """Cambia el rol de un permiso existente (owner PROHIBIDO)."""
-        if role == "owner":
-            raise ValueError("role=owner nunca se concede automáticamente por el MCP.")
-        return drive_ops.update_permission(
-            service_factory(account), file_id, permission_id, role=role)
+                          account: str, allow_external: bool = False) -> dict:
+        """Cambia el rol de un permiso existente. owner PROHIBIDO. Si el permiso es
+        EXTERNO (anyone o dominio ajeno), escalar su rol exige allow_external=true."""
+        svc = service_factory(account)
+        existing = drive_ops.get_permission(svc, file_id, permission_id)
+        nrole = (role or "").strip().lower()
+        _guard_external_share(
+            perm_type=existing.get("type", ""), role=nrole,
+            email_address=existing.get("emailAddress"),
+            domain=existing.get("domain"), allow_external=allow_external)
+        return drive_ops.update_permission(svc, file_id, permission_id, role=nrole)
 
     @mcp.tool()
     def delete_permission(file_id: str, permission_id: str, account: str) -> dict:

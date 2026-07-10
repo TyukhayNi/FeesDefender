@@ -163,3 +163,55 @@ def test_guardarrail_owner_siempre_rechazado():
     with pytest.raises(ValueError):
         tool(file_id="f1", perm_type="user", role="owner",
              email_address="x@tyukhay.legal", allow_external=True, account="a@b.com")
+
+
+def test_guardarrail_perm_type_desconocido_rechaza():
+    tool = _perm_tool()
+    for bad in ["ANYONE", "everyone", "", "user "]:
+        with pytest.raises(ValueError):
+            tool(file_id="f1", perm_type=bad, role="reader", account="a@b.com")
+
+
+def test_guardarrail_owner_mayusculas_rechazado():
+    tool = _perm_tool()
+    for bad in ["OWNER", "Owner", "owner "]:
+        with pytest.raises(ValueError):
+            tool(file_id="f1", perm_type="user", role=bad,
+                 email_address="x@tyukhay.legal", account="a@b.com")
+
+
+def _update_perm_tool(existing_perm):
+    from google_despacho_fakes import FakeService
+    svc = FakeService(permissions={"get": existing_perm, "update": {"id": "p1"}})
+    mcp = srv.build_server(service_factory=lambda acc: svc,
+                           account_lister=lambda: ["a@b.com"])
+    return mcp._tool_manager._tools["update_permission"].fn
+
+
+def test_guardarrail_update_escalar_externo_sin_flag_rechaza():
+    tool = _update_perm_tool({"id": "p1", "type": "user", "role": "reader",
+                              "emailAddress": "x@gmail.com"})
+    with pytest.raises(ValueError):
+        tool(file_id="f1", permission_id="p1", role="writer", account="a@b.com")
+
+
+def test_guardarrail_update_escalar_externo_con_flag_ok():
+    tool = _update_perm_tool({"id": "p1", "type": "user", "role": "reader",
+                              "emailAddress": "x@gmail.com"})
+    out = tool(file_id="f1", permission_id="p1", role="writer",
+               allow_external=True, account="a@b.com")
+    assert out["id"] == "p1"
+
+
+def test_guardarrail_update_interno_sin_flag_ok():
+    tool = _update_perm_tool({"id": "p1", "type": "user", "role": "reader",
+                              "emailAddress": "x@tyukhay.legal"})
+    out = tool(file_id="f1", permission_id="p1", role="writer", account="a@b.com")
+    assert out["id"] == "p1"
+
+
+def test_guardarrail_update_owner_rechazado():
+    tool = _update_perm_tool({"id": "p1", "type": "user", "role": "reader",
+                              "emailAddress": "x@tyukhay.legal"})
+    with pytest.raises(ValueError):
+        tool(file_id="f1", permission_id="p1", role="owner", account="a@b.com")

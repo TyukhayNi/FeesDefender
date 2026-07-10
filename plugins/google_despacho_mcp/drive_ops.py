@@ -500,6 +500,13 @@ def create_permission(service, file_id: str, *, perm_type: str, role: str,
     return created
 
 
+def get_permission(service, file_id: str, permission_id: str) -> dict:
+    return service.permissions().get(
+        fileId=file_id, permissionId=permission_id,
+        fields="id, type, role, emailAddress, domain", supportsAllDrives=True,
+    ).execute()
+
+
 def update_permission(service, file_id: str, permission_id: str, *, role: str) -> dict:
     updated = service.permissions().update(
         fileId=file_id, permissionId=permission_id, body={"role": role},
