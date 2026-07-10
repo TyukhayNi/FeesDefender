@@ -49,6 +49,30 @@ ilimitado). Es el nudo del §4.
 > pipeline totalmente desatendido. Prefijar comandos con
 > `cd "C:\Users\tnm33\Dev\FeesDefender"` y `.\.venv\Scripts\Activate.ps1`.
 
+### 2.0 Tareas de intake por fuente
+
+Un expediente se nutre de **seis fuentes**, cada una con su cajón en `00_Input/`, su punto
+de entrada y su evento forense en `_intake_log.jsonl`. El CRM (paso 1 del runbook) es una de
+ellas; el resto se listan aquí para el cuadro completo.
+
+| Fuente | Destino `00_Input/` | Punto de entrada | Evento | Estado |
+|---|---|---|---|---|
+| Drive E&V | `01_Drive EV/` (carpeta `W-XXXXXX`) | `core/intake_drive.pull_drive_ev` (`:162`) / command `/pull-rclone` (rclone) | `pull_drive_ev` | ✅ |
+| CRM sudespacho | `05_CRM/<rama>/` | `intake_demanda_contestacion(full=…)` / `intake-judicial --full` | `pull_crm`, `intake_judicial`, `cross_source_overlap` | ✅ |
+| WhatsApp | `02_Whatsapp/<consultor>/` | `core/whatsapp_intake` (zip) / UI Streamlit | `upload_whatsapp` | ✅ |
+| Email | `03_Email/<consultor>/` | `core/email_export` / skill `exportar-correos-etiqueta` | `upload_email` | ✅ |
+| Manual | `04_Manual/` | `core/intake_manual` / expander Streamlit | `upload_manual` | ✅ |
+| Entrevistas | `06_Entrevistas/<fecha>_<rol>/` | (transcripción Meet) | `upload_entrevista` | ⏳ `[SIGUIENTE-INTAKE-ENTREVISTAS]` |
+
+**Orquestadores genéricos** (dirigen el alta + depósito sin tocar bytes por el modelo): skill
+`intake-expediente` (conector MCP `expedientes-xl`, hash/copia/extracción server-side) y
+`abrir-caso` (alta del caso + estructura). **Invariantes comunes a todas las fuentes:** SHA-256
+por fichero, dedup por hash (`IntakeManifest`), guard de escritura (`dir_intake` — si el caso
+está prestado, desvía a `_pendiente_checkin/`), y nunca se toca `90_Notas personales/`. Aguas
+abajo, **las salas leen TODO `00_Input/`** (todas las fuentes juntas), no solo el CRM.
+
+### 2.1 Secuencia end-to-end
+
 1. **Bajar el expediente completo del Gdocu → `05_CRM`:**
    ```powershell
    python -m scripts.sync_sudespacho intake-judicial `
@@ -198,28 +222,48 @@ solo si se construye el camino programático `core/viabilidad/*` (hoy fuera de a
 **Dependencia de orden:** E1/E2 exigen sala de máquina antes; E3 exige sala de lectura
 antes → atan con la decisión de motor (§4).
 
-### 5.3 Estimación de tiempo (orden de magnitud)
+### 5.3 Estimación de tiempo (incluido el pipeline) y robustez
 
 Cuello de botella real: (1) que el corpus **quepa en contexto** (1 pasada, desatendido) o
 lo **desborde** (troceo + compactación + supervisión); (2) **OCR en sesión** de escaneados.
 Supuestos: página escaneada ≈ 1.500–2.500 tok; página MD ≈ 400–500 tok (~3× más ligera,
-sin OCR en sesión); E3 lee ~20–35 % de los docs; E4 lee una vez → JSON → 88 preguntas.
+sin OCR en sesión); ~40 % de docs escaneados; E3 lee ~20–35 % de los docs; E4 lee una vez →
+JSON → 88 preguntas. **Incluye el pipeline** (OCR sala de máquina + clasificación sala de
+lectura) en la columna de ejes; el crudo no requiere pipeline. Se separa el **wall-clock**
+del **tiempo de abogado** (atendido), que es el que de verdad cuesta.
 
-| Caso | Crudo hoy (Mundo 1) | Con E2+E3+E4 | Ahorro |
+| Caso | Crudo (todo atendido) | Ejes (pipeline+lectura) wall-clock | Ejes: tiempo **de abogado** |
 |---|---|---|---|
-| Pequeño ~40 docs / 200 pp | ~15–30 min, cabe a duras penas | ~4–8 min | ~3–4× |
-| Medio ~150 docs / 800 pp | ~45–90 min, **con babysitting** (desborda contexto) | ~8–15 min, **desatendido** | ~5–7× |
-| Grande ~600 docs / 3.000 pp (orden W-02VND1) | horas / inviable de una vez | ~15–30 min | ~6–10× |
+| Pequeño ~40 docs / 200 pp | ~15–30 min | ~15–26 min (OCR ~3–6 + clasif ~8–12 + lectura ~4–8) | ~8–12 min |
+| Medio ~150 docs / 800 pp | ~45–90 min (babysitting, desborda) | ~30–55 min (OCR ~10–20 + clasif ~12–20 + lectura ~8–15) | **~10–20 min** |
+| Grande ~600 docs / 3.000 pp | horas / inviable de una vez | ~1.5–2.8 h (casi todo desatendido) | ~30–50 min |
 
-**Coste único adelantado (desatendido, no es tiempo de abogado):** sala de máquina (OCR
-~10–25 min/800 pp, incremental) + sala de lectura (clasificación). Se **amortiza** en las
-88 preguntas, la 2.ª pasada de entrevista y los escritos posteriores. Son órdenes de
-magnitud con supuestos explícitos, no benchmarks; medir en W-02VND1 calibraría.
+**Lectura honesta:** incluido el pipeline, en **wall-clock** los ejes ~empatan en casos
+pequeños, ganan ~1.5× en medios y son la **única vía viable** en grandes. La ganancia clara
+es el **tiempo de abogado** (de ~45–90 min babysitteando a ~10–20 min en el caso medio) y que
+el pipeline **se amortiza** aguas abajo (88 preguntas, 2.ª pasada de entrevista, escritos):
+el crudo repaga la lectura cara muchas veces; los ejes la pagan una.
 
-**Para el abogado, la ganancia mayor no son los segundos de máquina, son tres saltos
-cualitativos:** (a) el prerelleno **cabe en contexto → fiable y desatendido** (sin
-babysitting); (b) revisa un XLSX **dirigido y ya anclado a fuente**, no un volcado; (c) el
-OCR/clasificación previos dejan montada la sala de lectura que se necesitaba igualmente.
+**Robustez de decisiones (%).** Rúbrica = media de *completitud* (no perder docs por desbordar
+contexto ni por escaneados ilegibles), *fidelidad/anclaje* (fuente no distorsionada + cita
+verbatim + pinpoint recuperable) y *consistencia* (idempotente, reproducible, trazado).
+
+| Caso | Crudo | Ejes | Δ |
+|---|---|---|---|
+| Pequeño, texto mayoritario | ~78 % | ~85 % | +7 pp |
+| Medio, mixto | ~68 % | ~87 % | +19 pp |
+| Grande, muy escaneado | ~55 % | ~86 % | +31 pp |
+
+**Matiz clave para el objetivo 3 ("fuentes no distorsionadas"):** el crudo *es* la fuente más
+fiel, pero en el flujo real el modelo **igual OCR-iza por visión** los escaneados (distorsión
+peor y sin registro) y, al desbordar el contexto, **resume** (omisión grande). La distorsión
+del crudo es **incontrolada e invisible**; la de los ejes es **controlada** (`ocr_quality`
+marca lo dudoso, escala al OCR/crudo fiel donde el MD flojea, preserva la cita verbatim
+re-anclable a la página del PDF OCR, y es reproducible). Por eso los ejes suben en robustez
+pese a leer un derivado, y la ventaja **crece con el tamaño y el % de escaneado**.
+
+> Son órdenes de magnitud con supuestos explícitos, no benchmarks; medir en W-02VND1 (668
+> docs) calibraría tiempo y robustez.
 
 ## 6. Decisiones abiertas / siguientes pasos
 
@@ -245,3 +289,96 @@ OCR/clasificación previos dejan montada la sala de lectura que se necesitaba ig
 - LLM/anon: `.claude/skills/viabilidad-prerelleno/`, `core/anon/api.py`,
   `core/llm.py`, `core/llm_cloud.py`, `docs/PLAN_PRERELLENO_LLM_VIABILIDAD.md`.
 - Motor (contexto): `docs/PLAN_MOTOR_DOCUMENTAL.md` (aparcado).
+
+## 7. Anexo — Simulación: `viabilidad-prerelleno` sobre el Drive de Engel
+
+> **Caso ficticio ilustrativo.** Ref, importes y contenidos inventados; sin PII; roles por
+> función (propietario / buscador). Sirve para ver el flujo de punta a punta cuando la
+> documental viene del Drive de E&V, y para contrastar crudo vs ejes en un caso concreto.
+
+**Caso:** `BaRS7 - <calle> (W-0AB123) - Negativa escritura`, tipo **`NEGATIVA_ESCRITURA`**
+(el buscador se niega a escriturar tras firmar arras). Precio de la operación **900.000 €**;
+honorarios 5 % + IVA ⇒ TOTAL DEUDA ≈ **54.450 €**. Sociedad cliente: EV MMC SPAIN (ID 2),
+posición actora. Supera el umbral de 2.500 € y la frontera de 15.000 € ⇒ ordinario.
+
+**Carpeta bajada** `00_Input/01_Drive EV/W-0AB123/` (nombres tras la sala de lectura, por
+categoría E&V):
+
+```
+01. ACTIVACIÓN/  2024-03-12_nota_encargo_exclusiva.pdf · 2024-03-12_dni_propietario.pdf ·
+                 2024-03-14_nota_simple_registral.pdf
+03. OFERTAS/     2024-05-02_hoja_visita_firmada.pdf · 2024-05-20_oferta_compra_firmada.pdf ·
+                 2024-05-20_dni_buscador.pdf
+04. ARRAS/       2024-06-10_contrato_arras_penitenciales.pdf ·
+                 2024-06-10_reconocimiento_honorarios_arras.pdf
+05. FACTURACIÓN/ 2024-06-11_factura_honorarios.pdf
+07. RECLAMACIONES/ 2024-09-15_burofax_requerimiento.pdf
+00. FOTOS/       2024-03-11_foto_inmueble_01.jpg … (×12)
+```
+
+**Paso a paso:**
+
+1. **Intake (Drive E&V):** `/pull-rclone "BaRS7 - <calle> (W-0AB123) - Negativa escritura"`
+   → rclone copia a `00_Input/01_Drive EV/W-0AB123/`; marcador `.pulled`; evento
+   `pull_drive_ev` (SHA-256 por fichero) en `_intake_log.jsonl`.
+2. **Sala de máquina** (`sala_maquina apply`): OCR + espejos MD en
+   `01_Procesado/02_Sala de máquina/03_MD/`; `_cobertura.md` marca las 12 fotos como `empty`
+   (sin texto) y los PDFs firmados como `ok`; evento `procesado_sala_maquina`.
+3. **Sala de lectura** (`organizar-sala-lectura`): clasifica por categoría E&V, nombra
+   canónicamente y escribe `indice_documental.yaml` (con `tipo_documental`, `parte`, `fecha`).
+4. **`viabilidad-prerelleno`** (Claude-en-sesión). Con los ejes: lee el **MD (N1, E2)**;
+   por hito consulta solo las categorías relevantes vía el catálogo (**E3** — p. ej. el hito
+   ENCARGO mira `01. ACTIVACIÓN`); **una pasada → JSON (E4)**. Detecta `NEGATIVA_ESCRITURA`,
+   rellena `PREGUNTAS` anclando `[doc: fichero] "cita" (confianza)` y deriva los 14 hitos.
+5. **Salida:** `python scripts/render_informe.py datos_W-0AB123.json --salida "…/02_Analisis/Informe viabilidad LLM - W-0AB123.xlsx"`
+   → XLSX de 4 hojas; **VIABILIDAD en blanco** (la decide el abogado).
+
+**Hitos derivados (hoja INFORMACION):**
+
+| # | Hito | Score | Por qué (ancla) |
+|---|---|---|---|
+| 1 | CUANTÍA | **3** | TOTAL DEUDA ≈ 54.450 € (>20.000 €) |
+| 2 | ENCARGO | **0** | firmado (`cap_08`) y original (`cap_13`), pero **firma sin cotejar vs DNI** (`cap_08d=no_cotejado`) → regla conservadora = 0 |
+| 3 | IDENT. PROPIETARIO | 1 | DNI propietario (`cap_17`) |
+| 4 | TITULARIDAD | 1 | nota simple de captación (`cap_18a`) |
+| 5 | HOJA DE VISITA | 1 | hoja firmada, original (`vis_05`/`vis_06`) |
+| 6 | OFERTA | 1 | original firmado (`ofb_05`) |
+| 7 | IDENT. BUSCADOR | 1 | DNI buscador (`vis_09`) |
+| 8 | ARRAS | 1 | arras firmadas (`arr_00=firmadas`) |
+| 9 | RECON. HON. — ARRAS | 1 | reconocimiento firmado en arras (`arr_13`) |
+| 10 | ESCRITURA | **0** | no se otorgó (`esc_01=no`) — es el supuesto del caso |
+| 11 | RECON. HON. — ESCRITURA | N/A | no hubo escritura |
+| 12 | RECLAMACIÓN JURÍDICO | 1 | burofax enviado (`rec_02`) → interrumpe prescripción |
+| 13 | RESPUESTA A LA RECLAMACIÓN | pendiente | no consta respuesta documentada (aún en plazo) |
+| 14 | OFERTA VINCULANTE CONFIDENCIAL | pendiente | no consta oferta de transacción del deudor |
+
+`TOTAL = 11` (métrica auxiliar, no veredicto; `N/A`/pendiente no suman).
+
+**Fragmento del JSON de datos** (estilo `SKILL.md`):
+
+```json
+{
+  "case_id": "W-0AB123", "tipo_caso": "NEGATIVA_ESCRITURA",
+  "importes": {"precio": 900000, "pct_honorarios": 5, "pagos_parciales": 0},
+  "hitos": {"CUANTIA": {"score": 3}, "ENCARGO": {"score": 0}, "ESCRITURA": {"score": 0},
+            "RECLAMACION_JURIDICO": {"score": 1, "fecha": "15/09/2024"}},
+  "preguntas": {
+    "cap_08":  {"respuesta": "Sí", "cita": "[doc: 2024-03-12_nota_encargo_exclusiva] \"firmado por DocuSign\"", "confianza": "alta", "pendiente": "no"},
+    "cap_08d": {"respuesta": "No cotejado", "cita": "[doc: 2024-03-12_dni_propietario] \"copia sin cotejo de firma\"", "confianza": "media", "pendiente": "no"},
+    "esc_01":  {"respuesta": "No", "cita": "[doc: 2024-09-15_burofax_requerimiento] \"pese a las arras, la parte compradora no acudió a la notaría\"", "confianza": "alta", "pendiente": "no"}
+  },
+  "avisos": [
+    {"tipo": "Prueba débil", "aviso": "Firma del encargo sin cotejar con DNI (cap_08d) → ENCARGO puntúa 0.",
+     "impacto": "Hito ENCARGO", "severidad": "media", "accion": "Recabar DNI para cotejar.", "sube": "no", "estado": "abierto"},
+    {"tipo": "Documento faltante", "aviso": "Original de las arras no localizado (solo copia).",
+     "impacto": "Hito ARRAS", "severidad": "baja", "accion": "Solicitar original al consultor.", "sube": "no", "estado": "abierto"}
+  ]
+}
+```
+
+**Contraste crudo vs ejes (este caso).** Sobre **crudo**, Claude leería los ~19 binarios
+enteros —incluidas las 12 fotos como imágenes (tokens altos e inútiles para el fondo)— sin
+filtrar. Con **ejes**, lee el **MD** de las 3–4 categorías que cada hito necesita
+(`ACTIVACIÓN/OFERTAS/ARRAS/RECLAMACIONES`) y salta las fotos (`empty` en `_cobertura.md`).
+Ganancia y robustez, en la tabla de §5.3. **RGPD:** todo en claro bajo la excepción §2
+(Claude-en-sesión, sin API externa); para un LLM cloud habría que anonimizar antes.
