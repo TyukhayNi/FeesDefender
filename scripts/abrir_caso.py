@@ -90,8 +90,42 @@ def _intake_drive_ev(ident, case_dir: Path, folder_id, team_id, *, dry_run: bool
     _intake_generico(case_dir, ident.case_id, "drive_ev", hashes, dry_run=dry_run)
 
 
+def _validar_flags(fuente, *, folder_id, team_id, src, rol, cuenta, label) -> None:
+    """Exige los flags propios de la fuente y rechaza los ajenos (fail-fast)."""
+    requeridos = {
+        "drive_ev": [],
+        "manual": [("--src", src)],
+        "whatsapp": [("--src", src), ("--rol", rol)],
+        "email": [("--cuenta", cuenta), ("--label", label)],
+    }[fuente]
+    faltan = [n for n, v in requeridos if not v]
+    if faltan:
+        typer.echo(f"[ERROR] Fuente {fuente}: faltan flags {faltan}", err=True)
+        raise typer.Exit(code=1)
+
+    ajenos = {
+        "drive_ev": [("--src", src), ("--rol", rol), ("--cuenta", cuenta), ("--label", label)],
+        "manual": [("--rol", rol), ("--cuenta", cuenta), ("--label", label),
+                   ("--folder-id", folder_id), ("--team-id", team_id)],
+        "whatsapp": [("--cuenta", cuenta), ("--label", label),
+                     ("--folder-id", folder_id), ("--team-id", team_id)],
+        "email": [("--src", src), ("--rol", rol),
+                  ("--folder-id", folder_id), ("--team-id", team_id)],
+    }[fuente]
+    presentes = [n for n, v in ajenos if v]
+    if presentes:
+        typer.echo(f"[ERROR] Fuente {fuente}: flags ajenos a la fuente {presentes}", err=True)
+        raise typer.Exit(code=1)
+
+    if fuente == "whatsapp" and rol not in config.WHATSAPP_SUBDIRS:
+        typer.echo(f"[ERROR] rol inválido: {rol}. Válidos: {config.WHATSAPP_SUBDIRS}", err=True)
+        raise typer.Exit(code=1)
+
+
 def _despachar_intake(fuente, ident, case_dir, *, folder_id, team_id, src, rol,
                       cuenta, label, dry_run):
+    _validar_flags(fuente, folder_id=folder_id, team_id=team_id, src=src, rol=rol,
+                   cuenta=cuenta, label=label)
     if fuente == "drive_ev":
         _intake_drive_ev(ident, case_dir, folder_id, team_id, dry_run=dry_run)
     else:

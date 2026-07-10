@@ -222,6 +222,49 @@ def test_cli_dry_run_es_honesto_sobre_lo_ejecutado(drive_temporal, monkeypatch):
     assert pulls == []
 
 
+def _args_min(**over):
+    """Args base SIN los flags específicos de drive_ev (folder-id/team-id)."""
+    base = [
+        "--w-code", "W-02Z2NR", "--ciudad", "Barcelona", "--tipo-caso", "VUELTA",
+        "--codigo-caso", "BaRS11", "--sufijo", "Vuelta",
+        "--direccion", "Passeig Marítim 30", "--yes",
+    ]
+    for k, v in over.items():
+        base += [f"--{k}", v]
+    return base
+
+
+def test_cli_manual_sin_src_exit_1(drive_temporal):
+    result = CliRunner().invoke(cli.app, _args_min(fuente="manual"))
+    assert result.exit_code == 1
+    assert "--src" in result.output
+
+
+def test_cli_whatsapp_sin_rol_exit_1(drive_temporal, tmp_path):
+    z = tmp_path / "x.zip"
+    z.write_bytes(b"PK")
+    result = CliRunner().invoke(cli.app, _args_min(fuente="whatsapp", src=str(z)))
+    assert result.exit_code == 1
+    assert "--rol" in result.output
+
+
+def test_cli_email_flags_ajenos_exit_1(drive_temporal):
+    """email con --src (ajeno) debe fallar."""
+    result = CliRunner().invoke(
+        cli.app, _args_min(fuente="email", cuenta="a@b.com", label="Caso", src="/x"))
+    assert result.exit_code == 1
+    assert "ajeno" in result.output.lower()
+
+
+def test_cli_whatsapp_rol_invalido_exit_1(drive_temporal, tmp_path):
+    z = tmp_path / "x.zip"
+    z.write_bytes(b"PK")
+    result = CliRunner().invoke(
+        cli.app, _args_min(fuente="whatsapp", src=str(z), rol="99_Inexistente"))
+    assert result.exit_code == 1
+    assert "rol" in result.output.lower()
+
+
 def _sin_yes(**over) -> list[str]:
     return [a for a in _args(**over) if a != "--yes"]
 
