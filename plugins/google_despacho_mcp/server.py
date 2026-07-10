@@ -246,6 +246,17 @@ def build_server(
         return drive_ops.restore_file(service_factory(account), file_id)
 
     @mcp.tool()
+    def export_to_drive(file_id: str, account: str, format: str = "pdf",
+                        dst_folder_id: Optional[str] = None,
+                        new_name: Optional[str] = None) -> dict:
+        """Exporta un Doc nativo a PDF (default) u Office ('office') y GUARDA el
+        resultado en Drive (server-side; sin bytes por el modelo). Destino por
+        defecto = la carpeta del origen. Devuelve id, nombre, sha256 y web_view_link."""
+        return drive_ops.export_to_drive(
+            service_factory(account), file_id, format=format,
+            dst_folder_id=dst_folder_id, new_name=new_name)
+
+    @mcp.tool()
     def append_text(file_id: str, text: str, account: str) -> dict:
         """Añade texto al final de un fichero de TEXTO existente (p. ej.
         _intake_log.jsonl). Read-modify-write server-side. Devuelve id, nombre y

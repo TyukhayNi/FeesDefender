@@ -396,6 +396,48 @@ def restore_file(service, file_id: str) -> dict:
     return {"id": updated.get("id"), "trashed": updated.get("trashed")}
 
 
+_EXPORT_EXT = {"application/pdf": ".pdf",
+               "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+               "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx"}
+
+
+def export_to_drive(service, file_id: str, *, format: str = "pdf",
+                    dst_folder_id: str | None = None,
+                    new_name: str | None = None) -> dict:
+    """Exporta un Doc NATIVO a PDF (default) u Office y sube el resultado a Drive
+    (server-side; sin bytes por el modelo). Destino por defecto = carpeta del
+    origen. Los ficheros ya-binarios (docx subido, etc.) no se convierten aquí."""
+    meta = get_file_metadata(service, file_id,
+                             fields="id, name, mimeType, parents")
+    mime = meta.get("mimeType", "")
+    if not mime.startswith(GOOGLE_NATIVE_PREFIX):
+        raise ValueError(
+            f"export_to_drive solo exporta Docs nativos; {mime!r} ya es binario. "
+            f"Usa copy_file o el pipeline local para convertir.")
+    table = _EXPORT_PDF if format == "pdf" else _EXPORT_OFFICE
+    export_mime = table.get(mime)
+    if not export_mime:
+        raise ValueError(f"El Doc {mime!r} no tiene export soportado a {format!r}.")
+    data = service.files().export_media(fileId=file_id, mimeType=export_mime).execute()
+    if not isinstance(data, (bytes, bytearray)):
+        raise TypeError("La API no devolvió bytes al exportar.")
+    data = bytes(data)
+    base = new_name or meta.get("name", "export")
+    ext = _EXPORT_EXT.get(export_mime, "")
+    fname = base if base.lower().endswith(ext) else base + ext
+    parents = [dst_folder_id] if dst_folder_id else meta.get("parents", [])
+    created = service.files().create(
+        body={"name": fname, "parents": parents},
+        media_body=_media_from_bytes(data, export_mime),
+        fields=CREATE_FIELDS, supportsAllDrives=True,
+    ).execute()
+    return {"id": created.get("id"), "name": created.get("name"),
+            "mime_type": export_mime,
+            "web_view_link": created.get("webViewLink"),
+            "sha256": hashlib.sha256(data).hexdigest()}
+
+
 def append_text(service, file_id: str, text: str, *,
                 max_bytes: int = 5_000_000) -> dict:
     """Append a un fichero de TEXTO existente (read-modify-write server-side).

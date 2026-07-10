@@ -208,3 +208,43 @@ def test_append_text_rechaza_binario():
     })
     with pytest.raises(ValueError):
         drive_ops.append_text(svc, "b1", "no")
+
+
+def test_export_to_drive_doc_nativo_a_pdf():
+    svc = FakeService(files={
+        "get": {"id": "g1", "name": "Escrito", "mimeType":
+                "application/vnd.google-apps.document", "parents": ["CASO"]},
+        "export_media": b"%PDF-1.4 real",
+        "create": {"id": "p1", "name": "Escrito.pdf", "mimeType": "application/pdf",
+                   "webViewLink": "https://drive/p1"},
+    })
+    out = drive_ops.export_to_drive(svc, "g1")
+    assert out["id"] == "p1"
+    assert out["sha256"] == __import__("hashlib").sha256(b"%PDF-1.4 real").hexdigest()
+    exp = [c for c in svc.recorded("files") if c[0] == "export_media"][0][1]
+    assert exp["mimeType"] == "application/pdf"
+    crt = [c for c in svc.recorded("files") if c[0] == "create"][0][1]
+    assert crt["body"]["name"] == "Escrito.pdf"
+    assert crt["body"]["parents"] == ["CASO"]
+
+
+def test_export_to_drive_dst_folder_explicito():
+    svc = FakeService(files={
+        "get": {"id": "g1", "name": "Doc", "mimeType":
+                "application/vnd.google-apps.document", "parents": ["ORIG"]},
+        "export_media": b"pdf",
+        "create": {"id": "p1", "name": "Doc.pdf"},
+    })
+    drive_ops.export_to_drive(svc, "g1", dst_folder_id="OTRA")
+    crt = [c for c in svc.recorded("files") if c[0] == "create"][0][1]
+    assert crt["body"]["parents"] == ["OTRA"]
+
+
+def test_export_to_drive_no_nativo_rechaza():
+    svc = FakeService(files={
+        "get": {"id": "b1", "name": "x.docx", "mimeType":
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "parents": ["C"]},
+    })
+    with pytest.raises(ValueError):
+        drive_ops.export_to_drive(svc, "b1")
