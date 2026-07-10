@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
-"""Servidor MCP `google-despacho` — F1: LECTURA de Drive multicuenta.
+"""Servidor MCP `google-despacho` — F2: LECTURA + ESCRITURA de Drive multicuenta.
 
-Doble restricción (calcada de Gmail-despacho): scope OAuth drive.readonly +
-solo se registran tools de LECTURA. Ninguna operación de escritura/borrado/
-permisos existe en F1.
+F1 era solo lectura (scope drive.readonly). F2 añade ESCRITURA (CRUD de
+ficheros/carpetas), PERMISOS (con guardarraíl de compartición externa vía
+`allow_external`) y NAVEGACIÓN (list_folder/list_trash/get_folder_path). El
+scope OAuth pasa a `https://www.googleapis.com/auth/drive` (completo).
 
 Selección de cuenta: las tools aceptan `account` (email). En búsquedas/listados
 se puede omitir para consultar TODAS las cuentas conectadas (cada resultado se
 etiqueta con su cuenta). Las tools por-fichero exigen `account` explícito.
 
 download_file_content escribe a disco (confinable con GOOGLE_DESPACHO_DL_ROOT);
-nunca devuelve bytes por el modelo.
+upload_file/update_file_content leen de disco (confinable con
+GOOGLE_DESPACHO_UPLOAD_ROOT). Ninguna de las dos deja pasar los bytes por el
+modelo.
 """
 from __future__ import annotations
 
