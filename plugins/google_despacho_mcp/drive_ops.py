@@ -372,3 +372,25 @@ def copy_file(service, file_id: str, *, dst_folder_id: str,
     return {"id": copied.get("id"), "name": copied.get("name"),
             "mime_type": copied.get("mimeType"),
             "web_view_link": copied.get("webViewLink")}
+
+
+def delete_file(service, file_id: str, *, permanent: bool = False) -> dict:
+    """Por defecto envía a la papelera (reversible con restore_file). Con
+    permanent=True borra IRREVERSIBLEMENTE (files.delete)."""
+    if permanent:
+        service.files().delete(fileId=file_id, supportsAllDrives=True).execute()
+        return {"id": file_id, "permanently_deleted": True}
+    updated = service.files().update(
+        fileId=file_id, body={"trashed": True},
+        fields="id, trashed", supportsAllDrives=True,
+    ).execute()
+    return {"id": updated.get("id"), "trashed": updated.get("trashed")}
+
+
+def restore_file(service, file_id: str) -> dict:
+    """Saca un fichero de la papelera (trashed=false)."""
+    updated = service.files().update(
+        fileId=file_id, body={"trashed": False},
+        fields="id, trashed", supportsAllDrives=True,
+    ).execute()
+    return {"id": updated.get("id"), "trashed": updated.get("trashed")}

@@ -234,6 +234,17 @@ def build_server(
         return drive_ops.copy_file(service_factory(account), file_id,
                                    dst_folder_id=dst_folder_id, new_name=new_name)
 
+    @mcp.tool()
+    def delete_file(file_id: str, account: str, permanent: bool = False) -> dict:
+        """Envía un fichero a la PAPELERA (por defecto, reversible con restore_file).
+        permanent=True lo borra IRREVERSIBLEMENTE."""
+        return drive_ops.delete_file(service_factory(account), file_id, permanent=permanent)
+
+    @mcp.tool()
+    def restore_file(file_id: str, account: str) -> dict:
+        """Saca un fichero de la papelera."""
+        return drive_ops.restore_file(service_factory(account), file_id)
+
     return mcp
 
 

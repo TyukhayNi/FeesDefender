@@ -162,3 +162,29 @@ def test_copy_file_sin_nombre_no_pone_name():
     drive_ops.copy_file(svc, "f1", dst_folder_id="DST")
     _, kw = svc.recorded("files")[0]
     assert "name" not in kw["body"]
+
+
+def test_delete_file_a_papelera_por_defecto():
+    svc = FakeService(files={"update": {"id": "f1", "trashed": True}})
+    out = drive_ops.delete_file(svc, "f1")
+    assert out["trashed"] is True
+    _, kw = svc.recorded("files")[0]
+    assert kw["body"] == {"trashed": True}
+    assert all(c[0] != "delete" for c in svc.recorded("files"))
+
+
+def test_delete_file_permanente_llama_delete():
+    svc = FakeService(files={"delete": {}})
+    out = drive_ops.delete_file(svc, "f1", permanent=True)
+    assert out["permanently_deleted"] is True
+    _, kw = svc.recorded("files")[0]
+    assert kw["fileId"] == "f1"
+    assert kw["supportsAllDrives"] is True
+
+
+def test_restore_file_desmarca_trashed():
+    svc = FakeService(files={"update": {"id": "f1", "trashed": False}})
+    out = drive_ops.restore_file(svc, "f1")
+    assert out["trashed"] is False
+    _, kw = svc.recorded("files")[0]
+    assert kw["body"] == {"trashed": False}
