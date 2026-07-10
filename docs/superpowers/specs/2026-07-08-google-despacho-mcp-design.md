@@ -376,4 +376,159 @@ proyecto: solo por disparador concreto).
 
 ### 13.8 Próximo paso F2
 
-Encadenar `writing-plans` para desglosar la F2 en plan de implementación.
+~~Encadenar `writing-plans` para desglosar la F2 en plan de implementación.~~ HECHO:
+F2 MERGEADA (PR #23 squash `52a5845`, cierre docs PR #24 `3a00442`). Siguiente: **F3** — ver §14.
+
+## 14. F3 — `import_drive_folder` (intake forense EV→TL de una orden) (brainstorming 2026-07-10)
+
+Delta de diseño que **supera y detalla** el esbozo de F3 de §4 (parte `import_drive_folder`)
+y §6/§7/§11 R1. Cerrado en brainstorming con Nikolai (Claude Code) sobre un mapeo previo del
+ecosistema (workflow de 7 lectores + síntesis). Decisiones tomadas con recomendación explícita
+y aprobadas.
+
+**Desambiguación de nombre:** este es el **F3 de `google-despacho`** (lote + intake Drive EV→TL).
+NO confundir con el **F3 de `abrir-caso`** (fuentes no-Drive manual/whatsapp/email + `init_caso`,
+ya mergeado, PR #22 `e68f59e`). Son trabajos distintos.
+
+### 14.1 Alcance (decisión clave)
+
+**F3 entrega SOLO `import_drive_folder`** (+ resolución `W-code` + recorrido recursivo). Las tools
+de **lote** (`copy_tree`/`move_batch`/`delete_batch`) de §4 quedan **DIFERIDAS** (YAGNI: reorg
+intra-Drive sin demanda real todavía; se promueven cuando un caso lo pida). Calendar → **F4**.
+
+`import_drive_folder` es el orquestador de una sola orden que compone las **primitivas atómicas de
+F2** (ya mergeadas en `drive_ops.py`): `search_files(drive_id=)`, `list_folder`, `get_file_metadata`,
+`download_file_content`, `ensure_folder_path`, `upload_file`, `append_text`. No inventa acceso nuevo
+a Drive; orquesta.
+
+**Relación con `pull_drive_ev` (no duplica):** es el **hermano nube/sin-PC** del camino local
+`intake_drive.pull_drive_ev` (rclone `gdrive_ev`→`00_Input/01_Drive EV/` sobre el mirror `G:`). Misma
+fuente de intake («01_Drive EV»), **transporte distinto**: rclone-local (con PC + `G:` montado) vs
+**Drive API cross-cuenta server-side** (descarga con token EV → sube con token TL, sin PC, sin bytes
+por el modelo). Lógica de negocio compartida como **contrato** (mismo evento, mismo path relativo,
+mismo shape de `details`), no reimplementada → las dos vías conviven sin doble-contar gracias al
+dedup por SHA.
+
+### 14.2 Firma y comportamiento
+
+`import_drive_folder(src_account, src_folder_id, dst_expediente, keep_editable=False) -> dict`
+
+- `src_account` explícito (normalmente EV; permite también TL→TL). Destino **implícito = TL**
+  (`GOOGLE_DESPACHO_TL_DRIVE_ID`, ver §14.6).
+- `dst_expediente` = **W-code** → se resuelve a `folder_id` de la carpeta canónica del caso en TL
+  (§14.3).
+- Recorre `src_folder_id` recursivamente, transfiere cada fichero EV→TL bajo `00_Input/01_Drive EV/`
+  del caso (espejando la estructura de subcarpetas), escribe el evento forense y devuelve un resumen
+  `{transferidos, omitidos_por_dedup, fallidos[], destino_folder_id}`.
+
+**Función pura** en `drive_ops.py` con **dos `service` inyectables** (`src_service`, `dst_service`)
+para testear sin API viva (patrón `build_server`/`email_export_mcp`); wrapper `@mcp.tool()` fino en
+`server.py` que resuelve `service_factory(src_account)` y `service_factory(TL)`.
+
+### 14.3 Resolución de `W-code` → `folder_id` (nueva pieza)
+
+No existe equivalente en código reutilizable (el `case_locator` local depende del mirror `G:`,
+indisponible en Cowork; el CRM resuelve a un ID de expediente, no a una carpeta). Se construye:
+
+- `resolve_expediente(dst_service, w_code) -> folder_id`: `search_files` sobre `TEAM_DRIVE_TL` con
+  `q` = carpetas cuyo nombre contiene el `W-code`, casando el **mismo patrón `(W-XXXXX)` de
+  `core.abrir_caso`** (replicado con test de equivalencia, §14.6), no una regex nueva.
+- **0 coincidencias → error ruidoso** (no crea nada). **>1 coincidencias → error** listando los
+  candidatos (nunca adivina).
+- Optimización diferida (YAGNI, sin disparador): cachear el `folder_id` resuelto en
+  `_caso.md.meta`.
+
+### 14.4 Recorrido y transferencia cross-cuenta
+
+- **Walker recursivo propio** (BFS): `list_folder` es NO recursivo. Mantiene `visited` de `file_id`
+  (guarda de ciclos), tope de profundidad, y **salta shortcuts** (`application/vnd.google-apps.shortcut`,
+  equivalente del `--drive-skip-shortcuts` de rclone) para no duplicar bytes ni buclear.
+- **Transferencia por fichero**: `download_file_content` (con service EV) a un **scratch temporal del
+  servidor** (`tempfile.mkdtemp`, limpieza en `finally`; la ruta NO viene del modelo → no aplica
+  symlink-escape) → `upload_file` (con service TL) a la subcarpeta espejo creada con
+  `ensure_folder_path`. `files.copy` NO cruza cuentas → siempre vía temp.
+- **Docs nativos** (§6): default **PDF**, `keep_editable`→Office; el `export_mime` + extensión se
+  derivan de `get_file_metadata().mimeType` + `keep_editable` con las tablas `_EXPORT_PDF`/
+  `_EXPORT_OFFICE`/`_EXPORT_EXT`, **sin confiar** en el `mime_type` que devuelve
+  `download_file_content` (bug §14.5). Se nombra el temporal con la extensión correcta y se pasan
+  `mime_type`+`name` explícitos a `upload_file`.
+- **Integridad forense**: binarios → asertar `sha256Checksum` (metadato de origen) vs `sha256`
+  recalculado tras descarga; Docs nativos (sin `sha256Checksum`) → SHA del artefacto exportado.
+
+### 14.5 Fix del bug de contrato en `download_file_content`
+
+`drive_ops.py` devuelve el **mime nativo** tras exportar un Doc (en vez del `export_mime`) y no añade
+la extensión al `dest_path`. Se corrige el `return` + un test pequeño (el fichero ya está mergeado en
+F2, pero el bug es latente para cualquier consumidor y F3 es el primero que lo pincha).
+
+### 14.6 Aislamiento (híbrido) — anti-drift
+
+El plugin sigue **standalone** (sin `import core`; corre bajo el puente de Claude Desktop). Las **tres
+convenciones compartidas** con `core` se anclan por **tests de equivalencia/paridad**, no por copia a fe:
+
+- **ID del Shared Drive TL**: `GOOGLE_DESPACHO_TL_DRIVE_ID` (ENV, default = `0AAhcjDaZBWe6Uk9PVA`) con
+  test que asegura `== core.config.TEAM_DRIVE_TL`.
+- **Regex de `W-code`**: replicada en el plugin con test de equivalencia contra
+  `core.abrir_caso._W_CODE_EN_NOMBRE`.
+- **Schema del evento forense**: constructor de evento propio del plugin (sin `import core`) que emite
+  EXACTO el envelope `{ts, actor, event, case_id, details}` con `event ∈ INTAKE_EVENTS` y
+  `details {count, files:[{path, sha256}]}`, blindado por un **test de paridad** calcado de
+  `tests/test_intake_traza.py` (mismo patrón ya probado para `intake-expediente/scripts/traza.py`).
+
+### 14.7 Log forense — dónde y cómo (decisión)
+
+**El MCP escribe él mismo el `_intake_log.jsonl` en la carpeta del caso en Drive** (R1: la traza viaja
+con el expediente; F3 no depende del PC), vía `append_text`. Reutiliza el evento **`pull_drive_ev`**
+(misma fuente/shape/dedup) añadiendo en `details`: `transport='drive_api_cross_account'` y
+`hash_source` (`sha256Checksum` para binarios, `export` para nativos) — honestidad forense sin romper
+el dedup por SHA. `path` relativo a `00_Input/` (`'01_Drive EV/<rel posix>'`), nunca absoluto.
+
+Mitigaciones del `append_text` (read-modify-write no atómico, sin lock, tope 5 MB): **guard §6**
+(no escribe a un caso `prestado`/`conflicto`) + **relectura del `headRevisionId`** antes de escribir.
+Los contras son de baja probabilidad real (log de caso normal <1 MB; import discreto).
+**Disparador documentado para promover a ficheros rotados por-evento:** el día que un caso real roce el
+tope 5 MB o aparezca una carrera. YAGNI hasta entonces.
+
+### 14.8 Guard §6 (lock de checkout)
+
+Antes de escribir en la carpeta del caso en TL, leer `estado_repositorio` del `_caso.md`
+(frontmatter de dos niveles, lock en `fm['meta']`) vía Drive API y **rechazar** el import si el caso
+está `prestado`/`conflicto` (equivalente nube de `case_manager.dir_intake`). Reutiliza los lectores
+puros del lock de `core.repository_checkout` (parseo sobre el meta leído por API), no reimplementa el
+parseo del frontmatter.
+
+### 14.9 Fallo parcial y rendimiento
+
+- **Sin rollback**: las copias de Drive no son destructivas. Ante fallo a medias se escribe lo
+  logrado, se devuelve **manifiesto de fallidos** y el re-run **deduplica por SHA** (reanudable).
+- **Concurrencia acotada + backoff** en 429/5xx (grado de paralelismo modesto, no fijado por §4).
+
+### 14.10 Frontera con EXPEDIENTES-XL (sin solape)
+
+Se honra el reparto del spec §7: `import_drive_folder` es Drive→Drive por temp del servidor; **XL**
+se queda con bytes locales/zips/WhatsApp/hash-sin-checksum. Como TL está espejado en `G:`
+(Drive-for-Desktop), al subir a TL por API el cliente ya sincroniza a `G:` — un aterrizaje local
+explícito sería redundante. La **fuente del hash difiere por canal** (metadato `sha256Checksum` en el
+MCP vs recálculo `hashlib` en XL); se documenta para que no se lea como inconsistencia.
+
+### 14.11 Tests
+
+- Todo función pura con `service` fake inyectado (dos: EV origen + TL destino); sin API viva.
+- `resolve_expediente`: 0 / 1 / >1 coincidencias (error ruidoso en 0 y >1).
+- Walker: árbol fake con subcarpetas, shortcut (se salta), ciclo (visited-set lo corta), profundidad.
+- Transferencia: binario (aserción sha256), Doc nativo (export_mime + extensión correctos, PDF y
+  Office), dedup por SHA (omite lo ya presente en el log).
+- Guard §6: rechaza si `estado_repositorio ∈ {prestado, conflicto}`.
+- Paridad/equivalencia (§14.6): schema del evento, regex W-code, `GOOGLE_DESPACHO_TL_DRIVE_ID`.
+- Fix del bug de `download_file_content`.
+- Manifiesto de fallidos ante fallo parcial (fake que lanza en un fichero).
+- Check de integración manual (§13.6) contra una carpeta desechable de Drive antes de dar F3 por viva.
+
+### 14.12 Fuera de F3
+
+Lote (`copy_tree`/`move_batch`/`delete_batch`) → diferido (YAGNI). Calendar → **F4**. Rotación del log
+por-evento → solo si un caso pincha el tope 5 MB o una carrera.
+
+### 14.13 Próximo paso F3
+
+Encadenar `writing-plans` para desglosar la F3 en plan de implementación.
