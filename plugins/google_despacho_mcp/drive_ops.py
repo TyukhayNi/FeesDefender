@@ -1,9 +1,11 @@
 """Operaciones PURAS de Google Drive v3.
 
 Sin dependencia de `mcp` ni de `core/`: cada función recibe un `service` ya
-construido (googleapiclient) e implementa una operación de lectura. Testeable
-con un `service` fake inyectado. Todas las lecturas abarcan unidades
-compartidas (corpora=allDrives, includeItemsFromAllDrives, supportsAllDrives).
+construido (googleapiclient) e implementa una operación de lectura, escritura,
+permisos o navegación (crear/actualizar/mover/copiar ficheros y carpetas,
+exportar Docs nativos, gestionar permisos, accesos directos, etc.). Testeable
+con un `service` fake inyectado. Las operaciones que abarcan unidades
+compartidas usan corpora=allDrives, includeItemsFromAllDrives, supportsAllDrives.
 """
 from __future__ import annotations
 
@@ -415,7 +417,10 @@ def export_to_drive(service, file_id: str, *, format: str = "pdf",
         raise ValueError(
             f"export_to_drive solo exporta Docs nativos; {mime!r} ya es binario. "
             f"Usa copy_file o el pipeline local para convertir.")
-    table = _EXPORT_PDF if format == "pdf" else _EXPORT_OFFICE
+    fmt = (format or "pdf").strip().lower()
+    if fmt not in ("pdf", "office"):
+        raise ValueError(f"format debe ser 'pdf' u 'office'; recibido {format!r}.")
+    table = _EXPORT_PDF if fmt == "pdf" else _EXPORT_OFFICE
     export_mime = table.get(mime)
     if not export_mime:
         raise ValueError(f"El Doc {mime!r} no tiene export soportado a {format!r}.")

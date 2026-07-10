@@ -250,6 +250,27 @@ def test_export_to_drive_no_nativo_rechaza():
         drive_ops.export_to_drive(svc, "b1")
 
 
+def test_export_to_drive_format_case_insensitive():
+    svc = FakeService(files={
+        "get": {"id": "g1", "name": "Doc", "mimeType":
+                "application/vnd.google-apps.document", "parents": ["C"]},
+        "export_media": b"pdf",
+        "create": {"id": "p1", "name": "Doc.pdf"},
+    })
+    drive_ops.export_to_drive(svc, "g1", format="PDF")
+    exp = [c for c in svc.recorded("files") if c[0] == "export_media"][0][1]
+    assert exp["mimeType"] == "application/pdf"
+
+
+def test_export_to_drive_format_invalido_rechaza():
+    svc = FakeService(files={
+        "get": {"id": "g1", "name": "Doc", "mimeType":
+                "application/vnd.google-apps.document", "parents": ["C"]},
+    })
+    with pytest.raises(ValueError):
+        drive_ops.export_to_drive(svc, "g1", format="epub")
+
+
 SHORTCUT_MIME = "application/vnd.google-apps.shortcut"
 
 

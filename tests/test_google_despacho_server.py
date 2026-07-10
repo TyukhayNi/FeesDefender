@@ -123,6 +123,19 @@ def test_tool_upload_file_confina_root(tmp_path, monkeypatch):
         tool(local_path=str(fuera), parent_id="P1", account="a@b.com")
 
 
+def test_tool_update_file_content_confina_root(tmp_path, monkeypatch):
+    monkeypatch.setenv("GOOGLE_DESPACHO_UPLOAD_ROOT", str(tmp_path / "up"))
+    (tmp_path / "up").mkdir()
+    fuera = tmp_path / "fuera.pdf"
+    fuera.write_bytes(b"x")
+    svc = FakeService(files={"update": {"id": "f1"}})
+    mcp = srv.build_server(service_factory=lambda acc: svc,
+                           account_lister=lambda: ["a@b.com"])
+    tool = mcp._tool_manager._tools["update_file_content"].fn
+    with pytest.raises(ValueError):
+        tool(file_id="f1", local_path=str(fuera), account="a@b.com")
+
+
 def _perm_tool(name="create_permission"):
     from google_despacho_fakes import FakeService
     svc = FakeService(permissions={"create": {"id": "p1"}, "delete": {}})
