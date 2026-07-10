@@ -108,3 +108,16 @@ def test_resolve_upload_fichero_inexistente_rechaza(tmp_path, monkeypatch):
     monkeypatch.delenv("GOOGLE_DESPACHO_UPLOAD_ROOT", raising=False)
     with pytest.raises(FileNotFoundError):
         srv._resolve_upload(str(tmp_path / "no_existe.pdf"))
+
+
+def test_tool_upload_file_confina_root(tmp_path, monkeypatch):
+    monkeypatch.setenv("GOOGLE_DESPACHO_UPLOAD_ROOT", str(tmp_path / "up"))
+    (tmp_path / "up").mkdir()
+    fuera = tmp_path / "fuera.pdf"
+    fuera.write_bytes(b"x")
+    svc = FakeService(files={"create": {"id": "u1"}})
+    mcp = srv.build_server(service_factory=lambda acc: svc,
+                           account_lister=lambda: ["a@b.com"])
+    tool = mcp._tool_manager._tools["upload_file"].fn
+    with pytest.raises(ValueError):
+        tool(local_path=str(fuera), parent_id="P1", account="a@b.com")

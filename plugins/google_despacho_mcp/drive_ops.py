@@ -8,6 +8,7 @@ compartidas (corpora=allDrives, includeItemsFromAllDrives, supportsAllDrives).
 from __future__ import annotations
 
 import hashlib
+import mimetypes
 from pathlib import Path
 
 FILE_FIELDS = (
@@ -17,6 +18,7 @@ FILE_FIELDS = (
 PERM_FIELDS = (
     "permissions(id, type, role, emailAddress, domain, displayName, deleted)"
 )
+CREATE_FIELDS = "id, name, mimeType, webViewLink, parents"
 
 GOOGLE_NATIVE_PREFIX = "application/vnd.google-apps."
 _EXPORT_TEXT = {
@@ -204,4 +206,58 @@ def download_file_content(service, file_id: str, dest_path: str, *,
         "bytes": len(data),
         "mime_type": mime,
         "sha256": hashlib.sha256(bytes(data)).hexdigest(),
+    }
+
+
+def _media_from_bytes(data: bytes, mime_type: str):
+    """MediaInMemoryUpload real (import perezoso, como el resto de Google)."""
+    from googleapiclient.http import MediaInMemoryUpload
+    return MediaInMemoryUpload(data, mimetype=mime_type, resumable=False)
+
+
+def _media_from_path(local_path: str, mime_type: str):
+    from googleapiclient.http import MediaFileUpload
+    return MediaFileUpload(local_path, mimetype=mime_type, resumable=True)
+
+
+def create_file(service, *, name: str, parent_id: str, text: str,
+                mime_type: str = "text/plain",
+                max_text_bytes: int = 1_000_000) -> dict:
+    """Crea un fichero de TEXTO (contenido generado por el modelo). Tope pequeño
+    (`max_text_bytes`) para forzar que los bytes de verdad vayan por upload_file."""
+    data = text.encode("utf-8")
+    if max_text_bytes and len(data) > max_text_bytes:
+        raise ValueError(f"{len(data)} bytes supera max_text_bytes ({max_text_bytes}); "
+                         f"usa upload_file para ficheros grandes.")
+    body = {"name": name, "parents": [parent_id]}
+    created = service.files().create(
+        body=body, media_body=_media_from_bytes(data, mime_type),
+        fields=CREATE_FIELDS, supportsAllDrives=True,
+    ).execute()
+    return {
+        "id": created.get("id"), "name": created.get("name"),
+        "mime_type": created.get("mimeType"),
+        "web_view_link": created.get("webViewLink"),
+        "sha256": hashlib.sha256(data).hexdigest(),
+    }
+
+
+def upload_file(service, *, local_path: str, parent_id: str,
+                name: str | None = None, mime_type: str | None = None) -> dict:
+    """Sube un fichero desde disco local (la ruta ya la saneó el server con
+    UPLOAD-root). sha256 sobre los bytes del disco."""
+    p = Path(local_path)
+    fname = name or p.name
+    mtype = mime_type or (mimetypes.guess_type(fname)[0] or "application/octet-stream")
+    data = p.read_bytes()
+    body = {"name": fname, "parents": [parent_id]}
+    created = service.files().create(
+        body=body, media_body=_media_from_path(str(p), mtype),
+        fields=CREATE_FIELDS, supportsAllDrives=True,
+    ).execute()
+    return {
+        "id": created.get("id"), "name": created.get("name"),
+        "mime_type": created.get("mimeType"),
+        "web_view_link": created.get("webViewLink"),
+        "sha256": hashlib.sha256(data).hexdigest(),
     }

@@ -172,6 +172,26 @@ def build_server(
         """Info de la cuenta y cuota de almacenamiento (about.get)."""
         return drive_ops.about_get(service_factory(account))
 
+    @mcp.tool()
+    def create_file(name: str, parent_id: str, text: str, account: str,
+                    mime_type: str = "text/plain") -> dict:
+        """Crea un fichero de TEXTO (contenido del modelo: logs, notas, .md) en la
+        carpeta `parent_id`. Para ficheros binarios/grandes usa upload_file.
+        Devuelve id, nombre, sha256 y web_view_link."""
+        return drive_ops.create_file(
+            service_factory(account), name=name, parent_id=parent_id,
+            text=text, mime_type=mime_type)
+
+    @mcp.tool()
+    def upload_file(local_path: str, parent_id: str, account: str,
+                    name: Optional[str] = None) -> dict:
+        """Sube un fichero desde una ruta LOCAL (confinada por
+        GOOGLE_DESPACHO_UPLOAD_ROOT) a la carpeta `parent_id`. Los bytes NO pasan
+        por el modelo. Devuelve id, nombre, sha256 y web_view_link."""
+        src = _resolve_upload(local_path)
+        return drive_ops.upload_file(
+            service_factory(account), local_path=src, parent_id=parent_id, name=name)
+
     return mcp
 
 
