@@ -1,12 +1,20 @@
-"""CLI local: abrir un expediente E&V (alta + intake drive_ev + CRM) en una pasada.
+"""CLI local: abrir un expediente E&V (alta + intake + CRM) en una pasada.
 
 Orquestador fino sobre el cerebro puro core.abrir_caso. Único módulo con I/O.
+El intake soporta varias fuentes vía --fuente (una por invocación; reentrante):
+drive_ev (default, pull rclone), manual (carpeta o .zip), whatsapp (export .zip)
+y email (export de etiqueta Gmail).
+
+Para montar solo el esqueleto (sin intake ni CRM), usa `scripts/init_caso.py`.
 
 Uso:
   python -m scripts.abrir_caso --w-code W-02Z2NR --ciudad Barcelona \\
       --tipo-caso VUELTA --codigo-caso BaRS11 --sufijo "Vuelta" \\
       --direccion "Passeig Marítim, 30 - Castelldefels (08860)" \\
       --folder-id <id> --team-id <shared-drive>
+  python -m scripts.abrir_caso ... --fuente manual --src <carpeta|.zip>
+  python -m scripts.abrir_caso ... --fuente whatsapp --src <.zip> --rol "03_Otros"
+  python -m scripts.abrir_caso ... --fuente email --cuenta <gmail> --label <etiqueta>
 """
 from __future__ import annotations
 
