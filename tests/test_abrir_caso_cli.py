@@ -265,6 +265,70 @@ def test_cli_whatsapp_rol_invalido_exit_1(drive_temporal, tmp_path):
     assert "rol" in result.output.lower()
 
 
+def _crear_carpeta_manual(tmp_path):
+    src = tmp_path / "aportado"
+    (src / "sub").mkdir(parents=True)
+    (src / "escrito.pdf").write_bytes(b"ESCRITO")
+    (src / "sub" / "anexo.pdf").write_bytes(b"ANEXO")
+    return src
+
+
+def test_cli_manual_carpeta_deposita_y_loguea(drive_temporal, tmp_path):
+    src = _crear_carpeta_manual(tmp_path)
+    result = CliRunner().invoke(cli.app, _args_min(fuente="manual", src=str(src)) + ["--crm", "skip"])
+    assert result.exit_code == 0, result.output
+
+    case_id = "BaRS11 - Passeig Marítim 30 (W-02Z2NR) - Vuelta"
+    case_dir = case_locator.path_for(case_id)
+    assert (case_dir / "00_Input" / "04_Manual" / "escrito.pdf").is_file()
+    assert (case_dir / "00_Input" / "04_Manual" / "sub" / "anexo.pdf").is_file()
+
+    eventos = intake_log.read_events(case_id)
+    manuales = [e for e in eventos if e["event"] == "upload_manual"]
+    assert manuales and len(manuales[-1]["details"]["files"]) == 2
+    assert all(f["sha256"] for f in manuales[-1]["details"]["files"])
+
+
+def test_cli_manual_zip_deposita(drive_temporal, tmp_path):
+    import zipfile as _zf
+    z = tmp_path / "aportado.zip"
+    with _zf.ZipFile(z, "w") as zf:
+        zf.writestr("carpeta/doc.pdf", b"DOC")
+    result = CliRunner().invoke(cli.app, _args_min(fuente="manual", src=str(z)) + ["--crm", "skip"])
+    assert result.exit_code == 0, result.output
+    case_dir = case_locator.path_for("BaRS11 - Passeig Marítim 30 (W-02Z2NR) - Vuelta")
+    assert (case_dir / "00_Input" / "04_Manual" / "carpeta" / "doc.pdf").is_file()
+
+
+def test_cli_manual_dry_run_no_deposita(drive_temporal, tmp_path):
+    src = _crear_carpeta_manual(tmp_path)
+    result = CliRunner().invoke(
+        cli.app, _args_min(fuente="manual", src=str(src)) + ["--dry-run"])
+    assert result.exit_code == 0, result.output
+    case_dir = case_locator.path_for("BaRS11 - Passeig Marítim 30 (W-02Z2NR) - Vuelta")
+    assert not (case_dir / "00_Input" / "04_Manual" / "escrito.pdf").exists()
+
+
+def test_cli_manual_reentrante_dedup(drive_temporal, tmp_path):
+    src = _crear_carpeta_manual(tmp_path)
+    a = _args_min(fuente="manual", src=str(src)) + ["--crm", "skip"]
+    r1 = CliRunner().invoke(cli.app, a)
+    assert r1.exit_code == 0, r1.output
+    r2 = CliRunner().invoke(cli.app, a + ["--force"])
+    assert r2.exit_code == 0, r2.output
+    case_id = "BaRS11 - Passeig Marítim 30 (W-02Z2NR) - Vuelta"
+    manuales = [e for e in intake_log.read_events(case_id) if e["event"] == "upload_manual"]
+    # 2ª pasada: todo dup → no nuevo evento
+    assert len(manuales) == 1
+
+
+def test_cli_manual_src_inexistente_exit_1(drive_temporal):
+    result = CliRunner().invoke(
+        cli.app, _args_min(fuente="manual", src="/no/existe/ruta") + ["--crm", "skip"])
+    assert result.exit_code == 1
+    assert "[ERROR]" in result.output
+
+
 def _sin_yes(**over) -> list[str]:
     return [a for a in _args(**over) if a != "--yes"]
 

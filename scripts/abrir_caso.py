@@ -18,7 +18,9 @@ from pathlib import Path
 import typer
 
 from core import abrir_caso as brain
-from core import case_manager, config, intake_drive, intake_log, sudespacho_create
+from core import (
+    case_manager, config, intake_drive, intake_log, intake_manual, sudespacho_create,
+)
 from core.casos import case_locator
 from core.ciudades import CIUDADES
 from core.utils import file_sha256
@@ -90,6 +92,75 @@ def _intake_drive_ev(ident, case_dir: Path, folder_id, team_id, *, dry_run: bool
     _intake_generico(case_dir, ident.case_id, "drive_ev", hashes, dry_run=dry_run)
 
 
+def _inventario_local(src: Path) -> list[dict]:
+    """Inventario {relpath, sha256, size} de un origen local (carpeta o .zip),
+    SIN copiar. Usado por el dry-run de manual."""
+    items: list[dict] = []
+    if src.is_dir():
+        for p in sorted(src.rglob("*")):
+            if p.is_file():
+                data = p.read_bytes()
+                items.append({"relpath": p.relative_to(src).as_posix(),
+                              "sha256": hashlib.sha256(data).hexdigest(), "size": len(data)})
+    elif zipfile.is_zipfile(src):
+        with zipfile.ZipFile(src) as zf:
+            for m in zf.infolist():
+                if m.is_dir():
+                    continue
+                data = zf.read(m)
+                items.append({"relpath": m.filename,
+                              "sha256": hashlib.sha256(data).hexdigest(), "size": m.file_size})
+    else:
+        raise FileNotFoundError(f"--src no es carpeta ni .zip: {src}")
+    return items
+
+
+def _depositar_manual(case_id: str, src: Path) -> list[str]:
+    """Deposita el origen en 04_Manual y devuelve los relpath (posix) depositados
+    en ESTA pasada (no toda la carpeta)."""
+    manual_dir = case_locator.path_for(case_id) / "00_Input" / "04_Manual"
+    manual_dir.mkdir(parents=True, exist_ok=True)
+    if zipfile.is_zipfile(src):
+        paths = intake_manual.extract_zip(case_id, src.read_bytes())
+        return [p.relative_to(manual_dir).as_posix() for p in paths]
+    if src.is_dir():
+        depositados: list[str] = []
+        for p in sorted(src.rglob("*")):
+            if not p.is_file():
+                continue
+            rel = p.relative_to(src)
+            dest = manual_dir / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(p.read_bytes())
+            depositados.append(rel.as_posix())
+        return depositados
+    raise FileNotFoundError(f"--src no es carpeta ni .zip: {src}")
+
+
+def _intake_manual(ident, case_dir: Path, src_str: str, *, dry_run: bool) -> None:
+    src = Path(src_str)
+    subdir = brain.FUENTE_A_SUBDIR["manual"]
+    if dry_run:
+        try:
+            inv = _inventario_local(src)
+        except FileNotFoundError as exc:
+            typer.echo(f"[ERROR] {exc}", err=True)
+            raise typer.Exit(code=1)
+        plan = brain.plan_intake(inv, intake_log.read_events(ident.case_id), "manual")
+        typer.echo(f"[dry-run] manual: {len(plan.depositables)} depositables (sin depositar)")
+        return
+    try:
+        rels = _depositar_manual(ident.case_id, src)
+    except FileNotFoundError as exc:
+        typer.echo(f"[ERROR] {exc}", err=True)
+        raise typer.Exit(code=1)
+    hashes = {
+        f"{subdir}/{rel}": file_sha256(case_dir / "00_Input" / subdir / rel)
+        for rel in rels
+    }
+    _intake_generico(case_dir, ident.case_id, "manual", hashes, dry_run=False)
+
+
 def _validar_flags(fuente, *, folder_id, team_id, src, rol, cuenta, label) -> None:
     """Exige los flags propios de la fuente y rechaza los ajenos (fail-fast)."""
     requeridos = {
@@ -128,8 +199,10 @@ def _despachar_intake(fuente, ident, case_dir, *, folder_id, team_id, src, rol,
                    cuenta=cuenta, label=label)
     if fuente == "drive_ev":
         _intake_drive_ev(ident, case_dir, folder_id, team_id, dry_run=dry_run)
+    elif fuente == "manual":
+        _intake_manual(ident, case_dir, src, dry_run=dry_run)
     else:
-        raise typer.Exit(code=1)  # ramas manual/whatsapp/email: tareas posteriores
+        raise typer.Exit(code=1)  # ramas whatsapp/email: tareas posteriores
 
 
 def _alta_crm(
