@@ -1,9 +1,14 @@
 ---
-estado: vigente
+estado: aprobada
 dueño: Nikolai Tyukhay
 fecha: 2026-07-10
+aprobada: 2026-07-10
 tipo: brainstorming + runbook
 ---
+
+> **APROBADA 2026-07-10.** Se adoptan las recomendaciones: motor **A2** (híbrido),
+> ejes **E2+E3+E4** (E5 diferido). Siguiente artefacto: plan de implementación en
+> `docs/superpowers/plans/` (E2 primero). Detalle en §6.
 
 # Bajada CRM → salas → registros → LLM
 
@@ -265,17 +270,20 @@ pese a leer un derivado, y la ventaja **crece con el tamaño y el % de escaneado
 > Son órdenes de magnitud con supuestos explícitos, no benchmarks; medir en W-02VND1 (668
 > docs) calibraría tiempo y robustez.
 
-## 6. Decisiones abiertas / siguientes pasos
+## 6. Decisiones (cerradas al aprobar la spec, 2026-07-10) / siguientes pasos
 
-1. **Motor (§4):** elegir A1 / A2 / A3. *Recomendación de arranque: A2.*
-2. **Ejes de consumo LLM (§5):** el trío **E2+E3+E4 se baraja como prioritario pero NO
-   está adoptado** (E5 diferido). Decidir adopción y si `viabilidad-prerelleno` cambia su
-   fuente primaria a MD (N1) o se ofrece como modo opt-in; y si se materializa el
-   manifiesto de niveles en `indice_documental.yaml`.
-3. **Higiene de cola:** cerrar formalmente `[SIGUIENTE-INTAKE-CRM-COMPLETO]` en
-   `PLAN.md` (su Paso 1 está hecho en código) y enlazar este documento.
-4. Cuando §4 y §5 estén cerrados, promover a un plan de implementación en
-   `docs/superpowers/plans/` (flujo brainstorming→spec→plan).
+1. **Motor (§4): A2 — híbrido** ✅ adoptado. Salas para OCR/MD/registros; el pipeline viejo
+   solo para la anonimización hasta migrarla. Deprecar el `intake-judicial --run-pipeline`
+   viejo cuando la anon consuma el OCR de la sala.
+2. **Ejes de consumo LLM (§5): E2 + E3 + E4** ✅ adoptados; **E5 (RAG) diferido**. Orden de
+   implementación E2 → E3 → E4. *A resolver en el plan de implementación:* si
+   `viabilidad-prerelleno` cambia su fuente primaria a MD (N1) o se ofrece como modo opt-in, y
+   si el manifiesto de niveles se materializa en `indice_documental.yaml`.
+3. **Higiene de cola:** cerrar formalmente `[SIGUIENTE-INTAKE-CRM-COMPLETO]` en `PLAN.md`
+   (su Paso 1 está hecho en código) y enlazar este documento.
+4. **Siguiente artefacto:** plan de implementación en `docs/superpowers/plans/` (flujo
+   brainstorming→spec→plan), empezando por **E2** (el más barato y sin prerrequisito de
+   clasificación).
 
 ## Referencias
 

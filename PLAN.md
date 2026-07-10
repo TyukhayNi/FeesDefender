@@ -741,7 +741,13 @@ incluye ya el **mapa de tareas de intake por fuente** (§2.0), la estimación de
 pipeline + robustez % (§5.3), una **simulación de referencia** de `viabilidad-prerelleno`
 sobre el Drive de E&V (§7, caso ficticio `NEGATIVA_ESCRITURA`) y una **§8 ROI** (trabajo
 mecánico vs de criterio, arbitraje de tarifas €20/€60, efecto del intake, embudo de gasto,
-caso real W-02VND1 ~€315→~€70). Decisión de ejes (E2+E3+E4) sigue **barajada, no adoptada**.
+caso real W-02VND1 ~€315→~€70).
+
+**✅ SPEC APROBADA 2026-07-10.** Decisiones adoptadas: motor **A2** (híbrido), ejes
+**E2+E3+E4** (E5 diferido). Orden de implementación **E2 → E3 → E4**. Siguiente artefacto:
+plan en `docs/superpowers/plans/` (E2 primero, el más barato y sin prerrequisito de
+clasificación). Sub-decisiones a cerrar en el plan: fuente primaria de `viabilidad-prerelleno`
+(MD/N1 vs opt-in) y manifiesto de niveles en `indice_documental.yaml`.
 
 **Decisiones abiertas (cerrar con Nikolai antes de implementar):**
 1. **Motor (§4 del doc):** A1 salas-only / A2 híbrido (salas + anon del pipeline viejo)
