@@ -188,3 +188,23 @@ def test_restore_file_desmarca_trashed():
     assert out["trashed"] is False
     _, kw = svc.recorded("files")[0]
     assert kw["body"] == {"trashed": False}
+
+
+def test_append_text_concatena_y_reescribe():
+    svc = FakeService(files={
+        "get": {"id": "f1", "name": "log.jsonl", "mimeType": "text/plain", "size": "6"},
+        "get_media": b"linea1\n",
+        "update": {"id": "f1", "name": "log.jsonl", "mimeType": "text/plain"},
+    })
+    out = drive_ops.append_text(svc, "f1", "linea2\n")
+    assert out["id"] == "f1"
+    upd = [c for c in svc.recorded("files") if c[0] == "update"][0][1]
+    assert "media_body" in upd
+
+
+def test_append_text_rechaza_binario():
+    svc = FakeService(files={
+        "get": {"id": "b1", "name": "x.pdf", "mimeType": "application/pdf", "size": "10"},
+    })
+    with pytest.raises(ValueError):
+        drive_ops.append_text(svc, "b1", "no")

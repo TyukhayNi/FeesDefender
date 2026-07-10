@@ -394,3 +394,29 @@ def restore_file(service, file_id: str) -> dict:
         fields="id, trashed", supportsAllDrives=True,
     ).execute()
     return {"id": updated.get("id"), "trashed": updated.get("trashed")}
+
+
+def append_text(service, file_id: str, text: str, *,
+                max_bytes: int = 5_000_000) -> dict:
+    """Append a un fichero de TEXTO existente (read-modify-write server-side).
+    Rechaza binarios y Docs nativos. Devuelve id, nombre y sha256 del resultado."""
+    meta = get_file_metadata(service, file_id, fields="id, name, mimeType, size")
+    mime = meta.get("mimeType", "")
+    if mime.startswith(GOOGLE_NATIVE_PREFIX):
+        raise ValueError(f"append_text no aplica a Docs nativos ({mime!r}).")
+    if not (mime.startswith("text/") or mime in _TEXTUAL_MIMES):
+        raise ValueError(f"append_text solo para texto; {mime!r} no lo es.")
+    size = int(meta.get("size") or 0)
+    if max_bytes and size > max_bytes:
+        raise ValueError(f"{size} bytes supera max_bytes ({max_bytes}).")
+    current = service.files().get_media(fileId=file_id, supportsAllDrives=True).execute()
+    current_bytes = bytes(current) if isinstance(current, (bytes, bytearray)) else str(current).encode("utf-8")
+    new_bytes = current_bytes + text.encode("utf-8")
+    if max_bytes and len(new_bytes) > max_bytes:
+        raise ValueError(f"{len(new_bytes)} bytes supera max_bytes ({max_bytes}).")
+    updated = service.files().update(
+        fileId=file_id, media_body=_media_from_bytes(new_bytes, mime or "text/plain"),
+        fields="id, name, mimeType", supportsAllDrives=True,
+    ).execute()
+    return {"id": updated.get("id"), "name": updated.get("name"),
+            "sha256": hashlib.sha256(new_bytes).hexdigest()}

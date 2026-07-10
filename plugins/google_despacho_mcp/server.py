@@ -245,6 +245,13 @@ def build_server(
         """Saca un fichero de la papelera."""
         return drive_ops.restore_file(service_factory(account), file_id)
 
+    @mcp.tool()
+    def append_text(file_id: str, text: str, account: str) -> dict:
+        """Añade texto al final de un fichero de TEXTO existente (p. ej.
+        _intake_log.jsonl). Read-modify-write server-side. Devuelve id, nombre y
+        sha256 del resultado."""
+        return drive_ops.append_text(service_factory(account), file_id, text)
+
     return mcp
 
 
