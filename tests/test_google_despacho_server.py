@@ -3,6 +3,7 @@ inyectado (sin API viva ni tokens). Comprueba enrutado account→service,
 delegación a drive_ops y saneado del DL-root."""
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -81,3 +82,149 @@ def test_resolve_dest_rechaza_symlink_que_escapa(tmp_path, monkeypatch):
     monkeypatch.setenv("GOOGLE_DESPACHO_DL_ROOT", str(root))
     with pytest.raises(ValueError):
         srv._resolve_dest(str(root / "escape" / "evil.bin"))
+
+
+def test_resolve_upload_dentro_de_root(tmp_path, monkeypatch):
+    root = tmp_path / "up"
+    root.mkdir()
+    f = root / "doc.pdf"
+    f.write_bytes(b"x")
+    monkeypatch.setenv("GOOGLE_DESPACHO_UPLOAD_ROOT", str(root))
+    out = srv._resolve_upload(str(f))
+    assert out == os.path.realpath(str(f))
+
+
+def test_resolve_upload_fuera_de_root_rechaza(tmp_path, monkeypatch):
+    root = tmp_path / "up"
+    root.mkdir()
+    fuera = tmp_path / "otro.pdf"
+    fuera.write_bytes(b"x")
+    monkeypatch.setenv("GOOGLE_DESPACHO_UPLOAD_ROOT", str(root))
+    with pytest.raises(ValueError):
+        srv._resolve_upload(str(fuera))
+
+
+def test_resolve_upload_fichero_inexistente_rechaza(tmp_path, monkeypatch):
+    monkeypatch.delenv("GOOGLE_DESPACHO_UPLOAD_ROOT", raising=False)
+    with pytest.raises(FileNotFoundError):
+        srv._resolve_upload(str(tmp_path / "no_existe.pdf"))
+
+
+def test_tool_upload_file_confina_root(tmp_path, monkeypatch):
+    monkeypatch.setenv("GOOGLE_DESPACHO_UPLOAD_ROOT", str(tmp_path / "up"))
+    (tmp_path / "up").mkdir()
+    fuera = tmp_path / "fuera.pdf"
+    fuera.write_bytes(b"x")
+    svc = FakeService(files={"create": {"id": "u1"}})
+    mcp = srv.build_server(service_factory=lambda acc: svc,
+                           account_lister=lambda: ["a@b.com"])
+    tool = mcp._tool_manager._tools["upload_file"].fn
+    with pytest.raises(ValueError):
+        tool(local_path=str(fuera), parent_id="P1", account="a@b.com")
+
+
+def test_tool_update_file_content_confina_root(tmp_path, monkeypatch):
+    monkeypatch.setenv("GOOGLE_DESPACHO_UPLOAD_ROOT", str(tmp_path / "up"))
+    (tmp_path / "up").mkdir()
+    fuera = tmp_path / "fuera.pdf"
+    fuera.write_bytes(b"x")
+    svc = FakeService(files={"update": {"id": "f1"}})
+    mcp = srv.build_server(service_factory=lambda acc: svc,
+                           account_lister=lambda: ["a@b.com"])
+    tool = mcp._tool_manager._tools["update_file_content"].fn
+    with pytest.raises(ValueError):
+        tool(file_id="f1", local_path=str(fuera), account="a@b.com")
+
+
+def _perm_tool(name="create_permission"):
+    from google_despacho_fakes import FakeService
+    svc = FakeService(permissions={"create": {"id": "p1"}, "delete": {}})
+    mcp = srv.build_server(service_factory=lambda acc: svc,
+                           account_lister=lambda: ["a@b.com"])
+    return mcp._tool_manager._tools[name].fn
+
+
+def test_guardarrail_bloquea_anyone_sin_flag():
+    tool = _perm_tool()
+    with pytest.raises(ValueError):
+        tool(file_id="f1", perm_type="anyone", role="reader", account="a@b.com")
+
+
+def test_guardarrail_bloquea_dominio_externo_sin_flag():
+    tool = _perm_tool()
+    with pytest.raises(ValueError):
+        tool(file_id="f1", perm_type="user", role="reader",
+             email_address="x@gmail.com", account="a@b.com")
+
+
+def test_guardarrail_permite_interno_sin_flag():
+    tool = _perm_tool()
+    out = tool(file_id="f1", perm_type="user", role="reader",
+               email_address="x@engelvoelkers.com", account="a@b.com")
+    assert out["id"] == "p1"
+
+
+def test_guardarrail_permite_externo_con_flag():
+    tool = _perm_tool()
+    out = tool(file_id="f1", perm_type="anyone", role="reader",
+               allow_external=True, account="a@b.com")
+    assert out["id"] == "p1"
+
+
+def test_guardarrail_owner_siempre_rechazado():
+    tool = _perm_tool()
+    with pytest.raises(ValueError):
+        tool(file_id="f1", perm_type="user", role="owner",
+             email_address="x@tyukhay.legal", allow_external=True, account="a@b.com")
+
+
+def test_guardarrail_perm_type_desconocido_rechaza():
+    tool = _perm_tool()
+    for bad in ["ANYONE", "everyone", "", "user "]:
+        with pytest.raises(ValueError):
+            tool(file_id="f1", perm_type=bad, role="reader", account="a@b.com")
+
+
+def test_guardarrail_owner_mayusculas_rechazado():
+    tool = _perm_tool()
+    for bad in ["OWNER", "Owner", "owner "]:
+        with pytest.raises(ValueError):
+            tool(file_id="f1", perm_type="user", role=bad,
+                 email_address="x@tyukhay.legal", account="a@b.com")
+
+
+def _update_perm_tool(existing_perm):
+    from google_despacho_fakes import FakeService
+    svc = FakeService(permissions={"get": existing_perm, "update": {"id": "p1"}})
+    mcp = srv.build_server(service_factory=lambda acc: svc,
+                           account_lister=lambda: ["a@b.com"])
+    return mcp._tool_manager._tools["update_permission"].fn
+
+
+def test_guardarrail_update_escalar_externo_sin_flag_rechaza():
+    tool = _update_perm_tool({"id": "p1", "type": "user", "role": "reader",
+                              "emailAddress": "x@gmail.com"})
+    with pytest.raises(ValueError):
+        tool(file_id="f1", permission_id="p1", role="writer", account="a@b.com")
+
+
+def test_guardarrail_update_escalar_externo_con_flag_ok():
+    tool = _update_perm_tool({"id": "p1", "type": "user", "role": "reader",
+                              "emailAddress": "x@gmail.com"})
+    out = tool(file_id="f1", permission_id="p1", role="writer",
+               allow_external=True, account="a@b.com")
+    assert out["id"] == "p1"
+
+
+def test_guardarrail_update_interno_sin_flag_ok():
+    tool = _update_perm_tool({"id": "p1", "type": "user", "role": "reader",
+                              "emailAddress": "x@tyukhay.legal"})
+    out = tool(file_id="f1", permission_id="p1", role="writer", account="a@b.com")
+    assert out["id"] == "p1"
+
+
+def test_guardarrail_update_owner_rechazado():
+    tool = _update_perm_tool({"id": "p1", "type": "user", "role": "reader",
+                              "emailAddress": "x@tyukhay.legal"})
+    with pytest.raises(ValueError):
+        tool(file_id="f1", permission_id="p1", role="owner", account="a@b.com")

@@ -18,7 +18,8 @@ import google_auth  # noqa: E402
 
 
 def cmd_add() -> None:
-    print("Se abrirá el navegador para autenticar la cuenta (SOLO LECTURA de Drive)...")
+    print("Se abrirá el navegador para autenticar la cuenta "
+          "(Drive: lectura + ESCRITURA)...")
     email = google_auth.add_account()
     print(f"OK · cuenta conectada: {email}")
     print(f"Token guardado en: {google_auth.tokens_dir() / (email + '.json')}")

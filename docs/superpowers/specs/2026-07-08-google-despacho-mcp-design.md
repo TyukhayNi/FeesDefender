@@ -271,5 +271,109 @@ reconstruir credenciales en cada llamada).
 1. ~~Nikolai: comprobación R2 (¿Internal disponible en `tyukhay.legal`?).~~ HECHA
    2026-07-09: Internal disponible pero app ya `En producción` → R2 cerrada sin split.
 2. ~~Cerrar R2 en este spec.~~ HECHA.
-3. Encadenar la skill `writing-plans` para desglosar **F1** (lectura cross-cuenta)
-   en plan de implementación. ← **siguiente**
+3. ~~Encadenar la skill `writing-plans` para desglosar **F1** (lectura cross-cuenta)
+   en plan de implementación.~~ HECHA: F1 MERGEADA (PR #12, `4056d6b`), validada en
+   vivo y cableada. Siguiente: **F2** — ver §13.
+
+## 13. F2 — Escritura CRUD + permisos (brainstorming 2026-07-10)
+
+Delta de diseño que **supera y detalla** el esbozo de F2 de §4 y §5. Cerrado en
+brainstorming con Nikolai (Claude Code). Decisiones tomadas con recomendación
+explícita y aprobadas.
+
+### 13.1 Frontera de fase (decisión clave)
+
+**F2 entrega los *ladrillos*; el intake de una sola orden es F3.** Con las tools de
+F2 se puede hacer un intake EV→TL **paso a paso** (`search_files` → `list_folder` →
+`download_file_content` a local con token EV → `upload_file` a carpeta TL con token
+TL → `append_text` al log). Lo que NO entra en F2 es el orquestador de una sola orden
+`import_drive_folder` (resolver `W-code`→carpeta canónica en «EXPEDIENTES - TYUKHAY
+LEGAL» + recorrido recursivo + transferencia cross-cuenta server-side + log forense
+en Drive): eso es **F3**, con su propio spec/plan. Motivo: fases pequeñas y
+verificables por PR.
+
+### 13.2 Inventario de tools (F2)
+
+Todas con `account` explícito; `drive_ops` puro (service inyectable) + wrapper fino en
+`server.py`. Ninguna cruza cuentas de forma implícita.
+
+**Escritura CRUD:**
+| Tool | Nota |
+|---|---|
+| `create_file(name, parent_id, text=…)` | texto generado por el modelo (logs/notas/`.md`); tope pequeño (p. ej. 1 MB) |
+| `upload_file(local_path, parent_id, name=…)` | bytes desde ruta local acotada por **UPLOAD-root** (`GOOGLE_DESPACHO_UPLOAD_ROOT`), simétrico al DL-root |
+| `create_folder(name, parent_id)` | creación simple |
+| `ensure_folder_path(path, parent_id)` | **idempotente**: crea solo los segmentos que falten y devuelve el `folder_id` final; evita carpetas duplicadas (Drive las permite) |
+| `copy_file(file_id, dst_folder_id, new_name=None)` | `files.copy` interno, `supportsAllDrives` |
+| `update_file_content(file_id, text= \| local_path=)` | edición in-place, mismo `file_id`; exactamente uno de los dos |
+| `update_file_metadata(file_id, name=…)` | renombrar |
+| `move_file(file_id, dst_folder_id)` | `addParents`/`removeParents` |
+| `delete_file(file_id, permanent=False)` | papelera por defecto; `permanent=true` solo con flag |
+| `restore_file(file_id)` | des-papelera (untrash), reverso de `delete_file` |
+| `append_text(file_id, text)` | append read-modify-write server-side (p. ej. `_intake_log.jsonl`); espeja XL |
+| `export_to_drive(file_id, format='pdf', dst_folder_id=None)` | exporta Doc nativo/Office a PDF (o Office) y **guarda de vuelta EN Drive**, server-side; sin bytes por el modelo. Default carpeta = la del origen |
+| `create_shortcut(target_id, dst_folder_id)` | enlaza un doc en varias carpetas sin duplicar bytes (fuente única) |
+
+**Permisos (guardarraíl §5):**
+`create_permission`, `update_permission`, `delete_permission`.
+- **Guardarraíl `allow_external`** (decisión): por defecto BLOQUEA `type=anyone`
+  (enlace público) y dominios ajenos a `tyukhay.legal`/`engelvoelkers.com` con error
+  claro. Solo procede si se pasa `allow_external=true` explícito (= "confirmación
+  reforzada" del §5). Segunda barrera: aprobación por acción en la consola de Cowork.
+- `role=owner` **nunca** automático.
+- `sendNotificationEmail=false` por defecto (no spamear a terceros al compartir).
+
+**Navegación / lectura (complementan la F1):**
+| Tool | Nota |
+|---|---|
+| `list_folder(folder_id, account)` | hijos directos (name/type/id); Drive navegable como explorador sin escribir queries |
+| `list_trash(account)` | ver la papelera (complementa `restore_file`) |
+| `get_folder_path(folder_id)` | miga de pan / ruta completa de una carpeta |
+
+### 13.3 Refinamientos dentro de tools
+
+- `upload_file` y `update_file_content` devuelven **`sha256` + `webViewLink`** del
+  artefacto guardado (cierra la cadena forense en la subida, igual que
+  `download_file_content` ya devuelve hash; el link es clicable para pasar a cliente).
+
+### 13.4 OAuth / scope
+
+- Subir `google_auth.SCOPES` de `drive.readonly` a
+  **`https://www.googleapis.com/auth/drive`** (completo). `drive.file` NO sirve:
+  solo opera sobre ficheros creados por la app, y F2 toca expedientes existentes.
+- `drive` subsume `drive.readonly` → las 9 tools de F1 siguen igual.
+- Requiere **edición consciente** de `SCOPES` + **reautorizar las 2 cuentas** una vez
+  (`google_cli.py add`). `drive` es scope *restricted*: con la app sin verificar y
+  2 usuarios (tope 100), funciona mostrando el aviso "app no verificada" (ya asumido
+  en R2 para `drive.readonly`).
+
+### 13.5 Seguridad (F2)
+
+- **UPLOAD-root** (`GOOGLE_DESPACHO_UPLOAD_ROOT`) confina los orígenes de
+  `upload_file`, variable **independiente** del DL-root; mismo saneado `realpath`
+  contra symlink-escape que `_resolve_dest`.
+- **Bytes masivos nunca por el modelo**: `upload_file`/`export_to_drive` operan por
+  ruta/`file_id`; `create_file`/`update_file_content(text=)` son solo para texto corto
+  del modelo con tope.
+- **Borrado**: papelera por defecto; `permanent` tras flag; contención por aprobación
+  en Cowork (sin "permitir siempre" para borrado).
+
+### 13.6 Tests (F2)
+
+- `drive_ops`: `service` fake inyectado (patrón `build_server`); sin API viva.
+- Guardarraíl de dominios (`allow_external`): unit-test allow/deny por `type` y dominio.
+- `ensure_folder_path` idempotente: no duplica un segmento existente.
+- Saneado de UPLOAD-root (symlink-escape) como el del DL-root.
+- Check de integración manual contra una carpeta desechable de Drive antes de dar F2
+  por viva.
+
+### 13.7 Fuera de F2 (F3/F4 o YAGNI)
+
+`import_drive_folder` + resolución `W-code` + lote (`copy_tree`/`move_batch`/
+`delete_batch`) → **F3**. Calendar → **F4**. Vaciar papelera, revisiones/historial,
+propiedades/etiquetas (`appProperties`/Labels) → diferidos (regla de promoción del
+proyecto: solo por disparador concreto).
+
+### 13.8 Próximo paso F2
+
+Encadenar `writing-plans` para desglosar la F2 en plan de implementación.
