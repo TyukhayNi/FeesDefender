@@ -15,6 +15,16 @@
 
 ---
 
+## Plugin/skill (o MCP) habilitado pero invisible en una sesión de Code ya iniciada
+
+- **Intentado:** invocar la skill `/brainstorming` del plugin `superpowers` (visible y activo en Ajustes→Plugins de la app de escritorio, v5.1.0) desde una sesión de Claude Code **ya en marcha**; también localizarlo con `ListPlugins`/`SearchPlugins`/`ListSkills`.
+- **Resultado:** el `Skill` tool devuelve `Unknown skill` (probado `superpowers:brainstorming` y `brainstorming`), y las herramientas de listado **no lo ven** — pese a estar habilitado en la cuenta. En una sesión de Code **nueva** (arrancada después de activarlo) **sí** aparece y funciona.
+- **Confirmado:** 2026-07-10 (y mismo patrón con un conector MCP el día anterior).
+- **Causa:** el índice de skills/plugins (y de servidores MCP) se fija **al arrancar la sesión**; una activación posterior **no sincroniza en caliente**.
+- **Solución:** **no reintentar en la misma sesión** (no se resuelve). Abrir una **sesión de Code nueva**, que reconstruye el índice y ya expone el plugin/skill/MCP.
+
+---
+
 ## Conector MCP local → Cowork: una entrada en `claude_desktop_config.json` NO basta (hay que `.dxt`)
 
 Confirmado empíricamente cableando el MCP `google-despacho` a Cowork (2026-07-09).
