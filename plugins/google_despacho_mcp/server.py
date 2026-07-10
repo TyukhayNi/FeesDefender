@@ -79,6 +79,31 @@ def _resolve_upload(local_path: str) -> str:
     return src
 
 
+INTERNAL_DOMAINS = {"tyukhay.legal", "engelvoelkers.com"}
+
+
+def _guard_external_share(*, perm_type: str, role: str,
+                          email_address: Optional[str], domain: Optional[str],
+                          allow_external: bool) -> None:
+    """Guardarraíl §5. Lanza ValueError si la compartición es externa sin
+    allow_external, o si pide role=owner (siempre prohibido)."""
+    if role == "owner":
+        raise ValueError("role=owner nunca se concede automáticamente por el MCP.")
+    external = False
+    if perm_type == "anyone":
+        external = True
+    elif perm_type in ("user", "group"):
+        dom = (email_address or "").rsplit("@", 1)[-1].lower()
+        external = dom not in INTERNAL_DOMAINS
+    elif perm_type == "domain":
+        external = (domain or "").lower() not in INTERNAL_DOMAINS
+    if external and not allow_external:
+        raise ValueError(
+            "Compartición EXTERNA bloqueada (type/dominio ajeno a "
+            f"{sorted(INTERNAL_DOMAINS)}). Repite con allow_external=true si es a "
+            "conciencia.")
+
+
 def build_server(
     *,
     service_factory: Callable[[str], object] | None = None,
@@ -271,6 +296,38 @@ def build_server(
         return drive_ops.create_shortcut(
             service_factory(account), target_id=target_id,
             dst_folder_id=dst_folder_id, name=name)
+
+    @mcp.tool()
+    def create_permission(file_id: str, perm_type: str, role: str, account: str,
+                          email_address: Optional[str] = None,
+                          domain: Optional[str] = None,
+                          allow_external: bool = False,
+                          send_notification_email: bool = False) -> dict:
+        """Concede un permiso (ACL). perm_type: user|group|domain|anyone;
+        role: reader|commenter|writer (owner PROHIBIDO). Compartir con externos
+        (anyone o dominio ajeno a tyukhay.legal/engelvoelkers.com) exige
+        allow_external=true. No envía email de aviso salvo send_notification_email."""
+        _guard_external_share(perm_type=perm_type, role=role,
+                              email_address=email_address, domain=domain,
+                              allow_external=allow_external)
+        return drive_ops.create_permission(
+            service_factory(account), file_id, perm_type=perm_type, role=role,
+            email_address=email_address, domain=domain,
+            send_notification_email=send_notification_email)
+
+    @mcp.tool()
+    def update_permission(file_id: str, permission_id: str, role: str,
+                          account: str) -> dict:
+        """Cambia el rol de un permiso existente (owner PROHIBIDO)."""
+        if role == "owner":
+            raise ValueError("role=owner nunca se concede automáticamente por el MCP.")
+        return drive_ops.update_permission(
+            service_factory(account), file_id, permission_id, role=role)
+
+    @mcp.tool()
+    def delete_permission(file_id: str, permission_id: str, account: str) -> dict:
+        """Revoca un permiso (ACL) de un fichero."""
+        return drive_ops.delete_permission(service_factory(account), file_id, permission_id)
 
     return mcp
 

@@ -482,3 +482,34 @@ def create_shortcut(service, *, target_id: str, dst_folder_id: str,
     return {"id": created.get("id"), "name": created.get("name"),
             "target_id": (created.get("shortcutDetails") or {}).get("targetId"),
             "web_view_link": created.get("webViewLink")}
+
+
+def create_permission(service, file_id: str, *, perm_type: str, role: str,
+                      email_address: str | None = None, domain: str | None = None,
+                      send_notification_email: bool = False) -> dict:
+    body: dict = {"type": perm_type, "role": role}
+    if email_address:
+        body["emailAddress"] = email_address
+    if domain:
+        body["domain"] = domain
+    created = service.permissions().create(
+        fileId=file_id, body=body,
+        sendNotificationEmail=send_notification_email,
+        fields="id, type, role, emailAddress, domain", supportsAllDrives=True,
+    ).execute()
+    return created
+
+
+def update_permission(service, file_id: str, permission_id: str, *, role: str) -> dict:
+    updated = service.permissions().update(
+        fileId=file_id, permissionId=permission_id, body={"role": role},
+        fields="id, type, role, emailAddress, domain", supportsAllDrives=True,
+    ).execute()
+    return updated
+
+
+def delete_permission(service, file_id: str, permission_id: str) -> dict:
+    service.permissions().delete(
+        fileId=file_id, permissionId=permission_id, supportsAllDrives=True,
+    ).execute()
+    return {"file_id": file_id, "permission_id": permission_id, "deleted": True}

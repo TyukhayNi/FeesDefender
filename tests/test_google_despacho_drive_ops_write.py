@@ -265,3 +265,28 @@ def test_create_shortcut():
     assert kw["body"]["mimeType"] == SHORTCUT_MIME
     assert kw["body"]["shortcutDetails"]["targetId"] == "T1"
     assert kw["body"]["parents"] == ["DST"]
+
+
+def test_create_permission_pasa_body_y_flags():
+    svc = FakeService(permissions={"create": {"id": "p1", "type": "user",
+                                              "role": "reader"}})
+    out = drive_ops.create_permission(
+        svc, "f1", perm_type="user", role="reader",
+        email_address="colega@tyukhay.legal", send_notification_email=False)
+    assert out["id"] == "p1"
+    _, kw = svc.recorded("permissions")[0]
+    assert kw["fileId"] == "f1"
+    assert kw["body"]["type"] == "user"
+    assert kw["body"]["role"] == "reader"
+    assert kw["body"]["emailAddress"] == "colega@tyukhay.legal"
+    assert kw["sendNotificationEmail"] is False
+    assert kw["supportsAllDrives"] is True
+
+
+def test_delete_permission():
+    svc = FakeService(permissions={"delete": {}})
+    out = drive_ops.delete_permission(svc, "f1", "p1")
+    assert out["deleted"] is True
+    _, kw = svc.recorded("permissions")[0]
+    assert kw["fileId"] == "f1"
+    assert kw["permissionId"] == "p1"

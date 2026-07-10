@@ -121,3 +121,45 @@ def test_tool_upload_file_confina_root(tmp_path, monkeypatch):
     tool = mcp._tool_manager._tools["upload_file"].fn
     with pytest.raises(ValueError):
         tool(local_path=str(fuera), parent_id="P1", account="a@b.com")
+
+
+def _perm_tool(name="create_permission"):
+    from google_despacho_fakes import FakeService
+    svc = FakeService(permissions={"create": {"id": "p1"}, "delete": {}})
+    mcp = srv.build_server(service_factory=lambda acc: svc,
+                           account_lister=lambda: ["a@b.com"])
+    return mcp._tool_manager._tools[name].fn
+
+
+def test_guardarrail_bloquea_anyone_sin_flag():
+    tool = _perm_tool()
+    with pytest.raises(ValueError):
+        tool(file_id="f1", perm_type="anyone", role="reader", account="a@b.com")
+
+
+def test_guardarrail_bloquea_dominio_externo_sin_flag():
+    tool = _perm_tool()
+    with pytest.raises(ValueError):
+        tool(file_id="f1", perm_type="user", role="reader",
+             email_address="x@gmail.com", account="a@b.com")
+
+
+def test_guardarrail_permite_interno_sin_flag():
+    tool = _perm_tool()
+    out = tool(file_id="f1", perm_type="user", role="reader",
+               email_address="x@engelvoelkers.com", account="a@b.com")
+    assert out["id"] == "p1"
+
+
+def test_guardarrail_permite_externo_con_flag():
+    tool = _perm_tool()
+    out = tool(file_id="f1", perm_type="anyone", role="reader",
+               allow_external=True, account="a@b.com")
+    assert out["id"] == "p1"
+
+
+def test_guardarrail_owner_siempre_rechazado():
+    tool = _perm_tool()
+    with pytest.raises(ValueError):
+        tool(file_id="f1", perm_type="user", role="owner",
+             email_address="x@tyukhay.legal", allow_external=True, account="a@b.com")
