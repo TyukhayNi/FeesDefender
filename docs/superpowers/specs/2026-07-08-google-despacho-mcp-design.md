@@ -381,6 +381,20 @@ F2 MERGEADA (PR #23 squash `52a5845`, cierre docs PR #24 `3a00442`). Siguiente: 
 
 ## 14. F3 — `import_drive_folder` (intake forense EV→TL de una orden) (brainstorming 2026-07-10)
 
+> 🅿️ **APARCADA 2026-07-10 (decisión de Nikolai) — NO se construye por ahora.** El diseño de abajo
+> quedó cerrado en brainstorming (sobre un mapeo del ecosistema con workflow de 7 lectores), pero se
+> considera **sobreingeniería** mientras no haya dolor real. **Vía suficiente hoy:** descargar el
+> expediente de Engel como **ZIP desde el Drive** y meterlo por la skill **`intake-expediente`**
+> (EXPEDIENTES-XL `extract_archive` ya trata zips) → no hace falta un orquestador cross-cuenta.
+> **Corrección registrada para si se reabre:** el origen se busca en las **unidades compartidas de
+> ENGEL** (cuenta EV); el `W-code` resuelve la carpeta **destino** en TL. **Disparadores de
+> reapertura:** (a) volumen recurrente que haga tedioso el ZIP manual; (b) necesidad de hacer el
+> intake desde Cowork **sin PC**; (c) un caso que pinche la vía ZIP. **Fleco independiente que el
+> mapeo destapó (NO de F3, vale la pena aunque F3 no se haga):** bug latente en
+> `download_file_content` (`drive_ops.py:209`) — devuelve el mime de origen tras exportar un Doc
+> nativo y no ajusta la extensión (en backlog). Lo de abajo se conserva como referencia para una
+> eventual reapertura.
+
 Delta de diseño que **supera y detalla** el esbozo de F3 de §4 (parte `import_drive_folder`)
 y §6/§7/§11 R1. Cerrado en brainstorming con Nikolai (Claude Code) sobre un mapeo previo del
 ecosistema (workflow de 7 lectores + síntesis). Decisiones tomadas con recomendación explícita
