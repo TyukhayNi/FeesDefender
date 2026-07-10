@@ -123,6 +123,13 @@ demanda+contestación, y el dedup M9 puede dejar `05_CRM` incompleto.
 
 ## Paso 2 — OCR / markdown / anonimización (ENTREGADO 2026-06-10)
 
+> **[SUPERSEDIDO POR → `docs/superpowers/specs/2026-07-10-intake-crm-a-llm-design.md`]**
+> (2026-07-10). Este Paso 2 cablea el pipeline VIEJO (`pipeline.run` → `raw_text/` +
+> `06_Anonimizado/`). Tras la entrega de las **salas** (`organizar-sala-maquina` /
+> `organizar-sala-lectura`, jul-2026) el camino de procesado del CRM se reconsidera en
+> el nuevo doc (§4, brainstorming del motor). El texto de abajo se conserva como
+> registro del estado a 2026-06-10.
+
 > **Estado: ENTREGADO.** Cableado del pipeline existente (sin lógica de negocio
 > nueva). `intake-judicial --run-pipeline` ahora llama a
 > `pipeline.run(case, do_sync=False, do_demanda=False, do_anonimizar=anonimizar,
