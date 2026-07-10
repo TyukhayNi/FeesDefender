@@ -52,7 +52,7 @@ puro + orquestadores finos. Spec: `docs/superpowers/specs/2026-07-09-abrir-caso-
   no-relación → 404, autos, procedimiento, partes M2M). Frente propio con disparador de caso judicial real.
 - Relacionado: `docs/MEJORAS_FUTURAS.md` **#50** (sección "Relación con el ecosistema" en todas las skills).
 
-## [SIGUIENTE-GOOGLE-MCP] F1 (lectura cross-cuenta) — CÓDIGO COMPLETO + validado en vivo; falta merge del PR
+## [SIGUIENTE-GOOGLE-MCP] F1 (lectura) ✅ MERGEADA · F2 (escritura+permisos+navegación) ✅ MERGEADA · F3/F4 pendientes
 
 *Disparador: encargo de Nikolai (`ENCARGO_MCP_Google_despacho.md`, fuera del repo). MCP propio
 `google-despacho` (Drive + Calendar, multicuenta EV+TL) que suple la mono-cuenta del Drive nativo.*
@@ -72,9 +72,10 @@ puro + orquestadores finos. Spec: `docs/superpowers/specs/2026-07-09-abrir-caso-
 - [x] **F1 VALIDADA EN VIVO (2026-07-09):** ambas cuentas conectadas (`~/.google-despacho/tokens/`); humo real =
   105 unidades compartidas EV / 10 TL (incl. «EXPEDIENTES - TYUKHAY LEGAL»), recientes, `about.get`, descarga
   (`get_media`→bytes+sha256) y confinamiento DL-root. Cableado en `claude_desktop_config.json`.
-- [ ] **Merge del PR** de `feat/google-despacho-mcp` → `main` (pasa `leak-scan`). ← **siguiente**
-- [ ] Verificar `list_accounts` desde Cowork por el puente (tras reiniciar Claude Desktop).
-- Después: **F2** (escritura CRUD + guardarraíl de permisos §5), **F3** (lote + `import_drive_folder`), **F4** (Calendar).
+- [x] **F1 MERGEADA (2026-07-09):** PR #12 (`4056d6b`), rama+worktree podados; cableada en `claude_desktop_config.json` y **confirmada end-to-end desde Cowork** por el puente (`list_shared_drives` = 10 unidades TL + 5 EV cross-drive). Entrega vía `.dxt` (una entrada cruda en el config NO se expone al motor de tools de la nube).
+- [x] **F2 COMPLETA + MERGEADA (2026-07-10):** PR #23 (squash `52a5845`), rama `feat/google-despacho-mcp-f2` podada. Plan `docs/superpowers/plans/2026-07-10-google-despacho-mcp-f2.md`; spec §13. **19 tools** (13 escritura + 3 permisos con guardarraíl `allow_external` + 3 navegación); scope OAuth `drive.readonly`→`drive`; UPLOAD-root simétrico al DL-root; `sha256` sobre bytes enviados. Subagent-driven; **la revisión adversarial del guardarraíl cazó 3 huecos fail-open** (perm_type/role sin normalizar + escalada de permiso externo en `update`) → fail-closed + tests de regresión. **Suite 1685 verde.**
+  - [ ] **Operativo tras merge:** reautorizar TL + EV una vez (`python plugins/google_despacho_mcp/google_cli.py add`; scope subió a `drive`) + check de integración manual (§13.6) contra carpeta desechable de Drive.
+- Después: **F3** (lote + `import_drive_folder` intake forense EV→TL + resolución `W-code`), **F4** (Calendar). Retomar por `writing-plans` cuando toque.
 
 ### ✅ [SIGUIENTE-CONTROLES-ANTIFUGA] COMPLETA 2026-07-07 — controles de `SEGURIDAD_DATOS.md` implementados
 *2026-07-07. Disparador concreto: el incidente de fugas de la Fase 2 (HAR + PII en el historial → una sesión entera de rewrite). La doctrina ya está escrita y cableada (`docs/SEGURIDAD_DATOS.md`, hogar canónico; cableado en el mapa SSOT, INDICE, GOBERNANZA §4 y CLAUDE.md). Todos los controles corren solos: barrera local (`51ecf24`), CI + shape-detection (#1 `48c790f`, #3 `e1ff182`) y prevención server-side ACTIVA (`a79ba90`).*
