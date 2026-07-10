@@ -127,43 +127,107 @@ desfasado). **A decidir con Nikolai.**
 
 ## 5. Brainstorming B — consumo LLM por niveles (economía de tokens)
 
-**Idea (Nikolai):** que el LLM lea primero el **texto ligero** y solo escale a fuentes
-más caras cuando haga falta, para gastar menos tokens.
+> **Estado de esta sección (2026-07-10):** el catálogo de ejes de abajo se **baraja como
+> prioritario, pero NO está adoptado**. Queda como decisión abierta (§6). Se conserva la
+> explicación del flujo y la estimación de tiempo para poder decidir con datos.
 
-**Jerarquía propuesta:**
+### 5.0 Estado del flujo de viabilidad hoy: los dos mundos
+
+El pre-relleno del informe de viabilidad convive en dos mundos que casi no se tocan;
+entender esto es la base para decidir los ejes.
+
+- **Mundo 1 — flujo vivo: skill `viabilidad-prerelleno` (Claude-en-sesión).** El "LLM"
+  es Claude leyendo, no un programa. Lee **todo `00_Input/`** (crudo, **no anonimizado**;
+  nunca `06_Entrevistas` en 1.ª pasada ni `90_Notas personales`), sin recuperación ni
+  scoring en código. Rellena la hoja `PREGUNTAS` (**88 preguntas** = 58 documentales / 30
+  testificales), deriva los **14 hitos** y vuelca banderas a `AVISOS LLM`; genera un XLSX
+  paralelo con `scripts/render_informe.py` (nunca sobrescribe el humano). Anclaje
+  `[doc: fichero] "cita" + confianza`; regla de oro **nunca inventar** → sin documento,
+  `pendiente`. RGPD: en claro bajo la excepción §2 (sin API externa).
+  (`SKILL.md:24,42,66`.)
+- **Mundo 2 — motor de código latente: `pipeline → scorer → viability`.** Existe en
+  `core/` pero **la skill NO lo invoca**. `core/scorer.py` puntúa por keywords ponderadas
+  (`honorarios`=5.0, `intermediación`=4.0…) → `documentos_top.md` (top-K);
+  `core/viability.py` concatena esos top-K **hasta 18.000 chars** (`_MAX_CONTEXT_CHARS`),
+  llama a Ollama local (llama3) y escribe `03_Decision/viabilidad.md` (+ `hechos_atomicos`,
+  `contradicciones`, `prueba_indexada`). Lee el **MD viejo** `01_Procesado/MD/`
+  (`markdown_generator`), **no** el de la sala de máquina.
+- **La paradoja:** la palanca de ahorro (scoring + top-K + presupuesto de contexto) **ya
+  está inventada**, pero vive en el motor que nadie usa y sobre el MD equivocado; el flujo
+  real lee todo el crudo sin filtrar.
+
+### 5.1 Jerarquía de fuentes por niveles (idea de Nikolai)
+
+Que el LLM lea primero el **texto ligero** y solo escale a fuentes más caras si hace falta:
 
 - **Nivel 1 — fuente principal:** espejos MD
-  `01_Procesado/02_Sala de máquina/03_MD/{slug__sha8}.md`. Texto plano barato; el
-  frontmatter ya trae `ocr_quality`, `text_sha256`, `source_path` (anclaje).
-- **Nivel 2 — soporte:** OCR PDF `.../01_OCR/{slug__sha8}.pdf` (cuando el MD no basta:
-  tablas, layout, columnas).
-- **Nivel 3 — soporte:** crudo `00_Input/05_CRM/...` (imágenes, firmas, inspección
-  visual, documento nativo).
+  `01_Procesado/02_Sala de máquina/03_MD/{slug__sha8}.md`. Texto plano barato; frontmatter
+  con `ocr_quality`, `text_sha256`, `source_path`.
+- **Nivel 2 — soporte:** OCR PDF `.../01_OCR/{slug__sha8}.pdf` (tablas, layout, columnas).
+- **Nivel 3 — soporte:** crudo `00_Input/...` (imágenes, firmas, inspección visual).
 
-**Señal de escalado (ya existe, no hay que inventarla):** el campo `ocr_quality` del
-frontmatter y `_revisar/_cobertura.md`. Regla: `ok` → usar N1; `low`/`empty` → subir a
-N2 y, si sigue insuficiente, a N3. **Idea de diseño a validar:** que
-`indice_documental.yaml` liste por documento su `ocr_quality` + punteros a los tres
-niveles → un **manifiesto único** que el LLM consulta para decidir qué abrir sin
-tantear.
+**Señal de escalado (ya existe):** `ocr_quality` del frontmatter + `_revisar/_cobertura.md`
+→ `ok` usa N1; `low`/`empty` sube a N2 y, si insuficiente, N3. Idea a validar: que
+`indice_documental.yaml` liste por doc su `ocr_quality` + punteros a los tres niveles.
 
-**Interacción RGPD (crítica):** los tres niveles están **en claro**. Válido para LLM
-**local** (`core/llm.py`, Ollama). Para **cloud/frontier**, el nivel equivalente debe
-ser el **anonimizado** (`06_Anonimizado/`) — la jerarquía se replica sobre el árbol
-anon, no sobre el crudo.
+**RGPD:** los tres niveles están **en claro** → válido para LLM **local** / Claude-en-sesión
+(§2). Para **cloud/frontier** la jerarquía se replica sobre `06_Anonimizado/`.
 
-**Efecto en `viabilidad-prerelleno`:** hoy lee el crudo de `00_Input/`. La propuesta la
-haría leer el **MD (N1)** como fuente principal. *Implica:* (1) nueva **dependencia de
-orden** — la sala de máquina debe haber corrido antes; (2) el anclaje `[doc: fichero]
-"cita"` se apoya en `source_path` del frontmatter; (3) ahorro de tokens grande a
-escala (p. ej. cientos de docs por caso). *A decidir:* ¿se cambia la fuente primaria de
-la skill, o se ofrece como modo opt-in?
+### 5.2 Catálogo de ejes (candidatos) y matriz
+
+| # | Eje | Tokens | Velocidad | Robustez (anclaje) | Coste | Reusa |
+|---|---|---|---|---|---|---|
+| **E1** | Leer MD (sala de máquina) en vez de crudo | ↑↑ | ↑ | ↔ (MD derivado; gate `ocr_quality`) | Bajo | `03_MD/` + frontmatter |
+| **E2** | Jerarquía niveles MD→OCR→crudo, escalado por `ocr_quality`/`_cobertura.md` | ↑↑ | ↑ | ↑ (escala a fuente fiel donde el MD flojea) | Bajo | E1 + `01_OCR/` |
+| **E3** | Recuperación selectiva por catálogo (`tipo_documental`/`fecha`/`parte`/categoría E&V) | ↑↑ | ↑↑ | ↔ (riesgo de omisión → barrido de residuo) | Medio (requiere sala de lectura) | `indice_documental.yaml` |
+| **E4** | Ficha de hechos en **una pasada** → JSON anclado (cita+fuente); responder 88 preguntas / 14 hitos desde el JSON | ↑↑ | ↑ | ↑ (si preserva cita verbatim) | Medio | dirección `hechos_atomicos` |
+| **E5** | RAG local con embeddings (Ollama `/api/embeddings` + store + chunking) | ↑↑↑ | ↑ | ↔/↓ (chunks pierden contexto) | **Alto** (todo nuevo) | patrón `llm_local.py`, coseno de `_few_shot` |
+| **E6** | Caching programático (`keep_alive`, caché por `text_sha256`) | ↑ | ↑ | — | Bajo | solo pipeline programático |
+| **E7** | Incremental por sha256 (no reprocesar sin cambios) | ↑ | ↑ | — | Bajo | sala de máquina ya idempotente |
+
+**Invariante de anclaje (gobierna el objetivo de robustez):** el MD sostiene la cita a
+nivel de **fichero** (verbatim + `source_path`), pero **no** el pinpoint a página/cláusula
+que exige `verificacion-anclada-fuente` (Regla 4) — el ancla de página vive solo en el PDF
+OCR (`01_OCR/`). Por eso toda extracción debe **preservar la cita verbatim**: es el puente
+para re-anclar al PDF OCR. Resumir/parafrasear para ahorrar tokens **rompe** el anclaje.
+
+**Recomendación (no adoptada):** trío **E2 + E3 + E4** — cubre los tres objetivos
+reutilizando lo existente y preservando el anclaje verbatim. **E5 (RAG) diferido** (coste
+alto, riesgo de anclaje; E3 ya da recuperación dirigida barata para 88 preguntas). E6/E7
+solo si se construye el camino programático `core/viabilidad/*` (hoy fuera de alcance).
+**Dependencia de orden:** E1/E2 exigen sala de máquina antes; E3 exige sala de lectura
+antes → atan con la decisión de motor (§4).
+
+### 5.3 Estimación de tiempo (orden de magnitud)
+
+Cuello de botella real: (1) que el corpus **quepa en contexto** (1 pasada, desatendido) o
+lo **desborde** (troceo + compactación + supervisión); (2) **OCR en sesión** de escaneados.
+Supuestos: página escaneada ≈ 1.500–2.500 tok; página MD ≈ 400–500 tok (~3× más ligera,
+sin OCR en sesión); E3 lee ~20–35 % de los docs; E4 lee una vez → JSON → 88 preguntas.
+
+| Caso | Crudo hoy (Mundo 1) | Con E2+E3+E4 | Ahorro |
+|---|---|---|---|
+| Pequeño ~40 docs / 200 pp | ~15–30 min, cabe a duras penas | ~4–8 min | ~3–4× |
+| Medio ~150 docs / 800 pp | ~45–90 min, **con babysitting** (desborda contexto) | ~8–15 min, **desatendido** | ~5–7× |
+| Grande ~600 docs / 3.000 pp (orden W-02VND1) | horas / inviable de una vez | ~15–30 min | ~6–10× |
+
+**Coste único adelantado (desatendido, no es tiempo de abogado):** sala de máquina (OCR
+~10–25 min/800 pp, incremental) + sala de lectura (clasificación). Se **amortiza** en las
+88 preguntas, la 2.ª pasada de entrevista y los escritos posteriores. Son órdenes de
+magnitud con supuestos explícitos, no benchmarks; medir en W-02VND1 calibraría.
+
+**Para el abogado, la ganancia mayor no son los segundos de máquina, son tres saltos
+cualitativos:** (a) el prerelleno **cabe en contexto → fiable y desatendido** (sin
+babysitting); (b) revisa un XLSX **dirigido y ya anclado a fuente**, no un volcado; (c) el
+OCR/clasificación previos dejan montada la sala de lectura que se necesitaba igualmente.
 
 ## 6. Decisiones abiertas / siguientes pasos
 
 1. **Motor (§4):** elegir A1 / A2 / A3. *Recomendación de arranque: A2.*
-2. **Consumo LLM (§5):** ¿`viabilidad-prerelleno` migra a leer N1 (MD) como fuente
-   principal? ¿Se materializa el manifiesto de niveles en `indice_documental.yaml`?
+2. **Ejes de consumo LLM (§5):** el trío **E2+E3+E4 se baraja como prioritario pero NO
+   está adoptado** (E5 diferido). Decidir adopción y si `viabilidad-prerelleno` cambia su
+   fuente primaria a MD (N1) o se ofrece como modo opt-in; y si se materializa el
+   manifiesto de niveles en `indice_documental.yaml`.
 3. **Higiene de cola:** cerrar formalmente `[SIGUIENTE-INTAKE-CRM-COMPLETO]` en
    `PLAN.md` (su Paso 1 está hecho en código) y enlazar este documento.
 4. Cuando §4 y §5 estén cerrados, promover a un plan de implementación en

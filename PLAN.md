@@ -742,10 +742,14 @@ procesado y decidir la estrategia de consumo LLM por niveles.
 1. **Motor (§4 del doc):** A1 salas-only / A2 híbrido (salas + anon del pipeline viejo)
    / A3 solo documentar. *Recomendación de arranque: A2.* Deprecar el
    `intake-judicial --run-pipeline` viejo depende de esto.
-2. **Consumo LLM (§5):** ¿`viabilidad-prerelleno` pasa a leer los espejos MD de la
-   sala de máquina (Nivel 1) como fuente principal, con OCR (N2) y crudo (N3) de
-   soporte, escalando por `ocr_quality`/`_cobertura.md`? ¿Manifiesto de niveles en
-   `indice_documental.yaml`? RGPD: en claro solo para LLM local; cloud → `06_Anonimizado`.
+2. **Ejes de consumo LLM (§5):** catálogo E1–E7 documentado con matriz y estimación de
+   tiempo (crudo ~45–90 min con babysitting vs ~8–15 min desatendido en caso medio). El
+   trío **E2 (niveles MD→OCR→crudo) + E3 (recuperación selectiva por catálogo) + E4
+   (ficha de hechos en una pasada, JSON anclado) se BARAJA como prioritario, pero NO está
+   adoptado**; E5 (RAG local) diferido. Pendiente: adopción, y si `viabilidad-prerelleno`
+   cambia su fuente primaria a MD (N1) o se ofrece opt-in. Invariante innegociable:
+   preservar la cita verbatim (anclaje re-localizable en el PDF OCR). RGPD: en claro solo
+   para LLM local/Claude-en-sesión; cloud → `06_Anonimizado`.
 3. Cerrar formalmente el Paso 1 de `[SIGUIENTE-INTAKE-CRM-COMPLETO]` (hecho en código).
 
 **Al cerrar §4 y §5:** promover a un plan de implementación en `docs/superpowers/plans/`.
