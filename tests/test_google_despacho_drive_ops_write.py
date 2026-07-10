@@ -93,3 +93,40 @@ def test_ensure_folder_path_todo_existe_no_crea():
     assert out["id"] == "B1"
     creates = [c for c in svc.recorded("files") if c[0] == "create"]
     assert creates == []
+
+
+def test_update_file_content_texto():
+    svc = FakeService(files={"update": {"id": "f1", "name": "log.jsonl",
+                                        "mimeType": "text/plain"}})
+    out = drive_ops.update_file_content(svc, "f1", text="nuevo\n")
+    assert out["id"] == "f1"
+    assert out["sha256"] == hashlib.sha256(b"nuevo\n").hexdigest()
+    _, kw = svc.recorded("files")[0]
+    assert kw["fileId"] == "f1"
+    assert "media_body" in kw
+    assert kw["supportsAllDrives"] is True
+
+
+def test_update_file_content_desde_ruta(tmp_path):
+    src = tmp_path / "x.pdf"
+    src.write_bytes(b"PDF")
+    svc = FakeService(files={"update": {"id": "f2", "name": "x.pdf"}})
+    out = drive_ops.update_file_content(svc, "f2", local_path=str(src))
+    assert out["sha256"] == hashlib.sha256(b"PDF").hexdigest()
+
+
+def test_update_file_content_exige_exactamente_uno():
+    svc = FakeService(files={"update": {}})
+    with pytest.raises(ValueError):
+        drive_ops.update_file_content(svc, "f1")  # ni text ni local_path
+    with pytest.raises(ValueError):
+        drive_ops.update_file_content(svc, "f1", text="a", local_path="/x")
+
+
+def test_update_file_metadata_renombra():
+    svc = FakeService(files={"update": {"id": "f1", "name": "nuevo.pdf"}})
+    out = drive_ops.update_file_metadata(svc, "f1", name="nuevo.pdf")
+    assert out["name"] == "nuevo.pdf"
+    _, kw = svc.recorded("files")[0]
+    assert kw["body"] == {"name": "nuevo.pdf"}
+    assert kw["fileId"] == "f1"

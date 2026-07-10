@@ -205,6 +205,22 @@ def build_server(
         no duplica carpetas existentes (Drive permite duplicados; esto lo evita)."""
         return drive_ops.ensure_folder_path(service_factory(account), path=path, parent_id=parent_id)
 
+    @mcp.tool()
+    def update_file_content(file_id: str, account: str,
+                            text: Optional[str] = None,
+                            local_path: Optional[str] = None) -> dict:
+        """Reemplaza el contenido de un fichero (mismo id). Pasa `text` (contenido
+        del modelo) O `local_path` (ruta local confinada por UPLOAD-root), no ambos.
+        Devuelve id, nombre, sha256 y web_view_link."""
+        src = _resolve_upload(local_path) if local_path else None
+        return drive_ops.update_file_content(
+            service_factory(account), file_id, text=text, local_path=src)
+
+    @mcp.tool()
+    def update_file_metadata(file_id: str, name: str, account: str) -> dict:
+        """Renombra un fichero. Devuelve id, nombre y web_view_link."""
+        return drive_ops.update_file_metadata(service_factory(account), file_id, name=name)
+
     return mcp
 
 

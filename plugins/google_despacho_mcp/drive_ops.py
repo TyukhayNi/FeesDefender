@@ -303,3 +303,40 @@ def ensure_folder_path(service, *, path: str, parent_id: str) -> dict:
             last = create_folder(service, name=segment, parent_id=current)
         current = last["id"]
     return last
+
+
+def update_file_content(service, file_id: str, *, text: str | None = None,
+                        local_path: str | None = None,
+                        mime_type: str | None = None,
+                        max_text_bytes: int = 1_000_000) -> dict:
+    """Reemplaza el contenido de un fichero existente (mismo file_id). Exactamente
+    uno de `text` / `local_path`. sha256 sobre los bytes enviados."""
+    if (text is None) == (local_path is None):
+        raise ValueError("Pasa exactamente uno de text o local_path.")
+    if text is not None:
+        data = text.encode("utf-8")
+        if max_text_bytes and len(data) > max_text_bytes:
+            raise ValueError(f"{len(data)} bytes supera max_text_bytes ({max_text_bytes}).")
+        media = _media_from_bytes(data, mime_type or "text/plain")
+    else:
+        data = Path(local_path).read_bytes()
+        mtype = mime_type or (mimetypes.guess_type(local_path)[0] or "application/octet-stream")
+        media = _media_from_path(local_path, mtype)
+    updated = service.files().update(
+        fileId=file_id, media_body=media,
+        fields="id, name, mimeType, webViewLink", supportsAllDrives=True,
+    ).execute()
+    return {"id": updated.get("id"), "name": updated.get("name"),
+            "mime_type": updated.get("mimeType"),
+            "web_view_link": updated.get("webViewLink"),
+            "sha256": hashlib.sha256(data).hexdigest()}
+
+
+def update_file_metadata(service, file_id: str, *, name: str) -> dict:
+    """Renombra un fichero (u otros metadatos editables en el futuro)."""
+    updated = service.files().update(
+        fileId=file_id, body={"name": name},
+        fields="id, name, webViewLink", supportsAllDrives=True,
+    ).execute()
+    return {"id": updated.get("id"), "name": updated.get("name"),
+            "web_view_link": updated.get("webViewLink")}
