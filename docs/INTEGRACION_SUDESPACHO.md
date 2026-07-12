@@ -2,7 +2,8 @@
 
 > Conocimiento empírico acumulado sobre la API de sudespacho.net.  
 > Todo lo aquí documentado ha sido verificado contra el tenant `tnm.sudespacho.net`  
-> (commons-pro). Última actualización: 2026-05-06.
+> (commons-pro). Última actualización: 2026-07-12 (§14: enums por API, gramática `filterGroup`, 3ª
+> variante `tipo_operaciones_iva`).
 
 ---
 
@@ -1070,7 +1071,9 @@ El Manual establece `RIESGO_POSIBLE` como el default para todos los asuntos defe
 > — la redacta Cowork y la comparten El Contable, El Auditor y FeesDefender. Esta sección **fusiona** sus
 > §1 (Auth), §2 (API de elementos), §3 (Permisos) y §5 (Enums/trampas) en este documento **sin duplicar**
 > lo ya cubierto arriba: para auth y endpoints se cross-referencian las secciones existentes; **permisos y
-> enums son contenido nuevo**. Verificado en navegador 2026-06-01/02 (F0) y 2026-06-08 (facturación).
+> enums son contenido nuevo**. Verificado en navegador 2026-06-01/02 (F0), 2026-06-08 (facturación) y
+> 2026-07-12 (descubrimiento de enums por API + corrección gramática `filterGroup` + 3ª variante de
+> `tipo_operaciones_iva`).
 
 ### 14.1 Auth y hosts — *delta* sobre §2
 
@@ -1103,6 +1106,15 @@ sudespacho expone casi todo como "elementos" con un patrón uniforme. FeesDefend
   `filterGroups[i][filterGroups][j][filters][k]` con `[operator] [property] [value]`
   (valores `in`/`between` usan `[value][0]`, `[value][1]`). Operadores: `in`, `not-in`, `equal`,
   `between`, `is-empty`, `is-not-empty`, `associated`.
+  - **⚠️ Corrección verificada 2026-07-12 (`associated`): la forma que acepta el API tiene 2 niveles,
+    no 3.** El front real usa `filterGroup[filterGroups][0][filters][0][...]` (los `filters` cuelgan
+    directamente del primer `filterGroups`, sin el `filterGroups[j]` intermedio de la gramática
+    genérica de arriba). Con la forma de 3 niveles el API responde «Filter group condition is
+    required». **El cliente REST de este repo ya construye la forma correcta de 2 niveles** en todas
+    sus consultas (`core/sync_sudespacho.py` `associated`, `core/sudespacho_relations.py`,
+    `core/procurador_search.py`, `core/sudespacho_create.py`), y los ejemplos de §3.1/§5.1 también son
+    2 niveles — **no hay bug latente en el código actual**. La trampa solo mordería a código nuevo que
+    copie literalmente la gramática de 3 niveles.
 - **Forma de respuesta (listado):**
   `{ totalItems, currentPage, itemsPerPage, items:[ { id, isPrimary, values:[ {property:{name}, value, label?} ] } ] }`.
 - **Relación many-to-many:** desde A, el relacionado es `right.<B>` (o `left.<B>`); se filtra con
@@ -1149,12 +1161,24 @@ sudespacho expone casi todo como "elementos" con un patrón uniforme. FeesDefend
 
 ### 14.4 Enums y trampas — **(nuevo en FeesDefender)**
 
+- **Descubrir enums por API (verificado 2026-07-12):** `GET /api/view/enums/{elemento}/{propiedad}` →
+  `{enums:[{id,label}]}`. Ejemplo: `/api/view/enums/facturas_recibidas/tipo_operaciones_iva`. Evita
+  hardcodear listas de valores: se pueden validar/refrescar contra el CRM en tiempo de ejecución. (Uso
+  potencial en el cliente REST anotado en `docs/MEJORAS_FUTURAS.md` #52 — sin disparador todavía.)
 - `conceptos_honorario_motivo_exencion`: `NULL`="No exenta IVA", `E1..E6`=exenciones
   (art. 20/21/22/24/25/otra). Honorario abogacía → vacío/NULL.
 - Otros enums: `conceptos_iva_propio`, `conceptos_irpf_propio`, `facturas_serie_factura`,
   `facturas_estado_cobro`.
-- **⚠️ Colisión `E1`:** en `invoices.tipo_operaciones_iva`, `E1`="Operaciones interiores **SUJETAS** a
-  IVA"; en `conceptos_honorario_motivo_exencion`, `E1`="**EXENTA** art. 20". **Mismo código, sentido
-  opuesto. No confundir.**
+- **⚠️ Colisión `tipo_operaciones_iva` — hay TRES listas distintas bajo el mismo nombre de campo:**
+  1. `invoices.tipo_operaciones_iva` (facturas **emitidas**): `E*` — p. ej. `E1`="Operaciones
+     interiores **SUJETAS** a IVA".
+  2. `conceptos_honorario_motivo_exencion`: `E*` — pero `E1`="**EXENTA** art. 20". **Mismo código `E1`,
+     sentido OPUESTO al de emitidas. No confundir.**
+  3. `facturas_recibidas.tipo_operaciones_iva` (facturas **recibidas**, verificado 2026-07-12): lista
+     PROPIA `tipo_operaciones_iva_recibidas` con códigos `R*` (deducibilidad): `R1`=interiores IVA
+     deducible · `R1BI`=ídem bienes de inversión · `R2`=compensaciones agrarias · `R3`=adq.
+     intracomunitaria de bienes · `R4`=inversión del sujeto pasivo · `R6`=importaciones · `R7`=IVA no
+     deducible · `R8`=adq. intracomunitaria de servicios. (Contenido específico de El Contable; aquí
+     como aviso de la trampa. Detalle en §4d de la referencia canónica.)
 - **Formatos:** `duracion` en **segundos**; importes string con punto decimal; fechas `YYYY-MM-DD`
   (algunas datetime `YYYY-MM-DD HH:MM:SS`).

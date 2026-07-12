@@ -137,6 +137,34 @@ Una vez capturado el endpoint, borra el expediente de prueba desde sudespacho:
 
 ---
 
+## Atajo: inventariar campos sin capturar un guardado (`data-testid`)
+
+> Verificado 2026-07-12 (descubrimiento de la referencia común sudespacho).
+
+Para **inventariar los campos de un formulario y su mapeo campo→nombre de propiedad API** no siempre
+hace falta capturar un POST de guardado. El DOM del front de sudespacho expone ese mapeo directamente:
+
+- Cada campo del formulario está envuelto en un contenedor con
+  `data-testid="form_field_<Label visible>"` (p. ej. `form_field_Fecha de expedición`).
+- El `<input>`/`<select>`/`<textarea>` de dentro lleva el atributo **`name`** con el **nombre real de
+  la propiedad API** (p. ej. `name="fecha_contabilizado"`).
+
+Recorriendo el DOM con la consola de DevTools se obtiene la tabla Label→propiedad de golpe, sin pulsar
+Guardar (útil cuando no se quiere crear un registro de prueba, o para descubrir nombres engañosos como
+«Fecha de expedición» → `fecha_contabilizado`). Ejemplo de volcado read-only:
+
+```javascript
+[...document.querySelectorAll('[data-testid^="form_field_"]')].map(c => ({
+  label: c.getAttribute('data-testid').replace(/^form_field_/, ''),
+  prop:  c.querySelector('input,select,textarea')?.getAttribute('name') ?? null,
+}))
+```
+
+Sigue haciendo falta la captura del POST/PUT para (a) el shape exacto del body, (b) los headers/auth y
+(c) la respuesta con el `id`; el `data-testid` solo cubre el **inventario de campos**.
+
+---
+
 ## Qué hacer si la request no aparece en Fetch/XHR
 
 Si el formulario usa un submit HTML clásico (no AJAX), la petición aparecerá en **All** (todos) en lugar de **Fetch/XHR**. En ese caso:
