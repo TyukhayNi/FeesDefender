@@ -2076,3 +2076,29 @@ Doc nativo fake y asertar `mime_type == "application/pdf"` (y `.docx` con `keep_
 
 **Disparador de promoción.** Que cualquier consumidor nuevo (reapertura de F3, o un flujo que
 descargue Docs nativos y ramifique por `mime_type`) lo necesite. Hasta entonces, backlog.
+
+---
+
+## 52. Validar/refrescar enums hardcodeados del CRM contra `/api/view/enums/{el}/{prop}`
+
+**Anotado 2026-07-12** desde el handoff de El Contable (descubrimiento del endpoint de enums).
+Referencia: `docs/INTEGRACION_SUDESPACHO.md` §14.4.
+
+**Contexto.** sudespacho expone el descubrimiento de valores de enum por API:
+`GET /api/view/enums/{elemento}/{propiedad}` → `{enums:[{id,label}]}` (verificado 2026-07-12, p. ej.
+`/api/view/enums/facturas_recibidas/tipo_operaciones_iva`). Hoy el cliente REST del repo lleva varios
+enums **hardcodeados** — códigos de posición procesal (`POSICION_*`), IDs de tags, y en el ecosistema
+contable listas como `facturas_estado_cobro` / `forma_pago` / `tipo_operaciones_iva`.
+
+**Mejora.** Sustituir/validar esos enums contra el endpoint al arrancar (con caché por proceso), en
+lugar de fiarlo a constantes que se desincronizan si el CRM cambia. Detecta drift (código nuevo,
+label renombrado) sin re-capturar HAR.
+
+**Justificación de no aplicarlo ahora.** Los enums hardcodeados que usa FeesDefender (posición
+procesal, tags) son estables y no han dado problemas; el valor del refresco dinámico es sobre todo
+para la rama contable (El Contable), que vive en otro repo. Regla del repo: promover solo con
+**disparador concreto** (un caso real que falle por enum desincronizado, o decisión de Nikolai). Hasta
+entonces, backlog.
+
+**Disparador de promoción.** Un fallo real por enum obsoleto en algún flujo del CRM de FeesDefender, o
+que se decida unificar el cliente REST con el de El Contable.
