@@ -83,10 +83,15 @@ override por `SUDESPACHO_DESPACHO_HOME`. Tests en `tests/`.
 (clave estática, **no caduca**; env `SUDESPACHO_API_KEY`). Sirve lectura y escritura.
 Confirmado en `core` (migrado de Bearer JWT a `x-api-key` el 2026-05-06).
 
-**Modelo A — clave por usuario, con su rol:**
-- Cada compañero entra en el CRM con **su** usuario (rol abogado) y genera **su propia
-  clave** en *tnm.sudespacho.net → Ajustes → API*. La clave **hereda su rol**: lo que su
-  rol no ve en el CRM, la clave tampoco.
+**Modelo A — credencial por cuenta de usuario, admin-provisionada:**
+- **Un usuario CRM por compañero** (rol abogado). **La credencial API la provisiona el admin
+  (Nikolai)** — los usuarios no-admin probablemente **no** pueden autogenerarla (a confirmar,
+  gate). Da igual quién pulsa "generar"; lo que cuenta es que la credencial **cuelga de la
+  cuenta del compañero**, así que **hereda su rol Y atribuye los eventos a ese usuario**.
+  Precedente: en El Contable, Nikolai (admin) creó los usuarios API y provisionó sus
+  credenciales (no fue autoservicio).
+- **Prerrequisito de despliegue:** cada compañero debe tener **cuenta propia en el CRM** (rol
+  abogado, sin `Read` en la contabilidad). Si no la tiene, crearla es parte del alta.
 - El **CRM hace de portero server-side** (presets por rol de
   `REFERENCIA_SUDESPACHO_API_PERMISOS.md`). La lista blanca del plugin (§5) es **segunda
   barrera** (defensa en profundidad), no la única.
@@ -111,8 +116,10 @@ ese usuario** (`created_by`/`modified_by`) y Nikolai pueda seguir quién hizo qu
 
 **Verificación previa (gate — dos comprobaciones):** el modelo es per-usuario y la clave se
 genera en su cuenta, luego casi con seguridad hereda su matriz Y su identidad. Como El
-Contable autentica con **Bearer JWT** (no con `x-api-key`), faltan por probar dos eslabones,
+Contable autentica con **Bearer JWT** (no con `x-api-key`), faltan por probar tres eslabones,
 con **un HAR usando la `x-api-key` de un usuario de rol abogado**:
+0. **Provisión:** que el **admin pueda emitir una `x-api-key` atada a una cuenta NO-admin**
+   (los usuarios no-admin quizá no puedan autogenerarla). Si no se puede → fallback JWT (abajo).
 1. **Rol:** recibe **403/lista vacía** en un elemento financiero.
 2. **Atribución:** al crear un registro `TEST - BORRAR`, el CRM lo registra con **ese
    usuario** como autor (no un "API user" genérico). Nikolai borra el registro de prueba
