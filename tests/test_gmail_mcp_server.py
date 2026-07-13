@@ -60,3 +60,22 @@ def test_search_messages_taggea_cada_cuenta():
 def test_resolve_accounts_sin_cuentas_da_error():
     with pytest.raises(RuntimeError):
         srv._resolve_accounts(None, lambda: [])
+
+
+# ------------------------------- list_labels -------------------------------
+
+def test_list_labels_devuelve_id_y_nombre_ordenado():
+    labels = {"list": {"labels": [
+        {"id": "Label_9", "name": "W-02XOR7", "type": "user"},
+        {"id": "INBOX", "name": "INBOX", "type": "system"},
+        {"id": "Label_1", "name": "Arras", "type": "user"},
+    ]}}
+    svc = FakeGmailService(labels=labels)
+    mcp = srv.build_server(service_factory=lambda e: svc,
+                           account_lister=lambda: ["a@tyukhay.legal"])
+    out = _tool(mcp, "list_labels")(account="a@tyukhay.legal")
+    assert out == {"a@tyukhay.legal": [
+        {"id": "Label_1", "name": "Arras"},
+        {"id": "INBOX", "name": "INBOX"},
+        {"id": "Label_9", "name": "W-02XOR7"},
+    ]}

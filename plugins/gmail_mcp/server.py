@@ -220,12 +220,18 @@ def build_server(
 
     @mcp.tool()
     def list_labels(account: Optional[str] = None) -> dict:
-        """Lista las etiquetas de una cuenta, o de todas si se omite `account`."""
-        out: dict[str, list[str]] = {}
+        """Lista las etiquetas de una cuenta (o de todas si se omite `account`).
+        Devuelve, por cuenta, una lista de {id, name} ordenada por nombre. El id es
+        necesario para apply_label/remove_label."""
+        out: dict[str, list[dict]] = {}
         for acc in _resolve_accounts(account, account_lister):
             service = service_factory(acc)
             resp = service.users().labels().list(userId="me").execute()
-            out[acc] = sorted(l.get("name", "") for l in resp.get("labels", []))
+            out[acc] = sorted(
+                ({"id": l.get("id"), "name": l.get("name", "")}
+                 for l in resp.get("labels", [])),
+                key=lambda d: d["name"],
+            )
         return out
 
     @mcp.tool()
