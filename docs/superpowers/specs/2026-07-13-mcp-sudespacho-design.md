@@ -149,6 +149,26 @@ no la cubre (p. ej. detalle completo de expediente por el bug 500, §4/§6). Not
 personal y su JWT/refresh son de la misma familia que este frontal — el gate aclara qué
 piezas hacen falta para el REST.
 
+### 3.1 Sesión y reconexión (UX de credenciales — objetivo: cero fricción)
+
+- **Alta (una vez):** el compañero conecta su cuenta con el comando de login del plugin
+  (`sudespacho_cli.py login`, patrón `gmail_cli`/`google_cli add`): introduce su
+  **usuario + contraseña del CRM** en el prompt local (oculto). El plugin obtiene JWT +
+  refresh_token y los guarda en `~/.sudespacho-despacho/`. **La contraseña NO se almacena**
+  (solo los tokens); nunca en chat ni repo. *(El asistente Claude no introduce contraseñas.)*
+- **Uso continuado:** JWT de 60 min; el plugin lo **refresca solo** con el refresh_token.
+  **Sin re-login por uso** (p. ej. leer un expediente 2 h después: transparente).
+- **Reinicio (PC / Claude Desktop apagado y encendido):** los tokens **persisten en disco**;
+  al relanzar, el MCP refresca con el refresh_token guardado. **No re-login** mientras el
+  refresh_token siga vivo. Cerrar Claude Desktop **≠** cerrar sesión en el CRM.
+- **Re-login:** solo al caducar el refresh_token, o tras logout explícito / cambio de
+  contraseña.
+- **🔎 GATE (dato pendiente):** el **refresh_token es OPACO** (128 chars, no-JWT, verificado
+  2026-07-13) → su caducidad y si es *rodante* la sabe solo el servidor. **Medir**
+  (empíricamente o preguntando a sudespacho) la vida del refresh_token: determina cada cuánto
+  re-loguea el usuario. Enlaza con la tensión de licencia: mantener la sesión caliente evita
+  re-login pero puede consumir un slot de los 4; apagar el PC de noche libera el slot.
+
 ## 4. Tools por fase
 
 Todas las de lectura pasan por la **lista blanca** (§5): un `element` fuera del catálogo
