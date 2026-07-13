@@ -1,0 +1,21 @@
+{
+  "manifest_version": "0.3",
+  "name": "gmail-multiaccount",
+  "display_name": "Gmail despacho — multicuenta (lectura + escritura)",
+  "version": "2.0.0",
+  "description": "Lectura + etiquetado de las cuentas de Gmail del despacho (buscar/leer correos e hilos; crear etiqueta de usuario y aplicarla/quitarla a mensaje o hilo). Sin borrado, envío ni archivado. Scope gmail.modify.",
+  "author": {
+    "name": "Tyukhay Legal"
+  },
+  "server": {
+    "type": "python",
+    "entry_point": "server.py",
+    "mcp_config": {
+      "command": "C:\\Users\\tnm33\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
+      "args": ["C:\\Users\\tnm33\\Dev\\FeesDefender\\plugins\\gmail_mcp\\server.py"],
+      "env": {
+        "GMAIL_MCP_HOME": "C:\\Users\\tnm33\\.gmail-mcp"
+      }
+    }
+  }
+}

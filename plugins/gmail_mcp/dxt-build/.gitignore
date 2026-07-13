@@ -1,0 +1,6 @@
+# Artefactos de build del .dxt. La fuente canónica es manifest.json (versionado)
+# + los módulos reales en ../ (server.py, gmail_auth.py). El .dxt y las copias .py
+# se regeneran al empaquetar; no se versionan.
+*.dxt
+server.py
+gmail_auth.py
