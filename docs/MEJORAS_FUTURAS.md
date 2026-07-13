@@ -2182,3 +2182,35 @@ correo tiene escritura) y con #53.
 
 **Disparador de promoción.** Decisión explícita de Nikolai de rediseñar `00_Input`, o que la fricción
 tri-canal / la duplicación cross-fuente vuelva a costar tiempo en otro caso. Hasta entonces, backlog.
+
+---
+
+## 55. Orden del pipeline documental: intake → atomize/explosión → sala de máquina → sala de lectura  [pieza de #54]
+
+**Anotado 2026-07-13** durante el procesado del W-02XOR7. **Orden ideal:** intake →
+**atomize/explosión** (romper compuestos: `.eml` → adjuntos + correos anidados como ficheros;
+`.zip` → contenido) → **sala de máquina** (OCR/MD de las piezas ya atómicas) → **sala de lectura**
+(clasificación humana). Hoy **atomize y máquina no se alimentan** porque viven en árboles distintos.
+
+**Hechos verificados (2026-07-13):**
+- `core.sala_maquina` **solo lee `00_Input/`** (excluye `90_Notas personales`).
+- El extractor `.eml` de la sala de máquina (`core.extractor._try_email`) saca **solo cabeceras +
+  cuerpo**; NO recorre adjuntos (no hay `walk()`/`get_payload` de partes). → un adjunto embebido
+  **solo** en un `.eml` (no suelto en `00_Input`) **nunca se OCR/MD-ea** por esta vía.
+- `core.email_atomize.atomize_dir` escribe por defecto en **`<caso>/01_Procesado/Emails`**, que la
+  sala de máquina **no lee**. → poner atomize "antes" NO mete los átomos en el OCR/MD de forma
+  automática.
+
+**Por qué no es un simple reorden.** Encadenarlos exige plumbing: (a) que la sala de máquina lea
+también `01_Procesado/Emails` (o el árbol de átomos), o (b) que atomize deposite en un bucket que la
+máquina lea dentro de `00_Input` — pero (b) choca con la invariante **«`00_Input` es crudo, no se
+toca»** (`destino_seguro`). Es exactamente el tipo de decisión que abre **#54** (dónde entran las
+cosas / qué árbol lee cada etapa) → **tratar como parte de #54, no como ajuste al vuelo.**
+
+**Mitigantes hoy (por qué no urge).** La sala de máquina ya OCR/MD-ea los adjuntos que están
+**sueltos** en `00_Input` (en W-02XOR7 eran casi todos, por el pull del Drive). Vía alternativa sin
+explotar el `.eml`: `core/adjuntos_contenido` (texto de cada adjunto → `<base>.contenido.md`).
+
+**Disparador de promoción.** Se aborda junto con #54 (rediseño de `00_Input` / orden del pipeline), o
+antes si aparece un caso con adjuntos probatorios **solo** embebidos en `.eml` que se pierdan en el
+OCR/MD. Hasta entonces, backlog. Relacionado: #53, #54 y la doctrina de proceso de correo.
