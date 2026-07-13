@@ -2102,3 +2102,33 @@ entonces, backlog.
 
 **Disparador de promoción.** Un fallo real por enum obsoleto en algún flujo del CRM de FeesDefender, o
 que se decida unificar el cliente REST con el de El Contable.
+
+---
+
+## 53. Fuente `entrevista` en `abrir-caso` (→ `06_Entrevistas`), con formato de notas configurable
+
+**Anotado 2026-07-13** durante el intake real del caso W-02XOR7 (Santes Creus 15). Al depositar la
+**grabación de la call de estudio de viabilidad** (mp4 de Meet) + su doc de notas/transcripción de
+Gemini, no había ruta soportada para llevarlos a `06_Entrevistas`: acabaron en `04_Manual`.
+
+**Gap.** El CLI `scripts/abrir_caso.py` solo expone `_FUENTES_CLI = (drive_ev, manual, whatsapp,
+email)`, y cada fuente escribe en una subcarpeta fija (`brain.FUENTE_A_SUBDIR`): `manual → 04_Manual`.
+`06_Entrevistas` existe en el esqueleto (`CASO_SUBDIRS`) pero **ninguna fuente de intake escribe ahí**.
+La fuente `entrevista` se **excluyó a propósito** en la F3 de abrir-caso (parte judicial aparcada). Hoy,
+para material de entrevista/call con custodia forense (`_intake_log` + SHA-256), el único camino es
+`--fuente manual`, cableado a `04_Manual`; colocarlo a mano en `06_Entrevistas` pierde la custodia.
+
+**Mejora propuesta.** Añadir `--fuente entrevista` a `abrir-caso` (espejo del camino `manual`, con
+destino `06_Entrevistas` vía `FUENTE_A_SUBDIR["entrevista"] = "06_Entrevistas"` + evento de intake
+propio). Acepta carpeta o fichero (grabación + notas + transcripción juntos). **Formato de notas
+configurable** al depositar un Doc nativo de Google: por defecto **texto/Markdown** (vía
+`read_file_content`, mejor para el pipeline LLM / sala de máquina) con opción a `.pdf`/`.docx`
+(`download_file_content` con/sin `keep_editable`); hoy el default de `download_file_content` es PDF y por
+eso las notas salieron en PDF. Considerar sub-roles dentro de `06_Entrevistas` (p. ej. audio/vídeo vs
+notas/transcripción) análogos a los roles de `--fuente whatsapp`.
+
+**Justificación de no aplicarlo ahora.** Un solo caso lo ha necesitado; `04_Manual` no rompe nada (el
+pipeline aguas abajo lee todas las fuentes). Regla del repo: promover solo con **disparador concreto**.
+
+**Disparador de promoción.** Recurrencia de intake de grabaciones/entrevistas de viabilidad (varios
+casos), o la reapertura de la parte de abrir-caso que tenía `entrevista` aparcada.
