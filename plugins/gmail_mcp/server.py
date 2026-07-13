@@ -204,6 +204,26 @@ def _guard_create_name(name: str) -> str:
     return n
 
 
+def _modify_target(service, *, target_id: str, target_type: str,
+                   add: Optional[list[str]] = None,
+                   remove: Optional[list[str]] = None) -> dict:
+    """Aplica addLabelIds/removeLabelIds a un mensaje o hilo. target_type inválido
+    → ValueError (fail-closed)."""
+    body: dict = {}
+    if add:
+        body["addLabelIds"] = add
+    if remove:
+        body["removeLabelIds"] = remove
+    tt = (target_type or "").strip().lower()
+    if tt == "message":
+        return (service.users().messages()
+                .modify(userId="me", id=target_id, body=body).execute())
+    if tt == "thread":
+        return (service.users().threads()
+                .modify(userId="me", id=target_id, body=body).execute())
+    raise ValueError(f"target_type debe ser 'message' o 'thread', no {target_type!r}.")
+
+
 def build_server(
     *,
     service_factory: Callable[[str], object] | None = None,
@@ -346,6 +366,23 @@ def build_server(
             userId="me", body={"name": clean}).execute()
         return {"account": account, "id": created.get("id"),
                 "name": created.get("name", clean), "created": True}
+
+    @mcp.tool()
+    def apply_label(account: str, label: str, target_id: str,
+                    target_type: str = "message") -> dict:
+        """Aplica la etiqueta de USUARIO `label` (id o nombre EXISTENTE) al mensaje
+        o hilo `target_id`. `target_type`: 'message' | 'thread'. El correo permanece
+        en Inbox (no se archiva). `label` inexistente → error (crear es explícito con
+        create_label). Devuelve {account, label_id, label_name, target_id,
+        target_type, action, label_ids}."""
+        service = service_factory(account)
+        match = _resolve_user_label(service, label)
+        resp = _modify_target(service, target_id=target_id, target_type=target_type,
+                              add=[match["id"]])
+        return {"account": account, "label_id": match["id"],
+                "label_name": match.get("name"), "target_id": target_id,
+                "target_type": target_type.strip().lower(), "action": "apply",
+                "label_ids": resp.get("labelIds", [])}
 
     return mcp
 

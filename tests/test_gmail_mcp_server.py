@@ -160,3 +160,83 @@ def test_create_label_account_obligatorio():
                            account_lister=lambda: ["a@tyukhay.legal"])
     fn = _tool(mcp, "create_label")
     assert inspect.signature(fn).parameters["account"].default is inspect._empty
+
+
+# ------------------------------- apply_label -------------------------------
+
+def _label_svc(**extra):
+    """FakeGmailService con etiquetas de usuario + respuestas de modify."""
+    labels = {"list": {"labels": [
+        {"id": "Label_1", "name": "W-02XOR7", "type": "user"},
+        {"id": "INBOX", "name": "INBOX", "type": "system"},
+    ]}}
+    return FakeGmailService(labels=labels, **extra)
+
+
+def test_apply_label_a_mensaje_por_id():
+    svc = _label_svc(messages={"modify": {"id": "m1", "labelIds": ["Label_1"]}})
+    mcp = srv.build_server(service_factory=lambda e: svc,
+                           account_lister=lambda: ["a@tyukhay.legal"])
+    out = _tool(mcp, "apply_label")(account="a@tyukhay.legal", label="Label_1",
+                                    target_id="m1", target_type="message")
+    assert out["label_id"] == "Label_1" and out["action"] == "apply"
+    assert out["target_type"] == "message"
+    method, kwargs = svc.recorded("messages")[-1]
+    assert method == "modify"
+    assert kwargs["body"] == {"addLabelIds": ["Label_1"]}
+    assert kwargs["id"] == "m1"
+
+
+def test_apply_label_por_nombre_resuelve_id():
+    svc = _label_svc(messages={"modify": {"id": "m1", "labelIds": ["Label_1"]}})
+    mcp = srv.build_server(service_factory=lambda e: svc,
+                           account_lister=lambda: ["a@tyukhay.legal"])
+    out = _tool(mcp, "apply_label")(account="a@tyukhay.legal", label="W-02XOR7",
+                                    target_id="m1", target_type="message")
+    assert out["label_id"] == "Label_1"
+
+
+def test_apply_label_a_hilo():
+    svc = _label_svc(threads={"modify": {"id": "t1", "labelIds": ["Label_1"]}})
+    mcp = srv.build_server(service_factory=lambda e: svc,
+                           account_lister=lambda: ["a@tyukhay.legal"])
+    out = _tool(mcp, "apply_label")(account="a@tyukhay.legal", label="Label_1",
+                                    target_id="t1", target_type="thread")
+    method, kwargs = svc.recorded("threads")[-1]
+    assert method == "modify" and kwargs["body"] == {"addLabelIds": ["Label_1"]}
+    assert out["target_type"] == "thread"
+
+
+def test_apply_label_nombre_inexistente_error():
+    svc = _label_svc()
+    mcp = srv.build_server(service_factory=lambda e: svc,
+                           account_lister=lambda: ["a@tyukhay.legal"])
+    with pytest.raises(ValueError):
+        _tool(mcp, "apply_label")(account="a@tyukhay.legal", label="NoExiste",
+                                  target_id="m1", target_type="message")
+
+
+def test_apply_label_sistema_rechazado():
+    svc = _label_svc()
+    mcp = srv.build_server(service_factory=lambda e: svc,
+                           account_lister=lambda: ["a@tyukhay.legal"])
+    with pytest.raises(ValueError):
+        _tool(mcp, "apply_label")(account="a@tyukhay.legal", label="INBOX",
+                                  target_id="m1", target_type="message")
+
+
+def test_apply_label_target_type_invalido_error():
+    svc = _label_svc()
+    mcp = srv.build_server(service_factory=lambda e: svc,
+                           account_lister=lambda: ["a@tyukhay.legal"])
+    with pytest.raises(ValueError):
+        _tool(mcp, "apply_label")(account="a@tyukhay.legal", label="Label_1",
+                                  target_id="x", target_type="foo")
+
+
+def test_apply_label_account_obligatorio():
+    svc = _label_svc()
+    mcp = srv.build_server(service_factory=lambda e: svc,
+                           account_lister=lambda: ["a@tyukhay.legal"])
+    fn = _tool(mcp, "apply_label")
+    assert inspect.signature(fn).parameters["account"].default is inspect._empty
