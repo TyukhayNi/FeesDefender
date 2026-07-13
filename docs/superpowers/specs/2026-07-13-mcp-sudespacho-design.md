@@ -115,14 +115,30 @@ credenciales: **`x-api-key`** (estática) y **`Bearer JWT`** (token de sesión d
 la **atribución por usuario** (todo bajo una credencial anónima) y expondría acceso total.
 Incompatible con los requisitos.
 
-**Gate de verificación — testeable con el usuario de Nikolai (§12):**
-1. **Mecanismo de auth** (usuario admin de Nikolai basta): login → capturar `Bearer JWT` +
-   refresh → llamada REST OK → confirmar que el CRM **atribuye el evento a Nikolai**
-   (crear `TEST - BORRAR`, ver autor, Nikolai lo borra — el plugin nunca borra). Precisar
-   endpoints de login/refresh y si hace falta PHPSESSID. **Cuidado con el JWT (secreto): no
-   va al chat ni al repo; se observa en DevTools sin exfiltrarlo.**
-2. **Rol que oculta la contabilidad** (necesita un usuario de rol abogado, o configurar uno):
-   su JWT recibe **403/lista vacía** en un elemento financiero. Test aparte del mecanismo.
+**Gate de verificación:**
+1. **Mecanismo de auth — ✅ VERIFICADO EN VIVO (2026-07-13, usuario admin de Nikolai):**
+   - `GET /api/element_registries/clientes_propios?page&itemsPerPage&properties[i]&return_totals=false`
+     → **200**. Patrón `element_registries` genérico confirmado (forma `properties[i]` array).
+   - JWT en `localStorage['token']` con claims `iat, exp, roles, username, authorization` →
+     **user-bound (`username` = atribución) y role-bearing (`roles`)**.
+   - **Vida del JWT = 60 min** + `localStorage['refresh_token']` → refresco horario.
+   - **Sin cookie PHPSESSID**; API cross-origin → auth **solo por `Bearer JWT`** (no PHPSESSID
+     para el REST). El frontal legacy NO es necesario para autenticar.
+   - (El JWT es secreto: verificado sin volcarlo al chat ni al repo.)
+2. **Atribución en escritura — PENDIENTE (F2):** crear un `TEST - BORRAR` y confirmar
+   `created_by` = ese usuario; Nikolai lo borra (el plugin nunca borra).
+3. **Rol que oculta la contabilidad — PENDIENTE:** necesita un **usuario de rol abogado**
+   (Nikolai es admin y lo ve todo); su JWT debe recibir **403/lista vacía** en un elemento
+   financiero. Endpoints de login/refresh: capturarlos (o reusar `core.sync_sudespacho_legacy`).
+
+**🚩 RIESGO — tope de licencia (4 concurrentes):** el contrato limita a **4 usuarios
+concurrentes** (verificado 2026-07-13: entrar obligó a expulsar al 4º, el usuario de soporte
+de sudespacho). Si cada sesión JWT del MCP **consume una licencia**, entonces Nikolai + 3
+compañeros = 4 → sin margen. **Bloqueante potencial del escalado a todos los compañeros a la
+vez.** A confirmar: (a) ¿una sesión JWT del MCP cuenta como licencia concurrente?; (b) ¿un
+mismo usuario en web + MCP cuenta una o dos?; (c) mitigaciones — reusar el token de la sesión
+web existente en vez de abrir otra, ampliar licencias, o limitar concurrencia. Enlaza con el
+fleco de El Contable ("límite 4; confirmar si un usuario API consume licencia").
 
 **Prerrequisito de despliegue:** cada compañero debe tener **cuenta propia en el CRM** con
 rol abogado (sin `Read` en la contabilidad). Si no la tiene, crearla/configurar su matriz es
