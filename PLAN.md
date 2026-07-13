@@ -82,6 +82,16 @@ puro + orquestadores finos. Spec: `docs/superpowers/specs/2026-07-09-abrir-caso-
 - **Fleco de F2 (no de F3):** `download_file_content` (`drive_ops.py:209`) devuelve el mime de ORIGEN tras exportar un Doc nativo (no el de export) y no ajusta la extensión del destino — bug latente menor (sin consumidor tras aparcar F3). En backlog.
 - Siguiente en cola: **F4** (Calendar) cuando haya disparador. Retomar por `writing-plans`.
 
+## [SIGUIENTE-MCP-SUDESPACHO] MCP `sudespacho` (CRM del despacho) — F1 lectura: spec HECHO, plan pendiente
+
+*Disparador: `docs/superpowers/handoff-2026-07-13-mcp-sudespacho.md` (brainstorming Cowork) + decisión Nikolai de dar producto rápido y escalable a los compañeros. Primer producto que escala a Ana/Sergio/Paola porque la API REST del CRM ya es nube. Aplica el principio transversal de dos capas (motor determinista + interfaz distribuible).*
+
+- Spec APROBADO en brainstorming: `docs/superpowers/specs/2026-07-13-mcp-sudespacho-design.md`.
+- **Decisiones cerradas:** **standalone** (sin `import core`, anti-drift por paridad) · entrega **`.dxt` a Cowork por el puente** · orden **F1 lectura → F2 escritura → F3+** · **Modelo A** de credenciales (clave `x-api-key` por usuario con su rol; CRM portero server-side) · **lista blanca deny-by-default** con TODO el árbol financiero/contable VETADO · tools **genéricas** (`element` como parámetro) · **descubrimiento** por `describe_element` + playbook + catálogo (lectura casi automática, escritura mantiene HAR) · descarga vía `downloadUri` a DL-root (bytes nunca por el modelo; `presigned_download_url` NO es bloqueo, ya resuelto) · ubicación `plugins/sudespacho_mcp/`.
+- [ ] **Gate de verificación (antes de codificar la auth):** HAR con usuario de rol abogado → confirmar que su `x-api-key` respeta el rol (Modelo A) o caer al **Modelo C** (motor central). El resto del diseño no depende del resultado.
+- [ ] **F1 (lectura)** — desglosar por `writing-plans` y construir. Entregables: cliente REST puro + lista blanca/catálogo + `describe_element` + tools de consulta genérica + expedientes/documentos + descarga a DL-root + `.dxt`. Playbook de descubrimiento en `docs/INTEGRACION_SUDESPACHO.md`.
+- [ ] **F2 (escritura)** y **F3+** (agenda CRM en escritura, legacy, lote): spec/plan aparte, por disparador.
+
 ### ✅ [SIGUIENTE-CONTROLES-ANTIFUGA] COMPLETA 2026-07-07 — controles de `SEGURIDAD_DATOS.md` implementados
 *2026-07-07. Disparador concreto: el incidente de fugas de la Fase 2 (HAR + PII en el historial → una sesión entera de rewrite). La doctrina ya está escrita y cableada (`docs/SEGURIDAD_DATOS.md`, hogar canónico; cableado en el mapa SSOT, INDICE, GOBERNANZA §4 y CLAUDE.md). Todos los controles corren solos: barrera local (`51ecf24`), CI + shape-detection (#1 `48c790f`, #3 `e1ff182`) y prevención server-side ACTIVA (`a79ba90`).*
 
@@ -128,6 +138,22 @@ Diferidos: alertas de préstamo >7 días (tarea programada), sección STATUS.md 
 **Avisos post-recreación:** re-invitar colaboradores + reconfigurar branch protection (se pierden al recrear); cualquier otro clon/Cowork debe **re-clonar** (SHAs sin ancestro común); `fd-backup.git` borrable al confirmar el resultado.
 
 **Fallos de baseline — RESUELTOS 2026-07-07:** `test_helpers_sin_drift` (drift de helpers → `sync_skill_helpers.py`); `test_adjuntos_contenido_router` (aislamiento por `reload(extractor)` → captura de `ExtractionError` cualificada por módulo en `router.py`); 2 módulos MCP sin colección (`mcp` instalado + `importorskip`). **Suite `1418 passed, 58 skipped`, verde.**
+
+---
+
+## 🧭 PRINCIPIO TRANSVERSAL — dos capas: motor determinista + interfaz distribuible (plugin)
+*Fijado 2026-07-13 (brainstorming Claude Code, Nikolai). Decisión de rumbo sobre cómo escalar el producto a los compañeros (Ana, Sergio, Paola) sin dejar de trabajar el código de FeesDefender. Disparador: el diseño del MCP de CRM sudespacho (`docs/superpowers/specs/2026-07-13-mcp-sudespacho-design.md`) obligó a decidir plugin standalone vs wrap-core.*
+
+**El producto es UNA cosa en DOS capas, no dos tracks que compiten:**
+- **Motor determinista (`core/`)** = la capa de confianza y auditoría. Todo lo forense, exacto e irreversible: custodia SHA-256, anonimización (`core/anon` — cero pérdida de lógica), altas en CRM (autoincremento sin duplicar), fidelidad byte de correos. Se mantiene y se sigue trabajando; es el cimiento, no legado a jubilar.
+- **Plugins/skills = la interfaz distribuible** que tocan los compañeros. Se reparte por la superficie de Claude (Cowork/Desktop/móvil): se instala y funciona, **sin repo, sin `.venv`, sin `G:`**. El Streamlit local NO escala a terceros porque es un entorno de desarrollador.
+
+**Regla de oro (evita el error caro):** lo irreversible/forense vive en el motor; el plugin lo **dispara**, no lo **reimplementa** "rápido". Si un plugin debe replicar una operación del motor, se blinda con **tests de paridad** contra `core` (patrón §14.6 de `2026-07-08-google-despacho-mcp-design.md`). Corolario de empaquetado: para que un plugin escale a un compañero debe ser **standalone** (`.dxt` autocontenido que él instala con sus credenciales); un plugin acoplado al repo (wrap-core) solo corre en la máquina que tiene el repo.
+
+**Qué escala a los compañeros y qué no (a fecha de hoy):**
+- **Escala YA, sin construir nada:** skills puro-LLM + conectores de lectura (Drive/Gmail) — `triaje-viabilidad`, `escritos-judiciales`, `verificacion-anclada-fuente`.
+- **Escala con build acotado:** MCP de CRM sudespacho **en lectura** (standalone; la API REST `x-api-key` ya es nube) → candidato a "primer producto rápido" para los compañeros, bajo riesgo.
+- **NO escala todavía (se queda en el track local determinista):** OCR, anonimización, atomización de correo y todo lo que hoy exige el pipeline local. Plugin-izarlo para terceros exigiría **hostear el motor** — proyecto aparte, sin disparador hoy.
 
 ---
 
