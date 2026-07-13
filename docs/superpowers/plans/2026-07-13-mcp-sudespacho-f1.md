@@ -1,0 +1,1299 @@
+# MCP `sudespacho` — F1 (lectura) Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Un MCP standalone que da LECTURA del CRM sudespacho desde el chat, autenticado con la cuenta personal de cada usuario (Bearer JWT + refresh), con lista blanca que oculta la contabilidad y sin ninguna capacidad de borrado.
+
+**Architecture:** Plugin stdio FastMCP en `plugins/sudespacho_mcp/`, **sin `import core`** (autocontenido, patrón de los otros 4 plugins). Lógica pura (cliente REST con `httpx` inyectable) separada del wrapper de tools (`server.py`). Auth Modelo B: login una vez (usuario/contraseña → tokens), refresco silencioso rodante (`POST /api/token/refresh`). Lectura por la API genérica de elementos (`GET /api/element_registries/{element}`). Entrega `.dxt` + puente de Claude Desktop.
+
+**Tech Stack:** Python 3.12+, `mcp` (FastMCP), `httpx`, `pytest`. Spec: `docs/superpowers/specs/2026-07-13-mcp-sudespacho-design.md`.
+
+**Convenciones del repo (críticas):**
+- Windows + PowerShell; UTF-8 sin BOM.
+- Tests en `tests/` (raíz del repo), no dentro del plugin. `python -m pytest -q`.
+- Commits: rama + PR (main protegida). `pre-commit` corre gitleaks + leak-guard.
+- Secretos (tokens/contraseña) nunca en repo ni chat; tokens en `~/.sudespacho-despacho/` (env `SUDESPACHO_DESPACHO_HOME`).
+- **Regla dura NO-BORRADO:** el cliente no implementa `DELETE`; el server no registra tool de borrado; test que lo asegura.
+
+**Contratos ya verificados (no re-descubrir):**
+- Listado: `GET https://api-crm-commons-pro.sudespacho.biz/api/element_registries/{element}?page=1&itemsPerPage=10&properties[0]=..&return_totals=false` → 200, respuesta `{totalItems, currentPage, itemsPerPage, items:[{id, isPrimary, values:[{property:{name}, value, label?}]}]}` (NO hydra). Verificado en vivo 2026-07-13.
+- Refresco (rodante, no requiere JWT vigente): `POST /api/token/refresh` body `{"refresh_token": rt}` → `{"token": jwt, "refresh_token": rt2}` (gesdinet/Lexik). Fuente: `core/sync_sudespacho_legacy.py:232` (`_try_refresh_jwt_post`).
+- JWT: en cliente vive en `localStorage['token']`, claims `iat, exp(60min), roles, username`. Auth REST = `Authorization: Bearer <jwt>`, SIN PHPSESSID.
+- Descarga documento: `GET /api/documents/{id}/downloadUri` → campo `presignedDownloadUrl`. Fuente: `core/sync_sudespacho.py:744`.
+
+**Gates de DESPLIEGUE (no de build; NO bloquean este plan):**
+- Rol que oculta contabilidad: verificar con un usuario de rol abogado (403/vacío en elementos financieros).
+- Tope de licencia (4 concurrentes): Nikolai consulta con sudespacho si la sesión del MCP consume licencia.
+- Vida del `refresh_token` (opaco): medir. Mitigado por el refresco rodante (sesión viva con uso).
+
+---
+
+## Task 1: Capturar el contrato de LOGIN inicial (discovery, en vivo)
+
+`core` no implementa login usuario/contraseña (solo refresco). El endpoint de login es lo único del contrato de auth sin confirmar. Setup gesdinet/Lexik → casi seguro `POST /api/login_check`.
+
+**Files:**
+- Create: `plugins/sudespacho_mcp/AUTH_CONTRACT.md` (nota de contrato, NO tokens)
+
+- [ ] **Step 1: Capturar el login en DevTools (con la sesión de Nikolai)**
+
+En Chrome, con DevTools → Network abierto y "Preserve log" activo, hacer un login limpio en `https://tnm.sudespacho.net/tnm/sign-in`. Localizar la petición que devuelve el JWT (candidato: `POST https://api-crm-commons-pro.sudespacho.biz/api/login_check`).
+- Anotar: URL, método, **nombres de campo del body** (p. ej. `username`/`password` o `email`/`password`) — **sin copiar el valor de la contraseña**.
+- Anotar: forma de la **respuesta** (`{token, refresh_token}` o `{"@token","@refreshToken"}`).
+- **NO** pegar tokens ni contraseña en `AUTH_CONTRACT.md` ni en el chat.
+
+- [ ] **Step 2: Escribir el contrato**
+
+En `AUTH_CONTRACT.md`, tabla con: endpoint de login (URL, método, campos del body, forma de respuesta) y el de refresco ya conocido (`POST /api/token/refresh`, `{refresh_token}` → `{token, refresh_token}`). Marcar el login `VERIFICADO <fecha>`.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add plugins/sudespacho_mcp/AUTH_CONTRACT.md
+git commit -m "docs(sudespacho-mcp): contrato de auth (login capturado + refresh conocido)"
+```
+
+---
+
+## Task 2: Scaffold del paquete
+
+**Files:**
+- Create: `plugins/sudespacho_mcp/__init__.py`
+- Create: `plugins/sudespacho_mcp/config.py`
+- Create: `plugins/sudespacho_mcp/requirements.txt`
+- Test: `tests/sudespacho_mcp/test_config.py`
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+# tests/sudespacho_mcp/test_config.py
+import os
+from plugins.sudespacho_mcp import config
+
+def test_home_default(monkeypatch, tmp_path):
+    monkeypatch.delenv("SUDESPACHO_DESPACHO_HOME", raising=False)
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert config.home_dir() == tmp_path / ".sudespacho-despacho"
+
+def test_home_override(monkeypatch, tmp_path):
+    monkeypatch.setenv("SUDESPACHO_DESPACHO_HOME", str(tmp_path / "x"))
+    assert config.home_dir() == tmp_path / "x"
+
+def test_base_url_default(monkeypatch):
+    monkeypatch.delenv("SUDESPACHO_BASE_URL", raising=False)
+    assert config.base_url() == "https://api-crm-commons-pro.sudespacho.biz"
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `python -m pytest tests/sudespacho_mcp/test_config.py -v`
+Expected: FAIL (module not found).
+
+- [ ] **Step 3: Write minimal implementation**
+
+```python
+# plugins/sudespacho_mcp/__init__.py
+# (vacío)
+```
+
+```python
+# plugins/sudespacho_mcp/config.py
+from __future__ import annotations
+import os
+from pathlib import Path
+
+DEFAULT_BASE_URL = "https://api-crm-commons-pro.sudespacho.biz"
+
+def home_dir() -> Path:
+    override = os.getenv("SUDESPACHO_DESPACHO_HOME")
+    if override:
+        return Path(override)
+    root = os.getenv("USERPROFILE") or os.getenv("HOME") or "."
+    return Path(root) / ".sudespacho-despacho"
+
+def base_url() -> str:
+    return (os.getenv("SUDESPACHO_BASE_URL") or DEFAULT_BASE_URL).rstrip("/")
+
+def tokens_path() -> Path:
+    return home_dir() / "tokens.json"
+```
+
+```
+# plugins/sudespacho_mcp/requirements.txt
+mcp>=1.0
+httpx>=0.27
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `python -m pytest tests/sudespacho_mcp/test_config.py -v`
+Expected: PASS (3 passed).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add plugins/sudespacho_mcp/__init__.py plugins/sudespacho_mcp/config.py plugins/sudespacho_mcp/requirements.txt tests/sudespacho_mcp/test_config.py
+git commit -m "feat(sudespacho-mcp): scaffold del paquete + config (home/base_url)"
+```
+
+---
+
+## Task 3: Almacén de tokens (persistencia local)
+
+**Files:**
+- Create: `plugins/sudespacho_mcp/token_store.py`
+- Test: `tests/sudespacho_mcp/test_token_store.py`
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+# tests/sudespacho_mcp/test_token_store.py
+from plugins.sudespacho_mcp.token_store import TokenStore
+
+def test_save_and_load_roundtrip(tmp_path):
+    store = TokenStore(tmp_path / "tokens.json")
+    store.save(jwt="J1", refresh="R1")
+    assert store.load() == {"jwt": "J1", "refresh": "R1"}
+
+def test_load_missing_returns_none(tmp_path):
+    assert TokenStore(tmp_path / "nope.json").load() is None
+
+def test_save_creates_parent_dir(tmp_path):
+    store = TokenStore(tmp_path / "sub" / "tokens.json")
+    store.save(jwt="J", refresh="R")
+    assert (tmp_path / "sub" / "tokens.json").exists()
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `python -m pytest tests/sudespacho_mcp/test_token_store.py -v`
+Expected: FAIL (module not found).
+
+- [ ] **Step 3: Write minimal implementation**
+
+```python
+# plugins/sudespacho_mcp/token_store.py
+from __future__ import annotations
+import json
+from pathlib import Path
+
+class TokenStore:
+    """Persiste JWT + refresh en disco local (UTF-8). Solo tokens, nunca contraseña."""
+    def __init__(self, path: Path) -> None:
+        self._path = Path(path)
+
+    def load(self) -> dict | None:
+        if not self._path.exists():
+            return None
+        return json.loads(self._path.read_text(encoding="utf-8"))
+
+    def save(self, *, jwt: str, refresh: str) -> None:
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        data = json.dumps({"jwt": jwt, "refresh": refresh}, ensure_ascii=False)
+        self._path.write_text(data, encoding="utf-8")
+```
+
+- [ ] **Step 4: Run to verify it passes**
+
+Run: `python -m pytest tests/sudespacho_mcp/test_token_store.py -v`
+Expected: PASS (3 passed).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add plugins/sudespacho_mcp/token_store.py tests/sudespacho_mcp/test_token_store.py
+git commit -m "feat(sudespacho-mcp): almacen de tokens local"
+```
+
+---
+
+## Task 4: Auth — login y refresco (httpx inyectable)
+
+**Files:**
+- Create: `plugins/sudespacho_mcp/auth.py`
+- Test: `tests/sudespacho_mcp/test_auth.py`
+
+Contrato: login `POST /api/login_check` body `{username, password}` → `{token, refresh_token}` (confirmar campos exactos en `AUTH_CONTRACT.md` de la Task 1 y ajustar `_LOGIN_PATH`/claves si difieren). Refresco `POST /api/token/refresh` body `{refresh_token}` → `{token, refresh_token}` (rodante).
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+# tests/sudespacho_mcp/test_auth.py
+import httpx
+from plugins.sudespacho_mcp.auth import login, refresh
+
+def _client(handler):
+    return httpx.Client(transport=httpx.MockTransport(handler), base_url="https://api-crm-commons-pro.sudespacho.biz")
+
+def test_login_returns_tokens():
+    def handler(req):
+        assert req.url.path == "/api/login_check"
+        assert b"password" in req.content
+        return httpx.Response(200, json={"token": "JWT1", "refresh_token": "RT1"})
+    with _client(handler) as c:
+        assert login(c, "user@x", "secret") == {"jwt": "JWT1", "refresh": "RT1"}
+
+def test_refresh_returns_new_tokens():
+    def handler(req):
+        assert req.url.path == "/api/token/refresh"
+        return httpx.Response(200, json={"token": "JWT2", "refresh_token": "RT2"})
+    with _client(handler) as c:
+        assert refresh(c, "RT1") == {"jwt": "JWT2", "refresh": "RT2"}
+
+def test_refresh_failure_raises():
+    def handler(req):
+        return httpx.Response(401, json={"message": "expired"})
+    with _client(handler) as c:
+        import pytest
+        with pytest.raises(Exception):
+            refresh(c, "RT_bad")
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `python -m pytest tests/sudespacho_mcp/test_auth.py -v`
+Expected: FAIL (module not found).
+
+- [ ] **Step 3: Write minimal implementation**
+
+```python
+# plugins/sudespacho_mcp/auth.py
+from __future__ import annotations
+import httpx
+
+_LOGIN_PATH = "/api/login_check"      # confirmar en AUTH_CONTRACT.md (Task 1)
+_REFRESH_PATH = "/api/token/refresh"  # gesdinet/Lexik, rodante
+
+class AuthError(RuntimeError):
+    pass
+
+def _extract(data: dict) -> dict:
+    jwt = data.get("token") or data.get("@token") or data.get("access_token")
+    rt = data.get("refresh_token") or data.get("@refreshToken")
+    if not jwt or not rt:
+        raise AuthError("respuesta de auth sin token/refresh_token")
+    return {"jwt": jwt, "refresh": rt}
+
+def login(client: httpx.Client, username: str, password: str) -> dict:
+    r = client.post(_LOGIN_PATH, json={"username": username, "password": password})
+    if r.status_code >= 400:
+        raise AuthError(f"login HTTP {r.status_code}")
+    return _extract(r.json())
+
+def refresh(client: httpx.Client, refresh_token: str) -> dict:
+    r = client.post(_REFRESH_PATH, json={"refresh_token": refresh_token})
+    if r.status_code >= 400:
+        raise AuthError(f"refresh HTTP {r.status_code} (posible refresh_token caducado → re-login)")
+    return _extract(r.json())
+```
+
+- [ ] **Step 4: Run to verify it passes**
+
+Run: `python -m pytest tests/sudespacho_mcp/test_auth.py -v`
+Expected: PASS (3 passed).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add plugins/sudespacho_mcp/auth.py tests/sudespacho_mcp/test_auth.py
+git commit -m "feat(sudespacho-mcp): auth login + refresh rodante (httpx inyectable)"
+```
+
+---
+
+## Task 5: Proveedor de sesión (JWT vigente con refresco silencioso)
+
+**Files:**
+- Create: `plugins/sudespacho_mcp/session.py`
+- Test: `tests/sudespacho_mcp/test_session.py`
+
+Decodifica el `exp` del JWT; si faltan <60s o ya expiró, refresca (rodante) y persiste el nuevo par. Si el refresh falla → `NeedsLogin`.
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+# tests/sudespacho_mcp/test_session.py
+import base64, json, time, httpx, pytest
+from plugins.sudespacho_mcp.session import Session, NeedsLogin
+from plugins.sudespacho_mcp.token_store import TokenStore
+
+def _jwt(exp: int) -> str:
+    payload = base64.urlsafe_b64encode(json.dumps({"exp": exp}).encode()).decode().rstrip("=")
+    return f"h.{payload}.s"
+
+def _client(handler):
+    return httpx.Client(transport=httpx.MockTransport(handler), base_url="https://x")
+
+def test_valid_jwt_used_without_refresh(tmp_path):
+    store = TokenStore(tmp_path / "t.json")
+    store.save(jwt=_jwt(int(time.time()) + 3600), refresh="RT")
+    def handler(req):
+        raise AssertionError("no debe refrescar si el JWT es válido")
+    sess = Session(store, _client(handler))
+    assert sess.bearer().startswith("h.")
+
+def test_expired_jwt_triggers_refresh_and_persists(tmp_path):
+    store = TokenStore(tmp_path / "t.json")
+    store.save(jwt=_jwt(int(time.time()) - 10), refresh="RT1")
+    def handler(req):
+        return httpx.Response(200, json={"token": _jwt(int(time.time()) + 3600), "refresh_token": "RT2"})
+    sess = Session(store, _client(handler))
+    _ = sess.bearer()
+    assert store.load()["refresh"] == "RT2"  # rodante persistido
+
+def test_refresh_failure_raises_needslogin(tmp_path):
+    store = TokenStore(tmp_path / "t.json")
+    store.save(jwt=_jwt(int(time.time()) - 10), refresh="RTbad")
+    def handler(req):
+        return httpx.Response(401, json={})
+    with pytest.raises(NeedsLogin):
+        Session(store, _client(handler)).bearer()
+
+def test_no_tokens_raises_needslogin(tmp_path):
+    with pytest.raises(NeedsLogin):
+        Session(TokenStore(tmp_path / "none.json"), _client(lambda r: httpx.Response(200))).bearer()
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `python -m pytest tests/sudespacho_mcp/test_session.py -v`
+Expected: FAIL (module not found).
+
+- [ ] **Step 3: Write minimal implementation**
+
+```python
+# plugins/sudespacho_mcp/session.py
+from __future__ import annotations
+import base64, json, time, httpx
+from .token_store import TokenStore
+from . import auth
+
+class NeedsLogin(RuntimeError):
+    pass
+
+def _jwt_exp(jwt: str) -> int | None:
+    try:
+        part = jwt.split(".")[1]
+        part += "=" * (-len(part) % 4)
+        return json.loads(base64.urlsafe_b64decode(part)).get("exp")
+    except Exception:
+        return None
+
+class Session:
+    """Da un Bearer JWT vigente; refresca (rodante) y persiste al caducar."""
+    def __init__(self, store: TokenStore, client: httpx.Client, *, skew: int = 60) -> None:
+        self._store = store
+        self._client = client
+        self._skew = skew
+
+    def bearer(self) -> str:
+        data = self._store.load()
+        if not data:
+            raise NeedsLogin("no hay tokens: ejecuta el login del plugin")
+        exp = _jwt_exp(data["jwt"])
+        if exp is None or exp - time.time() < self._skew:
+            try:
+                new = auth.refresh(self._client, data["refresh"])
+            except auth.AuthError as e:
+                raise NeedsLogin(str(e)) from e
+            self._store.save(jwt=new["jwt"], refresh=new["refresh"])
+            return new["jwt"]
+        return data["jwt"]
+```
+
+- [ ] **Step 4: Run to verify it passes**
+
+Run: `python -m pytest tests/sudespacho_mcp/test_session.py -v`
+Expected: PASS (4 passed).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add plugins/sudespacho_mcp/session.py tests/sudespacho_mcp/test_session.py
+git commit -m "feat(sudespacho-mcp): sesion con refresco silencioso rodante + NeedsLogin"
+```
+
+---
+
+## Task 6: Catálogo / lista blanca (deny-by-default; contabilidad vetada)
+
+**Files:**
+- Create: `plugins/sudespacho_mcp/catalog.py`
+- Test: `tests/sudespacho_mcp/test_catalog.py`
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+# tests/sudespacho_mcp/test_catalog.py
+import pytest
+from plugins.sudespacho_mcp import catalog
+
+FINANCIEROS = [
+    "facturas", "facturas_proforma", "remesas", "facturas_recibidas",
+    "cobros_clientes", "pagos_proveedores", "catalogo_conceptos_honorario",
+    "conceptos_honorario", "conceptos_gasto", "conceptos_suplido",
+    "conceptos_provision", "libros_oficiales", "nominas", "amortizaciones",
+    "cuentas_contables",
+]
+
+def test_permitidos_incluye_lectura_legal():
+    assert "clientes_propios" in catalog.ALLOWED
+    assert "expedientes_judiciales" in catalog.ALLOWED
+
+@pytest.mark.parametrize("slug", FINANCIEROS)
+def test_financiero_no_permitido(slug):
+    assert not catalog.is_allowed(slug)
+    assert slug in catalog.VETADOS
+
+def test_desconocido_denegado_por_defecto():
+    assert not catalog.is_allowed("elemento_inventado_xyz")
+
+def test_ensure_allowed_lanza_para_vetado():
+    with pytest.raises(catalog.NotAllowed):
+        catalog.ensure_allowed("nominas")
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `python -m pytest tests/sudespacho_mcp/test_catalog.py -v`
+Expected: FAIL (module not found).
+
+- [ ] **Step 3: Write minimal implementation**
+
+```python
+# plugins/sudespacho_mcp/catalog.py
+from __future__ import annotations
+
+# Lista blanca de elementos de LECTURA permitidos (deny-by-default).
+# La pertenencia la aprueba un humano (describe_element propone; no auto-añadir).
+ALLOWED: frozenset[str] = frozenset({
+    "clientes_propios", "clientes_contrarios",
+    "abogados", "procuradores_propios", "procuradores_contrarios",
+    "colaboradores", "organismos", "contactos", "juzgados", "poderes",
+    "expedientes_judiciales", "extrajudiciales", "actuaciones",
+    "notas_tecnicas", "tareas",
+})
+
+# Vetados explícitos (confidencial — NUNCA exponer). Doble negativa con ALLOWED.
+VETADOS: frozenset[str] = frozenset({
+    "facturas", "facturas_proforma", "remesas", "facturas_recibidas",
+    "cobros_clientes", "pagos_proveedores", "catalogo_conceptos_honorario",
+    "conceptos_honorario", "conceptos_gasto", "conceptos_suplido",
+    "conceptos_provision", "conceptos_varios", "libros_oficiales",
+    "nominas", "amortizaciones", "cuentas_contables",
+})
+
+class NotAllowed(PermissionError):
+    pass
+
+def is_allowed(slug: str) -> bool:
+    return slug in ALLOWED and slug not in VETADOS
+
+def ensure_allowed(slug: str) -> None:
+    if not is_allowed(slug):
+        raise NotAllowed(f"elemento '{slug}' no permitido por el plugin (lista blanca / vetado)")
+```
+
+- [ ] **Step 4: Run to verify it passes**
+
+Run: `python -m pytest tests/sudespacho_mcp/test_catalog.py -v`
+Expected: PASS (18 passed).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add plugins/sudespacho_mcp/catalog.py tests/sudespacho_mcp/test_catalog.py
+git commit -m "feat(sudespacho-mcp): lista blanca deny-by-default + contabilidad vetada"
+```
+
+---
+
+## Task 7: Cliente REST de lectura (element_registries) — SIN borrado
+
+**Files:**
+- Create: `plugins/sudespacho_mcp/client.py`
+- Test: `tests/sudespacho_mcp/test_client_read.py`
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+# tests/sudespacho_mcp/test_client_read.py
+import httpx
+from plugins.sudespacho_mcp.client import SudespachoClient
+
+class _FakeSession:
+    def bearer(self): return "JWT"
+
+def _client(handler):
+    http = httpx.Client(transport=httpx.MockTransport(handler), base_url="https://x")
+    return SudespachoClient(http, _FakeSession())
+
+def test_list_elements_sends_bearer_and_parses_items():
+    def handler(req):
+        assert req.headers["authorization"] == "Bearer JWT"
+        assert req.url.path == "/api/element_registries/clientes_propios"
+        assert req.url.params["page"] == "1"
+        return httpx.Response(200, json={
+            "totalItems": 1, "currentPage": 1, "itemsPerPage": 10,
+            "items": [{"id": 5, "values": [{"property": {"name": "nombre"}, "value": "ACME"}]}],
+        })
+    res = _client(handler).list_elements("clientes_propios", properties=["nombre"], page=1)
+    assert res["totalItems"] == 1
+    assert res["items"][0]["id"] == 5
+
+def test_client_has_no_delete_method():
+    # Regla dura: el cliente NO expone borrado.
+    assert not any("delete" in n.lower() for n in dir(SudespachoClient))
+    assert not any("borrar" in n.lower() for n in dir(SudespachoClient))
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `python -m pytest tests/sudespacho_mcp/test_client_read.py -v`
+Expected: FAIL (module not found).
+
+- [ ] **Step 3: Write minimal implementation**
+
+```python
+# plugins/sudespacho_mcp/client.py
+from __future__ import annotations
+import httpx
+
+class SudespachoClient:
+    """Cliente REST de LECTURA. Inyecta httpx + un proveedor de sesión (.bearer()).
+    NO implementa ningún verbo de borrado (regla dura §5 del spec)."""
+    def __init__(self, http: httpx.Client, session) -> None:
+        self._http = http
+        self._session = session
+
+    def _get(self, path: str, params: list[tuple[str, str]] | dict | None = None):
+        r = self._http.get(path, params=params,
+                            headers={"Authorization": f"Bearer {self._session.bearer()}",
+                                     "Accept": "application/json"})
+        r.raise_for_status()
+        return r.json()
+
+    def list_elements(self, element: str, *, properties: list[str] | None = None,
+                      page: int = 1, items_per_page: int = 10,
+                      filter_group: list[tuple[str, str]] | None = None) -> dict:
+        params: list[tuple[str, str]] = [("page", str(page)),
+                                         ("itemsPerPage", str(items_per_page)),
+                                         ("return_totals", "false")]
+        for i, p in enumerate(properties or []):
+            params.append((f"properties[{i}]", p))
+        params.extend(filter_group or [])
+        return self._get(f"/api/element_registries/{element}", params)
+```
+
+- [ ] **Step 4: Run to verify it passes**
+
+Run: `python -m pytest tests/sudespacho_mcp/test_client_read.py -v`
+Expected: PASS (2 passed).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add plugins/sudespacho_mcp/client.py tests/sudespacho_mcp/test_client_read.py
+git commit -m "feat(sudespacho-mcp): cliente REST list_elements + guard no-borrado"
+```
+
+---
+
+## Task 8: Cliente — summary, autocomplete, por-expediente, detalle
+
+**Files:**
+- Modify: `plugins/sudespacho_mcp/client.py`
+- Test: `tests/sudespacho_mcp/test_client_read2.py`
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+# tests/sudespacho_mcp/test_client_read2.py
+import httpx
+from plugins.sudespacho_mcp.client import SudespachoClient
+
+class _S:
+    def bearer(self): return "JWT"
+
+def _c(handler):
+    return SudespachoClient(httpx.Client(transport=httpx.MockTransport(handler), base_url="https://x"), _S())
+
+def test_summary():
+    def h(req):
+        assert req.url.path == "/api/element_registries/summary/actuaciones"
+        return httpx.Response(200, json={"items": []})
+    assert _c(h).summary("actuaciones") == {"items": []}
+
+def test_search_autocomplete():
+    def h(req):
+        assert req.url.path == "/autocompletar/buscar/elemento/colaboradores"
+        assert req.url.params["term"] == "gar"
+        return httpx.Response(200, json=[{"id": 1, "label": "García"}])
+    assert _c(h).search("colaboradores", "gar")[0]["id"] == 1
+
+def test_por_expediente_usa_filtro_associated():
+    captured = {}
+    def h(req):
+        captured["q"] = str(req.url)
+        return httpx.Response(200, json={"items": []})
+    _c(h).por_expediente("actuaciones", 671)
+    assert "associated" in captured["q"] and "671" in captured["q"]
+
+def test_get_detalle_usa_properties_coma():
+    # Hipótesis del workaround del bug 500: forma coma en el SINGULAR.
+    def h(req):
+        assert req.url.path == "/api/element_register/expedientes_judiciales/671"
+        assert req.url.params["properties"] == "id,Numero_Expediente"
+        return httpx.Response(200, json={"id": 671})
+    assert _c(h).get_detalle("expedientes_judiciales", 671, ["id", "Numero_Expediente"])["id"] == 671
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `python -m pytest tests/sudespacho_mcp/test_client_read2.py -v`
+Expected: FAIL (métodos no existen).
+
+- [ ] **Step 3: Write minimal implementation (añadir a `client.py`)**
+
+```python
+    def summary(self, element: str, *, filter_group=None) -> dict:
+        return self._get(f"/api/element_registries/summary/{element}", filter_group or None)
+
+    def search(self, element: str, term: str) -> list:
+        return self._get(f"/autocompletar/buscar/elemento/{element}", {"term": term})
+
+    def por_expediente(self, element: str, exp_id: int, *, direccion: str = "left",
+                       properties: list[str] | None = None) -> dict:
+        params: list[tuple[str, str]] = [
+            ("filterGroup[condition]", "AND"),
+            ("filterGroup[filterGroups][0][filters][0][operator]", "associated"),
+            ("filterGroup[filterGroups][0][filters][0][property]", f"{direccion}.{element}.id"),
+            ("filterGroup[filterGroups][0][filters][0][value]", str(exp_id)),
+        ]
+        for i, p in enumerate(properties or []):
+            params.append((f"properties[{i}]", p))
+        return self._get(f"/api/element_registries/{element}", params)
+
+    def get_detalle(self, element: str, id_: int, properties: list[str]) -> dict:
+        # Workaround bug 500: forma COMA (no properties[]). Hipótesis de El Contable.
+        return self._get(f"/api/element_register/{element}/{id_}",
+                         {"properties": ",".join(properties)})
+```
+
+- [ ] **Step 4: Run to verify it passes**
+
+Run: `python -m pytest tests/sudespacho_mcp/test_client_read2.py -v`
+Expected: PASS (4 passed).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add plugins/sudespacho_mcp/client.py tests/sudespacho_mcp/test_client_read2.py
+git commit -m "feat(sudespacho-mcp): summary/search/por-expediente/detalle (coma workaround)"
+```
+
+---
+
+## Task 9: Documentos — URL de descarga y descarga a DL-root
+
+**Files:**
+- Modify: `plugins/sudespacho_mcp/client.py`
+- Create: `plugins/sudespacho_mcp/download.py`
+- Test: `tests/sudespacho_mcp/test_download.py`
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+# tests/sudespacho_mcp/test_download.py
+import hashlib, httpx, pytest
+from plugins.sudespacho_mcp.client import SudespachoClient
+from plugins.sudespacho_mcp.download import resolve_dest, DownloadRootError
+
+class _S:
+    def bearer(self): return "JWT"
+
+def _c(handler):
+    return SudespachoClient(httpx.Client(transport=httpx.MockTransport(handler), base_url="https://x"), _S())
+
+def test_download_uri_extrae_presigned():
+    def h(req):
+        assert req.url.path == "/api/documents/42/downloadUri"
+        return httpx.Response(200, json={"presignedDownloadUrl": "https://s3/x?sig=1"})
+    assert _c(h).document_download_url(42) == "https://s3/x?sig=1"
+
+def test_resolve_dest_dentro_del_root(tmp_path):
+    root = tmp_path / "dl"
+    dest = resolve_dest(root, "sub/f.pdf")
+    assert str(dest).startswith(str(root.resolve()))
+
+def test_resolve_dest_symlink_escape_bloqueado(tmp_path):
+    root = tmp_path / "dl"
+    with pytest.raises(DownloadRootError):
+        resolve_dest(root, "../../escape.pdf")
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `python -m pytest tests/sudespacho_mcp/test_download.py -v`
+Expected: FAIL (módulos/métodos no existen).
+
+- [ ] **Step 3: Write minimal implementation**
+
+En `client.py` añadir:
+
+```python
+    def document_download_url(self, doc_id: int) -> str:
+        data = self._get(f"/api/documents/{doc_id}/downloadUri")
+        url = data.get("presignedDownloadUrl") or data.get("presignedUrl")
+        if not url:
+            raise RuntimeError(f"downloadUri doc {doc_id}: sin presignedDownloadUrl")
+        return url
+```
+
+```python
+# plugins/sudespacho_mcp/download.py
+from __future__ import annotations
+import hashlib, os, httpx
+from pathlib import Path
+
+class DownloadRootError(PermissionError):
+    pass
+
+def resolve_dest(root: Path, rel: str) -> Path:
+    root = Path(root).resolve()
+    dest = (root / rel).resolve()
+    if os.path.commonpath([str(root), str(dest)]) != str(root):
+        raise DownloadRootError(f"ruta fuera del DL-root: {rel}")
+    return dest
+
+def download_to(url: str, dest: Path) -> dict:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    h = hashlib.sha256()
+    with httpx.stream("GET", url) as r:  # URL S3 pública prefirmada (sin Bearer)
+        r.raise_for_status()
+        with open(dest, "wb") as f:
+            for chunk in r.iter_bytes():
+                h.update(chunk)
+                f.write(chunk)
+    return {"path": str(dest), "sha256": h.hexdigest(), "bytes": dest.stat().st_size}
+```
+
+- [ ] **Step 4: Run to verify it passes**
+
+Run: `python -m pytest tests/sudespacho_mcp/test_download.py -v`
+Expected: PASS (3 passed).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add plugins/sudespacho_mcp/client.py plugins/sudespacho_mcp/download.py tests/sudespacho_mcp/test_download.py
+git commit -m "feat(sudespacho-mcp): downloadUri + descarga a DL-root con sha256 (sin bytes por el modelo)"
+```
+
+---
+
+## Task 10: Introspección `describe_element`
+
+**Files:**
+- Create: `plugins/sudespacho_mcp/discovery.py`
+- Test: `tests/sudespacho_mcp/test_discovery.py`
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+# tests/sudespacho_mcp/test_discovery.py
+import httpx
+from plugins.sudespacho_mcp.client import SudespachoClient
+from plugins.sudespacho_mcp.discovery import describe_element
+
+class _S:
+    def bearer(self): return "JWT"
+
+def _c(handler):
+    return SudespachoClient(httpx.Client(transport=httpx.MockTransport(handler), base_url="https://x"), _S())
+
+def test_describe_element_junta_view_y_muestra():
+    def h(req):
+        if req.url.path == "/api/view/complete/organismos":
+            return httpx.Response(200, json={"properties": [{"name": "nombre"}, {"name": "cif"}]})
+        if req.url.path == "/api/element_registries/organismos":
+            return httpx.Response(200, json={"items": [{"values": [{"property": {"name": "nombre"}, "value": "X"}]}]})
+        return httpx.Response(404)
+    ficha = describe_element(_c(h), "organismos")
+    assert "nombre" in ficha["propiedades"]
+    assert ficha["slug"] == "organismos"
+    assert ficha["muestra_n"] >= 1
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `python -m pytest tests/sudespacho_mcp/test_discovery.py -v`
+Expected: FAIL (module not found).
+
+- [ ] **Step 3: Write minimal implementation**
+
+```python
+# plugins/sudespacho_mcp/discovery.py
+from __future__ import annotations
+
+def describe_element(client, element: str) -> dict:
+    """Borrador de ficha de catálogo para revisión humana (no auto-añade a la lista blanca)."""
+    props: set[str] = set()
+    try:
+        view = client._get(f"/api/view/complete/{element}")
+        for p in view.get("properties", []):
+            if p.get("name"):
+                props.add(p["name"])
+    except Exception:
+        pass
+    muestra = client.list_elements(element, page=1, items_per_page=3)
+    for it in muestra.get("items", []):
+        for v in it.get("values", []):
+            name = (v.get("property") or {}).get("name")
+            if name:
+                props.add(name)
+    return {"slug": element, "propiedades": sorted(props), "muestra_n": len(muestra.get("items", []))}
+```
+
+- [ ] **Step 4: Run to verify it passes**
+
+Run: `python -m pytest tests/sudespacho_mcp/test_discovery.py -v`
+Expected: PASS (1 passed).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add plugins/sudespacho_mcp/discovery.py tests/sudespacho_mcp/test_discovery.py
+git commit -m "feat(sudespacho-mcp): describe_element (introspeccion → borrador de ficha)"
+```
+
+---
+
+## Task 11: Server FastMCP — tools de lectura + lista blanca + sin tool de borrado
+
+**Files:**
+- Create: `plugins/sudespacho_mcp/server.py`
+- Test: `tests/sudespacho_mcp/test_server.py`
+
+`build_server()` inyecta cliente + sesión para testear sin API viva (patrón `email_export_mcp`). Cada tool de elemento pasa por `catalog.ensure_allowed`.
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+# tests/sudespacho_mcp/test_server.py
+import pytest
+from plugins.sudespacho_mcp.server import build_server
+from plugins.sudespacho_mcp import catalog
+
+class _FakeClient:
+    def list_elements(self, element, **kw): return {"element": element, "items": []}
+    def list_element_types(self): return sorted(catalog.ALLOWED)
+
+def _tools(server):
+    return {t.name for t in server._tool_manager.list_tools()}
+
+def test_no_hay_tool_de_borrado():
+    names = _tools(build_server(client=_FakeClient()))
+    assert not any("delete" in n or "borrar" in n or "remove" in n for n in names)
+
+def test_list_elements_rechaza_vetado():
+    server = build_server(client=_FakeClient())
+    fn = server._tool_manager.get_tool("list_elements").fn
+    with pytest.raises(catalog.NotAllowed):
+        fn(element="nominas")
+
+def test_list_elements_permite_legal():
+    server = build_server(client=_FakeClient())
+    fn = server._tool_manager.get_tool("list_elements").fn
+    assert fn(element="clientes_propios")["element"] == "clientes_propios"
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `python -m pytest tests/sudespacho_mcp/test_server.py -v`
+Expected: FAIL (module not found).
+
+- [ ] **Step 3: Write minimal implementation**
+
+```python
+# plugins/sudespacho_mcp/server.py
+from __future__ import annotations
+from mcp.server.fastmcp import FastMCP
+from . import catalog
+
+def build_server(*, client) -> FastMCP:
+    mcp = FastMCP("sudespacho")
+
+    @mcp.tool()
+    def list_element_types() -> list[str]:
+        """Lista los tipos de elemento CRM permitidos (lista blanca)."""
+        return client.list_element_types()
+
+    @mcp.tool()
+    def list_elements(element: str, page: int = 1, items_per_page: int = 10) -> dict:
+        """Lista registros de un tipo de elemento permitido del CRM."""
+        catalog.ensure_allowed(element)
+        return client.list_elements(element, page=page, items_per_page=items_per_page)
+
+    # NOTA: no se registra NINGUNA tool de borrado (regla dura §5).
+    return mcp
+```
+
+- [ ] **Step 4: Run to verify it passes**
+
+Run: `python -m pytest tests/sudespacho_mcp/test_server.py -v`
+Expected: PASS (3 passed).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add plugins/sudespacho_mcp/server.py tests/sudespacho_mcp/test_server.py
+git commit -m "feat(sudespacho-mcp): server FastMCP con lista blanca y sin tool de borrado"
+```
+
+---
+
+## Task 12: Tools restantes en el server (search/summary/por-expediente/detalle/documentos/describe)
+
+**Files:**
+- Modify: `plugins/sudespacho_mcp/server.py`
+- Test: `tests/sudespacho_mcp/test_server_tools.py`
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+# tests/sudespacho_mcp/test_server_tools.py
+import pytest
+from plugins.sudespacho_mcp.server import build_server
+from plugins.sudespacho_mcp import catalog
+
+class _FakeClient:
+    def search(self, element, term): return [{"element": element, "term": term}]
+    def summary(self, element, **kw): return {"element": element}
+    def por_expediente(self, element, exp_id, **kw): return {"element": element, "exp": exp_id}
+    def get_detalle(self, element, id_, properties): return {"id": id_}
+    def document_download_url(self, doc_id): return "https://s3/x"
+    def describe(self, element): return {"slug": element}
+
+def _fn(server, name):
+    return server._tool_manager.get_tool(name).fn
+
+def test_search_respeta_lista_blanca():
+    fn = _fn(build_server(client=_FakeClient()), "search_elements")
+    with pytest.raises(catalog.NotAllowed):
+        fn(element="facturas", term="x")
+    assert fn(element="colaboradores", term="x")[0]["term"] == "x"
+
+def test_describe_element_respeta_lista_blanca():
+    fn = _fn(build_server(client=_FakeClient()), "describe_element")
+    with pytest.raises(catalog.NotAllowed):
+        fn(element="cuentas_contables")
+    assert fn(element="organismos")["slug"] == "organismos"
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `python -m pytest tests/sudespacho_mcp/test_server_tools.py -v`
+Expected: FAIL (tools no existen).
+
+- [ ] **Step 3: Write minimal implementation (añadir tools a `build_server`)**
+
+```python
+    @mcp.tool()
+    def search_elements(element: str, term: str) -> list:
+        """Autocomplete de un tipo de elemento permitido."""
+        catalog.ensure_allowed(element)
+        return client.search(element, term)
+
+    @mcp.tool()
+    def get_element_summary(element: str) -> dict:
+        """Agregado/resumen de un tipo de elemento permitido."""
+        catalog.ensure_allowed(element)
+        return client.summary(element)
+
+    @mcp.tool()
+    def list_elements_por_expediente(element: str, exp_id: int) -> dict:
+        """Elementos de un tipo permitido asociados a un expediente."""
+        catalog.ensure_allowed(element)
+        return client.por_expediente(element, exp_id)
+
+    @mcp.tool()
+    def get_expediente_detalle(element: str, id: int, properties: list[str]) -> dict:
+        """Detalle de un registro (forma coma; workaround del bug 500)."""
+        catalog.ensure_allowed(element)
+        return client.get_detalle(element, id, properties)
+
+    @mcp.tool()
+    def get_document_download_url(doc_id: int) -> str:
+        """URL S3 prefirmada para descargar un documento del CRM."""
+        return client.document_download_url(doc_id)
+
+    @mcp.tool()
+    def describe_element(element: str) -> dict:
+        """Borrador de ficha (propiedades reales) de un elemento permitido."""
+        catalog.ensure_allowed(element)
+        return client.describe(element)
+```
+
+- [ ] **Step 4: Run to verify it passes**
+
+Run: `python -m pytest tests/sudespacho_mcp/test_server_tools.py -v`
+Expected: PASS (2 passed).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add plugins/sudespacho_mcp/server.py tests/sudespacho_mcp/test_server_tools.py
+git commit -m "feat(sudespacho-mcp): tools de lectura restantes (todas con lista blanca)"
+```
+
+---
+
+## Task 13: Adaptador de cliente para el server (`list_element_types` + `describe`) y cableado de arranque
+
+**Files:**
+- Modify: `plugins/sudespacho_mcp/client.py` (añadir `list_element_types`, `describe`)
+- Modify: `plugins/sudespacho_mcp/server.py` (fábrica real `create_server()`)
+- Create: `plugins/sudespacho_mcp/__main__.py`
+- Test: `tests/sudespacho_mcp/test_client_adapter.py`
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+# tests/sudespacho_mcp/test_client_adapter.py
+import httpx
+from plugins.sudespacho_mcp.client import SudespachoClient
+from plugins.sudespacho_mcp import catalog
+
+class _S:
+    def bearer(self): return "JWT"
+
+def test_list_element_types_es_la_lista_blanca():
+    c = SudespachoClient(httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200, json={})), base_url="https://x"), _S())
+    assert set(c.list_element_types()) == set(catalog.ALLOWED)
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `python -m pytest tests/sudespacho_mcp/test_client_adapter.py -v`
+Expected: FAIL (método no existe).
+
+- [ ] **Step 3: Write minimal implementation**
+
+En `client.py`:
+
+```python
+    def list_element_types(self) -> list[str]:
+        from . import catalog
+        return sorted(catalog.ALLOWED)
+
+    def describe(self, element: str) -> dict:
+        from .discovery import describe_element
+        return describe_element(self, element)
+```
+
+En `server.py` añadir la fábrica real:
+
+```python
+def create_server():
+    import httpx
+    from .config import base_url, tokens_path
+    from .token_store import TokenStore
+    from .session import Session
+    from .client import SudespachoClient
+    http = httpx.Client(base_url=base_url(), timeout=30.0)
+    session = Session(TokenStore(tokens_path()), http)
+    return build_server(client=SudespachoClient(http, session))
+```
+
+```python
+# plugins/sudespacho_mcp/__main__.py
+from .server import create_server
+if __name__ == "__main__":
+    create_server().run()
+```
+
+- [ ] **Step 4: Run to verify it passes**
+
+Run: `python -m pytest tests/sudespacho_mcp/test_client_adapter.py -v`
+Expected: PASS (1 passed).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add plugins/sudespacho_mcp/client.py plugins/sudespacho_mcp/server.py plugins/sudespacho_mcp/__main__.py tests/sudespacho_mcp/test_client_adapter.py
+git commit -m "feat(sudespacho-mcp): adaptador de cliente + fabrica de server + entrypoint"
+```
+
+---
+
+## Task 14: CLI de login (alta de cuenta, una vez)
+
+**Files:**
+- Create: `plugins/sudespacho_mcp/sudespacho_cli.py`
+- Test: `tests/sudespacho_mcp/test_cli.py`
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+# tests/sudespacho_mcp/test_cli.py
+import httpx
+from plugins.sudespacho_mcp import sudespacho_cli
+from plugins.sudespacho_mcp.token_store import TokenStore
+
+def test_do_login_guarda_tokens(tmp_path):
+    http = httpx.Client(transport=httpx.MockTransport(
+        lambda r: httpx.Response(200, json={"token": "J", "refresh_token": "R"})), base_url="https://x")
+    store = TokenStore(tmp_path / "t.json")
+    sudespacho_cli.do_login(http, store, "user@x", "secret")
+    assert store.load() == {"jwt": "J", "refresh": "R"}
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `python -m pytest tests/sudespacho_mcp/test_cli.py -v`
+Expected: FAIL (module not found).
+
+- [ ] **Step 3: Write minimal implementation**
+
+```python
+# plugins/sudespacho_mcp/sudespacho_cli.py
+from __future__ import annotations
+import getpass, sys, httpx
+from .auth import login
+from .token_store import TokenStore
+from .config import base_url, tokens_path
+
+def do_login(http: httpx.Client, store: TokenStore, username: str, password: str) -> None:
+    tokens = login(http, username, password)
+    store.save(jwt=tokens["jwt"], refresh=tokens["refresh"])
+
+def main() -> int:
+    print("Conectar cuenta sudespacho (tus credenciales; la contraseña NO se guarda).")
+    username = input("Usuario/email CRM: ").strip()
+    password = getpass.getpass("Contraseña CRM: ")
+    with httpx.Client(base_url=base_url(), timeout=30.0) as http:
+        do_login(http, TokenStore(tokens_path()), username, password)
+    print(f"OK. Tokens guardados en {tokens_path()}. La contraseña no se ha almacenado.")
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())
+```
+
+- [ ] **Step 4: Run to verify it passes**
+
+Run: `python -m pytest tests/sudespacho_mcp/test_cli.py -v`
+Expected: PASS (1 passed).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add plugins/sudespacho_mcp/sudespacho_cli.py tests/sudespacho_mcp/test_cli.py
+git commit -m "feat(sudespacho-mcp): CLI de login (guarda solo tokens, nunca la contraseña)"
+```
+
+---
+
+## Task 15: Empaquetado — `run_server.bat`, `.dxt`, README
+
+**Files:**
+- Create: `plugins/sudespacho_mcp/run_server.bat`
+- Create: `plugins/sudespacho_mcp/dxt-build/manifest.json`
+- Create: `plugins/sudespacho_mcp/README.md`
+
+- [ ] **Step 1: `run_server.bat` (patrón google_despacho, stderr al log)**
+
+```bat
+@echo off
+REM Wrapper de arranque del MCP sudespacho para Claude Desktop.
+REM stdout (fd1) queda para el pipe JSON-RPC de MCP; stderr al log.
+C:\Users\tnm33\AppData\Local\Python\pythoncore-3.14-64\python.exe -m plugins.sudespacho_mcp 2>>"%APPDATA%\Claude\sudespacho-mcp.log"
+```
+
+- [ ] **Step 2: `dxt-build/manifest.json` (calcado del de google_despacho)**
+
+```json
+{
+  "dxt_version": "0.1",
+  "name": "sudespacho",
+  "version": "0.1.0",
+  "description": "CRM sudespacho (lectura) — cuenta personal del usuario",
+  "server": {
+    "type": "python",
+    "entry_point": "plugins/sudespacho_mcp/__main__.py",
+    "mcp_config": {
+      "command": "run_server.bat"
+    }
+  }
+}
+```
+
+- [ ] **Step 3: `README.md`**
+
+Documentar: propósito (lectura CRM), Modelo B (login una vez con `python -m plugins.sudespacho_mcp.sudespacho_cli`), variables de entorno (`SUDESPACHO_BASE_URL`, `SUDESPACHO_DESPACHO_HOME`, `SUDESPACHO_DL_ROOT`), lista blanca (contabilidad vetada), no-borrado, y los gates de despliegue (rol abogado, licencia, vida del refresh). Enlazar el spec.
+
+- [ ] **Step 4: Verificar arranque import-safe**
+
+Run: `python -c "import plugins.sudespacho_mcp.server as s; s.create_server()"`
+Expected: sin error de import (aunque no haya tokens; el fallo de sesión es en tiempo de llamada, no de arranque).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add plugins/sudespacho_mcp/run_server.bat plugins/sudespacho_mcp/dxt-build/manifest.json plugins/sudespacho_mcp/README.md
+git commit -m "feat(sudespacho-mcp): empaquetado .dxt + run_server.bat + README"
+```
+
+---
+
+## Task 16: Suite verde + gitignore de tokens + nota de gates
+
+**Files:**
+- Modify: `.gitignore` (si hace falta), `plugins/sudespacho_mcp/README.md`
+
+- [ ] **Step 1: Asegurar que los tokens nunca se commitean**
+
+Confirmar que `~/.sudespacho-despacho/` está fuera del repo (lo está: es el HOME del usuario). Añadir a `.gitignore` una regla defensiva por si alguien pusiera `SUDESPACHO_DESPACHO_HOME` dentro del repo:
+
+```
+# tokens del MCP sudespacho (nunca al repo)
+**/.sudespacho-despacho/
+**/tokens.json
+```
+
+- [ ] **Step 2: Suite completa**
+
+Run: `python -m pytest -q`
+Expected: toda la suite verde (incluidos los ~30 tests nuevos del plugin). Si algún módulo del plugin no colecciona por falta de `mcp`, usar `importorskip("mcp")` en `test_server*.py` (patrón del repo).
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add .gitignore
+git commit -m "chore(sudespacho-mcp): gitignore defensivo de tokens"
+```
+
+- [ ] **Step 4: Gates de DESPLIEGUE (documentar, no bloquean el build)**
+
+En el `README.md`, sección "Antes de dar F1 por viva en producción":
+1. **Rol abogado:** con un usuario de rol abogado, confirmar 403/vacío en un elemento financiero (la lista blanca es 2ª barrera; el CRM debe ser la 1ª).
+2. **Licencia (4 concurrentes):** confirmar con sudespacho si la sesión del MCP consume licencia (Nikolai, en curso).
+3. **Vida del `refresh_token`** (opaco): medir; mitigado por el refresco rodante.
+4. **Check de integración manual:** login real + `list_elements("clientes_propios")` + `describe_element` + descarga de un documento a DL-root, contra el CRM real.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add plugins/sudespacho_mcp/README.md
+git commit -m "docs(sudespacho-mcp): gates de despliegue en README"
+```
+
+---
+
+## Cierre
+
+- Actualizar `PLAN.md` `[SIGUIENTE-MCP-SUDESPACHO]`: F1 marcada según avance + hash del PR.
+- Abrir PR (rama actual), pasar `leak-scan`, mergear con `--squash --delete-branch`.
+- Instalar el `.dxt` en Claude Desktop y cablear; ejecutar el check de integración manual (Task 16.4).
