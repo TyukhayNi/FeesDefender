@@ -2267,3 +2267,101 @@ carpeta y el formato de 7 columnas del `_MANIFIESTO` (que exige `manifiesto_a_ca
 **Disparador de promoción.** Decisión de Nikolai de invertir en el `core.sala_lectura` + tool MCP, o
 recurrencia del coste de montar salas grandes. Relacionado: #54 (layout `00_Input`), #55 (orden del
 pipeline: la máquina alimenta la lectura), plugin FeesDefender / `expedientes-xl`.
+
+---
+
+## 57. Generador de "instrucciones del proyecto" por caso (para proyectos compartidos de claude.ai)
+
+**Anotado 2026-07-13** tras brainstorming sobre BaRS8 (W-02XOR7). Cada caso se lleva como **proyecto
+compartido de claude.ai web (plan Team)** que usa el equipo del despacho (Ana, Sergio, Paola). El campo
+**"Instrucciones del proyecto"** orienta a Claude en cada chat de ese proyecto. Hoy se rellena a mano y su
+80% es boilerplate idéntico entre casos; el 20% específico ya vive en `_caso.md.meta`. **Por ahora se
+genera a demanda pidiéndoselo a Claude** (no automatizado); esta entrada guarda el diseño para cuando
+convenga automatizarlo.
+
+**Modelo de las 3 superficies del proyecto (verificado con la doc de Anthropic + la UI, 2026-07-13):**
+- **Instrucciones** → COMPARTIDO ("Todos en Tyukhay…"), editable por miembros "Can edit"; se carga en cada
+  chat. Es la única superficie compartida + siempre presente.
+- **Contexto** (knowledge) → COMPARTIDO; adjuntar PDFs/docs (aquí van `INDICE.md`, `CRONOLOGIA.md`, triaje,
+  viabilidad — que ya refresca el pipeline, sin mantenimiento a mano).
+- **Memoria** → **PRIVADA POR USUARIO** ("Solo tú"), autogenerada, apagable por el admin. **No sirve** para
+  estado compartido del equipo; se deja fuera.
+- Nota: Cowork de escritorio **no** soporta proyectos compartidos (local, sin sync) → el proyecto es web.
+
+**Decisión de diseño (aprobada):** las Instrucciones son **estáticas** — sin línea de "estado/próxima
+acción" ni bitácora a mano (Nikolai no quiere babysitting del campo). "En qué punto está el caso" sale de
+los docs de Contexto (que se auto-refrescan) y de la Memoria privada. El generador solo rellena lo
+determinista y estable.
+
+**Arquitectura propuesta (generador C-lite, patrón biblioteca):**
+- `core/instrucciones_proyecto.py` (cerebro puro) + CLI. Tres piezas:
+  - `glosa_tipo_caso(tipo_caso) -> str`: diccionario `tipo_caso → frase` (p. ej. `NEGATIVA_OFERTA` →
+    "el propietario acepta la oferta y luego se niega a formalizar; el despacho reclama los honorarios
+    devengados por E&V"). Fallback genérico + marca visible si el tipo es desconocido.
+  - `construir_instrucciones(meta: dict) -> str`: **pura**, sin I/O; boilerplate fijo (constante del módulo:
+    punto de entrada, cómo trabajar, equipo/revisión, convenciones) + campos derivados.
+  - CLI `python -m core.instrucciones_proyecto <caso>`: lee `00_Input/_caso.md`, escribe
+    `07_AI cowork/_INSTRUCCIONES_PROYECTO.txt` (UTF-8 sin BOM, **contenido = texto pegable puro**, sin
+    cabecera "GENERADO" que contamine el pegado) e imprime la ruta.
+- **Derivados de `meta`:** identidad/título, `W-XXXXX`, `tipo_caso`→glosa, `ciudad`, `cuantia`, partes;
+  `cliente` por defecto **Engel & Völkers** si `meta.cliente` es `null` (todo FeesDefender es E&V); campos
+  `null` → "pendiente".
+- **Idempotencia:** artefacto derivado → regenerar **sobrescribe** (sin merge). No se edita a mano: si
+  cambia `meta`, se regenera. El campo de claude.ai es la copia viva; el `.txt` es semilla + adjunto a
+  Contexto.
+- **Enganche a `abrir-caso`:** tras el scaffold, `core/abrir_caso.py` invoca el generador → todo caso nuevo
+  nace con su `.txt`. CLI standalone para regenerar casos existentes.
+- **Boilerplate/equipo** (Ana secretaria / Sergio pasante / Paola abogada / confirmación externa de Nikolai)
+  vive en **un solo sitio** (constante del módulo o `data/`).
+
+**Tests:** golden snapshot de `construir_instrucciones` con `meta` de BaRS8 → el texto aprobado; test de
+no-divergencia (todo `tipo_caso` de `core/config` tiene glosa); `null`→"pendiente" y `cliente` null→E&V;
+CLI escribe en ruta correcta, UTF-8 sin BOM, idempotente.
+
+**Plantilla de oro aprobada (salida esperada para BaRS8, `NEGATIVA_OFERTA`):**
+
+```
+CASO: «BaRS8 · Santes Creus 15, Montcada i Reixac (W-02XOR7)». Cliente: Engel & Völkers.
+Tipo: «NEGATIVA A OFERTA ACEPTADA» — el propietario acepta la oferta y luego se niega a
+formalizar; el despacho reclama los honorarios de intermediación devengados por E&V.
+Ciudad: «Barcelona». Cuantía: «pendiente». Partes concretas: «pendientes» (ver _caso.md).
+(«Los consultores» que aparezcan en la documental son personal de E&V, no del despacho.)
+
+PUNTO DE ENTRADA
+- Empieza SIEMPRE por "00_Input/_caso.md": es el índice del caso y enruta al resto
+  (documental, cronología, triaje, viabilidad). No navegues por rutas sueltas ni asumas
+  dónde está algo; si no está enlazado ahí, pregunta.
+
+CÓMO TRABAJAR ESTE CASO
+- Trabaja anclado a la documental del expediente. No inventes hechos, cifras ni
+  jurisprudencia. Si un dato no consta, dilo y márcalo como pendiente.
+- "90_Notas personales" es zona del abogado: no la leas ni escribas en ella.
+- Comunicaciones al cliente en castellano (en ruso si el cliente es de origen ex-URSS).
+
+EQUIPO Y REVISIÓN (Tyukhay Legal)
+- Paola (abogada): trabajo jurídico completo.
+- Sergio (pasante): redacta e investiga; todo escrito sale a revisión de Paola o Nikolai.
+- Ana (secretaria): organización, intake y logística de comunicaciones; no redacción jurídica.
+- Toda acción con efecto externo (enviar, presentar, subir, cerrar) la confirma Nikolai.
+
+CONVENCIONES
+- Partes: "propietario / buscador" (no vendedor/comprador), aunque el crudo use esos términos.
+- Refiere a terceros por "W-02XOR7" y por su rol; no vuelques nombres, DNI/NIE ni emails en el chat.
+- NIG no se usa.
+```
+
+Si las *instrucciones del perfil* del despacho ya cargan terminología, higiene PII y "no inventar
+jurisprudencia", el bloque CONVENCIONES es podable.
+
+**Pieza separada (NO parte de esta entrada, follow-up propio): hub de `_caso.md`.** Hoy la sección
+`## Navegación` de `_caso.md` es un stub fijo que genera `core/case_manager.py` (`[[scoring]] [[viabilidad]]
+[[hechos_atomicos]] [[contradicciones]] [[demanda]]`) apuntando a artefactos que aún no existen; editarla a
+mano es frágil porque el escritor **regenera el cuerpo entero** desde `meta` (los mutadores de lock sí
+preservan el cuerpo; el regenerador no). Para que `_caso.md` sea el **punto de entrada único real** que
+enruta a sala de lectura/máquina/triaje/viabilidad, hay que hacer que el escritor del índice incluya esos
+enlaces **condicionalmente cuando existan**. Cierra el tema SSOT ("una fuente por hecho": `_caso.md` = hub
+de navegación + metadatos; `INDICE.md` = corpus documental). Es un PR aparte y no bloquea el generador.
+
+**Disparador de promoción.** Recurrencia del coste de teclear las instrucciones a mano al abrir casos, o
+decisión de Nikolai. Relacionado: `abrir-caso` (`core/abrir_caso.py`, `_shared/scaffold_caso.py`),
+#30 (manifiesto + wikilinks de Navegación), #54/#55 (layout y pipeline).
