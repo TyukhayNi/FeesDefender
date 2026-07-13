@@ -2214,3 +2214,56 @@ explotar el `.eml`: `core/adjuntos_contenido` (texto de cada adjunto → `<base>
 **Disparador de promoción.** Se aborda junto con #54 (rediseño de `00_Input` / orden del pipeline), o
 antes si aparece un caso con adjuntos probatorios **solo** embebidos en `.eml` que se pierdan en el
 OCR/MD. Hasta entonces, backlog. Relacionado: #53, #54 y la doctrina de proceso de correo.
+
+---
+
+## 56. Mejora del proceso de sala de lectura: motor determinista + tool MCP, cronología + nombres que hablan  [pieza de #54/#55]
+
+**Anotado 2026-07-13** tras montar la sala del W-02XOR7. La corrida costó ~10 min (un subagente re-leyó
+los 169 ficheros de `00_Input`) **pese a existir ya los MD/`raw_text` de la sala de máquina**. Un script
+ad-hoc determinista lo rehízo en **segundos**, pero con bugs (acentos en el match de carpeta → `06. PBC`
+vacío; formato de 7 columnas del `_MANIFIESTO`; sin dedup por contenido; descripciones = slug del nombre
+→ **mudas** cuando el original es opaco). Un `core` testeado los evita.
+
+**Propósito de la sala (NO se cuestiona):** es donde el abogado **lee por orden de fechas** documentos con
+**nombres que hablan** (entender el doc sin abrirlo). El esqueleto es **cronológico** (`CRONOLOGIA`), no
+por categoría.
+
+**Objetivos:** (1) montarla **más rápido**; (2) **reducir `0000-00-00`** (la fecha ordena la sala → campo
+de máximo valor); (3) **nombres que hablan**.
+
+**Arquitectura decidida (brainstorming 2026-07-13):**
+- **`core.sala_lectura` determinista y testeado** (revivir/adaptar el deprecado 2026-06-18) que
+  **consume la salida de la sala de máquina** (`_cobertura.md` + `raw_text/` + los sha256 ya calculados)
+  en vez de re-explorar/re-hashear `00_Input`. Dedup por sha reutilizando hashes de la máquina; bundles
+  (WhatsApp/`.eml`) deterministas en core.
+- **Expuesto como tool MCP `build_sala_lectura(caso)` en el plugin FeesDefender** (junto a
+  `expedientes-xl`): corre **local** (PC, donde viven G:/OCR/core) pero **invocable desde Cowork** por el
+  puente `.dxt` — patrón de `google-despacho`/`gmail`/`expedientes`. "Cowork construye" = dispara el motor
+  local. **Un solo motor**, sin mantener vía LLM paralela.
+- **La skill pasa a orquestador fino:** llama a la tool + resuelve solo el residual + presenta el gate.
+
+**Producción de los 3 campos (principio: determinista donde ya habla/ya tiene fecha; LLM solo el residual):**
+- **Categoría → FACETA barata heredada** de la carpeta-oráculo del Drive EV. Columna en manifiesto/catálogo
+  + vista agrupada opcional en INDICE. **Degradada de esqueleto a etiqueta**; sin gate, sin routing
+  PBC-por-parte fino. Ningún consumidor vivo ramifica sobre ella (scorer = código muerto). Único uso real:
+  armar la documental de la demanda por tipo. **Nunca pasa por LLM.**
+- **Fecha → determinista sobre `raw_text`:** fórmula de firma ("En X a N de MES de AAAA"), cabecera `Date`
+  de emails, timestamp de WhatsApp, fecha registral/nota simple, fecha en nombre. Residual ambiguo (varias
+  fechas) → pasada LLM.
+- **Descripción que HABLA → determinista** cuando el tipo/nombre/**asunto del email** ya habla (encargo,
+  nota simple, oferta, DNI, anexo PBC, catastro, CEE, "reclamación honorarios"…). Content-derived para el
+  residual opaco (`753`, `25-0020`, `CNT…`, `(sin asunto)`, `detalle_transferencia`). **Siempre sin PII**
+  (describe el documento, no a las partes).
+
+**Eficiencia clave:** fecha + descripción del residual se resuelven en **una sola pasada LLM** sobre el
+puñado opaco/ambiguo (lee su `raw_text`, devuelve `{fecha, descripcion}` sin PII). El grueso (los que ya
+hablan/tienen fecha) es determinista e instantáneo → cumple el objetivo de velocidad.
+
+**Flecos menores:** dedup por **contenido** (docx + su `.docx.pdf`; `Nota Simple` ×2 casi idénticas con sha
+distinto) — opcional, por hash de texto normalizado. Tests que cubran el bug de acentos en el match de
+carpeta y el formato de 7 columnas del `_MANIFIESTO` (que exige `manifiesto_a_catalogo.py`).
+
+**Disparador de promoción.** Decisión de Nikolai de invertir en el `core.sala_lectura` + tool MCP, o
+recurrencia del coste de montar salas grandes. Relacionado: #54 (layout `00_Input`), #55 (orden del
+pipeline: la máquina alimenta la lectura), plugin FeesDefender / `expedientes-xl`.
