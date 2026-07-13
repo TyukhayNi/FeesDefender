@@ -149,6 +149,61 @@ def _resolve_dest(dest_path: str) -> str:
     return dest
 
 
+# --------------------------- guardarraíles de etiqueta ---------------------------
+
+# Etiquetas de sistema: nunca se crean/aplican/quitan. La fuente de verdad es el
+# campo `type == "system"` de la API; esta blocklist es una red defensiva por si
+# una etiqueta no aparece en el listado.
+SYSTEM_LABELS = frozenset({
+    "INBOX", "SENT", "DRAFT", "TRASH", "SPAM",
+    "IMPORTANT", "STARRED", "UNREAD", "CHAT",
+})
+
+
+def _is_system_label_ref(ref: str) -> bool:
+    """True si `ref` (id o nombre) es una etiqueta de sistema por convención."""
+    r = (ref or "").strip().upper()
+    return r in SYSTEM_LABELS or r.startswith("CATEGORY_")
+
+
+def _list_labels_raw(service) -> list[dict]:
+    resp = service.users().labels().list(userId="me").execute()
+    return resp.get("labels", [])
+
+
+def _resolve_user_label(service, label: str) -> dict:
+    """Resuelve `label` (id o nombre) a un dict de etiqueta de USUARIO. Fail-closed:
+    ValueError si está vacío, si no existe, o si es de sistema (por type o por
+    convención de id/nombre)."""
+    target = (label or "").strip()
+    if not target:
+        raise ValueError("label vacío.")
+    labels = _list_labels_raw(service)
+    by_id = [l for l in labels if l.get("id") == target]
+    by_name = [l for l in labels if l.get("name") == target]
+    match = by_id[0] if by_id else (by_name[0] if by_name else None)
+    if match is None:
+        raise ValueError(
+            f"Etiqueta no encontrada: {label!r}. Las etiquetas de usuario se crean "
+            f"explícitamente con create_label; no se crean al aplicar.")
+    if (match.get("type") or "").strip().lower() == "system" \
+            or _is_system_label_ref(match.get("id", "")) \
+            or _is_system_label_ref(match.get("name", "")):
+        raise ValueError(
+            f"Etiqueta de sistema no permitida: {match.get('id')} "
+            f"({match.get('name')}). Solo etiquetas de usuario.")
+    return match
+
+
+def _guard_create_name(name: str) -> str:
+    n = (name or "").strip()
+    if not n:
+        raise ValueError("name vacío.")
+    if _is_system_label_ref(n):
+        raise ValueError(f"Nombre reservado de etiqueta de sistema: {name!r}.")
+    return n
+
+
 def build_server(
     *,
     service_factory: Callable[[str], object] | None = None,
@@ -273,6 +328,24 @@ def build_server(
         with open(dest, "wb") as fh:
             fh.write(raw)
         return {"path": dest, "bytes": len(raw), "account": account}
+
+    # ------------------------------- etiquetado -------------------------------
+
+    @mcp.tool()
+    def create_label(account: str, name: str) -> dict:
+        """Crea la etiqueta de USUARIO `name` en `account`. IDEMPOTENTE: si ya
+        existe, devuelve su id sin recrearla. Rechaza nombres de etiqueta de
+        sistema. Devuelve {account, id, name, created}."""
+        clean = _guard_create_name(name)
+        service = service_factory(account)
+        for l in _list_labels_raw(service):
+            if l.get("name") == clean:
+                return {"account": account, "id": l.get("id"),
+                        "name": l.get("name"), "created": False}
+        created = service.users().labels().create(
+            userId="me", body={"name": clean}).execute()
+        return {"account": account, "id": created.get("id"),
+                "name": created.get("name", clean), "created": True}
 
     return mcp
 
