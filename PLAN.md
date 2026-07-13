@@ -82,6 +82,21 @@ puro + orquestadores finos. Spec: `docs/superpowers/specs/2026-07-09-abrir-caso-
 - **Fleco de F2 (no de F3):** `download_file_content` (`drive_ops.py:209`) devuelve el mime de ORIGEN tras exportar un Doc nativo (no el de export) y no ajusta la extensión del destino — bug latente menor (sin consumidor tras aparcar F3). En backlog.
 - Siguiente en cola: **F4** (Calendar) cuando haya disparador. Retomar por `writing-plans`.
 
+## [SIGUIENTE-MCP-SUDESPACHO] MCP `sudespacho` (CRM del despacho) — F1 lectura: spec HECHO, plan pendiente
+
+*Disparador: `docs/superpowers/handoff-2026-07-13-mcp-sudespacho.md` (brainstorming Cowork) + decisión Nikolai de dar producto rápido y escalable a los compañeros. Primer producto que escala a Ana/Sergio/Paola porque la API REST del CRM ya es nube. Aplica el principio transversal de dos capas (motor determinista + interfaz distribuible).*
+
+- Spec APROBADO en brainstorming: `docs/superpowers/specs/2026-07-13-mcp-sudespacho-design.md`.
+- **Decisiones cerradas:** **standalone** (sin `import core`, anti-drift por paridad) · entrega **`.dxt` a Cowork por el puente** · orden **F1 lectura → F2 escritura → F3+** · **Modelo B de credenciales: cuenta personal de cada usuario (Bearer JWT + refresh), NO la `x-api-key`** (hallazgo 2026-07-13: la key es GLOBAL/admin, no ligada a usuario, permisos no modificables, ~100% acceso → inútil para rol/atribución; el JWT personal SÍ respeta la matriz de rol —oculta contabilidad server-side— Y atribuye eventos al usuario; **Modelo A retirado, Modelo C descartado**) · **lista blanca deny-by-default** con TODO el árbol financiero/contable VETADO (2ª barrera) · **BORRADO NUNCA** (triple garantía: sin tool, cliente sin `DELETE`, rol con `Delete` OFF) · tools **genéricas** (`element` como parámetro) · **descubrimiento** por `describe_element` + playbook + catálogo (lectura casi automática, escritura mantiene HAR) · descarga vía `downloadUri` a DL-root (bytes nunca por el modelo; `presigned_download_url` NO es bloqueo, ya resuelto) · ubicación `plugins/sudespacho_mcp/`.
+- **Descubrimientos reusados de El Contable** (`../ElContable/docs/`): matriz de permisos por rol (valida Modelo A) · slugs financieros confirmados (conceptos_*, facturas, facturas_proforma) · workaround del bug 500 de detalle (forma `?properties=a,b,c` coma vs `properties[]` array) · host de calendario `api-calendar-commons-pro.sudespacho.biz` · gramática `filterGroup` + enums + colisión `E1`.
+- [x] **Gate de auth — mecanismo VERIFICADO EN VIVO (2026-07-13, usuario admin):** REST `element_registries/clientes_propios` → 200; JWT en localStorage con claims `username`+`roles` (atribución + rol); vida 60 min + `refresh_token`; **sin PHPSESSID** (REST = Bearer JWT puro). Modelo B viable.
+- [x] **Sesión de verificación en vivo (2026-07-13) — 3 gates cerrados:** (1) **Bug 500** resuelto — forma **coma** `?properties=a,b,c`→200, array→500 (INTEGRACION §8.3 corregido, workaround propagado); (2) **Login** resuelto — no hay endpoint usuario/contraseña (todos 404) → alta por **`refresh_token` pegado**, el plugin no maneja contraseña; (3) **Slugs** resueltos — `abogados_propios`/`abogados_contrarios` (no `abogados`), `extrajudiciales` (no `expedientes_extrajudiciales`), `juzgados` válido; `properties[]` obligatorio también en el listado. Spec+plan actualizados.
+- [ ] **PENDIENTES del gate:** (a) prueba de **atribución en escritura** (`created_by`, F2); (b) prueba de **rol que oculta la contabilidad** con un usuario de rol abogado (Nikolai es admin, lo ve todo).
+- [ ] **🚩 RIESGO tope de licencia (4 concurrentes) — Nikolai lo CONSULTA con sudespacho (en curso):** confirmar si una sesión JWT del MCP consume licencia (Nikolai+3 compañeros=4, sin margen; entrar expulsó al usuario de soporte). Posible bloqueante del escalado simultáneo (NO de código para F1). Mitigaciones a estudiar: reusar token de sesión web, ampliar licencias, o limitar concurrencia. Puerta de DESPLIEGUE, no de build.
+- [ ] **F1 (lectura)** — desglosar por `writing-plans` y construir. Entregables: cliente REST puro + lista blanca/catálogo + `describe_element` + tools de consulta genérica + expedientes/documentos + descarga a DL-root + `.dxt`. Playbook de descubrimiento en `docs/INTEGRACION_SUDESPACHO.md`.
+- [ ] **F2 (escritura)** y **F3+** (agenda CRM en escritura, legacy, lote): spec/plan aparte, por disparador.
+- [x] **Revisión adversarial del spec (2026-07-13, 4 lentes):** núcleo resiste; correcciones aplicadas a spec+plan (confidencialidad por CAMPO no solo slug + filtro de propiedades; `describe_element` solo-esquema; documentos vía `download_document` a DL-root + `gdocu` en lista blanca + validar elemento-origen; retirada la afirmación "coma esquiva 500" → fallback legacy; `.dxt` autocontenido sin ruta/repo personal; token store atómico+lock+carga tolerante; refresco reactivo a 401 + `_extract` tolerante; descarga con timeout/redirects; no-pérdida-de-datos en F2). **Gates EN VIVO (prerrequisitos de despliegue):** rol abogado oculta contabilidad a nivel slug+campo, endpoint de login, coma-vs-500, escritura con JWT (F2), licencia, vida del refresh_token, verificar slugs. Detalle en spec §13.
+
 ### ✅ [SIGUIENTE-CONTROLES-ANTIFUGA] COMPLETA 2026-07-07 — controles de `SEGURIDAD_DATOS.md` implementados
 *2026-07-07. Disparador concreto: el incidente de fugas de la Fase 2 (HAR + PII en el historial → una sesión entera de rewrite). La doctrina ya está escrita y cableada (`docs/SEGURIDAD_DATOS.md`, hogar canónico; cableado en el mapa SSOT, INDICE, GOBERNANZA §4 y CLAUDE.md). Todos los controles corren solos: barrera local (`51ecf24`), CI + shape-detection (#1 `48c790f`, #3 `e1ff182`) y prevención server-side ACTIVA (`a79ba90`).*
 
@@ -128,6 +143,22 @@ Diferidos: alertas de préstamo >7 días (tarea programada), sección STATUS.md 
 **Avisos post-recreación:** re-invitar colaboradores + reconfigurar branch protection (se pierden al recrear); cualquier otro clon/Cowork debe **re-clonar** (SHAs sin ancestro común); `fd-backup.git` borrable al confirmar el resultado.
 
 **Fallos de baseline — RESUELTOS 2026-07-07:** `test_helpers_sin_drift` (drift de helpers → `sync_skill_helpers.py`); `test_adjuntos_contenido_router` (aislamiento por `reload(extractor)` → captura de `ExtractionError` cualificada por módulo en `router.py`); 2 módulos MCP sin colección (`mcp` instalado + `importorskip`). **Suite `1418 passed, 58 skipped`, verde.**
+
+---
+
+## 🧭 PRINCIPIO TRANSVERSAL — dos capas: motor determinista + interfaz distribuible (plugin)
+*Fijado 2026-07-13 (brainstorming Claude Code, Nikolai). Decisión de rumbo sobre cómo escalar el producto a los compañeros (Ana, Sergio, Paola) sin dejar de trabajar el código de FeesDefender. Disparador: el diseño del MCP de CRM sudespacho (`docs/superpowers/specs/2026-07-13-mcp-sudespacho-design.md`) obligó a decidir plugin standalone vs wrap-core.*
+
+**El producto es UNA cosa en DOS capas, no dos tracks que compiten:**
+- **Motor determinista (`core/`)** = la capa de confianza y auditoría. Todo lo forense, exacto e irreversible: custodia SHA-256, anonimización (`core/anon` — cero pérdida de lógica), altas en CRM (autoincremento sin duplicar), fidelidad byte de correos. Se mantiene y se sigue trabajando; es el cimiento, no legado a jubilar.
+- **Plugins/skills = la interfaz distribuible** que tocan los compañeros. Se reparte por la superficie de Claude (Cowork/Desktop/móvil): se instala y funciona, **sin repo, sin `.venv`, sin `G:`**. El Streamlit local NO escala a terceros porque es un entorno de desarrollador.
+
+**Regla de oro (evita el error caro):** lo irreversible/forense vive en el motor; el plugin lo **dispara**, no lo **reimplementa** "rápido". Si un plugin debe replicar una operación del motor, se blinda con **tests de paridad** contra `core` (patrón §14.6 de `2026-07-08-google-despacho-mcp-design.md`). Corolario de empaquetado: para que un plugin escale a un compañero debe ser **standalone** (`.dxt` autocontenido que él instala con sus credenciales); un plugin acoplado al repo (wrap-core) solo corre en la máquina que tiene el repo.
+
+**Qué escala a los compañeros y qué no (a fecha de hoy):**
+- **Escala YA, sin construir nada:** skills puro-LLM + conectores de lectura (Drive/Gmail) — `triaje-viabilidad`, `escritos-judiciales`, `verificacion-anclada-fuente`.
+- **Escala con build acotado:** MCP de CRM sudespacho **en lectura** (standalone; la API REST `x-api-key` ya es nube) → candidato a "primer producto rápido" para los compañeros, bajo riesgo.
+- **NO escala todavía (se queda en el track local determinista):** OCR, anonimización, atomización de correo y todo lo que hoy exige el pipeline local. Plugin-izarlo para terceros exigiría **hostear el motor** — proyecto aparte, sin disparador hoy.
 
 ---
 

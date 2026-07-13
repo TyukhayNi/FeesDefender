@@ -235,7 +235,7 @@ Fix en `sudespacho_create.py`: `_get_next_num_expediente_judicial(year)` consult
 
 #### Bug conocido: `element_register` devuelve 500
 
-`GET /api/element_register/expedientes_judiciales/{id}?properties[]=id` → HTTP 500 "Array to string conversion". Bug en el backend de sudespacho. No tiene workaround conocido. Usamos el frontal heredado para todo lo que requiera el expediente completo.
+`GET /api/element_register/expedientes_judiciales/{id}?properties[]=id` → HTTP 500 "Array to string conversion" (el servidor no procesa `properties` como array PHP). **✅ WORKAROUND ENCONTRADO 2026-07-13:** usar la forma **coma** `?properties=id,serie_expediente,...` (string separado por comas, sin `[]`) → **HTTP 200** con el registro (verificado en exp. 672). Ya NO hace falta el frontal heredado para el detalle. *(Descubierto en la sesión de verificación del MCP `sudespacho`; ver `docs/superpowers/specs/2026-07-13-mcp-sudespacho-design.md` §13.)*
 
 #### Detalle: `/api/element_registries/{element}` — listado filtrado por expediente (confirmado 2026-05-04)
 
@@ -500,9 +500,11 @@ Pendiente: confirmar payload y respuesta con una conversión real.
 2. **PHPSESSID caduca**: Por inactividad del servidor PHP (~24 min), no por tiempo fijo.
    Si `check_legacy` falla, renovar desde DevTools → Application → Cookies.
 
-3. **`element_register` GET bug 500 — causa confirmada**: El spec OAS3 marca `properties[]`
-   como **required**. El servidor tiene un bug PHP (`Array to string conversion`) al procesar
-   el parámetro como array. No tiene workaround conocido — no usar este endpoint.
+3. **`element_register` GET bug 500 — causa confirmada + WORKAROUND**: El spec OAS3 marca
+   `properties[]` como **required**. El servidor falla (`Array to string conversion`) al procesar
+   el parámetro en forma **array** (`properties[]=`). **Workaround (2026-07-13):** enviar
+   `properties=a,b,c` en forma **coma** (string) → HTTP 200. Además, el **listado**
+   `element_registries` también exige `properties` (omitirlo → 500).
 
 4. ~~**Listado de documentos no está en la API nueva**~~ **CORREGIDO 2026-05-04**: El listado
    de documentos de un expediente SÍ está disponible vía API REST nueva usando
