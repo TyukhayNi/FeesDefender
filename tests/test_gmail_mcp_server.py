@@ -240,3 +240,43 @@ def test_apply_label_account_obligatorio():
                            account_lister=lambda: ["a@tyukhay.legal"])
     fn = _tool(mcp, "apply_label")
     assert inspect.signature(fn).parameters["account"].default is inspect._empty
+
+
+# ------------------------------- remove_label -------------------------------
+
+def test_remove_label_de_mensaje():
+    svc = _label_svc(messages={"modify": {"id": "m1", "labelIds": []}})
+    mcp = srv.build_server(service_factory=lambda e: svc,
+                           account_lister=lambda: ["a@tyukhay.legal"])
+    out = _tool(mcp, "remove_label")(account="a@tyukhay.legal", label="Label_1",
+                                     target_id="m1", target_type="message")
+    assert out["action"] == "remove" and out["label_id"] == "Label_1"
+    method, kwargs = svc.recorded("messages")[-1]
+    assert method == "modify" and kwargs["body"] == {"removeLabelIds": ["Label_1"]}
+
+
+def test_remove_label_de_hilo():
+    svc = _label_svc(threads={"modify": {"id": "t1", "labelIds": []}})
+    mcp = srv.build_server(service_factory=lambda e: svc,
+                           account_lister=lambda: ["a@tyukhay.legal"])
+    out = _tool(mcp, "remove_label")(account="a@tyukhay.legal", label="W-02XOR7",
+                                     target_id="t1", target_type="thread")
+    method, kwargs = svc.recorded("threads")[-1]
+    assert method == "modify" and kwargs["body"] == {"removeLabelIds": ["Label_1"]}
+
+
+def test_remove_label_sistema_rechazado():
+    svc = _label_svc()
+    mcp = srv.build_server(service_factory=lambda e: svc,
+                           account_lister=lambda: ["a@tyukhay.legal"])
+    with pytest.raises(ValueError):
+        _tool(mcp, "remove_label")(account="a@tyukhay.legal", label="INBOX",
+                                   target_id="m1", target_type="message")
+
+
+def test_remove_label_account_obligatorio():
+    svc = _label_svc()
+    mcp = srv.build_server(service_factory=lambda e: svc,
+                           account_lister=lambda: ["a@tyukhay.legal"])
+    fn = _tool(mcp, "remove_label")
+    assert inspect.signature(fn).parameters["account"].default is inspect._empty

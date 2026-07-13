@@ -384,6 +384,22 @@ def build_server(
                 "target_type": target_type.strip().lower(), "action": "apply",
                 "label_ids": resp.get("labelIds", [])}
 
+    @mcp.tool()
+    def remove_label(account: str, label: str, target_id: str,
+                     target_type: str = "message") -> dict:
+        """Quita la etiqueta de USUARIO `label` (id o nombre EXISTENTE) del mensaje o
+        hilo `target_id`. `target_type`: 'message' | 'thread'. Rechaza etiquetas de
+        sistema. Devuelve {account, label_id, label_name, target_id, target_type,
+        action, label_ids}."""
+        service = service_factory(account)
+        match = _resolve_user_label(service, label)
+        resp = _modify_target(service, target_id=target_id, target_type=target_type,
+                              remove=[match["id"]])
+        return {"account": account, "label_id": match["id"],
+                "label_name": match.get("name"), "target_id": target_id,
+                "target_type": target_type.strip().lower(), "action": "remove",
+                "label_ids": resp.get("labelIds", [])}
+
     return mcp
 
 
