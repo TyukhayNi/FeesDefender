@@ -2132,3 +2132,53 @@ pipeline aguas abajo lee todas las fuentes). Regla del repo: promover solo con *
 
 **Disparador de promoción.** Recurrencia de intake de grabaciones/entrevistas de viabilidad (varios
 casos), o la reapertura de la parte de abrir-caso que tenía `entrevista` aparcada.
+
+---
+
+## 54. Modelo de layout de `00_Input`: subcarpeta por lote de intake + metadatos, vs cajones fijos por fuente  [DECISIÓN DE ARQUITECTURA PENDIENTE]
+
+**Anotado 2026-07-13** a raíz del intake del W-02XOR7 (Santes Creus 15). El material llegó por **tres
+canales a la vez** (etiqueta de Gmail + carpetas del Drive de EV + grabación en Meet) y hubo fricción de
+clasificación: los WhatsApp y los correos de las partes venían **dentro** del pull del Drive → cayeron en
+`01_Drive EV`, no en `02_Whatsapp`/`03_Email`; la grabación fue a `04_Manual` por no haber ruta a
+`06_Entrevistas` (ver #53).
+
+**Diagnóstico.** Hoy `00_Input` codifica **procedencia** (canal) en el árbol con 6 cajones fijos
+(`01_Drive EV`…`06_Entrevistas`, `config.CASO_SUBDIRS`), y mezcla implícitamente el eje de **tipo de
+contenido**. En realidad hay **tres ejes ortogonales** —procedencia (canal), tipo (WhatsApp/email/PDF/
+grabación) y lote de entrega (quién/cuándo)— y un único árbol solo puede codificar uno limpio; los otros
+dos deben vivir en **metadatos**. De ahí la fricción.
+
+**Propuesta de Nikolai.** No imponer scaffolding canónico en `00_Input`: **cada intake = su propia
+subcarpeta** (por evento de entrega), conservando la estructura tal cual llega.
+
+**Dos modelos candidatos:**
+
+- **A (subcarpeta por lote + manifiesto).** Layout físico = una subcarpeta por evento de intake
+  (`00_Input/<fecha>_<fuente>_<lote>/…` verbatim); **procedencia y tipo pasan a metadatos** en un
+  `_manifiesto` por lote y/o en `_intake_log.jsonl`. Las herramientas filtran por **metadato, no por
+  ruta**. Ventajas: fidelidad (nada se fuerza a un cajón), forense (cada carpeta autodescribe una
+  entrega, encaja con el modelo de eventos del `_intake_log`), append-only (un intake nunca pisa otro).
+- **B (mantener cajones, enrutar por tipo en el ingest).** Se conservan los 6 cajones pero el ingest
+  **normaliza por tipo**: un export de WhatsApp siempre va a `02_Whatsapp` aunque venga por Drive, etc.
+  Arregla la misclasificación sin tocar a los consumidores, a costa de routing content-aware en la
+  entrada (y de "romper" carpetas de origen que venían agrupadas, p. ej. `_DEMANDA/` del Drive).
+
+**Coste del modelo A (consumidores a migrar).** El layout fijo está cableado en: `scripts/abrir_caso.py`
++ `core.abrir_caso.FUENTE_A_SUBDIR`; `core.whatsapp_intake` (roles bajo `02_Whatsapp`,
+`config.WHATSAPP_SUBDIRS`); `core.email_export` (dest `03_Email`); `core.intake_drive`
+(`_DRIVE_EV_INPUT_SUBDIR`); `core.case_manager.dir_intake` + **guard §6 de checkout/checkin**;
+`config.CASO_SUBDIRS`; y la skill `organizar-sala-lectura` (aunque ya lee todo `00_Input`). Pasar a lotes
+libres obliga a que todos **caminen `00_Input/**` y filtren por manifiesto**. Además **dedup cross-lote**
+(por `Message-ID` en correos, `sha256` en binarios) pasa de deseable a **obligatorio** (el mismo email en
+dos entregas = dos carpetas). Relacionado con la carencia actual: el intake deduplica *dentro* de cada
+fuente, no *entre* fuentes.
+
+**Recomendación.** Es un cambio de arquitectura, no un ajuste al vuelo: **merece brainstorming + spec**
+(como gmail-mcp), con la **sala de lectura como banco de pruebas** de la lectura por manifiesto. Decidir
+A vs B (o híbrido) es de Nikolai. Encadena con: proceso de correo (hogar canónico = etiqueta Gmail; jubilar
+el reenvío manual a `mails.repositorio`; auto-etiquetar por W-code con filtro Gmail, ahora que el MCP de
+correo tiene escritura) y con #53.
+
+**Disparador de promoción.** Decisión explícita de Nikolai de rediseñar `00_Input`, o que la fricción
+tri-canal / la duplicación cross-fuente vuelva a costar tiempo en otro caso. Hasta entonces, backlog.
