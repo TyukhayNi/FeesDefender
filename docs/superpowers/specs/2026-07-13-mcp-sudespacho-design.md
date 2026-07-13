@@ -47,21 +47,29 @@ siguen operando el CRM en local). No se jubila nada. El objetivo del MCP es el a
 Servidor **stdio local FastMCP**, calcado del molde de `plugins/google_despacho_mcp/`
 y del `Gmail MCP Desktop`. Empaquetado `.dxt` + entrada en `claude_desktop_config.json`;
 llega a Cowork/claude.ai por el **puente de Claude Desktop** (mismo requisito operativo
-que Gmail/google-despacho: PC encendido + app de escritorio + puente — salvo en el
-Modelo C, ver §3).
+que Gmail/google-despacho: PC encendido + app de escritorio + puente).
+
+**🔴 Requisito de distribución (corregido tras revisión adversarial):** para que un compañero
+lo instale, el `.dxt` debe ser **autocontenido** — **no** puede depender del repo de FeesDefender
+(Ana/Paola no lo tienen) ni de una ruta de Python personal de Nikolai. El `run_server.bat` NO debe
+hardcodear `C:\Users\tnm33\...python.exe` ni lanzar `-m plugins.sudespacho_mcp` (eso exige el repo
++ cwd correcto). El plugin es **standalone de verdad** (paquete autosuficiente dentro del `.dxt`,
+intérprete resuelto de forma portable). Si acabara dependiendo del repo, solo arrancaría en la
+máquina de Nikolai y el objetivo "escalable a compañeros" se cae.
 
 Separación lógica-pura / wrapper (patrón `plugins/expedientes_xl/` y
 `email_export_mcp/build_server`):
 
 ```
-plugins/sudespacho_mcp/
+sudespacho_mcp/            # paquete autosuficiente (se empaqueta entero en el .dxt)
     __init__.py
-    sudespacho_client.py   # cliente REST puro (x-api-key); httpx inyectable para tests
-    catalog.py             # catálogo de elementos permitidos (lista blanca) + slugs vetados
-    discovery.py           # introspección: describe_element() → borrador de ficha
-    server.py              # registro de tools FastMCP; resuelve credencial y delega
-    sudespacho_cli.py      # alta/prueba de la clave del usuario (interactivo, local)
-    run_server.bat         # wrapper de arranque (patrón expedientes_mcp/google_despacho)
+    sudespacho_client.py   # cliente REST puro; httpx + proveedor de sesión inyectables (tests)
+    auth.py / session.py / token_store.py  # Modelo B: login, refresco rodante, persistencia
+    catalog.py             # lista blanca de slugs + slugs vetados + filtro de propiedades (§5)
+    discovery.py           # introspección: describe_element() SOLO ESQUEMA
+    server.py              # registro de tools FastMCP; resuelve sesión, aplica lista blanca, delega
+    sudespacho_cli.py      # alta de cuenta (login interactivo, local; guarda solo tokens)
+    run_server.bat         # wrapper de arranque PORTABLE (sin ruta personal ni dependencia del repo)
     dxt-build/manifest.json
     README.md
     requirements.txt
@@ -192,16 +200,16 @@ confirmado sin PHPSESSID 2026-05-04; respuesta `{totalItems, items}`, NO formato
 | Tool | Endpoint / nota |
 |---|---|
 | `list_expedientes(referencia? \| texto?)` | búsqueda por referencia/texto (patrón `element_registries` + filtro `like`, operador **`equal`** no `eq`) |
-| `get_expediente(exp_id, element)` | metadatos; el singular REST `element_register/{id}?properties[]=` da **500** con la forma **array**. **Hipótesis a probar (dato de El Contable):** la forma **coma** `?properties=a,b,c` esquiva el bug → si funciona, no hace falta el frontal legacy para el detalle |
-| `list_documentos(exp_id, element)` | `GET /api/element_registries/gdocu?relatedElement=&relatedId=&direction=left` |
-| `get_document_download_url(doc_id, exp_id, element)` | `GET /api/documents/{id}/downloadUri` → `presignedDownloadUrl` (§7) |
-| `download_document(doc_id, exp_id, element, dest?)` | descarga a **DL-root** local + `sha256`; **nunca** bytes/base64 por el modelo (§7) |
+| `get_expediente(exp_id, element)` | metadatos. ⚠️ El singular REST `element_register/{id}?properties[]=` da **500** ("Array to string conversion") y `docs/INTEGRACION_SUDESPACHO.md` §8.3 dice **"No tiene workaround conocido → usar frontal heredado"**. **Gate en vivo:** probar si la forma **coma** `?properties=a,b,c` devuelve 200 con el objeto correcto. Si NO → **fallback al frontal legacy** para el detalle completo (no `raise` desnudo). No se asume que la coma funcione. |
+| `list_documentos(exp_id, element)` | documentos de un expediente. Requiere que el slug de documentos (`gdocu`) esté en la lista blanca (§5); sin él, no hay forma de obtener un `doc_id` (corregido tras revisión adversarial) |
+| `download_document(doc_id, exp_id, element, dest?)` | **tool principal de descarga**: resuelve `downloadUri` y **escribe a DL-root** local + `sha256`; devuelve ruta+hash+metadatos, **nunca** la URL S3 ni bytes/base64 por el modelo (§7). **Antes de descargar, valida que el elemento origen del documento NO está vetado** (un `doc_id` de factura no se sirve aunque se conozca su id) |
+| `get_document_download_url` | **NO se expone** (entregaría una URL S3 prefirmada al modelo = capability token, contra el principio DL-root). Uso interno de `download_document` |
 
 **Introspección / descubrimiento** (§6):
 
 | Tool | Nota |
 |---|---|
-| `describe_element(element)` | pregunta al CRM las propiedades reales del elemento (`/api/view/complete/{element}` + claves de una muestra de `element_registries`) → **borrador de ficha de catálogo** (slug + propiedades + muestra) para revisar y pegar |
+| `describe_element(element)` | **SOLO ESQUEMA** (nombres de propiedad + tipos, vía `/api/view/complete/{element}`). **NO devuelve registros de muestra** (evita volcar importes/PII al chat). Descubrir un elemento nuevo = su esquema, no sus datos. Un modo con muestra —si algún día hace falta— pasaría por la lista blanca y **nunca** por un slug vetado (corregido tras revisión adversarial) |
 
 ### F2 — Escritura (spec/plan aparte)
 `create_expediente` (extra/judicial), `create_colaborador`, `link_*` (vincular partes),
@@ -238,11 +246,31 @@ automático (la introspección propone, un humano aprueba antes de añadir a la 
   confirman por slug conforme se capturen; **el deny-by-default los cubre igual** mientras
   tanto — doble negativa (vetados por slug Y fuera de la lista blanca).
 
-**El CRM como portero fuerte (Modelo A).** La lista blanca protege *a través de las tools*.
-No impide que quien tenga la clave en la mano llame a la API directamente. Por eso la
-confidencialidad real se apoya en que **cada compañero use su clave de rol acotado**, que
-el CRM niega server-side. Dos barreras: rol del CRM (fuerte) + lista blanca (defensa en
-profundidad). **Nunca** repartir la clave de administrador con el plugin.
+**🔴 La lista blanca por slug NO basta — fuga por campo/relación (corregido tras revisión
+adversarial).** La referencia de permisos (`REFERENCIA_SUDESPACHO_API_PERMISOS.md` §3) avisa:
+*"no hay toggle por-campo; leer importes (`total`, `duracion`, conceptos, facturas) parece
+bastar con el `Read` del elemento"*. Y `properties[]` admite relaciones `left./right.<elem>.<campo>`
+y agregados `sum(...)`. Como `actuaciones`/`expedientes` están permitidos y **llevan importes**,
+un abogado podría leer honorarios vía `properties=["total","sum(right.conceptos_honorario.total)"]`
+o vía `summary`, **sin tocar un slug vetado**. Por tanto el plugin añade un **filtro de propiedades**:
+- **Veto de propiedades económicas** por nombre (`total`, `base_imponible`, `precio_unidad`,
+  `importe*`, `iva*`, `irpf*`, `cobro*`, `pago*`, …) en `list_elements`/`summary`/`por_expediente`.
+- **Veto de propiedades-relación a un slug vetado** (`*.conceptos_*`, `right.facturas.*`,
+  `*.facturas_proforma.*`, y cualquier `sum(...)` sobre esas) — se rechazan aunque el elemento
+  raíz esté permitido.
+- El detalle/documentos validan también el **elemento origen** contra la lista blanca.
+
+**El CRM como portero (barrera primaria — SIN verificar todavía).** La confidencialidad real se
+apoya en que **cada compañero use su cuenta personal (Modelo B, §3)** y que **su rol niegue la
+contabilidad server-side**. Pero eso está **PENDIENTE de verificar** (Nikolai es admin y lo ve
+todo) y la referencia sugiere que a nivel de campo no hay bloqueo. Por eso:
+- **Prerrequisito bloqueante de F1-producción:** probar con un usuario de rol abogado que recibe
+  **403/vacío** tanto en un **slug financiero** (`facturas`) como en un **campo económico de un
+  elemento permitido** (`actuaciones.properties[]=total`) y al **descargar un documento de factura**.
+- Mientras no se verifique, el **filtro de propiedades del plugin** (arriba) es el control que
+  NO depende de esa premisa. Defensa en profundidad: rol del CRM (por confirmar) + lista blanca de
+  slugs + filtro de propiedades + veto de relaciones.
+- **Nunca** repartir la `x-api-key` global con el plugin (ve todo, sin rol ni atribución).
 
 **Borrado — NUNCA, regla dura (en ninguna fase, ni F1 ni F2+).** Triple garantía en capas:
 1. **Tools:** el plugin no registra ninguna tool de borrado; sin `delete_*`, sin flag
@@ -253,12 +281,27 @@ profundidad). **Nunca** repartir la clave de administrador con el plugin.
    todo** (principio §3.1 de la referencia común: "Nunca `Delete` para usuarios
    automáticos"). Aunque el código lo intentara, el CRM lo rechaza.
 
+**Reformulación como NO-PÉRDIDA-DE-DATOS (para F2, tras revisión adversarial).** El borrado en
+este CRM **no necesita el verbo DELETE**: un PUT/PATCH de `relation_element` que reenvíe el array
+sin una relación existente **la elimina** (`REFERENCIA §2`: "excluir una relación = omitirla del
+array"), y `register_expediente` está marcado **destructivo** (§10). En F1 (solo lectura) no hay
+riesgo, pero **F2 debe nacer con política de update no-destructivo**: merge/append de relaciones
+(nunca reemplazo ciego del array), lectura-antes-de-escribir que preserve lo existente, y prohibir
+endpoints destructivos como `register_expediente`. La regla dura es **no pérdida de datos**, no
+solo "no DELETE".
+
 **Bytes nunca por el modelo:** `download_document` escribe a un **DL-root** acotado
 (`SUDESPACHO_DL_ROOT`, saneado `realpath` contra symlink-escape, patrón `_resolve_dest`
 de Gmail/google-despacho); solo se devuelven metadatos + ruta + `sha256`.
 
-**Credenciales** en env / `~/.sudespacho-despacho/`; nunca en el árbol del repo ni en el
-chat. (Regla dura del proyecto, `docs/SEGURIDAD_DATOS.md`.)
+**Credenciales y secretos** en env / `~/.sudespacho-despacho/`; nunca en el árbol del repo ni en el
+chat (regla dura del proyecto, `docs/SEGURIDAD_DATOS.md`). Además (tras revisión adversarial):
+- **Redacción en logs:** el wrapper `.bat` enruta stderr a un log → **nunca** loguear headers
+  `Authorization`/`Bearer` ni cuerpos de login/refresh; el cliente enmascara `token`/`refresh_token`
+  en excepciones y trazas. Test que asegura que no se vuelca el header de autorización.
+- **Permisos del fichero de tokens:** `tokens.json` guarda un refresh_token de larga vida (capability
+  a la sesión CRM completa) → permisos restrictivos de fichero (ACL de solo-usuario); el riesgo
+  residual (texto plano) se documenta en `SEGURIDAD_DATOS.md`.
 
 ## 6. Descubrimiento de endpoints (proceso reutilizable — "la guinda")
 
@@ -266,12 +309,14 @@ Objetivo: que añadir una entidad nueva sea **rápido y repetible**, no media ho
 DevTools por entidad.
 
 **Tres piezas (entregables de F1):**
-1. **`describe_element(element)`** (tool de introspección). El CRM se auto-describe: hay
-   endpoints que listan las propiedades de un elemento (`GET /api/view/complete/{element}`,
-   `/api/view/quick_creation/{element}`), y las **claves** que devuelve `element_registries`
-   ya son los nombres reales. La tool combina ambos y emite un **borrador de ficha**
-   (slug + propiedades + 1-2 registros de muestra). Sirve también al modelo para saber qué
-   campos existen antes de consultar.
+1. **`describe_element(element)`** (tool de introspección, **solo esquema**). El CRM se
+   auto-describe: `GET /api/view/complete/{element}` (y `/quick_creation/{element}`) listan las
+   propiedades. La tool emite un **borrador de ficha con nombres de propiedad + tipos, SIN
+   registros de muestra** (evita volcar importes/PII). El endpoint `view/complete` es una
+   aserción del spec **a verificar**; si no existe, se cae a listar los **nombres de propiedad**
+   de una muestra (sin sus valores). Sirve al modelo para saber qué campos existen antes de
+   consultar. *(La contradicción "para descubrir hay que saltarse la lista blanca" se resuelve
+   así: el esquema no expone datos, luego describir un elemento aún-no-aprobado no filtra nada.)*
 2. **Playbook escrito** en `docs/INTEGRACION_SUDESPACHO.md` (§0, junto a la regla dura):
    *"Cómo añadir una entidad nueva"* — (a) `describe_element(slug)`; (b) revisar el borrador;
    (c) si es solo lectura, añadir la ficha al catálogo y marcar permitido/vetado; (d) si es
@@ -291,10 +336,14 @@ DevTools por entidad.
 - Endpoint vivo: `GET /api/documents/{id}/downloadUri` → campo `presignedDownloadUrl`
   (RESUELTO 2026-06-10; los antiguos `/api/files/presigned_download_url/{id}` (400 IRI) y
   `/api/documents/presigned_urls/s3/download/{id}` (500) están rotos — no usar).
-- `download_document` sigue el patrón R3 de google-despacho: resuelve la URL S3, descarga a
-  una **ruta local acotada por DL-root** y devuelve `{path, sha256, mime, bytes}`. **Nunca**
-  base64 al modelo. `get_document_download_url` devuelve solo la URL firmada (TTL corto) si
-  se quiere pasar el enlace.
+- `download_document` sigue el patrón R3 de google-despacho: resuelve la URL S3 (uso interno),
+  descarga a una **ruta local acotada por DL-root** y devuelve `{path, sha256, mime, bytes}`.
+  **Nunca** base64 ni la URL S3 al modelo (la URL prefirmada es un capability token; **no se
+  expone** — corregido tras revisión adversarial). La descarga usa `timeout` + `follow_redirects`
+  (como `core._download_url_raw`; sin ellos S3/CloudFront cuelga o falla en redirect).
+- **Antes de resolver `downloadUri`, validar el elemento origen del documento** contra la lista
+  blanca (un `doc_id` de una factura no se sirve aunque se conozca su id; los ids pueden ser
+  enumerables). Gate en vivo: usuario abogado → 403 al descargar un documento de factura.
 
 ## 8. Tests
 
@@ -306,13 +355,18 @@ DevTools por entidad.
 - **Saneado del DL-root** (symlink-escape), como el de Gmail/google-despacho.
 - **No-borrado (regla dura §5):** test que asegura que **ninguna** tool registrada tiene un
   nombre de borrado y que `sudespacho_client.py` **no** expone método `DELETE`.
-- **`describe_element`:** contra un fake que devuelve `view/complete` + muestra → borrador
-  correcto.
-- **Paridad con `core`** (anti-drift, cuando aplique): regex de W-code, ids del tenant
-  (`SUDESPACHO_ELEMENT`, EV MMC id), y —en F2— schema de evento forense.
-- **Verificación de rol (manual, gate §3):** HAR con usuario abogado → 403 en contabilidad.
-- **Check de integración manual** contra el CRM (un expediente real desechable) antes de
-  dar F1 por viva.
+- **`describe_element`:** devuelve **solo esquema** (nombres+tipos), **sin valores** de muestra.
+- **Filtro de propiedades (§5):** rechaza `properties` económicas (`total`, `base_imponible`, …)
+  y relaciones a slug vetado (`*.conceptos_*`, `sum(...total)`) aunque el elemento raíz sea permitido.
+- **Paridad REAL con `core`** (anti-drift): tests que importan `core` **y** el plugin, mismo
+  transporte fake, y comparan lo emitido/parseado para la lógica DUPLICADA y frágil: parseo
+  `{totalItems,items,values[]}`, gramática `filterGroup` **`associated` de 2 niveles** (no 3),
+  **paginación**, `downloadUri`. Además regex W-code / ids del tenant, y —en F2— schema de evento.
+- **Verificación de rol (manual, gate §3):** usuario abogado → 403 en un **slug** financiero
+  **Y** en un **campo** económico de un elemento permitido (`actuaciones.total`) **Y** al descargar
+  un documento de factura.
+- **Check de integración manual** contra el CRM (expediente real desechable): incluir
+  `get_expediente` (¿coma vs 500?), `list_documentos`+`download_document`, además de la lectura.
 - Regla del proyecto: todo cambio en código → tests en `tests/`.
 
 ## 9. Entregable / hecho cuando (F1)
@@ -322,9 +376,11 @@ DevTools por entidad.
 - `list_element_types()` devuelve el catálogo permitido; los slugs financieros/contables
   **no** aparecen.
 - Consulta de expedientes/documentos/entidades y **descarga a DL-root** operativas con la
-  clave del usuario (Modelo A) — verificado el gate de rol (§3).
-- `describe_element` produce fichas de catálogo; playbook escrito en
+  **cuenta personal del usuario (Modelo B)** — verificado el gate de rol (§3) a nivel slug Y campo.
+- `describe_element` produce fichas de esquema (sin datos); playbook escrito en
   `docs/INTEGRACION_SUDESPACHO.md`.
+- **Un solo consumidor por usuario** del `tokens.json` (o acceso serializado con lock): evita la
+  carrera del refresh rodante entre Claude Code y el puente de Desktop (§3.1).
 - Hito registrado en `STATUS.md` / `PLAN.md` + commit; entrada `[SIGUIENTE-MCP-SUDESPACHO]`
   en `PLAN.md`.
 
@@ -376,3 +432,40 @@ DevTools por entidad.
 2. Encadenar la skill **`writing-plans`** para desglosar **F1 (lectura)** en plan de
    implementación (con la auth Modelo B como primer bloque, apoyada en el baile de refresco
    ya existente en `core/sync_sudespacho_legacy.py`).
+
+## 13. Revisión adversarial (2026-07-13) — correcciones aplicadas y gates en vivo
+
+Cuatro revisores adversariales (seguridad · auth/sesión/licencia · arquitectura · producto).
+El núcleo resistió (rechazo de la key global, deny-by-default por slug, no-borrado en F1,
+DL-root, auth de lectura verificada). Correcciones ya incorporadas al spec/plan:
+
+- **Confidencialidad por debajo del slug (§5):** filtro de **propiedades** económicas y de
+  relaciones a slug vetado (la lista blanca por slug no basta; los importes viajan como campos
+  de `actuaciones`/`expedientes`).
+- **`describe_element` solo esquema (§4/§6):** sin registros de muestra (evita volcar importes/PII).
+- **Documentos (§4/§7):** `download_document` es la tool (a DL-root); NO se expone la URL S3;
+  validar el elemento origen del doc contra la lista blanca; `gdocu` en la lista blanca.
+- **Bug 500 del detalle (§4/§7):** retirada la afirmación "la coma esquiva el 500"; es hipótesis
+  a probar en vivo, con **fallback al frontal legacy**.
+- **`.bat` distribuible (§2):** sin ruta de Python personal ni dependencia del repo; `.dxt`
+  autocontenido (si no, no escala a compañeros).
+- **No pérdida de datos (§5):** F2 con update no-destructivo (no basta "no DELETE").
+- **Secretos en logs / permisos del token store (§5).**
+- **Plan F1:** token store atómico + lock + carga tolerante; refresco reactivo a 401;
+  `_extract` tolerante (rt opcional, como `core`); descarga con timeout+redirects; paginación;
+  tests de paridad reales; slugs verificados antes de la lista blanca.
+
+**🔴 Gates EN VIVO (prerrequisitos de F1-producción; no bloquean escribir código, sí desplegar):**
+1. **Rol abogado oculta la contabilidad** a nivel **slug Y campo** (`actuaciones.total`) y en
+   **descarga de documento de factura**. Necesita un usuario de rol abogado real.
+2. **Endpoint de login** usuario/contraseña (¿`/api/login_check`? ¿CSRF/MFA?) — `core` nunca lo
+   implementó. Plan B: pegar JWT+refresh de DevTools una vez.
+3. **Bug 500 del detalle:** ¿la forma coma devuelve 200 con el objeto correcto, o hay que ir al
+   legacy?
+4. **Escritura con JWT personal (para F2):** `POST /api/element_register` ¿acepta JWT de rol
+   abogado y atribuye `created_by`? (`core` migró las escrituras a `x-api-key`).
+5. **Tope de 4 licencias:** ¿una sesión del MCP consume licencia? ¿web+MCP cuenta doble?
+   (Nikolai lo consulta con sudespacho.)
+6. **Vida del `refresh_token`** (opaco): medir; ¿es rodante o TTL absoluto?
+7. **Slugs de la lista blanca:** verificar cada uno como `element_registries` válido (`juzgados`
+   probablemente 404; resolver `extrajudiciales` vs `expedientes_extrajudiciales`).

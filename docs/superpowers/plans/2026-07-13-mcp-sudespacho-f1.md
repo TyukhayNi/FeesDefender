@@ -22,9 +22,29 @@
 - Descarga documento: `GET /api/documents/{id}/downloadUri` → campo `presignedDownloadUrl`. Fuente: `core/sync_sudespacho.py:744`.
 
 **Gates de DESPLIEGUE (no de build; NO bloquean este plan):**
-- Rol que oculta contabilidad: verificar con un usuario de rol abogado (403/vacío en elementos financieros).
+- Rol que oculta contabilidad: verificar con un usuario de rol abogado (403/vacío a nivel **slug Y campo** `actuaciones.total`, y en descarga de documento de factura).
+- Endpoint de login usuario/contraseña (¿`/api/login_check`? ¿CSRF/MFA?) — Task 1; plan B = pegar JWT+refresh de DevTools.
+- Bug 500 del detalle: ¿la forma coma devuelve 200 o hay que ir al frontal legacy?
+- Escritura con JWT personal (para F2): ¿`POST /api/element_register` atribuye `created_by`?
 - Tope de licencia (4 concurrentes): Nikolai consulta con sudespacho si la sesión del MCP consume licencia.
-- Vida del `refresh_token` (opaco): medir. Mitigado por el refresco rodante (sesión viva con uso).
+- Vida del `refresh_token` (opaco): medir (¿rodante o TTL absoluto?).
+- Slugs de la lista blanca: verificar cada uno como `element_registries` válido (`juzgados` probable 404).
+
+> **⚠️ CORRECCIONES DE LA REVISIÓN ADVERSARIAL (2026-07-13) — OBLIGATORIAS.** Este plan se
+> escribió antes del red-team; aplica estas correcciones al ejecutar (detalladas en cada task):
+> 1. **Token store atómico** (temp + `os.replace`) y **carga tolerante** (`JSONDecodeError`→None) — Task 3.
+> 2. **`auth._extract` tolerante**: exigir solo `jwt`; `refresh_token` opcional (como `core`) — Task 4.
+> 3. **Sesión con lock de fichero + re-lectura de disco antes de `NeedsLogin`** (carrera del refresh rodante entre Claude Code y el puente) — Task 5.
+> 4. **Refresco REACTIVO a 401** en el cliente (no solo proactivo por reloj): 401→refrescar→reintentar una vez; distinguir 401 de 5xx/red (transitorio) — Task 4/7.
+> 5. **Filtro de propiedades (confidencialidad por campo)**: vetar `properties` económicas (`total`, `base_imponible`, `precio_unidad`, `iva*`, `irpf*`, `importe*`, `cobro*`, `pago*`) y relaciones a slug vetado (`*.conceptos_*`, `right.facturas.*`, `sum(...)` sobre esas) — Task 6/7.
+> 6. **`describe_element` SOLO ESQUEMA** (sin registros de muestra) — Task 10.
+> 7. **Documentos:** registrar `download_document` (a DL-root) como tool; **NO** exponer `get_document_download_url`; añadir `gdocu` a la lista blanca; validar elemento-origen del doc — Task 9/12, Task 6.
+> 8. **Descarga con `timeout` + `follow_redirects=True`** (como `core._download_url_raw`) — Task 9.
+> 9. **Detalle (bug 500):** NO asumir que la coma funciona; probar en vivo, **fallback al frontal legacy**, sin `raise` desnudo; añadir `get_expediente` al check de integración — Task 8/16.
+> 10. **Paginación:** `list_elements`/`por_expediente` deben iterar páginas (o exponer `page`/`itemsPerPage` y un helper), no una sola página — Task 7/8.
+> 11. **Tests del server sin acoplarse a internals de FastMCP:** extraer la lógica de guard a funciones puras testeables (`ensure_allowed`, filtro de propiedades) y testear ESAS; un único smoke-test tolerante para el registro de tools. Pinnear rango de `mcp` — Task 11/12.
+> 12. **Slugs verificados** antes de entrar en `ALLOWED` (Task 6); resolver `extrajudiciales` vs `expedientes_extrajudiciales`.
+> 13. **Redacción de secretos en logs** + permisos restrictivos de `tokens.json` — Task 3/15.
 
 ---
 
@@ -184,14 +204,31 @@ class TokenStore:
         self._path = Path(path)
 
     def load(self) -> dict | None:
-        if not self._path.exists():
+        # Carga tolerante: fichero ausente/corrupto/truncado → None (degrada a NeedsLogin limpio,
+        # no crash). Cubre la carrera de escritura entre procesos (Claude Code + puente Desktop).
+        try:
+            return json.loads(self._path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError, OSError):
             return None
-        return json.loads(self._path.read_text(encoding="utf-8"))
 
     def save(self, *, jwt: str, refresh: str) -> None:
+        # Escritura ATÓMICA: temp + os.replace (atómico en Windows) para no dejar el fichero
+        # truncado si dos procesos escriben a la vez o hay un kill a mitad.
+        import os, tempfile
         self._path.parent.mkdir(parents=True, exist_ok=True)
         data = json.dumps({"jwt": jwt, "refresh": refresh}, ensure_ascii=False)
-        self._path.write_text(data, encoding="utf-8")
+        fd, tmp = tempfile.mkstemp(dir=str(self._path.parent), suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(data)
+            os.replace(tmp, self._path)
+        finally:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        try:  # permisos restrictivos (best-effort; en Windows aplica icacls aparte si hace falta)
+            os.chmod(self._path, 0o600)
+        except OSError:
+            pass
 ```
 
 - [ ] **Step 4: Run to verify it passes**
@@ -266,26 +303,43 @@ _LOGIN_PATH = "/api/login_check"      # confirmar en AUTH_CONTRACT.md (Task 1)
 _REFRESH_PATH = "/api/token/refresh"  # gesdinet/Lexik, rodante
 
 class AuthError(RuntimeError):
-    pass
+    """Auth fallida de forma TERMINAL (401/credencial muerta) → NeedsLogin."""
 
-def _extract(data: dict) -> dict:
+class TransientAuthError(AuthError):
+    """Fallo transitorio (5xx/timeout/red) → reintentar, NO forzar re-login."""
+
+def _extract(data: dict, *, prev_refresh: str | None = None) -> dict:
+    # TOLERANTE (como core._try_refresh_jwt_post): exigir solo el JWT; si no viene
+    # refresh_token nuevo, conservar el anterior (el CRM puede no rotarlo en cada refresh).
     jwt = data.get("token") or data.get("@token") or data.get("access_token")
-    rt = data.get("refresh_token") or data.get("@refreshToken")
-    if not jwt or not rt:
-        raise AuthError("respuesta de auth sin token/refresh_token")
+    if not jwt:
+        raise AuthError("respuesta de auth sin token")
+    rt = data.get("refresh_token") or data.get("@refreshToken") or prev_refresh
+    if not rt:
+        raise AuthError("respuesta de auth sin refresh_token y sin refresh previo")
     return {"jwt": jwt, "refresh": rt}
 
 def login(client: httpx.Client, username: str, password: str) -> dict:
-    r = client.post(_LOGIN_PATH, json={"username": username, "password": password})
+    try:
+        r = client.post(_LOGIN_PATH, json={"username": username, "password": password})
+    except httpx.HTTPError as e:
+        raise TransientAuthError(f"login red/timeout: {e}") from e
+    if r.status_code in (401, 403):
+        raise AuthError(f"login rechazado HTTP {r.status_code}")
     if r.status_code >= 400:
-        raise AuthError(f"login HTTP {r.status_code}")
+        raise TransientAuthError(f"login HTTP {r.status_code}")
     return _extract(r.json())
 
 def refresh(client: httpx.Client, refresh_token: str) -> dict:
-    r = client.post(_REFRESH_PATH, json={"refresh_token": refresh_token})
+    try:
+        r = client.post(_REFRESH_PATH, json={"refresh_token": refresh_token})
+    except httpx.HTTPError as e:
+        raise TransientAuthError(f"refresh red/timeout: {e}") from e
+    if r.status_code in (401, 403):
+        raise AuthError(f"refresh_token caducado (HTTP {r.status_code}) → re-login")
     if r.status_code >= 400:
-        raise AuthError(f"refresh HTTP {r.status_code} (posible refresh_token caducado → re-login)")
-    return _extract(r.json())
+        raise TransientAuthError(f"refresh HTTP {r.status_code} (transitorio)")
+    return _extract(r.json(), prev_refresh=refresh_token)
 ```
 
 - [ ] **Step 4: Run to verify it passes**
@@ -464,15 +518,20 @@ Expected: FAIL (module not found).
 ```python
 # plugins/sudespacho_mcp/catalog.py
 from __future__ import annotations
+import re
 
 # Lista blanca de elementos de LECTURA permitidos (deny-by-default).
-# La pertenencia la aprueba un humano (describe_element propone; no auto-añadir).
+# ⚠️ Cada slug debe VERIFICARSE como `element_registries` válido antes de confiar en él
+# (gate: `juzgados` es probablemente propiedad no-relación → 404; resolver
+# `extrajudiciales` vs `expedientes_extrajudiciales`). La pertenencia la aprueba un humano.
 ALLOWED: frozenset[str] = frozenset({
     "clientes_propios", "clientes_contrarios",
     "abogados", "procuradores_propios", "procuradores_contrarios",
-    "colaboradores", "organismos", "contactos", "juzgados", "poderes",
+    "colaboradores", "organismos", "contactos", "poderes",
     "expedientes_judiciales", "extrajudiciales", "actuaciones",
     "notas_tecnicas", "tareas",
+    "gdocu",  # documentos: necesario para obtener doc_id en list_documentos/download
+    # "juzgados",  # PENDIENTE verificar que es un element_registries (posible 404)
 })
 
 # Vetados explícitos (confidencial — NUNCA exponer). Doble negativa con ALLOWED.
@@ -484,6 +543,15 @@ VETADOS: frozenset[str] = frozenset({
     "nominas", "amortizaciones", "cuentas_contables",
 })
 
+# Fragmentos de slug financiero para vetar relaciones left./right.<slug>.<campo>.
+_VETADO_FRAG = ("factura", "conceptos_", "conceptos_recibidas", "cobros", "pagos_proveedores",
+                "nomina", "amortizacion", "cuentas_contables", "remesa", "libros_oficiales")
+# Nombres de propiedad económicos vetados (confidencialidad por CAMPO, no solo por slug).
+_VETADO_PROP = re.compile(
+    r"(^|[._])(total|base_imponible|precio_unidad|importe|iva|irpf|cobro|pago|descuento)",
+    re.IGNORECASE,
+)
+
 class NotAllowed(PermissionError):
     pass
 
@@ -493,6 +561,22 @@ def is_allowed(slug: str) -> bool:
 def ensure_allowed(slug: str) -> None:
     if not is_allowed(slug):
         raise NotAllowed(f"elemento '{slug}' no permitido por el plugin (lista blanca / vetado)")
+
+def is_property_allowed(prop: str) -> bool:
+    p = prop.lower()
+    if p.startswith("sum(") or p.startswith("count("):  # agregados sobre campos económicos
+        inner = p[p.index("(") + 1 : p.rfind(")")]
+        return is_property_allowed(inner)
+    if any(frag in p for frag in _VETADO_FRAG):  # relación a slug vetado (left./right.<slug>.*)
+        return False
+    if _VETADO_PROP.search(p):                    # campo económico directo
+        return False
+    return True
+
+def ensure_properties_allowed(props: list[str]) -> None:
+    bad = [p for p in (props or []) if not is_property_allowed(p)]
+    if bad:
+        raise NotAllowed(f"propiedades económicas/vetadas no permitidas: {bad}")
 ```
 
 - [ ] **Step 4: Run to verify it passes**
@@ -770,7 +854,9 @@ def resolve_dest(root: Path, rel: str) -> Path:
 def download_to(url: str, dest: Path) -> dict:
     dest.parent.mkdir(parents=True, exist_ok=True)
     h = hashlib.sha256()
-    with httpx.stream("GET", url) as r:  # URL S3 pública prefirmada (sin Bearer)
+    # timeout + follow_redirects como core._download_url_raw: S3/CloudFront puede redirigir,
+    # y sin timeout una descarga lenta cuelga indefinidamente.
+    with httpx.stream("GET", url, timeout=60.0, follow_redirects=True) as r:  # URL S3 prefirmada
         r.raise_for_status()
         with open(dest, "wb") as f:
             for chunk in r.iter_bytes():
@@ -823,7 +909,10 @@ def test_describe_element_junta_view_y_muestra():
     ficha = describe_element(_c(h), "organismos")
     assert "nombre" in ficha["propiedades"]
     assert ficha["slug"] == "organismos"
-    assert ficha["muestra_n"] >= 1
+    # SOLO esquema: no expone valores de registros (nada de "X" de la muestra).
+    assert "muestra_n" not in ficha
+    import json as _j
+    assert "X" not in _j.dumps(ficha)  # el valor del registro NO aparece
 ```
 
 - [ ] **Step 2: Run to verify it fails**
@@ -838,22 +927,25 @@ Expected: FAIL (module not found).
 from __future__ import annotations
 
 def describe_element(client, element: str) -> dict:
-    """Borrador de ficha de catálogo para revisión humana (no auto-añade a la lista blanca)."""
-    props: set[str] = set()
+    """Borrador de ficha de catálogo para revisión humana. SOLO ESQUEMA: nombres de propiedad
+    (y tipos si el CRM los da), NUNCA valores de registros (evita volcar importes/PII al chat)."""
+    props: dict[str, str] = {}
     try:
         view = client._get(f"/api/view/complete/{element}")
         for p in view.get("properties", []):
             if p.get("name"):
-                props.add(p["name"])
+                props[p["name"]] = p.get("type", "")
     except Exception:
         pass
-    muestra = client.list_elements(element, page=1, items_per_page=3)
-    for it in muestra.get("items", []):
-        for v in it.get("values", []):
-            name = (v.get("property") or {}).get("name")
-            if name:
-                props.add(name)
-    return {"slug": element, "propiedades": sorted(props), "muestra_n": len(muestra.get("items", []))}
+    if not props:
+        # Fallback: SOLO los NOMBRES de propiedad de una muestra; se descartan los valores.
+        muestra = client.list_elements(element, page=1, items_per_page=1)
+        for it in muestra.get("items", []):
+            for v in it.get("values", []):
+                name = (v.get("property") or {}).get("name")
+                if name:
+                    props.setdefault(name, "")
+    return {"slug": element, "propiedades": sorted(props.keys()), "tipos": props}
 ```
 
 - [ ] **Step 4: Run to verify it passes**
