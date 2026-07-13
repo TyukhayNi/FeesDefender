@@ -181,6 +181,12 @@ def _resolve_user_label(service, label: str) -> dict:
     labels = _list_labels_raw(service)
     by_id = [l for l in labels if l.get("id") == target]
     by_name = [l for l in labels if l.get("name") == target]
+    # Fail-closed ante ambigüedad (spec §6): si `target` casa como id de una
+    # etiqueta y como nombre de OTRA distinta, no elegir silenciosamente.
+    if by_id and by_name and by_id[0] is not by_name[0]:
+        raise ValueError(
+            f"Etiqueta ambigua: {label!r} casa como id y como nombre de etiquetas "
+            f"distintas. Desambigua usando el id exacto de list_labels.")
     match = by_id[0] if by_id else (by_name[0] if by_name else None)
     if match is None:
         raise ValueError(

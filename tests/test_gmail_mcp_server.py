@@ -120,6 +120,30 @@ def test_resolve_user_label_category_rechazado():
         srv._resolve_user_label(svc, "CATEGORY_PROMOTIONS")
 
 
+def test_resolve_user_label_ambigua_id_y_nombre_error():
+    # `Alpha` casa como id de una etiqueta y como nombre de otra distinta:
+    # fail-closed (spec §6), no elegir silenciosamente una.
+    labels = {"list": {"labels": [
+        {"id": "Label_1", "name": "Alpha", "type": "user"},
+        {"id": "Alpha", "name": "Beta", "type": "user"},
+    ]}}
+    svc = FakeGmailService(labels=labels)
+    with pytest.raises(ValueError):
+        srv._resolve_user_label(svc, "Alpha")
+
+
+def test_solo_tools_permitidas_registradas():
+    # Blinda el guardarraíl §3/§9: NUNCA debe aparecer una tool de borrado/envío/
+    # archivado. Una edición futura que registre delete_*/send_* rompe este test.
+    mcp = srv.build_server(service_factory=lambda e: FakeGmailService(),
+                           account_lister=lambda: [])
+    assert set(mcp._tool_manager._tools) == {
+        "list_accounts", "search_messages", "read_message", "read_thread",
+        "list_labels", "list_attachments", "get_attachment",
+        "create_label", "apply_label", "remove_label",
+    }
+
+
 # ------------------------------- create_label -------------------------------
 
 def test_create_label_idempotente_si_existe():
@@ -280,3 +304,21 @@ def test_remove_label_account_obligatorio():
                            account_lister=lambda: ["a@tyukhay.legal"])
     fn = _tool(mcp, "remove_label")
     assert inspect.signature(fn).parameters["account"].default is inspect._empty
+
+
+def test_remove_label_nombre_inexistente_error():
+    svc = _label_svc()
+    mcp = srv.build_server(service_factory=lambda e: svc,
+                           account_lister=lambda: ["a@tyukhay.legal"])
+    with pytest.raises(ValueError):
+        _tool(mcp, "remove_label")(account="a@tyukhay.legal", label="NoExiste",
+                                   target_id="m1", target_type="message")
+
+
+def test_remove_label_target_type_invalido_error():
+    svc = _label_svc()
+    mcp = srv.build_server(service_factory=lambda e: svc,
+                           account_lister=lambda: ["a@tyukhay.legal"])
+    with pytest.raises(ValueError):
+        _tool(mcp, "remove_label")(account="a@tyukhay.legal", label="Label_1",
+                                   target_id="m1", target_type="foo")
