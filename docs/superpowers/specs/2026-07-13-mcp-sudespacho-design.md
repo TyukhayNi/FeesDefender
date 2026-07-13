@@ -103,17 +103,31 @@ permisos real (**elemento × {Read, ReadGroup, Update, Delete, Create}**, ~198 e
 con su credencial y su matriz**. La confidencialidad financiera = **apagar el `Read` de los
 elementos financieros en el rol "abogado"**; el CRM lo niega server-side.
 
-**Verificación previa (gate — ahora confirmación, no incógnita):** el modelo es per-usuario;
-la `x-api-key` se genera *dentro de la cuenta de un usuario* (Ajustes → API), luego casi con
-seguridad hereda su matriz. Como El Contable autentica con **Bearer JWT** (no con `x-api-key`),
-falta el único eslabón sin probar: capturar un **HAR con un usuario de rol abogado** y
-confirmar que su **`x-api-key`** recibe **403/lista vacía** en un elemento financiero.
-- Si **respeta el rol** → Modelo A confirmado (el CRM es el portero fuerte).
-- Si la clave resulta ser **siempre de administrador** (ve todo) → el Modelo A no protege;
-  se cae al **Modelo C** (motor central: el plugin corre en el lado de Nikolai con una
-  sola clave, los usuarios sin credencial, y la **lista blanca del plugin es el único
+**Credencial = propia del usuario (requisito, no solo permiso).** La `x-api-key` se genera
+*dentro de la cuenta del usuario* (Ajustes → API) y está atada a su identidad. Esto no es
+solo para el rol: es para que **el CRM registre los eventos de creación/modificación bajo
+ese usuario** (`created_by`/`modified_by`) y Nikolai pueda seguir quién hizo qué. Nunca una
+`x-api-key` genérica/compartida ni la de administrador.
+
+**Verificación previa (gate — dos comprobaciones):** el modelo es per-usuario y la clave se
+genera en su cuenta, luego casi con seguridad hereda su matriz Y su identidad. Como El
+Contable autentica con **Bearer JWT** (no con `x-api-key`), faltan por probar dos eslabones,
+con **un HAR usando la `x-api-key` de un usuario de rol abogado**:
+1. **Rol:** recibe **403/lista vacía** en un elemento financiero.
+2. **Atribución:** al crear un registro `TEST - BORRAR`, el CRM lo registra con **ese
+   usuario** como autor (no un "API user" genérico). Nikolai borra el registro de prueba
+   (el plugin nunca borra).
+- Si cumple **ambos** → Modelo A confirmado (el CRM es portero fuerte y la traza atribuye).
+- **Fallback de atribución:** si la `x-api-key` NO atribuye al usuario (la registra como
+  API genérico), usar **Bearer JWT por-usuario** (mecanismo de El Contable, que da
+  "atribución limpia en la traza") — sigue siendo credencial propia del usuario, a cambio
+  de refresco de token.
+- Si la clave resulta ser **siempre de administrador** (ve todo, ignora el rol) → el Modelo
+  A no protege; se cae al **Modelo C** (motor central: el plugin corre en el lado de Nikolai
+  con una sola clave, los usuarios sin credencial, y la **lista blanca del plugin es el único
   portero**). El resto del diseño (tools, catálogo, introspección) no cambia; solo cambia
-  dónde vive el proceso y la credencial.
+  dónde vive el proceso y la credencial. (Contra del Modelo C: se pierde la atribución
+  por-usuario en la traza del CRM — todo iría bajo la única cuenta.)
 
 **Frontal legacy (diferido):** `tnm.sudespacho.net` (PHPSESSID + `@token` + `@refreshToken`,
 caduca ~24 min). **Fuera de F1** salvo para el único caso que REST no cubre (detalle
