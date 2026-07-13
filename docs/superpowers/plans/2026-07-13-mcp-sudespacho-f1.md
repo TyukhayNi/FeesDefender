@@ -21,14 +21,14 @@
 - JWT: en cliente vive en `localStorage['token']`, claims `iat, exp(60min), roles, username`. Auth REST = `Authorization: Bearer <jwt>`, SIN PHPSESSID.
 - Descarga documento: `GET /api/documents/{id}/downloadUri` → campo `presignedDownloadUrl`. Fuente: `core/sync_sudespacho.py:744`.
 
-**Gates de DESPLIEGUE (no de build; NO bloquean este plan):**
-- Rol que oculta contabilidad: verificar con un usuario de rol abogado (403/vacío a nivel **slug Y campo** `actuaciones.total`, y en descarga de documento de factura).
-- Endpoint de login usuario/contraseña (¿`/api/login_check`? ¿CSRF/MFA?) — Task 1; plan B = pegar JWT+refresh de DevTools.
-- Bug 500 del detalle: ¿la forma coma devuelve 200 o hay que ir al frontal legacy?
-- Escritura con JWT personal (para F2): ¿`POST /api/element_register` atribuye `created_by`?
-- Tope de licencia (4 concurrentes): Nikolai consulta con sudespacho si la sesión del MCP consume licencia.
-- Vida del `refresh_token` (opaco): medir (¿rodante o TTL absoluto?).
-- Slugs de la lista blanca: verificar cada uno como `element_registries` válido (`juzgados` probable 404).
+**Gates — estado tras verificación en vivo 2026-07-13 (detalle en spec §13):**
+- ✅ **Login RESUELTO:** no hay endpoint usuario/contraseña (404) → alta por `refresh_token` pegado (Task 14).
+- ✅ **Bug 500 RESUELTO:** forma **coma** `?properties=a,b,c` → 200 (array `properties[]` → 500). Sin legacy.
+- ✅ **Slugs RESUELTOS** (Task 6): `abogados_propios`/`abogados_contrarios` (no `abogados`), `extrajudiciales` (no `expedientes_extrajudiciales`), `juzgados` válido. Y `properties[]` obligatorio en el listado.
+- ⏳ **Rol oculta contabilidad** (slug + campo `actuaciones.total` + descarga de doc factura): PENDIENTE, necesita usuario de rol abogado.
+- ⏳ **Escritura con JWT personal (F2):** ¿`POST /api/element_register` atribuye `created_by`? PENDIENTE.
+- ⏳ **Tope de licencia (4 concurrentes):** Nikolai consulta con sudespacho.
+- ⏳ **Vida del `refresh_token`** (opaco): medir (¿rodante/absoluto?).
 
 > **⚠️ CORRECCIONES DE LA REVISIÓN ADVERSARIAL (2026-07-13) — OBLIGATORIAS.** Este plan se
 > escribió antes del red-team; aplica estas correcciones al ejecutar (detalladas en cada task):
@@ -40,10 +40,10 @@
 > 6. **`describe_element` SOLO ESQUEMA** (sin registros de muestra) — Task 10.
 > 7. **Documentos:** registrar `download_document` (a DL-root) como tool; **NO** exponer `get_document_download_url`; añadir `gdocu` a la lista blanca; validar elemento-origen del doc — Task 9/12, Task 6.
 > 8. **Descarga con `timeout` + `follow_redirects=True`** (como `core._download_url_raw`) — Task 9.
-> 9. **Detalle (bug 500):** NO asumir que la coma funciona; probar en vivo, **fallback al frontal legacy**, sin `raise` desnudo; añadir `get_expediente` al check de integración — Task 8/16.
+> 9. **Detalle (bug 500): coma VERIFICADA en vivo (200)** — usar `?properties=a,b,c` (coma), NO `properties[]` (500). **Sin fallback legacy.** Alta por `refresh_token` pegado (no hay login usuario/pass, verificado) — Task 8/14.
 > 10. **Paginación:** `list_elements`/`por_expediente` deben iterar páginas (o exponer `page`/`itemsPerPage` y un helper), no una sola página — Task 7/8.
 > 11. **Tests del server sin acoplarse a internals de FastMCP:** extraer la lógica de guard a funciones puras testeables (`ensure_allowed`, filtro de propiedades) y testear ESAS; un único smoke-test tolerante para el registro de tools. Pinnear rango de `mcp` — Task 11/12.
-> 12. **Slugs verificados** antes de entrar en `ALLOWED` (Task 6); resolver `extrajudiciales` vs `expedientes_extrajudiciales`.
+> 12. **Slugs VERIFICADOS en vivo (2026-07-13, Task 6):** `abogados_propios`/`abogados_contrarios` (no `abogados`→404), `extrajudiciales` (no `expedientes_extrajudiciales`→404), `juzgados` válido (200). `properties[]` obligatorio en el listado (default `["id"]`).
 > 13. **Redacción de secretos en logs** + permisos restrictivos de `tokens.json` — Task 3/15.
 
 ---
@@ -52,25 +52,30 @@
 
 `core` no implementa login usuario/contraseña (solo refresco). El endpoint de login es lo único del contrato de auth sin confirmar. Setup gesdinet/Lexik → casi seguro `POST /api/login_check`.
 
+> ✅ **RESUELTO en la sesión de verificación (2026-07-13) — esta task queda como documentación.**
+> NO hay endpoint estándar de login usuario/contraseña (`/api/login_check`, `/api/token`,
+> `/api/auth/login`, `/api/login`… todos **404**). **Decisión:** el alta es por **`refresh_token`
+> pegado** (Task 14); el plugin arranca el JWT con `POST /api/token/refresh` (verificado). El plugin
+> **no maneja contraseña**. Automatizar el login de cero (frontal + posible CSRF) queda fuera de
+> alcance salvo disparador.
+
 **Files:**
-- Create: `plugins/sudespacho_mcp/AUTH_CONTRACT.md` (nota de contrato, NO tokens)
+- Create: `plugins/sudespacho_mcp/AUTH_CONTRACT.md` (contrato de auth verificado; NO tokens)
 
-- [ ] **Step 1: Capturar el login en DevTools (con la sesión de Nikolai)**
+- [ ] **Step 1: Escribir el contrato de auth (verificado)**
 
-En Chrome, con DevTools → Network abierto y "Preserve log" activo, hacer un login limpio en `https://tnm.sudespacho.net/tnm/sign-in`. Localizar la petición que devuelve el JWT (candidato: `POST https://api-crm-commons-pro.sudespacho.biz/api/login_check`).
-- Anotar: URL, método, **nombres de campo del body** (p. ej. `username`/`password` o `email`/`password`) — **sin copiar el valor de la contraseña**.
-- Anotar: forma de la **respuesta** (`{token, refresh_token}` o `{"@token","@refreshToken"}`).
-- **NO** pegar tokens ni contraseña en `AUTH_CONTRACT.md` ni en el chat.
+En `AUTH_CONTRACT.md`, documentar:
+- **Alta:** pegar `refresh_token` (de localStorage del CRM del usuario) → `POST /api/token/refresh`.
+- **Refresco:** `POST /api/token/refresh`, body `{"refresh_token": rt}` → `{"token": jwt, "refresh_token": rt2}` (rodante; funciona sin JWT vigente).
+- **JWT:** 60 min, claims `iat, exp, roles, username`. Auth REST = `Authorization: Bearer <jwt>`, sin PHPSESSID.
+- **NO** existe login usuario/contraseña por API (candidatos probados → 404).
+- **NO** pegar tokens en `AUTH_CONTRACT.md` ni en el chat.
 
-- [ ] **Step 2: Escribir el contrato**
-
-En `AUTH_CONTRACT.md`, tabla con: endpoint de login (URL, método, campos del body, forma de respuesta) y el de refresco ya conocido (`POST /api/token/refresh`, `{refresh_token}` → `{token, refresh_token}`). Marcar el login `VERIFICADO <fecha>`.
-
-- [ ] **Step 3: Commit**
+- [ ] **Step 2: Commit**
 
 ```bash
 git add plugins/sudespacho_mcp/AUTH_CONTRACT.md
-git commit -m "docs(sudespacho-mcp): contrato de auth (login capturado + refresh conocido)"
+git commit -m "docs(sudespacho-mcp): contrato de auth verificado (alta por refresh_token; login usuario/pass no existe)"
 ```
 
 ---
@@ -521,17 +526,18 @@ from __future__ import annotations
 import re
 
 # Lista blanca de elementos de LECTURA permitidos (deny-by-default).
-# ⚠️ Cada slug debe VERIFICARSE como `element_registries` válido antes de confiar en él
-# (gate: `juzgados` es probablemente propiedad no-relación → 404; resolver
-# `extrajudiciales` vs `expedientes_extrajudiciales`). La pertenencia la aprueba un humano.
+# ✅ Todos VERIFICADOS en vivo como `element_registries` válidos (200) el 2026-07-13.
+# Correcciones de la verificación: `abogados` (a secas) NO existe (404) → `abogados_propios`/
+# `abogados_contrarios`; `expedientes_extrajudiciales` NO existe (404) → `extrajudiciales`;
+# `juzgados` SÍ es válido (200) — el 404 era del path de relación, no del listado.
 ALLOWED: frozenset[str] = frozenset({
     "clientes_propios", "clientes_contrarios",
-    "abogados", "procuradores_propios", "procuradores_contrarios",
-    "colaboradores", "organismos", "contactos", "poderes",
+    "abogados_propios", "abogados_contrarios",
+    "procuradores_propios", "procuradores_contrarios",
+    "colaboradores", "organismos", "contactos", "poderes", "juzgados",
     "expedientes_judiciales", "extrajudiciales", "actuaciones",
     "notas_tecnicas", "tareas",
     "gdocu",  # documentos: necesario para obtener doc_id en list_documentos/download
-    # "juzgados",  # PENDIENTE verificar que es un element_registries (posible 404)
 })
 
 # Vetados explícitos (confidencial — NUNCA exponer). Doble negativa con ALLOWED.
@@ -661,10 +667,13 @@ class SudespachoClient:
     def list_elements(self, element: str, *, properties: list[str] | None = None,
                       page: int = 1, items_per_page: int = 10,
                       filter_group: list[tuple[str, str]] | None = None) -> dict:
+        # `properties[]` es OBLIGATORIO en element_registries: omitirlo → HTTP 500
+        # (verificado en vivo 2026-07-13). Default seguro: ["id"].
+        props = properties or ["id"]
         params: list[tuple[str, str]] = [("page", str(page)),
                                          ("itemsPerPage", str(items_per_page)),
                                          ("return_totals", "false")]
-        for i, p in enumerate(properties or []):
+        for i, p in enumerate(props):
             params.append((f"properties[{i}]", p))
         params.extend(filter_group or [])
         return self._get(f"/api/element_registries/{element}", params)
@@ -1234,12 +1243,15 @@ import httpx
 from plugins.sudespacho_mcp import sudespacho_cli
 from plugins.sudespacho_mcp.token_store import TokenStore
 
-def test_do_login_guarda_tokens(tmp_path):
-    http = httpx.Client(transport=httpx.MockTransport(
-        lambda r: httpx.Response(200, json={"token": "J", "refresh_token": "R"})), base_url="https://x")
+def test_do_connect_bootstrapea_desde_refresh_token(tmp_path):
+    # Alta = pegar el refresh_token; el plugin arranca el JWT con POST /api/token/refresh.
+    def handler(req):
+        assert req.url.path == "/api/token/refresh"
+        return httpx.Response(200, json={"token": "J", "refresh_token": "R2"})
+    http = httpx.Client(transport=httpx.MockTransport(handler), base_url="https://x")
     store = TokenStore(tmp_path / "t.json")
-    sudespacho_cli.do_login(http, store, "user@x", "secret")
-    assert store.load() == {"jwt": "J", "refresh": "R"}
+    sudespacho_cli.do_connect(http, store, "RT_pegado")
+    assert store.load() == {"jwt": "J", "refresh": "R2"}
 ```
 
 - [ ] **Step 2: Run to verify it fails**
@@ -1253,21 +1265,24 @@ Expected: FAIL (module not found).
 # plugins/sudespacho_mcp/sudespacho_cli.py
 from __future__ import annotations
 import getpass, sys, httpx
-from .auth import login
+from .auth import refresh
 from .token_store import TokenStore
 from .config import base_url, tokens_path
 
-def do_login(http: httpx.Client, store: TokenStore, username: str, password: str) -> None:
-    tokens = login(http, username, password)
+def do_connect(http: httpx.Client, store: TokenStore, refresh_token: str) -> None:
+    # Alta por refresh_token (no hay endpoint de login usuario/contraseña — verificado 2026-07-13).
+    # POST /api/token/refresh arranca el JWT y (si es rodante) devuelve un refresh nuevo.
+    tokens = refresh(http, refresh_token)
     store.save(jwt=tokens["jwt"], refresh=tokens["refresh"])
 
 def main() -> int:
-    print("Conectar cuenta sudespacho (tus credenciales; la contraseña NO se guarda).")
-    username = input("Usuario/email CRM: ").strip()
-    password = getpass.getpass("Contraseña CRM: ")
+    print("Conectar cuenta sudespacho.")
+    print("En el CRM web (ya logueado): DevTools → Application → Local Storage →")
+    print("copia el valor de 'refresh_token' y pégalo aquí. NO se pide tu contraseña.")
+    rt = getpass.getpass("refresh_token: ").strip()  # oculto; no se registra
     with httpx.Client(base_url=base_url(), timeout=30.0) as http:
-        do_login(http, TokenStore(tokens_path()), username, password)
-    print(f"OK. Tokens guardados en {tokens_path()}. La contraseña no se ha almacenado.")
+        do_connect(http, TokenStore(tokens_path()), rt)
+    print(f"OK. Tokens guardados en {tokens_path()}. La sesión se refrescará sola.")
     return 0
 
 if __name__ == "__main__":

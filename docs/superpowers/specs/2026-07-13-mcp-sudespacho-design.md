@@ -159,11 +159,12 @@ piezas hacen falta para el REST.
 
 ### 3.1 Sesión y reconexión (UX de credenciales — objetivo: cero fricción)
 
-- **Alta (una vez):** el compañero conecta su cuenta con el comando de login del plugin
-  (`sudespacho_cli.py login`, patrón `gmail_cli`/`google_cli add`): introduce su
-  **usuario + contraseña del CRM** en el prompt local (oculto). El plugin obtiene JWT +
-  refresh_token y los guarda en `~/.sudespacho-despacho/`. **La contraseña NO se almacena**
-  (solo los tokens); nunca en chat ni repo. *(El asistente Claude no introduce contraseñas.)*
+- **Alta (una vez) — por `refresh_token`, NO por contraseña (verificado 2026-07-13):** no existe
+  endpoint estándar de login usuario/contraseña en la API (todos 404), así que el compañero pega
+  **su `refresh_token`** (de DevTools → localStorage de su sesión CRM) en `sudespacho_cli.py login`.
+  El plugin arranca el JWT con `POST /api/token/refresh` y guarda ambos en `~/.sudespacho-despacho/`.
+  **El plugin NUNCA maneja la contraseña**; el `refresh_token` es secreto y no va a chat ni repo.
+  *(Automatizar el login de cero —frontal + posible CSRF— queda fuera de alcance salvo disparador.)*
 - **Uso continuado:** JWT de 60 min; el plugin lo **refresca solo** con el refresh_token.
   **Sin re-login por uso** (p. ej. leer un expediente 2 h después: transparente).
 - **Reinicio (PC / Claude Desktop apagado y encendido):** los tokens **persisten en disco**;
@@ -200,7 +201,7 @@ confirmado sin PHPSESSID 2026-05-04; respuesta `{totalItems, items}`, NO formato
 | Tool | Endpoint / nota |
 |---|---|
 | `list_expedientes(referencia? \| texto?)` | búsqueda por referencia/texto (patrón `element_registries` + filtro `like`, operador **`equal`** no `eq`) |
-| `get_expediente(exp_id, element)` | metadatos. ⚠️ El singular REST `element_register/{id}?properties[]=` da **500** ("Array to string conversion") y `docs/INTEGRACION_SUDESPACHO.md` §8.3 dice **"No tiene workaround conocido → usar frontal heredado"**. **Gate en vivo:** probar si la forma **coma** `?properties=a,b,c` devuelve 200 con el objeto correcto. Si NO → **fallback al frontal legacy** para el detalle completo (no `raise` desnudo). No se asume que la coma funcione. |
+| `get_expediente(exp_id, element)` | metadatos. ✅ **VERIFICADO 2026-07-13:** la forma **coma** `element_register/{id}?properties=a,b,c` devuelve **200** (la forma **array** `properties[]=` da 500). Usar la coma. `INTEGRACION §8.3` ("no workaround") quedó desactualizado. |
 | `list_documentos(exp_id, element)` | documentos de un expediente. Requiere que el slug de documentos (`gdocu`) esté en la lista blanca (§5); sin él, no hay forma de obtener un `doc_id` (corregido tras revisión adversarial) |
 | `download_document(doc_id, exp_id, element, dest?)` | **tool principal de descarga**: resuelve `downloadUri` y **escribe a DL-root** local + `sha256`; devuelve ruta+hash+metadatos, **nunca** la URL S3 ni bytes/base64 por el modelo (§7). **Antes de descargar, valida que el elemento origen del documento NO está vetado** (un `doc_id` de factura no se sirve aunque se conozca su id) |
 | `get_document_download_url` | **NO se expone** (entregaría una URL S3 prefirmada al modelo = capability token, contra el principio DL-root). Uso interno de `download_document` |
@@ -455,17 +456,28 @@ DL-root, auth de lectura verificada). Correcciones ya incorporadas al spec/plan:
   `_extract` tolerante (rt opcional, como `core`); descarga con timeout+redirects; paginación;
   tests de paridad reales; slugs verificados antes de la lista blanca.
 
-**🔴 Gates EN VIVO (prerrequisitos de F1-producción; no bloquean escribir código, sí desplegar):**
-1. **Rol abogado oculta la contabilidad** a nivel **slug Y campo** (`actuaciones.total`) y en
-   **descarga de documento de factura**. Necesita un usuario de rol abogado real.
-2. **Endpoint de login** usuario/contraseña (¿`/api/login_check`? ¿CSRF/MFA?) — `core` nunca lo
-   implementó. Plan B: pegar JWT+refresh de DevTools una vez.
-3. **Bug 500 del detalle:** ¿la forma coma devuelve 200 con el objeto correcto, o hay que ir al
-   legacy?
-4. **Escritura con JWT personal (para F2):** `POST /api/element_register` ¿acepta JWT de rol
-   abogado y atribuye `created_by`? (`core` migró las escrituras a `x-api-key`).
-5. **Tope de 4 licencias:** ¿una sesión del MCP consume licencia? ¿web+MCP cuenta doble?
-   (Nikolai lo consulta con sudespacho.)
-6. **Vida del `refresh_token`** (opaco): medir; ¿es rodante o TTL absoluto?
-7. **Slugs de la lista blanca:** verificar cada uno como `element_registries` válido (`juzgados`
-   probablemente 404; resolver `extrajudiciales` vs `expedientes_extrajudiciales`).
+**Gates — estado tras la sesión de verificación en vivo (2026-07-13, usuario admin de Nikolai):**
+1. ⏳ **Rol abogado oculta la contabilidad** a nivel **slug Y campo** (`actuaciones.total`) y en
+   **descarga de documento de factura**. **PENDIENTE** — necesita un usuario de rol abogado real
+   (Nikolai es admin y lo ve todo). Vector de fuga por campo confirmado (`actuaciones` lleva `total`).
+2. ✅ **Login — RESUELTO (cambio de enfoque):** NO hay endpoint estándar de login usuario/contraseña
+   (`/api/login_check`, `/api/token`, `/api/auth/login`, `/api/login`… todos **404**). **Decisión:**
+   el alta es **"pegar el `refresh_token` una vez"** (de DevTools del usuario); el plugin arranca el
+   JWT con `POST /api/token/refresh` (ya funciona solo con el refresh). **El plugin NO maneja la
+   contraseña.** Captura del login real solo si algún día se quiere automatizar del todo (frontal +
+   posible CSRF).
+3. ✅ **Bug 500 del detalle — RESUELTO:** verificado en exp. 672: `?properties[]=id` (array) → **500**;
+   `?properties=id[,otras]` (**coma**) → **200** con el registro. `get_expediente_detalle` usa la
+   coma; **no hace falta el frontal legacy**. ⚠️ `INTEGRACION_SUDESPACHO.md §8.3` ("no hay workaround")
+   queda **desactualizado** → actualizar.
+4. ⏳ **Escritura con JWT personal (para F2):** `POST /api/element_register` ¿acepta JWT de rol
+   abogado y atribuye `created_by`? **PENDIENTE** (`core` migró las escrituras a `x-api-key`).
+5. ⏳ **Tope de 4 licencias:** ¿una sesión del MCP consume licencia? ¿web+MCP cuenta doble?
+   **PENDIENTE** (Nikolai lo consulta con sudespacho).
+6. ⏳ **Vida del `refresh_token`** (opaco): **PENDIENTE de medir**; ¿rodante o TTL absoluto?
+7. ✅ **Slugs — RESUELTO:** válidos = `clientes_propios`, `clientes_contrarios`, **`abogados_propios`**,
+   **`abogados_contrarios`** (¡`abogados` a secas → 404!), `procuradores_propios`, `procuradores_contrarios`,
+   `colaboradores`, `organismos`, `contactos`, `poderes`, `expedientes_judiciales`, **`extrajudiciales`**
+   (`expedientes_extrajudiciales` → 404), `actuaciones`, `notas_tecnicas`, `tareas`, `gdocu`, **`juzgados`**
+   (200 — el 404 era del path de relación, no del listado). **Descubrimiento:** `properties[]` es
+   **obligatorio también en el listado** `element_registries` (omitirlo → 500).
