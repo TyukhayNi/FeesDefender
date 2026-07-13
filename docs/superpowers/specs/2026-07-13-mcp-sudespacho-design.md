@@ -15,6 +15,7 @@ previo en Cowork, planificación). Precedente de patrón:
 | Credenciales | **Modelo A: clave `x-api-key` por usuario, con su rol** (cada compañero genera la suya; el CRM niega server-side lo que su rol no ve). Requiere **verificar por HAR** que la clave respeta el rol; si no lo respeta, se cae al Modelo C (motor central) |
 | `presigned_download_url` | **NO es bloqueo** — la descarga REST ya funciona vía `GET /api/documents/{id}/downloadUri` (RESUELTO 2026-06-10). Se expone en F1 con patrón DL-root (bytes nunca por el modelo) |
 | Confidencialidad | **Lista blanca (deny-by-default)**: solo se exponen los elementos del catálogo permitido. **Todo el árbol financiero/contable EXCLUIDO** (Facturas, Contabilidad, Exportación Contable) |
+| **Borrado** | **NUNCA, en ninguna fase.** Triple garantía: (1) el plugin no registra tool de borrado; (2) el cliente HTTP no implementa `DELETE`; (3) el rol del usuario tiene `Delete` OFF en todo. Regla dura §5 |
 | Diseño de tools | **Genéricas** (`element` como parámetro), no una tool por entidad |
 | Descubrimiento | **Introspección (`describe_element`) + playbook + catálogo**; lectura casi automática, escritura mantiene la disciplina HAR |
 | Ubicación | `plugins/sudespacho_mcp/` |
@@ -94,9 +95,19 @@ Confirmado en `core` (migrado de Bearer JWT a `x-api-key` el 2026-05-06).
   / config local); **nunca** en el repo ni en el chat. `sudespacho_cli.py` valida la clave
   (un GET de humo) sin escribirla en claro en ningún fichero versionado.
 
-**Verificación previa obligatoria (gate del diseño):** capturar un **HAR con un usuario
-de rol abogado** y comprobar que su `x-api-key` recibe **403/forbidden** (o lista vacía)
-al pedir un elemento financiero/contable. 
+**El modelo de roles YA está en producción (dato de El Contable, no especulación):**
+`../ElContable/docs/REFERENCIA_SUDESPACHO_API_PERMISOS.md` §3 documenta la matriz de
+permisos real (**elemento × {Read, ReadGroup, Update, Delete, Create}**, ~198 elementos,
+`settings/users/{id}?tab=permissions`) y §3.1 los **presets por rol ya operativos**
+(El Contable, El Auditor solo-lectura, bot.contable) — cada uno un **usuario CRM distinto
+con su credencial y su matriz**. La confidencialidad financiera = **apagar el `Read` de los
+elementos financieros en el rol "abogado"**; el CRM lo niega server-side.
+
+**Verificación previa (gate — ahora confirmación, no incógnita):** el modelo es per-usuario;
+la `x-api-key` se genera *dentro de la cuenta de un usuario* (Ajustes → API), luego casi con
+seguridad hereda su matriz. Como El Contable autentica con **Bearer JWT** (no con `x-api-key`),
+falta el único eslabón sin probar: capturar un **HAR con un usuario de rol abogado** y
+confirmar que su **`x-api-key`** recibe **403/lista vacía** en un elemento financiero.
 - Si **respeta el rol** → Modelo A confirmado (el CRM es el portero fuerte).
 - Si la clave resulta ser **siempre de administrador** (ve todo) → el Modelo A no protege;
   se cae al **Modelo C** (motor central: el plugin corre en el lado de Nikolai con una
@@ -133,7 +144,7 @@ confirmado sin PHPSESSID 2026-05-04; respuesta `{totalItems, items}`, NO formato
 | Tool | Endpoint / nota |
 |---|---|
 | `list_expedientes(referencia? \| texto?)` | búsqueda por referencia/texto (patrón `element_registries` + filtro `like`, operador **`equal`** no `eq`) |
-| `get_expediente(exp_id, element)` | metadatos; **usa frontal legacy si se pide el detalle completo** (el singular REST da 500, §6) |
+| `get_expediente(exp_id, element)` | metadatos; el singular REST `element_register/{id}?properties[]=` da **500** con la forma **array**. **Hipótesis a probar (dato de El Contable):** la forma **coma** `?properties=a,b,c` esquiva el bug → si funciona, no hace falta el frontal legacy para el detalle |
 | `list_documentos(exp_id, element)` | `GET /api/element_registries/gdocu?relatedElement=&relatedId=&direction=left` |
 | `get_document_download_url(doc_id, exp_id, element)` | `GET /api/documents/{id}/downloadUri` → `presignedDownloadUrl` (§7) |
 | `download_document(doc_id, exp_id, element, dest?)` | descarga a **DL-root** local + `sha256`; **nunca** bytes/base64 por el modelo (§7) |
@@ -171,14 +182,28 @@ automático (la introspección propone, un humano aprueba antes de añadir a la 
   conceptos suplido, conceptos provisión, libros oficiales.
 - **Contabilidad:** nóminas, amortizaciones.
 - **Exportación Contable:** cuentas contables.
-- (Los slugs exactos se fijan al capturar los HAR de verificación de rol; se vetan por
-  slug Y se dejan fuera de la lista blanca — doble negativa.)
+- **Slugs confirmados (de El Contable)** a vetar explícitamente: `conceptos_honorario`,
+  `conceptos_gasto`, `conceptos_suplido`, `conceptos_provision`, `conceptos_varios`,
+  `conceptos_recibidas*`, `catalogo_conceptos_*`, `facturas`, `facturas_proforma` (+ el
+  endpoint `POST /api/invoices`). El resto (remesas, facturas recibidas, cobros clientes,
+  pagos proveedores, libros oficiales, nóminas, amortizaciones, cuentas contables) se
+  confirman por slug conforme se capturen; **el deny-by-default los cubre igual** mientras
+  tanto — doble negativa (vetados por slug Y fuera de la lista blanca).
 
 **El CRM como portero fuerte (Modelo A).** La lista blanca protege *a través de las tools*.
 No impide que quien tenga la clave en la mano llame a la API directamente. Por eso la
 confidencialidad real se apoya en que **cada compañero use su clave de rol acotado**, que
 el CRM niega server-side. Dos barreras: rol del CRM (fuerte) + lista blanca (defensa en
 profundidad). **Nunca** repartir la clave de administrador con el plugin.
+
+**Borrado — NUNCA, regla dura (en ninguna fase, ni F1 ni F2+).** Triple garantía en capas:
+1. **Tools:** el plugin no registra ninguna tool de borrado; sin `delete_*`, sin flag
+   `permanent`. No hay superficie de borrado que el modelo pueda invocar.
+2. **Cliente HTTP:** `sudespacho_client.py` no implementa el verbo `DELETE` (calcado del
+   transporte de El Contable, que deliberadamente omite el borrado).
+3. **Rol/credencial (defensa en profundidad):** el rol del usuario tiene `Delete` **OFF en
+   todo** (principio §3.1 de la referencia común: "Nunca `Delete` para usuarios
+   automáticos"). Aunque el código lo intentara, el CRM lo rechaza.
 
 **Bytes nunca por el modelo:** `download_document` escribe a un **DL-root** acotado
 (`SUDESPACHO_DL_ROOT`, saneado `realpath` contra symlink-escape, patrón `_resolve_dest`
@@ -231,6 +256,8 @@ DevTools por entidad.
 - **Lista blanca (§5):** un `element` vetado o fuera del catálogo → error, no llamada a la
   API. Test explícito de que **cada slug financiero/contable** está vetado.
 - **Saneado del DL-root** (symlink-escape), como el de Gmail/google-despacho.
+- **No-borrado (regla dura §5):** test que asegura que **ninguna** tool registrada tiene un
+  nombre de borrado y que `sudespacho_client.py` **no** expone método `DELETE`.
 - **`describe_element`:** contra un fake que devuelve `view/complete` + muestra → borrador
   correcto.
 - **Paridad con `core`** (anti-drift, cuando aplique): regex de W-code, ids del tenant
@@ -268,7 +295,15 @@ DevTools por entidad.
 - Molde del plugin: `plugins/google_despacho_mcp/` (`server.py`, `run_server.bat`,
   `dxt-build/manifest.json`), inyección para tests: `plugins/email_export_mcp/server.py`.
 - Permisos y presets por rol: `../ElContable/docs/REFERENCIA_SUDESPACHO_API_PERMISOS.md`
-  (referencia común sudespacho, fusionada en `docs/INTEGRACION_SUDESPACHO.md` §14).
+  (referencia común sudespacho, fusionada en `docs/INTEGRACION_SUDESPACHO.md` §14) — matriz
+  §3 (elemento × Read/ReadGroup/Update/Delete/Create) y presets por rol §3.1. **El veto
+  financiero real = apagar `Read` del rol abogado en esos elementos.**
+- Modelo de datos financiero (conceptos/facturas/proforma, `/api/invoices`, idempotencia
+  `facturado`, gramática `filterGroup`, enums, colisión `E1`):
+  `../ElContable/docs/PLAN_DESCUBRIMIENTO_API_FacturacionEV.md`.
+- **Host de calendario del CRM** (para la futura agenda): `api-calendar-commons-pro.sudespacho.biz`.
+- Auth: El Contable usa **Bearer JWT**; FeesDefender `core` usa **`x-api-key`** (estática, no
+  caduca) — mismo host, dos mecanismos. El MCP usa `x-api-key` (mejor para plugin: sin refresco).
 
 ## 11. Relación con el ecosistema
 
