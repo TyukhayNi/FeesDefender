@@ -12,7 +12,7 @@ previo en Cowork, planificación). Precedente de patrón:
 | Relación con `core/` | **Standalone** (sin `import core`), patrón de los 4 plugins actuales; anti-drift por **tests de paridad** contra `core` cuando F2 replique lógica de escritura |
 | Entrega | **`.dxt` a Cowork por el puente de Claude Desktop** + instalable por cada compañero en su propio Desktop |
 | Orden de fases | **F1 lectura → F2 escritura → F3+ (según disparador)** |
-| Credenciales | **Modelo A: clave `x-api-key` por usuario, con su rol** (cada compañero genera la suya; el CRM niega server-side lo que su rol no ve). Requiere **verificar por HAR** que la clave respeta el rol; si no lo respeta, se cae al Modelo C (motor central) |
+| Credenciales | **Modelo B: cuenta personal de cada usuario (Bearer JWT + refresh)**, NO la `x-api-key`. La key es **global/admin** (no ligada a usuario, permisos no modificables, ~100% acceso) → inútil para rol/atribución. El JWT personal SÍ respeta la matriz de rol (oculta contabilidad server-side) Y atribuye los eventos al usuario. Modelo A (key por usuario) **retirado**; Modelo C (central) **descartado** (pierde atribución) |
 | `presigned_download_url` | **NO es bloqueo** — la descarga REST ya funciona vía `GET /api/documents/{id}/downloadUri` (RESUELTO 2026-06-10). Se expone en F1 con patrón DL-root (bytes nunca por el modelo) |
 | Confidencialidad | **Lista blanca (deny-by-default)**: solo se exponen los elementos del catálogo permitido. **Todo el árbol financiero/contable EXCLUIDO** (Facturas, Contabilidad, Exportación Contable) |
 | **Borrado** | **NUNCA, en ninguna fase.** Triple garantía: (1) el plugin no registra tool de borrado; (2) el cliente HTTP no implementa `DELETE`; (3) el rol del usuario tiene `Delete` OFF en todo. Regla dura §5 |
@@ -77,70 +77,61 @@ delega. **Sin `import core`** (standalone); las convenciones compartidas con `co
 Credenciales y config **fuera del repo** (env / `~/.sudespacho-despacho/`, gitignored),
 override por `SUDESPACHO_DESPACHO_HOME`. Tests en `tests/`.
 
-## 3. Autenticación / credenciales (Modelo A)
+## 3. Autenticación / credenciales (Modelo B — cuenta personal de cada usuario)
 
-**Superficie REST:** `https://api-crm-commons-pro.sudespacho.biz`, auth **`x-api-key`**
-(clave estática, **no caduca**; env `SUDESPACHO_API_KEY`). Sirve lectura y escritura.
-Confirmado en `core` (migrado de Bearer JWT a `x-api-key` el 2026-05-06).
+**Superficie REST:** `https://api-crm-commons-pro.sudespacho.biz`. La API acepta dos
+credenciales: **`x-api-key`** (estática) y **`Bearer JWT`** (token de sesión de un usuario).
 
-**Modelo A — credencial por cuenta de usuario, admin-provisionada:**
-- **Un usuario CRM por compañero** (rol abogado). **La credencial API la provisiona el admin
-  (Nikolai)** — los usuarios no-admin probablemente **no** pueden autogenerarla (a confirmar,
-  gate). Da igual quién pulsa "generar"; lo que cuenta es que la credencial **cuelga de la
-  cuenta del compañero**, así que **hereda su rol Y atribuye los eventos a ese usuario**.
-  Precedente: en El Contable, Nikolai (admin) creó los usuarios API y provisionó sus
-  credenciales (no fue autoservicio).
-- **Prerrequisito de despliegue:** cada compañero debe tener **cuenta propia en el CRM** (rol
-  abogado, sin `Read` en la contabilidad). Si no la tiene, crearla es parte del alta.
-- El **CRM hace de portero server-side** (presets por rol de
-  `REFERENCIA_SUDESPACHO_API_PERMISOS.md`). La lista blanca del plugin (§5) es **segunda
-  barrera** (defensa en profundidad), no la única.
-- Nikolai **nunca reparte su clave de administrador**.
-- La clave vive **solo** en el entorno del proceso del compañero (`SUDESPACHO_API_KEY` env
-  / config local); **nunca** en el repo ni en el chat. `sudespacho_cli.py` valida la clave
-  (un GET de humo) sin escribirla en claro en ningún fichero versionado.
+**Hallazgo que fija el modelo (2026-07-13):** la **`x-api-key` de sudespacho es GLOBAL** —
+**no** ligada a un usuario ni a sus credenciales, con **permisos no modificables y amplios
+(~100% de cualquier acción contra el CRM)**. Por tanto:
+- **La `x-api-key` NO sirve para el plugin de compañeros:** repartirla les daría acceso total
+  (contabilidad incluida) y **sin atribución** (credencial anónima). Contradice los dos
+  requisitos (confidencialidad por rol + traza por usuario).
+- La `x-api-key` se **reserva al contexto admin de Nikolai** (Streamlit/CLI de `core`), nunca
+  al MCP distribuido.
 
-**El modelo de roles YA está en producción (dato de El Contable, no especulación):**
-`../ElContable/docs/REFERENCIA_SUDESPACHO_API_PERMISOS.md` §3 documenta la matriz de
-permisos real (**elemento × {Read, ReadGroup, Update, Delete, Create}**, ~198 elementos,
-`settings/users/{id}?tab=permissions`) y §3.1 los **presets por rol ya operativos**
-(El Contable, El Auditor solo-lectura, bot.contable) — cada uno un **usuario CRM distinto
-con su credencial y su matriz**. La confidencialidad financiera = **apagar el `Read` de los
-elementos financieros en el rol "abogado"**; el CRM lo niega server-side.
+**Modelo B — el MCP se conecta con la CUENTA PERSONAL de cada usuario (Bearer JWT):**
+- Cada compañero se autentica con **su propio login del CRM** → el MCP obtiene su
+  **`Bearer JWT` + refresh token** y opera la API REST con ese JWT.
+- **Rol respetado (confidencialidad):** a diferencia de la key, un **usuario personal SÍ
+  tiene matriz de permisos modificable** (`REFERENCIA_SUDESPACHO_API_PERMISOS.md` §3, ~198
+  elementos, `settings/users/{id}?tab=permissions`). Apagando el `Read` de los elementos
+  financieros en el rol "abogado", **el CRM se los niega server-side**. La lista blanca del
+  plugin (§5) es **segunda barrera** (defensa en profundidad).
+- **Atribución (traza):** las acciones viajan con el JWT del usuario → el CRM registra
+  `created_by`/`modified_by` **bajo esa persona**. Nikolai puede seguir quién hizo qué. (Es
+  la razón por la que El Contable eligió credenciales por-usuario: "atribución limpia".)
+- **Contraseñas:** el usuario introduce **su propia** contraseña en el login del plugin
+  (como en cualquier app); el plugin guarda **solo los tokens** (`~/.sudespacho-despacho/`,
+  gitignored), **nunca la contraseña**, nunca el token en el repo ni en el chat
+  (`docs/SEGURIDAD_DATOS.md`). *(El asistente Claude no introduce contraseñas de terceros.)*
+- **Refresco:** el JWT caduca; se renueva con el refresh token. `core.sync_sudespacho_legacy`
+  ya implementa este baile (`try_auto_refresh_jwt` / `_try_refresh_jwt_post`); standalone se
+  **porta** esa lógica (trabajo acotado). Precisar si el REST con Bearer JWT necesita además
+  PHPSESSID o basta el JWT+refresh (gate).
 
-**Credencial = propia del usuario (requisito, no solo permiso).** La `x-api-key` se genera
-*dentro de la cuenta del usuario* (Ajustes → API) y está atada a su identidad. Esto no es
-solo para el rol: es para que **el CRM registre los eventos de creación/modificación bajo
-ese usuario** (`created_by`/`modified_by`) y Nikolai pueda seguir quién hizo qué. Nunca una
-`x-api-key` genérica/compartida ni la de administrador.
+**Modelo C — DESCARTADO** (no solo despriorizado): motor central con la key global. Perdería
+la **atribución por usuario** (todo bajo una credencial anónima) y expondría acceso total.
+Incompatible con los requisitos.
 
-**Verificación previa (gate — dos comprobaciones):** el modelo es per-usuario y la clave se
-genera en su cuenta, luego casi con seguridad hereda su matriz Y su identidad. Como El
-Contable autentica con **Bearer JWT** (no con `x-api-key`), faltan por probar tres eslabones,
-con **un HAR usando la `x-api-key` de un usuario de rol abogado**:
-0. **Provisión:** que el **admin pueda emitir una `x-api-key` atada a una cuenta NO-admin**
-   (los usuarios no-admin quizá no puedan autogenerarla). Si no se puede → fallback JWT (abajo).
-1. **Rol:** recibe **403/lista vacía** en un elemento financiero.
-2. **Atribución:** al crear un registro `TEST - BORRAR`, el CRM lo registra con **ese
-   usuario** como autor (no un "API user" genérico). Nikolai borra el registro de prueba
-   (el plugin nunca borra).
-- Si cumple **ambos** → Modelo A confirmado (el CRM es portero fuerte y la traza atribuye).
-- **Fallback de atribución:** si la `x-api-key` NO atribuye al usuario (la registra como
-  API genérico), usar **Bearer JWT por-usuario** (mecanismo de El Contable, que da
-  "atribución limpia en la traza") — sigue siendo credencial propia del usuario, a cambio
-  de refresco de token.
-- Si la clave resulta ser **siempre de administrador** (ve todo, ignora el rol) → el Modelo
-  A no protege; se cae al **Modelo C** (motor central: el plugin corre en el lado de Nikolai
-  con una sola clave, los usuarios sin credencial, y la **lista blanca del plugin es el único
-  portero**). El resto del diseño (tools, catálogo, introspección) no cambia; solo cambia
-  dónde vive el proceso y la credencial. (Contra del Modelo C: se pierde la atribución
-  por-usuario en la traza del CRM — todo iría bajo la única cuenta.)
+**Gate de verificación — testeable con el usuario de Nikolai (§12):**
+1. **Mecanismo de auth** (usuario admin de Nikolai basta): login → capturar `Bearer JWT` +
+   refresh → llamada REST OK → confirmar que el CRM **atribuye el evento a Nikolai**
+   (crear `TEST - BORRAR`, ver autor, Nikolai lo borra — el plugin nunca borra). Precisar
+   endpoints de login/refresh y si hace falta PHPSESSID. **Cuidado con el JWT (secreto): no
+   va al chat ni al repo; se observa en DevTools sin exfiltrarlo.**
+2. **Rol que oculta la contabilidad** (necesita un usuario de rol abogado, o configurar uno):
+   su JWT recibe **403/lista vacía** en un elemento financiero. Test aparte del mecanismo.
 
-**Frontal legacy (diferido):** `tnm.sudespacho.net` (PHPSESSID + `@token` + `@refreshToken`,
-caduca ~24 min). **Fuera de F1** salvo para el único caso que REST no cubre (detalle
-completo de un expediente, ver §4 y bug 500 de §6). Se implementa solo si una lectura de
-F1 lo exige; su fragilidad (expiración corta, cookies de Chrome) lo hace mal candidato a
-"producto para compañeros".
+**Prerrequisito de despliegue:** cada compañero debe tener **cuenta propia en el CRM** con
+rol abogado (sin `Read` en la contabilidad). Si no la tiene, crearla/configurar su matriz es
+parte del alta. *(Pendiente de Nikolai: ¿Ana/Sergio/Paola ya tienen usuario CRM?)*
+
+**Frontal legacy PHP** (`tnm.sudespacho.net`, PHPSESSID): solo si una lectura de F1 la REST
+no la cubre (p. ej. detalle completo de expediente por el bug 500, §4/§6). Nota: el login
+personal y su JWT/refresh son de la misma familia que este frontal — el gate aclara qué
+piezas hacen falta para el REST.
 
 ## 4. Tools por fase
 
@@ -323,8 +314,10 @@ DevTools por entidad.
   `facturado`, gramática `filterGroup`, enums, colisión `E1`):
   `../ElContable/docs/PLAN_DESCUBRIMIENTO_API_FacturacionEV.md`.
 - **Host de calendario del CRM** (para la futura agenda): `api-calendar-commons-pro.sudespacho.biz`.
-- Auth: El Contable usa **Bearer JWT**; FeesDefender `core` usa **`x-api-key`** (estática, no
-  caduca) — mismo host, dos mecanismos. El MCP usa `x-api-key` (mejor para plugin: sin refresco).
+- Auth: dos mecanismos en el mismo host — **`x-api-key`** (global/admin, ~100% acceso, no
+  ligada a usuario; la usa `core` para Nikolai) y **`Bearer JWT`** por login de usuario (lleva
+  rol + identidad; la usa El Contable). **El MCP usa Bearer JWT (Modelo B, §3)**, NO la key.
+  Baile de refresco de JWT ya en `core/sync_sudespacho_legacy.py` (`try_auto_refresh_jwt`).
 
 ## 11. Relación con el ecosistema
 
@@ -339,8 +332,11 @@ DevTools por entidad.
 
 ## 12. Próximo paso
 
-1. **Gate de verificación (§3):** capturar HAR con usuario de rol abogado → confirmar que
-   la `x-api-key` respeta el rol (Modelo A) o caer al Modelo C. *Idealmente antes de
-   codificar la auth; el resto del diseño no depende del resultado.*
+1. **Gate de auth — testeable YA con el usuario de Nikolai (§3):** login en el CRM →
+   observar en DevTools el `Bearer JWT` + refresh y el endpoint de login/refresh → una
+   llamada REST con ese JWT → confirmar **atribución** del evento a Nikolai. Precisar si el
+   REST necesita PHPSESSID o basta JWT+refresh. **No exfiltrar el JWT** (secreto). El test de
+   **rol** (403 en contabilidad) necesita un usuario abogado, aparte.
 2. Encadenar la skill **`writing-plans`** para desglosar **F1 (lectura)** en plan de
-   implementación.
+   implementación (con la auth Modelo B como primer bloque, apoyada en el baile de refresco
+   ya existente en `core/sync_sudespacho_legacy.py`).
