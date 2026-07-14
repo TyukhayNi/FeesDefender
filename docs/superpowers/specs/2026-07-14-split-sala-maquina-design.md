@@ -256,30 +256,70 @@ bundle escaneado (00_Input/, 1 PDF, sin capa de texto)
 
 ## 7. Layout en disco
 
+### 7.1 Qué existe hoy vs qué crea este spec
+
+`core/case_manager.py` **solo crea de entrada** `01_Procesado/{Sala lectura, MD, _revisar}`
+(línea 271). `02_Sala de máquina/` y sus productos se crean **bajo demanda**: Cluster A crea
+`01_OCR/` y `03_MD/`; **este spec añade `02_Documentos/`** (NO existe hoy). Nada se crea eager.
+
+### 7.2 Sala de máquina — subcarpeta por bundle
+
+`02_Documentos/` **solo contiene bundles que se partieron** (destino `split`; en el futuro,
+`merge`). Un **passthrough NUNCA aparece aquí**: su MD sale directo del buscable de `01_OCR/` o del
+nativo.
+
 ```
-01_Procesado/02_Sala de máquina/
+01_Procesado/02_Sala de máquina/               ← lo crea la Sala de máquina (NO existe hoy)
 ├── 01_OCR/
-│   └── {bundle_slug}.pdf                       PDF buscable del bundle completo (custodia)
-├── 02_Documentos/                              ← NUEVO — lo crea y posee este spec
-│   └── {bundle_slug}/
-│       ├── 01_CEDULA_EMPLAZAMIENTO__{sha8}.pdf documento lógico (segmento)
-│       ├── 02_AUTO__{sha8}.pdf
-│       ├── 03_DEMANDA__{sha8}.pdf
-│       ├── 04_DOC_CONTRATO__{sha8}.pdf
-│       ├── _segmentacion.json                  manifiesto editable (gate)
-│       ├── _segmentacion.md                    espejo legible
-│       └── indice.json                         relación bundle↔segmentos (separar.generar_indice)
+│   └── expediente-judicial__a1b2c3d4.pdf              el bundle ENTERO, buscable (custodia)
+├── 02_Documentos/                             ← NUEVO (este spec); SOLO bundles partidos
+│   └── expediente-judicial__a1b2c3d4/                 1 subcarpeta por bundle partido
+│       ├── 01_CEDULA_EMPLAZAMIENTO__e5f6.pdf          1 PDF por documento lógico (segmento)
+│       ├── 02_AUTO__7a8b.pdf
+│       ├── 03_DEMANDA__9c0d.pdf
+│       ├── 04_DOC_CONTRATO__1e2f.pdf
+│       ├── 05_DOC_PODER_NOTARIAL__3a4b.pdf
+│       ├── _segmentacion.json                         manifiesto editable (el gate, §5)
+│       ├── _segmentacion.md                           espejo legible
+│       └── indice.json                                relación bundle↔segmentos (+ delimitadores)
 ├── 03_MD/
-│   └── {seg_slug}.md                           un MD por documento lógico
-└── (_revisar/_cobertura.md a nivel caso)
+│   ├── expediente-judicial__a1b2c3d4__seg01_...__e5f6.md   1 MD por documento lógico
+│   ├── ...__seg02_AUTO__7a8b.md
+│   └── contrato-suelto__ffff.md                       un passthrough: MD directo, SIN carpeta arriba
+└── _revisar/
+    └── _cobertura.md                                  1 fila por documento lógico (registro interino)
 ```
 
-- **Subcarpeta por bundle** (`02_Documentos/{bundle_slug}/`) por legibilidad de un bundle con
-  muchos segmentos y para alojar su manifiesto/índice. **Divergencia menor consciente** con el
-  motor §G.6 (que prevé `02_Documentos/` plano + relación en `index.yaml`): mientras `index.yaml`
-  no exista, la subcarpeta + `indice.json` es el interim; el slug ya codifica el `parent`, así que
-  el aplanado futuro es mecánico.
-- Nombre "tipo oración"/numeración coherentes con el resto del árbol.
+**Por qué subcarpeta y no plano (divergencia menor consciente con el motor §G.6):** el motor prevé
+`02_Documentos/` **plano** con la relación bundle↔segmento en el registro único `index.yaml`. Pero
+`index.yaml` **no existe** (motor aparcado). Sin ese registro, un caso con varios bundles dejaría
+decenas de PDFs sueltos sin saber cuál vino de cuál. La **subcarpeta por bundle es el registro
+visual interino** y aloja el manifiesto y el índice del bundle. Cuando el motor traiga `index.yaml`,
+**aplanar es mecánico** (el slug ya codifica el `sha8` del bundle padre). Nombre "tipo oración" /
+numeración coherentes con el resto del árbol.
+
+### 7.3 Sala de lectura — plana, el bundle se DISUELVE (NO se toca aquí; end-state)
+
+Este spec **no toca `organizar-sala-lectura`** (D10, consumo = follow-on §9). Su convención actual
+es **estructura plana, la categoría vive en `INDICE.md`, no en carpetas**. Un segmento del split es
+un **documento atómico**, así que aterriza como cualquier otro documento: **el bundle se disuelve**
+en N entradas planas con nombre canónico `AAAA-MM-DD_descripción`. **NO** hay subcarpeta por bundle
+en la Sala de lectura (a diferencia de la Sala de máquina).
+
+```
+01_Procesado/Sala lectura/                     ← su convención actual (plana), NO la toca este spec
+├── 2023-04-12_cedula-emplazamiento.pdf                cada segmento = documento atómico plano
+├── 2023-05-03_auto-admision.pdf
+├── 2023-05-20_demanda.pdf
+├── 2023-02-10_contrato-arrendamiento.pdf
+├── 2023-02-10_poder-notarial.pdf
+├── INDICE.md                                          categoría E&V + enlace al bundle padre viven aquí
+└── CRONOLOGIA.md
+```
+
+**Contraste de las dos salas:** subcarpeta por bundle en la **Sala de máquina** (taller, agrupa por
+origen para trazabilidad/regeneración); **plano y disuelto** en la **Sala de lectura** (vista humana,
+categoría en el índice). El puente entre ambas es el contrato de `_cobertura.md` (§9).
 
 ---
 
@@ -302,10 +342,11 @@ bundle escaneado (00_Input/, 1 PDF, sin capa de texto)
 
 ## 9. Contrato de salida para la Sala de lectura (D10)
 
-**El bundle NO aterriza como bundle — aterriza como sus N documentos lógicos.** Ese es el objetivo:
-sin split, `organizar-sala-lectura` tendría una entrada opaca de 200 pp; con split, ve la cédula,
-el auto, la demanda, el contrato, el poder… **cada uno como entrada independiente**, con su nombre
-canónico `AAAA-MM-DD_descripción` y su categoría E&V.
+**El bundle NO aterriza como bundle — aterriza como sus N documentos lógicos** (layout concreto en
+§7.3: plano, disuelto, sin subcarpeta por bundle). Ese es el objetivo: sin split,
+`organizar-sala-lectura` tendría una entrada opaca de 200 pp; con split, ve la cédula, el auto, la
+demanda, el contrato, el poder… **cada uno como entrada independiente**, con su nombre canónico
+`AAAA-MM-DD_descripción` y su categoría E&V.
 
 **Contrato que este spec expone (estable):**
 - Cada documento lógico = un PDF (`02_Documentos/{bundle}/…` si split; `01_OCR/…` o nativo si
