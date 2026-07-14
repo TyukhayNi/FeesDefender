@@ -18,7 +18,7 @@ metadata:
   naturaleza: atomica
   jurisdiction: ES
   area: [civil, procesal]
-  version: "1.0"
+  version: "1.1"
   author: "Nikolai Tyukhay"
   organization: "Tyukhay Legal"
   contact: "nikolai.tyukhay@tyukhay.legal"
@@ -102,14 +102,23 @@ queda en `00_Input/_intake_log.jsonl` (sha256 por fichero — cadena de custodia
    extracción determinista) y escribe `03_MD/`, `raw_text/` y
    `_revisar/_cobertura.md`.
    - **`--vision`** (opcional, off por defecto): refuerza con transcripción de
-     visión los documentos que salieron `low`/`empty` tras el OCR. Solo si el
-     abogado lo pide explícitamente (páginas manuscritas, tablas complejas).
+     visión los documentos que salieron `low`/`empty` tras el OCR. **Requiere un
+     transcriptor cableado** (lo inyecta el flujo de la skill / la sesión Claude);
+     el CLI pelado **aborta con aviso claro** si se pide `--vision` sin cablearlo,
+     en vez de simular el intento. Úsalo solo si el abogado lo pide (páginas
+     manuscritas, tablas complejas).
    - **`--force`**: ignora el estado idempotente y regenera todo (usar solo si
      cambió el motor OCR o se sospecha una corrida corrupta).
 4. **Reporta:** nº de documentos por ruta, nº de saltados por `sha256`, nº que
    requieren revisión humana (`low`/`empty`, con motivo, listados primero en
    `_cobertura.md`).
-5. **Handoff (puntero, no se ejecuta):** sugiere correr `organizar-sala-lectura`
+5. **(opcional) Reforzar dudosos.** Si tras el `apply` quedan `low`/`empty` con
+   páginas renderizables y hay transcriptor cableado, dispara
+   `python -m scripts.sala_maquina reforzar "<case_id>"`: re-procesa **solo** esos
+   documentos con visión y reescribe MD + estado + cobertura de forma persistente
+   (ya no hace falta transcribir a mano como antes). Sin transcriptor cableado,
+   aborta con aviso.
+6. **Handoff (puntero, no se ejecuta):** sugiere correr `organizar-sala-lectura`
    sobre el mismo caso como siguiente paso — esta skill deja el material
    legible, no lo clasifica para lectura humana.
 
@@ -124,6 +133,11 @@ queda en `00_Input/_intake_log.jsonl` (sha256 por fichero — cadena de custodia
   se saltan. Un documento que falló (p. ej. PDF cifrado) **no** se marca como
   resuelto — se reintenta en la siguiente corrida normal, sin necesitar
   `--force`.
+- **Cobertura ACUMULATIVA entre corridas.** `_cobertura.md` es una vista derivada
+  del registro estructurado `_cobertura.json`; una corrida incremental **fusiona**
+  el delta con lo previo en vez de machacarlo — las filas de corridas anteriores no
+  se pierden. `--force` da foto fresca del inventario actual (simétrico con el
+  estado).
 - **`00_Input/` y `90_Notas personales/` intocables.** Invariante forzada por
   `core.sala_maquina.destino_seguro`: cualquier intento de escribir ahí lanza
   `ValueError` en vez de corromper el crudo.

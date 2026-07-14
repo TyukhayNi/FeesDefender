@@ -131,3 +131,82 @@ def test_render_cobertura_sanea_pipe_en_nota_sin_romper_columnas():
     fila = next(l for l in md.splitlines() if l.startswith("| a__1"))
     assert len(fila.split("|")) == len(header.split("|"))
     assert "rc=16 / firmado" in fila
+
+
+# --- Cluster A / A1: cobertura acumulativa (fusión + serialización) ----------
+
+def test_fusionar_cobertura_nueva_gana_por_slug():
+    # La cobertura debe acumular entre corridas (simétrica con el estado): una
+    # entrada nueva del mismo slug pisa a la previa; las previas no re-tocadas se
+    # conservan; las nuevas no vistas se añaden. Sin duplicados.
+    previa = [
+        sm.DocCobertura(slug="a__1", rel_path="x/a.pdf", metodo="ocr", estado="empty",
+                        chars=0, ocr=True, nota="OCR falló", sha256="a1"),
+        sm.DocCobertura(slug="b__2", rel_path="x/b.pdf", metodo="pypdf", estado="ok",
+                        chars=1200, sha256="b2"),
+    ]
+    nueva = [
+        sm.DocCobertura(slug="a__1", rel_path="x/a.pdf", metodo="ocr", estado="ok",
+                        chars=900, ocr=True, nota="reforzado con vision", sha256="a1"),
+        sm.DocCobertura(slug="c__3", rel_path="x/c.pdf", metodo="nativo", estado="ok",
+                        chars=300, sha256="c3"),
+    ]
+    fus = sm.fusionar_cobertura(previa, nueva)
+    by = {c.slug: c for c in fus}
+    assert set(by) == {"a__1", "b__2", "c__3"}
+    assert len(fus) == 3                                # sin duplicados
+    assert by["a__1"].estado == "ok"                    # la nueva gana
+    assert by["a__1"].nota == "reforzado con vision"
+    assert by["b__2"].estado == "ok"                    # la previa no re-tocada se conserva
+    assert by["c__3"].chars == 300                      # nueva añadida
+
+
+def test_fusionar_cobertura_preserva_orden_previas_luego_nuevas():
+    previa = [sm.DocCobertura(slug="b__2", rel_path="b", metodo="pypdf", estado="ok")]
+    nueva = [sm.DocCobertura(slug="a__1", rel_path="a", metodo="ocr", estado="empty")]
+    fus = sm.fusionar_cobertura(previa, nueva)
+    assert [c.slug for c in fus] == ["b__2", "a__1"]    # estable, no re-ordena
+
+
+def test_fusionar_cobertura_conserva_dos_rutas_mismo_slug():
+    # Dos ficheros byte-idénticos con el mismo stem en carpetas distintas comparten
+    # slug (output_slug = stem+sha8, sin carpeta): p. ej. el mismo encargo llega por
+    # Drive y como adjunto de correo. Son DOS filas de custodia (rel_path distinta);
+    # la fusión NO debe colapsarlas → se indexa por rel_path, no por slug.
+    a = sm.DocCobertura(slug="contrato__deadbeef", rel_path="01_Drive EV/contrato.pdf",
+                        metodo="pypdf", estado="ok", chars=500, sha256="deadbeef")
+    b = sm.DocCobertura(slug="contrato__deadbeef", rel_path="03_Email/contrato.pdf",
+                        metodo="pypdf", estado="ok", chars=500, sha256="deadbeef")
+    fus = sm.fusionar_cobertura([], [a, b])
+    assert {c.rel_path for c in fus} == {"01_Drive EV/contrato.pdf", "03_Email/contrato.pdf"}
+    assert len(fus) == 2
+
+
+def test_cobertura_serializacion_round_trip():
+    cob = [
+        sm.DocCobertura(slug="a__1", rel_path="x/a.pdf", metodo="ocr", estado="empty",
+                        chars=0, ocr=True, nota="x", sha256="deadbeef"),
+        sm.DocCobertura(slug="b__2", rel_path="x/b.pdf", metodo="nativo", estado="ok",
+                        chars=300),
+    ]
+    ds = sm.cobertura_a_dicts(cob)
+    assert isinstance(ds, list) and all(isinstance(d, dict) for d in ds)
+    assert sm.cobertura_desde_dicts(ds) == cob          # igualdad de dataclass
+
+
+def test_cobertura_desde_dicts_tolera_claves_extra_y_faltantes():
+    # Robustez ante evolución del esquema: ignora claves futuras y usa defaults
+    # para opcionales ausentes (no revienta al leer un _cobertura.json de otra versión).
+    ds = [{"slug": "a__1", "rel_path": "x/a.pdf", "metodo": "ocr", "estado": "empty",
+           "campo_futuro": 123}]
+    cob = sm.cobertura_desde_dicts(ds)
+    assert cob[0].slug == "a__1"
+    assert cob[0].chars == 0 and cob[0].ocr is False and cob[0].nota == ""
+
+
+# --- Cluster A / A2: detección de visión cableada ----------------------------
+
+def test_vision_cableada_detecta_stub_y_monkeypatch(monkeypatch):
+    assert sm.vision_cableada() is False                 # stub por defecto = no cableado
+    monkeypatch.setattr(sm, "_transcribir_vision", lambda imgs: "texto transcrito")
+    assert sm.vision_cableada() is True                  # inyectado = cableado

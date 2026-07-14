@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 import tempfile
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
 from core.extractor import (
@@ -154,6 +154,54 @@ def render_cobertura(cobertura: list[DocCobertura]) -> str:
     return "\n".join(lineas) + "\n"
 
 
+def fusionar_cobertura(previa: list[DocCobertura],
+                       nueva: list[DocCobertura]) -> list[DocCobertura]:
+    """Une la cobertura previa con la de esta corrida: la nueva gana por `rel_path`.
+
+    Simétrico con el estado idempotente (`previo | nuevo`), pero conservando el
+    registro COMPLETO en vez de solo el conjunto de shas: una corrida incremental
+    procesa solo el delta, así que sin esta fusión `_cobertura.md` perdería las
+    filas de las corridas anteriores (el bug de VALERO). Orden estable: las
+    previas en su orden (con la versión nueva si se re-tocó ese documento), luego
+    las nuevas no vistas.
+
+    Se indexa por `rel_path` (la fuente en `00_Input/`), NO por `slug`:
+    `output_slug` = stem + sha8 descarta la carpeta, así que dos ficheros
+    byte-idénticos con el mismo nombre en carpetas distintas (p. ej. el mismo
+    encargo por Drive y como adjunto de correo) comparten slug pero son DOS filas
+    de custodia. Indexar por slug las colapsaría, perdiendo una ruta en silencio.
+    `rel_path` es única por documento del inventario (`inventariar` recorre sin
+    duplicar), así que cada fuente conserva su fila.
+    """
+    por_ruta = {d.rel_path: d for d in nueva}
+    vistos: set[str] = set()
+    out: list[DocCobertura] = []
+    for d in previa:
+        out.append(por_ruta.get(d.rel_path, d))
+        vistos.add(d.rel_path)
+    for d in nueva:
+        if d.rel_path not in vistos:
+            out.append(d)
+            vistos.add(d.rel_path)
+    return out
+
+
+def cobertura_a_dicts(cob: list[DocCobertura]) -> list[dict]:
+    """Serializa la cobertura para `_cobertura.json` (dato persistible)."""
+    return [asdict(d) for d in cob]
+
+
+def cobertura_desde_dicts(ds: list[dict]) -> list[DocCobertura]:
+    """Reconstruye la cobertura desde `_cobertura.json`, tolerante al esquema:
+
+    ignora claves desconocidas (p. ej. campos de una versión futura) y deja que
+    los opcionales ausentes tomen su default — leer un json de otra versión no
+    debe reventar la corrida.
+    """
+    campos = {f.name for f in fields(DocCobertura)}
+    return [DocCobertura(**{k: v for k, v in d.items() if k in campos}) for d in ds]
+
+
 _ZONAS_VETADAS = ("00_Input", "90_Notas personales")
 
 
@@ -230,6 +278,21 @@ def _transcribir_vision(imgs) -> str:
     )
 
 
+# Marca del stub: quien lo reemplace (monkeypatch en test, o el cableado del flujo
+# skill/sesión) instala una función SIN esta marca → vision_cableada() lo detecta.
+_transcribir_vision._es_stub = True
+
+
+def vision_cableada() -> bool:
+    """`True` si `_transcribir_vision` está cableado (no es el stub por defecto).
+
+    Gemelo del preflight de `--vision` en el CLI: permite avisar EN ALTO cuando se
+    pide refuerzo por visión sin transcriptor, en vez del no-op silencioso que
+    dejaba una nota 'refuerzo vision falló…' por documento (fallo de VALERO).
+    """
+    return not getattr(_transcribir_vision, "_es_stub", False)
+
+
 def _reforzar_con_vision(pdf_path: Path, texto: str, estado: str, nota: str) -> tuple[str, str, str]:
     """Si `estado` es dudoso, intenta mejorar `texto` con transcripción de visión.
 
@@ -292,7 +355,19 @@ def _ocr_y_extraer(case_dir: Path, sm_dir: Path, case_id: str, d: DocPlan,
     try:
         buscable = ocr_pdf(entrada, ocr_out)
     except Exception as e:  # OCRError incl. cifrado/corrupto/firmado
-        return DocCobertura(d.slug, d.rel_path, "ocr", "empty", 0, True, f"OCR falló: {e}", d.sha256)
+        nota = f"OCR falló: {e}"
+        if not vision:
+            return DocCobertura(d.slug, d.rel_path, "ocr", "empty", 0, True, nota, d.sha256)
+        # OCRmyPDF rechazó el PDF, pero pypdfium2 (rasterizador más permisivo) puede
+        # renderizarlo: intenta la visión sobre la entrada original. Es justo el doc
+        # que `reforzar` existe para rescatar; sin esto la visión nunca se intentaba
+        # aquí (se retornaba antes del gate de visión). El texto viene solo de la
+        # visión → metodo "vision", sin artefacto de custodia en 01_OCR (ocr=False);
+        # metodo "vision" queda fuera de los reforzables → no hay reintento en bucle.
+        texto, estado, nota = _reforzar_con_vision(entrada, "", "empty", nota)
+        if texto.strip():
+            _escribir_md(case_dir, case_id, d.slug, d.rel_path, texto, "vision", False, estado)
+        return DocCobertura(d.slug, d.rel_path, "vision", estado, len(texto), False, nota, d.sha256)
     # Contrato de ocr_pdf: si el PDF ya tenía capa de texto (rc=6 / PriorOcrFound),
     # devuelve la ENTRADA sin escribir ocr_out → no hay artefacto de custodia en
     # 01_OCR/. No afirmamos una custodia que no existe: el texto se extrae igual de
