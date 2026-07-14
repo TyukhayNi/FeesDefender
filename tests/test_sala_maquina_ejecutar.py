@@ -1,4 +1,7 @@
 from pathlib import Path
+
+import pytest
+
 from core import sala_maquina as sm
 
 
@@ -425,6 +428,10 @@ def test_ejecutar_vision_refuerza_pdf_digital_gibberish(tmp_path, monkeypatch):
     contenido = md.read_text(encoding="utf-8")
     assert "Encargo de mediacion" in contenido      # el MD quedó reforzado con la transcripción
     assert cob[0].metodo == "pypdf" and cob[0].ocr is False
+    # el refuerzo no bastó (sigue gibberish): la cobertura deja constancia de que
+    # SÍ se intentó visión (distingue 'no intentado' de 'intentado y no bastó').
+    assert cob[0].estado == "low"
+    assert "sigue dudoso" in cob[0].nota
 
 
 def test_ejecutar_sin_vision_no_llama_transcribir(tmp_path, monkeypatch):
@@ -453,6 +460,323 @@ def test_ejecutar_sin_vision_no_llama_transcribir(tmp_path, monkeypatch):
     cob = sm.ejecutar(case, docs, case_id="EV-2026-001")  # vision=False (default)
 
     assert cob[0].estado == "empty"
+
+
+# --- Cluster A / A1: cobertura acumulativa (CLI apply) -----------------------
+
+def test_apply_incremental_acumula_cobertura(tmp_path, monkeypatch):
+    # Bug de VALERO: una 2ª corrida incremental machacaba _cobertura.md con solo
+    # el delta, perdiendo las filas anteriores. Tras el fix, conviven.
+    import scripts.sala_maquina as cli
+    case = tmp_path / "EV-2026-001"
+    drive = case / "00_Input" / "01_Drive EV"
+    drive.mkdir(parents=True)
+    _pdf_con_texto(drive / "uno.pdf", extra=" Documento uno.")
+    _pdf_con_texto(drive / "dos.pdf", extra=" Documento dos distinto.")
+    monkeypatch.setattr(cli, "caso_path", lambda cid: case)
+    monkeypatch.setattr(cli, "append_event", lambda *a, **k: None)
+
+    cli.apply("EV-2026-001")                       # 1ª corrida: uno + dos
+
+    cobertura = case / "01_Procesado" / "_revisar" / "_cobertura.md"
+    md1 = cobertura.read_text(encoding="utf-8")
+    assert "uno__" in md1 and "dos__" in md1
+
+    _pdf_con_texto(drive / "tres.pdf", extra=" Documento tres tardío.")
+    cli.apply("EV-2026-001")                       # 2ª corrida incremental: solo tres
+
+    md2 = cobertura.read_text(encoding="utf-8")
+    assert "uno__" in md2 and "dos__" in md2 and "tres__" in md2
+
+
+def test_apply_force_cobertura_es_snapshot_fresco(tmp_path, monkeypatch):
+    # Con --force, la cobertura refleja SOLO el inventario actual (foto fresca),
+    # simétrico con el estado: nada se saltó, la corrida es autoritativa.
+    import scripts.sala_maquina as cli
+    case = tmp_path / "EV-2026-001"
+    drive = case / "00_Input" / "01_Drive EV"
+    drive.mkdir(parents=True)
+    _pdf_con_texto(drive / "uno.pdf", extra=" Uno.")
+    monkeypatch.setattr(cli, "caso_path", lambda cid: case)
+    monkeypatch.setattr(cli, "append_event", lambda *a, **k: None)
+
+    cli.apply("EV-2026-001")
+
+    (drive / "uno.pdf").unlink()
+    _pdf_con_texto(drive / "dos.pdf", extra=" Dos distinto.")
+    cli.apply("EV-2026-001", force=True)
+
+    md = (case / "01_Procesado" / "_revisar" / "_cobertura.md").read_text(encoding="utf-8")
+    assert "dos__" in md and "uno__" not in md
+
+    # el estado estructurado (_cobertura.json) también es foto fresca: force NO
+    # fusiona con lo previo (si lo hiciera, 'uno' — ya borrado — quedaría stale).
+    import json as _json
+    cj = sm._sala_maquina_dir(case) / "_cobertura.json"
+    rel = {d["rel_path"] for d in _json.loads(cj.read_text(encoding="utf-8"))}
+    assert rel == {"01_Drive EV/dos.pdf"}
+
+
+# --- Cluster A / A2: --vision fail-loud (CLI apply) ---------------------------
+
+def test_apply_vision_sin_cablear_aborta_sin_procesar(tmp_path, monkeypatch):
+    import typer
+    import scripts.sala_maquina as cli
+    case = tmp_path / "EV-2026-001"
+    (case / "00_Input" / "01_Drive EV").mkdir(parents=True)
+    _pdf_con_texto(case / "00_Input" / "01_Drive EV" / "uno.pdf", extra=" Uno.")
+    monkeypatch.setattr(cli, "caso_path", lambda cid: case)
+    monkeypatch.setattr(cli, "append_event", lambda *a, **k: None)
+
+    def _boom(*a, **k):
+        raise AssertionError("no debe procesar si --vision no está cableado")
+    monkeypatch.setattr(cli.sm, "ejecutar", _boom)
+
+    with pytest.raises(typer.Exit):
+        cli.apply("EV-2026-001", vision=True)
+
+    # abortó en el preflight: no se escribió cobertura
+    assert not (case / "01_Procesado" / "_revisar" / "_cobertura.md").exists()
+
+
+# --- Cluster A / A3: comando reforzar ----------------------------------------
+
+def test_reforzar_reprocesa_solo_dudosos_con_vision(tmp_path, monkeypatch):
+    import scripts.sala_maquina as cli
+    case = tmp_path / "EV-2026-001"
+    drive = case / "00_Input" / "01_Drive EV"
+    drive.mkdir(parents=True)
+    _pdf_con_texto(drive / "bueno.pdf", extra=" Documento bueno con texto de sobra.")
+    escan = drive / "escaneado.pdf"
+    escan.write_bytes(b"%PDF-1.4\n% escaneado sin capa de texto\n")
+    sha_bueno = sm_file_sha(drive / "bueno.pdf")
+
+    monkeypatch.setattr(cli, "caso_path", lambda cid: case)
+    monkeypatch.setattr(cli, "append_event", lambda *a, **k: None)
+
+    def _fake_ocr(entrada, salida, **k):
+        Path(salida).parent.mkdir(parents=True, exist_ok=True)
+        Path(salida).write_bytes(b"%PDF buscable vacio")
+        return Path(salida)
+
+    real_pypdf = sm._try_pypdf
+
+    def _pypdf(path):
+        if "01_OCR" in str(path):
+            return ""                       # el buscable del escaneado sale vacío -> empty
+        return real_pypdf(path)
+
+    monkeypatch.setattr(sm, "ocr_pdf", _fake_ocr)
+    monkeypatch.setattr(sm, "_try_pypdf", _pypdf)
+    monkeypatch.setattr(sm, "_pdf_num_paginas", lambda p: 1)
+
+    cli.apply("EV-2026-001")                 # bueno=ok, escaneado=empty
+
+    # verifico el estado de partida: escaneado dudoso
+    prev = {c.rel_path: c for c in cli._cobertura_previa(case)}
+    assert prev["01_Drive EV/escaneado.pdf"].estado == "empty"
+    assert prev["01_Drive EV/bueno.pdf"].estado == "ok"
+
+    # cableo la visión y refuerzo
+    transcrito = ("Encargo de mediacion firmado por el propietario segun la imagen "
+                  "de la pagina escaneada, con honorarios pactados. " * 2)
+    monkeypatch.setattr(sm, "_renderizar_paginas", lambda p: ["pagina-fake"])
+    monkeypatch.setattr(sm, "_transcribir_vision", lambda imgs: transcrito)
+
+    # bueno.pdf (ok) NO debe re-procesarse: si se toca su MD, boom
+    real_write_md = sm.write_md
+
+    def _guard_write(path, meta, body):
+        if f"bueno__{sha_bueno[:8]}" in str(path):
+            raise AssertionError("reforzar no debe re-tocar un documento 'ok'")
+        return real_write_md(path, meta, body)
+
+    monkeypatch.setattr(sm, "write_md", _guard_write)
+
+    cli.reforzar("EV-2026-001")
+
+    post = {c.rel_path: c for c in cli._cobertura_previa(case)}
+    assert post["01_Drive EV/escaneado.pdf"].estado in ("ok", "low")   # mejoró
+    assert post["01_Drive EV/bueno.pdf"].estado == "ok"                # conservado
+
+
+def test_reforzar_sin_vision_cableada_aborta(tmp_path, monkeypatch):
+    import typer
+    import scripts.sala_maquina as cli
+    case = tmp_path / "EV-2026-001"
+    (case / "00_Input" / "01_Drive EV").mkdir(parents=True)
+    monkeypatch.setattr(cli, "caso_path", lambda cid: case)
+    with pytest.raises(typer.Exit):
+        cli.reforzar("EV-2026-001")
+
+
+# --- Revisión adversarial: hallazgos confirmados -----------------------------
+
+def test_apply_dos_copias_identicas_conserva_ambas_rutas(tmp_path, monkeypatch):
+    # Hallazgo cobertura: el mismo PDF byte-idéntico en dos carpetas (Drive +
+    # adjunto de correo) comparte slug; la cobertura debe registrar AMBAS rutas
+    # (dos filas de custodia), no colapsarlas a una.
+    import json as _json
+    import shutil
+    import scripts.sala_maquina as cli
+    case = tmp_path / "EV-2026-001"
+    (case / "00_Input" / "01_Drive EV").mkdir(parents=True)
+    (case / "00_Input" / "03_Email").mkdir(parents=True)
+    origen = case / "00_Input" / "01_Drive EV" / "contrato.pdf"
+    _pdf_con_texto(origen, extra=" Copia idéntica en dos carpetas.")
+    shutil.copyfile(origen, case / "00_Input" / "03_Email" / "contrato.pdf")   # bytes idénticos
+
+    monkeypatch.setattr(cli, "caso_path", lambda cid: case)
+    monkeypatch.setattr(cli, "append_event", lambda *a, **k: None)
+    cli.apply("EV-2026-001")
+
+    cj = sm._sala_maquina_dir(case) / "_cobertura.json"
+    rel = {d["rel_path"] for d in _json.loads(cj.read_text(encoding="utf-8"))}
+    assert rel == {"01_Drive EV/contrato.pdf", "03_Email/contrato.pdf"}
+
+
+def test_ejecutar_ocr_excepcion_con_vision_rescata(tmp_path, monkeypatch):
+    # Hallazgo reforzar: un PDF que OCRmyPDF rechaza (cifrado/corrupto) pero que
+    # pypdfium2 SÍ renderiza debe rescatarse con visión cuando vision=True, en vez
+    # de quedarse empty sin haber intentado la visión.
+    case = tmp_path / "EV-2026-001"
+    (case / "00_Input" / "01_Drive EV").mkdir(parents=True)
+    src = case / "00_Input" / "01_Drive EV" / "cifrado.pdf"
+    src.write_bytes(b"%PDF-1.4\n% escaneado que OCR rechaza\n")
+    sha = sm_file_sha(src)
+
+    def _ocr_boom(entrada, salida, **k):
+        raise RuntimeError("PDF cifrado: OCRmyPDF rc=8")
+    transcrito = ("Encargo de mediacion firmado por el propietario, honorarios "
+                  "pactados del cinco por ciento sobre el precio. " * 3)
+    monkeypatch.setattr(sm, "ocr_pdf", _ocr_boom)
+    monkeypatch.setattr(sm, "_try_pypdf", lambda p: "")
+    monkeypatch.setattr(sm, "_pdf_num_paginas", lambda p: 1)
+    monkeypatch.setattr(sm, "_renderizar_paginas", lambda p: ["pagina-fake"])
+    monkeypatch.setattr(sm, "_transcribir_vision", lambda imgs: transcrito)
+
+    docs = [sm.DocPlan(rel_path="01_Drive EV/cifrado.pdf", sha256=sha, ext=".pdf",
+                       ruta="pdf", slug=f"cifrado__{sha[:8]}")]
+    cob = sm.ejecutar(case, docs, case_id="EV-2026-001", vision=True)
+
+    md = case / "01_Procesado" / "02_Sala de máquina" / "03_MD" / f"cifrado__{sha[:8]}.md"
+    assert "Encargo de mediacion" in md.read_text(encoding="utf-8")
+    assert cob[0].estado in ("ok", "low")
+    assert cob[0].metodo == "vision"
+
+
+def test_ejecutar_ocr_excepcion_sin_vision_queda_empty(tmp_path, monkeypatch):
+    # Sin --vision, un PDF que OCR rechaza queda empty (no se intenta visión).
+    case = tmp_path / "EV-2026-001"
+    (case / "00_Input" / "01_Drive EV").mkdir(parents=True)
+    src = case / "00_Input" / "01_Drive EV" / "cifrado.pdf"
+    src.write_bytes(b"%PDF-1.4\n% escaneado que OCR rechaza\n")
+    sha = sm_file_sha(src)
+
+    def _ocr_boom(entrada, salida, **k):
+        raise RuntimeError("PDF cifrado")
+    def _vision_boom(imgs):
+        raise AssertionError("no debe intentar visión sin vision=True")
+    monkeypatch.setattr(sm, "ocr_pdf", _ocr_boom)
+    monkeypatch.setattr(sm, "_try_pypdf", lambda p: "")
+    monkeypatch.setattr(sm, "_pdf_num_paginas", lambda p: 1)
+    monkeypatch.setattr(sm, "_transcribir_vision", _vision_boom)
+
+    docs = [sm.DocPlan(rel_path="01_Drive EV/cifrado.pdf", sha256=sha, ext=".pdf",
+                       ruta="pdf", slug=f"cifrado__{sha[:8]}")]
+    cob = sm.ejecutar(case, docs, case_id="EV-2026-001")   # vision=False
+
+    assert cob[0].metodo == "ocr" and cob[0].estado == "empty"
+    assert "OCR falló" in cob[0].nota
+
+
+def test_reforzar_fuentes_desaparecidas_no_emite_evento(tmp_path, monkeypatch):
+    # Hallazgo reforzar (baja): si las fuentes dudosas ya no están en 00_Input, el
+    # plan filtrado queda vacío; reforzar NO debe reescribir ni emitir un evento
+    # forense count=0 en el log de custodia.
+    import scripts.sala_maquina as cli
+    case = tmp_path / "EV-2026-001"
+    drive = case / "00_Input" / "01_Drive EV"
+    drive.mkdir(parents=True)
+    escan = drive / "escaneado.pdf"
+    escan.write_bytes(b"%PDF-1.4\n% escaneado sin capa\n")
+
+    def _fake_ocr(entrada, salida, **k):
+        Path(salida).parent.mkdir(parents=True, exist_ok=True)
+        Path(salida).write_bytes(b"%PDF buscable vacio")
+        return Path(salida)
+    real_pypdf = sm._try_pypdf
+    monkeypatch.setattr(sm, "ocr_pdf", _fake_ocr)
+    monkeypatch.setattr(sm, "_try_pypdf", lambda p: "" if "01_OCR" in str(p) else real_pypdf(p))
+    monkeypatch.setattr(sm, "_pdf_num_paginas", lambda p: 1)
+
+    monkeypatch.setattr(cli, "caso_path", lambda cid: case)
+    eventos = []
+    monkeypatch.setattr(cli, "append_event",
+                        lambda cid, ev, *, details=None: eventos.append(ev))
+    cli.apply("EV-2026-001")                     # escaneado = empty (reforzable)
+    eventos.clear()
+
+    escan.unlink()                               # desaparece la fuente
+    monkeypatch.setattr(sm, "_renderizar_paginas", lambda p: ["fake"])
+    monkeypatch.setattr(sm, "_transcribir_vision", lambda imgs: "texto")
+    cli.reforzar("EV-2026-001")
+
+    assert eventos == []                         # sin evento forense para un lote vacío
+
+
+def test_reforzar_excluye_dudoso_nativo_no_reforzable(tmp_path, monkeypatch):
+    # Hallazgo tests: un dudoso NO reforzable (nativo empty, sin páginas que
+    # renderizar) no debe entrar en objetivos → reforzar no lo re-procesa.
+    import scripts.sala_maquina as cli
+    case = tmp_path / "EV-2026-001"
+    manual = case / "00_Input" / "04_Manual"
+    manual.mkdir(parents=True)
+    (manual / "vacio.txt").write_text("", encoding="utf-8")   # nativo → empty
+
+    monkeypatch.setattr(cli, "caso_path", lambda cid: case)
+    eventos = []
+    monkeypatch.setattr(cli, "append_event",
+                        lambda cid, ev, *, details=None: eventos.append(ev))
+    cli.apply("EV-2026-001")                     # nativo empty
+    eventos.clear()
+
+    monkeypatch.setattr(sm, "_renderizar_paginas", lambda p: ["fake"])
+    monkeypatch.setattr(sm, "_transcribir_vision", lambda imgs: "texto")
+    # si el nativo entrara en objetivos, ejecutar lo re-procesaría; no debe.
+    cli.reforzar("EV-2026-001")
+
+    assert eventos == []                         # 0 objetivos reforzables → sin evento
+
+
+def test_ejecutar_vision_cableada_falla_en_doc_aisla_lote(tmp_path, monkeypatch):
+    # A2 (fallo blando): visión cableada pero que LANZA en runtime en un doc →
+    # nota blanda, el lote sigue, el doc NO se marca 'error' (aislamiento §9).
+    case = tmp_path / "EV-2026-001"
+    (case / "00_Input" / "01_Drive EV").mkdir(parents=True)
+    src = case / "00_Input" / "01_Drive EV" / "escaneado.pdf"
+    src.write_bytes(b"%PDF-1.4\n% escaneado sin capa\n")
+    sha = sm_file_sha(src)
+
+    def _fake_ocr(entrada, salida, **k):
+        Path(salida).parent.mkdir(parents=True, exist_ok=True)
+        Path(salida).write_bytes(b"%PDF buscable vacio")
+        return Path(salida)
+    def _vision_boom(imgs):
+        raise RuntimeError("timeout del modelo de visión")
+    monkeypatch.setattr(sm, "ocr_pdf", _fake_ocr)
+    monkeypatch.setattr(sm, "_try_pypdf", lambda p: "")
+    monkeypatch.setattr(sm, "_pdf_num_paginas", lambda p: 1)
+    monkeypatch.setattr(sm, "_renderizar_paginas", lambda p: ["pagina-fake"])
+    monkeypatch.setattr(sm, "_transcribir_vision", _vision_boom)
+
+    docs = [sm.DocPlan(rel_path="01_Drive EV/escaneado.pdf", sha256=sha, ext=".pdf",
+                       ruta="pdf", slug=f"escaneado__{sha[:8]}")]
+    cob = sm.ejecutar(case, docs, case_id="EV-2026-001", vision=True)
+
+    assert cob[0].metodo == "ocr"                # no se tumbó a 'error'
+    assert cob[0].estado == "empty"
+    assert "vision" in cob[0].nota.lower()       # constancia del intento fallido
 
 
 def test_ejecutar_no_toca_00_input_ni_notas_personales(tmp_path):
