@@ -2365,3 +2365,76 @@ de navegación + metadatos; `INDICE.md` = corpus documental). Es un PR aparte y 
 **Disparador de promoción.** Recurrencia del coste de teclear las instrucciones a mano al abrir casos, o
 decisión de Nikolai. Relacionado: `abrir-caso` (`core/abrir_caso.py`, `_shared/scaffold_caso.py`),
 #30 (manifiesto + wikilinks de Navegación), #54/#55 (layout y pipeline).
+
+## 58. Fiabilidad de la sala de máquina: cobertura acumulativa + refuerzo por visión  [COMPLETADO → PR #42 (`24e69db`)]
+
+**Anotado 2026-07-14** tras la sesión E2E VALERO (W-02XOR7). Cluster A del roadmap post-VALERO. Tres piezas
+acopladas:
+
+- **Bug — `_cobertura.md` se machaca en el `apply` incremental.** `scripts/sala_maquina.py::apply` escribe
+  `render_cobertura(cob)` con **solo** los documentos de la tanda; una segunda corrida incremental borra la
+  cobertura acumulada y las notas de refuerzo. *Disparador vivo:* al añadir D_02/D_03 a VALERO, la cobertura
+  de 35 filas se redujo a 4 y hubo que reconstruirla a mano. *Fix:* `apply` debe **fusionar** el estado
+  previo (leer las filas existentes / reconstruir desde el frontmatter de `03_MD/` + los `sin_soporte`)
+  antes de renderizar. Es pérdida silenciosa de integridad (se pierde "qué queda por revisar").
+- **`--vision` es un stub que falla en silencio.** `core/sala_maquina._transcribir_vision` lanza
+  `NotImplementedError`; `_reforzar_con_vision` se traga la excepción y el documento queda `empty` con nota
+  "refuerzo vision falló". *Fix:* cablear a un transcriptor real — **preferente la sesión Claude** (criterio
+  de Nikolai: sin API de pago; ver `feedback-claude-en-sesion-vs-api-pago`) vía entry-point documentado; y,
+  sin cablear, que `apply --vision` **avise ruidosamente** en vez de no-op.
+- **Comando `reforzar` persistente.** `sala_maquina reforzar <caso> <doc>` que haga render→visión→reescriba
+  MD (frontmatter+`chars`+`text_sha256`), marque el SHA en `_sala_maquina_state.json` y actualice la
+  cobertura, de forma coherente. *Disparador:* en VALERO lo hice en 4 pasos manuales.
+
+**Disparador de promoción.** Bugs que mordieron en vivo esta sesión + operación (refuerzo) que hubo que
+hacer a mano. Rutas: `scripts/sala_maquina.py`, `core/sala_maquina.py` (`_transcribir_vision`,
+`render_cobertura`, `ejecutar`).
+
+## 59. Expediente scratch (caso de trabajo local) + detección E&V por stub `_caso.md`  [PROMOVIDO → PLAN.md]
+
+**Anotado 2026-07-14.** Cluster B del roadmap post-VALERO. Diseño aprobado en
+`docs/superpowers/specs/2026-07-14-expediente-scratch-design.md`. Un caso de trabajo **local** ligero con un
+`_caso.md` stub mínimo (`meta`: W-code, partes, ciudad, `tipo_caso`, `cliente`=E&V, `estado: scratch`) para
+que **todas las skills lo detecten** (modo E&V, terminología, ubicación) sin tocar Drive/CRM, más flags
+`--case-dir`/`--casos-root` en el pipeline (elimina el override de entorno) y un comando `promover` a
+expediente completo del Drive (reutiliza `core/abrir_caso.py`). Resuelve de raíz el antiguo punto "detección
+de modo E&V" (VALERO cayó en "civil genérico" por falta de `_caso.md`). *Disparador:* toda la fricción E2E
+de VALERO nació del `_caso.md` ausente. Custodia: el `estado: scratch` es transitorio; documentar en
+`SEGURIDAD_DATOS`/`GOBERNANZA` que no sustituye al expediente del Drive para prueba.
+
+## 60. `gen_solicitud`: petición subsidiaria (averiguación de domicilio) + DNI pendiente  [PROMOVIDO → PLAN.md]
+
+**Anotado 2026-07-14.** Cluster C (quick win). `scripts/gen_solicitud.py` no tiene campo para una petición
+subsidiaria por testigo (p. ej. **averiguación de domicilio, art. 156 LEC**) ni manejo de **DNI pendiente**;
+hoy hubo que doblar el art. 156 dentro de `citacion` y vaciar `movil`/`email`, y marcar el DNI de un testigo
+como `[pendiente de aportar]` a pelo. *Fix:* añadir `averiguacion_domicilio`/`subsidiario` como campo del
+`testigo` y `dni` opcional con marca de pendiente que renderice limpio. *Disparador:* AP de VALERO — la
+testigo compradora (art. 156 LEC) y la testigo directora de zona (DNI pendiente).
+
+## 61. Ingesta documental robusta: `.doc`, localizador de página en escaneado, extractor de entidades
+
+**Anotado 2026-07-14.** Cluster D (backlog). Tres huecos observados en VALERO:
+- **`.doc` binario → `sin_soporte`.** Añadir conversión LibreOffice headless (`soffice --convert-to`) aguas
+  arriba en `core/sala_maquina.clasificar_ruta`. (En VALERO había gemelos PDF, sin pérdida.)
+- **Localizador de página falla en PDF escaneado.** `pdfminer.extract_pages` devolvió `None` al buscar por
+  texto un bloque en un escaneo (sin capa de texto); fallback por render+visión o por índice de página.
+- **Extractor de "bloque de citación / entidades" con visión** (DNI, IBAN, email, móvil, domicilio) para
+  docs con PII OCR-corrupta. *Disparador:* el email de una testigo salió con el «@» transcrito como otra letra por el OCR.
+
+## 62. Entorno Windows (`setup_windows_deps`) + unificar el `.bat` de OCR con el pipeline
+
+**Anotado 2026-07-14.** Cluster E (backlog).
+- **`scripts/setup_windows_deps.ps1` vendorizado** — pngquant, tesseract-langs y **jbig2enc** (sin fuente
+  limpia en Windows; documentar/vendorizar binario revisado), para evitar el baile scoop + `iex` remoto
+  bloqueado que hicimos hoy.
+- **Unificar el `.bat` de escritorio con el pipeline** — el `OCR_PDF.bat`/`ocr_pdf.py` del escritorio
+  duplicaba el motor (con el bug `--force-ocr` ya corregido a `--skip-text` en la sesión). Un único
+  entry-point de arrastrar-y-soltar que invoque el pipeline bueno (`core/sala_maquina`), o documentar que el
+  `.bat` es solo herramienta throwaway.
+
+## 63. Sincronización procesal: providencia/DIOR de señalamiento → `00_Input`
+
+**Anotado 2026-07-14.** Cluster F (backlog). El señalamiento de la audiencia previa (art. 429 LEC) no está en
+`00_Input` (no hay providencia sincronizada del CRM), así que las skills procesales no pueden leer la fecha/
+sala; en VALERO la aportó el usuario ("hoy"). El sync Sudespacho debería depositar la providencia/DIOR en
+`00_Input`. Depende de trabajo de integración Sudespacho (`docs/INTEGRACION_SUDESPACHO.md`).

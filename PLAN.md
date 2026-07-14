@@ -21,6 +21,31 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 
 ---
 
+## [SIGUIENTE-INFRA-POST-VALERO] Roadmap de infraestructura tras la sesión VALERO (2026-07-14)
+
+*Disparador: sesión E2E VALERO (W-02XOR7 / BaRS8) del 2026-07-14 — OCR → sala de máquina → refuerzo por
+visión → audiencia previa. La sesión destapó bugs vivos y fricción de fondo. Brainstorming del roadmap y
+decisión de arquitectura del Cluster B: `docs/superpowers/specs/2026-07-14-expediente-scratch-design.md`.
+Backlog completo (6 clusters) en `docs/MEJORAS_FUTURAS.md` #58-#63. Orden acordado: **A (+C en paralelo) →
+B**; D/E/F quedan en backlog. **Actualización: el Cluster A lo completó la sesión paralela (PR #42, `24e69db`); siguiente = C (quick win) o B.***
+
+- [x] **A — Fiabilidad de la sala de máquina (`MEJORAS #58`) — ✅ HECHA (PR #42, `24e69db`, sesión paralela).** (1) Bug: `apply` incremental
+  machaca `_cobertura.md` (`scripts/sala_maquina.py::apply` debe **fusionar** el estado previo, no volcar
+  solo `cob`) — pérdida silenciosa de "qué queda por revisar". (2) `--vision` cableado a un transcriptor
+  real (preferente la sesión Claude) o que **avise** en vez de no-op (`core/sala_maquina._transcribir_vision`).
+  (3) Comando `reforzar` persistente (render→visión→MD+estado+cobertura). *En VALERO la cobertura de 35 filas
+  se perdió y el refuerzo de visión hubo que persistirlo a mano.*
+- [ ] **B — Expediente scratch (caso de trabajo local) (`MEJORAS #59`).** Stub `_caso.md` mínimo para que las
+  skills detecten el caso (E&V, terminología, ubicación) sin Drive/CRM + flags `--case-dir`/`--casos-root` +
+  comando de promoción a expediente completo. Resuelve de raíz la mala detección de modo (VALERO cayó en
+  "civil genérico"). Diseño aprobado en la spec citada.
+- [ ] **C — Campos de `gen_solicitud` (`MEJORAS #60`) — quick win, en paralelo a A.** Petición subsidiaria de
+  averiguación de domicilio (art. 156 LEC) como campo + DNI pendiente que renderice limpio. Disparador:
+  la testigo compradora (petición de averiguación de domicilio, art. 156 LEC) y la testigo directora de zona (DNI pendiente) en la AP de VALERO.
+- Backlog (no promovidos): **#61** ingesta documental robusta (`.doc`/soffice, localizador de página en
+  escaneado, extractor de entidades con visión), **#62** entorno Windows (`setup_windows_deps`) + unificar el
+  `.bat` de OCR, **#63** sincronización de la providencia/DIOR de señalamiento a `00_Input`.
+
 ## [abrir-caso] ✅ F1 + F2a + F3-(A+C) mergeadas; F2b APARCADA; F3-judicial pendiente
 
 *Disparador: encargo de Nikolai (spec v0.1 `SPEC_ABRIR_CASO.md`, fuera del repo). Abrir un expediente
