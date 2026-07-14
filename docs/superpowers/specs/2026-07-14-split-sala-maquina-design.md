@@ -298,28 +298,42 @@ visual interino** y aloja el manifiesto y el índice del bundle. Cuando el motor
 **aplanar es mecánico** (el slug ya codifica el `sha8` del bundle padre). Nombre "tipo oración" /
 numeración coherentes con el resto del árbol.
 
-### 7.3 Sala de lectura — plana, el bundle se DISUELVE (NO se toca aquí; end-state)
+### 7.3 Sala de lectura — el bundle es un DOCUMENTO COMPUESTO = subcarpeta fechada (NO se toca aquí; end-state)
 
-Este spec **no toca `organizar-sala-lectura`** (D10, consumo = follow-on §9). Su convención actual
-es **estructura plana, la categoría vive en `INDICE.md`, no en carpetas**. Un segmento del split es
-un **documento atómico**, así que aterriza como cualquier otro documento: **el bundle se disuelve**
-en N entradas planas con nombre canónico `AAAA-MM-DD_descripción`. **NO** hay subcarpeta por bundle
-en la Sala de lectura (a diferencia de la Sala de máquina).
+Este spec **no toca `organizar-sala-lectura`** (D10, consumo = follow-on §9). Su convención real
+(verificada en `SKILL.md` §"Documentos compuestos" y en la guarda "Estructura plana"): la sala es
+**plana para documentos sueltos** (la categoría vive en `INDICE.md`, no en carpetas), **pero los
+documentos compuestos (bundles) abren SUBCARPETA fechada** `AAAA-MM-DD_descripción/` con
+principal + anexos, agrupados por `parent_id`/`orden` del `_MANIFIESTO.md`. Los bundles canónicos
+que ya usan esta subcarpeta: **WhatsApp** (chat + `media/`), **email `.eml`** (cuerpo + adjuntos
+MIME), **clúster CRM** (subida en lote).
+
+**Un bundle partido encaja EXACTO en ese modelo:** es un documento compuesto cuyos miembros son sus
+segmentos. **NO se disuelve en documentos planos** — aterriza como una **subcarpeta fechada** cuyos
+miembros son los segmentos, cada uno con su propia fecha y nombre canónico, agrupados por el
+`parent_id`. El `parent_slug`/`role_in_bundle` del split (§3.2) mapea **directamente** al
+`parent_id`/`orden` que la Sala de lectura ya usa para compuestos.
 
 ```
-01_Procesado/Sala lectura/                     ← su convención actual (plana), NO la toca este spec
-├── 2023-04-12_cedula-emplazamiento.pdf                cada segmento = documento atómico plano
-├── 2023-05-03_auto-admision.pdf
-├── 2023-05-20_demanda.pdf
-├── 2023-02-10_contrato-arrendamiento.pdf
-├── 2023-02-10_poder-notarial.pdf
-├── INDICE.md                                          categoría E&V + enlace al bundle padre viven aquí
-└── CRONOLOGIA.md
+01_Procesado/Sala lectura/                     ← convención real (plana + compuestos en subcarpeta), NO la toca este spec
+├── 2023-05-20_expediente-judicial/                   BUNDLE PARTIDO = documento compuesto (subcarpeta fechada)
+│   ├── 2023-04-12_cedula-emplazamiento.pdf                  miembro (su propia fecha)
+│   ├── 2023-05-03_auto-admision.pdf
+│   ├── 2023-05-20_demanda.pdf
+│   ├── 2023-02-10_contrato-arrendamiento.pdf
+│   └── 2023-02-10_poder-notarial.pdf
+├── 2023-06-01_factura-suelta.pdf                     documento suelto (passthrough) = plano en la raíz
+├── INDICE.md                                          categoría E&V (por miembro) vive aquí
+├── CRONOLOGIA.md
+└── _MANIFIESTO.md                                     parent_id/orden del bundle ↔ sus segmentos
 ```
 
 **Contraste de las dos salas:** subcarpeta por bundle en la **Sala de máquina** (taller, agrupa por
-origen para trazabilidad/regeneración); **plano y disuelto** en la **Sala de lectura** (vista humana,
-categoría en el índice). El puente entre ambas es el contrato de `_cobertura.md` (§9).
+origen para trazabilidad/regeneración) **y** subcarpeta por bundle en la **Sala de lectura** (como
+documento compuesto, su convención ya existente); un **passthrough** es plano en ambas. El puente
+entre las dos salas es el contrato de `_cobertura.md` + `parent_slug`/`role_in_bundle` (§9). El
+nombramiento interno exacto (principal vs anexo, o miembros-pares) lo decide el follow-on, dueño de
+la convención de la Sala de lectura.
 
 ---
 
@@ -342,11 +356,12 @@ categoría en el índice). El puente entre ambas es el contrato de `_cobertura.m
 
 ## 9. Contrato de salida para la Sala de lectura (D10)
 
-**El bundle NO aterriza como bundle — aterriza como sus N documentos lógicos** (layout concreto en
-§7.3: plano, disuelto, sin subcarpeta por bundle). Ese es el objetivo: sin split,
-`organizar-sala-lectura` tendría una entrada opaca de 200 pp; con split, ve la cédula, el auto, la
-demanda, el contrato, el poder… **cada uno como entrada independiente**, con su nombre canónico
-`AAAA-MM-DD_descripción` y su categoría E&V.
+**El bundle aterriza como DOCUMENTO COMPUESTO — una subcarpeta fechada con sus N segmentos como
+miembros** (layout concreto en §7.3), reutilizando la convención de compuestos que la Sala de
+lectura ya aplica a WhatsApp/email/CRM. Ese es el objetivo: sin split, `organizar-sala-lectura`
+tendría una entrada opaca de 200 pp; con split, ve la cédula, el auto, la demanda, el contrato, el
+poder… **cada uno como miembro con su propia fecha, nombre canónico `AAAA-MM-DD_descripción` y
+categoría E&V**, agrupados bajo el bundle por `parent_id`.
 
 **Contrato que este spec expone (estable):**
 - Cada documento lógico = un PDF (`02_Documentos/{bundle}/…` si split; `01_OCR/…` o nativo si
@@ -355,8 +370,11 @@ demanda, el contrato, el poder… **cada uno como entrada independiente**, con s
   lógicos en el interim (hasta `index.yaml`).
 
 **Follow-on (fuera de este spec):** enseñar a `organizar-sala-lectura` a **consumir la enumeración
-de documentos lógicos** (`_cobertura.md`) en vez de recorrer `00_Input/` crudo. Toca el fichero de
-esa skill → handoff en spec aparte.
+de documentos lógicos** (`_cobertura.md`) en vez de recorrer `00_Input/` crudo, **emitiendo un
+bundle partido como documento compuesto** (subcarpeta fechada + `parent_id`). Es un follow-on
+**pequeño**: la Sala de lectura **ya tiene** el mecanismo de compuestos (WhatsApp/email/CRM) y el
+split ya entrega `parent_slug`/`role_in_bundle` — solo hay que mapear y añadir "bundle partido"
+como señal determinista de agrupación. Toca el fichero de esa skill → handoff en spec aparte.
 
 > **Brecha explícita:** mientras ese follow-on no se haga, `organizar-sala-lectura` seguirá leyendo
 > `00_Input/` y vería el bundle crudo. Este spec deja el material y el contrato listos; el círculo
