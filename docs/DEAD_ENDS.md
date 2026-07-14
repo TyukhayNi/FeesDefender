@@ -483,6 +483,24 @@ Cuantifica y matiza el hallazgo anterior con mediciones reales desde Cowork (wal
 
 ---
 
+## `sala_maquina apply --vision` no transcribe nada (stub sin cablear)
+
+- **Intentado:** correr `python -m scripts.sala_maquina apply <caso> --vision` para reforzar con visión los documentos que salieron `low`/`empty` tras el OCR.
+- **Resultado:** no-op silencioso. `core/sala_maquina._transcribir_vision` lanza `NotImplementedError` **a propósito** (el cerebro no incrusta llamadas a modelos), y `_reforzar_con_vision` **se traga la excepción**: el documento queda igual (`empty`) con la nota "refuerzo vision falló". Engaña: parece que se intentó y no bastó, cuando en realidad no se llamó a ningún modelo.
+- **Confirmado:** 2026-07-14 (caso VALERO).
+- **Conclusión:** no usar `--vision` esperando resultado hasta cablearlo (`MEJORAS #58`). Hoy el refuerzo = transcribir con la visión de la propia sesión Claude y persistir a mano (frontmatter `chars`/`text_sha256`, `_sala_maquina_state.json` y `_cobertura.md`).
+
+---
+
+## En un worktree, el `cd` de Bash al repo raíz apunta al PRINCIPAL, no al worktree
+
+- **Intentado:** en una sesión cuyo working dir es un worktree (`.claude/worktrees/<...>`), correr git (`checkout -b`, `add`, `commit`) tras `cd "C:\Users\tnm33\Dev\FeesDefender"`, mientras los tools de edición (Write/Edit) escribían con rutas del **worktree**.
+- **Resultado:** desincronización — la rama se creó en el repo PRINCIPAL (dejándolo fuera de `main`) y el `commit` falló (`pathspec ... did not match`) porque los ficheros editados vivían en el worktree, no en el principal.
+- **Confirmado:** 2026-07-14.
+- **Conclusión:** en worktrees, operar git **siempre** con `git -C "<ruta-del-worktree>"` (o `cd` al worktree), nunca al repo raíz; el `cd` por defecto del Bash tool no coincide con el working dir del worktree. Si se tocó el principal por error, restaurarlo a `main`.
+
+---
+
 ## Plantilla para nuevas entradas
 
 ```markdown
