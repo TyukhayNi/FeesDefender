@@ -561,7 +561,9 @@ def test_cobertura_tinta_blanca_vs_texto(tmp_path):
 
 
 def test_paginas_en_blanco_detecta_la_delimitadora(tmp_path):
-    pdf = build_pdf(tmp_path / "b.pdf", [["CEDULA DE EMPLAZAMIENTO"], [], ["FACTURA"]])
+    # p3 = contenido realista >=10 chars: la reja de chars lo excluye sin rasterizar; solo la
+    # hoja en blanco (~0 chars) llega al detector de tinta (1 palabra sería un caso irreal).
+    pdf = build_pdf(tmp_path / "b.pdf", [["CEDULA DE EMPLAZAMIENTO"], [], ["FACTURA", "Total 100"]])
     textos = _texto_por_pagina(pdf)
     assert paginas_en_blanco(pdf, textos) == {2}
 ```
@@ -663,7 +665,9 @@ def test_detectar_sin_blancos_fallback_marcadores(tmp_path):
     # Sin páginas en blanco; dos documentos con marcador → fallback separar los separa.
     pdf = build_pdf(tmp_path / "n.pdf", [
         ["CÉDULA DE EMPLAZAMIENTO", "cuerpo"],
-        ["FACTURA", "Total 100"],
+        # ambos NO absorbibles (CEDULA + AUTO, fuera de TIPOS_ABSORBE_SIN_NUMERO) → el fallback
+        # los separa; DOC_FACTURA sin nº se absorbería y no probaría el fallback.
+        ["A U T O", "AUTO Nº 12"],
     ])
     segmentos, blancos = detectar(pdf)
     assert blancos == set()
@@ -885,8 +889,8 @@ from core.split_documental import materializar
 
 def test_materializar_corta_y_devuelve_doclogicos(tmp_path):
     pdf = build_pdf(tmp_path / "j.pdf", [
-        ["CEDULA DE EMPLAZAMIENTO"], [], ["A U T O", "AUTO Nº 12"], [], ["FACTURA"],
-    ])
+        ["CEDULA DE EMPLAZAMIENTO"], [], ["A U T O", "AUTO Nº 12"], [], ["FACTURA", "Total 100"],
+    ])  # p5 realista >=10 chars (mismo motivo que Task 7) → detectar da 3 segmentos
     from core.split_documental import detectar
     segs, blancos = detectar(pdf)
     man = construir_manifiesto("01_Drive EV/j.pdf", "d" * 64, segs, blancos)
@@ -949,7 +953,6 @@ def materializar(pdf_path: Path, manifiesto: dict, carpeta_bundle: Path, *,
                          "pagina_inicio": ini, "pagina_fin": fin, "lineas_inicio": []})
 
     resultados = separar.separar_pdf(pdf_path, segs_sep, carpeta_bundle, log)
-    separar.generar_indice(resultados, pdf_path, carpeta_bundle, log)
 
     docs: list[DocLogico] = []
     for e, r in zip(manifiesto["segmentos"], resultados):
@@ -958,12 +961,16 @@ def materializar(pdf_path: Path, manifiesto: dict, carpeta_bundle: Path, *,
         slug = _slug_seg(parent_slug, e["seg"], e["tipo"], seg_sha)
         destino_pdf = carpeta_bundle / f"{slug}.pdf"
         emitido.replace(destino_pdf)   # renombrar a identidad estable por contenido
+        r["archivo"] = f"{slug}.pdf"   # que generar_indice registre el nombre FINAL, no el temporal
         docs.append(DocLogico(
             slug=slug, seg_sha256=seg_sha, destino="split", tipo=e["tipo"],
             parent_slug=parent_slug, parent_sha256=parent_sha256,
             role_in_bundle=e.get("role", "documento"), paginas=r["paginas"],
             fuentes=[bundle_rel_path],
         ))
+    # generar_indice DESPUÉS del rename (con r["archivo"] ya actualizado): si se llama antes,
+    # indice.json referencia los nombres temporales de separar_pdf → nombres muertos.
+    separar.generar_indice(resultados, pdf_path, carpeta_bundle, log)
     return docs
 ```
 

@@ -2438,3 +2438,24 @@ testigo compradora (art. 156 LEC) y la testigo directora de zona (DNI pendiente)
 `00_Input` (no hay providencia sincronizada del CRM), así que las skills procesales no pueden leer la fecha/
 sala; en VALERO la aportó el usuario ("hoy"). El sync Sudespacho debería depositar la providencia/DIOR en
 `00_Input`. Depende de trabajo de integración Sudespacho (`docs/INTEGRACION_SUDESPACHO.md`).
+
+## 64. Split de bundles — deferidos de la revisión de rama de F1 (2026-07-15)
+
+**Anotado 2026-07-15.** De la revisión final (Opus) de la Fase F1 del split (`core/split_documental.py`;
+plan `docs/superpowers/plans/2026-07-14-split-sala-maquina.md`). Ninguno bloquea F1; se resuelven en su
+fase natural:
+
+- **F0 (calibración con bundle real):** ajustar `UMBRAL_TINTA_BLANCO`/`UMBRAL_CHARS_BLANCO` contra el
+  expediente escaneado real, y **añadir un fixture con página imagen** (foto/plano escaneado: pocos chars,
+  tinta alta) que pruebe la *sinergia de las dos rejas* — que el ink-gate NO la marque como hoja en blanco.
+  Hoy no hay test de ese caso (el helper `build_pdf` es texto-only). Relevante: la querella real trae páginas foto.
+- **F2 (integración en `sala_maquina`):** `apply` debe (a) llamar `validar_manifiesto(man, total_pag)` ANTES de
+  `materializar` (M-A), y (b) enrutar los passthrough de 1 segmento FUERA de `materializar` (M-C) — ambos ya
+  contemplados en el plan (Task 12 `_split_o_md`). Añadir limpieza de PDFs de segmento huérfanos cuando el
+  letrado re-edita el manifiesto quitando/re-rangeando un segmento (M-4).
+- **Robustez del manifiesto editable (F2):** `_pp_a_rango` da un error críptico ante un `pp` mal formado
+  (`"5"` → unpack error); mensaje amigable "rango mal formado, usa 'inicio-fin'" (M-B). `materializar` recibe
+  `parent_sha256` por parámetro e ignora `manifiesto["bundle_sha256"]`: documentar que deben coincidir o leer
+  del manifiesto (M-D).
+- **Eficiencia (revisar solo si F0 lo mide lento):** `detectar` re-parsea el PDF ~3× (pypdf + pypdfium2 +
+  pdfminer vía `separar`). Es composición plan-mandated (reúso del módulo congelado), correctness-neutral.
