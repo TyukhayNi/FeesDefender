@@ -191,3 +191,8 @@ def test_materializar_corta_y_devuelve_doclogicos(tmp_path):
     assert len(d0.seg_sha256) == 64
     assert d0.slug.endswith(d0.seg_sha256[:8])
     assert d0.fuentes == ["01_Drive EV/j.pdf"]
+
+
+def test_split_documental_es_evento_valido():
+    from core.intake_log import INTAKE_EVENTS
+    assert "split_documental" in INTAKE_EVENTS

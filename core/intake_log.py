@@ -64,6 +64,7 @@ INTAKE_EVENTS: frozenset[str] = frozenset({
     "checkout_cancelado",   # cancelación de checkout: local descartado (§2, §7.1)
     "pendiente_checkin",    # guard §6: escritura desviada a _pendiente_checkin/ (caso prestado)
     "procesado_sala_maquina",  # OCR+MD escritos en 01_Procesado/02_Sala de máquina/
+    "split_documental",        # split 1→N de un bundle en 02_Documentos/ (documentos lógicos)
 })
 
 
