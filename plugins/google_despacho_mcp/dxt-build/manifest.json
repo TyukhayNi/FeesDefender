@@ -1,9 +1,9 @@
 {
   "manifest_version": "0.3",
   "name": "google-despacho",
-  "display_name": "Google despacho (Drive multicuenta, solo lectura)",
-  "version": "1.0.0",
-  "description": "Lectura de Google Drive sobre las cuentas del despacho (tyukhay.legal + engelvoelkers.com), incluidas unidades compartidas, sin reautenticar al cambiar de cuenta. Solo lectura (F1): buscar, listar unidades/ficheros recientes, metadatos, permisos, leer/descargar contenido.",
+  "display_name": "Google despacho (Drive multicuenta)",
+  "version": "2.0.0",
+  "description": "Acceso a Google Drive sobre las cuentas del despacho (tyukhay.legal + engelvoelkers.com), incluidas unidades compartidas, sin reautenticar al cambiar de cuenta. Lectura + escritura (F2): buscar/listar/leer/descargar, CRUD de ficheros y carpetas, permisos con guardarraíl de compartición externa y navegación.",
   "author": {
     "name": "Tyukhay Legal"
   },

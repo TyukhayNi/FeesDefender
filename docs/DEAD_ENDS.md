@@ -25,6 +25,16 @@
 
 ---
 
+## Pantalla Ajustes→Extensiones de la app de escritorio colgada en "Cargando extensiones…"
+
+- **Intentado:** instalar/gestionar una extensión `.dxt` (conector `google-despacho`) desde la app de escritorio → Ajustes → Extensiones. La pantalla se queda indefinidamente en "Cargando extensiones…".
+- **Resultado:** no carga. **Reiniciar el PC NO lo arregla** (persistente entre arranques).
+- **Confirmado:** 2026-07-15, build de escritorio `1.21459.0.0`.
+- **Diagnóstico (no es red ni el `.dxt`):** en `%APPDATA%\Claude\logs\main.log` se ve que la descarga de `blocklist` y la llamada `can_install` **completan OK** (`can_install check completed: 2 extensions checked`), y las extensiones ya instaladas **cargan y ejecutan** ("Using basic execution for extension …"). El log marca `trigger=stall … electron_renderer` → es un **cuelgue del renderer de esa pantalla concreta** en esta build, no del subsistema de extensiones.
+- **Solución / workaround:** no depender de esa pantalla. La app **LEE al arrancar** el registro `%APPDATA%\Claude\extensions-installations.json` (una entrada por extensión; `id`=`local.dxt.<org-slug>.<name>`, **`hash`=sha256 del fichero `.dxt`**, `source:"local"`, `signatureInfo:{status:"unsigned"}`, `manifest` embebido) + la carpeta `%APPDATA%\Claude\Claude Extensions\<id>\` con el `.dxt` descomprimido. Se instala/quita una extensión editando ese JSON + carpeta **con la app CERRADA** (la reescribe al salir → clobber; matar solo procesos con Path `*WindowsApps*Claude*`, el CLI de Claude Code es proceso aparte y sobrevive). Molde fiable = una extensión ya instalada por la UI (`gmail-multiaccount`).
+
+---
+
 ## Conector MCP local → Cowork: una entrada en `claude_desktop_config.json` NO basta (hay que `.dxt`)
 
 Confirmado empíricamente cableando el MCP `google-despacho` a Cowork (2026-07-09).
