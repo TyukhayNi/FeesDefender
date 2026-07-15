@@ -125,3 +125,32 @@ def test_detectar_documento_unico_passthrough(tmp_path):
     segmentos, blancos = detectar(pdf)
     assert len(segmentos) == 1
     assert segmentos[0].pagina_inicio == 1 and segmentos[0].pagina_fin == 1
+
+
+from core.split_documental import (
+    construir_manifiesto, escribir_manifiesto, leer_manifiesto, validar_manifiesto,
+)
+
+
+def test_construir_y_roundtrip_manifiesto(tmp_path):
+    segs = [Segmento(1, 1, 4, "CEDULA_EMPLAZAMIENTO"), Segmento(2, 6, 12, "AUTO")]
+    man = construir_manifiesto("01_Drive EV/bundle.pdf", "a1b2c3d4" * 8, segs, {5})
+    assert man["segmentos"][0]["pp"] == "1-4"
+    assert man["delimitadores"] == [5]
+    escribir_manifiesto(tmp_path, man)
+    assert (tmp_path / "_segmentacion.json").exists()
+    assert (tmp_path / "_segmentacion.md").exists()
+    assert leer_manifiesto(tmp_path)["segmentos"][1]["tipo"] == "AUTO"
+
+
+def test_validar_rechaza_rango_invalido():
+    man = {"segmentos": [{"seg": 1, "pp": "1-4", "tipo": "X", "role": "documento"},
+                         {"seg": 2, "pp": "3-9", "tipo": "Y", "role": "documento"}]}
+    with pytest.raises(ValueError, match="solap"):
+        validar_manifiesto(man, total_pag=20)
+
+
+def test_validar_rechaza_fuera_de_rango():
+    man = {"segmentos": [{"seg": 1, "pp": "1-40", "tipo": "X", "role": "documento"}]}
+    with pytest.raises(ValueError, match="fuera de rango"):
+        validar_manifiesto(man, total_pag=20)

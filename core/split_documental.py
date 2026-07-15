@@ -7,6 +7,7 @@ docs/superpowers/specs/2026-07-14-split-sala-maquina-design.md.
 """
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -198,3 +199,71 @@ def detectar(pdf_path: Path, *, tipos_extra=None, log: logging.Logger | None = N
     # Passthrough
     tipo = clasificar(textos, 1, total, tipos_extra=tipos_extra)
     return [Segmento(seg=1, pagina_inicio=1, pagina_fin=total, tipo=tipo)], blancos
+
+
+_MANIFIESTO_JSON = "_segmentacion.json"
+_MANIFIESTO_MD = "_segmentacion.md"
+
+
+def _pp(inicio: int, fin: int) -> str:
+    """Serializa un rango de páginas 1-based inclusive como 'inicio-fin'."""
+    return f"{inicio}-{fin}"
+
+
+def _pp_a_rango(pp: str) -> tuple[int, int]:
+    """Inversa de `_pp`: 'inicio-fin' -> (inicio, fin)."""
+    a, b = pp.split("-", 1)
+    return int(a), int(b)
+
+
+def construir_manifiesto(bundle_rel_path: str, bundle_sha256: str,
+                         segmentos: list[Segmento], blancos: set[int]) -> dict:
+    """Construye el manifiesto (dict serializable) propuesto por `plan` a partir de `detectar`."""
+    return {
+        "fuente": bundle_rel_path,
+        "bundle_sha256": bundle_sha256,
+        "segmentos": [{"seg": s.seg, "pp": _pp(s.pagina_inicio, s.pagina_fin),
+                       "tipo": s.tipo, "role": s.role} for s in segmentos],
+        "delimitadores": sorted(blancos),
+    }
+
+
+def escribir_manifiesto(carpeta_bundle: Path, manifiesto: dict) -> None:
+    """Escribe el manifiesto como JSON (editable por el letrado) + espejo Markdown legible."""
+    carpeta_bundle = Path(carpeta_bundle)
+    carpeta_bundle.mkdir(parents=True, exist_ok=True)
+    (carpeta_bundle / _MANIFIESTO_JSON).write_text(
+        json.dumps(manifiesto, ensure_ascii=False, indent=2), encoding="utf-8")
+    lineas = [
+        "<!-- GENERADO — editable: ajusta pp/tipo/role y re-ejecuta apply -->",
+        f"# Segmentación propuesta — {manifiesto['fuente']}",
+        "",
+        "| seg | páginas | tipo | role |",
+        "|---|---|---|---|",
+    ]
+    for e in manifiesto["segmentos"]:
+        lineas.append(f"| {e['seg']} | {e['pp']} | {e['tipo']} | {e['role']} |")
+    lineas += ["", f"Delimitadores (hojas en blanco descartadas): {manifiesto['delimitadores']}", ""]
+    (carpeta_bundle / _MANIFIESTO_MD).write_text("\n".join(lineas) + "\n", encoding="utf-8")
+
+
+def leer_manifiesto(carpeta_bundle: Path) -> dict:
+    """Lee de vuelta el manifiesto JSON (tras la edición del letrado, para `apply`)."""
+    return json.loads((Path(carpeta_bundle) / _MANIFIESTO_JSON).read_text(encoding="utf-8"))
+
+
+def manifiesto_existe(carpeta_bundle: Path) -> bool:
+    """True si ya hay un manifiesto escrito en `carpeta_bundle` (idempotencia de `plan`)."""
+    return (Path(carpeta_bundle) / _MANIFIESTO_JSON).exists()
+
+
+def validar_manifiesto(manifiesto: dict, total_pag: int) -> None:
+    """Falla claro si algún rango está fuera de [1, total_pag] o solapa/está desordenado."""
+    ultimo_fin = 0
+    for e in sorted(manifiesto["segmentos"], key=lambda x: _pp_a_rango(x["pp"])[0]):
+        ini, fin = _pp_a_rango(e["pp"])
+        if ini < 1 or fin > total_pag or fin < ini:
+            raise ValueError(f"Segmento {e['seg']} fuera de rango: {e['pp']} (total {total_pag})")
+        if ini <= ultimo_fin:
+            raise ValueError(f"Segmento {e['seg']} solapa con el anterior: {e['pp']}")
+        ultimo_fin = fin
