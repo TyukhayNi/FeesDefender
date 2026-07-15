@@ -51,3 +51,20 @@ def test_clasificar_usa_marcador_judicial():
 def test_clasificar_sin_marcador_devuelve_documento():
     textos = ["texto anodino sin marcadores reconocibles"]
     assert clasificar(textos, 1, 1) == "DOCUMENTO"
+
+
+import pytest as _pytest
+from core.split_documental import TIPOS_EXTRA_EV
+
+
+@_pytest.mark.parametrize("linea,esperado", [
+    ("PREVENCIÓN DE BLANQUEO DE CAPITALES", "DOC_PBC"),
+    ("CONTRATO DE ARRAS PENITENCIALES", "DOC_ARRAS"),
+    ("DOCUMENTO DE RESERVA", "DOC_RESERVA"),
+])
+def test_marcadores_ev_clasifican(linea, esperado):
+    assert clasificar([linea], 1, 1) == esperado
+
+
+def test_tipos_extra_ev_no_vacio():
+    assert len(TIPOS_EXTRA_EV) >= 3

@@ -25,8 +25,26 @@ UMBRAL_TINTA_BLANCO = 0.008    # fracción de píxeles con tinta; < → blanco c
 _RENDER_SCALE = 2              # pypdfium2 → ~144 dpi
 _UMBRAL_OSCURO = 200           # nivel de gris (0-255) por debajo del cual el píxel es "tinta"
 
-# PROVISIONAL: la Task 6 rellena el catálogo E&V inyectado a separar.detectar_tipo.
-TIPOS_EXTRA_EV: list[dict] = []
+# Marcadores E&V inyectados (hueco del congelado: separar.TIPOS_DOCUMENTO está
+# tuneado a lo judicial). Se pasan como tipos_extra; NO viven en core/anon.
+TIPOS_EXTRA_EV: list[dict] = [
+    {"tipo": "DOC_PBC", "prioridad": 7, "exige_inicio": True,
+     "marcadores": ["PREVENCION DE BLANQUEO", "PREVENCIÓN DE BLANQUEO",
+                    "SUJETO OBLIGADO", "IDENTIFICACION DEL TITULAR REAL",
+                    "IDENTIFICACIÓN DEL TITULAR REAL"]},
+    {"tipo": "DOC_ARRAS", "prioridad": 7, "exige_inicio": True,
+     "marcadores": ["CONTRATO DE ARRAS", "ARRAS PENITENCIALES", "SEÑAL Y ARRAS"]},
+    {"tipo": "DOC_RESERVA", "prioridad": 7, "exige_inicio": True,
+     "marcadores": ["DOCUMENTO DE RESERVA", "HOJA DE RESERVA", "CONTRATO DE RESERVA"]},
+    {"tipo": "DOC_ACTIVACION", "prioridad": 7, "exige_inicio": True,
+     "marcadores": ["ACTIVACION DEL ENCARGO", "ACTIVACIÓN DEL ENCARGO", "HOJA DE ACTIVACION",
+                    "HOJA DE ACTIVACIÓN"]},
+    {"tipo": "DOC_OFERTA", "prioridad": 6, "exige_inicio": True,
+     "marcadores": ["OFERTA DE COMPRA", "HOJA DE OFERTA", "PROPUESTA DE COMPRA"]},
+    {"tipo": "DOC_RECLAMACION", "prioridad": 6, "exige_inicio": True,
+     "marcadores": ["RECLAMACION DE CANTIDAD", "RECLAMACIÓN DE CANTIDAD",
+                    "REQUERIMIENTO DE PAGO", "BUROFAX"]},
+]
 
 
 @dataclass
