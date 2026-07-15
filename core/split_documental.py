@@ -303,7 +303,6 @@ def materializar(pdf_path: Path, manifiesto: dict, carpeta_bundle: Path, *,
                          "pagina_inicio": ini, "pagina_fin": fin, "lineas_inicio": []})
 
     resultados = separar.separar_pdf(pdf_path, segs_sep, carpeta_bundle, log)
-    separar.generar_indice(resultados, pdf_path, carpeta_bundle, log)
 
     docs: list[DocLogico] = []
     for e, r in zip(manifiesto["segmentos"], resultados):
@@ -312,10 +311,12 @@ def materializar(pdf_path: Path, manifiesto: dict, carpeta_bundle: Path, *,
         slug = _slug_seg(parent_slug, e["seg"], e["tipo"], seg_sha)
         destino_pdf = carpeta_bundle / f"{slug}.pdf"
         emitido.replace(destino_pdf)   # renombrar a identidad estable por contenido
+        r["archivo"] = f"{slug}.pdf"   # que generar_indice registre el nombre final, no el temporal de separar_pdf
         docs.append(DocLogico(
             slug=slug, seg_sha256=seg_sha, destino="split", tipo=e["tipo"],
             parent_slug=parent_slug, parent_sha256=parent_sha256,
             role_in_bundle=e.get("role", "documento"), paginas=r["paginas"],
             fuentes=[bundle_rel_path],
         ))
+    separar.generar_indice(resultados, pdf_path, carpeta_bundle, log)
     return docs

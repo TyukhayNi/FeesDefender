@@ -178,6 +178,11 @@ def test_materializar_corta_y_devuelve_doclogicos(tmp_path):
     pdfs = sorted(carpeta.glob("*.pdf"))
     assert len(pdfs) == 3
     assert (carpeta / "indice.json").exists()
+    import json as _json
+    indice = _json.loads((carpeta / "indice.json").read_text(encoding="utf-8"))
+    nombres_indice = {d["archivo"] for d in indice["documentos"]}
+    nombres_reales = {p.name for p in pdfs}
+    assert nombres_indice == nombres_reales  # el índice referencia los ficheros que existen (no el nombre temporal de separar_pdf)
     d0 = docs[0]
     assert d0.destino == "split"
     assert d0.parent_slug == "bundle-slug"
