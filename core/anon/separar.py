@@ -244,7 +244,7 @@ def extraer_primeras_lineas(pagina, n=5, tol_y=3.0, tol_x=8.0):
 # DETECCIÓN DE TIPO DE DOCUMENTO
 # ══════════════════════════════════════════════════════════════════════════════
 
-def detectar_tipo(lineas):
+def detectar_tipo(lineas, tipos_extra=None):
     """
     Determina el tipo documental de una página a partir de sus primeras líneas.
     Devuelve (tipo, prioridad, num_doc) o (None, 0, None).
@@ -284,7 +284,7 @@ def detectar_tipo(lineas):
         'DOC_TRADUCCION',
     }
 
-    for defn in TIPOS_DOCUMENTO:
+    for defn in TIPOS_DOCUMENTO + (tipos_extra or []):
         if defn["tipo"] in TIPOS_SOLO_TITULO:
             texto_buscar = texto_inicio_titulo
         elif defn["exige_inicio"]:
