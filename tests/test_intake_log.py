@@ -13,7 +13,7 @@ línea ``upload_manual`` happy path):
 - ``log_path`` no crea el archivo.
 - ``os.fsync`` se invoca en cada ``append_event`` (resiliencia a crashes
   según M10-Q4).
-- ``INTAKE_EVENTS`` sanity (18 eventos documentados).
+- ``INTAKE_EVENTS`` sanity (24 eventos documentados).
 """
 
 from __future__ import annotations
@@ -329,7 +329,7 @@ def test_append_event_invoca_fsync_por_cada_escritura(il, cm, monkeypatch):
 # INTAKE_EVENTS — sanity
 # ---------------------------------------------------------------------------
 
-def test_intake_events_es_frozenset_con_22_eventos(il):
+def test_intake_events_es_frozenset_con_24_eventos(il):
     assert isinstance(il.INTAKE_EVENTS, frozenset)
     assert len(il.INTAKE_EVENTS) == 24
 

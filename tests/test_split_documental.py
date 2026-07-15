@@ -125,6 +125,18 @@ def test_detectar_documento_unico_passthrough(tmp_path):
     segmentos, blancos = detectar(pdf)
     assert len(segmentos) == 1
     assert segmentos[0].pagina_inicio == 1 and segmentos[0].pagina_fin == 1
+    assert segmentos[0].tipo == "DOC_FACTURA"
+
+
+def test_detectar_pdf_vacio_lanza_pdfvacioerror(tmp_path):
+    from core.split_documental import detectar
+    from core.anon.exceptions import PDFVacioError
+    from pypdf import PdfWriter
+    vacio = tmp_path / "vacio.pdf"
+    with open(vacio, "wb") as fh:
+        PdfWriter().write(fh)   # PDF sin páginas
+    with pytest.raises(PDFVacioError):
+        detectar(vacio)
 
 
 from core.split_documental import (
