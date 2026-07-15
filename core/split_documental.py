@@ -112,3 +112,45 @@ def clasificar(textos: list[str], inicio: int, fin: int, *, tipos_extra=None) ->
     lineas = _primeras_lineas(textos[inicio - 1]) if 0 <= inicio - 1 < len(textos) else []
     tipo, _prio, _num = separar.detectar_tipo(lineas, tipos_extra=tipos_extra)
     return tipo or "DOCUMENTO"
+
+
+def _texto_por_pagina(pdf_path: Path) -> list[str]:
+    """Texto de cada página vía pypdf (cribado barato; el buscable ya tiene capa)."""
+    from pypdf import PdfReader
+    with PdfReader(str(pdf_path)) as reader:
+        return [(p.extract_text() or "") for p in reader.pages]
+
+
+def cobertura_tinta(pdf_path: Path, num_pag: int, *, scale: int = _RENDER_SCALE) -> float:
+    """Fracción de píxeles con tinta (grises < _UMBRAL_OSCURO) de la página `num_pag` (1-based).
+
+    Una hoja en blanco (aunque escaneada, con mota/franjas) queda muy por debajo del
+    umbral; una foto/plano escaneado con 0 chars OCR tiene tinta alta → NO es blanco.
+    """
+    import pypdfium2 as pdfium
+    doc = pdfium.PdfDocument(str(pdf_path))
+    try:
+        pil = doc[num_pag - 1].render(scale=scale).to_pil().convert("L")
+    finally:
+        doc.close()
+    hist = pil.histogram()               # 256 buckets para modo 'L'
+    oscuros = sum(hist[:_UMBRAL_OSCURO])
+    total = pil.width * pil.height
+    return oscuros / total if total else 0.0
+
+
+def paginas_en_blanco(pdf_path: Path, textos: list[str], *,
+                      umbral_chars: int = UMBRAL_CHARS_BLANCO,
+                      umbral_tinta: float = UMBRAL_TINTA_BLANCO) -> set[int]:
+    """Páginas delimitadoras (1-based): pocos chars OCR Y baja cobertura de tinta.
+
+    Cribado barato por chars primero; solo las candidatas se rasterizan (coste
+    acotado a las páginas vacías-de-texto, no a las 200).
+    """
+    blancos: set[int] = set()
+    for i, txt in enumerate(textos, 1):
+        if len((txt or "").strip()) >= umbral_chars:
+            continue  # tiene texto → no es separador
+        if cobertura_tinta(pdf_path, i) < umbral_tinta:
+            blancos.add(i)
+    return blancos

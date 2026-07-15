@@ -68,3 +68,20 @@ def test_marcadores_ev_clasifican(linea, esperado):
 
 def test_tipos_extra_ev_no_vacio():
     assert len(TIPOS_EXTRA_EV) >= 3
+
+
+from core.split_documental import cobertura_tinta, paginas_en_blanco, _texto_por_pagina
+
+
+def test_cobertura_tinta_blanca_vs_texto(tmp_path):
+    pdf = build_pdf(tmp_path / "t.pdf", [["MUCHO TEXTO EN ESTA PAGINA " * 5], []])
+    tinta_texto = cobertura_tinta(pdf, 1)
+    tinta_blanca = cobertura_tinta(pdf, 2)
+    assert tinta_blanca < tinta_texto
+    assert tinta_blanca < 0.008  # la blanca por debajo del umbral
+
+
+def test_paginas_en_blanco_detecta_la_delimitadora(tmp_path):
+    pdf = build_pdf(tmp_path / "b.pdf", [["CEDULA DE EMPLAZAMIENTO"], [], ["FACTURA"]])
+    textos = _texto_por_pagina(pdf)
+    assert paginas_en_blanco(pdf, textos) == {2}
