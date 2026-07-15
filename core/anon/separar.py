@@ -334,7 +334,7 @@ TIPOS_SUPER_ABSORBENTES = {
 MAX_PAGINAS_SIN_MARCADOR = 60
 
 
-def detectar_segmentos(ruta_pdf, log, *, on_page: "Callable[[int, int], None] | None" = None):
+def detectar_segmentos(ruta_pdf, log, *, on_page: "Callable[[int, int], None] | None" = None, tipos_extra=None):
     """
     Recorre el PDF página a página y detecta dónde empieza cada documento.
 
@@ -373,7 +373,7 @@ def detectar_segmentos(ruta_pdf, log, *, on_page: "Callable[[int, int], None] | 
     with closing(extract_pages(str(ruta_pdf))) as paginas:
         for num_pag, pagina in enumerate(paginas, 1):
             lineas = extraer_primeras_lineas(pagina, n=5)
-            tipo, prio, num_doc = detectar_tipo(lineas)
+            tipo, prio, num_doc = detectar_tipo(lineas, tipos_extra=tipos_extra)
             etiquetas.append((num_pag, tipo, num_doc, lineas))
             if on_page is not None:
                 on_page(num_pag, total_pag)
