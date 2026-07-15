@@ -154,3 +154,47 @@ def paginas_en_blanco(pdf_path: Path, textos: list[str], *,
         if cobertura_tinta(pdf_path, i) < umbral_tinta:
             blancos.add(i)
     return blancos
+
+
+def detectar(pdf_path: Path, *, tipos_extra=None, log: logging.Logger | None = None
+             ) -> tuple[list[Segmento], set[int]]:
+    """Detecta los documentos lógicos de un PDF ya buscable.
+
+    Primario: hoja en blanco. Fallback (sin blancos): marcadores (separar). Si
+    ni una ni otro dan >1 → passthrough (un solo segmento con todo el PDF).
+    Devuelve (segmentos, paginas_en_blanco).
+    """
+    log = log or _LOG
+    if tipos_extra is None:
+        tipos_extra = TIPOS_EXTRA_EV
+    pdf_path = Path(pdf_path)
+
+    textos = _texto_por_pagina(pdf_path)
+    total = len(textos)
+    if total == 0:
+        raise PDFVacioError(f"PDF sin páginas: {pdf_path.name}")
+
+    blancos = paginas_en_blanco(pdf_path, textos)
+    rangos = segmentar_por_blancos(total, blancos)
+
+    if len(rangos) > 1:
+        segmentos = [
+            Segmento(seg=i, pagina_inicio=ini, pagina_fin=fin,
+                     tipo=clasificar(textos, ini, fin, tipos_extra=tipos_extra))
+            for i, (ini, fin) in enumerate(rangos, 1)
+        ]
+        return segmentos, blancos
+
+    # Sin blancos útiles → fallback por marcadores
+    segs_sep = separar.detectar_segmentos(pdf_path, log, tipos_extra=tipos_extra)
+    if len(segs_sep) > 1:
+        segmentos = [
+            Segmento(seg=i, pagina_inicio=s["pagina_inicio"], pagina_fin=s["pagina_fin"],
+                     tipo=s["tipo"])
+            for i, s in enumerate(segs_sep, 1)
+        ]
+        return segmentos, blancos
+
+    # Passthrough
+    tipo = clasificar(textos, 1, total, tipos_extra=tipos_extra)
+    return [Segmento(seg=1, pagina_inicio=1, pagina_fin=total, tipo=tipo)], blancos

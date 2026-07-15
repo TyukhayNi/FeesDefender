@@ -88,3 +88,37 @@ def test_paginas_en_blanco_detecta_la_delimitadora(tmp_path):
     pdf = build_pdf(tmp_path / "b.pdf", [["CEDULA DE EMPLAZAMIENTO"], [], ["FACTURA", "Total 100"]])
     textos = _texto_por_pagina(pdf)
     assert paginas_en_blanco(pdf, textos) == {2}
+
+
+from core.split_documental import detectar
+
+
+def test_detectar_por_blancos(tmp_path):
+    pdf = build_pdf(tmp_path / "j.pdf", [
+        ["CEDULA DE EMPLAZAMIENTO"], [],
+        ["A U T O", "AUTO Nº 12"], [],
+        ["FACTURA", "Invoice"],
+    ])
+    segmentos, blancos = detectar(pdf)
+    assert blancos == {2, 4}
+    assert [(s.pagina_inicio, s.pagina_fin) for s in segmentos] == [(1, 1), (3, 3), (5, 5)]
+    assert segmentos[0].tipo == "CEDULA_EMPLAZAMIENTO"
+    assert segmentos[2].tipo == "DOC_FACTURA"
+
+
+def test_detectar_sin_blancos_fallback_marcadores(tmp_path):
+    # Sin páginas en blanco; dos documentos con marcador → fallback separar los separa.
+    pdf = build_pdf(tmp_path / "n.pdf", [
+        ["CÉDULA DE EMPLAZAMIENTO", "cuerpo"],
+        ["FACTURA", "Total 100"],
+    ])
+    segmentos, blancos = detectar(pdf)
+    assert blancos == set()
+    assert len(segmentos) >= 2
+
+
+def test_detectar_documento_unico_passthrough(tmp_path):
+    pdf = build_pdf(tmp_path / "u.pdf", [["FACTURA", "una sola factura", "Total 50"]])
+    segmentos, blancos = detectar(pdf)
+    assert len(segmentos) == 1
+    assert segmentos[0].pagina_inicio == 1 and segmentos[0].pagina_fin == 1
