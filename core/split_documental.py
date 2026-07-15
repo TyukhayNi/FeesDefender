@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -267,3 +268,54 @@ def validar_manifiesto(manifiesto: dict, total_pag: int) -> None:
         if ini <= ultimo_fin:
             raise ValueError(f"Segmento {e['seg']} solapa con el anterior: {e['pp']}")
         ultimo_fin = fin
+
+
+def _norm_tipo(tipo: str) -> str:
+    """TIPO en MAYÚSCULAS y path-safe. NO usa slugify (lleva lowercase=True y
+    machacaría el case): decisión D5 de la validación 2026-07-15. Colapsa cualquier
+    char no [A-Z0-9] a '_'; vacío → 'DOCUMENTO'."""
+    return re.sub(r"[^A-Z0-9]+", "_", (tipo or "").upper()).strip("_") or "DOCUMENTO"
+
+
+def _slug_seg(parent_slug: str, seg: int, tipo: str, seg_sha256: str) -> str:
+    # parent_slug ya viene de output_slug (path-safe). TIPO por _norm_tipo (mayúsculas),
+    # NO slugify: slugify lo pasaría a minúsculas (D5).
+    return f"{parent_slug}__seg{seg:02d}_{_norm_tipo(tipo)}__{seg_sha256[:8]}"
+
+
+def materializar(pdf_path: Path, manifiesto: dict, carpeta_bundle: Path, *,
+                 parent_slug: str, parent_sha256: str, bundle_rel_path: str,
+                 log: logging.Logger | None = None) -> list[DocLogico]:
+    """Corta el bundle según el manifiesto → PDFs en carpeta_bundle + DocLogico por segmento.
+
+    Reutiliza separar.separar_pdf (cortador atómico Windows-safe) y separar.generar_indice.
+    Renombra cada PDF a {seg_slug}.pdf (identidad estable por contenido).
+    """
+    log = log or _LOG
+    pdf_path = Path(pdf_path)
+    carpeta_bundle = Path(carpeta_bundle)
+    carpeta_bundle.mkdir(parents=True, exist_ok=True)
+
+    segs_sep = []
+    for e in manifiesto["segmentos"]:
+        ini, fin = _pp_a_rango(e["pp"])
+        segs_sep.append({"tipo": e["tipo"], "num_doc": e["seg"],
+                         "pagina_inicio": ini, "pagina_fin": fin, "lineas_inicio": []})
+
+    resultados = separar.separar_pdf(pdf_path, segs_sep, carpeta_bundle, log)
+    separar.generar_indice(resultados, pdf_path, carpeta_bundle, log)
+
+    docs: list[DocLogico] = []
+    for e, r in zip(manifiesto["segmentos"], resultados):
+        emitido = carpeta_bundle / r["archivo"]
+        seg_sha = file_sha256(emitido)
+        slug = _slug_seg(parent_slug, e["seg"], e["tipo"], seg_sha)
+        destino_pdf = carpeta_bundle / f"{slug}.pdf"
+        emitido.replace(destino_pdf)   # renombrar a identidad estable por contenido
+        docs.append(DocLogico(
+            slug=slug, seg_sha256=seg_sha, destino="split", tipo=e["tipo"],
+            parent_slug=parent_slug, parent_sha256=parent_sha256,
+            role_in_bundle=e.get("role", "documento"), paginas=r["paginas"],
+            fuentes=[bundle_rel_path],
+        ))
+    return docs

@@ -154,3 +154,35 @@ def test_validar_rechaza_fuera_de_rango():
     man = {"segmentos": [{"seg": 1, "pp": "1-40", "tipo": "X", "role": "documento"}]}
     with pytest.raises(ValueError, match="fuera de rango"):
         validar_manifiesto(man, total_pag=20)
+
+
+from core.split_documental import materializar
+
+
+def test_materializar_corta_y_devuelve_doclogicos(tmp_path):
+    # Página 5 con contenido >=10 chars ("FACTURA" solo son 7): con una sola
+    # palabra corta, detectar() la trataría como BLANCA (chars<10 ∧ tinta baja,
+    # mismo trampa de página-de-una-palabra ya corregida en Tasks 7/8) y
+    # colapsaría a 2 segmentos en vez de 3.
+    pdf = build_pdf(tmp_path / "j.pdf", [
+        ["CEDULA DE EMPLAZAMIENTO"], [], ["A U T O", "AUTO Nº 12"], [], ["FACTURA", "Total 100"],
+    ])
+    from core.split_documental import detectar
+    segs, blancos = detectar(pdf)
+    man = construir_manifiesto("01_Drive EV/j.pdf", "d" * 64, segs, blancos)
+    carpeta = tmp_path / "02_Documentos" / "bundle-slug"
+    docs = materializar(pdf, man, carpeta, parent_slug="bundle-slug",
+                        parent_sha256="d" * 64, bundle_rel_path="01_Drive EV/j.pdf")
+    assert len(docs) == 3
+    # Un PDF por segmento con nombre = seg_slug + índice de segmentación
+    pdfs = sorted(carpeta.glob("*.pdf"))
+    assert len(pdfs) == 3
+    assert (carpeta / "indice.json").exists()
+    d0 = docs[0]
+    assert d0.destino == "split"
+    assert d0.parent_slug == "bundle-slug"
+    assert d0.role_in_bundle == "documento"
+    assert d0.paginas == "1-1"
+    assert len(d0.seg_sha256) == 64
+    assert d0.slug.endswith(d0.seg_sha256[:8])
+    assert d0.fuentes == ["01_Drive EV/j.pdf"]
