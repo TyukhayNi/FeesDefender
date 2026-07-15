@@ -32,3 +32,22 @@ def test_segmentar_sin_blancos_un_solo_rango():
 
 def test_segmentar_todo_blanco_vacio():
     assert segmentar_por_blancos(3, {1, 2, 3}) == []
+
+
+from core.split_documental import _primeras_lineas, clasificar
+
+
+def test_primeras_lineas_filtra_cortas_y_limita():
+    txt = "CEDULA DE EMPLAZAMIENTO\nab\nJuzgado de Instancia\nlinea3\nlinea4\nlinea5\nlinea6"
+    out = _primeras_lineas(txt, n=3)
+    assert out == ["CEDULA DE EMPLAZAMIENTO", "Juzgado de Instancia", "linea3"]  # 'ab' (<3) fuera
+
+
+def test_clasificar_usa_marcador_judicial():
+    textos = ["CÉDULA DE EMPLAZAMIENTO\nJuzgado", "otra pagina"]
+    assert clasificar(textos, 1, 1) == "CEDULA_EMPLAZAMIENTO"
+
+
+def test_clasificar_sin_marcador_devuelve_documento():
+    textos = ["texto anodino sin marcadores reconocibles"]
+    assert clasificar(textos, 1, 1) == "DOCUMENTO"

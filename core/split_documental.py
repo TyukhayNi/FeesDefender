@@ -25,6 +25,9 @@ UMBRAL_TINTA_BLANCO = 0.008    # fracción de píxeles con tinta; < → blanco c
 _RENDER_SCALE = 2              # pypdfium2 → ~144 dpi
 _UMBRAL_OSCURO = 200           # nivel de gris (0-255) por debajo del cual el píxel es "tinta"
 
+# PROVISIONAL: la Task 6 rellena el catálogo E&V inyectado a separar.detectar_tipo.
+TIPOS_EXTRA_EV: list[dict] = []
+
 
 @dataclass
 class Segmento:
@@ -66,3 +69,28 @@ def segmentar_por_blancos(total_pag: int, blancos: set[int]) -> list[tuple[int, 
     if inicio is not None:
         rangos.append((inicio, total_pag))
     return rangos
+
+
+def _primeras_lineas(texto_pagina: str, n: int = 5) -> list[str]:
+    """Primeras N líneas útiles (>=3 chars) del texto de una página (para clasificar)."""
+    out: list[str] = []
+    for raw in (texto_pagina or "").splitlines():
+        ln = raw.strip()
+        if len(ln) >= 3:
+            out.append(ln)
+        if len(out) >= n:
+            break
+    return out
+
+
+def clasificar(textos: list[str], inicio: int, fin: int, *, tipos_extra=None) -> str:
+    """Etiqueta un segmento por los marcadores de su primera página (separar.detectar_tipo).
+
+    Reutiliza los marcadores judiciales de separar.py + los E&V inyectados. Sin
+    marcador reconocible → 'DOCUMENTO'.
+    """
+    if tipos_extra is None:
+        tipos_extra = TIPOS_EXTRA_EV
+    lineas = _primeras_lineas(textos[inicio - 1]) if 0 <= inicio - 1 < len(textos) else []
+    tipo, _prio, _num = separar.detectar_tipo(lineas, tipos_extra=tipos_extra)
+    return tipo or "DOCUMENTO"
