@@ -82,6 +82,9 @@ def test_cobertura_tinta_blanca_vs_texto(tmp_path):
 
 
 def test_paginas_en_blanco_detecta_la_delimitadora(tmp_path):
-    pdf = build_pdf(tmp_path / "b.pdf", [["CEDULA DE EMPLAZAMIENTO"], [], ["FACTURA"]])
+    # La página de contenido real tiene >10 chars: la reja barata de caracteres
+    # (UMBRAL_CHARS_BLANCO) la excluye sin rasterizar. Solo la hoja en blanco (~0 chars)
+    # llega al detector de tinta. Un contenido de 1 palabra sería un caso irreal.
+    pdf = build_pdf(tmp_path / "b.pdf", [["CEDULA DE EMPLAZAMIENTO"], [], ["FACTURA", "Total 100"]])
     textos = _texto_por_pagina(pdf)
     assert paginas_en_blanco(pdf, textos) == {2}
