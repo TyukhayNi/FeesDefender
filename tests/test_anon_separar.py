@@ -156,6 +156,21 @@ class TestDetectarTipo:
     def test_lineas_vacias(self) -> None:
         assert detectar_tipo([]) == (None, 0, None)
 
+    def test_detectar_tipo_tipos_extra_none_identico(self) -> None:
+        # Con tipos_extra=None debe dar EXACTAMENTE lo mismo que sin el argumento.
+        lineas = ["CÉDULA DE EMPLAZAMIENTO", "Juzgado de Instancia"]
+        assert detectar_tipo(lineas) == detectar_tipo(lineas, tipos_extra=None)
+
+    def test_detectar_tipo_inyecta_marcador_ev(self) -> None:
+        extra = [{"tipo": "DOC_PBC", "prioridad": 7,
+                  "marcadores": ["PREVENCION DE BLANQUEO", "PREVENCIÓN DE BLANQUEO"],
+                  "exige_inicio": True}]
+        lineas = ["PREVENCIÓN DE BLANQUEO DE CAPITALES"]
+        tipo, prio, _ = detectar_tipo(lineas, tipos_extra=extra)
+        assert tipo == "DOC_PBC"
+        # Sin inyección, ese marcador no existe → no lo clasifica como PBC
+        assert detectar_tipo(lineas)[0] != "DOC_PBC"
+
 
 # ---------------------------------------------------------------------------
 # Constantes de la lógica DEMANDA super-absorbente
@@ -533,3 +548,16 @@ class TestHelperLineasCompartido:
 
         assert lineas[0] == "CEDULA DE EMPLAZAMIENTO"
         assert "Segunda linea de la portada" in lineas
+
+
+def test_detectar_segmentos_acepta_tipos_extra(tmp_path: Path) -> None:
+    """``tipos_extra`` se propaga a ``detectar_tipo`` (Task 2) para permitir
+    marcadores adicionales (p.ej. E&V) sin tocar el catálogo congelado."""
+    from tests._pdf_fixtures import build_pdf
+
+    pdf = build_pdf(tmp_path / "x.pdf", [["ACTIVACION DEL ENCARGO", "cuerpo"]])
+    extra = [{"tipo": "DOC_ACTIVACION", "prioridad": 7,
+              "marcadores": ["ACTIVACION DEL ENCARGO", "ACTIVACIÓN DEL ENCARGO"],
+              "exige_inicio": True}]
+    segs = detectar_segmentos(pdf, _LOG_MUDO, tipos_extra=extra)
+    assert any(s["tipo"] == "DOC_ACTIVACION" for s in segs)

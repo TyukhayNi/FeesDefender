@@ -13,7 +13,7 @@ línea ``upload_manual`` happy path):
 - ``log_path`` no crea el archivo.
 - ``os.fsync`` se invoca en cada ``append_event`` (resiliencia a crashes
   según M10-Q4).
-- ``INTAKE_EVENTS`` sanity (18 eventos documentados).
+- ``INTAKE_EVENTS`` sanity (24 eventos documentados).
 """
 
 from __future__ import annotations
@@ -329,9 +329,9 @@ def test_append_event_invoca_fsync_por_cada_escritura(il, cm, monkeypatch):
 # INTAKE_EVENTS — sanity
 # ---------------------------------------------------------------------------
 
-def test_intake_events_es_frozenset_con_22_eventos(il):
+def test_intake_events_es_frozenset_con_24_eventos(il):
     assert isinstance(il.INTAKE_EVENTS, frozenset)
-    assert len(il.INTAKE_EVENTS) == 23
+    assert len(il.INTAKE_EVENTS) == 24
 
 
 def test_intake_events_contiene_los_canonicos(il):
@@ -344,7 +344,8 @@ def test_intake_events_contiene_los_canonicos(il):
     ``case_checkin``, ``checkout_cancelado``, ``pendiente_checkin``) con la
     biblioteca de casos (checkout/checkin, DISEÑO_V2 merge+biblioteca,
     2026-07-07). ``procesado_sala_maquina`` con la skill organizar-sala-maquina
-    (OCR+MD, 2026-07-09).
+    (OCR+MD, 2026-07-09). ``split_documental`` con el split de bundles
+    multi-documento en la Sala de máquina (2026-07-15).
     """
     expected = {
         "link_expediente",
@@ -370,5 +371,6 @@ def test_intake_events_contiene_los_canonicos(il):
         "checkout_cancelado",
         "pendiente_checkin",
         "procesado_sala_maquina",
+        "split_documental",
     }
     assert il.INTAKE_EVENTS == expected

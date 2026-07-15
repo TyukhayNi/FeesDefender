@@ -19,6 +19,16 @@
 - Rama propia + PR (nunca push directo a `main`). Instalar hooks: `pre-commit install && pre-commit install --hook-type pre-push`.
 - Entorno: Windows/PowerShell; empezar comandos con `cd "C:\Users\tnm33\Dev\FeesDefender"; .\.venv\Scripts\Activate.ps1`. Tests: `python -m pytest`.
 
+### Validación contra `main` (recon 2026-07-15) — parche aplicado
+
+Reconocimiento paralelo del código real de `main` (con Cluster A ya mergeado, PR #42 en `24e69db`) tras escribirse este plan. **Prerrequisito de F2 satisfecho.** Confirmado correcto: detección de tinta con PIL puro (sin numpy), anclas F1 (`detectar_tipo` L247/bucle L287; `detectar_segmentos` L337/llamada L376), y los helpers asumidos (`slugify`, `file_sha256`, `separar_pdf`/`generar_indice`, `PDFVacioError`). **Correcciones incorporadas al plan:**
+
+- **D2 →** Task 11 Step 3b: añadir `split_documental` sube `INTAKE_EVENTS` a 24 y rompe `test_intake_log.py` (conteo + set) → actualizado en el mismo paso.
+- **D3/D4 →** Task 12 Step 4: reescrito para cambiar `_ocr_y_extraer`→`list[DocCobertura]` y delegar en `_split_o_md`, **sin inlinear `ocr_pdf`** (así conserva el rescate por visión de Cluster A, `sala_maquina.py:357-370`); anclas F2 re-referenciadas (rama digital L414-422, `_ocr_y_extraer` L347-386, no 344-347).
+- **D1 + estado →** Task 13B (NUEVA): `fusionar_cobertura` re-clavada a `(rel_path, slug)` (los N segmentos comparten `rel_path` y colapsaban a 1) + estado idempotente agrupado por `parent_sha256` (bundle) con regla "todos ok/low".
+- **D5 →** Task 10: `_slug_seg` usa `_norm_tipo` (TIPO en MAYÚSCULAS), no `slugify` (que lo pasaría a minúsculas). Añadir `import re`.
+- **D7 (deferido) →** `reforzar` por bundle entero: correcto pero subóptimo; follow-on documentado.
+
 ---
 
 ## File Structure
@@ -31,8 +41,8 @@
 | `core/intake_log.py` (modificar) | nuevo evento `split_documental` en `INTAKE_EVENTS` | F1 |
 | `tests/test_split_documental.py` (crear) | unit + integración del cerebro | F1 |
 | `tests/test_anon_separar.py` (modificar) | regresión byte-idéntica de `tipos_extra=None` + inyección | F1 |
-| `core/sala_maquina.py` (modificar) | enganchar el split entre OCR y MD; cobertura por doc lógico | **F2 (tras Cluster A)** |
-| `scripts/sala_maquina.py` (modificar) | sub-gate del manifiesto en `plan`/`apply` | **F2 (tras Cluster A)** |
+| `core/sala_maquina.py` (modificar) | `_ocr_y_extraer`→lista + split entre OCR y MD; `DocCobertura` +campos; `fusionar_cobertura` re-clavada a `(rel_path, slug)` | **F2 (tras Cluster A)** |
+| `scripts/sala_maquina.py` (modificar) | sub-gate del manifiesto en `plan`/`apply`; estado idempotente por `parent_sha256` | **F2 (tras Cluster A)** |
 | `tests/test_split_sala_maquina_e2e.py` (crear) | E2E bundle→N MD + manifiesto respetado | F2 |
 
 ---
@@ -551,7 +561,9 @@ def test_cobertura_tinta_blanca_vs_texto(tmp_path):
 
 
 def test_paginas_en_blanco_detecta_la_delimitadora(tmp_path):
-    pdf = build_pdf(tmp_path / "b.pdf", [["CEDULA DE EMPLAZAMIENTO"], [], ["FACTURA"]])
+    # p3 = contenido realista >=10 chars: la reja de chars lo excluye sin rasterizar; solo la
+    # hoja en blanco (~0 chars) llega al detector de tinta (1 palabra sería un caso irreal).
+    pdf = build_pdf(tmp_path / "b.pdf", [["CEDULA DE EMPLAZAMIENTO"], [], ["FACTURA", "Total 100"]])
     textos = _texto_por_pagina(pdf)
     assert paginas_en_blanco(pdf, textos) == {2}
 ```
@@ -653,7 +665,9 @@ def test_detectar_sin_blancos_fallback_marcadores(tmp_path):
     # Sin páginas en blanco; dos documentos con marcador → fallback separar los separa.
     pdf = build_pdf(tmp_path / "n.pdf", [
         ["CÉDULA DE EMPLAZAMIENTO", "cuerpo"],
-        ["FACTURA", "Total 100"],
+        # ambos NO absorbibles (CEDULA + AUTO, fuera de TIPOS_ABSORBE_SIN_NUMERO) → el fallback
+        # los separa; DOC_FACTURA sin nº se absorbería y no probaría el fallback.
+        ["A U T O", "AUTO Nº 12"],
     ])
     segmentos, blancos = detectar(pdf)
     assert blancos == set()
@@ -875,8 +889,8 @@ from core.split_documental import materializar
 
 def test_materializar_corta_y_devuelve_doclogicos(tmp_path):
     pdf = build_pdf(tmp_path / "j.pdf", [
-        ["CEDULA DE EMPLAZAMIENTO"], [], ["A U T O", "AUTO Nº 12"], [], ["FACTURA"],
-    ])
+        ["CEDULA DE EMPLAZAMIENTO"], [], ["A U T O", "AUTO Nº 12"], [], ["FACTURA", "Total 100"],
+    ])  # p5 realista >=10 chars (mismo motivo que Task 7) → detectar da 3 segmentos
     from core.split_documental import detectar
     segs, blancos = detectar(pdf)
     man = construir_manifiesto("01_Drive EV/j.pdf", "d" * 64, segs, blancos)
@@ -906,9 +920,17 @@ Expected: FAIL con `ImportError`.
 - [ ] **Step 3: Implementar `materializar`**
 
 ```python
+def _norm_tipo(tipo: str) -> str:
+    """TIPO en MAYÚSCULAS y path-safe. NO usa slugify (lleva lowercase=True y
+    machacaría el case): decisión D5 de la validación 2026-07-15. Colapsa cualquier
+    char no [A-Z0-9] a '_'; vacío → 'DOCUMENTO'."""
+    return re.sub(r"[^A-Z0-9]+", "_", (tipo or "").upper()).strip("_") or "DOCUMENTO"
+
+
 def _slug_seg(parent_slug: str, seg: int, tipo: str, seg_sha256: str) -> str:
-    from core.utils import slugify
-    return f"{parent_slug}__seg{seg:02d}_{slugify(tipo)}__{seg_sha256[:8]}"
+    # parent_slug ya viene de output_slug (path-safe). TIPO por _norm_tipo (mayúsculas),
+    # NO slugify: slugify lo pasaría a minúsculas (D5).
+    return f"{parent_slug}__seg{seg:02d}_{_norm_tipo(tipo)}__{seg_sha256[:8]}"
 
 
 def materializar(pdf_path: Path, manifiesto: dict, carpeta_bundle: Path, *,
@@ -931,7 +953,6 @@ def materializar(pdf_path: Path, manifiesto: dict, carpeta_bundle: Path, *,
                          "pagina_inicio": ini, "pagina_fin": fin, "lineas_inicio": []})
 
     resultados = separar.separar_pdf(pdf_path, segs_sep, carpeta_bundle, log)
-    separar.generar_indice(resultados, pdf_path, carpeta_bundle, log)
 
     docs: list[DocLogico] = []
     for e, r in zip(manifiesto["segmentos"], resultados):
@@ -940,16 +961,20 @@ def materializar(pdf_path: Path, manifiesto: dict, carpeta_bundle: Path, *,
         slug = _slug_seg(parent_slug, e["seg"], e["tipo"], seg_sha)
         destino_pdf = carpeta_bundle / f"{slug}.pdf"
         emitido.replace(destino_pdf)   # renombrar a identidad estable por contenido
+        r["archivo"] = f"{slug}.pdf"   # que generar_indice registre el nombre FINAL, no el temporal
         docs.append(DocLogico(
             slug=slug, seg_sha256=seg_sha, destino="split", tipo=e["tipo"],
             parent_slug=parent_slug, parent_sha256=parent_sha256,
             role_in_bundle=e.get("role", "documento"), paginas=r["paginas"],
             fuentes=[bundle_rel_path],
         ))
+    # generar_indice DESPUÉS del rename (con r["archivo"] ya actualizado): si se llama antes,
+    # indice.json referencia los nombres temporales de separar_pdf → nombres muertos.
+    separar.generar_indice(resultados, pdf_path, carpeta_bundle, log)
     return docs
 ```
 
-> `core.utils.slugify` ya existe (lo usa `output_slug`). Verifícalo con `grep -n "def slugify" core/utils.py`.
+> **Verificado (recon 2026-07-15):** `core.utils.slugify` existe (`core/utils.py:27`) pero fuerza minúsculas (`lowercase=True`); por eso `_slug_seg` usa `_norm_tipo` (mayúsculas) para el TIPO, NO `slugify`. Añade `import re` al principio de `core/split_documental.py` (junto a `import json` de la Task 9). `file_sha256` y `separar.separar_pdf`/`generar_indice`/`PDFVacioError` verificados presentes con la firma asumida.
 
 - [ ] **Step 4: Ejecutar para verlo pasar**
 
@@ -994,6 +1019,19 @@ En `core/intake_log.py`, dentro del `frozenset` `INTAKE_EVENTS`, tras la línea 
     "split_documental",        # split 1→N de un bundle en 02_Documentos/ (documentos lógicos)
 ```
 
+- [ ] **Step 3b: Actualizar los tests de conteo/set de `INTAKE_EVENTS`**
+
+Añadir el evento **rompe dos asserts existentes** de `tests/test_intake_log.py` (recon 2026-07-15): el conteo `len(INTAKE_EVENTS) == 23` (~L332-334) y el set exacto de `test_intake_events_contiene_los_canonicos` (~L349). Sube el conteo a **24** y añade `"split_documental"` al set esperado:
+
+```python
+# tests/test_intake_log.py — test de conteo:
+assert len(intake_log.INTAKE_EVENTS) == 24   # era 23; +split_documental
+# y en test_intake_events_contiene_los_canonicos, añadir al set esperado:
+    "split_documental",
+```
+
+NO tocar `traza.UPLOAD_EVENTS` (el split NO lo emite Cowork): el test de paridad `test_intake_traza.py::test_paridad_eventos_subconjunto_de_core` (UPLOAD_EVENTS ⊆ INTAKE_EVENTS) sigue verde porque solo añadimos a INTAKE_EVENTS.
+
 - [ ] **Step 4: Ejecutar para verlo pasar**
 
 Run: `python -m pytest tests/test_split_documental.py::test_split_documental_es_evento_valido -v`
@@ -1033,10 +1071,16 @@ git commit -m "feat(intake_log): evento split_documental"
 En `core/sala_maquina.py`, añadir a la dataclass `DocCobertura` (tras `sha256: str = ""`):
 
 ```python
-    parent_slug: str = ""     # slug del bundle si es un segmento (split); vacío si suelto
-    role: str = "documento"   # role_in_bundle
-    paginas: str = ""         # rango en el bundle ("1-4"); vacío si no aplica
-    tipo: str = ""            # tipo clasificado del documento lógico
+    parent_slug: str = ""       # slug del bundle si es un segmento (split); vacío si suelto
+    parent_sha256: str = ""     # sha del fichero FÍSICO de origen; clave del estado idempotente
+    role: str = "documento"     # role_in_bundle
+    paginas: str = ""           # rango en el bundle ("1-4"); vacío si no aplica
+    tipo: str = ""              # tipo clasificado del documento lógico
+
+# `sha256` sigue siendo la custodia de ESTA fila (= seg_sha256 en un segmento, = sha del
+# fichero en un passthrough); `parent_sha256` es el sha del FÍSICO (bundle) y es la clave
+# por la que el estado idempotente marca "procesado" (ver Task 13B). Ambos con default
+# para que un _cobertura.json antiguo se lea sin romper (cobertura_desde_dicts tolerante).
 ```
 
 - [ ] **Step 2: Escribir el test E2E que falla**
@@ -1115,7 +1159,7 @@ def _split_o_md(case_dir: Path, sm_dir: Path, case_id: str, d: DocPlan,
         texto, estado, nota = _aplicar_vision(buscable, texto, estado, nota, vision)
         _escribir_md(case_dir, case_id, d.slug, d.rel_path, texto, metodo_base, ocr, estado)
         return [DocCobertura(d.slug, d.rel_path, metodo_base, estado, len(texto), ocr, nota, d.sha256,
-                             tipo=segmentos[0].tipo)]
+                             parent_sha256=d.sha256, tipo=segmentos[0].tipo)]
 
     # split: manifiesto → materializar → MD por segmento
     carpeta_bundle = destino_seguro(sm_dir / "02_Documentos" / d.slug, case_dir)
@@ -1136,8 +1180,8 @@ def _split_o_md(case_dir: Path, sm_dir: Path, case_id: str, d: DocPlan,
         texto, estado, nota = _aplicar_vision(seg_pdf, texto, estado, nota, vision)
         _escribir_md(case_dir, case_id, dl.slug, d.rel_path, texto, metodo_base, ocr, estado)
         filas.append(DocCobertura(dl.slug, d.rel_path, metodo_base, estado, len(texto), ocr, nota,
-                                  dl.seg_sha256, parent_slug=dl.parent_slug, role=dl.role_in_bundle,
-                                  paginas=dl.paginas, tipo=dl.tipo))
+                                  dl.seg_sha256, parent_slug=dl.parent_slug, parent_sha256=d.sha256,
+                                  role=dl.role_in_bundle, paginas=dl.paginas, tipo=dl.tipo))
     append_event(case_id, "split_documental", details={
         "bundle": d.rel_path, "bundle_sha256": d.sha256, "n_segmentos": len(doclogicos),
         "segmentos": [{"slug": dl.slug, "seg_sha256": dl.seg_sha256, "tipo": dl.tipo,
@@ -1147,7 +1191,34 @@ def _split_o_md(case_dir: Path, sm_dir: Path, case_id: str, d: DocPlan,
     return filas
 ```
 
-En la rama `d.ruta == "pdf"` de `ejecutar`, reemplazar el bloque digital + la llamada a `_ocr_y_extraer` por el enrutado que pasa por `_split_o_md`:
+**Reconciliado con el `main` post-Cluster A (recon 2026-07-15).** Anclas REALES (Cluster A desplazó ~70 líneas respecto de cuando se escribió el plan): la rama pdf-digital de `ejecutar` está en **`core/sala_maquina.py:414-422`** (`_escribir_md` L420, `continue` L422), NO en 344-347; `_ocr_y_extraer` está en **L347-386** e incluye ahora el **rescate por visión si el OCR falla** (L357-370) y el manejo `PriorOcrFound` (L375). **NO inlinees `ocr_pdf` en `ejecutar`** (perderías ese rescate). En su lugar:
+
+**(a)** Cambia `_ocr_y_extraer` para que DEVUELVA `list[DocCobertura]` y termine delegando en `_split_o_md` sobre el `buscable` que ya produjo. Conserva íntegro el camino de rescate (que ahora devuelve una lista de un elemento):
+
+```python
+def _ocr_y_extraer(case_dir, sm_dir, case_id, d, entrada, vision) -> list[DocCobertura]:
+    ocr_out = destino_seguro(sm_dir / "01_OCR" / f"{d.slug}.pdf", case_dir)
+    try:
+        buscable = ocr_pdf(entrada, ocr_out)
+    except Exception as e:                    # OCRError: cifrado/corrupto/firmado
+        nota = f"OCR falló: {e}"
+        if not vision:
+            return [DocCobertura(d.slug, d.rel_path, "ocr", "empty", 0, True, nota, d.sha256,
+                                 parent_sha256=d.sha256)]
+        # rescate por visión (Cluster A): pypdfium2 puede rasterizar lo que OCRmyPDF rechazó
+        texto, estado, nota = _reforzar_con_vision(entrada, "", "empty", nota)
+        if texto.strip():
+            _escribir_md(case_dir, case_id, d.slug, d.rel_path, texto, "vision", False, estado)
+        return [DocCobertura(d.slug, d.rel_path, "vision", estado, len(texto), False, nota, d.sha256,
+                             parent_sha256=d.sha256)]
+    persistido = Path(buscable) == ocr_out and ocr_out.exists()
+    metodo, ocr = ("ocr", True) if persistido else ("pypdf", False)
+    return _split_o_md(case_dir, sm_dir, case_id, d, Path(buscable), metodo, ocr, vision)
+```
+
+(El rescate por visión y `PriorOcrFound` quedan idénticos a Cluster A; solo cambia el contrato de retorno a lista y la delegación final en `_split_o_md`. La nota del passthrough `pypdf` "OCRmyPDF no regeneró…" la absorbe `_split_o_md`.)
+
+**(b)** En `ejecutar`, la rama pdf-digital (L414-422) llama a `_split_o_md` sobre `src`; las ramas escaneado (L424) e imagen (L437) usan `.extend(...)` porque `_ocr_y_extraer` ya devuelve lista:
 
 ```python
             if d.ruta == "pdf":
@@ -1156,20 +1227,13 @@ En la rama `d.ruta == "pdf"` de `ejecutar`, reemplazar el bloque digital + la ll
                 if texto and _texto_suficiente(texto, npags):
                     cobertura.extend(_split_o_md(case_dir, sm_dir, case_id, d, src, "pypdf", False, vision))
                     continue
-                # escaneado → OCRmyPDF → PDF buscable persistido
-                ocr_out = destino_seguro(sm_dir / "01_OCR" / f"{d.slug}.pdf", case_dir)
-                try:
-                    buscable = ocr_pdf(src, ocr_out)
-                except Exception as e:
-                    cobertura.append(DocCobertura(d.slug, d.rel_path, "ocr", "empty", 0, True,
-                                                  f"OCR falló: {e}", d.sha256))
-                    continue
-                persistido = Path(buscable) == ocr_out and ocr_out.exists()
-                metodo, ocr = ("ocr", True) if persistido else ("pypdf", False)
-                cobertura.extend(_split_o_md(case_dir, sm_dir, case_id, d, Path(buscable), metodo, ocr, vision))
+                cobertura.extend(_ocr_y_extraer(case_dir, sm_dir, case_id, d, src, vision))
+            elif d.ruta == "imagen":
+                # ... conversión a PDF intermedio igual que hoy, pero:
+                cobertura.extend(_ocr_y_extraer(case_dir, sm_dir, case_id, d, intermedio, vision))
 ```
 
-> **Reconciliación con Cluster A:** si Cluster A refactorizó `_ocr_y_extraer`, reutiliza su producción del PDF buscable y llama a `_split_o_md` con ese `buscable`. La única regla dura: **el split va sobre el buscable, antes del MD**.
+> **Regla dura de reconciliación al rebasar:** si Cluster A hubiera tocado más el interior de `_ocr_y_extraer`, mantén su lógica y aplica SOLO el cambio de contrato (retorno `list[DocCobertura]` + delegación en `_split_o_md`). El split va sobre el `buscable`, **después** del rescate por visión de OCR y **antes** del MD. Cambiar `append`→`extend` en las ramas escaneado/imagen es obligatorio (si no, `TypeError`/lista anidada).
 
 - [ ] **Step 5: Ejecutar para verlo pasar**
 
@@ -1273,6 +1337,109 @@ En `scripts/sala_maquina.py`, en el comando `plan`, tras listar los contadores, 
 git add core/sala_maquina.py scripts/sala_maquina.py tests/test_split_documental.py
 git commit -m "feat(sala_maquina): cobertura por documento lógico + plan avisa de bundles"
 ```
+
+---
+
+## Task 13B: Re-clave de `fusionar_cobertura` + estado idempotente por bundle (documento lógico)
+
+> **Defecto detectado en la validación (recon 2026-07-15), NO presente en el plan original.** La migración a documento lógico dejó la DEDUP de cobertura y el ESTADO idempotente clavados al fichero FÍSICO. Sin esta tarea: (1) `fusionar_cobertura` indexa por `rel_path` (`core/sala_maquina.py:176`) → los N segmentos de un bundle comparten `rel_path` → **colapsan a 1 fila, perdiendo N-1 en silencio** (verificado: con `previa=[]` y 3 segmentos devuelve 1). El E2E de la Task 12 NO lo detecta porque llama a `ejecutar` directo, sin pasar por `fusionar_cobertura` (que sí corre en el `apply` del CLI). (2) El estado se marca por `c.sha256`, que en un segmento es el `seg_sha256`, no el sha físico que `plan()` usa para el *skip* → el bundle **se re-parte en cada corrida** y podría marcarse "hecho" con un segmento fallido.
+
+**Files:**
+- Modify: `core/sala_maquina.py` (`fusionar_cobertura` + su docstring)
+- Modify: `scripts/sala_maquina.py` (`apply` y `reforzar`: estado agrupado por bundle)
+- Test: `tests/test_sala_maquina.py` (fusión) + `tests/test_split_sala_maquina_e2e.py` (idempotencia)
+
+- [ ] **Step 1: Test que falla — la fusión conserva los N segmentos de un bundle**
+
+Añadir a `tests/test_sala_maquina.py`:
+
+```python
+def test_fusionar_cobertura_conserva_n_segmentos_mismo_bundle():
+    # 3 segmentos del MISMO bundle (mismo rel_path) con slug propio NO deben colapsar.
+    from core.sala_maquina import DocCobertura, fusionar_cobertura
+    segs = [DocCobertura(f"b__seg{i:02d}_X__{i:08x}", "01_Drive EV/b.pdf", "pypdf", "ok",
+                         100, False, "", f"{i:064x}", parent_sha256="B" * 64, parent_slug="b")
+            for i in (1, 2, 3)]
+    out = fusionar_cobertura([], segs)
+    assert len(out) == 3   # hoy colapsa a 1 (indexado solo por rel_path)
+```
+
+- [ ] **Step 2: Ejecutar para verlo fallar**
+
+Run: `python -m pytest tests/test_sala_maquina.py -k conserva_n_segmentos -v`
+Expected: FAIL (devuelve 1 fila).
+
+- [ ] **Step 3: Re-clavar `fusionar_cobertura` a `(rel_path, slug)`**
+
+En `core/sala_maquina.py`, cambiar el índice de `rel_path` a la clave compuesta `(rel_path, slug)`: el `slug` es único por documento lógico (segmento), y `rel_path` sigue distinguiendo dos ficheros físicos byte-idénticos con igual slug. Reemplazar el cuerpo de `fusionar_cobertura`:
+
+```python
+    por_clave = {(d.rel_path, d.slug): d for d in nueva}
+    vistos: set[tuple[str, str]] = set()
+    out: list[DocCobertura] = []
+    for d in previa:
+        clave = (d.rel_path, d.slug)
+        out.append(por_clave.get(clave, d))
+        vistos.add(clave)
+    for d in nueva:
+        clave = (d.rel_path, d.slug)
+        if clave not in vistos:
+            out.append(d)
+            vistos.add(clave)
+    return out
+```
+
+Actualizar la docstring: la clave de fusión pasa a `(rel_path, slug)`; explicar que (a) dos ficheros byte-idénticos con igual slug en carpetas distintas siguen siendo 2 filas (distinto `rel_path`), y (b) N segmentos de un bundle son N filas (mismo `rel_path`, distinto `slug`).
+
+- [ ] **Step 4: Ejecutar — nuevo test pasa y el existente sigue verde**
+
+Run: `python -m pytest tests/test_sala_maquina.py -k "conserva_n_segmentos or conserva_dos_rutas" -v`
+Expected: PASS ambos. El existente `test_fusionar_cobertura_conserva_dos_rutas_mismo_slug` (misma slug, distinto `rel_path`) lo respeta la nueva clave.
+
+- [ ] **Step 5: Estado idempotente por bundle (solo si TODOS los segmentos salen ok/low)**
+
+En `scripts/sala_maquina.py`, `apply` marca hoy `exitosos = {c.sha256 for c in cob_delta if c.estado in ("ok","low")}` (L124). Con split, `c.sha256` de un segmento es el `seg_sha256`, no el sha físico que `plan()` usa para el *skip* → el bundle no se marcaría nunca (re-split en cada corrida), y un bundle con un segmento fallido no debe marcarse hecho. Agrupar por sha FÍSICO (`parent_sha256`, con fallback a `sha256` para filas no-split) y marcar hecho solo si TODOS sus documentos lógicos salieron `ok`/`low`:
+
+```python
+    from collections import defaultdict
+    por_fisico: dict[str, list] = defaultdict(list)
+    for c in cob_delta:
+        por_fisico[c.parent_sha256 or c.sha256].append(c)
+    exitosos = {sha for sha, filas in por_fisico.items()
+                if all(f.estado in ("ok", "low") for f in filas)}
+```
+
+Reemplaza la línea de `exitosos` en `apply` (L124) y aplica el MISMO patrón en `reforzar` (L180). El resto (`procesados = exitosos if force else _estado_previo(case_dir) | exitosos`) no cambia. (Para filas no-split —nativo, imagen, passthrough— `parent_sha256` vale `""` o `d.sha256`; el fallback `or c.sha256` las agrupa por su propio sha físico, idéntico al comportamiento actual.)
+
+- [ ] **Step 6: Test E2E — el segmento lleva el sha físico del bundle y el skip lo respeta**
+
+Añadir a `tests/test_split_sala_maquina_e2e.py`:
+
+```python
+def test_segmento_lleva_sha_fisico_y_skip_lo_respeta(tmp_path, monkeypatch):
+    import core.config as config
+    from core import sala_maquina as sm
+    case_dir = tmp_path / "W-TEST03"
+    (case_dir / "00_Input" / "01_Drive EV").mkdir(parents=True)
+    _bundle_digital(case_dir)
+    monkeypatch.setattr(config, "caso_path", lambda cid: case_dir)
+    inv = sm.inventariar(case_dir)
+    bundle_sha = inv[0]["sha256"]
+    cob = sm.ejecutar(case_dir, sm.plan(inv, set()), case_id="W-TEST03")
+    # cada segmento apunta al sha FÍSICO del bundle (clave del estado)
+    assert [c.parent_sha256 for c in cob if c.parent_slug] == [bundle_sha] * 3
+    # con ese sha en estado_previo, el bundle se salta ENTERO (no se re-parte)
+    assert all(d.skip for d in sm.plan(inv, {bundle_sha}))
+```
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add core/sala_maquina.py scripts/sala_maquina.py tests/test_sala_maquina.py tests/test_split_sala_maquina_e2e.py
+git commit -m "fix(sala_maquina): cobertura y estado por documento lógico (no colapsar segmentos)"
+```
+
+> **Deferido consciente (D7 de la validación):** `reforzar` selecciona objetivos por `rel_path` (`scripts:157-158`), así que un solo segmento dudoso re-procesa el bundle entero. Es *correcto* (re-detecta y re-escribe), solo subóptimo. Refinarlo a granularidad de segmento queda como follow-on (nota en Task 15 → `docs/MEJORAS_FUTURAS.md`).
 
 ---
 
@@ -1385,10 +1552,11 @@ git commit -m "docs(split): documentar split en SKILL + follow-ons en backlog"
 - **§5 manifiesto editable** → Tasks 9, 13, 14.
 - **§6 placement OCR→split→MD** → Task 12.
 - **§7 layout (02_Documentos subcarpeta por bundle; passthrough fuera)** → Tasks 10, 12.
-- **§8 contratos de datos (MD, cobertura por doc lógico, indice.json, evento log)** → Tasks 10, 11, 12, 13.
+- **§8 contratos de datos (MD, cobertura por doc lógico, indice.json, evento log)** → Tasks 10, 11, 12, 13, **13B** (dedup por doc lógico).
 - **§9 contrato de salida para sala de lectura** → Task 15 (documentado; consumo = follow-on).
-- **§10 idempotencia / manifiesto respetado / guard 00_Input** → Tasks 12, 14 (`destino_seguro`).
+- **§10 idempotencia / manifiesto respetado / guard 00_Input** → Tasks 12, **13B** (estado por bundle), 14 (`destino_seguro`).
 - **§11 errores (aislamiento por bundle, validación de manifiesto, imagen-only no descartada)** → Tasks 9 (validar), 12 (try/except heredado de `ejecutar`), 8/detectar.
 - **§12 composición con Cluster A** → gate de fase F2 + notas de reconciliación por tarea.
 - **§14/§15 fases y tests** → estructura F1/F2 + tests por tarea.
 - **Regla de oro core/anon** → Task 2/3 (param aditivo) + test de identidad `tipos_extra=None`.
+- **Validación contra `main` (2026-07-15)** → correcciones D1–D5 + D7 incorporadas (ver "Validación contra `main`" arriba); F1 verificada construíble tal cual, F2 desbloqueada (Cluster A en `main`, `24e69db`).
