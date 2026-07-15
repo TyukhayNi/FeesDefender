@@ -107,10 +107,13 @@ def test_detectar_por_blancos(tmp_path):
 
 
 def test_detectar_sin_blancos_fallback_marcadores(tmp_path):
-    # Sin páginas en blanco; dos documentos con marcador → fallback separar los separa.
+    # Sin páginas en blanco → fallback por marcadores (separar.detectar_segmentos).
+    # Ambos tipos son NO absorbibles (CEDULA_EMPLAZAMIENTO y AUTO, prio 10, fuera de
+    # TIPOS_ABSORBE_SIN_NUMERO), así que el fallback los separa en 2 segmentos.
+    # (DOC_FACTURA sí se absorbe sin nº de doc → no serviría para probar el fallback.)
     pdf = build_pdf(tmp_path / "n.pdf", [
         ["CÉDULA DE EMPLAZAMIENTO", "cuerpo"],
-        ["FACTURA", "Total 100"],
+        ["A U T O", "AUTO Nº 12"],
     ])
     segmentos, blancos = detectar(pdf)
     assert blancos == set()
