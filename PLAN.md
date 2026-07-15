@@ -29,6 +29,14 @@ decisión de arquitectura del Cluster B: `docs/superpowers/specs/2026-07-14-expe
 Backlog completo (6 clusters) en `docs/MEJORAS_FUTURAS.md` #58-#63. Orden acordado: **A (+C en paralelo) →
 B**; D/E/F quedan en backlog. **Actualización: el Cluster A lo completó la sesión paralela (PR #42, `24e69db`); siguiente = C (quick win) o B.***
 
+- [x] **Split de bundles multi-documento — F1 (cerebro) ✅ MERGEADO 2026-07-15 (PR #45, squash `6dba396`).**
+  `core/split_documental.py` nuevo (corte por hoja en blanco + fallback marcadores + manifiesto editable +
+  `materializar`), `separar.py` tocado solo con el parámetro aditivo `tipos_extra` (congelado, byte-idéntico),
+  evento `split_documental`. Construido subagent-driven (11 tareas TDD); revisión final Opus "ready to merge".
+  Plan `docs/superpowers/plans/2026-07-14-split-sala-maquina.md` (spec+plan del PR #43). **F2 (integración en
+  `core/sala_maquina.py`, Tareas 12-15 + 13B) PENDIENTE** — Cluster A ya en main → desbloqueada; rebasar antes.
+  Deferidos F0 (calibración umbrales + fixture página-imagen) y F2 (contratos M-A/M-C) en `MEJORAS_FUTURAS #64`.
+
 - [x] **A — Fiabilidad de la sala de máquina (`MEJORAS #58`) — ✅ HECHA (PR #42, `24e69db`, sesión paralela).** (1) Bug: `apply` incremental
   machaca `_cobertura.md` (`scripts/sala_maquina.py::apply` debe **fusionar** el estado previo, no volcar
   solo `cob`) — pérdida silenciosa de "qué queda por revisar". (2) `--vision` cableado a un transcriptor
