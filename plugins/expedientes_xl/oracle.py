@@ -13,6 +13,27 @@ import tempfile
 import time
 from pathlib import Path
 
+_VIRTUALES = {"unidades compartidas", "mi unidad", "otros ordenadores"}
+
+
+def _varints(blob: bytes) -> set[int]:
+    """Decodifica varints (protobuf-like) de un blob de `content-entry`.
+
+    Heurística de cruce: los content_id embebidos en el blob suelen coincidir
+    con nombres de fichero en la caché de contenido local (`content_cache`).
+    """
+    out: set[int] = set()
+    val = shift = 0
+    for b in blob:
+        val |= (b & 0x7F) << shift
+        if b & 0x80:
+            shift += 7
+        else:
+            if val > 1000:
+                out.add(val)
+            val = shift = 0
+    return out
+
 
 class Oracle:
     def __init__(self, dbs: dict[str, Path], cache_dirs: dict[str, Path],
@@ -71,3 +92,77 @@ class Oracle:
                     pass
         self._snap[root] = (ahora, con, tmp)
         return con
+
+    def _root_de(self, path: Path) -> str | None:
+        s = str(path)
+        for root in self._dbs:
+            if s.upper().startswith(root.upper()):
+                return root
+        return None
+
+    def _resolver(self, con: sqlite3.Connection, path: Path) -> int | None:
+        """stable_id del path por ascendencia de títulos; None = no resoluble."""
+        segs = [p for p in path.parts[1:] if p.lower() not in _VIRTUALES]
+        if not segs:
+            return None
+        leaf = segs[-1]
+        ancestros = [s.lower() for s in segs[:-1]]
+        candidatos = [r[0] for r in con.execute(
+            "SELECT stable_id FROM items WHERE local_title = ? AND is_tombstone = 0 AND trashed = 0",
+            (leaf,))]
+        resueltos = []
+        for sid in candidatos:
+            cadena: list[str] = []
+            actual = sid
+            for _ in range(64):  # tope de profundidad
+                fila = con.execute(
+                    "SELECT p.parent_stable_id, i.local_title FROM stable_parents p "
+                    "JOIN items i ON i.stable_id = p.parent_stable_id "
+                    "WHERE p.item_stable_id = ?", (actual,)).fetchone()
+                if fila is None:
+                    break
+                actual = fila[0]
+                cadena.append((fila[1] or "").lower())
+            # la cadena (leaf->raíz) debe contener los ancestros del path como sufijo
+            if cadena[: len(ancestros)] == list(reversed(ancestros)):
+                resueltos.append(sid)
+        return resueltos[0] if len(resueltos) == 1 else None
+
+    def _nombres_cache(self, root: str) -> frozenset[str]:
+        ahora = time.monotonic()
+        c = self._cache_names.get(root)
+        if c and ahora - c[0] < self._ttl:
+            return c[1]
+        nombres: set[str] = set()
+        base = self._cache_dirs.get(root)
+        if base and base.is_dir():
+            for r, _dirs, files in os.walk(base):
+                nombres.update(files)
+        fz = frozenset(nombres)
+        self._cache_names[root] = (ahora, fz)
+        return fz
+
+    def status(self, path: Path) -> str:
+        root = self._root_de(path)
+        if root is None:
+            return "UNKNOWN"
+        con = self._snapshot(root)
+        if con is None:
+            return "UNKNOWN"
+        try:
+            sid = self._resolver(con, path)
+            if sid is None:
+                return "UNKNOWN"
+            fila = con.execute(
+                "SELECT value FROM item_properties WHERE item_stable_id = ? AND key = 'content-entry'",
+                (sid,)).fetchone()
+            if fila is None:
+                return "COLD"
+            if os.environ.get("XL_ORACLE_STRICT") == "1":
+                ids = _varints(bytes(fila[0]))
+                nombres = self._nombres_cache(root)
+                if not any(str(i) in nombres for i in ids):
+                    return "COLD"
+            return "HOT"
+        except sqlite3.Error:
+            return "UNKNOWN"

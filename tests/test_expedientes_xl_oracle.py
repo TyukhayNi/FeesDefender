@@ -95,3 +95,30 @@ def test_fallo_backup_limpia_tmp(mini_db, mkstemp_registrado, monkeypatch):
     # el temporal creado para el dst del backup fallido no queda huérfano
     assert len(mkstemp_registrado) == 1
     assert not Path(mkstemp_registrado[0]).exists()
+
+
+def test_status_hot_cold_unknown(mini_db):
+    db, cache = mini_db
+    o = Oracle({"G:\\": db}, {"G:\\": cache}, ttl=999)
+    base = r"G:\Unidades compartidas\EXPEDIENTES - TYUKHAY LEGAL\Caso X\00_Input"
+    assert o.status(Path(base + r"\hot.pdf")) == "HOT"
+    assert o.status(Path(base + r"\cold.pdf")) == "COLD"
+    assert o.status(Path(base + r"\no_existe.pdf")) == "UNKNOWN"
+    assert o.status(Path(r"Z:\fuera\x.pdf")) == "UNKNOWN"   # raíz sin BD
+
+
+def test_status_oraculo_caido_unknown(tmp_path):
+    o = Oracle({"G:\\": tmp_path / "no"}, {"G:\\": tmp_path}, ttl=5)
+    assert o.status(Path(r"G:\Mi unidad\a.pdf")) == "UNKNOWN"
+
+
+def test_status_ambiguo_unknown(mini_db):
+    db, cache = mini_db
+    con = __import__("sqlite3").connect(db)
+    # duplicar el leaf con OTRA ascendencia que también casa parcialmente
+    con.execute("INSERT INTO items(stable_id,id,is_folder,local_title) VALUES (60,'d',0,'hot.pdf')")
+    con.execute("INSERT INTO stable_parents VALUES (60,30,'')")
+    con.commit(); con.close()
+    o = Oracle({"G:\\": db}, {"G:\\": cache}, ttl=999)
+    base = r"G:\Unidades compartidas\EXPEDIENTES - TYUKHAY LEGAL\Caso X\00_Input"
+    assert o.status(Path(base + r"\hot.pdf")) == "UNKNOWN"  # 2 candidatos -> fail-closed
