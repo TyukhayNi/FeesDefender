@@ -1,4 +1,5 @@
 import sqlite3
+import tempfile
 from pathlib import Path
 import pytest
 from plugins.expedientes_xl.oracle import Oracle
@@ -42,3 +43,55 @@ def test_snapshot_ttl_no_repite_backup(mini_db, monkeypatch):
 def test_snapshot_caido_devuelve_none(tmp_path):
     o = Oracle({"G:\\": tmp_path / "no_existe"}, {"G:\\": tmp_path}, ttl=5)
     assert o._snapshot("G:\\") is None
+
+
+@pytest.fixture
+def mkstemp_registrado(tmp_path, monkeypatch):
+    """Redirige tempfile.mkstemp a tmp_path y registra las rutas creadas."""
+    creados = []
+    real_mkstemp = tempfile.mkstemp
+
+    def _mkstemp(suffix=""):
+        fd, ruta = real_mkstemp(suffix=suffix, dir=str(tmp_path))
+        creados.append(ruta)
+        return fd, ruta
+
+    monkeypatch.setattr(tempfile, "mkstemp", _mkstemp)
+    return creados
+
+
+def test_refresh_borra_tmp_anterior(mini_db, mkstemp_registrado):
+    db, cache = mini_db
+    o = Oracle({"G:\\": db}, {"G:\\": cache}, ttl=0)  # ttl=0 -> refresco siempre
+    con1 = o._snapshot("G:\\")
+    con2 = o._snapshot("G:\\")
+    assert con1 is not con2 and o.refresh_count == 2
+    assert len(mkstemp_registrado) == 2
+    assert not Path(mkstemp_registrado[0]).exists()  # tmp del snapshot anterior borrado
+    assert Path(mkstemp_registrado[1]).exists()      # tmp del snapshot vigente sigue
+
+
+def test_fallo_backup_limpia_tmp(mini_db, mkstemp_registrado, monkeypatch):
+    db, cache = mini_db
+
+    class SrcRoto:
+        def backup(self, dst):
+            raise sqlite3.Error("backup roto a mitad")
+
+        def close(self):
+            pass
+
+    real_connect = sqlite3.connect
+
+    def connect_falso(*args, **kwargs):
+        if kwargs.get("uri"):
+            return SrcRoto()
+        return real_connect(*args, **kwargs)
+
+    monkeypatch.setattr(sqlite3, "connect", connect_falso)
+    o = Oracle({"G:\\": db}, {"G:\\": cache}, ttl=5)
+    assert o._snapshot("G:\\") is None
+    assert o.refresh_count == 0
+    # el temporal creado para el dst del backup fallido no queda huérfano
+    assert len(mkstemp_registrado) == 1
+    assert not Path(mkstemp_registrado[0]).exists()

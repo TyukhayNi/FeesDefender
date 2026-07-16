@@ -20,7 +20,7 @@ class Oracle:
         self._dbs = {k: Path(v) for k, v in dbs.items()}
         self._cache_dirs = {k: Path(v) for k, v in cache_dirs.items()}
         self._ttl = ttl if ttl is not None else float(os.environ.get("XL_ORACLE_TTL", "5"))
-        self._snap: dict[str, tuple[float, sqlite3.Connection | None]] = {}
+        self._snap: dict[str, tuple[float, sqlite3.Connection | None, str | None]] = {}
         self._cache_names: dict[str, tuple[float, frozenset[str]]] = {}
         self.refresh_count = 0
 
@@ -30,6 +30,9 @@ class Oracle:
         if cacheado and ahora - cacheado[0] < self._ttl:
             return cacheado[1]
         con: sqlite3.Connection | None = None
+        tmp: str | None = None
+        src: sqlite3.Connection | None = None
+        dst: sqlite3.Connection | None = None
         try:
             src = sqlite3.connect(f"file:{self._dbs[root]}?mode=ro", uri=True, timeout=8)
             fd, tmp = tempfile.mkstemp(suffix=".db")
@@ -40,11 +43,31 @@ class Oracle:
             con = dst
             self.refresh_count += 1
         except (sqlite3.Error, OSError, KeyError):
-            con = None  # oráculo caído -> UNKNOWN (fail-closed en guards)
-        if cacheado and cacheado[1] is not None and cacheado[1] is not con:
-            try:
-                cacheado[1].close()
-            except sqlite3.Error:
-                pass
-        self._snap[root] = (ahora, con)
+            # Oráculo caído -> UNKNOWN (fail-closed en guards). Limpieza best-effort:
+            # cerrar handles a medias y borrar el temporal (en Windows exige dst
+            # cerrado primero); esta rama nunca debe lanzar.
+            for handle in (dst, src):
+                if handle is not None:
+                    try:
+                        handle.close()
+                    except sqlite3.Error:
+                        pass
+            if tmp is not None:
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
+            con, tmp = None, None
+        if cacheado:
+            if cacheado[1] is not None and cacheado[1] is not con:
+                try:
+                    cacheado[1].close()
+                except sqlite3.Error:
+                    pass
+            if cacheado[2] is not None and cacheado[2] != tmp:
+                try:
+                    os.unlink(cacheado[2])  # tras cerrar la conexión (Windows)
+                except OSError:
+                    pass
+        self._snap[root] = (ahora, con, tmp)
         return con
