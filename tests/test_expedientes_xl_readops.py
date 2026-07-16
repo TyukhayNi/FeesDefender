@@ -205,3 +205,33 @@ def test_resolve_shortcut_revalida(sandbox):
     tier0 = resolve_shortcut([root], zonas, str(lnk),
                              _resolver_lnk=lambda p: str(caso / "90_Notas personales" / "s.txt"))
     assert tier0["dentro_sandbox"] is False and tier0["target"] is None
+
+
+def test_resolve_shortcut_nombre_con_comilla(sandbox):
+    # Un .lnk cuyo NOMBRE lleva comilla simple se resuelve sin romperse: con el
+    # paso de ruta por variable de entorno el lado Python no cita nada.
+    root, zonas, caso = sandbox
+    lnk = caso / "caso'X.lnk"; lnk.write_bytes(b"fake")
+    ok = resolve_shortcut([root], zonas, str(lnk),
+                          _resolver_lnk=lambda p: str(caso / "00_Input" / "doc.txt"))
+    assert ok["dentro_sandbox"] is True and ok["tier"] == 1
+
+
+def test_resolve_shortcut_falla_cerrado_en_timeout(sandbox, tmp_path, monkeypatch):
+    # Si el resolver lanza (TimeoutExpired/OSError), resolve_shortcut falla
+    # cerrado: forma None, audita "resolucion_fallida", ninguna excepción escapa.
+    import json
+    import subprocess as _sp
+    from plugins.expedientes_xl.readops import resolve_shortcut as _rs
+    log = tmp_path / "audit.jsonl"
+    monkeypatch.setenv("XL_AUDIT_PATH", str(log))
+    root, zonas, caso = sandbox
+    lnk = caso / "atajo.lnk"; lnk.write_bytes(b"fake")
+
+    def _boom(p):
+        raise _sp.TimeoutExpired(cmd="powershell", timeout=15)
+
+    res = _rs([root], zonas, str(lnk), _resolver_lnk=_boom)
+    assert res == {"target": None, "dentro_sandbox": False, "tier": None}
+    eventos = [json.loads(l) for l in log.read_text(encoding="utf-8").splitlines()]
+    assert any(e["resultado"] == "resolucion_fallida" for e in eventos)

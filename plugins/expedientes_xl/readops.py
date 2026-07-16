@@ -246,12 +246,22 @@ def search_content(allowed, zonas, oracle, path: str, consulta: str,
 
 
 def _resolver_lnk_com(path: str) -> str:
-    """Resuelve el TargetPath de un `.lnk` vía PowerShell COM (WScript.Shell)."""
-    ps = ("(New-Object -ComObject WScript.Shell)"
-          f".CreateShortcut('{path}').TargetPath")
-    r = subprocess.run(["powershell", "-NoProfile", "-Command", ps],
-                       capture_output=True, encoding="utf-8", errors="replace",
-                       timeout=15)
+    r"""Resuelve el TargetPath de un `.lnk` vía PowerShell COM (WScript.Shell).
+
+    La ruta se pasa por variable de entorno (`$env:XL_LNK_PATH`) y NUNCA se
+    interpola en el texto del comando: un `.lnk` es contenido de un tercero y su
+    nombre podría contener metacaracteres/comillas de PowerShell (inyección de
+    comandos, aguas arriba de las guardas de sandbox). Cualquier fallo del
+    subproceso (timeout, OSError) se absorbe devolviendo "" (fail-closed).
+    """
+    ps = "(New-Object -ComObject WScript.Shell).CreateShortcut($env:XL_LNK_PATH).TargetPath"
+    try:
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+            env={**os.environ, "XL_LNK_PATH": str(path)},
+            capture_output=True, encoding="utf-8", errors="replace", timeout=15)
+    except (subprocess.TimeoutExpired, OSError):
+        return ""
     return (r.stdout or "").strip()
 
 
@@ -262,11 +272,18 @@ def resolve_shortcut(allowed, zonas, path: str, _resolver_lnk=_resolver_lnk_com)
     confía en él sin pasar de nuevo por `resolve_within`/`classify`. Si cae
     fuera del sandbox o en Tier 0 (90_Notas personales), se devuelve
     `target=None` (Tier 0 nunca se filtra al modelo) y se registra en auditoría.
+    Fail-closed: si el resolver lanza o devuelve vacío, se audita
+    `resolucion_fallida` y se devuelve la forma None (ninguna excepción escapa).
     """
     p = fsops.resolve_within(allowed, path)
     check_read(zonas, p)
-    target = _resolver_lnk(str(p))
+    try:
+        target = _resolver_lnk(str(p))
+    except Exception:
+        audit.log_op("resolve_shortcut", str(p), "resolucion_fallida")
+        return {"target": None, "dentro_sandbox": False, "tier": None}
     if not target:
+        audit.log_op("resolve_shortcut", str(p), "resolucion_fallida")
         return {"target": None, "dentro_sandbox": False, "tier": None}
     try:
         t = fsops.resolve_within(allowed, target)
