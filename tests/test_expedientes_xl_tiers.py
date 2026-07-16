@@ -28,3 +28,44 @@ def test_carveout_espeja_merge_exclusions():
     from core.config import MERGE_EXCLUSIONS  # el test SÍ puede importar core
     core_files = {e for e in MERGE_EXCLUSIONS if "/" not in e}
     assert set(PROTOCOL_EDIT) | set(PROTOCOL_APPEND) == core_files
+
+
+def test_check_read_bloquea_tier0():
+    from plugins.expedientes_xl.tiers import TierViolation, check_read
+    with pytest.raises(TierViolation):
+        check_read(Z, Path(r"G:\CASOS\BaX\90_Notas personales\n.md"))
+    check_read(Z, Path(r"G:\CASOS\BaX\00_Input\d.pdf"))  # Tier 1 se lee
+
+
+def test_check_write_ro_root():
+    from plugins.expedientes_xl.tiers import TierViolation, check_write
+    with pytest.raises(TierViolation, match="solo-lectura"):
+        check_write(Z, Path(r"H:\Mi unidad\x.txt"), exists=False)
+
+
+def test_check_write_00input_crear_nuevo_ok():
+    from plugins.expedientes_xl.tiers import check_write
+    check_write(Z, Path(r"G:\CASOS\BaX\00_Input\04_Manual\nuevo.pdf"), exists=False)
+
+
+def test_check_write_00input_sobrescribir_rechazado():
+    from plugins.expedientes_xl.tiers import TierViolation, check_write
+    with pytest.raises(TierViolation):
+        check_write(Z, Path(r"G:\CASOS\BaX\00_Input\04_Manual\viejo.pdf"), exists=True)
+
+
+def test_check_write_carveout_protocolo():
+    from plugins.expedientes_xl.tiers import TierViolation, check_write
+    check_write(Z, Path(r"G:\CASOS\BaX\00_Input\_caso.md"), exists=True)          # edit
+    check_write(Z, Path(r"G:\CASOS\BaX\00_Input\_intake_log.jsonl"), exists=True, append=True)
+    check_write(Z, Path(r"G:\CASOS\BaX\00_Input\AUDITLOG_MERGE_x.jsonl"), exists=True, append=True)
+    with pytest.raises(TierViolation):  # el log NO es editable, solo append
+        check_write(Z, Path(r"G:\CASOS\BaX\00_Input\_intake_log.jsonl"), exists=True)
+
+
+def test_check_write_backup_sin_carveout():
+    from plugins.expedientes_xl.tiers import TierViolation, check_write
+    with pytest.raises(TierViolation):
+        check_write(Z, Path(r"G:\Otros ordenadores\PC\_caso.md"), exists=True)
+    with pytest.raises(TierViolation):  # ni crear-nuevo en backup
+        check_write(Z, Path(r"G:\Unidades compartidas\BACKUP\n.txt"), exists=False)
