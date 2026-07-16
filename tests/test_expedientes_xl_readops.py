@@ -55,3 +55,47 @@ def test_list_dir_poda_tier0(sandbox):
     assert "00_Input" in nombres and "hoja.gsheet" in nombres
     assert "90_Notas personales" not in nombres
     assert entradas[-1].get("_podados") == 1
+
+def test_read_text_head_tail_cero(sandbox):
+    root, zonas, caso = sandbox
+    f = str(caso / "00_Input" / "doc.txt")
+    assert read_text([root], zonas, FakeOracle(), f, head=0) == ""
+    assert read_text([root], zonas, FakeOracle(), f, tail=0) == ""
+
+def test_read_text_cap_trunca_y_tail_real(sandbox, monkeypatch):
+    root, zonas, caso = sandbox
+    f = str(caso / "00_Input" / "doc.txt")  # 12 bytes: l1\nl2\nl3\nl4\n
+    monkeypatch.setenv("XL_READ_MAX_BYTES", "4")
+    completo = read_text([root], zonas, FakeOracle(), f)
+    assert completo.startswith("l1\nl")
+    assert "[TRUNCADO: mostrados 4 de 12 bytes" in completo
+    # tail lee desde el FINAL real, no desde el prefijo del cap
+    assert read_text([root], zonas, FakeOracle(), f, tail=1) == "l4\n"
+
+def test_list_dir_sizes(sandbox):
+    root, zonas, caso = sandbox
+    entradas = list_dir([root], zonas, str(caso / "00_Input"), sizes=True)
+    doc = next(e for e in entradas if e.get("name") == "doc.txt")
+    assert doc["size"] == 12
+
+def test_list_dir_max_entries_trunca(sandbox):
+    root, zonas, caso = sandbox
+    entradas = list_dir([root], zonas, str(caso), max_entries=1)
+    nombres = [e["name"] for e in entradas if "name" in e]
+    assert nombres == ["00_Input"]
+    assert any(e.get("_truncado") for e in entradas)
+    assert entradas[-1].get("_podados") == 1  # _podados sigue siendo el último
+
+def test_get_metadata_bloquea_tier0(sandbox):
+    root, zonas, caso = sandbox
+    with pytest.raises(TierViolation):
+        get_metadata([root], zonas, FakeOracle(),
+                     str(caso / "90_Notas personales" / "secreto.txt"))
+
+def test_read_multiple_aisla_tier_violation(sandbox):
+    root, zonas, caso = sandbox
+    ok = str(caso / "00_Input" / "doc.txt")
+    tier0 = str(caso / "90_Notas personales" / "secreto.txt")
+    res = read_multiple([root], zonas, FakeOracle(), [ok, tier0])
+    assert res[ok].startswith("l1")
+    assert res[tier0].startswith("ERROR:")

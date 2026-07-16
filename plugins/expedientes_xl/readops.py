@@ -8,8 +8,20 @@ from pathlib import Path
 from . import fsops
 from .guards import check_gdoc, guard_file
 from .tiers import Tier, Zonas, check_read, classify
+from .winio import long_path
 
-_READ_MAX = int(os.environ.get("XL_READ_MAX_BYTES", "5000000"))
+_LONG_PATH_UMBRAL = 248
+
+
+def _read_max() -> int:
+    """Tope de lectura, leído por llamada (respeta monkeypatch.setenv)."""
+    return int(os.environ.get("XL_READ_MAX_BYTES", "5000000"))
+
+
+def _abrible(p: Path) -> str:
+    r"""Ruta apta para open(): prefijo \\?\ solo cuando roza MAX_PATH."""
+    s = str(p)
+    return long_path(p) if len(s) >= _LONG_PATH_UMBRAL else s
 
 
 def _abrir(allowed, zonas, oracle, path: str) -> Path:
@@ -22,13 +34,36 @@ def _abrir(allowed, zonas, oracle, path: str) -> Path:
 
 def read_text(allowed, zonas, oracle, path: str,
               head: int | None = None, tail: int | None = None) -> str:
+    """Lee texto UTF-8 (errors="replace") con tope XL_READ_MAX_BYTES.
+
+    `head`/`tail` en líneas; 0 o negativo devuelve "". `tail` lee el FINAL
+    real del fichero (seek desde el final, no el prefijo del cap); si el seek
+    cae en mitad de una línea, esa primera línea parcial se descarta de forma
+    natural al quedarse con las últimas N. Una lectura completa que supere el
+    cap termina con una línea marcadora [TRUNCADO: ...] — sin silencios.
+    """
     p = _abrir(allowed, zonas, oracle, path)
-    with open(p, "r", encoding="utf-8", errors="replace") as fh:
-        texto = fh.read(_READ_MAX)
+    if head is not None and head <= 0:
+        return ""
+    if tail is not None and tail <= 0:
+        return ""
+    cap = _read_max()
+    if tail is not None:
+        size = p.stat().st_size
+        with open(_abrible(p), "rb") as fh:
+            fh.seek(max(0, size - cap))
+            data = fh.read()
+        lineas = data.decode("utf-8", errors="replace").splitlines(keepends=True)
+        return "".join(lineas[-tail:])
+    with open(_abrible(p), "r", encoding="utf-8", errors="replace") as fh:
+        texto = fh.read(cap)
+        truncado = bool(fh.read(1))
     if head is not None:
         return "".join(texto.splitlines(keepends=True)[:head])
-    if tail is not None:
-        return "".join(texto.splitlines(keepends=True)[-tail:])
+    if truncado:
+        mostrados = len(texto.encode("utf-8", errors="replace"))
+        texto += (f"\n[TRUNCADO: mostrados {mostrados} de {p.stat().st_size} bytes"
+                  " — usa head/tail o sube XL_READ_MAX_BYTES]")
     return texto
 
 
