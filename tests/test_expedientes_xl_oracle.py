@@ -115,10 +115,55 @@ def test_status_oraculo_caido_unknown(tmp_path):
 def test_status_ambiguo_unknown(mini_db):
     db, cache = mini_db
     con = __import__("sqlite3").connect(db)
-    # duplicar el leaf con OTRA ascendencia que también casa parcialmente
+    # duplicar el leaf bajo el MISMO padre (30 = 00_Input): ambos candidatos
+    # casan la ascendencia completa -> 2 resueltos -> fail-closed
     con.execute("INSERT INTO items(stable_id,id,is_folder,local_title) VALUES (60,'d',0,'hot.pdf')")
     con.execute("INSERT INTO stable_parents VALUES (60,30,'')")
     con.commit(); con.close()
     o = Oracle({"G:\\": db}, {"G:\\": cache}, ttl=999)
     base = r"G:\Unidades compartidas\EXPEDIENTES - TYUKHAY LEGAL\Caso X\00_Input"
     assert o.status(Path(base + r"\hot.pdf")) == "UNKNOWN"  # 2 candidatos -> fail-closed
+
+
+def test_status_strict_cruza_con_cache(mini_db, monkeypatch):
+    monkeypatch.setenv("XL_ORACLE_STRICT", "1")
+    db, cache = mini_db
+    con = sqlite3.connect(db)
+    # warm.pdf con content-entry cuyo varint decodifica a 2001 (0xD1 0x0F)
+    con.execute("INSERT INTO items(stable_id,id,is_folder,local_title) VALUES (70,'w',0,'warm.pdf')")
+    con.execute("INSERT INTO stable_parents VALUES (70,30,'')")
+    con.execute("INSERT INTO item_properties VALUES (70,'content-entry',X'D10F')")
+    con.commit(); con.close()
+    o = Oracle({"G:\\": db}, {"G:\\": cache}, ttl=999)
+    base = r"G:\Unidades compartidas\EXPEDIENTES - TYUKHAY LEGAL\Caso X\00_Input"
+    # el blob de hot.pdf (X'0801') no decodifica ningun id >1000 -> sin match -> COLD
+    assert o.status(Path(base + r"\hot.pdf")) == "COLD"
+    # sin fichero "2001" en la cache -> COLD
+    assert o.status(Path(base + r"\warm.pdf")) == "COLD"
+    (cache / "2001").write_bytes(b"x")
+    o2 = Oracle({"G:\\": db}, {"G:\\": cache}, ttl=999)  # cache de nombres fresca
+    assert o2.status(Path(base + r"\warm.pdf")) == "HOT"
+
+
+def test_status_strict_blob_malformado_unknown(mini_db, monkeypatch):
+    monkeypatch.setenv("XL_ORACLE_STRICT", "1")
+    db, cache = mini_db
+    con = sqlite3.connect(db)
+    # content-entry con valor entero (no BLOB): _varints no puede iterarlo
+    con.execute("INSERT INTO items(stable_id,id,is_folder,local_title) VALUES (90,'m',0,'mal.pdf')")
+    con.execute("INSERT INTO stable_parents VALUES (90,30,'')")
+    con.execute("INSERT INTO item_properties VALUES (90,'content-entry',12345)")
+    con.commit(); con.close()
+    o = Oracle({"G:\\": db}, {"G:\\": cache}, ttl=999)
+    base = r"G:\Unidades compartidas\EXPEDIENTES - TYUKHAY LEGAL\Caso X\00_Input"
+    assert o.status(Path(base + r"\mal.pdf")) == "UNKNOWN"  # sin excepción hacia fuera
+
+
+def test_status_raiz_sin_ascendencia_unknown(mini_db):
+    db, cache = mini_db
+    con = sqlite3.connect(db)
+    # leaf único a nivel de raíz de la unidad: sin ancestros no hay verificación
+    con.execute("INSERT INTO items(stable_id,id,is_folder,local_title) VALUES (80,'s',0,'solo.pdf')")
+    con.commit(); con.close()
+    o = Oracle({"G:\\": db}, {"G:\\": cache}, ttl=999)
+    assert o.status(Path(r"G:\solo.pdf")) == "UNKNOWN"  # fail-closed, no vacuo

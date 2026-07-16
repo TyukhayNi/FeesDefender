@@ -107,6 +107,12 @@ class Oracle:
             return None
         leaf = segs[-1]
         ancestros = [s.lower() for s in segs[:-1]]
+        if not ancestros:
+            # Fichero directo en la raíz (tras quitar niveles virtuales): sin
+            # ancestros no hay verificación de ubicación posible — cualquier leaf
+            # homónimo casaría vacuamente. Fail-closed: UNKNOWN (trade-off: los
+            # ficheros a nivel de raíz nunca se resuelven por el oráculo).
+            return None
         candidatos = [r[0] for r in con.execute(
             "SELECT stable_id FROM items WHERE local_title = ? AND is_tombstone = 0 AND trashed = 0",
             (leaf,))]
@@ -159,10 +165,13 @@ class Oracle:
             if fila is None:
                 return "COLD"
             if os.environ.get("XL_ORACLE_STRICT") == "1":
-                ids = _varints(bytes(fila[0]))
+                ids = _varints(fila[0])
                 nombres = self._nombres_cache(root)
                 if not any(str(i) in nombres for i in ids):
                     return "COLD"
             return "HOT"
-        except sqlite3.Error:
+        except Exception:
+            # La BD de GDFD es dato externo NO fiable: cualquier fallo (esquema
+            # cambiado, valores malformados, tipos inesperados) -> UNKNOWN,
+            # nunca una excepción hacia el llamante (fail-closed total).
             return "UNKNOWN"
