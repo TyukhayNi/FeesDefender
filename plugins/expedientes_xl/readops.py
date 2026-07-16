@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timezone
+from fnmatch import fnmatch
 from pathlib import Path
 
 from . import fsops
@@ -114,3 +115,63 @@ def list_dir(allowed, zonas, path: str, sizes: bool = False,
     if podados:
         out.append({"_podados": podados})
     return out
+
+
+def iter_tree(zonas: Zonas, root: Path, on_prune=None):
+    """Generador de ficheros en árbol con poda Tier 0 topdown."""
+    for dirpath, dirnames, filenames in os.walk(root, topdown=True):
+        base = Path(dirpath)
+        vivos = []
+        for d in dirnames:
+            if classify(zonas, base / d) is Tier.PROHIBIDA:
+                if on_prune:
+                    on_prune(base / d)
+            else:
+                vivos.append(d)
+        dirnames[:] = vivos
+        for f in filenames:
+            yield base / f
+
+
+def tree(allowed, zonas, path: str, max_depth: int = 8, max_entries: int = 2000) -> dict:
+    """Árbol de ficheros relativo con poda Tier 0, limit profundidad y entradas.
+
+    Retorna dict con claves:
+    - entries: lista de rutas relativas (POSIX)
+    - podados: número de directorios Tier 0 excluidos
+    - truncado: True si se alcanzó max_entries
+    """
+    p = fsops.resolve_within(allowed, path)
+    check_read(zonas, p)
+    entries: list[str] = []
+    podados = 0
+
+    def _poda(_ruta):
+        nonlocal podados
+        podados += 1
+
+    for f in iter_tree(zonas, p, on_prune=_poda):
+        rel = f.relative_to(p)
+        if len(rel.parts) > max_depth:
+            continue
+        if len(entries) >= max_entries:
+            return {"entries": entries, "podados": podados, "truncado": True}
+        entries.append(rel.as_posix())
+    return {"entries": entries, "podados": podados, "truncado": False}
+
+
+def search_name(allowed, zonas, path: str, patron: str, max_results: int = 200) -> list[str]:
+    """Búsqueda por nombre de fichero (fnmatch case-insensitive) con poda Tier 0.
+
+    Patrón: e.g. "*.txt", "doc_*" — case-insensitive.
+    Retorna lista de rutas absolutas hasta max_results.
+    """
+    p = fsops.resolve_within(allowed, path)
+    check_read(zonas, p)
+    hits: list[str] = []
+    for f in iter_tree(zonas, p):
+        if fnmatch(f.name.lower(), patron.lower()):
+            hits.append(str(f))
+            if len(hits) >= max_results:
+                break
+    return hits

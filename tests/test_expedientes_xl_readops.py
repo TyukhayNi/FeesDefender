@@ -1,6 +1,6 @@
 from pathlib import Path
 import pytest
-from plugins.expedientes_xl.readops import read_text, read_multiple, get_metadata, list_dir
+from plugins.expedientes_xl.readops import read_text, read_multiple, get_metadata, list_dir, iter_tree, tree, search_name
 from plugins.expedientes_xl.tiers import Zonas, TierViolation
 from plugins.expedientes_xl.guards import GDocBloqueado
 
@@ -99,3 +99,22 @@ def test_read_multiple_aisla_tier_violation(sandbox):
     res = read_multiple([root], zonas, FakeOracle(), [ok, tier0])
     assert res[ok].startswith("l1")
     assert res[tier0].startswith("ERROR:")
+
+def test_iter_tree_poda_tier0(sandbox):
+    root, zonas, caso = sandbox
+    podas = []
+    vistos = [p.name for p in iter_tree(zonas, caso, on_prune=podas.append)]
+    assert "doc.txt" in vistos and "secreto.txt" not in vistos
+    assert len(podas) == 1 and podas[0].name == "90_Notas personales"
+
+def test_tree_estructura(sandbox):
+    root, zonas, caso = sandbox
+    t = tree([root], zonas, str(caso))
+    assert any(e.endswith("doc.txt") for e in t["entries"])
+    assert t["podados"] == 1 and t["truncado"] is False
+
+def test_search_name(sandbox):
+    root, zonas, caso = sandbox
+    hits = search_name([root], zonas, str(caso), "*.txt")
+    assert any(h.endswith("doc.txt") for h in hits)
+    assert not any("secreto" in h for h in hits)   # Tier 0 podado
