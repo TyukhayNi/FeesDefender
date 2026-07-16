@@ -19,22 +19,30 @@ class SharingViolation(Exception):
 
 
 def long_path(p: Path) -> str:
+    """Prefijo ``\\\\?\\`` solo para rutas absolutas: de unidad (``G:\\...``)
+    o UNC (``\\\\server\\share\\...`` → ``\\\\?\\UNC\\...``). Las relativas
+    se devuelven sin tocar (el prefijo las rompería)."""
     s = str(p)
     if s.startswith("\\\\?\\"):
         return s
-    return "\\\\?\\" + s
+    if len(s) >= 3 and s[1] == ":" and s[2] == "\\" and s[0].isalpha():
+        return "\\\\?\\" + s
+    if s.startswith("\\\\"):
+        return "\\\\?\\UNC\\" + s[2:]
+    return s
 
 
 def retry_sharing(fn: Callable[[], T]) -> T:
     ultimo: PermissionError | None = None
-    for espera in _BACKOFF:
+    for i, espera in enumerate(_BACKOFF):
         try:
             return fn()
         except PermissionError as e:
             if getattr(e, "winerror", None) != 32:
                 raise
             ultimo = e
-            time.sleep(espera)
+            if i < len(_BACKOFF) - 1:
+                time.sleep(espera)
     raise SharingViolation(
         "Bloqueado tras 3 reintentos: probablemente lo está editando un humano"
     ) from ultimo
