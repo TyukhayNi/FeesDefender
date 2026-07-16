@@ -24,6 +24,6 @@ def log_op(op: str, ruta: str, resultado: str, motivo: str = "", **extra) -> Non
         dst = _ruta_log()
         dst.parent.mkdir(parents=True, exist_ok=True)
         with open(dst, "a", encoding="utf-8", newline="") as fh:
-            fh.write(json.dumps(ev, ensure_ascii=False) + "\n")
-    except OSError as e:  # pragma: no cover - best effort
+            fh.write(json.dumps(ev, ensure_ascii=False, default=str) + "\n")
+    except Exception as e:  # best effort: el log nunca rompe la operación
         print(f"[xl-audit] no se pudo escribir el log: {e}", file=sys.stderr)
