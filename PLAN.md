@@ -88,6 +88,27 @@ puro + orquestadores finos. Spec: `docs/superpowers/specs/2026-07-09-abrir-caso-
   no-relación → 404, autos, procedimiento, partes M2M). Frente propio con disparador de caso judicial real.
 - Relacionado: `docs/MEJORAS_FUTURAS.md` **#50** (sección "Relación con el ecosistema" en todas las skills).
 
+## [SIGUIENTE-MCP-DRIVE-DISCO] MCP "Drive como disco" — spec rev 3 + plan V1 LISTOS (PR #48)
+
+Diseño CERRADO 2026-07-16 (docs-only): operar `G:` (rw) + `H:` (solo-lectura) montadas
+por GDFD como un disco, consolidando sobre `expedientes-xl` y **jubilando `expedientes`**
+(server-filesystem). 5 rondas adversariales (Gemini/Perplexity/Fable) + verificación en
+vivo + right-sizing V1 con 2 críticos confirmados contra el repo (carve-out de protocolo
+en Tier 1 anclado a `MERGE_EXCLUSIONS`; travesía por nodo con poda de `90_Notas`).
+
+- Spec: `docs/superpowers/specs/2026-07-16-mcp-drive-disco-local-design.md` (rev 3).
+- Plan: `docs/superpowers/plans/2026-07-16-mcp-drive-disco-local-v1.md` (18 tareas TDD
+  + spike fase 0 no bloqueante).
+- [ ] Mergear PR #48 (docs-only).
+- [ ] Construir V1: subagent-driven sobre el plan, rama `claude/mcp-drive-disco-f1`
+  desde `main`, Tasks 1→18.
+- [ ] Desplegar según `docs/DESPLIEGUE_MCP_DRIVE_DISCO.md` (checklist §8 del spec; se
+  crea en Task 18): server → validar Code → Cowork → migrar `organizar-sala-lectura` →
+  jubilar `expedientes`. Nunca skill migrada con server viejo.
+- V2/CUT motivados en el spec §5 (move/rename/batch/zip/du/verify_manifest/escritura-H:/
+  gate compartido/cancelación-real; `confirm_sync` = receta de skill sobre
+  `google-despacho`). Promoción solo por disparador (regla de CLAUDE.md).
+
 ## [SIGUIENTE-GOOGLE-MCP] F1 (lectura) ✅ MERGEADA · F2 (escritura+permisos+navegación) ✅ MERGEADA · F3/F4 pendientes
 
 *Disparador: encargo de Nikolai (`ENCARGO_MCP_Google_despacho.md`, fuera del repo). MCP propio
