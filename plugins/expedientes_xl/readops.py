@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 import os
+import re as _re
 from datetime import datetime, timezone
 from fnmatch import fnmatch
 from pathlib import Path
 
 from . import fsops
-from .guards import check_gdoc, guard_file
+from .guards import check_gdoc, guard_file, FileNotHydrated, GDocBloqueado
 from .tiers import Tier, Zonas, check_read, classify
 from .winio import long_path
 
@@ -181,3 +182,60 @@ def search_name(allowed, zonas, path: str, patron: str, max_results: int = 200) 
             if len(hits) >= max_results:
                 break
     return hits
+
+
+def search_content(allowed, zonas, oracle, path: str, consulta: str,
+                   regex: bool = False, max_results: int = 200) -> dict:
+    """Búsqueda de contenido grep con poda Tier 0, guardas hidratación y omisión COLD.
+
+    Salta binarios (byte nulo en los primeros 8 KB) y ficheros .g*;
+    los COLD/UNKNOWN por encima del umbral de fichero se OMITEN y se listan
+    (sin silencios); los HOT se leen con errors="replace".
+
+    Retorna dict:
+    - matches: lista de {"path": str, "line": int, "text": str}
+    - omitidos_cold: lista de rutas COLD/UNKNOWN omitidas (sin silencios)
+    - podados: número de ficheros/dirs Tier 0 podados
+    """
+    p = fsops.resolve_within(allowed, path)
+    check_read(zonas, p)
+    patron = _re.compile(consulta) if regex else None
+    matches: list[dict] = []
+    omitidos: list[str] = []
+    podados = 0
+
+    def _poda(_r):
+        nonlocal podados
+        podados += 1
+
+    for f in iter_tree(zonas, p, on_prune=_poda):
+        if len(matches) >= max_results:
+            break
+        # Saltar .g* silenciosamente
+        if f.name.lower().startswith(".g"):
+            continue
+        try:
+            check_gdoc(f)
+            guard_file(oracle, f)
+        except GDocBloqueado:
+            continue
+        except FileNotHydrated:
+            omitidos.append(str(f))
+            continue
+        try:
+            # Detectar binarios: byte nulo en los primeros 8 KB
+            with open(_abrible(f), "rb") as fh:
+                if b"\x00" in fh.read(8192):
+                    continue
+            # Leer y buscar en contenido
+            with open(_abrible(f), "r", encoding="utf-8", errors="replace") as fh:
+                for n, linea in enumerate(fh, 1):
+                    hit = patron.search(linea) if patron else (consulta in linea)
+                    if hit:
+                        matches.append({"path": str(f), "line": n,
+                                        "text": linea.rstrip("\n")[:300]})
+                        if len(matches) >= max_results:
+                            break
+        except OSError:
+            continue
+    return {"matches": matches, "omitidos_cold": omitidos, "podados": podados}

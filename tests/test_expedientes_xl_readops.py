@@ -1,6 +1,6 @@
 from pathlib import Path
 import pytest
-from plugins.expedientes_xl.readops import read_text, read_multiple, get_metadata, list_dir, iter_tree, tree, search_name
+from plugins.expedientes_xl.readops import read_text, read_multiple, get_metadata, list_dir, iter_tree, tree, search_name, search_content
 from plugins.expedientes_xl.tiers import Zonas, TierViolation
 from plugins.expedientes_xl.guards import GDocBloqueado
 
@@ -138,3 +138,33 @@ def test_search_name_case_insensitive(sandbox):
     (caso / "00_Input" / "INFORME.TXT").write_text("x", encoding="utf-8")
     hits2 = search_name([root], zonas, str(caso), "informe.*")
     assert any(h.endswith("INFORME.TXT") for h in hits2)
+
+
+class ColdOracle(FakeOracle):
+    def __init__(self, cold_names):
+        self.cold = cold_names
+    def status(self, p):
+        return "COLD" if p.name in self.cold else "HOT"
+
+
+def test_search_content_basico(sandbox):
+    root, zonas, caso = sandbox
+    res = search_content([root], zonas, FakeOracle(), str(caso), "l3")
+    assert res["matches"][0]["line"] == 3 and res["matches"][0]["text"] == "l3"
+    assert res["podados"] == 1                       # 90_Notas fuera
+    assert not any("secreto" in m["path"] for m in res["matches"])
+
+
+def test_search_content_omite_cold_grande(sandbox, monkeypatch):
+    root, zonas, caso = sandbox
+    monkeypatch.setenv("XL_HYDRATION_MAX_FILE_MB", "0")   # todo grande
+    res = search_content([root], zonas, ColdOracle({"doc.txt"}), str(caso), "l3")
+    assert res["matches"] == []
+    assert any(o.endswith("doc.txt") for o in res["omitidos_cold"])
+
+
+def test_search_content_salta_binarios(sandbox):
+    root, zonas, caso = sandbox
+    (caso / "bin.dat").write_bytes(b"l3\x00binario")
+    res = search_content([root], zonas, FakeOracle(), str(caso), "l3")
+    assert not any(m["path"].endswith("bin.dat") for m in res["matches"])
