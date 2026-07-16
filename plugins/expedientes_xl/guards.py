@@ -18,7 +18,7 @@ class FileNotHydrated(Exception):
         self.omitidos = omitidos
 
 
-def _mb(nombre: str, defecto: str) -> float:
+def _env_num(nombre: str, defecto: str) -> float:
     return float(os.environ.get(nombre, defecto))
 
 
@@ -30,7 +30,7 @@ def check_gdoc(path: Path) -> None:
 
 
 def guard_file(oracle, path: Path) -> None:
-    umbral = _mb("XL_HYDRATION_MAX_FILE_MB", "10") * 1024 * 1024
+    umbral = _env_num("XL_HYDRATION_MAX_FILE_MB", "10") * 1024 * 1024
     try:
         tam = path.stat().st_size
     except OSError:
@@ -46,8 +46,8 @@ def guard_file(oracle, path: Path) -> None:
 
 
 def guard_tree(oracle, root: Path) -> None:
-    max_cold = int(_mb("XL_TREE_MAX_COLD", "50"))
-    max_bytes = _mb("XL_TREE_MAX_MB", "150") * 1024 * 1024
+    max_cold = int(_env_num("XL_TREE_MAX_COLD", "50"))
+    max_bytes = _env_num("XL_TREE_MAX_MB", "150") * 1024 * 1024
     stats = oracle.subtree_cold_stats(root)
     if stats is not None:
         n_cold, n_total = stats
@@ -56,8 +56,8 @@ def guard_tree(oracle, root: Path) -> None:
                 f"ERROR_TREE_NOT_HYDRATED: {root}: {n_cold} ficheros COLD de {n_total} "
                 f"(umbral {max_cold}). Hidrata el árbol antes (pin offline).",
                 omitidos=[str(root)])
-        return
-    # oráculo caído: fail-closed si el árbol es grande (tamaño LÓGICO, stat no hidrata)
+    # Comprobación de volumen SIEMPRE (OR real, spec §6.2). Tamaño LÓGICO:
+    # stat en GDFD no hidrata. Aborta temprano en cuanto supera el umbral.
     total = 0
     for r, _d, files in os.walk(root):
         for f in files:
@@ -66,7 +66,15 @@ def guard_tree(oracle, root: Path) -> None:
             except OSError:
                 continue
         if total > max_bytes:
+            if stats is None:
+                # oráculo caído: el paseo de volumen dobla como puerta fail-closed
+                raise FileNotHydrated(
+                    f"ERROR_TREE_UNKNOWN: {root}: oráculo no disponible y árbol > "
+                    f"{max_bytes/1e6:.0f} MB — abortado fail-closed.",
+                    omitidos=[str(root)])
+            n_cold, n_total = stats
             raise FileNotHydrated(
-                f"ERROR_TREE_UNKNOWN: {root}: oráculo no disponible y árbol > "
-                f"{max_bytes/1e6:.0f} MB — abortado fail-closed.",
+                f"ERROR_TREE_TOO_BIG: {root}: árbol > {max_bytes/1e6:.0f} MB "
+                f"(acumulado {total/1e6:.1f} MB; {n_cold} ficheros COLD de {n_total}). "
+                "Reduce el alcance o trocea la operación antes.",
                 omitidos=[str(root)])
