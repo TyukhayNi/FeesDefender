@@ -8,10 +8,23 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import os
 import shutil
 import tarfile
+import tempfile
 import zipfile
 from pathlib import Path
+
+_LONG_PATH_UMBRAL = 248
+
+
+def _abrible(p: Path) -> str:
+    r"""Ruta apta para operaciones de fichero: prefijo \\?\ solo cuando roza
+    MAX_PATH (mismo patrón que readops._abrible)."""
+    from .winio import long_path
+
+    s = str(p)
+    return long_path(p) if len(s) >= _LONG_PATH_UMBRAL else s
 
 
 class OutsideSandbox(Exception):
@@ -68,7 +81,7 @@ def sha256_file(allowed_dirs: list[Path], path: str | Path) -> str:
     """SHA-256 del fichero, calculado server-side. Devuelve solo el digest."""
     target = resolve_within(allowed_dirs, path)
     h = hashlib.sha256()
-    with open(target, "rb") as fh:
+    with open(_abrible(target), "rb") as fh:
         for chunk in iter(lambda: fh.read(_CHUNK), b""):
             h.update(chunk)
     return h.hexdigest()
@@ -106,12 +119,74 @@ def copy_file(allowed_dirs: list[Path], src: str | Path, dst: str | Path) -> Pat
     return dst_p
 
 
-def copy_tree(allowed_dirs: list[Path], src: str | Path, dst: str | Path) -> Path:
-    """Copia recursiva de un árbol de directorios dentro del sandbox."""
+def write_text_file(allowed_dirs: list[Path], zonas, path: str | Path, text: str) -> Path:
+    """Escribe texto ATÓMICO (tmp+nonce mismo dir) respetando zonas."""
+    from .tiers import check_write
+    from .winio import atomic_write_text
+
+    dst = resolve_within(allowed_dirs, path)
+    check_write(zonas, dst, exists=dst.exists())
+    atomic_write_text(dst, text)
+    return dst
+
+
+def edit_text_file(allowed_dirs: list[Path], zonas, path: str | Path, old: str, new: str) -> Path:
+    """Reemplaza `old` (exactamente 1 aparición) por `new`, atómico."""
+    from .tiers import check_write
+    from .winio import atomic_write_text
+
+    dst = resolve_within(allowed_dirs, path)
+    if not dst.is_file():
+        raise FileNotFoundError(f"No existe: {path}")
+    check_write(zonas, dst, exists=True)
+    texto = dst.read_text(encoding="utf-8")
+    n = texto.count(old)
+    if n != 1:
+        raise ValueError(f"'{old[:60]}' aparece {n} veces (se exige exactamente 1)")
+    atomic_write_text(dst, texto.replace(old, new, 1))
+    return dst
+
+
+def copy_file_v2(allowed_dirs: list[Path], zonas, src: str | Path, dst: str | Path) -> Path:
+    """Copia con destino atómico (si existe: tmp+replace) y zonas en ambos extremos."""
+    from .tiers import check_read, check_write
+    from .winio import retry_sharing
+
     src_p = resolve_within(allowed_dirs, src)
     dst_p = resolve_within(allowed_dirs, dst)
-    shutil.copytree(src_p, dst_p, dirs_exist_ok=True, symlinks=True)
+    check_read(zonas, src_p)
+    check_write(zonas, dst_p, exists=dst_p.exists())
+    dst_p.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=dst_p.name + ".", suffix=".tmp", dir=str(dst_p.parent))
+    os.close(fd)
+    try:
+        shutil.copyfile(_abrible(src_p), tmp)
+        retry_sharing(lambda: os.replace(tmp, dst_p))
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
     return dst_p
+
+
+def copy_tree_v2(allowed_dirs: list[Path], zonas, oracle, src: str | Path, dst: str | Path) -> list[Path]:
+    """Copia recursiva con travesía por nodo: poda Tier 0, valida CADA destino
+    ANTES de copiar nada (dos pasadas), guarda de árbol frío."""
+    from .guards import guard_tree
+    from .readops import iter_tree
+    from .tiers import check_write
+
+    src_p = resolve_within(allowed_dirs, src)
+    dst_p = resolve_within(allowed_dirs, dst)
+    guard_tree(oracle, src_p)
+    plan: list[tuple[Path, Path]] = []
+    for f in iter_tree(zonas, src_p):
+        destino = dst_p / f.relative_to(src_p)
+        check_write(zonas, destino, exists=destino.exists())  # aborta ANTES de copiar
+        plan.append((f, destino))
+    copiados: list[Path] = []
+    for origen, destino in plan:
+        copiados.append(copy_file_v2(allowed_dirs, zonas, str(origen), str(destino)))
+    return sorted(copiados)
 
 
 def _safe_member_dest(dest_dir: Path, member_name: str) -> Path | None:

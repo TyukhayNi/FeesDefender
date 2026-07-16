@@ -8,6 +8,19 @@ from pathlib import Path
 import pytest
 
 from plugins.expedientes_xl import fsops
+from plugins.expedientes_xl.tiers import TierViolation, Zonas
+
+
+class FakeOracle:
+    def status(self, p):
+        return "HOT"
+
+    def subtree_cold_stats(self, p):
+        return (0, 1)
+
+
+def _zonas(tmp_path):
+    return Zonas(rw_roots=(tmp_path,))
 
 
 def test_resolve_within_acepta_ruta_dentro(tmp_path):
@@ -59,14 +72,88 @@ def test_copy_file_rechaza_destino_fuera(tmp_path):
         fsops.copy_file([tmp_path], str(src), str(tmp_path / ".." / "fuera.bin"))
 
 
-def test_copy_tree_recursivo(tmp_path):
+def test_copy_tree_v2_recursivo(tmp_path):
+    z = _zonas(tmp_path)
     src = tmp_path / "arbol"
     (src / "a").mkdir(parents=True)
     (src / "a" / "f.txt").write_text("hola", encoding="utf-8")
     dst = tmp_path / "copia_arbol"
-    out = fsops.copy_tree([tmp_path], str(src), str(dst))
-    assert out == dst.resolve()
+    out = fsops.copy_tree_v2([tmp_path], z, FakeOracle(), str(src), str(dst))
+    assert out == [dst.resolve() / "a" / "f.txt"]
     assert (dst / "a" / "f.txt").read_text(encoding="utf-8") == "hola"
+
+
+def test_copy_tree_v2_rechaza_destino_fuera(tmp_path):
+    z = _zonas(tmp_path)
+    src = tmp_path / "arbol"
+    (src).mkdir(parents=True)
+    (src / "f.txt").write_text("hola", encoding="utf-8")
+    with pytest.raises(fsops.OutsideSandbox):
+        fsops.copy_tree_v2(
+            [tmp_path], z, FakeOracle(), str(src), str(tmp_path / ".." / "fuera")
+        )
+
+
+def test_write_text_file_atomico(tmp_path):
+    z = _zonas(tmp_path)
+    f = tmp_path / "01_Procesado" / "nota.md"
+    fsops.write_text_file([tmp_path], z, str(f), "hola")
+    assert f.read_text(encoding="utf-8") == "hola"
+
+
+def test_write_text_file_respeta_00input(tmp_path):
+    z = _zonas(tmp_path)
+    f = tmp_path / "00_Input" / "depositado.txt"
+    fsops.write_text_file([tmp_path], z, str(f), "v1")       # crear-nuevo: ok
+    with pytest.raises(TierViolation):
+        fsops.write_text_file([tmp_path], z, str(f), "v2")   # sobrescribir: no
+
+
+def test_edit_text_file_unica_aparicion(tmp_path):
+    z = _zonas(tmp_path)
+    f = tmp_path / "doc.md"
+    f.write_text("a b a", encoding="utf-8")
+    with pytest.raises(ValueError):
+        fsops.edit_text_file([tmp_path], z, str(f), "a", "z")   # 2 apariciones
+    fsops.edit_text_file([tmp_path], z, str(f), "b", "z")
+    assert f.read_text(encoding="utf-8") == "a z a"
+
+
+def test_edit_text_file_rechaza_inexistente(tmp_path):
+    z = _zonas(tmp_path)
+    f = tmp_path / "no_existe.md"
+    with pytest.raises(FileNotFoundError):
+        fsops.edit_text_file([tmp_path], z, str(f), "a", "z")
+
+
+def test_copy_file_v2_sobrescribe_via_tmp_y_replace(tmp_path):
+    z = _zonas(tmp_path)
+    src = tmp_path / "orig.bin"
+    src.write_bytes(b"nuevo")
+    dst = tmp_path / "dest.bin"
+    dst.write_bytes(b"viejo")
+    out = fsops.copy_file_v2([tmp_path], z, str(src), str(dst))
+    assert out == dst.resolve()
+    assert dst.read_bytes() == b"nuevo"
+
+
+def test_copy_tree_v2_poda_y_aborta(tmp_path):
+    z = _zonas(tmp_path)
+    src = tmp_path / "src"
+    (src / "90_Notas personales").mkdir(parents=True)
+    (src / "doc.txt").write_text("x", encoding="utf-8")
+    (src / "90_Notas personales" / "s.txt").write_text("p", encoding="utf-8")
+    dst = tmp_path / "dst"
+    copiados = fsops.copy_tree_v2([tmp_path], z, FakeOracle(), str(src), str(dst))
+    assert (dst / "doc.txt").exists()
+    assert not (dst / "90_Notas personales").exists()          # podado
+    # destino que cae en 00_Input existente -> aborto TOTAL sin copiar nada
+    dst2 = tmp_path / "00_Input"
+    (dst2).mkdir()
+    (dst2 / "doc.txt").write_text("orig", encoding="utf-8")
+    with pytest.raises(TierViolation):
+        fsops.copy_tree_v2([tmp_path], z, FakeOracle(), str(src), str(dst2))
+    assert (dst2 / "doc.txt").read_text(encoding="utf-8") == "orig"  # intacto
 
 
 def _zip_bytes(entries: dict[str, bytes]) -> bytes:
