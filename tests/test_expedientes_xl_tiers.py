@@ -1,7 +1,8 @@
 from pathlib import Path
 import pytest
 from plugins.expedientes_xl.tiers import (
-    Tier, Zonas, classify, es_backup, PROTOCOL_EDIT, PROTOCOL_APPEND,
+    Tier, TierViolation, Zonas, check_read, check_write, classify, es_backup,
+    PROTOCOL_EDIT, PROTOCOL_APPEND,
 )
 
 Z = Zonas(rw_roots=(Path("G:/"),), ro_roots=(Path("H:/"),))
@@ -31,31 +32,26 @@ def test_carveout_espeja_merge_exclusions():
 
 
 def test_check_read_bloquea_tier0():
-    from plugins.expedientes_xl.tiers import TierViolation, check_read
     with pytest.raises(TierViolation):
         check_read(Z, Path(r"G:\CASOS\BaX\90_Notas personales\n.md"))
     check_read(Z, Path(r"G:\CASOS\BaX\00_Input\d.pdf"))  # Tier 1 se lee
 
 
 def test_check_write_ro_root():
-    from plugins.expedientes_xl.tiers import TierViolation, check_write
     with pytest.raises(TierViolation, match="solo-lectura"):
         check_write(Z, Path(r"H:\Mi unidad\x.txt"), exists=False)
 
 
 def test_check_write_00input_crear_nuevo_ok():
-    from plugins.expedientes_xl.tiers import check_write
     check_write(Z, Path(r"G:\CASOS\BaX\00_Input\04_Manual\nuevo.pdf"), exists=False)
 
 
 def test_check_write_00input_sobrescribir_rechazado():
-    from plugins.expedientes_xl.tiers import TierViolation, check_write
     with pytest.raises(TierViolation):
         check_write(Z, Path(r"G:\CASOS\BaX\00_Input\04_Manual\viejo.pdf"), exists=True)
 
 
 def test_check_write_carveout_protocolo():
-    from plugins.expedientes_xl.tiers import TierViolation, check_write
     check_write(Z, Path(r"G:\CASOS\BaX\00_Input\_caso.md"), exists=True)          # edit
     check_write(Z, Path(r"G:\CASOS\BaX\00_Input\_intake_log.jsonl"), exists=True, append=True)
     check_write(Z, Path(r"G:\CASOS\BaX\00_Input\AUDITLOG_MERGE_x.jsonl"), exists=True, append=True)
@@ -64,8 +60,18 @@ def test_check_write_carveout_protocolo():
 
 
 def test_check_write_backup_sin_carveout():
-    from plugins.expedientes_xl.tiers import TierViolation, check_write
     with pytest.raises(TierViolation):
         check_write(Z, Path(r"G:\Otros ordenadores\PC\_caso.md"), exists=True)
     with pytest.raises(TierViolation):  # ni crear-nuevo en backup
         check_write(Z, Path(r"G:\Unidades compartidas\BACKUP\n.txt"), exists=False)
+
+
+def test_check_write_workspace_permitido():
+    # Tier 2 (WORKSPACE) bajo rw_root: escritura permitida, exista o no el destino
+    check_write(Z, Path(r"G:\CASOS\BaX\01_Procesado\doc.md"), exists=True)
+    check_write(Z, Path(r"G:\CASOS\BaX\01_Procesado\doc.md"), exists=False)
+
+
+def test_check_write_bloquea_tier0():
+    with pytest.raises(TierViolation):
+        check_write(Z, Path(r"G:\CASOS\BaX\90_Notas personales\n.md"), exists=False)
