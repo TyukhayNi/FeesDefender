@@ -2459,3 +2459,23 @@ fase natural:
   del manifiesto (M-D).
 - **Eficiencia (revisar solo si F0 lo mide lento):** `detectar` re-parsea el PDF ~3× (pypdf + pypdfium2 +
   pdfminer vía `separar`). Es composición plan-mandated (reúso del módulo congelado), correctness-neutral.
+
+## 65. Conteo de tests estructural: `scripts/test_summary.py` (JUnit XML) cableado en protocolo y comandos
+
+**Anotado 2026-07-16.** El cierre de sesión de hoy quemó ~6 corridas de la suite completa intentando extraer
+la línea de resumen de pytest con greps — vía que `DEAD_ENDS.md` (primera entrada, 2026-07-07) declara ROTA
+en este entorno (Git Bash/Windows: la línea final no pasa por tuberías), con la solución documentada (JUnit
+XML). Fallo de fondo: **el protocolo ordena la vía rota** — `pytest -q --tb=no` crudo está cableado en 5
+sitios (`CLAUDE.md` §Tests, `STATUS.md` §protocolos, `.claude/commands/{cierre,status,tests}.md`), así que
+cada sesión futura tropieza igual: la instrucción activa gana al conocimiento pasivo de DEAD_ENDS.
+
+Arreglo (micro-PR autocontenido, ~30 min):
+1. `scripts/test_summary.py` (+ test): corre pytest UNA vez con `--junit-xml` a temp, parsea
+   `tests/failures/errors/skipped` del `<testsuite>` con `xml.etree` e imprime una línea limpia y fiable
+   (`1790 passed, 5 failed, 58 skipped — FAILED: nombres…`).
+2. Recablear los 5 sitios para invocar `python -m scripts.test_summary` en vez del pytest crudo.
+3. Añadir a `CLAUDE.md` la regla de método que faltaba: *operación cara (suite, OCR, pull) → UNA ejecución
+   con salida a fichero; el análisis se itera sobre el fichero, nunca re-ejecutando*.
+
+Principio: como con la higiene PII — a un fallo de disciplina se responde con estructura, no con más
+disciplina. Disparador ya ocurrido (mordió 2026-07-16); memoria `feedback-pytest-junit-xml-y-dead-ends`.
