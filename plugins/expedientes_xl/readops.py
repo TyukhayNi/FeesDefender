@@ -140,11 +140,14 @@ def tree(allowed, zonas, path: str, max_depth: int = 8, max_entries: int = 2000)
     - entries: lista de rutas relativas (POSIX)
     - podados: número de directorios Tier 0 excluidos
     - truncado: True si se alcanzó max_entries
+    - omitidos_profundidad: ficheros omitidos por superar max_depth (sin silencios)
     """
     p = fsops.resolve_within(allowed, path)
     check_read(zonas, p)
     entries: list[str] = []
     podados = 0
+    omitidos_profundidad = 0
+    truncado = False
 
     def _poda(_ruta):
         nonlocal podados
@@ -153,11 +156,14 @@ def tree(allowed, zonas, path: str, max_depth: int = 8, max_entries: int = 2000)
     for f in iter_tree(zonas, p, on_prune=_poda):
         rel = f.relative_to(p)
         if len(rel.parts) > max_depth:
+            omitidos_profundidad += 1
             continue
         if len(entries) >= max_entries:
-            return {"entries": entries, "podados": podados, "truncado": True}
+            truncado = True
+            break
         entries.append(rel.as_posix())
-    return {"entries": entries, "podados": podados, "truncado": False}
+    return {"entries": entries, "podados": podados, "truncado": truncado,
+            "omitidos_profundidad": omitidos_profundidad}
 
 
 def search_name(allowed, zonas, path: str, patron: str, max_results: int = 200) -> list[str]:

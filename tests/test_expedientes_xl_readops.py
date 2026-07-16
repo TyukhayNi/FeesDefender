@@ -118,3 +118,23 @@ def test_search_name(sandbox):
     hits = search_name([root], zonas, str(caso), "*.txt")
     assert any(h.endswith("doc.txt") for h in hits)
     assert not any("secreto" in h for h in hits)   # Tier 0 podado
+
+def test_tree_cuenta_omitidos_por_profundidad(sandbox):
+    root, zonas, caso = sandbox
+    # doc.txt vive en caso/00_Input/ (profundidad 2) → fuera con max_depth=1
+    t = tree([root], zonas, str(caso), max_depth=1)
+    assert not any(e.endswith("doc.txt") for e in t["entries"])
+    assert t["omitidos_profundidad"] >= 1
+    # sin límite que muerda: la clave existe siempre y vale 0
+    t2 = tree([root], zonas, str(caso))
+    assert t2["omitidos_profundidad"] == 0
+
+def test_search_name_case_insensitive(sandbox):
+    root, zonas, caso = sandbox
+    # patrón en MAYÚSCULAS debe matchear doc.txt (nombre en minúsculas)
+    hits = search_name([root], zonas, str(caso), "*.TXT")
+    assert any(h.endswith("doc.txt") for h in hits)
+    # y nombre en MAYÚSCULAS debe matchear patrón en minúsculas
+    (caso / "00_Input" / "INFORME.TXT").write_text("x", encoding="utf-8")
+    hits2 = search_name([root], zonas, str(caso), "informe.*")
+    assert any(h.endswith("INFORME.TXT") for h in hits2)
