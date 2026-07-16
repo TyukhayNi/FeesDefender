@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import os
 import re as _re
+import subprocess
 from datetime import datetime, timezone
 from fnmatch import fnmatch
 from pathlib import Path
 
-from . import fsops
+from . import audit, fsops
+from .fsops import OutsideSandbox
 from .guards import check_gdoc, guard_file, FileNotHydrated, GDocBloqueado
 from .tiers import Tier, Zonas, check_read, classify
 from .winio import long_path
@@ -241,3 +243,38 @@ def search_content(allowed, zonas, oracle, path: str, consulta: str,
         except OSError:
             continue
     return {"matches": matches, "omitidos_cold": omitidos, "podados": podados}
+
+
+def _resolver_lnk_com(path: str) -> str:
+    """Resuelve el TargetPath de un `.lnk` vía PowerShell COM (WScript.Shell)."""
+    ps = ("(New-Object -ComObject WScript.Shell)"
+          f".CreateShortcut('{path}').TargetPath")
+    r = subprocess.run(["powershell", "-NoProfile", "-Command", ps],
+                       capture_output=True, encoding="utf-8", errors="replace",
+                       timeout=15)
+    return (r.stdout or "").strip()
+
+
+def resolve_shortcut(allowed, zonas, path: str, _resolver_lnk=_resolver_lnk_com) -> dict:
+    """Resuelve un `.lnk` y RE-VALIDA su destino contra sandbox y tiers.
+
+    El destino de un atajo es contenido controlable por un tercero: nunca se
+    confía en él sin pasar de nuevo por `resolve_within`/`classify`. Si cae
+    fuera del sandbox o en Tier 0 (90_Notas personales), se devuelve
+    `target=None` (Tier 0 nunca se filtra al modelo) y se registra en auditoría.
+    """
+    p = fsops.resolve_within(allowed, path)
+    check_read(zonas, p)
+    target = _resolver_lnk(str(p))
+    if not target:
+        return {"target": None, "dentro_sandbox": False, "tier": None}
+    try:
+        t = fsops.resolve_within(allowed, target)
+    except OutsideSandbox:
+        audit.log_op("resolve_shortcut", str(p), "escape_bloqueado", motivo=target[:120])
+        return {"target": None, "dentro_sandbox": False, "tier": None}
+    tier = classify(zonas, t)
+    if tier is Tier.PROHIBIDA:
+        audit.log_op("resolve_shortcut", str(p), "tier0_bloqueado")
+        return {"target": None, "dentro_sandbox": False, "tier": None}
+    return {"target": str(t), "dentro_sandbox": True, "tier": int(tier)}

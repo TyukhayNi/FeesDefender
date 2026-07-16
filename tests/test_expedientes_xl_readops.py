@@ -1,6 +1,6 @@
 from pathlib import Path
 import pytest
-from plugins.expedientes_xl.readops import read_text, read_multiple, get_metadata, list_dir, iter_tree, tree, search_name, search_content
+from plugins.expedientes_xl.readops import read_text, read_multiple, get_metadata, list_dir, iter_tree, tree, search_name, search_content, resolve_shortcut
 from plugins.expedientes_xl.tiers import Zonas, TierViolation
 from plugins.expedientes_xl.guards import GDocBloqueado
 
@@ -189,3 +189,19 @@ def test_search_content_regex_invalida(sandbox):
     root, zonas, caso = sandbox
     with pytest.raises(ValueError, match="regex inválida"):
         search_content([root], zonas, FakeOracle(), str(caso), "[", regex=True)
+
+
+def test_resolve_shortcut_revalida(sandbox):
+    root, zonas, caso = sandbox
+    lnk = caso / "atajo.lnk"; lnk.write_bytes(b"fake")
+    ok = resolve_shortcut([root], zonas, str(lnk),
+                          _resolver_lnk=lambda p: str(caso / "00_Input" / "doc.txt"))
+    assert ok["dentro_sandbox"] is True and ok["tier"] == 1
+
+    fuera = resolve_shortcut([root], zonas, str(lnk),
+                             _resolver_lnk=lambda p: r"C:\Windows\System32\cmd.exe")
+    assert fuera["dentro_sandbox"] is False and fuera["target"] is None
+
+    tier0 = resolve_shortcut([root], zonas, str(lnk),
+                             _resolver_lnk=lambda p: str(caso / "90_Notas personales" / "s.txt"))
+    assert tier0["dentro_sandbox"] is False and tier0["target"] is None
