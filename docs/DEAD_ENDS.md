@@ -237,6 +237,25 @@ Cuantifica y matiza el hallazgo anterior con mediciones reales desde Cowork (wal
 
 ## Google Drive / Google Docs
 
+### Sondear el estado de hidratación (HOT/COLD) del montaje GDFD — todas las vías Windows fallan
+- **Intentado (2026-07-16, sesión de diseño MCP drive-disco, verificado en vivo):**
+  (a) atributos de fichero (`FILE_ATTRIBUTE_OFFLINE`/reparse): todo sale `Normal` — el
+  driver de GDFD los falsea; (b) `GetCompressedFileSizeW`: devuelve el tamaño LÓGICO,
+  no el asignado; (c) `attrib +P -U` para forzar pin/hidratación: **inerte** (GDFD no
+  usa la Cloud Files API de Microsoft; el pin va por IPC del Explorer);
+  (d) leer el stub `.gdoc`/`.gsheet` para sacar el ID: `ERROR_INVALID_FUNCTION` a nivel
+  kernel (bloqueado por diseño); (e) copiar `metadata_sqlite_db` por ficheros (trío
+  `.db`+`-wal`+`-shm`): NO atómico → `database disk image is malformed` intermitente;
+  (f) abrirla con `immutable=1`: ignora el `-wal` → estado obsoleto.
+- **Vía que SÍ funciona:** `sqlite3` `Connection.backup()` desde una conexión `mode=ro`
+  sobre la BD viva (`integrity_check=ok`, ~1,6 s) + clave `item_properties.content-entry`
+  (presente = bytes en `content_cache`). Sin señal local fiable de "pendiente de subir"
+  (el estado de la cola vive en protobuf cerrado): confirmación de subida = API
+  (`google-despacho.get_file_metadata`).
+- **Conclusión:** detalle completo y diseño derivado en
+  `docs/superpowers/specs/2026-07-16-mcp-drive-disco-local-design.md` (§4, §9).
+  No reintentar (a)-(f).
+
 ### Leer contenido de Google Docs vía Chrome extension (cross-origin)
 - **Intentado:** `javascript_tool`, atajos de teclado, `screenshot`, `left_click` por referencia, `find` en accessibility tree — todo desde la extensión Claude in Chrome sobre una pestaña con docs.google.com
 - **Resultado:** todos bloqueados por política cross-origin. La extensión no puede interactuar con el contenido de iframes de dominios externos (`chrome-extension://` → `docs.google.com`).
