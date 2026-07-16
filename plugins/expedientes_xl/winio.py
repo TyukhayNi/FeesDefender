@@ -32,6 +32,16 @@ def long_path(p: Path) -> str:
     return s
 
 
+_LONG_PATH_UMBRAL = 248
+
+
+def _abrible(p: Path | str) -> str:
+    r"""Ruta apta para operaciones de fichero: prefijo \\?\ solo cuando roza
+    MAX_PATH (mismo patrón que readops._abrible)."""
+    s = str(p)
+    return long_path(Path(s)) if len(s) >= _LONG_PATH_UMBRAL else s
+
+
 def retry_sharing(fn: Callable[[], T]) -> T:
     ultimo: PermissionError | None = None
     for i, espera in enumerate(_BACKOFF):
@@ -50,11 +60,11 @@ def retry_sharing(fn: Callable[[], T]) -> T:
 
 def atomic_write_bytes(dst: Path, data: bytes) -> int:
     dst.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(prefix=dst.name + ".", suffix=".tmp", dir=str(dst.parent))
+    fd, tmp = tempfile.mkstemp(prefix=dst.name + ".", suffix=".tmp", dir=_abrible(dst.parent))
     try:
         with os.fdopen(fd, "wb") as fh:
             fh.write(data)
-        retry_sharing(lambda: os.replace(tmp, dst))
+        retry_sharing(lambda: os.replace(_abrible(tmp), _abrible(dst)))
     except BaseException:
         try:
             os.unlink(tmp)

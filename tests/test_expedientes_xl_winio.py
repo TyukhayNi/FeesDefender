@@ -22,6 +22,26 @@ def test_atomic_write_no_deja_parcial_si_falla(tmp_path, monkeypatch):
     assert f.read_text(encoding="utf-8") == "estable"          # destino intacto
     assert [p.name for p in tmp_path.iterdir()] == ["doc.txt"]  # tmp limpiado
 
+def test_abrible_prefija_solo_rutas_largas(tmp_path):
+    from plugins.expedientes_xl.winio import _abrible
+    corta = tmp_path / "c.txt"
+    assert _abrible(corta) == str(corta)                # corta: sin tocar
+    larga = Path("C:\\" + "a" * 300 + "\\f.txt")
+    assert _abrible(larga) == "\\\\?\\" + str(larga)    # larga: prefijada
+
+
+def test_atomic_write_funciona_con_umbral_long_path_forzado(tmp_path, monkeypatch):
+    """Fuerza la rama long_path (\\\\?\\) de atomic_write sin necesitar una ruta
+    real >= MAX_PATH: mkstemp dir= y os.replace reciben la ruta prefijada."""
+    import plugins.expedientes_xl.winio as w
+    monkeypatch.setattr(w, "_LONG_PATH_UMBRAL", 1)
+    f = tmp_path / "doc.txt"
+    atomic_write_text(f, "v1")
+    assert atomic_write_text(f, "v2") == 2              # reemplazo por la rama prefijada
+    assert f.read_text(encoding="utf-8") == "v2"
+    assert [p.name for p in tmp_path.iterdir()] == ["doc.txt"]  # sin tmp huérfanos
+
+
 def test_long_path_prefija():
     assert long_path(Path(r"G:\Mi unidad\a.txt")).startswith("\\\\?\\")
     ya = "\\\\?\\G:\\a"

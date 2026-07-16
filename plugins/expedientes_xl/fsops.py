@@ -148,20 +148,28 @@ def edit_text_file(allowed_dirs: list[Path], zonas, path: str | Path, old: str, 
 
 
 def copy_file_v2(allowed_dirs: list[Path], zonas, src: str | Path, dst: str | Path) -> Path:
-    """Copia con destino atómico (si existe: tmp+replace) y zonas en ambos extremos."""
+    """Copia con destino atómico (si existe: tmp+replace) y zonas en ambos extremos.
+
+    El origen pasa `check_gdoc` (spec §6.4): un stub nativo de Google (.gdoc,
+    .gsheet, ...) es ilegible por FS y lanza `GDocBloqueado` con la desviación
+    a google-despacho.
+    """
+    from .guards import check_gdoc
     from .tiers import check_read, check_write
     from .winio import retry_sharing
 
     src_p = resolve_within(allowed_dirs, src)
     dst_p = resolve_within(allowed_dirs, dst)
     check_read(zonas, src_p)
+    check_gdoc(src_p)
     check_write(zonas, dst_p, exists=dst_p.exists())
     dst_p.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(prefix=dst_p.name + ".", suffix=".tmp", dir=str(dst_p.parent))
+    fd, tmp = tempfile.mkstemp(
+        prefix=dst_p.name + ".", suffix=".tmp", dir=_abrible(dst_p.parent))
     os.close(fd)
     try:
-        shutil.copyfile(_abrible(src_p), tmp)
-        retry_sharing(lambda: os.replace(tmp, dst_p))
+        shutil.copyfile(_abrible(src_p), _abrible(Path(tmp)))
+        retry_sharing(lambda: os.replace(_abrible(Path(tmp)), _abrible(dst_p)))
     except BaseException:
         Path(tmp).unlink(missing_ok=True)
         raise
@@ -170,8 +178,14 @@ def copy_file_v2(allowed_dirs: list[Path], zonas, src: str | Path, dst: str | Pa
 
 def copy_tree_v2(allowed_dirs: list[Path], zonas, oracle, src: str | Path, dst: str | Path) -> list[Path]:
     """Copia recursiva con travesía por nodo: poda Tier 0, valida CADA destino
-    ANTES de copiar nada (dos pasadas), guarda de árbol frío."""
-    from .guards import guard_tree
+    ANTES de copiar nada (dos pasadas), guarda de árbol frío.
+
+    Los stubs nativos de Google (.gdoc, .gsheet, ...) del origen se OMITEN
+    (incopiables a nivel de kernel) en vez de abortar el árbol; cada omisión
+    se registra en el audit log (`omitido_gdoc`) — sin silencios.
+    """
+    from . import audit
+    from .guards import GDocBloqueado, check_gdoc, guard_tree
     from .readops import iter_tree
     from .tiers import check_write
 
@@ -180,6 +194,11 @@ def copy_tree_v2(allowed_dirs: list[Path], zonas, oracle, src: str | Path, dst: 
     guard_tree(oracle, src_p)
     plan: list[tuple[Path, Path]] = []
     for f in iter_tree(zonas, src_p):
+        try:
+            check_gdoc(f)
+        except GDocBloqueado:
+            audit.log_op("copy_tree_v2", str(f), "omitido_gdoc")
+            continue
         destino = dst_p / f.relative_to(src_p)
         check_write(zonas, destino, exists=destino.exists())  # aborta ANTES de copiar
         plan.append((f, destino))

@@ -156,6 +156,97 @@ def test_copy_tree_v2_poda_y_aborta(tmp_path):
     assert (dst2 / "doc.txt").read_text(encoding="utf-8") == "orig"  # intacto
 
 
+def test_copy_tree_v2_aborto_multifichero_no_copia_nada(tmp_path):
+    """Si UN destino viola Tier 1, NINGÚN fichero (ni los válidos) se copia."""
+    z = _zonas(tmp_path)
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "a.txt").write_text("a", encoding="utf-8")
+    (src / "b.txt").write_text("b", encoding="utf-8")
+    dst = tmp_path / "00_Input"
+    dst.mkdir()
+    (dst / "b.txt").write_text("orig", encoding="utf-8")  # sobrescribir en Tier 1: violación
+    with pytest.raises(TierViolation):
+        fsops.copy_tree_v2([tmp_path], z, FakeOracle(), str(src), str(dst))
+    assert not (dst / "a.txt").exists()  # el válido TAMPOCO se copió (dos pasadas)
+    assert (dst / "b.txt").read_text(encoding="utf-8") == "orig"
+
+
+def test_copy_tree_v2_aborta_arbol_frio(tmp_path, monkeypatch):
+    from plugins.expedientes_xl.guards import FileNotHydrated
+
+    class ColdOracle:
+        def status(self, p):
+            return "COLD"
+
+        def subtree_cold_stats(self, p):
+            return (100, 100)
+
+    monkeypatch.setenv("XL_TREE_MAX_COLD", "50")
+    z = _zonas(tmp_path)
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "a.txt").write_text("a", encoding="utf-8")
+    dst = tmp_path / "dst"
+    with pytest.raises(FileNotHydrated):
+        fsops.copy_tree_v2([tmp_path], z, ColdOracle(), str(src), str(dst))
+    assert not dst.exists()  # nada copiado
+
+
+def test_copy_file_v2_rechaza_origen_tier0(tmp_path):
+    z = _zonas(tmp_path)
+    src = tmp_path / "90_Notas personales" / "s.txt"
+    src.parent.mkdir(parents=True)
+    src.write_text("privado", encoding="utf-8")
+    with pytest.raises(TierViolation):
+        fsops.copy_file_v2([tmp_path], z, str(src), str(tmp_path / "out.txt"))
+    assert not (tmp_path / "out.txt").exists()
+
+
+def test_copy_file_v2_rechaza_destino_backup(tmp_path):
+    z = _zonas(tmp_path)
+    src = tmp_path / "orig.txt"
+    src.write_text("x", encoding="utf-8")
+    dst = tmp_path / "Otros ordenadores" / "copia.txt"
+    with pytest.raises(TierViolation):
+        fsops.copy_file_v2([tmp_path], z, str(src), str(dst))
+    assert not dst.exists()
+
+
+def test_copy_file_v2_rechaza_gsheet(tmp_path):
+    from plugins.expedientes_xl.guards import GDocBloqueado
+
+    z = _zonas(tmp_path)
+    src = tmp_path / "hoja.gsheet"
+    src.write_text("{}", encoding="utf-8")
+    with pytest.raises(GDocBloqueado):
+        fsops.copy_file_v2([tmp_path], z, str(src), str(tmp_path / "copia.gsheet"))
+    assert not (tmp_path / "copia.gsheet").exists()
+
+
+def test_copy_tree_v2_omite_gdoc_y_lo_audita(tmp_path, monkeypatch):
+    import json
+
+    audit_log = tmp_path / "xl_audit.jsonl"
+    monkeypatch.setenv("XL_AUDIT_PATH", str(audit_log))
+    z = _zonas(tmp_path)
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "doc.txt").write_text("x", encoding="utf-8")
+    (src / "hoja.gsheet").write_text("{}", encoding="utf-8")
+    dst = tmp_path / "dst"
+    copiados = fsops.copy_tree_v2([tmp_path], z, FakeOracle(), str(src), str(dst))
+    assert (dst / "doc.txt").exists()
+    assert not (dst / "hoja.gsheet").exists()          # stub omitido, no viaja
+    assert copiados == [dst.resolve() / "doc.txt"]
+    eventos = [json.loads(l) for l in audit_log.read_text(encoding="utf-8").splitlines()]
+    assert any(
+        e["op"] == "copy_tree_v2" and e["resultado"] == "omitido_gdoc"
+        and e["ruta"].endswith("hoja.gsheet")
+        for e in eventos
+    )  # sin silencios: la omisión queda auditada
+
+
 def _zip_bytes(entries: dict[str, bytes]) -> bytes:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
