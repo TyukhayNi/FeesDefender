@@ -1,8 +1,9 @@
 import sqlite3
+import shutil
 import tempfile
 from pathlib import Path
 import pytest
-from plugins.expedientes_xl.oracle import Oracle
+from plugins.expedientes_xl.oracle import Oracle, descubrir_cuentas
 
 SCHEMA = """
 CREATE TABLE items (stable_id INTEGER PRIMARY KEY, id TEXT, trashed INT DEFAULT 0,
@@ -167,3 +168,32 @@ def test_status_raiz_sin_ascendencia_unknown(mini_db):
     con.commit(); con.close()
     o = Oracle({"G:\\": db}, {"G:\\": cache}, ttl=999)
     assert o.status(Path(r"G:\solo.pdf")) == "UNKNOWN"  # fail-closed, no vacuo
+
+
+def test_subtree_cold_stats(mini_db):
+    db, cache = mini_db
+    o = Oracle({"G:\\": db}, {"G:\\": cache}, ttl=999)
+    base = r"G:\Unidades compartidas\EXPEDIENTES - TYUKHAY LEGAL\Caso X\00_Input"
+    assert o.subtree_cold_stats(Path(base)) == (1, 2)   # cold.pdf de 2 ficheros
+    assert o.subtree_cold_stats(Path(r"G:\no\existe")) is None
+
+
+def test_descubrir_cuentas(mini_db, tmp_path, monkeypatch):
+    db, cache = mini_db
+    acct = tmp_path / "DriveFS" / "12345"
+    acct.mkdir(parents=True)
+    (acct / "content_cache").mkdir()
+    shutil.copy2(db, acct / "metadata_sqlite_db")
+    g = tmp_path / "G"; (g / "Unidades compartidas" / "EXPEDIENTES - TYUKHAY LEGAL").mkdir(parents=True)
+    (g / "Unidades compartidas" / "Caso X").mkdir()   # 2º marcador
+    dbs, caches = descubrir_cuentas(tmp_path / "DriveFS", {"G:\\": g})
+    assert dbs == {"G:\\": acct / "metadata_sqlite_db"}
+    assert caches == {"G:\\": acct / "content_cache"}
+
+
+def test_descubrir_cuentas_sin_drivefs_dir(tmp_path):
+    # DriveFS ausente de la máquina (p.ej. Drive no instalado): sin excepción,
+    # dicts vacíos -> el oráculo de esa letra queda caído -> UNKNOWN.
+    dbs, caches = descubrir_cuentas(tmp_path / "no_existe_DriveFS", {"G:\\": tmp_path})
+    assert dbs == {}
+    assert caches == {}

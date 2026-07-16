@@ -175,3 +175,74 @@ class Oracle:
             # cambiado, valores malformados, tipos inesperados) -> UNKNOWN,
             # nunca una excepción hacia el llamante (fail-closed total).
             return "UNKNOWN"
+
+    def subtree_cold_stats(self, path: Path) -> tuple[int, int] | None:
+        """(n_cold, n_total) de FICHEROS bajo `path`, recursivo; None = no resoluble/caído."""
+        root = self._root_de(path)
+        if root is None:
+            return None
+        con = self._snapshot(root)
+        if con is None:
+            return None
+        try:
+            sid = self._resolver(con, path)
+            if sid is None:
+                return None
+            pendientes, ficheros = [sid], []
+            while pendientes:
+                actual = pendientes.pop()
+                for hijo, es_dir in con.execute(
+                    "SELECT p.item_stable_id, i.is_folder FROM stable_parents p "
+                    "JOIN items i ON i.stable_id = p.item_stable_id "
+                    "WHERE p.parent_stable_id = ? AND i.is_tombstone = 0 AND i.trashed = 0",
+                        (actual,)):
+                    (pendientes if es_dir else ficheros).append(hijo)
+            if not ficheros:
+                return (0, 0)
+            marca = ",".join("?" * len(ficheros))
+            hot = con.execute(
+                f"SELECT count(DISTINCT item_stable_id) FROM item_properties "
+                f"WHERE key='content-entry' AND item_stable_id IN ({marca})",
+                ficheros).fetchone()[0]
+            return (len(ficheros) - hot, len(ficheros))
+        except Exception:
+            # Misma doctrina fail-closed que status(): dato externo no fiable.
+            return None
+
+
+def descubrir_cuentas(drivefs_dir: Path, roots: dict[str, Path]
+                      ) -> tuple[dict[str, Path], dict[str, Path]]:
+    """Mapea letra->BD casando nombres de unidades compartidas contra local_title.
+
+    Casa (>=2 nombres de carpeta bajo `<raíz>\\Unidades compartidas`) contra
+    `items.local_title` de cada `metadata_sqlite_db` de cuenta (subdirectorios
+    numéricos de `drivefs_dir`). Cuenta sin match para una letra -> se omite
+    (el oráculo de esa letra queda caído -> UNKNOWN, fail-closed).
+    """
+    dbs: dict[str, Path] = {}
+    caches: dict[str, Path] = {}
+    if not Path(drivefs_dir).is_dir():
+        return dbs, caches
+    cuentas = [d for d in drivefs_dir.iterdir()
+               if d.is_dir() and d.name.isdigit() and (d / "metadata_sqlite_db").exists()]
+    for root, base in roots.items():
+        uc = Path(base) / "Unidades compartidas"
+        marcadores = [p.name for p in uc.iterdir() if p.is_dir()][:10] if uc.is_dir() else []
+        if len(marcadores) < 2:
+            continue
+        for cuenta in cuentas:
+            try:
+                con = sqlite3.connect(f"file:{cuenta / 'metadata_sqlite_db'}?mode=ro",
+                                      uri=True, timeout=8)
+                hits = sum(
+                    1 for m in marcadores
+                    if con.execute("SELECT 1 FROM items WHERE local_title=? LIMIT 1",
+                                   (m,)).fetchone())
+                con.close()
+            except sqlite3.Error:
+                continue
+            if hits >= 2:
+                dbs[root] = cuenta / "metadata_sqlite_db"
+                caches[root] = cuenta / "content_cache"
+                break
+    return dbs, caches
