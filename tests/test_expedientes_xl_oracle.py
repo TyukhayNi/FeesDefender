@@ -191,6 +191,27 @@ def test_descubrir_cuentas(mini_db, tmp_path, monkeypatch):
     assert caches == {"G:\\": acct / "content_cache"}
 
 
+def test_descubrir_cuentas_bd_corrupta_cierra_handle(mini_db, tmp_path):
+    # Cuenta con BD basura junto a la válida: la válida sigue mapeando, sin
+    # excepción, Y el fichero basura se puede borrar después (en Windows un
+    # handle filtrado haría que os.remove lanzara PermissionError).
+    import os
+    db, cache = mini_db
+    mala = tmp_path / "DriveFS" / "111"
+    mala.mkdir(parents=True)
+    (mala / "metadata_sqlite_db").write_bytes(b"no es sqlite")
+    buena = tmp_path / "DriveFS" / "222"
+    buena.mkdir()
+    (buena / "content_cache").mkdir()
+    shutil.copy2(db, buena / "metadata_sqlite_db")
+    g = tmp_path / "G"; (g / "Unidades compartidas" / "EXPEDIENTES - TYUKHAY LEGAL").mkdir(parents=True)
+    (g / "Unidades compartidas" / "Caso X").mkdir()
+    dbs, caches = descubrir_cuentas(tmp_path / "DriveFS", {"G:\\": g})
+    assert dbs == {"G:\\": buena / "metadata_sqlite_db"}
+    assert caches == {"G:\\": buena / "content_cache"}
+    os.remove(mala / "metadata_sqlite_db")   # handle liberado -> no PermissionError
+
+
 def test_descubrir_cuentas_sin_drivefs_dir(tmp_path):
     # DriveFS ausente de la máquina (p.ej. Drive no instalado): sin excepción,
     # dicts vacíos -> el oráculo de esa letra queda caído -> UNKNOWN.

@@ -234,11 +234,15 @@ def descubrir_cuentas(drivefs_dir: Path, roots: dict[str, Path]
             try:
                 con = sqlite3.connect(f"file:{cuenta / 'metadata_sqlite_db'}?mode=ro",
                                       uri=True, timeout=8)
-                hits = sum(
-                    1 for m in marcadores
-                    if con.execute("SELECT 1 FROM items WHERE local_title=? LIMIT 1",
-                                   (m,)).fetchone())
-                con.close()
+                try:
+                    hits = sum(
+                        1 for m in marcadores
+                        if con.execute("SELECT 1 FROM items WHERE local_title=? LIMIT 1",
+                                       (m,)).fetchone())
+                finally:
+                    # Cierre en TODO camino: si execute() falla (BD corrupta/esquema
+                    # ajeno), un handle huérfano bloquearía el fichero en Windows.
+                    con.close()
             except sqlite3.Error:
                 continue
             if hits >= 2:
