@@ -199,7 +199,12 @@ def search_content(allowed, zonas, oracle, path: str, consulta: str,
     """
     p = fsops.resolve_within(allowed, path)
     check_read(zonas, p)
-    patron = _re.compile(consulta) if regex else None
+    patron = None
+    if regex:
+        try:
+            patron = _re.compile(consulta)
+        except _re.error as e:
+            raise ValueError(f"regex inválida: {e}") from e
     matches: list[dict] = []
     omitidos: list[str] = []
     podados = 0
@@ -211,9 +216,6 @@ def search_content(allowed, zonas, oracle, path: str, consulta: str,
     for f in iter_tree(zonas, p, on_prune=_poda):
         if len(matches) >= max_results:
             break
-        # Saltar .g* silenciosamente
-        if f.name.lower().startswith(".g"):
-            continue
         try:
             check_gdoc(f)
             guard_file(oracle, f)

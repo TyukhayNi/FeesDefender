@@ -168,3 +168,24 @@ def test_search_content_salta_binarios(sandbox):
     (caso / "bin.dat").write_bytes(b"l3\x00binario")
     res = search_content([root], zonas, FakeOracle(), str(caso), "l3")
     assert not any(m["path"].endswith("bin.dat") for m in res["matches"])
+
+
+def test_search_content_no_excluye_dotfiles(sandbox):
+    root, zonas, caso = sandbox
+    # un dotfile legítimo (.gitignore) SÍ entra en la búsqueda: el salto .g*
+    # es solo para documentos nativos de Google (por sufijo, via check_gdoc)
+    (caso / ".gitignore").write_text("patron_buscado\n", encoding="utf-8")
+    res = search_content([root], zonas, FakeOracle(), str(caso), "patron_buscado")
+    assert any(m["path"].endswith(".gitignore") for m in res["matches"])
+
+
+def test_search_content_regex(sandbox):
+    root, zonas, caso = sandbox
+    res = search_content([root], zonas, FakeOracle(), str(caso), "l[0-9]", regex=True)
+    assert any(m["text"] == "l3" for m in res["matches"])
+
+
+def test_search_content_regex_invalida(sandbox):
+    root, zonas, caso = sandbox
+    with pytest.raises(ValueError, match="regex inválida"):
+        search_content([root], zonas, FakeOracle(), str(caso), "[", regex=True)
