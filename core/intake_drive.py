@@ -46,7 +46,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .case_manager import register_drive_ev
-from .config import caso_path, settings
+from .config import INTAKE_CONTROL_FILES, caso_path, settings
 from .utils import now_iso
 
 
@@ -60,8 +60,9 @@ _PULL_MARKER = ".pulled"
 # Ficheros de control del intake que NUNCA son documento (marcadores de
 # idempotencia / inventario interno). Pública: la consumen otros módulos
 # (p.ej. scripts.abrir_caso.hash_tree_local) para excluirlos del ledger
-# forense (_intake_log.jsonl) sin duplicar el literal.
-CONTROL_FILES: frozenset[str] = frozenset({_PULL_MARKER, "_inventory.json", ".synced"})
+# forense (_intake_log.jsonl) sin duplicar el literal. Lista ÚNICA en
+# config.INTAKE_CONTROL_FILES (MEJORAS #54 T1).
+CONTROL_FILES: frozenset[str] = INTAKE_CONTROL_FILES
 
 # Encoding del backend local de rclone para el destino (montaje de Google
 # Drive for Desktop en G:\). Es el conjunto estándar de Windows MÁS LeftSpace

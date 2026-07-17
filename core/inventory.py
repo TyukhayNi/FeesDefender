@@ -17,7 +17,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 
-from .config import caso_path
+from .config import INTAKE_CONTROL_FILES, caso_path
 from .utils import file_sha256
 
 
@@ -44,7 +44,8 @@ _RELEVANT_EXTS = {
 }
 
 # Archivos de control que el inventario debe ignorar a cualquier nivel.
-_CONTROL_FILES = {"_inventory.json", ".pulled", ".synced"}
+# Lista ÚNICA en config.INTAKE_CONTROL_FILES (MEJORAS #54 T1).
+_CONTROL_FILES = INTAKE_CONTROL_FILES
 
 
 def _source_of(rel_parts: tuple[str, ...]) -> str:

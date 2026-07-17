@@ -408,6 +408,23 @@ EMAIL_SUBDIRS: tuple[str, ...] = (
     "03_Otros",
 )
 
+# --- Lotes de entrega en 00_Input (MEJORAS #54, spec 2026-07-17 rev 2) -------
+
+# Fuentes que forman LOTE de entrega (00_Input/<AAAA-MM-DD>_<fuente>_<NN>/).
+# 'drive_ev' y 'crm' NO están: son canales ESPEJO (cajón fijo + sync incremental).
+# 'entrevista' se reserva aunque hoy no tiene escritor (#53).
+FUENTES_LOTE: tuple[str, ...] = ("whatsapp", "email", "manual", "entrevista")
+
+# Cajones espejo: no forman lotes, su sync no se toca.
+ESPEJO_SUBDIRS: tuple[str, ...] = ("01_Drive EV", "05_CRM")
+
+# Ficheros de control del intake: NUNCA son documento ni entran en manifiestos
+# de lote. Lista ÚNICA (antes: copias en inventory/intake_manual/intake_drive).
+INTAKE_CONTROL_FILES: frozenset[str] = frozenset({
+    ".pulled", ".synced", "_inventory.json",
+    "_exported_ids.json", "_resolved_links.json",
+})
+
 
 def caso_path(case_id: str) -> Path:
     """Devuelve la ruta absoluta a un caso. Tolera layout flat y por ciudades."""

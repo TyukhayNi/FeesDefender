@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .config import CRM_SUBDIR, caso_path, settings
+from .config import CRM_SUBDIR, INTAKE_CONTROL_FILES, caso_path, settings
 from .intake_utils import safe_zip_extract
 
 
@@ -34,7 +34,8 @@ from .intake_utils import safe_zip_extract
 # ---------------------------------------------------------------------------
 
 _MANUAL_SUBDIR = "04_Manual"
-_CONTROL_FILES: frozenset[str] = frozenset({".pulled", "_inventory.json", ".synced"})
+# Lista ÚNICA en config.INTAKE_CONTROL_FILES (MEJORAS #54 T1).
+_CONTROL_FILES: frozenset[str] = INTAKE_CONTROL_FILES
 
 
 # ---------------------------------------------------------------------------
