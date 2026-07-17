@@ -7,10 +7,14 @@ intactos. Correr TRAS el checkin si el caso estaba prestado.
 
 Los movimientos físicos (fase 1) son todo-o-nada: si cualquier ``shutil.move``
 o ``mkdir`` falla a mitad de camino (fichero bloqueado, permiso, disco lleno),
-se revierte lo ya movido antes de propagar el error. M9/cobertura/catálogo
-(fase 2) solo se tocan si la fase 1 completó entera — así una migración a
-medias nunca deja los registros aguas abajo apuntando a rutas que ya no
-existen.
+se revierte lo ya movido antes de propagar el error. Ningún borrado ocurre en
+fase 1: los ficheros de control duplicados (``03_Email``) se dejan en su sitio
+y se listan en ``duplicados_a_borrar``; el ``unlink`` real se hace en fase 2,
+tras confirmar que la fase 1 completó entera. Así fase 1 es genuinamente
+reversible (rollback = solo movimientos, nunca borrados) y M9/cobertura/
+catálogo (también fase 2) solo se tocan si la fase 1 completó entera — una
+migración a medias nunca deja los registros aguas abajo apuntando a rutas que
+ya no existen, ni borra nada.
 """
 from __future__ import annotations
 
@@ -74,6 +78,7 @@ def migrar(case_id: str, *, dry_run: bool) -> list[migrar_layout.MovimientoCajon
     hechos: list[tuple[Path, Path]] = []
     lotes_creados: list[Path] = []
     mapping_total: dict[str, str] = {}
+    duplicados_a_borrar: list[Path] = []
     try:
         for mov in plan:
             cajon_dir, lote_dir = base / mov.cajon, base / mov.lote
@@ -88,7 +93,11 @@ def migrar(case_id: str, *, dry_run: bool) -> list[migrar_layout.MovimientoCajon
                         shutil.move(str(hijo), str(destino))
                         hechos.append((hijo, destino))
                     else:
-                        hijo.unlink()          # ya consolidado en la raíz
+                        # ya consolidado en la raíz: el duplicado NO se borra
+                        # aquí (Finding 1) — un borrado en fase 1 no sería
+                        # reversible por el rollback. Se deja en su sitio y
+                        # se borra en fase 2, solo si la fase 1 completa entera.
+                        duplicados_a_borrar.append(hijo)
                     continue
                 destino = lote_dir / hijo.name
                 shutil.move(str(hijo), str(destino))
@@ -108,7 +117,10 @@ def migrar(case_id: str, *, dry_run: bool) -> list[migrar_layout.MovimientoCajon
                 pass
         raise RuntimeError(f"Migración abortada y revertida: {exc}") from exc
 
-    # --- Fase 2: manifiestos + remaps + evento (solo si fase 1 completó) -
+    # --- Fase 2: borrado de duplicados + manifiestos + remaps + evento ----
+    # (solo se ejecuta si la fase 1 completó entera)
+    for hijo in duplicados_a_borrar:
+        hijo.unlink()
     for mov in plan:
         lote_dir = base / mov.lote
         intake_lotes.escribir_manifiesto(

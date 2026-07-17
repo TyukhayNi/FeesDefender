@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import yaml
+
 from core import migrar_layout as ml
 
 
@@ -127,6 +129,24 @@ def test_migracion_integral_espejos_intactos_y_remapeo(tmp_casos_root):
     (maq / "_cobertura.json").write_text(json.dumps(
         [{"rel_path": "04_Manual/2026-01-10_demanda.pdf", "slug": "s", "estado": "ok"}]),
         encoding="utf-8")
+    # catálogo documental (Finding 2): forma real de CatalogEntry/save_catalog
+    # (core/catalogo_documental.py) — un doc en cajón de entrega + un espejo.
+    cat_path = config.caso_path(case_id) / "01_Procesado" / "indice_documental.yaml"
+    cat_path.write_text(yaml.dump([
+        {"id_doc": "abc123", "ruta_relativa": "04_Manual/2026-01-10_demanda.pdf",
+         "nombre_original": "2026-01-10_demanda.pdf", "tipo_documental": None,
+         "fecha_doc": None, "parte": None, "fuente": "manual", "estado": "original",
+         "hash": "", "fecha_indexado": "", "parent_id": None, "orden_en_bundle": None,
+         "descripcion": None, "fecha_fuente": None, "confianza": None,
+         "nombre_canonico": None, "ruta_sala_lectura": None},
+        {"id_doc": "def456", "ruta_relativa": "01_Drive EV/w/doc.pdf",
+         "nombre_original": "doc.pdf", "tipo_documental": None, "fecha_doc": None,
+         "parte": None, "fuente": "drive_ev", "estado": "original", "hash": "",
+         "fecha_indexado": "", "parent_id": None, "orden_en_bundle": None,
+         "descripcion": None, "fecha_fuente": None, "confianza": None,
+         "nombre_canonico": None, "ruta_sala_lectura": None},
+    ], allow_unicode=True, default_flow_style=False, sort_keys=False),
+        encoding="utf-8")
 
     migrar(case_id, dry_run=False)
 
@@ -158,6 +178,16 @@ def test_migracion_integral_espejos_intactos_y_remapeo(tmp_casos_root):
     assert nuevo_rel.startswith("2026-01-10_manual_01/") and (base / nuevo_rel).is_file()
     cob = json.loads((maq / "_cobertura.json").read_text(encoding="utf-8"))
     assert cob[0]["rel_path"] == nuevo_rel
+    # remapeo del catálogo documental (Finding 2): la entrada de entrega
+    # remapea y su ruta nueva existe en disco; el espejo queda intacto; el
+    # YAML sigue siendo válido y con el mismo número de entradas.
+    catalogo = yaml.safe_load(cat_path.read_text(encoding="utf-8"))
+    assert len(catalogo) == 2
+    entry_manual = next(e for e in catalogo if e["id_doc"] == "abc123")
+    entry_espejo = next(e for e in catalogo if e["id_doc"] == "def456")
+    assert entry_manual["ruta_relativa"] == nuevo_rel
+    assert (base / entry_manual["ruta_relativa"]).is_file()
+    assert entry_espejo["ruta_relativa"] == "01_Drive EV/w/doc.pdf"
 
 
 def test_migracion_aborta_con_caso_prestado(tmp_casos_root):
@@ -239,3 +269,54 @@ def test_migracion_revierte_si_falla_un_movimiento_a_mitad(tmp_casos_root, monke
     log_path = base / "_intake_log.jsonl"
     assert not log_path.is_file() or "migracion_layout_intake" not in log_path.read_text(
         encoding="utf-8")
+
+
+def test_migracion_no_borra_duplicado_de_control_si_falla_despues(tmp_casos_root, monkeypatch):
+    """Finding 1: el borrado del fichero de control duplicado (``03_Email``, ya
+    consolidado en la raíz) se aplaza a fase 2. Si un cajón procesado DESPUÉS
+    falla, el duplicado debe seguir intacto en su cajón original — con el bug,
+    se borraba en el momento de detectarlo (fase 1), antes de saber si el
+    resto de la migración completaría, y el rollback nunca podía restaurarlo."""
+    import pytest
+
+    from core import case_manager, config
+    from core.intake_lotes import PATRON_LOTE
+    import scripts.migrar_layout_intake as mli
+
+    case_id = "EV-MIG-004"
+    case_manager.ensure_case(case_id, titulo="mig")
+    base = config.caso_path(case_id) / "00_Input"
+    for rel, b in {
+        "03_Email/2026-02-01_asunto.eml": b"e",
+        "03_Email/_exported_ids.json": b"{}",   # duplicado del ya consolidado
+        "04_Manual/2026-01-10_demanda.pdf": b"m",
+    }.items():
+        p = base / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(b)
+    # ya consolidado en la raíz: dispara la rama "duplicado, NO mover"
+    (base / "_exported_ids.json").write_text("{}", encoding="utf-8")
+
+    original_move = mli.shutil.move
+
+    def move_que_falla_en_manual(src, dst):
+        if "04_Manual" in str(src):
+            raise OSError("fichero bloqueado (simulado)")
+        return original_move(src, dst)
+
+    monkeypatch.setattr(mli.shutil, "move", move_que_falla_en_manual)
+
+    with pytest.raises(RuntimeError):
+        mli.migrar(case_id, dry_run=False)
+
+    # el duplicado NUNCA se borró: sigue en su cajón original, intacto
+    dup = base / "03_Email" / "_exported_ids.json"
+    assert dup.is_file()
+    assert dup.read_text(encoding="utf-8") == "{}"
+    # la raíz tampoco cambió
+    assert (base / "_exported_ids.json").read_text(encoding="utf-8") == "{}"
+    # rollback completo: ningún lote huérfano, todo vuelve a su cajón
+    lotes = [d for d in base.iterdir() if d.is_dir() and PATRON_LOTE.match(d.name)]
+    assert lotes == []
+    assert (base / "03_Email" / "2026-02-01_asunto.eml").is_file()
+    assert (base / "04_Manual" / "2026-01-10_demanda.pdf").is_file()
