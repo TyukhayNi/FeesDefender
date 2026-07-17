@@ -24,9 +24,13 @@ Lee y contrasta:
 
 - **Demanda** y **contestación** (y reconvención / alegación de nulidad si las hay).
 - Autos de admisión, **providencia de señalamiento** (de Sudespacho sincronizado en `00_Input/`).
-- `00_Input/`: encargo, exposé, report, nota simple, escritura, chats (`02_Whatsapp`), correos
-  (`03_Email`), CRM (`05_CRM`).
-- `06_Entrevistas/`: transcripción de la call de viabilidad/entrevista a consultores — de aquí salen
+- `00_Input/`: encargo, exposé, report, nota simple, escritura, chats (fuente `whatsapp`), correos
+  (fuente `email`), CRM (cajón espejo `05_CRM`). `00_Input/` tiene dos formas de canal: lotes de
+  entrega `<AAAA-MM-DD>_<fuente>_<NN>/` y cajones espejo fijos `01_Drive EV`/`05_CRM`; los casos
+  antiguos no migrados conservan los cajones legacy `02_Whatsapp`/`03_Email`/`04_Manual` — lee
+  AMBAS formas.
+- Fuente `entrevista` (lote `<AAAA-MM-DD>_entrevista_<NN>/` o cajón legacy `06_Entrevistas/`):
+  transcripción de la call de viabilidad/entrevista a consultores — de aquí salen
   los **testigos** y los hechos a acreditar. **No** la trates como prueba: es trabajo interno; su valor
   es identificar la testifical y la documental, y detectar admisiones internas peligrosas.
 - **Nunca** `90_Notas personales/`.

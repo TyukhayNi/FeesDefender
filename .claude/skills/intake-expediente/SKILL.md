@@ -28,8 +28,8 @@ license: "Proprietary — Tyukhay Legal (todos los derechos reservados)"
 
 # intake-expediente
 
-Deposita ficheros en `00_Input/<fuente>/` de un expediente del Drive, dirigido desde
-Claude, **con trazabilidad**. Todo lo que toca bytes va **server-side** por el conector
+Deposita ficheros en un **lote** `00_Input/<AAAA-MM-DD>_<fuente>_<NN>/` de un expediente
+del Drive, dirigido desde Claude, **con trazabilidad**. Todo lo que toca bytes va **server-side** por el conector
 `expedientes-xl` (los bytes nunca pasan por el modelo). La trazabilidad (evento `upload_*`)
 se construye con el helper puro `scripts/traza.py` y se escribe con `append_text`.
 
@@ -41,10 +41,20 @@ se construye con el helper puro `scripts/traza.py` y se escribe con `append_text
   los pequeños (< tope) pueden entrar por `write_file_base64`.
 
 ## Fuentes y destino (`00_Input/`)
-`01_Drive EV` · `02_Whatsapp/<rol>` · `03_Email` · `04_Manual` · `05_CRM` ·
-`06_Entrevistas/<AAAA-MM-DD>_<rol>_<apellido>`. El evento `upload_*` se elige por fuente:
-WhatsApp→`upload_whatsapp`, email→`upload_email`, entrevista→`upload_entrevista`, resto
-manual→`upload_manual`.
+`00_Input/` tiene dos formas de canal: **lotes de entrega** `<AAAA-MM-DD>_<fuente>_<NN>/`
+(fuentes `whatsapp`, `email`, `manual`, `entrevista`; cada lote lleva `_manifiesto.yaml` con
+`tipo_contenido` por ítem) y **cajones espejo** fijos `01_Drive EV/` y `05_CRM/` (sync
+incremental). Los casos antiguos no migrados conservan los cajones `02_Whatsapp/`,
+`03_Email/`, `04_Manual/`, `06_Entrevistas/`: leer AMBAS formas. La fuente de un fichero se
+deriva de su primer segmento de ruta (espejo → lote → cajón legacy → raíz=manual).
+
+**Esta skill CREA el lote:** el depósito dirigido resuelve el directorio
+`<AAAA-MM-DD>_<fuente>_<NN>` (NN = siguiente al mayor existente ese día para esa fuente; lo
+crea si no existe), deposita los ficheros **verbatim** dentro y escribe su
+`_manifiesto.yaml`. Los cajones espejo (`01_Drive EV/`, `05_CRM/`) **NO** reciben depósitos
+de esta skill, salvo el flujo CRM ya documentado (sync, no depósito dirigido). El evento
+`upload_*` se elige por fuente: WhatsApp→`upload_whatsapp`, email→`upload_email`,
+entrevista→`upload_entrevista`, resto manual→`upload_manual`.
 
 ## Autonomía y gate único
 
@@ -63,21 +73,28 @@ todo de una pasada **sin más preguntas**.
 ## Procedimiento
 
 1. **Prepara (sin copiar nada).** Resuelve el caso. Para cada fichero de `_ingest/` decide
-   **fuente** (`00_Input/<sub>`), **evento** `upload_*` y **nombre canónico**
+   **fuente** (`whatsapp`/`email`/`manual`/`entrevista`; los espejos `01_Drive EV`/`05_CRM`
+   NO se depositan desde aquí), **evento** `upload_*` y **nombre canónico**
    (`AAAA-MM-DD_descripcion`). Calcula su **sha256** con `hash_path` (server-side) para
    detectar **duplicados** (vs `00_Input/_intake_log.jsonl`, con `traza.is_duplicate`) y
    **0 bytes**. NO deposites todavía.
 2. **(GATE) Propón la clasificación y ESPERA.** Tabla por fichero:
-   `fichero → fuente (00_Input/<sub>) → nombre canónico → evento`, marcando **duplicado**,
-   **0 bytes** y **sin fecha**. Cabecera: «nada copiado aún». **Espera OK explícito.** Si
-   piden ajustes, reclasifica y vuelve a proponer.
-3. **(tras OK) Ejecuta de una pasada, sin más preguntas:** deposita server-side
-   (`.zip`/`.tar` → `extract_archive`; suelto → `copy_path`; binario pequeño atrapado en el
-   chat → `write_file_base64`) en `00_Input/<fuente>/`; **salta** los duplicados; construye
-   la línea con `traza.build_upload_event(case_id, event, files=[{path, sha256}…], actor,
-   ts)` (`path` relativo a `00_Input/`, posix; `ts` ISO; `actor` = quien sube) y escríbela
-   con `append_text` en `00_Input/_intake_log.jsonl`.
-4. **Reporta:** depositados por fuente, hashes, duplicados saltados, 0-byte avisados.
+   `fichero → fuente → lote destino (00_Input/<AAAA-MM-DD>_<fuente>_<NN>) → nombre canónico
+   → evento`, marcando **duplicado**, **0 bytes** y **sin fecha**. El `NN` propuesto es el
+   siguiente al mayor lote de esa fuente ya existente ese día (o `01` si no hay ninguno).
+   Cabecera: «nada copiado aún». **Espera OK explícito.** Si piden ajustes, reclasifica y
+   vuelve a proponer.
+3. **(tras OK) Ejecuta de una pasada, sin más preguntas:** resuelve/crea el lote
+   `00_Input/<AAAA-MM-DD>_<fuente>_<NN>/` (crea el directorio si no existe) y deposita
+   server-side dentro **verbatim** (`.zip`/`.tar` → `extract_archive`; suelto → `copy_path`;
+   binario pequeño atrapado en el chat → `write_file_base64`); **salta** los duplicados;
+   escribe/actualiza `_manifiesto.yaml` del lote (`fuente`, `fecha_intake`, `origen`, `items`
+   con `relpath`, `sha256`, `tipo_contenido` por ítem); construye la línea con
+   `traza.build_upload_event(case_id, event, files=[{path, sha256}…], actor, ts)` (`path`
+   relativo a `00_Input/`, posix; `ts` ISO; `actor` = quien sube) y escríbela con
+   `append_text` en `00_Input/_intake_log.jsonl`.
+4. **Reporta:** lote(s) creados/reutilizados por fuente, depositados, hashes, duplicados
+   saltados, 0-byte avisados.
 
 ## Qué NO hace (límites de capa)
 - **NO** escribe el `_intake_hashes.json` (IntakeManifest): esa dedup pesada (aliases/

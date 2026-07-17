@@ -33,7 +33,7 @@ Hace, en esta fase (**1ª pasada, documental**):
 - No valora la **VIABILIDAD** (JURÍDICO/FINANZAS): se dejan SIEMPRE en blanco.
 - No escribe el **recuadro ejecutivo** para el CFO (`B48`).
 - No rellena las **NOTAS LETRADO**.
-- No lee `06_Entrevistas/` en esta 1ª pasada (aún no hay entrevista), ni **nunca** `90_Notas personales/`.
+- No lee la fuente `entrevista` (lotes ni cajón legacy `06_Entrevistas/`) en esta 1ª pasada (aún no hay entrevista), ni **nunca** `90_Notas personales/`.
 
 > La **2ª pasada** (leer la transcripción de la entrevista y cerrar huecos testificales) está prevista pero **no se construye todavía** en esta versión.
 
@@ -44,13 +44,21 @@ Hace, en esta fase (**1ª pasada, documental**):
 3. **TOTAL de hitos = métrica auxiliar, no veredicto.** Sin umbrales fijos.
 4. **Scoring conservador**: una firma `no_cotejado` puntúa **0**, no 1. Los `N/A` no suman. Sin documento → `pendiente` (vacío), no `0`.
 5. **Terminología**: **propietario** (ofrece el bien; nunca "vendedor") / **buscador** (busca; nunca "comprador" ni "arrendatario"). Aplica **también al texto libre que tú redactas** (MOTIVOS DE IMPAGO, AVISOS, resúmenes): si un documento dice "comprador/vendedor/arrendatario", **normalízalo** a buscador/propietario al transcribir la postura. La cita literal en `CITA/FUENTE` (col J) puede conservar el término original entre comillas, pero el campo que redactas no.
-6. **No leer** `06_Entrevistas/` (1ª pasada) ni nunca `90_Notas personales/`. El **NIG no se usa**.
+6. **No leer** la fuente `entrevista` (lotes ni cajón legacy `06_Entrevistas/`) en esta 1ª pasada, ni nunca `90_Notas personales/`. El **NIG no se usa**.
 7. Trabaja sobre documentos **no anonimizados** (necesita nombres, fechas e importes reales). El rastro fuente+cita vale además como traza RGPD.
 
 ## Flujo de trabajo
 
 ### 1. Localiza el expediente y lee `00_Input/`
-Subcarpetas: `01_Drive EV`, `02_Whatsapp`, `03_Email`, `04_Manual`, `05_CRM`. Whatsapp/Email se subdividen por consultor (`00_Consultor propietario`, `01_Consultor buscador`, `02_Grupo/Dirección`, `03_Otros`). Lee todo lo que haya. No leas `06_Entrevistas/` ni `90_Notas personales/`.
+`00_Input/` tiene dos formas de canal: **lotes de entrega** `<AAAA-MM-DD>_<fuente>_<NN>/`
+(fuentes `whatsapp`, `email`, `manual`, `entrevista`; cada lote lleva `_manifiesto.yaml`
+con `tipo_contenido` por ítem) y **cajones espejo** fijos `01_Drive EV/` y `05_CRM/` (sync
+incremental). Los casos antiguos no migrados conservan los cajones `02_Whatsapp/`,
+`03_Email/`, `04_Manual/`: lee AMBAS formas. Whatsapp/Email se subdividen por consultor
+(`00_Consultor propietario`, `01_Consultor buscador`, `02_Grupo/Dirección`, `03_Otros`) tanto
+dentro de un lote como del cajón legacy. Lee todo lo que haya. No leas la fuente
+`entrevista` (lotes `<AAAA-MM-DD>_entrevista_<NN>/` o cajón legacy `06_Entrevistas/`) ni
+`90_Notas personales/`.
 
 ### 2. Determina el tipo de caso
 Del nombre de la carpeta / informe existente / tag CRM. Las claves canónicas son las de `core/config.py` (`TIPOS_CASO_ACTORA` / `TIPOS_CASO_DEFENSIVA`). Actores: `BAD_DEBT`, `NEGATIVA_OFERTA`, `NEGATIVA_ARRAS`, `NEGATIVA_ESCRITURA`, `NEGATIVA_CONTRATO_ARRENDAMIENTO`, `VUELTA`, `INCUMPLIMIENTO_EXCLUSIVA`. Defensivos: `RESPONSABILIDAD_PROFESIONAL`, `DEVOLUCION_RESERVA`, `LAU_20`, `DEVOLUCION_HONORARIOS`. Comodín: `OTROS`.
