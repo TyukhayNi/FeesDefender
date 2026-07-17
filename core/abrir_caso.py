@@ -11,10 +11,8 @@ from dataclasses import dataclass
 
 from core import config
 
-FUENTE_A_SUBDIR = {
-    "drive_ev": "01_Drive EV", "manual": "04_Manual",
-    "whatsapp": "02_Whatsapp", "email": "03_Email", "entrevista": "06_Entrevistas",
-}
+SUBDIR_DRIVE_EV = "01_Drive EV"          # espejo: cajón fijo (spec §2)
+FUENTES: tuple[str, ...] = ("drive_ev",) + config.FUENTES_LOTE
 FUENTE_A_EVENTO = {
     "drive_ev": "pull_drive_ev", "manual": "upload_manual",
     "whatsapp": "upload_whatsapp", "email": "upload_email", "entrevista": "upload_entrevista",
@@ -149,14 +147,23 @@ def _shas_en_log(log_existente: list[dict]) -> set[str]:
     return shas
 
 
-def plan_intake(inventario: list[dict], log_existente: list[dict], fuente: str) -> PlanIntake:
+def plan_intake(inventario: list[dict], log_existente: list[dict], fuente: str,
+                *, lote: str | None = None) -> PlanIntake:
     """Construye el plan de depósito (puro). Sin tocar bytes.
 
     inventario: [{"relpath": posix, "sha256": str|None, "size": int}, ...].
+    ``drive_ev`` (espejo) deposita siempre en el cajón fijo SUBDIR_DRIVE_EV;
+    las fuentes de entrega (config.FUENTES_LOTE) requieren ``lote=`` — cada
+    entrega es su propia subcarpeta ``00_Input/<AAAA-MM-DD>_<fuente>_<NN>/``.
     """
-    if fuente not in FUENTE_A_SUBDIR:
-        raise ValueError(f"Fuente desconocida: {fuente!r}. Válidas: {sorted(FUENTE_A_SUBDIR)}")
-    subdir = FUENTE_A_SUBDIR[fuente]
+    if fuente not in FUENTES:
+        raise ValueError(f"Fuente desconocida: {fuente!r}. Válidas: {sorted(FUENTES)}")
+    if fuente == "drive_ev":
+        base = SUBDIR_DRIVE_EV
+    else:
+        if not lote:
+            raise ValueError(f"La fuente de entrega {fuente!r} requiere lote=")
+        base = lote
     evento = FUENTE_A_EVENTO[fuente]
     shas_previos = _shas_en_log(log_existente)
 
@@ -167,7 +174,7 @@ def plan_intake(inventario: list[dict], log_existente: list[dict], fuente: str) 
         size = int(entry.get("size", 0))
         items.append(ItemIntake(
             relpath=rel,
-            dst=f"{subdir}/{rel}",
+            dst=f"{base}/{rel}",
             evento=evento,
             sha256=sha,
             size=size,
