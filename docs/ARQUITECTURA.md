@@ -13,7 +13,7 @@
 │   sync_sudespacho · sync_sudespacho_legacy
 │   sudespacho_create · sudespacho_relations
 │   intake_drive                       │  ← pull Drive E&V (rclone gdrive_ev)
-│   intake_manual                      │  ← upload manual a 04_Manual/
+│   intake_manual · intake_lotes       │  ← upload manual a lote 00_Input/<fecha>_manual_NN/ (MEJORAS #54)
 │   intake_log · intake_manifest       │  ← refactor v2 (M10 + M9)
 │   anon/ (api · separar · ocr · …)    │  ← absorbido de Expedientes Seguros
 │   extractor · markdown_generator     │
