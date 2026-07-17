@@ -86,6 +86,21 @@ def test_cli_pasada_completa_crea_intake_log_y_crm(drive_temporal):
     assert "9999" in ids
 
 
+def test_cli_persiste_id_go_para_resolve_ref(drive_temporal):
+    """El --w-code debe quedar en meta.id_go de _caso.md.
+
+    Bug real (2026-07-17, caso VaRS3/W-02TH0W): abrir_caso.py nunca pasaba
+    id_go a ensure_case(), así que resolve_ref(w_code) no encontraba el caso
+    y scripts/export_label_emails.py creaba una carpeta nueva (stray) en vez
+    de escribir en el caso real.
+    """
+    result = CliRunner().invoke(cli.app, _args())
+    assert result.exit_code == 0, result.output
+
+    case_id = "BaRS11 - Passeig Marítim 30 (W-02Z2NR) - Vuelta"
+    assert case_locator.resolve_ref("W-02Z2NR") == case_id
+
+
 def test_cli_idempotente_no_dobla_intake_ni_crm(drive_temporal, monkeypatch):
     """§8: una segunda pasada completa (mismo w_code, --force para superar la
     guarda de colisión) no debe volver a dar de alta en el CRM ni duplicar el
