@@ -303,18 +303,6 @@ def test_append_text_rechaza_fuera(tmp_path):
         fsops.append_text([tmp_path], str(tmp_path / ".." / "x.txt"), "y")
 
 
-def test_delete_path_borra_dentro(tmp_path):
-    f = tmp_path / "borrame.txt"
-    f.write_text("x", encoding="utf-8")
-    fsops.delete_path([tmp_path], str(f))
-    assert f.exists() is False
-
-
-def test_delete_path_rechaza_fuera(tmp_path):
-    with pytest.raises(fsops.OutsideSandbox):
-        fsops.delete_path([tmp_path], "C:\\Windows\\system32")
-
-
 def _tar_bytes(entries: dict[str, bytes]) -> bytes:
     import io as _io
     buf = _io.BytesIO()
@@ -416,11 +404,6 @@ def test_write_base64_frontera_exacta(tmp_path):
     b64_2 = _b64.b64encode(data2).decode("ascii")
     with pytest.raises(fsops.TooLarge):
         fsops.write_base64([tmp_path], str(tmp_path / "no.bin"), b64_2, max_bytes=100)
-
-
-def test_delete_path_rechaza_raiz_sandbox(tmp_path):
-    with pytest.raises(fsops.OutsideSandbox):
-        fsops.delete_path([tmp_path], str(tmp_path))
 
 
 def test_hash_tree_mapea_relpath_posix_a_sha(tmp_path):

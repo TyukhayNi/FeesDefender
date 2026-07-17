@@ -344,15 +344,3 @@ def append_text(allowed_dirs: list[Path], path: str | Path, text: str) -> Path:
     with open(dst, "a", encoding="utf-8", newline="") as fh:
         fh.write(text)
     return dst
-
-
-def delete_path(allowed_dirs: list[Path], path: str | Path) -> None:
-    """Borra un fichero o árbol dentro del sandbox."""
-    target = resolve_within(allowed_dirs, path)
-    for base in allowed_dirs:
-        if target == Path(base).resolve():
-            raise OutsideSandbox("No se permite borrar la raíz del sandbox")
-    if target.is_dir():
-        shutil.rmtree(target)
-    else:
-        target.unlink(missing_ok=True)
