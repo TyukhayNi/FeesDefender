@@ -1,11 +1,8 @@
 {
   "mcpServers": {
     "expedientes-xl": {
-      "command": "python",
-      "args": [
-        "${CLAUDE_PLUGIN_ROOT}/expedientes_xl/server.py",
-        "G:\\Unidades compartidas\\EXPEDIENTES - TYUKHAY LEGAL"
-      ]
+      "command": "cmd",
+      "args": ["/c", "${CLAUDE_PLUGIN_ROOT}/expedientes_xl/run_server.bat"]
     },
     "email-export": {
       "command": "python",
