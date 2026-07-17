@@ -97,6 +97,21 @@ def _html_colaboradores(rows: list[dict]) -> str:
 
 
 # ---------------------------------------------------------------------------
+# DTOs: normalización de teléfonos
+# ---------------------------------------------------------------------------
+
+def test_nuevo_colaborador_normaliza_telefonos():
+    c = NuevoColaborador(nombre="X", movil="+34 600 123 456", telefono="934 567 890")
+    assert c.movil == "600123456"
+    assert c.telefono == "934567890"
+
+
+def test_nuevo_cliente_contrario_normaliza_movil():
+    c = NuevoClienteContrario(nombre="X", movil="0034 611 222 333")
+    assert c.movil == "611222333"
+
+
+# ---------------------------------------------------------------------------
 # Constantes
 # ---------------------------------------------------------------------------
 
@@ -591,7 +606,7 @@ def test_create_colaborador_ok(monkeypatch):
         body_dict[k] = v
     assert body_dict.get("campo_1086__colaboradores") == "Ana López"
     assert body_dict.get("campo_1080__colaboradores") == "ana.lopez@engelvoelkers.com"
-    assert body_dict.get("campo_1083__colaboradores") == "+34 600 111 222"
+    assert body_dict.get("campo_1083__colaboradores") == "600111222"  # normalizado
     assert body_dict.get("ajax") == "true"
 
 
@@ -628,7 +643,7 @@ def test_rest_post_colaborador_201(monkeypatch):
     payload = call_args[1]["json"]
     assert payload["nombre"] == "Ana López"
     assert payload["email"] == "ana.lopez@engelvoelkers.com"
-    assert payload["movil"] == "+34 600 111 222"
+    assert payload["movil"] == "600111222"  # normalizado
     # nif vacío → no se incluye en payload
     assert "nif_cif" not in payload
 
