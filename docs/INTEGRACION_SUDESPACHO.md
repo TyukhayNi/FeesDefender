@@ -546,8 +546,19 @@ Pendiente: confirmar payload y respuesta con una conversión real.
    `["left.expedientes_judiciales.648", "right.clientes_propios.2"]`
    Cada string tiene el formato `"{dirección}.{elemento}.{id}"`.
 
-9. **`element_register` POST acepta `relatedElement`+`relatedId`**: Se puede crear un registro
-   y vincularlo en un solo call, sin necesidad de `saveselect` posterior.
+9. **`element_register` POST — `relatedElement`+`relatedId` NO vinculan de forma fiable
+   (corregido 2026-07-17).** Se aceptan sin error (201 igual) pero **se ignoran en silencio**:
+   el registro queda huérfano (verificado en vivo con `actuaciones`, la pestaña del expediente
+   sale vacía). **Vincular siempre en un paso aparte con `relation_element`** (§15.2/§15.3,
+   §10.6). *(La redacción anterior de este gotcha afirmaba lo contrario; era errónea.)*
+
+10. **Teléfonos: 9 dígitos o `HTTP 400`.** Los campos `movil`/`telefono*` de
+    `clientes_contrarios`/`colaboradores` rechazan `+34` y espacios
+    (`400 movil is incorrect`). Enviar solo los 9 dígitos. **Falsa pista:** si el escritor REST
+    falla por esto y hay fallback legacy, éste pide PHPSESSID → parece un problema de cookie
+    cuando en realidad es el formato del móvil. Hoy los escritores de `core/` **no normalizan**
+    (pasan el valor verbatim); normalizar antes de llamar. Ver `MEJORAS #70` / `PLAN.md
+    [SIGUIENTE-APERTURA-EXPEDIENTE]` (B3).
 
 ---
 
@@ -714,10 +725,11 @@ la única verificación posible hoy es visual en `tnm.sudespacho.net`.
 | `ccc` / `ccc_bic` / `ccc_original` | Cuenta bancaria | sin usar hasta ahora |
 | `iva` / `vies` / `tipo_doc_identidad` / `cliente_online` / `fax` / `web` | — | sin usar hasta ahora |
 
-**Pendiente de promover a código:** ejecutado 2026-07-17 con `httpx` directo (script
-ad-hoc de descubrimiento), sin `link_contrario()`/`create_cliente_contrario()` en
-`core/sudespacho_relations.py` todavía. Construir cuando un segundo caso lo necesite
-(no se promueve por anticipación — regla de la casa).
+**Promovido a código (PR #53, en `main`):** `create_cliente_contrario()`, `link_contrario()`
+y `ensure_contrario_vinculado()` ya viven en `core/sudespacho_relations.py` (verificado
+2026-07-18). **Aún NO cableado en `abrir_caso`** — el alta CRM sigue siendo mínima y estas
+funciones se llaman aparte; orquestarlas en la ficha completa es el build B1
+(`PLAN.md [SIGUIENTE-APERTURA-EXPEDIENTE]`).
 
 ### 10.7 Actualizar un registro existente — PUT, no PATCH (confirmado 2026-07-17)
 
@@ -737,6 +749,13 @@ Verificado en vivo sobre `colaboradores` (corrección de nombre a mayúsculas si
 y `extrajudiciales` (campos `tags` y `Notas`). El campo `tags` es una cadena de IDs
 separados por comas, con coma inicial y final — `",129,286,257,"` — NO un array JSON;
 para añadir un tag hay que leer el valor actual y concatenar, no reemplazar por uno solo.
+
+**⚠️ Preservar `Numero_Expediente` en el PUT de `extrajudiciales`.** Como el PUT es de
+reemplazo completo y `Numero_Expediente` solo se fija en la creación (no hay una función de
+`update` en `core/`; `core/sudespacho_create` lo calcula como `max+1` al crear), un PUT que
+lo omita puede dejarlo en `0`. Al reescribir tags/`Notas`, **reenvía el `Numero_Expediente`
+actual** (léelo con un GET previo). El build B1 encapsulará este round-trip en un
+`update_expediente` seguro (`PLAN.md [SIGUIENTE-APERTURA-EXPEDIENTE]`).
 
 ---
 
