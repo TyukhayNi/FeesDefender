@@ -518,6 +518,33 @@ def test_mismo_message_id_bytes_distintos_se_escribe_y_anota(tmp_casos_root):
     assert any(dest.rglob("*.eml"))  # el fichero ESTÁ en disco, no se descarta
 
 
+def test_dedup_mismo_message_id_dentro_de_la_misma_corrida_se_anota(tmp_casos_root):
+    """Finding revisión: dos gmail_id NUEVOS (ninguno aún en M9) comparten Message-ID
+    dentro de la MISMA llamada a ``export_label``. Ambos se escriben (§9.3); el 2º se
+    cuenta como duplicado y ``duplicados_map`` debe anotar ``duplicado_de`` apuntando
+    al 1º escrito esta corrida (00_Input-relativo: ``f"{dest.name}/{rel}"``), no
+    quedarse en blanco."""
+    case_id = _caso_para_export()
+    dest = ee.email_dest_dir(case_id)
+    raws = {
+        "g1": _build_raw(message_id="<mismo@x>", subject="Primera copia", body="Cuerpo A."),
+        "g2": _build_raw(message_id="<mismo@x>", subject="Segunda copia", body="Cuerpo B."),
+    }
+    report = ee.export_label(
+        "acc@x", _ETIQUETA, dest, case_id=case_id,
+        service=_fake_service_una_pagina(raws),
+    )
+
+    assert report.written == 2
+    assert report.duplicados == 1
+    emls = sorted(p.relative_to(dest).as_posix() for p in dest.glob("*.eml"))
+    assert len(emls) == 2
+    assert len(report.duplicados_map) == 1
+    primer_rel = report.files[0]
+    esperado = f"{dest.name}/{primer_rel}"
+    assert list(report.duplicados_map.values()) == [esperado]
+
+
 def test_emit_traza_registra_message_id_en_m9(tmp_casos_root):
     from core.intake_manifest import IntakeManifest
 

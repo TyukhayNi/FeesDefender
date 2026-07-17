@@ -993,13 +993,25 @@ def export_label(
         if case_id:
             with IntakeManifest(case_id) as _m:
                 vistos = _m.message_ids()
+                m9_mid_a_primary = {
+                    e["message_id"]: e["primary_path"]
+                    for e in _m.data.values()
+                    if e.get("message_id") and e.get("primary_path")
+                }
             vistos |= existing_message_ids(legacy_cajon)
         else:
             vistos = existing_message_ids(dest)
+            m9_mid_a_primary = {}
         link_index = _load_resolved_links(estado_dir)
         if case_id and not link_index:
             link_index = _load_resolved_links(legacy_cajon)
         nuevos_gids: list[str] = []
+        # Dedup DENTRO de esta corrida (finding: dos gmail_id nuevos con el mismo
+        # Message-ID, ninguno aún en M9): mid → rel (bajo `dest`) del primero escrito
+        # esta corrida con ese mid. `dest.name` es siempre el lote/cajón (agnóstico de
+        # bandeja), así que f"{dest.name}/{rel}" es 00_Input-relativo — igual formato
+        # que `primary_path` de M9 (spec §9.3: duplicado_de siempre 00_Input-relativo).
+        mid_a_rel_run: dict[str, str] = {}
 
         def _flatten_safe(gid: str, raw: bytes) -> None:
             """Aplana los anidados sin que un fallo aborte la corrida (un email
@@ -1032,11 +1044,14 @@ def export_label(
                 # §9.3: Message-ID ya conocido → SE ESCRIBE igual (canal nuevo lo trae),
                 # y se anota para el manifiesto de lotes (T8). La idempotencia de canal
                 # (no re-descargar) sigue siendo el índice de gmail_id, no este chequeo.
+                # Cross-corrida: M9 ya tiene el original (snapshot tomado antes del bucle).
+                # Within-corrida: dos gmail_id nuevos con el mismo mid, ninguno aún en M9
+                # (finding de revisión) → el primero escrito esta corrida, vía
+                # ``mid_a_rel_run``.
                 report.duplicados += 1
-                if case_id:
-                    with IntakeManifest(case_id) as _m:
-                        hit = _m.lookup_message_id(mid)
-                    duplicado_de = hit[1].get("primary_path") if hit else None
+                duplicado_de = m9_mid_a_primary.get(mid)
+                if duplicado_de is None and mid in mid_a_rel_run:
+                    duplicado_de = f"{dest.name}/{mid_a_rel_run[mid]}"
             elif mid:
                 vistos.add(mid)
             try:
@@ -1045,6 +1060,8 @@ def export_label(
                 report.errors.append(f"{gid}: {exc}")
                 continue
             rel = str(eml_path.relative_to(dest)).replace("\\", "/")
+            if mid:
+                mid_a_rel_run.setdefault(mid, rel)
             if duplicado_de:
                 report.duplicados_map[rel] = duplicado_de
             report.files.append(rel)
