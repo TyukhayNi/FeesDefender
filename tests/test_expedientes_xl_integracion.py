@@ -1,8 +1,10 @@
 # tests/test_expedientes_xl_integracion.py
 """E2E del servidor consolidado sobre un arbol de caso simulado."""
 import asyncio
-from pathlib import Path
 import pytest
+
+pytest.importorskip("mcp")  # el server importa mcp.server.fastmcp; skip si no está
+
 from plugins.expedientes_xl.server import build_server
 from plugins.expedientes_xl.tiers import Zonas
 
