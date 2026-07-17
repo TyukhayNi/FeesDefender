@@ -42,10 +42,17 @@ Hace, en esta fase (**1ª pasada, documental**):
 1. **Nunca inventar.** Cada dato se ancla a su fuente: `[doc: <fichero>]` + cita literal + confianza (`alta/media/baja`). Si el dato no consta en ningún documento → `pendiente`/vacío, jamás por inferencia. Encadena con la disciplina de `verificacion-anclada-fuente`.
 2. **VIABILIDAD siempre en blanco** en el pre-relleno. La decide el abogado.
 3. **TOTAL de hitos = métrica auxiliar, no veredicto.** Sin umbrales fijos.
-4. **Scoring conservador**: una firma `no_cotejado` puntúa **0**, no 1. Los `N/A` no suman. Sin documento → `pendiente` (vacío), no `0`.
+4. **Scoring conservador**: una firma `no_cotejado` puntúa **0**, no 1. Los `N/A` no suman. Sin documento → `pendiente` (vacío), no `0` — **salvo en los hitos de existencia documental** (ver matiz):
+   - **Hitos de existencia documental** — la pregunta ES "¿existe este documento concreto?" (`ENCARGO`, `IDENT_PROPIETARIO`, `TITULARIDAD`, `HOJA_VISITA`, `OFERTA`, `IDENT_BUSCADOR`, `ARRAS/ARRENDAMIENTO` en su vertiente firmadas, `RECON_HON_ARRAS`, `RECON_HON_ESCRITURA`, `ESCRITURA` — marcados en `hitos_derivacion.md`). Si tras revisar **todo** `00_Input` (crudo o MD, regla 8) no aparece ese documento **ni ninguna referencia a su existencia** (email, CRM, WhatsApp) → **`0`**, no pendiente. La ausencia no es una laguna aquí: es la respuesta — el hito pregunta literalmente por algo que, de existir, estaría en el expediente.
+   - **El resto** (hitos/preguntas que dependen de un hecho no necesariamente documentado: comunicaciones verbales, gestiones en curso como el envío de un burofax por un canal aún no subido, decisiones internas) — aquí la ausencia de documento no prueba que el hecho no ocurrió → sigue aplicando `pendiente` (vacío).
 5. **Terminología**: **propietario** (ofrece el bien; nunca "vendedor") / **buscador** (busca; nunca "comprador" ni "arrendatario"). Aplica **también al texto libre que tú redactas** (MOTIVOS DE IMPAGO, AVISOS, resúmenes): si un documento dice "comprador/vendedor/arrendatario", **normalízalo** a buscador/propietario al transcribir la postura. La cita literal en `CITA/FUENTE` (col J) puede conservar el término original entre comillas, pero el campo que redactas no.
 6. **No leer** la fuente `entrevista` (lotes ni cajón legacy `06_Entrevistas/`) en esta 1ª pasada, ni nunca `90_Notas personales/`. El **NIG no se usa**.
 7. Trabaja sobre documentos **no anonimizados** (necesita nombres, fechas e importes reales). El rastro fuente+cita vale además como traza RGPD.
+8. **Vía de lectura por documento (rápida pero rigurosa):**
+   1. Si existe `01_Procesado/02_Sala de máquina/03_MD/<slug>.md` para ese fichero **y** su estado en `_cobertura.md` es `ok` → léelo desde ahí. Ya está extraído y su calidad ya fue verificada (densidad de texto, sin gibberish); releer el binario crudo sería releer lo mismo por una vía más lenta.
+   2. Si el estado es `low`/`empty`, o no existe MD para ese documento (sala de máquina no se ha corrido, o el documento llegó después) → lee el **crudo** de `00_Input/` directamente. Nunca te fíes de una extracción ya marcada como dudosa.
+   3. Para cualquier dato que alimente un **hito** o un **importe** (fechas de encargo/oferta/escritura, precio, cuantías, cotejo de firmas) — los campos de más peso del informe — anota en la cita **de qué vía vino**: `[doc: fichero, vía MD]` frente a `[doc: fichero, crudo]`. Así el rastro queda auditable sin perder velocidad.
+   4. Esto **no** exige correr `organizar-sala-maquina` antes — esta skill sigue siendo independiente; solo aprovecha el MD *si ya existe*.
 
 ## Flujo de trabajo
 
@@ -58,7 +65,8 @@ incremental). Los casos antiguos no migrados conservan los cajones `02_Whatsapp/
 (`00_Consultor propietario`, `01_Consultor buscador`, `02_Grupo/Dirección`, `03_Otros`) tanto
 dentro de un lote como del cajón legacy. Lee todo lo que haya. No leas la fuente
 `entrevista` (lotes `<AAAA-MM-DD>_entrevista_<NN>/` o cajón legacy `06_Entrevistas/`) ni
-`90_Notas personales/`.
+`90_Notas personales/`. Para la vía de lectura de cada documento (MD vs crudo), aplica la
+regla de oro 8.
 
 ### 2. Determina el tipo de caso
 Del nombre de la carpeta / informe existente / tag CRM. Las claves canónicas son las de `core/config.py` (`TIPOS_CASO_ACTORA` / `TIPOS_CASO_DEFENSIVA`). Actores: `BAD_DEBT`, `NEGATIVA_OFERTA`, `NEGATIVA_ARRAS`, `NEGATIVA_ESCRITURA`, `NEGATIVA_CONTRATO_ARRENDAMIENTO`, `VUELTA`, `INCUMPLIMIENTO_EXCLUSIVA`. Defensivos: `RESPONSABILIDAD_PROFESIONAL`, `DEVOLUCION_RESERVA`, `LAU_20`, `DEVOLUCION_HONORARIOS`. Comodín: `OTROS`.

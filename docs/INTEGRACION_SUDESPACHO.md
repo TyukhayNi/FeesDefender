@@ -44,6 +44,28 @@ El HAR revela:
 Resultado: `POST /api/element_register/colaboradores` → HTTP 201, Bearer JWT, sin PHPSESSID.  
 Properties: `nombre`, `email`, `movil`, `nif_cif`, `telefono1`, `notas`, etc.
 
+### 0.3 Atajo: forzar una propiedad inválida para descubrir el esquema real
+
+Alternativa más rápida que la captura HAR (§0.2) cuando el elemento ya es accesible
+por `x-api-key` (no requiere sesión de navegador ni PHPSESSID): pedir en
+`GET /api/element_registries/{element}` una `properties[]` que sabes que NO existe.
+El backend responde `HTTP 500`, pero el campo `detail` **expone la lista completa de
+propiedades reales del elemento**:
+
+```
+GET /api/element_registries/{element}?properties[0]=xxx_invalid_probe
+→ HTTP 500 {"detail": "ElementProperty not found : xxx_invalid_probe The properties
+            are: campo1,campo2,campo3,..."}
+```
+
+Revela los nombres exactos de campo (p. ej. `1apellido`/`2apellido` separados, no un
+único `apellidos`) sin necesidad de crear un registro de prueba ni exportar HAR. Usado
+2026-07-17 para descubrir el esquema de `clientes_contrarios` (§10.6) y confirmar el de
+`extrajudiciales`. Limitación: solo lista propiedades ESCALARES del elemento — las
+relaciones (`clientes_propios`, `colaboradores`, `clientes_contrarios` como *relación*
+de otro elemento) no aparecen aquí; para esas, seguir usando el patrón confirmado de
+`relation_element` (§10.6/§12.2) o HAR si el patrón es nuevo.
+
 ---
 
 ## 1. Arquitectura de la plataforma
@@ -642,6 +664,79 @@ Mapping de campos de colaborador (confirmado 2026-04-29, miembro 776):
 | campo_1088__colaboradores | Población | |
 | campo_1078__colaboradores | CP | |
 | campo_1087__colaboradores | Notas | textarea, HTML |
+
+### 10.6 Crear y vincular cliente contrario a expediente EXTRAJUDICIAL (confirmado 2026-07-17)
+
+Antes de esta fecha, la vinculación de `clientes_contrarios` solo estaba confirmada
+para expedientes JUDICIALES (§12.2, endpoint legacy `saveselect`). Para extrajudicial
+**no hace falta un endpoint especial**: usa el mismo endpoint REST genérico de
+relación que ya usan `clientes_propios` y `colaboradores` en `extrajudiciales`.
+
+```
+1. Crear el contrario (si no existe ya en el CRM):
+   POST https://api-crm-commons-pro.sudespacho.biz/api/element_register/clientes_contrarios
+   Auth: x-api-key
+   Body: {"nombre": "...", "1apellido": "...", "2apellido": "...", "nif_cif": "...",
+          "email": "...", "movil": "...", "direccion": "...", "poblacion": "..."}
+   Response 201: {"id": N, "message": "Created!"}
+
+2. Vincular al expediente extrajudicial:
+   POST https://api-crm-commons-pro.sudespacho.biz/api/relation_element/extrajudiciales/{exp_id}
+   Auth: x-api-key
+   Body: ["right.clientes_contrarios.{contrario_id}"]
+   Response 201: "Created!"
+```
+
+**Verificado en vivo** (2026-07-17, expediente extrajudicial 624, W-02TH0W): contrario
+creado (id 1099) y confirmado visualmente en la ficha del CRM tras vincular. El 201 de
+la API por sí solo NO es prueba suficiente — el endpoint no valida FK server-side (ver
+`docs/DEAD_ENDS.md` "Leer relaciones de un elemento vía REST — sin ruta de lectura");
+la única verificación posible hoy es visual en `tnm.sudespacho.net`.
+
+**Mapping de campos de `clientes_contrarios`** (descubierto vía §0.3; a diferencia de
+`colaboradores`, aquí el apellido va SEPARADO en dos campos):
+
+| Campo REST | Significado | Notas |
+|---|---|---|
+| `nombre` | Nombre(s) | |
+| `1apellido` | Primer apellido | |
+| `2apellido` | Segundo apellido | |
+| `nif_cif` | NIF/CIF | tipo `Dni` |
+| `email` | Email | |
+| `movil` | Móvil | |
+| `telefono1` / `telefono2` / `telefono3` | Teléfonos | |
+| `direccion` | Dirección | |
+| `poblacion` | Población | |
+| `provincia` | Provincia | select |
+| `cp` | Código postal | |
+| `nacionalidad` | Nacionalidad | select |
+| `notas` | Notas | |
+| `ccc` / `ccc_bic` / `ccc_original` | Cuenta bancaria | sin usar hasta ahora |
+| `iva` / `vies` / `tipo_doc_identidad` / `cliente_online` / `fax` / `web` | — | sin usar hasta ahora |
+
+**Pendiente de promover a código:** ejecutado 2026-07-17 con `httpx` directo (script
+ad-hoc de descubrimiento), sin `link_contrario()`/`create_cliente_contrario()` en
+`core/sudespacho_relations.py` todavía. Construir cuando un segundo caso lo necesite
+(no se promueve por anticipación — regla de la casa).
+
+### 10.7 Actualizar un registro existente — PUT, no PATCH (confirmado 2026-07-17)
+
+`PATCH /api/element_register/{element}/{id}` → **HTTP 405** (`Allow: PUT, GET, DELETE`).
+El verbo correcto es **PUT**, de **reemplazo completo**: hay que reenviar el conjunto
+de campos que quieras conservar además del que cambias (no se ha probado un payload
+parcial, así que no asumir que los campos omitidos se preservan).
+
+```
+PUT https://api-crm-commons-pro.sudespacho.biz/api/element_register/{element}/{id}
+Auth: x-api-key
+Body: JSON con los campos actuales + los que cambian
+Response 200: el registro completo actualizado
+```
+
+Verificado en vivo sobre `colaboradores` (corrección de nombre a mayúsculas sin tilde)
+y `extrajudiciales` (campos `tags` y `Notas`). El campo `tags` es una cadena de IDs
+separados por comas, con coma inicial y final — `",129,286,257,"` — NO un array JSON;
+para añadir un tag hay que leer el valor actual y concatenar, no reemplazar por uno solo.
 
 ---
 

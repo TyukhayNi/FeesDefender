@@ -9,6 +9,7 @@ import httpx
 
 from core.sudespacho_relations import (
     EV_MMC_SPAIN_ID,
+    NuevoClienteContrario,
     NuevoColaborador,
     SudespachoRelationsError,
     _autocomplete,
@@ -18,21 +19,27 @@ from core.sudespacho_relations import (
     _link_rest,
     _link_rest_or_legacy,
     _list_colaboradores_rest,
+    _rest_post_cliente_contrario,
     _rest_post_colaborador,
     _rest_search_expedientes,
     _LINK_CLIENTE_PATH,
     _LINK_COLABORADOR_PATH,
     _REFERENCIA_PROP_BY_ELEMENT,
+    _REST_CREATE_CLIENTE_CONTRARIO,
     _REST_CREATE_COLABORADOR,
     _SAVEADD_COLABORADOR_PATH,
+    create_cliente_contrario,
     create_colaborador,
     ensure_colaborador_vinculado,
+    ensure_contrario_vinculado,
+    find_cliente_contrario_by_nif,
     find_colaborador_by_email,
     find_expediente_by_referencia,
     find_expediente_judicial_by_referencia,
     list_expedientes_judiciales_candidatos,
     wcode_match,
     link_colaborador,
+    link_contrario,
     link_ev_mmc,
     load_all_colaboradores,
     normalize_referencia,
@@ -1358,3 +1365,137 @@ def test_rest_texto_http_500_devuelve_vacio(_api_key):
     with patch("core.sudespacho_relations.httpx.get",
                return_value=_mock_get_response({}, status=500)):
         assert _rest_search_por_texto("expedientes_judiciales", "x") == []
+
+
+# ---------------------------------------------------------------------------
+# Cliente contrario en expedientes EXTRAJUDICIALES (confirmado 2026-07-17,
+# expediente 624/W-02TH0W — ver docs/INTEGRACION_SUDESPACHO.md §10.6)
+# ---------------------------------------------------------------------------
+
+def test_rest_post_cliente_contrario_201(monkeypatch):
+    """REST devuelve 201 → ID extraído correctamente."""
+    monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
+    datos = NuevoClienteContrario(
+        nombre="Ivanna Loreto",
+        apellido1="Camps",
+        apellido2="Pereperez",
+        nif="20794383Z",
+        email="ivanna@example.invalid",
+    )
+    resp = _make_httpx_response({"id": 1099, "message": "Created!"}, status=201)
+    with patch("core.sudespacho_relations.httpx.post", return_value=resp) as mock_post:
+        contrario_id = _rest_post_cliente_contrario(datos)
+    assert contrario_id == "1099"
+    call_args = mock_post.call_args
+    assert _REST_CREATE_CLIENTE_CONTRARIO in call_args[0][0]
+    payload = call_args[1]["json"]
+    assert payload["nombre"] == "Ivanna Loreto"
+    assert payload["1apellido"] == "Camps"
+    assert payload["2apellido"] == "Pereperez"
+    assert payload["nif_cif"] == "20794383Z"
+    assert payload["email"] == "ivanna@example.invalid"
+    # campos opcionales vacíos no incluidos
+    assert "movil" not in payload
+    assert "direccion" not in payload
+
+
+def test_rest_post_cliente_contrario_campos_opcionales_omitidos(monkeypatch):
+    """Campos opcionales vacíos no se incluyen en el payload REST."""
+    monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
+    datos = NuevoClienteContrario(nombre="Solo Nombre")
+    resp = _make_httpx_response({"id": 1100, "message": "Created!"}, status=201)
+    with patch("core.sudespacho_relations.httpx.post", return_value=resp) as mock_post:
+        _rest_post_cliente_contrario(datos)
+    payload = mock_post.call_args[1]["json"]
+    assert payload == {"nombre": "Solo Nombre"}
+
+
+def test_rest_post_cliente_contrario_apikey_ausente(monkeypatch):
+    monkeypatch.delenv("SUDESPACHO_API_KEY", raising=False)
+    datos = NuevoClienteContrario(nombre="Test")
+    with pytest.raises(ValueError, match="SUDESPACHO_API_KEY"):
+        _rest_post_cliente_contrario(datos)
+
+
+def test_rest_post_cliente_contrario_http_no_201_lanza_error(monkeypatch):
+    monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
+    r = MagicMock()
+    r.status_code = 500
+    r.json.return_value = {"detail": "algo fallo"}
+    r.text = '{"detail":"algo fallo"}'
+    with patch("core.sudespacho_relations.httpx.post", return_value=r):
+        with pytest.raises(SudespachoRelationsError, match="HTTP 500"):
+            _rest_post_cliente_contrario(NuevoClienteContrario(nombre="Test"))
+
+
+def test_create_cliente_contrario_delega_en_rest(monkeypatch):
+    """create_cliente_contrario() es un wrapper directo de _rest_post_cliente_contrario
+    (sin fallback legacy: no hay endpoint saveadd confirmado para este elemento)."""
+    monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
+    resp = _make_httpx_response({"id": 1101, "message": "Created!"}, status=201)
+    with patch("core.sudespacho_relations.httpx.post", return_value=resp):
+        contrario_id = create_cliente_contrario(NuevoClienteContrario(nombre="Test"))
+    assert contrario_id == "1101"
+
+
+def test_link_contrario_llama_a_link_rest_con_element_correcto(monkeypatch):
+    """link_contrario() vincula vía _link_rest sobre el elemento 'extrajudiciales'."""
+    monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
+    with patch("core.sudespacho_relations._link_rest") as mock_link_rest:
+        link_contrario("624", "1099")
+    mock_link_rest.assert_called_once_with(
+        "extrajudiciales", "624", ["right.clientes_contrarios.1099"]
+    )
+
+
+def test_find_cliente_contrario_por_nif(monkeypatch):
+    """Búsqueda por NIF exacto vía REST — devuelve el ID del contrario."""
+    monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
+    payload = {"items": [{"id": "1099", "values": [
+        {"property": {"name": "nif_cif"}, "value": "20794383Z"},
+    ]}]}
+    with patch("core.sudespacho_relations.httpx.get", return_value=_make_httpx_response(payload)):
+        result = find_cliente_contrario_by_nif("20794383Z")
+    assert result == "1099"
+
+
+def test_find_cliente_contrario_nif_vacio(monkeypatch):
+    monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
+    assert find_cliente_contrario_by_nif("") is None
+
+
+def test_find_cliente_contrario_no_encontrado(monkeypatch):
+    monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
+    with patch("core.sudespacho_relations.httpx.get",
+               return_value=_make_httpx_response({"items": []})):
+        assert find_cliente_contrario_by_nif("00000000X") is None
+
+
+def test_ensure_contrario_vinculado_existente(monkeypatch):
+    """Si el contrario ya existe (por NIF), no se crea — solo se vincula."""
+    monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
+    with patch("core.sudespacho_relations.find_cliente_contrario_by_nif", return_value="1099"):
+        with patch("core.sudespacho_relations.create_cliente_contrario") as mock_create:
+            with patch("core.sudespacho_relations.link_contrario") as mock_link:
+                contrario_id, created = ensure_contrario_vinculado(
+                    "624", NuevoClienteContrario(nombre="Ivanna Loreto", nif="20794383Z"),
+                )
+    assert contrario_id == "1099"
+    assert created is False
+    mock_create.assert_not_called()
+    mock_link.assert_called_once_with("624", "1099")
+
+
+def test_ensure_contrario_vinculado_nuevo(monkeypatch):
+    """Si el contrario no existe, se crea y luego se vincula."""
+    monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
+    with patch("core.sudespacho_relations.find_cliente_contrario_by_nif", return_value=None):
+        with patch("core.sudespacho_relations.create_cliente_contrario", return_value="1200") as mock_create:
+            with patch("core.sudespacho_relations.link_contrario") as mock_link:
+                contrario_id, created = ensure_contrario_vinculado(
+                    "624", NuevoClienteContrario(nombre="Nuevo Contrario", nif="11111111H"),
+                )
+    assert contrario_id == "1200"
+    assert created is True
+    mock_create.assert_called_once()
+    mock_link.assert_called_once_with("624", "1200")

@@ -334,7 +334,7 @@ def main(
     # 5.2 esqueleto
     case_manager.ensure_case(
         ident.case_id, titulo=ident.case_id, referencia_crm=ident.case_id,
-        tipo_caso=tipo_caso, ciudad=ciudad, direccion=direccion,
+        tipo_caso=tipo_caso, ciudad=ciudad, direccion=direccion, id_go=w_code,
     )
     case_dir = case_locator.path_for(ident.case_id)
 

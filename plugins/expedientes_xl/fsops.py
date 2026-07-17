@@ -8,10 +8,23 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import os
 import shutil
 import tarfile
+import tempfile
 import zipfile
 from pathlib import Path
+
+_LONG_PATH_UMBRAL = 248
+
+
+def _abrible(p: Path) -> str:
+    r"""Ruta apta para operaciones de fichero: prefijo \\?\ solo cuando roza
+    MAX_PATH (mismo patrón que readops._abrible)."""
+    from .winio import long_path
+
+    s = str(p)
+    return long_path(p) if len(s) >= _LONG_PATH_UMBRAL else s
 
 
 class OutsideSandbox(Exception):
@@ -68,7 +81,7 @@ def sha256_file(allowed_dirs: list[Path], path: str | Path) -> str:
     """SHA-256 del fichero, calculado server-side. Devuelve solo el digest."""
     target = resolve_within(allowed_dirs, path)
     h = hashlib.sha256()
-    with open(target, "rb") as fh:
+    with open(_abrible(target), "rb") as fh:
         for chunk in iter(lambda: fh.read(_CHUNK), b""):
             h.update(chunk)
     return h.hexdigest()
@@ -106,12 +119,93 @@ def copy_file(allowed_dirs: list[Path], src: str | Path, dst: str | Path) -> Pat
     return dst_p
 
 
-def copy_tree(allowed_dirs: list[Path], src: str | Path, dst: str | Path) -> Path:
-    """Copia recursiva de un árbol de directorios dentro del sandbox."""
+def write_text_file(allowed_dirs: list[Path], zonas, path: str | Path, text: str) -> Path:
+    """Escribe texto ATÓMICO (tmp+nonce mismo dir) respetando zonas."""
+    from .tiers import check_write
+    from .winio import atomic_write_text
+
+    dst = resolve_within(allowed_dirs, path)
+    check_write(zonas, dst, exists=dst.exists())
+    atomic_write_text(dst, text)
+    return dst
+
+
+def edit_text_file(allowed_dirs: list[Path], zonas, path: str | Path, old: str, new: str) -> Path:
+    """Reemplaza `old` (exactamente 1 aparición) por `new`, atómico."""
+    from .tiers import check_write
+    from .winio import atomic_write_text
+
+    dst = resolve_within(allowed_dirs, path)
+    if not dst.is_file():
+        raise FileNotFoundError(f"No existe: {path}")
+    check_write(zonas, dst, exists=True)
+    texto = dst.read_text(encoding="utf-8")
+    n = texto.count(old)
+    if n != 1:
+        raise ValueError(f"'{old[:60]}' aparece {n} veces (se exige exactamente 1)")
+    atomic_write_text(dst, texto.replace(old, new, 1))
+    return dst
+
+
+def copy_file_v2(allowed_dirs: list[Path], zonas, src: str | Path, dst: str | Path) -> Path:
+    """Copia con destino atómico (si existe: tmp+replace) y zonas en ambos extremos.
+
+    El origen pasa `check_gdoc` (spec §6.4): un stub nativo de Google (.gdoc,
+    .gsheet, ...) es ilegible por FS y lanza `GDocBloqueado` con la desviación
+    a google-despacho.
+    """
+    from .guards import check_gdoc
+    from .tiers import check_read, check_write
+    from .winio import retry_sharing
+
     src_p = resolve_within(allowed_dirs, src)
     dst_p = resolve_within(allowed_dirs, dst)
-    shutil.copytree(src_p, dst_p, dirs_exist_ok=True, symlinks=True)
+    check_read(zonas, src_p)
+    check_gdoc(src_p)
+    check_write(zonas, dst_p, exists=dst_p.exists())
+    dst_p.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(
+        prefix=dst_p.name + ".", suffix=".tmp", dir=_abrible(dst_p.parent))
+    os.close(fd)
+    try:
+        shutil.copyfile(_abrible(src_p), _abrible(Path(tmp)))
+        retry_sharing(lambda: os.replace(_abrible(Path(tmp)), _abrible(dst_p)))
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
     return dst_p
+
+
+def copy_tree_v2(allowed_dirs: list[Path], zonas, oracle, src: str | Path, dst: str | Path) -> list[Path]:
+    """Copia recursiva con travesía por nodo: poda Tier 0, valida CADA destino
+    ANTES de copiar nada (dos pasadas), guarda de árbol frío.
+
+    Los stubs nativos de Google (.gdoc, .gsheet, ...) del origen se OMITEN
+    (incopiables a nivel de kernel) en vez de abortar el árbol; cada omisión
+    se registra en el audit log (`omitido_gdoc`) — sin silencios.
+    """
+    from . import audit
+    from .guards import GDocBloqueado, check_gdoc, guard_tree
+    from .readops import iter_tree
+    from .tiers import check_write
+
+    src_p = resolve_within(allowed_dirs, src)
+    dst_p = resolve_within(allowed_dirs, dst)
+    guard_tree(oracle, src_p)
+    plan: list[tuple[Path, Path]] = []
+    for f in iter_tree(zonas, src_p):
+        try:
+            check_gdoc(f)
+        except GDocBloqueado:
+            audit.log_op("copy_tree_v2", str(f), "omitido_gdoc")
+            continue
+        destino = dst_p / f.relative_to(src_p)
+        check_write(zonas, destino, exists=destino.exists())  # aborta ANTES de copiar
+        plan.append((f, destino))
+    copiados: list[Path] = []
+    for origen, destino in plan:
+        copiados.append(copy_file_v2(allowed_dirs, zonas, str(origen), str(destino)))
+    return sorted(copiados)
 
 
 def _safe_member_dest(dest_dir: Path, member_name: str) -> Path | None:
@@ -156,6 +250,7 @@ def extract_archive(
     dest_dir: str | Path,
     max_total_bytes: int = DEFAULT_MAX_EXTRACT_BYTES,
     strip_top_level: bool = False,
+    member_filter=None,
 ) -> list[Path]:
     """Descomprime .zip o .tar(.gz/.bz2) en dest_dir, ambos dentro del sandbox.
 
@@ -163,6 +258,12 @@ def extract_archive(
     (anti zip-bomb). Si `strip_top_level` y el archivo tiene un ÚNICO directorio de
     primer nivel que envuelve a todos los ficheros, se quita ese wrapper de las
     rutas extraídas. Devuelve los ficheros extraídos (ordenados).
+
+    `member_filter(name, dest)`, si se pasa, decide POR MIEMBRO (ya con el nombre
+    saneado/sin wrapper y el destino resuelto) si se vuelca (True) o se OMITE
+    (False) — antes de tocar bytes. Lo usa el servidor MCP para aplicar zonas/tiers
+    por miembro (p. ej. destino Tier 0 o Tier 1 ya existente) sin abortar el resto
+    del archivo.
     """
     archive_p = resolve_within(allowed_dirs, archive)
     dest_p = resolve_within(allowed_dirs, dest_dir)
@@ -187,6 +288,8 @@ def extract_archive(
                 dest = _safe_member_dest(dest_p, name)
                 if dest is None:
                     continue
+                if member_filter is not None and not member_filter(name, dest):
+                    continue
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 with zf.open(member) as src:
                     _stream_member(src, dest, budget)
@@ -201,6 +304,8 @@ def extract_archive(
                     continue
                 dest = _safe_member_dest(dest_p, name)
                 if dest is None:
+                    continue
+                if member_filter is not None and not member_filter(name, dest):
                     continue
                 src = tf.extractfile(member)
                 if src is None:
@@ -239,15 +344,3 @@ def append_text(allowed_dirs: list[Path], path: str | Path, text: str) -> Path:
     with open(dst, "a", encoding="utf-8", newline="") as fh:
         fh.write(text)
     return dst
-
-
-def delete_path(allowed_dirs: list[Path], path: str | Path) -> None:
-    """Borra un fichero o árbol dentro del sandbox."""
-    target = resolve_within(allowed_dirs, path)
-    for base in allowed_dirs:
-        if target == Path(base).resolve():
-            raise OutsideSandbox("No se permite borrar la raíz del sandbox")
-    if target.is_dir():
-        shutil.rmtree(target)
-    else:
-        target.unlink(missing_ok=True)
