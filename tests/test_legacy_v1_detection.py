@@ -85,13 +85,13 @@ def test_caso_v2_recien_creado_no_es_legacy(cm):
 
 
 def test_caso_con_subdirs_v2_no_es_legacy(cm, tmp_casos_root):
-    """04_Manual/, 05_CRM/, 06_Entrevistas/ y _caso.md son todos v2."""
+    """05_CRM/ y _caso.md son v2; 04_Manual/06_Entrevistas son cajones de
+    entrega lazy (MEJORAS #54 T10) — no se comprueban aquí, ninguno de los
+    dos es lo que ``is_legacy_intake_v1`` mira."""
     cm.ensure_case("CASO-V2-2")
     base = tmp_casos_root / "CASO-V2-2" / "00_Input"
-    # Sanity: las subdirs v2 las crea ensure_case
-    assert (base / "04_Manual").is_dir()
+    # Sanity: la base v2 eager (D7) la crea ensure_case
     assert (base / "05_CRM").is_dir()
-    assert (base / "06_Entrevistas").is_dir()
     assert (base / "_caso.md").is_file()
 
     assert cm.is_legacy_intake_v1("CASO-V2-2") is False

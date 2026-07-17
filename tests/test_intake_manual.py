@@ -141,7 +141,11 @@ class TestListFiles:
 
     def test_excluye_archivos_de_control(self, caso_man, tmp_casos_root):
         save_file(caso_man, "real.pdf", b"pdf")
+        # 04_Manual (legacy) es lazy tras MEJORAS #54 T10: lo crea el propio
+        # test para ejercer el filtrado de archivos de control en el cajón
+        # legacy (casos no migrados a lotes), que list_files sigue soportando.
         manual_dir = tmp_casos_root / caso_man / "00_Input" / "04_Manual"
+        manual_dir.mkdir(parents=True, exist_ok=True)
         (manual_dir / ".pulled").write_text("{}", encoding="utf-8")
         (manual_dir / "_inventory.json").write_text("{}", encoding="utf-8")
         (manual_dir / ".synced").write_text("", encoding="utf-8")
@@ -307,9 +311,14 @@ class TestSaveFileEnLote:
 # Integración con ensure_case
 # ---------------------------------------------------------------------------
 
-class TestEnsureCaseCrea04Manual:
-    def test_ensure_case_crea_carpeta_manual(self, tmp_casos_root):
+class TestEnsureCaseNoCreaCajonesDeEntrega:
+    def test_ensure_case_no_crea_cajones_de_entrega(self, tmp_casos_root):
         importlib.reload(case_manager)
         case_manager.ensure_case("NUEVO-MAN", titulo="Nuevo manual")
-        manual_dir = tmp_casos_root / "NUEVO-MAN" / "00_Input" / "04_Manual"
-        assert manual_dir.exists(), "ensure_case debe crear 04_Manual"
+        input_dir = tmp_casos_root / "NUEVO-MAN" / "00_Input"
+        for cajon in ("01_Drive EV", "02_Whatsapp", "03_Email",
+                      "04_Manual", "06_Entrevistas"):
+            assert not (input_dir / cajon).exists(), f"{cajon} debe ser lazy"
+        # La base 05_CRM sigue eager (D7) y el protocolo de la raíz existe.
+        assert (input_dir / "05_CRM").is_dir()
+        assert (input_dir / "_caso.md").is_file()
