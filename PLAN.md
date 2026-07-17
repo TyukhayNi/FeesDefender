@@ -38,8 +38,10 @@ existentes solo bajo demanda, con remapeo de M9/cobertura OCR/catálogo por rel_
 - Spec (única fuente de verdad del diseño; no reabrir sus decisiones):
   `docs/superpowers/specs/2026-07-17-layout-00-input-lotes-design.md`.
 - Plan TDD: `docs/superpowers/plans/2026-07-17-layout-00-input-lotes.md` (16 tareas).
-- [ ] Revisión del plan por Nikolai.
-- [ ] Construcción (subagent-driven, Tareas 1→16; anotar aquí el hash del PR al cerrar).
+- [x] Revisión del plan por Nikolai (aprobado 2026-07-17).
+- [x] Construcción (subagent-driven, Tareas 1→16) ✅ **PR #57 mergeado, squash `8142d97`**.
+      Revisión final de rama completa: 0 Critical / 0 Important. Suite 2037 tests, 0 errors
+      (5 fallos ambientales sudespacho, ajenos). PR #51 (plan) cerrado como superseded.
 - [ ] Operativo tras merge: re-importar en Cowork las skills re-empaquetadas (Tarea 15).
 - [ ] Migración de casos existentes SOLO bajo demanda (`python -m scripts.migrar_layout_intake
       <caso>`) cuando reciban intake nuevo; nunca de oficio ni en barrido.
