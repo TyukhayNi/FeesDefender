@@ -235,6 +235,29 @@ def test_zip_identico_sigue_dedup_de_canal_sin_lote_nuevo(tmp_casos_root):
     r2 = whatsapp_intake.deposit_export(case_id, "03_Otros", content, zip_name="chat.zip")
     assert r2.skipped_dedup and r2.chat_dir == r1.chat_dir
     input_dir = config.caso_path(case_id) / "00_Input"
-    lotes = [d for d in input_dir.iterdir() if d.name.endswith("_whatsapp_01")
-             or "_whatsapp_" in d.name]
+    lotes = [d for d in input_dir.iterdir() if "_whatsapp_" in d.name]
     assert len(lotes) == 1                                # no se abrió un segundo lote
+
+
+def test_zip_identico_prestado_chat_dir_apunta_a_bandeja_real(tmp_casos_root):
+    """El skip de dedup de canal, con el caso prestado, devuelve la carpeta
+    que EXISTE realmente en disco (bandeja ``_pendiente_checkin``), no la
+    ruta del árbol vivo (que nunca se creó). Regresión del hallazgo de
+    revisión de T5: ``primary_path`` de M9 es bandeja-agnóstico."""
+    from core import config, whatsapp_intake
+    case_id = "EV-WA-IDEM-PRESTADO"
+    case_manager.ensure_case(case_id, titulo="wa")
+    case_manager.escribir_lock(
+        case_id, user="Nikolai Tyukhay", timestamp="2026-07-07T09:45:12Z", nonce="n"
+    )
+
+    content = _make_zip({"_chat.txt": _CHAT_TXT})
+    r1 = whatsapp_intake.deposit_export(case_id, "03_Otros", content, zip_name="chat.zip")
+    assert not r1.skipped_dedup
+    assert config.PENDIENTE_CHECKIN_SUBDIR in r1.chat_dir.parts
+
+    r2 = whatsapp_intake.deposit_export(case_id, "03_Otros", content, zip_name="chat.zip")
+    assert r2.skipped_dedup is True
+    assert r2.chat_dir.exists()
+    assert "_pendiente_checkin/whatsapp/" in r2.chat_dir.as_posix()
+    assert r2.chat_dir == r1.chat_dir

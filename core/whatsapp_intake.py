@@ -13,7 +13,8 @@ from datetime import datetime
 from pathlib import Path
 
 from . import intake_log, intake_lotes
-from .config import WHATSAPP_SUBDIRS, caso_path, settings
+from .case_manager import dir_intake
+from .config import PENDIENTE_CHECKIN_SUBDIR, WHATSAPP_SUBDIRS, caso_path, settings
 from .intake_manifest import IntakeManifest, compute_sha256_bytes
 from .intake_utils import safe_zip_members, sanitize_filename
 from .whatsapp_export import filter_by_date_range, parse_chat, referencias_adjuntos
@@ -71,6 +72,24 @@ def _find_chat_txt(members: dict[str, bytes]) -> tuple[str, str]:
             )
         name = sorted(txts)[0]
     return name, members[name].decode("utf-8", errors="replace")
+
+
+def _resolver_chat_dir_previo(case_id: str, case_dir: Path, parent: Path) -> Path:
+    """Resuelve dónde vive REALMENTE un depósito previo (M9 ``primary_path``).
+
+    ``primary_path`` es bandeja-agnóstico (relativo a ``00_Input``, sin
+    prefijo de bandeja): si ese depósito fue desviado a
+    ``_pendiente_checkin`` (caso prestado/conflicto, guard §6), el árbol vivo
+    nunca se creó. Se comprueba qué candidato existe realmente en disco;
+    si ninguno existe (no debería pasar), se cae al guard actual.
+    """
+    vivo = case_dir / "00_Input" / parent
+    if vivo.exists():
+        return vivo
+    bandeja = case_dir / PENDIENTE_CHECKIN_SUBDIR / "whatsapp" / "00_Input" / parent
+    if bandeja.exists():
+        return bandeja
+    return dir_intake(case_id, f"00_Input/{parent.as_posix()}", "whatsapp")
 
 
 def analyze(content: bytes, *, zip_name: str) -> ChatPreview:
@@ -147,7 +166,9 @@ def deposit_export(
         if previo is not None:
             # Idempotencia de CANAL (no dedup cross-lote §6): el mismo export
             # byte-idéntico ya entró; no se abre lote nuevo.
-            prev_dir = case_dir / "00_Input" / Path(previo["primary_path"]).parent
+            prev_dir = _resolver_chat_dir_previo(
+                case_id, case_dir, Path(previo["primary_path"]).parent
+            )
             return DepositResult(
                 chat_dir=prev_dir, preview=preview, skipped_dedup=True
             )
