@@ -9,6 +9,7 @@ from pathlib import Path
 
 from core.config import caso_path
 from core.email_atomize.model import AdjuntoRef
+from core.intake_lotes import PATRON_LOTE
 from core.whatsapp_export import parse_chat
 
 from . import corpus as corpus_mod
@@ -24,11 +25,17 @@ _OUT = ("01_Procesado", "Whatsapp")
 
 
 def descubrir_chats(case_dir: Path) -> list[Path]:
-    """Carpetas bajo 00_Input/02_Whatsapp que contienen un _chat.txt."""
-    base = case_dir.joinpath(*_WHATSAPP_IN)
-    if not base.exists():
-        return []
-    return sorted({p.parent for p in base.rglob("_chat.txt")}, key=lambda x: x.name)
+    """Carpetas con _chat.txt: cajón legacy 02_Whatsapp + lotes whatsapp (spec §8)."""
+    input_dir = case_dir / "00_Input"
+    bases: list[Path] = []
+    legacy = case_dir.joinpath(*_WHATSAPP_IN)
+    if legacy.exists():
+        bases.append(legacy)
+    if input_dir.is_dir():
+        bases += [d for d in input_dir.iterdir() if d.is_dir()
+                  and (m := PATRON_LOTE.match(d.name)) and m.group(2) == "whatsapp"]
+    dirs = {p.parent for base in bases for p in base.rglob("_chat.txt")}
+    return sorted(dirs, key=lambda x: x.name)
 
 
 def _hora_hhmm(ts) -> str:

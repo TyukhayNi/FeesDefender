@@ -23,6 +23,21 @@ def test_descubrir_chats(tmp_path):
     assert len(chats) == 1 and chats[0].name == "chat-x"
 
 
+def test_descubrir_chats_ve_lotes_y_legacy(tmp_path):
+    legacy = tmp_path / "00_Input" / "02_Whatsapp" / "03_Otros" / "chat_viejo"
+    legacy.mkdir(parents=True)
+    (legacy / "_chat.txt").write_text("x", encoding="utf-8")
+    lote = (tmp_path / "00_Input" / "2026-07-17_whatsapp_01"
+            / "00_Consultor propietario" / "chat_nuevo")
+    lote.mkdir(parents=True)
+    (lote / "_chat.txt").write_text("y", encoding="utf-8")
+    otros = tmp_path / "00_Input" / "2026-07-17_manual_01"   # lote NO whatsapp: fuera
+    otros.mkdir(parents=True)
+    (otros / "_chat.txt").write_text("z", encoding="utf-8")
+    nombres = {p.name for p in descubrir_chats(tmp_path)}
+    assert nombres == {"chat_viejo", "chat_nuevo"}
+
+
 def test_atomize_genera_salida_y_no_toca_input(tmp_path, monkeypatch):
     caso = _montar_caso(tmp_path)
     import core.whatsapp_atomize.pipeline as pl

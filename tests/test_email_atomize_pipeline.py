@@ -69,3 +69,26 @@ def test_e2e_idempotente_no_renumera(tmp_path):
     # <a@x> conserva su MSG-id original
     assert reg1["mensajes"]["a@x"]["id"] == reg2["mensajes"]["a@x"]["id"] == "MSG-00001"
     assert reg2["mensajes"]["b@x"]["id"] == "MSG-00002"
+
+
+def test_emails_src_dirs_lotes_y_legacy(tmp_casos_root):
+    from core import case_manager
+    from core.email_atomize.pipeline import emails_src_dirs
+    case_manager.ensure_case("EV-EA-001", titulo="ea")
+    base = tmp_casos_root / "EV-EA-001" / "00_Input"
+    (base / "03_Email").mkdir(parents=True)
+    (base / "2026-07-17_email_01").mkdir()
+    (base / "2026-07-17_whatsapp_01").mkdir()               # no email: fuera
+    dirs = {d.name for d in emails_src_dirs("EV-EA-001")}
+    assert dirs == {"2026-07-17_email_01", "03_Email"}
+
+
+def test_atomize_dir_acepta_varias_fuentes(tmp_path):
+    from core.email_atomize.pipeline import atomize_dir
+    d1, d2, out = tmp_path / "l1", tmp_path / "l2", tmp_path / "out"
+    d1.mkdir(); d2.mkdir()
+    (d1 / "a.eml").write_bytes(_msg("<a@x>", "Uno"))
+    (d2 / "b.eml").write_bytes(_msg("<b@x>", "Dos"))
+    report = P.atomize_dir([d1, d2], out, case_dir=tmp_path)
+    assert len(list((out / "mensajes").glob("*.md"))) == 2
+    assert report.mensajes == 2
