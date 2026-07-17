@@ -150,6 +150,10 @@ Atajo: `/status` ejecuta los 3 comandos y muestra un resumen.
 - Antes de tocar un endpoint del CRM: leer `docs/INTEGRACION_SUDESPACHO.md`
   y consultar HAR si lo hay (`docs/captura/`).
 - Antes de reintentar algo que falló raro: leer `docs/DEAD_ENDS.md`.
+- **Para abrir un expediente nuevo** (alta → intake → sala de máquina → sala de
+  lectura → viabilidad → ficha CRM → archivo → cierre): seguir
+  `docs/RUNBOOK_APERTURA_EXPEDIENTE.md` (fuente única operativa, con los gotchas
+  embebidos y punteros a `INTEGRACION_SUDESPACHO.md` como SSOT del detalle CRM).
 
 ### Cierre de sesión
 
@@ -177,6 +181,7 @@ Atajo: `/tests` ejecuta la suite completa.
 
 - **Estado y tareas**: `STATUS.md` (raíz del proyecto)
 - **Índice de `docs/` + ciclo de vida**: `docs/INDICE.md`
+- **Runbook de apertura de expediente**: `docs/RUNBOOK_APERTURA_EXPEDIENTE.md` (flujo E2E con gotchas)
 - **Arquitectura y deps**: `docs/ARQUITECTURA.md`
 - **Relaciones código/plugin/skills + SSOT**: `docs/ARQUITECTURA_RELACIONES.md`
 - **API sudespacho**: `docs/INTEGRACION_SUDESPACHO.md` (su §14 fusiona la **referencia común sudespacho**)
