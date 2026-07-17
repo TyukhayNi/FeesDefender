@@ -35,6 +35,7 @@ fecha: 2026-07-05
 | `SEGURIDAD_DATOS.md` | Prevención de fugas de PII y secretos — doctrina, controles y runbook. |
 | `INTEGRACION_SUDESPACHO.md` | API sudespacho (§14 fusiona la referencia común externa). |
 | `INGESTA_SUDESPACHO.md` | Flujo de ingesta desde el CRM. |
+| `RUNBOOK_APERTURA_EXPEDIENTE.md` | Runbook operativo de apertura E2E de expediente (alta→intake→sala→viabilidad→CRM→archivo→cierre); gotchas embebidos. |
 | `CONVENCIONES_DESPACHO.md` | Convenciones del despacho. |
 | `DEAD_ENDS.md` | Callejones sin salida — consultar antes de reintentar. |
 | `DESARROLLO.md` | Guía de desarrollo. |
@@ -66,3 +67,4 @@ fecha: 2026-07-05
 | Documento | Estado | Qué es |
 |---|---|---|
 | `prompt_handoff_expedientes_seguros.md` | historico | Handoff de absorción del Anonimizador (ya integrado en `core/anon`). |
+| `superpowers/handoff-2026-07-17-apertura-W-*.md` | historico | Los 3 handoffs de las aperturas E2E del 2026-07-17 (W-02T3XO/W-02TH0W/W-046G2R); consolidados en `RUNBOOK_APERTURA_EXPEDIENTE.md`. |

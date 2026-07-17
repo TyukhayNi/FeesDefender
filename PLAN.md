@@ -116,6 +116,49 @@ puro + orquestadores finos. Spec: `docs/superpowers/specs/2026-07-09-abrir-caso-
   no-relación → 404, autos, procedimiento, partes M2M). Frente propio con disparador de caso judicial real.
 - Relacionado: `docs/MEJORAS_FUTURAS.md` **#50** (sección "Relación con el ecosistema" en todas las skills).
 
+## [SIGUIENTE-APERTURA-EXPEDIENTE] Builds de apertura tras las 3 aperturas E2E del 2026-07-17
+
+*Disparador: 3 aperturas E2E el 2026-07-17 (W-02T3XO, W-02TH0W, W-046G2R), consolidadas en
+sesión dedicada. Recurrencia del cuello de botella en ≥2 aperturas + decisión de Nikolai
+2026-07-18. Promovido de `docs/MEJORAS_FUTURAS.md` #70 y de los handoffs
+`docs/superpowers/handoff-2026-07-17-apertura-W-*.md`. Runbook operativo (fuente única del
+flujo, con gotchas embebidos): `docs/RUNBOOK_APERTURA_EXPEDIENTE.md`. Verificado contra el
+repo 2026-07-17/18 (workflow de verificación): las primitivas `ensure_*`/`link_*` ya existen
+en `core/sudespacho_relations.py` (PR #53) — B1 es orquestación, no escribir de cero.*
+
+Orden recomendado por esfuerzo vs ahorro: **quick-wins (B4 + B3) → B2 → B1 (titular) → B5.**
+Todos con tests TDD; salida rama + PR (leak-scan verde).
+
+- [ ] **B1 — `abrir_caso` ficha CRM end-to-end (EL QUE MÁS AHORRA; recurrencia ≥2).** Que el
+  alta (o un paso post-alta) orqueste la **ficha completa**: tags ciudad+equipo (auto desde
+  `--ciudad`/`--codigo-caso`), `link_ev_mmc`, `ensure_contrario_vinculado` (contrario =
+  firmante del encargo), `ensure_colaborador_vinculado` (ficha completa desde firma
+  `@engelvoelkers.com`), `Notas`. Hoy son 5-6 llamadas manuales (`abrir_caso --crm api` solo
+  hace el alta mínima — verificado). **Incluye crear `update_expediente`** (PUT round-trip que
+  **preserva `Numero_Expediente`**; hoy NO existe — patrón en `INTEGRACION §10.7`). **Incluye
+  B3.** Detalle de campos/endpoints: SSOT `INTEGRACION §10–§15`. Continúa `[abrir-caso]`.
+- [ ] **B3 — Normalizador de teléfono a 9 dígitos (dentro de B1).** En los escritores CRM
+  (`core/sudespacho_relations.py`): `strip` de `+34`/espacios. Mata de raíz el
+  `HTTP 400 movil is incorrect` y su falsa pista de fallback legacy. Hoy NO hay normalización
+  (verificado). Esfuerzo mínimo.
+- [ ] **B2 — CLI `--case-id` para intake incremental.** Resolver la identidad desde `_caso.md`
+  (vía `case_locator.resolve_ref`, ya existe tras #54) en lugar de repetir los 6 flags de
+  identidad idénticos al nombre de carpeta con `--force`. Elimina fragilidad ante
+  espaciado/tilde. Esfuerzo bajo.
+- [ ] **B4 — Evento `archivado` en `INTAKE_EVENTS` (quick win).** Añadir `archivado` al
+  `frozenset` de `core/intake_log.py` (25 eventos hoy, sin él — verificado) para que el
+  archivo se logee por `intake_log.append_event` y no a mano. `MEJORAS #70.a`. Mínimo.
+- [ ] **B5 — Auto-derivar identidad desde `--folder-id`.** En `abrir_caso --fuente drive_ev`,
+  deducir `--team-id` (`driveId`), `--codigo-caso` (nombre de la unidad compartida) y
+  `--sufijo` (del `tipo_caso` canónico) desde el `--folder-id`. Elimina 3 flags + 3 preguntas.
+  Esfuerzo medio.
+- Fuera de este bloque (decidido en la consolidación): **skill Claude Code `abrir-caso`** — no
+  ahora, el RUNBOOK es el checklist; se valora cuando B1 esté mergeado. **MCP `sudespacho` F1**
+  — sigue en `[SIGUIENTE-MCP-SUDESPACHO]` (gates abiertos); el dolor de tantear campos se mata
+  con los endpoints de descubrimiento ya en `INTEGRACION §14.4/§15`. **CLI sala de lectura
+  deprecado** (`MEJORAS #67`) — no arreglar, encauzar por la skill. **atomize/OCR de adjuntos**
+  (`MEJORAS #68`) y **`archivar_caso` workflow** (`MEJORAS #70.b/c`) siguen en backlog.
+
 ## [SIGUIENTE-MCP-DRIVE-DISCO] MCP "Drive como disco" — spec rev 3 + plan V1 LISTOS (PR #48)
 
 Diseño CERRADO 2026-07-16 (docs-only): operar `G:` (rw) + `H:` (solo-lectura) montadas
