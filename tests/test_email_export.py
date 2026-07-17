@@ -285,7 +285,8 @@ def test_export_label_idempotente(tmp_path):
 
 
 def test_export_label_dedup_dentro_de_la_corrida(tmp_path):
-    """El mismo Message-ID en dos gmail_id (p. ej. dos copias) se escribe una vez."""
+    """§9.3: el mismo Message-ID en dos gmail_id (p. ej. dos copias) se ESCRIBE dos veces
+    (contrato T7: ya no se salta por Message-ID) y la 2ª se cuenta como duplicado."""
     raws = {
         "g1": _build_raw(message_id="<dup@x>", subject="Duplicado"),
         "g2": _build_raw(message_id="<dup@x>", subject="Duplicado"),
@@ -293,8 +294,10 @@ def test_export_label_dedup_dentro_de_la_corrida(tmp_path):
     pages = [{"messages": [{"id": "g1"}, {"id": "g2"}]}]
     svc = _FakeService(labels=_LABELS, pages=pages, raws=raws)
     rep = ee.export_label("c@engelvoelkers.com", _ETIQUETA, tmp_path, service=svc)
-    assert rep.written == 1
-    assert rep.skipped == 1
+    assert rep.written == 2
+    assert rep.skipped == 0
+    assert rep.duplicados == 1
+    assert len(list(tmp_path.glob("*.eml"))) == 2
 
 
 # ---------------------------------------------------------------------------
@@ -439,6 +442,96 @@ def test_export_label_traza_backfill_de_corrida_previa(tmp_casos_root):
 
 
 # ---------------------------------------------------------------------------
+# T7 — estado de canal a la raíz de 00_Input/ + dedup Message-ID vía M9
+# ---------------------------------------------------------------------------
+
+_CASO_EXPORT_COUNTER = 0
+
+
+def _caso_para_export() -> str:
+    """Caso fresco (case_id único) para tests de ``export_label`` con ``case_id``."""
+    global _CASO_EXPORT_COUNTER
+    _CASO_EXPORT_COUNTER += 1
+    return _setup_caso(f"EMAIL-CANAL-{_CASO_EXPORT_COUNTER:03d}")
+
+
+def _fake_service_una_pagina(raws: dict[str, bytes]) -> "_FakeService":
+    """``_FakeService`` con una sola página que lista todos los ``gmail_id`` de ``raws``."""
+    pages = [{"messages": [{"id": gid} for gid in raws]}]
+    return _FakeService(labels=_LABELS, pages=pages, raws=raws)
+
+
+# Mismo Message-ID, cuerpos distintos (§9.3: bytes distintos, mismo hilo lógico).
+_EML_UNO = _build_raw(message_id="<uno@x>", subject="Uno", body="Cuerpo original.")
+_EML_UNO_VARIANTE = _build_raw(message_id="<uno@x>", subject="Uno variante", body="Cuerpo distinto.")
+
+
+def test_indices_de_canal_viven_en_la_raiz_de_00_input(tmp_casos_root):
+    from core import config
+
+    case_id = _caso_para_export()
+    dest = ee.email_dest_dir(case_id)
+    ee.export_label(
+        "acc@x", _ETIQUETA, dest, case_id=case_id,
+        service=_fake_service_una_pagina({"g1": _EML_UNO}),
+    )
+    input_dir = config.caso_path(case_id) / "00_Input"
+    assert (input_dir / "_exported_ids.json").is_file()
+    assert not (dest / "_exported_ids.json").exists()
+
+
+def test_fallback_legacy_del_indice_en_03_email(tmp_casos_root):
+    """Caso no migrado: el índice viejo en 03_Email/ se respeta (no re-descarga)."""
+    from core import config
+
+    case_id = _caso_para_export()
+    legacy = config.caso_path(case_id) / "00_Input" / "03_Email"
+    legacy.mkdir(parents=True, exist_ok=True)
+    (legacy / "_exported_ids.json").write_text(
+        json.dumps({"acc@x": ["gid-1"]}), encoding="utf-8"
+    )
+    dest = ee.email_dest_dir(case_id)
+    report = ee.export_label(
+        "acc@x", _ETIQUETA, dest, case_id=case_id,
+        service=_fake_service_una_pagina({"gid-1": _EML_UNO}),
+    )
+    assert report.written == 0 and report.skipped == 1
+
+
+def test_mismo_message_id_bytes_distintos_se_escribe_y_anota(tmp_casos_root):
+    """§9.3: mismo Message-ID con bytes distintos → se copia igual + duplicado anotado."""
+    from core.intake_manifest import IntakeManifest
+
+    case_id = _caso_para_export()
+    with IntakeManifest(case_id) as m:
+        m.register(
+            "sha-previo", "2026-07-01_email_01/previo.eml",
+            source="email", message_id="uno@x",
+        )
+    dest = ee.email_dest_dir(case_id)
+    report = ee.export_label(
+        "acc@x", _ETIQUETA, dest, case_id=case_id,
+        service=_fake_service_una_pagina({"g1": _EML_UNO_VARIANTE}),
+    )
+    assert report.written == 1 and report.duplicados == 1
+    assert list(report.duplicados_map.values()) == ["2026-07-01_email_01/previo.eml"]
+    assert any(dest.rglob("*.eml"))  # el fichero ESTÁ en disco, no se descarta
+
+
+def test_emit_traza_registra_message_id_en_m9(tmp_casos_root):
+    from core.intake_manifest import IntakeManifest
+
+    case_id = _caso_para_export()
+    dest = ee.email_dest_dir(case_id)
+    ee.export_label(
+        "acc@x", _ETIQUETA, dest, case_id=case_id,
+        service=_fake_service_una_pagina({"g1": _EML_UNO}),
+    )
+    with IntakeManifest(case_id) as m:
+        assert "uno@x" in m.message_ids()
+
+
+# ---------------------------------------------------------------------------
 # resolve_ref — case_id canónico desde W-code (id_go)
 # ---------------------------------------------------------------------------
 
@@ -516,7 +609,8 @@ def test_indice_salta_descarga_en_recorrida(tmp_path):
 
 
 def test_force_ignora_indice_y_rebaja(tmp_path):
-    """force=True ignora el índice y vuelve a bajar; el .eml ya en disco se dedup."""
+    """force=True ignora el índice y vuelve a bajar; el Message-ID ya en disco se anota
+    como duplicado pero el mensaje SE ESCRIBE igual (contrato T7, §9.3)."""
     raws = {"g1": _build_raw(message_id="<m1@x>", subject="Uno")}
     pages = [{"messages": [{"id": "g1"}]}]
     ee.export_label(
@@ -528,8 +622,9 @@ def test_force_ignora_indice_y_rebaja(tmp_path):
         "c@engelvoelkers.com", _ETIQUETA, tmp_path, service=svc2, force=True
     )
     assert svc2._users._messages.got_formats == ["raw"]  # sí re-bajó
-    assert rep.written == 0   # pero el Message-ID ya está en disco → dedup
-    assert rep.skipped == 1
+    assert rep.written == 1        # se escribe igual (duplicado, no descartado)
+    assert rep.skipped == 0
+    assert rep.duplicados == 1
 
 
 def test_descarga_paralela_escribe_todo_en_orden(tmp_path, monkeypatch):

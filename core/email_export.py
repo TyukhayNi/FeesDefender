@@ -869,6 +869,7 @@ class ExportReport:
     total_in_label: int = 0
     written: int = 0
     skipped: int = 0
+    duplicados: int = 0          # Message-ID ya conocido; SE ESCRIBE igual (§9.3), anotado
     attachments: int = 0
     nested_flattened: int = 0   # emails anidados extraídos a primer nivel
     nested_dedup: int = 0       # emails anidados saltados por Message-ID duplicado
@@ -882,6 +883,7 @@ class ExportReport:
     errors: list[str] = field(default_factory=list)
     link_entries: list[dict[str, Any]] = field(default_factory=list)  # traza por enlace
     drive_link_paths: set[str] = field(default_factory=set)           # rel paths source="drive_link"
+    duplicados_map: dict[str, str] = field(default_factory=dict)  # rel → primary_path (T8 manifiesto)
     intake_logged: bool = False
 
     def resumen(self) -> str:
@@ -894,6 +896,7 @@ class ExportReport:
         return (
             f"etiqueta {self.label!r} ({self.account}): {self.total_in_label} mensajes; "
             f"{self.written} escritos, {self.skipped} ya presentes, "
+            f"{self.duplicados} duplicados por Message-ID, "
             f"{self.attachments} adjuntos extraídos, "
             f"{self.nested_flattened} emails anidados aplanados ({self.nested_dedup} dup), "
             f"{enlaces}, {len(self.errors)} errores"
@@ -966,17 +969,36 @@ def export_label(
     report.total_in_label = len(msg_ids)
 
     # B — índice persistente: saltar la descarga de los gmail_id ya exportados.
-    index = _load_export_index(dest)
+    # El estado de canal (idempotencia) vive en la raíz de 00_Input/ (spec §8): así
+    # sobrevive al paso a lotes y un re-export no re-baja la etiqueta entera. Fallback
+    # legacy: si un caso no migrado aún lo tiene en el cajón 03_Email/, se fusiona (y
+    # se guarda ya en la raíz en adelante).
+    estado_dir = _dir_estado_canal(dest, case_id)
+    index = _load_export_index(estado_dir)
+    legacy_cajon = estado_dir / "03_Email"
+    if case_id and legacy_cajon.is_dir():
+        for acc, gids in _load_export_index(legacy_cajon).items():
+            index[acc] = sorted(set(index.get(acc, [])) | set(gids))
     ya_gids: set[str] = set() if force else set(index.get(account, []))
     candidates = [g for g in msg_ids if g not in ya_gids]
     report.skipped += len(msg_ids) - len(candidates)
 
     procedencia: dict[str, str] = {}
     if candidates:
-        # Dedup por Message-ID (correctness): solo si hay algo que bajar (evita el
-        # escaneo de disco en re-corridas que no descargan nada).
-        vistos = existing_message_ids(dest)
-        link_index = _load_resolved_links(dest)
+        # Dedup por Message-ID (M9, spec §6/§9.3): solo si hay algo que bajar (evita
+        # el escaneo/lectura en re-corridas que no descargan nada). Con caso, se
+        # siembra de lo ya registrado en el manifest ∪ lo del cajón legacy sin migrar
+        # (no cubierto por M9 todavía); sin caso (uso suelto), del escaneo del propio
+        # destino.
+        if case_id:
+            with IntakeManifest(case_id) as _m:
+                vistos = _m.message_ids()
+            vistos |= existing_message_ids(legacy_cajon)
+        else:
+            vistos = existing_message_ids(dest)
+        link_index = _load_resolved_links(estado_dir)
+        if case_id and not link_index:
+            link_index = _load_resolved_links(legacy_cajon)
         nuevos_gids: list[str] = []
 
         def _flatten_safe(gid: str, raw: bytes) -> None:
@@ -1005,31 +1027,35 @@ def export_label(
             candidates, service=service, creds=creds, max_workers=max_workers, report=report
         ):
             mid = message_id_of(raw_bytes)
+            duplicado_de = None
             if mid and mid in vistos:
-                report.skipped += 1
-                nuevos_gids.append(gid)  # bajado y resuelto (duplicado): no re-bajar
-                # El padre ya está en disco, pero sus hijos anidados / enlaces pueden
-                # faltar (p. ej. tras borrar un hijo y re-exportar con force):
-                # reconciliarlos. Ambos pasos son idempotentes.
-                _flatten_safe(gid, raw_bytes)
-                _links_safe(gid, raw_bytes, mid)
-                continue
-            if mid:
+                # §9.3: Message-ID ya conocido → SE ESCRIBE igual (canal nuevo lo trae),
+                # y se anota para el manifiesto de lotes (T8). La idempotencia de canal
+                # (no re-descargar) sigue siendo el índice de gmail_id, no este chequeo.
+                report.duplicados += 1
+                if case_id:
+                    with IntakeManifest(case_id) as _m:
+                        hit = _m.lookup_message_id(mid)
+                    duplicado_de = hit[1].get("primary_path") if hit else None
+            elif mid:
                 vistos.add(mid)
             try:
                 eml_path = _escribe_mensaje(dest, raw_bytes, extract_attachments, report)
             except Exception as exc:  # noqa: BLE001 — un fallo no aborta la corrida
                 report.errors.append(f"{gid}: {exc}")
                 continue
-            report.files.append(str(eml_path.relative_to(dest)))
+            rel = str(eml_path.relative_to(dest)).replace("\\", "/")
+            if duplicado_de:
+                report.duplicados_map[rel] = duplicado_de
+            report.files.append(rel)
             report.written += 1
             nuevos_gids.append(gid)
             _flatten_safe(gid, raw_bytes)
             _links_safe(gid, raw_bytes, mid)
 
         index[account] = sorted(ya_gids | set(nuevos_gids))
-        _save_export_index(dest, index)
-        _save_resolved_links(dest, link_index)
+        _save_export_index(estado_dir, index)
+        _save_resolved_links(estado_dir, link_index)
 
     write_indices(dest)
 
@@ -1068,6 +1094,19 @@ def _escribe_mensaje(
 # ---------------------------------------------------------------------------
 
 _EXPORT_INDEX_NAME = "_exported_ids.json"
+
+
+def _dir_estado_canal(dest: Path, case_id: str | None) -> Path:
+    """Hogar de ``_exported_ids.json``/``_resolved_links.json`` (estado de canal).
+
+    Con caso: la raíz de ``00_Input/`` (ficheros de protocolo, spec §8) — así el
+    índice sobrevive al paso a lotes y un re-export no re-baja la etiqueta entera.
+    Sin caso (uso suelto): el propio ``dest``, como hasta ahora.
+    """
+    if not case_id:
+        return dest
+    from .casos.case_locator import path_for, resolve_ref
+    return path_for(resolve_ref(case_id)) / "00_Input"
 
 
 def _load_export_index(dest: Path) -> dict[str, list[str]]:
