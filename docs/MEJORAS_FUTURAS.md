@@ -2628,3 +2628,30 @@ del expediente, consultable por Ana/Sergio/Paola sin ir en copia; uso frecuente.
 capturó por HAR (los HAR nunca se commitean; contienen credenciales SMTP/IMAP en claro que expone
 `GET /api/accounts/{id}`). **Disparador:** decisión de automatizar / uso recurrente. Detalle en
 INTEGRACION §10.9 y en la memoria persistente `reference-sudespacho-enviar-email-crm`.
+
+## 70. Workflow de archivo de caso (`core/archivar_caso.py`) + evento `archivado` en `INTAKE_EVENTS`
+
+**Anotado 2026-07-18** (consolidación de las 3 aperturas del 2026-07-17; caso W-046G2R).
+Archivar un expediente inviable es hoy una secuencia de 5-6 pasos **manuales**, sin
+orquestador ni custodia forense homogénea. (Nota: esta entrada recrea la que la sesión de
+W-046G2R creyó haber registrado como "#66"; se perdió en el incidente de escritura sobre la
+raíz compartida — el `#66` real es "MCP Drive como disco".)
+
+- **70.a — `archivado` NO está en `INTAKE_EVENTS`** (`core/intake_log.py`, 25 eventos
+  verificados 2026-07-18). Hoy la línea de archivo se escribe a mano en `_intake_log.jsonl`
+  **sin pasar por `intake_log.append_event`** (que la rechazaría por validación). **Fix
+  (quick win):** añadir `archivado` al `frozenset` `INTAKE_EVENTS`. *[Promovido a `PLAN.md`
+  como B4 — disparador: decisión de Nikolai 2026-07-18.]*
+- **70.b — `core/archivar_caso.py` (workflow completo)** que encadene, idempotente y con
+  evento forense: (1) CRM `PUT historico=true` + `referencia_historico` +
+  `fecha_alta_hist` (mapa de campos en `INTEGRACION §12`); (2) actuación facturable de cierre (§15); (3) Gmail: mover la
+  etiqueta a `03. ARCHIVO/…/<año>/<caso>` + color (`labels.patch`, conserva hilos); (4)
+  Drive: mover la carpeta a `CASOS/_ARCHIVO/…/<año>/`; (5) `_caso.md` `estado: archivado` +
+  motivo + fecha en **dos niveles** (raíz + `meta`); (6) evento `archivado`. Patrón
+  biblioteca (cerebro puro + orquestador fino), como `abrir_caso`.
+- **70.c — Enum cerrado de motivos de archivo.** Fijar el conjunto de `referencia_historico`
+  admisibles (`MAYÚSCULAS_GUION_BAJO`) para que el motivo no sea texto libre.
+
+**Runbook operativo del archivo:** `docs/RUNBOOK_APERTURA_EXPEDIENTE.md §10`.
+**Disparador de promoción de 70.b/70.c:** próximo archivo de caso que justifique el
+orquestador, o decisión de Nikolai. (70.a ya promovido, ver arriba.)
