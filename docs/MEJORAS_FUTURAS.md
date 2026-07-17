@@ -2554,3 +2554,77 @@ un caso donde el batch-rename ahorre trabajo manual repetido, una sesión de hum
 mida cola de hilos zombis, etc.) o por decisión explícita de Nikolai — nunca por
 anticipación. Ver `docs/superpowers/specs/2026-07-16-mcp-drive-disco-local-design.md`
 §5 y §9 para el razonamiento de right-sizing original.
+
+## 67. `core/sala_lectura.py` (CLI deprecado): ruta MD desalineada + colisión de nombres en `poblar`
+
+**Anotado 2026-07-17.** Descubierto abriendo el caso W-02T3XO con el **CLI `scripts/sala_lectura.py`**
+(envuelve `core/sala_lectura.py`, marcado DEPRECADO 2026-06-18, superado por la skill
+`organizar-sala-lectura` v1.3). Dos defectos del módulo:
+
+- **67.a — Ruta MD desalineada.** `_md_path` (`core/sala_lectura.py:244`) y `_link_md` (`:493`)
+  apuntan a `01_Procesado/MD/`, pero la skill `organizar-sala-maquina` escribe los MD en
+  `01_Procesado/02_Sala de máquina/03_MD/`. Resultado: `01_Procesado/MD/` queda vacío, los
+  enlaces "ver texto" del `INDICE.md` salen rotos y `clasificar_residuo_llm` no encuentra el
+  texto. **Fix:** repuntar ambas funciones (y el fallback LLM) a `02_Sala de máquina/03_MD/`
+  como fuente única; o formalizar la ruta en `core/config`.
+
+- **67.b — Colisión de nombres canónicos en `poblar` → sobrescritura silenciosa.**
+  `_nombre_canonico` (`:563`) = `fecha_tipo_desc`; cuando el clasificador determinista pone
+  `descripcion` genérica (p. ej. `fotografia` a todas las imágenes de igual fecha) varios
+  documentos generan el MISMO nombre y `poblar_sala_lectura` (`:648`, `shutil.copy2`) los
+  sobrescribe sin guardia de unicidad. En W-02T3XO: 26 entradas → 16 ficheros (las 9 imágenes
+  de WhatsApp del comprador → 1; 2 DNI → 1; 2 índices de correo → 1). Sin pérdida real
+  (originales en `00_Input`, `INDICE.md` enlaza los 26), pero la carpeta plana queda coja de
+  prueba. **Fix:** sufijar el nombre canónico con `__<sha8>` en colisión (patrón
+  `utils.output_slug`) o guardia de unicidad por nombre en `poblar`. Workaround aplicado al
+  caso: descripciones únicas en el catálogo + re-`poblar`.
+
+- **67.c — `poblar` escribe subcarpetas por fuente, no plano.** `poblar_sala_lectura` (`:633`)
+  hardcodea `dst_rel = f"{_SALA}/{fuente_dir}/{nombre}"` → crea `Sala lectura/Drive E&V/`,
+  `Sala lectura/Email/`, etc. La estructura canónica de la skill `organizar-sala-lectura` v1.3
+  es **PLANA** (todos los documentos en la raíz de `Sala lectura/`; la categoría vive en
+  `INDICE.md`, no en carpetas; los compuestos van en subcarpeta fechada). **Fix:** que
+  `poblar` escriba plano (sin `fuente_dir`) salvo bundles. Workaround aplicado al caso: aplanar
+  a mano (mover ficheros a la raíz + borrar subcarpetas de fuente).
+
+**Meta-lección:** el fallo de fondo fue usar el **CLI deprecado** en vez de la skill canónica.
+Como el módulo está deprecado, valorar si el fix merece un ciclo core+PR o si basta con jubilar
+el CLI y encauzar todo por la skill `organizar-sala-lectura`. **Disparador de promoción:**
+próxima apertura de caso que use el CLI local, o decisión de Nikolai de mantenerlo vivo.
+
+## 68. Cableado del pipeline de correo: atomize + OCR de adjuntos no automáticos
+
+**Anotado 2026-07-17** (caso W-02T3XO). El motor `core/email_atomize` (CLI `scripts/atomize_emails.py`)
+extrae los adjuntos embebidos de los `.eml` (dedup por sha, filtro decorativo, fichas +
+`INDICE_ADJUNTOS.md`, Capa B de autoría), pero **no está cableado** en el flujo:
+
+- **68.a — `atomize_emails` es un paso manual.** Ni `abrir_caso` ni `organizar-sala-maquina`
+  lo invocan. Además, el intake (`abrir_caso._intake_email`) llama `email_export.export_label`
+  con el default `extract_attachments=False` y **no expone el flag**, así que los adjuntos
+  quedan embebidos en el `.eml` hasta que se lanza el motor a mano. **Riesgo:** un adjunto que
+  llegue SOLO por correo (sin copia en Drive) no se extrae en el flujo automático. En W-02T3XO
+  no hubo pérdida porque las 9 capturas estaban también en `00_Input/01_Drive EV/07. RECLAMACIONES`.
+- **68.b — OCR de adjuntos atomizados = "fase 2" no construida.** Las fichas `.md` de
+  `01_Procesado/Emails/adjuntos/` quedan con `Descripción: (pendiente; OCR en fase 2)`. Y
+  `organizar-sala-maquina` lee `00_Input`, **no** `01_Procesado/Emails/adjuntos/` → aunque se
+  atomice, el **contenido** (texto/OCR) de los adjuntos del correo no entra en la sala de
+  máquina/lectura. Hoy el dato solo se mina si existe copia del adjunto en `00_Input` (Drive).
+- **Fix:** encadenar `intake → atomize → OCR de adjuntos → sala de máquina/lectura`
+  (coherente con `MEJORAS #54/#55`), y construir la fase 2 de OCR de `email_atomize` (o que
+  `sala_maquina` procese también `01_Procesado/Emails/adjuntos/`). **Disparador de promoción:**
+  caso con adjuntos relevantes que lleguen solo por correo, sin copia en Drive.
+
+## 69. Automatizar el envío de email desde el CRM (deja rastro en el historial del expediente)
+
+**Anotado 2026-07-17.** Documentado el flujo completo de envío de email desde el CRM
+(endpoints + payload en `docs/INTEGRACION_SUDESPACHO.md §10.9`): crear borrador
+(`POST nest-mail/api/mail/`) → enviar (`PUT …/api/mail/{id}` con `draft:false`) → registrar
+(`PUT api-crm-commons/api/element_register/mail/{id}`) → relacionar con el expediente
+(`POST …/api/relation_element/extrajudiciales/{exp}`). **Valor:** el email queda en el historial
+del expediente, consultable por Ana/Sergio/Paola sin ir en copia; uso frecuente. Candidato a
+**tool** (dentro del MCP sudespacho F2/F3, o helper en `core/`). **Pendientes antes de construir:**
+(a) confirmar auth de estos endpoints — las XHR del SPA usan **cookie de sesión web**, NO el
+`x-api-key` de `core/`; (b) la rama "Email certificado" (no capturada); (c) el payload exacto se
+capturó por HAR (los HAR nunca se commitean; contienen credenciales SMTP/IMAP en claro que expone
+`GET /api/accounts/{id}`). **Disparador:** decisión de automatizar / uso recurrente. Detalle en
+INTEGRACION §10.9 y en la memoria persistente `reference-sudespacho-enviar-email-crm`.

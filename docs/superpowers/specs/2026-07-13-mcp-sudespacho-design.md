@@ -221,7 +221,10 @@ paridad** contra `core`, y **cada endpoint de escritura mantiene la disciplina H
 
 ### F3+ — Según disparador
 Agenda/calendario del CRM en **escritura** (crear citas/tareas); frontal legacy si algo
-lo exige; lote. **Regla de promoción del proyecto:** solo por disparador concreto.
+lo exige; lote; **envío de email desde el CRM** (microservicio `nest-mail`: crear borrador →
+`PUT …/api/mail/{id}` `draft:false` → registrar+relacionar con el expediente; endpoints y payload
+en `INTEGRACION_SUDESPACHO.md §10.9`; ⚠️ estas XHR usan cookie de sesión web, NO `x-api-key` —
+validar antes de construir). **Regla de promoción del proyecto:** solo por disparador concreto.
 
 ## 5. Seguridad y confidencialidad
 

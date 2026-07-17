@@ -645,6 +645,76 @@ Mapping de campos de colaborador (confirmado 2026-04-29, miembro 776):
 
 ---
 
+### 10.9 Enviar email desde el CRM (servicio `nest-mail`) + historial de mail del expediente
+
+> Confirmado en vivo por HAR el 2026-07-17 (exp 625). El envío deja el email en el **historial del
+> expediente** (pestaña Historial → Mail) como elemento de correo relacionado con el expediente →
+> visible para el equipo aunque no vaya en copia. Dos hosts: microservicio
+> **`nest-mail-commons-pro.sudespacho.biz`** (correo) y **`api-crm-commons-pro.sudespacho.biz`**
+> (plantillas/destinatarios/tracking). REST, sin PHPSESSID. Captura vía **HAR de DevTools** (el
+> `read_network` de Claude-in-Chrome no devuelve cuerpos). **Los HAR nunca se commitean** (higiene).
+
+**Lectura**
+
+| Operación | Método · endpoint |
+|---|---|
+| Historial de mail del expediente | `GET nest-mail…/api/mail/element_registries?properties[…]&filter left.extrajudiciales.id={exp}` |
+| Detalle / tracking de un mail | `GET api-crm-commons…/api/mail/{mailId}/tracking/{element}/{exp}` |
+| Cuentas remitentes (De) | `GET nest-mail…/api/accounts/accounts_links` · detalle `…/api/accounts/{accountId}` |
+| Lista de plantillas | `GET api-crm-commons…/api/templates/html/templates?…is_html=1` (props: id, nombre, asunto, datos, is_html, is_rtf, is_notification, right.gdocu.id) |
+| Detalle de plantilla | `GET api-crm-commons…/api/templates/html/detail/{tplId}` |
+| **Plantilla RENDERIZADA para el expediente** | `GET api-crm-commons…/api/templates/html/{tplId}/{element}/{exp}` — autogenera asunto + cabecera con los datos del expediente (Su ref, Mi ref `{num}/{serie}`, Cliente, Contrario, Cuantía) |
+| Adjuntos de una plantilla | `GET api-crm-commons…/api/element_registries/gdocu?filter associated left.templates.id={tplId}` |
+| Autocompletar destinatarios | `GET api-crm-commons…/api/mail/recipients/all?search={q}` (+ `POST …/api/mail/recipients`) |
+
+**Escritura (crear + enviar) — servicio `nest-mail`**
+
+- **Crear (borrador):** `POST nest-mail…/api/mail/` → **201** `{"mailId","uid","attachmentsIds":[]}`.
+- **Actualizar / ENVIAR:** `PUT nest-mail…/api/mail/{mailId}` → 200. **El envío es ese PUT con
+  `draft: false`**; con `draft: true` es autoguardado del borrador (el SPA hace varios PUT y un PUT
+  final `draft:false` que envía).
+- **Payload (idéntico en POST y PUT):**
+
+```json
+{
+  "from":      {"email":"…","name":"…"},
+  "replyTo":   {"email":"…","name":"…"},
+  "accountId": 15,                        // cuenta remitente (15 = nikolai.tyukhay@engelvoelkers.com)
+  "to":  [{"email":"…","name":"…"}],
+  "cc":  [{"email":"…","name":"…"}],      // [] si no hay
+  "bcc": [],
+  "subject": "…",                         // lo rellena la plantilla renderizada
+  "content": "<html>…</html>",            // cuerpo (cabecera de plantilla + texto)
+  "draft":   false,                       // ← false = ENVIAR (true = guardar borrador)
+  "attachment": [], "attachmentGdocu": [], "attachmentMail": []
+}
+```
+
+- **Registrar en el CRM + relacionar con el expediente** (imprescindible para que salga en el
+  historial): tras el envío, `PUT api-crm-commons…/api/element_register/mail/{mailId}` (registra el
+  mail como elemento del CRM) y **`POST api-crm-commons…/api/relation_element/extrajudiciales/{exp}`
+  → 201** (relaciona el mail con el expediente; mismo patrón `relation_element` que las partes).
+- **Auth (⚠️ al automatizar):** las XHR del SPA a `*.sudespacho.biz` **NO llevan header
+  `Authorization`/`x-api-key`** en el HAR → se autentican por **cookie de sesión web** (HttpOnly, no
+  visible en el HAR), NO por el `x-api-key` que usa `core/`. Validar si el `x-api-key` funciona en
+  estos endpoints de mail antes de automatizar.
+- **⚠️ Secreto en el HAR:** `GET nest-mail…/api/accounts/{id}` devuelve las **credenciales
+  SMTP/IMAP de la cuenta en texto plano** (app-password Gmail). Por eso los HAR de este flujo
+  **nunca se commitean** y se borran tras analizarlos.
+- **Plantilla GENERICO** `FG - CLIENTE - EXTRAJUDICIAL - GENERICO (CAST)` = **id 404**; su render
+  (`…/api/templates/html/404/extrajudiciales/{exp}`) produce el asunto
+  `S/R: {referencia_cliente} · M/R: {num}/{serie} · Cliente: … · Contrario: …` y la cabecera con la
+  cuantía. **Corolario:** completar la ficha CRM (referencia, cliente propio, contrario, cuantía)
+  ANTES de enviar; la plantilla la vuelca sola.
+- **Email certificado:** rama del menú "Email certificado" (no capturada; presumible flag/
+  `attachment*` adicional).
+- **Auth:** el HAR no expone el header de auth de estas XHR; `nest-mail`/`api-crm-commons` son REST
+  (Bearer/x-api-key), sin PHPSESSID — confirmar el header exacto si se automatiza.
+- **UI:** Historial → Mail → "Enviar email ▼ → Email estándar"; cuenta remitente =
+  `nikolai.tyukhay@engelvoelkers.com` para comunicaciones con Engel.
+
+---
+
 ## 12. Expediente judicial — Crear y vincular (confirmado 2026-04-30)
 
 ### 12.1 Crear expediente judicial
