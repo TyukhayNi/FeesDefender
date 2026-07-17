@@ -29,7 +29,7 @@ _SKILLS = _REPO / ".claude" / "skills"
 # Skills genéricas de terceros (Anthropic): no las gobierna el estándar del despacho.
 _GENERICAS = {"docx", "pdf", "xlsx", "pptx"}
 
-_ROLES = {"transversal", "fase", "cliente", "output"}
+_ROLES = {"transversal", "fase", "cliente", "output", "input", "procesado"}
 _NATURALEZAS = {"atomica", "orquestadora"}
 _ESTADOS = {"vigente", "deprecada", "experimental"}
 

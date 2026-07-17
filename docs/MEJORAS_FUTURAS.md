@@ -2052,6 +2052,17 @@ pre-commit/CI + AVISO en `validate_skills` → (6) regenerar workflow-skills + M
 re-empaquetar los `.skill`. **Promovible a `PLAN.md`** por decisión de Nikolai (ya hay
 disparador); pendiente solo de agendar la sesión.
 
+**Actualización 2026-07-18 (taxonomía de `rol` ampliada — arreglo acotado).** Al re-empaquetar
+las skills de `MEJORAS #54`, el validador (`validate_skills._ROLES`) rechazaba `rol: input`
+(usado por `intake-expediente`/`exportar-correos-etiqueta`, fuera de la lista) y `output` estaba
+sobrecargado (denotaba tanto entregables jurídicos como artefactos internos de procesado).
+Decisión de Nikolai: se añadieron los roles **`input`** (entrada de datos crudos, simétrico de
+`output`) y **`procesado`** (transforma el intake en artefactos internos), y se reclasificaron
+`organizar-sala-maquina`/`organizar-sala-lectura` de `output`→`procesado` (red anti-regresión en
+`tests/test_validate_skills_roles.py`). **Al construir este grafo, la taxonomía de `rol` se
+revalida con las 18 skills delante** (posible eje `familia` datos/jurídico y rol `analisis` para
+triaje/viabilidad); no se rediseñó ahora para no fijar el modelo sin su consumidor.
+
 ## 51. Bug latente: `download_file_content` devuelve el mime de origen tras exportar un Doc nativo
 
 **Descubierto 2026-07-10** durante el mapeo del ecosistema para la (aparcada) F3 de

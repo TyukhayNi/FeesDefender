@@ -1,5 +1,11 @@
 # Changelog — organizar-sala-lectura
 
+## 1.6 — 2026-07-18
+- **Reclasificación de `rol`: `output` → `procesado`.** La skill organiza el intake en la sala
+  de lectura (artefacto interno), no produce un entregable jurídico. Se estrena el rol
+  `procesado` del eje de pipeline de datos del expediente. Taxonomía a revalidar con el grafo de
+  ecosistema (`docs/MEJORAS_FUTURAS.md` #50). Sin cambios de comportamiento.
+
 ## 1.5 — 2026-06-22
 - **Anexos de WhatsApp con fecha de ENVÍO, no de la carpeta madre**: cada adjunto del
   chat se fecha por el `[DD/MM/AAAA, HH:MM]` del mensaje del `_chat.txt` que lo referencia

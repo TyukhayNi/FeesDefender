@@ -6,7 +6,7 @@ description: >-
   único que el modelo ve para decidir si activarla: que sea específico.
 metadata:
   # --- Dos ejes de clasificación (taxonomía del despacho) ---
-  rol: fase                 # transversal | fase | cliente | output
+  rol: fase                 # transversal | fase | cliente | output | input | procesado
   naturaleza: atomica       # atomica | orquestadora
   # --- Identidad ---
   jurisdiction: ES
