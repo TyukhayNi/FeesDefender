@@ -109,6 +109,7 @@ _CC_NUM = "HubspotCollectedFormsWorkaround"
 _REST_BASE = "https://api-crm-commons-pro.sudespacho.biz"
 _REST_RELATION_PATH = "/api/relation_element/{element}/{exp_id}"
 _REST_CREATE_COLABORADOR = "/api/element_register/colaboradores"
+_REST_CREATE_CLIENTE_CONTRARIO = "/api/element_register/clientes_contrarios"
 _REST_TIMEOUT = 30
 
 # Rutas de los endpoints (sin el host)
@@ -201,6 +202,24 @@ class NuevoColaborador:
     # Permisos (igual que en create_expediente)
     grupos: list[int] = field(default_factory=lambda: list(GRUPOS_DEFAULT))
     usuarios: list[int] = field(default_factory=lambda: list(USUARIOS_DEFAULT))
+
+
+@dataclass
+class NuevoClienteContrario:
+    """Datos mínimos para crear un cliente contrario (persona física) en sudespacho.
+
+    A diferencia de NuevoColaborador, aquí el apellido va SEPARADO en dos campos
+    (`1apellido`/`2apellido`) — confirmado 2026-07-17 vía el catálogo de propiedades
+    reales de `clientes_contrarios` (ver docs/INTEGRACION_SUDESPACHO.md §10.6).
+    """
+    nombre: str                          # nombre(s)
+    apellido1: str = ""                  # 1apellido
+    apellido2: str = ""                  # 2apellido
+    email: str = ""                      # clave de búsqueda alternativa al NIF
+    movil: str = ""
+    nif: str = ""                        # nif_cif
+    direccion: str = ""
+    poblacion: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -686,6 +705,200 @@ def _rest_post_colaborador(datos: "NuevoColaborador") -> str:
     raise SudespachoRelationsError(
         f"REST POST {_REST_CREATE_COLABORADOR} → HTTP {r.status_code}: {detail}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Creación de cliente contrario — REST (confirmado 2026-07-17, expediente 624)
+# ---------------------------------------------------------------------------
+
+def _rest_post_cliente_contrario(datos: "NuevoClienteContrario") -> str:
+    """POST /api/element_register/clientes_contrarios con x-api-key.
+
+    Mismo patrón que _rest_post_colaborador() — verificado en vivo 2026-07-17
+    (expediente extrajudicial 624/W-02TH0W, contrario creado con id 1099).
+
+    Args:
+        datos: Datos del cliente contrario a crear.
+
+    Returns:
+        ID numérico del contrario creado (str).
+
+    Raises:
+        SudespachoRelationsError: HTTP != 201 o error de red.
+        ValueError: SUDESPACHO_API_KEY no configurado.
+    """
+    api_key = (os.getenv("SUDESPACHO_API_KEY") or "").strip()
+    if not api_key:
+        raise ValueError(
+            "SUDESPACHO_API_KEY vacío en .env — ve a tnm.sudespacho.net → Ajustes → API"
+        )
+
+    payload: dict[str, str] = {"nombre": datos.nombre}
+    if datos.apellido1:
+        payload["1apellido"] = datos.apellido1
+    if datos.apellido2:
+        payload["2apellido"] = datos.apellido2
+    if datos.email:
+        payload["email"] = datos.email
+    if datos.movil:
+        payload["movil"] = datos.movil
+    if datos.nif:
+        payload["nif_cif"] = datos.nif
+    if datos.direccion:
+        payload["direccion"] = datos.direccion
+    if datos.poblacion:
+        payload["poblacion"] = datos.poblacion
+
+    url = f"{_REST_BASE}{_REST_CREATE_CLIENTE_CONTRARIO}"
+    headers = {
+        "x-api-key":    api_key,
+        "Content-Type": "application/json",
+        "Accept":       "application/json",
+    }
+
+    try:
+        r = httpx.post(url, json=payload, headers=headers, timeout=_REST_TIMEOUT)
+    except httpx.HTTPError as exc:
+        raise SudespachoRelationsError(
+            f"REST POST {_REST_CREATE_CLIENTE_CONTRARIO} falló: {exc}"
+        ) from exc
+
+    if r.status_code == 201:
+        try:
+            data = r.json()
+            contrario_id = str(data.get("id", ""))
+            if contrario_id and contrario_id.isdigit():
+                return contrario_id
+        except Exception:
+            pass
+        raise SudespachoRelationsError(
+            f"REST POST {_REST_CREATE_CLIENTE_CONTRARIO} devolvió 201 pero sin ID. "
+            f"Body: {r.text[:300]}"
+        )
+
+    try:
+        err = r.json()
+        detail = err.get("detail") or err.get("hydra:description") or r.text[:300]
+    except Exception:
+        detail = r.text[:300]
+    raise SudespachoRelationsError(
+        f"REST POST {_REST_CREATE_CLIENTE_CONTRARIO} → HTTP {r.status_code}: {detail}"
+    )
+
+
+def create_cliente_contrario(datos: "NuevoClienteContrario") -> str:
+    """Crea un nuevo cliente contrario en sudespacho.net.
+
+    A diferencia de create_colaborador(), NO hay fallback legacy: no existe
+    endpoint saveadd confirmado para clientes_contrarios (solo REST, verificado
+    en vivo 2026-07-17). Si REST falla, se propaga el error.
+
+    Args:
+        datos: Datos del contrario a crear.
+
+    Returns:
+        ID numérico del contrario creado (str).
+
+    Raises:
+        SudespachoRelationsError: si la creación falla.
+        ValueError: SUDESPACHO_API_KEY no configurado.
+    """
+    return _rest_post_cliente_contrario(datos)
+
+
+def find_cliente_contrario_by_nif(nif: str) -> str | None:
+    """Busca un cliente contrario en el CRM por NIF/CIF (búsqueda exacta).
+
+    Usa REST (element_registries/clientes_contrarios) con filtro `equal` sobre
+    `nif_cif` — no requiere PHPSESSID. Mismo mecanismo que _rest_search_expedientes.
+
+    Args:
+        nif: NIF/CIF del contrario.
+
+    Returns:
+        ID del contrario si existe, None si no hay NIF, no hay coincidencia,
+        o el CRM no es accesible. Nunca lanza.
+    """
+    nif = (nif or "").strip()
+    if not nif:
+        return None
+    api_key = (os.getenv("SUDESPACHO_API_KEY") or "").strip()
+    if not api_key:
+        return None
+
+    url = f"{_REST_BASE}/api/element_registries/clientes_contrarios"
+    params: list[tuple[str, str]] = [
+        ("properties[0]", "nif_cif"),
+        ("filterGroup[condition]", "AND"),
+        ("filterGroup[filterGroups][0][condition]", "AND"),
+        ("filterGroup[filterGroups][0][filters][0][operator]", "equal"),
+        ("filterGroup[filterGroups][0][filters][0][value]", nif),
+        ("filterGroup[filterGroups][0][filters][0][property]", "nif_cif"),
+        ("itemsPerPage", "5"),
+    ]
+    headers = {"x-api-key": api_key, "Accept": "application/json"}
+    try:
+        r = httpx.get(url, params=params, headers=headers, timeout=_REST_TIMEOUT)
+    except Exception:  # noqa: BLE001 — red caída no debe romper el caller
+        return None
+    if r.status_code != 200:
+        return None
+    try:
+        data = r.json()
+    except Exception:  # noqa: BLE001
+        return None
+    items = data.get("items") or data.get("hydra:member") or []
+    if not items:
+        return None
+    return str(items[0].get("id", "")) or None
+
+
+def link_contrario(exp_id: str, contrario_id: str) -> None:
+    """Vincula un cliente contrario existente a un expediente EXTRAJUDICIAL.
+
+    REST únicamente (confirmado en vivo 2026-07-17, expediente 624/W-02TH0W) —
+    sin fallback legacy: no hay endpoint saveselect confirmado para esta
+    combinación element+relación (a diferencia de clientes_propios/colaboradores
+    en extrajudiciales, que sí tienen legacy). Ver docs/INTEGRACION_SUDESPACHO.md §10.6.
+
+    Args:
+        exp_id: ID del expediente extrajudicial.
+        contrario_id: ID del cliente contrario en el CRM (clientes_contrarios).
+
+    Raises:
+        SudespachoRelationsError: si el vínculo falla.
+        ValueError: SUDESPACHO_API_KEY no configurado.
+    """
+    _link_rest("extrajudiciales", exp_id, [f"right.clientes_contrarios.{contrario_id}"])
+
+
+def ensure_contrario_vinculado(
+    exp_id: str,
+    datos: NuevoClienteContrario,
+) -> tuple[str, bool]:
+    """Garantiza que el contrario existe en el CRM y está vinculado al expediente.
+
+    Mismo flujo que ensure_colaborador_vinculado() pero para clientes_contrarios
+    en expedientes EXTRAJUDICIALES (confirmado en vivo 2026-07-17): busca por NIF,
+    crea si no existe, vincula siempre.
+
+    Args:
+        exp_id: ID del expediente extrajudicial.
+        datos: Datos del contrario (nombre + nif mínimos para deduplicar).
+
+    Returns:
+        Tupla (contrario_id, created) donde `created` es True si se creó nuevo.
+
+    Raises:
+        SudespachoRelationsError: si algún paso falla.
+    """
+    contrario_id = find_cliente_contrario_by_nif(datos.nif)
+    created = False
+    if contrario_id is None:
+        contrario_id = create_cliente_contrario(datos)
+        created = True
+    link_contrario(exp_id, contrario_id)
+    return contrario_id, created
 
 
 # ---------------------------------------------------------------------------

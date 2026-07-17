@@ -52,6 +52,7 @@ Relaciones confirmadas en el tenant `tnm`:
 | `extrajudiciales` | `expedientes_judiciales` | `left` | Extrajudicial 591 → Judicial 648 |
 | `extrajudiciales` | `clientes_propios` | `right` | Exp → EV MMC (ID=2) |
 | `extrajudiciales` | `colaboradores` | `right` | Exp → Marta Reynares |
+| `extrajudiciales` | `clientes_contrarios` | `right` | Exp → parte contraria (confirmado 2026-07-17; antes solo confirmado en judicial — mismo endpoint genérico `relation_element`, ver `INTEGRACION_SUDESPACHO.md` §10.6) |
 | `expedientes_judiciales` | `clientes_propios` | `right` | Exp → EV MMC |
 | `expedientes_judiciales` | `clientes_contrarios` | `right` | Exp → parte contraria |
 | `expedientes_judiciales` | `procuradores_propios` | `right` | Exp → procurador |

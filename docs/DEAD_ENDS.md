@@ -233,6 +233,19 @@ Cuantifica y matiza el hallazgo anterior con mediciones reales desde Cowork (wal
 - **Solución aplicada:** `core/sync_sudespacho.py::get_presigned_download_url` reescrito para usar `GET /api/documents/{id}/downloadUri` (constante `ENDPOINTS["document_download_uri"]`) y extraer `presignedDownloadUrl`. Se añadió `presignedDownloadUrl` a `_extract_url_from_doc` (defensa en profundidad para `download_document()`). Firma intacta → cero cambios en call-sites (`download_document_rest`, `pull_expediente_v2`). Tests: `test_get_presigned_download_url_usa_downloaduri`, `test_extract_url_from_doc_campo_presigned_download_url`. Verificación end-to-end: `scripts/_verify_pull_649.py` (31/31 OK).
 - **Nota menor (no bloquea):** el metadato `tamano` del CRM puede venir desfasado respecto a los bytes reales en S3 (visto en docs servidos en .pdf y .docx del mismo original); el dedup M9 usa SHA-256 de los bytes reales, así que es irrelevante.
 
+### Leer relaciones de un elemento vía REST — sin ruta de lectura
+- **Intentado:** tras vincular un `clientes_contrarios` a un `extrajudiciales` vía
+  `POST /api/relation_element/{element}/{exp_id}` (HTTP 201), verificar por API que la
+  relación quedó realmente aplicada (el endpoint no valida FK server-side — ver
+  `docs/INTEGRACION_SUDESPACHO.md` §10.6/§10.7 — un 201 no garantiza que se aplicara).
+  Se probó: `GET /api/relation_element/extrajudiciales/{id}` y
+  `GET /api/relations_elements` (colección genérica del recurso `RelationsElements` del
+  schema JSON-LD).
+- **Resultado:** `GET /api/relation_element/{element}/{id}` → **HTTP 405** (`Allow: POST, PUT, DELETE`, sin GET). `GET /api/relations_elements` → **HTTP 200 pero `[]`** siempre (no refleja las relaciones creadas vía `relation_element`; parecen vivir en tablas distintas).
+- **Confirmado:** 2026-07-17 (expediente extrajudicial 624, W-02TH0W).
+- **Conclusión:** no hay vía REST para leer relaciones ya vinculadas. La única verificación es visual, en la ficha del expediente en `tnm.sudespacho.net` (frontal heredado).
+- **Acción pendiente (no bloquea):** si aparece necesidad real de verificar relaciones por API (p. ej. para un guard automático), capturar HAR de la pestaña "Relaciones" del expediente en el frontal heredado.
+
 ---
 
 ## Google Drive / Google Docs
