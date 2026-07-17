@@ -17,11 +17,11 @@ description: >-
   NI genera el informe formal (eso es viabilidad-prerelleno) NI mueve/borra el
   crudo.
 metadata:
-  rol: output
+  rol: procesado
   naturaleza: atomica
   jurisdiction: ES
   area: [civil, procesal]
-  version: "1.5"
+  version: "1.6"
   author: "Nikolai Tyukhay"
   organization: "Tyukhay Legal"
   contact: "nikolai.tyukhay@tyukhay.legal"

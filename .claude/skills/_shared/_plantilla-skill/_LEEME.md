@@ -14,10 +14,18 @@ una skill ejecutable: es un molde. Carpeta ignorada por `sync_skill_helpers.py`
 
 ## Ejes de clasificación
 
-- **`rol`**: `transversal` (comportamiento que cruza asuntos, p. ej. verificación) ·
-  `fase` (un momento del litigio: preparación, audiencia previa, juicio) ·
-  `cliente` (aporta contexto de un cliente, p. ej. Engel & Völkers) ·
-  `output` (produce un entregable concreto, p. ej. escritos `.docx`).
+- **`rol`** — dos familias más un eje transversal:
+  - **Trabajo jurídico:** `fase` (un momento del litigio: preparación, audiencia previa,
+    juicio) · `output` (produce un entregable concreto, p. ej. escritos `.docx`) ·
+    `cliente` (aporta contexto de un cliente, p. ej. Engel & Völkers).
+  - **Pipeline de datos del expediente:** `input` (mete datos crudos al expediente, p. ej.
+    `intake-expediente`, `exportar-correos-etiqueta`; simétrico de `output`) · `procesado`
+    (transforma el intake en artefactos internos, p. ej. `organizar-sala-maquina`,
+    `organizar-sala-lectura`).
+  - **Transversal a ambas:** `transversal` (comportamiento que cruza asuntos, p. ej.
+    verificación, estilo).
+
+  (Taxonomía a revalidar al construir el grafo de ecosistema — `docs/MEJORAS_FUTURAS.md` #50.)
 - **`naturaleza`**: `atomica` (hace una cosa) · `orquestadora` (coordina otras
   skills; rellena entonces `orchestrates`).
 

@@ -14,11 +14,11 @@ description: >-
   (abrir-caso/intake-expediente), NO valora viabilidad (triaje-viabilidad), NO
   anonimiza.
 metadata:
-  rol: output
+  rol: procesado
   naturaleza: atomica
   jurisdiction: ES
   area: [civil, procesal]
-  version: "1.1"
+  version: "1.2"
   author: "Nikolai Tyukhay"
   organization: "Tyukhay Legal"
   contact: "nikolai.tyukhay@tyukhay.legal"
