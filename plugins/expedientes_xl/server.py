@@ -97,7 +97,7 @@ def build_server(zonas: Zonas, oracle, max_b64_bytes: int = DEFAULT_MAX_B64,
 
     @mcp.tool()
     def copy_path(src: str, dst: str) -> str:
-        """Copia un fichero (no destructivo; zonas+`.g*`+hidratación en ambos extremos). Ruta destino."""
+        """Copia un fichero (no destructivo; zonas+`.g*`+hidratación del origen). Ruta destino."""
         src_p = fsops.resolve_within(allowed, src)
         tiers.check_read(zonas, src_p)
         guards.guard_file(oracle, src_p)  # una copia lee bytes del origen (spec §6.2)

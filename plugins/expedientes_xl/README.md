@@ -107,7 +107,7 @@ append-only en `XL_AUDIT_PATH`).
 ### Copiar
 | Tool | Firma | Notas |
 |---|---|---|
-| `copy_path` | `(src, dst) -> str` | No destructivo; zonas + `check_gdoc` + hidratación en ambos extremos; destino atómico. |
+| `copy_path` | `(src, dst) -> str` | No destructivo; zonas + `check_gdoc` + guarda de hidratación del ORIGEN (una copia lee bytes del origen); destino atómico (write, sin guarda de hidratación — no aplica). |
 | `copy_dir` | `(src, dst) -> dict` | **Devuelve dict** `{"copiados": [...]}` (no lista plana). Travesía por nodo: poda Tier 0, **pre-scan** que valida CADA destino antes de copiar nada (aborta si alguno viola zonas), guarda de árbol frío. Los stubs `.gdoc`/`.gsheet`/… del origen se **omiten** (auditado `omitido_gdoc`), nunca abortan el árbol. No recrea directorios vacíos; symlinks-fichero se **deferencian** (contenido copiado, no recreados como enlace). |
 
 ### Comprimir
@@ -173,9 +173,6 @@ tool que borre ficheros o directorios.
   respecto al `copy_tree` anterior.
 - **`tree` añade `omitidos_profundidad`** (ficheros más allá de `max_depth`) junto a
   `entries`/`podados`/`truncado` — sin silencios.
-- **`copy_path` no guarda la hidratación del origen** en V1: una copia grande de un
-  único fichero COLD hidrata sin abortar (asimetría con `copy_dir`, que sí guarda vía
-  `guard_tree`). Anotado para un one-liner en V1.1 (`docs/MEJORAS_FUTURAS.md`).
 - **Cancelación real de operaciones pesadas es V2**: el timeout de `XL_OP_TIMEOUT`
   responde al canal MCP, pero el hilo daemon puede seguir con la E/S en segundo plano.
 

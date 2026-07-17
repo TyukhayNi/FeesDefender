@@ -50,13 +50,7 @@ detectados durante la construcción (Tasks 1-17). Revisar explícitamente en el 
    fallo es **silencioso hacia el pipe MCP** — solo se ve en
    `%APPDATA%\Claude\logs\mcp-server-expedientes-xl-wrapper.log`. Revisar ese log si
    Cowork no conecta.
-4. **`copy_path` no guarda la hidratación del origen en V1.** Un `copy_path` sobre un
-   único fichero COLD grande **hidrata sin abortar** (asimetría documentada con
-   `copy_dir`, que sí pasa por `guard_tree`). No es un bug de despliegue, pero puede
-   sorprender en la sesión de humo si el fichero de prueba es COLD y grande — la copia
-   tardará (descarga) en vez de fallar rápido con `ERROR_FILE_NOT_HYDRATED`. Fix
-   previsto como one-liner en V1.1 (`docs/MEJORAS_FUTURAS.md`).
-5. **Cancelación real de operaciones pesadas es V2.** `XL_OP_TIMEOUT` hace que el canal
+4. **Cancelación real de operaciones pesadas es V2.** `XL_OP_TIMEOUT` hace que el canal
    MCP **responda** aunque la E/S siga en curso en un hilo daemon en segundo plano — no
    hay forma de abortar esa E/S desde fuera. Si la sesión de humo dispara una operación
    muy pesada (árbol grande, extracción grande) y expira el timeout, el proceso puede

@@ -2525,13 +2525,6 @@ completitud de diseño ni por anticipación).
   un tool de este servidor.
 
 **Diferido V1.1 (más cercano, no V2):**
-- **Guarda de hidratación de origen en `copy_path`.** A diferencia de `copy_dir` (que
-  pasa por `guard_tree` antes de copiar), `copy_path` no comprueba el estado de
-  hidratación del origen: una copia de un único fichero COLD grande hidrata sin
-  abortar. Fix propuesto: un one-liner que llame `guards.guard_file(oracle, src_p)`
-  antes de `fsops.copy_file_v2` en el tool `copy_path` de `server.py` (mismo patrón que
-  ya usa para `hash_path`). Documentado también en `plugins/expedientes_xl/README.md`
-  (Límites conocidos).
 - **Consolidar las 3 copias de `_abrible`.** `winio.py`, `fsops.py` y `readops.py`
   definen cada uno su propia función privada `_abrible(p)` (idéntica: prefijo `\\?\`
   solo cuando la ruta roza `MAX_PATH`). Consolidar en `winio._abrible` (o exportarla
