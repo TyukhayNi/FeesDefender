@@ -2479,3 +2479,78 @@ Arreglo (micro-PR autocontenido, ~30 min):
 
 Principio: como con la higiene PII — a un fallo de disciplina se responde con estructura, no con más
 disciplina. Disparador ya ocurrido (mordió 2026-07-16); memoria `feedback-pytest-junit-xml-y-dead-ends`.
+
+---
+
+## 66. MCP "Drive como disco" (`expedientes-xl` consolidado) — diferidos V2 y V1.1
+
+**Anotado 2026-07-17.** Tras el V1 completo del servidor consolidado (Tasks 1-18,
+spec `docs/superpowers/specs/2026-07-16-mcp-drive-disco-local-design.md` rev 3,
+right-sized tras 5 rondas adversariales). El spec §5 ya fija qué queda fuera de V1 y
+por qué; esta entrada es el ancla de backlog para cuando aparezca el disparador
+concreto de cada pieza (regla de promoción de `CLAUDE.md`: no se construye por
+completitud de diseño ni por anticipación).
+
+**Diferido V2 (spec §5, "V2 diferido"):**
+- **`move`/`rename`** — doctrina de la casa es copiar, nunca mover (`move_file` de
+  `expedientes` ya está marcado destructivo); solo entra si aparece un flujo real que
+  lo necesite.
+- **`batch_rename`** — si entra, "pelado": dry-run + continue-on-error + informe
+  old→new en auditoría, **sin** journal/rollback (falsa transaccionalidad; la doctrina
+  de recuperación real de este servidor es re-ejecutar-converge, no deshacer).
+- **`create_zip`** — comprimir no tiene disparador hoy (solo `extract_archive` está en
+  V1).
+- **`du` como tool** — la lógica de volumen ya existe internamente (`guard_tree`, §6.2)
+  pero no está expuesta como tool de consulta directa.
+- **`verify_manifest`** — duplicaría `rclone check --one-way` del checkin; además el
+  `MANIFEST_CHECKOUT.json` llavea por MD5 de rclone, no por SHA-256 (los hashes de este
+  servidor) — requeriría decidir primero cuál es la fuente de verdad del hash antes de
+  construirlo.
+- **Escritura en `H:` + gate de mutación-en-compartido + staging de temporales** — hoy
+  `H:` es solo-lectura en V1 porque ningún flujo real escribe en el Drive de E&V (la
+  única mutación existente es `permissions.create` vía API en `core/share_drive.py`,
+  fuera del ámbito FS de este MCP). El día que exista ese flujo, hace falta además el
+  gate de mutación-en-compartido y el staging especial de temporales que el spec §2
+  aplaza explícitamente.
+- **Cancelación real de workers** — el timeout de `XL_OP_TIMEOUT` hoy solo hace que el
+  canal MCP *responda*; la E/S puede seguir en el hilo daemon. Cancelación-que-aborta-E/S
+  de verdad no es limpio en Python/Windows y el spec la aplaza a menos que se
+  **observe** acumulación real de hilos (hoy mitigado por el semáforo `XL_IO_CAP` +
+  timeouts).
+- **`confirm_sync` como receta de skill** (ex-#46 del spec, no tool del servidor) — no
+  hay señal local fiable de "pendiente de subir" en GDFD (verificado: no existe
+  `local-content-checksum`; el estado determinista vive en el protobuf cerrado de
+  `operations`). Si un flujo lo exige: skill que, tras escribir, haga polling de
+  `google-despacho.get_file_metadata` (`md5Checksum`/`modifiedTime`) con backoff — nunca
+  un tool de este servidor.
+
+**Diferido V1.1 (más cercano, no V2):**
+- **Consolidar las 3 copias de `_abrible`.** `winio.py`, `fsops.py` y `readops.py`
+  definen cada uno su propia función privada `_abrible(p)` (idéntica: prefijo `\\?\`
+  solo cuando la ruta roza `MAX_PATH`). Consolidar en `winio._abrible` (o exportarla
+  pública) y que `fsops`/`readops` la importen, eliminando la triplicación.
+- **Enumeración por fichero de `omitidos` en árboles fríos.** `guard_tree` hoy reporta
+  agregados (`n_cold`, `n_total`) y, al abortar, lista solo la raíz del árbol en
+  `omitidos=[str(root)]` — no los ficheros COLD individuales. Para un árbol grande,
+  saber *cuáles* ficheros son COLD (no solo cuántos) ahorraría una segunda vuelta al
+  usuario decidiendo qué hidratar. Requiere que `oracle.subtree_cold_stats` devuelva las
+  rutas, no solo el conteo (cambio de forma del oráculo, no solo del guard).
+- **`reclasificar_resueltos` también debería podar symlinks a destinos FUERA del sandbox.**
+  El fix de la revisión final (commit `9802fd1`) hizo que `iter_tree(..., reclasificar_resueltos=True)`
+  pode los symlinks cuyo destino RESUELTO es Tier 0 (anti-fuga de `90_Notas personales`).
+  Pero solo comprueba `classify(resuelto) is PROHIBIDA`; NO re-verifica pertenencia al
+  sandbox. Un symlink-fichero en workspace que apunte a un destino no-Tier0 *fuera* de
+  `G:`/`H:` sigue siendo entregado, así que `search_content` podría leer el contenido de
+  un fichero pequeño (< `XL_HYDRATION_MAX_FILE_MB`; los grandes los para `guard_file`→UNKNOWN)
+  fuera del sandbox. Disparador de bajísima probabilidad (exige un symlink NTFS de fichero
+  creado por admin; los atajos de GDFD son `.lnk`, ya tratados por `resolve_shortcut`).
+  Fix barato y completo en el mismo punto: podar también cuando `resolve_within(resuelto)`
+  falle (`OutsideSandbox`). Detectado en la revisión final whole-branch como observación
+  no-bloqueante adyacente al fix, no introducida por él.
+
+**Disparador de promoción.** Cualquiera de estas piezas se promueve a `PLAN.md`
+individualmente cuando aparezca su caso real (un flujo que necesite escribir en `H:`,
+un caso donde el batch-rename ahorre trabajo manual repetido, una sesión de humo que
+mida cola de hilos zombis, etc.) o por decisión explícita de Nikolai — nunca por
+anticipación. Ver `docs/superpowers/specs/2026-07-16-mcp-drive-disco-local-design.md`
+§5 y §9 para el razonamiento de right-sizing original.
