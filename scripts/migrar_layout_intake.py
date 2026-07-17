@@ -4,6 +4,13 @@ Se dispara SOLO cuando el caso recibe un intake nuevo — nunca de oficio ni en
 barrido. Envuelve los cajones de entrega en lotes sintéticos y remapea los
 registros aguas abajo (M9, cobertura OCR, catálogo). Espejos y protocolo
 intactos. Correr TRAS el checkin si el caso estaba prestado.
+
+Los movimientos físicos (fase 1) son todo-o-nada: si cualquier ``shutil.move``
+o ``mkdir`` falla a mitad de camino (fichero bloqueado, permiso, disco lleno),
+se revierte lo ya movido antes de propagar el error. M9/cobertura/catálogo
+(fase 2) solo se tocan si la fase 1 completó entera — así una migración a
+medias nunca deja los registros aguas abajo apuntando a rutas que ya no
+existen.
 """
 from __future__ import annotations
 
@@ -25,16 +32,36 @@ class CasoPrestadoError(RuntimeError):
     """El caso está prestado/conflicto: migrar tras el checkin (§7.6)."""
 
 
-def _json_atomico(path: Path, data) -> None:
+def _write_atomico(path: Path, text: str) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True),
-                   encoding="utf-8")
+    tmp.write_text(text, encoding="utf-8")
     tmp.replace(path)
+
+
+def _json_atomico(path: Path, data) -> None:
+    _write_atomico(
+        path, json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True))
+
+
+def _yaml_atomico(path: Path, data) -> None:
+    _write_atomico(
+        path,
+        yaml.dump(data, allow_unicode=True, default_flow_style=False,
+                  sort_keys=False))
+
+
+def _mapping_documental(mov: migrar_layout.MovimientoCajon) -> dict[str, str]:
+    """Sub-mapping de ``mov`` excluyendo los ficheros de control del canal
+    email, que se desvían a la raíz de 00_Input/ y nunca llegan al lote."""
+    if mov.cajon != "03_Email":
+        return mov.mapping
+    return {k: v for k, v in mov.mapping.items()
+            if Path(k).name not in config.INTAKE_CONTROL_FILES}
 
 
 def migrar(case_id: str, *, dry_run: bool) -> list[migrar_layout.MovimientoCajon]:
     estado = leer_estado_repositorio(case_id)
-    if estado in ("prestado", "conflicto"):
+    if estado in (config.ESTADO_REPO_PRESTADO, config.ESTADO_REPO_CONFLICTO):
         raise CasoPrestadoError(
             f"El caso está '{estado}': la migración se corre tras el checkin "
             "(desviar medio árbol a la bandeja no tiene sentido, spec §7.6).")
@@ -43,27 +70,52 @@ def migrar(case_id: str, *, dry_run: bool) -> list[migrar_layout.MovimientoCajon
     if dry_run or not plan:
         return plan
 
+    # --- Fase 1: movimientos físicos, todo-o-nada -------------------------
+    hechos: list[tuple[Path, Path]] = []
+    lotes_creados: list[Path] = []
     mapping_total: dict[str, str] = {}
+    try:
+        for mov in plan:
+            cajon_dir, lote_dir = base / mov.cajon, base / mov.lote
+            lote_dir.mkdir(parents=True, exist_ok=False)
+            lotes_creados.append(lote_dir)
+            for hijo in sorted(cajon_dir.iterdir()):
+                if (mov.cajon == "03_Email"
+                        and hijo.name in config.INTAKE_CONTROL_FILES):
+                    # estado de canal → raíz de 00_Input (hogar desde #54), no al lote
+                    destino = base / hijo.name
+                    if not destino.exists():
+                        shutil.move(str(hijo), str(destino))
+                        hechos.append((hijo, destino))
+                    else:
+                        hijo.unlink()          # ya consolidado en la raíz
+                    continue
+                destino = lote_dir / hijo.name
+                shutil.move(str(hijo), str(destino))
+                hechos.append((hijo, destino))
+            mapping_total.update(_mapping_documental(mov))
+    except Exception as exc:
+        for src, dst in reversed(hechos):
+            try:
+                shutil.move(str(dst), str(src))
+            except Exception:
+                pass    # best-effort: seguimos revirtiendo el resto
+        for lote_dir in lotes_creados:
+            try:
+                if lote_dir.is_dir() and not any(lote_dir.iterdir()):
+                    lote_dir.rmdir()
+            except Exception:
+                pass
+        raise RuntimeError(f"Migración abortada y revertida: {exc}") from exc
+
+    # --- Fase 2: manifiestos + remaps + evento (solo si fase 1 completó) -
     for mov in plan:
-        cajon_dir, lote_dir = base / mov.cajon, base / mov.lote
-        lote_dir.mkdir(parents=True, exist_ok=False)
-        for hijo in sorted(cajon_dir.iterdir()):
-            if (mov.cajon == "03_Email"
-                    and hijo.name in config.INTAKE_CONTROL_FILES):
-                # estado de canal → raíz de 00_Input (hogar desde #54), no al lote
-                destino = base / hijo.name
-                if not destino.exists():
-                    shutil.move(str(hijo), str(destino))
-                else:
-                    hijo.unlink()          # ya consolidado en la raíz
-                continue
-            shutil.move(str(hijo), str(lote_dir / hijo.name))
+        lote_dir = base / mov.lote
         intake_lotes.escribir_manifiesto(
             lote_dir, fuente=mov.fuente, fecha_intake=mov.lote[:10],
             origen="migracion_layout",
             items=intake_lotes.items_desde_disco(lote_dir),
             fecha_intake_estimada=True)
-        mapping_total.update(mov.mapping)
 
     remapeados: dict[str, int] = {}
     m9_path = base / "_intake_hashes.json"
@@ -82,9 +134,7 @@ def migrar(case_id: str, *, dry_run: bool) -> list[migrar_layout.MovimientoCajon
         entries = yaml.safe_load(cat_path.read_text(encoding="utf-8")) or []
         entries, remapeados["catalogo"] = migrar_layout.remap_catalogo(
             entries, mapping_total)
-        cat_path.write_text(
-            yaml.dump(entries, allow_unicode=True, default_flow_style=False,
-                      sort_keys=False), encoding="utf-8")
+        _yaml_atomico(cat_path, entries)
 
     intake_log.append_event(case_id, "migracion_layout_intake", details={
         "lotes": [m.lote for m in plan], "remapeados": remapeados})
@@ -98,12 +148,16 @@ def main(case_id: str, dry_run: bool = typer.Option(False, "--dry-run")) -> None
     except CasoPrestadoError as exc:
         typer.echo(f"[ERROR] {exc}", err=True)
         raise typer.Exit(code=1)
+    except Exception as exc:
+        typer.echo(f"[ERROR] {exc}", err=True)
+        raise typer.Exit(code=1)
     if not plan:
         typer.echo("Nada que migrar: sin cajones de entrega con contenido.")
         return
     for mov in plan:
+        n_docs = len(_mapping_documental(mov))
         typer.echo(f"{'[dry-run] ' if dry_run else ''}{mov.cajon} → {mov.lote} "
-                   f"({len(mov.mapping)} ficheros)")
+                   f"({n_docs} ficheros)")
 
 
 if __name__ == "__main__":
