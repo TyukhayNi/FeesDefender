@@ -141,6 +141,19 @@ def test_manifiesto_message_id_y_duplicado(tmp_path):
     assert item["tipo_contenido"] == "eml"
 
 
+def test_fuente_de_contrato_completo():
+    from core.intake_lotes import fuente_de
+    assert fuente_de("01_Drive EV/w/doc.pdf") == "drive_ev"          # espejo
+    assert fuente_de("05_CRM/Civil/demanda.pdf") == "crm"            # espejo
+    assert fuente_de("2026-07-17_whatsapp_01/00_Consultor propietario/c/_chat.txt") == "whatsapp"
+    assert fuente_de("2026-07-17_email_02/a.eml") == "email"         # lote
+    assert fuente_de("02_Whatsapp/rol/chat/_chat.txt") == "whatsapp" # cajón legacy
+    assert fuente_de("06_Entrevistas/x.mp4") == "entrevista"         # SINGULAR (spec §4)
+    assert fuente_de("suelto_en_raiz.pdf") == "manual"               # raíz
+    assert fuente_de("CarpetaRara/x.pdf") == "manual"                # fallback unificado
+    assert fuente_de("2026-07-17_manual_01\\a.pdf") == "manual"      # tolera backslash
+
+
 def test_anexar_items_fusiona_por_relpath(tmp_path):
     from core import intake_lotes as il
     lote = tmp_path / "2026-07-17_manual_01"

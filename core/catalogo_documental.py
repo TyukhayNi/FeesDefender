@@ -25,7 +25,7 @@ _SOURCE_MAP = {
     "03_Email": "email",
     "04_Manual": "manual",
     "05_CRM": "crm",
-    "06_Entrevistas": "entrevistas",
+    "06_Entrevistas": "entrevista",
 }
 
 
@@ -56,6 +56,13 @@ def _catalog_path(case_id: str) -> Path:
 
 
 def _map_source(inventory_source: str) -> str:
+    """Tolerancia legacy: mapea nombres de cajón de inventarios viejos persistidos.
+
+    Desde MEJORAS #54 T11, `inventory.FileEntry.source` ya es canónico
+    (delega en `intake_lotes.fuente_de`), así que para inventarios nuevos
+    este `get` es identidad; solo actúa sobre `_inventory.json` generados
+    antes de la migración, que aún llevan el nombre de cajón literal.
+    """
     return _SOURCE_MAP.get(inventory_source, inventory_source)
 
 

@@ -473,7 +473,7 @@ def make_llm_cloud_chat_fn(*, llm_config=None, max_chars: int = 6000):
 _SALA = "Sala lectura"
 FUENTE_LABEL = {
     "drive_ev": "Drive E&V", "crm": "CRM", "whatsapp": "WhatsApp",
-    "entrevistas": "Entrevistas", "email": "Email", "manual": "Manual",
+    "entrevista": "Entrevistas", "email": "Email", "manual": "Manual",
 }
 _CABECERA_RO = (
     "<!-- GENERADO AUTOMÁTICAMENTE — NO EDITAR A MANO. "

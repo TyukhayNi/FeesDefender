@@ -26,6 +26,30 @@ PATRON_LOTE = re.compile(
     r"^(\d{4}-\d{2}-\d{2})_(whatsapp|email|manual|entrevista)_(\d{2,})$"
 )
 
+ESPEJOS = {"01_Drive EV": "drive_ev", "05_CRM": "crm"}
+CAJONES_LEGACY = {
+    "01_Drive EV": "drive_ev", "02_Whatsapp": "whatsapp", "03_Email": "email",
+    "04_Manual": "manual", "05_CRM": "crm", "06_Entrevistas": "entrevista",
+}
+
+
+def fuente_de(rel_path: str) -> str:
+    """Fuente canónica de un rel_path bajo 00_Input/ (spec §8, contrato único).
+
+    Sustituye a inventory._source_of, catalogo_documental._map_source y al
+    _fuente del helper de organizar-sala-lectura.
+    """
+    partes = rel_path.replace("\\", "/").lstrip("/").split("/")
+    if len(partes) < 2:
+        return "manual"                       # fichero en la raíz
+    top = partes[0]
+    if top in ESPEJOS:
+        return ESPEJOS[top]
+    m = PATRON_LOTE.match(top)
+    if m:
+        return m.group(2)                     # el nombre del lote manda
+    return CAJONES_LEGACY.get(top, "manual")
+
 
 def _lotes_existentes(case_dir: Path) -> set[str]:
     """Nombres de lote presentes en 00_Input/ Y en la bandeja _pendiente_checkin.
