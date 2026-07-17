@@ -250,6 +250,7 @@ def extract_archive(
     dest_dir: str | Path,
     max_total_bytes: int = DEFAULT_MAX_EXTRACT_BYTES,
     strip_top_level: bool = False,
+    member_filter=None,
 ) -> list[Path]:
     """Descomprime .zip o .tar(.gz/.bz2) en dest_dir, ambos dentro del sandbox.
 
@@ -257,6 +258,12 @@ def extract_archive(
     (anti zip-bomb). Si `strip_top_level` y el archivo tiene un ÚNICO directorio de
     primer nivel que envuelve a todos los ficheros, se quita ese wrapper de las
     rutas extraídas. Devuelve los ficheros extraídos (ordenados).
+
+    `member_filter(name, dest)`, si se pasa, decide POR MIEMBRO (ya con el nombre
+    saneado/sin wrapper y el destino resuelto) si se vuelca (True) o se OMITE
+    (False) — antes de tocar bytes. Lo usa el servidor MCP para aplicar zonas/tiers
+    por miembro (p. ej. destino Tier 0 o Tier 1 ya existente) sin abortar el resto
+    del archivo.
     """
     archive_p = resolve_within(allowed_dirs, archive)
     dest_p = resolve_within(allowed_dirs, dest_dir)
@@ -281,6 +288,8 @@ def extract_archive(
                 dest = _safe_member_dest(dest_p, name)
                 if dest is None:
                     continue
+                if member_filter is not None and not member_filter(name, dest):
+                    continue
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 with zf.open(member) as src:
                     _stream_member(src, dest, budget)
@@ -295,6 +304,8 @@ def extract_archive(
                     continue
                 dest = _safe_member_dest(dest_p, name)
                 if dest is None:
+                    continue
+                if member_filter is not None and not member_filter(name, dest):
                     continue
                 src = tf.extractfile(member)
                 if src is None:

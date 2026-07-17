@@ -26,16 +26,24 @@ claude mcp add expedientes-xl -- python <ruta>/plugins/expedientes_xl/server.py 
 }
 ```
 
-Opcional: añadir `--max-b64-bytes N` tras `<allowed_dir>` para el tope de
-`write_file_base64` (def. 8 MiB). Se pueden pasar varios `<allowed_dir>`.
+Zonas por *tier* (spec §2): pasar `--rw DIR` (lectura+escritura, repetible) y/o
+`--ro DIR` (solo-lectura en V1, repetible); un `<allowed_dir>` posicional se trata como
+`--rw` (compat). Opcional: `--max-b64-bytes N` para el tope de `write_file_base64`
+(def. 8 MiB).
 
 ## Tools
-`hash_path` · `copy_path` · `copy_dir` · `extract_archive` · `write_file_base64` ·
-`append_text` · `delete_path`.
+`hash_path` · `hash_tree` · `copy_path` · `copy_dir` · `extract_archive` ·
+`write_file_base64` · `append_text`.
+
+**Sin borrado** (`delete_path` retirado de la superficie, spec §2).
 
 Toda ruta se valida contra los `allowedDirectories` (saneado anti path-traversal,
-incluido por miembro en `extract_archive`); `write_file_base64` tiene tope de tamaño
-duro. La lógica pura vive en `fsops.py` (testeada en `tests/test_expedientes_xl_fsops.py`);
+incluido por miembro en `extract_archive`) y contra las zonas: Tier 0
+(`90_Notas personales`) nunca se lee ni se escribe; Tier 1 (`00_Input` y backups) es
+forense-inmutable salvo el carve-out de protocolo. Las operaciones pesadas
+(`hash_tree`/`copy_dir`/`extract_archive`) pasan por un semáforo de E/S y responden con
+error legible si superan `XL_OP_TIMEOUT`. `write_file_base64` tiene tope de tamaño duro.
+La lógica pura vive en `fsops.py`/`tiers.py`/`guards.py` (testeadas en `tests/`);
 `server.py` es el wrapper FastMCP.
 
 ## Verificación

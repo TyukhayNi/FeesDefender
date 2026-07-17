@@ -352,6 +352,25 @@ def test_extract_archive_zip_bomb_supera_tope(tmp_path):
         fsops.extract_archive([tmp_path], str(archive), str(dest), max_total_bytes=1000)
 
 
+def test_extract_archive_member_filter_omite_sin_abortar_el_resto(tmp_path):
+    archive = tmp_path / "e.zip"
+    archive.write_bytes(_zip_bytes({"a.txt": b"uno", "b.txt": b"dos"}))
+    dest = tmp_path / "out"
+    omitidos = []
+
+    def _filtro(name, _dest):
+        if name == "a.txt":
+            omitidos.append(name)
+            return False
+        return True
+
+    out = fsops.extract_archive([tmp_path], str(archive), str(dest), member_filter=_filtro)
+    assert omitidos == ["a.txt"]
+    assert not (dest / "a.txt").exists()
+    assert (dest / "b.txt").read_bytes() == b"dos"
+    assert [p.name for p in out] == ["b.txt"]
+
+
 def test_extract_archive_no_es_archivo(tmp_path):
     f = tmp_path / "plano.txt"
     f.write_text("no soy archivo", encoding="utf-8")
