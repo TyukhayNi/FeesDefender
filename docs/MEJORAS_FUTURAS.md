@@ -2135,7 +2135,7 @@ casos), o la reapertura de la parte de abrir-caso que tenía `entrevista` aparca
 
 ---
 
-## 54. Modelo de layout de `00_Input`: subcarpeta por lote de intake + metadatos, vs cajones fijos por fuente  [DECISIÓN DE ARQUITECTURA PENDIENTE]
+## 54. Modelo de layout de `00_Input`: subcarpeta por lote de intake + metadatos, vs cajones fijos por fuente  [DECIDIDO 2026-07-17 → spec rev 2 en PR #49 mergeado]
 
 **Anotado 2026-07-13** a raíz del intake del W-02XOR7 (Santes Creus 15). El material llegó por **tres
 canales a la vez** (etiqueta de Gmail + carpetas del Drive de EV + grabación en Meet) y hubo fricción de
