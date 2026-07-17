@@ -6,6 +6,9 @@ una skill ejecutable: es un molde. Carpeta ignorada por `sync_skill_helpers.py`
 
 ## Cómo usarla
 
+> Sigue la **[checklist de autoría](../SKILL_AUTHORING.md)** al redactar o modificar cualquier
+> skill (frontmatter/triggering, concisión, progressive disclosure, scripts, pre-ship).
+
 1. Copia esta carpeta a `.claude/skills/<nombre-de-la-skill>/`.
 2. Renombra y rellena el frontmatter de `SKILL.md` (`name` == nombre de carpeta).
 3. Elige los **ejes** y añade los **módulos** que correspondan (abajo).
