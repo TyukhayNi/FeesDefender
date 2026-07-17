@@ -107,6 +107,34 @@ def test_iter_tree_poda_tier0(sandbox):
     assert "doc.txt" in vistos and "secreto.txt" not in vistos
     assert len(podas) == 1 and podas[0].name == "90_Notas personales"
 
+
+def test_iter_tree_reclasifica_symlink_resuelto(sandbox):
+    """`reclasificar_resueltos=True` omite un symlink-fichero SUELTO (no
+    dentro de un directorio Tier 0, así que la poda por directorio no lo ve)
+    cuyo DESTINO resuelto cae en Tier 0 — el vector que ya cerraba `hash_tree`
+    de forma duplicada en server.py, ahora consolidado en `iter_tree`."""
+    root, zonas, caso = sandbox
+    secreto = caso / "90_Notas personales" / "secreto.txt"
+    enlace = caso / "enlace.txt"
+    try:
+        enlace.symlink_to(secreto)
+    except OSError as e:
+        pytest.skip(f"symlink no soportado en este entorno (requiere admin en Windows): {e}")
+
+    # Sin reclasificar: la poda por DIRECTORIO no ve el symlink suelto, se cuela.
+    sin_reclasificar = [p.name for p in iter_tree(zonas, caso)]
+    assert "enlace.txt" in sin_reclasificar
+
+    # Con reclasificar: se re-valida por ruta resuelta y se omite (podado+contado).
+    podas = []
+    con_reclasificar = [
+        p.name for p in iter_tree(zonas, caso, on_prune=podas.append,
+                                   reclasificar_resueltos=True)
+    ]
+    assert "enlace.txt" not in con_reclasificar
+    assert "doc.txt" in con_reclasificar
+    assert enlace in podas
+
 def test_tree_estructura(sandbox):
     root, zonas, caso = sandbox
     t = tree([root], zonas, str(caso))

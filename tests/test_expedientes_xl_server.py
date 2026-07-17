@@ -166,6 +166,36 @@ def test_search_content_via_tool(tmp_path):
     assert out["podados"] == 0
 
 
+def test_search_content_no_sigue_symlink_a_tier0(tmp_path):
+    """Un symlink-fichero en el workspace que apunte DENTRO de 90_Notas
+    personales no debe filtrar su CONTENIDO al modelo: `iter_tree` poda por
+    DIRECTORIO (no ve el symlink suelto), así que `search_content` re-valida
+    la ruta RESUELTA antes de abrir/leer (mismo vector que ya cerraba
+    `hash_tree`, ahora también en `search_content` vía
+    `iter_tree(reclasificar_resueltos=True)`)."""
+    notas = tmp_path / "90_Notas personales"
+    notas.mkdir()
+    secreto = notas / "secreto.txt"
+    secreto.write_text("PALABRA_CLAVE_SECRETA\n", encoding="utf-8")
+    enlace = tmp_path / "enlace.txt"
+    try:
+        enlace.symlink_to(secreto)
+    except OSError as e:
+        pytest.skip(f"symlink no soportado en este entorno (requiere admin en Windows): {e}")
+    (tmp_path / "a.txt").write_text("PALABRA_CLAVE_SECRETA en claro\n", encoding="utf-8")
+    mcp = _srv(tmp_path)
+
+    async def _call():
+        return await mcp.call_tool(
+            "search_content", {"path": str(tmp_path), "consulta": "PALABRA_CLAVE_SECRETA"}
+        )
+
+    _content, out = asyncio.run(_call())
+    rutas = {m["path"] for m in out["matches"]}
+    assert str(enlace) not in rutas               # el symlink NUNCA se abre/lee
+    assert str(tmp_path / "a.txt") in rutas        # el fichero legítimo sí matchea
+
+
 def test_create_dir_via_tool(tmp_path):
     mcp = _srv(tmp_path)
     nuevo = tmp_path / "00_Input" / "sub"

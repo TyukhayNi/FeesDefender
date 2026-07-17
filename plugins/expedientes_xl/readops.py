@@ -105,6 +105,18 @@ def list_dir(allowed, zonas, path: str, sizes: bool = False,
         if classify(zonas, hijo) is Tier.PROHIBIDA:
             podados += 1
             continue
+        if hijo.is_symlink():
+            # `classify` sobre el nombre tal cual no ve el DESTINO de un
+            # symlink-fichero suelto; re-validar por ruta resuelta (mismo
+            # vector que `iter_tree(reclasificar_resueltos=True)`).
+            try:
+                resuelto = hijo.resolve()
+            except OSError:
+                podados += 1
+                continue
+            if classify(zonas, resuelto) is Tier.PROHIBIDA:
+                podados += 1
+                continue
         if len(out) >= max_entries:
             out.append({"_truncado": True})
             break
@@ -120,8 +132,20 @@ def list_dir(allowed, zonas, path: str, sizes: bool = False,
     return out
 
 
-def iter_tree(zonas: Zonas, root: Path, on_prune=None):
-    """Generador de ficheros en árbol con poda Tier 0 topdown."""
+def iter_tree(zonas: Zonas, root: Path, on_prune=None, reclasificar_resueltos: bool = False):
+    """Generador de ficheros en árbol con poda Tier 0 topdown.
+
+    `reclasificar_resueltos=True` re-valida, POR FICHERO, la ruta RESUELTA
+    (symlinks colapsados) contra `classify`: la poda por directorio (arriba)
+    solo ve el NOMBRE del path tal cual aparece en el árbol, así que un
+    symlink-fichero suelto que apunte dentro de Tier 0 se cuela como fichero
+    normal (mismo vector que ya defendía `hash_tree` en server.py de forma
+    duplicada; consolidado aquí para que lo hereden todos los llamadores).
+    Si el destino resuelto cae en Tier 0, se omite (poda-y-cuenta vía
+    `on_prune`, nunca aborta el resto del árbol). Un `OSError` al resolver
+    (enlace roto, permisos) se trata como podado — fail-closed: mejor omitir
+    que colar un fichero cuyo destino no se pudo verificar.
+    """
     for dirpath, dirnames, filenames in os.walk(root, topdown=True):
         base = Path(dirpath)
         vivos = []
@@ -133,7 +157,19 @@ def iter_tree(zonas: Zonas, root: Path, on_prune=None):
                 vivos.append(d)
         dirnames[:] = vivos
         for f in filenames:
-            yield base / f
+            candidato = base / f
+            if reclasificar_resueltos:
+                try:
+                    resuelto = candidato.resolve()
+                except OSError:
+                    if on_prune:
+                        on_prune(candidato)
+                    continue
+                if classify(zonas, resuelto) is Tier.PROHIBIDA:
+                    if on_prune:
+                        on_prune(candidato)
+                    continue
+            yield candidato
 
 
 def tree(allowed, zonas, path: str, max_depth: int = 8, max_entries: int = 2000) -> dict:
@@ -156,7 +192,7 @@ def tree(allowed, zonas, path: str, max_depth: int = 8, max_entries: int = 2000)
         nonlocal podados
         podados += 1
 
-    for f in iter_tree(zonas, p, on_prune=_poda):
+    for f in iter_tree(zonas, p, on_prune=_poda, reclasificar_resueltos=True):
         rel = f.relative_to(p)
         if len(rel.parts) > max_depth:
             omitidos_profundidad += 1
@@ -178,7 +214,7 @@ def search_name(allowed, zonas, path: str, patron: str, max_results: int = 200) 
     p = fsops.resolve_within(allowed, path)
     check_read(zonas, p)
     hits: list[str] = []
-    for f in iter_tree(zonas, p):
+    for f in iter_tree(zonas, p, reclasificar_resueltos=True):
         if fnmatch(f.name.lower(), patron.lower()):
             hits.append(str(f))
             if len(hits) >= max_results:
@@ -215,7 +251,7 @@ def search_content(allowed, zonas, oracle, path: str, consulta: str,
         nonlocal podados
         podados += 1
 
-    for f in iter_tree(zonas, p, on_prune=_poda):
+    for f in iter_tree(zonas, p, on_prune=_poda, reclasificar_resueltos=True):
         if len(matches) >= max_results:
             break
         try:
