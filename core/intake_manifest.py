@@ -248,6 +248,7 @@ class IntakeManifest:
         relative_path: str,
         *,
         source: str,
+        message_id: str | None = None,
         **alias_details: Any,
     ) -> tuple[str, str]:
         """Registra un hash y decide si hay que escribir el fichero físico (M9-Q3).
@@ -258,6 +259,11 @@ class IntakeManifest:
                 el caller PRETENDE escribir el doc.
             source: origen lógico del doc (``"crm"``, ``"drive_ev"``, ``"email"``,
                 ``"whatsapp"``, ``"manual"``, ``"entrevista"``, ``"migration"``).
+            message_id: Message-ID del correo de origen (canal email), si
+                aplica. Se persiste en ``entry["message_id"]`` la primera vez
+                que se ve ese hash (M9 — dedup tri-canal de correos, spec §6).
+                Un entry existente sin ``message_id`` lo adquiere en la
+                siguiente llamada que lo aporte; nunca se sobrescribe.
             **alias_details: datos extra que persisten en el alias (por
                 ejemplo ``expediente_id``). ``added_at`` se inyecta automáticamente.
 
@@ -284,12 +290,16 @@ class IntakeManifest:
 
         entry = self.data.get(sha256)
         if entry is None:
-            self.data[sha256] = {
-                "primary_path": rel,
-                "aliases": [],
-            }
+            nuevo: dict[str, Any] = {"primary_path": rel, "aliases": []}
+            if message_id:
+                nuevo["message_id"] = message_id
+            self.data[sha256] = nuevo
             self._dirty = True
             return ("write", rel)
+
+        if message_id and not entry.get("message_id"):
+            entry["message_id"] = message_id
+            self._dirty = True
 
         primary = entry.get("primary_path", "")
         if rel == primary:
@@ -319,6 +329,37 @@ class IntakeManifest:
         manifest. Usar copia defensiva si se necesita inmutabilidad.
         """
         return self.data.get(sha256)
+
+    def lookup_message_id(self, message_id: str) -> tuple[str, dict[str, Any]] | None:
+        """Primer entry (orden de inserción) cuyo ``message_id`` coincide, o None."""
+        if not message_id:
+            return None
+        for sha, entry in self.data.items():
+            if entry.get("message_id") == message_id:
+                return (sha, entry)
+        return None
+
+    def message_ids(self) -> set[str]:
+        """Todos los Message-ID registrados (dedup tri-canal de correos, spec §6)."""
+        return {e["message_id"] for e in self.data.values() if e.get("message_id")}
+
+    def duplicado_de_para(self, sha256: str, size: int,
+                          message_id: str | None = None) -> str | None:
+        """Valor para ``duplicado_de`` del manifiesto de lote (spec §6), o None.
+
+        El caller COPIA el fichero igualmente: esto solo anota. Tamaño 0 nunca
+        marca (su sha constante relacionaría cosas sin relación).
+        """
+        if size == 0:
+            return None
+        entry = self.data.get(sha256)
+        if entry is not None:
+            return entry.get("primary_path") or None
+        if message_id:
+            hit = self.lookup_message_id(message_id)
+            if hit is not None:
+                return hit[1].get("primary_path") or None
+        return None
 
     def all_paths(self) -> set[str]:
         """Devuelve todos los paths registrados (primary + aliases) como set.
