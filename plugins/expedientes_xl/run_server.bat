@@ -39,4 +39,4 @@ ping -n 3 127.0.0.1 >NUL
 goto waitloop
 :ready
 echo [xl-wrapper] montadas; arrancando server consolidado>>"%LOG%"
-python "%SRV%" --rw "G:\" --ro "H:\" 2>>"%LOG%"
+python "%SRV%" --rw G:\ --ro H:\ 2>>"%LOG%"

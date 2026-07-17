@@ -578,6 +578,23 @@ def test_parse_argv_rw_ro_repetibles_y_max_b64(tmp_path):
     assert max_b64 == 123
 
 
+def test_parse_argv_rw_ro_roots_correctos():
+    """Contrato de argv que consume `run_server.bat` (fix de la comilla escapada).
+
+    `--rw "G:\\"` bajo el parseo de argv de MSVCRT/Python colapsa la secuencia
+    `\\"` en una comilla escapada: el token `"G:\\"` se fusiona con el
+    siguiente y `H:` desaparece de `sys.argv`. El wrapper se corrige a raíces
+    SIN comillas (`--rw G:\\ --ro H:\\`); este test fija el contrato de
+    `_parse_argv` para ese argv ya tokenizado correctamente por el shell, de
+    modo que una regresión de intención (volver a poner comillas) quede
+    atrapada aunque el `.bat` en sí no sea testeable con pytest.
+    """
+    zonas, max_b64 = srv._parse_argv(["--rw", "G:\\", "--ro", "H:\\"])
+    assert zonas.rw_roots == (Path("G:\\"),)
+    assert zonas.ro_roots == (Path("H:\\"),)
+    assert max_b64 == srv.DEFAULT_MAX_B64
+
+
 def test_parse_argv_legacy_posicional_es_rw(tmp_path):
     zonas, max_b64 = srv._parse_argv([str(tmp_path)])
     assert zonas.rw_roots == (tmp_path,)

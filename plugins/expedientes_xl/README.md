@@ -18,7 +18,7 @@ para la secuencia de migración).
 
 ### Claude Code
 ```
-claude mcp add expedientes-xl -- python <ruta>/plugins/expedientes_xl/server.py --rw "G:\" --ro "H:\"
+claude mcp add expedientes-xl -- python <ruta>/plugins/expedientes_xl/server.py --rw G:\ --ro H:\
 ```
 
 ### Cowork (Claude Desktop, vía claude_desktop_config.json)
@@ -43,7 +43,7 @@ la app reescribe su config al cerrar y un cambio con la app abierta se pierde
 Zonas por *tier* (spec §2): pasar `--rw DIR` (lectura+escritura, repetible) y/o
 `--ro DIR` (solo-lectura en V1, repetible); un `<allowed_dir>` posicional se trata como
 `--rw` (compat). Opcional: `--max-b64-bytes N` para el tope de `write_file_base64`
-(def. 8 MiB). En V1: `--rw "G:\" --ro "H:\"` — `H:` entera es solo-lectura (§2, §5.1
+(def. 8 MiB). En V1: `--rw G:\ --ro H:\` — `H:` entera es solo-lectura (§2, §5.1
 Tier 2 del spec); ningún flujo real escribe en el Drive de E&V hoy.
 
 ## Zonas por tier (spec §2)
