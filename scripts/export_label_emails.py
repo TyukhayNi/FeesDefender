@@ -1,9 +1,10 @@
 """CLI: exporta una etiqueta Gmail al expediente como ``.eml`` fieles + adjuntos.
 
-Resuelve el destino con ``core.casos.case_locator.path_for(ref)`` →
-``00_Input/03_Email/`` y delega TODO el trabajo en el motor
-``core.email_export.export_label`` (la lógica vive en el core; este CLI solo
-orquesta). Idempotente. Solo lectura sobre Gmail.
+Reserva un LOTE nuevo en ``00_Input/<AAAA-MM-DD>_email_<NN>/`` con
+``core.email_export.email_dest_dir(ref)`` (guard §6 incluido) y delega TODO el
+trabajo en el motor ``core.email_export.export_label`` (la lógica vive en el
+core; este CLI solo orquesta). Idempotente: una corrida sin novedad no deja
+lote vacío. Solo lectura sobre Gmail.
 
 Uso:
     python -m scripts.export_label_emails --ref W-02VND1 \
@@ -20,8 +21,8 @@ from __future__ import annotations
 
 import argparse
 
-from core.casos.case_locator import path_for, resolve_ref
-from core.email_export import ExportReport, export_label
+from core.casos.case_locator import resolve_ref
+from core.email_export import ExportReport, email_dest_dir, export_label
 
 
 def _print_report(report: ExportReport, dest) -> None:
@@ -60,7 +61,7 @@ def main(argv: list[str] | None = None) -> int:
     case_id = resolve_ref(args.ref)
     if case_id != args.ref:
         print(f"[export-label] ref '{args.ref}' resuelta al caso '{case_id}'.")
-    dest = path_for(case_id) / "00_Input" / "03_Email"
+    dest = email_dest_dir(case_id)
     report = export_label(
         args.account, args.label, dest,
         case_id=case_id, extract_attachments=args.extraer_adjuntos,

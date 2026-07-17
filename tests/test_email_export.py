@@ -387,9 +387,10 @@ def test_export_label_traza_idempotente(tmp_casos_root):
 
 
 def test_export_label_traza_backfill_de_corrida_previa(tmp_casos_root):
-    """Exportado antes SIN case_id (sin traza); al re-exportar CON case_id, la traza
-    registra los ficheros ya presentes y emite el evento (caso real W-02VND1)."""
-    from core import intake_log
+    """Exportado antes SIN case_id (sin traza, caso no migrado a lotes — cajón legacy
+    03_Email); al re-exportar CON case_id, la traza registra los ficheros ya
+    presentes y emite el evento (caso real W-02VND1)."""
+    from core import config, intake_log
     from core.intake_manifest import IntakeManifest
 
     case_id = _setup_caso("EMAIL-2026-003")
@@ -401,7 +402,7 @@ def test_export_label_traza_backfill_de_corrida_previa(tmp_casos_root):
         "g2": _build_raw(message_id="<b@x>", subject="Plano"),
     }
     pages = [{"messages": [{"id": "g1"}, {"id": "g2"}]}]
-    dest = ee.email_dest_dir(case_id)
+    dest = config.caso_path(case_id) / "00_Input" / "03_Email"
 
     # 1ª corrida: SIN case_id → escribe los ficheros pero NO emite traza.
     rep0 = ee.export_label(
@@ -464,6 +465,10 @@ def _fake_service_una_pagina(raws: dict[str, bytes]) -> "_FakeService":
 # Mismo Message-ID, cuerpos distintos (§9.3: bytes distintos, mismo hilo lógico).
 _EML_UNO = _build_raw(message_id="<uno@x>", subject="Uno", body="Cuerpo original.")
 _EML_UNO_VARIANTE = _build_raw(message_id="<uno@x>", subject="Uno variante", body="Cuerpo distinto.")
+# Fecha temprana + Message-ID propio, para el cajón legacy 03_Email/ (T8: índices cross-lote).
+_EML_VIEJO = _build_raw(
+    message_id="<viejo@x>", subject="Viejo", date="Thu, 01 Jan 2026 09:00:00 +0200",
+)
 
 
 def test_indices_de_canal_viven_en_la_raiz_de_00_input(tmp_casos_root):
@@ -556,6 +561,71 @@ def test_emit_traza_registra_message_id_en_m9(tmp_casos_root):
     )
     with IntakeManifest(case_id) as m:
         assert "uno@x" in m.message_ids()
+
+
+# ---------------------------------------------------------------------------
+# T8 — lote por corrida, manifiesto del lote e índices cross-lote (spec §8)
+# ---------------------------------------------------------------------------
+
+def test_email_dest_dir_reserva_lote(tmp_casos_root):
+    from core.intake_lotes import PATRON_LOTE
+
+    case_id = _caso_para_export()
+    d = ee.email_dest_dir(case_id)
+    assert PATRON_LOTE.match(d.name).group(2) == "email"
+    assert d.parent.name == "00_Input" and d.is_dir()
+
+
+def test_export_escribe_manifiesto_con_message_id(tmp_casos_root):
+    from core import intake_lotes
+
+    case_id = _caso_para_export()
+    dest = ee.email_dest_dir(case_id)
+    ee.export_label(
+        "acc@x", _ETIQUETA, dest, case_id=case_id,
+        service=_fake_service_una_pagina({"g1": _EML_UNO}),
+    )
+    man = intake_lotes.leer_manifiesto(dest)
+    assert man["fuente"] == "email"
+    eml = next(i for i in man["items"] if i["relpath"].endswith(".eml"))
+    # message_id_of() normaliza (sin '<>'), igual que M9/upload_email en todo el módulo.
+    assert eml["message_id"] == "uno@x" and eml["tipo_contenido"] == "eml"
+
+
+def test_reexport_sin_novedad_no_deja_lote_vacio_y_cronologia_completa(tmp_casos_root):
+    """§9.5: el re-export no re-descarga (índice de canal) y la cronología cross-lote
+    sale completa (el lote vacío de la 2ª corrida no deja rastro)."""
+    from core import config
+
+    case_id = _caso_para_export()
+    d1 = ee.email_dest_dir(case_id)
+    ee.export_label(
+        "acc@x", _ETIQUETA, d1, case_id=case_id,
+        service=_fake_service_una_pagina({"g1": _EML_UNO}),
+    )
+    d2 = ee.email_dest_dir(case_id)
+    r2 = ee.export_label(
+        "acc@x", _ETIQUETA, d2, case_id=case_id,
+        service=_fake_service_una_pagina({"g1": _EML_UNO}),
+    )
+    assert r2.written == 0
+    assert not d2.exists()                                  # lote vacío eliminado
+    crono = (config.caso_path(case_id) / "01_Procesado" / "Emails"
+             / "CRONOLOGIA.md").read_text(encoding="utf-8")
+    assert d1.name in crono                                 # ruta con prefijo de lote
+
+
+def test_cronologia_cross_lote_incluye_legacy(tmp_casos_root):
+    from core import config
+
+    case_id = _caso_para_export()
+    legacy = config.caso_path(case_id) / "00_Input" / "03_Email"
+    legacy.mkdir(parents=True, exist_ok=True)
+    (legacy / "2026-01-01_viejo.eml").write_bytes(_EML_VIEJO)
+    ee.write_indices_caso(case_id)
+    indice = (config.caso_path(case_id) / "01_Procesado" / "Emails"
+              / "INDICE.md").read_text(encoding="utf-8")
+    assert "03_Email/2026-01-01_viejo.eml" in indice
 
 
 # ---------------------------------------------------------------------------
@@ -933,14 +1003,15 @@ def test_force_re_aplana_hijo_borrado(tmp_path):
 
 
 def test_traza_forwarded_in_backfill_desde_disco(tmp_casos_root):
-    """E: en el backfill (export sin case_id, luego con case_id y candidates vacío),
-    forwarded_in se reconstruye desde el disco (no queda None)."""
-    from core import intake_log
+    """E: en el backfill (export sin case_id sobre el cajón legacy 03_Email, no
+    migrado a lotes, luego con case_id y candidates vacío), forwarded_in se
+    reconstruye desde el disco (no queda None)."""
+    from core import config, intake_log
 
     case_id = _setup_caso("EMAIL-2026-005")
     hijo = _child(mid=b"<leaf@x>", subject=b"Hijo BF", date=b"Tue, 11 May 2023 09:00:00 +0200")
     padre = _envoltorio(b"BTOP", [_parte_rfc822(hijo)])
-    dest = ee.email_dest_dir(case_id)
+    dest = config.caso_path(case_id) / "00_Input" / "03_Email"
 
     # Corrida 1: SIN case_id → escribe padre + hijo, sin traza.
     ee.export_label("c@engelvoelkers.com", _ETIQUETA, dest,

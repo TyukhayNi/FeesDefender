@@ -42,7 +42,7 @@ from html import unescape
 from pathlib import Path
 from typing import Any, Iterable, Iterator
 
-from . import intake_log
+from . import config, intake_log
 from .gmail_source import _build_service, _load_credentials
 from .intake_drive import download_drive_media, get_drive_file_info
 from .intake_manifest import IntakeManifest, compute_sha256_bytes
@@ -1074,13 +1074,43 @@ def export_label(
         _save_export_index(estado_dir, index)
         _save_resolved_links(estado_dir, link_index)
 
-    write_indices(dest)
+    from . import intake_lotes
 
-    if case_id:
+    es_lote = bool(case_id) and intake_lotes.PATRON_LOTE.match(dest.name) is not None
+    if es_lote:
+        contenido = [p for p in dest.rglob("*") if p.is_file()
+                     and p.name not in config.INTAKE_CONTROL_FILES
+                     and p.name != intake_lotes.MANIFIESTO_LOTE]
+        if not contenido:
+            _rmtree_vacio(dest)          # corrida sin novedad: no queda lote vacío
+        else:
+            mids: dict[str, str] = {}
+            for eml in dest.rglob("*.eml"):
+                mid = message_id_of(eml.read_bytes())
+                if mid:
+                    mids[str(eml.relative_to(dest)).replace("\\", "/")] = mid
+            items = intake_lotes.items_desde_disco(
+                dest, message_id_de=mids, duplicados=report.duplicados_map)
+            intake_lotes.escribir_manifiesto(
+                dest, fuente="email", fecha_intake=dest.name[:10],
+                origen="email_export", items=items)
+        write_indices_caso(case_id)
+    else:
+        write_indices(dest)
+
+    if case_id and dest.exists():
         _emit_traza(case_id, dest, account, label, report, procedencia)
         _emit_traza_enlaces(case_id, account, label, report)
 
     return report
+
+
+def _rmtree_vacio(dest: Path) -> None:
+    """Elimina un directorio de lote sin ficheros: subdirectorios vacíos + el dir."""
+    for sub in sorted((p for p in dest.rglob("*") if p.is_dir()),
+                      key=lambda p: len(p.parts), reverse=True):
+        sub.rmdir()
+    dest.rmdir()
 
 
 def _escribe_mensaje(
@@ -1329,11 +1359,7 @@ def _escribe_utf8(path: Path, texto: str) -> None:
     path.write_text(texto, encoding="utf-8")
 
 
-def write_indices(dest_dir: Path | str) -> None:
-    """Regenera ``INDICE.md`` y ``CRONOLOGIA.md`` desde los ``.eml`` de ``dest_dir``."""
-    dest = Path(dest_dir)
-    entradas = _recolecta_entradas(dest)
-
+def _escribe_indices_en(out_dir: Path, entradas: list[_Entrada]) -> None:
     cab = (
         "<!-- Generado por core.email_export — NO editar a mano. -->\n"
         f"# Correos exportados — {len(entradas)} mensajes\n\n"
@@ -1341,7 +1367,7 @@ def write_indices(dest_dir: Path | str) -> None:
     filas = ["| Fecha | Asunto | De | Fichero |", "| --- | --- | --- | --- |"]
     for e in entradas:
         filas.append(f"| {e.fecha} | {e.asunto} | {e.de} | `{e.ruta}` |")
-    _escribe_utf8(dest / "INDICE.md", cab + "\n".join(filas) + "\n")
+    _escribe_utf8(out_dir / "INDICE.md", cab + "\n".join(filas) + "\n")
 
     crono = [
         "<!-- Generado por core.email_export — NO editar a mano. -->",
@@ -1351,19 +1377,55 @@ def write_indices(dest_dir: Path | str) -> None:
     for e in entradas:
         asunto = e.asunto or "(sin asunto)"
         crono.append(f"- **{e.fecha}** — {asunto} — {e.de} (`{e.ruta}`)")
-    _escribe_utf8(dest / "CRONOLOGIA.md", "\n".join(crono) + "\n")
+    _escribe_utf8(out_dir / "CRONOLOGIA.md", "\n".join(crono) + "\n")
+
+
+def write_indices(dest_dir: Path | str) -> None:
+    """Regenera ``INDICE.md`` y ``CRONOLOGIA.md`` desde los ``.eml`` de ``dest_dir``
+    (uso suelto: sin ``case_id``, o tests puros)."""
+    dest = Path(dest_dir)
+    _escribe_indices_en(dest, _recolecta_entradas(dest))
+
+
+def write_indices_caso(case_id: str) -> None:
+    """Índices CROSS-LOTE del caso en ``01_Procesado/Emails/`` (spec §8).
+
+    Recorre los lotes ``email`` de ``00_Input/`` + el cajón legacy ``03_Email``;
+    las rutas llevan el prefijo del lote/cajón. Son artefactos derivados, no crudo.
+    """
+    import dataclasses
+
+    from . import intake_lotes
+    from .casos.case_locator import path_for, resolve_ref
+
+    case_dir = path_for(resolve_ref(case_id))
+    input_dir = case_dir / "00_Input"
+    bases: list[Path] = []
+    if input_dir.is_dir():
+        bases = [d for d in input_dir.iterdir() if d.is_dir()
+                 and (m := intake_lotes.PATRON_LOTE.match(d.name))
+                 and m.group(2) == "email"]
+    legacy = input_dir / "03_Email"
+    if legacy.is_dir():
+        bases.append(legacy)
+    entradas: list[_Entrada] = []
+    for base in bases:
+        entradas += [dataclasses.replace(e, ruta=f"{base.name}/{e.ruta}")
+                     for e in _recolecta_entradas(base)]
+    entradas.sort(key=lambda e: (e.fecha, e.ruta))
+    out = case_dir / "01_Procesado" / "Emails"
+    out.mkdir(parents=True, exist_ok=True)
+    _escribe_indices_en(out, entradas)
 
 
 def email_dest_dir(case_id: str) -> Path:
-    """Carpeta de destino de escritura de los correos de un caso: ``00_Input/03_Email``.
+    """Destino de escritura del export: un LOTE email nuevo por corrida (spec §8).
 
-    Resuelve ``case_id`` (acepta case_id canónico o W-code ``id_go``) al nombre de
-    carpeta real. Aplica el guard de escritura (DISEÑO_V2 §6): si el caso está
-    prestado/conflicto devuelve la ruta dentro de ``_pendiente_checkin/email/…``
-    (con evento); si está disponible, la ruta normal. Es el punto de destino de
-    escritura del export — no un resolver de lectura.
+    Reserva ``00_Input/<AAAA-MM-DD>_email_<NN>/`` (guard §6 incluido: caso
+    prestado → el lote nace en la bandeja). ``export_label`` elimina el lote si
+    la corrida no escribe nada.
     """
-    from .case_manager import dir_intake
     from .casos.case_locator import resolve_ref
+    from .intake_lotes import reservar_lote
 
-    return dir_intake(resolve_ref(case_id), "00_Input/03_Email", "email")
+    return reservar_lote(resolve_ref(case_id), "email", "email")
