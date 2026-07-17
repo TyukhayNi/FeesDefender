@@ -49,3 +49,43 @@ def test_remap_cobertura_por_rel_path():
     assert out[0]["rel_path"] == "2026-01-10_manual_01/a.pdf"
     assert out[1]["rel_path"] == "01_Drive EV/w/doc.pdf"      # espejo intacto
     assert n == 1
+
+
+def test_remap_paths_m9_espejo_intacto():
+    data = {"sha1": {"primary_path": "01_Drive EV/w/doc.pdf", "aliases": []}}
+    mapping = {"04_Manual/a.pdf": "2026-01-10_manual_01/a.pdf"}
+    out, n = ml.remap_paths(data, mapping)
+    assert out["sha1"]["primary_path"] == "01_Drive EV/w/doc.pdf"  # espejo intacto
+    assert n == 0
+
+
+def test_remap_catalogo_sin_prefijo():
+    """Formato real emitido por catalogo_documental: ruta_relativa sin '00_Input/'
+    (`FileEntry.rel_path` es relativo a 00_Input/, ver core/inventory.py)."""
+    entries = [
+        {"id_doc": "abc123", "ruta_relativa": "04_Manual/a.pdf",
+         "nombre_original": "a.pdf", "fuente": "manual"},
+        {"id_doc": "def456", "ruta_relativa": "01_Drive EV/w/doc.pdf",
+         "nombre_original": "doc.pdf", "fuente": "drive_ev"},   # espejo: NO se toca
+    ]
+    mapping = {"04_Manual/a.pdf": "2026-01-10_manual_01/a.pdf"}
+    out, n = ml.remap_catalogo(entries, mapping)
+    assert out[0]["ruta_relativa"] == "2026-01-10_manual_01/a.pdf"
+    assert out[1]["ruta_relativa"] == "01_Drive EV/w/doc.pdf"      # espejo intacto
+    assert n == 1
+
+
+def test_remap_catalogo_con_prefijo_00_input():
+    """Tolerancia al formato con prefijo '00_Input/' (§7.4c): se preserva el
+    prefijo en la ruta reescrita."""
+    entries = [
+        {"id_doc": "abc123", "ruta_relativa": "00_Input/04_Manual/a.pdf",
+         "nombre_original": "a.pdf", "fuente": "manual"},
+        {"id_doc": "def456", "ruta_relativa": "00_Input/01_Drive EV/w/doc.pdf",
+         "nombre_original": "doc.pdf", "fuente": "drive_ev"},   # espejo: NO se toca
+    ]
+    mapping = {"04_Manual/a.pdf": "2026-01-10_manual_01/a.pdf"}
+    out, n = ml.remap_catalogo(entries, mapping)
+    assert out[0]["ruta_relativa"] == "00_Input/2026-01-10_manual_01/a.pdf"
+    assert out[1]["ruta_relativa"] == "00_Input/01_Drive EV/w/doc.pdf"  # espejo intacto
+    assert n == 1
