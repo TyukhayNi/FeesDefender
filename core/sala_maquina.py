@@ -38,6 +38,31 @@ def clasificar_ruta(ext: str) -> str:
     return "sin_soporte"
 
 
+_MAGIC_BYTES: tuple[tuple[bytes, str], ...] = (
+    (b"%PDF-", ".pdf"),
+    (b"\xff\xd8\xff", ".jpg"),
+    (b"\x89PNG\r\n\x1a\n", ".png"),
+    (b"GIF87a", ".gif"),
+    (b"GIF89a", ".gif"),
+    (b"BM", ".bmp"),
+)
+
+
+def _sniff_ext_por_contenido(head: bytes) -> str | None:
+    """Detecta la extensión real por firma mágica de bytes.
+
+    Último recurso en inventariar() cuando el nombre no trae extensión
+    reconocible (típico de capturas/fotos compartidas directo a Drive sin
+    "Guardar como" — confirmado 2026-07-17, caso W-02TH0W: 'Señal 3000 €' y
+    'DNI ... jpg' sin punto): el fichero es perfectamente legible, solo mal
+    nombrado. Nunca lanza — None si no reconoce ninguna firma.
+    """
+    for magic, ext in _MAGIC_BYTES:
+        if head.startswith(magic):
+            return ext
+    return None
+
+
 _MIN_CHARS = 40                 # < esto para el documento entero = empty
 _MIN_DENSIDAD = 40              # char/pág mínima (alineado con extractor._texto_suficiente)
 _MAX_GIBBERISH = 0.40           # > 40% de tokens sin vocal = OCR ruidoso
@@ -462,9 +487,16 @@ def inventariar(case_dir: Path) -> list[dict]:
     for p in sorted(root.rglob("*")):
         if not p.is_file() or p.name in _IGNORAR:
             continue
+        ext = p.suffix.lower()
+        if clasificar_ruta(ext) == "sin_soporte":
+            with p.open("rb") as fh:
+                head = fh.read(16)
+            detectada = _sniff_ext_por_contenido(head)
+            if detectada is not None:
+                ext = detectada
         out.append({
             "rel_path": p.relative_to(root).as_posix(),
             "sha256": file_sha256(p),
-            "ext": p.suffix.lower(),
+            "ext": ext,
         })
     return out

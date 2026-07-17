@@ -17,6 +17,67 @@ def test_clasificar_ruta_por_extension():
     assert sm.clasificar_ruta(".mp4") == "sin_soporte"
 
 
+def test_sniff_ext_por_contenido_pdf():
+    assert sm._sniff_ext_por_contenido(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3") == ".pdf"
+
+
+def test_sniff_ext_por_contenido_jpeg():
+    assert sm._sniff_ext_por_contenido(b"\xff\xd8\xff\xe0\x00\x10JFIF") == ".jpg"
+
+
+def test_sniff_ext_por_contenido_png():
+    assert sm._sniff_ext_por_contenido(b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR") == ".png"
+
+
+def test_sniff_ext_por_contenido_desconocido_devuelve_none():
+    assert sm._sniff_ext_por_contenido(b"cualquier texto plano sin firma") is None
+
+
+def test_sniff_ext_por_contenido_bytes_vacios_devuelve_none():
+    assert sm._sniff_ext_por_contenido(b"") is None
+
+
+def test_inventariar_detecta_extension_por_contenido_cuando_falta(tmp_path: Path):
+    """Ficheros de Drive sin extensión (típico: captura/foto compartida directo,
+    sin 'Guardar como') no deben caer en sin_soporte si el contenido es legible.
+    Caso real: 'Señal 3000 €' y 'DNI ... jpg' (sin punto), W-02TH0W, 2026-07-17."""
+    case_dir = tmp_path / "caso"
+    origen = case_dir / "00_Input" / "01_Drive EV"
+    origen.mkdir(parents=True)
+    (origen / "Señal 3000 €").write_bytes(b"\xff\xd8\xff\xe0\x00\x10JFIF" + b"\x00" * 50)
+
+    inventario = sm.inventariar(case_dir)
+
+    assert len(inventario) == 1
+    assert inventario[0]["ext"] == ".jpg"
+
+
+def test_inventariar_no_toca_extension_ya_reconocida(tmp_path: Path):
+    """Un fichero con extensión correcta no dispara el sniff (ni falta falta)."""
+    case_dir = tmp_path / "caso"
+    origen = case_dir / "00_Input"
+    origen.mkdir(parents=True)
+    (origen / "documento.pdf").write_bytes(b"%PDF-1.4\ncontenido")
+
+    inventario = sm.inventariar(case_dir)
+
+    assert inventario[0]["ext"] == ".pdf"
+
+
+def test_inventariar_contenido_irreconocible_mantiene_sin_soporte(tmp_path: Path):
+    """Si ni el nombre ni el contenido dan pistas, se queda sin_soporte (sin
+    fallo silencioso: sigue apareciendo, solo que sin extensión corregida)."""
+    case_dir = tmp_path / "caso"
+    origen = case_dir / "00_Input"
+    origen.mkdir(parents=True)
+    (origen / "misterioso").write_bytes(b"datos binarios sin firma conocida")
+
+    inventario = sm.inventariar(case_dir)
+
+    assert inventario[0]["ext"] == ""
+    assert sm.clasificar_ruta(inventario[0]["ext"]) == "sin_soporte"
+
+
 def test_extensiones_nativas_sin_doble_fuente_de_verdad():
     # _EXTS_NATIVO (lo que clasificar_ruta enruta como "nativo") debe coincidir
     # EXACTAMENTE con las extensiones que _extraer_nativo sabe manejar. Si alguien
