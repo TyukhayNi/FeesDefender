@@ -89,3 +89,79 @@ def test_remap_catalogo_con_prefijo_00_input():
     assert out[0]["ruta_relativa"] == "00_Input/2026-01-10_manual_01/a.pdf"
     assert out[1]["ruta_relativa"] == "00_Input/01_Drive EV/w/doc.pdf"  # espejo intacto
     assert n == 1
+
+
+# ---------------------------------------------------------------------------
+# T14: migración bajo demanda (integración disco real + CLI) — spec §7/§9.4
+# ---------------------------------------------------------------------------
+
+def test_migracion_integral_espejos_intactos_y_remapeo(tmp_casos_root):
+    import json
+
+    from core import case_manager, config
+    from core.intake_lotes import PATRON_LOTE, leer_manifiesto
+    from scripts.migrar_layout_intake import migrar
+
+    case_id = "EV-MIG-001"
+    case_manager.ensure_case(case_id, titulo="mig")
+    base = config.caso_path(case_id) / "00_Input"
+    # entrega (4 cajones) + espejos poblados
+    for rel, b in {
+        "02_Whatsapp/03_Otros/chat/_chat.txt": b"c",
+        "03_Email/2026-02-01_asunto.eml": b"e",
+        "03_Email/_exported_ids.json": b"{}",
+        "04_Manual/2026-01-10_demanda.pdf": b"m",
+        "06_Entrevistas/grabacion.mp4": b"g",
+        "01_Drive EV/w/doc.pdf": b"d",
+        "05_CRM/General/x.pdf": b"x",
+    }.items():
+        p = base / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(b)
+    # registros aguas abajo
+    (base / "_intake_hashes.json").write_text(json.dumps({
+        "sha-m": {"primary_path": "04_Manual/2026-01-10_demanda.pdf", "aliases": []}}),
+        encoding="utf-8")
+    maq = config.caso_path(case_id) / "01_Procesado" / "02_Sala de máquina"
+    maq.mkdir(parents=True)
+    (maq / "_cobertura.json").write_text(json.dumps(
+        [{"rel_path": "04_Manual/2026-01-10_demanda.pdf", "slug": "s", "estado": "ok"}]),
+        encoding="utf-8")
+
+    migrar(case_id, dry_run=False)
+
+    # espejos y protocolo intactos
+    assert (base / "01_Drive EV" / "w" / "doc.pdf").is_file()
+    assert (base / "05_CRM" / "General" / "x.pdf").is_file()
+    assert (base / "_caso.md").is_file()
+    # los 4 cajones envueltos en lotes sintéticos con manifiesto estimado
+    lotes = [d for d in base.iterdir() if d.is_dir() and PATRON_LOTE.match(d.name)]
+    assert {PATRON_LOTE.match(d.name).group(2) for d in lotes} \
+        == {"whatsapp", "email", "manual", "entrevista"}
+    lote_manual = next(d for d in lotes if "_manual_" in d.name)
+    assert lote_manual.name.startswith("2026-01-10")          # fecha del nombre de fichero
+    assert leer_manifiesto(lote_manual)["fecha_intake_estimada"] is True
+    # cajón vacío pero NO borrado; índice de canal movido a la raíz
+    assert (base / "04_Manual").is_dir()
+    assert not any((base / "04_Manual").iterdir())
+    assert (base / "_exported_ids.json").is_file()
+    # remapeo round-trip (§9.4): M9 y cobertura casan con el disco nuevo
+    m9 = json.loads((base / "_intake_hashes.json").read_text(encoding="utf-8"))
+    nuevo_rel = m9["sha-m"]["primary_path"]
+    assert nuevo_rel.startswith("2026-01-10_manual_01/") and (base / nuevo_rel).is_file()
+    cob = json.loads((maq / "_cobertura.json").read_text(encoding="utf-8"))
+    assert cob[0]["rel_path"] == nuevo_rel
+
+
+def test_migracion_aborta_con_caso_prestado(tmp_casos_root):
+    import pytest
+
+    from core import case_manager
+    from scripts.migrar_layout_intake import CasoPrestadoError, migrar
+
+    case_id = "EV-MIG-002"
+    case_manager.ensure_case(case_id, titulo="mig")
+    case_manager.escribir_lock(case_id, user="Nikolai Tyukhay",
+                               timestamp="2026-07-17T09:00:00Z", nonce="n")
+    with pytest.raises(CasoPrestadoError):
+        migrar(case_id, dry_run=False)

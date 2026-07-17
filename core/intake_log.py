@@ -65,6 +65,8 @@ INTAKE_EVENTS: frozenset[str] = frozenset({
     "pendiente_checkin",    # guard §6: escritura desviada a _pendiente_checkin/ (caso prestado)
     "procesado_sala_maquina",  # OCR+MD escritos en 01_Procesado/02_Sala de máquina/
     "split_documental",        # split 1→N de un bundle en 02_Documentos/ (documentos lógicos)
+    "migracion_layout_intake",  # migración bajo demanda a lotes (#54): details =
+                                 # {"lotes": [nombres], "remapeados": {registro: n}}
 })
 
 
