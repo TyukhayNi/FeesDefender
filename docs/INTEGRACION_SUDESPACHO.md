@@ -1349,3 +1349,63 @@ sudespacho expone casi todo como "elementos" con un patrón uniforme. FeesDefend
      como aviso de la trampa. Detalle en §4d de la referencia canónica.)
 - **Formatos:** `duracion` en **segundos**; importes string con punto decimal; fechas `YYYY-MM-DD`
   (algunas datetime `YYYY-MM-DD HH:MM:SS`).
+
+## 15. Actuaciones — crear y vincular a un expediente (confirmado 2026-07-17)
+
+Caso real: expediente extrajudicial 624 (VaRS3/W-02TH0W), actuación 20862.
+
+### 15.1 Descubrir el esquema de campos de cualquier elemento (atajo, sin HAR)
+
+```
+GET /api/view/config/{element}/fields
+```
+
+Devuelve `{"items": [{"id","name","label","type","active","deleted"}, ...]}` — el nombre y **tipo**
+real de cada campo del elemento (`Select`, `Cronometro`, `Moneda`, `ListaUsuarios`, `CheckBox`, `Date`,
+`NumEntero`...). Más directo que forzar una propiedad inválida (§10.6/§0.3): no hace falta que exista ya
+un registro para ver el esquema completo del elemento.
+
+### 15.2 Crear una actuación
+
+```
+POST /api/element_register/actuaciones
+Body: {
+  "Subject": "...", "Description": "...",
+  "duracion": "01:45:00",          // Cronometro: acepta HH:MM:SS, se guarda como TOTAL DE SEGUNDOS (§14.4)
+  "Estado": "Hecho",               // Select: "Planificado" | "Hecho"
+  "facturar": true,
+  "tipo_actuacion": "Tarea",       // Select: "Llamada" | "Tarea"
+  "profesional_asignado": "Nikolai_Tyukhay",  // ListaUsuarios: username, no ID
+  "fecha_alta": "2026-07-17"
+}
+Response 201: {"id": N, "message": "Created!"}
+```
+
+**⚠️ Corrección de una memoria previa:** los campos `relatedElement`/`relatedId` en este payload **NO
+vinculan la actuación a ningún expediente** — se aceptan sin error (201 igualmente) pero se ignoran en
+silencio. La actuación queda huérfana. Confirmado en vivo: tras crearla así, la pestaña
+Historial→Actuaciones del expediente seguía mostrando "No se han encontrado resultados".
+
+### 15.3 Vincular la actuación al expediente — mismo endpoint genérico ya conocido
+
+```
+POST /api/relation_element/extrajudiciales/{exp_id}
+Body: ["right.actuaciones.{actuacion_id}"]
+Response 201: "Created!"
+```
+
+Idéntico al patrón usado para `clientes_propios`/`colaboradores`/`clientes_contrarios` (§10.6). Tras esto
+la actuación sí aparece en Historial→Actuaciones del expediente.
+
+### 15.4 `precio_hora` / "facturar por horas" / "Aplicar tarifa usuario" — SOLO por UI, sin vía API
+
+El campo `precio_hora` (Moneda) se puede escribir directo por API, pero la **tarifa confidencial del
+usuario** (la que aplica el botón "Aplicar tarifa usuario") no se resuelve por ningún endpoint de los
+mapeados — es lógica de front que rellena el campo en el momento del clic, dentro de un panel lateral
+(`item-to-preview={id}` en la URL de Historial→Actuaciones del expediente). No intentar automatizarlo
+por REST sin descubrir antes ese endpoint (no confirmado); mientras tanto, este paso concreto se hace a
+mano en la UI. El checkbox correspondiente en el panel se llama "Facturar por duración" (no "por horas"
+como en el lenguaje coloquial del despacho).
+
+**Implementación:** aún sin promover a `core/sudespacho_relations.py` (ejecutado con `httpx` directo esta
+sesión). Construir cuando haya un segundo caso — mismo criterio que el resto de hallazgos de esta sesión.
