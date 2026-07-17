@@ -2535,6 +2535,18 @@ completitud de diseño ni por anticipación).
   saber *cuáles* ficheros son COLD (no solo cuántos) ahorraría una segunda vuelta al
   usuario decidiendo qué hidratar. Requiere que `oracle.subtree_cold_stats` devuelva las
   rutas, no solo el conteo (cambio de forma del oráculo, no solo del guard).
+- **`reclasificar_resueltos` también debería podar symlinks a destinos FUERA del sandbox.**
+  El fix de la revisión final (commit `9802fd1`) hizo que `iter_tree(..., reclasificar_resueltos=True)`
+  pode los symlinks cuyo destino RESUELTO es Tier 0 (anti-fuga de `90_Notas personales`).
+  Pero solo comprueba `classify(resuelto) is PROHIBIDA`; NO re-verifica pertenencia al
+  sandbox. Un symlink-fichero en workspace que apunte a un destino no-Tier0 *fuera* de
+  `G:`/`H:` sigue siendo entregado, así que `search_content` podría leer el contenido de
+  un fichero pequeño (< `XL_HYDRATION_MAX_FILE_MB`; los grandes los para `guard_file`→UNKNOWN)
+  fuera del sandbox. Disparador de bajísima probabilidad (exige un symlink NTFS de fichero
+  creado por admin; los atajos de GDFD son `.lnk`, ya tratados por `resolve_shortcut`).
+  Fix barato y completo en el mismo punto: podar también cuando `resolve_within(resuelto)`
+  falle (`OutsideSandbox`). Detectado en la revisión final whole-branch como observación
+  no-bloqueante adyacente al fix, no introducida por él.
 
 **Disparador de promoción.** Cualquiera de estas piezas se promueve a `PLAN.md`
 individualmente cuando aparezca su caso real (un flujo que necesite escribir en `H:`,
