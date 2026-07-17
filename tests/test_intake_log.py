@@ -331,7 +331,7 @@ def test_append_event_invoca_fsync_por_cada_escritura(il, cm, monkeypatch):
 
 def test_intake_events_es_frozenset_con_24_eventos(il):
     assert isinstance(il.INTAKE_EVENTS, frozenset)
-    assert len(il.INTAKE_EVENTS) == 25
+    assert len(il.INTAKE_EVENTS) == 26
 
 
 def test_intake_events_contiene_los_canonicos(il):
@@ -374,5 +374,17 @@ def test_intake_events_contiene_los_canonicos(il):
         "procesado_sala_maquina",
         "split_documental",
         "migracion_layout_intake",
+        "archivado",
     }
     assert il.INTAKE_EVENTS == expected
+
+
+def test_append_event_acepta_archivado(il, cm):
+    cm.ensure_case("LOG-ARCH")
+    il.set_actor("Nikolai Tyukhay")
+    il.append_event("LOG-ARCH", "archivado", details={"motivo": "PRESCRIPCION"})
+
+    events = il.read_events("LOG-ARCH")
+    assert len(events) == 1
+    assert events[0]["event"] == "archivado"
+    assert events[0]["details"] == {"motivo": "PRESCRIPCION"}
