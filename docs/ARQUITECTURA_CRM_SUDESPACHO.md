@@ -247,6 +247,18 @@ Este endpoint crea un nuevo expediente judicial vinculado al extrajudicial `{id}
 
 Útil para discovery — devuelve los slugs activos en el tenant.
 
+### 3.9 Correo (microservicio `nest-mail`) — envío + historial de mail
+
+El envío de email desde el expediente (Historial → Mail) usa el microservicio
+`nest-mail-commons-pro.sudespacho.biz` + `api-crm-commons`. Flujo: crear borrador
+(`POST nest-mail/api/mail/`) → enviar (`PUT …/api/mail/{id}` con `draft:false`) → registrar como
+elemento CRM (`PUT api-crm-commons/api/element_register/mail/{id}`) → relacionar con el expediente
+(`POST api-crm-commons/api/relation_element/extrajudiciales/{exp}`) → el email queda en el historial
+del expediente (visible al equipo sin ir en copia). **Endpoints y payload completos:
+`INTEGRACION_SUDESPACHO.md §10.9`.** ⚠️ Estas XHR del SPA se autentican por **cookie de sesión web**
+(no `x-api-key`); `GET /api/accounts/{id}` expone credenciales SMTP/IMAP en claro (higiene: HAR nunca
+al repo).
+
 ---
 
 ## 4. Mapa de autenticación por operación
