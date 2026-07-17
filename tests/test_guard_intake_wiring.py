@@ -54,7 +54,8 @@ def test_whatsapp_disponible_escribe_normal(tmp_casos_root):
     content = _make_zip({"_chat.txt": _CHAT})
     res = whatsapp_intake.deposit_export(case_id, "03_Otros", content, zip_name="chat.zip")
     assert "_pendiente_checkin" not in res.chat_dir.as_posix()
-    assert "02_Whatsapp" in res.chat_dir.as_posix()
+    from core.intake_lotes import PATRON_LOTE
+    assert PATRON_LOTE.match(res.chat_dir.parent.parent.name).group(2) == "whatsapp"
 
 
 def test_whatsapp_prestado_desvia_a_bandeja(tmp_casos_root):
@@ -67,8 +68,8 @@ def test_whatsapp_prestado_desvia_a_bandeja(tmp_casos_root):
     # Los ficheros existen en la bandeja, no en el árbol vivo.
     from core.config import caso_path
     assert res.chat_dir.exists()
-    vivo = caso_path(case_id) / "00_Input" / "02_Whatsapp" / "03_Otros"
-    assert not any(vivo.rglob("*.txt")) if vivo.exists() else True
+    vivo = caso_path(case_id) / "00_Input"
+    assert not any(vivo.rglob("_chat.txt"))
     # Evento de desvío registrado.
     assert any(e["event"] == "pendiente_checkin" for e in intake_log.read_events(case_id))
 

@@ -1,9 +1,10 @@
-"""Glue de ingesta de exports de WhatsApp → ``00_Input/02_Whatsapp/`` (Fase A).
+"""Glue de ingesta de exports de WhatsApp → ``00_Input/<lote>/`` (MEJORAS #54).
 
 Capa de pegamento entre la UI y el parser puro.  NO depende de Streamlit
-(recibe bytes + nombre).  Deposita el contenido del export verbatim, conserva
-el zip original como artefacto de procedencia, registra en ``IntakeManifest``
-(dedup por hash de zip) y emite el evento ``upload_whatsapp``.
+(recibe bytes + nombre).  Deposita el contenido del export verbatim (el
+``_chat.txt`` + todos los media + el zip original) en su propio lote de
+entrega (``core.intake_lotes``), registra en ``IntakeManifest`` (dedup por
+hash de zip = idempotencia de canal) y emite el evento ``upload_whatsapp``.
 """
 from __future__ import annotations
 
@@ -11,13 +12,12 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from . import intake_log
+from . import intake_log, intake_lotes
 from .config import WHATSAPP_SUBDIRS, caso_path, settings
 from .intake_manifest import IntakeManifest, compute_sha256_bytes
 from .intake_utils import safe_zip_members, sanitize_filename
 from .whatsapp_export import filter_by_date_range, parse_chat, referencias_adjuntos
 
-_WHATSAPP_SUBDIR = "02_Whatsapp"
 _AUDIO_EXTS = frozenset({".opus", ".ogg", ".m4a", ".aac", ".mp3"})
 _ORIGINAL_ZIP_NAME = "_export_original.zip"
 
@@ -108,12 +108,21 @@ def deposit_export(
     zip_name: str,
     date_range: tuple[datetime | None, datetime | None] | None = None,
 ) -> DepositResult:
-    """Deposita un export de WhatsApp en ``00_Input/02_Whatsapp/<rol>/<chat>/``.
+    """Deposita un export de WhatsApp en ``00_Input/<lote>/<rol>/<chat>/``.
 
-    Verbatim: escribe el ``_chat.txt`` + todos los media + el zip original.
-    Dedup por hash de zip: si ese export ya se importó, no escribe nada y
-    devuelve ``skipped_dedup=True``.  Registra cada fichero en el manifest y
-    emite el evento ``upload_whatsapp``.
+    Verbatim: escribe el ``_chat.txt`` + todos los media + el zip original,
+    con un ``_manifiesto.yaml`` del lote (MEJORAS #54). El lote se reserva vía
+    ``intake_lotes.reservar_lote`` (aplica el guard de escritura §6: caso
+    prestado/conflicto → el lote nace en ``_pendiente_checkin/whatsapp/...``).
+
+    Idempotencia de CANAL (no confundir con dedup §6): si ese export es
+    byte-idéntico a uno ya importado, no se abre lote nuevo — se devuelve
+    ``skipped_dedup=True`` con ``chat_dir`` apuntando al depósito previo.
+    Dentro de un lote nuevo, cada ítem que ya existía en otro lote (M9) se
+    COPIA igualmente y se anota con ``duplicado_de`` (§6).
+
+    Registra cada fichero en el manifest M9 y emite el evento
+    ``upload_whatsapp``.
     """
     if rol_subdir not in WHATSAPP_SUBDIRS:
         raise ValueError(
@@ -128,49 +137,50 @@ def deposit_export(
         )
 
     preview = analyze(content, zip_name=zip_name)
-
-    # Guard de escritura (DISEÑO_V2 §6): si el caso está prestado/conflicto, todo
-    # el export se desvía a _pendiente_checkin/whatsapp/... (con evento), no al
-    # árbol vivo. Si está disponible, escritura normal.
-    from .case_manager import dir_intake
-
-    chat_dir = dir_intake(
-        case_id, f"00_Input/{_WHATSAPP_SUBDIR}/{rol_subdir}/{preview.chat_name}", "whatsapp")
     zip_sha = compute_sha256_bytes(content)
     members = _read_members(content)
     chat_txt_name, texto = _find_chat_txt(members)
 
     files_written: list[Path] = []
     with IntakeManifest(case_id) as manifest:
-        if manifest.lookup(zip_sha) is not None:
+        previo = manifest.lookup(zip_sha)
+        if previo is not None:
+            # Idempotencia de CANAL (no dedup cross-lote §6): el mismo export
+            # byte-idéntico ya entró; no se abre lote nuevo.
+            prev_dir = case_dir / "00_Input" / Path(previo["primary_path"]).parent
             return DepositResult(
-                chat_dir=chat_dir, preview=preview, skipped_dedup=True
+                chat_dir=prev_dir, preview=preview, skipped_dedup=True
             )
 
+        lote_dir = intake_lotes.reservar_lote(case_id, "whatsapp", "whatsapp")
+        lote = lote_dir.name
+        chat_dir = lote_dir / rol_subdir / preview.chat_name
         chat_dir.mkdir(parents=True, exist_ok=True)
+        rel_base = f"{lote}/{rol_subdir}/{preview.chat_name}"
+        items: list[intake_lotes.ItemManifiesto] = []
 
-        rel_base = f"{_WHATSAPP_SUBDIR}/{rol_subdir}/{preview.chat_name}"
-        for name, data in members.items():
+        def _escribe(name: str, data: bytes, **extra) -> None:
+            sha = compute_sha256_bytes(data)
+            # duplicado_de ANTES de register (register crearía el entry propio)
+            dup = manifest.duplicado_de_para(sha, len(data))
             dest = chat_dir / name
-            dest.write_bytes(data)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(data)          # el duplicado SE COPIA igual (§6)
             files_written.append(dest)
             manifest.register(
-                compute_sha256_bytes(data),
-                f"{rel_base}/{name}",
-                source="whatsapp",
-                chat=preview.chat_name,
+                sha, f"{rel_base}/{name}", source="whatsapp",
+                chat=preview.chat_name, **extra,
             )
+            items.append(intake_lotes.ItemManifiesto(
+                relpath=f"{rol_subdir}/{preview.chat_name}/{name}",
+                sha256=sha, size=len(data),
+                tipo_contenido=intake_lotes.clasificar_tipo_contenido(name),
+                duplicado_de=dup,
+            ))
 
-        zip_dest = chat_dir / _ORIGINAL_ZIP_NAME
-        zip_dest.write_bytes(content)
-        files_written.append(zip_dest)
-        manifest.register(
-            zip_sha,
-            f"{rel_base}/{_ORIGINAL_ZIP_NAME}",
-            source="whatsapp",
-            chat=preview.chat_name,
-            es_zip_origen=True,
-        )
+        for name, data in members.items():
+            _escribe(name, data)
+        _escribe(_ORIGINAL_ZIP_NAME, content, es_zip_origen=True)
 
         if date_range is not None:
             desde, hasta = date_range
@@ -179,9 +189,12 @@ def deposit_export(
                 f"[{m.timestamp}] {m.autor or '(sistema)'}: {m.texto}"
                 for m in recortados
             ]
-            rec_dest = chat_dir / "_chat_recortado.txt"
-            rec_dest.write_text("\n".join(lineas), encoding="utf-8")
-            files_written.append(rec_dest)
+            _escribe("_chat_recortado.txt", "\n".join(lineas).encode("utf-8"))
+
+        intake_lotes.escribir_manifiesto(
+            lote_dir, fuente="whatsapp", fecha_intake=lote[:10],
+            origen="whatsapp_intake", items=items,
+        )
 
     intake_log.append_event(
         case_id,
@@ -189,6 +202,7 @@ def deposit_export(
         details={
             "chat": preview.chat_name,
             "rol": rol_subdir,
+            "lote": lote,
             "n_mensajes": preview.n_mensajes,
             "adjuntos_presentes": len(preview.adjuntos_presentes),
             "adjuntos_faltantes": preview.adjuntos_faltantes,
