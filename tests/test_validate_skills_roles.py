@@ -18,14 +18,21 @@ def test_input_y_procesado_son_roles_validos():
     assert "procesado" in vs._ROLES
 
 
-def test_skills_de_entrada_de_datos_declaran_rol_reconocido():
-    """Las skills que meten datos crudos al expediente no deben disparar el
-    aviso `metadata.rol=... no válido` del validador."""
+def test_skills_del_pipeline_de_datos_declaran_rol_reconocido():
+    """Las skills del pipeline de datos del expediente —entrada (`input`) y
+    procesado (`procesado`)— no deben disparar el aviso `metadata.rol=... no
+    válido` del validador. Cubre las 2 skills de entrada y las 2 reclasificadas
+    a `procesado` en 2026-07-18."""
     import scripts.validate_skills as vs
 
     helpers = vs._canonical_helpers()
     operacion = vs._operacion_dirs()
-    for nombre in ("intake-expediente", "exportar-correos-etiqueta"):
+    for nombre in (
+        "intake-expediente",
+        "exportar-correos-etiqueta",
+        "organizar-sala-maquina",
+        "organizar-sala-lectura",
+    ):
         skill_dir = vs._SKILLS / nombre
         avisos = vs.validar_skill(skill_dir, helpers, operacion)
         rol_invalido = [a for a in avisos if "rol=" in a and "no válido" in a]
