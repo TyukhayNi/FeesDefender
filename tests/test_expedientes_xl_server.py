@@ -36,7 +36,280 @@ def test_server_registra_todas_las_tools(tmp_path):
         "extract_archive",
         "write_file_base64",
         "append_text",
+        "read_text",
+        "read_multiple",
+        "list_dir",
+        "tree",
+        "get_metadata",
+        "search_name",
+        "search_content",
+        "create_dir",
+        "write_text",
+        "edit_text",
+        "resolve_shortcut",
+        "hydration_status",
     }
+
+
+def test_tools_nuevas_registradas(tmp_path):
+    srv_mcp = _srv(tmp_path)
+    nombres = {t.name for t in asyncio.run(srv_mcp.list_tools())}
+    esperadas = {"read_text", "read_multiple", "list_dir", "tree", "get_metadata",
+                 "search_name", "search_content", "create_dir", "write_text",
+                 "edit_text", "resolve_shortcut", "hydration_status"}
+    assert esperadas <= nombres
+
+
+def test_read_text_via_tool(tmp_path):
+    (tmp_path / "d.txt").write_text("hola\n", encoding="utf-8")
+    srv_mcp = _srv(tmp_path)
+    res = asyncio.run(srv_mcp.call_tool("read_text", {"path": str(tmp_path / "d.txt")}))
+    assert "hola" in str(res)
+
+
+def test_read_multiple_via_tool(tmp_path):
+    (tmp_path / "a.txt").write_text("uno", encoding="utf-8")
+    (tmp_path / "b.txt").write_text("dos", encoding="utf-8")
+    mcp = _srv(tmp_path)
+
+    async def _call():
+        return await mcp.call_tool(
+            "read_multiple", {"paths": [str(tmp_path / "a.txt"), str(tmp_path / "b.txt")]}
+        )
+
+    _content, out = asyncio.run(_call())
+    assert out[str(tmp_path / "a.txt")] == "uno"
+    assert out[str(tmp_path / "b.txt")] == "dos"
+
+
+def test_list_dir_via_tool(tmp_path):
+    (tmp_path / "x.txt").write_bytes(b"12345")
+    mcp = _srv(tmp_path)
+
+    async def _call():
+        return await mcp.call_tool("list_dir", {"path": str(tmp_path), "sizes": True})
+
+    _content, structured = asyncio.run(_call())
+    out = structured["result"]  # tool devuelve list[dict]: MCP envuelve listas top-level en {"result": [...]}
+    entrada = next(e for e in out if e.get("name") == "x.txt")
+    assert entrada["size"] == 5
+
+
+def test_list_dir_via_tool_poda_tier0(tmp_path):
+    (tmp_path / "90_Notas personales").mkdir()
+    (tmp_path / "90_Notas personales" / "s.txt").write_text("priv", encoding="utf-8")
+    mcp = _srv(tmp_path)
+
+    async def _call():
+        return await mcp.call_tool("list_dir", {"path": str(tmp_path)})
+
+    _content, structured = asyncio.run(_call())
+    nombres = [e["name"] for e in structured["result"] if "name" in e]
+    assert "90_Notas personales" not in nombres
+
+
+def test_tree_tool_pasa_dict_completo(tmp_path):
+    """El tool `tree` no reformatea el dict de readops: pasa TODAS sus claves,
+    incluida `omitidos_profundidad` (añadida tras el plan original)."""
+    (tmp_path / "a.txt").write_text("x", encoding="utf-8")
+    mcp = _srv(tmp_path)
+
+    async def _call():
+        return await mcp.call_tool("tree", {"path": str(tmp_path)})
+
+    _content, out = asyncio.run(_call())
+    assert set(out.keys()) == {"entries", "podados", "truncado", "omitidos_profundidad"}
+    assert out["entries"] == ["a.txt"]
+    assert out["omitidos_profundidad"] == 0
+
+
+def test_get_metadata_via_tool(tmp_path):
+    (tmp_path / "00_Input").mkdir()
+    f = tmp_path / "00_Input" / "doc.txt"
+    f.write_text("hola", encoding="utf-8")
+    mcp = _srv(tmp_path)
+
+    async def _call():
+        return await mcp.call_tool("get_metadata", {"path": str(f)})
+
+    _content, out = asyncio.run(_call())
+    assert out["name"] == "doc.txt"
+    assert out["tier"] == 1  # 00_Input -> FORENSE
+    assert out["hydration"] == "HOT"  # FakeOracle
+
+
+def test_search_name_via_tool(tmp_path):
+    (tmp_path / "doc.txt").write_text("x", encoding="utf-8")
+    (tmp_path / "otro.bin").write_bytes(b"y")
+    mcp = _srv(tmp_path)
+
+    async def _call():
+        return await mcp.call_tool("search_name", {"path": str(tmp_path), "patron": "*.txt"})
+
+    _content, structured = asyncio.run(_call())
+    out = structured["result"]  # tool devuelve list[str]: MCP envuelve listas top-level en {"result": [...]}
+    assert any(h.endswith("doc.txt") for h in out)
+    assert not any(h.endswith("otro.bin") for h in out)
+
+
+def test_search_content_via_tool(tmp_path):
+    (tmp_path / "doc.txt").write_text("linea uno\nbuscado aqui\n", encoding="utf-8")
+    mcp = _srv(tmp_path)
+
+    async def _call():
+        return await mcp.call_tool(
+            "search_content", {"path": str(tmp_path), "consulta": "buscado"}
+        )
+
+    _content, out = asyncio.run(_call())
+    assert out["matches"][0]["line"] == 2
+    assert out["podados"] == 0
+
+
+def test_create_dir_via_tool(tmp_path):
+    mcp = _srv(tmp_path)
+    nuevo = tmp_path / "00_Input" / "sub"
+
+    async def _call():
+        return await mcp.call_tool("create_dir", {"path": str(nuevo)})
+
+    asyncio.run(_call())
+    assert nuevo.is_dir()
+
+
+def test_create_dir_via_tool_rechaza_tier0(tmp_path):
+    mcp = _srv(tmp_path)
+    nuevo = tmp_path / "90_Notas personales" / "sub"
+
+    async def _call():
+        return await mcp.call_tool("create_dir", {"path": str(nuevo)})
+
+    with pytest.raises(Exception, match="Zona prohibida"):
+        asyncio.run(_call())
+
+
+def test_write_text_via_tool(tmp_path):
+    mcp = _srv(tmp_path)
+    destino = tmp_path / "nota.txt"
+
+    async def _call():
+        return await mcp.call_tool("write_text", {"path": str(destino), "text": "hola"})
+
+    asyncio.run(_call())
+    assert destino.read_text(encoding="utf-8") == "hola"
+
+
+def test_write_text_via_tool_rechaza_sobrescribir_00_input(tmp_path):
+    mcp = _srv(tmp_path)
+    destino = tmp_path / "00_Input" / "depositado.txt"
+    destino.parent.mkdir(parents=True)
+    destino.write_text("orig", encoding="utf-8")
+
+    async def _call():
+        return await mcp.call_tool("write_text", {"path": str(destino), "text": "nuevo"})
+
+    with pytest.raises(Exception, match="forense-inmutable"):
+        asyncio.run(_call())
+
+
+def test_edit_text_via_tool(tmp_path):
+    destino = tmp_path / "nota.txt"
+    destino.write_text("hola mundo", encoding="utf-8")
+    mcp = _srv(tmp_path)
+
+    async def _call():
+        return await mcp.call_tool(
+            "edit_text", {"path": str(destino), "old": "mundo", "new": "claude"}
+        )
+
+    asyncio.run(_call())
+    assert destino.read_text(encoding="utf-8") == "hola claude"
+
+
+def test_resolve_shortcut_via_tool_fail_closed(tmp_path):
+    """Sin resolver inyectable desde el tool MCP: un `.lnk` inválido resuelve
+    en vacío (fail-closed), tal y como hace `_resolver_lnk_com` real."""
+    lnk = tmp_path / "atajo.lnk"
+    lnk.write_bytes(b"no es un lnk valido")
+    mcp = _srv(tmp_path)
+
+    async def _call():
+        return await mcp.call_tool("resolve_shortcut", {"path": str(lnk)})
+
+    _content, out = asyncio.run(_call())
+    assert out["target"] is None
+    assert out["dentro_sandbox"] is False
+
+
+def test_hydration_status_via_tool(tmp_path):
+    f = tmp_path / "a.txt"
+    f.write_text("x", encoding="utf-8")
+    mcp = _srv(tmp_path)  # FakeOracle.status siempre "HOT"
+
+    async def _call():
+        return await mcp.call_tool("hydration_status", {"path": str(f)})
+
+    _content, out = asyncio.run(_call())
+    assert out == {"status": "HOT"}
+
+
+def test_hydration_status_via_tool_rechaza_tier0(tmp_path):
+    secreto = tmp_path / "90_Notas personales" / "s.txt"
+    secreto.parent.mkdir(parents=True)
+    secreto.write_text("x", encoding="utf-8")
+    mcp = _srv(tmp_path)
+
+    async def _call():
+        return await mcp.call_tool("hydration_status", {"path": str(secreto)})
+
+    with pytest.raises(Exception, match="Zona prohibida"):
+        asyncio.run(_call())
+
+
+def test_copy_path_rechaza_origen_frio_grande(tmp_path, monkeypatch):
+    """Guarda de hidratación en `copy_path` (controller review Task 14): una
+    copia lee bytes del origen, así que un COLD por encima del umbral se
+    rechaza en vez de intentar copiarlo (spec §6.2)."""
+    monkeypatch.setenv("XL_HYDRATION_MAX_FILE_MB", "0")
+
+    class ColdOracle(FakeOracle):
+        def status(self, p):
+            return "COLD"
+
+    src = tmp_path / "orig.bin"
+    src.write_bytes(b"datos")
+    dst = tmp_path / "dest" / "copia.bin"
+    mcp = _srv(tmp_path, oracle=ColdOracle())
+
+    async def _call():
+        return await mcp.call_tool("copy_path", {"src": str(src), "dst": str(dst)})
+
+    with pytest.raises(Exception, match="ERROR_FILE_NOT_HYDRATED"):
+        asyncio.run(_call())
+    assert not dst.exists()
+
+
+def test_hash_tree_poda_symlink_a_tier0(tmp_path):
+    """Un symlink en el workspace que apunte DENTRO de 90_Notas personales no
+    se cuela: `iter_tree` poda por directorio, así que un symlink-fichero
+    suelto se re-valida por ruta resuelta (controller review Task 14)."""
+    notas = tmp_path / "90_Notas personales"
+    notas.mkdir()
+    secreto = notas / "secreto.txt"
+    secreto.write_bytes(b"priv")
+    enlace = tmp_path / "enlace.txt"
+    try:
+        enlace.symlink_to(secreto)
+    except OSError as e:
+        pytest.skip(f"symlink no soportado en este entorno (requiere admin en Windows): {e}")
+    (tmp_path / "a.txt").write_bytes(b"hola")
+    mcp = _srv(tmp_path)
+
+    async def _call():
+        return await mcp.call_tool("hash_tree", {"root": str(tmp_path)})
+
+    _content, out = asyncio.run(_call())
+    assert out == {"a.txt": hashlib.sha256(b"hola").hexdigest()}
 
 
 def test_delete_path_retirado(tmp_path):

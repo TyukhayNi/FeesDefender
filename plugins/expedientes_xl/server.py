@@ -12,6 +12,7 @@ import os
 import sys
 import threading
 from pathlib import Path
+from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
@@ -73,20 +74,33 @@ def build_server(zonas: Zonas, oracle, max_b64_bytes: int = DEFAULT_MAX_B64,
 
     @mcp.tool()
     def hash_tree(root: str) -> dict[str, str]:
-        """SHA-256 recursivo (poda 90_Notas personales; aborta árbol frío grande)."""
+        """SHA-256 recursivo (poda 90_Notas personales; aborta árbol frío grande).
+
+        `iter_tree` poda por DIRECTORIO; un symlink-fichero suelto que apunte a
+        Tier 0 se cuela como fichero normal. Por eso cada hallazgo re-valida su
+        ruta RESUELTA (symlinks colapsados) contra `classify`: si el destino real
+        cae en Tier 0 se omite (poda-y-cuenta, nunca aborta el resto del árbol) y
+        queda auditado.
+        """
         def _impl() -> dict[str, str]:
             p = fsops.resolve_within(allowed, root)
             tiers.check_read(zonas, p)
             guards.guard_tree(oracle, p)
             out: dict[str, str] = {}
             for f in readops.iter_tree(zonas, p):
+                if tiers.classify(zonas, f.resolve()) is tiers.Tier.PROHIBIDA:
+                    audit.log_op("hash_tree", str(f), "podado_symlink_tier0")
+                    continue
                 out[f.relative_to(p).as_posix()] = fsops.sha256_file(allowed, str(f))
             return out
         return _heavy(_impl)
 
     @mcp.tool()
     def copy_path(src: str, dst: str) -> str:
-        """Copia un fichero (no destructivo; zonas+`.g*` en ambos extremos). Ruta destino."""
+        """Copia un fichero (no destructivo; zonas+`.g*`+hidratación en ambos extremos). Ruta destino."""
+        src_p = fsops.resolve_within(allowed, src)
+        tiers.check_read(zonas, src_p)
+        guards.guard_file(oracle, src_p)  # una copia lee bytes del origen (spec §6.2)
         out = fsops.copy_file_v2(allowed, zonas, src, dst)
         audit.log_op("copy_path", str(out), "ok")
         return str(out)
@@ -149,6 +163,80 @@ def build_server(zonas: Zonas, oracle, max_b64_bytes: int = DEFAULT_MAX_B64,
         dst = fsops.append_text(allowed, path, text)
         audit.log_op("append_text", str(dst), "ok", bytes=len(text.encode("utf-8")))
         return str(dst)
+
+    @mcp.tool()
+    def read_text(path: str, head: int | None = None, tail: int | None = None) -> str:
+        """Lee texto UTF-8 con tope de tamaño; `head`/`tail` acotan por líneas."""
+        return readops.read_text(allowed, zonas, oracle, path, head=head, tail=tail)
+
+    @mcp.tool()
+    def read_multiple(paths: list[str]) -> dict[str, str]:
+        """Lee varios ficheros de texto; un fallo individual no tumba el lote."""
+        return readops.read_multiple(allowed, zonas, oracle, paths)
+
+    @mcp.tool()
+    def list_dir(path: str, sizes: bool = False) -> list[dict]:
+        """Lista el contenido de un directorio, podando Tier 0."""
+        return readops.list_dir(allowed, zonas, path, sizes=sizes)
+
+    @mcp.tool()
+    def tree(path: str, max_depth: int = 8) -> dict[str, Any]:
+        """Árbol de ficheros relativo con poda Tier 0 y límites de profundidad/entradas."""
+        def _impl() -> dict[str, Any]:
+            return readops.tree(allowed, zonas, path, max_depth=max_depth)
+        return _heavy(_impl)
+
+    @mcp.tool()
+    def get_metadata(path: str) -> dict[str, Any]:
+        """Metadatos (tamaño, mtime, tier, hidratación) de un fichero o directorio."""
+        return readops.get_metadata(allowed, zonas, oracle, path)
+
+    @mcp.tool()
+    def search_name(path: str, patron: str) -> list[str]:
+        """Búsqueda por nombre de fichero (fnmatch case-insensitive), podando Tier 0."""
+        return readops.search_name(allowed, zonas, path, patron)
+
+    @mcp.tool()
+    def search_content(path: str, consulta: str, regex: bool = False) -> dict[str, Any]:
+        """Búsqueda de contenido (grep) con poda Tier 0 y guardas de hidratación."""
+        def _impl() -> dict[str, Any]:
+            return readops.search_content(allowed, zonas, oracle, path, consulta, regex=regex)
+        return _heavy(_impl)
+
+    @mcp.tool()
+    def create_dir(path: str) -> str:
+        """Crea un directorio (con sus padres) respetando zonas."""
+        p = fsops.resolve_within(allowed, path)
+        tiers.check_write(zonas, p, exists=False)
+        p.mkdir(parents=True, exist_ok=True)
+        audit.log_op("create_dir", str(p), "ok")
+        return str(p)
+
+    @mcp.tool()
+    def write_text(path: str, text: str) -> str:
+        """Escribe texto UTF-8 de forma atómica, respetando zonas."""
+        dst = fsops.write_text_file(allowed, zonas, path, text)
+        audit.log_op("write_text", str(dst), "ok", bytes=len(text.encode("utf-8")))
+        return str(dst)
+
+    @mcp.tool()
+    def edit_text(path: str, old: str, new: str) -> str:
+        """Reemplaza una única aparición exacta de texto en un fichero, atómico."""
+        dst = fsops.edit_text_file(allowed, zonas, path, old, new)
+        audit.log_op("edit_text", str(dst), "ok")
+        return str(dst)
+
+    @mcp.tool()
+    def resolve_shortcut(path: str) -> dict[str, Any]:
+        """Resuelve un `.lnk` y re-valida su destino contra sandbox y tiers."""
+        return readops.resolve_shortcut(allowed, zonas, path)
+
+    @mcp.tool()
+    def hydration_status(path: str) -> dict[str, str]:
+        """Estado de hidratación (HOT/COLD/UNKNOWN) de una ruta."""
+        p = fsops.resolve_within(allowed, path)
+        tiers.check_read(zonas, p)
+        return {"status": oracle.status(p)}
 
     return mcp
 
