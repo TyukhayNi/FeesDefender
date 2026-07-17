@@ -86,3 +86,72 @@ def test_reserva_atomica_por_mkdir(tmp_casos_root, monkeypatch):
     monkeypatch.setattr(intake_lotes, "_lotes_existentes", lambda case_dir: set())
     lote = intake_lotes.reservar_lote(case_id, "manual", "manual", hoy=HOY)
     assert lote.name == "2026-07-17_manual_02"
+
+
+def test_clasificar_tipo_contenido():
+    from core.intake_lotes import clasificar_tipo_contenido as tc
+    assert tc("_chat.txt") == "whatsapp"          # solo _chat.txt es 'whatsapp'
+    assert tc("notas.txt") == "txt"
+    assert tc("escrito.PDF") == "pdf"
+    assert tc("IMG-001.jpg") == "imagen"
+    assert tc("video.mp4") == "video"
+    assert tc("nota_voz.opus") == "audio"         # _AUDIO_EXTS ya existía (whatsapp_intake:21)
+    assert tc("correo.eml") == "eml"
+    assert tc("contrato.docx") == "docx"
+    assert tc("raro.xyz") == "otros"
+
+
+def test_manifiesto_round_trip_y_exclusiones(tmp_path):
+    from core import intake_lotes as il
+    lote = tmp_path / "2026-07-17_manual_01"
+    lote.mkdir()
+    (lote / "doc.pdf").write_bytes(b"pdf")
+    (lote / "_export_original.zip").write_bytes(b"zip")   # SÍ entra (spec §5)
+    (lote / "_exported_ids.json").write_text("{}", encoding="utf-8")  # control: NO entra
+    (lote / ".pulled").write_text("", encoding="utf-8")               # control: NO entra
+    items = il.items_desde_disco(lote)
+    assert {i.relpath for i in items} == {"doc.pdf", "_export_original.zip"}
+
+    il.escribir_manifiesto(lote, fuente="manual", fecha_intake="2026-07-17",
+                           origen="test", items=items)
+    data = il.leer_manifiesto(lote)
+    assert data["fuente"] == "manual" and data["origen"] == "test"
+    assert {i["relpath"] for i in data["items"]} == {"doc.pdf", "_export_original.zip"}
+    # None se omite: sin message_id/duplicado_de no aparecen las claves.
+    assert all("duplicado_de" not in i and "message_id" not in i for i in data["items"])
+    # El propio manifiesto no se auto-inventaría.
+    assert "_manifiesto.yaml" not in {i.relpath for i in il.items_desde_disco(lote)}
+
+
+def test_manifiesto_message_id_y_duplicado(tmp_path):
+    from core import intake_lotes as il
+    lote = tmp_path / "2026-07-17_email_01"
+    lote.mkdir()
+    (lote / "2026-07-01_asunto.eml").write_bytes(b"raw")
+    items = il.items_desde_disco(
+        lote,
+        message_id_de={"2026-07-01_asunto.eml": "<x@y>"},
+        duplicados={"2026-07-01_asunto.eml": "2026-06-10_manual_01/copia.eml"},
+    )
+    il.escribir_manifiesto(lote, fuente="email", fecha_intake="2026-07-17",
+                           origen="email_export", items=items)
+    item = il.leer_manifiesto(lote)["items"][0]
+    assert item["message_id"] == "<x@y>"
+    assert item["duplicado_de"] == "2026-06-10_manual_01/copia.eml"
+    assert item["tipo_contenido"] == "eml"
+
+
+def test_anexar_items_fusiona_por_relpath(tmp_path):
+    from core import intake_lotes as il
+    lote = tmp_path / "2026-07-17_manual_01"
+    lote.mkdir()
+    a = il.ItemManifiesto("a.pdf", "sha-a", 3, "pdf")
+    il.anexar_items(lote, [a], origen="ui_manual")
+    a2 = il.ItemManifiesto("a.pdf", "sha-a2", 4, "pdf")
+    b = il.ItemManifiesto("b.txt", "sha-b", 1, "txt")
+    il.anexar_items(lote, [a2, b], origen="ui_manual")
+    data = il.leer_manifiesto(lote)
+    assert data["fuente"] == "manual" and data["fecha_intake"] == "2026-07-17"
+    por_rel = {i["relpath"]: i for i in data["items"]}
+    assert set(por_rel) == {"a.pdf", "b.txt"}
+    assert por_rel["a.pdf"]["sha256"] == "sha-a2"   # el nuevo gana
