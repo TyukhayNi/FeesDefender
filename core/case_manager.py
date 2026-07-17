@@ -28,10 +28,7 @@ from .config import (
     CRM_FALLBACK_PATH,
     CRM_SUBDIR,
     CRM_TREE,
-    EMAIL_SUBDIRS,
     INFORME_VIABILIDAD_TIPOS,
-    INPUT_SUBDIRS,
-    WHATSAPP_SUBDIRS,
     caso_path,
     settings,
 )
@@ -271,13 +268,9 @@ def ensure_case(
     for sub01 in ("Sala lectura", "MD", "_revisar"):
         (case_dir / "01_Procesado" / sub01).mkdir(exist_ok=True)
 
-    # Subcarpetas de intake (niveles 2 y 3)
-    for intake_sub in INPUT_SUBDIRS:
-        (case_dir / "00_Input" / intake_sub).mkdir(exist_ok=True)
-    for sub3 in WHATSAPP_SUBDIRS:
-        (case_dir / "00_Input" / "02_Whatsapp" / sub3).mkdir(exist_ok=True)
-    for sub3 in EMAIL_SUBDIRS:
-        (case_dir / "00_Input" / "03_Email" / sub3).mkdir(exist_ok=True)
+    # (ELIMINADO — spec §8 «Scaffolding de ensure_case»: los cajones de entrega y
+    # sus roles ya no se crean al alta; los lotes nacen con cada intake y
+    # 01_Drive EV lo crea el pull. La base 05_CRM sigue eager (D7), justo abajo.)
 
     # Base 05_CRM (D7 — andamiaje lazy; los buckets se crean al escribir)
     _ensure_crm_tree_dirs(case_dir)

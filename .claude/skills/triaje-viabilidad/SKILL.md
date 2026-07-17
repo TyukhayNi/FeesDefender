@@ -46,7 +46,10 @@ anclado a documento o marcado como faltante. Orienta la decisión de coger el ca
 
 ## Entrada
 
-Lee `00_Input/` del expediente (todas las fuentes), igual que `viabilidad-prerelleno`.
+Lee `00_Input/` del expediente (todas las fuentes: lotes de entrega
+`<AAAA-MM-DD>_<fuente>_<NN>/` + cajones espejo `01_Drive EV/`/`05_CRM/`, y en casos
+antiguos no migrados los cajones legacy `02_Whatsapp/`, `03_Email/`, `04_Manual/`,
+`06_Entrevistas/` — lee AMBAS formas), igual que `viabilidad-prerelleno`.
 La fuente de verdad es el crudo: el triaje localiza sus factores leyendo el contenido,
 sin depender de la clasificación de la sala de lectura. **Opcional:** si existe
 `01_Procesado/Sala lectura/INDICE.md`, úsalo solo como **pista de navegación** (atajo para

@@ -3,10 +3,12 @@
 Genera `_inventory.json` con metadatos por archivo (tamaño, hash, mime básico,
 fecha mtime, fuente) para alimentar las fases siguientes del pipeline.
 
-Convención de fuentes: cada subcarpeta directa de `00_Input/` representa
-una fuente de ingestión (`sudespacho/`, `drive/`, `email/`, `whatsapp/`,
-`manual/`, ...). Los archivos sueltos en la raíz de `00_Input/` se
-clasifican como `manual`. La ruta relativa preserva la fuente.
+Convención de fuentes: la fuente de cada fichero se resuelve con el contrato
+único `intake_lotes.fuente_de` (MEJORAS #54 T11) — espejos (`01_Drive EV`,
+`05_CRM`), lotes (`<AAAA-MM-DD>_<fuente>_<NN>/`) y cajones legacy resuelven a
+valores canónicos (`drive_ev`, `crm`, `whatsapp`, `email`, `manual`,
+`entrevista`). Los archivos sueltos en la raíz de `00_Input/`, o bajo una
+carpeta de primer nivel no reconocida, se clasifican como `manual`.
 """
 
 from __future__ import annotations
@@ -17,7 +19,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 
-from .config import caso_path
+from .config import INTAKE_CONTROL_FILES, caso_path
 from .utils import file_sha256
 
 
@@ -44,18 +46,19 @@ _RELEVANT_EXTS = {
 }
 
 # Archivos de control que el inventario debe ignorar a cualquier nivel.
-_CONTROL_FILES = {"_inventory.json", ".pulled", ".synced"}
+# Lista ÚNICA en config.INTAKE_CONTROL_FILES (MEJORAS #54 T1).
+_CONTROL_FILES = INTAKE_CONTROL_FILES
 
 
 def _source_of(rel_parts: tuple[str, ...]) -> str:
-    """Determina la fuente a partir de la ruta relativa al 00_Input/.
+    """Determina la fuente canónica a partir de la ruta relativa al 00_Input/.
 
-    Si está en una subcarpeta directa, esa es la fuente. Si está en la
-    raíz, se considera 'manual' (drag-and-drop del abogado).
+    Delega en el contrato único ``intake_lotes.fuente_de`` (MEJORAS #54 T11):
+    espejo → nombre canónico; lote → la fuente del nombre; cajón legacy →
+    mapa canónico; raíz o cajón desconocido → 'manual'.
     """
-    if len(rel_parts) >= 2:
-        return rel_parts[0]
-    return "manual"
+    from .intake_lotes import fuente_de
+    return fuente_de("/".join(rel_parts))
 
 
 def _entry(root: Path, path: Path) -> FileEntry:

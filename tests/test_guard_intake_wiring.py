@@ -54,7 +54,8 @@ def test_whatsapp_disponible_escribe_normal(tmp_casos_root):
     content = _make_zip({"_chat.txt": _CHAT})
     res = whatsapp_intake.deposit_export(case_id, "03_Otros", content, zip_name="chat.zip")
     assert "_pendiente_checkin" not in res.chat_dir.as_posix()
-    assert "02_Whatsapp" in res.chat_dir.as_posix()
+    from core.intake_lotes import PATRON_LOTE
+    assert PATRON_LOTE.match(res.chat_dir.parent.parent.name).group(2) == "whatsapp"
 
 
 def test_whatsapp_prestado_desvia_a_bandeja(tmp_casos_root):
@@ -67,8 +68,8 @@ def test_whatsapp_prestado_desvia_a_bandeja(tmp_casos_root):
     # Los ficheros existen en la bandeja, no en el árbol vivo.
     from core.config import caso_path
     assert res.chat_dir.exists()
-    vivo = caso_path(case_id) / "00_Input" / "02_Whatsapp" / "03_Otros"
-    assert not any(vivo.rglob("*.txt")) if vivo.exists() else True
+    vivo = caso_path(case_id) / "00_Input"
+    assert not any(vivo.rglob("_chat.txt"))
     # Evento de desvío registrado.
     assert any(e["event"] == "pendiente_checkin" for e in intake_log.read_events(case_id))
 
@@ -81,17 +82,20 @@ def test_email_dest_dir_disponible_normal(tmp_casos_root):
     # NO se recarga email_export: contaminaría a test_email_export (liga nombres
     # al importar). dir_intake/caso_path resuelven contra los settings actuales.
     from core import email_export
+    from core.intake_lotes import PATRON_LOTE
     case_manager.ensure_case("EV-2026-001", titulo="x")
     d = email_export.email_dest_dir("EV-2026-001")
-    assert d.as_posix().endswith("00_Input/03_Email")
+    assert PATRON_LOTE.match(d.name).group(2) == "email"
     assert "_pendiente_checkin" not in d.as_posix()
 
 
 def test_email_dest_dir_prestado_desvia(tmp_casos_root):
     from core import email_export, intake_log
+    from core.intake_lotes import PATRON_LOTE
     case_id = _caso_prestado()
     d = email_export.email_dest_dir(case_id)
-    assert d.as_posix().endswith("_pendiente_checkin/email/00_Input/03_Email")
+    assert "_pendiente_checkin/email/00_Input/" in d.as_posix()
+    assert PATRON_LOTE.match(d.name)
     assert any(e["event"] == "pendiente_checkin" for e in intake_log.read_events(case_id))
 
 

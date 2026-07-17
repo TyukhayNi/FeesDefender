@@ -2,8 +2,9 @@
 name: organizar-sala-lectura
 description: >-
   Organiza el intake de un expediente FeesDefender en una "sala de lectura"
-  legible: lee TODO 00_Input (01_Drive EV, 02_Whatsapp, 03_Email, 04_Manual,
-  05_CRM, 06_Entrevistas; excluye 90_Notas personales), clasifica cada fichero
+  legible: lee 00_Input (lotes <fuente> + 01_Drive EV/05_CRM; legacy
+  02_Whatsapp/03_Email/04_Manual/06_Entrevistas; excluye 90_Notas personales),
+  clasifica cada fichero
   por las categorías canónicas de Engel & Völkers (activación, ofertas, arras,
   facturación, PBC, reclamaciones, fotos, pendiente de clasificar), presenta una
   propuesta para tu visto bueno y, tras aprobarla, los copia con nombre canónico
@@ -59,9 +60,13 @@ por `sha256` (la 2ª pasada solo toca lo nuevo).
 ## Entrada y montaje
 
 - Trabaja sobre el **expediente en el Drive del despacho** (no el de Engel).
-- **Lee** de **TODO `00_Input/`** (`01_Drive EV`, `02_Whatsapp`, `03_Email`,
-  `04_Manual`, `05_CRM`, `06_Entrevistas`), **excluyendo `90_Notas personales`**
-  (zona del abogado: ningún módulo la lee ni la escribe).
+- **Lee** de **TODO `00_Input/`**: `00_Input/` tiene dos formas de canal —
+  **lotes de entrega** `<AAAA-MM-DD>_<fuente>_<NN>/` (fuentes `whatsapp`, `email`,
+  `manual`, `entrevista`; cada lote lleva `_manifiesto.yaml` con `tipo_contenido` por
+  ítem) y **cajones espejo** fijos `01_Drive EV/` y `05_CRM/` (sync incremental). Los
+  casos antiguos no migrados conservan los cajones `02_Whatsapp/`, `03_Email/`,
+  `04_Manual/`, `06_Entrevistas/`: lee AMBAS formas. **Excluyendo `90_Notas
+  personales`** (zona del abogado: ningún módulo la lee ni la escribe).
 - **Escribe** en `01_Procesado/Sala lectura/`. Cowork debe tener montada la **raíz
   del expediente** (la salida vive fuera de `00_Input`).
 
@@ -142,8 +147,9 @@ diálogo.
      raíz del expediente → baja a `00_Input/`; subcarpeta de `00_Input` → úsala. Pide
      activar **"Permitir siempre"** en el conector (CERO diálogos durante la ejecución).
    - Disparadores: "organiza esta carpeta <nombre|ruta G:|url>".
-1. **Lista** **TODO `00_Input/`** (`01_Drive EV`, `02_Whatsapp`, `03_Email`,
-   `04_Manual`, `05_CRM`, `06_Entrevistas`), **excluyendo `90_Notas personales`**. Para
+1. **Lista** **TODO `00_Input/`**: lotes `<AAAA-MM-DD>_<fuente>_<NN>/` + cajones espejo
+   (`01_Drive EV`, `05_CRM`) + cajones legacy de casos no migrados (`02_Whatsapp`,
+   `03_Email`, `04_Manual`, `06_Entrevistas`), **excluyendo `90_Notas personales`**. Para
    cada fichero, calcula **sha256** de los bytes (modo local: lee los bytes; modo conector:
    ver Gotchas) y **salta** (sin leer ni copiar) lo que ya conste en `_MANIFIESTO.md` (ver
    "Re-aplicación").
@@ -217,8 +223,8 @@ preserva la subcarpeta + el `parent_id`/`orden` del `_MANIFIESTO.md`, no el pref
 
 Tarjeta visual (artefacto HTML; *fallback* markdown compacto), **no un muro de texto**:
 
-a. **Cabecera:** caso + fuentes leídas (todas las de `00_Input`) + aviso «nada copiado
-   aún».
+a. **Cabecera:** caso + fuentes leídas (todos los lotes de `00_Input` + los cajones
+   espejo/legacy presentes) + aviso «nada copiado aún».
 b. **Contadores** por categoría con su nº.
 c. **Panel "Requiere tu visto bueno":** SOLO decisiones a revisar — reclasificaciones
    no obvias, identidad/PBC enrutada por parte (y Anexos 1/2 → `06. PBC`), bundles

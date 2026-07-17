@@ -331,7 +331,7 @@ def test_append_event_invoca_fsync_por_cada_escritura(il, cm, monkeypatch):
 
 def test_intake_events_es_frozenset_con_24_eventos(il):
     assert isinstance(il.INTAKE_EVENTS, frozenset)
-    assert len(il.INTAKE_EVENTS) == 24
+    assert len(il.INTAKE_EVENTS) == 25
 
 
 def test_intake_events_contiene_los_canonicos(il):
@@ -345,7 +345,8 @@ def test_intake_events_contiene_los_canonicos(il):
     biblioteca de casos (checkout/checkin, DISEÑO_V2 merge+biblioteca,
     2026-07-07). ``procesado_sala_maquina`` con la skill organizar-sala-maquina
     (OCR+MD, 2026-07-09). ``split_documental`` con el split de bundles
-    multi-documento en la Sala de máquina (2026-07-15).
+    multi-documento en la Sala de máquina (2026-07-15). ``migracion_layout_intake``
+    con la migración bajo demanda al layout de lotes (MEJORAS #54, 2026-07-17).
     """
     expected = {
         "link_expediente",
@@ -372,5 +373,6 @@ def test_intake_events_contiene_los_canonicos(il):
         "pendiente_checkin",
         "procesado_sala_maquina",
         "split_documental",
+        "migracion_layout_intake",
     }
     assert il.INTAKE_EVENTS == expected

@@ -47,6 +47,17 @@ def test_campos_coinciden_con_CatalogEntry():
     assert set(mod.CAMPOS_EMITIDOS) <= validos
 
 
+def test_fuente_skill_sin_drift_con_core():
+    """Anti-drift: la resolución de fuente del helper coincide con core.intake_lotes.fuente_de."""
+    from core.intake_lotes import fuente_de
+    mod = _load()
+    casos = ["01_Drive EV/a.pdf", "05_CRM/b.pdf", "2026-07-17_email_01/c.eml",
+             "2026-07-17_whatsapp_02/rol/chat/_chat.txt", "02_Whatsapp/r/c/_chat.txt",
+             "06_Entrevistas/g.mp4", "raiz.pdf", "Rara/x.pdf"]
+    for c in casos:
+        assert mod._fuente(c) == fuente_de(c), c
+
+
 def test_idempotente(tmp_path):
     mod = _load()
     (tmp_path / "_MANIFIESTO.md").write_text(_MANIF, encoding="utf-8")

@@ -21,6 +21,32 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 
 ---
 
+## [SIGUIENTE-INPUT-LOTES] Layout de `00_Input` por lotes de entrega (`MEJORAS #54`)
+
+*Disparador: decisión de Nikolai 2026-07-17 (4 decisiones fijadas: espejos fuera del modelo
+de lotes; M9 índice único de dedup; los duplicados se copian igualmente; la migración remapea
+los registros aguas abajo) + spec rev 2 aprobada y MERGEADA (PR #49, squash `32fa663`).
+Promovido de `docs/MEJORAS_FUTURAS.md` #54 al arrancar la construcción (regla de promoción).*
+
+Canales de ENTREGA (`whatsapp`, `email`, `manual`, `entrevista`) pasan a lotes append-only
+`00_Input/<AAAA-MM-DD>_<fuente>_<NN>/` con `_manifiesto.yaml` (albarán forense, NO fuente de
+dedup); canales ESPEJO (`01_Drive EV`, `05_CRM`) conservan cajón fijo + sync incremental
+INTACTO (`.pulled`/`reconcile`). Dedup cross-lote vía M9 (`_intake_hashes.json`) + Message-ID
+en correos; el duplicado detectado SE COPIA y se anota (`duplicado_de`). Migración de casos
+existentes solo bajo demanda, con remapeo de M9/cobertura OCR/catálogo por rel_path.
+
+- Spec (única fuente de verdad del diseño; no reabrir sus decisiones):
+  `docs/superpowers/specs/2026-07-17-layout-00-input-lotes-design.md`.
+- Plan TDD: `docs/superpowers/plans/2026-07-17-layout-00-input-lotes.md` (16 tareas).
+- [ ] Revisión del plan por Nikolai.
+- [ ] Construcción (subagent-driven, Tareas 1→16; anotar aquí el hash del PR al cerrar).
+- [ ] Operativo tras merge: re-importar en Cowork las skills re-empaquetadas (Tarea 15).
+- [ ] Migración de casos existentes SOLO bajo demanda (`python -m scripts.migrar_layout_intake
+      <caso>`) cuando reciban intake nuevo; nunca de oficio ni en barrido.
+- Fuera de alcance (specs de seguimiento que consumen esta decisión): reenganche fino de
+  `email_atomize`/`sala_maquina`/motor de sala de lectura (**#55/#56**), escritor de la
+  fuente `entrevista` (**#53**), limpieza de cajones vacíos post-migración.
+
 ## [SIGUIENTE-INFRA-POST-VALERO] Roadmap de infraestructura tras la sesión VALERO (2026-07-14)
 
 *Disparador: sesión E2E VALERO (W-02XOR7 / BaRS8) del 2026-07-14 — OCR → sala de máquina → refuerzo por

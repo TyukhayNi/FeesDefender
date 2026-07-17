@@ -19,7 +19,6 @@ Uso:
 from __future__ import annotations
 
 import hashlib
-import shutil
 import zipfile
 from pathlib import Path
 
@@ -60,22 +59,29 @@ def hash_tree_local(root: Path, *, prefijo: str) -> dict[str, str]:
 _FUENTES_CLI = ("drive_ev", "manual", "whatsapp", "email")
 
 
-def _inventario_desde_hashes(case_dir: Path, subdir: str, hashes: dict[str, str]) -> list[dict]:
-    """Inventario {relpath, sha256, size} a partir de {subdir/rel: sha}."""
+def _inventario_desde_hashes(case_dir: Path, base: str, hashes: dict[str, str]) -> list[dict]:
+    """Inventario {relpath, sha256, size} a partir de {base/rel: sha}."""
     return [
-        {"relpath": k[len(subdir) + 1:], "sha256": v,
+        {"relpath": k[len(base) + 1:], "sha256": v,
          "size": (case_dir / "00_Input" / k).stat().st_size}
         for k, v in hashes.items()
     ]
 
 
 def _intake_generico(
-    case_dir: Path, case_id: str, fuente: str, hashes: dict[str, str], *, dry_run: bool
+    case_dir: Path, case_id: str, fuente: str, hashes: dict[str, str], *, base: str,
+    dry_run: bool,
 ) -> None:
     """Camino de custodia orquestado (drive_ev, manual): plan → (dry-run) →
-    reconcile → append_event. `hashes` cubre SOLO lo recién depositado."""
-    inventario = _inventario_desde_hashes(case_dir, brain.FUENTE_A_SUBDIR[fuente], hashes)
-    plan = brain.plan_intake(inventario, intake_log.read_events(case_id), fuente)
+    reconcile → append_event. `hashes` cubre SOLO lo recién depositado.
+
+    `base` es el cajón espejo (drive_ev) o el nombre del lote ya reservado
+    (fuentes de entrega); la cadena de custodia toma la fuente de `fuente`,
+    no del primer segmento de la ruta.
+    """
+    inventario = _inventario_desde_hashes(case_dir, base, hashes)
+    plan = brain.plan_intake(inventario, intake_log.read_events(case_id), fuente,
+                             lote=None if fuente == "drive_ev" else base)
     if dry_run:
         typer.echo(f"[dry-run] {len(plan.depositables)} depositables, "
                    f"{len(plan.items) - len(plan.depositables)} omitidos")
@@ -96,9 +102,9 @@ def _intake_generico(
 
 def _intake_drive_ev(ident, case_dir: Path, folder_id, team_id, *, dry_run: bool) -> None:
     intake_drive.pull_drive_ev(ident.case_id, folder_id, team_id)
-    subdir = brain.FUENTE_A_SUBDIR["drive_ev"]
+    subdir = brain.SUBDIR_DRIVE_EV
     hashes = hash_tree_local(case_dir / "00_Input" / subdir, prefijo=subdir)
-    _intake_generico(case_dir, ident.case_id, "drive_ev", hashes, dry_run=dry_run)
+    _intake_generico(case_dir, ident.case_id, "drive_ev", hashes, base=subdir, dry_run=dry_run)
 
 
 def _inventario_local(src: Path) -> list[dict]:
@@ -123,50 +129,45 @@ def _inventario_local(src: Path) -> list[dict]:
     return items
 
 
-def _depositar_manual(case_id: str, src: Path) -> list[str]:
-    """Deposita el origen en 04_Manual y devuelve los relpath (posix) depositados
-    en ESTA pasada (no toda la carpeta)."""
-    manual_dir = case_locator.path_for(case_id) / "00_Input" / "04_Manual"
-    manual_dir.mkdir(parents=True, exist_ok=True)
+def _depositar_manual(case_id: str, src: Path, lote: Path) -> list[str]:
+    """Deposita el origen en el LOTE (vía intake_manual: guard+M9+manifiesto) y
+    devuelve los relpath (posix) depositados en ESTA pasada."""
     if zipfile.is_zipfile(src):
-        paths = intake_manual.extract_zip(case_id, src.read_bytes())
-        return [p.relative_to(manual_dir).as_posix() for p in paths]
+        paths = intake_manual.extract_zip(case_id, src.read_bytes(), lote=lote)
+        return [p.relative_to(lote).as_posix() for p in paths]
     if src.is_dir():
         depositados: list[str] = []
         for p in sorted(src.rglob("*")):
             if not p.is_file():
                 continue
-            rel = p.relative_to(src)
-            dest = manual_dir / rel
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(p, dest)
-            depositados.append(rel.as_posix())
+            rel = p.relative_to(src).as_posix()
+            intake_manual.save_file_en_lote(case_id, lote, rel, p.read_bytes())
+            depositados.append(rel)
         return depositados
     raise FileNotFoundError(f"--src no es carpeta ni .zip: {src}")
 
 
 def _intake_manual(ident, case_dir: Path, src_str: str, *, dry_run: bool) -> None:
     src = Path(src_str)
-    subdir = brain.FUENTE_A_SUBDIR["manual"]
     if dry_run:
         try:
             inv = _inventario_local(src)
         except FileNotFoundError as exc:
             typer.echo(f"[ERROR] {exc}", err=True)
             raise typer.Exit(code=1)
-        plan = brain.plan_intake(inv, intake_log.read_events(ident.case_id), "manual")
-        typer.echo(f"[dry-run] manual: {len(plan.depositables)} depositables (sin depositar)")
+        plan = brain.plan_intake(inv, intake_log.read_events(ident.case_id), "manual",
+                                 lote="<fecha>_manual_NN")
+        typer.echo(f"[dry-run] manual: {len(plan.depositables)} depositables, "
+                   "se depositaría en un lote nuevo <fecha>_manual_NN (sin ejecutar)")
         return
+    lote = intake_manual.abrir_lote_manual(ident.case_id, origen="abrir_caso_cli")
     try:
-        rels = _depositar_manual(ident.case_id, src)
+        rels = _depositar_manual(ident.case_id, src, lote)
     except FileNotFoundError as exc:
         typer.echo(f"[ERROR] {exc}", err=True)
         raise typer.Exit(code=1)
-    hashes = {
-        f"{subdir}/{rel}": file_sha256(case_dir / "00_Input" / subdir / rel)
-        for rel in rels
-    }
-    _intake_generico(case_dir, ident.case_id, "manual", hashes, dry_run=False)
+    hashes = {f"{lote.name}/{rel}": file_sha256(lote / rel) for rel in rels}
+    _intake_generico(case_dir, ident.case_id, "manual", hashes, base=lote.name, dry_run=False)
 
 
 def _intake_whatsapp(ident, src_str: str, rol: str, *, dry_run: bool) -> None:
@@ -186,12 +187,11 @@ def _intake_whatsapp(ident, src_str: str, rol: str, *, dry_run: bool) -> None:
 
 
 def _intake_email(ident, case_dir: Path, cuenta: str, label: str, *, dry_run: bool) -> None:
-    dest = case_dir / "00_Input" / brain.FUENTE_A_SUBDIR["email"]
     if dry_run:
         typer.echo(f"[dry-run] email: se exportaría la etiqueta {label!r} de {cuenta} "
-                   f"a {dest} (sin ejecutar)")
+                   "a un lote nuevo 00_Input/<fecha>_email_NN (sin ejecutar)")
         return
-    dest.mkdir(parents=True, exist_ok=True)
+    dest = email_export.email_dest_dir(ident.case_id)     # reserva el lote (T8)
     email_export.export_label(cuenta, label, dest, case_id=ident.case_id)
     typer.echo(f"Email: etiqueta {label!r} exportada a {dest}")
 

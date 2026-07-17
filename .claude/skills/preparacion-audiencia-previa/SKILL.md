@@ -66,7 +66,9 @@ Hace:
 
 - Lee la **documental procesal** del expediente: demanda, contestación, reconvención y/o alegación de
   nulidad, autos de admisión, providencia de señalamiento, y la documental de `00_Input/`
-  (encargo, exposé, report, chats, correos) y la transcripción de `06_Entrevistas/`.
+  (encargo, exposé, report, chats, correos — en su lote de entrega `<AAAA-MM-DD>_<fuente>_<NN>/`
+  o, en casos no migrados, su cajón legacy) y la transcripción de la fuente `entrevista`
+  (lote `entrevista` o cajón legacy `06_Entrevistas/`).
 - **Fija los hechos** no controvertidos y controvertidos contrastando demanda y contestación, anclando
   cada hecho a su fuente.
 - Redacta la **minuta** (guion de sala) y la **solicitud de prueba** (escrito procesal).
@@ -111,7 +113,8 @@ NO hace:
    dónde guardar). Lee partes, perspectiva, órgano y cuantía.
 1. **Lectura procesal y fijación de hechos** (source-locked). Demanda + contestación → tabla de no
    controvertidos y tabla de controvertidos con posición de cada parte y prueba. Lee la entrevista de
-   `06_Entrevistas/` para identificar la prueba testifical y los hechos a acreditar.
+   la fuente `entrevista` (lote `<AAAA-MM-DD>_entrevista_<NN>/` o cajón legacy `06_Entrevistas/`)
+   para identificar la prueba testifical y los hechos a acreditar.
 2. **Confirmación de hechos con el letrado.** Presenta los dos cuadros y la causa de pedir. Señala
    flancos (admisiones internas peligrosas, lagunas documentales). Espera su visto bueno.
 3. **Propuesta de prueba (por chat).** Presenta la prueba propuesta (documental, más documental,
@@ -200,8 +203,8 @@ Esta skill se auto-instrumenta para mejorar con el uso (mismo patrón que `prepa
   el aviso en [references/manifiesto_y_registro.md](references/manifiesto_y_registro.md).
 - **Fichero `.docx` abierto = Word lo bloquea.** Si el destino está abierto, guarda con sufijo `_v2` y
   avisa (no falles en silencio).
-- **No leas `90_Notas personales/`** nunca; no leas `06_Entrevistas/` si la entrevista aún no se ha
-  celebrado.
+- **No leas `90_Notas personales/`** nunca; no leas la fuente `entrevista` (lote ni cajón legacy
+  `06_Entrevistas/`) si la entrevista aún no se ha celebrado.
 
 ## Changelog
 

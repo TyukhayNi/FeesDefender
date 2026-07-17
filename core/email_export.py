@@ -42,7 +42,7 @@ from html import unescape
 from pathlib import Path
 from typing import Any, Iterable, Iterator
 
-from . import intake_log
+from . import config, intake_log
 from .gmail_source import _build_service, _load_credentials
 from .intake_drive import download_drive_media, get_drive_file_info
 from .intake_manifest import IntakeManifest, compute_sha256_bytes
@@ -869,6 +869,7 @@ class ExportReport:
     total_in_label: int = 0
     written: int = 0
     skipped: int = 0
+    duplicados: int = 0          # Message-ID ya conocido; SE ESCRIBE igual (§9.3), anotado
     attachments: int = 0
     nested_flattened: int = 0   # emails anidados extraídos a primer nivel
     nested_dedup: int = 0       # emails anidados saltados por Message-ID duplicado
@@ -882,6 +883,7 @@ class ExportReport:
     errors: list[str] = field(default_factory=list)
     link_entries: list[dict[str, Any]] = field(default_factory=list)  # traza por enlace
     drive_link_paths: set[str] = field(default_factory=set)           # rel paths source="drive_link"
+    duplicados_map: dict[str, str] = field(default_factory=dict)  # rel → primary_path (T8 manifiesto)
     intake_logged: bool = False
 
     def resumen(self) -> str:
@@ -894,6 +896,7 @@ class ExportReport:
         return (
             f"etiqueta {self.label!r} ({self.account}): {self.total_in_label} mensajes; "
             f"{self.written} escritos, {self.skipped} ya presentes, "
+            f"{self.duplicados} duplicados por Message-ID, "
             f"{self.attachments} adjuntos extraídos, "
             f"{self.nested_flattened} emails anidados aplanados ({self.nested_dedup} dup), "
             f"{enlaces}, {len(self.errors)} errores"
@@ -966,18 +969,49 @@ def export_label(
     report.total_in_label = len(msg_ids)
 
     # B — índice persistente: saltar la descarga de los gmail_id ya exportados.
-    index = _load_export_index(dest)
+    # El estado de canal (idempotencia) vive en la raíz de 00_Input/ (spec §8): así
+    # sobrevive al paso a lotes y un re-export no re-baja la etiqueta entera. Fallback
+    # legacy: si un caso no migrado aún lo tiene en el cajón 03_Email/, se fusiona (y
+    # se guarda ya en la raíz en adelante).
+    estado_dir = _dir_estado_canal(dest, case_id)
+    index = _load_export_index(estado_dir)
+    legacy_cajon = estado_dir / "03_Email"
+    if case_id and legacy_cajon.is_dir():
+        for acc, gids in _load_export_index(legacy_cajon).items():
+            index[acc] = sorted(set(index.get(acc, [])) | set(gids))
     ya_gids: set[str] = set() if force else set(index.get(account, []))
     candidates = [g for g in msg_ids if g not in ya_gids]
     report.skipped += len(msg_ids) - len(candidates)
 
     procedencia: dict[str, str] = {}
     if candidates:
-        # Dedup por Message-ID (correctness): solo si hay algo que bajar (evita el
-        # escaneo de disco en re-corridas que no descargan nada).
-        vistos = existing_message_ids(dest)
-        link_index = _load_resolved_links(dest)
+        # Dedup por Message-ID (M9, spec §6/§9.3): solo si hay algo que bajar (evita
+        # el escaneo/lectura en re-corridas que no descargan nada). Con caso, se
+        # siembra de lo ya registrado en el manifest ∪ lo del cajón legacy sin migrar
+        # (no cubierto por M9 todavía); sin caso (uso suelto), del escaneo del propio
+        # destino.
+        if case_id:
+            with IntakeManifest(case_id) as _m:
+                vistos = _m.message_ids()
+                m9_mid_a_primary = {
+                    e["message_id"]: e["primary_path"]
+                    for e in _m.data.values()
+                    if e.get("message_id") and e.get("primary_path")
+                }
+            vistos |= existing_message_ids(legacy_cajon)
+        else:
+            vistos = existing_message_ids(dest)
+            m9_mid_a_primary = {}
+        link_index = _load_resolved_links(estado_dir)
+        if case_id and not link_index:
+            link_index = _load_resolved_links(legacy_cajon)
         nuevos_gids: list[str] = []
+        # Dedup DENTRO de esta corrida (finding: dos gmail_id nuevos con el mismo
+        # Message-ID, ninguno aún en M9): mid → rel (bajo `dest`) del primero escrito
+        # esta corrida con ese mid. `dest.name` es siempre el lote/cajón (agnóstico de
+        # bandeja), así que f"{dest.name}/{rel}" es 00_Input-relativo — igual formato
+        # que `primary_path` de M9 (spec §9.3: duplicado_de siempre 00_Input-relativo).
+        mid_a_rel_run: dict[str, str] = {}
 
         def _flatten_safe(gid: str, raw: bytes) -> None:
             """Aplana los anidados sin que un fallo aborte la corrida (un email
@@ -1005,39 +1039,78 @@ def export_label(
             candidates, service=service, creds=creds, max_workers=max_workers, report=report
         ):
             mid = message_id_of(raw_bytes)
+            duplicado_de = None
             if mid and mid in vistos:
-                report.skipped += 1
-                nuevos_gids.append(gid)  # bajado y resuelto (duplicado): no re-bajar
-                # El padre ya está en disco, pero sus hijos anidados / enlaces pueden
-                # faltar (p. ej. tras borrar un hijo y re-exportar con force):
-                # reconciliarlos. Ambos pasos son idempotentes.
-                _flatten_safe(gid, raw_bytes)
-                _links_safe(gid, raw_bytes, mid)
-                continue
-            if mid:
+                # §9.3: Message-ID ya conocido → SE ESCRIBE igual (canal nuevo lo trae),
+                # y se anota para el manifiesto de lotes (T8). La idempotencia de canal
+                # (no re-descargar) sigue siendo el índice de gmail_id, no este chequeo.
+                # Cross-corrida: M9 ya tiene el original (snapshot tomado antes del bucle).
+                # Within-corrida: dos gmail_id nuevos con el mismo mid, ninguno aún en M9
+                # (finding de revisión) → el primero escrito esta corrida, vía
+                # ``mid_a_rel_run``.
+                report.duplicados += 1
+                duplicado_de = m9_mid_a_primary.get(mid)
+                if duplicado_de is None and mid in mid_a_rel_run:
+                    duplicado_de = f"{dest.name}/{mid_a_rel_run[mid]}"
+            elif mid:
                 vistos.add(mid)
             try:
                 eml_path = _escribe_mensaje(dest, raw_bytes, extract_attachments, report)
             except Exception as exc:  # noqa: BLE001 — un fallo no aborta la corrida
                 report.errors.append(f"{gid}: {exc}")
                 continue
-            report.files.append(str(eml_path.relative_to(dest)))
+            rel = str(eml_path.relative_to(dest)).replace("\\", "/")
+            if mid:
+                mid_a_rel_run.setdefault(mid, rel)
+            if duplicado_de:
+                report.duplicados_map[rel] = duplicado_de
+            report.files.append(rel)
             report.written += 1
             nuevos_gids.append(gid)
             _flatten_safe(gid, raw_bytes)
             _links_safe(gid, raw_bytes, mid)
 
         index[account] = sorted(ya_gids | set(nuevos_gids))
-        _save_export_index(dest, index)
-        _save_resolved_links(dest, link_index)
+        _save_export_index(estado_dir, index)
+        _save_resolved_links(estado_dir, link_index)
 
-    write_indices(dest)
+    from . import intake_lotes
 
-    if case_id:
+    es_lote = bool(case_id) and intake_lotes.PATRON_LOTE.match(dest.name) is not None
+    if es_lote:
+        contenido = [p for p in dest.rglob("*") if p.is_file()
+                     and p.name not in config.INTAKE_CONTROL_FILES
+                     and p.name != intake_lotes.MANIFIESTO_LOTE]
+        if not contenido:
+            _rmtree_vacio(dest)          # corrida sin novedad: no queda lote vacío
+        else:
+            mids: dict[str, str] = {}
+            for eml in dest.rglob("*.eml"):
+                mid = message_id_of(eml.read_bytes())
+                if mid:
+                    mids[str(eml.relative_to(dest)).replace("\\", "/")] = mid
+            items = intake_lotes.items_desde_disco(
+                dest, message_id_de=mids, duplicados=report.duplicados_map)
+            intake_lotes.escribir_manifiesto(
+                dest, fuente="email", fecha_intake=dest.name[:10],
+                origen="email_export", items=items)
+        write_indices_caso(case_id)
+    else:
+        write_indices(dest)
+
+    if case_id and dest.exists():
         _emit_traza(case_id, dest, account, label, report, procedencia)
         _emit_traza_enlaces(case_id, account, label, report)
 
     return report
+
+
+def _rmtree_vacio(dest: Path) -> None:
+    """Elimina un directorio de lote sin ficheros: subdirectorios vacíos + el dir."""
+    for sub in sorted((p for p in dest.rglob("*") if p.is_dir()),
+                      key=lambda p: len(p.parts), reverse=True):
+        sub.rmdir()
+    dest.rmdir()
 
 
 def _escribe_mensaje(
@@ -1068,6 +1141,19 @@ def _escribe_mensaje(
 # ---------------------------------------------------------------------------
 
 _EXPORT_INDEX_NAME = "_exported_ids.json"
+
+
+def _dir_estado_canal(dest: Path, case_id: str | None) -> Path:
+    """Hogar de ``_exported_ids.json``/``_resolved_links.json`` (estado de canal).
+
+    Con caso: la raíz de ``00_Input/`` (ficheros de protocolo, spec §8) — así el
+    índice sobrevive al paso a lotes y un re-export no re-baja la etiqueta entera.
+    Sin caso (uso suelto): el propio ``dest``, como hasta ahora.
+    """
+    if not case_id:
+        return dest
+    from .casos.case_locator import path_for, resolve_ref
+    return path_for(resolve_ref(case_id)) / "00_Input"
 
 
 def _load_export_index(dest: Path) -> dict[str, list[str]]:
@@ -1273,11 +1359,7 @@ def _escribe_utf8(path: Path, texto: str) -> None:
     path.write_text(texto, encoding="utf-8")
 
 
-def write_indices(dest_dir: Path | str) -> None:
-    """Regenera ``INDICE.md`` y ``CRONOLOGIA.md`` desde los ``.eml`` de ``dest_dir``."""
-    dest = Path(dest_dir)
-    entradas = _recolecta_entradas(dest)
-
+def _escribe_indices_en(out_dir: Path, entradas: list[_Entrada]) -> None:
     cab = (
         "<!-- Generado por core.email_export — NO editar a mano. -->\n"
         f"# Correos exportados — {len(entradas)} mensajes\n\n"
@@ -1285,7 +1367,7 @@ def write_indices(dest_dir: Path | str) -> None:
     filas = ["| Fecha | Asunto | De | Fichero |", "| --- | --- | --- | --- |"]
     for e in entradas:
         filas.append(f"| {e.fecha} | {e.asunto} | {e.de} | `{e.ruta}` |")
-    _escribe_utf8(dest / "INDICE.md", cab + "\n".join(filas) + "\n")
+    _escribe_utf8(out_dir / "INDICE.md", cab + "\n".join(filas) + "\n")
 
     crono = [
         "<!-- Generado por core.email_export — NO editar a mano. -->",
@@ -1295,19 +1377,55 @@ def write_indices(dest_dir: Path | str) -> None:
     for e in entradas:
         asunto = e.asunto or "(sin asunto)"
         crono.append(f"- **{e.fecha}** — {asunto} — {e.de} (`{e.ruta}`)")
-    _escribe_utf8(dest / "CRONOLOGIA.md", "\n".join(crono) + "\n")
+    _escribe_utf8(out_dir / "CRONOLOGIA.md", "\n".join(crono) + "\n")
+
+
+def write_indices(dest_dir: Path | str) -> None:
+    """Regenera ``INDICE.md`` y ``CRONOLOGIA.md`` desde los ``.eml`` de ``dest_dir``
+    (uso suelto: sin ``case_id``, o tests puros)."""
+    dest = Path(dest_dir)
+    _escribe_indices_en(dest, _recolecta_entradas(dest))
+
+
+def write_indices_caso(case_id: str) -> None:
+    """Índices CROSS-LOTE del caso en ``01_Procesado/Emails/`` (spec §8).
+
+    Recorre los lotes ``email`` de ``00_Input/`` + el cajón legacy ``03_Email``;
+    las rutas llevan el prefijo del lote/cajón. Son artefactos derivados, no crudo.
+    """
+    import dataclasses
+
+    from . import intake_lotes
+    from .casos.case_locator import path_for, resolve_ref
+
+    case_dir = path_for(resolve_ref(case_id))
+    input_dir = case_dir / "00_Input"
+    bases: list[Path] = []
+    if input_dir.is_dir():
+        bases = [d for d in input_dir.iterdir() if d.is_dir()
+                 and (m := intake_lotes.PATRON_LOTE.match(d.name))
+                 and m.group(2) == "email"]
+    legacy = input_dir / "03_Email"
+    if legacy.is_dir():
+        bases.append(legacy)
+    entradas: list[_Entrada] = []
+    for base in bases:
+        entradas += [dataclasses.replace(e, ruta=f"{base.name}/{e.ruta}")
+                     for e in _recolecta_entradas(base)]
+    entradas.sort(key=lambda e: (e.fecha, e.ruta))
+    out = case_dir / "01_Procesado" / "Emails"
+    out.mkdir(parents=True, exist_ok=True)
+    _escribe_indices_en(out, entradas)
 
 
 def email_dest_dir(case_id: str) -> Path:
-    """Carpeta de destino de escritura de los correos de un caso: ``00_Input/03_Email``.
+    """Destino de escritura del export: un LOTE email nuevo por corrida (spec §8).
 
-    Resuelve ``case_id`` (acepta case_id canónico o W-code ``id_go``) al nombre de
-    carpeta real. Aplica el guard de escritura (DISEÑO_V2 §6): si el caso está
-    prestado/conflicto devuelve la ruta dentro de ``_pendiente_checkin/email/…``
-    (con evento); si está disponible, la ruta normal. Es el punto de destino de
-    escritura del export — no un resolver de lectura.
+    Reserva ``00_Input/<AAAA-MM-DD>_email_<NN>/`` (guard §6 incluido: caso
+    prestado → el lote nace en la bandeja). ``export_label`` elimina el lote si
+    la corrida no escribe nada.
     """
-    from .case_manager import dir_intake
     from .casos.case_locator import resolve_ref
+    from .intake_lotes import reservar_lote
 
-    return dir_intake(resolve_ref(case_id), "00_Input/03_Email", "email")
+    return reservar_lote(resolve_ref(case_id), "email", "email")

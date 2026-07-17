@@ -1,4 +1,5 @@
 import hashlib
+import re
 from pathlib import Path
 
 import pytest
@@ -288,6 +289,14 @@ def _crear_carpeta_manual(tmp_path):
     return src
 
 
+def _lotes_manual(case_dir: Path) -> list[Path]:
+    """Subcarpetas de lote manual (`<AAAA-MM-DD>_manual_NN`) bajo 00_Input/."""
+    input_dir = case_dir / "00_Input"
+    if not input_dir.is_dir():
+        return []
+    return sorted(p for p in input_dir.iterdir() if p.is_dir() and "_manual_" in p.name)
+
+
 def test_cli_manual_carpeta_deposita_y_loguea(drive_temporal, tmp_path):
     src = _crear_carpeta_manual(tmp_path)
     result = CliRunner().invoke(cli.app, _args_min(fuente="manual", src=str(src)) + ["--crm", "skip"])
@@ -295,13 +304,16 @@ def test_cli_manual_carpeta_deposita_y_loguea(drive_temporal, tmp_path):
 
     case_id = "BaRS11 - Passeig Marítim 30 (W-02Z2NR) - Vuelta"
     case_dir = case_locator.path_for(case_id)
-    assert (case_dir / "00_Input" / "04_Manual" / "escrito.pdf").is_file()
-    assert (case_dir / "00_Input" / "04_Manual" / "sub" / "anexo.pdf").is_file()
+    lotes = _lotes_manual(case_dir)
+    assert len(lotes) == 1
+    assert (lotes[0] / "escrito.pdf").is_file()
+    assert (lotes[0] / "sub" / "anexo.pdf").is_file()
 
     eventos = intake_log.read_events(case_id)
     manuales = [e for e in eventos if e["event"] == "upload_manual"]
     assert manuales and len(manuales[-1]["details"]["files"]) == 2
     assert all(f["sha256"] for f in manuales[-1]["details"]["files"])
+    assert all(f["path"].startswith(f"{lotes[0].name}/") for f in manuales[-1]["details"]["files"])
 
 
 def test_cli_manual_zip_deposita(drive_temporal, tmp_path):
@@ -312,7 +324,9 @@ def test_cli_manual_zip_deposita(drive_temporal, tmp_path):
     result = CliRunner().invoke(cli.app, _args_min(fuente="manual", src=str(z)) + ["--crm", "skip"])
     assert result.exit_code == 0, result.output
     case_dir = case_locator.path_for("BaRS11 - Passeig Marítim 30 (W-02Z2NR) - Vuelta")
-    assert (case_dir / "00_Input" / "04_Manual" / "carpeta" / "doc.pdf").is_file()
+    lotes = _lotes_manual(case_dir)
+    assert len(lotes) == 1
+    assert (lotes[0] / "carpeta" / "doc.pdf").is_file()
 
 
 def test_cli_manual_dry_run_no_deposita(drive_temporal, tmp_path):
@@ -321,7 +335,8 @@ def test_cli_manual_dry_run_no_deposita(drive_temporal, tmp_path):
         cli.app, _args_min(fuente="manual", src=str(src)) + ["--dry-run"])
     assert result.exit_code == 0, result.output
     case_dir = case_locator.path_for("BaRS11 - Passeig Marítim 30 (W-02Z2NR) - Vuelta")
-    assert not (case_dir / "00_Input" / "04_Manual" / "escrito.pdf").exists()
+    # dry-run no reserva lote (ni siquiera esqueleto 00_Input/ para esta fuente)
+    assert _lotes_manual(case_dir) == []
 
 
 def test_cli_manual_reentrante_dedup(drive_temporal, tmp_path):
@@ -427,7 +442,8 @@ def test_cli_email_delega_en_export_label(drive_temporal, monkeypatch):
     assert llamadas["account"] == "mails@x.example"
     assert llamadas["label"] == "Caso W"
     assert llamadas["case_id"] == case_id
-    assert llamadas["dest"].replace("\\", "/").endswith("00_Input/03_Email")
+    dest_posix = llamadas["dest"].replace("\\", "/")
+    assert re.search(r"/00_Input/\d{4}-\d{2}-\d{2}_email_\d{2}$", dest_posix), dest_posix
     # el orquestador NO emite un segundo evento (lo hace export_label, aquí mockeado)
     eventos = intake_log.read_events(case_id)
     assert [e for e in eventos if e["event"] == "upload_email"] == []

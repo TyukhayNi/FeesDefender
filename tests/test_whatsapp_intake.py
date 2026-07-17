@@ -82,8 +82,6 @@ def test_analyze_sin_chat_txt_falla():
 # ---------------------------------------------------------------------------
 from datetime import datetime
 
-from core.config import caso_path
-
 
 class TestDepositExport:
     def _ensure_case(self):
@@ -92,7 +90,7 @@ class TestDepositExport:
         return "WA-2026-001"
 
     def test_deposita_verbatim_y_conserva_zip(self):
-        from core import whatsapp_intake
+        from core import intake_lotes, whatsapp_intake
 
         importlib.reload(whatsapp_intake)
         case_id = self._ensure_case()
@@ -103,17 +101,14 @@ class TestDepositExport:
         )
 
         assert res.skipped_dedup is False
-        chat_dir = (
-            caso_path(case_id)
-            / "00_Input"
-            / "02_Whatsapp"
-            / "02_Grupo operacion"
-            / "Grupo Valldaura"
-        )
-        assert res.chat_dir == chat_dir
-        assert (chat_dir / "_chat.txt").read_bytes() == _CHAT_TXT
-        assert (chat_dir / "IMG-1.jpg").read_bytes() == b"jpgdata"
-        assert (chat_dir / "_export_original.zip").exists()
+        # chat_dir = <lote>/<rol>/<chat> — el lote conserva la subcarpeta de rol
+        # (verbatim §4).
+        lote_dir = res.chat_dir.parent.parent
+        assert intake_lotes.PATRON_LOTE.match(lote_dir.name).group(2) == "whatsapp"
+        assert res.chat_dir == lote_dir / "02_Grupo operacion" / "Grupo Valldaura"
+        assert (res.chat_dir / "_chat.txt").read_bytes() == _CHAT_TXT
+        assert (res.chat_dir / "IMG-1.jpg").read_bytes() == b"jpgdata"
+        assert (res.chat_dir / "_export_original.zip").exists()
 
     def test_rol_invalido_falla(self):
         from core import whatsapp_intake
@@ -190,3 +185,79 @@ class TestDepositExport:
         )
         assert second.skipped_dedup is True
         assert second.files_written == []
+
+
+# ---------------------------------------------------------------------------
+# deposit_export → lote (MEJORAS #54, T5)
+# ---------------------------------------------------------------------------
+
+def test_deposit_crea_lote_con_manifiesto(tmp_casos_root):
+    from core import intake_lotes, whatsapp_intake
+    case_id = "EV-WA-LOTE"
+    case_manager.ensure_case(case_id, titulo="wa")
+    content = _make_zip({"_chat.txt": _CHAT_TXT, "IMG-001.jpg": b"img"})
+    res = whatsapp_intake.deposit_export(case_id, "03_Otros", content, zip_name="chat.zip")
+    # chat_dir = <lote>/<rol>/<chat> — el lote conserva la subcarpeta de rol (verbatim §4)
+    lote_dir = res.chat_dir.parent.parent
+    assert intake_lotes.PATRON_LOTE.match(lote_dir.name).group(2) == "whatsapp"
+    assert res.chat_dir.parent.name == "03_Otros"
+    man = intake_lotes.leer_manifiesto(lote_dir)
+    assert man["fuente"] == "whatsapp"
+    rels = {i["relpath"] for i in man["items"]}
+    assert "03_Otros/chat/_chat.txt" in rels
+    assert "03_Otros/chat/_export_original.zip" in rels   # sí entra (spec §5)
+
+
+def test_duplicado_cross_lote_se_copia_y_anota(tmp_casos_root):
+    from core import intake_lotes, whatsapp_intake
+    from core.intake_manifest import IntakeManifest, compute_sha256_bytes
+    case_id = "EV-WA-DUP"
+    case_manager.ensure_case(case_id, titulo="wa")
+    # La misma imagen ya entró por un lote manual anterior (registrada en M9).
+    with IntakeManifest(case_id) as m:
+        m.register(compute_sha256_bytes(b"img"),
+                   "2026-06-10_manual_01/IMG-001.jpg", source="manual")
+    content = _make_zip({"_chat.txt": _CHAT_TXT, "IMG-001.jpg": b"img"})
+    res = whatsapp_intake.deposit_export(case_id, "03_Otros", content, zip_name="chat.zip")
+    assert not res.skipped_dedup
+    assert (res.chat_dir / "IMG-001.jpg").exists()        # SE COPIA igualmente (§6)
+    man = intake_lotes.leer_manifiesto(res.chat_dir.parent.parent)
+    item = next(i for i in man["items"] if i["relpath"].endswith("IMG-001.jpg"))
+    assert item["duplicado_de"] == "2026-06-10_manual_01/IMG-001.jpg"
+
+
+def test_zip_identico_sigue_dedup_de_canal_sin_lote_nuevo(tmp_casos_root):
+    from core import config, whatsapp_intake
+    case_id = "EV-WA-IDEM"
+    case_manager.ensure_case(case_id, titulo="wa")
+    content = _make_zip({"_chat.txt": _CHAT_TXT})
+    r1 = whatsapp_intake.deposit_export(case_id, "03_Otros", content, zip_name="chat.zip")
+    r2 = whatsapp_intake.deposit_export(case_id, "03_Otros", content, zip_name="chat.zip")
+    assert r2.skipped_dedup and r2.chat_dir == r1.chat_dir
+    input_dir = config.caso_path(case_id) / "00_Input"
+    lotes = [d for d in input_dir.iterdir() if "_whatsapp_" in d.name]
+    assert len(lotes) == 1                                # no se abrió un segundo lote
+
+
+def test_zip_identico_prestado_chat_dir_apunta_a_bandeja_real(tmp_casos_root):
+    """El skip de dedup de canal, con el caso prestado, devuelve la carpeta
+    que EXISTE realmente en disco (bandeja ``_pendiente_checkin``), no la
+    ruta del árbol vivo (que nunca se creó). Regresión del hallazgo de
+    revisión de T5: ``primary_path`` de M9 es bandeja-agnóstico."""
+    from core import config, whatsapp_intake
+    case_id = "EV-WA-IDEM-PRESTADO"
+    case_manager.ensure_case(case_id, titulo="wa")
+    case_manager.escribir_lock(
+        case_id, user="Nikolai Tyukhay", timestamp="2026-07-07T09:45:12Z", nonce="n"
+    )
+
+    content = _make_zip({"_chat.txt": _CHAT_TXT})
+    r1 = whatsapp_intake.deposit_export(case_id, "03_Otros", content, zip_name="chat.zip")
+    assert not r1.skipped_dedup
+    assert config.PENDIENTE_CHECKIN_SUBDIR in r1.chat_dir.parts
+
+    r2 = whatsapp_intake.deposit_export(case_id, "03_Otros", content, zip_name="chat.zip")
+    assert r2.skipped_dedup is True
+    assert r2.chat_dir.exists()
+    assert "_pendiente_checkin/whatsapp/" in r2.chat_dir.as_posix()
+    assert r2.chat_dir == r1.chat_dir

@@ -6,15 +6,19 @@ El LLM NO escribe YAML: lo escribe este helper.
 """
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
 import yaml
 
-# Mapeo fuente: prefijo de ruta en 00_Input → etiqueta de fuente del catálogo.
+# Duplica (self-contained, sin `core/`) el contrato único core.intake_lotes.fuente_de
+# (spec §8, MEJORAS #54 T11). El test anti-drift `test_fuente_skill_sin_drift_con_core`
+# compara `_fuente` contra `fuente_de` — mantener ambos en sincronía a mano.
+_PATRON_LOTE = re.compile(r"^(\d{4}-\d{2}-\d{2})_(whatsapp|email|manual|entrevista)_(\d{2,})$")
 _SOURCE_MAP = {
     "01_Drive EV": "drive_ev", "02_Whatsapp": "whatsapp", "03_Email": "email",
-    "04_Manual": "manual", "05_CRM": "crm", "06_Entrevistas": "entrevistas",
+    "04_Manual": "manual", "05_CRM": "crm", "06_Entrevistas": "entrevista",
 }
 # Columnas del _MANIFIESTO.md (orden fijo).
 _COLS = ["sha256", "ruta_original", "nombre_canonico", "tipo", "fecha", "parte", "parent_id"]
@@ -26,7 +30,13 @@ CAMPOS_EMITIDOS = [
 
 
 def _fuente(ruta_rel: str) -> str:
-    top = ruta_rel.replace("\\", "/").split("/", 1)[0]
+    partes = ruta_rel.replace("\\", "/").lstrip("/").split("/")
+    if len(partes) < 2:
+        return "manual"
+    top = partes[0]
+    m = _PATRON_LOTE.match(top)
+    if m:
+        return m.group(2)
     return _SOURCE_MAP.get(top, "manual")
 
 

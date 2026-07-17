@@ -574,7 +574,8 @@ with tab_casos:
                 help=(
                     "Sube la demanda y demás documentos judiciales "
                     "(autos, notificaciones, diligencias…). "
-                    "Se guardan en `00_Input/04_Manual/`. "
+                    "Cada clic en «Guardar documentos» abre un lote nuevo en "
+                    "`00_Input/`. "
                     "Los archivos **ZIP se descomprimen automáticamente** manteniendo "
                     "la estructura de carpetas interna."
                 ),
@@ -586,20 +587,25 @@ with tab_casos:
                 disabled=not _uploaded_dem,
                 help="Guarda los archivos seleccionados. Los ZIP se descomprimen automáticamente.",
             ):
+                _lote_dem = intake_manual.abrir_lote_manual(_caso_dem)
                 _saved_dem = 0
                 _errors_dem: list[str] = []
                 for _uf in _uploaded_dem:
                     try:
                         _raw = _uf.read()
                         if _uf.name.lower().endswith(".zip"):
-                            _extracted = intake_manual.extract_zip(_caso_dem, _raw)
+                            _extracted = intake_manual.extract_zip(
+                                _caso_dem, _raw, lote=_lote_dem
+                            )
                             _saved_dem += len(_extracted)
                             st.success(
                                 f"✅ **{_uf.name}** descomprimido — "
                                 f"**{len(_extracted)}** archivo/s extraídos."
                             )
                         else:
-                            intake_manual.save_file(_caso_dem, _uf.name, _raw)
+                            intake_manual.save_file(
+                                _caso_dem, _uf.name, _raw, lote=_lote_dem
+                            )
                             _saved_dem += 1
                     except _zipfile.BadZipFile:
                         _errors_dem.append(
@@ -612,7 +618,7 @@ with tab_casos:
                     # Mensaje global solo si no hay ZIPs (los ZIPs ya muestran su propio mensaje)
                     st.success(
                         f"✅ **{_saved_dem}** archivo/s guardados "
-                        f"en `04_Manual/`."
+                        f"en `{_lote_dem.name}/`."
                     )
                 for _err_dem in _errors_dem:
                     st.error(f"❌ {_err_dem}")

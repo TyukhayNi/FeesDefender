@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from core.email_export import split_eml
+from core.intake_lotes import PATRON_LOTE
 from core.intake_manifest import compute_sha256_bytes
 
 from . import attachments as A
@@ -58,11 +59,18 @@ def _idioma(texto: str) -> str:
     return max((("ca", ca), ("en", en), ("es", es)), key=lambda x: x[1])[0]
 
 
-def atomize_dir(src_dir: Path | str, out_dir: Path | str, *, case_dir: Path | str | None = None) -> AtomizeReport:
+def atomize_dir(
+    src_dir: Path | str | list[Path | str] | tuple[Path | str, ...],
+    out_dir: Path | str,
+    *, case_dir: Path | str | None = None,
+) -> AtomizeReport:
     """Atomiza todos los .eml de *src_dir* y escribe los artefactos en *out_dir*.
 
     Args:
-        src_dir: directorio con los .eml de entrada.
+        src_dir: directorio con los .eml de entrada, o una secuencia de directorios
+            (lotes ``email`` de ``00_Input/`` + cajón legacy ``03_Email`` — spec §8).
+            Los avistamientos de todas las fuentes se concatenan; ``colapsar``
+            (por Message-ID) hace la deduplicación entre fuentes.
         out_dir: directorio de salida (se crea si no existe).
         case_dir: raíz del caso donde se busca ``identidades.yaml``/``vistas.yaml``.
             Por defecto ``out.parent.parent`` (layout estándar
@@ -70,7 +78,8 @@ def atomize_dir(src_dir: Path | str, out_dir: Path | str, *, case_dir: Path | st
             no cuelgue de ``01_Procesado/Emails``, pasar *case_dir* explícitamente;
             si no se encuentra el YAML, el comportamiento es genérico (sets vacíos).
     """
-    src = Path(src_dir)
+    srcs = [Path(s) for s in src_dir] if isinstance(src_dir, (list, tuple)) \
+        else [Path(src_dir)]
     out = Path(out_dir)
     if case_dir is None:
         case_dir = out.parent.parent          # <caso>/01_Procesado/Emails → <caso>
@@ -80,7 +89,7 @@ def atomize_dir(src_dir: Path | str, out_dir: Path | str, *, case_dir: Path | st
     report = AtomizeReport()
 
     reg = IDS.load_registro(out)
-    avistamientos = list(E.iter_avistamientos(src))
+    avistamientos = [a for s in srcs for a in E.iter_avistamientos(s)]
     colapsados = D.colapsar(avistamientos)
 
     # adjuntos: contar apariciones (para filtro decorativo) sobre los raws canónicos
@@ -262,9 +271,20 @@ def _escribe_adjunto(out: Path, att: AdjuntoUnico) -> None:
     (out / "adjuntos" / f"{base}{ficha_suffix}").write_text(ficha, encoding="utf-8")
 
 
-def emails_src_dir(case_id: str) -> Path:
+def emails_src_dirs(case_id: str) -> list[Path]:
+    """Fuentes de .eml del caso: lotes email de 00_Input/ + cajón legacy 03_Email."""
     from core.casos.case_locator import path_for, resolve_ref
-    return path_for(resolve_ref(case_id)) / "00_Input" / "03_Email"
+    input_dir = path_for(resolve_ref(case_id)) / "00_Input"
+    bases: list[Path] = []
+    if input_dir.is_dir():
+        bases = sorted(
+            (d for d in input_dir.iterdir() if d.is_dir()
+             and (m := PATRON_LOTE.match(d.name)) and m.group(2) == "email"),
+            key=lambda d: d.name)
+    legacy = input_dir / "03_Email"
+    if legacy.is_dir():
+        bases.append(legacy)
+    return bases
 
 
 def emails_out_dir(case_id: str) -> Path:
@@ -273,7 +293,7 @@ def emails_out_dir(case_id: str) -> Path:
 
 
 def atomize_case(case_id: str) -> AtomizeReport:
-    return atomize_dir(emails_src_dir(case_id), emails_out_dir(case_id))
+    return atomize_dir(emails_src_dirs(case_id), emails_out_dir(case_id))
 
 
 def sellar_entrega(out_dir: Path | str, descr: str) -> Path:

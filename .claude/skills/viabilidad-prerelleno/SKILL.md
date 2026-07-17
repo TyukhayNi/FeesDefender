@@ -33,7 +33,7 @@ Hace, en esta fase (**1ª pasada, documental**):
 - No valora la **VIABILIDAD** (JURÍDICO/FINANZAS): se dejan SIEMPRE en blanco.
 - No escribe el **recuadro ejecutivo** para el CFO (`B48`).
 - No rellena las **NOTAS LETRADO**.
-- No lee `06_Entrevistas/` en esta 1ª pasada (aún no hay entrevista), ni **nunca** `90_Notas personales/`.
+- No lee la fuente `entrevista` (lotes ni cajón legacy `06_Entrevistas/`) en esta 1ª pasada (aún no hay entrevista), ni **nunca** `90_Notas personales/`.
 
 > La **2ª pasada** (leer la transcripción de la entrevista y cerrar huecos testificales) está prevista pero **no se construye todavía** en esta versión.
 
@@ -46,7 +46,7 @@ Hace, en esta fase (**1ª pasada, documental**):
    - **Hitos de existencia documental** — la pregunta ES "¿existe este documento concreto?" (`ENCARGO`, `IDENT_PROPIETARIO`, `TITULARIDAD`, `HOJA_VISITA`, `OFERTA`, `IDENT_BUSCADOR`, `ARRAS/ARRENDAMIENTO` en su vertiente firmadas, `RECON_HON_ARRAS`, `RECON_HON_ESCRITURA`, `ESCRITURA` — marcados en `hitos_derivacion.md`). Si tras revisar **todo** `00_Input` (crudo o MD, regla 8) no aparece ese documento **ni ninguna referencia a su existencia** (email, CRM, WhatsApp) → **`0`**, no pendiente. La ausencia no es una laguna aquí: es la respuesta — el hito pregunta literalmente por algo que, de existir, estaría en el expediente.
    - **El resto** (hitos/preguntas que dependen de un hecho no necesariamente documentado: comunicaciones verbales, gestiones en curso como el envío de un burofax por un canal aún no subido, decisiones internas) — aquí la ausencia de documento no prueba que el hecho no ocurrió → sigue aplicando `pendiente` (vacío).
 5. **Terminología**: **propietario** (ofrece el bien; nunca "vendedor") / **buscador** (busca; nunca "comprador" ni "arrendatario"). Aplica **también al texto libre que tú redactas** (MOTIVOS DE IMPAGO, AVISOS, resúmenes): si un documento dice "comprador/vendedor/arrendatario", **normalízalo** a buscador/propietario al transcribir la postura. La cita literal en `CITA/FUENTE` (col J) puede conservar el término original entre comillas, pero el campo que redactas no.
-6. **No leer** `06_Entrevistas/` (1ª pasada) ni nunca `90_Notas personales/`. El **NIG no se usa**.
+6. **No leer** la fuente `entrevista` (lotes ni cajón legacy `06_Entrevistas/`) en esta 1ª pasada, ni nunca `90_Notas personales/`. El **NIG no se usa**.
 7. Trabaja sobre documentos **no anonimizados** (necesita nombres, fechas e importes reales). El rastro fuente+cita vale además como traza RGPD.
 8. **Vía de lectura por documento (rápida pero rigurosa):**
    1. Si existe `01_Procesado/02_Sala de máquina/03_MD/<slug>.md` para ese fichero **y** su estado en `_cobertura.md` es `ok` → léelo desde ahí. Ya está extraído y su calidad ya fue verificada (densidad de texto, sin gibberish); releer el binario crudo sería releer lo mismo por una vía más lenta.
@@ -57,7 +57,16 @@ Hace, en esta fase (**1ª pasada, documental**):
 ## Flujo de trabajo
 
 ### 1. Localiza el expediente y lee `00_Input/`
-Subcarpetas: `01_Drive EV`, `02_Whatsapp`, `03_Email`, `04_Manual`, `05_CRM`. Whatsapp/Email se subdividen por consultor (`00_Consultor propietario`, `01_Consultor buscador`, `02_Grupo/Dirección`, `03_Otros`). Lee todo lo que haya. No leas `06_Entrevistas/` ni `90_Notas personales/`. Para la vía de lectura de cada documento (MD vs crudo), aplica la regla de oro 8.
+`00_Input/` tiene dos formas de canal: **lotes de entrega** `<AAAA-MM-DD>_<fuente>_<NN>/`
+(fuentes `whatsapp`, `email`, `manual`, `entrevista`; cada lote lleva `_manifiesto.yaml`
+con `tipo_contenido` por ítem) y **cajones espejo** fijos `01_Drive EV/` y `05_CRM/` (sync
+incremental). Los casos antiguos no migrados conservan los cajones `02_Whatsapp/`,
+`03_Email/`, `04_Manual/`: lee AMBAS formas. Whatsapp/Email se subdividen por consultor
+(`00_Consultor propietario`, `01_Consultor buscador`, `02_Grupo/Dirección`, `03_Otros`) tanto
+dentro de un lote como del cajón legacy. Lee todo lo que haya. No leas la fuente
+`entrevista` (lotes `<AAAA-MM-DD>_entrevista_<NN>/` o cajón legacy `06_Entrevistas/`) ni
+`90_Notas personales/`. Para la vía de lectura de cada documento (MD vs crudo), aplica la
+regla de oro 8.
 
 ### 2. Determina el tipo de caso
 Del nombre de la carpeta / informe existente / tag CRM. Las claves canónicas son las de `core/config.py` (`TIPOS_CASO_ACTORA` / `TIPOS_CASO_DEFENSIVA`). Actores: `BAD_DEBT`, `NEGATIVA_OFERTA`, `NEGATIVA_ARRAS`, `NEGATIVA_ESCRITURA`, `NEGATIVA_CONTRATO_ARRENDAMIENTO`, `VUELTA`, `INCUMPLIMIENTO_EXCLUSIVA`. Defensivos: `RESPONSABILIDAD_PROFESIONAL`, `DEVOLUCION_RESERVA`, `LAU_20`, `DEVOLUCION_HONORARIOS`. Comodín: `OTROS`.

@@ -98,6 +98,29 @@ def test_plan_intake_fuente_desconocida():
         abrir_caso.plan_intake([], [], "inexistente")
 
 
+def test_plan_intake_fuente_de_lote_exige_lote():
+    with pytest.raises(ValueError):
+        abrir_caso.plan_intake([], [], "manual")           # sin lote → error
+
+
+def test_plan_intake_lote_compone_dst():
+    inv = [{"relpath": "a.pdf", "sha256": "s1", "size": 3}]
+    plan = abrir_caso.plan_intake(inv, [], "manual", lote="2026-07-17_manual_01")
+    assert plan.items[0].dst == "2026-07-17_manual_01/a.pdf"
+    assert plan.categorias == ("2026-07-17_manual_01",)
+
+
+def test_plan_intake_drive_ev_sigue_en_cajon_espejo():
+    inv = [{"relpath": "w/doc.pdf", "sha256": "s1", "size": 3}]
+    plan = abrir_caso.plan_intake(inv, [], "drive_ev")
+    assert plan.items[0].dst == "01_Drive EV/w/doc.pdf"
+
+
+def test_fuente_a_subdir_eliminado():
+    assert not hasattr(abrir_caso, "FUENTE_A_SUBDIR")
+    assert abrir_caso.FUENTES == ("drive_ev", "whatsapp", "email", "manual", "entrevista")
+
+
 def _plan_una(dst="01_Drive EV/ACTIVACION/hoja.pdf", sha="aaa"):
     item = abrir_caso.ItemIntake(relpath="ACTIVACION/hoja.pdf", dst=dst, evento="pull_drive_ev",
                                  sha256=sha, size=100, dup=False, zero=False)

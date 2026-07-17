@@ -3,8 +3,9 @@ name: exportar-correos-etiqueta
 description: >-
   Exporta TODOS los mensajes de una etiqueta Gmail de un caso a su expediente como
   .eml fieles (cualquier tamaño) + adjuntos extraídos, organizados cronológicamente
-  con la nomenclatura del despacho (AAAA-MM-DD_descripcion) en 00_Input/03_Email/.
-  Corre el motor local (core.email_export / scripts.export_label_emails), que
+  con la nomenclatura del despacho (AAAA-MM-DD_descripcion) en un lote de entrega
+  nuevo 00_Input/<AAAA-MM-DD>_email_<NN>/ por corrida, con índices cross-lote en
+  01_Procesado/Emails/. Corre el motor local (core.email_export / scripts.export_label_emails), que
   reutiliza el OAuth de gmail_source (tokens ~/.gmail-mcp/) — se ejecuta en el PC,
   no en Cowork. Úsala cuando el usuario diga "exporta los correos de la etiqueta X",
   "baja la etiqueta del caso W-XXXXX a su expediente", "vuelca todos los emails de
@@ -47,16 +48,22 @@ Falsos amigos (NO activar):
 
 ## Qué produce
 
-En `…/<EXPEDIENTE>/00_Input/03_Email/` (resuelto desde la ref del caso; la `ref`
-acepta el case_id canónico o el **W-code** `id_go`, que se resuelve al nombre de
-carpeta real):
+El motor escribe en un **lote de entrega nuevo por corrida**,
+`…/<EXPEDIENTE>/00_Input/<AAAA-MM-DD>_email_<NN>/` (`NN` siguiente al mayor lote
+`email` ya existente ese día; resuelto desde la ref del caso — la `ref` acepta el
+case_id canónico o el **W-code** `id_go`, que se resuelve al nombre de carpeta real):
 - Un `.eml` fiel por mensaje, nombre `AAAA-MM-DD_descripcion.eml`, **plano** en la
-  raíz (el `.eml` ya contiene sus adjuntos embebidos).
+  raíz del lote (el `.eml` ya contiene sus adjuntos embebidos).
 - Opcional (`--extraer-adjuntos` / checkbox): los mensajes con adjuntos van en
   **subcarpeta fechada** `AAAA-MM-DD_descripcion/` con el `.eml` + los adjuntos
   extraídos (PDF/imágenes) como ficheros reales.
-- `INDICE.md` y `CRONOLOGIA.md` del conjunto.
-- **Idempotente:** re-ejecutar no duplica (dedup por `Message-ID`).
+- `_manifiesto.yaml` del lote (`fuente: email`, `tipo_contenido` por ítem). Si la
+  corrida no escribe nada nuevo, el lote se borra (no queda vacío).
+- **`INDICE.md` y `CRONOLOGIA.md` CROSS-LOTE** en `01_Procesado/Emails/`: recorren
+  TODOS los lotes `email` de `00_Input/` más el cajón legacy `03_Email/` (casos
+  antiguos no migrados), con el prefijo de lote/cajón en cada ruta. Se regeneran
+  enteros en cada corrida (artefacto derivado, no crudo).
+- **Idempotente:** re-ejecutar no duplica (dedup por `Message-ID`, cross-lote).
 - **Traza forense:** registra el SHA-256 de cada `.eml` en el `IntakeManifest` y
   emite el evento `upload_email` en `_intake_log.jsonl` (mapeo Message-ID→sha→ruta).
 
@@ -67,9 +74,11 @@ carpeta real):
    caso (`W-XXXXX`).
 2. Ejecuta el CLI en local (Claude Code / PowerShell):
    `python -m scripts.export_label_emails --ref W-XXXXX --account <cuenta> --label "<ruta/etiqueta>"`
-   El destino se resuelve con `core.casos.case_locator.path_for(ref)` → `00_Input/03_Email/`.
+   El destino lo resuelve `core.email_export.email_dest_dir(case_id)`: reserva un lote
+   `00_Input/<AAAA-MM-DD>_email_<NN>/` nuevo (no reutiliza lotes de corridas anteriores).
 3. Verifica el recuento que reporta el CLI (mensajes en la etiqueta = `.eml` escritos +
-   ya existentes) y revisa `INDICE.md`.
+   ya existentes) y revisa `INDICE.md`/`CRONOLOGIA.md` en `01_Procesado/Emails/` (cross-lote,
+   no dentro del lote de esta corrida).
 4. Para **Paola y Ana**: el mismo motor está expuesto como **botón en Streamlit**
    («Exportar correos por etiqueta»); eligen caso + etiqueta y pulsan. No usan CLI.
 
