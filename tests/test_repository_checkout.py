@@ -607,7 +607,8 @@ def test_save_file_escribe_normal_si_disponible(cm, tmp_casos_root):
     im = _reload_intake_manual(tmp_casos_root)
     case_id = _crear_caso(cm)
     dest = im.save_file(case_id, "x.pdf", b"data")
-    assert "04_Manual" in dest.as_posix()
+    from core.intake_lotes import PATRON_LOTE
+    assert PATRON_LOTE.match(dest.parent.name).group(2) == "manual"
     assert "_pendiente_checkin" not in dest.as_posix()
     assert dest.read_bytes() == b"data"
 

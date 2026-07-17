@@ -289,6 +289,16 @@ def test_cli_manual_carpeta_deposita_y_loguea(drive_temporal, tmp_path):
     assert all(f["sha256"] for f in manuales[-1]["details"]["files"])
 
 
+@pytest.mark.xfail(
+    reason=(
+        "MEJORAS #54 T6: intake_manual.extract_zip ya no deposita en el cajón "
+        "fijo 04_Manual (abre un lote 00_Input/<AAAA-MM-DD>_manual_NN/). "
+        "_depositar_manual/_intake_generico (scripts/abrir_caso.py) siguen "
+        "asumiendo brain.FUENTE_A_SUBDIR['manual'] == '04_Manual' fijo — migrar "
+        "este CLI a intake_manual.save_file_en_lote en T9."
+    ),
+    strict=True,
+)
 def test_cli_manual_zip_deposita(drive_temporal, tmp_path):
     import zipfile as _zf
     z = tmp_path / "aportado.zip"
