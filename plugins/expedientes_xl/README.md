@@ -59,11 +59,14 @@ visitado en operaciones recursivas (`tree`/`copy_dir`/`hash_tree`/`search_conten
 | **2 — Workspace** | El resto de `G:` | Sí | Sí |
 | — | `H:` entera (V1) | Sí | **No** — unidad solo-lectura en V1 (independiente del tier del path) |
 
-Nodo Tier 0 encontrado en una travesía → se **poda** el subárbol (nunca aborta el resto)
-y queda auditado (`podado_symlink_tier0` / `podado`). Destino efectivo Tier 1 fuera del
-carve-out → **aborta** la operación completa antes de tocar bytes (pre-scan en dos
-pasadas para `copy_dir`). `SIN borrado` en ningún tier: `delete_path` está **retirado**
-de la superficie (spec §2).
+Nodo Tier 0 encontrado en una travesía → se **poda** el subárbol (nunca aborta el resto).
+La poda se refleja en el **contador del valor de retorno** (`podados` / `_podados` de
+`tree`/`list_dir`/`search_content`, etc.); el log de auditoría solo registra un evento de
+poda en el caso del symlink re-validado de `hash_tree` (`podado_symlink_tier0`) — la poda
+de directorios Tier 0 no escribe en `audit.jsonl` (comportamiento intencional en V1).
+Destino efectivo Tier 1 fuera del carve-out → **aborta** la operación completa antes de
+tocar bytes (pre-scan en dos pasadas para `copy_dir`). `SIN borrado` en ningún tier:
+`delete_path` está **retirado** de la superficie (spec §2).
 
 ## Superficie de tools (19)
 
@@ -142,10 +145,14 @@ tool que borre ficheros o directorios.
   con ~22 GB de caché). Planificar operaciones grandes sobre `H:` en consecuencia.
 - **Stubs nativos de Google** (`.gdoc`, `.gsheet`, `.gslides`, `.gdraw`, `.gform`,
   `.gtable`, `.gmap`) son **ilegibles por el sistema de ficheros** (a nivel de kernel
-  Windows da `ERROR_INVALID_FUNCTION`): bloqueados con `GDocBloqueado`. `copy_path`/
-  `hash_path`/lectura sobre uno de estos **lanza**; `copy_dir` los **omite** (auditado
-  `omitido_gdoc`, listado nunca silencioso). Usa `google-despacho`
-  (`export_to_drive`/`read_file_content`) para su contenido real.
+  Windows da `ERROR_INVALID_FUNCTION`). `copy_path` y las lecturas (`read_text`/
+  `search_content`) enrutan por `check_gdoc` y **lanzan `GDocBloqueado`** (mensaje
+  amigable que desvía a `google-despacho`); `copy_dir` los **omite** (auditado
+  `omitido_gdoc`, listado nunca silencioso). **`hash_path` NO pasa por `check_gdoc`**
+  (solo `guard_file`): sobre un stub `.g*` también falla, pero con un **`OSError` crudo**
+  (`ERROR_INVALID_FUNCTION` del kernel), no el `GDocBloqueado` amigable. En todos los
+  casos, usa `google-despacho` (`export_to_drive`/`read_file_content`) para su contenido
+  real.
 - **Conflict-copies de la nube** son un límite inherente de GDFD: la escritura atómica
   (`tmp` + `os.replace`) protege la integridad **local** únicamente. Si un tercero edita
   la versión web mientras se escribe, Drive puede generar una copia de conflicto — no
