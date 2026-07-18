@@ -1014,3 +1014,141 @@ class TestDownloadDriveMedia:
         with patch("httpx.get") as mget:
             assert download_drive_media("FID1") is None
         mget.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# get_shared_drive_name (Task 3, B5)
+# ---------------------------------------------------------------------------
+
+class TestGetSharedDriveName:
+    """Tests for get_shared_drive_name (Task 3, B5)."""
+
+    def test_get_shared_drive_name_success(self, monkeypatch):
+        """Successful fetch: returns drive name."""
+        from core.intake_drive import get_shared_drive_name
+
+        _mock_rclone_token(monkeypatch, "test_token_xyz")
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"name": "Barcelona - S3"}
+
+        with patch("httpx.get", return_value=mock_response) as mock_get:
+            result = get_shared_drive_name("drive_id_12345")
+
+        assert result == "Barcelona - S3"
+        mock_get.assert_called_once()
+        call_args = mock_get.call_args
+        assert "drives/drive_id_12345" in call_args[0][0]
+        assert call_args[1]["params"]["fields"] == "name"
+
+    def test_get_shared_drive_name_empty_drive_id(self, monkeypatch):
+        """Empty drive_id: returns None without calling API."""
+        from core.intake_drive import get_shared_drive_name
+
+        result = get_shared_drive_name("")
+        assert result is None
+
+    def test_get_shared_drive_name_no_token(self, monkeypatch):
+        """No access token available: returns None."""
+        from core.intake_drive import get_shared_drive_name
+
+        monkeypatch.setattr("core.intake_drive._get_drive_access_token", lambda: None)
+
+        result = get_shared_drive_name("drive_id_12345")
+        assert result is None
+
+    def test_get_shared_drive_name_http_404(self, monkeypatch):
+        """Drive not found (404): returns None."""
+        from core.intake_drive import get_shared_drive_name
+
+        _mock_rclone_token(monkeypatch, "test_token")
+
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+        mock_response.json.return_value = {"error": {"message": "Not found"}}
+
+        with patch("httpx.get", return_value=mock_response):
+            result = get_shared_drive_name("drive_id_notfound")
+
+        assert result is None
+
+    def test_get_shared_drive_name_network_error(self, monkeypatch):
+        """Network error during request: returns None."""
+        from core.intake_drive import get_shared_drive_name
+
+        _mock_rclone_token(monkeypatch, "test_token")
+
+        with patch("httpx.get", side_effect=Exception("Connection error")):
+            result = get_shared_drive_name("drive_id_12345")
+
+        assert result is None
+
+    def test_get_shared_drive_name_rate_limit_retry(self, monkeypatch):
+        """Rate limit (403 with rateLimitExceeded) → retry → success."""
+        from core.intake_drive import get_shared_drive_name
+
+        _mock_rclone_token(monkeypatch, "test_token")
+        sleeps: list[float] = []
+        monkeypatch.setattr("core.intake_drive.time.sleep", lambda s: sleeps.append(s))
+
+        mock_response_429 = MagicMock()
+        mock_response_429.status_code = 429
+        mock_response_429.json.return_value = {
+            "error": {"errors": [{"reason": "rateLimitExceeded"}]}
+        }
+
+        mock_response_200 = MagicMock()
+        mock_response_200.status_code = 200
+        mock_response_200.json.return_value = {"name": "Madrid - S1"}
+
+        with patch("httpx.get", side_effect=[mock_response_429, mock_response_200]) as mock_get:
+            result = get_shared_drive_name("drive_id_madrid")
+
+        assert result == "Madrid - S1"
+        assert mock_get.call_count == 2
+
+    def test_get_shared_drive_name_malformed_response(self, monkeypatch):
+        """Response JSON parse error: returns None."""
+        from core.intake_drive import get_shared_drive_name
+
+        _mock_rclone_token(monkeypatch, "test_token")
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.side_effect = ValueError("Invalid JSON")
+
+        with patch("httpx.get", return_value=mock_response):
+            result = get_shared_drive_name("drive_id_12345")
+
+        assert result is None
+
+    def test_get_shared_drive_name_missing_name_field(self, monkeypatch):
+        """Response lacks 'name' field: returns None."""
+        from core.intake_drive import get_shared_drive_name
+
+        _mock_rclone_token(monkeypatch, "test_token")
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {}  # no 'name' field
+
+        with patch("httpx.get", return_value=mock_response):
+            result = get_shared_drive_name("drive_id_12345")
+
+        assert result is None
+
+    def test_get_shared_drive_name_empty_name_field(self, monkeypatch):
+        """Response 'name' field is empty string: returns None."""
+        from core.intake_drive import get_shared_drive_name
+
+        _mock_rclone_token(monkeypatch, "test_token")
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"name": ""}
+
+        with patch("httpx.get", return_value=mock_response):
+            result = get_shared_drive_name("drive_id_12345")
+
+        assert result is None

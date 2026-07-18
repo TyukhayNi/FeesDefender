@@ -641,6 +641,73 @@ def get_drive_folder_info(folder_id: str) -> DriveFolderInfo | None:
     return None
 
 
+def get_shared_drive_name(drive_id: str) -> str | None:
+    """Obtiene el nombre de una unidad compartida (Shared Drive) de Google Drive.
+
+    Usa la API REST de Google Drive (v3) con el access_token del remote
+    ``gdrive_ev``. Devuelve None si el token está expirado, la unidad
+    compartida no existe o cualquier error de red.
+
+    **Retry on rate-limit**: cuando la Drive API devuelve 403/429 con
+    ``reason == rateLimitExceeded``, reintenta con backoff exponencial
+    según ``_RATE_LIMIT_BACKOFF_SECONDS``. Si tras agotar los reintentos
+    sigue rate-limited, devuelve None.
+
+    Args:
+        drive_id: ID del Shared Drive (obtenido de folder's driveId).
+
+    Returns:
+        Nombre del Shared Drive (str), o None si no se pudo obtener.
+    """
+    # Guard: drive_id vacío
+    if not drive_id:
+        return None
+
+    access_token = _get_drive_access_token()
+    if not access_token:
+        return None
+
+    try:
+        import httpx
+    except ImportError:
+        return None
+
+    # Secuencia de esperas: 0 (primer intento, sin sleep) + backoffs.
+    attempts = (0.0,) + _RATE_LIMIT_BACKOFF_SECONDS
+
+    for delay in attempts:
+        if delay > 0:
+            time.sleep(delay)
+        try:
+            r = httpx.get(
+                f"https://www.googleapis.com/drive/v3/drives/{drive_id}",
+                params={"fields": "name"},
+                headers={"Authorization": f"Bearer {access_token}"},
+                timeout=5,
+            )
+        except Exception:
+            return None
+
+        if r.status_code == 200:
+            try:
+                data = r.json()
+            except Exception:
+                return None
+            name = data.get("name", "")
+            if name:
+                return name
+            return None
+
+        # No-200: si es rate-limit, reintentar; cualquier otro fallo (401, 404,
+        # 500…) es no-recuperable y termina inmediatamente con None.
+        if not _is_rate_limit_response(r):
+            return None
+        # Es rate-limit → seguir al siguiente backoff.
+
+    # Agotados los reintentos sin obtener 200.
+    return None
+
+
 def get_drive_folder_info_cached(
     folder_id: str,
     case_id: str | None = None,
