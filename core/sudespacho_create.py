@@ -1557,6 +1557,21 @@ def create_expediente_judicial_rest(
     return _rest_post(_REST_CREATE_JUDICIAL, payload)
 
 
+# Lista completa de propiedades del elemento extrajudiciales (descubierta 2026-07-18
+# vía probe de propiedad inválida). El GET-detalle exige ?properties=<coma>: el GET
+# plano da HTTP 500 "Undefined array key properties".
+_EXTRAJUDICIAL_PROPS = (
+    "costas", "cuantia", "Fecha_alta", "fecha_alta_hist", "historico", "intereses",
+    "Notas", "numero_anterior", "Numero_Expediente", "online", "Profesional",
+    "Referencia_Cliente", "referencia_historico", "Referencia_Propia", "saldo_cobrado",
+    "saldo_facturado", "saldo_no_facturado", "saldo_pendiente", "serie_expediente",
+    "Tipo_Asunto", "Tipo_Procedimiento", "total", "total_pendiente", "profesional_asignado",
+    "tags", "tnm_posicionprocesal", "tnm_siniestro", "dias_sin_actuaciones", "id",
+    "grupo_contable_id", "id_creador", "id_ultimo_modificador", "fecha_creacion",
+    "fecha_ultima_modificacion",
+)
+
+
 def _rest_headers() -> dict[str, str]:
     return {
         "x-api-key":    _get_api_key(),
@@ -1565,41 +1580,36 @@ def _rest_headers() -> dict[str, str]:
     }
 
 
-def merge_expediente_update(actual: dict, cambios: dict) -> dict:
-    """Fusiona ``cambios`` sobre ``actual`` para un PUT de reemplazo total,
-    garantizando que ``Numero_Expediente`` NO se pierde (el PUT es de reemplazo
-    completo y un valor "0"/ausente dejaría el expediente sin número).
-
-    Lanza ``ValueError`` si ``actual`` no trae un ``Numero_Expediente`` válido
-    (ausente, vacío, None o "0"): sin un número real que preservar, no es seguro hacer
-    el PUT.
-    """
-    raw = actual.get("Numero_Expediente")
-    num = str(raw).strip() if raw is not None else ""
-    if not num or num == "0":
-        raise ValueError(
-            f"actual sin Numero_Expediente válido ({num!r}); no es seguro el PUT"
-        )
-    out = dict(actual)
-    out.update(cambios)
-    out["Numero_Expediente"] = num  # siempre el del GET, pase lo que pase en cambios
+def _parse_values(body: dict) -> dict:
+    """Aplana la respuesta GET/PUT-detalle {values:[{property:{name},value}]} → {name: value}."""
+    out: dict = {}
+    for item in (body.get("values") or []):
+        if not isinstance(item, dict):
+            continue
+        prop = item.get("property")
+        name = prop.get("name") if isinstance(prop, dict) else prop
+        if name:
+            out[name] = item.get("value")
     return out
 
 
-def get_expediente(exp_id: str) -> dict:
-    """GET del registro extrajudicial completo por id (x-api-key)."""
-    url = f"{_REST_BASE}{_REST_CREATE_EXTRAJUDICIAL}/{exp_id}"
+def get_expediente(exp_id: str, properties: tuple[str, ...] | None = None) -> dict:
+    """GET-detalle del expediente extrajudicial, aplanado a {property: value}.
+
+    El GET-detalle exige ?properties=<coma> (el GET plano da HTTP 500). Devuelve las
+    propiedades pedidas (default: todas, _EXTRAJUDICIAL_PROPS).
+    """
+    props = ",".join(properties or _EXTRAJUDICIAL_PROPS)
+    url = f"{_REST_BASE}{_REST_CREATE_EXTRAJUDICIAL}/{exp_id}?properties={props}"
     try:
         r = httpx.get(url, headers=_rest_headers(), timeout=_REST_TIMEOUT)
     except httpx.HTTPError as exc:
         raise SudespachoCreateError(f"REST GET extrajudiciales/{exp_id} falló: {exc}") from exc
     if r.status_code == 200:
         try:
-            return r.json()
+            return _parse_values(r.json())
         except Exception as exc:
-            raise SudespachoCreateError(
-                f"REST GET extrajudiciales/{exp_id}: 200 sin JSON válido"
-            ) from exc
+            raise SudespachoCreateError(f"REST GET extrajudiciales/{exp_id}: 200 sin JSON válido") from exc
     try:
         detail = r.json().get("detail") or r.text[:300]
     except Exception:
@@ -1608,23 +1618,26 @@ def get_expediente(exp_id: str) -> dict:
 
 
 def update_expediente(exp_id: str, cambios: dict) -> dict:
-    """GET → merge (preservando Numero_Expediente) → PUT de reemplazo total.
+    """Actualiza campos de un expediente extrajudicial vía PUT PARCIAL.
 
-    Único punto de reescritura de un expediente extrajudicial. Devuelve el
-    registro actualizado que responde el servidor.
+    El PUT de element_register/extrajudiciales/{id} es PARCIAL y PRESERVA los campos
+    omitidos (verificado en vivo 2026-07-18 sobre expediente desechable: un PUT {Notas}
+    preservó Numero_Expediente/cuantia/Referencia_Cliente). Por eso NO hace falta
+    GET→merge ni reenviar Numero_Expediente: se envía SOLO `cambios` (dict plano).
+    Devuelve el registro aplanado que responde el servidor.
     """
-    actual = get_expediente(exp_id)
-    body = merge_expediente_update(actual, cambios)
+    if not cambios:
+        raise ValueError("update_expediente: 'cambios' no puede estar vacío")
     url = f"{_REST_BASE}{_REST_CREATE_EXTRAJUDICIAL}/{exp_id}"
     try:
-        r = httpx.put(url, json=body, headers=_rest_headers(), timeout=_REST_TIMEOUT)
+        r = httpx.put(url, json=cambios, headers=_rest_headers(), timeout=_REST_TIMEOUT)
     except httpx.HTTPError as exc:
         raise SudespachoCreateError(f"REST PUT extrajudiciales/{exp_id} falló: {exc}") from exc
     if r.status_code == 200:
         try:
-            return r.json()
+            return _parse_values(r.json())
         except Exception:
-            return body
+            return dict(cambios)
     try:
         detail = r.json().get("detail") or r.text[:300]
     except Exception:
