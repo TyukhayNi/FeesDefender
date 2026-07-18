@@ -752,7 +752,7 @@ Response 200: {"id","isPrimary","groupsAccessRegister","usersAccessRegister",
 da **HTTP 500 "Undefined array key properties"** — hay que pedir `?properties=a,b,c` (forma coma,
 §8.3). La respuesta trae los campos en `values` como **lista** de `{property:{name},value}` (NO un
 dict plano); hay que aplanarla por `property.name`. La lista completa de propiedades de
-`extrajudiciales` (34) se descubre con el probe de propiedad inválida (§0.2).
+`extrajudiciales` (34) se descubre con el probe de propiedad inválida (§0.3).
 
 El campo `tags` es una cadena de IDs separados por comas, con coma inicial y final —
 `",129,286,257,"` — NO un array JSON; para editarlo hay que leer y concatenar. (Pero los tags de
