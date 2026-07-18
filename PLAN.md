@@ -578,8 +578,15 @@ serie=año). **RGPD — excepción acotada SOLO a este flujo:** usa LLM cloud UE
   el autocomplete legacy devuelve body vacío (`DEAD_ENDS.md`); búsqueda por
   `referencia_cliente`+`referencia_procurador`+nº/serie, sin `clientes`; búsqueda por
   contrario/autos fuera de alcance (`MEJORAS_FUTURAS.md` §31). Suite **935 passed**.
-- **F3 — Escritura en el CRM.** ⬜ Resolver auth nest-mail (x-api-key vs JWT);
-  relate + adjuntar en expediente de prueba. Mismo requisito de traza que F2.
+- **F3 — Escritura en el CRM.** 🔬 **Endpoint IDENTIFICADO (HAR `judicial_648.har`, 2026-07-19):**
+  el relate+adjuntar va por un **plugin propio de Roundcube** (`POST roundcube.sudespacho.net/
+  ?_task=mail&_action=plugin.sudespacho_asignaa_*`), **NO** por nest-mail ni `MailRoundcube` de
+  api-crm (ambos **refutados** por el HAR). Llave = **Message-ID RFC** → puente Gmail↔CRM directo.
+  Contrato completo en `INTEGRACION_SUDESPACHO §10.10`; §7 del doc y `DEAD_ENDS.md` actualizados.
+  **Bloqueo restante = spike de auth (A-vs-C):** ¿la sesión legacy (`check-legacy`/PHPSESSID) sirve
+  para el plugin, o Roundcube exige login web propio? Después: relate+adjuntar en expediente de
+  prueba + traza §18.9. ⚠️ **Limpiar en el CRM** el relate/adjunto de prueba del HAR (adjunto
+  "…ELIMINAR.pdf") + los `PRUEBA BORRAR` de s44 (SeRR1/13, MaRS9).
 - **F4 — Renombrado + OCR + aprendizaje.** ⬜ Contenido del adjunto → nombre; store
   de correcciones few-shot (§10).
 - **F5 — Grabaciones.** ⬜ Descarga de enlaces (WeTransfer caduca) + fallback manual.
@@ -588,8 +595,8 @@ serie=año). **RGPD — excepción acotada SOLO a este flujo:** usa LLM cloud UE
   **Diseño cerrado 2026-06-12, doc §18.** Depende de F2/F3 (consume la terna de traza).
 
 **Pendientes de decisión (doc §17 + §18.11):** ¿confirmar en bloque las de alta de
-inicio? · auth nest-mail · plazos de escalado de la cola por tipo · tamaño de muestra
-(default 10%) · lista de "tipos con plazo".
+inicio? · **auth del plugin Roundcube (sesión legacy PHPSESSID vs login propio) → decide A-vs-C** ·
+plazos de escalado de la cola por tipo · tamaño de muestra (default 10%) · lista de "tipos con plazo".
 
 ---
 

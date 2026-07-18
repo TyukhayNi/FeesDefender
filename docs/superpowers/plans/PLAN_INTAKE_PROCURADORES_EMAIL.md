@@ -149,39 +149,41 @@ existente en FeesDefender.
 **Enlace "abrir en el CRM":** navegación normal → abre el expediente en la sesión
 del CRM de quien pincha (su propio login en el navegador), no comparte sesión.
 
-## 7. Escritura en el CRM (contrato)
+## 7. Escritura en el CRM (contrato) — ACTUALIZADO 2026-07-19 (HAR `judicial_648.har`)
 
-El módulo de correo del CRM es **Roundcube**, servido por un microservicio aparte
-**`nest-mail-commons-pro.sudespacho.biz`** (OpenAPI en `/api-json`), distinto del
-`api-crm-commons-pro`.
+> **El HAR refutó las tres hipótesis previas** (`PUT /api/mail/{id}` de nest-mail,
+> `MailRoundcube` de api-crm, AppSync). El "Asignar a Elemento" del webmail lo
+> ejecuta un **plugin propio de Roundcube**. **SSOT del contrato (acciones + params):
+> `docs/INTEGRACION_SUDESPACHO.md §10.10`.** Hallazgo en `DEAD_ENDS.md`. Resumen operativo:
 
-- **Relacionar correo ↔ expediente:** modelo `MailRelationInput =
-  { element, elementId, mail }` (element=`expedientes_judiciales` /
-  extrajudiciales / clientes; elementId=ID expediente; mail=identificador del
-  correo). Se setea `mailRelations: [MailRelationInput]` vía **`PUT /api/mail/{id}`**
-  (body tipo `MailSend`/`MailUpdate`).
-- **Adjuntar al gestor documental:** `attachmentGdocu: [{ identifier }]` en el
-  mismo PUT, o subida directa. Subida de fichero por **URL prefirmada**:
-  `GET /api/documents/presigned-upload-attachment-url` (nest-mail) o
-  `GET /api/documents/presigned_urls/{service}/upload/{n}` (api-crm) → PUT bytes a
-  S3 → registrar. Alternativa de bajo nivel: `POST /api/documents` /
-  `POST /api/documents/single-document/import` (api-crm).
-- **Atribución (APROBADO):** una sola API Key, dada de alta como usuario
-  **"Robot intake / Archivo automático"**. El "quién confirmó" vive en nuestro
-  log. Si hay campo de nota, escribir "confirmado por X". NO una clave por persona.
-- **PENDIENTE confirmar al construir:** ¿`nest-mail` acepta `x-api-key` o exige
-  el JWT de sesión web (`api-auth-commons-pro/api/authenticate/refresh`)? Si exige
-  JWT, resolver el flujo de auth para ese microservicio.
-- **Candidato detectado (s44, 2026-06-15, SIN confirmar):** en el swagger de
-  `api-crm-commons-pro` (estilo API-Platform) existe el recurso **`MailRoundcube`**
-  con CRUD completo (POST/GET/PUT/DEL/PATCH). Es el espejo probable del correo de
-  Roundcube en la API REST y el lugar natural de la vinculación. **Antes de F3,
-  confirmar:** (1) el *body schema* del `PUT`/`PATCH` — ¿expone `mailRelations`
-  `[{element, elementId, mail}]` y `attachmentGdocu` `[{identifier}]`?; (2) la ruta
-  exacta (p. ej. `/api/mail_roundcubes/{id}`) y el host (`api-crm-commons` vs
-  `nest-mail-commons`) → decide el auth. Descartados como auxiliares (no vinculan):
-  `AccountLinks`, `DownloadAttachment` (solo bajada de bytes), `MailPermissions`,
-  `MailRecipients`, `Mail` (GET).
+- **Transporte:** `POST https://roundcube.sudespacho.net/?_task=mail&_action=plugin.sudespacho_asignaa_*`,
+  `application/x-www-form-urlencoded`, cabeceras `X-Requested-With: XMLHttpRequest` +
+  `X-Roundcube-Request: <request-token>` (CSRF de Roundcube).
+- **Relacionar correo ↔ expediente:** acción `set_registros_seleccionados` con
+  `registrosSeleccionados[]={idExpediente}`, `elementoSeleccionado=expedientes_judiciales->izq`,
+  `messageIdsEncontrados=<MessageID>,,,{uid}`, permisos `groups/usersAccessRegister[identifiers][]`.
+- **Adjuntar al gestor documental:** acción `set_adjuntos_relacionar_crm` con
+  `datosRelacionados[expedientes_judiciales][]={idExpediente}`,
+  `datosAdjuntos[seleccionado_adjunto][{mailId}][]={attId}`,
+  `datosAdjuntos[nombre_adjunto][{mailId}][{attId}]={NOMBRE.ext}` (← **aquí enchufa F4**),
+  `folderId={idCarpeta}`.
+- **Llave del correo = Message-ID RFC** (`<...@...>`), aceptado tal cual → **puente directo
+  Gmail↔CRM**: el robot ya tiene el Message-ID de cada correo desde Gmail; se acabó el problema
+  del "id numérico interno" que bloqueaba con nest-mail.
+- **Auth:** sesión web de Roundcube (cookies + request-token), host legacy `.sudespacho.net`.
+  **BLOQUEO RESTANTE de F3 (spike A-vs-C):** confirmar si la sesión legacy de
+  `sync_sudespacho check-legacy` (PHPSESSID) vale para el plugin, o si Roundcube exige login
+  web propio. → **(A)** reutilizar la sesión legacy = automatizable; **(C)** el robot deja todo
+  emparejado + propuesto y el humano remata con 1 clic.
+- **Atribución (APROBADO):** una sola API Key / usuario **"Robot intake / Archivo automático"**.
+  El "quién confirmó" vive en nuestro log; si hay campo de nota, escribir "confirmado por X".
+  NO una clave por persona. *(Nota: la atribución del write por plugin dependerá del usuario de
+  la sesión Roundcube — reconciliar con este modelo en el spike de auth.)*
+- **Descartados (confirmado por HAR, no vinculan):** `PUT /api/mail/{id}` (nest-mail),
+  `MailRoundcube` (api-crm), AppSync, y los auxiliares `AccountLinks`, `DownloadAttachment`
+  (solo bajada de bytes), `MailPermissions`, `MailRecipients`, `Mail` (GET). Las GET api-crm del
+  diálogo (`/api/element_registries/expedientes_judiciales` = buscador; `/api/folders/gdocu/{parent}`
+  = carpetas) son solo lectura y **ya están en F2**.
 
 ## 8. Carpetas del gestor documental
 

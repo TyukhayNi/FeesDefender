@@ -834,6 +834,47 @@ plano parcial (envía solo `cambios`; NO necesita GET→merge ni reenviar `Numer
 
 ---
 
+### 10.10 Relacionar un correo ENTRANTE ↔ expediente + adjuntar al gestor (plugin Roundcube `sudespacho_asignaa`)
+
+> Confirmado por HAR el 2026-07-19 (expediente judicial). Es el "Asignar a Elemento" del webmail.
+> **El write NO es REST de api-crm ni de nest-mail** (refuta las 3 hipótesis del plan de intake §7 y
+> la entrada de `DEAD_ENDS.md`): lo ejecuta un **plugin propio de Roundcube** con POSTs AJAX a
+> `roundcube.sudespacho.net`. Distinto del §10.9 (que ENVÍA un correo saliente por nest-mail). Los
+> HAR nunca se commitean (higiene).
+
+**Host / transporte.** `POST https://roundcube.sudespacho.net/?_task=mail&_action=plugin.sudespacho_asignaa_<acción>`,
+body `application/x-www-form-urlencoded`, cabeceras `X-Requested-With: XMLHttpRequest` +
+`X-Roundcube-Request: <request-token>` (CSRF de Roundcube). Respuesta: JSON de Roundcube
+(`{action, env, texts, exec, callbacks, unlock}`).
+
+**Auth.** Sesión web de Roundcube (cookies `roundcube_sessid`/`roundcube_sessauth` + el request-token).
+Host `.sudespacho.net` (legacy, el mismo dominio del PHPSESSID). **PENDIENTE (spike F3):** confirmar si
+la sesión legacy que monta `sync_sudespacho check-legacy` sirve para el plugin, o si Roundcube exige
+login web propio (decide el camino A-vs-C de F3).
+
+**Llave del correo = Message-ID RFC** (`<...@...>`), aceptado tal cual → hay **puente directo
+Gmail↔CRM** (corrige el "no hay puente Message-ID → id numérico" que asumía la ruta nest-mail).
+
+| Acción (`_action=plugin.sudespacho_asignaa_…`) | Qué hace | Params (form) |
+|---|---|---|
+| `get_relaciones` | lee relaciones previas del correo | `messageId=<MsgID>` · `_remote=1` · `_unlock=0` |
+| `set_registros_seleccionados` | **RELATE** correo→elemento | `registrosSeleccionados[]={idExpediente}` · `elementoSeleccionado=expedientes_judiciales->izq` · `messageIdsEncontrados=<MsgID>,,,{uid}` · `groupsAccessRegister[identifiers][]={idGrupo}` · `usersAccessRegister[identifiers][]={idUsuario}` · `_unlock=loading{ts}` |
+| `set_adjuntos_relacionar_crm` | **ADJUNTAR** al gestor documental | `datosRelacionados[expedientes_judiciales][]={idExpediente}` · `datosAdjuntos[seleccionado_adjunto][{mailId}][]={attId}` · `datosAdjuntos[nombre_adjunto][{mailId}][{attId}]={NOMBRE.ext}` · `folderId={idCarpeta}` · `messageIdsEncontrados=<MsgID>,,,{uid}` |
+| `get_mails_asignados` | verifica (correos ya asignados del buzón) | `messageIds[{uidRoundcube}]=<MsgID>` |
+
+Notas:
+- `elementoSeleccionado` = `<elemento>->izq` (posición izquierda de la relación; `expedientes_judiciales`,
+  `extrajudiciales`, `clientes`).
+- `groups/usersAccessRegister[identifiers][]` = permisos de visibilidad del registro (en el HAR, id `2` = EV MMC).
+- **F4 (renombrado) enchufa en `nombre_adjunto`:** la cadena que se pasa ahí es el nombre con el que
+  el CRM guarda el adjunto en el gestor documental.
+- `{idExpediente}`, `{mailId}` (id del correo en el CRM) y `{attId}` (id del adjunto) salen de las GET
+  api-crm del diálogo: buscador = `GET /api/element_registries/expedientes_judiciales`; carpetas =
+  `GET /api/folders/gdocu/{parent}` (⚠️ en este HAR devolvió **200** para `{1,306,315}` — revisar el
+  "dead end de carpetas vacías" del plan de intake §8).
+
+---
+
 ## 12. Expediente judicial — Crear y vincular (confirmado 2026-04-30)
 
 ### 12.1 Crear expediente judicial
