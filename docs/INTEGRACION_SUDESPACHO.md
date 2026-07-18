@@ -731,31 +731,36 @@ y `ensure_contrario_vinculado()` ya viven en `core/sudespacho_relations.py` (ver
 funciones se llaman aparte; orquestarlas en la ficha completa es el build B1
 (`PLAN.md [SIGUIENTE-APERTURA-EXPEDIENTE]`).
 
-### 10.7 Actualizar un registro existente — PUT, no PATCH (confirmado 2026-07-17)
+### 10.7 Actualizar un registro existente — PUT PARCIAL (verificado en vivo 2026-07-18)
 
 `PATCH /api/element_register/{element}/{id}` → **HTTP 405** (`Allow: PUT, GET, DELETE`).
-El verbo correcto es **PUT**, de **reemplazo completo**: hay que reenviar el conjunto
-de campos que quieras conservar además del que cambias (no se ha probado un payload
-parcial, así que no asumir que los campos omitidos se preservan).
+El verbo es **PUT** y — **verificado en vivo 2026-07-18 sobre `extrajudiciales`** (expediente
+desechable 626) — es **PARCIAL: preserva los campos omitidos**. Un `PUT {"Notas": "..."}` cambió
+solo `Notas` y dejó intactos `Numero_Expediente`, `cuantia` y `Referencia_Cliente`. **La redacción
+anterior —"reemplazo completo; no asumir que los omitidos se preservan"— queda REFUTADA** por esa
+prueba: no hace falta reenviar el resto de campos ni preservar `Numero_Expediente` a mano.
 
 ```
 PUT https://api-crm-commons-pro.sudespacho.biz/api/element_register/{element}/{id}
 Auth: x-api-key
-Body: JSON con los campos actuales + los que cambian
-Response 200: el registro completo actualizado
+Body: JSON PLANO solo con los campos que cambian, p.ej. {"Notas": "<html>"}
+Response 200: {"id","isPrimary","groupsAccessRegister","usersAccessRegister",
+               "values":[{"property":{"name":...},"value":...}, ...]}
 ```
 
-Verificado en vivo sobre `colaboradores` (corrección de nombre a mayúsculas sin tilde)
-y `extrajudiciales` (campos `tags` y `Notas`). El campo `tags` es una cadena de IDs
-separados por comas, con coma inicial y final — `",129,286,257,"` — NO un array JSON;
-para añadir un tag hay que leer el valor actual y concatenar, no reemplazar por uno solo.
+**⚠️ Lectura de un registro (GET-detalle).** El GET **plano** `element_register/{element}/{id}`
+da **HTTP 500 "Undefined array key properties"** — hay que pedir `?properties=a,b,c` (forma coma,
+§8.3). La respuesta trae los campos en `values` como **lista** de `{property:{name},value}` (NO un
+dict plano); hay que aplanarla por `property.name`. La lista completa de propiedades de
+`extrajudiciales` (34) se descubre con el probe de propiedad inválida (§0.2).
 
-**⚠️ Preservar `Numero_Expediente` en el PUT de `extrajudiciales`.** Como el PUT es de
-reemplazo completo y `Numero_Expediente` solo se fija en la creación (`core/sudespacho_create`
-lo calcula como `max+1` al crear), un PUT que lo omita puede dejarlo en `0`. Este round-trip
-ya está encapsulado en **`core/sudespacho_create.update_expediente`** (GET→merge→PUT; B1, PR-3):
-`merge_expediente_update` reenvía el `Numero_Expediente` del GET pase lo que pase en los cambios
-y **aborta** (`ValueError`) si el GET no trae un número válido (`0`/vacío/`None`).
+El campo `tags` es una cadena de IDs separados por comas, con coma inicial y final —
+`",129,286,257,"` — NO un array JSON; para editarlo hay que leer y concatenar. (Pero los tags de
+equipo/ciudad ya van en el **alta**, §11.3, no por PUT.)
+
+**En código (B1, PR-3):** `core/sudespacho_create.update_expediente(exp_id, cambios)` hace el PUT
+plano parcial (envía solo `cambios`; NO necesita GET→merge ni reenviar `Numero_Expediente`), y
+`get_expediente(exp_id, properties=…)` hace el GET con `?properties=` y aplana la lista `values`.
 
 ---
 
