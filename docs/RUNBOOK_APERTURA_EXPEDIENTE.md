@@ -70,7 +70,8 @@ De las 4 preguntas clásicas de apertura, **3 son auto-derivables**; la única r
 **alcance** (¿uno o varios asuntos en el hilo?).
 
 - **`[APER-03]` Equipo `BaRS<N>` = nombre de la unidad compartida del Drive**
-  (`"Barcelona - S3"` → `BaRS3`). Del `driveId` de la carpeta. NO preguntar.
+  (`"Barcelona - S3"` → `BaRS3`). Del `driveId` de la carpeta. NO preguntar. La CLI lo
+  auto-deriva (B5).
 - **`[APER-04]` / W-046G2R — Sufijo = `tipo_caso` CANÓNICO**, nunca paráfrasis libre
   (`VUELTA` → `"Vuelta"`; `NEGATIVA_ESCRITURA` → `"Negativa escritura"`). Ofrecer una
   paráfrasis obliga a renombrar carpeta Drive + `_caso.md` + etiqueta Gmail + referencia
@@ -105,10 +106,16 @@ Memoria `reference-gmail-etiquetas-organizacion`.
 
 ```powershell
 python -m scripts.abrir_caso --w-code W-XXXXXX --ciudad Barcelona --tipo-caso VUELTA `
-  --codigo-caso BaRS3 --sufijo "Vuelta" --direccion "..." --folder-id <id> --team-id <driveId> `
+  --direccion "..." --folder-id <id> `
   --fuente drive_ev --crm api --cuantia <n> --yes --force
 ```
 
+- **`[APER-34]` Auto-derivación (B5):** en `--fuente drive_ev`, si se omiten,
+  `--team-id` (driveId), `--codigo-caso` (nombre de la unidad compartida vía Drive API) y
+  `--sufijo` (del `tipo_caso` canónico) se **auto-derivan** desde `--folder-id`. Los flags
+  explícitos SIEMPRE ganan. Si `codigo_de_unidad` no puede derivar (unidad comercial,
+  ambigua como `"Sevilla - S1 / S6"`, o ciudad fuera del mapa), la CLI pide `--codigo-caso`
+  explícito con un error claro (nunca un código equivocado).
 - **`--yes` desde la primera llamada.** La colisión del código `BaRS<N>` con casos previos
   del mismo equipo **es la norma, no la excepción** (W-046G2R). Sin `--yes`, el prompt
   "el código BaRS3 ya existe" cuelga el proceso en background esperando confirmación.
@@ -135,7 +142,8 @@ python -m scripts.abrir_caso --case-id W-XXXXXX --fuente email --cuenta <gmail> 
 
 `--case-id` es **excluyente** con los 6 flags de identidad (`--w-code --ciudad --tipo-caso
 --codigo-caso --sufijo --direccion`); el caso debe existir ya. Para `--fuente drive_ev`
-(re-pull) aún hacen falta `--folder-id`/`--team-id` (B5 los auto-derivará).
+(re-pull) basta `--folder-id`: `--team-id` se auto-deriva del `driveId` (la identidad sale de
+`_caso.md`; `--codigo-caso`/`--sufijo` no se pasan con `--case-id`).
 
 - **Export de WhatsApp:** el nombre del `.zip` suele decir el chat
   (`"...Cliente Vendedor.zip"`) → mapear directo a los 4 roles de
@@ -303,9 +311,8 @@ Todo REST `x-api-key`. No se borra nada.
 - **Handoffs fuente:** `docs/superpowers/handoff-2026-07-17-apertura-W-{02T3XO,02TH0W,046G2R}-mejoras-proceso.md`.
 - **Builds de este flujo (`PLAN.md [SIGUIENTE-APERTURA-EXPEDIENTE]`):** B1 ficha CRM
   end-to-end (`scripts/crm_ficha.py` + `_ficha_crm.yaml`), B2 `--case-id`, B3 normalización de
-  móvil, B4 evento `archivado` — **ya en `main`** (PR #69/#71/#72). **B5** (auto-derivar
-  `--team-id`/`--codigo-caso`/`--sufijo` desde `--folder-id`) **pendiente** — hasta entonces,
-  §1/§2/§4 se hacen a mano (recon del `driveId`).
+  móvil, B4 evento `archivado`, B5 auto-derivación de `--team-id`/`--codigo-caso`/`--sufijo`
+  desde `--folder-id` (`[APER-34]`, §4) — **todos en `main`**. El bloque B1–B5 está completo.
 - **Memorias:** `feedback-case-sufijo-tipo-canonico`, `feedback-crm-fichas-mayusculas`,
   `reference-sudespacho-crm-cableado-expediente`, `reference-sudespacho-archivo-actuaciones`,
   `reference-gmail-etiquetas-organizacion`, `feedback-worktree-vs-raiz-compartida`.

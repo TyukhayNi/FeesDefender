@@ -7,6 +7,7 @@ from core.sudespacho_create import (
     tag_rojo_equipo,
     tag_azul_de_codigo,
     TAG_ROJO_BaRS11,
+    TAG_ROJO_BaPD1,
     TAG_AZUL_BARCELONA,
     TAG_AZUL_MADRID,
     _parse_values,
@@ -22,6 +23,15 @@ def test_tag_rojo_equipo_conocido():
 
 def test_tag_rojo_equipo_desconocido_es_none():
     assert tag_rojo_equipo("ZzZZ99") is None
+
+
+def test_tag_rojo_equipo_bapd1_resuelve():
+    """El código canónico "BaPD1" (que B5 auto-deriva de la unidad "Barcelona -
+    PD1") debe resolver su tag rojo extrajudicial. Regresión del alias FD
+    corregido BaDP1->BaPD1 (2026-07-18): antes tag_rojo_equipo("BaPD1") era None
+    y un alta PD de Barcelona perdía el tag rojo en silencio."""
+    assert tag_rojo_equipo("BaPD1") == TAG_ROJO_BaPD1
+    assert tag_rojo_equipo("BaPD1") is not None
 
 
 @pytest.mark.parametrize("codigo,esperado", [
