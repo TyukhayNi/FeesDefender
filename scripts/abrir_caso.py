@@ -292,6 +292,45 @@ def _alta_crm(
         )
 
 
+def _autoderivar_drive_ev(
+    *, folder_id, tipo_caso, team_id, codigo_caso, sufijo,
+):
+    """B5: en --fuente drive_ev, deriva team_id/codigo_caso/sufijo omitidos.
+
+    - sufijo: puro, del tipo_caso (no necesita la Drive API).
+    - team_id: driveId de la carpeta (--folder-id).
+    - codigo_caso: nombre de la unidad compartida -> config.codigo_de_unidad.
+
+    Los flags explícitos SIEMPRE ganan (solo se rellena lo que viene None).
+    Degrada limpio: lo que no se pueda derivar queda None y lo caza el chequeo
+    de flags de identidad con un error claro.
+    """
+    if sufijo is None and tipo_caso:
+        sufijo = config.sufijo_de_tipo_caso(tipo_caso)
+        typer.echo(f"[auto] --sufijo del tipo_caso: {sufijo!r}")
+
+    if folder_id and (team_id is None or codigo_caso is None):
+        info = intake_drive.get_drive_folder_info(folder_id)
+        if info is None:
+            typer.echo("[auto] No se pudo leer la carpeta de Drive (token/red); "
+                       "pasa los flags que falten explícitos.")
+            return team_id, codigo_caso, sufijo
+        if team_id is None and info.drive_id:
+            team_id = info.drive_id
+            typer.echo(f"[auto] --team-id del driveId: {team_id}")
+        if codigo_caso is None:
+            drive_id_eff = team_id or info.drive_id
+            unidad = intake_drive.get_shared_drive_name(drive_id_eff) if drive_id_eff else None
+            derivado = config.codigo_de_unidad(unidad) if unidad else None
+            if derivado:
+                codigo_caso = derivado
+                typer.echo(f"[auto] --codigo-caso de la unidad {unidad!r}: {codigo_caso}")
+            else:
+                typer.echo(f"[auto] No pude derivar --codigo-caso de la unidad {unidad!r}; "
+                           "pásalo explícito.")
+    return team_id, codigo_caso, sufijo
+
+
 @app.command()
 def main(
     w_code: str | None = typer.Option(None, "--w-code"),
@@ -362,7 +401,16 @@ def main(
         # [APER-19] que esta feature previene).
         ident = dataclasses.replace(ident, case_id=resolved)
     else:
-        faltan = [n for n, v in flags_ident if v is None]
+        if fuente == "drive_ev":
+            team_id, codigo_caso, sufijo = _autoderivar_drive_ev(
+                folder_id=folder_id, tipo_caso=tipo_caso,
+                team_id=team_id, codigo_caso=codigo_caso, sufijo=sufijo,
+            )
+        flags_ident_eff = [
+            ("--w-code", w_code), ("--ciudad", ciudad), ("--tipo-caso", tipo_caso),
+            ("--codigo-caso", codigo_caso), ("--sufijo", sufijo), ("--direccion", direccion),
+        ]
+        faltan = [n for n, v in flags_ident_eff if v is None]
         if faltan:
             typer.echo(f"[ERROR] faltan flags de identidad {faltan} (o usa --case-id)", err=True)
             raise typer.Exit(code=1)
