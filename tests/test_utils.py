@@ -7,6 +7,7 @@ import pytest
 from core.utils import (
     build_frontmatter,
     neutralizar_case_id,
+    normalize_es_phone,
     read_md,
     slugify,
     validate_case_id,
@@ -90,3 +91,33 @@ class TestNeutralizarCaseId:
         original = "BaRR3 - Roser 39, 2º (W-030LFT) - Art 20 LAU"
         una_vez = neutralizar_case_id(original)
         assert neutralizar_case_id(una_vez) == una_vez
+
+
+# ---------------------------------------------------------------------------
+# normalize_es_phone — B3 (apertura de expediente)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("raw,esperado", [
+    ("+34 600 123 456", "600123456"),
+    ("600123456", "600123456"),
+    ("0034600123456", "600123456"),
+    ("+34600123456", "600123456"),
+    ("934 567 890", "934567890"),
+    ("34600123456", "600123456"),
+    ("(+34) 600-123-456", "600123456"),
+    ("", ""),
+])
+def test_normalize_es_phone(raw, esperado):
+    assert normalize_es_phone(raw) == esperado
+
+
+def test_normalize_es_phone_idempotente():
+    for raw in ["+34 600 123 456", "600123456", "0034600123456"]:
+        una = normalize_es_phone(raw)
+        assert normalize_es_phone(una) == una
+
+
+def test_normalize_es_phone_extranjero_no_se_mutila():
+    # No es +34: no se convierte en un ES de 9 dígitos erróneo.
+    assert normalize_es_phone("+33 6 12 34 56 78") == "+33612345678"
