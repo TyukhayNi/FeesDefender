@@ -70,6 +70,7 @@ Pendiente confirmar
 from __future__ import annotations
 
 import os
+import sys as _sys
 import time
 from dataclasses import dataclass, field
 from datetime import date
@@ -1046,6 +1047,33 @@ def tag_defaults_for_tipo_caso(tipo_caso: str) -> list[str]:
     return tags
 
 
+# Prefijo de 2 letras del código de equipo → tag azul de ciudad.
+# El código de equipo es "{ciudad(2)}{tipo_op(2)}{nº}" (INTEGRACION §11.3),
+# así que sus 2 primeras letras identifican la plaza sin ambigüedad.
+_PREFIJO_CIUDAD_A_TAG_AZUL: dict[str, str] = {
+    "Ba": TAG_AZUL_BARCELONA,
+    "Ma": TAG_AZUL_MADRID,
+    "Va": TAG_AZUL_VALENCIA,
+    "Bi": TAG_AZUL_BILBAO,
+    "Sa": TAG_AZUL_SANTANDER,
+    "Se": TAG_AZUL_SEVILLA,
+}
+
+
+def tag_rojo_equipo(codigo: str) -> str | None:
+    """Token del tag rojo de equipo para un código (p. ej. "BaRS11"), o None.
+
+    Resuelve la constante ``TAG_ROJO_<codigo>`` de este módulo (las constantes se
+    nombran exactamente así: ``TAG_ROJO_BaRS11``).
+    """
+    return getattr(_sys.modules[__name__], f"TAG_ROJO_{codigo}", None)
+
+
+def tag_azul_de_codigo(codigo: str) -> str | None:
+    """Token del tag azul de ciudad derivado del prefijo de 2 letras del código, o None."""
+    return _PREFIJO_CIUDAD_A_TAG_AZUL.get(codigo[:2])
+
+
 # ---------------------------------------------------------------------------
 # Builder de form-data
 # ---------------------------------------------------------------------------
@@ -1527,6 +1555,94 @@ def create_expediente_judicial_rest(
     """
     payload = _build_rest_payload_judicial(datos)
     return _rest_post(_REST_CREATE_JUDICIAL, payload)
+
+
+# Lista completa de propiedades del elemento extrajudiciales (descubierta 2026-07-18
+# vía probe de propiedad inválida). El GET-detalle exige ?properties=<coma>: el GET
+# plano da HTTP 500 "Undefined array key properties".
+_EXTRAJUDICIAL_PROPS = (
+    "costas", "cuantia", "Fecha_alta", "fecha_alta_hist", "historico", "intereses",
+    "Notas", "numero_anterior", "Numero_Expediente", "online", "Profesional",
+    "Referencia_Cliente", "referencia_historico", "Referencia_Propia", "saldo_cobrado",
+    "saldo_facturado", "saldo_no_facturado", "saldo_pendiente", "serie_expediente",
+    "Tipo_Asunto", "Tipo_Procedimiento", "total", "total_pendiente", "profesional_asignado",
+    "tags", "tnm_posicionprocesal", "tnm_siniestro", "dias_sin_actuaciones", "id",
+    "grupo_contable_id", "id_creador", "id_ultimo_modificador", "fecha_creacion",
+    "fecha_ultima_modificacion",
+)
+
+
+def _rest_headers() -> dict[str, str]:
+    return {
+        "x-api-key":    _get_api_key(),
+        "Content-Type": "application/json",
+        "Accept":       "application/json",
+    }
+
+
+def _parse_values(body: dict) -> dict:
+    """Aplana la respuesta GET/PUT-detalle {values:[{property:{name},value}]} → {name: value}."""
+    out: dict = {}
+    for item in (body.get("values") or []):
+        if not isinstance(item, dict):
+            continue
+        prop = item.get("property")
+        name = prop.get("name") if isinstance(prop, dict) else prop
+        if name:
+            out[name] = item.get("value")
+    return out
+
+
+def get_expediente(exp_id: str, properties: tuple[str, ...] | None = None) -> dict:
+    """GET-detalle del expediente extrajudicial, aplanado a {property: value}.
+
+    El GET-detalle exige ?properties=<coma> (el GET plano da HTTP 500). Devuelve las
+    propiedades pedidas (default: todas, _EXTRAJUDICIAL_PROPS).
+    """
+    props = ",".join(properties or _EXTRAJUDICIAL_PROPS)
+    url = f"{_REST_BASE}{_REST_CREATE_EXTRAJUDICIAL}/{exp_id}?properties={props}"
+    try:
+        r = httpx.get(url, headers=_rest_headers(), timeout=_REST_TIMEOUT)
+    except httpx.HTTPError as exc:
+        raise SudespachoCreateError(f"REST GET extrajudiciales/{exp_id} falló: {exc}") from exc
+    if r.status_code == 200:
+        try:
+            return _parse_values(r.json())
+        except Exception as exc:
+            raise SudespachoCreateError(f"REST GET extrajudiciales/{exp_id}: 200 sin JSON válido") from exc
+    try:
+        detail = r.json().get("detail") or r.text[:300]
+    except Exception:
+        detail = r.text[:300]
+    raise SudespachoCreateError(f"REST GET extrajudiciales/{exp_id} → HTTP {r.status_code}: {detail}")
+
+
+def update_expediente(exp_id: str, cambios: dict) -> dict:
+    """Actualiza campos de un expediente extrajudicial vía PUT PARCIAL.
+
+    El PUT de element_register/extrajudiciales/{id} es PARCIAL y PRESERVA los campos
+    omitidos (verificado en vivo 2026-07-18 sobre expediente desechable: un PUT {Notas}
+    preservó Numero_Expediente/cuantia/Referencia_Cliente). Por eso NO hace falta
+    GET→merge ni reenviar Numero_Expediente: se envía SOLO `cambios` (dict plano).
+    Devuelve el registro aplanado que responde el servidor.
+    """
+    if not cambios:
+        raise ValueError("update_expediente: 'cambios' no puede estar vacío")
+    url = f"{_REST_BASE}{_REST_CREATE_EXTRAJUDICIAL}/{exp_id}"
+    try:
+        r = httpx.put(url, json=cambios, headers=_rest_headers(), timeout=_REST_TIMEOUT)
+    except httpx.HTTPError as exc:
+        raise SudespachoCreateError(f"REST PUT extrajudiciales/{exp_id} falló: {exc}") from exc
+    if r.status_code == 200:
+        try:
+            return _parse_values(r.json())
+        except Exception:
+            return dict(cambios)
+    try:
+        detail = r.json().get("detail") or r.text[:300]
+    except Exception:
+        detail = r.text[:300]
+    raise SudespachoCreateError(f"REST PUT extrajudiciales/{exp_id} → HTTP {r.status_code}: {detail}")
 
 
 class SudespachoCreateError(RuntimeError):

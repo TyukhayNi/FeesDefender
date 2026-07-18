@@ -230,9 +230,18 @@ def crm_payload(identidad: Identidad, *, cuantia: float = 0.0):
         config.POSICION_OTROS: sc.POSICION_ACTOR,
     }[identidad.posicion]
 
+    tags: list[str] = []
+    rojo = sc.tag_rojo_equipo(identidad.codigo)
+    azul = sc.tag_azul_de_codigo(identidad.codigo)
+    if rojo:
+        tags.append(rojo)
+    if azul:
+        tags.append(azul)
+    tags += sc.tag_defaults_for_tipo_caso(identidad.tipo_caso)
+
     return sc.NuevoExpedienteExtrajudicial(
         referencia_cliente=identidad.case_id,
         cuantia=cuantia,
-        tags=sc.tag_defaults_for_tipo_caso(identidad.tipo_caso),
+        tags=tags,
         posicion=posicion_crm,
     )

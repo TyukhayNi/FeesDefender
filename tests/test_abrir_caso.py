@@ -158,8 +158,12 @@ def test_crm_payload_extrajudicial_actora():
     assert dto.referencia_cliente == ident.case_id
     assert dto.cuantia == 15000.0
     assert dto.posicion == sc.POSICION_ACTOR           # actora → ACTOR
-    # tags base del tipo de caso presentes
-    assert dto.tags == sc.tag_defaults_for_tipo_caso("VUELTA")
+    # tags: exact list equality pins order (rojo/azul first, defaults last) and exhaustiveness
+    rojo = sc.tag_rojo_equipo("BaRS11")
+    azul = sc.tag_azul_de_codigo("BaRS11")
+    defaults = sc.tag_defaults_for_tipo_caso("VUELTA")
+    expected = ([rojo] if rojo else []) + ([azul] if azul else []) + defaults
+    assert dto.tags == expected
 
 
 def test_crm_payload_defensiva_mapea_demandado():
@@ -230,3 +234,22 @@ def test_resolver_identidad_tipo_caso_desconocido_lanza():
             **_ident(tipo_caso="NO_EXISTE"),
             nombres_existentes=[], force=False,
         )
+
+
+def test_crm_payload_incluye_tags_equipo_y_ciudad():
+    from core import abrir_caso as brain
+    from core import sudespacho_create as sc
+
+    ident = brain.resolver_identidad(
+        codigo="BaRS11", direccion="Falsa 1", w_code="W-000AAA", sufijo="Vuelta",
+        tipo_caso="VUELTA", nombres_existentes=[], force=True,
+    )
+    payload = brain.crm_payload(ident, cuantia=1000.0)
+
+    assert sc.tag_rojo_equipo("BaRS11") in payload.tags       # equipo (rojo)
+    assert sc.tag_azul_de_codigo("BaRS11") in payload.tags    # ciudad (azul)
+    # los defaults de tipo (verde asunto + valoración) siguen presentes
+    for t in sc.tag_defaults_for_tipo_caso("VUELTA"):
+        assert t in payload.tags
+    # orden canónico: rojo primero, azul después, defaults al final
+    assert payload.tags.index(sc.tag_rojo_equipo("BaRS11")) == 0
