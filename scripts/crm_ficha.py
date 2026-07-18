@@ -88,18 +88,26 @@ def main(
         typer.echo("Cancelado.")
         raise typer.Exit(code=0)
 
-    link_ev_mmc(exp_id, cliente_propio_id=cliente_propio_id)
-    typer.echo(f"OK cliente propio {ficha.cliente_propio} (id {cliente_propio_id}) vinculado (exp {exp_id})")
+    try:
+        link_ev_mmc(exp_id, cliente_propio_id=cliente_propio_id)
+        typer.echo(f"OK cliente propio {ficha.cliente_propio} (id {cliente_propio_id}) vinculado (exp {exp_id})")
 
-    if ficha.contrario:
-        cid, creado = ensure_contrario_vinculado(exp_id, ficha.contrario)
-        typer.echo(f"OK contrario id={cid} ({'creado' if creado else 'existente'}) vinculado")
-    for col in ficha.colaboradores:
-        colid, creado = ensure_colaborador_vinculado(exp_id, col)
-        typer.echo(f"OK colaborador id={colid} ({'creado' if creado else 'existente'}) vinculado")
-    if ficha.notas_html:
-        update_expediente(exp_id, {"Notas": ficha.notas_html})
-        typer.echo("OK Notas actualizadas")
+        if ficha.contrario:
+            cid, creado = ensure_contrario_vinculado(exp_id, ficha.contrario)
+            typer.echo(f"OK contrario id={cid} ({'creado' if creado else 'existente'}) vinculado")
+        for col in ficha.colaboradores:
+            colid, creado = ensure_colaborador_vinculado(exp_id, col)
+            typer.echo(f"OK colaborador id={colid} ({'creado' if creado else 'existente'}) vinculado")
+        if ficha.notas_html:
+            update_expediente(exp_id, {"Notas": ficha.notas_html})
+            typer.echo("OK Notas actualizadas")
+    except Exception as exc:  # noqa: BLE001 — tolerancia a caída (spec §7.4), como _alta_crm
+        typer.echo(
+            f"[ERROR] Falló una escritura al CRM ({exc!r}). "
+            "Re-ejecutar es seguro: contrario/colaboradores deduplican por NIF/email.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
 
     # GET de verificación (el 201/200 no prueba el vínculo; confirmar por lectura).
     try:

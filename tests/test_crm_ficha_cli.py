@@ -1,4 +1,3 @@
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -110,6 +109,25 @@ def test_crm_ficha_cliente_propio_engel_volkers_vincula_id_27(tmp_path, monkeypa
     r = CliRunner().invoke(cli.app, ["--case-id", "W-000CCC", "--yes"])
     assert r.exit_code == 0, r.output
     link_ev.assert_called_once_with("607", cliente_propio_id="27")
+
+
+def test_crm_ficha_falla_limpio_si_writer_revienta_mid_run(caso_con_ficha, monkeypatch):
+    """Si un writer revienta a mitad del secuenciado (tras link_ev_mmc OK), debe fallar
+    limpio (spec §7.4: tolerancia a caída como _alta_crm — avisa, no revienta), no dejar
+    burbujear la excepción cruda ni imprimir un traceback."""
+    link_ev = MagicMock()
+    ensure_c = MagicMock(side_effect=RuntimeError("boom"))
+    monkeypatch.setattr("scripts.crm_ficha.link_ev_mmc", link_ev)
+    monkeypatch.setattr("scripts.crm_ficha.ensure_contrario_vinculado", ensure_c)
+
+    r = CliRunner().invoke(cli.app, ["--case-id", "W-000AAA", "--yes"])
+
+    assert r.exit_code != 0
+    assert r.exception is None or isinstance(r.exception, SystemExit)
+    assert "Traceback" not in r.output
+    link_ev.assert_called_once()
+    assert "[ERROR]" in r.output
+    assert "re-ejecutar" in r.output.lower() and "dedup" in r.output.lower()
 
 
 def test_crm_ficha_cliente_propio_desconocido_falla_sin_escribir(tmp_path, monkeypatch):
