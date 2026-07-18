@@ -210,3 +210,42 @@ def test_contar_cerrados_cuenta_las_entradas_del_ledger():
 
 def test_contar_cerrados_sin_seccion_es_cero():
     assert sc._contar_cerrados("# PLAN\n## Cola\n- [ ] tarea\n") == 0
+
+
+# --- Aviso de higiene de planificacion (D3) ---
+
+def _prep_higiene(monkeypatch, tmp_path, status_lineas, plan_texto):
+    (tmp_path / "STATUS.md").write_text("x\n" * status_lineas, encoding="utf-8")
+    (tmp_path / "PLAN.md").write_text(plan_texto, encoding="utf-8")
+    monkeypatch.setattr(sc, "ROOT", tmp_path)
+
+
+def test_higiene_avisa_status_grande(monkeypatch, capsys, tmp_path):
+    _prep_higiene(monkeypatch, tmp_path, 500, "# PLAN\n## ✅ Cerrados\n")
+    sc._avisar_higiene_planificacion()
+    out = capsys.readouterr().out
+    assert "[!]" in out and "STATUS.md" in out and "500" in out
+
+
+def test_higiene_avisa_item_sin_colapsar(monkeypatch, capsys, tmp_path):
+    _prep_higiene(monkeypatch, tmp_path, 10, _PLAN_CON_CERRADO_SUELTO)
+    sc._avisar_higiene_planificacion()
+    out = capsys.readouterr().out
+    assert "[!]" in out and "[VIEJO] COMPLETA" in out
+
+
+def test_higiene_avisa_ledger_lleno(monkeypatch, capsys, tmp_path):
+    ledger = "# PLAN\n## ✅ Cerrados\n" + "".join(
+        f"- ✅ **[I{i}]** x — PR #{i}\n" for i in range(31)
+    )
+    _prep_higiene(monkeypatch, tmp_path, 10, ledger)
+    sc._avisar_higiene_planificacion()
+    out = capsys.readouterr().out
+    assert "[!]" in out and "31" in out and "area" in out.lower()
+
+
+def test_higiene_limpia_no_alarma(monkeypatch, capsys, tmp_path):
+    _prep_higiene(monkeypatch, tmp_path, 100, _PLAN_CON_LEDGER)
+    sc._avisar_higiene_planificacion()
+    out = capsys.readouterr().out
+    assert "[!]" not in out

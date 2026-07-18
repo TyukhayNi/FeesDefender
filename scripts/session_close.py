@@ -273,6 +273,47 @@ def _avisar_plan_desfasado() -> None:
     print("quita la prosa de rama/worktree (git es el hogar de ese hecho).")
 
 
+def _avisar_higiene_planificacion() -> None:
+    """AVISO no bloqueante: higiene de STATUS.md y PLAN.md.
+
+    (1) STATUS.md supera el presupuesto de tamaño -> rotar a docs/bitacora/.
+    (2) PLAN.md tiene item(s) ✅ sin colapsar al ledger '## Cerrados'.
+    (3) El ledger '## Cerrados' supera el tope -> agrupar por area.
+    Solo lee ficheros del repo; sin git ni red. Cablea las reglas que la
+    doctrina 2026-07-05 dejo como prosa y por eso se degradaron.
+    """
+    print("\n" + "-" * 40)
+    print("Higiene de planificacion (STATUS.md / PLAN.md)")
+    hay_aviso = False
+
+    status = ROOT / "STATUS.md"
+    if status.exists():
+        n = _contar_lineas(status.read_text(encoding="utf-8"))
+        if n > _STATUS_MAX_LINEAS:
+            hay_aviso = True
+            print(f"[!] STATUS.md: {n} lineas (> {_STATUS_MAX_LINEAS}). "
+                  "Rota el historico de cierres a docs/bitacora/2026.md (fase C).")
+
+    plan = ROOT / "PLAN.md"
+    if plan.exists():
+        texto = plan.read_text(encoding="utf-8")
+        sin_colapsar = _cerrados_sin_colapsar(texto)
+        if sin_colapsar:
+            hay_aviso = True
+            print(f"[!] PLAN.md: {len(sin_colapsar)} item(s) ✅ sin colapsar al "
+                  "ledger '## Cerrados':")
+            for titulo in sin_colapsar:
+                print(f"  -> {titulo}")
+        n_cerrados = _contar_cerrados(texto)
+        if n_cerrados > _CERRADOS_MAX:
+            hay_aviso = True
+            print(f"[!] PLAN.md: '## Cerrados' tiene {n_cerrados} entradas "
+                  f"(> {_CERRADOS_MAX}). Promueve el ledger a agrupacion por area.")
+
+    if not hay_aviso:
+        print("STATUS.md y PLAN.md dentro de presupuesto; sin ✅ sin colapsar.")
+
+
 def main() -> None:
     force_slow = "--runslow" in sys.argv or os.getenv("RUN_SLOW") == "1"
     runslow = force_slow or _anon_tocado()
@@ -321,6 +362,12 @@ def main() -> None:
         _avisar_plan_desfasado()
     except Exception as e:  # el aviso nunca debe romper el cierre
         print(f"[aviso] no se pudo comprobar coherencia de PLAN.md: {e}")
+
+    # Aviso de higiene de planificacion (modo AVISO, no bloquea).
+    try:
+        _avisar_higiene_planificacion()
+    except Exception as e:  # el aviso nunca debe romper el cierre
+        print(f"[aviso] no se pudo comprobar higiene de planificacion: {e}")
 
 
 if __name__ == "__main__":
