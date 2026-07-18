@@ -469,3 +469,49 @@ def test_cli_whatsapp_dedup_reporta(drive_temporal, tmp_path, monkeypatch):
         cli.app, _args_min(fuente="whatsapp", src=str(z), rol="03_Otros") + ["--crm", "skip"])
     assert result.exit_code == 0, result.output
     assert "dedup" in result.output.lower() or "ya importado" in result.output.lower()
+
+
+def test_cli_case_id_resuelve_identidad_por_wcode(drive_temporal, tmp_path):
+    # 1) Crear el caso con una pasada normal (drive_ev).
+    r1 = CliRunner().invoke(cli.app, _args())
+    assert r1.exit_code == 0, r1.output
+    case_id = "BaRS11 - Passeig Marítim 30 (W-02Z2NR) - Vuelta"
+
+    # 2) Intake incremental con --case-id (W-code) + fuente manual, sin repetir los 6 flags.
+    src = tmp_path / "extra"
+    src.mkdir()
+    (src / "nota.txt").write_bytes(b"contenido incremental")
+    r2 = CliRunner().invoke(cli.app, [
+        "--case-id", "W-02Z2NR", "--fuente", "manual", "--src", str(src), "--yes",
+    ])
+    assert r2.exit_code == 0, r2.output
+
+    # El intake fue al MISMO caso (no una carpeta nueva) y se logeó upload_manual.
+    eventos = intake_log.read_events(case_id)
+    assert any(e["event"] == "upload_manual" for e in eventos)
+
+
+def test_cli_case_id_excluyente_con_flags_de_identidad(drive_temporal):
+    r = CliRunner().invoke(cli.app, [
+        "--case-id", "W-02Z2NR", "--w-code", "W-02Z2NR",
+        "--fuente", "manual", "--src", "x", "--yes",
+    ])
+    assert r.exit_code != 0
+    assert "excluyente" in r.output.lower()
+
+
+def test_cli_sin_case_id_ni_flags_falla(drive_temporal):
+    r = CliRunner().invoke(cli.app, ["--fuente", "manual", "--src", "x", "--yes"])
+    assert r.exit_code != 0
+    assert "identidad" in r.output.lower()
+
+
+def test_cli_case_id_caso_inexistente_falla(drive_temporal, tmp_path):
+    src = tmp_path / "e"
+    src.mkdir()
+    (src / "a.txt").write_bytes(b"x")
+    r = CliRunner().invoke(cli.app, [
+        "--case-id", "W-NOEXISTE", "--fuente", "manual", "--src", str(src), "--yes",
+    ])
+    assert r.exit_code != 0
+    assert "no encontrado" in r.output.lower()
