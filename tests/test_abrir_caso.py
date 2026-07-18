@@ -158,17 +158,12 @@ def test_crm_payload_extrajudicial_actora():
     assert dto.referencia_cliente == ident.case_id
     assert dto.cuantia == 15000.0
     assert dto.posicion == sc.POSICION_ACTOR           # actora → ACTOR
-    # tags incluyen rojo/azul de equipo/ciudad + los defaults del tipo
-    defaults = sc.tag_defaults_for_tipo_caso("VUELTA")
-    for tag in defaults:
-        assert tag in dto.tags
-    # verificar que rojo y azul están presentes (si existen)
+    # tags: exact list equality pins order (rojo/azul first, defaults last) and exhaustiveness
     rojo = sc.tag_rojo_equipo("BaRS11")
     azul = sc.tag_azul_de_codigo("BaRS11")
-    if rojo:
-        assert rojo in dto.tags
-    if azul:
-        assert azul in dto.tags
+    defaults = sc.tag_defaults_for_tipo_caso("VUELTA")
+    expected = ([rojo] if rojo else []) + ([azul] if azul else []) + defaults
+    assert dto.tags == expected
 
 
 def test_crm_payload_defensiva_mapea_demandado():
