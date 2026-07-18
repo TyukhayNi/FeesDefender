@@ -258,10 +258,10 @@ Todo REST `x-api-key`. No se borra nada.
    ya existe).
 5. **`_caso.md`:** `estado: archivado` + motivo + fecha en **dos niveles** del frontmatter
    (raíz y `meta`).
-6. **Evento forense:** el evento `archivado` **aún no está** en `INTAKE_EVENTS` de
-   `core/intake_log.py` → hoy se escribe la línea a mano en `_intake_log.jsonl`.
-   *Build en cola (B4) para formalizarlo:* `PLAN.md [SIGUIENTE-APERTURA-EXPEDIENTE]` +
-   `MEJORAS #70`.
+6. **Evento forense:** registrar el archivo con
+   `intake_log.append_event(case_id, "archivado", details={"motivo": ..., "fecha": ...})`.
+   El evento `archivado` **ya está** en `INTAKE_EVENTS` de `core/intake_log.py` (B4, PR-1 de
+   `[SIGUIENTE-APERTURA-EXPEDIENTE]`; `MEJORAS #70.a`) → ya no se escribe la línea a mano.
 
 ---
 
