@@ -12,12 +12,21 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 
 ---
 
-## ✅ MÁXIMA PRIORIDAD — CERRADA (ambos ítems completados 2026-07-07)
+## 🎯 Cola priorizada  (orden = prioridad; fila #1 = lo que toca ahora)
 
-> Los dos bloques que abrían aquí (`[SIGUIENTE-CONTROLES-ANTIFUGA]` y `[BIBLIOTECA-CHECKOUT]`)
-> están **completados y mergeados**. **No hay tarea de código en cola** (lo confirma `STATUS.md`
-> [SIGUIENTE]). La próxima sesión elige el siguiente frente de las secciones `[SIGUIENTE-…]` de
-> abajo según prioridad de Nikolai. Se conservan aquí marcados ✅ (patrón del repo).
+| # | Ítem | Estado | Gate / disparador | Esf. |
+|---|------|--------|-------------------|------|
+| 1 | [B5 auto-derivar `--folder-id`](#siguiente-apertura-expediente-builds-de-apertura-tras-las-3-aperturas-e2e-del-2026-07-17) | en curso (otra sesión) | desbloqueado | medio |
+| 2 | [MCP Drive-disco V1](#siguiente-mcp-drive-disco-mcp-drive-como-disco--spec-rev-3--plan-v1-listos-pr-48) | spec lista | mergear PR #48 | alto |
+| 3 | [Split F2 sala de máquina](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado | medio |
+| 4 | [Infra C — art. 156 LEC](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado (quick win) | bajo |
+| 5 | [Infra B — expediente scratch](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado | medio |
+| 6 | [MCP sudespacho F1](#siguiente-mcp-sudespacho-mcp-sudespacho-crm-del-despacho--f1-lectura-spec-hecho-plan-pendiente) | spec lista | gates de despliegue | alto |
+| 7 | [abrir-caso F3-judicial](#abrir-caso--f1--f2a--f3-ac-mergeadas-f2b-aparcada-f3-judicial-pendiente) | diferida | caso judicial real | alto |
+| 8 | [Google MCP F4 (Calendar)](#siguiente-google-mcp-f1-lectura--mergeada--f2-escriturapermisosnavegación--mergeada--f3f4-pendientes) | diferida | disparador | medio |
+
+> Detalle de cada ítem en su bloque `[SIGUIENTE-*]` más abajo. Backlog sin
+> promover: `docs/MEJORAS_FUTURAS.md`. Ledger de cerrados: `## Cerrados` (final).
 
 ---
 
