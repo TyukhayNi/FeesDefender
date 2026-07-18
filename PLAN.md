@@ -231,53 +231,6 @@ en Tier 1 anclado a `MERGE_EXCLUSIONS`; travesía por nodo con poda de `90_Notas
 - [ ] **F2 (escritura)** y **F3+** (agenda CRM en escritura, legacy, lote): spec/plan aparte, por disparador.
 - [x] **Revisión adversarial del spec (2026-07-13, 4 lentes):** núcleo resiste; correcciones aplicadas a spec+plan (confidencialidad por CAMPO no solo slug + filtro de propiedades; `describe_element` solo-esquema; documentos vía `download_document` a DL-root + `gdocu` en lista blanca + validar elemento-origen; retirada la afirmación "coma esquiva 500" → fallback legacy; `.dxt` autocontenido sin ruta/repo personal; token store atómico+lock+carga tolerante; refresco reactivo a 401 + `_extract` tolerante; descarga con timeout/redirects; no-pérdida-de-datos en F2). **Gates EN VIVO (prerrequisitos de despliegue):** rol abogado oculta contabilidad a nivel slug+campo, endpoint de login, coma-vs-500, escritura con JWT (F2), licencia, vida del refresh_token, verificar slugs. Detalle en spec §13.
 
-### ✅ [SIGUIENTE-CONTROLES-ANTIFUGA] COMPLETA 2026-07-07 — controles de `SEGURIDAD_DATOS.md` implementados
-*2026-07-07. Disparador concreto: el incidente de fugas de la Fase 2 (HAR + PII en el historial → una sesión entera de rewrite). La doctrina ya está escrita y cableada (`docs/SEGURIDAD_DATOS.md`, hogar canónico; cableado en el mapa SSOT, INDICE, GOBERNANZA §4 y CLAUDE.md). Todos los controles corren solos: barrera local (`51ecf24`), CI + shape-detection (#1 `48c790f`, #3 `e1ff182`) y prevención server-side ACTIVA (`a79ba90`).*
-
-Estado (según la tabla doctrina→mecanismo de `SEGURIDAD_DATOS.md`):
-- [x] **pre-commit local** — `.pre-commit-config.yaml`: gitleaks (secretos; verificado que pilla JWT) + `check-added-large-files` (maxkb=2048, corta el HAR de 22 MB) + `scripts/precommit_leak_guard.py` (rutas vetadas + PII de la blocklist gitignored, con test `tests/test_precommit_leak_guard.py`, 9 verde). Instalado en `pre-commit` y `pre-push`. **Auto-push `post-commit` eliminado** (chocaba con el flujo PR). Commit: `51ecf24`.
-- [x] **CI** — `.github/workflows/leak-scan.yml`: gitleaks + leak-guard en cada push/PR. Detección garantizada aunque el push venga de una máquina sin el hook. Opción: secret `PII_BLOCKLIST` para escaneo de PII server-side sin que la lista viva en el repo.
-- [x] **Prevención server-side de verdad — ACTIVA (2026-07-07, Nikolai subió a Pro):** branch protection en `main` con `leak-scan` como check OBLIGATORIO + PR requerido + `enforce_admins` + force-push/borrado bloqueados. **Ya no se pushea directo a `main`: rama + PR.** Cubre todas las máquinas y Cowork.
-- [x] **Fixtures sintéticas / test-guard — HECHO (2026-07-07).** Al descubrir: el `leak-guard` con la blocklist real halló **0 PII en TODO el árbol trackeado** — Fase 1 ya había pseudonimizado los tests. Los emails de `tests/` son sintéticos (`x.com`, `example.invalid`, `*.example`) o nombres inventados sobre dominios realistas. Deliverable real = el guard anti-regresión `tests/test_no_pii_en_tests.py` (reutiliza `escanear` sobre `tests/`+`core/`; se salta si no hay blocklist, p. ej. CI sin secret). Suite del guard 10 verde.
-- Instalar el hook en cada clon/worktree: `pre-commit install && pre-commit install --hook-type pre-push` (incl. la worktree `FeesDefender-email`).
-
-### ✅ [BIBLIOTECA-CHECKOUT] COMPLETA, MERGEADA y VALIDADA EN VIVO 2026-07-07
-*2026-07-07. Disparador: diseño v2 congelado (`~/DISEÑO_V2_20260707_MERGE_BIBLIOTECA.md`) + piloto validado en W-02VND1/W-02THLJ. Implementa el sistema de checkout/checkin Desktop↔Drive (biblioteca de casos).*
-
-**MERGEADA a `main` vía 3 PRs** (+ docs): **#4 `061d99e`** (cerebro puro + CLI + guard §6 + CP10 + campos de lock en `CaseMeta` + 4 eventos), **#5 `b67f46d`** (guard §6 en `email_export`/`sync_sudespacho`), **#6 `8dd138c`** (checkin honra el plan por-fichero vía `--files-from`) y **#7 `16cbb54`** (STATUS.md al estado final + gotchas de rclone/checkin en `DEAD_ENDS.md`). Rama `feat/repository-checkout` y worktree `~/Dev/fd-repo-checkout` ya podados. **Validada EN VIVO** contra el Drive real (`gdrive_tl`, casos desechables purgados): checkout, checkin (copia + borrado + renombrado + conflicto→resolución→disponible), bandeja/CP10, write-then-verify del lock, idempotencia. Estado final en `STATUS.md` (bloque «BIBLIOTECA DE CASOS — COMPLETA, MERGEADA y VALIDADA EN VIVO»).
-
-- [x] `core/config.py`: `ESTADOS_REPOSITORIO`, `TRANSICIONES_PERMITIDAS`, `MERGE_EXCLUSIONS`, `DERIVADOS_REGENERABLES`, `PENDIENTE_CHECKIN_SUBDIR`, `RCLONE_REMOTE_TL`/`TEAM_DRIVE_TL` (SSOT de definición, §2/§5).
-- [x] `core/repository_checkout.py` **PURO** (cero I/O Drive): `validar_transicion`, `plan_merge` (tabla canónica 9 casos §4.1 + derivados §4.2 + Google-native + renombrado por hash), `decidir_escritura` (guard §6), mutadores puros del lock (fm→fm), `verificar_nonce`, constructores de eventos.
-- [x] `core/case_manager.py`: campos de lock en `CaseMeta` (§2.3, retrocompatibles) + helpers `escribir_lock`/`liberar_lock`/`cancelar_checkout`/`marcar_conflicto`/`leer_estado_repositorio`/`leer_lock` (delegan en el cerebro) + `guard_escritura` (guard §6 integrado, emite `pendiente_checkin`). Fix latente: `register_expediente` ahora preserva todos los campos (no resetea el lock).
-- [x] `core/intake_log.py`: eventos `case_checkout`/`case_checkin`/`checkout_cancelado`/`pendiente_checkin` (INTAKE_EVENTS 18→22).
-- [x] `core/utils.py`: `now_iso_utc()` + `ts_compacto()` (timestamps ISO-UTC con zona para artefactos, §8).
-- [x] CLI `scripts/repository_cli.py`: `checkout`/`checkin` orquestando cerebro + rclone (`gdrive_tl` + `team_drive`, subprocess UTF-8 sin pipes, `--checksum`/`--backup-dir`/`--fast-list`, inventario validado por contenido, semáforo). Codifica los 9 hallazgos del piloto.
-- [x] Tests `tests/test_repository_checkout.py` (65) + `tests/test_repository_cli.py` (15): transiciones válidas/inválidas, tabla 9 casos, doble checkout rechazado, convergencia (idempotencia), round-trip `_caso.md`, bandeja, guard, parseo lsjson, semáforo, comandos rclone. **Suite completa verde (1556 tests).**
-- [x] Guard §6 **cableado** en los writers de intake con destino propio: `intake_manual` (`save_file`→`manual`, `save_file_crm_branch`→`crm_manual`), `whatsapp_intake.deposit_export`→`whatsapp`, `intake_drive.pull_drive_ev`→`drive_ev`. Helper reutilizable `case_manager.dir_intake(case_id, rel_base, origen)` (testeado) → devuelve dir efectivo (bandeja o normal) + evento; cualquier writer lo adopta en 1 línea. Retrocompatible (disponible → normal).
-- [x] **CP10 — integración de la bandeja** en el checkin del CLI: `planificar_integracion_bandeja` (puro, testeado) + `_integrar_bandeja` (mueve cada `_pendiente_checkin/<origen>/<rel>` a `<rel>`, o a `_reingesta_<base>` si colisiona — nunca sobrescribe; §6) + `rmdirs` de la bandeja vacía. Se ejecuta antes de CP11.
-- [x] Guard §6 en `email_export` y `sync_sudespacho` (pull CRM): **HECHO en PR #5 `b67f46d`** — el guard §6 queda cableado en **TODOS** los writers de intake (manual, whatsapp, drive_ev, email, crm) vía `case_manager.dir_intake`.
-- [x] Revisión skill `checkin-caso` (`~/checkin-caso-skill/`, editada la copia local): exclusiones de protocolo COMPLETAS en `.cmd`, evento canónico `case_checkin`, liberación del lock CP11, paridad con la CLI, baseline 3-vías, +2 lecciones, eval 0 actualizado. Cowork re-ejecuta evals antes de instalar.
-- [x] Skills **`checkin-caso` (revisada) + `checkout-caso` (nueva)** empaquetadas (`dist_skills/*.skill`, raíz canónica). Cowork las re-importa (skills sueltos, no bundle de plugin).
-
-**Decisiones (Nikolai: "SÍ A TODO", 2026-07-07):** commit + PR ✓; guard cableado en TODOS los writers de intake ✓; reconciliación `90_Notas personales` = copia ciega de cortesía como no-op ✓; ESTADO.md del Drive la actualiza Cowork.
-
-Diferidos: alertas de préstamo >7 días (tarea programada), sección STATUS.md como vista derivada, UI Streamlit; instalar las skills en Cowork.
-
-### ✅ [SANEADO-PII-FASE-2] HECHA 2026-07-06 — Historial git reescrito + repo GitHub recreado (scrub total)
-*La Fase 1 (árbol actual) estaba en el `7c27ec5` original; ver memoria `project-saneado-pii-repo`. Esta Fase 2 sacó la PII del HISTORIAL (HAR 22 MB + `data/_audit/` desde el commit inicial `d6051f4`).*
-
-**Ejecutado:**
-- [x] Rewrite con `python -m git_filter_repo` sobre **clon `--mirror` aparte** (`~/Dev/fd-rewrite.git`; backup íntegro con PII en `~/Dev/fd-backup.git`): `--force --invert-paths --path docs/_descubrimiento/ --path data/_audit/ --replace-text data/_saneado/replacements.txt` (67 reglas). Nuevo `main` = **`a40b27f`** (494 commits). Verificado: HAR/audit fuera del historial, 0 JWT, 0 PII alta-ID como palabra, pseudónimos presentes. Único cambio de árbol en HEAD vs Fase 1: 2 líneas de prosa meta en `PLAN.md`/`STATUS.md` (mejora).
-- [x] **Gate que el plan no cubría (detectado en sesión):** `push --force origin main` NO limpia GitHub — los `refs/pull/*` (10 PRs, server-managed) + la rama `feat` siguen anclando los objetos viejos. **Decisión Nikolai: SCRUB TOTAL = borrar + recrear el repo** (token sin scope `delete_repo`, `gh` no instalado → Nikolai lo hizo en la UI web).
-- [x] Push selectivo al repo recreado: `main` (`a40b27f`) + `feat/intake-procuradores-f2-ui` (`58ffaeb`) + `feat/intake-email-consultores` (esta era **local-only sin respaldo** → se reescribió también y se subió limpia como `71f8fee`). Las 6 ramas cloud (todas mergeadas) desaparecen por no re-subirlas. **Remoto final: solo esas 3 ramas, 0 refs de PR, 0 HAR/PII/JWT.**
-- [x] Worktrees re-sincronizadas (`reset --hard origin/…` — lo corre Nikolai, está en deny-rule) + `reflog expire`/`gc --prune=now` para purgar la PII del `.git` local (incl. la worktree enlazada `FeesDefender-email`).
-
-**Pendiente (opcional, cosmético — Fase 2a):** barrer nombres del despacho en PROSA distinguiendo prosa (sustituir) de config FUNCIONAL a conservar (`core/config.py ABOGADOS`, `sudespacho_create.abogado_principal`, firma `share_drive.py`, `LICENSE`). En gran parte inútil (el nombre persiste en git author + CRM). Sin disparador → no promovido.
-
-**Avisos post-recreación:** re-invitar colaboradores + reconfigurar branch protection (se pierden al recrear); cualquier otro clon/Cowork debe **re-clonar** (SHAs sin ancestro común); `fd-backup.git` borrable al confirmar el resultado.
-
-**Fallos de baseline — RESUELTOS 2026-07-07:** `test_helpers_sin_drift` (drift de helpers → `sync_skill_helpers.py`); `test_adjuntos_contenido_router` (aislamiento por `reload(extractor)` → captura de `ExtractionError` cualificada por módulo en `router.py`); 2 módulos MCP sin colección (`mcp` instalado + `importorskip`). **Suite `1418 passed, 58 skipped`, verde.**
-
 ---
 
 ## 🧭 PRINCIPIO TRANSVERSAL — dos capas: motor determinista + interfaz distribuible (plugin)
@@ -308,42 +261,6 @@ Tres reglas que gobiernan TODO pipeline de procesado (aplican a `[SIGUIENTE-MOTO
 - **(c) PARCHE PROVISIONAL (hasta que exista el piloto de biblioteca).** Para procesar un caso HOY: `rclone copy` manual del caso a local antes del pipeline y de vuelta al terminar (válido solo si **un único usuario** toca el caso), o **pin offline** de la carpeta antes de procesar.
 
 ---
-
-### ✅ [CRITICO-PRESIGNED-DOWNLOAD-BUG] RESUELTO 2026-06-10 — descarga del Gestor Documental
-
-La descarga REST está arreglada (era la **Fase 0** de
-`[SIGUIENTE-INTAKE-JUDICIAL-AUTO]`, abajo). Causa raíz: el CRM redesplegó el
-módulo `App\Upload` y rompió **ambos** endpoints de presigned-URL
-(`/api/files/presigned_download_url` → 400 IRI; `/api/documents/presigned_urls/s3/download`
-→ 500 controlador no registrado). Endpoint vivo: `GET /api/documents/{id}/downloadUri`
-→ campo `presignedDownloadUrl`. `get_presigned_download_url` reescrito; 31/31 docs
-del exp. 649 verificados byte a byte. Detalle completo y diagnóstico en
-`docs/DEAD_ENDS.md` (entrada marcada ✅ RESUELTO). **Próximo paso real:** Fases 1-4
-de `[SIGUIENTE-INTAKE-JUDICIAL-AUTO]`.
-
----
-
-## ✅ [SIGUIENTE-SKILL-EXPEDIENTE-A-MD] Skill `organizar-sala-maquina` (ex `expediente-a-md`) — COMPLETA 2026-07-09
-*Decisión Nikolai 2026-07-04 (vía lean). CONSTRUIDA y validada 2026-07-09 en rama `feat/organizar-sala-maquina` (PR pendiente de merge → sustituir por hash del squash al mergear). Renombrada `expediente-a-md`→`organizar-sala-maquina` para alinear con el grafo de ecosistema de `abrir-caso` (paraleliza `organizar-sala-lectura`).*
-
-> **HECHA.** Spec `docs/superpowers/specs/2026-07-09-organizar-sala-maquina-design.md` · plan `docs/superpowers/plans/2026-07-09-organizar-sala-maquina.md`. Cerebro `core/sala_maquina.py` + CLI `scripts/sala_maquina.py` + skill `.claude/skills/organizar-sala-maquina/`. 51 tests verdes; revisión adversarial por subagentes (cazó fallo de aislamiento por documento, hueco de custodia `01_OCR/` con `PriorOcrFound`, estado `--force` obsoleto). **Task 14 (corrida real W-02VND1): 668 docs, 0 crashes, 531 `ok`**; los `empty` = 90 fotos + 6 PDFs (candidatos `--vision`), todos en `_cobertura.md` (cero caída silenciosa).
-
-**Qué hace (2 pasos + handoff):**
-- [1] `01_Procesado/02_Sala de máquina/01_OCR/` — PDFs **buscables** con **OCRmyPDF** (local, sin tope de páginas).
-- [2] `01_Procesado/02_Sala de máquina/03_MD/` — 1 `.md` por documento (+ `raw_text/` intermedio, idempotencia).
-- **Handoff:** SUGIERE `organizar-sala-lectura` (puntero atómico, NO encadena).
-- `_revisar/_cobertura.md` (red de calidad: densidad+gibberish+idioma). `00_Input`/`90_Notas personales` intocables (guard). Idempotente por sha256.
-
-**Desviaciones vs diseño lean 2026-07-04 (cerradas con Nikolai):** escribe en `02_Sala de máquina/` (no plano) · NO renombra `Sala lectura` (eso es motor F0) · handoff SUGIERE (no encadena) · NO usa `pipeline.run`/Docling (OCRmyPDF aguas arriba → cierra el hueco de >30 pp). Integración de ecosistema diferida al patrón grafo-único (`MEJORAS #50`, otra sesión).
-
-**Motor:** OCRmyPDF base (obligatorio para el PDF buscable — Claude visión no lo genera); **Claude visión (Sonnet 5 / Opus 4.8) = refuerzo OPCIONAL** del MD en páginas duras (manuscrito/tablas).
-
-**Reutiliza:** `core/anon/ocr.py::ocr_pdf` · `imagen_a_pdf` · `extractor` · `markdown_generator` · `catalogo_documental` · `intake_log` · `utils.output_slug` · `pypdfium2` · skill `organizar-sala-lectura`.
-
-**Prerrequisitos para arrancar:**
-- [ ] Instalar **OCRmyPDF + Tesseract `spa/cat/rus`** en el PC (imprescindible para [1]).
-- [ ] Aportar **un caso real** (o unos PDFs) para el E2E.
-- [ ] Build: `render`(pypdfium2) + `SKILL.md` + tests (transcripción mockeada) + `CHANGELOG` + sync helpers `_shared`.
 
 ## [SIGUIENTE-MOTOR-DOCUMENTAL] Motor documental unificado (split/OCR/MD) + empaquetado como conector (`MEJORAS #48`)
 *Decisión Nikolai 2026-07-03. Disparador concreto: Nikolai quiere empaquetar el motor OCR→split→MD como un conector/plugin reutilizable por los compañeros. Un motor fragmentado y que falla en silencio no se puede empaquetar bien → sanear + fachada + registro de cobertura es la preparación del plugin.*
@@ -377,65 +294,6 @@ script manual · OCRmyPDF en anon), hueco de escaneados >30pp que salen vacíos,
 - [ ] **F4 — conector MCP + empaquetado + botón reformar plugin** (aislamiento por subproceso, versión/modelos pinneados, sin fuga de datos, preservar `core/anon`) + **preflight (M8)** + **doctor/manifiesto (M9)**. **Botón `rebuild_plugin`** mecánico + señalización semántica (handoff `motor_mejora`) + hook de drift (`session-start-hook`). Ver §K.
 - [ ] **F-final — anonimización + reinstauración del muro `06`** (gate PII §L) — último eslabón; + faltas restantes (D.2–D.9) según disparador.
 - **Transversales:** Preview→Apply (M7) y guard `00_Input` (M5) en todas las fases.
-
-## ✅ [SIGUIENTE-EMAIL-APLANADO-ANIDADOS] Aplanado byte-fiel de emails anidados en el export de etiquetas
-*Decisión Nikolai 2026-06-24 (hilo Cowork BaRS1 Tibidabo 8). Disparador concreto: en `03_Email` del caso W-02VND1 no aparecen los emails que viajan adjuntos dentro de otro (p. ej. los del padre `2026-06-08_mails_consulado`). Extiende `[SIGUIENTE-EXPORT-ETIQUETA-EMAIL]` (abajo, ✅).*
-
-> **✅ HECHO 2026-06-24 — Parte 1 (`c492b70`) + Parte 2 (`911bf39`) + fix red de seguridad (`5cbb6eb`).**
-> Ambas partes implementadas por TDD, cada una con revisión adversarial (3 lentes) cuyos
-> hallazgos HIGH/MEDIUM/LOW se corrigieron en el mismo commit. Suite 1215 verde.
->
-> **Reextracción real W-02VND1 EJECUTADA** (`--force --extraer-adjuntos`): 125 → **277 `.eml`**
-> a primer nivel; **37 ficheros rescatados** de enlaces (PDFs `Nota simple`/`Nota mercantil`/
-> poderes + grabación de la call de 193 MB; 3 carpetas y 11 nativos anotados; 14 firmas
-> filtradas; 1 manual). La corrida destapó que el **boundary reusado entre niveles SÍ ocurre**
-> (3 padres `jdb_*`, 126 anidados de Apple Mail/Outlook/Nodemailer): el trigger inicial
-> (boundary repetido) era demasiado agresivo y los re-serializaba aunque el rebanado byte-fiel
-> era correcto → **fix `5cbb6eb`** ancla la red de seguridad a la coincidencia de Message-IDs
-> con el parser (byte-fiel si coinciden). **Decisión Nikolai:** los 126 ya almacenados se
-> **aceptan re-serializados** (contenido íntegro; el byte-original sigue embebido en el `.eml`
-> padre, re-extraíble a demanda); sin rebuild. Residuales en `MEJORAS #44`/`#45`.
-> **Pendiente menor:** si el flag afecta a la interfaz, re-empaquetar/re-importar la skill
-> `exportar-correos-etiqueta`.
-
-> **Plano completo y listo para ejecutar: `docs/PLAN_email_aplanado_anidados.md`.**
-> Todo el código de producción y el bloque de tests están **verificados en sandbox
-> (7/7 verde)** antes de redactar el plano. Es la **Parte 1 de 2**.
-
-**Causa raíz.** En `core/email_export.py`, `split_eml` descarta las partes
-`message/rfc822` porque `get_payload(decode=True)` devuelve `None` para ellas
-(`if payload is None: continue`). Los `.eml` adjuntos quedan solo embebidos en el
-padre, sin extraer.
-
-**Qué hay que hacer (resumen; detalle en el plano).** Extraer cada email anidado a
-**primer nivel** de `03_Email`, **byte-original** (rebanando los bytes crudos +
-decodificando el transfer-encoding; `as_bytes()` NO sirve, normaliza CRLF), nombrado
-por sus propias cabeceras, **recursivo** a hojas, **deduplicado** por `Message-ID`,
-con el padre conservado en la cronología y la **procedencia** (`forwarded_in`) en el
-evento `upload_email` de `_intake_log.jsonl`. Aplanado **por defecto**
-(`--no-aplanar-emails` para opt-out). **Red de seguridad:** si el rebanado crudo no
-halla nada pero el parser sí ve `message/rfc822`, caer a `as_bytes()` y avisar (nunca
-se pierde un email).
-
-**Ficheros.** `core/email_export.py` (nuevas `iter_nested_originals`/`_iter_raw_rfc822`/
-`_decode_cte`/`_iter_partes_hoja`/`_payload_message`/`_nested_con_fallback`/
-`_aplana_anidados`; reescribir `split_eml`; `ExportReport` +2 contadores; `export_label`
-+flag; `_emit_traza` +procedencia) · `scripts/export_label_emails.py` (flag CLI) ·
-`tests/test_email_export.py` (bloque verificado + e2e con `_FakeService`).
-
-**Pendiente operativo al cerrar.** Anotar la limitación del *boundary* compartido en
-`docs/MEJORAS_FUTURAS.md`; reextraer W-02VND1 con `--force`; dejar `STATUS.md`/`PLAN.md`
-al día con el hash del commit; re-empaquetar/re-importar la skill/plugin si el flag
-afecta a la interfaz expuesta.
-
-**Parte 2 (✅ HECHA, `911bf39`; plano `docs/PLAN_email_enlaces_drive.md`).** Emails/ficheros
-que el consultor reenvía **como enlace a Drive/Gmail** en vez de `.eml` adjunto: se rescatan
-byte-fieles vía Drive REST v3 (token `gdrive_ev`). Carpetas y docs nativos solo se anotan en
-traza; binarios de descarga directa se descargan verificados por md5 (filtrando firmas); los
-`.eml` reentran la Parte 1; otros binarios van a `_enlaces/` del padre (`source="drive_link"`).
-Permalinks Gmail vía `format=raw`. Evento forense `upload_drive_link`. Scope `drive` del
-remote confirmado en Fase 0. La instrucción operativa a los consultores (reenviar como
-adjunto) sigue vigente para el flujo nuevo; la Parte 2 rescata el backlog histórico por enlace.
 
 ---
 
@@ -724,49 +582,6 @@ intacto; ningún camino de IA accede a `01`. Primera fase = ficheros en
 único vs manifiesto aparte (diferida) · taxonomía documental (la redacta Cowork;
 bloquea afinar el clasificador, no el cimiento) · DPA Scaleway (bloquea solo
 Tarea 7) · correspondencia suelta.
-
----
-
-## ✅ [INTAKE-WHATSAPP-FASE-A] Intake de chats de WhatsApp — Fase A (UI Streamlit)
-*Diseño aprobado 2026-06-15. Spec: `docs/superpowers/specs/2026-06-15-intake-whatsapp-design.md`. Plan: `docs/superpowers/plans/2026-06-15-intake-whatsapp-fase-a.md`. Implementación: Claude Code, rama `feat/whatsapp-faseA`.*
-
-**Fase A COMPLETA (2026-06-17).** Parser puro `core/whatsapp_export.py` (iOS/Android,
-2/4 cifras, 12/24h, multilínea, sistema, adjuntos, filtro por fechas) + glue
-`core/whatsapp_intake.py` (analyze + deposit_export, depósito verbatim + zip
-original + IntakeManifest dedup por hash + evento `upload_whatsapp`) + expander
-«📲 Importar chat de WhatsApp» en el tab Casos de `streamlit_app.py` (multi-zip,
-rol por chat, previsualización, aviso de adjuntos faltantes/audios diferidos).
-Commits: `3734dcb` → `8b5bb42` → `2db5617` → `1a64fb4` → `aa4904f` → `6963ec5`
-→ `3e64dd5` → `cf26b2a` (spec review fix). Tests: +25 (16 parser + 9 glue).
-Suite: **955 passed, 58 skipped** (5 fallos preexistentes en
-`test_sudespacho_relations.py` — ajenos).
-
-**Fase B (email) y transcripción de audio diferidas** — fuera de alcance de Fase A,
-reutilizan el parser sin cambios.
-
----
-
-## ✅ [ESTILO-DE-LA-CASA] Infraestructura de escritura del despacho (claridad + persuasión + no-IA)
-*Plano: `PLANO_Code_skill_estilo_casa.md`. Decisiones de Nikolai + recomendaciones de Code. Implementación: Claude Code, 2026-06-17.*
-
-**COMPLETA (2026-06-17).** Dos capas. **Capa 1:** contrato canónico
-`data/_estilo/contrato_estilo.md` (instrucción para modelo; 3 capas + regla de oro
-claridad ⟂ precisión —gana la precisión— + opera dentro del formato Sala 1ª TS).
-**Capa 2:** skill `pase-de-estilo` (`transversal`/`atomica`, núcleo + identidad, sin
-módulos ni telemetría; valida OK; references `claridad_es.md` + `tics_ia_es.md` (81
-patrones) + `persuasion_es.md` (34 técnicas) + `registros.md` placeholder; versión
-final + tabla de cambios + traza; guardarraíl de reordenación afinado —frase
-intra-fundamento permitida, esqueleto solo propuesto—; cita vaga remitida a
-`verificacion-anclada-fuente`, no inventa). Test lean con-skill vs baseline:
-guardarraíles OK. **Enganche (prosa):** puntero capa 1 + `pase-de-estilo` capa 2 en
-las 5 procesales (`escritos-judiciales` —+ línea nueva `verificacion-anclada-fuente`,
-único hueco—, `oposicion`, `preparacion-litigio-civil`/`-audiencia-previa`/`-juicio-oral`);
-línea always-on en `CLAUDE.md`; módulo **ESTILO + VERIFICACIÓN** en `_plantilla-skill`
-(las skills nuevas nacen con ambos concerns en `requires`). `.skill` en `dist/skills/`.
-**Pendiente:** reimport en servidor (manual, Cowork/claude.ai); corpus de voz real
-(`registros.md`, Fase E, lo aporta Nikolai). **Diferido:** `requires` en las 5 skills
-viejas (prosa ahora, retrofit de identidad único futuro); enforcement en
-`validate_skills.py`.
 
 ---
 
@@ -1200,17 +1015,6 @@ relanzar el pipeline con intake ya parcialmente OCRizado/markdowneado/anonimizad
 re-ejecutar nunca toca `00_Input/`" significa "no muta inputs", no "salta lo ya
 hecho". El skip refuerza esa idempotencia, no la rompe. Implementación: Claude Code.
 
-### ✅ Idea de gobernanza documental — `[IDEA-GOBERNANZA-DOCS]` RESUELTO 2026-06-10
-
-Implementada la malla de referencias cruzadas y regla de promoción:
-- `docs/MEJORAS_FUTURAS.md` retitulado a "backlog técnico" (alcance: todo el repo).
-- Cabecera de `MEJORAS_FUTURAS.md` con referencia a `PLAN.md` y convención
-  `[PROMOVIDO → PLAN.md]`.
-- Cabecera de `PLAN.md` con referencia a `docs/MEJORAS_FUTURAS.md` y convención
-  `MEJORAS #NN`.
-- Regla de promoción documentada en `CLAUDE.md` §"Planificación y estado":
-  disparador concreto (caso real, bug bloqueante, decisión de Nikolai).
-
 ## TODO — Refactor de `hechos_atomicos`: extractor source-locked
 *Sesión Cowork 2026-05-29*
 
@@ -1564,66 +1368,20 @@ trabajo para que no contamine).
 
 ---
 
-## ✅ [SKILL-CONTESTACION-ART20-LAU] Nueva skill `contestacion-honorarios-art20-lau` — entregada e integrada en el repo
-*Creada en Cowork (v1.1.0, playbook del asunto W-02THLJ) y distribuida al equipo como `.skill`. Handoff Cowork→Claude Code 2026-07-03. Integración en el repo: Claude Code.*
+## ✅ Cerrados
 
-> **✅ HECHA 2026-07-03 (Claude Code).** La skill se **importó a `.claude/skills/contestacion-honorarios-art20-lau/`** (fuente única de desarrollo, regla CLAUDE.md; antes vivía solo como `.skill` fuera del repo). Integración completa:
-> - **Helpers canónicos (task 1):** añadida a `_TARGETS` de `scripts/sync_skill_helpers.py`. El sincronizador la promueve a módulo **OPERACIÓN** y le copia los 4 helpers (`registrar_uso.py` —ya venía byte-idéntico—, `registrar_outputs.py`, `programar_revision.py`, `scaffold_caso.py`), en paridad con `oposicion-alegacion-nulidad`. `sync --check` OK (byte-idénticos); `test_skill_helpers_sync.py` verde.
-> - **Telemetría (task 2):** el patrón de detección del helper (`pyproject.toml` hacia arriba) resuelve a `data/_skill_logs/contestacion-honorarios-art20-lau/` (verificado); `uso.jsonl` se crea a demanda en el primer `log()`. Ruta ya cubierta por `.gitignore` (no se versiona telemetría con refs reales). Se añadió `.gitignore` propio a la skill (excluye `logs/*.jsonl|*.json`, conserva `README.md`).
-> - **Homogeneización / validador AVISO (task 3):** al vivir en `.claude/skills/`, entra automáticamente en el alcance de `scripts/validate_skills.py`. Único aviso: `metadata.rol`/`metadata.naturaleza` ausentes (usa el eje viejo `type: workflow`) — mismo estado que las demás skills bajo el **retrofit de identidad diferido**; license, version y helpers conformes.
-> - **PENDIENTE (v1.1.1, lo hace Cowork cuando Nikolai aporte el PDF):** incorporar **SJPI nº 10 de Barcelona 69/2025 anonimizada** a `references/jurisprudencia/` (+ fila en `INDICE.md`).
-> - Observación (fuera de alcance, pre-existente): `registrar_uso.skill_version` no lee `metadata.version` anidado → registra `"0.0"` para esta skill y para `oposicion` por igual. No se toca aquí.
+> Ciclo de vida cerrado. Narrativa completa: `git log` + el spec/plan enlazado.
+> Lista plana, reciente primero. Promover a agrupación por área cuando supere ~30
+> entradas (lo avisa `session_close`).
 
----
-
-## ✅ [SIGUIENTE-EXPORT-ETIQUETA-EMAIL] Exportar etiqueta Gmail → expediente (motor + Streamlit + CLI + skill)
-*Decisión Nikolai 2026-06-22 (hilo Cowork BaRS1 Tibidabo 8). Disparador concreto: el volcado de los correos de una etiqueta al expediente es lentísimo vía Cowork (conector solo-texto, sin binarios, tope de tamaño por contexto). Se necesita herramienta reutilizable para TODOS los casos y usable por Paola y Ana.*
-
-> **✅ HITOS 1 y 2 COMPLETOS (2026-06-22, Claude Code).** Motor `core/email_export.py`
-> (capa pura `eml_filename`/`split_eml`/dedup `Message-ID` + glue `export_label`) + CLI
-> `scripts/export_label_emails.py` + `tests/test_email_export.py` (+14). **Corrida real
-> W-02VND1: 122 `.eml` + 348 adjuntos, idempotente (2ª corrida 0/122).** Hito 2: botón
-> Streamlit «✉️ Exportar correos por etiqueta» + skill `exportar-correos-etiqueta`
-> empaquetada en el plugin (`package_plugin.py`), versión 0.1.0→0.2.0,
-> descripciones actualizadas. Suite verde (exit 0). Commit `5088e27` (main, sin push).
-> **✅ Hito 3 COMPLETO (2026-06-23, Claude Code).** Conector `email-export` en
-> `plugins/email_export_mcp/server.py` (FastMCP, tool `export_label_emails`, inyección
-> de deps). Plugin v0.2.0→0.3.0. Tests: `tests/test_email_export_mcp_server.py` (6 verdes).
-> Snippet `claude_desktop_config.json` en `plugin-src/README.md`. Commit `b58497f`.
-> **Pendiente Nikolai:** copiar snippet al `claude_desktop_config.json` de Cowork y reiniciar Claude Desktop.
-
-**Objetivo.** Dada una etiqueta Gmail de un caso, volcar TODOS sus mensajes como `.eml` fieles (cualquier tamaño) + adjuntos extraídos, organizados cronológicamente con la nomenclatura del despacho (`AAAA-MM-DD_descripcion`), en `00_Input/03_Email/`. Idempotente.
-
-**Arquitectura (UI → Core → Datos; lógica solo en core):**
-- `core/email_export.py` — MOTOR. Reutiliza el OAuth de `gmail_source` (`_load_credentials`/`_build_service`; tokens `~/.gmail-mcp/`, sin alta nueva). `labels().list`→labelId; `messages().list(labelIds=[…])` paginado; `messages().get(format='raw')`→`.eml`; capa pura `split_eml(raw)->(.eml,[adjuntos])` + `eml_filename(headers)`; subcarpeta fechada si hay adjuntos; dedup por `Message-ID`; idempotente.
-- Streamlit — página/botón "Exportar correos por etiqueta" para **Paola y Ana** (eligen caso+etiqueta y pulsan; corre en el PC con token y `G:`). La UI solo orquesta.
-- `scripts/export_label_emails.py` — CLI (`--ref W-XXXXX`, `--account`, `--label`); destino vía `case_locator.path_for`; genera `INDICE.md`/`CRONOLOGIA.md`.
-- `.claude/skills/exportar-correos-etiqueta/` — skill (rol:input, atomica) para Cowork/Claude Code; NO confundir con `intake-expediente` (subir sueltos) ni `organizar-sala-lectura`. Empaquetar con `package_skill.py` + re-import.
-- `tests/test_email_export.py` — capa pura (nombre canónico, extracción de adjuntos, dedup, idempotencia).
-
-**Validación inicial.** Correr para W-02VND1, etiqueta `01. CONTING/01. EXTRAJUD/01. BARCELONA/BaRS1 - Tibidabo 8 - (W-02VND1)` (cuenta engelvoelkers) → todos los correos organizados en `03_Email`.
-
-**Ejecución/commit/empaquetado:** Claude Code (pytest + token local + git). El OAuth ya está resuelto.
-
-**Estado provisional dejado hoy (2026-06-22, Cowork):** en el Drive de engelvoelkers se creó `00_Originales (W-02VND1)` con 40 `.eml` (los adjuntos de las 8 remesas de Eva/Isabel) + `03_Email/04_Correos organizados (W-02VND1)/INDICE.md` y `CRONOLOGIA.md`. Es provisional y queda sustituido por el export por etiqueta cuando exista.
-
-**Secuencia de entrega (añadido 2026-06-22).**
-- **✅ Fase 1 — que funcione para Nikolai en W-02VND1 (PRIORITARIA):** `core/email_export.py` + CLI `scripts/export_label_emails.py` + `tests/test_email_export.py`. Criterio de aceptación: ejecutar el CLI para W-02VND1 deja TODOS los correos de la etiqueta como `.eml` + adjuntos organizados en `00_Input/03_Email/`, idempotente y con la suite verde. Con esto el intake ya es operativo para el abogado. **HECHA — 122 `.eml` + 348 adjuntos, idempotencia verificada.**
-- **✅ Fase 2 — usable por Paola y Ana:** página/botón Streamlit sobre el mismo motor + empaquetado de la skill `exportar-correos-etiqueta` y re-import del `.skill`. **HECHA (botón + empaquetado; re-import del `.skill` lo hace Nikolai).**
-- El conector `expedientes-xl` NO interviene en este motor (el script escribe en `G:` por filesystem local). Producir `.eml` fieles de toda la etiqueta requiere Gmail API local `format=raw`; por eso la implementación/ejecución es Claude Code.
-
-**Criterio de aceptación / orden (ajuste 2026-06-22):** PRIMERO que funcione para
-**Nikolai en W-02VND1 (Tibidabo 8)** — `core/email_export.py` + CLI + corrida real
-dejando todos los correos de la etiqueta en su `03_Email` (Hito 1). DESPUÉS, botón
-Streamlit para Paola/Ana, skill empaquetada y tests completos (Hito 2). El motor es
-el mismo; la UI solo orquesta.
-
-**Distribución = plugin `feesdefender` (decisión 2026-06-22).** La capacidad se entrega
-dentro del plugin existente (no uno nuevo): se añade la skill `exportar-correos-etiqueta`
-al empaquetado (`scripts/package_plugin.py` copia también esa skill), se sube versión en
-`plugin-src/.claude-plugin/plugin.json` (0.1.0→0.2.0) y se actualizan
-`marketplace.json`/`README`. Así es instalable y reutilizable en TODOS los casos
-(parametrizado por `--ref`/etiqueta). Evolución opcional (Hito 3): exponer el motor como
-**herramienta MCP** del plugin (análogo a `expedientes_xl/server.py`, que corre local con
-acceso al token `~/.gmail-mcp` y a `G:`) → usable también desde Cowork de escritorio, no
-solo Claude Code.
+- ✅ **[SIGUIENTE-SKILL-EXPEDIENTE-A-MD]** Skill `organizar-sala-maquina` (ex `expediente-a-md`) — rama `feat/organizar-sala-maquina` (sin hash de squash registrado) · [spec](docs/superpowers/specs/2026-07-09-organizar-sala-maquina-design.md)
+- ✅ **[SIGUIENTE-CONTROLES-ANTIFUGA]** Controles de `SEGURIDAD_DATOS.md` implementados — commits `51ecf24`/`48c790f`/`e1ff182`/`a79ba90` · doctrina `docs/SEGURIDAD_DATOS.md`
+- ✅ **[BIBLIOTECA-CHECKOUT]** Biblioteca de casos (checkout/checkin Desktop↔Drive) — PR #4 (`061d99e`) + PR #5 (`b67f46d`) + PR #6 (`8dd138c`) + PR #7 (`16cbb54`)
+- ✅ **[SANEADO-PII-FASE-2]** Historial git reescrito + repo GitHub recreado (scrub total) — nuevo `main` `a40b27f`
+- ✅ **[SKILL-CONTESTACION-ART20-LAU]** Skill `contestacion-honorarios-art20-lau` integrada en el repo — 2026-07-03, sin PR/hash registrado en el bloque
+- ✅ **[SIGUIENTE-EMAIL-APLANADO-ANIDADOS]** Aplanado byte-fiel de emails anidados en el export de etiquetas — commits `c492b70`+`911bf39`+`5cbb6eb` · [plan](docs/PLAN_email_aplanado_anidados.md)
+- ✅ **[SIGUIENTE-EXPORT-ETIQUETA-EMAIL]** Exportar etiqueta Gmail → expediente (motor + Streamlit + CLI + skill) — commits `5088e27`+`b58497f`
+- ✅ **[INTAKE-WHATSAPP-FASE-A]** Intake de chats de WhatsApp — Fase A (UI Streamlit) — commits `3734dcb`→`cf26b2a` · [spec](docs/superpowers/specs/2026-06-15-intake-whatsapp-design.md)
+- ✅ **[ESTILO-DE-LA-CASA]** Infraestructura de escritura del despacho (claridad + persuasión + no-IA) — 2026-06-17, sin hash registrado · plano `PLANO_Code_skill_estilo_casa.md`
+- ✅ **[CRITICO-PRESIGNED-DOWNLOAD-BUG]** Descarga del Gestor Documental (bug presigned URL) — RESUELTO 2026-06-10, sin hash registrado · detalle `docs/DEAD_ENDS.md`
+- ✅ **[IDEA-GOBERNANZA-DOCS]** Malla de referencias cruzadas + regla de promoción backlog→`PLAN.md` — RESUELTO 2026-06-10, sin hash registrado
