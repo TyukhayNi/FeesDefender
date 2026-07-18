@@ -308,7 +308,7 @@ TAG_ROJO_BaCR10 = "#a32929___287"
 TAG_ROJO_BaCS1  = "#a32929___136"
 TAG_ROJO_BaCS10 = "#a32929___139"
 # Barcelona (Pendiente)
-TAG_ROJO_BaDP1  = "#a32929___319"   # label en CRM: "BaPD1" (2026-05-06)
+TAG_ROJO_BaPD1  = "#a32929___319"   # label en CRM: "BaPD1" (ID 319 estable; identificador FD corregido BaDP1→BaPD1 el 2026-07-18)
 # Bilbao Residential Sales
 TAG_ROJO_BiRS1  = "#a32929___273"
 TAG_ROJO_BiRS2  = "#a32929___268"
@@ -408,7 +408,7 @@ J_TAG_LILA_POSIBILIDAD_LT_15          = "#5229a3___261"   # <15%
 J_TAG_ROJO_BaCR1  = "#a32929___32"
 J_TAG_ROJO_BaCR10 = "#a32929___195"
 J_TAG_ROJO_BaCS1  = "#a32929___101"
-J_TAG_ROJO_BaDP1  = "#a32929___56"     # tipo op. pendiente confirmar
+J_TAG_ROJO_BaPD1  = "#a32929___56"     # label CRM corregido a "BaPD1" el 2026-07-18 (era "BaDP1" por error; ID 56 estable)
 J_TAG_ROJO_BaRR1  = "#a32929___33"
 J_TAG_ROJO_BaRR2  = "#a32929___34"
 J_TAG_ROJO_BaRR3  = "#a32929___39"

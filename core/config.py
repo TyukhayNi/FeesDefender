@@ -739,7 +739,7 @@ DRIVE_EV_TEAM_IDS: dict[str, str | None] = {
     "BaCS1":  "0AO2kC2doh2bpUk9PVA",   # BCN Comm - Propiedades
     "BaCS10": "0APxcQvRXJ8w_Uk9PVA",   # BCN Comm - MC2
     # ── Barcelona Pendiente ──────────────────────────────────────────────────
-    "BaDP1":  "0ADwt6QSqkvYXUk9PVA",   # Barcelona - PD1
+    "BaPD1":  "0ADwt6QSqkvYXUk9PVA",   # Barcelona - PD1
     # ── Bilbao ───────────────────────────────────────────────────────────────
     "BiRS1":  "0APU1_XB6UB2WUk9PVA",   # Bilbao - S1
     "BiRS2":  "0AI7ThNrdHBBFUk9PVA",   # Bilbao - S2

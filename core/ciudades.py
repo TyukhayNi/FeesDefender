@@ -87,7 +87,7 @@ EQUIPOS_POR_CIUDAD_EXTRAJUDICIAL: dict[str, dict[str, str]] = {
         "BaCR10 — BCN Commercial Rentals 10":  _sc.TAG_ROJO_BaCR10,
         "BaCS1  — BCN Commercial Sales 1":     _sc.TAG_ROJO_BaCS1,
         "BaCS10 — BCN Commercial Sales 10":    _sc.TAG_ROJO_BaCS10,
-        "BaDP1  — BCN (Pendiente) 1":          _sc.TAG_ROJO_BaDP1,
+        "BaPD1  — BCN (Pendiente) 1":          _sc.TAG_ROJO_BaPD1,
     },
     "Bilbao": {
         "BiRS1  — Bilbao Residential Sales 1": _sc.TAG_ROJO_BiRS1,
@@ -172,7 +172,7 @@ EQUIPOS_POR_CIUDAD_JUDICIAL: dict[str, dict[str, str]] = {
         "BaCR10 — BCN Commercial Rentals 10":  _sc.J_TAG_ROJO_BaCR10,
         "BaCS1  — BCN Commercial Sales 1":     _sc.J_TAG_ROJO_BaCS1,
         "BaCS2  — BCN Commercial Sales 2":     _sc.J_TAG_AZUL_BaCS2,
-        "BaDP1  — BCN (pendiente) 1":          _sc.J_TAG_ROJO_BaDP1,
+        "BaPD1  — BCN (pendiente) 1":          _sc.J_TAG_ROJO_BaPD1,
     },
     "Bilbao": {
         "BiRS1  — Bilbao Residential Sales 1": _sc.J_TAG_ROJO_BiRS1,
