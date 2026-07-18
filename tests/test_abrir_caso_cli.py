@@ -6,7 +6,6 @@ import pytest
 from typer.testing import CliRunner
 
 from core import case_manager, intake_log
-from core import config as _config
 from core.casos import case_locator
 from scripts import abrir_caso as cli
 
