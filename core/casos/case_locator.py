@@ -69,6 +69,34 @@ def _id_go_of(case_dir: Path) -> str | None:
     return None
 
 
+def read_case_meta(case_dir: Path) -> dict:
+    """Lee el dict ``meta`` del frontmatter de ``00_Input/_caso.md``.
+
+    Devuelve ``{}`` si el fichero no existe, no tiene frontmatter válido, o el
+    YAML está corrupto. No lanza (mismo criterio tolerante que ``_id_go_of``).
+    """
+    import yaml
+
+    caso_md = case_dir / "00_Input" / "_caso.md"
+    if not caso_md.is_file():
+        return {}
+    try:
+        text = caso_md.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    if not text.startswith("---"):
+        return {}
+    parts = text.split("---", 2)
+    if len(parts) < 3:
+        return {}
+    try:
+        fm = yaml.safe_load(parts[1]) or {}
+    except yaml.YAMLError:
+        return {}
+    meta = fm.get("meta") if isinstance(fm, dict) else None
+    return meta if isinstance(meta, dict) else {}
+
+
 def resolve_ref(ref: str) -> str:
     """Resuelve una referencia al ``case_id`` canónico (nombre de la carpeta).
 

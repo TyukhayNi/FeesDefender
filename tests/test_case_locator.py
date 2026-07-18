@@ -381,3 +381,33 @@ class TestCaseManagerListCases:
         from core.case_manager import list_cases
         (root / "Barcelona" / "BaRR3 - Roser").mkdir(parents=True)
         assert list_cases() == ["BaRR3 - Roser"]
+
+
+# ---------------------------------------------------------------------------
+# read_case_meta — Fase 2 B2
+# ---------------------------------------------------------------------------
+
+class TestReadCaseMeta:
+    def test_read_case_meta_devuelve_meta(self, tmp_path):
+        from core.casos.case_locator import read_case_meta
+        case_dir = tmp_path / "BaRS11 - Falsa 1 (W-000AAA) - Vuelta"
+        (case_dir / "00_Input").mkdir(parents=True)
+        (case_dir / "00_Input" / "_caso.md").write_text(
+            "---\n"
+            "ciudad: Barcelona\n"
+            "meta:\n"
+            "  tipo_caso: VUELTA\n"
+            "  ciudad: Barcelona\n"
+            "  direccion: Falsa 1\n"
+            "  id_go: W-000AAA\n"
+            "---\n\n# Caso\n",
+            encoding="utf-8",
+        )
+        meta = read_case_meta(case_dir)
+        assert meta["tipo_caso"] == "VUELTA"
+        assert meta["ciudad"] == "Barcelona"
+        assert meta["id_go"] == "W-000AAA"
+
+    def test_read_case_meta_sin_fichero_devuelve_vacio(self, tmp_path):
+        from core.casos.case_locator import read_case_meta
+        assert read_case_meta(tmp_path / "no-existe") == {}
