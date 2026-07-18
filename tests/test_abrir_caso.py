@@ -230,3 +230,18 @@ def test_resolver_identidad_tipo_caso_desconocido_lanza():
             **_ident(tipo_caso="NO_EXISTE"),
             nombres_existentes=[], force=False,
         )
+
+
+@pytest.mark.parametrize("codigo,direccion,w_code,sufijo", [
+    ("BaRS11", "Passeig Marítim, 30 - Castelldefels (08860)", "W-02Z2NR", "Vuelta"),
+    ("MaRS2", "Puerto Rico 2, 5º 2", "W-0470GM", "Negativa arras"),
+    ("VaRS3", "Calle Mayor 1", "W-02TH0W", "Negativa escritura"),
+])
+def test_descomponer_case_id_round_trip(codigo, direccion, w_code, sufijo):
+    case_id = abrir_caso.componer_case_id(codigo=codigo, direccion=direccion, w_code=w_code, sufijo=sufijo)
+    assert abrir_caso.descomponer_case_id(case_id) == (codigo, direccion, w_code, sufijo)
+
+
+def test_descomponer_case_id_sin_wcode_lanza():
+    with pytest.raises(ValueError):
+        abrir_caso.descomponer_case_id("BaRS11 - Sin referencia - Vuelta")

@@ -32,6 +32,26 @@ def componer_case_id(*, codigo: str, direccion: str, w_code: str, sufijo: str) -
     return f"{codigo} - {direccion} ({w_code}) - {sufijo}"
 
 
+def descomponer_case_id(case_id: str) -> tuple[str, str, str, str]:
+    """Inverso de ``componer_case_id``: (codigo, direccion, w_code, sufijo).
+
+    El W-code se localiza por la forma ``(W-...)`` (no cualquier paréntesis),
+    así una dirección con ``(08860)`` o con ` - ` interno se reconstruye bien.
+    Lanza ``ValueError`` si el nombre no contiene un W-code en esa forma.
+    """
+    m = _W_CODE_EN_NOMBRE.search(case_id)
+    if not m:
+        raise ValueError(f"case_id sin (W-...): {case_id!r}")
+    w_code = m.group(1)
+    codigo = case_id.split(" - ", 1)[0].strip()
+    before = case_id[:m.start()].rstrip()          # "codigo - direccion"
+    after = case_id[m.end():].lstrip()             # "- sufijo"
+    prefijo = f"{codigo} - "
+    direccion = before[len(prefijo):].strip() if before.startswith(prefijo) else before.strip()
+    sufijo = after[1:].strip() if after.startswith("-") else after.strip()
+    return codigo, direccion, w_code, sufijo
+
+
 class ColisionCaso(Exception):
     """El W-code ya existe en la ciudad (mismo caso) y no se forzó --force."""
 
