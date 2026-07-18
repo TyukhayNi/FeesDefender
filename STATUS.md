@@ -35,7 +35,7 @@ Claude revisa y comunica:
 - [ ] Tests: ¿alguno nuevo o modificado? ¿estado esperado?
 - [ ] Dead ends: ¿hubo callejón nuevo? → entrada propuesta para `docs/DEAD_ENDS.md`
 - [ ] Dependencias: ¿algún fichero modificado activa la tabla de `docs/ARQUITECTURA.md`?
-- [ ] STATUS.md: texto exacto de fecha + resumen + tareas completadas + [SIGUIENTE]
+- [ ] Bitácora: el **bloque de cierre** (fecha + resumen + tareas + [SIGUIENTE]) va a `docs/bitacora/AAAA.md` (reciente primero), **NO** al top de este fichero; `STATUS.md` mantiene solo estado vigente. El aviso E1 de `session_close` avisa si STATUS crece (>400 líneas).
 - [ ] Memoria: ¿hay decisión de arquitectura o patrón nuevo que guardar?
 - [ ] Commit: mensaje propuesto
 

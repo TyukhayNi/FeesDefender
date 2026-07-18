@@ -163,9 +163,13 @@ python -m scripts.session_close
 
 Equivalentemente, slash command `/cierre`.
 
-El cierre actualiza `STATUS.md`, valida que la suite sigue verde, prepara
-mensaje de commit. La memoria persistente (en mi memoria global, no en el
-repo) la actualizo yo en el chat antes de cerrar.
+El cierre valida que la suite sigue verde y prepara el mensaje de commit. El
+**bloque de cierre** (fecha + resumen + [SIGUIENTE]) se escribe en
+`docs/bitacora/AAAA.md` (reciente primero), **NO** en el top de `STATUS.md`;
+STATUS mantiene solo estado vigente + puntero a la bitácora (el aviso E1 de
+`session_close` avisa si STATUS crece >400 líneas). Fundamento:
+`docs/GOBERNANZA_FUENTES_VERDAD.md`. La memoria persistente (en mi memoria
+global, no en el repo) la actualizo yo en el chat antes de cerrar.
 
 ## Tests
 
