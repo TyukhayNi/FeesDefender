@@ -1,7 +1,17 @@
 ---
-estado: vigente
+estado: historico
 dueño: Nikolai Tyukhay
 ---
+
+> **Nota de auditoría (2026-07-18):** el diseño de este plan (motor determinista
+> `core/viabilidad.py` + clasificador Haiku/extractor Sonnet vía API sobre docs
+> anonimizados + botón Streamlit) **no es el camino que se construyó**. El
+> prerelleno vivo es la skill `viabilidad-prerelleno` (Claude en sesión lee
+> `00_Input/` crudo directamente, sin API ni pipeline de anonimización previo).
+> `core/scorer.py`/`core/viability.py` existen pero son **código muerto** sin
+> importadores (confirmado `grep` + `PLAN.md` línea 51: *"scorer→viability es
+> código muerto sobre el MD viejo; el flujo vivo es la skill"*). Se conserva
+> como registro histórico del diseño original.
 
 # Plan — Pre-relleno LLM del informe de viabilidad
 

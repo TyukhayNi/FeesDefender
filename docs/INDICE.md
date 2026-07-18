@@ -39,6 +39,7 @@ fecha: 2026-07-05
 | `CONVENCIONES_DESPACHO.md` | Convenciones del despacho. |
 | `DEAD_ENDS.md` | Callejones sin salida — consultar antes de reintentar. |
 | `DESARROLLO.md` | Guía de desarrollo. |
+| `DESPLIEGUE_MCP_DRIVE_DISCO.md` | Checklist ejecutable de despliegue del MCP "Drive como disco" V1 (spec §8); código V1 construido y mergeado (PR #52), despliegue manual pendiente. |
 | `DEVTOOLS_CAPTURA_CREATE.md` | Captura DevTools para el alta en el CRM. |
 | `INSTALACION_ANONIMIZADOR.md` | Instalación del anonimizador (`core/anon`). |
 | `MANUAL_DESPACHO.md` | Manual operativo del despacho. |
@@ -53,7 +54,7 @@ fecha: 2026-07-05
 | `PLAN_INTAKE_CRM_COMPLETO.md` | vigente | Intake CRM completo a `05_CRM` (`[SIGUIENTE-INTAKE-CRM-COMPLETO]`); su Paso 2 (procesado) queda supersedido por el diseño de 2026-07-10 (abajo). |
 | `superpowers/specs/2026-07-10-intake-crm-a-llm-design.md` | revisar | Bajada CRM → salas → registros → LLM + ejes de eficiencia + ROI (`[SIGUIENTE-INTAKE-CRM-A-LLM]`); aprobación revertida 2026-07-10, en re-brainstorming (decisiones abiertas). |
 | `PLAN_INTAKE_PROCURADORES_EMAIL.md` | vigente | Intake procuradores→CRM; F1/F2 hechas, F3 pendiente. |
-| `PLAN_PRERELLENO_LLM_VIABILIDAD.md` | vigente | Pre-relleno LLM del informe de viabilidad. |
+| `PLAN_PRERELLENO_LLM_VIABILIDAD.md` | historico | Diseño original (motor `core/viabilidad.py` + API Haiku/Sonnet) superado por la skill `viabilidad-prerelleno` (lee `00_Input/` crudo); `core/scorer.py`/`core/viability.py` son código muerto sin importadores. |
 | `PLAN_SaRS1_anon_pipeline.md` | vigente | Pipeline SaRS1 multi-hilo; H6 aún abierto. |
 | `PLAN_MOTOR_DOCUMENTAL.md` | aparcado | Motor OCR→split→MD como conector (⏸️ 2026-07-04; `MEJORAS #48`). |
 | `PLAN_BITACORA_CASOS.md` | aparcado | Bitácora razonada por caso (planificada s24, 2026-05-21); nunca implementada y fuera de la cola viva — recuperar si se decide. |

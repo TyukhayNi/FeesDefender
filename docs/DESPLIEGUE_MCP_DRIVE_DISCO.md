@@ -1,3 +1,9 @@
+---
+estado: vigente
+dueño: Nikolai Tyukhay
+fecha: 2026-07-18
+---
+
 # Despliegue del MCP "Drive como disco" (`expedientes-xl` consolidado)
 
 > Checklist ejecutable de la secuencia de despliegue del spec
