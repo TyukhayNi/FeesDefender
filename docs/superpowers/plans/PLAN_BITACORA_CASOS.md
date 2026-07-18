@@ -306,7 +306,7 @@ real reciente (revisar 3-5 sesiones de Cowork del último mes).
   se acumulan muchas. Indexable con `ripgrep` directamente — no requiere
   herramienta nueva. Si se vuelve frecuente, valorar índice persistente.
 - **RAG local sobre bitácoras del caso** para que el pre-relleno LLM
-  (plan `PLAN_PRERELLENO_LLM_VIABILIDAD.md`) tire de contexto histórico.
+  (plan `docs/superpowers/plans/PLAN_PRERELLENO_LLM_VIABILIDAD.md`) tire de contexto histórico.
   Solo si se acumulan ≥10 entradas por caso y se demuestra valor real.
 - **Bitácora multi-caso para sesiones que tocan varios casos a la vez**.
   El diseño actual genera una entrada por caso (replicando el resumen

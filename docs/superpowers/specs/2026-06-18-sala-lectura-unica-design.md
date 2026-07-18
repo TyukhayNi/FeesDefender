@@ -237,7 +237,7 @@ hash), respetando idempotencia.
 - HANDOFF `docs/superpowers/handoff-2026-06-18-unificar-salas-lectura.md`.
 - Specs/planes previos: `docs/superpowers/specs/2026-06-18-organizacion-sala-lectura-drive-triaje-design.md`,
   `docs/superpowers/specs/2026-06-17-sala-lectura-f4f6-design.md`,
-  `docs/PLAN_SALA_LECTURA_01_PROCESADO.md`.
+  `docs/superpowers/plans/PLAN_SALA_LECTURA_01_PROCESADO.md`.
 - `PLAN.md` → `[SIGUIENTE-SALA-UNICA-PLANA]`. `docs/MEJORAS_FUTURAS.md` #34/#35/#36/#38/#39.
 - Código: `core/sala_lectura.py`, `core/catalogo_documental.py`, `core/inventory.py`,
   `core/conjunto_detector.py`, `core/intake_manifest.py`.

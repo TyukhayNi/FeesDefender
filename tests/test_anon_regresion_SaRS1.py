@@ -3,7 +3,7 @@
 
 El caso SaRS1 (Castelar 37-39, Santander) es el primer expediente real que
 pasa por el motor `core/anon/` íntegro (OCR + split + anonimización). H5
-del plan `docs/PLAN_SaRS1_anon_pipeline.md` fija el output del motor a
+del plan `docs/superpowers/plans/PLAN_SaRS1_anon_pipeline.md` fija el output del motor a
 fecha del commit `d22febd` (cierre de H3) como referencia inmutable de
 regresión.
 
@@ -100,7 +100,7 @@ pytestmark = [pytest.mark.slow, pytest.mark.skipif(
     reason=(
         "Fixture gold-standard SaRS1 no presente localmente. "
         "Contiene PII real — directorio en .gitignore. "
-        "Ver docs/PLAN_SaRS1_anon_pipeline.md §8 (H5) y REVISION.md "
+        "Ver docs/superpowers/plans/PLAN_SaRS1_anon_pipeline.md §8 (H5) y REVISION.md "
         "del fixture para reconstruirlo."
     ),
 )]

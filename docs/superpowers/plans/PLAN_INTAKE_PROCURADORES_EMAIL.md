@@ -27,7 +27,7 @@ documental con un **nombre legible**. Todo pasa por una **red de seguridad** con
 confirmación humana antes de escribir en el CRM.
 
 Es el sentido inverso del intake actual (correo→CRM, no CRM→local). Encaja con
-`docs/PLAN_INTAKE_CRM_COMPLETO.md`.
+`docs/superpowers/plans/PLAN_INTAKE_CRM_COMPLETO.md`.
 
 ## 2. Alcance
 

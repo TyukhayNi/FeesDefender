@@ -10,7 +10,7 @@ La fuente de correo (gmail / IMAP) se inyecta como un iterable de ``EmailMessage
 testeable sin red. El extractor de señales y el matcher también se inyectan.
 
 RGPD: excepción acotada SOLO a este flujo. Ver
-``docs/PLAN_INTAKE_PROCURADORES_EMAIL.md`` §3-§6.
+``docs/superpowers/plans/PLAN_INTAKE_PROCURADORES_EMAIL.md`` §3-§6.
 """
 
 from __future__ import annotations

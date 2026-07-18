@@ -33,8 +33,8 @@ tipo: brainstorming + runbook
   brainstorming del *motor de procesado* (§4) y de la *estrategia de consumo LLM por
   niveles* (§5). Consumidor LLM del alcance: la skill `viabilidad-prerelleno`.
 - **Fuera de alcance:** construir el pipeline programático `core/viabilidad/*` de
-  `docs/PLAN_PRERELLENO_LLM_VIABILIDAD.md` (Haiku+Sonnet); refactor del motor
-  documental (`docs/PLAN_MOTOR_DOCUMENTAL.md`, aparcado).
+  `docs/superpowers/plans/PLAN_PRERELLENO_LLM_VIABILIDAD.md` (Haiku+Sonnet); refactor del motor
+  documental (`docs/superpowers/plans/PLAN_MOTOR_DOCUMENTAL.md`, aparcado).
 
 ## 1. Estado verificado (código leído 2026-07-10)
 
@@ -155,7 +155,7 @@ PII" está *relajado* desde 2026-07-04, deuda consciente).
   incoherencia y el riesgo de doble extracción siguen vivos.
 
 **Enlaces:** `[SIGUIENTE-MOTOR-DOCUMENTAL]` (aparcado, unificación grande),
-`[SIGUIENTE-SALA-UNICA-PLANA]`, `docs/PLAN_INTAKE_CRM_COMPLETO.md` (su "Paso 2" quedó
+`[SIGUIENTE-SALA-UNICA-PLANA]`, `docs/superpowers/plans/PLAN_INTAKE_CRM_COMPLETO.md` (su "Paso 2" quedó
 desfasado). **A decidir con Nikolai.**
 
 ## 5. Brainstorming B — consumo LLM por niveles (economía de tokens)
@@ -295,14 +295,14 @@ pese a leer un derivado, y la ventaja **crece con el tamaño y el % de escaneado
 
 - CRM: `core/sync_sudespacho.py`, `core/judicial_intake.py`,
   `scripts/sync_sudespacho.py:201`, `docs/INTEGRACION_SUDESPACHO.md`,
-  `docs/PLAN_INTAKE_CRM_COMPLETO.md`.
+  `docs/superpowers/plans/PLAN_INTAKE_CRM_COMPLETO.md`.
 - Salas: `core/sala_maquina.py`, `scripts/sala_maquina.py`,
   `.claude/skills/organizar-sala-{maquina,lectura}/SKILL.md`.
 - Registros: `core/catalogo_documental.py`, `core/inventory.py`, `core/intake_log.py`,
   `core/case_manager.py`.
 - LLM/anon: `.claude/skills/viabilidad-prerelleno/`, `core/anon/api.py`,
-  `core/llm.py`, `core/llm_cloud.py`, `docs/PLAN_PRERELLENO_LLM_VIABILIDAD.md`.
-- Motor (contexto): `docs/PLAN_MOTOR_DOCUMENTAL.md` (aparcado).
+  `core/llm.py`, `core/llm_cloud.py`, `docs/superpowers/plans/PLAN_PRERELLENO_LLM_VIABILIDAD.md`.
+- Motor (contexto): `docs/superpowers/plans/PLAN_MOTOR_DOCUMENTAL.md` (aparcado).
 
 ## 7. Anexo — Simulación: `viabilidad-prerelleno` sobre el Drive de Engel
 

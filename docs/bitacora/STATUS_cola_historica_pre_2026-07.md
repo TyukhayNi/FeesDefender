@@ -300,7 +300,7 @@ específico. Detalle completo en memoria `project_plantillas_viabilidad.md`.
 **[SIGUIENTE-VIABILIDAD-LLM]** (plan trazado el 2026-05-19 s22)
 Pre-relleno LLM del informe de viabilidad usando los documentos del Drive
 E&V volcados en el intake. Plan completo en
-`docs/PLAN_PRERELLENO_LLM_VIABILIDAD.md`. **Decisiones cerradas (D1-D5)**:
+`docs/superpowers/plans/PLAN_PRERELLENO_LLM_VIABILIDAD.md`. **Decisiones cerradas (D1-D5)**:
 camino cuestionario→derivación a ficha; disparo manual vía botón Streamlit;
 clasificador LLM previo sobre el Drive; Claude Haiku (clasificador) +
 Sonnet (extractor) sobre docs anonimizados con el pipeline SaRS1; output
@@ -371,7 +371,7 @@ Referencia: handoff de Cowork "organizador local con Ollama" Fase 5 (UI) + memor
 **[SIGUIENTE-SUBDIVISION-CIUDADES]** (plan trazado el 2026-05-12 s14; Fase 0 cerrada el 2026-05-12 s16)
 
 Subdivisión de `CASOS_ROOT` por ciudades. Plan en
-`docs/PLAN_SUBDIVISION_CIUDADES.md`. 11 decisiones cerradas, 7 fases.
+`docs/superpowers/plans/PLAN_SUBDIVISION_CIUDADES.md`. 11 decisiones cerradas, 7 fases.
 
 **Fase 0 cerrada (s16)** — commit en rama `feature/subdivision-ciudades`:
 
@@ -416,7 +416,7 @@ Desarrollo multi-hilo del procesamiento documental del caso SaRS1
 (Castelar 37-39, Santander) + inauguración del primer fixture
 gold-standard de anonimización. **7 hilos planificados**, cada uno
 autocontenido (contexto, pre-condiciones, comandos, criterios de
-aceptación, entregables) en `docs/PLAN_SaRS1_anon_pipeline.md`.
+aceptación, entregables) en `docs/superpowers/plans/PLAN_SaRS1_anon_pipeline.md`.
 
 Ruta crítica: H1 → H2 → H4 → H5 → H6 → H7. H3 (adaptación de
 `core/anon/deanonimizar.py` al `_mapa_caso.json`) es paralelizable.
@@ -517,7 +517,7 @@ FeesDefender (acceso de carpeta solo a `08_Para frontier/`), adjuntar
 30-90 min según iteraciones con el modelo.
 
 Cada hilo es una sesión nueva de Cowork con ventana de contexto
-limpia: leer `STATUS.md` + sección H<N> de `docs/PLAN_SaRS1_anon_pipeline.md`.
+limpia: leer `STATUS.md` + sección H<N> de `docs/superpowers/plans/PLAN_SaRS1_anon_pipeline.md`.
 
 ---
 
@@ -625,7 +625,7 @@ dudas pendientes, documentos generados) que se anexa a un único
 `BITACORA.md` en la raíz del caso. No archiva el chat crudo — solo el
 proceso de razonamiento, que es donde está el valor.
 
-Plan completo en `docs/PLAN_BITACORA_CASOS.md`. 10 decisiones cerradas,
+Plan completo en `docs/superpowers/plans/PLAN_BITACORA_CASOS.md`. 10 decisiones cerradas,
 6 fases (3 en ruta crítica, ~3 sesiones cowork estimadas).
 
 **Arrancar por F1**: módulo `core/bitacora/` aislado (fachada

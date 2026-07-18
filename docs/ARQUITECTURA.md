@@ -156,7 +156,7 @@ El campo `ciudad` se persiste tanto en `meta.ciudad` como en la raíz del frontm
 
 **Segundo nivel `<Ciudad>/<Equipo>/<case_id>` preparado pero no activado.** `case_locator` tolera el catálogo actual; si en el futuro se decide subdividir además por equipo, el refactor de call-sites ya no será necesario — solo cambiar la composición en `path_for_ciudad`.
 
-Histórico operativo: la migración inicial del 2026-05-21 movió 9 expedientes a 5 ciudades (Barcelona, Madrid, Santander, Sevilla, Valencia). Plan completo en `docs/PLAN_SUBDIVISION_CIUDADES.md`. Snapshot pre-migración persistido en `_audit/snapshot_pre_migration_20260521_013728.json`.
+Histórico operativo: la migración inicial del 2026-05-21 movió 9 expedientes a 5 ciudades (Barcelona, Madrid, Santander, Sevilla, Valencia). Plan completo en `docs/superpowers/plans/PLAN_SUBDIVISION_CIUDADES.md`. Snapshot pre-migración persistido en `_audit/snapshot_pre_migration_20260521_013728.json`.
 
 ---
 

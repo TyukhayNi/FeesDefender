@@ -11,7 +11,7 @@
 Sin idioma de UI: el placeholder de los ``st.selectbox`` lo antepone quien
 consume las constantes.
 
-Plan: ``docs/PLAN_SUBDIVISION_CIUDADES.md`` (Fase 0, sesión 16, 2026-05-12).
+Plan: ``docs/superpowers/plans/PLAN_SUBDIVISION_CIUDADES.md`` (Fase 0, sesión 16, 2026-05-12).
 """
 from __future__ import annotations
 

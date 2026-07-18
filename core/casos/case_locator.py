@@ -5,7 +5,7 @@
 - **Flat (legacy):** ``CASOS_ROOT/<case_id>/``
 - **Por ciudades:** ``CASOS_ROOT/<Ciudad>/<case_id>/``
 
-Plan: ``docs/PLAN_SUBDIVISION_CIUDADES.md`` (Fase 1).
+Plan: ``docs/superpowers/plans/PLAN_SUBDIVISION_CIUDADES.md`` (Fase 1).
 """
 from __future__ import annotations
 

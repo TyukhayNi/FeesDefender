@@ -933,7 +933,7 @@ acceso del disco de trabajo local.
 
 Matiz de alcance: el crudo lo genera `core/extractor.py`, no `core/anon/`; esta
 mejora es transversal al pipeline. La pieza de cifrado en reposo / control de
-acceso se solapa con `docs/PLAN_DESPLIEGUE_EV.md` (backup off-site cifrado con
+acceso se solapa con `docs/superpowers/plans/PLAN_DESPLIEGUE_EV.md` (backup off-site cifrado con
 `rclone crypt`, retención de logs de acceso) y pertenece en parte al plan de
 cumplimiento RIA/RGPD pendiente; aquí se documenta el delta técnico
 (retención/purga del crudo + PII en nombres de fichero).
@@ -1192,7 +1192,7 @@ Respeta la arquitectura: la lógica vive en el core, el LLM ocupa exactamente el
 humano de la worklist (no inventa estructura nueva), y `aplicar_clasificacion` sigue
 siendo el único camino al catálogo canónico. El prompt clasifica solo lo que ve
 (regla de la casa: no inventar). Infraestructura ya disponible: `core/llm_cloud.py`
-y el `docs/PLAN_PRERELLENO_LLM_VIABILIDAD.md`.
+y el `docs/superpowers/plans/PLAN_PRERELLENO_LLM_VIABILIDAD.md`.
 
 **Descartado.** Generar un índice/clasificación paralelo desde Cowork al margen de
 `indice_documental.yaml` reproduce la divergencia PC↔nube que el proyecto ya eliminó
@@ -1695,7 +1695,7 @@ corrección que conviene cerrar **antes** de apoyar análisis automatizado sobre
 
 ## 48. Motor documental unificado (split/OCR/MD) + empaquetado como conector  [PROMOVIDO → PLAN.md]
 
-**Desarrollo completo en [`docs/PLAN_MOTOR_DOCUMENTAL.md`](PLAN_MOTOR_DOCUMENTAL.md).** Entrada
+**Desarrollo completo en [`docs/superpowers/plans/PLAN_MOTOR_DOCUMENTAL.md`](superpowers/plans/PLAN_MOTOR_DOCUMENTAL.md).** Entrada
 paraguas que consolida el diagnóstico del flujo split/OCR/MD y fija el objetivo rector de
 **empaquetar el motor como un conector reutilizable** por el despacho.
 
@@ -1728,19 +1728,19 @@ subproceso, versión/modelos pinneados, sin fuga de datos + preservar `core/anon
 `github.com/strigov/vassal-litigator`: registro ÚNICO de caso estilo `index.yaml`, espejos MD que
 replican la jerarquía de origen (con `mirror_stale`), y `reocr` condicional por `ocr_quality` (funde el
 hueco de >30pp). Decisiones de layout: `01_Procesado/01_Sala de lectura/` (humano) + `02_Sala de máquina/`
-(máquina, productos numerados) e id **dual** (`sha8` + `doc-NNN`). Ver §G/§H/§I de `PLAN_MOTOR_DOCUMENTAL.md`.
+(máquina, productos numerados) e id **dual** (`sha8` + `doc-NNN`). Ver §G/§H/§I de `docs/superpowers/plans/PLAN_MOTOR_DOCUMENTAL.md`.
 
 **Ampliación 2026-07-03 (dos botones de operación).** `reorganizar_caso` (migración de casos antiguos al
 layout nuevo, por flota, con sello `layout_version` + `--force` del pipeline, patrón `plan`/`apply` con
 journal reversible) y `rebuild_plugin` (repackage mecánico de skills/conectores + señalización semántica de
-skills con prosa afectada + hook de drift no-silencioso). Ver §J/§K de `PLAN_MOTOR_DOCUMENTAL.md`.
+skills con prosa afectada + hook de drift no-silencioso). Ver §J/§K de `docs/superpowers/plans/PLAN_MOTOR_DOCUMENTAL.md`.
 
 **Decisiones estratégicas + principios (2026-07-04).** (1) plugin-first (Streamlit parqueado, distribución
 vía plugin); (2) Ollama/LLM local descartado → motor OCR **OCRmyPDF + `ocr_per_page` torch** como reocr;
 (3) regla PII relajada temporalmente, anonimización resecuenciada al **último eslabón** con **gate de
 reinstauración del muro `06`**. Además **9 principios rectores de ejecución** (M1–M9): golden fixture,
 registro-primero, walking skeleton, fachada, `00_Input` intocable, medir-antes, Preview→Apply, preflight y
-doctor de dependencias. Roadmap resecuenciado F(-1)→F-final. Ver §L/§M de `PLAN_MOTOR_DOCUMENTAL.md`.
+doctor de dependencias. Roadmap resecuenciado F(-1)→F-final. Ver §L/§M de `docs/superpowers/plans/PLAN_MOTOR_DOCUMENTAL.md`.
 
 **Motor en dos cajas + MinerU (2026-07-04).** El motor vive tras la junta (registro+`ocr_quality`), así que es
 decisión **aplazada e intercambiable**: Caja 1 (PDF buscable) = OCRmyPDF fijado; Caja 2 (extractor→MD) =
@@ -1752,7 +1752,7 @@ presupuesto. Corrección de licencia: **Docling (MIT)** por defecto sobre MinerU
 extractor→MD. Añadida **opción Mistral OCR cloud (UE) + ZDR + DPA** como motor de la fase de construcción
 (coste irrelevante ~$1-2/1.000; el punto es RGPD del crudo). Cola dura (manuscrito) → Azure contenedor
 desconectado / Mistral self-host, post-anonimización. **Este plan queda APARCADO**; foco actual: skills con
-código (`ocr-a-md` sobre el scaffold). Ver §F de `PLAN_MOTOR_DOCUMENTAL.md`.
+código (`ocr-a-md` sobre el scaffold). Ver §F de `docs/superpowers/plans/PLAN_MOTOR_DOCUMENTAL.md`.
 
 **Justificación de no aplicarlo ahora.** Es un refactor arquitectónico grande; primero se
 memoriza el diseño. El orden sugerido de ejecución (saneamiento barato → registro de cobertura →

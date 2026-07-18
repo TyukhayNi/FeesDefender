@@ -10,7 +10,7 @@ banco_de_pruebas: W-02VND1 (Tibidabo 8) — golden fixture ya usado por email_at
 **Versión:** 1.0 (diseño cerrado; anclado al código real de FeesDefender)
 **Fecha:** 2026-07-09
 **Naturaleza:** documento de DISEÑO. El siguiente paso es `writing-plans`, no construir.
-**Origen:** materializa la vía lean del apéndice de `docs/PLAN_MOTOR_DOCUMENTAL.md`
+**Origen:** materializa la vía lean del apéndice de `docs/superpowers/plans/PLAN_MOTOR_DOCUMENTAL.md`
 (`[SIGUIENTE-SKILL-EXPEDIENTE-A-MD]` en `PLAN.md`, diseño cerrado 2026-07-04), renombrada a
 `organizar-sala-maquina` y reconciliada con el ecosistema de `abrir-caso`
 (`docs/superpowers/specs/2026-07-09-abrir-caso-design.md`, otra sesión).
@@ -55,7 +55,7 @@ Preview→Apply; y **sugerir** `organizar-sala-lectura` como siguiente paso.
 - **Split/merge** de documentos compuestos (`02_Documentos/`), **registro único** `index.yaml`,
   id `doc-NNN`, **reocr-torch automático**, **anonimización** (`06_`), **botón de reorganizar
   flota** y **renombrado** `Sala lectura`→`01_Sala de lectura`: todo eso es el **motor completo**
-  (`PLAN_MOTOR_DOCUMENTAL.md`, aparcado). Ver §11 y §15.
+  (`docs/superpowers/plans/PLAN_MOTOR_DOCUMENTAL.md`, aparcado). Ver §11 y §15.
 - **Alta de caso / intake / CRM** — eso es `abrir-caso` (un eslabón antes).
 - `90_Notas personales/` es zona reservada del abogado: ningún paso la lee ni la escribe.
 

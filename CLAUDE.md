@@ -188,10 +188,10 @@ Atajo: `/tests` ejecuta la suite completa.
 - **Referencia común sudespacho** (fuente única agnóstica: auth, API de elementos, permisos + presets por
   rol, enums; compartida con El Contable / El Auditor): [`../ElContable/docs/REFERENCIA_SUDESPACHO_API_PERMISOS.md`](../ElContable/docs/REFERENCIA_SUDESPACHO_API_PERMISOS.md)
 - **Callejones sin salida**: `docs/DEAD_ENDS.md` ← consultar antes de reintentar algo
-- **Plan subdivisión ciudades**: `docs/PLAN_SUBDIVISION_CIUDADES.md`
-- **Plan SaRS1 anon**: `docs/PLAN_SaRS1_anon_pipeline.md`
-- **Plan pre-relleno LLM**: `docs/PLAN_PRERELLENO_LLM_VIABILIDAD.md`
-- **Motor documental (split/OCR/MD) + empaquetado**: `docs/PLAN_MOTOR_DOCUMENTAL.md` (`MEJORAS #48`)
+- **Plan subdivisión ciudades**: `docs/superpowers/plans/PLAN_SUBDIVISION_CIUDADES.md`
+- **Plan SaRS1 anon**: `docs/superpowers/plans/PLAN_SaRS1_anon_pipeline.md`
+- **Plan pre-relleno LLM**: `docs/superpowers/plans/PLAN_PRERELLENO_LLM_VIABILIDAD.md`
+- **Motor documental (split/OCR/MD) + empaquetado**: `docs/superpowers/plans/PLAN_MOTOR_DOCUMENTAL.md` (`MEJORAS #48`)
 - **Mejoras futuras**: `docs/MEJORAS_FUTURAS.md`
 - **Gobernanza de fuentes de verdad**: `docs/GOBERNANZA_FUENTES_VERDAD.md`
 - **Seguridad de datos (fugas PII/secretos)**: `docs/SEGURIDAD_DATOS.md`

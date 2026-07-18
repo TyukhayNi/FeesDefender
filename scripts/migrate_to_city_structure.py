@@ -5,7 +5,7 @@ Dos modos:
     python -m scripts.migrate_to_city_structure plan
     python -m scripts.migrate_to_city_structure apply migration_plan.csv
 
-Plan: ``docs/PLAN_SUBDIVISION_CIUDADES.md`` (Fase 4).
+Plan: ``docs/superpowers/plans/PLAN_SUBDIVISION_CIUDADES.md`` (Fase 4).
 """
 from __future__ import annotations
 
