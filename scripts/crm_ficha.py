@@ -15,6 +15,7 @@ from __future__ import annotations
 import typer
 
 from core import case_manager
+from core import config
 from core.casos import case_locator
 from core.crm_ficha import cargar_ficha_yaml
 from core.sudespacho_create import get_expediente, update_expediente
@@ -63,7 +64,16 @@ def main(
         typer.echo(f"[ERROR] {_FICHA_YAML} inválido: {exc}", err=True)
         raise typer.Exit(code=1)
 
-    plan = [f"cliente propio EV → exp {exp_id}"]
+    try:
+        cliente_propio_id = config.cliente_propio_id(ficha.cliente_propio)
+    except ValueError:
+        typer.echo(
+            f"[ERROR] cliente_propio desconocido: {ficha.cliente_propio!r}"
+            " (ver core.config.CLIENTES_PROPIOS_EV)", err=True,
+        )
+        raise typer.Exit(code=1)
+
+    plan = [f"cliente propio {ficha.cliente_propio} (id {cliente_propio_id}) → exp {exp_id}"]
     if ficha.contrario:
         plan.append(f"contrario: {ficha.contrario.apellido1} (dedup NIF)")
     plan += [f"colaborador: {c.email or c.nombre} (dedup email)" for c in ficha.colaboradores]
@@ -78,8 +88,8 @@ def main(
         typer.echo("Cancelado.")
         raise typer.Exit(code=0)
 
-    link_ev_mmc(exp_id)
-    typer.echo(f"OK cliente propio EV vinculado (exp {exp_id})")
+    link_ev_mmc(exp_id, cliente_propio_id=cliente_propio_id)
+    typer.echo(f"OK cliente propio {ficha.cliente_propio} (id {cliente_propio_id}) vinculado (exp {exp_id})")
 
     if ficha.contrario:
         cid, creado = ensure_contrario_vinculado(exp_id, ficha.contrario)
