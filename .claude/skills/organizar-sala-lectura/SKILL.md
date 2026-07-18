@@ -2,7 +2,7 @@
 name: organizar-sala-lectura
 description: >-
   Organiza el intake de un expediente FeesDefender en una "sala de lectura"
-  legible: lee 00_Input (lotes <fuente> + 01_Drive EV/05_CRM; legacy
+  legible: lee 00_Input (lotes por fuente + 01_Drive EV/05_CRM; legacy
   02_Whatsapp/03_Email/04_Manual/06_Entrevistas; excluye 90_Notas personales),
   clasifica cada fichero
   por las categorías canónicas de Engel & Völkers (activación, ofertas, arras,
@@ -21,7 +21,7 @@ metadata:
   naturaleza: atomica
   jurisdiction: ES
   area: [civil, procesal]
-  version: "1.6"
+  version: "1.7"
   author: "Nikolai Tyukhay"
   organization: "Tyukhay Legal"
   contact: "nikolai.tyukhay@tyukhay.legal"

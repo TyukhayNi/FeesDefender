@@ -4,12 +4,12 @@ description: >-
   Exporta TODOS los mensajes de una etiqueta Gmail de un caso a su expediente como
   .eml fieles (cualquier tamaño) + adjuntos extraídos, organizados cronológicamente
   con la nomenclatura del despacho (AAAA-MM-DD_descripcion) en un lote de entrega
-  nuevo 00_Input/<AAAA-MM-DD>_email_<NN>/ por corrida, con índices cross-lote en
+  nuevo 00_Input/AAAA-MM-DD_email_NN/ por corrida, con índices cross-lote en
   01_Procesado/Emails/. Corre el motor local (core.email_export / scripts.export_label_emails), que
   reutiliza el OAuth de gmail_source (tokens ~/.gmail-mcp/) — se ejecuta en el PC,
   no en Cowork. Úsala cuando el usuario diga "exporta los correos de la etiqueta X",
   "baja la etiqueta del caso W-XXXXX a su expediente", "vuelca todos los emails de
-  <caso> al expediente" o "quiero todos los correos de esta etiqueta como .eml". NO
+  un caso al expediente" o "quiero todos los correos de esta etiqueta como .eml". NO
   la uses para subir ficheros sueltos (eso es intake-expediente), ni para montar la
   sala de lectura (organizar-sala-lectura), ni para leer/resumir un correo concreto.
   Requiere ejecución local (token + acceso a G:); desde Cowork solo planifica.
@@ -18,7 +18,7 @@ metadata:
   naturaleza: atomica
   jurisdiction: ES
   area: [civil, procesal]
-  version: "1.1"
+  version: "1.2"
   author: "Nikolai Tyukhay"
   organization: "Tyukhay Legal"
   contact: "nikolai.tyukhay@tyukhay.legal"
