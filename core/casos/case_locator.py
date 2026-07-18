@@ -52,7 +52,7 @@ def _id_go_of(case_dir: Path) -> str | None:
         return None
     try:
         text = caso_md.read_text(encoding="utf-8")
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return None
     if not text.startswith("---"):
         return None
@@ -82,7 +82,7 @@ def read_case_meta(case_dir: Path) -> dict:
         return {}
     try:
         text = caso_md.read_text(encoding="utf-8")
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return {}
     if not text.startswith("---"):
         return {}
