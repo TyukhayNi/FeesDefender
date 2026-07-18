@@ -751,11 +751,11 @@ separados por comas, con coma inicial y final — `",129,286,257,"` — NO un ar
 para añadir un tag hay que leer el valor actual y concatenar, no reemplazar por uno solo.
 
 **⚠️ Preservar `Numero_Expediente` en el PUT de `extrajudiciales`.** Como el PUT es de
-reemplazo completo y `Numero_Expediente` solo se fija en la creación (no hay una función de
-`update` en `core/`; `core/sudespacho_create` lo calcula como `max+1` al crear), un PUT que
-lo omita puede dejarlo en `0`. Al reescribir tags/`Notas`, **reenvía el `Numero_Expediente`
-actual** (léelo con un GET previo). El build B1 encapsulará este round-trip en un
-`update_expediente` seguro (`PLAN.md [SIGUIENTE-APERTURA-EXPEDIENTE]`).
+reemplazo completo y `Numero_Expediente` solo se fija en la creación (`core/sudespacho_create`
+lo calcula como `max+1` al crear), un PUT que lo omita puede dejarlo en `0`. Este round-trip
+ya está encapsulado en **`core/sudespacho_create.update_expediente`** (GET→merge→PUT; B1, PR-3):
+`merge_expediente_update` reenvía el `Numero_Expediente` del GET pase lo que pase en los cambios
+y **aborta** (`ValueError`) si el GET no trae un número válido (`0`/vacío/`None`).
 
 ---
 
@@ -1193,11 +1193,19 @@ El tag **azul** (ciudad) no figura como obligatorio en el Manual. Se añade cuan
 
 | Constante Python | Tag CRM | ID | Cuándo usar |
 |---|---|---|---|
+| `TAG_AZUL_BARCELONA` | BARCELONA | 296 | Plaza Barcelona |
 | `TAG_AZUL_MADRID` | MADRID | 258 | Plaza Madrid |
 | `TAG_AZUL_VALENCIA` | VALENCIA | 257 | Plaza Valencia |
+| `TAG_AZUL_BILBAO` | BILBAO | 292 | Plaza Bilbao |
+| `TAG_AZUL_SEVILLA` | SEVILLA | 291 | Plaza Sevilla |
+| `TAG_AZUL_SANTANDER` | SANTANDER | 294 | Plaza Santander |
+| `TAG_AZUL_SAN_SEBASTIAN` | SAN SEBASTIÁN | 293 | Plaza San Sebastián |
 | `TAG_AZUL_POSIBILIDAD_50` | POSIBILIDAD EXITO=50% | 286 | **DEFAULT actora** — todos los asuntos nuevos |
 
-⚠️ Bilbao, Sevilla, Santander y San Sebastián **no tienen tag azul de ciudad** en el CRM. Solo sus equipos tienen tags rojos (BiRS*, SeRS*, SaRS*). Los tags de probabilidad <15%→50% y <15% tampoco existen aún.
+**Todas las plazas tienen tag azul de ciudad** en el CRM (verificado en código 2026-07-18:
+constantes `TAG_AZUL_*` de `core/sudespacho_create.py`). El alta (`crm_payload`) lo deriva del
+prefijo de 2 letras del código de equipo (`Ba`→Barcelona, `Ma`→Madrid, …) vía
+`tag_azul_de_codigo`. Los tags de probabilidad <15%→50% y <15% no existen aún.
 
 #### Rojo `#a32929` — Equipos comerciales + tipo especial (49 tags)
 

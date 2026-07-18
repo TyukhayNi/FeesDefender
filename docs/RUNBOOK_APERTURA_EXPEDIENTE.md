@@ -201,22 +201,26 @@ de hoy (W-046G2R).
 posición). El resto va **aparte**, todo **REST con `x-api-key`, sin PHPSESSID** `[APER-13]`.
 
 > **Detalle de endpoints, campos y enums: SSOT en `INTEGRACION_SUDESPACHO.md` §10–§15.**
-> Hoy los pasos 1–5 son manuales (5-6 llamadas) — *build en cola B1 para orquestarlos:*
-> `PLAN.md [SIGUIENTE-APERTURA-EXPEDIENTE]`.
+> Los tags equipo+ciudad ya van en el **alta** (`crm_payload`). Los pasos 2–5 los orquesta
+> `python -m scripts.crm_ficha --case-id <W-code o case_id>` desde `00_Input/_ficha_crm.yaml`
+> (B1, PR-3; el YAML lleva PII → solo en `data/CASOS/`). Hace GET de verificación tras escribir.
 
 **Checklist de la ficha:**
-1. **Tags dependientes del caso** (el alta NO los pone): ciudad (azul) + equipo (rojo).
-   PUT de reemplazo completo `element_register/extrajudiciales/{id}` → **preservar
-   `Numero_Expediente`** o se pierde; `tags` = cadena de IDs con coma inicial/final, se
-   **concatena** al valor actual, no se reemplaza (§10.7).
-2. **Cliente propio EV:** `link_ev_mmc(exp_id)` (id `2`).
+1. **Tags equipo (rojo) + ciudad (azul):** los pone **el alta** (`crm_payload` los deriva del
+   `codigo` vía `tag_rojo_equipo` + `tag_azul_de_codigo`). Ya **no** hace falta un PUT posterior
+   de tags. (Si alguna vez editas `tags`/`Notas` a mano, usa `update_expediente`, que preserva
+   `Numero_Expediente`, §10.7.)
+2. **Cliente propio EV:** `link_ev_mmc(exp_id, cliente_propio_id=…)` — id del `cliente_propio`
+   del `_ficha_crm.yaml` (default EV MMC SPAIN `2`; ENGEL & VÖLKERS SPAIN `27`). `crm_ficha`
+   aborta si el valor es desconocido (no linkea la entidad equivocada en silencio).
 3. **Contrario:** `ensure_contrario_vinculado(...)` (dedup por NIF). El **deudor de
    honorarios es quien firmó el encargo**, no todo co-titular (W-046G2R, memoria
    `feedback-crm-fichas-mayusculas`).
 4. **Colaboradores (TL + consultores):** `ensure_colaborador_vinculado(...)` (dedup email).
    **Ficha completa** (móvil + fijo) buscando la firma en su correo `@engelvoelkers.com`;
    si ya existe → `GET → merge → PUT` para no pisar.
-5. **Nota/hechos inicial:** PUT `Notas` con el narrativo (tipo + partes + cláusula + cuantía).
+5. **Nota/hechos inicial:** `update_expediente(exp_id, {"Notas": …})` con el narrativo (tipo +
+   partes + cláusula + cuantía). `notas_html` en el `_ficha_crm.yaml`.
 6. **(Si procede) Actuación facturable:** `POST element_register/actuaciones` **+ vincular
    aparte** con `relation_element` (§15.2/15.3). `duracion` en `HH:MM:SS` → segundos;
    `Prioridad` obligatoria; **tarifa solo por UI** (§15.4).
