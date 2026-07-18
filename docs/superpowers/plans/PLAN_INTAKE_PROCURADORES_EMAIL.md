@@ -175,6 +175,20 @@ del CRM de quien pincha (su propio login en el navegador), no comparte sesión.
   `sync_sudespacho check-legacy` (PHPSESSID) vale para el plugin, o si Roundcube exige login
   web propio. → **(A)** reutilizar la sesión legacy = automatizable; **(C)** el robot deja todo
   emparejado + propuesto y el humano remata con 1 clic.
+- **Spike de auth (2026-07-19 — probe anónimo + lectura de `core/sync_sudespacho_legacy.py`):**
+  hay **3 dominios de auth distintos**: `*.sudespacho.biz` (REST / `x-api-key`, ya en F2) ·
+  `tnm.sudespacho.net` (frontal legacy / `PHPSESSID`+`@token`+`@refreshToken`) ·
+  `roundcube.sudespacho.net` (webmail / sesión Roundcube propia, tras un AWS ALB). **Descartado el
+  camino A ingenuo** (reutilizar el `PHPSESSID` del frontal tal cual): Roundcube es un tercer dominio
+  con sesión propia. Además, **Roundcube es multi-tenant y arranca desde el frontal**: su raíz anónima
+  responde *"No se ha podido recuperar el nombre del despacho. No se ha podido acceder a las cookies."*
+  → **no hay login user/pass directo** en el webmail; el contexto de despacho + la sesión se establecen
+  **al abrir el correo desde el CRM**. → **Camino realista = A':** partir de la sesión legacy del
+  frontal (que el robot ya monta con `check-legacy`) y **replicar el handshake "abrir webmail"**
+  (traspaso frontal→Roundcube) para obtener `roundcube_sessid` + `X-Roundcube-Request`, y luego llamar
+  al plugin. **Evidencia que falta para cerrar A' vs C:** un HAR del "abrir el correo desde el CRM"
+  (login/SSO de Roundcube), o inspección en vivo de las cookies de `roundcube.sudespacho.net`.
+  **Fallback garantizado: C** (robot prepara + humano 1 clic) si el handshake no es replicable headless.
 - **Atribución (APROBADO):** una sola API Key / usuario **"Robot intake / Archivo automático"**.
   El "quién confirmó" vive en nuestro log; si hay campo de nota, escribir "confirmado por X".
   NO una clave por persona. *(Nota: la atribución del write por plugin dependerá del usuario de

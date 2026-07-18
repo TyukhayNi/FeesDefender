@@ -583,10 +583,14 @@ serie=año). **RGPD — excepción acotada SOLO a este flujo:** usa LLM cloud UE
   ?_task=mail&_action=plugin.sudespacho_asignaa_*`), **NO** por nest-mail ni `MailRoundcube` de
   api-crm (ambos **refutados** por el HAR). Llave = **Message-ID RFC** → puente Gmail↔CRM directo.
   Contrato completo en `INTEGRACION_SUDESPACHO §10.10`; §7 del doc y `DEAD_ENDS.md` actualizados.
-  **Bloqueo restante = spike de auth (A-vs-C):** ¿la sesión legacy (`check-legacy`/PHPSESSID) sirve
-  para el plugin, o Roundcube exige login web propio? Después: relate+adjuntar en expediente de
-  prueba + traza §18.9. ⚠️ **Limpiar en el CRM** el relate/adjunto de prueba del HAR (adjunto
-  "…ELIMINAR.pdf") + los `PRUEBA BORRAR` de s44 (SeRR1/13, MaRS9).
+  **Spike de auth (2026-07-19):** 3 dominios de auth distintos; **descartado reutilizar el PHPSESSID
+  del frontal** — Roundcube tiene sesión propia y es **multi-tenant, arranca desde el frontal** (raíz
+  anónima: *"No se ha podido recuperar el nombre del despacho…"*). → camino realista **A'** = partir de
+  la sesión legacy (`check-legacy`) y **replicar el handshake "abrir webmail"** (frontal→Roundcube) para
+  obtener `roundcube_sessid`+`X-Roundcube-Request`; **fallback C** (humano 1 clic). **Evidencia que falta:**
+  HAR del "abrir el correo desde el CRM" (login/SSO Roundcube) o inspección en vivo de sus cookies.
+  Después: relate+adjuntar en expediente de prueba + traza §18.9. ✅ Limpieza de pruebas del CRM hecha
+  (Nikolai, 2026-07-19).
 - **F4 — Renombrado + OCR + aprendizaje.** ⬜ Contenido del adjunto → nombre; store
   de correcciones few-shot (§10).
 - **F5 — Grabaciones.** ⬜ Descarga de enlaces (WeTransfer caduca) + fallback manual.
