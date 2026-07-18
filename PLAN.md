@@ -16,14 +16,13 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 
 | # | Ítem | Estado | Gate / disparador | Esf. |
 |---|------|--------|-------------------|------|
-| 1 | [B5 auto-derivar `--folder-id`](#siguiente-apertura-expediente-builds-de-apertura-tras-las-3-aperturas-e2e-del-2026-07-17) | en curso (otra sesión) | desbloqueado | medio |
-| 2 | [MCP Drive-disco V1](#siguiente-mcp-drive-disco-mcp-drive-como-disco--spec-rev-3--plan-v1-listos-pr-48) | spec lista | mergear PR #48 | alto |
-| 3 | [Split F2 sala de máquina](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado | medio |
-| 4 | [Infra C — art. 156 LEC](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado (quick win) | bajo |
-| 5 | [Infra B — expediente scratch](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado | medio |
-| 6 | [MCP sudespacho F1](#siguiente-mcp-sudespacho-mcp-sudespacho-crm-del-despacho--f1-lectura-spec-hecho-plan-pendiente) | spec lista | gates de despliegue | alto |
-| 7 | [abrir-caso F3-judicial](#abrir-caso--f1--f2a--f3-ac-mergeadas-f2b-aparcada-f3-judicial-pendiente) | diferida | caso judicial real | alto |
-| 8 | [Google MCP F4 (Calendar)](#siguiente-google-mcp-f1-lectura--mergeada--f2-escriturapermisosnavegación--mergeada--f3f4-pendientes) | diferida | disparador | medio |
+| 1 | [MCP Drive-disco V1](#siguiente-mcp-drive-disco-mcp-drive-como-disco--spec-rev-3--plan-v1-listos-pr-48) | spec lista | mergear PR #48 | alto |
+| 2 | [Split F2 sala de máquina](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado | medio |
+| 3 | [Infra C — art. 156 LEC](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado (quick win) | bajo |
+| 4 | [Infra B — expediente scratch](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado | medio |
+| 5 | [MCP sudespacho F1](#siguiente-mcp-sudespacho-mcp-sudespacho-crm-del-despacho--f1-lectura-spec-hecho-plan-pendiente) | spec lista | gates de despliegue | alto |
+| 6 | [abrir-caso F3-judicial](#abrir-caso--f1--f2a--f3-ac-mergeadas-f2b-aparcada-f3-judicial-pendiente) | diferida | caso judicial real | alto |
+| 7 | [Google MCP F4 (Calendar)](#siguiente-google-mcp-f1-lectura--mergeada--f2-escriturapermisosnavegación--mergeada--f3f4-pendientes) | diferida | disparador | medio |
 
 > Detalle de cada ítem en su bloque `[SIGUIENTE-*]` más abajo. Backlog sin
 > promover: `docs/MEJORAS_FUTURAS.md`. Ledger de cerrados: `## Cerrados` (final).
@@ -124,62 +123,6 @@ puro + orquestadores finos. Spec: `docs/superpowers/specs/2026-07-09-abrir-caso-
   / `create_expediente_judicial` / element `expedientes_judiciales`): superficie grande (juzgado propiedad
   no-relación → 404, autos, procedimiento, partes M2M). Frente propio con disparador de caso judicial real.
 - Relacionado: `docs/MEJORAS_FUTURAS.md` **#50** (sección "Relación con el ecosistema" en todas las skills).
-
-## [SIGUIENTE-APERTURA-EXPEDIENTE] Builds de apertura tras las 3 aperturas E2E del 2026-07-17
-
-*Disparador: 3 aperturas E2E el 2026-07-17 (W-02T3XO, W-02TH0W, W-046G2R), consolidadas en
-sesión dedicada. Recurrencia del cuello de botella en ≥2 aperturas + decisión de Nikolai
-2026-07-18. Promovido de `docs/MEJORAS_FUTURAS.md` #70 y de los handoffs
-`docs/superpowers/handoff-2026-07-17-apertura-W-*.md`. Runbook operativo (fuente única del
-flujo, con gotchas embebidos): `docs/RUNBOOK_APERTURA_EXPEDIENTE.md`. Verificado contra el
-repo 2026-07-17/18 (workflow de verificación): las primitivas `ensure_*`/`link_*` ya existen
-en `core/sudespacho_relations.py` (PR #53) — B1 es orquestación, no escribir de cero.*
-
-Orden ejecutado: **quick-wins (B4 + B3) → B2 → B1 (titular) → B5.** Todos con TDD, rama + PR
-(leak-scan verde), subagent-driven + revisión final Opus. **Estado 2026-07-18: B1-B4 mergeados
-a `main`; B5 construido (PR-4, en revisión). Bloque B1–B5 COMPLETO.** Memoria
-`project-apertura-b1-b5-builds`.
-
-- [x] **B1 — ficha CRM end-to-end (titular) ✅ PR #72 (squash; `main` `9f9a555`).** Construido como
-  **subcomando reentrante `scripts/crm_ficha.py`** (no dentro del alta) + tags equipo/ciudad
-  enriquecidos en el alta (`crm_payload`, derivados del prefijo del `codigo`), `link_ev_mmc`,
-  `ensure_contrario_vinculado`, `ensure_colaborador_vinculado` y `Notas`, a partir de un
-  `_ficha_crm.yaml` de caso (PII → `data/CASOS/`). **`update_expediente`/`get_expediente` creados y
-  REESCRITOS tras verificación en vivo del CRM:** R2 refutó el diseño mockeado (el GET-detalle
-  exige `?properties=` y devuelve lista `values`); R3 confirmó que el **PUT es PARCIAL y preserva
-  los omitidos** (no hace falta GET→merge ni preservar `Numero_Expediente` a mano). R1 (re-link no
-  duplica) también verificado en vivo. Detalle CRM: `INTEGRACION §10.7`.
-- [x] **B3 — normalizador de teléfono a 9 dígitos ✅ PR #69.** `normalize_es_phone` (`core/utils.py`)
-  en el `__post_init__` de los DTOs `NuevoClienteContrario`/`NuevoColaborador` (cubre REST+legacy).
-- [x] **B2 — CLI `--case-id` para intake incremental ✅ PR #71.** `descomponer_case_id` (sobre la
-  gramática canónica → soporta `(W-...)` y `(SIN REFERENCIA)`) + `read_case_meta`; `--case-id`
-  excluyente con los 6 flags de identidad.
-- [x] **B4 — evento `archivado` en `INTAKE_EVENTS` ✅ PR #69.** `MEJORAS #70.a` cerrado.
-- [x] **B5 — auto-derivar identidad desde `--folder-id` ✅ PR-4 ([#74](https://github.com/TyukhayNi/FeesDefender/pull/74)).** En `abrir_caso --fuente drive_ev`, si se
-  omiten, `--team-id` (`driveId` vía `get_drive_folder_info`), `--codigo-caso`
-  (`config.codigo_de_unidad` sobre el nombre de la **unidad compartida**, leído por Drive API
-  con `intake_drive.get_shared_drive_name` → `drives.get`) y `--sufijo`
-  (`config.sufijo_de_tipo_caso`, canónico: LAU_20→"LAU 20", resto title-case). Flags explícitos
-  siempre ganan. Regla `codigo_de_unidad` fijada contra los **nombres reales** de las unidades
-  compartidas (`drives.list`, cuenta EV): "<Ciudad> - <S|R|PD><N>" → "<Ciudad2><Op2><N>" (match
-  exacto de ciudad + strip de " Rentals"; `None` ante duda → pide flag, nunca código erróneo).
-  `--team-id` también se auto-deriva en la vía `--case-id` (re-pull) y hay guard de error limpio
-  (nunca `team_id=None` a rclone). Plan `docs/superpowers/plans/2026-07-18-apertura-b5-autoderivar.md`;
-  spec §8. Subagent-driven + revisión final Opus ("Ready to merge: Yes"). Verificación en vivo
-  contra Drive real (`drives.get` con token `gdrive_ev`): `0AAPGi…`→"Barcelona - S3"→BaRS3,
-  Rentals→BaRR1, PD1→BaPD1. **Alineación CRM BaDP1→BaPD1 INCLUIDA en el PR** (decisión Nikolai
-  2026-07-18): el label del equipo pendiente de Barcelona es `BaPD1` (extrajudicial ID 319 ya
-  correcto; judicial ID 56 corregido en el CRM, era `BaDP1` por error). Renombrados los
-  identificadores FD `TAG_ROJO_BaDP1`/`J_TAG_ROJO_BaDP1`→`…BaPD1` + clave `DRIVE_EV_TEAM_IDS` +
-  labels `ciudades.py` (valores 319/56/driveId intactos) → `tag_rojo_equipo("BaPD1")` resuelve
-  (cierra el hueco: un alta PD de Barcelona por B5 ya coge el tag rojo). +test de regresión.
-  Suite 2153, solo 5 ambientales. Con el merge, **bloque B1–B5 COMPLETO**.
-- Fuera de este bloque (decidido en la consolidación): **skill Claude Code `abrir-caso`** — no
-  ahora, el RUNBOOK es el checklist; se valora cuando B1 esté mergeado. **MCP `sudespacho` F1**
-  — sigue en `[SIGUIENTE-MCP-SUDESPACHO]` (gates abiertos); el dolor de tantear campos se mata
-  con los endpoints de descubrimiento ya en `INTEGRACION §14.4/§15`. **CLI sala de lectura
-  deprecado** (`MEJORAS #67`) — no arreglar, encauzar por la skill. **atomize/OCR de adjuntos**
-  (`MEJORAS #68`) y **`archivar_caso` workflow** (`MEJORAS #70.b/c`) siguen en backlog.
 
 ## [SIGUIENTE-MCP-DRIVE-DISCO] MCP "Drive como disco" — spec rev 3 + plan V1 LISTOS (PR #48)
 
@@ -1388,6 +1331,7 @@ trabajo para que no contamine).
 > Lista plana, reciente primero. Promover a agrupación por área cuando supere ~30
 > entradas (lo avisa `session_close`).
 
+- ✅ **[SIGUIENTE-APERTURA-EXPEDIENTE]** Builds de apertura B1-B5 (ficha CRM end-to-end, `--case-id` incremental, normalizador de teléfono, evento `archivado`, auto-derivar `--folder-id`) — PR #69/#71/#72/#74 · [spec](docs/superpowers/specs/2026-07-18-apertura-expediente-b1-b5-design.md)
 - ✅ **[SIGUIENTE-SKILL-EXPEDIENTE-A-MD]** Skill `organizar-sala-maquina` (ex `expediente-a-md`) — rama `feat/organizar-sala-maquina` (sin hash de squash registrado) · [spec](docs/superpowers/specs/2026-07-09-organizar-sala-maquina-design.md)
 - ✅ **[SIGUIENTE-CONTROLES-ANTIFUGA]** Controles de `SEGURIDAD_DATOS.md` implementados — commits `51ecf24`/`48c790f`/`e1ff182`/`a79ba90` · doctrina `docs/SEGURIDAD_DATOS.md`
 - ✅ **[BIBLIOTECA-CHECKOUT]** Biblioteca de casos (checkout/checkin Desktop↔Drive) — PR #4 (`061d99e`) + PR #5 (`b67f46d`) + PR #6 (`8dd138c`) + PR #7 (`16cbb54`)
