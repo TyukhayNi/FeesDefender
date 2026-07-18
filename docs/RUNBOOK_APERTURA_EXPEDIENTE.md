@@ -125,12 +125,17 @@ python -m scripts.abrir_caso --w-code W-XXXXXX --ciudad Barcelona --tipo-caso VU
 
 ## 5. Intake incremental (fuentes adicionales)
 
-Cada intake posterior (`--fuente email|whatsapp|manual|entrevista`) hoy obliga a **repetir
-los 6 flags de identidad** (`--w-code --ciudad --tipo-caso --codigo-caso --sufijo
---direccion`) idénticos al nombre real de la carpeta, con `--force`. Frágil ante cualquier
-diferencia de espaciado/tilde (W-046G2R).
-→ *Build en cola:* `--case-id "<nombre completo>"` para intakes incrementales
-(`PLAN.md [SIGUIENTE-APERTURA-EXPEDIENTE]`, B2).
+Cada intake posterior resuelve la identidad desde `_caso.md` con **`--case-id <W-code o
+case_id>`** (B2, PR-2) — no repitas los 6 flags de identidad:
+
+```powershell
+python -m scripts.abrir_caso --case-id W-XXXXXX --fuente manual --src <carpeta|.zip> --yes
+python -m scripts.abrir_caso --case-id W-XXXXXX --fuente email --cuenta <gmail> --label <etiqueta> --yes
+```
+
+`--case-id` es **excluyente** con los 6 flags de identidad (`--w-code --ciudad --tipo-caso
+--codigo-caso --sufijo --direccion`); el caso debe existir ya. Para `--fuente drive_ev`
+(re-pull) aún hacen falta `--folder-id`/`--team-id` (B5 los auto-derivará).
 
 - **Export de WhatsApp:** el nombre del `.zip` suele decir el chat
   (`"...Cliente Vendedor.zip"`) → mapear directo a los 4 roles de

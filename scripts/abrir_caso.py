@@ -15,6 +15,10 @@ Uso:
   python -m scripts.abrir_caso ... --fuente manual --src <carpeta|.zip>
   python -m scripts.abrir_caso ... --fuente whatsapp --src <.zip> --rol "03_Otros"
   python -m scripts.abrir_caso ... --fuente email --cuenta <gmail> --label <etiqueta>
+
+Intake incremental (identidad desde _caso.md, sin repetir los 6 flags):
+  python -m scripts.abrir_caso --case-id W-02Z2NR --fuente manual --src <carpeta|.zip>
+  python -m scripts.abrir_caso --case-id W-02Z2NR --fuente email --cuenta <gmail> --label <etiqueta>
 """
 from __future__ import annotations
 
