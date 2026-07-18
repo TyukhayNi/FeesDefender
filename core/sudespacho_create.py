@@ -1557,6 +1557,80 @@ def create_expediente_judicial_rest(
     return _rest_post(_REST_CREATE_JUDICIAL, payload)
 
 
+def _rest_headers() -> dict[str, str]:
+    return {
+        "x-api-key":    _get_api_key(),
+        "Content-Type": "application/json",
+        "Accept":       "application/json",
+    }
+
+
+def merge_expediente_update(actual: dict, cambios: dict) -> dict:
+    """Fusiona ``cambios`` sobre ``actual`` para un PUT de reemplazo total,
+    garantizando que ``Numero_Expediente`` NO se pierde (el PUT es de reemplazo
+    completo y un valor "0"/ausente dejaría el expediente sin número).
+
+    Lanza ``ValueError`` si ``actual`` no trae un ``Numero_Expediente`` válido
+    (ausente, vacío o "0"): sin un número real que preservar, no es seguro hacer
+    el PUT.
+    """
+    num = str(actual.get("Numero_Expediente", "")).strip()
+    if not num or num == "0":
+        raise ValueError(
+            f"actual sin Numero_Expediente válido ({num!r}); no es seguro el PUT"
+        )
+    out = dict(actual)
+    out.update(cambios)
+    out["Numero_Expediente"] = num  # siempre el del GET, pase lo que pase en cambios
+    return out
+
+
+def get_expediente(exp_id: str) -> dict:
+    """GET del registro extrajudicial completo por id (x-api-key)."""
+    url = f"{_REST_BASE}{_REST_CREATE_EXTRAJUDICIAL}/{exp_id}"
+    try:
+        r = httpx.get(url, headers=_rest_headers(), timeout=_REST_TIMEOUT)
+    except httpx.HTTPError as exc:
+        raise SudespachoCreateError(f"REST GET extrajudiciales/{exp_id} falló: {exc}") from exc
+    if r.status_code == 200:
+        try:
+            return r.json()
+        except Exception as exc:
+            raise SudespachoCreateError(
+                f"REST GET extrajudiciales/{exp_id}: 200 sin JSON válido"
+            ) from exc
+    try:
+        detail = r.json().get("detail") or r.text[:300]
+    except Exception:
+        detail = r.text[:300]
+    raise SudespachoCreateError(f"REST GET extrajudiciales/{exp_id} → HTTP {r.status_code}: {detail}")
+
+
+def update_expediente(exp_id: str, cambios: dict) -> dict:
+    """GET → merge (preservando Numero_Expediente) → PUT de reemplazo total.
+
+    Único punto de reescritura de un expediente extrajudicial. Devuelve el
+    registro actualizado que responde el servidor.
+    """
+    actual = get_expediente(exp_id)
+    body = merge_expediente_update(actual, cambios)
+    url = f"{_REST_BASE}{_REST_CREATE_EXTRAJUDICIAL}/{exp_id}"
+    try:
+        r = httpx.put(url, json=body, headers=_rest_headers(), timeout=_REST_TIMEOUT)
+    except httpx.HTTPError as exc:
+        raise SudespachoCreateError(f"REST PUT extrajudiciales/{exp_id} falló: {exc}") from exc
+    if r.status_code == 200:
+        try:
+            return r.json()
+        except Exception:
+            return body
+    try:
+        detail = r.json().get("detail") or r.text[:300]
+    except Exception:
+        detail = r.text[:300]
+    raise SudespachoCreateError(f"REST PUT extrajudiciales/{exp_id} → HTTP {r.status_code}: {detail}")
+
+
 class SudespachoCreateError(RuntimeError):
     pass
 
