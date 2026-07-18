@@ -2667,16 +2667,35 @@ raíz compartida — el `#66` real es "MCP Drive como disco".)
 **Disparador de promoción de 70.b/70.c:** próximo archivo de caso que justifique el
 orquestador, o decisión de Nikolai. (70.a ya promovido, ver arriba.)
 
-## 71. Rotación y saneado de STAT.md (fase C de gobernanza de planificación)
+## 71. Rotación y saneado de STATUS.md (fase C de gobernanza de planificación)
 
-**Estado actual.** STATUS.md acumula ~125 bloques de cierre (>400 líneas) antes de
-las secciones de estado. `session_close` ya avisa del tamaño (guardarraíl E1).
+**Hecho (D1+D3).** Rotados los 126 bloques de cierre a `docs/bitacora/2026.md`
+(STATUS 506→268 líneas; aviso E1 en silencio) + convención fijada: los cierres
+nuevos van a `docs/bitacora/AAAA.md`, no al top de STATUS (Protocolo de cierre de
+`STATUS.md` + `CLAUDE.md §Cierre`). Se descartaron spec y plan por sobreingeniería
+(era mover markdown); ejecutado lean directo.
 
-**Mejora propuesta.** Rotar el histórico de cierres a `docs/bitacora/2026.md`;
-partir STATUS en "estado vigente" + log; terminar la migración prosa→puntero
-(Arquitectura/taxonomía/estructura → enlaces a `core/config.py`/`ARQUITECTURA.md`,
-Drifts #3/#4 de `GOBERNANZA_FUENTES_VERDAD.md`).
+**Diferido (D2) — prosa→puntero.** Colapsar las 3 secciones de STATUS que aún
+duplican `ARQUITECTURA.md` (`Arquitectura v2`, `Estructura de carpetas`,
+`Arquitectura multi-expediente`) a punteros, con la regla verificar-antes-de-colapsar
+(migrar lo único, cero pérdida). Cierra los Drifts #3/#4 de
+`GOBERNANZA_FUENTES_VERDAD.md`. **Disparador:** cuando esa prosa muerda (un dato
+desincronizado respecto a `ARQUITECTURA.md`/`config.py`).
 
-**Disparador de promoción.** El primer aviso de E1 por STATUS>400 (ya se cumple) o
-tras aterrizar el arreglo de la cola. Spec de referencia:
-`docs/superpowers/specs/2026-07-18-gobernanza-planificacion-design.md` §7.
+## 72. Deudas de la gobernanza de la planificación (huecos post-fase-B/C)
+
+Anotados 2026-07-18 al valorar la mejora conjunta de PLAN.md / MEJORAS / STATUS.
+Ninguno bloquea; promover por disparador concreto.
+
+- **La cola de PLAN.md se desincroniza sin aviso.** Un ítem mergeado que sigue en la
+  tabla de cola priorizada no lo detecta el guardarraíl E1 (solo vigila tamaño /
+  ✅-sin-colapsar / ledger>30). Pasó con B5 (PR #74): la fila #1 quedó obsoleta al
+  instante y se corrigió a mano. **Disparador:** si una fila de cola vuelve a quedar
+  obsoleta sin avisar → extender E1 a "fila cuyo destino ya está en `## Cerrados`".
+- **Anclas de la cola frágiles.** Los enlaces de la tabla son slugs largos de GitHub;
+  renombrar un encabezado `[SIGUIENTE-*]` rompe el enlace en silencio. **Disparador:**
+  un enlace roto detectado → guard de anclas, o enlazar por tag en vez de slug.
+- **Asimetría de `MEJORAS_FUTURAS.md`.** PLAN.md tiene cola + ledger + guardarraíl;
+  este fichero no: ~2.700 líneas, ~25 entradas resueltas expandidas inline, "orden por
+  prioridad operativa" sin mecanismo, y E1 no lo vigila. **Disparador:** cuando MEJORAS
+  moleste de leer → mismo tratamiento lean (colapsar las resueltas a un ledger).
