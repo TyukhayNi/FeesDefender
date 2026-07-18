@@ -154,6 +154,32 @@ TAGS_CRM_VALIDOS: frozenset[str] = frozenset(
 
 
 # ---------------------------------------------------------------------------
+# Sufijo del case_id derivado del tipo_caso canónico (B5)
+# ---------------------------------------------------------------------------
+#
+# El descriptor del case_id (carpeta Drive + referencia CRM + etiqueta Gmail)
+# se deriva SIEMPRE del tipo_caso, nunca de una paráfrasis libre — si no, hay
+# que renombrar cross-sistema (memoria feedback-case-sufijo-tipo-canonico).
+# Solo LAU_20 necesita entrada explícita: el fallback title-case degradaría el
+# acrónimo ("Lau 20"). El resto sale del fallback (VUELTA -> "Vuelta", etc.).
+_SUFIJO_TIPO_CASO_ESPECIAL: dict[str, str] = {
+    "LAU_20": "LAU 20",
+}
+
+
+def sufijo_de_tipo_caso(tipo: str) -> str:
+    """Descriptor humano del case_id derivado del tipo_caso canónico.
+
+    Ejemplos: ``VUELTA -> "Vuelta"``, ``NEGATIVA_ESCRITURA -> "Negativa
+    escritura"``, ``LAU_20 -> "LAU 20"``. Casos especiales (acrónimos) por mapa;
+    el resto por fallback title-case ``tipo.replace("_", " ").capitalize()``.
+    """
+    if tipo in _SUFIJO_TIPO_CASO_ESPECIAL:
+        return _SUFIJO_TIPO_CASO_ESPECIAL[tipo]
+    return tipo.replace("_", " ").capitalize()
+
+
+# ---------------------------------------------------------------------------
 # Clientes propios E&V (sudespacho — tabla clientes_propios)
 # ---------------------------------------------------------------------------
 #
