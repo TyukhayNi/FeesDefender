@@ -311,9 +311,8 @@ Todo REST `x-api-key`. No se borra nada.
 - **Handoffs fuente:** `docs/superpowers/handoff-2026-07-17-apertura-W-{02T3XO,02TH0W,046G2R}-mejoras-proceso.md`.
 - **Builds de este flujo (`PLAN.md [SIGUIENTE-APERTURA-EXPEDIENTE]`):** B1 ficha CRM
   end-to-end (`scripts/crm_ficha.py` + `_ficha_crm.yaml`), B2 `--case-id`, B3 normalización de
-  móvil, B4 evento `archivado` — **ya en `main`** (PR #69/#71/#72). **B5** (auto-derivar
-  `--team-id`/`--codigo-caso`/`--sufijo` desde `--folder-id`) **pendiente** — hasta entonces,
-  §1/§2/§4 se hacen a mano (recon del `driveId`).
+  móvil, B4 evento `archivado`, B5 auto-derivación de `--team-id`/`--codigo-caso`/`--sufijo`
+  desde `--folder-id` (`[APER-34]`, §4) — **todos en `main`**. El bloque B1–B5 está completo.
 - **Memorias:** `feedback-case-sufijo-tipo-canonico`, `feedback-crm-fichas-mayusculas`,
   `reference-sudespacho-crm-cableado-expediente`, `reference-sudespacho-archivo-actuaciones`,
   `reference-gmail-etiquetas-organizacion`, `feedback-worktree-vs-raiz-compartida`.

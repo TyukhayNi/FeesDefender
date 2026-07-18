@@ -128,7 +128,8 @@ en `core/sudespacho_relations.py` (PR #53) — B1 es orquestación, no escribir 
 
 Orden ejecutado: **quick-wins (B4 + B3) → B2 → B1 (titular) → B5.** Todos con TDD, rama + PR
 (leak-scan verde), subagent-driven + revisión final Opus. **Estado 2026-07-18: B1-B4 mergeados
-a `main`; solo falta B5.** Memoria `project-apertura-b1-b5-builds`.
+a `main`; B5 construido (PR-4, en revisión). Bloque B1–B5 COMPLETO.** Memoria
+`project-apertura-b1-b5-builds`.
 
 - [x] **B1 — ficha CRM end-to-end (titular) ✅ PR #72 (squash; `main` `9f9a555`).** Construido como
   **subcomando reentrante `scripts/crm_ficha.py`** (no dentro del alta) + tags equipo/ciudad
@@ -145,12 +146,21 @@ a `main`; solo falta B5.** Memoria `project-apertura-b1-b5-builds`.
   gramática canónica → soporta `(W-...)` y `(SIN REFERENCIA)`) + `read_case_meta`; `--case-id`
   excluyente con los 6 flags de identidad.
 - [x] **B4 — evento `archivado` en `INTAKE_EVENTS` ✅ PR #69.** `MEJORAS #70.a` cerrado.
-- [ ] **B5 — auto-derivar identidad desde `--folder-id` (ÚNICO PENDIENTE).** En `abrir_caso
-  --fuente drive_ev`, deducir `--team-id` (`driveId`), `--codigo-caso` (nombre de la unidad
-  compartida) y `--sufijo` (del `tipo_caso` canónico) desde `--folder-id`. **Desbloqueado** (PR-2
-  en `main`). Decisión Nikolai 2026-07-18: los nombres de unidad compartida se leen por **Drive
-  API** (google-despacho), no tabla manual → fijar la regla `codigo_de_unidad` ("Barcelona - S3"→
-  "BaRS3") con nombres reales. Spec §8. Esfuerzo medio.
+- [x] **B5 — auto-derivar identidad desde `--folder-id` ✅ PR-4 (rama
+  `claude/b5-apertura-auto-derivacion-938dd8`).** En `abrir_caso --fuente drive_ev`, si se
+  omiten, `--team-id` (`driveId` vía `get_drive_folder_info`), `--codigo-caso`
+  (`config.codigo_de_unidad` sobre el nombre de la **unidad compartida**, leído por Drive API
+  con `intake_drive.get_shared_drive_name` → `drives.get`) y `--sufijo`
+  (`config.sufijo_de_tipo_caso`, canónico: LAU_20→"LAU 20", resto title-case). Flags explícitos
+  siempre ganan. Regla `codigo_de_unidad` fijada contra los **nombres reales** de las unidades
+  compartidas (`drives.list`, cuenta EV): "<Ciudad> - <S|R|PD><N>" → "<Ciudad2><Op2><N>" (match
+  exacto de ciudad + strip de " Rentals"; `None` ante duda → pide flag, nunca código erróneo).
+  `--team-id` también se auto-deriva en la vía `--case-id` (re-pull) y hay guard de error limpio
+  (nunca `team_id=None` a rclone). Plan `docs/superpowers/plans/2026-07-18-apertura-b5-autoderivar.md`;
+  spec §8. Subagent-driven + revisión final Opus ("Ready to merge: Yes"). Suite 2152, solo 5
+  ambientales. **Follow-up para Nikolai** (pre-existente, ahora alcanzable): normalizar
+  `BaDP1`→`BaPD1` (constante `TAG_ROJO_BaDP1` + clave `DRIVE_EV_TEAM_IDS` + dropdown ciudades),
+  o un alta PD de Barcelona omite el tag rojo. Con el merge, **bloque B1–B5 COMPLETO**.
 - Fuera de este bloque (decidido en la consolidación): **skill Claude Code `abrir-caso`** — no
   ahora, el RUNBOOK es el checklist; se valora cuando B1 esté mergeado. **MCP `sudespacho` F1**
   — sigue en `[SIGUIENTE-MCP-SUDESPACHO]` (gates abiertos); el dolor de tantear campos se mata
