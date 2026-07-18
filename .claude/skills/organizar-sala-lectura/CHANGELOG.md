@@ -1,5 +1,11 @@
 # Changelog — organizar-sala-lectura
 
+## 1.7 — 2026-07-18
+- **Fix de compatibilidad Cowork:** `<fuente>` en la `description` (placeholder con ángulos)
+  hacía que claude.ai rechazara la importación («SKILL.md description cannot contain XML
+  tags») → reescrito como «lotes por fuente». Solo texto del frontmatter; sin cambios de
+  comportamiento.
+
 ## 1.6 — 2026-07-18
 - **Reclasificación de `rol`: `output` → `procesado`.** La skill organiza el intake en la sala
   de lectura (artefacto interno), no produce un entregable jurídico. Se estrena el rol

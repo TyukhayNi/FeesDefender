@@ -1,5 +1,11 @@
 # Changelog — exportar-correos-etiqueta
 
+## 1.2 (2026-07-18)
+- **Fix de compatibilidad Cowork:** la `description` contenía placeholders con ángulos
+  (`<AAAA-MM-DD>`, `<NN>`, `<caso>`) que claude.ai rechaza al importar («SKILL.md description
+  cannot contain XML tags»). Reescritos sin ángulos (`AAAA-MM-DD_email_NN`, «un caso»). Solo
+  texto del frontmatter; sin cambios de comportamiento.
+
 ## 1.1 (2026-06-23)
 - Motor implementado y validado en Claude Code (`core/email_export.py` + CLI + botón
   Streamlit + plugin v0.2.0). Corrida real W-02VND1: 122 `.eml` + adjuntos.

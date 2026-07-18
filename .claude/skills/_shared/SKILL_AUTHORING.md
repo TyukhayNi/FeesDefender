@@ -22,6 +22,7 @@ Destilado operativo de las dos guías de buenas prácticas:
 - [ ] `description`: **tercera persona** (no «Úsala»/«I can»/«You can» → «Se usa cuando…», «Procesa…»). ≤ 1024 chars.
 - [ ] La `description` dice **qué hace Y cuándo usarla**, con términos/triggers concretos. Es lo que decide la activación frente a 100+ skills.
 - [ ] Evitar descripciones vagas («ayuda con documentos»).
+- [ ] **Sin etiquetas tipo XML `<...>` en la `description`** (p. ej. `<fuente>`, `<AAAA-MM-DD>_<NN>`): Cowork/claude.ai **rechaza la importación** («SKILL.md description cannot contain XML tags»). Escribe `AAAA-MM-DD_fuente_NN` o «por fuente/por lote», no ángulos. En el **cuerpo** del `SKILL.md` sí se pueden usar; solo la `description` está vetada. Lo verifica `scripts/validate_skills.py` (aviso) + `tests/test_skill_descriptions_no_xml.py`.
 
 ## 2. Concisión — el contexto es un bien común
 
