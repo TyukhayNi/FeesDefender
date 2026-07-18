@@ -146,8 +146,7 @@ a `main`; B5 construido (PR-4, en revisión). Bloque B1–B5 COMPLETO.** Memoria
   gramática canónica → soporta `(W-...)` y `(SIN REFERENCIA)`) + `read_case_meta`; `--case-id`
   excluyente con los 6 flags de identidad.
 - [x] **B4 — evento `archivado` en `INTAKE_EVENTS` ✅ PR #69.** `MEJORAS #70.a` cerrado.
-- [x] **B5 — auto-derivar identidad desde `--folder-id` ✅ PR-4 (rama
-  `claude/b5-apertura-auto-derivacion-938dd8`).** En `abrir_caso --fuente drive_ev`, si se
+- [x] **B5 — auto-derivar identidad desde `--folder-id` ✅ PR-4 ([#74](https://github.com/TyukhayNi/FeesDefender/pull/74)).** En `abrir_caso --fuente drive_ev`, si se
   omiten, `--team-id` (`driveId` vía `get_drive_folder_info`), `--codigo-caso`
   (`config.codigo_de_unidad` sobre el nombre de la **unidad compartida**, leído por Drive API
   con `intake_drive.get_shared_drive_name` → `drives.get`) y `--sufijo`
