@@ -10,6 +10,7 @@ import re
 from dataclasses import dataclass
 
 from core import config
+from core.utils import _CASE_ID_NEW_PARTES
 
 SUBDIR_DRIVE_EV = "01_Drive EV"          # espejo: cajón fijo (spec §2)
 FUENTES: tuple[str, ...] = ("drive_ev",) + config.FUENTES_LOTE
@@ -35,21 +36,19 @@ def componer_case_id(*, codigo: str, direccion: str, w_code: str, sufijo: str) -
 def descomponer_case_id(case_id: str) -> tuple[str, str, str, str]:
     """Inverso de ``componer_case_id``: (codigo, direccion, w_code, sufijo).
 
-    El W-code se localiza por la forma ``(W-...)`` (no cualquier paréntesis),
-    así una dirección con ``(08860)`` o con ` - ` interno se reconstruye bien.
-    Lanza ``ValueError`` si el nombre no contiene un W-code en esa forma.
+    Se apoya en la gramática canónica ``core.utils._CASE_ID_NEW_PARTES``, que
+    acepta AMBAS referencias: ``(W-...)`` y ``(SIN REFERENCIA)`` (categoría
+    OTROS — ver ``MEJORAS_FUTURAS.md §12``). La referencia se localiza por su
+    forma literal entre paréntesis (no cualquier paréntesis), así una
+    dirección con ``(08860)`` o con ` - ` interno se reconstruye bien.
+    Lanza ``ValueError`` si el nombre no sigue esta gramática canónica.
     """
-    m = _W_CODE_EN_NOMBRE.search(case_id)
+    m = _CASE_ID_NEW_PARTES.match(case_id.strip())
     if not m:
-        raise ValueError(f"case_id sin (W-...): {case_id!r}")
-    w_code = m.group(1)
-    codigo = case_id.split(" - ", 1)[0].strip()
-    before = case_id[:m.start()].rstrip()          # "codigo - direccion"
-    after = case_id[m.end():].lstrip()             # "- sufijo"
-    prefijo = f"{codigo} - "
-    direccion = before[len(prefijo):].strip() if before.startswith(prefijo) else before.strip()
-    sufijo = after[1:].strip() if after.startswith("-") else after.strip()
-    return codigo, direccion, w_code, sufijo
+        raise ValueError(f"case_id no canónico: {case_id!r}")
+    ref = m.group("ref")
+    ref_inner = ref[1:-1]
+    return m.group("prefijo"), m.group("direccion").strip(), ref_inner, m.group("categoria")
 
 
 class ColisionCaso(Exception):

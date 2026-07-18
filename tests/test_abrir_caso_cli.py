@@ -515,3 +515,25 @@ def test_cli_case_id_caso_inexistente_falla(drive_temporal, tmp_path):
     ])
     assert r.exit_code != 0
     assert "no encontrado" in r.output.lower()
+
+
+def test_cli_case_id_formato_no_canonico_falla_limpio(drive_temporal, tmp_path):
+    """[Finding #1b] Un case_id existente (con `_caso.md`) pero cuyo nombre de
+    carpeta no sigue la gramática canónica (legacy: doble espacio, sin
+    `(W-...)`) debe fallar con [ERROR] limpio, no con un ValueError sin capturar."""
+    nombre_legacy = "BaRS11 - Legacy  Address - Vuelta"
+    case_manager.ensure_case(
+        nombre_legacy, titulo=nombre_legacy, referencia_crm=nombre_legacy,
+        tipo_caso="VUELTA", ciudad="Barcelona", direccion="Legacy  Address",
+    )
+    src = tmp_path / "e"
+    src.mkdir()
+    (src / "a.txt").write_bytes(b"x")
+
+    r = CliRunner().invoke(cli.app, [
+        "--case-id", nombre_legacy, "--fuente", "manual", "--src", str(src), "--yes",
+    ])
+
+    assert r.exit_code != 0
+    assert r.exception is None or isinstance(r.exception, SystemExit)
+    assert "[ERROR]" in r.output

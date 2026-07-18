@@ -22,6 +22,7 @@ Intake incremental (identidad desde _caso.md, sin repetir los 6 flags):
 """
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import zipfile
 from pathlib import Path
@@ -342,11 +343,24 @@ def main(
         if not tipo_caso_eff or not ciudad:
             typer.echo("[ERROR] _caso.md sin tipo_caso/ciudad; usa los flags de identidad", err=True)
             raise typer.Exit(code=1)
-        codigo_p, direccion_p, w_code_p, sufijo_p = brain.descomponer_case_id(resolved)
+        try:
+            codigo_p, direccion_p, w_code_p, sufijo_p = brain.descomponer_case_id(resolved)
+        except ValueError:
+            typer.echo(
+                "[ERROR] --case-id no soporta este formato de case_id "
+                f"(usa los 6 flags de identidad): {resolved!r}", err=True,
+            )
+            raise typer.Exit(code=1)
         ident = brain.resolver_identidad(
             codigo=codigo_p, direccion=direccion_p, w_code=w_code_p, sufijo=sufijo_p,
             tipo_caso=tipo_caso_eff, nombres_existentes=[], force=True,
         )
+        # Pin al nombre de carpeta YA VERIFICADO (`resolved`): el round-trip
+        # componer(descomponer(...)) normaliza espacios/formato y podría no
+        # coincidir byte a byte si la carpeta real no es perfectamente
+        # canónica, desviando ensure_case/intake a una carpeta NUEVA (el bug
+        # [APER-19] que esta feature previene).
+        ident = dataclasses.replace(ident, case_id=resolved)
     else:
         faltan = [n for n, v in flags_ident if v is None]
         if faltan:
