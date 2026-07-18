@@ -142,7 +142,8 @@ python -m scripts.abrir_caso --case-id W-XXXXXX --fuente email --cuenta <gmail> 
 
 `--case-id` es **excluyente** con los 6 flags de identidad (`--w-code --ciudad --tipo-caso
 --codigo-caso --sufijo --direccion`); el caso debe existir ya. Para `--fuente drive_ev`
-(re-pull) basta `--folder-id`: `--team-id`/`--codigo-caso`/`--sufijo` se auto-derivan (B5).
+(re-pull) basta `--folder-id`: `--team-id` se auto-deriva del `driveId` (la identidad sale de
+`_caso.md`; `--codigo-caso`/`--sufijo` no se pasan con `--case-id`).
 
 - **Export de WhatsApp:** el nombre del `.zip` suele decir el chat
   (`"...Cliente Vendedor.zip"`) → mapear directo a los 4 roles de

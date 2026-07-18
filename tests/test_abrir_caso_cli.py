@@ -623,3 +623,50 @@ def test_cli_drive_ev_sufijo_autoderivado_sin_api(drive_temporal, monkeypatch):
     assert result.exit_code == 0, result.output
     caso = next(case_locator.path_for(p.name) for p in case_locator.list_cases("Barcelona"))
     assert caso.name.endswith("- Vuelta")  # sufijo derivado de VUELTA
+
+
+def test_cli_case_id_drive_ev_autoderiva_team_id(drive_temporal, monkeypatch):
+    """B5: la vía --case-id (re-pull) no pasa por _autoderivar_drive_ev, pero el
+    bloque común 5.1.b deriva --team-id del driveId de --folder-id."""
+    # 1) Crear el caso con una pasada normal (drive_ev, con --team-id explícito).
+    r1 = CliRunner().invoke(cli.app, _args())
+    assert r1.exit_code == 0, r1.output
+
+    # 2) Re-pull con --case-id y SIN --team-id: se auto-deriva del driveId.
+    from core.intake_drive import DriveFolderInfo
+    monkeypatch.setattr(
+        "core.intake_drive.get_drive_folder_info",
+        lambda fid: DriveFolderInfo(name="x", drive_id="DRIVEID2"),
+    )
+    captura = {}
+    def fake_pull(case_id, folder_id, team_id, *, force=False):
+        captura["team_id"] = team_id
+        dest = case_locator.path_for(case_id) / "00_Input" / "01_Drive EV"
+        dest.mkdir(parents=True, exist_ok=True)
+        (dest / "nuevo.pdf").write_bytes(b"contenido-nuevo")
+        return type("R", (), {"count": 1})()
+    monkeypatch.setattr("core.intake_drive.pull_drive_ev", fake_pull)
+
+    r2 = CliRunner().invoke(cli.app, [
+        "--case-id", "W-02Z2NR", "--fuente", "drive_ev", "--folder-id", "FID",
+        "--crm", "skip", "--yes",
+    ])
+    assert r2.exit_code == 0, r2.output
+    assert captura["team_id"] == "DRIVEID2"  # team_id derivado del driveId
+
+
+def test_cli_drive_ev_team_id_no_derivable_error_limpio(drive_temporal, monkeypatch):
+    """B5 invariante: si --team-id se omite y no se puede derivar (token/red),
+    error LIMPIO (exit 1 + menciona --team-id), NUNCA un TypeError de rclone."""
+    monkeypatch.setattr("core.intake_drive.get_drive_folder_info", lambda fid: None)
+    def boom(*a, **kw):
+        raise AssertionError("no debe llegar al pull con team_id=None")
+    monkeypatch.setattr("core.intake_drive.pull_drive_ev", boom)
+
+    # 6 flags con --codigo-caso explícito (faltan pasa), pero --team-id omitido
+    # y get_drive_folder_info=None -> no se deriva -> error limpio en 5.1.b.
+    result = CliRunner().invoke(
+        cli.app, _args_b5_autoderivar(**{"codigo-caso": "BaRS11", "crm": "skip"}))
+    assert result.exit_code == 1
+    assert "--team-id" in result.output
+    assert not isinstance(result.exception, TypeError)

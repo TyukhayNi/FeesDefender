@@ -331,6 +331,14 @@ def _autoderivar_drive_ev(
     return team_id, codigo_caso, sufijo
 
 
+def _derivar_team_id(folder_id):
+    """B5: driveId de la carpeta (= --team-id), o None si no se puede leer."""
+    if not folder_id:
+        return None
+    info = intake_drive.get_drive_folder_info(folder_id)
+    return info.drive_id if (info and info.drive_id) else None
+
+
 @app.command()
 def main(
     w_code: str | None = typer.Option(None, "--w-code"),
@@ -434,6 +442,21 @@ def main(
     if ciudad not in CIUDADES:
         typer.echo(f"[ERROR] Ciudad desconocida: {ciudad}", err=True)
         raise typer.Exit(code=1)
+
+    # 5.1.b (B5) drive_ev necesita --team-id para el pull rclone. Se deriva del
+    # --folder-id si se omitió — también en la vía --case-id (re-pull), que no
+    # pasa por _autoderivar_drive_ev. Si aun así no se resuelve, error limpio
+    # (evita el TypeError de rclone con team_id=None). En el camino feliz de 6
+    # flags, _autoderivar_drive_ev ya lo fijó y este bloque no vuelve a llamar.
+    if fuente == "drive_ev" and team_id is None:
+        team_id = _derivar_team_id(folder_id)
+        if team_id is not None:
+            typer.echo(f"[auto] --team-id del driveId: {team_id}")
+        else:
+            typer.echo("[ERROR] --fuente drive_ev requiere --team-id: no se pudo "
+                       "derivar de --folder-id (sin --folder-id o token/red); "
+                       "pásalo explícito.", err=True)
+            raise typer.Exit(code=1)
 
     # 5.2 esqueleto (idempotente; con --case-id el caso ya existe)
     case_manager.ensure_case(
