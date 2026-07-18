@@ -55,6 +55,9 @@ class TestCodigoDeUnidad:
         "Madrid - R1 Inactivas",    # sufijo no operativo
         "Madrid - R1_1",            # sufijo no operativo
         "Lisboa - S1",              # Portugal, fuera del mapa
+        "San Sebastian de los Reyes - S1",
+        "Sevilla la Nueva - S1",
+        "Madrid Digitalizacion - S1",
         "BACKUP MADRID",            # sin " - "
         "NIKOLAI",                  # sin " - " ni ciudad
         "_Team_Example_S0",         # sin " - "

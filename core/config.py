@@ -221,11 +221,15 @@ def codigo_de_unidad(nombre_unidad: str) -> str | None:
     zona, sufijo = nombre_unidad.split(" - ", 1)
     zona = zona.strip()
 
-    ciudad = None
-    for nombre_ciudad, cod in _CIUDAD_DE_UNIDAD.items():
-        if zona == nombre_ciudad or zona.startswith(nombre_ciudad + " "):
-            ciudad = cod
-            break
+    # Única extensión real del nombre de ciudad en las unidades operativas es
+    # el cualificador " Rentals" (Barcelona); el tipo de operación se lee del
+    # sufijo, no de la zona. Se normaliza y se exige coincidencia EXACTA de
+    # ciudad: así "San Sebastian de los Reyes - S1" o "Madrid Digitalización -
+    # S1" (municipios/zonas reales que extienden un nombre de ciudad) devuelven
+    # None en vez de un código erróneo.
+    if zona.endswith(" Rentals"):
+        zona = zona[: -len(" Rentals")]
+    ciudad = _CIUDAD_DE_UNIDAD.get(zona)
     if ciudad is None:
         return None
 
