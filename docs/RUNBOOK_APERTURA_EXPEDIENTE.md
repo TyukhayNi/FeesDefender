@@ -70,7 +70,8 @@ De las 4 preguntas clásicas de apertura, **3 son auto-derivables**; la única r
 **alcance** (¿uno o varios asuntos en el hilo?).
 
 - **`[APER-03]` Equipo `BaRS<N>` = nombre de la unidad compartida del Drive**
-  (`"Barcelona - S3"` → `BaRS3`). Del `driveId` de la carpeta. NO preguntar.
+  (`"Barcelona - S3"` → `BaRS3`). Del `driveId` de la carpeta. NO preguntar. La CLI lo
+  auto-deriva (B5).
 - **`[APER-04]` / W-046G2R — Sufijo = `tipo_caso` CANÓNICO**, nunca paráfrasis libre
   (`VUELTA` → `"Vuelta"`; `NEGATIVA_ESCRITURA` → `"Negativa escritura"`). Ofrecer una
   paráfrasis obliga a renombrar carpeta Drive + `_caso.md` + etiqueta Gmail + referencia
@@ -105,10 +106,16 @@ Memoria `reference-gmail-etiquetas-organizacion`.
 
 ```powershell
 python -m scripts.abrir_caso --w-code W-XXXXXX --ciudad Barcelona --tipo-caso VUELTA `
-  --codigo-caso BaRS3 --sufijo "Vuelta" --direccion "..." --folder-id <id> --team-id <driveId> `
+  --direccion "..." --folder-id <id> `
   --fuente drive_ev --crm api --cuantia <n> --yes --force
 ```
 
+- **`[APER-34]` Auto-derivación (B5):** en `--fuente drive_ev`, si se omiten,
+  `--team-id` (driveId), `--codigo-caso` (nombre de la unidad compartida vía Drive API) y
+  `--sufijo` (del `tipo_caso` canónico) se **auto-derivan** desde `--folder-id`. Los flags
+  explícitos SIEMPRE ganan. Si `codigo_de_unidad` no puede derivar (unidad comercial,
+  ambigua como `"Sevilla - S1 / S6"`, o ciudad fuera del mapa), la CLI pide `--codigo-caso`
+  explícito con un error claro (nunca un código equivocado).
 - **`--yes` desde la primera llamada.** La colisión del código `BaRS<N>` con casos previos
   del mismo equipo **es la norma, no la excepción** (W-046G2R). Sin `--yes`, el prompt
   "el código BaRS3 ya existe" cuelga el proceso en background esperando confirmación.
@@ -135,7 +142,7 @@ python -m scripts.abrir_caso --case-id W-XXXXXX --fuente email --cuenta <gmail> 
 
 `--case-id` es **excluyente** con los 6 flags de identidad (`--w-code --ciudad --tipo-caso
 --codigo-caso --sufijo --direccion`); el caso debe existir ya. Para `--fuente drive_ev`
-(re-pull) aún hacen falta `--folder-id`/`--team-id` (B5 los auto-derivará).
+(re-pull) basta `--folder-id`: `--team-id`/`--codigo-caso`/`--sufijo` se auto-derivan (B5).
 
 - **Export de WhatsApp:** el nombre del `.zip` suele decir el chat
   (`"...Cliente Vendedor.zip"`) → mapear directo a los 4 roles de
