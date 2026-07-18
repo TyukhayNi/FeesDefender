@@ -70,6 +70,7 @@ Pendiente confirmar
 from __future__ import annotations
 
 import os
+import sys as _sys
 import time
 from dataclasses import dataclass, field
 from datetime import date
@@ -1044,6 +1045,33 @@ def tag_defaults_for_tipo_caso(tipo_caso: str) -> list[str]:
     if valoracion_tag is not None:
         tags.append(valoracion_tag)
     return tags
+
+
+# Prefijo de 2 letras del código de equipo → tag azul de ciudad.
+# El código de equipo es "{ciudad(2)}{tipo_op(2)}{nº}" (INTEGRACION §11.3),
+# así que sus 2 primeras letras identifican la plaza sin ambigüedad.
+_PREFIJO_CIUDAD_A_TAG_AZUL: dict[str, str] = {
+    "Ba": TAG_AZUL_BARCELONA,
+    "Ma": TAG_AZUL_MADRID,
+    "Va": TAG_AZUL_VALENCIA,
+    "Bi": TAG_AZUL_BILBAO,
+    "Sa": TAG_AZUL_SANTANDER,
+    "Se": TAG_AZUL_SEVILLA,
+}
+
+
+def tag_rojo_equipo(codigo: str) -> str | None:
+    """Token del tag rojo de equipo para un código (p. ej. "BaRS11"), o None.
+
+    Resuelve la constante ``TAG_ROJO_<codigo>`` de este módulo (las constantes se
+    nombran exactamente así: ``TAG_ROJO_BaRS11``).
+    """
+    return getattr(_sys.modules[__name__], f"TAG_ROJO_{codigo}", None)
+
+
+def tag_azul_de_codigo(codigo: str) -> str | None:
+    """Token del tag azul de ciudad derivado del prefijo de 2 letras del código, o None."""
+    return _PREFIJO_CIUDAD_A_TAG_AZUL.get(codigo[:2])
 
 
 # ---------------------------------------------------------------------------
