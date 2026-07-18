@@ -126,32 +126,31 @@ flujo, con gotchas embebidos): `docs/RUNBOOK_APERTURA_EXPEDIENTE.md`. Verificado
 repo 2026-07-17/18 (workflow de verificación): las primitivas `ensure_*`/`link_*` ya existen
 en `core/sudespacho_relations.py` (PR #53) — B1 es orquestación, no escribir de cero.*
 
-Orden recomendado por esfuerzo vs ahorro: **quick-wins (B4 + B3) → B2 → B1 (titular) → B5.**
-Todos con tests TDD; salida rama + PR (leak-scan verde).
+Orden ejecutado: **quick-wins (B4 + B3) → B2 → B1 (titular) → B5.** Todos con TDD, rama + PR
+(leak-scan verde), subagent-driven + revisión final Opus. **Estado 2026-07-18: B1-B4 mergeados
+a `main`; solo falta B5.** Memoria `project-apertura-b1-b5-builds`.
 
-- [ ] **B1 — `abrir_caso` ficha CRM end-to-end (EL QUE MÁS AHORRA; recurrencia ≥2).** Que el
-  alta (o un paso post-alta) orqueste la **ficha completa**: tags ciudad+equipo (auto desde
-  `--ciudad`/`--codigo-caso`), `link_ev_mmc`, `ensure_contrario_vinculado` (contrario =
-  firmante del encargo), `ensure_colaborador_vinculado` (ficha completa desde firma
-  `@engelvoelkers.com`), `Notas`. Hoy son 5-6 llamadas manuales (`abrir_caso --crm api` solo
-  hace el alta mínima — verificado). **Incluye crear `update_expediente`** (PUT round-trip que
-  **preserva `Numero_Expediente`**; hoy NO existe — patrón en `INTEGRACION §10.7`). **Incluye
-  B3.** Detalle de campos/endpoints: SSOT `INTEGRACION §10–§15`. Continúa `[abrir-caso]`.
-- [ ] **B3 — Normalizador de teléfono a 9 dígitos (dentro de B1).** En los escritores CRM
-  (`core/sudespacho_relations.py`): `strip` de `+34`/espacios. Mata de raíz el
-  `HTTP 400 movil is incorrect` y su falsa pista de fallback legacy. Hoy NO hay normalización
-  (verificado). Esfuerzo mínimo.
-- [ ] **B2 — CLI `--case-id` para intake incremental.** Resolver la identidad desde `_caso.md`
-  (vía `case_locator.resolve_ref`, ya existe tras #54) en lugar de repetir los 6 flags de
-  identidad idénticos al nombre de carpeta con `--force`. Elimina fragilidad ante
-  espaciado/tilde. Esfuerzo bajo.
-- [ ] **B4 — Evento `archivado` en `INTAKE_EVENTS` (quick win).** Añadir `archivado` al
-  `frozenset` de `core/intake_log.py` (25 eventos hoy, sin él — verificado) para que el
-  archivo se logee por `intake_log.append_event` y no a mano. `MEJORAS #70.a`. Mínimo.
-- [ ] **B5 — Auto-derivar identidad desde `--folder-id`.** En `abrir_caso --fuente drive_ev`,
-  deducir `--team-id` (`driveId`), `--codigo-caso` (nombre de la unidad compartida) y
-  `--sufijo` (del `tipo_caso` canónico) desde el `--folder-id`. Elimina 3 flags + 3 preguntas.
-  Esfuerzo medio.
+- [x] **B1 — ficha CRM end-to-end (titular) ✅ PR #72 (squash; `main` `9f9a555`).** Construido como
+  **subcomando reentrante `scripts/crm_ficha.py`** (no dentro del alta) + tags equipo/ciudad
+  enriquecidos en el alta (`crm_payload`, derivados del prefijo del `codigo`), `link_ev_mmc`,
+  `ensure_contrario_vinculado`, `ensure_colaborador_vinculado` y `Notas`, a partir de un
+  `_ficha_crm.yaml` de caso (PII → `data/CASOS/`). **`update_expediente`/`get_expediente` creados y
+  REESCRITOS tras verificación en vivo del CRM:** R2 refutó el diseño mockeado (el GET-detalle
+  exige `?properties=` y devuelve lista `values`); R3 confirmó que el **PUT es PARCIAL y preserva
+  los omitidos** (no hace falta GET→merge ni preservar `Numero_Expediente` a mano). R1 (re-link no
+  duplica) también verificado en vivo. Detalle CRM: `INTEGRACION §10.7`.
+- [x] **B3 — normalizador de teléfono a 9 dígitos ✅ PR #69.** `normalize_es_phone` (`core/utils.py`)
+  en el `__post_init__` de los DTOs `NuevoClienteContrario`/`NuevoColaborador` (cubre REST+legacy).
+- [x] **B2 — CLI `--case-id` para intake incremental ✅ PR #71.** `descomponer_case_id` (sobre la
+  gramática canónica → soporta `(W-...)` y `(SIN REFERENCIA)`) + `read_case_meta`; `--case-id`
+  excluyente con los 6 flags de identidad.
+- [x] **B4 — evento `archivado` en `INTAKE_EVENTS` ✅ PR #69.** `MEJORAS #70.a` cerrado.
+- [ ] **B5 — auto-derivar identidad desde `--folder-id` (ÚNICO PENDIENTE).** En `abrir_caso
+  --fuente drive_ev`, deducir `--team-id` (`driveId`), `--codigo-caso` (nombre de la unidad
+  compartida) y `--sufijo` (del `tipo_caso` canónico) desde `--folder-id`. **Desbloqueado** (PR-2
+  en `main`). Decisión Nikolai 2026-07-18: los nombres de unidad compartida se leen por **Drive
+  API** (google-despacho), no tabla manual → fijar la regla `codigo_de_unidad` ("Barcelona - S3"→
+  "BaRS3") con nombres reales. Spec §8. Esfuerzo medio.
 - Fuera de este bloque (decidido en la consolidación): **skill Claude Code `abrir-caso`** — no
   ahora, el RUNBOOK es el checklist; se valora cuando B1 esté mergeado. **MCP `sudespacho` F1**
   — sigue en `[SIGUIENTE-MCP-SUDESPACHO]` (gates abiertos); el dolor de tantear campos se mata

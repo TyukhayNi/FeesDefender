@@ -239,8 +239,10 @@ posición). El resto va **aparte**, todo **REST con `x-api-key`, sin PHPSESSID**
 - **`[APER-24]` `relatedElement`/`relatedId` en el POST de creación NO vinculan** — se
   ignoran en silencio (201 igual, pero la pestaña queda vacía). Vincular **siempre** por
   `relation_element` (§15.2).
-- **`[APER-26]` PUT (reemplazo completo), no PATCH (→ 405).** Para editar un campo:
-  `GET` todo → reenviar todo cambiando solo lo que toca (§10.7).
+- **`[APER-26]` PUT (no PATCH → 405) y es PARCIAL: preserva los campos omitidos**
+  (verificado en vivo 2026-07-18, §10.7). Para editar un campo, `update_expediente(exp_id,
+  {campo: valor})` envía **solo** ese campo — NO hace falta reenviar todo ni preservar
+  `Numero_Expediente` a mano. El GET-detalle sí exige `?properties=` (el GET plano da HTTP 500).
 - **MAYÚSCULAS** en las fichas (excepto email). Los `Select` (provincia, nacionalidad,
   tipo_doc) usan el **valor literal del enum** (`GET /api/view/enums/{elem}/{prop}`), no
   inventado (W-046G2R).
@@ -256,10 +258,11 @@ posición). El resto va **aparte**, todo **REST con `x-api-key`, sin PHPSESSID**
 
 Todo REST `x-api-key`. No se borra nada.
 
-1. **CRM:** `PUT element_register/extrajudiciales/{id}` con `historico=true`,
-   `referencia_historico` (motivo breve, `MAYÚSCULAS_GUION_BAJO`) y `fecha_alta_hist`
-   (campos `campo_855`/`campo_868`/`campo_852`; mapa en `INTEGRACION §12`). *(Enum cerrado
-   de motivos: pendiente — `MEJORAS #70`.)*
+1. **CRM:** `update_expediente(exp_id, {"historico": True, "referencia_historico":
+   "<MOTIVO_MAYUSCULAS_GUION_BAJO>", "fecha_alta_hist": "<AAAA-MM-DD>"})` — PUT parcial que
+   preserva el resto. Nombres REST `historico`/`referencia_historico` verificados en vivo
+   2026-07-18 (mismo patrón para `fecha_alta_hist`); ya no hacen falta los `campo_855/868/852`
+   legacy. *(Enum cerrado de motivos: pendiente — `MEJORAS #70.c`.)*
 2. **Actuación facturable** de cierre (§15).
 3. **Gmail:** mover la etiqueta a `03. ARCHIVO/01. ARCHIVO - EXTRAJUDICIALES/<año>/<caso>`
    (o `02. ... JUDICIALES/` si es judicial) + color; `labels.patch` conserva los hilos.
@@ -298,8 +301,11 @@ Todo REST `x-api-key`. No se borra nada.
   (judicial + archivo), §15 (actuaciones), §11 (tags/colores), §14.4 (enums).
 - **Callejones sin salida:** `docs/DEAD_ENDS.md` (worktree vs. raíz; lectura de relaciones REST).
 - **Handoffs fuente:** `docs/superpowers/handoff-2026-07-17-apertura-W-{02T3XO,02TH0W,046G2R}-mejoras-proceso.md`.
-- **Builds que suavizan este flujo:** `PLAN.md [SIGUIENTE-APERTURA-EXPEDIENTE]` (B1 ficha
-  CRM end-to-end, B2 `--case-id`, B4 evento `archivado`, B5 auto-derivación de identidad).
+- **Builds de este flujo (`PLAN.md [SIGUIENTE-APERTURA-EXPEDIENTE]`):** B1 ficha CRM
+  end-to-end (`scripts/crm_ficha.py` + `_ficha_crm.yaml`), B2 `--case-id`, B3 normalización de
+  móvil, B4 evento `archivado` — **ya en `main`** (PR #69/#71/#72). **B5** (auto-derivar
+  `--team-id`/`--codigo-caso`/`--sufijo` desde `--folder-id`) **pendiente** — hasta entonces,
+  §1/§2/§4 se hacen a mano (recon del `driveId`).
 - **Memorias:** `feedback-case-sufijo-tipo-canonico`, `feedback-crm-fichas-mayusculas`,
   `reference-sudespacho-crm-cableado-expediente`, `reference-sudespacho-archivo-actuaciones`,
   `reference-gmail-etiquetas-organizacion`, `feedback-worktree-vs-raiz-compartida`.
