@@ -1571,10 +1571,11 @@ def merge_expediente_update(actual: dict, cambios: dict) -> dict:
     completo y un valor "0"/ausente dejaría el expediente sin número).
 
     Lanza ``ValueError`` si ``actual`` no trae un ``Numero_Expediente`` válido
-    (ausente, vacío o "0"): sin un número real que preservar, no es seguro hacer
+    (ausente, vacío, None o "0"): sin un número real que preservar, no es seguro hacer
     el PUT.
     """
-    num = str(actual.get("Numero_Expediente", "")).strip()
+    raw = actual.get("Numero_Expediente")
+    num = str(raw).strip() if raw is not None else ""
     if not num or num == "0":
         raise ValueError(
             f"actual sin Numero_Expediente válido ({num!r}); no es seguro el PUT"

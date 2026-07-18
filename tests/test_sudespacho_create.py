@@ -59,6 +59,14 @@ def test_merge_expediente_update_lanza_si_actual_sin_numero_valido():
         merge_expediente_update({"Notas": "n"}, {"Notas": "n2"})
 
 
+def test_merge_expediente_update_lanza_si_numero_es_none():
+    # Regresión: cuando la API devuelve None (clave presente pero valor nulo),
+    # str(None) → "None" que pasa la validación incorrectamente.
+    # Debe lanzar ValueError igual que absent/empty/"0".
+    with pytest.raises(ValueError):
+        merge_expediente_update({"Numero_Expediente": None, "Notas": "v"}, {"Notas": "n"})
+
+
 def test_get_expediente_hace_get_con_api_key():
     resp = MagicMock(status_code=200)
     resp.json.return_value = {"id": 606, "Numero_Expediente": "49"}
