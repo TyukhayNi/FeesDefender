@@ -7,6 +7,7 @@ del core debe importar `settings` desde aquí en lugar de leer el entorno.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -177,6 +178,61 @@ def sufijo_de_tipo_caso(tipo: str) -> str:
     if tipo in _SUFIJO_TIPO_CASO_ESPECIAL:
         return _SUFIJO_TIPO_CASO_ESPECIAL[tipo]
     return tipo.replace("_", " ").capitalize()
+
+
+# ---------------------------------------------------------------------------
+# Código de caso derivado del nombre de la unidad compartida del Drive (B5)
+# ---------------------------------------------------------------------------
+#
+# Regla LOSSY fijada contra los NOMBRES REALES de las unidades compartidas del
+# Drive E&V (cuenta EV, drives.list 2026-07-18). Formato operativo:
+# "<Ciudad> - <S|R|PD><N>" -> "<Ciudad2><Op2><N>" (p.ej. "Barcelona - S3" ->
+# "BaRS3", "Barcelona Rentals - R1" -> "BaRR1", "Valencia - PD1" -> "VaPD1").
+# Lisboa (Portugal) y las unidades comerciales/administrativas quedan fuera a
+# propósito. Un None (pedir --codigo-caso explícito) es preferible a un código
+# equivocado, que obligaría a renombrar cross-sistema.
+_CIUDAD_DE_UNIDAD: dict[str, str] = {
+    "Barcelona": "Ba",
+    "Bilbao": "Bi",
+    "Madrid": "Ma",
+    "Santander": "Sa",
+    "San Sebastian": "SS",
+    "San Sebastián": "SS",
+    "Sevilla": "Se",
+    "Valencia": "Va",
+}
+
+# Tipo de operación del código, leído de la letra inicial del sufijo de la
+# unidad: "S<N>" (venta residencial) -> "RS", "R<N>" (alquiler) -> "RR",
+# "PD<N>" (patrimonio) -> "PD".
+_OP_DE_SUFIJO_UNIDAD: dict[str, str] = {"S": "RS", "R": "RR", "PD": "PD"}
+_SUFIJO_UNIDAD_RE = re.compile(r"^(PD|S|R)(\d+)$")
+
+
+def codigo_de_unidad(nombre_unidad: str) -> str | None:
+    """Deriva el código de caso ("BaRS3") del nombre de una unidad compartida.
+
+    Devuelve ``None`` cuando no puede derivar con certeza (ciudad desconocida,
+    sufijo no operativo, unidad comercial o ambigua): pedir ``--codigo-caso``
+    explícito. Regla fijada contra los nombres reales (drives.list, cuenta EV).
+    """
+    if not nombre_unidad or " - " not in nombre_unidad:
+        return None
+    zona, sufijo = nombre_unidad.split(" - ", 1)
+    zona = zona.strip()
+
+    ciudad = None
+    for nombre_ciudad, cod in _CIUDAD_DE_UNIDAD.items():
+        if zona == nombre_ciudad or zona.startswith(nombre_ciudad + " "):
+            ciudad = cod
+            break
+    if ciudad is None:
+        return None
+
+    m = _SUFIJO_UNIDAD_RE.match(sufijo.strip().upper())
+    if not m:
+        return None
+    return f"{ciudad}{_OP_DE_SUFIJO_UNIDAD[m.group(1)]}{m.group(2)}"
 
 
 # ---------------------------------------------------------------------------
