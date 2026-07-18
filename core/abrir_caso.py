@@ -10,6 +10,7 @@ import re
 from dataclasses import dataclass
 
 from core import config
+from core.utils import _CASE_ID_NEW_PARTES
 
 SUBDIR_DRIVE_EV = "01_Drive EV"          # espejo: cajón fijo (spec §2)
 FUENTES: tuple[str, ...] = ("drive_ev",) + config.FUENTES_LOTE
@@ -30,6 +31,24 @@ def componer_case_id(*, codigo: str, direccion: str, w_code: str, sufijo: str) -
     la dirección va pegada al paréntesis de la referencia, sin guion previo.
     """
     return f"{codigo} - {direccion} ({w_code}) - {sufijo}"
+
+
+def descomponer_case_id(case_id: str) -> tuple[str, str, str, str]:
+    """Inverso de ``componer_case_id``: (codigo, direccion, w_code, sufijo).
+
+    Se apoya en la gramática canónica ``core.utils._CASE_ID_NEW_PARTES``, que
+    acepta AMBAS referencias: ``(W-...)`` y ``(SIN REFERENCIA)`` (categoría
+    OTROS — ver ``MEJORAS_FUTURAS.md §12``). La referencia se localiza por su
+    forma literal entre paréntesis (no cualquier paréntesis), así una
+    dirección con ``(08860)`` o con ` - ` interno se reconstruye bien.
+    Lanza ``ValueError`` si el nombre no sigue esta gramática canónica.
+    """
+    m = _CASE_ID_NEW_PARTES.match(case_id.strip())
+    if not m:
+        raise ValueError(f"case_id no canónico: {case_id!r}")
+    ref = m.group("ref")
+    ref_inner = ref[1:-1]
+    return m.group("prefijo"), m.group("direccion").strip(), ref_inner, m.group("categoria")
 
 
 class ColisionCaso(Exception):

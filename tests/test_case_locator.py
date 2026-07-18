@@ -381,3 +381,91 @@ class TestCaseManagerListCases:
         from core.case_manager import list_cases
         (root / "Barcelona" / "BaRR3 - Roser").mkdir(parents=True)
         assert list_cases() == ["BaRR3 - Roser"]
+
+
+# ---------------------------------------------------------------------------
+# read_case_meta — Fase 2 B2
+# ---------------------------------------------------------------------------
+
+class TestReadCaseMeta:
+    def test_read_case_meta_devuelve_meta(self, tmp_path):
+        from core.casos.case_locator import read_case_meta
+        case_dir = tmp_path / "BaRS11 - Falsa 1 (W-000AAA) - Vuelta"
+        (case_dir / "00_Input").mkdir(parents=True)
+        (case_dir / "00_Input" / "_caso.md").write_text(
+            "---\n"
+            "ciudad: Barcelona\n"
+            "meta:\n"
+            "  tipo_caso: VUELTA\n"
+            "  ciudad: Barcelona\n"
+            "  direccion: Falsa 1\n"
+            "  id_go: W-000AAA\n"
+            "---\n\n# Caso\n",
+            encoding="utf-8",
+        )
+        meta = read_case_meta(case_dir)
+        assert meta["tipo_caso"] == "VUELTA"
+        assert meta["ciudad"] == "Barcelona"
+        assert meta["id_go"] == "W-000AAA"
+
+    def test_read_case_meta_sin_fichero_devuelve_vacio(self, tmp_path):
+        from core.casos.case_locator import read_case_meta
+        assert read_case_meta(tmp_path / "no-existe") == {}
+
+    def test_read_case_meta_encoding_corrupto_devuelve_vacio(self, tmp_path):
+        """Regresión: no-UTF8 debe devolver {} en lugar de lanzar UnicodeDecodeError."""
+        from core.casos.case_locator import read_case_meta
+        case_dir = tmp_path / "BaRS11 - Falsa 1 (W-000AAA) - Vuelta"
+        (case_dir / "00_Input").mkdir(parents=True)
+        # Frontmatter con un byte cp1252 (0xf1 = 'ñ' en latin-1), inválido en UTF-8
+        (case_dir / "00_Input" / "_caso.md").write_bytes(
+            b"---\nmeta:\n  ciudad: Barcelona\n  direcci\xf1n: X\n---\n"
+        )
+        result = read_case_meta(case_dir)
+        assert result == {}
+
+    def test_read_case_meta_yaml_corrupto_devuelve_vacio(self, tmp_path):
+        """Regresión: frontmatter YAML malformado debe devolver {} en lugar de lanzar YAMLError."""
+        from core.casos.case_locator import read_case_meta
+        case_dir = tmp_path / "BaRS11 - Falsa 1 (W-000AAA) - Vuelta"
+        (case_dir / "00_Input").mkdir(parents=True)
+        # YAML inválido: lista sin cerrar
+        (case_dir / "00_Input" / "_caso.md").write_text(
+            "---\nmeta:\n  - [unterminated\n---\n",
+            encoding="utf-8",
+        )
+        result = read_case_meta(case_dir)
+        assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# resolve_ref — Fase 2 B2
+# ---------------------------------------------------------------------------
+
+class TestResolveRef:
+    def test_resolve_ref_encoding_corrupto_no_lanza(self, root):
+        """Regresión: _id_go_of con no-UTF8 vía resolve_ref no debe lanzar."""
+        from core.casos.case_locator import resolve_ref
+        case_dir = root / "BaRS11 - Falsa 1 (W-000AAA) - Vuelta"
+        (case_dir / "00_Input").mkdir(parents=True)
+        # Frontmatter con byte cp1252 inválido en UTF-8
+        (case_dir / "00_Input" / "_caso.md").write_bytes(
+            b"---\nmeta:\n  id_go: W-000AAA\n  direcci\xf1n: X\n---\n"
+        )
+        # resolve_ref no debe lanzar; si no encuentra por id_go (por el error), devuelve ref tal cual
+        result = resolve_ref("W-000AAA")
+        assert result == "W-000AAA"
+
+    def test_resolve_ref_yaml_corrupto_no_lanza(self, root):
+        """Regresión: _id_go_of con YAML malformado vía resolve_ref no debe lanzar."""
+        from core.casos.case_locator import resolve_ref
+        case_dir = root / "BaRS11 - Falsa 1 (W-000AAA) - Vuelta"
+        (case_dir / "00_Input").mkdir(parents=True)
+        # YAML inválido pero encoding UTF-8 válido
+        (case_dir / "00_Input" / "_caso.md").write_text(
+            "---\nmeta:\n  id_go: W-000AAA\n  - [unterminated\n---\n",
+            encoding="utf-8",
+        )
+        # resolve_ref no debe lanzar
+        result = resolve_ref("W-000AAA")
+        assert result == "W-000AAA"

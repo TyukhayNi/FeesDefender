@@ -15,9 +15,14 @@ Uso:
   python -m scripts.abrir_caso ... --fuente manual --src <carpeta|.zip>
   python -m scripts.abrir_caso ... --fuente whatsapp --src <.zip> --rol "03_Otros"
   python -m scripts.abrir_caso ... --fuente email --cuenta <gmail> --label <etiqueta>
+
+Intake incremental (identidad desde _caso.md, sin repetir los 6 flags):
+  python -m scripts.abrir_caso --case-id W-02Z2NR --fuente manual --src <carpeta|.zip>
+  python -m scripts.abrir_caso --case-id W-02Z2NR --fuente email --cuenta <gmail> --label <etiqueta>
 """
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import zipfile
 from pathlib import Path
@@ -289,12 +294,17 @@ def _alta_crm(
 
 @app.command()
 def main(
-    w_code: str = typer.Option(..., "--w-code"),
-    ciudad: str = typer.Option(..., "--ciudad"),
-    tipo_caso: str = typer.Option(..., "--tipo-caso"),
-    codigo_caso: str = typer.Option(..., "--codigo-caso"),
-    sufijo: str = typer.Option(..., "--sufijo"),
-    direccion: str = typer.Option(..., "--direccion"),
+    w_code: str | None = typer.Option(None, "--w-code"),
+    ciudad: str | None = typer.Option(None, "--ciudad"),
+    tipo_caso: str | None = typer.Option(None, "--tipo-caso"),
+    codigo_caso: str | None = typer.Option(None, "--codigo-caso"),
+    sufijo: str | None = typer.Option(None, "--sufijo"),
+    direccion: str | None = typer.Option(None, "--direccion"),
+    case_id: str | None = typer.Option(
+        None, "--case-id",
+        help="Intake incremental: resuelve identidad desde _caso.md (case_id o W-code). "
+             "Excluyente con los 6 flags de identidad.",
+    ),
     folder_id: str | None = typer.Option(None, "--folder-id"),
     team_id: str | None = typer.Option(None, "--team-id"),
     fuente: str = typer.Option("drive_ev", "--fuente", help="drive_ev|manual|whatsapp|email"),
@@ -308,33 +318,79 @@ def main(
     dry_run: bool = typer.Option(False, "--dry-run"),
     yes: bool = typer.Option(False, "--yes", help="auto-confirma el gate CRM"),
 ) -> None:
-    if ciudad not in CIUDADES:
-        typer.echo(f"[ERROR] Ciudad desconocida: {ciudad}", err=True)
-        raise typer.Exit(code=1)
-
     if fuente not in _FUENTES_CLI:
         typer.echo(f"[ERROR] Fuente desconocida: {fuente}. Válidas: {_FUENTES_CLI}", err=True)
         raise typer.Exit(code=1)
 
-    # 5.1 identidad + colisión
-    nombres = [p.name for p in case_locator.list_cases(ciudad)]
-    try:
-        ident = brain.resolver_identidad(
-            codigo=codigo_caso, direccion=direccion, w_code=w_code, sufijo=sufijo,
-            tipo_caso=tipo_caso, nombres_existentes=nombres, force=force,
-        )
-    except brain.ColisionCaso as exc:
-        typer.echo(f"[ERROR] {exc}", err=True)
-        raise typer.Exit(code=1)
-    if ident.requiere_confirmacion and not force:
-        typer.echo(f"[AVISO] El código {ident.codigo} ya existe: {ident.colisiones}")
-        if not (yes or typer.confirm("¿Crear igualmente con este código?")):
+    # 5.1 identidad — dos vías excluyentes: --case-id (intake incremental) o los 6 flags.
+    flags_ident = [
+        ("--w-code", w_code), ("--ciudad", ciudad), ("--tipo-caso", tipo_caso),
+        ("--codigo-caso", codigo_caso), ("--sufijo", sufijo), ("--direccion", direccion),
+    ]
+    if case_id is not None:
+        dados = [n for n, v in flags_ident if v is not None]
+        if dados:
+            typer.echo(f"[ERROR] --case-id es excluyente con los flags de identidad: {dados}", err=True)
             raise typer.Exit(code=1)
+        resolved = case_locator.resolve_ref(case_id)
+        case_dir = case_locator.path_for(resolved)
+        if not (case_dir / "00_Input" / "_caso.md").is_file():
+            typer.echo(f"[ERROR] Caso no encontrado para --case-id {case_id!r} "
+                       f"(resuelto: {resolved!r})", err=True)
+            raise typer.Exit(code=1)
+        meta = case_locator.read_case_meta(case_dir)
+        tipo_caso_eff, ciudad = meta.get("tipo_caso"), meta.get("ciudad")
+        if not tipo_caso_eff or not ciudad:
+            typer.echo("[ERROR] _caso.md sin tipo_caso/ciudad; usa los flags de identidad", err=True)
+            raise typer.Exit(code=1)
+        try:
+            codigo_p, direccion_p, w_code_p, sufijo_p = brain.descomponer_case_id(resolved)
+        except ValueError:
+            typer.echo(
+                "[ERROR] --case-id no soporta este formato de case_id "
+                f"(usa los 6 flags de identidad): {resolved!r}", err=True,
+            )
+            raise typer.Exit(code=1)
+        ident = brain.resolver_identidad(
+            codigo=codigo_p, direccion=direccion_p, w_code=w_code_p, sufijo=sufijo_p,
+            tipo_caso=tipo_caso_eff, nombres_existentes=[], force=True,
+        )
+        # Pin al nombre de carpeta YA VERIFICADO (`resolved`): el round-trip
+        # componer(descomponer(...)) normaliza espacios/formato y podría no
+        # coincidir byte a byte si la carpeta real no es perfectamente
+        # canónica, desviando ensure_case/intake a una carpeta NUEVA (el bug
+        # [APER-19] que esta feature previene).
+        ident = dataclasses.replace(ident, case_id=resolved)
+    else:
+        faltan = [n for n, v in flags_ident if v is None]
+        if faltan:
+            typer.echo(f"[ERROR] faltan flags de identidad {faltan} (o usa --case-id)", err=True)
+            raise typer.Exit(code=1)
+        if ciudad not in CIUDADES:
+            typer.echo(f"[ERROR] Ciudad desconocida: {ciudad}", err=True)
+            raise typer.Exit(code=1)
+        nombres = [p.name for p in case_locator.list_cases(ciudad)]
+        try:
+            ident = brain.resolver_identidad(
+                codigo=codigo_caso, direccion=direccion, w_code=w_code, sufijo=sufijo,
+                tipo_caso=tipo_caso, nombres_existentes=nombres, force=force,
+            )
+        except brain.ColisionCaso as exc:
+            typer.echo(f"[ERROR] {exc}", err=True)
+            raise typer.Exit(code=1)
+        if ident.requiere_confirmacion and not force:
+            typer.echo(f"[AVISO] El código {ident.codigo} ya existe: {ident.colisiones}")
+            if not (yes or typer.confirm("¿Crear igualmente con este código?")):
+                raise typer.Exit(code=1)
 
-    # 5.2 esqueleto
+    if ciudad not in CIUDADES:
+        typer.echo(f"[ERROR] Ciudad desconocida: {ciudad}", err=True)
+        raise typer.Exit(code=1)
+
+    # 5.2 esqueleto (idempotente; con --case-id el caso ya existe)
     case_manager.ensure_case(
         ident.case_id, titulo=ident.case_id, referencia_crm=ident.case_id,
-        tipo_caso=tipo_caso, ciudad=ciudad, direccion=direccion, id_go=w_code,
+        tipo_caso=ident.tipo_caso, ciudad=ciudad, direccion=ident.direccion, id_go=ident.w_code,
     )
     case_dir = case_locator.path_for(ident.case_id)
 
