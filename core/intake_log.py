@@ -6,7 +6,7 @@ quién hizo qué, cuándo y con qué efecto sobre el repositorio del caso.
 
 Decisiones cerradas (memoria persistente: ``project_intake_estructura_v2.md``):
 
-- M10-Q1: 17 tipos de evento permitidos (constante ``INTAKE_EVENTS``).
+- M10-Q1: 26 tipos de evento permitidos (constante ``INTAKE_EVENTS``).
 - M10-Q2: schema común ``{ts, actor, event, case_id, details}`` con
   ``details`` específico por evento.
 - M10-Q3: actor resuelto desde un singleton thread-safe (``set_actor`` /
@@ -67,6 +67,8 @@ INTAKE_EVENTS: frozenset[str] = frozenset({
     "split_documental",        # split 1→N de un bundle en 02_Documentos/ (documentos lógicos)
     "migracion_layout_intake",  # migración bajo demanda a lotes (#54): details =
                                  # {"lotes": [nombres], "remapeados": {registro: n}}
+    "archivado",                # archivo del expediente inviable (RUNBOOK §10; MEJORAS #70.a):
+                                 # details = {"motivo": MAYUSCULAS_GUION_BAJO, "fecha": ISO}
 })
 
 

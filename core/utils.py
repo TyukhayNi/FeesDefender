@@ -24,6 +24,31 @@ def text_sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+_TEL_SEPARADORES = re.compile(r"[\s.\-/()]+")
+
+
+def normalize_es_phone(raw: str) -> str:
+    """Normaliza un teléfono español a 9 dígitos para el CRM sudespacho.
+
+    El CRM rechaza `+34`, `0034` y espacios (`HTTP 400 movil is incorrect`);
+    hay que enviar solo los 9 dígitos. Conservador: quita separadores y el
+    prefijo de país español, pero NO valida longitud (eso lo hace el CRM) ni
+    toca números extranjeros (`+33…` se dejan intactos salvo separadores).
+
+    Idempotente: ``normalize_es_phone(normalize_es_phone(x)) == normalize_es_phone(x)``.
+    """
+    if not raw:
+        return raw
+    s = _TEL_SEPARADORES.sub("", raw)
+    if s.startswith("+34"):
+        s = s[3:]
+    elif s.startswith("0034"):
+        s = s[4:]
+    elif s.startswith("34") and len(s) == 11:
+        s = s[2:]
+    return s
+
+
 def slugify(value: str, max_length: int = 80) -> str:
     """Slugify amigable para nombres de archivo Markdown."""
     return _slugify(value, max_length=max_length, lowercase=True, separator="_")

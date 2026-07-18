@@ -88,6 +88,7 @@ from .sudespacho_create import (
     GRUPOS_DEFAULT,
     USUARIOS_DEFAULT,
 )
+from .utils import normalize_es_phone
 
 _log = logging.getLogger(__name__)
 
@@ -203,6 +204,10 @@ class NuevoColaborador:
     grupos: list[int] = field(default_factory=lambda: list(GRUPOS_DEFAULT))
     usuarios: list[int] = field(default_factory=lambda: list(USUARIOS_DEFAULT))
 
+    def __post_init__(self) -> None:
+        self.movil = normalize_es_phone(self.movil)
+        self.telefono = normalize_es_phone(self.telefono)
+
 
 @dataclass
 class NuevoClienteContrario:
@@ -220,6 +225,9 @@ class NuevoClienteContrario:
     nif: str = ""                        # nif_cif
     direccion: str = ""
     poblacion: str = ""
+
+    def __post_init__(self) -> None:
+        self.movil = normalize_es_phone(self.movil)
 
 
 # ---------------------------------------------------------------------------

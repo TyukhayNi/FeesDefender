@@ -17,6 +17,7 @@ Uso:
 """
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -92,6 +93,8 @@ def validar_skill(skill_dir: Path, helpers: list[str], operacion: set[str]) -> l
         avisos.append("falta description")
     elif len(str(desc)) > 1024:
         avisos.append(f"description > 1024 chars ({len(str(desc))})")
+    if desc and re.search(r"<[^>\s][^>]*>", str(desc)):
+        avisos.append("description contiene etiqueta(s) tipo XML `<...>` (Cowork rechaza la importación)")
     if "license" not in fm:
         avisos.append("falta 'license' de primer nivel")
 
