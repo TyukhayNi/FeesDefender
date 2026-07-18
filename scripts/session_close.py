@@ -188,6 +188,65 @@ def _plan_items_desfasados(
     return filas
 
 
+# --- Higiene de PLAN.md / STATUS.md (presupuesto de tamaño + ledger) ---
+_STATUS_MAX_LINEAS = 400
+_CERRADOS_MAX = 30
+_RE_HEADING_CERRADOS = re.compile(r"^#{2,}\s+.*Cerrados\b", re.IGNORECASE)
+
+
+def _contar_lineas(texto: str) -> int:
+    """Nº de líneas de un texto (0 si vacío)."""
+    return len(texto.splitlines())
+
+
+def _indice_cerrados(lineas: list[str]) -> int | None:
+    """Índice de la línea del encabezado '## … Cerrados' (None si no existe)."""
+    for i, ln in enumerate(lineas):
+        if _RE_HEADING_CERRADOS.match(ln.strip()):
+            return i
+    return None
+
+
+def _cerrados_sin_colapsar(plan_texto: str) -> list[str]:
+    """Títulos de encabezados de ítems CERRADOS que no se han colapsado al ledger.
+
+    Puro y testeable. Un ítem cerrado se escribe con el encabezado empezando por
+    ✅ (`## ✅ [FOO] COMPLETA`). Un ✅ a mitad del encabezado marca una FASE hecha
+    de un ítem abierto (`[SIGUIENTE-GOOGLE-MCP] F1 ✅ …`) y NO se marca. Solo se
+    miran los encabezados ANTES de la sección '## … Cerrados' (el encabezado de la
+    propia sección y las entradas del ledger quedan fuera del corte).
+    """
+    lineas = plan_texto.splitlines()
+    corte = _indice_cerrados(lineas)
+    limite = corte if corte is not None else len(lineas)
+    titulos: list[str] = []
+    for ln in lineas[:limite]:
+        s = ln.strip()
+        if not s.startswith("#"):
+            continue
+        texto = s.lstrip("#").strip()
+        if texto.startswith("✅"):
+            titulos.append(texto.lstrip("✅").strip())
+    return titulos
+
+
+def _contar_cerrados(plan_texto: str) -> int:
+    """Nº de entradas del ledger '## … Cerrados' (líneas '- ' hasta el siguiente
+    encabezado o el fin del fichero). 0 si no hay sección Cerrados."""
+    lineas = plan_texto.splitlines()
+    corte = _indice_cerrados(lineas)
+    if corte is None:
+        return 0
+    n = 0
+    for ln in lineas[corte + 1:]:
+        s = ln.strip()
+        if s.startswith("#"):
+            break
+        if s.startswith("- "):
+            n += 1
+    return n
+
+
 def _avisar_plan_desfasado() -> None:
     """AVISO no bloqueante: PLAN.md afirma trabajo pendiente en ramas fantasma.
 

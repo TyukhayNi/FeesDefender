@@ -152,3 +152,61 @@ def test_aviso_plan_coherente_no_alarma(monkeypatch, capsys, tmp_path):
 
     assert "PLAN.md" in salida
     assert "[!]" not in salida
+
+
+# --- Higiene de PLAN.md: detectores puros (D3) ---
+
+_PLAN_CON_LEDGER = (
+    "# PLAN\n"
+    "## 🎯 Cola priorizada\n"
+    "| # | Ítem | Estado |\n"
+    "| 1 | B5 | en curso |\n"
+    "## [SIGUIENTE-GOOGLE-MCP] F1 ✅ MERGEADA · F4 pendiente\n"
+    "texto de un item ABIERTO con una fase hecha\n"
+    "## ✅ Cerrados\n"
+    "> ledger\n"
+    "- ✅ **[FOO]** algo — PR #1\n"
+    "- ✅ **[BAR]** otra — PR #2\n"
+)
+
+_PLAN_CON_CERRADO_SUELTO = (
+    "# PLAN\n"
+    "## ✅ [VIEJO] COMPLETA\n"
+    "MERGEADA a main. Rama podada.\n"
+    "## ✅ Cerrados\n"
+    "- ✅ **[FOO]** algo — PR #1\n"
+)
+
+
+def test_contar_lineas():
+    assert sc._contar_lineas("a\nb\nc") == 3
+    assert sc._contar_lineas("") == 0
+
+
+def test_indice_cerrados_encuentra_la_seccion():
+    lineas = _PLAN_CON_LEDGER.splitlines()
+    i = sc._indice_cerrados(lineas)
+    assert lineas[i].strip() == "## ✅ Cerrados"
+
+
+def test_indice_cerrados_none_si_no_existe():
+    assert sc._indice_cerrados(["# PLAN", "## Cola"]) is None
+
+
+def test_cerrados_sin_colapsar_ignora_item_abierto_con_fase_hecha():
+    # El ✅ va a mitad del encabezado (fase hecha de un item ABIERTO) -> no se marca.
+    # Y las entradas del ledger (bajo ## Cerrados) tampoco se marcan.
+    assert sc._cerrados_sin_colapsar(_PLAN_CON_LEDGER) == []
+
+
+def test_cerrados_sin_colapsar_detecta_bloque_cerrado_arriba():
+    # Encabezado cuyo TEXTO empieza por ✅ y está antes de ## Cerrados -> sin colapsar.
+    assert sc._cerrados_sin_colapsar(_PLAN_CON_CERRADO_SUELTO) == ["[VIEJO] COMPLETA"]
+
+
+def test_contar_cerrados_cuenta_las_entradas_del_ledger():
+    assert sc._contar_cerrados(_PLAN_CON_LEDGER) == 2
+
+
+def test_contar_cerrados_sin_seccion_es_cero():
+    assert sc._contar_cerrados("# PLAN\n## Cola\n- [ ] tarea\n") == 0
