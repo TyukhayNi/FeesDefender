@@ -9,7 +9,7 @@ Módulos reutilizados:
     core.sync_sudespacho — conexión API REST a Sudespacho (x-api-key)
 
 RGPD: excepción acotada SOLO a este flujo (LLM cloud con PII de correos
-procesales). Ver docs/PLAN_INTAKE_PROCURADORES_EMAIL.md §preamble.
+procesales). Ver docs/superpowers/plans/PLAN_INTAKE_PROCURADORES_EMAIL.md §preamble.
 """
 
 from __future__ import annotations

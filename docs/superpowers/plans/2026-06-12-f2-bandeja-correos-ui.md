@@ -954,12 +954,12 @@ Expected: el conteo previo (899 passed, 58 skipped) **+ los tests nuevos** (≈ 
 
 - [ ] **Step 2: Actualizar planificación**
 
-En `PLAN.md`, marcar F2 como UI ✅ (entrada `[SIGUIENTE-INTAKE-PROCURADORES-EMAIL]`, línea ~50-59) y anotar los hashes de commit. En `docs/PLAN_INTAKE_PROCURADORES_EMAIL.md` §15, marcar F2 completa.
+En `PLAN.md`, marcar F2 como UI ✅ (entrada `[SIGUIENTE-INTAKE-PROCURADORES-EMAIL]`, línea ~50-59) y anotar los hashes de commit. En `docs/superpowers/plans/PLAN_INTAKE_PROCURADORES_EMAIL.md` §15, marcar F2 completa.
 
 - [ ] **Step 3: Commit de planificación (acotado)**
 
 ```bash
-git add PLAN.md docs/PLAN_INTAKE_PROCURADORES_EMAIL.md
+git add PLAN.md docs/superpowers/plans/PLAN_INTAKE_PROCURADORES_EMAIL.md
 git commit -m "docs(intake-procuradores): F2 UI completa — bandeja + CLI"
 ```
 

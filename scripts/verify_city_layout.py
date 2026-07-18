@@ -1,6 +1,6 @@
 """Verificación del filesystem post-migración por ciudades.
 
-Comprueba dos invariantes del plan ``docs/PLAN_SUBDIVISION_CIUDADES.md`` §10:
+Comprueba dos invariantes del plan ``docs/superpowers/plans/PLAN_SUBDIVISION_CIUDADES.md`` §10:
 
 1. **Sin huérfanos en raíz**: ninguna carpeta-expediente vive directamente
    bajo ``CASOS_ROOT/`` — todas deben estar bajo una ciudad o ``_Sin

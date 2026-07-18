@@ -285,7 +285,7 @@ Tres reglas que gobiernan TODO pipeline de procesado (aplican a `[SIGUIENTE-MOTO
 > Docling(MIT)>MinerU(AGPL) / **Mistral OCR cloud+ZDR+DPA como opción de fase de construcción** / Azure
 > contenedor para manuscrito, post-anonimización) en §F del doc.
 
-> **Plano completo y memoria de diagnóstico: [`docs/PLAN_MOTOR_DOCUMENTAL.md`](docs/PLAN_MOTOR_DOCUMENTAL.md).**
+> **Plano completo y memoria de diagnóstico: [`docs/superpowers/plans/PLAN_MOTOR_DOCUMENTAL.md`](docs/superpowers/plans/PLAN_MOTOR_DOCUMENTAL.md).**
 > Consolida `MEJORAS #21/#24/#39/#42/#43/#41`. **Solo diseño escrito; sin código todavía.**
 
 **Diagnóstico (resumen).** Tres motores de OCR desacoplados (Docling interno · RapidOCR por página vía
@@ -555,7 +555,7 @@ sobre `core/llm_cloud.py`) queda OPT-IN para el futuro DPA.
 ---
 
 ## [SIGUIENTE-SALA-LECTURA-01] Sala de lectura y organización de `01_Procesado`
-*Diseño cerrado con Nikolai 2026-06-12 (sesión Cowork, HANDOFF). Plan fino autocontenido: `docs/PLAN_SALA_LECTURA_01_PROCESADO.md` (incluye §0 con notas de Claude Code sobre el estado del repo). Implementación: Claude Code.*
+*Diseño cerrado con Nikolai 2026-06-12 (sesión Cowork, HANDOFF). Plan fino autocontenido: `docs/superpowers/plans/PLAN_SALA_LECTURA_01_PROCESADO.md` (incluye §0 con notas de Claude Code sobre el estado del repo). Implementación: Claude Code.*
 
 **Objetivo.** Capa humana sobre `01_Procesado`: una **sala de lectura** (documentos
 en claro y en orden, por fuente y narrativa) + una **capa de texto** (`MD/`) para
@@ -600,7 +600,7 @@ Tarea 7) · correspondencia suelta.
 ---
 
 ## [SIGUIENTE-INTAKE-PROCURADORES-EMAIL] Intake automático de correos de procuradores → Sudespacho
-*Diseño cerrado con Nikolai 2026-06-12. Plan fino autocontenido: `docs/PLAN_INTAKE_PROCURADORES_EMAIL.md`. Implementación: Claude Code.*
+*Diseño cerrado con Nikolai 2026-06-12. Plan fino autocontenido: `docs/superpowers/plans/PLAN_INTAKE_PROCURADORES_EMAIL.md`. Implementación: Claude Code.*
 
 **Objetivo.** Sentido inverso del intake actual: archivar en el CRM los correos de
 procuradores (y contestaciones a correos del despacho), relacionarlos con su
@@ -707,7 +707,7 @@ bajar TODO el expediente del CRM a `05_CRM` físicamente completo (sin que el
 dedup M9 lo deje incompleto) + OCR/markdown/anonimización con el pipeline actual
 + contador de solapamientos byte-idénticos (para decidir con datos si el "dedup
 en extracción" merece construirse, que queda APLAZADO). Plan fino autocontenido
-para hilo nuevo: **`docs/PLAN_INTAKE_CRM_COMPLETO.md`**.
+para hilo nuevo: **`docs/superpowers/plans/PLAN_INTAKE_CRM_COMPLETO.md`**.
 - **Paso 1 (bajar todo + `physical_complete` + contador `documents_overlap`) HECHO
   en código** (`pull_expediente_v2`, `intake_demanda_contestacion(full=…)`,
   `intake-judicial --full`); falta cierre formal (`✅` + hash del PR).
@@ -1393,7 +1393,7 @@ trabajo para que no contamine).
 - ✅ **[BIBLIOTECA-CHECKOUT]** Biblioteca de casos (checkout/checkin Desktop↔Drive) — PR #4 (`061d99e`) + PR #5 (`b67f46d`) + PR #6 (`8dd138c`) + PR #7 (`16cbb54`)
 - ✅ **[SANEADO-PII-FASE-2]** Historial git reescrito + repo GitHub recreado (scrub total) — nuevo `main` `a40b27f`
 - ✅ **[SKILL-CONTESTACION-ART20-LAU]** Skill `contestacion-honorarios-art20-lau` integrada en el repo — 2026-07-03, sin PR/hash registrado en el bloque
-- ✅ **[SIGUIENTE-EMAIL-APLANADO-ANIDADOS]** Aplanado byte-fiel de emails anidados en el export de etiquetas — commits `c492b70`+`911bf39`+`5cbb6eb` · [plan](docs/PLAN_email_aplanado_anidados.md)
+- ✅ **[SIGUIENTE-EMAIL-APLANADO-ANIDADOS]** Aplanado byte-fiel de emails anidados en el export de etiquetas — commits `c492b70`+`911bf39`+`5cbb6eb` · [plan](docs/superpowers/plans/PLAN_email_aplanado_anidados.md)
 - ✅ **[SIGUIENTE-EXPORT-ETIQUETA-EMAIL]** Exportar etiqueta Gmail → expediente (motor + Streamlit + CLI + skill) — commits `5088e27`+`b58497f`
 - ✅ **[INTAKE-WHATSAPP-FASE-A]** Intake de chats de WhatsApp — Fase A (UI Streamlit) — commits `3734dcb`→`cf26b2a` · [spec](docs/superpowers/specs/2026-06-15-intake-whatsapp-design.md)
 - ✅ **[ESTILO-DE-LA-CASA]** Infraestructura de escritura del despacho (claridad + persuasión + no-IA) — 2026-06-17, sin hash registrado · plano `PLANO_Code_skill_estilo_casa.md`

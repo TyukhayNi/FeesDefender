@@ -10,7 +10,7 @@ decisión NO escribe en el CRM; solo persiste la intención en el log de auditor
 asignar caso), vive en ``data/_aprendizaje/`` y lleva PII → gitignored.
 
 RGPD: excepción acotada SOLO a este flujo. Ver
-``docs/PLAN_INTAKE_PROCURADORES_EMAIL.md`` §18.
+``docs/superpowers/plans/PLAN_INTAKE_PROCURADORES_EMAIL.md`` §18.
 """
 
 from __future__ import annotations

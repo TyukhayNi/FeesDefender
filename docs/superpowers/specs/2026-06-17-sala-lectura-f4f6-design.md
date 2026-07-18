@@ -1,7 +1,7 @@
 # Diseño — Sala de lectura `01_Procesado`: F4 (copiador+bundles) + F5 (índices) + F6 (clasificador híbrido)
 
 > **Origen:** brainstorming Claude Code ↔ Nikolai, 2026-06-17. Continúa el plan
-> fino `docs/PLAN_SALA_LECTURA_01_PROCESADO.md` (Fases 0–3 ya en `main`, commit
+> fino `docs/superpowers/plans/PLAN_SALA_LECTURA_01_PROCESADO.md` (Fases 0–3 ya en `main`, commit
 > `f253a84`). **Implementación:** Claude Code. **Frontera:** este spec cubre las
 > Fases 4–6 del plan; Streamlit se adelanta parcialmente (botón disparador).
 
@@ -223,4 +223,4 @@ disparar de punta a punta).
 - `core/case_manager.py:266` — scaffolding `Sala lectura/`, `MD/`, `_revisar/` (F2).
 - `data/_prompts/clasificador_ev.md` — taxonomía + esquema (referencia, no se
   llama a LLM en las reglas deterministas).
-- `docs/PLAN_SALA_LECTURA_01_PROCESADO.md` — plan fino y §0 (acoplamientos).
+- `docs/superpowers/plans/PLAN_SALA_LECTURA_01_PROCESADO.md` — plan fino y §0 (acoplamientos).

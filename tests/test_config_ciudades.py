@@ -1,6 +1,6 @@
 """Tests del catálogo de ciudades — :mod:`core.ciudades`.
 
-Cubre Fase 0 del plan ``docs/PLAN_SUBDIVISION_CIUDADES.md``:
+Cubre Fase 0 del plan ``docs/superpowers/plans/PLAN_SUBDIVISION_CIUDADES.md``:
 
 - Catálogo canónico inmutable.
 - Mappings tag azul por contexto (extrajudicial / judicial).

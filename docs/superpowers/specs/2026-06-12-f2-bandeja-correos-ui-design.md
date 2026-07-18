@@ -1,7 +1,7 @@
 # Diseño — F2 UI «Bandeja de correos» (§18.6 completo) + CLI thin
 
 **Fecha:** 2026-06-12 · **Fase:** Intake procuradores F2 (última pieza) ·
-**Implementación:** Claude Code · **Plan fino base:** `docs/PLAN_INTAKE_PROCURADORES_EMAIL.md` §6, §18.
+**Implementación:** Claude Code · **Plan fino base:** `docs/superpowers/plans/PLAN_INTAKE_PROCURADORES_EMAIL.md` §6, §18.
 
 ## Objetivo
 

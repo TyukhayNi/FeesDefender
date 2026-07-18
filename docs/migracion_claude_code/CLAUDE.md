@@ -127,9 +127,9 @@ Atajo: `/tests` ejecuta la suite completa.
 - **Arquitectura y deps**: `docs/ARQUITECTURA.md`
 - **API sudespacho**: `docs/INTEGRACION_SUDESPACHO.md`
 - **Callejones sin salida**: `docs/DEAD_ENDS.md` ← consultar antes de reintentar algo
-- **Plan subdivisión ciudades**: `docs/PLAN_SUBDIVISION_CIUDADES.md`
-- **Plan SaRS1 anon**: `docs/PLAN_SaRS1_anon_pipeline.md`
-- **Plan pre-relleno LLM**: `docs/PLAN_PRERELLENO_LLM_VIABILIDAD.md`
+- **Plan subdivisión ciudades**: `docs/superpowers/plans/PLAN_SUBDIVISION_CIUDADES.md`
+- **Plan SaRS1 anon**: `docs/superpowers/plans/PLAN_SaRS1_anon_pipeline.md`
+- **Plan pre-relleno LLM**: `docs/superpowers/plans/PLAN_PRERELLENO_LLM_VIABILIDAD.md`
 - **Mejoras futuras**: `docs/MEJORAS_FUTURAS.md`
 - **Convenciones del despacho**: `docs/CONVENCIONES_DESPACHO.md`
 

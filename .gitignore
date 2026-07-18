@@ -112,7 +112,7 @@ data/_audit/
 # Fixtures gold-standard de anonimización con PII real — local-only.
 # El test tests/test_anon_regresion_SaRS1.py hace pytest.skip() si no
 # están presentes. Política decidida en H5 del plan SaRS1 (opción a del
-# Pendiente C1 de docs/PLAN_SaRS1_anon_pipeline.md §13).
+# Pendiente C1 de docs/superpowers/plans/PLAN_SaRS1_anon_pipeline.md §13).
 tests/fixtures/anon/
 
 # Claude Code — local

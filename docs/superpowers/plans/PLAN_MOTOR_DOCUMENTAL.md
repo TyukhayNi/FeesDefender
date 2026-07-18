@@ -34,25 +34,25 @@ de skills).
 
 ## A. Cómo está cableado hoy
 
-Orquestador: [`core/pipeline.py::run()`](../core/pipeline.py:43)
+Orquestador: [`core/pipeline.py::run()`](../../../core/pipeline.py:43)
 
 ```
 ensure_case → sync → inventory → extractor.extract_all → markdown_generator.build
             → scorer → viability → [demanda] → [anon] → linker
 ```
 
-Ruta de un PDF en [`extractor._extract_one`](../core/extractor.py:234) (líneas 237-253):
+Ruta de un PDF en [`extractor._extract_one`](../../../core/extractor.py:234) (líneas 237-253):
 
 1. **pypdf primero.** Si la capa de texto basta (`_texto_suficiente`: ≥100 chars y ≥40
-   char/pág, [extractor.py:125-137](../core/extractor.py:125)) → pypdf, **sin OCR**.
-2. Si es escaneado y **≤30 páginas** (`MAX_OCR_PAGINAS`, [extractor.py:44](../core/extractor.py:44))
+   char/pág, [extractor.py:125-137](../../../core/extractor.py:125)) → pypdf, **sin OCR**.
+2. Si es escaneado y **≤30 páginas** (`MAX_OCR_PAGINAS`, [extractor.py:44](../../../core/extractor.py:44))
    → **Docling** (OCR interno).
 3. Si es escaneado y **>30 páginas** → `sin_texto` (se salta).
 
-Luego [`markdown_generator.build`](../core/markdown_generator.py) envuelve cada
+Luego [`markdown_generator.build`](../../../core/markdown_generator.py) envuelve cada
 `raw_text/{slug}.txt` en `MD/{slug}.md` con frontmatter.
 
-Tablas: Docling con `do_table_structure = False` ([extractor.py:81](../core/extractor.py:81))
+Tablas: Docling con `do_table_structure = False` ([extractor.py:81](../../../core/extractor.py:81))
 por memoria — se conserva el texto, se pierde la rejilla.
 
 ---
@@ -62,9 +62,9 @@ por memoria — se conserva el texto, se pierde la rejilla.
 1. **Tres motores de OCR desacoplados** para el mismo trabajo, con idiomas distintos:
    | Motor | Módulo | Quién lo llama | Idiomas |
    |---|---|---|---|
-   | Docling interno | [`extractor._try_docling`](../core/extractor.py:87) | el pipeline (≤30pp) | por defecto |
-   | RapidOCR por página | [`core/ocr_per_page.py`](../core/ocr_per_page.py) | **solo** script manual [`scripts/ocr_textless_pdfs.py`](../scripts/ocr_textless_pdfs.py) | por defecto |
-   | OCRmyPDF | [`core/anon/ocr.py`](../core/anon/ocr.py) | anonimización ([`api._ocr_y_extraer`](../core/anon/api.py:254)), re-OCR del ORIGINAL de cero | `spa+cat+rus` |
+   | Docling interno | [`extractor._try_docling`](../../../core/extractor.py:87) | el pipeline (≤30pp) | por defecto |
+   | RapidOCR por página | [`core/ocr_per_page.py`](../../../core/ocr_per_page.py) | **solo** script manual [`scripts/ocr_textless_pdfs.py`](../../../scripts/ocr_textless_pdfs.py) | por defecto |
+   | OCRmyPDF | [`core/anon/ocr.py`](../../../core/anon/ocr.py) | anonimización ([`api._ocr_y_extraer`](../../../core/anon/api.py:254)), re-OCR del ORIGINAL de cero | `spa+cat+rus` |
 
    → el mismo PDF lee distinto según el camino; doble OCR pipeline+anon.
 
@@ -73,31 +73,31 @@ por memoria — se conserva el texto, se pierde la rejilla.
    El paso `extractor.extract_all` termina en ✅ igualmente: nada avisa.
 
 3. **Banda muerta de umbrales.** `extractor._texto_suficiente` = ≥100 chars;
-   `ocr_textless_pdfs.UMBRAL_TEXTO` = 50 ([ocr_textless_pdfs.py:31](../scripts/ocr_textless_pdfs.py:31)).
+   `ocr_textless_pdfs.UMBRAL_TEXTO` = 50 ([ocr_textless_pdfs.py:31](../../../scripts/ocr_textless_pdfs.py:31)).
    Un escaneado >30pp con 50–99 chars residuales **no lo OCR-iza nadie**: el extractor no
    (>30pp) y el script de rescate tampoco (≥50 → "ya tiene texto").
 
-4. **Cabecera vs código en `extractor.py`.** El docstring ([extractor.py:3-6](../core/extractor.py:3))
+4. **Cabecera vs código en `extractor.py`.** El docstring ([extractor.py:3-6](../../../core/extractor.py:3))
    dice "*.pdf → Docling; fallback → pypdf*" (Docling primario); el código v2 hace lo
    **contrario** (pypdf primero, Docling solo escaneados). El comentario `EXTRACTOR_VERSION`
    sí lo explica, pero la cabecera quedó sin actualizar.
 
-5. **`separar.py` desenganchado + etiqueta engañosa.** [`separar.py`](../core/anon/separar.py)
-   no está en ningún pipeline (`anonimizar_caso` "No separa PDFs", [api.py:27](../core/anon/api.py:27));
-   solo CLI + tests. Y el comentario "OCR vía Docling" ([pipeline.py:70](../core/pipeline.py:70))
+5. **`separar.py` desenganchado + etiqueta engañosa.** [`separar.py`](../../../core/anon/separar.py)
+   no está en ningún pipeline (`anonimizar_caso` "No separa PDFs", [api.py:27](../../../core/anon/api.py:27));
+   solo CLI + tests. Y el comentario "OCR vía Docling" ([pipeline.py:70](../../../core/pipeline.py:70))
    miente para los PDFs con texto, que van por pypdf sin OCR.
 
 ---
 
 ## C. Trato de imágenes (tres tratos incompatibles)
 
-- **Pipeline principal:** [`extractor`](../core/extractor.py:234) **no tiene rama de imagen**
+- **Pipeline principal:** [`extractor`](../../../core/extractor.py:234) **no tiene rama de imagen**
   → `ExtractionError` → se salta (ni `.txt` ni `.md`).
-- **Adjuntos de correo:** [`adjuntos_contenido/router.py:27-32`](../core/adjuntos_contenido/router.py:27):
+- **Adjuntos de correo:** [`adjuntos_contenido/router.py:27-32`](../../../core/adjuntos_contenido/router.py:27):
   <50KB "decorativa" omitida; ≥50KB → **cola de visión** (LLM, **no** OCR).
-- **Anonimización:** ignora imágenes ([api.py:30](../core/anon/api.py:30)); depende de
-  [`core/anon/imagen_a_pdf.convertir`](../core/anon/imagen_a_pdf.py), que es **solo CLI manual**.
-- **Agujero HEIC:** `inventory._RELEVANT_EXTS` ([inventory.py:42](../core/inventory.py:42))
+- **Anonimización:** ignora imágenes ([api.py:30](../../../core/anon/api.py:30)); depende de
+  [`core/anon/imagen_a_pdf.convertir`](../../../core/anon/imagen_a_pdf.py), que es **solo CLI manual**.
+- **Agujero HEIC:** `inventory._RELEVANT_EXTS` ([inventory.py:42](../../../core/inventory.py:42))
   **NO** incluye `.heic/.heif/.webp/.gif/.bmp`; `local_organizer`/`sala_lectura` **SÍ**. Las
   fotos de iPhone se caen desde el inventario.
 - **Conflicto de fondo:** **OCR** (foto-de-documento) vs **visión** (foto-de-escena) sin
@@ -111,9 +111,9 @@ por memoria — se conserva el texto, se pierde la rejilla.
    `_pipeline_log.md` registra pasos, no documentos. Sin esto, las demás fallan sin avisar.
 2. **Control de calidad del OCR** — densidad de chars, ratio de gibberish, idioma detectado.
 3. **Clasificar QUÉ es cada documento** (encargo/factura/arras/PBC…) enganchando
-   [`judicial_classifier`](../core/judicial_classifier.py) + la taxonomía de la sala de lectura.
+   [`judicial_classifier`](../../../core/judicial_classifier.py) + la taxonomía de la sala de lectura.
 4. **Reensamblar documentos multi-parte** — fotos página-a-página;
-   [`conjunto_detector`](../core/conjunto_detector.py) solo cubre cabecera+prueba.
+   [`conjunto_detector`](../../../core/conjunto_detector.py) solo cubre cabecera+prueba.
 5. **PDFs protegidos/cifrados/firmados** — rc=15/16 conocidos en `anon/ocr.py`, no tratados en el flujo principal.
 6. **Tablas** — hoy descartadas a propósito; factura/liquidación de honorarios son tablas (base, %, importe).
 7. **Detección de idioma** por documento (catalán/ruso).
@@ -232,14 +232,14 @@ derivado y regenerable**, bajo `01_Procesado/` (nunca `00_Input/`; toda la ruta
   la regla PII está relajada temporalmente — hoy el LLM lee en claro; es deuda consciente con gate de
   reinstauración. La anonimización es el último eslabón, no el primero.
 - `ensure_case` hoy crea eager `01_Procesado/{Sala lectura, MD, _revisar}`
-  ([case_manager.py:267](../core/case_manager.py:267)). La migración renombra `Sala lectura` →
+  ([case_manager.py:267](../../../core/case_manager.py:267)). La migración renombra `Sala lectura` →
   `01_Sala de lectura` y crea `02_Sala de máquina/` (fase F0). Cada subcarpeta de producto se crea
   bajo demanda por la etapa que la escribe, como hoy hace el extractor con `raw_text/`.
 - Naming "tipo oración" respetado; numeración `01_`/`02_` como el resto del árbol del caso.
 
 ### G.1bis Espejos (mirror) — los productos replican la jerarquía de origen
-Hoy `MD/` es **plano** ([markdown_generator.py:25](../core/markdown_generator.py:25)); el espejar
-quedó pendiente (`docs/PLAN_SALA_LECTURA_01_PROCESADO.md:164-168`). Decisión: cada producto vive en la
+Hoy `MD/` es **plano** ([markdown_generator.py:25](../../../core/markdown_generator.py:25)); el espejar
+quedó pendiente (`docs/superpowers/plans/PLAN_SALA_LECTURA_01_PROCESADO.md:164-168`). Decisión: cada producto vive en la
 **misma ruta relativa que su fuente en `00_Input/`**, dentro de su carpeta de etapa. Beneficios:
 navegación en paralelo al origen y **resuelve de raíz el bug #47** (los cuatro `_chat.txt` que se
 pisaban dejan de colisionar al colgar de rutas distintas). Cuidado con el límite de 260 chars de ruta
@@ -248,17 +248,17 @@ en Windows → nombre de fichero por `{slug}__{sha8}` (corto). Frontmatter del e
 marca el espejo como desactualizado si cambió el origen).
 
 ### G.2 Victoria barata (primer paso de código — fase F3)
-Persistir el PDF del OCR. Hoy [`api._ocr_y_extraer`](../core/anon/api.py:254) escribe el PDF
+Persistir el PDF del OCR. Hoy [`api._ocr_y_extraer`](../../../core/anon/api.py:254) escribe el PDF
 buscable en `tempfile.mkdtemp` y lo borra con `shutil.rmtree` (`api.py:270,283-284`).
-[`anon/ocr.py::ocr_pdf`](../core/anon/ocr.py:30) **ya acepta ruta de salida explícita** y crea
+[`anon/ocr.py::ocr_pdf`](../../../core/anon/ocr.py:30) **ya acepta ruta de salida explícita** y crea
 su carpeta → basta apuntarla a `01_Procesado/OCR/{id}.pdf` en vez del tempdir. Efecto: el PDF
 buscable queda guardado, la anonimización y el resto lo **reutilizan**, y se acaba el doble OCR.
 Máximo retorno por el menor cambio.
 
 ### G.3 Identidad de documento — DUAL (decidido)
-Hoy fragmentada en 4-5 esquemas: `output_slug` = `slug__sha8` ([utils.py:32](../core/utils.py:32)) en
-extractor/MD; `id_doc = sha[:12]` en el catálogo ([catalogo_documental.py:109](../core/catalogo_documental.py:109));
-`slugify(stem)` + sha8 distinto en anon ([api.py:239-242](../core/anon/api.py:239)); el nombre del split
+Hoy fragmentada en 4-5 esquemas: `output_slug` = `slug__sha8` ([utils.py:32](../../../core/utils.py:32)) en
+extractor/MD; `id_doc = sha[:12]` en el catálogo ([catalogo_documental.py:109](../../../core/catalogo_documental.py:109));
+`slugify(stem)` + sha8 distinto en anon ([api.py:239-242](../../../core/anon/api.py:239)); el nombre del split
 por tipo procesal; y el nombre canónico legible `AAAA-MM-DD_descripción`. Decisión: **id dual**.
 - **`sha8`** (interno, estable, atado al contenido): dedup automática, resuelve #47. Nombre de fichero
   de artefacto = `slug__sha8` (reutiliza `output_slug`), regenerable y dedup-safe.
@@ -274,20 +274,20 @@ registros que hoy solapan. Diseño completo en **§H**. Sigue siendo la respuest
 ### G.5 Estado / idempotencia por etapa
 Consolidar el estado en el propio ledger (o un `_stage_state.json`) con SHA de origen + versión de
 motor, siguiendo el patrón de `_extract_state.json`
-([extractor.py:39,299-303](../core/extractor.py:299)): re-ejecutar salta lo no cambiado y jamás
+([extractor.py:39,299-303](../../../core/extractor.py:299)): re-ejecutar salta lo no cambiado y jamás
 re-toca `00_Input/`.
 
 ### G.6 Split 1→N y merge N→1
 Un bundle produce N documentos; un merge junta N ficheros en 1. Los PDFs lógicos resultantes van a
 `02_Sala de máquina/02_Documentos/`; la relación con el bundle se expresa con `parent_id`/`role_in_bundle`
-del registro (no con subcarpetas). El índice de segmentación de [`separar.py`](../core/anon/separar.py)
+del registro (no con subcarpetas). El índice de segmentación de [`separar.py`](../../../core/anon/separar.py)
 (`indice.json`) se integra en el registro.
 
 ### G.7 reocr condicional por calidad — DECIDIDO (funde el hueco de >30pp)
 En vez del rescate manual actual (`scripts/ocr_textless_pdfs.py`, invocado a mano), el OCR escribe en el
 registro `ocr_quality` (`ok | low | empty`) + `ocr_quality_reason`; si es `low`/`empty`, se dispara un
 **reocr automático**. El motor por página con subproceso aislado que ya existe
-([`core/ocr_per_page.py`](../core/ocr_per_page.py)) pasa a ser esa etapa `reocr`, disparada por **calidad**,
+([`core/ocr_per_page.py`](../../../core/ocr_per_page.py)) pasa a ser esa etapa `reocr`, disparada por **calidad**,
 no por un comando manual (patrón tomado de Vassal, §I). Marca `ocr_reattempted` en el registro. Esto
 **funde en un solo mecanismo**: el hueco de >30pp (§B.2), la banda muerta de umbrales 100 vs 50 (§B.3,
 ahora un único campo `ocr_quality`) y el control de calidad del OCR (§D.2).
@@ -301,7 +301,7 @@ Hoy el único registro de ámbito-caso es `00_Input/_caso.md` (solo metadatos); 
 dedup por hash (el propio repo lo reconoce sin resolver). Decisión: **un registro único de caso**,
 tomando el modelo de Vassal.
 
-- **Elevar+extender `indice_documental.yaml`** ([`core/catalogo_documental.py`](../core/catalogo_documental.py),
+- **Elevar+extender `indice_documental.yaml`** ([`core/catalogo_documental.py`](../../../core/catalogo_documental.py),
   `CatalogEntry`) a **ámbito CASO** (raíz del caso, p. ej. `<caso>/_indice_documental.yaml`), consolidando
   los registros que hoy solapan.
 - **Campos por documento** (unión de los actuales + Vassal `index.yaml`):
@@ -347,17 +347,17 @@ ni registro único). Se necesita un botón repetible para llevarlos al layout nu
   el layout nuevo (regenera `01_OCR/02_Documentos/03_MD` como espejos) + reconstruir el registro único
   (§H). **Nunca** se tocan `00_Input/` ni `90_Notas personales/`.
 - **Reutilizar el patrón existente** (no inventar): `plan`/`apply` con artefacto revisable + **journal
-  reversible + backups `.bak`** de [`scripts/migrate_05crm_buckets.py`](../scripts/migrate_05crm_buckets.py)
+  reversible + backups `.bak`** de [`scripts/migrate_05crm_buckets.py`](../../../scripts/migrate_05crm_buckets.py)
   (re-llavea `_intake_hashes.json` y `_extract_state.json` para preservar dedup y cache OCR); gate humano
-  con confirmación literal como [`scripts/migrate_to_city_structure.py`](../scripts/migrate_to_city_structure.py);
-  verificador post tipo [`scripts/verify_city_layout.py`](../scripts/verify_city_layout.py).
+  con confirmación literal como [`scripts/migrate_to_city_structure.py`](../../../scripts/migrate_to_city_structure.py);
+  verificador post tipo [`scripts/verify_city_layout.py`](../../../scripts/verify_city_layout.py).
 - **Pieza nueva — sello `layout_version` (decisión):** añadir `layout_version: N` a `00_Input/_caso.md`
-  (análogo de `EXTRACTOR_VERSION`, [extractor.py:37](../core/extractor.py:37)). Hoy **no existe** un sello
+  (análogo de `EXTRACTOR_VERSION`, [extractor.py:37](../../../core/extractor.py:37)). Hoy **no existe** un sello
   de versión de layout por caso — el estado se infiere del filesystem, frágil para una flota. Con el sello,
   el botón lee la versión, sabe qué pasos aplicar, migra hacia delante y re-sella; y habilita un modo
   **"reorganizar todos"** que recorre la flota y reporta casos atrasados.
 - **Cablear `--force`:** hoy `run_pipeline`/`pipeline.run` **no** tienen `--force` (solo
-  [`extractor.extract_all(force=)`](../core/extractor.py:329), sin cablear). Hace falta para forzar la
+  [`extractor.extract_all(force=)`](../../../core/extractor.py:329), sin cablear). Hace falta para forzar la
   regeneración en el layout nuevo.
 - **Dónde vive:** CLI `scripts/reorganizar_caso.py` (`plan`/`apply`, por caso y `--todos`) + **skill/comando
   del plugin** (Streamlit **parqueado**, §L); ejecución local. Fase **F0**.
@@ -368,9 +368,9 @@ Al cambiar el código que afecta a los procesos (nombres de carpeta, taxonomía,
 conectores del plugin deben reconstruirse. Se necesita un botón que lo haga y avise de lo que queda desalineado.
 
 - **Orquestador `scripts/rebuild_plugin.py` (un clic):** encadena la cadena que **ya existe** →
-  [`sync_skill_helpers`](../scripts/sync_skill_helpers.py) → [`sync_taxonomia_skills`](../scripts/sync_taxonomia_skills.py)
-  → [`validate_skills`](../scripts/validate_skills.py) → [`check_skills`](../scripts/check_skills.py) (drift)
-  → [`package_skill --all`](../scripts/package_skill.py) + [`package_plugin`](../scripts/package_plugin.py)
+  [`sync_skill_helpers`](../../../scripts/sync_skill_helpers.py) → [`sync_taxonomia_skills`](../../../scripts/sync_taxonomia_skills.py)
+  → [`validate_skills`](../../../scripts/validate_skills.py) → [`check_skills`](../../../scripts/check_skills.py) (drift)
+  → [`package_skill --all`](../../../scripts/package_skill.py) + [`package_plugin`](../../../scripts/package_plugin.py)
   → imprime "qué cambió / qué re-importar en el servidor".
 - **Frontera honesta (decisión), dos capas:**
   - *Mecánica* (automatizable a un clic): helpers `_shared`, taxonomía (`TAXONOMIA_EV`), constantes de
@@ -378,7 +378,7 @@ conectores del plugin deben reconstruirse. Se necesita un botón que lo haga y a
   - *Semántica* (detectar+señalar, **no** reescribir): la prosa de las skills que menciona rutas/procesos
     (p. ej. `02_Sala de máquina`, `index.yaml`). El botón **lista** las skills afectadas por el cambio de
     proceso → handoff a Claude Code para editar el `SKILL.md` (mismo modelo de handoff que
-    [`motor_mejora.py`](../scripts/motor_mejora.py) / `docs/MEJORA_CONTINUA_SKILLS.md`).
+    [`motor_mejora.py`](../../../scripts/motor_mejora.py) / `docs/MEJORA_CONTINUA_SKILLS.md`).
 - **Drift no-silencioso (decisión):** enganchar `check_skills --strict` a un **hook** (skill
   `session-start-hook`, o pre-commit) para que el sistema avise solo al tocar código que afecta procesos,
   en vez de depender de correrlo a mano al cerrar sesión (hoy todo es "modo AVISO").
@@ -411,7 +411,7 @@ conectores del plugin deben reconstruirse. Se necesita un botón que lo haga y a
 ## M. Principios rectores de ejecución
 
 - **M1 · Golden fixture antes de tocar código** — congelar una foto end-to-end de W-02VND1 (patrón
-  [`scripts/regen_fixture_sars1.py`](../scripts/regen_fixture_sars1.py)); cada fase demuestra equivalencia
+  [`scripts/regen_fixture_sars1.py`](../../../scripts/regen_fixture_sars1.py)); cada fase demuestra equivalencia
   salvo los cambios buscados. Antídoto al fallo silencioso.
 - **M2 · Registro `index.yaml` primero (piedra angular)** — todo deriva de él (vistas, espejos, `ocr_quality`,
   botones). Antes que lo cosmético.
@@ -425,7 +425,7 @@ conectores del plugin deben reconstruirse. Se necesita un botón que lo haga y a
   >30pp, banda muerta, imágenes, `.heic`). Métrica de éxito ("de N a 0") + prioriza qué casos migrar.
 - **M7 · Preview→Apply obligatorio** en todo lo masivo/destructivo (migraciones, botones) — regla que ninguna
   herramienta futura puede saltarse. "El sistema propone, el jurista dispone."
-- **M8 · Preflight por capacidades, centralizado** — extender [`scripts/health_check.py`](../scripts/health_check.py)
+- **M8 · Preflight por capacidades, centralizado** — extender [`scripts/health_check.py`](../../../scripts/health_check.py)
   con checks nombrados (`ocr`, `nlp`, `crm`, `drive`, `pipeline`); **read-only**, gate antes de cada operación,
   falla en voz alta. Gemelo de entrada del registro de cobertura (§D.1). Caso crítico: **PHPSESSID** del CRM
   (`check-legacy`).

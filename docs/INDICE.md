@@ -15,8 +15,9 @@ fecha: 2026-07-05
 
 - **Dónde nacen los documentos de diseño:** los specs y planes nuevos van en
   `docs/superpowers/{specs,plans}/` (flujo brainstorming→spec→plan→ejecución, con
-  nombre fechado). Los `docs/PLAN_*.md` sueltos son **legacy**: no se crean más
-  ahí; los vivos se mantienen donde están hasta que cierren.
+  nombre fechado). Los `docs/superpowers/plans/PLAN_*.md` (reubicados desde
+  `docs/` el 2026-07-18) son **legacy**: no se crean más con ese nombre; los
+  vivos se mantienen donde están hasta que cierren.
 - **Estado archivado:** la bitácora histórica de `STATUS.md` se rota a
   `docs/bitacora/AAAA.md`.
 - **Campo `estado`** en el frontmatter de cada doc: `vigente` (en uso o trabajo
@@ -46,22 +47,22 @@ fecha: 2026-07-05
 | `MEJORAS_FUTURAS.md` | Backlog técnico (todo el repo). |
 | `MEJORA_CONTINUA_SKILLS.md` | Ciclo de mejora de las skills. |
 
-## Planes de diseño legacy (`docs/PLAN_*.md`)
+## Planes de diseño legacy (`docs/superpowers/plans/PLAN_*.md`)
 
 | Documento | Estado | Qué es |
 |---|---|---|
-| `PLAN_DESPLIEGUE_EV.md` | vigente | Despliegue del Streamlit en VPS + apertura a E&V (futuro). |
-| `PLAN_INTAKE_CRM_COMPLETO.md` | vigente | Intake CRM completo a `05_CRM` (`[SIGUIENTE-INTAKE-CRM-COMPLETO]`); su Paso 2 (procesado) queda supersedido por el diseño de 2026-07-10 (abajo). |
+| `docs/superpowers/plans/PLAN_DESPLIEGUE_EV.md` | vigente | Despliegue del Streamlit en VPS + apertura a E&V (futuro). |
+| `docs/superpowers/plans/PLAN_INTAKE_CRM_COMPLETO.md` | vigente | Intake CRM completo a `05_CRM` (`[SIGUIENTE-INTAKE-CRM-COMPLETO]`); su Paso 2 (procesado) queda supersedido por el diseño de 2026-07-10 (abajo). |
 | `superpowers/specs/2026-07-10-intake-crm-a-llm-design.md` | revisar | Bajada CRM → salas → registros → LLM + ejes de eficiencia + ROI (`[SIGUIENTE-INTAKE-CRM-A-LLM]`); aprobación revertida 2026-07-10, en re-brainstorming (decisiones abiertas). |
-| `PLAN_INTAKE_PROCURADORES_EMAIL.md` | vigente | Intake procuradores→CRM; F1/F2 hechas, F3 pendiente. |
-| `PLAN_PRERELLENO_LLM_VIABILIDAD.md` | revisar | Diseño original (motor `core/viabilidad.py` + API Haiku/Sonnet) nunca se construyó; superado en el flujo recomendado por la skill `viabilidad-prerelleno` (lee `00_Input/` crudo). `core/scorer.py`/`core/viability.py` SÍ se usan (vía `core/pipeline.py`, cableado en Streamlit); pendiente de que Nikolai ratifique el archivo. |
-| `PLAN_SaRS1_anon_pipeline.md` | vigente | Pipeline SaRS1 multi-hilo; H6 aún abierto. |
-| `PLAN_MOTOR_DOCUMENTAL.md` | aparcado | Motor OCR→split→MD como conector (⏸️ 2026-07-04; `MEJORAS #48`). |
-| `PLAN_BITACORA_CASOS.md` | aparcado | Bitácora razonada por caso (planificada s24, 2026-05-21); nunca implementada y fuera de la cola viva — recuperar si se decide. |
-| `PLAN_SUBDIVISION_CIUDADES.md` | historico | Implementado (`core/ciudades` + `case_locator`; migración 2026-05-21). |
-| `PLAN_SALA_LECTURA_01_PROCESADO.md` | historico | Superado por la sala única (`[SIGUIENTE-SALA-UNICA-PLANA]` + skill). |
-| `PLAN_email_aplanado_anidados.md` | historico | Implementado ✅ (Parte 1 — emails `.eml` anidados). |
-| `PLAN_email_enlaces_drive.md` | historico | Implementado ✅ (Parte 2 — enlaces Drive, `911bf39`). |
+| `docs/superpowers/plans/PLAN_INTAKE_PROCURADORES_EMAIL.md` | vigente | Intake procuradores→CRM; F1/F2 hechas, F3 pendiente. |
+| `docs/superpowers/plans/PLAN_PRERELLENO_LLM_VIABILIDAD.md` | revisar | Diseño original (motor `core/viabilidad.py` + API Haiku/Sonnet) nunca se construyó; superado en el flujo recomendado por la skill `viabilidad-prerelleno` (lee `00_Input/` crudo). `core/scorer.py`/`core/viability.py` SÍ se usan (vía `core/pipeline.py`, cableado en Streamlit); pendiente de que Nikolai ratifique el archivo. |
+| `docs/superpowers/plans/PLAN_SaRS1_anon_pipeline.md` | vigente | Pipeline SaRS1 multi-hilo; H6 aún abierto. |
+| `docs/superpowers/plans/PLAN_MOTOR_DOCUMENTAL.md` | aparcado | Motor OCR→split→MD como conector (⏸️ 2026-07-04; `MEJORAS #48`). |
+| `docs/superpowers/plans/PLAN_BITACORA_CASOS.md` | aparcado | Bitácora razonada por caso (planificada s24, 2026-05-21); nunca implementada y fuera de la cola viva — recuperar si se decide. |
+| `docs/superpowers/plans/PLAN_SUBDIVISION_CIUDADES.md` | historico | Implementado (`core/ciudades` + `case_locator`; migración 2026-05-21). |
+| `docs/superpowers/plans/PLAN_SALA_LECTURA_01_PROCESADO.md` | historico | Superado por la sala única (`[SIGUIENTE-SALA-UNICA-PLANA]` + skill). |
+| `docs/superpowers/plans/PLAN_email_aplanado_anidados.md` | historico | Implementado ✅ (Parte 1 — emails `.eml` anidados). |
+| `docs/superpowers/plans/PLAN_email_enlaces_drive.md` | historico | Implementado ✅ (Parte 2 — enlaces Drive, `911bf39`). |
 
 ## Handoffs
 

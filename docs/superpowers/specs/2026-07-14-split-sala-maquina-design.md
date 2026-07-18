@@ -11,7 +11,7 @@ depende_de: Cluster A (cobertura acumulativa + --vision + reforzar sobre core/sa
 **Versión:** 1.0 (diseño cerrado; anclado al código real de FeesDefender)
 **Fecha:** 2026-07-14
 **Naturaleza:** documento de DISEÑO. El siguiente paso es `writing-plans`, NO construir.
-**Origen:** materializa la pieza de split (1→N) del §F/§G.6 de `docs/PLAN_MOTOR_DOCUMENTAL.md`
+**Origen:** materializa la pieza de split (1→N) del §F/§G.6 de `docs/superpowers/plans/PLAN_MOTOR_DOCUMENTAL.md`
 (diferida en el spec `2026-07-09-organizar-sala-maquina-design.md` §15.6), enganchándola en la
 Sala de máquina entre OCR y MD.
 
