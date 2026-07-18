@@ -432,6 +432,8 @@ La taxonomía canónica de tipos de caso vive en `core/config.py`: `TIPOS_CASO_A
 
 La cola de trabajo **viva y priorizada** es `PLAN.md` (raíz del repo). STATUS.md ya no mantiene una cola propia: hacerlo duplicaba la verdad y provocó que un bug crítico viviera aquí sin estar en la cola de PLAN (`[CRITICO-PRESIGNED-DOWNLOAD-BUG]`, rescatado a mano el 2026-05-28).
 
+El siguiente paso vive en la **cola priorizada** de PLAN.md (fila #1).
+
 La cola histórica pre 2026-07 (sesiones 4–24) se archivó en `docs/bitacora/STATUS_cola_historica_pre_2026-07.md` (`estado: histórico`); conserva ítems resueltos y algún hilo abierto antiguo por si hay que promoverlo a `PLAN.md`.
 
 ## Credenciales / variables de entorno críticas

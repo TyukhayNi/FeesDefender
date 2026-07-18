@@ -2666,3 +2666,17 @@ raíz compartida — el `#66` real es "MCP Drive como disco".)
 **Runbook operativo del archivo:** `docs/RUNBOOK_APERTURA_EXPEDIENTE.md §10`.
 **Disparador de promoción de 70.b/70.c:** próximo archivo de caso que justifique el
 orquestador, o decisión de Nikolai. (70.a ya promovido, ver arriba.)
+
+## 71. Rotación y saneado de STAT.md (fase C de gobernanza de planificación)
+
+**Estado actual.** STATUS.md acumula ~125 bloques de cierre (>400 líneas) antes de
+las secciones de estado. `session_close` ya avisa del tamaño (guardarraíl E1).
+
+**Mejora propuesta.** Rotar el histórico de cierres a `docs/bitacora/2026.md`;
+partir STATUS en "estado vigente" + log; terminar la migración prosa→puntero
+(Arquitectura/taxonomía/estructura → enlaces a `core/config.py`/`ARQUITECTURA.md`,
+Drifts #3/#4 de `GOBERNANZA_FUENTES_VERDAD.md`).
+
+**Disparador de promoción.** El primer aviso de E1 por STATUS>400 (ya se cumple) o
+tras aterrizar el arreglo de la cola. Spec de referencia:
+`docs/superpowers/specs/2026-07-18-gobernanza-planificacion-design.md` §7.

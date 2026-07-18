@@ -1,4 +1,6 @@
 ---
+estado: vigente
+dueño: Nikolai Tyukhay
 titulo: "Convenciones del Despacho — destilado operativo"
 fuente: "docs/MANUAL_GESTION_INTERNA_DESPACHO.txt (V.2020-1)"
 indice_completo: "docs/MANUAL_DESPACHO.md"

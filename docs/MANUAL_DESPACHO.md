@@ -1,4 +1,6 @@
 ---
+estado: vigente
+dueño: Nikolai Tyukhay
 titulo: "Manual de Gestión Interna del Despacho — Índice Navegable"
 fuente: "docs/MANUAL_GESTION_INTERNA_DESPACHO.txt (V.2020-1)"
 fuente_lineas: 2022

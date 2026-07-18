@@ -1,7 +1,32 @@
 ---
-estado: vigente
+estado: revisar
 dueño: Nikolai Tyukhay
 ---
+
+> **Nota de auditoría (2026-07-18, corregida):** el diseño de este plan (motor
+> determinista `core/viabilidad.py` + clasificador Haiku/extractor Sonnet vía
+> API sobre docs anonimizados + botón Streamlit) **no es el camino que se
+> construyó**. El prerelleno vivo es la skill `viabilidad-prerelleno` (Claude
+> en sesión lee `00_Input/` crudo directamente, sin API ni pipeline de
+> anonimización previo).
+>
+> Corrección: `core/scorer.py` y `core/viability.py` **no son código muerto**.
+> Se importan y se ejecutan desde `core/pipeline.py::run` (import en la
+> línea 14; llamadas `scorer.score(case_id)` y `viability.analyze(case_id)` en
+> las líneas 89-90), que a su vez está cableado en `streamlit_app.py` (pestaña
+> "Ejecutar pipeline", botón que invoca `pipeline.run(...)`) y cubierto por
+> `tests/test_pipeline.py` (suite verde). Lo que **no** se construyó es el
+> diseño de pre-relleno por LLM de ESTE plan (clasificador Haiku + extractor
+> Sonnet sobre docs anonimizados, Fases 2-5 más abajo): ese camino quedó sin
+> implementar y el flujo recomendado hoy para pre-rellenar viabilidad es la
+> skill `viabilidad-prerelleno`. Por eso el estado es `revisar` (pendiente de
+> que Nikolai ratifique si el plan se archiva formalmente o se retoma en algún
+> punto) y no `historico` — la pieza de código que este plan iba a sustituir
+> sigue viva y en uso, aunque el plan en sí no avanzó de la fase de diseño.
+>
+> Cita de origen del hallazgo "flujo vivo es la skill": `PLAN.md`, sección
+> `[APARCADO-INTAKE-CRM-A-LLM]` (hallazgos del re-brainstorming 2026-07-10),
+> no la línea 51 citada originalmente.
 
 # Plan — Pre-relleno LLM del informe de viabilidad
 
