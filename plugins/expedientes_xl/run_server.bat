@@ -22,7 +22,6 @@ REM Reglas de oro: ver plugins/expedientes_mcp/run_server.bat (mismo patron).
 setlocal
 set "PROBE_G=G:\Unidades compartidas\EXPEDIENTES - TYUKHAY LEGAL\CASOS"
 set "PROBE_H=H:\Unidades compartidas"
-set "SRV=%~dp0server.py"
 set "LOG=%APPDATA%\Claude\logs\mcp-server-expedientes-xl-wrapper.log"
 if not exist "%APPDATA%\Claude\logs" mkdir "%APPDATA%\Claude\logs" 2>NUL
 set /a TRIES=0
@@ -39,4 +38,5 @@ ping -n 3 127.0.0.1 >NUL
 goto waitloop
 :ready
 echo [xl-wrapper] montadas; arrancando server consolidado>>"%LOG%"
-python "%SRV%" --rw G:\ --ro H:\ 2>>"%LOG%"
+set "PYTHONPATH=%~dp0..;%PYTHONPATH%"
+python -m expedientes_xl.server --rw G:\ --ro H:\ 2>>"%LOG%"
