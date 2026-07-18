@@ -156,10 +156,15 @@ a `main`; B5 construido (PR-4, en revisión). Bloque B1–B5 COMPLETO.** Memoria
   exacto de ciudad + strip de " Rentals"; `None` ante duda → pide flag, nunca código erróneo).
   `--team-id` también se auto-deriva en la vía `--case-id` (re-pull) y hay guard de error limpio
   (nunca `team_id=None` a rclone). Plan `docs/superpowers/plans/2026-07-18-apertura-b5-autoderivar.md`;
-  spec §8. Subagent-driven + revisión final Opus ("Ready to merge: Yes"). Suite 2152, solo 5
-  ambientales. **Follow-up para Nikolai** (pre-existente, ahora alcanzable): normalizar
-  `BaDP1`→`BaPD1` (constante `TAG_ROJO_BaDP1` + clave `DRIVE_EV_TEAM_IDS` + dropdown ciudades),
-  o un alta PD de Barcelona omite el tag rojo. Con el merge, **bloque B1–B5 COMPLETO**.
+  spec §8. Subagent-driven + revisión final Opus ("Ready to merge: Yes"). Verificación en vivo
+  contra Drive real (`drives.get` con token `gdrive_ev`): `0AAPGi…`→"Barcelona - S3"→BaRS3,
+  Rentals→BaRR1, PD1→BaPD1. **Alineación CRM BaDP1→BaPD1 INCLUIDA en el PR** (decisión Nikolai
+  2026-07-18): el label del equipo pendiente de Barcelona es `BaPD1` (extrajudicial ID 319 ya
+  correcto; judicial ID 56 corregido en el CRM, era `BaDP1` por error). Renombrados los
+  identificadores FD `TAG_ROJO_BaDP1`/`J_TAG_ROJO_BaDP1`→`…BaPD1` + clave `DRIVE_EV_TEAM_IDS` +
+  labels `ciudades.py` (valores 319/56/driveId intactos) → `tag_rojo_equipo("BaPD1")` resuelve
+  (cierra el hueco: un alta PD de Barcelona por B5 ya coge el tag rojo). +test de regresión.
+  Suite 2153, solo 5 ambientales. Con el merge, **bloque B1–B5 COMPLETO**.
 - Fuera de este bloque (decidido en la consolidación): **skill Claude Code `abrir-caso`** — no
   ahora, el RUNBOOK es el checklist; se valora cuando B1 esté mergeado. **MCP `sudespacho` F1**
   — sigue en `[SIGUIENTE-MCP-SUDESPACHO]` (gates abiertos); el dolor de tantear campos se mata
