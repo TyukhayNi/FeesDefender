@@ -20,7 +20,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 2 | [Infra C — art. 156 LEC](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado (quick win) | bajo |
 | 3 | [Infra B — expediente scratch](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado | medio |
 | 4 | [MCP sudespacho F1](#siguiente-mcp-sudespacho-mcp-sudespacho-crm-del-despacho--f1-lectura-spec-hecho-plan-pendiente) | spec lista | gates de despliegue | alto |
-| 5 | [Drive-disco: pasos 5-7 + Claude Code](#siguiente-mcp-drive-disco-pasos-5-7-diferidos) | en curso | repo ✅ (fase 2); acciones de máquina | medio |
+| 5 | [Drive-disco: pasos 5-7 + Claude Code](#siguiente-mcp-drive-disco-pasos-5-7-diferidos) | ✅ desplegado | resto pasivo: check Modo 1 en caso real | medio |
 | 6 | [abrir-caso F3-judicial](#abrir-caso--f1--f2a--f3-ac-mergeadas-f2b-aparcada-f3-judicial-pendiente) | diferida | caso judicial real | alto |
 | 7 | [Google MCP F4 (Calendar)](#siguiente-google-mcp-f1-lectura--mergeada--f2-escriturapermisosnavegación--mergeada--f3f4-pendientes) | diferida | disparador | medio |
 
@@ -135,21 +135,22 @@ puro + orquestadores finos. Spec: `docs/superpowers/specs/2026-07-09-abrir-caso-
 máquina (re-import en Cowork, bundle Code con reinicio, paso 7). Checklist operativo:
 `docs/DESPLIEGUE_MCP_DRIVE_DISCO.md`.*
 
-**➡️ PUNTO DE RETOME (despliegue pasos 5-7, 2026-07-19).** Bundle Code **VERIFICADO EN VIVO** y paso 7
-**Parte B (Code) HECHA**. **Queda solo la Parte A del paso 7 (acción manual de Nikolai):**
+**➡️ PUNTO DE RETOME (despliegue pasos 5-7, 2026-07-19).** Paso 7 **COMPLETO** (server viejo `expedientes`
+jubilado en Code **y** Desktop). Bundle Code verificado en vivo. **Único resto pasivo:** verificación funcional
+de `organizar-sala-lectura` Modo 1 el próximo caso real (por diseño, no gastar una corrida solo para probar).
 1. **Bundle Code (B1-B3) ✅ HECHO+VERIFICADO.** `claude mcp list` (raíz) = `plugin:feesdefender:expedientes-xl`
    Connected, **19 tools sin `delete_path`**; `list_dir`/`get_metadata`/`read_text` sobre `G:` OK; poda Tier 0
    OK. Corrección de scope: el standalone y el server viejo estaban en **`-s local`**, no `project`.
-2. **Paso 5 gate — decidido por Nikolai:** «jubilar ya el server viejo» (no esperar a caso real). La
-   verificación funcional plena de `organizar-sala-lectura` Modo 1 se hará el próximo caso real.
+2. **Paso 5 gate — decidido por Nikolai:** «jubilar ya el server viejo» (no esperar a caso real).
 3. **Paso 7 · Parte B (Code) ✅ HECHA+VERIFICADA:** `claude mcp remove "expedientes" -s local` (desde la
    raíz); `claude mcp list` confirma `expedientes` fuera, queda `expedientes-xl` (Code no se quedó sin FS).
-4. **Paso 7 · Parte A (Desktop/Cowork) ⏳ PENDIENTE = Nikolai corre `Desktop\jubilar_expedientes_node.ps1`**
-   desde terminal EXTERNA a Claude → relanza Desktop. **Gotcha:** las sesiones de Code son procesos hijos de
-   la app Desktop (mismo image name) → `taskkill /F /IM claude.exe /T` mata también Code → no se puede editar
-   `claude_desktop_config.json` desde dentro de Code. El script hace backup + force-kill + quita SOLO
-   `expedientes` (conserva `email-export`). Rollback: `.bak-*` o re-añadir la entrada. Al confirmar (relaunch),
-   poner el ✅ del paso 7 completo aquí.
+4. **Paso 7 · Parte A (Desktop/Cowork) ✅ HECHA+VERIFICADA:** se retiró `expedientes` desde el **panel de la app**
+   (Ajustes → Desarrollador → Servidores MCP locales → papelera) + relaunch — **la vía limpia**, sin `taskkill`.
+   Confirmado autoritativo: `claude_desktop_config.json` solo tiene `email-export`; `expedientes` fuera del panel.
+   *Aprendizaje:* la papelera del panel es una acción propia de la app que actualiza su estado en memoria y
+   reescribe el config → evita el auto-kill del `taskkill /IM claude.exe /T` desde un terminal hijo de Claude
+   (que fue lo que hizo fallar el intento por script; ver `docs/DEAD_ENDS.md`). El script
+   `Desktop\jubilar_expedientes_node.ps1` v2 (guarda de ancestría) queda como plan B documentado, no usado.
 
 - [x] **Paso 6 (migración de skill) — ✅ repo fase 2.** `organizar-sala-lectura` v1.8 migrada al
   consolidado: `write_file`→`write_text`, `read_media_file` retirado (binarios server-side); tres
@@ -163,10 +164,11 @@ máquina (re-import en Cowork, bundle Code con reinicio, paso 7). Checklist oper
   + B2 (`plugin marketplace update despacho-tyukhay` + `plugin update feesdefender@despacho-tyukhay`
   v0.1.0→0.3.0) + B3 (reiniciar Code). `claude mcp list` = `plugin:feesdefender:expedientes-xl` Connected,
   **19 tools sin `delete_path`**; `list_dir`/`get_metadata`/`read_text` de `G:` OK.
-- [~] **Paso 7 (jubilar `expedientes` Node) — Parte B (Code) ✅ HECHA; Parte A (Desktop) ⏳ pendiente.**
-  Parte B: `claude mcp remove "expedientes" -s local` (scope real **`local`**, no `project`; desde la raíz);
-  verificado fuera de Code. Parte A: Nikolai corre `Desktop\jubilar_expedientes_node.ps1` (Code es hijo de la
-  app Desktop → `taskkill /F /IM claude.exe /T` lo mata; script externo con backup) + relanza Desktop.
+- [x] **Paso 7 (jubilar `expedientes` Node) — ✅ COMPLETO 2026-07-19.** Parte B (Code):
+  `claude mcp remove "expedientes" -s local` (scope real **`local`**, no `project`; desde la raíz). Parte A
+  (Desktop): retirado desde el panel de la app (Ajustes → Desarrollador → papelera) + relaunch — vía limpia sin
+  `taskkill`. Confirmado: `claude_desktop_config.json` solo con `email-export`; `expedientes` fuera de Code y
+  Desktop; `expedientes-xl` (FS) operativo. Gotcha del auto-kill del `taskkill` en `docs/DEAD_ENDS.md`.
 - [ ] **`MEJORAS #74`** (oracle perezoso): el badge `failed` del panel Desarrollador es cosmético
   (el health-check de la app expira antes de que el oracle DriveFS termine ~2-3s); las tools sirven.
 - V2/CUT motivados en el spec §5 y en `docs/MEJORAS_FUTURAS.md` #66. Promoción solo por disparador.
