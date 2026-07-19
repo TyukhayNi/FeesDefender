@@ -578,19 +578,19 @@ serie=año). **RGPD — excepción acotada SOLO a este flujo:** usa LLM cloud UE
   el autocomplete legacy devuelve body vacío (`DEAD_ENDS.md`); búsqueda por
   `referencia_cliente`+`referencia_procurador`+nº/serie, sin `clientes`; búsqueda por
   contrario/autos fuera de alcance (`MEJORAS_FUTURAS.md` §31). Suite **935 passed**.
-- **F3 — Escritura en el CRM.** 🔬 **Endpoint IDENTIFICADO (HAR `judicial_648.har`, 2026-07-19):**
-  el relate+adjuntar va por un **plugin propio de Roundcube** (`POST roundcube.sudespacho.net/
-  ?_task=mail&_action=plugin.sudespacho_asignaa_*`), **NO** por nest-mail ni `MailRoundcube` de
-  api-crm (ambos **refutados** por el HAR). Llave = **Message-ID RFC** → puente Gmail↔CRM directo.
-  Contrato completo en `INTEGRACION_SUDESPACHO §10.10`; §7 del doc y `DEAD_ENDS.md` actualizados.
-  **Spike de auth (2026-07-19):** 3 dominios de auth distintos; **descartado reutilizar el PHPSESSID
-  del frontal** — Roundcube tiene sesión propia y es **multi-tenant, arranca desde el frontal** (raíz
-  anónima: *"No se ha podido recuperar el nombre del despacho…"*). → camino realista **A'** = partir de
-  la sesión legacy (`check-legacy`) y **replicar el handshake "abrir webmail"** (frontal→Roundcube) para
-  obtener `roundcube_sessid`+`X-Roundcube-Request`; **fallback C** (humano 1 clic). **Evidencia que falta:**
-  HAR del "abrir el correo desde el CRM" (login/SSO Roundcube) o inspección en vivo de sus cookies.
-  Después: relate+adjuntar en expediente de prueba + traza §18.9. ✅ Limpieza de pruebas del CRM hecha
-  (Nikolai, 2026-07-19).
+- **F3 — Escritura en el CRM.** 🎨 **DISEÑO CERRADO (2026-07-19); pendiente construir.** El relate+adjuntar
+  va por un **plugin propio de Roundcube** (`plugin.sudespacho_asignaa_*`), NO nest-mail/`MailRoundcube`/AppSync
+  (refutados por HAR `judicial_648`). Llave = **Message-ID RFC** (conservado en el auto-forward de `procesal@`,
+  verificado con cabeceras). **Spike de auth HECHO** (2 pruebas en vivo + HAR `handshake_webmail`): el plugin es
+  llamable con la sesión del webmail (`fetch`+`X-Roundcube-Request=rcmail.env.request_token` → 200+JSON); el acceso
+  es **SSO por `init.php?dataHash`** (blob cifrado client-side) → **transporte = webview**; headless-puro descartado
+  (regenerar el `dataHash` + credenciales IMAP = frágil/inseguro). **A' viable** (archiva solo). Specs:
+  `docs/superpowers/specs/2026-07-19-f3-relate-crm-plugin-roundcube-design.md` (v2, tras panel adversarial) +
+  `…-intake-miniapp-entrega-design.md` (miniapp bajo demanda por persona, bandeja=visor compartido, índice-caché
+  del emparejamiento en Drive, cada quien su cuenta, judicial-first, autoría→F6). SSOT del CRM:
+  `INTEGRACION_SUDESPACHO §10.10/§14.5`; dead-end en `DEAD_ENDS`. **[SIGUIENTE]:** `writing-plans` → construir
+  cliente `core/procurador_relate.py` (adaptador de transporte webview, TDD) + miniapp/bandeja mínima + índice-caché;
+  validar relate/adjuntar reales en expediente de prueba. ✅ Limpieza de pruebas del CRM hecha (Nikolai, 2026-07-19).
 - **F4 — Renombrado + OCR + aprendizaje.** ⬜ Contenido del adjunto → nombre; store
   de correcciones few-shot (§10).
 - **F5 — Grabaciones.** ⬜ Descarga de enlaces (WeTransfer caduca) + fallback manual.
