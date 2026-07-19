@@ -1,3 +1,10 @@
+---
+tipo: handoff
+estado: historico
+consumido_por: "RUNBOOK_APERTURA_EXPEDIENTE.md"
+migrado: "2026-07-19 (regla MEJORAS #77 / GOBERNANZA §5)"
+---
+
 # Handoff — Mejoras de proceso de APERTURA DE EXPEDIENTE (2/3)
 
 **Fuente:** sesión de apertura E2E del caso **W-02TH0W** (equipo VaRS3, tipo NEGATIVA_OFERTA), 2026-07-17.

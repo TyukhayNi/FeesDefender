@@ -66,7 +66,16 @@ fecha: 2026-07-05
 
 ## Handoffs
 
-| Documento | Estado | Qué es |
+> Andamios efímeros de traspaso. **Regla:** `GOBERNANZA_FUENTES_VERDAD §5` (ubicación única
+> `docs/superpowers/handoffs/`; `estado:` en el frontmatter = hogar único). Esta tabla es **vista derivada**.
+
+| Documento (en `docs/superpowers/handoffs/`) | Estado | Qué es |
 |---|---|---|
-| `prompt_handoff_expedientes_seguros.md` | historico | Handoff de absorción del Anonimizador (ya integrado en `core/anon`). |
-| `superpowers/handoff-2026-07-17-apertura-W-*.md` | historico | Los 3 handoffs de las aperturas E2E del 2026-07-17 (W-02T3XO/W-02TH0W/W-046G2R); consolidados en `RUNBOOK_APERTURA_EXPEDIENTE.md`. |
+| `handoff-2026-07-19-triaje-plan.md` | consumido | Triaje de la cola de planificación (informe aplicado). |
+| `handoff-2026-07-17-apertura-W-{02T3XO,02TH0W,046G2R}-mejoras-proceso.md` | historico | 3 aperturas E2E; consolidados en `RUNBOOK_APERTURA_EXPEDIENTE.md`. |
+| `handoff-2026-07-16-rightsizing-mcp-drive-v1.md` | consumido | Right-sizing V1 del MCP Drive-disco (spec `2026-07-16-…` + build PR #52). |
+| `handoff-2026-07-13-mcp-sudespacho.md` | consumido | Brainstorming MCP sudespacho (spec `2026-07-13-…`). |
+| `handoff-2026-06-25-email-atomize-fase3.md` | consumido | Fase 3 de `core/email_atomize`. |
+| `handoff-2026-06-18-unificar-salas-lectura.md` | consumido | Unificación de salas de lectura (skill v1.3+ / spec `2026-06-18-…`). |
+| `prompt_handoff_expedientes_seguros.md` | historico | Absorción del Anonimizador (`core/anon`). |
+| `../specs/cronologia-handoffs/handoff_F*.md` (7) | consumido | Stress-tests de la Cronología v7 (excepción de ubicación: agrupados con su spec). |

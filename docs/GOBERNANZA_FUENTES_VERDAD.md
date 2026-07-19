@@ -159,3 +159,21 @@ los controles y el runbook. Este §4 solo apunta.
 - La limpieza retroactiva del historial (`git filter-repo`) —que aquí se dejaba como
   "decisión aparte"— **se ejecutó** (Fase 2 del saneado: purga del HAR + `data/_audit/`,
   pseudonimización, repo recreado). Ver `PLAN.md [SANEADO-PII-FASE-2]`.
+
+### 5. Handoffs — andamios efímeros de traspaso
+
+Un **handoff** es un documento **efímero** de traspaso de contexto para arrancar una tarea en otra
+sesión/agente. **No es fuente de verdad**: su contenido durable se promueve a spec/plan/runbook/código
+(las SSOT); el handoff es el andamio, no el hogar del dato. Regla (aprobada 2026-07-19, `MEJORAS #77`):
+
+- **Ubicación única:** `docs/superpowers/handoffs/`. Lo que deba sobrevivir a la sesión va al **repo,
+  nunca a `scratchpad`** (scratchpad solo para andamios de usar-y-tirar intra-sesión). Excepción heredada:
+  los stress-tests de la Cronología viven agrupados en `docs/superpowers/specs/cronologia-handoffs/`.
+- **Nombre:** `handoff-AAAA-MM-DD-<tema-kebab>.md`.
+- **Estado en el frontmatter (hogar único del estado):** `estado: activo | consumido | historico` +
+  `creado`, `origen`, `destino`, `consumido_por` (el spec/plan/PR/runbook donde acabó su contenido durable).
+- **Ciclo de vida:** `activo` (creado, sin consumir) → `consumido` (la tarea arrancó y su contenido durable
+  ya vive en su SSOT; se rellena `consumido_por`) → `historico` (se conserva por trazabilidad). El
+  `docs/INDICE.md §Handoffs` es **vista derivada** (lista/enlaza), NO el hogar del estado. Un `activo`
+  abandonado se borra en un cierre; los `consumido/historico` se conservan con su puntero (como el ledger
+  `## Cerrados` de `PLAN.md`).

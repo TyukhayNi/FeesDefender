@@ -2869,8 +2869,10 @@ previo (esp. en Cowork nube) se vuelva un dolor real, o decisión de Nikolai.
 
 ## 77. Gobernanza de handoffs (creación, ubicación única y ciclo de vida)
 
-**Estado: PROPUESTA — pendiente de aprobar por Nikolai** (2026-07-19). No hay regla que gobierne los
-handoffs y están dispersos.
+**Estado: ✅ APROBADA E IMPLEMENTADA (2026-07-19).** Regla escrita en `GOBERNANZA_FUENTES_VERDAD §5` +
+puntero en `CLAUDE.md`; 9 handoffs migrados a `docs/superpowers/handoffs/` con `estado:` en el frontmatter
+(los 7 stress-tests de Cronología quedan en `specs/cronologia-handoffs/`, excepción documentada); `INDICE
+§Handoffs` = vista derivada. (Diagnóstico y regla originales, conservados abajo.)
 
 **Diagnóstico (verificado 2026-07-19):** los ~12 handoffs viven repartidos sin convención —
 `docs/superpowers/handoff-YYYY-MM-DD-<tema>.md` (mayoría), `docs/superpowers/specs/cronologia-handoffs/`
@@ -2897,4 +2899,4 @@ puntero en `CLAUDE.md`; (2) crear `docs/superpowers/handoffs/` y migrar los hand
 `estado`; (3) convertir `INDICE.md §Handoffs` en vista derivada completa. Docs-only, rama+PR.
 
 **Disparador:** decisión de Nikolai; encaja de forma natural en la sesión de gobernanza/triaje de `PLAN.md`
-(el primer handoff que estrena la nomenclatura es `docs/superpowers/handoff-2026-07-19-triaje-plan.md`).
+(el primer handoff que estrena la nomenclatura es `docs/superpowers/handoffs/handoff-2026-07-19-triaje-plan.md`).

@@ -1,7 +1,7 @@
 # Diseño — MCP `sudespacho` (CRM del despacho, lectura → escritura por fases)
 
 _Brainstorming Claude Code · FeesDefender · 2026-07-13_
-_Origen: `docs/superpowers/handoff-2026-07-13-mcp-sudespacho.md` (brainstorming
+_Origen: `docs/superpowers/handoffs/handoff-2026-07-13-mcp-sudespacho.md` (brainstorming
 previo en Cowork, planificación). Precedente de patrón:
 `docs/superpowers/specs/2026-07-08-google-despacho-mcp-design.md`._
 

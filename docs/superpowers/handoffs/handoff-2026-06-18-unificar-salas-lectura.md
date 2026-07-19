@@ -1,3 +1,10 @@
+---
+tipo: handoff
+estado: consumido
+consumido_por: "skill organizar-sala-lectura v1.3+ / spec 2026-06-18-sala-lectura-unica-design.md"
+migrado: "2026-07-19 (regla MEJORAS #77 / GOBERNANZA §5)"
+---
+
 # HANDOFF — Unificar las DOS salas de lectura en UNA sola skill que la alimente
 
 > Origen: hilo Claude Code FeesDefender, 2026-06-18. Decisión (tomada en otro hilo):

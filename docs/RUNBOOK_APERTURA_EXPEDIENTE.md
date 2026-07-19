@@ -11,7 +11,7 @@ fecha: 2026-07-18
 > viabilidad → ficha CRM completa → (si procede) archivo → cierre.
 >
 > Consolida los 3 handoffs de las aperturas del 2026-07-17 (W-02T3XO, W-02TH0W, W-046G2R;
-> en `docs/superpowers/handoff-2026-07-17-apertura-W-*.md`). Las etiquetas `[APER-xx]`
+> en `docs/superpowers/handoffs/handoff-2026-07-17-apertura-W-*.md`). Las etiquetas `[APER-xx]`
 > remiten al hallazgo original.
 >
 > **SSOT del detalle CRM (endpoints, campos, enums, tags):** `docs/INTEGRACION_SUDESPACHO.md`
@@ -308,7 +308,7 @@ Todo REST `x-api-key`. No se borra nada.
 - **Detalle API CRM (SSOT):** `docs/INTEGRACION_SUDESPACHO.md` §10 (relaciones), §12
   (judicial + archivo), §15 (actuaciones), §11 (tags/colores), §14.4 (enums).
 - **Callejones sin salida:** `docs/DEAD_ENDS.md` (worktree vs. raíz; lectura de relaciones REST).
-- **Handoffs fuente:** `docs/superpowers/handoff-2026-07-17-apertura-W-{02T3XO,02TH0W,046G2R}-mejoras-proceso.md`.
+- **Handoffs fuente:** `docs/superpowers/handoffs/handoff-2026-07-17-apertura-W-{02T3XO,02TH0W,046G2R}-mejoras-proceso.md`.
 - **Builds de este flujo (`PLAN.md [SIGUIENTE-APERTURA-EXPEDIENTE]`):** B1 ficha CRM
   end-to-end (`scripts/crm_ficha.py` + `_ficha_crm.yaml`), B2 `--case-id`, B3 normalización de
   móvil, B4 evento `archivado`, B5 auto-derivación de `--team-id`/`--codigo-caso`/`--sufijo`

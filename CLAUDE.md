@@ -197,7 +197,8 @@ Atajo: `/tests` ejecuta la suite completa.
 - **Plan pre-relleno LLM**: `docs/superpowers/plans/PLAN_PRERELLENO_LLM_VIABILIDAD.md`
 - **Motor documental (split/OCR/MD) + empaquetado**: `docs/superpowers/plans/PLAN_MOTOR_DOCUMENTAL.md` (`MEJORAS #48`)
 - **Mejoras futuras**: `docs/MEJORAS_FUTURAS.md`
-- **Gobernanza de fuentes de verdad**: `docs/GOBERNANZA_FUENTES_VERDAD.md`
+- **Gobernanza de fuentes de verdad**: `docs/GOBERNANZA_FUENTES_VERDAD.md` (su §5 gobierna los
+  **handoffs**: andamios efímeros en `docs/superpowers/handoffs/`, con `estado:` en el frontmatter)
 - **Seguridad de datos (fugas PII/secretos)**: `docs/SEGURIDAD_DATOS.md`
 - **Convenciones del despacho**: `docs/CONVENCIONES_DESPACHO.md`
 

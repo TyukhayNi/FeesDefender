@@ -1,10 +1,10 @@
 ---
 tipo: handoff
-estado: activo
+estado: consumido
 creado: 2026-07-19
 origen: sesión fase-2 despliegue MCP Drive-disco (20º cierre)
 destino: sesión nueva de Claude Code — triaje de la cola de planificación
-consumido_por: "(pendiente — apuntar el PR/spec que resulte del triaje)"
+consumido_por: "informe de triaje 2026-07-19 (aplicado en PR de gobernanza: victorias al ledger + archivados en PLAN.md, MEJORAS #77)"
 ---
 
 # HANDOFF — Triaje de la cola de planificación de FeesDefender
