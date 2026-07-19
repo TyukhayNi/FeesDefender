@@ -45,3 +45,15 @@ def test_server_arranca_como_modulo_sin_importerror():
     assert "attempted relative import" not in r.stderr
     assert "ImportError" not in r.stderr
     assert "Uso:" in r.stderr  # llego a _parse_argv => imports resolvieron
+
+
+def test_wrapper_bat_evita_stub_windowsapps():
+    """El .bat resuelve un Python REAL (via %PYEXE%) evitando el stub de la Microsoft
+    Store (WindowsApps). Regresion del bug 2026-07-19 (2a parte): `python` pelado
+    resolvia al stub `...\\WindowsApps\\python.exe` en el PATH que ve Claude Desktop
+    (PATH persistente, no el del terminal) -> el server salia -> 'Server disconnected'."""
+    txt = BAT.read_text(encoding="utf-8")
+    # La invocacion final usa el interprete resuelto, no `python` pelado.
+    assert '"%PYEXE%" -m expedientes_xl.server' in txt, "invocar el interprete resuelto %PYEXE%"
+    # Debe eludir explicitamente el stub de WindowsApps.
+    assert "WindowsApps" in txt, "el wrapper debe eludir el stub WindowsApps"
