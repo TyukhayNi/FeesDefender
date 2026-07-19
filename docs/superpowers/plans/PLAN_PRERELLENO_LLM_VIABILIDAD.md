@@ -1,7 +1,10 @@
 ---
-estado: revisar
+estado: historico
 dueño: Nikolai Tyukhay
 ---
+
+> 🗄️ **ARCHIVADO (historico) 2026-07-19** (ratificado por Nikolai en el triaje): diseño nunca construido,
+> superado por la skill `viabilidad-prerelleno`. Se conserva como referencia.
 
 > **Nota de auditoría (2026-07-18, corregida):** el diseño de este plan (motor
 > determinista `core/viabilidad.py` + clasificador Haiku/extractor Sonnet vía

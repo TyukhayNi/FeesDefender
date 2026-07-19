@@ -1,3 +1,10 @@
+---
+tipo: handoff
+estado: consumido
+consumido_por: "spec 2026-07-13-mcp-sudespacho-design.md"
+migrado: "2026-07-19 (regla MEJORAS #77 / GOBERNANZA §5)"
+---
+
 # Handoff — MCP `sudespacho` (envolver → sustituir progresivo)
 
 > **Autocontenido para una sesión nueva de Claude Code (sin memoria de la

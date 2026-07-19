@@ -1,3 +1,10 @@
+---
+tipo: handoff
+estado: consumido
+consumido_por: "core/email_atomize (F3 en main)"
+migrado: "2026-07-19 (regla MEJORAS #77 / GOBERNANZA §5)"
+---
+
 # Handoff — Fase 3 del motor de atomización de correo (`core/email_atomize`)
 
 > **Autocontenido para una sesión nueva (sin memoria de la conversación previa).**

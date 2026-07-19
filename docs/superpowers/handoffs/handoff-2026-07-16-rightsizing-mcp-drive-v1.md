@@ -1,3 +1,10 @@
+---
+tipo: handoff
+estado: consumido
+consumido_por: "spec 2026-07-16-mcp-drive-disco-local-design.md + build PR #52"
+migrado: "2026-07-19 (regla MEJORAS #77 / GOBERNANZA §5)"
+---
+
 # Right-sizing V1 — MCP "Drive como disco" (spec rev 2)
 
 > Handoff para el hilo del spec. Objeto: `docs/superpowers/specs/2026-07-16-mcp-drive-disco-local-design.md`

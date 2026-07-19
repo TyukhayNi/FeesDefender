@@ -1,3 +1,10 @@
+---
+tipo: handoff
+estado: historico
+consumido_por: "RUNBOOK_APERTURA_EXPEDIENTE.md"
+migrado: "2026-07-19 (regla MEJORAS #77 / GOBERNANZA §5)"
+---
+
 # Handoff W-046G2R — mejoras de proceso en apertura de expedientes (1 de 3)
 
 > **Autocontenido para una sesión nueva de Claude Code (sin memoria de la

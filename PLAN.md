@@ -31,6 +31,10 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 
 ## [SIGUIENTE-INPUT-LOTES] Layout de `00_Input` por lotes de entrega (`MEJORAS #54`)
 
+> ✅ **CERRADO (triaje 2026-07-19)** → ledger `## ✅ Cerrados`. Build mergeado (PR #57 `8142d97`). Tail
+> operativo (re-import Cowork + migración `migrar_layout_intake` bajo demanda) NO bloquea. Bloque conservado
+> como histórico.
+
 *Disparador: decisión de Nikolai 2026-07-17 (4 decisiones fijadas: espejos fuera del modelo
 de lotes; M9 índice único de dedup; los duplicados se copian igualmente; la migración remapea
 los registros aguas abajo) + spec rev 2 aprobada y MERGEADA (PR #49, squash `32fa663`).
@@ -83,7 +87,7 @@ B**; D/E/F quedan en backlog. **Actualización: el Cluster A lo completó la ses
   skills detecten el caso (E&V, terminología, ubicación) sin Drive/CRM + flags `--case-dir`/`--casos-root` +
   comando de promoción a expediente completo. Resuelve de raíz la mala detección de modo (VALERO cayó en
   "civil genérico"). Diseño aprobado en la spec citada.
-- [ ] **C — Campos de `gen_solicitud` (`MEJORAS #60`) — quick win, en paralelo a A.** Petición subsidiaria de
+- [ ] **C — Campos de `gen_solicitud` (`MEJORAS #60`; fichero real `.claude/skills/preparacion-audiencia-previa/scripts/gen_solicitud.py`, no `scripts/` de la raíz) — quick win, en paralelo a A.** Petición subsidiaria de
   averiguación de domicilio (art. 156 LEC) como campo + DNI pendiente que renderice limpio. Disparador:
   la testigo compradora (petición de averiguación de domicilio, art. 156 LEC) y la testigo directora de zona (DNI pendiente) en la AP de VALERO.
 - Backlog (no promovidos): **#61** ingesta documental robusta (`.doc`/soffice, localizador de página en
@@ -192,7 +196,7 @@ producía `.skill` viejos → corregido con `git pull`). **Pendiente, en este or
 
 ## [SIGUIENTE-MCP-SUDESPACHO] MCP `sudespacho` (CRM del despacho) — F1 lectura: spec HECHO, plan pendiente
 
-*Disparador: `docs/superpowers/handoff-2026-07-13-mcp-sudespacho.md` (brainstorming Cowork) + decisión Nikolai de dar producto rápido y escalable a los compañeros. Primer producto que escala a Ana/Sergio/Paola porque la API REST del CRM ya es nube. Aplica el principio transversal de dos capas (motor determinista + interfaz distribuible).*
+*Disparador: `docs/superpowers/handoffs/handoff-2026-07-13-mcp-sudespacho.md` (brainstorming Cowork) + decisión Nikolai de dar producto rápido y escalable a los compañeros. Primer producto que escala a Ana/Sergio/Paola porque la API REST del CRM ya es nube. Aplica el principio transversal de dos capas (motor determinista + interfaz distribuible).*
 
 - Spec APROBADO en brainstorming: `docs/superpowers/specs/2026-07-13-mcp-sudespacho-design.md`.
 - **Decisiones cerradas:** **standalone** (sin `import core`, anti-drift por paridad) · entrega **`.dxt` a Cowork por el puente** · orden **F1 lectura → F2 escritura → F3+** · **Modelo B de credenciales: cuenta personal de cada usuario (Bearer JWT + refresh), NO la `x-api-key`** (hallazgo 2026-07-13: la key es GLOBAL/admin, no ligada a usuario, permisos no modificables, ~100% acceso → inútil para rol/atribución; el JWT personal SÍ respeta la matriz de rol —oculta contabilidad server-side— Y atribuye eventos al usuario; **Modelo A retirado, Modelo C descartado**) · **lista blanca deny-by-default** con TODO el árbol financiero/contable VETADO (2ª barrera) · **BORRADO NUNCA** (triple garantía: sin tool, cliente sin `DELETE`, rol con `Delete` OFF) · tools **genéricas** (`element` como parámetro) · **descubrimiento** por `describe_element` + playbook + catálogo (lectura casi automática, escritura mantiene HAR) · descarga vía `downloadUri` a DL-root (bytes nunca por el modelo; `presigned_download_url` NO es bloqueo, ya resuelto) · ubicación `plugins/sudespacho_mcp/`.
@@ -302,6 +306,12 @@ enterrada de PersonaUno (levantar el velo de Tibidabo 8 S.L.). Reutiliza `core.e
 ---
 
 ## [SIGUIENTE-CRONOLOGIA-UNIFICADA] Cronología Unificada de Prueba (capa por encima de los atomizadores)
+
+> 🗄️ **APARCADO (triaje 2026-07-19).** DISEÑO COMPLETO (8 fases) pero **sin una línea de código**
+> (`core/cronologia*` no existe). Se conserva como **NORTE de arquitectura**, no como cola activa. La
+> materialización cercana es la sala de lectura a nivel-fichero (hermana, NO prerrequisito; ver
+> `docs/superpowers/2026-07-19-sala-lectura-procesado-exploracion.md`). **Desarchivar** solo con un caso
+> real que exija una cronología unificada de prueba.
 *Diseño aportado por Nikolai 2026-06-25 (hilo Cowork). Spec **v7 — DISEÑO COMPLETO (8 fases, 0–7)**: `docs/superpowers/specs/2026-06-25-cronologia-unificada-design.md`. Banco de pruebas de diseño: W-02VND1 (Tibidabo 8). **Naturaleza: documento de DISEÑO, NO construcción.** Disciplina rectora: skill `verificacion-anclada-fuente`. Implementación: Claude Code en `core/` — **siguiente paso = BUILD, no más diseño.***
 
 **Objetivo.** Fusionar todas las fuentes de prueba de un expediente (correo, WhatsApp,
@@ -474,6 +484,9 @@ enfoque y destapó los dos bugs corregidos).
 ---
 
 ## [SIGUIENTE-RESIDUO-LLM] Clasificador LLM del residuo de intake (`MEJORAS #37`)
+
+> ✅ **CERRADO (triaje 2026-07-19)** → ledger `## ✅ Cerrados`. Implementación + tests en `742e35a`. Bloque
+> conservado como histórico.
 *Promovido 2026-06-18 por petición de Nikolai (Cowork). `MEJORAS #37`. Implementación: Claude Code.*
 
 **Objetivo.** Cerrar el único paso humano que queda en la sala de lectura: rellenar
@@ -515,6 +528,10 @@ sobre `core/llm_cloud.py`) queda OPT-IN para el futuro DPA.
 ---
 
 ## [SIGUIENTE-SALA-LECTURA-01] Sala de lectura y organización de `01_Procesado`
+
+> 🗄️ **HISTÓRICO (triaje 2026-07-19).** El camino core de sala de lectura quedó superado por la skill
+> `organizar-sala-lectura` (sala única). Bloque conservado como histórico; el futuro de la sala se decide en
+> la decisión-madre `#56 vs #75` (ver `MEJORAS #75`/`#76`).
 *Diseño cerrado con Nikolai 2026-06-12 (sesión Cowork, HANDOFF). Plan fino autocontenido: `docs/superpowers/plans/PLAN_SALA_LECTURA_01_PROCESADO.md` (incluye §0 con notas de Claude Code sobre el estado del repo). Implementación: Claude Code.*
 
 **Objetivo.** Capa humana sobre `01_Procesado`: una **sala de lectura** (documentos
@@ -622,6 +639,9 @@ plazos de escalado de la cola por tipo · tamaño de muestra (default 10%) · li
 ---
 
 ## [SIGUIENTE-INTAKE-JUDICIAL-AUTO] Intake automático de demanda y contestación desde el CRM
+
+> ✅ **CERRADO (triaje 2026-07-19)** → ledger `## ✅ Cerrados`. 5 fases ✅, validado e2e real. Bloque
+> conservado como histórico.
 *Añadido 2026-06-10 (sesión Cowork). Implementación: Claude Code. Engloba y resuelve `[CRITICO-PRESIGNED-DOWNLOAD-BUG]` como su Fase 0.*
 
 **Objetivo:** intake end-to-end de los dos documentos judiciales clave de un
@@ -1359,6 +1379,9 @@ trabajo para que no contamine).
 > Lista plana, reciente primero. Promover a agrupación por área cuando supere ~30
 > entradas (lo avisa `session_close`).
 
+- ✅ **[SIGUIENTE-RESIDUO-LLM]** Clasificador LLM del residuo de intake (`MEJORAS #37`) — `preparar_residuo`/`rellenar_worklist`/`clasificar_residuo_llm` (chat_fn inyectable) + CLI `scripts/sala_lectura.py`; +9 tests; commit `742e35a` (triaje 2026-07-19)
+- ✅ **[SIGUIENTE-INTAKE-JUDICIAL-AUTO]** Intake automático de demanda/contestación desde el CRM — 5 fases ✅, validado e2e real (incluye el Paso 1 del intake CRM-completo) (triaje 2026-07-19)
+- ✅ **[SIGUIENTE-INPUT-LOTES]** Layout de `00_Input` por lotes de entrega (`MEJORAS #54`) — build MERGEADO PR #57 (`8142d97`); la cola operativa (re-import Cowork + migración `migrar_layout_intake` bajo demanda) queda como tail no-bloqueante · [spec](docs/superpowers/specs/2026-07-17-layout-00-input-lotes-design.md) (triaje 2026-07-19)
 - ✅ **[SIGUIENTE-MCP-DRIVE-DISCO]** MCP "Drive como disco" (`expedientes-xl` G:+H:) V1 — construido PR #52, **DESPLEGADO 2026-07-19** vía extensión `.dxt` (PR #83); funciona en vivo en Cowork/Desktop (G: rw, H: ro, poda Tier 0, 19 tools). Hallazgo: `claude_desktop_config.json` NO llega a Cowork (solo `.dxt`). 3 bugs de arranque bajo Claude Desktop: imports `python -m` (PR #80), stub Python WindowsApps (PR #82), duplicado config.json↔.dxt. Pasos 5-7 + bundle Code diferidos (ver `[SIGUIENTE-MCP-DRIVE-DISCO-PASOS-5-7]`) · [spec](docs/superpowers/specs/2026-07-16-mcp-drive-disco-local-design.md)
 - ✅ **[SIGUIENTE-APERTURA-EXPEDIENTE]** Builds de apertura B1-B5 (ficha CRM end-to-end, `--case-id` incremental, normalizador de teléfono, evento `archivado`, auto-derivar `--folder-id`) — PR #69/#71/#72/#74 · [spec](docs/superpowers/specs/2026-07-18-apertura-expediente-b1-b5-design.md)
 - ✅ **[SIGUIENTE-SKILL-EXPEDIENTE-A-MD]** Skill `organizar-sala-maquina` (ex `expediente-a-md`) — rama `feat/organizar-sala-maquina` (sin hash de squash registrado) · [spec](docs/superpowers/specs/2026-07-09-organizar-sala-maquina-design.md)

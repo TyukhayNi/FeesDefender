@@ -55,7 +55,7 @@ fecha: 2026-07-05
 | `docs/superpowers/plans/PLAN_INTAKE_CRM_COMPLETO.md` | vigente | Intake CRM completo a `05_CRM` (`[SIGUIENTE-INTAKE-CRM-COMPLETO]`); su Paso 2 (procesado) queda supersedido por el diseño de 2026-07-10 (abajo). |
 | `superpowers/specs/2026-07-10-intake-crm-a-llm-design.md` | revisar | Bajada CRM → salas → registros → LLM + ejes de eficiencia + ROI (`[SIGUIENTE-INTAKE-CRM-A-LLM]`); aprobación revertida 2026-07-10, en re-brainstorming (decisiones abiertas). |
 | `docs/superpowers/plans/PLAN_INTAKE_PROCURADORES_EMAIL.md` | vigente | Intake procuradores→CRM; F1/F2 hechas, F3 pendiente. |
-| `docs/superpowers/plans/PLAN_PRERELLENO_LLM_VIABILIDAD.md` | revisar | Diseño original (motor `core/viabilidad.py` + API Haiku/Sonnet) nunca se construyó; superado en el flujo recomendado por la skill `viabilidad-prerelleno` (lee `00_Input/` crudo). `core/scorer.py`/`core/viability.py` SÍ se usan (vía `core/pipeline.py`, cableado en Streamlit); pendiente de que Nikolai ratifique el archivo. |
+| `docs/superpowers/plans/PLAN_PRERELLENO_LLM_VIABILIDAD.md` | historico | Diseño original (motor `core/viabilidad.py` + API Haiku/Sonnet) nunca se construyó; superado en el flujo recomendado por la skill `viabilidad-prerelleno` (lee `00_Input/` crudo). `core/scorer.py`/`core/viability.py` SÍ se usan (vía `core/pipeline.py`, cableado en Streamlit). **Archivado 2026-07-19 (ratificado por Nikolai; triaje).** |
 | `docs/superpowers/plans/PLAN_SaRS1_anon_pipeline.md` | vigente | Pipeline SaRS1 multi-hilo; H6 aún abierto. |
 | `docs/superpowers/plans/PLAN_MOTOR_DOCUMENTAL.md` | aparcado | Motor OCR→split→MD como conector (⏸️ 2026-07-04; `MEJORAS #48`). |
 | `docs/superpowers/plans/PLAN_BITACORA_CASOS.md` | aparcado | Bitácora razonada por caso (planificada s24, 2026-05-21); nunca implementada y fuera de la cola viva — recuperar si se decide. |
@@ -66,7 +66,16 @@ fecha: 2026-07-05
 
 ## Handoffs
 
-| Documento | Estado | Qué es |
+> Andamios efímeros de traspaso. **Regla:** `GOBERNANZA_FUENTES_VERDAD §5` (ubicación única
+> `docs/superpowers/handoffs/`; `estado:` en el frontmatter = hogar único). Esta tabla es **vista derivada**.
+
+| Documento (en `docs/superpowers/handoffs/`) | Estado | Qué es |
 |---|---|---|
-| `prompt_handoff_expedientes_seguros.md` | historico | Handoff de absorción del Anonimizador (ya integrado en `core/anon`). |
-| `superpowers/handoff-2026-07-17-apertura-W-*.md` | historico | Los 3 handoffs de las aperturas E2E del 2026-07-17 (W-02T3XO/W-02TH0W/W-046G2R); consolidados en `RUNBOOK_APERTURA_EXPEDIENTE.md`. |
+| `handoff-2026-07-19-triaje-plan.md` | consumido | Triaje de la cola de planificación (informe aplicado). |
+| `handoff-2026-07-17-apertura-W-{02T3XO,02TH0W,046G2R}-mejoras-proceso.md` | historico | 3 aperturas E2E; consolidados en `RUNBOOK_APERTURA_EXPEDIENTE.md`. |
+| `handoff-2026-07-16-rightsizing-mcp-drive-v1.md` | consumido | Right-sizing V1 del MCP Drive-disco (spec `2026-07-16-…` + build PR #52). |
+| `handoff-2026-07-13-mcp-sudespacho.md` | consumido | Brainstorming MCP sudespacho (spec `2026-07-13-…`). |
+| `handoff-2026-06-25-email-atomize-fase3.md` | consumido | Fase 3 de `core/email_atomize`. |
+| `handoff-2026-06-18-unificar-salas-lectura.md` | consumido | Unificación de salas de lectura (skill v1.3+ / spec `2026-06-18-…`). |
+| `prompt_handoff_expedientes_seguros.md` | historico | Absorción del Anonimizador (`core/anon`). |
+| `../specs/cronologia-handoffs/handoff_F*.md` (7) | consumido | Stress-tests de la Cronología v7 (excepción de ubicación: agrupados con su spec). |
