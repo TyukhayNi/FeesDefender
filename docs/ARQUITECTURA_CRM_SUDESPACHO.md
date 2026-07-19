@@ -259,6 +259,12 @@ del expediente (visible al equipo sin ir en copia). **Endpoints y payload comple
 (no `x-api-key`); `GET /api/accounts/{id}` expone credenciales SMTP/IMAP en claro (higiene: HAR nunca
 al repo).
 
+**Relacionar un correo ENTRANTE con un expediente (distinto del envío):** lo ejecuta un **plugin de
+Roundcube** (`roundcube.sudespacho.net`, `plugin.sudespacho_asignaa_*`), NO nest-mail. El webmail es
+Roundcube montado como **cliente IMAP** sobre las cuentas Gmail del despacho, con **SSO por `dataHash`**
+desde el frontal (Roundcube en iframe cross-origin). Se automatiza vía **webview** (no headless).
+Contrato + auth: `INTEGRACION_SUDESPACHO.md §10.10`.
+
 ---
 
 ## 4. Mapa de autenticación por operación

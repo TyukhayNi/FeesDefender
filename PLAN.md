@@ -578,8 +578,19 @@ serie=año). **RGPD — excepción acotada SOLO a este flujo:** usa LLM cloud UE
   el autocomplete legacy devuelve body vacío (`DEAD_ENDS.md`); búsqueda por
   `referencia_cliente`+`referencia_procurador`+nº/serie, sin `clientes`; búsqueda por
   contrario/autos fuera de alcance (`MEJORAS_FUTURAS.md` §31). Suite **935 passed**.
-- **F3 — Escritura en el CRM.** ⬜ Resolver auth nest-mail (x-api-key vs JWT);
-  relate + adjuntar en expediente de prueba. Mismo requisito de traza que F2.
+- **F3 — Escritura en el CRM.** 🎨 **DISEÑO CERRADO (2026-07-19); pendiente construir.** El relate+adjuntar
+  va por un **plugin propio de Roundcube** (`plugin.sudespacho_asignaa_*`), NO nest-mail/`MailRoundcube`/AppSync
+  (refutados por HAR `judicial_648`). Llave = **Message-ID RFC** (conservado en el auto-forward de `procesal@`,
+  verificado con cabeceras). **Spike de auth HECHO** (2 pruebas en vivo + HAR `handshake_webmail`): el plugin es
+  llamable con la sesión del webmail (`fetch`+`X-Roundcube-Request=rcmail.env.request_token` → 200+JSON); el acceso
+  es **SSO por `init.php?dataHash`** (blob cifrado client-side) → **transporte = webview**; headless-puro descartado
+  (regenerar el `dataHash` + credenciales IMAP = frágil/inseguro). **A' viable** (archiva solo). Specs:
+  `docs/superpowers/specs/2026-07-19-f3-relate-crm-plugin-roundcube-design.md` (v2, tras panel adversarial) +
+  `…-intake-miniapp-entrega-design.md` (miniapp bajo demanda por persona, bandeja=visor compartido, índice-caché
+  del emparejamiento en Drive, cada quien su cuenta, judicial-first, autoría→F6). SSOT del CRM:
+  `INTEGRACION_SUDESPACHO §10.10/§14.5`; dead-end en `DEAD_ENDS`. **[SIGUIENTE]:** `writing-plans` → construir
+  cliente `core/procurador_relate.py` (adaptador de transporte webview, TDD) + miniapp/bandeja mínima + índice-caché;
+  validar relate/adjuntar reales en expediente de prueba. ✅ Limpieza de pruebas del CRM hecha (Nikolai, 2026-07-19).
 - **F4 — Renombrado + OCR + aprendizaje.** ⬜ Contenido del adjunto → nombre; store
   de correcciones few-shot (§10).
 - **F5 — Grabaciones.** ⬜ Descarga de enlaces (WeTransfer caduca) + fallback manual.
@@ -588,8 +599,8 @@ serie=año). **RGPD — excepción acotada SOLO a este flujo:** usa LLM cloud UE
   **Diseño cerrado 2026-06-12, doc §18.** Depende de F2/F3 (consume la terna de traza).
 
 **Pendientes de decisión (doc §17 + §18.11):** ¿confirmar en bloque las de alta de
-inicio? · auth nest-mail · plazos de escalado de la cola por tipo · tamaño de muestra
-(default 10%) · lista de "tipos con plazo".
+inicio? · **auth del plugin Roundcube (sesión legacy PHPSESSID vs login propio) → decide A-vs-C** ·
+plazos de escalado de la cola por tipo · tamaño de muestra (default 10%) · lista de "tipos con plazo".
 
 ---
 

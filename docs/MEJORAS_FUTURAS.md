@@ -2699,3 +2699,25 @@ Ninguno bloquea; promover por disparador concreto.
   este fichero no: ~2.700 líneas, ~25 entradas resueltas expandidas inline, "orden por
   prioridad operativa" sin mecanismo, y E1 no lo vigila. **Disparador:** cuando MEJORAS
   moleste de leer → mismo tratamiento lean (colapsar las resueltas a un ledger).
+
+## 73. Intake de facturas desde `contabilidad@tyukhay.legal` (proveedores → Facturas recibidas; procuradores → gestor documental del expediente)
+
+Anotado 2026-07-19 (idea de Nikolai). **Hermano del intake de procuradores**; reutiliza el mismo
+mecanismo de correo del CRM (SSO del webmail + plugin Roundcube de relate/adjuntar,
+`INTEGRACION_SUDESPACHO §10.10` y §14.5). Cruza **FeesDefender** (expedientes) y **El Contable**
+(facturas recibidas).
+
+**Flujo previsto.** A `contabilidad@tyukhay.legal` llegan las facturas de **proveedores** y de
+**procuradores** (factura en PDF adjunta). El robot las clasifica y enruta:
+- **Facturas de proveedores** → módulo **Facturas recibidas** del CRM (contabilidad del despacho).
+- **Facturas de procuradores** (gastos del caso, **pagados por el cliente**) → **gestor documental del
+  expediente** correspondiente (mismo relate/adjuntar que el intake de procuradores).
+
+**Piezas.** (a) clasificar proveedor-vs-procurador y, si es de procurador, emparejar con el expediente
+(matcher tipo F1 por referencia/importe); (b) alta en **Facturas recibidas** (`facturas_recibidas`,
+enums en `INTEGRACION_SUDESPACHO §14.4`) — camino **distinto** del plugin Roundcube (es alta de factura
+en contabilidad, no un relate); (c) para procuradores, el relate/adjuntar al gestor documental ya está
+diseñado (F3 del intake de procuradores).
+
+**Disparador para promover:** decisión de Nikolai de construirlo, o cuando el volumen de facturas
+manuales moleste. Hoy: **solo anotado.**
