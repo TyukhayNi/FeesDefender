@@ -2744,3 +2744,69 @@ política ya es fail-closed/COLD ante desconocido). Así `initialize` responde a
 pasa a verde. **No confirmado** que sea el health-check (no se leyó el timeout exacto del panel); verificar
 antes de construir. **Disparador:** que el `failed` estorbe de verdad, o al retomar los pasos 5-7 del
 despliegue.
+
+## 75. Sala de lectura como consumidor de la capa «procesado» (MD fiables → OCR-soporte → crudo)
+
+**Origen (2026-07-19, fase 2 del despliegue MCP).** Al migrar `organizar-sala-lectura` a v1.8, Nikolai
+señaló que la **skill re-procesa el crudo** para clasificar, cuando el **motor core deprecado** clasificaba
+leyendo los **MD fiables** (`core/sala_lectura.py:13-14` «Claude rellena la worklist leyendo los `MD/` en
+claro»; `core/local_organizer.py` sobre `06_Anonimizado/*.md`). La skill (desde v1.3) se desvió a la
+extracción del conector de Drive; la v1.8 solo dejó el MD como apoyo condicional. Este ítem **eleva el MD a
+fuente primaria** y reorienta la skill.
+
+**Decisión de arquitectura — CERRADA por Nikolai 2026-07-19:** la sala de lectura pasa de *re-procesador del
+crudo* a **consumidor/clasificador de la capa «procesado»** (sala de máquina + atomizadores por fuente).
+Alinea con el **Motor Documental #48** (registro único de caso) y con la **Cronología Unificada** (capa sobre
+los atomizadores); no es un parche a la skill, sino ponerla en la arquitectura de dos capas ya decidida.
+
+**Jerarquía de fuentes de CLASIFICACIÓN — dependencia BLANDA (CERRADA):**
+1. **MD fiable** (primaria).
+2. **OCR-soporte** (MD dudoso) como pista.
+3. **Crudo** (visión/bytes) solo en casos no claros.
+Blanda, **no dura**: si no hay MD, cae a crudo. Una dependencia dura (exigir MD) sacaría a la sala de lectura
+de **Cowork puro-nube** (el OCR/atomización son locales) y rompería el uso multiusuario nube que la motivó.
+
+**Fuente fiable POR TIPO de fuente:**
+- **Email** → `01_Procesado/Emails/` (`core/email_atomize`): mensajes MD + adjuntos deduplicados + su
+  `.contenido.md` + autoría/inline (Capa B). **NO** la sala de máquina (trata el `.eml` grueso = 1 MD).
+- **WhatsApp** → atomizador WhatsApp (`core/whatsapp_atomize`).
+- **Documentos** (PDF/imagen/office) → `01_Procesado/02_Sala de máquina/03_MD/`.
+- **Fotos / señal visual** → crudo/nombre (nunca MD).
+
+**Evaluación de fiabilidad — YA montada (no hay que construirla):** la señal vive en el **frontmatter de cada
+`03_MD/{slug}.md`** (`core/sala_maquina.py::_escribir_md`): `ocr_quality` (`ok`|`low`|`empty`), `ocr` (bool:
+`false`=extracción nativa determinista / `true`=OCR), `chars`, `text_sha256`. La calcula
+`ocr_quality(text, n_pags)` (`core/sala_maquina.py:86-100`) con tres señales deterministas y explicables:
+`_MIN_CHARS=40` (documento → `empty`), `_MIN_DENSIDAD=40` char/pág (→ `low`), `_MAX_GIBBERISH=0.40` (>40% de
+tokens sin vocal, spa/cat/rus incl. cirílico → `low`). **Frontera de la jerarquía:** *fiable* = `ocr_quality
+== "ok"` (dos grados: `ocr:false`+`ok` = máxima confianza; `ocr:true`+`ok` = OCR fiable); *soporte* = `low`/
+`empty` (listados en `_cobertura.md`, dudosos primero). La señal **viaja EN el MD** → la sala de lectura la
+lee directa, sin consultar `_cobertura.json`. **Limitación:** `ocr_quality` mide densidad+ruido, **no
+corrección semántica** (un OCR denso con errores de carácter pasa como `ok`) → basta para clasificar
+CATEGORÍA; para datos exactos (importes, fechas) ir a la fuente (eso es viabilidad, no la sala).
+
+**Criterio de COPIA a la sala — CERRADO por Nikolai 2026-07-19** (qué fichero queda en
+`01_Procesado/Sala lectura/` con nombre canónico; ortogonal a qué se LEE para clasificar):
+- PDF **nativo** / `.docx` / `.txt` / **foto** / imagen → **crudo**.
+- PDF/imagen **escaneada** → **OCR** (`01_OCR/*.pdf` = original + capa de texto, buscable; superior al
+  escaneado ciego sin perder fidelidad visual).
+- **Email** → **MD legible** de `email_atomize` + adjuntos originales (el `.eml` es custodia, no lectura).
+- **El MD suelto NUNCA sustituye** a un documento visual (firmas/sellos/fotos/tablas).
+
+**Ampliación del `_MANIFIESTO.md`:** procedencia **doble** — `sha256` del original en `00_Input` + `sha256`
+del artefacto copiado + de qué se derivó (hoy guarda un solo `sha256`). Custodia intacta: el original nunca
+se toca (su `sha256` está en `_intake_log.jsonl`); la sala es vista derivada, no prueba.
+
+**Fuera de alcance / a resolver en el spec:** (a) **granularidad del email** (1 documento por email/hilo vs
+por mensaje atómico); (b) **dueño del OCR de adjuntos** (`email_atomize`/`adjuntos_contenido` vs sala de
+máquina — evitar partir el bundle-email); (c) **frontera con la Cronología Unificada** (ambas serían
+consumidoras de átomos/MD → no duplicar la capa de adaptadores); (d) **orden de pipeline** (atomizadores/
+máquina → lectura → viabilidad).
+
+**Relación:** #48 (Motor Documental), Cronología Unificada (`docs/superpowers/specs/2026-06-25-cronologia-
+unificada-design.md`), #68 (cableado del pipeline de correo), v1.8 de `organizar-sala-lectura` (MD como
+apoyo condicional — este ítem lo eleva a primario).
+
+**Disparador de promoción a `PLAN.md`:** escribir el spec (`writing-plans`) cuando se decida construir. La
+**arquitectura y los criterios ya están CERRADOS** (decisión Nikolai 2026-07-19); falta el spec (granularidad
+email + frontera Cronología + orden de pipeline).
