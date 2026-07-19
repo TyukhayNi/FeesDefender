@@ -63,6 +63,9 @@ fecha: 2026-07-05
 | `docs/superpowers/plans/PLAN_SALA_LECTURA_01_PROCESADO.md` | historico | Superado por la sala única (`[SIGUIENTE-SALA-UNICA-PLANA]` + skill). |
 | `docs/superpowers/plans/PLAN_email_aplanado_anidados.md` | historico | Implementado ✅ (Parte 1 — emails `.eml` anidados). |
 | `docs/superpowers/plans/PLAN_email_enlaces_drive.md` | historico | Implementado ✅ (Parte 2 — enlaces Drive, `911bf39`). |
+| `docs/superpowers/plans/PLAN_registro_outputs_skills.md` | historico | Registro de outputs de skills en el expediente (v1); superado por `PLAN_skills_registro_y_mejora_v3.md`. |
+| `docs/superpowers/plans/PLAN_registro_outputs_skills_v2.md` | historico | Idem v2 (añade clientes particulares); superado por v3. |
+| `docs/superpowers/plans/PLAN_skills_registro_y_mejora_v3.md` | historico | Registro de outputs + mejora continua (v3 consolidado). Implementado ✅ (`.claude/skills/_shared/{registrar_outputs,registrar_uso}.py`, `scripts/{sync_skill_helpers,package_skill}.py` + copias en skills). |
 
 ## Handoffs
 
@@ -75,7 +78,12 @@ fecha: 2026-07-05
 | `handoff-2026-07-17-apertura-W-{02T3XO,02TH0W,046G2R}-mejoras-proceso.md` | historico | 3 aperturas E2E; consolidados en `RUNBOOK_APERTURA_EXPEDIENTE.md`. |
 | `handoff-2026-07-16-rightsizing-mcp-drive-v1.md` | consumido | Right-sizing V1 del MCP Drive-disco (spec `2026-07-16-…` + build PR #52). |
 | `handoff-2026-07-13-mcp-sudespacho.md` | consumido | Brainstorming MCP sudespacho (spec `2026-07-13-…`). |
+| `handoff-2026-07-03-escritos-judiciales-v1-1.md` | consumido | Actualización de formato v1.0→v1.1 de la skill `escritos-judiciales`. |
 | `handoff-2026-06-25-email-atomize-fase3.md` | consumido | Fase 3 de `core/email_atomize`. |
 | `handoff-2026-06-18-unificar-salas-lectura.md` | consumido | Unificación de salas de lectura (skill v1.3+ / spec `2026-06-18-…`). |
+| `handoff-2026-06-18-buzon-intake.md` | historico | Buzón de intake universal; nunca construido (`core/intake_buzon.py` inexistente), superado por el intake vigente. |
+| `handoff-2026-06-12-control-calidad-archivo-check2.md` | historico | Control de calidad del archivo (check 2); absorbido por el diseño de intake-procuradores (F3 / PR #81). |
+| `handoff-2026-06-12-sala-lectura-01-procesado.md` | historico | Sala de lectura + `01_Procesado`; deriva a `core/sala_lectura.py` (F4–F6), luego deprecado por la skill v1.3+. |
+| `handoff-2026-06-05-prerelleno-viabilidad-experiencia.md` | historico | Conocimiento cristalizado que originó la skill `viabilidad-prerelleno`. |
 | `prompt_handoff_expedientes_seguros.md` | historico | Absorción del Anonimizador (`core/anon`). |
 | `../specs/cronologia-handoffs/handoff_F*.md` (7) | consumido | Stress-tests de la Cronología v7 (excepción de ubicación: agrupados con su spec). |
