@@ -39,4 +39,9 @@ goto waitloop
 :ready
 echo [xl-wrapper] montadas; arrancando server consolidado>>"%LOG%"
 set "PYTHONPATH=%~dp0..;%PYTHONPATH%"
-python -m expedientes_xl.server --rw G:\ --ro H:\ 2>>"%LOG%"
+REM Resolver un Python REAL: el stub de la Microsoft Store (WindowsApps) aborta el server MCP.
+set "PYEXE="
+if exist "%LOCALAPPDATA%\Python\bin\python.exe" set "PYEXE=%LOCALAPPDATA%\Python\bin\python.exe"
+if not defined PYEXE for /f "delims=" %%p in ('where python 2^>nul ^| findstr /v /i "WindowsApps"') do if not defined PYEXE set "PYEXE=%%p"
+if not defined PYEXE set "PYEXE=python"
+"%PYEXE%" -m expedientes_xl.server --rw G:\ --ro H:\ 2>>"%LOG%"
