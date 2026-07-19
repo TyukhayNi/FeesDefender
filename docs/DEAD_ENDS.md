@@ -6,6 +6,16 @@
 
 ---
 
+## Worktree muerto como *cwd* de sesión → los comandos git operan sobre la raíz compartida
+
+- **Intentado:** trabajar y luego borrar el directorio de un worktree cuyo *cwd* de sesión apuntaba a `.claude/worktrees/<name>` con solo `.claude/` residual (sin fichero `.git`). Borrado con `rm -rf` (Bash) y `Remove-Item -Recurse -Force` (PowerShell).
+- **Resultado:** los comandos git desde ese *cwd* **no operan sobre el worktree**: resuelven hacia arriba y actúan sobre la **raíz compartida** y *su* rama (engaña — `git branch --show-current` devuelve la rama de la raíz, no la del worktree; `git ls-tree HEAD` puede salir vacío). Y el directorio **no se borra en caliente**: Windows lo bloquea por ser el *cwd* de una sesión viva (`rm -rf` denegado por política; `Remove-Item` → `being used by another process`). Un segundo directorio residual de OTRA sesión dio el mismo bloqueo → lo sujeta su sesión viva.
+- **Confirmado:** 2026-07-19.
+- **Señal:** `git worktree list --porcelain` marca la entrada `prunable  gitdir file points to non-existent location`.
+- **Solución:** limpiar el REGISTRO con `git worktree prune` (+ `git branch -D` si la rama está mergeada); el DIRECTORIO físico solo se borra tras **cerrar la sesión** que lo tiene como *cwd* (o desde otra sesión cuyo *cwd* no sea ese). No reintentar el borrado en caliente.
+
+---
+
 ## pytest — la línea de resumen (`N passed`) no se captura en Git Bash (Windows)
 
 - **Intentado:** leer el conteo final de pytest (`N passed, M skipped`) con `pytest -q | tail`, `| grep passed`, o PowerShell `Select-String` a través del Bash tool en Windows.
