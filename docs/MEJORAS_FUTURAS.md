@@ -2419,7 +2419,8 @@ de VALERO nació del `_caso.md` ausente. Custodia: el `estado: scratch` es trans
 
 ## 60. `gen_solicitud`: petición subsidiaria (averiguación de domicilio) + DNI pendiente  [PROMOVIDO → PLAN.md]
 
-**Anotado 2026-07-14.** Cluster C (quick win). `scripts/gen_solicitud.py` no tiene campo para una petición
+**Anotado 2026-07-14.** Cluster C (quick win). `gen_solicitud.py` (ubicación real:
+`.claude/skills/preparacion-audiencia-previa/scripts/gen_solicitud.py`) no tiene campo para una petición
 subsidiaria por testigo (p. ej. **averiguación de domicilio, art. 156 LEC**) ni manejo de **DNI pendiente**;
 hoy hubo que doblar el art. 156 dentro de `citacion` y vaciar `movil`/`email`, y marcar el DNI de un testigo
 como `[pendiente de aportar]` a pelo. *Fix:* añadir `averiguacion_domicilio`/`subsidiario` como campo del
