@@ -1,0 +1,28 @@
+{
+  "manifest_version": "0.3",
+  "name": "expedientes-xl",
+  "display_name": "expedientes-xl (Drive como disco G:/H:)",
+  "version": "1.0.0",
+  "description": "Operaciones de fichero acotadas sobre el Drive del despacho montado como disco local: G: (unidad EXPEDIENTES - TYUKHAY LEGAL, lectura-escritura) y H: (Drive Engel & Voelkers, solo lectura). 19 tools: leer/listar/buscar/arbol/metadatos + copiar/mover/escribir/hash/extraer, con zonas (tiers), guardas Stream-aware (Google Drive) y auditoria. Sin borrado (spec).",
+  "author": {
+    "name": "Tyukhay Legal"
+  },
+  "server": {
+    "type": "python",
+    "entry_point": "server.py",
+    "mcp_config": {
+      "command": "C:\\Users\\tnm33\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
+      "args": [
+        "-m",
+        "expedientes_xl.server",
+        "--rw",
+        "G:\\",
+        "--ro",
+        "H:\\"
+      ],
+      "env": {
+        "PYTHONPATH": "C:\\Users\\tnm33\\Dev\\FeesDefender\\plugins"
+      }
+    }
+  }
+}
