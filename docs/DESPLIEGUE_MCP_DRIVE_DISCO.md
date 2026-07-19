@@ -62,19 +62,19 @@ Los pasos 3-4 de abajo **solo aplican al chat de Desktop / Claude Code**, no a C
        vuelven al modelo). Tres modos de acceso por ubicación del caso: (1) Drive vía
        `expedientes-xl`, (2) local-nativo (filesystem del entorno), (3) conector nube
        prefiriendo `google-despacho` sobre el nativo E&V. Tools citadas como `servidor:tool`.
-7. [~] **SOLO ENTONCES** retirar el server viejo `expedientes` (Node FS). Dos partes:
-       - **Parte B (Claude Code) ✅ HECHA+VERIFICADA 2026-07-19** —
-         `claude mcp remove "expedientes" -s local` (scope real = **`local`**, NO `project`;
-         lo dicta `claude mcp get`; corrige la versión previa de este paso). `claude mcp list`
+7. [x] **✅ COMPLETO 2026-07-19** — retirado el server viejo `expedientes` (Node FS) en ambos lados:
+       - **Parte B (Claude Code) ✅** — `claude mcp remove "expedientes" -s local` (scope real = **`local`**,
+         NO `project`; lo dicta `claude mcp get`; corrige la versión previa de este paso). `claude mcp list`
          confirma `expedientes` fuera de Code; queda `expedientes-xl` (Connected).
-       - **Parte A (Claude Desktop/Cowork) ⏳ PENDIENTE = acción manual de Nikolai.** Quitar la
-         entrada `expedientes` de `claude_desktop_config.json`. **GOTCHA:** las sesiones de Claude
-         Code (`...\claude-code\...\claude.exe`) son **procesos hijos de la app Desktop** (mismo
-         image name) → `taskkill /F /IM claude.exe /T` **mata también la sesión de Code**, así que
-         no puede hacerse desde dentro de Code (además el config se reescribe con la app viva). Vía:
-         script atómico externo `Desktop\jubilar_expedientes_node.ps1` (backup previo → force-kill →
-         edición en memoria que quita SOLO `expedientes` y conserva `email-export` → Nikolai relanza).
-         Rollback: `.bak-*` o re-añadir la entrada.
+       - **Parte A (Claude Desktop/Cowork) ✅** — **VÍA LIMPIA = papelera del panel** (Ajustes →
+         Desarrollador → Servidores MCP locales → seleccionar `expedientes` → icono papelera) + relaunch.
+         Es una acción propia de la app: actualiza su estado en memoria y reescribe el config. Confirmado
+         autoritativo: `claude_desktop_config.json` solo con `email-export`; `expedientes` fuera del panel.
+       - **GOTCHA (por qué NO el script/`taskkill`):** las sesiones de Claude Code
+         (`...\claude-code\...\claude.exe`) son **procesos hijos de la app Desktop** (mismo image name) →
+         `taskkill /F /IM claude.exe /T` desde un terminal hijo de Claude **se auto-mata** antes de escribir la
+         edición (fallo real del intento por script: backups creados, config intacto). Ver `docs/DEAD_ENDS.md`.
+         El script `Desktop\jubilar_expedientes_node.ps1` v2 (guarda de ancestría) queda como plan B, no usado.
 8. [ ] Sesión de humo: intake de un fichero de prueba + `tree` de un caso + `grep`
        (`search_content`) — ver checklist de la sesión de humo abajo.
 
