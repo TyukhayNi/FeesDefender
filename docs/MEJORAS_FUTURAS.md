@@ -2810,3 +2810,49 @@ apoyo condicional — este ítem lo eleva a primario).
 **Disparador de promoción a `PLAN.md`:** escribir el spec (`writing-plans`) cuando se decida construir. La
 **arquitectura y los criterios ya están CERRADOS** (decisión Nikolai 2026-07-19); falta el spec (granularidad
 email + frontera Cronología + orden de pipeline).
+
+## 76. Cuestión ABIERTA: ¿reañadir `read_media_file` (lectura visual directa) a `expedientes-xl`?
+
+**Estado: NO decidido — brainstorming (Nikolai + Claude, 2026-07-19). No es un descarte.** El consolidado
+retiró `read_media_file` en la migración v1.8 (los binarios no vuelven al modelo; se manejan server-side). Se
+debate reañadir una tool que entregue el binario (imagen/PDF/página) al modelo para **visión directa**.
+
+**Clave: son DOS casos de uso distintos y no hay que confundirlos.**
+1. **Montar la sala de lectura** (clasificar el intake): aquí manda la jerarquía de #75 (MD fiables →
+   OCR-soporte → crudo). Para esto `read_media_file` **no** aporta velocidad (la visión es más lenta que leer
+   un MD) ni fiabilidad (el OCR determinista + `ocr_quality` es más fiable que la visión estocástica).
+2. **Lectura rápida / hojeo ad-hoc del expediente SIN abrir los ficheros** (consulta ágil del abogado): aquí
+   el punto de Nikolai — **sin `read_media_file`, `expedientes-xl` es una herramienta "ciega"** a todo lo
+   visual (imágenes, escaneados sin OCR). Para "ver" un documento habría que haber corrido antes la sala de
+   máquina (OCR local); la visión directa daría acceso inmediato a cualquier documento, **independiente de la
+   sala de máquina**.
+
+**A favor de reañadirlo:**
+- **Cobertura de acceso:** leer/ver CUALQUIER documento directamente, sin depender de que exista OCR previo.
+- **Independencia de la sala de máquina:** hojear el expediente sin ejecutar OCR local (que no corre en Cowork
+  puro-nube).
+- En **Cowork puro-nube** (sin OCR local, sin `Read` nativo de Claude Code) es la **única** vía de ver un
+  escaneado/foto → hoy ahí el lector es ciego.
+
+**En contra:**
+- Para *clasificar* (montar la sala) no aporta velocidad ni fiabilidad; la vía OCR/texto es superior.
+- **Vía menos fiable:** visión estocástica, sin artefacto reutilizable, sin `ocr_quality`, sin traza.
+- **Mezcla de capas:** `expedientes-xl` es lector de bytes/texto + operador; la interpretación visual vive en
+  su capa (OCR). Delegar lo visual es coherente con delegar los `.gdoc`/`.gsheet` a `google-despacho`.
+- **RGPD:** reabre "binarios con PII al modelo", cerrado a propósito en el consolidado.
+- En **Claude Code (Modo 2)** el `Read` nativo ya da visión → el hueco real es solo **Cowork-vía-`expedientes-xl`**.
+
+**Tensión central (sin resolver):** *cobertura de acceso + independencia de la sala de máquina* (a favor)
+vs. *separación de capas + fiabilidad + RGPD* (en contra). Depende de cuánto pese el caso de uso "hojear/leer
+rápido el expediente sin OCR previo", sobre todo en Cowork nube.
+
+**Términos medios a estudiar (no decididos):**
+- Una tool acotada tipo **`render_page(path, n, dpi_bajo)`** que devuelva SOLO una página a baja resolución
+  para hojeo (no el binario completo) → acota coste y superficie PII vs. `read_media_file` pleno.
+- Restringir la visión a **bajo demanda explícita** (nunca en barridos/montaje automático) con aviso RGPD.
+- Aceptar el hueco y responder con **"corre la sala de máquina"** (mover a local / disparar OCR) como vía
+  robusta, dejando la visión fuera.
+
+**Relación:** #75 (jerarquía de fuentes de la sala de lectura), migración v1.8 de `organizar-sala-lectura`
+(que retiró `read_media_file`). **Disparador para retomar:** que la lectura ad-hoc de escaneados/fotos sin OCR
+previo (esp. en Cowork nube) se vuelva un dolor real, o decisión de Nikolai.
