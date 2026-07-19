@@ -131,6 +131,18 @@ puro + orquestadores finos. Spec: `docs/superpowers/specs/2026-07-09-abrir-caso-
 máquina (re-import en Cowork, bundle Code con reinicio, paso 7). Checklist operativo:
 `docs/DESPLIEGUE_MCP_DRIVE_DISCO.md`.*
 
+**➡️ PUNTO DE RETOME (fin de fase 2, 2026-07-19).** El lado-repo está en `main` (skills migradas) y la
+raíz ya está en `main` con los `.skill` regenerados (se cazó que la raíz estaba en `#84` sin `#85` y
+producía `.skill` viejos → corregido con `git pull`). **Pendiente, en este orden:**
+1. **Import en Cowork** de los 4 `.skill` (trivial) + **verificación funcional** de `organizar-sala-lectura`
+   sobre un caso real (Modo 1 `expedientes-xl`, sin nombrar el server viejo). La verificación se hace **la
+   próxima vez que se organice un caso de verdad** (no gastar una corrida solo para probar).
+2. **Bundle Code (B1-B3):** `claude mcp remove expedientes-xl -s project` (desde la raíz) →
+   `/plugin marketplace update despacho-tyukhay` + reinstalar → **reiniciar Code** (corta la sesión) →
+   verificar 19 tools. Detalle en el checklist §Bundle Claude Code.
+3. **Paso 7 (irreversible):** jubilar `expedientes` Node — `claude_desktop_config.json` (app cerrada,
+   `taskkill /F /IM claude.exe /T`) + `claude mcp remove expedientes -s project`. **Solo tras 1-2 verdes.**
+
 - [x] **Paso 6 (migración de skill) — ✅ repo fase 2.** `organizar-sala-lectura` v1.8 migrada al
   consolidado: `write_file`→`write_text`, `read_media_file` retirado (binarios server-side); tres
   modos por ubicación del caso (Drive `expedientes-xl` / local-nativo / conector nube prefiriendo

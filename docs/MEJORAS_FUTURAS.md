@@ -2811,6 +2811,15 @@ apoyo condicional — este ítem lo eleva a primario).
 **arquitectura y los criterios ya están CERRADOS** (decisión Nikolai 2026-07-19); falta el spec (granularidad
 email + frontera Cronología + orden de pipeline).
 
+**Exploración pre-brainstorming (opciones + trade-offs + preguntas para el diálogo):**
+`docs/superpowers/2026-07-19-sala-lectura-procesado-exploracion.md`. Hallazgos clave: (1) es
+**MATERIALIZACIÓN**, no arquitectura nueva (Cronología §9 y #48 ya la modelan; los atomizadores + sala de
+máquina YA están construidos) → el trabajo es el **contrato de consumo a nivel-fichero** + el cableado (#68);
+(2) **decisión-madre pendiente:** `#56` (revivir `core.sala_lectura` determinista + tool MCP) **vs** `#75`
+(skill prompt-driven que consume MD); (3) el criterio de copia de artefactos derivados **rompe la
+idempotencia por sha256 actual** (hay que reescribir el algoritmo de skip, no solo añadir columna al
+`_MANIFIESTO`); (4) piloto propuesto W-02VND1 como gate anti-spec-dormido.
+
 ## 76. Cuestión ABIERTA: ¿reañadir `read_media_file` (lectura visual directa) a `expedientes-xl`?
 
 **Estado: NO decidido — brainstorming (Nikolai + Claude, 2026-07-19). No es un descarte.** El consolidado
