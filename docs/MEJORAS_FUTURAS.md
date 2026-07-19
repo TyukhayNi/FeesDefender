@@ -2865,3 +2865,35 @@ rápido el expediente sin OCR previo", sobre todo en Cowork nube.
 **Relación:** #75 (jerarquía de fuentes de la sala de lectura), migración v1.8 de `organizar-sala-lectura`
 (que retiró `read_media_file`). **Disparador para retomar:** que la lectura ad-hoc de escaneados/fotos sin OCR
 previo (esp. en Cowork nube) se vuelva un dolor real, o decisión de Nikolai.
+
+## 77. Gobernanza de handoffs (creación, ubicación única y ciclo de vida)
+
+**Estado: PROPUESTA — pendiente de aprobar por Nikolai** (2026-07-19). No hay regla que gobierne los
+handoffs y están dispersos.
+
+**Diagnóstico (verificado 2026-07-19):** los ~12 handoffs viven repartidos sin convención —
+`docs/superpowers/handoff-YYYY-MM-DD-<tema>.md` (mayoría), `docs/superpowers/specs/cronologia-handoffs/`
+(otra nomenclatura `handoff_FXDY_...`), `docs/prompt_handoff_expedientes_seguros.md` (suelto), y alguno en
+`scratchpad` (efímero, se pierde). `GOBERNANZA_FUENTES_VERDAD.md` y `CLAUDE.md` **no los mencionan**; la
+sección `## Handoffs` de `docs/INDICE.md` cataloga solo 2 de ~12 (incompleta y desactualizada). No hay
+ciclo de vida ni distinción handoff (andamio efímero) vs spec/plan (SSOT durable).
+
+**Regla propuesta (proporcionada, YAGNI):**
+- **Qué es:** documento **efímero** de traspaso de contexto para arrancar una tarea en otra sesión/agente.
+  **No es fuente de verdad**: su contenido durable se promueve a spec/plan/runbook/código.
+- **Ubicación única:** `docs/superpowers/handoffs/`. Lo que deba sobrevivir a la sesión va al **repo, nunca
+  a `scratchpad`** (scratchpad solo para andamios de usar-y-tirar intra-sesión).
+- **Nombre:** `handoff-YYYY-MM-DD-<tema-kebab>.md`.
+- **Estado en el frontmatter (hogar único):** `estado: activo | consumido | historico` + `creado`,
+  `origen`, `destino`, `consumido_por` (spec/plan/PR/runbook donde acabó su contenido durable).
+- **Ciclo de vida:** `activo` (creado, sin consumir) → `consumido` (la tarea arrancó y su contenido durable
+  ya vive en su SSOT; se apunta `consumido_por`) → `historico` (se conserva por trazabilidad). El `INDICE`
+  §Handoffs pasa a **vista derivada** (lista/enlaza), no hogar del estado. Un `activo` abandonado se borra
+  en un cierre; los `consumido/historico` se conservan con su puntero (como el ledger `## Cerrados`).
+
+**Acción de formalización (al aprobar):** (1) escribir la regla en `GOBERNANZA_FUENTES_VERDAD.md` +
+puntero en `CLAUDE.md`; (2) crear `docs/superpowers/handoffs/` y migrar los handoffs existentes con su
+`estado`; (3) convertir `INDICE.md §Handoffs` en vista derivada completa. Docs-only, rama+PR.
+
+**Disparador:** decisión de Nikolai; encaja de forma natural en la sesión de gobernanza/triaje de `PLAN.md`
+(el primer handoff que estrena la nomenclatura es `docs/superpowers/handoff-2026-07-19-triaje-plan.md`).
