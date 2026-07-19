@@ -847,10 +847,20 @@ body `application/x-www-form-urlencoded`, cabeceras `X-Requested-With: XMLHttpRe
 `X-Roundcube-Request: <request-token>` (CSRF de Roundcube). Respuesta: JSON de Roundcube
 (`{action, env, texts, exec, callbacks, unlock}`).
 
-**Auth.** Sesión web de Roundcube (cookies `roundcube_sessid`/`roundcube_sessauth` + el request-token).
-Host `.sudespacho.net` (legacy, el mismo dominio del PHPSESSID). **PENDIENTE (spike F3):** confirmar si
-la sesión legacy que monta `sync_sudespacho check-legacy` sirve para el plugin, o si Roundcube exige
-login web propio (decide el camino A-vs-C de F3).
+**Auth y acceso programático (spike en vivo, 2026-07-19).**
+- El webmail se autentica por **SSO desde el frontal**: el CRM abre
+  `roundcube…/init.php?randomvar=<nonce>&dataHash=<blob>` → `index.php` → `/?_task=&_token=<t>`.
+  El `dataHash` es un **blob cifrado (~620 chars) generado en el cliente** (JS del CRM), que Roundcube
+  descifra (`env.sudespacho_dataHashDecrypted`); **no viaja por ninguna respuesta REST**. Roundcube corre
+  en **iframe cross-origin** dentro del SPA `tnm.sudespacho.net` (la global `rcmail` vive en ese iframe).
+  Cookies de sesión propias `roundcube_sessid`/`roundcube_sessauth` + el request-token.
+- **Llamada programática confirmada:** desde el contexto del iframe (sesión viva), un `fetch` POST a la
+  acción del plugin con header `X-Roundcube-Request: rcmail.env.request_token` (+ las cookies de sesión,
+  automáticas) responde **200 + JSON**. Verificado en vivo con `get_relaciones` (read-only) el 2026-07-19.
+- **Automatización (decidido en F3):** la vía es **webview** — navegador embebido donde el CRM hace su
+  SSO y la app dispara el `fetch`. Reproducir la sesión **headless con `requests` queda DESCARTADO**
+  (exigiría regenerar el `dataHash` cifrado client-side + manejar credenciales IMAP; ver `DEAD_ENDS.md`).
+  Diseño completo: spec F3 (`docs/superpowers/specs/2026-07-19-f3-relate-crm-plugin-roundcube-design.md`).
 
 **Llave del correo = Message-ID RFC** (`<...@...>`), aceptado tal cual → hay **puente directo
 Gmail↔CRM** (corrige el "no hay puente Message-ID → id numérico" que asumía la ruta nest-mail).
@@ -1422,6 +1432,29 @@ sudespacho expone casi todo como "elementos" con un patrón uniforme. FeesDefend
      como aviso de la trampa. Detalle en §4d de la referencia canónica.)
 - **Formatos:** `duracion` en **segundos**; importes string con punto decimal; fechas `YYYY-MM-DD`
   (algunas datetime `YYYY-MM-DD HH:MM:SS`).
+
+### 14.5 Módulo de correo — SSO del webmail (Roundcube) + plugin de relate/adjuntar — **(compartible con El Contable)**
+
+Mecanismo agnóstico del CRM para **relacionar un correo con un elemento y subir sus adjuntos al gestor
+documental** — reutilizable por cualquier producto del ecosistema (FeesDefender: correos de
+procuradores → expediente; **El Contable: futuro intake de facturas de `contabilidad@`**, ver
+`MEJORAS_FUTURAS.md #73`). Confirmado en vivo 2026-07-19.
+
+- **Webmail = Roundcube** (`roundcube.sudespacho.net`), embebido en **iframe cross-origin** dentro del
+  SPA, montado como **cliente IMAP** sobre las cuentas de correo del despacho (Gmail).
+- **Auth = SSO por token en la URL:** el frontal abre `…/init.php?randomvar=<nonce>&dataHash=<blob>`; el
+  `dataHash` es un **blob cifrado generado client-side** (JS del CRM) que empaqueta datos/credenciales
+  IMAP de la cuenta; Roundcube lo descifra. **No hay endpoint REST para obtenerlo** → automatización por
+  **webview** (dejar que el CRM haga el SSO), **no headless**.
+- **Relate/adjuntar = plugin `plugin.sudespacho_asignaa_*`** por `fetch`/POST form-urlencoded con
+  `X-Roundcube-Request: rcmail.env.request_token`. Acciones: `get_relaciones` (lee), 
+  `set_registros_seleccionados` (relate correo↔elemento), `set_adjuntos_relacionar_crm` (sube adjuntos al
+  gestor documental de ese elemento), `get_mails_asignados` (verifica). La respuesta del relate
+  **devuelve** el id del correo en el CRM y los ids de sus adjuntos (que consume el adjuntar).
+- **Contrato completo + params + gotchas:** `§10.10`. Dead-end (headless): `DEAD_ENDS.md`.
+- **Ojo El Contable:** el alta de una **factura recibida** en contabilidad es un camino **distinto** del
+  relate (es `facturas_recibidas`, ver enums §14.4), no lo cubre este plugin. El plugin solo sirve para
+  la parte "correo↔expediente + adjunto al gestor documental" (p. ej. facturas de procurador al caso).
 
 ## 15. Actuaciones — crear y vincular a un expediente (confirmado 2026-07-17)
 
