@@ -53,16 +53,38 @@ Los pasos 3-4 de abajo **solo aplican al chat de Desktop / Claude Code**, no a C
        cerrar!), actualizar el bloque `expedientes-xl` en `claude_desktop_config.json`
        al wrapper.
 4. [ ] Validar en Cowork: `read_text`/`list_dir`/`search_content` sobre `G:` y `H:`.
-5. [ ] Re-empaquetar las skills afectadas y re-importarlas en Cowork.
-6. [ ] Migrar `organizar-sala-lectura` a los nombres del consolidado
-       (`write_file`→`write_text`; `read_media_file`→**YA NO** — los binarios no
-       vuelven a pasar por el modelo, se manejan server-side).
+5. [~] Re-empaquetar las skills afectadas (**✅ repo, 2026-07-19 fase 2**:
+       `organizar-sala-lectura` 1.8, `intake-expediente` 1.2, `checkout-caso`/`checkin-caso`
+       con frontmatter canónico + CHANGELOG; 4 `.skill` en `dist/skills/`) y
+       **re-importarlas en Cowork** (⏳ acción manual de Nikolai).
+6. [x] **✅ repo, 2026-07-19 fase 2** — `organizar-sala-lectura` migrada al consolidado:
+       `write_file`→`write_text`; `read_media_file` retirado (binarios server-side, no
+       vuelven al modelo). Tres modos de acceso por ubicación del caso: (1) Drive vía
+       `expedientes-xl`, (2) local-nativo (filesystem del entorno), (3) conector nube
+       prefiriendo `google-despacho` sobre el nativo E&V. Tools citadas como `servidor:tool`.
 7. [ ] **SOLO ENTONCES** retirar la entrada `expedientes` de
-       `claude_desktop_config.json`.
+       `claude_desktop_config.json` **y** del scope proyecto de Claude Code
+       (`claude mcp remove expedientes -s project`).
 8. [ ] Sesión de humo: intake de un fichero de prueba + `tree` de un caso + `grep`
        (`search_content`) — ver checklist de la sesión de humo abajo.
 
 **NUNCA** dejar la skill migrada con el server viejo activo (o viceversa).
+
+## Bundle Claude Code (coherencia del lado Code — 2026-07-19 fase 2)
+
+El lado Claude Code corría tools viejas. Estado de partida (verificado 2026-07-19):
+`plugin:feesdefender:expedientes-xl` = **7 tools viejas** (incl. `delete_path`);
+`expedientes-xl` standalone (scope proyecto) = **Failed** (arranca `server.py` directo con
+`python` pelado → los 2 bugs ya corregidos en el `.dxt`/`run_server.bat`); `expedientes`
+(Node FS) = activo. `dist/plugin` YA está reconstruido con las 19 tools + `.bat` corregido.
+
+- [ ] **B1.** Quitar el standalone del scope proyecto: `claude mcp remove expedientes-xl -s project`
+      (desde la RAÍZ del repo, no desde un worktree). No corta la sesión.
+- [ ] **B2.** Refrescar el plugin: `/plugin marketplace update despacho-tyukhay` + reinstalar
+      `feesdefender`.
+- [ ] **B3.** **Reiniciar Claude Code** (necesario para cargar las 19 tools; **corta la sesión
+      activa**). Verificar: `read_text`/`list_dir` sobre un fichero de `G:` responden y el
+      plugin expone 19 tools (ya sin `delete_path`).
 
 ## Sesión de humo — puntos a vigilar
 

@@ -1,6 +1,18 @@
 ---
 name: checkin-caso
 description: Checkin (merge) de un caso FeesDefender desde una carpeta local del PC al repositorio canónico del Drive del despacho (unidad EXPEDIENTES - TYUKHAY LEGAL), con rclone como motor, verificación por hash, respaldo automático de lo sobrescrito y cierre forense en _intake_log.jsonl. Úsala SIEMPRE que el usuario quiera sincronizar, mergear, subir o "devolver" al Drive una carpeta local de caso; dispara con "checkin del caso", "mergea esta carpeta al Drive", "sube el caso W-XXXXX al Drive", "sincroniza el expediente con el Drive", "quiero retirar la copia local", o cuando aporte una ruta local de caso (Desktop\BaXXX - ... - (W-XXXXX) - ...) junto a una carpeta de Drive. También cubre la retirada segura del local tras el merge (manifiesto + BKUP_ + recordatorio de borrado). NO hace el checkout (Drive→local) ni organiza el contenido del caso (organizar-sala-lectura) ni valora viabilidad.
+metadata:
+  rol: transversal
+  naturaleza: atomica
+  jurisdiction: ES
+  area: [civil, procesal]
+  version: "1.0"
+  author: "Nikolai Tyukhay"
+  organization: "Tyukhay Legal"
+  contact: "nikolai.tyukhay@tyukhay.legal"
+  status: vigente
+  requires: []
+license: "Proprietary — Tyukhay Legal (todos los derechos reservados)"
 ---
 
 # Checkin de caso — merge Desktop→Drive (FeesDefender)

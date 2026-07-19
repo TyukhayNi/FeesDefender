@@ -17,7 +17,7 @@ metadata:
   naturaleza: atomica
   jurisdiction: ES
   area: [civil, procesal]
-  version: "1.1"
+  version: "1.2"
   author: "Nikolai Tyukhay"
   organization: "Tyukhay Legal"
   contact: "nikolai.tyukhay@tyukhay.legal"
@@ -111,3 +111,8 @@ todo de una pasada **sin más preguntas**.
   escribe el conector. Si añades un evento nuevo, debe estar en `core.intake_log.INTAKE_EVENTS`
   (lo vigila `tests/test_intake_traza.py::test_paridad_eventos_subconjunto_de_core`).
 - **Sin PII en los paths** del evento más allá del nombre de fichero ya existente.
+- **`extract_archive` y `copy_dir` devuelven un dict, no una lista** (consolidado
+  `expedientes-xl`): `extract_archive` → `{"extraidos": [...], "omitidos": [...]}` (los
+  miembros que caen en zona Tier 0 / Tier 1-existente van en `omitidos`, sin abortar el
+  resto); `copy_dir` → `{"copiados": [...]}`. Cuenta y registra lo depositado desde
+  `extraidos`/`copiados`; no asumas una lista plana.

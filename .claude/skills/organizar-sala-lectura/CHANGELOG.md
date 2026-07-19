@@ -1,5 +1,23 @@
 # Changelog — organizar-sala-lectura
 
+## 1.8 — 2026-07-19
+- **Migración al MCP consolidado `expedientes-xl`** (server viejo `expedientes` /
+  `server-filesystem` Node jubilado). El acceso pasa de dos a **tres modos** por ubicación
+  del caso: (1) **Drive vía `expedientes-xl`** (`copy_path`/`copy_dir`/`hash_path`/`read_text`/
+  `write_text` server-side; copia binarios sin pasar bytes por el modelo → Cowork-en-PC es
+  constructor completo, no solo texto); (2) **local-nativo** (caso en ruta local del PC fuera
+  de `G:`/`H:`, p. ej. tras `checkout-caso`: filesystem del entorno — nativo en Claude Code,
+  montaje bash en Cowork); (3) **conector nube**, prefiriendo `google-despacho` (Drive
+  multicuenta, ve el Drive del despacho y copia server-side) sobre el conector nativo (que en
+  Cowork es cuenta E&V y no ve el Drive del despacho).
+- **`read_media_file` retirado:** los binarios ya no vuelven al modelo (no hay visión
+  directa). La clasificación de binarios opacos se apoya en nombre + metadata + espejo MD de
+  la sala de máquina; lo dudoso → `08. PENDIENTE DE CLASIFICAR`.
+- **Retirada la doctrina "binarios solo por motor local"**: el "único residuo" de volcado
+  local desaparece (los tres modos copian binarios server-side/nativo). Cierra `MEJORAS #40`.
+- Tools MCP citadas con nombre cualificado `servidor:tool` (checklist de autoría §8).
+- Clasificación, taxonomía, gate único, índices, catálogo y bundles: **sin cambios**.
+
 ## 1.7 — 2026-07-18
 - **Fix de compatibilidad Cowork:** `<fuente>` en la `description` (placeholder con ángulos)
   hacía que claude.ai rechazara la importación («SKILL.md description cannot contain XML

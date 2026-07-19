@@ -1272,6 +1272,10 @@ intake del zip W-01VG51 (5 PDFs, 11 MB) al expediente W-02VND1 desde Cowork: `ex
 (zip), `copy_path`/`copy_dir` (binarios de 5 MB), `hash_path` (sha256), `delete_path`,
 `append_text` y `write_file_base64` operan server-side sobre `G:\…\EXPEDIENTES - TYUKHAY LEGAL`.
 Cowork ya deposita binarios y, en principio, puede montar la sala completa sin Claude Code.
+**Cerrado del todo 2026-07-19 (fase 2):** la skill `organizar-sala-lectura` v1.8 migró al
+consolidado y ya usa `copy_path`/`copy_dir` server-side (antes seguía con el reparto viejo
+"solo texto") → Cowork-en-PC monta la sala completa (texto **y** binarios) sin Claude Code.
+El `CLAUDE.md` y `docs/DESPLIEGUE_MCP_DRIVE_DISCO.md` (bundle Code) quedan alineados.
 **Residuo abierto:** no hay extracción de texto/OCR de PDF server-side (datar escaneados sigue
 siendo del pipeline local) → ver #42.
 
