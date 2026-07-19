@@ -2721,3 +2721,22 @@ diseñado (F3 del intake de procuradores).
 
 **Disparador para promover:** decisión de Nikolai de construirlo, o cuando el volumen de facturas
 manuales moleste. Hoy: **solo anotado.**
+
+## 74. `expedientes-xl`: descubrimiento del oracle perezoso (badge `failed` cosmético en Claude Desktop)
+
+Anotado 2026-07-19 durante el despliegue del MCP Drive-disco. Con la extensión `.dxt` instalada, el
+panel **Ajustes → Desarrollador** de Claude Desktop marca `expedientes-xl` como **`failed`** aunque las
+tools **funcionan** (verificado en vivo: `list_dir` G:/H:, poda Tier 0; el panel **Conectores** lo marca
+✓). Causa: `main()` de `plugins/expedientes_xl/server.py` hace el **descubrimiento del oracle**
+(`oracle_module.descubrir_cuentas` sobre las BD DriveFS de G: **y** H:) **antes** de `build_server(...).run()`
+(~2-3 s). El **health-check** de Claude Desktop probablemente expira antes de esa respuesta inicial y marca
+`failed`; las llamadas reales a tools (posteriores) sí funcionan. Es **cosmético** (no bloquea), pero
+ensucia el panel y puede inducir reinicios innecesarios (parte del dolor de esta sesión).
+
+**Arreglo propuesto (si molesta):** hacer el descubrimiento del oracle **perezoso** — que `main()`
+arranque el server (`run()`) de inmediato y difiera `descubrir_cuentas` a un hilo de fondo o a la primera
+tool que necesite el oracle (las guardas de hidratación degradan con gracia si el oracle aún no está: la
+política ya es fail-closed/COLD ante desconocido). Así `initialize` responde al instante y el health-check
+pasa a verde. **No confirmado** que sea el health-check (no se leyó el timeout exacto del panel); verificar
+antes de construir. **Disparador:** que el `failed` estorbe de verdad, o al retomar los pasos 5-7 del
+despliegue.

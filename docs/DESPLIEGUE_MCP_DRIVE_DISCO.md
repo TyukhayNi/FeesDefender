@@ -14,6 +14,35 @@ fecha: 2026-07-18
 >
 > Referencia de superficie y límites conocidos: `plugins/expedientes_xl/README.md`.
 
+## ⚠️ CORRECCIÓN 2026-07-19 (aprendido al desplegar en vivo)
+
+**Este checklist partía de una premisa equivocada:** que editar `claude_desktop_config.json`
+(pasos 3-4) haría disponible `expedientes-xl` **en Cowork**. **NO es así.** Las entradas de
+`claude_desktop_config.json` (mcpServers) alimentan el **chat directo de Claude Desktop** y
+**Claude Code**, pero **NO llegan a la VM de Cowork**. **Cowork solo consume extensiones `.dxt`**
+(por eso tenía gmail/google-despacho —importados como `.dxt`— y no expedientes-xl).
+
+**Vía real a Cowork** = empaquetar un `.dxt` e importarlo en **Ajustes → Extensiones** (patrón de
+`gmail_mcp`/`google_despacho_mcp`). Hecho 2026-07-19: `plugins/expedientes_xl/dxt-build/`
+(`manifest.json` + `expedientes-xl.dxt` + README, PR #83). El manifest arranca
+`python -m expedientes_xl.server --rw G:\ --ro H:\` con **ruta absoluta a `python.exe`**
+(el `python` a secas cae en el **stub de la Microsoft Store** en el PATH de Claude Desktop) y
+`env.PYTHONPATH` → `plugins/`. Detalle: `plugins/expedientes_xl/dxt-build/README.md`.
+
+**Gotchas duros del proceso (dolor real de esta sesión):**
+- El `.bat` del wrapper corría `python server.py` (script suelto) → `ImportError` de imports relativos.
+  Fix: `python -m expedientes_xl.server` (contexto de paquete). PR #80.
+- `python` a secas = stub de WindowsApps en el PATH persistente que ve Claude Desktop (no el del
+  terminal). Fix: resolver un Python real, eludir WindowsApps. PR #82.
+- Editar `claude_desktop_config.json` con la app viva **no recarga** (Electron reengancha a procesos
+  de fondo) y el fichero se vacía/reescribe solo. Vía fiable: **`taskkill /F /IM claude.exe /T` + relanzar**.
+- Dos `expedientes-xl` a la vez (config.json + `.dxt`) → conflicto que parpadea `failed` y tira otro
+  server. Dejar **solo la `.dxt`**.
+- Badge `failed` en Desarrollador con las tools funcionando = **cosmético** (health-check vs arranque del
+  oracle). Ver `MEJORAS #74`.
+
+Los pasos 3-4 de abajo **solo aplican al chat de Desktop / Claude Code**, no a Cowork.
+
 ## Secuencia de despliegue (spec §8 — orden OBLIGATORIO)
 
 1. [ ] Mergear el PR de código; `python -m pytest -q --tb=no` verde en `main`.
