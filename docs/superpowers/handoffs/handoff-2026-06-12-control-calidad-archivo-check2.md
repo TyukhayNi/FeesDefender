@@ -12,7 +12,7 @@ migrado: "2026-07-19 (regla MEJORAS #77 / GOBERNANZA §5)"
 
 > **Para Claude Code.** Incorporar este bloque a `PLAN.md` dentro del backlog
 > `[SIGUIENTE-INTAKE-PROCURADORES-EMAIL]`. Diseño cerrado con Nikolai el
-> 2026-06-12. Extiende `docs/PLAN_INTAKE_PROCURADORES_EMAIL.md` (§4.7 log de
+> 2026-06-12. Extiende `docs/superpowers/plans/PLAN_INTAKE_PROCURADORES_EMAIL.md` (§4.7 log de
 > auditoría y §10 store de aprendizaje). Coherente con *El Auditor* (solo lectura,
 > reporta no conformidades a Nikolai, traza desde el día uno).
 

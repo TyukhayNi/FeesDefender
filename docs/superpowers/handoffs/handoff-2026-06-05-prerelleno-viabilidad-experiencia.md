@@ -148,4 +148,4 @@ Genera una pestaña con las preguntas no resueltas por documento, agrupadas por 
 - Las observaciones de cada hito son el lugar natural para el rastro `[doc: fichero] "cita" (confianza)`.
 - Encadena conceptualmente con `verificacion-anclada-fuente` (disciplina anti-alucinación) y deja el resultado listo para que la fase de entrevista lo complete.
 
-**Fuentes en el repo (Claude Code):** `data/_plantillas/informe_viabilidad.yaml`, `data/_plantillas/cuestionario_viabilidad.yaml`, `core/config.py` (TIPOS_CASO, CASO_SUBDIRS, INPUT_SUBDIRS, terminología). `docs/PLAN_PRERELLENO_LLM_VIABILIDAD.md` (re-encuadre 2026-05-30).
+**Fuentes en el repo (Claude Code):** `data/_plantillas/informe_viabilidad.yaml`, `data/_plantillas/cuestionario_viabilidad.yaml`, `core/config.py` (TIPOS_CASO, CASO_SUBDIRS, INPUT_SUBDIRS, terminología). `docs/superpowers/plans/PLAN_PRERELLENO_LLM_VIABILIDAD.md` (re-encuadre 2026-05-30).
