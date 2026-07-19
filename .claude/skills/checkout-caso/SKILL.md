@@ -1,6 +1,18 @@
 ---
 name: checkout-caso
 description: Checkout (préstamo) de un caso FeesDefender del Drive del despacho (unidad EXPEDIENTES - TYUKHAY LEGAL) a una carpeta local del PC, con rclone. Adquiere el lock en el _caso.md del Drive (write-then-verify con nonce), copia el caso a local excluyendo ficheros de protocolo y 90_Notas personales, y genera el baseline MANIFEST_CHECKOUT.json que el checkin usará para el merge de 3 vías. Úsala cuando el usuario quiera "sacar", "prestarse" o "bajar a local" un caso; dispara con "checkout del caso", "sácame el caso W-XXXXX a local", "préstame el expediente", "quiero trabajar en local el caso". Es la operación INVERSA de checkin-caso. NO hace el merge de vuelta (checkin-caso), ni organiza el contenido (organizar-sala-lectura), ni valora viabilidad.
+metadata:
+  rol: transversal
+  naturaleza: atomica
+  jurisdiction: ES
+  area: [civil, procesal]
+  version: "1.0"
+  author: "Nikolai Tyukhay"
+  organization: "Tyukhay Legal"
+  contact: "nikolai.tyukhay@tyukhay.legal"
+  status: vigente
+  requires: []
+license: "Proprietary — Tyukhay Legal (todos los derechos reservados)"
 ---
 
 # Checkout de caso — préstamo Drive→Desktop (FeesDefender)

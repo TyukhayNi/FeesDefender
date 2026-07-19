@@ -20,7 +20,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 2 | [Infra C — art. 156 LEC](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado (quick win) | bajo |
 | 3 | [Infra B — expediente scratch](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado | medio |
 | 4 | [MCP sudespacho F1](#siguiente-mcp-sudespacho-mcp-sudespacho-crm-del-despacho--f1-lectura-spec-hecho-plan-pendiente) | spec lista | gates de despliegue | alto |
-| 5 | [Drive-disco: pasos 5-7 + Claude Code](#siguiente-mcp-drive-disco-pasos-5-7-diferidos) | diferido | otra sesión | medio |
+| 5 | [Drive-disco: pasos 5-7 + Claude Code](#siguiente-mcp-drive-disco-pasos-5-7-diferidos) | en curso | repo ✅ (fase 2); acciones de máquina | medio |
 | 6 | [abrir-caso F3-judicial](#abrir-caso--f1--f2a--f3-ac-mergeadas-f2b-aparcada-f3-judicial-pendiente) | diferida | caso judicial real | alto |
 | 7 | [Google MCP F4 (Calendar)](#siguiente-google-mcp-f1-lectura--mergeada--f2-escriturapermisosnavegación--mergeada--f3f4-pendientes) | diferida | disparador | medio |
 
@@ -124,20 +124,28 @@ puro + orquestadores finos. Spec: `docs/superpowers/specs/2026-07-09-abrir-caso-
   no-relación → 404, autos, procedimiento, partes M2M). Frente propio con disparador de caso judicial real.
 - Relacionado: `docs/MEJORAS_FUTURAS.md` **#50** (sección "Relación con el ecosistema" en todas las skills).
 
-## [SIGUIENTE-MCP-DRIVE-DISCO-PASOS-5-7] Drive-disco: pasos 5-7 diferidos + bundle Claude Code
+## [SIGUIENTE-MCP-DRIVE-DISCO-PASOS-5-7] Drive-disco: pasos 5-7 + bundle Claude Code
 
-*V1 construido (PR #52) y **DESPLEGADO 2026-07-19** — funciona en vivo en Cowork/Desktop vía
-extensión `.dxt` (PR #83); ver `## ✅ Cerrados`. Quedan diferidos a otra sesión los pasos 5-7
-del checklist `docs/DESPLIEGUE_MCP_DRIVE_DISCO.md` y la coherencia de Claude Code.*
+*V1 construido (PR #52) y DESPLEGADO 2026-07-19 (fase 1) en Cowork/Desktop vía `.dxt` (PR #83).
+**Fase 2 (2026-07-19):** lado-repo cerrado (migración de skills + docs). Quedan las acciones de
+máquina (re-import en Cowork, bundle Code con reinicio, paso 7). Checklist operativo:
+`docs/DESPLIEGUE_MCP_DRIVE_DISCO.md`.*
 
-- [ ] **Pasos 5-6**: re-empaquetar las skills afectadas + migrar `organizar-sala-lectura` a los
-  nombres del consolidado (`write_file`→`write_text`; `read_media_file`→ya no) + re-importar en Cowork.
+- [x] **Paso 6 (migración de skill) — ✅ repo fase 2.** `organizar-sala-lectura` v1.8 migrada al
+  consolidado: `write_file`→`write_text`, `read_media_file` retirado (binarios server-side); tres
+  modos por ubicación del caso (Drive `expedientes-xl` / local-nativo / conector nube prefiriendo
+  `google-despacho`). Además `intake-expediente` v1.2 (gotcha dict `extract_archive`/`copy_dir`) y
+  `checkout`/`checkin` con frontmatter canónico + CHANGELOG. `CLAUDE.md` y `MEJORAS #40` alineados.
+  Tests de skills 66/66; `validate_skills`/`check_skills` limpios para las 4.
+- [~] **Paso 5 (re-empaquetar + re-import Cowork).** ✅ re-empaquetadas (4 `.skill` en
+  `dist/skills/`); ⏳ **re-import en Cowork** = acción manual de Nikolai.
+- [~] **Bundle Claude Code.** Diagnóstico fase 2: `plugin:feesdefender:expedientes-xl` sirve **7
+  tools viejas** (caché de instalación); standalone `expedientes-xl` (scope proyecto) = **Failed**;
+  `dist/plugin` ya reconstruido con las 19 tools + `.bat` corregido. ⏳ ejecutar: `claude mcp remove
+  expedientes-xl -s project` → `/plugin marketplace update despacho-tyukhay` + reinstalar →
+  **reiniciar Code** (corta la sesión) → verificar 19 tools. Detalle: checklist § Bundle Claude Code.
 - [ ] **Paso 7 (irreversible)**: jubilar el server viejo `expedientes` (Node FS) de
-  `claude_desktop_config.json` (+ del scope proyecto de Claude Code) — solo tras 5-6.
-- [ ] **Bundle Claude Code**: quitar el standalone `expedientes-xl` del scope proyecto en
-  `~/.claude.json`; `/plugin` marketplace update `despacho-tyukhay` + reinstalar el plugin
-  `feesdefender` (cacheado 2026-06-22 con las tools viejas, ya reconstruido `dist/plugin`);
-  reiniciar Code → verificar las 19 tools.
+  `claude_desktop_config.json` (+ `claude mcp remove expedientes -s project`) — solo tras 5-6 verdes.
 - [ ] **`MEJORAS #74`** (oracle perezoso): el badge `failed` del panel Desarrollador es cosmético
   (el health-check de la app expira antes de que el oracle DriveFS termine ~2-3s); las tools sirven.
 - V2/CUT motivados en el spec §5 y en `docs/MEJORAS_FUTURAS.md` #66. Promoción solo por disparador.

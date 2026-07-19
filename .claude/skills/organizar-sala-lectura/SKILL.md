@@ -21,7 +21,7 @@ metadata:
   naturaleza: atomica
   jurisdiction: ES
   area: [civil, procesal]
-  version: "1.7"
+  version: "1.8"
   author: "Nikolai Tyukhay"
   organization: "Tyukhay Legal"
   contact: "nikolai.tyukhay@tyukhay.legal"
@@ -37,11 +37,11 @@ fuentes de `00_Input`) en una **sala de lectura ÚNICA y plana**: documentos con
 nombre canónico `AAAA-MM-DD_descripcion`, clasificados por las categorías canónicas
 de E&V **en `INDICE.md`** (no en carpetas), más índices de navegación y un catálogo
 máquina. Es el **único constructor** de la sala (el camino de sala del motor local
-quedó deprecado). Corre en claude.ai/Cowork o en Claude Code local, por **dos modos de
-acceso** (ver "Modos de acceso"): **local** (MCP de filesystem sobre el Drive montado en
-disco — rápido) o **conector** de Drive (nube — fallback), sin instalar nada. **No
-destructivo: copia, nunca mueve ni borra el crudo.** Presenta **una propuesta para tu
-visto bueno** antes de copiar nada.
+quedó deprecado). Corre en claude.ai/Cowork o en Claude Code local, por **tres modos de
+acceso** (ver "Modos de acceso"): **Drive vía `expedientes-xl`** (montado en disco — rápido),
+**local-nativo** (caso en ruta local del PC) o **conector** de Drive (nube — fallback), sin
+instalar nada. **No destructivo: copia, nunca mueve ni borra el crudo.** Presenta **una
+propuesta para tu visto bueno** antes de copiar nada.
 
 ## Cuándo se activa
 
@@ -72,30 +72,37 @@ por `sha256` (la 2ª pasada solo toca lo nuevo).
 
 ## Modos de acceso
 
-La skill accede a los ficheros por uno de dos modos, decidido en el **Paso 0**. **Prefiere
-SIEMPRE el local si está disponible** (≈velocidad de disco; el conector es per-fichero y
-puede tardar decenas de minutos en un expediente grande).
+La skill accede a los ficheros por uno de **tres** modos, decidido en el **Paso 0** según
+**dónde vive el caso**. Todo lo demás (clasificación, taxonomía, gate, índices, catálogo,
+bundles) es **idéntico** en los tres. Orden de preferencia: **Modo 1 > Modo 2 > Modo 3**
+(los locales evitan la latencia per-fichero del conector nube, que puede tardar decenas de
+minutos en un expediente grande).
 
-- **Modo local (preferente):** MCP de filesystem `expedientes` sobre el Drive del despacho
-  montado en disco, acotado a `G:/Unidades compartidas/EXPEDIENTES - TYUKHAY LEGAL/`. Los
-  casos cuelgan de `CASOS/<ciudad>/<caso>/` (subdivididos por ciudad: Barcelona, Madrid…).
-  Disponible cuando ese MCP está conectado (Claude Code local, o Cowork en un PC con el
-  montaje y el server en `claude_desktop_config.json`). Lee bytes → **sha256 real**. Se le
-  indica el caso por **nombre de carpeta** (lo resuelve buscando bajo `CASOS/`) **o** por
-  **ruta `G:/…` completa** pegada. **Copia — límite por entorno (ver Gotchas):** en Claude
-  Code local copia binarios con el filesystem real (`shutil`); en Cowork el MCP `expedientes`
-  (`server-filesystem`) **solo escribe TEXTO** (índices, `.md`/`.txt`/`.yaml`) — `write_file`
-  no es binario y no hay `copy_file`, `move_file` es destructivo. Desde Cowork, por tanto,
-  **la copia de binarios (PDF, fotos, vídeos, `.xlsx`) la hace el motor local**; Cowork solo
-  amplía la sala en texto.
-- **Modo conector (fallback):** conector de Drive (nube). Único camino en Cowork puro-nube
-  (móvil/navegador) o en PC sin el montaje. Trabaja con `folderId`/URL; el conector da
-  `md5` (no sha256 — ver Gotchas) y copia server-side. **Aviso:** el `copy_file` server-side
-  solo escribe binarios si el conector apunta a la **Drive del despacho**; el conector de E&V
-  (`@engelvoelkers.com`) NO la ve y no puede escribir en la sala (ver Gotchas).
-
-Todo lo demás (clasificación, taxonomía, gate, índices, catálogo, bundles) es **idéntico**
-en ambos modos.
+- **Modo 1 — Drive vía `expedientes-xl` (preferente).** El caso está en el Drive montado en
+  disco (`G:/Unidades compartidas/EXPEDIENTES - TYUKHAY LEGAL/CASOS/<ciudad>/<caso>/`,
+  subdividido por ciudad: Barcelona, Madrid…). Se accede por el MCP consolidado
+  `expedientes-xl` (sandbox `G:` lectura+escritura / `H:` solo-lectura), disponible tanto en
+  Claude Code como en Cowork-en-PC (vía la extensión `.dxt`). Lee bytes →
+  `expedientes-xl:hash_path` da **sha256 real** server-side. **Copia binarios server-side**
+  (`expedientes-xl:copy_path` un fichero / `expedientes-xl:copy_dir` un bundle con su `media/`):
+  los bytes NO pasan por el modelo. Se le indica el caso por **nombre de carpeta** (lo resuelve
+  bajo `CASOS/`) **o** por **ruta `G:/…` completa** pegada.
+- **Modo 2 — Local-nativo.** El caso está en una **ruta local del PC fuera de `G:`/`H:`**
+  (p. ej. `Desktop/…` tras un `checkout-caso`, o cualquier carpeta suelta que aporte el
+  usuario). `expedientes-xl` **NO llega ahí** (su sandbox es `G:`/`H:`): se usa el filesystem
+  que sí alcanza la ruta — en **Claude Code**, las tools nativas (`Read`/`Write`/`Glob`/`Bash`;
+  `shutil`/`cp` para binarios); en **Cowork**, el **montaje bash** de la VM (`<mount>/Desktop/…`,
+  el mismo que usan `checkout-caso`/`checkin-caso`). sha256 de los bytes leídos localmente;
+  copia binarios con `cp`/`shutil`. La sala organizada en local se devuelve al Drive con
+  `checkin-caso`.
+- **Modo 3 — Conector nube (fallback puro-nube).** No hay filesystem local (Cowork
+  móvil/navegador, o PC sin montaje). **Prefiere el conector `google-despacho` (Drive
+  multicuenta EV+TL) si está disponible**: ve el Drive del despacho (cuenta TL), escribe
+  (scope `drive`) y **copia binarios server-side** (`google-despacho:copy_file` dentro del
+  Drive; los bytes no pasan por el modelo). El conector **nativo** de Drive queda como
+  **último recurso**: en Cowork es la cuenta **E&V** (`@engelvoelkers.com`), que **NO ve**
+  «EXPEDIENTES - TYUKHAY LEGAL» y por tanto no puede escribir la sala. Ambos dan `md5`
+  (no sha256): ver Gotchas.
 
 ## Por qué fuera de 00_Input
 
@@ -128,32 +135,45 @@ La skill **no inserta preguntas de aclaración** ni pide permiso fichero a fiche
 Tiene **un solo gate humano**: la propuesta del Paso 2.5. Tras tu OK, ejecuta todo de
 una pasada **sin más preguntas**. Por defecto asume autorización para crear y copiar
 en `01_Procesado/Sala lectura/` (el crudo de `00_Input` no se toca ni se borra;
-siempre **copia**). En **modo conector**, el diálogo de permiso por-llamada se neutraliza
-en el **Paso 0** ("Permitir siempre"), no en la skill; en **modo local** no hay tal
-diálogo.
+siempre **copia**). En **Modo 3 (conector)**, el diálogo de permiso por-llamada se neutraliza
+en el **Paso 0** ("Permitir siempre"), no en la skill; en **Modos 1 y 2 (filesystem)** no hay
+tal diálogo.
 
 ## Procedimiento
 
-0. **Montaje (bloqueante). Elige modo (ver "Modos de acceso"):**
-   - **Intenta primero el modo local:** comprueba si el MCP `expedientes` está disponible
-     (ToolSearch por sus tools de filesystem). Si lo está, **úsalo**. Resuelve el
-     expediente desde lo que dé el usuario: **ruta `G:/…` completa** pegada → úsala; **solo
-     el nombre del caso** → búscalo bajo `G:/Unidades compartidas/EXPEDIENTES - TYUKHAY
-     LEGAL/CASOS/` (subdividido por ciudad: `CASOS/<ciudad>/<caso>/` — lista las ciudades y
-     casa el nombre; no asumas profundidad fija). Baja a `00_Input/`. En local **no hay
-     diálogo de permiso del conector**.
-   - **Si el MCP local NO está:** cae al **modo conector**. Carga el conector de Drive
-     (ToolSearch). Acepta una URL de carpeta pegada: resuelve `folderId` y DETECTA nivel —
-     raíz del expediente → baja a `00_Input/`; subcarpeta de `00_Input` → úsala. Pide
-     activar **"Permitir siempre"** en el conector (CERO diálogos durante la ejecución).
-   - Disparadores: "organiza esta carpeta <nombre|ruta G:|url>".
+0. **Montaje (bloqueante). Determina DÓNDE vive el caso y elige modo (ver "Modos de acceso"):**
+   - **¿El usuario dio una ruta local del PC** (`Desktop/…`, `C:/Users/…`, cualquier cosa
+     fuera de `G:`/`H:`; típico tras un `checkout-caso`)? → **Modo 2 (local-nativo).** Usa el
+     filesystem del entorno (Claude Code: tools nativas `Read`/`Write`/`Glob`/`Bash`; Cowork:
+     montaje bash). Baja a `00_Input/`.
+   - **¿El caso está en el Drive** (ruta `G:/…` completa, o solo el nombre del caso)? Prueba
+     los modos en este orden y usa el **primero disponible** (ToolSearch por sus tools):
+     1. **`expedientes-xl`** → **Modo 1.** Resuelve el caso: **ruta `G:/…`** pegada → úsala;
+        **solo el nombre** → búscalo bajo `G:/Unidades compartidas/EXPEDIENTES - TYUKHAY
+        LEGAL/CASOS/<ciudad>/<caso>/` (lista las ciudades y casa el nombre; no asumas
+        profundidad fija). Sin diálogo de permiso.
+     2. **`google-despacho`** → **Modo 3 (preferente).** Localiza la carpeta del caso en la
+        unidad `EXPEDIENTES - TYUKHAY LEGAL` (cuenta TL) por nombre / `W-XXXXX` / URL.
+     3. **conector nativo** de Drive → **Modo 3 (último recurso).** URL de carpeta pegada:
+        resuelve `folderId` y DETECTA nivel (raíz → baja a `00_Input/`; subcarpeta de
+        `00_Input/` → úsala). En Cowork avisa: la cuenta E&V no ve el Drive del despacho.
+   - En cualquier Modo 3, pide activar **"Permitir siempre"** en el conector (CERO diálogos
+     durante la ejecución). Baja a `00_Input/`.
+   - Disparadores: "organiza esta carpeta <nombre|ruta G:|ruta local|url>".
 1. **Lista** **TODO `00_Input/`**: lotes `<AAAA-MM-DD>_<fuente>_<NN>/` + cajones espejo
    (`01_Drive EV`, `05_CRM`) + cajones legacy de casos no migrados (`02_Whatsapp`,
    `03_Email`, `04_Manual`, `06_Entrevistas`), **excluyendo `90_Notas personales`**. Para
-   cada fichero, calcula **sha256** de los bytes (modo local: lee los bytes; modo conector:
-   ver Gotchas) y **salta** (sin leer ni copiar) lo que ya conste en `_MANIFIESTO.md` (ver
-   "Re-aplicación").
-2. **Clasifica cada fichero NUEVO** leyendo su contenido:
+   cada fichero, calcula **sha256** de los bytes (**Modo 1**: `expedientes-xl:hash_path`,
+   server-side; **Modo 2**: hash de los bytes locales; **Modo 3**: ver Gotchas) y **salta**
+   (sin leer ni copiar) lo que ya conste en `_MANIFIESTO.md` (ver "Re-aplicación").
+2. **Clasifica cada fichero NUEVO** leyendo su contenido. **Cómo leer según tipo:** los de
+   **texto** (`.txt`/`.md`/`.eml`/`_chat.txt`/`.rtf`/`.csv`) se leen directo (**Modo 1**
+   `expedientes-xl:read_text`; **Modo 2** `Read`; **Modo 3** `google-despacho:read_file_content`).
+   Los **binarios opacos** (PDF escaneado, imágenes, `.xlsx`, vídeo) **NO vuelven al modelo**
+   (no hay lectura de su contenido visual): clasifícalos por **nombre + metadata + fecha** y,
+   si existe, por el **espejo MD** de `01_Procesado/02_Sala de máquina/03_MD/`; si hay muchos
+   escaneados sin MD, sugiere correr `organizar-sala-maquina` antes. Lo que no puedas
+   determinar con seguridad → `08. PENDIENTE DE CLASIFICAR`.
    - **Categoría** — una de las 8 de `references/taxonomia_ev.md`. La **identidad/PBC se
      enruta POR PARTE**: vendedor → `01. ACTIVACIÓN` (con los Anexos 1 y 2 del vendedor a
      `06. PBC`); comprador → `03. OFERTAS`. Lo ambiguo o ilegible →
@@ -181,10 +201,13 @@ diálogo.
 4. **(tras OK) Ejecuta de una pasada (PLANO):** **copia** cada fichero a
    `01_Procesado/Sala lectura/` (raíz) con **nombre canónico**
    `AAAA-MM-DD_descripcion.ext`; los documentos compuestos a su **subcarpeta fechada**
-   `AAAA-MM-DD_descripcion/`. Copia según el modo: **local** con las tools de escritura del
-   MCP `expedientes`; **conector** con la copia server-side de Drive. **Guarda de colisión:**
-   si el nombre destino ya se usó en la corrida, añade sufijo `_2`/`_3`. Sin más preguntas.
-5. **Escribe los índices** en `01_Procesado/Sala lectura/`:
+   `AAAA-MM-DD_descripcion/`. Copia según el modo: **Modo 1** con `expedientes-xl:copy_path`
+   (fichero) / `expedientes-xl:copy_dir` (bundle con su `media/`); **Modo 2** con `cp`/`shutil`;
+   **Modo 3** con `google-despacho:copy_file` (o el conector nativo). Los tres copian binarios
+   **sin pasarlos por el modelo**. **Guarda de colisión:** si el nombre destino ya se usó en
+   la corrida, añade sufijo `_2`/`_3`. Sin más preguntas.
+5. **Escribe los índices** en `01_Procesado/Sala lectura/` (con la tool de texto del modo:
+   `expedientes-xl:write_text` / `Write` / `google-despacho:create_file`):
    - `_MANIFIESTO.md` — tabla por documento, una fila por fichero, columnas:
      `sha256 | ruta_original | nombre_canonico | tipo | fecha | parte | parent_id`. El
      `sha256` se calcula de los bytes (el `md5` de Drive NO sirve: la traza del caso
@@ -232,9 +255,9 @@ c. **Panel "Requiere tu visto bueno":** SOLO decisiones a revisar — reclasific
    `08. PENDIENTE` con motivo, doc(s) destacado(s). 1 línea/icono.
 d. **Listado por fecha DESCENDENTE:** una línea por documento
    `fecha · nombre-canónico · [categoría]` (la categoría es etiqueta, no carpeta).
-   **Cada fila identifica el ORIGINAL** para revisar antes de aprobar: modo conector →
-   enlace `viewUrl` de `00_Input/…`; modo local → **ruta relativa** del original bajo el
-   caso (no hay `viewUrl`).
+   **Cada fila identifica el ORIGINAL** para revisar antes de aprobar: **Modo 3 (conector)** →
+   enlace `viewUrl` de `00_Input/…`; **Modos 1 y 2 (filesystem)** → **ruta relativa** del
+   original bajo el caso (no hay `viewUrl`).
 e. **Botones:** «Aprobar y ejecutar» / «Quiero ajustar algo».
 
 Regla de enlaces: en la **propuesta** se apunta al **original** (enlace o ruta según modo);
@@ -262,20 +285,26 @@ de preparar la demanda). En cada re-corrida:
 - **Identidad/PBC por parte:** no mandes la identidad a `06. PBC` por defecto;
   vendedor → `01. ACTIVACIÓN`, comprador → `03. OFERTAS`. `06. PBC` sobrevive **solo**
   para los Anexos 1 y 2 del vendedor. La parte se decide **leyendo** el documento.
-- **sha256, no md5:** el `_MANIFIESTO.md` guarda el sha256 de los bytes. En **modo local**
-  se leen los bytes directamente → sha256 real. En **modo conector**, el conector da `md5`
-  (que NO casa con la traza del caso); calcula sha256 descargando los bytes, no uses el md5.
+- **sha256, no md5:** el `_MANIFIESTO.md` guarda el sha256 de los bytes. En **Modos 1 y 2
+  (filesystem)** se leen los bytes → sha256 real (`expedientes-xl:hash_path` server-side, o
+  hash local). En **Modo 3 (conector)**, la API da `md5` (que NO casa con la traza del caso):
+  calcula sha256 descargando los bytes, no uses el md5.
 - **Sin PII en nombres:** revisa la `descripcion` antes de copiar.
 - **Estructura plana:** la categoría vive en `INDICE.md`, **no** en carpetas. La sala es
   un único directorio; solo los documentos compuestos abren subcarpeta fechada.
 - **Carpeta enorme:** avisa y procesa por lotes; deja constancia de lo cubierto.
-- **Copia de binarios desde Cowork = NO (usa el motor local):** el MCP local `expedientes`
-  (`@modelcontextprotocol/server-filesystem`) **no copia binarios** — `write_file` es solo
-  texto (UTF-8), no hay `copy_file` y `move_file` es destructivo; volcar `read_media_file`
-  (base64) con `write_file` corrompe. El conector de Drive en la nube de Cowork es la cuenta
-  **E&V** (`@engelvoelkers.com`), que NO ve la Drive del despacho «EXPEDIENTES - TYUKHAY
-  LEGAL», así que su `copy_file` tampoco escribe en la sala. **Conclusión:** desde Cowork la
-  sala solo crece en TEXTO (índices, `.md`/`.txt`/`.rtf`, transcripciones); los **binarios**
-  (PDF, fotos, vídeos, `.xlsx`) los copia el **motor local** (Claude Code/Python sobre `G:`).
-  Para volver Cowork constructor completo: dar copia binaria al MCP `expedientes` (backlog en
-  `docs/MEJORAS_FUTURAS.md`). Confirmado en BaRS1/Tibidabo, 2026-06-22.
+- **Los binarios se copian server-side (ya no hay "residuo local"):** el consolidado
+  `expedientes-xl` copia binarios en el Drive con `expedientes-xl:copy_path`/`copy_dir`
+  (server-side, sin pasar bytes por el modelo), y `google-despacho:copy_file` hace lo mismo
+  vía API. Así **Cowork-en-PC (Modo 1) es constructor completo** (texto **y** binarios), no
+  solo texto. El viejo límite del `server-filesystem` Node (solo texto, sin `copy_file`) ya
+  no aplica: ese server queda jubilado.
+- **`expedientes-xl` NO ve el disco local (fuera de `G:`/`H:`):** si el caso está en
+  `Desktop/…` u otra ruta local (Modo 2), usa el filesystem del entorno (`cp`/`shutil` en
+  Claude Code; montaje bash en Cowork), no `expedientes-xl`.
+- **El conector nativo de Cowork es la cuenta E&V:** no ve «EXPEDIENTES - TYUKHAY LEGAL» →
+  no puede escribir la sala. En Modo 3 prefiere `google-despacho` (cuenta TL); el nativo es
+  último recurso.
+- **Stubs `.gdoc`/`.gsheet` (Docs nativos)** son ilegibles por filesystem (`expedientes-xl`
+  los omite/bloquea): para su contenido, exporta con `google-despacho`
+  (`export_to_drive`/`read_file_content`).

@@ -1,5 +1,11 @@
 # Changelog — intake-expediente
 
+## 1.2 — 2026-07-19
+- **Aviso del contrato dict del consolidado `expedientes-xl`:** `extract_archive` devuelve
+  `{"extraidos": [...], "omitidos": [...]}` y `copy_dir` `{"copiados": [...]}` (no listas
+  planas); nuevo gotcha para contar/registrar lo depositado desde la clave correcta. Sin
+  cambio de flujo.
+
 ## 1.1 — 2026-06-22
 - **Gate único de clasificación (Paso 2):** antes de mover nada, propone por chat la
   clasificación de cada fichero (fuente `00_Input/<sub>` + nombre canónico + evento, con
