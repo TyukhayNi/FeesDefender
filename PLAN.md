@@ -135,17 +135,21 @@ puro + orquestadores finos. Spec: `docs/superpowers/specs/2026-07-09-abrir-caso-
 máquina (re-import en Cowork, bundle Code con reinicio, paso 7). Checklist operativo:
 `docs/DESPLIEGUE_MCP_DRIVE_DISCO.md`.*
 
-**➡️ PUNTO DE RETOME (fin de fase 2, 2026-07-19).** El lado-repo está en `main` (skills migradas) y la
-raíz ya está en `main` con los `.skill` regenerados (se cazó que la raíz estaba en `#84` sin `#85` y
-producía `.skill` viejos → corregido con `git pull`). **Pendiente, en este orden:**
-1. **Import en Cowork** de los 4 `.skill` (trivial) + **verificación funcional** de `organizar-sala-lectura`
-   sobre un caso real (Modo 1 `expedientes-xl`, sin nombrar el server viejo). La verificación se hace **la
-   próxima vez que se organice un caso de verdad** (no gastar una corrida solo para probar).
-2. **Bundle Code (B1-B3):** `claude mcp remove expedientes-xl -s project` (desde la raíz) →
-   `/plugin marketplace update despacho-tyukhay` + reinstalar → **reiniciar Code** (corta la sesión) →
-   verificar 19 tools. Detalle en el checklist §Bundle Claude Code.
-3. **Paso 7 (irreversible):** jubilar `expedientes` Node — `claude_desktop_config.json` (app cerrada,
-   `taskkill /F /IM claude.exe /T`) + `claude mcp remove expedientes -s project`. **Solo tras 1-2 verdes.**
+**➡️ PUNTO DE RETOME (despliegue pasos 5-7, 2026-07-19).** Bundle Code **VERIFICADO EN VIVO** y paso 7
+**Parte B (Code) HECHA**. **Queda solo la Parte A del paso 7 (acción manual de Nikolai):**
+1. **Bundle Code (B1-B3) ✅ HECHO+VERIFICADO.** `claude mcp list` (raíz) = `plugin:feesdefender:expedientes-xl`
+   Connected, **19 tools sin `delete_path`**; `list_dir`/`get_metadata`/`read_text` sobre `G:` OK; poda Tier 0
+   OK. Corrección de scope: el standalone y el server viejo estaban en **`-s local`**, no `project`.
+2. **Paso 5 gate — decidido por Nikolai:** «jubilar ya el server viejo» (no esperar a caso real). La
+   verificación funcional plena de `organizar-sala-lectura` Modo 1 se hará el próximo caso real.
+3. **Paso 7 · Parte B (Code) ✅ HECHA+VERIFICADA:** `claude mcp remove "expedientes" -s local` (desde la
+   raíz); `claude mcp list` confirma `expedientes` fuera, queda `expedientes-xl` (Code no se quedó sin FS).
+4. **Paso 7 · Parte A (Desktop/Cowork) ⏳ PENDIENTE = Nikolai corre `Desktop\jubilar_expedientes_node.ps1`**
+   desde terminal EXTERNA a Claude → relanza Desktop. **Gotcha:** las sesiones de Code son procesos hijos de
+   la app Desktop (mismo image name) → `taskkill /F /IM claude.exe /T` mata también Code → no se puede editar
+   `claude_desktop_config.json` desde dentro de Code. El script hace backup + force-kill + quita SOLO
+   `expedientes` (conserva `email-export`). Rollback: `.bak-*` o re-añadir la entrada. Al confirmar (relaunch),
+   poner el ✅ del paso 7 completo aquí.
 
 - [x] **Paso 6 (migración de skill) — ✅ repo fase 2.** `organizar-sala-lectura` v1.8 migrada al
   consolidado: `write_file`→`write_text`, `read_media_file` retirado (binarios server-side); tres
@@ -155,13 +159,14 @@ producía `.skill` viejos → corregido con `git pull`). **Pendiente, en este or
   Tests de skills 66/66; `validate_skills`/`check_skills` limpios para las 4.
 - [~] **Paso 5 (re-empaquetar + re-import Cowork).** ✅ re-empaquetadas (4 `.skill` en
   `dist/skills/`); ⏳ **re-import en Cowork** = acción manual de Nikolai.
-- [~] **Bundle Claude Code.** Diagnóstico fase 2: `plugin:feesdefender:expedientes-xl` sirve **7
-  tools viejas** (caché de instalación); standalone `expedientes-xl` (scope proyecto) = **Failed**;
-  `dist/plugin` ya reconstruido con las 19 tools + `.bat` corregido. ⏳ ejecutar: `claude mcp remove
-  expedientes-xl -s project` → `/plugin marketplace update despacho-tyukhay` + reinstalar →
-  **reiniciar Code** (corta la sesión) → verificar 19 tools. Detalle: checklist § Bundle Claude Code.
-- [ ] **Paso 7 (irreversible)**: jubilar el server viejo `expedientes` (Node FS) de
-  `claude_desktop_config.json` (+ `claude mcp remove expedientes -s project`) — solo tras 5-6 verdes.
+- [x] **Bundle Claude Code — ✅ HECHO+VERIFICADO 2026-07-19.** B1 (retirar standalone, scope real `local`)
+  + B2 (`plugin marketplace update despacho-tyukhay` + `plugin update feesdefender@despacho-tyukhay`
+  v0.1.0→0.3.0) + B3 (reiniciar Code). `claude mcp list` = `plugin:feesdefender:expedientes-xl` Connected,
+  **19 tools sin `delete_path`**; `list_dir`/`get_metadata`/`read_text` de `G:` OK.
+- [~] **Paso 7 (jubilar `expedientes` Node) — Parte B (Code) ✅ HECHA; Parte A (Desktop) ⏳ pendiente.**
+  Parte B: `claude mcp remove "expedientes" -s local` (scope real **`local`**, no `project`; desde la raíz);
+  verificado fuera de Code. Parte A: Nikolai corre `Desktop\jubilar_expedientes_node.ps1` (Code es hijo de la
+  app Desktop → `taskkill /F /IM claude.exe /T` lo mata; script externo con backup) + relanza Desktop.
 - [ ] **`MEJORAS #74`** (oracle perezoso): el badge `failed` del panel Desarrollador es cosmético
   (el health-check de la app expira antes de que el oracle DriveFS termine ~2-3s); las tools sirven.
 - V2/CUT motivados en el spec §5 y en `docs/MEJORAS_FUTURAS.md` #66. Promoción solo por disparador.
