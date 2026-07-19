@@ -2,7 +2,7 @@
 
 > **Estado:** diseño aprobado por Nikolai 2026-06-25 (brainstorming).
 > **Alcance:** capa ESPECÍFICA de caso sobre el motor genérico `core/email_atomize/`.
-> **Banco de pruebas:** W-02VND1 (`BaRS1 - Tibidabo 8 - (W-02VND1) - Vuelta`).
+> **Banco de pruebas:** W-02VND1 (`BaRS1 - [inmueble] - (W-02VND1) - Vuelta`).
 > **Fuera de alcance (spec separado posterior):** fix de recall MSG-00018, OCR de adjuntos.
 > **Disciplina:** brainstorming → spec → plan → TDD → verificación en vivo + revisión adversarial.
 
@@ -26,7 +26,7 @@ caso y añade dos capacidades de caso que consumen las salidas congeladas del mo
 **vistas temáticas** y **entregas selladas**.
 
 Fin último del proyecto: recuperar la autoría enterrada de **PersonaUno** para sostener el
-levantamiento del velo de Tibidabo 8 S.L.
+levantamiento del velo de [inmueble] S.L.
 
 ## 2. Objetivos y no-objetivos
 
@@ -124,9 +124,9 @@ vistas:
     tipo: persona                 # AUTO: mensajes de/para/cc de la persona, orden cronológico
     persona: persona_uno      # → mapa de unificación de identidades.yaml
   - id: nexo_causal
-    titulo: "Nexo causal — Tibidabo 8"
+    titulo: "Nexo causal — [inmueble]"
     tipo: tematica                # CURADO por el letrado
-    palabras_clave: ["tibidabo", "arras", "encargo", "comisión"]   # en asunto+cuerpo, ascii/casefold
+    palabras_clave: ["inmueble", "arras", "encargo", "comisión"]   # en asunto+cuerpo, ascii/casefold
     incluye_msg: ["MSG-00042"]    # forzar dentro (override gana)
     excluye_msg: ["MSG-00100"]    # forzar fuera (override gana)
     desde: "2024-01-01"           # opcional, ISO; filtra por fecha_iso del mensaje

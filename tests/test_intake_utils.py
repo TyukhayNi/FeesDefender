@@ -67,7 +67,7 @@ class TestSanitizeFilenameSegment:
         assert sanitize_filename("Nº 12 - José", mode="segment") == "Nº 12 - José"
 
     def test_string_limpio_intacto(self):
-        s = "BaRS1 - Tibidabo 8 (W-02VND1)"
+        s = "BaRS1 - [inmueble] (W-02VND1)"
         assert sanitize_filename(s, mode="segment") == s
 
 

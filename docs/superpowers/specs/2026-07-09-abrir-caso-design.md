@@ -2,7 +2,7 @@
 estado: vigente
 dueño: Nikolai (arquitectura) + Claude Code (implementación)
 disparador: encargo de Nikolai — unificar alta + intake + alta CRM en una sola pasada
-banco_de_pruebas: W-02Z2NR (Passeig Marítim / Castelldefels) y W-02VND1 (Tibidabo 8)
+banco_de_pruebas: W-02Z2NR (Passeig Marítim / Castelldefels) y W-02VND1 ([inmueble])
 ---
 
 # SPEC — `abrir-caso`: alta + intake de expediente en una sola pasada
@@ -94,7 +94,7 @@ cerebro puro + orquestadores finos + músculo de I/O).
 - `resolver_identidad(args, listado_ciudad, cfg) -> Identidad`
   - `case_id = "{codigo} - {direccion} ({w_code}) - {sufijo}"` — formato **canónico**
     que valida `core.utils.validate_case_id` (la dirección va pegada al paréntesis de la
-    referencia, **sin** guion previo; p. ej. `BaRS1 - Tibidabo 8 (W-02VND1) - Vuelta`).
+    referencia, **sin** guion previo; p. ej. `BaRS1 - [inmueble] (W-02VND1) - Vuelta`).
   - Busca en el listado de `CASOS/<ciudad>/` prefijos `{codigo}` y `{w_code}`.
   - **Colisión (D2):** `w_code` duplicado ⇒ error (mismo caso ya existe) salvo `--force`.
     `codigo` duplicado + `w_code` nuevo ⇒ marca `requiere_confirmacion` (política `ask`);

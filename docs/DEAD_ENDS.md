@@ -105,7 +105,7 @@ Gotchas confirmados en la implementación + validación en vivo del sistema de c
 ## Rendimiento — sala de lectura por el conector de Drive (Cowork)
 
 ### Organizar la sala vía conector de Drive en Cowork = inviablemente lento para I/O masivo
-- **Intentado:** correr la skill `organizar-sala-lectura` (v1.3) en Cowork sobre el caso real BaRS1/Tibidabo (61 ficheros) — clasificar + copiar a `01_Procesado/Sala lectura/` + subir índices, todo por el conector de Drive.
+- **Intentado:** correr la skill `organizar-sala-lectura` (v1.3) en Cowork sobre el caso real BaRS1/[inmueble] (61 ficheros) — clasificar + copiar a `01_Procesado/Sala lectura/` + subir índices, todo por el conector de Drive.
 - **Resultado:** **~53 minutos.** El conector hace **una llamada API por fichero**: leer contenido (~60) + copiar server-side (60, en lotes, con stalls de permiso) + subir índices de uno en uno = 120+ round-trips con latencia. Inaceptable para que lo use Paola.
 - **Causa:** la API REST de Drive es per-fichero; no hay copia en lote. Cowork (nube) **no tiene** el filesystem local, así que no puede usar el montaje Drive for Desktop.
 - **Confirmado:** 2026-06-18 (corrida real BaRS1).
@@ -293,7 +293,7 @@ Cuantifica y matiza el hallazgo anterior con mediciones reales desde Cowork (wal
 - **Conclusión:** No accesible sin sesión activa. Usar Drive MCP si está en My Drive, o exportación manual si está en Shared Drive.
 
 ### `rclone copy` sobre carpeta E&V con dangling shortcut → exit 1 aunque copie todo lo demás
-- **Intentado:** pull desde Streamlit (`core/intake_drive.pull_drive_ev`) sobre la carpeta `1MEu1xV1zPP9meyRHgPYqRwr_6obqW15g` del Shared Drive de BaRS1 (Tibidabo 8 - W-02VND1). 41 ficheros legítimos en raíz + 2 subcarpetas (`Planos/`, `_RECMAMACION/`).
+- **Intentado:** pull desde Streamlit (`core/intake_drive.pull_drive_ev`) sobre la carpeta `1MEu1xV1zPP9meyRHgPYqRwr_6obqW15g` del Shared Drive de BaRS1 ([inmueble] - W-02VND1). 41 ficheros legítimos en raíz + 2 subcarpetas (`Planos/`, `_RECMAMACION/`).
 - **Resultado:** `rclone exit 1` tras 3 reintentos. En el `.pulled` queda `"errors": ["rclone exit 1: "]` con stderr vacío (ver entrada siguiente sobre captura subprocess en Windows). En realidad rclone copia los 41 ficheros correctamente; el exit 1 lo causa un **único** acceso directo de Google Drive en la raíz (`Atles de planòls.pdf`) cuyo target está borrado o sin acceso para `nikolai.tyukhay@engelvoelkers.com` (hay un fichero homónimo *válido* dentro de `Planos/` que sí se copia).
 - **Confirmado:** 2026-05-19 — reproducido con `rclone copy gdrive_ev: ... -vv` que reveló `NOTICE: Dangling shortcut "Atles de planòls.pdf" detected` + `ERROR : Failed to copy: failed to open source object: can't read dangling shortcut`.
 - **Conclusión:** Las carpetas E&V suelen contener accesos directos que el consultor captador creó hacia ficheros de su carpeta personal (rotación de personal → target inaccesible). Sin mitigación, **cualquier** dangling shortcut tumba el pull entero.

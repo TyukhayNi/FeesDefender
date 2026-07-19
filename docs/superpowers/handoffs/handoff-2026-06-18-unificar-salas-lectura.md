@@ -63,10 +63,10 @@ Cowork/Drive, SIN core/, sin Docling), versión actual **v1.2**:
   (sesión concurrente, `45dd5ad`):** `build_catalog` **YA está cableado** en
   `core/pipeline.py` (tras `inventory.scan`, idempotente) + subcomando `catalogo` en
   `scripts/sala_lectura.py`; y #37 (residuo por Claude-en-sesión) validado sobre el
-  caso real BaRS1/Tibidabo.
+  caso real BaRS1/[inmueble].
 - **NO destructivo:** el crudo de `00_Input` NUNCA se toca ni se borra. Copia server-side.
 - **TAXONOMÍA E&V canónica** = `core/config.py` `TAXONOMIA_EV` (8 cats, incl
-  `08. PENDIENTE DE CLASIFICAR`). **PBC POR PARTE** (decidido sobre Tibidabo): identidad
+  `08. PENDIENTE DE CLASIFICAR`). **PBC POR PARTE** (decidido sobre [inmueble]): identidad
   del VENDEDOR (nota mercantil, nota simple/titularidad, titular real, poderes, catastro)
   → `01. ACTIVACIÓN`; EXCEPCIÓN Anexos 1 y 2 del vendedor → `06. PBC` (la carpeta
   sobrevive SOLO para eso); identidad/KYC del COMPRADOR → `03. OFERTAS` (subcarpeta por
@@ -82,7 +82,7 @@ Cowork/Drive, SIN core/, sin Docling), versión actual **v1.2**:
   `viabilidad-prerelleno`; + gate anti-drift en `check_skills` (`sync_taxonomia_skills.py`).
   Hoy se corrigió a mano un drift real (`08. PENDIENTE` → `08. PENDIENTE DE CLASIFICAR`).
 
-## 3) Cambios pendientes del último handoff Cowork (sobre Tibidabo W-02VND1) — incorporar
+## 3) Cambios pendientes del último handoff Cowork (sobre [inmueble] W-02VND1) — incorporar
 
 1. **ORDEN:** en el visor (Paso 2.5) e `INDICE.md`, por fecha DESCENDENTE; `CRONOLOGIA.md`
    se queda ascendente.
@@ -90,7 +90,7 @@ Cowork/Drive, SIN core/, sin Docling), versión actual **v1.2**:
    inequívoca del contenido → (c) nombre del fichero → (d) `0000-00-00`. mtime NO es
    fuente; si se usa como aprox., marcar `(*)` en `CRONOLOGIA` y `_MANIFIESTO`. Regresión
    real (leer cada doc, no por nombre): "PODERES JAIME.pdf"→`2023-01-17` (no 2024-10-04);
-   "Poderes PersonaTres Feu" (TIBIDABO 8 S.L.U., notario Yllescas, nº4160)→`2024-11-21`
+   "Poderes PersonaTres Feu" ([inmueble] S.L.U., notario Yllescas, nº4160)→`2024-11-21`
    (no 2025-02-14).
 3. **PERMISO:** Paso 0 bloqueante → "Permitir siempre" en el conector de Drive; CERO
    diálogos durante la ejecución; gate único (2.5).
@@ -150,5 +150,5 @@ opción A para la vista plana. NO empezar a codificar sin spec aprobado por Niko
   `core/inventory.py` (rglob), `core/intake_manifest.py` (sha256, scope `00_Input`).
 - **Memoria de proyecto:** `project-sala-lectura-prompt-driven.md`,
   `project-sala-lectura-01-procesado.md`.
-- **Pendiente operativo:** re-importar `.skill` v1.2 en Cowork; reorganizar Tibidabo
+- **Pendiente operativo:** re-importar `.skill` v1.2 en Cowork; reorganizar [inmueble]
   (vaciando antes la sala v1.0); alinear triaje; gate anti-drift de taxonomía.

@@ -140,7 +140,7 @@ Carpeta-bundle solo si hay **≥1 anexo**; documento solo → fichero plano.
 
 - **Motor:** Claude-en-sesión lee el contenido (no por nombre). Sin API de pago
   (Scaleway queda OPT-IN para un futuro DPA). Ambiguo/ilegible → `08. PENDIENTE`.
-- **PBC por parte** (decidido sobre Tibidabo): identidad del **VENDEDOR** (nota mercantil,
+- **PBC por parte** (decidido sobre [inmueble]): identidad del **VENDEDOR** (nota mercantil,
   nota simple/titularidad, titular real, poderes, catastro) → `01. ACTIVACIÓN`;
   **excepción** anexos 1 y 2 del vendedor → `06. PBC` (la carpeta sobrevive solo para eso);
   identidad/KYC del **COMPRADOR** → `03. OFERTAS` (subcarpeta por oferta si hay varias).

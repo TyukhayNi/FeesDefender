@@ -2,7 +2,7 @@
 estado: vigente
 dueño: Nikolai (arquitectura) + Claude Code (implementación)
 disparador: encargo de Nikolai — "organizar la sala de máquinas desde Cowork"; retomar la vía lean [SIGUIENTE-SKILL-EXPEDIENTE-A-MD]
-banco_de_pruebas: W-02VND1 (Tibidabo 8) — golden fixture ya usado por email_atomize
+banco_de_pruebas: W-02VND1 ([inmueble]) — golden fixture ya usado por email_atomize
 ---
 
 # SPEC — `organizar-sala-maquina`: OCR + MD del expediente (construye la Sala de máquina)

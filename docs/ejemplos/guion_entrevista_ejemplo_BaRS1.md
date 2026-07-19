@@ -1,4 +1,4 @@
-# Guion de entrevista — BaRS1 (Tibidabo 8 · W-02VND1 · Vuelta)
+# Guion de entrevista — BaRS1 ([inmueble] · W-02VND1 · Vuelta)
 
 > **EJEMPLO de formato (Fase 3).** Documento de apoyo para el letrado durante la
 > entrevista por Meet. No es un escrito procesal. En el flujo real lo generaría

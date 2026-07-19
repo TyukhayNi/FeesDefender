@@ -1,9 +1,9 @@
 # Diseño — Motor de atomización de correo (`core/email_atomize/`)
 
 > Spec de diseño. Aprobado por Nikolai 2026-06-24 (brainstorming).
-> Caso piloto: **W-02VND1 (BaRS1 — Tibidabo 8)**. Motor **genérico**, no específico del caso.
+> Caso piloto: **W-02VND1 (BaRS1 — [inmueble])**. Motor **genérico**, no específico del caso.
 > Fin último: recuperar TODA la autoría de PersonaUno —hoy enterrada como reenvíos—
-> para levantar el velo de Tibidabo 8 S.L. (titular real + administrador de hecho).
+> para levantar el velo de [inmueble] S.L. (titular real + administrador de hecho).
 
 ## 1. Contexto y objetivo
 

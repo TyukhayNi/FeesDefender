@@ -29,7 +29,7 @@ def test_layerb_promueve_y_no_renumera_capaA(tmp_path):
         "    direcciones: [ { email: per01a@example.invalid, estado: confirmada } ]\n",
         encoding="utf-8")
     (src / "2026-06-01_carrier.eml").write_bytes(_carrier_gmail(
-        "<carrier@x>", "Te reenvío.", "per01a@example.invalid", "1 de mayo de 2020", "Tibidabo",
+        "<carrier@x>", "Te reenvío.", "per01a@example.invalid", "1 de mayo de 2020", "[inmueble]",
         "contenido citado suficientemente largo para superar el floor de 24"))
     rep = P.atomize_dir(src, out, case_dir=tmp_path)
     # Capa A: 1 portador; Capa B: 1 reconstruida (PersonaUno)
@@ -79,7 +79,7 @@ def _carrier_outlook_plano(mid, de_cita, fecha_label, asunto_cita, cuerpo_cita):
 def test_layerb_outlook_plano_promueve_media_reconstruida(tmp_path):
     src = tmp_path / "03_Email"; out = tmp_path / "Emails"; src.mkdir()
     (src / "2026-06-01_carrier_plano.eml").write_bytes(_carrier_outlook_plano(
-        "<carrier-plano@x>", "alguien@x.com", "1 de mayo de 2020", "Tibidabo",
+        "<carrier-plano@x>", "alguien@x.com", "1 de mayo de 2020", "[inmueble]",
         "contenido citado suficientemente largo para superar el floor de 24 chars"))
     rep = P.atomize_dir(src, out, case_dir=tmp_path)
     # Capa A: 1 portador; Capa B: 1 media-reconstruida
@@ -124,9 +124,9 @@ def test_layerb_media_reconstruida_dedup_contra_capa_a(tmp_path):
     cuerpo = "contenido identico citado suficientemente largo para superar el floor de 24 chars"
     src = tmp_path / "03_Email"; out = tmp_path / "Emails"; src.mkdir()
     (src / "2020-05-01_limpio.eml").write_bytes(_eml_limpio(
-        "<limpio@x>", "alguien@x.com", "Fri, 01 May 2020 09:00:00 +0200", "Tibidabo", cuerpo))
+        "<limpio@x>", "alguien@x.com", "Fri, 01 May 2020 09:00:00 +0200", "[inmueble]", cuerpo))
     (src / "2026-06-01_carrier_plano.eml").write_bytes(_carrier_outlook_plano(
-        "<carrier-plano@x>", "alguien@x.com", "1 de mayo de 2020", "Tibidabo", cuerpo))
+        "<carrier-plano@x>", "alguien@x.com", "1 de mayo de 2020", "[inmueble]", cuerpo))
     rep = P.atomize_dir(src, out, case_dir=tmp_path)
     mds = sorted((out / "mensajes").glob("*.md"))
     # NO se acuña un .md B nuevo: solo el .md de Capa A del mensaje limpio.
@@ -175,10 +175,10 @@ def test_capa_a_md_byte_identico_entre_corridas(tmp_path):
 def test_layerb_enviado_el_promueve_media_reconstruida(tmp_path):
     src = tmp_path / "03_Email"; out = tmp_path / "Emails"; src.mkdir()
     m = EmailMessage()
-    m["Message-ID"] = "<carrier-el@x>"; m["Subject"] = "RV: Tibidabo"
+    m["Message-ID"] = "<carrier-el@x>"; m["Subject"] = "RV: [inmueble]"
     m["Date"] = "Mon, 01 Jun 2026 10:00:00 +0200"; m["From"] = "c@x"; m["To"] = "d@x"
     m.set_content("Te reenvio:\n\n-----Mensaje original-----\nDe: Jaime <alguien@x.com>\n"
-                  "Enviado el: viernes, 4 de octubre de 2024 11:40\nPara: x@y\nAsunto: Tibidabo\n"
+                  "Enviado el: viernes, 4 de octubre de 2024 11:40\nPara: x@y\nAsunto: [inmueble]\n"
                   "contenido citado suficientemente largo para superar el floor de 24 chars\n")
     (src / "2026-06-01_carrier_el.eml").write_bytes(m.as_bytes())
     rep = P.atomize_dir(src, out, case_dir=tmp_path)
@@ -216,7 +216,7 @@ def _carrier_html_apple_en_cuerpo(mid, autor, attr_line, cuerpo_cita):
     """Portador HTML: anclaje previo = prosa; atribución Apple = 1ª línea del blockquote.
     El de NO está en el anclaje → lo levanta el body-scan → media-reconstruida (atribucion_cuerpo)."""
     m = EmailMessage()
-    m["Message-ID"] = mid; m["Subject"] = "RV: Tibidabo"
+    m["Message-ID"] = mid; m["Subject"] = "RV: [inmueble]"
     m["Date"] = "Mon, 01 Jun 2026 10:00:00 +0200"; m["From"] = "c@x"; m["To"] = "d@x"
     m.set_content(autor)
     html = (f"<div>{autor}</div>"
@@ -283,7 +283,7 @@ def _carrier_html_anchor_completo(mid, de_cita, fecha_attr, cuerpo_cita):
     """Portador HTML con gmail_attr que YA lleva de+fecha en el anclaje (NO levantada del cuerpo).
     Debe seguir alta-reconstruida: el graft solo topa lo levantado del cuerpo (§5.18)."""
     m = EmailMessage()
-    m["Message-ID"] = mid; m["Subject"] = "RV: Tibidabo"
+    m["Message-ID"] = mid; m["Subject"] = "RV: [inmueble]"
     m["Date"] = "Mon, 01 Jun 2026 10:00:00 +0200"; m["From"] = "c@x"; m["To"] = "d@x"
     m.set_content("Te reenvío.")
     html = (f'<div>Te reenvío.</div><div class="gmail_quote">'
@@ -364,7 +364,7 @@ def test_layerb_interior_idempotente_y_capaA_byte_identico(tmp_path):
     bq = (
         "Sent from Gmail Mobile<br>---------- Mensaje reenviado ---------<br>"
         "De:<br>PersonaCuatro, Eva<br>&lt;<br>persona.cuatro@engelvoelkers.com<br>&gt;<br>"
-        "Fecha: El lun, 7 jul 2025 a las 19:44<br>Asunto: Re: offer letter TIBIDABO 8<br>"
+        "Fecha: El lun, 7 jul 2025 a las 19:44<br>Asunto: Re: offer letter [inmueble]<br>"
         "Para: Consulado de [PAIS_EXTRANJERO] &lt;<br>contacto@org-qa.example<br>&gt;<br>"
         "Estimada PersonaSiete, adjunto remito la Contraoferta con sustancia suficiente.")
     (src / "2025-07-23_c.eml").write_bytes(_carrier_con_interior(

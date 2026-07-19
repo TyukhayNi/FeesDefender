@@ -371,9 +371,9 @@ git commit -m "feat(email-atomize): inline normalizador + fingerprint dia-granul
 - [ ] **Step 1: Tests (debe fallar)** — añadir a `tests/test_email_atomize_inline.py`:
 ```python
 def test_anclaje_outlook_bilingue():
-    blk = "De: PersonaUno <per01a@example.invalid>\nEnviado: lunes, 3 de febrero de 2020 18:42\nPara: x@y\nAsunto: RE: Tibidabo"
+    blk = "De: PersonaUno <per01a@example.invalid>\nEnviado: lunes, 3 de febrero de 2020 18:42\nPara: x@y\nAsunto: RE: [inmueble]"
     anc = I.parsear_anclaje(blk, "outlook_es")
-    assert anc.de == "per01a@example.invalid" and anc.fecha_iso == "2020-02-03" and "Tibidabo" in anc.asunto
+    assert anc.de == "per01a@example.invalid" and anc.fecha_iso == "2020-02-03" and "[inmueble]" in anc.asunto
 
 
 def test_anclaje_apple_addr_y_fecha():
@@ -575,7 +575,7 @@ def _ra(**kw):
 def test_reconstruir_promueve_del_burgo_inline():
     raw = make_eml_con_cita_outlook(  # helper de test que construye .eml con cita inline de PersonaUno
         autor="Te reenvío.", de_cita="per01a@example.invalid", fecha_cita="2020-05-01",
-        asunto_cita="Tibidabo", cuerpo_cita="contenido suficientemente largo para fingerprint")
+        asunto_cita="[inmueble]", cuerpo_cita="contenido suficientemente largo para fingerprint")
     res = I.reconstruir(_ra(fecha_iso="2026-06-01"), raw)
     altas = [s for s in res.candidatos if s.confianza == "alta-reconstruida"]
     assert any(s.de == "per01a@example.invalid" for s in altas)
@@ -643,7 +643,7 @@ def test_layerb_promueve_y_no_renumera_capaA(tmp_path):
     src = tmp_path / "03_Email"; out = tmp_path / "Emails"; src.mkdir()
     (src / "2026-06-01_carrier.eml").write_bytes(_carrier_con_cita(
         "<carrier@x>", "Te reenvío.", "per01a@example.invalid", "1 de mayo de 2020 9:00",
-        "Tibidabo", "contenido citado suficientemente largo para superar el floor de 24"))
+        "[inmueble]", "contenido citado suficientemente largo para superar el floor de 24"))
     rep = P.atomize_dir(src, out)
     # Capa A: 1 portador; Capa B: 1 reconstruida (PersonaUno)
     mds = sorted((out / "mensajes").glob("*.md"))
@@ -706,7 +706,7 @@ import json
 def _b(**kw):
     base = dict(msg_id="MSG-00050", capa="B", confianza="alta-reconstruida",
                 de="per01a@example.invalid", de_nombre="PersonaUno", fecha_iso="2020-05-01",
-                hora="0900", asunto="Tibidabo", cuerpo="texto reconstruido",
+                hora="0900", asunto="[inmueble]", cuerpo="texto reconstruido",
                 reconstruido_desde_cita=True, reconstruido_de="MSG-00042",
                 fingerprint="fp:abc", procedencia=[{"citado_en": "MSG-00042", "profundidad": 1}])
     base.update(kw); return RegistroMensaje(**base)
@@ -764,14 +764,14 @@ git commit -m "feat(email-atomize): render .md capa B + cola de revision + corpu
 
 Antes de correr sobre el caso real, capturar un hash del set actual y re-correr. PowerShell:
 ```powershell
-$out = "G:\Unidades compartidas\EXPEDIENTES - TYUKHAY LEGAL\CASOS\Barcelona\BaRS1 - Tibidabo 8 - (W-02VND1) - Vuelta\01_Procesado\Emails"
+$out = "G:\Unidades compartidas\EXPEDIENTES - TYUKHAY LEGAL\CASOS\Barcelona\BaRS1 - [inmueble] - (W-02VND1) - Vuelta\01_Procesado\Emails"
 # hash de los .md de Capa A ANTES (de la corrida Fase 1 ya presente)
 $pre = Get-ChildItem "$out\mensajes" -Filter *.md | ForEach-Object { (Get-FileHash $_.FullName -Algorithm SHA256).Hash } | Sort-Object
 ```
 
 - [ ] **Step 2: Correr el motor (Capa A+B) sobre el caso real (solo lectura de 00_Input)**
 ```powershell
-$case = "G:\Unidades compartidas\EXPEDIENTES - TYUKHAY LEGAL\CASOS\Barcelona\BaRS1 - Tibidabo 8 - (W-02VND1) - Vuelta"
+$case = "G:\Unidades compartidas\EXPEDIENTES - TYUKHAY LEGAL\CASOS\Barcelona\BaRS1 - [inmueble] - (W-02VND1) - Vuelta"
 & ".\.venv\Scripts\python.exe" -m scripts.atomize_emails --src "$case\00_Input\03_Email" --out "$case\01_Procesado\Emails"
 ```
 Verificar (DD §11):

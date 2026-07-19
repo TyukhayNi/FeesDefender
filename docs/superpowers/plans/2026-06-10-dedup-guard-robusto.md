@@ -41,10 +41,10 @@ class TestNormalizeReferencia:
         assert normalize_referencia("María García") == "maria garcia"
 
     def test_lowercase(self):
-        assert normalize_referencia("BaRS1 - Tibidabo") == "bars1 - tibidabo"
+        assert normalize_referencia("BaRS1 - [inmueble]") == "bars1 - inmueble"
 
     def test_combined(self):
-        assert normalize_referencia("  BaRS1  - Tibidabo  (W-02VND1)  - Vuelta ") == "bars1 - tibidabo (w-02vnd1) - vuelta"
+        assert normalize_referencia("  BaRS1  - [inmueble]  (W-02VND1)  - Vuelta ") == "bars1 - inmueble (w-02vnd1) - vuelta"
 
     def test_empty_string(self):
         assert normalize_referencia("") == ""
@@ -124,7 +124,7 @@ from core.sudespacho_relations import _extract_w_code
 
 class TestExtractWCode:
     def test_standard_case_id(self):
-        assert _extract_w_code("BaRS1 - Tibidabo 8 - (W-02VND1) - Vuelta") == "W-02VND1"
+        assert _extract_w_code("BaRS1 - [inmueble] - (W-02VND1) - Vuelta") == "W-02VND1"
 
     def test_no_w_code(self):
         assert _extract_w_code("MaRS2 - Gran Vía 40 - Vuelta") is None
@@ -225,10 +225,10 @@ class TestFindExpedienteRobust:
     def test_case_difference_matches(self):
         client = _mock_client()
         client._client.get.return_value = _mock_get_response([
-            {"id": 1, "label": "bars1 - tibidabo - (W-02VND1) - vuelta", "value": "100", "data": []},
+            {"id": 1, "label": "bars1 - inmueble - (W-02VND1) - vuelta", "value": "100", "data": []},
         ])
         result = find_expediente_by_referencia(
-            "BaRS1 - Tibidabo - (W-02VND1) - Vuelta", client=client,
+            "BaRS1 - [inmueble] - (W-02VND1) - Vuelta", client=client,
         )
         assert result == "100"
 
@@ -239,7 +239,7 @@ class TestFindExpedienteRobust:
             {"id": 1, "label": "Completely Different Case", "value": "999", "data": []},
         ])
         result = find_expediente_by_referencia(
-            "BaRS1 - Tibidabo - (W-02VND1) - Vuelta", client=client,
+            "BaRS1 - [inmueble] - (W-02VND1) - Vuelta", client=client,
         )
         assert result is None
 
@@ -549,10 +549,10 @@ class TestVerifyNormalized:
 
     @patch("core.sudespacho_relations.fetch_referencia_cliente")
     def test_case_difference_matches(self, mock_fetch):
-        mock_fetch.return_value = ("bars1 - tibidabo", False)
+        mock_fetch.return_value = ("bars1 - inmueble", False)
         result = verify_expediente_referencia(
             "100", "extrajudiciales",
-            expected_referencia="BaRS1 - Tibidabo",
+            expected_referencia="BaRS1 - [inmueble]",
         )
         assert result["match"] is True
 

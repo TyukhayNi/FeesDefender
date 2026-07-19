@@ -11,7 +11,7 @@ dueño: Nikolai Tyukhay
 > correo**, sino como **enlace a Drive/Gmail** en el cuerpo del padre, y exige sesión
 > autenticada para recuperarlo.
 >
-> Origen: hilo Cowork sobre el caso W-02VND1 (Tibidabo 8). Decisiones de alcance
+> Origen: hilo Cowork sobre el caso W-02VND1 ([inmueble]). Decisiones de alcance
 > cerradas con Nikolai (2026-06-24).
 
 ## 1. Problema
@@ -306,7 +306,7 @@ Antes de la corrida real: **verificar el scope del token `gdrive_ev`** (§3).
 
 Validación contra datos reales de W-02VND1 (`00_Input/03_Email`): los fixtures
 `2026-06-05_hoja_de_calculo_compartida_*` (NATIVE → no se captura, solo nota) y
-`2026-05-19_share_request_for_tibidabo_8_*` (FOLDER → no se baja, solo nota) ejercen
+`2026-05-19_share_request_for_inmueble_*` (FOLDER → no se baja, solo nota) ejercen
 las dos ramas de "no descargar". Localizar además un correo con un enlace `/file/d/`
 o `uc?export=download` de descarga directa para validar el rescate byte-fiel y el
 filtro de firma. Comprobar en la traza que los no resueltos quedan como worklist.
@@ -314,7 +314,7 @@ filtro de firma. Comprobar en la traza que los no resueltos quedan como worklist
 ```powershell
 python -m scripts.export_label_emails --ref W-02VND1 `
   --account nikolai.tyukhay@engelvoelkers.com `
-  --label "01. CONTING/01. EXTRAJUD/01. BARCELONA/BaRS1 - Tibidabo 8 - (W-02VND1)" `
+  --label "01. CONTING/01. EXTRAJUD/01. BARCELONA/BaRS1 - [inmueble] - (W-02VND1)" `
   --extraer-adjuntos --force
 ```
 

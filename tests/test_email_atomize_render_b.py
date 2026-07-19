@@ -8,7 +8,7 @@ from core.email_atomize import corpus as C
 def _b(**kw):
     base = dict(msg_id="MSG-00050", capa="B", confianza="alta-reconstruida",
                 de="per01a@example.invalid", de_nombre="PersonaUno", fecha_iso="2020-05-01",
-                hora="0900", asunto="Tibidabo", cuerpo="texto reconstruido",
+                hora="0900", asunto="[inmueble]", cuerpo="texto reconstruido",
                 reconstruido_desde_cita=True, reconstruido_de="MSG-00042",
                 fingerprint="fp:abc", procedencia=[{"citado_en": "MSG-00042", "profundidad": 1}])
     base.update(kw)

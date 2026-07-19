@@ -377,10 +377,10 @@ def test_cache_drive_folder_info_roundtrip(caso_ev, tmp_casos_root):
     """Guardar y leer folder_name + drive_id del cache en _caso.md."""
     from core.case_manager import cache_drive_folder_info, get_cached_drive_folder_info
 
-    cache_drive_folder_info(caso_ev, "Tibidabo 8 - W-02VND1", "0APKz123")
+    cache_drive_folder_info(caso_ev, "[inmueble] - W-02VND1", "0APKz123")
 
     name, drive_id = get_cached_drive_folder_info(caso_ev)
-    assert name == "Tibidabo 8 - W-02VND1"
+    assert name == "[inmueble] - W-02VND1"
     assert drive_id == "0APKz123"
 
 

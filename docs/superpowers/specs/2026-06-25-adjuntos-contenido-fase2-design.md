@@ -2,7 +2,7 @@
 
 - **Fecha:** 2026-06-25
 - **Estado:** aprobado (brainstorming) — pendiente de plan de implementación
-- **Disparador:** carpeta `01_Procesado/Emails/adjuntos/` del caso BaRS1 — Tibidabo 8 (W-02VND1)
+- **Disparador:** carpeta `01_Procesado/Emails/adjuntos/` del caso BaRS1 — [inmueble] (W-02VND1)
   con 162 adjuntos únicos cuyos sidecars `.md` (generados por `core.email_atomize`)
   dejan `## Descripción → (pendiente; OCR en fase 2)`.
 

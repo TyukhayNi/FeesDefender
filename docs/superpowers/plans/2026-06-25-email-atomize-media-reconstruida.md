@@ -126,7 +126,7 @@ def _eml_carrier_plano(de_cita, fecha_label, asunto_cita, cuerpo_cita):
 
 
 def test_reconstruir_media_reconstruida_va_a_candidatos_y_en_revision():
-    raw = _eml_carrier_plano("alguien@x.com", "1 de mayo de 2020", "Tibidabo",
+    raw = _eml_carrier_plano("alguien@x.com", "1 de mayo de 2020", "[inmueble]",
                              "contenido citado suficientemente largo para superar el floor de 24")
     res = I.reconstruir(_ra(fecha_iso="2026-06-01"), raw)
     medias = [s for s in res.candidatos if s.confianza == "media-reconstruida"]
@@ -207,7 +207,7 @@ def _mb(confianza):
     # Helper de capa B reconstruida — reutilizado por Tasks 3, 4 y 5.
     return RegistroMensaje(
         msg_id="MSG-09001", capa="B", confianza=confianza, de="a@x.com", de_nombre="Ana",
-        fecha_iso="2020-05-01", asunto="Tibidabo", cuerpo="cuerpo del mensaje reconstruido",
+        fecha_iso="2020-05-01", asunto="[inmueble]", cuerpo="cuerpo del mensaje reconstruido",
         reconstruido_desde_cita=True, reconstruido_de="MSG-00007", en_revision=True,
         fingerprint="fp:abc123", fuente="email")
 
@@ -364,7 +364,7 @@ def test_render_revision_emite_reconstruidos_md_y_jsonl():
     rec = d["reconstruidos.md"]
     # Lista SOLO los media-reconstruida, con sus columnas:
     assert "MSG-09001" in rec and "a@x.com" in rec and "2020-05-01" in rec
-    assert "Tibidabo" in rec and "MSG-00007" in rec
+    assert "[inmueble]" in rec and "MSG-00007" in rec
     # NO incluye el alta-reconstruida:
     assert "MSG-09002" not in rec
     # El espejo .jsonl: una línea JSON parseable por cada media-reconstruida, y solo esos:
@@ -485,7 +485,7 @@ def _carrier_outlook_plano(mid, de_cita, fecha_label, asunto_cita, cuerpo_cita):
 def test_layerb_outlook_plano_promueve_media_reconstruida(tmp_path):
     src = tmp_path / "03_Email"; out = tmp_path / "Emails"; src.mkdir()
     (src / "2026-06-01_carrier_plano.eml").write_bytes(_carrier_outlook_plano(
-        "<carrier-plano@x>", "alguien@x.com", "1 de mayo de 2020", "Tibidabo",
+        "<carrier-plano@x>", "alguien@x.com", "1 de mayo de 2020", "[inmueble]",
         "contenido citado suficientemente largo para superar el floor de 24 chars"))
     rep = P.atomize_dir(src, out, case_dir=tmp_path)
     # Capa A: 1 portador; Capa B: 1 media-reconstruida
@@ -533,9 +533,9 @@ def test_layerb_media_reconstruida_dedup_contra_capa_a(tmp_path):
     cuerpo = "contenido identico citado suficientemente largo para superar el floor de 24 chars"
     src = tmp_path / "03_Email"; out = tmp_path / "Emails"; src.mkdir()
     (src / "2020-05-01_limpio.eml").write_bytes(_eml_limpio(
-        "<limpio@x>", "alguien@x.com", "Fri, 01 May 2020 09:00:00 +0200", "Tibidabo", cuerpo))
+        "<limpio@x>", "alguien@x.com", "Fri, 01 May 2020 09:00:00 +0200", "[inmueble]", cuerpo))
     (src / "2026-06-01_carrier_plano.eml").write_bytes(_carrier_outlook_plano(
-        "<carrier-plano@x>", "alguien@x.com", "1 de mayo de 2020", "Tibidabo", cuerpo))
+        "<carrier-plano@x>", "alguien@x.com", "1 de mayo de 2020", "[inmueble]", cuerpo))
     rep = P.atomize_dir(src, out, case_dir=tmp_path)
     mds = sorted((out / "mensajes").glob("*.md"))
     # NO se acuña un .md B nuevo: solo el .md de Capa A del mensaje limpio (1 portador limpio

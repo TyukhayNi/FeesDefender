@@ -58,7 +58,7 @@ def _crear_doc(drive: Path, anon: Path, nombre: str, *, cuerpo: str | None) -> s
 @pytest.fixture
 def case(tmp_path, monkeypatch):
     """Monta un caso aislado y devuelve un helper de configuración."""
-    case_id = "BaRS1 - Tibidabo 8 - (W-02VND1) - Vuelta"
+    case_id = "BaRS1 - [inmueble] - (W-02VND1) - Vuelta"
     case_dir = tmp_path / "caso"
     drive = case_dir / "00_Input" / org.DRIVE_EV_SUBDIR
     anon = case_dir / org.ANONIMIZADO_SUBDIR

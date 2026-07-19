@@ -37,9 +37,9 @@ def test_fingerprint_floor_no_colapsa_cuerpos_cortos():
 
 def test_anclaje_outlook_bilingue():
     blk = ("De: PersonaUno <per01a@example.invalid>\nEnviado: lunes, 3 de febrero de 2020 18:42\n"
-           "Para: x@y\nAsunto: RE: Tibidabo")
+           "Para: x@y\nAsunto: RE: [inmueble]")
     anc = I.parsear_anclaje(blk, "outlook_es")
-    assert anc.de == "per01a@example.invalid" and anc.fecha_iso == "2020-02-03" and "Tibidabo" in anc.asunto
+    assert anc.de == "per01a@example.invalid" and anc.fecha_iso == "2020-02-03" and "[inmueble]" in anc.asunto
 
 
 def test_anclaje_apple_addr_y_fecha():
@@ -88,9 +88,9 @@ def test_anclaje_sin_fecha_parseable():
 def test_anclaje_outlook_enviado_el_parsea_fecha():
     # Outlook ES real usa "Enviado el:" (no "Enviado:") — debe parsear la fecha igual.
     blk = ("De: PersonaTres <per03@example.invalid>\nEnviado el: viernes, 4 de octubre de 2024 11:40\n"
-           "Para: x@y\nAsunto: RV: Tibidabo")
+           "Para: x@y\nAsunto: RV: [inmueble]")
     anc = I.parsear_anclaje(blk, "outlook_es")
-    assert anc.de == "per03@example.invalid" and anc.fecha_iso == "2024-10-04" and "Tibidabo" in anc.asunto
+    assert anc.de == "per03@example.invalid" and anc.fecha_iso == "2024-10-04" and "[inmueble]" in anc.asunto
 
 
 def test_anclaje_enviat_el_catalan_parsea_fecha():
@@ -348,7 +348,7 @@ def _eml_carrier_plano(de_cita, fecha_label, asunto_cita, cuerpo_cita):
 
 
 def test_reconstruir_media_reconstruida_va_a_candidatos_y_en_revision():
-    raw = _eml_carrier_plano("alguien@x.com", "1 de mayo de 2020", "Tibidabo",
+    raw = _eml_carrier_plano("alguien@x.com", "1 de mayo de 2020", "[inmueble]",
                              "contenido citado suficientemente largo para superar el floor de 24")
     res = I.reconstruir(_ra(fecha_iso="2026-06-01"), raw)
     medias = [s for s in res.candidatos if s.confianza == "media-reconstruida"]
@@ -643,7 +643,7 @@ def test_cprime_per01_addr_envuelto():
 def test_cprime_eva_no_roba_destinatario_qatar():
     # testigo MSG-00305: eva sale de la franja De:→Fecha:; el <addr> de [PAIS_EXTRANJERO] (Para/Cc) queda FUERA.
     lines = ["De:", "PersonaCuatro, Eva", "<", "persona.cuatro@engelvoelkers.com", ">",
-             "Fecha: El lun, 7 jul 2025 a las 19:44", "Asunto: Re: offer letter TIBIDABO 8",
+             "Fecha: El lun, 7 jul 2025 a las 19:44", "Asunto: Re: offer letter [inmueble]",
              "Para: General Consulate of the State of [PAIS_EXTRANJERO] in Barcelona <",
              "contacto@org-qa.example", ">"]
     de, nombre = I._addr_remitente_cprime(lines, 0)
@@ -757,7 +757,7 @@ def test_interior_reenviado_testigo_eva_7jul():
              "---------- Mensaje reenviado ---------\n"
              "De:\nPrat Padrós, Eva\n<\npersona.cuatro@engelvoelkers.com\n>\n"
              "Fecha: El lun, 7 jul 2025 a las 19:44\n"
-             "Asunto: Re: offer letter TIBIDABO 8\n"
+             "Asunto: Re: offer letter [inmueble]\n"
              "Para: General Consulate of the State of [PAIS_EXTRANJERO] in Barcelona <\ncontacto@org-qa.example\n>\n"
              "Estimada PersonaSiete, adjunto remito la Contraoferta.")
     out = I._interior_reenviado(texto)
@@ -817,7 +817,7 @@ _BQ_TESTIGO = (
     "---------- Mensaje reenviado ---------<br>"
     "De:<br>PersonaCuatro, Eva<br>&lt;<br>persona.cuatro@engelvoelkers.com<br>&gt;<br>"
     "Fecha: El lun, 7 jul 2025 a las 19:44<br>"
-    "Asunto: Re: offer letter TIBIDABO 8<br>"
+    "Asunto: Re: offer letter [inmueble]<br>"
     "Para: General Consulate of the State of [PAIS_EXTRANJERO] in Barcelona &lt;<br>contacto@org-qa.example<br>&gt;<br>"
     "Estimada PersonaSiete, adjunto remito la Contraoferta con sustancia suficiente.")
 
@@ -838,7 +838,7 @@ def test_reconstruir_interior_reenviado_testigo_msg305():
     assert i.confianza == "media-reconstruida"
     assert i.motivo == "interior_reenviado"
     assert i.en_revision is True
-    assert i.asunto == "Re: offer letter TIBIDABO 8"
+    assert i.asunto == "Re: offer letter [inmueble]"
     assert "Contraoferta" in i.texto
     assert i.de == "persona.cuatro@engelvoelkers.com"   # NUNCA el <addr> de [PAIS_EXTRANJERO] (Para/Cc)
 

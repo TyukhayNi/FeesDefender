@@ -8,7 +8,7 @@ tienen texto utilizable. Escribe `01_Procesado/raw_text/{slug}.txt`, regenera el
 
 Uso:
   # Driver (sobre todos los PDFs sin texto del caso):
-  python -m scripts.ocr_textless_pdfs run --case "BaRS1 - Tibidabo 8 - (W-02VND1) - Vuelta"
+  python -m scripts.ocr_textless_pdfs run --case "BaRS1 - [inmueble] - (W-02VND1) - Vuelta"
 
   # Worker (interno, un solo PDF):
   python -m scripts.ocr_textless_pdfs worker "<pdf_abs>" "<out_txt_abs>"

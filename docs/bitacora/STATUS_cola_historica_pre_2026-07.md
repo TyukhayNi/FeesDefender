@@ -131,7 +131,7 @@ estaba pendiente. **Pendiente smoke**: re-lanzar pull BaRS10 desde la UI y
 confirmar `rclone_returncode=0` en `.pulled`.
 
 ~~**[SIGUIENTE-PULL-RCLONE-EXIT1]**~~ ✅ 2026-05-19 (sesión 19) —
-Causa raíz confirmada con `rclone -vv` sobre BaRS1 (Tibidabo 8 - W-02VND1):
+Causa raíz confirmada con `rclone -vv` sobre BaRS1 ([inmueble] - W-02VND1):
 **dangling shortcut** en raíz de la carpeta E&V (acceso directo a un fichero
 borrado o sin permisos del consultor captador) — un único shortcut roto
 basta para que rclone devuelva exit 1 aunque los 40+ ficheros restantes se
@@ -350,7 +350,7 @@ trazabilidad por commits. Detalle completo en memoria
 
 ### ⚠️ MÁXIMA PRIORIDAD — abrir próxima sesión por aquí
 
-~~**[SIGUIENTE-ORGANIZADOR-UI]**~~ ✅ 2026-05-30 (sesión 28) — Botón "🤖 Organizar localmente" entregado: expander en la pestaña «Casos» con flujo Proponer→Aplicar, semáforo de precondiciones (`core.local_organizer.estado_precondiciones`), métricas, disclaimer PII y `help=` en todos los controles. +5 tests. Smoke manual de UI pendiente (no automatizable). **[SIGUIENTE]** real ahora: `[SIGUIENTE-ORGANIZADOR-VALIDACION]` — validar el organizador end-to-end sobre el piloto BaRS1 (`python -m scripts.organizar_local "BaRS1 - Tibidabo 8 - (W-02VND1) - Vuelta" --plan` → revisar `07_AI cowork/_plan_reorganizacion.md` → `--execute`), o usar ya el botón nuevo desde la app.
+~~**[SIGUIENTE-ORGANIZADOR-UI]**~~ ✅ 2026-05-30 (sesión 28) — Botón "🤖 Organizar localmente" entregado: expander en la pestaña «Casos» con flujo Proponer→Aplicar, semáforo de precondiciones (`core.local_organizer.estado_precondiciones`), métricas, disclaimer PII y `help=` en todos los controles. +5 tests. Smoke manual de UI pendiente (no automatizable). **[SIGUIENTE]** real ahora: `[SIGUIENTE-ORGANIZADOR-VALIDACION]` — validar el organizador end-to-end sobre el piloto BaRS1 (`python -m scripts.organizar_local "BaRS1 - [inmueble] - (W-02VND1) - Vuelta" --plan` → revisar `07_AI cowork/_plan_reorganizacion.md` → `--execute`), o usar ya el botón nuevo desde la app.
 
 Alcance (referencia histórica del diseño, ya implementado):
 - **Ubicación**: página del caso, sección de análisis/intake.

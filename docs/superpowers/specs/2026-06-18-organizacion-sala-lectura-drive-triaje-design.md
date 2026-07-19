@@ -4,7 +4,7 @@
 **Autor:** Nikolai Tyukhay (decisiones) + Claude Code (diseño)
 **Estado:** propuesta para revisión
 
-> **Decisiones cerradas (2026-06-18, sobre expediente real W-02VND1 Tibidabo 8, 61 ficheros):**
+> **Decisiones cerradas (2026-06-18, sobre expediente real W-02VND1 [inmueble], 61 ficheros):**
 > - **Alcance:** la skill `organizar-sala-lectura` procesa **solo `00_Input/01_Drive EV/`** (39 ficheros). `04_Manual` (22) y demás fuentes quedan fuera de esta corrida.
 > - **Destino:** `01_Procesado/Sala lectura Drive EV/` (tipo oración), **fuera de `00_Input`** para no ser re-ingerida por `inventory.scan` (rglob) ni pisada por re-pulls. Carpeta propia (por tipo) distinta de la del motor local (`01_Procesado/Sala lectura/`, por fuente) → sin colisión.
 > - **Per-fuente** a este nivel (carpeta nombrada por la fuente), no sala unificada — al revés que la disposición *interna*, que es por tipo.
