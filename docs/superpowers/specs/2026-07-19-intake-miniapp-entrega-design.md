@@ -63,6 +63,16 @@ las apps de Paola, Sergio y Nikolai, para que puedan **leerlo** — aunque ya co
   Así, aunque dos personas miren a la vez, solo se archiva una vez. *(Encaja con el
   anti-duplicado de F3 §5/§6 y del plan §4.)*
 
+**Índice/caché del emparejamiento en Drive (evita repetir el LLM).** El resultado del
+emparejamiento de un correo (señales extraídas + expediente propuesto + nombres) se calcula
+**una sola vez**: la **primera** app que ve un correo nuevo lo lee con el LLM y **guarda el
+resultado** en un índice compartido en el Drive del despacho (una entrada por Message-ID). Las
+**demás** apps lo **reutilizan** sin volver a llamar al LLM → el LLM corre **una vez por correo,
+no una por persona** (responde a "¿se cuadruplica con 4 apps?": **no**). Colisión de escritura
+evitada con **una entrada/fichero por Message-ID** (sin locks); si por rareza dos apps procesan
+el mismo correo a la vez, el peor caso es una llamada LLM de más (céntimos, inocuo). Este índice
+es además el sitio natural donde F6 añadirá la autoría (§8).
+
 ## 5. Auth (relación con el Track 1 de F3)
 
 El modelo **facilita** el punto más delicado de F3 (obtener sesión del webmail): la app corre
@@ -92,18 +102,19 @@ webmail) sigue disponible si el login programático no sale.
 ## 8. Aplazado (no se construye ahora)
 
 - **Registro de autoría (quién archivó / cuándo).** El estado ✅/🟠 + expediente sale gratis de
-  CRM+Gmail. El «por quién y cuándo» necesitaría un pequeño **registro compartido** (un fichero
-  por persona en el Drive del despacho — append sin candados, todas leen los N ficheros). Es
-  barato pero **no hace falta para el requisito de lectura**, y es justo lo que consume el
-  **control de calidad (F6)**. → Se construye **con F6**, no antes.
+  CRM+Gmail; y el índice de §4 ya existe (por el caché del emparejamiento). El «por quién y
+  cuándo» es **un campo más** que se añade a ese índice **con F6** (control de calidad), que es
+  donde se necesita. No antes. *(El índice/caché sí se construye desde el principio, §4; lo único
+  aplazado es este campo de autoría.)*
 - **Empaquetado definitivo** (formato del instalador Windows): al plan de implementación.
 
 ## 9. Decisiones abiertas
 
 - **Formato de la miniapp:** empaquetar la vista Streamlit como app de escritorio (ejecutable
   con navegador embebido / Electron / equivalente). A decidir en el plan; no cambia el diseño.
-- **Alcance de elementos (heredado de F3):** recomendación **judicial-first** (los procuradores
-  actúan en pleitos); extrajudicial como interruptor, clientes fuera. Pendiente de tu OK.
+- **Alcance de elementos (heredado de F3): DECIDIDO judicial-first (2026-07-19).** Solo
+  expedientes judiciales; extrajudicial queda como interruptor a activar cuando aparezca un
+  caso; `clientes` fuera.
 - **Retención/orden de la lista:** cuántos archivados se muestran y con qué filtros (solo UI).
 
 ## 10. Higiene

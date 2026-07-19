@@ -229,9 +229,9 @@ modelo de datos de la cola, no atornillar después.
 - **Cuenta de relate: RESUELTA (2026-07-19).** Cada persona archiva desde **su propia cuenta**
   del webmail (modelo miniapp por persona — ver spec de entrega). No hay «cuenta fija». El
   `id_cuenta` y el `uid` se resuelven en la cuenta del usuario de la app.
-- **Alcance de elementos:** **judicial-first** (procuradores actúan en procedimientos).
-  Extrajudicial = parámetro sin cablear los params no confirmados; `clientes` **fuera** (F2 lo
-  retiró a propósito; YAGNI + gobernanza CLAUDE.md).
+- **Alcance de elementos: DECIDIDO judicial-first (2026-07-19).** Solo expedientes judiciales;
+  extrajudicial = interruptor a activar cuando surja (con sus params por confirmar); `clientes`
+  **fuera** (F2 lo retiró a propósito; YAGNI + gobernanza CLAUDE.md).
 - Idempotencia del adjuntar (§6): confirmar vía prueba antes de habilitar reintentos automáticos.
 
 ## 12. Higiene
