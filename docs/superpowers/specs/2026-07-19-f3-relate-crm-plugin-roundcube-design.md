@@ -8,6 +8,7 @@ relacionado:
   - docs/superpowers/plans/PLAN_INTAKE_PROCURADORES_EMAIL.md (§7, §15 F3)
   - docs/INTEGRACION_SUDESPACHO.md (§10.10 — SSOT del contrato del plugin)
   - docs/DEAD_ENDS.md (Módulo de correo nest-mail/Roundcube)
+  - docs/superpowers/specs/2026-07-19-intake-miniapp-entrega-design.md (entrega: miniapp bajo demanda por persona)
 ---
 
 # Diseño — F3: escritura en el CRM (relate correo↔expediente + adjuntar)
@@ -225,8 +226,9 @@ modelo de datos de la cola, no atornillar después.
 
 ## 11. Decisiones abiertas
 
-- **Cuenta de relate:** ¿en la cuenta del abogado que confirma en la bandeja, o una canónica
-  (p. ej. la del abogado del expediente)? Afecta a `id_cuenta` y a dónde buscar el `uid`.
+- **Cuenta de relate: RESUELTA (2026-07-19).** Cada persona archiva desde **su propia cuenta**
+  del webmail (modelo miniapp por persona — ver spec de entrega). No hay «cuenta fija». El
+  `id_cuenta` y el `uid` se resuelven en la cuenta del usuario de la app.
 - **Alcance de elementos:** **judicial-first** (procuradores actúan en procedimientos).
   Extrajudicial = parámetro sin cablear los params no confirmados; `clientes` **fuera** (F2 lo
   retiró a propósito; YAGNI + gobernanza CLAUDE.md).
