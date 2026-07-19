@@ -51,6 +51,11 @@ Confirmado empíricamente cableando el MCP `google-despacho` a Cowork (2026-07-0
 - **Confirmado:** 2026-07-09.
 - **Solución:** editar el config **con la app cerrada** (el **cierre forzado** `Stop-Process -Name claude -Force` no dispara la reescritura). Verificar siempre con `ConvertFrom-Json` que el JSON sigue válido.
 
+### `taskkill /F /IM claude.exe /T` desde un terminal hijo de Claude se auto-mata
+- **Intentado:** script que hace backup → `taskkill /F /IM claude.exe /T` → edita `claude_desktop_config.json`, lanzado desde un terminal que colgaba de la app Claude (los procesos de Claude Code `...\claude-code\...\claude.exe` y los terminales que abren son **hijos de la app Desktop** `Claude.exe`; mismo image name, `/IM` es case-insensitive).
+- **Resultado:** el `/T` mata el árbol de Claude **incluido el propio terminal/script** → el backup se crea pero la edición **nunca se escribe** → `expedientes` sigue en el config (síntoma: varios `.bak-*` pero el fichero intacto). Confirmado 2026-07-19 (paso 7 del despliegue MCP Drive-disco, 2 corridas fallidas).
+- **Solución:** lanzar el editor desde un proceso que **NO cuelgue de Claude** (PowerShell nuevo del menú Inicio). Blindaje en el script: **guarda de ancestría** — recorrer la cadena `ParentProcessId` desde `$PID`; si algún ancestro es `claude.exe`, **abortar antes de tocar nada** (no un `taskkill` a ciegas). Patrón en `Desktop\jubilar_expedientes_node.ps1` v2.
+
 ### `.dxt` instalado + entrada cruda del config con el MISMO nombre = colisión
 - **Resultado:** dos servers registrados con el mismo `name` (`google-despacho`) → el puente se confunde y Cowork no resuelve el bueno; la entrada cruda además puede quedar en "failed / Server disconnected".
 - **Solución:** tras instalar el `.dxt`, **borrar la entrada cruda del config** (quedarse solo con el `.dxt`).
