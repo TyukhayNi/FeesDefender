@@ -62,9 +62,19 @@ Los pasos 3-4 de abajo **solo aplican al chat de Desktop / Claude Code**, no a C
        vuelven al modelo). Tres modos de acceso por ubicación del caso: (1) Drive vía
        `expedientes-xl`, (2) local-nativo (filesystem del entorno), (3) conector nube
        prefiriendo `google-despacho` sobre el nativo E&V. Tools citadas como `servidor:tool`.
-7. [ ] **SOLO ENTONCES** retirar la entrada `expedientes` de
-       `claude_desktop_config.json` **y** del scope proyecto de Claude Code
-       (`claude mcp remove expedientes -s project`).
+7. [~] **SOLO ENTONCES** retirar el server viejo `expedientes` (Node FS). Dos partes:
+       - **Parte B (Claude Code) ✅ HECHA+VERIFICADA 2026-07-19** —
+         `claude mcp remove "expedientes" -s local` (scope real = **`local`**, NO `project`;
+         lo dicta `claude mcp get`; corrige la versión previa de este paso). `claude mcp list`
+         confirma `expedientes` fuera de Code; queda `expedientes-xl` (Connected).
+       - **Parte A (Claude Desktop/Cowork) ⏳ PENDIENTE = acción manual de Nikolai.** Quitar la
+         entrada `expedientes` de `claude_desktop_config.json`. **GOTCHA:** las sesiones de Claude
+         Code (`...\claude-code\...\claude.exe`) son **procesos hijos de la app Desktop** (mismo
+         image name) → `taskkill /F /IM claude.exe /T` **mata también la sesión de Code**, así que
+         no puede hacerse desde dentro de Code (además el config se reescribe con la app viva). Vía:
+         script atómico externo `Desktop\jubilar_expedientes_node.ps1` (backup previo → force-kill →
+         edición en memoria que quita SOLO `expedientes` y conserva `email-export` → Nikolai relanza).
+         Rollback: `.bak-*` o re-añadir la entrada.
 8. [ ] Sesión de humo: intake de un fichero de prueba + `tree` de un caso + `grep`
        (`search_content`) — ver checklist de la sesión de humo abajo.
 
@@ -78,13 +88,16 @@ El lado Claude Code corría tools viejas. Estado de partida (verificado 2026-07-
 `python` pelado → los 2 bugs ya corregidos en el `.dxt`/`run_server.bat`); `expedientes`
 (Node FS) = activo. `dist/plugin` YA está reconstruido con las 19 tools + `.bat` corregido.
 
-- [ ] **B1.** Quitar el standalone del scope proyecto: `claude mcp remove expedientes-xl -s project`
-      (desde la RAÍZ del repo, no desde un worktree). No corta la sesión.
-- [ ] **B2.** Refrescar el plugin: `/plugin marketplace update despacho-tyukhay` + reinstalar
-      `feesdefender`.
-- [ ] **B3.** **Reiniciar Claude Code** (necesario para cargar las 19 tools; **corta la sesión
-      activa**). Verificar: `read_text`/`list_dir` sobre un fichero de `G:` responden y el
-      plugin expone 19 tools (ya sin `delete_path`).
+- [x] **B1. ✅ HECHA** — standalone `expedientes-xl` (Failed) retirado. **Corrección:** su scope real
+      era **`local`**, no `project` (lo dicta `claude mcp get`; ejecutar `claude mcp remove` SIEMPRE
+      desde la RAÍZ del repo, no desde un worktree).
+- [x] **B2. ✅ HECHA** — `claude plugin marketplace update despacho-tyukhay` + `claude plugin update
+      feesdefender@despacho-tyukhay` (v0.1.0→**0.3.0**). Gotcha: el `update` con nombre pelado
+      (`feesdefender`) falla "Plugin not found"; hay que cualificar `@despacho-tyukhay`.
+- [x] **B3. ✅ HECHA+VERIFICADA 2026-07-19** — reiniciado Claude Code. `claude mcp list` (desde la raíz)
+      = `plugin:feesdefender:expedientes-xl` **√ Connected** con **19 tools sin `delete_path`**;
+      `list_dir`+`get_metadata`+`read_text` sobre `G:\...\CASOS\_PLANTILLA\README.md` responden; poda
+      Tier 0 (`_podados:1`) OK.
 
 ## Sesión de humo — puntos a vigilar
 
