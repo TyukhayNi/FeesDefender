@@ -4,7 +4,7 @@
 
 ---
 
-Vamos a **construir** la Cronología Unificada de Prueba en `core/`. El **diseño está cerrado** (8 fases, 0–7); hoy NO se diseña, se construye. Banco de pruebas: expediente W-02VND1 (Tibidabo 8).
+Vamos a **construir** la Cronología Unificada de Prueba en `core/`. El **diseño está cerrado** (8 fases, 0–7); hoy NO se diseña, se construye. Banco de pruebas: expediente W-02VND1 ([inmueble]).
 
 ## Antes de tocar nada
 

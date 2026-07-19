@@ -10,7 +10,7 @@ dueño: Nikolai Tyukhay
 > como **enlace a Drive** dentro del padre— se aborda en un hilo aparte y NO entra
 > en este plano.
 >
-> Origen: hilo Cowork sobre el caso W-02VND1 (Tibidabo 8). Todo el código de abajo
+> Origen: hilo Cowork sobre el caso W-02VND1 ([inmueble]). Todo el código de abajo
 > está **verificado en sandbox** (7/7 tests en verde) antes de redactar el plano.
 
 ## 1. Problema
@@ -390,7 +390,7 @@ Reextracción del caso W-02VND1 (rebuild forzado, idempotente):
 ```powershell
 python -m scripts.export_label_emails --ref W-02VND1 `
   --account nikolai.tyukhay@engelvoelkers.com `
-  --label "01. CONTING/01. EXTRAJUD/01. BARCELONA/BaRS1 - Tibidabo 8 - (W-02VND1)" `
+  --label "01. CONTING/01. EXTRAJUD/01. BARCELONA/BaRS1 - [inmueble] - (W-02VND1)" `
   --extraer-adjuntos --force
 ```
 
@@ -408,12 +408,12 @@ y permite validar end-to-end sin sintéticos:
 
 - **Padre:** `2026-06-08_mails_consulado.eml` — de `persona.cuatro@engelvoelkers.com`
   (consultora E&V; confirma el flujo de reenvío en bloque). Lleva un adjunto
-  `Content-Type: message/rfc822; name="offer letter TIBIDABO 8.eml"` que el export
+  `Content-Type: message/rfc822; name="offer letter [inmueble].eml"` que el export
   actual NO extrae.
-- **Hijo esperado tras el fix:** sus cabeceras son `Subject: Re: offer letter TIBIDABO 8`,
-  `Date: Wed, 23 Jul 2025 17:24:48 +0200` → nombre canónico `2025-07-23_offer_letter_tibidabo_8.eml`.
+- **Hijo esperado tras el fix:** sus cabeceras son `Subject: Re: offer letter [inmueble]`,
+  `Date: Wed, 23 Jul 2025 17:24:48 +0200` → nombre canónico `2025-07-23_offer_letter_inmueble.eml`.
 - **Validación de la dedup (clave):** en la carpeta YA existen
-  `2025-07-23_offer_letter_tibidabo_8.eml` y `…_2.eml` (exportados sueltos desde la
+  `2025-07-23_offer_letter_inmueble.eml` y `…_2.eml` (exportados sueltos desde la
   etiqueta). Si ese email se exportó suelto **y** viaja anidado en el padre con el
   mismo `Message-ID`, el aplanado debe **colapsarlo** (no crear un tercer fichero). Es
   el test real de la dedup por `Message-ID`. Comprobar el `Message-ID` de ambos antes

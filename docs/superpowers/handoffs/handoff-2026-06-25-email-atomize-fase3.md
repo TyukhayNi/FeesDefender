@@ -47,12 +47,12 @@ Spec/plan de referencia:
   por workflow adversarial)
 - planes homónimos en `docs/superpowers/plans/`
 
-**Caso piloto W-02VND1** = `BaRS1 - Tibidabo 8 - (W-02VND1) - Vuelta` (Barcelona). Ruta real:
-`G:\Unidades compartidas\EXPEDIENTES - TYUKHAY LEGAL\CASOS\Barcelona\BaRS1 - Tibidabo 8 - (W-02VND1) - Vuelta`.
+**Caso piloto W-02VND1** = `BaRS1 - [inmueble] - (W-02VND1) - Vuelta` (Barcelona). Ruta real:
+`G:\Unidades compartidas\EXPEDIENTES - TYUKHAY LEGAL\CASOS\Barcelona\BaRS1 - [inmueble] - (W-02VND1) - Vuelta`.
 Estado tras Fase 2: 277 Capa A byte-idénticos + 89 Capa B `alta-reconstruida`; **PersonaUno = 12
 directos (Capa A) + 13 inline PROMOVIDOS + 3 en revisión** (ver `_revision/del_burgo.md`). Fin
 último del proyecto: recuperar la autoría enterrada de **PersonaUno** para levantar el velo
-de Tibidabo 8 S.L.
+de [inmueble] S.L.
 
 ## Objetivo de la Fase 3 (capa ESPECÍFICA del caso; el motor sigue genérico)
 

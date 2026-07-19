@@ -178,7 +178,7 @@ import pytest
 
 
 def _ident(**kw):
-    base = dict(codigo="BaRS11", direccion="Tibidabo 8", w_code="W-NUEVO1",
+    base = dict(codigo="BaRS11", direccion="[inmueble]", w_code="W-NUEVO1",
                 sufijo="Vuelta", tipo_caso="VUELTA")
     base.update(kw)
     return base
@@ -188,7 +188,7 @@ def test_resolver_identidad_sin_colision():
     ident = abrir_caso.resolver_identidad(
         **_ident(), nombres_existentes=["BaRS1 - Otra (W-VIEJO1) - Vuelta"], force=False,
     )
-    assert ident.case_id == "BaRS11 - Tibidabo 8 (W-NUEVO1) - Vuelta"
+    assert ident.case_id == "BaRS11 - [inmueble] (W-NUEVO1) - Vuelta"
     assert ident.posicion == config.POSICION_ACTORA
     assert not ident.requiere_confirmacion
     assert not ident.w_code_duplicado
@@ -198,7 +198,7 @@ def test_resolver_identidad_wcode_duplicado_es_error():
     with pytest.raises(abrir_caso.ColisionCaso):
         abrir_caso.resolver_identidad(
             **_ident(w_code="W-02VND1"),
-            nombres_existentes=["BaRS1 - Tibidabo 8 (W-02VND1) - Vuelta"],
+            nombres_existentes=["BaRS1 - [inmueble] (W-02VND1) - Vuelta"],
             force=False,
         )
 
@@ -206,7 +206,7 @@ def test_resolver_identidad_wcode_duplicado_es_error():
 def test_resolver_identidad_wcode_duplicado_force_no_lanza():
     ident = abrir_caso.resolver_identidad(
         **_ident(w_code="W-02VND1"),
-        nombres_existentes=["BaRS1 - Tibidabo 8 (W-02VND1) - Vuelta"],
+        nombres_existentes=["BaRS1 - [inmueble] (W-02VND1) - Vuelta"],
         force=True,
     )
     assert ident.w_code_duplicado is True

@@ -26,7 +26,7 @@ from core.email_export import _slug_descripcion  # noqa: E402
 
 BASE = Path(
     r"G:\Unidades compartidas\EXPEDIENTES - TYUKHAY LEGAL\CASOS\Barcelona"
-    r"\BaRS1 - Tibidabo 8 - (W-02VND1) - Vuelta\01_Procesado\Emails"
+    r"\BaRS1 - [inmueble] - (W-02VND1) - Vuelta\01_Procesado\Emails"
 )
 MENSAJES = BASE / "mensajes"
 CORPUS = BASE / "corpus.jsonl"

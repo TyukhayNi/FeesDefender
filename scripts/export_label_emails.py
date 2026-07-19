@@ -9,7 +9,7 @@ lote vacío. Solo lectura sobre Gmail.
 Uso:
     python -m scripts.export_label_emails --ref W-02VND1 \
         --account nikolai.tyukhay@engelvoelkers.com \
-        --label "01. CONTING/01. EXTRAJUD/01. BARCELONA/BaRS1 - Tibidabo 8 - (W-02VND1)"
+        --label "01. CONTING/01. EXTRAJUD/01. BARCELONA/BaRS1 - [inmueble] - (W-02VND1)"
 
 Ejecución LOCAL: necesita el token OAuth en ``~/.gmail-mcp/tokens/<cuenta>.json``
 (reutilizado de gmail-ro) y acceso de escritura a ``G:``. Desde Cowork no corre.

@@ -9,7 +9,7 @@ def _msg(**kw) -> RegistroMensaje:
         msg_id="MSG-00001", rfc_message_id="a@x", in_reply_to="", hilo="a@x",
         fecha_iso="2026-06-12", hora="1030", fecha_tz="2026-06-12T10:30:00+02:00",
         de="per01c@example.invalid", de_nombre="PersonaUno", para=["b@x"], cc=[], cco=[],
-        asunto="Oferta Tibidabo", eml_origen="2026-06-12_oferta.eml", profundidad=0,
+        asunto="Oferta [inmueble]", eml_origen="2026-06-12_oferta.eml", profundidad=0,
         ruta_anidacion=[], procedencia=[{"eml_origen": "2026-06-12_oferta.eml",
                                          "profundidad": 0, "ruta_anidacion": []}],
         capa="A", confianza="alta", auth={"dkim": "pass"}, sha256="deadbeef",
@@ -23,7 +23,7 @@ def _msg(**kw) -> RegistroMensaje:
 
 
 def test_nombre_fichero_mensaje():
-    assert R.nombre_md(_msg()) == "2026-06-12_1030_oferta_tibidabo_MSG-00001.md"
+    assert R.nombre_md(_msg()) == "2026-06-12_1030_oferta_inmueble_MSG-00001.md"
 
 
 def test_render_md_tiene_frontmatter_y_cuerpo():
@@ -50,7 +50,7 @@ def _mb(confianza):
     # Helper de capa B reconstruida — reutilizado por Tasks 3, 4 y 5.
     return RegistroMensaje(
         msg_id="MSG-09001", capa="B", confianza=confianza, de="a@x.com", de_nombre="Ana",
-        fecha_iso="2020-05-01", asunto="Tibidabo", cuerpo="cuerpo del mensaje reconstruido",
+        fecha_iso="2020-05-01", asunto="[inmueble]", cuerpo="cuerpo del mensaje reconstruido",
         reconstruido_desde_cita=True, reconstruido_de="MSG-00007", en_revision=True,
         fingerprint="fp:abc123", fuente="email")
 
@@ -95,7 +95,7 @@ def test_render_revision_emite_reconstruidos_md_y_jsonl():
     rec = d["reconstruidos.md"]
     # Lista SOLO los media-reconstruida, con sus columnas:
     assert "MSG-09001" in rec and "a@x.com" in rec and "2020-05-01" in rec
-    assert "Tibidabo" in rec and "MSG-00007" in rec
+    assert "[inmueble]" in rec and "MSG-00007" in rec
     # NO incluye el alta-reconstruida:
     assert "MSG-09002" not in rec
     # El espejo .jsonl: una línea JSON parseable por cada media-reconstruida, y solo esos:

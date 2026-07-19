@@ -15,7 +15,7 @@ Los consultores de E&V firman con display-name **"Apellido, Nombre"** (`PersonaC
 
 Reproducción: `parsear_anclaje("De: PersonaCuatro, Eva <persona.cuatro@engelvoelkers.com>\n…")` →
 `de=''`; sin la coma (`De: Eva <addr>`) → `de='eva.pratpadros@…'`. Confirmado sobre el correo
-Eva→Consulado de [PAIS_EXTRANJERO] (7-jul, "Re: offer letter TIBIDABO 8", interior de MSG-00305) y sobre las
+Eva→Consulado de [PAIS_EXTRANJERO] (7-jul, "Re: offer letter [inmueble]", interior de MSG-00305) y sobre las
 filas `comma_EV` del informe de auditoría.
 
 ## 1. Fix

@@ -78,7 +78,7 @@ def test_server_registra_tool_export_label_emails(tmp_path):
 def test_export_label_emails_pasa_parametros_correctamente(tmp_path):
     """La tool resuelve ref→case_id, calcula dest_dir y llama a export_label
     con todos los parámetros mapeados."""
-    fake_case_id = "BaRS1 - Tibidabo 8 - (W-02VND1) - Vuelta"
+    fake_case_id = "BaRS1 - [inmueble] - (W-02VND1) - Vuelta"
     fake_report = _FakeReport()
     dest_dir = tmp_path / "00_Input" / "03_Email"
 

@@ -72,7 +72,7 @@ def build_server(
                 "nikolai.tyukhay@engelvoelkers.com"). Los casos E&V usan la cuenta
                 @engelvoelkers; con otra cuenta ``labels().list`` devolverá vacío.
             label: nombre exacto de la etiqueta Gmail (p.ej.
-                "01. CONTING/01. EXTRAJUD/BaRS1 - Tibidabo 8 - (W-02VND1)").
+                "01. CONTING/01. EXTRAJUD/BaRS1 - [inmueble] - (W-02VND1)").
             extraer_adjuntos: si True, extrae los adjuntos a subcarpeta fechada.
                 Por defecto False (estructura plana: un .eml por mensaje).
             workers: hilos paralelos de descarga (default 8).

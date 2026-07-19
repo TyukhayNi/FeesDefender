@@ -44,14 +44,14 @@ def test_vista_persona_agrupa_autor_y_destinatario_no_a_ignacio():
 def test_vista_tematica_keyword_incluye_excluye_rango():
     ident = _ident_db()
     mensajes = [
-        _m("MSG-1", asunto="Tibidabo arras", fecha="2024-03-01"),     # keyword + en rango
+        _m("MSG-1", asunto="[inmueble] arras", fecha="2024-03-01"),     # keyword + en rango
         _m("MSG-2", cuerpo="hablamos del ENCARGO", fecha="2024-03-02"),  # keyword en cuerpo
         _m("MSG-3", asunto="nada que ver", fecha="2024-03-03"),       # sin keyword
-        _m("MSG-4", asunto="Tibidabo", fecha="2025-01-01"),           # keyword pero fuera de rango
-        _m("MSG-5", asunto="Tibidabo", fecha="2024-03-04"),           # keyword pero excluido
+        _m("MSG-4", asunto="[inmueble]", fecha="2025-01-01"),           # keyword pero fuera de rango
+        _m("MSG-5", asunto="[inmueble]", fecha="2024-03-04"),           # keyword pero excluido
     ]
     d = V.DefVista(id="nexo_causal", titulo="Nexo", tipo="tematica",
-                   palabras_clave=["tibidabo", "encargo"],
+                   palabras_clave=["inmueble", "encargo"],
                    incluye_msg=["MSG-3"], excluye_msg=["MSG-5"],
                    desde="2024-01-01", hasta="2024-12-31")
     salidas, _notas = V.render_vistas(mensajes, ident, [d])
@@ -85,7 +85,7 @@ def test_cargar_vistas_sin_fichero_es_vacio(tmp_path):
 def test_render_vistas_lista_vacia_no_crashea():
     ident = _ident_db()
     dp = V.DefVista(id="dossier_del_burgo", tipo="persona", persona="persona_uno")
-    dt = V.DefVista(id="nexo_causal", tipo="tematica", palabras_clave=["tibidabo"])
+    dt = V.DefVista(id="nexo_causal", tipo="tematica", palabras_clave=["inmueble"])
     salidas, notas = V.render_vistas([], ident, [dp, dt])
     assert "dossier_del_burgo.md" in salidas and "nexo_causal.md" in salidas
     assert notas == []
@@ -93,7 +93,7 @@ def test_render_vistas_lista_vacia_no_crashea():
 
 def test_tematica_sin_palabras_clave_no_incluye_nada():
     ident = _ident_db()
-    mensajes = [_m("MSG-1", asunto="Tibidabo arras"), _m("MSG-2", cuerpo="lo que sea")]
+    mensajes = [_m("MSG-1", asunto="[inmueble] arras"), _m("MSG-2", cuerpo="lo que sea")]
     d = V.DefVista(id="nexo_causal", tipo="tematica", palabras_clave=[])
     salidas, _notas = V.render_vistas(mensajes, ident, [d])
     doc = salidas["nexo_causal.md"]

@@ -1078,7 +1078,7 @@ def _msg(**kw) -> RegistroMensaje:
         msg_id="MSG-00001", rfc_message_id="a@x", in_reply_to="", hilo="a@x",
         fecha_iso="2026-06-12", hora="1030", fecha_tz="2026-06-12T10:30:00+02:00",
         de="per01c@example.invalid", de_nombre="PersonaUno", para=["b@x"], cc=[], cco=[],
-        asunto="Oferta Tibidabo", eml_origen="2026-06-12_oferta.eml", profundidad=0,
+        asunto="Oferta [inmueble]", eml_origen="2026-06-12_oferta.eml", profundidad=0,
         ruta_anidacion=[], procedencia=[{"eml_origen": "2026-06-12_oferta.eml",
                                          "profundidad": 0, "ruta_anidacion": []}],
         capa="A", confianza="alta", auth={"dkim": "pass"}, sha256="deadbeef",
@@ -1092,7 +1092,7 @@ def _msg(**kw) -> RegistroMensaje:
 
 
 def test_nombre_fichero_mensaje():
-    assert R.nombre_md(_msg()) == "2026-06-12_1030_oferta_tibidabo_MSG-00001.md"
+    assert R.nombre_md(_msg()) == "2026-06-12_1030_oferta_inmueble_MSG-00001.md"
 
 
 def test_render_md_tiene_frontmatter_y_cuerpo():
@@ -1779,8 +1779,8 @@ git commit -m "feat(email-atomize): CLI scripts/atomize_emails.py (Fase 1 T10)"
 
 Run (PowerShell, desde la raíz):
 ```powershell
-$out = "G:\Unidades compartidas\EXPEDIENTES - TYUKHAY LEGAL\CASOS\Barcelona\BaRS1 - Tibidabo 8 - (W-02VND1) - Vuelta\01_Procesado\Emails"
-$src = "G:\Unidades compartidas\EXPEDIENTES - TYUKHAY LEGAL\CASOS\Barcelona\BaRS1 - Tibidabo 8 - (W-02VND1) - Vuelta\00_Input\03_Email"
+$out = "G:\Unidades compartidas\EXPEDIENTES - TYUKHAY LEGAL\CASOS\Barcelona\BaRS1 - [inmueble] - (W-02VND1) - Vuelta\01_Procesado\Emails"
+$src = "G:\Unidades compartidas\EXPEDIENTES - TYUKHAY LEGAL\CASOS\Barcelona\BaRS1 - [inmueble] - (W-02VND1) - Vuelta\00_Input\03_Email"
 & ".\.venv\Scripts\python.exe" -m scripts.atomize_emails --src "$src" --out "$out"
 ```
 Expected: imprime `277 mensajes atómicos, …`. Verificar:

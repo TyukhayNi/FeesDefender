@@ -298,7 +298,7 @@ En `tests/test_email_atomize_pipeline_b.py`, en `test_layerb_promueve_y_no_renum
         "    direcciones: [ { email: per01a@example.invalid, estado: confirmada } ]\n",
         encoding="utf-8")
     (src / "2026-06-01_carrier.eml").write_bytes(_carrier_gmail(
-        "<carrier@x>", "Te reenvío.", "per01a@example.invalid", "1 de mayo de 2020", "Tibidabo",
+        "<carrier@x>", "Te reenvío.", "per01a@example.invalid", "1 de mayo de 2020", "[inmueble]",
         "contenido citado suficientemente largo para superar el floor de 24"))
     rep = P.atomize_dir(src, out, case_dir=tmp_path)
     # Capa A: 1 portador; Capa B: 1 reconstruida (PersonaUno)
@@ -519,14 +519,14 @@ def test_vista_persona_agrupa_autor_y_destinatario_no_a_ignacio():
 def test_vista_tematica_keyword_incluye_excluye_rango():
     ident = _ident_db()
     mensajes = [
-        _m("MSG-1", asunto="Tibidabo arras", fecha="2024-03-01"),     # keyword + en rango
+        _m("MSG-1", asunto="[inmueble] arras", fecha="2024-03-01"),     # keyword + en rango
         _m("MSG-2", cuerpo="hablamos del ENCARGO", fecha="2024-03-02"),  # keyword en cuerpo
         _m("MSG-3", asunto="nada que ver", fecha="2024-03-03"),       # sin keyword
-        _m("MSG-4", asunto="Tibidabo", fecha="2025-01-01"),           # keyword pero fuera de rango
-        _m("MSG-5", asunto="Tibidabo", fecha="2024-03-04"),           # keyword pero excluido
+        _m("MSG-4", asunto="[inmueble]", fecha="2025-01-01"),           # keyword pero fuera de rango
+        _m("MSG-5", asunto="[inmueble]", fecha="2024-03-04"),           # keyword pero excluido
     ]
     d = V.DefVista(id="nexo_causal", titulo="Nexo", tipo="tematica",
-                   palabras_clave=["tibidabo", "encargo"],
+                   palabras_clave=["inmueble", "encargo"],
                    incluye_msg=["MSG-3"], excluye_msg=["MSG-5"],
                    desde="2024-01-01", hasta="2024-12-31")
     salidas, _notas = V.render_vistas(mensajes, ident, [d])
@@ -777,10 +777,10 @@ def test_genera_vistas_desde_config(tmp_path):
         "  - id: nexo_causal\n"
         "    titulo: Nexo\n"
         "    tipo: tematica\n"
-        "    palabras_clave: [tibidabo]\n",
+        "    palabras_clave: [inmueble]\n",
         encoding="utf-8")
     (src / "a.eml").write_bytes(_eml("<a@x>", "Jaime <per01a@example.invalid>", "x@y.com",
-                                     "Tibidabo", "cuerpo sobre arras y tibidabo"))
+                                     "[inmueble]", "cuerpo sobre arras y inmueble"))
     rep = P.atomize_dir(src, out)   # case_dir derivado = out.parent.parent = case
     assert (out / "vistas" / "dossier_del_burgo.md").exists()
     assert (out / "vistas" / "nexo_causal.md").exists()
@@ -1134,7 +1134,7 @@ git commit -m "feat(email-atomize): CLI --entrega para sellar la entrega (F3 T6)
 ## Task 7: Verificación EN VIVO sobre W-02VND1 (lección dura F2)
 
 No es TDD: es verificación sobre los 277 reales. Ruta del caso:
-`G:\Unidades compartidas\EXPEDIENTES - TYUKHAY LEGAL\CASOS\Barcelona\BaRS1 - Tibidabo 8 - (W-02VND1) - Vuelta`.
+`G:\Unidades compartidas\EXPEDIENTES - TYUKHAY LEGAL\CASOS\Barcelona\BaRS1 - [inmueble] - (W-02VND1) - Vuelta`.
 **No tocar `00_Input`.** Las `palabras_clave` del nexo las fija Nikolai antes de correr.
 
 - [ ] **Step 1: Capturar la línea base de hashes de los 277 Capa A (ANTES)**
@@ -1142,7 +1142,7 @@ No es TDD: es verificación sobre los 277 reales. Ruta del caso:
 Run (PowerShell, lectura sobre `G:` → `dangerouslyDisableSandbox`):
 
 ```powershell
-$emails = "G:\Unidades compartidas\EXPEDIENTES - TYUKHAY LEGAL\CASOS\Barcelona\BaRS1 - Tibidabo 8 - (W-02VND1) - Vuelta\01_Procesado\Emails\mensajes"
+$emails = "G:\Unidades compartidas\EXPEDIENTES - TYUKHAY LEGAL\CASOS\Barcelona\BaRS1 - [inmueble] - (W-02VND1) - Vuelta\01_Procesado\Emails\mensajes"
 Get-ChildItem $emails -Filter *_MSG-*.md |
   Where-Object { (Get-Content $_.FullName -Raw) -notmatch "capa: B" } |
   Get-FileHash -Algorithm SHA256 |
@@ -1181,7 +1181,7 @@ Expected: `OK: 277 Capa A byte-idénticos`. **Si algo cambió → STOP**: invest
 
 Run:
 ```powershell
-$rev = "G:\Unidades compartidas\EXPEDIENTES - TYUKHAY LEGAL\CASOS\Barcelona\BaRS1 - Tibidabo 8 - (W-02VND1) - Vuelta\01_Procesado\Emails"
+$rev = "G:\Unidades compartidas\EXPEDIENTES - TYUKHAY LEGAL\CASOS\Barcelona\BaRS1 - [inmueble] - (W-02VND1) - Vuelta\01_Procesado\Emails"
 (Get-Content "$rev\_revision\del_burgo.md" -Raw)  # 12+13 PersonaUno, idéntico a F2
 (Get-Content "$rev\vistas\dossier_del_burgo.md" -Raw)
 (Get-Content "$rev\vistas\nexo_causal.md" -Raw)

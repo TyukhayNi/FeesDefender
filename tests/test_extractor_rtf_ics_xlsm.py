@@ -16,7 +16,7 @@ def test_extract_ics(tmp_path: Path):
     p.write_text(
         "BEGIN:VCALENDAR\r\n"
         "BEGIN:VEVENT\r\n"
-        "SUMMARY:Reunión Tibidabo\r\n"
+        "SUMMARY:Reunión [inmueble]\r\n"
         "DTSTART:20260604T100000Z\r\n"
         "LOCATION:Barcelona\r\n"
         "END:VEVENT\r\n"
@@ -25,7 +25,7 @@ def test_extract_ics(tmp_path: Path):
     )
     texto, metodo = _extract_one(p)
     assert metodo == "ics"
-    assert "Reunión Tibidabo" in texto
+    assert "Reunión [inmueble]" in texto
     assert "DTSTART" in texto and "20260604T100000Z" in texto
 
 

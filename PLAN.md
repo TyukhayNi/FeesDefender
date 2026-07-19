@@ -288,7 +288,7 @@ script manual · OCRmyPDF en anon), hueco de escaneados >30pp que salen vacíos,
 Descompone `00_Input/03_Email/*.eml` a nivel de **mensaje atómico** → `01_Procesado/Emails/`
 (`.md` por mensaje + frontmatter, adjuntos dedup sha256 + ficha, `corpus.jsonl`, `_registro.json`
 con IDs congelados, `CORREOS_LECTURA.md`, `INDICE_ADJUNTOS.md`). Fin: recuperar la autoría
-enterrada de PersonaUno (levantar el velo de Tibidabo 8 S.L.). Reutiliza `core.email_export`.
+enterrada de PersonaUno (levantar el velo de [inmueble] S.L.). Reutiliza `core.email_export`.
 
 - [x] **Fase 1 — IDs + Capa A (MIME) + salidas.** Paquete `core/email_atomize/` (ids/headers/
   extract/dedup/bodies/attachments/render/corpus/pipeline) + CLI `scripts/atomize_emails.py`.
@@ -319,7 +319,7 @@ enterrada de PersonaUno (levantar el velo de Tibidabo 8 S.L.). Reutiliza `core.e
 > materialización cercana es la sala de lectura a nivel-fichero (hermana, NO prerrequisito; ver
 > `docs/superpowers/2026-07-19-sala-lectura-procesado-exploracion.md`). **Desarchivar** solo con un caso
 > real que exija una cronología unificada de prueba.
-*Diseño aportado por Nikolai 2026-06-25 (hilo Cowork). Spec **v7 — DISEÑO COMPLETO (8 fases, 0–7)**: `docs/superpowers/specs/2026-06-25-cronologia-unificada-design.md`. Banco de pruebas de diseño: W-02VND1 (Tibidabo 8). **Naturaleza: documento de DISEÑO, NO construcción.** Disciplina rectora: skill `verificacion-anclada-fuente`. Implementación: Claude Code en `core/` — **siguiente paso = BUILD, no más diseño.***
+*Diseño aportado por Nikolai 2026-06-25 (hilo Cowork). Spec **v7 — DISEÑO COMPLETO (8 fases, 0–7)**: `docs/superpowers/specs/2026-06-25-cronologia-unificada-design.md`. Banco de pruebas de diseño: W-02VND1 ([inmueble]). **Naturaleza: documento de DISEÑO, NO construcción.** Disciplina rectora: skill `verificacion-anclada-fuente`. Implementación: Claude Code en `core/` — **siguiente paso = BUILD, no más diseño.***
 
 **Objetivo.** Fusionar todas las fuentes de prueba de un expediente (correo, WhatsApp,
 CRM, entrevistas, documental, registros) en **UNA sola línea de tiempo**, separando lo

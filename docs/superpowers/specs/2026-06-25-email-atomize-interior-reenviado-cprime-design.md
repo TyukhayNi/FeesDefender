@@ -24,7 +24,7 @@ cabecera, ese interior:
 **Medición real (read-only, cruzada contra el corpus del motor, no contra la auditoría tolerante):** el filón
 recuperable son **~5-7 correos c′ genuinos**, casi todos de **PersonaUno / PersonaDos** — la autoría
 enterrada es el payoff del levantamiento del velo —, más el **testigo MSG-00305** (Eva→Consulado de [PAIS_EXTRANJERO],
-7-jul, *Re: offer letter TIBIDABO 8*, con la **Contraoferta**). La cifra exacta de atoms net-new **solo se sabe
+7-jul, *Re: offer letter [inmueble]*, con la **Contraoferta**). La cifra exacta de atoms net-new **solo se sabe
 tras construir** (dedup por `cuerpo_sha` del motor; las claves `(de,fecha)`/`(de,asunto)` infra- y sobre-cuentan
 por colisión de hilo).
 
@@ -267,7 +267,7 @@ churn de código.
    `_interior_reenviado` → `de="per01a@example.invalid"`, `de_nombre="PersonaUno"`, `fecha=2025-07-23`,
    `asunto="[PAIS_EXTRANJERO] docs"`; `cuerpo` SIN la cabecera.
 2. **c′ testigo Eva 7-jul (MSG-00305):** ancla exterior Eva 23-jul; interior `De:`↵`PersonaCuatro, Eva`↵`<`↵`eva…`↵`>`↵
-   `Fecha: El lun, 7 jul 2025`↵`Asunto: Re: offer letter TIBIDABO 8`↵`Para: …contacto@org-qa.example…` →
+   `Fecha: El lun, 7 jul 2025`↵`Asunto: Re: offer letter [inmueble]`↵`Para: …contacto@org-qa.example…` →
    `de="eva.pratpadros@…"`, `fecha=2025-07-07`, asunto correcto; el `<addr>` de [PAIS_EXTRANJERO] (Para/Cc) **NO** se coge.
 3. **G-UNICIDAD robo de destinatario:** `De:`↵`Nombre` (sin `<addr>`) + `Para: <x@y>` → `None` (de="").
 4. **G-FRANJA etiqueta intermedia:** `De:`↵`Nombre`↵`Reply-To: <relay@x>`↵`<`↵`addr@real`↵`>` →

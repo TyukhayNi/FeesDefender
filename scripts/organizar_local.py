@@ -5,10 +5,10 @@ Clasifica con un LLM local (Ollama) los documentos en bruto de
 
 Uso:
   # 1) Proponer (no toca _organizado/). Revisa luego 07_AI cowork/_plan_reorganizacion.md
-  python -m scripts.organizar_local "BaRS1 - Tibidabo 8 - (W-02VND1) - Vuelta" --plan
+  python -m scripts.organizar_local "BaRS1 - [inmueble] - (W-02VND1) - Vuelta" --plan
 
   # 2) Materializar la vista desde el plan (posiblemente editado a mano)
-  python -m scripts.organizar_local "BaRS1 - Tibidabo 8 - (W-02VND1) - Vuelta" --execute
+  python -m scripts.organizar_local "BaRS1 - [inmueble] - (W-02VND1) - Vuelta" --execute
 
   # Otros: --dry-run, --refresh, --rebuild, --renumerar
 

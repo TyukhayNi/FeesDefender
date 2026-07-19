@@ -16,7 +16,7 @@
 - **Traza forense:** registra SHA-256 en `IntakeManifest` + evento `upload_email`.
 
 ## 1.0 (2026-06-22) — borrador
-- Alta de la skill (rol:input, atomica). Redactada en Cowork (hilo BaRS1 Tibidabo 8).
+- Alta de la skill (rol:input, atomica). Redactada en Cowork (hilo BaRS1 [inmueble]).
 - Orquesta el motor local `core/email_export.py` + CLI `scripts/export_label_emails.py`
   (pendientes de implementar en Claude Code; ver PLAN.md [SIGUIENTE-EXPORT-ETIQUETA-EMAIL]).
 - Pendiente: empaquetar con `scripts/package_skill.py` y re-importar el `.skill` tras

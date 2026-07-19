@@ -56,9 +56,9 @@ def _b64url(raw: bytes) -> str:
 
 def test_eml_filename_fecha_iso_y_descripcion():
     nombre = ee.eml_filename(
-        {"date": "Thu, 12 Jun 2026 10:00:00 +0200", "subject": "Oferta Tibidabo 8"}
+        {"date": "Thu, 12 Jun 2026 10:00:00 +0200", "subject": "Oferta [inmueble]"}
     )
-    assert nombre == "2026-06-12_oferta_tibidabo_8.eml"
+    assert nombre == "2026-06-12_oferta_inmueble.eml"
 
 
 def test_eml_filename_quita_prefijos_re_fwd_y_acentos():
@@ -184,9 +184,9 @@ class _FakeService:
 
 _LABELS = [
     {"id": "Label_1", "name": "INBOX"},
-    {"id": "Label_99", "name": "01. CONTING/01. EXTRAJUD/01. BARCELONA/BaRS1 - Tibidabo 8 - (W-02VND1)"},
+    {"id": "Label_99", "name": "01. CONTING/01. EXTRAJUD/01. BARCELONA/BaRS1 - [inmueble] - (W-02VND1)"},
 ]
-_ETIQUETA = "01. CONTING/01. EXTRAJUD/01. BARCELONA/BaRS1 - Tibidabo 8 - (W-02VND1)"
+_ETIQUETA = "01. CONTING/01. EXTRAJUD/01. BARCELONA/BaRS1 - [inmueble] - (W-02VND1)"
 
 
 def test_export_label_etiqueta_inexistente(tmp_path):
@@ -648,15 +648,15 @@ def test_resolve_ref_wcode_a_case_id(tmp_casos_root):
     importlib.reload(case_locator)
 
     _crear_caso_con_id_go(
-        tmp_casos_root, "Barcelona", "BaRS1 - Tibidabo 8 - (W-02VND1) - Vuelta", "W-02VND1"
+        tmp_casos_root, "Barcelona", "BaRS1 - [inmueble] - (W-02VND1) - Vuelta", "W-02VND1"
     )
 
     # W-code → nombre de carpeta canónico.
-    assert case_locator.resolve_ref("W-02VND1") == "BaRS1 - Tibidabo 8 - (W-02VND1) - Vuelta"
+    assert case_locator.resolve_ref("W-02VND1") == "BaRS1 - [inmueble] - (W-02VND1) - Vuelta"
     # case_id exacto → se devuelve tal cual.
     assert (
-        case_locator.resolve_ref("BaRS1 - Tibidabo 8 - (W-02VND1) - Vuelta")
-        == "BaRS1 - Tibidabo 8 - (W-02VND1) - Vuelta"
+        case_locator.resolve_ref("BaRS1 - [inmueble] - (W-02VND1) - Vuelta")
+        == "BaRS1 - [inmueble] - (W-02VND1) - Vuelta"
     )
     # Desconocido → fallback al propio ref.
     assert case_locator.resolve_ref("W-NOEXISTE") == "W-NOEXISTE"
@@ -672,12 +672,12 @@ def test_resolve_ref_ignora_carpeta_fantasma_sin_caso_md(tmp_casos_root):
 
     # Caso real (con _caso.md e id_go) bajo ciudad.
     _crear_caso_con_id_go(
-        tmp_casos_root, "Barcelona", "BaRS1 - Tibidabo 8 - (W-02VND1) - Vuelta", "W-02VND1"
+        tmp_casos_root, "Barcelona", "BaRS1 - [inmueble] - (W-02VND1) - Vuelta", "W-02VND1"
     )
     # Carpeta fantasma plana con el nombre del W-code, SIN _caso.md.
     (tmp_casos_root / "W-02VND1" / "00_Input" / "03_Email").mkdir(parents=True)
 
-    assert case_locator.resolve_ref("W-02VND1") == "BaRS1 - Tibidabo 8 - (W-02VND1) - Vuelta"
+    assert case_locator.resolve_ref("W-02VND1") == "BaRS1 - [inmueble] - (W-02VND1) - Vuelta"
 
 
 # ---------------------------------------------------------------------------

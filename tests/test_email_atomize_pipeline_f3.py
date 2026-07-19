@@ -37,10 +37,10 @@ def test_genera_vistas_desde_config(tmp_path):
         "  - id: nexo_causal\n"
         "    titulo: Nexo\n"
         "    tipo: tematica\n"
-        "    palabras_clave: [tibidabo]\n",
+        "    palabras_clave: [inmueble]\n",
         encoding="utf-8")
     (src / "a.eml").write_bytes(_eml("<a@x>", "Jaime <per01a@example.invalid>", "x@y.com",
-                                     "Tibidabo", "cuerpo sobre arras y tibidabo"))
+                                     "[inmueble]", "cuerpo sobre arras y inmueble"))
     rep = P.atomize_dir(src, out)   # case_dir derivado = out.parent.parent = case
     assert (out / "vistas" / "dossier_del_burgo.md").exists()
     assert (out / "vistas" / "nexo_causal.md").exists()

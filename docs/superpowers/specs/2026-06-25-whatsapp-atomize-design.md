@@ -2,7 +2,7 @@
 
 > Spec de diseño. Aprobado por Nikolai 2026-06-25 (brainstorming).
 > Motor **genérico**, no específico de caso. Caso de verificación: chats reales de
-> **W-02VND1 (BaRS1 — Tibidabo 8)** / BaRS1, que ya tienen WhatsApp media depositada.
+> **W-02VND1 (BaRS1 — [inmueble])** / BaRS1, que ya tienen WhatsApp media depositada.
 > Hermano de `core/email_atomize/`: mismo espíritu (lo plano se queda, lo enterrado se
 > promueve; cero misatribución), modelo de datos propio del formato WhatsApp.
 

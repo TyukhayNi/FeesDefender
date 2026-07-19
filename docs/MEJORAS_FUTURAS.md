@@ -1219,7 +1219,7 @@ fase "clasificador por conector" del spec
 
 ## 38. `clasificar_residuo_llm`: permitir sobrescribir la fecha de baja calidad (`mtime`)
 
-**Detectado.** 2026-06-18, al probar #37 sobre el caso real BaRS1 (Tibidabo 8).
+**Detectado.** 2026-06-18, al probar #37 sobre el caso real BaRS1 ([inmueble]).
 
 **Síntoma.** `clasificar_caso` pre-rellena la columna **Fecha** de la worklist del
 residuo con el `mtime` del fichero (`fecha_fuente=mtime`) cuando no hay fecha en el
@@ -1279,7 +1279,7 @@ El `CLAUDE.md` y `docs/DESPLIEGUE_MCP_DRIVE_DISCO.md` (bundle Code) quedan aline
 **Residuo abierto:** no hay extracción de texto/OCR de PDF server-side (datar escaneados sigue
 siendo del pipeline local) → ver #42.
 
-**Problema (confirmado 2026-06-22, re-aplicación BaRS1/Tibidabo; ver `DEAD_ENDS.md`).**
+**Problema (confirmado 2026-06-22, re-aplicación BaRS1/[inmueble]; ver `DEAD_ENDS.md`).**
 Desde Cowork no se pueden copiar binarios (PDF, fotos, vídeos, `.xlsx`) a la Sala lectura
 del despacho. El MCP local `expedientes` (`@modelcontextprotocol/server-filesystem`) no
 expone copia: `write_file` es solo texto, no hay `copy_file` y `move_file` es destructivo;
@@ -1333,7 +1333,7 @@ por el conector `expedientes-xl` de la sesión 2026-06-22).
 
 ## 42. Extracción de texto/OCR de PDF server-side en `expedientes-xl`
 
-**Contexto (2026-06-23, intake Tibidabo W-02VND1).** Con #40 resuelto, Cowork ya mueve
+**Contexto (2026-06-23, intake [inmueble] W-02VND1).** Con #40 resuelto, Cowork ya mueve
 binarios al Drive, pero **no puede leer el contenido de un PDF**: `expedientes` `read_media_file`
 acepta solo image/audio (rechaza PDF), y el shell está aislado del Drive (no hay `pdftotext`
 sobre el mount). Consecuencia: al hacer intake de PDFs **escaneados** no se pueden datar ni
@@ -1658,7 +1658,7 @@ Resultado: dos ficheros de origen distintos con el mismo *stem* (mismo nombre en
 el mismo documento espejado en `01_Drive EV/` y en `05_CRM/`) colapsan al **mismo** `{slug}.txt`/`{slug}.md`
 y se **pisan en silencio**: solo sobrevive el último escrito.
 
-**Evidencia empírica.** Reproceso de `BaRS1 - Tibidabo 8 - (W-02VND1)` el 2026-06-25:
+**Evidencia empírica.** Reproceso de `BaRS1 - [inmueble] - (W-02VND1)` el 2026-06-25:
 `_extract_state.json` registra **491 documentos** pero en disco quedan **481 `.md`/`.txt`** → 8 slugs
 colisionados que afectan a 18 documentos. (Los `.eml` no colisionan porque la atomización los numera
 `MSG-XXXXX`.) De las 8 colisiones, 7 son benignas (mismo documento en dos formatos `.docx`+`.pdf` /

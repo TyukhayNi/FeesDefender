@@ -2,7 +2,7 @@
 
 > **Versión:** v7 (2026-06-25) — **DISEÑO COMPLETO**
 > **Estado:** **DISEÑO CERRADO, 8 fases (0–7).** Fases 0–2 (esquema del evento, D1–D6). **Fase 3 (correlación) COMPLETA (F3.D1–D5).** **Fase 4 (tiempo heterogéneo) COMPLETA (F4.D1–D2).** **Fase 5 (arquitectura de ingesta) COMPLETA (F5.D1–D2).** **Fase 6 (vistas y custodia) COMPLETA (F6.D1–D2).** **Fase 7 (alcance del piloto) COMPLETA (F7.D1).** Siguiente paso: **BUILD** en Claude Code, no más diseño.
-> **Banco de pruebas:** expediente W-02VND1 (Tibidabo 8). El diseño es genérico; el caso solo sirvió de validación sobre datos reales.
+> **Banco de pruebas:** expediente W-02VND1 ([inmueble]). El diseño es genérico; el caso solo sirvió de validación sobre datos reales.
 > **Naturaleza:** documento de diseño (no construcción). El build vive en `core/` de FeesDefender y lo realiza Claude Code en local. El motor de atomización de correo está **congelado** y es el primer adaptador de esta capa; no se toca.
 > **Disciplina rectora:** skill `verificacion-anclada-fuente` (sin inferencia en la capa canónica; anclaje con pinpoint; categorías A–E).
 
