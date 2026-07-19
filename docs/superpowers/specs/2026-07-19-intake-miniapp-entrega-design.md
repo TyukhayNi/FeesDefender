@@ -75,12 +75,14 @@ es además el sitio natural donde F6 añadirá la autoría (§8).
 
 ## 5. Auth (relación con el Track 1 de F3)
 
-El modelo **facilita** el punto más delicado de F3 (obtener sesión del webmail): la app corre
-en el contexto de la persona y **con su cuenta**, así que iniciar sesión en el webmail como
-ella es mucho más natural que para un robot headless anónimo en un servidor. El detalle
-técnico (login programático a Roundcube / reuso de sesión) se resuelve en el **spike del
-Track 1**, ahora en modo «app de la persona». Fallback C (la persona da el último clic en el
-webmail) sigue disponible si el login programático no sale.
+**RESUELTO por el spike (2026-07-19).** La miniapp lleva un **navegador embebido (webview)**.
+La persona entra al CRM con su login normal; el CRM hace su **SSO** al webmail (abre
+`roundcube…/init.php?dataHash=…`, un token cifrado que **genera el propio CRM** y Roundcube
+descifra) y monta la sesión de Roundcube como siempre. A partir de ahí, la app **ejecuta las
+llamadas al plugin con un `fetch`** en el contexto del iframe de Roundcube (validado en vivo:
+`get_relaciones` → 200 + JSON). La app **no maneja credenciales IMAP** ni reproduce el SSO: deja
+que lo haga el CRM. Se descarta la vía headless-pura (regenerar el `dataHash` con `requests`):
+frágil e insegura. Para la persona es "archiva solo" (no da clics en el webmail) — es A', no C.
 
 ## 6. Qué reutiliza (no se reconstruye)
 

@@ -36,8 +36,10 @@ las lecturas api-crm que el diálogo necesita (tipos de entidad, carpetas); y la
 resultado del write**.
 
 **NO entra:**
-- **Obtención de la sesión Roundcube** (handshake frontal→Roundcube): Track 1 (spike de auth
-  en curso). Este módulo define el contrato de sesión y lo consume.
+- **Obtención de la sesión Roundcube** (handshake frontal→Roundcube): **Track 1 — spike HECHO
+  2026-07-19 (ver §2).** Resuelto: la sesión se obtiene **vía webview** (navegador embebido de
+  la miniapp), no headless. Este módulo **construye** las peticiones al plugin; el webview ya
+  autenticado las **ejecuta**.
 - **Nombrado LLM** y **decisión de qué adjunto subir** (F4). F3 consume `{nombre_final, subir}`
   por adjunto; la lógica que los produce es F4.
 - Grabaciones (F5) y control de calidad (F6).
@@ -61,8 +63,25 @@ resultado del write**.
   expediente, carpetas). Confirmado en `SudespachoConfig` (`auth_header="x-api-key"`).
 - `tnm.sudespacho.net` — frontal legacy, `PHPSESSID`+`@token` (no lo usa F3).
 - `roundcube.sudespacho.net` — webmail, **sesión Roundcube** (cookies `roundcube_sessid`/
-  `sessauth` + header `X-Roundcube-Request`, token estable por-sesión). Es el único auth que
-  F3 no tiene resuelto (Track 1).
+  `sessauth` + header `X-Roundcube-Request`, token estable por-sesión).
+
+**Auth RESUELTO — spike en vivo (2026-07-19).** Dos comprobaciones:
+1. **El plugin es llamable programáticamente** con la sesión del webmail: un `fetch` POST a
+   `?_task=mail&_action=plugin.sudespacho_asignaa_get_relaciones` con header
+   `X-Roundcube-Request: rcmail.env.request_token` (+ cookies automáticas) → **200 + JSON** de
+   Roundcube. Read-only, confirmado en vivo. (Roundcube va en **iframe cross-origin** dentro
+   del SPA; `rcmail` vive en el contexto del iframe.)
+2. **El acceso a Roundcube es SSO por token en la URL:** el CRM abre
+   `roundcube…/init.php?randomvar=…&dataHash=…` → `index.php` → `/?_task=&_token=…`. El
+   `dataHash` es un **blob cifrado (~620 chars) generado en el cliente (JS del CRM)** — no
+   aparece en ninguna respuesta; casi seguro cifra los datos/credenciales IMAP de la cuenta
+   (de `nest-mail/…/accounts_links`) que Roundcube descifra (`dataHashDecrypted`).
+
+→ **Decisión de transporte: webview, NO headless-puro.** La miniapp (spec de entrega) lleva un
+navegador embebido; la persona entra al CRM (login normal), el CRM hace el SSO y monta Roundcube
+como siempre, y la app ejecuta el `fetch` del punto 1. **Reproducir la sesión headless con
+`requests` queda descartado**: exigiría regenerar el `dataHash` (reverse-engineering del cifrado
+del JS) y manejar credenciales IMAP — frágil e inseguro (candidato a nota en `DEAD_ENDS`).
 
 ## 3. Hallazgos que fundamentan el diseño (HAR + UI + cabeceras + código)
 
@@ -110,11 +129,13 @@ get_mails_asignados(session, uid, message_id) -> list       # verificación (dé
 archivar_en_crm(session, plan) -> ArchivoResult             # orquestador; ver §5
 ```
 
-- **Contrato de sesión (dependencia):** objeto tipo `httpx.Client` con
-  `base_url=https://roundcube.sudespacho.net`, cookies de sesión Roundcube y header
-  `X-Roundcube-Request`. Lo recibe; no lo fabrica. Tests: fake que captura `(action, params)`
-  y devuelve JSON canned **tomado de la forma real del HAR** (incluida la ruta anidada
-  `acumulaDatos.mailadjunto[mail_id]`).
+- **Transporte = webview (decidido por el spike, §2), NO `httpx` headless.** El módulo
+  **construye** cada petición (action + params) de forma pura; la **ejecuta el navegador
+  embebido** (un `fetch` en el contexto del iframe de Roundcube, ya autenticado por el SSO del
+  CRM, con `rcmail.env.request_token` como `X-Roundcube-Request`). La «sesión» que el módulo
+  recibe es, pues, **un adaptador de transporte inyectable**, no un cliente HTTP con cookies
+  reproducidas. Tests: adaptador **fake** que captura `(action, params)` y devuelve JSON canned
+  **tomado de la forma real del HAR** (incluida la ruta anidada `acumulaDatos.mailadjunto[mail_id]`).
 - **Encoding:** el módulo pre-encodea `messageIdsEncontrados` una vez y deja que el
   form-encoder lo encodee otra (doble encoding) — **solo** en ese campo.
 
@@ -125,7 +146,9 @@ Hay que resolver el UID IMAP + carpeta del correo en esa cuenta a partir del `Me
 estable. Vía: **búsqueda IMAP en `imap.gmail.com`** de la cuenta del abogado (el robot ya
 tiene OAuth a esas cuentas vía `gmail_source`), o una acción de búsqueda del propio Roundcube
 (a capturar). El `id_cuenta` interno de Roundcube es **por abogado** (hay que conocerlo por
-cuenta). **Este componente es explícito, no un parámetro con default.**
+cuenta). **Este componente es explícito, no un parámetro con default.** *(En modo webview, la
+propia sesión de Roundcube ya expone el `uid` del mensaje abierto vía `rcmail.env`, lo que
+simplifica la resolución.)*
 
 ### 4.3 Capa api-crm (x-api-key, sin handshake)
 
