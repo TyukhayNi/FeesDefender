@@ -13,11 +13,29 @@ leen datos de registros ni se escribe en el CRM. Las funciones de parseo son pur
 
 from __future__ import annotations
 
+import concurrent.futures
+import json
+import os
+import random
 import re
+import time
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
 import httpx
+
+
+# ---------------------------------------------------------------------------
+# Excepciones
+# ---------------------------------------------------------------------------
+
+class CrmAtlasError(RuntimeError):
+    """Error base del atlas del CRM."""
+
+
+class CrmAtlasAuthError(CrmAtlasError):
+    """Auth global rechazada (401/403) o credencial ausente."""
+
 
 # ---------------------------------------------------------------------------
 # Constantes de fuente
@@ -290,9 +308,11 @@ def build_atlas_phase_a(
             "tenant": tenant,
             "generated_at": generated_at,
             "generator": "scripts.crm_atlas",
-            "generator_version": 1,
-            "phase_a_complete": True,
-            "phase_b_complete": False,
+            "generator_version": 2,
+            "phase_a": {"complete": True},
+            "phase_b": {"ran": False, "complete": False},
+            "auth_note": ("El spec declara header 'Authorization' (apiKey) pero devuelve "
+                          "401; el header operativo es 'x-api-key' (INTEGRACION §2.1)."),
             "sources": {
                 "oas3": {
                     "url": base_url.rstrip("/") + OAS3_PATH,
@@ -321,10 +341,11 @@ def _md_escape(text: str | None) -> str:
 
 
 def render_markdown(atlas: dict) -> str:
-    """Render humano del atlas (generado — no editar a mano)."""
-    meta = atlas["meta"]
-    summ = atlas["summary"]
-    oas = meta["sources"]["oas3"]
+    """Render humano del atlas (generado — no editar a mano). Tolera atlas de Fase A y B."""
+    meta = atlas.get("meta", {})
+    summ = atlas.get("summary", {})
+    oas = meta.get("sources", {}).get("oas3", {})
+    phase_b_complete = meta.get("phase_b", {}).get("complete", False)
     lines: list[str] = []
     lines.append("# Atlas del CRM sudespacho — inventario de endpoints")
     lines.append("")
@@ -335,18 +356,22 @@ def render_markdown(atlas: dict) -> str:
     lines.append("")
     lines.append("| Meta | Valor |")
     lines.append("|---|---|")
-    lines.append(f"| Tenant | `{meta['tenant']}` |")
+    lines.append(f"| Tenant | `{meta.get('tenant', '?')}` |")
     lines.append(f"| Generado | {meta.get('generated_at') or '(sin sello)'} |")
-    lines.append(f"| Fuente OAS3 | `{oas['url']}` |")
+    lines.append(f"| Fuente OAS3 | `{oas.get('url', '?')}` |")
     lines.append(f"| OpenAPI | {oas.get('openapi')} · {oas.get('info_title')} v{oas.get('info_version')} |")
-    lines.append(f"| Auth global | `{oas.get('global_security_auth')}` "
+    lines.append(f"| Auth global | `{oas.get('global_security_auth', '?')}` "
                  f"(header `{_security_header(oas)}`) |")
-    lines.append(f"| Fase B (esquema por elemento) | {'✅' if meta['phase_b_complete'] else '⏳ pendiente'} |")
+    lines.append(f"| Fase B (esquema por elemento) | {'✅' if phase_b_complete else '⏳ pendiente'} |")
     lines.append("")
-    lines.append(f"**{summ['total_operations']} operaciones** sobre "
-                 f"**{summ.get('total_path_keys', summ['total_paths'])} paths declarados** "
-                 f"({summ['total_paths']} con operación documentada). Por método: "
-                 + " · ".join(f"{m} {n}" for m, n in summ["by_method"].items()) + ".")
+    total_ops = summ.get("total_operations", "?")
+    total_paths = summ.get("total_paths", "?")
+    total_keys = summ.get("total_path_keys", total_paths)
+    by_method = summ.get("by_method", {})
+    lines.append(f"**{total_ops} operaciones** sobre "
+                 f"**{total_keys} paths declarados** "
+                 f"({total_paths} con operación documentada). Por método: "
+                 + " · ".join(f"{m} {n}" for m, n in by_method.items()) + ".")
     orphan_n = summ.get("paths_without_operations", 0)
     if orphan_n:
         lines.append("")
@@ -359,14 +384,14 @@ def render_markdown(atlas: dict) -> str:
     lines.append("")
     lines.append("| Módulo | Operaciones |")
     lines.append("|---|---|")
-    for tag, n in summ["by_tag"].items():
+    for tag, n in summ.get("by_tag", {}).items():
         anchor = _anchor(tag)
         lines.append(f"| [{_md_escape(tag)}](#{anchor}) | {n} |")
     lines.append("")
 
     # Endpoints agrupados por tag
     by_tag: dict[str, list[dict]] = {}
-    for ep in atlas["endpoints"]:
+    for ep in atlas.get("endpoints", []):
         for tag in ep["tags"] or ["(sin tag)"]:
             by_tag.setdefault(tag, []).append(ep)
 

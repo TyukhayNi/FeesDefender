@@ -179,8 +179,9 @@ def test_find_orphan_paths(spec):
 def test_build_atlas_shape(spec):
     atlas = build_atlas_phase_a(spec, tenant="tnm", generated_at="2026-07-20T00:00:00Z")
     assert atlas["meta"]["tenant"] == "tnm"
-    assert atlas["meta"]["phase_a_complete"] is True
-    assert atlas["meta"]["phase_b_complete"] is False
+    assert atlas["meta"]["phase_a"] == {"complete": True}
+    assert atlas["meta"]["phase_b"]["complete"] is False
+    assert atlas["meta"]["generator_version"] == 2
     assert atlas["meta"]["sources"]["oas3"]["openapi"] == "3.0.0"
     assert atlas["meta"]["sources"]["oas3"]["global_security_auth"] == "apiKey"
     assert len(atlas["endpoints"]) == 3
@@ -232,3 +233,27 @@ def test_render_markdown_escapes_pipes():
     atlas = build_atlas_phase_a(spec, tenant="tnm")
     md = render_markdown(atlas)
     assert "a \\| b pipe" in md
+
+
+# --- Grupo 0: andamiaje --------------------------------------------------------
+
+def test_exception_hierarchy():
+    from core.crm_atlas import CrmAtlasError, CrmAtlasAuthError
+    import core.crm_atlas as m
+    assert issubclass(CrmAtlasAuthError, CrmAtlasError)
+    assert all(hasattr(m, n) for n in ("json", "os", "time", "random"))
+
+
+def test_meta_nested_schema(spec):
+    m = build_atlas_phase_a(spec, tenant="tnm")["meta"]
+    assert m["generator_version"] == 2
+    assert m["phase_a"] == {"complete": True}
+    assert m["phase_b"]["complete"] is False and m["phase_b"]["ran"] is False
+    assert "x-api-key" in m["auth_note"]
+    assert "phase_a_complete" not in m and "phase_b_complete" not in m
+
+
+def test_render_markdown_tolerates_minimal_phase_b():
+    md = render_markdown({"meta": {"tenant": "tnm", "phase_b": {"complete": False}},
+                          "summary": {"by_tag": {}}, "endpoints": [], "elements": []})
+    assert "# Atlas del CRM" in md  # no KeyError
