@@ -500,3 +500,147 @@ def _anchor(text: str) -> str:
     s = text.lower()
     s = re.sub(r"[^\w\s-]", "", s)
     return re.sub(r"\s+", "-", s).strip("-")
+
+
+# ===========================================================================
+# Fase B — esquema por elemento (x-api-key). Solo lectura de esquema.
+# ===========================================================================
+
+SELECT_TYPE = "Select"
+# Tipos dinámicos respaldados por tabla — sus VALORES nunca se vuelcan (PII/config):
+ENUM_DENYLIST = frozenset({
+    "ListaUsuarios", "ListaBancos", "ListaGrupos", "ListaElemento",
+    "ListaElementoSelect", "Tags",
+})
+
+_RETRY_STATUS = {429, 500, 502, 503, 504}
+_PROBE_RE = re.compile(r"properties are\s*:?\s*(.+)", re.IGNORECASE)
+
+
+@dataclass
+class Field:
+    name: str
+    type: str | None
+    label: str | None
+    active: bool = True
+    source: str = "view/config/fields"
+
+
+# --- cliente + reintentos ---------------------------------------------------
+
+def _jitter(delay: float) -> float:
+    return delay * (1 + random.uniform(-0.2, 0.2))
+
+
+def get_with_retry(client: httpx.Client, path: str, *, attempts: int = 5,
+                   params: dict | None = None) -> httpx.Response:
+    """GET con backoff exponencial ante 429/5xx (respeta `Retry-After`).
+
+    NO la usa el probe 4b (su 500 es la respuesta esperada, no un error).
+    Los 4xx no-429 se devuelven sin reintentar. Agotados los intentos → lanza.
+    """
+    resp = None
+    for n in range(attempts):
+        resp = client.get(path, params=params)
+        if resp.status_code not in _RETRY_STATUS:
+            return resp
+        if n < attempts - 1:
+            ra = resp.headers.get("Retry-After")
+            delay = float(ra) if (ra and str(ra).isdigit()) else min(1.0 * (2 ** n), 30.0)
+            time.sleep(_jitter(delay))
+    raise CrmAtlasError(
+        f"{path}: agotados {attempts} reintentos (último HTTP "
+        f"{resp.status_code if resp is not None else '?'})."
+    )
+
+
+def atlas_client(base_url: str = PUBLIC_BASE_URL, *, timeout: float = 60.0) -> httpx.Client:
+    """Cliente `x-api-key` para la Fase B. La key viene del entorno (secreto Windows)."""
+    key = os.environ.get("SUDESPACHO_API_KEY", "").strip()
+    if not key:
+        raise CrmAtlasAuthError("Falta SUDESPACHO_API_KEY en el entorno.")
+    return httpx.Client(
+        base_url=base_url.rstrip("/"),
+        headers={"x-api-key": key, "Accept": "application/json"},
+        timeout=timeout,
+    )
+
+
+def auth_healthcheck(client: httpx.Client) -> None:
+    """Fail-fast: si la auth global falla (401/403), aborta antes del bucle."""
+    r = client.get("/api/elements")
+    if r.status_code in (401, 403):
+        raise CrmAtlasAuthError(f"Auth global rechazada (HTTP {r.status_code}). Revisa SUDESPACHO_API_KEY.")
+    r.raise_for_status()
+
+
+def fetch_elements(client: httpx.Client) -> list[str]:
+    """Catálogo de slugs del tenant. Tolera lista plana y colección Hydra."""
+    r = get_with_retry(client, "/api/elements")
+    r.raise_for_status()
+    data = r.json()
+    members = data.get("hydra:member", data.get("items", data)) if isinstance(data, dict) else data
+    if not isinstance(members, list):
+        raise CrmAtlasError("/api/elements devolvió una forma inesperada.")
+    slugs: set[str] = set()
+    for it in members:
+        if isinstance(it, dict):
+            ident = it.get("id")
+            slug = ident.get("value") if isinstance(ident, dict) else (ident if isinstance(ident, str) else None)
+            if slug:
+                slugs.add(slug)
+    return sorted(slugs)
+
+
+# --- parsers de esquema por elemento ----------------------------------------
+
+def parse_fields_config(payload: Any) -> list[Field]:
+    """4a: `{items:[{name,type,label,active,deleted}]}` → Field[] (ordenado, sin borrados)."""
+    items = payload.get("items", []) if isinstance(payload, dict) else []
+    fields: list[Field] = []
+    for it in items:
+        if not isinstance(it, dict) or it.get("deleted"):
+            continue
+        fields.append(Field(name=it.get("name", ""), type=it.get("type"),
+                            label=it.get("label"), active=bool(it.get("active", True))))
+    return sorted(fields, key=lambda f: f.name)
+
+
+def parse_invalid_property_probe(resp: httpx.Response) -> list[str] | None:
+    """4b (fallback): exige HTTP 500 + patrón `properties are:`.
+
+    Un 200 (elemento que valida laxo) → None (NUNCA se trata como esquema: guarda
+    anti-lectura-de-registros). Un 500 con otro mensaje → None.
+    """
+    if resp.status_code != 500:
+        return None
+    try:
+        detail = resp.json().get("detail") or ""
+    except Exception:
+        return None
+    m = _PROBE_RE.search(detail)
+    if not m:
+        return None
+    return [f.strip() for f in m.group(1).replace(".", "").split(",") if f.strip()]
+
+
+def parse_relations_config(payload: Any) -> dict:
+    """5a: `{parent:[...],children:[...]}` (ordenado; tolera claves ausentes)."""
+    if not isinstance(payload, dict):
+        return {"parent": [], "children": []}
+    return {
+        "parent": sorted(payload.get("parent") or []),
+        "children": sorted(payload.get("children") or []),
+    }
+
+
+def select_enum_fields(fields: list[Field]) -> list[str]:
+    """Allowlist dura: solo `type=="Select"` se enumera. Los `Lista*`/`Tags` quedan fuera."""
+    return [f.name for f in fields if f.type == SELECT_TYPE]
+
+
+def parse_enums(payload: Any) -> list[dict]:
+    """5b: `{enums:[{id,label}]}` → solo `{id,label}`, ordenado por id."""
+    enums = payload.get("enums", []) if isinstance(payload, dict) else []
+    out = [{"id": e.get("id"), "label": e.get("label")} for e in enums if isinstance(e, dict)]
+    return sorted(out, key=lambda e: str(e.get("id")))

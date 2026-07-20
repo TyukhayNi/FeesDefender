@@ -9,16 +9,29 @@ from __future__ import annotations
 import copy
 import json
 
+import httpx
 import pytest
 
 from core.crm_atlas import (
+    CrmAtlasAuthError,
+    CrmAtlasError,
     Endpoint,
+    Field,
+    atlas_client,
+    auth_healthcheck,
     build_atlas_phase_a,
+    fetch_elements,
     find_orphan_paths,
+    get_with_retry,
     operation_id_to_dev_slug,
+    parse_enums,
+    parse_fields_config,
+    parse_invalid_property_probe,
     parse_oas3,
+    parse_relations_config,
     render_digest,
     render_markdown,
+    select_enum_fields,
     summarize_endpoints,
 )
 
@@ -323,3 +336,109 @@ def test_cli_discover_a_no_stamp(tmp_path, monkeypatch):
     assert r.exit_code == 0, r.output
     assert json.loads(out.read_text(encoding="utf-8"))["meta"]["generated_at"] is None
     assert dig.exists() and md.exists()
+
+
+# --- Grupo 2A: cliente + parsers de Fase B -------------------------------------
+
+def _mock_client(handler):
+    return httpx.Client(transport=httpx.MockTransport(handler), base_url="https://x")
+
+
+def test_get_with_retry_retries_503(monkeypatch):
+    import core.crm_atlas as m
+    calls = {"n": 0}
+    def handler(req):
+        calls["n"] += 1
+        return httpx.Response(200, json={}) if calls["n"] >= 3 else httpx.Response(503)
+    monkeypatch.setattr(m.time, "sleep", lambda s: None)
+    monkeypatch.setattr(m, "_jitter", lambda d: d)
+    with _mock_client(handler) as c:
+        r = get_with_retry(c, "/api/elements")
+    assert r.status_code == 200 and calls["n"] == 3
+
+
+def test_get_with_retry_no_retry_on_404():
+    calls = {"n": 0}
+    def handler(req):
+        calls["n"] += 1
+        return httpx.Response(404)
+    with _mock_client(handler) as c:
+        r = get_with_retry(c, "/api/x")
+    assert r.status_code == 404 and calls["n"] == 1   # 4xx no-429 no reintenta
+
+
+def test_get_with_retry_exhausts_raises(monkeypatch):
+    import core.crm_atlas as m
+    monkeypatch.setattr(m.time, "sleep", lambda s: None)
+    monkeypatch.setattr(m, "_jitter", lambda d: d)
+    with _mock_client(lambda req: httpx.Response(503)) as c:
+        with pytest.raises(CrmAtlasError):
+            get_with_retry(c, "/api/x", attempts=3)
+
+
+def test_atlas_client_requires_key(monkeypatch):
+    monkeypatch.delenv("SUDESPACHO_API_KEY", raising=False)
+    with pytest.raises(CrmAtlasAuthError):
+        atlas_client()
+
+
+def test_auth_healthcheck_401_and_200():
+    with _mock_client(lambda req: httpx.Response(401)) as c:
+        with pytest.raises(CrmAtlasAuthError):
+            auth_healthcheck(c)
+    with _mock_client(lambda req: httpx.Response(200, json=[])) as c:
+        auth_healthcheck(c)   # no lanza
+
+
+def test_fetch_elements_list_and_hydra():
+    members = [{"label": "Devices", "id": {"value": "devices"}},
+               {"label": "Absences", "id": {"value": "absences"}},
+               {"label": "Bad"}]  # sin id.value -> ignorado
+    def handler(req):
+        if "ld+json" in req.headers.get("accept", ""):
+            return httpx.Response(200, json={"hydra:member": members, "hydra:totalItems": 3})
+        return httpx.Response(200, json=members)
+    with _mock_client(handler) as c:
+        assert fetch_elements(c) == ["absences", "devices"]
+
+
+def test_parse_fields_config_ordered_excludes_deleted():
+    payload = {"items": [
+        {"name": "tipo", "label": "Tipo", "type": "Select", "active": True, "deleted": False},
+        {"name": "cuantia", "label": "Cuantía", "type": "Moneda", "active": True, "deleted": False},
+        {"name": "x", "label": "x", "type": "TextCorto", "active": False, "deleted": True}]}
+    fields = parse_fields_config(payload)
+    assert [f.name for f in fields] == ["cuantia", "tipo"]   # ordenado, deleted fuera
+    assert {f.name: f.type for f in fields} == {"cuantia": "Moneda", "tipo": "Select"}
+    assert fields[0].source == "view/config/fields"
+
+
+def test_probe_guards():
+    ok = httpx.Response(500, json={"detail": "ElementProperty not found : zz The properties are: a,b,c."})
+    assert parse_invalid_property_probe(ok) == ["a", "b", "c"]
+    other500 = httpx.Response(500, json={"detail": "Array to string conversion"})
+    assert parse_invalid_property_probe(other500) is None
+    got200 = httpx.Response(200, json={"items": [{"id": 1}]})   # NUNCA esquema desde 200
+    assert parse_invalid_property_probe(got200) is None
+
+
+def test_parse_relations_config_sorted():
+    rel = parse_relations_config({"parent": ["sms", "abogados_propios"],
+                                  "children": ["actuaciones", "abogados_propios"]})
+    assert rel == {"parent": ["abogados_propios", "sms"],
+                   "children": ["abogados_propios", "actuaciones"]}
+    assert parse_relations_config({}) == {"parent": [], "children": []}
+
+
+def test_select_enum_fields_allowlist_only_select():
+    fields = parse_fields_config({"items": [
+        {"name": "tipo", "type": "Select", "label": "", "active": True, "deleted": False},
+        {"name": "prof", "type": "ListaUsuarios", "label": "", "active": True, "deleted": False},
+        {"name": "banco", "type": "ListaBancos", "label": "", "active": True, "deleted": False},
+        {"name": "tags", "type": "Tags", "label": "", "active": True, "deleted": False}]})
+    assert select_enum_fields(fields) == ["tipo"]   # SOLO Select
+
+
+def test_parse_enums_ordered_id_label_only():
+    assert parse_enums({"enums": [{"id": "R2", "label": "y", "x": 1}, {"id": "R1", "label": "z"}]}) == \
+        [{"id": "R1", "label": "z"}, {"id": "R2", "label": "y"}]
