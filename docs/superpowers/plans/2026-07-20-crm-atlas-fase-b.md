@@ -1,758 +1,330 @@
-# Atlas del CRM sudespacho — Fase B + hardening Fase A · Plan de implementación
+# Atlas del CRM sudespacho — Fase B + hardening Fase A · Plan v2
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **v2 — reescrito tras auditoría adversarial del plan (4 revisores, 2026-07-20).** Traza de correcciones en §APÉNDICE. Ejecución **EN LÍNEA** (el ejecutor sostiene contexto entre tareas), con checkpoints por grupo.
 
-**Goal:** Completar el atlas del CRM: endurecer la Fase A ya commiteada y añadir la Fase B (esquema por elemento: campos, relaciones, enums) con barrera anti-PII, de forma que una sola corrida `discover` produzca un mapa exhaustivo, determinista y seguro.
+**Goal:** Completar el atlas del CRM: endurecer la Fase A commiteada y añadir la Fase B (esquema por elemento) con barrera anti-PII estanca, produciendo un mapa exhaustivo, determinista y seguro con una corrida `discover`.
 
-**Architecture:** Lógica pura + cliente HTTP bespoke en `core/crm_atlas.py`; CLI Typer en `scripts/crm_atlas.py`. Fase A = OpenAPI público (sin credenciales). Fase B = `x-api-key` (ya en `os.environ`) contra `/api/elements` + `view/config/{el}/fields|relations` + `view/enums/{el}/{prop}`. Solo lectura de esquema; nunca datos ni escritura.
+**Architecture:** Lógica + cliente HTTP bespoke en `core/crm_atlas.py`; CLI Typer en `scripts/crm_atlas.py`. Fase A = OpenAPI público. Fase B = `x-api-key` (en `os.environ`) contra `/api/elements` + `view/config/{el}/fields|relations` + `view/enums/{el}/{prop}`. Solo lectura de esquema.
 
-**Tech Stack:** Python 3.14 (venv), `httpx`, `typer`, `pytest` (+ `pytest-randomly`), `core/anon` para el gate anti-PII.
+**Tech Stack:** Python 3.14 (venv), `httpx`, `typer`, `pytest`, `core/anon` (solo regex de EMAIL).
 
 **Spec:** `docs/superpowers/specs/2026-07-20-crm-atlas-descubrimiento-design.md` (v2).
 
 ## Global Constraints
 
-- **Solo esquema, nunca datos de registros.** Prohibido llamar a `element_registries`/`element_register` para leer registros. El probe 4b (que provoca un 500) es la única llamada "no-GET-limpia".
-- **Sin escritura:** el cliente no implementa POST/PUT/PATCH/DELETE.
-- **Barrera PII (dura):** enums solo para `type=="Select"`; denylist `ListaUsuarios`/`ListaBancos`/`ListaGrupos`/`ListaElemento*`/`Tags`. Gate `scan_atlas_for_pii` que **bloquea** el write. El cliente **nunca** logea headers ni bodies; `warnings[]` solo `status`+`endpoint`.
-- **Secretos solo por entorno:** `SUDESPACHO_API_KEY` de `os.environ`; nunca en el árbol ni en logs.
-- **Encoding:** SIEMPRE `encoding="utf-8"`, `newline="\n"`, `ensure_ascii=False`. Lectura del atlas previo (resume) con `encoding="utf-8"` explícito.
-- **Determinismo:** `json.dumps(..., sort_keys=True, ensure_ascii=False, indent=2)` + ordenación explícita de toda lista antes de serializar.
-- **Entorno:** Windows + PowerShell; comandos desde la raíz del repo. Conteo de tests SIEMPRE por `--junit-xml` (el resumen de pytest no se captura por tubería en este Windows).
-- **Auth header operativo:** `x-api-key` (el spec declara `Authorization` pero da 401 — `INTEGRACION §2.1`).
-- **Git:** rama + PR (nunca commit directo a `main`). Correr pytest local antes de mergear (el CI solo corre leak-scan).
+- **Solo esquema, nunca datos.** Prohibido `element_registries`/`element_register` para leer registros. El probe 4b (que provoca 500) es la única llamada "no-GET-limpia".
+- **Sin escritura** (no POST/PUT/PATCH/DELETE).
+- **Gate PII (decidido):** enums solo de `type=="Select"`; **denylist** `ListaUsuarios`/`ListaBancos`/`ListaGrupos`/`ListaElemento`/`ListaElementoSelect`/`Tags` (barrera primaria). `scan_atlas_for_pii` = **regex de EMAIL** (reusar `core/anon.anonimizar` L727) que **bloquea** el write + **cuarentena heurística**: todo valor de enum `Select` que parezca nombre de persona (2-4 tokens Title-Case, sin dígitos/códigos) NO se vuelca — va a `field_types_no_enumerados` para revisión. **NO usar `detectar_nombres_protegidos`** (semántica invertida: detecta operadores que NO deben anonimizarse). El cliente **nunca** logea headers/body; `warnings[]` solo `status`+`endpoint`.
+- **Secretos por entorno:** `SUDESPACHO_API_KEY` de `os.environ`; nunca en árbol ni logs.
+- **Encoding:** SIEMPRE `encoding="utf-8"`, `newline="\n"`, `ensure_ascii=False`; lectura del atlas previo (resume) con `encoding="utf-8"` explícito.
+- **Determinismo:** `json.dumps(..., sort_keys=True, ensure_ascii=False, indent=2)` + ordenación explícita de TODA lista antes de serializar; el test canónico compara **`.md` y digest** (lo commiteado) bajo permutación de orden de llegada.
+- **Entorno Windows + PowerShell:** conteo de tests por `--junit-xml` a ruta del scratchpad (NO `%TEMP%`: en la herramienta Bash usar `"$TMPDIR/j.xml"` o ruta absoluta; en PowerShell `$env:TEMP\j.xml`). Comandos desde la raíz del repo.
+- **Tests de CLI:** parchear **`scripts.crm_atlas.fetch_oas3`** y **`scripts.crm_atlas.atlas_client`** (el binding importado en el módulo CLI, no `core.crm_atlas.*`); `monkeypatch.delenv("SUDESPACHO_API_KEY", raising=False)` como cinturón; nunca red real.
+- **Auth header operativo:** `x-api-key` (el spec declara `Authorization` pero da 401).
+- **Git:** rama + PR; pytest local antes de mergear. **Un PR por grupo** (§14).
 
 ---
 
-## Grupo 1 — Hardening de la Fase A (bugs verificados en la auditoría)
+## Grupo 0 — Andamiaje transversal (mata los bugs de "símbolo indefinido entre tasks")
 
-Todos tocan `core/crm_atlas.py` (ya commiteado en `87ff113`) y sus tests `tests/test_crm_atlas.py`.
+Todo en `core/crm_atlas.py`. Front-loaded para que el resto compile.
 
-### Task 1: Determinismo de serialización + `generated_at`
+### Task 0.1: Imports de módulo + excepciones
 
-**Files:**
-- Modify: `scripts/crm_atlas.py` (llamada `json.dumps`, default de `--stamp-time`)
-- Modify: `core/crm_atlas.py` (`build_atlas_phase_a` → orden de `by_tag`/`by_method` ya ordenado; asegurar listas ordenadas)
-- Modify: `core/utils.py` (usar `now_iso_utc` si existe; si no, añadirlo)
-- Test: `tests/test_crm_atlas.py`
+**Files:** Modify `core/crm_atlas.py` (cabecera); Test `tests/test_crm_atlas.py`
 
-**Interfaces:**
-- Produces: el `atlas.json` es idéntico byte a byte entre dos corridas con los mismos datos y `--no-stamp-time`.
-
-- [ ] **Step 1: Test de determinismo (falla)**
-
+- [ ] **Step 1:** Añadir a los imports de módulo: `import json`, `import os`, `import time`, `import random`, `import concurrent.futures`. (Ya están `re`, `dataclasses`, `typing`, `httpx`.)
+- [ ] **Step 2:** Definir la jerarquía de excepciones **antes** de todo:
 ```python
-def test_atlas_json_is_byte_stable(spec):
-    from core.crm_atlas import build_atlas_phase_a
-    import json
-    a1 = build_atlas_phase_a(spec, tenant="tnm", generated_at=None)
-    a2 = build_atlas_phase_a(spec, tenant="tnm", generated_at=None)
-    s1 = json.dumps(a1, sort_keys=True, ensure_ascii=False, indent=2)
-    s2 = json.dumps(a2, sort_keys=True, ensure_ascii=False, indent=2)
-    assert s1 == s2
-```
-
-- [ ] **Step 2: Ejecutar → verificar que pasa (build ya es determinista con `generated_at=None`)**
-
-Run: `python -m pytest tests/test_crm_atlas.py::test_atlas_json_is_byte_stable -v`
-Expected: PASS (confirma que el build es estable; el riesgo real es la CLI, Step 3).
-
-- [ ] **Step 3: CLI — `sort_keys=True` y default `--no-stamp-time`**
-
-En `scripts/crm_atlas.py`, cambiar la escritura:
-```python
-_write_text(atlas_json, json.dumps(atlas, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
-```
-y el default del flag:
-```python
-    stamp_time: bool = typer.Option(False, help="Sellar generated_at (UTC). Default OFF para diff limpio."),
-```
-y usar UTC cuando se selle:
-```python
-        generated_at=now_iso_utc() if stamp_time else None,
-```
-Añadir `now_iso_utc` a `core/utils.py` si no existe:
-```python
-def now_iso_utc() -> str:
-    from datetime import datetime, timezone
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-```
-
-- [ ] **Step 4: Test del default de la CLI (no-stamp → generated_at None)**
-
-```python
-def test_cli_discover_a_no_stamp(tmp_path, monkeypatch):
-    from typer.testing import CliRunner
-    from scripts.crm_atlas import app
-    import json, core.crm_atlas as m
-    monkeypatch.setattr(m, "fetch_oas3", lambda base_url=m.PUBLIC_BASE_URL, **k: _MINI_SPEC)
-    out = tmp_path / "atlas.json"; md = tmp_path / "atlas.md"
-    r = CliRunner().invoke(app, ["discover", "--phase", "a",
-                                 "--atlas-json", str(out), "--atlas-md", str(md)])
-    assert r.exit_code == 0
-    assert json.loads(out.read_text(encoding="utf-8"))["meta"]["generated_at"] is None
-```
-(`_MINI_SPEC` = el fixture `spec` extraído a módulo o duplicado mínimo.)
-
-- [ ] **Step 5: Ejecutar todos los tests del módulo**
-
-Run: `python -m pytest tests/test_crm_atlas.py -q --junit-xml=%TEMP%\j.xml`
-Expected: PASS.
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add core/crm_atlas.py scripts/crm_atlas.py core/utils.py tests/test_crm_atlas.py
-git commit -m "fix(crm-atlas): determinismo (sort_keys) + generated_at UTC/no-stamp por defecto"
-```
-
-### Task 2: `_request_schema` — content-types que faltan + composición
-
-**Files:**
-- Modify: `core/crm_atlas.py:143-164` (`_request_schema`)
-- Test: `tests/test_crm_atlas.py`
-
-**Interfaces:**
-- Consumes: nada nuevo.
-- Produces: `Endpoint.request_schema` no-nulo para bodies `application/merge-patch+json` y `multipart/form-data`.
-
-- [ ] **Step 1: Test (falla) — merge-patch y multipart**
-
-```python
-def test_request_schema_merge_patch_and_multipart():
-    from core.crm_atlas import parse_oas3
-    spec = {"openapi":"3.0.0","info":{},"security":[{"apiKey":[]}],"components":{"securitySchemes":{}},
-      "paths":{
-        "/api/x/{id}":{"patch":{"operationId":"patch_x","tags":["X"],"responses":{"200":{}},
-          "requestBody":{"content":{"application/merge-patch+json":{"schema":{"$ref":"#/components/schemas/PatchX"}}}}}},
-        "/api/up":{"post":{"operationId":"post_up","tags":["X"],"responses":{"201":{}},
-          "requestBody":{"content":{"multipart/form-data":{"schema":{"type":"object"}}}}}}}
-    eps = {(e.path,e.method): e for e in parse_oas3(spec)}
-    assert eps[("/api/x/{id}","PATCH")].request_schema == "PatchX"
-    assert eps[("/api/up","POST")].request_schema == "object"
-```
-
-- [ ] **Step 2: Ejecutar → FAIL** (`request_schema` = None hoy).
-
-Run: `python -m pytest tests/test_crm_atlas.py::test_request_schema_merge_patch_and_multipart -v`
-Expected: FAIL.
-
-- [ ] **Step 3: Ampliar los content-types + composición**
-
-En `_request_schema`, ampliar la tupla y manejar `allOf/oneOf/anyOf`:
-```python
-    for ctype in ("application/json", "application/ld+json",
-                  "application/merge-patch+json", "multipart/form-data"):
-        ct = content.get(ctype, {})
-        schema = ct.get("schema", {}) if isinstance(ct, dict) else {}
-        if not isinstance(schema, dict):
-            continue
-        for comp in ("allOf", "oneOf", "anyOf"):
-            if comp in schema and isinstance(schema[comp], list) and schema[comp]:
-                first = schema[comp][0]
-                if isinstance(first, dict) and "$ref" in first:
-                    return first["$ref"].rsplit("/", 1)[-1]
-        if "$ref" in schema:
-            return schema["$ref"].rsplit("/", 1)[-1]
-        if schema.get("type"):
-            ...  # (rama array/tipo existente, sin cambios)
-```
-
-- [ ] **Step 4: Ejecutar → PASS.**
-
-Run: `python -m pytest tests/test_crm_atlas.py::test_request_schema_merge_patch_and_multipart -v`
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add core/crm_atlas.py tests/test_crm_atlas.py
-git commit -m "fix(crm-atlas): _request_schema cubre merge-patch+json, multipart y allOf/oneOf"
-```
-
-### Task 3: `operation_id_to_dev_slug` — colapsar no-alfanuméricos + trailing slash
-
-**Files:**
-- Modify: `core/crm_atlas.py:77-89`
-- Test: `tests/test_crm_atlas.py`
-
-**Interfaces:**
-- Produces: slugs kebab sin paréntesis ni guiones dobles; `dev_doc_url` con `/` final.
-
-- [ ] **Step 1: Test (falla) — paréntesis y `" - "`**
-
-```python
-def test_dev_slug_collapses_punctuation():
-    from core.crm_atlas import operation_id_to_dev_slug
-    assert operation_id_to_dev_slug("getAccounting - ConfigurationItem") == "get-accounting-configuration-item"
-    assert operation_id_to_dev_slug("createPublic Holidays (Multiple)Collection") == "create-public-holidays-multiple-collection"
-```
-
-- [ ] **Step 2: Ejecutar → FAIL** (hoy deja `(multiple)` y `---`).
-
-- [ ] **Step 3: Implementar**
-
-Al final de `operation_id_to_dev_slug`, tras construir la cadena, colapsar:
-```python
-    import re
-    s = op_id.replace("_", " ")
-    s = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", s)
-    s = re.sub(r"(?<=[A-Z])(?=[A-Z][a-z])", " ", s)
-    s = re.sub(r"[^0-9a-zA-Z]+", "-", s.lower())   # colapsa TODO no-alfanum a un solo '-'
-    return s.strip("-")
-```
-Y en `parse_oas3`, añadir barra final:
-```python
-    dev_doc_url=(f"{DEV_PORTAL_BASE}/{operation_id_to_dev_slug(op_id)}/" if dev_links and op_id else None)
-```
-
-- [ ] **Step 4: Ejecutar los tests de slug (incluido el existente `test_dev_slug_matches_portal_pattern`) → PASS.** Ajustar el test existente para esperar el mismo resultado (sin `/` en la función; el `/` lo añade `parse_oas3`).
-
-Run: `python -m pytest tests/test_crm_atlas.py -k dev_slug -v`
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add core/crm_atlas.py tests/test_crm_atlas.py
-git commit -m "fix(crm-atlas): slug del portal colapsa no-alfanumericos + trailing slash (evita 404)"
-```
-
-### Task 4: `Endpoint.deprecated` + `Param.enum`/`default`
-
-**Files:**
-- Modify: `core/crm_atlas.py` (`Param`, `Endpoint`, `_parse_param`, `parse_oas3`)
-- Test: `tests/test_crm_atlas.py`
-
-- [ ] **Step 1: Test (falla)**
-
-```python
-def test_deprecated_and_param_enum_default():
-    from core.crm_atlas import parse_oas3
-    spec={"openapi":"3.0.0","info":{},"security":[{"apiKey":[]}],"components":{"securitySchemes":{}},
-      "paths":{"/api/y":{"get":{"operationId":"get_y","tags":["Y"],"deprecated":True,"responses":{"200":{}},
-        "parameters":[{"name":"mode","in":"query","required":False,
-                       "schema":{"type":"string","enum":["a","b"],"default":"a"}}]}}}}
-    e = parse_oas3(spec)[0]
-    assert e.deprecated is True
-    assert e.parameters[0].enum == ["a","b"]
-    assert e.parameters[0].default == "a"
-```
-
-- [ ] **Step 2: Ejecutar → FAIL.**
-
-- [ ] **Step 3: Implementar** — añadir `deprecated: bool = False` a `Endpoint`, `enum: list | None` y `default: … | None` a `Param`; poblarlos en `_parse_param` (`schema.get("enum")`, `schema.get("default")`) y en `parse_oas3` (`bool(op.get("deprecated", False))`).
-
-- [ ] **Step 4: Ejecutar → PASS.** Ajustar `test_parse_endpoint_fields` si comprueba el shape de `Param`.
-
-- [ ] **Step 5: Commit** `fix(crm-atlas): capturar deprecated y enum/default de parametros`
-
-### Task 5: `render_digest` + `meta.auth_note` + gitignore `atlas.json`
-
-**Files:**
-- Modify: `core/crm_atlas.py` (`build_atlas_phase_a` → `meta.auth_note`; nueva `render_digest`)
-- Modify: `scripts/crm_atlas.py` (escribir digest; ruta `atlas.digest.md`)
-- Modify: `.gitignore` (añadir `docs/crm_atlas/atlas.json`)
-- Test: `tests/test_crm_atlas.py`
-
-**Interfaces:**
-- Produces: `render_digest(atlas) -> str`; artefacto `docs/crm_atlas/atlas.digest.md`.
-
-- [ ] **Step 1: Test de `render_digest` + `auth_note`**
-
-```python
-def test_digest_and_auth_note(spec):
-    from core.crm_atlas import build_atlas_phase_a, render_digest
-    atlas = build_atlas_phase_a(spec, tenant="tnm")
-    assert "x-api-key" in atlas["meta"]["auth_note"]
-    d = render_digest(atlas)
-    assert "548" not in d or True                      # digest lleva conteos por módulo
-    assert "## Digest" in d
-    for tag in atlas["summary"]["by_tag"]:
-        assert tag in d                                # cada módulo aparece con su nº de ops
-```
-
-- [ ] **Step 2: Ejecutar → FAIL** (`render_digest`/`auth_note` no existen).
-
-- [ ] **Step 3: Implementar** `auth_note` en `meta` y `render_digest`:
-```python
-def render_digest(atlas: dict) -> str:
-    m, s = atlas["meta"], atlas["summary"]
-    out = ["# Digest del atlas del CRM sudespacho", "",
-           "> Superficie de DERIVA (legible en diff). Regenerar: `python -m scripts.crm_atlas discover`.",
-           "", f"## Digest — tenant `{m['tenant']}`", "",
-           f"- endpoints: {s['total_operations']} ops / {s['total_path_keys']} paths "
-           f"({s['paths_without_operations']} huérfanos)"]
-    out.append("")
-    out.append("### Endpoints por módulo")
-    for tag, n in s["by_tag"].items():
-        out.append(f"- {tag}: {n}")
-    if atlas.get("elements"):
-        import hashlib
-        out.append("")
-        out.append("### Elementos (campos · hash de esquema)")
-        for el in atlas["elements"]:
-            blob = json.dumps({"fields": el.get("fields"), "relations": el.get("relations"),
-                               "enums": el.get("enums")}, sort_keys=True, ensure_ascii=False)
-            h = hashlib.sha256(blob.encode("utf-8")).hexdigest()[:12]
-            out.append(f"- {el['slug']}: {len(el.get('fields') or [])} campos · {h}")
-    return "\n".join(out) + "\n"
-```
-En `build_atlas_phase_a`, añadir a `meta`:
-```python
-"auth_note": ("El spec declara header 'Authorization' (apiKey) pero devuelve 401; "
-              "el header operativo es 'x-api-key' (INTEGRACION §2.1)."),
-```
-En la CLI, escribir el digest y su ruta `DEFAULT_DIGEST = Path("docs/crm_atlas/atlas.digest.md")`.
-
-- [ ] **Step 4: `.gitignore`** — añadir línea `docs/crm_atlas/atlas.json`. Sacar de git el ya trackeado:
-```bash
-git rm --cached docs/crm_atlas/atlas.json
-```
-
-- [ ] **Step 5: Regenerar y verificar artefactos**
-
-Run: `python -m scripts.crm_atlas discover --phase a`
-Expected: escribe `.md` + `.digest.md`; `atlas.json` local (no trackeado).
-Run: `git status --short` → `atlas.json` NO aparece; `.md`/`.digest.md` sí.
-
-- [ ] **Step 6: Ejecutar tests → PASS. Commit**
-
-```bash
-git add core/crm_atlas.py scripts/crm_atlas.py .gitignore tests/test_crm_atlas.py docs/CRM_SUDESPACHO_ATLAS.md docs/crm_atlas/atlas.digest.md
-git commit -m "feat(crm-atlas): digest de deriva + auth_note; atlas.json fuera de git"
-```
-
----
-
-## Grupo 2 — Fase B (esquema por elemento)
-
-Todo nuevo en `core/crm_atlas.py` + tests. Cliente HTTP bespoke con `x-api-key`.
-
-### Task 6: `atlas_client()` + `auth_healthcheck()` (fail-fast)
-
-**Files:**
-- Modify: `core/crm_atlas.py`
-- Test: `tests/test_crm_atlas.py`
-
-**Interfaces:**
-- Produces: `atlas_client() -> httpx.Client` (header `x-api-key` de env; sin logging de body/headers); `auth_healthcheck(client) -> None` (lanza `CrmAtlasAuthError` en 401/403).
-
-- [ ] **Step 1: Test (falla) — healthcheck lanza en 401**
-
-```python
-def test_auth_healthcheck_fails_fast_on_401():
-    import httpx, pytest
-    from core.crm_atlas import auth_healthcheck, CrmAtlasAuthError
-    transport = httpx.MockTransport(lambda req: httpx.Response(401))
-    with httpx.Client(transport=transport, base_url="https://x") as c:
-        with pytest.raises(CrmAtlasAuthError):
-            auth_healthcheck(c)
-
-def test_auth_healthcheck_ok_on_200():
-    import httpx
-    from core.crm_atlas import auth_healthcheck
-    transport = httpx.MockTransport(lambda req: httpx.Response(200, json=[]))
-    with httpx.Client(transport=transport, base_url="https://x") as c:
-        auth_healthcheck(c)   # no lanza
-```
-
-- [ ] **Step 2: Ejecutar → FAIL.**
-
-- [ ] **Step 3: Implementar**
-
-```python
-class CrmAtlasAuthError(RuntimeError):
+class CrmAtlasError(RuntimeError):
     pass
 
-def atlas_client(base_url: str = PUBLIC_BASE_URL, *, timeout: float = 60.0) -> httpx.Client:
-    key = os.environ.get("SUDESPACHO_API_KEY", "").strip()
-    if not key:
-        raise CrmAtlasAuthError("Falta SUDESPACHO_API_KEY en el entorno.")
-    return httpx.Client(base_url=base_url.rstrip("/"),
-                        headers={"x-api-key": key, "Accept": "application/json"},
-                        timeout=timeout)
-
-def auth_healthcheck(client: httpx.Client) -> None:
-    r = client.get("/api/elements")
-    if r.status_code in (401, 403):
-        raise CrmAtlasAuthError(f"Auth global rechazada (HTTP {r.status_code}). Revisa SUDESPACHO_API_KEY.")
-    r.raise_for_status()
+class CrmAtlasAuthError(CrmAtlasError):
+    pass
 ```
-
-- [ ] **Step 4: Ejecutar → PASS. Commit** `feat(crm-atlas): cliente x-api-key + auth healthcheck fail-fast`
-
-### Task 7: `fetch_elements()` — Accept json + hydra unwrap + guarda
-
-**Files:** Modify `core/crm_atlas.py`; Test `tests/test_crm_atlas.py`
-
-**Interfaces:**
-- Produces: `fetch_elements(client) -> list[str]` (slugs, ordenados, dedup).
-
-- [ ] **Step 1: Test (falla) — lista Y hydra**
-
+- [ ] **Step 3: Test**
 ```python
-def test_fetch_elements_list_and_hydra():
-    import httpx
-    from core.crm_atlas import fetch_elements
-    members = [{"label":"Devices","id":{"value":"devices"}},
-               {"label":"Absences","id":{"value":"absences"}},
-               {"label":"Bad"}]  # sin id.value -> se ignora con guarda
-    def handler(req):
-        if "ld+json" in req.headers.get("accept",""):
-            return httpx.Response(200, json={"hydra:member": members, "hydra:totalItems": 3})
-        return httpx.Response(200, json=members)
-    with httpx.Client(transport=httpx.MockTransport(handler), base_url="https://x") as c:
-        assert fetch_elements(c) == ["absences", "devices"]   # ordenado, dedup, 'Bad' descartado
+def test_exception_hierarchy():
+    from core.crm_atlas import CrmAtlasError, CrmAtlasAuthError
+    assert issubclass(CrmAtlasAuthError, CrmAtlasError)
+    import core.crm_atlas as m
+    assert all(hasattr(m, n) for n in ("json","os","time","random"))
 ```
+- [ ] **Step 4:** Run `python -m pytest tests/test_crm_atlas.py::test_exception_hierarchy -v` → PASS.
+- [ ] **Step 5: Commit** `feat(crm-atlas): andamiaje — imports + jerarquia CrmAtlasError/CrmAtlasAuthError`
 
-- [ ] **Step 2: Ejecutar → FAIL.**
+### Task 0.2: Migrar `meta` a esquema anidado + `generator_version=2`
 
-- [ ] **Step 3: Implementar**
+**Files:** Modify `core/crm_atlas.py` (`build_atlas_phase_a`); Test `tests/test_crm_atlas.py`
 
-```python
-def fetch_elements(client: httpx.Client) -> list[str]:
-    r = client.get("/api/elements")
-    r.raise_for_status()
-    data = r.json()
-    members = data.get("hydra:member", data.get("items", data)) if isinstance(data, dict) else data
-    if not isinstance(members, list):
-        raise CrmAtlasError("/api/elements devolvió una forma inesperada.")
-    slugs = set()
-    for it in members:
-        if isinstance(it, dict):
-            ident = it.get("id")
-            slug = ident.get("value") if isinstance(ident, dict) else (ident if isinstance(ident, str) else None)
-            if slug:
-                slugs.add(slug)
-    return sorted(slugs)
-```
-(`CrmAtlasError` = clase base ya existente o nueva.)
-
-- [ ] **Step 4: Ejecutar → PASS. Commit** `feat(crm-atlas): fetch_elements (hydra/list + guarda de miembro)`
-
-### Task 8: `parse_fields_config()` (fuente 4a)
-
-**Files:** Modify `core/crm_atlas.py`; Test `tests/test_crm_atlas.py`
-
-**Interfaces:**
-- Produces: `Field(name, type, label, active)`; `parse_fields_config(payload) -> list[Field]`.
+**Interfaces (Produces):** `meta.phase_a = {"complete": True}`, `meta.phase_b = {"ran": False, "complete": False}`, `meta.generator_version = 2`, `meta.auth_note` (x-api-key). Se retiran los bools planos `phase_a_complete`/`phase_b_complete`.
 
 - [ ] **Step 1: Test (falla)**
-
 ```python
-def test_parse_fields_config():
-    from core.crm_atlas import parse_fields_config
-    payload = {"items":[{"id":1,"name":"cuantia","label":"Cuantía","type":"Moneda","active":True,"deleted":False},
-                        {"id":2,"name":"tipo","label":"Tipo","type":"Select","active":True,"deleted":False},
-                        {"id":3,"name":"x","label":"x","type":"TextCorto","active":False,"deleted":True}]}
-    fields = parse_fields_config(payload)
-    assert [f.name for f in fields] == ["cuantia", "tipo"]     # deleted=True se excluye
-    assert {f.name: f.type for f in fields} == {"cuantia":"Moneda","tipo":"Select"}
+def test_meta_nested_schema(spec):
+    from core.crm_atlas import build_atlas_phase_a
+    m = build_atlas_phase_a(spec, tenant="tnm")["meta"]
+    assert m["generator_version"] == 2
+    assert m["phase_a"] == {"complete": True}
+    assert m["phase_b"]["complete"] is False and m["phase_b"]["ran"] is False
+    assert "x-api-key" in m["auth_note"]
+    assert "phase_a_complete" not in m and "phase_b_complete" not in m
 ```
+- [ ] **Step 2:** FAIL.
+- [ ] **Step 3:** En `build_atlas_phase_a`: `generator_version=2`; sustituir los bools por `"phase_a":{"complete":True}`, `"phase_b":{"ran":False,"complete":False}`; añadir `"auth_note": ("El spec declara header 'Authorization' (apiKey) pero devuelve 401; el header operativo es 'x-api-key' (INTEGRACION §2.1).")`.
+- [ ] **Step 4:** PASS.
+- [ ] **Step 5: Commit** `refactor(crm-atlas): meta anidado (phase_a/phase_b) + generator_version 2 + auth_note`
 
-- [ ] **Step 2: Ejecutar → FAIL.**
-- [ ] **Step 3: Implementar** dataclass `Field` + `parse_fields_config` (excluir `deleted`, conservar `name/type/label/active`).
-- [ ] **Step 4: PASS. Commit** `feat(crm-atlas): parse_fields_config (view/config/fields)`
+### Task 0.3: `render_markdown` defensivo (tolera atlas de Fase A y de Fase B)
 
-### Task 9: `parse_invalid_property_probe()` (fuente 4b, con guardas)
+**Files:** Modify `core/crm_atlas.py` (`render_markdown`); Test `tests/test_crm_atlas.py`
 
-**Files:** Modify `core/crm_atlas.py`; Test `tests/test_crm_atlas.py`
+**Interfaces (Produces):** `render_markdown(atlas)` no lanza `KeyError` ante `meta`/`summary` parciales; lee `meta["phase_b"]["complete"]`; renderiza `elements` si existen.
 
-**Interfaces:**
-- Consumes: un `httpx.Response`.
-- Produces: `parse_invalid_property_probe(resp) -> list[str] | None` (None si no es 500-con-patrón).
-
-- [ ] **Step 1: Tests (fallan) — 500+patrón OK; 500 sin patrón → None; 200 → None**
-
+- [ ] **Step 1: Test (falla) — atlas mínimo de Fase B no debe petar**
 ```python
-def test_probe_guards():
-    import httpx
-    from core.crm_atlas import parse_invalid_property_probe as p
-    ok = httpx.Response(500, json={"detail":"ElementProperty not found : zz The properties are: a,b,c."})
-    assert p(ok) == ["a","b","c"]
-    other500 = httpx.Response(500, json={"detail":"Array to string conversion"})
-    assert p(other500) is None
-    got200 = httpx.Response(200, json={"items":[{"id":1}]})   # NUNCA tratar 200 como esquema
-    assert p(got200) is None
+def test_render_markdown_tolerates_minimal_phase_b():
+    from core.crm_atlas import render_markdown
+    md = render_markdown({"meta":{"tenant":"tnm","phase_b":{"complete":False}},
+                          "summary":{"by_tag":{}}, "endpoints":[], "elements":[]})
+    assert "# Atlas del CRM" in md   # no KeyError
 ```
+- [ ] **Step 2:** FAIL (`KeyError: 'sources'`).
+- [ ] **Step 3:** Reescribir accesos con `.get(...)`: `meta.get("sources",{}).get("oas3",{})`, `summ.get("total_operations","?")`, `summ.get("by_method",{})`, etc. El header de fase lee `meta.get("phase_b",{}).get("complete")` → "✅"/"⏳ pendiente". Actualizar el test existente `test_render_markdown_has_tables_and_index` si dependía de `phase_b_complete`.
+- [ ] **Step 4:** PASS + módulo completo verde.
+- [ ] **Step 5: Commit** `refactor(crm-atlas): render_markdown defensivo (Fase A y B)`
 
-- [ ] **Step 2: Ejecutar → FAIL.**
-- [ ] **Step 3: Implementar**
+---
 
-```python
-_PROBE_RE = re.compile(r"properties are\s*:?\s*(.+)", re.IGNORECASE)
+## Grupo 1 — Hardening de la Fase A
 
-def parse_invalid_property_probe(resp) -> list[str] | None:
-    if resp.status_code != 500:
-        return None
-    try:
-        detail = (resp.json().get("detail") or "")
-    except Exception:
-        return None
-    m = _PROBE_RE.search(detail)
-    if not m:
-        return None
-    return [f.strip() for f in m.group(1).replace(".", "").split(",") if f.strip()]
-```
-
-- [ ] **Step 4: PASS. Commit** `feat(crm-atlas): probe 4b con guardas (500+patron, anti-200)`
-
-### Task 10: `parse_relations_config()` (fuente 5a)
-
-**Files:** Modify `core/crm_atlas.py`; Test `tests/test_crm_atlas.py`
-
-- [ ] **Step 1: Test (falla)**
-
-```python
-def test_parse_relations_config():
-    from core.crm_atlas import parse_relations_config
-    rel = parse_relations_config({"parent":["sms","abogados_propios"], "children":["actuaciones","abogados_propios"]})
-    assert rel == {"parent":["abogados_propios","sms"], "children":["abogados_propios","actuaciones"]}  # ordenado
-```
-
-- [ ] **Step 2: FAIL.**
-- [ ] **Step 3: Implementar** — devolver `{"parent": sorted(...), "children": sorted(...)}`, tolerando claves ausentes.
-- [ ] **Step 4: PASS. Commit** `feat(crm-atlas): parse_relations_config (parent/children ordenado)`
-
-### Task 11: `select_enum_fields()` (allowlist) + `parse_enums()` (fuente 5b)
-
-**Files:** Modify `core/crm_atlas.py`; Test `tests/test_crm_atlas.py`
-
-**Interfaces:**
-- Produces: `SELECT_TYPE="Select"`, `ENUM_DENYLIST={"ListaUsuarios","ListaBancos","ListaGrupos","ListaElemento","ListaElementoSelect","Tags"}`; `select_enum_fields(fields) -> list[str]`; `parse_enums(payload) -> list[dict]`.
-
-- [ ] **Step 1: Tests (fallan) — allowlist Select, denylist Lista***
-
-```python
-def test_select_enum_fields_allowlist_only_select():
-    from core.crm_atlas import parse_fields_config, select_enum_fields
-    fields = parse_fields_config({"items":[
-        {"name":"tipo","type":"Select","label":"","active":True,"deleted":False},
-        {"name":"profesional_asignado","type":"ListaUsuarios","label":"","active":True,"deleted":False},
-        {"name":"banco","type":"ListaBancos","label":"","active":True,"deleted":False},
-        {"name":"tags","type":"Tags","label":"","active":True,"deleted":False}]})
-    assert select_enum_fields(fields) == ["tipo"]   # SOLO Select; Lista*/Tags fuera
-
-def test_parse_enums():
-    from core.crm_atlas import parse_enums
-    assert parse_enums({"enums":[{"id":"R1","label":"x","extra":1},{"id":"R2","label":"y"}]}) == \
-        [{"id":"R1","label":"x"},{"id":"R2","label":"y"}]
-```
-
-- [ ] **Step 2: FAIL.**
-- [ ] **Step 3: Implementar** las constantes + `select_enum_fields` (filtra `f.type == SELECT_TYPE`; ignora denylist) + `parse_enums` (extrae solo `{id,label}`, ordenado por `id`).
-- [ ] **Step 4: PASS. Commit** `feat(crm-atlas): select_enum_fields (allowlist Select, denylist Lista*/Tags) + parse_enums`
-
-### Task 12: `discover_element()` — orquestación con degradación
-
-**Files:** Modify `core/crm_atlas.py`; Test `tests/test_crm_atlas.py`
-
-**Interfaces:**
-- Consumes: `atlas_client`, `parse_fields_config`/`parse_invalid_property_probe`/`parse_relations_config`/`select_enum_fields`/`parse_enums`.
-- Produces: `discover_element(client, slug) -> dict` con claves `slug, fields, relations, enums, field_types_no_enumerados, probes`. `relations=None` si falló; `probes[k] in {"view/config/fields","500-probe","failed","ok"}`.
-
-- [ ] **Step 1: Tests (fallan) — feliz + degradación**
-
-```python
-def test_discover_element_happy(monkeypatch):
-    import httpx
-    from core.crm_atlas import discover_element
-    def handler(req):
-        p = req.url.path
-        if p.endswith("/fields"):
-            return httpx.Response(200, json={"items":[
-                {"name":"tipo","type":"Select","label":"T","active":True,"deleted":False},
-                {"name":"resp","type":"ListaUsuarios","label":"R","active":True,"deleted":False}]})
-        if p.endswith("/relations"):
-            return httpx.Response(200, json={"parent":[],"children":["actuaciones"]})
-        if "/view/enums/" in p:
-            return httpx.Response(200, json={"enums":[{"id":"A","label":"a"}]})
-        return httpx.Response(404)
-    with httpx.Client(transport=httpx.MockTransport(handler), base_url="https://x") as c:
-        el = discover_element(c, "extrajudiciales")
-    assert [f["name"] for f in el["fields"]] == ["resp","tipo"]        # ordenado
-    assert el["enums"] == {"tipo":[{"id":"A","label":"a"}]}            # SOLO el Select
-    assert el["field_types_no_enumerados"] == {"resp":"ListaUsuarios"} # Lista* registrado por tipo
-    assert el["relations"] == {"parent":[],"children":["actuaciones"]}
-    assert el["probes"] == {"fields":"view/config/fields","relations":"ok","enums":"ok"}
-
-def test_discover_element_degrades_relations(monkeypatch):
-    import httpx
-    from core.crm_atlas import discover_element
-    def handler(req):
-        p = req.url.path
-        if p.endswith("/fields"):
-            return httpx.Response(200, json={"items":[]})
-        if p.endswith("/relations"):
-            return httpx.Response(500, json={"detail":"boom"})
-        return httpx.Response(404)
-    with httpx.Client(transport=httpx.MockTransport(handler), base_url="https://x") as c:
-        el = discover_element(c, "x")
-    assert el["relations"] is None            # null, no [] — distingue fallo de vacío
-    assert el["probes"]["relations"] == "failed"
-```
-
-- [ ] **Step 2: FAIL.**
-- [ ] **Step 3: Implementar** `discover_element` con try/except por sub-llamada: 4a primero (si 404 → 4b), 5a, luego 5b solo sobre `select_enum_fields`; los `Field` con `type` en denylist van a `field_types_no_enumerados`. Cada fallo → `probes[k]="failed"`, campo `None` (relations) o `[]`/`{}` según semántica. El probe 4b (Task 9) se llama **sin** la capa de reintento (Task 13).
-- [ ] **Step 4: PASS. Commit** `feat(crm-atlas): discover_element con degradacion (null vs vacio, probes)`
-
-### Task 13: Capa de reintento/backoff + concurrencia
-
-**Files:** Modify `core/crm_atlas.py`; Test `tests/test_crm_atlas.py`
-
-**Interfaces:**
-- Produces: `get_with_retry(client, path, *, attempts=5) -> httpx.Response` (exponencial `min(1·2^n,30)s` + jitter, respeta `Retry-After`, reintenta 429/5xx). Nota: el probe 4b **NO** usa esta capa.
-
-- [ ] **Step 1: Test (falla) — reintenta 503 y luego 200; jitter/sleep parcheado**
-
-```python
-def test_get_with_retry_retries_503(monkeypatch):
-    import httpx
-    from core import crm_atlas as m
-    calls = {"n":0}
-    def handler(req):
-        calls["n"] += 1
-        return httpx.Response(200, json={}) if calls["n"] >= 3 else httpx.Response(503)
-    monkeypatch.setattr(m.time, "sleep", lambda s: None)   # no dormir en test
-    monkeypatch.setattr(m, "_jitter", lambda d: d)
-    with httpx.Client(transport=httpx.MockTransport(handler), base_url="https://x") as c:
-        r = m.get_with_retry(c, "/api/elements")
-    assert r.status_code == 200 and calls["n"] == 3
-```
-
-- [ ] **Step 2: FAIL.**
-- [ ] **Step 3: Implementar** `get_with_retry` (import `time`; `_jitter`; respetar `Retry-After`; `attempts=5`, base 1s, cap 30s; reintenta solo 429/5xx; lanza tras agotar). Concurrencia se aplica en Task 15 (orquestador) con un pool de tamaño 4.
-- [ ] **Step 4: PASS. Commit** `feat(crm-atlas): backoff exponencial + Retry-After (excluye probe 4b)`
-
-### Task 14: `scan_atlas_for_pii()` — gate anti-PII
-
-**Files:** Modify `core/crm_atlas.py`; Test `tests/test_crm_atlas.py`
-
-**Interfaces:**
-- Consumes: `core/anon` (detectores EMAIL/PERSONA).
-- Produces: `scan_atlas_for_pii(atlas) -> list[str]` (lista de hallazgos; vacía = limpio). La CLI **aborta el write** si no está vacía.
-
-- [ ] **Step 1: Test (falla) — email en un enum → detectado; atlas limpio → vacío**
-
-```python
-def test_scan_atlas_for_pii_detects_email():
-    from core.crm_atlas import scan_atlas_for_pii
-    dirty = {"elements":[{"slug":"x","enums":{"campo":[{"id":"a","label":"Fulano de Tal fulano@bufete.com"}]}}]}
-    hits = scan_atlas_for_pii(dirty)
-    assert hits and any("x" in h for h in hits)
-
-def test_scan_atlas_for_pii_clean():
-    from core.crm_atlas import scan_atlas_for_pii
-    clean = {"elements":[{"slug":"y","enums":{"iva":[{"id":"R1","label":"Operaciones interiores"}]}}]}
-    assert scan_atlas_for_pii(clean) == []
-```
-
-- [ ] **Step 2: FAIL.**
-- [ ] **Step 3: Implementar** — recorrer `enums` y labels de campo; detectar patrón de email (regex) y, si `core/anon` expone un detector de PERSONA barato, usarlo; devolver lista de `"{slug}.{prop}: <motivo>"` (sin volcar el valor). Priorizar email (regex robusto) — la denylist `Lista*` ya evita el grueso; esto es defensa en profundidad.
-- [ ] **Step 4: PASS. Commit** `feat(crm-atlas): gate anti-PII (email/persona) que bloquea el write`
-
-### Task 15: `build_atlas` Fase B + orden determinista + métrica de completitud
-
-**Files:** Modify `core/crm_atlas.py`; Test `tests/test_crm_atlas.py`
-
-**Interfaces:**
-- Produces: `build_atlas_phase_b(spec_or_phase_a_atlas, elements_results, ...) -> dict` con `meta.phase_b={ran,elements_total,elements_ok,elements_degraded,complete}` y `elements[]` ordenado.
-
-- [ ] **Step 1: Test (falla) — completitud + orden + concurrencia determinista**
-
-```python
-def test_build_atlas_phase_b_completeness_and_order():
-    from core.crm_atlas import build_atlas_phase_b
-    results = [
-        {"slug":"b","fields":[],"relations":{"parent":[],"children":[]},"enums":{},"field_types_no_enumerados":{},"probes":{"fields":"ok","relations":"ok","enums":"ok"}},
-        {"slug":"a","fields":[],"relations":None,"enums":{},"field_types_no_enumerados":{},"probes":{"fields":"ok","relations":"failed","enums":"ok"}},
-    ]
-    atlas = build_atlas_phase_b({"meta":{},"summary":{},"endpoints":[]}, results, tenant="tnm")
-    assert [e["slug"] for e in atlas["elements"]] == ["a","b"]     # ordenado por slug
-    pb = atlas["meta"]["phase_b"]
-    assert pb == {"ran":True,"elements_total":2,"elements_ok":1,"elements_degraded":1,"complete":False}
-```
-
-- [ ] **Step 2: FAIL.**
-- [ ] **Step 3: Implementar** — ordenar `elements` por slug (y dentro, `fields` por name, ya vienen de discover); calcular la métrica (`degraded` = elementos con algún `probes[k]=="failed"`); `complete = ran and elements_degraded==0`.
-- [ ] **Step 4: PASS. Commit** `feat(crm-atlas): build_atlas fase B (metrica de completitud + orden)`
-
-### Task 16: `render_markdown` Fase B — sección de degradados + escape
-
-**Files:** Modify `core/crm_atlas.py`; Test `tests/test_crm_atlas.py`
-
-- [ ] **Step 1: Test (falla)** — el `.md` con elementos degradados muestra una cabecera "N/M resueltos" y una tabla de degradados **al principio**; labels con `|`/`\n` escapados en campos y enums.
-
-```python
-def test_render_md_phase_b_degraded_section():
-    from core.crm_atlas import build_atlas_phase_b, render_markdown
-    results=[{"slug":"a","fields":[],"relations":None,"enums":{},"field_types_no_enumerados":{},"probes":{"fields":"ok","relations":"failed","enums":"ok"}}]
-    md = render_markdown(build_atlas_phase_b({"meta":{},"summary":{"by_tag":{}},"endpoints":[]}, results, tenant="tnm"))
-    assert "degradado" in md.lower()
-    assert "a" in md
-```
-
-- [ ] **Step 2: FAIL.**
-- [ ] **Step 3: Implementar** — sección "Elementos con descubrimiento degradado" antes del detalle; por elemento, tabla de campos (name·type) + relaciones + enums; `_md_escape` aplicado a **todo** label de campo y enum.
-- [ ] **Step 4: PASS. Commit** `feat(crm-atlas): render fase B (seccion de degradados + escape de labels)`
-
-### Task 17: CLI `discover --phase b|all --scope --resume`
+### Task 1.1: Determinismo (`sort_keys`) + `generated_at` UTC/no-stamp por defecto
 
 **Files:** Modify `scripts/crm_atlas.py`; Test `tests/test_crm_atlas.py`
 
-**Interfaces:**
-- Consumes: todo lo anterior.
-- Produces: `discover --phase b|all [--scope all|juridicos] [--resume] [--no-stamp-time]`. Sin `--also-elcontable`.
+- [ ] **Step 1: Test** — `test_atlas_json_is_byte_stable` (dos builds mismos datos → `json.dumps(sort_keys=True)` idéntico).
+- [ ] **Step 2:** PASS (build ya determinista con `generated_at=None`).
+- [ ] **Step 3:** CLI: escribir con `json.dumps(atlas, ensure_ascii=False, indent=2, sort_keys=True)`; default `stamp_time: bool = typer.Option(False, ...)`; cuando se selle usar `now_iso_utc()` (ya existe en `core/utils.py:76`); **cambiar el import** de `scripts/crm_atlas.py` a `from core.utils import now_iso_utc`.
+- [ ] **Step 4: Test CLI** (monkeypatch **`scripts.crm_atlas.fetch_oas3`**, `_MINI_SPEC` de módulo — ver Task 1.6) → `atlas.json.meta.generated_at is None`.
+- [ ] **Step 5:** Módulo verde. **Commit** `fix(crm-atlas): determinismo sort_keys + generated_at no-stamp/UTC`
 
-- [ ] **Step 1: Test (falla) — `--phase all` con transport mockeado produce atlas con elements y bloquea si PII**
+### Task 1.2: `_request_schema` — merge-patch, multipart, allOf/oneOf
 
-Test con `CliRunner` + `monkeypatch` de `fetch_oas3`, `atlas_client` (devuelve un `httpx.Client` con `MockTransport`), verificando que: (a) escribe `.md`+digest, (b) `atlas.json` local, (c) si un enum trae email → exit_code != 0 y NO escribe (gate).
+**Files:** Modify `core/crm_atlas.py:143-164`; Test `tests/test_crm_atlas.py`
 
-- [ ] **Step 2: FAIL.**
-- [ ] **Step 3: Implementar** el cuerpo `phase in {b,all}`: `client=atlas_client(base_url)`, `auth_healthcheck(client)`, `slugs=fetch_elements(client)` (filtrar por `--scope juridicos` contra una constante `ELEMENTOS_JURIDICOS` si se elige), pool de concurrencia 4 (`concurrent.futures.ThreadPoolExecutor`) llamando `discover_element`, `build_atlas_phase_b`, **`hits=scan_atlas_for_pii(atlas)` → si hits: echo + `raise typer.Exit(1)` SIN escribir**, luego escribir `.md`+digest (json local). Quitar `--also-elcontable`.
-- [ ] **Step 4: PASS. Commit** `feat(crm-atlas): CLI fase B (scope, gate PII, sin also-elcontable)`
+- [ ] **Step 1: Tests (fallan)** — merge-patch (`$ref`→basename), multipart (`type:object`→"object"), **allOf** (`{"allOf":[{"$ref":".../Base"},...]}`→"Base").
+- [ ] **Step 2:** FAIL.
+- [ ] **Step 3:** Ampliar la tupla de content-types a `("application/json","application/ld+json","application/merge-patch+json","multipart/form-data")`; antes del `$ref` directo, manejar `allOf/oneOf/anyOf` (tomar el primer `$ref`). Preservar la rama array/tipo existente.
+- [ ] **Step 4:** PASS (incl. `test_request_schema_ref_basename`). **Commit** `fix(crm-atlas): _request_schema cubre merge-patch/multipart/allOf`
 
-### Task 18: `--resume` (reintenta degradados)
+### Task 1.3: `operation_id_to_dev_slug` — colapsar no-alfanuméricos + trailing slash
 
-**Files:** Modify `scripts/crm_atlas.py`, `core/crm_atlas.py`; Test `tests/test_crm_atlas.py`
+**Files:** Modify `core/crm_atlas.py:77-89`, `parse_oas3`; Test `tests/test_crm_atlas.py`
 
-- [ ] **Step 1: Test (falla)** — con un `atlas.json` previo donde `a` está "ok" y `b` "failed", `--resume` **salta `a`** y **reintenta `b`**. (Leer previo con `encoding="utf-8"`.)
-- [ ] **Step 2: FAIL.**
-- [ ] **Step 3: Implementar** `load_previous_atlas(path) -> dict|None` (utf-8) + predicado `is_resolved(el)` (`all(v=="ok" or v=="view/config/fields" or v=="500-probe" for v in probes.values())` y ninguna `failed`); en la CLI, si `--resume` y hay previo, saltar los resueltos y **reintentar** el resto.
-- [ ] **Step 4: PASS. Commit** `feat(crm-atlas): --resume reintenta degradados (lee utf-8)`
+- [ ] **Step 1: Test** — `getAccounting - ConfigurationItem`→`get-accounting-configuration-item`; `createPublic Holidays (Multiple)Collection`→`create-public-holidays-multiple-collection`.
+- [ ] **Step 2:** FAIL.
+- [ ] **Step 3:** Tras construir el slug: `s = re.sub(r"[^0-9a-zA-Z]+","-", s.lower()).strip("-")` (usa el `re` ya importado). En `parse_oas3`, `dev_doc_url = f"{DEV_PORTAL_BASE}/{slug}/"` (trailing `/`).
+- [ ] **Step 4:** **Actualizar `test_parse_endpoint_fields`** (`tests/test_crm_atlas.py:136`): esperar `.endswith("/get-absences-absences-collection/")` (con barra). Verificar con el **módulo completo**: `python -m pytest tests/test_crm_atlas.py -q --junit-xml=...`.
+- [ ] **Step 5:** PASS. **Commit** `fix(crm-atlas): slug del portal colapsa no-alfanum + trailing slash`
 
-### Task 19: Corrida en vivo + verificación
+### Task 1.4: `Endpoint.deprecated` + `Param.enum/default` (defaults al final)
 
-**Files:** (ninguno de código) — corrida real.
+**Files:** Modify `core/crm_atlas.py` (`Param`,`Endpoint`,`_parse_param`,`parse_oas3`); Test
+
+- [ ] **Step 1: Test** — `deprecated` True; `Param.enum==["a","b"]`, `Param.default=="a"`.
+- [ ] **Step 2:** FAIL.
+- [ ] **Step 3:** Añadir a `Param`: `enum: list | None = None`, `default: Any = None` (**al final, con default**, para no romper el orden de dataclass). A `Endpoint`: `deprecated: bool = False` (al final). Poblar en `_parse_param` (`schema.get("enum")`, `schema.get("default")`) y `parse_oas3` (`bool(op.get("deprecated",False))`). Verificar que el fallback `Param(name="",...)` de la línea ~115 sigue válido (los nuevos campos tienen default).
+- [ ] **Step 4:** PASS. **Commit** `feat(crm-atlas): capturar deprecated + enum/default de parametros`
+
+### Task 1.5: `render_digest` + gitignore `atlas.json`
+
+**Files:** Modify `core/crm_atlas.py` (`render_digest`), `scripts/crm_atlas.py`, `.gitignore`; Test
+
+- [ ] **Step 1: Test** — `render_digest(atlas)` contiene `f"- {tag}: {n}"` por módulo (assert real, NO tautología); sobre atlas con `elements`, una línea por elemento con `len(fields)` y hash.
+- [ ] **Step 2:** FAIL.
+- [ ] **Step 3:** Implementar `render_digest` (usa `json.dumps`+`hashlib` — `json` ya importado en Task 0.1). CLI escribe `docs/crm_atlas/atlas.digest.md`.
+- [ ] **Step 4:** `.gitignore` += `docs/crm_atlas/atlas.json`; `git rm --cached docs/crm_atlas/atlas.json`.
+- [ ] **Step 5:** Regenerar `discover --phase a`; `git status` → `atlas.json` no trackeado; `.md`/digest sí.
+- [ ] **Step 6:** PASS. **Commit** `feat(crm-atlas): digest de deriva; atlas.json fuera de git`
+
+### Task 1.6: Fixture `_MINI_SPEC` de módulo (habilita tests de CLI)
+
+**Files:** Modify `tests/test_crm_atlas.py`
+
+- [ ] **Step 1:** Extraer el dict del fixture `spec` a una constante de módulo `_MINI_SPEC = {...}` y reescribir el fixture `def spec(): return copy.deepcopy(_MINI_SPEC)`. Así los `lambda` de CLI pueden devolver `_MINI_SPEC`.
+- [ ] **Step 2:** Módulo verde. **Commit** `test(crm-atlas): _MINI_SPEC de modulo para tests de CLI`
+
+---
+
+## Grupo 2 — Fase B
+
+### Task 2.1: `get_with_retry` (capa de reintento) — ANTES de discover_element
+
+**Files:** Modify `core/crm_atlas.py`; Test
+
+**Interfaces (Produces):** `get_with_retry(client, path, *, attempts=5) -> httpx.Response` (exponencial `min(1·2^n,30)s`, jitter `_jitter`, respeta `Retry-After`, reintenta solo 429/5xx). El probe 4b **NO** la usa.
+
+- [ ] **Step 1: Tests** — (a) 503,503,200 → 3 llamadas, `sleep` y `_jitter` monkeypatcheados; (b) 4xx no-429 → NO reintenta; (c) agota → lanza.
+- [ ] **Step 2:** FAIL.
+- [ ] **Step 3:** Implementar (`time`/`random` de Task 0.1). `_jitter(d)=d*(1+random.uniform(-0.2,0.2))`.
+- [ ] **Step 4:** PASS. **Commit** `feat(crm-atlas): get_with_retry (backoff + Retry-After)`
+
+### Task 2.2: `atlas_client` + `auth_healthcheck`
+
+**Files:** Modify `core/crm_atlas.py`; Test
+
+- [ ] **Step 1: Tests** — healthcheck lanza `CrmAtlasAuthError` en 401; no lanza en 200. (`atlas_client` lee `os.environ`; test de que sin key lanza `CrmAtlasAuthError`, con `monkeypatch.delenv`.)
+- [ ] **Step 2:** FAIL.
+- [ ] **Step 3:** `atlas_client(base_url=PUBLIC_BASE_URL)` → `httpx.Client` con `{"x-api-key":key,"Accept":"application/json"}`; sin key → `CrmAtlasAuthError`. `auth_healthcheck(client)` → `GET /api/elements`; 401/403 → `CrmAtlasAuthError`; else `raise_for_status`.
+- [ ] **Step 4:** PASS. **Commit** `feat(crm-atlas): atlas_client + auth_healthcheck fail-fast`
+
+### Task 2.3: `fetch_elements` (Accept json + hydra unwrap + guarda)
+
+**Files:** Modify `core/crm_atlas.py`; Test
+
+- [ ] **Step 1: Test** — lista Y hydra (`hydra:member`); miembro sin `id.value` ignorado; salida ordenada+dedup (`["absences","devices"]`).
+- [ ] **Step 2:** FAIL.
+- [ ] **Step 3:** Implementar (desenvuelve `data.get("hydra:member", data.get("items", data))`; extrae `it["id"]["value"]`; `CrmAtlasError` si forma inesperada). Usa `get_with_retry`.
+- [ ] **Step 4:** PASS. **Commit** `feat(crm-atlas): fetch_elements (hydra/list + guarda)`
+
+### Task 2.4: `parse_fields_config` (4a) — con `source`
+
+**Files:** Modify `core/crm_atlas.py` (`Field`, parser); Test
+
+- [ ] **Step 1: Test** — entrada **desordenada** `[tipo, cuantia]` → salida ordenada por name `["cuantia","tipo"]`; `deleted=True` excluido; `type` conservado; `source="view/config/fields"`.
+- [ ] **Step 2:** FAIL.
+- [ ] **Step 3:** `Field(name,type,label,active,source)`; `parse_fields_config` excluye `deleted`, **ordena por name**.
+- [ ] **Step 4:** PASS. **Commit** `feat(crm-atlas): parse_fields_config (con source, ordenado)`
+
+### Task 2.5: `parse_invalid_property_probe` (4b, guardado)
+
+**Files:** Modify `core/crm_atlas.py`; Test
+
+- [ ] **Step 1: Test** — 500+patrón→`["a","b","c"]`; 500 sin patrón→**`None`**; **200→`None`** (anti-lectura de registros). (Se fija `None`, coherente con "null=falló"; se reconcilia spec §2 a `None` — ver Task 3.2 doc.)
+- [ ] **Step 2:** FAIL.
+- [ ] **Step 3:** Implementar (exige `status==500` + regex `properties are:`); recibe el `Response` (llamado con `client.get`, NO `get_with_retry`).
+- [ ] **Step 4:** PASS. **Commit** `feat(crm-atlas): probe 4b guardado (500+patron, anti-200)`
+
+### Task 2.6: `parse_relations_config` (5a)
+
+**Files:** Modify `core/crm_atlas.py`; Test
+
+- [ ] **Step 1: Test** — entrada desordenada → `{"parent":sorted,"children":sorted}`; claves ausentes toleradas.
+- [ ] **Step 2:** FAIL. **Step 3:** Implementar. **Step 4:** PASS. **Commit** `feat(crm-atlas): parse_relations_config`
+
+### Task 2.7: `select_enum_fields` (allowlist) + `parse_enums` (5b)
+
+**Files:** Modify `core/crm_atlas.py`; Test
+
+**Interfaces:** `SELECT_TYPE="Select"`; `ENUM_DENYLIST={"ListaUsuarios","ListaBancos","ListaGrupos","ListaElemento","ListaElementoSelect","Tags"}`.
+
+- [ ] **Step 1: Tests** — `select_enum_fields` con `[Select, ListaUsuarios, ListaBancos, Tags]` → `["<solo el Select>"]`; `parse_enums` entrada `[R2,R1]` → ordenado `[{R1},{R2}]`, solo `{id,label}`.
+- [ ] **Step 2:** FAIL. **Step 3:** Implementar (allowlist `f.type==SELECT_TYPE`). **Step 4:** PASS. **Commit** `feat(crm-atlas): select_enum_fields (allowlist Select) + parse_enums`
+
+### Task 2.8: `discover_element` (orquestación + degradación + cableado a get_with_retry)
+
+**Files:** Modify `core/crm_atlas.py`; Test
+
+**Interfaces (Produces):** dict `{slug, fields, relations, enums, field_types_no_enumerados, probes}`. `relations=None` si falló; `probes[k]∈{"view/config/fields","500-probe","ok","failed"}`; **`probes["enums"]="ok"` aunque no haya campos Select** (evita bucle de resume); `field_types_no_enumerados` = **todo campo con `type != "Select"`** (por tipo, sin valores). 4a/5a/5b vía `get_with_retry`; 4b vía `client.get`.
+
+- [ ] **Step 1: Tests** — (a) feliz: `enums` solo del Select, `field_types_no_enumerados` con el `ListaUsuarios`, orden correcto, `probes` todo "ok"; (b) relations 500 → `relations=None`, `probes["relations"]="failed"`; (c) elemento sin campos Select → `probes["enums"]=="ok"`; (d) las sub-llamadas no-probe pasan por `get_with_retry` (monkeypatch de `get_with_retry` a un contador).
+- [ ] **Step 2:** FAIL. **Step 3:** Implementar. **Step 4:** PASS. **Commit** `feat(crm-atlas): discover_element (degradacion, get_with_retry, probes)`
+
+### Task 2.9: `scan_atlas_for_pii` — email + cuarentena heurística
+
+**Files:** Modify `core/crm_atlas.py`; Test
+
+**Interfaces (Produces):** `scan_atlas_for_pii(atlas) -> list[str]` (hits `"{slug}.{prop}: <motivo>"`, sin volcar el valor). Escanea `enums` **y** `warnings`. Motivos: EMAIL (regex de `core/anon`) → hit; valor `Select` que parece nombre-persona (`_parece_persona`) → hit + el llamador lo mueve a cuarentena. La CLI **bloquea el write** si hay hits de email; los de "parece persona" disparan la cuarentena (mover ese enum a `field_types_no_enumerados`) y se re-escanea.
+
+- [ ] **Step 1: Tests** — (a) label con email → hit; (b) label `"María González Ruiz"` (nombre SIN email) → hit por heurística; (c) `"Operaciones interiores"` / `"R1"` → limpio; (d) email en `warnings` → hit.
+- [ ] **Step 2:** FAIL.
+- [ ] **Step 3:** Implementar: reusar el patrón EMAIL de `core.anon.anonimizar.PATRONES_REGEX_COMPILADOS`; `_parece_persona(s)` = 2-4 tokens, todos Title-Case, sin dígitos ni caracteres de código, no en una allowlist de palabras de taxonomía. Recorrer `elements[*].enums` y `warnings`.
+- [ ] **Step 4:** PASS. **Commit** `feat(crm-atlas): gate anti-PII (email regex + cuarentena heuristica de persona)`
+
+### Task 2.10: `build_atlas_phase_b` — meta/summary completos + orden + circuit-breaker
+
+**Files:** Modify `core/crm_atlas.py`; Test
+
+**Interfaces (Produces):** `build_atlas_phase_b(phase_a_atlas: dict, elements_results: list[dict], *, tenant) -> dict` (primer arg = atlas de Fase A, del que **hereda `meta.sources`/`summary`/`endpoints`**). `meta.phase_b={ran,elements_total,elements_ok,elements_degraded,complete}`, `complete = ran and elements_degraded==0`. `elements` ordenado por slug.
+
+- [ ] **Step 1: Tests** — (a) métrica + orden por slug (entrada desordenada); (b) **determinismo bajo permutación** sobre `render_markdown`+`render_digest` (no solo el json); (c) circuit-breaker: si `elements_degraded > total//2` → `meta.phase_b["circuit_broken"]=True` (la CLI aborta el write, Task 3.1).
+- [ ] **Step 2:** FAIL. **Step 3:** Implementar (hereda meta/summary de Fase A; ordena `elements`, y dentro `fields`/`relations`/`enums` ya vienen ordenados de discover; ordena `warnings`). **Step 4:** PASS. **Commit** `feat(crm-atlas): build_atlas_phase_b (completitud + orden + circuit-breaker)`
+
+### Task 2.11: `render_markdown` Fase B — sección de degradados
+
+**Files:** Modify `core/crm_atlas.py`; Test
+
+- [ ] **Step 1: Test** — slug distintivo `extrajudiciales_zzz` degradado → aparece cabecera "N/M resueltos" y el slug **después** de la cabecera de degradados (`md.index("degradado") < md.index(slug)`); `_md_escape` en labels de campo/enum.
+- [ ] **Step 2:** FAIL. **Step 3:** Implementar (sección "Elementos con descubrimiento degradado" al principio; tablas por elemento). **Step 4:** PASS. **Commit** `feat(crm-atlas): render fase B (degradados + escape)`
+
+### Task 2.12: Leak-guard carve-out para `docs/crm_atlas/**`
+
+**Files:** Modify `scripts/precommit_leak_guard.py:158`; Test (si hay suite del guard) o verificación manual
+
+- [ ] **Step 1:** En `escanear_formas`, cambiar el skip para que `docs/crm_atlas/**` **no** quede exento (el resto de `docs/` sigue exento). Así el AVISO de email-forma cubre el `.md`/digest commiteados.
+- [ ] **Step 2:** Verificar: crear un `.md` de prueba con un email bajo `docs/crm_atlas/` → el guard lo marca; bajo otro `docs/` → sigue exento.
+- [ ] **Step 3: Commit** `fix(leak-guard): docs/crm_atlas/** no exento (cubre el atlas commiteado)`
+
+### Task 2.13: CLI 17a — `discover --phase b|all` (cableado A+B + concurrencia)
+
+**Files:** Modify `scripts/crm_atlas.py`; Test
+
+- [ ] **Step 1: Tests (CLI, transport mockeado)** — `--phase all`: `fetch_oas3`→A, `atlas_client`(MockTransport)→B; escribe `.md`+digest, `atlas.json` local; `meta.phase_b.elements_total` correcto. **Auth 401 → exit≠0 y NO existe atlas** (`not out.exists()`). **Quitar `--scope juridicos`** (elegimos los 89); quitar `--also-elcontable`, `ELCONTABLE_ATLAS_DIR`, `import shutil` y el docstring que lo cita.
+- [ ] **Step 2:** FAIL.
+- [ ] **Step 3:** Cuerpo `b|all`: `spec=fetch_oas3()` + `a=build_atlas_phase_a(spec,...)`; `client=atlas_client()`; `auth_healthcheck(client)`; `slugs=fetch_elements(client)`; `ThreadPoolExecutor(max_workers=4)` sobre `discover_element`; `atlas=build_atlas_phase_b(a, results, tenant=...)`. (Gate + escritura en Task 2.14.)
+- [ ] **Step 4:** PASS. **Commit** `feat(crm-atlas): CLI fase B — cableado A+B + concurrencia (sin scope/elcontable)`
+
+### Task 2.14: CLI 17b — gate PII bloquea el write (+ circuit-breaker)
+
+**Files:** Modify `scripts/crm_atlas.py`; Test
+
+- [ ] **Step 1: Tests** — (a) un enum con email → `scan_atlas_for_pii` da hits → **exit≠0, NADA escrito** (ni json local); (b) hits "parece persona" → ese enum se **cuarentena** (a `field_types_no_enumerados`), se re-escanea, y si queda limpio → escribe; (c) `circuit_broken` → exit≠0, nada escrito.
+- [ ] **Step 2:** FAIL.
+- [ ] **Step 3:** Tras `build_atlas_phase_b`: aplicar cuarentena de los hits heurísticos → re-`scan_atlas_for_pii`; si quedan hits de email o `circuit_broken` → `typer.echo` + `raise typer.Exit(1)` **antes de cualquier `_write_text`**. Solo si limpio, escribir `.md`+digest+json(local). **Único camino de escritura** (lo comparte `--resume`).
+- [ ] **Step 4:** PASS. **Commit** `feat(crm-atlas): gate PII bloquea el write + cuarentena + circuit-breaker`
+
+### Task 2.15: `--resume` (reintenta degradados, lee utf-8, pasa por el gate)
+
+**Files:** Modify `scripts/crm_atlas.py`, `core/crm_atlas.py`; Test
+
+- [ ] **Step 1: Tests** — (a) previo con `a`=ok, `b`=failed → `--resume` salta `a`, reintenta `b`; (b) **resume + enum sucio → bloquea** (mismo gate); (c) lectura del previo con `encoding="utf-8"` (round-trip con label `"Año/Categoría|X\nY"`).
+- [ ] **Step 2:** FAIL. **Step 3:** `load_previous_atlas(path)` (utf-8) + `is_resolved(el)` (ninguna `probes.value=="failed"`); resume reusa el camino de escritura con gate de Task 2.14. **Step 4:** PASS. **Commit** `feat(crm-atlas): --resume (reintenta degradados, utf-8, con gate)`
+
+---
+
+## Grupo 3 — Corrida en vivo + integración documental
+
+### Task 3.1: Corrida en vivo (checkpoint MANUAL — requiere key en el entorno)
 
 - [ ] **Step 1:** `python -m scripts.crm_atlas discover --phase all` (con `SUDESPACHO_API_KEY` en el entorno).
-- [ ] **Step 2:** Verificar: `meta.phase_b.elements_total==89`, `elements_degraded` bajo (idealmente 0); ningún `enums` de tipos `Lista*`; el gate PII no bloqueó (o, si bloqueó, investigar el hallazgo antes de continuar).
-- [ ] **Step 3:** Inspeccionar el `atlas.json` local: confirmar 0 emails (`grep -c "@" | por labels`), y que `field_types_no_enumerados` registra los `ListaUsuarios`.
-- [ ] **Step 4:** `python -m pytest -q --junit-xml` (suite completa verde; recordar las env vars).
+- [ ] **Step 2:** Verificar: `meta.phase_b.elements_total==89`; `elements_degraded` bajo; ningún `enums` de tipos `Lista*`; el gate no bloqueó (o, si bloqueó, **investigar el hallazgo** antes de seguir — es señal de PII real).
+- [ ] **Step 3:** Inspección de higiene del `atlas.json` local (con Python, contando patrones de email en labels, SIN imprimirlos) → 0 emails; `field_types_no_enumerados` registra los `ListaUsuarios`.
+- [ ] **Step 4:** `python -m pytest -q --junit-xml=...` (suite completa verde; recordar env vars de sudespacho para los tests que las piden — nota del task_289b4b7b).
 - [ ] **Step 5: Commit** de `.md`+digest actualizados.
 
----
+### Task 3.2: Integración documental + reconciliación doc-hygiene
 
-## Grupo 3 — Integración documental
+**Files:** Modify `docs/ARQUITECTURA_CRM_SUDESPACHO.md` (§3/§6/§11 → puntero; **§4.1/§11.1** reconciliación x-api-key), `docs/INTEGRACION_SUDESPACHO.md` (§0 puntero; §8.1 reconciliación **sin borrar** la nota empírica), `CLAUDE.md` (Referencias rápidas), spec §2 (nota 4b: `[]`→`None`).
 
-### Task 20: Vaciar tablas de `ARQUITECTURA` a punteros + cross-links + doc-hygiene
+- [ ] **Step 1:** Vaciar tablas de `ARQUITECTURA §3/§6/§11` a puntero + "por qué"; reconciliar x-api-key en `§4.1/§11.1` **e** `INTEGRACION §8.1` (añadir, no borrar). Alinear spec §2 (probe 4b devuelve `None`).
+- [ ] **Step 2:** Cross-links en `INTEGRACION §0` y `CLAUDE.md`.
+- [ ] **Step 3:** `python -m pytest -q` (guards de docs verdes — `test_docs_gobernanza` si existe).
+- [ ] **Step 4: Commit** `docs(crm-atlas): atlas como SSOT de endpoints + reconciliacion x-api-key`
 
-**Files:**
-- Modify: `docs/ARQUITECTURA_CRM_SUDESPACHO.md` (§3, §6, §11 → puntero + "por qué")
-- Modify: `docs/INTEGRACION_SUDESPACHO.md` (§0 puntero; §8.1 reconciliación x-api-key SIN borrar la nota empírica)
-- Modify: `CLAUDE.md` (Referencias rápidas → entrada del atlas)
-- Modify: `../ElContable/docs/REFERENCIA_SUDESPACHO_API_PERMISOS.md` (§2 puntero — **PR aparte en El Contable**)
+### Task 3.3: El Contable (MANUAL, fuera del worktree — DIFERIDO)
 
-- [ ] **Step 1:** En `ARQUITECTURA §3/§6/§11`: sustituir las tablas de endpoints/módulos/conteo por un puntero a `docs/CRM_SUDESPACHO_ATLAS.md`/digest + conservar solo el "por qué" conceptual. (No hay test; es doc.)
-- [ ] **Step 2:** En `INTEGRACION §8.1`: **añadir** la reconciliación ("la guía oficial documenta `x-api-key`; el spec declara `Authorization`; no concuerdan") **sin borrar** la nota de que `Authorization` da 401.
-- [ ] **Step 3:** Cross-links en `INTEGRACION §0` y `CLAUDE.md`.
-- [ ] **Step 4:** Verificar guards de docs: `python -m pytest tests/test_docs_gobernanza.py -q` (si existe) + `python -m pytest -q` completa.
-- [ ] **Step 5: Commit** `docs(crm-atlas): atlas como SSOT de endpoints — vaciar tablas de ARQUITECTURA a punteros`
-- [ ] **Step 6 (El Contable, PR aparte):** puntero desde `REFERENCIA §2` al atlas de FeesDefender (sin copia física).
+- [ ] Puntero desde `REFERENCIA §2` al atlas de FeesDefender. **No ejecutable desde el worktree** (`../ElContable` no resuelve; el repo real está en `C:\Users\tnm33\Dev\ElContable`). Se hace en un PR aparte en ese repo, por ruta absoluta, tras mergear esta rama. Sin copia física del artefacto.
 
 ---
 
-## Self-review (cobertura de la spec)
+## Self-review (cobertura de la spec v2)
 
-- §2 fuentes → Tasks 6-11. §3 arquitectura → Tasks 6-18. §4 modelo → Tasks 12,15. §5 fases → Tasks 6,17. §6 barandillas → Tasks 9,11,14,17 (gate). §7 robustez → Tasks 1,13,15,18. §8 artefactos → Task 5. §9 SSOT → Task 20. §10 tests → embebidos en cada task. §11 doc-hygiene → Task 20. §14 hardening → Tasks 1-5. §15 traza → cubierta por los arreglos anteriores.
-- Sin placeholders: cada step de código lleva código real.
-- Consistencia de tipos: `Field`/`Endpoint`/`Param`, `discover_element` dict con `probes`, `phase_b` métrica — consistentes entre tasks.
+- §2 fuentes→2.3-2.8. §3 arq→G0+G2. §4 modelo→0.2,2.8,2.10. §5 fases→2.13. §6 barandillas→2.7,2.9,2.12,2.14. §7 robustez→1.1,2.1,2.10(circuit-breaker),2.15. §8 artefactos→1.5. §9 SSOT→3.2. §10 tests→embebidos + los 4 E2E (auth-401 en 2.13, gate-bloquea en 2.14, determinismo-permutado en 2.10, encoding en 2.15). §11 doc-hygiene→3.2. §12 YAGNI→respetado (sin --scope, sin expandir schemas). §13 riesgos→cubiertos. §14 hardening→G1. §15→APÉNDICE.
+- Sin placeholders; símbolos definidos antes de usarse (G0 front-load); tests de CLI parchean el módulo CLI; comandos de shell corregidos.
+
+## APÉNDICE — Traza de la auditoría del plan (v1→v2)
+
+BLOCKERS: render_markdown Fase B (→0.3); `import json`/os/time (→0.1); `CrmAtlasError` (→0.1); `get_with_retry` sin cablear + orden (→2.1 antes de 2.8, cableado en 2.8); gate PII solo-email → cuarentena heurística (→2.9, decisión de Nikolai); tests E2E de los 4 blockers (→2.10/2.13/2.14/2.15).
+MAJORS: monkeypatch al módulo CLI (→Global Constraints + 1.1/2.13); `_MINI_SPEC` (→1.6); `--junit %TEMP%` (→Global Constraints); `ELEMENTOS_JURIDICOS`/`--scope juridicos` eliminado (→2.13); Task 3 rompe `test_parse_endpoint_fields` (→1.3 Step 4); `--phase all` A+B (→2.13); meta plano→anidado + gen_version 2 (→0.2); leak-guard carve-out (→2.12); circuit-breaker (→2.10); El Contable diferido (→3.3); detector persona invertido → NO usar (→Global Constraints + 2.9).
+MINORS: dataclass defaults al final (→1.4); `probes["enums"]="ok"` sin Select (→2.8); `Field.source` (→2.4); `field_types_no_enumerados`=todo≠Select (→2.8); tautologías `assert...or True`/`"a" in md` (→1.5/2.11); allOf test (→1.2); order tests con entrada desordenada (→2.4/2.7); reconciliación x-api-key en ARQUITECTURA §4.1/§11.1 (→3.2); cleanup `--also-elcontable`/`shutil`/docstring (→2.13).
+DE-RIESGOS confirmados (no sobre-corregir): refs de línea de Fase A correctas; slug preserva casos; `_request_schema` conserva rama array; `atlas.json` trackeado (git rm --cached correcto); literales de `probes` consistentes; allowlist `Select` protege aunque `ENUM_DENYLIST` no sea wildcard.
