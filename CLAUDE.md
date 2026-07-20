@@ -133,6 +133,11 @@ Código: este directorio (`C:\Users\tnm33\Dev\FeesDefender`), versionado en Git 
 
 ## Flujo de trabajo estándar
 
+> **Flujo git completo (modelo, apertura, cierre, poda, recuperación): fuente única
+> `docs/FLUJO_GIT.md`.** Regla de oro: una mesa = una tarea = una rama; **la raíz compartida
+> vive siempre en `main`**; el trabajo va en rama/worktree y entra a `main` solo por **PR**
+> (nunca commit directo — `main` está protegida).
+
 ### Apertura de sesión
 
 ```powershell
@@ -163,6 +168,9 @@ python -m scripts.session_close
 
 Equivalentemente, slash command `/cierre`.
 
+El cierre va por **rama → PR** (`main` protegida; nunca commit directo) y termina **podando la
+rama y el worktree** y devolviendo la raíz a `main`. Procedimiento completo: `docs/FLUJO_GIT.md §4`.
+
 El cierre valida que la suite sigue verde y prepara el mensaje de commit. El
 **bloque de cierre** (fecha + resumen + [SIGUIENTE]) se escribe en
 `docs/bitacora/AAAA.md` (reciente primero), **NO** en el top de `STATUS.md`;
@@ -184,6 +192,7 @@ Atajo: `/tests` ejecuta la suite completa.
 ## Referencias rápidas
 
 - **Estado y tareas**: `STATUS.md` (raíz del proyecto)
+- **Flujo git + protocolo de cierre (SSOT)**: `docs/FLUJO_GIT.md`
 - **Índice de `docs/` + ciclo de vida**: `docs/INDICE.md`
 - **Runbook de apertura de expediente**: `docs/RUNBOOK_APERTURA_EXPEDIENTE.md` (flujo E2E con gotchas)
 - **Arquitectura y deps**: `docs/ARQUITECTURA.md`
