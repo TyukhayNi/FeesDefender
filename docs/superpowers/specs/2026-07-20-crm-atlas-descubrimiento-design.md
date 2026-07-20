@@ -74,8 +74,8 @@ Cinco fuentes, todas de **lectura**; ninguna crea registros. Formas de payload *
   endpoints no depende de `.env`.
 - **4a primaria; 4b fallback endurecido.** 4b **exige `status==500` Y** que el `detail` matchee el
   patrón `properties are:`; si el patrón no aparece (el CRM tiene otros 500: "Array to string
-  conversion", "Undefined array key properties" — `INTEGRACION §8.3`), devuelve `[]` + warning, **no
-  misparsea**. Si la respuesta fuera `200` (elemento que valida laxo) **nunca** se trata como esquema
+  conversion", "Undefined array key properties" — `INTEGRACION §8.3`), devuelve `None` + warning, **no
+  misparsea** (`None` = "falló/no aplica", coherente con `null`=sub-llamada falló del §4). Si la respuesta fuera `200` (elemento que valida laxo) **nunca** se trata como esquema
   (guarda anti-lectura-de-registros). 4b corre **fuera** de la capa de reintento-5xx (§7) para que su
   500 deliberado no dispare backoff.
 - **`view/complete` NO se usa** (toma un id de **registro** → leería un registro; rompe la barandilla).
@@ -235,7 +235,7 @@ Parsers puros con fixtures; HTTP mockeado (`httpx.MockTransport`). Además del c
 - `operation_id_to_dev_slug`: casos con paréntesis y con `" - "` (los que hoy dan 404).
 - `fetch_elements`: forma **lista** Y forma **Hydra** (`hydra:member`); miembro malformado → guarda.
 - `parse_fields_config` (no `parse_complete_view`).
-- `parse_invalid_property_probe`: 500+patrón OK; 500 sin patrón → `[]`+warning; **200 → nunca esquema**.
+- `parse_invalid_property_probe`: 500+patrón OK; 500 sin patrón → `None`+warning; **200 → nunca esquema**.
 - `select_enum_fields`: `Select` sí; **`ListaUsuarios`/`ListaBancos`/`Tags` NO** (test que falla si se cuela).
 - `scan_atlas_for_pii`: atlas con un email/nombre → **detecta y bloquea**.
 - **Determinismo:** dos builds con orden de llegada permutado → JSON idéntico byte a byte.

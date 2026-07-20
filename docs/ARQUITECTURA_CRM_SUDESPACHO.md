@@ -2,12 +2,13 @@
 
 > Documento de conocimiento estructural sobre el CRM sudespacho.net, orientado a la
 > integración con FeesDefender. Combina la documentación oficial de
-> `developers.sudespacho.net` (capturada 2026-05-06), el spec OAS3 en
-> `api-crm-commons-pro.sudespacho.biz/api/docs.json` (466 paths, capturado 2026-05-06)
-> y el conocimiento empírico acumulado en `INTEGRACION_SUDESPACHO.md`.
+> `developers.sudespacho.net`, el spec OAS3 en
+> `api-crm-commons-pro.sudespacho.biz/api/docs.json` y el conocimiento empírico acumulado en
+> `INTEGRACION_SUDESPACHO.md`.
 >
-> **Este documento responde a "¿qué es el CRM y cómo funciona?"**
-> `INTEGRACION_SUDESPACHO.md` responde a "¿qué endpoints usamos y cómo?"
+> **Este documento responde a "¿qué es el CRM y cómo funciona?"** (modelo conceptual).
+> El **inventario de la superficie** (endpoints + esquema por elemento, generado y re-ejecutable)
+> es el atlas `docs/CRM_SUDESPACHO_ATLAS.md`; **"¿qué endpoints usamos y cómo?"**, `INTEGRACION_SUDESPACHO.md`.
 
 ---
 
@@ -135,137 +136,30 @@ hasta que se confirme que `PUT /api/relation_element/` las reemplaza.
 
 ---
 
-## 3. Catálogo completo de endpoints (oficial + empírico)
+## 3. Catálogo de endpoints → atlas generado (SSOT)
 
-### 3.1 ElementRegistries — listado y agregados de cualquier elemento
+> **Vaciado 2026-07-20 (Grupo 3.2 del atlas).** El catálogo exhaustivo de endpoints ya no se
+> mantiene a mano aquí: se generaba deriva (esta sección llegó a decir ~466 paths; el tenant
+> tiene 486). Regla "un hecho, un hogar" (`docs/GOBERNANZA_FUENTES_VERDAD.md`).
 
-| Método | Endpoint | Auth | Descripción |
-|---|---|---|---|
-| GET | `/api/element_registries/{element}` | x-api-key | Listado filtrable de registros |
-| GET | `/api/element_registries/summary/{element}` | x-api-key | Agregado/resumen numérico |
-| GET | `/api/element_registries/gdocu` | x-api-key | ⭐ Listado docs de expediente (filtro `associated`) |
-
-`element_registries` es la vía principal de lectura en REST. Devuelve `hydra:member`
-con un array de `{id, values: [{property: {name}, value}]}`.
-
-### 3.2 Expedientes — crear, leer, convertir
-
-| Método | Endpoint | Auth | Descripción |
-|---|---|---|---|
-| POST | `/api/element_register/extrajudiciales` | Bearer JWT | ⭐ Crear extrajudicial — JSON, HTTP 201 → `{id}` |
-| POST | `/api/element_register/expedientes_judiciales` | Bearer JWT | ⭐ Crear judicial — JSON, HTTP 201 → `{id}` |
-| GET | `/api/element_register/{element}/{id}` | x-api-key | ⚠️ Bug 500 — no usar hasta corrección |
-| POST | `/api/expedient/convert/{id}?type=CONVERT` | **x-api-key** | Convertir extrajudicial → judicial |
-| POST | `/api/expedient/convert/{id}?type=DUPLICATE` | **x-api-key** | Duplicar expediente |
-| POST | `/extrajudiciales/saveadd/elemento/extrajudiciales` | PHPSESSID+JWT | Legacy fallback crear extrajudicial |
-| POST | `/judiciales/saveadd/elemento/expedientes_judiciales` | PHPSESSID+JWT | Legacy fallback crear judicial |
-
-> **⚠️ Auth diferenciada en crear vs convertir:** `POST /api/element_register/` usa JWT
-> (`Authorization: Bearer`), mientras que `POST /api/expedient/convert/` usa `x-api-key`.
-> Son el mismo token distinto header — no confundir.
-
-### 3.3 Documentos (Gdocu) — listado y descarga
-
-| Método | Endpoint | Auth | Descripción |
-|---|---|---|---|
-| GET | `/api/element_registries/gdocu` + filterGroup | x-api-key | ⭐ Listado docs de expediente SIN PHPSESSID |
-| GET | `/api/files/presigned_download_url/{doc_id}?relatedElement=...&relatedId=...&direction=left` | x-api-key | ⭐ URL S3 prefirmada (TTL 600s) |
-| GET | `/api/documents` | x-api-key | Listado general de documentos con filtros |
-| GET | `/api/documents/{id}` | x-api-key | Metadatos de un documento (shape no estándar: `values[]`) |
-| GET | `/api/documents/{id}/zip/files` | x-api-key | ZIP de una carpeta Gdocu |
-| GET | `/api/documents/presigned_urls/{service}/download/{documentId}` | x-api-key | URL prefirmada — service: `s3`, `aws`, `gdrive` |
-| GET | `/api/documents/{id}/downloadUri` | x-api-key | URL de descarga directa |
-| GET | `/api/folders/gdocu/{parent}?related_element=...&related_member=...` | x-api-key | Carpetas Gdocu del expediente |
-| POST | `/gdocu/list/elemento/gdocu/elemento_relacionado/{element}/miembro_relacionado/{id}/...` | PHPSESSID | Legacy: listado HTML doc IDs |
-| POST | `/gestordocumental/predownloadfile/...` | PHPSESSID | Legacy: resolver método de descarga |
-| POST | `/gestordocumental/descargaficheros3/id_docu/{id}/...` | PHPSESSID | Legacy: URL S3 prefirmada |
-
-### 3.4 Relaciones entre registros
-
-| Método | Endpoint | Auth | Descripción |
-|---|---|---|---|
-| GET | `/api/related_registers?id={register_id}` | x-api-key | ⭐ Relaciones de un registro (plural, empírico) |
-| GET | `/api/related_register/{element}/{id}` | x-api-key | Relaciones de un elemento (singular, oficial) |
-| POST | `/api/relation_element/{element}/{id}` | Bearer JWT | **⭐ Crear relación REST** (confirmado 2026-05-06 — 201, idempotente, sin PHPSESSID) |
-| PUT | `/api/relation_element/{element}/{id}` | Bearer JWT | Actualizar relación existente (primary, relation) |
-| POST | `/api/related_registers` | — | ❌ Dead end — devuelve 405 |
-| POST | `/{elemento}/saveselect/elemento/{elem}/elemento_relacionado/{elem2}/miembro_relacionado/{id}/...` | PHPSESSID | Legacy: vincular entidad |
-| POST | `/views/saveselectrelacion/elemento/juzgados/elemento_relacion/autos/...` | PHPSESSID | Legacy especial: vincular juzgado (usa `saveselectrelacion`) |
-
-> **🔬 Oportunidad prioritaria:** `PUT /api/relation_element/{element}/{id}` con body
-> `{"relation": "left.expedientes_judiciales.648"}` podría reemplazar todos los
-> `saveselect` del frontal legacy, eliminando la dependencia de PHPSESSID para vínculos.
-> **Pendiente validar** con un caso real en el tenant `tnm`.
-
-### 3.5 Tags — crear y gestionar
-
-| Método | Endpoint | Auth | Descripción |
-|---|---|---|---|
-| POST | `/api/tags/{element}?field={fieldName}` | x-api-key | **🔬 Crear tag REST** (pendiente validar) |
-| POST | `/tagsinput/saveadd/elemento/tags_input/elemento_relacionado/tags/miembro_relacionado/{grupo_id}/...` | PHPSESSID | Legacy: crear tag (confirmado 2026-04-30) |
-
-Body del endpoint REST: `{"label": "NOMBRE TAG", "colour": "#5b9bd1"}`
-El `field` en el query param es el nombre del campo de tags del elemento (p. ej. `tags`).
-
-> **🔬 Oportunidad:** Si funciona, reemplaza la creación legacy de tags (actualmente
-> único método confirmado). Confirmar con `POST /api/tags/extrajudiciales?field=tags`.
-
-### 3.6 Clientes — búsqueda, creación, conversión
-
-| Método | Endpoint | Auth | Descripción |
-|---|---|---|---|
-| GET | `/autocompletar/buscar/elemento/{element}?term={q}&` | PHPSESSID | ⭐ Búsqueda fulltext (legacy) |
-| POST | `/api/client/convert/{id}?type=CONVERT` | x-api-key | Convertir prospecto → cliente |
-| POST | `/api/client/convert/{id}?type=DUPLICATE` | x-api-key | Duplicar cliente |
-| POST | `/views/saveadd/elemento/colaboradores` | PHPSESSID | Legacy: crear colaborador |
-
-### 3.7 Expedient (conversión extrajudicial → judicial)
+El inventario completo y **re-ejecutable** de la superficie REST vive en el atlas
+**`docs/CRM_SUDESPACHO_ATLAS.md`** — el **SSOT de "qué existe"**: **548 operaciones · 486 paths ·
+125 módulos** (Fase A, del OpenAPI público `/api/docs.json`), más, por cada uno de los 89 elementos
+del tenant, sus **campos, relaciones y enums** de tipo `Select` (Fase B). Regenerar y ver la deriva:
 
 ```
-POST /api/expedient/convert/{id}?type=CONVERT
-Authorization: x-api-key: <API_KEY>        ← OJO: x-api-key, NO Bearer JWT
-Body: {}    (body vacío)
-→ HTTP 201, {"id": "N_nuevo_judicial"}
+python -m scripts.crm_atlas discover --phase all
 ```
 
-Este endpoint crea un nuevo expediente judicial vinculado al extrajudicial `{id}`.
-**Aún no validado** en el tenant `tnm` — la conversión podría requerir campos adicionales.
+**Dónde vive cada cosa:**
 
-### 3.8 Elementos disponibles (catálogo)
-
-`GET /api/elements` devuelve el catálogo de tipos de elemento disponibles en el tenant:
-
-```json
-[{
-  "clientes": {"flags": 0, "iteratorClass": "..."},
-  "proveedores": {...},
-  "ticket": {...},
-  "bancos": {...},
-  "personal": {...}
-}]
-```
-
-Útil para discovery — devuelve los slugs activos en el tenant.
-
-### 3.9 Correo (microservicio `nest-mail`) — envío + historial de mail
-
-El envío de email desde el expediente (Historial → Mail) usa el microservicio
-`nest-mail-commons-pro.sudespacho.biz` + `api-crm-commons`. Flujo: crear borrador
-(`POST nest-mail/api/mail/`) → enviar (`PUT …/api/mail/{id}` con `draft:false`) → registrar como
-elemento CRM (`PUT api-crm-commons/api/element_register/mail/{id}`) → relacionar con el expediente
-(`POST api-crm-commons/api/relation_element/extrajudiciales/{exp}`) → el email queda en el historial
-del expediente (visible al equipo sin ir en copia). **Endpoints y payload completos:
-`INTEGRACION_SUDESPACHO.md §10.9`.** ⚠️ Estas XHR del SPA se autentican por **cookie de sesión web**
-(no `x-api-key`); `GET /api/accounts/{id}` expone credenciales SMTP/IMAP en claro (higiene: HAR nunca
-al repo).
-
-**Relacionar un correo ENTRANTE con un expediente (distinto del envío):** lo ejecuta un **plugin de
-Roundcube** (`roundcube.sudespacho.net`, `plugin.sudespacho_asignaa_*`), NO nest-mail. El webmail es
-Roundcube montado como **cliente IMAP** sobre las cuentas Gmail del despacho, con **SSO por `dataHash`**
-desde el frontal (Roundcube en iframe cross-origin). Se automatiza vía **webview** (no headless).
-Contrato + auth: `INTEGRACION_SUDESPACHO.md §10.10`.
-
----
+- **Qué endpoints / campos / relaciones / enums existen** → el atlas (arriba).
+- **Cuáles usamos y con qué payload / auth / dead-ends / bugs** → `INTEGRACION_SUDESPACHO.md`
+  (§3.1 endpoints confirmados con payload; §5 descarga de documentos; §8 gotchas —bug 500 de
+  `element_register`, `x-api-key` vs `Authorization`, dead-end `POST /api/related_registers` 405—;
+  §10 / §12 / §15 operaciones de relación, judicial y actuaciones; §10.9 / §10.10 correo
+  `nest-mail` + relate Roundcube).
+- **Qué es el CRM y cómo funciona (modelo conceptual)** → el resto de este documento (§1, §2, §4…).
 
 ## 4. Mapa de autenticación por operación
 
@@ -282,7 +176,15 @@ securitySchemes:
 La seguridad global del spec es `[{"apiKey": []}]`. Esto significa que la spec
 describe únicamente el header `Authorization`, que se usa tanto para el JWT de sesión
 web como (según el spec) para la API key. **`x-api-key` no aparece en ningún lugar
-del spec OAS3** — es un header paralelo no documentado que también funciona.
+del spec OAS3** — es un header paralelo que también funciona.
+
+> **Reconciliación (2026-07-20).** La **guía oficial en prosa**
+> (`developers.sudespacho.net/docs/first-steps/authentication/`) **sí documenta `x-api-key`**
+> como el header de la API key; el **spec OAS3** (`/api/docs.json`) no — declara `Authorization`.
+> Las dos fuentes oficiales **no concuerdan**. Empíricamente manda la guía: enviar la API key por
+> `Authorization` devuelve **401**, y el header operativo es **`x-api-key`** (conocimiento
+> load-bearing del cliente; no refutar sin confirmación de Nikolai). El atlas lo fija en
+> `meta.auth_note` (`docs/CRM_SUDESPACHO_ATLAS.md`).
 
 **Modelo auth real (tres tokens distintos):**
 
@@ -340,25 +242,14 @@ La propiedad `left.{elemento}.id` especifica la dirección de la relación.
 
 ---
 
-## 6. Módulos de sudespacho.net documentados oficialmente
+## 6. Módulos de sudespacho.net → índice del atlas
 
-El portal `developers.sudespacho.net` documenta ~100 módulos. Los relevantes para
-un despacho jurídico con integración FeesDefender:
+> **Vaciado 2026-07-20 (Grupo 3.2).** La tabla a mano listaba ~10 de los ~100 módulos.
 
-| Módulo | URL docs | Relevancia |
-|---|---|---|
-| ElementRegistries | `/docs/api-crm/get-summation-...` | ⭐⭐⭐ Core de todas las lecturas |
-| Expedient | `/docs/api-crm/convert-judicial-expedient-item` | ⭐⭐⭐ Conversión ext→jud |
-| Documents / Gdocu | `/docs/api-crm/get-list-documents-collection` | ⭐⭐⭐ Descarga de docs |
-| PresignedUrl | `/docs/api-crm/get-one-down-presigned-url-item` | ⭐⭐⭐ URL S3 |
-| RelatedRegister | `/docs/api-crm/get-related-register-related-register-collection` | ⭐⭐ Vínculos entre exps |
-| RelationsElements | `/docs/api-crm/put-relation-element-relations-elements-collection` | ⭐⭐ Crear vínculos REST |
-| Tag | `/docs/api-crm/post-tags-tag-collection` | ⭐⭐ Crear tags REST |
-| Client | `/docs/api-crm/convert-client-client-collection` | ⭐ Conversión prospects |
-| Make | `/docs/api-crm/get-integration-make-integration-dto-collection` | ⭐ Automatización futura |
-| Activities | `/docs/api-crm/get-activities-collection` | — Solo lectura, 204 response |
-
----
+El índice completo por módulo (tag) — **125 módulos** con su número de operaciones y enlace a la
+sección correspondiente — es el **"Índice por módulo (tag)"** del atlas
+`docs/CRM_SUDESPACHO_ATLAS.md`. Cada operación enlaza además a su doc del portal
+`developers.sudespacho.net` cuando existe (campo `dev_doc_url`).
 
 ## 7. Oportunidades de mejora REST (pendientes de validar)
 
@@ -488,10 +379,12 @@ Para llegar a operación 100% REST sin PHPSESSID:
 
 ---
 
-## 11. Hallazgos del spec OAS3 (2026-05-06)
+## 11. Hallazgos del spec OAS3
 
-> Fuente: `GET https://api-crm-commons-pro.sudespacho.biz/api/docs.json`
-> 466 paths documentados. Capturado y analizado 2026-05-06.
+> Fuente: `GET https://api-crm-commons-pro.sudespacho.biz/api/docs.json`. El **conteo vivo** de
+> paths/operaciones y el desglose por módulo **ya no se fija a mano aquí** (llegó a decir 466;
+> el tenant tiene 486) → lo da el atlas `docs/CRM_SUDESPACHO_ATLAS.md`, regenerable. Se conserva
+> abajo solo la **clarificación de autenticación** (§11.1), conocimiento load-bearing.
 
 ### 11.1 Autenticación — clarificación definitiva
 
@@ -502,98 +395,25 @@ documentado que funciona empíricamente. Implicaciones:
 - El spec asume que tanto la API key como el JWT van en el header `Authorization`.
 - La distinción `x-api-key` vs `Authorization: Bearer` que usamos es real y funcional
   pero no está en el spec oficial.
+- **La guía oficial en prosa sí documenta `x-api-key`** (`developers.sudespacho.net/docs/first-steps/authentication/`);
+  las dos fuentes oficiales no concuerdan. **Empíricamente manda la guía:** la API key por
+  `Authorization` devuelve **401**; el header operativo es `x-api-key` (no refutar sin confirmación
+  de Nikolai). El atlas lo registra en `meta.auth_note`.
 - Para crear expedientes (`POST /api/element_register/`), el spec indica `Authorization`
   genérico — que en práctica acepta el JWT (`Bearer <token>`).
 
-### 11.2 `POST /api/relation_element/{element}/{id}` — CREATE relación
+### 11.2 Resto de hallazgos del spec → atlas
 
-**Descubrimiento más importante del spec.** Además del PUT (actualizar), existe POST
-para **crear** relaciones nuevas:
-
-```json
-// Body: array JSON de strings de relación
-["left.expedientes_judiciales.10", "right.gdocu.9"]
-```
-
-Sintaxis de cada string: `"{dirección}.{slug_elemento}.{id}"`
-Dirección `left` = la entidad referenciada es "padre", `right` = es "hijo".
-
-Respuesta 201 si se crea correctamente. Esto **reemplaza en su totalidad** el mecanismo
-`saveselect` del frontal legacy si funciona en el tenant `tnm`.
-
-### 11.3 `GET /api/element_register/{element}/{id}` — properties es REQUIRED
-
-El spec marca `properties` como **required** en el GET de un registro individual.
-Esto clarifica el bug 500: el bug NO es que `properties[]` sea inválido, sino que
-el servidor requiere el parámetro pero tiene un bug al procesar arrays en PHP
-(`Array to string conversion`). El bug está en el backend, no en nuestro uso.
-
-El GET también acepta params opcionales `relatedElement` y `relatedId` — para filtrar
-el registro dentro del contexto de una relación específica.
-
-### 11.4 `POST /api/element_register/{element}` — creación con relación
-
-El body del POST incluye `relatedElement` y `relatedId` como campos opcionales:
-```json
-{
-  "nombre": "Manolo",
-  "email": "manolo@api.es",
-  "relatedElement": "contactos_met",
-  "relatedId": "23232"
-}
-```
-Esto permite **crear un registro y vincularlo en un solo call**. Útil para crear
-colaboradores directamente con relación al expediente, sin `saveselect` posterior.
-
-### 11.5 Endpoints masivos (`/api/element_register/mass/`)
-
-Existen tres variantes de operaciones masivas:
-
-| Endpoint | Uso |
-|---|---|
-| `POST /api/element_register/mass/{element}` | Operación masiva genérica |
-| `GET /api/element_register/mass/{element}/{ids}` | Operación masiva sobre IDs |
-| `POST /api/element_register/bulk-deletion/{element}` | Borrado masivo |
-
-Relevante para sincronización batch de expedientes en el futuro.
-
-### 11.6 Integración Google Drive y Microsoft OneDrive
-
-El CRM tiene integración nativa con ambas plataformas:
-- `/api/drive/connect`, `/api/drive/uploadFiles`, `/api/drive/files/{id}/download`
-- `/api/entra/connect`, `/api/entra/uploadFiles`, `/api/entra/files/{id}/download`
-
-Estos endpoints permiten subir/descargar documentos directamente desde el CRM hacia
-Google Drive o OneDrive. No relevante para FeesDefender ahora (usamos rclone), pero
-documentado para el futuro.
-
-### 11.7 Contadores de serie (`/api/general_counters/`)
-
-Endpoints para gestionar la numeración automática de expedientes:
-- `GET /api/general_counters/{element}/{seriesId}` — obtener el contador actual
-- Permite conocer el siguiente número disponible antes de crear un expediente.
-
-### 11.8 Configuración de vistas y relaciones
-
-`GET /api/view/config/{element}/relations` — devuelve la configuración de relaciones
-de un elemento, incluyendo qué elementos puede relacionar y en qué dirección.
-Útil para discovery: saber qué relaciones son válidas sin ensayo/error.
-
-### 11.9 Endpoints adicionales relevantes
-
-| Endpoint | Descripción |
-|---|---|
-| `/api/list/{element}/{field}` | Listado de valores de un campo select/combo |
-| `/api/elements/count_related` | Contar registros relacionados |
-| `/api/element_registries` | Colección de element_registries sin filtro |
-| `/api/registers` | Alias de registros |
-| `/api/merge-tags/{element}` | Merge tags entre registros |
-| `/api/online/clients` | Clientes conectados en línea |
-| `/api/autonumber`, `/api/autonumber/{element}` | Autonumeración |
-| `/api/predefined/{element}` | Plantillas predefinidas por elemento |
+> **Vaciado 2026-07-20 (Grupo 3.2).** Los antiguos §11.2–§11.9 enumeraban a mano endpoints
+> concretos del spec (crear relación REST, bug 500 de `element_register`, operaciones masivas,
+> integración Drive/OneDrive, contadores de serie, `view/config/relations`, `list`/`autonumber`…).
+> Eso es "qué existe" → hoy vive, exhaustivo y regenerable, en el atlas `docs/CRM_SUDESPACHO_ATLAS.md`.
+> Lo que **usamos** con payload confirmado (relación REST, bug 500 + workaround coma, etc.) está en
+> `INTEGRACION_SUDESPACHO.md` §3.1 / §8 / §10 / §11.
 
 ---
 
-*Fuente: `developers.sudespacho.net` + `api-crm-commons-pro.sudespacho.biz/api/docs.json`
-(466 paths, OAS3, capturado 2026-05-06) + conocimiento empírico en `INTEGRACION_SUDESPACHO.md`.
-Última actualización: 2026-05-06.*
+*Documento conceptual ("¿qué es el CRM y cómo funciona?"). La superficie REST exhaustiva y
+re-ejecutable (endpoints + esquema por elemento) es el atlas `docs/CRM_SUDESPACHO_ATLAS.md`; el
+"qué usamos y cómo", `INTEGRACION_SUDESPACHO.md`. Base OAS3: `api-crm-commons-pro.sudespacho.biz/api/docs.json`.
+Vaciado de tablas de endpoints → atlas: 2026-07-20 (Grupo 3.2).*

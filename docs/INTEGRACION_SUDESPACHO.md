@@ -66,6 +66,22 @@ relaciones (`clientes_propios`, `colaboradores`, `clientes_contrarios` como *rel
 de otro elemento) no aparecen aquí; para esas, seguir usando el patrón confirmado de
 `relation_element` (§10.6/§12.2) o HAR si el patrón es nuevo.
 
+### 0.4 Atajo previo: consultar el atlas ya generado
+
+**Antes de un HAR (§0.2) o un probe (§0.3), mirar el atlas** `docs/CRM_SUDESPACHO_ATLAS.md`:
+ya mapea toda la superficie del tenant `tnm` de forma generada y re-ejecutable — endpoints
+(Fase A: 548 ops / 486 paths / 125 módulos) **y** por elemento sus campos, relaciones y enums
+de tipo `Select` (Fase B: 89 elementos). Es el **SSOT de "qué existe"**; a menudo evita el
+descubrimiento a mano. Regenerar y ver la deriva del tenant:
+
+```
+python -m scripts.crm_atlas discover --phase all   # requiere SUDESPACHO_API_KEY en el entorno
+```
+
+El atlas responde "¿qué endpoints/campos/relaciones existen?"; **este documento** responde
+"¿cuáles usamos y con qué payload/auth?" (§3.1 en adelante). Diseño y barandillas anti-PII del
+generador: `docs/superpowers/specs/2026-07-20-crm-atlas-descubrimiento-design.md`.
+
 ---
 
 ## 1. Arquitectura de la plataforma
@@ -155,6 +171,10 @@ document.cookie.split(';').map(c=>c.trim()).filter(c=>c.startsWith('PHPSESSID')|
 ## 3. Endpoints confirmados
 
 ### 3.1 API REST nueva (`api-crm-commons-pro.sudespacho.biz`)
+
+> Esta tabla lista **solo los endpoints confirmados con payload** (el "qué usamos y cómo",
+> hogar legítimamente distinto). El inventario **exhaustivo** de la superficie REST (toda la
+> superficie, aunque no la usemos) vive en el atlas `docs/CRM_SUDESPACHO_ATLAS.md`.
 
 | Método | Endpoint | Descripción | Estado |
 |---|---|---|---|
@@ -514,10 +534,15 @@ Pendiente: confirmar payload y respuesta con una conversión real.
 
 ## 8. Gotchas / cosas no obvias
 
-1. **`x-api-key` no está en el spec OAS3**: El spec oficial OAS3 solo declara el header
-   `Authorization` como mecanismo de auth (`apiKey` scheme). `x-api-key` es un header
-   paralelo no documentado que funciona empíricamente. En la práctica: usar `x-api-key`
-   para operaciones de lectura y admin, `Authorization: Bearer <JWT>` para crear expedientes.
+1. **`x-api-key` vs `Authorization` — la guía en prosa y el spec OAS3 NO concuerdan**: la
+   **guía oficial** (`developers.sudespacho.net/docs/first-steps/authentication/`) documenta
+   `x-api-key` como el header de la API key; el **spec OAS3** (`/api/docs.json`), en cambio,
+   solo declara un `apiKey` scheme sobre el header `Authorization` y `x-api-key` no aparece
+   en él. Empíricamente **manda la guía**: enviar la API key por `Authorization` devuelve
+   **401**; el header operativo es **`x-api-key`** (nota load-bearing del cliente — no refutar
+   sin confirmación de Nikolai). En la práctica: usar `x-api-key` para lectura y admin,
+   `Authorization: Bearer <JWT>` para crear expedientes. (El atlas registra esta salvedad en
+   `meta.auth_note`; ver `docs/CRM_SUDESPACHO_ATLAS.md`.)
 
 2. **PHPSESSID caduca**: Por inactividad del servidor PHP (~24 min), no por tiempo fijo.
    Si `check_legacy` falla, renovar desde DevTools → Application → Cookies.
