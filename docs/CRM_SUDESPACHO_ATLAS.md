@@ -1391,3 +1391,2306 @@ Entradas de `paths` que el OpenAPI declara con `parameters` pero **sin** operaci
 | `/api/users` | parameters |
 | `/api/widgets` | parameters |
 
+## Esquema por elemento — 87/89 resueltos
+
+### Elementos con descubrimiento degradado
+
+| Elemento | Sondas fallidas |
+|---|---|
+| `conceptos_honorario` | enums |
+| `tareas` | enums |
+
+### abogados_contrarios
+
+| Campo | Tipo |
+|---|---|
+| `1apellido` | TextCorto |
+| `2apellido` | TextCorto |
+| `Colegio_Profesional` | TextCorto |
+| `Num_Colegiado` | TextCorto |
+| `ccc` | TextCorto |
+| `cp` | CodPostal |
+| `direccion` | TextCorto |
+| `email` | Email |
+| `fax` | Telefono |
+| `iva` | Select |
+| `movil` | Telefono |
+| `nacionalidad` | Select |
+| `nif_cif` | Dni |
+| `nombre` | TextCorto |
+| `notas` | EditorHtmlSimple |
+| `poblacion` | TextCorto |
+| `provincia` | Select |
+| `telefono1` | Telefono |
+| `telefono2` | Telefono |
+| `telefono3` | Telefono |
+| `web` | TextCorto |
+
+- Relaciones · parent: expedientes_judiciales, extrajudiciales · children: calendario, contactos, emailmarketing, facturas, gdocu, mail
+- enum `iva`: -1=Exento, 10=10%, 19=19%, 21=21%, 4=4%, 8=8%
+- enum `provincia`: 1=Sin Asignar, A Coruña=A Coruña, Albacete=Albacete, Alicante=Alicante, Almería=Almería, Asturias=Asturias, Badajoz=Badajoz, Baleares (Illes)=Baleares (Illes), Barcelona=Barcelona, Burgos=Burgos, Cantabria=Cantabria, Castellón=Castellón, Ceuta=Ceuta, Ciudad Real=Ciudad Real, Cuenca=Cuenca, Cáceres=Cáceres, Cádiz=Cádiz, Córdoba=Córdoba, Girona=Girona, Granada=Granada, Guadalajara=Guadalajara, Guipúzcoa=Guipúzcoa, Huelva=Huelva, Huesca=Huesca, Jaén=Jaén, La Rioja=La Rioja, Las Palmas=Las Palmas, León=León, Lleida=Lleida, Lugo=Lugo, Madrid=Madrid, Melilla=Melilla, Murcia=Murcia, Málaga=Málaga, Navarra=Navarra, Ourense=Ourense, Palencia=Palencia, Pontevedra=Pontevedra, Salamanca=Salamanca, Santa Cruz de Tenerife=Santa Cruz de Tenerife, Segovia=Segovia, Sevilla=Sevilla, Soria=Soria, Tarragona=Tarragona, Teruel=Teruel, Toledo=Toledo, Valencia=Valencia, Valladolid=Valladolid, Vizcaya=Vizcaya, Zamora=Zamora, Zaragoza=Zaragoza, Álava=Álava, Ávila=Ávila
+- campos no enumerados (por tipo): `1apellido`=TextCorto, `2apellido`=TextCorto, `Colegio_Profesional`=TextCorto, `Num_Colegiado`=TextCorto, `ccc`=TextCorto, `cp`=CodPostal, `direccion`=TextCorto, `email`=Email, `fax`=Telefono, `movil`=Telefono, `nacionalidad`=Select(cuarentena-PII), `nif_cif`=Dni, `nombre`=TextCorto, `notas`=EditorHtmlSimple, `poblacion`=TextCorto, `telefono1`=Telefono, `telefono2`=Telefono, `telefono3`=Telefono, `web`=TextCorto
+
+### abogados_propios
+
+| Campo | Tipo |
+|---|---|
+| `1apellido` | TextCorto |
+| `2apellido` | TextCorto |
+| `Colegio_Profesional` | TextCorto |
+| `Num_Colegiado` | TextCorto |
+| `ccc` | TextCorto |
+| `cliente_online` | CheckBox |
+| `cp` | CodPostal |
+| `direccion` | TextCorto |
+| `email` | Email |
+| `fax` | Telefono |
+| `iva` | Select |
+| `movil` | Telefono |
+| `nacionalidad` | Select |
+| `nif_cif` | Dni |
+| `nombre` | TextCorto |
+| `notas` | EditorHtmlSimple |
+| `online` | CheckBox |
+| `poblacion` | TextCorto |
+| `provincia` | Select |
+| `telefono1` | Telefono |
+| `telefono2` | Telefono |
+| `telefono3` | Telefono |
+| `test` | Email |
+| `web` | TextCorto |
+
+- Relaciones · parent: expedientes_judiciales, extrajudiciales · children: calendario, contactos, emailmarketing, expedientes_judiciales, extrajudiciales, facturas, gdocu, mail, usuarios
+- enum `iva`: -1=Exento, 10=10%, 19=19%, 21=21%, 4=4%, 8=8%
+- enum `provincia`: 1=Sin Asignar, A Coruña=A Coruña, Albacete=Albacete, Alicante=Alicante, Almería=Almería, Asturias=Asturias, Badajoz=Badajoz, Baleares (Illes)=Baleares (Illes), Barcelona=Barcelona, Burgos=Burgos, Cantabria=Cantabria, Castellón=Castellón, Ceuta=Ceuta, Ciudad Real=Ciudad Real, Cuenca=Cuenca, Cáceres=Cáceres, Cádiz=Cádiz, Córdoba=Córdoba, Girona=Girona, Granada=Granada, Guadalajara=Guadalajara, Guipúzcoa=Guipúzcoa, Huelva=Huelva, Huesca=Huesca, Jaén=Jaén, La Rioja=La Rioja, Las Palmas=Las Palmas, León=León, Lleida=Lleida, Lugo=Lugo, Madrid=Madrid, Melilla=Melilla, Murcia=Murcia, Málaga=Málaga, Navarra=Navarra, Ourense=Ourense, Palencia=Palencia, Pontevedra=Pontevedra, Salamanca=Salamanca, Santa Cruz de Tenerife=Santa Cruz de Tenerife, Segovia=Segovia, Sevilla=Sevilla, Soria=Soria, Tarragona=Tarragona, Teruel=Teruel, Toledo=Toledo, Valencia=Valencia, Valladolid=Valladolid, Vizcaya=Vizcaya, Zamora=Zamora, Zaragoza=Zaragoza, Álava=Álava, Ávila=Ávila
+- campos no enumerados (por tipo): `1apellido`=TextCorto, `2apellido`=TextCorto, `Colegio_Profesional`=TextCorto, `Num_Colegiado`=TextCorto, `ccc`=TextCorto, `cliente_online`=CheckBox, `cp`=CodPostal, `direccion`=TextCorto, `email`=Email, `fax`=Telefono, `movil`=Telefono, `nacionalidad`=Select(cuarentena-PII), `nif_cif`=Dni, `nombre`=TextCorto, `notas`=EditorHtmlSimple, `online`=CheckBox, `poblacion`=TextCorto, `telefono1`=Telefono, `telefono2`=Telefono, `telefono3`=Telefono, `test`=Email, `web`=TextCorto
+
+### actuaciones
+
+| Campo | Tipo |
+|---|---|
+| `Color` | TextCorto |
+| `Description` | TextAreaLong |
+| `EndTime` | DateTime |
+| `Estado` | Select |
+| `Invitados` | TextArea |
+| `IsAllDayEvent` | CheckBox |
+| `Location` | TextCorto |
+| `Prioridad` | Select |
+| `RecurringRule` | TextArea |
+| `StartTime` | DateTime |
+| `Subject` | TextArea |
+| `Tipo` | Select |
+| `actuacion_recursiva` | TextArea |
+| `conceptualizada` | CheckBox |
+| `duracion` | Cronometro |
+| `facturar` | CheckBox |
+| `fecha_alta` | Date |
+| `fecha_fin` | Date |
+| `fecha_vencimiento` | DateTime |
+| `id_carpeta` | Carpetable |
+| `id_gcalendar` | TextArea |
+| `id_miembro_calendario` | NumEntero |
+| `id_predefinido` | NumEntero |
+| `invitadosexternal` | TextArea |
+| `obligacion` | CheckBox |
+| `online` | CheckBox |
+| `precio_hora` | Moneda |
+| `precio_unidad` | Moneda |
+| `profesional_asignado` | ListaUsuarios |
+| `recordatorios` | TextArea |
+| `tags` | Tags |
+| `tipo_actuacion` | Select |
+| `tipo_facturacion` | TextCorto |
+| `total` | Moneda |
+| `total_empresa` | Moneda |
+| `total_profesional` | Moneda |
+| `unidades` | NumEntero |
+
+- Relaciones · parent: clientes_propios, comercial_oportunidades, contactos_met, empleados, expedientes_judiciales, extrajudiciales, igualas, lexnet, preclientes · children: actuaciones_obligaciones, articulos_met, calendario, conceptos_honorario, contactos_met, gdocu, mail, seguimientos, zoom
+- enum `Estado`: Hecho=Hecho, Planificado=Planificado
+- enum `Prioridad`: Alta=Alta, Baja=Baja, Media=Media
+- enum `Tipo`: presentado recurso casacion=PRESENTADO RECURSO CASACION
+- enum `tipo_actuacion`: LLamada=Llamada, Tarea=Tarea
+- campos no enumerados (por tipo): `Color`=TextCorto, `Description`=TextAreaLong, `EndTime`=DateTime, `Invitados`=TextArea, `IsAllDayEvent`=CheckBox, `Location`=TextCorto, `RecurringRule`=TextArea, `StartTime`=DateTime, `Subject`=TextArea, `actuacion_recursiva`=TextArea, `conceptualizada`=CheckBox, `duracion`=Cronometro, `facturar`=CheckBox, `fecha_alta`=Date, `fecha_fin`=Date, `fecha_vencimiento`=DateTime, `id_carpeta`=Carpetable, `id_gcalendar`=TextArea, `id_miembro_calendario`=NumEntero, `id_predefinido`=NumEntero, `invitadosexternal`=TextArea, `obligacion`=CheckBox, `online`=CheckBox, `precio_hora`=Moneda, `precio_unidad`=Moneda, `profesional_asignado`=ListaUsuarios, `recordatorios`=TextArea, `tags`=Tags, `tipo_facturacion`=TextCorto, `total`=Moneda, `total_empresa`=Moneda, `total_profesional`=Moneda, `unidades`=NumEntero
+
+### actuaciones_obligaciones
+
+| Campo | Tipo |
+|---|---|
+| `correo` | Email |
+| `estado_actuaciones_obligaciones` | Select |
+| `fecha_inicio` | Date |
+| `fecha_presentacion` | Date |
+| `forma_pago` | Select |
+| `pagado` | CheckBox |
+| `presentacion` | Select |
+
+- Relaciones · parent: actuaciones, clientes_propios, contactos_met · children: gdocu, mail
+- enum `estado_actuaciones_obligaciones`: Presentado=Presentado, pendiente_documentacion=Pte. documentación, pendiente_pago_impuesto=Pte. pago impuesto, pendiente_presentacion=Pte. presentación, proxima_obligacion=Próx. obligación
+- enum `forma_pago`: 01=Al contado, 03=Recibo, 04=Transferencia, 11=Cheque, 19=Tarjeta, 50=Contrareembolso
+- enum `presentacion`: presencial=Presencial, telematica=Telematica
+- campos no enumerados (por tipo): `correo`=Email, `fecha_inicio`=Date, `fecha_presentacion`=Date, `pagado`=CheckBox
+
+### acusacion
+
+| Campo | Tipo |
+|---|---|
+| `acusacion` | Select |
+| `direccion` | TextCorto |
+| `email` | Email |
+| `movil` | Telefono |
+| `nif_cif` | Dni |
+| `nombre` | TextCorto |
+| `notas` | EditorHtmlSimple |
+| `poblacion` | TextCorto |
+| `provincia` | Select |
+| `telefono_1` | Telefono |
+
+- Relaciones · parent: expedientes_judiciales · children: 
+- enum `acusacion`: particular=particular, popular=popular
+- enum `provincia`: 1=Sin Asignar, A Coruña=A Coruña, Albacete=Albacete, Alicante=Alicante, Almería=Almería, Asturias=Asturias, Badajoz=Badajoz, Baleares (Illes)=Baleares (Illes), Barcelona=Barcelona, Burgos=Burgos, Cantabria=Cantabria, Castellón=Castellón, Ceuta=Ceuta, Ciudad Real=Ciudad Real, Cuenca=Cuenca, Cáceres=Cáceres, Cádiz=Cádiz, Córdoba=Córdoba, Girona=Girona, Granada=Granada, Guadalajara=Guadalajara, Guipúzcoa=Guipúzcoa, Huelva=Huelva, Huesca=Huesca, Jaén=Jaén, La Rioja=La Rioja, Las Palmas=Las Palmas, León=León, Lleida=Lleida, Lugo=Lugo, Madrid=Madrid, Melilla=Melilla, Murcia=Murcia, Málaga=Málaga, Navarra=Navarra, Ourense=Ourense, Palencia=Palencia, Pontevedra=Pontevedra, Salamanca=Salamanca, Santa Cruz de Tenerife=Santa Cruz de Tenerife, Segovia=Segovia, Sevilla=Sevilla, Soria=Soria, Tarragona=Tarragona, Teruel=Teruel, Toledo=Toledo, Valencia=Valencia, Valladolid=Valladolid, Vizcaya=Vizcaya, Zamora=Zamora, Zaragoza=Zaragoza, Álava=Álava, Ávila=Ávila
+- campos no enumerados (por tipo): `direccion`=TextCorto, `email`=Email, `movil`=Telefono, `nif_cif`=Dni, `nombre`=TextCorto, `notas`=EditorHtmlSimple, `poblacion`=TextCorto, `telefono_1`=Telefono
+
+### alertas
+
+| Campo | Tipo |
+|---|---|
+| `activo` | CheckBox |
+| `codigo_instalacion` | TextCorto |
+| `datos` | TextAreaLong |
+| `elemento` | TextCorto |
+| `id_carpeta` | Carpetable |
+| `nombre` | TextCorto |
+
+- Relaciones · parent:  · children: 
+- campos no enumerados (por tipo): `activo`=CheckBox, `codigo_instalacion`=TextCorto, `datos`=TextAreaLong, `elemento`=TextCorto, `id_carpeta`=Carpetable, `nombre`=TextCorto
+
+### amortizaciones
+
+| Campo | Tipo |
+|---|---|
+| `coeficiente` | NumEntero |
+| `fecha_baja` | Date |
+| `matricula` | TextCorto |
+| `metodo` | Select |
+| `motivo_baja` | TextCorto |
+| `notas` | TextArea |
+| `numero_anotacion` | TextCorto |
+| `periodo` | NumEntero |
+| `porcentaje_afectacion` | TextCorto |
+| `produccion_estimada` | NumEntero |
+| `produccion_total_estimada` | NumEntero |
+| `referencia_catastral` | TextCorto |
+| `suma_digitos` | NumEntero |
+| `tanto_amortizacion` | NumEntero |
+| `tipo_de_bien` | Select |
+| `valor_original` | Moneda |
+| `valor_residual` | Moneda |
+
+- Relaciones · parent:  · children: amortizaciones_historico
+- enum `metodo`: Constante=Constante, Decreciente=Decreciente, Lineal=Lineal, Numeros Digitos=Numeros Digitos
+- enum `tipo_de_bien`: 1=Obra civil general, 10=Terrenos dedicados exclusivamente a escombreras, 11=Almacenes y depositos (gaseosos, liquidos y solidos), 12=Edificios comerciales, administrativos, de servicios y viviendas, 13=Subestaciones. Redes de transporte y distribucion de energia, 14=Cables, 15=Resto instalaciones, 16=Maquinaria, 17=Equipos medicos y asimilados, 18=Locomotoras, vagones y equipos de traccion, 19=Buques, aeronaves, 2=Pavimentos, 20=Elementos de transporte interno, 21=Elementos de transporte externo, 22=Autocamiones, 23=Mobiliario, 24=Lenceria, 25=Cristaleria, 26=Utiles y herramientas, 27=Moldes, matrices y modelos, 28=Otros enseres, 29=Equipos electronicos, 3=Infraestructuras y obras mineras, 30=Equipos para procesos de informacion, 31=Sistemas y programas informaticos, 32=Producciones cinematograficas, fonograficas, videos y series audiovisuales, 33=Otros elementos, 4=Centrales hidraulicas, 5=Centrales nucleares, 6=Centrales de carbon, 7=Centrales renovables, 8=Otras centrales, 9=Edificios industriales
+- campos no enumerados (por tipo): `coeficiente`=NumEntero, `fecha_baja`=Date, `matricula`=TextCorto, `motivo_baja`=TextCorto, `notas`=TextArea, `numero_anotacion`=TextCorto, `periodo`=NumEntero, `porcentaje_afectacion`=TextCorto, `produccion_estimada`=NumEntero, `produccion_total_estimada`=NumEntero, `referencia_catastral`=TextCorto, `suma_digitos`=NumEntero, `tanto_amortizacion`=NumEntero, `valor_original`=Moneda, `valor_residual`=Moneda
+
+### amortizaciones_historico
+
+| Campo | Tipo |
+|---|---|
+| `aao` | Year |
+| `acumulado` | TextCorto |
+| `anno` | Year |
+| `cuota` | TextCorto |
+| `pendiente` | TextCorto |
+| `produccion_estimada` | NumEntero |
+
+- Relaciones · parent: amortizaciones · children: 
+- campos no enumerados (por tipo): `aao`=Year, `acumulado`=TextCorto, `anno`=Year, `cuota`=TextCorto, `pendiente`=TextCorto, `produccion_estimada`=NumEntero
+
+### amortizaciones_tabla
+
+| Campo | Tipo |
+|---|---|
+| `coeficiente_maximo` | NumEntero |
+| `nombre` | TextCorto |
+| `periodo_maximo` | NumEntero |
+| `tipo_bien` | TextCorto |
+
+- Relaciones · parent:  · children: 
+- campos no enumerados (por tipo): `coeficiente_maximo`=NumEntero, `nombre`=TextCorto, `periodo_maximo`=NumEntero, `tipo_bien`=TextCorto
+
+### articulos_met
+
+| Campo | Tipo |
+|---|---|
+| `base_imponible` | Moneda |
+| `cantidad` | NumEntero |
+| `descripcion` | TextCorto |
+| `descuento_porcentaje` | NumDecimal |
+| `descuento_unidad` | Moneda |
+| `entrada` | Moneda |
+| `facturado` | CheckBox |
+| `facturar` | CheckBox |
+| `familia` | Select |
+| `fecha` | Date |
+| `impuestos` | Tags |
+| `irpf` | Select |
+| `iva` | Select |
+| `precio_unidad` | Moneda |
+| `salida` | Moneda |
+| `total` | Moneda |
+| `total_irpf` | Moneda |
+| `total_iva` | Moneda |
+
+- Relaciones · parent: actuaciones, expedientes_judiciales · children: cuentascontables_met
+- enum `familia`: Gasto=Gasto, Honorario=Honorario, Provision=Provision, Suplido=Suplido
+- enum `irpf`: -1=Exento, 15=15%, 19=19%, 19.5=19,5%, 20=20%, 21=21%, 7=7%
+- enum `iva`: -1=Exento, 10=10%, 19=19%, 21=21%, 4=4%, 8=8%
+- campos no enumerados (por tipo): `base_imponible`=Moneda, `cantidad`=NumEntero, `descripcion`=TextCorto, `descuento_porcentaje`=NumDecimal, `descuento_unidad`=Moneda, `entrada`=Moneda, `facturado`=CheckBox, `facturar`=CheckBox, `fecha`=Date, `impuestos`=Tags, `precio_unidad`=Moneda, `salida`=Moneda, `total`=Moneda, `total_irpf`=Moneda, `total_iva`=Moneda
+
+### autos
+
+| Campo | Tipo |
+|---|---|
+| `Auto` | TextCorto |
+| `fase_procedimiento` | Select |
+
+- Relaciones · parent: expedientes_judiciales, juzgados · children: 
+- enum `fase_procedimiento`: PROCEDIMIENTO MEDIDAS CAUTELARES=PROCEDIMIENTO MEDIDAS CAUTELARES, apelacion=PROCEDIMIENTO RECURSO APELACION, diligencias preliminares=DILIGENCIAS PRELIMINARES, ejecucion=PROCEDIMIENTO EJECUCION TITULOS JUDICIALES, primera instancia=PROCEDIMIENTO ORDINARIO, procedimientio conciliacion=PROCEDIMIENTIO CONCILIACION, procedimiento abreviado=PROCEDIMIENTO PENAL ABREVIADO, procedimiento arbitraje=PROCEDIMIENTO ARBITRAJE, procedimiento concurso=PROCEDIMIENTO CONCURSO, procedimiento contencioso-administrativo abreviado=PROCEDIMIENTO CONTENCIOSO-ADMINISTRATIVO ABREVIADO, procedimiento desahucio=PROCEDIMIENTO DESAHUCIO, procedimiento despido=PROCEDIMIENTO DESPIDO, procedimiento diligencias penales previas=PROCEDIMIENTO DILIGENCIAS PENALES PREVIAS, procedimiento ejecucion hipotecaria=PROCEDIMIENTO EJECUCION HIPOTECARIA, procedimiento exhorto civil=PROCEDIMIENTO EXHORTO CIVIL, procedimiento extradiccion pasiva=PROCEDIMIENTO EXTRADICCION PASIVA, procedimiento juicio rapido=PROCEDIMIENTO JUICIO RAPIDO, procedimiento jurisdiccion voluntaria=PROCEDIMIENTO JURISDICCION VOLUNTARIA, procedimiento liquidaciÓn regimenes economico matrimoniales=PROCEDIMIENTO LIQUIDACIÓN REGIMENES ECONOMICO MATRIMONIALES, procedimiento modificacion sustancial condiciones laborales=PROCEDIMIENTO MODIFICACION SUSTANCIAL CONDICIONES LABORALES, procedimiento monitorio=PROCEDIMIENTO MONITORIO, procedimiento recurso alzada=PROCEDIMIENTO RECURSO ALZADA, procedimiento recurso casacion=PROCEDIMIENTO RECURSO CASACION, procedimiento verbal=PROCEDIMIENTO VERBAL
+- campos no enumerados (por tipo): `Auto`=TextCorto
+
+### banco
+
+| Campo | Tipo |
+|---|---|
+| `cp` | TextCorto |
+| `desactivado` | CheckBox |
+| `direccion` | TextCorto |
+| `email` | Email |
+| `fax` | TextCorto |
+| `nombre` | TextCorto |
+| `notas` | EditorHtmlSimple |
+| `num_cuenta` | CuentaBancaria |
+| `num_cuenta_bic` | TextCorto |
+| `num_cuenta_original` | TextCorto |
+| `poblacion` | TextCorto |
+| `provincia` | Select |
+| `sufijo_adeudo_ordenante` | TextCorto |
+| `sufijo_adeudo_presentador` | TextCorto |
+| `sufijo_devolucion_ordenante` | TextCorto |
+| `sufijo_devolucion_presentador` | TextCorto |
+| `sufijodescuento` | TextCorto |
+| `sufijovencidos` | TextCorto |
+| `telefono` | TextCorto |
+
+- Relaciones · parent: pagos_proveedores, proveedores, remesas · children: contactos, cuentas_contables, cuentascontables, gdocu, mail
+- enum `provincia`: 1=Sin Asignar, A Coruña=A Coruña, Albacete=Albacete, Alicante=Alicante, Almería=Almería, Asturias=Asturias, Badajoz=Badajoz, Baleares (Illes)=Baleares (Illes), Barcelona=Barcelona, Burgos=Burgos, Cantabria=Cantabria, Castellón=Castellón, Ceuta=Ceuta, Ciudad Real=Ciudad Real, Cuenca=Cuenca, Cáceres=Cáceres, Cádiz=Cádiz, Córdoba=Córdoba, Girona=Girona, Granada=Granada, Guadalajara=Guadalajara, Guipúzcoa=Guipúzcoa, Huelva=Huelva, Huesca=Huesca, Jaén=Jaén, La Rioja=La Rioja, Las Palmas=Las Palmas, León=León, Lleida=Lleida, Lugo=Lugo, Madrid=Madrid, Melilla=Melilla, Murcia=Murcia, Málaga=Málaga, Navarra=Navarra, Ourense=Ourense, Palencia=Palencia, Pontevedra=Pontevedra, Salamanca=Salamanca, Santa Cruz de Tenerife=Santa Cruz de Tenerife, Segovia=Segovia, Sevilla=Sevilla, Soria=Soria, Tarragona=Tarragona, Teruel=Teruel, Toledo=Toledo, Valencia=Valencia, Valladolid=Valladolid, Vizcaya=Vizcaya, Zamora=Zamora, Zaragoza=Zaragoza, Álava=Álava, Ávila=Ávila
+- campos no enumerados (por tipo): `cp`=TextCorto, `desactivado`=CheckBox, `direccion`=TextCorto, `email`=Email, `fax`=TextCorto, `nombre`=TextCorto, `notas`=EditorHtmlSimple, `num_cuenta`=CuentaBancaria, `num_cuenta_bic`=TextCorto, `num_cuenta_original`=TextCorto, `poblacion`=TextCorto, `sufijo_adeudo_ordenante`=TextCorto, `sufijo_adeudo_presentador`=TextCorto, `sufijo_devolucion_ordenante`=TextCorto, `sufijo_devolucion_presentador`=TextCorto, `sufijodescuento`=TextCorto, `sufijovencidos`=TextCorto, `telefono`=TextCorto
+
+### busquedas
+
+| Campo | Tipo |
+|---|---|
+| `datos` | TextAreaLong |
+| `desplegar_desde` | TextCorto |
+| `elemento` | TextCorto |
+| `nombre` | TextCorto |
+
+- Relaciones · parent:  · children: 
+- campos no enumerados (por tipo): `datos`=TextAreaLong, `desplegar_desde`=TextCorto, `elemento`=TextCorto, `nombre`=TextCorto
+
+### calendario
+
+| Campo | Tipo |
+|---|---|
+| `Color` | TextCorto |
+| `Description` | TextArea |
+| `EndTime` | DateTime |
+| `Estado` | Select |
+| `Invitados` | TextArea |
+| `IsAllDayEvent` | CheckBox |
+| `Location` | TextCorto |
+| `Prioridad` | Select |
+| `RecurringRule` | TextArea |
+| `StartTime` | DateTime |
+| `Subject` | TextArea |
+| `Tipo` | Select |
+| `conferencingservice` | TextCorto |
+| `digest` | TextCorto |
+| `elemento` | TextCorto |
+| `id_gcalendar` | TextCorto |
+| `id_recursiva` | NumEntero |
+| `invitadosexternal` | TextArea |
+| `miembro` | NumEntero |
+| `private_notes` | TextArea |
+| `profesional_asignado` | ListaUsuarios |
+| `readonly` | CheckBox |
+| `recordatorios` | TextArea |
+| `reurrenciaultimocalculo` | Date |
+| `tipo_sincronizacion` | TextCorto |
+
+- Relaciones · parent: abogados_contrarios, abogados_propios, actuaciones, clientes_propios, colaboradores, contactos, contactos_met, empleados, expedientes_judiciales, extrajudiciales, juzgados, organismos, preclientes, procuradores_contrarios, procuradores_propios, proveedores · children: 
+- enum `Estado`: Hecho=Hecho, Planificado=Planificado
+- enum `Prioridad`: Alta=Alta, Baja=Baja, Media=Media
+- enum `Tipo`: Aviso=Aviso, Evento=Evento, Llamada=Llamada, Recordatorio=Recordatorio, Señalamiento=Señalamiento, Vencimiento=Vencimiento
+- campos no enumerados (por tipo): `Color`=TextCorto, `Description`=TextArea, `EndTime`=DateTime, `Invitados`=TextArea, `IsAllDayEvent`=CheckBox, `Location`=TextCorto, `RecurringRule`=TextArea, `StartTime`=DateTime, `Subject`=TextArea, `conferencingservice`=TextCorto, `digest`=TextCorto, `elemento`=TextCorto, `id_gcalendar`=TextCorto, `id_recursiva`=NumEntero, `invitadosexternal`=TextArea, `miembro`=NumEntero, `private_notes`=TextArea, `profesional_asignado`=ListaUsuarios, `readonly`=CheckBox, `recordatorios`=TextArea, `reurrenciaultimocalculo`=Date, `tipo_sincronizacion`=TextCorto
+
+### campanamarketing
+
+| Campo | Tipo |
+|---|---|
+| `campaingid` | TextCorto |
+| `emails_enviados` | NumEntero |
+| `fecha` | DateTime |
+| `nombre` | TextCorto |
+| `reports` | TextAreaLong |
+
+- Relaciones · parent: emailmarketing · children: 
+- campos no enumerados (por tipo): `campaingid`=TextCorto, `emails_enviados`=NumEntero, `fecha`=DateTime, `nombre`=TextCorto, `reports`=TextAreaLong
+
+### catalogo_conceptos_gasto
+
+| Campo | Tipo |
+|---|---|
+| `cantidad` | NumDecimal |
+| `descripcion` | TextCorto |
+| `descuento_porcentaje` | NumDecimal |
+| `descuento_unidad` | Moneda |
+| `facturado` | Select |
+| `facturar` | Select |
+| `fecha` | Date |
+| `irpf_propio` | Select |
+| `iva_propio` | Select |
+| `periodico` | CheckBox |
+| `precio_unidad` | Moneda |
+| `total` | Moneda |
+
+- Relaciones · parent:  · children: conceptos_gasto
+- enum `facturado`: N=NO, S=SI
+- enum `facturar`: N=NO, S=SI
+- enum `irpf_propio`: -1=Exento, 15=15%, 19=19%, 19.5=19,5%, 20=20%, 21=21%, 7=7%
+- enum `iva_propio`: -1=Exento, 10=10%, 19=19%, 21=21%, 4=4%, 8=8%
+- campos no enumerados (por tipo): `cantidad`=NumDecimal, `descripcion`=TextCorto, `descuento_porcentaje`=NumDecimal, `descuento_unidad`=Moneda, `fecha`=Date, `periodico`=CheckBox, `precio_unidad`=Moneda, `total`=Moneda
+
+### catalogo_conceptos_honorario
+
+| Campo | Tipo |
+|---|---|
+| `cantidad` | NumDecimal |
+| `codigo` | TextCorto |
+| `descripcion` | TextCorto |
+| `descuento_porcentaje` | NumDecimal |
+| `descuento_unidad` | Moneda |
+| `facturado` | Select |
+| `facturar` | Select |
+| `fecha` | Date |
+| `irpf_propio` | Select |
+| `iva_propio` | Select |
+| `periodico` | CheckBox |
+| `precio_unidad` | Moneda |
+| `stock` | NumEntero |
+| `total` | Moneda |
+
+- Relaciones · parent:  · children: conceptos_honorario, conceptos_recibidas_honorarios, paquetes_catalogo, tarifas_conceptos_honorario
+- enum `facturado`: N=NO, S=SI
+- enum `facturar`: N=NO, S=SI
+- enum `irpf_propio`: -1=Exento, 15=15%, 19=19%, 19.5=19,5%, 20=20%, 21=21%, 7=7%
+- enum `iva_propio`: -1=Exento, 10=10%, 19=19%, 21=21%, 4=4%, 8=8%
+- campos no enumerados (por tipo): `cantidad`=NumDecimal, `codigo`=TextCorto, `descripcion`=TextCorto, `descuento_porcentaje`=NumDecimal, `descuento_unidad`=Moneda, `fecha`=Date, `periodico`=CheckBox, `precio_unidad`=Moneda, `stock`=NumEntero, `total`=Moneda
+
+### catalogo_conceptos_suplido
+
+| Campo | Tipo |
+|---|---|
+| `cantidad` | NumDecimal |
+| `descripcion` | TextCorto |
+| `descuento_porcentaje` | NumDecimal |
+| `descuento_unidad` | NumDecimal |
+| `facturado` | Select |
+| `facturar` | Select |
+| `fecha` | Date |
+| `irpf_propio` | Select |
+| `iva_propio` | Select |
+| `periodico` | CheckBox |
+| `precio_unidad` | Moneda |
+| `total` | Moneda |
+
+- Relaciones · parent:  · children: conceptos_suplido
+- enum `facturado`: N=NO, S=SI
+- enum `facturar`: N=NO, S=SI
+- enum `irpf_propio`: -1=Exento, 15=15%, 19=19%, 19.5=19,5%, 20=20%, 21=21%, 7=7%
+- enum `iva_propio`: -1=Exento, 10=10%, 19=19%, 21=21%, 4=4%, 8=8%
+- campos no enumerados (por tipo): `cantidad`=NumDecimal, `descripcion`=TextCorto, `descuento_porcentaje`=NumDecimal, `descuento_unidad`=NumDecimal, `fecha`=Date, `periodico`=CheckBox, `precio_unidad`=Moneda, `total`=Moneda
+
+### catalogo_productos
+
+| Campo | Tipo |
+|---|---|
+| `cantidad` | Moneda |
+| `cod_cuenta_emitidas` | NumEntero |
+| `cod_cuenta_recibidas` | NumEntero |
+| `codigo` | TextCorto |
+| `codigo_emitidas` | NumEntero |
+| `codigo_recibidas` | NumEntero |
+| `descatalogado` | CheckBox |
+| `descripcion` | TextCorto |
+| `descuento_porcentaje` | NumDecimal |
+| `ean` | TextCorto |
+| `familia` | Select |
+| `precio_compra` | Moneda |
+| `precio_venta` | Moneda |
+| `proveedor` | ListaElemento |
+| `referencia` | TextCorto |
+| `stock` | TextCorto |
+| `tipo_emitidas` | TextCorto |
+| `tipo_irpf` | Select |
+| `tipo_iva` | Select |
+| `tipo_recibidas` | TextCorto |
+| `total` | Moneda |
+
+- Relaciones · parent: paquetes · children: comisiones, descuentos, productos
+- enum `tipo_irpf`: -1=Exento, 15=15%, 19=19%, 19.5=19,5%, 20=20%, 21=21%, 7=7%
+- enum `tipo_iva`: -1=Exento, 10=10%, 19=19%, 21=21%, 4=4%, 8=8%
+- campos no enumerados (por tipo): `cantidad`=Moneda, `cod_cuenta_emitidas`=NumEntero, `cod_cuenta_recibidas`=NumEntero, `codigo`=TextCorto, `codigo_emitidas`=NumEntero, `codigo_recibidas`=NumEntero, `descatalogado`=CheckBox, `descripcion`=TextCorto, `descuento_porcentaje`=NumDecimal, `ean`=TextCorto, `precio_compra`=Moneda, `precio_venta`=Moneda, `proveedor`=ListaElemento, `referencia`=TextCorto, `stock`=TextCorto, `tipo_emitidas`=TextCorto, `tipo_recibidas`=TextCorto, `total`=Moneda
+
+### centralita_virtual
+
+| Campo | Tipo |
+|---|---|
+| `callid` | TextCorto |
+| `extension` | Telefono |
+| `fecha` | DateTime |
+| `fichero` | TextCorto |
+| `notas` | EditorHtmlSimple |
+| `numero` | Telefono |
+| `pbxcallid` | TextCorto |
+| `tiempo` | Cronometro |
+| `tipo_llamada` | Select |
+
+- Relaciones · parent: clientes_propios, contactos, contactos_met, preclientes · children: 
+- enum `tipo_llamada`: entrada=Entrada, salida=Salida
+- campos no enumerados (por tipo): `callid`=TextCorto, `extension`=Telefono, `fecha`=DateTime, `fichero`=TextCorto, `notas`=EditorHtmlSimple, `numero`=Telefono, `pbxcallid`=TextCorto, `tiempo`=Cronometro
+
+### chat
+
+| Campo | Tipo |
+|---|---|
+| `documento` | Documento |
+| `esonline` | CheckBox |
+| `leido` | CheckBox |
+| `mensaje` | TextArea |
+
+- Relaciones · parent: consultas, holidays, tickets_nuevo · children: gdocu
+- campos no enumerados (por tipo): `documento`=Documento, `esonline`=CheckBox, `leido`=CheckBox, `mensaje`=TextArea
+
+### clientes_contrarios
+
+| Campo | Tipo |
+|---|---|
+| `1apellido` | TextCorto |
+| `2apellido` | TextCorto |
+| `ccc` | CuentaBancaria |
+| `ccc_bic` | TextCorto |
+| `ccc_original` | TextCorto |
+| `cliente_online` | CheckBox |
+| `cp` | CodPostal |
+| `direccion` | TextCorto |
+| `email` | Email |
+| `fax` | Telefono |
+| `fecha_alta` | Date |
+| `iva` | Select |
+| `movil` | Telefono |
+| `nacionalidad` | Select |
+| `nif_cif` | Dni |
+| `nombre` | TextCorto |
+| `notas` | EditorHtmlSimple |
+| `poblacion` | TextCorto |
+| `provincia` | Select |
+| `telefono1` | Telefono |
+| `telefono2` | Telefono |
+| `telefono3` | Telefono |
+| `tipo_doc_identidad` | Select |
+| `vies` | CheckBox |
+| `web` | TextCorto |
+
+- Relaciones · parent: expedientes_judiciales, extrajudiciales, sms · children: cobros_clientes, contactos, cuentas_contables, cuentascontables, emailmarketing, facturas, facturas_proforma, gdocu, mail, mandatos, sms, zoom
+- enum `iva`: -1=Exento, 10=10%, 19=19%, 21=21%, 4=4%, 8=8%
+- enum `provincia`: 1=Sin Asignar, A Coruña=A Coruña, Albacete=Albacete, Alicante=Alicante, Almería=Almería, Asturias=Asturias, Badajoz=Badajoz, Baleares (Illes)=Baleares (Illes), Barcelona=Barcelona, Burgos=Burgos, Cantabria=Cantabria, Castellón=Castellón, Ceuta=Ceuta, Ciudad Real=Ciudad Real, Cuenca=Cuenca, Cáceres=Cáceres, Cádiz=Cádiz, Córdoba=Córdoba, Girona=Girona, Granada=Granada, Guadalajara=Guadalajara, Guipúzcoa=Guipúzcoa, Huelva=Huelva, Huesca=Huesca, Jaén=Jaén, La Rioja=La Rioja, Las Palmas=Las Palmas, León=León, Lleida=Lleida, Lugo=Lugo, Madrid=Madrid, Melilla=Melilla, Murcia=Murcia, Málaga=Málaga, Navarra=Navarra, Ourense=Ourense, Palencia=Palencia, Pontevedra=Pontevedra, Salamanca=Salamanca, Santa Cruz de Tenerife=Santa Cruz de Tenerife, Segovia=Segovia, Sevilla=Sevilla, Soria=Soria, Tarragona=Tarragona, Teruel=Teruel, Toledo=Toledo, Valencia=Valencia, Valladolid=Valladolid, Vizcaya=Vizcaya, Zamora=Zamora, Zaragoza=Zaragoza, Álava=Álava, Ávila=Ávila
+- enum `tipo_doc_identidad`: 2=NIF / CIF / NIE, 3=Pasaporte, 4=Documento Oficial de Identificacion Expedido por el Pais o Territorio de Residencia, 5=Certificado de residencia, 6=Otro documento probatorio, 7=No censado
+- campos no enumerados (por tipo): `1apellido`=TextCorto, `2apellido`=TextCorto, `ccc`=CuentaBancaria, `ccc_bic`=TextCorto, `ccc_original`=TextCorto, `cliente_online`=CheckBox, `cp`=CodPostal, `direccion`=TextCorto, `email`=Email, `fax`=Telefono, `fecha_alta`=Date, `movil`=Telefono, `nacionalidad`=Select(cuarentena-PII), `nif_cif`=Dni, `nombre`=TextCorto, `notas`=EditorHtmlSimple, `poblacion`=TextCorto, `telefono1`=Telefono, `telefono2`=Telefono, `telefono3`=Telefono, `vies`=CheckBox, `web`=TextCorto
+
+### clientes_propios
+
+| Campo | Tipo |
+|---|---|
+| `ccc` | CuentaBancaria |
+| `ccc_bic` | TextCorto |
+| `ccc_original` | TextCorto |
+| `cliente_online` | CheckBox |
+| `cp` | CodPostal |
+| `direccion` | TextCorto |
+| `email` | Email |
+| `email_facturacion` | Email |
+| `fax` | Telefono |
+| `fecha_alta` | Date |
+| `fecha_caducidad` | Date |
+| `forma_pago_vencimientos` | FormaPago |
+| `irpf` | Select |
+| `iva` | Select |
+| `movil` | Telefono |
+| `nacionalidad` | Select |
+| `nif_cif` | Dni |
+| `nombre` | TextCorto |
+| `notas` | EditorHtmlSimple |
+| `pais` | Select |
+| `poblacion` | TextCorto |
+| `provincia` | Select |
+| `tags` | Tags |
+| `telefono1` | Telefono |
+| `telefono2` | Telefono |
+| `telefono3` | Telefono |
+| `tipo` | Select |
+| `tipo_doc_identidad` | Select |
+| `tipo_operaciones_iva` | Select |
+| `vies` | CheckBox |
+| `web` | TextCorto |
+
+- Relaciones · parent: contactos_met, expedientes_judiciales, extrajudiciales, igualas, poderes, proyectos, rgpdlopd, sms · children: actuaciones, actuaciones_obligaciones, calendario, centralita_virtual, cobros_clientes, comercial_oportunidades, comerciales, companias_seguros, conceptos, conceptos_gasto, conceptos_honorario, conceptos_provision, conceptos_suplido, conceptos_varios, config_facturas, consultas, contactos, cron, cuentas_contables, cuentascontables, descuentos, emailmarketing, face, facturas, facturas_proforma, gdocu, mail, mandatos, mis_portales, notas_tecnicas, poderes, sms, tareas, usuarios, zoom
+- enum `irpf`: -1=Exento, 15=15%, 19=19%, 19.5=19,5%, 20=20%, 21=21%, 7=7%
+- enum `iva`: -1=Exento, 10=10%, 19=19%, 21=21%, 4=4%, 8=8%
+- enum `provincia`: 1=Sin Asignar, A Coruña=A Coruña, Albacete=Albacete, Alicante=Alicante, Almería=Almería, Asturias=Asturias, Badajoz=Badajoz, Baleares (Illes)=Baleares (Illes), Barcelona=Barcelona, Burgos=Burgos, Cantabria=Cantabria, Castellón=Castellón, Ceuta=Ceuta, Ciudad Real=Ciudad Real, Cuenca=Cuenca, Cáceres=Cáceres, Cádiz=Cádiz, Córdoba=Córdoba, Girona=Girona, Granada=Granada, Guadalajara=Guadalajara, Guipúzcoa=Guipúzcoa, Huelva=Huelva, Huesca=Huesca, Jaén=Jaén, La Rioja=La Rioja, Las Palmas=Las Palmas, León=León, Lleida=Lleida, Lugo=Lugo, Madrid=Madrid, Melilla=Melilla, Murcia=Murcia, Málaga=Málaga, Navarra=Navarra, Ourense=Ourense, Palencia=Palencia, Pontevedra=Pontevedra, Salamanca=Salamanca, Santa Cruz de Tenerife=Santa Cruz de Tenerife, Segovia=Segovia, Sevilla=Sevilla, Soria=Soria, Tarragona=Tarragona, Teruel=Teruel, Toledo=Toledo, Valencia=Valencia, Valladolid=Valladolid, Vizcaya=Vizcaya, Zamora=Zamora, Zaragoza=Zaragoza, Álava=Álava, Ávila=Ávila
+- enum `tipo`: =, -1=Sin Asignar, 2=Empresa, 3=Particular, 4=Compañía, 5=Autónomo
+- enum `tipo_doc_identidad`: 2=NIF / CIF / NIE, 3=Pasaporte, 4=Documento Oficial de Identificacion Expedido por el Pais o Territorio de Residencia, 5=Certificado de residencia, 6=Otro documento probatorio, 7=No censado
+- enum `tipo_operaciones_iva`: E1=Operaciones Interiores sujetas a I.V.A., E10=Op. no sujeta o inv. sujeto pasivo con dcho. deduccion, E11=Operación no sujeta por reglas de localización, E2=Operaciones exentas sin derecho a deduccion, E3=Entregas intracomunitarias, E4=Entregas intracomunitarias. Op. triangulares, E5=Operaciones con Canarias, Ceuta y Melilla, E6=Exportaciones, E7=Op. no sujeta a I.V.A. reservada para a3ges, E8=Op. no sujeta o Inv. sujeto pasivo con dcho. deduccion, E9=Otras oper. exentas con derecho a deduccion
+- campos no enumerados (por tipo): `ccc`=CuentaBancaria, `ccc_bic`=TextCorto, `ccc_original`=TextCorto, `cliente_online`=CheckBox, `cp`=CodPostal, `direccion`=TextCorto, `email`=Email, `email_facturacion`=Email, `fax`=Telefono, `fecha_alta`=Date, `fecha_caducidad`=Date, `forma_pago_vencimientos`=FormaPago, `movil`=Telefono, `nacionalidad`=Select(cuarentena-PII), `nif_cif`=Dni, `nombre`=TextCorto, `notas`=EditorHtmlSimple, `pais`=Select(cuarentena-PII), `poblacion`=TextCorto, `tags`=Tags, `telefono1`=Telefono, `telefono2`=Telefono, `telefono3`=Telefono, `vies`=CheckBox, `web`=TextCorto
+
+### cobros_clientes
+
+| Campo | Tipo |
+|---|---|
+| `banco_cobro` | ListaBancos |
+| `borrado_simulado` | CheckBox |
+| `concepto_recibo` | TextCorto |
+| `cuenta_bancaria` | CuentaBancaria |
+| `cuenta_bancaria_bic` | TextCorto |
+| `cuenta_bancaria_original` | TextCorto |
+| `cuota_base_imponible` | Moneda |
+| `cuota_irpf` | Moneda |
+| `cuota_iva` | EditorHtmlAvanzado |
+| `estado_cobro` | Select |
+| `exportada` | CheckBox |
+| `exportada_fecha` | DateTime |
+| `exportada_impagado` | CheckBox |
+| `exportada_impagado_fecha` | DateTime |
+| `fecha` | Date |
+| `fecha_cobro` | Date |
+| `fecha_impago` | Date |
+| `forma_pago` | Select |
+| `gastos_comision_banco` | Moneda |
+| `gastos_devolucion` | Moneda |
+| `impagado` | CheckBox |
+| `impagado_estado_cobro` | Select |
+| `impagado_importe_cobrado` | Moneda |
+| `impagado_importe_pendiente` | Moneda |
+| `impagado_tipo_impago` | Select |
+| `importe` | Moneda |
+| `importe_total_con_gastos` | Moneda |
+| `notas` | EditorHtmlSimple |
+| `numero_recibo` | NumEntero |
+| `pago_relacionado` | NumEntero |
+| `procede_provision` | CheckBox |
+| `referencia_interna` | TextCorto |
+| `remesado` | CheckBox |
+| `remesar` | CheckBox |
+
+- Relaciones · parent: clientes_contrarios, clientes_propios, contactos_met, expedientes_judiciales, extrajudiciales, facturas, facturas_proforma, igualas, mandatos, proyectos, remesas, vencimientos · children: 
+- enum `estado_cobro`: AC=Abonado al cliente, C=Cobrado, CE=Cobrado en Exceso, NC=NO cobrado, PAC=Pendiente de Abonar al Cliente, PC=Cobro Parcial
+- enum `forma_pago`: 01=Al contado, 03=Recibo, 04=Transferencia, 11=Cheque, 19=Tarjeta, 50=Contrareembolso
+- enum `impagado_estado_cobro`: AC=Abonado al cliente, C=Cobrado, CE=Cobrado en Exceso, NC=NO cobrado, PAC=Pendiente de Abonar al Cliente, PC=Cobro Parcial
+- enum `impagado_tipo_impago`: -1=Sin Asignar, AC01=Número de IBAN incorrecto, AC04=Número de cuenta cancelada, AC06=Cuenta bloqueada, AC13=Error en el tipo de cta del deudor, AG01=La cta no admite adeudos por normativa, AG02=Código de op. o secuencia incorrecto, AM04=Saldo insuficiente, AM05=Cargo u operación duplicada, BE05=Error identificador del acreedor, CNOR=BIC banco acreedor no registrado, DNOR=BIC banco deudor no registrado, FF01=Formato de fichero XML erróneo, FF05=Código de transacción incorrecto, MD01=Mandato no válido / op no autorizada, MD02=Faltan datos o mandato incorrecto, MD06=No conforme con el cargo, MD07=Fallecimiento del deudor, MS02=Razón no especificada por el cliente, MS03=Razón no especificada (prot de datos), RC01=Invalid BIC, RR01=Error en el IBAN del deudor, RR02=Falta el nombre del deudor, RR03=Falta nombre del acreedor, RR04=Error por motivos normativos, SL01=Servicios específicos del banco del deudor
+- campos no enumerados (por tipo): `banco_cobro`=ListaBancos, `borrado_simulado`=CheckBox, `concepto_recibo`=TextCorto, `cuenta_bancaria`=CuentaBancaria, `cuenta_bancaria_bic`=TextCorto, `cuenta_bancaria_original`=TextCorto, `cuota_base_imponible`=Moneda, `cuota_irpf`=Moneda, `cuota_iva`=EditorHtmlAvanzado, `exportada`=CheckBox, `exportada_fecha`=DateTime, `exportada_impagado`=CheckBox, `exportada_impagado_fecha`=DateTime, `fecha`=Date, `fecha_cobro`=Date, `fecha_impago`=Date, `gastos_comision_banco`=Moneda, `gastos_devolucion`=Moneda, `impagado`=CheckBox, `impagado_importe_cobrado`=Moneda, `impagado_importe_pendiente`=Moneda, `importe`=Moneda, `importe_total_con_gastos`=Moneda, `notas`=EditorHtmlSimple, `numero_recibo`=NumEntero, `pago_relacionado`=NumEntero, `procede_provision`=CheckBox, `referencia_interna`=TextCorto, `remesado`=CheckBox, `remesar`=CheckBox
+
+### colaboradores
+
+| Campo | Tipo |
+|---|---|
+| `ccc` | TextCorto |
+| `cp` | CodPostal |
+| `direccion` | TextCorto |
+| `email` | Email |
+| `fax` | Telefono |
+| `iva` | Select |
+| `movil` | Telefono |
+| `nacionalidad` | Select |
+| `nif_cif` | Dni |
+| `nombre` | TextCorto |
+| `notas` | EditorHtmlSimple |
+| `poblacion` | TextCorto |
+| `provincia` | Select |
+| `telefono1` | Telefono |
+| `telefono2` | Telefono |
+| `telefono3` | Telefono |
+| `tipo` | Select |
+| `web` | TextCorto |
+
+- Relaciones · parent: expedientes_judiciales, extrajudiciales, igualas, preclientes, rgpdlopd · children: calendario, contactos, gdocu, mail, sms
+- enum `iva`: -1=Exento, 10=10%, 19=19%, 21=21%, 4=4%, 8=8%
+- enum `provincia`: 1=Sin Asignar, A Coruña=A Coruña, Albacete=Albacete, Alicante=Alicante, Almería=Almería, Asturias=Asturias, Badajoz=Badajoz, Baleares (Illes)=Baleares (Illes), Barcelona=Barcelona, Burgos=Burgos, Cantabria=Cantabria, Castellón=Castellón, Ceuta=Ceuta, Ciudad Real=Ciudad Real, Cuenca=Cuenca, Cáceres=Cáceres, Cádiz=Cádiz, Córdoba=Córdoba, Girona=Girona, Granada=Granada, Guadalajara=Guadalajara, Guipúzcoa=Guipúzcoa, Huelva=Huelva, Huesca=Huesca, Jaén=Jaén, La Rioja=La Rioja, Las Palmas=Las Palmas, León=León, Lleida=Lleida, Lugo=Lugo, Madrid=Madrid, Melilla=Melilla, Murcia=Murcia, Málaga=Málaga, Navarra=Navarra, Ourense=Ourense, Palencia=Palencia, Pontevedra=Pontevedra, Salamanca=Salamanca, Santa Cruz de Tenerife=Santa Cruz de Tenerife, Segovia=Segovia, Sevilla=Sevilla, Soria=Soria, Tarragona=Tarragona, Teruel=Teruel, Toledo=Toledo, Valencia=Valencia, Valladolid=Valladolid, Vizcaya=Vizcaya, Zamora=Zamora, Zaragoza=Zaragoza, Álava=Álava, Ávila=Ávila
+- enum `tipo`: -1=Sin Asignar, colaborador=Colaborador, perito=Perito, tercero=Tercero
+- campos no enumerados (por tipo): `ccc`=TextCorto, `cp`=CodPostal, `direccion`=TextCorto, `email`=Email, `fax`=Telefono, `movil`=Telefono, `nacionalidad`=Select(cuarentena-PII), `nif_cif`=Dni, `nombre`=TextCorto, `notas`=EditorHtmlSimple, `poblacion`=TextCorto, `telefono1`=Telefono, `telefono2`=Telefono, `telefono3`=Telefono, `web`=TextCorto
+
+### comercial_oportunidades
+
+| Campo | Tipo |
+|---|---|
+| `descripcion` | EditorHtmlSimple |
+| `estado_oportunidad` | Select |
+| `etapa_ventas` | Select |
+| `fecha_cierre` | Date |
+| `fuente` | Select |
+| `importe` | Moneda |
+| `nombre_oportunidad` | TextCorto |
+| `usuario_asignado` | ListaUsuarios |
+
+- Relaciones · parent: clientes_propios, contactos_met, expedientes_judiciales, extrajudiciales, preclientes · children: actuaciones, conceptos, conceptos_honorario, conceptos_suplido, contactos_met, gdocu, mail, sms
+- enum `estado_oportunidad`: evaluacion=Evaluación en curso, ganado=Ganado, perdido=Perdido, postpuesto=Postpuesto
+- enum `etapa_ventas`: 0=Seleccionar, EVALUACION EN CURSO=EVALUACION EN CURSO, INTERES CONFIRMADO=INTERES CONFIRMADO, PERDIDO=PERDIDO, POSTPUESTO=POSTPUESTO, TOMA DE DECISIONES=TOMA DE DECISIONES, VENTA=VENTA
+- enum `fuente`: 0=Seleccionar
+- campos no enumerados (por tipo): `descripcion`=EditorHtmlSimple, `fecha_cierre`=Date, `importe`=Moneda, `nombre_oportunidad`=TextCorto, `usuario_asignado`=ListaUsuarios
+
+### comerciales
+
+| Campo | Tipo |
+|---|---|
+| `direccion` | TextCorto |
+| `nif_cif` | Dni |
+| `nombre` | TextCorto |
+
+- Relaciones · parent: clientes_propios · children: comisiones
+- campos no enumerados (por tipo): `direccion`=TextCorto, `nif_cif`=Dni, `nombre`=TextCorto
+
+### comisiones
+
+| Campo | Tipo |
+|---|---|
+| `familia` | Select |
+| `porcentaje_comision` | NumDecimal |
+
+- Relaciones · parent: catalogo_productos, comerciales · children: 
+- campos no enumerados (por tipo): `porcentaje_comision`=NumDecimal
+
+### companias_seguros
+
+| Campo | Tipo |
+|---|---|
+| `asegurado` | TextCorto |
+| `asegurado_contrario` | TextCorto |
+| `cliente` | Select |
+| `compania` | ListaElemento |
+| `compania_contraria` | ListaElemento |
+| `compania_seguros` | TextCorto |
+| `descripcion` | EditorHtmlSimple |
+| `fecha_alta` | Date |
+| `matricula` | TextCorto |
+| `matricula_contraria` | TextCorto |
+| `num_poliza` | TextCorto |
+| `num_siniestro` | TextCorto |
+| `poliza_contraria` | TextCorto |
+| `propietario` | TextCorto |
+| `propietario_contrario` | TextCorto |
+| `siniestro_contrario` | TextCorto |
+| `tipo1` | Select |
+| `tipo2` | Select |
+| `tomador` | TextCorto |
+| `tomador_contrario` | TextCorto |
+| `vehiculo1` | TextCorto |
+| `vehiculo2` | TextCorto |
+
+- Relaciones · parent: clientes_propios, contactos_met, expedientes_judiciales · children: 
+- enum `cliente`: N=NO, S=SI
+- enum `tipo1`: -1=Sin Asignar, 2=Turismo, 3=Motocicleta, 4=Furgoneta, 5=Camión, 6=Autobus, 7=Bicicleta
+- enum `tipo2`: -1=Sin Asignar, 2=Turismo, 3=Motocicleta, 4=Furgoneta, 5=Camión, 6=Autobus, 7=Bicicleta
+- campos no enumerados (por tipo): `asegurado`=TextCorto, `asegurado_contrario`=TextCorto, `compania`=ListaElemento, `compania_contraria`=ListaElemento, `compania_seguros`=TextCorto, `descripcion`=EditorHtmlSimple, `fecha_alta`=Date, `matricula`=TextCorto, `matricula_contraria`=TextCorto, `num_poliza`=TextCorto, `num_siniestro`=TextCorto, `poliza_contraria`=TextCorto, `propietario`=TextCorto, `propietario_contrario`=TextCorto, `siniestro_contrario`=TextCorto, `tomador`=TextCorto, `tomador_contrario`=TextCorto, `vehiculo1`=TextCorto, `vehiculo2`=TextCorto
+
+### conceptos_gasto
+
+| Campo | Tipo |
+|---|---|
+| `base_imponible` | Moneda |
+| `cantidad` | NumEntero |
+| `cc_irpf` | TextCorto |
+| `cc_iva` | TextCorto |
+| `cc_servicios` | TextCorto |
+| `cod_cuenta` | NumEntero |
+| `codigo` | NumEntero |
+| `con_promocion` | CheckBox |
+| `descripcion` | TextCorto |
+| `descuento_porcentaje` | NumDecimal |
+| `descuento_unidad` | Moneda |
+| `entrada` | Moneda |
+| `exencion_ticketbai` | Select |
+| `facturado` | Select |
+| `facturar` | Select |
+| `fecha` | Date |
+| `irpf_propio` | Select |
+| `iva_propio` | Select |
+| `motivo_exencion` | Select |
+| `periodico` | CheckBox |
+| `precio_unidad` | Moneda |
+| `salida` | Moneda |
+| `seleccion_entrada_salida` | Select |
+| `total` | Moneda |
+| `total_irpf_propio` | Moneda |
+| `total_iva_propio` | Moneda |
+
+- Relaciones · parent: catalogo_conceptos_gasto, clientes_propios, expedientes_judiciales, extrajudiciales, facturas, facturas_proforma, igualas, productos · children: gdocu
+- enum `exencion_ticketbai`: E1=Exenta art 20 NF IVA (operaciones interiores), E2=Exenta art 21NF IVA (exportaciones), E3=Exenta art 22 NF IVA (op. asimiladas a exportaciones), E4=Exenta art 23 y 24 NF IVA (zonas y depositos francos o aduaneros), E5=Exenta art 25 NF IVA (entregas intracomunitarias), E6=Exenta por otra causa, NULL=No exenta IVA, OT=No sujeta art 7 NF IVA y otros supuestos, RL=Inversion de sujeto pasivo
+- enum `facturado`: N=NO, S=SI
+- enum `facturar`: N=NO, S=SI
+- enum `irpf_propio`: -1=Exento, 15=15%, 19=19%, 19.5=19,5%, 20=20%, 21=21%, 7=7%
+- enum `iva_propio`: -1=Exento, 10=10%, 19=19%, 21=21%, 4=4%, 8=8%
+- enum `motivo_exencion`: E1=Exenta art 20 IVA (operaciones interiores), E2=Exenta art 21 IVA (exportaciones), E3=Exenta art 22 IVA (op. asimiladas a exportaciones), E4=Exenta art 24 IVA (zonas y depositos francos o aduaneros), E5=Exenta art 25 IVA (entregas intracomunitarias), E6=Exenta por otra causa, NULL=No exenta IVA
+- enum `seleccion_entrada_salida`: Salida=Salida, entrada=Entrada
+- campos no enumerados (por tipo): `base_imponible`=Moneda, `cantidad`=NumEntero, `cc_irpf`=TextCorto, `cc_iva`=TextCorto, `cc_servicios`=TextCorto, `cod_cuenta`=NumEntero, `codigo`=NumEntero, `con_promocion`=CheckBox, `descripcion`=TextCorto, `descuento_porcentaje`=NumDecimal, `descuento_unidad`=Moneda, `entrada`=Moneda, `fecha`=Date, `periodico`=CheckBox, `precio_unidad`=Moneda, `salida`=Moneda, `total`=Moneda, `total_irpf_propio`=Moneda, `total_iva_propio`=Moneda
+
+### conceptos_honorario
+
+| Campo | Tipo |
+|---|---|
+| `base_imponible` | Moneda |
+| `cantidad` | NumEntero |
+| `cc_irpf` | TextCorto |
+| `cc_iva` | TextCorto |
+| `cc_servicios` | TextCorto |
+| `cod_cuenta` | NumEntero |
+| `codigo` | NumEntero |
+| `con_promocion` | CheckBox |
+| `descripcion` | TextCorto |
+| `descuento_porcentaje` | NumDecimal |
+| `descuento_unidad` | Moneda |
+| `entrada` | Moneda |
+| `exencion_facturae` | Select |
+| `exencion_ticketbai` | Select |
+| `facturado` | Select |
+| `facturar` | Select |
+| `fecha` | Date |
+| `irpf_propio` | Select |
+| `iva_propio` | Select |
+| `motivo_exencion` | Select |
+| `periodico` | CheckBox |
+| `precio_unidad` | Moneda |
+| `salida` | Moneda |
+| `seleccion_entrada_salida` | Select |
+| `total` | Moneda |
+| `total_irpf_propio` | Moneda |
+| `total_iva_propio` | Moneda |
+
+- Relaciones · parent: actuaciones, catalogo_conceptos_honorario, clientes_propios, comercial_oportunidades, expedientes_judiciales, extrajudiciales, facturas, facturas_proforma, igualas, preclientes, productos · children: 
+- enum `exencion_ticketbai`: E1=Exenta art 20 NF IVA (operaciones interiores), E2=Exenta art 21NF IVA (exportaciones), E3=Exenta art 22 NF IVA (op. asimiladas a exportaciones), E4=Exenta art 23 y 24 NF IVA (zonas y depositos francos o aduaneros), E5=Exenta art 25 NF IVA (entregas intracomunitarias), E6=Exenta por otra causa, NULL=No exenta IVA, OT=No sujeta art 7 NF IVA y otros supuestos, RL=Inversion de sujeto pasivo
+- enum `facturado`: N=NO, S=SI
+- enum `facturar`: N=NO, S=SI
+- enum `irpf_propio`: -1=Exento, 15=15%, 19=19%, 19.5=19,5%, 20=20%, 21=21%, 7=7%
+- enum `iva_propio`: -1=Exento, 10=10%, 19=19%, 21=21%, 4=4%, 8=8%
+- enum `motivo_exencion`: E1=Exenta art 20 IVA (operaciones interiores), E2=Exenta art 21 IVA (exportaciones), E3=Exenta art 22 IVA (op. asimiladas a exportaciones), E4=Exenta art 24 IVA (zonas y depositos francos o aduaneros), E5=Exenta art 25 IVA (entregas intracomunitarias), E6=Exenta por otra causa, NULL=No exenta IVA
+- enum `seleccion_entrada_salida`: Salida=Salida, entrada=Entrada
+- campos no enumerados (por tipo): `base_imponible`=Moneda, `cantidad`=NumEntero, `cc_irpf`=TextCorto, `cc_iva`=TextCorto, `cc_servicios`=TextCorto, `cod_cuenta`=NumEntero, `codigo`=NumEntero, `con_promocion`=CheckBox, `descripcion`=TextCorto, `descuento_porcentaje`=NumDecimal, `descuento_unidad`=Moneda, `entrada`=Moneda, `fecha`=Date, `periodico`=CheckBox, `precio_unidad`=Moneda, `salida`=Moneda, `total`=Moneda, `total_irpf_propio`=Moneda, `total_iva_propio`=Moneda
+
+### conceptos_provision
+
+| Campo | Tipo |
+|---|---|
+| `base_imponible` | Moneda |
+| `cantidad` | NumEntero |
+| `cod_cuenta` | NumEntero |
+| `codigo` | NumEntero |
+| `con_promocion` | CheckBox |
+| `descripcion` | TextCorto |
+| `descuento_porcentaje` | NumDecimal |
+| `descuento_unidad` | Moneda |
+| `entrada` | Moneda |
+| `facturado` | Select |
+| `facturar` | Select |
+| `fecha` | Date |
+| `irpf_propio` | Select |
+| `iva_propio` | Select |
+| `numero_orden` | NumEntero |
+| `periodico` | CheckBox |
+| `precio_unidad` | Moneda |
+| `salida` | Moneda |
+| `seleccion_entrada_salida` | Select |
+| `total` | Moneda |
+| `total_irpf_propio` | Moneda |
+| `total_iva_propio` | Moneda |
+
+- Relaciones · parent: catalogo_conceptos_provision, clientes_propios, expedientes_judiciales, extrajudiciales, facturas, facturas_proforma, igualas, productos · children: 
+- enum `facturado`: N=NO, S=SI
+- enum `facturar`: N=NO, S=SI
+- enum `irpf_propio`: -1=Exento, 15=15%, 19=19%, 19.5=19,5%, 20=20%, 21=21%, 7=7%
+- enum `iva_propio`: -1=Exento, 10=10%, 19=19%, 21=21%, 4=4%, 8=8%
+- enum `seleccion_entrada_salida`: Salida=Salida, entrada=Entrada
+- campos no enumerados (por tipo): `base_imponible`=Moneda, `cantidad`=NumEntero, `cod_cuenta`=NumEntero, `codigo`=NumEntero, `con_promocion`=CheckBox, `descripcion`=TextCorto, `descuento_porcentaje`=NumDecimal, `descuento_unidad`=Moneda, `entrada`=Moneda, `fecha`=Date, `numero_orden`=NumEntero, `periodico`=CheckBox, `precio_unidad`=Moneda, `salida`=Moneda, `total`=Moneda, `total_irpf_propio`=Moneda, `total_iva_propio`=Moneda
+
+### conceptos_suplido
+
+| Campo | Tipo |
+|---|---|
+| `base_imponible` | Moneda |
+| `cantidad` | NumEntero |
+| `cod_cuenta` | NumEntero |
+| `codigo` | TextCorto |
+| `con_promocion` | CheckBox |
+| `descripcion` | TextCorto |
+| `descuento_porcentaje` | NumDecimal |
+| `descuento_unidad` | Moneda |
+| `entrada` | Moneda |
+| `exencion_ticketbai` | Select |
+| `facturado` | Select |
+| `facturar` | Select |
+| `fecha` | Date |
+| `irpf_propio` | Select |
+| `iva_propio` | Select |
+| `motivo_exencion` | Select |
+| `numero_orden` | NumEntero |
+| `periodico` | CheckBox |
+| `precio_unidad` | Moneda |
+| `salida` | Moneda |
+| `seleccion_entrada_salida` | Select |
+| `total` | Moneda |
+| `total_irpf_propio` | Moneda |
+| `total_iva_propio` | Moneda |
+
+- Relaciones · parent: catalogo_conceptos_suplido, clientes_propios, comercial_oportunidades, expedientes_judiciales, extrajudiciales, facturas, facturas_proforma, igualas, productos · children: gdocu
+- enum `exencion_ticketbai`: E1=Exenta art 20 NF IVA (operaciones interiores), E2=Exenta art 21NF IVA (exportaciones), E3=Exenta art 22 NF IVA (op. asimiladas a exportaciones), E4=Exenta art 23 y 24 NF IVA (zonas y depositos francos o aduaneros), E5=Exenta art 25 NF IVA (entregas intracomunitarias), E6=Exenta por otra causa, NULL=No exenta IVA, OT=No sujeta art 7 NF IVA y otros supuestos, RL=Inversion de sujeto pasivo
+- enum `facturado`: N=NO, S=SI
+- enum `facturar`: N=NO, S=SI
+- enum `irpf_propio`: -1=Exento, 15=15%, 19=19%, 19.5=19,5%, 20=20%, 21=21%, 7=7%
+- enum `iva_propio`: -1=Exento, 10=10%, 19=19%, 21=21%, 4=4%, 8=8%
+- enum `motivo_exencion`: E1=Exenta art 20 IVA (operaciones interiores), E2=Exenta art 21 IVA (exportaciones), E3=Exenta art 22 IVA (op. asimiladas a exportaciones), E4=Exenta art 24 IVA (zonas y depositos francos o aduaneros), E5=Exenta art 25 IVA (entregas intracomunitarias), E6=Exenta por otra causa, NULL=No exenta IVA
+- enum `seleccion_entrada_salida`: Salida=Salida, entrada=Entrada
+- campos no enumerados (por tipo): `base_imponible`=Moneda, `cantidad`=NumEntero, `cod_cuenta`=NumEntero, `codigo`=TextCorto, `con_promocion`=CheckBox, `descripcion`=TextCorto, `descuento_porcentaje`=NumDecimal, `descuento_unidad`=Moneda, `entrada`=Moneda, `fecha`=Date, `numero_orden`=NumEntero, `periodico`=CheckBox, `precio_unidad`=Moneda, `salida`=Moneda, `total`=Moneda, `total_irpf_propio`=Moneda, `total_iva_propio`=Moneda
+
+### config_facturas
+
+| Campo | Tipo |
+|---|---|
+| `automatico` | CheckBox |
+| `cantidad_max` | NumEntero |
+| `descripcion` | TextCorto |
+| `elemento` | TextCorto |
+| `elemento_origen` | TextCorto |
+| `elemento_receptor` | TextCorto |
+| `fecha_final` | Date |
+| `fecha_inicio` | Date |
+| `frecuenciacheck` | CheckBox |
+| `id_cliente` | ListaElemento |
+| `mail_acuserecibo` | CheckBox |
+| `mail_asunto` | TextCorto |
+| `mail_cc` | TextCorto |
+| `mail_cco` | TextCorto |
+| `mail_check` | CheckBox |
+| `mail_cuenta` | NumEntero |
+| `mail_enviaracliente` | CheckBox |
+| `mail_enviaracontactos` | CheckBox |
+| `mail_enviarapara` | TextCorto |
+| `mail_formato` | TextCorto |
+| `mail_pdfcheck` | CheckBox |
+| `mail_plantilla` | NumEntero |
+| `mail_plantillafacturaid` | NumEntero |
+| `mail_prioridad` | NumEntero |
+| `mail_texto` | EditorHtmlAvanzado |
+| `mail_tipopdf` | TextCorto |
+| `mail_xmlcheck` | CheckBox |
+| `mail_xmlfirmar` | CheckBox |
+| `mail_xmlversion` | TextCorto |
+| `miembro` | NumEntero |
+| `miembro_origen` | TextCorto |
+| `notas` | EditorHtmlSimple |
+| `periodicidad` | NumEntero |
+| `proximaelaboracion` | Date |
+| `referencia` | TextCorto |
+| `repeticiones` | TextCorto |
+| `serie_factura` | Select |
+| `siguienteelaboracion` | Date |
+| `tipo_operaciones` | Select |
+| `total` | Moneda |
+| `total_base_imponible` | Moneda |
+| `total_cobrado` | Moneda |
+| `total_descuento` | Moneda |
+| `total_irpf` | Moneda |
+| `total_iva` | Moneda |
+| `total_pendiente` | Moneda |
+| `total_suplidos` | Moneda |
+
+- Relaciones · parent: clientes_propios, preclientes, proveedores · children: facturas, facturas_proforma, facturas_recibidas, gdocu, ipc_aplicado, mail, productos, ticket, vencimientos
+- enum `tipo_operaciones`: E1=Operaciones Interiores sujetas a I.V.A., E10=Op. no sujeta o inv. sujeto pasivo con dcho. deduccion, E11=Operación no sujeta por reglas de localización, E2=Operaciones exentas sin derecho a deduccion, E3=Entregas intracomunitarias, E4=Entregas intracomunitarias. Op. triangulares, E5=Operaciones con Canarias, Ceuta y Melilla, E6=Exportaciones, E7=Op. no sujeta a I.V.A. reservada para a3ges, E8=Op. no sujeta o Inv. sujeto pasivo con dcho. deduccion, E9=Otras oper. exentas con derecho a deduccion
+- campos no enumerados (por tipo): `automatico`=CheckBox, `cantidad_max`=NumEntero, `descripcion`=TextCorto, `elemento`=TextCorto, `elemento_origen`=TextCorto, `elemento_receptor`=TextCorto, `fecha_final`=Date, `fecha_inicio`=Date, `frecuenciacheck`=CheckBox, `id_cliente`=ListaElemento, `mail_acuserecibo`=CheckBox, `mail_asunto`=TextCorto, `mail_cc`=TextCorto, `mail_cco`=TextCorto, `mail_check`=CheckBox, `mail_cuenta`=NumEntero, `mail_enviaracliente`=CheckBox, `mail_enviaracontactos`=CheckBox, `mail_enviarapara`=TextCorto, `mail_formato`=TextCorto, `mail_pdfcheck`=CheckBox, `mail_plantilla`=NumEntero, `mail_plantillafacturaid`=NumEntero, `mail_prioridad`=NumEntero, `mail_texto`=EditorHtmlAvanzado, `mail_tipopdf`=TextCorto, `mail_xmlcheck`=CheckBox, `mail_xmlfirmar`=CheckBox, `mail_xmlversion`=TextCorto, `miembro`=NumEntero, `miembro_origen`=TextCorto, `notas`=EditorHtmlSimple, `periodicidad`=NumEntero, `proximaelaboracion`=Date, `referencia`=TextCorto, `repeticiones`=TextCorto, `siguienteelaboracion`=Date, `total`=Moneda, `total_base_imponible`=Moneda, `total_cobrado`=Moneda, `total_descuento`=Moneda, `total_irpf`=Moneda, `total_iva`=Moneda, `total_pendiente`=Moneda, `total_suplidos`=Moneda
+
+### consultas
+
+| Campo | Tipo |
+|---|---|
+| `asunto` | TextCorto |
+| `consulta` | TextAreaLong |
+| `departamento` | Carpetable |
+| `documento` | Documento |
+| `esonline` | CheckBox |
+| `estado` | Select |
+| `leido` | CheckBox |
+
+- Relaciones · parent: clientes_propios, contactos_met, empleados · children: chat, contactos_met, gdocu
+- enum `estado`: Abierto=Abierto, Cerrado=Cerrado
+- campos no enumerados (por tipo): `asunto`=TextCorto, `consulta`=TextAreaLong, `departamento`=Carpetable, `documento`=Documento, `esonline`=CheckBox, `leido`=CheckBox
+
+### contactos
+
+| Campo | Tipo |
+|---|---|
+| `cargo_titulo` | TextCorto |
+| `ccc` | TextCorto |
+| `cp` | CodPostal |
+| `direccion` | TextCorto |
+| `email` | Email |
+| `fax` | Telefono |
+| `generar_online` | CheckBox |
+| `iva` | Select |
+| `movil` | Telefono |
+| `nacionalidad` | Select |
+| `nif_cif` | Dni |
+| `nombre` | TextCorto |
+| `notas` | EditorHtmlSimple |
+| `poblacion` | TextCorto |
+| `provincia` | Select |
+| `telefono1` | Telefono |
+| `telefono2` | Telefono |
+| `telefono3` | Telefono |
+| `web` | TextCorto |
+
+- Relaciones · parent: abogados_contrarios, abogados_propios, banco, clientes_contrarios, clientes_propios, colaboradores, contactos_met, empleados, expedientes_judiciales, extrajudiciales, juzgados, organismos, preclientes, procuradores_contrarios, procuradores_propios, proveedores, rgpdlopd · children: calendario, centralita_virtual, emailmarketing, gdocu, mail, usuarios
+- enum `iva`: -1=Exento, 10=10%, 19=19%, 21=21%, 4=4%, 8=8%
+- enum `provincia`: 1=Sin Asignar, A Coruña=A Coruña, Albacete=Albacete, Alicante=Alicante, Almería=Almería, Asturias=Asturias, Badajoz=Badajoz, Baleares (Illes)=Baleares (Illes), Barcelona=Barcelona, Burgos=Burgos, Cantabria=Cantabria, Castellón=Castellón, Ceuta=Ceuta, Ciudad Real=Ciudad Real, Cuenca=Cuenca, Cáceres=Cáceres, Cádiz=Cádiz, Córdoba=Córdoba, Girona=Girona, Granada=Granada, Guadalajara=Guadalajara, Guipúzcoa=Guipúzcoa, Huelva=Huelva, Huesca=Huesca, Jaén=Jaén, La Rioja=La Rioja, Las Palmas=Las Palmas, León=León, Lleida=Lleida, Lugo=Lugo, Madrid=Madrid, Melilla=Melilla, Murcia=Murcia, Málaga=Málaga, Navarra=Navarra, Ourense=Ourense, Palencia=Palencia, Pontevedra=Pontevedra, Salamanca=Salamanca, Santa Cruz de Tenerife=Santa Cruz de Tenerife, Segovia=Segovia, Sevilla=Sevilla, Soria=Soria, Tarragona=Tarragona, Teruel=Teruel, Toledo=Toledo, Valencia=Valencia, Valladolid=Valladolid, Vizcaya=Vizcaya, Zamora=Zamora, Zaragoza=Zaragoza, Álava=Álava, Ávila=Ávila
+- campos no enumerados (por tipo): `cargo_titulo`=TextCorto, `ccc`=TextCorto, `cp`=CodPostal, `direccion`=TextCorto, `email`=Email, `fax`=Telefono, `generar_online`=CheckBox, `movil`=Telefono, `nacionalidad`=Select(cuarentena-PII), `nif_cif`=Dni, `nombre`=TextCorto, `notas`=EditorHtmlSimple, `poblacion`=TextCorto, `telefono1`=Telefono, `telefono2`=Telefono, `telefono3`=Telefono, `web`=TextCorto
+
+### contactos_met
+
+| Campo | Tipo |
+|---|---|
+| `actividad` | TextCorto |
+| `bic_swift` | TextCorto |
+| `cp` | CodPostal |
+| `direccion` | TextCorto |
+| `email` | Email |
+| `email2` | Email |
+| `email_administracion` | Email |
+| `emailfacturacion` | Email |
+| `fax` | Telefono |
+| `gestor_comercial` | ListaUsuarios |
+| `iban` | CuentaBancaria |
+| `impagado` | TextCorto |
+| `irpf` | Select |
+| `iva` | Select |
+| `movil` | Telefono |
+| `nacionalidad` | Select |
+| `nif_cif` | Dni |
+| `nombre` | TextCorto |
+| `nombre_contacto` | TextCorto |
+| `notas` | EditorHtmlSimple |
+| `pais` | Select |
+| `poblacion` | TextCorto |
+| `provincia` | Select |
+| `tags` | Tags |
+| `telefono1` | Telefono |
+| `telefono2` | Telefono |
+| `telefono3` | Telefono |
+| `tipocontacto` | Tags |
+| `web` | TextCorto |
+
+- Relaciones · parent: actuaciones, comercial_oportunidades, consultas, expedientes_judiciales, gdocu, sms, tickets_nuevo · children: actuaciones, actuaciones_obligaciones, calendario, centralita_virtual, clientes_propios, cobros_clientes, comercial_oportunidades, companias_seguros, consultas, contactos, expedientes_judiciales, extrajudiciales, gdocu, igualas, mail, mandatos, notas_tecnicas, preclientes, sms, usuarios
+- enum `irpf`: -1=Exento, 15=15%, 19=19%, 19.5=19,5%, 20=20%, 21=21%, 7=7%
+- enum `iva`: -1=Exento, 18=18%, 4=4%, 8=8%
+- enum `provincia`: 1=Sin Asignar, A Coruña=A Coruña, Albacete=Albacete, Alicante=Alicante, Almería=Almería, Asturias=Asturias, Badajoz=Badajoz, Baleares (Illes)=Baleares (Illes), Barcelona=Barcelona, Burgos=Burgos, Cantabria=Cantabria, Castellón=Castellón, Ceuta=Ceuta, Ciudad Real=Ciudad Real, Cuenca=Cuenca, Cáceres=Cáceres, Cádiz=Cádiz, Córdoba=Córdoba, Girona=Girona, Granada=Granada, Guadalajara=Guadalajara, Guipúzcoa=Guipúzcoa, Huelva=Huelva, Huesca=Huesca, Jaén=Jaén, La Rioja=La Rioja, Las Palmas=Las Palmas, León=León, Lleida=Lleida, Lugo=Lugo, Madrid=Madrid, Melilla=Melilla, Murcia=Murcia, Málaga=Málaga, Navarra=Navarra, Ourense=Ourense, Palencia=Palencia, Pontevedra=Pontevedra, Salamanca=Salamanca, Santa Cruz de Tenerife=Santa Cruz de Tenerife, Segovia=Segovia, Sevilla=Sevilla, Soria=Soria, Tarragona=Tarragona, Teruel=Teruel, Toledo=Toledo, Valencia=Valencia, Valladolid=Valladolid, Vizcaya=Vizcaya, Zamora=Zamora, Zaragoza=Zaragoza, Álava=Álava, Ávila=Ávila
+- campos no enumerados (por tipo): `actividad`=TextCorto, `bic_swift`=TextCorto, `cp`=CodPostal, `direccion`=TextCorto, `email`=Email, `email2`=Email, `email_administracion`=Email, `emailfacturacion`=Email, `fax`=Telefono, `gestor_comercial`=ListaUsuarios, `iban`=CuentaBancaria, `impagado`=TextCorto, `movil`=Telefono, `nacionalidad`=Select(cuarentena-PII), `nif_cif`=Dni, `nombre`=TextCorto, `nombre_contacto`=TextCorto, `notas`=EditorHtmlSimple, `pais`=Select(cuarentena-PII), `poblacion`=TextCorto, `tags`=Tags, `telefono1`=Telefono, `telefono2`=Telefono, `telefono3`=Telefono, `tipocontacto`=Tags, `web`=TextCorto
+
+### crontab
+
+| Campo | Tipo |
+|---|---|
+| `activo` | CheckBox |
+| `codigo_instalacion` | TextCorto |
+| `datos` | TextArea |
+| `id_carpeta` | Carpetable |
+| `nombre` | TextCorto |
+| `notas` | EditorHtmlAvanzado |
+
+- Relaciones · parent:  · children: 
+- campos no enumerados (por tipo): `activo`=CheckBox, `codigo_instalacion`=TextCorto, `datos`=TextArea, `id_carpeta`=Carpetable, `nombre`=TextCorto, `notas`=EditorHtmlAvanzado
+
+### cuentas_contables
+
+| Campo | Tipo |
+|---|---|
+| `cambiado_a` | TextCorto |
+| `cod_cuenta` | NumEntero |
+| `codigo` | NumEntero |
+| `descripcion` | TextCorto |
+| `elemento` | TextCorto |
+| `id_grupo_contable` | NumEntero |
+| `miembro` | NumEntero |
+| `num_cuenta` | TextCorto |
+| `subcuenta` | NumEntero |
+| `tipo` | TextCorto |
+
+- Relaciones · parent: banco, clientes_contrarios, clientes_propios, empleados, proveedores, ticket · children: 
+- campos no enumerados (por tipo): `cambiado_a`=TextCorto, `cod_cuenta`=NumEntero, `codigo`=NumEntero, `descripcion`=TextCorto, `elemento`=TextCorto, `id_grupo_contable`=NumEntero, `miembro`=NumEntero, `num_cuenta`=TextCorto, `subcuenta`=NumEntero, `tipo`=TextCorto
+
+### cuentascontables
+
+| Campo | Tipo |
+|---|---|
+| `cod_cuenta` | NumEntero |
+| `cod_cuenta_propio` | NumEntero |
+| `elemento` | TextCorto |
+| `fecha_validez_fin` | Date |
+| `fecha_validez_inicio` | Date |
+| `nombre_cuenta` | TextCorto |
+| `tipo` | TextCorto |
+| `tupla` | TextCorto |
+
+- Relaciones · parent: banco, clientes_contrarios, clientes_propios, cuentascontables_configuracion, proveedores · children: 
+- campos no enumerados (por tipo): `cod_cuenta`=NumEntero, `cod_cuenta_propio`=NumEntero, `elemento`=TextCorto, `fecha_validez_fin`=Date, `fecha_validez_inicio`=Date, `nombre_cuenta`=TextCorto, `tipo`=TextCorto, `tupla`=TextCorto
+
+### cuentascontables_met
+
+| Campo | Tipo |
+|---|---|
+| `cuenta` | NumEntero |
+| `descripcion` | TextCorto |
+| `subcuenta` | NumEntero |
+
+- Relaciones · parent: articulos_met · children: 
+- campos no enumerados (por tipo): `cuenta`=NumEntero, `descripcion`=TextCorto, `subcuenta`=NumEntero
+
+### datosregistrales
+
+| Campo | Tipo |
+|---|---|
+| `folio` | TextCorto |
+| `hoja` | TextCorto |
+| `libro` | TextCorto |
+| `reg_mercantil` | TextCorto |
+| `seccion` | TextCorto |
+| `tomo` | TextCorto |
+
+- Relaciones · parent: gruposcontables · children: 
+- campos no enumerados (por tipo): `folio`=TextCorto, `hoja`=TextCorto, `libro`=TextCorto, `reg_mercantil`=TextCorto, `seccion`=TextCorto, `tomo`=TextCorto
+
+### descuentos
+
+| Campo | Tipo |
+|---|---|
+| `activo` | CheckBox |
+| `descuento_porcentaje` | NumDecimal |
+| `elemento` | TextCorto |
+| `id_catalogo` | NumEntero |
+| `miembro` | TextCorto |
+| `precio_venta` | Moneda |
+| `tipo_descuento` | TextCorto |
+
+- Relaciones · parent: catalogo_productos, clientes_propios · children: 
+- campos no enumerados (por tipo): `activo`=CheckBox, `descuento_porcentaje`=NumDecimal, `elemento`=TextCorto, `id_catalogo`=NumEntero, `miembro`=TextCorto, `precio_venta`=Moneda, `tipo_descuento`=TextCorto
+
+### devices
+
+| Campo | Tipo |
+|---|---|
+| `activo` | CheckBox |
+| `app` | TextCorto |
+| `hwid` | TextCorto |
+| `modelo` | TextCorto |
+| `plataforma` | TextCorto |
+| `pushtoken` | TextCorto |
+| `serial` | TextCorto |
+| `tipo` | Select |
+| `usuario` | TextCorto |
+
+- Relaciones · parent: usuarios · children: 
+- enum `tipo`: push=push, sms=sms
+- campos no enumerados (por tipo): `activo`=CheckBox, `app`=TextCorto, `hwid`=TextCorto, `modelo`=TextCorto, `plataforma`=TextCorto, `pushtoken`=TextCorto, `serial`=TextCorto, `usuario`=TextCorto
+
+### emailmarketing
+
+| Campo | Tipo |
+|---|---|
+| `nombre` | TextCorto |
+| `num_emails` | NumEntero |
+
+- Relaciones · parent: abogados_contrarios, abogados_propios, clientes_contrarios, clientes_propios, contactos, preclientes · children: campanamarketing
+- campos no enumerados (por tipo): `nombre`=TextCorto, `num_emails`=NumEntero
+
+### empleados
+
+| Campo | Tipo |
+|---|---|
+| `alta_empresa` | Date |
+| `ccc` | CuentaBancaria |
+| `ccc_bic` | TextCorto |
+| `cliente_online` | CheckBox |
+| `cp` | CodPostal |
+| `direccion` | TextCorto |
+| `email` | Email |
+| `estudios` | Select |
+| `fax` | Telefono |
+| `fecha_caducidad` | Date |
+| `fecha_nacimiento` | Date |
+| `fecha_vencimiento_contrato` | Date |
+| `fotografia` | Imagen |
+| `idioma_aleman` | Select |
+| `idioma_castellano` | Select |
+| `idioma_catalan` | Select |
+| `idioma_eusquera` | Select |
+| `idioma_frances` | Select |
+| `idioma_gallego` | Select |
+| `idioma_ingles` | Select |
+| `idioma_otros` | Select |
+| `idioma_otros_idioma` | TextCorto |
+| `idioma_ruso` | Select |
+| `iva` | Select |
+| `movil` | Telefono |
+| `nacionalidad` | Select |
+| `nif_cif` | Dni |
+| `nombre` | TextCorto |
+| `notas` | EditorHtmlSimple |
+| `numero_ss` | TextCorto |
+| `poblacion` | TextCorto |
+| `provincia` | Select |
+| `sexo` | Select |
+| `telefono1` | Telefono |
+| `telefono2` | Telefono |
+| `telefono3` | Telefono |
+| `tipo_de_contrato` | Select |
+| `web` | TextCorto |
+
+- Relaciones · parent: empresas, proveedores · children: actuaciones, calendario, consultas, contactos, cuentas_contables, gdocu, holidays, mail, nominas, sms, usuarios
+- enum `estudios`: -1=Sin Asignar, Diplomatura=Diplomatura, Doctorado=Doctorado, FP=FP, Licenciatura=Licenciatura, Master=Master, Primaria=Primaria, Secundaria=Secundaria, Sin Estudios=Sin Estudios
+- enum `idioma_aleman`: -1=Sin Asignar, Bien=Bien, Hablado=Hablado, Muy Bien=Muy Bien, Regular=Regular
+- enum `idioma_castellano`: -1=Sin Asignar, Bien=Bien, Hablado=Hablado, Muy Bien=Muy Bien, Regular=Regular
+- enum `idioma_catalan`: -1=Sin Asignar, Bien=Bien, Hablado=Hablado, Muy Bien=Muy Bien, Regular=Regular
+- enum `idioma_eusquera`: -1=Sin Asignar, Bien=Bien, Hablado=Hablado, Muy Bien=Muy Bien, Regular=Regular
+- enum `idioma_frances`: -1=Sin Asignar, Bien=Bien, Hablado=Hablado, Muy Bien=Muy Bien, Regular=Regular
+- enum `idioma_gallego`: -1=Sin Asignar, Bien=Bien, Hablado=Hablado, Muy Bien=Muy Bien, Regular=Regular
+- enum `idioma_ingles`: -1=Sin Asignar, Bien=Bien, Hablado=Hablado, Muy Bien=Muy Bien, Regular=Regular
+- enum `idioma_otros`: -1=Sin Asignar, Bien=Bien, Hablado=Hablado, Muy Bien=Muy Bien, Regular=Regular
+- enum `idioma_ruso`: -1=Sin Asignar, Bien=Bien, Hablado=Hablado, Muy Bien=Muy Bien, Regular=Regular
+- enum `iva`: -1=Exento, 10=10%, 19=19%, 21=21%, 4=4%, 8=8%
+- enum `provincia`: 1=Sin Asignar, A Coruña=A Coruña, Albacete=Albacete, Alicante=Alicante, Almería=Almería, Asturias=Asturias, Badajoz=Badajoz, Baleares (Illes)=Baleares (Illes), Barcelona=Barcelona, Burgos=Burgos, Cantabria=Cantabria, Castellón=Castellón, Ceuta=Ceuta, Ciudad Real=Ciudad Real, Cuenca=Cuenca, Cáceres=Cáceres, Cádiz=Cádiz, Córdoba=Córdoba, Girona=Girona, Granada=Granada, Guadalajara=Guadalajara, Guipúzcoa=Guipúzcoa, Huelva=Huelva, Huesca=Huesca, Jaén=Jaén, La Rioja=La Rioja, Las Palmas=Las Palmas, León=León, Lleida=Lleida, Lugo=Lugo, Madrid=Madrid, Melilla=Melilla, Murcia=Murcia, Málaga=Málaga, Navarra=Navarra, Ourense=Ourense, Palencia=Palencia, Pontevedra=Pontevedra, Salamanca=Salamanca, Santa Cruz de Tenerife=Santa Cruz de Tenerife, Segovia=Segovia, Sevilla=Sevilla, Soria=Soria, Tarragona=Tarragona, Teruel=Teruel, Toledo=Toledo, Valencia=Valencia, Valladolid=Valladolid, Vizcaya=Vizcaya, Zamora=Zamora, Zaragoza=Zaragoza, Álava=Álava, Ávila=Ávila
+- enum `sexo`: Hombre=Hombre, Mujer=Mujer
+- enum `tipo_de_contrato`: -1=Sin Asignar, Indefinido=Indefinido
+- campos no enumerados (por tipo): `alta_empresa`=Date, `ccc`=CuentaBancaria, `ccc_bic`=TextCorto, `cliente_online`=CheckBox, `cp`=CodPostal, `direccion`=TextCorto, `email`=Email, `fax`=Telefono, `fecha_caducidad`=Date, `fecha_nacimiento`=Date, `fecha_vencimiento_contrato`=Date, `fotografia`=Imagen, `idioma_otros_idioma`=TextCorto, `movil`=Telefono, `nacionalidad`=Select(cuarentena-PII), `nif_cif`=Dni, `nombre`=TextCorto, `notas`=EditorHtmlSimple, `numero_ss`=TextCorto, `poblacion`=TextCorto, `telefono1`=Telefono, `telefono2`=Telefono, `telefono3`=Telefono, `web`=TextCorto
+
+### empresas
+
+| Campo | Tipo |
+|---|---|
+| `comunidad` | Select |
+| `cp` | CodPostal |
+| `direccion` | Direccion |
+| `localidad` | TextCorto |
+| `mail` | Email |
+| `mail2` | Email |
+| `nombre` | TextCorto |
+| `provincia` | Select |
+| `telefono1` | Telefono |
+| `telefono2` | Telefono |
+
+- Relaciones · parent:  · children: empleados, festivos, holidays
+- enum `comunidad`: Andalucia=Andalucia, Aragon=Aragon, Asturias=Asturias, Cantabria=Cantabria, Castilla y Leon=Castilla y Leon, Castilla-La Mancha=Castilla-La Mancha, Cataluña=Cataluña, Ceuta=Ceuta, Euskadi=Euskadi, Extremadura=Extremadura, Galicia=Galicia, Illes Balears=Illes Balears, Islas Canarias=Islas Canarias, La Rioja=La Rioja, Madrid=Madrid, Melilla=Melilla, Murcia=Murcia, Navarra=Navarra, Valencia=Valencia
+- enum `provincia`: 1=Sin Asignar, A Coruña=A Coruña, Albacete=Albacete, Alicante=Alicante, Almería=Almería, Asturias=Asturias, Badajoz=Badajoz, Baleares (Illes)=Baleares (Illes), Barcelona=Barcelona, Burgos=Burgos, Cantabria=Cantabria, Castellón=Castellón, Ceuta=Ceuta, Ciudad Real=Ciudad Real, Cuenca=Cuenca, Cáceres=Cáceres, Cádiz=Cádiz, Córdoba=Córdoba, Girona=Girona, Granada=Granada, Guadalajara=Guadalajara, Guipúzcoa=Guipúzcoa, Huelva=Huelva, Huesca=Huesca, Jaén=Jaén, La Rioja=La Rioja, Las Palmas=Las Palmas, León=León, Lleida=Lleida, Lugo=Lugo, Madrid=Madrid, Melilla=Melilla, Murcia=Murcia, Málaga=Málaga, Navarra=Navarra, Ourense=Ourense, Palencia=Palencia, Pontevedra=Pontevedra, Salamanca=Salamanca, Santa Cruz de Tenerife=Santa Cruz de Tenerife, Segovia=Segovia, Sevilla=Sevilla, Soria=Soria, Tarragona=Tarragona, Teruel=Teruel, Toledo=Toledo, Valencia=Valencia, Valladolid=Valladolid, Vizcaya=Vizcaya, Zamora=Zamora, Zaragoza=Zaragoza, Álava=Álava, Ávila=Ávila
+- campos no enumerados (por tipo): `cp`=CodPostal, `direccion`=Direccion, `localidad`=TextCorto, `mail`=Email, `mail2`=Email, `nombre`=TextCorto, `telefono1`=Telefono, `telefono2`=Telefono
+
+### errorinfoalert
+
+| Campo | Tipo |
+|---|---|
+| `descripcion` | TextArea |
+| `fechaaviso` | DateTime |
+| `tipo` | TextCorto |
+
+- Relaciones · parent:  · children: 
+- campos no enumerados (por tipo): `descripcion`=TextArea, `fechaaviso`=DateTime, `tipo`=TextCorto
+
+### expedientes_judiciales
+
+| Campo | Tipo |
+|---|---|
+| `NCiaSeguros` | NumEntero |
+| `NIG` | TextCorto |
+| `ciaSeguros` | CheckBox |
+| `costas` | Moneda |
+| `cuantia` | Moneda |
+| `f_siniestro` | Date |
+| `fas_procedimiento` | TextCorto |
+| `fecha_alta` | Date |
+| `fecha_alta_hist` | Date |
+| `grupo` | TextCorto |
+| `historico` | CheckBox |
+| `intereses` | Moneda |
+| `judicial` | NumEntero |
+| `juzgado` | NumEntero |
+| `notas` | EditorHtmlSimple |
+| `num_asunto` | TextCorto |
+| `num_expediente` | Autoincremental |
+| `numero_anterior` | TextCorto |
+| `online` | CheckBox |
+| `posicion_procesal` | Select |
+| `profesional_asignado` | ListaUsuarios |
+| `referencia_cliente` | TextCorto |
+| `referencia_historico` | TextCorto |
+| `referencia_procurador` | TextCorto |
+| `referencia_propia` | TextCorto |
+| `saldo_cobrado` | Moneda |
+| `saldo_facturado` | Moneda |
+| `saldo_no_facturado` | Moneda |
+| `saldo_pendiente` | Moneda |
+| `serie_expediente` | Select |
+| `tags` | Tags |
+| `tipo_asunto` | Select |
+| `tipo_expediente` | Select |
+| `tipo_procedimiento` | Select |
+| `total` | Moneda |
+| `total_pendiente` | Moneda |
+
+- Relaciones · parent: abogados_propios, contactos_met, juzgados, procuradores_contrarios, procuradores_propios, sms · children: abogados_contrarios, abogados_propios, actuaciones, acusacion, articulos_met, autos, calendario, clientes_contrarios, clientes_propios, cobros_clientes, colaboradores, comercial_oportunidades, companias_seguros, conceptos, conceptos_finance, conceptos_gasto, conceptos_honorario, conceptos_provision, conceptos_suplido, conceptos_varios, contactos, contactos_met, facturas, facturas_proforma, gdocu, lesionados, lexnet, mail, notas_tecnicas, organismos, procuradores_contrarios, procuradores_propios, sms, zoom
+- enum `posicion_procesal`: 01=Actor, 02=Demandado, 03=Querellante, 04=Querellado, 05=Denunciante, 06=Denunciado, 07=Responsable civil directo, 08=Responsable civil subsidiario
+- enum `serie_expediente`: 2016=2016, 2017=2017, 2018=2018, 2019=2019, 2019-e=2019-E, 2019-p=2019-P, 2020=2020, 2020-e=2020-E, 2020-p=2020-P, 2021=2021, 2021-e=2021-E, 2021-n=2021-N, 2021-p=2021-P, 2022 - n=2022-N, 2022 - p=2022-P, 2023-n=2023-N, 2024=2024, 2025=2025, 2026=2026
+- enum `tipo_asunto`: =, 4=Familia, Administrativo=Administrativo, Civil=Civil, Laboral=Laboral, Penal=Penal, bancario=BANCARIO, fiscal=Fiscal, herencia=HERENCIA
+- enum `tipo_expediente`: 0= , 1=Judicial, 2=Extrajudicial
+- enum `tipo_procedimiento`: Diligencias Previas=DILIGENCIAS PENALES PREVIAS, Medidas cautelares=PROCEDIMIENTO PENAL ABREVIADO, aprocedimiento administrativo=PROCEDIMIENTO ADMINISTRATIVO, bancario=BANCARIO, compraventa=COMPRAVENTA, concurso abreviado=CONCURSO ABREVIADO, diligencias preliminares=DILIGENCIAS PRELIMINARES, direccion=DIRECCION, exequatur=EXEQUATUR, extranjeria=EXTRANJERIA, familia=FAMILIA, fiscal - irnr=FISCAL - IRNR, herencia=HERENCIA, jurisdiccion voluntaria=JURISDICCION VOLUNTARIA, laboral=LABORAL, liquidacion regimenes economico matrimoniales=LIQUIDACION REGIMENES ECONOMICO MATRIMONIALES, notarial=NOTARIAL, procedimiento arbitral=PROCEDIMIENTO ARBITRAL, procedimiento cambiario=PROCEDIMIENTO CAMBIARIO, procedimiento conciliacion=PROCEDIMIENTO CONCILIACION, procedimiento concurso voluntario=PROCEDIMIENTO CONCURSO VOLUNTARIO, procedimiento desahucio=PROCEDIMIENTO DESAHUCIO, procedimiento ejecucion titulos judiciales=PROCEDIMIENTO EJECUCION TITULOS JUDICIALES, procedimiento exhorto civil=PROCEDIMIENTO EXHORTO, procedimiento extradicion=PROCEDIMIENTO EXTRADICION, procedimiento juicio ordinario=PROCEDIMIENTO JUICIO ORDINARIO, procedimiento juicio verbal=PROCEDIMIENTO JUICIO VERBAL, procedimiento monitorio=PROCEDIMIENTO MONITORIO, procedimiento recurso apelacion=PROCEDIMIENTO RECURSO APELACION, reclamacion extrajudicial=RECLAMACION EXTRAJUDICIAL
+- campos no enumerados (por tipo): `NCiaSeguros`=NumEntero, `NIG`=TextCorto, `ciaSeguros`=CheckBox, `costas`=Moneda, `cuantia`=Moneda, `f_siniestro`=Date, `fas_procedimiento`=TextCorto, `fecha_alta`=Date, `fecha_alta_hist`=Date, `grupo`=TextCorto, `historico`=CheckBox, `intereses`=Moneda, `judicial`=NumEntero, `juzgado`=NumEntero, `notas`=EditorHtmlSimple, `num_asunto`=TextCorto, `num_expediente`=Autoincremental, `numero_anterior`=TextCorto, `online`=CheckBox, `profesional_asignado`=ListaUsuarios, `referencia_cliente`=TextCorto, `referencia_historico`=TextCorto, `referencia_procurador`=TextCorto, `referencia_propia`=TextCorto, `saldo_cobrado`=Moneda, `saldo_facturado`=Moneda, `saldo_no_facturado`=Moneda, `saldo_pendiente`=Moneda, `tags`=Tags, `total`=Moneda, `total_pendiente`=Moneda
+
+### extrajudiciales
+
+| Campo | Tipo |
+|---|---|
+| `Fecha_alta` | Date |
+| `Notas` | EditorHtmlSimple |
+| `Numero_Expediente` | Autoincremental |
+| `Profesional` | ListaUsuarios |
+| `Referencia_Cliente` | TextCorto |
+| `Referencia_Propia` | TextCorto |
+| `Tipo_Asunto` | Select |
+| `Tipo_Procedimiento` | Select |
+| `costas` | Moneda |
+| `cuantia` | Moneda |
+| `fecha_alta_hist` | Date |
+| `historico` | CheckBox |
+| `intereses` | Moneda |
+| `numero_anterior` | TextCorto |
+| `online` | CheckBox |
+| `profesional_asignado` | ListaUsuarios |
+| `referencia_historico` | TextCorto |
+| `saldo_cobrado` | Moneda |
+| `saldo_facturado` | Moneda |
+| `saldo_no_facturado` | Moneda |
+| `saldo_pendiente` | Moneda |
+| `serie_expediente` | Select |
+| `tags` | Tags |
+| `tnm_posicionprocesal` | Select |
+| `tnm_siniestro` | CheckBox |
+| `total` | Moneda |
+| `total_pendiente` | Moneda |
+
+- Relaciones · parent: abogados_propios, contactos_met, sms · children: abogados_contrarios, abogados_propios, actuaciones, calendario, clientes_contrarios, clientes_propios, cobros_clientes, colaboradores, comercial_oportunidades, conceptos, conceptos_finance, conceptos_gasto, conceptos_honorario, conceptos_provision, conceptos_suplido, conceptos_varios, contactos, facturas, facturas_proforma, gdocu, mail, notas_tecnicas, organismos, sms, zoom
+- enum `Tipo_Asunto`: =, 4=Familia, Administrativo=Administrativo, Civil=Civil, Laboral=Laboral, Penal=Penal, bancario=BANCARIO, fiscal=Fiscal, herencia=HERENCIA
+- enum `Tipo_Procedimiento`: Diligencias Previas=DILIGENCIAS PENALES PREVIAS, Medidas cautelares=PROCEDIMIENTO PENAL ABREVIADO, aprocedimiento administrativo=PROCEDIMIENTO ADMINISTRATIVO, bancario=BANCARIO, compraventa=COMPRAVENTA, concurso abreviado=CONCURSO ABREVIADO, diligencias preliminares=DILIGENCIAS PRELIMINARES, direccion=DIRECCION, exequatur=EXEQUATUR, extranjeria=EXTRANJERIA, familia=FAMILIA, fiscal - irnr=FISCAL - IRNR, herencia=HERENCIA, jurisdiccion voluntaria=JURISDICCION VOLUNTARIA, laboral=LABORAL, liquidacion regimenes economico matrimoniales=LIQUIDACION REGIMENES ECONOMICO MATRIMONIALES, notarial=NOTARIAL, procedimiento arbitral=PROCEDIMIENTO ARBITRAL, procedimiento cambiario=PROCEDIMIENTO CAMBIARIO, procedimiento conciliacion=PROCEDIMIENTO CONCILIACION, procedimiento concurso voluntario=PROCEDIMIENTO CONCURSO VOLUNTARIO, procedimiento desahucio=PROCEDIMIENTO DESAHUCIO, procedimiento ejecucion titulos judiciales=PROCEDIMIENTO EJECUCION TITULOS JUDICIALES, procedimiento exhorto civil=PROCEDIMIENTO EXHORTO, procedimiento extradicion=PROCEDIMIENTO EXTRADICION, procedimiento juicio ordinario=PROCEDIMIENTO JUICIO ORDINARIO, procedimiento juicio verbal=PROCEDIMIENTO JUICIO VERBAL, procedimiento monitorio=PROCEDIMIENTO MONITORIO, procedimiento recurso apelacion=PROCEDIMIENTO RECURSO APELACION, reclamacion extrajudicial=RECLAMACION EXTRAJUDICIAL
+- enum `serie_expediente`: 2016=2016, 2017=2017, 2018=2018, 2019=2019, 2019-e=2019-E, 2019-p=2019-P, 2020=2020, 2020-e=2020-E, 2020-p=2020-P, 2021=2021, 2021-e=2021-E, 2021-n=2021-N, 2021-p=2021-P, 2022 - n=2022-N, 2022 - p=2022-P, 2023-n=2023-N, 2024=2024, 2025=2025, 2026=2026
+- enum `tnm_posicionprocesal`: 01=Actor, 02=Demandado, 03=Querellante, 04=Querellado, 05=Denunciante, 06=Denunciado, 07=Responsable civil directo, 08=Responsable civil subsidiario
+- campos no enumerados (por tipo): `Fecha_alta`=Date, `Notas`=EditorHtmlSimple, `Numero_Expediente`=Autoincremental, `Profesional`=ListaUsuarios, `Referencia_Cliente`=TextCorto, `Referencia_Propia`=TextCorto, `costas`=Moneda, `cuantia`=Moneda, `fecha_alta_hist`=Date, `historico`=CheckBox, `intereses`=Moneda, `numero_anterior`=TextCorto, `online`=CheckBox, `profesional_asignado`=ListaUsuarios, `referencia_historico`=TextCorto, `saldo_cobrado`=Moneda, `saldo_facturado`=Moneda, `saldo_no_facturado`=Moneda, `saldo_pendiente`=Moneda, `tags`=Tags, `tnm_siniestro`=CheckBox, `total`=Moneda, `total_pendiente`=Moneda
+
+### face
+
+| Campo | Tipo |
+|---|---|
+| `oficina_contable_codigo` | TextCorto |
+| `oficina_contable_descripcion` | TextCorto |
+| `organo_gestor_codigo` | TextCorto |
+| `organo_gestor_descripcion` | TextCorto |
+| `unidad_tramitadora_codigo` | TextCorto |
+| `unidad_tramitadora_descripcion` | TextCorto |
+
+- Relaciones · parent: clientes_propios · children: 
+- campos no enumerados (por tipo): `oficina_contable_codigo`=TextCorto, `oficina_contable_descripcion`=TextCorto, `organo_gestor_codigo`=TextCorto, `organo_gestor_descripcion`=TextCorto, `unidad_tramitadora_codigo`=TextCorto, `unidad_tramitadora_descripcion`=TextCorto
+
+### facturas
+
+| Campo | Tipo |
+|---|---|
+| `anno_factura` | NumEntero |
+| `base_imponible_declarada` | Moneda |
+| `base_imponible_pendiente` | Moneda |
+| `base_irpf_exento` | Moneda |
+| `base_irpf_normal` | Moneda |
+| `base_iva_exento` | Moneda |
+| `base_iva_minimo` | Moneda |
+| `base_iva_normal` | Moneda |
+| `base_iva_reducido` | Moneda |
+| `calificacion_operacion` | Select |
+| `clave_regimen` | Select |
+| `codigo_postal_receptor` | CodPostal |
+| `concepto_recibo` | TextCorto |
+| `descripcion_operacion` | TextCorto |
+| `detallescorrecion` | TextCorto |
+| `domicilio_receptor` | TextArea |
+| `estado_cobro` | Select |
+| `exportada` | CheckBox |
+| `exportada_fecha` | DateTime |
+| `exportada_ifactura` | CheckBox |
+| `exportada_ifactura_error` | TextArea |
+| `exportada_ifactura_fecha` | DateTime |
+| `factura_codigo_qr` | TextArea |
+| `factura_url_qr` | TextCorto |
+| `fechaCobro` | Date |
+| `fecha_correspondiente_iguala` | Date |
+| `fecha_correspondiente_varias` | TextAreaLong |
+| `fecha_factura` | Date |
+| `fecha_recurrencia` | Date |
+| `huellatbai` | TextCorto |
+| `id_proforma` | NumEntero |
+| `ifactura_notificado` | TextCorto |
+| `ifactura_punto_entrada` | TextCorto |
+| `ifactura_xml` | TextAreaLong |
+| `motivo_rectificativa` | Select |
+| `nif_receptor` | Dni |
+| `nombre_receptor` | TextCorto |
+| `notas` | EditorHtmlSimple |
+| `notificado_nextfacturae` | CheckBox |
+| `num_exp` | NumEntero |
+| `num_pagos` | NumEntero |
+| `numero_anotacion` | TextCorto |
+| `numero_factura` | Autoincremental |
+| `online` | CheckBox |
+| `origen_elemento` | TextCorto |
+| `origen_numero` | NumEntero |
+| `poblacion_receptor` | TextCorto |
+| `provincia_receptor` | Select |
+| `razoncorrecion` | Select |
+| `referencia_interna` | TextCorto |
+| `referencia_propia` | TextCorto |
+| `serie_factura` | Select |
+| `tipo_factura` | Select |
+| `tipo_operaciones_iva` | Select |
+| `tipo_rectificativa` | Select |
+| `total` | Moneda |
+| `total_base_imponible` | Moneda |
+| `total_cobrado` | Moneda |
+| `total_descuentos` | Moneda |
+| `total_gastos` | Moneda |
+| `total_honorarios` | Moneda |
+| `total_irpf` | Moneda |
+| `total_irpf_declarado` | Moneda |
+| `total_irpf_exento` | Moneda |
+| `total_irpf_normal` | Moneda |
+| `total_irpf_pendiente` | Moneda |
+| `total_iva` | Moneda |
+| `total_iva_declarado` | Moneda |
+| `total_iva_exento` | Moneda |
+| `total_iva_minimo` | Moneda |
+| `total_iva_normal` | Moneda |
+| `total_iva_pendiente` | Moneda |
+| `total_iva_reducido` | Moneda |
+| `total_pendiente` | Moneda |
+| `total_provisiones` | Moneda |
+| `total_suplidos` | Moneda |
+| `total_varios` | Moneda |
+| `uuid_nextfacturae` | TextCorto |
+| `valor_irpf_exento` | NumDecimal |
+| `valor_irpf_normal` | NumDecimal |
+| `valor_iva_exento` | NumDecimal |
+| `valor_iva_minimo` | NumDecimal |
+| `valor_iva_normal` | NumDecimal |
+| `valor_iva_reducido` | NumDecimal |
+
+- Relaciones · parent: abogados_contrarios, abogados_propios, clientes_contrarios, clientes_propios, config_facturas, expedientes_judiciales, extrajudiciales, igualas, mandatos · children: cobros_clientes, conceptos, conceptos_gasto, conceptos_honorario, conceptos_provision, conceptos_suplido, conceptos_varios, gdocu, mail
+- enum `calificacion_operacion`: N1=Operacion No Sujeta articulo 7, 14, otros, N2=Operacion No Sujeta por Reglas de localizacion, S1=Operacion Sujeta y No exenta - Sin inversion del sujeto pasivo, S2=Operacion Sujeta y No exenta - Con inversion del sujeto pasivo
+- enum `clave_regimen`: 01=Operacion de regimen general, 02=Exportacion, 03=Operaciones a las que se aplique el regimen especial de bienes usados, objetos de arte, antiguedades y objetos de coleccion, 04=Regimen especial del oro de inversion, 05=Regimen especial de las agencias de viajes, 06=Regimen especial grupo de entidades en IVA (Nivel Avanzado), 07=Regimen especial del criterio de caja, 08=Operaciones sujetas al IPSI / IGIC (Impuesto sobre la Produccion, los Servicios y la Importacion /  Impuesto General Indirecto Canario), 09=Facturacion de las prestaciones de servicios de agencias de viaje que actuan como mediadoras en nombre y por cuenta ajena (D.A.4 RD 1619/2012), 10=Cobros por cuenta de terceros de honorarios profesionales o de derechos derivados de la propiedad industrial de autor u otros por cuenta de sus socios, asociados o colegiados efectuados por sociedades, asociaciones, colegios profesionales u otras entidades que realicen estas funciones de cobro, 11=Operaciones de arrendamiento de local de negocio, 14=Factura con IVA pendiente de devengo en certificaciones de obra cuyo destinatario sea una Administracion Publica, 15=Factura con IVA pendiente de devengo en operaciones de tracto sucesivo, 17=Operacion acogida a alguno de los regimenes previstos en el Capitulo XI del Titulo IX (OSS e IOSS), 18=Recargo de equivalencia, 19=Operaciones de actividades incluidas en el Regimen Especial de Agricultura, Ganaderia y Pesca (REAGYP), 20=Regimen simplificado
+- enum `estado_cobro`: AC=Abonado al cliente, C=Cobrado, CE=Cobrado en Exceso, NC=NO cobrado, PAC=Pendiente de Abonar al Cliente, PC=Cobro Parcial
+- enum `motivo_rectificativa`: R1=Factura rectificativa por error fundado de derecho y art. 80.1., 80.2. de la Ley de IVA, R2=Factura rectificativa artículo 80.3 de la Ley del IVA, R3=Factura rectificativa: artículo 80.4 de la Ley de IVA, R4=Factura rectificativa: resto, R5=Factura rectificativa en facturas simplificadas
+- enum `provincia_receptor`: 1=Sin Asignar, A Coruña=A Coruña, Albacete=Albacete, Alicante=Alicante, Almería=Almería, Asturias=Asturias, Badajoz=Badajoz, Baleares (Illes)=Baleares (Illes), Barcelona=Barcelona, Burgos=Burgos, Cantabria=Cantabria, Castellón=Castellón, Ceuta=Ceuta, Ciudad Real=Ciudad Real, Cuenca=Cuenca, Cáceres=Cáceres, Cádiz=Cádiz, Córdoba=Córdoba, Girona=Girona, Granada=Granada, Guadalajara=Guadalajara, Guipúzcoa=Guipúzcoa, Huelva=Huelva, Huesca=Huesca, Jaén=Jaén, La Rioja=La Rioja, Las Palmas=Las Palmas, León=León, Lleida=Lleida, Lugo=Lugo, Madrid=Madrid, Melilla=Melilla, Murcia=Murcia, Málaga=Málaga, Navarra=Navarra, Ourense=Ourense, Palencia=Palencia, Pontevedra=Pontevedra, Salamanca=Salamanca, Santa Cruz de Tenerife=Santa Cruz de Tenerife, Segovia=Segovia, Sevilla=Sevilla, Soria=Soria, Tarragona=Tarragona, Teruel=Teruel, Toledo=Toledo, Valencia=Valencia, Valladolid=Valladolid, Vizcaya=Vizcaya, Zamora=Zamora, Zaragoza=Zaragoza, Álava=Álava, Ávila=Ávila
+- enum `razoncorrecion`: r1=Devoluciones, descuentos y errores fundados de derecho, r2=Concurso de Acreedores, r3=Deudas incobrables, r4=Resto de Causas, r5=Factura rectificativa simplificada
+- enum `serie_factura`: 1_2026_ANULATIVA2026=ANULATIVA2026, 1_2026_FACTURACION2026=FACTURACION2026, 1_2026_RECTIFICATIVA2026=RECTIFICATIVA2026
+- enum `tipo_factura`: F1=Completa / Ordinaria, F2=Simplificada, F3=Sustitucion Simplificada
+- enum `tipo_operaciones_iva`: E1=Operaciones Interiores sujetas a I.V.A., E10=Op. no sujeta o inv. sujeto pasivo con dcho. deduccion, E11=Operación no sujeta por reglas de localización, E2=Operaciones exentas sin derecho a deduccion, E3=Entregas intracomunitarias, E4=Entregas intracomunitarias. Op. triangulares, E5=Operaciones con Canarias, Ceuta y Melilla, E6=Exportaciones, E7=Op. no sujeta a I.V.A. reservada para a3ges, E8=Op. no sujeta o Inv. sujeto pasivo con dcho. deduccion, E9=Otras oper. exentas con derecho a deduccion
+- enum `tipo_rectificativa`: I=Factura Rectificativa por Diferencias, S=Factura Rectificativa por Sustitucion
+- campos no enumerados (por tipo): `anno_factura`=NumEntero, `base_imponible_declarada`=Moneda, `base_imponible_pendiente`=Moneda, `base_irpf_exento`=Moneda, `base_irpf_normal`=Moneda, `base_iva_exento`=Moneda, `base_iva_minimo`=Moneda, `base_iva_normal`=Moneda, `base_iva_reducido`=Moneda, `codigo_postal_receptor`=CodPostal, `concepto_recibo`=TextCorto, `descripcion_operacion`=TextCorto, `detallescorrecion`=TextCorto, `domicilio_receptor`=TextArea, `exportada`=CheckBox, `exportada_fecha`=DateTime, `exportada_ifactura`=CheckBox, `exportada_ifactura_error`=TextArea, `exportada_ifactura_fecha`=DateTime, `factura_codigo_qr`=TextArea, `factura_url_qr`=TextCorto, `fechaCobro`=Date, `fecha_correspondiente_iguala`=Date, `fecha_correspondiente_varias`=TextAreaLong, `fecha_factura`=Date, `fecha_recurrencia`=Date, `huellatbai`=TextCorto, `id_proforma`=NumEntero, `ifactura_notificado`=TextCorto, `ifactura_punto_entrada`=TextCorto, `ifactura_xml`=TextAreaLong, `nif_receptor`=Dni, `nombre_receptor`=TextCorto, `notas`=EditorHtmlSimple, `notificado_nextfacturae`=CheckBox, `num_exp`=NumEntero, `num_pagos`=NumEntero, `numero_anotacion`=TextCorto, `numero_factura`=Autoincremental, `online`=CheckBox, `origen_elemento`=TextCorto, `origen_numero`=NumEntero, `poblacion_receptor`=TextCorto, `referencia_interna`=TextCorto, `referencia_propia`=TextCorto, `total`=Moneda, `total_base_imponible`=Moneda, `total_cobrado`=Moneda, `total_descuentos`=Moneda, `total_gastos`=Moneda, `total_honorarios`=Moneda, `total_irpf`=Moneda, `total_irpf_declarado`=Moneda, `total_irpf_exento`=Moneda, `total_irpf_normal`=Moneda, `total_irpf_pendiente`=Moneda, `total_iva`=Moneda, `total_iva_declarado`=Moneda, `total_iva_exento`=Moneda, `total_iva_minimo`=Moneda, `total_iva_normal`=Moneda, `total_iva_pendiente`=Moneda, `total_iva_reducido`=Moneda, `total_pendiente`=Moneda, `total_provisiones`=Moneda, `total_suplidos`=Moneda, `total_varios`=Moneda, `uuid_nextfacturae`=TextCorto, `valor_irpf_exento`=NumDecimal, `valor_irpf_normal`=NumDecimal, `valor_iva_exento`=NumDecimal, `valor_iva_minimo`=NumDecimal, `valor_iva_normal`=NumDecimal, `valor_iva_reducido`=NumDecimal
+
+### facturas_proforma
+
+| Campo | Tipo |
+|---|---|
+| `anno_factura` | NumEntero |
+| `base_imponible_declarada` | Moneda |
+| `base_imponible_pendiente` | Moneda |
+| `base_irpf_exento` | Moneda |
+| `base_irpf_normal` | Moneda |
+| `base_iva_exento` | Moneda |
+| `base_iva_minimo` | Moneda |
+| `base_iva_normal` | Moneda |
+| `base_iva_reducido` | Moneda |
+| `codigo_postal_receptor` | CodPostal |
+| `concepto_recibo` | TextCorto |
+| `convertir` | CheckBox |
+| `domicilio_receptor` | TextArea |
+| `estado_cobro` | Select |
+| `exportada` | CheckBox |
+| `exportada_fecha` | DateTime |
+| `fechaCobro` | Date |
+| `fecha_correspondiente_iguala` | Date |
+| `fecha_factura` | Date |
+| `nif_receptor` | Dni |
+| `nombre_receptor` | TextCorto |
+| `notas` | EditorHtmlSimple |
+| `num_pagos` | NumEntero |
+| `numero_factura` | Autoincremental |
+| `origen_elemento` | TextCorto |
+| `origen_numero` | NumEntero |
+| `poblacion_receptor` | TextCorto |
+| `provincia_receptor` | Select |
+| `referencia_interna` | TextCorto |
+| `referencia_propia` | TextCorto |
+| `serie_factura` | Select |
+| `tipo_operaciones_iva` | Select |
+| `total` | Moneda |
+| `total_base_imponible` | Moneda |
+| `total_cobrado` | Moneda |
+| `total_descuentos` | Moneda |
+| `total_gastos` | Moneda |
+| `total_honorarios` | Moneda |
+| `total_irpf` | Moneda |
+| `total_irpf_declarado` | Moneda |
+| `total_irpf_exento` | Moneda |
+| `total_irpf_normal` | Moneda |
+| `total_irpf_pendiente` | Moneda |
+| `total_iva` | Moneda |
+| `total_iva_declarado` | Moneda |
+| `total_iva_exento` | Moneda |
+| `total_iva_minimo` | Moneda |
+| `total_iva_normal` | Moneda |
+| `total_iva_pendiente` | Moneda |
+| `total_iva_reducido` | Moneda |
+| `total_pendiente` | Moneda |
+| `total_provisiones` | Moneda |
+| `total_suplidos` | Moneda |
+| `total_varios` | Moneda |
+| `valor_irpf_exento` | Moneda |
+| `valor_irpf_normal` | Moneda |
+| `valor_iva_exento` | Moneda |
+| `valor_iva_minimo` | Moneda |
+| `valor_iva_normal` | Moneda |
+| `valor_iva_reducido` | Moneda |
+
+- Relaciones · parent: clientes_contrarios, clientes_propios, config_facturas, expedientes_judiciales, extrajudiciales, igualas, mandatos · children: cobros_clientes, conceptos, conceptos_gasto, conceptos_honorario, conceptos_provision, conceptos_suplido, conceptos_varios, gdocu, mail
+- enum `estado_cobro`: AC=Abonado al cliente, C=Cobrado, CE=Cobrado en Exceso, NC=NO cobrado, PAC=Pendiente de Abonar al Cliente, PC=Cobro Parcial
+- enum `provincia_receptor`: 1=Sin Asignar, A Coruña=A Coruña, Albacete=Albacete, Alicante=Alicante, Almería=Almería, Asturias=Asturias, Badajoz=Badajoz, Baleares (Illes)=Baleares (Illes), Barcelona=Barcelona, Burgos=Burgos, Cantabria=Cantabria, Castellón=Castellón, Ceuta=Ceuta, Ciudad Real=Ciudad Real, Cuenca=Cuenca, Cáceres=Cáceres, Cádiz=Cádiz, Córdoba=Córdoba, Girona=Girona, Granada=Granada, Guadalajara=Guadalajara, Guipúzcoa=Guipúzcoa, Huelva=Huelva, Huesca=Huesca, Jaén=Jaén, La Rioja=La Rioja, Las Palmas=Las Palmas, León=León, Lleida=Lleida, Lugo=Lugo, Madrid=Madrid, Melilla=Melilla, Murcia=Murcia, Málaga=Málaga, Navarra=Navarra, Ourense=Ourense, Palencia=Palencia, Pontevedra=Pontevedra, Salamanca=Salamanca, Santa Cruz de Tenerife=Santa Cruz de Tenerife, Segovia=Segovia, Sevilla=Sevilla, Soria=Soria, Tarragona=Tarragona, Teruel=Teruel, Toledo=Toledo, Valencia=Valencia, Valladolid=Valladolid, Vizcaya=Vizcaya, Zamora=Zamora, Zaragoza=Zaragoza, Álava=Álava, Ávila=Ávila
+- enum `serie_factura`: 1_2026_ANULATIVA2026=ANULATIVA2026, 1_2026_FACTURACION2026=FACTURACION2026, 1_2026_RECTIFICATIVA2026=RECTIFICATIVA2026
+- enum `tipo_operaciones_iva`: E1=Operaciones Interiores sujetas a I.V.A., E10=Op. no sujeta o inv. sujeto pasivo con dcho. deduccion, E11=Operación no sujeta por reglas de localización, E2=Operaciones exentas sin derecho a deduccion, E3=Entregas intracomunitarias, E4=Entregas intracomunitarias. Op. triangulares, E5=Operaciones con Canarias, Ceuta y Melilla, E6=Exportaciones, E7=Op. no sujeta a I.V.A. reservada para a3ges, E8=Op. no sujeta o Inv. sujeto pasivo con dcho. deduccion, E9=Otras oper. exentas con derecho a deduccion
+- campos no enumerados (por tipo): `anno_factura`=NumEntero, `base_imponible_declarada`=Moneda, `base_imponible_pendiente`=Moneda, `base_irpf_exento`=Moneda, `base_irpf_normal`=Moneda, `base_iva_exento`=Moneda, `base_iva_minimo`=Moneda, `base_iva_normal`=Moneda, `base_iva_reducido`=Moneda, `codigo_postal_receptor`=CodPostal, `concepto_recibo`=TextCorto, `convertir`=CheckBox, `domicilio_receptor`=TextArea, `exportada`=CheckBox, `exportada_fecha`=DateTime, `fechaCobro`=Date, `fecha_correspondiente_iguala`=Date, `fecha_factura`=Date, `nif_receptor`=Dni, `nombre_receptor`=TextCorto, `notas`=EditorHtmlSimple, `num_pagos`=NumEntero, `numero_factura`=Autoincremental, `origen_elemento`=TextCorto, `origen_numero`=NumEntero, `poblacion_receptor`=TextCorto, `referencia_interna`=TextCorto, `referencia_propia`=TextCorto, `total`=Moneda, `total_base_imponible`=Moneda, `total_cobrado`=Moneda, `total_descuentos`=Moneda, `total_gastos`=Moneda, `total_honorarios`=Moneda, `total_irpf`=Moneda, `total_irpf_declarado`=Moneda, `total_irpf_exento`=Moneda, `total_irpf_normal`=Moneda, `total_irpf_pendiente`=Moneda, `total_iva`=Moneda, `total_iva_declarado`=Moneda, `total_iva_exento`=Moneda, `total_iva_minimo`=Moneda, `total_iva_normal`=Moneda, `total_iva_pendiente`=Moneda, `total_iva_reducido`=Moneda, `total_pendiente`=Moneda, `total_provisiones`=Moneda, `total_suplidos`=Moneda, `total_varios`=Moneda, `valor_irpf_exento`=Moneda, `valor_irpf_normal`=Moneda, `valor_iva_exento`=Moneda, `valor_iva_minimo`=Moneda, `valor_iva_normal`=Moneda, `valor_iva_reducido`=Moneda
+
+### facturas_recibidas
+
+| Campo | Tipo |
+|---|---|
+| `anno_factura` | NumEntero |
+| `banco` | ListaBancos |
+| `base_imponible` | Moneda |
+| `base_imponible_declarada` | Moneda |
+| `base_imponible_pendiente` | Moneda |
+| `descripcion_anotacion` | TextCorto |
+| `estado` | Select |
+| `exportada` | CheckBox |
+| `exportada_fecha` | DateTime |
+| `exportar` | Select |
+| `fecha_contabilizado` | Date |
+| `fecha_factura` | Date |
+| `fecha_pago` | Date |
+| `fecha_recurrencia` | Date |
+| `forma_pago` | Select |
+| `notas` | EditorHtmlSimple |
+| `num_factura` | Autoincremental |
+| `num_pagos` | NumEntero |
+| `num_proforma` | NumEntero |
+| `numero_anotacion` | TextCorto |
+| `ref_factura` | TextCorto |
+| `referencia_factura_proveedor` | TextCorto |
+| `tipo_operaciones_iva` | Select |
+| `total` | Moneda |
+| `total_cobrado` | Moneda |
+| `total_irpf` | Moneda |
+| `total_irpf_declarado` | Moneda |
+| `total_irpf_pendiente` | Moneda |
+| `total_iva` | Moneda |
+| `total_iva_declarado` | Moneda |
+| `total_iva_pendiente` | Moneda |
+| `total_pendiente` | Moneda |
+
+- Relaciones · parent: config_facturas, proveedores · children: conceptos_recibidas, conceptos_recibidas_gastos, conceptos_recibidas_honorarios, gdocu, mail, pagos_proveedores
+- enum `estado`: C=Cobrada, NC=NO cobrado, PC=Parcialmente Cobrada
+- enum `exportar`: N=NO, S=SI
+- enum `forma_pago`: 01=Al contado, 03=Recibo, 04=Transferencia, 11=Cheque, 19=Tarjeta, 50=Contrareembolso
+- enum `tipo_operaciones_iva`: R1=Operaciones Interiores I.V.A. deducible, R1BI=Operaciones Interiores I.V.A. deducible. Bienes de Inversion, R2=Compensaciones Agrarias, R3=Adq. intracomunitaria de bienes, R4=Inversion del sujeto pasivo, R6=Importaciones, R7=I.V.A. no deducible, R8=Adq. intracomunitaria de servicios
+- campos no enumerados (por tipo): `anno_factura`=NumEntero, `banco`=ListaBancos, `base_imponible`=Moneda, `base_imponible_declarada`=Moneda, `base_imponible_pendiente`=Moneda, `descripcion_anotacion`=TextCorto, `exportada`=CheckBox, `exportada_fecha`=DateTime, `fecha_contabilizado`=Date, `fecha_factura`=Date, `fecha_pago`=Date, `fecha_recurrencia`=Date, `notas`=EditorHtmlSimple, `num_factura`=Autoincremental, `num_pagos`=NumEntero, `num_proforma`=NumEntero, `numero_anotacion`=TextCorto, `ref_factura`=TextCorto, `referencia_factura_proveedor`=TextCorto, `total`=Moneda, `total_cobrado`=Moneda, `total_irpf`=Moneda, `total_irpf_declarado`=Moneda, `total_irpf_pendiente`=Moneda, `total_iva`=Moneda, `total_iva_declarado`=Moneda, `total_iva_pendiente`=Moneda, `total_pendiente`=Moneda
+
+### festivos
+
+| Campo | Tipo |
+|---|---|
+| `descripcion` | TextCorto |
+| `fecha` | Date |
+| `tipo` | Select |
+
+- Relaciones · parent: empresas · children: 
+- enum `tipo`: autonomico=Autonómico, empresa=Empresa, estatal=Estatal, local=Local, nacional=Nacional, provincial=Provincial
+- campos no enumerados (por tipo): `descripcion`=TextCorto, `fecha`=Date
+
+### gdocu
+
+| Campo | Tipo |
+|---|---|
+| `asunto` | TextCorto |
+| `carpeta` | TextCorto |
+| `categoria` | Select |
+| `condiciones` | TextCorto |
+| `descripcion` | EditorHtmlSimple |
+| `doc` | TextCorto |
+| `enlaceiberley` | EnlaceIberley |
+| `esonline` | CheckBox |
+| `estado` | Select |
+| `fechaenvio` | DateTime |
+| `fechaexpiracion` | DateTime |
+| `fechamodificacion` | DateTime |
+| `fechapublicacion` | DateTime |
+| `id_carpeta` | Carpetable |
+| `mime` | TextCorto |
+| `nombrefinal` | TextCorto |
+| `nombreoriginal` | TextCorto |
+| `online` | CheckBox |
+| `origen` | TextCorto |
+| `origen_id` | TextCorto |
+| `origen_rutas` | TextCorto |
+| `subcategoria` | Select |
+| `tags` | Tags |
+| `tamano` | NumEntero |
+| `tipo` | Select |
+
+- Relaciones · parent: abogados_contrarios, abogados_propios, actuaciones, actuaciones_obligaciones, banco, chat, clientes_contrarios, clientes_propios, colaboradores, comercial_oportunidades, conceptos_gasto, conceptos_suplido, config_facturas, consultas, contactos, contactos_met, empleados, expedientes_judiciales, extrajudiciales, facturas, facturas_proforma, facturas_recibidas, holidays, igualas, importa_iberley, juzgados, lexnet, lexnet_avisos, mandatos, nominas, notas_tecnicas, organismos, plantillas, poderes, preclientes, procuradores_contrarios, procuradores_propios, proveedores, tareas, templates, ticket, tickets_nuevo · children: contactos_met, gdoculogdescargas, signatures, tracking
+- enum `categoria`: -1=Sin Asignar
+- enum `estado`: -1=Sin Asignar
+- enum `subcategoria`: -1=Sin Asignar
+- enum `tipo`: -1=Sin Asignar
+- campos no enumerados (por tipo): `asunto`=TextCorto, `carpeta`=TextCorto, `condiciones`=TextCorto, `descripcion`=EditorHtmlSimple, `doc`=TextCorto, `enlaceiberley`=EnlaceIberley, `esonline`=CheckBox, `fechaenvio`=DateTime, `fechaexpiracion`=DateTime, `fechamodificacion`=DateTime, `fechapublicacion`=DateTime, `id_carpeta`=Carpetable, `mime`=TextCorto, `nombrefinal`=TextCorto, `nombreoriginal`=TextCorto, `online`=CheckBox, `origen`=TextCorto, `origen_id`=TextCorto, `origen_rutas`=TextCorto, `tags`=Tags, `tamano`=NumEntero
+
+### holidays
+
+| Campo | Tipo |
+|---|---|
+| `anho` | Year |
+| `asunto` | TextArea |
+| `documentos` | Documento |
+| `estado` | Select |
+| `fecha_fin` | Date |
+| `fecha_inicio` | Date |
+| `notas` | TextArea |
+| `numero_dias` | Cantidad |
+| `tipo` | Select |
+
+- Relaciones · parent: empleados, empresas · children: chat, gdocu
+- enum `estado`: Aceptado=Aceptado, Pendiente=Pendiente, Rechazado=Rechazado
+- enum `tipo`: boda=Boda, defuncion=Defuncion, enfermedad=Baja medica, festivo trabajado=Festivo trabajado, maternidad=Maternidad, mudanza=Mudanza, otros=Otros, otros presencia=Otros presencia, paternidad=Paternidad, reposo medico=Reposo medico, vacaciones=Vacaciones
+- campos no enumerados (por tipo): `anho`=Year, `asunto`=TextArea, `documentos`=Documento, `fecha_fin`=Date, `fecha_inicio`=Date, `notas`=TextArea, `numero_dias`=Cantidad
+
+### igualas
+
+| Campo | Tipo |
+|---|---|
+| `check_baja__en_fecha` | TextCorto |
+| `check_baja_fecha` | CheckBox |
+| `check_vencimiento_tipo` | CheckBox |
+| `concepto_recibo` | TextCorto |
+| `descripcion_asunto` | Select |
+| `duracion_contrato` | Select |
+| `duracion_iguala` | Select |
+| `fecha_alta` | Date |
+| `fecha_fin` | Date |
+| `fecha_inicio` | Date |
+| `fecha_proxima_factura` | Date |
+| `fecha_renovacion` | Date |
+| `fecha_ultima_factura` | Date |
+| `fechas_facturas` | TextArea |
+| `forma_pago` | Select |
+| `importe_iguala` | Moneda |
+| `notas` | EditorHtmlSimple |
+| `numero` | Autoincremental |
+| `numero_pagos` | NumEntero |
+| `periodicidad` | Select |
+| `periodicidad_pagos` | Select |
+| `referencia` | TextCorto |
+| `renovacion_automatica` | CheckBox |
+| `serie` | Select |
+| `vencimiento` | Date |
+| `vencimiento_desde_factura` | NumEntero |
+| `vencimiento_dia_mes` | Select |
+| `vencimiento_tipo` | TextCorto |
+
+- Relaciones · parent: contactos_met, mandatos · children: actuaciones, clientes_propios, cobros_clientes, colaboradores, conceptos, conceptos_gasto, conceptos_honorario, conceptos_provision, conceptos_suplido, conceptos_varios, facturas, facturas_proforma, gdocu, mail, mandatos, organismos
+- enum `duracion_contrato`: 1=Mensual, 12=Anual, 2=Bimestral, 24=Bianual, 3=Trimestral, 36=Trianual, 4=Cuatrimestral, 6=Semestral
+- enum `duracion_iguala`: 1=Mensual, 12=Anual, 2=Bimestral, 24=Bianual, 3=Trimestral, 36=Trianual, 4=Cuatrimestral, 6=Semestral
+- enum `forma_pago`: 01=Al contado, 03=Recibo, 04=Transferencia, 11=Cheque, 19=Tarjeta, 50=Contrareembolso
+- enum `periodicidad`: 1=Mensual, 12=Anual, 2=Bimestral, 24=Bianual, 3=Trimestral, 36=Trianual, 4=Cuatrimestral, 6=Semestral
+- enum `periodicidad_pagos`: 1=Mensual, 12=Anual, 2=Bimestral, 24=Bianual, 3=Trimestral, 36=Trianual, 4=Cuatrimestral, 6=Semestral
+- enum `vencimiento_dia_mes`: 1=1, 10=10, 11=11, 12=12, 13=13, 14=14, 15=15, 16=16, 17=17, 18=18, 19=19, 2=2, 20=20, 21=21, 22=22, 23=23, 24=24, 25=25, 26=26, 27=27, 28=28, 29=29, 3=3, 30=30, 31=31, 4=4, 5=5, 6=6, 7=7, 8=8, 9=9
+- campos no enumerados (por tipo): `check_baja__en_fecha`=TextCorto, `check_baja_fecha`=CheckBox, `check_vencimiento_tipo`=CheckBox, `concepto_recibo`=TextCorto, `fecha_alta`=Date, `fecha_fin`=Date, `fecha_inicio`=Date, `fecha_proxima_factura`=Date, `fecha_renovacion`=Date, `fecha_ultima_factura`=Date, `fechas_facturas`=TextArea, `importe_iguala`=Moneda, `notas`=EditorHtmlSimple, `numero`=Autoincremental, `numero_pagos`=NumEntero, `referencia`=TextCorto, `renovacion_automatica`=CheckBox, `vencimiento`=Date, `vencimiento_desde_factura`=NumEntero, `vencimiento_tipo`=TextCorto
+
+### importa_iberley
+
+| Campo | Tipo |
+|---|---|
+| `coleccion` | TextCorto |
+| `fecha` | DateTime |
+| `id_documento` | NumEntero |
+| `procesado` | NumEntero |
+| `texto` | TextAreaLong |
+| `titulo` | TextCorto |
+
+- Relaciones · parent:  · children: gdocu
+- campos no enumerados (por tipo): `coleccion`=TextCorto, `fecha`=DateTime, `id_documento`=NumEntero, `procesado`=NumEntero, `texto`=TextAreaLong, `titulo`=TextCorto
+
+### ipc_aplicado
+
+| Campo | Tipo |
+|---|---|
+| `anho` | Year |
+| `ipc` | NumEntero |
+
+- Relaciones · parent: config_facturas · children: productos
+- campos no enumerados (por tipo): `anho`=Year, `ipc`=NumEntero
+
+### juzgados
+
+| Campo | Tipo |
+|---|---|
+| `cp` | CodPostal |
+| `direccion` | TextCorto |
+| `email` | Email |
+| `fax` | Telefono |
+| `nacionalidad` | Select |
+| `nif_cif` | Dni |
+| `nombre` | TextCorto |
+| `notas` | EditorHtmlSimple |
+| `poblacion` | TextCorto |
+| `provincia` | Select |
+| `telefono1` | Telefono |
+| `telefono2` | Telefono |
+| `telefono3` | Telefono |
+| `web` | TextCorto |
+
+- Relaciones · parent:  · children: autos, calendario, contactos, expedientes_judiciales, gdocu, mail
+- enum `provincia`: 1=Sin Asignar, A Coruña=A Coruña, Albacete=Albacete, Alicante=Alicante, Almería=Almería, Asturias=Asturias, Badajoz=Badajoz, Baleares (Illes)=Baleares (Illes), Barcelona=Barcelona, Burgos=Burgos, Cantabria=Cantabria, Castellón=Castellón, Ceuta=Ceuta, Ciudad Real=Ciudad Real, Cuenca=Cuenca, Cáceres=Cáceres, Cádiz=Cádiz, Córdoba=Córdoba, Girona=Girona, Granada=Granada, Guadalajara=Guadalajara, Guipúzcoa=Guipúzcoa, Huelva=Huelva, Huesca=Huesca, Jaén=Jaén, La Rioja=La Rioja, Las Palmas=Las Palmas, León=León, Lleida=Lleida, Lugo=Lugo, Madrid=Madrid, Melilla=Melilla, Murcia=Murcia, Málaga=Málaga, Navarra=Navarra, Ourense=Ourense, Palencia=Palencia, Pontevedra=Pontevedra, Salamanca=Salamanca, Santa Cruz de Tenerife=Santa Cruz de Tenerife, Segovia=Segovia, Sevilla=Sevilla, Soria=Soria, Tarragona=Tarragona, Teruel=Teruel, Toledo=Toledo, Valencia=Valencia, Valladolid=Valladolid, Vizcaya=Vizcaya, Zamora=Zamora, Zaragoza=Zaragoza, Álava=Álava, Ávila=Ávila
+- campos no enumerados (por tipo): `cp`=CodPostal, `direccion`=TextCorto, `email`=Email, `fax`=Telefono, `nacionalidad`=Select(cuarentena-PII), `nif_cif`=Dni, `nombre`=TextCorto, `notas`=EditorHtmlSimple, `poblacion`=TextCorto, `telefono1`=Telefono, `telefono2`=Telefono, `telefono3`=Telefono, `web`=TextCorto
+
+### lexnet
+
+| Campo | Tipo |
+|---|---|
+| `asunto` | TextCorto |
+| `colegio` | TextCorto |
+| `descargado` | CheckBox |
+| `descripcionar` | TextArea |
+| `destino_codigocolegiado` | TextCorto |
+| `destino_dn` | TextCorto |
+| `destino_email` | Email |
+| `destino_entidad_dn` | TextCorto |
+| `destino_entidad_nombre` | TextCorto |
+| `destino_entidad_partidojudicial` | TextCorto |
+| `destino_entidad_tipo` | TextCorto |
+| `destino_entidad_tiporepresentacion` | TextCorto |
+| `destino_nif` | Dni |
+| `destino_nombre` | TextCorto |
+| `destino_tipo` | TextCorto |
+| `detalle_acontecimiento` | TextCorto |
+| `dni` | TextCorto |
+| `dnisustituto` | TextCorto |
+| `espieza` | CheckBox |
+| `estado` | NumEntero |
+| `estadoar` | NumEntero |
+| `estarelacionado` | CheckBox |
+| `fecha_envio` | DateTime |
+| `fechaar` | DateTime |
+| `firmante_codigopoblacion` | CodPostal |
+| `firmante_dn` | TextCorto |
+| `firmante_nombre` | TextCorto |
+| `firmante_numeroorgano` | TextCorto |
+| `firmante_tipo` | TextCorto |
+| `firmante_tipoorgano` | TextCorto |
+| `idacuse` | TextCorto |
+| `identificador` | TextCorto |
+| `juzgadoguardia` | TextCorto |
+| `leido` | CheckBox |
+| `nig` | TextCorto |
+| `nombresustituto` | TextCorto |
+| `numero_pieza` | TextCorto |
+| `numero_procedimiento` | TextCorto |
+| `numero_procedimiento_pieza` | TextCorto |
+| `organo_judicial` | TextCorto |
+| `origen_codigopoblacion` | CodPostal |
+| `origen_dn` | TextCorto |
+| `origen_nombre` | TextCorto |
+| `origen_numeroorgano` | TextCorto |
+| `origen_tipo` | TextCorto |
+| `origen_tipoorgano` | TextCorto |
+| `remitente` | TextCorto |
+| `repartoaranyo` | TextCorto |
+| `repartoarcodigoconsejo` | TextCorto |
+| `repartoaridsujeto` | TextCorto |
+| `repartoarnumero` | TextCorto |
+| `repartoartipoorgano` | TextCorto |
+| `rol` | Select |
+| `serializado_cabeceras` | TextArea |
+| `tipo_mensaje` | Select |
+| `tipo_procedimiento` | TextCorto |
+| `tipo_procedimiento_pieza` | TextCorto |
+| `tipomensaje` | Select |
+| `xml` | TextAreaLong |
+| `xml_cabeceras` | TextArea |
+
+- Relaciones · parent: expedientes_judiciales · children: actuaciones, gdocu
+- enum `rol`: 1=Abogado, 16=Graduado Social, 28=Procurador
+- enum `tipomensaje`: 1=Acuse, 10=Mensaje internacional, 11=Traslado, 12=Iniciador atestado, 13=Iniciador parte hospitalario, 14=Personacion, 15=Recurso queja, 16=Escrito defensa, 17=Recurso casacon, 2=Escrito, 3=Notificacion, 4=Recibi, 5=Itineracion, 6=Iniciador asunto, 7=Ejecucion/ejecutoria
+- campos no enumerados (por tipo): `asunto`=TextCorto, `colegio`=TextCorto, `descargado`=CheckBox, `descripcionar`=TextArea, `destino_codigocolegiado`=TextCorto, `destino_dn`=TextCorto, `destino_email`=Email, `destino_entidad_dn`=TextCorto, `destino_entidad_nombre`=TextCorto, `destino_entidad_partidojudicial`=TextCorto, `destino_entidad_tipo`=TextCorto, `destino_entidad_tiporepresentacion`=TextCorto, `destino_nif`=Dni, `destino_nombre`=TextCorto, `destino_tipo`=TextCorto, `detalle_acontecimiento`=TextCorto, `dni`=TextCorto, `dnisustituto`=TextCorto, `espieza`=CheckBox, `estado`=NumEntero, `estadoar`=NumEntero, `estarelacionado`=CheckBox, `fecha_envio`=DateTime, `fechaar`=DateTime, `firmante_codigopoblacion`=CodPostal, `firmante_dn`=TextCorto, `firmante_nombre`=TextCorto, `firmante_numeroorgano`=TextCorto, `firmante_tipo`=TextCorto, `firmante_tipoorgano`=TextCorto, `idacuse`=TextCorto, `identificador`=TextCorto, `juzgadoguardia`=TextCorto, `leido`=CheckBox, `nig`=TextCorto, `nombresustituto`=TextCorto, `numero_pieza`=TextCorto, `numero_procedimiento`=TextCorto, `numero_procedimiento_pieza`=TextCorto, `organo_judicial`=TextCorto, `origen_codigopoblacion`=CodPostal, `origen_dn`=TextCorto, `origen_nombre`=TextCorto, `origen_numeroorgano`=TextCorto, `origen_tipo`=TextCorto, `origen_tipoorgano`=TextCorto, `remitente`=TextCorto, `repartoaranyo`=TextCorto, `repartoarcodigoconsejo`=TextCorto, `repartoaridsujeto`=TextCorto, `repartoarnumero`=TextCorto, `repartoartipoorgano`=TextCorto, `serializado_cabeceras`=TextArea, `tipo_procedimiento`=TextCorto, `tipo_procedimiento_pieza`=TextCorto, `xml`=TextAreaLong, `xml_cabeceras`=TextArea
+
+### lexnet_avisos
+
+| Campo | Tipo |
+|---|---|
+| `colegio` | TextCorto |
+| `dnisustituto` | TextCorto |
+| `fechaparada` | DateTime |
+| `idadjunto` | NumEntero |
+| `identificadordni` | TextCorto |
+| `importancia` | TextCorto |
+| `nombreadjunto` | TextCorto |
+| `parada` | CheckBox |
+| `rol` | NumEntero |
+| `texto` | TextArea |
+| `usuario` | TextCorto |
+| `xml` | TextAreaLong |
+
+- Relaciones · parent:  · children: gdocu
+- campos no enumerados (por tipo): `colegio`=TextCorto, `dnisustituto`=TextCorto, `fechaparada`=DateTime, `idadjunto`=NumEntero, `identificadordni`=TextCorto, `importancia`=TextCorto, `nombreadjunto`=TextCorto, `parada`=CheckBox, `rol`=NumEntero, `texto`=TextArea, `usuario`=TextCorto, `xml`=TextAreaLong
+
+### lexnet_datos
+
+| Campo | Tipo |
+|---|---|
+| `colegio` | TextCorto |
+| `dnisustituto` | TextCorto |
+| `fecha` | DateTime |
+| `identificador` | TextCorto |
+| `rol` | Select |
+| `tipo` | NumEntero |
+| `usuario` | NumEntero |
+
+- Relaciones · parent:  · children: 
+- enum `rol`: 1=Abogado, 16=Graduado Social, 28=Procurador
+- campos no enumerados (por tipo): `colegio`=TextCorto, `dnisustituto`=TextCorto, `fecha`=DateTime, `identificador`=TextCorto, `tipo`=NumEntero, `usuario`=NumEntero
+
+### lexnet_logdescargas
+
+| Campo | Tipo |
+|---|---|
+| `cabecera` | NumEntero |
+| `dni` | TextCorto |
+| `idmensaje` | TextCorto |
+| `numintentos` | NumEntero |
+
+- Relaciones · parent:  · children: 
+- campos no enumerados (por tipo): `cabecera`=NumEntero, `dni`=TextCorto, `idmensaje`=TextCorto, `numintentos`=NumEntero
+
+### lexnet_logerrores
+
+| Campo | Tipo |
+|---|---|
+| `dni` | TextCorto |
+| `mensaje` | TextCorto |
+| `tipo` | TextCorto |
+| `usuario` | TextCorto |
+
+- Relaciones · parent:  · children: 
+- campos no enumerados (por tipo): `dni`=TextCorto, `mensaje`=TextCorto, `tipo`=TextCorto, `usuario`=TextCorto
+
+### mis_portales
+
+| Campo | Tipo |
+|---|---|
+| `baja` | CheckBox |
+| `cliente` | TextCorto |
+| `email` | Email |
+| `fecha_fin` | DateTime |
+| `fecha_inicio` | DateTime |
+| `notas` | EditorHtmlSimple |
+| `ruta` | TextCorto |
+| `version` | Select |
+
+- Relaciones · parent: clientes_propios · children: 
+- enum `version`: -1= , basico=Portal Básico, lite=Gratuito, medium=Medium, profesional=Profesional, profesional=Portal Profesional
+- campos no enumerados (por tipo): `baja`=CheckBox, `cliente`=TextCorto, `email`=Email, `fecha_fin`=DateTime, `fecha_inicio`=DateTime, `notas`=EditorHtmlSimple, `ruta`=TextCorto
+
+### nominas
+
+| Campo | Tipo |
+|---|---|
+| `coste_total` | Operacion |
+| `documento` | Documento |
+| `fecha` | Date |
+| `importe_bruto` | Operacion |
+| `importe_neto` | Moneda |
+| `referencia` | TextCorto |
+| `retencion_irpf` | Moneda |
+| `seg_social_empresa` | Moneda |
+| `seg_social_trabajador` | Moneda |
+
+- Relaciones · parent: empleados · children: gdocu, mail
+- campos no enumerados (por tipo): `coste_total`=Operacion, `documento`=Documento, `fecha`=Date, `importe_bruto`=Operacion, `importe_neto`=Moneda, `referencia`=TextCorto, `retencion_irpf`=Moneda, `seg_social_empresa`=Moneda, `seg_social_trabajador`=Moneda
+
+### notas_tecnicas
+
+| Campo | Tipo |
+|---|---|
+| `categoria` | Select |
+| `descripcion` | EditorHtmlSimple |
+| `estado` | Select |
+| `fecha_expiracion` | DateTime |
+| `fecha_publicacion` | DateTime |
+| `tipo` | Select |
+| `titulo` | TextCorto |
+
+- Relaciones · parent: clientes_propios, contactos_met, expedientes_judiciales, extrajudiciales · children: gdocu
+- enum `categoria`: -1=Sin Asignar
+- enum `estado`: -1=Sin Asignar
+- enum `tipo`: -1=Sin Asignar
+- campos no enumerados (por tipo): `descripcion`=EditorHtmlSimple, `fecha_expiracion`=DateTime, `fecha_publicacion`=DateTime, `titulo`=TextCorto
+
+### organismos
+
+| Campo | Tipo |
+|---|---|
+| `cp` | CodPostal |
+| `direccion` | TextCorto |
+| `email` | Email |
+| `fax` | Telefono |
+| `iva` | Select |
+| `nacionalidad` | Select |
+| `nif_cif` | Dni |
+| `nombre` | TextCorto |
+| `notas` | EditorHtmlSimple |
+| `poblacion` | TextCorto |
+| `provincia` | Select |
+| `telefono1` | Telefono |
+| `telefono2` | Telefono |
+| `telefono3` | Telefono |
+| `web` | TextCorto |
+
+- Relaciones · parent: expedientes_judiciales, extrajudiciales, igualas · children: calendario, contactos, gdocu, mail
+- enum `iva`: -1=Exento, 10=10%, 19=19%, 21=21%, 4=4%, 8=8%
+- enum `provincia`: 1=Sin Asignar, A Coruña=A Coruña, Albacete=Albacete, Alicante=Alicante, Almería=Almería, Asturias=Asturias, Badajoz=Badajoz, Baleares (Illes)=Baleares (Illes), Barcelona=Barcelona, Burgos=Burgos, Cantabria=Cantabria, Castellón=Castellón, Ceuta=Ceuta, Ciudad Real=Ciudad Real, Cuenca=Cuenca, Cáceres=Cáceres, Cádiz=Cádiz, Córdoba=Córdoba, Girona=Girona, Granada=Granada, Guadalajara=Guadalajara, Guipúzcoa=Guipúzcoa, Huelva=Huelva, Huesca=Huesca, Jaén=Jaén, La Rioja=La Rioja, Las Palmas=Las Palmas, León=León, Lleida=Lleida, Lugo=Lugo, Madrid=Madrid, Melilla=Melilla, Murcia=Murcia, Málaga=Málaga, Navarra=Navarra, Ourense=Ourense, Palencia=Palencia, Pontevedra=Pontevedra, Salamanca=Salamanca, Santa Cruz de Tenerife=Santa Cruz de Tenerife, Segovia=Segovia, Sevilla=Sevilla, Soria=Soria, Tarragona=Tarragona, Teruel=Teruel, Toledo=Toledo, Valencia=Valencia, Valladolid=Valladolid, Vizcaya=Vizcaya, Zamora=Zamora, Zaragoza=Zaragoza, Álava=Álava, Ávila=Ávila
+- campos no enumerados (por tipo): `cp`=CodPostal, `direccion`=TextCorto, `email`=Email, `fax`=Telefono, `nacionalidad`=Select(cuarentena-PII), `nif_cif`=Dni, `nombre`=TextCorto, `notas`=EditorHtmlSimple, `poblacion`=TextCorto, `telefono1`=Telefono, `telefono2`=Telefono, `telefono3`=Telefono, `web`=TextCorto
+
+### panels_widgets
+
+| Campo | Tipo |
+|---|---|
+| `activo` | CheckBox |
+| `datos` | TextArea |
+| `nombre` | TextCorto |
+
+- Relaciones · parent: panels, reports_met · children: reports, reports_met
+- campos no enumerados (por tipo): `activo`=CheckBox, `datos`=TextArea, `nombre`=TextCorto
+
+### paquetes
+
+| Campo | Tipo |
+|---|---|
+| `cuantos` | TextCorto |
+| `nombre` | TextCorto |
+
+- Relaciones · parent:  · children: catalogo_productos, paquetes_catalogo
+- campos no enumerados (por tipo): `cuantos`=TextCorto, `nombre`=TextCorto
+
+### paquetes_catalogo
+
+| Campo | Tipo |
+|---|---|
+| `cuantos` | TextCorto |
+
+- Relaciones · parent: catalogo_conceptos_honorario, paquetes · children: 
+- campos no enumerados (por tipo): `cuantos`=TextCorto
+
+### preclientes
+
+| Campo | Tipo |
+|---|---|
+| `ccc` | CuentaBancaria |
+| `ccc_bic` | TextCorto |
+| `ccc_original` | TextCorto |
+| `contacto` | TextCorto |
+| `cp` | CodPostal |
+| `direccion` | TextCorto |
+| `email` | Email |
+| `fax` | Telefono |
+| `gestor_comercial` | ListaUsuarios |
+| `movil` | Telefono |
+| `nacionalidad` | Select |
+| `nif_cif` | Dni |
+| `nombre` | TextCorto |
+| `nombre_comercial` | TextCorto |
+| `notas` | EditorHtmlSimple |
+| `poblacion` | TextCorto |
+| `provincia` | Select |
+| `telefono1` | Telefono |
+| `telefono2` | Telefono |
+| `telefono3` | Telefono |
+| `web` | TextCorto |
+
+- Relaciones · parent: contactos_met, rgpdlopd · children: actuaciones, calendario, centralita_virtual, colaboradores, comercial_oportunidades, conceptos_honorario, config_facturas, contactos, emailmarketing, gdocu, mail, sms, zoom
+- enum `provincia`: 1=Sin Asignar, A Coruña=A Coruña, Albacete=Albacete, Alicante=Alicante, Almería=Almería, Asturias=Asturias, Badajoz=Badajoz, Baleares (Illes)=Baleares (Illes), Barcelona=Barcelona, Burgos=Burgos, Cantabria=Cantabria, Castellón=Castellón, Ceuta=Ceuta, Ciudad Real=Ciudad Real, Cuenca=Cuenca, Cáceres=Cáceres, Cádiz=Cádiz, Córdoba=Córdoba, Girona=Girona, Granada=Granada, Guadalajara=Guadalajara, Guipúzcoa=Guipúzcoa, Huelva=Huelva, Huesca=Huesca, Jaén=Jaén, La Rioja=La Rioja, Las Palmas=Las Palmas, León=León, Lleida=Lleida, Lugo=Lugo, Madrid=Madrid, Melilla=Melilla, Murcia=Murcia, Málaga=Málaga, Navarra=Navarra, Ourense=Ourense, Palencia=Palencia, Pontevedra=Pontevedra, Salamanca=Salamanca, Santa Cruz de Tenerife=Santa Cruz de Tenerife, Segovia=Segovia, Sevilla=Sevilla, Soria=Soria, Tarragona=Tarragona, Teruel=Teruel, Toledo=Toledo, Valencia=Valencia, Valladolid=Valladolid, Vizcaya=Vizcaya, Zamora=Zamora, Zaragoza=Zaragoza, Álava=Álava, Ávila=Ávila
+- campos no enumerados (por tipo): `ccc`=CuentaBancaria, `ccc_bic`=TextCorto, `ccc_original`=TextCorto, `contacto`=TextCorto, `cp`=CodPostal, `direccion`=TextCorto, `email`=Email, `fax`=Telefono, `gestor_comercial`=ListaUsuarios, `movil`=Telefono, `nacionalidad`=Select(cuarentena-PII), `nif_cif`=Dni, `nombre`=TextCorto, `nombre_comercial`=TextCorto, `notas`=EditorHtmlSimple, `poblacion`=TextCorto, `telefono1`=Telefono, `telefono2`=Telefono, `telefono3`=Telefono, `web`=TextCorto
+
+### procuradores_contrarios
+
+| Campo | Tipo |
+|---|---|
+| `1apellido` | TextCorto |
+| `2apellido` | TextCorto |
+| `Colegio_Profesional` | TextCorto |
+| `Num_Colegiado` | TextCorto |
+| `ccc` | TextCorto |
+| `cp` | CodPostal |
+| `direccion` | TextCorto |
+| `email` | Email |
+| `fax` | Telefono |
+| `iva` | Select |
+| `movil` | Telefono |
+| `nacionalidad` | Select |
+| `nif_cif` | Dni |
+| `nombre` | TextCorto |
+| `notas` | EditorHtmlSimple |
+| `poblacion` | TextCorto |
+| `provincia` | Select |
+| `telefono1` | Telefono |
+| `telefono2` | Telefono |
+| `telefono3` | Telefono |
+| `web` | TextCorto |
+
+- Relaciones · parent: expedientes_judiciales · children: calendario, contactos, expedientes_judiciales, gdocu, mail
+- enum `iva`: -1=Exento, 10=10%, 19=19%, 21=21%, 4=4%, 8=8%
+- enum `provincia`: 1=Sin Asignar, A Coruña=A Coruña, Albacete=Albacete, Alicante=Alicante, Almería=Almería, Asturias=Asturias, Badajoz=Badajoz, Baleares (Illes)=Baleares (Illes), Barcelona=Barcelona, Burgos=Burgos, Cantabria=Cantabria, Castellón=Castellón, Ceuta=Ceuta, Ciudad Real=Ciudad Real, Cuenca=Cuenca, Cáceres=Cáceres, Cádiz=Cádiz, Córdoba=Córdoba, Girona=Girona, Granada=Granada, Guadalajara=Guadalajara, Guipúzcoa=Guipúzcoa, Huelva=Huelva, Huesca=Huesca, Jaén=Jaén, La Rioja=La Rioja, Las Palmas=Las Palmas, León=León, Lleida=Lleida, Lugo=Lugo, Madrid=Madrid, Melilla=Melilla, Murcia=Murcia, Málaga=Málaga, Navarra=Navarra, Ourense=Ourense, Palencia=Palencia, Pontevedra=Pontevedra, Salamanca=Salamanca, Santa Cruz de Tenerife=Santa Cruz de Tenerife, Segovia=Segovia, Sevilla=Sevilla, Soria=Soria, Tarragona=Tarragona, Teruel=Teruel, Toledo=Toledo, Valencia=Valencia, Valladolid=Valladolid, Vizcaya=Vizcaya, Zamora=Zamora, Zaragoza=Zaragoza, Álava=Álava, Ávila=Ávila
+- campos no enumerados (por tipo): `1apellido`=TextCorto, `2apellido`=TextCorto, `Colegio_Profesional`=TextCorto, `Num_Colegiado`=TextCorto, `ccc`=TextCorto, `cp`=CodPostal, `direccion`=TextCorto, `email`=Email, `fax`=Telefono, `movil`=Telefono, `nacionalidad`=Select(cuarentena-PII), `nif_cif`=Dni, `nombre`=TextCorto, `notas`=EditorHtmlSimple, `poblacion`=TextCorto, `telefono1`=Telefono, `telefono2`=Telefono, `telefono3`=Telefono, `web`=TextCorto
+
+### procuradores_propios
+
+| Campo | Tipo |
+|---|---|
+| `1apellido` | TextCorto |
+| `2apellido` | TextCorto |
+| `Colegio_Profesional` | TextCorto |
+| `Num_Colegiado` | TextCorto |
+| `ccc` | TextCorto |
+| `cp` | CodPostal |
+| `direccion` | TextCorto |
+| `email` | Email |
+| `fax` | Telefono |
+| `iva` | Select |
+| `movil` | Telefono |
+| `nacionalidad` | Select |
+| `nif_cif` | Dni |
+| `nombre` | TextCorto |
+| `notas` | EditorHtmlSimple |
+| `poblacion` | TextCorto |
+| `provincia` | Select |
+| `telefono1` | Telefono |
+| `telefono2` | Telefono |
+| `telefono3` | Telefono |
+| `web` | TextCorto |
+
+- Relaciones · parent: expedientes_judiciales, poderes · children: calendario, contactos, expedientes_judiciales, gdocu, mail
+- enum `iva`: -1=Exento, 10=10%, 19=19%, 21=21%, 4=4%, 8=8%
+- enum `provincia`: 1=Sin Asignar, A Coruña=A Coruña, Albacete=Albacete, Alicante=Alicante, Almería=Almería, Asturias=Asturias, Badajoz=Badajoz, Baleares (Illes)=Baleares (Illes), Barcelona=Barcelona, Burgos=Burgos, Cantabria=Cantabria, Castellón=Castellón, Ceuta=Ceuta, Ciudad Real=Ciudad Real, Cuenca=Cuenca, Cáceres=Cáceres, Cádiz=Cádiz, Córdoba=Córdoba, Girona=Girona, Granada=Granada, Guadalajara=Guadalajara, Guipúzcoa=Guipúzcoa, Huelva=Huelva, Huesca=Huesca, Jaén=Jaén, La Rioja=La Rioja, Las Palmas=Las Palmas, León=León, Lleida=Lleida, Lugo=Lugo, Madrid=Madrid, Melilla=Melilla, Murcia=Murcia, Málaga=Málaga, Navarra=Navarra, Ourense=Ourense, Palencia=Palencia, Pontevedra=Pontevedra, Salamanca=Salamanca, Santa Cruz de Tenerife=Santa Cruz de Tenerife, Segovia=Segovia, Sevilla=Sevilla, Soria=Soria, Tarragona=Tarragona, Teruel=Teruel, Toledo=Toledo, Valencia=Valencia, Valladolid=Valladolid, Vizcaya=Vizcaya, Zamora=Zamora, Zaragoza=Zaragoza, Álava=Álava, Ávila=Ávila
+- campos no enumerados (por tipo): `1apellido`=TextCorto, `2apellido`=TextCorto, `Colegio_Profesional`=TextCorto, `Num_Colegiado`=TextCorto, `ccc`=TextCorto, `cp`=CodPostal, `direccion`=TextCorto, `email`=Email, `fax`=Telefono, `movil`=Telefono, `nacionalidad`=Select(cuarentena-PII), `nif_cif`=Dni, `nombre`=TextCorto, `notas`=EditorHtmlSimple, `poblacion`=TextCorto, `telefono1`=Telefono, `telefono2`=Telefono, `telefono3`=Telefono, `web`=TextCorto
+
+### productos
+
+| Campo | Tipo |
+|---|---|
+| `base_imponible` | Moneda |
+| `cantidad` | Moneda |
+| `cod_cuenta_emitidas` | NumEntero |
+| `cod_cuenta_recibidas` | NumEntero |
+| `codigo` | TextCorto |
+| `codigo_emitidas` | NumEntero |
+| `codigo_recibidas` | NumEntero |
+| `descripcion` | TextCorto |
+| `descuento` | Moneda |
+| `descuento_porcentaje` | NumDecimal |
+| `facturado` | NumEntero |
+| `id_catalogo` | ListaElemento |
+| `id_comercial` | NumEntero |
+| `importe_comision` | Moneda |
+| `modelo_impuestos` | Select |
+| `porcentaje_comision` | TextCorto |
+| `precio` | Moneda |
+| `precio_compra` | Moneda |
+| `referencia` | TextCorto |
+| `tipo_concepto` | TextCorto |
+| `tipo_irpf` | Select |
+| `tipo_iva` | Select |
+| `total` | Moneda |
+| `total_irpf_propio` | Moneda |
+| `total_iva_propio` | Moneda |
+
+- Relaciones · parent: catalogo_productos, config_facturas, ipc_aplicado · children: conceptos, conceptos_finance, conceptos_gasto, conceptos_honorario, conceptos_provision, conceptos_recibidas, conceptos_recibidas_honorarios, conceptos_suplido
+- enum `modelo_impuestos`: -1=Ninguno, 111=111, 115=115
+- enum `tipo_irpf`: -1=Exento, 15=15%, 19=19%, 19.5=19,5%, 20=20%, 21=21%, 7=7%
+- enum `tipo_iva`: -1=Exento, 10=10%, 19=19%, 21=21%, 4=4%, 8=8%
+- campos no enumerados (por tipo): `base_imponible`=Moneda, `cantidad`=Moneda, `cod_cuenta_emitidas`=NumEntero, `cod_cuenta_recibidas`=NumEntero, `codigo`=TextCorto, `codigo_emitidas`=NumEntero, `codigo_recibidas`=NumEntero, `descripcion`=TextCorto, `descuento`=Moneda, `descuento_porcentaje`=NumDecimal, `facturado`=NumEntero, `id_catalogo`=ListaElemento, `id_comercial`=NumEntero, `importe_comision`=Moneda, `porcentaje_comision`=TextCorto, `precio`=Moneda, `precio_compra`=Moneda, `referencia`=TextCorto, `tipo_concepto`=TextCorto, `total`=Moneda, `total_irpf_propio`=Moneda, `total_iva_propio`=Moneda
+
+### proveedores
+
+| Campo | Tipo |
+|---|---|
+| `1apellido` | TextCorto |
+| `2apellido` | TextCorto |
+| `ccc` | CuentaBancaria |
+| `ccc_bic` | TextCorto |
+| `ccc_original` | TextCorto |
+| `cp` | CodPostal |
+| `direccion` | TextCorto |
+| `email` | Email |
+| `fax` | Telefono |
+| `forma_pago_vencimientos` | FormaPago |
+| `irpf` | Select |
+| `iva` | Select |
+| `movil` | Telefono |
+| `nacionalidad` | Select |
+| `nif_cif` | Dni |
+| `nombre` | TextCorto |
+| `notas` | EditorHtmlSimple |
+| `poblacion` | TextCorto |
+| `provincia` | Select |
+| `telefono1` | Telefono |
+| `telefono2` | Telefono |
+| `telefono3` | Telefono |
+| `tipo_operaciones_iva` | Select |
+| `usar_criterio_caja` | CheckBox |
+| `web` | TextCorto |
+
+- Relaciones · parent: rgpdlopd · children: banco, calendario, conceptos_recibidas, conceptos_recibidas_gastos, conceptos_recibidas_honorarios, config_facturas, contactos, cuentas_contables, cuentascontables, empleados, facturas_recibidas, gdocu, mail, pagos_proveedores
+- enum `irpf`: -1=Exento, 15=15%, 19=19%, 19.5=19,5%, 20=20%, 21=21%, 7=7%
+- enum `iva`: -1=Exento, 10=10%, 19=19%, 21=21%, 4=4%, 8=8%
+- enum `provincia`: 1=Sin Asignar, A Coruña=A Coruña, Albacete=Albacete, Alicante=Alicante, Almería=Almería, Asturias=Asturias, Badajoz=Badajoz, Baleares (Illes)=Baleares (Illes), Barcelona=Barcelona, Burgos=Burgos, Cantabria=Cantabria, Castellón=Castellón, Ceuta=Ceuta, Ciudad Real=Ciudad Real, Cuenca=Cuenca, Cáceres=Cáceres, Cádiz=Cádiz, Córdoba=Córdoba, Girona=Girona, Granada=Granada, Guadalajara=Guadalajara, Guipúzcoa=Guipúzcoa, Huelva=Huelva, Huesca=Huesca, Jaén=Jaén, La Rioja=La Rioja, Las Palmas=Las Palmas, León=León, Lleida=Lleida, Lugo=Lugo, Madrid=Madrid, Melilla=Melilla, Murcia=Murcia, Málaga=Málaga, Navarra=Navarra, Ourense=Ourense, Palencia=Palencia, Pontevedra=Pontevedra, Salamanca=Salamanca, Santa Cruz de Tenerife=Santa Cruz de Tenerife, Segovia=Segovia, Sevilla=Sevilla, Soria=Soria, Tarragona=Tarragona, Teruel=Teruel, Toledo=Toledo, Valencia=Valencia, Valladolid=Valladolid, Vizcaya=Vizcaya, Zamora=Zamora, Zaragoza=Zaragoza, Álava=Álava, Ávila=Ávila
+- enum `tipo_operaciones_iva`: R1=Operaciones Interiores I.V.A. deducible, R1BI=Operaciones Interiores I.V.A. deducible. Bienes de Inversion, R2=Compensaciones Agrarias, R3=Adq. intracomunitaria de bienes, R4=Inversion del sujeto pasivo, R6=Importaciones, R7=I.V.A. no deducible, R8=Adq. intracomunitaria de servicios
+- campos no enumerados (por tipo): `1apellido`=TextCorto, `2apellido`=TextCorto, `ccc`=CuentaBancaria, `ccc_bic`=TextCorto, `ccc_original`=TextCorto, `cp`=CodPostal, `direccion`=TextCorto, `email`=Email, `fax`=Telefono, `forma_pago_vencimientos`=FormaPago, `movil`=Telefono, `nacionalidad`=Select(cuarentena-PII), `nif_cif`=Dni, `nombre`=TextCorto, `notas`=EditorHtmlSimple, `poblacion`=TextCorto, `telefono1`=Telefono, `telefono2`=Telefono, `telefono3`=Telefono, `usar_criterio_caja`=CheckBox, `web`=TextCorto
+
+### qr
+
+| Campo | Tipo |
+|---|---|
+| `geo` | Geolocalizacion |
+| `ip` | TextCorto |
+| `motivo` | Select |
+| `notas` | TextArea |
+| `tipo` | TextCorto |
+| `ubicacion` | ListaGrupos |
+
+- Relaciones · parent: grupos, usuarios · children: 
+- enum `motivo`: bano=Baño, comida=Comida, desayuno=Desayuno, fumar=Fumar, medico=Medico, otros=Otros, personal=Personal
+- campos no enumerados (por tipo): `geo`=Geolocalizacion, `ip`=TextCorto, `notas`=TextArea, `tipo`=TextCorto, `ubicacion`=ListaGrupos
+
+### reports_met
+
+| Campo | Tipo |
+|---|---|
+| `activo` | CheckBox |
+| `datos` | TextAreaLong |
+| `datos_grafica` | TextAreaLong |
+| `elemento` | TextCorto |
+| `id_carpeta` | Carpetable |
+| `nombre` | TextCorto |
+| `tags` | Tags |
+
+- Relaciones · parent: panels_widgets · children: panels_widgets
+- campos no enumerados (por tipo): `activo`=CheckBox, `datos`=TextAreaLong, `datos_grafica`=TextAreaLong, `elemento`=TextCorto, `id_carpeta`=Carpetable, `nombre`=TextCorto, `tags`=Tags
+
+### seguimientos
+
+| Campo | Tipo |
+|---|---|
+| `asunto` | TextCorto |
+| `documento` | Documento |
+| `duracion` | Duracion |
+| `fechainicio` | DateTime |
+| `notas` | EditorHtmlSimple |
+| `personaasignada` | ListaUsuarios |
+| `tiempoprevistofinalizacion` | Duracion |
+| `tiempotrabajado` | DateTime |
+
+- Relaciones · parent: actuaciones · children: 
+- campos no enumerados (por tipo): `asunto`=TextCorto, `documento`=Documento, `duracion`=Duracion, `fechainicio`=DateTime, `notas`=EditorHtmlSimple, `personaasignada`=ListaUsuarios, `tiempoprevistofinalizacion`=Duracion, `tiempotrabajado`=DateTime
+
+### signatures
+
+| Campo | Tipo |
+|---|---|
+| `body` | TextArea |
+| `log` | TextArea |
+| `log_documents` | TextAreaLong |
+| `signature_id` | TextCorto |
+| `status` | Select |
+| `subject` | TextCorto |
+| `tipo` | TextCorto |
+| `webhook` | TextCorto |
+
+- Relaciones · parent: gdocu, mail · children: signatures_documents
+- enum `status`: Firmado=Firmado, Pendiente=Pendiente, Rechazado=Rechazado
+- campos no enumerados (por tipo): `body`=TextArea, `log`=TextArea, `log_documents`=TextAreaLong, `signature_id`=TextCorto, `subject`=TextCorto, `tipo`=TextCorto, `webhook`=TextCorto
+
+### sms
+
+| Campo | Tipo |
+|---|---|
+| `destinatarios` | TextArea |
+| `elemento` | TextCorto |
+| `estado` | TextCorto |
+| `mensaje` | TextArea |
+| `numero_envios_efectuado` | NumEntero |
+| `numero_envios_solicitado` | NumEntero |
+| `recurrencia` | TextArea |
+| `remitente` | TextCorto |
+| `reporte` | TextArea |
+| `tipo` | Select |
+
+- Relaciones · parent: clientes_contrarios, clientes_propios, colaboradores, comercial_oportunidades, contactos_met, empleados, expedientes_judiciales, extrajudiciales, preclientes, ticket · children: clientes_contrarios, clientes_propios, contactos_met, expedientes_judiciales, extrajudiciales
+- enum `tipo`: push=push, sms=sms, whatsapp=whatsapp
+- campos no enumerados (por tipo): `destinatarios`=TextArea, `elemento`=TextCorto, `estado`=TextCorto, `mensaje`=TextArea, `numero_envios_efectuado`=NumEntero, `numero_envios_solicitado`=NumEntero, `recurrencia`=TextArea, `remitente`=TextCorto, `reporte`=TextArea
+
+### tareas
+
+| Campo | Tipo |
+|---|---|
+| `acceso` | Select |
+| `cliente_relacionado` | TextCorto |
+| `descripcion` | EditorHtmlAvanzado |
+| `duracion_presupuestada` | Duracion |
+| `estado` | Select |
+| `fase` | Select |
+| `fecha_fin` | Date |
+| `fecha_inicio` | DateTime |
+| `hito` | CheckBox |
+| `hora_fin` | Time |
+| `hora_inicio` | Time |
+| `nombre` | TextCorto |
+| `persona_asignada` | ListaUsuarios |
+| `presupuesto` | Moneda |
+| `prioridad` | Select |
+| `progreso` | Select |
+| `propietario` | ListaUsuarios |
+| `sitio_web` | TextCorto |
+| `tipo_tarea` | Select |
+| `unidad_temporal` | Select |
+
+- Relaciones · parent: clientes_propios, proyectos · children: gdocu, mail
+- enum `estado`: Abierta=Abierta, Cerrada=Cerrada
+- enum `fase`: -1=Sin Asignar
+- enum `prioridad`: -1=Sin asignar, 1=1, 10=10, 2=2, 3=3, 4=4, 5=5, 6=6, 7=7, 8=8, 9=9
+- enum `progreso`: 1=0, 10=10, 100=100, 15=15, 20=20, 25=25, 30=30, 35=35, 40=40, 45=45, 5=5, 50=50, 55=55, 60=60, 65=65, 70=70, 75=75, 80=80, 85=85, 90=90, 95=95
+- enum `tipo_tarea`: -1=Desconocido, Error=Error, Error-cliente=Error cliente, Mejora=Mejora pendiente, Mejora-aprobada=Mejora aprobada, Mejora-cliente=Mejora cliente pendiente, Mejora-cliente-aprobada=Mejora cliente aprobada, Sprint=Sprint
+- campos no enumerados (por tipo): `cliente_relacionado`=TextCorto, `descripcion`=EditorHtmlAvanzado, `duracion_presupuestada`=Duracion, `fecha_fin`=Date, `fecha_inicio`=DateTime, `hito`=CheckBox, `hora_fin`=Time, `hora_inicio`=Time, `nombre`=TextCorto, `persona_asignada`=ListaUsuarios, `presupuesto`=Moneda, `propietario`=ListaUsuarios, `sitio_web`=TextCorto
+
+### ticket
+
+| Campo | Tipo |
+|---|---|
+| `emisor` | TextCorto |
+| `exportada` | CheckBox |
+| `exportada_fecha` | DateTime |
+| `fecha` | Date |
+| `numero` | Autoincremental |
+| `numero_ticket` | TextCorto |
+
+- Relaciones · parent: config_facturas · children: cuentas_contables, gdocu, mail, sms
+- campos no enumerados (por tipo): `emisor`=TextCorto, `exportada`=CheckBox, `exportada_fecha`=DateTime, `fecha`=Date, `numero`=Autoincremental, `numero_ticket`=TextCorto
+
+### tickets_nuevo
+
+| Campo | Tipo |
+|---|---|
+| `asunto` | TextCorto |
+| `documento` | Documento |
+| `estado` | Select |
+| `nombre` | TextArea |
+| `numero` | Autoincremental |
+| `tipo_ticket` | ListaElementoSelect |
+
+- Relaciones · parent:  · children: chat, contactos_met, gdocu
+- enum `estado`: Abierto=Abierto, Cerrado=Cerrado
+- campos no enumerados (por tipo): `asunto`=TextCorto, `documento`=Documento, `nombre`=TextArea, `numero`=Autoincremental, `tipo_ticket`=ListaElementoSelect
+
+### tipos_de_ticket
+
+| Campo | Tipo |
+|---|---|
+| `emails` | TextCorto |
+| `nombre` | TextCorto |
+
+- Relaciones · parent:  · children: 
+- campos no enumerados (por tipo): `emails`=TextCorto, `nombre`=TextCorto
+
+### vencimientos
+
+| Campo | Tipo |
+|---|---|
+| `banco` | ListaBancos |
+| `cobrado` | CheckBox |
+| `descripcion` | TextCorto |
+| `descripcion_cargo` | Select |
+| `fecha` | Date |
+| `fecha_impago` | Date |
+| `fecha_vencimiento` | Date |
+| `forma_pago` | Select |
+| `gastos_comision_banco` | Moneda |
+| `gastos_devolucion` | Moneda |
+| `impagado` | CheckBox |
+| `impagado_tipo_impago` | Select |
+| `importe` | Moneda |
+| `orden` | NumEntero |
+| `plazo` | NumEntero |
+| `porcentaje` | TextCorto |
+| `remesar` | CheckBox |
+
+- Relaciones · parent: config_facturas · children: cobros_clientes, pagos_proveedores
+- enum `descripcion_cargo`: 1=Numero factura y fecha vencimiento, 2=Descripcion primera linea factura
+- enum `forma_pago`: 01=Al contado, 03=Recibo, 04=Transferencia, 11=Cheque, 19=Tarjeta, 50=Contrareembolso
+- enum `impagado_tipo_impago`: -1=Sin Asignar, AC01=Número de IBAN incorrecto, AC04=Número de cuenta cancelada, AC06=Cuenta bloqueada, AC13=Error en el tipo de cta del deudor, AG01=La cta no admite adeudos por normativa, AG02=Código de op. o secuencia incorrecto, AM04=Saldo insuficiente, AM05=Cargo u operación duplicada, BE05=Error identificador del acreedor, CNOR=BIC banco acreedor no registrado, DNOR=BIC banco deudor no registrado, FF01=Formato de fichero XML erróneo, FF05=Código de transacción incorrecto, MD01=Mandato no válido / op no autorizada, MD02=Faltan datos o mandato incorrecto, MD06=No conforme con el cargo, MD07=Fallecimiento del deudor, MS02=Razón no especificada por el cliente, MS03=Razón no especificada (prot de datos), RC01=Invalid BIC, RR01=Error en el IBAN del deudor, RR02=Falta el nombre del deudor, RR03=Falta nombre del acreedor, RR04=Error por motivos normativos, SL01=Servicios específicos del banco del deudor
+- campos no enumerados (por tipo): `banco`=ListaBancos, `cobrado`=CheckBox, `descripcion`=TextCorto, `fecha`=Date, `fecha_impago`=Date, `fecha_vencimiento`=Date, `gastos_comision_banco`=Moneda, `gastos_devolucion`=Moneda, `impagado`=CheckBox, `importe`=Moneda, `orden`=NumEntero, `plazo`=NumEntero, `porcentaje`=TextCorto, `remesar`=CheckBox
+
+### zoom
+
+| Campo | Tipo |
+|---|---|
+| `datos` | TextArea |
+| `elemento` | TextCorto |
+| `meetingid` | TextCorto |
+| `miembro` | TextCorto |
+| `pass` | TextCorto |
+| `url_join` | Link |
+| `url_record` | Link |
+| `url_start` | Link |
+
+- Relaciones · parent: actuaciones, clientes_contrarios, clientes_propios, expedientes_judiciales, extrajudiciales, preclientes · children: 
+- campos no enumerados (por tipo): `datos`=TextArea, `elemento`=TextCorto, `meetingid`=TextCorto, `miembro`=TextCorto, `pass`=TextCorto, `url_join`=Link, `url_record`=Link, `url_start`=Link
+
