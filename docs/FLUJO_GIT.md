@@ -62,11 +62,6 @@ fecha: 2026-07-20
 
 > `leak-scan` es el **único** check del CI — **no corre pytest**. Por eso `session_close`
 > (pytest local) es la red real; córrelo antes de mergear, sobre todo si tocas guards o `.py`.
->
-> **En un worktree sin `.env`**, `session_close` sale 1 por los 5 tests ambientales de
-> `test_sudespacho_relations` (= `main`, no regresión) y muere **antes** de imprimir los
-> avisos → interpreta por el `git diff` (docs-only = sin regresión), no lo tomes como fallo
-> bloqueante.
 
 ## 5. Poda e higiene (lo que más se olvida)
 

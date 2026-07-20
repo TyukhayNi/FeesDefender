@@ -824,7 +824,22 @@ def _member(id_: str, nombre: str, email: str = "") -> dict:
     return {"id": id_, "values": values}
 
 
-def test_list_colaboradores_rest_una_pagina(monkeypatch):
+@pytest.fixture
+def _rest_config_env(monkeypatch):
+    """SudespachoConfig.from_env() exige BASE_URL **y** API_KEY.
+
+    _list_colaboradores_rest() es el único helper REST que carga config vía
+    SudespachoConfig.from_env(); el resto lee os.getenv("SUDESPACHO_API_KEY")
+    directamente. Sin estas dos env vars, from_env() lanza SudespachoError —
+    lo que ocurre en cualquier entorno sin .env (worktree, CI). Fijarlas aquí
+    desacopla el test del entorno ambiente; httpx.get está mockeado, así que
+    los valores concretos son irrelevantes.
+    """
+    monkeypatch.setenv("SUDESPACHO_BASE_URL", "https://test.sudespacho.example")
+    monkeypatch.setenv("SUDESPACHO_API_KEY", "test_key_abc")
+
+
+def test_list_colaboradores_rest_una_pagina(_rest_config_env):
     """Lista de colaboradores en una sola página devuelve todos los registros."""
     page_data = _hydra_page(
         [
@@ -843,7 +858,7 @@ def test_list_colaboradores_rest_una_pagina(monkeypatch):
     assert result[1]["email"] == ""
 
 
-def test_list_colaboradores_rest_sin_nombre_ignorado(monkeypatch):
+def test_list_colaboradores_rest_sin_nombre_ignorado(_rest_config_env):
     """Miembros sin campo 'nombre' se ignoran."""
     page_data = _hydra_page(
         [
@@ -858,14 +873,14 @@ def test_list_colaboradores_rest_sin_nombre_ignorado(monkeypatch):
     assert result[0]["id"] == "304"
 
 
-def test_list_colaboradores_rest_http_error(monkeypatch):
+def test_list_colaboradores_rest_http_error(_rest_config_env):
     """Error de red lanza SudespachoRelationsError."""
     with patch("httpx.get", side_effect=httpx.ConnectError("timeout")):
         with pytest.raises(SudespachoRelationsError, match="REST GET colaboradores"):
             _list_colaboradores_rest()
 
 
-def test_list_colaboradores_rest_status_error(monkeypatch):
+def test_list_colaboradores_rest_status_error(_rest_config_env):
     """HTTP 401 lanza SudespachoRelationsError."""
     r = _make_httpx_response({}, status=401)
     with patch("httpx.get", return_value=r):
@@ -873,7 +888,7 @@ def test_list_colaboradores_rest_status_error(monkeypatch):
             _list_colaboradores_rest()
 
 
-def test_list_colaboradores_rest_multi_pagina(monkeypatch):
+def test_list_colaboradores_rest_multi_pagina(_rest_config_env):
     """Con total > PAGE_SIZE, las páginas restantes se descargan en paralelo
     y el resultado final contiene los registros de todas las páginas en orden."""
     page1 = _hydra_page(

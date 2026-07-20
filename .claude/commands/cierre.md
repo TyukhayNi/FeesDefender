@@ -11,8 +11,6 @@ commit/push/merge directo a `main`; el trabajo entra por **rama → PR**.
 1. `python -m scripts.session_close` — pytest (rápido; completo si toca `core/anon/`) + los
    AVISOS (STATUS>400, PLAN ✅-sin-colapsar, ledger>30, trabajo-sin-publicar, PLAN↔git).
    **Leer todos los avisos**, no solo "tests verdes". (El `leak-scan` del CI NO corre pytest.)
-   En un worktree sin `.env`, `session_close` sale 1 por los 5 ambientales de
-   `test_sudespacho_relations` (= `main`); no es regresión — interpreta por el `git diff`.
 2. Estado git: `git branch --show-current`, `git status -sb`, `git worktree list`.
 3. Leer las ~15 primeras líneas de `docs/bitacora/AAAA.md` (patrón del bloque de cierre).
 
