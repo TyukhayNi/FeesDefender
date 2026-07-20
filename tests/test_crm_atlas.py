@@ -442,3 +442,253 @@ def test_select_enum_fields_allowlist_only_select():
 def test_parse_enums_ordered_id_label_only():
     assert parse_enums({"enums": [{"id": "R2", "label": "y", "x": 1}, {"id": "R1", "label": "z"}]}) == \
         [{"id": "R1", "label": "z"}, {"id": "R2", "label": "y"}]
+
+
+# --- Grupo 2B: discover / gate / build / CLI -----------------------------------
+
+def test_discover_element_happy():
+    from core.crm_atlas import discover_element
+    def handler(req):
+        p = req.url.path
+        if p.endswith("/view/config/x/fields"):
+            return httpx.Response(200, json={"items": [
+                {"name": "tipo", "type": "Select", "label": "T", "active": True, "deleted": False},
+                {"name": "resp", "type": "ListaUsuarios", "label": "R", "active": True, "deleted": False}]})
+        if p.endswith("/view/config/x/relations"):
+            return httpx.Response(200, json={"parent": [], "children": ["actuaciones"]})
+        if "/view/enums/x/tipo" in p:
+            return httpx.Response(200, json={"enums": [{"id": "A", "label": "a"}]})
+        return httpx.Response(404)
+    with _mock_client(handler) as c:
+        el = discover_element(c, "x")
+    assert [f["name"] for f in el["fields"]] == ["resp", "tipo"]
+    assert el["enums"] == {"tipo": [{"id": "A", "label": "a"}]}
+    assert el["field_types_no_enumerados"] == {"resp": "ListaUsuarios"}
+    assert el["relations"] == {"parent": [], "children": ["actuaciones"]}
+    assert el["probes"] == {"fields": "view/config/fields", "relations": "ok", "enums": "ok"}
+
+
+def test_discover_element_degrades_relations(monkeypatch):
+    import core.crm_atlas as m
+    monkeypatch.setattr(m.time, "sleep", lambda s: None)
+    monkeypatch.setattr(m, "_jitter", lambda d: d)
+    def handler(req):
+        p = req.url.path
+        if p.endswith("/fields"):
+            return httpx.Response(200, json={"items": []})
+        if p.endswith("/relations"):
+            return httpx.Response(500, json={"detail": "boom"})
+        return httpx.Response(404)
+    with _mock_client(handler) as c:
+        el = m.discover_element(c, "y")
+    assert el["relations"] is None
+    assert el["probes"]["relations"] == "failed"
+    assert el["probes"]["enums"] == "ok"
+
+
+def test_discover_element_probe_4b_uses_client_get(monkeypatch):
+    import core.crm_atlas as m
+    def fake_retry(client, path, **k):
+        if path.endswith("/fields"):
+            return httpx.Response(404)
+        if path.endswith("/relations"):
+            return httpx.Response(200, json={"parent": [], "children": []})
+        return httpx.Response(404)
+    monkeypatch.setattr(m, "get_with_retry", fake_retry)
+    probe_calls = []
+    class _C:
+        def get(self, path, params=None):
+            probe_calls.append(path)
+            return httpx.Response(500, json={"detail": "... The properties are: a,b."})
+    el = m.discover_element(_C(), "x")
+    assert probe_calls and probe_calls[0].endswith("/element_registries/x")
+    assert el["probes"]["fields"] == "500-probe"
+    assert [f["name"] for f in el["fields"]] == ["a", "b"]
+
+
+def test_scan_atlas_for_pii_email_persona_clean_warnings():
+    from core.crm_atlas import scan_atlas_for_pii
+    dirty = {"elements": [{"slug": "u", "enums": {"c": [{"id": "1", "label": "Fulano fulano@x.com"}]}}]}
+    assert any(h.startswith("u.c") and h.endswith("email") for h in scan_atlas_for_pii(dirty))
+    persona = {"elements": [{"slug": "u", "enums": {"c": [{"id": "1", "label": "Maria Gonzalez Ruiz"}]}}]}
+    assert any(h.endswith("parece-persona") for h in scan_atlas_for_pii(persona))
+    clean = {"elements": [{"slug": "y", "enums": {"iva": [{"id": "R1", "label": "Operaciones interiores"}]}}]}
+    assert scan_atlas_for_pii(clean) == []
+    warn = {"elements": [], "warnings": ["algo raro con a@b.com"]}
+    assert any(h.endswith("email") for h in scan_atlas_for_pii(warn))
+
+
+def test_build_atlas_phase_b_metric_and_order():
+    from core.crm_atlas import build_atlas_phase_b
+    results = [
+        {"slug": "b", "probes": {"fields": "ok", "relations": "ok", "enums": "ok"}},
+        {"slug": "a", "probes": {"fields": "ok", "relations": "failed", "enums": "ok"}}]
+    atlas = build_atlas_phase_b({"meta": {}, "summary": {}, "endpoints": []}, results, tenant="tnm")
+    assert [e["slug"] for e in atlas["elements"]] == ["a", "b"]
+    pb = atlas["meta"]["phase_b"]
+    assert pb["ran"] is True and pb["elements_total"] == 2
+    assert pb["elements_ok"] == 1 and pb["elements_degraded"] == 1 and pb["complete"] is False
+
+
+def test_build_atlas_phase_b_circuit_breaker():
+    from core.crm_atlas import build_atlas_phase_b
+    results = [{"slug": s, "probes": {"fields": "failed", "relations": "ok", "enums": "ok"}}
+               for s in ["a", "b", "c"]]
+    atlas = build_atlas_phase_b({"meta": {}, "summary": {}, "endpoints": []}, results, tenant="tnm")
+    assert atlas["meta"]["phase_b"]["circuit_broken"] is True
+
+
+def test_phase_b_deterministic_under_permutation():
+    from core.crm_atlas import build_atlas_phase_b, render_digest
+    import random
+    base = [{"slug": s, "fields": [], "relations": {"parent": [], "children": []},
+             "enums": {}, "field_types_no_enumerados": {},
+             "probes": {"fields": "ok", "relations": "ok", "enums": "ok"}} for s in ["b", "a", "c"]]
+    p2 = list(base)
+    random.Random(1).shuffle(p2)
+    a1 = build_atlas_phase_b({"meta": {}, "summary": {"by_tag": {}}, "endpoints": []}, list(base), tenant="tnm")
+    a2 = build_atlas_phase_b({"meta": {}, "summary": {"by_tag": {}}, "endpoints": []}, p2, tenant="tnm")
+    assert json.dumps(a1, sort_keys=True, ensure_ascii=False) == json.dumps(a2, sort_keys=True, ensure_ascii=False)
+    assert render_markdown(a1) == render_markdown(a2)
+    assert render_digest(a1) == render_digest(a2)
+
+
+def test_render_md_phase_b_degraded_section():
+    from core.crm_atlas import build_atlas_phase_b
+    results = [{"slug": "extrajudiciales_zzz", "fields": [], "relations": None, "enums": {},
+                "field_types_no_enumerados": {},
+                "probes": {"fields": "ok", "relations": "failed", "enums": "ok"}}]
+    md = render_markdown(build_atlas_phase_b(
+        {"meta": {}, "summary": {"by_tag": {}}, "endpoints": []}, results, tenant="tnm"))
+    assert "0/1 resueltos" in md
+    assert "degradado" in md.lower()
+    assert "extrajudiciales_zzz" in md
+    assert md.index("degradado") < md.index("extrajudiciales_zzz")
+
+
+def test_load_previous_atlas_utf8(tmp_path):
+    from core.crm_atlas import load_previous_atlas
+    p = tmp_path / "a.json"
+    p.write_text(json.dumps({"x": "Anio/Categoria|N"}, ensure_ascii=False), encoding="utf-8")
+    assert load_previous_atlas(p)["x"] == "Anio/Categoria|N"
+    assert load_previous_atlas(tmp_path / "nope.json") is None
+
+
+def _cli(monkeypatch, handler):
+    from typer.testing import CliRunner
+    import scripts.crm_atlas as cli
+    monkeypatch.delenv("SUDESPACHO_API_KEY", raising=False)
+    monkeypatch.setattr(cli, "fetch_oas3", lambda base_url=cli.PUBLIC_BASE_URL, **k: copy.deepcopy(_MINI_SPEC))
+    monkeypatch.setattr(cli, "atlas_client",
+                        lambda *a, **k: httpx.Client(transport=httpx.MockTransport(handler), base_url="https://x"))
+    return CliRunner(), cli
+
+
+def _invoke(runner, cli, tmp_path, *extra):
+    out = tmp_path / "a.json"
+    md = tmp_path / "a.md"
+    dig = tmp_path / "d.md"
+    r = runner.invoke(cli.app, ["discover", "--phase", "all",
+                                "--atlas-json", str(out), "--atlas-md", str(md),
+                                "--digest-md", str(dig), *extra])
+    return r, out, md, dig
+
+
+def test_cli_phase_all_writes(tmp_path, monkeypatch):
+    def handler(req):
+        p = req.url.path
+        if p == "/api/elements":
+            return httpx.Response(200, json=[{"label": "Extra", "id": {"value": "extra"}}])
+        if p.endswith("/view/config/extra/fields"):
+            return httpx.Response(200, json={"items": [
+                {"name": "tipo", "type": "Select", "label": "T", "active": True, "deleted": False}]})
+        if p.endswith("/view/config/extra/relations"):
+            return httpx.Response(200, json={"parent": [], "children": []})
+        if "/view/enums/extra/tipo" in p:
+            return httpx.Response(200, json={"enums": [{"id": "A", "label": "Alfa"}]})
+        return httpx.Response(404)
+    runner, cli = _cli(monkeypatch, handler)
+    r, out, md, dig = _invoke(runner, cli, tmp_path)
+    assert r.exit_code == 0, r.output
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert data["meta"]["phase_b"]["elements_total"] == 1
+    assert data["elements"][0]["slug"] == "extra"
+    assert data["elements"][0]["enums"] == {"tipo": [{"id": "A", "label": "Alfa"}]}
+    assert dig.exists() and md.exists()
+
+
+def test_cli_phase_all_aborts_on_401_writes_nothing(tmp_path, monkeypatch):
+    runner, cli = _cli(monkeypatch, lambda req: httpx.Response(401))
+    r, out, md, dig = _invoke(runner, cli, tmp_path)
+    assert r.exit_code != 0
+    assert not out.exists() and not md.exists() and not dig.exists()
+
+
+def test_cli_phase_all_email_blocks_write(tmp_path, monkeypatch):
+    def handler(req):
+        p = req.url.path
+        if p == "/api/elements":
+            return httpx.Response(200, json=[{"label": "E", "id": {"value": "e"}}])
+        if p.endswith("/view/config/e/fields"):
+            return httpx.Response(200, json={"items": [
+                {"name": "c", "type": "Select", "label": "", "active": True, "deleted": False}]})
+        if p.endswith("/view/config/e/relations"):
+            return httpx.Response(200, json={"parent": [], "children": []})
+        if "/view/enums/e/c" in p:
+            return httpx.Response(200, json={"enums": [{"id": "1", "label": "foo bar@correo.com"}]})
+        return httpx.Response(404)
+    runner, cli = _cli(monkeypatch, handler)
+    r, out, md, dig = _invoke(runner, cli, tmp_path)
+    assert r.exit_code != 0
+    assert not out.exists() and not md.exists()
+
+
+def test_cli_phase_all_persona_quarantined(tmp_path, monkeypatch):
+    def handler(req):
+        p = req.url.path
+        if p == "/api/elements":
+            return httpx.Response(200, json=[{"label": "E", "id": {"value": "e"}}])
+        if p.endswith("/view/config/e/fields"):
+            return httpx.Response(200, json={"items": [
+                {"name": "c", "type": "Select", "label": "", "active": True, "deleted": False}]})
+        if p.endswith("/view/config/e/relations"):
+            return httpx.Response(200, json={"parent": [], "children": []})
+        if "/view/enums/e/c" in p:
+            return httpx.Response(200, json={"enums": [{"id": "1", "label": "Maria Gonzalez Ruiz"}]})
+        return httpx.Response(404)
+    runner, cli = _cli(monkeypatch, handler)
+    r, out, md, dig = _invoke(runner, cli, tmp_path)
+    assert r.exit_code == 0, r.output
+    el = json.loads(out.read_text(encoding="utf-8"))["elements"][0]
+    assert "c" not in el["enums"]
+    assert el["field_types_no_enumerados"].get("c") == "Select(cuarentena-PII)"
+
+
+def test_cli_resume_keeps_resolved_retries_degraded(tmp_path, monkeypatch):
+    prev = {"meta": {}, "summary": {}, "endpoints": [], "elements": [
+        {"slug": "a", "fields": [], "relations": {"parent": [], "children": []}, "enums": {},
+         "field_types_no_enumerados": {}, "probes": {"fields": "ok", "relations": "ok", "enums": "ok"}},
+        {"slug": "b", "fields": [], "relations": None, "enums": {},
+         "field_types_no_enumerados": {}, "probes": {"fields": "ok", "relations": "failed", "enums": "ok"}}]}
+    out = tmp_path / "a.json"
+    md = tmp_path / "a.md"
+    dig = tmp_path / "d.md"
+    out.write_text(json.dumps(prev), encoding="utf-8")
+    def handler(req):
+        p = req.url.path
+        if p == "/api/elements":
+            return httpx.Response(200, json=[{"label": "A", "id": {"value": "a"}},
+                                             {"label": "B", "id": {"value": "b"}}])
+        if p.endswith("/fields"):
+            return httpx.Response(200, json={"items": []})
+        if p.endswith("/relations"):
+            return httpx.Response(200, json={"parent": [], "children": []})
+        return httpx.Response(404)
+    runner, cli = _cli(monkeypatch, handler)
+    r = runner.invoke(cli.app, ["discover", "--phase", "all", "--resume",
+                                "--atlas-json", str(out), "--atlas-md", str(md), "--digest-md", str(dig)])
+    assert r.exit_code == 0, r.output
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert {e["slug"] for e in data["elements"]} == {"a", "b"}
+    b = next(e for e in data["elements"] if e["slug"] == "b")
+    assert b["relations"] == {"parent": [], "children": []} and b["probes"]["relations"] == "ok"

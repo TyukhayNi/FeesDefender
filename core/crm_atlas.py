@@ -444,6 +444,47 @@ def render_markdown(atlas: dict) -> str:
         for o in sorted(orphans, key=lambda x: x["path"]):
             lines.append(f"| `{_md_escape(o['path'])}` | {', '.join(o.get('declared_keys', []))} |")
         lines.append("")
+
+    # Fase B — esquema por elemento
+    elements = atlas.get("elements", [])
+    if elements:
+        pb = meta.get("phase_b", {})
+        total = pb.get("elements_total", len(elements))
+        ok = pb.get("elements_ok", "?")
+        lines.append(f"## Esquema por elemento — {ok}/{total} resueltos")
+        lines.append("")
+        degraded = [e for e in elements if "failed" in (e.get("probes") or {}).values()]
+        if degraded:
+            lines.append("### Elementos con descubrimiento degradado")
+            lines.append("")
+            lines.append("| Elemento | Sondas fallidas |")
+            lines.append("|---|---|")
+            for e in degraded:
+                failed = [k for k, v in (e.get("probes") or {}).items() if v == "failed"]
+                lines.append(f"| `{_md_escape(e['slug'])}` | {', '.join(sorted(failed))} |")
+            lines.append("")
+        for e in elements:
+            lines.append(f"### {_md_escape(e['slug'])}")
+            lines.append("")
+            flds = e.get("fields") or []
+            if flds:
+                lines.append("| Campo | Tipo |")
+                lines.append("|---|---|")
+                for f in flds:
+                    lines.append(f"| `{_md_escape(f.get('name'))}` | {_md_escape(f.get('type') or '')} |")
+                lines.append("")
+            rel = e.get("relations")
+            if rel:
+                lines.append(f"- Relaciones · parent: {', '.join(rel.get('parent', []))} · "
+                             f"children: {', '.join(rel.get('children', []))}")
+            for prop, vals in (e.get("enums") or {}).items():
+                labs = ", ".join(_md_escape(f"{v.get('id')}={v.get('label')}") for v in vals)
+                lines.append(f"- enum `{_md_escape(prop)}`: {labs}")
+            ftne = e.get("field_types_no_enumerados") or {}
+            if ftne:
+                lines.append(f"- campos no enumerados (por tipo): "
+                             + ", ".join(f"`{k}`={v}" for k, v in sorted(ftne.items())))
+            lines.append("")
     return "\n".join(lines) + "\n"
 
 
@@ -644,3 +685,176 @@ def parse_enums(payload: Any) -> list[dict]:
     enums = payload.get("enums", []) if isinstance(payload, dict) else []
     out = [{"id": e.get("id"), "label": e.get("label")} for e in enums if isinstance(e, dict)]
     return sorted(out, key=lambda e: str(e.get("id")))
+
+
+# --- orquestación por elemento ----------------------------------------------
+
+def discover_element(client: httpx.Client, slug: str) -> dict:
+    """Descubre el esquema de un elemento. Degrada por sub-llamada (no aborta).
+
+    4a/5a/5b vía `get_with_retry`; 4b (probe) vía `client.get` directo (su 500 es
+    la respuesta esperada). `relations=None` si falló; los campos no-`Select` se
+    registran por tipo en `field_types_no_enumerados` (sus valores nunca se piden).
+    """
+    probes = {"fields": "failed", "relations": "failed", "enums": "ok"}
+    fields: list[Field] = []
+    # 4a — view/config/fields
+    try:
+        r = get_with_retry(client, f"/api/view/config/{slug}/fields")
+        if r.status_code == 200:
+            fields = parse_fields_config(r.json())
+            probes["fields"] = "view/config/fields"
+    except CrmAtlasError:
+        pass
+    # 4b — fallback (probe de propiedad inválida; SIN capa de reintento)
+    if probes["fields"] == "failed":
+        try:
+            rp = client.get(f"/api/element_registries/{slug}",
+                            params={"properties[0]": "zzz__invalid_probe__"})
+            names = parse_invalid_property_probe(rp)
+            if names is not None:
+                fields = [Field(name=n, type=None, label=None, source="500-probe")
+                          for n in sorted(names)]
+                probes["fields"] = "500-probe"
+        except Exception:  # noqa: BLE001 — degradación, nunca aborta
+            pass
+    # 5a — relaciones
+    relations = None
+    try:
+        r = get_with_retry(client, f"/api/view/config/{slug}/relations")
+        if r.status_code == 200:
+            relations = parse_relations_config(r.json())
+            probes["relations"] = "ok"
+    except CrmAtlasError:
+        relations = None
+    # reparto de campos + 5b enums (solo Select)
+    field_types_no_enumerados = {f.name: f.type for f in fields if f.type != SELECT_TYPE}
+    enums: dict[str, list] = {}
+    for prop in select_enum_fields(fields):
+        try:
+            r = get_with_retry(client, f"/api/view/enums/{slug}/{prop}")
+            if r.status_code == 200:
+                vals = parse_enums(r.json())
+                if vals:
+                    enums[prop] = vals
+            else:
+                probes["enums"] = "failed"
+        except CrmAtlasError:
+            probes["enums"] = "failed"
+    return {
+        "slug": slug,
+        "fields": [asdict(f) for f in fields],
+        "relations": relations,
+        "enums": enums,
+        "field_types_no_enumerados": field_types_no_enumerados,
+        "probes": probes,
+    }
+
+
+def is_resolved(el: dict) -> bool:
+    """Un elemento está resuelto si ninguna sonda falló (para --resume)."""
+    return "failed" not in (el.get("probes") or {}).values()
+
+
+# --- gate anti-PII ----------------------------------------------------------
+
+_EMAIL_RE = re.compile(r"[\w.+-]+\s*@\s*[\w-]+(?:\s*\.\s*[\w]+)+")
+
+
+def _parece_persona(s: str) -> bool:
+    """Heurística: 3-4 tokens Title-Case, sin dígitos ni acrónimos (nombre completo).
+
+    Deliberadamente NO marca 1-2 tokens (evita falsos positivos con provincias/países
+    como 'A Coruña') ni tokens ALL-CAPS (códigos) ni con dígitos. Es un backstop sobre
+    la barrera primaria (denylist `Lista*`), no el detector principal.
+    """
+    if not s:
+        return False
+    toks = s.split()
+    if not (3 <= len(toks) <= 4):
+        return False
+    for t in toks:
+        if any(ch.isdigit() for ch in t):
+            return False
+        if not (t[:1].isupper() and not t.isupper()):
+            return False
+    return True
+
+
+def scan_atlas_for_pii(atlas: dict) -> list[str]:
+    """Gate anti-PII: EMAIL (regex, bloqueante) + heurística de persona (→ cuarentena).
+
+    Devuelve hits `"{slug}.{prop}: email|parece-persona"`; sin volcar el valor.
+    Escanea `enums` y `warnings`. NO se confía en leak-scan (salta docs/).
+    """
+    hits: list[str] = []
+    for el in atlas.get("elements", []):
+        slug = el.get("slug", "?")
+        for prop, vals in (el.get("enums") or {}).items():
+            for v in vals:
+                blob = f"{v.get('id', '')} {v.get('label', '')}"
+                if _EMAIL_RE.search(blob):
+                    hits.append(f"{slug}.{prop}: email")
+                    break
+                if _parece_persona(str(v.get("label", ""))):
+                    hits.append(f"{slug}.{prop}: parece-persona")
+                    break
+    for w in atlas.get("warnings", []):
+        if _EMAIL_RE.search(str(w)):
+            hits.append("warnings: email")
+    return hits
+
+
+def quarantine_person_enums(atlas: dict) -> int:
+    """Mueve a `field_types_no_enumerados` los enums `Select` con pinta de persona.
+
+    No borra información de esquema (el campo sigue registrado por tipo), pero sus
+    VALORES no se vuelcan. Devuelve cuántos enums se pusieron en cuarentena.
+    """
+    moved = 0
+    for el in atlas.get("elements", []):
+        enums = el.get("enums") or {}
+        to_move = [p for p, vals in enums.items()
+                   if any(_parece_persona(str(v.get("label", ""))) for v in vals)]
+        for p in to_move:
+            el.setdefault("field_types_no_enumerados", {})[p] = "Select(cuarentena-PII)"
+            del enums[p]
+            moved += 1
+    return moved
+
+
+# --- build + resume ---------------------------------------------------------
+
+def build_atlas_phase_b(phase_a_atlas: dict, elements_results: list, *, tenant: str) -> dict:
+    """Fusiona los resultados por elemento sobre el atlas de Fase A (hereda meta/summary/endpoints).
+
+    `meta.phase_b` = métrica de completitud; `complete` solo si 0 degradados.
+    `circuit_broken` si >50% degradados (fallo probablemente global → la CLI aborta).
+    """
+    atlas = dict(phase_a_atlas)
+    meta = dict(atlas.get("meta", {}))
+    meta["tenant"] = tenant
+    results = sorted([r for r in elements_results if r], key=lambda e: e["slug"])
+    n_deg = sum(1 for r in results if not is_resolved(r))
+    total = len(results)
+    meta["phase_b"] = {
+        "ran": True,
+        "elements_total": total,
+        "elements_ok": total - n_deg,
+        "elements_degraded": n_deg,
+        "complete": n_deg == 0,
+        "circuit_broken": total > 0 and n_deg > total // 2,
+    }
+    atlas["meta"] = meta
+    atlas["elements"] = results
+    atlas["warnings"] = sorted(atlas.get("warnings", []))
+    return atlas
+
+
+def load_previous_atlas(path) -> dict | None:
+    """Lee el atlas.json previo (utf-8 explícito) para --resume. None si no existe."""
+    from pathlib import Path
+    p = Path(path)
+    if not p.exists():
+        return None
+    return json.loads(p.read_text(encoding="utf-8"))

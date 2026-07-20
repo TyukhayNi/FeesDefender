@@ -155,7 +155,13 @@ def escanear_formas(paths: list[str], repo: Path = REPO_DEFECTO) -> tuple[list[s
     avisos: list[str] = []
     for raw in paths:
         p = _norm(raw)
-        if re.search(r"(^|/)(tests|docs|\.claude)/", p) or p.endswith(".example"):
+        # Excepción a la exención de docs/: el atlas del CRM es GENERADO desde datos
+        # del tenant → SÍ se escanea (un enum puede traer email del personal; el
+        # gate del generador es la barrera dura, esto es la red del hook).
+        _es_atlas_crm = "docs/crm_atlas/" in p or p.endswith("docs/CRM_SUDESPACHO_ATLAS.md")
+        if not _es_atlas_crm and (
+            re.search(r"(^|/)(tests|docs|\.claude)/", p) or p.endswith(".example")
+        ):
             continue
         fp = repo / raw
         if not fp.is_file():
