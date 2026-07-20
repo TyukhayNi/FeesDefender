@@ -20,6 +20,25 @@ Precedentes de conocimiento: `docs/INTEGRACION_SUDESPACHO.md`, `docs/ARQUITECTUR
 | **Ubicación del código** | `core/crm_atlas.py` (lógica pura, regla 3 capas) + `scripts/crm_atlas.py` (CLI Typer) |
 | **Estratificación con docs existentes** | Atlas = capa de **verdad cruda generada**; `INTEGRACION`/`ARQUITECTURA`/referencia común = **doctrina a mano** que lo cita. No compiten, no se duplican |
 
+## 0.bis Estado empírico (validado en vivo 2026-07-20)
+
+Fase A **construida, testeada y corrida** (PR en rama; `core/crm_atlas.py` + `scripts/crm_atlas.py`
++ `tests/test_crm_atlas.py`). Los mecanismos de Fase B **validados en vivo** con la `x-api-key`.
+
+| Hecho | Valor confirmado |
+|---|---|
+| Credencial | `SUDESPACHO_API_KEY` es un **secreto de Windows** (variable de entorno de usuario); Python la hereda por `os.environ` al arrancar. `core/config.py` hace `load_dotenv(override=False)` → el env del SO gana. **Ya presente en la sesión** (122 chars) sin `.env` en el worktree |
+| Base URL | No es secreto: constante pública `https://api-crm-commons-pro.sudespacho.biz` (la pone el harness) |
+| Endpoints (Fase A) | **548 operaciones** · **486 paths** declarados (424 con operación + **62 huérfanos** solo-`parameters`, capturados) · **125 módulos** (tags). El tenant creció desde 466 (2026-05-06) |
+| Catálogo de elementos | `GET /api/elements` → 200 · **89 elementos** · slug en `item["id"]["value"]`, nombre en `item["label"]` |
+| Campos | `view/config/{el}/fields` → 200 con `type` por campo (verificado: `extrajudiciales`, 34 campos). Probe inválido → 500 con nombres (fallback), también verificado |
+| Relaciones | `view/config/{el}/relations` → 200 `{parent,children}` (verificado: `extrajudiciales`) |
+| Enums | `view/enums/{el}/{prop}` → 200 `{enums:[{id,label}]}` (verificado) |
+| Legacy `@token`/PHPSESSID | **No presentes** y **no necesarios** para el atlas (solo escritura/frontal PHP) |
+
+**Conclusión:** la Fase B es ejecutable ya, sin más input — la key vive en el entorno de la sesión
+y todos los endpoints de descubrimiento responden con `x-api-key`.
+
 ## 1. Propósito y alcance
 
 Producir un **artefacto generado, exhaustivo y re-ejecutable** que sea la foto completa de la
@@ -43,25 +62,29 @@ escribe nada en el CRM, NO se construye un cliente de uso general (eso ya es `co
 
 Cinco fuentes, todas de **lectura**; ninguna crea registros de prueba.
 
+> **✅ Validación en vivo 2026-07-20** (con la `x-api-key` del entorno; ver §0.bis): los 5
+> mecanismos devuelven 200/500 como se espera. Las formas de payload de abajo son las **reales**,
+> ya confirmadas — no supuestas.
+
 | # | Fuente | Método | Da | Auth | Fase |
 |---|---|---|---|---|---|
-| 1 | `GET /api/docs.json` | GET | Los ~466 endpoints: método, path, params, auth, schema req/resp, tags | **Pública** | A |
+| 1 | `GET /api/docs.json` | GET | Los **486** endpoints: método, path, params, auth, schema req/resp, tags | **Pública** | A |
 | 2 | Portal `developers.sudespacho.net/docs/api-crm/{slug}` | GET | Nombre humano + URL de doc por operación (enriquecimiento **opcional**) | Pública | A |
-| 3 | `GET /api/elements` | GET | Catálogo de slugs de elemento activos en el tenant (~130–200) | `x-api-key` | B |
-| 4a | `GET /api/view/complete/{element}` (preferida) | GET | Campos del elemento con tipo/label (más rico) | `x-api-key` | B |
-| 4b | Probe de propiedad inválida (§0.3 de `INTEGRACION`) | GET → 500 | Lista completa de **nombres** de campo (fallback garantizado) | `x-api-key` | B |
-| 5a | `GET /api/view/config/{element}/relations` | GET | Relaciones válidas del elemento y su dirección | `x-api-key` | B |
-| 5b | `GET /api/view/enums/{element}/{propiedad}` | GET | Valores `{id,label}` de un campo select | `x-api-key` | B |
+| 3 | `GET /api/elements` | GET | Catálogo del tenant: **89 elementos**, cada uno `{"label","id":{"value":slug}}` (slug en `id.value`) | `x-api-key` | B |
+| 4a | `GET /api/view/config/{element}/fields` (**primaria**) | GET | `{"items":[{id,name,label,type,active,deleted}]}` — campos **con tipo** (`Moneda`,`Date`,`Enum`…) | `x-api-key` | B |
+| 4b | Probe de propiedad inválida (§0.3 de `INTEGRACION`) | GET → 500 | Lista de **nombres** de campo (fallback si 4a falla) | `x-api-key` | B |
+| 5a | `GET /api/view/config/{element}/relations` | GET | `{"parent":[...],"children":[...]}` — slugs relacionados por dirección | `x-api-key` | B |
+| 5b | `GET /api/view/enums/{element}/{propiedad}` | GET | `{"enums":[{id,label}]}` de un campo select | `x-api-key` | B |
 
 **Notas de fuente:**
-- **1 es pública** (verificado 2026-07-20 con WebFetch sin credenciales). Es el mayor
-  de-riesgo del proyecto: el inventario de endpoints no depende de tener `.env`.
-- **4a preferida sobre 4b**: `view/complete` da tipo y label; el probe (4b) solo da nombres,
-  pero es el mecanismo ya confirmado en vivo (§0.3) y sirve de fallback si `view/complete` falla.
-- **5b (enums)**: para no lanzar `view/enums` sobre todos los campos, se usan los campos que
-  4a marque como *select*; si 4a no está disponible para un elemento, se degrada a probar
-  `view/enums` solo sobre los campos y se conservan los que devuelvan enum (acotado por el
-  límite de concurrencia). Endpoint verificado 2026-07-12 (referencia común El Contable §5).
+- **1 es pública** (verificado 2026-07-20 con WebFetch **y** con httpx local, sin credenciales).
+  Es el mayor de-riesgo: el inventario de endpoints no depende de tener `.env`.
+- **4a primaria sobre 4b**: `view/config/{el}/fields` da nombre + **tipo** + label + active/deleted
+  (verificado sobre `extrajudiciales`: 34 campos con tipo). El probe (4b) solo da nombres y queda
+  como fallback si 4a falla para algún elemento.
+- **5b (enums)**: los campos select se identifican por el `type` que devuelve **4a** (p. ej. `Enum`),
+  y solo sobre esos se llama `view/enums` — así se evita sondear todos los campos. Verificado
+  2026-07-20 (`facturas_recibidas/tipo_operaciones_iva` → `{enums:[{id,label}]}`).
 - **2 es opcional**: el portal es casi con seguridad un Docusaurus generado desde el mismo
   OpenAPI (slug `get-activities-collection` es el patrón openapi→docusaurus), así que aporta
   poco sobre el spec. Se limita a **enlazar** cada path a su página; no se scrapea contenido.
@@ -74,12 +97,13 @@ Regla 3 capas: lógica en `core/`, la CLI solo orquesta.
 core/crm_atlas.py            # lógica pura, funciones testeables offline
     fetch_oas3(client)                 -> dict            # baja /api/docs.json
     parse_oas3(spec) -> list[Endpoint]                    # normaliza los 466 paths
-    fetch_elements(client) -> list[str]                   # /api/elements → slugs
+    fetch_elements(client) -> list[str]                   # /api/elements → slugs (item["id"]["value"])
     discover_element(client, slug) -> ElementSchema       # orquesta 4a/4b + 5a + 5b por elemento
-        parse_complete_view(payload) -> list[Field]
-        parse_invalid_property_probe(detail_500) -> list[str]   # "...properties are: a,b,c"
-        parse_relations_config(payload) -> list[Relation]
-        parse_enums(payload) -> list[EnumValue]
+        parse_fields_config(payload) -> list[Field]        # 4a primaria: {"items":[{name,type,label,...}]}
+        parse_invalid_property_probe(detail_500) -> list[str]   # 4b fallback: "...properties are: a,b,c"
+        parse_relations_config(payload) -> list[Relation]  # 5a: {"parent":[...],"children":[...]}
+        parse_enums(payload) -> list[EnumValue]            # 5b: {"enums":[{id,label}]}
+        select_enum_fields(fields) -> list[str]            # campos cuyo type es Enum → a 5b
     build_atlas(endpoints, elements, meta) -> Atlas       # dataclass → dict serializable
     render_markdown(atlas) -> str                         # atlas.json → CRM_SUDESPACHO_ATLAS.md
 
@@ -262,23 +286,29 @@ en su `securityScheme` (la guía en prosa y el spec no concuerdan). Cambio menor
 
 ## 13. Riesgos y verificación en primera corrida
 
-- `view/config/{element}/relations` está **documentado (OAS3)** pero no verificado en vivo en
-  todos los elementos → la primera corrida de Fase B **confirma** su comportamiento y, si falla,
-  cae a `warnings` sin romper. Anotar el resultado en `INTEGRACION`/`DEAD_ENDS` (regla: no marcar
-  dead end sin confirmación de Nikolai).
-- `view/complete/{element}` (4a) puede no existir para todos los elementos → fallback al probe (4b).
-- `/api/elements` puede devolver un shape distinto al documentado (`ARQUITECTURA` §3.8) → el
-  parser tolera lista y dict.
-- Credenciales de Fase B: este worktree no hereda `.env` (worktrees no lo heredan). Antes de la
-  Fase B, hacer disponible `SUDESPACHO_API_KEY` (+ `/renovar-php` si hace falta `@token`).
+Los riesgos originales (¿existe `view/config/relations`? ¿shape de `/api/elements`? ¿credenciales?)
+**quedaron resueltos por la validación en vivo del 2026-07-20** (ver §0.bis). Riesgos residuales:
+
+- **`view/config/{el}/fields` puede no existir para algún elemento** (verificado en `extrajudiciales`,
+  no en los 89) → fallback al probe (4b); si ambos fallan, `warnings` + `fields: []`, sin abortar.
+- **Enums**: el valor exacto del `type` que marca "select" (¿`Enum`? ¿otro?) se fija en la 1ª corrida
+  inspeccionando los tipos reales de los 89 elementos; `select_enum_fields` se calibra con eso.
+- **Volumen**: 89 elementos × (1 fields + 1 relations + N enums) ≈ pocos cientos de GETs. Concurrencia
+  limitada + backoff (§7).
+- **Higiene**: aunque el atlas es solo esquema, los **labels de enum** o **nombres de campo** de
+  elementos como `usuarios`/`personal` podrían nombrar personas del despacho (ya documentadas). No es
+  PII de tercero, pero el test de higiene (§10) corre igual sobre el atlas final antes del commit.
+- Anotar cualquier endpoint que falle en `INTEGRACION`/`DEAD_ENDS` (regla: no marcar dead end sin
+  confirmación de Nikolai).
 
 ## 14. Plan de entrega por fases
 
-1. **Fase A (pública):** `core.crm_atlas` (fetch/parse OAS3 + build + render) + `scripts.crm_atlas
-   discover --phase a` + tests offline. Corre sin credenciales → primer `atlas.json`/`.md` con los
-   ~466 endpoints. **Da valor inmediato hoy.**
-2. **Fase B (autenticada):** catálogo de elementos + `discover_element` (4a/4b/5a/5b) + degradación
-   + resume + tests. Corrida en vivo con `x-api-key` → completa `elements[]`.
+1. **Fase A (pública):** ✅ **HECHA** (commit `87ff113` en rama) — `core.crm_atlas` (fetch/parse OAS3
+   + build + render) + `scripts.crm_atlas discover --phase a` + 11 tests offline. Corrida sin
+   credenciales → `atlas.json`/`.md` con 548 operaciones / 486 paths / 125 módulos.
+2. **Fase B (autenticada):** catálogo de elementos (89) + `discover_element` (4a `fields` primaria /
+   4b probe fallback / 5a relations / 5b enums) + `select_enum_fields` + degradación + resume + tests.
+   Corrida en vivo con `x-api-key` (ya en el entorno) → completa `elements[]`. **Sin bloqueos** (§0.bis).
 3. **Integración doc:** cross-links en los 3 docs + `CLAUDE.md`; corrección de doc-hygiene §11;
    `--also-elcontable` + PR en El Contable.
 
