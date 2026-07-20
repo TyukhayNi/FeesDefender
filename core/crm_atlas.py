@@ -62,6 +62,8 @@ class Param:
     required: bool
     type: str | None
     description: str | None
+    enum: list | None = None
+    default: Any = None
 
 
 @dataclass
@@ -77,6 +79,7 @@ class Endpoint:
     request_schema: str | None
     response_codes: list[str]
     dev_doc_url: str | None
+    deprecated: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -104,7 +107,10 @@ def operation_id_to_dev_slug(op_id: str) -> str:
     s = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", s)
     # frontera acrónimo (HTMLPage → HTML Page)
     s = re.sub(r"(?<=[A-Z])(?=[A-Z][a-z])", " ", s)
-    return "-".join(s.lower().split())
+    # colapsar toda tanda de no-alfanuméricos a un solo '-' (kebab lodash);
+    # evita paréntesis y guiones dobles que dan 404 en el portal.
+    s = re.sub(r"[^0-9a-zA-Z]+", "-", s.lower())
+    return s.strip("-")
 
 
 def _resolve_ref(spec: dict, ref: str) -> dict:
@@ -133,12 +139,16 @@ def _parse_param(spec: dict, raw: Any) -> Param:
         return Param(name="", location="", required=False, type=None, description=None)
     if "$ref" in raw:
         raw = _resolve_ref(spec, raw["$ref"])
+    schema = raw.get("schema", {})
+    schema = schema if isinstance(schema, dict) else {}
     return Param(
         name=raw.get("name", ""),
         location=raw.get("in", ""),
         required=bool(raw.get("required", False)),
-        type=_param_type(raw.get("schema", {})),
+        type=_param_type(schema),
         description=_clean(raw.get("description")),
+        enum=schema.get("enum"),
+        default=schema.get("default"),
     )
 
 
@@ -165,11 +175,18 @@ def _request_schema(spec: dict, op: dict) -> str | None:
     content = body.get("content", {})
     if not isinstance(content, dict):
         return None
-    for ctype in ("application/json", "application/ld+json"):
+    for ctype in ("application/json", "application/ld+json",
+                  "application/merge-patch+json", "multipart/form-data"):
         ct = content.get(ctype, {})
         schema = ct.get("schema", {}) if isinstance(ct, dict) else {}
         if not isinstance(schema, dict):
             continue
+        for comp in ("allOf", "oneOf", "anyOf"):
+            parts = schema.get(comp)
+            if isinstance(parts, list) and parts:
+                first = parts[0]
+                if isinstance(first, dict) and "$ref" in first:
+                    return first["$ref"].rsplit("/", 1)[-1]
         if "$ref" in schema:
             return schema["$ref"].rsplit("/", 1)[-1]
         if schema.get("type"):
@@ -213,10 +230,11 @@ def parse_oas3(spec: dict, *, dev_links: bool = True) -> list[Endpoint]:
                     request_schema=_request_schema(spec, op),
                     response_codes=sorted((op.get("responses") or {}).keys()),
                     dev_doc_url=(
-                        f"{DEV_PORTAL_BASE}/{operation_id_to_dev_slug(op_id)}"
+                        f"{DEV_PORTAL_BASE}/{operation_id_to_dev_slug(op_id)}/"
                         if dev_links and op_id
                         else None
                     ),
+                    deprecated=bool(op.get("deprecated", False)),
                 )
             )
     return endpoints
@@ -427,6 +445,46 @@ def render_markdown(atlas: dict) -> str:
             lines.append(f"| `{_md_escape(o['path'])}` | {', '.join(o.get('declared_keys', []))} |")
         lines.append("")
     return "\n".join(lines) + "\n"
+
+
+def render_digest(atlas: dict) -> str:
+    """Digest de deriva (~100-200 líneas): superficie legible en `git diff`.
+
+    Por módulo (tag): nº de ops. Por elemento: nº de campos + hash del esquema.
+    Es el artefacto commiteado cuyo diff se REVISA (el `atlas.json` es demasiado
+    grande; el `.md` es para leer, no para revisar el diff).
+    """
+    meta = atlas.get("meta", {})
+    summ = atlas.get("summary", {})
+    out: list[str] = []
+    out.append("# Digest del atlas del CRM sudespacho")
+    out.append("")
+    out.append("> Superficie de DERIVA (legible en diff). Regenerar: "
+               "`python -m scripts.crm_atlas discover`. NO editar a mano.")
+    out.append("")
+    out.append(f"## Digest — tenant `{meta.get('tenant', '?')}`")
+    out.append("")
+    out.append(f"- endpoints: {summ.get('total_operations', '?')} ops / "
+               f"{summ.get('total_path_keys', '?')} paths "
+               f"({summ.get('paths_without_operations', 0)} huérfanos)")
+    out.append("")
+    out.append("### Endpoints por módulo")
+    for tag, n in summ.get("by_tag", {}).items():
+        out.append(f"- {tag}: {n}")
+    elements = atlas.get("elements", [])
+    if elements:
+        out.append("")
+        out.append("### Elementos (campos · hash de esquema)")
+        for el in elements:
+            blob = json.dumps(
+                {"fields": el.get("fields"), "relations": el.get("relations"),
+                 "enums": el.get("enums")},
+                sort_keys=True, ensure_ascii=False,
+            )
+            import hashlib
+            h = hashlib.sha256(blob.encode("utf-8")).hexdigest()[:12]
+            out.append(f"- {el['slug']}: {len(el.get('fields') or [])} campos · {h}")
+    return "\n".join(out) + "\n"
 
 
 def _security_header(oas: dict) -> str:

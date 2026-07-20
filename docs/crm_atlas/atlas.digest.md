@@ -1,0 +1,134 @@
+# Digest del atlas del CRM sudespacho
+
+> Superficie de DERIVA (legible en diff). Regenerar: `python -m scripts.crm_atlas discover`. NO editar a mano.
+
+## Digest — tenant `tnm`
+
+- endpoints: 548 ops / 486 paths (62 huérfanos)
+
+### Endpoints por módulo
+- Absences: 6
+- AbsencesConfig: 4
+- AccessRegister: 3
+- AccessRegisterForEmployees: 1
+- Accounting - Configuration: 4
+- Accounting - Element Accounts: 3
+- Accounting - Export Form Lists: 2
+- Accounting Accounts: 5
+- Accounting Export: 3
+- Activities: 6
+- ActivityTotals: 1
+- Articles: 9
+- Audit Registers: 1
+- Auth - ApiKey: 1
+- Auth - Cache: 4
+- Auth - Groups: 5
+- Auth - IP: 3
+- Auth - Online: 3
+- Auth - Permissions: 4
+- Auth - PersonalConfig: 3
+- Auth - Profile: 3
+- Auth - Roles: 3
+- Auth - UserGroups: 5
+- Auth - Users: 7
+- Azure: 7
+- CalculateAllActivitiesTotals: 1
+- Calendar: 1
+- Certified Mail: 2
+- Certified Sms: 2
+- Chat: 5
+- Client: 1
+- Companies: 8
+- Concepts: 12
+- Concepts of invoices received: 5
+- Configurations: 7
+- Counter Configuration: 6
+- Cron: 3
+- Dashboard: 1
+- Data Migration: 2
+- Documents: 8
+- Documents Create Multiple: 1
+- Documents Import: 5
+- Electronic Invoice: 4
+- ElectronicInvoiceConfig: 4
+- Element Validations: 3
+- ElementRegistries: 2
+- Elements: 2
+- Employee Portal: 4
+- Employees: 1
+- Expedient: 4
+- Exporter/Importer Data: 3
+- FinanceConcept: 3
+- Folder Emails Config: 4
+- Folders: 7
+- Gdocu: 4
+- Google Docs: 8
+- Google Drive: 7
+- Holidays: 8
+- Holidays configs: 4
+- IberleyAI: 4
+- Integrations: 1
+- Invoice: 15
+- Invoices received: 1
+- Lexnet: 1
+- Lists: 4
+- Logo: 3
+- Mail: 12
+- MailRoundcube: 9
+- Make: 3
+- MassiveDelivery: 1
+- Meeting Room: 3
+- Mensatek: 5
+- Menu: 1
+- Ms OneDrive: 5
+- MyCheckinOption: 4
+- NextFacturae: 2
+- Notifications: 3
+- Office Configuration: 10
+- OfficialBook: 7
+- Online Edition: 6
+- Opportunity: 1
+- Panel: 8
+- Patch: 1
+- Payment: 5
+- Payments of invoices received: 6
+- Payroll: 1
+- Predefined: 7
+- PresignedUrl: 2
+- Public Holidays: 4
+- Public Holidays (Multiple): 1
+- Questions: 6
+- Readiness: 1
+- RecalculateAllConcepts: 1
+- Recurrence: 3
+- Recurring Payments: 10
+- Register: 11
+- RelatedRegister: 1
+- RelatedRegistries: 1
+- RelationsElements: 3
+- Remittances: 5
+- Reports: 10
+- Restore Registers: 1
+- Series and Counters: 2
+- Sms: 1
+- SudespachoAI: 4
+- Tab: 2
+- Tag: 4
+- TaxZone: 2
+- Taxes: 9
+- Taxes (massive creation): 1
+- Templates: 22
+- Time Tracking Export Report: 1
+- Time Tracking Report: 1
+- Time Worked Report: 1
+- TimeTracking: 4
+- TimeTrackingConfig: 4
+- Upload: 3
+- VIDSigner: 9
+- View: 14
+- View Config: 8
+- ViewConfig: 2
+- WhatsApp: 7
+- Widgets: 5
+- WorkGraphics: 5
+- Zadarma: 10

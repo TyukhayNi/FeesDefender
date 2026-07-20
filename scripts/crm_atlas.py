@@ -26,9 +26,10 @@ from core.crm_atlas import (
     PUBLIC_BASE_URL,
     build_atlas_phase_a,
     fetch_oas3,
+    render_digest,
     render_markdown,
 )
-from core.utils import now_iso
+from core.utils import now_iso_utc
 
 app = typer.Typer(add_completion=False, help="Atlas del CRM sudespacho (descubrimiento).")
 
@@ -40,6 +41,7 @@ def _main() -> None:
 # Rutas por defecto (relativas a la raíz del repo)
 DEFAULT_ATLAS_JSON = Path("docs/crm_atlas/atlas.json")
 DEFAULT_ATLAS_MD = Path("docs/CRM_SUDESPACHO_ATLAS.md")
+DEFAULT_DIGEST = Path("docs/crm_atlas/atlas.digest.md")
 ELCONTABLE_ATLAS_DIR = Path("../ElContable/docs/crm_atlas")
 
 
@@ -53,10 +55,11 @@ def discover(
     phase: str = typer.Option("a", help="Fase: 'a' (pública) | 'b' | 'all'."),
     base_url: str = typer.Option(PUBLIC_BASE_URL, help="Host de la API (público para Fase A)."),
     tenant: str = typer.Option("tnm", help="Etiqueta de tenant para el atlas."),
-    atlas_json: Path = typer.Option(DEFAULT_ATLAS_JSON, help="Ruta del atlas.json."),
+    atlas_json: Path = typer.Option(DEFAULT_ATLAS_JSON, help="Ruta del atlas.json (gitignorado)."),
     atlas_md: Path = typer.Option(DEFAULT_ATLAS_MD, help="Ruta del render Markdown."),
+    digest_md: Path = typer.Option(DEFAULT_DIGEST, help="Ruta del digest de deriva."),
     dev_links: bool = typer.Option(True, help="Enlazar cada operación al portal de docs."),
-    stamp_time: bool = typer.Option(True, help="Sellar generated_at (usar --no-stamp-time para diff limpio)."),
+    stamp_time: bool = typer.Option(False, help="Sellar generated_at (UTC). Default OFF para diff limpio."),
     also_elcontable: bool = typer.Option(False, help="Copiar el atlas a ../ElContable/docs/crm_atlas."),
 ) -> None:
     """Descubre la superficie del CRM y persiste atlas.json + Markdown."""
@@ -75,13 +78,14 @@ def discover(
         spec,
         tenant=tenant,
         base_url=base_url,
-        generated_at=now_iso() if stamp_time else None,
+        generated_at=now_iso_utc() if stamp_time else None,
         dev_links=dev_links,
     )
     summ = atlas["summary"]
 
-    _write_text(atlas_json, json.dumps(atlas, ensure_ascii=False, indent=2) + "\n")
+    _write_text(atlas_json, json.dumps(atlas, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
     _write_text(atlas_md, render_markdown(atlas))
+    _write_text(digest_md, render_digest(atlas))
 
     typer.echo(
         f"✅ {summ['total_operations']} operaciones · {summ['total_paths']} paths · "
@@ -90,6 +94,7 @@ def discover(
     typer.echo("   " + " · ".join(f"{m} {n}" for m, n in summ["by_method"].items()))
     typer.echo(f"   → {atlas_json}")
     typer.echo(f"   → {atlas_md}")
+    typer.echo(f"   → {digest_md}")
 
     if also_elcontable:
         if ELCONTABLE_ATLAS_DIR.parent.parent.exists():

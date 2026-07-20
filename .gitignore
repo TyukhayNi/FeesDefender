@@ -115,6 +115,10 @@ data/_audit/
 # Pendiente C1 de docs/superpowers/plans/PLAN_SaRS1_anon_pipeline.md §13).
 tests/fixtures/anon/
 
+# Atlas del CRM — el .json crudo (>1 MB, verdad-máquina) se regenera bajo demanda;
+# solo se commitean el .md navegable y el digest. Ver spec 2026-07-20 §8.
+docs/crm_atlas/atlas.json
+
 # Claude Code — local
 .claude/settings.local.json
 .claude/mcp_servers.json
