@@ -198,6 +198,10 @@ Atajo: `/tests` ejecuta la suite completa.
 - **Arquitectura y deps**: `docs/ARQUITECTURA.md`
 - **Relaciones código/plugin/skills + SSOT**: `docs/ARQUITECTURA_RELACIONES.md`
 - **API sudespacho**: `docs/INTEGRACION_SUDESPACHO.md` (su §14 fusiona la **referencia común sudespacho**)
+- **Atlas del CRM sudespacho (SSOT de la superficie)**: `docs/CRM_SUDESPACHO_ATLAS.md` — inventario
+  generado y re-ejecutable de "qué existe" (endpoints Fase A + campos/relaciones/enums por elemento,
+  Fase B). Consultarlo ANTES de descubrir un endpoint a mano. Regenerar: `python -m scripts.crm_atlas
+  discover --phase all`. El "cómo se usa" (payloads confirmados, auth, dead-ends) sigue en `INTEGRACION`.
 - **Referencia común sudespacho** (fuente única agnóstica: auth, API de elementos, permisos + presets por
   rol, enums; compartida con El Contable / El Auditor): [`../ElContable/docs/REFERENCIA_SUDESPACHO_API_PERMISOS.md`](../ElContable/docs/REFERENCIA_SUDESPACHO_API_PERMISOS.md)
 - **Callejones sin salida**: `docs/DEAD_ENDS.md` ← consultar antes de reintentar algo

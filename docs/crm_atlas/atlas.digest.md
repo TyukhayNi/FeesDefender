@@ -1,0 +1,225 @@
+# Digest del atlas del CRM sudespacho
+
+> Superficie de DERIVA (legible en diff). Regenerar: `python -m scripts.crm_atlas discover`. NO editar a mano.
+
+## Digest — tenant `tnm`
+
+- endpoints: 548 ops / 486 paths (62 huérfanos)
+
+### Endpoints por módulo
+- Absences: 6
+- AbsencesConfig: 4
+- AccessRegister: 3
+- AccessRegisterForEmployees: 1
+- Accounting - Configuration: 4
+- Accounting - Element Accounts: 3
+- Accounting - Export Form Lists: 2
+- Accounting Accounts: 5
+- Accounting Export: 3
+- Activities: 6
+- ActivityTotals: 1
+- Articles: 9
+- Audit Registers: 1
+- Auth - ApiKey: 1
+- Auth - Cache: 4
+- Auth - Groups: 5
+- Auth - IP: 3
+- Auth - Online: 3
+- Auth - Permissions: 4
+- Auth - PersonalConfig: 3
+- Auth - Profile: 3
+- Auth - Roles: 3
+- Auth - UserGroups: 5
+- Auth - Users: 7
+- Azure: 7
+- CalculateAllActivitiesTotals: 1
+- Calendar: 1
+- Certified Mail: 2
+- Certified Sms: 2
+- Chat: 5
+- Client: 1
+- Companies: 8
+- Concepts: 12
+- Concepts of invoices received: 5
+- Configurations: 7
+- Counter Configuration: 6
+- Cron: 3
+- Dashboard: 1
+- Data Migration: 2
+- Documents: 8
+- Documents Create Multiple: 1
+- Documents Import: 5
+- Electronic Invoice: 4
+- ElectronicInvoiceConfig: 4
+- Element Validations: 3
+- ElementRegistries: 2
+- Elements: 2
+- Employee Portal: 4
+- Employees: 1
+- Expedient: 4
+- Exporter/Importer Data: 3
+- FinanceConcept: 3
+- Folder Emails Config: 4
+- Folders: 7
+- Gdocu: 4
+- Google Docs: 8
+- Google Drive: 7
+- Holidays: 8
+- Holidays configs: 4
+- IberleyAI: 4
+- Integrations: 1
+- Invoice: 15
+- Invoices received: 1
+- Lexnet: 1
+- Lists: 4
+- Logo: 3
+- Mail: 12
+- MailRoundcube: 9
+- Make: 3
+- MassiveDelivery: 1
+- Meeting Room: 3
+- Mensatek: 5
+- Menu: 1
+- Ms OneDrive: 5
+- MyCheckinOption: 4
+- NextFacturae: 2
+- Notifications: 3
+- Office Configuration: 10
+- OfficialBook: 7
+- Online Edition: 6
+- Opportunity: 1
+- Panel: 8
+- Patch: 1
+- Payment: 5
+- Payments of invoices received: 6
+- Payroll: 1
+- Predefined: 7
+- PresignedUrl: 2
+- Public Holidays: 4
+- Public Holidays (Multiple): 1
+- Questions: 6
+- Readiness: 1
+- RecalculateAllConcepts: 1
+- Recurrence: 3
+- Recurring Payments: 10
+- Register: 11
+- RelatedRegister: 1
+- RelatedRegistries: 1
+- RelationsElements: 3
+- Remittances: 5
+- Reports: 10
+- Restore Registers: 1
+- Series and Counters: 2
+- Sms: 1
+- SudespachoAI: 4
+- Tab: 2
+- Tag: 4
+- TaxZone: 2
+- Taxes: 9
+- Taxes (massive creation): 1
+- Templates: 22
+- Time Tracking Export Report: 1
+- Time Tracking Report: 1
+- Time Worked Report: 1
+- TimeTracking: 4
+- TimeTrackingConfig: 4
+- Upload: 3
+- VIDSigner: 9
+- View: 14
+- View Config: 8
+- ViewConfig: 2
+- WhatsApp: 7
+- Widgets: 5
+- WorkGraphics: 5
+- Zadarma: 10
+
+### Elementos (campos · hash de esquema)
+- abogados_contrarios: 21 campos · d18ee3196d0b
+- abogados_propios: 24 campos · a7cdecea5df4
+- actuaciones: 37 campos · db27be71420d
+- actuaciones_obligaciones: 7 campos · 2d55e4011474
+- acusacion: 10 campos · 9bf05a3cb0f3
+- alertas: 6 campos · f7e0c4be6b79
+- amortizaciones: 17 campos · 48fcd3f3a8fd
+- amortizaciones_historico: 6 campos · b3ddd298b882
+- amortizaciones_tabla: 4 campos · 2df1d5941cf6
+- articulos_met: 18 campos · 66534d9a047b
+- autos: 2 campos · 15a7e60ad967
+- banco: 19 campos · acb475aa1c0c
+- busquedas: 4 campos · 41b1645c1323
+- calendario: 25 campos · f9a76f52d522
+- campanamarketing: 5 campos · 7e61011c737d
+- catalogo_conceptos_gasto: 12 campos · 49268972961d
+- catalogo_conceptos_honorario: 14 campos · 75e2e165cc2b
+- catalogo_conceptos_suplido: 12 campos · 7d1f4ee88750
+- catalogo_productos: 21 campos · 3fcf8630b180
+- centralita_virtual: 9 campos · 3199430480b0
+- chat: 4 campos · 22f36c6ebf2e
+- clientes_contrarios: 25 campos · 309d9fcdb4f2
+- clientes_propios: 31 campos · 6e19d795f1a3
+- cobros_clientes: 34 campos · b29f721f6438
+- colaboradores: 18 campos · 9d40198bdc14
+- comercial_oportunidades: 8 campos · e056e8a42449
+- comerciales: 3 campos · 8e07c4e1b8de
+- comisiones: 2 campos · 32e04277aeb9
+- companias_seguros: 22 campos · b6f3fc834210
+- conceptos_gasto: 26 campos · 3f566896072d
+- conceptos_honorario: 27 campos · e40c9ef2ccd5
+- conceptos_provision: 22 campos · 5a2ab0e9a7e8
+- conceptos_suplido: 24 campos · 8847b3e3d73c
+- config_facturas: 47 campos · 0980291bf5bf
+- consultas: 7 campos · 6c49d80bbabd
+- contactos: 19 campos · 2af3f30436c6
+- contactos_met: 29 campos · 2b0ee8399dfe
+- crontab: 6 campos · 21ab56da3379
+- cuentas_contables: 10 campos · 471204f4913b
+- cuentascontables: 8 campos · 77aba3364a55
+- cuentascontables_met: 3 campos · 115dd4d2984b
+- datosregistrales: 6 campos · 5388c1b41e50
+- descuentos: 7 campos · 6288bf98cb78
+- devices: 9 campos · 09b7266422c5
+- emailmarketing: 2 campos · d1505bdc1b14
+- empleados: 38 campos · e667a7b1b0b5
+- empresas: 10 campos · 2e93ea739fd6
+- errorinfoalert: 3 campos · af6fd59c6575
+- expedientes_judiciales: 36 campos · 100461811cac
+- extrajudiciales: 27 campos · fb69eaa7e786
+- face: 6 campos · 03cba1c0bd2d
+- facturas: 84 campos · a6e0692debe6
+- facturas_proforma: 60 campos · 8322ccb3a8d9
+- facturas_recibidas: 32 campos · 3241ba8403b2
+- festivos: 3 campos · 8a60632b8bfe
+- gdocu: 25 campos · 65214fe5049c
+- holidays: 9 campos · e1ee5b88604e
+- igualas: 28 campos · 567716c95147
+- importa_iberley: 6 campos · 0a4022598709
+- ipc_aplicado: 2 campos · 4343ecbd1d7c
+- juzgados: 14 campos · 06e34bc7d1bc
+- lexnet: 60 campos · ecc6808c0f4c
+- lexnet_avisos: 12 campos · abeca89e36af
+- lexnet_datos: 7 campos · 999ff7309072
+- lexnet_logdescargas: 4 campos · e971b207b10e
+- lexnet_logerrores: 4 campos · 576ec24286b6
+- mis_portales: 8 campos · 2e16adffe292
+- nominas: 9 campos · 02cffa213624
+- notas_tecnicas: 7 campos · 7301d2bbe423
+- organismos: 15 campos · fd9fede8c726
+- panels_widgets: 3 campos · 53b907cfdfc5
+- paquetes: 2 campos · c5080b14b6ce
+- paquetes_catalogo: 1 campos · 8fab0ae1e2b6
+- preclientes: 21 campos · e68b9be8084d
+- procuradores_contrarios: 21 campos · 0e33a0ef4d13
+- procuradores_propios: 21 campos · 2e275f54bff5
+- productos: 25 campos · 2a0951289c72
+- proveedores: 25 campos · 5a8c45ed4686
+- qr: 6 campos · d07a3357f5e1
+- reports_met: 7 campos · 10929981e9a8
+- seguimientos: 8 campos · e3b9c0891d19
+- signatures: 8 campos · b305f90324d0
+- sms: 10 campos · d3db98e9d5a3
+- tareas: 20 campos · f55b8d82bcb1
+- ticket: 6 campos · a61d4046cf28
+- tickets_nuevo: 6 campos · e1d2b6b0c3a1
+- tipos_de_ticket: 2 campos · 3241b21a91bc
+- vencimientos: 17 campos · 44ca44f90c6c
+- zoom: 8 campos · 40b098d6d1aa
