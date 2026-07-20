@@ -57,3 +57,34 @@ def test_wrapper_bat_evita_stub_windowsapps():
     assert '"%PYEXE%" -m expedientes_xl.server' in txt, "invocar el interprete resuelto %PYEXE%"
     # Debe eludir explicitamente el stub de WindowsApps.
     assert "WindowsApps" in txt, "el wrapper debe eludir el stub WindowsApps"
+
+
+def test_main_no_escanea_las_bd_antes_de_run(monkeypatch):
+    """El arranque (main) difiere el descubrimiento del oraculo: NO debe correr
+    descubrir_cuentas (escaneo de las BD DriveFS de G:/H:) antes de .run().
+
+    Bug de despliegue (2026-07-20): main() escaneaba las BD ANTES de .run(),
+    retrasando el `initialize` MCP ~8-11s (medido en mcp.log; descubrir_cuentas
+    ~2s en caliente, mucho mas en frio) -> Claude Desktop marcaba el server
+    'failed' (badge cosmetico, MEJORAS #74). La suite verde no lo veia: los tests
+    construian Oracle directamente, nunca ejercian el arranque de main(). Fix:
+    LazyOracle difiere el escaneo al primer uso, fuera del handshake."""
+    pytest.importorskip("mcp")
+    from plugins.expedientes_xl import server
+    from plugins.expedientes_xl import oracle as oracle_mod
+
+    eventos = []
+
+    def descubrir_espia(drivefs, roots):
+        eventos.append("descubrir")
+        return {}, {}
+
+    monkeypatch.setattr(oracle_mod, "descubrir_cuentas", descubrir_espia)
+    monkeypatch.setattr(server.FastMCP, "run", lambda self: eventos.append("run"))
+    monkeypatch.setattr(sys, "argv", ["server.py", "--rw", "G:\\", "--ro", "H:\\"])
+
+    server.main()
+
+    assert "run" in eventos, "main debe arrancar el server (.run())"
+    assert "descubrir" not in eventos, (
+        f"el descubrimiento del oraculo no debe correr en el arranque: {eventos}")
