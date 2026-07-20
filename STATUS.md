@@ -27,31 +27,12 @@ Luego leer la sección **[SIGUIENTE]** en "Próximas tareas" más abajo.
 
 ---
 
-## ⚡ Protocolo de cierre de sesión
+## ⚡ Protocolo de cierre de sesión → `docs/FLUJO_GIT.md`
 
-**Momento 1 — Claude presenta en el chat (sin acción del usuario):**
-
-Claude revisa y comunica:
-- [ ] Tests: ¿alguno nuevo o modificado? ¿estado esperado?
-- [ ] Dead ends: ¿hubo callejón nuevo? → entrada propuesta para `docs/DEAD_ENDS.md`
-- [ ] Dependencias: ¿algún fichero modificado activa la tabla de `docs/ARQUITECTURA.md`?
-- [ ] Bitácora: el **bloque de cierre** (fecha + resumen + tareas + [SIGUIENTE]) va a `docs/bitacora/AAAA.md` (reciente primero), **NO** al top de este fichero; `STATUS.md` mantiene solo estado vigente. El aviso E1 de `session_close` avisa si STATUS crece (>400 líneas).
-- [ ] Memoria: ¿hay decisión de arquitectura o patrón nuevo que guardar?
-- [ ] Commit: mensaje propuesto
-
-**Momento 2 — Usuario revisa y aprueba** ("sí" en el chat)
-
-**Momento 3 — Claude ejecuta** todos los cambios de ficheros (STATUS.md, DEAD_ENDS.md, memoria)
-
-**Momento 4 — Usuario pega una sola línea en PowerShell:**
-
-```powershell
-cd "C:\Users\tnm33\Dev\FeesDefender"
-python -m scripts.session_close
-# Si los tests pasan:
-git add -A
-git commit -m "<mensaje que Claude propuso>"
-```
+El protocolo de cierre —y el flujo git completo (modelo, apertura, poda, recuperación)— vive
+en `docs/FLUJO_GIT.md` §4. Ejecutable: `/cierre` (o `python -m scripts.session_close`).
+Recordatorio clave: **`main` está protegida** → el cierre va por **rama → PR**, nunca commit
+directo; el bloque de cierre va a `docs/bitacora/AAAA.md`, **no** a este fichero.
 
 ---
 

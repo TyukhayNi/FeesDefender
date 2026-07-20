@@ -41,6 +41,7 @@ taxonomía y arquitectura**, donde hoy quedan copias que se contradicen.
 | Cola priorizada de trabajo | `PLAN.md` | STATUS borra "Próximas tareas" / "MÁXIMA PRIORIDAD" y enlaza |
 | **Estado de ciclo de vida de un ítem** (pendiente / en curso / `✅` + hash del PR) | `PLAN.md` | STATUS narra por sesión y enlaza por etiqueta, **no** es donde se lee el estado actual |
 | Rama, worktree, "sin commitear", "mergeado" | **git** (`git log`, `for-each-ref`) | `PLAN.md`/`STATUS.md` **no** los restatan como prosa; al cerrar un ítem se cita solo el hash del PR |
+| Flujo git y protocolo de cierre | `docs/FLUJO_GIT.md` | `CLAUDE.md`, `STATUS.md` y el comando `/cierre` enlazan; no repiten el procedimiento |
 | Backlog técnico | `docs/MEJORAS_FUTURAS.md` | (ya cableado) |
 | Estructura de carpetas del caso | `core/config.py::CASO_SUBDIRS` | README + ARQUITECTURA + STATUS enlazan; ningún `.md` la transcribe |
 | Taxonomía de tipos de caso | `core/config.py::TIPOS_CASO_*` | STATUS enlaza; se borra la tabla en prosa |

@@ -33,6 +33,7 @@ fecha: 2026-07-05
 | `ARQUITECTURA_RELACIONES.md` | Mapa SSOT (código/plugin/skills) — *quién depende de quién*. |
 | `ARQUITECTURA_CRM_SUDESPACHO.md` | Arquitectura de la integración con el CRM. |
 | `GOBERNANZA_FUENTES_VERDAD.md` | Gobernanza de fuentes de verdad (esta iniciativa). |
+| `FLUJO_GIT.md` | Flujo de trabajo git + protocolo de cierre (SSOT); manual llano del modelo git. |
 | `SEGURIDAD_DATOS.md` | Prevención de fugas de PII y secretos — doctrina, controles y runbook. |
 | `INTEGRACION_SUDESPACHO.md` | API sudespacho (§14 fusiona la referencia común externa). |
 | `INGESTA_SUDESPACHO.md` | Flujo de ingesta desde el CRM. |
