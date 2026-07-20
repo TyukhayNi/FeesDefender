@@ -2729,6 +2729,22 @@ manuales moleste. Hoy: **solo anotado.**
 
 ## 74. `expedientes-xl`: descubrimiento del oracle perezoso (badge `failed` cosmético en Claude Desktop)
 
+> ✅ **RESUELTO 2026-07-20 (PR pendiente).** Causa CONFIRMADA (ya no conjetura) y arreglo construido:
+> `main()` ahora usa `oracle.LazyOracle`, que difiere `descubrir_cuentas` al primer uso del oráculo
+> (dentro de una tool, fuera del handshake); `initialize` responde al instante. TDD: test unit del
+> `LazyOracle` (no escanea en construcción / escanea una vez / delega / thread-safe bajo concurrencia) +
+> `test_main_no_escanea_las_bd_antes_de_run` en `tests/test_expedientes_xl_wrapper.py`.
+> **Evidencia de la causa (esta sesión):** (1) `mcp.log` — el `initialize id=0`→`id=0 result` tardó **8,1 s**
+> y **10,8 s** en arranques reales del 19/07; (2) medición directa — `descubrir_cuentas` = **2,2 s en
+> caliente** (más en frío, cuando DriveFS aún indexa), bloqueando antes de `.run()`; (3) `server.py:main`
+> escaneaba síncrono antes de `build_server(...).run()`. Explica la **intermitencia**: `G:`/`H:` frías al
+> arrancar → `failed`; calientes → conecta. **Despliegue:** la extensión `.dxt` corre el código VIVO del
+> repo (`-m expedientes_xl.server`, `PYTHONPATH=…\FeesDefender\plugins`), así que basta **mergear a `main` +
+> `git pull` en la raíz + reiniciar Claude Desktop** (sin reempaquetar `.dxt`). El bundle de Claude Code
+> (copia cacheada del plugin) coge el fix con un `plugin update` aparte.
+>
+> Bloque histórico (diagnóstico original) conservado abajo.
+
 Anotado 2026-07-19 durante el despliegue del MCP Drive-disco. Con la extensión `.dxt` instalada, el
 panel **Ajustes → Desarrollador** de Claude Desktop marca `expedientes-xl` como **`failed`** aunque las
 tools **funcionan** (verificado en vivo: `list_dir` G:/H:, poda Tier 0; el panel **Conectores** lo marca

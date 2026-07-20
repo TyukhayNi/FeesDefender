@@ -1,8 +1,11 @@
 import sqlite3
 import shutil
 import tempfile
+import threading
+import time
 from pathlib import Path
 import pytest
+from plugins.expedientes_xl import oracle as oracle_mod
 from plugins.expedientes_xl.oracle import Oracle, descubrir_cuentas
 
 SCHEMA = """
@@ -218,3 +221,74 @@ def test_descubrir_cuentas_sin_drivefs_dir(tmp_path):
     dbs, caches = descubrir_cuentas(tmp_path / "no_existe_DriveFS", {"G:\\": tmp_path})
     assert dbs == {}
     assert caches == {}
+
+
+# --- LazyOracle: el descubrimiento del oráculo NO debe bloquear el arranque ---
+# Regresión (2026-07-20): main() escaneaba las BD DriveFS (descubrir_cuentas) ANTES
+# de .run(), retrasando el `initialize` MCP ~8-11s -> Claude Desktop marcaba el
+# server 'failed' (badge cosmético, MEJORAS #74). Medido: descubrir_cuentas ~2s en
+# caliente, mucho más en frío. LazyOracle difiere el escaneo al primer uso del oráculo
+# (thread-safe: el server corre tools en hilos daemon vía _heavy).
+
+def test_lazy_oracle_no_descubre_en_construccion(monkeypatch):
+    llamadas = []
+
+    def espia(drivefs, roots):
+        llamadas.append((drivefs, roots))
+        return {}, {}
+
+    monkeypatch.setattr(oracle_mod, "descubrir_cuentas", espia)
+    oracle_mod.LazyOracle(Path("X"), {"G:\\": Path("G:\\")})
+    assert llamadas == []  # construir el LazyOracle no toca las BD
+
+
+def test_lazy_oracle_descubre_una_sola_vez(monkeypatch):
+    llamadas = []
+
+    def espia(drivefs, roots):
+        llamadas.append((drivefs, roots))
+        return {}, {}
+
+    monkeypatch.setattr(oracle_mod, "descubrir_cuentas", espia)
+    lz = oracle_mod.LazyOracle(Path("X"), {"G:\\": Path("G:\\")})
+    assert lz.status(Path(r"G:\algo.pdf")) == "UNKNOWN"   # dbs vacío -> UNKNOWN
+    assert len(llamadas) == 1                              # descubrió en el 1er uso
+    lz.status(Path(r"G:\otro.pdf"))
+    lz.subtree_cold_stats(Path(r"G:\dir"))
+    assert len(llamadas) == 1                              # memoizado: no re-escanea
+
+
+def test_lazy_oracle_delega_en_oracle_real(mini_db, monkeypatch):
+    db, cache = mini_db
+    monkeypatch.setattr(oracle_mod, "descubrir_cuentas",
+                        lambda drivefs, roots: ({"G:\\": db}, {"G:\\": cache}))
+    lz = oracle_mod.LazyOracle(Path("X"), {"G:\\": Path("G:\\")}, ttl=999)
+    base = r"G:\Unidades compartidas\EXPEDIENTES - TYUKHAY LEGAL\Caso X\00_Input"
+    assert lz.status(Path(base + r"\hot.pdf")) == "HOT"
+    assert lz.status(Path(base + r"\cold.pdf")) == "COLD"
+    assert lz.subtree_cold_stats(Path(base)) == (1, 2)
+
+
+def test_lazy_oracle_descubre_una_vez_bajo_concurrencia(monkeypatch):
+    llamadas = []
+
+    def lento(drivefs, roots):
+        llamadas.append(1)
+        time.sleep(0.05)  # ensancha la ventana de carrera entre hilos
+        return {}, {}
+
+    monkeypatch.setattr(oracle_mod, "descubrir_cuentas", lento)
+    lz = oracle_mod.LazyOracle(Path("X"), {"G:\\": Path("G:\\")})
+    n = 8
+    barrera = threading.Barrier(n)
+
+    def worker():
+        barrera.wait()
+        lz.status(Path(r"G:\x.pdf"))
+
+    hilos = [threading.Thread(target=worker) for _ in range(n)]
+    for h in hilos:
+        h.start()
+    for h in hilos:
+        h.join()
+    assert len(llamadas) == 1  # doble-check locking: un solo descubrimiento

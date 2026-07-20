@@ -169,8 +169,11 @@ de `organizar-sala-lectura` Modo 1 el próximo caso real (por diseño, no gastar
   (Desktop): retirado desde el panel de la app (Ajustes → Desarrollador → papelera) + relaunch — vía limpia sin
   `taskkill`. Confirmado: `claude_desktop_config.json` solo con `email-export`; `expedientes` fuera de Code y
   Desktop; `expedientes-xl` (FS) operativo. Gotcha del auto-kill del `taskkill` en `docs/DEAD_ENDS.md`.
-- [ ] **`MEJORAS #74`** (oracle perezoso): el badge `failed` del panel Desarrollador es cosmético
-  (el health-check de la app expira antes de que el oracle DriveFS termine ~2-3s); las tools sirven.
+- [x] **`MEJORAS #74`** (oracle perezoso) — ✅ **RESUELTO 2026-07-20 (PR pendiente).** Causa CONFIRMADA:
+  `server.main` escaneaba las BD DriveFS (`descubrir_cuentas`) antes de `.run()` → `initialize` MCP tardaba
+  8-11 s (medido) → Claude Desktop marcaba `failed` (intermitente: frío→failed, caliente→conecta). Fix:
+  `oracle.LazyOracle` difiere el escaneo al primer uso; TDD (5 tests). Despliegue: merge + `git pull` en la
+  raíz + reiniciar Desktop (la `.dxt` corre el código vivo del repo; no hace falta reempaquetar).
 - V2/CUT motivados en el spec §5 y en `docs/MEJORAS_FUTURAS.md` #66. Promoción solo por disparador.
 
 ## [SIGUIENTE-GOOGLE-MCP] F1 (lectura) ✅ MERGEADA · F2 (escritura+permisos+navegación) ✅ MERGEADA · F3/F4 pendientes

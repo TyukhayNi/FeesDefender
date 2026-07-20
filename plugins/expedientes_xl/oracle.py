@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import sqlite3
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -250,3 +251,43 @@ def descubrir_cuentas(drivefs_dir: Path, roots: dict[str, Path]
                 caches[root] = cuenta / "content_cache"
                 break
     return dbs, caches
+
+
+class LazyOracle:
+    """Fachada perezosa: difiere `descubrir_cuentas` al primer uso del oráculo.
+
+    `descubrir_cuentas` escanea las BD SQLite de DriveFS (medido ~2 s en caliente,
+    bastante más en frío). Si corre en el arranque de `server.main()` —antes de
+    `.run()`— retrasa la respuesta al `initialize` de MCP ~8-11 s, y Claude Desktop
+    marca el server `failed` (badge cosmético; el server sí sirve una vez arranca).
+    Esta fachada mantiene la interfaz del `Oracle` real (`status`/`subtree_cold_stats`)
+    pero no escanea nada hasta que una guarda lo consulta —ya dentro de una tool,
+    fuera del handshake. Thread-safe (doble-check locking): las tools corren en hilos
+    daemon (`server._heavy`), de modo que varias pueden pedir el oráculo a la vez;
+    el escaneo ocurre una sola vez. Ver `docs/MEJORAS_FUTURAS.md` #74.
+    """
+
+    def __init__(self, drivefs_dir: Path, roots: dict[str, Path],
+                 ttl: float | None = None) -> None:
+        self._drivefs_dir = Path(drivefs_dir)
+        self._roots = dict(roots)
+        self._ttl = ttl
+        self._lock = threading.Lock()
+        self._real: Oracle | None = None
+
+    def _ensure(self) -> Oracle:
+        real = self._real
+        if real is None:
+            with self._lock:
+                real = self._real
+                if real is None:
+                    dbs, caches = descubrir_cuentas(self._drivefs_dir, self._roots)
+                    real = Oracle(dbs, caches, ttl=self._ttl)
+                    self._real = real
+        return real
+
+    def status(self, path: Path) -> str:
+        return self._ensure().status(path)
+
+    def subtree_cold_stats(self, path: Path) -> tuple[int, int] | None:
+        return self._ensure().subtree_cold_stats(path)

@@ -265,8 +265,11 @@ def main() -> None:
     all_roots = list(zonas.rw_roots) + list(zonas.ro_roots)
     roots = {str(r): r for r in all_roots}
     drivefs_dir = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "Google" / "DriveFS"
-    dbs, caches = oracle_module.descubrir_cuentas(drivefs_dir, roots)
-    orc = oracle_module.Oracle(dbs, caches)
+    # Oráculo PEREZOSO: el descubrimiento (escaneo de las BD DriveFS, ~2 s en
+    # caliente / más en frío) se difiere al primer uso, para no bloquear el
+    # `initialize` de MCP y que Claude Desktop no marque el server `failed`
+    # (MEJORAS #74). Las guardas ya degradan fail-closed si el oráculo aún no está.
+    orc = oracle_module.LazyOracle(drivefs_dir, roots)
     build_server(zonas, orc, max_b64).run()
 
 
