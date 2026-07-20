@@ -169,7 +169,7 @@ de `organizar-sala-lectura` Modo 1 el próximo caso real (por diseño, no gastar
   (Desktop): retirado desde el panel de la app (Ajustes → Desarrollador → papelera) + relaunch — vía limpia sin
   `taskkill`. Confirmado: `claude_desktop_config.json` solo con `email-export`; `expedientes` fuera de Code y
   Desktop; `expedientes-xl` (FS) operativo. Gotcha del auto-kill del `taskkill` en `docs/DEAD_ENDS.md`.
-- [x] **`MEJORAS #74`** (oracle perezoso) — ✅ **RESUELTO 2026-07-20 (PR pendiente).** Causa CONFIRMADA:
+- [x] **`MEJORAS #74`** (oracle perezoso) — ✅ **RESUELTO 2026-07-20 (PR #101 `c2f6240`; extensión `.dxt` 1.1.0 #105 + bundle Code 0.4.0 #102).** Causa CONFIRMADA:
   `server.main` escaneaba las BD DriveFS (`descubrir_cuentas`) antes de `.run()` → `initialize` MCP tardaba
   8-11 s (medido) → Claude Desktop marcaba `failed` (intermitente: frío→failed, caliente→conecta). Fix:
   `oracle.LazyOracle` difiere el escaneo al primer uso; TDD (5 tests). Despliegue: merge + `git pull` en la
