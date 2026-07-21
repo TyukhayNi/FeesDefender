@@ -108,3 +108,32 @@ def test_detecta_fecha_0000_con_texto_de_bundle_spliteado_via_parent_sha256():
     problemas = verificar_sala.verificar(
         filas, ficheros_en_disco={"0000-00-00_escaneado.pdf"}, cobertura_filas=cobertura)
     assert any("0000-00-00" in p and "texto extraído" in p for p in problemas)
+
+
+def test_detecta_colision_de_nombre_canonico():
+    filas = [
+        {"nombre_canonico": "2025-01-01_doc.pdf", "sha256": "a", "parent_id": ""},
+        {"nombre_canonico": "2025-01-01_doc.pdf", "sha256": "b", "parent_id": ""},
+    ]
+    problemas = verificar_sala.verificar(filas, ficheros_en_disco={"2025-01-01_doc.pdf"})
+    assert any("nombre_canonico repetido" in p and "2025-01-01_doc.pdf" in p for p in problemas)
+
+
+def test_avisa_de_fallos_homogeneos_por_encima_del_umbral():
+    # 6 anexos con parent_id que no resuelve -> mismo tipo 'parent_huerfano'.
+    filas = [{"nombre_canonico": "p.pdf", "sha256": "p", "parent_id": ""}]
+    for i in range(6):
+        filas.append({"nombre_canonico": f"a{i}.pdf", "sha256": f"s{i}", "parent_id": "no-existe"})
+    disco = {f["nombre_canonico"] for f in filas}
+    problemas = verificar_sala.verificar(filas, ficheros_en_disco=disco)
+    assert problemas[0].startswith("ATENCIÓN:")
+    assert "homogéneos" in problemas[0] and "parent_huerfano" in problemas[0]
+
+
+def test_no_avisa_homogeneo_por_debajo_del_umbral():
+    filas = [{"nombre_canonico": "p.pdf", "sha256": "p", "parent_id": ""}]
+    for i in range(3):
+        filas.append({"nombre_canonico": f"a{i}.pdf", "sha256": f"s{i}", "parent_id": "no-existe"})
+    disco = {f["nombre_canonico"] for f in filas}
+    problemas = verificar_sala.verificar(filas, ficheros_en_disco=disco)
+    assert not any(p.startswith("ATENCIÓN:") for p in problemas)
