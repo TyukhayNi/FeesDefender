@@ -205,6 +205,29 @@ el antes/después sin mezclar la construcción con el caso real.*
   para pasar el verify; telemetría de fases ausente). Backlog completo, con fichero/cambio/por
   qué por ítem:
   `docs/superpowers/plans/2026-07-21-robustez-velocidad-sala-lectura.md`.
+- [x] **Ejecución del backlog — 8 ítems de PRIORIDAD ALTA (rama
+  `claude/sala-lectura-robustez-plan-15dcf7`, PR pendiente).** Backlog convertido a plan TDD
+  `docs/superpowers/plans/2026-07-21-robustez-velocidad-sala-lectura-tdd.md` (11 Tasks) y ejecutado
+  con `superpowers:subagent-driven-development`. HECHOS los 8 de alta: **(1)** `senales_gate` por
+  código (W-code ajeno/casi-duplicado/binario-sin-espejo/parte); **(2)** versión 1.11 + guard
+  frontmatter↔CHANGELOG (`tests/test_sala_lectura_version_changelog.py`) + Paso 0 frescura del
+  checkout (aborta, nunca auto-repara sobre la raíz compartida) + gotcha de subagentes; **(3)**
+  colisión de `nombre_canonico` en `verificar()` + `validar_pares` aborta la copia antes de tocar
+  Drive; **(4)** prohibición de editar artefactos generados + aviso de fallos homogéneos (≥5 mismo
+  tipo → sospecha del check); **(5)** fallback `ERROR_FILE_NOT_HYDRATED` → `copiar_renombrar` (rcd)
+  cableado en Paso 4; **(6)** `precheck_rclone.py` (prerrequisito OAuth por exit code, sin volcar
+  secretos); **(7)** CLI de `verificar_sala.py` (parser compartido `manifiesto_parser.py` + listado
+  + `--cobertura`/`--hash`); **(8)** columnas `categoria`/`subcategoria_crm` en `_MANIFIESTO`+YAML
+  (`CatalogEntry`) + `indices_desde_manifiesto.py` (INDICE/CRONOLOGIA por script). Suite 2281/0/0
+  (+70 skip). Skill v1.11 re-empaquetada; **re-import del `.skill` en Cowork PENDIENTE**.
+- [ ] **PENDIENTE (3ª sesión) — 8 ítems de PRIORIDAD MEDIA/BAJA (9-16)** del backlog: progreso
+  durable por fila + reanudación (9); leer representante de hilo `.eml` que cae al 07 (10); dos bugs
+  deterministas de `preclasificar` — exports WhatsApp crudos y `agrupar_por_hilo` con cifras (11);
+  `_parse_filas` estricto (12); Modo 3 degradado md5 para binarios grandes (13); timeout/async +
+  ciclo de vida del `rcd` en `copiar_manifiesto_rclone` (14); fecha aproximada `(*)` fuera del valor
+  (15); **telemetría de fases (16)**. El seguimiento natural es re-correr `organizar-sala-lectura`
+  una 3ª vez sobre un caso real para por fin medir limpio el A/B de velocidad (ítem 16) — las dos
+  pasadas anteriores quedaron invalidadas por los errores que este backlog corrige.
 - [ ] **Seguimiento (fuera del backlog):** investigar por qué `gdrive_ev` no ve el shared drive
   "EXPEDIENTES - TYUKHAY LEGAL" con el client OAuth propio nuevo (probable cuenta de reauth
   equivocada o falta añadirla como test user en el consent screen de `rclone-despacho-drive-2026`).
