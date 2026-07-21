@@ -79,9 +79,28 @@ def _construir_plan(case_dir: Path, force: bool):
     return sm.plan(sm.inventariar(case_dir), previo)
 
 
+def _exitosos_por_bundle(cob_delta: list[sm.DocCobertura]) -> set[str]:
+    """Shas FÍSICOS marcables como "hecho" en el estado idempotente.
+
+    Agrupa la cobertura por el sha del fichero de ORIGEN (`parent_sha256`, con
+    fallback a `sha256` para filas no-split: nativo/imagen/passthrough) y marca un
+    bundle hecho solo si TODOS sus documentos lógicos salieron `ok`/`low`. Así (a)
+    el estado usa el sha que `plan()` consulta para el *skip* (no el `seg_sha256` de
+    un segmento, que haría re-split en cada corrida) y (b) un bundle con un segmento
+    fallido NO se marca hecho → se reintenta en la siguiente corrida.
+    """
+    from collections import defaultdict
+    por_fisico: dict[str, list[sm.DocCobertura]] = defaultdict(list)
+    for c in cob_delta:
+        por_fisico[c.parent_sha256 or c.sha256].append(c)
+    return {sha for sha, filas in por_fisico.items()
+            if all(f.estado in ("ok", "low") for f in filas)}
+
+
 @app.command()
 def plan(case_id: str):
-    """Muestra la propuesta (Preview) sin escribir nada."""
+    """Muestra la propuesta (Preview); no escribe nada salvo el manifiesto de
+    segmentación propuesto (gate editable) de los bundles multi-documento detectados."""
     case_dir = caso_path(case_id)
     p = _construir_plan(case_dir, force=False)
     nuevos = [d for d in p if not d.skip]
@@ -90,6 +109,31 @@ def plan(case_id: str):
         n = sum(1 for d in nuevos if d.ruta == ruta)
         if n:
             typer.echo(f"  {ruta}: {n}")
+
+    # Pre-detección de bundles (Preview del split): informa de los PDFs multi-documento
+    # y deja su manifiesto de segmentación propuesto (editable) para que el letrado lo
+    # ajuste antes de `apply`. Solo corre sobre PDFs ya buscables (con capa de texto);
+    # los escaneados sin OCR aún se segmentan en `apply`, tras el OCR (asimetría
+    # documentada en el SKILL). El gate sigue vigente: `apply` respeta el manifiesto si
+    # existe y solo lo crea si falta.
+    from core import split_documental as split
+    sm_dir = sm._sala_maquina_dir(case_dir)
+    for d in nuevos:
+        if d.ruta != "pdf":
+            continue
+        src = case_dir / "00_Input" / d.rel_path
+        try:
+            segmentos, blancos = split.detectar(src)
+        except Exception:
+            continue
+        if len(segmentos) > 1:
+            carpeta = sm.destino_seguro(sm_dir / "02_Documentos" / d.slug, case_dir)
+            if not split.manifiesto_existe(carpeta):
+                split.escribir_manifiesto(carpeta, split.construir_manifiesto(
+                    d.rel_path, d.sha256, segmentos, blancos))
+            typer.echo(f"  bundle {d.rel_path}: {len(segmentos)} documentos → revisa "
+                       f"{carpeta / '_segmentacion.md'} y ajusta antes de apply")
+
     typer.echo(f"  (saltados por sha ya procesado: {sum(1 for d in p if d.skip)})")
 
 
@@ -100,7 +144,7 @@ def apply(case_id: str, vision: bool = False, force: bool = False):
     if vision:
         _exigir_vision_cableada()          # preflight: aborta antes de procesar
     p = _construir_plan(case_dir, force=force)
-    cob_delta = sm.ejecutar(case_dir, p, case_id=case_id, vision=vision)
+    cob_delta = sm.ejecutar(case_dir, p, case_id=case_id, vision=vision, force=force)
 
     # Cobertura ACUMULATIVA: una corrida incremental procesa solo el delta, así que
     # la cobertura debe fusionarse con la persistida (si no, se pierden las filas de
@@ -121,7 +165,7 @@ def apply(case_id: str, vision: bool = False, force: bool = False):
     # estado en disco, que puede marcar "resuelto" un documento que ahora falla
     # (p. ej. tras cambiar el motor OCR) → si se uniera, la siguiente corrida
     # normal lo saltaría, contradiciendo "un fallo se reintenta sin --force".
-    exitosos = {c.sha256 for c in cob_delta if c.estado in ("ok", "low")}
+    exitosos = _exitosos_por_bundle(cob_delta)
     procesados = exitosos if force else (_estado_previo(case_dir) | exitosos)
     _guardar_estado(case_dir, procesados)
     append_event(case_id, "procesado_sala_maquina", details={
@@ -177,7 +221,7 @@ def reforzar(case_id: str):
     _guardar_cobertura(case_dir, cob)
     _escribir_cobertura_md(case_dir, cob)
 
-    exitosos = {c.sha256 for c in cob_delta if c.estado in ("ok", "low")}
+    exitosos = _exitosos_por_bundle(cob_delta)
     _guardar_estado(case_dir, _estado_previo(case_dir) | exitosos)
     append_event(case_id, "procesado_sala_maquina", details={
         "modo": "reforzar",
