@@ -166,6 +166,38 @@ tal diálogo.
    cada fichero, calcula **sha256** de los bytes (**Modo 1**: `expedientes-xl:hash_path`,
    server-side; **Modo 2**: hash de los bytes locales; **Modo 3**: ver Gotchas) y **salta**
    (sin leer ni copiar) lo que ya conste en `_MANIFIESTO.md` (ver "Re-aplicación").
+1-bis. **Pre-clasifica mecánicamente antes de leer contenido.** Con la lista de
+   `(ruta, sha256, nombre)` del Paso 1:
+   a. `dedup_por_sha(ficheros)` → clasifica UNA sola vez cada sha256 único; los
+      duplicados se anotan en el `_MANIFIESTO.md` como "duplicado, saltado" sin
+      volver a leerlos.
+   b. `agrupar_por_hilo(rutas_eml)` sobre los `.eml` únicos → clasifica solo un
+      representante por hilo (el nombre sin sufijo `_N`) y propaga su categoría
+      al resto del grupo sin volver a leerlos.
+   c. `clasificar_por_patron(nombre, es_bundle_conversacional=...)` sobre cada
+      único/representante restante → SIEMPRE devuelve una categoría (00-06 por
+      patrón estrecho, 07 por defecto, u 08 si es un bundle de WhatsApp sin
+      patrón). Pásalo por alto (verifica leyendo) solo cuando el motivo sea
+      `default_reclamaciones` y el documento sea inusual o el letrado lo pida
+      — no hace falta confirmar 07 sistemáticamente.
+   d. Para los binarios opacos (PDF escaneado, imagen) que SÍ necesiten lectura
+      real (bundles conversacionales, o para poner fecha real en vez de
+      `0000-00-00`): prueba `texto_espejo_md(sm_dir, sha256)` — si
+      `01_Procesado/02_Sala de máquina/` ya tiene el texto OCR, úsalo en vez de
+      leer el binario o rendirte a `(*)`. Si el binario opaco NO tiene espejo MD
+      disponible (`01_Procesado/02_Sala de máquina/` no existe, o su fila en
+      `_cobertura.json` no tiene `estado` ok/low), márcalo como señal para el
+      gate condicional del Paso 2.5 (ver abajo) — es exactamente la categoría de
+      "algo ambiguo" que debe forzar la aparición del gate, en vez de
+      clasificarlo a ciegas por nombre y seguir en silencio.
+   e. `subcategoria_crm(ruta)` sobre cada documento con categoría "07.
+      RECLAMACIONES" → si devuelve subcarpeta (`civil`/`demanda`/`documentos`/
+      `preliminares`/`documentacion_rgpd_lopd`), guárdala en el
+      `_MANIFIESTO.md` como columna informativa para sub-agrupar el `INDICE.md`
+      dentro de "07. RECLAMACIONES" (ver Paso 5 actualizado abajo) — gratis,
+      sin coste de clasificación.
+   Si `01_Procesado/02_Sala de máquina/` no existe todavía, salta (d) y sigue
+   igual — no es bloqueante, solo una ganancia si ya se corrió `organizar-sala-maquina`.
 2. **Clasifica cada fichero NUEVO** leyendo su contenido. **Cómo leer según tipo:** los de
    **texto** (`.txt`/`.md`/`.eml`/`_chat.txt`/`.rtf`/`.csv`) se leen directo (**Modo 1**
    `expedientes-xl:read_text`; **Modo 2** `Read`; **Modo 3** `google-despacho:read_file_content`).
@@ -195,9 +227,28 @@ tal diálogo.
    - **Bundle:** detecta si el fichero es parte de un documento compuesto (ver
      "Documentos compuestos").
    No copies nada todavía.
-3. **(Paso 2.5 — GATE) Presenta la propuesta y ESPERA.** Renderiza la propuesta
-   visual (ver abajo) y **espera confirmación**. Si piden ajustes, reclasifica y vuelve
-   a presentar. **Solo con OK explícito** pasas al paso 4.
+2-bis. **Persiste la propuesta a fichero** en
+   `01_Procesado/Sala lectura/_plan/plan-<AAAA-MM-DD-HHmm>.md` — la misma
+   tabla que vas a mostrar en el Paso 2.5 (`sha256 | ruta_original |
+   nombre_canonico | tipo | fecha | parte | parent_id` + categoría +
+   `subcategoria_crm`), con cabecera `estado: propuesto`. Fuera de
+   `Sala lectura/` propiamente dicha para que un re-pull o una re-corrida no
+   lo pise ni lo reingiera (mismo motivo que "por qué la sala vive fuera de
+   `00_Input`"). NO se borra tras ejecutar — pasa a `estado: ejecutado`
+   (mismo razonamiento no-destructivo del resto de la skill).
+3. **(Paso 2.5 — GATE, ahora condicional, no siempre).** Si la propuesta NO
+   tiene ninguna fila con motivo `requiere_identificar_parte` (bundle
+   conversacional sin parte), ningún documento con W-code ajeno al caso,
+   ningún casi-duplicado de hash distinto con mismo nombre, y ningún binario
+   opaco SIN espejo MD disponible (ver Paso 1-bis.d más arriba) — **procede
+   directo al Paso 4 sin esperar aprobación**, deja constancia en el plan
+   persistido (`estado: auto-aprobado, sin anomalías`) para que quede trazado
+   qué se decidió sin humano.
+   Si SÍ hay alguna de esas señales, presenta la propuesta (tarjeta visual,
+   como hasta ahora) y **espera confirmación**. Si piden ajustes, reclasifica y
+   vuelve a presentar. **Solo con OK explícito** pasas al paso 4 — el gate
+   sigue existiendo, pero solo cuando hay algo genuinamente ambiguo que
+   decidir, no como trámite fijo.
 4. **(tras OK) Ejecuta de una pasada (PLANO):** **copia** cada fichero a
    `01_Procesado/Sala lectura/` (raíz) con **nombre canónico**
    `AAAA-MM-DD_descripcion.ext`; los documentos compuestos a su **subcarpeta fechada**
@@ -212,8 +263,14 @@ tal diálogo.
      `sha256 | ruta_original | nombre_canonico | tipo | fecha | parte | parent_id`. El
      `sha256` se calcula de los bytes (el `md5` de Drive NO sirve: la traza del caso
      llavea por sha256). `parent_id` agrupa los anexos de un bundle bajo su principal.
-   - `INDICE.md` — agrupado **por categoría** (la categoría vive aquí, no en carpetas),
-     orden **fecha DESCENDENTE**; cada entrada enlaza a la copia plana + nombre original.
+   - `INDICE.md` — agrupado por categoría, orden fecha DESCENDENTE. **Dentro de
+     "07. RECLAMACIONES"**, si la mayoría de sus documentos tienen
+     `subcategoria_crm` (Paso 1-bis.e), sub-agrupa por esa subcarpeta
+     (`civil`/`demanda`/`documentos`/`preliminares`/`documentacion_rgpd_lopd`,
+     y "correspondencia" para los `.eml` sin subcategoría CRM) antes de ordenar
+     por fecha dentro de cada subgrupo — es la única categoría que lo necesita
+     (concentra la mayoría de los documentos en expedientes judicializados).
+     Cada entrada enlaza a la copia plana + nombre original.
    - `CRONOLOGIA.md` — por fecha **ASCENDENTE**; `0000-00-00` y fechas `(*)` al final.
    Los tres con cabecera `<!-- GENERADO — NO EDITAR A MANO -->`.
 6. **Deriva el catálogo:** ejecuta
@@ -308,3 +365,14 @@ de preparar la demanda). En cada re-corrida:
 - **Stubs `.gdoc`/`.gsheet` (Docs nativos)** son ilegibles por filesystem (`expedientes-xl`
   los omite/bloquea): para su contenido, exporta con `google-despacho`
   (`export_to_drive`/`read_file_content`).
+- **Casos grandes (>80 ficheros): reparte la clasificación por fuente en
+  subagentes paralelos** (uno por `01_Drive EV`, uno por el lote de email, uno
+  por cada expediente CRM) en vez de un único agente secuencial — el dedup por
+  sha256 cruzado entre fuentes (Task 1) es la ÚNICA parte que necesita ver todo
+  junto; hazla en un paso de fusión aparte, después de que cada subagente
+  devuelva su clasificación local.
+- **Caso en Drive con muchos ficheros fríos (no hidratados): considera
+  `checkout-caso` a disco local antes de montar la sala.** `hash_tree`/
+  `read_text` sobre `G:` paga latencia de red por fichero no cacheado; en local
+  esa latencia desaparece. La copia server-side (`copy_path`/`cp`) es igual de
+  eficiente en ambos sitios — la ganancia está en la LECTURA, no en la copia.
