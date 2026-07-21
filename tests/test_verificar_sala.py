@@ -53,3 +53,42 @@ def test_parent_id_como_nombre_de_carpeta_de_bundle_no_es_huerfano():
     ]
     problemas = verificar_sala.verificar(filas, ficheros_en_disco={f["nombre_canonico"] for f in filas})
     assert problemas == []
+
+
+def test_detecta_fecha_0000_con_texto_ya_extraido_sin_usar():
+    # Bug real (W-02VUDR, 2026-07-21): 7 binarios opacos quedaron en 0000-00-00
+    # pese a que su espejo MD en sala de maquina ya tenia texto extraido con una
+    # fecha inequivoca (p.ej. un burofax certificado con "Fecha y hora del
+    # envio: 08/04/2025"). texto_espejo_md() existe desde la v1.9 pero es
+    # invocacion opcional en el procedimiento -- nada lo hacia obligatorio ni
+    # lo verificaba despues. cobertura_filas (de _cobertura.json) permite
+    # cruzar: si hay texto util (estado ok/low, chars por encima de un umbral)
+    # para un sha256 que quedo en 0000-00-00, es sospechoso y hay que avisar.
+    filas = [{"nombre_canonico": "0000-00-00_burofax.pdf", "sha256": "a", "parent_id": "", "fecha": "0000-00-00"}]
+    cobertura = [{"sha256": "a", "estado": "ok", "chars": 500}]
+    problemas = verificar_sala.verificar(
+        filas, ficheros_en_disco={"0000-00-00_burofax.pdf"}, cobertura_filas=cobertura)
+    assert any("0000-00-00" in p and "texto extraído" in p for p in problemas)
+
+
+def test_no_flaggea_fecha_0000_sin_cobertura():
+    filas = [{"nombre_canonico": "0000-00-00_doc.pdf", "sha256": "a", "parent_id": "", "fecha": "0000-00-00"}]
+    problemas = verificar_sala.verificar(
+        filas, ficheros_en_disco={"0000-00-00_doc.pdf"}, cobertura_filas=[])
+    assert problemas == []
+
+
+def test_no_flaggea_fecha_0000_con_texto_insuficiente_o_vacio():
+    filas = [{"nombre_canonico": "0000-00-00_doc.pdf", "sha256": "a", "parent_id": "", "fecha": "0000-00-00"}]
+    cobertura = [{"sha256": "a", "estado": "sin_soporte", "chars": 0}]
+    problemas = verificar_sala.verificar(
+        filas, ficheros_en_disco={"0000-00-00_doc.pdf"}, cobertura_filas=cobertura)
+    assert problemas == []
+
+
+def test_no_flaggea_fecha_con_valor_real_aunque_haya_cobertura():
+    filas = [{"nombre_canonico": "2025-04-08_burofax.pdf", "sha256": "a", "parent_id": "", "fecha": "2025-04-08"}]
+    cobertura = [{"sha256": "a", "estado": "ok", "chars": 500}]
+    problemas = verificar_sala.verificar(
+        filas, ficheros_en_disco={"2025-04-08_burofax.pdf"}, cobertura_filas=cobertura)
+    assert problemas == []

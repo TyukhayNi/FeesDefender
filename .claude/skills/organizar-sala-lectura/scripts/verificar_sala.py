@@ -5,14 +5,31 @@ lista problemas. Self-contained (sin `core/`), determinista.
 Motivo (sesión 2026-07-21, W-02VUDR, fusión de `HANDOFF_sala-lectura.md`
 §3.2): dos discrepancias reales de conteo pasaron el reporte final sin que
 nada las detectara automáticamente. Esta fase es la red de seguridad.
+
+Motivo del chequeo de fecha (misma sesión, hallazgo posterior): 7 binarios
+opacos quedaron en `0000-00-00` pese a que su espejo MD en sala de máquina
+ya tenía texto extraído con fecha inequívoca (p.ej. un burofax certificado
+con "Fecha y hora del envío: 08/04/2025"). `texto_espejo_md()` existe desde
+la v1.9 pero su consulta era opcional en el procedimiento — nada la
+verificaba después. El propósito de la sala de lectura es el timeline;
+`0000-00-00` sin motivo lo rompe.
 """
 from __future__ import annotations
 
+_CHARS_MINIMOS_SOSPECHOSO = 200
 
-def verificar(manifiesto_filas: list[dict], ficheros_en_disco: set[str]) -> list[str]:
+
+def verificar(
+    manifiesto_filas: list[dict],
+    ficheros_en_disco: set[str],
+    cobertura_filas: list[dict] | None = None,
+) -> list[str]:
     """Nunca arregla nada — solo detecta. `manifiesto_filas` son dicts con
-    al menos `nombre_canonico`, `sha256`, `parent_id`. Devuelve la lista de
-    problemas (vacía si todo cuadra)."""
+    al menos `nombre_canonico`, `sha256`, `parent_id`; si incluyen `fecha` y
+    se pasa `cobertura_filas` (filas de `_cobertura.json` de sala de
+    máquina), también se contrasta fecha `0000-00-00` contra texto ya
+    extraído disponible. Devuelve la lista de problemas (vacía si todo
+    cuadra)."""
     problemas: list[str] = []
     nombres_manifiesto = {f["nombre_canonico"] for f in manifiesto_filas}
 
@@ -44,4 +61,21 @@ def verificar(manifiesto_filas: list[dict], ficheros_en_disco: set[str]) -> list
                 f"{fila['nombre_canonico']}: parent_id {parent!r} no resuelve "
                 f"a ningún documento del manifiesto (anexo huérfano)"
             )
+
+    if cobertura_filas:
+        chars_ok_por_sha = {
+            c.get("sha256"): c.get("chars") or 0
+            for c in cobertura_filas
+            if c.get("estado") in ("ok", "low")
+        }
+        for fila in manifiesto_filas:
+            if fila.get("fecha") != "0000-00-00":
+                continue
+            chars = chars_ok_por_sha.get(fila.get("sha256"))
+            if chars is not None and chars >= _CHARS_MINIMOS_SOSPECHOSO:
+                problemas.append(
+                    f"{fila['nombre_canonico']}: fecha 0000-00-00 pero hay texto "
+                    f"extraído ({chars} chars) en sala de máquina -- revisar si "
+                    f"contiene una fecha real antes de dar por bueno el 0000-00-00"
+                )
     return problemas

@@ -185,16 +185,28 @@ tal diálogo.
       patrón). Pásalo por alto (verifica leyendo) solo cuando el motivo sea
       `default_reclamaciones` y el documento sea inusual o el letrado lo pida
       — no hace falta confirmar 07 sistemáticamente.
-   d. Para los binarios opacos (PDF escaneado, imagen) que SÍ necesiten lectura
-      real (bundles conversacionales, o para poner fecha real en vez de
-      `0000-00-00`): prueba `texto_espejo_md(sm_dir, sha256)` — si
-      `01_Procesado/02_Sala de máquina/` ya tiene el texto OCR, úsalo en vez de
-      leer el binario o rendirte a `(*)`. Si el binario opaco NO tiene espejo MD
-      disponible (`01_Procesado/02_Sala de máquina/` no existe, o su fila en
-      `_cobertura.json` no tiene `estado` ok/low), márcalo como señal para el
-      gate condicional del Paso 2.5 (ver abajo) — es exactamente la categoría de
-      "algo ambiguo" que debe forzar la aparición del gate, en vez de
-      clasificarlo a ciegas por nombre y seguir en silencio.
+   d. **Para TODO binario opaco (PDF escaneado, imagen) que vaya a quedar sin
+      fecha por patrón/nombre: consulta `texto_espejo_md(sm_dir, sha256)`
+      SIEMPRE antes de escribir `0000-00-00` — no es opcional, ni solo para
+      bundles conversacionales.** Si devuelve texto, aplícale la jerarquía de
+      fecha del Paso 2 (otorgamiento/firma → otra fecha inequívoca del
+      contenido → nombre del fichero → `0000-00-00`) antes de rendirte.
+      Motivo (sesión 2026-07-21, W-02VUDR): 7 binarios quedaron en
+      `0000-00-00` con el espejo ya disponible y una fecha inequívoca en el
+      texto (p.ej. un burofax certificado con "Fecha y hora del envío:
+      08/04/2025 18:13:12") porque esta consulta era una sugerencia fácil de
+      saltarse bajo presión de tiempo (casos grandes fanned-out en varios
+      subagentes) — rompe el propósito de la sala, que es tener el timeline
+      claro. El Paso 6.5 ahora lo detecta si se salta, pero es mucho más
+      barato acertar aquí que corregirlo después. Si el binario opaco NO
+      tiene espejo MD disponible (`01_Procesado/02_Sala de máquina/` no
+      existe, o su fila en `_cobertura.json` no tiene `estado` ok/low),
+      márcalo como señal para el gate condicional del Paso 2.5 (ver abajo) —
+      es exactamente la categoría de "algo ambiguo" que debe forzar la
+      aparición del gate. Si el espejo SÍ existe pero el texto no contiene
+      ninguna fecha reconocible (formulario en blanco, captura con solo
+      timestamps relativos, ficha CRM sin fecha de documento única),
+      `0000-00-00` es correcto — pero solo tras haber mirado el texto.
    e. `subcategoria_crm(ruta)` sobre cada documento con categoría "07.
       RECLAMACIONES" → si devuelve subcarpeta (`civil`/`demanda`/`documentos`/
       `preliminares`/`documentacion_rgpd_lopd`), guárdala en el
@@ -289,8 +301,15 @@ tal diálogo.
    - `CRONOLOGIA.md` — por fecha **ASCENDENTE**; `0000-00-00` y fechas `(*)` al final.
    Los tres con cabecera `<!-- GENERADO — NO EDITAR A MANO -->`.
 6.5. **Verify — falla ruidosamente, no resumas bonito.** `verificar(filas,
-   ficheros_en_disco)` sobre el `_MANIFIESTO.md` recién escrito. Si devuelve
-   ALGÚN problema, NO sigas al Paso 7 con un reporte de éxito — lista los
+   ficheros_en_disco, cobertura_filas)` sobre el `_MANIFIESTO.md` recién
+   escrito — pasa también las filas de `01_Procesado/02_Sala de máquina/
+   _cobertura.json` si el fichero existe (si no existe, pasa `None`/omite el
+   argumento). Con `cobertura_filas`, `verificar()` además avisa de cualquier
+   fila con `fecha: 0000-00-00` cuyo sha256 tenga texto ya extraído en sala
+   de máquina (`estado` ok/low con chars por encima del umbral) — señal de
+   que el Paso 1-bis.d se saltó y hay que revisar esa fila antes de dar el
+   `0000-00-00` por bueno. Si `verificar()` devuelve ALGÚN problema (de
+   cualquier tipo), NO sigas al Paso 7 con un reporte de éxito — lista los
    problemas primero, en el mismo nivel de visibilidad que el resto del
    reporte, y decide con el letrado si reintentar o dejarlos anotados
    explícitamente. Nunca "cuenta bien" un total que no cuadra con lo real.
