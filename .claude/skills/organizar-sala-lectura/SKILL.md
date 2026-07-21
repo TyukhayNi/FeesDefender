@@ -21,7 +21,7 @@ metadata:
   naturaleza: atomica
   jurisdiction: ES
   area: [civil, procesal]
-  version: "1.9"
+  version: "1.11"
   author: "Nikolai Tyukhay"
   organization: "Tyukhay Legal"
   contact: "nikolai.tyukhay@tyukhay.legal"
@@ -147,6 +147,16 @@ tal diálogo.
 ## Procedimiento
 
 0. **Montaje (bloqueante). Determina DÓNDE vive el caso y elige modo (ver "Modos de acceso"):**
+   - **Frescura (solo si la skill se ejecuta desde un checkout git del repo —
+     Claude Code local, no el `.skill` importado en Cowork):** antes de leer el
+     resto del procedimiento, verifica que tu copia está al día:
+     `git fetch origin main --quiet && git diff --quiet origin/main HEAD -- .claude/skills/organizar-sala-lectura/`.
+     Si difiere, **ABORTA y avisa** ("la skill local está desactualizada respecto
+     a origin/main; actualiza tu rama antes de correrla"). **NUNCA auto-repares con
+     `git checkout origin/main -- .claude/skills/...` sobre la raíz git compartida:**
+     otra sesión concurrente puede tener trabajo sin commitear ahí y lo pisarías
+     (pasó en la pasada 2 de W-02VUDR). Actualizar la rama es decisión del humano,
+     no de la skill.
    - **¿El usuario dio una ruta local del PC** (`Desktop/…`, `C:/Users/…`, cualquier cosa
      fuera de `G:`/`H:`; típico tras un `checkout-caso`)? → **Modo 2 (local-nativo).** Usa el
      filesystem del entorno (Claude Code: tools nativas `Read`/`Write`/`Glob`/`Bash`; Cowork:
@@ -441,7 +451,11 @@ de preparar la demanda). En cada re-corrida:
   por cada expediente CRM) en vez de un único agente secuencial — el dedup por
   sha256 cruzado entre fuentes (Task 1) es la ÚNICA parte que necesita ver todo
   junto; hazla en un paso de fusión aparte, después de que cada subagente
-  devuelva su clasificación local.
+  devuelva su clasificación local. Cada subagente **verifica frescura ANTES de
+  leer `SKILL.md`** (misma comprobación del Paso 0); si está desactualizado
+  respecto a `origin/main`, **para y avisa** — nunca corre una versión mezclada
+  ni auto-repara con `git checkout` sobre la raíz compartida (en la pasada 2 un
+  subagente corrió parcialmente v1.8 creyéndose v1.9 e invalidó el A/B).
 - **Caso en Drive con muchos ficheros fríos (no hidratados): considera
   `checkout-caso` a disco local antes de montar la sala.** `hash_tree`/
   `read_text` sobre `G:` paga latencia de red por fichero no cacheado; en local

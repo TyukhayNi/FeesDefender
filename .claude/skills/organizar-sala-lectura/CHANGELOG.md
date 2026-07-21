@@ -1,5 +1,40 @@
 # Changelog — organizar-sala-lectura
 
+## 1.11 — 2026-07-22
+- **Señales del gate por código (`scripts/preclasificar.py::senales_gate`).** El
+  gate condicional (Paso 2.5) deja de depender de comprobaciones mentales del
+  agente: `senales_gate(filas, wcode_caso, cobertura_filas)` detecta de forma
+  determinista W-code AJENO al caso (excluir, nunca copiar — falló en producción:
+  un fichero de W-02X270 se copió a W-02VUDR), casi-duplicado (mismo nombre,
+  sha256 distinto), binario opaco sin espejo MD y bundle sin parte. Lista vacía →
+  auto-aprueba; no vacía → presenta y espera.
+- **Verify determinista de extremo a extremo (`scripts/verificar_sala.py` CLI).**
+  `python verificar_sala.py <sala_dir> [--cobertura ...] [--hash no|muestra|completo]`
+  parsea él mismo el `_MANIFIESTO.md` (parser compartido `manifiesto_parser.py`) y
+  lista el directorio — el mismo agente que clasifica ya no ensambla a mano lo que
+  el check debe cazar. `verificar()` ahora detecta colisiones de `nombre_canonico`
+  (el `set` las colapsaba y el verify pasaba verde — podía DESAPARECER un documento)
+  y antepone un aviso si ≥5 problemas son del mismo tipo (sospecha del check, no de
+  los datos: 21 filas se parchearon a mano por un falso positivo).
+- **Prohibido editar artefactos generados para pasar el verify.** Paso 6.5: la
+  cabecera `GENERADO — NO EDITAR` es vinculante; toda corrección se re-deriva.
+- **`precheck_rclone.py` — prerrequisito OAuth por exit code, no por doc.** Un
+  agente concluyó desde un doc archivado que no había client propio (falso; un
+  comando de 1s lo confirmaba). Extrae SOLO `client_id` (nunca vuelca la config —
+  `token`/`client_secret` en claro). exit 0 → `rcd` primario; 3 → copia secuencial.
+- **Fallback `ERROR_FILE_NOT_HYDRATED` cableado (Paso 4).** Reintento automático
+  de ese fichero vía `copiar_renombrar()` (server-side) antes de anotar pendiente;
+  `copiar_manifiesto` aborta antes de tocar Drive (`validar_pares`) si hay destinos
+  duplicados.
+- **Columna `categoria` + `subcategoria_crm` en el `_MANIFIESTO.md` y el YAML;
+  índices por script.** `indices_desde_manifiesto.py` deriva INDICE/CRONOLOGIA y el
+  LLM deja de transcribir ~350 líneas por corrida; el catálogo YAML ya no omite la
+  categoría por la que se construyó la sala (`CatalogEntry` gana `categoria`/
+  `subcategoria_crm`). Parser del manifiesto compartido (`manifiesto_parser.py`).
+- **Frescura del checkout + guard de versión (Paso 0 + test).** Frontmatter y
+  CHANGELOG se validan en sincronía; Paso 0 aborta (no auto-repara) si el checkout
+  git está desactualizado, y prohíbe `git checkout` sobre la raíz compartida.
+
 ## 1.10 — 2026-07-21
 - **Fix — `verificar_sala.py` reconoce `parent_id` como carpeta de bundle.**
   La v1 de `verificar()` solo aceptaba match exacto contra `nombre_canonico`
