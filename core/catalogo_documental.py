@@ -49,6 +49,8 @@ class CatalogEntry:
     confianza: float | None = None
     nombre_canonico: str | None = None
     ruta_sala_lectura: str | None = None
+    categoria: str | None = None          # categoría E&V (por la que se construyó la sala)
+    subcategoria_crm: str | None = None   # subcarpeta del Gestor Documental CRM (etiqueta secundaria)
 
 
 def _catalog_path(case_id: str) -> Path:

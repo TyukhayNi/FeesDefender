@@ -30,6 +30,7 @@ _SOURCE_MAP = {
 CAMPOS_EMITIDOS = [
     "id_doc", "ruta_relativa", "nombre_original", "tipo_documental", "fecha_doc",
     "parte", "fuente", "estado", "hash", "parent_id", "nombre_canonico",
+    "categoria", "subcategoria_crm",
 ]
 
 
@@ -62,6 +63,8 @@ def derivar(manifiesto: Path, salida: Path) -> Path:
             "hash": sha,
             "parent_id": f["parent_id"] or None,
             "nombre_canonico": f["nombre_canonico"] or None,
+            "categoria": f.get("categoria") or None,
+            "subcategoria_crm": f.get("subcategoria_crm") or None,
         })
     Path(salida).write_text(
         yaml.dump(entradas, allow_unicode=True, default_flow_style=False, sort_keys=False),
