@@ -208,3 +208,14 @@ def test_materializar_corta_y_devuelve_doclogicos(tmp_path):
 def test_split_documental_es_evento_valido():
     from core.intake_log import INTAKE_EVENTS
     assert "split_documental" in INTAKE_EVENTS
+
+
+def test_render_cobertura_incluye_columnas_de_segmento():
+    from core.sala_maquina import DocCobertura, render_cobertura
+    filas = [DocCobertura("bundle__seg01_cedula__ab", "01_Drive EV/b.pdf", "pypdf", "ok",
+                          120, False, "", "ab" * 32, parent_slug="bundle", role="documento",
+                          paginas="1-4", tipo="CEDULA_EMPLAZAMIENTO")]
+    out = render_cobertura(filas)
+    assert "parent" in out.lower()
+    assert "1-4" in out
+    assert "CEDULA_EMPLAZAMIENTO" in out

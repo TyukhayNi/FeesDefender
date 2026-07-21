@@ -75,9 +75,10 @@ revisa, no ejecuta OCR.
 ├── 00_Input/                              ← crudo, NO se toca
 └── 01_Procesado/
     ├── 02_Sala de máquina/
-    │   ├── 01_OCR/      {slug__sha8}.pdf      PDFs BUSCABLES (custodia)
-    │   ├── 03_MD/       {slug__sha8}.md       markdown legible + frontmatter
-    │   └── raw_text/    {slug__sha8}.txt      texto intermedio (idempotencia)
+    │   ├── 01_OCR/         {slug__sha8}.pdf   PDFs BUSCABLES (custodia)
+    │   ├── 02_Documentos/  {bundle}/…         segmentos de bundles multi-doc + _segmentacion.md/.json
+    │   ├── 03_MD/          {slug__sha8}.md     markdown legible + frontmatter (uno por documento lógico)
+    │   └── raw_text/       {slug__sha8}.txt    texto intermedio (idempotencia)
     └── _revisar/
         └── _cobertura.md                     worklist de revisión (ok/low/empty)
 ```
@@ -85,6 +86,25 @@ revisa, no ejecuta OCR.
 Cada `.md` lleva frontmatter trazable (`case_id`, `source_path`, `extractor`,
 `chars`, `ocr`, `ocr_quality`, `text_sha256`). El evento `procesado_sala_maquina`
 queda en `00_Input/_intake_log.jsonl` (sha256 por fichero — cadena de custodia).
+
+### Split de bundles multi-documento
+
+Un PDF que reúne varios documentos (un *bundle*: p. ej. escaneo corrido de cédula +
+auto + factura) se **parte por HOJA EN BLANCO** antes del MD, sobre el PDF ya
+buscable (entre el OCR y el MD), para que cada documento lógico tenga su propio
+`.md` y su fila de cobertura, no un MD gigante.
+
+- `plan` **propone** un manifiesto editable por bundle en
+  `02_Documentos/{bundle}/_segmentacion.md` (+ `.json`) y avisa. Solo pre-detecta los
+  PDF ya buscables; los escaneados sin OCR se segmentan en `apply`, tras el OCR.
+- El letrado **ajusta** ese manifiesto (fusionar segmentos, mover un límite,
+  re-etiquetar el `tipo`); `apply` **respeta el editado** y solo lo regenera con
+  `--force`. Los segmentos aterrizan en `02_Documentos/{bundle}/`, cada uno con su
+  MD; el evento `split_documental` deja la traza.
+- Si no se detectan ≥2 documentos (o el PDF es ilegible para el detector), se
+  comporta como antes: un solo MD (passthrough), con nota de constancia.
+- Consumir estos documentos lógicos como *documento compuesto* en
+  `organizar-sala-lectura` es follow-on (`MEJORAS #79`).
 
 ## Procedimiento
 

@@ -21,6 +21,8 @@ from core.extractor import (
 from core.anon.ocr import ocr_pdf
 from core.anon.imagen_a_pdf import convertir as convertir_imagen
 from core.utils import file_sha256, now_iso, output_slug, text_sha256, write_md
+from core import split_documental as split
+from core.intake_log import append_event
 
 _EXTS_IMAGEN = {".jpg", ".jpeg", ".png", ".tiff", ".tif", ".heic", ".heif", ".webp", ".bmp", ".gif"}
 _EXTS_NATIVO = {".eml", ".txt", ".md", ".rtf", ".ics", ".csv", ".xlsx", ".xls", ".docx", ".html", ".htm"}
@@ -123,6 +125,11 @@ class DocCobertura:
     ocr: bool = False
     nota: str = ""
     sha256: str = ""     # sha del origen: cadena de custodia (spec §7/§10) + estado idempotente
+    parent_slug: str = ""    # slug del bundle si es un segmento (split); vacío si documento suelto
+    parent_sha256: str = ""  # sha del fichero FÍSICO de origen; clave del estado idempotente por bundle
+    role: str = "documento"  # role_in_bundle (documento | anexo | ...)
+    paginas: str = ""        # rango de páginas en el bundle ("1-4"); vacío si no aplica
+    tipo: str = ""           # tipo clasificado del documento lógico
 
 
 def plan(inventario: list[dict], estado_previo: set[str]) -> list[DocPlan]:
@@ -166,13 +173,14 @@ def render_cobertura(cobertura: list[DocCobertura]) -> str:
         "<!-- GENERADO — NO EDITAR A MANO -->",
         "# Cobertura de la Sala de máquina",
         "",
-        "| documento | origen | método | estado | chars | ocr | nota |",
-        "|---|---|---|---|---|---|---|",
+        "| documento | origen | tipo | páginas | parent | método | estado | chars | ocr | nota |",
+        "|---|---|---|---|---|---|---|---|---|---|",
     ]
     for d in filas:
         lineas.append(
-            f"| {_celda(d.slug)} | {_celda(d.rel_path)} | {d.metodo} | {d.estado} | "
-            f"{d.chars} | {'sí' if d.ocr else '—'} | {_celda(d.nota)} |"
+            f"| {_celda(d.slug)} | {_celda(d.rel_path)} | {_celda(d.tipo)} | {_celda(d.paginas)} | "
+            f"{_celda(d.parent_slug)} | {d.metodo} | {d.estado} | {d.chars} | "
+            f"{'sí' if d.ocr else '—'} | {_celda(d.nota)} |"
         )
     dudosos = [d for d in filas if d.estado != "ok"]
     lineas += ["", f"**{len(dudosos)} de {len(filas)} documentos requieren tu revisión.**", ""]
@@ -190,24 +198,28 @@ def fusionar_cobertura(previa: list[DocCobertura],
     previas en su orden (con la versión nueva si se re-tocó ese documento), luego
     las nuevas no vistas.
 
-    Se indexa por `rel_path` (la fuente en `00_Input/`), NO por `slug`:
-    `output_slug` = stem + sha8 descarta la carpeta, así que dos ficheros
-    byte-idénticos con el mismo nombre en carpetas distintas (p. ej. el mismo
-    encargo por Drive y como adjunto de correo) comparten slug pero son DOS filas
-    de custodia. Indexar por slug las colapsaría, perdiendo una ruta en silencio.
-    `rel_path` es única por documento del inventario (`inventariar` recorre sin
-    duplicar), así que cada fuente conserva su fila.
+    Se indexa por la clave compuesta `(rel_path, slug)`: (a) dos ficheros
+    byte-idénticos con el mismo nombre en carpetas distintas (mismo `slug`, porque
+    `output_slug` = stem + sha8 descarta la carpeta; p. ej. el mismo encargo por
+    Drive y como adjunto de correo) siguen siendo DOS filas de custodia porque su
+    `rel_path` difiere; y (b) los N documentos lógicos de un bundle multi-documento
+    (mismo `rel_path`, un `slug` propio por segmento) son N filas y NO colapsan.
+    Indexar solo por `rel_path` colapsaría los segmentos a 1 (perdiendo N-1 en
+    silencio, el defecto detectado en la validación); indexar solo por `slug`
+    colapsaría las dos rutas byte-idénticas.
     """
-    por_ruta = {d.rel_path: d for d in nueva}
-    vistos: set[str] = set()
+    por_clave = {(d.rel_path, d.slug): d for d in nueva}
+    vistos: set[tuple[str, str]] = set()
     out: list[DocCobertura] = []
     for d in previa:
-        out.append(por_ruta.get(d.rel_path, d))
-        vistos.add(d.rel_path)
+        clave = (d.rel_path, d.slug)
+        out.append(por_clave.get(clave, d))
+        vistos.add(clave)
     for d in nueva:
-        if d.rel_path not in vistos:
+        clave = (d.rel_path, d.slug)
+        if clave not in vistos:
             out.append(d)
-            vistos.add(d.rel_path)
+            vistos.add(clave)
     return out
 
 
@@ -369,12 +381,76 @@ def _escribir_md(case_dir, case_id, slug, rel_path, texto, metodo, ocr, estado):
     write_md(md_path, meta, texto)
 
 
+def _split_o_md(case_dir: Path, sm_dir: Path, case_id: str, d: DocPlan,
+                buscable: Path, metodo_base: str, ocr: bool, vision: bool,
+                force: bool = False) -> list[DocCobertura]:
+    """Sobre el PDF buscable: si tiene ≥2 documentos lógicos, corta el bundle y
+    genera un MD por documento; si no, MD único (passthrough = comportamiento
+    previo al split). Devuelve las filas de cobertura (N si es bundle, 1 si no).
+
+    El manifiesto es el gate editable por el letrado: se respeta el existente
+    salvo `--force`, que lo regenera desde la detección (Task 14).
+    """
+    try:
+        segmentos, blancos = split.detectar(buscable)
+        split_err = ""
+    except Exception as e:
+        # No se pudo segmentar (PDF ilegible/corrupto/vacío para el detector): se
+        # degrada a passthrough (un solo documento) en vez de perder el documento.
+        # Preserva el comportamiento previo al split; la nota deja constancia.
+        segmentos, blancos, split_err = None, None, str(e)
+
+    if not segmentos or len(segmentos) <= 1:
+        # passthrough: un solo documento lógico → MD único, como antes del split.
+        texto = _try_pypdf(buscable) or ""
+        estado, nota = ocr_quality(texto, _pdf_num_paginas(buscable))
+        texto, estado, nota = _aplicar_vision(buscable, texto, estado, nota, vision)
+        if split_err:
+            aviso = f"segmentación omitida ({split_err})"
+            nota = f"{nota} · {aviso}" if nota else aviso
+        _escribir_md(case_dir, case_id, d.slug, d.rel_path, texto, metodo_base, ocr, estado)
+        tipo_pass = segmentos[0].tipo if segmentos else ""
+        return [DocCobertura(d.slug, d.rel_path, metodo_base, estado, len(texto), ocr, nota,
+                             d.sha256, parent_sha256=d.sha256, tipo=tipo_pass)]
+
+    # split: manifiesto (editable) → materializar → un MD por documento lógico.
+    carpeta_bundle = destino_seguro(sm_dir / "02_Documentos" / d.slug, case_dir)
+    usar_previo = split.manifiesto_existe(carpeta_bundle) and not force
+    manifiesto = (split.leer_manifiesto(carpeta_bundle) if usar_previo
+                  else split.construir_manifiesto(d.rel_path, d.sha256, segmentos, blancos))
+    split.validar_manifiesto(manifiesto, _pdf_num_paginas(buscable) or 0)
+    if not usar_previo:
+        split.escribir_manifiesto(carpeta_bundle, manifiesto)
+    doclogicos = split.materializar(buscable, manifiesto, carpeta_bundle,
+                                    parent_slug=d.slug, parent_sha256=d.sha256,
+                                    bundle_rel_path=d.rel_path)
+    filas: list[DocCobertura] = []
+    for dl in doclogicos:
+        seg_pdf = carpeta_bundle / f"{dl.slug}.pdf"
+        texto = _try_pypdf(seg_pdf) or ""
+        estado, nota = ocr_quality(texto, _pdf_num_paginas(seg_pdf))
+        texto, estado, nota = _aplicar_vision(seg_pdf, texto, estado, nota, vision)
+        _escribir_md(case_dir, case_id, dl.slug, d.rel_path, texto, metodo_base, ocr, estado)
+        filas.append(DocCobertura(dl.slug, d.rel_path, metodo_base, estado, len(texto), ocr, nota,
+                                  dl.seg_sha256, parent_slug=dl.parent_slug, parent_sha256=d.sha256,
+                                  role=dl.role_in_bundle, paginas=dl.paginas, tipo=dl.tipo))
+    append_event(case_id, "split_documental", details={
+        "bundle": d.rel_path, "bundle_sha256": d.sha256, "n_segmentos": len(doclogicos),
+        "segmentos": [{"slug": dl.slug, "seg_sha256": dl.seg_sha256, "tipo": dl.tipo,
+                       "paginas": dl.paginas} for dl in doclogicos],
+        "delimitadores": manifiesto["delimitadores"],
+    })
+    return filas
+
+
 def _ocr_y_extraer(case_dir: Path, sm_dir: Path, case_id: str, d: DocPlan,
-                    entrada: Path, vision: bool) -> DocCobertura:
-    """OCRmyPDF sobre `entrada` → PDF buscable persistido en 01_OCR/ → texto → MD.
+                   entrada: Path, vision: bool, force: bool = False) -> list[DocCobertura]:
+    """OCRmyPDF sobre `entrada` → PDF buscable persistido en 01_OCR/ → split → MD.
 
     Compartido por el camino PDF escaneado y el camino imagen/`.heic` (ambos
     terminan en "aplícale OCR a un PDF"; solo cambia de dónde sale ese PDF).
+    Devuelve una lista de cobertura (N filas si el buscable es un bundle
+    multi-documento; 1 fila en passthrough o si el OCR falla).
     """
     ocr_out = destino_seguro(sm_dir / "01_OCR" / f"{d.slug}.pdf", case_dir)
     try:
@@ -382,7 +458,8 @@ def _ocr_y_extraer(case_dir: Path, sm_dir: Path, case_id: str, d: DocPlan,
     except Exception as e:  # OCRError incl. cifrado/corrupto/firmado
         nota = f"OCR falló: {e}"
         if not vision:
-            return DocCobertura(d.slug, d.rel_path, "ocr", "empty", 0, True, nota, d.sha256)
+            return [DocCobertura(d.slug, d.rel_path, "ocr", "empty", 0, True, nota, d.sha256,
+                                 parent_sha256=d.sha256)]
         # OCRmyPDF rechazó el PDF, pero pypdfium2 (rasterizador más permisivo) puede
         # renderizarlo: intenta la visión sobre la entrada original. Es justo el doc
         # que `reforzar` existe para rescatar; sin esto la visión nunca se intentaba
@@ -392,27 +469,24 @@ def _ocr_y_extraer(case_dir: Path, sm_dir: Path, case_id: str, d: DocPlan,
         texto, estado, nota = _reforzar_con_vision(entrada, "", "empty", nota)
         if texto.strip():
             _escribir_md(case_dir, case_id, d.slug, d.rel_path, texto, "vision", False, estado)
-        return DocCobertura(d.slug, d.rel_path, "vision", estado, len(texto), False, nota, d.sha256)
+        return [DocCobertura(d.slug, d.rel_path, "vision", estado, len(texto), False, nota, d.sha256,
+                             parent_sha256=d.sha256)]
     # Contrato de ocr_pdf: si el PDF ya tenía capa de texto (rc=6 / PriorOcrFound),
-    # devuelve la ENTRADA sin escribir ocr_out → no hay artefacto de custodia en
-    # 01_OCR/. No afirmamos una custodia que no existe: el texto se extrae igual de
-    # la capa previa, pero se refleja como pypdf (ocr=False) con nota explícita.
+    # devuelve la ENTRADA sin escribir ocr_out → no hay artefacto de custodia en 01_OCR/.
     persistido = Path(buscable) == ocr_out and ocr_out.exists()
-    texto = _try_pypdf(buscable) or ""
-    estado, nota = ocr_quality(texto, _pdf_num_paginas(buscable))
-    texto, estado, nota = _aplicar_vision(buscable, texto, estado, nota, vision)
-    if persistido:
-        metodo, ocr = "ocr", True
-    else:
-        metodo, ocr = "pypdf", False
+    metodo, ocr = ("ocr", True) if persistido else ("pypdf", False)
+    filas = _split_o_md(case_dir, sm_dir, case_id, d, Path(buscable), metodo, ocr, vision, force)
+    if not persistido:
+        # No afirmamos una custodia que no existe: el texto sale de la capa previa;
+        # se refleja como pypdf con nota explícita, preservada por documento lógico.
         aviso = "OCRmyPDF no regeneró (PDF ya tenía texto); sin artefacto en 01_OCR"
-        nota = f"{nota} · {aviso}" if nota else aviso
-    _escribir_md(case_dir, case_id, d.slug, d.rel_path, texto, metodo, ocr, estado)
-    return DocCobertura(d.slug, d.rel_path, metodo, estado, len(texto), ocr, nota, d.sha256)
+        for f in filas:
+            f.nota = f"{f.nota} · {aviso}" if f.nota else aviso
+    return filas
 
 
 def ejecutar(case_dir: Path, docs: list[DocPlan], *, case_id: str,
-             vision: bool = False) -> list[DocCobertura]:
+             vision: bool = False, force: bool = False) -> list[DocCobertura]:
     """Recorre el plan escribiendo 01_OCR/, raw_text/, 03_MD/. Devuelve cobertura.
 
     Rutas (spec §5): PDF con capa de texto → pypdf sin OCR; PDF escaneado o
@@ -440,13 +514,11 @@ def ejecutar(case_dir: Path, docs: list[DocPlan], *, case_id: str,
                 texto = _try_pypdf(src) or ""
                 npags = _pdf_num_paginas(src)
                 if texto and _texto_suficiente(texto, npags):
-                    estado, nota = ocr_quality(texto, npags)
-                    texto, estado, nota = _aplicar_vision(src, texto, estado, nota, vision)
-                    _escribir_md(case_dir, case_id, d.slug, d.rel_path, texto, "pypdf", False, estado)
-                    cobertura.append(DocCobertura(d.slug, d.rel_path, "pypdf", estado, len(texto), False, nota, d.sha256))
+                    # PDF digital (ya buscable): el split va sobre el propio PDF → MD por doc lógico
+                    cobertura.extend(_split_o_md(case_dir, sm_dir, case_id, d, src, "pypdf", False, vision, force))
                     continue
-                # escaneado → OCRmyPDF (sin tope de páginas)
-                cobertura.append(_ocr_y_extraer(case_dir, sm_dir, case_id, d, src, vision))
+                # escaneado → OCRmyPDF (sin tope de páginas) → split → MD
+                cobertura.extend(_ocr_y_extraer(case_dir, sm_dir, case_id, d, src, vision, force))
             elif d.ruta == "imagen":
                 # imagen/.heic → PDF intermedio (no persistido: solo el buscable
                 # tras OCR va a 01_OCR/, spec §5) → mismo camino OCR que un escaneado.
@@ -459,7 +531,7 @@ def ejecutar(case_dir: Path, docs: list[DocPlan], *, case_id: str,
                             d.slug, d.rel_path, "sin_soporte", "sin_soporte", 0, False,
                             f"conversión a PDF falló: {e}", d.sha256))
                         continue
-                    cobertura.append(_ocr_y_extraer(case_dir, sm_dir, case_id, d, intermedio, vision))
+                    cobertura.extend(_ocr_y_extraer(case_dir, sm_dir, case_id, d, intermedio, vision, force))
             elif d.ruta == "nativo":
                 texto = _extraer_nativo(src, d.ext) or ""
                 estado, nota = ocr_quality(texto, None)

@@ -271,3 +271,15 @@ def test_vision_cableada_detecta_stub_y_monkeypatch(monkeypatch):
     assert sm.vision_cableada() is False                 # stub por defecto = no cableado
     monkeypatch.setattr(sm, "_transcribir_vision", lambda imgs: "texto transcrito")
     assert sm.vision_cableada() is True                  # inyectado = cableado
+
+
+# --- Task 13B: cobertura por documento lógico (no colapsar segmentos) --------
+
+def test_fusionar_cobertura_conserva_n_segmentos_mismo_bundle():
+    # 3 segmentos del MISMO bundle (mismo rel_path) con slug propio NO deben colapsar.
+    from core.sala_maquina import DocCobertura, fusionar_cobertura
+    segs = [DocCobertura(f"b__seg{i:02d}_X__{i:08x}", "01_Drive EV/b.pdf", "pypdf", "ok",
+                         100, False, "", f"{i:064x}", parent_sha256="B" * 64, parent_slug="b")
+            for i in (1, 2, 3)]
+    out = fusionar_cobertura([], segs)
+    assert len(out) == 3   # antes colapsaba a 1 (indexado solo por rel_path)

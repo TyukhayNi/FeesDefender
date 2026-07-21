@@ -2916,3 +2916,25 @@ puntero en `CLAUDE.md`; (2) crear `docs/superpowers/handoffs/` y migrar los hand
 
 **Disparador:** decisión de Nikolai; encaja de forma natural en la sesión de gobernanza/triaje de `PLAN.md`
 (el primer handoff que estrena la nomenclatura es `docs/superpowers/handoffs/handoff-2026-07-19-triaje-plan.md`).
+
+## 78. Split de bundles — merge N→1 en `apply` + auto-detección de conjunto  [follow-on de F2]
+
+**Disparador:** cierre de la Fase F2 (integración del split en la Sala de máquina). Deferido consciente (YAGNI).
+
+Dos refinamientos que F2 dejó fuera:
+- **Merge N→1 dirigido por el manifiesto:** hoy el letrado puede fusionar segmentos DENTRO de un bundle
+  editando `_segmentacion.md`, pero falta el camino inverso explícito (unir varios PDFs SUELTOS en un mismo
+  documento lógico) apoyándose en `role_in_bundle`/`fuentes` de `DocLogico`, que ya está merge-ready.
+- **Auto-detección de conjunto (`conjunto_detector`):** detectar que N ficheros sueltos de `00_Input` forman
+  un mismo documento (p. ej. páginas fotografiadas por separado) y proponerlos como bundle.
+
+El corte 1→N (el caso real de VALERO) ya lo cubre F2; esto es comodidad.
+
+## 79. Consumo de documentos lógicos (split) por `organizar-sala-lectura`  [follow-on de F2]
+
+**Disparador:** cierre de la Fase F2. La Sala de máquina ya emite un MD por documento lógico bajo
+`02_Documentos/{bundle}/`, con `parent_slug`/`tipo`/`paginas` en la cobertura. Falta que
+`organizar-sala-lectura` los consuma como **documento compuesto** (subcarpeta fechada) en vez de tratar el
+bundle como un solo fichero: leer la cobertura por documento lógico, respetar el `tipo` clasificado y nombrar
+canónicamente cada segmento. Contrato de salida documentado en el §9 del spec del split
+(`docs/superpowers/specs/2026-07-14-split-sala-maquina-design.md`).

@@ -16,7 +16,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 
 | # | Ítem | Estado | Gate / disparador | Esf. |
 |---|------|--------|-------------------|------|
-| 1 | [Split F2 sala de máquina](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado | medio |
+| 1 | [Split F2 sala de máquina](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | ✅ construido | PR pendiente de merge | medio |
 | 2 | [Infra C — art. 156 LEC](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado (quick win) | bajo |
 | 3 | [Infra B — expediente scratch](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado | medio |
 | 4 | [MCP sudespacho F1](#siguiente-mcp-sudespacho-mcp-sudespacho-crm-del-despacho--f1-lectura-spec-hecho-plan-pendiente) | spec lista | gates de despliegue | alto |
@@ -74,7 +74,9 @@ B**; D/E/F quedan en backlog. **Actualización: el Cluster A lo completó la ses
   `materializar`), `separar.py` tocado solo con el parámetro aditivo `tipos_extra` (congelado, byte-idéntico),
   evento `split_documental`. Construido subagent-driven (11 tareas TDD); revisión final Opus "ready to merge".
   Plan `docs/superpowers/plans/2026-07-14-split-sala-maquina.md` (spec+plan del PR #43). **F2 (integración en
-  `core/sala_maquina.py`, Tareas 12-15 + 13B) PENDIENTE** — Cluster A ya en main → desbloqueada; rebasar antes.
+  `core/sala_maquina.py`, Tareas 12-15 + 13B) ✅ CONSTRUIDA** (suite 2222 verde): split enganchado entre OCR y
+  MD, cobertura y estado idempotente por documento lógico, `--force` regenera el manifiesto y passthrough
+  robusto si la detección falla. Follow-ons en `MEJORAS #78/#79`. PR pendiente de merge.
   Deferidos F0 (calibración umbrales + fixture página-imagen) y F2 (contratos M-A/M-C) en `MEJORAS_FUTURAS #64`.
 
 - [x] **A — Fiabilidad de la sala de máquina (`MEJORAS #58`) — ✅ HECHA (PR #42, `24e69db`, sesión paralela).** (1) Bug: `apply` incremental
