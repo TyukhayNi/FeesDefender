@@ -205,8 +205,7 @@ el antes/después sin mezclar la construcción con el caso real.*
   para pasar el verify; telemetría de fases ausente). Backlog completo, con fichero/cambio/por
   qué por ítem:
   `docs/superpowers/plans/2026-07-21-robustez-velocidad-sala-lectura.md`.
-- [x] **Ejecución del backlog — 8 ítems de PRIORIDAD ALTA (rama
-  `claude/sala-lectura-robustez-plan-15dcf7`, PR pendiente).** Backlog convertido a plan TDD
+- [x] **Ejecución del backlog — 8 ítems de PRIORIDAD ALTA (PR #116).** Backlog convertido a plan TDD
   `docs/superpowers/plans/2026-07-21-robustez-velocidad-sala-lectura-tdd.md` (11 Tasks) y ejecutado
   con `superpowers:subagent-driven-development`. HECHOS los 8 de alta: **(1)** `senales_gate` por
   código (W-code ajeno/casi-duplicado/binario-sin-espejo/parte); **(2)** versión 1.11 + guard
