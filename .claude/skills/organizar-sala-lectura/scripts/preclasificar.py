@@ -17,7 +17,11 @@ compara `_CATEGORIAS` contra `core.config.TAXONOMIA_EV` — mantener ambos en si
 """
 from __future__ import annotations
 
-import re
+import json
+import re as _re
+from pathlib import Path
+
+re = _re  # Backward compatibility for existing code
 
 _CATEGORIAS = (
     "00. FOTOS", "01. ACTIVACIÓN", "03. OFERTAS", "04. ARRAS - ARRENDAMIENTOS",
@@ -109,3 +113,24 @@ def subcategoria_crm(ruta: str) -> str | None:
     coste de clasificación adicional."""
     m = re.search(r"sudespacho_\d+/([a-z_]+)/", ruta.replace("\\", "/"), re.I)
     return m.group(1) if m else None
+
+
+def texto_espejo_md(sm_dir: Path, sha256_origen: str) -> str | None:
+    """Busca en `_cobertura.json` de `sm_dir` (02_Sala de máquina) la fila cuyo
+    `parent_sha256` (o `sha256` si no hay split) sea `sha256_origen` y estado sea
+    ok/low, y devuelve el CUERPO (sin frontmatter) de su `03_MD/{slug}.md`.
+    `None` si no hay cobertura, no hay match, o el estado es empty/sin_soporte
+    (no hay texto útil que ofrecer)."""
+    cobertura_path = Path(sm_dir) / "_cobertura.json"
+    if not cobertura_path.exists():
+        return None
+    filas = json.loads(cobertura_path.read_text(encoding="utf-8"))
+    for fila in filas:
+        origen = fila.get("parent_sha256") or fila.get("sha256")
+        if origen == sha256_origen and fila.get("estado") in ("ok", "low"):
+            md_path = Path(sm_dir) / "03_MD" / f"{fila['slug']}.md"
+            if not md_path.exists():
+                return None
+            texto = md_path.read_text(encoding="utf-8")
+            return _re.sub(r"^---.*?---\n", "", texto, count=1, flags=_re.DOTALL)
+    return None

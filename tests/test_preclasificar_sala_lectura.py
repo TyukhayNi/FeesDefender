@@ -75,3 +75,30 @@ def test_subcategoria_crm_extrae_la_subcarpeta():
 def test_categorias_sin_drift():
     from core.config import TAXONOMIA_EV
     assert set(preclasificar._CATEGORIAS) == set(TAXONOMIA_EV)
+
+
+def test_texto_espejo_md_encuentra_por_parent_sha256(tmp_path):
+    sm_dir = tmp_path / "02_Sala de máquina"
+    (sm_dir / "03_MD").mkdir(parents=True)
+    (sm_dir / "03_MD" / "hoja_visita__a1b2c3d4.md").write_text(
+        "---\nchars: 120\n---\nHoja de visita firmada el 31 de marzo de 2025.", encoding="utf-8")
+    import json
+    (sm_dir / "_cobertura.json").write_text(json.dumps([
+        {"slug": "hoja_visita__a1b2c3d4", "sha256": "a1b2c3d4", "parent_sha256": "origen_sha_xyz", "estado": "ok"},
+    ]), encoding="utf-8")
+    texto = preclasificar.texto_espejo_md(sm_dir, "origen_sha_xyz")
+    assert "31 de marzo de 2025" in texto
+
+
+def test_texto_espejo_md_none_si_no_hay_cobertura(tmp_path):
+    assert preclasificar.texto_espejo_md(tmp_path / "no_existe", "cualquier_sha") is None
+
+
+def test_texto_espejo_md_none_si_estado_vacio(tmp_path):
+    sm_dir = tmp_path / "02_Sala de máquina"
+    sm_dir.mkdir()
+    import json
+    (sm_dir / "_cobertura.json").write_text(json.dumps([
+        {"slug": "x__y", "sha256": "s1", "parent_sha256": "origen", "estado": "empty"},
+    ]), encoding="utf-8")
+    assert preclasificar.texto_espejo_md(sm_dir, "origen") is None
