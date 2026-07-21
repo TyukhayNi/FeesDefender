@@ -105,7 +105,7 @@ def test_texto_espejo_md_none_si_estado_vacio(tmp_path):
 
 
 def test_senales_gate_detecta_wcode_ajeno():
-    filas = [{"ruta_original": "05_CRM/sudespacio_9/W-02X270_doc.pdf",
+    filas = [{"ruta_original": "05_CRM/sudespacho_9/W-02X270_doc.pdf",
               "nombre_canonico": "2025-01-01_doc.pdf", "sha256": "a", "motivo": "default_reclamaciones"}]
     señales = preclasificar.senales_gate(filas, wcode_caso="W-02VUDR")
     assert any("W-02X270" in s for s in señales)

@@ -8,8 +8,8 @@ idx = import_module("indices_desde_manifiesto")
 _MANIF = """<!-- GENERADO — NO EDITAR A MANO -->
 | sha256 | ruta_original | nombre_canonico | tipo | fecha | parte | parent_id | categoria | subcategoria_crm |
 |---|---|---|---|---|---|---|---|---|
-| a | sudespacio_1/civil/auto.pdf | 2025-03-01_auto.pdf | pdf | 2025-03-01 | propietario |  | 07. RECLAMACIONES | civil |
-| b | sudespacio_1/demanda/dda.pdf | 2025-05-10_demanda.pdf | pdf | 2025-05-10 | propietario |  | 07. RECLAMACIONES | demanda |
+| a | sudespacho_1/civil/auto.pdf | 2025-03-01_auto.pdf | pdf | 2025-03-01 | propietario |  | 07. RECLAMACIONES | civil |
+| b | sudespacho_1/demanda/dda.pdf | 2025-05-10_demanda.pdf | pdf | 2025-05-10 | propietario |  | 07. RECLAMACIONES | demanda |
 | c | 03_Email/corr.eml | 2025-06-01_correo.eml | eml | 2025-06-01 | propietario |  | 07. RECLAMACIONES |  |
 | d | 01_Drive EV/encargo.pdf | 2024-01-01_encargo.pdf | pdf | 2024-01-01 | propietario |  | 01. ACTIVACIÓN |  |
 | e | 01_Drive EV/sin_fecha.pdf | 0000-00-00_sinfecha.pdf | pdf | 0000-00-00 | propietario |  | 01. ACTIVACIÓN |  |
