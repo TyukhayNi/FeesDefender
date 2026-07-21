@@ -20,6 +20,7 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
+from collections import Counter
 
 _RC_PORT = 15572
 _RC_URL = f"http://localhost:{_RC_PORT}"
@@ -76,6 +77,19 @@ def copiar_renombrar(remote: str, src_relpath: str, dst_relpath: str) -> dict:
         return json.loads(resp.read())
 
 
+
+
+def validar_pares(pares: list[tuple[str, str]]) -> None:
+    """Aborta ANTES de tocar Drive si dos orígenes escriben el MISMO destino
+    (\dst_relpath\ duplicado) — uno pisaría al otro sin rastro. Backlog
+    robustez-velocidad ítem 3: único modo de fallo que puede hacer DESAPARECER
+    un documento sin que ningún check posterior lo cace."""
+    dups = sorted(d for d, n in Counter(dst for _, dst in pares).items() if n > 1)
+    if dups:
+        raise ValueError(
+            "destinos duplicados en el plan de copia (colisión de nombre_canonico): "
+            + ", ".join(dups) + " — desambigua con _2/_3 antes de copiar")
+
 def copiar_manifiesto(
     remote: str, pares: list[tuple[str, str]],
 ) -> tuple[list[str], list[tuple[str, str]]]:
@@ -84,6 +98,7 @@ def copiar_manifiesto(
     proceso `rcd` — el pacer se mantiene estable entre llamadas, a
     diferencia de invocar `rclone.exe` una vez por fichero. Devuelve
     `(ok, fallidos)`; un fallo individual NO aborta el resto."""
+    validar_pares(pares)
     ok: list[str] = []
     fallidos: list[tuple[str, str]] = []
     for src, dst in pares:
@@ -93,3 +108,4 @@ def copiar_manifiesto(
         except Exception as exc:  # noqa: BLE001 — un fallo no aborta el resto
             fallidos.append((dst, str(exc)))
     return ok, fallidos
+
