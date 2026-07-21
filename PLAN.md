@@ -22,7 +22,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 4 | [Drive-disco: pasos 5-7 + Claude Code](#siguiente-mcp-drive-disco-pasos-5-7-diferidos) | ✅ desplegado | resto pasivo: check Modo 1 en caso real | medio |
 | 5 | [abrir-caso F3-judicial](#abrir-caso--f1--f2a--f3-ac-mergeadas-f2b-aparcada-f3-judicial-pendiente) | diferida | caso judicial real | alto |
 | 6 | [Google MCP F4 (Calendar)](#siguiente-google-mcp-f1-lectura--mergeada--f2-escriturapermisosnavegación--mergeada--f3f4-pendientes) | diferida | disparador | medio |
-| 7 | [Pre-clasificación sala de lectura](#siguiente-preclasificacion-sala-lectura-preclasificar-mecanico--copia-rclone-rcd--verify) | ✅ construida (v1.9) | validación A/B en curso | medio |
+| 7 | [Robustez y velocidad sala de lectura](#siguiente-preclasificacion-sala-lectura-preclasificar-mecanico--copia-rclone-rcd--verify) | backlog priorizado (16 ítems) | sesión de construcción dedicada | medio-alto |
 | 8 | [Intake email — filtro de exclusión de ruido](#siguiente-intake-email-filtro-exclusión-de-ruido-administrativo-y-cruzado) | pendiente | disparador: W-02VUDR (fuga cruzada de 7 casos ajenos + cartera de litigios) | medio |
 
 > Detalle de cada ítem en su bloque `[SIGUIENTE-*]` más abajo. Backlog sin
@@ -188,10 +188,24 @@ el antes/después sin mezclar la construcción con el caso real.*
   pendiente de revisar, no bloqueaba esta Task porque `gdrive_tl` sirvió para verificar. PR #112.
 - [x] **Task 5** — `verificar_sala.py` (fase verify con criterios duros: manifiesto vs. disco,
   anexos huérfanos) enganchada como Paso 6.5, antes de reportar éxito. PR #112.
-- [ ] **Seguimiento (fuera del plan, tras merge):** re-correr `organizar-sala-lectura` sobre un
-  caso real y comparar el tiempo de clasificación y de copia contra la línea base de W-02VUDR
-  (14 min / 30+ min) para medir la mejora real — variable de "local vs. Drive" aparte, no mezclar.
-- [ ] **Seguimiento (fuera del plan):** investigar por qué `gdrive_ev` no ve el shared drive
+- [x] **Seguimiento — re-corrida A/B sobre W-02VUDR (2026-07-21).** Reveló 7 errores reales de
+  proceso (checkout obsoleto, diagnóstico erróneo de OAuth de rclone, falso positivo de verify
+  parcheado a mano, `ERROR_FILE_NOT_HYDRATED` recurrente, 2 regresiones de calidad/dedup, tiempo
+  total peor que la línea base por el overhead de los anteriores) — la comparación limpia de
+  velocidad de Tasks 1-3 sigue sin lograrse (queda en el nuevo backlog, ítem 16).
+- [x] **Fixes puntuales de la re-corrida (PR #114, `main` `117b7c1`):** `verificar_sala` reconoce
+  `parent_id` como carpeta de bundle; `_rc_activo` usa POST no GET; `verificar()` detecta fecha
+  `0000-00-00` con texto ya extraído (incl. el hueco de `parent_sha256` en bundles spliteados,
+  cerrado antes de mergear). Incidente de datos aparte: fichero de otro caso (W-02X270) copiado
+  por error a la sala real, borrado y documentado en su `_MANIFIESTO.md`.
+- [x] **Auditoría con Fable 5 (Workflow, 2026-07-21):** análisis de los errores de ambas pasadas +
+  revisión holística de `SKILL.md` v1.10 → backlog priorizado de 16 ítems (9 alta / 5 media / 2
+  baja), 4 patrones de fondo identificados (juicio de agente donde cabe un check determinista;
+  fallos recurrentes sin ruta de resolución automática; edición a mano de artefactos generados
+  para pasar el verify; telemetría de fases ausente). Backlog completo, con fichero/cambio/por
+  qué por ítem:
+  `docs/superpowers/plans/2026-07-21-robustez-velocidad-sala-lectura.md`.
+- [ ] **Seguimiento (fuera del backlog):** investigar por qué `gdrive_ev` no ve el shared drive
   "EXPEDIENTES - TYUKHAY LEGAL" con el client OAuth propio nuevo (probable cuenta de reauth
   equivocada o falta añadirla como test user en el consent screen de `rclone-despacho-drive-2026`).
 - Deferida sin construir en esta sesión: Task 6 (agrupar `doc_NN_*` de una demanda+anexos del CRM en
