@@ -22,6 +22,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 4 | [Drive-disco: pasos 5-7 + Claude Code](#siguiente-mcp-drive-disco-pasos-5-7-diferidos) | ✅ desplegado | resto pasivo: check Modo 1 en caso real | medio |
 | 5 | [abrir-caso F3-judicial](#abrir-caso--f1--f2a--f3-ac-mergeadas-f2b-aparcada-f3-judicial-pendiente) | diferida | caso judicial real | alto |
 | 6 | [Google MCP F4 (Calendar)](#siguiente-google-mcp-f1-lectura--mergeada--f2-escriturapermisosnavegación--mergeada--f3f4-pendientes) | diferida | disparador | medio |
+| 7 | [Pre-clasificación sala de lectura](#siguiente-preclasificacion-sala-lectura-preclasificar-mecanico--copia-rclone-rcd--verify) | plan listo (Tasks 1-5) | sesión dedicada | medio |
 
 > Detalle de cada ítem en su bloque `[SIGUIENTE-*]` más abajo. Backlog sin
 > promover: `docs/MEJORAS_FUTURAS.md`. Ledger de cerrados: `## Cerrados` (final).
@@ -128,6 +129,36 @@ puro + orquestadores finos. Spec: `docs/superpowers/specs/2026-07-09-abrir-caso-
   / `create_expediente_judicial` / element `expedientes_judiciales`): superficie grande (juzgado propiedad
   no-relación → 404, autos, procedimiento, partes M2M). Frente propio con disparador de caso judicial real.
 - Relacionado: `docs/MEJORAS_FUTURAS.md` **#50** (sección "Relación con el ecosistema" en todas las skills).
+
+## [SIGUIENTE-PRECLASIFICACION-SALA-LECTURA] `preclasificar` mecánico + copia `rclone rcd` + verify
+
+*Disparador: medido en vivo en la apertura de W-02VUDR (2026-07-21) — la clasificación de
+`organizar-sala-lectura` tardó 14 min y la fase de copia+índices más de 30 min sobre 172
+documentos. Plan TDD completo ya escrito: `docs/superpowers/plans/2026-07-21-preclasificacion-sala-lectura.md`
+(5 Tasks, formato `superpowers:writing-plans`, con historial de revisión de 7 puntos y auto-revisión).
+Deferida explícitamente a "otra sesión dedicada" (decisión de Nikolai, misma sesión) para poder medir
+el antes/después sin mezclar la construcción con el caso real.*
+
+- [ ] **Task 1-2** — `preclasificar.py` (patrón con "07. RECLAMACIONES" como DEFAULT, hilo de
+  email por sufijo `_N`, dedup sha256, subcategoría CRM, lookup del espejo MD de sala de máquina).
+  Self-contained, sin `import core`; test anti-drift contra `core.config.TAXONOMIA_EV`.
+- [ ] **Task 3** — enganchar los helpers en `SKILL.md` (Paso 1-bis), plan persistido a fichero
+  ANTES del gate, gate condicional (solo si hay anomalías genuinas), sub-agrupación de
+  "07. RECLAMACIONES" por subcategoría CRM en el `INDICE.md`.
+- [ ] **Task 4 (v2)** — `copiar_manifiesto_rclone.py` (copia+renombrado en bloque vía `rclone rcd`,
+  evita el reinicio del "pacer" de cuota). **Bloqueo conocido:** requiere que Nikolai configure un
+  client OAuth PROPIO del despacho en `rclone config` (no automatizable) — sin eso, la Task se
+  implementa y testea (mocks) igual, pero su Paso 7 (verificación en vivo, sin `403 Quota exceeded`)
+  no puede cerrarse limpio. Confirmar con Nikolai si ya está configurado antes de dar el bloqueo por
+  no resuelto.
+- [ ] **Task 5** — `verificar_sala.py` (fase verify con criterios duros: manifiesto vs. disco,
+  anexos huérfanos) enganchada como Paso 6.5, antes de reportar éxito.
+- [ ] **Seguimiento (fuera del plan, tras merge):** re-correr `organizar-sala-lectura` sobre un
+  caso real y comparar el tiempo de clasificación y de copia contra la línea base de W-02VUDR
+  (14 min / 30+ min) para medir la mejora real — variable de "local vs. Drive" aparte, no mezclar.
+- Deferida sin construir en esta sesión: Task 6 (agrupar `doc_NN_*` de una demanda+anexos del CRM en
+  subcarpeta) — bajo ROI para un solo expediente; ver `docs/MEJORAS_FUTURAS.md` **#80** (verificar
+  dedup de `sync_sudespacho pull` contra "05. Procedimiento" antes de reabrir esto).
 
 ## [SIGUIENTE-MCP-DRIVE-DISCO-PASOS-5-7] Drive-disco: pasos 5-7 + bundle Claude Code
 
