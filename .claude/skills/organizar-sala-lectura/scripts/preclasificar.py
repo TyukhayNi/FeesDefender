@@ -1,0 +1,136 @@
+"""Pre-clasifica documentos por patrón de nombre + dedup por sha256 + agrupación
+por hilo de email, ANTES de que el LLM lea contenido. Determinista, idempotente.
+Self-contained (corre en Cowork sin `core/`) — mismo patrón que
+`manifiesto_a_catalogo.py`.
+
+Diseño invertido (sesión 2026-07-21, caso W-02VUDR): en un expediente de honorarios
+ya judicializado, "07. RECLAMACIONES" es el DEFAULT — la mayoría de los documentos
+no son ni activación ni ofertas ni arras ni facturación ni PBC ni fotos, y forzarlos
+a demostrar "07" leyendo contenido es gasto sin retorno. Los 6 patrones estrechos
+(00/01/03/04/05/06) son los que de verdad discriminan; lo que no casa con ninguno
+cae en "07" sin necesidad de confirmarlo, EXCEPTO los bundles conversacionales
+(WhatsApp) donde la categoría depende de qué PARTE es — eso sigue necesitando
+juicio real y va a "08. PENDIENTE DE CLASIFICAR" si no se puede determinar.
+
+El test anti-drift `tests/test_preclasificar_sala_lectura.py::test_categorias_sin_drift`
+compara `_CATEGORIAS` contra `core.config.TAXONOMIA_EV` — mantener ambos en sincronía a mano.
+"""
+from __future__ import annotations
+
+import json
+import re as _re
+from pathlib import Path
+
+re = _re  # Backward compatibility for existing code
+
+_CATEGORIAS = (
+    "00. FOTOS", "01. ACTIVACIÓN", "03. OFERTAS", "04. ARRAS - ARRENDAMIENTOS",
+    "05. FACTURACIÓN - FINANZAS", "06. PBC", "07. RECLAMACIONES",
+    "08. PENDIENTE DE CLASIFICAR",
+)
+_DEFAULT = "07. RECLAMACIONES"
+_PENDIENTE = "08. PENDIENTE DE CLASIFICAR"
+
+# Los 6 patrones ESTRECHOS que de verdad discriminan. SIN `^` — el nombre puede
+# llevar prefijo de fecha ("AAAA-MM-DD_..."); `.search` busca el token en
+# cualquier posición, no solo al principio.
+_PATRONES: tuple[tuple[re.Pattern, str, str], ...] = (
+    (re.compile(r"screenshot|captura", re.I), "00. FOTOS", "captura_foto"),
+    (re.compile(r"doc_\d+_encargo", re.I), "01. ACTIVACIÓN", "doc_NN_encargo"),
+    (re.compile(
+        r"doc_\d+_(nota_simple|dni)|nota[ _]simple|datos[ _]catastro|"
+        r"consulta[ _]descriptiva|ficha[ _](propiedad|propietario)", re.I),
+     "01. ACTIVACIÓN", "activacion_vendedor"),
+    (re.compile(
+        r"doc_\d+_(oferta|comunicacion_oferta|hoja_de_visita)|\boferta\b|"
+        r"hoja[ _]de[ _]visita|ficha[ _]comprador", re.I),
+     "03. OFERTAS", "oferta_comprador"),
+    (re.compile(r"doc_\d+_justificante_reserva|\barras\b", re.I),
+     "04. ARRAS - ARRENDAMIENTOS", "arras"),
+    (re.compile(r"^(fra|factura)[ _]|\bminuta\b|tasacion_costas|provis(ion)?_fondos", re.I),
+     "05. FACTURACIÓN - FINANZAS", "factura_minuta"),
+    (re.compile(r"anexo[s]?[ _]?[12][^0-9]", re.I), "06. PBC", "anexo_pbc_1_2"),
+)
+
+
+def clasificar_por_patron(nombre: str, *, es_bundle_conversacional: bool = False) -> tuple[str, str]:
+    """SIEMPRE devuelve `(categoria, motivo)` — nunca `None`. Prueba los 6
+    patrones estrechos primero; si ninguno casa y `es_bundle_conversacional` es
+    `True` (WhatsApp — la categoría depende de qué parte es, no del nombre),
+    cae a "08. PENDIENTE DE CLASIFICAR"; si no, cae a "07. RECLAMACIONES" por
+    defecto (es el caso normal en un expediente ya judicializado)."""
+    for patron, categoria, etiqueta in _PATRONES:
+        if patron.search(nombre):
+            return categoria, etiqueta
+    if es_bundle_conversacional:
+        return _PENDIENTE, "requiere_identificar_parte"
+    return _DEFAULT, "default_reclamaciones"
+
+
+def dedup_por_sha(ficheros: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Agrupa `ficheros` (`{"ruta", "sha256"}`) por sha256; el primero visto por
+    cada hash es el único, el resto son duplicados con `duplicado_de` apuntando
+    a la ruta del único. Preserva el orden de entrada."""
+    vistos: dict[str, str] = {}
+    unicos: list[dict] = []
+    duplicados: list[dict] = []
+    for f in ficheros:
+        sha = f["sha256"]
+        if sha not in vistos:
+            vistos[sha] = f["ruta"]
+            unicos.append(f)
+        else:
+            duplicados.append({**f, "duplicado_de": vistos[sha]})
+    return unicos, duplicados
+
+
+_SUFIJO_HILO_RE = re.compile(r"^(.*)_(\d+)$")
+
+
+def agrupar_por_hilo(rutas_eml: list[str]) -> dict[str, list[str]]:
+    """Agrupa nombres de `.eml` por HILO: el motor de export
+    (`core.email_export`) numera con sufijo `_N` los mensajes de mismo
+    asunto+fecha exportados en la misma corrida. La clave de hilo es el nombre
+    sin ese sufijo. Devuelve `{clave_hilo: [nombres_del_grupo]}` — clasifica
+    solo un representante del grupo (p. ej. el más corto/sin sufijo) y propaga
+    su categoría al resto sin volver a leerlos. Heurística de nombre, no de
+    `Message-ID`/`References` reales — proxy barato, no sustituto de un
+    threading riguroso si algún día hace falta."""
+    grupos: dict[str, list[str]] = {}
+    for nombre in rutas_eml:
+        base = nombre[:-4] if nombre.lower().endswith(".eml") else nombre
+        m = _SUFIJO_HILO_RE.match(base)
+        clave = m.group(1) if m else base
+        grupos.setdefault(clave, []).append(nombre)
+    return grupos
+
+
+def subcategoria_crm(ruta: str) -> str | None:
+    """Extrae la subcarpeta del Gestor Documental CRM
+    (`sudespacho_<id>/<subcarpeta>/...`) como etiqueta secundaria — GRATIS (ya
+    está en la ruta, cero lectura). `None` si la ruta no viene de un
+    expediente CRM. Uso: sub-agrupar "07. RECLAMACIONES" en el `INDICE.md` sin
+    coste de clasificación adicional."""
+    m = re.search(r"sudespacho_\d+/([a-z_]+)/", ruta.replace("\\", "/"), re.I)
+    return m.group(1) if m else None
+
+
+def texto_espejo_md(sm_dir: Path, sha256_origen: str) -> str | None:
+    """Busca en `_cobertura.json` de `sm_dir` (02_Sala de máquina) la fila cuyo
+    `parent_sha256` (o `sha256` si no hay split) sea `sha256_origen` y estado sea
+    ok/low, y devuelve el CUERPO (sin frontmatter) de su `03_MD/{slug}.md`.
+    `None` si no hay cobertura, no hay match, o el estado es empty/sin_soporte
+    (no hay texto útil que ofrecer)."""
+    cobertura_path = Path(sm_dir) / "_cobertura.json"
+    if not cobertura_path.exists():
+        return None
+    filas = json.loads(cobertura_path.read_text(encoding="utf-8"))
+    for fila in filas:
+        origen = fila.get("parent_sha256") or fila.get("sha256")
+        if origen == sha256_origen and fila.get("estado") in ("ok", "low"):
+            md_path = Path(sm_dir) / "03_MD" / f"{fila['slug']}.md"
+            if not md_path.exists():
+                return None
+            texto = md_path.read_text(encoding="utf-8")
+            return _re.sub(r"^---.*?---\n", "", texto, count=1, flags=_re.DOTALL)
+    return None

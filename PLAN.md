@@ -139,23 +139,28 @@ documentos. Plan TDD completo ya escrito: `docs/superpowers/plans/2026-07-21-pre
 Deferida explícitamente a "otra sesión dedicada" (decisión de Nikolai, misma sesión) para poder medir
 el antes/después sin mezclar la construcción con el caso real.*
 
-- [ ] **Task 1-2** — `preclasificar.py` (patrón con "07. RECLAMACIONES" como DEFAULT, hilo de
+- [x] **Task 1-2** — `preclasificar.py` (patrón con "07. RECLAMACIONES" como DEFAULT, hilo de
   email por sufijo `_N`, dedup sha256, subcategoría CRM, lookup del espejo MD de sala de máquina).
-  Self-contained, sin `import core`; test anti-drift contra `core.config.TAXONOMIA_EV`.
-- [ ] **Task 3** — enganchar los helpers en `SKILL.md` (Paso 1-bis), plan persistido a fichero
+  Self-contained, sin `import core`; test anti-drift contra `core.config.TAXONOMIA_EV`. PR #112.
+- [x] **Task 3** — enganchar los helpers en `SKILL.md` (Paso 1-bis), plan persistido a fichero
   ANTES del gate, gate condicional (solo si hay anomalías genuinas), sub-agrupación de
-  "07. RECLAMACIONES" por subcategoría CRM en el `INDICE.md`.
-- [ ] **Task 4 (v2)** — `copiar_manifiesto_rclone.py` (copia+renombrado en bloque vía `rclone rcd`,
-  evita el reinicio del "pacer" de cuota). **Bloqueo conocido:** requiere que Nikolai configure un
-  client OAuth PROPIO del despacho en `rclone config` (no automatizable) — sin eso, la Task se
-  implementa y testea (mocks) igual, pero su Paso 7 (verificación en vivo, sin `403 Quota exceeded`)
-  no puede cerrarse limpio. Confirmar con Nikolai si ya está configurado antes de dar el bloqueo por
-  no resuelto.
-- [ ] **Task 5** — `verificar_sala.py` (fase verify con criterios duros: manifiesto vs. disco,
-  anexos huérfanos) enganchada como Paso 6.5, antes de reportar éxito.
+  "07. RECLAMACIONES" por subcategoría CRM en el `INDICE.md`. PR #112.
+- [x] **Task 4 (v2)** — `copiar_manifiesto_rclone.py` (copia+renombrado en bloque vía `rclone rcd`,
+  evita el reinicio del "pacer" de cuota). Nikolai configuró el client OAuth propio del despacho
+  en la misma sesión (proyecto `rclone-despacho-drive-2026`) para `gdrive_ev`/`gdrive_tl`. Paso 7
+  (verificación en vivo) ejecutado sobre W-02VUDR vía `gdrive_tl`: 10/10 ficheros copiados
+  server-side en 57.5s, 0 `403 Quota exceeded` en logs `-vv`, carpeta de prueba purgada tras la
+  verificación. **Hallazgo aparte:** `gdrive_ev` da "Shared drive not found" con el client nuevo
+  (reauth probablemente con cuenta de Google sin acceso a ese shared drive, o falta test user) —
+  pendiente de revisar, no bloqueaba esta Task porque `gdrive_tl` sirvió para verificar. PR #112.
+- [x] **Task 5** — `verificar_sala.py` (fase verify con criterios duros: manifiesto vs. disco,
+  anexos huérfanos) enganchada como Paso 6.5, antes de reportar éxito. PR #112.
 - [ ] **Seguimiento (fuera del plan, tras merge):** re-correr `organizar-sala-lectura` sobre un
   caso real y comparar el tiempo de clasificación y de copia contra la línea base de W-02VUDR
   (14 min / 30+ min) para medir la mejora real — variable de "local vs. Drive" aparte, no mezclar.
+- [ ] **Seguimiento (fuera del plan):** investigar por qué `gdrive_ev` no ve el shared drive
+  "EXPEDIENTES - TYUKHAY LEGAL" con el client OAuth propio nuevo (probable cuenta de reauth
+  equivocada o falta añadirla como test user en el consent screen de `rclone-despacho-drive-2026`).
 - Deferida sin construir en esta sesión: Task 6 (agrupar `doc_NN_*` de una demanda+anexos del CRM en
   subcarpeta) — bajo ROI para un solo expediente; ver `docs/MEJORAS_FUTURAS.md` **#80** (verificar
   dedup de `sync_sudespacho pull` contra "05. Procedimiento" antes de reabrir esto).

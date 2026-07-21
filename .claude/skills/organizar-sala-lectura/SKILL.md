@@ -40,8 +40,10 @@ máquina. Es el **único constructor** de la sala (el camino de sala del motor l
 quedó deprecado). Corre en claude.ai/Cowork o en Claude Code local, por **tres modos de
 acceso** (ver "Modos de acceso"): **Drive vía `expedientes-xl`** (montado en disco — rápido),
 **local-nativo** (caso en ruta local del PC) o **conector** de Drive (nube — fallback), sin
-instalar nada. **No destructivo: copia, nunca mueve ni borra el crudo.** Presenta **una
-propuesta para tu visto bueno** antes de copiar nada.
+instalar nada. **No destructivo: copia, nunca mueve ni borra el crudo.** El gate humano
+es **condicional**: si la propuesta no tiene anomalías, se auto-aprueba y ejecuta sin
+esperar OK; si las hay, presenta **una propuesta para tu visto bueno** antes de copiar
+nada.
 
 ## Cuándo se activa
 
@@ -129,11 +131,14 @@ nuevo (duplicados, re-OCR) y un re-pull las pisaría. Por eso la salida va a
 Estructura **PLANA**: la categoría E&V vive en `INDICE.md`, no en carpetas (ver
 `references/taxonomia_ev.md` para el set cerrado y los criterios).
 
-## Autonomía y gate único
+## Autonomía y gate condicional
 
 La skill **no inserta preguntas de aclaración** ni pide permiso fichero a fichero.
-Tiene **un solo gate humano**: la propuesta del Paso 2.5. Tras tu OK, ejecuta todo de
-una pasada **sin más preguntas**. Por defecto asume autorización para crear y copiar
+Tiene **un único gate humano posible**: la propuesta del Paso 2.5, pero es
+**condicional** (ver el gate en el Paso 3) — si no hay anomalías, se auto-aprueba y
+pasa directo al Paso 4 sin esperar OK, dejando constancia en el plan persistido; solo
+cuando hay algo genuinamente ambiguo espera tu confirmación y, tras el OK, ejecuta todo
+de una pasada **sin más preguntas**. Por defecto asume autorización para crear y copiar
 en `01_Procesado/Sala lectura/` (el crudo de `00_Input` no se toca ni se borra;
 siempre **copia**). En **Modo 3 (conector)**, el diálogo de permiso por-llamada se neutraliza
 en el **Paso 0** ("Permitir siempre"), no en la skill; en **Modos 1 y 2 (filesystem)** no hay
@@ -166,6 +171,38 @@ tal diálogo.
    cada fichero, calcula **sha256** de los bytes (**Modo 1**: `expedientes-xl:hash_path`,
    server-side; **Modo 2**: hash de los bytes locales; **Modo 3**: ver Gotchas) y **salta**
    (sin leer ni copiar) lo que ya conste en `_MANIFIESTO.md` (ver "Re-aplicación").
+1-bis. **Pre-clasifica mecánicamente antes de leer contenido.** Con la lista de
+   `(ruta, sha256, nombre)` del Paso 1:
+   a. `dedup_por_sha(ficheros)` → clasifica UNA sola vez cada sha256 único; los
+      duplicados se anotan en el `_MANIFIESTO.md` como "duplicado, saltado" sin
+      volver a leerlos.
+   b. `agrupar_por_hilo(rutas_eml)` sobre los `.eml` únicos → clasifica solo un
+      representante por hilo (el nombre sin sufijo `_N`) y propaga su categoría
+      al resto del grupo sin volver a leerlos.
+   c. `clasificar_por_patron(nombre, es_bundle_conversacional=...)` sobre cada
+      único/representante restante → SIEMPRE devuelve una categoría (00-06 por
+      patrón estrecho, 07 por defecto, u 08 si es un bundle de WhatsApp sin
+      patrón). Pásalo por alto (verifica leyendo) solo cuando el motivo sea
+      `default_reclamaciones` y el documento sea inusual o el letrado lo pida
+      — no hace falta confirmar 07 sistemáticamente.
+   d. Para los binarios opacos (PDF escaneado, imagen) que SÍ necesiten lectura
+      real (bundles conversacionales, o para poner fecha real en vez de
+      `0000-00-00`): prueba `texto_espejo_md(sm_dir, sha256)` — si
+      `01_Procesado/02_Sala de máquina/` ya tiene el texto OCR, úsalo en vez de
+      leer el binario o rendirte a `(*)`. Si el binario opaco NO tiene espejo MD
+      disponible (`01_Procesado/02_Sala de máquina/` no existe, o su fila en
+      `_cobertura.json` no tiene `estado` ok/low), márcalo como señal para el
+      gate condicional del Paso 2.5 (ver abajo) — es exactamente la categoría de
+      "algo ambiguo" que debe forzar la aparición del gate, en vez de
+      clasificarlo a ciegas por nombre y seguir en silencio.
+   e. `subcategoria_crm(ruta)` sobre cada documento con categoría "07.
+      RECLAMACIONES" → si devuelve subcarpeta (`civil`/`demanda`/`documentos`/
+      `preliminares`/`documentacion_rgpd_lopd`), guárdala en el
+      `_MANIFIESTO.md` como columna informativa para sub-agrupar el `INDICE.md`
+      dentro de "07. RECLAMACIONES" (ver Paso 5 actualizado abajo) — gratis,
+      sin coste de clasificación.
+   Si `01_Procesado/02_Sala de máquina/` no existe todavía, salta (d) y sigue
+   igual — no es bloqueante, solo una ganancia si ya se corrió `organizar-sala-maquina`.
 2. **Clasifica cada fichero NUEVO** leyendo su contenido. **Cómo leer según tipo:** los de
    **texto** (`.txt`/`.md`/`.eml`/`_chat.txt`/`.rtf`/`.csv`) se leen directo (**Modo 1**
    `expedientes-xl:read_text`; **Modo 2** `Read`; **Modo 3** `google-despacho:read_file_content`).
@@ -195,17 +232,46 @@ tal diálogo.
    - **Bundle:** detecta si el fichero es parte de un documento compuesto (ver
      "Documentos compuestos").
    No copies nada todavía.
-3. **(Paso 2.5 — GATE) Presenta la propuesta y ESPERA.** Renderiza la propuesta
-   visual (ver abajo) y **espera confirmación**. Si piden ajustes, reclasifica y vuelve
-   a presentar. **Solo con OK explícito** pasas al paso 4.
-4. **(tras OK) Ejecuta de una pasada (PLANO):** **copia** cada fichero a
-   `01_Procesado/Sala lectura/` (raíz) con **nombre canónico**
-   `AAAA-MM-DD_descripcion.ext`; los documentos compuestos a su **subcarpeta fechada**
-   `AAAA-MM-DD_descripcion/`. Copia según el modo: **Modo 1** con `expedientes-xl:copy_path`
-   (fichero) / `expedientes-xl:copy_dir` (bundle con su `media/`); **Modo 2** con `cp`/`shutil`;
-   **Modo 3** con `google-despacho:copy_file` (o el conector nativo). Los tres copian binarios
-   **sin pasarlos por el modelo**. **Guarda de colisión:** si el nombre destino ya se usó en
-   la corrida, añade sufijo `_2`/`_3`. Sin más preguntas.
+2-bis. **Persiste la propuesta a fichero** en
+   `01_Procesado/Sala lectura/_plan/plan-<AAAA-MM-DD-HHmm>.md` — la misma
+   tabla que vas a mostrar en el Paso 2.5 (`sha256 | ruta_original |
+   nombre_canonico | tipo | fecha | parte | parent_id` + categoría +
+   `subcategoria_crm`), con cabecera `estado: propuesto`. Fuera de
+   `Sala lectura/` propiamente dicha para que un re-pull o una re-corrida no
+   lo pise ni lo reingiera (mismo motivo que "por qué la sala vive fuera de
+   `00_Input`"). NO se borra tras ejecutar — pasa a `estado: ejecutado`
+   (mismo razonamiento no-destructivo del resto de la skill).
+3. **(Paso 2.5 — GATE, ahora condicional, no siempre).** Si la propuesta NO
+   tiene ninguna fila con motivo `requiere_identificar_parte` (bundle
+   conversacional sin parte), ningún documento con W-code ajeno al caso,
+   ningún casi-duplicado de hash distinto con mismo nombre, y ningún binario
+   opaco SIN espejo MD disponible (ver Paso 1-bis.d más arriba) — **procede
+   directo al Paso 4 sin esperar aprobación**, deja constancia en el plan
+   persistido (`estado: auto-aprobado, sin anomalías`) para que quede trazado
+   qué se decidió sin humano.
+   Si SÍ hay alguna de esas señales, presenta la propuesta (tarjeta visual,
+   como hasta ahora) y **espera confirmación**. Si piden ajustes, reclasifica y
+   vuelve a presentar. **Solo con OK explícito** pasas al paso 4 — el gate
+   sigue existiendo, pero solo cuando hay algo genuinamente ambiguo que
+   decidir, no como trámite fijo.
+4. **(tras OK, y SOLO si `rclone` tiene un client OAuth propio configurado —
+   ver prerrequisito del Task 4 del plan de la skill; si no, copia
+   secuencial como hasta ahora con `copy_path`/`cp`, más lenta pero sin
+   prerrequisito) Copia+renombra en bloque vía `rclone rcd`:** aplica **solo a
+   casos Drive-residentes (Modo 1 o Modo 3)** — en **Modo 2 (local-nativo)** los
+   ficheros están en disco local, no en ningún remote rclone, así que ahí se
+   copia con `cp`/`shutil` como ya indica "Modos de acceso". `remote` (p. ej.
+   `gdrive_tl:`) y las rutas relativas de `pares` se derivan de la ubicación del
+   caso ya resuelta en el **Paso 0**. `levantar_rcd_si_falta()` una vez, luego
+   `copiar_manifiesto(remote, pares)` con TODAS las filas del **plan persistido
+   en el Paso 2-bis** (`_plan/plan-<AAAA-MM-DD-HHmm>.md`; el `_MANIFIESTO.md`
+   todavía no existe — se escribe en el Paso 5) de una vez (no una
+   llamada de shell por fichero) — el pacer de cuota se mantiene estable
+   dentro del mismo proceso. Los documentos compuestos (bundles) copian
+   primero su principal, luego sus anexos, todo dentro de la misma corrida.
+   Los `fallidos` que devuelva se reintentan una vez (red inestable) y si
+   siguen fallando se anotan en `_MANIFIESTO.md` como pendientes, igual que
+   hoy con `ERROR_FILE_NOT_HYDRATED` — nunca se fuerza ni se fabrica un éxito.
 5. **Escribe los índices** en `01_Procesado/Sala lectura/` (con la tool de texto del modo:
    `expedientes-xl:write_text` / `Write` / `google-despacho:create_file`):
    - `_MANIFIESTO.md` — tabla por documento, una fila por fichero, columnas:
@@ -213,9 +279,21 @@ tal diálogo.
      `sha256` se calcula de los bytes (el `md5` de Drive NO sirve: la traza del caso
      llavea por sha256). `parent_id` agrupa los anexos de un bundle bajo su principal.
    - `INDICE.md` — agrupado **por categoría** (la categoría vive aquí, no en carpetas),
-     orden **fecha DESCENDENTE**; cada entrada enlaza a la copia plana + nombre original.
+     orden **fecha DESCENDENTE**. **Dentro de "07. RECLAMACIONES"**, si la mayoría de sus
+     documentos tienen `subcategoria_crm` (Paso 1-bis.e), sub-agrupa por esa subcarpeta
+     (`civil`/`demanda`/`documentos`/`preliminares`/`documentacion_rgpd_lopd`,
+     y "correspondencia" para los `.eml` sin subcategoría CRM) antes de ordenar
+     por fecha dentro de cada subgrupo — es la única categoría que lo necesita
+     (concentra la mayoría de los documentos en expedientes judicializados).
+     Cada entrada enlaza a la copia plana + nombre original.
    - `CRONOLOGIA.md` — por fecha **ASCENDENTE**; `0000-00-00` y fechas `(*)` al final.
    Los tres con cabecera `<!-- GENERADO — NO EDITAR A MANO -->`.
+6.5. **Verify — falla ruidosamente, no resumas bonito.** `verificar(filas,
+   ficheros_en_disco)` sobre el `_MANIFIESTO.md` recién escrito. Si devuelve
+   ALGÚN problema, NO sigas al Paso 7 con un reporte de éxito — lista los
+   problemas primero, en el mismo nivel de visibilidad que el resto del
+   reporte, y decide con el letrado si reintentar o dejarlos anotados
+   explícitamente. Nunca "cuenta bien" un total que no cuadra con lo real.
 6. **Deriva el catálogo:** ejecuta
    `scripts/manifiesto_a_catalogo.py _MANIFIESTO.md indice_documental.yaml` (el LLM **NO**
    escribe el YAML). Es la SSOT máquina.
@@ -308,3 +386,14 @@ de preparar la demanda). En cada re-corrida:
 - **Stubs `.gdoc`/`.gsheet` (Docs nativos)** son ilegibles por filesystem (`expedientes-xl`
   los omite/bloquea): para su contenido, exporta con `google-despacho`
   (`export_to_drive`/`read_file_content`).
+- **Casos grandes (>80 ficheros): reparte la clasificación por fuente en
+  subagentes paralelos** (uno por `01_Drive EV`, uno por el lote de email, uno
+  por cada expediente CRM) en vez de un único agente secuencial — el dedup por
+  sha256 cruzado entre fuentes (Task 1) es la ÚNICA parte que necesita ver todo
+  junto; hazla en un paso de fusión aparte, después de que cada subagente
+  devuelva su clasificación local.
+- **Caso en Drive con muchos ficheros fríos (no hidratados): considera
+  `checkout-caso` a disco local antes de montar la sala.** `hash_tree`/
+  `read_text` sobre `G:` paga latencia de red por fichero no cacheado; en local
+  esa latencia desaparece. La copia server-side (`copy_path`/`cp`) es igual de
+  eficiente en ambos sitios — la ganancia está en la LECTURA, no en la copia.
