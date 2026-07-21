@@ -4,6 +4,19 @@ Formato: una entrada por versión, la más reciente arriba. Cada entrada cita la
 **evidencia** que motivó el cambio (uso real, delta borrador↔firmado, decisión
 del letrado) — cultura source-locked del despacho.
 
+## 1.3 — 2026-07-21
+
+- **Split de bundles multi-documento (Fase F2, PR #109).** Un PDF que reúne varios
+  documentos (un *bundle*) se parte por HOJA EN BLANCO sobre el PDF ya buscable —entre el
+  OCR y el MD— generando un MD por documento lógico en vez de un MD gigante. `plan`
+  pre-detecta los bundles y deja un `_segmentacion.md` editable; el letrado lo ajusta y
+  `apply` corta (respeta el editado; `--force` lo regenera). Los segmentos aterrizan en
+  `02_Documentos/{bundle}/` con su propio MD; la cobertura y el estado idempotente pasan a
+  granularidad de documento lógico. Passthrough robusto si la detección falla (no pierde el
+  documento). Consumo por `organizar-sala-lectura` como documento compuesto = follow-on
+  (`MEJORAS #79`). Evidencia: sesión VALERO (bundles escaneados corridos: cédula/auto/factura
+  y encargo/arras/facturas E&V). Plan `docs/superpowers/plans/2026-07-14-split-sala-maquina.md`.
+
 ## 1.2 — 2026-07-18
 
 - **Reclasificación de `rol`: `output` → `procesado`.** La skill no produce un entregable
