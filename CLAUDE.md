@@ -13,6 +13,15 @@ intermediación inmobiliaria en España. Cliente principal: Engel & Völkers
 Responder siempre en castellano salvo que el usuario inicie en otro idioma.
 Las comunicaciones a clientes de origen ruso o ex-URSS van en ruso por defecto.
 
+## Ahorro de cupo: delegar en Antigravity (`agy`) es OBLIGATORIO, no opcional
+
+Nikolai quema rápido su límite semanal de Claude y paga Gemini Pro aparte (bolsa de tokens de Antigravity). Por eso **delegar el trabajo pesado/mecánico a Gemini vía la CLI `agy` es la conducta por defecto siempre que ahorre cupo de Claude — no es opcional.** Antes de leer corpus enteros, generar boilerplate o revisar un diff a mano, pregúntate si eso lo debe hacer `agy`.
+
+- **Patrón:** Gemini lee / busca / extrae / borra → escribe a fichero → Claude **juzga** desde ese fichero.
+- **Delega (obligatorio donde toque):** primer barrido de expedientes, OCR / extracción / atomización, resúmenes masivos, **revisión adversarial de código y de planes/specs**, boilerplate.
+- **Se queda en Claude:** juicio jurídico, escritos con la voz del despacho, veredictos, anclaje a fuente y revisión final. Claude siempre es el juez; Gemini nunca tiene la última palabra sobre corrección.
+- **Recetas listas + qué NO delegar:** `C:\Users\tnm33\Dev\Antigravity\PLAYBOOK_AGY.md`. Protocolo y modelos de `agy`: `CLAUDE.md` global (`~/.claude/CLAUDE.md`).
+
 ## Al iniciar cada sesión
 
 Leer `STATUS.md` — es la fuente de verdad única del proyecto. Contiene
