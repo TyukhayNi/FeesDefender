@@ -40,8 +40,10 @@ máquina. Es el **único constructor** de la sala (el camino de sala del motor l
 quedó deprecado). Corre en claude.ai/Cowork o en Claude Code local, por **tres modos de
 acceso** (ver "Modos de acceso"): **Drive vía `expedientes-xl`** (montado en disco — rápido),
 **local-nativo** (caso en ruta local del PC) o **conector** de Drive (nube — fallback), sin
-instalar nada. **No destructivo: copia, nunca mueve ni borra el crudo.** Presenta **una
-propuesta para tu visto bueno** antes de copiar nada.
+instalar nada. **No destructivo: copia, nunca mueve ni borra el crudo.** El gate humano
+es **condicional**: si la propuesta no tiene anomalías, se auto-aprueba y ejecuta sin
+esperar OK; si las hay, presenta **una propuesta para tu visto bueno** antes de copiar
+nada.
 
 ## Cuándo se activa
 
@@ -129,11 +131,14 @@ nuevo (duplicados, re-OCR) y un re-pull las pisaría. Por eso la salida va a
 Estructura **PLANA**: la categoría E&V vive en `INDICE.md`, no en carpetas (ver
 `references/taxonomia_ev.md` para el set cerrado y los criterios).
 
-## Autonomía y gate único
+## Autonomía y gate condicional
 
 La skill **no inserta preguntas de aclaración** ni pide permiso fichero a fichero.
-Tiene **un solo gate humano**: la propuesta del Paso 2.5. Tras tu OK, ejecuta todo de
-una pasada **sin más preguntas**. Por defecto asume autorización para crear y copiar
+Tiene **un único gate humano posible**: la propuesta del Paso 2.5, pero es
+**condicional** (ver el gate en el Paso 3) — si no hay anomalías, se auto-aprueba y
+pasa directo al Paso 4 sin esperar OK, dejando constancia en el plan persistido; solo
+cuando hay algo genuinamente ambiguo espera tu confirmación y, tras el OK, ejecuta todo
+de una pasada **sin más preguntas**. Por defecto asume autorización para crear y copiar
 en `01_Procesado/Sala lectura/` (el crudo de `00_Input` no se toca ni se borra;
 siempre **copia**). En **Modo 3 (conector)**, el diálogo de permiso por-llamada se neutraliza
 en el **Paso 0** ("Permitir siempre"), no en la skill; en **Modos 1 y 2 (filesystem)** no hay
@@ -252,9 +257,15 @@ tal diálogo.
 4. **(tras OK, y SOLO si `rclone` tiene un client OAuth propio configurado —
    ver prerrequisito del Task 4 del plan de la skill; si no, copia
    secuencial como hasta ahora con `copy_path`/`cp`, más lenta pero sin
-   prerrequisito) Copia+renombra en bloque vía `rclone rcd`:**
-   `levantar_rcd_si_falta()` una vez, luego `copiar_manifiesto(remote, pares)`
-   con TODAS las filas del `_MANIFIESTO.md` propuesto de una vez (no una
+   prerrequisito) Copia+renombra en bloque vía `rclone rcd`:** aplica **solo a
+   casos Drive-residentes (Modo 1 o Modo 3)** — en **Modo 2 (local-nativo)** los
+   ficheros están en disco local, no en ningún remote rclone, así que ahí se
+   copia con `cp`/`shutil` como ya indica "Modos de acceso". `remote` (p. ej.
+   `gdrive_tl:`) y las rutas relativas de `pares` se derivan de la ubicación del
+   caso ya resuelta en el **Paso 0**. `levantar_rcd_si_falta()` una vez, luego
+   `copiar_manifiesto(remote, pares)` con TODAS las filas del **plan persistido
+   en el Paso 2-bis** (`_plan/plan-<AAAA-MM-DD-HHmm>.md`; el `_MANIFIESTO.md`
+   todavía no existe — se escribe en el Paso 5) de una vez (no una
    llamada de shell por fichero) — el pacer de cuota se mantiene estable
    dentro del mismo proceso. Los documentos compuestos (bundles) copian
    primero su principal, luego sus anexos, todo dentro de la misma corrida.
