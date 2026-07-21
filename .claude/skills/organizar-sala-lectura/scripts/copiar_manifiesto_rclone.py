@@ -26,8 +26,14 @@ _RC_URL = f"http://localhost:{_RC_PORT}"
 
 
 def _rc_activo() -> bool:
+    """La RC API de rclone es POST-only (un GET a `core/pid` devuelve 404,
+    confirmado en vivo contra rclone v1.73.5 con `curl`) — con `urlopen` sin
+    `method` explícito (GET por defecto) esta comprobación SIEMPRE fallaba,
+    así que `levantar_rcd_si_falta` nunca detectaba un rcd ya activo y
+    agotaba el timeout de 10s. Bug real (sesión 2026-07-21, W-02VUDR)."""
     try:
-        urllib.request.urlopen(f"{_RC_URL}/core/pid", timeout=2)
+        req = urllib.request.Request(f"{_RC_URL}/core/pid", data=b"{}", method="POST")
+        urllib.request.urlopen(req, timeout=2)
         return True
     except Exception:
         return False

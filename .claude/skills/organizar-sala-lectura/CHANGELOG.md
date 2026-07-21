@@ -1,5 +1,44 @@
 # Changelog — organizar-sala-lectura
 
+## 1.10 — 2026-07-21
+- **Fix — `verificar_sala.py` reconoce `parent_id` como carpeta de bundle.**
+  La v1 de `verificar()` solo aceptaba match exacto contra `nombre_canonico`
+  o sha256; la convención real desde v1.1 es que `parent_id` sea el nombre
+  pelado de la carpeta del bundle (prefijo de directorio). Con eso, todo
+  anexo de todo bundle salía como "huérfano" (21 falsos positivos detectados
+  al re-correr sobre W-02VUDR). Ahora también resuelve por prefijo de
+  directorio.
+- **Fix — `copiar_manifiesto_rclone.py::_rc_activo` usa POST, no GET.** La RC
+  API de rclone es POST-only (confirmado con `curl` real contra v1.73.5: GET
+  a `/core/pid` → 404, POST → 200). Con GET, `_rc_activo()` SIEMPRE devolvía
+  `False` → `levantar_rcd_si_falta` nunca detectaba un rcd ya activo y
+  agotaba el timeout de 10s — Task 4 (copia vía `rclone rcd`) nunca había
+  funcionado de verdad pese a la verificación de la v1.9. Con el fix: 3
+  ficheros (incl. uno de 1,1 GB) se copiaron server-side en 19s.
+- **Paso 1-bis.d pasa de sugerencia a obligación + Paso 6.5 verifica fecha
+  contra cobertura.** 7 binarios opacos de W-02VUDR quedaron en `0000-00-00`
+  con su espejo MD ya disponible y una fecha inequívoca en el texto (p.ej.
+  un burofax certificado con "Fecha y hora del envío: 08/04/2025") porque
+  `texto_espejo_md()` era una consulta opcional, fácil de saltarse bajo
+  presión de tiempo (casos grandes fanned-out en varios subagentes).
+  `texto_espejo_md` pasa a ser obligatoria antes de escribir `0000-00-00`
+  para cualquier binario opaco, y `verificar()` (Paso 6.5) ahora acepta
+  `cobertura_filas` opcional para detectar automáticamente esta discrepancia
+  si se repite: fecha `0000-00-00` con texto ya extraído por encima de un
+  umbral de caracteres. Rompe el propósito de la sala (timeline claro) si no
+  se corrige. **Hueco cerrado antes de mergear** (auditoría fable-5): el
+  cruce clavaba solo por `sha256`, pero un PDF escaneado multi-documento
+  spliteado por sala de máquina lleva el hash de origen en `parent_sha256`
+  (igual que `texto_espejo_md` ya resuelve) — justo los binarios más
+  propensos a `0000-00-00` escapaban a la red de seguridad.
+- **Fix — dato de otro caso (W-02X270) copiado por error a la sala de
+  W-02VUDR.** El gate condicional no tenía señal determinista para W-code
+  ajeno; la v1.8 lo excluía correctamente (juicio manual), la re-corrida
+  v1.9 lo copió. Detectado por la misma auditoría fable-5, borrado del caso
+  real y documentado en `_MANIFIESTO.md` § Excluido de la sala. Señal
+  determinista de W-code ajeno en el gate: diferida a sesión de
+  construcción dedicada (no forma parte de este fix puntual).
+
 ## 1.9 — 2026-07-21
 - **Pre-clasificación mecánica (Paso 1-bis, `scripts/preclasificar.py`):**
   `clasificar_por_patron` — 6 patrones estrechos para 00/01/03/04/05/06 y

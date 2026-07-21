@@ -25,6 +25,18 @@ def test_copiar_renombrar_envia_srcfs_srcremote_dstfs_dstremote():
         }
 
 
+def test_rc_activo_usa_post_no_get():
+    # Bug real (sesion 2026-07-21, W-02VUDR): la RC API de rclone es
+    # POST-only (confirmado con `curl` real contra rclone v1.73.5: GET a
+    # /core/pid -> 404, POST -> 200). Con GET (el default de urlopen sin
+    # `method`), _rc_activo() SIEMPRE devolvia False -> levantar_rcd_si_falta
+    # nunca detectaba un rcd ya activo y agotaba el timeout de 10s.
+    with patch("urllib.request.urlopen", return_value=_mock_response(b'{"pid": 123}')) as m:
+        assert cmr._rc_activo() is True
+        req = m.call_args[0][0]
+        assert req.get_method() == "POST"
+
+
 def test_copiar_manifiesto_no_aborta_si_uno_falla():
     def fake_urlopen(req, timeout=60):
         body = req.data.decode("utf-8")
