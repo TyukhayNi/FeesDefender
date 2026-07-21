@@ -1,5 +1,40 @@
 # Changelog — organizar-sala-lectura
 
+## 1.9 — 2026-07-21
+- **Pre-clasificación mecánica (Paso 1-bis, `scripts/preclasificar.py`):**
+  `clasificar_por_patron` — 6 patrones estrechos para 00/01/03/04/05/06 y
+  **"07. RECLAMACIONES" como DEFAULT** (no una categoría a demostrar leyendo
+  contenido; en un expediente ya judicializado concentra la mayoría de
+  documentos), "08. PENDIENTE DE CLASIFICAR" solo para bundles conversacionales
+  sin parte identificable. `dedup_por_sha` (dedup por sha256 antes de
+  clasificar). `agrupar_por_hilo` (agrupa `.eml` del mismo hilo por sufijo
+  `_N` del motor de export; clasifica un representante y propaga). `texto_espejo_md`
+  (lee el espejo MD de `02_Sala de máquina` para binarios opacos en vez de
+  rendirse a `(*)`). `subcategoria_crm` (subcarpeta del Gestor Documental como
+  etiqueta secundaria gratis, sub-agrupa "07. RECLAMACIONES" en `INDICE.md`).
+  Test anti-drift contra `core.config.TAXONOMIA_EV`.
+- **Plan persistido a fichero + gate condicional (Paso 2-bis/3):** la propuesta
+  se guarda en `_plan/plan-<fecha>.md` antes del gate; el gate solo espera
+  aprobación humana si hay anomalías genuinas (bundle sin parte, W-code ajeno,
+  casi-duplicado, binario opaco sin espejo MD) — si la propuesta sale limpia,
+  auto-aprueba y ejecuta, dejando constancia de la decisión en el plan.
+- **Copia en bloque vía `rclone rcd` (Paso 4, `scripts/copiar_manifiesto_rclone.py`):**
+  para casos Drive-residentes (Modo 1/3) con client OAuth propio del despacho
+  configurado, evita el reinicio del "pacer" de cuota de invocar `rclone.exe`
+  una vez por fichero (medido: 110s/6 reintentos `403 Quota exceeded` con el
+  cliente compartido). Sin ese prerrequisito, sigue la copia secuencial de
+  siempre. Verificado en vivo (W-02VUDR, `gdrive_tl`): 10/10 ficheros
+  server-side, 0 `403`.
+- **Fase verify con criterios duros (Paso 6.5, `scripts/verificar_sala.py`):**
+  contrasta `_MANIFIESTO.md` contra lo realmente copiado en disco antes de
+  reportar éxito — fila sin fichero, fichero sin fila, anexo con `parent_id`
+  huérfano. Nunca arregla, solo detecta y obliga a listar problemas.
+- Disparador: medido en vivo en la apertura de W-02VUDR — 14 min de
+  clasificación + 30+ min de copia+índices sobre 172 documentos. Plan:
+  `docs/superpowers/plans/2026-07-21-preclasificacion-sala-lectura.md`.
+- Taxonomía, bundles, modos de acceso, re-aplicación: sin cambios de fondo
+  (salvo la sub-agrupación de "07" en `INDICE.md` arriba).
+
 ## 1.8 — 2026-07-19
 - **Migración al MCP consolidado `expedientes-xl`** (server viejo `expedientes` /
   `server-filesystem` Node jubilado). El acceso pasa de dos a **tres modos** por ubicación
