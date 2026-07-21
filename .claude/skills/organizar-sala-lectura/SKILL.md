@@ -243,6 +243,11 @@ tal diálogo.
    - **Descripción** ≤50 car., minúsculas, **guiones_bajos**, **sin PII**.
    - **Bundle:** detecta si el fichero es parte de un documento compuesto (ver
      "Documentos compuestos").
+   - **Desambigua colisiones de nombre ANTES de persistir el plan:** si dos
+     documentos derivan el MISMO `nombre_canonico` (misma fecha + misma
+     descripción), añade sufijo `_2`/`_3` al segundo y siguientes. Una colisión
+     no resuelta hace que una copia pise a otra en disco sin rastro; el verify
+     del Paso 6.5 (`verificar()`) también la caza, pero es más barato evitarla aquí.
    No copies nada todavía.
 2-bis. **Persiste la propuesta a fichero** en
    `01_Procesado/Sala lectura/_plan/plan-<AAAA-MM-DD-HHmm>.md` — la misma
@@ -253,66 +258,86 @@ tal diálogo.
    lo pise ni lo reingiera (mismo motivo que "por qué la sala vive fuera de
    `00_Input`"). NO se borra tras ejecutar — pasa a `estado: ejecutado`
    (mismo razonamiento no-destructivo del resto de la skill).
-3. **(Paso 2.5 — GATE, ahora condicional, no siempre).** Si la propuesta NO
-   tiene ninguna fila con motivo `requiere_identificar_parte` (bundle
-   conversacional sin parte), ningún documento con W-code ajeno al caso,
-   ningún casi-duplicado de hash distinto con mismo nombre, y ningún binario
-   opaco SIN espejo MD disponible (ver Paso 1-bis.d más arriba) — **procede
-   directo al Paso 4 sin esperar aprobación**, deja constancia en el plan
-   persistido (`estado: auto-aprobado, sin anomalías`) para que quede trazado
-   qué se decidió sin humano.
-   Si SÍ hay alguna de esas señales, presenta la propuesta (tarjeta visual,
-   como hasta ahora) y **espera confirmación**. Si piden ajustes, reclasifica y
-   vuelve a presentar. **Solo con OK explícito** pasas al paso 4 — el gate
-   sigue existiendo, pero solo cuando hay algo genuinamente ambiguo que
-   decidir, no como trámite fijo.
-4. **(tras OK, y SOLO si `rclone` tiene un client OAuth propio configurado —
-   ver prerrequisito del Task 4 del plan de la skill; si no, copia
-   secuencial como hasta ahora con `copy_path`/`cp`, más lenta pero sin
-   prerrequisito) Copia+renombra en bloque vía `rclone rcd`:** aplica **solo a
-   casos Drive-residentes (Modo 1 o Modo 3)** — en **Modo 2 (local-nativo)** los
-   ficheros están en disco local, no en ningún remote rclone, así que ahí se
-   copia con `cp`/`shutil` como ya indica "Modos de acceso". `remote` (p. ej.
-   `gdrive_tl:`) y las rutas relativas de `pares` se derivan de la ubicación del
-   caso ya resuelta en el **Paso 0**. `levantar_rcd_si_falta()` una vez, luego
-   `copiar_manifiesto(remote, pares)` con TODAS las filas del **plan persistido
-   en el Paso 2-bis** (`_plan/plan-<AAAA-MM-DD-HHmm>.md`; el `_MANIFIESTO.md`
-   todavía no existe — se escribe en el Paso 5) de una vez (no una
-   llamada de shell por fichero) — el pacer de cuota se mantiene estable
-   dentro del mismo proceso. Los documentos compuestos (bundles) copian
-   primero su principal, luego sus anexos, todo dentro de la misma corrida.
-   Los `fallidos` que devuelva se reintentan una vez (red inestable) y si
-   siguen fallando se anotan en `_MANIFIESTO.md` como pendientes, igual que
-   hoy con `ERROR_FILE_NOT_HYDRATED` — nunca se fuerza ni se fabrica un éxito.
-5. **Escribe los índices** en `01_Procesado/Sala lectura/` (con la tool de texto del modo:
-   `expedientes-xl:write_text` / `Write` / `google-despacho:create_file`):
-   - `_MANIFIESTO.md` — tabla por documento, una fila por fichero, columnas:
-     `sha256 | ruta_original | nombre_canonico | tipo | fecha | parte | parent_id`. El
-     `sha256` se calcula de los bytes (el `md5` de Drive NO sirve: la traza del caso
-     llavea por sha256). `parent_id` agrupa los anexos de un bundle bajo su principal.
-   - `INDICE.md` — agrupado **por categoría** (la categoría vive aquí, no en carpetas),
-     orden **fecha DESCENDENTE**. **Dentro de "07. RECLAMACIONES"**, si la mayoría de sus
-     documentos tienen `subcategoria_crm` (Paso 1-bis.e), sub-agrupa por esa subcarpeta
-     (`civil`/`demanda`/`documentos`/`preliminares`/`documentacion_rgpd_lopd`,
-     y "correspondencia" para los `.eml` sin subcategoría CRM) antes de ordenar
-     por fecha dentro de cada subgrupo — es la única categoría que lo necesita
-     (concentra la mayoría de los documentos en expedientes judicializados).
-     Cada entrada enlaza a la copia plana + nombre original.
-   - `CRONOLOGIA.md` — por fecha **ASCENDENTE**; `0000-00-00` y fechas `(*)` al final.
-   Los tres con cabecera `<!-- GENERADO — NO EDITAR A MANO -->`.
-6.5. **Verify — falla ruidosamente, no resumas bonito.** `verificar(filas,
-   ficheros_en_disco, cobertura_filas)` sobre el `_MANIFIESTO.md` recién
-   escrito — pasa también las filas de `01_Procesado/02_Sala de máquina/
-   _cobertura.json` si el fichero existe (si no existe, pasa `None`/omite el
-   argumento). Con `cobertura_filas`, `verificar()` además avisa de cualquier
-   fila con `fecha: 0000-00-00` cuyo sha256 tenga texto ya extraído en sala
-   de máquina (`estado` ok/low con chars por encima del umbral) — señal de
-   que el Paso 1-bis.d se saltó y hay que revisar esa fila antes de dar el
-   `0000-00-00` por bueno. Si `verificar()` devuelve ALGÚN problema (de
-   cualquier tipo), NO sigas al Paso 7 con un reporte de éxito — lista los
-   problemas primero, en el mismo nivel de visibilidad que el resto del
-   reporte, y decide con el letrado si reintentar o dejarlos anotados
-   explícitamente. Nunca "cuenta bien" un total que no cuadra con lo real.
+3. **(Paso 2.5 — GATE condicional, por código, no por impresión).** Ejecuta
+   `senales_gate(filas, wcode_caso, cobertura_filas)` (de
+   `scripts/preclasificar.py`) sobre las filas propuestas, con `wcode_caso` = el
+   W-code del caso (del nombre de la carpeta / `case_id`) y `cobertura_filas` =
+   las filas de `01_Procesado/02_Sala de máquina/_cobertura.json` si existe (si
+   no, `None`). Detecta de forma determinista: **W-code AJENO** al caso (remedio
+   por defecto: **excluir, nunca copiar** — no es de este expediente),
+   **casi-duplicado** (mismo nombre de origen, sha256 distinto), **binario opaco
+   SIN espejo MD**, y **bundle sin parte** (`requiere_identificar_parte`).
+   - **Lista vacía → procede directo al Paso 4 sin esperar aprobación**, y deja
+     constancia en el plan persistido (`estado: auto-aprobado, sin anomalías`).
+   - **Lista NO vacía → presenta la propuesta** (tarjeta visual) con esas señales
+     en el panel "Requiere tu visto bueno" y **espera confirmación**. Si piden
+     ajustes, reclasifica y vuelve a presentar. Solo con OK explícito pasas al
+     Paso 4.
+   Es un chequeo de 1 segundo, no una impresión del agente: si `senales_gate`
+   devuelve vacío no inventes anomalías; si devuelve algo no lo ignores.
+4. **(tras OK) Copia+renombra.** Aplica solo a casos Drive-residentes (Modo 1 o
+   Modo 3); en **Modo 2 (local-nativo)** los ficheros están en disco local (no en
+   ningún remote rclone) → copia con `cp`/`shutil`. Decide la ruta de copia **por
+   exit code, no leyendo documentación**: ejecuta
+   `python scripts/precheck_rclone.py <remote>` (p. ej. `gdrive_tl:`; `remote` y
+   las rutas relativas de `pares` se derivan de la ubicación resuelta en el Paso 0).
+   - **exit 0** (client OAuth propio del despacho) → ruta PRIMARIA `rclone rcd`:
+     `levantar_rcd_si_falta()` una vez, luego `copiar_manifiesto(remote, pares)`
+     con TODAS las filas del **plan persistido en el Paso 2-bis**
+     (`_plan/plan-<AAAA-MM-DD-HHmm>.md`; el `_MANIFIESTO.md` aún no existe — se
+     escribe en el Paso 5) de una vez — el pacer de cuota se mantiene estable
+     dentro del mismo proceso. `copiar_manifiesto` **aborta antes de tocar Drive**
+     (`validar_pares`) si hay destinos duplicados: es una colisión de
+     `nombre_canonico` sin resolver → vuelve al Paso 2 y desambigua con `_2`/`_3`.
+   - **exit != 0** (client compartido, o `rclone` no disponible) → copia
+     secuencial server-side con `copy_path`/`cp` (más lenta, sin prerrequisito).
+   Los documentos compuestos (bundles) copian primero su principal, luego sus
+   anexos, dentro de la misma corrida.
+   - **`ERROR_FILE_NOT_HYDRATED` (fichero frío no hidratado):** NO lo anotes
+     pendiente a la primera. Reintenta ESE fichero vía `copiar_renombrar(remote,
+     src, dst)` (RC API server-side, inmune al caché de hidratación local): en
+     W-02VUDR esa ruta copió 3 ficheros atascados —incl. uno de 1,1 GB— en 19s.
+     Solo si el reintento server-side también falla se anota pendiente en el
+     `_MANIFIESTO.md`. Nunca se fuerza ni se fabrica un éxito.
+   Al terminar, si `levantar_rcd_si_falta()` devolvió un `Popen` (lo arrancó esta
+   corrida), ciérralo (`proc.terminate()`) para no dejar un `rcd` huérfano.
+5. **Escribe SOLO el `_MANIFIESTO.md`, y deriva el resto por script.** El LLM ya
+   no transcribe INDICE/CRONOLOGIA/YAML a mano (parte medible de la fase lenta).
+   - `_MANIFIESTO.md` (con la tool de texto del modo: `expedientes-xl:write_text` /
+     `Write` / `google-despacho:create_file`) — tabla por documento, una fila por
+     fichero, columnas (orden fijo):
+     `sha256 | ruta_original | nombre_canonico | tipo | fecha | parte | parent_id | categoria | subcategoria_crm`.
+     `categoria` = una de las 8 de `references/taxonomia_ev.md`; `subcategoria_crm`
+     = lo que devuelva `subcategoria_crm(ruta)` (o vacío). El `sha256` se calcula de
+     los bytes (el `md5` de Drive NO sirve: la traza del caso llavea por sha256).
+     `parent_id` agrupa los anexos de un bundle bajo su principal. Cabecera
+     `<!-- GENERADO — NO EDITAR A MANO -->`.
+   - `INDICE.md` y `CRONOLOGIA.md` → ejecuta
+     `python scripts/indices_desde_manifiesto.py _MANIFIESTO.md <sala_dir>`
+     (agrupa **por categoría** fecha DESCENDENTE, sub-agrupa "07. RECLAMACIONES" por
+     `subcategoria_crm` —`civil`/`demanda`/`documentos`/`preliminares`/
+     `documentacion_rgpd_lopd`, y "correspondencia" para los `.eml` sin
+     subcategoría—; cronología fecha ASCENDENTE con `0000-00-00`/`(*)` al final).
+   Los derivados llevan cabecera GENERADO; **no los edites a mano** (ver Paso 6.5).
+6.5. **Verify determinista — falla ruidosamente, no resumas bonito.** Ejecuta
+   `python scripts/verificar_sala.py <sala_dir> [--cobertura "01_Procesado/02_Sala de máquina/_cobertura.json"]`
+   (añade `--hash muestra` para contrastar sha origen↔copia de un 10%, o
+   `--hash completo` si sospechas corrupción). El script parsea él mismo el
+   `_MANIFIESTO.md` y lista el directorio — no ensambles a mano sus entradas.
+   Detecta: fila sin fichero, fichero sin fila, anexo con `parent_id` huérfano,
+   **colisión de `nombre_canonico`**, y —con `--cobertura`— fila `0000-00-00` con
+   texto ya extraído en sala de máquina (señal de que el Paso 1-bis.d se saltó).
+   **Exit 1 = hay problemas:** NO sigas al Paso 7 con un reporte de éxito; lístalos.
+   - **PROHIBIDO editar `_MANIFIESTO.md`/`INDICE.md`/`CRONOLOGIA.md`/
+     `indice_documental.yaml` a mano para "hacer pasar" el verify.** La cabecera
+     `GENERADO — NO EDITAR A MANO` es vinculante; toda corrección real se
+     re-deriva reescribiendo el `_MANIFIESTO.md` y re-ejecutando los scripts del
+     Paso 5.
+   - Si el verify antepone `ATENCIÓN: N problemas homogéneos del tipo ...` (≥5 del
+     mismo tipo), la hipótesis por defecto es **bug del check, no de los datos**:
+     contrasta 2-3 filas a mano y PARA reportando al letrado, en vez de parchear N
+     filas (modo de fallo más caro observado: 21 filas parcheadas a mano por un
+     falso positivo).
 6. **Deriva el catálogo:** ejecuta
    `scripts/manifiesto_a_catalogo.py _MANIFIESTO.md indice_documental.yaml` (el LLM **NO**
    escribe el YAML). Es la SSOT máquina.
