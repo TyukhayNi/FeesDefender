@@ -17,9 +17,19 @@ verificaba después. El propósito de la sala de lectura es el timeline;
 from __future__ import annotations
 
 from collections import Counter
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+if str(Path(__file__).resolve().parent) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+import manifiesto_parser  # noqa: E402
 
 _CHARS_MINIMOS_SOSPECHOSO = 200
 _UMBRAL_HOMOGENEO = 5
+_EXCLUIR_NOMBRES = {"INDICE.md", "CRONOLOGIA.md", "_MANIFIESTO.md", "indice_documental.yaml"}
+_EXCLUIR_DIRS_TOP = {"_plan"}
 
 
 def verificar(
@@ -95,3 +105,94 @@ def verificar(
         for t, n in por_tipo.items() if n >= _UMBRAL_HOMOGENEO
     ]
     return avisos + [msg for _, msg in tipados]
+
+
+def _listar_sala(sala_dir) -> set[str]:
+    """Relpaths posix de los ficheros COPIADOS de la sala (bundles incluidos como
+    `subcarpeta/fichero.ext`, que es como se escribe su `nombre_canonico`),
+    excluyendo los índices generados y el directorio `_plan/`."""
+    sala_dir = Path(sala_dir)
+    encontrados: set[str] = set()
+    for p in sala_dir.rglob("*"):
+        if not p.is_file():
+            continue
+        rel = p.relative_to(sala_dir)
+        if rel.parts and rel.parts[0] in _EXCLUIR_DIRS_TOP:
+            continue
+        if p.name in _EXCLUIR_NOMBRES:
+            continue
+        encontrados.add(rel.as_posix())
+    return encontrados
+
+
+def _sha256_fichero(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _problemas_hash(sala_dir, filas, ficheros_en_disco, modo) -> list[str]:
+    """Contrasta el sha256 de la COPIA en disco contra el del manifiesto (que es
+    el del ORIGEN; una copia byte-idéntica debe coincidir). `muestra` = 10%
+    determinista; `completo` = todos. Filas sin sha256 de 64 hex (Modo 3 md5 o
+    pendiente) no se pueden contrastar y se saltan."""
+    if modo == "no":
+        return []
+    objetivo = sorted(ficheros_en_disco)
+    if modo == "muestra":
+        objetivo = objetivo[::10] or objetivo[:1]
+    sha_por_nombre = {f["nombre_canonico"]: f.get("sha256") for f in filas}
+    problemas: list[str] = []
+    for rel in objetivo:
+        esperado = sha_por_nombre.get(rel)
+        if not esperado or len(esperado) != 64:
+            continue
+        real = _sha256_fichero(Path(sala_dir) / rel)
+        if real != esperado:
+            problemas.append(
+                f"{rel}: sha256 en disco {real[:12]} != manifiesto {esperado[:12]} "
+                f"(copia corrupta o alterada)")
+    return problemas
+
+
+def main(argv: list[str]) -> int:
+    args = argv[1:]
+    if not args:
+        print("uso: verificar_sala.py <sala_dir> [--cobertura <ruta>] [--hash {no|muestra|completo}]")
+        return 2
+    sala_dir = Path(args[0])
+    cobertura_path = None
+    modo_hash = "no"
+    i = 1
+    while i < len(args):
+        if args[i] == "--cobertura" and i + 1 < len(args):
+            cobertura_path = Path(args[i + 1]); i += 2
+        elif args[i] == "--hash" and i + 1 < len(args):
+            modo_hash = args[i + 1]; i += 2
+        else:
+            print(f"argumento no reconocido: {args[i]}"); return 2
+    if modo_hash not in ("no", "muestra", "completo"):
+        print(f"--hash debe ser no|muestra|completo, no {modo_hash!r}"); return 2
+    manif = sala_dir / "_MANIFIESTO.md"
+    if not manif.exists():
+        print(f"no existe {manif}"); return 2
+    filas = manifiesto_parser.parse_manifiesto(manif.read_text(encoding="utf-8"))
+    cobertura = None
+    if cobertura_path and cobertura_path.exists():
+        cobertura = json.loads(cobertura_path.read_text(encoding="utf-8"))
+    ficheros = _listar_sala(sala_dir)
+    problemas = verificar(filas, ficheros, cobertura)
+    problemas += _problemas_hash(sala_dir, filas, ficheros, modo_hash)
+    for p in problemas:
+        print(p)
+    if problemas:
+        print(f"\n{len(problemas)} problema(s).")
+        return 1
+    print("Verify OK: manifiesto y disco cuadran.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))
