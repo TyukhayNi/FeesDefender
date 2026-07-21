@@ -16,13 +16,12 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 
 | # | Ítem | Estado | Gate / disparador | Esf. |
 |---|------|--------|-------------------|------|
-| 1 | [Split F2 sala de máquina](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | ✅ construido | PR pendiente de merge | medio |
-| 2 | [Infra C — art. 156 LEC](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado (quick win) | bajo |
-| 3 | [Infra B — expediente scratch](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado | medio |
-| 4 | [MCP sudespacho F1](#siguiente-mcp-sudespacho-mcp-sudespacho-crm-del-despacho--f1-lectura-spec-hecho-plan-pendiente) | spec lista | gates de despliegue | alto |
-| 5 | [Drive-disco: pasos 5-7 + Claude Code](#siguiente-mcp-drive-disco-pasos-5-7-diferidos) | ✅ desplegado | resto pasivo: check Modo 1 en caso real | medio |
-| 6 | [abrir-caso F3-judicial](#abrir-caso--f1--f2a--f3-ac-mergeadas-f2b-aparcada-f3-judicial-pendiente) | diferida | caso judicial real | alto |
-| 7 | [Google MCP F4 (Calendar)](#siguiente-google-mcp-f1-lectura--mergeada--f2-escriturapermisosnavegación--mergeada--f3f4-pendientes) | diferida | disparador | medio |
+| 1 | [Infra C — art. 156 LEC](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado (quick win) | bajo |
+| 2 | [Infra B — expediente scratch](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado | medio |
+| 3 | [MCP sudespacho F1](#siguiente-mcp-sudespacho-mcp-sudespacho-crm-del-despacho--f1-lectura-spec-hecho-plan-pendiente) | spec lista | gates de despliegue | alto |
+| 4 | [Drive-disco: pasos 5-7 + Claude Code](#siguiente-mcp-drive-disco-pasos-5-7-diferidos) | ✅ desplegado | resto pasivo: check Modo 1 en caso real | medio |
+| 5 | [abrir-caso F3-judicial](#abrir-caso--f1--f2a--f3-ac-mergeadas-f2b-aparcada-f3-judicial-pendiente) | diferida | caso judicial real | alto |
+| 6 | [Google MCP F4 (Calendar)](#siguiente-google-mcp-f1-lectura--mergeada--f2-escriturapermisosnavegación--mergeada--f3f4-pendientes) | diferida | disparador | medio |
 
 > Detalle de cada ítem en su bloque `[SIGUIENTE-*]` más abajo. Backlog sin
 > promover: `docs/MEJORAS_FUTURAS.md`. Ledger de cerrados: `## Cerrados` (final).
@@ -76,7 +75,7 @@ B**; D/E/F quedan en backlog. **Actualización: el Cluster A lo completó la ses
   Plan `docs/superpowers/plans/2026-07-14-split-sala-maquina.md` (spec+plan del PR #43). **F2 (integración en
   `core/sala_maquina.py`, Tareas 12-15 + 13B) ✅ CONSTRUIDA** (suite 2222 verde): split enganchado entre OCR y
   MD, cobertura y estado idempotente por documento lógico, `--force` regenera el manifiesto y passthrough
-  robusto si la detección falla. Follow-ons en `MEJORAS #78/#79`. PR pendiente de merge.
+  robusto si la detección falla. Follow-ons en `MEJORAS #78/#79`. ✅ **MERGEADA** (PR #109, `cc13355`) → ledger `## Cerrados`.
   Deferidos F0 (calibración umbrales + fixture página-imagen) y F2 (contratos M-A/M-C) en `MEJORAS_FUTURAS #64`.
 
 - [x] **A — Fiabilidad de la sala de máquina (`MEJORAS #58`) — ✅ HECHA (PR #42, `24e69db`, sesión paralela).** (1) Bug: `apply` incremental
@@ -1391,6 +1390,7 @@ trabajo para que no contamine).
 > Lista plana, reciente primero. Promover a agrupación por área cuando supere ~30
 > entradas (lo avisa `session_close`).
 
+- ✅ **[SPLIT-SALA-MAQUINA]** Split de bundles multi-documento en la Sala de máquina — F1 (cerebro `core/split_documental.py`, PR #45 `6dba396`) + F2 (integración en `sala_maquina`/CLI, Tareas 12-15 + 13B, PR #109 `cc13355`): split entre OCR y MD, cobertura y estado por documento lógico, manifiesto editable + `--force`, passthrough robusto; skill `organizar-sala-maquina` v1.3; follow-ons `MEJORAS #78/#79` · [plan](docs/superpowers/plans/2026-07-14-split-sala-maquina.md) (2026-07-21)
 - ✅ **[SIGUIENTE-RESIDUO-LLM]** Clasificador LLM del residuo de intake (`MEJORAS #37`) — `preparar_residuo`/`rellenar_worklist`/`clasificar_residuo_llm` (chat_fn inyectable) + CLI `scripts/sala_lectura.py`; +9 tests; commit `742e35a` (triaje 2026-07-19)
 - ✅ **[SIGUIENTE-INTAKE-JUDICIAL-AUTO]** Intake automático de demanda/contestación desde el CRM — 5 fases ✅, validado e2e real (incluye el Paso 1 del intake CRM-completo) (triaje 2026-07-19)
 - ✅ **[SIGUIENTE-INPUT-LOTES]** Layout de `00_Input` por lotes de entrega (`MEJORAS #54`) — build MERGEADO PR #57 (`8142d97`); la cola operativa (re-import Cowork + migración `migrar_layout_intake` bajo demanda) queda como tail no-bloqueante · [spec](docs/superpowers/specs/2026-07-17-layout-00-input-lotes-design.md) (triaje 2026-07-19)
