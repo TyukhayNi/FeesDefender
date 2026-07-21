@@ -2938,3 +2938,22 @@ El corte 1→N (el caso real de VALERO) ya lo cubre F2; esto es comodidad.
 bundle como un solo fichero: leer la cobertura por documento lógico, respetar el `tipo` clasificado y nombrar
 canónicamente cada segmento. Contrato de salida documentado en el §9 del spec del split
 (`docs/superpowers/specs/2026-07-14-split-sala-maquina-design.md`).
+
+## 80. Verificar dedup de `sync_sudespacho pull` contra documentos ya presentes en «05. Procedimiento»
+
+**Disparador:** ninguno todavía — anotado sin promover, a la espera de un caso real llevado con
+el flujo que lo activa.
+
+Contexto: en W-02VUDR, `00_Input/sudespacho_499/demanda/` trajo del CRM una demanda de diligencias
+preliminares + 12 anexos (`doc_NN_*`) sin agrupar como bundle (ver `core/conjunto_detector.py`, cuyo
+regex `\bD\s*\d+[\s\w]*-` no casa con `doc_NN_`). Se decidió NO construir un detector de bundle para
+este patrón (bajo ROI para un solo expediente); la vía elegida es de proceso, no de código: cuando el
+despacho redacte el escrito + monte sus anexos en una carpeta de Procedimiento en Drive **antes** de
+subirlos al CRM, la versión bien organizada existe desde el origen y el CRM es solo su espejo.
+
+La suposición pendiente de comprobar: que `sync_sudespacho.pull_expediente`/`pull_expediente_v2` no
+re-descargue como sueltos esos mismos documentos si ya están presentes en Procedimiento. Hoy el dedup
+de `pull_expediente*` es por marcador `.pulled`/`--incremental` **keyed por `doc_id` del CRM**, no por
+contenido — no hay comprobación cruzada contra otras rutas del caso. Si en el futuro se da el caso real
+(escrito+anexos montados en Procedimiento antes de subir al CRM) y el pull los vuelve a traer sueltos
+sin agrupar, esto se promueve a `PLAN.md` con ese caso como disparador; si no, queda como nota.

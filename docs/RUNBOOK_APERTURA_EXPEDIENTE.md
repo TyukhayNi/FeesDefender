@@ -1,7 +1,7 @@
 ---
 estado: vigente
 dueño: Nikolai Tyukhay
-fecha: 2026-07-18
+fecha: 2026-07-21
 ---
 
 # RUNBOOK — Apertura de expediente (FeesDefender)
@@ -11,7 +11,8 @@ fecha: 2026-07-18
 > viabilidad → ficha CRM completa → (si procede) archivo → cierre.
 >
 > Consolida los 3 handoffs de las aperturas del 2026-07-17 (W-02T3XO, W-02TH0W, W-046G2R;
-> en `docs/superpowers/handoffs/handoff-2026-07-17-apertura-W-*.md`). Las etiquetas `[APER-xx]`
+> en `docs/superpowers/handoffs/handoff-2026-07-17-apertura-W-*.md`) + los hallazgos de la
+> apertura de W-02VUDR (2026-07-21: `[APER-35]` a `[APER-40]`). Las etiquetas `[APER-xx]`
 > remiten al hallazgo original.
 >
 > **SSOT del detalle CRM (endpoints, campos, enums, tags):** `docs/INTEGRACION_SUDESPACHO.md`
@@ -40,6 +41,14 @@ fecha: 2026-07-18
   `docs/DEAD_ENDS.md` (entrada "En un worktree, el `cd` de Bash al repo raíz apunta al
   PRINCIPAL, no al worktree") + memoria `feedback-worktree-vs-raiz-compartida` (recoge el
   facet de sobrescritura silenciosa de ediciones, sin conflicto de git).
+- **`[APER-40]` / W-02VUDR — Comandos de shell: PowerShell, no Bash.** Rutas con
+  backslash (`.venv\Scripts\python.exe`) ejecutadas por un tool Bash (POSIX sh) pierden
+  los backslashes (`exit 127`). Y **nunca** `Glob`/`grep` recursivo sobre `G:\` sin
+  acotar para localizar algo de un caso concreto — `G:` es Drive Stream-con-caché
+  (filesystem virtual), no disco local, y cuelga/hace timeout. Ir directo a
+  `CASOS_ROOT` acotado (`Get-ChildItem` en PowerShell) o, si el dato vive en CRM, a la
+  API (`core/sudespacho_relations.py`) en vez del filesystem. Memoria
+  `feedback-eficiencia-herramientas-windows-drive`.
 
 ---
 
@@ -78,6 +87,14 @@ De las 4 preguntas clásicas de apertura, **3 son auto-derivables**; la única r
   CRM cross-sistema (pasó en W-02T3XO). Fijar el sufijo canónico **antes** del alta.
   Memoria `feedback-case-sufijo-tipo-canonico`.
 - **`[APER-05]` `--tipo-caso` se deduce del hilo** (vuelta / negativa / bad debt / …).
+- **`[APER-35]` / W-02VUDR — Si al buscar candidatos CRM por W-code aparece MÁS DE UN
+  expediente, es un caso con varios frentes (p. ej. demanda solo contra el propietario +
+  extrajudicial previo + un judicial "de cortesía" contra el comprador que no se
+  demanda), no un error de búsqueda.** `list_expedientes_judiciales_candidatos`/
+  `_rest_search_expedientes` (`core/sudespacho_relations.py`) devuelven TODOS los que
+  contienen el W-code. **Parar y confirmar con el letrado el alcance** (¿local = un solo
+  caso o uno por frente?) antes de fijar `--tipo-caso`/`--direccion` — no asumir 1:1
+  caso↔expediente. Ver memoria `feedback-case-sufijo-tipo-canonico`.
 
 ---
 
@@ -97,6 +114,20 @@ Taxonomía por cuenta (distinta):
 - "Mover" una etiqueta = `labels().patch(id, {name:"<nuevo path>"})` — **conserva los
   hilos**, no re-etiqueta. Aplicar color = `labels().patch(id, {color:{...}})`.
 - `list_labels` sobre miles de etiquetas excede tokens → volcar a fichero y `grep`.
+- **`[APER-38]` / W-02VUDR — Verificar contaminación cruzada tras exportar la etiqueta,
+  SIEMPRE que la etiqueta ya existiera de antes (no la acabas de crear tú).** Una
+  etiqueta curada en otra sesión puede traer ruido: (a) administración interna del
+  despacho — facturación mensual a `Proveedores.ES@engelvoelkers.com`, actas CFO+Legal,
+  circularización de auditoría, cartas de auditores, reenvíos a
+  `mails.repositorio@gmail.com` con `S/R:`/`M/R:`/`Contrario:` vacíos (memoria
+  `feedback-intake-email-exclusiones`); (b) documentos de OTROS casos — grep el lote
+  exportado buscando un W-code DISTINTO al del caso en nombre de fichero/asunto. Si
+  aparece, **borrar directamente** tras exportar (no mover a una carpeta de cuarentena:
+  sigue siendo visible para quien tenga acceso Drive al caso) — comprobar antes por
+  `sha256` que ningún adjunto esté también en uso por un mensaje legítimo del caso.
+  Regenerar índices: `core.email_export.write_indices_caso(case_id)` +
+  `scripts.atomize_emails --ref <case_id>` (poda solo, y solo, los `.md` de mensaje
+  huérfanos — los adjuntos hay que borrarlos a mano).
 
 Memoria `reference-gmail-etiquetas-organizacion`.
 
@@ -127,6 +158,17 @@ python -m scripts.abrir_caso --w-code W-XXXXXX --ciudad Barcelona --tipo-caso VU
 - **`[APER-19]`** El bug del `id_go` ya está arreglado (PR #54, en `main`): el W-code se
   persiste en `meta.id_go` de `_caso.md` → `case_locator.resolve_ref(w_code)` encuentra el
   caso. Ya no se desvía el intake a una carpeta nueva `CASOS\W-XXXXXX`.
+- **`[APER-36]` / W-02VUDR — `--crm skip` (caso ya dado de alta en CRM ANTES de abrirse en
+  Drive/local) NO vincula los expedientes ya existentes.** Deja "referencia pendiente +
+  TODO" en `_caso.md`; hay que vincularlos a mano, uno por cada expediente que
+  corresponda al caso (extrajudicial y/o judicial):
+  ```python
+  from core import case_manager
+  case_manager.register_expediente(case_id, expediente_id, "extrajudiciales")
+  case_manager.register_expediente(case_id, expediente_id_judicial, "expedientes_judiciales")
+  ```
+  Sin esto, `scripts.crm_ficha`/el archivo posterior no saben a qué expediente(s) del
+  CRM corresponde el caso.
 
 ---
 
@@ -154,6 +196,15 @@ python -m scripts.abrir_caso --case-id W-XXXXXX --fuente email --cuenta <gmail> 
   `extract_attachments=False`; `abrir_caso` no expone el flag). Se extraen con
   `python -m scripts.atomize_emails --ref ...` (motor aparte, manual). Solo es crítico si
   la prueba llega **únicamente por correo** sin copia en Drive (`MEJORAS #68`).
+- **`[APER-37]` / W-02VUDR — Checklist obligatoria ANTES de `sala_maquina apply`, no
+  después:** (1) si hubo intake de email, `scripts.atomize_emails --ref <case_id>`
+  (`[APER-17]` es el motivo, esto es el paso que cierra el motivo); (2) si el caso ya
+  estaba dado de alta en CRM (`--crm skip`, `[APER-36]`), `scripts.sync_sudespacho pull
+  --case <case_id> --expediente <id> --element <extrajudiciales|expedientes_judiciales>
+  --referencia "<referencia_cliente_exacta_del_CRM>"` por cada expediente vinculado —
+  vincular el expediente (`[APER-36]`) NO descarga sus documentos, es solo bookkeeping.
+  Saltarse esto deja `00_Input` incompleto y la sala de máquina hay que reprocesarla.
+  Memoria `feedback-orden-intake-antes-sala-maquina`.
 
 ---
 
@@ -168,6 +219,17 @@ python -m scripts.sala_maquina apply "<case_id>"   # background
 - **`[APER-21]`** Ficheros de Drive sin extensión usable (nombre sin punto, o `"… jpg"`) ya
   se **auto-detectan por firma de bytes** (magic bytes, PR #55). Si aún ves `sin_soporte`,
   es un formato genuinamente desconocido, no un fallo de nombre.
+- **`[APER-39]` / W-02VUDR — NUNCA relanzar `apply` sobre el mismo caso sin comprobar que
+  la corrida anterior en background terminó de verdad** (leer su `.output`, no asumir por
+  el tiempo transcurrido). `core/sala_maquina.py` **no poda huérfanos**: sin `--force`,
+  cada corrida FUSIONA sobre `_cobertura.json` persistido — si se detectó y corrigió un
+  problema de intake (p. ej. `[APER-38]`) MIENTRAS una corrida seguía activa, esa corrida
+  procesó el estado sucio y una 2ª corrida sin `--force` no lo arregla, solo añade
+  trabajo redundante. Hace falta un **`--force`** (foto fresca desde el `00_Input`
+  actual) para limpiar — y aun así **hay que borrar a mano** los `.md`/`.pdf`/`.txt`
+  huérfanos en `02_Sala de máquina/{01_OCR,03_MD,raw_text}` de documentos que ya no
+  están en `00_Input`, porque `--force` no los toca. Coste real medido: ~1h40 de OCR
+  repetido evitable. Memoria `feedback-concurrencia-pipelines-y-tiempos-apertura`.
 
 ---
 
@@ -315,4 +377,7 @@ Todo REST `x-api-key`. No se borra nada.
   desde `--folder-id` (`[APER-34]`, §4) — **todos en `main`**. El bloque B1–B5 está completo.
 - **Memorias:** `feedback-case-sufijo-tipo-canonico`, `feedback-crm-fichas-mayusculas`,
   `reference-sudespacho-crm-cableado-expediente`, `reference-sudespacho-archivo-actuaciones`,
-  `reference-gmail-etiquetas-organizacion`, `feedback-worktree-vs-raiz-compartida`.
+  `reference-gmail-etiquetas-organizacion`, `feedback-worktree-vs-raiz-compartida`,
+  `feedback-orden-intake-antes-sala-maquina`, `feedback-intake-email-exclusiones`,
+  `feedback-concurrencia-pipelines-y-tiempos-apertura`,
+  `feedback-eficiencia-herramientas-windows-drive` (todas de la apertura W-02VUDR, 2026-07-21).
