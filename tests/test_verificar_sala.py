@@ -32,3 +32,24 @@ def test_todo_correcto_no_da_problemas():
     filas = [{"nombre_canonico": "2025-01-01_doc.pdf", "sha256": "a", "parent_id": ""}]
     problemas = verificar_sala.verificar(filas, ficheros_en_disco={"2025-01-01_doc.pdf"})
     assert problemas == []
+
+
+def test_parent_id_como_nombre_de_carpeta_de_bundle_no_es_huerfano():
+    # Convención real de la skill desde v1.1 (ver "Documentos compuestos"): el
+    # parent_id de un anexo es el nombre PELADO de la carpeta del bundle, no el
+    # nombre_canonico completo del principal (que incluye la subcarpeta +
+    # extensión). Bug real detectado en W-02VUDR 2026-07-21: la v1 de esta
+    # función solo aceptaba match exacto contra nombre_canonico o sha256, así
+    # que TODO anexo de TODO bundle salía como "huérfano" (falso positivo).
+    filas = [
+        {
+            "nombre_canonico": "2024-06-18_chat_whatsapp_propietario_tonet/2024-06-18_chat_whatsapp_propietario_tonet.txt",
+            "sha256": "a", "parent_id": "",
+        },
+        {
+            "nombre_canonico": "2024-06-18_chat_whatsapp_propietario_tonet/2024-06-18_chat_whatsapp_propietario_tonet_anexo_1_foto.jpg",
+            "sha256": "b", "parent_id": "2024-06-18_chat_whatsapp_propietario_tonet",
+        },
+    ]
+    problemas = verificar_sala.verificar(filas, ficheros_en_disco={f["nombre_canonico"] for f in filas})
+    assert problemas == []

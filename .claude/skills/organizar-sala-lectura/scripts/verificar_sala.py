@@ -25,11 +25,21 @@ def verificar(manifiesto_filas: list[dict], ficheros_en_disco: set[str]) -> list
         if nombre not in nombres_manifiesto:
             problemas.append(f"{nombre}: fichero en disco sin fila en el manifiesto")
 
+    shas_manifiesto = {f.get("sha256") for f in manifiesto_filas}
     for fila in manifiesto_filas:
         parent = fila.get("parent_id") or ""
-        if parent and parent not in nombres_manifiesto and parent not in {
-            f.get("sha256") for f in manifiesto_filas
-        }:
+        if not parent:
+            continue
+        # parent_id resuelve por sha256, por nombre_canonico exacto, o —
+        # convención real de bundles desde v1.1 (ver SKILL.md "Documentos
+        # compuestos") — por ser el nombre PELADO de la carpeta del bundle,
+        # es decir prefijo de directorio de algún nombre_canonico.
+        resuelve = (
+            parent in shas_manifiesto
+            or parent in nombres_manifiesto
+            or any(n.startswith(parent + "/") for n in nombres_manifiesto)
+        )
+        if not resuelve:
             problemas.append(
                 f"{fila['nombre_canonico']}: parent_id {parent!r} no resuelve "
                 f"a ningún documento del manifiesto (anexo huérfano)"

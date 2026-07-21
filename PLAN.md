@@ -22,7 +22,8 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 4 | [Drive-disco: pasos 5-7 + Claude Code](#siguiente-mcp-drive-disco-pasos-5-7-diferidos) | ✅ desplegado | resto pasivo: check Modo 1 en caso real | medio |
 | 5 | [abrir-caso F3-judicial](#abrir-caso--f1--f2a--f3-ac-mergeadas-f2b-aparcada-f3-judicial-pendiente) | diferida | caso judicial real | alto |
 | 6 | [Google MCP F4 (Calendar)](#siguiente-google-mcp-f1-lectura--mergeada--f2-escriturapermisosnavegación--mergeada--f3f4-pendientes) | diferida | disparador | medio |
-| 7 | [Pre-clasificación sala de lectura](#siguiente-preclasificacion-sala-lectura-preclasificar-mecanico--copia-rclone-rcd--verify) | plan listo (Tasks 1-5) | sesión dedicada | medio |
+| 7 | [Pre-clasificación sala de lectura](#siguiente-preclasificacion-sala-lectura-preclasificar-mecanico--copia-rclone-rcd--verify) | ✅ construida (v1.9) | validación A/B en curso | medio |
+| 8 | [Intake email — filtro de exclusión de ruido](#siguiente-intake-email-filtro-exclusión-de-ruido-administrativo-y-cruzado) | pendiente | disparador: W-02VUDR (fuga cruzada de 7 casos ajenos + cartera de litigios) | medio |
 
 > Detalle de cada ítem en su bloque `[SIGUIENTE-*]` más abajo. Backlog sin
 > promover: `docs/MEJORAS_FUTURAS.md`. Ledger de cerrados: `## Cerrados` (final).
@@ -60,6 +61,38 @@ existentes solo bajo demanda, con remapeo de M9/cobertura OCR/catálogo por rel_
 - Fuera de alcance (specs de seguimiento que consumen esta decisión): reenganche fino de
   `email_atomize`/`sala_maquina`/motor de sala de lectura (**#55/#56**), escritor de la
   fuente `entrevista` (**#53**), limpieza de cajones vacíos post-migración.
+
+## [SIGUIENTE-INTAKE-EMAIL-FILTRO] Intake email — filtro de exclusión de ruido administrativo y cruzado
+
+*Disparador: apertura de W-02VUDR (Cr Denia-Javea 14, 2026-07-21). La etiqueta Gmail del
+caso, curada antes de esta sesión, traía 14 correos de administración/gobernanza interna
+del despacho (facturación mensual a EV MMC, actas CFO+Legal, circularización de auditoría,
+cartas de auditores) — y sus adjuntos arrastraban documentos de **al menos 8 casos de
+otros expedientes** (W-028QTL, W-02KJHT, BCN-OS-007074, W-02IXUI, W-02HLLB, W-02G6OE,
+W-02BDN7, W-02MFGZ, W-02M50U) más los anexos completos de la cartera de litigios del
+despacho. Es la **tercera recurrencia** de este patrón (ver memoria
+`feedback-intake-email-exclusiones`, 1ª en W-02XOR7 2026-07-13). Remediado en W-02VUDR por
+**borrado directo** (no cuarentena — una carpeta de cuarentena sigue siendo visible para
+quien tenga acceso Drive al caso; el original vive en Gmail, así que no se pierde nada;
+el evento queda en `_intake_log.jsonl`). Root cause sin resolver: la regla de exclusión
+solo existe como memoria/prosa, nunca como filtro de código.*
+
+- [ ] **Filtro de código en `core/email_export.py::export_label`** (o paso de triaje previo
+  al depósito): excluir por remitente/destinatario `Proveedores.ES@engelvoelkers.com`;
+  por patrón de asunto `S/R:.*M/R:.*Cliente: EV MMC.*Contrario:` con referencias vacías;
+  por asuntos "circularización auditoría"/"carta de auditores"/"acta reunión CFO"; por
+  reenvíos a `mails.repositorio@gmail.com` que casen esos mismos patrones.
+- [ ] **Norma de curado de etiqueta**: la etiqueta Gmail de un caso se puebla SIEMPRE
+  buscando por la referencia específica del caso (W-code/dirección), nunca por nombre de
+  cliente en genérico ("EV MMC SPAIN") — así se evita arrastrar ruido de otros casos.
+- [ ] **Chequeo post-atomización**: avisar si aparece un W-code DISTINTO al del caso
+  actual en el nombre de un adjunto/asunto — señal fuerte de contaminación cruzada (habría
+  bastado para detectar los 7 casos ajenos automáticamente en W-02VUDR).
+- [ ] Backlog relacionado no promovido: auditar si alguno de los 7 casos ajenos tiene a su
+  vez documentación de W-02VUDR colada por el mismo motivo (acción de seguimiento aparte,
+  no acoplada al cierre de este caso).
+
+---
 
 ## [SIGUIENTE-INFRA-POST-VALERO] Roadmap de infraestructura tras la sesión VALERO (2026-07-14)
 
