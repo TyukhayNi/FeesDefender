@@ -63,15 +63,23 @@ def verificar(
             )
 
     if cobertura_filas:
-        chars_ok_por_sha = {
-            c.get("sha256"): c.get("chars") or 0
-            for c in cobertura_filas
-            if c.get("estado") in ("ok", "low")
-        }
+        # Un bundle multi-documento spliteado (core/sala_maquina.py) tiene N
+        # filas de cobertura para el mismo origen, cada una con `sha256` del
+        # SEGMENTO y el hash del fichero de origen en `parent_sha256` --
+        # exactamente igual que texto_espejo_md() ya resuelve. Con varios
+        # segmentos del mismo origen, nos quedamos con el de más chars.
+        chars_ok_por_origen: dict[str, int] = {}
+        for c in cobertura_filas:
+            if c.get("estado") not in ("ok", "low"):
+                continue
+            origen = c.get("parent_sha256") or c.get("sha256")
+            chars = c.get("chars") or 0
+            if chars > chars_ok_por_origen.get(origen, -1):
+                chars_ok_por_origen[origen] = chars
         for fila in manifiesto_filas:
             if fila.get("fecha") != "0000-00-00":
                 continue
-            chars = chars_ok_por_sha.get(fila.get("sha256"))
+            chars = chars_ok_por_origen.get(fila.get("sha256"))
             if chars is not None and chars >= _CHARS_MINIMOS_SOSPECHOSO:
                 problemas.append(
                     f"{fila['nombre_canonico']}: fecha 0000-00-00 pero hay texto "

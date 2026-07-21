@@ -92,3 +92,19 @@ def test_no_flaggea_fecha_con_valor_real_aunque_haya_cobertura():
     problemas = verificar_sala.verificar(
         filas, ficheros_en_disco={"2025-04-08_burofax.pdf"}, cobertura_filas=cobertura)
     assert problemas == []
+
+
+def test_detecta_fecha_0000_con_texto_de_bundle_spliteado_via_parent_sha256():
+    # Hueco real (auditoria fable-5, 2026-07-21): un PDF escaneado multi-documento
+    # spliteado por sala de maquina (core/sala_maquina.py) tiene filas de
+    # cobertura donde `sha256` es el hash del SEGMENTO y el hash del fichero de
+    # origen (el que consta en el _MANIFIESTO.md de la sala de lectura) va en
+    # `parent_sha256`. texto_espejo_md() ya resuelve por "parent_sha256 or
+    # sha256"; verificar() solo miraba `sha256` y por tanto los binarios
+    # multi-documento -- justo los mas propensos a 0000-00-00 -- escapaban a
+    # esta red de seguridad.
+    filas = [{"nombre_canonico": "0000-00-00_escaneado.pdf", "sha256": "origen_a", "parent_id": "", "fecha": "0000-00-00"}]
+    cobertura = [{"sha256": "seg_1", "parent_sha256": "origen_a", "estado": "ok", "chars": 500}]
+    problemas = verificar_sala.verificar(
+        filas, ficheros_en_disco={"0000-00-00_escaneado.pdf"}, cobertura_filas=cobertura)
+    assert any("0000-00-00" in p and "texto extraído" in p for p in problemas)

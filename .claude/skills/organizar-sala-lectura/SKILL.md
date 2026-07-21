@@ -332,7 +332,13 @@ agrupan SOLO con señal determinista:
   → plano. Nunca inventar bundles.
 
 Nombre: carpeta `AAAA-MM-DD_descripcion/`; principal `AAAA-MM-DD_descripcion.ext`; anexos
-`AAAA-MM-DD_descripcion_anexo_N_x.ext`. `parent_id`/`orden` van al `_MANIFIESTO.md`.
+`AAAA-MM-DD_descripcion_anexo_N_x.ext`. **`parent_id` de un anexo = el nombre PELADO de
+la carpeta del bundle** (p.ej. `2024-06-18_chat_whatsapp_propietario_tonet`, sin `/` ni
+extensión) — no el `nombre_canonico` completo del principal (que incluye la subcarpeta +
+extensión). Es la convención real desde v1.1; `orden` va al `_MANIFIESTO.md` junto a
+`parent_id`. (Confusión real, sesión 2026-07-21: un verify que solo aceptaba match exacto
+contra `nombre_canonico`/sha256 marcó 21 anexos legítimos como "huérfanos" por no conocer
+esta convención — ver `scripts/verificar_sala.py`.)
 La carpeta y el principal se fechan por el inicio del documento (en WhatsApp, la fecha
 del chat); **el `AAAA-MM-DD` de cada anexo es su PROPIA fecha** (en WhatsApp, la de envío
 del mensaje que lo adjunta — ver la jerarquía de fecha arriba), por lo que distintos
