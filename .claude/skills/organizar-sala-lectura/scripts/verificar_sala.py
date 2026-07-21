@@ -57,7 +57,7 @@ def verificar(
         if nombre not in ficheros_en_disco:
             tipados.append(("sin_fichero", f"{nombre}: fila en manifiesto pero no existe en disco"))
 
-    for nombre in ficheros_en_disco:
+    for nombre in sorted(ficheros_en_disco):  # sorted → salida determinista (ficheros_en_disco es un set)
         if nombre not in nombres_manifiesto:
             tipados.append(("huerfano_disco", f"{nombre}: fichero en disco sin fila en el manifiesto"))
 

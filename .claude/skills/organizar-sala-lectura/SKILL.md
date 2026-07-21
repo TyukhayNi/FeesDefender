@@ -270,7 +270,10 @@ tal diálogo.
    (mismo razonamiento no-destructivo del resto de la skill).
 3. **(Paso 2.5 — GATE condicional, por código, no por impresión).** Ejecuta
    `senales_gate(filas, wcode_caso, cobertura_filas)` (de
-   `scripts/preclasificar.py`) sobre las filas propuestas, con `wcode_caso` = el
+   `scripts/preclasificar.py`) sobre las **filas de clasificación en memoria** —
+   las que devuelve `clasificar_por_patron` (Paso 1-bis), que **llevan `motivo`**,
+   NO la tabla del plan persistido del Paso 2-bis (que no tiene columna `motivo`,
+   así que la señal `requiere_identificar_parte` no dispararía). `wcode_caso` = el
    W-code del caso (del nombre de la carpeta / `case_id`) y `cobertura_filas` =
    las filas de `01_Procesado/02_Sala de máquina/_cobertura.json` si existe (si
    no, `None`). Detecta de forma determinista: **W-code AJENO** al caso (remedio
