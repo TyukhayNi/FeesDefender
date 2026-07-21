@@ -277,6 +277,12 @@ tal diálogo.
      Cada entrada enlaza a la copia plana + nombre original.
    - `CRONOLOGIA.md` — por fecha **ASCENDENTE**; `0000-00-00` y fechas `(*)` al final.
    Los tres con cabecera `<!-- GENERADO — NO EDITAR A MANO -->`.
+6.5. **Verify — falla ruidosamente, no resumas bonito.** `verificar(filas,
+   ficheros_en_disco)` sobre el `_MANIFIESTO.md` recién escrito. Si devuelve
+   ALGÚN problema, NO sigas al Paso 7 con un reporte de éxito — lista los
+   problemas primero, en el mismo nivel de visibilidad que el resto del
+   reporte, y decide con el letrado si reintentar o dejarlos anotados
+   explícitamente. Nunca "cuenta bien" un total que no cuadra con lo real.
 6. **Deriva el catálogo:** ejecuta
    `scripts/manifiesto_a_catalogo.py _MANIFIESTO.md indice_documental.yaml` (el LLM **NO**
    escribe el YAML). Es la SSOT máquina.
