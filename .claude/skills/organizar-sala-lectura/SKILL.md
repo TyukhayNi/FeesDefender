@@ -263,9 +263,9 @@ tal diálogo.
      `sha256 | ruta_original | nombre_canonico | tipo | fecha | parte | parent_id`. El
      `sha256` se calcula de los bytes (el `md5` de Drive NO sirve: la traza del caso
      llavea por sha256). `parent_id` agrupa los anexos de un bundle bajo su principal.
-   - `INDICE.md` — agrupado por categoría, orden fecha DESCENDENTE. **Dentro de
-     "07. RECLAMACIONES"**, si la mayoría de sus documentos tienen
-     `subcategoria_crm` (Paso 1-bis.e), sub-agrupa por esa subcarpeta
+   - `INDICE.md` — agrupado **por categoría** (la categoría vive aquí, no en carpetas),
+     orden **fecha DESCENDENTE**. **Dentro de "07. RECLAMACIONES"**, si la mayoría de sus
+     documentos tienen `subcategoria_crm` (Paso 1-bis.e), sub-agrupa por esa subcarpeta
      (`civil`/`demanda`/`documentos`/`preliminares`/`documentacion_rgpd_lopd`,
      y "correspondencia" para los `.eml` sin subcategoría CRM) antes de ordenar
      por fecha dentro de cada subgrupo — es la única categoría que lo necesita
