@@ -249,14 +249,18 @@ tal diálogo.
    vuelve a presentar. **Solo con OK explícito** pasas al paso 4 — el gate
    sigue existiendo, pero solo cuando hay algo genuinamente ambiguo que
    decidir, no como trámite fijo.
-4. **(tras OK) Ejecuta de una pasada (PLANO):** **copia** cada fichero a
-   `01_Procesado/Sala lectura/` (raíz) con **nombre canónico**
-   `AAAA-MM-DD_descripcion.ext`; los documentos compuestos a su **subcarpeta fechada**
-   `AAAA-MM-DD_descripcion/`. Copia según el modo: **Modo 1** con `expedientes-xl:copy_path`
-   (fichero) / `expedientes-xl:copy_dir` (bundle con su `media/`); **Modo 2** con `cp`/`shutil`;
-   **Modo 3** con `google-despacho:copy_file` (o el conector nativo). Los tres copian binarios
-   **sin pasarlos por el modelo**. **Guarda de colisión:** si el nombre destino ya se usó en
-   la corrida, añade sufijo `_2`/`_3`. Sin más preguntas.
+4. **(tras OK, y SOLO si `rclone` tiene un client OAuth propio configurado —
+   ver prerrequisito del Task 4 del plan de la skill; si no, copia
+   secuencial como hasta ahora con `copy_path`/`cp`, más lenta pero sin
+   prerrequisito) Copia+renombra en bloque vía `rclone rcd`:**
+   `levantar_rcd_si_falta()` una vez, luego `copiar_manifiesto(remote, pares)`
+   con TODAS las filas del `_MANIFIESTO.md` propuesto de una vez (no una
+   llamada de shell por fichero) — el pacer de cuota se mantiene estable
+   dentro del mismo proceso. Los documentos compuestos (bundles) copian
+   primero su principal, luego sus anexos, todo dentro de la misma corrida.
+   Los `fallidos` que devuelva se reintentan una vez (red inestable) y si
+   siguen fallando se anotan en `_MANIFIESTO.md` como pendientes, igual que
+   hoy con `ERROR_FILE_NOT_HYDRATED` — nunca se fuerza ni se fabrica un éxito.
 5. **Escribe los índices** en `01_Procesado/Sala lectura/` (con la tool de texto del modo:
    `expedientes-xl:write_text` / `Write` / `google-despacho:create_file`):
    - `_MANIFIESTO.md` — tabla por documento, una fila por fichero, columnas:
