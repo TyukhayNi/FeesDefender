@@ -77,11 +77,9 @@ def copiar_renombrar(remote: str, src_relpath: str, dst_relpath: str) -> dict:
         return json.loads(resp.read())
 
 
-
-
 def validar_pares(pares: list[tuple[str, str]]) -> None:
     """Aborta ANTES de tocar Drive si dos orígenes escriben el MISMO destino
-    (\dst_relpath\ duplicado) — uno pisaría al otro sin rastro. Backlog
+    (`dst_relpath` duplicado) — uno pisaría al otro sin rastro. Backlog
     robustez-velocidad ítem 3: único modo de fallo que puede hacer DESAPARECER
     un documento sin que ningún check posterior lo cace."""
     dups = sorted(d for d, n in Counter(dst for _, dst in pares).items() if n > 1)
@@ -89,6 +87,7 @@ def validar_pares(pares: list[tuple[str, str]]) -> None:
         raise ValueError(
             "destinos duplicados en el plan de copia (colisión de nombre_canonico): "
             + ", ".join(dups) + " — desambigua con _2/_3 antes de copiar")
+
 
 def copiar_manifiesto(
     remote: str, pares: list[tuple[str, str]],
