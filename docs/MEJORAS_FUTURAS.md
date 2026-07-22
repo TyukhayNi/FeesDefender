@@ -2985,3 +2985,24 @@ o si de verdad se usa/se espera usar con W-code puro (candidato real a la misma 
 confirma un caso real, promover a `PLAN.md` con ese caso como disparador, aplicando el mismo patrón
 de fix (`case_id = case_locator.resolve_ref(case_id)` antes de derivar cualquier ruta + fallo en alto
 si la ruta resuelta no tiene `00_Input`).
+
+## 82. Split de bundles — `num_doc` de portada fragmentada solo se busca en `lineas[:3]`
+
+**Disparador:** ninguno todavía — anotado tras el fix de `num_doc` fragmentado en
+`core/anon/separar.py` (W-02ZIIF, 2026-07-22), sin promover a `PLAN.md` a la espera de un caso real
+donde el número quede más allá de la 3ª línea reconstruida.
+
+Contexto: el fix de W-02ZIIF añadió `PATRON_NUM_DOC_FRAGMENTADO` + un fallback en `detectar_tipo`
+que une las líneas cortas de portada para reconocer "Documento anexo n.º 2" cuando el marcador y el
+número quedan repartidos entre líneas reconstruidas distintas (portada a dos líneas, o interlineado
+irregular de origen que fragmenta lo que visualmente es una sola línea). El fallback, igual que el
+bucle original que complementa, solo mira `lineas[:3]` — la misma ventana que usa la clasificación de
+TIPO (`texto_inicio`/`texto_inicio_titulo`). Si la fragmentación es tan agresiva que el dígito acaba
+en la línea 4 o 5 (de las 5 que `extraer_primeras_lineas` ya extrae), ni el bucle original ni el
+fallback lo ven, y `num_doc` sigue `None` para esa portada.
+
+Pendiente: si aparece un caso real donde esto importe, extender **solo el fallback** (nunca el bucle
+original ni la ventana de TIPO) para considerar las 5 líneas ya disponibles en `lineas`, no solo las
+3 primeras. No ampliar la ventana de `texto_inicio`/`texto_inicio_titulo`: esa ventana corta es la que
+evita que una mención de "anexo"/"contrato" en el cuerpo de una demanda dispare un tipo falso, y
+ampliarla reabriría ese riesgo. Test de referencia: `tests/test_anon_separar.py::TestNumDocPortadaFragmentada`.
