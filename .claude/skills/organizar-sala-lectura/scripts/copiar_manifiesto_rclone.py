@@ -93,6 +93,8 @@ def _cargar_progreso(path) -> set[str]:
             reg = json.loads(linea)
         except ValueError:
             continue
+        if not isinstance(reg, dict):
+            continue  # línea JSON válida pero no-objeto (lista/número) — corrupción externa
         if reg.get("estado") == "ok" and reg.get("dst"):
             ok.add(reg["dst"])
     return ok
@@ -105,6 +107,19 @@ def _anota_progreso(path, dst: str, estado: str, error: str = "") -> None:
         reg["error"] = error
     with open(path, "a", encoding="utf-8") as fh:
         fh.write(json.dumps(reg, ensure_ascii=False) + "\n")
+
+
+def _anota_progreso_seguro(path, dst: str, estado: str, error: str = "") -> None:
+    """Envoltorio tolerante de `_anota_progreso`: un fallo al ESCRIBIR el log
+    (`PermissionError` por antivirus/Drive-sync en Windows, directorio padre
+    inexistente, disco lleno) es una incidencia de I/O del log, no de la copia
+    — nunca debe abortar el batch ni reclasificar una copia ya exitosa como
+    fallida. La copia y el log son preocupaciones independientes (revisión
+    Task 5, defecto Important)."""
+    try:
+        _anota_progreso(path, dst, estado, error)
+    except Exception:  # noqa: BLE001 — best-effort, un fallo de log no es fatal
+        pass
 
 
 def validar_pares(pares: list[tuple[str, str]]) -> None:
@@ -141,12 +156,13 @@ def copiar_manifiesto(
             continue
         try:
             copiar_renombrar(remote, src, dst)
-            ok.append(dst)
-            if progreso_path:
-                _anota_progreso(progreso_path, dst, "ok")
-        except Exception as exc:  # noqa: BLE001 — un fallo no aborta el resto
+        except Exception as exc:  # noqa: BLE001 — un fallo de copia no aborta el resto
             fallidos.append((dst, str(exc)))
             if progreso_path:
-                _anota_progreso(progreso_path, dst, "fallido", str(exc))
+                _anota_progreso_seguro(progreso_path, dst, "fallido", str(exc))
+            continue
+        ok.append(dst)
+        if progreso_path:
+            _anota_progreso_seguro(progreso_path, dst, "ok")
     return ok, fallidos
 

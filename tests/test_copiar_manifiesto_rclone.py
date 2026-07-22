@@ -97,3 +97,40 @@ def test_copiar_manifiesto_reanuda_salta_los_ya_ok(tmp_path):
     assert ok == ["b/x.pdf", "b/y.pdf"]           # x.pdf cuenta como ok (reanudado)
     assert all("x.pdf" not in c for c in llamadas)  # pero NO se volvió a copiar
     assert any("y.pdf" in c for c in llamadas)
+
+
+def test_copiar_manifiesto_fallo_al_escribir_log_no_aborta_ni_reclasifica(tmp_path):
+    # Revision Task 5 (Important): si la copia tiene exito pero ESCRIBIR el
+    # log de progreso falla (PermissionError por antivirus/Drive-sync en
+    # Windows, directorio padre inexistente, disco lleno), el dst YA copiado
+    # no debe reclasificarse como fallido, y el fallo de I/O del log no debe
+    # propagarse fuera de copiar_manifiesto (abortaria el resto del batch,
+    # violando la invariante "un fallo individual no aborta el resto").
+    prog = tmp_path / "copia.jsonl"
+    with patch("urllib.request.urlopen", return_value=_mock_response(b"{}")):
+        with patch.object(cmr, "_anota_progreso", side_effect=PermissionError("log bloqueado")):
+            ok, fallidos = cmr.copiar_manifiesto(
+                "gdrive_tl:", [("a/x.pdf", "b/x.pdf"), ("a/y.pdf", "b/y.pdf")], progreso_path=prog)
+    assert ok == ["b/x.pdf", "b/y.pdf"]
+    assert fallidos == []
+
+
+def test_cargar_progreso_ignora_linea_json_no_objeto(tmp_path):
+    # Minor 1: una linea JSON sintacticamente valida pero que no sea un
+    # objeto (lista, numero...) no debe lanzar AttributeError al llamar
+    # .get() sobre ella — se ignora como cualquier otra linea corrupta.
+    prog = tmp_path / "copia.jsonl"
+    prog.write_text(
+        _json.dumps([1, 2, 3]) + "\n" + _json.dumps({"dst": "b/x.pdf", "estado": "ok"}) + "\n",
+        encoding="utf-8",
+    )
+    assert cmr._cargar_progreso(prog) == {"b/x.pdf"}
+
+
+def test_cargar_progreso_no_indexa_fallidos_se_reintentan(tmp_path):
+    # Un dst marcado "fallido" en el log NO cuenta como ya-ok: la reanudacion
+    # debe reintentarlo (solo "estado"=="ok" se indexa).
+    prog = tmp_path / "copia.jsonl"
+    prog.write_text(
+        _json.dumps({"dst": "b/x.pdf", "estado": "fallido", "error": "boom"}) + "\n", encoding="utf-8")
+    assert cmr._cargar_progreso(prog) == set()
