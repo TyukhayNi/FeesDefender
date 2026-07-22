@@ -21,6 +21,7 @@ import time
 import urllib.error
 import urllib.request
 from collections import Counter
+from pathlib import Path
 
 _RC_PORT = 15572
 _RC_URL = f"http://localhost:{_RC_PORT}"
@@ -77,6 +78,35 @@ def copiar_renombrar(remote: str, src_relpath: str, dst_relpath: str) -> dict:
         return json.loads(resp.read())
 
 
+def _cargar_progreso(path) -> set[str]:
+    """`dst` ya copiados OK según el log JSONL (reanudación). Tolerante a un log
+    ausente o a líneas corruptas (una corrida muerta puede dejar media línea)."""
+    p = Path(path)
+    if not p.exists():
+        return set()
+    ok: set[str] = set()
+    for linea in p.read_text(encoding="utf-8").splitlines():
+        linea = linea.strip()
+        if not linea:
+            continue
+        try:
+            reg = json.loads(linea)
+        except ValueError:
+            continue
+        if reg.get("estado") == "ok" and reg.get("dst"):
+            ok.add(reg["dst"])
+    return ok
+
+
+def _anota_progreso(path, dst: str, estado: str, error: str = "") -> None:
+    """Anota una fila de progreso al log JSONL (append-only)."""
+    reg = {"dst": dst, "estado": estado}
+    if error:
+        reg["error"] = error
+    with open(path, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps(reg, ensure_ascii=False) + "\n")
+
+
 def validar_pares(pares: list[tuple[str, str]]) -> None:
     """Aborta ANTES de tocar Drive si dos orígenes escriben el MISMO destino
     (`dst_relpath` duplicado) — uno pisaría al otro sin rastro. Backlog
@@ -90,21 +120,33 @@ def validar_pares(pares: list[tuple[str, str]]) -> None:
 
 
 def copiar_manifiesto(
-    remote: str, pares: list[tuple[str, str]],
+    remote: str, pares: list[tuple[str, str]], *, progreso_path=None,
 ) -> tuple[list[str], list[tuple[str, str]]]:
     """`pares` = [(src_relpath, dst_relpath), ...] ya decididos por la
-    clasificación (Paso 1-3 de la skill). Copia TODOS dentro del MISMO
-    proceso `rcd` — el pacer se mantiene estable entre llamadas, a
-    diferencia de invocar `rclone.exe` una vez por fichero. Devuelve
-    `(ok, fallidos)`; un fallo individual NO aborta el resto."""
+    clasificación (Paso 1-3 de la skill). Copia TODOS dentro del MISMO proceso
+    `rcd` — el pacer se mantiene estable entre llamadas, a diferencia de
+    invocar `rclone.exe` una vez por fichero. Devuelve `(ok, fallidos)`;
+    un fallo individual NO aborta el resto.
+
+    Con `progreso_path`, escribe un log JSONL append por fila y REANUDA: los
+    `dst` ya `ok` en un log previo se cuentan como copiados y se saltan (ítem 9
+    — una corrida muerta a mitad no re-copia lo ya hecho)."""
     validar_pares(pares)
+    ya_ok = _cargar_progreso(progreso_path) if progreso_path else set()
     ok: list[str] = []
     fallidos: list[tuple[str, str]] = []
     for src, dst in pares:
+        if dst in ya_ok:
+            ok.append(dst)
+            continue
         try:
             copiar_renombrar(remote, src, dst)
             ok.append(dst)
+            if progreso_path:
+                _anota_progreso(progreso_path, dst, "ok")
         except Exception as exc:  # noqa: BLE001 — un fallo no aborta el resto
             fallidos.append((dst, str(exc)))
+            if progreso_path:
+                _anota_progreso(progreso_path, dst, "fallido", str(exc))
     return ok, fallidos
 

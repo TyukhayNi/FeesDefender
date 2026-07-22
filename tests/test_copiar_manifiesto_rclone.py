@@ -3,6 +3,7 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 import sys
 import pytest
+import json as _json
 
 sys.path.insert(0, str(Path(__file__).parent.parent / ".claude/skills/organizar-sala-lectura/scripts"))
 cmr = import_module("copiar_manifiesto_rclone")
@@ -68,3 +69,31 @@ def test_copiar_manifiesto_aborta_antes_de_copiar_si_hay_colision():
         with pytest.raises(ValueError, match="destinos duplicados"):
             cmr.copiar_manifiesto("gdrive_tl:", [("a/x.pdf", "b/dup.pdf"), ("a/y.pdf", "b/dup.pdf")])
         m.assert_not_called()  # ningún fichero se copió
+
+
+def test_copiar_manifiesto_escribe_progreso_jsonl(tmp_path):
+    prog = tmp_path / "copia.jsonl"
+    with patch("urllib.request.urlopen", return_value=_mock_response(b"{}")):
+        ok, fallidos = cmr.copiar_manifiesto(
+            "gdrive_tl:", [("a/x.pdf", "b/x.pdf"), ("a/y.pdf", "b/y.pdf")], progreso_path=prog)
+    assert ok == ["b/x.pdf", "b/y.pdf"]
+    lineas = [_json.loads(l) for l in prog.read_text(encoding="utf-8").splitlines()]
+    assert [l["dst"] for l in lineas] == ["b/x.pdf", "b/y.pdf"]
+    assert all(l["estado"] == "ok" for l in lineas)
+
+
+def test_copiar_manifiesto_reanuda_salta_los_ya_ok(tmp_path):
+    prog = tmp_path / "copia.jsonl"
+    prog.write_text(_json.dumps({"dst": "b/x.pdf", "estado": "ok"}) + "\n", encoding="utf-8")
+    llamadas = []
+
+    def fake_urlopen(req, timeout=60):
+        llamadas.append(req.data.decode("utf-8"))
+        return _mock_response(b"{}")
+
+    with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        ok, fallidos = cmr.copiar_manifiesto(
+            "gdrive_tl:", [("a/x.pdf", "b/x.pdf"), ("a/y.pdf", "b/y.pdf")], progreso_path=prog)
+    assert ok == ["b/x.pdf", "b/y.pdf"]           # x.pdf cuenta como ok (reanudado)
+    assert all("x.pdf" not in c for c in llamadas)  # pero NO se volvió a copiar
+    assert any("y.pdf" in c for c in llamadas)
