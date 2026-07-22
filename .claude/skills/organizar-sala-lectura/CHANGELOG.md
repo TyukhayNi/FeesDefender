@@ -1,5 +1,32 @@
 # Changelog — organizar-sala-lectura
 
+## 1.12 — 2026-07-22
+- **`agrupar_por_hilo` no fusiona por una cifra del asunto.** Un `.eml` con una
+  cifra final (`..._1_990_000.eml`) ya no se agrupa con un hilo inexistente: `_N`
+  solo es sufijo de hilo si la base sin sufijo existe en el conjunto (así lo
+  numera `email_export`: primero sin sufijo, luego `_2`, `_3`).
+- **`emparejar_exports_whatsapp` excluye el zip crudo.** El `_export_original.zip`
+  que `whatsapp_intake` deja junto al `_chat.txt` ya no recibe fila propia (en
+  W-02VUDR fabricó 5 filas basura `0000-00-00`); se anota `duplicado_de` su chat.
+- **Parseo estricto del `_MANIFIESTO.md` + `md5:` en Modo 3.** `parse_manifiesto`
+  gana `estricto=`: una fila con nº de columnas incorrecto ya no desaparece del
+  catálogo en silencio (aborta ruidosamente). El catálogo, los índices y el verify
+  parsean en estricto. La columna sha256 admite `md5:<32 hex>` para binarios
+  grandes en nube pura (`sha_valido`), que la primera sesión con filesystem
+  recalcula.
+- **`fecha_aproximada` separa el marcador `(*)` del valor.** El catálogo YAML emite
+  `fecha_doc` limpia (parseable) + `fecha_aproximada: true|false` en vez de
+  `"2024-06-06(*)"`.
+- **Copia por lote reanudable + ciclo de vida del `rcd`.** `copiar_manifiesto`
+  escribe un log JSONL de progreso por fila y reanuda una corrida interrumpida sin
+  re-copiar; gestiona el `rcd` (lo cierra si lo arrancó, no deja huérfano en
+  :15572); `timeout` parametrizable y modo `async` con polling para copias grandes
+  (>60s ya no cuentan como fallidas).
+- **Correo: se lee el representante de cada hilo `.eml` que cae al `07` por
+  defecto** (una lectura por hilo) para no degradar correspondencia de activación a
+  reclamaciones. **Telemetría de fases** en el plan persistido (Paso 2-bis/7) para
+  medir el A/B de velocidad.
+
 ## 1.11 — 2026-07-22
 - **Señales del gate por código (`scripts/preclasificar.py::senales_gate`).** El
   gate condicional (Paso 2.5) deja de depender de comprobaciones mentales del
