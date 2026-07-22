@@ -87,6 +87,49 @@ def dedup_por_sha(ficheros: list[dict]) -> tuple[list[dict], list[dict]]:
 _SUFIJO_HILO_RE = re.compile(r"^(.*)_(\d+)$")
 
 
+# Nombre EXACTO del zip crudo que deposita whatsapp_intake.deposit_export
+# (self-contained; el test test_nombre_export_crudo_sin_drift_con_core lo compara
+# con la constante real core.whatsapp_intake._ORIGINAL_ZIP_NAME — sincronía a mano).
+_NOMBRE_EXPORT_CRUDO_WHATSAPP = "_export_original.zip"
+
+
+def emparejar_exports_whatsapp(rutas: list[str]) -> tuple[list[str], list[dict]]:
+    """Separa los exports CRUDOS de WhatsApp de las rutas a clasificar. Un `.zip`
+    es crudo SOLO si su basename es exactamente `_export_original.zip` (el que
+    `whatsapp_intake.deposit_export` deja junto al `_chat.txt` extraído) Y en su
+    MISMO directorio hay un `_chat.txt`: es el crudo del chat ya extraído y no
+    debe tener fila propia (no tiene fecha ni espejo MD; darle una fabrica basura
+    `0000-00-00`). Un `.zip` con OTRO nombre (documentación aportada) se conserva
+    aunque comparta carpeta con un chat. Devuelve `(rutas_sin_crudos, crudos)`;
+    cada crudo se anota `duplicado_de` su `_chat.txt` hermano (trazable, no
+    borrado). Determinista, sin releer nada."""
+    def _norm(r: str) -> str:
+        return r.replace("\\", "/")
+
+    def _dir(r: str) -> str:
+        r = _norm(r)
+        return r.rsplit("/", 1)[0] if "/" in r else ""
+
+    def _base(r: str) -> str:
+        return _norm(r).rsplit("/", 1)[-1].lower()
+
+    chat_por_dir: dict[str, str] = {}
+    for r in rutas:
+        if _base(r) == "_chat.txt":
+            chat_por_dir[_dir(r)] = r
+
+    limpias: list[str] = []
+    crudos: list[dict] = []
+    for r in rutas:
+        es_crudo = _base(r) == _NOMBRE_EXPORT_CRUDO_WHATSAPP
+        hermano = chat_por_dir.get(_dir(r))
+        if es_crudo and hermano:
+            crudos.append({"ruta": r, "duplicado_de": hermano, "motivo": "export_crudo_whatsapp"})
+        else:
+            limpias.append(r)
+    return limpias, crudos
+
+
 def agrupar_por_hilo(rutas_eml: list[str]) -> dict[str, list[str]]:
     """Agrupa nombres de `.eml` por HILO: el motor de export (`core.email_export`)
     escribe el PRIMER mensaje de un asunto+fecha sin sufijo y numera los
