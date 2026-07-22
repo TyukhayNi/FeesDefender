@@ -30,7 +30,7 @@ def test_genera_vistas_desde_config(tmp_path):
         encoding="utf-8")
     (case / "vistas.yaml").write_text(
         "vistas:\n"
-        "  - id: dossier_del_burgo\n"
+        "  - id: dossier_persona_vigilada\n"
         "    titulo: Dossier\n"
         "    tipo: persona\n"
         "    persona: persona_uno\n"
@@ -42,10 +42,10 @@ def test_genera_vistas_desde_config(tmp_path):
     (src / "a.eml").write_bytes(_eml("<a@x>", "Jaime <per01a@example.invalid>", "x@y.com",
                                      "[inmueble]", "cuerpo sobre arras y inmueble"))
     rep = P.atomize_dir(src, out)   # case_dir derivado = out.parent.parent = case
-    assert (out / "vistas" / "dossier_del_burgo.md").exists()
+    assert (out / "vistas" / "dossier_persona_vigilada.md").exists()
     assert (out / "vistas" / "nexo_causal.md").exists()
     assert rep.vistas_generadas == 2
-    dossier = (out / "vistas" / "dossier_del_burgo.md").read_text(encoding="utf-8")
+    dossier = (out / "vistas" / "dossier_persona_vigilada.md").read_text(encoding="utf-8")
     assert "per01a@example.invalid" in dossier
 
 

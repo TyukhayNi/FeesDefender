@@ -90,7 +90,7 @@ def test_render_revision_emite_reconstruidos_md_y_jsonl():
         reconstruido_desde_cita=True, reconstruido_de="MSG-00008", fingerprint="fp:def456")
     d = R.render_revision([mb_media, mb_alta], [], watched=None)
     # Mantiene las claves existentes + las dos nuevas:
-    assert set(d) == {"cola.md", "casi_duplicados.md", "del_burgo.md",
+    assert set(d) == {"cola.md", "casi_duplicados.md", "identidades_vigiladas.md",
                       "reconstruidos.md", "reconstruidos.jsonl"}
     rec = d["reconstruidos.md"]
     # Lista SOLO los media-reconstruida, con sus columnas:

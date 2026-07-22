@@ -210,6 +210,21 @@ PATRON_NUM_DOC = re.compile(
     re.IGNORECASE
 )
 
+# FeesDefender 2026-07-22: fallback ADITIVO — no modifica PATRON_NUM_DOC ni el
+# bucle que lo usa; core/anon/ es congelado (CLAUDE.md), así que esto se añade
+# al lado, no se toca lo existente. Cubre portadas tipo "Documento anexo n.º 2"
+# donde una palabra calificadora ("anexo", "contrato"...) separa el marcador
+# DOC del número — PATRON_NUM_DOC nunca las matchea porque su clase de
+# caracteres solo tolera símbolos (Nº/n°/.) entre DOC y el dígito, no palabras.
+# Bug real: W-02ZIIF (2026-07-22) — un PDF judicial reordenado colapsó 10
+# documentos en 1 porque num_doc quedaba siempre None en estas portadas y la
+# absorción de TIPOS_SUPER_ABSORBENTES se comía cada "Documento anexo n.º N".
+_CALIFICADORES_PORTADA = r'(?:ANEXO|ANNEX|APPENDIX|CONTRATO|FACTURA|INFORME|TRADUCCI[OÓ]N)'
+PATRON_NUM_DOC_FRAGMENTADO = re.compile(
+    rf'\bDOC(?:UMENTO)?\b\s*(?:{_CALIFICADORES_PORTADA}\s*)?[NnºN°\.]*\s*(\d+)\b',
+    re.IGNORECASE
+)
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # EXTRACCIÓN DE TEXTO
@@ -273,6 +288,21 @@ def detectar_tipo(lineas, tipos_extra=None):
             if m:
                 num_doc = int(m.group(1))
                 break
+
+    if num_doc is None:
+        # Fallback: el marcador y el número pueden quedar repartidos en líneas
+        # reconstruidas distintas (portada a dos líneas, o interlineado
+        # irregular de origen que fragmenta lo que visualmente es una sola
+        # línea). Unimos las líneas cortas de portada y probamos el patrón
+        # tolerante a calificador. Solo se activa si el bucle de arriba
+        # (comportamiento original, intacto) no encontró nada.
+        lineas_cortas_portada = [
+            l for l in lineas[:3] if len(l.strip().split()) <= 5
+        ]
+        if lineas_cortas_portada:
+            m = PATRON_NUM_DOC_FRAGMENTADO.search(" ".join(lineas_cortas_portada))
+            if m:
+                num_doc = int(m.group(1))
 
     mejor_tipo = None
     mejor_prio = 0

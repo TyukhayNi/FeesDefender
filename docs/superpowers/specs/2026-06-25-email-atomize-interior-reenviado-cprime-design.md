@@ -175,7 +175,7 @@ for seg in seg_total.ancestros:
                 mot_i = "interior_reenviado"
             if conf_i == "alta-reconstruida":      # imposible con estructural=False; defensivo
                 conf_i, mot_i = "media-reconstruida", "interior_reenviado"
-            # identidad candidata: hereda el cap a media + ruta del_burgo (sin cambios de routing)
+            # identidad candidata: hereda el cap a media + ruta identidades_vigiladas (sin cambios de routing)
             if anc_i.de in identidades.candidatas and conf_i == "media-reconstruida":
                 conf_i, mot_i = "media", "identidad_candidata"
             seg_i = Segmento(
@@ -220,7 +220,7 @@ exterior=PersonaUno fecha=X, interior=PersonaUno fecha=X → suprimido).
 | **G-AMBIGUA-INT** | `_n_cabeceras(cuerpo_i) > 1` → `ambigua` en `clasificar` | otra cabecera apilada dentro del cuerpo del interior | nivel equivocado (2ª red) |
 | **G5** (heredada) | `anc.de` vacío | el body-scan nunca devuelve sin `de` | invención de remitente |
 | **G-CONF** (heredada it.2) | interior NUNCA `alta-reconstruida` | `estructural=False` + tope dura | autenticar límite no-DOM como alta |
-| **G-FECHA/G-IDENTIDAD** (heredadas) | fecha posterior al portador → media; candidata → media + del_burgo.md | `clasificar` | fecha imposible; identidad no confirmada |
+| **G-FECHA/G-IDENTIDAD** (heredadas) | fecha posterior al portador → media; candidata → media + identidades_vigiladas.md | `clasificar` | fecha imposible; identidad no confirmada |
 
 **Por qué la franja es segura sobre datos reales:** el `<addr>` del remitente está SIEMPRE entre `De:` y la 1ª
 etiqueta (`Date:/Fecha:`); los destinatarios van DESPUÉS de `Date:/Subject:` → fuera de la franja. Una etiqueta
@@ -236,8 +236,8 @@ El interior entra al `clasificar(anc_i, m_a.fecha_iso, estructural=False, ambigu
 (ii) el **límite de su cuerpo** es por adyacencia tras un marcador, **no autenticado por estructura DOM** ni por
 el `.eml`; (iii) es un mensaje reconstruido a **dos saltos**. Si `clasificar` devuelve algo menor (fecha
 incoherente / candidata) se respeta. PersonaUno (`per01a@example.invalid`, identidad confirmada en Fase 2) →
-`media-reconstruida`, `en_revision` (vigilada) → aparece en `del_burgo.md`. PersonaUno `outlook`/candidata → cap
-a `media` + `del_burgo.md` (routing sin cambios). `render.py`/`corpus.py` ya rotulan `media-reconstruida` → cero
+`media-reconstruida`, `en_revision` (vigilada) → aparece en `identidades_vigiladas.md`. PersonaUno `outlook`/candidata → cap
+a `media` + `identidades_vigiladas.md` (routing sin cambios). `render.py`/`corpus.py` ya rotulan `media-reconstruida` → cero
 churn de código.
 
 ---
@@ -285,7 +285,7 @@ churn de código.
 
 11. **Testigo MSG-00305 end-to-end:** portador real → exterior Eva 23-jul intacto **+ interior** Eva 7-jul
     `media-reconstruida`/`interior_reenviado`, `en_revision=True`, `de`/`fecha`/`asunto` del interior. (Hoy: ausente.)
-12. **PersonaUno c′ → del_burgo.md:** interior `per01a@example.invalid` → candidato `media-reconstruida`, vigilado.
+12. **PersonaUno c′ → identidades_vigiladas.md:** interior `per01a@example.invalid` → candidato `media-reconstruida`, vigilado.
 13. **[G-NO-DUP-EXT] no doble:** segmento cuyo exterior YA es el interior (de+fecha iguales) → NO se emite 2º atom.
 14. **[Regresión F4.1] los 6 `fwd_line` PersonaUno** ya promovidos → mismo nº de atoms, fp idénticos, 0 atoms
     `interior_reenviado` duplicados.

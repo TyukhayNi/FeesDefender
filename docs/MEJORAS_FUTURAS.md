@@ -1511,10 +1511,10 @@ residuales quedaron como follow-up no bloqueante:
 línea ~144; reconstruidos.md ext/asunto líneas ~182-183). Extraer `_celda(txt, limit=None)` para
 centralizar y evitar deriva (una columna futura que olvide escapar `|` rompería la tabla).
 
-**46.2 — `candidata` `media-reconstruida` ausente de `del_burgo.md`.** Una cita atribuida a una
+**46.2 — `candidata` `media-reconstruida` ausente de `identidades_vigiladas.md`.** Una cita atribuida a una
 identidad *candidata* (no vigilada; p.ej. `per01b@example.invalid`) se promueve y queda
-`en_revision`, pero `render_revision` filtra `del_burgo.md` solo por `watched`/vigiladas, así que
-no aparece en la vista probatoria. Decidir si `del_burgo.md` debe listar `watched ∪ candidatas`.
+`en_revision`, pero `render_revision` filtra `identidades_vigiladas.md` solo por `watched`/vigiladas, así que
+no aparece en la vista probatoria. Decidir si `identidades_vigiladas.md` debe listar `watched ∪ candidatas`.
 *Disparador:* un atom candidata real en W-02VND1 que haya que revisar. (Documentado en el plan.)
 
 **46.3 — `_pasada_segmentos` siembra `body=list(anclaje)`.** Los segmentos `outlook_es`/`fwd_line`
@@ -2957,3 +2957,52 @@ de `pull_expediente*` es por marcador `.pulled`/`--incremental` **keyed por `doc
 contenido — no hay comprobación cruzada contra otras rutas del caso. Si en el futuro se da el caso real
 (escrito+anexos montados en Procedimiento antes de subir al CRM) y el pull los vuelve a traer sueltos
 sin agrupar, esto se promueve a `PLAN.md` con ese caso como disparador; si no, queda como nota.
+
+## 81. Bug latente: otros scripts CLI pueden componer rutas sin resolver W-code (`case_locator.resolve_ref`)
+
+**Disparador:** ninguno todavía — anotado tras el fix de PR #117 (2026-07-22), sin promover a
+`PLAN.md` a la espera de confirmar cuáles de estos CLI se usan realmente con W-code puro.
+
+Contexto: PR #117 corrigió `scripts/sala_maquina.py` (`plan`/`apply`/`reforzar`), que pasaba
+`case_id` directo a `caso_path()`/`path_for()` sin resolver un W-code primero — `path_for` solo
+entiende layout flat/ciudad por NOMBRE DE CARPETA, nunca `meta.id_go`. Síntoma real (W-02ZIIF,
+2026-07-22): un W-code puro caía al fallback flat inexistente y la corrida seguía en silencio con
+plan vacío ("0 documentos" reportado como éxito), creando ahí una carpeta fantasma.
+
+`docs/ARQUITECTURA.md` (fila `core/casos/case_locator.py`) ya señalaba como candidatos a auditar
+"toda llamada que componía `settings.casos_root / case_id`" en `core/case_manager.list_cases`,
+`core/config.caso_path` y `scripts/{audit_referencias_casos,scheduled_sync,sync_sudespacho}.py` —
+nunca se llegó a auditar. Revisión rápida (grep `case_id: str`/`--case`/`--expediente` en
+`scripts/*.py` + `resolve_ref\(` en el mismo fichero) añade un candidato no listado ahí:
+`scripts/migrar_layout_intake.py` (`case_id: str` como argumento directo, sin `case_locator` en el
+fichero). `scripts/sala_lectura.py` (múltiples comandos `--case`) queda fuera de prioridad: es CLI
+**deprecado** (`ARQUITECTURA.md` fila `core/sala_lectura.py`, superado por la skill
+`organizar-sala-lectura` v1.3).
+
+Pendiente: para cada candidato, confirmar si su contrato documentado es "case_id completo" (p. ej.
+`scripts/migrate_05crm_buckets.py` lo dice explícitamente en el `--help` — no es un bug, es diseño)
+o si de verdad se usa/se espera usar con W-code puro (candidato real a la misma clase de bug). Si se
+confirma un caso real, promover a `PLAN.md` con ese caso como disparador, aplicando el mismo patrón
+de fix (`case_id = case_locator.resolve_ref(case_id)` antes de derivar cualquier ruta + fallo en alto
+si la ruta resuelta no tiene `00_Input`).
+
+## 82. Split de bundles — `num_doc` de portada fragmentada solo se busca en `lineas[:3]`
+
+**Disparador:** ninguno todavía — anotado tras el fix de `num_doc` fragmentado en
+`core/anon/separar.py` (W-02ZIIF, 2026-07-22), sin promover a `PLAN.md` a la espera de un caso real
+donde el número quede más allá de la 3ª línea reconstruida.
+
+Contexto: el fix de W-02ZIIF añadió `PATRON_NUM_DOC_FRAGMENTADO` + un fallback en `detectar_tipo`
+que une las líneas cortas de portada para reconocer "Documento anexo n.º 2" cuando el marcador y el
+número quedan repartidos entre líneas reconstruidas distintas (portada a dos líneas, o interlineado
+irregular de origen que fragmenta lo que visualmente es una sola línea). El fallback, igual que el
+bucle original que complementa, solo mira `lineas[:3]` — la misma ventana que usa la clasificación de
+TIPO (`texto_inicio`/`texto_inicio_titulo`). Si la fragmentación es tan agresiva que el dígito acaba
+en la línea 4 o 5 (de las 5 que `extraer_primeras_lineas` ya extrae), ni el bucle original ni el
+fallback lo ven, y `num_doc` sigue `None` para esa portada.
+
+Pendiente: si aparece un caso real donde esto importe, extender **solo el fallback** (nunca el bucle
+original ni la ventana de TIPO) para considerar las 5 líneas ya disponibles en `lineas`, no solo las
+3 primeras. No ampliar la ventana de `texto_inicio`/`texto_inicio_titulo`: esa ventana corta es la que
+evita que una mención de "anexo"/"contrato" en el cuerpo de una demanda dispare un tipo falso, y
+ampliarla reabriría ese riesgo. Test de referencia: `tests/test_anon_separar.py::TestNumDocPortadaFragmentada`.
