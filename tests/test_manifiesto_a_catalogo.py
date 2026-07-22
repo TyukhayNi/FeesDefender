@@ -66,3 +66,28 @@ def test_idempotente(tmp_path):
     a = o.read_text(encoding="utf-8")
     mod.derivar(tmp_path / "_MANIFIESTO.md", o)
     assert o.read_text(encoding="utf-8") == a
+
+
+_MANIF_CAT = """<!-- GENERADO — NO EDITAR A MANO -->
+| sha256 | ruta_original | nombre_canonico | tipo | fecha | parte | parent_id | categoria | subcategoria_crm |
+|---|---|---|---|---|---|---|---|---|
+| aaaa | sudespacho_1/civil/x.pdf | 2025-01-01_x.pdf | pdf | 2025-01-01 | propietario |  | 07. RECLAMACIONES | civil |
+"""
+
+
+def test_deriva_categoria_y_subcategoria(tmp_path):
+    mod = _load()
+    (tmp_path / "_MANIFIESTO.md").write_text(_MANIF_CAT, encoding="utf-8")
+    out = mod.derivar(tmp_path / "_MANIFIESTO.md", tmp_path / "indice_documental.yaml")
+    data = yaml.safe_load(out.read_text(encoding="utf-8"))
+    assert data[0]["categoria"] == "07. RECLAMACIONES"
+    assert data[0]["subcategoria_crm"] == "civil"
+
+
+def test_manifiesto_viejo_7col_da_categoria_none(tmp_path):
+    mod = _load()
+    (tmp_path / "_MANIFIESTO.md").write_text(_MANIF, encoding="utf-8")
+    out = mod.derivar(tmp_path / "_MANIFIESTO.md", tmp_path / "indice_documental.yaml")
+    data = yaml.safe_load(out.read_text(encoding="utf-8"))
+    assert data[0]["categoria"] is None
+    assert data[0]["subcategoria_crm"] is None

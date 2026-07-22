@@ -134,3 +134,74 @@ def texto_espejo_md(sm_dir: Path, sha256_origen: str) -> str | None:
             texto = md_path.read_text(encoding="utf-8")
             return _re.sub(r"^---.*?---\n", "", texto, count=1, flags=_re.DOTALL)
     return None
+
+
+_WCODE_RE = re.compile(r"W-[0-9A-Z]{5,6}", re.I)
+_EXT_OPACAS = {
+    "pdf", "jpg", "jpeg", "png", "gif", "tif", "tiff", "bmp", "heic", "webp",
+    "xlsx", "xls", "mp4", "mov", "avi", "mkv", "m4a", "ogg", "opus",
+}
+
+
+def _ext(nombre: str) -> str:
+    nombre = (nombre or "").rsplit("/", 1)[-1]
+    return nombre.rsplit(".", 1)[-1].lower() if "." in nombre else ""
+
+
+def _es_binario_opaco(fila: dict) -> bool:
+    return _ext(fila.get("nombre_canonico") or fila.get("ruta_original") or "") in _EXT_OPACAS
+
+
+def senales_gate(
+    filas: list[dict],
+    wcode_caso: str,
+    cobertura_filas: list[dict] | None = None,
+) -> list[str]:
+    """Señales deterministas para el gate condicional (Paso 2.5). Lista VACÍA →
+    auto-aprueba (sin anomalías); NO vacía → presenta la propuesta y espera OK.
+    `filas`: dicts con `ruta_original`, `nombre_canonico`, `sha256`, `motivo`
+    (de `clasificar_por_patron`). `wcode_caso`: el W-code propio del caso (las
+    señales saltan para cualquier OTRO). `cobertura_filas`: filas de
+    `_cobertura.json` de sala de máquina para saber qué sha256 tienen espejo MD
+    (None = no hay sala de máquina → todo binario opaco es señal)."""
+    señales: list[str] = []
+    propio = (wcode_caso or "").upper()
+
+    # (a) W-code ajeno en nombre o ruta -> excluir, nunca copiar.
+    for f in filas:
+        texto = f"{f.get('ruta_original', '')} {f.get('nombre_canonico', '')}"
+        for m in _WCODE_RE.findall(texto):
+            if m.upper() != propio:
+                ref = f.get("ruta_original") or f.get("nombre_canonico")
+                señales.append(f"W-code ajeno {m!r} en {ref} — excluir, nunca copiar")
+
+    # (b) mismo nombre de origen con sha256 distinto (casi-duplicado).
+    por_nombre: dict[str, set[str]] = {}
+    for f in filas:
+        base = (f.get("ruta_original") or "").replace("\\", "/").rsplit("/", 1)[-1].lower()
+        if not base:
+            continue
+        por_nombre.setdefault(base, set()).add(f.get("sha256") or "")
+    for base, shas in por_nombre.items():
+        distintos = {s for s in shas if s}
+        if len(distintos) > 1:
+            señales.append(
+                f"casi-duplicado: mismo nombre de origen {base!r} con {len(distintos)} sha256 distintos")
+
+    # (c) binarios opacos sin espejo MD (cruzando por parent_sha256 or sha256).
+    con_espejo: set[str] = set()
+    for c in (cobertura_filas or []):
+        if c.get("estado") in ("ok", "low"):
+            con_espejo.add(c.get("parent_sha256") or c.get("sha256"))
+    for f in filas:
+        if _es_binario_opaco(f) and (f.get("sha256") not in con_espejo):
+            ref = f.get("nombre_canonico") or f.get("ruta_original")
+            señales.append(f"binario opaco sin espejo MD: {ref} — clasificado a ciegas por nombre")
+
+    # (d) pass-through de requiere_identificar_parte (bundle sin parte).
+    for f in filas:
+        if f.get("motivo") == "requiere_identificar_parte":
+            ref = f.get("nombre_canonico") or f.get("ruta_original")
+            señales.append(f"bundle conversacional sin parte identificable: {ref} — requiere_identificar_parte")
+
+    return señales

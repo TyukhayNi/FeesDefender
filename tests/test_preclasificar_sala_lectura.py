@@ -102,3 +102,49 @@ def test_texto_espejo_md_none_si_estado_vacio(tmp_path):
         {"slug": "x__y", "sha256": "s1", "parent_sha256": "origen", "estado": "empty"},
     ]), encoding="utf-8")
     assert preclasificar.texto_espejo_md(sm_dir, "origen") is None
+
+
+def test_senales_gate_detecta_wcode_ajeno():
+    filas = [{"ruta_original": "05_CRM/sudespacho_9/W-02X270_doc.pdf",
+              "nombre_canonico": "2025-01-01_doc.pdf", "sha256": "a", "motivo": "default_reclamaciones"}]
+    señales = preclasificar.senales_gate(filas, wcode_caso="W-02VUDR")
+    assert any("W-02X270" in s for s in señales)
+
+
+def test_senales_gate_ignora_wcode_propio():
+    filas = [{"ruta_original": "05_CRM/sudespacho_9/W-02VUDR_doc.pdf",
+              "nombre_canonico": "2025-01-01_doc.txt", "sha256": "a", "motivo": "default_reclamaciones"}]
+    assert preclasificar.senales_gate(filas, wcode_caso="W-02VUDR") == []
+
+
+def test_senales_gate_detecta_casi_duplicado_mismo_nombre_distinto_sha():
+    filas = [
+        {"ruta_original": "a/OFERTA.pdf", "nombre_canonico": "2025-01-01_oferta.pdf", "sha256": "aaa", "motivo": "x"},
+        {"ruta_original": "b/OFERTA.pdf", "nombre_canonico": "2025-02-01_oferta.pdf", "sha256": "bbb", "motivo": "x"},
+    ]
+    señales = preclasificar.senales_gate(filas, wcode_caso="W-02VUDR")
+    assert any("casi-duplicado" in s and "oferta.pdf".lower() in s.lower() for s in señales)
+
+
+def test_senales_gate_detecta_binario_opaco_sin_espejo_md():
+    filas = [{"ruta_original": "a/escaneo.pdf", "nombre_canonico": "2025-01-01_escaneo.pdf", "sha256": "a", "motivo": "default_reclamaciones"}]
+    señales = preclasificar.senales_gate(filas, wcode_caso="W-02VUDR", cobertura_filas=[])
+    assert any("sin espejo MD" in s for s in señales)
+
+
+def test_senales_gate_binario_opaco_con_espejo_no_es_senal():
+    filas = [{"ruta_original": "a/escaneo.pdf", "nombre_canonico": "2025-01-01_escaneo.pdf", "sha256": "a", "motivo": "x"}]
+    cobertura = [{"sha256": "seg", "parent_sha256": "a", "estado": "ok", "chars": 300}]
+    assert preclasificar.senales_gate(filas, wcode_caso="W-02VUDR", cobertura_filas=cobertura) == []
+
+
+def test_senales_gate_pasa_requiere_identificar_parte():
+    filas = [{"ruta_original": "a/chat.txt", "nombre_canonico": "2024-01-01_chat.txt", "sha256": "a", "motivo": "requiere_identificar_parte"}]
+    señales = preclasificar.senales_gate(filas, wcode_caso="W-02VUDR", cobertura_filas=None)
+    assert any("requiere_identificar_parte" in s for s in señales)
+
+
+def test_senales_gate_limpio_da_lista_vacia():
+    # .eml (texto, no binario opaco), nombre único, wcode propio -> auto-aprueba.
+    filas = [{"ruta_original": "03_Email/corr.eml", "nombre_canonico": "2025-01-01_correo.eml", "sha256": "a", "motivo": "default_reclamaciones"}]
+    assert preclasificar.senales_gate(filas, wcode_caso="W-02VUDR", cobertura_filas=None) == []

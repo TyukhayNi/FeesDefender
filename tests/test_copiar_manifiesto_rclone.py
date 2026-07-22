@@ -2,6 +2,7 @@ from importlib import import_module
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 import sys
+import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / ".claude/skills/organizar-sala-lectura/scripts"))
 cmr = import_module("copiar_manifiesto_rclone")
@@ -51,3 +52,19 @@ def test_copiar_manifiesto_no_aborta_si_uno_falla():
         ])
     assert ok == ["b/ok1.pdf", "b/ok2.pdf"]
     assert len(fallidos) == 1 and fallidos[0][0] == "b/falla.pdf"
+
+
+def test_validar_pares_lanza_si_hay_destino_duplicado():
+    with pytest.raises(ValueError, match="destinos duplicados"):
+        cmr.validar_pares([("a/x.pdf", "b/dup.pdf"), ("a/y.pdf", "b/dup.pdf")])
+
+
+def test_validar_pares_ok_si_destinos_unicos():
+    cmr.validar_pares([("a/x.pdf", "b/x.pdf"), ("a/y.pdf", "b/y.pdf")])  # no lanza
+
+
+def test_copiar_manifiesto_aborta_antes_de_copiar_si_hay_colision():
+    with patch("urllib.request.urlopen") as m:
+        with pytest.raises(ValueError, match="destinos duplicados"):
+            cmr.copiar_manifiesto("gdrive_tl:", [("a/x.pdf", "b/dup.pdf"), ("a/y.pdf", "b/dup.pdf")])
+        m.assert_not_called()  # ningún fichero se copió
