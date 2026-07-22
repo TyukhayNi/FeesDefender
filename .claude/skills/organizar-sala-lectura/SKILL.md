@@ -183,6 +183,11 @@ tal diálogo.
    (sin leer ni copiar) lo que ya conste en `_MANIFIESTO.md` (ver "Re-aplicación").
 1-bis. **Pre-clasifica mecánicamente antes de leer contenido.** Con la lista de
    `(ruta, sha256, nombre)` del Paso 1:
+   a0. `emparejar_exports_whatsapp(rutas)` → aparta los `.zip` crudos de WhatsApp
+      (`_export_original.zip` que `whatsapp_intake` deja junto al `_chat.txt`): se
+      anotan `duplicado_de` su chat y **no reciben fila propia** (no tienen fecha
+      ni espejo MD; darles una fabrica basura `0000-00-00`). Trabaja sobre las
+      rutas ya limpias en los pasos siguientes.
    a. `dedup_por_sha(ficheros)` → clasifica UNA sola vez cada sha256 único; los
       duplicados se anotan en el `_MANIFIESTO.md` como "duplicado, saltado" sin
       volver a leerlos.
@@ -192,9 +197,17 @@ tal diálogo.
    c. `clasificar_por_patron(nombre, es_bundle_conversacional=...)` sobre cada
       único/representante restante → SIEMPRE devuelve una categoría (00-06 por
       patrón estrecho, 07 por defecto, u 08 si es un bundle de WhatsApp sin
-      patrón). Pásalo por alto (verifica leyendo) solo cuando el motivo sea
-      `default_reclamaciones` y el documento sea inusual o el letrado lo pida
-      — no hace falta confirmar 07 sistemáticamente.
+      patrón). **Excepción de calidad para correo:** para cada HILO de `.eml`
+      cuyo representante caiga a `07. RECLAMACIONES` con motivo
+      `default_reclamaciones`, **lee el representante del hilo antes de fijar la
+      categoría** (UNA lectura por hilo, no por mensaje — `agrupar_por_hilo` ya
+      colapsó el hilo a un representante) y propaga la categoría que determines al
+      resto del grupo. Motivo (W-02VUDR): ~12 correos de correspondencia con el
+      propietario (prueba nuclear de activación) se degradaron de `01. ACTIVACIÓN`
+      a `07` por no leerlos; ~30 lecturas baratas recuperan la calidad conservando
+      casi toda la ganancia de velocidad. Para el resto (documentos que no son
+      `.eml`, o `.eml` que casan un patrón estrecho) NO hace falta confirmar `07`
+      sistemáticamente.
    d. **Para TODO binario opaco (PDF escaneado, imagen) que vaya a quedar sin
       fecha por patrón/nombre: consulta `texto_espejo_md(sm_dir, sha256)`
       SIEMPRE antes de escribir `0000-00-00` — no es opcional, ni solo para
@@ -268,6 +281,10 @@ tal diálogo.
    lo pise ni lo reingiera (mismo motivo que "por qué la sala vive fuera de
    `00_Input`"). NO se borra tras ejecutar — pasa a `estado: ejecutado`
    (mismo razonamiento no-destructivo del resto de la skill).
+   Añade al pie del plan una sección **`## Telemetría de fases`** con una línea por
+   fase (`clasificación`, `copia`, `índices`, `verify`) en formato
+   `- <fase>: inicio <ISO-8601> · fin <ISO-8601>`; el ejecutor rellena los sellos
+   de tiempo al entrar/salir de cada fase. Es prosa del plan, sin código.
 3. **(Paso 2.5 — GATE condicional, por código, no por impresión).** Ejecuta
    `senales_gate(filas, wcode_caso, cobertura_filas)` (de
    `scripts/preclasificar.py`) sobre las **filas de clasificación en memoria** —
@@ -295,15 +312,24 @@ tal diálogo.
    `python scripts/precheck_rclone.py <remote>` (p. ej. `gdrive_tl:`; `remote` y
    las rutas relativas de `pares` se derivan de la ubicación resuelta en el Paso 0).
    - **exit 0** (client OAuth propio del despacho) → ruta PRIMARIA `rclone rcd`:
-     `levantar_rcd_si_falta()` una vez, luego `copiar_manifiesto(remote, pares)`
-     con TODAS las filas del **plan persistido en el Paso 2-bis**
-     (`_plan/plan-<AAAA-MM-DD-HHmm>.md`; el `_MANIFIESTO.md` aún no existe — se
-     escribe en el Paso 5) de una vez — el pacer de cuota se mantiene estable
-     dentro del mismo proceso. `copiar_manifiesto` **aborta antes de tocar Drive**
-     (`validar_pares`) si hay destinos duplicados: es una colisión de
-     `nombre_canonico` sin resolver → vuelve al Paso 2 y desambigua con `_2`/`_3`.
+     `copiar_manifiesto(remote, pares, progreso_path="01_Procesado/Sala lectura/_plan/copia-<AAAA-MM-DD-HHmm>.jsonl", usar_async=True)`
+     con TODAS las filas del **plan persistido en el Paso 2-bis**. `copiar_manifiesto`
+     **gestiona el `rcd` por sí solo** (lo arranca si falta y lo cierra al terminar
+     si lo arrancó — no dejes un `rcd` huérfano en `:15572` ni lo levantes a mano);
+     **aborta antes de tocar Drive** (`validar_pares`) si hay destinos duplicados
+     (colisión de `nombre_canonico` sin resolver → vuelve al Paso 2, desambigua con
+     `_2`/`_3`); escribe un **log JSONL de progreso** por fila, de modo que una
+     corrida interrumpida se **reanuda** sin re-copiar lo ya hecho (ver
+     "Corrida interrumpida"). `usar_async=True` no cuenta una copia grande legítima
+     (>60s) como fallida.
    - **exit != 0** (client compartido, o `rclone` no disponible) → copia
      secuencial server-side con `copy_path`/`cp` (más lenta, sin prerrequisito).
+   - **Modo 3 (nube pura) — binario grande sin filesystem:** si NO puedes calcular
+     el sha256 de un binario grande (descargar los bytes es incumplible), admite en
+     su fila del `_MANIFIESTO.md` un `md5:<hash>` (el `md5` lo da la API del
+     conector gratis) en la columna sha256; la PRIMERA sesión con filesystem lo
+     recalcula a sha256 real. El verify (`--hash`) salta las filas `md5:` (no puede
+     contrastar sha), y el catálogo las acepta (`sha_valido`).
    Los documentos compuestos (bundles) copian primero su principal, luego sus
    anexos, dentro de la misma corrida.
    - **`ERROR_FILE_NOT_HYDRATED` (fichero frío no hidratado):** NO lo anotes
@@ -312,8 +338,6 @@ tal diálogo.
      W-02VUDR esa ruta copió 3 ficheros atascados —incl. uno de 1,1 GB— en 19s.
      Solo si el reintento server-side también falla se anota pendiente en el
      `_MANIFIESTO.md`. Nunca se fuerza ni se fabrica un éxito.
-   Al terminar, si `levantar_rcd_si_falta()` devolvió un `Popen` (lo arrancó esta
-   corrida), ciérralo (`proc.terminate()`) para no dejar un `rcd` huérfano.
 5. **Escribe SOLO el `_MANIFIESTO.md`, y deriva el resto por script.** El LLM ya
    no transcribe INDICE/CRONOLOGIA/YAML a mano (parte medible de la fase lenta).
    - `_MANIFIESTO.md` (con la tool de texto del modo: `expedientes-xl:write_text` /
@@ -355,7 +379,10 @@ tal diálogo.
    `scripts/manifiesto_a_catalogo.py _MANIFIESTO.md indice_documental.yaml` (el LLM **NO**
    escribe el YAML). Es la SSOT máquina.
 7. **Reporta:** nº por categoría, nº a `08. PENDIENTE DE CLASIFICAR`, bundles formados,
-   duplicados saltados.
+   duplicados saltados. Incluye la **telemetría de fases** del plan persistido (duración de
+   clasificación / copia / índices / verify) — es lo que por fin permite medir el
+   A/B de velocidad limpio entre corridas (las dos pasadas de W-02VUDR quedaron sin
+   medir por falta de estos sellos).
 
 ## Documentos compuestos (bundles)
 
@@ -420,6 +447,13 @@ de preparar la demanda). En cada re-corrida:
 - **Cambio de reglas de clasificación** (p. ej. nueva taxonomía): es el ÚNICO caso que
   deja copias obsoletas. **No se automatiza** — vacía a mano
   `01_Procesado/Sala lectura/` (el crudo está intacto) y re-corre desde cero.
+- **Corrida interrumpida (Paso 4 a medias).** Si la copia muere antes del Paso 5,
+  el `_MANIFIESTO.md` aún no existe, pero el **log JSONL** `_plan/copia-<fecha>.jsonl`
+  registró cada fila `ok`/`fallido`. Para reanudar: vuelve a llamar
+  `copiar_manifiesto(remote, pares, progreso_path=<el mismo jsonl>)` con el MISMO
+  plan persistido (`_plan/plan-<fecha>.md`) — los `dst` ya `ok` se saltan y solo se
+  copia lo pendiente. No borres el jsonl entre reintentos (es la llave de la
+  reanudación); pasa a `estado: ejecutado` cuando el Paso 5 escriba el manifiesto.
 
 ## Gotchas
 
