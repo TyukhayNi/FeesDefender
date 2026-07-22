@@ -30,6 +30,7 @@ from core.sudespacho_relations import (
     _SAVEADD_COLABORADOR_PATH,
     create_cliente_contrario,
     create_colaborador,
+    update_cliente_contrario,
     ensure_colaborador_vinculado,
     ensure_contrario_vinculado,
     find_cliente_contrario_by_nif,
@@ -1466,6 +1467,72 @@ def test_create_cliente_contrario_delega_en_rest(monkeypatch):
     with patch("core.sudespacho_relations.httpx.post", return_value=resp):
         contrario_id = create_cliente_contrario(NuevoClienteContrario(nombre="Test"))
     assert contrario_id == "1101"
+
+
+# ---------------------------------------------------------------------------
+# update_cliente_contrario (confirmado en vivo 2026-07-22, expediente 674/W-02ZIIF)
+# ---------------------------------------------------------------------------
+
+def _values_body(flat: dict) -> dict:
+    """Envuelve un dict plano en la forma {"values": [{"property": {"name": k}, "value": v}]}
+    que devuelve el CRM y que _parse_values() aplana de vuelta."""
+    return {"id": "1101", "values": [
+        {"property": {"name": k}, "value": v} for k, v in flat.items()
+    ]}
+
+
+def test_update_cliente_contrario_put_reenviando_todos_los_campos(monkeypatch):
+    monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
+    cambios = {
+        "nombre": "SALVADOR GUERRERO DEL PRADO",
+        "1apellido": "GUERRERO",
+        "2apellido": "DEL PRADO",
+        "nif_cif": "27306377H",
+        "email": "sguerrero@alters.es",
+        "movil": "666452780",
+    }
+    resp = _make_httpx_response(_values_body(cambios), status=200)
+    with patch("core.sudespacho_relations.httpx.put", return_value=resp) as mput:
+        out = update_cliente_contrario("1101", cambios)
+    url = mput.call_args.args[0]
+    assert url == (
+        "https://api-crm-commons-pro.sudespacho.biz"
+        "/api/element_register/clientes_contrarios/1101"
+    )
+    assert mput.call_args.kwargs["json"] == cambios
+    assert mput.call_args.kwargs["headers"]["x-api-key"] == "test-api-key"
+    assert out == cambios
+
+
+def test_update_cliente_contrario_cambios_vacio_lanza_value_error():
+    with pytest.raises(ValueError):
+        update_cliente_contrario("1101", {})
+
+
+def test_update_cliente_contrario_apikey_ausente(monkeypatch):
+    monkeypatch.delenv("SUDESPACHO_API_KEY", raising=False)
+    with pytest.raises(ValueError, match="SUDESPACHO_API_KEY"):
+        update_cliente_contrario("1101", {"email": "x@example.invalid"})
+
+
+def test_update_cliente_contrario_http_no_200_lanza_error(monkeypatch):
+    monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
+    resp = MagicMock(status_code=404, text="not found")
+    resp.json.side_effect = ValueError
+    with patch("core.sudespacho_relations.httpx.put", return_value=resp):
+        with pytest.raises(SudespachoRelationsError, match="HTTP 404"):
+            update_cliente_contrario("9999", {"email": "x@example.invalid"})
+
+
+def test_update_cliente_contrario_respuesta_no_json_devuelve_cambios(monkeypatch):
+    """Si el 200 no trae JSON parseable, se devuelve `cambios` tal cual (no rompe)."""
+    monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
+    resp = MagicMock(status_code=200)
+    resp.json.side_effect = ValueError
+    cambios = {"email": "x@example.invalid"}
+    with patch("core.sudespacho_relations.httpx.put", return_value=resp):
+        out = update_cliente_contrario("1101", cambios)
+    assert out == cambios
 
 
 def test_link_contrario_llama_a_link_rest_con_element_correcto(monkeypatch):

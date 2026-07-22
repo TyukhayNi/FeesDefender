@@ -227,9 +227,17 @@ el antes/después sin mezclar la construcción con el caso real.*
   (15); **telemetría de fases (16)**. El seguimiento natural es re-correr `organizar-sala-lectura`
   una 3ª vez sobre un caso real para por fin medir limpio el A/B de velocidad (ítem 16) — las dos
   pasadas anteriores quedaron invalidadas por los errores que este backlog corrige.
-- [ ] **Seguimiento (fuera del backlog):** investigar por qué `gdrive_ev` no ve el shared drive
-  "EXPEDIENTES - TYUKHAY LEGAL" con el client OAuth propio nuevo (probable cuenta de reauth
-  equivocada o falta añadirla como test user en el consent screen de `rclone-despacho-drive-2026`).
+- [ ] **CAUSA CONFIRMADA (2026-07-22, apertura de prueba W-02ZIIF):** `gdrive_ev` está
+  autenticado con la cuenta/proyecto equivocados — `rclone backend drives gdrive_ev:` devuelve
+  las Shared Drives del DESPACHO (ADMINISTRACION, EXPEDIENTES - TYUKHAY LEGAL, JURIDICO...),
+  ninguna de Engel & Völkers. Al reautenticar (`rclone config reconnect gdrive_ev:`) con
+  `nikolai.tyukhay@engelvoelkers.com`, Google bloquea con "Error 403: access_denied": el proyecto
+  OAuth `rclone-despacho-drive-2026` está en modo Testing y esa cuenta no está en la lista de test
+  users (solo lo está la cuenta TL, de ahí el desvío). **BLOQUEA `--fuente drive_ev` de cualquier
+  caso E&V nuevo**, en local o en Drive — no es un problema introducido por la prueba de apertura
+  en local ([[project-apertura-local-vs-drive]]). Arreglo: Google Cloud Console → proyecto
+  `rclone-despacho-drive-2026` → OAuth consent screen → Test users → añadir
+  `nikolai.tyukhay@engelvoelkers.com` → repetir `rclone config reconnect gdrive_ev:`.
 - Deferida sin construir en esta sesión: Task 6 (agrupar `doc_NN_*` de una demanda+anexos del CRM en
   subcarpeta) — bajo ROI para un solo expediente; ver `docs/MEJORAS_FUTURAS.md` **#80** (verificar
   dedup de `sync_sudespacho pull` contra "05. Procedimiento" antes de reabrir esto).

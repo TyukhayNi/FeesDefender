@@ -140,7 +140,7 @@ def test_solo_tools_permitidas_registradas():
     assert set(mcp._tool_manager._tools) == {
         "list_accounts", "search_messages", "read_message", "read_thread",
         "list_labels", "list_attachments", "get_attachment",
-        "create_label", "apply_label", "remove_label",
+        "create_label", "apply_label", "remove_label", "rename_label",
     }
 
 
@@ -322,3 +322,76 @@ def test_remove_label_target_type_invalido_error():
     with pytest.raises(ValueError):
         _tool(mcp, "remove_label")(account="a@tyukhay.legal", label="Label_1",
                                    target_id="m1", target_type="foo")
+
+
+# ------------------------------- rename_label -------------------------------
+
+def test_rename_label_por_id_llama_a_patch():
+    svc = _label_svc(labels={
+        "list": {"labels": [
+            {"id": "Label_1", "name": "01. CONTING/01. EXTRAJUD/05. SEVILLA/Caso",
+             "type": "user"},
+            {"id": "INBOX", "name": "INBOX", "type": "system"},
+        ]},
+        "patch": {"id": "Label_1",
+                  "name": "01. CONTING/02. JUDICIALES/05. SEVILLA/Caso"},
+    })
+    mcp = srv.build_server(service_factory=lambda e: svc,
+                           account_lister=lambda: ["a@tyukhay.legal"])
+    out = _tool(mcp, "rename_label")(
+        account="a@tyukhay.legal", label="Label_1",
+        new_name="01. CONTING/02. JUDICIALES/05. SEVILLA/Caso")
+    assert out["id"] == "Label_1"
+    assert out["old_name"] == "01. CONTING/01. EXTRAJUD/05. SEVILLA/Caso"
+    assert out["new_name"] == "01. CONTING/02. JUDICIALES/05. SEVILLA/Caso"
+    method, kwargs = svc.recorded("labels")[-1]
+    assert method == "patch"
+    assert kwargs["id"] == "Label_1"
+    assert kwargs["body"] == {"name": "01. CONTING/02. JUDICIALES/05. SEVILLA/Caso"}
+
+
+def test_rename_label_por_nombre_resuelve_id():
+    svc = _label_svc(labels={
+        "list": {"labels": [{"id": "Label_1", "name": "W-02XOR7", "type": "user"}]},
+        "patch": {"id": "Label_1", "name": "W-02XOR7-renombrada"},
+    })
+    mcp = srv.build_server(service_factory=lambda e: svc,
+                           account_lister=lambda: ["a@tyukhay.legal"])
+    out = _tool(mcp, "rename_label")(account="a@tyukhay.legal", label="W-02XOR7",
+                                     new_name="W-02XOR7-renombrada")
+    assert out["id"] == "Label_1"
+
+
+def test_rename_label_origen_inexistente_error():
+    svc = _label_svc()
+    mcp = srv.build_server(service_factory=lambda e: svc,
+                           account_lister=lambda: ["a@tyukhay.legal"])
+    with pytest.raises(ValueError):
+        _tool(mcp, "rename_label")(account="a@tyukhay.legal", label="NoExiste",
+                                   new_name="Lo que sea")
+
+
+def test_rename_label_sistema_rechazado():
+    svc = _label_svc()
+    mcp = srv.build_server(service_factory=lambda e: svc,
+                           account_lister=lambda: ["a@tyukhay.legal"])
+    with pytest.raises(ValueError):
+        _tool(mcp, "rename_label")(account="a@tyukhay.legal", label="INBOX",
+                                   new_name="Lo que sea")
+
+
+def test_rename_label_nombre_destino_de_sistema_rechazado():
+    svc = _label_svc()
+    mcp = srv.build_server(service_factory=lambda e: svc,
+                           account_lister=lambda: ["a@tyukhay.legal"])
+    with pytest.raises(ValueError):
+        _tool(mcp, "rename_label")(account="a@tyukhay.legal", label="Label_1",
+                                   new_name="INBOX")
+
+
+def test_rename_label_account_obligatorio():
+    svc = _label_svc()
+    mcp = srv.build_server(service_factory=lambda e: svc,
+                           account_lister=lambda: ["a@tyukhay.legal"])
+    fn = _tool(mcp, "rename_label")
+    assert inspect.signature(fn).parameters["account"].default is inspect._empty
