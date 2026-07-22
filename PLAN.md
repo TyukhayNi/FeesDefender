@@ -22,7 +22,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 4 | [Drive-disco: pasos 5-7 + Claude Code](#siguiente-mcp-drive-disco-pasos-5-7-diferidos) | ✅ desplegado | resto pasivo: check Modo 1 en caso real | medio |
 | 5 | [abrir-caso F3-judicial](#abrir-caso--f1--f2a--f3-ac-mergeadas-f2b-aparcada-f3-judicial-pendiente) | diferida | caso judicial real | alto |
 | 6 | [Google MCP F4 (Calendar)](#siguiente-google-mcp-f1-lectura--mergeada--f2-escriturapermisosnavegación--mergeada--f3f4-pendientes) | diferida | disparador | medio |
-| 7 | [Robustez y velocidad sala de lectura](#siguiente-preclasificacion-sala-lectura-preclasificar-mecanico--copia-rclone-rcd--verify) | ✅ construido y revisado (16/16 ítems, v1.12) | PR pendiente (cierre de sesión) | medio-alto |
+| 7 | [Robustez y velocidad sala de lectura](#siguiente-preclasificacion-sala-lectura-preclasificar-mecanico--copia-rclone-rcd--verify) | ✅ construido y revisado (16/16 ítems, v1.12) | PR #121 (pendiente de merge) | medio-alto |
 | 8 | [Intake email — filtro de exclusión de ruido](#siguiente-intake-email-filtro-exclusión-de-ruido-administrativo-y-cruzado) | pendiente | disparador: W-02VUDR (fuga cruzada de 7 casos ajenos + cartera de litigios) | medio |
 
 > Detalle de cada ítem en su bloque `[SIGUIENTE-*]` más abajo. Backlog sin
@@ -231,7 +231,7 @@ el antes/después sin mezclar la construcción con el caso real.*
   timeout parametrizable + modo `async` + `copiar_manifiesto_rclone` gestiona el ciclo de vida de
   su propio `rcd` (14); `fecha_aproximada` separa el marcador `(*)` del valor de fecha en el
   catálogo YAML (15); telemetría de fases en el plan persistido (16). Suite completa verde (2307
-  tests, 0 failures, 0 errors, 70 skipped). PR pendiente — el merge es el paso de cierre posterior
+  tests, 0 failures, 0 errors, 70 skipped). PR #121 — el merge es el paso de cierre posterior
   a esta sesión.
 - [ ] **Seguimiento operativo (no bloquea):** 3ª corrida real A/B de velocidad sobre un caso real,
   ahora con la telemetría del ítem 16, para por fin medir limpio el antes/después — las dos pasadas
