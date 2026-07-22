@@ -88,19 +88,26 @@ _SUFIJO_HILO_RE = re.compile(r"^(.*)_(\d+)$")
 
 
 def agrupar_por_hilo(rutas_eml: list[str]) -> dict[str, list[str]]:
-    """Agrupa nombres de `.eml` por HILO: el motor de export
-    (`core.email_export`) numera con sufijo `_N` los mensajes de mismo
-    asunto+fecha exportados en la misma corrida. La clave de hilo es el nombre
-    sin ese sufijo. Devuelve `{clave_hilo: [nombres_del_grupo]}` — clasifica
-    solo un representante del grupo (p. ej. el más corto/sin sufijo) y propaga
-    su categoría al resto sin volver a leerlos. Heurística de nombre, no de
-    `Message-ID`/`References` reales — proxy barato, no sustituto de un
-    threading riguroso si algún día hace falta."""
+    """Agrupa nombres de `.eml` por HILO: el motor de export (`core.email_export`)
+    escribe el PRIMER mensaje de un asunto+fecha sin sufijo y numera los
+    siguientes `_2`, `_3`… (`_ruta_unica`; nunca `_0`/`_1`). La clave de hilo es
+    el nombre sin ese sufijo, pero SOLO se agrupa `X_N` bajo `X` si `X` está de
+    verdad en el conjunto — así una cifra del propio asunto (`..._1_990_000.eml`)
+    no fabrica un hilo inexistente. Devuelve `{clave_hilo: [nombres_del_grupo]}`;
+    clasifica un representante y propaga su categoría al resto sin releerlos.
+    Heurística de nombre, no de `Message-ID`/`References` — proxy barato, no
+    sustituto de un threading riguroso si algún día hace falta."""
+    def _base(nombre: str) -> str:
+        return nombre[:-4] if nombre.lower().endswith(".eml") else nombre
+
+    bases_presentes = {_base(n) for n in rutas_eml}
     grupos: dict[str, list[str]] = {}
     for nombre in rutas_eml:
-        base = nombre[:-4] if nombre.lower().endswith(".eml") else nombre
+        base = _base(nombre)
         m = _SUFIJO_HILO_RE.match(base)
-        clave = m.group(1) if m else base
+        # Solo es sufijo de hilo si el nombre pelado (sin `_N`) existe como .eml
+        # propio en el conjunto; si no, el `_N` es parte del asunto (p. ej. cifra).
+        clave = m.group(1) if (m and m.group(1) in bases_presentes) else base
         grupos.setdefault(clave, []).append(nombre)
     return grupos
 

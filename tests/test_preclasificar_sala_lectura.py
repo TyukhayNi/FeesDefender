@@ -67,6 +67,36 @@ def test_agrupar_por_hilo_junta_variantes_del_mismo_dia_y_asunto():
     assert len(grupos[clave_consulta]) == 3
 
 
+def test_agrupar_por_hilo_no_fusiona_por_cifra_en_el_asunto():
+    # ".._1_990_000" NO es un sufijo de hilo: no existe la base ".._1_990" en el conjunto.
+    nombres = [
+        "2025-05-10_oferta_vivienda_1_990_000.eml",
+        "2025-06-01_otra_cosa.eml",
+    ]
+    grupos = preclasificar.agrupar_por_hilo(nombres)
+    assert set(grupos) == {"2025-05-10_oferta_vivienda_1_990_000", "2025-06-01_otra_cosa"}
+    assert grupos["2025-05-10_oferta_vivienda_1_990_000"] == ["2025-05-10_oferta_vivienda_1_990_000.eml"]
+
+
+def test_agrupar_por_hilo_agrupa_solo_si_la_base_existe():
+    # Hay base sin sufijo -> _2/_3 se agrupan bajo ella (caso real de email_export).
+    nombres = [
+        "2025-03-20_consulta.eml",
+        "2025-03-20_consulta_2.eml",
+        "2025-03-20_consulta_3.eml",
+    ]
+    grupos = preclasificar.agrupar_por_hilo(nombres)
+    assert len(grupos) == 1
+    assert len(grupos["2025-03-20_consulta"]) == 3
+
+
+def test_agrupar_por_hilo_sin_base_no_fusiona():
+    # _2 y _3 SIN el base -> no se puede afirmar que sean un hilo: cada uno su clave.
+    nombres = ["2025-03-20_consulta_2.eml", "2025-03-20_consulta_3.eml"]
+    grupos = preclasificar.agrupar_por_hilo(nombres)
+    assert len(grupos) == 2
+
+
 def test_subcategoria_crm_extrae_la_subcarpeta():
     assert preclasificar.subcategoria_crm("sudespacho_602/civil/auto_inadmite_diligencias_preliminares.pdf") == "civil"
     assert preclasificar.subcategoria_crm("01_Drive EV/OFERTA.PDF") is None
