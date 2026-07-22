@@ -32,10 +32,10 @@ def test_vista_persona_agrupa_autor_y_destinatario_no_a_ignacio():
         _m("MSG-2", de="otro@x.com", para=["per01b@example.invalid"], asunto="destino candidata"),
         _m("MSG-3", de="ignacio@despacho-ab.example", asunto="ignacio fuera"),
     ]
-    d = V.DefVista(id="dossier_del_burgo", titulo="Dossier", tipo="persona",
+    d = V.DefVista(id="dossier_persona_vigilada", titulo="Dossier", tipo="persona",
                    persona="persona_uno")
     salidas, notas = V.render_vistas(mensajes, ident, [d])
-    doc = salidas["dossier_del_burgo.md"]
+    doc = salidas["dossier_persona_vigilada.md"]
     assert "MSG-1" in doc and "MSG-2" in doc       # autor + destinatario (candidata incluida)
     assert "MSG-3" not in doc                       # Ignacio NUNCA entra
     assert notas == []
@@ -84,10 +84,10 @@ def test_cargar_vistas_sin_fichero_es_vacio(tmp_path):
 
 def test_render_vistas_lista_vacia_no_crashea():
     ident = _ident_db()
-    dp = V.DefVista(id="dossier_del_burgo", tipo="persona", persona="persona_uno")
+    dp = V.DefVista(id="dossier_persona_vigilada", tipo="persona", persona="persona_uno")
     dt = V.DefVista(id="nexo_causal", tipo="tematica", palabras_clave=["inmueble"])
     salidas, notas = V.render_vistas([], ident, [dp, dt])
-    assert "dossier_del_burgo.md" in salidas and "nexo_causal.md" in salidas
+    assert "dossier_persona_vigilada.md" in salidas and "nexo_causal.md" in salidas
     assert notas == []
 
 
@@ -103,6 +103,6 @@ def test_tematica_sin_palabras_clave_no_incluye_nada():
 def test_vista_persona_normaliza_de_en_mayusculas():
     ident = _ident_db()
     mensajes = [_m("MSG-1", de="per01a@example.invalid", asunto="autor mayusculas")]
-    d = V.DefVista(id="dossier_del_burgo", tipo="persona", persona="persona_uno")
+    d = V.DefVista(id="dossier_persona_vigilada", tipo="persona", persona="persona_uno")
     salidas, _notas = V.render_vistas(mensajes, ident, [d])
-    assert "MSG-1" in salidas["dossier_del_burgo.md"]   # de en mayúsculas SÍ casa
+    assert "MSG-1" in salidas["dossier_persona_vigilada.md"]   # de en mayúsculas SÍ casa

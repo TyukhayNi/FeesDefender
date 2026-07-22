@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Sacar las identidades del caso del código a `identidades.yaml`/`vistas.yaml` curados, generar vistas temáticas (`dossier_del_burgo`, `nexo_causal`) de solo-lectura y sellar entregas con manifiesto de hashes — manteniendo el motor genérico y los 277 Capa A byte-idénticos.
+**Goal:** Sacar las identidades del caso del código a `identidades.yaml`/`vistas.yaml` curados, generar vistas temáticas (`dossier_persona_vigilada`, `nexo_causal`) de solo-lectura y sellar entregas con manifiesto de hashes — manteniendo el motor genérico y los 277 Capa A byte-idénticos.
 
 **Architecture:** Capa de caso sobre el motor congelado `core/email_atomize/`. Dos ficheros YAML curados en la raíz del caso (sin ellos = genérico). Tres módulos nuevos (`identidades.py`, `vistas.py`, `entregas.py`) + inyección de `Identidades` por el pipeline (sin estado global). Vistas y entregas son ficheros nuevos en subdirectorios nuevos → no alteran bytes existentes.
 
@@ -252,10 +252,10 @@ Mueve la consulta de identidades de variables module-level de `inline.py` a un o
 
 - [ ] **Step 1: Migrar los 5 tests al nuevo contrato (escribir primero — fallarán)**
 
-En `tests/test_email_atomize_inline.py`, reemplazar `test_reconstruir_watched_va_a_del_burgo_queue` (líneas 200-206):
+En `tests/test_email_atomize_inline.py`, reemplazar `test_reconstruir_watched_va_a_identidades_vigiladas_queue` (líneas 200-206):
 
 ```python
-def test_reconstruir_watched_va_a_del_burgo_queue():
+def test_reconstruir_watched_va_a_identidades_vigiladas_queue():
     from core.email_atomize.identidades import Identidades
     ident = Identidades(vigiladas=frozenset({"per01a@example.invalid"}))
     raw = _eml_cita_gmail("x", "per01a@example.invalid", "1 de mayo de 2020",
@@ -306,8 +306,8 @@ En `tests/test_email_atomize_pipeline_b.py`, en `test_layerb_promueve_y_no_renum
     assert len(mds) == 2
     reg = json.loads((out / "_registro.json").read_text(encoding="utf-8"))
     assert reg["version"] == 2 and len(reg["mensajes_fp"]) == 1     # 1 fp-keyed B
-    assert (out / "_revision" / "del_burgo.md").exists()
-    db = (out / "_revision" / "del_burgo.md").read_text(encoding="utf-8")
+    assert (out / "_revision" / "identidades_vigiladas.md").exists()
+    db = (out / "_revision" / "identidades_vigiladas.md").read_text(encoding="utf-8")
     assert "per01a@example.invalid" in db
     assert rep.reconstruidos_b == 1
     # idempotencia: re-run no renumera ni duplica
@@ -317,7 +317,7 @@ En `tests/test_email_atomize_pipeline_b.py`, en `test_layerb_promueve_y_no_renum
     assert len(sorted((out / "mensajes").glob("*.md"))) == 2
 ```
 
-En `tests/test_email_atomize_regresion_b.py`, en `test_gmail_del_burgo_en_del_burgo_md` reemplazar el bloque 22-28:
+En `tests/test_email_atomize_regresion_b.py`, en `test_gmail_identidades_vigiladas_en_identidades_vigiladas_md` reemplazar el bloque 22-28:
 
 ```python
     src = tmp_path / "03_Email"; out = tmp_path / "Emails"; src.mkdir()
@@ -331,13 +331,13 @@ En `tests/test_email_atomize_regresion_b.py`, en `test_gmail_del_burgo_en_del_bu
         "<c@x>", "Te reenvío.", "per01a@example.invalid", "1 de mayo de 2020",
         "contenido citado suficientemente largo para fingerprint PersonaUno"))
     P.atomize_dir(src, out, case_dir=tmp_path)
-    db = (out / "_revision" / "del_burgo.md").read_text(encoding="utf-8")
+    db = (out / "_revision" / "identidades_vigiladas.md").read_text(encoding="utf-8")
     assert "per01a@example.invalid" in db
 ```
 
 - [ ] **Step 2: Run migrated tests to verify they fail (old code)**
 
-Run: `python -m pytest tests/test_email_atomize_inline.py::test_reconstruir_watched_va_a_del_burgo_queue tests/test_email_atomize_pipeline_b.py::test_layerb_promueve_y_no_renumera_capaA -q --tb=short`
+Run: `python -m pytest tests/test_email_atomize_inline.py::test_reconstruir_watched_va_a_identidades_vigiladas_queue tests/test_email_atomize_pipeline_b.py::test_layerb_promueve_y_no_renumera_capaA -q --tb=short`
 Expected: FAIL — `reconstruir()` aún no acepta 3er arg / `atomize_dir()` no acepta `case_dir`.
 
 - [ ] **Step 3: Implementar el enhebrado**
@@ -391,9 +391,9 @@ queda:
 def render_revision(mensajes_b: list[RegistroMensaje], punteros: list, watched=None,
                     upgrades: list | None = None) -> dict:
     """Colas de revisión Layer B: ``cola.md`` (punteros media/baja), ``casi_duplicados.md``
-    (upgrades de fidelidad: cita inline resuelta a una copia limpia de Capa A), ``del_burgo.md``
+    (upgrades de fidelidad: cita inline resuelta a una copia limpia de Capa A), ``identidades_vigiladas.md``
     (autoría vigilada). Regenerado cada corrida (determinista → idempotente). ``watched`` =
-    identidades vigiladas del caso; sin caso → vacío (del_burgo.md vacío)."""
+    identidades vigiladas del caso; sin caso → vacío (identidades_vigiladas.md vacío)."""
     watched = frozenset(watched) if watched is not None else frozenset()
     upgrades = upgrades or []
 ```
@@ -507,10 +507,10 @@ def test_vista_persona_agrupa_autor_y_destinatario_no_a_ignacio():
         _m("MSG-2", de="otro@x.com", para=["per01b@example.invalid"], asunto="destino candidata"),
         _m("MSG-3", de="ignacio@despacho-ab.example", asunto="ignacio fuera"),
     ]
-    d = V.DefVista(id="dossier_del_burgo", titulo="Dossier", tipo="persona",
+    d = V.DefVista(id="dossier_persona_vigilada", titulo="Dossier", tipo="persona",
                    persona="persona_uno")
     salidas, notas = V.render_vistas(mensajes, ident, [d])
-    doc = salidas["dossier_del_burgo.md"]
+    doc = salidas["dossier_persona_vigilada.md"]
     assert "MSG-1" in doc and "MSG-2" in doc       # autor + destinatario (candidata incluida)
     assert "MSG-3" not in doc                       # Ignacio NUNCA entra
     assert notas == []
@@ -770,7 +770,7 @@ def test_genera_vistas_desde_config(tmp_path):
         encoding="utf-8")
     (case / "vistas.yaml").write_text(
         "vistas:\n"
-        "  - id: dossier_del_burgo\n"
+        "  - id: dossier_persona_vigilada\n"
         "    titulo: Dossier\n"
         "    tipo: persona\n"
         "    persona: persona_uno\n"
@@ -782,10 +782,10 @@ def test_genera_vistas_desde_config(tmp_path):
     (src / "a.eml").write_bytes(_eml("<a@x>", "Jaime <per01a@example.invalid>", "x@y.com",
                                      "[inmueble]", "cuerpo sobre arras y inmueble"))
     rep = P.atomize_dir(src, out)   # case_dir derivado = out.parent.parent = case
-    assert (out / "vistas" / "dossier_del_burgo.md").exists()
+    assert (out / "vistas" / "dossier_persona_vigilada.md").exists()
     assert (out / "vistas" / "nexo_causal.md").exists()
     assert rep.vistas_generadas == 2
-    dossier = (out / "vistas" / "dossier_del_burgo.md").read_text(encoding="utf-8")
+    dossier = (out / "vistas" / "dossier_persona_vigilada.md").read_text(encoding="utf-8")
     assert "per01a@example.invalid" in dossier
 
 
@@ -901,7 +901,7 @@ def _out_con_set(tmp_path):
     (out / "mensajes").mkdir(parents=True)
     (out / "mensajes" / "m1.md").write_text("uno", encoding="utf-8")
     (out / "vistas").mkdir()
-    (out / "vistas" / "dossier_del_burgo.md").write_text("dossier", encoding="utf-8")
+    (out / "vistas" / "dossier_persona_vigilada.md").write_text("dossier", encoding="utf-8")
     (out / "corpus.jsonl").write_text('{"x":1}\n', encoding="utf-8")
     (out / "CORREOS_LECTURA.md").write_text("lectura", encoding="utf-8")
     return out
@@ -915,7 +915,7 @@ def test_sella_copia_y_manifiesto(tmp_path):
     assert dest.parent == out / "_entregas"
     # set entregable copiado congelado
     assert (dest / "mensajes" / "m1.md").read_text(encoding="utf-8") == "uno"
-    assert (dest / "vistas" / "dossier_del_burgo.md").exists()
+    assert (dest / "vistas" / "dossier_persona_vigilada.md").exists()
     assert (dest / "corpus.jsonl").exists()
     # _SELLO.md con metadatos + sha256 por fichero
     sello = (dest / "_SELLO.md").read_text(encoding="utf-8")
@@ -1152,7 +1152,7 @@ Expected: CSV con ~277 filas (las Capa A; los `.md` de Capa B llevan `capa: B`).
 
 - [ ] **Step 2: Crear `identidades.yaml` + `vistas.yaml` del piloto en la raíz del caso**
 
-Crear `<caso>\identidades.yaml` con el contenido del §4.1 del spec (las 2 personas, 3+1 direcciones). Crear `<caso>\vistas.yaml` con `dossier_del_burgo` (`tipo: persona`, `persona: persona_uno`) y `nexo_causal` (`tipo: tematica`, `palabras_clave` que apruebe Nikolai). Usar el editor (UTF-8 sin BOM); NO meterlos en `01_Procesado/`.
+Crear `<caso>\identidades.yaml` con el contenido del §4.1 del spec (las 2 personas, 3+1 direcciones). Crear `<caso>\vistas.yaml` con `dossier_persona_vigilada` (`tipo: persona`, `persona: persona_uno`) y `nexo_causal` (`tipo: tematica`, `palabras_clave` que apruebe Nikolai). Usar el editor (UTF-8 sin BOM); NO meterlos en `01_Procesado/`.
 
 - [ ] **Step 3: Re-correr la atomización**
 
@@ -1182,11 +1182,11 @@ Expected: `OK: 277 Capa A byte-idénticos`. **Si algo cambió → STOP**: invest
 Run:
 ```powershell
 $rev = "G:\Unidades compartidas\EXPEDIENTES - TYUKHAY LEGAL\CASOS\Barcelona\BaRS1 - [inmueble] - (W-02VND1) - Vuelta\01_Procesado\Emails"
-(Get-Content "$rev\_revision\del_burgo.md" -Raw)  # 12+13 PersonaUno, idéntico a F2
-(Get-Content "$rev\vistas\dossier_del_burgo.md" -Raw)
+(Get-Content "$rev\_revision\identidades_vigiladas.md" -Raw)  # 12+13 PersonaUno, idéntico a F2
+(Get-Content "$rev\vistas\dossier_persona_vigilada.md" -Raw)
 (Get-Content "$rev\vistas\nexo_causal.md" -Raw)
 ```
-Expected: `del_burgo.md` igual a la F2; `dossier_del_burgo.md` agrupa las 3 direcciones de PersonaUno y **NO** lista a `ignacio@despacho-ab.example`; `nexo_causal.md` con los mensajes de las palabras clave en orden cronológico.
+Expected: `identidades_vigiladas.md` igual a la F2; `dossier_persona_vigilada.md` agrupa las 3 direcciones de PersonaUno y **NO** lista a `ignacio@despacho-ab.example`; `nexo_causal.md` con los mensajes de las palabras clave en orden cronológico.
 
 - [ ] **Step 6: Probar el sellado de entrega (append-only)**
 

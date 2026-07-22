@@ -176,7 +176,7 @@ robusto (quoted-printable, base64, `=?UTF-8?Q?`, charsets) + chequeo anti-mojiba
 - **Genérica (motor, idéntica en todo caso):** todo lo anterior. Salida por defecto:
   `CORREOS_LECTURA.md` + `INDICE_ADJUNTOS.md` + `corpus.jsonl` + `_registro.json`.
 - **Específica del caso (opcional, vía `etiquetas` + config `identidades.yaml`):** vistas
-  temáticas (`dossier_del_burgo`, `vista_nexo_causal`) y mapa de identidades. Para W-02VND1:
+  temáticas (`dossier_persona_vigilada`, `vista_nexo_causal`) y mapa de identidades. Para W-02VND1:
   PersonaUno = {`per01c@example.invalid`, `per01a@example.invalid`, cuenta Outlook *(confirmar)*}. Snapshots
   de entrega en `_entregas/` (acción manual: copia sellada + hash).
 

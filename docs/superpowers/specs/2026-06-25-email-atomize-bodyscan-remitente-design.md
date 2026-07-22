@@ -114,7 +114,7 @@ Todas dentro de `_atribucion_en_cuerpo` salvo las heredadas; cualquiera que disp
 | **G5** | `de` vacío / destinatario | c | `De:`/`From:` sin `<addr>` propio (solo nombre, o el `<addr>` solo en `Para:/Cc:`) → `anc.de==""` | estructural vía `_parse_label` (línea 199) |
 | **G6** | Ambigüedad de profundidad (heredada) | a/b/c | `_n_cabeceras(seg.texto) > 1 and (levantada_del_cuerpo or not estructural)` (línea 727) — 2ª red sobre G3 para bloques no-envueltos en TODO el cuerpo | heredada, intacta |
 | **G7** | Fecha posterior al portador (heredada) | todas | `clasificar` (líneas 628-630) → `media, fecha_incoherente`; nunca alta | heredada, intacta |
-| **G8** | Identidad candidata (heredada) | todas | `anc.de ∈ identidades.candidatas` (línea 730) → tope `media` + `del_burgo.md` | heredada, intacta |
+| **G8** | Identidad candidata (heredada) | todas | `anc.de ∈ identidades.candidatas` (línea 730) → tope `media` + `identidades_vigiladas.md` | heredada, intacta |
 
 **Por qué no G9-mojibake:** descartado (0.3). Un `<addr>` limpio en un cabezal con mojibake en prosa es recuperable y seguro; un `<addr>` corrupto ya lo demota `_email_valido` → `clasificar` da `media`/`baja`. Añadir G9 cuesta cobertura E&V real sin ganar seguridad.
 
@@ -142,7 +142,7 @@ Resultado por caso:
 - **Ambigua / sin fecha / email inválido / fecha incoherente** → `media`/`baja` → cola.
 - **Tope inferior respetado:** si `clasificar` devuelve algo < media-reconstruida (p.ej. `media, fecha_incoherente`), se respeta; la guarda solo degrada alta→media-reconstruida, nunca redondea hacia arriba.
 
-Routing y capping de identidad **sin cambios**: línea 730 (candidata→media), líneas 750-751 (`en_revision` para vigiladas + media/baja/media-reconstruida), 752-758 (candidatos vs punteros). `PersonaUno` candidato sigue capado y forzado a `del_burgo.md`. `render.py`/`corpus.py` ya rotulan `media-reconstruida` — **cero churn**.
+Routing y capping de identidad **sin cambios**: línea 730 (candidata→media), líneas 750-751 (`en_revision` para vigiladas + media/baja/media-reconstruida), 752-758 (candidatos vs punteros). `PersonaUno` candidato sigue capado y forzado a `identidades_vigiladas.md`. `render.py`/`corpus.py` ya rotulan `media-reconstruida` — **cero churn**.
 
 ---
 

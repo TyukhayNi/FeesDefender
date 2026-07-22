@@ -572,7 +572,7 @@ def _ra(**kw):
                 asunto="Asunto", de="c@x", cuerpo="autor", capa="A", confianza="alta")
     base.update(kw); return RegistroMensaje(**base)
 
-def test_reconstruir_promueve_del_burgo_inline():
+def test_reconstruir_promueve_identidades_vigiladas_inline():
     raw = make_eml_con_cita_outlook(  # helper de test que construye .eml con cita inline de PersonaUno
         autor="Te reenvío.", de_cita="per01a@example.invalid", fecha_cita="2020-05-01",
         asunto_cita="[inmueble]", cuerpo_cita="contenido suficientemente largo para fingerprint")
@@ -580,7 +580,7 @@ def test_reconstruir_promueve_del_burgo_inline():
     altas = [s for s in res.candidatos if s.confianza == "alta-reconstruida"]
     assert any(s.de == "per01a@example.invalid" for s in altas)
 
-def test_reconstruir_watched_va_a_del_burgo_queue():
+def test_reconstruir_watched_va_a_identidades_vigiladas_queue():
     # con IDENTIDADES_VIGILADAS conteniendo per01a@example.invalid, una alta-reconstruida marca en_revision
     res = I.reconstruir(_ra(), make_eml_con_cita_outlook(
         autor="x", de_cita="per01a@example.invalid", fecha_cita="2020-05-01", asunto_cita="z",
@@ -650,7 +650,7 @@ def test_layerb_promueve_y_no_renumera_capaA(tmp_path):
     assert len(mds) == 2
     reg = json.loads((out / "_registro.json").read_text(encoding="utf-8"))
     assert reg["version"] == 2 and len(reg["mensajes_fp"]) == 1     # 1 fp-keyed B
-    assert (out / "_revision" / "del_burgo.md").exists()
+    assert (out / "_revision" / "identidades_vigiladas.md").exists()
     # idempotencia: re-run no renumera ni duplica
     P.atomize_dir(src, out)
     reg2 = json.loads((out / "_registro.json").read_text(encoding="utf-8"))
@@ -728,9 +728,9 @@ def test_render_revision_tres_colas():
                                   confianza="baja", motivo="sin_cabecera", extracto="...")]
     msgs_b = [_b(en_revision=True)]
     out = R.render_revision(msgs_b, punteros)
-    assert "cola.md" in out and "casi_duplicados.md" in out and "del_burgo.md" in out
+    assert "cola.md" in out and "casi_duplicados.md" in out and "identidades_vigiladas.md" in out
     assert "MSG-1" in out["cola.md"]
-    assert "per01a@example.invalid" in out["del_burgo.md"]
+    assert "per01a@example.invalid" in out["identidades_vigiladas.md"]
 
 def test_corpus_incluye_fingerprint_y_capa_b():
     fila = json.loads(C.corpus_jsonl([_b()]).strip().splitlines()[1])
@@ -743,7 +743,7 @@ def test_corpus_incluye_fingerprint_y_capa_b():
 - [ ] **Step 3: Implementar (DD §1 render/corpus bullets):**
   - `render.render_md`: emitir los flags nuevos cuando True (`reconstruido_desde_cita`, `reconstruido_de`, `fecha_inferida`, `ambiguedad_profundidad`, `en_revision`, `fingerprint`); para `capa=="B"` anteponer al cuerpo un banner `> RECONSTRUIDO DESDE CITA — remitente verificado por cabecera inline` (alta-reconstruida) o `> AUTORÍA POR RECONSTRUIR — sin verificar` (media/baja).
   - `render.render_correos_lectura`: para capa B usar `**De (reconstruido):**` (nunca con la misma autoridad visual que un `De:` de Capa A) + nota llana "Mensaje recuperado de una cita; remitente verificado por cabecera (MSG-id)".
-  - `render.render_revision(mensajes_b, punteros) -> dict[str,str]`: `cola.md` (punteros media/baja + extracto + motivo), `casi_duplicados.md` (placeholder de eventos de upgrade/near-dup; alimentado por el pipeline en T10/T12), `del_burgo.md` (toda capa B con `de ∈ IDENTIDADES_VIGILADAS` o `en_revision` con de del watched), + espejos `.jsonl` para re-alertado idempotente.
+  - `render.render_revision(mensajes_b, punteros) -> dict[str,str]`: `cola.md` (punteros media/baja + extracto + motivo), `casi_duplicados.md` (placeholder de eventos de upgrade/near-dup; alimentado por el pipeline en T10/T12), `identidades_vigiladas.md` (toda capa B con `de ∈ IDENTIDADES_VIGILADAS` o `en_revision` con de del watched), + espejos `.jsonl` para re-alertado idempotente.
   - `corpus._fila`: añadir `fingerprint`, `reconstruido_desde_cita`, `en_revision`.
 
 - [ ] **Step 4: Ejecutar (debe pasar)** + no-regresión: `python -m pytest tests/test_email_atomize_render_b.py tests/test_email_atomize_render.py tests/test_email_atomize_corpus.py -q` → PASS.
@@ -776,13 +776,13 @@ $case = "G:\Unidades compartidas\EXPEDIENTES - TYUKHAY LEGAL\CASOS\Barcelona\BaR
 ```
 Verificar (DD §11):
 - Los `.md` de **capa A** siguen siendo 277 y **byte-idénticos** (recomputar hashes Capa A y comparar con `$pre`: deben coincidir; los nuevos son solo capa B).
-- `_revision/del_burgo.md`, `cola.md`, `casi_duplicados.md` presentes.
+- `_revision/identidades_vigiladas.md`, `cola.md`, `casi_duplicados.md` presentes.
 - **Auditar a mano CADA `alta-reconstruida`** (≈21 PersonaUno + otras): confirmar que el `de`/`fecha` afirmado aparece LITERALMENTE en el bloque de cabecera del `.eml` fuente. **Cero tolerancia a un remitente fabricado.**
 - Diff de `_registro.json` en dos corridas: 0 renumeraciones, 0 IDs fp duplicados, 277 Capa A idénticos.
 - Buscar hilos HTML intercalados: confirmar que ninguno se segmentó (deben quedar `respuesta_intercalada`).
 - Cruzar `casi_duplicados.md` con `.eml` reenviados conocidos (266/266 embebidos existen como `.eml` limpio → el upgrade debe disparar).
 
-Anotar los conteos reales (nº alta-reconstruida, media, baja, del_burgo) para STATUS.
+Anotar los conteos reales (nº alta-reconstruida, media, baja, identidades_vigiladas) para STATUS.
 
 - [ ] **Step 3: Test de regresión sintético (debe pasar)** — `tests/test_email_atomize_regresion_b.py`: un `.eml` con cita inline de PersonaUno en HTML gmail_quote → 1 `alta-reconstruida` con `de=per01a@example.invalid`; un `.eml` headerless → 0 promovidos, entrada en cola; un `.eml` con fecha de cita POSTERIOR al portador → media + `fecha_incoherente` (nunca alta). (Bloquea las 3 regresiones prime-directive.)
 

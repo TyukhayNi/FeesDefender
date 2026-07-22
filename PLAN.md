@@ -416,7 +416,7 @@ enterrada de PersonaUno (levantar el velo de [inmueble] S.L.). Reutiliza `core.e
 - [x] **Fase 3 — capa de caso.** _CÓDIGO COMPLETO en `origin/main` (`14d8743`→`5b566ea`), vía subagent-driven + revisión adversarial=SHIP; suite 1255 verde. PENDIENTES (no parte de F3 / siguiente sesión): **Task 7** verificación EN VIVO sobre W-02VND1 en `G:` (nada escrito aún; necesita keywords del `nexo_causal` + autorización) y, en spec/plan SEPARADO, el **recall MSG-00018** + OCR de adjuntos._ `identidades.yaml` (mover `IDENTIDADES_VIGILADAS`; set de PersonaUno
   `per01a@example.invalid`/`per01c@example.invalid` confirmados, `per01b@example.invalid` candidato→tope media,
   `ignacio@despacho-ab.example` parte DISTINTA), mejor parser de fechas ES/CA + niveles
-  profundos (subir recall PersonaUno), vistas temáticas (`dossier_del_burgo`, `vista_nexo_causal`),
+  profundos (subir recall PersonaUno), vistas temáticas (`dossier_persona_vigilada`, `vista_nexo_causal`),
   `_entregas/` selladas. OCR de adjuntos = posterior.
 
 ---
@@ -984,7 +984,7 @@ prosa copia del código.
 - [ ] **Higiene de PII en la bitácora** (recomendación nº4, propuesta 2026-07-06 en
   `GOBERNANZA_FUENTES_VERDAD.md §4`). Regla: la bitácora referencia por código `W-xxxxx`, sin correos
   ni nombres de terceros ni direcciones (el dato sensible vive en `data/CASOS/`, fuera del repo).
-  Huella medida en tracked docs: correos de terceros de casos reales (PersonaUno, PersonaTres, Prat,
+  Huella medida en tracked docs: correos de terceros de casos reales (PersonaUno, PersonaTres, PersonaCuatro,
   PersonaCinco…) mezclados con sintéticos de test, y también en **tests/core** (`email_atomize`/`whatsapp_atomize`),
   no solo en la bitácora. **Piezas:** (1) regla going-forward + check opcional en `session_close`;
   (2) **saneamiento retroactivo del historial** (`git filter-repo`).
