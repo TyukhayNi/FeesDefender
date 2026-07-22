@@ -28,7 +28,7 @@ Módulo `core/email_atomize/` que lee `<caso>/00_Input/03_Email/*.eml` y produce
 - `_registro.json` — IDs **CONGELADOS** (`MSG-NNNNN` por Message-ID/fingerprint, `ATT-NNNNN` por
   sha256). **Re-ejecutar NUNCA renumera.**
 - `CORREOS_LECTURA.md`, `INDICE_ADJUNTOS.md` — vistas humanas.
-- `_revision/{cola,casi_duplicados,del_burgo}.md` — cola de revisión de Layer B.
+- `_revision/{cola,casi_duplicados,identidades_vigiladas}.md` — cola de revisión de Layer B.
 
 CLI: `python -m scripts.atomize_emails --ref W-02VND1` (o `--src <…/03_Email> --out <…/Emails>`).
 
@@ -50,7 +50,7 @@ Spec/plan de referencia:
 **Caso piloto W-02VND1** = `BaRS1 - [inmueble] - (W-02VND1) - Vuelta` (Barcelona). Ruta real:
 `G:\Unidades compartidas\EXPEDIENTES - TYUKHAY LEGAL\CASOS\Barcelona\BaRS1 - [inmueble] - (W-02VND1) - Vuelta`.
 Estado tras Fase 2: 277 Capa A byte-idénticos + 89 Capa B `alta-reconstruida`; **PersonaUno = 12
-directos (Capa A) + 13 inline PROMOVIDOS + 3 en revisión** (ver `_revision/del_burgo.md`). Fin
+directos (Capa A) + 13 inline PROMOVIDOS + 3 en revisión** (ver `_revision/identidades_vigiladas.md`). Fin
 último del proyecto: recuperar la autoría enterrada de **PersonaUno** para levantar el velo
 de [inmueble] S.L.
 
@@ -66,7 +66,7 @@ de [inmueble] S.L.
    `per01a@example.invalid` como un único "PersonaUno"). `ignacio@despacho-ab.example` =
    **parte relacionada (su despacho), PERSONA DISTINTA**: nunca fundir con PersonaUno.
 
-2. **Vistas temáticas.** `dossier_del_burgo` (todo lo de autoría/relacionado con PersonaUno, orden
+2. **Vistas temáticas.** `dossier_persona_vigilada` (todo lo de autoría/relacionado con PersonaUno, orden
    cronológico, con `Ref. MSG-NNNNN` y portador) y `vista_nexo_causal`. Dirigidas por `etiquetas`
    (campo ya presente en el frontmatter/corpus) + `identidades.yaml`.
 

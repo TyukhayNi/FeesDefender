@@ -73,7 +73,7 @@ Grafted fixes:
 - **`render.py`**: 
   - `render_md`: emit the new flags when set; for capa B add a body banner `> RECONSTRUIDO DESDE CITA — remitente verificado por cabecera inline` (alta) / `> AUTORÍA POR RECONSTRUIR — sin verificar` (media/baja). **Provenance must be visible at point of citation, not only in the queue** (fixes the judge weakness that a lawyer could cite a `.md` in isolation).
   - `render_correos_lectura`: capa-B `de` line is rendered distinctly — `**De (reconstruido):** …` — never with the same visual authority as an authenticated Layer-A `De:`. Add the plain-language forward note "Mensaje recuperado de una cita; remitente verificado por cabecera (MSG-id)".
-  - new `render_revision(mensajes_b, punteros) -> dict[str, str]` producing `cola.md`, `casi_duplicados.md`, `del_burgo.md` (+ `.jsonl` mirrors for idempotent re-alerting).
+  - new `render_revision(mensajes_b, punteros) -> dict[str, str]` producing `cola.md`, `casi_duplicados.md`, `identidades_vigiladas.md` (+ `.jsonl` mirrors for idempotent re-alerting).
 - **`corpus.py`**: `_fila` already emits `capa`/`confianza`; add `fingerprint`, `reconstruido_desde_cita`, `en_revision` so machine consumers can filter.
 
 ---
@@ -147,7 +147,7 @@ After segmentation, assert `tokens(autor) + Σ tokens(ancestros)` is within ±5%
 Evaluated per segment. Layer-A messages keep `confianza="alta"` untouched. Layer-B never uses the bare string `"alta"` (reserved for authenticated MIME); the top reconstructed level is **`"alta-reconstruida"`**.
 
 ```
-ALTA-RECONSTRUIDA (promotes to a capa=B .md; NOT in cola.md, but watched ids → del_burgo.md):
+ALTA-RECONSTRUIDA (promotes to a capa=B .md; NOT in cola.md, but watched ids → identidades_vigiladas.md):
     anc.de is a syntactically valid email
     AND anc.fecha parses (fecha_iso != 0000-00-00)
     AND anc.fecha_iso <= fecha_portador_iso            # date-coherence guard
@@ -292,7 +292,7 @@ Body banner (capa B) rendered in the `.md` body AND distinct `De (reconstruido)`
 
 Layer B is **case-agnostic**: it parses literal inline From addresses and never coalesces identities. The 21 inline-authored blocks surface because they each carry a **parseable inline From** (19× `per01a@example.invalid`, 2× `per01c@example.invalid`) → they land **alta-reconstruida** with a real address, independent of the weak ~77 headerless majority.
 
-A single **config-driven watched-list** (`identidades.yaml`, Phase 3; absent in Phase 2 ⇒ no-op, but the hook exists now as a constant `IDENTIDADES_VIGILADAS: set[str]`) force-routes any segment whose `de` ∈ watched to `_revision/del_burgo.md` for probative review even when alta-reconstruida. For Phase 3 `identidades.yaml`:
+A single **config-driven watched-list** (`identidades.yaml`, Phase 3; absent in Phase 2 ⇒ no-op, but the hook exists now as a constant `IDENTIDADES_VIGILADAS: set[str]`) force-routes any segment whose `de` ∈ watched to `_revision/identidades_vigiladas.md` for probative review even when alta-reconstruida. For Phase 3 `identidades.yaml`:
 - PersonaUno = `{per01a@example.invalid, per01c@example.invalid}`; **`per01b@example.invalid` = candidate** (name-proximity only → capped at media until confirmed).
 - `ignacio@despacho-ab.example` (20× inline From) = **related party (his firm), a DISTINCT person** — never folded into PersonaUno despite the domain surname.
 - Identity unification (collapsing `per01c@example.invalid` ↔ `per01a@example.invalid`) is **Phase 3, not Layer B**.
@@ -340,7 +340,7 @@ Pure-layer tests (`tests/test_email_atomize_inline.py`) + glue (`tests/test_emai
 - ES/CA long-date parser coverage is the alta↔media gate; an unhandled format silently demotes (safe: more review, zero misattribution) but shrinks the PersonaUno alta yield.
 - `html.parser` (no real DOM) can mis-count nesting on malformed Outlook/Office365 HTML; mitigated by header-to-level binding validation + token-conservation + plain fallback, but mis-nesting that *passes* both checks would mis-state who-quoted-whom (structure, not sender).
 - `cuerpo_sha`-only bridge misses truncated quotes (Gmail/Outlook elide trailing content) → upgrade miss → near-dup, surfaced in `casi_duplicados.md` for a human (acceptable: miss, not misattribution).
-- Watched-list is literal-address; a new PersonaUno address not in `identidades.yaml` won't hit `del_burgo.md` (but still hits `cola.md` if media/baja, or is a normal alta `.md`).
+- Watched-list is literal-address; a new PersonaUno address not in `identidades.yaml` won't hit `identidades_vigiladas.md` (but still hits `cola.md` if media/baja, or is a normal alta `.md`).
 
 **Adversarially verify on the 277 after building:**
 1. **Manual audit of EVERY alta-reconstruida** (expect ≈21 PersonaUno + others): confirm the asserted `de`/`fecha` literally appears in the source `.eml` header block. Zero tolerance for a fabricated sender.

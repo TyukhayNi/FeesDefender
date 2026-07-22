@@ -9,7 +9,7 @@
 **Tech Stack:** Python 3.11+, pytest (+ pytest-randomly), stdlib (`email`, `html.parser`, `dataclasses`, `json`). Windows/PowerShell. Comandos desde la raíz del repo `C:\Users\tnm33\Dev\FeesDefender`.
 
 **Desviaciones de spec documentadas (decididas, no omitidas):**
-- **Candidata en `del_burgo.md` (spec §6, §1 líneas 69-71)**: un `media-reconstruida` cuyo `de ∈ candidatas` (no vigilada) **se promueve correctamente** (el cap a `media` solo dispara para `alta-reconstruida`, `inline.py` línea 687), pero `render_revision` filtra `del_burgo.md` solo por `watched` (vigiladas) — `candidatas` y `vigiladas` son sets disjuntos. Por tanto una candidata `media-reconstruida` queda promovida y en revisión, **pero ausente de `del_burgo.md`**. Esto **se difiere explícitamente** en este plan (no se altera el filtro de `del_burgo.md`): tratarlo exige decidir si `del_burgo.md` debe listar `watched ∪ candidatas`, lo cual cambia la semántica de la cola vigilada y queda fuera del alcance del peldaño nuevo. Anotado como invariante pendiente de §6 para una iteración posterior.
+- **Candidata en `identidades_vigiladas.md` (spec §6, §1 líneas 69-71)**: un `media-reconstruida` cuyo `de ∈ candidatas` (no vigilada) **se promueve correctamente** (el cap a `media` solo dispara para `alta-reconstruida`, `inline.py` línea 687), pero `render_revision` filtra `identidades_vigiladas.md` solo por `watched` (vigiladas) — `candidatas` y `vigiladas` son sets disjuntos. Por tanto una candidata `media-reconstruida` queda promovida y en revisión, **pero ausente de `identidades_vigiladas.md`**. Esto **se difiere explícitamente** en este plan (no se altera el filtro de `identidades_vigiladas.md`): tratarlo exige decidir si `identidades_vigiladas.md` debe listar `watched ∪ candidatas`, lo cual cambia la semántica de la cola vigilada y queda fuera del alcance del peldaño nuevo. Anotado como invariante pendiente de §6 para una iteración posterior.
 
 ---
 
@@ -184,7 +184,7 @@ new_string:
 ```
 
 - [ ] **(5) Correr los nuevos tests + regresión de T9.** `python -m pytest -q "tests/test_email_atomize_inline.py" -k "reconstruir or indice" -v`
-  EXPECTED: **PASS** — ambos tests nuevos pasan y no rompen `test_reconstruir_promueve_del_burgo_inline` (línea 192), `test_reconstruir_watched_va_a_del_burgo_queue` (línea 202), `test_indice_layer_a_resuelve_por_cuerpo_sha` (línea 212).
+  EXPECTED: **PASS** — ambos tests nuevos pasan y no rompen `test_reconstruir_promueve_identidades_vigiladas_inline` (línea 192), `test_reconstruir_watched_va_a_identidades_vigiladas_queue` (línea 202), `test_indice_layer_a_resuelve_por_cuerpo_sha` (línea 212).
 
 - [ ] **(6) Commit.** `git add core/email_atomize/inline.py tests/test_email_atomize_inline.py && git commit -m "feat(email-atomize): reconstruir() enruta media-reconstruida a candidatos + en_revision [F4]"`
 
@@ -359,7 +359,7 @@ def test_render_revision_emite_reconstruidos_md_y_jsonl():
         reconstruido_desde_cita=True, reconstruido_de="MSG-00008", fingerprint="fp:def456")
     d = R.render_revision([mb_media, mb_alta], [], watched=None)
     # Mantiene las claves existentes + las dos nuevas:
-    assert set(d) == {"cola.md", "casi_duplicados.md", "del_burgo.md",
+    assert set(d) == {"cola.md", "casi_duplicados.md", "identidades_vigiladas.md",
                       "reconstruidos.md", "reconstruidos.jsonl"}
     rec = d["reconstruidos.md"]
     # Lista SOLO los media-reconstruida, con sus columnas:
@@ -377,7 +377,7 @@ def test_render_revision_emite_reconstruidos_md_y_jsonl():
 ```
 
 - [ ] **(2) Correr el test.** `python -m pytest -q "tests/test_email_atomize_render.py::test_render_revision_emite_reconstruidos_md_y_jsonl" -v`
-  EXPECTED: **FAIL** — `render_revision` devuelve hoy solo `{"cola.md", "casi_duplicados.md", "del_burgo.md"}` (líneas 164-166); `set(d)` no contiene las claves nuevas → `assert set(d) == {...}` falla por desigualdad.
+  EXPECTED: **FAIL** — `render_revision` devuelve hoy solo `{"cola.md", "casi_duplicados.md", "identidades_vigiladas.md"}` (líneas 164-166); `set(d)` no contiene las claves nuevas → `assert set(d) == {...}` falla por desigualdad.
 
 - [ ] **(3) Implementación mínima — construir tabla `.md` + espejo `.jsonl`.** En `core/email_atomize/render.py`, reemplazar el old_string LITERAL (líneas 164-166):
 
@@ -385,7 +385,7 @@ old_string:
 ```python
     return {"cola.md": "\n".join(cola) + "\n",
             "casi_duplicados.md": "\n".join(casi) + "\n",
-            "del_burgo.md": "\n".join(db) + "\n"}
+            "identidades_vigiladas.md": "\n".join(db) + "\n"}
 ```
 
 new_string:
@@ -411,7 +411,7 @@ new_string:
 
     return {"cola.md": "\n".join(cola) + "\n",
             "casi_duplicados.md": "\n".join(casi) + "\n",
-            "del_burgo.md": "\n".join(db) + "\n",
+            "identidades_vigiladas.md": "\n".join(db) + "\n",
             "reconstruidos.md": "\n".join(rec) + "\n",
             "reconstruidos.jsonl": ("\n".join(rec_jsonl) + "\n") if rec_jsonl else ""}
 ```
@@ -419,7 +419,7 @@ new_string:
 > Verificar que `import json` está presente al inicio de `core/email_atomize/render.py`; si no, añadirlo en la zona de imports del módulo (no dentro de la función).
 
 - [ ] **(4) Correr el test + el fichero render completo + el render_b preexistente (no regresión).** `python -m pytest -q "tests/test_email_atomize_render.py" "tests/test_email_atomize_render_b.py" -v`
-  EXPECTED: **PASS** — el nuevo test pasa; los 5 tests previos de `test_email_atomize_render.py` siguen verdes; `test_render_revision_tres_colas` (render_b, usa `in` no `==`) y `test_render_revision_sin_watched_produce_del_burgo_vacio` siguen verdes (las claves extra no rompen `in`). Nota: el pipeline (`atomize_dir` líneas 129-130) ya itera `R.render_revision(...).items()` y escribe TODAS las claves → `reconstruidos.md` y `reconstruidos.jsonl` se escriben en disco **sin tocar pipeline**.
+  EXPECTED: **PASS** — el nuevo test pasa; los 5 tests previos de `test_email_atomize_render.py` siguen verdes; `test_render_revision_tres_colas` (render_b, usa `in` no `==`) y `test_render_revision_sin_watched_produce_identidades_vigiladas_vacio` siguen verdes (las claves extra no rompen `in`). Nota: el pipeline (`atomize_dir` líneas 129-130) ya itera `R.render_revision(...).items()` y escribe TODAS las claves → `reconstruidos.md` y `reconstruidos.jsonl` se escriben en disco **sin tocar pipeline**.
 
 - [ ] **(5) Commit.** `git add core/email_atomize/render.py tests/test_email_atomize_render.py && git commit -m "feat(email-atomize): render_revision emite reconstruidos.md + reconstruidos.jsonl (checklist + espejo) [F4]"`
 
@@ -609,7 +609,7 @@ def test_capa_a_md_byte_identico_entre_corridas(tmp_path):
   EXPECTED: **PASS** — los cambios de Tasks 1-6 son aditivos sobre la rama capa B; `render_md` para `capa == "A"` no entra en el bloque del banner (línea 77 `if m.capa == "B"`) y `_construir_mensaje` (pipeline) no setea ningún campo Layer B. Si **FALLA**, hay regresión que filtra campos B a Capa A — detener y depurar con superpowers:systematic-debugging (guard de la prime directive de no-churn).
 
 - [ ] **(3) Correr la suite COMPLETA del motor (regresión global, INCLUYE render_b).** `python -m pytest -q "tests/test_email_atomize_inline.py" "tests/test_email_atomize_render.py" "tests/test_email_atomize_render_b.py" "tests/test_email_atomize_pipeline_b.py" --tb=short`
-  EXPECTED: **PASS** (todos verdes; sin regresiones en T4-T9, render, render_b ni glue). `tests/test_email_atomize_render_b.py` es **superficie de regresión** de los cambios de banner (Task 3), línea `De` (Task 4) y claves de `render_revision` (Task 5): sus 5 tests deben seguir verdes — `alta-reconstruida` sin cambio; `test_render_revision_tres_colas` y `test_render_revision_sin_watched_produce_del_burgo_vacio` usan `in`/filtros tolerantes, no `==`, así que las claves extra no rompen.
+  EXPECTED: **PASS** (todos verdes; sin regresiones en T4-T9, render, render_b ni glue). `tests/test_email_atomize_render_b.py` es **superficie de regresión** de los cambios de banner (Task 3), línea `De` (Task 4) y claves de `render_revision` (Task 5): sus 5 tests deben seguir verdes — `alta-reconstruida` sin cambio; `test_render_revision_tres_colas` y `test_render_revision_sin_watched_produce_identidades_vigiladas_vacio` usan `in`/filtros tolerantes, no `==`, así que las claves extra no rompen.
 
 - [ ] **(4) Correr la suite COMPLETA del repo (gate final).** `python -m pytest -q --tb=short`
   EXPECTED: **PASS** — la suite entera verde. El último número conocido en STATUS/memoria es 1252; el delta esperado es el nº de tests nuevos de este plan (Task 1: +4; Task 2: +2; Task 3: +2; Task 4: +2; Task 5: +1; Task 6: +2; Task 7: +2 = **+15**, total esperado ~1267; el test de la línea 155 se actualiza, no se suma). Cualquier número distinto debe explicarse en `STATUS.md` al cerrar.
@@ -622,7 +622,7 @@ def test_capa_a_md_byte_identico_entre_corridas(tmp_path):
 - **`model.py` y `corpus.py` no se tocan** en ningún Task (restricción 8): `confianza` es `str` libre; `corpus._fila` ya emite `confianza`/`fingerprint`/`en_revision`; los consumidores máquina filtran `confianza == "media-reconstruida"`.
 - **`pipeline._pase_layer_b` no cambia su lógica de promoción** (restricción 7): consume `res.candidatos` (línea 175) e itera `R.render_revision(...).items()` (líneas 129-130) escribiendo toda clave del dict → `reconstruidos.md` y `reconstruidos.jsonl` aterrizan solos. El único cambio en `pipeline.py` es el contador `reconstruidos_media` (Task 6 paso 1).
 - **Superficie de regresión declarada:** `tests/test_email_atomize_render_b.py` ejercita el banner capa B (`RECONSTRUIDO DESDE CITA`), la línea `De (reconstruido)` y las tres colas de `render_revision`, todos tocados en Tasks 3/4/5. Verificado que sus 5 tests SOBREVIVEN (alta-reconstruida sin cambio; claves del dict por inclusión, no igualdad). Su corrida está incluida en Task 7 paso 3.
-- **Desviación de spec documentada (candidata en `del_burgo.md`, §6/§1):** un `media-reconstruida` con `de ∈ candidatas` se promueve correctamente pero NO aparece en `del_burgo.md` (filtra solo por `watched`/vigiladas). Se **difiere** explícitamente (no se altera el filtro): tratarlo cambia la semántica de la cola vigilada. Queda como invariante pendiente de §6 para una iteración posterior.
+- **Desviación de spec documentada (candidata en `identidades_vigiladas.md`, §6/§1):** un `media-reconstruida` con `de ∈ candidatas` se promueve correctamente pero NO aparece en `identidades_vigiladas.md` (filtra solo por `watched`/vigiladas). Se **difiere** explícitamente (no se altera el filtro): tratarlo cambia la semántica de la cola vigilada. Queda como invariante pendiente de §6 para una iteración posterior.
 - **Verificación adversarial sobre datos reales** (`--ref W-02VND1`, §9 de la spec: auditar cada `media-reconstruida` contra su `.eml`, cobertura de los 36, idempotencia, PersonaUno/Ignacio) queda **fuera de este plan** (post-build, requiere autorización para escribir en `G:` y los keywords del nexo causal — alineado con el "déjalo" registrado en memoria). No ejecutar escritura en `G:` en este plan.
 
 **Ficheros tocados (todos absolutos):**

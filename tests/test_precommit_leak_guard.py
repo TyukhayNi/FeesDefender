@@ -18,7 +18,7 @@ def repo(tmp_path: Path) -> Path:
     saneado.mkdir(parents=True)
     (saneado / "replacements.txt").write_text(
         "Fulano Menganez==>PersonaX\n"
-        "Burgo==>PersonaY\n"
+        "Alba==>PersonaY\n"
         r"regex:(?i)(?<![\w])Zutano\ Perez(?![\w@])==>PersonaZ" + "\n",
         encoding="utf-8",
     )
@@ -35,7 +35,7 @@ def _crea(repo: Path, rel: str, contenido: str) -> str:
 def test_blocklist_parsea_literal_y_regex(repo: Path):
     bl = cargar_blocklist(repo)
     assert "Fulano Menganez" in bl
-    assert "Burgo" in bl
+    assert "Alba" in bl
     assert "Zutano Perez" in bl  # regex desenvuelto
 
 
@@ -57,8 +57,8 @@ def test_pii_regex_en_contenido_bloquea(repo: Path):
 
 
 def test_limite_de_palabra_evita_falso_positivo(repo: Path):
-    # 'Burgos' NO debe casar con el termino 'Burgo'.
-    r = _crea(repo, "viaje.md", "Fuimos a Burgos en verano.")
+    # 'Albacete' NO debe casar con el termino 'Alba'.
+    r = _crea(repo, "viaje.md", "Fuimos a Albacete en verano.")
     assert escanear([r], repo) == []
 
 
