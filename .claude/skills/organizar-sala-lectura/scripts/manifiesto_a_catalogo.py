@@ -46,7 +46,13 @@ def _fuente(ruta_rel: str) -> str:
 
 
 def derivar(manifiesto: Path, salida: Path) -> Path:
-    filas = manifiesto_parser.parse_manifiesto(Path(manifiesto).read_text(encoding="utf-8"))
+    filas = manifiesto_parser.parse_manifiesto(
+        Path(manifiesto).read_text(encoding="utf-8"), estricto=True)
+    malos = [f["sha256"] for f in filas if not manifiesto_parser.sha_valido(f.get("sha256", ""))]
+    if malos:
+        raise ValueError(
+            "sha256 inválido en el _MANIFIESTO.md (ni sha256 de 64 hex, ni md5:<32 hex>, "
+            "ni vacío): " + ", ".join(repr(m) for m in malos[:5]))
     entradas = []
     for f in filas:
         rel = f["ruta_original"]

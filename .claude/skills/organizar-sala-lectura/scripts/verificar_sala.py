@@ -178,7 +178,12 @@ def main(argv: list[str]) -> int:
     manif = sala_dir / "_MANIFIESTO.md"
     if not manif.exists():
         print(f"no existe {manif}"); return 2
-    filas = manifiesto_parser.parse_manifiesto(manif.read_text(encoding="utf-8"))
+    try:
+        filas = manifiesto_parser.parse_manifiesto(
+            manif.read_text(encoding="utf-8"), estricto=True)
+    except ValueError as exc:
+        print(str(exc))
+        return 1
     cobertura = None
     if cobertura_path and cobertura_path.exists():
         cobertura = json.loads(cobertura_path.read_text(encoding="utf-8"))
