@@ -13,6 +13,7 @@
 - **Confirmado:** 2026-07-19.
 - **Señal:** `git worktree list --porcelain` marca la entrada `prunable  gitdir file points to non-existent location`.
 - **Solución:** limpiar el REGISTRO con `git worktree prune` (+ `git branch -D` si la rama está mergeada); el DIRECTORIO físico solo se borra tras **cerrar la sesión** que lo tiene como *cwd* (o desde otra sesión cuyo *cwd* no sea ese). No reintentar el borrado en caliente.
+- **Reconfirmado 2026-07-22:** una sesión nueva heredó como *cwd* asignado un worktree exactamente en este estado (huérfano de una sesión anterior que no pudo borrar el directorio físico tras el merge). No aparecía en `git worktree list` en absoluto (ni siquiera como *prunable*). **No intentar reparar el directorio roto** — pedir uno nuevo (p. ej. `EnterWorktree` con nombre nuevo) es más simple y no bloquea nada; el huérfano queda para poda posterior desde una sesión sin esa ruta como *cwd*.
 
 ---
 

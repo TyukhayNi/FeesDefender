@@ -371,4 +371,12 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    # UTF-8 wrap en Windows: sin esto, _avisar_higiene_planificacion() revienta
+    # con UnicodeEncodeError (cp1252 no codifica el "✅" de sus propios avisos) y
+    # el aviso real de PLAN.md/STATUS.md nunca llega a imprimirse (mismo gotcha
+    # documentado en CLAUDE.md para separar.py/anonimizar.py).
+    if sys.platform == "win32":
+        import io
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
     main()
