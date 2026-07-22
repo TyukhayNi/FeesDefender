@@ -134,3 +134,53 @@ def test_cargar_progreso_no_indexa_fallidos_se_reintentan(tmp_path):
     prog.write_text(
         _json.dumps({"dst": "b/x.pdf", "estado": "fallido", "error": "boom"}) + "\n", encoding="utf-8")
     assert cmr._cargar_progreso(prog) == set()
+
+
+def test_copiar_renombrar_respeta_timeout_parametrizable():
+    capturado = {}
+
+    def fake_urlopen(req, timeout=60):
+        capturado["timeout"] = timeout
+        return _mock_response(b"{}")
+
+    with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        cmr.copiar_renombrar("gdrive_tl:", "a/x.pdf", "b/x.pdf", timeout=900)
+    assert capturado["timeout"] == 900
+
+
+def test_copiar_renombrar_async_manda_flag_y_devuelve_jobid():
+    with patch("urllib.request.urlopen", return_value=_mock_response(b'{"jobid": 7}')) as m:
+        r = cmr.copiar_renombrar("gdrive_tl:", "a/x.pdf", "b/x.pdf", async_=True)
+        import json
+        assert json.loads(m.call_args[0][0].data)["_async"] is True
+        assert r["jobid"] == 7
+
+
+def test_esperar_job_hace_polling_hasta_finished():
+    respuestas = [b'{"finished": false}', b'{"finished": true, "success": true}']
+    with patch("urllib.request.urlopen", side_effect=[_mock_response(x) for x in respuestas]):
+        with patch("time.sleep"):
+            estado = cmr.esperar_job(7, intervalo=0)
+    assert estado["finished"] is True and estado["success"] is True
+
+
+def test_esperar_job_lanza_si_el_job_falla():
+    with patch("urllib.request.urlopen", return_value=_mock_response(b'{"finished": true, "success": false, "error": "boom"}')):
+        with patch("time.sleep"):
+            with pytest.raises(RuntimeError, match="boom"):
+                cmr.esperar_job(7, intervalo=0)
+
+
+def test_copiar_manifiesto_cierra_el_rcd_que_arranco():
+    proc = MagicMock()
+    with patch.object(cmr, "levantar_rcd_si_falta", return_value=proc):
+        with patch("urllib.request.urlopen", return_value=_mock_response(b"{}")):
+            cmr.copiar_manifiesto("gdrive_tl:", [("a/x.pdf", "b/x.pdf")])
+    proc.terminate.assert_called_once()
+
+
+def test_copiar_manifiesto_no_toca_un_rcd_ajeno():
+    with patch.object(cmr, "levantar_rcd_si_falta", return_value=None):
+        with patch("urllib.request.urlopen", return_value=_mock_response(b"{}")):
+            ok, _ = cmr.copiar_manifiesto("gdrive_tl:", [("a/x.pdf", "b/x.pdf")])
+    assert ok == ["b/x.pdf"]  # sin Popen que cerrar, no revienta
