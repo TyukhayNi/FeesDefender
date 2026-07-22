@@ -30,7 +30,7 @@ _SOURCE_MAP = {
 CAMPOS_EMITIDOS = [
     "id_doc", "ruta_relativa", "nombre_original", "tipo_documental", "fecha_doc",
     "parte", "fuente", "estado", "hash", "parent_id", "nombre_canonico",
-    "categoria", "subcategoria_crm",
+    "categoria", "subcategoria_crm", "fecha_aproximada",
 ]
 
 
@@ -57,12 +57,15 @@ def derivar(manifiesto: Path, salida: Path) -> Path:
     for f in filas:
         rel = f["ruta_original"]
         sha = f["sha256"]
+        fecha_cruda = f["fecha"] or ""
+        aproximada = "(*)" in fecha_cruda
+        fecha_limpia = fecha_cruda.replace("(*)", "").strip()
         entradas.append({
             "id_doc": sha[:12] if sha else rel,
             "ruta_relativa": rel,
             "nombre_original": rel.replace("\\", "/").rsplit("/", 1)[-1],
             "tipo_documental": f["tipo"] or None,
-            "fecha_doc": f["fecha"] or None,
+            "fecha_doc": fecha_limpia or None,
             "parte": f["parte"] or None,
             "fuente": _fuente(rel),
             "estado": "original",
@@ -71,6 +74,7 @@ def derivar(manifiesto: Path, salida: Path) -> Path:
             "nombre_canonico": f["nombre_canonico"] or None,
             "categoria": f.get("categoria") or None,
             "subcategoria_crm": f.get("subcategoria_crm") or None,
+            "fecha_aproximada": aproximada,
         })
     Path(salida).write_text(
         yaml.dump(entradas, allow_unicode=True, default_flow_style=False, sort_keys=False),

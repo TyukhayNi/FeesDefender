@@ -89,7 +89,7 @@ def verificar(
             if chars > chars_ok_por_origen.get(origen, -1):
                 chars_ok_por_origen[origen] = chars
         for fila in manifiesto_filas:
-            if fila.get("fecha") != "0000-00-00":
+            if (fila.get("fecha") or "").replace("(*)", "").strip() != "0000-00-00":
                 continue
             chars = chars_ok_por_origen.get(fila.get("sha256"))
             if chars is not None and chars >= _CHARS_MINIMOS_SOSPECHOSO:

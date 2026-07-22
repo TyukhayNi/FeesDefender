@@ -122,3 +122,24 @@ def test_derivar_aborta_si_sha_invalido(tmp_path):
     (tmp_path / "_MANIFIESTO.md").write_text(_MANIF_SHA_MALO, encoding="utf-8")
     with pytest.raises(ValueError, match="sha256|hash"):
         mod.derivar(tmp_path / "_MANIFIESTO.md", tmp_path / "indice_documental.yaml")
+
+
+_MANIF_APROX = f"""<!-- GENERADO — NO EDITAR A MANO -->
+| sha256 | ruta_original | nombre_canonico | tipo | fecha | parte | parent_id |
+|---|---|---|---|---|---|---|
+| {"d" * 64} | 01_Drive EV/foto.jpg | 2024-06-06_foto.jpg | jpg | 2024-06-06(*) | propietario |  |
+| {"e" * 64} | 01_Drive EV/acta.pdf | 2025-01-02_acta.pdf | pdf | 2025-01-02 | propietario |  |
+"""
+
+
+def test_derivar_saca_el_marcador_aproximado_de_la_fecha(tmp_path):
+    mod = _load()
+    (tmp_path / "_MANIFIESTO.md").write_text(_MANIF_APROX, encoding="utf-8")
+    out = mod.derivar(tmp_path / "_MANIFIESTO.md", tmp_path / "indice_documental.yaml")
+    data = yaml.safe_load(out.read_text(encoding="utf-8"))
+    aprox = {d["hash"]: d for d in data}["d" * 64]
+    exacta = {d["hash"]: d for d in data}["e" * 64]
+    assert aprox["fecha_doc"] == "2024-06-06"
+    assert aprox["fecha_aproximada"] is True
+    assert exacta["fecha_doc"] == "2025-01-02"
+    assert exacta["fecha_aproximada"] is False
