@@ -11,22 +11,37 @@ reconocible, se asume el orden canónico de 7 columnas.
 """
 from __future__ import annotations
 
+import re
+
 COLS_CANON = [
     "sha256", "ruta_original", "nombre_canonico", "tipo", "fecha", "parte", "parent_id",
 ]
+
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_MD5_RE = re.compile(r"^md5:[0-9a-f]{32}$")
 
 
 def _es_separador(celdas: list[str]) -> bool:
     return bool(celdas) and all(c and set(c) <= {"-", ":"} for c in celdas)
 
 
-def parse_manifiesto(texto: str) -> list[dict]:
+def sha_valido(valor: str) -> bool:
+    """`True` si el valor de la columna sha256 es un sha256 real (64 hex), un
+    `md5:<32 hex>` (Modo 3 degradado, ítem 13), o vacío (placeholder tolerado)."""
+    v = (valor or "").strip()
+    return v == "" or bool(_SHA256_RE.match(v)) or bool(_MD5_RE.match(v))
+
+
+def parse_manifiesto(texto: str, *, estricto: bool = False) -> list[dict]:
     """Una fila-dict por fila de datos. Claves de la cabecera (o `COLS_CANON`).
-    Filas con nº de celdas != nº de columnas se saltan (tolerancia heredada; el
-    endurecimiento estricto es el ítem 12, fuera de alcance)."""
+    Con `estricto=True`, una línea candidata (empieza por `|`, no cabecera, no
+    separador) cuyo nº de celdas != nº de columnas lanza `ValueError` (ítem 12:
+    ninguna fila desaparece del catálogo en silencio). Sin `estricto` (default)
+    esas filas se saltan — comportamiento heredado, no rompe manifiestos viejos."""
     cols: list[str] | None = None
     filas: list[dict] = []
-    for linea in texto.splitlines():
+    rechazadas: list[str] = []
+    for i, linea in enumerate(texto.splitlines(), 1):
         s = linea.strip()
         if not s.startswith("|"):
             continue
@@ -39,6 +54,11 @@ def parse_manifiesto(texto: str) -> list[dict]:
         if cols is None:
             cols = COLS_CANON
         if len(celdas) != len(cols):
+            rechazadas.append(f"  línea {i}: {len(celdas)} celdas, se esperaban {len(cols)}: {s}")
             continue
         filas.append(dict(zip(cols, celdas)))
+    if estricto and rechazadas:
+        raise ValueError(
+            "fila(s) malformada(s) en el _MANIFIESTO.md (nº de columnas incorrecto) — "
+            "se perderían del catálogo en silencio:\n" + "\n".join(rechazadas))
     return filas

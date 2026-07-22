@@ -2,6 +2,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
+import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -15,11 +16,13 @@ def _load():
     return mod
 
 
-_MANIF = """<!-- GENERADO — NO EDITAR A MANO -->
+_SHA_A = "a" * 64
+_SHA_B = "b" * 64
+_MANIF = f"""<!-- GENERADO — NO EDITAR A MANO -->
 | sha256 | ruta_original | nombre_canonico | tipo | fecha | parte | parent_id |
 |---|---|---|---|---|---|---|
-| aaaa | 01_Drive EV/Catastro.pdf | 2024-04-26_catastro.pdf | 08. PENDIENTE DE CLASIFICAR | 2024-04-26 | propietario |  |
-| bbbb | 04_Manual/RESPUESTA_RESOLUCION.pdf | 2025-07-22_requerimiento.pdf | 07. RECLAMACIONES | 2025-07-22 | propietario |  |
+| {_SHA_A} | 01_Drive EV/Catastro.pdf | 2024-04-26_catastro.pdf | 08. PENDIENTE DE CLASIFICAR | 2024-04-26 | propietario |  |
+| {_SHA_B} | 04_Manual/RESPUESTA_RESOLUCION.pdf | 2025-07-22_requerimiento.pdf | 07. RECLAMACIONES | 2025-07-22 | propietario |  |
 """
 
 
@@ -29,7 +32,7 @@ def test_deriva_catalogo_yaml(tmp_path):
     out = mod.derivar(tmp_path / "_MANIFIESTO.md", tmp_path / "indice_documental.yaml")
     data = yaml.safe_load(out.read_text(encoding="utf-8"))
     assert len(data) == 2
-    e0 = {d["hash"]: d for d in data}["aaaa"]
+    e0 = {d["hash"]: d for d in data}[_SHA_A]
     assert e0["nombre_original"] == "Catastro.pdf"
     assert e0["fuente"] == "drive_ev"
     assert e0["tipo_documental"] == "08. PENDIENTE DE CLASIFICAR"
@@ -68,10 +71,10 @@ def test_idempotente(tmp_path):
     assert o.read_text(encoding="utf-8") == a
 
 
-_MANIF_CAT = """<!-- GENERADO — NO EDITAR A MANO -->
+_MANIF_CAT = f"""<!-- GENERADO — NO EDITAR A MANO -->
 | sha256 | ruta_original | nombre_canonico | tipo | fecha | parte | parent_id | categoria | subcategoria_crm |
 |---|---|---|---|---|---|---|---|---|
-| aaaa | sudespacho_1/civil/x.pdf | 2025-01-01_x.pdf | pdf | 2025-01-01 | propietario |  | 07. RECLAMACIONES | civil |
+| {_SHA_A} | sudespacho_1/civil/x.pdf | 2025-01-01_x.pdf | pdf | 2025-01-01 | propietario |  | 07. RECLAMACIONES | civil |
 """
 
 
@@ -91,3 +94,52 @@ def test_manifiesto_viejo_7col_da_categoria_none(tmp_path):
     data = yaml.safe_load(out.read_text(encoding="utf-8"))
     assert data[0]["categoria"] is None
     assert data[0]["subcategoria_crm"] is None
+
+
+_MANIF_MD5 = """<!-- GENERADO — NO EDITAR A MANO -->
+| sha256 | ruta_original | nombre_canonico | tipo | fecha | parte | parent_id |
+|---|---|---|---|---|---|---|
+| md5:%s | 06_Entrevistas/video.mp4 | 2025-01-01_video.mp4 | mp4 | 2025-01-01 | propietario |  |
+""" % ("c" * 32)
+
+_MANIF_SHA_MALO = """<!-- GENERADO — NO EDITAR A MANO -->
+| sha256 | ruta_original | nombre_canonico | tipo | fecha | parte | parent_id |
+|---|---|---|---|---|---|---|
+| noesunhash | 01_Drive EV/x.pdf | 2025-01-01_x.pdf | pdf | 2025-01-01 | propietario |  |
+"""
+
+
+def test_derivar_acepta_md5_prefijado(tmp_path):
+    mod = _load()
+    (tmp_path / "_MANIFIESTO.md").write_text(_MANIF_MD5, encoding="utf-8")
+    out = mod.derivar(tmp_path / "_MANIFIESTO.md", tmp_path / "indice_documental.yaml")
+    data = yaml.safe_load(out.read_text(encoding="utf-8"))
+    assert data[0]["hash"] == "md5:" + "c" * 32
+
+
+def test_derivar_aborta_si_sha_invalido(tmp_path):
+    mod = _load()
+    (tmp_path / "_MANIFIESTO.md").write_text(_MANIF_SHA_MALO, encoding="utf-8")
+    with pytest.raises(ValueError, match="sha256|hash"):
+        mod.derivar(tmp_path / "_MANIFIESTO.md", tmp_path / "indice_documental.yaml")
+
+
+_MANIF_APROX = f"""<!-- GENERADO — NO EDITAR A MANO -->
+| sha256 | ruta_original | nombre_canonico | tipo | fecha | parte | parent_id |
+|---|---|---|---|---|---|---|
+| {"d" * 64} | 01_Drive EV/foto.jpg | 2024-06-06_foto.jpg | jpg | 2024-06-06(*) | propietario |  |
+| {"e" * 64} | 01_Drive EV/acta.pdf | 2025-01-02_acta.pdf | pdf | 2025-01-02 | propietario |  |
+"""
+
+
+def test_derivar_saca_el_marcador_aproximado_de_la_fecha(tmp_path):
+    mod = _load()
+    (tmp_path / "_MANIFIESTO.md").write_text(_MANIF_APROX, encoding="utf-8")
+    out = mod.derivar(tmp_path / "_MANIFIESTO.md", tmp_path / "indice_documental.yaml")
+    data = yaml.safe_load(out.read_text(encoding="utf-8"))
+    aprox = {d["hash"]: d for d in data}["d" * 64]
+    exacta = {d["hash"]: d for d in data}["e" * 64]
+    assert aprox["fecha_doc"] == "2024-06-06"
+    assert aprox["fecha_aproximada"] is True
+    assert exacta["fecha_doc"] == "2025-01-02"
+    assert exacta["fecha_aproximada"] is False
