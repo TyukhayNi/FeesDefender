@@ -1511,10 +1511,10 @@ residuales quedaron como follow-up no bloqueante:
 línea ~144; reconstruidos.md ext/asunto líneas ~182-183). Extraer `_celda(txt, limit=None)` para
 centralizar y evitar deriva (una columna futura que olvide escapar `|` rompería la tabla).
 
-**46.2 — `candidata` `media-reconstruida` ausente de `del_burgo.md`.** Una cita atribuida a una
+**46.2 — `candidata` `media-reconstruida` ausente de `identidades_vigiladas.md`.** Una cita atribuida a una
 identidad *candidata* (no vigilada; p.ej. `per01b@example.invalid`) se promueve y queda
-`en_revision`, pero `render_revision` filtra `del_burgo.md` solo por `watched`/vigiladas, así que
-no aparece en la vista probatoria. Decidir si `del_burgo.md` debe listar `watched ∪ candidatas`.
+`en_revision`, pero `render_revision` filtra `identidades_vigiladas.md` solo por `watched`/vigiladas, así que
+no aparece en la vista probatoria. Decidir si `identidades_vigiladas.md` debe listar `watched ∪ candidatas`.
 *Disparador:* un atom candidata real en W-02VND1 que haya que revisar. (Documentado en el plan.)
 
 **46.3 — `_pasada_segmentos` siembra `body=list(anclaje)`.** Los segmentos `outlook_es`/`fwd_line`

@@ -17,8 +17,8 @@ def _gmail(mid, autor, de_cita, fecha_attr, cuerpo):
     return m.as_bytes()
 
 
-def test_gmail_del_burgo_en_del_burgo_md(tmp_path):
-    """Cita ESTRUCTURAL de PersonaUno → alta-reconstruida → aparece en del_burgo.md."""
+def test_gmail_persona_uno_en_identidades_vigiladas_md(tmp_path):
+    """Cita ESTRUCTURAL de PersonaUno → alta-reconstruida → aparece en identidades_vigiladas.md."""
     src = tmp_path / "03_Email"; out = tmp_path / "Emails"; src.mkdir()
     (tmp_path / "identidades.yaml").write_text(
         "personas:\n"
@@ -30,8 +30,8 @@ def test_gmail_del_burgo_en_del_burgo_md(tmp_path):
         "<c@x>", "Te reenvío.", "per01a@example.invalid", "1 de mayo de 2020",
         "contenido citado suficientemente largo para fingerprint PersonaUno"))
     P.atomize_dir(src, out, case_dir=tmp_path)
-    db = (out / "_revision" / "del_burgo.md").read_text(encoding="utf-8")
-    assert "per01a@example.invalid" in db
+    iv = (out / "_revision" / "identidades_vigiladas.md").read_text(encoding="utf-8")
+    assert "per01a@example.invalid" in iv
 
 
 def test_headerless_no_inventa(tmp_path):

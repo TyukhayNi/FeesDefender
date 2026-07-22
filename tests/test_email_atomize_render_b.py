@@ -32,9 +32,9 @@ def test_render_revision_tres_colas():
                                   confianza="baja", motivo="sin_cabecera", extracto="...")]
     msgs_b = [_b(en_revision=True)]
     out = R.render_revision(msgs_b, punteros, watched=frozenset({"per01a@example.invalid"}))
-    assert "cola.md" in out and "casi_duplicados.md" in out and "del_burgo.md" in out
+    assert "cola.md" in out and "casi_duplicados.md" in out and "identidades_vigiladas.md" in out
     assert "MSG-1" in out["cola.md"]
-    assert "per01a@example.invalid" in out["del_burgo.md"]
+    assert "per01a@example.invalid" in out["identidades_vigiladas.md"]
 
 
 def test_corpus_incluye_fingerprint_y_capa_b():
@@ -43,10 +43,10 @@ def test_corpus_incluye_fingerprint_y_capa_b():
     assert fila["en_revision"] is False
 
 
-def test_render_revision_sin_watched_produce_del_burgo_vacio():
+def test_render_revision_sin_watched_produce_identidades_vigiladas_vacio():
     out = R.render_revision([], [], watched=None)
-    assert "del_burgo.md" in out
-    # sin watched → del_burgo.md solo cabecera, ninguna fila de dirección
-    filas = [l for l in out["del_burgo.md"].splitlines()
+    assert "identidades_vigiladas.md" in out
+    # sin watched → identidades_vigiladas.md solo cabecera, ninguna fila de dirección
+    filas = [l for l in out["identidades_vigiladas.md"].splitlines()
              if l.startswith("|") and "---" not in l and "Ref" not in l]
     assert filas == []

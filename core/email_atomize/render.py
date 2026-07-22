@@ -132,7 +132,7 @@ def render_correos_lectura(mensajes: list[RegistroMensaje]) -> str:
 def render_revision(mensajes_b: list[RegistroMensaje], punteros: list, watched=None,
                     upgrades: list | None = None) -> dict:
     """Colas de revisión Layer B: ``cola.md`` (punteros media/baja), ``casi_duplicados.md``
-    (upgrades de fidelidad: cita inline resuelta a una copia limpia de Capa A), ``del_burgo.md``
+    (upgrades de fidelidad: cita inline resuelta a una copia limpia de Capa A), ``identidades_vigiladas.md``
     (identidades vigiladas del caso; sin caso → vacío). Regenerado cada corrida (determinista → idempotente)."""
     watched = frozenset(watched) if watched is not None else frozenset()
     upgrades = upgrades or []
@@ -155,18 +155,18 @@ def render_revision(mensajes_b: list[RegistroMensaje], punteros: list, watched=N
         casi.append(f"| {u.get('msg_a')} | {u.get('citado_en')} | {u.get('profundidad')} | "
                     f"{u.get('fingerprint')} |")
 
-    db = [_GEN_VIEW, "# Autoría vigilada (PersonaUno) — revisión probatoria\n",
+    viv = [_GEN_VIEW, "# Autoría vigilada (PersonaUno) — revisión probatoria\n",
           "Toda cita atribuida a una identidad vigilada: promovidas (mensaje B propio) y "
           "las que quedaron en revisión (media/baja). Cada una, a verificar contra la fuente.\n",
           "| Ref | De | Fecha | Confianza | Portador | Estado |",
           "| --- | --- | --- | --- | --- | --- |"]
     for m in mensajes_b:
         if m.de in watched:
-            db.append(f"| {m.msg_id} | {m.de} | {m.fecha_iso} | {m.confianza} | "
+            viv.append(f"| {m.msg_id} | {m.de} | {m.fecha_iso} | {m.confianza} | "
                       f"{m.reconstruido_de} | promovido |")
     for p in punteros:
         if p.de in watched:
-            db.append(f"| (cita) | {p.de} | {p.fecha_iso} | {p.confianza} | "
+            viv.append(f"| (cita) | {p.de} | {p.fecha_iso} | {p.confianza} | "
                       f"{p.portador_msg_id} | revisar |")
 
     medias = sorted((m for m in mensajes_b if m.confianza == "media-reconstruida"),
@@ -190,7 +190,7 @@ def render_revision(mensajes_b: list[RegistroMensaje], punteros: list, watched=N
 
     return {"cola.md": "\n".join(cola) + "\n",
             "casi_duplicados.md": "\n".join(casi) + "\n",
-            "del_burgo.md": "\n".join(db) + "\n",
+            "identidades_vigiladas.md": "\n".join(viv) + "\n",
             "reconstruidos.md": "\n".join(rec) + "\n",
             "reconstruidos.jsonl": ("\n".join(rec_jsonl) + "\n") if rec_jsonl else ""}
 
