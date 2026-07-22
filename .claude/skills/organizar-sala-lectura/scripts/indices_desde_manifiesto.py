@@ -76,7 +76,8 @@ def construir_cronologia(filas: list[dict]) -> str:
 
 
 def derivar(manifiesto: Path, out_dir: Path) -> tuple[Path, Path]:
-    filas = manifiesto_parser.parse_manifiesto(Path(manifiesto).read_text(encoding="utf-8"))
+    filas = manifiesto_parser.parse_manifiesto(
+        Path(manifiesto).read_text(encoding="utf-8"), estricto=True)
     indice = Path(out_dir) / "INDICE.md"
     crono = Path(out_dir) / "CRONOLOGIA.md"
     indice.write_text(construir_indice(filas), encoding="utf-8")

@@ -67,6 +67,36 @@ def test_agrupar_por_hilo_junta_variantes_del_mismo_dia_y_asunto():
     assert len(grupos[clave_consulta]) == 3
 
 
+def test_agrupar_por_hilo_no_fusiona_por_cifra_en_el_asunto():
+    # ".._1_990_000" NO es un sufijo de hilo: no existe la base ".._1_990" en el conjunto.
+    nombres = [
+        "2025-05-10_oferta_vivienda_1_990_000.eml",
+        "2025-06-01_otra_cosa.eml",
+    ]
+    grupos = preclasificar.agrupar_por_hilo(nombres)
+    assert set(grupos) == {"2025-05-10_oferta_vivienda_1_990_000", "2025-06-01_otra_cosa"}
+    assert grupos["2025-05-10_oferta_vivienda_1_990_000"] == ["2025-05-10_oferta_vivienda_1_990_000.eml"]
+
+
+def test_agrupar_por_hilo_agrupa_solo_si_la_base_existe():
+    # Hay base sin sufijo -> _2/_3 se agrupan bajo ella (caso real de email_export).
+    nombres = [
+        "2025-03-20_consulta.eml",
+        "2025-03-20_consulta_2.eml",
+        "2025-03-20_consulta_3.eml",
+    ]
+    grupos = preclasificar.agrupar_por_hilo(nombres)
+    assert len(grupos) == 1
+    assert len(grupos["2025-03-20_consulta"]) == 3
+
+
+def test_agrupar_por_hilo_sin_base_no_fusiona():
+    # _2 y _3 SIN el base -> no se puede afirmar que sean un hilo: cada uno su clave.
+    nombres = ["2025-03-20_consulta_2.eml", "2025-03-20_consulta_3.eml"]
+    grupos = preclasificar.agrupar_por_hilo(nombres)
+    assert len(grupos) == 2
+
+
 def test_subcategoria_crm_extrae_la_subcarpeta():
     assert preclasificar.subcategoria_crm("sudespacho_602/civil/auto_inadmite_diligencias_preliminares.pdf") == "civil"
     assert preclasificar.subcategoria_crm("01_Drive EV/OFERTA.PDF") is None
@@ -148,3 +178,49 @@ def test_senales_gate_limpio_da_lista_vacia():
     # .eml (texto, no binario opaco), nombre único, wcode propio -> auto-aprueba.
     filas = [{"ruta_original": "03_Email/corr.eml", "nombre_canonico": "2025-01-01_correo.eml", "sha256": "a", "motivo": "default_reclamaciones"}]
     assert preclasificar.senales_gate(filas, wcode_caso="W-02VUDR", cobertura_filas=None) == []
+
+
+def test_emparejar_exports_whatsapp_marca_el_zip_crudo_como_duplicado():
+    rutas = [
+        "2026-07-21_whatsapp_01/propietario/Chat con Tonet/_chat.txt",
+        "2026-07-21_whatsapp_01/propietario/Chat con Tonet/media/IMG-0001.jpg",
+        "2026-07-21_whatsapp_01/propietario/Chat con Tonet/_export_original.zip",
+    ]
+    limpias, crudos = preclasificar.emparejar_exports_whatsapp(rutas)
+    assert "2026-07-21_whatsapp_01/propietario/Chat con Tonet/_export_original.zip" not in limpias
+    assert len(crudos) == 1
+    assert crudos[0]["motivo"] == "export_crudo_whatsapp"
+    assert crudos[0]["duplicado_de"].endswith("Chat con Tonet/_chat.txt")
+
+
+def test_emparejar_exports_whatsapp_conserva_zip_sin_chat_hermano():
+    # Un .zip suelto (Manual) SIN _chat.txt hermano NO es un export crudo -> se conserva.
+    rutas = ["04_Manual/documentacion_aportada.zip", "04_Manual/otro.pdf"]
+    limpias, crudos = preclasificar.emparejar_exports_whatsapp(rutas)
+    assert "04_Manual/documentacion_aportada.zip" in limpias
+    assert crudos == []
+
+
+def test_emparejar_exports_whatsapp_sin_zip_no_toca_nada():
+    rutas = ["01_Drive EV/a.pdf", "03_Email/corr.eml"]
+    limpias, crudos = preclasificar.emparejar_exports_whatsapp(rutas)
+    assert limpias == rutas
+    assert crudos == []
+
+
+def test_emparejar_exports_whatsapp_conserva_zip_no_original_junto_a_chat():
+    # Un .zip que NO es _export_original.zip, aunque comparta carpeta con un
+    # _chat.txt, es documentación legítima aportada: se conserva (hallazgo de la
+    # revisión adversarial — el matcher no debe ser un `.endswith('.zip')` genérico).
+    rutas = [
+        "2026-07-21_whatsapp_01/propietario/Chat con Tonet/_chat.txt",
+        "2026-07-21_whatsapp_01/propietario/Chat con Tonet/adjuntos_aportados.zip",
+    ]
+    limpias, crudos = preclasificar.emparejar_exports_whatsapp(rutas)
+    assert "2026-07-21_whatsapp_01/propietario/Chat con Tonet/adjuntos_aportados.zip" in limpias
+    assert crudos == []
+
+
+def test_nombre_export_crudo_sin_drift_con_core():
+    from core.whatsapp_intake import _ORIGINAL_ZIP_NAME
+    assert preclasificar._NOMBRE_EXPORT_CRUDO_WHATSAPP == _ORIGINAL_ZIP_NAME

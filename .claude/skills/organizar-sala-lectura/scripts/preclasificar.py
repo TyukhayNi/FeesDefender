@@ -87,20 +87,70 @@ def dedup_por_sha(ficheros: list[dict]) -> tuple[list[dict], list[dict]]:
 _SUFIJO_HILO_RE = re.compile(r"^(.*)_(\d+)$")
 
 
+# Nombre EXACTO del zip crudo que deposita whatsapp_intake.deposit_export
+# (self-contained; el test test_nombre_export_crudo_sin_drift_con_core lo compara
+# con la constante real core.whatsapp_intake._ORIGINAL_ZIP_NAME — sincronía a mano).
+_NOMBRE_EXPORT_CRUDO_WHATSAPP = "_export_original.zip"
+
+
+def emparejar_exports_whatsapp(rutas: list[str]) -> tuple[list[str], list[dict]]:
+    """Separa los exports CRUDOS de WhatsApp de las rutas a clasificar. Un `.zip`
+    es crudo SOLO si su basename es exactamente `_export_original.zip` (el que
+    `whatsapp_intake.deposit_export` deja junto al `_chat.txt` extraído) Y en su
+    MISMO directorio hay un `_chat.txt`: es el crudo del chat ya extraído y no
+    debe tener fila propia (no tiene fecha ni espejo MD; darle una fabrica basura
+    `0000-00-00`). Un `.zip` con OTRO nombre (documentación aportada) se conserva
+    aunque comparta carpeta con un chat. Devuelve `(rutas_sin_crudos, crudos)`;
+    cada crudo se anota `duplicado_de` su `_chat.txt` hermano (trazable, no
+    borrado). Determinista, sin releer nada."""
+    def _norm(r: str) -> str:
+        return r.replace("\\", "/")
+
+    def _dir(r: str) -> str:
+        r = _norm(r)
+        return r.rsplit("/", 1)[0] if "/" in r else ""
+
+    def _base(r: str) -> str:
+        return _norm(r).rsplit("/", 1)[-1].lower()
+
+    chat_por_dir: dict[str, str] = {}
+    for r in rutas:
+        if _base(r) == "_chat.txt":
+            chat_por_dir[_dir(r)] = r
+
+    limpias: list[str] = []
+    crudos: list[dict] = []
+    for r in rutas:
+        es_crudo = _base(r) == _NOMBRE_EXPORT_CRUDO_WHATSAPP
+        hermano = chat_por_dir.get(_dir(r))
+        if es_crudo and hermano:
+            crudos.append({"ruta": r, "duplicado_de": hermano, "motivo": "export_crudo_whatsapp"})
+        else:
+            limpias.append(r)
+    return limpias, crudos
+
+
 def agrupar_por_hilo(rutas_eml: list[str]) -> dict[str, list[str]]:
-    """Agrupa nombres de `.eml` por HILO: el motor de export
-    (`core.email_export`) numera con sufijo `_N` los mensajes de mismo
-    asunto+fecha exportados en la misma corrida. La clave de hilo es el nombre
-    sin ese sufijo. Devuelve `{clave_hilo: [nombres_del_grupo]}` — clasifica
-    solo un representante del grupo (p. ej. el más corto/sin sufijo) y propaga
-    su categoría al resto sin volver a leerlos. Heurística de nombre, no de
-    `Message-ID`/`References` reales — proxy barato, no sustituto de un
-    threading riguroso si algún día hace falta."""
+    """Agrupa nombres de `.eml` por HILO: el motor de export (`core.email_export`)
+    escribe el PRIMER mensaje de un asunto+fecha sin sufijo y numera los
+    siguientes `_2`, `_3`… (`_ruta_unica`; nunca `_0`/`_1`). La clave de hilo es
+    el nombre sin ese sufijo, pero SOLO se agrupa `X_N` bajo `X` si `X` está de
+    verdad en el conjunto — así una cifra del propio asunto (`..._1_990_000.eml`)
+    no fabrica un hilo inexistente. Devuelve `{clave_hilo: [nombres_del_grupo]}`;
+    clasifica un representante y propaga su categoría al resto sin releerlos.
+    Heurística de nombre, no de `Message-ID`/`References` — proxy barato, no
+    sustituto de un threading riguroso si algún día hace falta."""
+    def _base(nombre: str) -> str:
+        return nombre[:-4] if nombre.lower().endswith(".eml") else nombre
+
+    bases_presentes = {_base(n) for n in rutas_eml}
     grupos: dict[str, list[str]] = {}
     for nombre in rutas_eml:
-        base = nombre[:-4] if nombre.lower().endswith(".eml") else nombre
+        base = _base(nombre)
         m = _SUFIJO_HILO_RE.match(base)
-        clave = m.group(1) if m else base
+        # Solo es sufijo de hilo si el nombre pelado (sin `_N`) existe como .eml
+        # propio en el conjunto; si no, el `_N` es parte del asunto (p. ej. cifra).
+        clave = m.group(1) if (m and m.group(1) in bases_presentes) else base
         grupos.setdefault(clave, []).append(nombre)
     return grupos
 
