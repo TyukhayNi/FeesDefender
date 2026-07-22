@@ -112,7 +112,7 @@ El script **parte de `assets/plantilla_informe_viabilidad.xlsx`** (formato, fór
   "fecha": "05/06/2026",
   "ref": "BaXX - Avenida del Parque 7 (W-0RURIT) - Vuelta",
   "equipo": {"director_captador": "Soler, Marta", "asesor_captador": "Rovira, Eva",
-             "director_buscador": "Soler, Marta", "asesor_buscador": "Prat, Luis"},
+             "director_buscador": "Soler, Marta", "asesor_buscador": "Rius, Luis"},
   "tipo_caso": "VUELTA",
   "observaciones": "VUELTA",
   "motivos_impago": "",

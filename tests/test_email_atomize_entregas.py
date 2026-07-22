@@ -9,7 +9,7 @@ def _out_con_set(tmp_path):
     (out / "mensajes").mkdir(parents=True)
     (out / "mensajes" / "m1.md").write_text("uno", encoding="utf-8")
     (out / "vistas").mkdir()
-    (out / "vistas" / "dossier_del_burgo.md").write_text("dossier", encoding="utf-8")
+    (out / "vistas" / "dossier_persona_vigilada.md").write_text("dossier", encoding="utf-8")
     (out / "corpus.jsonl").write_text('{"x":1}\n', encoding="utf-8")
     (out / "CORREOS_LECTURA.md").write_text("lectura", encoding="utf-8")
     return out
@@ -23,7 +23,7 @@ def test_sella_copia_y_manifiesto(tmp_path):
     assert dest.parent == out / "_entregas"
     # set entregable copiado congelado
     assert (dest / "mensajes" / "m1.md").read_text(encoding="utf-8") == "uno"
-    assert (dest / "vistas" / "dossier_del_burgo.md").exists()
+    assert (dest / "vistas" / "dossier_persona_vigilada.md").exists()
     assert (dest / "corpus.jsonl").exists()
     # _SELLO.md con metadatos + sha256 por fichero
     sello = (dest / "_SELLO.md").read_text(encoding="utf-8")
