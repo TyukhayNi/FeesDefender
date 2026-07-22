@@ -87,6 +87,7 @@ from .sync_sudespacho_legacy import (
 from .sudespacho_create import (
     GRUPOS_DEFAULT,
     USUARIOS_DEFAULT,
+    _parse_values,
 )
 from .utils import normalize_es_phone
 
@@ -812,6 +813,66 @@ def create_cliente_contrario(datos: "NuevoClienteContrario") -> str:
         ValueError: SUDESPACHO_API_KEY no configurado.
     """
     return _rest_post_cliente_contrario(datos)
+
+
+def update_cliente_contrario(contrario_id: str, cambios: dict) -> dict:
+    """Actualiza campos de un cliente contrario existente vía PUT.
+
+    A diferencia de `update_expediente()` (sudespacho_create.py, confirmado PUT
+    PARCIAL en vivo 2026-07-18), no hay confirmación de si el PUT de
+    `clientes_contrarios` es parcial o de reemplazo completo. Por prudencia el
+    caller debe reenviar TODOS los campos que quiera conservar (nombre,
+    1apellido, 2apellido, nif_cif, direccion, poblacion, email, movil...), no
+    solo los que cambian — así el comportamiento es correcto sin importar cuál
+    de los dos sea (confirmado en vivo 2026-07-22, expediente 674/W-02ZIIF).
+
+    Args:
+        contrario_id: ID del cliente contrario en el CRM (clientes_contrarios).
+        cambios: Campos a escribir. No puede estar vacío.
+
+    Returns:
+        Dict aplanado {property: value} con el registro tal como responde el
+        servidor (o `cambios` tal cual si la respuesta 200 no es JSON parseable).
+
+    Raises:
+        SudespachoRelationsError: si el PUT falla o el HTTP no es 200.
+        ValueError: si `cambios` está vacío o SUDESPACHO_API_KEY no está configurado.
+    """
+    if not cambios:
+        raise ValueError("update_cliente_contrario: 'cambios' no puede estar vacío")
+
+    api_key = (os.getenv("SUDESPACHO_API_KEY") or "").strip()
+    if not api_key:
+        raise ValueError(
+            "SUDESPACHO_API_KEY vacío en .env — ve a tnm.sudespacho.net → Ajustes → API"
+        )
+
+    url = f"{_REST_BASE}{_REST_CREATE_CLIENTE_CONTRARIO}/{contrario_id}"
+    headers = {
+        "x-api-key":    api_key,
+        "Content-Type": "application/json",
+        "Accept":       "application/json",
+    }
+    try:
+        r = httpx.put(url, json=cambios, headers=headers, timeout=_REST_TIMEOUT)
+    except httpx.HTTPError as exc:
+        raise SudespachoRelationsError(
+            f"REST PUT clientes_contrarios/{contrario_id} falló: {exc}"
+        ) from exc
+
+    if r.status_code == 200:
+        try:
+            return _parse_values(r.json())
+        except Exception:
+            return dict(cambios)
+
+    try:
+        detail = r.json().get("detail") or r.text[:300]
+    except Exception:
+        detail = r.text[:300]
+    raise SudespachoRelationsError(
+        f"REST PUT clientes_contrarios/{contrario_id} → HTTP {r.status_code}: {detail}"
+    )
 
 
 def find_cliente_contrario_by_nif(nif: str) -> str | None:

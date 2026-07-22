@@ -345,10 +345,10 @@ Este endpoint es el mismo que usa el CRM para el visor PDF y para el botón "Des
 | `expedientes_judiciales` | Expediente judicial (serie 28) |
 | `expedientes_extrajudiciales` | Expediente extrajudicial (serie 42) |
 | `clientes_propios` | Clientes parte actora |
-| `clientes_contrarios` | Clientes parte contraria |
+| `clientes_contrarios` | Clientes parte contraria — la persona/entidad que litiga CONTRA el cliente del despacho (E&V), sea actor o demandado según la posición procesal |
 | `procuradores_propios` | Procuradores |
 | `abogados_propios` | Abogados |
-| `colaboradores` | Colaboradores externos |
+| `colaboradores` | Personal DEL CLIENTE (E&V) que colabora en el caso — agentes, apoderados, directores de zona, etc. **No confundir** con el procurador/letrado de la parte contraria (ese va como relación del propio expediente, no como colaborador) ni con el cliente contrario mismo. Confirmado 2026-07-22, W-02ZIIF: Pilar Aparicio Delgado (apoderada E&V que firmó el encargo de venta) es colaboradora válida. |
 
 ### 4.2 Campos de documentos (`DOC_FIELDS` en `sync_sudespacho.py`)
 
@@ -1001,6 +1001,51 @@ BiRS1, BiRS2, SaRS1, SeRS6, SSRR1, SSRS1, VaRS5, BaCS10 (extraj→ID 139), MaRS1
 **Respuesta:** `{"resultado": true, "dato": "{id}", ...}` — el ID del nuevo tag está en `"dato"`.
 
 **Implementación:** `core/sudespacho_relations.py` — `create_tag_judicial()`.
+
+### 12.5 Vincular Juzgado a expediente judicial — CONFIRMADO (2026-07-22, HAR vía JS-instrumentado sobre expediente desechable 675)
+
+⚠️ **Corrige una entrada anterior** ("Juzgado NO es relación... propiedad de un solo valor") —
+esa lectura era incompleta. El mecanismo real: `juzgado` **no** es una relación M2M simple
+ni una propiedad plana del expediente — es una relación **CON ATRIBUTOS PROPIOS** a través
+de un elemento intermedio `autos` (nº de asunto + fase procesal viven en `autos`, no en el
+expediente ni en el juzgado). Confirmado por REST (auth `x-api-key`), no legacy:
+
+```
+1. Crear el registro "autos" (lleva el nº de asunto + fase procesal):
+   POST /api/element_register/autos
+   Body: {"Auto": "<num_autos texto libre>", "fase_procedimiento": "<valor enum>"}
+   Response 201: {"id": N}
+
+2. Vincular el expediente al autos recién creado:
+   POST /api/relation_element/expedientes_judiciales/{exp_id}
+   Body: ["right.autos.{autos_id}"]
+
+3. Vincular el autos al juzgado real:
+   POST /api/relation_element/autos/{autos_id}
+   Body: ["left.juzgados.{juzgado_id}"]
+
+4. Marcar la relación como primaria (checkbox "Primario" de la UI):
+   PUT /api/relation_element/autos/{autos_id}
+   Body: {"relation": "left.juzgados.{juzgado_id}", "primary": 1}
+```
+
+**⚠️ Trampa de enum confirmada:** `fase_procedimiento` es un enum PROPIO de `autos`
+(`listName: Tipos_de_fase_procedimiento`), **distinto** del `tipo_procedimiento` del propio
+expediente (`listName: Tipo_de_Procedimiento`) — mismas etiquetas de UI parecidas, valores
+internos NO relacionados: la UI "PROCEDIMIENTO ORDINARIO" (fase_procedimiento) resolvió al
+valor interno `"primera instancia"` (nada que ver con el label). **Nunca adivinar** — resolver
+siempre vía `GET /api/view/enums/autos/fase_procedimiento` (patrón §14.4) antes de escribir.
+
+**Propiedades de `autos`** (8, vía probe §0.3): `Auto` (TextCorto, requerido), `fase_procedimiento`
+(Select), `id`, `grupo_contable_id`, `id_creador`, `id_ultimo_modificador`, `fecha_creacion`,
+`fecha_ultima_modificacion` — más las relaciones `left.juzgados.*` y `left.expedientes_judiciales.*`.
+Búsqueda del juzgado existente (478 registros en el tenant): `GET /api/element_registries/juzgados`.
+Alta de un juzgado NUEVO (modal "Crear elemento Juzgados" — Juzgado/Email/Telefono1): endpoint
+sin capturar todavía, previsiblemente `POST /api/element_register/juzgados` por el patrón genérico.
+
+**No cableado en código.** Ningún wrapper en `core/sudespacho_relations.py` hace esta secuencia
+todavía — habría que añadir `link_juzgado_judicial(exp_id, juzgado_id, num_autos, fase_procedimiento)`
+resolviendo el enum primero.
 
 ---
 

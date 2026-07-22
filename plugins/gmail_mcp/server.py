@@ -406,6 +406,22 @@ def build_server(
                 "target_type": target_type.strip().lower(), "action": "remove",
                 "label_ids": resp.get("labelIds", [])}
 
+    @mcp.tool()
+    def rename_label(account: str, label: str, new_name: str) -> dict:
+        """Renombra la etiqueta de USUARIO `label` (id o nombre EXISTENTE) a
+        `new_name` en `account`. Como los segmentos separados por "/" definen el
+        árbol de etiquetas, esto también sirve para "mover" una etiqueta a otra
+        rama (p. ej. de extrajudicial a judicial): todos los mensajes/hilos que ya
+        la llevaban la conservan sin re-etiquetar uno a uno. Rechaza etiquetas y
+        nombres de sistema. Devuelve {account, id, old_name, new_name}."""
+        service = service_factory(account)
+        match = _resolve_user_label(service, label)
+        clean_new = _guard_create_name(new_name)
+        updated = service.users().labels().patch(
+            userId="me", id=match["id"], body={"name": clean_new}).execute()
+        return {"account": account, "id": match["id"],
+                "old_name": match.get("name"), "new_name": updated.get("name", clean_new)}
+
     return mcp
 
 

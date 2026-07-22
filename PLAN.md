@@ -20,7 +20,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 2 | [Infra B — expediente scratch](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado | medio |
 | 3 | [MCP sudespacho F1](#siguiente-mcp-sudespacho-mcp-sudespacho-crm-del-despacho--f1-lectura-spec-hecho-plan-pendiente) | spec lista | gates de despliegue | alto |
 | 4 | [Drive-disco: pasos 5-7 + Claude Code](#siguiente-mcp-drive-disco-pasos-5-7-diferidos) | ✅ desplegado | resto pasivo: check Modo 1 en caso real | medio |
-| 5 | [abrir-caso F3-judicial](#abrir-caso--f1--f2a--f3-ac-mergeadas-f2b-aparcada-f3-judicial-pendiente) | diferida | caso judicial real | alto |
+| 5 | [abrir-caso F3-judicial](#abrir-caso--f1--f2a--f3-ac-mergeadas-f2b-aparcada-f3-judicial-pendiente) | disparador confirmado 2026-07-22 | plan concreto listo (4 piezas, ver bloque) | medio |
 | 6 | [Google MCP F4 (Calendar)](#siguiente-google-mcp-f1-lectura--mergeada--f2-escriturapermisosnavegación--mergeada--f3f4-pendientes) | diferida | disparador | medio |
 | 7 | [Robustez y velocidad sala de lectura](#siguiente-preclasificacion-sala-lectura-preclasificar-mecanico--copia-rclone-rcd--verify) | ✅ construido y revisado (16/16 ítems, v1.12) | PR #121 (pendiente de merge) | medio-alto |
 | 8 | [Intake email — filtro de exclusión de ruido](#siguiente-intake-email-filtro-exclusión-de-ruido-administrativo-y-cruzado) | pendiente | disparador: W-02VUDR (fuga cruzada de 7 casos ajenos + cartera de litigios) | medio |
@@ -158,9 +158,26 @@ puro + orquestadores finos. Spec: `docs/superpowers/specs/2026-07-09-abrir-caso-
   tocar `core/`). Hallazgos reutilizables (esp. **`_caso.md` es de dos niveles con el lock en `meta`**)
   en `docs/superpowers/specs/2026-07-10-abrir-caso-f2b-skill-cowork-design.md` (estado: aparcado).
   Reabrir solo con necesidad real de abrir un caso desde Cowork/móvil.
-- [ ] **F3-judicial (parte B, diferida)** — expediente **judicial** en el CRM (`NuevoExpedienteJudicial`
-  / `create_expediente_judicial` / element `expedientes_judiciales`): superficie grande (juzgado propiedad
-  no-relación → 404, autos, procedimiento, partes M2M). Frente propio con disparador de caso judicial real.
+- [ ] **F3-judicial (parte B) — disparador CONFIRMADO 2026-07-22 (W-02ZIIF, caso real que
+  escaló a judicial durante su propia apertura).** Expediente **judicial** en el CRM
+  (`NuevoExpedienteJudicial`/`create_expediente_judicial`/element `expedientes_judiciales`).
+  **Corrige la nota anterior de este mismo ítem:** "juzgado propiedad no-relación → 404"
+  estaba incompleto — el mecanismo real es una relación CON ATRIBUTOS PROPIOS vía el
+  elemento intermedio `autos` (secuencia REST de 4 llamadas confirmada en vivo, detalle en
+  `docs/INTEGRACION_SUDESPACHO.md §12.5`). Piezas concretas a construir (esfuerzo bajo,
+  mirroring mecánico desde plantillas ya existentes — candidato a delegar a Gemini/agy con
+  revisión de Claude, no rediseño):
+  1. `get_expediente_judicial()`/`update_expediente_judicial()` en `sudespacho_create.py`
+     (mirror de `get_expediente`/`update_expediente`).
+  2. `ensure_contrario_vinculado_judicial()` en `sudespacho_relations.py` (mirror de
+     `ensure_contrario_vinculado`, usando `link_contrario_judicial`).
+  3. `link_juzgado_judicial(exp_id, juzgado_id, num_autos, fase_procedimiento)` — nuevo,
+     implementa la secuencia de §12.5 resolviendo `fase_procedimiento` vía
+     `GET /api/view/enums/autos/fase_procedimiento` (nunca hardcodeado).
+  4. Ramificar `scripts/crm_ficha.py` (hoy hardcodea `_ELEMENT_EXTRAJUDICIAL`) para que
+     use las piezas judiciales cuando el expediente registrado en `_caso.md` sea judicial.
+  Aparte, sin confirmar: `POST /api/expedient/convert/{id}` (extrajudicial→judicial) —
+  ver `docs/MEJORAS_FUTURAS.md` **#81**.
 - Relacionado: `docs/MEJORAS_FUTURAS.md` **#50** (sección "Relación con el ecosistema" en todas las skills).
 
 ## [SIGUIENTE-PRECLASIFICACION-SALA-LECTURA] `preclasificar` mecánico + copia `rclone rcd` + verify
@@ -236,9 +253,15 @@ el antes/después sin mezclar la construcción con el caso real.*
 - [ ] **Seguimiento operativo (no bloquea):** 3ª corrida real A/B de velocidad sobre un caso real,
   ahora con la telemetría del ítem 16, para por fin medir limpio el antes/después — las dos pasadas
   anteriores quedaron invalidadas por los errores que este backlog corrige.
-- [ ] **Seguimiento (fuera del backlog):** investigar por qué `gdrive_ev` no ve el shared drive
-  "EXPEDIENTES - TYUKHAY LEGAL" con el client OAuth propio nuevo (probable cuenta de reauth
-  equivocada o falta añadirla como test user en el consent screen de `rclone-despacho-drive-2026`).
+- [x] **RESUELTO (2026-07-22, apertura de prueba W-02ZIIF):** `gdrive_ev` estaba autenticado con
+  la cuenta/proyecto equivocados — `rclone backend drives gdrive_ev:` devolvía las Shared Drives
+  del DESPACHO (ADMINISTRACION, EXPEDIENTES - TYUKHAY LEGAL, JURIDICO...), ninguna de Engel &
+  Völkers. Causa: el proyecto OAuth `rclone-despacho-drive-2026` está en modo Testing y la cuenta
+  `nikolai.tyukhay@engelvoelkers.com` no estaba en la lista de test users (solo la cuenta TL, de
+  ahí el desvío). Arreglado añadiendo esa cuenta como test user en Google Cloud Console + `rclone
+  config reconnect gdrive_ev:`. Confirma que **no** era un problema introducido por la prueba de
+  apertura en local ([[project-apertura-local-vs-drive]]) — bloqueaba `--fuente drive_ev` de
+  cualquier caso E&V nuevo, en local o en Drive.
 - Deferida sin construir en esta sesión: Task 6 (agrupar `doc_NN_*` de una demanda+anexos del CRM en
   subcarpeta) — bajo ROI para un solo expediente; ver `docs/MEJORAS_FUTURAS.md` **#80** (verificar
   dedup de `sync_sudespacho pull` contra "05. Procedimiento" antes de reabrir esto).

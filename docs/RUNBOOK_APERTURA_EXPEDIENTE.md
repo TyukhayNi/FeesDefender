@@ -1,19 +1,20 @@
 ---
 estado: vigente
 dueño: Nikolai Tyukhay
-fecha: 2026-07-21
+fecha: 2026-07-22
 ---
 
 # RUNBOOK — Apertura de expediente (FeesDefender)
 
 > **Fuente única operativa** del flujo de apertura E2E de un expediente de honorarios de
-> Engel & Völkers: alta → intake multi-fuente → sala de máquina → sala de lectura →
-> viabilidad → ficha CRM completa → (si procede) archivo → cierre.
+> Engel & Völkers: alta → intake multi-fuente → sala de máquina → etiqueta Gmail →
+> sala de lectura → viabilidad → ficha CRM completa → (si procede) archivo → cierre.
 >
 > Consolida los 3 handoffs de las aperturas del 2026-07-17 (W-02T3XO, W-02TH0W, W-046G2R;
 > en `docs/superpowers/handoffs/handoff-2026-07-17-apertura-W-*.md`) + los hallazgos de la
-> apertura de W-02VUDR (2026-07-21: `[APER-35]` a `[APER-40]`). Las etiquetas `[APER-xx]`
-> remiten al hallazgo original.
+> apertura de W-02VUDR (2026-07-21: `[APER-35]` a `[APER-40]`) + los hallazgos de la
+> apertura EN LOCAL de W-02ZIIF (2026-07-22: `[APER-41]` en adelante). Las etiquetas
+> `[APER-xx]` remiten al hallazgo original.
 >
 > **SSOT del detalle CRM (endpoints, campos, enums, tags):** `docs/INTEGRACION_SUDESPACHO.md`
 > (§10–§15). Este runbook **no duplica** la API; la orquesta y marca los gotchas.
@@ -49,6 +50,23 @@ fecha: 2026-07-21
   `CASOS_ROOT` acotado (`Get-ChildItem` en PowerShell) o, si el dato vive en CRM, a la
   API (`core/sudespacho_relations.py`) en vez del filesystem. Memoria
   `feedback-eficiencia-herramientas-windows-drive`.
+- **`[APER-41]` / W-02ZIIF — Modo local (opcional, más rápido para el pipeline mecánico).**
+  En vez de `CASOS_ROOT = G:\Unidades compartidas\EXPEDIENTES - TYUKHAY LEGAL\CASOS`, apunta
+  `CASOS_ROOT` a una carpeta local temporal (p. ej. `$env:USERPROFILE\Desktop`) **en la
+  misma invocación de cada comando** (`core/config.py:31` lee la env var, no persiste entre
+  llamadas de herramienta). Corre TODO el pipeline mecánico ahí (alta → intake → sala de
+  máquina → sala de lectura) y haz *checkin* a Drive solo al final, antes de la ficha CRM.
+  - **Por qué:** medido en W-02ZIIF (2026-07-22) — OCR+split ~18 min, sala de lectura
+    (skill completa, Paso 0 → catálogo) ~25 min, alta CRM con 2 vínculos <2 min de
+    ejecución real. Evita además los cuelgues de `G:` de `[APER-40]` por completo (no hay
+    Drive Stream-con-caché de por medio; escrituras NTFS reales, atómicas de verdad).
+  - **Aviso honesto:** esta prueba corrió TODO en serie — no se midió la ventaja de
+    paralelizar fases sobre el mismo caso, que era la motivación original de valorar el
+    modo local. Y la infraestructura de checkout/checkin (`project-biblioteca-checkout-checkin`)
+    asume un caso YA EXISTENTE en Drive para hacer el merge a 3 vías — **no cubre un caso
+    que nace en local** sin ese baseline previo. Ese primer *checkin* de un caso nuevo es
+    un hueco de infraestructura sin resolver, no algo ya construido — no prometer una vía
+    de vuelta a Drive sin verificarla primero. Memoria `project-apertura-local-vs-drive`.
 
 ---
 
@@ -98,42 +116,7 @@ De las 4 preguntas clásicas de apertura, **3 son auto-derivables**; la única r
 
 ---
 
-## 3. Etiqueta Gmail (primero — es reversible) `[APER-06]`
-
-Nombre de la etiqueta *leaf* = `Referencia_Cliente` del CRM = nombre de la carpeta del caso
-en Drive (**mismo string exacto** en las 3 superficies).
-
-Taxonomía por cuenta (distinta):
-- **Cuenta EV** (`nikolai.tyukhay@engelvoelkers.com`):
-  `01. CONTING/01. EXTRAJUD/<ciudad>/BaRS<N> - <dir> - (W-XXXXX) - <tipo>`.
-- **`mails.repositorio`**: `01. EXTRAJUDICIAL/...`.
-
-**Colores y mecánica (W-046G2R, medido sobre 226 etiquetas reales):**
-- *leaf* de caso (activa o archivada): `{backgroundColor:"#4986e7", textColor:"#ffffff"}`.
-  Carpeta de **ciudad** (nivel padre): verde `#16a765`. **No confundir nivel.**
-- "Mover" una etiqueta = `labels().patch(id, {name:"<nuevo path>"})` — **conserva los
-  hilos**, no re-etiqueta. Aplicar color = `labels().patch(id, {color:{...}})`.
-- `list_labels` sobre miles de etiquetas excede tokens → volcar a fichero y `grep`.
-- **`[APER-38]` / W-02VUDR — Verificar contaminación cruzada tras exportar la etiqueta,
-  SIEMPRE que la etiqueta ya existiera de antes (no la acabas de crear tú).** Una
-  etiqueta curada en otra sesión puede traer ruido: (a) administración interna del
-  despacho — facturación mensual a `Proveedores.ES@engelvoelkers.com`, actas CFO+Legal,
-  circularización de auditoría, cartas de auditores, reenvíos a
-  `mails.repositorio@gmail.com` con `S/R:`/`M/R:`/`Contrario:` vacíos (memoria
-  `feedback-intake-email-exclusiones`); (b) documentos de OTROS casos — grep el lote
-  exportado buscando un W-code DISTINTO al del caso en nombre de fichero/asunto. Si
-  aparece, **borrar directamente** tras exportar (no mover a una carpeta de cuarentena:
-  sigue siendo visible para quien tenga acceso Drive al caso) — comprobar antes por
-  `sha256` que ningún adjunto esté también en uso por un mensaje legítimo del caso.
-  Regenerar índices: `core.email_export.write_indices_caso(case_id)` +
-  `scripts.atomize_emails --ref <case_id>` (poda solo, y solo, los `.md` de mensaje
-  huérfanos — los adjuntos hay que borrarlos a mano).
-
-Memoria `reference-gmail-etiquetas-organizacion`.
-
----
-
-## 4. Alta + intake inicial `[APER-07]`
+## 3. Alta + intake inicial `[APER-07]`
 
 ```powershell
 python -m scripts.abrir_caso --w-code W-XXXXXX --ciudad Barcelona --tipo-caso VUELTA `
@@ -169,17 +152,26 @@ python -m scripts.abrir_caso --w-code W-XXXXXX --ciudad Barcelona --tipo-caso VU
   ```
   Sin esto, `scripts.crm_ficha`/el archivo posterior no saben a qué expediente(s) del
   CRM corresponde el caso.
+- **`[APER-42]` / W-02ZIIF — `--crm api` (arriba) da de alta SOLO la ficha
+  EXTRAJUDICIAL.** No hay camino documentado en este runbook para un caso que nace
+  judicial desde el principio (p. ej. llega ya con una demanda admitida) — es una
+  **decisión de diseño pendiente**, no un bug a arreglar ya (ver §9, aviso de
+  `crm_ficha.py`). Si el caso ya es judicial desde el día 1, usa `--crm skip` aquí y da de
+  alta el expediente judicial aparte, a mano, siguiendo §9.
 
 ---
 
-## 5. Intake incremental (fuentes adicionales)
+## 4. Intake incremental (fuentes adicionales)
 
 Cada intake posterior resuelve la identidad desde `_caso.md` con **`--case-id <W-code o
-case_id>`** (B2, PR-2) — no repitas los 6 flags de identidad:
+case_id>`** (B2, PR-2) — no repitas los 6 flags de identidad. **`[APER-43]` / W-02ZIIF —
+pasa `--crm skip` en TODAS estas llamadas, no solo en la primera del §3**: el default de
+`abrir_caso` es `--crm api`, y olvidarlo en una llamada posterior crea una ficha
+extrajudicial fantasma que hay que borrar a mano en el CRM (pasó en W-02ZIIF).
 
 ```powershell
-python -m scripts.abrir_caso --case-id W-XXXXXX --fuente manual --src <carpeta|.zip> --yes
-python -m scripts.abrir_caso --case-id W-XXXXXX --fuente email --cuenta <gmail> --label <etiqueta> --yes
+python -m scripts.abrir_caso --case-id W-XXXXXX --fuente manual --src <carpeta|.zip> --crm skip --yes
+python -m scripts.abrir_caso --case-id W-XXXXXX --fuente email --cuenta <gmail> --label <etiqueta> --crm skip --yes
 ```
 
 `--case-id` es **excluyente** con los 6 flags de identidad (`--w-code --ciudad --tipo-caso
@@ -196,6 +188,13 @@ python -m scripts.abrir_caso --case-id W-XXXXXX --fuente email --cuenta <gmail> 
   `extract_attachments=False`; `abrir_caso` no expone el flag). Se extraen con
   `python -m scripts.atomize_emails --ref ...` (motor aparte, manual). Solo es crítico si
   la prueba llega **únicamente por correo** sin copia en Drive (`MEJORAS #68`).
+- **`[APER-44]` / W-02ZIIF — Verifica por sha256/nombre ANTES de depositar nada a mano en
+  `00_Input`.** El intake **copia el duplicado igual y solo lo anota** (`duplicado_de`) —
+  "N duplicados omitidos" en la salida del CLI **NO significa "no se copió"**. Si ya viste
+  el mismo fichero por otra vía (p. ej. un enlace de Drive ya resuelto automáticamente
+  durante la atomización de email), no lo vuelvas a depositar manualmente sin comprobar
+  antes por hash o nombre — genera una copia redundante que luego hay que localizar y
+  limpiar. Memoria `feedback-verificar-antes-de-depositar-intake`.
 - **`[APER-37]` / W-02VUDR — Checklist obligatoria ANTES de `sala_maquina apply`, no
   después:** (1) si hubo intake de email, `scripts.atomize_emails --ref <case_id>`
   (`[APER-17]` es el motivo, esto es el paso que cierra el motivo); (2) si el caso ya
@@ -208,7 +207,7 @@ python -m scripts.abrir_caso --case-id W-XXXXXX --fuente email --cuenta <gmail> 
 
 ---
 
-## 6. Sala de máquina `[APER-09]`
+## 5. Sala de máquina `[APER-09]`
 
 ```powershell
 python -m scripts.sala_maquina apply "<case_id>"   # background
@@ -230,10 +229,78 @@ python -m scripts.sala_maquina apply "<case_id>"   # background
   huérfanos en `02_Sala de máquina/{01_OCR,03_MD,raw_text}` de documentos que ya no
   están en `00_Input`, porque `--force` no los toca. Coste real medido: ~1h40 de OCR
   repetido evitable. Memoria `feedback-concurrencia-pipelines-y-tiempos-apertura`.
+- **`[APER-45]` / W-02ZIIF — Un documento con texto roto/desordenado tras el split
+  (letras sueltas, orden alterado) puede ser un defecto del PDF DE ORIGEN, no del
+  pipeline** — visto en documentos generados por LexNET / Junta de Andalucía. Verifica
+  comparando `extract_text()` del crudo original contra el derivado ANTES de sospechar
+  del código. Memoria `reference-lexnet-pdf-layout-roto`.
+
+---
+
+## 6. Etiqueta Gmail (ya con judicial/extrajudicial decidido) `[APER-06]`
+
+Se crea aquí, no antes de intake: para este punto normalmente ya sabes si el caso es
+judicial o extrajudicial (a veces se sabe desde el recon del §1, a veces no hasta la sala
+de lectura del §7) — crearla ya con el destino correcto evita tener que "moverla" después.
+En W-02ZIIF (2026-07-22) se creó como extrajudicial antes de ver que ya había una demanda
+admitida, y hubo que reubicarla — este orden lo evita en la mayoría de los casos.
+
+Nombre de la etiqueta *leaf* = `Referencia_Cliente` del CRM = nombre de la carpeta del caso
+en Drive (**mismo string exacto** en las 3 superficies).
+
+**Jerarquía en la cuenta EV** (`nikolai.tyukhay@engelvoelkers.com`) — **`01. CONTING` es el
+padre único** de ambas ramas; `02. JUDICIALES` NO es de primer nivel (confirmado 2026-07-22
+sobre el listado real de etiquetas, W-02ZIIF):
+- Activos extrajudiciales: `01. CONTING/01. EXTRAJUD/<ciudad>/BaRS<N> - <dir> - (W-XXXXX) - <tipo>`.
+- Activos judiciales: `01. CONTING/02. JUDICIALES/<ciudad>/<caso>` (mismo patrón de
+  numeración de ciudad que EXTRAJUD).
+- **`mails.repositorio`**: `01. EXTRAJUDICIAL/...`.
+
+**Colores y mecánica (W-046G2R, medido sobre 226 etiquetas reales):**
+- *leaf* de caso (activa o archivada): `{backgroundColor:"#4986e7", textColor:"#ffffff"}`.
+  Carpeta de **ciudad** (nivel padre): verde `#16a765`. **No confundir nivel.**
+- **"Mover" una etiqueta = tool `rename_label(account, label, new_name)`** del MCP
+  `gmail-multiaccount` (`plugins/gmail_mcp/server.py`, construida 2026-07-22) — usa
+  `labels().patch(id, {name:"<nuevo path>"})` internamente, conserva los hilos, no
+  re-etiqueta. El conector **no tiene `delete_label`** (decisión de diseño deliberada del
+  módulo, no un hueco) — tras "mover", la ruta antigua queda vacía y hay que borrarla a
+  mano desde Gmail si molesta. Aplicar color sigue siendo `labels().patch(id, {color:{...}})`.
+- `list_labels` sobre miles de etiquetas excede tokens → volcar a fichero y `grep`.
+- **`[APER-46]` / W-02ZIIF — Etiquetas de listas de distribución pueden parecer "la
+  etiqueta del caso" sin serlo.** Una etiqueta como
+  `02. LISTAS DISTRIBUCION LEGAL/01. LEGAL/sevilla.legal` se auto-aplica a casi todos los
+  correos de una oficina cuando una bandeja compartida va en copia — verifica siempre el
+  `name` real de la etiqueta (`list_labels`) antes de tratar cualquier label recurrente
+  como la etiqueta específica de un caso.
+- **`[APER-47]` / W-02ZIIF — Un mismo asunto puede partirse en varios `thread_id`** si la
+  línea de asunto cambia a mitad de conversación (Gmail rompe el hilo). Al agrupar
+  correspondencia de un caso, busca por remitente/persona/asunto amplio y revisa CADA
+  `thread_id` distinto que aparezca — no asumas que todo cuelga de un único hilo.
+- **`[APER-38]` / W-02VUDR — Verificar contaminación cruzada tras exportar la etiqueta,
+  SIEMPRE que la etiqueta ya existiera de antes (no la acabas de crear tú).** Una
+  etiqueta curada en otra sesión puede traer ruido: (a) administración interna del
+  despacho — facturación mensual a `Proveedores.ES@engelvoelkers.com`, actas CFO+Legal,
+  circularización de auditoría, cartas de auditores, reenvíos a
+  `mails.repositorio@gmail.com` con `S/R:`/`M/R:`/`Contrario:` vacíos (memoria
+  `feedback-intake-email-exclusiones`); (b) documentos de OTROS casos — grep el lote
+  exportado buscando un W-code DISTINTO al del caso en nombre de fichero/asunto. Si
+  aparece, **borrar directamente** tras exportar (no mover a una carpeta de cuarentena:
+  sigue siendo visible para quien tenga acceso Drive al caso) — comprobar antes por
+  `sha256` que ningún adjunto esté también en uso por un mensaje legítimo del caso.
+  Regenerar índices: `core.email_export.write_indices_caso(case_id)` +
+  `scripts.atomize_emails --ref <case_id>` (poda solo, y solo, los `.md` de mensaje
+  huérfanos — los adjuntos hay que borrarlos a mano).
+
+Memoria `reference-gmail-etiquetas-organizacion`.
 
 ---
 
 ## 7. Sala de lectura `[APER-10]` `[APER-22]`
+
+**`[APER-48]` / W-02ZIIF — No mezcles análisis del fondo del expediente (fechas límite,
+argumentos, estrategia) con la mecánica de intake.** Para llegar aquí ya deberías tener
+cerrado TODO el intake + atomización + sala de máquina (§3-§5) — este es el punto natural
+donde empieza la lectura real; no intercalar análisis a mitad de la mecánica de arriba.
 
 **Usa la skill canónica `organizar-sala-lectura` (v1.3, estructura PLANA)** o el comando
 todo-en-uno del CLI:
@@ -279,8 +346,17 @@ posición). El resto va **aparte**, todo **REST con `x-api-key`, sin PHPSESSID**
 > Los tags equipo+ciudad ya van en el **alta** (`crm_payload`). Los pasos 2–5 los orquesta
 > `python -m scripts.crm_ficha --case-id <W-code o case_id>` desde `00_Input/_ficha_crm.yaml`
 > (B1, PR-3; el YAML lleva PII → solo en `data/CASOS/`). Hace GET de verificación tras escribir.
+>
+> **`[APER-49]` / W-02ZIIF — `crm_ficha.py` es EXTRAJUDICIAL-ONLY** (verificado en el
+> código 2026-07-22: hardcodea `_ELEMENT_EXTRAJUDICIAL`, usa `link_ev_mmc` /
+> `ensure_contrario_vinculado` / `get_expediente` / `update_expediente` — ninguno tiene
+> equivalente `_judicial` cableado en este CLI). **Para un caso judicial hoy no hay
+> orquestador**: hay que llamar `create_expediente_judicial` + `link_ev_mmc_judicial` +
+> `link_contrario_judicial` + `ensure_colaborador_vinculado_judicial` a mano — no existen
+> todavía `ensure_contrario_vinculado_judicial`, `get_expediente_judicial` ni
+> `update_expediente_judicial`. Documentado como hueco pendiente, no como resuelto.
 
-**Checklist de la ficha:**
+**Checklist de la ficha (extrajudicial — ver aviso de arriba para judicial):**
 1. **Tags equipo (rojo) + ciudad (azul):** los pone **el alta** (`crm_payload` los deriva del
    `codigo` vía `tag_rojo_equipo` + `tag_azul_de_codigo`). Ya **no** hace falta un PUT posterior
    de tags. (Si alguna vez editas `tags`/`Notas` a mano, usa `update_expediente`, que preserva
@@ -290,15 +366,27 @@ posición). El resto va **aparte**, todo **REST con `x-api-key`, sin PHPSESSID**
    aborta si el valor es desconocido (no linkea la entidad equivocada en silencio).
 3. **Contrario:** `ensure_contrario_vinculado(...)` (dedup por NIF). El **deudor de
    honorarios es quien firmó el encargo**, no todo co-titular (W-046G2R, memoria
-   `feedback-crm-fichas-mayusculas`).
+   `feedback-crm-fichas-mayusculas`). Para completar datos DESPUÉS del alta (email, móvil
+   hallados más tarde) usa `update_cliente_contrario(contrario_id, cambios)`
+   (`core/sudespacho_relations.py`, construido 2026-07-22) — reenvía TODOS los campos ya
+   conocidos, no confirmado si el PUT de este elemento es parcial o de reemplazo completo.
 4. **Colaboradores (TL + consultores):** `ensure_colaborador_vinculado(...)` (dedup email).
    **Ficha completa** (móvil + fijo) buscando la firma en su correo `@engelvoelkers.com`;
-   si ya existe → `GET → merge → PUT` para no pisar.
+   si ya existe → `GET → merge → PUT` para no pisar. **`colaboradores` = personal PROPIO
+   del cliente (E&V) — nunca el procurador/letrado de la parte contraria** (fácil de
+   confundir por el nombre del campo).
 5. **Nota/hechos inicial:** `update_expediente(exp_id, {"Notas": …})` con el narrativo (tipo +
    partes + cláusula + cuantía). `notas_html` en el `_ficha_crm.yaml`.
 6. **(Si procede) Actuación facturable:** `POST element_register/actuaciones` **+ vincular
    aparte** con `relation_element` (§15.2/15.3). `duracion` en `HH:MM:SS` → segundos;
    `Prioridad` obligatoria; **tarifa solo por UI** (§15.4).
+7. **`[APER-50]` / W-02ZIIF — Juzgado (solo judicial):** NO es una relación M2M simple ni
+   una propiedad plana del expediente — es una relación con atributos propios vía el
+   elemento intermedio `autos` (secuencia de 4 llamadas REST confirmada; detalle completo
+   en `INTEGRACION_SUDESPACHO.md §12.5`). ⚠️ `fase_procedimiento` es un enum PROPIO de
+   `autos`, distinto del `tipo_procedimiento` del expediente aunque la UI se parezca —
+   resolver siempre vía `GET /api/view/enums/autos/fase_procedimiento`, nunca adivinar el
+   valor interno. No cableado en código: `link_juzgado_judicial()` no existe todavía.
 
 **Gotchas CRM (deduplicados):**
 - **`[APER-13]` No es PHPSESSID:** alta, vínculos, contrario/colaboradores y actuaciones van
@@ -308,7 +396,7 @@ posición). El resto va **aparte**, todo **REST con `x-api-key`, sin PHPSESSID**
   cookie = **falsa pista** → arreglar el móvil (§8 gotcha).
 - **`[APER-24]` `relatedElement`/`relatedId` en el POST de creación NO vinculan** — se
   ignoran en silencio (201 igual, pero la pestaña queda vacía). Vincular **siempre** por
-  `relation_element` (§15.2).
+  `relation_element` (§15.2/§15.3, §10.6).
 - **`[APER-26]` PUT (no PATCH → 405) y es PARCIAL: preserva los campos omitidos**
   (verificado en vivo 2026-07-18, §10.7). Para editar un campo, `update_expediente(exp_id,
   {campo: valor})` envía **solo** ese campo — NO hace falta reenviar todo ni preservar
@@ -318,9 +406,27 @@ posición). El resto va **aparte**, todo **REST con `x-api-key`, sin PHPSESSID**
   inventado (W-046G2R).
 - **GET de verificación tras cada PUT/POST.** La columna "Contrario" del listado de la UI no
   refleja cambios de apellidos (solo `nombre`) — solo la API es fuente fiable (W-046G2R).
+  Mitigación práctica: mete el nombre completo en el propio campo `nombre`, redundante con
+  los apellidos separados pero es el único campo que el listado renderiza.
 - **`[APER-15]` La doc puede ir por detrás del código** → verificar contra
   `core/sudespacho_relations.py` (`ensure_*`, `link_*`); **grep del código > doc**.
 - **`[APER-16]` / `[APER-33]` Estado de PR/merge por `gh`, no por la rama local.**
+- **`[APER-51]` / W-02ZIIF — `referencia_propia`/`NIG` NO son el número de autos.**
+  `referencia_propia` = referencia interna del despacho; `NIG` = identificador del
+  juicio asignado por el juzgado; el número de autos/procedimiento (p. ej. "550/2026")
+  va en el flujo de Juzgado del punto 7 de arriba (campo `Auto` de `autos`) — no lo
+  metas en notas ni en ninguno de esos dos campos por defecto.
+- **`[APER-52]` / W-02ZIIF — Ojo con homónimos entre roles.** Si el mismo nombre aparece
+  como tercero en un documento operativo (p. ej. comprador en una oferta) y también como
+  remitente/CC en correspondencia interna de E&V, NO asumas que es la misma persona ni que
+  son distintas — confirma antes de dar de alta nada a ese nombre como contrario o
+  colaborador.
+- **`[APER-53]` / W-02ZIIF — Existe (sin confirmar en vivo) `POST /api/expedient/convert/{id}`**
+  para convertir un expediente extrajudicial existente en judicial (§6.2 de
+  `INTEGRACION_SUDESPACHO.md`). Relevante cuando un caso escala de reclamación a demanda y
+  YA tiene ficha extrajudicial viva — evitaría crear un judicial desconectado del
+  histórico. **No usar sin probarlo primero contra un expediente desechable**: payload y
+  respuesta sin confirmar todavía.
 
 ---
 
@@ -334,8 +440,9 @@ Todo REST `x-api-key`. No se borra nada.
    2026-07-18 (mismo patrón para `fecha_alta_hist`); ya no hacen falta los `campo_855/868/852`
    legacy. *(Enum cerrado de motivos: pendiente — `MEJORAS #70.c`.)*
 2. **Actuación facturable** de cierre (§15).
-3. **Gmail:** mover la etiqueta a `03. ARCHIVO/01. ARCHIVO - EXTRAJUDICIALES/<año>/<caso>`
-   (o `02. ... JUDICIALES/` si es judicial) + color; `labels.patch` conserva los hilos.
+3. **Gmail:** mover la etiqueta con `rename_label` a
+   `03. ARCHIVO/01. ARCHIVO - EXTRAJUDICIALES/<año>/<caso>` (o `02. ... JUDICIALES/` si es
+   judicial) + color; conserva los hilos, no re-etiqueta.
 4. **Drive:** mover la carpeta a `CASOS/_ARCHIVO/01. EXTRAJUDICIALES/<año>/` (scaffolding
    ya existe).
 5. **`_caso.md`:** `estado: archivado` + motivo + fecha en **dos niveles** del frontmatter
@@ -368,16 +475,21 @@ Todo REST `x-api-key`. No se borra nada.
 ## Referencias
 
 - **Detalle API CRM (SSOT):** `docs/INTEGRACION_SUDESPACHO.md` §10 (relaciones), §12
-  (judicial + archivo), §15 (actuaciones), §11 (tags/colores), §14.4 (enums).
+  (judicial + archivo + Juzgado/§12.5), §15 (actuaciones), §11 (tags/colores), §14.4 (enums).
 - **Callejones sin salida:** `docs/DEAD_ENDS.md` (worktree vs. raíz; lectura de relaciones REST).
 - **Handoffs fuente:** `docs/superpowers/handoffs/handoff-2026-07-17-apertura-W-{02T3XO,02TH0W,046G2R}-mejoras-proceso.md`.
 - **Builds de este flujo (`PLAN.md [SIGUIENTE-APERTURA-EXPEDIENTE]`):** B1 ficha CRM
   end-to-end (`scripts/crm_ficha.py` + `_ficha_crm.yaml`), B2 `--case-id`, B3 normalización de
   móvil, B4 evento `archivado`, B5 auto-derivación de `--team-id`/`--codigo-caso`/`--sufijo`
-  desde `--folder-id` (`[APER-34]`, §4) — **todos en `main`**. El bloque B1–B5 está completo.
-- **Memorias:** `feedback-case-sufijo-tipo-canonico`, `feedback-crm-fichas-mayusculas`,
+  desde `--folder-id` (`[APER-34]`, §3) — **todos en `main`**. El bloque B1–B5 está completo.
+- **Memorias (aperturas W-02T3XO/W-02TH0W/W-046G2R/W-02VUDR):**
+  `feedback-case-sufijo-tipo-canonico`, `feedback-crm-fichas-mayusculas`,
   `reference-sudespacho-crm-cableado-expediente`, `reference-sudespacho-archivo-actuaciones`,
   `reference-gmail-etiquetas-organizacion`, `feedback-worktree-vs-raiz-compartida`,
   `feedback-orden-intake-antes-sala-maquina`, `feedback-intake-email-exclusiones`,
   `feedback-concurrencia-pipelines-y-tiempos-apertura`,
-  `feedback-eficiencia-herramientas-windows-drive` (todas de la apertura W-02VUDR, 2026-07-21).
+  `feedback-eficiencia-herramientas-windows-drive`.
+- **Memorias (apertura EN LOCAL de W-02ZIIF, 2026-07-22):**
+  `feedback-mecanica-antes-analisis`, `feedback-crm-alta-al-final-no-durante-intake`,
+  `reference-lexnet-pdf-layout-roto`, `feedback-verificar-antes-de-depositar-intake`,
+  `feedback-taxonomia-roi-casos-pequenos`, `project-apertura-local-vs-drive`.

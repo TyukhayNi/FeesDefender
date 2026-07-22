@@ -2958,6 +2958,8 @@ contenido — no hay comprobación cruzada contra otras rutas del caso. Si en el
 (escrito+anexos montados en Procedimiento antes de subir al CRM) y el pull los vuelve a traer sueltos
 sin agrupar, esto se promueve a `PLAN.md` con ese caso como disparador; si no, queda como nota.
 
+---
+
 ## 81. Bug latente: otros scripts CLI pueden componer rutas sin resolver W-code (`case_locator.resolve_ref`)
 
 **Disparador:** ninguno todavía — anotado tras el fix de PR #117 (2026-07-22), sin promover a
@@ -3006,3 +3008,31 @@ original ni la ventana de TIPO) para considerar las 5 líneas ya disponibles en 
 3 primeras. No ampliar la ventana de `texto_inicio`/`texto_inicio_titulo`: esa ventana corta es la que
 evita que una mención de "anexo"/"contrato" en el cuerpo de una demanda dispare un tipo falso, y
 ampliarla reabriría ese riesgo. Test de referencia: `tests/test_anon_separar.py::TestNumDocPortadaFragmentada`.
+
+---
+
+## 83. Confirmar `POST /api/expedient/convert/{id}` (extrajudicial → judicial)
+
+**Disparador:** ninguno todavía — anotado sin promover. Sería relevante cuando un caso con
+ficha extrajudicial YA VIVA escale a judicial (demanda admitida) y se quiera evitar crear un
+expediente judicial desconectado del histórico.
+
+**Estado actual.** `docs/INTEGRACION_SUDESPACHO.md §6.2` documenta el endpoint
+(`POST /api/expedient/convert/{id}`) pero marcado "pendiente confirmar payload y respuesta
+con una conversión real" — nadie lo ha probado en vivo. En W-02ZIIF (2026-07-22) no aplicó
+porque el expediente extrajudicial ya se había borrado a mano antes de la escalada a
+judicial, así que se creó un judicial nuevo desde cero en su lugar.
+
+**Mejora propuesta.** Probar el endpoint contra un expediente extrajudicial desechable
+(mismo patrón usado para confirmar el mecanismo de Juzgado, `INTEGRACION_SUDESPACHO.md
+§12.5`): crear un extrajudicial de prueba, invocar `convert`, inspeccionar la respuesta y
+el estado resultante, documentar el payload real. Si funciona como cabe esperar, envolver
+en `convert_expediente_a_judicial()` (`core/sudespacho_create.py`).
+
+**Justificación de no aplicarlo ahora.** Sin caso real que lo necesite hoy — W-02ZIIF ya
+resolvió su escalada creando un judicial nuevo (el extrajudicial ya no existía). Probar un
+endpoint sin confirmar contra el CRM real, aunque sea con un expediente desechable, merece
+su propia sesión dedicada, no un añadido de paso.
+
+**Coste estimado.** ~30 min de prueba en vivo (patrón ya validado hoy con Juzgado) + un
+wrapper pequeño en código si el resultado es limpio.
