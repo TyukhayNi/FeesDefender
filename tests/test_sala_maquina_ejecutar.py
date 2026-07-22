@@ -807,3 +807,146 @@ def test_ejecutar_no_toca_00_input_ni_notas_personales(tmp_path):
 
     despues = _snapshot(input_root)
     assert antes == despues
+
+
+# --- Bug real (2026-07-22, W-02ZIIF): resolución de W-code en el CLI ---------
+#
+# `plan`/`apply`/`reforzar` pasaban `case_id` directo a `caso_path()`, que solo
+# entiende layout flat/ciudad por NOMBRE DE CARPETA (`case_locator.path_for`)
+# — nunca resuelve un W-code (`meta.id_go` del `_caso.md`), a diferencia de
+# `scripts/atomize_emails.py`/`core/email_atomize/pipeline.py`, que sí hacen
+# `path_for(resolve_ref(case_id))`. Con un W-code puro, `path_for` caía al
+# fallback flat inexistente y la corrida seguía en silencio con plan vacío
+# ("0 documentos" reportado como éxito), creando ahí una carpeta fantasma.
+# Repro real: `apply("W-02ZIIF")` sobre un caso ya existente en
+# `<ciudad>/<case_id>/` con 34+ documentos en 00_Input dio "0 documentos,
+# 0 a revisar" en ~25s y creó `<CASOS_ROOT>/W-02ZIIF/` con artefactos vacíos.
+
+def test_apply_resuelve_w_code_y_procesa_documentos_reales(tmp_path, monkeypatch):
+    from core import case_manager
+    from core.casos import case_locator
+    import scripts.sala_maquina as cli
+
+    root = tmp_path / "CASOS"
+    root.mkdir()
+    monkeypatch.setattr(case_locator, "_root", lambda: root)
+
+    case_id = "BaRS11 - Falsa 5 (W-000EEE) - Vuelta"
+    case_manager.ensure_case(
+        case_id, titulo=case_id, referencia_crm=case_id,
+        tipo_caso="VUELTA", ciudad="Barcelona", direccion="Falsa 5", id_go="W-000EEE",
+    )
+    case_dir = case_locator.path_for(case_id)
+    drive = case_dir / "00_Input" / "01_Drive EV"
+    drive.mkdir(parents=True)
+    _pdf_con_texto(drive / "encargo.pdf", extra=" Encargo real del caso.")
+
+    cli.apply("W-000EEE")                      # el W-code PURO, no el case_id completo
+
+    # los documentos reales del caso se procesaron (no "0 documentos")
+    cobertura = case_dir / "01_Procesado" / "_revisar" / "_cobertura.md"
+    assert cobertura.exists()
+    assert "encargo__" in cobertura.read_text(encoding="utf-8")
+
+    # el log forense quedó en el caso REAL, no perdido en un fallback
+    log = case_dir / "00_Input" / "_intake_log.jsonl"
+    assert log.exists()
+    assert "procesado_sala_maquina" in log.read_text(encoding="utf-8")
+
+    # sin carpeta fantasma en el fallback flat (root / "W-000EEE")
+    assert not (root / "W-000EEE").exists()
+
+
+def test_plan_resuelve_w_code_sin_crear_carpeta_fantasma(tmp_path, monkeypatch, capsys):
+    from core import case_manager
+    from core.casos import case_locator
+    import scripts.sala_maquina as cli
+
+    root = tmp_path / "CASOS"
+    root.mkdir()
+    monkeypatch.setattr(case_locator, "_root", lambda: root)
+
+    case_id = "BaRS11 - Falsa 6 (W-000FFF) - Vuelta"
+    case_manager.ensure_case(
+        case_id, titulo=case_id, referencia_crm=case_id,
+        tipo_caso="VUELTA", ciudad="Barcelona", direccion="Falsa 6", id_go="W-000FFF",
+    )
+    case_dir = case_locator.path_for(case_id)
+    drive = case_dir / "00_Input" / "01_Drive EV"
+    drive.mkdir(parents=True)
+    _pdf_con_texto(drive / "encargo.pdf")
+
+    cli.plan("W-000FFF")                        # el W-code PURO
+
+    salida = capsys.readouterr().out
+    assert "pdf: 1" in salida                    # detectó el documento real
+    assert not (root / "W-000FFF").exists()       # sin carpeta fantasma
+
+
+def test_reforzar_resuelve_w_code_y_reprocesa_dudoso_real(tmp_path, monkeypatch):
+    # Hallazgo revisión adversarial (agy/Gemini): `apply`/`plan` tenían cobertura de
+    # resolución de W-code pero `reforzar` no — pese a que también se editó para usar
+    # `_resolver_caso`. Prueba la integración específica de `reforzar` (no solo el
+    # helper compartido), con case_locator real (sin monkeypatch de `caso_path`).
+    from core import case_manager
+    from core.casos import case_locator
+    import scripts.sala_maquina as cli
+
+    root = tmp_path / "CASOS"
+    root.mkdir()
+    monkeypatch.setattr(case_locator, "_root", lambda: root)
+    monkeypatch.setattr(cli, "append_event", lambda *a, **k: None)
+
+    case_id = "BaRS11 - Falsa 7 (W-000GGG) - Vuelta"
+    case_manager.ensure_case(
+        case_id, titulo=case_id, referencia_crm=case_id,
+        tipo_caso="VUELTA", ciudad="Barcelona", direccion="Falsa 7", id_go="W-000GGG",
+    )
+    case_dir = case_locator.path_for(case_id)
+    drive = case_dir / "00_Input" / "01_Drive EV"
+    drive.mkdir(parents=True)
+    escan = drive / "escaneado.pdf"
+    escan.write_bytes(b"%PDF-1.4\n% escaneado sin capa de texto\n")
+
+    def _fake_ocr(entrada, salida, **k):
+        Path(salida).parent.mkdir(parents=True, exist_ok=True)
+        Path(salida).write_bytes(b"%PDF buscable vacio")
+        return Path(salida)
+
+    monkeypatch.setattr(sm, "ocr_pdf", _fake_ocr)
+    monkeypatch.setattr(sm, "_try_pypdf", lambda p: "")     # siempre vacío -> empty
+    monkeypatch.setattr(sm, "_pdf_num_paginas", lambda p: 1)
+
+    cli.apply("W-000GGG")                        # W-code puro: escaneado queda "empty"
+
+    prev = {c.rel_path: c for c in cli._cobertura_previa(case_dir)}
+    assert prev["01_Drive EV/escaneado.pdf"].estado == "empty"
+
+    transcrito = ("Encargo de mediacion firmado por el propietario segun la imagen "
+                  "escaneada, con honorarios pactados de intermediacion. " * 2)
+    monkeypatch.setattr(sm, "_renderizar_paginas", lambda p: ["pagina-fake"])
+    monkeypatch.setattr(sm, "_transcribir_vision", lambda imgs: transcrito)
+
+    cli.reforzar("W-000GGG")                      # el mismo W-code puro
+
+    post = {c.rel_path: c for c in cli._cobertura_previa(case_dir)}
+    assert post["01_Drive EV/escaneado.pdf"].estado in ("ok", "low")   # mejoró de verdad
+    assert not (root / "W-000GGG").exists()        # sin carpeta fantasma
+
+
+def test_apply_ref_desconocido_falla_en_alto_sin_crear_carpeta(tmp_path, monkeypatch):
+    # Fix complementario: un case_id/W-code que no resuelve a NINGÚN caso real
+    # debe abortar con un mensaje claro, no proceder en silencio con plan
+    # vacío ("0 documentos" como si fuera éxito) ni crear una carpeta fantasma.
+    from core.casos import case_locator
+    import scripts.sala_maquina as cli
+    import typer
+
+    root = tmp_path / "CASOS"
+    root.mkdir()
+    monkeypatch.setattr(case_locator, "_root", lambda: root)
+
+    with pytest.raises(typer.Exit):
+        cli.apply("W-NOEXISTE")
+
+    assert not (root / "W-NOEXISTE").exists()

@@ -12,6 +12,7 @@ from pathlib import Path
 import typer
 
 from core import sala_maquina as sm
+from core.casos import case_locator
 from core.config import caso_path
 from core.intake_log import append_event
 
@@ -97,11 +98,34 @@ def _exitosos_por_bundle(cob_delta: list[sm.DocCobertura]) -> set[str]:
             if all(f.estado in ("ok", "low") for f in filas)}
 
 
+def _resolver_caso(case_id: str) -> tuple[str, Path]:
+    """Resuelve `case_id` (case_id canónico o W-code) a su carpeta real.
+
+    `caso_path`/`path_for` solo entienden layout flat o por ciudad buscando
+    ``case_id`` COMO NOMBRE DE CARPETA — nunca resuelven un W-code
+    (``meta.id_go``). Sin este paso, un W-code puro no encontraba el caso
+    real y `path_for` caía a su fallback flat inexistente: la corrida seguía
+    en silencio con plan vacío ("0 documentos" reportado como éxito) y
+    creaba ahí una carpeta fantasma (bug reproducido 2026-07-22, W-02ZIIF).
+    Mismo patrón que ``scripts/atomize_emails.py``/``scripts/crm_ficha.py``.
+    """
+    case_id = case_locator.resolve_ref(case_id)
+    case_dir = caso_path(case_id)
+    if not (case_dir / "00_Input").is_dir():
+        typer.echo(
+            f"[ERROR] Caso no encontrado: {case_id!r} (ruta resuelta sin "
+            f"00_Input: {case_dir}). Comprueba el case_id o W-code.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+    return case_id, case_dir
+
+
 @app.command()
 def plan(case_id: str):
     """Muestra la propuesta (Preview); no escribe nada salvo el manifiesto de
     segmentación propuesto (gate editable) de los bundles multi-documento detectados."""
-    case_dir = caso_path(case_id)
+    case_id, case_dir = _resolver_caso(case_id)
     p = _construir_plan(case_dir, force=False)
     nuevos = [d for d in p if not d.skip]
     typer.echo(f"Caso: {case_id}")
@@ -140,7 +164,7 @@ def plan(case_id: str):
 @app.command()
 def apply(case_id: str, vision: bool = False, force: bool = False):
     """Ejecuta OCR+MD y escribe la Sala de máquina + cobertura + log."""
-    case_dir = caso_path(case_id)
+    case_id, case_dir = _resolver_caso(case_id)
     if vision:
         _exigir_vision_cableada()          # preflight: aborta antes de procesar
     p = _construir_plan(case_dir, force=force)
@@ -192,7 +216,7 @@ def reforzar(case_id: str):
     reescribe MD + estado + cobertura. Exige el transcriptor cableado (flujo skill/
     sesión); el CLI pelado aborta en el preflight.
     """
-    case_dir = caso_path(case_id)
+    case_id, case_dir = _resolver_caso(case_id)
     _exigir_vision_cableada()
     previa = _cobertura_previa(case_dir)
     if not previa:

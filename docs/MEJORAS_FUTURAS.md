@@ -2957,3 +2957,31 @@ de `pull_expediente*` es por marcador `.pulled`/`--incremental` **keyed por `doc
 contenido — no hay comprobación cruzada contra otras rutas del caso. Si en el futuro se da el caso real
 (escrito+anexos montados en Procedimiento antes de subir al CRM) y el pull los vuelve a traer sueltos
 sin agrupar, esto se promueve a `PLAN.md` con ese caso como disparador; si no, queda como nota.
+
+## 81. Bug latente: otros scripts CLI pueden componer rutas sin resolver W-code (`case_locator.resolve_ref`)
+
+**Disparador:** ninguno todavía — anotado tras el fix de PR #117 (2026-07-22), sin promover a
+`PLAN.md` a la espera de confirmar cuáles de estos CLI se usan realmente con W-code puro.
+
+Contexto: PR #117 corrigió `scripts/sala_maquina.py` (`plan`/`apply`/`reforzar`), que pasaba
+`case_id` directo a `caso_path()`/`path_for()` sin resolver un W-code primero — `path_for` solo
+entiende layout flat/ciudad por NOMBRE DE CARPETA, nunca `meta.id_go`. Síntoma real (W-02ZIIF,
+2026-07-22): un W-code puro caía al fallback flat inexistente y la corrida seguía en silencio con
+plan vacío ("0 documentos" reportado como éxito), creando ahí una carpeta fantasma.
+
+`docs/ARQUITECTURA.md` (fila `core/casos/case_locator.py`) ya señalaba como candidatos a auditar
+"toda llamada que componía `settings.casos_root / case_id`" en `core/case_manager.list_cases`,
+`core/config.caso_path` y `scripts/{audit_referencias_casos,scheduled_sync,sync_sudespacho}.py` —
+nunca se llegó a auditar. Revisión rápida (grep `case_id: str`/`--case`/`--expediente` en
+`scripts/*.py` + `resolve_ref\(` en el mismo fichero) añade un candidato no listado ahí:
+`scripts/migrar_layout_intake.py` (`case_id: str` como argumento directo, sin `case_locator` en el
+fichero). `scripts/sala_lectura.py` (múltiples comandos `--case`) queda fuera de prioridad: es CLI
+**deprecado** (`ARQUITECTURA.md` fila `core/sala_lectura.py`, superado por la skill
+`organizar-sala-lectura` v1.3).
+
+Pendiente: para cada candidato, confirmar si su contrato documentado es "case_id completo" (p. ej.
+`scripts/migrate_05crm_buckets.py` lo dice explícitamente en el `--help` — no es un bug, es diseño)
+o si de verdad se usa/se espera usar con W-code puro (candidato real a la misma clase de bug). Si se
+confirma un caso real, promover a `PLAN.md` con ese caso como disparador, aplicando el mismo patrón
+de fix (`case_id = case_locator.resolve_ref(case_id)` antes de derivar cualquier ruta + fallo en alto
+si la ruta resuelta no tiene `00_Input`).
