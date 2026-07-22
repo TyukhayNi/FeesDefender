@@ -229,6 +229,72 @@ class TestPatronNumDoc:
 
 
 # ---------------------------------------------------------------------------
+# num_doc en portadas fragmentadas — fallback aditivo (bug real W-02ZIIF)
+# ---------------------------------------------------------------------------
+
+class TestNumDocPortadaFragmentada:
+    """Portadas "Documento anexo n.º N" con el número separado del marcador
+    DOC por una palabra calificadora o repartido en una línea reconstruida
+    distinta. PATRON_NUM_DOC nunca las matchea (su clase de caracteres solo
+    tolera símbolos entre DOC y el dígito, no palabras) y el bucle original
+    busca línea a línea sin unir fragmentos.
+
+    Regresión: W-02ZIIF (2026-07-22) — un PDF judicial con "DEMANDA" antes de
+    sus documentos anexo colapsó 10 documentos en 1 porque num_doc quedaba
+    siempre None en estas portadas y la absorción de TIPOS_SUPER_ABSORBENTES
+    se comía cada "Documento anexo n.º N" subsiguiente.
+    """
+
+    def test_calificador_en_la_misma_linea(self) -> None:
+        tipo, _, num = detectar_tipo(["DOCUMENTO ANEXO Nº 2"])
+        assert tipo == "DOC_ANEXO"
+        assert num == 2
+
+    def test_numero_en_linea_separada(self) -> None:
+        # Portada a dos líneas: título arriba, número debajo (o fragmentación
+        # de origen que parte lo que visualmente es una sola línea).
+        tipo, _, num = detectar_tipo(["DOCUMENTO ANEXO", "Nº 2"])
+        assert tipo == "DOC_ANEXO"
+        assert num == 2
+
+    def test_marcador_y_numero_en_tres_lineas(self) -> None:
+        tipo, _, num = detectar_tipo(["DOCUMENTO", "ANEXO", "Nº 2"])
+        assert tipo == "DOC_ANEXO"
+        assert num == 2
+
+    def test_no_inventa_numero_sin_digito(self) -> None:
+        # Ninguna línea corta trae un dígito: ni el original ni el fallback
+        # deben inventar un num_doc.
+        _, _, num = detectar_tipo(["DOCUMENTO", "Pagina siguiente"])
+        assert num is None
+
+    def test_patron_original_sigue_intacto(self) -> None:
+        # PATRON_NUM_DOC (congelado) no cambia: sigue sin matchear con la
+        # palabra calificadora de por medio. El fallback vive aparte.
+        assert PATRON_NUM_DOC.search("DOCUMENTO ANEXO Nº 2") is None
+
+    def test_detectar_segmentos_demanda_no_absorbe_anexos_numero_fragmentado(
+        self, tmp_path: Path
+    ) -> None:
+        """End-to-end (PDF real): DEMANDA primero (super-absorbente) seguida
+        de 2 DOC_ANEXO con portada de número fragmentado debe dar 3 segmentos
+        separados, no 1 solo documento fusionado."""
+        src = _build_pdf(tmp_path / "exp.pdf", [
+            ["AL JUZGADO DE PRIMERA INSTANCIA Nº 15 DE BARCELONA",
+             "DEMANDA DE JUICIO ORDINARIO"],
+            ["Hechos y fundamentos de la demanda"],
+            ["DOCUMENTO ANEXO Nº 1"],
+            ["DOCUMENTO ANEXO", "Nº 2"],
+        ])
+        segmentos = detectar_segmentos(src, _LOG_MUDO)
+
+        assert len(segmentos) == 3
+        assert [s["tipo"] for s in segmentos] == ["DEMANDA", "DOC_ANEXO", "DOC_ANEXO"]
+        anexo_nums = [s["num_doc"] for s in segmentos if s["tipo"] == "DOC_ANEXO"]
+        assert anexo_nums == [1, 2]
+
+
+# ---------------------------------------------------------------------------
 # Renombrar — estructura plana FeesDefender
 # ---------------------------------------------------------------------------
 

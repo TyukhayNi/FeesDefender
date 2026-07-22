@@ -308,7 +308,7 @@ def _eml_cita_gmail(autor, de_cita, fecha_attr, cuerpo_cita):
     return m.as_bytes()
 
 
-def test_reconstruir_promueve_del_burgo_inline():
+def test_reconstruir_promueve_generico_inline():
     # Ruta genérica (sin identidades inyectadas): PersonaUno no está vigilado ni es candidato,
     # por lo que una cita estructural con fecha+email válidos SÍ promociona a alta-reconstruida.
     raw = _eml_cita_gmail("Te reenvío.", "per01a@example.invalid", "1 de mayo de 2020",
@@ -318,7 +318,7 @@ def test_reconstruir_promueve_del_burgo_inline():
     assert any(s.de == "per01a@example.invalid" for s in altas)
 
 
-def test_reconstruir_watched_va_a_del_burgo_queue():
+def test_reconstruir_watched_va_a_identidades_vigiladas_queue():
     from core.email_atomize.identidades import Identidades
     ident = Identidades(vigiladas=frozenset({"per01a@example.invalid"}))
     raw = _eml_cita_gmail("x", "per01a@example.invalid", "1 de mayo de 2020",

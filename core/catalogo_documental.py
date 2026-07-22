@@ -51,6 +51,7 @@ class CatalogEntry:
     ruta_sala_lectura: str | None = None
     categoria: str | None = None          # categoría E&V (por la que se construyó la sala)
     subcategoria_crm: str | None = None   # subcarpeta del Gestor Documental CRM (etiqueta secundaria)
+    fecha_aproximada: bool | None = None   # True si la fecha viene del mtime/nombre (marcada (*) en los índices)
 
 
 def _catalog_path(case_id: str) -> Path:

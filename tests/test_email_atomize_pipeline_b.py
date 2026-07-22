@@ -37,9 +37,9 @@ def test_layerb_promueve_y_no_renumera_capaA(tmp_path):
     assert len(mds) == 2
     reg = json.loads((out / "_registro.json").read_text(encoding="utf-8"))
     assert reg["version"] == 2 and len(reg["mensajes_fp"]) == 1     # 1 fp-keyed B
-    assert (out / "_revision" / "del_burgo.md").exists()
-    db = (out / "_revision" / "del_burgo.md").read_text(encoding="utf-8")
-    assert "per01a@example.invalid" in db
+    assert (out / "_revision" / "identidades_vigiladas.md").exists()
+    iv = (out / "_revision" / "identidades_vigiladas.md").read_text(encoding="utf-8")
+    assert "per01a@example.invalid" in iv
     assert rep.reconstruidos_b == 1
     # idempotencia: re-run no renumera ni duplica
     P.atomize_dir(src, out, case_dir=tmp_path)

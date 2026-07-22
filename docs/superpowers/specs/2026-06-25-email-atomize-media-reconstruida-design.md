@@ -68,7 +68,7 @@ Claves del peldaño nuevo:
   `alta`.
 - Identidad candidata (`identidades.candidatas`, p.ej. `per01b@example.invalid`) sigue capada:
   si saliera `media-reconstruida` y `anc.de ∈ candidatas`, se mantiene promovida pero `en_revision`
-  y forzada a `del_burgo.md` (no cambia su tope, ya es media).
+  y forzada a `identidades_vigiladas.md` (no cambia su tope, ya es media).
 
 ## 2. Routing en `inline.reconstruir()`
 
@@ -121,7 +121,7 @@ lista.)
 Sin cambios de mecánica: `PersonaUno = {per01a@example.invalid, per01c@example.invalid}`,
 `per01b@example.invalid` = candidata (tope media), `ignacio@despacho-ab.example` =
 parte relacionada DISTINTA. Todo `media-reconstruida` con `de ∈ vigiladas/candidatas` se fuerza a
-`del_burgo.md` además de promover.
+`identidades_vigiladas.md` además de promover.
 
 ## 7. Ficheros tocados (todo aditivo; salida capa A byte-idéntica)
 
@@ -164,7 +164,7 @@ Tras implementar, re-ejecutar `--ref W-02VND1` y:
    enterrados en reconstrucciones). Cuadrar la lista; cero desapariciones silenciosas.
 3. **Idempotencia**: dos ejecuciones, diff de `_registro.json` → 0 renumerados, 0 fp duplicados,
    277 `.md` idénticos.
-4. **PersonaUno / Ignacio**: revisar `del_burgo.md`; confirmar que PersonaDos nunca se
+4. **PersonaUno / Ignacio**: revisar `identidades_vigiladas.md`; confirmar que PersonaDos nunca se
    pliega sobre PersonaUno.
 5. Re-correr `scripts/audit_correos_no_separados.py`: el conteo de "sin atom" debe caer a los
    diferidos por Gap 2 (+ posibles casi-dups marcados), nada más.

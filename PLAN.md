@@ -22,7 +22,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 4 | [Drive-disco: pasos 5-7 + Claude Code](#siguiente-mcp-drive-disco-pasos-5-7-diferidos) | ✅ desplegado | resto pasivo: check Modo 1 en caso real | medio |
 | 5 | [abrir-caso F3-judicial](#abrir-caso--f1--f2a--f3-ac-mergeadas-f2b-aparcada-f3-judicial-pendiente) | disparador confirmado 2026-07-22 | plan concreto listo (4 piezas, ver bloque) | medio |
 | 6 | [Google MCP F4 (Calendar)](#siguiente-google-mcp-f1-lectura--mergeada--f2-escriturapermisosnavegación--mergeada--f3f4-pendientes) | diferida | disparador | medio |
-| 7 | [Robustez y velocidad sala de lectura](#siguiente-preclasificacion-sala-lectura-preclasificar-mecanico--copia-rclone-rcd--verify) | backlog priorizado (16 ítems) | sesión de construcción dedicada | medio-alto |
+| 7 | [Robustez y velocidad sala de lectura](#siguiente-preclasificacion-sala-lectura-preclasificar-mecanico--copia-rclone-rcd--verify) | ✅ construido y revisado (16/16 ítems, v1.12) | PR #121 (pendiente de merge) | medio-alto |
 | 8 | [Intake email — filtro de exclusión de ruido](#siguiente-intake-email-filtro-exclusión-de-ruido-administrativo-y-cruzado) | pendiente | disparador: W-02VUDR (fuga cruzada de 7 casos ajenos + cartera de litigios) | medio |
 
 > Detalle de cada ítem en su bloque `[SIGUIENTE-*]` más abajo. Backlog sin
@@ -236,25 +236,32 @@ el antes/después sin mezclar la construcción con el caso real.*
   + `--cobertura`/`--hash`); **(8)** columnas `categoria`/`subcategoria_crm` en `_MANIFIESTO`+YAML
   (`CatalogEntry`) + `indices_desde_manifiesto.py` (INDICE/CRONOLOGIA por script). Suite 2281/0/0
   (+70 skip). Skill v1.11 re-empaquetada; **re-import del `.skill` en Cowork PENDIENTE**.
-- [ ] **PENDIENTE (3ª sesión) — 8 ítems de PRIORIDAD MEDIA/BAJA (9-16)** del backlog: progreso
-  durable por fila + reanudación (9); leer representante de hilo `.eml` que cae al 07 (10); dos bugs
-  deterministas de `preclasificar` — exports WhatsApp crudos y `agrupar_por_hilo` con cifras (11);
-  `_parse_filas` estricto (12); Modo 3 degradado md5 para binarios grandes (13); timeout/async +
-  ciclo de vida del `rcd` en `copiar_manifiesto_rclone` (14); fecha aproximada `(*)` fuera del valor
-  (15); **telemetría de fases (16)**. El seguimiento natural es re-correr `organizar-sala-lectura`
-  una 3ª vez sobre un caso real para por fin medir limpio el A/B de velocidad (ítem 16) — las dos
-  pasadas anteriores quedaron invalidadas por los errores que este backlog corrige.
-- [ ] **CAUSA CONFIRMADA (2026-07-22, apertura de prueba W-02ZIIF):** `gdrive_ev` está
-  autenticado con la cuenta/proyecto equivocados — `rclone backend drives gdrive_ev:` devuelve
-  las Shared Drives del DESPACHO (ADMINISTRACION, EXPEDIENTES - TYUKHAY LEGAL, JURIDICO...),
-  ninguna de Engel & Völkers. Al reautenticar (`rclone config reconnect gdrive_ev:`) con
-  `nikolai.tyukhay@engelvoelkers.com`, Google bloquea con "Error 403: access_denied": el proyecto
-  OAuth `rclone-despacho-drive-2026` está en modo Testing y esa cuenta no está en la lista de test
-  users (solo lo está la cuenta TL, de ahí el desvío). **BLOQUEA `--fuente drive_ev` de cualquier
-  caso E&V nuevo**, en local o en Drive — no es un problema introducido por la prueba de apertura
-  en local ([[project-apertura-local-vs-drive]]). Arreglo: Google Cloud Console → proyecto
-  `rclone-despacho-drive-2026` → OAuth consent screen → Test users → añadir
-  `nikolai.tyukhay@engelvoelkers.com` → repetir `rclone config reconnect gdrive_ev:`.
+- [x] **CONSTRUIDO Y REVISADO (3ª sesión) — 8 ítems de PRIORIDAD MEDIA/BAJA (9-16)** del backlog,
+  vía `superpowers:subagent-driven-development` (9 Tasks). Plan TDD:
+  `docs/superpowers/plans/2026-07-22-robustez-velocidad-sala-lectura-tdd-9-16.md`. Skill **v1.12**
+  (frontmatter + CHANGELOG). Hecho: progreso JSONL durable por fila + reanudación de corrida
+  interrumpida en `copiar_manifiesto` (9); lectura del representante de cada hilo `.eml` que cae
+  al `07` por defecto (10); dos bugs deterministas de `preclasificar` — `agrupar_por_hilo` ya no
+  fusiona por una cifra suelta del asunto y `emparejar_exports_whatsapp` excluye el zip crudo
+  `_export_original.zip` (11); `parse_manifiesto` con `estricto=` — aborta filas con nº de columnas
+  incorrecto (12); `sha_valido` admite `md5:` para el Modo 3 degradado en binarios grandes (13);
+  timeout parametrizable + modo `async` + `copiar_manifiesto_rclone` gestiona el ciclo de vida de
+  su propio `rcd` (14); `fecha_aproximada` separa el marcador `(*)` del valor de fecha en el
+  catálogo YAML (15); telemetría de fases en el plan persistido (16). Suite completa verde (2307
+  tests, 0 failures, 0 errors, 70 skipped). PR #121 — el merge es el paso de cierre posterior
+  a esta sesión.
+- [ ] **Seguimiento operativo (no bloquea):** 3ª corrida real A/B de velocidad sobre un caso real,
+  ahora con la telemetría del ítem 16, para por fin medir limpio el antes/después — las dos pasadas
+  anteriores quedaron invalidadas por los errores que este backlog corrige.
+- [x] **RESUELTO (2026-07-22, apertura de prueba W-02ZIIF):** `gdrive_ev` estaba autenticado con
+  la cuenta/proyecto equivocados — `rclone backend drives gdrive_ev:` devolvía las Shared Drives
+  del DESPACHO (ADMINISTRACION, EXPEDIENTES - TYUKHAY LEGAL, JURIDICO...), ninguna de Engel &
+  Völkers. Causa: el proyecto OAuth `rclone-despacho-drive-2026` está en modo Testing y la cuenta
+  `nikolai.tyukhay@engelvoelkers.com` no estaba en la lista de test users (solo la cuenta TL, de
+  ahí el desvío). Arreglado añadiendo esa cuenta como test user en Google Cloud Console + `rclone
+  config reconnect gdrive_ev:`. Confirma que **no** era un problema introducido por la prueba de
+  apertura en local ([[project-apertura-local-vs-drive]]) — bloqueaba `--fuente drive_ev` de
+  cualquier caso E&V nuevo, en local o en Drive.
 - Deferida sin construir en esta sesión: Task 6 (agrupar `doc_NN_*` de una demanda+anexos del CRM en
   subcarpeta) — bajo ROI para un solo expediente; ver `docs/MEJORAS_FUTURAS.md` **#80** (verificar
   dedup de `sync_sudespacho pull` contra "05. Procedimiento" antes de reabrir esto).
@@ -441,7 +448,7 @@ enterrada de PersonaUno (levantar el velo de [inmueble] S.L.). Reutiliza `core.e
 - [x] **Fase 3 — capa de caso.** _CÓDIGO COMPLETO en `origin/main` (`14d8743`→`5b566ea`), vía subagent-driven + revisión adversarial=SHIP; suite 1255 verde. PENDIENTES (no parte de F3 / siguiente sesión): **Task 7** verificación EN VIVO sobre W-02VND1 en `G:` (nada escrito aún; necesita keywords del `nexo_causal` + autorización) y, en spec/plan SEPARADO, el **recall MSG-00018** + OCR de adjuntos._ `identidades.yaml` (mover `IDENTIDADES_VIGILADAS`; set de PersonaUno
   `per01a@example.invalid`/`per01c@example.invalid` confirmados, `per01b@example.invalid` candidato→tope media,
   `ignacio@despacho-ab.example` parte DISTINTA), mejor parser de fechas ES/CA + niveles
-  profundos (subir recall PersonaUno), vistas temáticas (`dossier_del_burgo`, `vista_nexo_causal`),
+  profundos (subir recall PersonaUno), vistas temáticas (`dossier_persona_vigilada`, `vista_nexo_causal`),
   `_entregas/` selladas. OCR de adjuntos = posterior.
 
 ---
@@ -1009,7 +1016,7 @@ prosa copia del código.
 - [ ] **Higiene de PII en la bitácora** (recomendación nº4, propuesta 2026-07-06 en
   `GOBERNANZA_FUENTES_VERDAD.md §4`). Regla: la bitácora referencia por código `W-xxxxx`, sin correos
   ni nombres de terceros ni direcciones (el dato sensible vive en `data/CASOS/`, fuera del repo).
-  Huella medida en tracked docs: correos de terceros de casos reales (PersonaUno, PersonaTres, Prat,
+  Huella medida en tracked docs: correos de terceros de casos reales (PersonaUno, PersonaTres, PersonaCuatro,
   PersonaCinco…) mezclados con sintéticos de test, y también en **tests/core** (`email_atomize`/`whatsapp_atomize`),
   no solo en la bitácora. **Piezas:** (1) regla going-forward + check opcional en `session_close`;
   (2) **saneamiento retroactivo del historial** (`git filter-repo`).

@@ -24,7 +24,7 @@ def _reload():
 def test_output_slug_distingue_por_contenido():
     from core.utils import output_slug
 
-    a = output_slug("02_Whatsapp/del_burgo/_chat.txt", "a" * 64)
+    a = output_slug("02_Whatsapp/identidades_vigiladas/_chat.txt", "a" * 64)
     b = output_slug("02_Whatsapp/PersonaOcho/_chat.txt", "b" * 64)
     assert a != b  # mismo stem, distinto contenido → nombres distintos
 
@@ -146,7 +146,7 @@ def test_sala_lectura_md_path_usa_sufijo_sha():
     from core.catalogo_documental import CatalogEntry
     from core.utils import output_slug
 
-    rel = "02_Whatsapp/del_burgo/_chat.txt"
+    rel = "02_Whatsapp/identidades_vigiladas/_chat.txt"
     e = CatalogEntry(
         id_doc="d1", ruta_relativa=rel, nombre_original="_chat.txt",
         hash="deadbeefcafe1234",

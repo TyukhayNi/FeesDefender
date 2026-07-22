@@ -12,7 +12,7 @@ Las Fases 1 (Capa A — MIME) y 2 (Layer B — reconstrucción de autoría inlin
 `core/email_atomize/` están completas y en `origin/main`. El motor lee
 `<caso>/00_Input/03_Email/*.eml` y produce en `<caso>/01_Procesado/Emails/`: `mensajes/` (1 `.md`
 por mensaje atómico), `adjuntos/`, `corpus.jsonl`, `_registro.json` (IDs congelados),
-`CORREOS_LECTURA.md`, `INDICE_ADJUNTOS.md`, `_revision/{cola,casi_duplicados,del_burgo}.md`.
+`CORREOS_LECTURA.md`, `INDICE_ADJUNTOS.md`, `_revision/{cola,casi_duplicados,identidades_vigiladas}.md`.
 
 Hoy dos sets de identidades viven **sembrados en código** en `core/email_atomize/inline.py`:
 
@@ -34,7 +34,7 @@ levantamiento del velo de [inmueble] S.L.
 1. Sacar las identidades del caso a `<caso>/identidades.yaml` (input curado a mano; el motor solo
    lo lee). Sin fichero = comportamiento genérico (sets vacíos = hoy). Incluir unificación de
    persona (varias direcciones → una identidad).
-2. Vistas temáticas (`dossier_del_burgo`, `nexo_causal`) dirigidas por `<caso>/vistas.yaml` +
+2. Vistas temáticas (`dossier_persona_vigilada`, `nexo_causal`) dirigidas por `<caso>/vistas.yaml` +
    `identidades.yaml`, como artefacto de solo-lectura que **no muta** ningún `.md`.
 3. `_entregas/` selladas: snapshot congelado del set entregable + manifiesto de hashes
    (`_SELLO.md`) para cadena de custodia.
@@ -80,7 +80,7 @@ caso: "W-02VND1"                # informativo
 personas:
   - id: persona_uno          # slug estable y opaco; lo usan las vistas para agrupar
     nombre: "PersonaUno"
-    vigilada: true               # doble control probatorio: toda cita suya → _revision/del_burgo.md
+    vigilada: true               # doble control probatorio: toda cita suya → _revision/identidades_vigiladas.md
     rol: "tesis: administrador de hecho (levantamiento del velo)"   # OPCIONAL, informativo
     direcciones:
       - { email: per01a@example.invalid,            estado: confirmada }
@@ -119,7 +119,7 @@ motor los IGNORA): `rol`, `notas`, `version`, `caso`. Forward-compatible con la 
 ```yaml
 version: 1
 vistas:
-  - id: dossier_del_burgo
+  - id: dossier_persona_vigilada
     titulo: "Dossier — PersonaUno"
     tipo: persona                 # AUTO: mensajes de/para/cc de la persona, orden cronológico
     persona: persona_uno      # → mapa de unificación de identidades.yaml
@@ -219,7 +219,7 @@ caso elige cuáles y sus parámetros (regla dura: nada de caso hardcodeado).
 <caso>/vistas.yaml               # input curado (raíz del caso)
 <caso>/01_Procesado/Emails/
   vistas/
-    dossier_del_burgo.md
+    dossier_persona_vigilada.md
     nexo_causal.md
   _entregas/
     2026-06-25_entrega-instructora/
@@ -229,7 +229,7 @@ caso elige cuáles y sus parámetros (regla dura: nada de caso hardcodeado).
 
 ## 7. Impacto en tests existentes
 
-- `tests/test_email_atomize_inline.py:200` (`test_reconstruir_watched_va_a_del_burgo_queue`)
+- `tests/test_email_atomize_inline.py:200` (`test_reconstruir_watched_va_a_identidades_vigiladas_queue`)
   monkeypatchea `I.IDENTIDADES_VIGILADAS`. Se actualiza a pasar
   `identidades=Identidades(vigiladas={"per01a@example.invalid"})` a `reconstruir`. Cualquier otro test que
   dependa de los sets module-level se migra igual.
@@ -245,7 +245,7 @@ Verificar SIEMPRE sobre los 277 reales de W-02VND1, no solo fixtures:
    - **277 Capa A byte-idénticos** (hash a hash).
    - Layer B sin cambios: 89 reconstruidos, PersonaUno 12 directos + 13 inline, candidata topada en
      `media`, idempotente (mismos fp, sin renumerar).
-   - `vistas/dossier_del_burgo.md` y `vistas/nexo_causal.md` generadas; inspección manual de que
+   - `vistas/dossier_persona_vigilada.md` y `vistas/nexo_causal.md` generadas; inspección manual de que
      el dossier agrupa correctamente las 3 direcciones de PersonaUno y NO incluye a Ignacio.
 4. Probar `--entrega`: sello creado, `_SELLO.md` con sha256 correctos, segunda llamada crea carpeta
    distinta (append-only).

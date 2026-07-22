@@ -917,7 +917,7 @@ def _emitir_interior(texto_exterior_original, seg, m_a, identidades) -> "Segment
     conf_i, mot_i = clasificar(anc_i, m_a.fecha_iso, estructural=False, ambigua=ambigua_i)
     if conf_i in ("media-reconstruida", "alta-reconstruida"):   # estructural=False ⇒ jamás alta; defensivo
         conf_i, mot_i = "media-reconstruida", "interior_reenviado"
-    # Identidad candidata (no confirmada) → cap a media + ruta del_burgo (routing heredado).
+    # Identidad candidata (no confirmada) → cap a media + ruta identidades_vigiladas (routing heredado).
     if anc_i.de in identidades.candidatas and conf_i == "media-reconstruida":
         conf_i, mot_i = "media", "identidad_candidata"
     cuerpo_norm_i = normaliza_cuerpo(cuerpo_i)
