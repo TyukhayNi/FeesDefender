@@ -332,12 +332,13 @@ tal diálogo.
      contrastar sha), y el catálogo las acepta (`sha_valido`).
    Los documentos compuestos (bundles) copian primero su principal, luego sus
    anexos, dentro de la misma corrida.
-   - **`ERROR_FILE_NOT_HYDRATED` (fichero frío no hidratado):** NO lo anotes
-     pendiente a la primera. Reintenta ESE fichero vía `copiar_renombrar(remote,
-     src, dst)` (RC API server-side, inmune al caché de hidratación local): en
-     W-02VUDR esa ruta copió 3 ficheros atascados —incl. uno de 1,1 GB— en 19s.
-     Solo si el reintento server-side también falla se anota pendiente en el
-     `_MANIFIESTO.md`. Nunca se fuerza ni se fabrica un éxito.
+   - **`ERROR_FILE_NOT_HYDRATED` (fichero frío):** no lo anotes pendiente a la
+     primera. Reintenta ESE fichero por la ruta `rcd` server-side con
+     `copiar_manifiesto(remote, [(src, dst)], progreso_path=<el mismo jsonl>)`, que
+     arranca el `rcd` si falta y lo cierra (NO uses `copiar_renombrar` a pelo: desde
+     `exit != 0` no hay `rcd` y fallaría por conexión rechazada). En W-02VUDR la ruta
+     `rcd` copió 3 ficheros atascados, uno de 1,1 GB, en 19s. Solo si también falla,
+     pendiente en el `_MANIFIESTO.md`; nunca se fabrica un éxito.
 5. **Escribe SOLO el `_MANIFIESTO.md`, y deriva el resto por script.** El LLM ya
    no transcribe INDICE/CRONOLOGIA/YAML a mano (parte medible de la fase lenta).
    - `_MANIFIESTO.md` (con la tool de texto del modo: `expedientes-xl:write_text` /

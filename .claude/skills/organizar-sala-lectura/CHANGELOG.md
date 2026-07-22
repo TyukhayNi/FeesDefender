@@ -21,7 +21,8 @@
   escribe un log JSONL de progreso por fila y reanuda una corrida interrumpida sin
   re-copiar; gestiona el `rcd` (lo cierra si lo arrancó, no deja huérfano en
   :15572); `timeout` parametrizable y modo `async` con polling para copias grandes
-  (>60s ya no cuentan como fallidas).
+  (>60s ya no cuentan como fallidas); el reintento de `ERROR_FILE_NOT_HYDRATED` va
+  por `copiar_manifiesto` (autogestiona el `rcd`), no por `copiar_renombrar` a pelo.
 - **Correo: se lee el representante de cada hilo `.eml` que cae al `07` por
   defecto** (una lectura por hilo) para no degradar correspondencia de activación a
   reclamaciones. **Telemetría de fases** en el plan persistido (Paso 2-bis/7) para
