@@ -1,5 +1,10 @@
 # Diseño — Consumo de emails atomizados en la sala de lectura (nivel-fichero)
 
+> ⚠️ **ESTADO: REVISIÓN ADVERSARIAL PENDIENTE DE ADJUDICAR.** Antes de crear el plan
+> o implementar, leer
+> [`2026-07-23-emails-atomizados-sala-lectura-adversarial-review.md`](2026-07-23-emails-atomizados-sala-lectura-adversarial-review.md).
+> Los hallazgos P0 deben resolverse expresamente en esta spec.
+
 > Diseño cerrado por brainstorming dialógico con Nikolai, 2026-07-23. Motivo: limpieza de
 > arquitectura (sin caso urgente disparándolo). Contexto previo: exploración
 > `docs/superpowers/2026-07-19-sala-lectura-procesado-exploracion.md`, `MEJORAS_FUTURAS.md` #75/#76.
