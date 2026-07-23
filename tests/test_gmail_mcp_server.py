@@ -190,10 +190,10 @@ def test_create_label_account_obligatorio():
 
 def _label_svc(**extra):
     """FakeGmailService con etiquetas de usuario + respuestas de modify."""
-    labels = {"list": {"labels": [
+    labels = extra.pop("labels", {"list": {"labels": [
         {"id": "Label_1", "name": "W-02XOR7", "type": "user"},
         {"id": "INBOX", "name": "INBOX", "type": "system"},
-    ]}}
+    ]}})
     return FakeGmailService(labels=labels, **extra)
 
 
