@@ -72,7 +72,9 @@ def derivar(manifiesto: Path, salida: Path) -> Path:
             "hash": sha,
             "parent_id": f["parent_id"] or None,
             "nombre_canonico": f["nombre_canonico"] or None,
-            "categoria": f.get("categoria") or None,
+            # Manifiestos de 7 columnas (previos a `categoria`) guardan la categoría
+            # E&V en `tipo` — fallback, no lo tratamos como ausente.
+            "categoria": f.get("categoria") or f.get("tipo") or None,
             "subcategoria_crm": f.get("subcategoria_crm") or None,
             "fecha_aproximada": aproximada,
         })
