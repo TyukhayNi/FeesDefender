@@ -22,8 +22,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 4 | [Drive-disco: pasos 5-7 + Claude Code](#siguiente-mcp-drive-disco-pasos-5-7-diferidos) | ✅ desplegado | resto pasivo: check Modo 1 en caso real | medio |
 | 5 | [abrir-caso F3-judicial](#abrir-caso--f1--f2a--f3-ac-mergeadas-f2b-aparcada-f3-judicial-pendiente) | disparador confirmado 2026-07-22 | plan concreto listo (4 piezas, ver bloque) | medio |
 | 6 | [Google MCP F4 (Calendar)](#siguiente-google-mcp-f1-lectura--mergeada--f2-escriturapermisosnavegación--mergeada--f3f4-pendientes) | diferida | disparador | medio |
-| 7 | [Robustez y velocidad sala de lectura](#siguiente-preclasificacion-sala-lectura-preclasificar-mecanico--copia-rclone-rcd--verify) | ✅ construido y revisado (16/16 ítems, v1.12) | PR #121 (pendiente de merge) | medio-alto |
-| 8 | [Intake email — filtro de exclusión de ruido](#siguiente-intake-email-filtro-exclusión-de-ruido-administrativo-y-cruzado) | pendiente | disparador: W-02VUDR (fuga cruzada de 7 casos ajenos + cartera de litigios) | medio |
+| 7 | [Intake email — filtro de exclusión de ruido](#siguiente-intake-email-filtro-exclusión-de-ruido-administrativo-y-cruzado) | pendiente | disparador: W-02VUDR (fuga cruzada de 7 casos ajenos + cartera de litigios) | medio |
 
 > Detalle de cada ítem en su bloque `[SIGUIENTE-*]` más abajo. Backlog sin
 > promover: `docs/MEJORAS_FUTURAS.md`. Ledger de cerrados: `## Cerrados` (final).
@@ -181,6 +180,9 @@ puro + orquestadores finos. Spec: `docs/superpowers/specs/2026-07-09-abrir-caso-
 - Relacionado: `docs/MEJORAS_FUTURAS.md` **#50** (sección "Relación con el ecosistema" en todas las skills).
 
 ## [SIGUIENTE-PRECLASIFICACION-SALA-LECTURA] `preclasificar` mecánico + copia `rclone rcd` + verify
+
+> ✅ **CERRADO (2026-07-23)** → ledger `## ✅ Cerrados`. 16/16 ítems del backlog construidos y
+> revisados (v1.12, PR #116 + PR #121 mergeado). Bloque conservado como histórico.
 
 *Disparador: medido en vivo en la apertura de W-02VUDR (2026-07-21) — la clasificación de
 `organizar-sala-lectura` tardó 14 min y la fase de copia+índices más de 30 min sobre 172
@@ -1527,6 +1529,7 @@ trabajo para que no contamine).
 > Lista plana, reciente primero. Promover a agrupación por área cuando supere ~30
 > entradas (lo avisa `session_close`).
 
+- ✅ **[SIGUIENTE-PRECLASIFICACION-SALA-LECTURA]** Robustez/velocidad de `organizar-sala-lectura` — 16/16 ítems del backlog fable-5: `preclasificar.py` (gate determinista), `copiar_manifiesto_rclone.py` (rcd + reanudación), `verificar_sala.py`+`manifiesto_parser.py`, columnas `categoria`/`subcategoria_crm`; v1.12 — PR #116 (8 ALTA) + PR #121 (8 MEDIA/BAJA) · [plan](docs/superpowers/plans/2026-07-21-preclasificacion-sala-lectura.md) (2026-07-23)
 - ✅ **[SPLIT-SALA-MAQUINA]** Split de bundles multi-documento en la Sala de máquina — F1 (cerebro `core/split_documental.py`, PR #45 `6dba396`) + F2 (integración en `sala_maquina`/CLI, Tareas 12-15 + 13B, PR #109 `cc13355`): split entre OCR y MD, cobertura y estado por documento lógico, manifiesto editable + `--force`, passthrough robusto; skill `organizar-sala-maquina` v1.3; follow-ons `MEJORAS #78/#79` · [plan](docs/superpowers/plans/2026-07-14-split-sala-maquina.md) (2026-07-21)
 - ✅ **[SIGUIENTE-RESIDUO-LLM]** Clasificador LLM del residuo de intake (`MEJORAS #37`) — `preparar_residuo`/`rellenar_worklist`/`clasificar_residuo_llm` (chat_fn inyectable) + CLI `scripts/sala_lectura.py`; +9 tests; commit `742e35a` (triaje 2026-07-19)
 - ✅ **[SIGUIENTE-INTAKE-JUDICIAL-AUTO]** Intake automático de demanda/contestación desde el CRM — 5 fases ✅, validado e2e real (incluye el Paso 1 del intake CRM-completo) (triaje 2026-07-19)

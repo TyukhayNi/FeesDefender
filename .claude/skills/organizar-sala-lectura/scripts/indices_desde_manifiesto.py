@@ -46,7 +46,10 @@ def construir_indice(filas: list[dict]) -> str:
 
     por_cat: dict[str, list[dict]] = {}
     for f in filas:
-        por_cat.setdefault((f.get("categoria") or _SIN_CATEGORIA).strip(), []).append(f)
+        # Manifiestos de 7 columnas (previos a `categoria`/`subcategoria_crm`) guardan
+        # la categoría E&V en `tipo` — fallback, no lo tratamos como ausente.
+        cat = f.get("categoria") or f.get("tipo") or _SIN_CATEGORIA
+        por_cat.setdefault(cat.strip(), []).append(f)
 
     out = [_GEN, "", "# Índice documental", ""]
     for cat in sorted(por_cat):

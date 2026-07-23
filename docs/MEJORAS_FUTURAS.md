@@ -1761,6 +1761,19 @@ código (`ocr-a-md` sobre el scaffold). Ver §F de `docs/superpowers/plans/PLAN_
 **Justificación de no aplicarlo ahora.** Es un refactor arquitectónico grande; primero se
 memoriza el diseño. El orden sugerido de ejecución (saneamiento barato → registro de cobertura →
 fachada → motor OCR único → conector → resto de faltas) está en el doc.
+
+**Anotación 2026-07-23 (W-02VND1).** Medido en vivo durante el intake de la querella penal del
+caso: `sala_maquina apply` sobre un `00_Input/` de 2,6 GB/715 ficheros tardó varios minutos para
+depositar solo 43 PDFs nuevos. Dos causas concretas, verificadas en código: `core/sala_maquina.py::
+inventariar()` rehashea `00_Input/` entero en cada corrida en vez de leer `00_Input/_intake_hashes.json`
+(`core/intake_manifest.py::IntakeManifest`, ya poblado por la mayoría de fuentes — `core/intake_drive.py`
+es la excepción, no registra en él); y ~169 documentos no resueltos desde una corrida anterior se
+reintentan (con OCR real) en cada `apply` sin límite (detalle en #84). Confirma en código el "registro
+ÚNICO de caso" que este #48 ya diseñaba (ampliación 2026-07-03) y que sigue aparcado. La misma carencia
+apareció el mismo día, independientemente, en la revisión adversarial de
+`docs/superpowers/specs/2026-07-23-emails-atomizados-sala-lectura-adversarial-review.md` (hallazgo P0.1:
+`corpus.jsonl` de `email_atomize` tampoco reconcilia contra el inventario real de `00_Input`). No
+promuevo — solo dejo la evidencia para cuando se decida desaparcar.
 ---
 
 ## 48. Endurecimiento del robot CENDOJ (`cendoj-descarga`)
@@ -2232,7 +2245,7 @@ OCR/MD. Hasta entonces, backlog. Relacionado: #53, #54 y la doctrina de proceso 
 
 ---
 
-## 56. Mejora del proceso de sala de lectura: motor determinista + tool MCP, cronología + nombres que hablan  [pieza de #54/#55]
+## 56. Mejora del proceso de sala de lectura: motor determinista + tool MCP, cronología + nombres que hablan  [pieza de #54/#55] [DESCARTADO 2026-07-23 — ver #75 / PR #124]
 
 **Anotado 2026-07-13** tras montar la sala del W-02XOR7. La corrida costó ~10 min (un subagente re-leyó
 los 169 ficheros de `00_Input`) **pese a existir ya los MD/`raw_text` de la sala de máquina**. Un script
@@ -2282,6 +2295,14 @@ carpeta y el formato de 7 columnas del `_MANIFIESTO` (que exige `manifiesto_a_ca
 **Disparador de promoción.** Decisión de Nikolai de invertir en el `core.sala_lectura` + tool MCP, o
 recurrencia del coste de montar salas grandes. Relacionado: #54 (layout `00_Input`), #55 (orden del
 pipeline: la máquina alimenta la lectura), plugin FeesDefender / `expedientes-xl`.
+
+**Anotación 2026-07-23 — DESCARTADO.** La decisión-madre `#56 vs #75` (ver #75) se resolvió: en
+`docs/superpowers/specs/2026-07-23-emails-atomizados-sala-lectura-design.md` (PR #124, mergeado a
+`main` en `55df077`) Nikolai descarta explícitamente revivir `core/sala_lectura.py` como motor
+determinista + tool MCP, a favor de un script pequeño embebido en la propia skill (§3 de esa spec).
+Consecuencia: `core/inventory.py`/`core/catalogo_documental.py` (que hoy solo alimentan ese camino
+deprecado) quedan sin plan que los reviva — candidatos limpios a retirar, no a fusionar aquí (ver
+anotación en #48). Esta entrada queda cerrada/descartada salvo que Nikolai la reabra explícitamente.
 
 ---
 
@@ -2837,6 +2858,16 @@ máquina YA están construidos) → el trabajo es el **contrato de consumo a niv
 idempotencia por sha256 actual** (hay que reescribir el algoritmo de skip, no solo añadir columna al
 `_MANIFIESTO`); (4) piloto propuesto W-02VND1 como gate anti-spec-dormido.
 
+**Anotación 2026-07-23 (W-02VND1) — decisión-madre RESUELTA.**
+`docs/superpowers/specs/2026-07-23-emails-atomizados-sala-lectura-design.md` (PR #124, mergeado a `main`
+en `55df077`) descarta `#56` a favor del camino de esta entrada (skill + script embebido) — ver anotación
+en #56. Ese mismo spec queda, a su vez, **pendiente de adjudicar** 3 hallazgos P0 de su propia revisión
+adversarial antes de poder implementarse; su hallazgo P0.1 confirma, independientemente y el mismo día, el
+mismo hueco de "idempotencia por sha256"/inventario reconciliado señalado en (3) — esta vez en
+`email_atomize` (`corpus.jsonl` sin contrato de cobertura contra `00_Input`). W-02VND1, el piloto propuesto
+en (4), es también el caso sobre el que hoy se midió en vivo el coste de re-hashear `00_Input` en
+`sala_maquina.py` (#48/#84) — misma familia de carencia, un escalón antes en el pipeline.
+
 ## 76. Cuestión ABIERTA: ¿reañadir `read_media_file` (lectura visual directa) a `expedientes-xl`?
 
 **Estado: NO decidido — brainstorming (Nikolai + Claude, 2026-07-19). No es un descarte.** El consolidado
@@ -3036,3 +3067,39 @@ su propia sesión dedicada, no un añadido de paso.
 
 **Coste estimado.** ~30 min de prueba en vivo (patrón ya validado hoy con Juzgado) + un
 wrapper pequeño en código si el resultado es limpio.
+
+---
+
+## 84. Bug latente: `sala_maquina apply` reintenta indefinidamente documentos no resueltos (sin límite ni backoff)
+
+**Disparador:** ninguno todavía — anotado en vivo durante el intake de la querella penal de W-02VND1
+(2026-07-23): mensajes `[tesseract] Error during processing.` durante una corrida que solo tenía 43
+ficheros nuevos que procesar correspondían a documentos antiguos ya fallidos el 9-jul (vía Cowork), no
+al lote nuevo — sin promover a `PLAN.md` a la espera de que el letrado decida si conviene un límite
+explícito o solo visibilidad. Relacionado: #48 (misma corrida, hallazgo hermano sobre `inventariar()`),
+#58 (cobertura acumulativa, mismo mecanismo de estado).
+
+**Estado actual.** `scripts/sala_maquina.py::apply` solo añade un sha a "procesado"
+(`_exitosos_por_bundle`, línea 83) si su resultado fue `ok`/`low`; un documento en
+`error`/`empty`/`sin_soporte` nunca entra en `_sala_maquina_state.json` → `plan()`
+(`core/sala_maquina.py`, línea 152) lo vuelve a marcar `skip=False` en TODA corrida futura sin
+`--force`, reintentando OCR real sin límite de intentos ni backoff. En W-02VND1, de ~672 ficheros
+antiguos en `00_Input/`, solo 503 shas físicos constan como "procesados" en
+`_sala_maquina_state.json` — el resto (documentos genuinamente irrecuperables: cifrados, corruptos,
+formatos sin soporte) se reintenta en cada `apply`, indefinidamente.
+
+**Mejora propuesta.** Decidir entre (a) un contador de intentos por sha con tope (p. ej. 3) tras el
+cual se marca `descartado` explícito en la cobertura sin más reintentos automáticos, o (b) mantener
+el reintento infinito pero hacerlo VISIBLE antes de correr (`plan` podría listar "N documentos con
+fallo persistente, reintentados de nuevo"). Revisar también por qué falta `_cobertura.json` en
+W-02VND1 (solo existe `_sala_maquina_state.json`) pese a que el código de `apply` sí lo persiste
+(línea 179) — probablemente la corrida del 9-jul (vía Cowork) usó una versión del pipeline anterior a
+que se introdujera ese fichero, o no se copió al Drive en el checkin correspondiente; sin ese
+fichero no hay forma de ver, sin re-ejecutar, cuáles de los ~169 documentos pendientes fallan y por qué.
+
+**Justificación de no aplicarlo ahora.** Sin decisión de Nikolai sobre (a) vs (b); construir
+cualquiera de las dos sin esa decisión es apostar el diseño. El caso concreto (W-02VND1) no está
+bloqueado por esto — solo es más lento de lo necesario.
+
+**Coste estimado.** (a) contador+tope: ~1h (campo nuevo en `DocCobertura`, chequeo en `plan()`,
+test). (b) solo visibilidad: ~30 min (contar en `plan`, sin cambiar `apply`).
