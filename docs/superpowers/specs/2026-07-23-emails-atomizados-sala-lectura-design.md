@@ -40,9 +40,28 @@ que Paola, Ana y Sergio solo reimportan el `.skill` como ya hacen.
 
 ### 2.1 Forma de copia: un bundle por grupo de hilo
 
-Se **reutiliza `agrupar_por_hilo` tal cual** ([`preclasificar.py:133-155`](../../../.claude/skills/organizar-sala-lectura/scripts/preclasificar.py:133)),
-que ya agrupa los `.eml` por hilo y ya está endurecido contra el falso positivo de una cifra en el
-asunto (ítem 11 del backlog de robustez). Lo único que cambia es **dónde aterriza cada fichero**:
+**Corrección de premisa (2026-07-26, antes de escribir el plan).** La primera versión de este spec
+decía "se reutiliza `agrupar_por_hilo` tal cual". **Es falso y no habría entregado el beneficio:** esa
+función no agrupa hilos, agrupa **colisiones de nombre del mismo día y mismo asunto**. `email_export`
+nombra cada mensaje `AAAA-MM-DD_descripcion.eml` con **su propia fecha**
+([`email_export.py:119-129`](../../../core/email_export.py:119)) y `_ruta_unica` solo añade `_2`/`_3`
+cuando el nombre completo choca; el propio test vigente se llama
+`test_agrupar_por_hilo_junta_variantes_del_mismo_dia_y_asunto`. Un hilo que cruza días produce stems
+distintos y **no se agrupaba**: 277 correos habrían colapsado a ~240, no a ~40.
+
+**Lo que sí funciona, y es más barato que leer cabeceras RFC:** `_slug_descripcion` **ya elimina los
+prefijos `Re:`/`RV:`/`Fwd:`** antes de construir el nombre
+([`email_export.py:90-103`](../../../core/email_export.py:90)), así que **todos los mensajes de un hilo
+comparten la misma `descripcion`** y solo difieren en el prefijo de fecha. Por tanto la clave de hilo
+pasa a ser **la descripción, ignorando la fecha** — sigue siendo solo nombres de fichero, cero
+lecturas de contenido, idéntico en los tres modos de acceso. `MEJORAS #86` (threading por cabeceras
+RFC) se conserva como el refinamiento fino, no como prerrequisito.
+
+`agrupar_por_hilo` **cambia de clave** (descripción en vez de stem con fecha), conservando por
+construcción la protección del ítem 11 del backlog: un `_N` final solo se recorta si la descripción
+sin ese sufijo existe de verdad en el conjunto, así que `oferta_vivienda_1_990_000` no se fusiona con
+un `oferta_vivienda_1_990` inexistente. Con la clave nueva, lo que cambia además es **dónde aterriza
+cada fichero**:
 
 - **Grupo con ≥2 mensajes** → subcarpeta fechada `AAAA-MM-DD_descripcion/`; **principal** = el `.eml`
   más antiguo; **anexos** = los demás mensajes y los adjuntos MIME de todos ellos.
@@ -107,26 +126,42 @@ intacto).
   de conversación no se agrupa. Es la limitación que el propio `agrupar_por_hilo` ya advierte en su
   docstring ("proxy barato, no sustituto de un threading riguroso si algún día hace falta").
   Threading riguroso por `References`/`In-Reply-To` → `MEJORAS #86`.
+- **Dos conversaciones distintas con el mismo asunto comparten bundle** (p. ej. dos "consulta" de
+  años diferentes). **Decisión de Nikolai 2026-07-26: sin guarda** — se descartó partir por salto
+  temporal para no introducir un umbral arbitrario. El daño está acotado: los documentos conservan su
+  fecha correcta en el `_MANIFIESTO.md` y en `CRONOLOGIA.md`, el crudo de `00_Input` está intacto y la
+  sala es una vista derivada, no prueba; la molestia es de legibilidad. `MEJORAS #86` es el arreglo
+  cuando moleste de verdad.
 - **Correspondencia suelta no gana nada:** un hilo de un único mensaje queda plano, como hoy.
 - **La sala no aprovecha el trabajo de `email_atomize`.** Sigue releyendo el `.eml`. Ese era el
   objetivo original y queda íntegro en `MEJORAS #84`.
 
 ## 6. Plan de testing
 
-1. Grupo de 3 `.eml` → una subcarpeta, principal = el más antiguo, 2 anexos con `parent_id` correcto
-   y su fecha propia.
-2. Grupo de 1 mensaje sin adjuntos → fichero plano, sin subcarpeta.
-3. `construir_indice` sobre 1 principal + 3 anexos → **una** línea con `(+3 anexos)`;
-   `construir_cronologia` sobre lo mismo → **cuatro** líneas.
-4. Re-corrida sin cambios → 0 escrituras (skip por `sha256` intacto).
-5. Re-corrida con un `.eml` nuevo del mismo hilo → 1 anexo nuevo en la carpeta existente, principal
-   intacto (`sha256` idéntico), índice con `(+4 anexos)`.
-6. Re-corrida con un `.eml` nuevo **anterior** al principal → entra como anexo, la carpeta **no** se
-   renombra, `CRONOLOGIA.md` lo ordena primero.
-7. `verificar_sala.py` verde sobre una sala con bundles de hilo: sin `parent_id` huérfano, sin
-   colisión de `nombre_canonico`.
-8. **Regresión:** tests de `preclasificar` e índices verdes; los bundles de WhatsApp y CRM existentes
-   siguen pasando el verify y ahora aparecen colapsados en el índice.
+Sobre las **dos funciones deterministas** que soportan el diseño (`agrupar_por_hilo` con la clave
+nueva y `layout_bundle_hilo`, ambas en `scripts/preclasificar.py`) y sobre `construir_indice`:
+
+1. **Clave nueva:** el mismo asunto en fechas distintas cae en un solo grupo.
+2. **Regresión del ítem 11:** `oferta_vivienda_1_990_000` sigue sin fusionarse con un
+   `oferta_vivienda_1_990` inexistente.
+3. Grupo de 3 `.eml` → una subcarpeta, principal = el más antiguo, 2 anexos con `parent_id` = nombre
+   pelado de la carpeta y **su fecha propia**.
+4. Grupo de 1 mensaje **sin** adjuntos → plano, sin subcarpeta. Grupo de 1 **con** adjuntos → bundle.
+5. Un `0000-00-00` (fecha no parseable) **no** se convierte en principal: las fechas ciertas van
+   primero (misma convención que el índice).
+6. **Idempotencia del nombre (§2.3):** con `carpeta_existente` dado, añadir al grupo un mensaje
+   **anterior** al principal **no** renombra la carpeta; el mensaje entra como anexo con su fecha.
+7. `construir_indice` sobre 1 principal + 3 anexos → **una** línea con `(+3 anexos)`;
+   `construir_cronologia` sobre lo mismo → **cuatro** líneas (sin cambios).
+8. **Ningún anexo desaparece en silencio:** un anexo con `parent_id` huérfano (sin principal que lo
+   reclame) sigue emitiendo su propia línea en `INDICE.md` — misma doctrina del ítem 12 del backlog.
+9. **Regresión:** suite completa verde, incluidos los tests vigentes de `agrupar_por_hilo`
+   (actualizados a la clave sin fecha) y los bundles de WhatsApp/CRM, que ahora aparecen colapsados.
+
+**Fuera de test unitario, por honestidad:** las invariantes de re-corrida (skip por `sha256`, "solo
+añade") no las implementa código de la skill sino el procedimiento del `SKILL.md` sobre el
+`_MANIFIESTO.md`; no se simulan con un test. Lo testeable de esa promesa es la **determinismo de
+`layout_bundle_hilo`**, que cubre el test 6.
 
 ## 7. Pasos operativos al cerrar
 
