@@ -23,7 +23,6 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 5 | [abrir-caso F3-judicial](#abrir-caso--f1--f2a--f3-ac-mergeadas-f2b-aparcada-f3-judicial-pendiente) | disparador confirmado 2026-07-22 | plan concreto listo (4 piezas, ver bloque) | medio |
 | 6 | [Google MCP F4 (Calendar)](#siguiente-google-mcp-f1-lectura--mergeada--f2-escriturapermisosnavegación--mergeada--f3f4-pendientes) | diferida | disparador | medio |
 | 7 | [Intake email — filtro de exclusión de ruido](#siguiente-intake-email-filtro-exclusión-de-ruido-administrativo-y-cruzado) | pendiente | disparador: W-02VUDR (fuga cruzada de 7 casos ajenos + cartera de litigios) | medio |
-| 8 | [Sala de lectura — bundle por hilo de correo](#siguiente-sala-hilos-bundle-por-hilo-de-correo-en-la-sala-de-lectura-slice-1) | ✅ construido y revisado (5 commits, suite verde, skill v1.14) | pendiente de merge (PR de esta rama) | bajo |
 
 > Detalle de cada ítem en su bloque `[SIGUIENTE-*]` más abajo. Backlog sin
 > promover: `docs/MEJORAS_FUTURAS.md`. Ledger de cerrados: `## Cerrados` (final).
@@ -182,34 +181,41 @@ puro + orquestadores finos. Spec: `docs/superpowers/specs/2026-07-09-abrir-caso-
 
 ## [SIGUIENTE-SALA-HILOS] Bundle por hilo de correo en la sala de lectura (Slice 1)
 
+> ✅ **CERRADO (2026-07-26)** → ledger `## ✅ Cerrados`. Construido, revisado y mergeado en **PR #131**
+> (`d27172b`), skill **v1.14**, suite 2366/0/0. Bloque conservado como histórico. **Tail operativo que
+> NO bloquea: re-importar el `.skill` v1.14 en Cowork** (si no, Paola/Ana/Sergio siguen en la v1.12).
+
 *Spec: `docs/superpowers/specs/2026-07-23-emails-atomizados-sala-lectura-design.md` (re-tajada
 2026-07-26). Revisión adversarial adjudicada: `…-adversarial-review.md`. Origen: `MEJORAS #75`
-(promovido parcialmente). Implementación: Claude Code. Plan de implementación: pendiente.*
+(promovido parcialmente). Plan TDD: `docs/superpowers/plans/2026-07-26-sala-lectura-bundle-por-hilo.md`.
+Implementación: Claude Code.*
 
 **Objetivo.** Que la correspondencia ocupe **una entrada por hilo** en la sala, no una por mensaje: un
 caso de ~277 correos deja de producir ~277 ficheros sueltos y ~277 líneas de índice.
 
 **Tres cambios, todos dentro del `.skill`** (scripts stdlib puro, sin instalación nueva para el
-equipo): (1) forma de copia = un bundle fechado por grupo de hilo, reutilizando `agrupar_por_hilo` tal
-cual, con el `.eml` más antiguo como principal y el resto + adjuntos MIME como anexos con su fecha
-propia (grupo de 1 sin adjuntos → plano); (2) `INDICE.md` colapsa bundles a una línea con
-`(+N anexos)` —hoy `construir_indice` emite una línea por fila sin mirar `parent_id`, así que agrupar
-en carpetas por sí solo no reduciría nada— mientras `CRONOLOGIA.md` se deja intacta; (3) el nombre del
-bundle se fija en la primera corrida y nunca se renombra.
+equipo): (1) forma de copia = un bundle fechado por grupo de hilo, con el `.eml` de fecha cierta más
+antigua como principal y el resto + adjuntos MIME como anexos con su fecha propia (grupo de 1 sin
+adjuntos → plano); (2) `INDICE.md` colapsa bundles a una línea con `(+N anexos)` —`construir_indice`
+emitía una línea por fila sin mirar `parent_id`, así que agrupar en carpetas por sí solo no habría
+reducido nada— mientras `CRONOLOGIA.md` se deja intacta; (3) el nombre del bundle se fija en la primera
+corrida y nunca se renombra.
+
+**Dos correcciones que el build impuso al diseño** (ver bitácora del 38º cierre): la clave de
+`agrupar_por_hilo` **tuvo que cambiar** (agrupaba colisiones del mismo día y asunto, no hilos), y la
+afirmación «idempotencia sin algoritmo nuevo» del §3 del spec **era falsa para bundles** — el nombre de
+carpeta y de anexo eran estado derivado del grupo, con tres caminos de pérdida/sobrescritura que
+encontró la revisión final. Remedio: **nombres como función pura del fichero de origen**.
 
 **Lo que este ítem NO hace** (salió del alcance en el re-tajo): no consume `01_Procesado/Emails/`
 (→ `MEJORAS #86`), no toca el motor OCR de adjuntos (→ `MEJORAS #87`), no introduce threading por
 cabeceras RFC (→ `MEJORAS #88`), no toca `email_atomize` ni `core/anon`.
 
-**Por qué es de coste bajo:** la idempotencia **no cambia** (sigue el `sha256` por `.eml`, cada
-mensaje conserva su fila), no hay artefacto sintetizado que copiar, y no hay migración de salas ya
-montadas (lo copiado se salta; solo lo nuevo se bundlea). El mecanismo de ledger de `MSG-id` que la
-revisión desmontó quedó **retirado**, no parcheado.
-
-- [ ] Plan TDD (`superpowers:writing-plans`) + implementación de los 3 cambios.
-- [ ] 8 tests del §6 del spec (incluye re-corrida con mensaje nuevo, y con mensaje anterior al
-      principal sin renombrar la carpeta).
-- [ ] Skill → v1.13 (frontmatter + CHANGELOG), re-empaquetar y **re-importar el `.skill` en Cowork**.
+- [x] Plan TDD (`superpowers:writing-plans`) + implementación de los 3 cambios.
+- [x] Tests del §6 del spec, +10 tras la revisión final (estabilidad del nombre de anexo entre
+      corridas, `carpeta_existente` sin candidato, `plano_existente`, basenames repetidos).
+- [x] Skill → **v1.14** (`main` había tomado la 1.13) + CHANGELOG; `.skill` re-empaquetado.
+- [ ] **Re-importar el `.skill` v1.14 en Cowork** (acción manual de Nikolai; ningún test lo cubre).
 
 ---
 
@@ -1564,6 +1570,7 @@ trabajo para que no contamine).
 > Lista plana, reciente primero. Promover a agrupación por área cuando supere ~30
 > entradas (lo avisa `session_close`).
 
+- ✅ **[SIGUIENTE-SALA-HILOS]** Bundle por hilo de correo en la sala de lectura (Slice 1 del re-tajo del spec de emails atomizados) — la correspondencia ocupa **una entrada por hilo**, no una por mensaje, y `INDICE.md` colapsa los bundles a una línea `(+N anexos)` (`CRONOLOGIA.md` intacta). Clave de `agrupar_por_hilo` cambiada a la **descripción** del nombre (la anterior solo unía colisiones del mismo día y asunto) y `layout_bundle_hilo` con **nombres como función pura del fichero de origen**, tras una revisión final que encontró tres caminos de pérdida/sobrescritura de documentos ya copiados. Skill **v1.14**, suite 2366/0/0. **PR #131** (`d27172b`). Spec `2026-07-23-emails-atomizados-sala-lectura-design.md` + plan `2026-07-26-sala-lectura-bundle-por-hilo.md`. Slices 2 y 3 sin promover: `MEJORAS #86`/`#87`; threading RFC en `#88`. **Tail:** re-importar el `.skill` en Cowork.
 - ✅ **[GOBERNANZA-DOCUMENTAL]** Revisión adversarial del diagnóstico de INDICE/PLAN/specs + remediación — 4 de los 5 hallazgos REFUTADOS (el test de `INDICE.md` DESCARTADO: asertaba un contrato que nunca existió); el hueco real estaba en el **ledger**, no en el índice. Ejecutado en tres PR: **#127** (`7c20442`, D1/D2/D6b — el atlas ya no ordena el comando que lo mutila, guarda anti-clobber, tres estados de Fase B, frontmatter generado), **#128** (`4f4bc39`, ledger `[CRM-ATLAS]` + `[PLUGIN-FEESDEFENDER]`, higiene de punteros H2/H4/D3/D4/D5/D6a y guards G1-G3) y **#129** (aviso `_avisar_specs_sin_traza` en `session_close`). Informe: **PR #126** (`4bc8dc2`) · [informe](docs/superpowers/specs/2026-07-26-gobernanza-indice-adversarial-review.md) (2026-07-26)
 - ✅ **[SIGUIENTE-PRECLASIFICACION-SALA-LECTURA]** Robustez/velocidad de `organizar-sala-lectura` — 16/16 ítems del backlog fable-5: `preclasificar.py` (gate determinista), `copiar_manifiesto_rclone.py` (rcd + reanudación), `verificar_sala.py`+`manifiesto_parser.py`, columnas `categoria`/`subcategoria_crm`; v1.12 — PR #116 (8 ALTA) + PR #121 (8 MEDIA/BAJA) · [plan](docs/superpowers/plans/2026-07-21-preclasificacion-sala-lectura.md) (2026-07-23)
 - ✅ **[SPLIT-SALA-MAQUINA]** Split de bundles multi-documento en la Sala de máquina — F1 (cerebro `core/split_documental.py`, PR #45 `6dba396`) + F2 (integración en `sala_maquina`/CLI, Tareas 12-15 + 13B, PR #109 `cc13355`): split entre OCR y MD, cobertura y estado por documento lógico, manifiesto editable + `--force`, passthrough robusto; skill `organizar-sala-maquina` v1.3; follow-ons `MEJORAS #78/#79` · [plan](docs/superpowers/plans/2026-07-14-split-sala-maquina.md) (2026-07-21)
