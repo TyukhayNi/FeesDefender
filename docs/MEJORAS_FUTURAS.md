@@ -2764,6 +2764,16 @@ despliegue.
 
 ## 75. Sala de lectura como consumidor de la capa «procesado» (MD fiables → OCR-soporte → crudo)
 
+> ⚠️ **[PROMOVIDO PARCIALMENTE → `PLAN.md`, 2026-07-26].** El spec que materializaba este ítem se
+> **re-tajó en tres slices** tras dos revisiones adversariales (ver
+> `docs/superpowers/specs/2026-07-23-emails-atomizados-sala-lectura-adversarial-review.md`):
+> la **granularidad** (un documento por hilo, no por mensaje) se promueve como
+> `[SIGUIENTE-SALA-HILOS]` en `PLAN.md`; el **consumo de las fuentes atomizadas** —el corazón de este
+> ítem— sigue **sin promover** y vive ahora en **`#84`** con sus requisitos de entrada; la
+> **unificación del motor OCR** de adjuntos, en **`#85`**. Este bloque se conserva porque la
+> arquitectura y los criterios de copia que cerró Nikolai el 2026-07-19 siguen vigentes como base de
+> `#84`.
+
 **Origen (2026-07-19, fase 2 del despliegue MCP).** Al migrar `organizar-sala-lectura` a v1.8, Nikolai
 señaló que la **skill re-procesa el crudo** para clasificar, cuando el **motor core deprecado** clasificaba
 leyendo los **MD fiables** (`core/sala_lectura.py:13-14` «Claude rellena la worklist leyendo los `MD/` en
@@ -3036,3 +3046,88 @@ su propia sesión dedicada, no un añadido de paso.
 
 **Coste estimado.** ~30 min de prueba en vivo (patrón ya validado hoy con Juzgado) + un
 wrapper pequeño en código si el resultado es limpio.
+
+## 84. Consumo de las fuentes atomizadas por la sala de lectura (Slice 2 del re-tajo)  [ex-`#75`, parte de consumo]
+
+**Origen.** Es el objetivo original del spec
+`docs/superpowers/specs/2026-07-23-emails-atomizados-sala-lectura-design.md`, que el **re-tajo del
+2026-07-26** dejó fuera: que `organizar-sala-lectura` deje de releer el `.eml` crudo cuando el caso ya
+tiene `core/email_atomize` corrido, y aproveche el dedup de adjuntos, la limpieza de MIME/HTML y la
+autoría reconstruida de Capa B. La arquitectura y los criterios de copia siguen siendo los que Nikolai
+cerró el 2026-07-19 (`#75`); lo que falta es un spec que resuelva los bloqueantes.
+
+**Requisitos de ENTRADA (no negociables — vienen de dos revisiones adversariales independientes,
+adjudicadas en `…-adversarial-review.md`):**
+1. **Contrato de cobertura reconciliable.** "Existe `corpus.jsonl`" NO equivale a "todo cubierto".
+   La cobertura se lee de `_registro.json.eml_procesados` (`core/email_atomize/ids.py:77-91`), con el
+   caveat de que la llave es el **nombre** del fichero y `corpus.jsonl` **no** emite `eml_origen`
+   (`corpus.py:21-46`) → mapear un `.eml` cubierto a *su* hilo no tiene llave fuerte hoy.
+2. **Capa B y el hilo vacío.** Todos los mensajes reconstruidos llevan `hilo=""` (`model.py:43`;
+   `construir_b` no lo fija). Agrupar por `hilo` a ciegas fabrica un pseudo-hilo con conversaciones
+   sin relación — misatribución en un expediente probatorio. Derivable en el consumidor vía
+   `procedencia[].citado_en` (el portador), sin tocar el atomizador.
+3. **Identidad de mensaje.** `MSG-id` está congelado por `Message-ID`, **no por contenido**
+   (`ids.py:37-46`), y el contenido puede mutar por upgrade de fidelidad; el conjunto de mensajes de
+   un hilo puede además **encoger** entre corridas. Cualquier mecanismo de skip que asuma lo
+   contrario está roto de origen (así murió el §7 del spec anterior).
+4. **Adjuntos muchos-a-muchos.** Un adjunto deduplicado por sha256 puede pertenecer a varios hilos:
+   hace falta política explícita antes de reutilizar el dedup global.
+
+**Material sin adjudicar que hay que revisar al escribir el spec** (de los 28 hallazgos del workflow
+que no llegaron a verificarse por el límite de gasto): caché de `adjuntos_contenido` a versionar,
+mapeo de confianza del router, adjuntos decorativos excluidos por el camino atomizado, línea meta
+inicial de `corpus.jsonl`, ejecutabilidad del script en Modo 3 (nube pura), y `senales_gate` marcando
+los adjuntos reutilizados como "binario opaco sin espejo MD".
+
+**Disparador de promoción a `PLAN.md`:** un caso real donde la calidad de clasificación del correo
+importe (correspondencia nuclear de activación mal categorizada por leer el `.eml` crudo, del tipo que
+ya pasó en W-02VUDR) **o** decisión explícita de Nikolai. **No promover por completitud de diseño:**
+el Slice 1 ya entrega la legibilidad, que era el beneficio visible.
+
+## 85. Motor de extracción/OCR unificado para adjuntos de correo (Slice 3 del re-tajo)
+
+**Origen.** El §8 del spec de 2026-07-23, retirado en el re-tajo del 2026-07-26 por ser un proyecto
+independiente de la sala de lectura que se había colado dentro.
+
+**El problema real.** `core/adjuntos_contenido` extrae texto de los adjuntos con Docling, un motor
+**distinto** del OCRmyPDF que usa `core/sala_maquina.py`. Consecuencia: el mismo documento puede dar
+texto de calidad distinta según la puerta por la que entre (suelto en Drive vs. pegado a un correo), y
+Docling trae un tope de páginas que trunca en silencio los anexos largos.
+
+**Por qué no fue un cambio de una línea** (ambas revisiones lo confirmaron): `core/anon/ocr.py::ocr_pdf`
+es **PDF→PDF** (devuelve un PDF buscable y exige ruta de salida), no un extractor de texto, mientras el
+router de `adjuntos_contenido` espera una `Extraccion` textual. Hace falta un **adaptador completo**
+(PDF temporal → extracción → limpieza → gestión de fallos → PDF nativo / ya OCRizado → actualización
+coherente de `metodo_extraccion`/`ocr_aplicado`), y además Docling es el extractor **primario** de
+tipos que `ocr_pdf` no cubre, así que retirarlo sin más dejaría formatos sin cobertura. Súmese la
+caché por sha256 a versionar (sin bump, los adjuntos ya procesados conservarían el texto viejo) y el
+mapeo de confianza del router, que hoy depende del nombre del motor.
+
+**Corrección de dato para el futuro spec:** la ruta del texto de adjunto **no** es
+`adjuntos/<sha>.contenido.md`; el nombre real lo compone `core/adjuntos_contenido/pipeline.py:27-29`.
+
+**Disparador de promoción a `PLAN.md`:** un adjunto largo truncado en silencio que afecte a un caso
+real, o una divergencia de texto observada entre los dos caminos. **No** promover por limpieza.
+
+## 86. Threading riguroso de correo por cabeceras RFC (`References`/`In-Reply-To`)
+
+**Estado.** Limitación **aceptada y documentada** en el Slice 1 (spec de 2026-07-23 §5), no un bug.
+
+`agrupar_por_hilo` (`.claude/skills/organizar-sala-lectura/scripts/preclasificar.py:133-155`) agrupa
+por **nombre de fichero** —el esquema `asunto_fecha` + sufijos `_N` que escribe `core.email_export`—
+y su propio docstring ya lo declara: "heurística de nombre, no de `Message-ID`/`References` — proxy
+barato, no sustituto de un threading riguroso si algún día hace falta". Consecuencia: un hilo cuyo
+**asunto cambió a mitad** de conversación no se agrupa, y se reparte en varios bundles.
+
+**Mejora propuesta.** Componentes conexos (union-find estilo JWZ) sobre el grafo
+`Message-ID`/`References`/`In-Reply-To` leídos con el `email` de la stdlib — compatible con el
+requisito de que los scripts de la skill sean self-contained. Resuelve además la partición
+conservadora que Codex señaló como P1.2 (cadena A←B←C donde C perdió `References`).
+
+**Coste y cautelas.** Exige leer cabeceras de **todos** los `.eml`, no de un representante por grupo:
+barato en Modo 1/2 (filesystem), caro en Modo 3 (cada lectura es una descarga del conector) → habría
+que degradar a la heurística de nombre en nube pura. Riesgo inverso: un cliente que referencie un
+mensaje ajeno puede **sobre-fusionar** hilos distintos.
+
+**Disparador de promoción:** un caso real donde un hilo con cambio de asunto quede troceado de forma
+molesta en la sala. Hasta entonces, la heurística de nombre basta.
