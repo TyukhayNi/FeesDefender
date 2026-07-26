@@ -49,8 +49,10 @@
 **Interfaces:**
 - Consumes: nada de tareas anteriores.
 - Produces: `agrupar_por_hilo(rutas_eml: list[str]) -> dict[str, list[str]]` — las **claves pasan a ser
-  la descripción sin prefijo de fecha** (antes eran el stem completo con fecha). También expone
-  `_descripcion_hilo(nombre: str) -> str` y `fecha_de_nombre(nombre: str) -> str`, que la Task 2 reusa.
+  la descripción sin prefijo de fecha** (antes eran el stem completo con fecha). Añade además dos
+  nombres a nivel de módulo que **la Task 2 consume**: `fecha_de_nombre(nombre: str) -> str` (público)
+  y la constante `_SIN_FECHA = "0000-00-00"`. `_descripcion_hilo(nombre: str) -> str` es interno de
+  esta tarea; ninguna otra lo usa.
 
 **Contexto que el implementador necesita.** `core.email_export.eml_filename` nombra cada `.eml`
 `AAAA-MM-DD_descripcion.eml` con la fecha **de ese mensaje**, y `_slug_descripcion` ya elimina los
@@ -365,7 +367,7 @@ def layout_bundle_hilo(
     if not ordenados:
         return []
 
-    es_bundle = len(ordenados) >= 2 or bool(con_adjuntos)
+    es_bundle = len(ordenados) >= 2 or any(n in con_adjuntos for n in ordenados)
     principal = ordenados[0]
     if not es_bundle:
         return [{
