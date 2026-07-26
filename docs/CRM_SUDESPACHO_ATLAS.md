@@ -1,8 +1,14 @@
+---
+estado: vigente
+dueño: Nikolai Tyukhay
+---
+
 # Atlas del CRM sudespacho — inventario de endpoints
 
 > **GENERADO por `scripts.crm_atlas discover` — NO editar a mano.**
-> Regenerar: `python -m scripts.crm_atlas discover --phase a`. El `git diff` entre corridas = deriva del tenant.
+> Regenerar: `python -m scripts.crm_atlas discover --phase all`. El `git diff` entre corridas = deriva del tenant.
 > Diseño: `docs/superpowers/specs/2026-07-20-crm-atlas-descubrimiento-design.md`.
+> Única excepción al «NO editar a mano»: alinear a mano estas líneas de cabecera con lo que ya emite el render corregido, cuando no hay corrida en vivo disponible. Cualquier otra edición se pierde en la siguiente corrida.
 
 | Meta | Valor |
 |---|---|
@@ -11,7 +17,7 @@
 | Fuente OAS3 | `https://api-crm-commons-pro.sudespacho.biz/api/docs.json` |
 | OpenAPI | 3.0.0 · API CRM reference documentation v0.0.1 |
 | Auth global | `apiKey` (header `Authorization`) |
-| Fase B (esquema por elemento) | ⏳ pendiente |
+| Fase B (esquema por elemento) | ⚠️ 87/89 (2 degradados) |
 
 **548 operaciones** sobre **486 paths declarados** (424 con operación documentada). Por método: DELETE 63 · GET 230 · PATCH 18 · POST 183 · PUT 54.
 

@@ -358,19 +358,50 @@ def _md_escape(text: str | None) -> str:
     return text.replace("|", "\\|").replace("\n", " ")
 
 
+def _fase_b_estado(pb: dict) -> str:
+    """Estado de la Fase B en TRES valores (D2, 2026-07-26).
+
+    `ran` = se ejecutó; `complete` = se ejecutó **sin degradados**. El render
+    original solo miraba `complete`, así que una corrida con 2 elementos
+    degradados se presentaba como «⏳ pendiente» mientras el propio documento
+    llevaba abajo las ~2.300 líneas del esquema. Son estados distintos:
+
+    - `⏳ no ejecutada`      — nunca corrió la Fase B.
+    - `✅ 89/89`             — corrió y resolvió todo.
+    - `⚠️ 87/89 (2 degradados)` — corrió, pero con elementos sin resolver.
+    """
+    if not pb.get("ran"):
+        return "⏳ no ejecutada"
+    ok = pb.get("elements_ok", "?")
+    total = pb.get("elements_total", "?")
+    if pb.get("complete"):
+        return f"✅ {ok}/{total}"
+    return f"⚠️ {ok}/{total} ({pb.get('elements_degraded', '?')} degradados)"
+
+
 def render_markdown(atlas: dict) -> str:
     """Render humano del atlas (generado — no editar a mano). Tolera atlas de Fase A y B."""
     meta = atlas.get("meta", {})
     summ = atlas.get("summary", {})
     oas = meta.get("sources", {}).get("oas3", {})
-    phase_b_complete = meta.get("phase_b", {}).get("complete", False)
     lines: list[str] = []
+    # Frontmatter (D6b): el atlas es doc de raíz de docs/ y entra en INDICE.md;
+    # el guard de gobernanza exige `estado:`. Al ser generado, no se puede
+    # añadir a mano de forma estable — lo emite el propio render.
+    lines.append("---")
+    lines.append("estado: vigente")
+    lines.append("dueño: Nikolai Tyukhay")
+    lines.append("---")
+    lines.append("")
     lines.append("# Atlas del CRM sudespacho — inventario de endpoints")
     lines.append("")
     lines.append("> **GENERADO por `scripts.crm_atlas discover` — NO editar a mano.**")
-    lines.append("> Regenerar: `python -m scripts.crm_atlas discover --phase a`. "
+    lines.append("> Regenerar: `python -m scripts.crm_atlas discover --phase all`. "
                  "El `git diff` entre corridas = deriva del tenant.")
     lines.append("> Diseño: `docs/superpowers/specs/2026-07-20-crm-atlas-descubrimiento-design.md`.")
+    lines.append("> Única excepción al «NO editar a mano»: alinear a mano estas líneas de cabecera "
+                 "con lo que ya emite el render corregido, cuando no hay corrida en vivo "
+                 "disponible. Cualquier otra edición se pierde en la siguiente corrida.")
     lines.append("")
     lines.append("| Meta | Valor |")
     lines.append("|---|---|")
@@ -380,7 +411,7 @@ def render_markdown(atlas: dict) -> str:
     lines.append(f"| OpenAPI | {oas.get('openapi')} · {oas.get('info_title')} v{oas.get('info_version')} |")
     lines.append(f"| Auth global | `{oas.get('global_security_auth', '?')}` "
                  f"(header `{_security_header(oas)}`) |")
-    lines.append(f"| Fase B (esquema por elemento) | {'✅' if phase_b_complete else '⏳ pendiente'} |")
+    lines.append(f"| Fase B (esquema por elemento) | {_fase_b_estado(meta.get('phase_b', {}))} |")
     lines.append("")
     total_ops = summ.get("total_operations", "?")
     total_paths = summ.get("total_paths", "?")
@@ -501,7 +532,7 @@ def render_digest(atlas: dict) -> str:
     out.append("# Digest del atlas del CRM sudespacho")
     out.append("")
     out.append("> Superficie de DERIVA (legible en diff). Regenerar: "
-               "`python -m scripts.crm_atlas discover`. NO editar a mano.")
+               "`python -m scripts.crm_atlas discover --phase all`. NO editar a mano.")
     out.append("")
     out.append(f"## Digest — tenant `{meta.get('tenant', '?')}`")
     out.append("")
