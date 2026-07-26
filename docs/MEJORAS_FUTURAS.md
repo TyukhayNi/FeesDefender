@@ -2592,6 +2592,72 @@ completitud de diseño ni por anticipación).
   falle (`OutsideSandbox`). Detectado en la revisión final whole-branch como observación
   no-bloqueante adyacente al fix, no introducida por él.
 
+## 89. Que la documentación no se desincronice ni cueste tiempo: 4 medidas contra los líos de edición paralela
+
+**Origen (2026-07-26, sesión del bundle por hilo / PR #131).** Al integrar la rama con `main` —que
+había avanzado 4 PRs por sesiones concurrentes— salieron **9 conflictos** y tres colisiones de
+identificadores: el **#84** de este mismo documento (dos sesiones cogieron el mismo número), la
+**versión 1.13** de `organizar-sala-lectura` (publicada en `main` mientras la rama escribía esa misma
+versión) y la **fila 7** de la cola de `PLAN.md`. Ninguna colisión costó "un conflicto": costó
+**propagar el renumerado a 7 ficheros** con referencias cruzadas. Además `PLAN.md` afirmaba estado
+falso (un PR ya mergeado seguía como "pendiente de merge"; un ítem ya construido, como "spec lista").
+
+**El fallo más caro no fue un conflicto.** La rama arrancó 4 PRs por detrás de `main`, y una
+reescritura completa de `construir_indice` **estaba a punto de revertir en silencio** un fix que
+`main` ya tenía (fallback `categoria`→`tipo`; 669 filas mal clasificadas en un caso real). No lo cazó
+ningún test: se cazó al mirar `main` antes de mergear. Eso es suerte, no proceso.
+
+**Tres causas raíz:** (a) identificadores monótonos asignados **a mano** en ficheros que varias
+sesiones editan a la vez; (b) ramas que trabajan sobre **base vieja** y lo descubren al final;
+(c) documentación que **repite estado** que git y GitHub ya conocen.
+
+### Medida 1 — Sincronizar con `main` temprano (la única gratis; la que haría primero)
+
+`git fetch && git merge origin/main` **al abrir sesión** y **otra vez antes de reescribir cualquier
+función existente**. Elimina la causa (b) entera. Complemento de coste cero: antes de reescribir una
+función en bloque, `git log -3 -- <fichero>` sobre `origin/main` — el vector del casi-fallo fue
+reescribir en bloque en vez de editar quirúrgicamente. **Coste:** un minuto por sesión, cero código.
+
+### Medida 2 — Quitar los contadores compartidos (no todos cuestan lo mismo)
+
+- **Números de fila de la cola de `PLAN.md`: quitarlos.** La prioridad ya la da el orden de las filas;
+  el número no aporta y es colisión garantizada cuando dos sesiones añaden o cierran ítems.
+  **Coste real: ~5 min.** Verificar antes que ninguna referencia externa cite "fila N".
+- **Versión de skill: validarla contra `origin/main`.** Un guard que falle si la versión que escribes
+  **ya existe** en el `CHANGELOG.md` de `origin/main`. Hoy habría avisado en un segundo, en vez de a la
+  hora, al mergear. **Coste: ~30 min** (un test o un hook de pre-push).
+- **Slug en vez de número para ítems nuevos de este documento: NO es gratis, decidir aparte.** La
+  primera versión de esta idea se estimó en "5 minutos"; **es falso**: `MEJORAS #NN` es la **llave de
+  referencia** usada en docs, specs, CHANGELOGs y commits, y el guard **G1**
+  (`tests/test_docs_gobernanza.py::test_mejoras_futuras_numeracion_unica`) se apoya en el formato
+  `## NN.` precisamente porque esa llave debe ser unívoca. Cambiarlo implica decidir la nueva llave y
+  migrar las referencias. **Queda como cuestión abierta, no como acción.** Mitigación barata mientras
+  no se decida: tomar el número **tras** un `git fetch` (la Medida 1 ya lo cubre).
+
+### Medida 3 — `PLAN.md` deja de narrar el estado que GitHub sabe mejor
+
+Las filas llevan **prioridad, ítem y disparador**; el estado del PR **se consulta, no se transcribe**
+(nada de "pendiente de merge" a mano). Misma doctrina que ya fija
+`docs/GOBERNANZA_FUENTES_VERDAD.md` para los hechos de git: el hogar del dato es quien lo genera.
+**Coste: ~15 min** de limpieza, más la disciplina de no volver a escribirlo.
+
+### Medida 4 — Extender `/status` para que la fidelidad sea un comando, no un acto de fe
+
+Que imprima: cuántos commits lleva la rama **por detrás** de `origin/main`, **qué ficheros tocan en
+común** la rama y `main` (aviso temprano de conflicto), PRs abiertos, y **versión de cada skill en la
+rama frente a `main`**. Convierte las tres causas en algo observable en un segundo. **Coste: ~1 h.**
+Es el que más tiempo ahorra por hora invertida, después de la Medida 1.
+
+### Extra (barato, se repetirá si no se cierra)
+
+Un subagente commiteó en `main` de la **raíz compartida** en vez de en su worktree asignado. Se cierra
+con una línea en el prompt de despacho («verifica `git rev-parse --abbrev-ref HEAD`; si no es la rama
+asignada, aborta») o con un hook. **Coste: 5 min.**
+
+**Disparador de promoción a `PLAN.md`:** decisión de Nikolai. Las Medidas 1 y 4 no dependen de nada; la
+2 y la 3 conviene hacerlas juntas (ambas tocan `PLAN.md`). La cuestión del slug **no se promueve** hasta
+decidir la llave de referencia.
+
 **Disparador de promoción.** Cualquiera de estas piezas se promueve a `PLAN.md`
 individualmente cuando aparezca su caso real (un flujo que necesite escribir en `H:`,
 un caso donde el batch-rename ahorre trabajo manual repetido, una sesión de humo que
