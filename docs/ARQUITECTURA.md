@@ -53,6 +53,7 @@ Cada paso es ejecutable de forma aislada. El pipeline es **idempotente**: re-eje
 | `core/sudespacho_create.py` — constantes `NOTA_*` | `docs/INTEGRACION_SUDESPACHO.md` sección 10 (notas de expediente) |
 | `core/sudespacho_create.py` — constantes `TAG_*` | `docs/INTEGRACION_SUDESPACHO.md` sección 8 (sistema de tags) |
 | `core/case_manager.py` — `CaseMeta`, `ExpedienteLink` | `tests/test_case_manager.py`, `core/pipeline.py` si consume esos campos |
+| `core/crm_atlas.py` — `render_markdown` / `render_digest` | Los artefactos **generados y commiteados** `docs/CRM_SUDESPACHO_ATLAS.md` y `docs/crm_atlas/atlas.digest.md`. Lo canónico es regenerar (`python -m scripts.crm_atlas discover --phase all`, requiere `SUDESPACHO_API_KEY`); **sin corrida en vivo, alinear a mano solo las líneas de cabecera** con lo que ya emite el render (excepción escrita en la propia cabecera). Verja: `tests/test_crm_atlas.py::test_artefacto_atlas_coherente_con_su_fase_b`, que valida el artefacto, no el generador — es el único que caza esta deriva (D1/D2, 2026-07-26). |
 | `prompts/*.md` | Invalidar frontmatter `prompt_hash` en `.md` generados existentes (re-ejecutar pipeline sobre casos afectados) |
 | `core/pipeline.py` — orden de pasos | `docs/ARQUITECTURA.md` sección "Flujo de un caso", `STATUS.md` sección Pipeline |
 | `core/intake_drive.py` — campos `CaseMeta` | `core/case_manager.py` (`drive_ev_team_id`, `drive_ev_folder_id`), `tests/test_intake_drive.py` |
