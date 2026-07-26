@@ -368,7 +368,16 @@ def layout_bundle_hilo(
         return []
 
     es_bundle = len(ordenados) >= 2 or any(n in con_adjuntos for n in ordenados)
-    principal = ordenados[0]
+    # Con `carpeta_existente`, el principal NO es simplemente el más antiguo: es el
+    # mensaje que dio nombre a la carpeta en la primera corrida (el de la fecha del
+    # prefijo). Si no, un mensaje que llegue con fecha ANTERIOR le robaría el rol al
+    # principal ya copiado y el bundle quedaría incoherente con su nombre.
+    if carpeta_existente:
+        fecha_carpeta = fecha_de_nombre(carpeta_existente)
+        candidatos = [n for n in ordenados if fecha_de_nombre(n) == fecha_carpeta]
+        principal = candidatos[0] if candidatos else ordenados[0]
+    else:
+        principal = ordenados[0]
     if not es_bundle:
         return [{
             "nombre_origen": principal,
@@ -388,7 +397,7 @@ def layout_bundle_hilo(
         "parent_id": "",
         "orden": 0,
     }]
-    for i, nombre in enumerate(ordenados[1:], 1):
+    for i, nombre in enumerate([n for n in ordenados if n != principal], 1):
         fecha = fecha_de_nombre(nombre)
         filas.append({
             "nombre_origen": nombre,

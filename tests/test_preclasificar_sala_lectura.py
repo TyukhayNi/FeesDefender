@@ -235,3 +235,70 @@ def test_emparejar_exports_whatsapp_conserva_zip_no_original_junto_a_chat():
 def test_nombre_export_crudo_sin_drift_con_core():
     from core.whatsapp_intake import _ORIGINAL_ZIP_NAME
     assert preclasificar._NOMBRE_EXPORT_CRUDO_WHATSAPP == _ORIGINAL_ZIP_NAME
+
+
+def test_layout_bundle_de_tres_mensajes():
+    grupo = [
+        "2025-04-02_oferta_calle_x.eml",
+        "2025-03-20_oferta_calle_x.eml",
+        "2025-03-21_oferta_calle_x.eml",
+    ]
+    filas = preclasificar.layout_bundle_hilo(grupo, "oferta_calle_x")
+    assert [f["rol"] for f in filas] == ["principal", "anexo", "anexo"]
+    principal = filas[0]
+    assert principal["nombre_origen"] == "2025-03-20_oferta_calle_x.eml"
+    assert principal["nombre_canonico"] == "2025-03-20_oferta_calle_x/2025-03-20_oferta_calle_x.eml"
+    assert principal["parent_id"] == ""
+    assert principal["orden"] == 0
+    # Cada anexo lleva SU PROPIA fecha y el parent_id pelado de la carpeta.
+    assert filas[1]["fecha"] == "2025-03-21"
+    assert filas[1]["parent_id"] == "2025-03-20_oferta_calle_x"
+    assert filas[1]["nombre_canonico"] == (
+        "2025-03-20_oferta_calle_x/2025-03-21_oferta_calle_x_anexo_1_mensaje.eml")
+    assert filas[2]["fecha"] == "2025-04-02"
+    assert filas[2]["orden"] == 2
+
+
+def test_layout_mensaje_unico_sin_adjuntos_queda_plano():
+    filas = preclasificar.layout_bundle_hilo(["2025-03-20_consulta.eml"], "consulta")
+    assert len(filas) == 1
+    assert filas[0]["rol"] == "principal"
+    assert filas[0]["nombre_canonico"] == "2025-03-20_consulta.eml"
+    assert filas[0]["parent_id"] == ""
+
+
+def test_layout_mensaje_unico_con_adjuntos_abre_bundle():
+    filas = preclasificar.layout_bundle_hilo(
+        ["2025-03-20_consulta.eml"], "consulta",
+        con_adjuntos=frozenset({"2025-03-20_consulta.eml"}))
+    assert filas[0]["nombre_canonico"] == "2025-03-20_consulta/2025-03-20_consulta.eml"
+
+
+def test_layout_fecha_incierta_no_es_principal():
+    grupo = ["0000-00-00_oferta_calle_x.eml", "2025-03-20_oferta_calle_x.eml"]
+    filas = preclasificar.layout_bundle_hilo(grupo, "oferta_calle_x")
+    assert filas[0]["nombre_origen"] == "2025-03-20_oferta_calle_x.eml"
+    assert filas[1]["fecha"] == "0000-00-00"
+
+
+def test_layout_carpeta_existente_no_se_renombra_con_mensaje_anterior():
+    # §2.3: el nombre del bundle se fija en la 1ª corrida. Llega un mensaje MÁS
+    # ANTIGUO que el principal -> entra como anexo, la carpeta NO cambia.
+    grupo = [
+        "2025-03-20_oferta_calle_x.eml",
+        "2025-03-21_oferta_calle_x.eml",
+        "2025-01-05_oferta_calle_x.eml",
+    ]
+    filas = preclasificar.layout_bundle_hilo(
+        grupo, "oferta_calle_x", carpeta_existente="2025-03-20_oferta_calle_x")
+    assert all(f["nombre_canonico"].startswith("2025-03-20_oferta_calle_x/") for f in filas)
+    nuevo = [f for f in filas if f["nombre_origen"] == "2025-01-05_oferta_calle_x.eml"][0]
+    assert nuevo["rol"] == "anexo"
+    assert nuevo["fecha"] == "2025-01-05"
+    assert nuevo["parent_id"] == "2025-03-20_oferta_calle_x"
+
+
+def test_layout_es_determinista():
+    grupo = ["2025-03-21_x.eml", "2025-03-20_x.eml"]
+    assert preclasificar.layout_bundle_hilo(grupo, "x") == preclasificar.layout_bundle_hilo(
+        list(reversed(grupo)), "x")

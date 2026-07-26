@@ -282,3 +282,80 @@ def senales_gate(
             señales.append(f"bundle conversacional sin parte identificable: {ref} — requiere_identificar_parte")
 
     return señales
+
+
+def layout_bundle_hilo(
+    grupo: list[str],
+    descripcion: str,
+    *,
+    con_adjuntos: frozenset[str] = frozenset(),
+    carpeta_existente: str | None = None,
+) -> list[dict]:
+    """Decide la FORMA DE COPIA de un grupo de hilo devuelto por
+    :func:`agrupar_por_hilo`. Determinista y sin E/S: solo nombres y fechas.
+
+    Reglas (spec 2026-07-23 §2.1/§2.3):
+    - Bundle (subcarpeta fechada) si el grupo tiene ≥2 mensajes O alguno lleva
+      adjuntos MIME; si es un mensaje solo y sin adjuntos, queda PLANO (evita
+      cientos de carpetas de un fichero).
+    - El principal es el mensaje de fecha CIERTA más antigua; los `0000-00-00`
+      nunca son principal (misma convención que el índice: lo incierto va al
+      final). Empate -> orden alfabético del nombre, para ser determinista.
+    - Cada anexo lleva SU PROPIA fecha, no la del bundle.
+    - `parent_id` de un anexo = nombre PELADO de la carpeta.
+    - `carpeta_existente`, si se pasa, se usa VERBATIM: el nombre del bundle se
+      fija en la primera corrida y no se renombra nunca (si llegara un mensaje
+      anterior al principal, entra como anexo; renombrar pisaría lo ya copiado).
+
+    `descripcion` llega ya aprobada (≤50 car., minúsculas, guiones bajos, sin
+    PII): esta función no la deriva ni la sanea.
+    """
+    def _clave(nombre: str):
+        f = fecha_de_nombre(nombre)
+        return (1 if f == _SIN_FECHA else 0, f, nombre)
+
+    ordenados = sorted(grupo, key=_clave)
+    if not ordenados:
+        return []
+
+    es_bundle = len(ordenados) >= 2 or any(n in con_adjuntos for n in ordenados)
+    # Con `carpeta_existente`, el principal NO es simplemente el más antiguo: es el
+    # mensaje que dio nombre a la carpeta en la primera corrida (el de la fecha del
+    # prefijo). Si no, un mensaje que llegue con fecha ANTERIOR le robaría el rol al
+    # principal ya copiado y el bundle quedaría incoherente con su nombre.
+    if carpeta_existente:
+        fecha_carpeta = fecha_de_nombre(carpeta_existente)
+        candidatos = [n for n in ordenados if fecha_de_nombre(n) == fecha_carpeta]
+        principal = candidatos[0] if candidatos else ordenados[0]
+    else:
+        principal = ordenados[0]
+    if not es_bundle:
+        return [{
+            "nombre_origen": principal,
+            "fecha": fecha_de_nombre(principal),
+            "rol": "principal",
+            "nombre_canonico": f"{fecha_de_nombre(principal)}_{descripcion}.eml",
+            "parent_id": "",
+            "orden": 0,
+        }]
+
+    carpeta = carpeta_existente or f"{fecha_de_nombre(principal)}_{descripcion}"
+    filas = [{
+        "nombre_origen": principal,
+        "fecha": fecha_de_nombre(principal),
+        "rol": "principal",
+        "nombre_canonico": f"{carpeta}/{carpeta}.eml",
+        "parent_id": "",
+        "orden": 0,
+    }]
+    for i, nombre in enumerate([n for n in ordenados if n != principal], 1):
+        fecha = fecha_de_nombre(nombre)
+        filas.append({
+            "nombre_origen": nombre,
+            "fecha": fecha,
+            "rol": "anexo",
+            "nombre_canonico": f"{carpeta}/{fecha}_{descripcion}_anexo_{i}_mensaje.eml",
+            "parent_id": carpeta,
+            "orden": i,
+        })
+    return filas
