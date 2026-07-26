@@ -390,7 +390,7 @@ no citar sus cifras de tamaño.
 | --- | --- | --- | --- | --- | --- |
 | H1 | REFUTADO | aceptar | ninguna, cerrar | 0 | — |
 | H2 | CONFIRMADO CON MATIZ (P2, **no sube a P1**) | aceptar | fila `[CRM-ATLAS]` en el ledger + puntero en `PLAN.md:358` + `87ff113`→`b2d624c` | 20 min | PR2 |
-| H3 | REFUTADO (88% FP) | aceptar | retirar; antes de fijar filas, verificar 5 stems sin anclar | 15 min | PR2 |
+| H3 | REFUTADO (88% FP) | aceptar | retirar. **5 stems pendientes ya verificados: los 5 TRAZADOS** (ver §Cierre de H3) — 0 filas obligatorias | 0 | — |
 | H4 | REFUTADO | aceptar | acotar la frase de `INDICE.md:23` a las 3 poblaciones | 5 min | PR2 |
 | H5 | REFUTADO | aceptar **con reserva** | ninguna; **corregir el dato: la contramarca `#58` es falsa** (`MEJORAS_FUTURAS.md:2405` ya lleva `[COMPLETADO → PR #42]`) | 0 | — |
 | D1 | **P2 alto** (recuperable con `git restore`), no P1 | arreglar | `--phase all` en **los dos** renders (md **y digest**) + guarda dura anti-clobber en el CLI | 30 min | PR1 |
@@ -405,6 +405,31 @@ no citar sus cifras de tamaño.
 | Test INDICE | — | **no implementar** | confirmado | — | — |
 | Test «citado en algún sitio» | — | **no como test**, pero limpiar | solo **6 de 99** fallarían (4 huérfanos reales). No bloqueante porque `session_close` corre pytest como verja y rompería el estado legítimo «spec hoy, decisión mañana» | 20 min | PR2 |
 | Aviso `session_close` | — | implementar **con corrección crítica** | **excluir `handoffs/` del corpus de trazas** y eliminar la señal `[XXX]`; N=10 días | 45 líneas | PR3 |
+
+### Cierre de H3 — los 5 stems que quedaban sin anclar
+
+Verificados (2026-07-26). **Los 5 TRAZADOS; ninguna fila de ledger es obligatoria.**
+
+| Plan | Ancla | Señal |
+|---|---|---|
+| `2026-06-15-intake-whatsapp-fase-a` | `PLAN.md:1546` + `bitacora/2026.md:193` | etiqueta `[INTAKE-WHATSAPP-FASE-A]` en el ledger + prosa de cierre |
+| `2026-06-17-sala-lectura-f0a3` | `PLAN.md:711-715` | casillas `[x]` (hash `f253a84`) dentro de `[SIGUIENTE-CATALOGO-DOCUMENTAL]`, ítem **abierto** — correcto que no esté en `## ✅ Cerrados` |
+| `2026-06-22-expedientes-xl-conector` | `bitacora/2026.md:175` + `PLAN.md:144,1544` | prosa nominal del cierre 22-06 (plan 1/3) |
+| `2026-06-22-intake-skill-trazabilidad` | `bitacora/2026.md:175` | prosa nominal (plan 2/3) |
+| `2026-06-22-empaquetado-plugin-feesdefender` | `bitacora/2026.md:175` + `ARQUITECTURA_RELACIONES.md:19,52-65` | prosa nominal (plan 3/3) + pieza viva del SSOT de build |
+
+Esto **eleva la tasa de falsos positivos de H3 por encima del 88%** y confirma el diagnóstico
+de método: la señal real vive como etiqueta, como casilla `[x]` dentro de un ítem abierto, o
+como prosa nominal de bitácora — nunca como stem del plan.
+
+Único hueco de **forma** (no de trazabilidad): el trío del plugin nunca recibió etiqueta ni
+fila de ledger. Opcional, 1 fila consolidada `[PLUGIN-FEESDEFENDER]` con los tres planes.
+
+**Gotcha general que conviene retener:** los hashes de junio citados en la bitácora
+(`fa96e8c`, `c7d1f2a`, `fc71a75`, `f253a84`) **ya no resuelven en `main`** — el trabajo es
+anterior a la reescritura de historial (`a40b27f`) y a la protección de rama (2026-07-07).
+Que un hash de esa época no resuelva no dice nada sobre si el trabajo se hizo. Es el mismo
+error de categoría que el del squash con `87ff113`, por otra causa.
 
 ### Autocorrecciones de la segunda ronda
 
