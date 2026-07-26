@@ -23,6 +23,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 5 | [abrir-caso F3-judicial](#abrir-caso--f1--f2a--f3-ac-mergeadas-f2b-aparcada-f3-judicial-pendiente) | disparador confirmado 2026-07-22 | plan concreto listo (4 piezas, ver bloque) | medio |
 | 6 | [Google MCP F4 (Calendar)](#siguiente-google-mcp-f1-lectura--mergeada--f2-escriturapermisosnavegación--mergeada--f3f4-pendientes) | diferida | disparador | medio |
 | 7 | [Intake email — filtro de exclusión de ruido](#siguiente-intake-email-filtro-exclusión-de-ruido-administrativo-y-cruzado) | pendiente | disparador: W-02VUDR (fuga cruzada de 7 casos ajenos + cartera de litigios) | medio |
+| 8 | [Sala de lectura — bundle por hilo de correo](#siguiente-sala-hilos-bundle-por-hilo-de-correo-en-la-sala-de-lectura-slice-1) | ✅ construido y revisado (5 commits, suite verde, skill v1.14) | pendiente de merge (PR de esta rama) | bajo |
 
 > Detalle de cada ítem en su bloque `[SIGUIENTE-*]` más abajo. Backlog sin
 > promover: `docs/MEJORAS_FUTURAS.md`. Ledger de cerrados: `## Cerrados` (final).
@@ -178,6 +179,39 @@ puro + orquestadores finos. Spec: `docs/superpowers/specs/2026-07-09-abrir-caso-
   Aparte, sin confirmar: `POST /api/expedient/convert/{id}` (extrajudicial→judicial) —
   ver `docs/MEJORAS_FUTURAS.md` **#81**.
 - Relacionado: `docs/MEJORAS_FUTURAS.md` **#50** (sección "Relación con el ecosistema" en todas las skills).
+
+## [SIGUIENTE-SALA-HILOS] Bundle por hilo de correo en la sala de lectura (Slice 1)
+
+*Spec: `docs/superpowers/specs/2026-07-23-emails-atomizados-sala-lectura-design.md` (re-tajada
+2026-07-26). Revisión adversarial adjudicada: `…-adversarial-review.md`. Origen: `MEJORAS #75`
+(promovido parcialmente). Implementación: Claude Code. Plan de implementación: pendiente.*
+
+**Objetivo.** Que la correspondencia ocupe **una entrada por hilo** en la sala, no una por mensaje: un
+caso de ~277 correos deja de producir ~277 ficheros sueltos y ~277 líneas de índice.
+
+**Tres cambios, todos dentro del `.skill`** (scripts stdlib puro, sin instalación nueva para el
+equipo): (1) forma de copia = un bundle fechado por grupo de hilo, reutilizando `agrupar_por_hilo` tal
+cual, con el `.eml` más antiguo como principal y el resto + adjuntos MIME como anexos con su fecha
+propia (grupo de 1 sin adjuntos → plano); (2) `INDICE.md` colapsa bundles a una línea con
+`(+N anexos)` —hoy `construir_indice` emite una línea por fila sin mirar `parent_id`, así que agrupar
+en carpetas por sí solo no reduciría nada— mientras `CRONOLOGIA.md` se deja intacta; (3) el nombre del
+bundle se fija en la primera corrida y nunca se renombra.
+
+**Lo que este ítem NO hace** (salió del alcance en el re-tajo): no consume `01_Procesado/Emails/`
+(→ `MEJORAS #86`), no toca el motor OCR de adjuntos (→ `MEJORAS #87`), no introduce threading por
+cabeceras RFC (→ `MEJORAS #88`), no toca `email_atomize` ni `core/anon`.
+
+**Por qué es de coste bajo:** la idempotencia **no cambia** (sigue el `sha256` por `.eml`, cada
+mensaje conserva su fila), no hay artefacto sintetizado que copiar, y no hay migración de salas ya
+montadas (lo copiado se salta; solo lo nuevo se bundlea). El mecanismo de ledger de `MSG-id` que la
+revisión desmontó quedó **retirado**, no parcheado.
+
+- [ ] Plan TDD (`superpowers:writing-plans`) + implementación de los 3 cambios.
+- [ ] 8 tests del §6 del spec (incluye re-corrida con mensaje nuevo, y con mensaje anterior al
+      principal sin renombrar la carpeta).
+- [ ] Skill → v1.13 (frontmatter + CHANGELOG), re-empaquetar y **re-importar el `.skill` en Cowork**.
+
+---
 
 ## [SIGUIENTE-PRECLASIFICACION-SALA-LECTURA] `preclasificar` mecánico + copia `rclone rcd` + verify
 

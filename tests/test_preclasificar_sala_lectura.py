@@ -54,47 +54,58 @@ def test_dedup_por_sha_agrupa_y_reporta_duplicados():
     assert duplicados[0]["duplicado_de"] == "sudespacho_499/demanda/doc_02_encargo_y_poderes.pdf"
 
 
+def test_agrupar_por_hilo_junta_el_mismo_asunto_en_fechas_distintas():
+    # Comportamiento NUEVO (v1.13): la clave es la descripción, no el stem con fecha.
+    nombres = [
+        "2025-03-20_oferta_calle_x.eml",
+        "2025-03-21_oferta_calle_x.eml",
+        "2025-04-02_oferta_calle_x.eml",
+        "2025-04-22_ubicacion_propietario.eml",
+    ]
+    grupos = preclasificar.agrupar_por_hilo(nombres)
+    assert set(grupos) == {"oferta_calle_x", "ubicacion_propietario"}
+    assert len(grupos["oferta_calle_x"]) == 3
+
+
 def test_agrupar_por_hilo_junta_variantes_del_mismo_dia_y_asunto():
     nombres = [
-        "2025-03-20_consulta_de_procedimiento_en_el_caso_salto_de_clientes.eml",
-        "2025-03-20_consulta_de_procedimiento_en_el_caso_salto_de_clientes_2.eml",
-        "2025-03-20_consulta_de_procedimiento_en_el_caso_salto_de_clientes_3.eml",
-        "2025-04-22_ubicacion_propietario_tonet.eml",
+        "2025-03-20_consulta_procedimiento.eml",
+        "2025-03-20_consulta_procedimiento_2.eml",
+        "2025-03-20_consulta_procedimiento_3.eml",
+        "2025-04-22_ubicacion_propietario.eml",
     ]
     grupos = preclasificar.agrupar_por_hilo(nombres)
     assert len(grupos) == 2
-    clave_consulta = "2025-03-20_consulta_de_procedimiento_en_el_caso_salto_de_clientes"
-    assert len(grupos[clave_consulta]) == 3
+    assert len(grupos["consulta_procedimiento"]) == 3
 
 
 def test_agrupar_por_hilo_no_fusiona_por_cifra_en_el_asunto():
-    # ".._1_990_000" NO es un sufijo de hilo: no existe la base ".._1_990" en el conjunto.
+    # Regresión del ítem 11: "_000" NO es sufijo de hilo (no existe "oferta_vivienda_1_990").
     nombres = [
         "2025-05-10_oferta_vivienda_1_990_000.eml",
         "2025-06-01_otra_cosa.eml",
     ]
     grupos = preclasificar.agrupar_por_hilo(nombres)
-    assert set(grupos) == {"2025-05-10_oferta_vivienda_1_990_000", "2025-06-01_otra_cosa"}
-    assert grupos["2025-05-10_oferta_vivienda_1_990_000"] == ["2025-05-10_oferta_vivienda_1_990_000.eml"]
-
-
-def test_agrupar_por_hilo_agrupa_solo_si_la_base_existe():
-    # Hay base sin sufijo -> _2/_3 se agrupan bajo ella (caso real de email_export).
-    nombres = [
-        "2025-03-20_consulta.eml",
-        "2025-03-20_consulta_2.eml",
-        "2025-03-20_consulta_3.eml",
-    ]
-    grupos = preclasificar.agrupar_por_hilo(nombres)
-    assert len(grupos) == 1
-    assert len(grupos["2025-03-20_consulta"]) == 3
+    assert set(grupos) == {"oferta_vivienda_1_990_000", "otra_cosa"}
 
 
 def test_agrupar_por_hilo_sin_base_no_fusiona():
-    # _2 y _3 SIN el base -> no se puede afirmar que sean un hilo: cada uno su clave.
+    # _2 y _3 SIN la base -> no se puede afirmar que sean el mismo hilo.
     nombres = ["2025-03-20_consulta_2.eml", "2025-03-20_consulta_3.eml"]
     grupos = preclasificar.agrupar_por_hilo(nombres)
-    assert len(grupos) == 2
+    assert set(grupos) == {"consulta_2", "consulta_3"}
+
+
+def test_agrupar_por_hilo_nombre_sin_prefijo_de_fecha():
+    # Fichero legacy/manual sin fecha delante: la descripción es el nombre pelado.
+    grupos = preclasificar.agrupar_por_hilo(["oferta_suelta.eml"])
+    assert set(grupos) == {"oferta_suelta"}
+
+
+def test_fecha_de_nombre():
+    assert preclasificar.fecha_de_nombre("2025-03-20_consulta.eml") == "2025-03-20"
+    assert preclasificar.fecha_de_nombre("0000-00-00_sin_fecha.eml") == "0000-00-00"
+    assert preclasificar.fecha_de_nombre("oferta_suelta.eml") == "0000-00-00"
 
 
 def test_subcategoria_crm_extrae_la_subcarpeta():
@@ -224,3 +235,114 @@ def test_emparejar_exports_whatsapp_conserva_zip_no_original_junto_a_chat():
 def test_nombre_export_crudo_sin_drift_con_core():
     from core.whatsapp_intake import _ORIGINAL_ZIP_NAME
     assert preclasificar._NOMBRE_EXPORT_CRUDO_WHATSAPP == _ORIGINAL_ZIP_NAME
+
+
+
+def test_layout_bundle_de_tres_mensajes():
+    grupo = [
+        "2025-04-02_oferta_calle_x.eml",
+        "2025-03-20_oferta_calle_x.eml",
+        "2025-03-21_oferta_calle_x.eml",
+    ]
+    filas = preclasificar.layout_bundle_hilo(grupo, "oferta_calle_x")
+    assert [f["rol"] for f in filas] == ["principal", "anexo", "anexo"]
+    principal = filas[0]
+    assert principal["nombre_origen"] == "2025-03-20_oferta_calle_x.eml"
+    assert principal["nombre_canonico"] == "2025-03-20_oferta_calle_x/2025-03-20_oferta_calle_x.eml"
+    assert principal["parent_id"] == ""
+    # Cada anexo lleva SU PROPIA fecha, el parent_id pelado de la carpeta y un
+    # discriminante derivado de su propio origen (no de su posicion en el grupo).
+    assert filas[1]["fecha"] == "2025-03-21"
+    assert filas[1]["parent_id"] == "2025-03-20_oferta_calle_x"
+    assert filas[1]["nombre_canonico"].startswith(
+        "2025-03-20_oferta_calle_x/2025-03-21_oferta_calle_x_")
+    assert filas[2]["fecha"] == "2025-04-02"
+
+
+def test_layout_nombre_de_anexo_es_estable_al_llegar_uno_anterior():
+    # REGRESION: con indice posicional, un mensaje nuevo que ordenase antes se
+    # llevaba el `_anexo_1` de otro YA COPIADO y lo sobrescribia.
+    corrida1 = ["2025-03-20_x.eml", "2025-04-02_x.eml"]
+    nombre_c = [f for f in preclasificar.layout_bundle_hilo(corrida1, "x")
+                if f["nombre_origen"] == "2025-04-02_x.eml"][0]["nombre_canonico"]
+    corrida2 = corrida1 + ["2025-03-25_x.eml"]
+    filas2 = preclasificar.layout_bundle_hilo(
+        corrida2, "x", carpeta_existente="2025-03-20_x")
+    nombre_c2 = [f for f in filas2 if f["nombre_origen"] == "2025-04-02_x.eml"][0]["nombre_canonico"]
+    assert nombre_c2 == nombre_c  # el ya copiado conserva su nombre exacto
+    nombres = [f["nombre_canonico"] for f in filas2]
+    assert len(set(nombres)) == len(nombres)  # y nadie pisa a nadie
+
+
+def test_layout_nombres_repetidos_abortan_ruidosamente():
+    # Dos lotes distintos pueden traer el MISMO basename con sha distinto
+    # (`_ruta_unica` solo desambigua dentro de su lote). Silenciarlo perderia un
+    # mensaje; y con nombres repetidos el llamante tampoco puede resolver el origen.
+    import pytest
+    with pytest.raises(ValueError, match="repetid"):
+        preclasificar.layout_bundle_hilo(
+            ["2025-03-20_x.eml", "2025-03-20_x.eml"], "x")
+
+
+def test_layout_mensaje_unico_sin_adjuntos_queda_plano():
+    filas = preclasificar.layout_bundle_hilo(["2025-03-20_consulta.eml"], "consulta")
+    assert len(filas) == 1
+    assert filas[0]["rol"] == "principal"
+    assert filas[0]["nombre_canonico"] == "2025-03-20_consulta.eml"
+    assert filas[0]["parent_id"] == ""
+
+
+def test_layout_mensaje_unico_con_adjuntos_abre_bundle():
+    filas = preclasificar.layout_bundle_hilo(
+        ["2025-03-20_consulta.eml"], "consulta",
+        con_adjuntos=frozenset({"2025-03-20_consulta.eml"}))
+    assert filas[0]["nombre_canonico"] == "2025-03-20_consulta/2025-03-20_consulta.eml"
+
+
+def test_layout_fecha_incierta_no_es_principal():
+    grupo = ["0000-00-00_oferta_calle_x.eml", "2025-03-20_oferta_calle_x.eml"]
+    filas = preclasificar.layout_bundle_hilo(grupo, "oferta_calle_x")
+    assert filas[0]["nombre_origen"] == "2025-03-20_oferta_calle_x.eml"
+    assert filas[1]["fecha"] == "0000-00-00"
+
+
+def test_layout_carpeta_existente_no_se_renombra_con_mensaje_anterior():
+    grupo = [
+        "2025-03-20_oferta_calle_x.eml",
+        "2025-03-21_oferta_calle_x.eml",
+        "2025-01-05_oferta_calle_x.eml",
+    ]
+    filas = preclasificar.layout_bundle_hilo(
+        grupo, "oferta_calle_x", carpeta_existente="2025-03-20_oferta_calle_x")
+    assert all(f["nombre_canonico"].startswith("2025-03-20_oferta_calle_x/") for f in filas)
+    nuevo = [f for f in filas if f["nombre_origen"] == "2025-01-05_oferta_calle_x.eml"][0]
+    assert nuevo["rol"] == "anexo"
+    assert nuevo["fecha"] == "2025-01-05"
+    assert nuevo["parent_id"] == "2025-03-20_oferta_calle_x"
+
+
+def test_layout_carpeta_existente_sin_candidato_no_adjudica_principal():
+    # El principal original ya no esta en el grupo (borrado de 00_Input, o el
+    # llamante pasa solo lo nuevo): NADIE debe recibir `{carpeta}/{carpeta}.eml`,
+    # que es la ruta del principal YA COPIADO.
+    filas = preclasificar.layout_bundle_hilo(
+        ["2025-05-01_x.eml", "2025-06-01_x.eml"], "x", carpeta_existente="2025-03-20_x")
+    assert all(f["rol"] == "anexo" for f in filas)
+    assert all(f["parent_id"] == "2025-03-20_x" for f in filas)
+    assert "2025-03-20_x/2025-03-20_x.eml" not in [f["nombre_canonico"] for f in filas]
+
+
+def test_layout_plano_existente_no_crea_carpeta():
+    # El hilo ya se materializo PLANO (1 mensaje sin adjuntos). Al llegar un
+    # segundo, NO se abre carpeta: se anadiria un bundle sin principal dentro y el
+    # hilo quedaria partido en dos sitios.
+    filas = preclasificar.layout_bundle_hilo(
+        ["2025-04-01_x.eml"], "x", plano_existente=True)
+    assert all("/" not in f["nombre_canonico"] for f in filas)
+    assert all(f["parent_id"] == "" for f in filas)
+
+
+def test_layout_es_determinista():
+    grupo = ["2025-03-21_x.eml", "2025-03-20_x.eml"]
+    assert preclasificar.layout_bundle_hilo(grupo, "x") == preclasificar.layout_bundle_hilo(
+        list(reversed(grupo)), "x")

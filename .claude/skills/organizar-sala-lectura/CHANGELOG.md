@@ -1,5 +1,48 @@
 # Changelog — organizar-sala-lectura
 
+## 1.14 — 2026-07-26
+- **Un bundle por hilo de correo, no un documento por mensaje.** `agrupar_por_hilo`
+  cambia de clave: ahora agrupa por la **descripción** del nombre ignorando el
+  prefijo de fecha. Motivo: `email_export` fecha cada mensaje con SU fecha y solo
+  numera `_2`/`_3` las colisiones del mismo día, así que la clave anterior no
+  agrupaba hilos que cruzan días (277 correos colapsaban a ~240, no a ~40). Como
+  `_slug_descripcion` ya elimina `Re:`/`RV:`/`Fwd:`, todo el hilo comparte
+  descripción — agrupar por ella es agrupar el hilo sin leer cabeceras RFC. Se
+  conserva la protección del ítem 11 (un `_N` solo se recorta si la base existe).
+- **`layout_bundle_hilo` decide la forma de copia.** Principal = mensaje de fecha
+  cierta más antigua (los `0000-00-00` nunca son principal); anexos con su propia
+  fecha y `parent_id` pelado de la carpeta; grupo de uno sin adjuntos queda plano.
+  `carpeta_existente` hace cumplir que el nombre del bundle se fije en la primera
+  corrida y no se renombre nunca — y que el rol de principal siga siendo del
+  mensaje que dio nombre a la carpeta, aunque llegue uno con fecha anterior.
+- **El nombre de cada anexo-mensaje es función PURA de su fichero de origen**
+  (`<fecha_propia>_<descripcion>_<hash6_del_origen>.eml`), sin la numeración
+  `_anexo_N_x` que conservan los bundles de WhatsApp/CRM. Con índice posicional, un
+  mensaje que llegase después pero ordenase antes se llevaba el `_anexo_1` de otro
+  **ya copiado** y lo sobrescribía. Además: `plano_existente=True` impide abrir
+  carpeta en un hilo ya materializado plano (si no, el bundle nacía sin principal
+  dentro y el hilo quedaba partido); `carpeta_existente` sin candidato de esa fecha
+  ya no adjudica el rol de principal a un mensaje nuevo (le habría dado la ruta del
+  principal ya copiado); y basenames repetidos en el grupo **abortan con
+  `ValueError`** en vez de perder un mensaje en silencio (dos lotes distintos pueden
+  traer el mismo basename: `_ruta_unica` solo desambigua dentro de su lote).
+- **Fallback `categoria`→`tipo` acotado.** Solo aplica cuando la clave `categoria`
+  NO existe (manifiesto de 7 columnas). Con 9 columnas y la celda vacía, la fila va
+  a "08. PENDIENTE DE CLASIFICAR": caer a `tipo` fabricaba encabezados con la
+  extensión (`## pdf`) y sacaba la fila del cajón que el letrado repasa.
+- **`INDICE.md` colapsa bundles** a una línea por principal con `(+N anexos)`;
+  `CRONOLOGIA.md` sigue intacta (es una línea de tiempo). Un anexo huérfano emite
+  su propia línea: nunca desaparece en silencio. Efecto colateral buscado: los
+  bundles de WhatsApp y CRM también dejan de inflar el índice.
+- **Limitaciones aceptadas** (spec `2026-07-23-emails-atomizados-sala-lectura-design.md`
+  §5): un hilo con cambio de asunto no se agrupa, y dos conversaciones con el mismo
+  asunto comparten bundle (sin guarda por salto temporal, decisión de Nikolai).
+  Threading riguroso por `References`/`In-Reply-To` = `MEJORAS #88`.
+- **Test de regresión del fallback `categoria or tipo`** (la cobertura que la v1.13
+  dejó pendiente): el colapso de bundles reescribió `construir_indice`, así que un
+  test fija que un `_MANIFIESTO.md` de 7 columnas conserva su categoría real y
+  colapsa a la vez. Sin él, la reescritura habría revertido el fix en silencio.
+
 ## 1.13 — 2026-07-23
 - **Bug — `indices_desde_manifiesto.py`/`manifiesto_a_catalogo.py` ignoraban la
   categoría de manifiestos de 7 columnas.** Ambos leían solo `categoria` (columna

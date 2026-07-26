@@ -17,6 +17,7 @@ compara `_CATEGORIAS` contra `core.config.TAXONOMIA_EV` — mantener ambos en si
 """
 from __future__ import annotations
 
+import hashlib as _hashlib
 import json
 import re as _re
 from pathlib import Path
@@ -85,6 +86,8 @@ def dedup_por_sha(ficheros: list[dict]) -> tuple[list[dict], list[dict]]:
 
 
 _SUFIJO_HILO_RE = re.compile(r"^(.*)_(\d+)$")
+_PREFIJO_FECHA_RE = _re.compile(r"^(\d{4}-\d{2}-\d{2})_(.+)$")
+_SIN_FECHA = "0000-00-00"
 
 
 # Nombre EXACTO del zip crudo que deposita whatsapp_intake.deposit_export
@@ -130,27 +133,52 @@ def emparejar_exports_whatsapp(rutas: list[str]) -> tuple[list[str], list[dict]]
     return limpias, crudos
 
 
-def agrupar_por_hilo(rutas_eml: list[str]) -> dict[str, list[str]]:
-    """Agrupa nombres de `.eml` por HILO: el motor de export (`core.email_export`)
-    escribe el PRIMER mensaje de un asunto+fecha sin sufijo y numera los
-    siguientes `_2`, `_3`… (`_ruta_unica`; nunca `_0`/`_1`). La clave de hilo es
-    el nombre sin ese sufijo, pero SOLO se agrupa `X_N` bajo `X` si `X` está de
-    verdad en el conjunto — así una cifra del propio asunto (`..._1_990_000.eml`)
-    no fabrica un hilo inexistente. Devuelve `{clave_hilo: [nombres_del_grupo]}`;
-    clasifica un representante y propaga su categoría al resto sin releerlos.
-    Heurística de nombre, no de `Message-ID`/`References` — proxy barato, no
-    sustituto de un threading riguroso si algún día hace falta."""
-    def _base(nombre: str) -> str:
-        return nombre[:-4] if nombre.lower().endswith(".eml") else nombre
+def fecha_de_nombre(nombre: str) -> str:
+    """Prefijo `AAAA-MM-DD` del nombre canónico de `email_export`, o `0000-00-00`
+    si el nombre no lo lleva. NO valida que la fecha exista en el calendario:
+    `0000-00-00` es un valor legítimo que emite `_fecha_iso` cuando la cabecera
+    `Date` falta o no parsea."""
+    base = nombre[:-4] if nombre.lower().endswith(".eml") else nombre
+    m = _PREFIJO_FECHA_RE.match(base)
+    return m.group(1) if m else _SIN_FECHA
 
-    bases_presentes = {_base(n) for n in rutas_eml}
+
+def _descripcion_hilo(nombre: str) -> str:
+    """Descripción del nombre, SIN el prefijo de fecha y sin la extensión.
+    `2025-03-20_oferta_calle_x.eml` -> `oferta_calle_x`."""
+    base = nombre[:-4] if nombre.lower().endswith(".eml") else nombre
+    m = _PREFIJO_FECHA_RE.match(base)
+    return m.group(2) if m else base
+
+
+def agrupar_por_hilo(rutas_eml: list[str]) -> dict[str, list[str]]:
+    """Agrupa nombres de `.eml` por HILO. La clave es la **descripción** del
+    nombre, IGNORANDO el prefijo de fecha: `core.email_export._slug_descripcion`
+    ya elimina los prefijos `Re:`/`RV:`/`Fwd:` del asunto, así que todos los
+    mensajes de un hilo comparten descripción y solo difieren en la fecha
+    (`eml_filename` usa la fecha del propio mensaje). Agrupar por descripción es,
+    por tanto, agrupar el hilo sin leer una sola cabecera RFC — gratis en los tres
+    modos de acceso de la skill.
+
+    Se conserva la protección del ítem 11 del backlog, ahora sobre descripciones:
+    un `_N` final solo se recorta si la descripción sin ese sufijo existe DE VERDAD
+    en el conjunto, así que una cifra del propio asunto
+    (`oferta_vivienda_1_990_000`) no fabrica un hilo inexistente.
+
+    Devuelve `{descripcion_hilo: [nombres_del_grupo]}`. Se clasifica un
+    representante y su categoría se propaga al resto sin releerlos.
+
+    LIMITACIONES (deliberadas, ver spec 2026-07-23 §5): un hilo cuyo ASUNTO cambió
+    a mitad de conversación no se agrupa, y dos conversaciones distintas con el
+    mismo asunto SÍ comparten grupo (sin guarda por salto temporal — decisión de
+    Nikolai 2026-07-26). El threading riguroso por `References`/`In-Reply-To` es
+    `MEJORAS #86`, no un prerrequisito."""
+    descripciones = {_descripcion_hilo(n) for n in rutas_eml}
     grupos: dict[str, list[str]] = {}
     for nombre in rutas_eml:
-        base = _base(nombre)
-        m = _SUFIJO_HILO_RE.match(base)
-        # Solo es sufijo de hilo si el nombre pelado (sin `_N`) existe como .eml
-        # propio en el conjunto; si no, el `_N` es parte del asunto (p. ej. cifra).
-        clave = m.group(1) if (m and m.group(1) in bases_presentes) else base
+        desc = _descripcion_hilo(nombre)
+        m = _SUFIJO_HILO_RE.match(desc)
+        clave = m.group(1) if (m and m.group(1) in descripciones) else desc
         grupos.setdefault(clave, []).append(nombre)
     return grupos
 
@@ -255,3 +283,120 @@ def senales_gate(
             señales.append(f"bundle conversacional sin parte identificable: {ref} — requiere_identificar_parte")
 
     return señales
+
+
+def _hash_origen(nombre: str) -> str:
+    """Discriminante corto y ESTABLE derivado solo del nombre de origen. Se usa en
+    los anexos de un bundle para que su nombre canónico no dependa de su posición
+    en el grupo: con un índice posicional, un mensaje que llegase después pero
+    ordenase antes se llevaba el `_anexo_1` de otro YA COPIADO y lo sobrescribía."""
+    return _hashlib.sha256(nombre.encode("utf-8")).hexdigest()[:6]
+
+
+def layout_bundle_hilo(
+    grupo: list[str],
+    descripcion: str,
+    *,
+    con_adjuntos: frozenset[str] = frozenset(),
+    carpeta_existente: str | None = None,
+    plano_existente: bool = False,
+) -> list[dict]:
+    """Decide la FORMA DE COPIA de un grupo de hilo devuelto por
+    :func:`agrupar_por_hilo`. Determinista y sin E/S: solo nombres y fechas.
+
+    Reglas (spec 2026-07-23 §2.1/§2.3):
+    - Bundle (subcarpeta fechada) si el grupo tiene ≥2 mensajes O alguno lleva
+      adjuntos MIME; un mensaje solo y sin adjuntos queda PLANO (evita cientos de
+      carpetas de un fichero).
+    - El principal es el mensaje de fecha CIERTA más antigua; los `0000-00-00`
+      nunca son principal salvo que TODO el grupo sea incierto (lo incierto va al
+      final, misma convención que el índice). Empate -> orden alfabético.
+    - **El nombre de cada anexo es función PURA de su propio fichero de origen**
+      (su fecha + la descripción aprobada + `_hash_origen`), nunca de su posición
+      en el grupo: añadir un mensaje no renumera ni pisa nada. `orden` sí es
+      posicional, pero es metadato del manifiesto, no un nombre de fichero.
+    - `parent_id` de un anexo = nombre PELADO de la carpeta.
+    - `carpeta_existente`, si se pasa, se usa VERBATIM (el nombre del bundle se
+      fija en la primera corrida y no se renombra nunca). Si NINGÚN miembro del
+      grupo casa con la fecha de esa carpeta, el principal ya copiado no está en
+      el grupo: entonces **nadie** recibe el rol de principal y todas las filas
+      son anexos — adjudicarlo daría a un mensaje nuevo la ruta del principal ya
+      copiado, sobrescribiéndolo.
+    - `plano_existente=True` (el hilo ya se materializó PLANO en una corrida
+      anterior): NO se abre carpeta. Si no, el bundle nacería sin principal dentro
+      (el original se salta por sha y sigue fuera) y el hilo quedaría partido en
+      dos sitios, con el anexo apareciendo como huérfano en el índice.
+
+    `descripcion` llega ya aprobada (≤50 car., minúsculas, guiones bajos, sin
+    PII): esta función no la deriva ni la sanea. Los nombres de origen se usan como
+    llave, así que **deben ser únicos**: si se repiten, aborta (`ValueError`) en
+    vez de perder un mensaje en silencio — dos lotes distintos pueden traer el
+    mismo basename con sha distinto, porque `_ruta_unica` solo desambigua dentro
+    de su propio lote.
+
+    NO emite los adjuntos MIME de los mensajes: los nombra el procedimiento del
+    `SKILL.md` con la misma regla (fecha propia + descripción + discriminante de su
+    origen), bajo el mismo `parent_id`.
+    """
+    if len(set(grupo)) != len(grupo):
+        repetidos = sorted({n for n in grupo if grupo.count(n) > 1})
+        raise ValueError(
+            "nombres de origen repetidos en el grupo de hilo "
+            f"{repetidos!r}: no se puede resolver su fichero de origen ni darles "
+            "nombre canónico distinto. Desambigua antes de llamar (p. ej. por lote).")
+
+    def _clave(nombre: str):
+        f = fecha_de_nombre(nombre)
+        return (1 if f == _SIN_FECHA else 0, f, nombre)
+
+    ordenados = sorted(grupo, key=_clave)
+    if not ordenados:
+        return []
+
+    def _fila(nombre: str, *, rol: str, nombre_canonico: str, parent_id: str, orden: int) -> dict:
+        return {
+            "nombre_origen": nombre,
+            "fecha": fecha_de_nombre(nombre),
+            "rol": rol,
+            "nombre_canonico": nombre_canonico,
+            "parent_id": parent_id,
+            "orden": orden,
+        }
+
+    if plano_existente:
+        return [
+            _fila(n, rol="principal", parent_id="", orden=i,
+                  nombre_canonico=f"{fecha_de_nombre(n)}_{descripcion}_{_hash_origen(n)}.eml")
+            for i, n in enumerate(ordenados)
+        ]
+
+    es_bundle = len(ordenados) >= 2 or any(n in con_adjuntos for n in ordenados)
+    if not es_bundle:
+        n = ordenados[0]
+        return [_fila(n, rol="principal", parent_id="", orden=0,
+                      nombre_canonico=f"{fecha_de_nombre(n)}_{descripcion}.eml")]
+
+    if carpeta_existente:
+        carpeta = carpeta_existente
+        fecha_carpeta = fecha_de_nombre(carpeta_existente)
+        candidatos = [n for n in ordenados if fecha_de_nombre(n) == fecha_carpeta]
+        principal = candidatos[0] if candidatos else None
+    else:
+        principal = ordenados[0]
+        carpeta = f"{fecha_de_nombre(principal)}_{descripcion}"
+
+    filas: list[dict] = []
+    orden = 0
+    if principal is not None:
+        filas.append(_fila(principal, rol="principal", parent_id="", orden=0,
+                           nombre_canonico=f"{carpeta}/{carpeta}.eml"))
+        orden = 1
+    for n in ordenados:
+        if n is principal or n == principal:
+            continue
+        fecha = fecha_de_nombre(n)
+        filas.append(_fila(
+            n, rol="anexo", parent_id=carpeta, orden=orden,
+            nombre_canonico=f"{carpeta}/{fecha}_{descripcion}_{_hash_origen(n)}.eml"))
+        orden += 1
+    return filas

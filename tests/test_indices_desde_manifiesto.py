@@ -21,6 +21,88 @@ def _filas():
     return manifiesto_parser.parse_manifiesto(_MANIF)
 
 
+_MANIF_BUNDLE = """<!-- GENERADO — NO EDITAR A MANO -->
+| sha256 | ruta_original | nombre_canonico | tipo | fecha | parte | parent_id | categoria | subcategoria_crm |
+|---|---|---|---|---|---|---|---|---|
+| a | 03_Email/m1.eml | 2025-03-20_oferta/2025-03-20_oferta.eml | eml | 2025-03-20 | buscador |  | 03. OFERTAS |  |
+| b | 03_Email/m2.eml | 2025-03-20_oferta/2025-03-21_oferta_anexo_1_mensaje.eml | eml | 2025-03-21 | buscador | 2025-03-20_oferta | 03. OFERTAS |  |
+| c | 03_Email/m3.eml | 2025-03-20_oferta/2025-04-02_oferta_anexo_2_mensaje.eml | eml | 2025-04-02 | buscador | 2025-03-20_oferta | 03. OFERTAS |  |
+| d | 03_Email/adj.pdf | 2025-03-20_oferta/2025-03-21_oferta_anexo_3_hoja.pdf | pdf | 2025-03-21 | buscador | 2025-03-20_oferta | 03. OFERTAS |  |
+| e | 01_Drive EV/encargo.pdf | 2024-01-01_encargo.pdf | pdf | 2024-01-01 | propietario |  | 01. ACTIVACIÓN |  |
+"""
+
+
+_MANIF_HUERFANO = """<!-- GENERADO — NO EDITAR A MANO -->
+| sha256 | ruta_original | nombre_canonico | tipo | fecha | parte | parent_id | categoria | subcategoria_crm |
+|---|---|---|---|---|---|---|---|---|
+| b | 03_Email/m2.eml | 2025-03-20_oferta/2025-03-21_oferta_anexo_1_mensaje.eml | eml | 2025-03-21 | buscador | carpeta_que_no_existe | 03. OFERTAS |  |
+| e | 01_Drive EV/encargo.pdf | 2024-01-01_encargo.pdf | pdf | 2024-01-01 | propietario |  | 01. ACTIVACIÓN |  |
+"""
+
+
+def _filas_bundle():
+    import manifiesto_parser
+    return manifiesto_parser.parse_manifiesto(_MANIF_BUNDLE)
+
+
+def test_indice_colapsa_el_bundle_a_una_linea():
+    salida = idx.construir_indice(_filas_bundle())
+    lineas = [l for l in salida.splitlines() if l.startswith("- ")]
+    assert len(lineas) == 2  # el bundle (1) + el encargo suelto (1)
+    bundle = [l for l in lineas if "2025-03-20_oferta" in l][0]
+    assert "(+3 anexos)" in bundle
+    assert "anexo_1_mensaje" not in salida
+
+
+def test_cronologia_no_colapsa_el_bundle():
+    salida = idx.construir_cronologia(_filas_bundle())
+    lineas = [l for l in salida.splitlines() if l.startswith("- ")]
+    assert len(lineas) == 5  # todas las filas, es una línea de tiempo
+    assert "anexo_1_mensaje" in salida
+
+
+def test_indice_un_anexo_huerfano_no_desaparece():
+    # `parent_id` que no case con ningún bundle presente -> línea propia, nunca
+    # se omite en silencio (doctrina del ítem 12 del backlog).
+    import manifiesto_parser
+    filas = manifiesto_parser.parse_manifiesto(_MANIF_HUERFANO)
+    salida = idx.construir_indice(filas)
+    assert "anexo_1_mensaje" in salida
+    lineas = [l for l in salida.splitlines() if l.startswith("- ")]
+    assert len(lineas) == 2
+    assert "anexos)" not in salida  # el huérfano no reclama anexos propios
+
+
+def test_indice_sin_bundles_no_cambia_el_recuento():
+    salida = idx.construir_indice(_filas())
+    lineas = [l for l in salida.splitlines() if l.startswith("- ")]
+    assert len(lineas) == 5
+    assert "anexos)" not in salida
+
+
+_MANIF_7_COLUMNAS = """<!-- GENERADO — NO EDITAR A MANO -->
+| sha256 | ruta_original | nombre_canonico | tipo | fecha | parte | parent_id |
+|---|---|---|---|---|---|---|
+| a | 01_Drive EV/encargo.pdf | 2024-01-01_encargo.pdf | 01. ACTIVACIÓN | 2024-01-01 | propietario |  |
+| b | 03_Email/m1.eml | 2025-03-20_oferta/2025-03-20_oferta.eml | 03. OFERTAS | 2025-03-20 | buscador |  |
+| c | 03_Email/m2.eml | 2025-03-20_oferta/2025-03-21_oferta_anexo_1_mensaje.eml | 03. OFERTAS | 2025-03-21 | buscador | 2025-03-20_oferta |
+"""
+
+
+def test_indice_manifiesto_de_7_columnas_conserva_la_categoria_y_colapsa():
+    # Regresión del fix de la v1.13: sin el fallback `categoria or tipo`, un
+    # manifiesto de 7 columnas manda TODO a "08. PENDIENTE DE CLASIFICAR"
+    # (W-02VND1, 669 filas). El colapso de bundles debe convivir con el fallback.
+    import manifiesto_parser
+    filas = manifiesto_parser.parse_manifiesto(_MANIF_7_COLUMNAS)
+    salida = idx.construir_indice(filas)
+    assert "## 01. ACTIVACIÓN" in salida
+    assert "## 03. OFERTAS" in salida
+    assert "08. PENDIENTE DE CLASIFICAR" not in salida
+    lineas = [l for l in salida.splitlines() if l.startswith("- ")]
+    assert len(lineas) == 2  # el encargo + el bundle colapsado
+    assert "(+1 anexos)" in salida
+
 _MANIF_7COL = """<!-- GENERADO — NO EDITAR A MANO -->
 | sha256 | ruta_original | nombre_canonico | tipo | fecha | parte | parent_id |
 |---|---|---|---|---|---|---|
@@ -72,3 +154,21 @@ def test_derivar_escribe_ambos_ficheros_idempotente(tmp_path):
     assert i1.read_text(encoding="utf-8") == a
     assert c1.read_text(encoding="utf-8") == b
     assert a.startswith("<!-- GENERADO — NO EDITAR A MANO -->")
+
+
+_MANIF_9_COLUMNAS_CATEGORIA_VACIA = """<!-- GENERADO — NO EDITAR A MANO -->
+| sha256 | ruta_original | nombre_canonico | tipo | fecha | parte | parent_id | categoria | subcategoria_crm |
+|---|---|---|---|---|---|---|---|---|
+| a | 01_Drive EV/escaneo.pdf | 2024-01-01_escaneo.pdf | pdf | 2024-01-01 | propietario |  |  |  |
+"""
+
+
+def test_indice_categoria_vacia_en_9_columnas_va_a_pendiente_no_a_la_extension():
+    # El fallback a `tipo` es SOLO para manifiestos de 7 columnas (donde la clave
+    # `categoria` no existe). Con 9 columnas y la celda vacía, caer a `tipo`
+    # fabricaria un encabezado `## pdf` y sacaria la fila del cajon "08".
+    import manifiesto_parser
+    filas = manifiesto_parser.parse_manifiesto(_MANIF_9_COLUMNAS_CATEGORIA_VACIA)
+    salida = idx.construir_indice(filas)
+    assert "## 08. PENDIENTE DE CLASIFICAR" in salida
+    assert "## pdf" not in salida

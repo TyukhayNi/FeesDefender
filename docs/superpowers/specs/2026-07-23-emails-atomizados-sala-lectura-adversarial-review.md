@@ -1,8 +1,19 @@
 # Revisión adversarial — Consumo de emails atomizados en la sala de lectura
 
-> Fecha: 2026-07-23. Revisor: Codex. Estado: **pendiente de adjudicación**.
+> Fecha: 2026-07-23. Revisor: Codex. Estado: **✅ ADJUDICADA (Claude, 2026-07-26)** — ver la tabla
+> final. Resultado: el spec se **re-tajó** en tres slices y quedó reducido al Slice 1; los hallazgos
+> que atacaban el consumo del corpus y el OCR salieron de alcance con destino de backlog.
 > Esta revisión no sustituye la spec: identifica condiciones que deben aceptarse,
 > rechazarse con evidencia o incorporarse antes de escribir el plan de implementación.
+
+> **Segunda revisión, independiente (2026-07-26).** Un workflow de 6 lentes (contrato de datos ·
+> idempotencia · integración con la skill · motor OCR · doctrinas del repo · completitud) produjo 55
+> hallazgos brutos → 35 únicos. La verificación adversarial (3 escépticos por hallazgo, con lectura de
+> fuente completa) solo alcanzó a **7 de 35** antes de que la organización topara su límite mensual de
+> gasto; **los 7 sobrevivieron con 3 de 3 escépticos confirmando**, y los 28 restantes quedaron
+> **sin verificar** (no refutados — la distinción importa: sus verificadores murieron por el límite,
+> no por desmontar el hallazgo). Los 7 verificados coinciden en lo sustancial con P0.1, P0.2, P1.1 y
+> P1.4 de esta revisión, más dos aportaciones propias recogidas abajo (F-A, F-B).
 
 ## Veredicto
 
@@ -106,17 +117,54 @@ La spec usa `adjuntos/<sha>.contenido.md`; el código genera
 7. Tests de corpus desactualizado, reducción del conjunto, hilo nuevo, hilo vacío, adjunto
    compartido/nuevo y re-recorrida tras un delta.
 
-## Adjudicación
+## Adjudicación (Claude, 2026-07-26)
 
-Antes del plan, completar esta tabla y modificar la spec en consonancia:
+**Decisión de fondo.** El veredicto "no implementar todavía" se acepta. La adjudicación individual
+mostró que los hallazgos no eran defectos de detalle de un spec por lo demás sano: se concentraban en
+**dos piezas separables** (el consumo del corpus atomizado y la unificación del motor OCR) y en **un
+mecanismo propio roto** (el §7, ledger de `MSG-id` con principal inmutable y deltas). Por eso el
+remedio no fue parchear ocho puntos, sino **re-tajar el spec en tres slices** (aprobado por Nikolai el
+2026-07-26) y reducirlo al que no arrastra ningún bloqueante:
+
+- **Slice 1 — bundle por hilo en la sala** (este spec, re-escrito). No consume el corpus, no usa
+  `MSG-id`, no toca `email_atomize` ni el OCR. Idempotencia = el `sha256` por `.eml` que ya existe.
+- **Slice 2 — consumo de las fuentes atomizadas** → `MEJORAS #86`, con P0.1, P0.2, P1.1 y P1.3 como
+  **requisitos de entrada** del futuro spec.
+- **Slice 3 — motor de extracción/OCR unificado para adjuntos** → `MEJORAS #87`, con P1.4 y P1.5 como
+  requisitos de entrada.
+
+**Dos correcciones a la revisión, verificadas contra fuente** (Claude es el juez; ni Codex ni el
+workflow tienen la última palabra sobre corrección):
+
+- **P0.1 se rebaja de bloqueante a omisión del spec.** La cobertura **sí** es demostrable:
+  `_registro.json` persiste `eml_procesados`, la lista de `.eml` ya atomizados
+  (`core/email_atomize/ids.py:77-79,91`, alimentada desde `pipeline.py:110` con
+  `marcar_procesado(col.eml_origen)`). Lo que falla es que el spec no la citaba y asumía "existe
+  `corpus.jsonl` ⇒ todo cubierto". El caveat de la revisión sí se sostiene y se hereda al Slice 2: la
+  llave es el **nombre** del fichero, y `corpus.jsonl` no emite `eml_origen` (verificado,
+  `core/email_atomize/corpus.py:21-46`), así que mapear un `.eml` cubierto a *su* hilo sigue sin llave
+  fuerte.
+- **P0.2 no obliga a modificar el atomizador congelado.** El enlace Capa B→hilo es derivable **en el
+  consumidor**: `construir_b` fija `procedencia=[{"citado_en": <portador>}]` y `corpus.py` lo emite,
+  de modo que un mensaje B puede heredar el hilo de su portador sin tocar `email_atomize`. El defecto
+  (todos los B con `hilo=""`, `model.py:43`) es real y triple-verificado; solo cambia dónde se arregla.
 
 | Hallazgo | Decisión | Evidencia / cambio incorporado |
 | --- | --- | --- |
-| P0.1 | pendiente | |
-| P0.2 | pendiente | |
-| P0.3 | pendiente | |
-| P1.1 | pendiente | |
-| P1.2 | pendiente | |
-| P1.3 | pendiente | |
-| P1.4 | pendiente | |
-| P1.5 | pendiente | |
+| P0.1 | **rebajado + fuera de alcance** | `_registro.json.eml_procesados` da la cobertura (`ids.py:77-91`, `pipeline.py:110`); no era capacidad ausente sino omisión. El Slice 1 no consume el corpus → no aplica. Requisito de entrada de `MEJORAS #86`, con el caveat "llave por nombre, sin `eml_origen` en `corpus.jsonl`". |
+| P0.2 | **aceptado + fuera de alcance** | Real y verificado 3/3 (Capa B con `hilo=""`, `model.py:43`). Arreglable en el consumidor vía `procedencia[].citado_en`, sin tocar módulo congelado. El Slice 1 no lee el corpus → no aplica. Requisito de entrada de `MEJORAS #86`. |
+| P0.3 | **aceptado y resuelto en el Slice 1** | Confirmado en código: `construir_indice` recorre todas las filas sin filtrar `parent_id` (`indices_desde_manifiesto.py:43-66`), así que agrupar en carpetas no habría reducido el índice. Doble remedio: (a) el §7 (principal inmutable + deltas) **se retira entero**, el skip vuelve a ser el `sha256` por `.eml`; (b) `INDICE.md` colapsa bundles a una línea `(+N anexos)` y `CRONOLOGIA.md` se deja intacta. |
+| P1.1 | **aceptado + fuera de alcance** | La premisa "`MSG-id` congelado por contenido" era falsa (`ids.py:37-46`: congelado por `Message-ID`, contenido mutable por upgrade de fidelidad). El Slice 1 ya no usa `MSG-id` para nada. Requisito de entrada de `MEJORAS #86`. |
+| P1.2 | **aceptado como limitación documentada** | El Slice 1 conserva a propósito la heurística de nombre de `agrupar_por_hilo` (`preclasificar.py:133-155`), cuyo docstring ya advierte que no sustituye un threading riguroso. Consecuencia declarada en §5 del spec: un hilo con cambio de asunto no se agrupa. Threading RFC → `MEJORAS #88`. |
+| P1.3 | **aceptado + fuera de alcance** | El Slice 1 sigue extrayendo los adjuntos del MIME de cada `.eml` (status quo); no reutiliza el dedup global por sha256 de `email_atomize`, que es donde nace el problema muchos-a-muchos. Requisito de entrada de `MEJORAS #86`. |
+| P1.4 | **aceptado + fuera de alcance** | Confirmado también por el workflow (crítico, 3/3): `ocr_pdf` es PDF→PDF, no extractor de texto, y Docling es además el extractor primario de otros tipos, así que retirarlo dejaría formatos sin cobertura. Sale entero a `MEJORAS #87`. |
+| P1.5 | **aceptado + fuera de alcance** | La ruta `adjuntos/<sha>.contenido.md` del spec no existía; el nombre real lo compone `core/adjuntos_contenido/pipeline.py:27-29`. Sale a `MEJORAS #87`. |
+| **F-A** (workflow) | **aceptado y resuelto en el Slice 1** | No había regla de convivencia para salas ya montadas. Resuelto sin migración: el skip por `sha256` salta lo ya copiado y solo lo nuevo se bundlea → sala mixta, sin duplicados ni borrados (§4 del spec). |
+| **F-B** (workflow) | **aceptado y resuelto en el Slice 1** | Huecos de definición: hilo de un solo mensaje, `descripcion` canónica y fecha del bundle. Resueltos en §2.1/§2.3: grupo de 1 sin adjuntos → plano; `descripcion` = slug del asunto del más antiguo, ≤50 car., sin PII; nombre fijado en la 1ª corrida y nunca renombrado. |
+
+**Hallazgos sin verificar que quedan vivos para el Slice 2/3.** De los 28 que no llegaron a
+verificación, los que apuntan al consumo del corpus o al OCR se heredan como material de entrada de
+`MEJORAS #86`/`#87` (caché de `adjuntos_contenido` a versionar, mapeo de confianza del router,
+adjuntos decorativos, `corpus.jsonl` con línea meta inicial, ejecutabilidad del script en Modo 3,
+`senales_gate` marcando adjuntos reutilizados como "binario opaco sin espejo MD"). **No están
+adjudicados** y no deben tratarse como aprobados ni como descartados.
