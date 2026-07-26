@@ -85,6 +85,8 @@ def dedup_por_sha(ficheros: list[dict]) -> tuple[list[dict], list[dict]]:
 
 
 _SUFIJO_HILO_RE = re.compile(r"^(.*)_(\d+)$")
+_PREFIJO_FECHA_RE = _re.compile(r"^(\d{4}-\d{2}-\d{2})_(.+)$")
+_SIN_FECHA = "0000-00-00"
 
 
 # Nombre EXACTO del zip crudo que deposita whatsapp_intake.deposit_export
@@ -130,27 +132,52 @@ def emparejar_exports_whatsapp(rutas: list[str]) -> tuple[list[str], list[dict]]
     return limpias, crudos
 
 
-def agrupar_por_hilo(rutas_eml: list[str]) -> dict[str, list[str]]:
-    """Agrupa nombres de `.eml` por HILO: el motor de export (`core.email_export`)
-    escribe el PRIMER mensaje de un asunto+fecha sin sufijo y numera los
-    siguientes `_2`, `_3`… (`_ruta_unica`; nunca `_0`/`_1`). La clave de hilo es
-    el nombre sin ese sufijo, pero SOLO se agrupa `X_N` bajo `X` si `X` está de
-    verdad en el conjunto — así una cifra del propio asunto (`..._1_990_000.eml`)
-    no fabrica un hilo inexistente. Devuelve `{clave_hilo: [nombres_del_grupo]}`;
-    clasifica un representante y propaga su categoría al resto sin releerlos.
-    Heurística de nombre, no de `Message-ID`/`References` — proxy barato, no
-    sustituto de un threading riguroso si algún día hace falta."""
-    def _base(nombre: str) -> str:
-        return nombre[:-4] if nombre.lower().endswith(".eml") else nombre
+def fecha_de_nombre(nombre: str) -> str:
+    """Prefijo `AAAA-MM-DD` del nombre canónico de `email_export`, o `0000-00-00`
+    si el nombre no lo lleva. NO valida que la fecha exista en el calendario:
+    `0000-00-00` es un valor legítimo que emite `_fecha_iso` cuando la cabecera
+    `Date` falta o no parsea."""
+    base = nombre[:-4] if nombre.lower().endswith(".eml") else nombre
+    m = _PREFIJO_FECHA_RE.match(base)
+    return m.group(1) if m else _SIN_FECHA
 
-    bases_presentes = {_base(n) for n in rutas_eml}
+
+def _descripcion_hilo(nombre: str) -> str:
+    """Descripción del nombre, SIN el prefijo de fecha y sin la extensión.
+    `2025-03-20_oferta_calle_x.eml` -> `oferta_calle_x`."""
+    base = nombre[:-4] if nombre.lower().endswith(".eml") else nombre
+    m = _PREFIJO_FECHA_RE.match(base)
+    return m.group(2) if m else base
+
+
+def agrupar_por_hilo(rutas_eml: list[str]) -> dict[str, list[str]]:
+    """Agrupa nombres de `.eml` por HILO. La clave es la **descripción** del
+    nombre, IGNORANDO el prefijo de fecha: `core.email_export._slug_descripcion`
+    ya elimina los prefijos `Re:`/`RV:`/`Fwd:` del asunto, así que todos los
+    mensajes de un hilo comparten descripción y solo difieren en la fecha
+    (`eml_filename` usa la fecha del propio mensaje). Agrupar por descripción es,
+    por tanto, agrupar el hilo sin leer una sola cabecera RFC — gratis en los tres
+    modos de acceso de la skill.
+
+    Se conserva la protección del ítem 11 del backlog, ahora sobre descripciones:
+    un `_N` final solo se recorta si la descripción sin ese sufijo existe DE VERDAD
+    en el conjunto, así que una cifra del propio asunto
+    (`oferta_vivienda_1_990_000`) no fabrica un hilo inexistente.
+
+    Devuelve `{descripcion_hilo: [nombres_del_grupo]}`. Se clasifica un
+    representante y su categoría se propaga al resto sin releerlos.
+
+    LIMITACIONES (deliberadas, ver spec 2026-07-23 §5): un hilo cuyo ASUNTO cambió
+    a mitad de conversación no se agrupa, y dos conversaciones distintas con el
+    mismo asunto SÍ comparten grupo (sin guarda por salto temporal — decisión de
+    Nikolai 2026-07-26). El threading riguroso por `References`/`In-Reply-To` es
+    `MEJORAS #86`, no un prerrequisito."""
+    descripciones = {_descripcion_hilo(n) for n in rutas_eml}
     grupos: dict[str, list[str]] = {}
     for nombre in rutas_eml:
-        base = _base(nombre)
-        m = _SUFIJO_HILO_RE.match(base)
-        # Solo es sufijo de hilo si el nombre pelado (sin `_N`) existe como .eml
-        # propio en el conjunto; si no, el `_N` es parte del asunto (p. ej. cifra).
-        clave = m.group(1) if (m and m.group(1) in bases_presentes) else base
+        desc = _descripcion_hilo(nombre)
+        m = _SUFIJO_HILO_RE.match(desc)
+        clave = m.group(1) if (m and m.group(1) in descripciones) else desc
         grupos.setdefault(clave, []).append(nombre)
     return grupos
 

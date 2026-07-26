@@ -54,47 +54,58 @@ def test_dedup_por_sha_agrupa_y_reporta_duplicados():
     assert duplicados[0]["duplicado_de"] == "sudespacho_499/demanda/doc_02_encargo_y_poderes.pdf"
 
 
+def test_agrupar_por_hilo_junta_el_mismo_asunto_en_fechas_distintas():
+    # Comportamiento NUEVO (v1.13): la clave es la descripción, no el stem con fecha.
+    nombres = [
+        "2025-03-20_oferta_calle_x.eml",
+        "2025-03-21_oferta_calle_x.eml",
+        "2025-04-02_oferta_calle_x.eml",
+        "2025-04-22_ubicacion_propietario.eml",
+    ]
+    grupos = preclasificar.agrupar_por_hilo(nombres)
+    assert set(grupos) == {"oferta_calle_x", "ubicacion_propietario"}
+    assert len(grupos["oferta_calle_x"]) == 3
+
+
 def test_agrupar_por_hilo_junta_variantes_del_mismo_dia_y_asunto():
     nombres = [
-        "2025-03-20_consulta_de_procedimiento_en_el_caso_salto_de_clientes.eml",
-        "2025-03-20_consulta_de_procedimiento_en_el_caso_salto_de_clientes_2.eml",
-        "2025-03-20_consulta_de_procedimiento_en_el_caso_salto_de_clientes_3.eml",
-        "2025-04-22_ubicacion_propietario_tonet.eml",
+        "2025-03-20_consulta_procedimiento.eml",
+        "2025-03-20_consulta_procedimiento_2.eml",
+        "2025-03-20_consulta_procedimiento_3.eml",
+        "2025-04-22_ubicacion_propietario.eml",
     ]
     grupos = preclasificar.agrupar_por_hilo(nombres)
     assert len(grupos) == 2
-    clave_consulta = "2025-03-20_consulta_de_procedimiento_en_el_caso_salto_de_clientes"
-    assert len(grupos[clave_consulta]) == 3
+    assert len(grupos["consulta_procedimiento"]) == 3
 
 
 def test_agrupar_por_hilo_no_fusiona_por_cifra_en_el_asunto():
-    # ".._1_990_000" NO es un sufijo de hilo: no existe la base ".._1_990" en el conjunto.
+    # Regresión del ítem 11: "_000" NO es sufijo de hilo (no existe "oferta_vivienda_1_990").
     nombres = [
         "2025-05-10_oferta_vivienda_1_990_000.eml",
         "2025-06-01_otra_cosa.eml",
     ]
     grupos = preclasificar.agrupar_por_hilo(nombres)
-    assert set(grupos) == {"2025-05-10_oferta_vivienda_1_990_000", "2025-06-01_otra_cosa"}
-    assert grupos["2025-05-10_oferta_vivienda_1_990_000"] == ["2025-05-10_oferta_vivienda_1_990_000.eml"]
-
-
-def test_agrupar_por_hilo_agrupa_solo_si_la_base_existe():
-    # Hay base sin sufijo -> _2/_3 se agrupan bajo ella (caso real de email_export).
-    nombres = [
-        "2025-03-20_consulta.eml",
-        "2025-03-20_consulta_2.eml",
-        "2025-03-20_consulta_3.eml",
-    ]
-    grupos = preclasificar.agrupar_por_hilo(nombres)
-    assert len(grupos) == 1
-    assert len(grupos["2025-03-20_consulta"]) == 3
+    assert set(grupos) == {"oferta_vivienda_1_990_000", "otra_cosa"}
 
 
 def test_agrupar_por_hilo_sin_base_no_fusiona():
-    # _2 y _3 SIN el base -> no se puede afirmar que sean un hilo: cada uno su clave.
+    # _2 y _3 SIN la base -> no se puede afirmar que sean el mismo hilo.
     nombres = ["2025-03-20_consulta_2.eml", "2025-03-20_consulta_3.eml"]
     grupos = preclasificar.agrupar_por_hilo(nombres)
-    assert len(grupos) == 2
+    assert set(grupos) == {"consulta_2", "consulta_3"}
+
+
+def test_agrupar_por_hilo_nombre_sin_prefijo_de_fecha():
+    # Fichero legacy/manual sin fecha delante: la descripción es el nombre pelado.
+    grupos = preclasificar.agrupar_por_hilo(["oferta_suelta.eml"])
+    assert set(grupos) == {"oferta_suelta"}
+
+
+def test_fecha_de_nombre():
+    assert preclasificar.fecha_de_nombre("2025-03-20_consulta.eml") == "2025-03-20"
+    assert preclasificar.fecha_de_nombre("0000-00-00_sin_fecha.eml") == "0000-00-00"
+    assert preclasificar.fecha_de_nombre("oferta_suelta.eml") == "0000-00-00"
 
 
 def test_subcategoria_crm_extrae_la_subcarpeta():
