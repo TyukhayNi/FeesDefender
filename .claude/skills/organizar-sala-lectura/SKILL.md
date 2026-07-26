@@ -21,7 +21,7 @@ metadata:
   naturaleza: atomica
   jurisdiction: ES
   area: [civil, procesal]
-  version: "1.12"
+  version: "1.13"
   author: "Nikolai Tyukhay"
   organization: "Tyukhay Legal"
   contact: "nikolai.tyukhay@tyukhay.legal"
@@ -191,9 +191,13 @@ tal diálogo.
    a. `dedup_por_sha(ficheros)` → clasifica UNA sola vez cada sha256 único; los
       duplicados se anotan en el `_MANIFIESTO.md` como "duplicado, saltado" sin
       volver a leerlos.
-   b. `agrupar_por_hilo(rutas_eml)` sobre los `.eml` únicos → clasifica solo un
-      representante por hilo (el nombre sin sufijo `_N`) y propaga su categoría
-      al resto del grupo sin volver a leerlos.
+   b. `agrupar_por_hilo(rutas_eml)` sobre los `.eml` únicos → la clave es la
+      **descripción del nombre ignorando el prefijo de fecha** (`email_export` ya
+      quita `Re:`/`RV:`/`Fwd:` del asunto, así que todo el hilo comparte
+      descripción y solo cambia la fecha). Clasifica solo un representante por
+      hilo y propaga su categoría al resto del grupo sin volver a leerlos. Un hilo
+      cuyo ASUNTO cambió a mitad no se agrupa, y dos conversaciones con el mismo
+      asunto SÍ comparten grupo: limitaciones aceptadas a propósito.
    c. `clasificar_por_patron(nombre, es_bundle_conversacional=...)` sobre cada
       único/representante restante → SIEMPRE devuelve una categoría (00-06 por
       patrón estrecho, 07 por defecto, u 08 si es un bundle de WhatsApp sin
@@ -332,6 +336,18 @@ tal diálogo.
      contrastar sha), y el catálogo las acepta (`sha_valido`).
    Los documentos compuestos (bundles) copian primero su principal, luego sus
    anexos, dentro de la misma corrida.
+   - **Correo: un bundle por hilo.** Para cada grupo de `agrupar_por_hilo`, llama a
+     `layout_bundle_hilo(grupo, descripcion, con_adjuntos=..., carpeta_existente=...)`
+     (`scripts/preclasificar.py`) y usa sus filas tal cual: te da el principal (el
+     mensaje de fecha cierta más antigua), los anexos con **su propia fecha**, el
+     `parent_id` y el `orden`. Pasa `carpeta_existente` con el nombre que ya conste
+     en el `_MANIFIESTO.md` si el bundle viene de una corrida anterior: **el nombre
+     del bundle se fija en la primera corrida y NUNCA se renombra**, ni siquiera si
+     llega un mensaje anterior al principal (renombrar pisaría lo ya copiado, y con
+     `carpeta_existente` el rol de principal sigue siendo del mensaje que dio nombre
+     a la carpeta). Un grupo de un solo mensaje sin adjuntos queda PLANO, sin
+     subcarpeta. El `.eml` original se copia igual que hasta ahora — el criterio
+     "email → MD legible" NO está en vigor todavía (`MEJORAS #84`).
    - **`ERROR_FILE_NOT_HYDRATED` (fichero frío):** no lo anotes pendiente a la
      primera. Reintenta ESE fichero por la ruta `rcd` server-side con
      `copiar_manifiesto(remote, [(src, dst)], progreso_path=<el mismo jsonl>)`, que
@@ -410,6 +426,19 @@ del chat); **el `AAAA-MM-DD` de cada anexo es su PROPIA fecha** (en WhatsApp, la
 del mensaje que lo adjunta — ver la jerarquía de fecha arriba), por lo que distintos
 anexos del mismo bundle pueden llevar fechas distintas. La pertenencia al bundle la
 preserva la subcarpeta + el `parent_id`/`orden` del `_MANIFIESTO.md`, no el prefijo de fecha.
+
+**El `INDICE.md` colapsa los bundles** (una línea por documento principal, con
+`(+N anexos)`); `CRONOLOGIA.md` no colapsa: sigue listando cada fila, porque un anexo con
+fecha propia es un evento datado. Los anexos siguen en el `_MANIFIESTO.md`, en la cronología
+y en disco — no se pierde información. Un anexo cuyo `parent_id` no case con ningún bundle
+presente emite su propia línea: nunca desaparece en silencio.
+
+**Convivencia con salas montadas antes de la v1.13.** No hay migración: los `.eml` ya
+copiados constan por su `sha256` y se saltan; solo los documentos NUEVOS adoptan la forma de
+bundle por hilo. La sala queda mixta (documentos planos antiguos + bundles nuevos), sin
+duplicados y sin borrar nada. Es el comportamiento esperado. Para re-montar una sala entera
+con la forma nueva, vacía a mano `01_Procesado/Sala lectura/` y re-corre (el crudo de
+`00_Input` está intacto).
 
 ## Propuesta visual (Paso 2.5)
 

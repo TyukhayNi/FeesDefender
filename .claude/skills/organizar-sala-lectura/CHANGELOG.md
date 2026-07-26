@@ -1,5 +1,29 @@
 # Changelog — organizar-sala-lectura
 
+## 1.13 — 2026-07-26
+- **Un bundle por hilo de correo, no un documento por mensaje.** `agrupar_por_hilo`
+  cambia de clave: ahora agrupa por la **descripción** del nombre ignorando el
+  prefijo de fecha. Motivo: `email_export` fecha cada mensaje con SU fecha y solo
+  numera `_2`/`_3` las colisiones del mismo día, así que la clave anterior no
+  agrupaba hilos que cruzan días (277 correos colapsaban a ~240, no a ~40). Como
+  `_slug_descripcion` ya elimina `Re:`/`RV:`/`Fwd:`, todo el hilo comparte
+  descripción — agrupar por ella es agrupar el hilo sin leer cabeceras RFC. Se
+  conserva la protección del ítem 11 (un `_N` solo se recorta si la base existe).
+- **`layout_bundle_hilo` decide la forma de copia.** Principal = mensaje de fecha
+  cierta más antigua (los `0000-00-00` nunca son principal); anexos con su propia
+  fecha y `parent_id` pelado de la carpeta; grupo de uno sin adjuntos queda plano.
+  `carpeta_existente` hace cumplir que el nombre del bundle se fije en la primera
+  corrida y no se renombre nunca — y que el rol de principal siga siendo del
+  mensaje que dio nombre a la carpeta, aunque llegue uno con fecha anterior.
+- **`INDICE.md` colapsa bundles** a una línea por principal con `(+N anexos)`;
+  `CRONOLOGIA.md` sigue intacta (es una línea de tiempo). Un anexo huérfano emite
+  su propia línea: nunca desaparece en silencio. Efecto colateral buscado: los
+  bundles de WhatsApp y CRM también dejan de inflar el índice.
+- **Limitaciones aceptadas** (spec `2026-07-23-emails-atomizados-sala-lectura-design.md`
+  §5): un hilo con cambio de asunto no se agrupa, y dos conversaciones con el mismo
+  asunto comparten bundle (sin guarda por salto temporal, decisión de Nikolai).
+  Threading riguroso por `References`/`In-Reply-To` = `MEJORAS #86`.
+
 ## 1.12 — 2026-07-22
 - **`agrupar_por_hilo` no fusiona por una cifra del asunto.** Un `.eml` con una
   cifra final (`..._1_990_000.eml`) ya no se agrupa con un hilo inexistente: `_N`
