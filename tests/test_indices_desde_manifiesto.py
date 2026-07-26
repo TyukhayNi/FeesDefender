@@ -21,6 +21,65 @@ def _filas():
     return manifiesto_parser.parse_manifiesto(_MANIF)
 
 
+_MANIF_BUNDLE = """<!-- GENERADO — NO EDITAR A MANO -->
+| sha256 | ruta_original | nombre_canonico | tipo | fecha | parte | parent_id | categoria | subcategoria_crm |
+|---|---|---|---|---|---|---|---|---|
+| a | 03_Email/m1.eml | 2025-03-20_oferta/2025-03-20_oferta.eml | eml | 2025-03-20 | buscador |  | 03. OFERTAS |  |
+| b | 03_Email/m2.eml | 2025-03-20_oferta/2025-03-21_oferta_anexo_1_mensaje.eml | eml | 2025-03-21 | buscador | 2025-03-20_oferta | 03. OFERTAS |  |
+| c | 03_Email/m3.eml | 2025-03-20_oferta/2025-04-02_oferta_anexo_2_mensaje.eml | eml | 2025-04-02 | buscador | 2025-03-20_oferta | 03. OFERTAS |  |
+| d | 03_Email/adj.pdf | 2025-03-20_oferta/2025-03-21_oferta_anexo_3_hoja.pdf | pdf | 2025-03-21 | buscador | 2025-03-20_oferta | 03. OFERTAS |  |
+| e | 01_Drive EV/encargo.pdf | 2024-01-01_encargo.pdf | pdf | 2024-01-01 | propietario |  | 01. ACTIVACIÓN |  |
+"""
+
+
+_MANIF_HUERFANO = """<!-- GENERADO — NO EDITAR A MANO -->
+| sha256 | ruta_original | nombre_canonico | tipo | fecha | parte | parent_id | categoria | subcategoria_crm |
+|---|---|---|---|---|---|---|---|---|
+| b | 03_Email/m2.eml | 2025-03-20_oferta/2025-03-21_oferta_anexo_1_mensaje.eml | eml | 2025-03-21 | buscador | carpeta_que_no_existe | 03. OFERTAS |  |
+| e | 01_Drive EV/encargo.pdf | 2024-01-01_encargo.pdf | pdf | 2024-01-01 | propietario |  | 01. ACTIVACIÓN |  |
+"""
+
+
+def _filas_bundle():
+    import manifiesto_parser
+    return manifiesto_parser.parse_manifiesto(_MANIF_BUNDLE)
+
+
+def test_indice_colapsa_el_bundle_a_una_linea():
+    salida = idx.construir_indice(_filas_bundle())
+    lineas = [l for l in salida.splitlines() if l.startswith("- ")]
+    assert len(lineas) == 2  # el bundle (1) + el encargo suelto (1)
+    bundle = [l for l in lineas if "2025-03-20_oferta" in l][0]
+    assert "(+3 anexos)" in bundle
+    assert "anexo_1_mensaje" not in salida
+
+
+def test_cronologia_no_colapsa_el_bundle():
+    salida = idx.construir_cronologia(_filas_bundle())
+    lineas = [l for l in salida.splitlines() if l.startswith("- ")]
+    assert len(lineas) == 5  # todas las filas, es una línea de tiempo
+    assert "anexo_1_mensaje" in salida
+
+
+def test_indice_un_anexo_huerfano_no_desaparece():
+    # `parent_id` que no case con ningún bundle presente -> línea propia, nunca
+    # se omite en silencio (doctrina del ítem 12 del backlog).
+    import manifiesto_parser
+    filas = manifiesto_parser.parse_manifiesto(_MANIF_HUERFANO)
+    salida = idx.construir_indice(filas)
+    assert "anexo_1_mensaje" in salida
+    lineas = [l for l in salida.splitlines() if l.startswith("- ")]
+    assert len(lineas) == 2
+    assert "anexos)" not in salida  # el huérfano no reclama anexos propios
+
+
+def test_indice_sin_bundles_no_cambia_el_recuento():
+    salida = idx.construir_indice(_filas())
+    lineas = [l for l in salida.splitlines() if l.startswith("- ")]
+    assert len(lineas) == 5
+    assert "anexos)" not in salida
+
+
 def test_indice_agrupa_por_categoria_y_ordena_fecha_desc():
     txt = idx.construir_indice(_filas())
     assert "## 01. ACTIVACIÓN" in txt

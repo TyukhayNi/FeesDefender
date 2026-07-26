@@ -8,6 +8,7 @@ markdown por corrida (backlog robustez-velocidad, ítem 8): escribe solo el
 from __future__ import annotations
 
 import sys
+from collections import Counter
 from pathlib import Path
 
 if str(Path(__file__).resolve().parent) not in sys.path:
@@ -29,11 +30,20 @@ def _es_fecha_incierta(fecha: str) -> bool:
     return (not f) or f.startswith(_SIN_FECHA) or "(*)" in f
 
 
-def _linea(f: dict) -> str:
+def _linea(f: dict, n_anexos: int = 0) -> str:
     nombre = f.get("nombre_canonico") or ""
     orig = (f.get("ruta_original") or "").replace("\\", "/").rsplit("/", 1)[-1]
     fecha = f.get("fecha") or _SIN_FECHA
-    return f"- {fecha} · [{nombre}]({nombre}) — original: {orig}"
+    sufijo = f" (+{n_anexos} anexos)" if n_anexos else ""
+    return f"- {fecha} · [{nombre}]({nombre}) — original: {orig}{sufijo}"
+
+
+def _stem_bundle(f: dict) -> str:
+    """Nombre PELADO de la carpeta de un bundle, derivado del `nombre_canonico`
+    del principal (`2025-03-20_x/2025-03-20_x.eml` -> `2025-03-20_x`). Cadena
+    vacía si la fila no vive en subcarpeta (documento plano)."""
+    n = (f.get("nombre_canonico") or "").replace("\\", "/")
+    return n.split("/", 1)[0] if "/" in n else ""
 
 
 def _subcat(f: dict) -> str:
@@ -41,12 +51,28 @@ def _subcat(f: dict) -> str:
 
 
 def construir_indice(filas: list[dict]) -> str:
+    """`INDICE.md`: por categoría, fecha DESC, con los bundles COLAPSADOS a una
+    línea por documento principal (`(+N anexos)`). La información de los anexos
+    no se pierde: sigue en el `_MANIFIESTO.md`, en `CRONOLOGIA.md` y en disco.
+    Un anexo HUÉRFANO (cuyo `parent_id` no case con ningún bundle presente) emite
+    su propia línea — nunca desaparece en silencio (doctrina del ítem 12)."""
     def clave_desc(f: dict):
         return (0 if _es_fecha_incierta(f.get("fecha", "")) else 1, _fecha_limpia(f.get("fecha", "")))
 
+    def _parent(f: dict) -> str:
+        return (f.get("parent_id") or "").strip()
+
+    bundles = {_stem_bundle(f) for f in filas if not _parent(f) and _stem_bundle(f)}
+    n_anexos = Counter(_parent(f) for f in filas if _parent(f))
+    # Principales + anexos huérfanos (su bundle no existe entre las filas).
+    visibles = [f for f in filas if not _parent(f) or _parent(f) not in bundles]
+
     por_cat: dict[str, list[dict]] = {}
-    for f in filas:
+    for f in visibles:
         por_cat.setdefault((f.get("categoria") or _SIN_CATEGORIA).strip(), []).append(f)
+
+    def _l(f: dict) -> str:
+        return _linea(f, n_anexos.get(_stem_bundle(f), 0) if not _parent(f) else 0)
 
     out = [_GEN, "", "# Índice documental", ""]
     for cat in sorted(por_cat):
@@ -58,10 +84,10 @@ def construir_indice(filas: list[dict]) -> str:
                 por_sub.setdefault(_subcat(f), []).append(f)
             for sub in sorted(por_sub):
                 out += [f"### {sub}", ""]
-                out += [_linea(f) for f in sorted(por_sub[sub], key=clave_desc, reverse=True)]
+                out += [_l(f) for f in sorted(por_sub[sub], key=clave_desc, reverse=True)]
                 out += [""]
         else:
-            out += [_linea(f) for f in sorted(grupo, key=clave_desc, reverse=True)]
+            out += [_l(f) for f in sorted(grupo, key=clave_desc, reverse=True)]
             out += [""]
     return "\n".join(out).rstrip() + "\n"
 
