@@ -4,11 +4,13 @@ Diseño: `docs/superpowers/specs/2026-07-20-crm-atlas-descubrimiento-design.md`.
 
 Uso:
 
-    # Fase A (pública, sin credenciales): inventario de endpoints del OpenAPI
-    python -m scripts.crm_atlas discover --phase a
-
-    # Fase B (x-api-key en el entorno): esquema por elemento
+    # Regeneración canónica (x-api-key en el entorno): endpoints + esquema por elemento
     python -m scripts.crm_atlas discover --phase all
+
+    # Fase A sola (pública, sin credenciales): inventario de endpoints del OpenAPI.
+    # OJO: NO regenera el atlas commiteado — la guarda anti-clobber rehúsa pisar un
+    # .md que ya contiene Fase B. Para inspeccionar, apunta a otra ruta con --atlas-md.
+    python -m scripts.crm_atlas discover --phase a --atlas-md /tmp/atlas_fase_a.md
 
     # reintentar solo los elementos degradados de una corrida previa
     python -m scripts.crm_atlas discover --phase all --resume
@@ -55,10 +57,38 @@ DEFAULT_DIGEST = Path("docs/crm_atlas/atlas.digest.md")
 
 CONCURRENCY = 4
 
+# Marca de que el .md en disco YA contiene el esquema por elemento (Fase B).
+MARCA_FASE_B = "## Esquema por elemento"
+
 
 def _write_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8", newline="\n")
+
+
+def _guard_no_pisar_fase_b(atlas: dict, atlas_md: Path) -> None:
+    """Rehúsa sobrescribir un .md con Fase B usando un atlas que no la trae (D1).
+
+    Una corrida `--phase a` (el default del CLI) produce un atlas sin `elements`;
+    la escritura es incondicional, así que borraba las ~2.300 líneas del esquema
+    por elemento y los hashes del digest sin decir nada. Recuperar exige una
+    corrida en vivo con `SUDESPACHO_API_KEY` (o `git restore`, que solo funciona
+    si nadie commiteó el destrozo).
+
+    Deliberadamente **sin flag de fuerza**: el camino legítimo para rehacer el
+    atlas completo es `--phase all` (o `--phase all --resume`), no pisar a ciegas.
+    """
+    if atlas.get("elements"):
+        return
+    if not atlas_md.exists():
+        return
+    if MARCA_FASE_B not in atlas_md.read_text(encoding="utf-8"):
+        return
+    typer.echo(f"❌ {atlas_md} ya contiene la Fase B ('{MARCA_FASE_B}') y esta corrida "
+               "no la trae — NO se escribe nada.")
+    typer.echo("   Usa `--phase all` (necesita SUDESPACHO_API_KEY) para regenerar el atlas "
+               "completo, o `--atlas-md <otra_ruta>` para escribir aparte.")
+    raise typer.Exit(code=1)
 
 
 @app.command()
@@ -136,6 +166,7 @@ def discover(
             raise typer.Exit(code=1)
 
     # --- Escritura (único camino, tras el gate) ---
+    _guard_no_pisar_fase_b(atlas, atlas_md)
     _write_text(atlas_json, json.dumps(atlas, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
     _write_text(atlas_md, render_markdown(atlas))
     _write_text(digest_md, render_digest(atlas))

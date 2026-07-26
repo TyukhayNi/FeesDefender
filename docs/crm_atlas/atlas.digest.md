@@ -1,6 +1,6 @@
 # Digest del atlas del CRM sudespacho
 
-> Superficie de DERIVA (legible en diff). Regenerar: `python -m scripts.crm_atlas discover`. NO editar a mano.
+> Superficie de DERIVA (legible en diff). Regenerar: `python -m scripts.crm_atlas discover --phase all`. NO editar a mano.
 
 ## Digest — tenant `tnm`
 
