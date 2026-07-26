@@ -283,9 +283,14 @@ líneas y marca `[COMPLETADO]` en la entrada de CENDOJ.
 
 ### D5 — P2 · Puntero roto que ninguna herramienta detecta *(verificado por mí)*
 
-[PLAN.md:449](../../../PLAN.md) cita `2026-06-25-email-atomize-layerb-{design,fase2}.md`. El
+[PLAN.md:449](../../../PLAN.md) cita `…-email-atomize-layerb-{design,fase2}.md`. El
 `…-layerb-design.md` existe en `specs/`; **no existe ningún `plans/*layerb*`** — el plan se llama
 `2026-06-25-email-atomize-fase2.md`.
+
+> **Resuelto 2026-07-26 (PR2 de la remediación):** `PLAN.md` desdobla ya la cita en el spec y el
+> plan reales, y el guard **G2** cubre el hueco. La cita de arriba se deja en forma elíptica
+> (`…-`) a propósito: es *prueba* de un puntero roto, no un puntero vivo, y G2 descarta las
+> elipsis por patrón — que es como el repo distingue el ejemplo de la referencia.
 
 El guard `test_sin_refs_a_docs_plan_legacy` solo comprueba que no se cite la **ubicación vieja**
 `docs/PLAN_*.md`; **nunca verifica que la ruta citada exista**.

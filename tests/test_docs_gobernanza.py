@@ -1,10 +1,20 @@
 """Guards de gobernanza de docs: frontmatter estado: valido en docs/*.md."""
 
 import re
+import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-_ESTADOS = {"vigente", "historico", "aparcado", "revisar"}
+
+# ⚠️ TRAMPA (D3, revision adversarial 2026-07-26): este vocabulario es SOLO el de
+# los docs de raiz de docs/ y los PLAN_*.md legacy. Los HANDOFFS usan otro
+# (`activo | consumido | historico`, GOBERNANZA_FUENTES_VERDAD §5) y hoy quedan
+# fuera de alcance porque el glob de _docs_con_frontmatter NO es recursivo.
+# Ampliar ese glob a docs/**/*.md sin reconciliar antes los dos vocabularios
+# rompe el test al instante (radio medido: 11 ficheros — 7 `consumido`, 1
+# `historico` con tilde, 2 `aprobado`, 1 placeholder). Son dos poblaciones con
+# reglas distintas, no una deriva: NO unificar los sets, separarlos por poblacion.
+_ESTADOS_DOCS = {"vigente", "historico", "aparcado", "revisar"}
 _RE_ESTADO = re.compile(r"^estado:\s*(\S+)\s*$", re.MULTILINE)
 
 
@@ -20,7 +30,7 @@ def test_estado_frontmatter_valido():
     malos = []
     for p, txt in _docs_con_frontmatter():
         m = _RE_ESTADO.search(txt)
-        if not m or m.group(1) not in _ESTADOS:
+        if not m or m.group(1) not in _ESTADOS_DOCS:
             malos.append(p.name)
     assert not malos, f"docs con estado: ausente o invalido: {malos}"
 
@@ -28,7 +38,6 @@ def test_estado_frontmatter_valido():
 def test_sin_refs_a_docs_plan_legacy():
     """Tras la reubicacion, ningun fichero trackeado debe citar docs/PLAN_*.md
     en la raiz de docs/ (ahora viven en docs/superpowers/plans/)."""
-    import subprocess
     r = subprocess.run(
         ["git", "grep", "-l", "-E", r"docs/PLAN_[A-Za-z]"],
         cwd=ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace",
@@ -46,3 +55,102 @@ def test_sin_refs_a_docs_plan_legacy():
         and "docs/superpowers/specs/2026-07-13-mcp-sudespacho-design.md" not in ln
     ]
     assert not ofensores, f"referencias a docs/PLAN_* sin actualizar: {ofensores}"
+
+
+# ===========================================================================
+# G1-G3 — los tres invariantes que SI habrian cazado defectos reales.
+# Revision adversarial 2026-07-26:
+# docs/superpowers/specs/2026-07-26-gobernanza-indice-adversarial-review.md
+# ===========================================================================
+
+def test_mejoras_futuras_numeracion_unica():
+    """G1 — cada `## NN.` de MEJORAS_FUTURAS.md es unico (habria cazado D4).
+
+    La regla de promocion backlog->cola (`CLAUDE.md`) referencia las entradas por
+    `MEJORAS #NN`. Con dos `## 48.` esa llave dejaba de ser univoca justo en el
+    numero que `CLAUDE.md:220` y `PLAN.md` resuelven al motor documental: un
+    `Ctrl+F "## 48"` en un fichero de 3.100 lineas caia en la entrada equivocada.
+    """
+    txt = (ROOT / "docs" / "MEJORAS_FUTURAS.md").read_text(encoding="utf-8")
+    nums = re.findall(r"^## (\d+)\.", txt, re.MULTILINE)
+    dups = sorted({n for n in nums if nums.count(n) > 1}, key=int)
+    assert not dups, (
+        f"numeros duplicados en MEJORAS_FUTURAS.md (rompen la llave `MEJORAS #NN`): {dups}")
+
+
+# --- G2: toda cita a un spec/plan debe resolver en disco ---------------------
+
+# Un nombre = cadena de caracteres corrientes o grupos de llaves COMPLETOS. La coma
+# solo se admite dentro de `{...}`: sin eso, `…-{design,fase2}.md` se parte por la
+# coma y el token deja de terminar en `.md`, o sea que la cita rota de D5 pasaba
+# desapercibida — el propio defecto que este guard existe para cazar.
+_NOMBRE = r"(?:[^\s`\"'()\[\]<>,;{}]|\{[^{}]*\})+\.md"
+_RE_RUTA_SP = re.compile(rf"docs/superpowers/(?:specs|plans)/{_NOMBRE}")
+# Stem DESNUDO (sin directorio): asi estaba escrita la cita rota de D5, y por eso
+# un guard que solo mirase rutas completas no la habria cazado.
+_RE_STEM_FECHADO = re.compile(rf"(?<![\w/.-])(\d{{4}}-\d{{2}}-\d{{2}}-{_NOMBRE})")
+
+# Descarte por PATRON, no por lista de excepciones (el guard de refs legacy ya
+# acumulo 2 excepciones hardcodeadas en 48 lineas; ese es el modo de erosion).
+_RE_PLACEHOLDER = re.compile(
+    r"[*?]"                          # glob
+    r"|\.\.\.|…"                     # elipsis
+    r"|\bAAAA\b|\bMM\b|\bDD\b|\bNN\b|X{3,}"   # metavariables de plantilla
+    r"|(?<=[_-])[A-Z](?=[._-])"      # metavariable de una letra: PLAN_X.md
+)
+
+
+def _expandir_llaves(token: str) -> list[str]:
+    """`a-{x,y}.md` -> ['a-x.md', 'a-y.md']. Recursivo para varios grupos."""
+    m = re.search(r"\{([^{}]*)\}", token)
+    if not m:
+        return [token]
+    return [x for alt in m.group(1).split(",")
+            for x in _expandir_llaves(token[:m.start()] + alt.strip() + token[m.end():])]
+
+
+def _md_trackeados() -> list[Path]:
+    r = subprocess.run(["git", "ls-files", "*.md"], cwd=ROOT,
+                       capture_output=True, text=True, encoding="utf-8", errors="replace")
+    return [ROOT / ln for ln in r.stdout.splitlines() if ln]
+
+
+def test_citas_a_specs_y_plans_existen():
+    """G2 — toda cita a un spec/plan en un .md trackeado resuelve en disco.
+
+    Habria cazado D5: `PLAN.md` citaba `2026-06-25-email-atomize-layerb-{design,
+    fase2}.md`; el `-design` existe en specs/ pero NO hay ningun plan `*layerb*`
+    (se llama `2026-06-25-email-atomize-fase2.md`). El guard de refs legacy solo
+    comprueba que no se cite la UBICACION vieja; nunca que la ruta exista.
+    """
+    nombres = {p.name for p in (ROOT / "docs" / "superpowers").rglob("*.md")}
+    rotas: dict[str, list[str]] = {}
+    for f in _md_trackeados():
+        txt = f.read_text(encoding="utf-8", errors="replace")
+        rel = f.relative_to(ROOT).as_posix()
+        candidatos = [(t, True) for t in _RE_RUTA_SP.findall(txt)]
+        candidatos += [(t, False) for t in _RE_STEM_FECHADO.findall(txt)]
+        for token, es_ruta in candidatos:
+            if _RE_PLACEHOLDER.search(token):
+                continue
+            for cand in _expandir_llaves(token):
+                existe = (ROOT / cand).exists() if es_ruta else Path(cand).name in nombres
+                if not existe:
+                    rotas.setdefault(rel, []).append(cand)
+    assert not rotas, f"citas a specs/plans que no existen en disco: {rotas}"
+
+
+def test_todo_doc_de_raiz_esta_en_el_indice():
+    """G3 — todo `docs/*.md` esta citado en `INDICE.md` (habria cazado D6).
+
+    Sustituye al G3 original («todo doc de raiz DEBE tener frontmatter»), que no
+    era barato: 11 de 20 docs lo incumplen hoy y uno de ellos es generado. Este
+    caza el mismo defecto — `CRM_SUDESPACHO_ATLAS.md`, declarado SSOT en
+    `CLAUDE.md:210`, estaba fuera del indice que promete cubrir la raiz de
+    `docs/` — y nace verde con una sola fila.
+    """
+    indice = ROOT / "docs" / "INDICE.md"
+    txt = indice.read_text(encoding="utf-8")
+    ausentes = [p.name for p in sorted((ROOT / "docs").glob("*.md"))
+                if p != indice and p.name not in txt]
+    assert not ausentes, f"docs de raiz sin fila en INDICE.md: {ausentes}"
