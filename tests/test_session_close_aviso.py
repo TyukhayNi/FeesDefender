@@ -249,3 +249,132 @@ def test_higiene_limpia_no_alarma(monkeypatch, capsys, tmp_path):
     sc._avisar_higiene_planificacion()
     out = capsys.readouterr().out
     assert "[!]" not in out
+
+
+# --- Trazabilidad de specs/plans recientes en el ledger -------------------------
+# Revision adversarial 2026-07-26:
+# docs/superpowers/specs/2026-07-26-gobernanza-indice-adversarial-review.md
+
+_LOG_ALTAS = [
+    "a" * 40,
+    "docs/superpowers/specs/2026-07-20-crm-atlas-descubrimiento-design.md",
+    "b" * 40,
+    "docs/superpowers/specs/2026-07-19-otra-cosa-design.md",
+]
+
+
+def test_disenos_recientes_parsea_altas_y_su_pr(monkeypatch):
+    # `git log --diff-filter=A --pretty=%H --name-only` intercala sha y ficheros.
+    def fake_lines(args):
+        if args[0] == "log" and "--name-only" in args:
+            return _LOG_ALTAS if "specs/" in args[-1] else []
+        if args[0] == "log" and "--pretty=format:%s" in args:
+            sha = args[-1]
+            return [f"feat(x): algo (#{104 if sha.startswith('a') else 99})"]
+        return []
+    monkeypatch.setattr(sc, "_git_lines", fake_lines)
+
+    filas = sc._disenos_recientes(dias=10)
+
+    assert filas == [
+        ("docs/superpowers/specs/2026-07-19-otra-cosa-design.md", "99"),
+        ("docs/superpowers/specs/2026-07-20-crm-atlas-descubrimiento-design.md", "104"),
+    ]
+
+
+def test_pr_del_commit_sin_numero_es_none(monkeypatch):
+    monkeypatch.setattr(sc, "_git_lines", lambda args: ["chore: commit directo sin PR"])
+    assert sc._pr_del_commit("a" * 40) is None
+
+
+def test_traza_por_stem():
+    recientes = [("docs/superpowers/specs/2026-07-20-crm-atlas-descubrimiento-design.md", None)]
+    corpus = "- ✅ [CRM-ATLAS] … [spec](…/2026-07-20-crm-atlas-descubrimiento-design.md)"
+    assert sc._disenos_sin_traza(recientes, corpus) == []
+
+
+def test_traza_por_numero_de_pr_aunque_nadie_escriba_el_stem():
+    # Caso real: la fila del ledger cita el PR y enlaza, pero no nombra el plan.
+    recientes = [("docs/superpowers/plans/2026-07-20-crm-atlas-fase-b.md", "104")]
+    assert sc._disenos_sin_traza(recientes, "- ✅ [CRM-ATLAS] … PR #104 (`b2d624c`)") == []
+    # sin la señal, el mismo plan es huerfano
+    assert sc._disenos_sin_traza(recientes, "- ✅ [OTRA-COSA] … PR #77") == [
+        "docs/superpowers/plans/2026-07-20-crm-atlas-fase-b.md"]
+
+
+def test_pr_parecido_no_cuenta_como_traza():
+    # `#10` no debe dar por trazado al PR #1 ni al reves: la señal es exacta.
+    recientes = [("docs/superpowers/plans/x.md", "1")]
+    assert sc._disenos_sin_traza(recientes, "PR #104 y PR #10") == ["docs/superpowers/plans/x.md"]
+
+
+def _prep_corpus(tmp_path, monkeypatch, *, plan="", handoff="", indice="", bitacora=""):
+    (tmp_path / "PLAN.md").write_text(plan, encoding="utf-8")
+    (tmp_path / "docs").mkdir(exist_ok=True)
+    (tmp_path / "docs" / "INDICE.md").write_text(indice, encoding="utf-8")
+    (tmp_path / "docs" / "bitacora").mkdir(exist_ok=True)
+    (tmp_path / "docs" / "bitacora" / "2026.md").write_text(bitacora, encoding="utf-8")
+    hd = tmp_path / "docs" / "superpowers" / "handoffs"
+    hd.mkdir(parents=True, exist_ok=True)
+    (hd / "handoff-x.md").write_text(handoff, encoding="utf-8")
+    monkeypatch.setattr(sc, "ROOT", tmp_path)
+
+
+def test_handoff_no_cuenta_como_traza(tmp_path, monkeypatch):
+    """CRITICO: incluir handoffs/ AUTOANULA el aviso.
+
+    El stem de `crm-atlas` aparece justo dentro del handoff que denuncio el hueco:
+    contarlo daria por trazado el defecto por haber sido denunciado (0 disparos).
+    `GOBERNANZA_FUENTES_VERDAD §5`: el handoff no es fuente de verdad.
+    """
+    stem = "2026-07-20-crm-atlas-descubrimiento-design"
+    _prep_corpus(tmp_path, monkeypatch,
+                 plan="cola de trabajo, sin mencion",
+                 handoff=f"el hueco esta en {stem}.md, nadie lo trazo")
+
+    corpus = sc._texto_corpus_trazas()
+
+    assert stem not in corpus
+    assert sc._disenos_sin_traza([(f"docs/superpowers/specs/{stem}.md", None)], corpus) == [
+        f"docs/superpowers/specs/{stem}.md"]
+
+
+def test_indice_no_cuenta_como_traza(tmp_path, monkeypatch):
+    # INDICE.md es vista derivada, no ledger: no puede dar por trazado nada.
+    stem = "2026-07-20-algo-design"
+    _prep_corpus(tmp_path, monkeypatch, plan="nada", indice=f"| `{stem}.md` | vigente |")
+    assert stem not in sc._texto_corpus_trazas()
+
+
+def test_bitacora_si_cuenta_como_traza(tmp_path, monkeypatch):
+    # La prosa nominal del cierre es señal legitima (asi estan trazados varios planes).
+    stem = "2026-06-22-expedientes-xl-conector"
+    _prep_corpus(tmp_path, monkeypatch, plan="nada", bitacora=f"cierre: plan {stem} ejecutado")
+    assert sc._disenos_sin_traza([(f"docs/superpowers/plans/{stem}.md", None)],
+                                 sc._texto_corpus_trazas()) == []
+
+
+def test_aviso_lista_los_huerfanos(monkeypatch, capsys):
+    monkeypatch.setattr(sc, "_disenos_recientes", lambda: [("docs/superpowers/plans/x.md", "9")])
+    monkeypatch.setattr(sc, "_texto_corpus_trazas", lambda: "corpus vacio de señales")
+
+    sc._avisar_specs_sin_traza()
+    out = capsys.readouterr().out
+
+    assert "[!]" in out and "docs/superpowers/plans/x.md" in out
+    assert "Cerrados" in out          # dice donde se arregla
+    assert "handoff" in out.lower()   # y por que un handoff no vale
+
+
+def test_aviso_no_alarma_si_todo_trazado(monkeypatch, capsys):
+    monkeypatch.setattr(sc, "_disenos_recientes", lambda: [("docs/superpowers/plans/x.md", "9")])
+    monkeypatch.setattr(sc, "_texto_corpus_trazas", lambda: "… PR #9 …")
+    sc._avisar_specs_sin_traza()
+    assert "[!]" not in capsys.readouterr().out
+
+
+def test_aviso_sin_specs_recientes_no_alarma(monkeypatch, capsys):
+    monkeypatch.setattr(sc, "_disenos_recientes", lambda: [])
+    sc._avisar_specs_sin_traza()
+    out = capsys.readouterr().out
+    assert "[!]" not in out and "Sin specs/plans nuevos" in out
