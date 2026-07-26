@@ -20,10 +20,17 @@ fecha: 2026-07-05
   vivos se mantienen donde están hasta que cierren.
 - **Estado archivado:** la bitácora histórica de `STATUS.md` se rota a
   `docs/bitacora/AAAA.md`.
-- **Campo `estado`** en el frontmatter de cada doc: `vigente` (en uso o trabajo
-  pendiente), `historico` (implementado o superado; se conserva como registro),
-  `aparcado` (decisión explícita de pausa) o `revisar` (sin señal clara — Nikolai
-  confirma). El `estado` de los `PLAN_*.md` es un primer pase automatizado.
+- **Campo `estado`** en el frontmatter — **solo de las tres poblaciones que este
+  índice cubre**: los docs de raíz de `docs/`, los `PLAN_*.md` legacy y los
+  handoffs. Los specs y planes fechados de `docs/superpowers/{specs,plans}/` **no
+  están sujetos a esta regla** (ni los indexa este fichero): su estado vive en
+  `PLAN.md` — etiqueta, casilla y ledger `## ✅ Cerrados`. El frontmatter se
+  introduce el día que se construya un consumidor, no antes. Valores: `vigente`
+  (en uso o trabajo pendiente), `historico` (implementado o superado; se conserva
+  como registro), `aparcado` (decisión explícita de pausa) o `revisar` (sin señal
+  clara — Nikolai confirma). Los handoffs usan **otro vocabulario**
+  (`activo | consumido | historico`, `GOBERNANZA_FUENTES_VERDAD §5`). El `estado`
+  de los `PLAN_*.md` es un primer pase automatizado.
 
 ## Referencia y gobernanza (vigentes)
 
@@ -36,6 +43,7 @@ fecha: 2026-07-05
 | `FLUJO_GIT.md` | Flujo de trabajo git + protocolo de cierre (SSOT); manual llano del modelo git. |
 | `SEGURIDAD_DATOS.md` | Prevención de fugas de PII y secretos — doctrina, controles y runbook. |
 | `INTEGRACION_SUDESPACHO.md` | API sudespacho (§14 fusiona la referencia común externa). |
+| `CRM_SUDESPACHO_ATLAS.md` | **SSOT de la superficie del CRM** — inventario generado y re-ejecutable (endpoints Fase A + campos/relaciones/enums por elemento, Fase B). Consultar ANTES de descubrir un endpoint a mano. **Generado**: regenerar con `python -m scripts.crm_atlas discover --phase all` (nunca `--phase a`: no trae Fase B). |
 | `INGESTA_SUDESPACHO.md` | Flujo de ingesta desde el CRM. |
 | `RUNBOOK_APERTURA_EXPEDIENTE.md` | Runbook operativo de apertura E2E de expediente (alta→intake→sala→viabilidad→CRM→archivo→cierre); gotchas embebidos. |
 | `CONVENCIONES_DESPACHO.md` | Convenciones del despacho. |
