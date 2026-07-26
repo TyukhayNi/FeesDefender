@@ -1,6 +1,6 @@
 # Changelog — organizar-sala-lectura
 
-## 1.13 — 2026-07-26
+## 1.14 — 2026-07-26
 - **Un bundle por hilo de correo, no un documento por mensaje.** `agrupar_por_hilo`
   cambia de clave: ahora agrupa por la **descripción** del nombre ignorando el
   prefijo de fecha. Motivo: `email_export` fecha cada mensaje con SU fecha y solo
@@ -23,6 +23,10 @@
   §5): un hilo con cambio de asunto no se agrupa, y dos conversaciones con el mismo
   asunto comparten bundle (sin guarda por salto temporal, decisión de Nikolai).
   Threading riguroso por `References`/`In-Reply-To` = `MEJORAS #86`.
+- **Test de regresión del fallback `categoria or tipo`** (la cobertura que la v1.13
+  dejó pendiente): el colapso de bundles reescribió `construir_indice`, así que un
+  test fija que un `_MANIFIESTO.md` de 7 columnas conserva su categoría real y
+  colapsa a la vez. Sin él, la reescritura habría revertido el fix en silencio.
 
 ## 1.12 — 2026-07-22
 - **`agrupar_por_hilo` no fusiona por una cifra del asunto.** Un `.eml` con una

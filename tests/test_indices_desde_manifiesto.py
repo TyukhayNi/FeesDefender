@@ -80,6 +80,30 @@ def test_indice_sin_bundles_no_cambia_el_recuento():
     assert "anexos)" not in salida
 
 
+_MANIF_7_COLUMNAS = """<!-- GENERADO — NO EDITAR A MANO -->
+| sha256 | ruta_original | nombre_canonico | tipo | fecha | parte | parent_id |
+|---|---|---|---|---|---|---|
+| a | 01_Drive EV/encargo.pdf | 2024-01-01_encargo.pdf | 01. ACTIVACIÓN | 2024-01-01 | propietario |  |
+| b | 03_Email/m1.eml | 2025-03-20_oferta/2025-03-20_oferta.eml | 03. OFERTAS | 2025-03-20 | buscador |  |
+| c | 03_Email/m2.eml | 2025-03-20_oferta/2025-03-21_oferta_anexo_1_mensaje.eml | 03. OFERTAS | 2025-03-21 | buscador | 2025-03-20_oferta |
+"""
+
+
+def test_indice_manifiesto_de_7_columnas_conserva_la_categoria_y_colapsa():
+    # Regresión del fix de la v1.13: sin el fallback `categoria or tipo`, un
+    # manifiesto de 7 columnas manda TODO a "08. PENDIENTE DE CLASIFICAR"
+    # (W-02VND1, 669 filas). El colapso de bundles debe convivir con el fallback.
+    import manifiesto_parser
+    filas = manifiesto_parser.parse_manifiesto(_MANIF_7_COLUMNAS)
+    salida = idx.construir_indice(filas)
+    assert "## 01. ACTIVACIÓN" in salida
+    assert "## 03. OFERTAS" in salida
+    assert "08. PENDIENTE DE CLASIFICAR" not in salida
+    lineas = [l for l in salida.splitlines() if l.startswith("- ")]
+    assert len(lineas) == 2  # el encargo + el bundle colapsado
+    assert "(+1 anexos)" in salida
+
+
 def test_indice_agrupa_por_categoria_y_ordena_fecha_desc():
     txt = idx.construir_indice(_filas())
     assert "## 01. ACTIVACIÓN" in txt
