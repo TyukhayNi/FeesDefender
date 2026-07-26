@@ -382,18 +382,39 @@ no citar sus cifras de tamaño.
 
 ## Adjudicación
 
-| Hallazgo | Veredicto | Decisión de Nikolai | Acción |
-| --- | --- | --- | --- |
-| H1 | REFUTADO | pendiente | ninguna |
-| H2 | CONFIRMADO CON MATIZ | pendiente | ledger + puntero en `PLAN.md:358` + hash pre-squash |
-| H3 | REFUTADO (88% FP) | pendiente | retirar; quedan D5 y 3 filas de ledger |
-| H4 | REFUTADO | pendiente | ninguna (a lo sumo, acotar `INDICE.md:23`) |
-| H5 | REFUTADO | pendiente | ninguna |
-| D1 | P1 destructivo | pendiente | fix `core/crm_atlas.py:371` + guarda `--force` |
-| D2 | P1 | pendiente | fix render `ran` vs `complete` |
-| D3 | P1 latente | pendiente | reconciliar vocabulario antes de tocar el glob |
-| D4 | P2 | pendiente | renumerar CENDOJ a `#85` + G1 |
-| D5 | P2 | pendiente | corregir cita + G2 |
-| D6 | P2 | pendiente | alta en INDICE + frontmatter + G3 |
-| Test INDICE | — | pendiente | **no implementar** |
-| Aviso session_close | — | pendiente | implementar **rediseñado** |
+> Segunda ronda (2026-07-26, 4 subagentes en paralelo) con mandato de **disputar las
+> conclusiones de esta misma revisión**. Corrigió seis afirmaciones propias — anotadas en
+> §Autocorrecciones. Recomendación por fila; la decisión sigue siendo de Nikolai.
+
+| Ítem | Veredicto | Recomendación | Acción | Esfuerzo | PR |
+| --- | --- | --- | --- | --- | --- |
+| H1 | REFUTADO | aceptar | ninguna, cerrar | 0 | — |
+| H2 | CONFIRMADO CON MATIZ (P2, **no sube a P1**) | aceptar | fila `[CRM-ATLAS]` en el ledger + puntero en `PLAN.md:358` + `87ff113`→`b2d624c` | 20 min | PR2 |
+| H3 | REFUTADO (88% FP) | aceptar | retirar; antes de fijar filas, verificar 5 stems sin anclar | 15 min | PR2 |
+| H4 | REFUTADO | aceptar | acotar la frase de `INDICE.md:23` a las 3 poblaciones | 5 min | PR2 |
+| H5 | REFUTADO | aceptar **con reserva** | ninguna; **corregir el dato: la contramarca `#58` es falsa** (`MEJORAS_FUTURAS.md:2405` ya lleva `[COMPLETADO → PR #42]`) | 0 | — |
+| D1 | **P2 alto** (recuperable con `git restore`), no P1 | arreglar | `--phase all` en **los dos** renders (md **y digest**) + guarda dura anti-clobber en el CLI | 30 min | PR1 |
+| D2 | P1 | arreglar | tres estados leyendo `ran` + `complete` + contadores | 15 min | PR1 |
+| D3 | P1 latente | **modificar** | **no** unificar `_ESTADOS`: vocabularios por población. Hoy solo señalizar la trampa en `test_docs_gobernanza.py:7` | 5 min | PR2 |
+| D4 | P2 | hacer | renumerar **CENDOJ → `#85`** (6 refs externas, todas internas al fichero; mover el motor rompería 3 anclas del protocolo) | 20 min | PR2 |
+| D5 | P2 | hacer | desdoblar la cita de `PLAN.md:449` en spec + plan reales | 2 min | PR2 |
+| D6 | P2 | **modificar** | alta en INDICE sí; el frontmatter **no se puede añadir a mano** (fichero generado) → emitirlo en `render_markdown` | 10+20 min | PR2 + PR1 |
+| G1 | — | hacer | unicidad de `## NN.` en MEJORAS (verde solo tras D4) | 10 min | PR2 |
+| G2 | — | **modificar** | tal como se redactó **no caza D5**: añadir stems desnudos, expandir llaves `{a,b}`, descartar elipsis y placeholders | 40 min | PR2 |
+| G3 | — | **descartar y sustituir** | no es barato (12 de 20 docs fallan). Sustituir por «todo `docs/*.md` citado en `INDICE.md`» — caza D6 igual y nace verde con **una** fila | 10 min | PR2 |
+| Test INDICE | — | **no implementar** | confirmado | — | — |
+| Test «citado en algún sitio» | — | **no como test**, pero limpiar | solo **6 de 99** fallarían (4 huérfanos reales). No bloqueante porque `session_close` corre pytest como verja y rompería el estado legítimo «spec hoy, decisión mañana» | 20 min | PR2 |
+| Aviso `session_close` | — | implementar **con corrección crítica** | **excluir `handoffs/` del corpus de trazas** y eliminar la señal `[XXX]`; N=10 días | 45 líneas | PR3 |
+
+### Autocorrecciones de la segunda ronda
+
+Seis afirmaciones de este informe que la segunda ronda corrigió, todas contra el repo:
+
+1. **D1 no es «irrecuperable».** `CRM_SUDESPACHO_ATLAS.md` y `atlas.digest.md` están **trackeados**; `git restore` los devuelve al 100%. Lo único irrecuperable es `atlas.json`, que está gitignored y **hoy no existe**. Severidad real: P2 alto.
+2. **D1 tiene un segundo vector que no vi:** `render_digest` imprime `discover` **sin fase**, y el default del CLI es `--phase a` — mismo destrozo por otra puerta.
+3. **G2, tal como lo redacté, no habría cazado D5.** La cita de `PLAN.md:449` es un *stem desnudo*, sin directorio; mi guard solo miraba rutas completas. La afirmación de la tabla de contrapropuesta era falsa.
+4. **G3 no es barato:** 12 de 20 docs de raíz lo incumplirían — el mismo retrofit que este informe rechaza, un orden de magnitud menor. Y uno de los 12 es generado.
+5. **El aviso rediseñado, tal como lo especifiqué, dispara 0 avisos: se autoanula.** Al incluir `handoffs/` en el corpus, el stem de crm-atlas aparece *solo* dentro del handoff que denunció el hueco — el aviso daría por trazado el defecto por haber sido denunciado. Corregido: `GOBERNANZA_FUENTES_VERDAD.md:164-166` dice que el handoff **no es fuente de verdad**. Excluyéndolo, dispara 3 a N=10 días, con 2 verdaderos positivos.
+6. **Mi razón nº2 contra el test (~98 filas de retrofit) no sobrevive a la variante reformulada:** exigir la cita en *cualquier* sitio del corpus solo falla en 6 de 99. El descarte se sostiene, pero por otro motivo (la verja de pytest en `session_close`), no por el coste.
+
+Además: el radio de D3 es **11 ficheros, no 7** (7 `consumido`, 1 `histórico` con tilde, 2 `aprobado`, 1 placeholder); `activo` no lo usa ningún handoff.
