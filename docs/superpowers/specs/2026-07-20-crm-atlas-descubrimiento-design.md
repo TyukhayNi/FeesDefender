@@ -24,7 +24,8 @@ Precedentes: `docs/INTEGRACION_SUDESPACHO.md`, `docs/ARQUITECTURA_CRM_SUDESPACHO
 
 ## 0.bis Estado empírico (validado en vivo 2026-07-20)
 
-Fase A **construida, testeada (11 tests) y corrida** (commit `87ff113`). Mecanismos de Fase B y
+Fase A **construida, testeada (11 tests) y corrida** (mergeada en `b2d624c`, PR #104; el `87ff113`
+original es un commit colgante pre-squash que **no está en `main`**). Mecanismos de Fase B y
 riesgos de PII **validados en vivo** con la `x-api-key` del entorno (solo esquema):
 
 | Hecho | Valor confirmado |
@@ -271,7 +272,7 @@ confirmación de Nikolai).
 
 ## 14. Plan de entrega por fases
 
-1. **Fase A** ✅ hecha (`87ff113`), **+ hardening** (bugs verificados en la auditoría):
+1. **Fase A** ✅ hecha (`b2d624c`, PR #104), **+ hardening** (bugs verificados en la auditoría):
    `json.dumps(sort_keys=True)`; `generated_at` default no-stamp / UTC; `_request_schema` acepta
    `merge-patch+json` + `multipart/form-data`; `operation_id_to_dev_slug` colapsa no-alfanuméricos +
    trailing `/`; `Endpoint.deprecated` + `Param.enum/default`; nota `auth_note` (`x-api-key`);

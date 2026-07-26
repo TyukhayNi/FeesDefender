@@ -9,7 +9,7 @@
 > mecanismo central de idempotencia partía de una premisa falsa. **Re-tajado el 2026-07-26 con
 > aprobación de Nikolai:** este documento queda reducido al **Slice 1**, que entrega el beneficio más
 > visible sin ninguno de los bloqueantes. Los Slices 2 y 3 salen a backlog con disparador explícito
-> (`MEJORAS #84`, `#85`). La tabla de adjudicación completa vive en la revisión hermana.
+> (`MEJORAS #86`, `#87`). La tabla de adjudicación completa vive en la revisión hermana.
 
 ---
 
@@ -23,13 +23,13 @@ líneas — la sala deja de ser legible, que es exactamente su propósito.
 **Este spec NO hace** (y es deliberado, no un olvido):
 
 - **No consume `01_Procesado/Emails/`.** Nada de `corpus.jsonl`, `MSG-id`, Capa B ni adjuntos
-  deduplicados. → `MEJORAS #84` (Slice 2).
+  deduplicados. → `MEJORAS #86` (Slice 2).
 - **No cambia QUÉ fichero se copia.** Sigue copiándose el `.eml` con sus adjuntos MIME, como hoy. El
   criterio "email → MD legible, el `.eml` es custodia" que Nikolai cerró el 2026-07-19
   (`MEJORAS #75`) llega con el Slice 2, no aquí.
 - **No toca `core/email_atomize` ni `core/anon`** (módulo congelado por `CLAUDE.md`).
-- **No toca el OCR de adjuntos** ni el motor de extracción. → `MEJORAS #85` (Slice 3).
-- **No introduce ningún motor de threading nuevo.** → `MEJORAS #86`.
+- **No toca el OCR de adjuntos** ni el motor de extracción. → `MEJORAS #87` (Slice 3).
+- **No introduce ningún motor de threading nuevo.** → `MEJORAS #88`.
 
 Todo el cambio vive **dentro del paquete `.skill`** de `organizar-sala-lectura`. Cero instalación
 nueva para el equipo: los scripts de la skill son **stdlib puro y self-contained** (corren en el
@@ -54,7 +54,7 @@ prefijos `Re:`/`RV:`/`Fwd:`** antes de construir el nombre
 ([`email_export.py:90-103`](../../../core/email_export.py:90)), así que **todos los mensajes de un hilo
 comparten la misma `descripcion`** y solo difieren en el prefijo de fecha. Por tanto la clave de hilo
 pasa a ser **la descripción, ignorando la fecha** — sigue siendo solo nombres de fichero, cero
-lecturas de contenido, idéntico en los tres modos de acceso. `MEJORAS #86` (threading por cabeceras
+lecturas de contenido, idéntico en los tres modos de acceso. `MEJORAS #88` (threading por cabeceras
 RFC) se conserva como el refinamiento fino, no como prerrequisito.
 
 `agrupar_por_hilo` **cambia de clave** (descripción en vez de stem con fecha), conservando por
@@ -152,16 +152,16 @@ intacto).
 - **El agrupado es por nombre de fichero, no por cabeceras RFC.** Un hilo cuyo asunto cambió a mitad
   de conversación no se agrupa. Es la limitación que el propio `agrupar_por_hilo` ya advierte en su
   docstring ("proxy barato, no sustituto de un threading riguroso si algún día hace falta").
-  Threading riguroso por `References`/`In-Reply-To` → `MEJORAS #86`.
+  Threading riguroso por `References`/`In-Reply-To` → `MEJORAS #88`.
 - **Dos conversaciones distintas con el mismo asunto comparten bundle** (p. ej. dos "consulta" de
   años diferentes). **Decisión de Nikolai 2026-07-26: sin guarda** — se descartó partir por salto
   temporal para no introducir un umbral arbitrario. El daño está acotado: los documentos conservan su
   fecha correcta en el `_MANIFIESTO.md` y en `CRONOLOGIA.md`, el crudo de `00_Input` está intacto y la
-  sala es una vista derivada, no prueba; la molestia es de legibilidad. `MEJORAS #86` es el arreglo
+  sala es una vista derivada, no prueba; la molestia es de legibilidad. `MEJORAS #88` es el arreglo
   cuando moleste de verdad.
 - **Correspondencia suelta no gana nada:** un hilo de un único mensaje queda plano, como hoy.
 - **La sala no aprovecha el trabajo de `email_atomize`.** Sigue releyendo el `.eml`. Ese era el
-  objetivo original y queda íntegro en `MEJORAS #84`.
+  objetivo original y queda íntegro en `MEJORAS #86`.
 
 ## 6. Plan de testing
 
@@ -203,4 +203,4 @@ añade") no las implementa código de la skill sino el procedimiento del `SKILL.
 - Re-empaquetar (`scripts/package_skill.py --out dist/skills <dir>`) y **re-importar el `.skill` en
   Cowork** — sin esto, Paola/Ana/Sergio siguen con la v1.12.
 - `MEJORAS #75` queda **parcialmente promovido**: la parte de granularidad la cubre este spec; la de
-  consumo de fuentes atomizadas sigue en backlog como `#84`.
+  consumo de fuentes atomizadas sigue en backlog como `#86`.

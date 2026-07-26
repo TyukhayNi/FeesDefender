@@ -37,11 +37,22 @@
 - **Limitaciones aceptadas** (spec `2026-07-23-emails-atomizados-sala-lectura-design.md`
   §5): un hilo con cambio de asunto no se agrupa, y dos conversaciones con el mismo
   asunto comparten bundle (sin guarda por salto temporal, decisión de Nikolai).
-  Threading riguroso por `References`/`In-Reply-To` = `MEJORAS #86`.
+  Threading riguroso por `References`/`In-Reply-To` = `MEJORAS #88`.
 - **Test de regresión del fallback `categoria or tipo`** (la cobertura que la v1.13
   dejó pendiente): el colapso de bundles reescribió `construir_indice`, así que un
   test fija que un `_MANIFIESTO.md` de 7 columnas conserva su categoría real y
   colapsa a la vez. Sin él, la reescritura habría revertido el fix en silencio.
+
+## 1.13 — 2026-07-23
+- **Bug — `indices_desde_manifiesto.py`/`manifiesto_a_catalogo.py` ignoraban la
+  categoría de manifiestos de 7 columnas.** Ambos leían solo `categoria` (columna
+  añadida en una versión posterior); un `_MANIFIESTO.md` de 7 columnas (donde la
+  categoría vive en `tipo`, per diseño de `manifiesto_parser.py`) producía
+  `INDICE.md` con TODO bajo "08. PENDIENTE DE CLASIFICAR" y `categoria: null` en
+  el catálogo — sin avisar, sin romper el parseo, solo perdiendo la clasificación
+  real de casos abiertos antes de que existiera la columna `categoria` (detectado
+  en W-02VND1, 669 filas afectadas). Fix: ambos caen a `tipo` si `categoria` está
+  ausente. Cobertura de test pendiente (`MEJORAS_FUTURAS`).
 
 ## 1.12 — 2026-07-22
 - **`agrupar_por_hilo` no fusiona por una cifra del asunto.** Un `.eml` con una

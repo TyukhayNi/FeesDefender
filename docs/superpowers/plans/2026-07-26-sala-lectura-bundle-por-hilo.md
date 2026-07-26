@@ -25,7 +25,7 @@
 - **Comandos desde la raíz del worktree:** `C:\Users\tnm33\Dev\FeesDefender\.claude\worktrees\emails-atomizados-sala-lectura-c290ef`.
 - **NO editar `.agents/skills/`** — es un espejo untracked ajeno a este trabajo. La fuente única es
   `.claude/skills/`.
-- **Versión objetivo de la skill: 1.13** (frontmatter de `SKILL.md` + entrada en `CHANGELOG.md`).
+- **Versión objetivo de la skill: 1.14** (`main` tomó la 1.13) (frontmatter de `SKILL.md` + entrada en `CHANGELOG.md`).
 
 ## File Structure
 
@@ -184,7 +184,7 @@ def agrupar_por_hilo(rutas_eml: list[str]) -> dict[str, list[str]]:
     a mitad de conversación no se agrupa, y dos conversaciones distintas con el
     mismo asunto SÍ comparten grupo (sin guarda por salto temporal — decisión de
     Nikolai 2026-07-26). El threading riguroso por `References`/`In-Reply-To` es
-    `MEJORAS #86`, no un prerrequisito."""
+    `MEJORAS #88`, no un prerrequisito."""
     descripciones = {_descripcion_hilo(n) for n in rutas_eml}
     grupos: dict[str, list[str]] = {}
     for nombre in rutas_eml:
@@ -661,7 +661,7 @@ principal…", añade:
      llega un mensaje anterior al principal (renombrar pisaría lo ya copiado). Un
      grupo de un solo mensaje sin adjuntos queda PLANO, sin subcarpeta. El `.eml`
      original se copia igual que hasta ahora — el criterio "email → MD legible" NO
-     está en vigor todavía (`MEJORAS #84`).
+     está en vigor todavía (`MEJORAS #86`).
 ```
 
 - [ ] **Step 3: Documentar el colapso del índice y la convivencia**
@@ -710,7 +710,7 @@ En `CHANGELOG.md`, inserta justo debajo de `# Changelog — organizar-sala-lectu
 - **Limitaciones aceptadas** (spec `2026-07-23-emails-atomizados-sala-lectura-design.md`
   §5): un hilo con cambio de asunto no se agrupa, y dos conversaciones con el mismo
   asunto comparten bundle (sin guarda por salto temporal, decisión de Nikolai).
-  Threading riguroso por `References`/`In-Reply-To` = `MEJORAS #86`.
+  Threading riguroso por `References`/`In-Reply-To` = `MEJORAS #88`.
 ```
 
 - [ ] **Step 5: Verificar los guards de la skill y la suite completa**
@@ -790,7 +790,7 @@ por hilo. Anótalo en el bloque de cierre de la bitácora.
 Fuera de este plan, por decisión explícita del re-tajo del spec:
 
 - **No** se consume `01_Procesado/Emails/` (`corpus.jsonl`, `MSG-id`, Capa B, adjuntos deduplicados) →
-  `MEJORAS #84`.
-- **No** se toca el motor de extracción/OCR de adjuntos → `MEJORAS #85`.
-- **No** se implementa threading por cabeceras `References`/`In-Reply-To` → `MEJORAS #86`.
+  `MEJORAS #86`.
+- **No** se toca el motor de extracción/OCR de adjuntos → `MEJORAS #87`.
+- **No** se implementa threading por cabeceras `References`/`In-Reply-To` → `MEJORAS #88`.
 - **No** se toca `core/` ni se cambia el criterio de qué fichero se copia (sigue el `.eml`).

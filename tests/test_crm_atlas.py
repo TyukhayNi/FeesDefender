@@ -692,3 +692,110 @@ def test_cli_resume_keeps_resolved_retries_degraded(tmp_path, monkeypatch):
     assert {e["slug"] for e in data["elements"]} == {"a", "b"}
     b = next(e for e in data["elements"] if e["slug"] == "b")
     assert b["relations"] == {"parent": [], "children": []} and b["probes"]["relations"] == "ok"
+
+
+# --- Grupo 4: D1/D2/D6b — el atlas no debe ordenar el comando que lo mutila ------
+# Revisión adversarial 2026-07-26:
+# docs/superpowers/specs/2026-07-26-gobernanza-indice-adversarial-review.md
+
+def test_renders_ordenan_phase_all_no_phase_a(spec):
+    """D1 — ambos renders imprimen `--phase all`; ninguno el `--phase a` destructivo.
+
+    Dos vectores: el .md ordenaba `--phase a` y el digest imprimía `discover`
+    sin fase (y el default del CLI es `a`).
+    """
+    atlas = build_atlas_phase_a(spec, tenant="tnm")
+    for render in (render_markdown, render_digest):
+        txt = render(atlas)
+        assert "scripts.crm_atlas discover --phase all" in txt, render.__name__
+        assert "discover --phase a." not in txt, render.__name__
+        assert "`python -m scripts.crm_atlas discover`" not in txt, render.__name__
+
+
+def test_fila_fase_b_distingue_tres_estados(spec):
+    """D2 — `ran` (ejecución) y `complete` (0 degradados) son estados distintos."""
+    from core.crm_atlas import _fase_b_estado
+    base = build_atlas_phase_a(spec, tenant="tnm")
+
+    assert _fase_b_estado(base["meta"]["phase_b"]) == "⏳ no ejecutada"
+    assert "⏳ no ejecutada" in render_markdown(base)
+
+    completa = {"ran": True, "elements_total": 89, "elements_ok": 89,
+                "elements_degraded": 0, "complete": True}
+    assert _fase_b_estado(completa) == "✅ 89/89"
+
+    degradada = {"ran": True, "elements_total": 89, "elements_ok": 87,
+                 "elements_degraded": 2, "complete": False}
+    assert _fase_b_estado(degradada) == "⚠️ 87/89 (2 degradados)"
+    # el bug original: `complete=False` con Fase B corrida se rendía como "pendiente"
+    md = render_markdown({**base, "meta": {**base["meta"], "phase_b": degradada}})
+    assert "| Fase B (esquema por elemento) | ⚠️ 87/89 (2 degradados) |" in md
+    assert "pendiente" not in md.split("## Índice por módulo")[0]
+
+
+def test_render_markdown_emite_frontmatter_estado(spec):
+    """D6b — el atlas es doc de raíz de docs/: necesita frontmatter, y es generado."""
+    md = render_markdown(build_atlas_phase_a(spec, tenant="tnm"))
+    assert md.startswith("---\nestado: vigente\n")
+    cabecera = md.split("---\n")[1]
+    assert "dueño:" in cabecera
+
+
+def test_cli_rehusa_pisar_atlas_con_fase_b(tmp_path, monkeypatch):
+    """D1 — guarda dura: un atlas sin Fase B no pisa un .md que sí la tiene."""
+    from typer.testing import CliRunner
+    import scripts.crm_atlas as cli
+    monkeypatch.setattr(cli, "fetch_oas3",
+                        lambda base_url=cli.PUBLIC_BASE_URL, **k: copy.deepcopy(_MINI_SPEC))
+    md = tmp_path / "atlas.md"
+    previo = "# Atlas\n\n## Esquema por elemento — 87/89 resueltos\n\n### abogados\n"
+    md.write_text(previo, encoding="utf-8")
+    out, dig = tmp_path / "a.json", tmp_path / "d.md"
+
+    r = CliRunner().invoke(cli.app, ["discover", "--phase", "a", "--atlas-json", str(out),
+                                     "--atlas-md", str(md), "--digest-md", str(dig)])
+    assert r.exit_code == 1, r.output
+    assert md.read_text(encoding="utf-8") == previo   # intacto
+    assert not out.exists() and not dig.exists()      # ninguna de las tres escrituras
+
+    # sin .md previo (o sin Fase B en él) la corrida de Fase A sigue siendo legítima
+    md.unlink()
+    r2 = CliRunner().invoke(cli.app, ["discover", "--phase", "a", "--atlas-json", str(out),
+                                      "--atlas-md", str(md), "--digest-md", str(dig)])
+    assert r2.exit_code == 0, r2.output
+    assert md.exists() and out.exists() and dig.exists()
+
+
+def test_artefacto_atlas_coherente_con_su_fase_b():
+    """DECISIVO — valida el ARTEFACTO commiteado, no el generador.
+
+    Es el único que caza la deriva: el generador puede estar corregido y el .md
+    en disco seguir mintiendo (que es justo lo que pasó entre `b2d624c` y hoy).
+    """
+    import re
+    from pathlib import Path
+    ruta = Path(__file__).resolve().parent.parent / "docs" / "CRM_SUDESPACHO_ATLAS.md"
+    txt = ruta.read_text(encoding="utf-8")
+
+    fila = re.search(r"^\| Fase B \(esquema por elemento\) \| (.+?) \|$", txt, re.MULTILINE)
+    assert fila, "falta la fila «Fase B» en el atlas"
+    estado = fila.group(1)
+    esquema = re.search(r"^## Esquema por elemento — (\d+)/(\d+) resueltos$", txt, re.MULTILINE)
+
+    if esquema is None:
+        assert estado == "⏳ no ejecutada", (
+            f"el atlas no trae esquema por elemento pero la fila dice «{estado}»")
+        return
+    ok, total = esquema.group(1), esquema.group(2)
+    assert "no ejecutada" not in estado and "pendiente" not in estado, (
+        f"el atlas trae el esquema de {ok}/{total} elementos pero la fila dice «{estado}»")
+    assert f"{ok}/{total}" in estado, (
+        f"la fila «{estado}» no cuadra con el encabezado «{ok}/{total} resueltos»")
+    n_deg = int(total) - int(ok)
+    assert estado.startswith("✅" if n_deg == 0 else "⚠️"), estado
+    if n_deg:
+        assert f"({n_deg} degradados)" in estado, estado
+
+    # D1 en el artefacto: el documento no puede ordenar el comando que lo borra
+    assert "discover --phase all" in txt
+    assert "discover --phase a." not in txt

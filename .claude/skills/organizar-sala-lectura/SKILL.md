@@ -368,7 +368,7 @@ tal diálogo.
        renumera entre corridas y pisa ficheros ya copiados).
      Un grupo de un solo mensaje sin adjuntos queda PLANO, sin subcarpeta. El `.eml`
      original se copia igual que hasta ahora — el criterio "email → MD legible" NO
-     está en vigor todavía (`MEJORAS #84`).
+     está en vigor todavía (`MEJORAS #86`).
    - **`ERROR_FILE_NOT_HYDRATED` (fichero frío):** no lo anotes pendiente a la
      primera. Reintenta ESE fichero por la ruta `rcd` server-side con
      `copiar_manifiesto(remote, [(src, dst)], progreso_path=<el mismo jsonl>)`, que

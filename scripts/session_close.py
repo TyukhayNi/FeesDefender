@@ -314,6 +314,123 @@ def _avisar_higiene_planificacion() -> None:
         print("STATUS.md y PLAN.md dentro de presupuesto; sin ✅ sin colapsar.")
 
 
+# --- Trazabilidad de specs/plans recientes en el ledger ---
+#
+# Cierra el hueco que dejo `crm-atlas`: PR #104 mergeado a `main` con 6.400 lineas
+# de atlas y CERO filas en `PLAN.md ## ✅ Cerrados`, cero prosa en la bitacora. Su
+# unica huella era el nombre de su rama, citado como escombro a podar.
+#
+# Dos decisiones de diseño que parecen detalles y no lo son (revision adversarial
+# 2026-07-26, §Autocorrecciones):
+#
+# 1. `docs/superpowers/handoffs/` NO entra en el corpus de trazas. El handoff es
+#    un andamio efimero y `GOBERNANZA_FUENTES_VERDAD §5` dice expresamente que no
+#    es fuente de verdad. Incluirlo AUTOANULA el aviso: el stem de `crm-atlas`
+#    aparece justo dentro del handoff que denuncio el hueco, o sea que el defecto
+#    se daria por trazado por haber sido denunciado. Con handoffs dentro: 0 avisos.
+# 2. La etiqueta `[XXX]` del bloque NO se usa como señal: sobre-empareja (una
+#    etiqueta generica casa con cualquier item vecino y da por trazado lo que no
+#    lo esta). Señal = el stem del fichero, o el nº de PR del commit que lo
+#    introdujo. `INDICE.md` tampoco entra: es vista derivada, no ledger.
+_TRAZA_DIAS = 10
+_DIRS_DISENO = ("docs/superpowers/specs/", "docs/superpowers/plans/")
+_CORPUS_TRAZAS = ("PLAN.md", "docs/bitacora", "docs/MEJORAS_FUTURAS.md", "docs/DEAD_ENDS.md")
+_RE_SHA = re.compile(r"^[0-9a-f]{40}$")
+_RE_PR_SUBJECT = re.compile(r"\(#(\d+)\)\s*$")
+
+
+def _pr_del_commit(sha: str) -> str | None:
+    """Nº de PR del subject de un squash ('… (#127)'). None si no lo lleva."""
+    subject = _git_lines(["log", "-1", "--pretty=format:%s", sha])
+    if not subject:
+        return None
+    m = _RE_PR_SUBJECT.search(subject[0])
+    return m.group(1) if m else None
+
+
+def _disenos_recientes(dias: int = _TRAZA_DIAS) -> list[tuple[str, str | None]]:
+    """[(ruta, nº_de_PR|None)] de specs/plans AÑADIDOS en los ultimos N dias.
+
+    `--diff-filter=A` = solo altas; renombrar o editar un doc viejo no dispara.
+    Solo consultas locales a git; sin red.
+    """
+    vistos: dict[str, str] = {}
+    for pat in _DIRS_DISENO:
+        sha = ""
+        for ln in _git_lines(["log", f"--since={dias}.days.ago", "--diff-filter=A",
+                              "--pretty=format:%H", "--name-only", "--", pat]):
+            if _RE_SHA.match(ln):
+                sha = ln
+            elif ln.startswith(pat) and ln.endswith(".md"):
+                vistos.setdefault(ln, sha)
+    cache: dict[str, str | None] = {}
+    filas = []
+    for ruta, sha in sorted(vistos.items()):
+        if sha not in cache:
+            cache[sha] = _pr_del_commit(sha)
+        filas.append((ruta, cache[sha]))
+    return filas
+
+
+def _texto_corpus_trazas() -> str:
+    """Concatena el corpus donde vive la trazabilidad REAL (ledger + narrativa)."""
+    partes: list[str] = []
+    for rel in _CORPUS_TRAZAS:
+        p = ROOT / rel
+        if p.is_dir():
+            for f in sorted(p.glob("*.md")):
+                partes.append(f.read_text(encoding="utf-8", errors="replace"))
+        elif p.exists():
+            partes.append(p.read_text(encoding="utf-8", errors="replace"))
+    return "\n".join(partes)
+
+
+def _disenos_sin_traza(recientes: list[tuple[str, str | None]], corpus: str) -> list[str]:
+    """Rutas de specs/plans recientes sin señal en el corpus. Puro y testeable.
+
+    Trazado = su STEM aparece en el corpus, o el nº de PR que lo introdujo. Basta
+    una de las dos: un plan puede estar trazado por la fila de ledger de su PR sin
+    que nadie escriba el nombre del fichero, y al reves.
+    """
+    huerfanos = []
+    for ruta, pr in recientes:
+        stem = ruta.rsplit("/", 1)[-1][:-3]  # sin .md
+        if stem in corpus:
+            continue
+        # `#1` NO puede casar dentro de `#104`: el nº de PR se compara entero.
+        if pr and re.search(rf"#{pr}(?!\d)", corpus):
+            continue
+        huerfanos.append(ruta)
+    return huerfanos
+
+
+def _avisar_specs_sin_traza() -> None:
+    """AVISO no bloqueante: spec/plan reciente sin traza en el ledger ni la bitacora.
+
+    Solo git local + lectura de ficheros del repo; sin red. Un spec sin traza NO
+    es necesariamente un defecto —«spec hoy, decision mañana» es un estado
+    legitimo—, por eso avisa y no bloquea: la verja de pytest del cierre romperia
+    ese estado.
+    """
+    print("\n" + "-" * 40)
+    print(f"Trazabilidad de specs/plans (ultimos {_TRAZA_DIAS} dias)")
+    recientes = _disenos_recientes()
+    if not recientes:
+        print(f"Sin specs/plans nuevos en los ultimos {_TRAZA_DIAS} dias.")
+        return
+    huerfanos = _disenos_sin_traza(recientes, _texto_corpus_trazas())
+    if not huerfanos:
+        print(f"{len(recientes)} spec(s)/plan(es) reciente(s); todos con traza.")
+        return
+    print(f"[!] {len(huerfanos)} de {len(recientes)} spec(s)/plan(es) reciente(s) sin traza")
+    print("    en PLAN.md / bitacora / MEJORAS_FUTURAS / DEAD_ENDS:")
+    for ruta in huerfanos:
+        print(f"  -> {ruta}")
+    print("Si el trabajo ya esta en main: fila en 'PLAN.md ## ✅ Cerrados' con el")
+    print("nº de PR y enlace al spec. Si sigue abierto: item en la cola.")
+    print("(Un handoff que lo mencione NO cuenta: no es fuente de verdad.)")
+
+
 def main() -> None:
     force_slow = "--runslow" in sys.argv or os.getenv("RUN_SLOW") == "1"
     runslow = force_slow or _anon_tocado()
@@ -368,6 +485,12 @@ def main() -> None:
         _avisar_higiene_planificacion()
     except Exception as e:  # el aviso nunca debe romper el cierre
         print(f"[aviso] no se pudo comprobar higiene de planificacion: {e}")
+
+    # Aviso de specs/plans recientes sin traza en el ledger (modo AVISO, no bloquea).
+    try:
+        _avisar_specs_sin_traza()
+    except Exception as e:  # el aviso nunca debe romper el cierre
+        print(f"[aviso] no se pudo comprobar trazabilidad de specs/plans: {e}")
 
 
 if __name__ == "__main__":

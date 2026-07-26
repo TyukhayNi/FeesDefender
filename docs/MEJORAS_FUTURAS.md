@@ -1761,14 +1761,34 @@ código (`ocr-a-md` sobre el scaffold). Ver §F de `docs/superpowers/plans/PLAN_
 **Justificación de no aplicarlo ahora.** Es un refactor arquitectónico grande; primero se
 memoriza el diseño. El orden sugerido de ejecución (saneamiento barato → registro de cobertura →
 fachada → motor OCR único → conector → resto de faltas) está en el doc.
+
+**Anotación 2026-07-23 (W-02VND1).** Medido en vivo durante el intake de la querella penal del
+caso: `sala_maquina apply` sobre un `00_Input/` de 2,6 GB/715 ficheros tardó varios minutos para
+depositar solo 43 PDFs nuevos. Dos causas concretas, verificadas en código: `core/sala_maquina.py::
+inventariar()` rehashea `00_Input/` entero en cada corrida en vez de leer `00_Input/_intake_hashes.json`
+(`core/intake_manifest.py::IntakeManifest`, ya poblado por la mayoría de fuentes — `core/intake_drive.py`
+es la excepción, no registra en él); y ~169 documentos no resueltos desde una corrida anterior se
+reintentan (con OCR real) en cada `apply` sin límite (detalle en #84). Confirma en código el "registro
+ÚNICO de caso" que este #48 ya diseñaba (ampliación 2026-07-03) y que sigue aparcado. La misma carencia
+apareció el mismo día, independientemente, en la revisión adversarial de
+`docs/superpowers/specs/2026-07-23-emails-atomizados-sala-lectura-adversarial-review.md` (hallazgo P0.1:
+`corpus.jsonl` de `email_atomize` tampoco reconcilia contra el inventario real de `00_Input`). No
+promuevo — solo dejo la evidencia para cuando se decida desaparcar.
 ---
 
-## 48. Endurecimiento del robot CENDOJ (`cendoj-descarga`)
+## 85. Endurecimiento del robot CENDOJ (`cendoj-descarga`)
+
+> *Renumerada el 2026-07-26 (D4 de la revisión adversarial de gobernanza). Nació como `#48`,
+> número que ya ocupaba el **motor documental** (arriba, `:1700`): la colisión rompía la llave
+> `MEJORAS #NN` que exige la regla de promoción de `CLAUDE.md`, y `Ctrl+F "## 48"` caía aquí.
+> Se renumeró esta (6 refs, todas internas al fichero) y no el motor documental, que está
+> anclado en `CLAUDE.md:220` y `PLAN.md`. Referencias antiguas a «#48.A–D» son de esta entrada;
+> las que hablen de motor documental / registro único de caso son del `#48` real.*
 
 **Disparador.** Petición de Nikolai (2026-06-30) de mejorar el robot de búsqueda
 en CENDOJ; rama dedicada `claude/cendoj-search-robot-yt67sz`. Se registran como
 backlog cuatro sub-frentes con disparador propio; cada uno es promovible a
-`PLAN.md` por separado (referencia `MEJORAS #48.X`). El techo del **CAPTCHA**
+`PLAN.md` por separado (referencia `MEJORAS #85.X`). El techo del **CAPTCHA**
 «Control > Descargas masivas» es estructural (política anti-bot, no se resuelve);
 ninguna mejora lo elimina, solo reducen el volumen de descargas que lo dispara y
 mejoran la recuperación cuando aparece.
@@ -1777,7 +1797,7 @@ Estado de partida: skill `cendoj-descarga` v1.1 (`SKILL.md` como manual operativ
 + subagente `cendoj-bot.md` (model sonnet) + 7 helpers en `scripts/`. Todo sobre
 `mcp__Claude_in_Chrome` (el sandbox bash no alcanza `poderjudicial.es`).
 
-### 48.A — Sustituir clics por coordenadas fijas por selectores/JS (robustez)
+### 85.A — Sustituir clics por coordenadas fijas por selectores/JS (robustez)
 
 **Síntoma.** El flujo navega por **coordenadas absolutas**: cierre del modal de
 aviso legal (`coord. ≈ 1002, 47`, [SKILL.md:50](../.claude/skills/cendoj-descarga/SKILL.md))
@@ -1808,7 +1828,7 @@ Python. El subagente ejecuta JS, no hay test automatizable salvo en sesión real
 > **Posiblemente superado por #49 (vía Apify):** si se adopta el actor `legaltech/cendoj`,
 > desaparece el navegador y, con él, los clics por coordenadas — esta entrada quedaría sin objeto.
 
-### 48.B — Discriminar candidatos por JS del listado, sin abrir PDFs
+### 85.B — Discriminar candidatos por JS del listado, sin abrir PDFs
 
 **Síntoma.** Cuando hay varios resultados con la misma fecha, el Paso 5
 ([SKILL.md:111-119](../.claude/skills/cendoj-descarga/SKILL.md)) propone *abrir cada
@@ -1831,13 +1851,13 @@ la apertura del PDF únicamente como desempate final cuando el listado no basta.
 > `roj`/`ecli`/`resolutionNumber`/`appealNumber`/`summary` por resultado, lista la discriminación
 > sin scrapear el listado a mano (con el matiz de que `ponente` llega anonimizado a iniciales).
 
-### 48.C — Verificación automatizada metadatos-vs-lead (helper nuevo)
+### 85.C — Verificación automatizada metadatos-vs-lead (helper nuevo)
 
 **Síntoma.** La verificación (Paso 8, [SKILL.md:211-239](../.claude/skills/cendoj-descarga/SKILL.md))
 es `pdftotext | grep` **a ojo**: el operador compara mentalmente ROJ/ECLI/Nº Res/
 Ponente del PDF contra lo pedido. Es el paso donde se cuela el error «parece la
 buena y no lo es», precisamente el que rompe el rigor de cita en un escrito
-procesal. Además choca con el encoding CIDFont (ver 48.D), que vacía el `grep`.
+procesal. Además choca con el encoding CIDFont (ver 85.D), que vacía el `grep`.
 
 **Mejora propuesta.** Helper nuevo `scripts/verificar_sentencia.py` que reciba la
 referencia esperada (ROJ/ECLI/Nº Res/fecha/ponente) y el PDF descargado, parsee el
@@ -1847,7 +1867,7 @@ seleccionable aunque el cuerpo sea CIDFont) y emita un informe por campo:
 [SKILL.md:230](../.claude/skills/cendoj-descarga/SKILL.md), que se reconcilia por ECLI
 y se documenta, no se «corrige»). Reutiliza el parser de cabecera de
 `parse_pdf_to_md.py`. Salida apta para volcar al consolidado (Paso 9) y al ledger
-(48.D). No sustituye la lectura humana de hechos+ratio (Paso 5 / nota
+(85.D). No sustituye la lectura humana de hechos+ratio (Paso 5 / nota
 [SKILL.md:373](../.claude/skills/cendoj-descarga/SKILL.md)): verifica **identidad**,
 no idoneidad temática.
 
@@ -1860,10 +1880,10 @@ Paso 8 del manual para invocarlo.
 > auditor multi-agente que verifica ECLI/ROJ/ponente/fecha contra fuentes oficiales,
 > **detecta alucinaciones** (fecha imposible, ponente que no consta en nóminas públicas)
 > y **valida la cita literal entrecomillada** contra el texto oficial. No es drop-in
-> (la descarga de PDF figura como roadmap v2.0) pero es el modelo conceptual de 48.C y
+> (la descarga de PDF figura como roadmap v2.0) pero es el modelo conceptual de 85.C y
 > encaja con `verificacion-anclada-fuente`. Estudiarlo al construir el helper.
 
-### 48.D — OCR fallback ante CIDFont + ledger de lote reanudable
+### 85.D — OCR fallback ante CIDFont + ledger de lote reanudable
 
 **Síntoma (dos partes).**
 1. **CIDFont.** `pdftotext` devuelve 0 coincidencias con el encoding propio de CENDOJ
@@ -1899,16 +1919,16 @@ Paso 8 del manual para invocarlo.
 el ledger + edición de Pasos 6-bis/8-bis/9 del manual. Idempotencia: el ledger nunca
 re-descarga lo ya `verificado`.
 
-**Justificación de no aplicarlo ahora (toda la #48).** Decisión de Nikolai (2026-06-30):
+**Justificación de no aplicarlo ahora (toda la #85).** Decisión de Nikolai (2026-06-30):
 en esta sesión solo se documenta el backlog; la implementación se aborda después,
-priorizando 48.A y 48.B (mayor retorno: matan fallos silenciosos y bajan el volumen
-que dispara el CAPTCHA) y luego 48.C (blinda el rigor de cita). 48.D es el de menor
+priorizando 85.A y 85.B (mayor retorno: matan fallos silenciosos y bajan el volumen
+que dispara el CAPTCHA) y luego 85.C (blinda el rigor de cita). 85.D es el de menor
 urgencia salvo que un encargo grande haga del CAPTCHA un cuello real.
 
 > **Actualización 2026-06-30:** investigado el actor de Apify `legaltech/cendoj` (ver
 > #49). Pasa la prueba decisiva (devuelve la URL del PDF **oficial** del CGPJ). Si se
-> adopta, **supera 48.A y 48.B** y reordena la prioridad: la vía Apify pasa a ser el
-> descubrimiento primario y el navegador queda como fallback. 48.C y 48.D siguen vigentes.
+> adopta, **supera 85.A y 85.B** y reordena la prioridad: la vía Apify pasa a ser el
+> descubrimiento primario y el navegador queda como fallback. 85.C y 85.D siguen vigentes.
 
 ---
 
@@ -1918,7 +1938,7 @@ urgencia salvo que un encargo grande haga del CAPTCHA un cuello real.
 MCP) como alternativa a la navegación real, a raíz de un tutorial de
 legaltechnologybootcamp. Investigada su ficha técnica (Input/Output/Pricing): **pasa la
 prueba decisiva** — devuelve la URL del **PDF oficial del CGPJ**, no un sustituto
-scrapeado — y reconfigura los frentes #48.A/B.
+scrapeado — y reconfigura los frentes #85.A/B.
 
 **Qué es.** Actor de Apify (MCP `https://mcp.apify.com/`) que automatiza la búsqueda en
 CENDOJ server-side y devuelve un dataset JSON estructurado. Mantenedor de comunidad
@@ -1934,12 +1954,12 @@ así que el proxy residencial no es opcional). Forma parte de una familia legalt
   CENDOJ, traducción automática) + filtros `jurisdictions`, `organoTypes` (códigos
   opacos, p. ej. `11`=Sala Civil TS, `37`=AP, `42`=JPI; la ficha trae **tabla de
   referencia completa**), `resolutionTypes`, `locations`, `dateFrom/dateTo`,
-  `sortOrder`, `maxResults`. → **Obsoleta 48.A** (cero navegador, cero coordenadas) y
+  `sortOrder`, `maxResults`. → **Obsoleta 85.A** (cero navegador, cero coordenadas) y
   supera la cascada de texto libre del manual actual.
 - **Output por resolución**: `roj`, `ecli`, `resolutionNumber`, `appealNumber`,
   `municipality`, `organo`, `resolutionDateISO`, `summary`, **`pdfUrl` (PDF oficial del
   CGPJ, `action=contentpdf`)** y `documentUrl` (visor estable `openDocument`, sin `&`).
-  → **Resuelve 48.B**: discriminación por metadatos casables (ECLI/ROJ/Nº recurso/Nº
+  → **Resuelve 85.B**: discriminación por metadatos casables (ECLI/ROJ/Nº recurso/Nº
   res) sin abrir PDFs.
 - **Extracción de texto bajo demanda** en 2.ª ejecución (`pdfUrls`, máx. 50) para
   leer/analizar sin descarga manual. El actor **respeta el no-descarga-masiva** del
@@ -1978,10 +1998,10 @@ así que el proxy residencial no es opcional). Forma parte de una familia legalt
    no de Claude Code local. El token personal de Apify se gestiona **fuera del repo y
    fuera del chat** (regla de secretos del proyecto).
 
-**Relación con #48.** Si se adopta: **48.A y 48.B quedan superados** (no hay navegador
-que endurecer; la discriminación viene en el dataset). **48.C gana valor**: el «lead»
+**Relación con #85.** Si se adopta: **85.A y 85.B quedan superados** (no hay navegador
+que endurecer; la discriminación viene en el dataset). **85.C gana valor**: el «lead»
 puede ser la propia salida del actor y la verificación contrasta el PDF oficial contra
-ROJ/ECLI/Nº recurso ya estructurados. **48.D sigue aplicando** a los PDFs que se bajen
+ROJ/ECLI/Nº recurso ya estructurados. **85.D sigue aplicando** a los PDFs que se bajen
 y al estado del lote. El robot pasa de «navegador frágil» a **híbrido: descubrimiento
 por actor → descarga + verificación del PDF oficial → archivado en expediente**.
 
@@ -2232,7 +2252,7 @@ OCR/MD. Hasta entonces, backlog. Relacionado: #53, #54 y la doctrina de proceso 
 
 ---
 
-## 56. Mejora del proceso de sala de lectura: motor determinista + tool MCP, cronología + nombres que hablan  [pieza de #54/#55]
+## 56. Mejora del proceso de sala de lectura: motor determinista + tool MCP, cronología + nombres que hablan  [pieza de #54/#55] [DESCARTADO 2026-07-23 — ver #75 / PR #124]
 
 **Anotado 2026-07-13** tras montar la sala del W-02XOR7. La corrida costó ~10 min (un subagente re-leyó
 los 169 ficheros de `00_Input`) **pese a existir ya los MD/`raw_text` de la sala de máquina**. Un script
@@ -2282,6 +2302,14 @@ carpeta y el formato de 7 columnas del `_MANIFIESTO` (que exige `manifiesto_a_ca
 **Disparador de promoción.** Decisión de Nikolai de invertir en el `core.sala_lectura` + tool MCP, o
 recurrencia del coste de montar salas grandes. Relacionado: #54 (layout `00_Input`), #55 (orden del
 pipeline: la máquina alimenta la lectura), plugin FeesDefender / `expedientes-xl`.
+
+**Anotación 2026-07-23 — DESCARTADO.** La decisión-madre `#56 vs #75` (ver #75) se resolvió: en
+`docs/superpowers/specs/2026-07-23-emails-atomizados-sala-lectura-design.md` (PR #124, mergeado a
+`main` en `55df077`) Nikolai descarta explícitamente revivir `core/sala_lectura.py` como motor
+determinista + tool MCP, a favor de un script pequeño embebido en la propia skill (§3 de esa spec).
+Consecuencia: `core/inventory.py`/`core/catalogo_documental.py` (que hoy solo alimentan ese camino
+deprecado) quedan sin plan que los reviva — candidatos limpios a retirar, no a fusionar aquí (ver
+anotación en #48). Esta entrada queda cerrada/descartada salvo que Nikolai la reabra explícitamente.
 
 ---
 
@@ -2769,10 +2797,10 @@ despliegue.
 > `docs/superpowers/specs/2026-07-23-emails-atomizados-sala-lectura-adversarial-review.md`):
 > la **granularidad** (un documento por hilo, no por mensaje) se promueve como
 > `[SIGUIENTE-SALA-HILOS]` en `PLAN.md`; el **consumo de las fuentes atomizadas** —el corazón de este
-> ítem— sigue **sin promover** y vive ahora en **`#84`** con sus requisitos de entrada; la
-> **unificación del motor OCR** de adjuntos, en **`#85`**. Este bloque se conserva porque la
+> ítem— sigue **sin promover** y vive ahora en **`#86`** con sus requisitos de entrada; la
+> **unificación del motor OCR** de adjuntos, en **`#87`**. Este bloque se conserva porque la
 > arquitectura y los criterios de copia que cerró Nikolai el 2026-07-19 siguen vigentes como base de
-> `#84`.
+> `#86`.
 
 **Origen (2026-07-19, fase 2 del despliegue MCP).** Al migrar `organizar-sala-lectura` a v1.8, Nikolai
 señaló que la **skill re-procesa el crudo** para clasificar, cuando el **motor core deprecado** clasificaba
@@ -2846,6 +2874,16 @@ máquina YA están construidos) → el trabajo es el **contrato de consumo a niv
 (skill prompt-driven que consume MD); (3) el criterio de copia de artefactos derivados **rompe la
 idempotencia por sha256 actual** (hay que reescribir el algoritmo de skip, no solo añadir columna al
 `_MANIFIESTO`); (4) piloto propuesto W-02VND1 como gate anti-spec-dormido.
+
+**Anotación 2026-07-23 (W-02VND1) — decisión-madre RESUELTA.**
+`docs/superpowers/specs/2026-07-23-emails-atomizados-sala-lectura-design.md` (PR #124, mergeado a `main`
+en `55df077`) descarta `#56` a favor del camino de esta entrada (skill + script embebido) — ver anotación
+en #56. Ese mismo spec queda, a su vez, **pendiente de adjudicar** 3 hallazgos P0 de su propia revisión
+adversarial antes de poder implementarse; su hallazgo P0.1 confirma, independientemente y el mismo día, el
+mismo hueco de "idempotencia por sha256"/inventario reconciliado señalado en (3) — esta vez en
+`email_atomize` (`corpus.jsonl` sin contrato de cobertura contra `00_Input`). W-02VND1, el piloto propuesto
+en (4), es también el caso sobre el que hoy se midió en vivo el coste de re-hashear `00_Input` en
+`sala_maquina.py` (#48/#84) — misma familia de carencia, un escalón antes en el pipeline.
 
 ## 76. Cuestión ABIERTA: ¿reañadir `read_media_file` (lectura visual directa) a `expedientes-xl`?
 
@@ -3047,7 +3085,43 @@ su propia sesión dedicada, no un añadido de paso.
 **Coste estimado.** ~30 min de prueba en vivo (patrón ya validado hoy con Juzgado) + un
 wrapper pequeño en código si el resultado es limpio.
 
-## 84. Consumo de las fuentes atomizadas por la sala de lectura (Slice 2 del re-tajo)  [ex-`#75`, parte de consumo]
+---
+
+## 84. Bug latente: `sala_maquina apply` reintenta indefinidamente documentos no resueltos (sin límite ni backoff)
+
+**Disparador:** ninguno todavía — anotado en vivo durante el intake de la querella penal de W-02VND1
+(2026-07-23): mensajes `[tesseract] Error during processing.` durante una corrida que solo tenía 43
+ficheros nuevos que procesar correspondían a documentos antiguos ya fallidos el 9-jul (vía Cowork), no
+al lote nuevo — sin promover a `PLAN.md` a la espera de que el letrado decida si conviene un límite
+explícito o solo visibilidad. Relacionado: #48 (misma corrida, hallazgo hermano sobre `inventariar()`),
+#58 (cobertura acumulativa, mismo mecanismo de estado).
+
+**Estado actual.** `scripts/sala_maquina.py::apply` solo añade un sha a "procesado"
+(`_exitosos_por_bundle`, línea 83) si su resultado fue `ok`/`low`; un documento en
+`error`/`empty`/`sin_soporte` nunca entra en `_sala_maquina_state.json` → `plan()`
+(`core/sala_maquina.py`, línea 152) lo vuelve a marcar `skip=False` en TODA corrida futura sin
+`--force`, reintentando OCR real sin límite de intentos ni backoff. En W-02VND1, de ~672 ficheros
+antiguos en `00_Input/`, solo 503 shas físicos constan como "procesados" en
+`_sala_maquina_state.json` — el resto (documentos genuinamente irrecuperables: cifrados, corruptos,
+formatos sin soporte) se reintenta en cada `apply`, indefinidamente.
+
+**Mejora propuesta.** Decidir entre (a) un contador de intentos por sha con tope (p. ej. 3) tras el
+cual se marca `descartado` explícito en la cobertura sin más reintentos automáticos, o (b) mantener
+el reintento infinito pero hacerlo VISIBLE antes de correr (`plan` podría listar "N documentos con
+fallo persistente, reintentados de nuevo"). Revisar también por qué falta `_cobertura.json` en
+W-02VND1 (solo existe `_sala_maquina_state.json`) pese a que el código de `apply` sí lo persiste
+(línea 179) — probablemente la corrida del 9-jul (vía Cowork) usó una versión del pipeline anterior a
+que se introdujera ese fichero, o no se copió al Drive en el checkin correspondiente; sin ese
+fichero no hay forma de ver, sin re-ejecutar, cuáles de los ~169 documentos pendientes fallan y por qué.
+
+**Justificación de no aplicarlo ahora.** Sin decisión de Nikolai sobre (a) vs (b); construir
+cualquiera de las dos sin esa decisión es apostar el diseño. El caso concreto (W-02VND1) no está
+bloqueado por esto — solo es más lento de lo necesario.
+
+**Coste estimado.** (a) contador+tope: ~1h (campo nuevo en `DocCobertura`, chequeo en `plan()`,
+test). (b) solo visibilidad: ~30 min (contar en `plan`, sin cambiar `apply`).
+
+## 86. Consumo de las fuentes atomizadas por la sala de lectura (Slice 2 del re-tajo)  [ex-`#75`, parte de consumo]
 
 **Origen.** Es el objetivo original del spec
 `docs/superpowers/specs/2026-07-23-emails-atomizados-sala-lectura-design.md`, que el **re-tajo del
@@ -3084,7 +3158,7 @@ importe (correspondencia nuclear de activación mal categorizada por leer el `.e
 ya pasó en W-02VUDR) **o** decisión explícita de Nikolai. **No promover por completitud de diseño:**
 el Slice 1 ya entrega la legibilidad, que era el beneficio visible.
 
-## 85. Motor de extracción/OCR unificado para adjuntos de correo (Slice 3 del re-tajo)
+## 87. Motor de extracción/OCR unificado para adjuntos de correo (Slice 3 del re-tajo)
 
 **Origen.** El §8 del spec de 2026-07-23, retirado en el re-tajo del 2026-07-26 por ser un proyecto
 independiente de la sala de lectura que se había colado dentro.
@@ -3109,7 +3183,7 @@ mapeo de confianza del router, que hoy depende del nombre del motor.
 **Disparador de promoción a `PLAN.md`:** un adjunto largo truncado en silencio que afecte a un caso
 real, o una divergencia de texto observada entre los dos caminos. **No** promover por limpieza.
 
-## 86. Threading riguroso de correo por cabeceras RFC (`References`/`In-Reply-To`)
+## 88. Threading riguroso de correo por cabeceras RFC (`References`/`In-Reply-To`)
 
 **Estado.** Limitación **aceptada y documentada** en el Slice 1 (spec de 2026-07-23 §5), no un bug.
 

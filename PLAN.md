@@ -22,9 +22,8 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 4 | [Drive-disco: pasos 5-7 + Claude Code](#siguiente-mcp-drive-disco-pasos-5-7-diferidos) | ✅ desplegado | resto pasivo: check Modo 1 en caso real | medio |
 | 5 | [abrir-caso F3-judicial](#abrir-caso--f1--f2a--f3-ac-mergeadas-f2b-aparcada-f3-judicial-pendiente) | disparador confirmado 2026-07-22 | plan concreto listo (4 piezas, ver bloque) | medio |
 | 6 | [Google MCP F4 (Calendar)](#siguiente-google-mcp-f1-lectura--mergeada--f2-escriturapermisosnavegación--mergeada--f3f4-pendientes) | diferida | disparador | medio |
-| 7 | [Robustez y velocidad sala de lectura](#siguiente-preclasificacion-sala-lectura-preclasificar-mecanico--copia-rclone-rcd--verify) | ✅ construido y revisado (16/16 ítems, v1.12) | PR #121 (pendiente de merge) | medio-alto |
-| 8 | [Intake email — filtro de exclusión de ruido](#siguiente-intake-email-filtro-exclusión-de-ruido-administrativo-y-cruzado) | pendiente | disparador: W-02VUDR (fuga cruzada de 7 casos ajenos + cartera de litigios) | medio |
-| 9 | [Sala de lectura — bundle por hilo de correo](#siguiente-sala-hilos-bundle-por-hilo-de-correo-en-la-sala-de-lectura-slice-1) | spec lista (re-tajada tras revisión adversarial) | desbloqueado; decisión de Nikolai 2026-07-26 | bajo |
+| 7 | [Intake email — filtro de exclusión de ruido](#siguiente-intake-email-filtro-exclusión-de-ruido-administrativo-y-cruzado) | pendiente | disparador: W-02VUDR (fuga cruzada de 7 casos ajenos + cartera de litigios) | medio |
+| 8 | [Sala de lectura — bundle por hilo de correo](#siguiente-sala-hilos-bundle-por-hilo-de-correo-en-la-sala-de-lectura-slice-1) | ✅ construido y revisado (5 commits, suite verde, skill v1.14) | pendiente de merge (PR de esta rama) | bajo |
 
 > Detalle de cada ítem en su bloque `[SIGUIENTE-*]` más abajo. Backlog sin
 > promover: `docs/MEJORAS_FUTURAS.md`. Ledger de cerrados: `## Cerrados` (final).
@@ -199,8 +198,8 @@ en carpetas por sí solo no reduciría nada— mientras `CRONOLOGIA.md` se deja 
 bundle se fija en la primera corrida y nunca se renombra.
 
 **Lo que este ítem NO hace** (salió del alcance en el re-tajo): no consume `01_Procesado/Emails/`
-(→ `MEJORAS #84`), no toca el motor OCR de adjuntos (→ `MEJORAS #85`), no introduce threading por
-cabeceras RFC (→ `MEJORAS #86`), no toca `email_atomize` ni `core/anon`.
+(→ `MEJORAS #86`), no toca el motor OCR de adjuntos (→ `MEJORAS #87`), no introduce threading por
+cabeceras RFC (→ `MEJORAS #88`), no toca `email_atomize` ni `core/anon`.
 
 **Por qué es de coste bajo:** la idempotencia **no cambia** (sigue el `sha256` por `.eml`, cada
 mensaje conserva su fila), no hay artefacto sintetizado que copiar, y no hay migración de salas ya
@@ -215,6 +214,9 @@ revisión desmontó quedó **retirado**, no parcheado.
 ---
 
 ## [SIGUIENTE-PRECLASIFICACION-SALA-LECTURA] `preclasificar` mecánico + copia `rclone rcd` + verify
+
+> ✅ **CERRADO (2026-07-23)** → ledger `## ✅ Cerrados`. 16/16 ítems del backlog construidos y
+> revisados (v1.12, PR #116 + PR #121 mergeado). Bloque conservado como histórico.
 
 *Disparador: medido en vivo en la apertura de W-02VUDR (2026-07-21) — la clasificación de
 `organizar-sala-lectura` tardó 14 min y la fase de copia+índices más de 30 min sobre 172
@@ -387,7 +389,7 @@ de `organizar-sala-lectura` Modo 1 el próximo caso real (por diseño, no gastar
 - [x] **Sesión de verificación en vivo (2026-07-13) — 3 gates cerrados:** (1) **Bug 500** resuelto — forma **coma** `?properties=a,b,c`→200, array→500 (INTEGRACION §8.3 corregido, workaround propagado); (2) **Login** resuelto — no hay endpoint usuario/contraseña (todos 404) → alta por **`refresh_token` pegado**, el plugin no maneja contraseña; (3) **Slugs** resueltos — `abogados_propios`/`abogados_contrarios` (no `abogados`), `extrajudiciales` (no `expedientes_extrajudiciales`), `juzgados` válido; `properties[]` obligatorio también en el listado. Spec+plan actualizados.
 - [ ] **PENDIENTES del gate:** (a) prueba de **atribución en escritura** (`created_by`, F2); (b) prueba de **rol que oculta la contabilidad** con un usuario de rol abogado (Nikolai es admin, lo ve todo).
 - [ ] **🚩 RIESGO tope de licencia (4 concurrentes) — Nikolai lo CONSULTA con sudespacho (en curso):** confirmar si una sesión JWT del MCP consume licencia (Nikolai+3 compañeros=4, sin margen; entrar expulsó al usuario de soporte). Posible bloqueante del escalado simultáneo (NO de código para F1). Mitigaciones a estudiar: reusar token de sesión web, ampliar licencias, o limitar concurrencia. Puerta de DESPLIEGUE, no de build.
-- [ ] **F1 (lectura)** — desglosar por `writing-plans` y construir. Entregables: cliente REST puro + lista blanca/catálogo + `describe_element` + tools de consulta genérica + expedientes/documentos + descarga a DL-root + `.dxt`. Playbook de descubrimiento en `docs/INTEGRACION_SUDESPACHO.md`.
+- [ ] **F1 (lectura)** — desglosar por `writing-plans` y construir. Entregables: cliente REST puro + lista blanca/catálogo + `describe_element` + tools de consulta genérica + expedientes/documentos + descarga a DL-root + `.dxt`. Playbook de descubrimiento en `docs/INTEGRACION_SUDESPACHO.md`. **Consulta previa OBLIGATORIA: `docs/CRM_SUDESPACHO_ATLAS.md`** — SSOT de la superficie (548 ops de Fase A + campos/relaciones/enums de 87/89 elementos, PR #104), ya pagada. La lista blanca, el catálogo y `describe_element` se derivan de ahí; redescubrir endpoints a mano está prohibido por `CLAUDE.md:212`.
 - [ ] **F2 (escritura)** y **F3+** (agenda CRM en escritura, legacy, lote): spec/plan aparte, por disparador.
 - [x] **Revisión adversarial del spec (2026-07-13, 4 lentes):** núcleo resiste; correcciones aplicadas a spec+plan (confidencialidad por CAMPO no solo slug + filtro de propiedades; `describe_element` solo-esquema; documentos vía `download_document` a DL-root + `gdocu` en lista blanca + validar elemento-origen; retirada la afirmación "coma esquiva 500" → fallback legacy; `.dxt` autocontenido sin ruta/repo personal; token store atómico+lock+carga tolerante; refresco reactivo a 401 + `_extract` tolerante; descarga con timeout/redirects; no-pérdida-de-datos en F2). **Gates EN VIVO (prerrequisitos de despliegue):** rol abogado oculta contabilidad a nivel slug+campo, endpoint de login, coma-vs-500, escritura con JWT (F2), licencia, vida del refresh_token, verificar slugs. Detalle en spec §13.
 
@@ -478,7 +480,8 @@ enterrada de PersonaUno (levantar el velo de [inmueble] S.L.). Reutiliza `core.e
   +53 tests. **Corrida real W-02VND1: 277 Capa A BYTE-IDÉNTICOS, +89 Capa B alta (0 misatribuciones
   auditadas), 84 a revisión, 6 upgrades, idempotente; PersonaUno 12 directos + 13 inline PROMOVIDOS
   (autoría enterrada recuperada).** Un bug de fecha enmascaraba el payoff (antes 14/0 → 89/13).
-  Spec/plan `2026-06-25-email-atomize-layerb-{design,fase2}.md`.
+  [spec](docs/superpowers/specs/2026-06-25-email-atomize-layerb-design.md) ·
+  [plan](docs/superpowers/plans/2026-06-25-email-atomize-fase2.md).
 - [x] **Fase 3 — capa de caso.** _CÓDIGO COMPLETO en `origin/main` (`14d8743`→`5b566ea`), vía subagent-driven + revisión adversarial=SHIP; suite 1255 verde. PENDIENTES (no parte de F3 / siguiente sesión): **Task 7** verificación EN VIVO sobre W-02VND1 en `G:` (nada escrito aún; necesita keywords del `nexo_causal` + autorización) y, en spec/plan SEPARADO, el **recall MSG-00018** + OCR de adjuntos._ `identidades.yaml` (mover `IDENTIDADES_VIGILADAS`; set de PersonaUno
   `per01a@example.invalid`/`per01c@example.invalid` confirmados, `per01b@example.invalid` candidato→tope media,
   `ignacio@despacho-ab.example` parte DISTINTA), mejor parser de fechas ES/CA + niveles
@@ -1561,7 +1564,10 @@ trabajo para que no contamine).
 > Lista plana, reciente primero. Promover a agrupación por área cuando supere ~30
 > entradas (lo avisa `session_close`).
 
+- ✅ **[GOBERNANZA-DOCUMENTAL]** Revisión adversarial del diagnóstico de INDICE/PLAN/specs + remediación — 4 de los 5 hallazgos REFUTADOS (el test de `INDICE.md` DESCARTADO: asertaba un contrato que nunca existió); el hueco real estaba en el **ledger**, no en el índice. Ejecutado en tres PR: **#127** (`7c20442`, D1/D2/D6b — el atlas ya no ordena el comando que lo mutila, guarda anti-clobber, tres estados de Fase B, frontmatter generado), **#128** (`4f4bc39`, ledger `[CRM-ATLAS]` + `[PLUGIN-FEESDEFENDER]`, higiene de punteros H2/H4/D3/D4/D5/D6a y guards G1-G3) y **#129** (aviso `_avisar_specs_sin_traza` en `session_close`). Informe: **PR #126** (`4bc8dc2`) · [informe](docs/superpowers/specs/2026-07-26-gobernanza-indice-adversarial-review.md) (2026-07-26)
+- ✅ **[SIGUIENTE-PRECLASIFICACION-SALA-LECTURA]** Robustez/velocidad de `organizar-sala-lectura` — 16/16 ítems del backlog fable-5: `preclasificar.py` (gate determinista), `copiar_manifiesto_rclone.py` (rcd + reanudación), `verificar_sala.py`+`manifiesto_parser.py`, columnas `categoria`/`subcategoria_crm`; v1.12 — PR #116 (8 ALTA) + PR #121 (8 MEDIA/BAJA) · [plan](docs/superpowers/plans/2026-07-21-preclasificacion-sala-lectura.md) (2026-07-23)
 - ✅ **[SPLIT-SALA-MAQUINA]** Split de bundles multi-documento en la Sala de máquina — F1 (cerebro `core/split_documental.py`, PR #45 `6dba396`) + F2 (integración en `sala_maquina`/CLI, Tareas 12-15 + 13B, PR #109 `cc13355`): split entre OCR y MD, cobertura y estado por documento lógico, manifiesto editable + `--force`, passthrough robusto; skill `organizar-sala-maquina` v1.3; follow-ons `MEJORAS #78/#79` · [plan](docs/superpowers/plans/2026-07-14-split-sala-maquina.md) (2026-07-21)
+- ✅ **[CRM-ATLAS]** Atlas del CRM sudespacho (SSOT de la superficie) — Fase A (inventario de endpoints del OpenAPI) + Fase B (esquema por elemento: campos, relaciones, enums) + Grupo 3.2, con gate anti-PII y digest de deriva; `core/crm_atlas.py` + `scripts/crm_atlas.py` + `docs/CRM_SUDESPACHO_ATLAS.md`. Regenerar SIEMPRE con `--phase all`. **PR #104 (`b2d624c`)**; el `87ff113` que cita el spec es un commit colgante pre-squash, no está en `main`. Remediación posterior de D1/D2/D6b en PR #127 (`7c20442`) · [spec](docs/superpowers/specs/2026-07-20-crm-atlas-descubrimiento-design.md) (2026-07-20)
 - ✅ **[SIGUIENTE-RESIDUO-LLM]** Clasificador LLM del residuo de intake (`MEJORAS #37`) — `preparar_residuo`/`rellenar_worklist`/`clasificar_residuo_llm` (chat_fn inyectable) + CLI `scripts/sala_lectura.py`; +9 tests; commit `742e35a` (triaje 2026-07-19)
 - ✅ **[SIGUIENTE-INTAKE-JUDICIAL-AUTO]** Intake automático de demanda/contestación desde el CRM — 5 fases ✅, validado e2e real (incluye el Paso 1 del intake CRM-completo) (triaje 2026-07-19)
 - ✅ **[SIGUIENTE-INPUT-LOTES]** Layout de `00_Input` por lotes de entrega (`MEJORAS #54`) — build MERGEADO PR #57 (`8142d97`); la cola operativa (re-import Cowork + migración `migrar_layout_intake` bajo demanda) queda como tail no-bloqueante · [spec](docs/superpowers/specs/2026-07-17-layout-00-input-lotes-design.md) (triaje 2026-07-19)
@@ -1574,6 +1580,7 @@ trabajo para que no contamine).
 - ✅ **[SKILL-CONTESTACION-ART20-LAU]** Skill `contestacion-honorarios-art20-lau` integrada en el repo — 2026-07-03, sin PR/hash registrado en el bloque
 - ✅ **[SIGUIENTE-EMAIL-APLANADO-ANIDADOS]** Aplanado byte-fiel de emails anidados en el export de etiquetas — commits `c492b70`+`911bf39`+`5cbb6eb` · [plan](docs/superpowers/plans/PLAN_email_aplanado_anidados.md)
 - ✅ **[SIGUIENTE-EXPORT-ETIQUETA-EMAIL]** Exportar etiqueta Gmail → expediente (motor + Streamlit + CLI + skill) — commits `5088e27`+`b58497f`
+- ✅ **[PLUGIN-FEESDEFENDER]** Plugin FeesDefender / conector `expedientes-xl` — tres planes del 2026-06-22 ejecutados como una sola pieza: conector de expedientes, trazabilidad de la skill de intake y empaquetado del plugin. **Sin nº de PR: es trabajo anterior a la protección de rama (2026-07-07)**; narrado en `docs/bitacora/2026.md:175` y vivo en `docs/ARQUITECTURA_RELACIONES.md:19,52-65` (SSOT de build) · planes [expedientes-xl-conector](docs/superpowers/plans/2026-06-22-expedientes-xl-conector.md) · [intake-skill-trazabilidad](docs/superpowers/plans/2026-06-22-intake-skill-trazabilidad.md) · [empaquetado-plugin-feesdefender](docs/superpowers/plans/2026-06-22-empaquetado-plugin-feesdefender.md) (2026-06-22)
 - ✅ **[INTAKE-WHATSAPP-FASE-A]** Intake de chats de WhatsApp — Fase A (UI Streamlit) — commits `3734dcb`→`cf26b2a` · [spec](docs/superpowers/specs/2026-06-15-intake-whatsapp-design.md)
 - ✅ **[ESTILO-DE-LA-CASA]** Infraestructura de escritura del despacho (claridad + persuasión + no-IA) — 2026-06-17, sin hash registrado · plano `PLANO_Code_skill_estilo_casa.md`
 - ✅ **[CRITICO-PRESIGNED-DOWNLOAD-BUG]** Descarga del Gestor Documental (bug presigned URL) — RESUELTO 2026-06-10, sin hash registrado · detalle `docs/DEAD_ENDS.md`

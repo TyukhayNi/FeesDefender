@@ -103,6 +103,25 @@ def test_indice_manifiesto_de_7_columnas_conserva_la_categoria_y_colapsa():
     assert len(lineas) == 2  # el encargo + el bundle colapsado
     assert "(+1 anexos)" in salida
 
+_MANIF_7COL = """<!-- GENERADO — NO EDITAR A MANO -->
+| sha256 | ruta_original | nombre_canonico | tipo | fecha | parte | parent_id |
+|---|---|---|---|---|---|---|
+| f | 04_Manual/burofax.pdf | 2025-07-22_certificacion_envio.pdf | 07. RECLAMACIONES | 2025-07-22 |  |  |
+| g | 01_Drive EV/nota_simple.pdf | 2021-00-00_nota_simple.pdf | 01. ACTIVACIÓN | 2021-00-00 | vendedor |  |
+"""
+
+
+def test_indice_cae_a_tipo_si_falta_columna_categoria():
+    """Manifiestos de 7 columnas (previos a `categoria`) guardan la categoría E&V
+    en `tipo` — regresión W-02VND1 2026-07-23: sin este fallback, TODO caía en
+    "08. PENDIENTE DE CLASIFICAR" pese a tener categoría real."""
+    import manifiesto_parser
+    filas = manifiesto_parser.parse_manifiesto(_MANIF_7COL)
+    txt = idx.construir_indice(filas)
+    assert "## 07. RECLAMACIONES" in txt
+    assert "## 01. ACTIVACIÓN" in txt
+    assert "## 08. PENDIENTE DE CLASIFICAR" not in txt
+
 
 def test_indice_agrupa_por_categoria_y_ordena_fecha_desc():
     txt = idx.construir_indice(_filas())

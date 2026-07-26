@@ -87,13 +87,21 @@ def test_deriva_categoria_y_subcategoria(tmp_path):
     assert data[0]["subcategoria_crm"] == "civil"
 
 
-def test_manifiesto_viejo_7col_da_categoria_none(tmp_path):
+def test_manifiesto_viejo_7col_categoria_cae_a_tipo(tmp_path):
+    """Manifiestos de 7 columnas (previos a `categoria`) guardan la categoría E&V
+    en `tipo` — regresión W-02VND1 2026-07-23: sin este fallback, el catálogo
+    emitía `categoria: null` pese a tener categoría real en `tipo`, y
+    `indices_desde_manifiesto.py` volcaba TODO a "08. PENDIENTE DE CLASIFICAR"."""
     mod = _load()
     (tmp_path / "_MANIFIESTO.md").write_text(_MANIF, encoding="utf-8")
     out = mod.derivar(tmp_path / "_MANIFIESTO.md", tmp_path / "indice_documental.yaml")
     data = yaml.safe_load(out.read_text(encoding="utf-8"))
-    assert data[0]["categoria"] is None
-    assert data[0]["subcategoria_crm"] is None
+    e0 = {d["hash"]: d for d in data}[_SHA_A]
+    e1 = {d["hash"]: d for d in data}[_SHA_B]
+    assert e0["categoria"] == "08. PENDIENTE DE CLASIFICAR"
+    assert e1["categoria"] == "07. RECLAMACIONES"
+    # subcategoria_crm no tiene equivalente en el esquema viejo: sigue None.
+    assert e0["subcategoria_crm"] is None
 
 
 _MANIF_MD5 = """<!-- GENERADO — NO EDITAR A MANO -->
