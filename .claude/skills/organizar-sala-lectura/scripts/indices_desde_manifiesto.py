@@ -69,9 +69,19 @@ def construir_indice(filas: list[dict]) -> str:
 
     por_cat: dict[str, list[dict]] = {}
     for f in visibles:
-        # Manifiestos de 7 columnas (previos a `categoria`/`subcategoria_crm`) guardan
-        # la categoría E&V en `tipo` — fallback, no lo tratamos como ausente.
-        cat = f.get("categoria") or f.get("tipo") or _SIN_CATEGORIA
+        if f.get("categoria"):
+            cat = f["categoria"]
+        elif "categoria" not in f:
+            # Manifiesto de 7 columnas (previo a `categoria`): la categoría E&V vive
+            # en `tipo` — fallback, no lo tratamos como ausente. `manifiesto_parser`
+            # no crea la clave cuando la columna no existe, así que "ausente" y
+            # "presente pero vacía" se distinguen sin ambigüedad.
+            cat = f.get("tipo") or _SIN_CATEGORIA
+        else:
+            # 9 columnas con la celda vacía: es PENDIENTE de verdad. Caer a `tipo`
+            # aquí fabricaría encabezados con la extensión (`## pdf`) y sacaría la
+            # fila del cajón "08" que el letrado repasa.
+            cat = _SIN_CATEGORIA
         por_cat.setdefault(cat.strip(), []).append(f)
 
     def _l(f: dict) -> str:

@@ -135,3 +135,21 @@ def test_derivar_escribe_ambos_ficheros_idempotente(tmp_path):
     assert i1.read_text(encoding="utf-8") == a
     assert c1.read_text(encoding="utf-8") == b
     assert a.startswith("<!-- GENERADO — NO EDITAR A MANO -->")
+
+
+_MANIF_9_COLUMNAS_CATEGORIA_VACIA = """<!-- GENERADO — NO EDITAR A MANO -->
+| sha256 | ruta_original | nombre_canonico | tipo | fecha | parte | parent_id | categoria | subcategoria_crm |
+|---|---|---|---|---|---|---|---|---|
+| a | 01_Drive EV/escaneo.pdf | 2024-01-01_escaneo.pdf | pdf | 2024-01-01 | propietario |  |  |  |
+"""
+
+
+def test_indice_categoria_vacia_en_9_columnas_va_a_pendiente_no_a_la_extension():
+    # El fallback a `tipo` es SOLO para manifiestos de 7 columnas (donde la clave
+    # `categoria` no existe). Con 9 columnas y la celda vacía, caer a `tipo`
+    # fabricaria un encabezado `## pdf` y sacaria la fila del cajon "08".
+    import manifiesto_parser
+    filas = manifiesto_parser.parse_manifiesto(_MANIF_9_COLUMNAS_CATEGORIA_VACIA)
+    salida = idx.construir_indice(filas)
+    assert "## 08. PENDIENTE DE CLASIFICAR" in salida
+    assert "## pdf" not in salida

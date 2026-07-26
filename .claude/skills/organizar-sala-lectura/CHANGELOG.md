@@ -15,6 +15,21 @@
   `carpeta_existente` hace cumplir que el nombre del bundle se fije en la primera
   corrida y no se renombre nunca — y que el rol de principal siga siendo del
   mensaje que dio nombre a la carpeta, aunque llegue uno con fecha anterior.
+- **El nombre de cada anexo-mensaje es función PURA de su fichero de origen**
+  (`<fecha_propia>_<descripcion>_<hash6_del_origen>.eml`), sin la numeración
+  `_anexo_N_x` que conservan los bundles de WhatsApp/CRM. Con índice posicional, un
+  mensaje que llegase después pero ordenase antes se llevaba el `_anexo_1` de otro
+  **ya copiado** y lo sobrescribía. Además: `plano_existente=True` impide abrir
+  carpeta en un hilo ya materializado plano (si no, el bundle nacía sin principal
+  dentro y el hilo quedaba partido); `carpeta_existente` sin candidato de esa fecha
+  ya no adjudica el rol de principal a un mensaje nuevo (le habría dado la ruta del
+  principal ya copiado); y basenames repetidos en el grupo **abortan con
+  `ValueError`** en vez de perder un mensaje en silencio (dos lotes distintos pueden
+  traer el mismo basename: `_ruta_unica` solo desambigua dentro de su lote).
+- **Fallback `categoria`→`tipo` acotado.** Solo aplica cuando la clave `categoria`
+  NO existe (manifiesto de 7 columnas). Con 9 columnas y la celda vacía, la fila va
+  a "08. PENDIENTE DE CLASIFICAR": caer a `tipo` fabricaba encabezados con la
+  extensión (`## pdf`) y sacaba la fila del cajón que el letrado repasa.
 - **`INDICE.md` colapsa bundles** a una línea por principal con `(+N anexos)`;
   `CRONOLOGIA.md` sigue intacta (es una línea de tiempo). Un anexo huérfano emite
   su propia línea: nunca desaparece en silencio. Efecto colateral buscado: los

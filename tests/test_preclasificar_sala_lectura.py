@@ -237,6 +237,7 @@ def test_nombre_export_crudo_sin_drift_con_core():
     assert preclasificar._NOMBRE_EXPORT_CRUDO_WHATSAPP == _ORIGINAL_ZIP_NAME
 
 
+
 def test_layout_bundle_de_tres_mensajes():
     grupo = [
         "2025-04-02_oferta_calle_x.eml",
@@ -249,14 +250,38 @@ def test_layout_bundle_de_tres_mensajes():
     assert principal["nombre_origen"] == "2025-03-20_oferta_calle_x.eml"
     assert principal["nombre_canonico"] == "2025-03-20_oferta_calle_x/2025-03-20_oferta_calle_x.eml"
     assert principal["parent_id"] == ""
-    assert principal["orden"] == 0
-    # Cada anexo lleva SU PROPIA fecha y el parent_id pelado de la carpeta.
+    # Cada anexo lleva SU PROPIA fecha, el parent_id pelado de la carpeta y un
+    # discriminante derivado de su propio origen (no de su posicion en el grupo).
     assert filas[1]["fecha"] == "2025-03-21"
     assert filas[1]["parent_id"] == "2025-03-20_oferta_calle_x"
-    assert filas[1]["nombre_canonico"] == (
-        "2025-03-20_oferta_calle_x/2025-03-21_oferta_calle_x_anexo_1_mensaje.eml")
+    assert filas[1]["nombre_canonico"].startswith(
+        "2025-03-20_oferta_calle_x/2025-03-21_oferta_calle_x_")
     assert filas[2]["fecha"] == "2025-04-02"
-    assert filas[2]["orden"] == 2
+
+
+def test_layout_nombre_de_anexo_es_estable_al_llegar_uno_anterior():
+    # REGRESION: con indice posicional, un mensaje nuevo que ordenase antes se
+    # llevaba el `_anexo_1` de otro YA COPIADO y lo sobrescribia.
+    corrida1 = ["2025-03-20_x.eml", "2025-04-02_x.eml"]
+    nombre_c = [f for f in preclasificar.layout_bundle_hilo(corrida1, "x")
+                if f["nombre_origen"] == "2025-04-02_x.eml"][0]["nombre_canonico"]
+    corrida2 = corrida1 + ["2025-03-25_x.eml"]
+    filas2 = preclasificar.layout_bundle_hilo(
+        corrida2, "x", carpeta_existente="2025-03-20_x")
+    nombre_c2 = [f for f in filas2 if f["nombre_origen"] == "2025-04-02_x.eml"][0]["nombre_canonico"]
+    assert nombre_c2 == nombre_c  # el ya copiado conserva su nombre exacto
+    nombres = [f["nombre_canonico"] for f in filas2]
+    assert len(set(nombres)) == len(nombres)  # y nadie pisa a nadie
+
+
+def test_layout_nombres_repetidos_abortan_ruidosamente():
+    # Dos lotes distintos pueden traer el MISMO basename con sha distinto
+    # (`_ruta_unica` solo desambigua dentro de su lote). Silenciarlo perderia un
+    # mensaje; y con nombres repetidos el llamante tampoco puede resolver el origen.
+    import pytest
+    with pytest.raises(ValueError, match="repetid"):
+        preclasificar.layout_bundle_hilo(
+            ["2025-03-20_x.eml", "2025-03-20_x.eml"], "x")
 
 
 def test_layout_mensaje_unico_sin_adjuntos_queda_plano():
@@ -282,8 +307,6 @@ def test_layout_fecha_incierta_no_es_principal():
 
 
 def test_layout_carpeta_existente_no_se_renombra_con_mensaje_anterior():
-    # §2.3: el nombre del bundle se fija en la 1ª corrida. Llega un mensaje MÁS
-    # ANTIGUO que el principal -> entra como anexo, la carpeta NO cambia.
     grupo = [
         "2025-03-20_oferta_calle_x.eml",
         "2025-03-21_oferta_calle_x.eml",
@@ -296,6 +319,27 @@ def test_layout_carpeta_existente_no_se_renombra_con_mensaje_anterior():
     assert nuevo["rol"] == "anexo"
     assert nuevo["fecha"] == "2025-01-05"
     assert nuevo["parent_id"] == "2025-03-20_oferta_calle_x"
+
+
+def test_layout_carpeta_existente_sin_candidato_no_adjudica_principal():
+    # El principal original ya no esta en el grupo (borrado de 00_Input, o el
+    # llamante pasa solo lo nuevo): NADIE debe recibir `{carpeta}/{carpeta}.eml`,
+    # que es la ruta del principal YA COPIADO.
+    filas = preclasificar.layout_bundle_hilo(
+        ["2025-05-01_x.eml", "2025-06-01_x.eml"], "x", carpeta_existente="2025-03-20_x")
+    assert all(f["rol"] == "anexo" for f in filas)
+    assert all(f["parent_id"] == "2025-03-20_x" for f in filas)
+    assert "2025-03-20_x/2025-03-20_x.eml" not in [f["nombre_canonico"] for f in filas]
+
+
+def test_layout_plano_existente_no_crea_carpeta():
+    # El hilo ya se materializo PLANO (1 mensaje sin adjuntos). Al llegar un
+    # segundo, NO se abre carpeta: se anadiria un bundle sin principal dentro y el
+    # hilo quedaria partido en dos sitios.
+    filas = preclasificar.layout_bundle_hilo(
+        ["2025-04-01_x.eml"], "x", plano_existente=True)
+    assert all("/" not in f["nombre_canonico"] for f in filas)
+    assert all(f["parent_id"] == "" for f in filas)
 
 
 def test_layout_es_determinista():

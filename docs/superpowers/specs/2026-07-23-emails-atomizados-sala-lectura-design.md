@@ -98,12 +98,39 @@ mensaje **anterior** al principal, entra como **anexo con su fecha propia** y la
 renombra**: renombrar pisaría documentos ya copiados y rompería la doctrina "solo añade, nunca
 borra ni sobrescribe". `CRONOLOGIA.md`, que no colapsa, lo sitúa en su posición temporal correcta.
 
-## 3. Idempotencia: sin algoritmo nuevo
+## 3. Idempotencia
 
-**El skip incremental no cambia.** Sigue siendo por `sha256` del `.eml` de origen, y cada `.eml`
-conserva su fila propia en el `_MANIFIESTO.md`. Un mensaje nuevo del hilo es un `.eml` nuevo, con su
-propio `sha256`, que aterriza como anexo dentro de la carpeta ya existente. No hace falta ledger, ni
-conjuntos, ni columna nueva, ni huella agregada.
+> ⚠️ **Corrección (2026-07-26, tras la revisión final de la rama).** Este apartado afirmaba
+> "sin algoritmo nuevo: basta el `sha256` por `.eml`". **Era falso para bundles.** El skip por
+> `sha256` sí basta para decidir *si* un fichero se copia, pero el **nombre de la carpeta** y el
+> **nombre de cada anexo** son estado DERIVADO del grupo, y el grupo cambia entre corridas. De esa
+> confusión salieron tres fallos reales que la revisión encontró en el código ya escrito: un mensaje
+> podía desaparecer sin error (exclusión del principal por valor con basenames repetidos), un mensaje
+> nuevo podía llevarse el `_anexo_1` de otro ya copiado y sobrescribirlo (índice posicional), y un
+> mensaje nuevo podía recibir la ruta del principal ya copiado (`carpeta_existente` sin candidato).
+> El remedio adoptado **no es un contrato de re-corrida más complejo, sino suprimir el estado
+> derivado**: los nombres pasan a ser función pura del fichero de origen (decisión de Nikolai,
+> 2026-07-26). Lo que sigue describe el diseño ya corregido.
+
+**El skip incremental no cambia:** sigue siendo por `sha256` del `.eml` de origen, y cada `.eml`
+conserva su fila propia en el `_MANIFIESTO.md`. No hace falta ledger, ni conjuntos, ni columna nueva.
+
+**Lo que sí hizo falta: que ningún nombre dependa del grupo.**
+
+- El nombre de un **anexo-mensaje** es `<fecha_propia>_<descripcion>_<discriminante>.eml`, donde el
+  discriminante deriva **solo de su propio nombre de origen** (hash corto). Añadir un mensaje no
+  renumera ni pisa nada. El `orden` sigue siendo posicional, pero es metadato del manifiesto, no un
+  nombre de fichero.
+- El **nombre de la carpeta** se fija en la primera corrida y se pasa como `carpeta_existente`; si
+  ningún mensaje del grupo casa con su fecha, el principal ya está copiado y **nadie** recibe el rol
+  de principal: todas las filas son anexos.
+- Si el hilo ya se materializó **plano**, `plano_existente=True` impide abrir carpeta: los mensajes
+  nuevos entran como documentos planos propios, en vez de crear un bundle sin principal dentro.
+- Los **basenames de origen deben ser únicos**: si se repiten, la función aborta con `ValueError`.
+  Dos lotes distintos pueden traer el mismo basename con `sha256` distinto, porque `_ruta_unica` solo
+  desambigua dentro de su propio lote; silenciarlo perdería un mensaje.
+
+## 3-bis. Lo que el §7 original proponía y quedó retirado
 
 Esto retira **por completo** el §7 del diseño anterior (ledger de `MSG-id` + principal inmutable +
 deltas). Era la pieza que las dos revisiones desmontaron, por tres vías confirmadas de forma
@@ -151,6 +178,13 @@ nueva y `layout_bundle_hilo`, ambas en `scripts/preclasificar.py`) y sobre `cons
    primero (misma convención que el índice).
 6. **Idempotencia del nombre (§2.3):** con `carpeta_existente` dado, añadir al grupo un mensaje
    **anterior** al principal **no** renombra la carpeta; el mensaje entra como anexo con su fecha.
+6-bis. **Estabilidad del nombre del anexo entre corridas** (el fallo que la revisión final
+   encontró): un mensaje que llegue en la 2ª corrida y ordene ANTES que otro ya copiado no puede
+   cambiar el nombre de aquel; y ninguna fila del grupo puede repetir `nombre_canonico`.
+6-ter. **`carpeta_existente` sin candidato de esa fecha** → todas las filas son anexos, ninguna
+   recibe `{carpeta}/{carpeta}.eml` (la ruta del principal ya copiado).
+6-quater. **`plano_existente=True`** → no se abre carpeta y ninguna fila lleva `/`.
+6-quinquies. **Basenames repetidos en el grupo** → `ValueError`, no pérdida silenciosa.
 7. `construir_indice` sobre 1 principal + 3 anexos → **una** línea con `(+3 anexos)`;
    `construir_cronologia` sobre lo mismo → **cuatro** líneas (sin cambios).
 8. **Ningún anexo desaparece en silencio:** un anexo con `parent_id` huérfano (sin principal que lo

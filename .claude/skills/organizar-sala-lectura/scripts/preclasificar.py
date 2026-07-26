@@ -17,6 +17,7 @@ compara `_CATEGORIAS` contra `core.config.TAXONOMIA_EV` — mantener ambos en si
 """
 from __future__ import annotations
 
+import hashlib as _hashlib
 import json
 import re as _re
 from pathlib import Path
@@ -284,32 +285,66 @@ def senales_gate(
     return señales
 
 
+def _hash_origen(nombre: str) -> str:
+    """Discriminante corto y ESTABLE derivado solo del nombre de origen. Se usa en
+    los anexos de un bundle para que su nombre canónico no dependa de su posición
+    en el grupo: con un índice posicional, un mensaje que llegase después pero
+    ordenase antes se llevaba el `_anexo_1` de otro YA COPIADO y lo sobrescribía."""
+    return _hashlib.sha256(nombre.encode("utf-8")).hexdigest()[:6]
+
+
 def layout_bundle_hilo(
     grupo: list[str],
     descripcion: str,
     *,
     con_adjuntos: frozenset[str] = frozenset(),
     carpeta_existente: str | None = None,
+    plano_existente: bool = False,
 ) -> list[dict]:
     """Decide la FORMA DE COPIA de un grupo de hilo devuelto por
     :func:`agrupar_por_hilo`. Determinista y sin E/S: solo nombres y fechas.
 
     Reglas (spec 2026-07-23 §2.1/§2.3):
     - Bundle (subcarpeta fechada) si el grupo tiene ≥2 mensajes O alguno lleva
-      adjuntos MIME; si es un mensaje solo y sin adjuntos, queda PLANO (evita
-      cientos de carpetas de un fichero).
+      adjuntos MIME; un mensaje solo y sin adjuntos queda PLANO (evita cientos de
+      carpetas de un fichero).
     - El principal es el mensaje de fecha CIERTA más antigua; los `0000-00-00`
-      nunca son principal (misma convención que el índice: lo incierto va al
-      final). Empate -> orden alfabético del nombre, para ser determinista.
-    - Cada anexo lleva SU PROPIA fecha, no la del bundle.
+      nunca son principal salvo que TODO el grupo sea incierto (lo incierto va al
+      final, misma convención que el índice). Empate -> orden alfabético.
+    - **El nombre de cada anexo es función PURA de su propio fichero de origen**
+      (su fecha + la descripción aprobada + `_hash_origen`), nunca de su posición
+      en el grupo: añadir un mensaje no renumera ni pisa nada. `orden` sí es
+      posicional, pero es metadato del manifiesto, no un nombre de fichero.
     - `parent_id` de un anexo = nombre PELADO de la carpeta.
-    - `carpeta_existente`, si se pasa, se usa VERBATIM: el nombre del bundle se
-      fija en la primera corrida y no se renombra nunca (si llegara un mensaje
-      anterior al principal, entra como anexo; renombrar pisaría lo ya copiado).
+    - `carpeta_existente`, si se pasa, se usa VERBATIM (el nombre del bundle se
+      fija en la primera corrida y no se renombra nunca). Si NINGÚN miembro del
+      grupo casa con la fecha de esa carpeta, el principal ya copiado no está en
+      el grupo: entonces **nadie** recibe el rol de principal y todas las filas
+      son anexos — adjudicarlo daría a un mensaje nuevo la ruta del principal ya
+      copiado, sobrescribiéndolo.
+    - `plano_existente=True` (el hilo ya se materializó PLANO en una corrida
+      anterior): NO se abre carpeta. Si no, el bundle nacería sin principal dentro
+      (el original se salta por sha y sigue fuera) y el hilo quedaría partido en
+      dos sitios, con el anexo apareciendo como huérfano en el índice.
 
     `descripcion` llega ya aprobada (≤50 car., minúsculas, guiones bajos, sin
-    PII): esta función no la deriva ni la sanea.
+    PII): esta función no la deriva ni la sanea. Los nombres de origen se usan como
+    llave, así que **deben ser únicos**: si se repiten, aborta (`ValueError`) en
+    vez de perder un mensaje en silencio — dos lotes distintos pueden traer el
+    mismo basename con sha distinto, porque `_ruta_unica` solo desambigua dentro
+    de su propio lote.
+
+    NO emite los adjuntos MIME de los mensajes: los nombra el procedimiento del
+    `SKILL.md` con la misma regla (fecha propia + descripción + discriminante de su
+    origen), bajo el mismo `parent_id`.
     """
+    if len(set(grupo)) != len(grupo):
+        repetidos = sorted({n for n in grupo if grupo.count(n) > 1})
+        raise ValueError(
+            "nombres de origen repetidos en el grupo de hilo "
+            f"{repetidos!r}: no se puede resolver su fichero de origen ni darles "
+            "nombre canónico distinto. Desambigua antes de llamar (p. ej. por lote).")
+
     def _clave(nombre: str):
         f = fecha_de_nombre(nombre)
         return (1 if f == _SIN_FECHA else 0, f, nombre)
@@ -318,44 +353,50 @@ def layout_bundle_hilo(
     if not ordenados:
         return []
 
+    def _fila(nombre: str, *, rol: str, nombre_canonico: str, parent_id: str, orden: int) -> dict:
+        return {
+            "nombre_origen": nombre,
+            "fecha": fecha_de_nombre(nombre),
+            "rol": rol,
+            "nombre_canonico": nombre_canonico,
+            "parent_id": parent_id,
+            "orden": orden,
+        }
+
+    if plano_existente:
+        return [
+            _fila(n, rol="principal", parent_id="", orden=i,
+                  nombre_canonico=f"{fecha_de_nombre(n)}_{descripcion}_{_hash_origen(n)}.eml")
+            for i, n in enumerate(ordenados)
+        ]
+
     es_bundle = len(ordenados) >= 2 or any(n in con_adjuntos for n in ordenados)
-    # Con `carpeta_existente`, el principal NO es simplemente el más antiguo: es el
-    # mensaje que dio nombre a la carpeta en la primera corrida (el de la fecha del
-    # prefijo). Si no, un mensaje que llegue con fecha ANTERIOR le robaría el rol al
-    # principal ya copiado y el bundle quedaría incoherente con su nombre.
+    if not es_bundle:
+        n = ordenados[0]
+        return [_fila(n, rol="principal", parent_id="", orden=0,
+                      nombre_canonico=f"{fecha_de_nombre(n)}_{descripcion}.eml")]
+
     if carpeta_existente:
+        carpeta = carpeta_existente
         fecha_carpeta = fecha_de_nombre(carpeta_existente)
         candidatos = [n for n in ordenados if fecha_de_nombre(n) == fecha_carpeta]
-        principal = candidatos[0] if candidatos else ordenados[0]
+        principal = candidatos[0] if candidatos else None
     else:
         principal = ordenados[0]
-    if not es_bundle:
-        return [{
-            "nombre_origen": principal,
-            "fecha": fecha_de_nombre(principal),
-            "rol": "principal",
-            "nombre_canonico": f"{fecha_de_nombre(principal)}_{descripcion}.eml",
-            "parent_id": "",
-            "orden": 0,
-        }]
+        carpeta = f"{fecha_de_nombre(principal)}_{descripcion}"
 
-    carpeta = carpeta_existente or f"{fecha_de_nombre(principal)}_{descripcion}"
-    filas = [{
-        "nombre_origen": principal,
-        "fecha": fecha_de_nombre(principal),
-        "rol": "principal",
-        "nombre_canonico": f"{carpeta}/{carpeta}.eml",
-        "parent_id": "",
-        "orden": 0,
-    }]
-    for i, nombre in enumerate([n for n in ordenados if n != principal], 1):
-        fecha = fecha_de_nombre(nombre)
-        filas.append({
-            "nombre_origen": nombre,
-            "fecha": fecha,
-            "rol": "anexo",
-            "nombre_canonico": f"{carpeta}/{fecha}_{descripcion}_anexo_{i}_mensaje.eml",
-            "parent_id": carpeta,
-            "orden": i,
-        })
+    filas: list[dict] = []
+    orden = 0
+    if principal is not None:
+        filas.append(_fila(principal, rol="principal", parent_id="", orden=0,
+                           nombre_canonico=f"{carpeta}/{carpeta}.eml"))
+        orden = 1
+    for n in ordenados:
+        if n is principal or n == principal:
+            continue
+        fecha = fecha_de_nombre(n)
+        filas.append(_fila(
+            n, rol="anexo", parent_id=carpeta, orden=orden,
+            nombre_canonico=f"{carpeta}/{fecha}_{descripcion}_{_hash_origen(n)}.eml"))
+        orden += 1
     return filas

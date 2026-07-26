@@ -337,17 +337,38 @@ tal diálogo.
    Los documentos compuestos (bundles) copian primero su principal, luego sus
    anexos, dentro de la misma corrida.
    - **Correo: un bundle por hilo.** Para cada grupo de `agrupar_por_hilo`, llama a
-     `layout_bundle_hilo(grupo, descripcion, con_adjuntos=..., carpeta_existente=...)`
-     (`scripts/preclasificar.py`) y usa sus filas tal cual: te da el principal (el
-     mensaje de fecha cierta más antigua), los anexos con **su propia fecha**, el
-     `parent_id` y el `orden`. Pasa `carpeta_existente` con el nombre que ya conste
-     en el `_MANIFIESTO.md` si el bundle viene de una corrida anterior: **el nombre
-     del bundle se fija en la primera corrida y NUNCA se renombra**, ni siquiera si
-     llega un mensaje anterior al principal (renombrar pisaría lo ya copiado, y con
-     `carpeta_existente` el rol de principal sigue siendo del mensaje que dio nombre
-     a la carpeta). Un grupo de un solo mensaje sin adjuntos queda PLANO, sin
-     subcarpeta. El `.eml` original se copia igual que hasta ahora — el criterio
-     "email → MD legible" NO está en vigor todavía (`MEJORAS #84`).
+     `layout_bundle_hilo(grupo, descripcion, con_adjuntos=…, carpeta_existente=…,
+     plano_existente=…)` (`scripts/preclasificar.py`) y usa sus filas **tal cual**
+     (`nombre_canonico`, `parent_id`, `orden`, `fecha`): no recompongas los nombres
+     a mano. De dónde sale cada argumento:
+     - `grupo`: los **basenames** del grupo, no rutas. La función agrupa y nombra por
+       nombre de fichero; si le pasas rutas, ni agrupa ni fecha bien. Si dos lotes
+       traen el MISMO basename (posible: `_ruta_unica` solo desambigua dentro de su
+       lote), **aborta con `ValueError`** — desambigua antes, no lo silencies.
+     - `descripcion`: la clave del grupo, **revisada por ti**: ≤50 caracteres,
+       minúsculas, guiones bajos y **sin PII**. La clave viene del asunto vía
+       `_slug_descripcion`, que trunca a 60 y puede arrastrar nombres de personas:
+       recórtala tú antes de pasarla. Úsala IDÉNTICA en re-corridas o nacerá un
+       segundo bundle del mismo hilo.
+     - `con_adjuntos`: los basenames del grupo que traen adjuntos MIME (con
+       `extract_attachments=True` el export los deja en subcarpeta propia).
+     - `carpeta_existente`: el `parent_id` que ya conste en el `_MANIFIESTO.md` para
+       cualquier mensaje de ese hilo. **El nombre del bundle se fija en la primera
+       corrida y NUNCA se renombra.** Si ningún mensaje del grupo casa con la fecha
+       de esa carpeta, la función no adjudica principal y emite todo como anexos:
+       el principal ya está copiado y no se puede pisar.
+     - `plano_existente=True` si el hilo ya se materializó PLANO (un mensaje sin
+       adjuntos) y ahora llegan más. NO se abre carpeta: los nuevos entran como
+       documentos planos propios. Abrirla dejaría el principal fuera y el bundle
+       sin principal dentro, con el anexo saliendo como huérfano en el índice.
+     - **Adjuntos MIME:** la función NO los emite. Nómbralos tú con la MISMA regla
+       que sus anexos-mensaje — `<fecha_propia>_<descripcion>_<discriminante>.<ext>`
+       bajo el mismo `parent_id` de la carpeta — donde el discriminante deriva del
+       nombre de origen del adjunto, **nunca de un contador posicional** (un contador
+       renumera entre corridas y pisa ficheros ya copiados).
+     Un grupo de un solo mensaje sin adjuntos queda PLANO, sin subcarpeta. El `.eml`
+     original se copia igual que hasta ahora — el criterio "email → MD legible" NO
+     está en vigor todavía (`MEJORAS #84`).
    - **`ERROR_FILE_NOT_HYDRATED` (fichero frío):** no lo anotes pendiente a la
      primera. Reintenta ESE fichero por la ruta `rcd` server-side con
      `copiar_manifiesto(remote, [(src, dst)], progreso_path=<el mismo jsonl>)`, que
@@ -426,6 +447,13 @@ del chat); **el `AAAA-MM-DD` de cada anexo es su PROPIA fecha** (en WhatsApp, la
 del mensaje que lo adjunta — ver la jerarquía de fecha arriba), por lo que distintos
 anexos del mismo bundle pueden llevar fechas distintas. La pertenencia al bundle la
 preserva la subcarpeta + el `parent_id`/`orden` del `_MANIFIESTO.md`, no el prefijo de fecha.
+
+**Bundles de HILO de correo: el nombre de cada anexo es función PURA de su fichero de
+origen** (`<fecha_propia>_<descripcion>_<discriminante_del_origen>.eml`), no de su posición
+en el grupo — por eso NO llevan la numeración `_anexo_N_x` del resto de los bundles. Motivo:
+con un índice posicional, un mensaje que llegue después pero ordene antes se lleva el
+`_anexo_1` de otro **ya copiado** y lo sobrescribe. Los bundles de WhatsApp/CRM conservan la
+convención `_anexo_N_x` (su conjunto no crece entre corridas).
 
 **El `INDICE.md` colapsa los bundles** (una línea por documento principal, con
 `(+N anexos)`); `CRONOLOGIA.md` no colapsa: sigue listando cada fila, porque un anexo con
