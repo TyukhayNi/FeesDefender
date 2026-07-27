@@ -16,7 +16,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 
 | # | Ítem | Estado | Gate / disparador | Esf. |
 |---|------|--------|-------------------|------|
-| 1 | [OCR ciego bajo el sello (`MEJORAS #90`)](#siguiente-ocr-ciego-texto-perdido-bajo-el-sello-de-firma-mejoras-90) | **motor arreglado; queda decidir (d)** | (a) y (b) construidos y verdes; la causa ya no está viva para casos NUEVOS. Falta la decisión de Nikolai sobre el alcance de la re-corrida en los 5 casos ya procesados | medio |
+| 1 | [OCR ciego bajo el sello (`MEJORAS #90`)](#siguiente-ocr-ciego-texto-perdido-bajo-el-sello-de-firma-mejoras-90) | **motor arreglado; queda ejecutar (e)** | (a)+(b) construidos y verdes: la causa ya no está viva para casos NUEVOS. (d) decidido 2026-07-27 = `D1`; falta ejecutarla sobre los 17 candidatos sin medir | bajo |
 | 2 | [Infra C — art. 156 LEC](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado (quick win) | bajo |
 | 3 | [Infra B — expediente scratch](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado | medio |
 | 4 | [MCP sudespacho F1](#siguiente-mcp-sudespacho-mcp-sudespacho-crm-del-despacho--f1-lectura-spec-hecho-plan-pendiente) | spec lista | gates de despliegue | alto |
@@ -143,7 +143,12 @@ ser cambiar una bandera.
   (c2) fue puntual (scratchpad, no versionado): el método está descrito arriba con el detalle suficiente
   para rehacerlo, y **su validación en 7 documentos, 3 casos y 2 destinos distintos es lo que
   des-arriesga la tarea (a)**.
-- [ ] **(d) Decidir el alcance de la re-corrida** — **DECISIÓN PENDIENTE DE NIKOLAI**. El motor
+- [x] **(d) Alcance de la re-corrida — DECIDIDO por Nikolai el 2026-07-27: `D1`, acotada a los
+      candidatos.** Se re-procesan solo los 17 documentos que el cribado marcó y nadie midió; no se
+      lanza `--force` sobre los 5 casos. Queda como trabajo siguiente, ver **(e)**.
+      El razonamiento y las opciones descartadas se conservan abajo.
+
+      El motor
       nuevo solo actúa sobre lo que procesa: los **5 casos ya procesados** conservan las coberturas
       que escribió el motor viejo, y en ellas siguen marcados `ok` los **17 candidatos del cribado
       sin medir** (brochures, dossiers y planos de W-02VND1, más `753_informeSaintGobain` de
@@ -156,12 +161,22 @@ ser cambiar una bandera.
       | **D1 — acotada a los candidatos** | re-procesar solo esos 17 documentos | ~1 h de código (`apply` no sabe hoy acotar por documento; `reforzar` filtra por `low`/`empty` y estos están `ok`) + minutos de OCR. Variante sin código: retirar a mano sus sha del `_sala_maquina_state.json` y lanzar `apply` | los documentos que el cribado NO marcó; el detector sobre-marca pero también puede callar |
       | **D2 — `apply --force` en los 5 casos** | foto fresca y coherente: cobertura, estado y MD reescritos por el motor nuevo | horas: la corrida completa de W-02VND1 (~672 ficheros) fue de ~1 h 40 **con el motor viejo**, y el nuevo añade el OCR de las páginas ciegas que antes se saltaban | nada, pero reescribe MD de documentos que hoy están bien y hay que coordinarlo con checkouts/Drive abiertos |
 
-      **Mi recomendación: D1.** Es donde está la pérdida medida (los 6 reales salieron de esos 24
-      candidatos) y no reescribe nada que hoy funcione. D2 solo compensa si además se quiere una
-      cobertura homogénea de cara a la vista procesal.
+      **Elegida D1** (recomendación seguida): es donde está la pérdida medida —los 6 reales salieron
+      de esos 24 candidatos— y no reescribe nada que hoy funcione. D2 solo habría compensado si se
+      quisiera además una cobertura homogénea de cara a la vista procesal.
 
-      Cautelas para cualquiera de las dos: no lanzar sobre un caso con checkout abierto sin cerrarlo
-      antes, y no relanzar sin comprobar que la corrida anterior terminó.
+- [ ] **(e) Ejecutar D1** — pendiente, es el siguiente paso de este bloque:
+      1. Re-correr el detector (`python -m scripts.detectar_ocr_ciego todos --salida <fuera-del-repo>.md`)
+         para partir de la lista viva, no de la del 2026-07-27.
+      2. Dar a `sala_maquina apply` la capacidad de acotar por documento (~1 h). Hoy no existe:
+         `--force` reprocesa el caso entero y `reforzar` solo recoge `low`/`empty`, y estos están
+         `ok`. Variante sin código, si se prefiere no tocar el CLI: retirar a mano los sha de esos
+         documentos del `_sala_maquina_state.json` y lanzar `apply` normal.
+      3. Correrlo y comparar chars antes/después, como en (c1)/(c2) — el cribado sobre-marca, así
+         que la medición es la única prueba de que hubo pérdida.
+
+      Cautelas: no lanzar sobre un caso con checkout abierto sin cerrarlo antes, y no relanzar sin
+      comprobar que la corrida anterior terminó.
 
 **Herramienta ya disponible:** `python -m scripts.detectar_ocr_ciego todos --salida <fuera-del-repo>.md`
 (read-only). Es un **cribado**, no un veredicto: de 24 candidatos, 6 eran reales; medir la pérdida
