@@ -27,7 +27,8 @@ El bloque del `PLAN.md` justifica el orden diciendo que hay que **atomizar antes
 máquina «o el OCR queda incompleto»**. Verificado contra el código, eso **no es cierto para el
 atomizador**:
 
-- `core/sala_maquina.py::inventariar` recorre **solo** `<caso>/00_Input/` (`sala_maquina.py:551`).
+- `core/sala_maquina.py::inventariar` recorre **solo** `<caso>/00_Input/` (`sala_maquina.py:645`
+  tras fusionar el PR #147; era `:551` antes de la escalera de OCR).
 - Ninguna escritura de `core/email_atomize/` sale de su `out_dir`
   (`<caso>/01_Procesado/Emails`, `pipeline.py:297`), árbol que la sala de máquina no mira.
 - El `.eml` sí entra al inventario (ext «nativo»), pero `core.extractor._try_email`

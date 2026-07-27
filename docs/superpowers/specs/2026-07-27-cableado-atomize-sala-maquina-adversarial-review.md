@@ -65,7 +65,8 @@ Comprobado abriendo el código, no aceptado por la cita del revisor:
   la mitigación de la rev. 1 era factualmente falsa.
 - `test_intake_log.py:334` — `assert len(il.INTAKE_EVENTS) == 26`. **Confirmado**: añadir el evento
   rompe el test.
-- `sala_maquina.py:551`, `extractor.py:173-194`, `intake_log.py:168-172`, `config.py:547-550`,
+- `sala_maquina.py:645` (`:551` en el momento de la revisión; desplazado por el PR #147),
+  `extractor.py:173-194`, `intake_log.py:168-172`, `config.py:547-550`,
   `pipeline.py:31-42`, `pipeline.py:281`, `pipeline.py:88-89` — afirmaciones de la rev. 1 que
   **resultaron correctas**.
 
