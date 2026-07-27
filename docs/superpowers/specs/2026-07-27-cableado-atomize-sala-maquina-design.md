@@ -1,25 +1,25 @@
 # Diseño — Cableado de la atomización de correo en la sala de máquina
 
-> **Estado:** diseño aprobado por Nikolai 2026-07-27 (brainstorming).
+> **Estado:** rev. 2 (2026-07-27), tras revisión adversarial de Codex + pasada propia.
+> Decisiones de alcance de la rev. 2 aprobadas por Nikolai.
 > **Alcance:** **cableado, no motor.** Quién llama a quién en el pipeline de correo.
 > **Origen:** `PLAN.md` → `[SIGUIENTE-CABLEADO-CORREO]` (resto de `MEJORAS #68`), promovido por
 > decisión explícita de Nikolai el 2026-07-27.
-> **Fuera de alcance (otros ítems, no este PR):** OCR/extracción de adjuntos de correo
-> (`MEJORAS #87`), consumo de las fuentes atomizadas por la sala de lectura (`MEJORAS #86`),
-> `--extraer-adjuntos` a default `True` (tercera casilla del bloque del PLAN).
+> **Fuera de alcance (otros ítems, no este PR):** saneamiento del motor (`MEJORAS #99`), trampa de
+> `--extraer-adjuntos` (`MEJORAS #98`), OCR/extracción de adjuntos (`MEJORAS #87`), consumo por la
+> sala de lectura (`MEJORAS #86`), `--extraer-adjuntos` a default `True` (casilla 3 del bloque —
+> **bloqueada por `#98`**).
+> **Revisión adversarial:** `2026-07-27-cableado-atomize-sala-maquina-adversarial-review.md`
+> (hallazgos, adjudicación y evidencia). `agy` no pudo correr: cupo de Gemini agotado.
 > **Disciplina:** brainstorming → spec → plan → TDD → revisión adversarial.
 
 ## 1. Contexto
 
 Las piezas del pipeline de correo están construidas y ninguna llama a la siguiente. El motor
-`core/email_atomize/` (Capas A + B + capa de caso, completo en `main`) solo lo invocan hoy:
-
-- el CLI manual `scripts/atomize_emails.py`, y
-- `scripts/audit_correos_no_separados.py`, que importa un helper para auditar.
-
-`core/sala_maquina.py` no lo menciona en absoluto; `scripts/abrir_caso.py` tampoco. Si el operador
-no se acuerda de lanzar la atomización a mano, todo lo que cuelga de ella se comporta como si no
-existiera.
+`core/email_atomize/` (Capas A + B + capa de caso, completo en `main`) solo lo invocan hoy el CLI
+manual `scripts/atomize_emails.py` y `scripts/audit_correos_no_separados.py`. `core/sala_maquina.py`
+no lo menciona; `scripts/abrir_caso.py` tampoco. Si el operador no se acuerda de lanzarlo a mano,
+todo lo que cuelga de él se comporta como si no existiera.
 
 ### 1.1. Corrección de un supuesto heredado
 
@@ -28,17 +28,39 @@ máquina «o el OCR queda incompleto»**. Verificado contra el código, eso **no
 atomizador**:
 
 - `core/sala_maquina.py::inventariar` recorre **solo** `<caso>/00_Input/` (`sala_maquina.py:551`).
-- `core.email_atomize.pipeline.atomize_dir` escribe en `<caso>/01_Procesado/Emails`
-  (`pipeline.py:297`), árbol que la sala de máquina no mira.
-- El `.eml` sí entra al inventario (ext «nativo»), pero `core.extractor._try_email` extrae
-  cabeceras + cuerpo y **no recorre adjuntos**.
+- Ninguna escritura de `core/email_atomize/` sale de su `out_dir`
+  (`<caso>/01_Procesado/Emails`, `pipeline.py:297`), árbol que la sala de máquina no mira.
+- El `.eml` sí entra al inventario (ext «nativo»), pero `core.extractor._try_email`
+  (`extractor.py:173-194`) extrae `From/To/Date/Subject` + `msg.get_body(...)` y **no recorre
+  adjuntos**: no hay `walk()` ni `iter_attachments()`.
 
-Es exactamente lo que ya dejó anotado `MEJORAS #55`: *«poner atomize "antes" NO mete los átomos en
-el OCR/MD de forma automática»*. La frase del PLAN es cierta para el `--extraer-adjuntos` del
-intake (resuelto en `07b0377`, escribe los adjuntos sueltos en `00_Input`), no para el atomizador.
+Es lo que ya dejó anotado `MEJORAS #55`. La frase del PLAN es cierta para el `--extraer-adjuntos`
+del intake, que sí deposita binarios en `00_Input`, **no** para el atomizador.
 
-**Consecuencia para este diseño:** el cableado se justifica por lo que sí compra, no por cerrar el
-hueco del OCR — que sigue abierto y con dueño (`MEJORAS #87`).
+**Matiz aceptado de la revisión:** hay una mejora *indirecta*. Mostrar la contaminación cruzada
+antes del OCR permite al operador abortar, limpiar `00_Input` y reintentar — lo que mejora la
+corrección del corpus OCR. No hay gate ni exclusión automática, así que no es cobertura: es
+oportunidad de intervención.
+
+### 1.2. Hallazgo de la revisión: `--extraer-adjuntos` deja ciego al atomizador
+
+**Bug latente en `main`, descubierto por la revisión de Codex y verificado.** Dos hechos que juntos
+abren un agujero silencioso:
+
+- `iter_avistamientos` enumera con `base.glob("*.eml")` — **nivel superior, no recursivo**
+  (`extract.py:53`).
+- `_escribe_mensaje`, cuando `extract_attachments=True` **y** el mensaje trae adjuntos, escribe el
+  `.eml` dentro de una **subcarpeta** (`email_export.py:1123-1132`).
+
+Consecuencia: los mensajes exportados con `--extraer-adjuntos` — **exactamente los que tienen
+adjuntos** — son invisibles para el atomizador. Sin error, sin nota: simplemente no aparecen.
+Tampoco los mira el detector de contaminación.
+
+Esto **no lo causa este PR** y no se arregla aquí (es motor). Se documenta en `MEJORAS #98` y
+**bloquea la casilla 3** del bloque del PLAN: pasar `--extraer-adjuntos` a default `True`
+generalizaría la ceguera a todos los casos con adjuntos.
+
+Lo que este PR sí hace es **dejar de ocultarlo**: §4.2.
 
 ## 2. Objetivos y no-objetivos
 
@@ -46,173 +68,260 @@ hueco del OCR — que sigue abierto y con dueño (`MEJORAS #87`).
 
 1. Que el orden **intake → atomización → sala de máquina** lo garantice el código, no la memoria
    del operador.
-2. Que `<caso>/01_Procesado/Emails` esté siempre fresco cuando la sala de máquina ha corrido, de
-   modo que el consumidor de la sala de lectura pueda apoyarse en él sin comprobar nada.
+2. Que el resultado de la atomización quede **declarado y auditable** tras cada `apply`: estado
+   explícito (`ok` / `parcial` / `fallo` / `noop`) en el log de custodia.
 3. Que el **detector de contaminación cruzada por W-code** (`core/email_atomize/contaminacion.py`,
-   commit `20465ef`) corra en toda corrida y su aviso sea visible. Hoy solo se dispara si alguien
-   lanza el CLI a mano; el patrón que detecta ya ha mordido tres veces (W-02XOR7, W-02VUDR y el
-   caso anotado en `MEJORAS #68`).
-4. Dar rastro forense a la atomización, que hoy **no emite ningún evento** en `_intake_log.jsonl`
-   pese a reescribir un árbol entero de `01_Procesado/`.
+   `20465ef`) corra en toda corrida y su aviso sea visible antes del OCR.
+4. Que la discrepancia de enumeración de §1.2 deje de ser silenciosa.
 
-**No-objetivos (explícitos, para que nadie lea este PR como el cierre del frente de correo).**
+**Rebaja explícita respecto de la rev. 1 (hallazgo H-09 de la revisión).** La rev. 1 prometía que
+`01_Procesado/Emails` quedaría *«siempre fresco y consumible sin comprobar nada»*. **Esa promesa no
+es entregable sin tocar el motor**, porque el motor no converge cuando se retiran entradas: no poda
+`adjuntos/` (§9.2) y no publica de forma atómica (§9.3). Mantener el no-objetivo «no tocar motor» y
+la promesa de frescura a la vez era una contradicción interna de la spec. Se elige mantener el
+alcance y **rebajar la promesa**: el consumidor **debe** comprobar el estado declarado; no se
+garantiza convergencia del árbol hasta `MEJORAS #99`.
+
+**No-objetivos.**
 
 - **El adjunto que llega solo por correo sigue sin llegar al OCR.** Este PR no cambia una línea de
   lo que la sala de máquina inventaría.
-- No se toca el motor `core/email_atomize/` — ni su lógica, ni sus salidas, ni sus IDs congelados.
+- No se toca el motor `core/email_atomize/`: ni su enumeración, ni su poda, ni su publicación.
 - No se toca la invariante «`00_Input` es crudo y es la única fuente de la sala de máquina».
-- No se encadena nada en `scripts/abrir_caso.py` (opción (i) del PLAN, descartada en el
-  brainstorming a favor de (ii)).
+- No se encadena nada en `scripts/abrir_caso.py` (opción (i) del PLAN, descartada).
 
 ## 3. Decisión: dónde vive el disparo
 
-El PLAN dejaba tres opciones abiertas. Se elige **(ii) `organizar-sala-maquina`**, y dentro de ella,
-el orquestador CLI:
+Se elige **(ii) `organizar-sala-maquina`**. Esta decisión **sobrevivió intacta a las dos revisiones
+adversariales**: ningún hallazgo ataca la ubicación, solo el contrato.
 
 | Opción | Veredicto |
 |---|---|
-| (i) `abrir_caso` lo encadena | **No.** La apertura corre una vez; la sala de máquina se re-lanza. Atar el paso a la apertura deja sin cubrir todo caso reprocesado. |
-| (ii) `organizar-sala-maquina` antes de su OCR | **Sí.** Es donde el orden importa y donde el operador ya está. |
-| (iii) fachada `procesar_expediente()` | **No.** Añade una capa sin resolver quién la llama: mueve el problema, no lo cierra. |
+| (i) `abrir_caso` lo encadena | **No.** La apertura corre una vez; la sala de máquina se re-lanza. Deja sin cubrir todo caso reprocesado. |
+| (ii) `organizar-sala-maquina` antes de su OCR | **Sí.** Donde el orden importa y donde el operador ya está. |
+| (iii) fachada `procesar_expediente()` | **No.** Añade una capa sin resolver quién la llama. |
 
-Dentro de (ii), el disparo va en **`scripts/sala_maquina.py::apply`**, no en el SKILL.md ni en
-`core/sala_maquina.py`:
-
-- **No en el SKILL.md.** Un paso descrito en prosa que un modelo debe recordar ejecutar es el mismo
-  mecanismo que falla hoy. El bloque del PLAN pide garantía mecánica; la prosa no lo es.
-- **No en `core/sala_maquina.py`.** El motor de OCR no debe saber qué es un correo. Encadenar dos
-  pipelines es orquestación, y la orquestación vive en `scripts/` (regla de las 3 capas del
-  `CLAUDE.md`: la lógica en el core, el orquestador fino).
+Dentro de (ii), en **`scripts/sala_maquina.py::apply`**, no en el SKILL.md (la prosa es el mecanismo
+que falla hoy) ni en `core/sala_maquina.py` (el motor de OCR no debe saber qué es un correo;
+encadenar pipelines es orquestación).
 
 ## 4. Arquitectura
 
 ```
 apply(case_id, vision, force)
-  ├─ _resolver_caso(case_id)            (existente)
-  ├─ _exigir_vision_cableada()          (existente, solo si --vision)
-  ├─ _atomizar_correo(case_id)          ← NUEVO
-  ├─ _construir_plan(case_dir, force)   (existente)
-  └─ sm.ejecutar(...)                   (existente)
+  ├─ _resolver_caso(case_id)            → (case_id, case_dir) ya resueltos
+  ├─ _exigir_vision_cableada()          (solo si --vision)
+  ├─ _atomizar_correo(case_id, case_dir)  ← NUEVO
+  ├─ _construir_plan(case_dir, force)
+  └─ sm.ejecutar(...)
 ```
 
-### 4.1. `_atomizar_correo(case_id) -> AtomizeReport | None`
+### 4.1. Enumeración: un solo criterio, el del motor
 
-Función privada del CLI. Reutiliza `core.email_atomize.pipeline` sin envolverlo en abstracción
-nueva.
+**El pre-scan usa el mismo enumerador que el motor**: `glob("*.eml")` por carpeta fuente, **no
+`rglob`** (la rev. 1 decía `rglob` «coherente con lo que el motor recorre», y era falso — §1.2).
+Alinear el conteo *hacia abajo*, a lo que el motor realmente procesará, es lo que mantiene honesto
+el no-op y el evento.
 
 ```
 fuentes = P.emails_src_dirs(case_id)
-si ningún .eml bajo esas fuentes:  → devuelve None, no toca disco, no emite evento
-intenta:  report = P.atomize_case(case_id)
-excepto:  imprime el fallo, devuelve None, la corrida SIGUE
-imprime resumen + notas destacadas + errores
-emite evento atomizado_email
-devuelve report
+n_top = suma de len(glob("*.eml")) por fuente     # lo que el motor VERÁ
+n_rec = suma de len(rglob("*.eml")) por fuente    # lo que realmente HAY
 ```
 
-**Tres reglas de comportamiento:**
+El predicado vive en **`core/email_atomize/pipeline.py`** (`contar_eml(fuentes) -> (n_top, n_rec)`),
+no en el CLI: es lógica, la regla de las 3 capas la quiere en el core, y así `plan` y `apply`
+comparten una sola verdad en vez de dos implementaciones que derivan.
 
-**(a) No-op estricto sin correo.** La condición de no-op es **que no haya ningún `.eml`** bajo las
-fuentes, no que la lista de fuentes esté vacía: `emails_src_dirs` devuelve carpetas de lote y un
-lote `email` puede existir vacío (o quedarse vacío tras un borrado de ruido, que es justo el
-remedio aplicado en W-02VUDR). Importa porque `atomize_dir` hace
-`mkdir(parents=True, exist_ok=True)` de `mensajes/` y `adjuntos/` **incondicionalmente**
-(`pipeline.py:88-89`): llamarlo a ciegas sembraría dos carpetas vacías en todo caso sin correo, y
-la sala de máquina se usa en casos que no tienen ninguno. El conteo es un `rglob("*.eml")` sobre
-las fuentes, coherente con lo que el propio motor recorre.
+### 4.2. Aviso de correo invisible
 
-**(b) Idempotencia heredada, sin estado propio.** El motor ya es idempotente y está verificado en
-vivo (dos corridas seguidas sobre W-02VND1 → 0 cambios). No se añade un segundo `_state.json` ni
-ningún registro paralelo: duplicar el control de idempotencia es crear dos verdades que pueden
-divergir.
+Si `n_rec > n_top`, se emite un **aviso destacado** — en `apply`, en `plan` y en el payload del
+evento:
 
-**(c) Falla blando.** Una excepción del motor se captura, se reporta y **no aborta el OCR**.
-Fundamento: el OCR hoy no depende de la atomización (§1.1), una corrida de sala de máquina puede
-durar ~1h40, y el propio motor ya profesa que «un email entre 125 no tumba la corrida». Los
-`report.errores` por mensaje se imprimen pero tampoco abortan.
+```
+AVISO: N .eml viven en subcarpetas y el atomizador NO los verá (MEJORAS #98).
+Causa típica: exportación con --extraer-adjuntos. Son justo los mensajes con adjuntos.
+```
 
-### 4.2. Visibilidad de las notas de contaminación
+Es la respuesta en alcance a §1.2: no arregla la ceguera, pero la vuelve ruidosa. Sin esto, el
+cableado *propagaría* el agujero con apariencia de éxito.
 
-`report.notas` es donde `contaminacion.py` deposita el aviso de W-code ajeno. Se imprimen
-**destacadas y al principio** de la corrida, no sepultadas al final de una hora de log de OCR. El
-aviso avisa; no excluye nada (decisión ya tomada en `20465ef`: borrar es del letrado).
+### 4.3. Cuándo NO se atomiza (no-op), y cuándo sí aunque no haya correo
 
-### 4.3. Evento forense
+El no-op de la rev. 1 (`si no hay .eml, no hacer nada`) dejaba salida rancia: si un caso tuvo
+correos atomizados y luego se borran todos —**el remedio exacto que se aplicó en W-02VUDR contra la
+contaminación**— el consumidor seguiría viendo los mensajes viejos tras un `apply` con éxito
+(hallazgo H-02).
 
-Alta de `atomizado_email` en `INTAKE_EVENTS` (`core/intake_log.py:42`). Se emite **solo si hubo
-atomización real** — nunca en el no-op de (a) ni cuando el motor lanzó.
+Regla corregida:
+
+| `n_top` | ¿existe `01_Procesado/Emails`? | Acción | `status` |
+|---|---|---|---|
+| 0 | no | no se llama al motor, no se toca disco | `noop` |
+| 0 | **sí** | **se llama al motor** para que pode `mensajes/` | `ok` |
+| > 0 | cualquiera | se llama al motor | `ok` / `parcial` |
+
+El caso `n_top == 0` con árbol existente **debe** ejecutarse: es la única vía en alcance para que la
+retirada de correos se refleje. Queda documentado que la reconciliación es **parcial** — el motor no
+poda `adjuntos/` (§9.2), así que los binarios y sidecars huérfanos permanecen y `adjuntos_contenido`
+los seguirá recogiendo (`descubrir.py:13`). Cierre completo: `MEJORAS #99`.
+
+El no-op estricto sigue siendo necesario en la primera fila porque `atomize_dir` hace `mkdir` de
+`mensajes/` y `adjuntos/` **incondicionalmente** (`pipeline.py:88-89`): llamarlo a ciegas sembraría
+carpetas vacías en todo caso sin correo.
+
+### 4.4. Fallo: blando para el OCR, duro para el registro
+
+Una excepción del motor **no aborta el OCR** (decisión de Nikolai: el OCR no depende de la
+atomización y una corrida dura ~1h40). Pero, a diferencia de la rev. 1, **sí se emite evento**, con
+`status: "fallo"`.
+
+Fundamento (hallazgos H-05 propio y H-04/H-05 de Codex, convergentes): el motor publica por
+escrituras directas sucesivas y guarda `_registro.json` en la **última** línea (`pipeline.py:170`,
+`ids.py:93-96`, sin temporal ni `replace`). Una excepción a media escritura deja el árbol mutado y
+el registro sin salvar. Como `load_registro` degrada un JSON truncado a registro vacío en silencio
+(`ids.py:104-107`) y los IDs se asignan por contador incremental (`ids.py:37-46`), la corrida
+siguiente puede **renumerar** `MSG-`/`ATT-`, contra la invariante «re-ejecutar NUNCA renumera». Un
+MSG-id ya citado en `_revision/cola.md`, en un `_entregas/` sellado o en una nota del letrado pasaría
+a apuntar a otro mensaje.
+
+La fragilidad es del motor y preexistente, pero **hoy es ruidosa**: el CLI manual escupe el traceback
+y el operador para. El fallo blando la volvería silenciosa. Emitir el evento de fallo es lo que
+impide que este PR degrade una avería visible en una invisible. Además, el aviso sale como **banner
+destacado al principio**, no como una línea sepultada bajo una hora de log de OCR.
+
+### 4.5. Evento forense
+
+Alta de `atomizado_email` en `INTAKE_EVENTS` (`intake_log.py:42`). Se emite **siempre que se haya
+llamado al motor**, con éxito o con fallo; nunca en el `noop`.
 
 ```json
 {"event": "atomizado_email",
- "details": {"mensajes": 413, "adjuntos_unicos": 162, "reconstruidos_b": 136,
+ "details": {"status": "ok",
+             "mensajes": 413, "adjuntos_unicos": 162, "reconstruidos_b": 136,
              "citas_a_revision": 43, "upgrades": 8,
+             "eml_nivel_superior": 277, "eml_totales": 277,
              "notas": ["…W-code ajeno…"], "errores": []}}
 ```
 
-Se emite **antes** de arrancar el OCR, no al terminar la corrida: si la corrida larga se cae a
-media, el rastro de lo que la atomización hizo en disco ya está escrito.
+- `status`: `ok` | `parcial` (el motor terminó pero `errores` no está vacío) | `fallo` (excepción).
+- `eml_nivel_superior` / `eml_totales`: los dos conteos de §4.1. Que difieran es la huella de §1.2.
+- Se emite **antes** de arrancar el OCR: si la corrida larga muere, el rastro ya está en disco.
+- **Si `append_event` falla**, se captura y se avisa; nunca se aborta el OCR por un fallo de log.
 
-### 4.4. `plan` y `reforzar` no atomizan
+### 4.6. Resolución del caso: una sola vez
 
-- **`plan`** es preview. No debe reescribir `01_Procesado/Emails`. En su lugar, con el **mismo
-  conteo de (a)**, emite una línea informativa del tipo `correo: N .eml (se atomizarán en apply)`,
-  y calla si `N == 0`. *(Matiz honesto: `plan` ya no es del todo read-only —
-  escribe el manifiesto de segmentación. Aun así, atomizar en un preview es sorprendente y el
-  manifiesto es un gate editable deliberado, no un precedente.)*
+`_atomizar_correo` recibe el `case_dir` **ya resuelto** por `_resolver_caso` y compone las rutas
+desde él, en vez de dejar que `atomize_case` vuelva a localizar el caso. `caso_path` es un wrapper
+exacto de `path_for` (`config.py:547-550`), así que hoy no hay divergencia; pero resolver tres veces
+(conteo, fuentes, salida) es superficie gratuita. Se usa `atomize_dir(fuentes, out)` con las rutas
+derivadas de `case_dir`, no `atomize_case(case_id)`.
+
+### 4.7. `plan` y `reforzar` no atomizan
+
+- **`plan`** es preview: no reescribe `01_Procesado/Emails`. Emite la línea informativa con el mismo
+  `contar_eml` de §4.1 (`correo: N .eml (se atomizarán en apply)`, callando si `N == 0`) y **el aviso
+  de §4.2 si procede**. *(Matiz: `plan` ya escribe el manifiesto de segmentación, un gate editable
+  deliberado; no es precedente para atomizar en un preview.)*
 - **`reforzar`** re-procesa dudosos ya conocidos de la cobertura. La atomización no le aporta nada.
 
 ## 5. Alternativas descartadas
 
-**Que la sala de máquina inventaríe también `01_Procesado/Emails/adjuntos/`** (con dedup por
-sha256 contra `00_Input`, que sería barato porque `inventariar` ya hashea). Cerraría de verdad el
-hueco del adjunto solo-email, pero amplía una invariante declarada en el docstring del módulo y en
-`_ZONAS_VETADAS`, y se solapa de lleno con `MEJORAS #86`/`#87`. Descartada para este PR por
-decisión de Nikolai: este bloque es cableado, no motor.
+**Ampliar el alcance y arreglar el motor en este PR** (enumeración recursiva + poda de adjuntos +
+publicación atómica). Cumpliría la promesa original de frescura, pero deja de ser cableado, toca
+código con IDs congelados verificados en vivo sobre W-02VND1, y multiplica riesgo y tamaño de
+revisión. Descartado por Nikolai: va a `MEJORAS #99`.
 
-**`--extraer-adjuntos` a default `True`.** Cerraría el hueco sin tocar invariante alguna (los
-adjuntos caerían sueltos en `00_Input`, que la máquina ya lee), pero mueve la superficie de dedup
-de todo intake futuro. Es la tercera casilla del bloque del PLAN y se decide aparte.
+**Parar el cableado y sanear el motor primero.** Más limpio conceptualmente, pero deja el orden
+dependiendo de la memoria del operador varias sesiones más y el detector de contaminación sin correr
+solo. Descartado.
 
-**Flag `--sin-atomizar` en `apply`.** Descartado (YAGNI). La atomización es idempotente y no hace
-OCR, así que re-correrla es barato frente a la corrida que la sigue; y un flag para saltarse el
-paso reabre justo la puerta que este bloque viene a cerrar.
+**Que la sala de máquina inventaríe `01_Procesado/Emails/adjuntos/`.** Cerraría el hueco del adjunto
+solo-email, pero amplía una invariante declarada y se solapa con `MEJORAS #86`/`#87`.
+
+**`--extraer-adjuntos` a default `True`.** Ahora además **bloqueado por `#98`**: generalizaría la
+ceguera de §1.2.
+
+**Flag `--sin-atomizar`.** YAGNI: la atomización es idempotente y barata frente al OCR que la sigue,
+y un flag para saltarse el paso reabre la puerta que este bloque cierra.
 
 ## 6. Contrato de tests
 
-Fichero nuevo `tests/test_sala_maquina_cableado_atomize.py`, con el motor real sustituido por un
-doble (no se atomiza de verdad en la suite):
+Los 7 tests de la rev. 1 doblaban el motor, y la revisión demostró un defecto real que los pasaba
+los 7: un lote con `mensaje_con_adjunto/mensaje.eml` (el layout de `--extraer-adjuntos`) donde el
+pre-scan con `rglob` contaba 1 y el motor real encontraba 0. El contrato se amplía con **tests de
+frontera contra el motor real**, no solo dobles.
 
-1. **Orden real.** La atomización se invoca **antes** de que se construya el plan de OCR. Se
-   verifica la secuencia registrada, no un simple «se llamó»: el orden es el objeto del PR.
-2. **No-op sin correo — dos variantes.** (a) Caso sin lotes `email` ni `03_Email`; (b) caso **con**
-   un lote `email` que no contiene ningún `.eml`. En ambas: el motor no se invoca, no se crean
-   `Emails/mensajes` ni `Emails/adjuntos`, y no se emite evento. La variante (b) es la que fija la
-   regla real y la que un `if not fuentes` ingenuo dejaría pasar.
-3. **Falla blando.** El motor lanza → el mensaje sale por pantalla, `sm.ejecutar` se invoca igual,
-   la corrida termina con su salida normal.
-4. **Evento.** Con atomización real se emite `atomizado_email` con los contadores del report;
-   se emite antes que `procesado_sala_maquina`.
-5. **`plan` no atomiza.** El motor no se invoca y la línea informativa aparece.
-6. **`reforzar` no atomiza.** El motor no se invoca.
-7. **Notas visibles.** Una nota de contaminación en el report aparece en la salida.
+**Con doble del motor** (`tests/test_sala_maquina_cableado_atomize.py`):
 
-Suite completa verde como gate (baseline de esta rama: 2424 · 0 fallos · 0 errores · 76 skipped).
+1. **Orden real:** la atomización se invoca antes de que se construya el plan de OCR (secuencia
+   registrada, no un «se llamó»).
+2. **No-op:** sin `.eml` y sin árbol previo → el motor no se invoca, no se crean `Emails/mensajes` ni
+   `Emails/adjuntos`, no se emite evento.
+3. **Reconciliación:** sin `.eml` **pero con árbol previo** → el motor **sí** se invoca, `status: ok`.
+4. **Fallo blando:** el motor lanza → banner visible, evento con `status: fallo`, `sm.ejecutar` se
+   invoca igual.
+5. **`parcial`:** el motor termina con `errores` no vacío → `status: parcial`.
+6. **Payload atado al dataclass real:** el doble devuelve una instancia real de `AtomizeReport`, no
+   un `SimpleNamespace`; así un campo mal escrito en el payload rompe el test.
+7. **`plan` no atomiza** (y emite la línea informativa). **`reforzar` no atomiza.**
+8. **`case_dir` resuelto una sola vez:** no hay re-localización del caso dentro del helper.
+
+**Contra el motor real** (`.eml` sintéticos mínimos en `tmp_path`):
+
+9. **`.eml` anidado en subcarpeta:** `n_rec > n_top` → salta el aviso de §4.2 y los conteos del
+   evento difieren. Es el test que la rev. 1 no tenía y que habría cazado el defecto.
+10. **Transición a cero fuentes:** atomizar con correo → borrar el último `.eml` → `apply` →
+    `mensajes/` queda podado. **Se documenta en el propio test** que `adjuntos/` NO se poda
+    (comportamiento conocido, `MEJORAS #99`), para que el día que se arregle el test lo señale.
+11. **Evento real:** vía `append_event` sin parchear, para verificar que `atomizado_email` es un
+    evento válido y el payload es JSON-serializable.
+
+**Test existente a actualizar:** `tests/test_intake_log.py:334` fija `len(INTAKE_EVENTS) == 26`;
+pasa a 27. (El nombre de la función dice «24» — deriva preexistente, no la toco aquí.)
+
+No se cubre en tests: exclusión mutua entre corridas concurrentes. Se documenta como hueco conocido
+en §9.4 en vez de fingir que el contrato lo cubre.
 
 ## 7. Documentación a actualizar
 
 - `.claude/skills/organizar-sala-maquina/SKILL.md` — hoy no menciona la atomización ni una vez.
-  Añadir que `apply` la encadena, y qué significan las notas de contaminación cuando aparecen.
-- `PLAN.md` — casillas 1 y 2 del bloque `[SIGUIENTE-CABLEADO-CORREO]`, con el hash del PR. La
-  casilla 3 (`--extraer-adjuntos`) queda abierta.
-- `docs/MEJORAS_FUTURAS.md` `#55` y `#68` — estado real tras el cableado, y la corrección de §1.1
-  para que el supuesto «atomizar antes arregla el OCR» no vuelva a circular.
+- `PLAN.md` — casillas 1 y 2 del bloque, con el hash del PR; **casilla 3 marcada como bloqueada por
+  `#98`**; corrección del supuesto de §1.1.
+- `docs/MEJORAS_FUTURAS.md` — **`#98` nuevo** (trampa de `--extraer-adjuntos`), **`#99` nuevo**
+  (saneamiento del motor), y actualización de `#55` y `#68` (el registro actual presenta `07b0377`
+  como «la mitad resuelta»; es una trampa armada).
 - `docs/ARQUITECTURA.md` si describe el orden del pipeline documental.
 
 ## 8. Riesgos
 
 | Riesgo | Mitigación |
 |---|---|
-| Que el PR se lea como «el frente de correo está cerrado» | §2 no-objetivos, explícito en spec, PLAN y MEJORAS |
-| Una corrida de `apply` sobre un caso en `G:` re-lee todos los `.eml` | Coste marginal frente al OCR que la sigue; medido como aceptable en la decisión de descartar el flag |
-| El evento nuevo rompe un consumidor del log | `INTAKE_EVENTS` es una lista blanca aditiva; los consumidores filtran por evento conocido |
-| Divergencia de resolución del caso entre `_resolver_caso` y `emails_src_dirs` | Ninguna: `core.config.caso_path` delega en `case_locator.path_for`, y ambos caminos pasan por `resolve_ref` |
+| Que el PR se lea como «el frente de correo está cerrado» | §2 no-objetivos + §9, explícitos también en PLAN y MEJORAS |
+| Que el cableado propague en silencio la ceguera de §1.2 | Aviso de §4.2 y los dos conteos en el evento |
+| Que el consumidor asuma frescura | Rebaja explícita del objetivo 2 + `status` obligatorio en el evento |
+| Re-leer los `.eml` en cada `apply` sobre `G:` | Coste marginal frente al OCR que sigue |
+| El evento nuevo rompe un consumidor del log | **Corregido respecto de la rev. 1:** el consumidor localizado (`abrir_caso.py:159-166`) **no** filtra por evento — recorre todos y agrega `details.files[].sha256`. El evento nuevo es inocuo porque su payload **no lleva `files`**, no porque exista filtrado. Cualquier cambio futuro del payload debe respetar eso |
+
+## 9. Defectos conocidos del motor (fuera de alcance, con dueño)
+
+Se dejan escritos aquí porque acotan lo que este PR puede prometer.
+
+**9.1. Enumeración no recursiva** (`extract.py:53`) → `MEJORAS #98`. Detallado en §1.2.
+
+**9.2. Sin poda de `adjuntos/`.** La poda de idempotencia cubre solo `mensajes/*.md`
+(`pipeline.py:121-124`); los binarios y sidecars de un correo retirado permanecen, y
+`core/adjuntos_contenido/descubrir.py:13` recorre **todos** los sidecars sin contrastarlos con
+`INDICE_ADJUNTOS.md`. Un adjunto borrado —incluso de otro expediente— se sigue procesando aguas
+abajo. → `MEJORAS #99`.
+
+**9.3. Publicación no atómica.** Escrituras directas sucesivas y `reg.save()` al final
+(`pipeline.py:170`), con `write_text` sin temporal ni `replace` (`ids.py:93-96`) y degradación
+silenciosa del registro truncado (`ids.py:104-107`). Riesgo: renumeración de IDs congelados.
+→ `MEJORAS #99`.
+
+**9.4. Sin exclusión mutua.** No hay lock ni snapshot entre el conteo, la lectura del atomizador y
+el inventario del OCR. Dos `apply` simultáneos sobre el mismo caso pueden cargar el mismo contador
+de `_registro.json`; un intake concurrente puede depositar un `.eml` entre la atomización y el
+inventario. La concurrencia sobre el mismo caso ya ha ocurrido en este proyecto. Este PR **no** la
+resuelve y **no** la empeora en lo esencial (ya existía para el OCR). → `MEJORAS #99`.
