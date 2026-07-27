@@ -3476,3 +3476,173 @@ de un tercero —incluido un nombre de pila— en el fichero de control de otro 
 copia del **Drive** y **no** tocar la local. `_intake_hashes.json` no está en `MERGE_EXCLUSIONS`, así
 que entra en el merge de 3 vías; con la local igual al baseline y el Drive cambiado, el checkin
 acepta el Drive. Tocar la local haría divergir las dos ramas y provocaría un conflicto para nada.
+
+---
+
+## 93. Ciclo de vida del lock de la biblioteca: no se escribió en el checkout y el checkin aborta al cerrar
+
+**Disparador:** ninguno todavía — detectado en vivo el 2026-07-27 al hacer el checkin de W-02VND1 (el
+que subió la recuperación de `#90`). Son **dos fallos del mismo ciclo de vida**, y el segundo tapa al
+primero. Sin promover a `PLAN.md`: nada está bloqueado hoy, pero con varias sesiones en paralelo esto
+es exactamente lo que el lock existe para evitar.
+
+**Estado actual.**
+
+*Fallo A — el checkout no dejó lock.* El `_caso.md` de W-02VND1 en el Drive **no tiene el campo
+`estado_repositorio`**, pese a que su `_intake_log.jsonl` sí registra un `case_checkout` el
+`2026-07-23T09:08:00`. Es decir: el caso estuvo prestado **cuatro días** y el sistema no lo sabía. Un
+segundo usuario habría podido hacer checkout del mismo caso sin que nada se lo impidiera.
+
+Lo que lo hace invisible es una decisión de diseño: `estado_de_fm` (`core/repository_checkout.py`)
+devuelve `disponible` **por defecto cuando el campo falta**, así que "nunca se bloqueó" y "se bloqueó y
+se liberó" son indistinguibles. Un lock que falla en silencio es peor que no tenerlo, porque induce
+confianza.
+
+*Fallo B — el checkin aborta en el último paso.* `scripts/repository_cli.py:658-661` (CP11) hace
+`estado_actual = rc.estado_de_fm(fm)` y luego `rc.validar_transicion(estado_actual, "disponible")`.
+Con el campo ausente eso es `disponible` → `disponible`, que la tabla no permite
+(`TransicionInvalida: desde 'disponible' solo se permite: ('prestado',)`) → **traceback**.
+
+El problema no es que aborte: es **cuándo**. La excepción salta *después* de que el merge haya
+terminado en VERDE, de subir la evidencia (línea 605), de registrar el evento `case_checkin` (608) y de
+integrar la bandeja (620). Lo verificado el 2026-07-27: `rclone check` por md5 dio **0 diferencias /
+431 ficheros coincidentes** y el evento quedó escrito con `copiados=428 renombrados=3
+resultado=verde` — el checkin **había funcionado**. Pero el usuario recibe un traceback que parece
+decir lo contrario, y el cierre queda a medias (lock sin escribir). Hubo que completar CP11 a mano
+invocando `aplicar_lock_liberado` + `_push_caso_md` desde Python.
+
+**Mejora propuesta.**
+- **(B, barato)** Tratar la transición `disponible` → `disponible` como no-op idempotente en CP11 en vez
+  de excepción: si el caso ya consta disponible, escribir igualmente `ultimo_checkin_timestamp` /
+  `ultimo_checkin_auditlog` (que son la traza de auditoría) y salir en VERDE. Un checkin que ya movió
+  los bytes y registró el evento **no puede terminar en traceback**.
+- **(A, el de fondo)** Que el checkout falle **en alto** si el write-then-verify del lock no confirma
+  (ya existe `verificar_nonce` para eso, §2.2: usarlo como gate, no como diagnóstico). Y considerar
+  distinguir `sin_lock` de `disponible` en `estado_de_fm`, para que la ausencia del campo sea un aviso
+  y no un silencio.
+- Al arreglar A, revisar si el checkout escribe el lock ANTES o DESPUÉS de copiar 5 GiB: si es después,
+  la ventana de carrera es de ~45 min (ver `#95`).
+
+**Justificación de no aplicarlo ahora.** B es una guarda de una línea, pero toca el cierre del checkin,
+que es el camino que mueve los bytes de los expedientes: merece su test propio
+(`tests/test_repository_cli.py` ya cubre la orquestación) y no un parche al vuelo. A es más profundo —
+decidir si `sin_lock` pasa a ser un estado del modelo afecta a `TRANSICIONES_PERMITIDAS`, que es SSOT en
+`config`. Y hoy el caso quedó correctamente `disponible`, así que nadie está bloqueado.
+
+**Coste estimado.** B: ~30 min (guarda + test). A: ~1 h el gate del nonce; +1 h si se añade `sin_lock`
+al modelo de estados y se migran las transiciones.
+
+---
+
+## 94. El montaje `G:` no es fiable justo después de escribir: verificar por API, nunca por el montaje
+
+**Disparador:** ninguno — anotado el 2026-07-27 tras tropezar dos veces con lo mismo durante la
+verificación del checkin de W-02VND1. No bloquea; es una trampa que hace **fallar la verificación, no
+la escritura**, que es la peor clase de trampa.
+
+**Estado actual.** Drive for Desktop (`G:`) es *Stream con caché*, no un espejo. Tras subir un fichero,
+la vista del montaje puede quedar temporalmente incoherente con lo que Drive ya tiene:
+
+1. **`OSError: [Errno 22] Invalid argument`** al leer con `Path.read_bytes()` un PDF recién subido, para
+   compararlo por hash. El fichero está en Drive y es correcto; el montaje no puede servirlo aún.
+2. **`Path.exists()` devuelve `False`** para `_caso.md`, y sin embargo `_pull_caso_md` (rclone, por API)
+   lo baja con su contenido real (2.316 bytes, con los `sudespacho_expedientes` del caso). Dos
+   comprobaciones independientes por el montaje dijeron "no existe" sobre un fichero que **sí existe**.
+
+La consecuencia es un **falso negativo de verificación**: quien audite un checkin leyendo por `G:`
+puede concluir que faltan ficheros o que no coinciden, cuando el problema es la hidratación. La
+verificación autoritativa del mismo merge, `rclone check --one-way` (por API, md5), dio **0
+diferencias / 431 ficheros coincidentes**.
+
+Es la misma familia que el gotcha ya documentado en `CLAUDE.md` (rclone hacia un destino Drive for
+Desktop necesita `--ignore-size --ignore-checksum --inplace` para evitar falsos "corrupted on
+transfer"): el montaje miente sobre metadatos recién tocados. Y el MCP `expedientes-xl` ya expone
+`hydration_status` precisamente para esto.
+
+**Mejora propuesta.** Fijar la regla como doctrina explícita donde se pueda tropezar con ella —
+`docs/SEGURIDAD_DATOS.md` o el runbook de la biblioteca, y un puntero desde `docs/DEAD_ENDS.md`:
+**toda verificación de integridad contra el Drive va por API (`rclone check` / `hashsum`), nunca
+leyendo el montaje**; el montaje sirve para trabajar, no para auditar. Si en algún flujo hace falta
+leer por el montaje justo después de escribir, envolver la lectura en un reintento con espera y tratar
+`OSError` / `exists() == False` como "aún no hidratado", no como "no está".
+
+**Justificación de no aplicarlo ahora.** Es documentación de una trampa, no un bug de código: los
+flujos del repo que verifican de verdad (el `check` del checkin) ya lo hacen bien por API. El riesgo
+es humano —o de un agente auditando a mano, como pasó hoy— y se cierra escribiéndolo donde se lea.
+
+**Coste estimado.** ~20 min de doctrina + puntero en `DEAD_ENDS.md`. El helper de reintento, si algún
+día hace falta, ~30 min más.
+
+---
+
+## 95. Rendimiento de checkout/checkin: medido, y el cuello de botella no es el que parece
+
+**Disparador:** ninguno — números tomados en el checkin real de W-02VND1 del 2026-07-27. Es
+**diagnóstico medido, no diseño**: la parte (3) toca el lock, el baseline y el merge de 3 vías, así que
+exige spec propia. Relacionado: `#93` (mismo subsistema).
+
+**Estado actual (todo medido, no estimado).**
+
+*El checkin de W-02VND1:* **248,783 MiB en 426 ficheros, 44 min 17 s, `ERROR: 0`**, media real
+**~96 KiB/s**. Cuidado con el número que imprime rclone al final (22,9 KiB/s): es la tasa instantánea
+del último tramo, no la media. Aparte, **205 movimientos server-side (22,230 MiB)** que **no pasaron
+por la línea**: es el `--backup-dir` apartando dentro de Google lo que iba a sobrescribir. Gratis.
+
+*El caso completo:* **5.358 ficheros, 5,06 GiB.** Y la asimetría que lo gobierna todo:
+
+| capa | ficheros | peso |
+|---|---|---|
+| Caso completo | 5.358 | **5.181 MiB** |
+| Solo texto (`.md` / `.txt` / `.yaml` / `.json`) | 3.434 | **32,5 MiB** |
+| Solo la sala de lectura (texto) | 42 | **1,1 MiB** |
+
+Es decir: **lo que se lee para trabajar pesa el 0,02 % del caso.** Los 5 GiB son grabaciones de
+entrevista (613 MiB), media de WhatsApp (260 MiB), adjuntos de correo (179 MiB) y los originales de
+`00_Input` (2,65 GiB).
+
+*Y la trampa de dirección:* el **checkout baja** y el **checkin sube**, y en una ADSL doméstica típica
+(Orange 20/1) eso son mundos distintos: checkout completo **~43 min** (bajada, 20 Mb); subida
+**1 Mb = ~128 KiB/s**, apenas un 33 % mejor que el internet móvil de un tren. Corolario importante:
+**a 1 Mb de subida, tocar flags de rclone no sirve** (`--transfers`, `--drive-chunk-size` reparten mejor
+un ancho de banda agotado, no lo crean). El único lever que funciona es mover menos bytes.
+
+*Multiplicador del intake:* en este delta, **132,4 MiB de originales en `00_Input` generaron 113 MiB de
+derivados** (`01_OCR` 33,2 + `02_Documentos` 79,5). Un intake nuevo cuesta en subida **~2x su tamaño**.
+Ojo: esos derivados son el **45 % de este delta** pero solo el **3 % del caso entero** — excluirlos
+ayuda al checkin y **no** al checkout.
+
+**Mejora propuesta**, por orden de rentabilidad:
+
+- **(1) Cachear el inventario local — gratis y ajeno al ancho de banda.** `inventario_local`
+  (`scripts/repository_cli.py`) calcula el **md5 de los 5.358 ficheros en cada ejecución, incluidos los
+  `--dry-run`**. El 2026-07-27 se pagó **tres veces** solo para ver el plan. Cachear por
+  `(ruta, tamaño, mtime)` deja los dry-run en instantáneos. Es el único punto que mejora sin depender
+  de la red.
+- **(2) Checkout parcial.** Traer siempre la capa de texto + índices (32,5 MiB; la sala de lectura,
+  1,1 MiB, es instantánea) y los binarios pesados **bajo demanda**. Convierte 43 min en segundos para
+  el uso mayoritario: leer y redactar.
+- **(3) Separar el lock de la copia (cuestión ABIERTA, no acción).** El checkout mezcla dos cosas: el
+  **lock** (lo valioso, sobre todo con sesiones en paralelo) y la **copia de 5 GiB** (para I/O local y
+  trabajo sin red). `G:` ya es un filesystem y el pipeline acepta `CASOS_ROOT=G:`. Un *checkout
+  solo-lock* sería casi instantáneo y **eliminaría de raíz toda la maquinaria de merge**: el plan de 3
+  vías, el baseline y los conflictos existen únicamente porque hay dos copias. El 2026-07-27 esa
+  maquinaria produjo 3 conflictos de índices que hubo que resolver a mano antes de poder cerrar.
+
+  **Contraargumentos que hay que responder antes de decidir, no después:** (a) *Stream con caché no
+  elimina los bytes, los reparte* — abrir un fichero no cacheado lo descarga entonces; si tocas el 10 %
+  del caso ganas 10 a 1, pero si lanzas OCR sobre los 717 ficheros de `00_Input` (2,65 GiB) es empate;
+  (b) **desaparece la zona de ensayo**: hoy un pipeline que revienta a medias deja la basura en local y
+  se tira, mientras que sobre `G:` el estado a medio escribir ya está subiendo; (c) sin red no se
+  trabaja; (d) el montaje no es fiable para verificar (ver `#94`). Ya hay un dato del proyecto que
+  apunta a favor: en la apertura de W-02ZIIF se concluyó que **el cuello de botella es la verificación
+  humana, no la I/O**.
+- **(4) Flags de rclone: solo si hay margen de ancho de banda.** Antes de tocar `--transfers` o
+  `--drive-chunk-size`, medir la subida real del enlace. Con 1 Mb contratado no hay nada que ganar.
+
+**Justificación de no aplicarlo ahora.** (1) es la única cerrada y barata, y aun así toca el frontal que
+mueve los bytes de los expedientes. (2) y (3) son decisiones de arquitectura de la biblioteca —afectan
+al lock, al baseline y al merge de 3 vías— y (3) además tiene contraargumentos sin responder. Ninguna se
+promueve por completitud: hoy nadie está bloqueado, y el checkin de W-02VND1 se cerró en VERDE.
+
+**Coste estimado.** (1) ~1 h (caché + invalidación por mtime + test). (2) ~1 día con spec. (3) spec
+propia, sin estimar hasta responder los contraargumentos. (4) ~10 min de medición; el ajuste, trivial.
