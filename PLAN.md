@@ -82,9 +82,36 @@ ser cambiar una bandera.
       (`modo: recuperacion_ocr_sello`) en el log; `00_Input/` intacto.
       **Pendiente operativo: el `checkin` a Drive lo decide Nikolai** (hay checkout abierto desde
       2026-07-23; la copia local va por delante — 677 MD vs 625).
-- [ ] **(c2) Resto de documentos afectados**: tasación TECNITASA (W-02VND1, faltaba 26 %), exposé de
-      propiedad (W-02XOR7, 28 %) y exposé (W-02VUDR, 10 %). Mismo método; en los dos exposés
-      `--redo-ocr` funciona directamente (no son AcroForm).
+- [x] **(c2) Tasación y exposés RECUPERADOS** (2026-07-27):
+
+      | documento | caso | destino | texto antes | ahora | peldaño |
+      |---|---|---|---|---|---|
+      | Tasación TECNITASA (2 copias de custodia, bytes idénticos) | W-02VND1 | local (checkout) | 46.142 | **62.828** | por página, 12 de 34 |
+      | Exposé de propiedad | W-02XOR7 | Drive (sin checkout) | 9.854 | **13.800** | doc. entero |
+      | Exposé | W-02VUDR | Drive (sin checkout) | 12.490 | **13.977** | doc. entero |
+
+      La escalera se comportó como se diseñó: peldaño 1 (`--redo-ocr` de documento entero) bastó en los
+      dos exposés; la tasación, AcroForm como las cuentas anuales, exigió el peldaño 2 (extraer página →
+      quita el AcroForm → `--redo-ocr`). **En ningún documento hizo falta `--force-ocr`.**
+
+      Matiz verificado, útil para diseñar (a): los dos peldaños no son igual de conservadores. El
+      peldaño 2 deja las páginas digitales **byte-idénticas** (19 de 34 en la tasación). El peldaño 1
+      **sí reescribe** el texto de algunas páginas digitales (XOR7: 2,3,4,34,35 · VUDR: 2,3,4,45), pero
+      de forma **aditiva**: el 100 % de las palabras del original sobrevive en todas ellas y ninguna
+      pierde texto — lo que gana es el texto incrustado en imágenes pequeñas dentro de esas páginas. Aun
+      así, para documentos donde las cifras sean críticas conviene forzar el peldaño 2.
+
+      Calidad: gibberish 2,6 % (tasación) / 4,0-4,6 % (exposés); tasación con 6/6 términos de tasación
+      presentes; páginas conservadas 34/35/45. `00_Input/` intacto en los tres casos; respaldos en
+      `99_Versiones anteriores/recuperacion_ocr_2026-07-27/`; `_cobertura.json` actualizado donde
+      existía; evento `procesado_sala_maquina` (`modo: recuperacion_ocr_sello`) en los tres logs.
+
+- Quedan **17 candidatos** del cribado sin medir (brochures, dossiers, planos y similares de W-02VND1,
+  más `753_informeSaintGobain` de W-02XOR7). Son material de marketing y planos, no prueba nuclear: se
+  recuperan cuando hagan falta, o de oficio al construir (a). El script de recuperación usado en (c1) y
+  (c2) fue puntual (scratchpad, no versionado): el método está descrito arriba con el detalle suficiente
+  para rehacerlo, y **su validación en 7 documentos, 3 casos y 2 destinos distintos es lo que
+  des-arriesga la tarea (a)**.
 - [ ] **(d) Decidir el alcance de la re-corrida**: cambiar el modo de OCR desalinea
       `_sala_maquina_state.json` y las coberturas ya persistidas. Decisión de Nikolai.
 
