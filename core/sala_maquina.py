@@ -18,8 +18,9 @@ from core.extractor import (
     _try_pypdf, _pdf_num_paginas, _texto_suficiente,
     _try_email, _try_rtf, _try_ics, _try_pandas_table, _try_docx, _read_text_file,
 )
-from core.anon.ocr import ocr_pdf
+from core.anon.ocr import ocr_pdf_escalera
 from core.anon.imagen_a_pdf import convertir as convertir_imagen
+from core import pdf_paginas
 from core.utils import file_sha256, now_iso, output_slug, text_sha256, write_md
 from core import split_documental as split
 from core.intake_log import append_event
@@ -100,6 +101,42 @@ def ocr_quality(text: str, n_pags: int | None) -> tuple[str, str]:
     if n_pags and n_pags > 0 and (len(t) / n_pags) < _MIN_DENSIDAD:
         return "low", f"densidad baja ({len(t) // max(n_pags,1)} char/pág)"
     return "ok", ""
+
+
+_MIN_PAGS_PERDIDAS = 2        # nº de páginas escaneadas mudas que ya obliga a revisar
+_RATIO_PAGS_PERDIDAS = 0.5    # …o que sean al menos la mitad del documento
+
+
+def calidad_por_pagina(perfil: list[pdf_paginas.PaginaPerfil]) -> tuple[str, str]:
+    """Señal POR PÁGINA que rompe la dilución del promedio (`MEJORAS #90` (b)).
+
+    `ocr_quality` promedia sobre el documento: 4 escaneos que no dieron ni un
+    carácter se diluyen entre 36 páginas digitales densas y el documento sale
+    `ok` — fuera de la worklist y fuera del filtro de `reforzar`.
+
+    **Página perdida** = ráster a página completa Y menos texto del que exige la
+    densidad mínima. Los dos términos importan: sin el ráster marcaríamos los
+    reversos en blanco de un dúplex, que son legítimos; sin el umbral de texto
+    marcaríamos cualquier escaneo bien OCR-izado.
+
+    Devuelve ``("", "")`` cuando no hay señal — el llamador conserva entonces el
+    veredicto de `ocr_quality`. Nunca sube la calidad: solo puede degradarla.
+    """
+    n = len(perfil)
+    if n < 2:
+        # Una sola página con ráster es el camino `imagen` (jpg → pdf → OCR): un
+        # DNI o una captura. Marcarlo inundaría la worklist de falsos positivos,
+        # los mismos que hubo que descartar al medir el cribado del detector.
+        return "", ""
+    perdidas = [p.numero for p in perfil
+                if p.raster_px >= pdf_paginas.MIN_PX_RASTER and p.chars < _MIN_DENSIDAD]
+    if not perdidas:
+        return "", ""
+    if len(perdidas) < _MIN_PAGS_PERDIDAS and (len(perdidas) / n) < _RATIO_PAGS_PERDIDAS:
+        return "", ""
+    pags = ", ".join(str(i) for i in perdidas[:12]) + ("…" if len(perdidas) > 12 else "")
+    return "low", (f"{len(perdidas)} de {n} páginas escaneadas sin texto "
+                   f"(págs. {pags}): revisar o reforzar")
 
 
 _EXCLUIR_PREFIJOS = ("90_Notas personales/", "90_Notas personales\\")
@@ -381,6 +418,38 @@ def _escribir_md(case_dir, case_id, slug, rel_path, texto, metodo, ocr, estado):
     write_md(md_path, meta, texto)
 
 
+def _calidad(texto: str, pdf: Path) -> tuple[str, str]:
+    """`ocr_quality` del documento + la señal POR PÁGINA que rompe la dilución.
+
+    Solo puede degradar: si el promedio ya dice `low`/`empty`, no se perfila (ni
+    se paga la pasada) porque el documento ya está en la worklist.
+    """
+    estado, nota = ocr_quality(texto, _pdf_num_paginas(pdf))
+    if estado != "ok" or not pdf_paginas.tiene_rasteres(pdf):
+        return estado, nota
+    p_estado, p_nota = calidad_por_pagina(pdf_paginas.perfilar_paginas(pdf))
+    return (p_estado, p_nota) if p_estado else (estado, nota)
+
+
+def _paginas_ciegas(pdf: Path) -> list[int]:
+    """Páginas con escaneo a página completa bajo una capa de texto de sello.
+
+    Pasa antes el gate barato (`tiene_rasteres`, solo metadato) para no perfilar
+    página a página el caso común: un PDF nativo, sin nada ciego que buscar.
+    """
+    if not pdf_paginas.tiene_rasteres(pdf):
+        return []
+    return pdf_paginas.paginas_ciegas(pdf_paginas.perfilar_paginas(pdf))
+
+
+def _anotar(filas: list[DocCobertura], aviso: str) -> None:
+    """Añade `aviso` a la nota de cada fila, preservando lo que ya hubiera."""
+    if not aviso:
+        return
+    for f in filas:
+        f.nota = f"{f.nota} · {aviso}" if f.nota else aviso
+
+
 def _split_o_md(case_dir: Path, sm_dir: Path, case_id: str, d: DocPlan,
                 buscable: Path, metodo_base: str, ocr: bool, vision: bool,
                 force: bool = False) -> list[DocCobertura]:
@@ -403,7 +472,7 @@ def _split_o_md(case_dir: Path, sm_dir: Path, case_id: str, d: DocPlan,
     if not segmentos or len(segmentos) <= 1:
         # passthrough: un solo documento lógico → MD único, como antes del split.
         texto = _try_pypdf(buscable) or ""
-        estado, nota = ocr_quality(texto, _pdf_num_paginas(buscable))
+        estado, nota = _calidad(texto, buscable)
         texto, estado, nota = _aplicar_vision(buscable, texto, estado, nota, vision)
         if split_err:
             aviso = f"segmentación omitida ({split_err})"
@@ -428,7 +497,7 @@ def _split_o_md(case_dir: Path, sm_dir: Path, case_id: str, d: DocPlan,
     for dl in doclogicos:
         seg_pdf = carpeta_bundle / f"{dl.slug}.pdf"
         texto = _try_pypdf(seg_pdf) or ""
-        estado, nota = ocr_quality(texto, _pdf_num_paginas(seg_pdf))
+        estado, nota = _calidad(texto, seg_pdf)
         texto, estado, nota = _aplicar_vision(seg_pdf, texto, estado, nota, vision)
         _escribir_md(case_dir, case_id, dl.slug, d.rel_path, texto, metodo_base, ocr, estado)
         filas.append(DocCobertura(dl.slug, d.rel_path, metodo_base, estado, len(texto), ocr, nota,
@@ -444,17 +513,22 @@ def _split_o_md(case_dir: Path, sm_dir: Path, case_id: str, d: DocPlan,
 
 
 def _ocr_y_extraer(case_dir: Path, sm_dir: Path, case_id: str, d: DocPlan,
-                   entrada: Path, vision: bool, force: bool = False) -> list[DocCobertura]:
-    """OCRmyPDF sobre `entrada` → PDF buscable persistido en 01_OCR/ → split → MD.
+                   entrada: Path, vision: bool, force: bool = False,
+                   conservador: bool = False) -> list[DocCobertura]:
+    """Escalera de OCR sobre `entrada` → PDF buscable en 01_OCR/ → split → MD.
 
     Compartido por el camino PDF escaneado y el camino imagen/`.heic` (ambos
     terminan en "aplícale OCR a un PDF"; solo cambia de dónde sale ese PDF).
     Devuelve una lista de cobertura (N filas si el buscable es un bundle
     multi-documento; 1 fila en passthrough o si el OCR falla).
+
+    `conservador` viaja hasta `ocr_pdf_escalera`: lo activa el documento que YA
+    trae capa de texto real y solo esconde páginas ciegas (`MEJORAS #90`).
     """
     ocr_out = destino_seguro(sm_dir / "01_OCR" / f"{d.slug}.pdf", case_dir)
     try:
-        buscable = ocr_pdf(entrada, ocr_out)
+        res = ocr_pdf_escalera(entrada, ocr_out, conservador=conservador)
+        buscable = Path(res.ruta)
     except Exception as e:  # OCRError incl. cifrado/corrupto/firmado
         nota = f"OCR falló: {e}"
         if not vision:
@@ -471,17 +545,24 @@ def _ocr_y_extraer(case_dir: Path, sm_dir: Path, case_id: str, d: DocPlan,
             _escribir_md(case_dir, case_id, d.slug, d.rel_path, texto, "vision", False, estado)
         return [DocCobertura(d.slug, d.rel_path, "vision", estado, len(texto), False, nota, d.sha256,
                              parent_sha256=d.sha256)]
-    # Contrato de ocr_pdf: si el PDF ya tenía capa de texto (rc=6 / PriorOcrFound),
-    # devuelve la ENTRADA sin escribir ocr_out → no hay artefacto de custodia en 01_OCR/.
-    persistido = Path(buscable) == ocr_out and ocr_out.exists()
+    # Contrato de la escalera: si ningún peldaño regeneró el PDF, devuelve la
+    # ENTRADA sin escribir ocr_out → no hay artefacto de custodia en 01_OCR/.
+    persistido = buscable == ocr_out and ocr_out.exists()
     metodo, ocr = ("ocr", True) if persistido else ("pypdf", False)
-    filas = _split_o_md(case_dir, sm_dir, case_id, d, Path(buscable), metodo, ocr, vision, force)
+    filas = _split_o_md(case_dir, sm_dir, case_id, d, buscable, metodo, ocr, vision, force)
+    _anotar(filas, res.nota)
+    if res.degradado:
+        # Peldaño 3: quedó texto escondido bajo un ráster que no se pudo sacar.
+        # El documento NO puede salir `ok`: `ok` lo deja fuera de la worklist de
+        # `_cobertura.md` y fuera del filtro de `reforzar` — el silencio de #90.
+        for f in filas:
+            if f.estado == "ok":
+                f.estado = "low"
+        _anotar(filas, "escalera degradada: queda texto ciego sin recuperar")
     if not persistido:
         # No afirmamos una custodia que no existe: el texto sale de la capa previa;
         # se refleja como pypdf con nota explícita, preservada por documento lógico.
-        aviso = "OCRmyPDF no regeneró (PDF ya tenía texto); sin artefacto en 01_OCR"
-        for f in filas:
-            f.nota = f"{f.nota} · {aviso}" if f.nota else aviso
+        _anotar(filas, "OCRmyPDF no regeneró (PDF ya tenía texto); sin artefacto en 01_OCR")
     return filas
 
 
@@ -514,6 +595,16 @@ def ejecutar(case_dir: Path, docs: list[DocPlan], *, case_id: str,
                 texto = _try_pypdf(src) or ""
                 npags = _pdf_num_paginas(src)
                 if texto and _texto_suficiente(texto, npags):
+                    # OJO: "tiene capa de texto" no es "tiene TODO su texto". Un
+                    # escaneo con el pie de firma de LexNET ronda 228 char/pág —
+                    # 5,7× el umbral— y pasa por digital con el cuerpo perdido
+                    # (`MEJORAS #90`). Si esconde páginas ciegas baja a la
+                    # escalera en modo conservador: peldaño 2, que aísla y
+                    # re-OCR-iza SOLO esas páginas y no reescribe las digitales.
+                    if _paginas_ciegas(src):
+                        cobertura.extend(_ocr_y_extraer(case_dir, sm_dir, case_id, d, src,
+                                                        vision, force, conservador=True))
+                        continue
                     # PDF digital (ya buscable): el split va sobre el propio PDF → MD por doc lógico
                     cobertura.extend(_split_o_md(case_dir, sm_dir, case_id, d, src, "pypdf", False, vision, force))
                     continue

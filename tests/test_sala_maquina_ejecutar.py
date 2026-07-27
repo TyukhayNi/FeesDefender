@@ -3,6 +3,21 @@ from pathlib import Path
 import pytest
 
 from core import sala_maquina as sm
+from core.anon.ocr import ResultadoEscalera
+
+
+def _como_escalera(doble):
+    """Adapta un doble de `ocr_pdf` (devuelve la ruta) al contrato de la escalera.
+
+    El camino OCR pasó a `ocr_pdf_escalera` (`MEJORAS #90`), que devuelve un
+    `ResultadoEscalera` en vez de una ruta pelada. Estos tests siguen midiendo lo
+    de siempre —custodia en 01_OCR/, aislamiento del fallo, refuerzo por visión—,
+    así que se adapta el doble en vez de reescribir cada uno.
+    """
+    def _wrap(entrada, salida, **kw):
+        ruta = Path(doble(entrada, salida, **kw))
+        return ResultadoEscalera(ruta, "redo" if ruta == Path(salida) else "sin_paginas_ciegas")
+    return _wrap
 
 
 def _pdf_con_texto(path: Path, extra: str = ""):
@@ -32,7 +47,7 @@ def test_ejecutar_pdf_digital_escribe_md_sin_ocr(tmp_path, monkeypatch):
     # ocr_pdf NO debe llamarse para un PDF digital
     def _boom(*a, **k):
         raise AssertionError("no debe OCR-izar un PDF con capa de texto")
-    monkeypatch.setattr(sm, "ocr_pdf", _boom)
+    monkeypatch.setattr(sm, "ocr_pdf_escalera", _como_escalera(_boom))
 
     plan = [sm.DocPlan(rel_path="01_Drive EV/encargo.pdf", sha256=sha, ext=".pdf",
                        ruta="pdf", slug=f"encargo__{sha[:8]}")]
@@ -68,7 +83,7 @@ def test_ejecutar_pdf_escaneado_llama_ocr_y_persiste(tmp_path, monkeypatch):
         return "Contrato de arras penitenciales entre las partes. " * 4 \
             if "01_OCR" in str(path) else ""
 
-    monkeypatch.setattr(sm, "ocr_pdf", _fake_ocr)
+    monkeypatch.setattr(sm, "ocr_pdf_escalera", _como_escalera(_fake_ocr))
     monkeypatch.setattr(sm, "_try_pypdf", _fake_pypdf)
     monkeypatch.setattr(sm, "_pdf_num_paginas", lambda p: 1)
 
@@ -108,7 +123,7 @@ def test_ejecutar_ocr_sin_regenerar_no_afirma_custodia(tmp_path, monkeypatch):
             return "corto"                       # < 100 chars -> _texto_suficiente False
         return "Contrato de mediacion inmobiliaria entre las partes firmantes. " * 3
 
-    monkeypatch.setattr(sm, "ocr_pdf", _fake_ocr_prior)
+    monkeypatch.setattr(sm, "ocr_pdf_escalera", _como_escalera(_fake_ocr_prior))
     monkeypatch.setattr(sm, "_try_pypdf", _fake_pypdf)
     monkeypatch.setattr(sm, "_pdf_num_paginas", lambda p: 1)
 
@@ -172,7 +187,7 @@ def test_ejecutar_cobertura_lleva_sha256_del_plan(tmp_path, monkeypatch):
     src = case / "00_Input" / "01_Drive EV" / "encargo.pdf"
     _pdf_con_texto(src)
     sha = sm_file_sha(src)
-    monkeypatch.setattr(sm, "ocr_pdf", lambda *a, **k: (_ for _ in ()).throw(AssertionError()))
+    monkeypatch.setattr(sm, "ocr_pdf_escalera", _como_escalera(lambda *a, **k: (_ for _ in ()).throw(AssertionError())))
     docs = [sm.DocPlan(rel_path="01_Drive EV/encargo.pdf", sha256=sha, ext=".pdf",
                        ruta="pdf", slug=f"encargo__{sha[:8]}")]
     cob = sm.ejecutar(case, docs, case_id="EV-2026-001")
@@ -328,7 +343,7 @@ def test_ejecutar_imagen_convierte_y_ocr(tmp_path, monkeypatch):
         return "Fotografia del inmueble objeto de la mediacion inmobiliaria. " * 3 \
             if "01_OCR" in str(path) else ""
 
-    monkeypatch.setattr(sm, "ocr_pdf", _fake_ocr)
+    monkeypatch.setattr(sm, "ocr_pdf_escalera", _como_escalera(_fake_ocr))
     monkeypatch.setattr(sm, "_try_pypdf", _fake_pypdf)
     monkeypatch.setattr(sm, "_pdf_num_paginas", lambda p: 1)
 
@@ -355,7 +370,7 @@ def test_ejecutar_imagen_conversion_fallida_es_sin_soporte(tmp_path, monkeypatch
 
     def _boom(*a, **k):
         raise AssertionError("no debe OCR-izar si la conversion a PDF fallo")
-    monkeypatch.setattr(sm, "ocr_pdf", _boom)
+    monkeypatch.setattr(sm, "ocr_pdf_escalera", _como_escalera(_boom))
 
     docs = [sm.DocPlan(rel_path="01_Drive EV/foto.heic", sha256=sha, ext=".heic",
                        ruta="imagen", slug=f"foto__{sha[:8]}")]
@@ -381,7 +396,7 @@ def test_ejecutar_vision_refuerza_documento_empty(tmp_path, monkeypatch):
     transcrito = ("Encargo de mediacion firmado por el propietario, "
                   "segun se lee en la imagen de la pagina. " * 2)
 
-    monkeypatch.setattr(sm, "ocr_pdf", _fake_ocr)
+    monkeypatch.setattr(sm, "ocr_pdf_escalera", _como_escalera(_fake_ocr))
     monkeypatch.setattr(sm, "_try_pypdf", lambda p: "")           # OCR no sacó nada -> empty
     monkeypatch.setattr(sm, "_pdf_num_paginas", lambda p: 1)
     monkeypatch.setattr(sm, "_renderizar_paginas", lambda p: ["pagina-fake"])
@@ -414,7 +429,7 @@ def test_ejecutar_vision_refuerza_pdf_digital_gibberish(tmp_path, monkeypatch):
     def _boom_ocr(*a, **k):
         raise AssertionError("no debe OCR-izar un PDF con capa de texto suficiente")
 
-    monkeypatch.setattr(sm, "ocr_pdf", _boom_ocr)
+    monkeypatch.setattr(sm, "ocr_pdf_escalera", _como_escalera(_boom_ocr))
     monkeypatch.setattr(sm, "_try_pypdf", lambda p: gibberish)
     monkeypatch.setattr(sm, "_pdf_num_paginas", lambda p: 1)
     monkeypatch.setattr(sm, "_renderizar_paginas", lambda p: ["pagina-fake"])
@@ -450,7 +465,7 @@ def test_ejecutar_sin_vision_no_llama_transcribir(tmp_path, monkeypatch):
     def _boom(imgs):
         raise AssertionError("vision no debe llamarse si vision=False")
 
-    monkeypatch.setattr(sm, "ocr_pdf", _fake_ocr)
+    monkeypatch.setattr(sm, "ocr_pdf_escalera", _como_escalera(_fake_ocr))
     monkeypatch.setattr(sm, "_try_pypdf", lambda p: "")
     monkeypatch.setattr(sm, "_pdf_num_paginas", lambda p: 1)
     monkeypatch.setattr(sm, "_transcribir_vision", _boom)
@@ -566,7 +581,7 @@ def test_reforzar_reprocesa_solo_dudosos_con_vision(tmp_path, monkeypatch):
             return ""                       # el buscable del escaneado sale vacío -> empty
         return real_pypdf(path)
 
-    monkeypatch.setattr(sm, "ocr_pdf", _fake_ocr)
+    monkeypatch.setattr(sm, "ocr_pdf_escalera", _como_escalera(_fake_ocr))
     monkeypatch.setattr(sm, "_try_pypdf", _pypdf)
     monkeypatch.setattr(sm, "_pdf_num_paginas", lambda p: 1)
 
@@ -649,7 +664,7 @@ def test_ejecutar_ocr_excepcion_con_vision_rescata(tmp_path, monkeypatch):
         raise RuntimeError("PDF cifrado: OCRmyPDF rc=8")
     transcrito = ("Encargo de mediacion firmado por el propietario, honorarios "
                   "pactados del cinco por ciento sobre el precio. " * 3)
-    monkeypatch.setattr(sm, "ocr_pdf", _ocr_boom)
+    monkeypatch.setattr(sm, "ocr_pdf_escalera", _como_escalera(_ocr_boom))
     monkeypatch.setattr(sm, "_try_pypdf", lambda p: "")
     monkeypatch.setattr(sm, "_pdf_num_paginas", lambda p: 1)
     monkeypatch.setattr(sm, "_renderizar_paginas", lambda p: ["pagina-fake"])
@@ -677,7 +692,7 @@ def test_ejecutar_ocr_excepcion_sin_vision_queda_empty(tmp_path, monkeypatch):
         raise RuntimeError("PDF cifrado")
     def _vision_boom(imgs):
         raise AssertionError("no debe intentar visión sin vision=True")
-    monkeypatch.setattr(sm, "ocr_pdf", _ocr_boom)
+    monkeypatch.setattr(sm, "ocr_pdf_escalera", _como_escalera(_ocr_boom))
     monkeypatch.setattr(sm, "_try_pypdf", lambda p: "")
     monkeypatch.setattr(sm, "_pdf_num_paginas", lambda p: 1)
     monkeypatch.setattr(sm, "_transcribir_vision", _vision_boom)
@@ -706,7 +721,7 @@ def test_reforzar_fuentes_desaparecidas_no_emite_evento(tmp_path, monkeypatch):
         Path(salida).write_bytes(b"%PDF buscable vacio")
         return Path(salida)
     real_pypdf = sm._try_pypdf
-    monkeypatch.setattr(sm, "ocr_pdf", _fake_ocr)
+    monkeypatch.setattr(sm, "ocr_pdf_escalera", _como_escalera(_fake_ocr))
     monkeypatch.setattr(sm, "_try_pypdf", lambda p: "" if "01_OCR" in str(p) else real_pypdf(p))
     monkeypatch.setattr(sm, "_pdf_num_paginas", lambda p: 1)
 
@@ -764,7 +779,7 @@ def test_ejecutar_vision_cableada_falla_en_doc_aisla_lote(tmp_path, monkeypatch)
         return Path(salida)
     def _vision_boom(imgs):
         raise RuntimeError("timeout del modelo de visión")
-    monkeypatch.setattr(sm, "ocr_pdf", _fake_ocr)
+    monkeypatch.setattr(sm, "ocr_pdf_escalera", _como_escalera(_fake_ocr))
     monkeypatch.setattr(sm, "_try_pypdf", lambda p: "")
     monkeypatch.setattr(sm, "_pdf_num_paginas", lambda p: 1)
     monkeypatch.setattr(sm, "_renderizar_paginas", lambda p: ["pagina-fake"])
@@ -913,7 +928,7 @@ def test_reforzar_resuelve_w_code_y_reprocesa_dudoso_real(tmp_path, monkeypatch)
         Path(salida).write_bytes(b"%PDF buscable vacio")
         return Path(salida)
 
-    monkeypatch.setattr(sm, "ocr_pdf", _fake_ocr)
+    monkeypatch.setattr(sm, "ocr_pdf_escalera", _como_escalera(_fake_ocr))
     monkeypatch.setattr(sm, "_try_pypdf", lambda p: "")     # siempre vacío -> empty
     monkeypatch.setattr(sm, "_pdf_num_paginas", lambda p: 1)
 
