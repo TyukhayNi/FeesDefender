@@ -26,6 +26,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 8 | [Intake email — filtro de exclusión de ruido](#siguiente-intake-email-filtro-exclusión-de-ruido-administrativo-y-cruzado) | parcial (2/4) | disparador: W-02VUDR (fuga cruzada de 7 casos ajenos + cartera de litigios) | medio |
 | 9 | [Vista procesal en `05_Procedimiento`](#siguiente-vista-procesal-vista-procesal-del-expediente-en-05_procedimiento) | piezas 1-2 ✅ (#137, #140); spec v3.1 con 2 revisiones consumidas | pieza 3 **bloqueada** por la fila #1 (OCR ciego); plan de la pieza 4 por reescribir | medio |
 | 10 | [`.doc` → LibreOffice headless](#siguiente-doc-libreoffice-doc-binario-sin-md-ni-ocr-conversión-libreoffice-headless) | pendiente | disparador: W-02MA0R, la demanda del ordinario solo existe en `.doc` sin gemelo PDF | bajo |
+| 11 | [Cableado del pipeline de correo (`MEJORAS #68`)](#siguiente-cableado-correo-cableado-del-pipeline-de-correo-encadenar-la-atomización-resto-de-mejoras-68) | pendiente | decisión de Nikolai 2026-07-27; falta cerrar el punto de disparo | medio |
 
 > Detalle de cada ítem en su bloque `[SIGUIENTE-*]` más abajo. Backlog sin
 > promover: `docs/MEJORAS_FUTURAS.md`. Ledger de cerrados: `## Cerrados` (final).
@@ -229,6 +230,47 @@ existentes solo bajo demanda, con remapeo de M9/cobertura OCR/catálogo por rel_
 - Fuera de alcance (specs de seguimiento que consumen esta decisión): reenganche fino de
   `email_atomize`/`sala_maquina`/motor de sala de lectura (**#55/#56**), escritor de la
   fuente `entrevista` (**#53**), limpieza de cajones vacíos post-migración.
+
+## [SIGUIENTE-CABLEADO-CORREO] Cableado del pipeline de correo: encadenar la atomización (resto de `MEJORAS #68`)
+
+*Promovido 2026-07-27 por **decisión explícita de Nikolai**, tras verificar el estado real del
+pipeline de correo. El disparador que el ítem esperaba (un adjunto relevante que llegue solo por
+correo, sin copia en Drive) **no** se ha materializado; se promueve por decisión, no por incidente.
+Origen: `MEJORAS #68`. Naturaleza: **cableado**, no motor.*
+
+**El problema en una frase.** Las cinco piezas del pipeline de correo están construidas y ninguna
+llama a la siguiente: si alguien no se acuerda de lanzar la atomización a mano, todo lo demás se
+comporta como si no existiera.
+
+**Estado verificado (2026-07-27, contra el código, no contra la memoria):**
+- **Nadie encadena `atomize_emails`.** Solo lo invocan el CLI manual `scripts/atomize_emails.py` y
+  `scripts/audit_correos_no_separados.py` (que importa un helper para auditar). `core/sala_maquina.py`
+  **no lo menciona en absoluto**; ni `abrir_caso` tampoco.
+- **El contenido de los adjuntos atomizados no llega a la sala.** `sala_maquina` lee `00_Input` por
+  invariante declarada (`_ZONAS_VETADAS`, docstring del módulo), así que lo que la atomización deja en
+  `01_Procesado/Emails/adjuntos/` queda fuera; sus fichas siguen con
+  `Descripción: (pendiente; OCR en fase 2)`.
+- **YA RESUELTO, no repetir:** el flag `--extraer-adjuntos` se expone en `scripts/abrir_caso.py`
+  (commit `07b0377`), con default `False` **a propósito** — activarlo mueve la superficie de dedup de
+  todo intake futuro, y eso es decisión aparte.
+
+**Decisión abierta que hay que cerrar antes de construir:** ¿dónde vive el disparo? Las tres opciones
+que la exploración del 2026-07-19 dejó sin resolver son (i) que lo encadene `abrir_caso`, (ii) que lo
+invoque `organizar-sala-maquina` antes de su OCR, o (iii) una fachada `procesar_expediente()`. El
+orden correcto está fijado por la operativa (**atomizar antes de la sala de máquina**, o el OCR queda
+incompleto); lo que falta es quién lo garantiza mecánicamente en vez de por memoria del operador.
+
+**Frontera con otros ítems — no construir dos veces:**
+- El **motor** de extracción/OCR de adjuntos (unificar Docling → OCRmyPDF, cola de visión NO-OP) es
+  **`MEJORAS #87`**, no este bloque. Aquí solo se cablea quién llama a quién.
+- El **consumo** de las fuentes atomizadas por la sala de lectura es **`MEJORAS #86`**.
+- El filtro de ruido del intake de correo es el bloque `[SIGUIENTE-INTAKE-EMAIL-FILTRO]`, distinto.
+
+- [ ] Cerrar la decisión del punto de disparo (abrir_caso / organizar-sala-maquina / fachada).
+- [ ] Encadenar la atomización en ese punto, con tests que fijen el orden.
+- [ ] Decidir por separado si `--extraer-adjuntos` pasa a default `True` (mueve el dedup del intake).
+
+---
 
 ## [SIGUIENTE-INTAKE-EMAIL-FILTRO] Intake email — filtro de exclusión de ruido administrativo y cruzado
 
