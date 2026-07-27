@@ -409,6 +409,38 @@ DERIVADOS_REGENERABLES: frozenset[str] = frozenset({
     "_TRIAJE_VIABILIDAD.docx",
 })
 
+# Grupos de merge INDIVISIBLES (hallazgo N6 de la revisión adversarial del
+# 2026-07-27). El merge decide fichero por fichero, como si cada uno fuera
+# independiente; hay tríos de ficheros de control que solo tienen sentido juntos.
+#
+# Regla (la aplica `repository_checkout._vetar_grupos`): un grupo se sube SOLO si
+# todos sus miembros son SKIP o COPY_LOCAL/RENAME. Cualquier CONFLICT,
+# PRESERVE_DRIVE o DELETE_DRIVE entre ellos veta la subida de TODO el grupo.
+#
+# Que PRESERVE_DRIVE también vete no es un exceso: es el caso silencioso. Si el
+# mapa solo cambió en Drive, la tabla general devuelve PRESERVE_DRIVE (correcto)
+# y sin veto el ledger local se subiría igualmente → Drive con mapa nuevo y
+# ledger viejo, semáforo VERDE y lock liberado. Nadie se enteraría.
+#
+# El grupo son los ficheros de CONTROL, no la carpeta: si fuera
+# `05_Procedimiento/**`, un lío en el mapa impediría subir los escritos del
+# propio letrado y su `Jurisprudencia/`, que no tienen relación. Los PDF de la
+# vista se desacoplan sin peligro — un fichero sin línea en el ledger se reporta
+# como ajeno (visible y recuperable); un ledger que reclama ficheros ausentes
+# aborta por las puertas de propiedad. La dirección peligrosa es la que se veta.
+#
+# Rutas relativas al caso, separador POSIX, coincidencia EXACTA (no por basename
+# como DERIVADOS_REGENERABLES: aquí la ruta completa es parte de la identidad).
+GRUPOS_MERGE: tuple[tuple[str, ...], ...] = (
+    # Vista procesal de 05_Procedimiento (spec 2026-07-27): mapa (maestro),
+    # ledger de propiedad y registro de ocurrencias del CRM.
+    (
+        "05_Procedimiento/_mapa_procesal.yaml",
+        "05_Procedimiento/_MANIFIESTO_PROCESAL.json",
+        "00_Input/_ocurrencias_crm.json",
+    ),
+)
+
 # Carpeta de la bandeja del guard de escritura (DISEÑO_V2 §6). Dentro del caso.
 PENDIENTE_CHECKIN_SUBDIR = "_pendiente_checkin"
 

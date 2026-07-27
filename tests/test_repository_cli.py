@@ -245,3 +245,54 @@ def test_integrar_bandeja_preserva_rel_anidado(cli):
     paths = {"_pendiente_checkin/crm_manual/00_Input/05_CRM/General/d.pdf"}
     plan = cli.planificar_integracion_bandeja(paths)
     assert plan[0]["destino"] == "00_Input/05_CRM/General/d.pdf"
+
+
+# ---------------------------------------------------------------------------
+# Veto de grupo indivisible (N6) — el frontal debe ENTERARSE
+# ---------------------------------------------------------------------------
+
+def _plan_con_veto():
+    from core import repository_checkout as rc
+    return [
+        rc.AccionMerge("05_Procedimiento/_mapa_procesal.yaml",
+                       rc.ACCION_PRESERVE_DRIVE, "solo cambió Drive", caso_tabla=3),
+        rc.AccionMerge("05_Procedimiento/_MANIFIESTO_PROCESAL.json",
+                       rc.ACCION_VETO_GRUPO, "Grupo indivisible inconsistente — bloquea: "
+                       "05_Procedimiento/_mapa_procesal.yaml (PRESERVE_DRIVE)."),
+        rc.AccionMerge("05_Procedimiento/DEMANDA_W-02MA0R.docx",
+                       rc.ACCION_COPY_LOCAL, "nuevo en local", caso_tabla=7),
+    ]
+
+
+def test_rutas_a_copiar_excluye_los_vetados(cli):
+    """Un VETO_GRUPO no se sube; lo que está fuera del grupo, sí."""
+    assert cli.rutas_a_copiar(_plan_con_veto()) == [
+        "05_Procedimiento/DEMANDA_W-02MA0R.docx"
+    ]
+
+
+def test_semaforo_amarillo_por_veto_de_grupo(cli):
+    """Sin conflictos ni fallo de copia, pero con veto → NO puede salir verde.
+
+    Es el caso silencioso de N6c: si saliera verde, el lock se liberaría y nadie
+    sabría que el ledger se quedó sin subir.
+    """
+    assert cli.clasificar_semaforo(
+        conflictos=0, copia_fallo_sistemico=False, verificacion_limpia=True,
+        vetados=1,
+    ) == "amarillo"
+
+
+def test_semaforo_verde_sigue_verde_sin_vetos(cli):
+    assert cli.clasificar_semaforo(
+        conflictos=0, copia_fallo_sistemico=False, verificacion_limpia=True,
+        vetados=0,
+    ) == "verde"
+
+
+def test_delta_lista_los_vetados_con_su_bloqueante(cli):
+    """El DELTA tiene que decir qué no se subió y por culpa de quién."""
+    md = cli.render_delta(_plan_con_veto())
+    assert "_MANIFIESTO_PROCESAL.json" in md
+    assert "_mapa_procesal.yaml" in md
+    assert "grupo" in md.lower()
