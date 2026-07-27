@@ -23,7 +23,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 5 | [Drive-disco: pasos 5-7 + Claude Code](#siguiente-mcp-drive-disco-pasos-5-7-diferidos) | ✅ desplegado | resto pasivo: check Modo 1 en caso real | medio |
 | 6 | [abrir-caso F3-judicial](#abrir-caso--f1--f2a--f3-ac-mergeadas-f2b-aparcada-f3-judicial-pendiente) | disparador confirmado 2026-07-22 | plan concreto listo (4 piezas, ver bloque) | medio |
 | 7 | [Google MCP F4 (Calendar)](#siguiente-google-mcp-f1-lectura--mergeada--f2-escriturapermisosnavegación--mergeada--f3f4-pendientes) | diferida | disparador | medio |
-| 8 | [Intake email — filtro de exclusión de ruido](#siguiente-intake-email-filtro-exclusión-de-ruido-administrativo-y-cruzado) | pendiente | disparador: W-02VUDR (fuga cruzada de 7 casos ajenos + cartera de litigios) | medio |
+| 8 | [Intake email — filtro de exclusión de ruido](#siguiente-intake-email-filtro-exclusión-de-ruido-administrativo-y-cruzado) | parcial (2/4) | disparador: W-02VUDR (fuga cruzada de 7 casos ajenos + cartera de litigios) | medio |
 
 > Detalle de cada ítem en su bloque `[SIGUIENTE-*]` más abajo. Backlog sin
 > promover: `docs/MEJORAS_FUTURAS.md`. Ledger de cerrados: `## Cerrados` (final).
