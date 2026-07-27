@@ -256,7 +256,7 @@ desconocidas, así que ampliarlo más adelante no rompe nada.
 | Sin cobertura para un documento soportado | — | **bloqueo**, salvo override explícito que registre «crudo no buscable» |
 
 La ruta del artefacto OCR se **deriva** (`slug = utils.output_slug(rel_path, sha256)` →
-`01_Procesado/02 Sala de máquina/01_OCR/<slug>.pdf`), pero eso es una **verificación**, no una
+`01_Procesado/02_Sala de máquina/01_OCR/<slug>.pdf`), pero eso es una **verificación**, no una
 inferencia de estado: quien dice que hay OCR es `metodo`, y si el artefacto no está donde debe, se
 bloquea en vez de degradar en silencio.
 
@@ -404,7 +404,7 @@ Ledger `05_Procedimiento/_MANIFIESTO_PROCESAL.json`, por destino:
  "raw_path": "05_CRM/01_Demanda/ordinario_vuelta_comprador.doc",
  "raw_sha256": "…",
  "source_kind": "converted",
- "source_path": "01_Procesado/02 Sala de máquina/01_OCR/<slug>.pdf",
+ "source_path": "01_Procesado/02_Sala de máquina/01_OCR/<slug>.pdf",
  "source_sha256": "…",
  "destination_sha256": "…"}
 ```
@@ -521,7 +521,7 @@ escrito generado se registre en su fase (camino normal del flujo de §1).
 - **La preparación de la documental numerada.** En el flujo de régimen (§1.1) la carpeta es el
   origen, pero **hoy nada produce el `D-04_chat_whatsapp.pdf`**: `escritos-judiciales` genera el
   escrito, no sus documentos; la sala de máquina convierte y OCRiza pero deja el resultado en
-  `01_Procesado/02 Sala de máquina`, sin numerar y sin condición de documento del pleito. El salto de
+  `01_Procesado/02_Sala de máquina`, sin numerar y sin condición de documento del pleito. El salto de
   «material bruto de `00_Input`» a «documento numerado listo para aportar» es **manual** y no tiene
   dueño. Esta pieza lo acepta sin problema como `origen: despacho`, pero alguien tiene que ponerlo.
   Es un proyecto propio, con su propia decisión sobre quién numera y con qué criterio. →
