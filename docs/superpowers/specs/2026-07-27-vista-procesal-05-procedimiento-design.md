@@ -22,7 +22,9 @@ _Precedentes: `docs/INTEGRACION_SUDESPACHO.md` §13 (árbol `05_CRM`), `PLAN.md`
 | **Idempotencia** | `apply` solo toca lo que figura en su propio `_MANIFIESTO_PROCESAL.json`. Escritos generados y `Jurisprudencia/` son inalcanzables por construcción |
 | **Resolución `doc_id` → fichero** | Opción **B**: persistir el `doc_id` en la entrada canónica del manifiesto de intake (hoy solo vive en los alias) |
 | **Índice para el letrado** | El que ya existe: `<carpeta>/_index.md` de `registrar_outputs.py`. **No se inventa un segundo índice humano** — ver §2.3 |
-| **Qué fichero se copia** | El **PDF buscable** de la sala de máquina (`01_OCR/<slug>.pdf`) cuando existe; el crudo de `05_CRM` cuando no. Ver §2.4 |
+| **Qué fichero se copia** | El **PDF buscable** de la sala de máquina (`01_OCR/<slug>.pdf`) cuando existe; el crudo cuando no; y el crudo **con aviso** si el documento es `sin_soporte`. Es el criterio que Nikolai ya cerró el 2026-07-19 para la sala de lectura, aplicado aquí. Ver §2.4 |
+| **`01_OCR/` no se universaliza** | Sigue siendo artefacto de custodia («a esto le añadimos capa de texto»), no almacén de todo. La capa universal es `03_MD/`. Razonado en §2.4 para que no se «arregle» después |
+| **`.doc` sin MD ni OCR** | Hueco real: `clasificar_ruta` lo manda a `sin_soporte`. Afecta a la demanda del ordinario del caso piloto. Se cierra con `MEJORAS #61` (LibreOffice headless), **promovido a `PLAN.md` el 2026-07-27**. No bloquea esta pieza |
 | **Documentos presentados en los dos procedimientos** | Se copian en **ambas** carpetas, con la numeración de cada pleito. El reparto es por `doc_id`, no por SHA: cada carpeta queda completa y legible sin salir de ella (§4.2) |
 | **Sala de lectura** | Los procesales **no** van a `01_Procesado/Sala lectura`. `05_Procedimiento` ya es la sala de lectura del letrado para la fase procesal (§7) |
 
@@ -156,15 +158,50 @@ La ruta de esa salida es **derivable, no hay que adivinarla**:
 —`rel_path` y `sha256`— ya están en el manifiesto de intake. El PDF buscable vive en
 `01_Procesado/02_Sala de máquina/01_OCR/<slug>.pdf`.
 
-**Regla de origen, de dos ramas y determinista:**
+**Esta regla no es nueva: es el criterio que Nikolai ya cerró el 2026-07-19** para la sala de
+lectura (`docs/MEJORAS_FUTURAS.md`, «Criterio de COPIA a la sala — CERRADO»): PDF nativo /
+`.docx` / `.txt` / foto → **crudo**; PDF o imagen **escaneada** → **OCR**; email → MD legible +
+adjuntos; y «**el MD suelto NUNCA sustituye a un documento visual**» (firmas, sellos, fotos,
+tablas). Aquí se aplica el mismo criterio a la vista procesal, no se inventa otro. De su cuarta
+regla se sigue, además, que el MD **no** acompaña al PDF en `05_Procedimiento` (§7).
+
+**Regla de origen, de tres ramas y determinista:**
 
 1. Si existe `01_OCR/<slug>.pdf` → se copia **ese**. Es la versión con capa de texto de un
    documento escaneado.
-2. Si no existe → se copia el crudo de `05_CRM`. La ausencia de artefacto en `01_OCR/` significa
-   que OCRmyPDF no regeneró porque **el PDF ya traía texto**: el crudo ya es buscable.
+2. Si no existe pero el documento tiene MD con `ocr_quality` distinto de `sin_soporte` → se copia
+   el crudo de `05_CRM`. La ausencia de artefacto en `01_OCR/` significa que OCRmyPDF no regeneró
+   porque **el PDF ya traía texto**: el crudo ya es buscable.
+3. Si el documento es **`sin_soporte`** (no hay MD ni OCR) → se copia el crudo **y se avisa**. Es un
+   documento que el letrado puede abrir pero que ningún LLM puede leer. Ver el aviso abajo.
 
 Así el letrado busca dentro del documento sin salir de la carpeta, que es el objetivo de toda la
 pieza. El `sha256` que el ledger registra es el **del fichero copiado**, no el del crudo.
+
+**De dónde sale la señal de fiabilidad.** Del **frontmatter de `03_MD/<slug>.md`**
+(`sala_maquina._escribir_md`): `ocr_quality` (`ok`|`low`|`empty`), `ocr` (bool), `chars`,
+`text_sha256`. La señal viaja EN el MD; **no** hay que parsear `_cobertura.md`. `plan` reporta los
+documentos asignados cuyo `ocr_quality` no sea `ok`, y los `sin_soporte` aparte: no bloquea —el
+fichero se copia igual y el letrado lo puede leer— pero deja constancia de que su texto no es
+explotable.
+
+**`01_OCR/` no se universaliza.** Es tentador hacer que contenga un PDF buscable de *todos* los
+documentos para tener una sola regla; **no se hace**, y queda escrito aquí para que nadie lo
+«arregle» más adelante: (a) `01_OCR/` es un **artefacto de custodia** — significa «a este documento
+le añadimos una capa de texto»; llenarlo de copias idénticas al crudo destruye esa información, que
+es relevante a efectos de prueba; (b) para los nativos (`.eml`, `.xlsx`, `.docx`) no existe PDF y
+habría que sintetizarlo, añadiendo un paso y un riesgo de fidelidad; (c) duplicaría ~65 PDF por
+caso en Drive. La capa universal es **`03_MD/`**, no `01_OCR/`.
+
+**El hueco real: `sin_soporte`.** La capa universal solo es universal si `03_MD/` cubre todo, y hoy
+no lo hace: `clasificar_ruta` manda a `sin_soporte` cualquier extensión fuera de `.pdf`, `_EXTS_IMAGEN`
+y `_EXTS_NATIVO`. **`.doc` (Word binario) está fuera** —la lista tiene `.docx` y `.rtf` pero no
+`.doc`— así que no tiene ni MD ni OCR. En el caso piloto son 2 de 69 ficheros, y uno es
+**`ordinario_vuelta_comprador.doc`: la demanda del juicio ordinario**, que en el CRM existe *solo*
+en ese formato, sin gemelo PDF. Cerrarlo es `MEJORAS #61` (conversión LibreOffice headless
+`soffice --convert-to` aguas arriba de `clasificar_ruta`), **promovido a `PLAN.md` el 2026-07-27**
+con este caso como disparador. **Dependencia:** la vista procesal funciona sin ese arreglo —copia el
+crudo y avisa—, pero la preparación de la audiencia previa de W-02MA0R lo necesita.
 
 **Orden de ejecución que esto impone:** la sala de máquina corre **antes** de la vista procesal.
 Si se ejecuta al revés, la vista se llena de crudos sin capa de texto. `plan` lo avisa cuando la
@@ -333,7 +370,10 @@ antigua sin `doc_id` sigue resolviendo y lo adquiere al re-registrar.
 **Sobre el origen buscable (§2.4):** con `01_OCR/<slug>.pdf` presente se copia ese y el `sha256`
 del ledger es el suyo, no el del crudo; sin artefacto en `01_OCR/` se copia el crudo; un cambio del
 `01_OCR/<slug>.pdf` tras un re-OCR reabre el documento como `copiar` y sobrescribe; sin
-`02_Sala de máquina/` la herramienta avisa y sigue.
+`02_Sala de máquina/` la herramienta avisa y sigue. **Tercera rama:** un documento sin MD ni OCR
+(`.doc`, u otra extensión fuera de los tres conjuntos de `clasificar_ruta`) se copia crudo y se
+reporta como `sin_soporte`, sin bloquear. Y la señal de fiabilidad se lee del **frontmatter del
+MD**, no de `_cobertura.md`: un `ocr_quality` `low`/`empty` se reporta y el documento se copia igual.
 
 **Sobre los artefactos (§2.3):** `_index.md` y `_MANIFIESTO_PROCESAL.json` **no** aparecen nunca en
 `ajenos`; `apply` añade a `_index.md` una fila por documento depositado y no duplica filas al

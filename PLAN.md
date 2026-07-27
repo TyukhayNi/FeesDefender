@@ -23,9 +23,63 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 5 | [abrir-caso F3-judicial](#abrir-caso--f1--f2a--f3-ac-mergeadas-f2b-aparcada-f3-judicial-pendiente) | disparador confirmado 2026-07-22 | plan concreto listo (4 piezas, ver bloque) | medio |
 | 6 | [Google MCP F4 (Calendar)](#siguiente-google-mcp-f1-lectura--mergeada--f2-escriturapermisosnavegación--mergeada--f3f4-pendientes) | diferida | disparador | medio |
 | 7 | [Intake email — filtro de exclusión de ruido](#siguiente-intake-email-filtro-exclusión-de-ruido-administrativo-y-cruzado) | pendiente | disparador: W-02VUDR (fuga cruzada de 7 casos ajenos + cartera de litigios) | medio |
+| 8 | [Vista procesal en `05_Procedimiento`](#siguiente-vista-procesal-vista-procesal-del-expediente-en-05_procedimiento) | spec lista, plan por rehacer | revisión adversarial (Codex) pendiente | medio |
+| 9 | [`.doc` → LibreOffice headless](#siguiente-doc-libreoffice-doc-binario-sin-md-ni-ocr-conversión-libreoffice-headless) | pendiente | disparador: W-02MA0R, la demanda del ordinario solo existe en `.doc` sin gemelo PDF | bajo |
 
 > Detalle de cada ítem en su bloque `[SIGUIENTE-*]` más abajo. Backlog sin
 > promover: `docs/MEJORAS_FUTURAS.md`. Ledger de cerrados: `## Cerrados` (final).
+
+---
+
+## [SIGUIENTE-VISTA-PROCESAL] Vista procesal del expediente en `05_Procedimiento`
+*Abierto 2026-07-27 (Nikolai), sobre el expediente CRM 487 / caso `W-02MA0R`. Spec:
+`docs/superpowers/specs/2026-07-27-vista-procesal-05-procedimiento-design.md`.*
+
+**Objetivo.** Cinco carpetas procesales en `05_Procedimiento` (monitorio demanda+documentos,
+monitorio oposición, ordinario demanda+documentos, ordinario contestación, otros escritos)
+construidas desde un mapping explícito `doc_id → carpeta` que decide el letrado, dejando
+`00_Input/05_CRM` intacto como espejo del CRM. Objetivo de uso: **leer un procedimiento entero
+sin salir de su carpeta**, con el PDF buscable.
+
+**Estado.** Spec al día (v2 + §8 de impacto en skills). **El plan de implementación
+(`2026-07-27-vista-procesal-05-procedimiento.md`) está por detrás del spec y hay que rehacerlo**
+tras la revisión adversarial; su Task 9 además dice «cuatro copias» de `registrar_outputs.py`
+cuando son siete. Siguiente paso: revisión adversarial por Codex → handoff → rehacer plan.
+
+**Bidireccional (contexto del 2026-07-27).** Lo que genera el despacho sube al CRM (para el
+procurador y para centralizar); lo que llega del juzgado y del contrario baja del CRM. De ahí
+`origen: crm | despacho` en el mapa. **La subida carpeta → CRM no está construida**: los endpoints
+están inventariados en el atlas pero `core/` solo lee (§7 del spec) → `MEJORAS_FUTURAS.md`.
+
+**Dependencia con el punto 9 de esta cola:** la vista funciona sin el arreglo de `.doc` (copia el
+crudo y avisa), pero la audiencia previa de W-02MA0R lo necesita.
+
+---
+
+## [SIGUIENTE-DOC-LIBREOFFICE] `.doc` binario sin MD ni OCR — conversión LibreOffice headless
+*Promovido 2026-07-27 desde `MEJORAS #61` (Cluster D) por disparador real. Decisión de Nikolai:
+LibreOffice, descartada la conversión vía CRM (`POST /api/documents/convert/doc-to-pdf`) por
+complejidad.*
+
+**Problema.** `core/sala_maquina.clasificar_ruta` enruta por extensión a `pdf` | `imagen` |
+`nativo` | `sin_soporte`. `_EXTS_NATIVO` incluye `.docx` y `.rtf` pero **no `.doc`** (Word binario
+antiguo), que cae a `sin_soporte`: **ni espejo Markdown ni OCR**. Solo queda el crudo, que ningún
+LLM puede leer.
+
+**Disparador (lo que lo saca del backlog).** En W-02MA0R la **demanda del juicio ordinario** existe
+en el gestor documental del CRM *solo* como `ordinario_vuelta_comprador.doc`, **sin gemelo PDF**.
+Cuando se anotó `MEJORAS #61` todos los `.doc` de VALERO tenían gemelo y no había pérdida; ahora sí
+la hay, y afecta al documento central para preparar la audiencia previa. En el expediente son 2 de
+69 ficheros (el otro es un burofax).
+
+**Qué hacer.** Conversión LibreOffice headless (`soffice --convert-to pdf`) **aguas arriba** de
+`clasificar_ruta`, de modo que un `.doc` entre por la vía `pdf` normal y obtenga MD y, si es
+escaneado, OCR. Puntos a cerrar en el plan: dónde vive el PDF derivado (no en `00_Input`, que es
+crudo), cómo se registra su procedencia, qué pasa si `soffice` no está instalado (degradar a
+`sin_soporte` con nota, nunca fallar el lote), y el arranque en frío de LibreOffice en Windows.
+
+**No entra:** los otros dos puntos de `MEJORAS #61` (localizador de página en escaneado, extractor
+de entidades con visión) siguen en backlog, sin disparador.
 
 ---
 

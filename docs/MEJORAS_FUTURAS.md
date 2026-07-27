@@ -2460,6 +2460,12 @@ testigo compradora (art. 156 LEC) y la testigo directora de zona (DNI pendiente)
 **Anotado 2026-07-14.** Cluster D (backlog). Tres huecos observados en VALERO:
 - **`.doc` binario → `sin_soporte`.** Añadir conversión LibreOffice headless (`soffice --convert-to`) aguas
   arriba en `core/sala_maquina.clasificar_ruta`. (En VALERO había gemelos PDF, sin pérdida.)
+  **[PROMOVIDO → PLAN.md 2026-07-27]** — `[SIGUIENTE-DOC-LIBREOFFICE]`. **Disparador:** en W-02MA0R
+  (expediente CRM 487) la **demanda del juicio ordinario** existe en el CRM *solo* como
+  `ordinario_vuelta_comprador.doc`, **sin gemelo PDF**: cae a `sin_soporte`, no tiene ni MD ni OCR y
+  ningún LLM puede leerla. Se acabó el «sin pérdida» que justificaba dejarlo en backlog. Los otros dos
+  puntos de esta entrada (localizador de página, extractor de entidades) **siguen en backlog**: no tienen
+  disparador.
 - **Localizador de página falla en PDF escaneado.** `pdfminer.extract_pages` devolvió `None` al buscar por
   texto un bloque en un escaneo (sin capa de texto); fallback por render+visión o por índice de página.
 - **Extractor de "bloque de citación / entidades" con visión** (DNI, IBAN, email, móvil, domicilio) para
