@@ -16,7 +16,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 
 | # | Ítem | Estado | Gate / disparador | Esf. |
 |---|------|--------|-------------------|------|
-| 1 | [OCR ciego bajo el sello (`MEJORAS #90`)](#siguiente-ocr-ciego-texto-perdido-bajo-el-sello-de-firma-mejoras-90) | pendiente | **disparador confirmado 2026-07-27: falta el 81-83 % del texto de las cuentas anuales de W-02VND1 (medidas cautelares)** | medio |
+| 1 | [OCR ciego bajo el sello (`MEJORAS #90`)](#siguiente-ocr-ciego-texto-perdido-bajo-el-sello-de-firma-mejoras-90) | **parcial: diagnóstico y rescate hechos, la causa sigue viva** | las 6 pérdidas medidas están recuperadas y en Drive, pero el MOTOR no cambió: `redo_ocr=True` existe en `ocr_pdf` y **ningún llamador lo pasa** → el próximo escaneo con solo pie de firma volverá a salir `ok` | medio |
 | 2 | [Infra C — art. 156 LEC](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado (quick win) | bajo |
 | 3 | [Infra B — expediente scratch](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado | medio |
 | 4 | [MCP sudespacho F1](#siguiente-mcp-sudespacho-mcp-sudespacho-crm-del-despacho--f1-lectura-spec-hecho-plan-pendiente) | spec lista | gates de despliegue | alto |
@@ -66,8 +66,8 @@ ser cambiar una bandera.
       Hoy `redo_ocr=True` existe en `ocr_pdf` pero **ningún llamador lo pasa**: es código inalcanzable.
 - [ ] **(b) `ocr_quality` por página**, no solo la media: marcar `low` si ≥N páginas quedan bajo el
       umbral aunque el promedio pase. Es lo que rompe la dilución.
-- [x] **(c1) Cuentas anuales de W-02VND1 RECUPERADAS** (2026-07-27), en la **copia local** del checkout
-      abierto — no en Drive:
+- [x] **(c1) Cuentas anuales de W-02VND1 RECUPERADAS** (2026-07-27), primero en la copia local del
+      checkout y **ya en Drive** tras el `case_checkin` (ver abajo):
 
       | ejercicio | páginas recuperadas | texto antes | ahora |
       |---|---|---|---|
@@ -82,13 +82,15 @@ ser cambiar una bandera.
       PATRIMONIO NETO / PÉRDIDAS Y GANANCIAS / ACTIVO / PASIVO / MEMORIA. Versión anterior en
       `99_Versiones anteriores/recuperacion_ocr_2026-07-27/`; evento `procesado_sala_maquina`
       (`modo: recuperacion_ocr_sello`) en el log; `00_Input/` intacto.
-      **Pendiente operativo: el `checkin` a Drive lo decide Nikolai** (hay checkout abierto desde
-      2026-07-23; la copia local va por delante — 677 MD vs 625).
+      ✅ **Subido a Drive** con el `case_checkin` del 2026-07-27T17:56:49 (evento en
+      `_intake_log.jsonl`), verificado por contenido en el repositorio canónico: los tres MD
+      recuperados y el respaldo `99_Versiones anteriores/recuperacion_ocr_2026-07-27/` están en
+      `G:`. El checkout abierto el 2026-07-23 queda así cerrado.
 - [x] **(c2) Tasación y exposés RECUPERADOS** (2026-07-27):
 
       | documento | caso | destino | texto antes | ahora | peldaño |
       |---|---|---|---|---|---|
-      | Tasación TECNITASA (2 copias de custodia, bytes idénticos) | W-02VND1 | local (checkout) | 46.142 | **62.828** | por página, 12 de 34 |
+      | Tasación TECNITASA (2 copias de custodia, bytes idénticos) | W-02VND1 | local → **Drive** (checkin 2026-07-27) | 46.142 | **62.828** | por página, 12 de 34 |
       | Exposé de propiedad | W-02XOR7 | Drive (sin checkout) | 9.854 | **13.800** | doc. entero |
       | Exposé | W-02VUDR | Drive (sin checkout) | 12.490 | **13.977** | doc. entero |
 
