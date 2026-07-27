@@ -3276,6 +3276,11 @@ molesta en la sala. Hasta entonces, la heurística de nombre basta.
 
 ## 90. OCR ciego bajo el sello: un escaneo con pie de firma sale `ok` en `_cobertura.md` y nadie lo revisa
 
+> **[PROMOVIDO → `PLAN.md`]** (2026-07-27). El paso 0 se ejecutó y encontró pérdida REAL y material en
+> un caso vivo: en **W-02VND1** faltaba el **81-83 % del texto de las cuentas anuales 2022/2023/2024**
+> depositadas en `04_Manual/MEDIDAS CAUTELARES/`. Disparador concreto cumplido → entrada en `PLAN.md`
+> con referencia `MEJORAS #90`. Resultados medidos y corrección del arreglo propuesto, al final.
+
 **Disparador:** ninguno todavía — origen en `docs/superpowers/handoffs/handoff-2026-07-27-sala-maquina-ocr-gaps.md`
 (`[SM-OCR-02]`, diagnóstico de lectura hecho en Cowork durante W-02MA0R, un expediente ad-hoc fuera del
 layout FeesDefender). A diferencia del handoff, lo de abajo **sí está verificado en vivo** contra
@@ -3351,6 +3356,42 @@ decompression bomb"). Además el fallo, si ocurre, **es ruidoso**: en la ruta im
 `core/sala_maquina.py:529` → fila `sin_soporte` con la nota "conversión a PDF falló: …", y en la ruta PDF
 queda `empty` con "OCR falló: …". En ambos casos el documento aparece como no-`ok` en `_cobertura.md`,
 que es el comportamiento diseñado. Es el opuesto exacto de #90: falla a la vista. No merece entrada.
+
+### Resultado del paso 0 (ejecutado 2026-07-27) — el hueco es real y material
+
+Detector construido y corrido en modo read-only sobre los **5 casos con Sala de máquina**
+(`python -m scripts.detectar_ocr_ciego todos`): **402 documentos `ok`, 24 candidatos**. Los candidatos
+se midieron re-OCR-izando y comparando contra el `raw_text/` que el expediente tiene hoy — la única
+medida honesta, porque el cribado sobre-marca.
+
+| documento (caso) | texto HOY | tras re-OCR | faltaba |
+|---|---|---|---|
+| Cuentas anuales **2024** (W-02VND1, `MEDIDAS CAUTELARES`) | 10.979 | 65.076 | **83 %** |
+| Cuentas anuales **2023** (W-02VND1, ídem) | 10.082 | 53.857 | **81 %** |
+| Cuentas anuales **2022** (W-02VND1, ídem) | 10.381 | 55.011 | **81 %** |
+| Tasación TECNITASA (W-02VND1) | 46.142 | 62.711 | **26 %** |
+| Exposé de propiedad (W-02XOR7) | 9.854 | 13.732 | **28 %** |
+| Exposé (W-02VUDR) | 12.490 | 13.889 | **10 %** |
+
+Los cuatro primeros están en un **caso vivo** y los tres primeros son prueba de solvencia en una pieza
+de medidas cautelares. Eso es lo que convierte #90 de riesgo teórico en disparador.
+
+**Corrección importante al arreglo propuesto: `--redo-ocr` NO basta.** Los cuatro documentos de
+W-02VND1 son **AcroForm** (PDF con formulario rellenable) y ocrmypdf rechaza el modo redo sobre ellos:
+`InputFileError: This PDF has a user fillable form. --redo-ocr (or --mode redo) is not currently
+possible on such files`. Lo único que recuperó el texto fue `--force-ocr`, justo el modo destructivo
+que se abandonó tras VALERO. El arreglo tiene por tanto que ser una **escalera con degradación
+explícita**, no un cambio de bandera: (1) `--redo-ocr` por defecto; (2) si falla por AcroForm, aislar
+las páginas afectadas y OCR-izarlas aparte (o `--force-ocr` acotado con `--pages`) en vez de rendirse;
+(3) si nada funciona, **marcar el documento `low`** para que entre en la worklist y en `reforzar` —
+nunca dejarlo `ok`. En los dos Exposés `--redo-ocr` sí funcionó sin más.
+
+**Sobre la precisión del detector (leer antes de fiarse de sus cifras).** Es un cribado: de 24
+candidatos, 6 resultaron pérdidas reales. Falsos positivos confirmados midiendo: DNIs y capturas de
+WhatsApp (venían de `.jpg`, sin capa de texto que saltar → el OCR corrió entero), un poder notarial
+(fuente con 0 chars, misma razón) y dos contratos C214 (la fuente tenía 41 chars pero el MD final
+tiene 8.766: ocrmypdf sí los OCR-izó). El discriminante «la fuente tiene capa de texto» elimina el
+grueso del ruido pero no sustituye a la medición; el detector sirve para **acotar a quién medir**.
 
 ---
 

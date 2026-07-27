@@ -16,16 +16,62 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 
 | # | Ítem | Estado | Gate / disparador | Esf. |
 |---|------|--------|-------------------|------|
-| 1 | [Infra C — art. 156 LEC](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado (quick win) | bajo |
-| 2 | [Infra B — expediente scratch](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado | medio |
-| 3 | [MCP sudespacho F1](#siguiente-mcp-sudespacho-mcp-sudespacho-crm-del-despacho--f1-lectura-spec-hecho-plan-pendiente) | spec lista | gates de despliegue | alto |
-| 4 | [Drive-disco: pasos 5-7 + Claude Code](#siguiente-mcp-drive-disco-pasos-5-7-diferidos) | ✅ desplegado | resto pasivo: check Modo 1 en caso real | medio |
-| 5 | [abrir-caso F3-judicial](#abrir-caso--f1--f2a--f3-ac-mergeadas-f2b-aparcada-f3-judicial-pendiente) | disparador confirmado 2026-07-22 | plan concreto listo (4 piezas, ver bloque) | medio |
-| 6 | [Google MCP F4 (Calendar)](#siguiente-google-mcp-f1-lectura--mergeada--f2-escriturapermisosnavegación--mergeada--f3f4-pendientes) | diferida | disparador | medio |
-| 7 | [Intake email — filtro de exclusión de ruido](#siguiente-intake-email-filtro-exclusión-de-ruido-administrativo-y-cruzado) | pendiente | disparador: W-02VUDR (fuga cruzada de 7 casos ajenos + cartera de litigios) | medio |
+| 1 | [OCR ciego bajo el sello (`MEJORAS #90`)](#siguiente-ocr-ciego-texto-perdido-bajo-el-sello-de-firma-mejoras-90) | pendiente | **disparador confirmado 2026-07-27: falta el 81-83 % del texto de las cuentas anuales de W-02VND1 (medidas cautelares)** | medio |
+| 2 | [Infra C — art. 156 LEC](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado (quick win) | bajo |
+| 3 | [Infra B — expediente scratch](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado | medio |
+| 4 | [MCP sudespacho F1](#siguiente-mcp-sudespacho-mcp-sudespacho-crm-del-despacho--f1-lectura-spec-hecho-plan-pendiente) | spec lista | gates de despliegue | alto |
+| 5 | [Drive-disco: pasos 5-7 + Claude Code](#siguiente-mcp-drive-disco-pasos-5-7-diferidos) | ✅ desplegado | resto pasivo: check Modo 1 en caso real | medio |
+| 6 | [abrir-caso F3-judicial](#abrir-caso--f1--f2a--f3-ac-mergeadas-f2b-aparcada-f3-judicial-pendiente) | disparador confirmado 2026-07-22 | plan concreto listo (4 piezas, ver bloque) | medio |
+| 7 | [Google MCP F4 (Calendar)](#siguiente-google-mcp-f1-lectura--mergeada--f2-escriturapermisosnavegación--mergeada--f3f4-pendientes) | diferida | disparador | medio |
+| 8 | [Intake email — filtro de exclusión de ruido](#siguiente-intake-email-filtro-exclusión-de-ruido-administrativo-y-cruzado) | pendiente | disparador: W-02VUDR (fuga cruzada de 7 casos ajenos + cartera de litigios) | medio |
 
 > Detalle de cada ítem en su bloque `[SIGUIENTE-*]` más abajo. Backlog sin
 > promover: `docs/MEJORAS_FUTURAS.md`. Ledger de cerrados: `## Cerrados` (final).
+
+---
+
+## [SIGUIENTE-OCR-CIEGO] Texto perdido bajo el sello de firma (`MEJORAS #90`)
+
+*Disparador confirmado 2026-07-27 al ejecutar el paso 0 (detector) sobre los 5 casos con Sala de
+máquina: **402 documentos `ok`, 24 candidatos, 6 pérdidas reales medidas**. Promovido de
+`docs/MEJORAS_FUTURAS.md` #90, que conserva el diagnóstico completo, la tabla de mediciones y el
+razonamiento. No reabrir aquí lo que ya está decidido allí.*
+
+**El problema en una frase:** un PDF escaneado que trae capa de texto —aunque sea solo el pie de firma
+de LexNET— engaña a los tres guardarraíles en cadena (`_texto_suficiente` → `--skip-text` →
+`ocr_quality`), sale **`ok`** en `_cobertura.md`, y por tanto queda fuera de la worklist de revisión
+**y** del filtro de `reforzar`. Nadie lo ve.
+
+**Lo que ya está medido (no hay que volver a medirlo):**
+
+| documento | texto hoy | tras re-OCR | faltaba |
+|---|---|---|---|
+| Cuentas anuales 2024 — W-02VND1, `MEDIDAS CAUTELARES` | 10.979 | 65.076 | **83 %** |
+| Cuentas anuales 2023 — W-02VND1 | 10.082 | 53.857 | **81 %** |
+| Cuentas anuales 2022 — W-02VND1 | 10.381 | 55.011 | **81 %** |
+| Tasación TECNITASA — W-02VND1 | 46.142 | 62.711 | 26 % |
+| Exposé de propiedad — W-02XOR7 | 9.854 | 13.732 | 28 % |
+| Exposé — W-02VUDR | 12.490 | 13.889 | 10 % |
+
+**Restricción dura que condiciona el diseño:** los cuatro documentos de W-02VND1 son **AcroForm** y
+ocrmypdf **rechaza `--redo-ocr`** sobre ellos (`InputFileError: This PDF has a user fillable form`).
+Solo `--force-ocr` recuperó su texto — el modo destructivo abandonado tras VALERO. El arreglo no puede
+ser cambiar una bandera.
+
+- [ ] **(a) Escalera de OCR con degradación explícita** en `core/anon/ocr.py` + `core/sala_maquina.py`:
+      `--redo-ocr` por defecto → si falla por AcroForm, aislar las páginas afectadas y OCR-izarlas
+      aparte (o `--force-ocr` acotado con `--pages`) → si nada funciona, marcar `low` (nunca `ok`).
+      Hoy `redo_ocr=True` existe en `ocr_pdf` pero **ningún llamador lo pasa**: es código inalcanzable.
+- [ ] **(b) `ocr_quality` por página**, no solo la media: marcar `low` si ≥N páginas quedan bajo el
+      umbral aunque el promedio pase. Es lo que rompe la dilución.
+- [ ] **(c) Recuperar los documentos ya afectados** de W-02VND1 (prioridad: las 3 cuentas anuales, que
+      son prueba de solvencia en una pieza de medidas cautelares) y de W-02XOR7 / W-02VUDR.
+- [ ] **(d) Decidir el alcance de la re-corrida**: cambiar el modo de OCR desalinea
+      `_sala_maquina_state.json` y las coberturas ya persistidas. Decisión de Nikolai.
+
+**Herramienta ya disponible:** `python -m scripts.detectar_ocr_ciego todos --salida <fuera-del-repo>.md`
+(read-only). Es un **cribado**, no un veredicto: de 24 candidatos, 6 eran reales; medir la pérdida
+exige re-OCR-izar y comparar. Ver #90 para los falsos positivos ya identificados.
 
 ---
 
