@@ -670,3 +670,55 @@ def test_cli_drive_ev_team_id_no_derivable_error_limpio(drive_temporal, monkeypa
     assert result.exit_code == 1
     assert "--team-id" in result.output
     assert not isinstance(result.exception, TypeError)
+
+
+# --- Intake de correo: el flag de extracción de adjuntos llega al motor (MEJORAS #68.a) ---
+
+@pytest.fixture
+def export_label_espia(tmp_path, monkeypatch):
+    """Captura los kwargs con que `_intake_email` llama a `export_label` (sin red)."""
+    capturado: dict = {}
+
+    def fake_export(cuenta, label, dest, **kw):
+        capturado.update(kw)
+        return type("R", (), {"messages": 0, "attachments": 0})()
+
+    monkeypatch.setattr(cli.email_export, "email_dest_dir", lambda case_id: tmp_path / "lote")
+    monkeypatch.setattr(cli.email_export, "export_label", fake_export)
+    return capturado
+
+
+def _ident_email():
+    return type("I", (), {"case_id": "BaRS9 - Calle Falsa 1 (W-02VUDR) - Art 20 LAU"})()
+
+
+def test_intake_email_propaga_extraer_adjuntos_al_motor(tmp_path, export_label_espia):
+    cli._intake_email(_ident_email(), tmp_path, "c@x", "01. CONTING/X",
+                      dry_run=False, extraer_adjuntos=True)
+
+    assert export_label_espia["extract_attachments"] is True
+
+
+def test_intake_email_no_extrae_adjuntos_por_defecto(tmp_path, export_label_espia):
+    """El default NO cambia: activarlo mueve la superficie de dedup de todo intake
+    futuro, así que es decisión explícita de quien abre el caso."""
+    cli._intake_email(_ident_email(), tmp_path, "c@x", "01. CONTING/X", dry_run=False)
+
+    assert export_label_espia["extract_attachments"] is False
+
+
+def test_cli_extraer_adjuntos_llega_al_intake_de_email(drive_temporal, monkeypatch):
+    """Cablear el flag en el CLI: sin esto, exponerlo en `_intake_email` no sirve."""
+    capturado: dict = {}
+
+    def espia(ident, case_dir, cuenta, label, *, dry_run, extraer_adjuntos=False):
+        capturado["extraer"] = extraer_adjuntos
+
+    monkeypatch.setattr(cli, "_intake_email", espia)
+
+    result = CliRunner().invoke(cli.app, _args_min(
+        fuente="email", cuenta="c@x", label="01. CONTING/X", crm="skip"
+    ) + ["--extraer-adjuntos"])
+
+    assert result.exit_code == 0, result.output
+    assert capturado["extraer"] is True

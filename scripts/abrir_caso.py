@@ -191,13 +191,25 @@ def _intake_whatsapp(ident, src_str: str, rol: str, *, dry_run: bool) -> None:
         typer.echo(f"WhatsApp depositado en {getattr(res, 'chat_dir', '?')}")
 
 
-def _intake_email(ident, case_dir: Path, cuenta: str, label: str, *, dry_run: bool) -> None:
+def _intake_email(ident, case_dir: Path, cuenta: str, label: str, *, dry_run: bool,
+                  extraer_adjuntos: bool = False) -> None:
+    """Exporta la etiqueta Gmail del caso a un lote nuevo de ``00_Input``.
+
+    ``extraer_adjuntos`` saca además cada adjunto como fichero suelto junto al
+    ``.eml`` (que conserva los suyos embebidos, byte-fieles). Importa porque la sala
+    de máquina lee ``00_Input``: sin extraer, un adjunto que llegue SOLO por correo
+    —sin copia en el Drive— no se OCR-ea ni aparece en la sala de lectura
+    (``MEJORAS #68.a``). El default no cambia: activarlo mueve la superficie de dedup
+    de todo intake futuro, así que es decisión explícita de quien abre el caso.
+    """
     if dry_run:
+        extra = " (extrayendo adjuntos)" if extraer_adjuntos else ""
         typer.echo(f"[dry-run] email: se exportaría la etiqueta {label!r} de {cuenta} "
-                   "a un lote nuevo 00_Input/<fecha>_email_NN (sin ejecutar)")
+                   f"a un lote nuevo 00_Input/<fecha>_email_NN{extra} (sin ejecutar)")
         return
     dest = email_export.email_dest_dir(ident.case_id)     # reserva el lote (T8)
-    email_export.export_label(cuenta, label, dest, case_id=ident.case_id)
+    email_export.export_label(cuenta, label, dest, case_id=ident.case_id,
+                              extract_attachments=extraer_adjuntos)
     typer.echo(f"Email: etiqueta {label!r} exportada a {dest}")
 
 
@@ -234,7 +246,7 @@ def _validar_flags(fuente, *, folder_id, team_id, src, rol, cuenta, label) -> No
 
 
 def _despachar_intake(fuente, ident, case_dir, *, folder_id, team_id, src, rol,
-                      cuenta, label, dry_run):
+                      cuenta, label, dry_run, extraer_adjuntos=False):
     _validar_flags(fuente, folder_id=folder_id, team_id=team_id, src=src, rol=rol,
                    cuenta=cuenta, label=label)
     if fuente == "drive_ev":
@@ -244,7 +256,8 @@ def _despachar_intake(fuente, ident, case_dir, *, folder_id, team_id, src, rol,
     elif fuente == "whatsapp":
         _intake_whatsapp(ident, src, rol, dry_run=dry_run)
     elif fuente == "email":
-        _intake_email(ident, case_dir, cuenta, label, dry_run=dry_run)
+        _intake_email(ident, case_dir, cuenta, label, dry_run=dry_run,
+                      extraer_adjuntos=extraer_adjuntos)
     else:
         raise typer.Exit(code=1)  # red de seguridad: _FUENTES_CLI ya filtra el valor
 
@@ -359,6 +372,11 @@ def main(
     rol: str | None = typer.Option(None, "--rol", help="whatsapp: rol_subdir"),
     cuenta: str | None = typer.Option(None, "--cuenta", help="email: cuenta gmail"),
     label: str | None = typer.Option(None, "--label", help="email: etiqueta"),
+    extraer_adjuntos: bool = typer.Option(
+        False, "--extraer-adjuntos",
+        help="email: saca cada adjunto como fichero suelto junto al .eml, para que la "
+             "sala de máquina lo OCR-ee (un adjunto que llegue SOLO por correo, sin "
+             "copia en el Drive, no se procesa sin esto)"),
     cuantia: float = typer.Option(0.0, "--cuantia"),
     crm: str = typer.Option("api", "--crm", help="api|skip"),
     force: bool = typer.Option(False, "--force"),
@@ -470,6 +488,7 @@ def main(
         fuente, ident, case_dir,
         folder_id=folder_id, team_id=team_id, src=src, rol=rol,
         cuenta=cuenta, label=label, dry_run=dry_run,
+        extraer_adjuntos=extraer_adjuntos,
     )
     if dry_run:
         typer.echo(f"[dry-run] esqueleto en {case_dir}; se omiten log de intake y alta CRM")
