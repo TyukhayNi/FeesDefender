@@ -1,6 +1,6 @@
 # Changelog — organizar-sala-lectura
 
-## 1.14 — 2026-07-26
+## 1.14 — 2026-07-27
 - **Un bundle por hilo de correo, no un documento por mensaje.** `agrupar_por_hilo`
   cambia de clave: ahora agrupa por la **descripción** del nombre ignorando el
   prefijo de fecha. Motivo: `email_export` fecha cada mensaje con SU fecha y solo

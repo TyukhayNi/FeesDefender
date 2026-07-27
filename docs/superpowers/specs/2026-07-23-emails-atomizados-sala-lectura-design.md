@@ -5,8 +5,8 @@
 > el `.eml` crudo. Dos revisiones adversariales independientes —Codex
 > ([`…-adversarial-review.md`](2026-07-23-emails-atomizados-sala-lectura-adversarial-review.md)) y un
 > workflow de 6 lentes con verificación por escépticos— convergieron en los mismos bloqueantes, y la
-> adjudicación (Claude, 2026-07-26) concluyó que el spec **empaquetaba tres proyectos** y que su
-> mecanismo central de idempotencia partía de una premisa falsa. **Re-tajado el 2026-07-26 con
+> adjudicación (Claude, 2026-07-27) concluyó que el spec **empaquetaba tres proyectos** y que su
+> mecanismo central de idempotencia partía de una premisa falsa. **Re-tajado el 2026-07-27 con
 > aprobación de Nikolai:** este documento queda reducido al **Slice 1**, que entrega el beneficio más
 > visible sin ninguno de los bloqueantes. Los Slices 2 y 3 salen a backlog con disparador explícito
 > (`MEJORAS #86`, `#87`). La tabla de adjudicación completa vive en la revisión hermana.
@@ -40,7 +40,7 @@ que Paola, Ana y Sergio solo reimportan el `.skill` como ya hacen.
 
 ### 2.1 Forma de copia: un bundle por grupo de hilo
 
-**Corrección de premisa (2026-07-26, antes de escribir el plan).** La primera versión de este spec
+**Corrección de premisa (2026-07-27, antes de escribir el plan).** La primera versión de este spec
 decía "se reutiliza `agrupar_por_hilo` tal cual". **Es falso y no habría entregado el beneficio:** esa
 función no agrupa hilos, agrupa **colisiones de nombre del mismo día y mismo asunto**. `email_export`
 nombra cada mensaje `AAAA-MM-DD_descripcion.eml` con **su propia fecha**
@@ -100,7 +100,7 @@ borra ni sobrescribe". `CRONOLOGIA.md`, que no colapsa, lo sitúa en su posició
 
 ## 3. Idempotencia
 
-> ⚠️ **Corrección (2026-07-26, tras la revisión final de la rama).** Este apartado afirmaba
+> ⚠️ **Corrección (2026-07-27, tras la revisión final de la rama).** Este apartado afirmaba
 > "sin algoritmo nuevo: basta el `sha256` por `.eml`". **Era falso para bundles.** El skip por
 > `sha256` sí basta para decidir *si* un fichero se copia, pero el **nombre de la carpeta** y el
 > **nombre de cada anexo** son estado DERIVADO del grupo, y el grupo cambia entre corridas. De esa
@@ -110,7 +110,7 @@ borra ni sobrescribe". `CRONOLOGIA.md`, que no colapsa, lo sitúa en su posició
 > mensaje nuevo podía recibir la ruta del principal ya copiado (`carpeta_existente` sin candidato).
 > El remedio adoptado **no es un contrato de re-corrida más complejo, sino suprimir el estado
 > derivado**: los nombres pasan a ser función pura del fichero de origen (decisión de Nikolai,
-> 2026-07-26). Lo que sigue describe el diseño ya corregido.
+> 2026-07-27). Lo que sigue describe el diseño ya corregido.
 
 **El skip incremental no cambia:** sigue siendo por `sha256` del `.eml` de origen, y cada `.eml`
 conserva su fila propia en el `_MANIFIESTO.md`. No hace falta ledger, ni conjuntos, ni columna nueva.
@@ -154,7 +154,7 @@ intacto).
   docstring ("proxy barato, no sustituto de un threading riguroso si algún día hace falta").
   Threading riguroso por `References`/`In-Reply-To` → `MEJORAS #88`.
 - **Dos conversaciones distintas con el mismo asunto comparten bundle** (p. ej. dos "consulta" de
-  años diferentes). **Decisión de Nikolai 2026-07-26: sin guarda** — se descartó partir por salto
+  años diferentes). **Decisión de Nikolai 2026-07-27: sin guarda** — se descartó partir por salto
   temporal para no introducir un umbral arbitrario. El daño está acotado: los documentos conservan su
   fecha correcta en el `_MANIFIESTO.md` y en `CRONOLOGIA.md`, el crudo de `00_Input` está intacto y la
   sala es una vista derivada, no prueba; la molestia es de legibilidad. `MEJORAS #88` es el arreglo

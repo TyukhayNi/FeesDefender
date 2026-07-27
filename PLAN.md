@@ -16,16 +16,108 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 
 | # | Ítem | Estado | Gate / disparador | Esf. |
 |---|------|--------|-------------------|------|
-| 1 | [Infra C — art. 156 LEC](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado (quick win) | bajo |
-| 2 | [Infra B — expediente scratch](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado | medio |
-| 3 | [MCP sudespacho F1](#siguiente-mcp-sudespacho-mcp-sudespacho-crm-del-despacho--f1-lectura-spec-hecho-plan-pendiente) | spec lista | gates de despliegue | alto |
-| 4 | [Drive-disco: pasos 5-7 + Claude Code](#siguiente-mcp-drive-disco-pasos-5-7-diferidos) | ✅ desplegado | resto pasivo: check Modo 1 en caso real | medio |
-| 5 | [abrir-caso F3-judicial](#abrir-caso--f1--f2a--f3-ac-mergeadas-f2b-aparcada-f3-judicial-pendiente) | disparador confirmado 2026-07-22 | plan concreto listo (4 piezas, ver bloque) | medio |
-| 6 | [Google MCP F4 (Calendar)](#siguiente-google-mcp-f1-lectura--mergeada--f2-escriturapermisosnavegación--mergeada--f3f4-pendientes) | diferida | disparador | medio |
-| 7 | [Intake email — filtro de exclusión de ruido](#siguiente-intake-email-filtro-exclusión-de-ruido-administrativo-y-cruzado) | pendiente | disparador: W-02VUDR (fuga cruzada de 7 casos ajenos + cartera de litigios) | medio |
+| 1 | [OCR ciego bajo el sello (`MEJORAS #90`)](#siguiente-ocr-ciego-texto-perdido-bajo-el-sello-de-firma-mejoras-90) | pendiente | **disparador confirmado 2026-07-27: falta el 81-83 % del texto de las cuentas anuales de W-02VND1 (medidas cautelares)** | medio |
+| 2 | [Infra C — art. 156 LEC](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado (quick win) | bajo |
+| 3 | [Infra B — expediente scratch](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado | medio |
+| 4 | [MCP sudespacho F1](#siguiente-mcp-sudespacho-mcp-sudespacho-crm-del-despacho--f1-lectura-spec-hecho-plan-pendiente) | spec lista | gates de despliegue | alto |
+| 5 | [Drive-disco: pasos 5-7 + Claude Code](#siguiente-mcp-drive-disco-pasos-5-7-diferidos) | ✅ desplegado | resto pasivo: check Modo 1 en caso real | medio |
+| 6 | [abrir-caso F3-judicial](#abrir-caso--f1--f2a--f3-ac-mergeadas-f2b-aparcada-f3-judicial-pendiente) | disparador confirmado 2026-07-22 | plan concreto listo (4 piezas, ver bloque) | medio |
+| 7 | [Google MCP F4 (Calendar)](#siguiente-google-mcp-f1-lectura--mergeada--f2-escriturapermisosnavegación--mergeada--f3f4-pendientes) | diferida | disparador | medio |
+| 8 | [Intake email — filtro de exclusión de ruido](#siguiente-intake-email-filtro-exclusión-de-ruido-administrativo-y-cruzado) | pendiente | disparador: W-02VUDR (fuga cruzada de 7 casos ajenos + cartera de litigios) | medio |
 
 > Detalle de cada ítem en su bloque `[SIGUIENTE-*]` más abajo. Backlog sin
 > promover: `docs/MEJORAS_FUTURAS.md`. Ledger de cerrados: `## Cerrados` (final).
+
+---
+
+## [SIGUIENTE-OCR-CIEGO] Texto perdido bajo el sello de firma (`MEJORAS #90`)
+
+*Disparador confirmado 2026-07-27 al ejecutar el paso 0 (detector) sobre los 5 casos con Sala de
+máquina: **402 documentos `ok`, 24 candidatos, 6 pérdidas reales medidas**. Promovido de
+`docs/MEJORAS_FUTURAS.md` #90, que conserva el diagnóstico completo, la tabla de mediciones y el
+razonamiento. No reabrir aquí lo que ya está decidido allí.*
+
+**El problema en una frase:** un PDF escaneado que trae capa de texto —aunque sea solo el pie de firma
+de LexNET— engaña a los tres guardarraíles en cadena (`_texto_suficiente` → `--skip-text` →
+`ocr_quality`), sale **`ok`** en `_cobertura.md`, y por tanto queda fuera de la worklist de revisión
+**y** del filtro de `reforzar`. Nadie lo ve.
+
+**Lo que ya está medido (no hay que volver a medirlo):**
+
+| documento | texto hoy | tras re-OCR | faltaba |
+|---|---|---|---|
+| Cuentas anuales 2024 — W-02VND1, `MEDIDAS CAUTELARES` | 10.979 | 65.076 | **83 %** |
+| Cuentas anuales 2023 — W-02VND1 | 10.082 | 53.857 | **81 %** |
+| Cuentas anuales 2022 — W-02VND1 | 10.381 | 55.011 | **81 %** |
+| Tasación TECNITASA — W-02VND1 | 46.142 | 62.711 | 26 % |
+| Exposé de propiedad — W-02XOR7 | 9.854 | 13.732 | 28 % |
+| Exposé — W-02VUDR | 12.490 | 13.889 | 10 % |
+
+**Restricción dura que condiciona el diseño:** los cuatro documentos de W-02VND1 son **AcroForm** y
+ocrmypdf **rechaza `--redo-ocr`** sobre ellos (`InputFileError: This PDF has a user fillable form`).
+Solo `--force-ocr` recuperó su texto — el modo destructivo abandonado tras VALERO. El arreglo no puede
+ser cambiar una bandera.
+
+- [ ] **(a) Escalera de OCR con degradación explícita** en `core/anon/ocr.py` + `core/sala_maquina.py`:
+      `--redo-ocr` por defecto → si falla por AcroForm, aislar las páginas afectadas y OCR-izarlas
+      aparte (o `--force-ocr` acotado con `--pages`) → si nada funciona, marcar `low` (nunca `ok`).
+      Hoy `redo_ocr=True` existe en `ocr_pdf` pero **ningún llamador lo pasa**: es código inalcanzable.
+- [ ] **(b) `ocr_quality` por página**, no solo la media: marcar `low` si ≥N páginas quedan bajo el
+      umbral aunque el promedio pase. Es lo que rompe la dilución.
+- [x] **(c1) Cuentas anuales de W-02VND1 RECUPERADAS** (2026-07-27), en la **copia local** del checkout
+      abierto — no en Drive:
+
+      | ejercicio | páginas recuperadas | texto antes | ahora |
+      |---|---|---|---|
+      | 2024 | 23 de 25 | 10.979 | **65.159** |
+      | 2023 | 20 de 22 | 10.082 | **53.849** |
+      | 2022 | 21 de 23 | 10.381 | **55.123** |
+
+      Método: extraer cada página saltada con `pypdf` (**quita el AcroForm**, que era el bloqueo) y
+      OCR-izarla con **`--redo-ocr`** — no destructivo: las 64 páginas se recuperaron sin recurrir a
+      `--force-ocr`, así que las cifras de las páginas digitales quedan intactas (verificado: texto
+      idéntico en las páginas digitales densas). Calidad: gibberish 2,0-2,6 %, y presentes BALANCE /
+      PATRIMONIO NETO / PÉRDIDAS Y GANANCIAS / ACTIVO / PASIVO / MEMORIA. Versión anterior en
+      `99_Versiones anteriores/recuperacion_ocr_2026-07-27/`; evento `procesado_sala_maquina`
+      (`modo: recuperacion_ocr_sello`) en el log; `00_Input/` intacto.
+      **Pendiente operativo: el `checkin` a Drive lo decide Nikolai** (hay checkout abierto desde
+      2026-07-23; la copia local va por delante — 677 MD vs 625).
+- [x] **(c2) Tasación y exposés RECUPERADOS** (2026-07-27):
+
+      | documento | caso | destino | texto antes | ahora | peldaño |
+      |---|---|---|---|---|---|
+      | Tasación TECNITASA (2 copias de custodia, bytes idénticos) | W-02VND1 | local (checkout) | 46.142 | **62.828** | por página, 12 de 34 |
+      | Exposé de propiedad | W-02XOR7 | Drive (sin checkout) | 9.854 | **13.800** | doc. entero |
+      | Exposé | W-02VUDR | Drive (sin checkout) | 12.490 | **13.977** | doc. entero |
+
+      La escalera se comportó como se diseñó: peldaño 1 (`--redo-ocr` de documento entero) bastó en los
+      dos exposés; la tasación, AcroForm como las cuentas anuales, exigió el peldaño 2 (extraer página →
+      quita el AcroForm → `--redo-ocr`). **En ningún documento hizo falta `--force-ocr`.**
+
+      Matiz verificado, útil para diseñar (a): los dos peldaños no son igual de conservadores. El
+      peldaño 2 deja las páginas digitales **byte-idénticas** (19 de 34 en la tasación). El peldaño 1
+      **sí reescribe** el texto de algunas páginas digitales (XOR7: 2,3,4,34,35 · VUDR: 2,3,4,45), pero
+      de forma **aditiva**: el 100 % de las palabras del original sobrevive en todas ellas y ninguna
+      pierde texto — lo que gana es el texto incrustado en imágenes pequeñas dentro de esas páginas. Aun
+      así, para documentos donde las cifras sean críticas conviene forzar el peldaño 2.
+
+      Calidad: gibberish 2,6 % (tasación) / 4,0-4,6 % (exposés); tasación con 6/6 términos de tasación
+      presentes; páginas conservadas 34/35/45. `00_Input/` intacto en los tres casos; respaldos en
+      `99_Versiones anteriores/recuperacion_ocr_2026-07-27/`; `_cobertura.json` actualizado donde
+      existía; evento `procesado_sala_maquina` (`modo: recuperacion_ocr_sello`) en los tres logs.
+
+- Quedan **17 candidatos** del cribado sin medir (brochures, dossiers, planos y similares de W-02VND1,
+  más `753_informeSaintGobain` de W-02XOR7). Son material de marketing y planos, no prueba nuclear: se
+  recuperan cuando hagan falta, o de oficio al construir (a). El script de recuperación usado en (c1) y
+  (c2) fue puntual (scratchpad, no versionado): el método está descrito arriba con el detalle suficiente
+  para rehacerlo, y **su validación en 7 documentos, 3 casos y 2 destinos distintos es lo que
+  des-arriesga la tarea (a)**.
+- [ ] **(d) Decidir el alcance de la re-corrida**: cambiar el modo de OCR desalinea
+      `_sala_maquina_state.json` y las coberturas ya persistidas. Decisión de Nikolai.
+
+**Herramienta ya disponible:** `python -m scripts.detectar_ocr_ciego todos --salida <fuera-del-repo>.md`
+(read-only). Es un **cribado**, no un veredicto: de 24 candidatos, 6 eran reales; medir la pérdida
+exige re-OCR-izar y comparar. Ver #90 para los falsos positivos ya identificados.
 
 ---
 
@@ -181,12 +273,12 @@ puro + orquestadores finos. Spec: `docs/superpowers/specs/2026-07-09-abrir-caso-
 
 ## [SIGUIENTE-SALA-HILOS] Bundle por hilo de correo en la sala de lectura (Slice 1)
 
-> ✅ **CERRADO (2026-07-26)** → ledger `## ✅ Cerrados`. Construido, revisado y mergeado en **PR #131**
+> ✅ **CERRADO (2026-07-27)** → ledger `## ✅ Cerrados`. Construido, revisado y mergeado en **PR #131**
 > (`d27172b`), skill **v1.14**, suite 2366/0/0. Bloque conservado como histórico. **Tail operativo que
 > NO bloquea: re-importar el `.skill` v1.14 en Cowork** (si no, Paola/Ana/Sergio siguen en la v1.12).
 
 *Spec: `docs/superpowers/specs/2026-07-23-emails-atomizados-sala-lectura-design.md` (re-tajada
-2026-07-26). Revisión adversarial adjudicada: `…-adversarial-review.md`. Origen: `MEJORAS #75`
+2026-07-27). Revisión adversarial adjudicada: `…-adversarial-review.md`. Origen: `MEJORAS #75`
 (promovido parcialmente). Plan TDD: `docs/superpowers/plans/2026-07-26-sala-lectura-bundle-por-hilo.md`.
 Implementación: Claude Code.*
 
