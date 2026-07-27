@@ -178,9 +178,11 @@ B**; D/E/F quedan en backlog. **Actualización: el Cluster A lo completó la ses
 - [ ] **C — Campos de `gen_solicitud` (`MEJORAS #60`; fichero real `.claude/skills/preparacion-audiencia-previa/scripts/gen_solicitud.py`, no `scripts/` de la raíz) — quick win, en paralelo a A.** Petición subsidiaria de
   averiguación de domicilio (art. 156 LEC) como campo + DNI pendiente que renderice limpio. Disparador:
   la testigo compradora (petición de averiguación de domicilio, art. 156 LEC) y la testigo directora de zona (DNI pendiente) en la AP de VALERO.
-- Backlog (no promovidos): **#61** ingesta documental robusta (`.doc`/soffice, localizador de página en
-  escaneado, extractor de entidades con visión), **#62** entorno Windows (`setup_windows_deps`) + unificar el
-  `.bat` de OCR, **#63** sincronización de la providencia/DIOR de señalamiento a `00_Input`.
+- Backlog (no promovidos): **resto de #61** — localizador de página en escaneado y extractor de
+  entidades con visión (su **punto `.doc`/soffice sí está promovido**: ver
+  `[SIGUIENTE-DOC-LIBREOFFICE]` en la cola) —, **#62** entorno Windows (`setup_windows_deps`) +
+  unificar el `.bat` de OCR, **#63** sincronización de la providencia/DIOR de señalamiento a
+  `00_Input`.
 
 ## [abrir-caso] ✅ F1 + F2a + F3-(A+C) mergeadas; F2b APARCADA; F3-judicial pendiente
 
