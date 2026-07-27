@@ -16,7 +16,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 
 | # | Ítem | Estado | Gate / disparador | Esf. |
 |---|------|--------|-------------------|------|
-| 1 | [OCR ciego bajo el sello (`MEJORAS #90`)](#siguiente-ocr-ciego-texto-perdido-bajo-el-sello-de-firma-mejoras-90) | **parcial: diagnóstico y rescate hechos, la causa sigue viva** | las 6 pérdidas medidas están recuperadas y en Drive, pero el MOTOR no cambió: `redo_ocr=True` existe en `ocr_pdf` y **ningún llamador lo pasa** → el próximo escaneo con solo pie de firma volverá a salir `ok` | medio |
+| 1 | [OCR ciego bajo el sello (`MEJORAS #90`)](#siguiente-ocr-ciego-texto-perdido-bajo-el-sello-de-firma-mejoras-90) | **motor arreglado; queda ejecutar (e)** | (a)+(b) construidos y verdes: la causa ya no está viva para casos NUEVOS. (d) decidido 2026-07-27 = `D1`; falta ejecutarla sobre los 17 candidatos sin medir | bajo |
 | 2 | [Infra C — art. 156 LEC](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado (quick win) | bajo |
 | 3 | [Infra B — expediente scratch](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado | medio |
 | 4 | [MCP sudespacho F1](#siguiente-mcp-sudespacho-mcp-sudespacho-crm-del-despacho--f1-lectura-spec-hecho-plan-pendiente) | spec lista | gates de despliegue | alto |
@@ -61,12 +61,38 @@ ocrmypdf **rechaza `--redo-ocr`** sobre ellos (`InputFileError: This PDF has a u
 Solo `--force-ocr` recuperó su texto — el modo destructivo abandonado tras VALERO. El arreglo no puede
 ser cambiar una bandera.
 
-- [ ] **(a) Escalera de OCR con degradación explícita** en `core/anon/ocr.py` + `core/sala_maquina.py`:
-      `--redo-ocr` por defecto → si falla por AcroForm, aislar las páginas afectadas y OCR-izarlas
-      aparte (o `--force-ocr` acotado con `--pages`) → si nada funciona, marcar `low` (nunca `ok`).
-      Hoy `redo_ocr=True` existe en `ocr_pdf` pero **ningún llamador lo pasa**: es código inalcanzable.
-- [ ] **(b) `ocr_quality` por página**, no solo la media: marcar `low` si ≥N páginas quedan bajo el
-      umbral aunque el promedio pase. Es lo que rompe la dilución.
+- [x] **(a) Escalera de OCR con degradación explícita** — `core.anon.ocr.ocr_pdf_escalera`
+      (`7ed5c1f`). Peldaño 1 `--redo-ocr` sobre el documento entero → peldaño 2, si falla, aislar
+      cada página ciega con `pypdf` (**eso quita el AcroForm**, que era el bloqueo) y OCR-izarla
+      aparte, recomponiendo el documento sin reescribir las demás páginas → peldaño 3
+      `degradado=True`, que `_ocr_y_extraer` traduce a `low`, **nunca `ok`**, con la nota en
+      `_cobertura.md`. **`--force-ocr` no aparece en ningún punto.** Verificado en integración
+      contra ocrmypdf y Tesseract reales sobre un AcroForm: peldaño 1 rechazado, peldaño 2 recupera
+      el cuerpo y deja intacta la página digital.
+- [x] **(b) `ocr_quality` por página** — `sala_maquina.calidad_por_pagina` (`7ed5c1f`). Marca `low`
+      cuando hay páginas con ráster a página completa y sin texto recuperado, aunque el promedio
+      pase (≥2 páginas, o ≥la mitad del documento). El ráster es el discriminante que evita marcar
+      los reversos en blanco de un dúplex, y el mínimo de 2 páginas evita marcar la foto suelta del
+      camino `imagen` — los falsos positivos que ya hubo que descartar al medir el cribado.
+- [x] **(a-bis) El gate de entrada, sin el cual (a) seguiría siendo inalcanzable.** Era el eslabón
+      1 de la cadena y no estaba en esta lista: un escaneo con pie de LexNET (~228 char/pág frente
+      a un umbral de 40) pasa `_texto_suficiente`, se clasifica «digital» y **nunca llegaba a
+      OCRmyPDF** — con la escalera puesta y nada más, los cuatro documentos de W-02VND1 habrían
+      vuelto a salir `ok`. Ahora, un PDF que pasa ese gate pero esconde páginas ciegas baja
+      igualmente a la escalera en **modo conservador** (empieza en el peldaño 2, que no reescribe
+      el texto de las páginas digitales — el matiz medido en (c2)). `_texto_suficiente` no se toca:
+      la decisión se toma con el discriminante de página ciega, ya validado en 402 documentos.
+- [x] **(a-ter) Dos bugs de fondo, encontrados al ejecutarlo en vivo y no por lectura.**
+      (1) ocrmypdf **rechaza `--redo-ocr` junto a `--deskew`**, que es el default de `ocr_pdf`: el
+      modo redo era inalcanzable *dos* veces —ningún llamador lo pasaba y, si lo hubiera pasado,
+      habría reventado en la validación de opciones antes de OCR-izar nada—. (2) Como el modo redo
+      obliga a renunciar al deskew, se reserva a los documentos que **traen capa de texto**: el
+      escaneo limpio sigue por `--skip-text` y conserva el enderezado. Sin esto, arreglar #90 le
+      habría costado calidad de OCR al caso mayoritario.
+- Infraestructura: `core/pdf_paginas.py` es el **SSOT del discriminante de página ciega**, consumido
+  por el motor, por la calidad por página y por `scripts/detectar_ocr_ciego` (refactorizado para
+  consumirlo, sin cambio de comportamiento). Si cribado y motor divergieran, el detector dejaría de
+  describir lo que el motor hace.
 - [x] **(c1) Cuentas anuales de W-02VND1 RECUPERADAS** (2026-07-27), primero en la copia local del
       checkout y **ya en Drive** tras el `case_checkin` (ver abajo):
 
@@ -117,8 +143,40 @@ ser cambiar una bandera.
   (c2) fue puntual (scratchpad, no versionado): el método está descrito arriba con el detalle suficiente
   para rehacerlo, y **su validación en 7 documentos, 3 casos y 2 destinos distintos es lo que
   des-arriesga la tarea (a)**.
-- [ ] **(d) Decidir el alcance de la re-corrida**: cambiar el modo de OCR desalinea
-      `_sala_maquina_state.json` y las coberturas ya persistidas. Decisión de Nikolai.
+- [x] **(d) Alcance de la re-corrida — DECIDIDO por Nikolai el 2026-07-27: `D1`, acotada a los
+      candidatos.** Se re-procesan solo los 17 documentos que el cribado marcó y nadie midió; no se
+      lanza `--force` sobre los 5 casos. Queda como trabajo siguiente, ver **(e)**.
+      El razonamiento y las opciones descartadas se conservan abajo.
+
+      El motor
+      nuevo solo actúa sobre lo que procesa: los **5 casos ya procesados** conservan las coberturas
+      que escribió el motor viejo, y en ellas siguen marcados `ok` los **17 candidatos del cribado
+      sin medir** (brochures, dossiers y planos de W-02VND1, más `753_informeSaintGobain` de
+      W-02XOR7). `apply` sin `--force` no los revisará: sus sha ya están en
+      `_sala_maquina_state.json` y se saltan. Tres alcances, de menos a más:
+
+      | opción | qué hace | coste | qué deja sin cubrir |
+      |---|---|---|---|
+      | **D0 — nada** | solo los casos nuevos usan el motor nuevo | 0 | los 17 candidatos siguen `ok`; nadie los verá hasta que alguien eche en falta el documento leyendo el fondo |
+      | **D1 — acotada a los candidatos** | re-procesar solo esos 17 documentos | ~1 h de código (`apply` no sabe hoy acotar por documento; `reforzar` filtra por `low`/`empty` y estos están `ok`) + minutos de OCR. Variante sin código: retirar a mano sus sha del `_sala_maquina_state.json` y lanzar `apply` | los documentos que el cribado NO marcó; el detector sobre-marca pero también puede callar |
+      | **D2 — `apply --force` en los 5 casos** | foto fresca y coherente: cobertura, estado y MD reescritos por el motor nuevo | horas: la corrida completa de W-02VND1 (~672 ficheros) fue de ~1 h 40 **con el motor viejo**, y el nuevo añade el OCR de las páginas ciegas que antes se saltaban | nada, pero reescribe MD de documentos que hoy están bien y hay que coordinarlo con checkouts/Drive abiertos |
+
+      **Elegida D1** (recomendación seguida): es donde está la pérdida medida —los 6 reales salieron
+      de esos 24 candidatos— y no reescribe nada que hoy funcione. D2 solo habría compensado si se
+      quisiera además una cobertura homogénea de cara a la vista procesal.
+
+- [ ] **(e) Ejecutar D1** — pendiente, es el siguiente paso de este bloque:
+      1. Re-correr el detector (`python -m scripts.detectar_ocr_ciego todos --salida <fuera-del-repo>.md`)
+         para partir de la lista viva, no de la del 2026-07-27.
+      2. Dar a `sala_maquina apply` la capacidad de acotar por documento (~1 h). Hoy no existe:
+         `--force` reprocesa el caso entero y `reforzar` solo recoge `low`/`empty`, y estos están
+         `ok`. Variante sin código, si se prefiere no tocar el CLI: retirar a mano los sha de esos
+         documentos del `_sala_maquina_state.json` y lanzar `apply` normal.
+      3. Correrlo y comparar chars antes/después, como en (c1)/(c2) — el cribado sobre-marca, así
+         que la medición es la única prueba de que hubo pérdida.
+
+      Cautelas: no lanzar sobre un caso con checkout abierto sin cerrarlo antes, y no relanzar sin
+      comprobar que la corrida anterior terminó.
 
 **Herramienta ya disponible:** `python -m scripts.detectar_ocr_ciego todos --salida <fuera-del-repo>.md`
 (read-only). Es un **cribado**, no un veredicto: de 24 candidatos, 6 eran reales; medir la pérdida

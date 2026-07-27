@@ -21,19 +21,21 @@ from pathlib import Path
 
 import typer
 
+from core import pdf_paginas
 from core import sala_maquina as sm
 from core.casos import case_locator
 from core.config import caso_path, settings
 
 app = typer.Typer(add_completion=False)
 
-# Un escaneo A4 a 100 dpi ya son ~970k px; por debajo de esto es un logo o una firma.
-MIN_PX_RASTER = 600_000
-# Por encima de esto la página tiene cuerpo real, no solo un sello.
-MAX_CHARS_PAGINA = 400
+# El discriminante vive en `core.pdf_paginas`, que es donde lo consumen también el
+# motor (peldaño 2 de la escalera) y la calidad por página. Compartirlo es el
+# punto: si el cribado y el motor divergieran, el detector dejaría de describir
+# lo que el motor hace.
+MIN_PX_RASTER = pdf_paginas.MIN_PX_RASTER
+MAX_CHARS_PAGINA = pdf_paginas.MAX_CHARS_SELLO
 
 _W_RE = re.compile(r"\((W-[A-Z0-9]+)\)")
-_NORM_RE = re.compile(r"[\W\d_]+", re.UNICODE)
 
 
 @dataclass
@@ -45,56 +47,19 @@ class Perfil:
     acroform: bool
 
 
-def _max_raster_px(pagina) -> int:
-    """Píxeles del ráster más grande de la página, SIN descomprimir la imagen."""
-    try:
-        recursos = pagina.get("/Resources")
-        if recursos is None:
-            return 0
-        xobjects = recursos.get_object().get("/XObject")
-        if xobjects is None:
-            return 0
-        mayor = 0
-        for ref in xobjects.get_object().values():
-            try:
-                obj = ref.get_object()
-                if obj.get("/Subtype") == "/Image":
-                    mayor = max(mayor, int(obj.get("/Width", 0)) * int(obj.get("/Height", 0)))
-            except Exception:
-                continue
-        return mayor
-    except Exception:
-        return 0
-
-
 def perfilar(pdf: Path) -> Perfil | None:
     """Perfil por página del PDF fuente. `None` si no se puede abrir."""
-    try:
-        from pypdf import PdfReader
-    except ImportError:  # pragma: no cover - dependencia del proyecto
-        raise typer.Exit(code=1)
-    try:
-        reader = PdfReader(str(pdf))
-        paginas = reader.pages
-        raiz = reader.trailer.get("/Root") or {}
-        acroform = "/AcroForm" in raiz
-    except Exception:
+    perfil = pdf_paginas.perfilar_paginas(pdf)
+    if not perfil:
         return None
-
-    perfil = []
-    for pagina in paginas:
-        try:
-            texto = pagina.extract_text() or ""
-        except Exception:
-            texto = ""
-        perfil.append((len(texto.strip()), _max_raster_px(pagina),
-                       _NORM_RE.sub("", texto).lower()[:300]))
-
-    saltadas = [i for i, (chars, px, _) in enumerate(perfil, 1)
-                if px >= MIN_PX_RASTER and chars < MAX_CHARS_PAGINA]
-    normas = [perfil[i - 1][2] for i in saltadas]
-    repetida = sum(1 for n in normas if n and normas.count(n) > 1)
-    return Perfil(len(perfil), sum(p[0] for p in perfil), saltadas, repetida, acroform)
+    saltadas = pdf_paginas.paginas_ciegas(perfil)
+    return Perfil(
+        n_pags=len(perfil),
+        chars_fuente=sum(p.chars for p in perfil),
+        paginas_saltadas=saltadas,
+        firma_repetida=pdf_paginas.firmas_repetidas(perfil, saltadas),
+        acroform=pdf_paginas.tiene_acroform(pdf),
+    )
 
 
 def filas_ok(case_dir: Path) -> list[dict]:
