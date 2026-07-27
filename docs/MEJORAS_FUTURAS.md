@@ -2715,11 +2715,20 @@ extrae los adjuntos embebidos de los `.eml` (dedup por sha, filtro decorativo, f
 `INDICE_ADJUNTOS.md`, Capa B de autoría), pero **no está cableado** en el flujo:
 
 - **68.a — `atomize_emails` es un paso manual.** Ni `abrir_caso` ni `organizar-sala-maquina`
-  lo invocan. Además, el intake (`abrir_caso._intake_email`) llama `email_export.export_label`
+  lo invocan. Además, el intake llama `email_export.export_label`
   con el default `extract_attachments=False` y **no expone el flag**, así que los adjuntos
   quedan embebidos en el `.eml` hasta que se lanza el motor a mano. **Riesgo:** un adjunto que
   llegue SOLO por correo (sin copia en Drive) no se extrae en el flujo automático. En W-02T3XO
   no hubo pérdida porque las 9 capturas estaban también en `00_Input/01_Drive EV/07. RECLAMACIONES`.
+  - ✅ **PARCIALMENTE RESUELTO 2026-07-27** (`[PROMOVIDO → PLAN.md]` por decisión de Nikolai,
+    bloque `[SIGUIENTE-INTAKE-EMAIL-FILTRO]`; commit `07b0377`): el flag ya se expone como
+    `--extraer-adjuntos` en `scripts/abrir_caso.py` (default intacto en `False`, porque
+    activarlo mueve la superficie de dedup de todo intake futuro). Verificado leyendo
+    `email_export._escribe_mensaje`: con el flag activo cada adjunto se escribe como fichero
+    suelto en `00_Input/<lote>/`, el árbol que `sala_maquina` sí recorre.
+    **Corrección de dato:** el call site es `scripts/abrir_caso.py::_intake_email`, no
+    `core/abrir_caso`. **Sigue pendiente** la otra mitad de 68.a: que `abrir_caso` /
+    `organizar-sala-maquina` invoquen `atomize_emails` en cadena, en vez de a mano.
 - **68.b — OCR de adjuntos atomizados = "fase 2" no construida.** Las fichas `.md` de
   `01_Procesado/Emails/adjuntos/` quedan con `Descripción: (pendiente; OCR en fase 2)`. Y
   `organizar-sala-maquina` lee `00_Input`, **no** `01_Procesado/Emails/adjuntos/` → aunque se
