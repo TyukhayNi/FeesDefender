@@ -3660,3 +3660,34 @@ promueve por completitud: hoy nadie está bloqueado, y el checkin de W-02VND1 se
 
 **Coste estimado.** (1) ~1 h (caché + invalidación por mtime + test). (2) ~1 día con spec. (3) spec
 propia, sin estimar hasta responder los contraargumentos. (4) ~10 min de medición; el ajuste, trivial.
+
+## 96. El espejo `.agents/skills/` ha divergido de la fuente única `.claude/skills/`
+
+**Detectado 2026-07-27** al decidir qué hacer con los ficheros sin trackear de la raíz.
+
+**El dato.** `.agents/` son **400 ficheros y 11 MB**, un espejo de `.claude/skills/` para Codex.
+Pero ya no es un espejo fiel: **`.claude/skills/` tiene 22 skills y `.agents/skills/` tiene 25**
+(las 22 coinciden en nombre; sobran 3). `CLAUDE.md` es explícito en que la fuente única de
+desarrollo de las skills es `.claude/skills/`, así que ese árbol es una copia que nadie sincroniza
+y que ya contradice a su fuente.
+
+**Resuelto de momento (2026-07-27):** `.agents/` pasa a `.gitignore` — commitearlo pondría dos
+árboles de skills en git y consagraría la duplicación. Y `AGENTS.md` (que era una copia de
+`CLAUDE.md` con «Claude» sustituido por «Codex», con rutas fabricadas del tipo `.Codex/skills/`,
+inexistente) queda reducido a un **puntero**, avisando de que no se edite el espejo.
+
+**Lo que sigue sin decidir, y es la pregunta de fondo:** ¿debe existir ese espejo? Tres salidas:
+1. **Que no exista.** Si Codex puede leer `.claude/skills/` directamente, el espejo es deuda pura.
+   Hay que comprobar si Codex tiene alguna restricción real que lo obligue (no verificado).
+2. **Que se genere**, como `dist/`: un script que lo derive de `.claude/skills/` y un guard que
+   falle si divergen — mismo patrón que `scripts/sync_skill_helpers.py` ya usa para los helpers.
+3. **Que sea un enlace simbólico** a `.claude/skills/`. Barato en NTFS, pero exige admin y se
+   rompe en clones desde otras máquinas.
+
+**Y una pregunta previa a las tres:** ¿qué son las **3 skills de más**? Puede que sean trabajo real
+que solo vive ahí y que se perdería al ignorar el árbol (está sin trackear, así que hoy ya no tiene
+respaldo en git). **Comprobarlo antes de cualquier limpieza.**
+
+**Disparador de promoción:** que Codex trabaje con una skill obsoleta del espejo y produzca algo
+incorrecto, o decisión de Nikolai. **Coste:** ~10 min responder qué son las 3 extra; la salida (1)
+es gratis si se confirma, la (2) ~1 h con guard y test.
