@@ -384,7 +384,61 @@ En el flujo de régimen (§1.1) ese es el camino normal, no una excepción.
   automática (por nombre, por par de formatos, o marcando en el mapa qué `doc_id` del CRM es el
   eco de qué fichero del despacho) se diseña cuando exista la subida.
 
-## 8. Hallazgos colaterales (no son de este diseño)
+## 8. Impacto en las skills del despacho
+
+Revisión del cableado real (2026-07-27). Nueve skills afectadas, en cuatro grupos.
+
+### 8.1 Cambian comportamiento
+
+| Skill | Cambio |
+|---|---|
+| `organizar-sala-lectura` | Declarar que los documentos procesales **no** entran en `01_Procesado/Sala lectura` (§7). Sin esto se duplican la próxima vez que se monte la sala de lectura de un caso con pleito |
+| `preparacion-audiencia-previa` | Hoy lee «la documental procesal del expediente» **sin ruta**: la tiene que buscar. Pasa a rutas deterministas — demanda en `03_Ordinario - Demanda y documentos`, contestación en `04_Ordinario - Contestacion`, monitorio en `01`/`02` |
+| `preparacion-juicio-oral` | Igual: lee demanda y contestación y guarda en `05_Procedimiento` |
+| `escritos-judiciales` | Su tabla de destinos manda todo a `05_Procedimiento` raíz. Con `DESTINOS_VALIDOS` ampliado (§7) puede depositar en la carpeta de fase. **Decisión abierta:** ¿destino por defecto la carpeta procesal, o preguntar al letrado? |
+
+**Aviso a retirar.** `preparacion-audiencia-previa` afirma que «`05_Procedimiento` y el manifiesto
+son convención nueva; FeesDefender (core) aún no la lee», y lo repite en
+`references/manifiesto_y_registro.md`. Este diseño es precisamente lo que hace que el core la lea
+y la escriba: si el aviso se queda, contradice al código.
+
+### 8.2 Sincronización del helper (mecánico, pero el recuento importa)
+
+`registrar_outputs.py` está replicado en **siete** skills: `cendoj-descarga`,
+`contestacion-honorarios-art20-lau`, `escritos-judiciales`, `oposicion-alegacion-nulidad`,
+`preparacion-audiencia-previa`, `preparacion-juicio-oral`, `preparacion-litigio-civil`.
+`scripts/sync_skill_helpers.py` cubre esas siete exactas y `tests/test_skill_helpers_sync.py` lo
+ejecuta en `--check` exigiendo copias byte-idénticas.
+
+La verificación correcta tras ampliar `DESTINOS_VALIDOS` es `python scripts/sync_skill_helpers.py`
+seguido de `--check` y del test, **no** una comprobación de hashes a mano.
+
+### 8.3 Solo documentación
+
+- `preparacion-litigio-civil`: su árbol describe `05_Procedimiento/ ← escritos generados`; ahora
+  también recibe documental del CRM.
+- `engel-volkers`: enumera la estructura del expediente sin la subdivisión procesal.
+
+### 8.4 Decisiones abiertas
+
+- **`organizar-sala-maquina`**: su paso 6 (handoff) sugiere `organizar-sala-lectura`. Como §2.4
+  impone que la sala de máquina corra **antes** de la vista procesal, ese handoff es el sitio
+  natural para sugerirla en casos con pleito. Pendiente de decisión de Nikolai.
+- **`checkin-caso` / `checkout-caso`**: no cambian de comportamiento, pero los dos ficheros nuevos
+  no tienen sitio en la taxonomía de merge de la biblioteca. `MERGE_EXCLUSIONS` no los captura
+  (correcto: deben sincronizar) y `DERIVADOS_REGENERABLES` tampoco. Propuesta:
+  `_mapa_procesal.yaml` es **maestro** —decisión del letrado— y va por la tabla de 3 vías como
+  `identidades.yaml`; `_MANIFIESTO_PROCESAL.json` es **derivado regenerable** y va a «local gana».
+  Se resuelve en `core/config.py`; las skills solo lo documentan.
+
+### 8.5 No se tocan
+
+`triaje-viabilidad`, `viabilidad-prerelleno`, `intake-expediente`, `exportar-correos-etiqueta`, la
+lógica de `checkout-caso`/`checkin-caso`, y `contestacion-honorarios-art20-lau` /
+`oposicion-alegacion-nulidad` más allá de la sincronización del helper: solo citan
+`05_Procedimiento` raíz como destino de guardado, que sigue siendo válido.
+
+## 9. Hallazgos colaterales (no son de este diseño)
 
 Registrados aquí porque salieron al construirlo y no deben perderse:
 
