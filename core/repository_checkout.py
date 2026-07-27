@@ -29,7 +29,7 @@ sin MD5): no se puede comparar por hash → se preserva siempre.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from fnmatch import fnmatch
 from pathlib import PurePosixPath
 from typing import Any
@@ -39,6 +39,7 @@ from .config import (
     ESTADO_REPO_DEFAULT,
     ESTADO_REPO_DISPONIBLE,
     ESTADO_REPO_PRESTADO,
+    GRUPOS_MERGE,
     MERGE_EXCLUSIONS,
     PENDIENTE_CHECKIN_SUBDIR,
     TRANSICIONES_PERMITIDAS,
@@ -54,6 +55,7 @@ ACCION_PRESERVE_DRIVE = "PRESERVE_DRIVE"  # dejar Drive como está
 ACCION_CONFLICT = "CONFLICT"             # divergencia real, decisión manual
 ACCION_DELETE_DRIVE = "DELETE_DRIVE"     # borrar en Drive (a papelera, con confirmación)
 ACCION_RENAME = "RENAME"                 # renombrado detectado por hash: mover, no duplicar
+ACCION_VETO_GRUPO = "VETO_GRUPO"         # subible, pero su grupo indivisible no es consistente (N6)
 
 # Acciones que mutan el Drive (útil para el frontal y para el resumen del plan).
 ACCIONES_MUTAN_DRIVE: frozenset[str] = frozenset({
@@ -370,10 +372,23 @@ def plan_merge(
         # -- Derivados regenerables (§4.2): local gana salvo que Drive cambiara.
         if _es_derivado(ruta) and L is not None:
             if D is None:
-                acciones.append(AccionMerge(
-                    ruta=ruta, accion=ACCION_COPY_LOCAL,
-                    motivo="Derivado regenerable: local gana (no existe en Drive)",
-                ))
+                if B is not None:
+                    # N6b: no existe en Drive PERO sí en el baseline → Drive lo
+                    # borró durante el préstamo. Resucitarlo en silencio es
+                    # incoherente con el caso 6 de la tabla general, que para un
+                    # fichero normal exige decisión manual. Y con el ledger de la
+                    # vista procesal deja de ser inocuo: un ledger viejo revivido
+                    # reclama propiedad sobre ficheros que ya no coinciden.
+                    acciones.append(AccionMerge(
+                        ruta=ruta, accion=ACCION_CONFLICT,
+                        motivo="Drive borró un derivado que sigue en local: decisión manual",
+                        caso_tabla=6,
+                    ))
+                else:
+                    acciones.append(AccionMerge(
+                        ruta=ruta, accion=ACCION_COPY_LOCAL,
+                        motivo="Derivado regenerable: local gana (no existe en Drive)",
+                    ))
             elif B is not None and hD == hB:
                 acciones.append(AccionMerge(
                     ruta=ruta, accion=ACCION_COPY_LOCAL,
@@ -394,7 +409,47 @@ def plan_merge(
             acciones.append(accion)
 
     acciones.sort(key=lambda a: a.ruta)
-    return acciones
+    return _vetar_grupos(acciones)
+
+
+# Acciones que SÍ suben a Drive. El veto solo puede degradar estas.
+_ACCIONES_SUBIBLES: frozenset[str] = frozenset({ACCION_COPY_LOCAL, ACCION_RENAME})
+
+
+def _vetar_grupos(acciones: list[AccionMerge]) -> list[AccionMerge]:
+    """Aplica los grupos indivisibles de ``GRUPOS_MERGE`` (N6).
+
+    Un grupo se sube solo si **todos** sus miembros son SKIP (ausentes del plan)
+    o subibles. Cualquier ``CONFLICT``, ``PRESERVE_DRIVE`` o ``DELETE_DRIVE``
+    entre ellos degrada a ``VETO_GRUPO`` los miembros que iban a subir, con el
+    bloqueante nombrado en el motivo.
+
+    Que ``PRESERVE_DRIVE`` vete es lo que cubre el caso silencioso: sin esto, un
+    mapa que solo cambió en Drive dejaría subir el ledger local y el Drive
+    acabaría con mapa nuevo y ledger viejo, en verde y con el lock liberado.
+
+    Función PURA: no muta la lista de entrada.
+    """
+    salida = list(acciones)
+    por_ruta = {a.ruta: a for a in salida}
+
+    for grupo in GRUPOS_MERGE:
+        miembros = {_norm(r) for r in grupo}
+        bloqueantes = [
+            por_ruta[r] for r in sorted(miembros)
+            if r in por_ruta and por_ruta[r].accion not in _ACCIONES_SUBIBLES
+        ]
+        if not bloqueantes:
+            continue
+        detalle = ", ".join(f"{b.ruta} ({b.accion})" for b in bloqueantes)
+        for i, a in enumerate(salida):
+            if a.ruta in miembros and a.accion in _ACCIONES_SUBIBLES:
+                salida[i] = replace(
+                    a, accion=ACCION_VETO_GRUPO,
+                    motivo=(f"Grupo indivisible inconsistente — bloquea: {detalle}. "
+                            f"No se sube hasta reconciliar el grupo completo."),
+                )
+    return salida
 
 
 def _decidir_tabla_general(
@@ -461,6 +516,7 @@ def resumen_plan(plan: list[AccionMerge]) -> dict[str, int]:
         ACCION_CONFLICT: 0,
         ACCION_DELETE_DRIVE: 0,
         ACCION_RENAME: 0,
+        ACCION_VETO_GRUPO: 0,
     }
     for a in plan:
         if a.accion in resumen:

@@ -2460,6 +2460,12 @@ testigo compradora (art. 156 LEC) y la testigo directora de zona (DNI pendiente)
 **Anotado 2026-07-14.** Cluster D (backlog). Tres huecos observados en VALERO:
 - **`.doc` binario → `sin_soporte`.** Añadir conversión LibreOffice headless (`soffice --convert-to`) aguas
   arriba en `core/sala_maquina.clasificar_ruta`. (En VALERO había gemelos PDF, sin pérdida.)
+  **[PROMOVIDO → PLAN.md 2026-07-27]** — `[SIGUIENTE-DOC-LIBREOFFICE]`. **Disparador:** en W-02MA0R
+  (expediente CRM 487) la **demanda del juicio ordinario** existe en el CRM *solo* como
+  `ordinario_vuelta_comprador.doc`, **sin gemelo PDF**: cae a `sin_soporte`, no tiene ni MD ni OCR y
+  ningún LLM puede leerla. Se acabó el «sin pérdida» que justificaba dejarlo en backlog. Los otros dos
+  puntos de esta entrada (localizador de página, extractor de entidades) **siguen en backlog**: no tienen
+  disparador.
 - **Localizador de página falla en PDF escaneado.** `pdfminer.extract_pages` devolvió `None` al buscar por
   texto un bloque en un escaneo (sin capa de texto); fallback por render+visión o por índice de página.
 - **Extractor de "bloque de citación / entidades" con visión** (DNI, IBAN, email, móvil, domicilio) para
@@ -3430,3 +3436,34 @@ entorno.
 
 **Coste estimado.** ~30 min: helper reutilizable extraído de `health_check.py`, llamada desde `apply`, y
 un test con el binario mockeado.
+
+## 92. Integridad del manifiesto de intake: entradas de un expediente ajeno + evento de saneamiento
+
+**Anotado 2026-07-27**, a raíz del saneamiento de `W-02MA0R` (acta en el `_snapshot/` del caso).
+
+**Lo que pasó.** El `00_Input/_intake_hashes.json` de `W-02MA0R` acumuló **31 entradas del
+expediente CRM 649**, que es otro caso (`BaRR3`, `W-030LFT`) y era el **banco de pruebas** del intake
+judicial (`PLAN.md:911`). El log lo fecha: `2026-06-12T16:27:55`, `pull_crm` con
+`expediente_id: 649` y `documents_written: 31` **contra la carpeta de este caso**. Los ficheros se
+retiraron luego, pero las entradas quedaron porque `reconcile()` conserva a propósito las que no
+tienen primary vivo. Resultado: 92 entradas de las que solo 61 eran del caso, con nombres de fichero
+de un tercero —incluido un nombre de pila— en el fichero de control de otro expediente.
+
+**Dos huecos, ninguno cerrado:**
+
+1. **Nada detecta que un manifiesto contenga entradas de un expediente no declarado.** Los
+   `expediente_id` que el caso reconoce están en `_caso.md` (`sudespacho_expedientes`); comparar
+   contra ellos es una comprobación barata que hoy no existe. Es, además, exactamente la puerta de
+   integridad que pide `§5.2` del spec de la vista procesal para las ocurrencias
+   (`docs/superpowers/specs/2026-07-27-vista-procesal-05-procedimiento-design.md`), así que conviene
+   que las dos usen el mismo criterio.
+2. **`INTAKE_EVENTS` no tiene un tipo para el saneamiento de un fichero de control.** El set es
+   cerrado (26 tipos) y ninguno encaja: `delete_doc` sería inexacto y haría creer a una auditoría que
+   se borraron documentos del caso. Por eso el saneamiento del 2026-07-27 se registró en un acta en
+   `_snapshot/` y no en el log. Falta un `saneamiento_manifiesto` (o equivalente) con
+   `details = {fichero, entradas_antes, entradas_retiradas, entradas_despues, motivo, respaldo}`.
+
+**Precaución aprendida (vale para cualquier saneamiento con checkout abierto):** operar sobre la
+copia del **Drive** y **no** tocar la local. `_intake_hashes.json` no está en `MERGE_EXCLUSIONS`, así
+que entra en el merge de 3 vías; con la local igual al baseline y el Drive cambiado, el checkin
+acepta el Drive. Tocar la local haría divergir las dos ramas y provocaría un conflicto para nada.
