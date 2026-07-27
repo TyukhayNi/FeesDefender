@@ -3271,3 +3271,121 @@ mensaje ajeno puede **sobre-fusionar** hilos distintos.
 
 **Disparador de promoción:** un caso real donde un hilo con cambio de asunto quede troceado de forma
 molesta en la sala. Hasta entonces, la heurística de nombre basta.
+
+---
+
+## 90. OCR ciego bajo el sello: un escaneo con pie de firma sale `ok` en `_cobertura.md` y nadie lo revisa
+
+**Disparador:** ninguno todavía — origen en `docs/superpowers/handoffs/handoff-2026-07-27-sala-maquina-ocr-gaps.md`
+(`[SM-OCR-02]`, diagnóstico de lectura hecho en Cowork durante W-02MA0R, un expediente ad-hoc fuera del
+layout FeesDefender). A diferencia del handoff, lo de abajo **sí está verificado en vivo** contra
+ocrmypdf 17.4.2 y contra las propias funciones del repo. Hallazgos hermanos del mismo handoff:
+`[SM-OCR-01]` → #91; `[SM-OCR-03]` (bomba de descompresión PIL) **refutado**, ver el cierre de esta entrada.
+
+**Estado actual.** Un PDF escaneado cuyo único texto embebido es el **pie de firma electrónica**
+(LexNET, sellos del juzgado, cabeceras de fax) engaña a los DOS guardarraíles del pipeline, de forma
+encadenada y silenciosa:
+
+1. **Nunca llega al OCR.** `core/sala_maquina.py:516-518` decide la ruta con
+   `_texto_suficiente(texto, npags)` (`core/extractor.py:125-137`): basta ≥100 caracteres totales y una
+   densidad ≥40 char/pág. Un pie de LexNET real ronda los **228 caracteres por página** — 5,7× el umbral.
+   El documento se clasifica "PDF digital ya buscable" y se manda por `pypdf`; OCRmyPDF no se invoca jamás.
+2. **Y si llegara, `--skip-text` tampoco lo salvaría.** `core/anon/ocr.py:100-103`: con el default
+   `redo_ocr=False` siempre se pasa `skip_text=True`, cuya semántica es *"skip OCR on any pages that
+   already contain text"* — por página y todo-o-nada. Medido sobre una página construida a imitación de un
+   documento LexNET (imagen rasterizada + sello de texto real encima): `--skip-text` devuelve **31
+   caracteres** (solo el sello, cuerpo perdido); `--redo-ocr` sobre la misma página devuelve **295**
+   (cuerpo recuperado).
+3. **Y la red de calidad lo da por bueno.** `ocr_quality` (`core/sala_maquina.py:88-102`) promedia sobre
+   el documento entero. Con el sello de 228 char/pág y **cero** cuerpo recuperado, devuelve `ok` para 8,
+   20 y 40 páginas. Un documento mixto (36 páginas digitales reales + 4 escaneadas perdidas) también sale
+   `ok`. Y `ok` significa que el documento no aparece en la worklist de `_cobertura.md` **ni entra en el
+   filtro de `reforzar`**, que solo recoge `low`/`empty` (`scripts/sala_maquina.py:225-226`) — la única
+   red de rescate por visión queda inalcanzable justo para el caso que debería rescatar.
+
+Corrección al handoff: `--skip-text` **sí** opera por página (su título decía "a nivel de documento, no de
+página"). El hueco real es **sub-página** — una página con cualquier objeto de texto se salta entera,
+incluido el escaneo que lleva debajo. Nota adicional: `ocr_pdf` ya acepta `redo_ocr=True`, pero **ningún
+llamador lo pasa** — `_ocr_y_extraer` invoca `ocr_pdf(entrada, ocr_out)` a pelo
+(`core/sala_maquina.py:457`) y el `--force` del CLI solo invalida el caché de sha y regenera manifiestos
+de split, nunca toca el modo de OCR. Hoy es código inalcanzable.
+
+**Mejora propuesta.** En este orden, porque el paso 0 es el que decide si los demás valen la pena:
+
+- **(0) Detector, antes que arreglo.** Auditoría read-only sobre los casos ya procesados: por cada PDF de
+  `00_Input/`, marcar como sospechoso el que tenga páginas con imagen a página completa cuyo texto
+  extraído sea corto y **casi idéntico entre páginas** (la firma repetida es la huella delatora). Salida:
+  lista de documentos y casos afectados. No escribe nada en el expediente.
+- **(1) Cambiar el default del motor a `--redo-ocr`.** No es `--force-ocr`: la librería documenta que
+  *"existing visible text objects will not be changed"*, solo aplica OCR al texto que vive dentro de
+  rásteres. Por tanto no reproduce el bloat de 3-10× ni la destrucción de la capa de texto real que
+  obligó a abandonar `--force-ocr` (bitácora 2026-07-14, VALERO).
+- **(2) Métrica por página en `ocr_quality`,** no solo la media: marcar `low` si ≥N páginas quedan bajo el
+  umbral aunque el promedio pase. Es lo que rompe la dilución del punto 3.
+- **(3) Relajar el gate de entrada:** `_texto_suficiente` no debería concluir "digital" cuando el texto
+  por página es casi idéntico entre páginas.
+
+**Justificación de no aplicarlo ahora.** Cambiar el modo de OCR por defecto afecta a todos los
+expedientes del despacho: `--redo-ocr` re-procesa páginas que hoy se saltan (corridas más lentas) y deja
+`_sala_maquina_state.json` y las coberturas ya persistidas desalineadas con el motor nuevo, con la
+pregunta abierta de qué casos re-correr. Sin el paso 0 no sabemos si esto afecta a 0 documentos o a 200,
+y esa cifra es justo lo que debe decidir el alcance. Decisión de Nikolai.
+
+**Cautela sobre el disparador.** La regla del proyecto es promover a `PLAN.md` cuando haya un caso real
+que lo necesite; aquí ese criterio se muerde la cola, porque **el fallo es silencioso por construcción**:
+sale `ok`, no entra en ninguna worklist, y nadie lo nota salvo que eche en falta un documento leyendo el
+fondo del asunto. Por eso el paso 0 se propone como diagnóstico barato: convertir un riesgo invisible en
+un número. Si el detector encuentra documentos afectados en expedientes vivos, **eso** es el disparador.
+
+**Coste estimado.** (0) detector read-only ~1 h. (1) ~15 min de código, más la decisión de re-corrida.
+(2) ~1 h (`ocr_quality` por página + tests). (3) ~30 min. Nada de esto exige tocar el split ni la sala de
+lectura.
+
+**Hallazgo hermano refutado (`[SM-OCR-03]`, bomba de descompresión).** El handoff afirmaba "grep vacío de
+`PIL`/`MAX_IMAGE_PIXELS` en todo `core/` y `scripts/`" y deducía que una imagen sobredimensionada caería
+en el `except Exception` genérico de `ocr.py:125-126` dejando el documento `empty` sin red. Las dos
+premisas son falsas: `core/anon/imagen_a_pdf.py:43` importa PIL y llama a `Image.open()` (también
+`core/local_organizer.py:179`), con lo que el guardarraíl propio de Pillow (`MAX_IMAGE_PIXELS` =
+89.478.485 px) está activo; y ocrmypdf trae el suyo (`--max-image-mpixels`, "treating an image as a
+decompression bomb"). Además el fallo, si ocurre, **es ruidoso**: en la ruta imagen lo captura
+`core/sala_maquina.py:529` → fila `sin_soporte` con la nota "conversión a PDF falló: …", y en la ruta PDF
+queda `empty` con "OCR falló: …". En ambos casos el documento aparece como no-`ok` en `_cobertura.md`,
+que es el comportamiento diseñado. Es el opuesto exacto de #90: falla a la vista. No merece entrada.
+
+---
+
+## 91. `sala_maquina apply` no comprueba el motor OCR antes de una corrida larga
+
+**Disparador:** ninguno — `[SM-OCR-01]` del handoff de 2026-07-27, **parcialmente refutado** al
+verificarlo; queda un resto real, menor.
+
+**Estado actual.** Lo refutado primero: el handoff sostenía que no existe chequeo de que Tesseract tenga
+`spa+cat+rus`. Sí existe. `scripts/health_check.py` comprueba los binarios del sistema
+(`_check_system_binaries`, líneas 104-118: tesseract, ocrmypdf, ghostscript) y los paquetes de idioma
+(`_check_tesseract_langs`, líneas 121-142, exige exactamente `{spa, cat, rus}` vía
+`tesseract --list-langs`), y está expuesto como `/health-check`. También es inexacto describir
+`ocr_disponible()` (`core/anon/ocr.py:129-135`) como el preflight de la sala de máquina: su único
+consumidor es `core/anon/api.py:263`, y el camino de sala de máquina no lo llama nunca.
+
+Lo que sí queda en pie: `scripts/sala_maquina.py::apply` (líneas 164-171) tiene preflight para `--vision`
+(`_exigir_vision_cableada`, línea 169, que aborta antes de procesar) pero **ninguno para el motor OCR**.
+Con Tesseract ausente o sin el paquete de idioma, el aislamiento por documento de `ejecutar`
+(`core/sala_maquina.py:511`) hace lo que debe —no tumbar el lote— con el efecto perverso de que la
+corrida recorre `00_Input/` entero y termina "correctamente" con la cobertura completa en `empty` /
+"OCR falló". En un caso grande eso son horas antes del primer síntoma (referencia de escala: ~672
+ficheros en W-02VND1). Compone con #84: al no ser `ok`/`low`, ninguno entra en
+`_sala_maquina_state.json`, así que la corrida siguiente los reintenta todos otra vez.
+
+**Mejora propuesta.** En `apply`, simétrico con el preflight de `--vision`: si el plan trae algún
+documento por ruta `pdf` o `imagen`, comprobar **una vez** que el binario Tesseract responde y que los
+idiomas pedidos están instalados, y abortar con mensaje accionable (remitiendo a `/health-check`) en vez
+de procesar el lote. Extraer el chequeo de `health_check.py` a un helper reutilizable en lugar de
+duplicar la lógica.
+
+**Justificación de no aplicarlo ahora.** Nadie está bloqueado: el entorno del PC está bien instalado y
+`/health-check` ya cubre el diagnóstico cuando se sospecha. Esto es conveniencia —fallar en dos segundos
+en vez de en dos horas—, no corrección. Su valor real aparece en máquina nueva o tras un cambio de
+entorno.
+
+**Coste estimado.** ~30 min: helper reutilizable extraído de `health_check.py`, llamada desde `apply`, y
+un test con el binario mockeado.
