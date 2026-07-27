@@ -30,6 +30,7 @@ la sala — CERRADO por Nikolai 2026-07-19»)._
 | **Ubicación del mapping** | `05_Procedimiento/_mapa_procesal.yaml` |
 | **Deriva (doc_id nuevos)** | Van a `sin_asignar:`; **`apply` aborta** mientras no esté vacío. Nunca se adivina la carpeta |
 | **Qué fichero se copia** | Se decide desde **`_cobertura.json`** (método declarado), no desde la existencia de artefactos — §2.4 |
+| **Buscabilidad** | **No se promete.** `estado: ok` puede ser falso para escaneos con pie de firma electrónica (`MEJORAS #90`, medido: 6 pérdidas reales). Se copia el mejor artefacto y se reporta lo declarado. La pieza de cobertura va **después** de #90 — §2.4 |
 | **Documentos en los dos procedimientos** | Se copian en **ambas** carpetas, con la numeración de cada pleito. Reparto por `doc_id`, no por SHA (§4.2) |
 | **`01_OCR/` no se universaliza** | Se mantiene, justificado por **semántica, fidelidad y coste** — no por «pérdida de custodia», que era un argumento sobreactuado (§2.4) |
 | **Índice para el letrado** | `<carpeta>/_index.md`, con un **reconciliador propio** de filas `CRM:<doc_id>` (§2.3) |
@@ -264,12 +265,43 @@ bloquea en vez de degradar en silencio.
 agrupa por **`parent_sha256`** —que la cobertura ya persiste— y la calidad del conjunto es **la peor
 de sus segmentos**. Nunca se busca un MD padre por slug derivado.
 
-**Buscabilidad: promesa acotada.** La heurística de suficiencia es **global** (`>100` caracteres y
-`>40` char/página de media). En el piloto, **8 de 65 PDF la superan conteniendo páginas de menos de
-40 caracteres**, cinco con al menos una página vacía, y dos escrituras de 74 páginas pasan con 38
-páginas cada una bajo el umbral. Por tanto **este diseño no promete buscabilidad íntegra**: promete
-«texto global suficiente» y **reporta la calidad declarada** (`estado`, `chars`). La detección por
-página y su OCR selectivo es un cambio de la sala de máquina y sale como mejora propia (§9.2).
+**Buscabilidad: `estado: ok` NO es una garantía.** Y esto es más grave de lo que la v3 admitía.
+
+La heurística de suficiencia es **global** (`>100` caracteres y `>40` char/página de media). En el
+piloto, **8 de 65 PDF la superan conteniendo páginas de menos de 40 caracteres**, cinco con al menos
+una página vacía, y dos escrituras de 74 páginas pasan con 38 páginas cada una bajo el umbral.
+
+Pero el fallo mayor lo midió una sesión concurrente el mismo día (`MEJORAS #90`, promovido a la fila
+**#1** de `PLAN.md`; nace del OCR manual de 32 PDF durante la preparación de la audiencia previa de
+**este mismo caso**). Un escaneo cuyo único texto embebido es el **pie de firma electrónica** —LexNET,
+sellos del juzgado, cabeceras de fax— engaña a los tres guardarraíles en cadena:
+
+1. **Nunca llega al OCR.** El pie ronda los **228 caracteres por página**, 5,7× el umbral. El
+   documento se clasifica «PDF digital ya buscable» y va por `pypdf`; OCRmyPDF no se invoca.
+2. **Y si llegara, `--skip-text` (el default) no lo salvaría**: se salta la página entera si contiene
+   cualquier objeto de texto. Medido: 31 caracteres con `--skip-text` frente a 295 con `--redo-ocr`.
+3. **Y `ocr_quality` lo bendice**: promedia sobre el documento, devuelve `ok`, y `ok` no entra en la
+   worklist de `_cobertura.md` **ni en el filtro de `reforzar`**, que solo recoge `low`/`empty`. La
+   única red de rescate queda inalcanzable justo para el caso que debería rescatar.
+
+Medición de esa sesión: **402 documentos `ok`, 24 candidatos, 6 pérdidas reales**; en `W-02VND1`
+faltaba el **81-83 % del texto de unas cuentas anuales**.
+
+**Consecuencia directa para esta pieza.** La clase de documento afectada —resoluciones del juzgado,
+cédulas, diligencias, escritos con sello— **es la mayoría de lo que llena la vista procesal**. El
+piloto tiene dos `lxn*.pdf`, decretos, una cédula de emplazamiento y diligencias de ordenación. Por
+tanto:
+
+- Este diseño **no promete buscabilidad**, ni íntegra ni «global suficiente». Promete **copiar el
+  mejor artefacto disponible y reportar lo que la cobertura declara**, sabiendo que la declaración
+  puede ser optimista.
+- La pieza que endurece la cobertura (§9.2, `artifact_sha256` + escritura atómica) va **después** de
+  `MEJORAS #90`, no en paralelo: mientras `estado: ok` pueda ser falso, autenticar el artefacto por
+  hash asegura que copiamos *el fichero correcto*, no que su texto esté completo.
+- Existe ya un cribado read-only, `scripts/detectar_ocr_ciego.py`, que **hay que pasar sobre el caso
+  antes de dar la vista por buena**. Es cribado, no veredicto: de 24 candidatos, 6 eran reales.
+- **En el piloto no se puede correr todavía**: `01_Procesado` está vacío, la sala de máquina no ha
+  corrido nunca sobre `W-02MA0R`. El orden es sala de máquina → detector → vista.
 
 **Procedencia doble en el ledger.** Se guarda el SHA del **crudo** y el del **fichero copiado**, más
 de qué se derivó. Sin eso no hay cadena de custodia del artefacto.
