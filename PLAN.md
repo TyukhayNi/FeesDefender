@@ -273,12 +273,12 @@ puro + orquestadores finos. Spec: `docs/superpowers/specs/2026-07-09-abrir-caso-
 
 ## [SIGUIENTE-SALA-HILOS] Bundle por hilo de correo en la sala de lectura (Slice 1)
 
-> ✅ **CERRADO (2026-07-26)** → ledger `## ✅ Cerrados`. Construido, revisado y mergeado en **PR #131**
+> ✅ **CERRADO (2026-07-27)** → ledger `## ✅ Cerrados`. Construido, revisado y mergeado en **PR #131**
 > (`d27172b`), skill **v1.14**, suite 2366/0/0. Bloque conservado como histórico. **Tail operativo que
 > NO bloquea: re-importar el `.skill` v1.14 en Cowork** (si no, Paola/Ana/Sergio siguen en la v1.12).
 
 *Spec: `docs/superpowers/specs/2026-07-23-emails-atomizados-sala-lectura-design.md` (re-tajada
-2026-07-26). Revisión adversarial adjudicada: `…-adversarial-review.md`. Origen: `MEJORAS #75`
+2026-07-27). Revisión adversarial adjudicada: `…-adversarial-review.md`. Origen: `MEJORAS #75`
 (promovido parcialmente). Plan TDD: `docs/superpowers/plans/2026-07-26-sala-lectura-bundle-por-hilo.md`.
 Implementación: Claude Code.*
 

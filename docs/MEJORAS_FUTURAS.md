@@ -2594,7 +2594,7 @@ completitud de diseño ni por anticipación).
 
 ## 89. Que la documentación no se desincronice ni cueste tiempo: 4 medidas contra los líos de edición paralela
 
-**Origen (2026-07-26, sesión del bundle por hilo / PR #131).** Al integrar la rama con `main` —que
+**Origen (2026-07-27, sesión del bundle por hilo / PR #131).** Al integrar la rama con `main` —que
 había avanzado 4 PRs por sesiones concurrentes— salieron **9 conflictos** y tres colisiones de
 identificadores: el **#84** de este mismo documento (dos sesiones cogieron el mismo número), la
 **versión 1.13** de `organizar-sala-lectura` (publicada en `main` mientras la rama escribía esa misma
@@ -2858,7 +2858,7 @@ despliegue.
 
 ## 75. Sala de lectura como consumidor de la capa «procesado» (MD fiables → OCR-soporte → crudo)
 
-> ⚠️ **[PROMOVIDO PARCIALMENTE → `PLAN.md`, 2026-07-26].** El spec que materializaba este ítem se
+> ⚠️ **[PROMOVIDO PARCIALMENTE → `PLAN.md`, 2026-07-27].** El spec que materializaba este ítem se
 > **re-tajó en tres slices** tras dos revisiones adversariales (ver
 > `docs/superpowers/specs/2026-07-23-emails-atomizados-sala-lectura-adversarial-review.md`):
 > la **granularidad** (un documento por hilo, no por mensaje) se promueve como
@@ -3191,7 +3191,7 @@ test). (b) solo visibilidad: ~30 min (contar en `plan`, sin cambiar `apply`).
 
 **Origen.** Es el objetivo original del spec
 `docs/superpowers/specs/2026-07-23-emails-atomizados-sala-lectura-design.md`, que el **re-tajo del
-2026-07-26** dejó fuera: que `organizar-sala-lectura` deje de releer el `.eml` crudo cuando el caso ya
+2026-07-27** dejó fuera: que `organizar-sala-lectura` deje de releer el `.eml` crudo cuando el caso ya
 tiene `core/email_atomize` corrido, y aproveche el dedup de adjuntos, la limpieza de MIME/HTML y la
 autoría reconstruida de Capa B. La arquitectura y los criterios de copia siguen siendo los que Nikolai
 cerró el 2026-07-19 (`#75`); lo que falta es un spec que resuelva los bloqueantes.
@@ -3226,7 +3226,7 @@ el Slice 1 ya entrega la legibilidad, que era el beneficio visible.
 
 ## 87. Motor de extracción/OCR unificado para adjuntos de correo (Slice 3 del re-tajo)
 
-**Origen.** El §8 del spec de 2026-07-23, retirado en el re-tajo del 2026-07-26 por ser un proyecto
+**Origen.** El §8 del spec de 2026-07-23, retirado en el re-tajo del 2026-07-27 por ser un proyecto
 independiente de la sala de lectura que se había colado dentro.
 
 **El problema real.** `core/adjuntos_contenido` extrae texto de los adjuntos con Docling, un motor
