@@ -176,9 +176,20 @@ solo existe como memoria/prosa, nunca como filtro de código.*
 - [ ] **Norma de curado de etiqueta**: la etiqueta Gmail de un caso se puebla SIEMPRE
   buscando por la referencia específica del caso (W-code/dirección), nunca por nombre de
   cliente en genérico ("EV MMC SPAIN") — así se evita arrastrar ruido de otros casos.
-- [ ] **Chequeo post-atomización**: avisar si aparece un W-code DISTINTO al del caso
+- [x] **Chequeo post-atomización**: avisar si aparece un W-code DISTINTO al del caso
   actual en el nombre de un adjunto/asunto — señal fuerte de contaminación cruzada (habría
   bastado para detectar los 7 casos ajenos automáticamente en W-02VUDR).
+  ✅ `core/email_atomize/contaminacion.py` (capa pura) + gancho en `atomize_dir` → nota en
+  `AtomizeReport.notas`. **AVISA, no excluye** (la decisión de borrar es del letrado, coherente
+  con el remedio de W-02VUDR); calla si del nombre de la carpeta no se deriva W-code
+  (`(SIN REFERENCIA)`); no mira el cuerpo (el letrado referencia otros casos con normalidad).
+  +15 tests. Commit `20465ef`.
+- [x] **Adjuntos que llegan solo por correo** (`MEJORAS #68.a`, promovido por decisión de
+  Nikolai 2026-07-27): `scripts/abrir_caso.py::_intake_email` llamaba a `export_label` con el
+  default `extract_attachments=False` **sin exponer el flag** → un adjunto sin copia en Drive
+  no llegaba nunca a la sala de máquina. Nuevo `--extraer-adjuntos` (default intacto: activarlo
+  mueve la superficie de dedup). +3 tests. Commit `07b0377`. Queda abierto `#68.b` (OCR de los
+  adjuntos ya atomizados, que se solapa con `#87`).
 - [ ] Backlog relacionado no promovido: auditar si alguno de los 7 casos ajenos tiene a su
   vez documentación de W-02VUDR colada por el mismo motivo (acción de seguimiento aparte,
   no acoplada al cierre de este caso).
