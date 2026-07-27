@@ -23,7 +23,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 5 | [Drive-disco: pasos 5-7 + Claude Code](#siguiente-mcp-drive-disco-pasos-5-7-diferidos) | ✅ desplegado | resto pasivo: check Modo 1 en caso real | medio |
 | 6 | [abrir-caso F3-judicial](#abrir-caso--f1--f2a--f3-ac-mergeadas-f2b-aparcada-f3-judicial-pendiente) | disparador confirmado 2026-07-22 | plan concreto listo (4 piezas, ver bloque) | medio |
 | 7 | [Google MCP F4 (Calendar)](#siguiente-google-mcp-f1-lectura--mergeada--f2-escriturapermisosnavegación--mergeada--f3f4-pendientes) | diferida | disparador | medio |
-| 8 | [Intake email — filtro de exclusión de ruido](#siguiente-intake-email-filtro-exclusión-de-ruido-administrativo-y-cruzado) | pendiente | disparador: W-02VUDR (fuga cruzada de 7 casos ajenos + cartera de litigios) | medio |
+| 8 | [Intake email — filtro de exclusión de ruido](#siguiente-intake-email-filtro-exclusión-de-ruido-administrativo-y-cruzado) | parcial (2/4) | disparador: W-02VUDR (fuga cruzada de 7 casos ajenos + cartera de litigios) | medio |
 | 9 | [Vista procesal en `05_Procedimiento`](#siguiente-vista-procesal-vista-procesal-del-expediente-en-05_procedimiento) | spec lista, plan por rehacer | revisión adversarial (Codex) pendiente | medio |
 | 10 | [`.doc` → LibreOffice headless](#siguiente-doc-libreoffice-doc-binario-sin-md-ni-ocr-conversión-libreoffice-headless) | pendiente | disparador: W-02MA0R, la demanda del ordinario solo existe en `.doc` sin gemelo PDF | bajo |
 
@@ -248,9 +248,20 @@ solo existe como memoria/prosa, nunca como filtro de código.*
 - [ ] **Norma de curado de etiqueta**: la etiqueta Gmail de un caso se puebla SIEMPRE
   buscando por la referencia específica del caso (W-code/dirección), nunca por nombre de
   cliente en genérico ("EV MMC SPAIN") — así se evita arrastrar ruido de otros casos.
-- [ ] **Chequeo post-atomización**: avisar si aparece un W-code DISTINTO al del caso
+- [x] **Chequeo post-atomización**: avisar si aparece un W-code DISTINTO al del caso
   actual en el nombre de un adjunto/asunto — señal fuerte de contaminación cruzada (habría
   bastado para detectar los 7 casos ajenos automáticamente en W-02VUDR).
+  ✅ `core/email_atomize/contaminacion.py` (capa pura) + gancho en `atomize_dir` → nota en
+  `AtomizeReport.notas`. **AVISA, no excluye** (la decisión de borrar es del letrado, coherente
+  con el remedio de W-02VUDR); calla si del nombre de la carpeta no se deriva W-code
+  (`(SIN REFERENCIA)`); no mira el cuerpo (el letrado referencia otros casos con normalidad).
+  +15 tests. Commit `20465ef`.
+- [x] **Adjuntos que llegan solo por correo** (`MEJORAS #68.a`, promovido por decisión de
+  Nikolai 2026-07-27): `scripts/abrir_caso.py::_intake_email` llamaba a `export_label` con el
+  default `extract_attachments=False` **sin exponer el flag** → un adjunto sin copia en Drive
+  no llegaba nunca a la sala de máquina. Nuevo `--extraer-adjuntos` (default intacto: activarlo
+  mueve la superficie de dedup). +3 tests. Commit `07b0377`. Queda abierto `#68.b` (OCR de los
+  adjuntos ya atomizados, que se solapa con `#87`).
 - [ ] Backlog relacionado no promovido: auditar si alguno de los 7 casos ajenos tiene a su
   vez documentación de W-02VUDR colada por el mismo motivo (acción de seguimiento aparte,
   no acoplada al cierre de este caso).
