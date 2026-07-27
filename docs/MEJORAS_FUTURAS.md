@@ -2710,6 +2710,14 @@ próxima apertura de caso que use el CLI local, o decisión de Nikolai de manten
 
 ## 68. Cableado del pipeline de correo: atomize + OCR de adjuntos no automáticos
 
+> ⚠️ **[PROMOVIDO → `PLAN.md`, 2026-07-27]** — el **resto de 68.a** (encadenar la atomización, que hoy
+> nadie invoca: verificado que solo la llaman el CLI manual y un script de auditoría) va al bloque
+> `[SIGUIENTE-CABLEADO-CORREO]`, por **decisión explícita de Nikolai**; el disparador que este ítem
+> esperaba (adjunto relevante que llegue solo por correo, sin copia en Drive) nunca se materializó.
+> La mitad del flag `--extraer-adjuntos` ya está **resuelta** (`07b0377`). El **motor** de OCR de
+> adjuntos de 68.b vive en **`MEJORAS #87`**, no en el bloque nuevo: allí solo se cablea quién llama a
+> quién. El consumo de las fuentes atomizadas por la sala de lectura es **`MEJORAS #86`**.
+
 **Anotado 2026-07-17** (caso W-02T3XO). El motor `core/email_atomize` (CLI `scripts/atomize_emails.py`)
 extrae los adjuntos embebidos de los `.eml` (dedup por sha, filtro decorativo, fichas +
 `INDICE_ADJUNTOS.md`, Capa B de autoría), pero **no está cableado** en el flujo:
