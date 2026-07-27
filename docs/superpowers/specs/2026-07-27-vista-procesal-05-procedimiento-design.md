@@ -1,6 +1,8 @@
 # Diseño — Vista procesal del expediente en `05_Procedimiento`
 
 _Brainstorming Claude Code · FeesDefender · 2026-07-27_
+_**v3.1 — §11 cerrada: no queda ninguna decisión abierta.** Incorpora el viaje de ida y vuelta del
+flujo de régimen (§1.1, con `eco_crm`) y el hueco sin dueño de la documental numerada (§7)._
 _**v3 — reescrita tras la revisión adversarial de Codex (veredicto NO SHIP, 25 hallazgos).**
 Los 25 se aceptaron en sustancia, con seis ajustes de severidad y dos recortes de alcance; la
 adjudicación hallazgo → sección está en §10. Informe y handoff:
@@ -32,6 +34,11 @@ la sala — CERRADO por Nikolai 2026-07-19»)._
 | **`01_OCR/` no se universaliza** | Se mantiene, justificado por **semántica, fidelidad y coste** — no por «pérdida de custodia», que era un argumento sobreactuado (§2.4) |
 | **Índice para el letrado** | `<carpeta>/_index.md`, con un **reconciliador propio** de filas `CRM:<doc_id>` (§2.3) |
 | **Sala de lectura** | Los procesales **no** van a `01_Procesado/Sala lectura`, y la exclusión es **operativa** (por SHA/ocurrencia), no narrativa (§7, §8) |
+| **Qué alimenta la vista** | **Lo que se presentó en el pleito**: documentos del CRM y escritos del despacho. **No** la materia prima de `00_Input` (Drive, WhatsApp, correo), que es la vista de «qué pasó» y vive en la sala de lectura |
+| **Viaje de ida y vuelta (régimen)** | La carpeta es el **origen**: convertimos y OCRizamos ahí, subimos al CRM, y al bajar vuelve lo que ya teníamos. El eco se **declara** con `eco_crm`, no se detecta por huella (§1.1) |
+| **Imágenes** | Con texto → PDF buscable; sin texto → original. **Sin ejercitar**: cero imágenes en el `05_CRM` del piloto (§11.1) |
+| **`escritos-judiciales`** | **Pregunta la carpeta de fase** y escribe ahí. No puede deducir monitorio vs ordinario |
+| **Override de cobertura** | Se declara en el mapa (`sin_cobertura_ok`), se registra en `_intake_log.jsonl` con actor |
 
 ## 1. El flujo real, en los dos sentidos
 
@@ -55,7 +62,42 @@ Con `origen: despacho` los escritos propios quedan **inventariados** en vez de t
 **Caso piloto W-02MA0R:** los 70 documentos son `origen: crm` (la demanda es anterior a
 FeesDefender). La rama `despacho` no se ejercita aquí; se implementa porque es el camino de régimen.
 
-### 1.1 El problema: el CRM no archiva por fase procesal
+### 1.1 El viaje de ida y vuelta: la carpeta es el origen (Nikolai, 2026-07-27)
+
+En un caso con FeesDefender activo el recorrido de un documento propio es este:
+
+1. La conversión del material bruto a PDF —una conversación de WhatsApp, un correo, una foto— se
+   hace **en la carpeta del caso**, no en el CRM. Ahí es donde adquiere su capa de texto.
+2. La demanda y sus documentos numerados **suben** al CRM, para el procurador y para centralizar.
+3. Al preparar la audiencia previa o el juicio, **bajan** otra vez a la carpeta.
+4. Pero **ya estaban ahí**: la carpeta fue el origen de la subida, y ya venían buscables.
+
+Cuatro consecuencias de diseño:
+
+**(a) El eco del CRM se declara, no se detecta.** Un documento propio existe por dos vías: el
+fichero de la carpeta (nuestro, con su nombre) y el documento del CRM (con su `doc_id`) que vuelve
+al bajar. Sin declararlo, la vista lo mostraría **dos veces**. La entrada `despacho` del mapa lleva
+por eso un campo `eco_crm` con el `doc_id` del que es original (§3). No se intenta detectar por
+huella: si el CRM reenvuelve el PDF al almacenarlo el SHA cambia y ninguna comparación automática lo
+pillaría.
+
+**(b) En régimen el intake es acotado, no `--full`.** Del CRM solo hace falta lo que no tenemos: la
+contestación, los documentos de contrario, decretos, cédulas y tasas. `--full` es para los casos
+anteriores a FeesDefender, como el piloto.
+
+**(c) El original nuestro manda.** Para un documento que existe por las dos vías, el fichero que se
+queda en la carpeta es **el nuestro** —es el que preparamos y presentamos—, y el `doc_id` del CRM es
+el metadato que lo ata al pleito. La copia del CRM es un artefacto de tránsito.
+
+**(d) El OCR se hace una vez, antes de subir.** Para esos documentos la sala de máquina deja de ser
+requisito previo de la vista: llegan buscables de fábrica. Sigue siendo necesaria para lo que baja del
+CRM sin capa de texto (lo del contrario y lo del juzgado).
+
+**Y `sin_asignar` se convierte en la herramienta de trabajo del letrado:** lo que aparece ahí es, o
+algo nuevo del juzgado o del contrario —se asigna a su carpeta—, o el eco de un fichero propio —se
+declara con `eco_crm`—. No hay una tercera posibilidad.
+
+### 1.2 El problema: el CRM no archiva por fase procesal
 
 Dos procedimientos (monitorio y, tras la oposición, ordinario) y **70 documentos** en el gestor:
 
@@ -208,7 +250,8 @@ desconocidas, así que ampliarlo más adelante no rompe nada.
 | PDF o imagen escaneada (`metodo: ocr`) | `01_OCR/<slug>.pdf` | el artefacto **debe existir** y su ruta derivarse de `slug`; si falta → **bloqueo** |
 | Nativo textual `.docx`/`.rtf`/`.txt` (`metodo: nativo`) | crudo | SHA del crudo == `cobertura.sha256` |
 | Email `.eml` | **MD atomizado + adjuntos**, no el `.eml` | resolución vía `email_atomize`; **fuera de v1** (§7) |
-| Fotografía / imagen | crudo | el criterio del 2026-07-19 pide crudo para foto aunque hoy pase por OCR: **decisión abierta** (§11) |
+| Imagen **con** texto (`estado: ok`/`low`) | `01_OCR/<slug>.pdf` | nota en el índice si la calidad es `low` |
+| Imagen **sin** texto (`estado: empty`) | crudo | es una foto de algo, no de una página: el PDF no aporta nada |
 | `metodo: sin_soporte` | crudo **con aviso** | ni MD ni OCR: el letrado lo abre, ningún LLM lo lee |
 | Sin cobertura para un documento soportado | — | **bloqueo**, salvo override explícito que registre «crudo no buscable» |
 
@@ -274,14 +317,20 @@ carpetas:
     - {origen: crm, doc_id: '33435', orden: 'D-02', descripcion: contrato_mediacion}
   "03_Ordinario - Demanda y documentos":
     - {origen: despacho, fichero: DEMANDA_W-02MA0R.docx}
+    # Documento propio que ya viajó al CRM y ha vuelto: se declara su eco (§1.1a)
+    - {origen: despacho, fichero: D-04_chat_whatsapp.pdf, eco_crm: '40725'}
 sin_asignar:
   - {doc_id: '41219', fichero: justif_presentacion_escr_pide_compa_telemat.pdf, lote: '2026-05-29T12:07'}
 ```
 
-| `origen` | Campos exigidos | Clave lógica | Nombre en destino |
-|---|---|---|---|
-| `crm` | `doc_id`, `orden`, `descripcion` | `crm:<expediente_id>:<doc_id>` | `<orden>_<descripcion>.<ext del artefacto>` |
-| `despacho` | `fichero` | `despacho:<fichero>` | **el que ya tiene** |
+| `origen` | Campos exigidos | Opcionales | Clave lógica | Nombre en destino |
+|---|---|---|---|---|
+| `crm` | `doc_id`, `orden`, `descripcion` | `sin_cobertura_ok` | `crm:<expediente_id>:<doc_id>` | `<orden>_<descripcion>.<ext del artefacto>` |
+| `despacho` | `fichero` | `eco_crm` | `despacho:<fichero>` | **el que ya tiene** |
+
+**`eco_crm`** declara que el `doc_id` indicado es la copia del CRM de este fichero propio. Efecto:
+ese `doc_id` **no aparece en `sin_asignar` ni se copia**, y el ledger anota la correspondencia. Es el
+mecanismo que evita ver la demanda dos veces en régimen (§1.1a).
 
 `plan` **propone** `orden` y `descripcion`: número de documento si el nombre del CRM lo lleva
 (`D 02` → `D-02`, `D 02-A` → `D-02A`, `DOC 3` → `D-03`); `00` si no lo lleva y la carpeta es una de
@@ -335,7 +384,7 @@ ocurrencias `active`, las rutas existentes en disco, los SHA actuales y los erro
 | `registrar` | Entrada `despacho` presente en su carpeta y no inventariada. **No copia ni renombra** |
 | `borrar` | En el ledger, ya no en el YAML. **Solo entradas `crm`** |
 | `desregistrar` | Entrada `despacho` que sale del YAML: se retira del inventario, **el fichero se queda** |
-| `sin_asignar` | Ocurrencia `active` del expediente ausente del YAML |
+| `sin_asignar` | Ocurrencia `active` del expediente ausente del YAML **y no declarada como `eco_crm`** de ninguna entrada `despacho` |
 | `avisos` | Calidad `low`/`empty`, `sin_soporte`, override de cobertura, sala de máquina no ejecutada |
 | `ajenos` | Fichero no declarado dentro de las cinco carpetas — se reporta, **no se toca** |
 
@@ -402,6 +451,8 @@ distintos. Es legítimo; la puerta de colisión mira solo el **nombre final**.
 
 6. `sin_asignar` no vacío.
 7. Una entrada `despacho` cuyo fichero no está en la carpeta que declara.
+7-bis. Un `eco_crm` que apunta a un `doc_id` **sin ocurrencia `active`** en el expediente, o a uno
+   que **ya está asignado** como entrada `crm` (sería el mismo documento por dos vías declaradas).
 
 **Contrato del mapa**
 
@@ -467,6 +518,14 @@ escrito generado se registre en su fase (camino normal del flujo de §1).
 - **La reescritura de `intake_manifest` al modelo de ocurrencias** (opción A). Disparador para
   reabrirla: que una segunda fuente necesite ocurrencias — el candidato natural es la subida
   carpeta → CRM, que tendrá que reconciliar lo que subimos con lo que el CRM devuelve.
+- **La preparación de la documental numerada.** En el flujo de régimen (§1.1) la carpeta es el
+  origen, pero **hoy nada produce el `D-04_chat_whatsapp.pdf`**: `escritos-judiciales` genera el
+  escrito, no sus documentos; la sala de máquina convierte y OCRiza pero deja el resultado en
+  `01_Procesado/02 Sala de máquina`, sin numerar y sin condición de documento del pleito. El salto de
+  «material bruto de `00_Input`» a «documento numerado listo para aportar» es **manual** y no tiene
+  dueño. Esta pieza lo acepta sin problema como `origen: despacho`, pero alguien tiene que ponerlo.
+  Es un proyecto propio, con su propia decisión sobre quién numera y con qué criterio. →
+  `MEJORAS_FUTURAS.md`.
 - **La subida carpeta → CRM.** Es la otra mitad del flujo de §1 y un proyecto propio: los endpoints
   están inventariados (`POST /api/documents`, `/api/documents/single-document/import`,
   `GET /api/documents/presigned_urls/{service}/upload/{n}`) y **el cliente documental de `core` solo
@@ -497,7 +556,7 @@ escrito generado se registre en su fase (camino normal del flujo de §1).
 | `organizar-sala-lectura` | Exclusión **operativa** de los procesales por ocurrencia/SHA (§7) |
 | `preparacion-audiencia-previa` | Hoy lee «la documental procesal» **sin ruta**. Pasa a rutas deterministas: demanda en `03_Ordinario`, contestación en `04_Ordinario`, monitorio en `01`/`02`. **Y hay que retirar su aviso** de que «FeesDefender (core) aún no lee `05_Procedimiento`», repetido en `references/manifiesto_y_registro.md`: este diseño lo invalida |
 | `preparacion-juicio-oral` | Igual: lee demanda y contestación, guarda en `05_Procedimiento` |
-| `escritos-judiciales` | Con `DESTINOS_VALIDOS` ampliado puede depositar en la carpeta de fase. **Decisión abierta** (§11) |
+| `escritos-judiciales` | Con `DESTINOS_VALIDOS` ampliado, **pregunta la carpeta de fase y escribe ahí** (§11.2). No puede deducir monitorio vs ordinario: es conocimiento del caso |
 | `contestacion-honorarios-art20-lau` | **Reclasificada**: lee la documental del pleito, no es solo sincronización de helper |
 | `oposicion-alegacion-nulidad` | **Reclasificada**: idem |
 
@@ -613,14 +672,54 @@ Los 25 hallazgos se aceptan en sustancia. Seis ajustes de severidad y dos recort
 repositorio; la suite real son ~2213 funciones de test en 156 ficheros. Nada que dependa de haber
 ejecutado la suite queda verificado por esa revisión.
 
-## 11. Decisiones abiertas
+## 11. Decisiones cerradas (2026-07-27) — no queda ninguna abierta
 
-1. **Fotografías e imágenes.** El criterio del 2026-07-19 pide **crudo** para foto, pero hoy toda
-   imagen pasa por PDF + OCR en la sala de máquina. ¿Se copia el crudo (fiel al criterio) o el PDF
-   buscable (útil para buscar)? El piloto no tiene imágenes en el CRM.
-2. **Destino por defecto de `escritos-judiciales`.** ¿Deposita en la carpeta de fase, o sigue en la
-   raíz de `05_Procedimiento` y pregunta?
-3. **Fixture del piloto.** ¿Se construye el fixture anonimizado con los 70 `doc_id` para validar el
-   reparto 9/5/15/12/29, o se retira esa cifra del spec como no reproducible?
-4. **Override de cobertura.** ¿Quién lo autoriza y dónde queda registrado — en el mapa, en el ledger,
-   o en `_intake_log.jsonl`?
+1. **Imágenes.** Regla: imagen **con** texto → PDF buscable, con nota si la calidad es `low`; imagen
+   **sin** texto → el original. Pero **fuera de alcance real**: de los 69 ficheros de `05_CRM` del
+   piloto, **cero son imágenes** (65 PDF, 2 DOC, 2 RTF). Los `.jpg` viven en Drive, WhatsApp y
+   correo, que es **materia prima** de `00_Input`, no documental del pleito. La regla queda escrita y
+   **sin ejercitar**, para que haya respuesta el día que aparezca una imagen en el CRM.
+2. **Destino de `escritos-judiciales`.** **Pregunta la carpeta de fase y escribe ahí.** No puede
+   deducirla: conoce el `tipo` (demanda, contestación, recurso) pero no si el pleito es monitorio u
+   ordinario, que es conocimiento del caso. Con `DESTINOS_VALIDOS` ampliado, `registrar_outputs` la
+   anota en el `_index.md` de esa carpeta. Un solo sitio, sin movimientos posteriores: `apply` nunca
+   tiene que mover un fichero del letrado.
+3. **Fixture del piloto.** **Se construye**, con los 70 `doc_id`, y con **pasada de PII previa** —al
+   menos un nombre de fichero lleva el nombre de pila de una persona, que va sustituido por
+   `<PARTICULAR>`. Es el test de regresión de toda la pieza y deja registrada de forma durable la
+   asignación aprobada. Hasta que exista, el reparto 9/5/15/12/29 queda como **pendiente de
+   validación** (§6).
+4. **Override de cobertura.** Se **declara** en la entrada del mapa (`sin_cobertura_ok: true`) y se
+   **registra** al ejercerse en `_intake_log.jsonl` con el actor de `intake_log.get_actor()`. El
+   ledger no participa —nadie lo edita a mano— y el log no puede ser donde se autoriza: es
+   append-only y su papel es dar fe, no conceder permisos.
+
+### 11.1 Qué garantiza la vista, y qué no
+
+**Garantiza:** que **nada que exista se queda fuera en silencio.** La puerta de `sin_asignar` impide
+que `apply` corra mientras haya un documento del expediente sin carpeta, y `05_Otros escritos` es el
+cajón que recoge todo lo procesal que no es un escrito rector con sus documentos. Y garantiza el
+agrupamiento por carpetas autocontenidas en los dos tipos de caso:
+
+| Bloque | Caso anterior a FeesDefender | Caso en régimen |
+|---|---|---|
+| Demanda monitorio + documentos | del CRM | de la carpeta (propia) |
+| Oposición al monitorio + documentos | del CRM | del CRM (es del contrario) |
+| Demanda ordinario + documentos | del CRM | de la carpeta (propia) |
+| Contestación + documentos | del CRM | del CRM (es del contrario) |
+| Resto de escritos | del CRM | mezcla: escritos propios + resoluciones del CRM |
+
+**No garantiza tres cosas, y conviene decirlas:**
+
+1. **Lo que nunca se subió al CRM no puede aparecer.** Ejemplo vivo en el piloto: **falta el «D 01»**
+   en los dos pleitos (monitorio D 02–D 08, ordinario D 02–D 14). La carpeta queda completa respecto
+   al CRM, no respecto al juzgado.
+2. **En caso nuevo, los documentos numerados de la demanda propia hoy no los produce nadie** (§7). Se
+   aceptan como `origen: despacho`, pero entran a mano hasta que exista esa pieza.
+3. **Un documento aportado en los dos pleitos aparece en las dos carpetas** — siete casos en el
+   piloto. Es deliberado (§4.2).
+
+**Y un aviso de calidad, no de completitud:** en el piloto la demanda del ordinario es un `.doc` sin
+texto explotable hasta que entre LibreOffice, hay 7 PDF sin capa de texto y 8 más con páginas ciegas.
+Estarán todos en su carpeta y se podrán abrir; lo que no se podrá es buscar dentro de algunos hasta
+que corra la sala de máquina.
