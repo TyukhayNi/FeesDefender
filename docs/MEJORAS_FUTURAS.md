@@ -3466,6 +3466,12 @@ de un tercero —incluido un nombre de pila— en el fichero de control de otro 
    integridad que pide `§5.2` del spec de la vista procesal para las ocurrencias
    (`docs/superpowers/specs/2026-07-27-vista-procesal-05-procedimiento-design.md`), así que conviene
    que las dos usen el mismo criterio.
+
+   **No lo cubre `core/email_atomize/contaminacion.py`** (PR #138, 2026-07-27), aunque el nombre lo
+   sugiera: ese detector opera sobre **mensajes de correo ya atomizados** y caza W-codes ajenos en
+   asuntos y nombres de adjunto — otro canal y otra capa. Este hueco es del canal **CRM** y del
+   fichero de control. Sí comparten el principio, y es el correcto: **avisar, nunca excluir en
+   silencio** — en un expediente probatorio la decisión de borrar es del letrado.
 2. **`INTAKE_EVENTS` no tiene un tipo para el saneamiento de un fichero de control.** El set es
    cerrado (26 tipos) y ninguno encaja: `delete_doc` sería inexacto y haría creer a una auditoría que
    se borraron documentos del caso. Por eso el saneamiento del 2026-07-27 se registró en un acta en

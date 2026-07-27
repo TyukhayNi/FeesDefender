@@ -49,17 +49,20 @@ def modules(tmp_casos_root):
     etc. vía las globals de los módulos recargados, así que el
     ``casos_root`` del tmp se propaga sin tocar este módulo.
     """
-    from core import case_manager, intake_log, intake_manifest, sync_sudespacho
+    from core import (case_manager, intake_log, intake_manifest, ocurrencias_crm,
+                      sync_sudespacho)
 
     importlib.reload(case_manager)
     importlib.reload(intake_log)
     importlib.reload(intake_manifest)
+    importlib.reload(ocurrencias_crm)
     # sync_sudespacho NO se recarga — ver docstring
 
     return {
         "case_manager": case_manager,
         "intake_log": intake_log,
         "intake_manifest": intake_manifest,
+        "ocurrencias_crm": ocurrencias_crm,
         "sync_sudespacho": sync_sudespacho,
     }
 
@@ -115,7 +118,8 @@ class FakeSudespachoClient:
         return self._content.get(doc_id, b"")
 
 
-def _make_doc(modules, doc_id, *, filename, id_carpeta=None, id_carpeta_label=None):
+def _make_doc(modules, doc_id, *, filename, id_carpeta=None, id_carpeta_label=None,
+              modified_at=None):
     """Construye un ``GdocuDocInfo`` con los campos mínimos del fake."""
     GdocuDocInfo = modules["sync_sudespacho"].GdocuDocInfo
     return GdocuDocInfo(
@@ -126,6 +130,7 @@ def _make_doc(modules, doc_id, *, filename, id_carpeta=None, id_carpeta_label=No
         mime="application/pdf",
         size=None,
         raw={},
+        modified_at=modified_at,
     )
 
 
@@ -623,3 +628,131 @@ def test_pull_v2_download_falla_un_doc_otro_se_procesa(modules):
     assert result.doc_ids == ["7001"]
     # Hay un error específico del doc fallado
     assert any("7002" in e for e in result.errors)
+
+
+# ===========================================================================
+# Registro de ocurrencias del CRM (pieza 2 — hallazgos N1/N2)
+# ===========================================================================
+
+def _registro(modules, case_id):
+    r = modules["ocurrencias_crm"].RegistroOcurrencias(case_id)
+    r.load()
+    return r
+
+
+def test_pull_registra_listadas_ANTES_del_filtro_acotado(modules, tmp_casos_root):
+    """N2: el intake acotado no puede hacer invisible lo que el CRM sí enumera.
+
+    Si el registro se escribiera solo en el bucle de descarga, coincidiría con
+    `pull_state.doc_ids` (1 de 1) y la puerta de integridad no vería nada raro,
+    aunque el CRM tenga 3 documentos.
+    """
+    cm, ss = modules["case_manager"], modules["sync_sudespacho"]
+    cm.ensure_case("PV2-N2")
+    docs = [
+        _make_doc(modules, "A", filename="a.pdf", id_carpeta="307",
+                  modified_at="2026-01-01T10:00:00+01:00"),
+        _make_doc(modules, "B", filename="b.pdf", id_carpeta="307",
+                  modified_at="2026-01-02T10:00:00+01:00"),
+        _make_doc(modules, "C", filename="c.pdf", id_carpeta="307",
+                  modified_at="2026-01-03T10:00:00+01:00"),
+    ]
+    client = FakeSudespachoClient(
+        docs=docs, docs_content={"A": b"%PDF a", "B": b"%PDF b", "C": b"%PDF c"})
+
+    result = ss.pull_expediente_v2("PV2-N2", "487", client=client,
+                                   only_doc_ids={"A"})
+
+    assert result.documents_total_crm == 3
+    assert result.documents_written == 1
+
+    r = _registro(modules, "PV2-N2")
+    assert set(r.listadas("487")) == {"A", "B", "C"}
+    assert set(r.materializadas("487")) == {"A"}
+    # Y el hueco es explícito, no una ausencia que haya que deducir.
+    assert set(r.solo_listadas("487")) == {"B", "C"}
+
+
+def test_pull_registra_la_ruta_propia_del_documento(modules, tmp_casos_root):
+    cm, ss = modules["case_manager"], modules["sync_sudespacho"]
+    cm.ensure_case("PV2-OC1")
+    doc = _make_doc(modules, "40054", filename="Demanda.pdf", id_carpeta="307",
+                   id_carpeta_label="DEMANDA", modified_at="2026-01-01T10:00:00+01:00")
+    client = FakeSudespachoClient(docs=[doc], docs_content={"40054": b"%PDF demo"})
+
+    ss.pull_expediente_v2("PV2-OC1", "487", client=client)
+
+    r = _registro(modules, "PV2-OC1")
+    sha, path = r.resolver("487", "40054")
+    assert path.startswith("05_CRM/01_Demanda/")
+    assert len(sha) == 64
+    rev = r.activa("487", "40054")
+    assert rev["modified_at"] == "2026-01-01T10:00:00+01:00"
+    assert rev["id_carpeta"] == "307"
+    assert rev["filename"] == "Demanda.pdf"
+
+
+def test_pull_registra_el_primary_cuando_hubo_dedup(modules, tmp_casos_root):
+    """Dos doc_id con el mismo contenido: el segundo resuelve al fichero del primero.
+
+    Es el caso de la TASA ORDINARIO del piloto, y es exactamente lo que el
+    manifiesto de intake no podía representar.
+    """
+    cm, ss = modules["case_manager"], modules["sync_sudespacho"]
+    cm.ensure_case("PV2-OC2")
+    docs = [
+        _make_doc(modules, "P1", filename="tasa.pdf", id_carpeta="307",
+                  modified_at="2026-02-11T12:37:11+01:00"),
+        _make_doc(modules, "P2", filename="tasa.pdf", id_carpeta="307",
+                  modified_at="2026-03-23T16:38:23+01:00"),
+    ]
+    mismos = b"%PDF identicos"
+    client = FakeSudespachoClient(docs=docs, docs_content={"P1": mismos, "P2": mismos})
+
+    result = ss.pull_expediente_v2("PV2-OC2", "487", client=client)
+    assert result.documents_skipped_dedup == 1
+
+    r = _registro(modules, "PV2-OC2")
+    assert set(r.materializadas("487")) == {"P1", "P2"}
+    assert r.resolver("487", "P1") == r.resolver("487", "P2")
+    # Cada uno conserva su fecha de lote: es lo que los distingue como
+    # aportaciones procesales distintas.
+    assert (r.activa("487", "P1")["modified_at"]
+            != r.activa("487", "P2")["modified_at"])
+
+
+def test_pull_deja_listada_la_que_no_pudo_descargar(modules, tmp_casos_root):
+    """Un fallo de descarga no borra la evidencia de que el documento existe."""
+    cm, ss = modules["case_manager"], modules["sync_sudespacho"]
+    cm.ensure_case("PV2-OC3")
+    docs = [
+        _make_doc(modules, "OK", filename="ok.pdf", id_carpeta="307",
+                  modified_at="2026-01-01T10:00:00+01:00"),
+        _make_doc(modules, "KO", filename="ko.pdf", id_carpeta="307",
+                  modified_at="2026-01-02T10:00:00+01:00"),
+    ]
+    client = FakeSudespachoClient(docs=docs, docs_content={"OK": b"%PDF ok"},
+                                  download_errors={"KO"})
+
+    result = ss.pull_expediente_v2("PV2-OC3", "487", client=client)
+    assert result.documents_failed == 1
+
+    r = _registro(modules, "PV2-OC3")
+    assert set(r.listadas("487")) == {"OK", "KO"}
+    assert set(r.solo_listadas("487")) == {"KO"}
+    assert r.resolver("487", "KO") is None
+
+
+def test_pull_es_idempotente_sobre_el_registro(modules, tmp_casos_root):
+    """Re-ejecutar no infla el histórico de revisiones."""
+    cm, ss = modules["case_manager"], modules["sync_sudespacho"]
+    cm.ensure_case("PV2-OC4")
+    doc = _make_doc(modules, "X", filename="x.pdf", id_carpeta="307",
+                   modified_at="2026-01-01T10:00:00+01:00")
+
+    for _ in range(2):
+        client = FakeSudespachoClient(docs=[doc], docs_content={"X": b"%PDF x"})
+        ss.pull_expediente_v2("PV2-OC4", "487", client=client)
+
+    r = _registro(modules, "PV2-OC4")
+    assert len(r.revisiones("487", "X")) == 1

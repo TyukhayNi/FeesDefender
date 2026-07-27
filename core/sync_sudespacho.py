@@ -75,6 +75,7 @@ from .intake_manifest import (
     compute_sha256,
     compute_sha256_bytes,
 )
+from .ocurrencias_crm import RegistroOcurrencias
 from .utils import now_iso, slugify
 
 
@@ -1448,6 +1449,25 @@ def pull_expediente_v2(
                 f"(o el elemento '{element}' no es el correcto)."
             )
 
+        # Registro de ocurrencias (spec vista procesal §2.1): se anota TODO lo que
+        # el CRM enumera, **antes** del filtro acotado y antes de descargar nada.
+        # Si se anotara dentro del bucle de descarga, el registro coincidiría con
+        # `pull_state.doc_ids` aunque hubiera documentos del CRM invisibles, y la
+        # puerta de integridad de la vista procesal no comprobaría nada (N2).
+        ocurrencias = RegistroOcurrencias(case_id)
+        ocurrencias.load()
+        for info in docs:
+            ocurrencias.registrar_listada(
+                expediente_id=str(expediente_id),
+                doc_id=info.doc_id,
+                filename=info.filename,
+                modified_at=info.modified_at,
+                id_carpeta=info.id_carpeta,
+            )
+        # Se persiste ya: el universo de lo enumerado debe sobrevivir a un fallo
+        # de descarga posterior.
+        ocurrencias.save()
+
         # Intake acotado (Fase intake judicial): procesar solo los doc_ids
         # indicados, manteniendo documents_total_crm = total real del CRM.
         if only_doc_ids is not None:
@@ -1532,6 +1552,12 @@ def pull_expediente_v2(
                     doc_id=info.doc_id,
                 )
 
+                # Ruta donde el contenido de ESTE doc_id queda realmente accesible:
+                # la propia si se escribe, la del primary si el dedup lo salta. Es
+                # lo que permite que dos doc_id byte-idénticos (la TASA ORDINARIO
+                # del piloto) resuelvan al mismo fichero sin perder su identidad.
+                _ruta_registrada = rel_path if action == "write" else primary_rel
+
                 if action == "write":
                     _wt = _target_efectivo(final_target)
                     _wt.parent.mkdir(parents=True, exist_ok=True)
@@ -1546,6 +1572,8 @@ def pull_expediente_v2(
                     _wt.parent.mkdir(parents=True, exist_ok=True)
                     _wt.write_bytes(data)
                     result.documents_overlap += 1
+                    # La copia física propia sí se escribió: su ruta es la suya.
+                    _ruta_registrada = rel_path
                     _log_event(
                         case_id, "cross_source_overlap",
                         actor=actor,
@@ -1575,6 +1603,15 @@ def pull_expediente_v2(
                         },
                     )
 
+                # 4.4-bis El documento pasa de `listada` a `materializada`, con la
+                #         ruta donde su contenido queda accesible y su SHA.
+                ocurrencias.registrar_materializada(
+                    expediente_id=str(expediente_id),
+                    doc_id=info.doc_id,
+                    path=_ruta_registrada,
+                    sha256=sha,
+                )
+
                 # 4.5 by_carpeta cuenta la rama lógica destino del pull,
                 #     no el primary_path físico (M9-Q3).
                 rel_branch = dest_dir.relative_to(crm_root).as_posix()
@@ -1582,6 +1619,10 @@ def pull_expediente_v2(
                     result.by_carpeta.get(rel_branch, 0) + 1
                 )
                 result.doc_ids.append(info.doc_id)
+
+        # 4.6 Persistir el registro de ocurrencias con las materializaciones de
+        #     esta corrida (las `listada` ya se guardaron antes de descargar).
+        ocurrencias.save()
 
         # 5. Persistir pull state en frontmatter de _caso.md (D8)
         try:
