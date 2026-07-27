@@ -637,3 +637,111 @@ def test_save_file_crm_branch_desvia_si_prestado(cm, tmp_casos_root):
     dest = im.save_file_crm_branch(case_id, "General", "d.pdf", b"x")
     assert "_pendiente_checkin/crm_manual/" in dest.as_posix()
     assert not (caso_path(case_id) / "00_Input" / "05_CRM" / "General" / "d.pdf").exists()
+
+
+# ===========================================================================
+# 8. Grupos de merge indivisibles + derivado borrado en Drive (N6)
+# ===========================================================================
+#
+# Hallazgo N6 de la revisión adversarial (2026-07-27). Tres defectos distintos:
+#   a) un COPY_LOCAL se sube aunque un hermano de su grupo esté en CONFLICT;
+#   b) un derivado ausente en Drive pero presente en el baseline se resucita
+#      (Drive lo borró durante el préstamo → debe ser CONFLICT, caso 6);
+#   c) el peor: si el mapa solo cambió en Drive → PRESERVE_DRIVE, no hay
+#      conflicto, el semáforo sale verde y el ledger local se sube igualmente
+#      → Drive con mapa nuevo y ledger viejo, en silencio.
+
+_MAPA = "05_Procedimiento/_mapa_procesal.yaml"
+_LEDGER = "05_Procedimiento/_MANIFIESTO_PROCESAL.json"
+_OCURR = "00_Input/_ocurrencias_crm.json"
+
+
+def test_derivado_borrado_en_drive_durante_prestamo_es_conflict(rc):
+    """N6b: Drive borró un derivado que sigue en local → decisión manual.
+
+    Coherencia con el caso 6 de la tabla general: hoy la rama de derivados
+    devuelve COPY_LOCAL sin mirar el baseline y lo resucita.
+    """
+    p = "01_Procesado/Sala lectura/INDICE.md"
+    plan = rc.plan_merge({p: _e("h_local")}, {}, {p: _e("h_base")})
+    a = _accion_de(plan, p)
+    assert a is not None and a.accion == rc.ACCION_CONFLICT
+
+
+def test_derivado_nuevo_en_local_sigue_siendo_copy_local(rc):
+    """No regresión: sin baseline es un alta genuina, no una resurrección."""
+    p = "01_Procesado/Sala lectura/INDICE.md"
+    plan = rc.plan_merge({p: _e("h_local")}, {}, {})
+    a = _accion_de(plan, p)
+    assert a is not None and a.accion == rc.ACCION_COPY_LOCAL
+
+
+def test_grupo_vetado_si_un_miembro_esta_en_conflicto(rc):
+    """N6a: el mapa en conflicto veta la subida del ledger y de las ocurrencias."""
+    plan = rc.plan_merge(
+        local={_MAPA: _e("h_local"), _LEDGER: _e("l_local"), _OCURR: _e("o_local")},
+        drive={_MAPA: _e("h_drive"), _LEDGER: _e("l_base"), _OCURR: _e("o_base")},
+        base={_MAPA: _e("h_base"), _LEDGER: _e("l_base"), _OCURR: _e("o_base")},
+    )
+    assert _accion_de(plan, _MAPA).accion == rc.ACCION_CONFLICT
+    for p in (_LEDGER, _OCURR):
+        a = _accion_de(plan, p)
+        assert a is not None and a.accion == rc.ACCION_VETO_GRUPO, p
+        assert _MAPA in a.motivo
+
+
+def test_grupo_vetado_si_el_mapa_solo_cambio_en_drive(rc):
+    """N6c, el caso silencioso: PRESERVE_DRIVE en el mapa también veta.
+
+    No hay conflicto, así que sin el veto el semáforo saldría verde y el Drive
+    se quedaría con mapa nuevo y ledger viejo.
+    """
+    plan = rc.plan_merge(
+        local={_MAPA: _e("h_base"), _LEDGER: _e("l_local")},
+        drive={_MAPA: _e("h_drive"), _LEDGER: _e("l_base")},
+        base={_MAPA: _e("h_base"), _LEDGER: _e("l_base")},
+    )
+    assert _accion_de(plan, _MAPA).accion == rc.ACCION_PRESERVE_DRIVE
+    a = _accion_de(plan, _LEDGER)
+    assert a is not None and a.accion == rc.ACCION_VETO_GRUPO
+
+
+def test_grupo_no_vetado_si_todos_sus_miembros_suben_o_no_cambian(rc):
+    """El caso normal: el trío viaja junto sin trabas."""
+    plan = rc.plan_merge(
+        local={_MAPA: _e("h_local"), _LEDGER: _e("l_local"), _OCURR: _e("o_base")},
+        drive={_MAPA: _e("h_base"), _LEDGER: _e("l_base"), _OCURR: _e("o_base")},
+        base={_MAPA: _e("h_base"), _LEDGER: _e("l_base"), _OCURR: _e("o_base")},
+    )
+    assert _accion_de(plan, _MAPA).accion == rc.ACCION_COPY_LOCAL
+    assert _accion_de(plan, _LEDGER).accion == rc.ACCION_COPY_LOCAL
+    # Las ocurrencias no cambiaron: SKIP implícito, y no vetan a nadie.
+    assert _accion_de(plan, _OCURR) is None
+
+
+def test_veto_no_alcanza_a_ficheros_fuera_del_grupo(rc):
+    """Opción A: el escrito del letrado sube aunque el mapa esté en conflicto."""
+    demanda = "05_Procedimiento/DEMANDA_W-02MA0R.docx"
+    plan = rc.plan_merge(
+        local={_MAPA: _e("h_local"), demanda: _e("d_local")},
+        drive={_MAPA: _e("h_drive")},
+        base={_MAPA: _e("h_base")},
+    )
+    assert _accion_de(plan, _MAPA).accion == rc.ACCION_CONFLICT
+    assert _accion_de(plan, demanda).accion == rc.ACCION_COPY_LOCAL
+
+
+def test_resumen_plan_cuenta_los_vetados(rc):
+    plan = rc.plan_merge(
+        local={_MAPA: _e("h_base"), _LEDGER: _e("l_local")},
+        drive={_MAPA: _e("h_drive"), _LEDGER: _e("l_base")},
+        base={_MAPA: _e("h_base"), _LEDGER: _e("l_base")},
+    )
+    assert rc.resumen_plan(plan)[rc.ACCION_VETO_GRUPO] == 1
+
+
+def test_grupos_merge_son_ssot_en_config(rc, cfg):
+    """La definición de los grupos vive en config, no en el cerebro."""
+    assert hasattr(cfg, "GRUPOS_MERGE")
+    todas = {r for g in cfg.GRUPOS_MERGE for r in g}
+    assert {_MAPA, _LEDGER, _OCURR} <= todas

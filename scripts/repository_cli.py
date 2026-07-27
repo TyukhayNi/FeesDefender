@@ -117,17 +117,23 @@ def clasificar_semaforo(
     conflictos: int,
     copia_fallo_sistemico: bool,
     verificacion_limpia: bool,
+    vetados: int = 0,
 ) -> str:
     """Devuelve ``"verde"`` / ``"amarillo"`` / ``"rojo"`` (semáforo del checkin).
 
     - ROJO: fallo sistémico de copia (no borrar nada).
-    - AMARILLO: hay conflictos por resolver o la verificación encontró
-      diferencias (revisar; lo sobrescrito está en ``_merge_backups/``).
-    - VERDE: copia hecha, verificación por hash limpia y sin conflictos.
+    - AMARILLO: hay conflictos por resolver, la verificación encontró
+      diferencias, o un grupo indivisible quedó vetado (revisar; lo sobrescrito
+      está en ``_merge_backups/``).
+    - VERDE: copia hecha, verificación limpia, sin conflictos y sin vetos.
+
+    ``vetados`` no puede omitirse del amarillo: el caso que motivó el veto (N6c)
+    es precisamente uno **sin** conflictos, y salir verde liberaría el lock sin
+    que nadie supiera que la mitad del grupo se quedó sin subir.
     """
     if copia_fallo_sistemico:
         return "rojo"
-    if conflictos > 0 or not verificacion_limpia:
+    if conflictos > 0 or vetados > 0 or not verificacion_limpia:
         return "amarillo"
     return "verde"
 
@@ -370,7 +376,17 @@ def render_delta(plan: list[rc.AccionMerge]) -> str:
         f"- Renombrar (mover en Drive): {resumen[rc.ACCION_RENAME]}\n"
         f"- Borrar en Drive (a papelera): {resumen[rc.ACCION_DELETE_DRIVE]}\n"
         f"- Conflictos (decisión manual): {resumen[rc.ACCION_CONFLICT]}\n"
+        f"- Vetados por grupo indivisible: {resumen[rc.ACCION_VETO_GRUPO]}\n"
     )
+    vetados = [a for a in plan if a.accion == rc.ACCION_VETO_GRUPO]
+    if vetados:
+        lineas.append(
+            "\n## Vetados por grupo indivisible (N6)\n\n"
+            "Iban a subir, pero un fichero de su grupo no está consistente. Suben los "
+            "tres juntos o no sube ninguno: reconcilia el grupo y reintenta.\n"
+        )
+        for a in vetados:
+            lineas.append(f"- `{a.ruta}` — {a.motivo}")
     borrados = [a for a in plan if a.accion == rc.ACCION_DELETE_DRIVE]
     if borrados:
         lineas.append("\n## Borrados propuestos (requieren confirmación explícita)\n")
@@ -515,6 +531,15 @@ def cmd_checkin(args: argparse.Namespace) -> int:
 
     borrados = [a for a in plan if a.accion == rc.ACCION_DELETE_DRIVE]
     conflictos = [a for a in plan if a.accion == rc.ACCION_CONFLICT]
+    # N6: miembros de un grupo indivisible que iban a subir y no suben porque un
+    # hermano del grupo no está consistente. `plan_merge` ya los degradó, así que
+    # `rutas_a_copiar` los excluye solo; aquí se reportan y bloquean el verde.
+    vetados = [a for a in plan if a.accion == rc.ACCION_VETO_GRUPO]
+    if vetados:
+        print(f"  ⚠ {len(vetados)} fichero(s) vetado(s) por grupo indivisible "
+              f"(no se suben; ver DELTA):")
+        for a in vetados:
+            print(f"      {a.ruta}")
 
     if args.dry_run:
         print("  [dry-run] DELTA_PREVIO.md escrito. Nada tocado.")
@@ -585,10 +610,18 @@ def cmd_checkin(args: argparse.Namespace) -> int:
         conflictos=len(conflictos),
         copia_fallo_sistemico=copia_fallo,
         verificacion_limpia=verificacion_limpia,
+        vetados=len(vetados),
     )
     print(f"  semáforo: {semaforo.upper()}")
 
     if semaforo != "verde":
+        if vetados and not conflictos:
+            # N6c: no hay conflicto que resolver — el grupo quedó descuadrado
+            # porque el Drive tiene otra versión de un miembro. Se reconcilia
+            # regenerando en local contra la versión del Drive, no a mano.
+            print(f"  → {len(vetados)} fichero(s) sin subir por grupo indivisible. "
+                  f"Baja la versión del Drive del miembro bloqueante, regenera en "
+                  f"local y reintenta el checkin. NO se libera el lock.")
         # CP7: si hay conflictos → estado 'conflicto' (el local SE CONSERVA);
         # el AMARILLO no libera el lock. El ROJO tampoco.
         if conflictos:
