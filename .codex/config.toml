@@ -1,0 +1,7 @@
+[shell_environment_policy]
+inherit = "core"
+
+[shell_environment_policy.set]
+PYTHONIOENCODING = "utf-8"
+PYTHONUTF8 = "1"
+_comment_env = "Aquí puedes meter overrides puntuales. Las credenciales reales viven en .env, no aquí."

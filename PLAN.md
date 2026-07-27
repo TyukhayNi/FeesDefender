@@ -24,7 +24,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 6 | [abrir-caso F3-judicial](#abrir-caso--f1--f2a--f3-ac-mergeadas-f2b-aparcada-f3-judicial-pendiente) | disparador confirmado 2026-07-22 | plan concreto listo (4 piezas, ver bloque) | medio |
 | 7 | [Google MCP F4 (Calendar)](#siguiente-google-mcp-f1-lectura--mergeada--f2-escriturapermisosnavegación--mergeada--f3f4-pendientes) | diferida | disparador | medio |
 | 8 | [Intake email — filtro de exclusión de ruido](#siguiente-intake-email-filtro-exclusión-de-ruido-administrativo-y-cruzado) | parcial (2/4) | disparador: W-02VUDR (fuga cruzada de 7 casos ajenos + cartera de litigios) | medio |
-| 9 | [Vista procesal en `05_Procedimiento`](#siguiente-vista-procesal-vista-procesal-del-expediente-en-05_procedimiento) | spec lista, plan por rehacer | revisión adversarial (Codex) pendiente | medio |
+| 9 | [Vista procesal en `05_Procedimiento`](#siguiente-vista-procesal-vista-procesal-del-expediente-en-05_procedimiento) | piezas 1-2 ✅ (#137, #140); spec v3.1 con 2 revisiones consumidas | pieza 3 **bloqueada** por la fila #1 (OCR ciego); plan de la pieza 4 por reescribir | medio |
 | 10 | [`.doc` → LibreOffice headless](#siguiente-doc-libreoffice-doc-binario-sin-md-ni-ocr-conversión-libreoffice-headless) | pendiente | disparador: W-02MA0R, la demanda del ordinario solo existe en `.doc` sin gemelo PDF | bajo |
 | 11 | [Cableado del pipeline de correo (`MEJORAS #68`)](#siguiente-cableado-correo-cableado-del-pipeline-de-correo-encadenar-la-atomización-resto-de-mejoras-68) | pendiente | decisión de Nikolai 2026-07-27; falta cerrar el punto de disparo | medio |
 
@@ -190,9 +190,12 @@ dependencias aguas arriba que no son suyas:
 
 - [x] **1. Veto de grupo en el checkin** — `GRUPOS_MERGE` + acción `VETO_GRUPO`; y el derivado con
       `D=None, B≠None` pasa a conflicto en vez de resucitar. Era **bug vivo**, independiente de esta
-      vista. Hecho, suite 2302/0/76.
-- [ ] **2. Ocurrencias con estado `listed`** en el pull (N2): sin ellas la puerta de integridad es
-      **vacua** con intake acotado, que es el modo de régimen.
+      vista. ✅ **PR #137** (`12c8a91`).
+- [x] **2. Ocurrencias con estado `listada`/`materializada`** (`core/ocurrencias_crm.py`): sin ellas
+      la puerta de integridad era **vacua** con intake acotado, que es el modo de régimen — registro y
+      `pull_state` salen de la misma fuente y cuadran siempre. `registrar_listada` corre antes del
+      filtro. Resuelve además N1 (revisiones) y H1 (la `TASA ORDINARIO`: dos `doc_id`, mismo SHA,
+      misma ruta). ✅ **PR #140** (`86e3abd`).
 - [ ] **3. `artifact_sha256` + escritura atómica de la cobertura** (N3). **Ampliada por el hallazgo
       de la sesión concurrente** (`MEJORAS #90`, fila #1 de esta cola): `estado: ok` puede ser
       mentira justo para los documentos con sello de firma, que son la mayoría de lo procesal. Va
