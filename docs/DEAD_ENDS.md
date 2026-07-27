@@ -10,7 +10,7 @@
 
 - **Intentado:** cerrar un PR con `gh pr merge <n> --squash --delete-branch`, el comando que prescribe `docs/FLUJO_GIT.md §4`, trabajando desde un worktree mientras la raíz compartida seguía en `main`.
 - **Resultado:** el comando termina con `failed to run git: fatal: 'main' is already used by worktree at 'C:/Users/tnm33/Dev/FeesDefender'` y **sin ningún mensaje de éxito**. Parece que el merge no se ha hecho. **Es falso:** el merge en GitHub se completa igualmente; lo que falla es el paso **local** de `gh`, que intenta `git switch main` para borrar la rama local y no puede porque `main` está ocupada por otro worktree. Si te lo crees, acabas relanzando el merge o dudando del estado del PR.
-- **Confirmado:** 2026-07-26 (PR #131).
+- **Confirmado:** 2026-07-27 (PR #131).
 - **Señal:** el mensaje de error nombra `worktree at <raíz>`; `gh pr view <n> --json state` devuelve `MERGED`.
 - **Solución:** usar `gh pr merge <n> --squash` **sin** `--delete-branch`, verificar con `gh pr view <n> --json state,mergeCommit` y borrar la rama remota aparte con `git push origin --delete <rama>`. La rama LOCAL se poda después, desde la raíz y **verificando por contenido** (`git diff --stat origin/main <rama>` vacío), porque el squash rompe la ascendencia y `git branch -d` la rechaza.
 

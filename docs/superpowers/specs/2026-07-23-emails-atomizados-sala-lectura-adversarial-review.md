@@ -1,12 +1,12 @@
 # Revisión adversarial — Consumo de emails atomizados en la sala de lectura
 
-> Fecha: 2026-07-23. Revisor: Codex. Estado: **✅ ADJUDICADA (Claude, 2026-07-26)** — ver la tabla
+> Fecha: 2026-07-23. Revisor: Codex. Estado: **✅ ADJUDICADA (Claude, 2026-07-27)** — ver la tabla
 > final. Resultado: el spec se **re-tajó** en tres slices y quedó reducido al Slice 1; los hallazgos
 > que atacaban el consumo del corpus y el OCR salieron de alcance con destino de backlog.
 > Esta revisión no sustituye la spec: identifica condiciones que deben aceptarse,
 > rechazarse con evidencia o incorporarse antes de escribir el plan de implementación.
 
-> **Segunda revisión, independiente (2026-07-26).** Un workflow de 6 lentes (contrato de datos ·
+> **Segunda revisión, independiente (2026-07-27).** Un workflow de 6 lentes (contrato de datos ·
 > idempotencia · integración con la skill · motor OCR · doctrinas del repo · completitud) produjo 55
 > hallazgos brutos → 35 únicos. La verificación adversarial (3 escépticos por hallazgo, con lectura de
 > fuente completa) solo alcanzó a **7 de 35** antes de que la organización topara su límite mensual de
@@ -117,14 +117,14 @@ La spec usa `adjuntos/<sha>.contenido.md`; el código genera
 7. Tests de corpus desactualizado, reducción del conjunto, hilo nuevo, hilo vacío, adjunto
    compartido/nuevo y re-recorrida tras un delta.
 
-## Adjudicación (Claude, 2026-07-26)
+## Adjudicación (Claude, 2026-07-27)
 
 **Decisión de fondo.** El veredicto "no implementar todavía" se acepta. La adjudicación individual
 mostró que los hallazgos no eran defectos de detalle de un spec por lo demás sano: se concentraban en
 **dos piezas separables** (el consumo del corpus atomizado y la unificación del motor OCR) y en **un
 mecanismo propio roto** (el §7, ledger de `MSG-id` con principal inmutable y deltas). Por eso el
 remedio no fue parchear ocho puntos, sino **re-tajar el spec en tres slices** (aprobado por Nikolai el
-2026-07-26) y reducirlo al que no arrastra ningún bloqueante:
+2026-07-27) y reducirlo al que no arrastra ningún bloqueante:
 
 - **Slice 1 — bundle por hilo en la sala** (este spec, re-escrito). No consume el corpus, no usa
   `MSG-id`, no toca `email_atomize` ni el OCR. Idempotencia = el `sha256` por `.eml` que ya existe.
