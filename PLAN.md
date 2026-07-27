@@ -64,8 +64,27 @@ ser cambiar una bandera.
       Hoy `redo_ocr=True` existe en `ocr_pdf` pero **ningún llamador lo pasa**: es código inalcanzable.
 - [ ] **(b) `ocr_quality` por página**, no solo la media: marcar `low` si ≥N páginas quedan bajo el
       umbral aunque el promedio pase. Es lo que rompe la dilución.
-- [ ] **(c) Recuperar los documentos ya afectados** de W-02VND1 (prioridad: las 3 cuentas anuales, que
-      son prueba de solvencia en una pieza de medidas cautelares) y de W-02XOR7 / W-02VUDR.
+- [x] **(c1) Cuentas anuales de W-02VND1 RECUPERADAS** (2026-07-27), en la **copia local** del checkout
+      abierto — no en Drive:
+
+      | ejercicio | páginas recuperadas | texto antes | ahora |
+      |---|---|---|---|
+      | 2024 | 23 de 25 | 10.979 | **65.159** |
+      | 2023 | 20 de 22 | 10.082 | **53.849** |
+      | 2022 | 21 de 23 | 10.381 | **55.123** |
+
+      Método: extraer cada página saltada con `pypdf` (**quita el AcroForm**, que era el bloqueo) y
+      OCR-izarla con **`--redo-ocr`** — no destructivo: las 64 páginas se recuperaron sin recurrir a
+      `--force-ocr`, así que las cifras de las páginas digitales quedan intactas (verificado: texto
+      idéntico en las páginas digitales densas). Calidad: gibberish 2,0-2,6 %, y presentes BALANCE /
+      PATRIMONIO NETO / PÉRDIDAS Y GANANCIAS / ACTIVO / PASIVO / MEMORIA. Versión anterior en
+      `99_Versiones anteriores/recuperacion_ocr_2026-07-27/`; evento `procesado_sala_maquina`
+      (`modo: recuperacion_ocr_sello`) en el log; `00_Input/` intacto.
+      **Pendiente operativo: el `checkin` a Drive lo decide Nikolai** (hay checkout abierto desde
+      2026-07-23; la copia local va por delante — 677 MD vs 625).
+- [ ] **(c2) Resto de documentos afectados**: tasación TECNITASA (W-02VND1, faltaba 26 %), exposé de
+      propiedad (W-02XOR7, 28 %) y exposé (W-02VUDR, 10 %). Mismo método; en los dos exposés
+      `--redo-ocr` funciona directamente (no son AcroForm).
 - [ ] **(d) Decidir el alcance de la re-corrida**: cambiar el modo de OCR desalinea
       `_sala_maquina_state.json` y las coberturas ya persistidas. Decisión de Nikolai.
 
