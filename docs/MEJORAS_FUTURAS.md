@@ -3652,3 +3652,43 @@ promueve por completitud: hoy nadie está bloqueado, y el checkin de W-02VND1 se
 
 **Coste estimado.** (1) ~1 h (caché + invalidación por mtime + test). (2) ~1 día con spec. (3) spec
 propia, sin estimar hasta responder los contraargumentos. (4) ~10 min de medición; el ajuste, trivial.
+
+## 96. El guard de escritura se dispara sobre la copia PRESTADA, y ahí no protege de nada
+
+**Anotado 2026-07-27**, al preparar el caso `W-02MA0R` para seguir trabajando en local con el
+préstamo abierto. Hermano de `#93` (ciclo de vida del lock): los dos salen del mismo sitio, que el
+`_caso.md` local no debería gobernar el lock pero de hecho lo gobierna.
+
+**Lo que pasa.** `case_manager.guard_escritura` decide vía `leer_estado_repositorio(case_id)`, que
+lee el `estado_repositorio` del **`_caso.md` LOCAL** (`_read_fm` → `caso_path`). Si ese fichero dice
+`prestado`, toda escritura del intake se desvía a `_pendiente_checkin/<origen>/…`, que está **fuera de
+`00_Input`**. Y `sala_maquina.inventariar()` recorre `00_Input`. Consecuencia medida: se depositan
+documentos nuevos, la sala de máquina **no ve ni uno**, y la de lectura tampoco. El pipeline queda
+roto en silencio y la corrida se reporta como correcta.
+
+**Por qué es un error de sitio, no de implementación.** El propósito del guard (DISEÑO_V2 §6) es
+proteger **el Drive**: que el pipeline no pise un caso que otro tiene prestado. Sobre una **copia
+local prestada** desviar no protege de nada — esa copia entera ya es «pendiente de checkin» por
+definición, y el merge de 3 vías sube sus altas como `COPY_LOCAL`. Es una bandeja dentro de la
+bandeja.
+
+**Hoy solo funciona por accidente.** El checkout **no baja** el `_caso.md` (está en
+`MERGE_EXCLUSIONS`), así que en una copia recién prestada el campo falta, `estado_de_fm` devuelve
+`disponible` por defecto y el guard queda inerte. En cuanto alguien copia el `_caso.md` del Drive a
+local —lo que hay que hacer si se quiere conservar el pull state, ver `#92`— el guard se activa y
+rompe el pipeline. Dos comportamientos opuestos según un fichero que el protocolo dice que **no es
+autoridad del lock en local**.
+
+**Mejora propuesta.** Que el guard distinga **dónde** escribe, no solo el estado: sobre `CASOS_ROOT`
+apuntando al Drive, desviar; sobre una copia local con `MANIFEST_CHECKOUT.json` presente (marca
+inequívoca de copia prestada), no desviar. Alternativa más simple: que `guard_escritura` reciba
+explícitamente si el destino es la copia de trabajo, y que los CLI locales lo pasen.
+
+**Justificación de no aplicarlo ahora.** Requiere decidir el criterio de «estoy en una copia
+prestada» y tocar un guard que cubre todos los canales de intake. Mientras no se haga, el remedio
+manual es quitar los campos de lock del `_caso.md` **local** (el del Drive es la autoridad y se
+queda intacto) — hecho en `W-02MA0R` el 2026-07-27, con respaldo en el scratchpad de la sesión.
+
+**Hallazgo menor del mismo sitio:** `ensure_case` crea `90_Notas personales/` en la copia local, y el
+checkout la excluye a propósito (D5: zona reservada del abogado, vive solo en Drive). Queda vacía, así
+que rclone no la sincroniza y hoy es inocua — pero contradice la intención del checkout.
