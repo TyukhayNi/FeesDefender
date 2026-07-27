@@ -15,6 +15,7 @@ from core.intake_manifest import compute_sha256_bytes
 
 from . import attachments as A
 from . import bodies as B
+from . import contaminacion as CT
 from . import corpus as C
 from . import dedup as D
 from . import extract as E
@@ -125,6 +126,12 @@ def atomize_dir(
     report.reconstruidos_b = len(mensajes_b)
     report.reconstruidos_media = sum(1 for m in mensajes_b if m.confianza == "media-reconstruida")
     report.citas_a_revision = len(punteros)
+
+    # --- Contaminación cruzada: W-codes de OTROS expedientes en asuntos/adjuntos ---
+    # AVISA, no excluye (la decisión de borrar es del letrado). Calla si del nombre de
+    # la carpeta no se deriva W-code. Ver `PLAN.md [SIGUIENTE-INTAKE-EMAIL-FILTRO]`.
+    report.notas.extend(CT.resumir(CT.detectar_cruce(
+        mensajes, w_code_propio=CT.w_code_de_carpeta(Path(case_dir).name))))
 
     for att in unicos.values():
         _escribe_adjunto(out, att)
