@@ -6,13 +6,30 @@
 
 ---
 
-## `gh pr merge --delete-branch` aborta si la raíz compartida tiene `main` checkouteado (y engaña: el merge SÍ se hizo)
+## `gh pr merge` es poco fiable con worktrees activos: aborta o se cuelga, y en ambos casos ENGAÑA sobre si el merge se hizo
+
+**Regla corta: para mergear, usa la API (`gh api -X PUT`), no `gh pr merge`.** Los dos fallos de abajo comparten causa: `gh pr merge` hace trabajo de **git local** además de llamar a la API, y ese trabajo se rompe cuando hay varios worktrees. La verdad sobre si un PR está mergeado **nunca** es la salida de `gh pr merge`: es `gh pr view <n> --json state,mergeCommit`.
+
+### Caso A — aborta con `--delete-branch` si la raíz compartida tiene `main` checkouteado (el merge SÍ se hizo)
 
 - **Intentado:** cerrar un PR con `gh pr merge <n> --squash --delete-branch`, el comando que prescribe `docs/FLUJO_GIT.md §4`, trabajando desde un worktree mientras la raíz compartida seguía en `main`.
 - **Resultado:** el comando termina con `failed to run git: fatal: 'main' is already used by worktree at 'C:/Users/tnm33/Dev/FeesDefender'` y **sin ningún mensaje de éxito**. Parece que el merge no se ha hecho. **Es falso:** el merge en GitHub se completa igualmente; lo que falla es el paso **local** de `gh`, que intenta `git switch main` para borrar la rama local y no puede porque `main` está ocupada por otro worktree. Si te lo crees, acabas relanzando el merge o dudando del estado del PR.
 - **Confirmado:** 2026-07-27 (PR #131).
 - **Señal:** el mensaje de error nombra `worktree at <raíz>`; `gh pr view <n> --json state` devuelve `MERGED`.
-- **Solución:** usar `gh pr merge <n> --squash` **sin** `--delete-branch`, verificar con `gh pr view <n> --json state,mergeCommit` y borrar la rama remota aparte con `git push origin --delete <rama>`. La rama LOCAL se poda después, desde la raíz y **verificando por contenido** (`git diff --stat origin/main <rama>` vacío), porque el squash rompe la ascendencia y `git branch -d` la rechaza.
+
+### Caso B — se cuelga SIN `--delete-branch` y NO mergea (el inverso del caso A)
+
+- **Intentado:** `gh pr merge <n> --squash` (sin `--delete-branch`, ya evitando el caso A), desde un worktree, con **cinco sesiones concurrentes** y sus worktrees vivos.
+- **Resultado:** el comando **se cuelga y agota el timeout de 5 minutos sin devolver nada**, y el PR se queda **`OPEN`**: aquí, al revés que en el caso A, el merge **no** se hizo. Nada lo bloqueaba — `gh pr view` daba `mergeable: MERGEABLE`, `mergeStateStatus: CLEAN` y el único check (`leak-scan`) en `SUCCESS`. No se pudo aislar la causa exacta (no imprime error), pero el patrón apunta al mismo trabajo de git local del caso A.
+- **Confirmado:** 2026-07-27 (PR #135).
+- **Señal:** timeout sin salida; `gh pr view <n> --json state` sigue en `OPEN` mientras `mergeStateStatus` es `CLEAN`. **Peligro añadido:** durante ese cuelgue otra sesión mergeó su PR (#134) y `main` avanzó, así que el PR propio acabó entrando **después** del ajeno — orden inverso al planificado. Con varias sesiones vivas, un cuelgue de 5 min basta para perder el control del orden de merge.
+- **Solución (la que funcionó, instantánea):** mergear por la API REST, que no toca git local:
+  `gh api -X PUT "repos/<owner>/<repo>/pulls/<n>/merge" -f merge_method=squash -f commit_title="<título> (#<n>)"`
+  Devuelve `{"merged": true, ...}` o falla ruidosamente. Después, `git fetch` y **verificar en `origin/main`** que el contenido llegó (con varias sesiones, entre tu check verde y tu merge puede haber entrado otro PR).
+
+### Poda de la rama, en los dos casos
+
+Borrar la rama remota aparte (`git push origin --delete <rama>`); la LOCAL se poda desde la raíz y **verificando por contenido** (`git diff --stat origin/main <rama>` vacío), porque el squash rompe la ascendencia y `git branch -d` la rechaza.
 
 ---
 
