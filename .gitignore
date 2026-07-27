@@ -1,6 +1,6 @@
 # Andamiaje de otras herramientas y salida de tests (producto, no fuente).
 # OJO: git NO admite comentarios al final de la línea de un patrón — cada uno en su línea.
-# .agents/ = espejo local de .claude/skills; la fuente única es .claude/ (ver MEJORAS #96)
+# .agents/ = espejo local de .claude/skills; la fuente única es .claude/ (ver MEJORAS #97)
 .agents/
 # .superpowers/ = scratch efímero de la ejecución por subagentes
 .superpowers/

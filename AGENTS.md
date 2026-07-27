@@ -27,7 +27,7 @@ una instrucción divergente es peor que ninguna.
   mismo gotcha de encoding que documenta `CLAUDE.md`.
 - **Skills:** se editan **siempre** en `.claude/skills/` (fuente única de desarrollo, con
   helpers en `.claude/skills/_shared/`). El árbol `.agents/skills/` es un espejo local **no
-  versionado** que ya ha divergido de la fuente; no lo edites ni te fíes de él. Ver `MEJORAS #96`.
+  versionado** que ya ha divergido de la fuente; no lo edites ni te fíes de él. Ver `MEJORAS #97`.
 - **Delegación a Gemini (`agy`):** aplica igual que a cualquier agente. `agy` **no** carga
   instrucciones de proyecto: se le pasa un prompt autocontenido con `--add-dir`. Recetas en
   `C:\Users\tnm33\Dev\Antigravity\PLAYBOOK_AGY.md`.
