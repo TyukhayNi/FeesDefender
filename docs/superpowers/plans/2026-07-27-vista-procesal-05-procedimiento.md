@@ -1,5 +1,21 @@
 # Vista procesal en `05_Procedimiento` — Plan de implementación
 
+> # ⛔ OBSOLETO — NO EJECUTAR (2026-07-27)
+>
+> Este plan describe un diseño que **ya no existe**. Sus Tareas 1 y 2 eran el cambio de esquema de
+> `core/intake_manifest.py`, que se **cayó entero** al elegir la **opción B** (registro de ocurrencias
+> nuevo y regenerable) tras la 2ª revisión adversarial de Codex. Además su Task 9 afirma «cuatro
+> copias» de `registrar_outputs.py` cuando son **siete**.
+>
+> El diseño vigente es el **spec v3.1**:
+> [`docs/superpowers/specs/2026-07-27-vista-procesal-05-procedimiento-design.md`](../specs/2026-07-27-vista-procesal-05-procedimiento-design.md).
+>
+> El trabajo se partió en **cuatro piezas** (decisión de Nikolai, 2026-07-27): (1) veto de grupo en el
+> checkin — hecho; (2) ocurrencias con estado `listed` en el pull; (3) `artifact_sha256` + escritura
+> atómica de la cobertura; (4) la vista procesal encima. **El plan de la pieza 4 se reescribirá desde
+> cero** cuando las tres primeras estén dentro. Se conserva este fichero solo por trazabilidad de las
+> dos revisiones.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Construir en `05_Procedimiento` cinco carpetas procesales a partir de un mapping explícito `doc_id → carpeta`, sin tocar `00_Input/05_CRM`.

@@ -3278,7 +3278,7 @@ mensaje ajeno puede **sobre-fusionar** hilos distintos.
 **Disparador de promoción:** un caso real donde un hilo con cambio de asunto quede troceado de forma
 molesta en la sala. Hasta entonces, la heurística de nombre basta.
 
-## 90. Integridad del manifiesto de intake: entradas de un expediente ajeno + evento de saneamiento
+## 92. Integridad del manifiesto de intake: entradas de un expediente ajeno + evento de saneamiento
 
 **Anotado 2026-07-27**, a raíz del saneamiento de `W-02MA0R` (acta en el `_snapshot/` del caso).
 
