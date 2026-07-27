@@ -2250,6 +2250,14 @@ explotar el `.eml`: `core/adjuntos_contenido` (texto de cada adjunto → `<base>
 antes si aparece un caso con adjuntos probatorios **solo** embebidos en `.eml` que se pierdan en el
 OCR/MD. Hasta entonces, backlog. Relacionado: #53, #54 y la doctrina de proceso de correo.
 
+**Actualización 2026-07-27.** El *orden* ya no depende de la memoria del operador: el bloque
+`[SIGUIENTE-CABLEADO-CORREO]` del `PLAN.md` encadena la atomización dentro de
+`scripts/sala_maquina.py::apply`. Lo que **sigue en pie de esta entrada** es el diagnóstico de fondo
+—atomize y máquina viven en árboles distintos y encadenarlos no mete los átomos en el OCR—, que el
+cableado confirma en vez de resolver. Los defectos del motor que impiden prometer un árbol
+atomizado fiable están ahora acotados en **`#98`** (enumeración no recursiva) y **`#99`**
+(convergencia bajo borrados + publicación atómica).
+
 ---
 
 ## 56. Mejora del proceso de sala de lectura: motor determinista + tool MCP, cronología + nombres que hablan  [pieza de #54/#55] [DESCARTADO 2026-07-23 — ver #75 / PR #124]
@@ -2728,12 +2736,19 @@ extrae los adjuntos embebidos de los `.eml` (dedup por sha, filtro decorativo, f
   quedan embebidos en el `.eml` hasta que se lanza el motor a mano. **Riesgo:** un adjunto que
   llegue SOLO por correo (sin copia en Drive) no se extrae en el flujo automático. En W-02T3XO
   no hubo pérdida porque las 9 capturas estaban también en `00_Input/01_Drive EV/07. RECLAMACIONES`.
+  - ⚠️ **CORRECCIÓN 2026-07-27 (rev. 2): `07b0377` NO es «la mitad resuelta» — es una trampa
+    armada. Ver `#98`.** La lectura de abajo se quedó a medio camino: es cierto que con el flag
+    activo cada adjunto se escribe suelto en `00_Input/<lote>/`, pero **el `.eml` de ese mensaje se
+    va a una SUBCARPETA** (`email_export.py:1123-1132`) y el atomizador solo enumera el nivel
+    superior (`extract.py:53`) → **los mensajes con adjuntos dejan de existir para el atomizador**.
+    Se gana el binario para el OCR y se pierde el mensaje para la atomización, en silencio.
   - ✅ **PARCIALMENTE RESUELTO 2026-07-27** (`[PROMOVIDO → PLAN.md]` por decisión de Nikolai,
     bloque `[SIGUIENTE-INTAKE-EMAIL-FILTRO]`; commit `07b0377`): el flag ya se expone como
     `--extraer-adjuntos` en `scripts/abrir_caso.py` (default intacto en `False`, porque
     activarlo mueve la superficie de dedup de todo intake futuro). Verificado leyendo
     `email_export._escribe_mensaje`: con el flag activo cada adjunto se escribe como fichero
-    suelto en `00_Input/<lote>/`, el árbol que `sala_maquina` sí recorre.
+    suelto en `00_Input/<lote>/`, el árbol que `sala_maquina` sí recorre. *(Lectura incompleta:
+    ver la corrección de arriba.)*
     **Corrección de dato:** el call site es `scripts/abrir_caso.py::_intake_email`, no
     `core/abrir_caso`. **Sigue pendiente** la otra mitad de 68.a: que `abrir_caso` /
     `organizar-sala-maquina` invoquen `atomize_emails` en cadena, en vez de a mano.
@@ -3757,3 +3772,99 @@ respaldo en git). **Comprobarlo antes de cualquier limpieza.**
 **Disparador de promoción:** que Codex trabaje con una skill obsoleta del espejo y produzca algo
 incorrecto, o decisión de Nikolai. **Coste:** ~10 min responder qué son las 3 extra; la salida (1)
 es gratis si se confirma, la (2) ~1 h con guard y test.
+
+---
+
+## 98. `--extraer-adjuntos` deja CIEGO al atomizador: los `.eml` en subcarpeta no se procesan
+
+**Detectado 2026-07-27** por la revisión adversarial de Codex sobre la spec del cableado de correo
+(`docs/superpowers/specs/2026-07-27-cableado-atomize-sala-maquina-adversarial-review.md`), y
+verificado abriendo el código. **Bug latente en `main`, no introducido por ese PR.**
+
+**Los dos hechos que abren el agujero:**
+
+- `core/email_atomize/extract.py:53` — `iter_avistamientos` enumera con `base.glob("*.eml")`:
+  **solo el nivel superior de cada carpeta fuente**, no recursivo.
+- `core/email_export.py:1123-1132` — `_escribe_mensaje`, cuando `extract_attachments=True` **y** el
+  mensaje trae adjuntos, crea una subcarpeta y escribe ahí el `.eml` + los adjuntos sueltos.
+
+**Consecuencia.** Todo mensaje exportado con `--extraer-adjuntos` que tenga adjuntos —es decir,
+**exactamente los mensajes que motivaron el flag**— es invisible para el atomizador. Sin excepción,
+sin error, sin nota: no aparece en `mensajes/`, no entra en `corpus.jsonl`, y el detector de
+contaminación cruzada tampoco lo mira. El síntoma es un conteo bajo que nadie tiene con qué
+contrastar.
+
+**Corrección del registro.** `PLAN.md` y la entrada `#68` de este mismo fichero presentan el commit
+`07b0377` (alta del flag `--extraer-adjuntos` en `scripts/abrir_caso.py`) como «la mitad resuelta»
+de `#68.a`. **No lo es: es una trampa armada.** El flag hace llegar los binarios a `00_Input` —eso
+sí funciona y es lo que la sala de máquina lee— pero al precio de sacar esos mensajes del radar del
+atomizador. Hoy no muerde a nadie porque el default es `False`.
+
+**Bloquea.** La casilla 3 del bloque `[SIGUIENTE-CABLEADO-CORREO]` del `PLAN.md` (pasar
+`--extraer-adjuntos` a default `True`) **no se puede tocar hasta resolver esto**: generalizaría la
+ceguera a todos los casos con adjuntos.
+
+**Mitigación ya en curso (no es el arreglo).** El cableado de la sala de máquina emite un aviso
+destacado cuando el conteo recursivo de `.eml` supera al de nivel superior (§4.2 de su spec). Vuelve
+el agujero ruidoso; no lo cierra.
+
+**Salidas posibles** (ninguna elegida — exige decisión):
+1. **Enumeración recursiva en el motor** (`glob` → `rglob` en `extract.py:53`). Una línea, pero
+   cambia el conjunto de entrada del motor: hay que comprobar qué pasa con `eml_origen` (hoy
+   `eml.name`, que dejaría de ser único entre subcarpetas) y con el registro de procesados, que
+   lleva **nombre de fichero** como llave.
+2. **Que el llamante pase el conjunto exacto de carpetas** a `atomize_dir` (ya acepta una secuencia).
+   No toca el motor, pero deja la responsabilidad repartida entre llamantes.
+3. **Que `email_export` no use subcarpetas** y desambigüe por nombre. Cambia el layout de intake ya
+   desplegado; el más caro.
+
+**Prioridad.** Alta en cuanto alguien use el flag. **Disparador de promoción:** primer caso real
+exportado con `--extraer-adjuntos`, o la decisión de tocar la casilla 3.
+
+---
+
+## 99. Saneamiento del motor `email_atomize`: converger bajo borrados y publicar de forma atómica
+
+**Detectado 2026-07-27** por la revisión adversarial de Codex + pasada propia sobre la spec del
+cableado; verificado contra el código. Son las tres razones por las que el cableado **no puede
+prometer** que `01_Procesado/Emails` esté fresco y consumible sin comprobar nada, y por las que esa
+promesa se rebajó a un `status` declarado en el evento.
+
+**99.1 — No poda `adjuntos/`.** La poda de idempotencia cubre solo `mensajes/*.md`
+(`core/email_atomize/pipeline.py:121-124`). Los binarios y sus sidecars de un correo retirado
+permanecen indefinidamente. No es residuo invisible: `core/adjuntos_contenido/descubrir.py:13`
+recorre **todos** los sidecars de `adjuntos/` sin contrastarlos con `INDICE_ADJUNTOS.md`, así que un
+adjunto borrado se sigue procesando aguas abajo — incluido el caso feo de un adjunto que se borró
+por ser **de otro expediente**. *Contraejemplo:* `A.eml` trae `contrato.pdf`; se atomiza; se borra
+`A.eml`; la corrida siguiente informa `adjuntos_unicos=0` y los dos ficheros siguen ahí.
+
+**99.2 — Publicación no atómica.** El árbol se actualiza por escrituras directas sucesivas
+(mensajes → poda → adjuntos → `corpus.jsonl` → índices → `_revision/` → vistas) y `_registro.json`
+se guarda en la **última** línea (`pipeline.py:170`) con `write_text`, sin temporal ni `replace`
+(`ids.py:93-96`). Un proceso que muere en medio deja una mezcla de generaciones con el registro sin
+salvar. Y `load_registro` degrada un JSON truncado a **registro vacío en silencio**
+(`ids.py:104-107`). Como los IDs se asignan por contador incremental (`ids.py:37-46`), la corrida
+siguiente puede **renumerar** `MSG-`/`ATT-`, contra la invariante que el propio docstring del módulo
+declara («Re-ejecutar NUNCA renumera»). Un MSG-id ya citado en `_revision/cola.md`, en un
+`_entregas/` sellado o en una nota del letrado pasaría a apuntar a otro mensaje: **misatribución en
+un árbol probatorio**. *Fix mínimo:* `try/finally: reg.save()` + escritura por temporal y `replace`.
+
+**99.3 — Sin exclusión mutua.** No hay lock ni snapshot entre el conteo de fuentes, la lectura del
+atomizador y el inventario del OCR. Dos `apply` simultáneos sobre el mismo caso pueden cargar el
+mismo contador de `_registro.json` y asignar el mismo ID a mensajes distintos antes de que gane el
+último escritor; un intake concurrente puede depositar un `.eml` entre la atomización y el
+inventario, dejando el árbol atomizado y el estado OCR describiendo generaciones distintas. La
+concurrencia sobre el mismo caso ya ha ocurrido en este proyecto (memoria
+`feedback-concurrencia-pipelines-y-tiempos-apertura`).
+
+**Nota de honestidad sobre la idempotencia verificada.** Las corridas en vivo sobre W-02VND1 que
+declararon «2 corridas → 0 cambios» se hicieron con **entradas inmutables**. Eso demuestra
+estabilidad, no **convergencia**: nadie probó qué pasa cuando se retiran entradas, que es justo
+donde 99.1 falla.
+
+**Relación.** `#98` es el otro defecto del motor (enumeración) y va aparte porque tiene disparador y
+bloqueo propios. `#87` (motor de OCR de adjuntos) y `#86` (consumo por la sala de lectura) dependen
+de que este árbol sea fiable.
+
+**Disparador de promoción:** que se construya `#86` (un consumidor real del árbol atomizado
+convierte 99.1 en pérdida visible), un crash real a media atomización, o decisión de Nikolai.

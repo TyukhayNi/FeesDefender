@@ -312,11 +312,20 @@ comporta como si no existiera.
   (commit `07b0377`), con default `False` **a propósito** — activarlo mueve la superficie de dedup de
   todo intake futuro, y eso es decisión aparte.
 
-**Decisión abierta que hay que cerrar antes de construir:** ¿dónde vive el disparo? Las tres opciones
-que la exploración del 2026-07-19 dejó sin resolver son (i) que lo encadene `abrir_caso`, (ii) que lo
-invoque `organizar-sala-maquina` antes de su OCR, o (iii) una fachada `procesar_expediente()`. El
-orden correcto está fijado por la operativa (**atomizar antes de la sala de máquina**, o el OCR queda
-incompleto); lo que falta es quién lo garantiza mecánicamente en vez de por memoria del operador.
+**Decisión CERRADA 2026-07-27: opción (ii), dentro de `scripts/sala_maquina.py::apply`**, antes de
+construir el plan de OCR. Descartadas (i) `abrir_caso` (la apertura corre una vez; deja sin cubrir
+todo caso reprocesado) y (iii) fachada `procesar_expediente()` (mueve el problema: no dice quién la
+llama). Tampoco en el SKILL.md: la prosa es justo el mecanismo que falla hoy. Spec:
+`docs/superpowers/specs/2026-07-27-cableado-atomize-sala-maquina-design.md` (rev. 2) · revisión
+adversarial adjudicada: `…-adversarial-review.md`.
+
+**Corrección del supuesto que justificaba el orden.** Este bloque decía «atomizar antes de la sala
+de máquina, o el OCR queda incompleto». **Es falso para el atomizador** y está verificado contra
+código: `inventariar` solo recorre `00_Input` (`sala_maquina.py:551`) y ninguna escritura de
+`email_atomize` sale de `01_Procesado/Emails`. La frase valía para `--extraer-adjuntos`, que sí
+deposita binarios en `00_Input`. Lo que el cableado compra de verdad: orden garantizado por código,
+estado de la atomización declarado en el log, y el detector de contaminación cruzada corriendo solo
+(hoy solo se dispara a mano, y el patrón ya ha mordido tres veces).
 
 **Frontera con otros ítems — no construir dos veces:**
 - El **motor** de extracción/OCR de adjuntos (unificar Docling → OCRmyPDF, cola de visión NO-OP) es
@@ -324,9 +333,21 @@ incompleto); lo que falta es quién lo garantiza mecánicamente en vez de por me
 - El **consumo** de las fuentes atomizadas por la sala de lectura es **`MEJORAS #86`**.
 - El filtro de ruido del intake de correo es el bloque `[SIGUIENTE-INTAKE-EMAIL-FILTRO]`, distinto.
 
-- [ ] Cerrar la decisión del punto de disparo (abrir_caso / organizar-sala-maquina / fachada).
+- [x] **Cerrar la decisión del punto de disparo** — (ii) `scripts/sala_maquina.py::apply`, antes del
+  plan de OCR. Cerrada 2026-07-27 en la spec rev. 2; sobrevivió a dos revisiones adversariales.
 - [ ] Encadenar la atomización en ese punto, con tests que fijen el orden.
-- [ ] Decidir por separado si `--extraer-adjuntos` pasa a default `True` (mueve el dedup del intake).
+- [ ] ⛔ **BLOQUEADA por `MEJORAS #98`** — decidir si `--extraer-adjuntos` pasa a default `True`.
+  No se puede tocar hasta arreglar la enumeración del motor: con el flag activo, el `.eml` de todo
+  mensaje **con adjuntos** se escribe en una subcarpeta (`email_export.py:1123-1132`) y el
+  atomizador solo enumera el nivel superior (`extract.py:53`) → esos mensajes **desaparecen del
+  atomizador en silencio**. Pasar el flag a default `True` generalizaría la ceguera a todos los
+  casos con adjuntos. Corrige el registro previo: `07b0377` no era «la mitad resuelta» de `#68.a`.
+
+**Deuda destapada por la revisión adversarial (no bloquea este bloque):** `MEJORAS #98`
+(enumeración no recursiva del motor) y `MEJORAS #99` (el motor no converge bajo borrados —no poda
+`adjuntos/`— y publica sin atomicidad, con riesgo de renumerar IDs congelados). Por eso este bloque
+**no promete** un árbol atomizado fresco: declara su estado en el evento `atomizado_email` y el
+consumidor debe comprobarlo.
 
 ---
 
