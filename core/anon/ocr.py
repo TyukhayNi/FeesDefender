@@ -22,7 +22,7 @@ proyecto origen, vienen de la librería):
 from __future__ import annotations
 
 import tempfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
@@ -150,7 +150,6 @@ class ResultadoEscalera:
     paginas_fallidas: tuple[int, ...] = ()
     degradado: bool = False
     nota: str = ""
-    opciones: dict = field(default_factory=dict)
 
 
 _ACROFORM_MARCA = "user fillable form"
@@ -218,7 +217,7 @@ def ocr_pdf_escalera(
                 motivo = "peldaño 1 (--redo-ocr) rechazado por AcroForm"
         else:
             if devuelta == salida and salida.exists():
-                return ResultadoEscalera(salida, "redo", opciones=comunes)
+                return ResultadoEscalera(salida, "redo")
             # rc=6 / PriorOcrFound: no hubo artefacto, así que tampoco recuperación.
             motivo = "peldaño 1 no regeneró el PDF (OCR previo detectado)"
 
@@ -253,11 +252,12 @@ def _peldano_paginas(entrada: Path, salida: Path, motivo: str,
         # conservador) el peldaño 1 falló y no hemos producido texto: eso sí es
         # degradación. Si el documento ya traía capa de texto, no lo es.
         return ResultadoEscalera(entrada, "sin_paginas_ciegas", degradado=not conservador,
-                                 nota=f"sin páginas ciegas que aislar; {motivo}", opciones=comunes)
+                                 nota=f"sin páginas ciegas que aislar; {motivo}")
 
     lector = PdfReader(str(entrada))
     recuperadas: dict[int, object] = {}
     fallidas: list[int] = []
+    causa = ""                                        # por qué falló la primera página
     with tempfile.TemporaryDirectory() as tmp:
         tmpdir = Path(tmp)
         for n in ciegas:
@@ -275,14 +275,15 @@ def _peldano_paginas(entrada: Path, salida: Path, motivo: str,
                 if devuelta != escrita or not escrita.exists():
                     raise OCRError("la página aislada no produjo PDF nuevo")
                 recuperadas[n] = PdfReader(str(escrita)).pages[0]
-            except Exception:
+            except Exception as e:
                 fallidas.append(n)
+                causa = causa or str(e)
 
         if not recuperadas:
             return ResultadoEscalera(entrada, "fallido", paginas_fallidas=tuple(fallidas),
-                                     degradado=True, opciones=comunes,
+                                     degradado=True,
                                      nota=(f"texto ciego NO recuperado en {len(fallidas)} "
-                                           f"página(s); {motivo}"))
+                                           f"página(s) ({causa}); {motivo}"))
 
         salida.parent.mkdir(parents=True, exist_ok=True)
         escritor = PdfWriter()
@@ -293,9 +294,9 @@ def _peldano_paginas(entrada: Path, salida: Path, motivo: str,
 
     nota = f"peldaño 2: {len(recuperadas)} página(s) ciega(s) re-OCR-izadas aparte; {motivo}"
     if fallidas:
-        nota += f" · sin recuperar: {', '.join(str(n) for n in fallidas)}"
+        nota += f" · sin recuperar: {', '.join(str(n) for n in fallidas)} ({causa})"
     return ResultadoEscalera(salida, "paginas", tuple(sorted(recuperadas)), tuple(fallidas),
-                             degradado=bool(fallidas), nota=nota, opciones=comunes)
+                             degradado=bool(fallidas), nota=nota)
 
 
 def ocr_disponible() -> bool:

@@ -3351,7 +3351,11 @@ de split, nunca toca el modo de OCR. Hoy es código inalcanzable.
 - **(2) Métrica por página en `ocr_quality`,** no solo la media: marcar `low` si ≥N páginas quedan bajo el
   umbral aunque el promedio pase. Es lo que rompe la dilución del punto 3.
 - **(3) Relajar el gate de entrada:** `_texto_suficiente` no debería concluir "digital" cuando el texto
-  por página es casi idéntico entre páginas.
+  por página es casi idéntico entre páginas. **[HECHO 2026-07-27, con otra forma]**: `_texto_suficiente`
+  se dejó intacto (lo comparte el extractor); en su lugar, un PDF que pasa ese gate pero esconde
+  páginas ciegas baja igualmente a la escalera, en modo conservador. El disparo no usa la similitud
+  entre páginas sino el discriminante de página ciega, que ya estaba validado en 402 documentos.
+  Sin este punto, (1) y (2) no habrían servido de nada: es el eslabón que impide llegar al OCR.
 
 **Justificación de no aplicarlo ahora.** Cambiar el modo de OCR por defecto afecta a todos los
 expedientes del despacho: `--redo-ocr` re-procesa páginas que hoy se saltan (corridas más lentas) y deja
@@ -3408,6 +3412,28 @@ explícita**, no un cambio de bandera: (1) `--redo-ocr` por defecto; (2) si fall
 las páginas afectadas y OCR-izarlas aparte (o `--force-ocr` acotado con `--pages`) en vez de rendirse;
 (3) si nada funciona, **marcar el documento `low`** para que entre en la worklist y en `reforzar` —
 nunca dejarlo `ok`. En los dos Exposés `--redo-ocr` sí funcionó sin más.
+
+### Dos hechos del motor, verificados en vivo al construir el arreglo (2026-07-27)
+
+Conocimiento durable sobre ocrmypdf, no estado del ítem (el estado vive en `PLAN.md`,
+`[SIGUIENTE-OCR-CIEGO]`). Los dos salieron de **ejecutar**, no de leer:
+
+1. **`--redo-ocr` es incompatible con `--deskew`** (ocrmypdf 17.4.2: *"not currently compatible with
+   --deskew, --clean-final and --remove-background"*), y `deskew=True` es el default de `ocr_pdf`.
+   El modo redo era por tanto inalcanzable **dos** veces: ningún llamador lo pasaba y, si lo hubiera
+   pasado, habría fallado en la validación de opciones antes de OCR-izar nada. Corolario de diseño:
+   como el redo obliga a renunciar al enderezado, conviene reservarlo a los documentos que **traen
+   capa de texto**; el escaneo limpio no gana nada con él y sí pierde el `--deskew`.
+2. **Extraer una página con `pypdf.PdfWriter` quita el `/AcroForm`** y ocrmypdf la acepta en modo
+   redo. Confirmado en un test de integración contra ocrmypdf y Tesseract reales: el documento
+   entero se rechaza con *"This PDF has a user fillable form"* y la misma página, aislada, se
+   OCR-iza y devuelve el cuerpo. Es lo que hace viable el peldaño 2 sin tocar `--force-ocr`.
+
+Nota de coste, por si alguna vez molesta: el motor abre ahora el mismo PDF varias veces con
+`pypdf` (texto, nº de páginas, perfil de páginas ciegas y, tras el OCR, calidad por página). El
+gate barato `pdf_paginas.tiene_rasteres` —solo metadato— evita el perfilado en el caso común (PDF
+nativo), pero un documento con escaneos sí paga varias lecturas. Frente al coste del OCR es ruido;
+si algún día se mide como problema, el arreglo es devolver texto y perfil en una sola pasada.
 
 **Sobre la precisión del detector (leer antes de fiarse de sus cifras).** Es un cribado: de 24
 candidatos, 6 resultaron pérdidas reales. Falsos positivos confirmados midiendo: DNIs y capturas de

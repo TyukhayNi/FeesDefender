@@ -258,6 +258,23 @@ def test_peldano_3_degrada_cuando_ninguna_pagina_se_recupera(tmp_path, monkeypat
     assert res.ruta == entrada                     # sin artefacto: no se miente
 
 
+def test_la_nota_dice_por_que_fallo_la_pagina(tmp_path, monkeypatch):
+    """En el camino conservador el peldaño 1 ni se intenta, así que el único
+    motivo que existe es el de la página. Sin él la nota dice «no recuperado» y
+    no sirve para diagnosticar nada."""
+    entrada = _doc_con_pagina_ciega(tmp_path)
+
+    def _fake(ruta_entrada, ruta_salida, **kw):
+        raise OCRError("tesseract sin el paquete de idioma cat")
+
+    monkeypatch.setattr(ocr_mod, "ocr_pdf", _fake)
+
+    res = ocr_mod.ocr_pdf_escalera(entrada, tmp_path / "out" / "x.pdf", conservador=True)
+
+    assert res.degradado is True
+    assert "paquete de idioma cat" in res.nota
+
+
 def test_recuperacion_parcial_sigue_siendo_degradada(tmp_path, monkeypatch):
     entrada = _pdf(tmp_path / "tres.pdf", [
         (_DIGITAL, None), (_SELLO, (1200, 1600)), (_SELLO, (1200, 1600))])

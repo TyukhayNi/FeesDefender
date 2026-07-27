@@ -562,7 +562,10 @@ def _ocr_y_extraer(case_dir: Path, sm_dir: Path, case_id: str, d: DocPlan,
     if not persistido:
         # No afirmamos una custodia que no existe: el texto sale de la capa previa;
         # se refleja como pypdf con nota explícita, preservada por documento lógico.
-        _anotar(filas, "OCRmyPDF no regeneró (PDF ya tenía texto); sin artefacto en 01_OCR")
+        # La redacción es neutra a propósito: "no se regeneró" cubre tanto el PDF
+        # que ya traía OCR como la escalera que no consiguió recuperar nada, y el
+        # motivo concreto ya viene en `res.nota`.
+        _anotar(filas, "ningún peldaño regeneró el PDF; sin artefacto en 01_OCR")
     return filas
 
 
