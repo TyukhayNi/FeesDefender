@@ -26,7 +26,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 8 | [Intake email — filtro de exclusión de ruido](#siguiente-intake-email-filtro-exclusión-de-ruido-administrativo-y-cruzado) | parcial (2/4) | disparador: W-02VUDR (fuga cruzada de 7 casos ajenos + cartera de litigios) | medio |
 | 9 | [Vista procesal en `05_Procedimiento`](#siguiente-vista-procesal-vista-procesal-del-expediente-en-05_procedimiento) | piezas 1-2 ✅ (#137, #140); spec v3.1 con 2 revisiones consumidas | pieza 3 **bloqueada** por la fila #1 (OCR ciego); plan de la pieza 4 por reescribir | medio |
 | 10 | [`.doc` → LibreOffice headless](#siguiente-doc-libreoffice-doc-binario-sin-md-ni-ocr-conversión-libreoffice-headless) | pendiente | disparador: W-02MA0R, la demanda del ordinario solo existe en `.doc` sin gemelo PDF | bajo |
-| 11 | [Cableado del pipeline de correo (`MEJORAS #68`)](#siguiente-cableado-correo-cableado-del-pipeline-de-correo-encadenar-la-atomización-resto-de-mejoras-68) | casillas 1-2 ✅ (PR #NNN); casilla 3 ⛔ #98 | solo queda la casilla 3, bloqueada por MEJORAS #98 | medio |
+| 11 | [Cableado del pipeline de correo (`MEJORAS #68`)](#siguiente-cableado-correo-cableado-del-pipeline-de-correo-encadenar-la-atomización-resto-de-mejoras-68) | casillas 1-2 ✅ (PR #151); casilla 3 ⛔ #98 | solo queda la casilla 3, bloqueada por MEJORAS #98 | medio |
 
 > Detalle de cada ítem en su bloque `[SIGUIENTE-*]` más abajo. Backlog sin
 > promover: `docs/MEJORAS_FUTURAS.md`. Ledger de cerrados: `## Cerrados` (final).
@@ -335,8 +335,8 @@ estado de la atomización declarado en el log, y el detector de contaminación c
 
 - [x] **Cerrar la decisión del punto de disparo** — (ii) `scripts/sala_maquina.py::apply`, antes del
   plan de OCR. Cerrada 2026-07-27 en la spec rev. 2; sobrevivió a dos revisiones adversariales.
-- [x] Encadenar la atomización en ese punto, con tests que fijen el orden. ✅ **PR #NNN**
-      (`<hash del merge>`): `_atomizar_correo` en `scripts/sala_maquina.py::apply` antes de
+- [x] Encadenar la atomización en ese punto, con tests que fijen el orden. ✅ **PR #151**
+      (`c845a01`): `_atomizar_correo` en `scripts/sala_maquina.py::apply` antes de
       `_construir_plan`; `contar_eml` + derivadores desde `case_dir` en
       `core/email_atomize/pipeline.py`; evento `atomizado_email` (INTAKE_EVENTS 26→27) con
       `status` `ok`/`parcial`/`fallo`/`noop`; fallo blando para el OCR y banner + evento para

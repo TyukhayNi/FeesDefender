@@ -2258,7 +2258,7 @@ cableado confirma en vez de resolver. Los defectos del motor que impiden promete
 atomizado fiable están ahora acotados en **`#98`** (enumeración no recursiva) y **`#99`**
 (convergencia bajo borrados + publicación atómica).
 
-**Actualización 2026-07-28 (PR #NNN).** El **orden** ya lo garantiza el código:
+**Actualización 2026-07-28 (PR #151, `c845a01`).** El **orden** ya lo garantiza el código:
 `scripts/sala_maquina.py::apply` atomiza antes del OCR. Lo que este ítem seguía
 prometiendo y **sigue sin cumplirse** es lo otro: que los átomos ENTREN al OCR. La sala
 de máquina continúa leyendo solo `00_Input`, así que el contenido de los adjuntos
@@ -2761,7 +2761,7 @@ extrae los adjuntos embebidos de los `.eml` (dedup por sha, filtro decorativo, f
     `core/abrir_caso`. La otra mitad de 68.a —que la atomización se invoque en cadena y no a
     mano— **quedaba** pendiente cuando se escribió esto; se cerró después: ver el bullet
     siguiente.
-  - ✅ **RESUELTA la otra mitad (PR #NNN, `<hash del merge>`):** `scripts/sala_maquina.py::apply`
+  - ✅ **RESUELTA la otra mitad (PR #151, `c845a01`):** `scripts/sala_maquina.py::apply`
     encadena la atomización antes del OCR y declara el resultado en el evento
     `atomizado_email`. Lo que **sigue** abierto de `#68.b` es el **contenido** de los
     adjuntos atomizados (`MEJORAS #87`), no el encadenado.
@@ -3819,7 +3819,7 @@ ceguera a todos los casos con adjuntos.
 
 **Mitigación YA EN MAIN (no es el arreglo).** `apply` y `plan` emiten un banner cuando
 el conteo recursivo de `.eml` supera al de nivel superior, y el evento `atomizado_email`
-lleva los dos conteos (`eml_nivel_superior` / `eml_totales`) (PR #NNN). El agujero es
+lleva los dos conteos (`eml_nivel_superior` / `eml_totales`) (PR #151, `c845a01`). El agujero es
 ruidoso; sigue abierto.
 
 **Salidas posibles** (ninguna elegida — exige decisión):
