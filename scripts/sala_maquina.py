@@ -36,8 +36,9 @@ _AVISO_EML_INVISIBLE = (
     f"\n{_SEP}\n"
     "AVISO: {n} .eml viven en subcarpetas y el atomizador NO los verá (MEJORAS #98).\n"
     "Causa típica: exportación con --extraer-adjuntos. Son justo los mensajes con\n"
-    f"adjuntos. El conteo del evento lo deja registrado.\n{_SEP}"
+    f"adjuntos. `apply` deja los dos conteos en el evento `atomizado_email`.\n{_SEP}"
 )
+
 
 def _registrar_atomizado(case_id: str, details: dict) -> None:
     """Emite `atomizado_email`; un fallo de log nunca aborta el OCR."""

@@ -1174,6 +1174,29 @@ Al adjudicar: un hallazgo que solo mira el diff suele ser falso positivo, y la c
 
 ---
 
+## Desviaciones aprobadas durante la ejecución
+
+**1. El `noop` con discrepancia SÍ emite evento** (decisión de Nikolai, 2026-07-28, durante la
+revisión de la Task 5). La revisión de la tarea encontró que el banner de `#98` afirmaba «el conteo
+del evento lo deja registrado» mientras el no-op salía **antes** de emitirlo — y ese camino es
+justo el escenario típico del flag: si **todos** los `.eml` traen adjunto, todos bajan a subcarpeta,
+`n_top == 0` y, sin árbol previo, la discrepancia se quedaba solo en un stderr efímero. Contradecía
+el objetivo 4 de la spec («que la discrepancia deje de ser silenciosa») aunque respetase el §4.5
+(«nunca evento en el `noop`»).
+
+Regla final, que sustituye a la del §4.3 en esa fila: con `n_top == 0` y sin árbol previo **no se
+llama al motor** (sigue intacto el motivo: `atomize_dir` hace `mkdir` incondicional y sembraría
+carpetas vacías), pero **si `n_rec > n_top` se emite `atomizado_email` con `status: "noop"`** y solo
+los dos conteos. Sin discrepancia, silencio total: ni evento ni salida. `"noop"` no es un status
+nuevo — la tabla del §4.3 ya lo nombraba. La emisión guardada se extrajo a
+`_registrar_atomizado(case_id, details)`, usada por los dos puntos de emisión.
+
+**2. Redacción del banner.** La frase final pasa a «`apply` deja los dos conteos en el evento
+`atomizado_email`»: el mismo banner lo imprime `plan`, que no emite ningún evento, así que la
+promesa en primera persona era falsa en ese contexto.
+
+---
+
 ## Adjudicación de la revisión adversarial del PLAN (Codex, 2026-07-28) — veredicto NO-SHIP, remediado
 
 `agy` no pudo correr (cupo de Gemini agotado), así que la revisión del plan la hizo Codex en solo
