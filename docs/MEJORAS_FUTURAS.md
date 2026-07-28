@@ -2758,9 +2758,9 @@ extrae los adjuntos embebidos de los `.eml` (dedup por sha, filtro decorativo, f
     suelto en `00_Input/<lote>/`, el árbol que `sala_maquina` sí recorre. *(Lectura incompleta:
     ver la corrección de arriba.)*
     **Corrección de dato:** el call site es `scripts/abrir_caso.py::_intake_email`, no
-    `core/abrir_caso`. Sigue pendiente la otra mitad de 68.a: que `abrir_caso` /
-    `organizar-sala-maquina` invoquen `atomize_emails` en cadena, en vez de a mano —
-    ✅ ver bullet siguiente.
+    `core/abrir_caso`. La otra mitad de 68.a —que la atomización se invoque en cadena y no a
+    mano— **quedaba** pendiente cuando se escribió esto; se cerró después: ver el bullet
+    siguiente.
   - ✅ **RESUELTA la otra mitad (PR #NNN, `56b82b4`):** `scripts/sala_maquina.py::apply`
     encadena la atomización antes del OCR y declara el resultado en el evento
     `atomizado_email`. Lo que **sigue** abierto de `#68.b` es el **contenido** de los
