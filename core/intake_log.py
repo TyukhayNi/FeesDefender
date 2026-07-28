@@ -6,7 +6,7 @@ quién hizo qué, cuándo y con qué efecto sobre el repositorio del caso.
 
 Decisiones cerradas (memoria persistente: ``project_intake_estructura_v2.md``):
 
-- M10-Q1: 26 tipos de evento permitidos (constante ``INTAKE_EVENTS``).
+- M10-Q1: 27 tipos de evento permitidos (constante ``INTAKE_EVENTS``).
 - M10-Q2: schema común ``{ts, actor, event, case_id, details}`` con
   ``details`` específico por evento.
 - M10-Q3: actor resuelto desde un singleton thread-safe (``set_actor`` /
@@ -69,6 +69,10 @@ INTAKE_EVENTS: frozenset[str] = frozenset({
                                  # {"lotes": [nombres], "remapeados": {registro: n}}
     "archivado",                # archivo del expediente inviable (RUNBOOK §10; MEJORAS #70.a):
                                  # details = {"motivo": MAYUSCULAS_GUION_BAJO, "fecha": ISO}
+    "atomizado_email",          # atomización de correo encadenada por la sala de máquina
+                                 # (spec 2026-07-27 §4.5): details = {"status": ok|parcial|fallo,
+                                 # "eml_nivel_superior": n, "eml_totales": n, + contadores del
+                                 # AtomizeReport si el motor terminó}. NO lleva "files".
 })
 
 
