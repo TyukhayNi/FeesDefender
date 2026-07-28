@@ -26,7 +26,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 8 | [Intake email — filtro de exclusión de ruido](#siguiente-intake-email-filtro-exclusión-de-ruido-administrativo-y-cruzado) | parcial (2/4) | disparador: W-02VUDR (fuga cruzada de 7 casos ajenos + cartera de litigios) | medio |
 | 9 | [Vista procesal en `05_Procedimiento`](#siguiente-vista-procesal-vista-procesal-del-expediente-en-05_procedimiento) | piezas 1-2 ✅ (#137, #140); spec v3.1 con 2 revisiones consumidas | pieza 3 **bloqueada** por la fila #1 (OCR ciego); plan de la pieza 4 por reescribir | medio |
 | 10 | [`.doc` → LibreOffice headless](#siguiente-doc-libreoffice-doc-binario-sin-md-ni-ocr-conversión-libreoffice-headless) | pendiente | disparador: W-02MA0R, la demanda del ordinario solo existe en `.doc` sin gemelo PDF | bajo |
-| 11 | [Cableado del pipeline de correo (`MEJORAS #68`)](#siguiente-cableado-correo-cableado-del-pipeline-de-correo-encadenar-la-atomización-resto-de-mejoras-68) | pendiente | decisión de Nikolai 2026-07-27; falta cerrar el punto de disparo | medio |
+| 11 | [Cableado del pipeline de correo (`MEJORAS #68`)](#siguiente-cableado-correo-cableado-del-pipeline-de-correo-encadenar-la-atomización-resto-de-mejoras-68) | casillas 1-2 ✅ (PR #NNN); casilla 3 ⛔ #98 | solo queda la casilla 3, bloqueada por MEJORAS #98 | medio |
 
 > Detalle de cada ítem en su bloque `[SIGUIENTE-*]` más abajo. Backlog sin
 > promover: `docs/MEJORAS_FUTURAS.md`. Ledger de cerrados: `## Cerrados` (final).
@@ -335,7 +335,15 @@ estado de la atomización declarado en el log, y el detector de contaminación c
 
 - [x] **Cerrar la decisión del punto de disparo** — (ii) `scripts/sala_maquina.py::apply`, antes del
   plan de OCR. Cerrada 2026-07-27 en la spec rev. 2; sobrevivió a dos revisiones adversariales.
-- [ ] Encadenar la atomización en ese punto, con tests que fijen el orden.
+- [x] Encadenar la atomización en ese punto, con tests que fijen el orden. ✅ **PR #NNN**:
+      `_atomizar_correo` en `scripts/sala_maquina.py::apply` antes de `_construir_plan`
+      (`56b82b4`); `contar_eml` + derivadores desde `case_dir` en
+      `core/email_atomize/pipeline.py` (`9d43eb2`); evento `atomizado_email` (INTAKE_EVENTS
+      26→27, `edbfc76`) con `status` `ok`/`parcial`/`fallo`/`noop`; fallo blando para el OCR y
+      banner + evento para el registro (`5a4b47d`); aviso de `.eml` invisibles (`MEJORAS #98`),
+      `plan` informa y no atomiza, y el evento `status: "noop"` cuando el no-op coincide con la
+      discrepancia (`873ba1a`, `23b1fb7`); `reforzar` tampoco atomiza. +17 tests (14 con doble
+      del motor, 3 contra el motor real, `0e8b8eb`).
 - [ ] ⛔ **BLOQUEADA por `MEJORAS #98`** — decidir si `--extraer-adjuntos` pasa a default `True`.
   No se puede tocar hasta arreglar la enumeración del motor: con el flag activo, el `.eml` de todo
   mensaje **con adjuntos** se escribe en una subcarpeta (`email_export.py:1123-1132`) y el

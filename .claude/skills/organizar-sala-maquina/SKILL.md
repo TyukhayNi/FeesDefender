@@ -121,6 +121,14 @@ buscable (entre el OCR y el MD), para que cada documento lógico tenga su propio
    → OCRmyPDF → PDF buscable en `01_OCR/`; nativo `.eml`/`.docx`/`.txt`/… →
    extracción determinista) y escribe `03_MD/`, `raw_text/` y
    `_revisar/_cobertura.md`.
+   - **Atomiza el correo primero.** Antes del OCR, `apply` corre el motor de
+     atomización (`core/email_atomize`) sobre los lotes `email` de `00_Input/` y el
+     cajón legacy `03_Email`, y deja el resultado en `01_Procesado/Emails/` + un evento
+     `atomizado_email` en `_intake_log.jsonl` con `status` (`ok`/`parcial`/`fallo`/`noop`).
+     Ya no hace falta acordarse de lanzar `python -m scripts.atomize_emails` a mano.
+     **Si el motor falla, el OCR sigue** (no depende de él) y el fallo sale como banner
+     + evento: no lo ignores, revisa `01_Procesado/Emails` antes de citar `MSG-ids`.
+     Si el caso no tiene correo y no tiene árbol previo, este paso no hace nada.
    - **`--vision`** (opcional, off por defecto): refuerza con transcripción de
      visión los documentos que salieron `low`/`empty` tras el OCR. **Requiere un
      transcriptor cableado** (lo inyecta el flujo de la skill / la sesión Claude);
@@ -171,3 +179,10 @@ buscable (entre el OCR y el MD), para que cada documento lógico tenga su propio
   despacho, revisitar cuando se reinstaure el muro `06_`); no mandes estos MD
   fuera del entorno de trabajo del despacho sin pasar por el pipeline de
   anonimización si el destino lo exige.
+- **La atomización no garantiza un árbol fresco.** El motor poda `mensajes/` pero **no**
+  `adjuntos/` (`MEJORAS #99`), así que un adjunto de un correo retirado sobrevive y
+  `adjuntos_contenido` lo seguirá recogiendo. Y con `--extraer-adjuntos` el `.eml` de un
+  mensaje con adjuntos baja a una subcarpeta que el atomizador **no** enumera
+  (`MEJORAS #98`): `apply` avisa con un banner cuando detecta esos `.eml`. El contenido
+  (texto/OCR) de los adjuntos del correo sigue **fuera** de la sala de máquina, que lee
+  solo `00_Input` (`MEJORAS #87`).
