@@ -307,21 +307,26 @@ def emails_out_dir_de_caso(case_dir: Path | str) -> Path:
 def contar_eml(fuentes: Iterable[Path | str]) -> tuple[int, int]:
     """``(n_top, n_rec)``: los .eml que el motor VERÁ y los que realmente HAY.
 
-    ``n_top`` usa el MISMO enumerador que el motor (``glob("*.eml")``, no recursivo —
-    ``extract.iter_avistamientos``), así que es el conteo autoritativo para decidir
-    no-op y para el evento. ``n_rec`` (``rglob``) solo sirve para delatar la
-    discrepancia de `MEJORAS #98`: con ``--extraer-adjuntos``, el .eml de un mensaje
-    con adjuntos baja a una subcarpeta y desaparece del atomizador sin error.
-    ``n_rec >= n_top`` siempre. La ceguera a ``.EML`` en mayúsculas es la misma que la
-    del motor, a propósito: los dos conteos han de medir lo mismo.
+    ``n_top`` cuenta el mismo subconjunto que enumeraría el motor (``glob("*.eml")``,
+    no recursivo — ``extract.iter_avistamientos``): los que cuelgan directamente de la
+    base, sin subcarpeta. Es el conteo autoritativo para decidir no-op y para el
+    evento. ``n_rec`` (recursivo, vía ``rglob``) cuenta TODOS, y solo sirve para
+    delatar la discrepancia de `MEJORAS #98`: con ``--extraer-adjuntos``, el .eml de
+    un mensaje con adjuntos baja a una subcarpeta y desaparece del atomizador sin
+    error. ``n_rec >= n_top`` siempre. La ceguera a ``.EML`` en mayúsculas es la misma
+    que la del motor, a propósito: los dos conteos han de medir lo mismo. Una sola
+    pasada por fuente (``rglob``); ``n_top`` se deriva del mismo recorrido comparando
+    el padre de cada hallazgo con la base, sin recorrer dos veces el árbol.
     """
     n_top = n_rec = 0
     for f in fuentes:
         base = Path(f)
         if not base.is_dir():
             continue
-        n_top += sum(1 for _ in base.glob("*.eml"))
-        n_rec += sum(1 for _ in base.rglob("*.eml"))
+        for p in base.rglob("*.eml"):
+            n_rec += 1
+            if p.parent == base:
+                n_top += 1
     return n_top, n_rec
 
 

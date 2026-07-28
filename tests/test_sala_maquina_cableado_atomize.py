@@ -151,6 +151,76 @@ def test_noop_con_discrepancia_emite_evento_noop(caso, monkeypatch, capsys):
     }]
 
 
+def test_arbol_previo_con_discrepancia_total_no_llama_al_motor(caso, monkeypatch, capsys):
+    # El defecto real: con arbol YA existente y `n_top == 0` (todos los .eml en
+    # subcarpeta), la guarda vieja (`n_top == 0 and not out.exists()`) no cubria este
+    # caso porque `out.exists()` es True -> caia al motor con CERO avistamientos, que
+    # podaria `mensajes/*.md` (ninguno esperado), vaciaria indices/_revision/vistas, y
+    # el evento diria "ok, mensajes: 0" como si el letrado hubiera retirado el correo.
+    case_dir, eventos = caso
+    mensajes_dir = case_dir / "01_Procesado" / "Emails" / "mensajes"
+    mensajes_dir.mkdir(parents=True)
+    dummy = mensajes_dir / "dummy.md"
+    dummy.write_text("contenido vivo", encoding="utf-8")
+    src = case_dir / "00_Input" / "03_Email"
+    sub = src / "mensaje_con_adjunto"
+    sub.mkdir()
+    (sub / "a.eml").write_bytes(_eml("<a@x>"))
+    (sub / "b.eml").write_bytes(_eml("<b@x>"))
+    llamadas: list[int] = []
+
+    def fake_atomize(*a, **k):
+        llamadas.append(1)
+        return AtomizeReport()
+
+    monkeypatch.setattr(cli.atomize, "atomize_dir", fake_atomize)
+
+    cli.apply("W-TEST99")
+
+    assert llamadas == []                        # el motor NO se invoca: destruiria el arbol
+    assert dummy.exists()                         # el .md vivo sigue ahi, no podado
+    assert dummy.read_text(encoding="utf-8") == "contenido vivo"
+    err = capsys.readouterr().err
+    assert "2 .eml viven en subcarpetas" in err
+    assert _evento(eventos) == [{
+        "status": "noop", "eml_nivel_superior": 0, "eml_totales": 2,
+    }]
+
+
+def test_arbol_previo_con_discrepancia_parcial_no_llama_al_motor(caso, monkeypatch, capsys):
+    # Visibilidad PARCIAL (n_top == 1, n_rec == 3): sin el fix, el motor se llamaria
+    # viendo solo 1 de 3 mensajes y podaria los .md de los otros 2, cuyo .eml fuente es
+    # invisible. La regla es "ve TODO o no reconcilia", no solo "ve cero".
+    case_dir, eventos = caso
+    mensajes_dir = case_dir / "01_Procesado" / "Emails" / "mensajes"
+    mensajes_dir.mkdir(parents=True)
+    dummy = mensajes_dir / "dummy.md"
+    dummy.write_text("contenido vivo", encoding="utf-8")
+    src = case_dir / "00_Input" / "03_Email"
+    (src / "a.eml").write_bytes(_eml("<a@x>"))
+    sub = src / "mensaje_con_adjunto"
+    sub.mkdir()
+    (sub / "b.eml").write_bytes(_eml("<b@x>"))
+    (sub / "c.eml").write_bytes(_eml("<c@x>"))
+    llamadas: list[int] = []
+
+    def fake_atomize(*a, **k):
+        llamadas.append(1)
+        return AtomizeReport()
+
+    monkeypatch.setattr(cli.atomize, "atomize_dir", fake_atomize)
+
+    cli.apply("W-TEST99")
+
+    assert llamadas == []                        # tampoco se llama: visibilidad parcial
+    assert dummy.exists()
+    err = capsys.readouterr().err
+    assert "2 .eml viven en subcarpetas" in err
+    assert _evento(eventos) == [{
+        "status": "noop", "eml_nivel_superior": 1, "eml_totales": 3,
+    }]
+
+
 def test_con_arbol_previo_y_cero_eml_si_se_atomiza(caso, monkeypatch):
     # La retirada de correos (remedio real de W-02VUDR contra la contaminación) debe
     # reflejarse: con árbol previo se llama al motor aunque no quede un solo .eml.

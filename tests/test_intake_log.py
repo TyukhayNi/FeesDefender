@@ -329,7 +329,7 @@ def test_append_event_invoca_fsync_por_cada_escritura(il, cm, monkeypatch):
 # INTAKE_EVENTS — sanity
 # ---------------------------------------------------------------------------
 
-def test_intake_events_es_frozenset_con_24_eventos(il):
+def test_intake_events_es_frozenset_con_27_eventos(il):
     assert isinstance(il.INTAKE_EVENTS, frozenset)
     assert len(il.INTAKE_EVENTS) == 27
     assert "atomizado_email" in il.INTAKE_EVENTS

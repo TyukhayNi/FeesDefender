@@ -2761,7 +2761,7 @@ extrae los adjuntos embebidos de los `.eml` (dedup por sha, filtro decorativo, f
     `core/abrir_caso`. La otra mitad de 68.a —que la atomización se invoque en cadena y no a
     mano— **quedaba** pendiente cuando se escribió esto; se cerró después: ver el bullet
     siguiente.
-  - ✅ **RESUELTA la otra mitad (PR #NNN, `56b82b4`):** `scripts/sala_maquina.py::apply`
+  - ✅ **RESUELTA la otra mitad (PR #NNN, `<hash del merge>`):** `scripts/sala_maquina.py::apply`
     encadena la atomización antes del OCR y declara el resultado en el evento
     `atomizado_email`. Lo que **sigue** abierto de `#68.b` es el **contenido** de los
     adjuntos atomizados (`MEJORAS #87`), no el encadenado.
@@ -3834,6 +3834,17 @@ ruidoso; sigue abierto.
 
 **Prioridad.** Alta en cuanto alguien use el flag. **Disparador de promoción:** primer caso real
 exportado con `--extraer-adjuntos`, o la decisión de tocar la casilla 3.
+
+**Segundo motivo por el que `#98` bloquea la casilla 3, hallado en la revisión de rama del
+cableado (2026-07-28).** Con un árbol atomizado YA existente, la discrepancia no solo es muda:
+es **destructiva**. Si el conteo de nivel superior baja (todos o parte de los `.eml` en
+subcarpeta), el motor ve menos mensajes de los que hay y su poda de idempotencia
+(`pipeline.py:122-125`) borra los `mensajes/*.md` cuyo `.eml` fuente es invisible, además de
+vaciar `corpus.jsonl`, los índices, `_revision/` y `vistas/` — y no se pueden regenerar
+mientras la ceguera siga, porque esos `.eml` no se ven. El cableado se protege declarando
+`status: "noop"` y no llamando al motor cuando `n_rec > n_top` y el árbol existe, pero eso
+significa que **un caso con la discrepancia viva deja de atomizarse** hasta que se aplane el
+lote. Es coste real de tener `#98` abierto.
 
 ---
 

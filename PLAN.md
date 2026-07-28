@@ -335,15 +335,15 @@ estado de la atomización declarado en el log, y el detector de contaminación c
 
 - [x] **Cerrar la decisión del punto de disparo** — (ii) `scripts/sala_maquina.py::apply`, antes del
   plan de OCR. Cerrada 2026-07-27 en la spec rev. 2; sobrevivió a dos revisiones adversariales.
-- [x] Encadenar la atomización en ese punto, con tests que fijen el orden. ✅ **PR #NNN**:
-      `_atomizar_correo` en `scripts/sala_maquina.py::apply` antes de `_construir_plan`
-      (`56b82b4`); `contar_eml` + derivadores desde `case_dir` en
-      `core/email_atomize/pipeline.py` (`9d43eb2`); evento `atomizado_email` (INTAKE_EVENTS
-      26→27, `edbfc76`) con `status` `ok`/`parcial`/`fallo`/`noop`; fallo blando para el OCR y
-      banner + evento para el registro (`5a4b47d`); aviso de `.eml` invisibles (`MEJORAS #98`),
-      `plan` informa y no atomiza, y el evento `status: "noop"` cuando el no-op coincide con la
-      discrepancia (`873ba1a`, `23b1fb7`); `reforzar` tampoco atomiza. +17 tests (14 con doble
-      del motor, 3 contra el motor real, `0e8b8eb`).
+- [x] Encadenar la atomización en ese punto, con tests que fijen el orden. ✅ **PR #NNN**
+      (`<hash del merge>`): `_atomizar_correo` en `scripts/sala_maquina.py::apply` antes de
+      `_construir_plan`; `contar_eml` + derivadores desde `case_dir` en
+      `core/email_atomize/pipeline.py`; evento `atomizado_email` (INTAKE_EVENTS 26→27) con
+      `status` `ok`/`parcial`/`fallo`/`noop`; fallo blando para el OCR y banner + evento para
+      el registro; aviso de `.eml` invisibles (`MEJORAS #98`), `plan` informa y no atomiza, y
+      el evento `status: "noop"` cuando el no-op coincide con la discrepancia; `reforzar`
+      tampoco atomiza; el motor solo reconcilia un árbol existente si ve TODO el correo (no
+      solo si ve cero). +19 tests (16 con doble del motor, 3 contra el motor real).
 - [ ] ⛔ **BLOQUEADA por `MEJORAS #98`** — decidir si `--extraer-adjuntos` pasa a default `True`.
   No se puede tocar hasta arreglar la enumeración del motor: con el flag activo, el `.eml` de todo
   mensaje **con adjuntos** se escribe en una subcarpeta (`email_export.py:1123-1132`) y el

@@ -1195,6 +1195,20 @@ nuevo — la tabla del §4.3 ya lo nombraba. La emisión guardada se extrajo a
 `atomizado_email`»: el mismo banner lo imprime `plan`, que no emite ningún evento, así que la
 promesa en primera persona era falsa en ese contexto.
 
+**3. La guarda de no-op se amplía a «ve TODO o no reconcilia»** (hallado en la revisión de rama
+completa, 2026-07-28, posterior al cierre de esta tarea). La regla del punto 1 de arriba solo
+cubría `n_top == 0 and not out.exists()`: con árbol previo YA existente (`out.exists()`), la
+condición vieja no se activaba y el helper caía al motor aunque hubiera discrepancia
+(`n_rec > n_top`). El motor reconciliaría con visibilidad parcial o nula, y su poda de
+idempotencia (`pipeline.py:122-125`) borraría `mensajes/*.md` cuyo `.eml` fuente es invisible,
+además de vaciar `corpus.jsonl`, los índices, `_revision/` y `vistas/` — sin poder regenerarlos
+mientras la ceguera de `MEJORAS #98` siga. Guarda final, evaluada ANTES que la del punto 1:
+`if n_rec > n_top and out.exists(): status "noop" y no se llama al motor`. Motivo: el motor solo
+puede reconciliar un árbol existente si VE TODO el correo; «cero visibles» no distingue entre «el
+letrado retiró el correo» y «hay `.eml` invisibles». Coste aceptado: un caso con la discrepancia
+viva **deja de atomizarse** (el árbol previo queda congelado, sin podar ni actualizar) hasta que
+se aplane el lote — documentado también en `MEJORAS #98`.
+
 ---
 
 ## Adjudicación de la revisión adversarial del PLAN (Codex, 2026-07-28) — veredicto NO-SHIP, remediado
