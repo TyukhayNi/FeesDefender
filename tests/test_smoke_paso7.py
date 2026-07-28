@@ -143,8 +143,8 @@ def test_ensure_case_prerellena_ref_y_fecha(reloaded_modules):
         direccion="Roger Lluria 38",
         id_go="W-030LFT",
     )
-    # case_id sigue formato CRM nuevo → nombre del informe con case_id completo
-    informe = case_dir / "02_Analisis" / f"Informe viabilidad - {case_id}.xlsx"
+    # case_id sigue formato CRM nuevo → nombre del informe con solo el ID GO
+    informe = case_dir / "02_Analisis" / "Informe viabilidad - W-030LFT.xlsx"
     assert informe.is_file(), f"Informe no encontrado en {informe}"
     wb = load_workbook(informe)
     ws = wb["OPERACION"]
@@ -180,8 +180,8 @@ def test_ensure_case_ref_vacio_si_falta_id_go(reloaded_modules):
         direccion="Roger Lluria 38",
         id_go=None,                    # ← faltante
     )
-    # case_id sigue formato CRM nuevo → nombre del informe con case_id completo
-    informe = case_dir / "02_Analisis" / f"Informe viabilidad - {case_id}.xlsx"
+    # El nombre sale del ID GO que arrastra el case_id, aunque el kwarg falte
+    informe = case_dir / "02_Analisis" / "Informe viabilidad - W-030LFT.xlsx"
     wb = load_workbook(informe)
     ws = wb["OPERACION"]
     for r in range(1, 200):
@@ -228,6 +228,36 @@ def test_ensure_case_idempotente_preserva_informe_editado(reloaded_modules):
 
     wb2 = load_workbook(informe)
     assert wb2["OPERACION"].cell(row=50, column=7).value == "EDIT DEL ABOGADO"
+
+
+def test_ensure_case_no_duplica_informe_con_nombre_legacy(reloaded_modules):
+    """Tras acortar el nombre (2026-07-28), un caso ya abierto lleva el informe
+    con el case_id completo. ``ensure_case`` debe reconocerlo y NO dejar una
+    segunda plantilla en blanco al lado del informe trabajado por el abogado.
+    """
+    cm = reloaded_modules["case_manager"]
+    from openpyxl import load_workbook
+
+    case_id = "BaRS1 - Roger Lluria 38 (W-030LFT) - Negativa Oferta"
+    case_dir = cm.ensure_case(case_id, tipo_caso="NEGATIVA_OFERTA")
+
+    # Simular el estado previo: renombrar al nombre largo de antes del cambio.
+    analisis = case_dir / "02_Analisis"
+    nuevo = analisis / "Informe viabilidad - W-030LFT.xlsx"
+    legacy = analisis / f"Informe viabilidad - {case_id}.xlsx"
+    nuevo.rename(legacy)
+
+    wb = load_workbook(legacy)
+    wb["OPERACION"].cell(row=50, column=7, value="EDIT DEL ABOGADO")
+    wb.save(legacy)
+
+    cm.ensure_case(case_id, tipo_caso="NEGATIVA_OFERTA")
+
+    informes = sorted(p.name for p in analisis.glob("*.xlsx")
+                      if "cuestionario" not in p.name.lower())
+    assert informes == [legacy.name], f"Informe duplicado: {informes}"
+    assert load_workbook(legacy)["OPERACION"].cell(row=50, column=7).value == \
+        "EDIT DEL ABOGADO"
 
 
 def test_ensure_case_actualiza_tipo_caso_si_kwarg_difiere(reloaded_modules):

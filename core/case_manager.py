@@ -41,6 +41,12 @@ logger = logging.getLogger(__name__)
 # `python -m scripts.render_plantillas all` desde los YAML canónicos en
 # `data/_plantillas/`.
 _PLANTILLAS_DIR = settings.project_root / "data" / "_plantillas"
+# Presupuesto de longitud de ruta para ficheros que abre Office. El sistema de
+# ficheros admite más (``LongPathsEnabled=1``) y Python los abre sin problema,
+# pero Excel no es long-path aware y se rinde en 260. Los 240 dejan margen para
+# el fichero de bloqueo ``~$…`` y para copias tipo «Copia de …».
+RUTA_OFFICE_MAX = 240
+
 _INFORME_TEMPLATE = _PLANTILLAS_DIR / "informe_viabilidad.xlsx"
 _CUESTIONARIO_TEMPLATE = _PLANTILLAS_DIR / "cuestionario_viabilidad.xlsx"
 
@@ -231,10 +237,13 @@ def ensure_case(
       reorg 2026-06-10; los buckets se materializan al escribir). Antes creaba
       todas las ramas de ``CRM_TREE`` en eager (D1, derogado).
     - Copia ``data/_plantillas/informe_viabilidad.xlsx`` a
-      ``02_Analisis/<nombre>`` (siempre). El ``<nombre>`` lo decide
-      ``_compose_informe_filename``: ``Informe viabilidad - <case_id>.xlsx``
-      si el case_id sigue el formato CRM nuevo, ``_informe_viabilidad.xlsx``
-      como fallback para casos legacy.
+      ``02_Analisis/<nombre>`` salvo que ya haya un informe ahí (con cualquier
+      nombre histórico — ver ``_find_informe_existente``). El ``<nombre>`` lo
+      decide ``_compose_informe_filename``: ``Informe viabilidad - <id_go>.xlsx``
+      si el case_id sigue el formato CRM nuevo y hay ID GO,
+      ``_informe_viabilidad.xlsx`` como fallback. El nombre se acortó el
+      2026-07-28 (antes llevaba el case_id completo) porque la ruta pasaba de
+      260 y Excel no abría el fichero.
     - Si ``tipo_caso ∈ INFORME_VIABILIDAD_TIPOS`` copia además
       ``data/_plantillas/cuestionario_viabilidad.xlsx`` a
       ``02_Analisis/_cuestionario_viabilidad.xlsx``.
@@ -340,9 +349,17 @@ def ensure_case(
     # case_id sigue el formato CRM nuevo; ``_informe_viabilidad.xlsx`` si
     # no (fallback). Detalle en ``_compose_informe_filename``.
     analisis_dir = case_dir / "02_Analisis"
-    informe_filename = _compose_informe_filename(case_id)
-    informe_dest = analisis_dir / informe_filename
-    informe_copiado = _copy_plantilla(_INFORME_TEMPLATE, informe_dest)
+    informe_existente = _find_informe_existente(analisis_dir)
+    if informe_existente is not None:
+        # Ya hay informe, quizá con un nombre histórico largo. No se copia otra
+        # plantilla (dejaría dos informes, uno en blanco) ni se renombra aquí:
+        # el renombrado es del script de migración, que respalda antes de tocar.
+        informe_dest = informe_existente
+        informe_copiado = False
+    else:
+        informe_dest = analisis_dir / _compose_informe_filename(case_id, id_go_eff)
+        informe_copiado = _copy_plantilla(_INFORME_TEMPLATE, informe_dest)
+    _avisar_si_ruta_larga(informe_dest)
 
     if tipo_caso_eff in INFORME_VIABILIDAD_TIPOS:
         cuestionario_dest = analisis_dir / "_cuestionario_viabilidad.xlsx"
@@ -1198,6 +1215,9 @@ def update_pull_state(
 # `BaRR3 - Dirección (W-XXXXXX) - Tipo` → "BaRR3".
 _EQUIPO_RE = re.compile(r"^[A-Z][a-zA-Z][A-Z]{2}\d+$")
 
+# ID GO del CRM: ``W-`` + 6 alfanuméricos en mayúsculas (W-02XOR7, W-030LFT).
+_ID_GO_RE = re.compile(r"\bW-[A-Z0-9]{6}\b")
+
 
 def _parse_equipo_from_case_id(case_id: str) -> str | None:
     """Extrae el token de equipo del case_id si sigue el formato CRM nuevo.
@@ -1221,29 +1241,102 @@ def _sanitize_filename_segment(s: str) -> str:
     return _sanitize_filename_util(s, mode="segment")
 
 
-def _compose_informe_filename(case_id: str) -> str:
+def _parse_id_go_from_case_id(case_id: str) -> str | None:
+    """Extrae el ID GO (``W-XXXXXX``) que el case_id lleva entre paréntesis.
+
+    Tolera las dos convenciones que conviven en el Drive (``… 15 (W-02XOR7) -
+    …`` y ``… 41 - (W-02MA0R) - …``) porque busca el patrón, no la posición.
+    Devuelve ``None`` si no hay ID GO (caso real: ``(SIN REFERENCIA)``).
+    """
+    match = _ID_GO_RE.search(case_id or "")
+    return match.group(0) if match else None
+
+
+def _compose_informe_filename(case_id: str, id_go: str | None = None) -> str:
     """Compone el nombre del fichero del informe de viabilidad.
 
-    Política (decisión del usuario, sesión 7 del 2026-05-11):
+    Política (nombre con case_id completo decidido en la sesión 7 del
+    2026-05-11; **acortado a solo el ID GO el 2026-07-28**):
 
     - Si ``case_id`` sigue el formato CRM nuevo (``<equipo> - <dirección>
-      (<id_go>) - <sufijo>``, detectado por ``_parse_equipo_from_case_id``):
-      ``"Informe viabilidad - <case_id>.xlsx"``. El case_id ya contiene
-      equipo + dirección + ID GO + tipo, por lo que sirve como sufijo
-      directo del nombre.
-    - Si ``case_id`` no sigue el formato nuevo (legacy ``EV-2026-001``):
-      ``"_informe_viabilidad.xlsx"`` (fallback con underscore inicial).
-      Mantiene ordenación arriba en el explorador y evita nombres
-      truncados con datos vacíos.
+      (<id_go>) - <sufijo>``, detectado por ``_parse_equipo_from_case_id``) y
+      hay un ID GO resoluble: ``"Informe viabilidad - <id_go>.xlsx"``.
+    - En cualquier otro caso (legacy ``EV-2026-001``, o formato nuevo sin ID GO
+      como ``(SIN REFERENCIA)``): ``"_informe_viabilidad.xlsx"`` (fallback con
+      underscore inicial). Mantiene ordenación arriba en el explorador y evita
+      nombres con datos vacíos.
+
+    El ``id_go`` explícito (el que ``ensure_case`` resuelve del frontmatter)
+    manda sobre el que arrastra el case_id; si no es un ID GO válido se ignora
+    y se cae al del case_id.
+
+    **Por qué solo el ID GO y no el case_id completo.** El fichero vive en
+    ``<CASOS>/<ciudad>/<case_id>/02_Analisis/``, así que repetir el case_id en
+    el nombre no añade información y cuesta ~85 caracteres. Con el case_id
+    completo el informe de W-02XOR7 llegaba a 269 caracteres de ruta y **Excel
+    se negaba a abrirlo**: Office no es long-path aware y se rinde en 260
+    aunque el sistema de ficheros admita más (``LongPathsEnabled=1`` y
+    ``openpyxl`` sí abría el mismo fichero). El ID GO conserva la identidad del
+    caso cuando el fichero viaja suelto (adjunto a un correo) por 8 caracteres.
+    Se descartó truncar el case_id al hueco disponible porque el nombre
+    dependería de dónde vive el caso, y el checkin mergea por ruta relativa:
+    el mismo informe tendría un nombre en el Drive y otro en el checkout local.
 
     El nombre se sanea de caracteres prohibidos en Windows (``/ \\ : * ?
-    " < > |``) por defensa, aunque en la práctica el case_id no debería
-    contenerlos.
+    " < > |``) por defensa, aunque un ID GO no debería contenerlos.
     """
     if _parse_equipo_from_case_id(case_id) is None:
         return "_informe_viabilidad.xlsx"
-    sanitized = _sanitize_filename_segment(case_id)
-    return f"Informe viabilidad - {sanitized}.xlsx"
+    for candidato in (id_go, _parse_id_go_from_case_id(case_id)):
+        if candidato and _ID_GO_RE.fullmatch(candidato.strip()):
+            return f"Informe viabilidad - {_sanitize_filename_segment(candidato.strip())}.xlsx"
+    return "_informe_viabilidad.xlsx"
+
+
+def _find_informe_existente(analisis_dir: Path) -> Path | None:
+    """Localiza un informe de viabilidad ya presente, con cualquiera de los
+    nombres históricos.
+
+    Necesario tras el acortamiento del 2026-07-28: los casos abiertos antes
+    llevan el case_id completo en el nombre, y comparar solo contra el destino
+    nuevo dejaría una segunda plantilla en blanco al lado del informe que el
+    abogado ya ha trabajado. Reconoce el nombre nuevo, el largo legacy, el
+    fallback ``_informe_viabilidad.xlsx`` y los puestos a mano en el Drive
+    (hay uno en mayúsculas), comparando en minúsculas y con ``_`` como espacio.
+
+    Excluye ``Informe viabilidad LLM - …`` a propósito: es el artefacto
+    paralelo que genera ``render_informe.py`` y no sustituye al informe humano.
+    """
+    if not analisis_dir.is_dir():
+        return None
+    for path in sorted(analisis_dir.iterdir()):
+        if path.suffix.lower() != ".xlsx" or not path.is_file():
+            continue
+        stem = path.stem.lower().replace("_", " ").strip()
+        if stem.startswith("informe viabilidad") and "llm" not in stem:
+            return path
+    return None
+
+
+def _avisar_si_ruta_larga(path: Path, *, limite: int = RUTA_OFFICE_MAX) -> bool:
+    """Avisa (no aborta) si la ruta supera el presupuesto que tolera Office.
+
+    Guardarraíl de defensa en profundidad: el nombre corto resuelve el caso
+    conocido, pero una carpeta de caso bautizada con una dirección muy larga
+    podría volver a pasarse. Devuelve ``True`` si ha avisado.
+    """
+    largo = len(str(path))
+    if largo <= limite:
+        return False
+    logger.warning(
+        "Ruta de %d caracteres (presupuesto %d) para %s: Excel no abre "
+        "ficheros cuya ruta completa roza los 260 aunque el sistema de "
+        "ficheros lo admita. Acorta el nombre de la carpeta del caso.",
+        largo,
+        limite,
+        path.name,
+    )
+    return True
 
 
 def _ensure_crm_tree_dirs(case_dir: Path) -> None:

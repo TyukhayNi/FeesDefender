@@ -3868,3 +3868,48 @@ de que este árbol sea fiable.
 
 **Disparador de promoción:** que se construya `#86` (un consumidor real del árbol atomizado
 convierte 99.1 en pérdida visible), un crash real a media atomización, o decisión de Nikolai.
+
+---
+
+## 100. Rutas del crudo y del procesado que Office no puede abrir (el resto del MAX_PATH)
+
+**Detectado 2026-07-28** al arreglar el nombre del informe de viabilidad (ruta de 269 caracteres en
+BaRS8 `W-02XOR7`; Excel se negaba a abrirlo). El arreglo acortó lo que **genera el código**
+(`Informe viabilidad - <id_go>.xlsx`, y guardarraíl `_avisar_si_ruta_larga` con presupuesto
+`RUTA_OFFICE_MAX = 240` en `core/case_manager.py`). Queda fuera todo lo que el código **no bautiza**.
+
+**El hecho técnico, que conviene no volver a re-descubrir.** El sistema de ficheros NO es el límite:
+`LongPathsEnabled = 1` en el registro de esta máquina y `openpyxl` abre sin problema el mismo fichero
+de 269 caracteres que Excel rechaza. Quien se rinde en 260 es **Office**, que no es long-path aware.
+Diagnosticar esto mirando el explorador o `Test-Path` lleva a la conclusión contraria.
+
+**100.1 — El espejo de `00_Input` es intocable y ya viene pasado.** El crudo de E&V trae sus propios
+nombres: en BaRS8 `W-02XOR7` hay un `INFORME VIABILIDAD BaRS8 - … - Negativa oferta aceptada.xlsx`
+en `00_Input/01_Drive EV/_DEMANDA/` que da **287 caracteres**. No se puede renombrar por doctrina
+(el pipeline nunca escribe en `00_Input`) y porque divergiría del espejo del Drive de E&V. El
+migrador (`core/migrar_nombres_informe.py`) lo excluye a propósito vía `_es_raiz_de_caso`.
+
+**Por qué hoy no muerde:** la sala de lectura copia ese mismo fichero con nombre canónico corto
+(`01_Procesado/Sala lectura/0000-00-00_informe_viabilidad_bars8_….xlsx`, 242 caracteres, hash
+idéntico `B1DFFE4E`), así que existe una ruta legible. Pero es **suerte, no garantía**: nada
+comprueba el presupuesto al nombrar en la sala de lectura.
+
+**100.2 — El procesado genera rutas mucho peores.** Medido sobre `CASOS` el 2026-07-28, hay ficheros
+de hasta **377 caracteres** en `01_Procesado` (anexos de due diligence de BaRS1, `Sala lectura`, y
+segmentos del split en `02_Sala de máquina` de VaRS5, 364). Son `.pdf` y `.md`, que hoy se abren con
+visores más tolerantes que Office, por lo que **nadie se ha quejado todavía**. Hay también `.docx`
+del espejo de BaRS3 a **345** caracteres: Word comparte el límite de Excel, pero **no lo he probado
+en vivo** — es la comprobación pendiente antes de dar por real ese caso.
+
+**Salidas posibles** (ninguna elegida):
+1. **Presupuesto compartido**: subir `RUTA_OFFICE_MAX` a constante de `core/config.py` y aplicarla al
+   nombrar en sala de lectura y sala de máquina (truncando el descriptor, que ahí sí es libre y no
+   viaja en la llave de merge del checkin, al contrario que el nombre del informe).
+2. **Auditoría periódica**: un `scripts/audit_rutas_largas.py` que liste lo que pasa del presupuesto
+   por caso. Cero riesgo, no arregla nada por sí solo.
+3. **Acortar los nombres de las carpetas de caso**, que son el tramo común de 160+ caracteres. El más
+   efectivo y el más caro: rompe la llave de `checkout`/`checkin` y las referencias en bitácora.
+
+**Prioridad.** Baja hasta que alguien no pueda abrir un `.docx` o un `.xlsx` del procesado.
+**Disparador de promoción:** primer fichero de `01_Procesado` que no abra en Word/Excel, o decisión
+de Nikolai.
