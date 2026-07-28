@@ -18,10 +18,10 @@ ni las NOTAS LETRADO (las rellena el abogado).
 SALIDA: fichero paralelo. NUNCA sobrescribe el informe humano.
 
 Uso:
-    python render_informe.py datos.json --salida "Informe viabilidad LLM - <case_id>.xlsx"
+    python render_informe.py datos.json --salida "Informe viabilidad LLM - <id_go>.xlsx"
     python render_informe.py datos.json            # deriva el nombre de case_id en el JSON
 """
-import argparse, json, os, sys, shutil
+import argparse, json, os, re, sys, shutil
 from datetime import datetime
 
 try:
@@ -95,13 +95,21 @@ def main():
 
     salida = args.salida
     if not salida:
+        # Solo el ID GO, no el case_id completo: el fichero ya vive en
+        # <case_id>/02_Analisis/, y el case_id completo se pasaba de los 260
+        # caracteres que tolera Excel (mismo criterio que
+        # core.case_manager._compose_informe_filename, 2026-07-28).
         cid = d.get("case_id", "SIN_ID")
-        salida = f"Informe viabilidad LLM - {cid}.xlsx"
+        m = re.search(r"\bW-[A-Z0-9]{6}\b", cid)
+        salida = f"Informe viabilidad LLM - {m.group(0) if m else cid}.xlsx"
 
     if os.path.abspath(salida) == os.path.abspath(args.plantilla):
         sys.exit("ERROR: la salida no puede ser la propia plantilla.")
     if os.path.exists(salida):
         sys.exit(f"ERROR: '{salida}' ya existe. Renombra o borra antes (la skill nunca sobrescribe).")
+    if len(os.path.abspath(salida)) > 240:
+        print(f"AVISO: la ruta de salida tiene {len(os.path.abspath(salida))} "
+              "caracteres; Excel no abre ficheros que rozan los 260.", file=sys.stderr)
 
     shutil.copy(args.plantilla, salida)
     wb = openpyxl.load_workbook(salida)

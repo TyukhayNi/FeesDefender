@@ -55,6 +55,16 @@ Borrar la rama remota aparte (`git push origin --delete <rama>`); la LOCAL se po
 
 ---
 
+## `LongPathsEnabled` / prefijo `\\?\` NO hacen que Excel abra una ruta larga
+
+- **Intentado:** que Excel abriese `02_Analisis/Informe viabilidad - <case_id>.xlsx` de `W-02XOR7`, **269 caracteres** de ruta. La vía tentadora es tratarlo como límite del sistema de ficheros: activar `LongPathsEnabled` en el registro, o prefijar con `\\?\` (que es lo que hacen `plugins/expedientes_xl/winio.py::long_path` y `readops._abrible`).
+- **Resultado:** no sirve de nada, porque **el sistema de ficheros no era el límite**. `LongPathsEnabled` ya estaba a `1`; `Test-Path` decía `True`; `openpyxl` abría ese mismo fichero sin una queja (`hojas=['OPERACION','_meta']`). Quien se rinde en 260 es **Office**, que no declara long-path awareness en su manifest, así que el prefijo `\\?\` no está en su ruta de código y el flag del registro no le aplica. Engaña doblemente: el explorador enseña el fichero y cualquier herramienta que no sea Office lo lee, de modo que el diagnóstico «será cosa de Excel, no de la ruta» parece descartado cuando es exactamente eso.
+- **Confirmado:** 2026-07-28.
+- **Solución:** acortar la ruta, no ampliar el límite. El nombre generado ya no repite el `case_id` de la carpeta contenedora (`core/case_manager.py::_compose_informe_filename` → `Informe viabilidad - <id_go>.xlsx`) y hay presupuesto explícito `RUTA_OFFICE_MAX = 240` con aviso (`_avisar_si_ruta_larga`). Migración de lo ya existente: `python -m scripts.migrar_nombres_informe [--apply]`. **Corolario para diagnosticar:** un `open()` de Python que funciona **no** descarta un problema de longitud de ruta; hay que probar con la aplicación que se va a usar.
+- **Residuo conocido:** el crudo de `00_Input/01_Drive EV/` viene con nombres de E&V que ya se pasan (287 en ese mismo caso) y es intocable por doctrina; ver `MEJORAS #100`.
+
+---
+
 ## Plugin/skill (o MCP) habilitado pero invisible en una sesión de Code ya iniciada
 
 - **Intentado:** invocar la skill `/brainstorming` del plugin `superpowers` (visible y activo en Ajustes→Plugins de la app de escritorio, v5.1.0) desde una sesión de Claude Code **ya en marcha**; también localizarlo con `ListPlugins`/`SearchPlugins`/`ListSkills`.

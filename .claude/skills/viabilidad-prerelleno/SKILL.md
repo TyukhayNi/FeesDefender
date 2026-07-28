@@ -99,7 +99,7 @@ Cuantía a conciliar, riesgos (despatrimonialización, sociedad pantalla), prueb
 Reúne lo extraído en un JSON (ver `references/modelo_xlsx.md` para el mapa exacto de celdas) y ejecuta:
 
 ```bash
-python scripts/render_informe.py datos_<case_id>.json --salida "<expediente>/02_Analisis/Informe viabilidad LLM - <case_id>.xlsx"
+python scripts/render_informe.py datos_<case_id>.json --salida "<expediente>/02_Analisis/Informe viabilidad LLM - <id_go>.xlsx"
 ```
 
 El script **parte de `assets/plantilla_informe_viabilidad.xlsx`** (formato, fórmulas, semáforo, validaciones y protección ya incorporados), solo escribe valores, deja VIABILIDAD y el recuadro en blanco, y **se niega a sobrescribir** un fichero existente. Construir el formato a mano rompería el semáforo y la protección; por eso siempre se parte de la plantilla.
