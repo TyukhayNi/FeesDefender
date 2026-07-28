@@ -273,3 +273,81 @@ def test_un_fallo_de_log_no_aborta_el_ocr(caso, monkeypatch, capsys):
 
     assert ejecutado == [1]
     assert "no se pudo registrar el evento atomizado_email" in capsys.readouterr().err
+
+
+def test_aviso_cuando_hay_eml_en_subcarpetas(caso, monkeypatch, capsys):
+    case_dir, eventos = caso
+    src = case_dir / "00_Input" / "03_Email"
+    (src / "a.eml").write_bytes(_eml("<a@x>"))
+    (src / "mensaje_con_adjunto").mkdir()
+    (src / "mensaje_con_adjunto" / "b.eml").write_bytes(_eml("<b@x>"))
+    monkeypatch.setattr(cli.atomize, "atomize_dir", lambda *a, **k: AtomizeReport(mensajes=1))
+
+    cli.apply("W-TEST99")
+
+    err = capsys.readouterr().err
+    assert "1 .eml viven en subcarpetas" in err
+    assert "MEJORAS #98" in err
+    d = _evento(eventos)[0]
+    assert (d["eml_nivel_superior"], d["eml_totales"]) == (1, 2)
+
+
+def test_sin_discrepancia_no_hay_aviso(caso, monkeypatch, capsys):
+    # Prueba NEGATIVA: un aviso que salte siempre es tan inútil como no tenerlo, y el
+    # test positivo de arriba pasaría igual.
+    case_dir, _ = caso
+    (case_dir / "00_Input" / "03_Email" / "a.eml").write_bytes(_eml("<a@x>"))
+    monkeypatch.setattr(cli.atomize, "atomize_dir", lambda *a, **k: AtomizeReport(mensajes=1))
+
+    cli.apply("W-TEST99")
+
+    assert "viven en subcarpetas" not in capsys.readouterr().err
+
+
+def test_plan_no_atomiza_pero_informa_y_avisa(caso, monkeypatch, capsys):
+    case_dir, eventos = caso
+    src = case_dir / "00_Input" / "03_Email"
+    (src / "a.eml").write_bytes(_eml("<a@x>"))
+    (src / "b.eml").write_bytes(_eml("<b@x>"))
+    (src / "sub").mkdir()
+    (src / "sub" / "c.eml").write_bytes(_eml("<c@x>"))
+
+    def prohibido(*a, **k):
+        raise AssertionError("`plan` es preview: no debe atomizar")
+
+    monkeypatch.setattr(cli.atomize, "atomize_dir", prohibido)
+
+    cli.plan("W-TEST99")
+
+    cap = capsys.readouterr()
+    assert "correo: 2 .eml (se atomizarán en apply)" in cap.out
+    assert "1 .eml viven en subcarpetas" in cap.err
+    assert _evento(eventos) == []
+    # Prohibir `atomize_dir` no basta: `plan` tampoco debe escribir en el árbol por su
+    # cuenta. Es preview.
+    assert not (case_dir / "01_Procesado" / "Emails").exists()
+
+
+def test_reforzar_no_atomiza(caso, monkeypatch, capsys):
+    from core import sala_maquina as sm
+    from core.utils import file_sha256
+    case_dir, _ = caso
+    (case_dir / "00_Input" / "03_Email" / "a.eml").write_bytes(_eml("<a@x>"))
+    drive = case_dir / "00_Input" / "01_Drive EV"
+    drive.mkdir(parents=True)
+    doc = drive / "escaneo.pdf"
+    doc.write_bytes(b"%PDF-1.4 escaneo sin texto")
+    sha = file_sha256(doc)
+    cli._guardar_cobertura(case_dir, [sm.DocCobertura(
+        slug=f"escaneo__{sha[:8]}", rel_path="01_Drive EV/escaneo.pdf", metodo="ocr",
+        estado="low", chars=10, ocr=True, nota="OCR pobre", sha256=sha)])
+
+    def prohibido(*a, **k):
+        raise AssertionError("`reforzar` no debe atomizar")
+
+    monkeypatch.setattr(cli.atomize, "atomize_dir", prohibido)
+    monkeypatch.setattr(cli.sm, "vision_cableada", lambda: True)
+
+    cli.reforzar("W-TEST99")
+
+    assert "Reforzados" in capsys.readouterr().out

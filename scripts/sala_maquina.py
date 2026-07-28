@@ -32,6 +32,13 @@ _BANNER_FALLO_ATOMIZE = (
     f"de citar MSG-ids nuevos.\n{_SEP}"
 )
 
+_AVISO_EML_INVISIBLE = (
+    f"\n{_SEP}\n"
+    "AVISO: {n} .eml viven en subcarpetas y el atomizador NO los verá (MEJORAS #98).\n"
+    "Causa típica: exportación con --extraer-adjuntos. Son justo los mensajes con\n"
+    f"adjuntos. El conteo del evento lo deja registrado.\n{_SEP}"
+)
+
 
 def _estado_previo(case_dir: Path) -> set[str]:
     f = sm._sala_maquina_dir(case_dir) / _STATE
@@ -148,6 +155,10 @@ def _atomizar_correo(case_id: str, case_dir: Path) -> None:
     fuentes = atomize.emails_src_dirs_de_caso(case_dir)
     out = atomize.emails_out_dir_de_caso(case_dir)
     n_top, n_rec = atomize.contar_eml(fuentes)
+    if n_rec > n_top:
+        # No arregla la ceguera (es motor, MEJORAS #98): la vuelve ruidosa. Sin esto,
+        # el cableado propagaría el agujero con apariencia de éxito.
+        typer.echo(_AVISO_EML_INVISIBLE.format(n=n_rec - n_top), err=True)
 
     # No-op estricto: sin correo Y sin árbol previo no se llama al motor, porque
     # `atomize_dir` hace mkdir de mensajes/ y adjuntos/ INCONDICIONALMENTE y sembraría
@@ -205,6 +216,14 @@ def plan(case_id: str):
         n = sum(1 for d in nuevos if d.ruta == ruta)
         if n:
             typer.echo(f"  {ruta}: {n}")
+
+    # Preview del cableado: `plan` NO atomiza (es preview), solo informa de lo que
+    # `apply` atomizará, con el MISMO contador que usa `apply` (spec §4.7).
+    n_top, n_rec = atomize.contar_eml(atomize.emails_src_dirs_de_caso(case_dir))
+    if n_top:
+        typer.echo(f"  correo: {n_top} .eml (se atomizarán en apply)")
+    if n_rec > n_top:
+        typer.echo(_AVISO_EML_INVISIBLE.format(n=n_rec - n_top), err=True)
 
     # Pre-detección de bundles (Preview del split): informa de los PDFs multi-documento
     # y deja su manifiesto de segmentación propuesto (editable) para que el letrado lo
