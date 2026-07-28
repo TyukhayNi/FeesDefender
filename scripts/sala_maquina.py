@@ -39,6 +39,12 @@ _AVISO_EML_INVISIBLE = (
     f"adjuntos. El conteo del evento lo deja registrado.\n{_SEP}"
 )
 
+def _registrar_atomizado(case_id: str, details: dict) -> None:
+    """Emite `atomizado_email`; un fallo de log nunca aborta el OCR."""
+    try:
+        append_event(case_id, "atomizado_email", details=details)
+    except Exception as exc:  # noqa: BLE001
+        typer.echo(f"AVISO: no se pudo registrar el evento atomizado_email: {exc}", err=True)
 
 def _estado_previo(case_dir: Path) -> set[str]:
     f = sm._sala_maquina_dir(case_dir) / _STATE
@@ -164,8 +170,14 @@ def _atomizar_correo(case_id: str, case_dir: Path) -> None:
     # `atomize_dir` hace mkdir de mensajes/ y adjuntos/ INCONDICIONALMENTE y sembraría
     # carpetas vacías en todo caso sin correo. Con árbol previo SÍ se llama aunque
     # n_top == 0: es la única vía en alcance para que la retirada de correos se refleje
-    # (poda de `mensajes/`; `adjuntos/` NO se poda — `MEJORAS #99`).
+    # (poda de `mensajes/`; `adjuntos/` NO se poda — `MEJORAS #99`). Pero si hay
+    # discrepancia (MEJORAS #98) el rastro NO puede quedarse solo en el stderr: el
+    # escenario típico del flag es justo este (todos los .eml con adjunto → todos en
+    # subcarpeta → n_top == 0).
     if n_top == 0 and not out.exists():
+        if n_rec > n_top:
+            _registrar_atomizado(case_id, {
+                "status": "noop", "eml_nivel_superior": n_top, "eml_totales": n_rec})
         return
 
     details: dict[str, object] = {"eml_nivel_superior": n_top, "eml_totales": n_rec}
@@ -198,10 +210,7 @@ def _atomizar_correo(case_id: str, case_dir: Path) -> None:
 
     # Se emite ANTES de arrancar el OCR: si la corrida larga muere, el rastro ya está
     # en disco. Un fallo de log tampoco aborta el OCR.
-    try:
-        append_event(case_id, "atomizado_email", details=details)
-    except Exception as exc:  # noqa: BLE001
-        typer.echo(f"AVISO: no se pudo registrar el evento atomizado_email: {exc}", err=True)
+    _registrar_atomizado(case_id, details)
 
 
 @app.command()

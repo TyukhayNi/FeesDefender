@@ -121,6 +121,36 @@ def test_noop_sin_eml_y_sin_arbol_previo(caso, monkeypatch):
     assert _evento(eventos) == []                            # no se emite evento
 
 
+def test_noop_con_discrepancia_emite_evento_noop(caso, monkeypatch, capsys):
+    # Contrapartida de `test_noop_sin_eml_y_sin_arbol_previo`: sin árbol previo Y sin
+    # .eml de nivel superior el motor sigue sin llamarse (no se siembran carpetas
+    # vacías), pero si hay discrepancia (MEJORAS #98) el rastro no puede quedarse solo
+    # en stderr: es justo el escenario típico del flag (todos los .eml con adjunto).
+    case_dir, eventos = caso
+    src = case_dir / "00_Input" / "03_Email"
+    sub = src / "mensaje_con_adjunto"
+    sub.mkdir()
+    (sub / "a.eml").write_bytes(_eml("<a@x>"))
+    (sub / "b.eml").write_bytes(_eml("<b@x>"))
+    llamadas: list[int] = []
+
+    def fake_atomize(*a, **k):
+        llamadas.append(1)
+        return AtomizeReport()
+
+    monkeypatch.setattr(cli.atomize, "atomize_dir", fake_atomize)
+
+    cli.apply("W-TEST99")
+
+    assert llamadas == []                                       # el motor no se invoca
+    assert not (case_dir / "01_Procesado" / "Emails").exists()   # no se siembran carpetas
+    err = capsys.readouterr().err
+    assert "2 .eml viven en subcarpetas" in err
+    assert _evento(eventos) == [{
+        "status": "noop", "eml_nivel_superior": 0, "eml_totales": 2,
+    }]
+
+
 def test_con_arbol_previo_y_cero_eml_si_se_atomiza(caso, monkeypatch):
     # La retirada de correos (remedio real de W-02VUDR contra la contaminación) debe
     # reflejarse: con árbol previo se llama al motor aunque no quede un solo .eml.
@@ -326,6 +356,20 @@ def test_plan_no_atomiza_pero_informa_y_avisa(caso, monkeypatch, capsys):
     # Prohibir `atomize_dir` no basta: `plan` tampoco debe escribir en el árbol por su
     # cuenta. Es preview.
     assert not (case_dir / "01_Procesado" / "Emails").exists()
+
+
+def test_plan_silencioso_sin_eml(caso, monkeypatch, capsys):
+    # `plan` copia el condicional de `_atomizar_correo` para su preview; sin ningún
+    # .eml (ni nivel superior ni en subcarpetas) debe quedar completamente callado
+    # sobre correo: ni la línea `correo:` en stdout ni el banner en stderr. Esta rama
+    # de la copia del condicional estaba sin verificar en aislamiento.
+    # `caso` deja 00_Input/03_Email creado pero vacío — no hace falta desempaquetarlo.
+
+    cli.plan("W-TEST99")
+
+    cap = capsys.readouterr()
+    assert "correo:" not in cap.out
+    assert "viven en subcarpetas" not in cap.err
 
 
 def test_reforzar_no_atomiza(caso, monkeypatch, capsys):
