@@ -6,6 +6,7 @@ corpus.jsonl, _registro.json, CORREOS_LECTURA.md, INDICE_ADJUNTOS.md. Idempotent
 """
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -278,10 +279,14 @@ def _escribe_adjunto(out: Path, att: AdjuntoUnico) -> None:
     (out / "adjuntos" / f"{base}{ficha_suffix}").write_text(ficha, encoding="utf-8")
 
 
-def emails_src_dirs(case_id: str) -> list[Path]:
-    """Fuentes de .eml del caso: lotes email de 00_Input/ + cajón legacy 03_Email."""
-    from core.casos.case_locator import path_for, resolve_ref
-    input_dir = path_for(resolve_ref(case_id)) / "00_Input"
+def emails_src_dirs_de_caso(case_dir: Path | str) -> list[Path]:
+    """Fuentes de .eml de un caso YA localizado: lotes ``email`` de ``00_Input/`` +
+    cajón legacy ``03_Email``.
+
+    Parte del ``case_dir`` y no vuelve a resolver el caso: el llamante (CLI de la sala
+    de máquina) ya lo resolvió una vez y resolver tres veces es superficie gratuita.
+    """
+    input_dir = Path(case_dir) / "00_Input"
     bases: list[Path] = []
     if input_dir.is_dir():
         bases = sorted(
@@ -294,9 +299,41 @@ def emails_src_dirs(case_id: str) -> list[Path]:
     return bases
 
 
+def emails_out_dir_de_caso(case_dir: Path | str) -> Path:
+    """Salida de la atomización de un caso YA localizado."""
+    return Path(case_dir) / "01_Procesado" / "Emails"
+
+
+def contar_eml(fuentes: Iterable[Path | str]) -> tuple[int, int]:
+    """``(n_top, n_rec)``: los .eml que el motor VERÁ y los que realmente HAY.
+
+    ``n_top`` usa el MISMO enumerador que el motor (``glob("*.eml")``, no recursivo —
+    ``extract.iter_avistamientos``), así que es el conteo autoritativo para decidir
+    no-op y para el evento. ``n_rec`` (``rglob``) solo sirve para delatar la
+    discrepancia de `MEJORAS #98`: con ``--extraer-adjuntos``, el .eml de un mensaje
+    con adjuntos baja a una subcarpeta y desaparece del atomizador sin error.
+    ``n_rec >= n_top`` siempre. La ceguera a ``.EML`` en mayúsculas es la misma que la
+    del motor, a propósito: los dos conteos han de medir lo mismo.
+    """
+    n_top = n_rec = 0
+    for f in fuentes:
+        base = Path(f)
+        if not base.is_dir():
+            continue
+        n_top += sum(1 for _ in base.glob("*.eml"))
+        n_rec += sum(1 for _ in base.rglob("*.eml"))
+    return n_top, n_rec
+
+
+def emails_src_dirs(case_id: str) -> list[Path]:
+    """Fuentes de .eml del caso: lotes email de 00_Input/ + cajón legacy 03_Email."""
+    from core.casos.case_locator import path_for, resolve_ref
+    return emails_src_dirs_de_caso(path_for(resolve_ref(case_id)))
+
+
 def emails_out_dir(case_id: str) -> Path:
     from core.casos.case_locator import path_for, resolve_ref
-    return path_for(resolve_ref(case_id)) / "01_Procesado" / "Emails"
+    return emails_out_dir_de_caso(path_for(resolve_ref(case_id)))
 
 
 def atomize_case(case_id: str) -> AtomizeReport:
