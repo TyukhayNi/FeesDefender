@@ -63,6 +63,14 @@ fecha: 2026-07-20
 > `leak-scan` es el **único** check del CI — **no corre pytest**. Por eso `session_close`
 > (pytest local) es la red real; córrelo antes de mergear, sobre todo si tocas guards o `.py`.
 
+> **Gotcha del paso 4 (visto 2026-07-28, PR #151):** lanzado desde un worktree,
+> `gh pr merge --squash --delete-branch` **falla su paso local** con
+> `fatal: 'main' is already used by worktree at 'C:/Users/tnm33/Dev/FeesDefender'` —
+> intenta volver a `main`, que la tiene tomada la raíz compartida. **El merge ya ha entrado
+> en GitHub**: NO relanzarlo. Comprobar con `gh pr view <n> --json state,mergeCommit` y, si
+> dice `MERGED`, borrar la rama remota aparte (`git push origin --delete <rama>`) y seguir
+> con la poda local.
+
 ## 5. Poda e higiene (lo que más se olvida)
 
 - **Podar es el paso 4 del cierre, no un fleco para luego.** Rama mergeada = rama podada.
