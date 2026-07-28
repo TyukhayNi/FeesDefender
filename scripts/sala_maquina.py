@@ -14,6 +14,7 @@ import typer
 from core import sala_maquina as sm
 from core.casos import case_locator
 from core.config import caso_path
+from core.email_atomize import pipeline as atomize
 from core.intake_log import append_event
 
 app = typer.Typer(add_completion=False)
@@ -121,6 +122,35 @@ def _resolver_caso(case_id: str) -> tuple[str, Path]:
     return case_id, case_dir
 
 
+def _atomizar_correo(case_id: str, case_dir: Path) -> None:
+    """Atomiza el correo del caso ANTES del OCR (cableado, spec 2026-07-27 §4).
+
+    Garantiza por código el orden intake → atomización → sala de máquina, en vez de
+    dejarlo en la memoria del operador, y hace correr el detector de contaminación
+    cruzada en toda corrida. Recibe el `case_dir` YA resuelto y compone las rutas desde
+    él: no vuelve a localizar el caso (§4.6).
+
+    Lo que este paso NO promete: que `01_Procesado/Emails` quede fresco y consumible
+    sin comprobar nada. El motor no poda `adjuntos/` ni publica de forma atómica
+    (`MEJORAS #99`), así que el consumidor DEBE leer el `status` del evento
+    `atomizado_email`.
+    """
+    fuentes = atomize.emails_src_dirs_de_caso(case_dir)
+    out = atomize.emails_out_dir_de_caso(case_dir)
+    n_top, n_rec = atomize.contar_eml(fuentes)
+
+    # No-op estricto: sin correo Y sin árbol previo no se llama al motor, porque
+    # `atomize_dir` hace mkdir de mensajes/ y adjuntos/ INCONDICIONALMENTE y sembraría
+    # carpetas vacías en todo caso sin correo. Con árbol previo SÍ se llama aunque
+    # n_top == 0: es la única vía en alcance para que la retirada de correos se refleje
+    # (poda de `mensajes/`; `adjuntos/` NO se poda — `MEJORAS #99`).
+    if n_top == 0 and not out.exists():
+        return
+
+    report = atomize.atomize_dir(fuentes, out, case_dir=case_dir)
+    typer.echo(f"Correo atomizado: {report.resumen()}")
+
+
 @app.command()
 def plan(case_id: str):
     """Muestra la propuesta (Preview); no escribe nada salvo el manifiesto de
@@ -167,6 +197,7 @@ def apply(case_id: str, vision: bool = False, force: bool = False):
     case_id, case_dir = _resolver_caso(case_id)
     if vision:
         _exigir_vision_cableada()          # preflight: aborta antes de procesar
+    _atomizar_correo(case_id, case_dir)   # cableado: atomizar ANTES del OCR (spec §4)
     p = _construir_plan(case_dir, force=force)
     cob_delta = sm.ejecutar(case_dir, p, case_id=case_id, vision=vision, force=force)
 
