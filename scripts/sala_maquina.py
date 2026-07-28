@@ -22,6 +22,16 @@ app = typer.Typer(add_completion=False)
 _STATE = "_sala_maquina_state.json"
 _COBERTURA = "_cobertura.json"
 
+_SEP = "=" * 72
+
+_BANNER_FALLO_ATOMIZE = (
+    f"\n{_SEP}\n"
+    "AVISO: la atomización de correo FALLÓ ({tipo}: {exc}).\n"
+    "El OCR continúa (no depende de ella), pero `01_Procesado/Emails` puede haber\n"
+    "quedado a medias con el registro de IDs sin salvar (MEJORAS #99): revísalo antes\n"
+    f"de citar MSG-ids nuevos.\n{_SEP}"
+)
+
 
 def _estado_previo(case_dir: Path) -> set[str]:
     f = sm._sala_maquina_dir(case_dir) / _STATE
@@ -147,8 +157,40 @@ def _atomizar_correo(case_id: str, case_dir: Path) -> None:
     if n_top == 0 and not out.exists():
         return
 
-    report = atomize.atomize_dir(fuentes, out, case_dir=case_dir)
-    typer.echo(f"Correo atomizado: {report.resumen()}")
+    details: dict[str, object] = {"eml_nivel_superior": n_top, "eml_totales": n_rec}
+    try:
+        report = atomize.atomize_dir(fuentes, out, case_dir=case_dir)
+    except Exception as exc:  # noqa: BLE001 — el OCR no depende de la atomización
+        # Fallo BLANDO para el OCR (una corrida dura ~1h40 y no depende de esto) pero
+        # DURO para el registro: sin evento, este cableado convertiría una avería hoy
+        # ruidosa (traceback del CLI manual) en silenciosa. No se fabrican contadores:
+        # si el motor no terminó, el payload no finge saber cuántos mensajes hay.
+        details["status"] = "fallo"
+        details["errores"] = [f"{type(exc).__name__}: {exc}"]
+        typer.echo(_BANNER_FALLO_ATOMIZE.format(tipo=type(exc).__name__, exc=exc), err=True)
+    else:
+        details["status"] = "parcial" if report.errores else "ok"
+        details.update({
+            "mensajes": report.mensajes,
+            "adjuntos_unicos": report.adjuntos_unicos,
+            "reconstruidos_b": report.reconstruidos_b,
+            "citas_a_revision": report.citas_a_revision,
+            "upgrades": report.upgrades,
+            "notas": list(report.notas),
+            "errores": list(report.errores),
+        })
+        typer.echo(f"Correo atomizado ({details['status']}): {report.resumen()}")
+        for nota in report.notas:
+            # Contaminación cruzada por W-code y vistas rotas: a stderr, ANTES del OCR,
+            # para que el operador pueda abortar y limpiar `00_Input`.
+            typer.echo(f"NOTA: {nota}", err=True)
+
+    # Se emite ANTES de arrancar el OCR: si la corrida larga muere, el rastro ya está
+    # en disco. Un fallo de log tampoco aborta el OCR.
+    try:
+        append_event(case_id, "atomizado_email", details=details)
+    except Exception as exc:  # noqa: BLE001
+        typer.echo(f"AVISO: no se pudo registrar el evento atomizado_email: {exc}", err=True)
 
 
 @app.command()

@@ -53,15 +53,21 @@ def _evento(eventos, nombre="atomizado_email"):
 # --- Grupo 1: con doble del motor --------------------------------------------
 
 def test_atomiza_antes_de_construir_el_plan_de_ocr(caso, monkeypatch):
-    # La Task 4 AMPLÍA este test para exigir que el evento y las notas existan también
-    # antes del OCR: la secuencia de etapas por sí sola no lo mata.
+    """Orden real, incluido el rastro: evento y notas ANTES de arrancar el OCR.
+
+    La secuencia `atomize → plan → ejecutar` por sí sola NO basta: una implementación que
+    guarde el report en memoria, corra el OCR (~1 h 40) y escriba el evento al final
+    pasaría, dejando sin rastro una corrida que muere a mitad (spec §4.5) y sin ver la
+    contaminación cruzada hasta después del OCR (objetivo 3 de la spec).
+    """
     case_dir, _ = caso
     (case_dir / "00_Input" / "03_Email" / "a.eml").write_bytes(_eml("<a@x>"))
     orden: list[str] = []
+    real_echo = cli.typer.echo
 
     def fake_atomize(*a, **k):
         orden.append("atomize")
-        return AtomizeReport(mensajes=1)
+        return AtomizeReport(mensajes=1, notas=["W-code ajeno en 1 mensaje: W-00000"])
 
     def fake_plan(cd, force):
         orden.append("plan")
@@ -71,13 +77,31 @@ def test_atomiza_antes_de_construir_el_plan_de_ocr(caso, monkeypatch):
         orden.append("ejecutar")
         return []
 
+    def fake_evento(cid, ev, *, details=None):
+        orden.append(f"evento:{ev}")
+
+    def fake_echo(msg="", **kw):
+        if "NOTA:" in str(msg):
+            orden.append("nota")
+        real_echo(msg, **kw)
+
     monkeypatch.setattr(cli.atomize, "atomize_dir", fake_atomize)
     monkeypatch.setattr(cli, "_construir_plan", fake_plan)
     monkeypatch.setattr(cli.sm, "ejecutar", fake_ejecutar)
+    monkeypatch.setattr(cli, "append_event", fake_evento)
+    monkeypatch.setattr(cli.typer, "echo", fake_echo)
 
     cli.apply("W-TEST99")
 
-    assert orden == ["atomize", "plan", "ejecutar"]
+    # Las etapas, en orden y sin duplicados.
+    assert [x for x in orden if x in ("atomize", "plan", "ejecutar")] == \
+        ["atomize", "plan", "ejecutar"]
+    # Rastro y aviso ANTES del OCR. No se fija el orden entre nota y evento: los dos
+    # cumplen la spec mientras precedan al plan.
+    assert orden.index("evento:atomizado_email") < orden.index("plan")
+    assert orden.index("nota") < orden.index("plan")
+    # Y el evento del OCR después: nada se ha invertido por el camino.
+    assert orden.index("evento:procesado_sala_maquina") > orden.index("ejecutar")
 
 
 def test_noop_sin_eml_y_sin_arbol_previo(caso, monkeypatch):
@@ -119,6 +143,8 @@ def test_con_arbol_previo_y_cero_eml_si_se_atomiza(caso, monkeypatch):
     assert fuentes == [case_dir / "00_Input" / "03_Email"]
     assert out == case_dir / "01_Procesado" / "Emails"
     assert cd == case_dir            # case_dir explícito: no se infiere de out.parent.parent
+    assert _evento(eventos)[0]["status"] == "ok"          # reconciliación declarada
+    assert _evento(eventos)[0]["eml_nivel_superior"] == 0
 
 
 def test_el_caso_se_resuelve_una_sola_vez(caso, monkeypatch):
@@ -149,3 +175,101 @@ def test_el_caso_se_resuelve_una_sola_vez(caso, monkeypatch):
     cli.apply("W-TEST99")   # no debe lanzar
 
     assert refs == ["W-TEST99"]
+
+
+def test_fallo_del_motor_no_aborta_el_ocr_y_emite_evento(caso, monkeypatch, capsys):
+    case_dir, eventos = caso
+    (case_dir / "00_Input" / "03_Email" / "a.eml").write_bytes(_eml("<a@x>"))
+    ejecutado: list[int] = []
+
+    def boom(*a, **k):
+        raise RuntimeError("motor roto")
+
+    def fake_ejecutar(*a, **k):
+        ejecutado.append(1)
+        return []
+
+    monkeypatch.setattr(cli.atomize, "atomize_dir", boom)
+    monkeypatch.setattr(cli.sm, "ejecutar", fake_ejecutar)
+
+    cli.apply("W-TEST99")
+
+    assert ejecutado == [1]                      # el OCR corre igual (fallo blando)
+    # Igualdad EXACTA: un payload de fallo sin los dos conteos de .eml también sería un
+    # rastro mutilado, y con `assert status == "fallo"` pasaría igual.
+    assert _evento(eventos)[0] == {
+        "status": "fallo",
+        "eml_nivel_superior": 1, "eml_totales": 1,
+        "errores": ["RuntimeError: motor roto"],
+    }
+    err = capsys.readouterr().err
+    assert "la atomización de correo FALLÓ" in err
+
+
+def test_status_parcial_cuando_el_motor_termina_con_errores(caso, monkeypatch):
+    case_dir, eventos = caso
+    (case_dir / "00_Input" / "03_Email" / "a.eml").write_bytes(_eml("<a@x>"))
+    monkeypatch.setattr(cli.atomize, "atomize_dir", lambda *a, **k: AtomizeReport(
+        mensajes=2, errores=["<x@y>: cabecera ilegible"]))
+
+    cli.apply("W-TEST99")
+
+    # Igualdad exacta también aquí: el motor TERMINÓ, así que el payload debe llevar
+    # todos los contadores del report — no solo `status` y `errores`.
+    assert _evento(eventos)[0] == {
+        "status": "parcial",
+        "eml_nivel_superior": 1, "eml_totales": 1,
+        "mensajes": 2, "adjuntos_unicos": 0, "reconstruidos_b": 0,
+        "citas_a_revision": 0, "upgrades": 0,
+        "notas": [], "errores": ["<x@y>: cabecera ilegible"],
+    }
+
+
+def test_payload_atado_a_los_campos_reales_del_report(caso, monkeypatch, capsys):
+    # El doble devuelve un AtomizeReport REAL (no un SimpleNamespace): un campo mal
+    # escrito en el payload rompe este test. Igualdad exacta del dict a propósito.
+    case_dir, eventos = caso
+    (case_dir / "00_Input" / "03_Email" / "a.eml").write_bytes(_eml("<a@x>"))
+    report = AtomizeReport(mensajes=413, adjuntos_unicos=162, reconstruidos_b=136,
+                           citas_a_revision=43, upgrades=8,
+                           notas=["W-code ajeno en 1 mensaje: W-00000"])
+    monkeypatch.setattr(cli.atomize, "atomize_dir", lambda *a, **k: report)
+
+    cli.apply("W-TEST99")
+
+    assert _evento(eventos)[0] == {
+        "status": "ok",
+        "eml_nivel_superior": 1, "eml_totales": 1,
+        "mensajes": 413, "adjuntos_unicos": 162, "reconstruidos_b": 136,
+        "citas_a_revision": 43, "upgrades": 8,
+        "notas": ["W-code ajeno en 1 mensaje: W-00000"], "errores": [],
+    }
+    # objetivo 3 de la spec: la contaminación cruzada se ve ANTES del OCR
+    assert "W-code ajeno" in capsys.readouterr().err
+
+
+def test_un_fallo_de_log_no_aborta_el_ocr(caso, monkeypatch, capsys):
+    case_dir, _ = caso
+    (case_dir / "00_Input" / "03_Email" / "a.eml").write_bytes(_eml("<a@x>"))
+    ejecutado: list[int] = []
+
+    def log_roto(cid, ev, *, details=None):
+        # SOLO el evento de atomización. `apply` emite después `procesado_sala_maquina`
+        # con un `append_event` SIN captura (`scripts/sala_maquina.py:195`): un doble que
+        # lanzara para todo evento haría fallar este test por una vía ajena al cableado
+        # (y así estaba mal escrito en la primera versión del plan).
+        if ev == "atomizado_email":
+            raise OSError("disco lleno")
+
+    def fake_ejecutar(*a, **k):
+        ejecutado.append(1)
+        return []
+
+    monkeypatch.setattr(cli.atomize, "atomize_dir", lambda *a, **k: AtomizeReport(mensajes=1))
+    monkeypatch.setattr(cli, "append_event", log_roto)
+    monkeypatch.setattr(cli.sm, "ejecutar", fake_ejecutar)
+
+    cli.apply("W-TEST99")   # no debe propagar OSError
+
+    assert ejecutado == [1]
+    assert "no se pudo registrar el evento atomizado_email" in capsys.readouterr().err
