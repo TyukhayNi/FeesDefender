@@ -1164,10 +1164,10 @@ gh pr create --fill
 
 ## Revisión adversarial (obligatoria antes del PR)
 
-Por `CLAUDE.md`, la revisión adversarial de código se delega a Gemini vía `agy` y **Claude adjudica**:
+Por `CLAUDE.md`, la revisión adversarial de código se delega a Gemini vía `agy` y **Claude adjudica**. La salida va **fuera del repo** (el guard `test_citas_a_specs_y_plans_existen` rompe si un `.md` trackeado cita un fichero de `docs/superpowers/` que aún no existe); la adjudicación se registra luego en este plan, como se hizo con la revisión del plan:
 
 ```bash
-& "C:\Users\tnm33\AppData\Local\agy\bin\agy.exe" -p "Revisa adversarialmente el diff de esta rama contra main (cableado de la atomizacion de correo en scripts/sala_maquina.py). Contrasta CADA hallazgo contra el codigo real, no solo contra el diff. Busca: (1) que el no-op no siembre carpetas, (2) que un fallo del motor no aborte el OCR pero si emita evento, (3) que el payload del evento no invente contadores, (4) que plan no escriba en 01_Procesado/Emails, (5) que no se re-resuelva el caso. Escribe el resultado en docs/superpowers/specs/2026-07-28-cableado-atomize-sala-maquina-code-review.md y responde solo HECHO" --model "Gemini 3.1 Pro (High)" --add-dir "." --dangerously-skip-permissions
+& "C:\Users\tnm33\AppData\Local\agy\bin\agy.exe" -p "Revisa adversarialmente el diff de esta rama contra main (cableado de la atomizacion de correo en scripts/sala_maquina.py). Contrasta CADA hallazgo contra el codigo real, no solo contra el diff. Busca: (1) que el no-op no siembre carpetas, (2) que un fallo del motor no aborte el OCR pero si emita evento, (3) que el payload del evento no invente contadores, (4) que plan no escriba en 01_Procesado/Emails, (5) que no se re-resuelva el caso. Escribe el resultado en %TEMP%\\revision_cableado_correo.md y responde solo HECHO" --model "Gemini 3.1 Pro (High)" --add-dir "." --dangerously-skip-permissions
 ```
 
 Al adjudicar: un hallazgo que solo mira el diff suele ser falso positivo, y la convergencia de dos revisores **no** exime de verificar contra la fuente. Claude es el juez.
