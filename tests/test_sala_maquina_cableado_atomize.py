@@ -395,3 +395,73 @@ def test_reforzar_no_atomiza(caso, monkeypatch, capsys):
     cli.reforzar("W-TEST99")
 
     assert "Reforzados" in capsys.readouterr().out
+
+
+# --- Grupo 2: contra el MOTOR REAL -------------------------------------------
+
+def test_motor_real_solo_ve_el_nivel_superior(caso, monkeypatch, capsys):
+    # El .eml de la subcarpeta NO se atomiza (glob, no rglob): el evento lo declara
+    # con dos conteos distintos y el aviso lo grita. Si algún día el motor pasa a
+    # enumerar recursivamente (MEJORAS #98), este test lo señalará.
+    case_dir, eventos = caso
+    src = case_dir / "00_Input" / "03_Email"
+    (src / "a.eml").write_bytes(_eml("<a@x>", "Visible"))
+    (src / "mensaje_con_adjunto").mkdir()
+    (src / "mensaje_con_adjunto" / "b.eml").write_bytes(_eml("<b@x>", "Invisible"))
+
+    cli.apply("W-TEST99")
+
+    d = _evento(eventos)[0]
+    assert d["status"] == "ok"
+    assert (d["eml_nivel_superior"], d["eml_totales"]) == (1, 2)
+    assert d["mensajes"] == 1                 # el motor solo atomizó el visible
+    mds = list((case_dir / "01_Procesado" / "Emails" / "mensajes").glob("*.md"))
+    assert len(mds) == 1
+    assert "Invisible" not in mds[0].read_text(encoding="utf-8")
+    assert "1 .eml viven en subcarpetas" in capsys.readouterr().err
+
+
+def test_transicion_a_cero_fuentes_poda_mensajes_pero_no_adjuntos(caso, monkeypatch):
+    # Retirar el correo (remedio real de W-02VUDR) debe reflejarse en `mensajes/`.
+    # `adjuntos/` NO se poda: comportamiento CONOCIDO del motor (MEJORAS #99). El día
+    # que se arregle, este test fallará y hay que actualizarlo — eso es lo que se
+    # quiere: que la deuda no se olvide.
+    case_dir, eventos = caso
+    src = case_dir / "00_Input" / "03_Email"
+    eml = src / "a.eml"
+    eml.write_bytes(_eml("<a@x>", "Con adjunto",
+                         attachments=[("contrato.pdf", "application/pdf", b"%PDF datos")]))
+
+    cli.apply("W-TEST99")
+    emails = case_dir / "01_Procesado" / "Emails"
+    assert len(list((emails / "mensajes").glob("*.md"))) == 1
+    adjuntos_antes = sorted(p.name for p in (emails / "adjuntos").glob("*.pdf"))
+    assert adjuntos_antes                                  # el adjunto se materializó
+
+    eml.unlink()
+    cli.apply("W-TEST99")
+
+    assert list((emails / "mensajes").glob("*.md")) == []  # podado
+    assert sorted(p.name for p in (emails / "adjuntos").glob("*.pdf")) == adjuntos_antes
+    d = _evento(eventos)[-1]
+    assert d["status"] == "ok" and d["mensajes"] == 0
+
+
+def test_evento_real_es_valido_y_serializable(tmp_path, monkeypatch):
+    # Sin parchear `append_event`: verifica que `atomizado_email` está en INTAKE_EVENTS
+    # (si no, ValueError) y que el payload es JSON-serializable de verdad.
+    from core import intake_log
+    case_dir = tmp_path / "BaRS9 - Prueba - (W-TEST99) - Vuelta"
+    (case_dir / "00_Input" / "03_Email").mkdir(parents=True)
+    (case_dir / "00_Input" / "03_Email" / "a.eml").write_bytes(_eml("<a@x>"))
+    monkeypatch.setattr(cli, "caso_path", lambda cid: case_dir)
+    monkeypatch.setattr(intake_log, "caso_path", lambda cid: case_dir)
+    monkeypatch.setattr(cli.sm, "ejecutar", lambda *a, **k: [])
+
+    cli.apply("W-TEST99")
+
+    eventos = [e for e in intake_log.read_events("W-TEST99")
+               if e["event"] == "atomizado_email"]
+    assert len(eventos) == 1
+    assert eventos[0]["details"]["status"] == "ok"
+    assert eventos[0]["details"]["mensajes"] == 1
