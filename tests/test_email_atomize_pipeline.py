@@ -92,3 +92,48 @@ def test_atomize_dir_acepta_varias_fuentes(tmp_path):
     report = P.atomize_dir([d1, d2], out, case_dir=tmp_path)
     assert len(list((out / "mensajes").glob("*.md"))) == 2
     assert report.mensajes == 2
+
+
+# --- Derivadores de ruta y conteo (cableado, spec §4.1/§4.6) ------------------
+
+def test_contar_eml_distingue_nivel_superior_de_recursivo(tmp_path):
+    src = tmp_path / "2026-07-28_email_01"
+    (src / "mensaje_con_adjunto").mkdir(parents=True)
+    (src / "a.eml").write_bytes(_msg("<a@x>", "Uno"))
+    (src / "b.eml").write_bytes(_msg("<b@x>", "Dos"))
+    # El layout que deja `--extraer-adjuntos`: el .eml baja a una subcarpeta y el
+    # motor (glob, no rglob) no lo verá — MEJORAS #98.
+    (src / "mensaje_con_adjunto" / "c.eml").write_bytes(_msg("<c@x>", "Tres"))
+
+    assert P.contar_eml([src]) == (2, 3)
+
+
+def test_contar_eml_suma_fuentes_y_tolera_inexistentes(tmp_path):
+    lote = tmp_path / "2026-07-28_email_01"
+    legacy = tmp_path / "03_Email"
+    lote.mkdir()
+    legacy.mkdir()
+    (lote / "a.eml").write_bytes(_msg("<a@x>", "Uno"))
+    (legacy / "b.eml").write_bytes(_msg("<b@x>", "Dos"))
+
+    assert P.contar_eml([lote, legacy, tmp_path / "no_existe"]) == (2, 2)
+    assert P.contar_eml([]) == (0, 0)
+
+
+def test_emails_src_dirs_de_caso_no_resuelve_el_caso(tmp_path, monkeypatch):
+    from core.casos import case_locator
+
+    def _prohibido(*a, **k):
+        raise AssertionError("re-localización del caso: debe partir del case_dir dado")
+
+    monkeypatch.setattr(case_locator, "path_for", _prohibido)
+    monkeypatch.setattr(case_locator, "resolve_ref", _prohibido)
+
+    case_dir = tmp_path / "BaRS9 - Prueba - (W-TEST99) - Vuelta"
+    (case_dir / "00_Input" / "2026-07-28_email_01").mkdir(parents=True)
+    (case_dir / "00_Input" / "2026-07-20_whatsapp_01").mkdir()   # otra fuente: se ignora
+    (case_dir / "00_Input" / "03_Email").mkdir()                 # cajón legacy: se incluye
+
+    fuentes = P.emails_src_dirs_de_caso(case_dir)
+    assert [f.name for f in fuentes] == ["2026-07-28_email_01", "03_Email"]
+    assert P.emails_out_dir_de_caso(case_dir) == case_dir / "01_Procesado" / "Emails"

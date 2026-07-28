@@ -2258,6 +2258,14 @@ cableado confirma en vez de resolver. Los defectos del motor que impiden promete
 atomizado fiable están ahora acotados en **`#98`** (enumeración no recursiva) y **`#99`**
 (convergencia bajo borrados + publicación atómica).
 
+**Actualización 2026-07-28 (PR #NNN).** El **orden** ya lo garantiza el código:
+`scripts/sala_maquina.py::apply` atomiza antes del OCR. Lo que este ítem seguía
+prometiendo y **sigue sin cumplirse** es lo otro: que los átomos ENTREN al OCR. La sala
+de máquina continúa leyendo solo `00_Input`, así que el contenido de los adjuntos
+atomizados sigue fuera (`MEJORAS #87`), y el consumo del árbol atomizado por la sala de
+lectura es `MEJORAS #86`. La parte de este ítem que era «encadenar» está cerrada; la que
+era «alimentar» no.
+
 ---
 
 ## 56. Mejora del proceso de sala de lectura: motor determinista + tool MCP, cronología + nombres que hablan  [pieza de #54/#55] [DESCARTADO 2026-07-23 — ver #75 / PR #124]
@@ -2750,8 +2758,13 @@ extrae los adjuntos embebidos de los `.eml` (dedup por sha, filtro decorativo, f
     suelto en `00_Input/<lote>/`, el árbol que `sala_maquina` sí recorre. *(Lectura incompleta:
     ver la corrección de arriba.)*
     **Corrección de dato:** el call site es `scripts/abrir_caso.py::_intake_email`, no
-    `core/abrir_caso`. **Sigue pendiente** la otra mitad de 68.a: que `abrir_caso` /
-    `organizar-sala-maquina` invoquen `atomize_emails` en cadena, en vez de a mano.
+    `core/abrir_caso`. La otra mitad de 68.a —que la atomización se invoque en cadena y no a
+    mano— **quedaba** pendiente cuando se escribió esto; se cerró después: ver el bullet
+    siguiente.
+  - ✅ **RESUELTA la otra mitad (PR #NNN, `<hash del merge>`):** `scripts/sala_maquina.py::apply`
+    encadena la atomización antes del OCR y declara el resultado en el evento
+    `atomizado_email`. Lo que **sigue** abierto de `#68.b` es el **contenido** de los
+    adjuntos atomizados (`MEJORAS #87`), no el encadenado.
 - **68.b — OCR de adjuntos atomizados = "fase 2" no construida.** Las fichas `.md` de
   `01_Procesado/Emails/adjuntos/` quedan con `Descripción: (pendiente; OCR en fase 2)`. Y
   `organizar-sala-maquina` lee `00_Input`, **no** `01_Procesado/Emails/adjuntos/` → aunque se
@@ -3804,9 +3817,10 @@ atomizador. Hoy no muerde a nadie porque el default es `False`.
 `--extraer-adjuntos` a default `True`) **no se puede tocar hasta resolver esto**: generalizaría la
 ceguera a todos los casos con adjuntos.
 
-**Mitigación ya en curso (no es el arreglo).** El cableado de la sala de máquina emite un aviso
-destacado cuando el conteo recursivo de `.eml` supera al de nivel superior (§4.2 de su spec). Vuelve
-el agujero ruidoso; no lo cierra.
+**Mitigación YA EN MAIN (no es el arreglo).** `apply` y `plan` emiten un banner cuando
+el conteo recursivo de `.eml` supera al de nivel superior, y el evento `atomizado_email`
+lleva los dos conteos (`eml_nivel_superior` / `eml_totales`) (PR #NNN). El agujero es
+ruidoso; sigue abierto.
 
 **Salidas posibles** (ninguna elegida — exige decisión):
 1. **Enumeración recursiva en el motor** (`glob` → `rglob` en `extract.py:53`). Una línea, pero
@@ -3820,6 +3834,17 @@ el agujero ruidoso; no lo cierra.
 
 **Prioridad.** Alta en cuanto alguien use el flag. **Disparador de promoción:** primer caso real
 exportado con `--extraer-adjuntos`, o la decisión de tocar la casilla 3.
+
+**Segundo motivo por el que `#98` bloquea la casilla 3, hallado en la revisión de rama del
+cableado (2026-07-28).** Con un árbol atomizado YA existente, la discrepancia no solo es muda:
+es **destructiva**. Si el conteo de nivel superior baja (todos o parte de los `.eml` en
+subcarpeta), el motor ve menos mensajes de los que hay y su poda de idempotencia
+(`pipeline.py:122-125`) borra los `mensajes/*.md` cuyo `.eml` fuente es invisible, además de
+vaciar `corpus.jsonl`, los índices, `_revision/` y `vistas/` — y no se pueden regenerar
+mientras la ceguera siga, porque esos `.eml` no se ven. El cableado se protege declarando
+`status: "noop"` y no llamando al motor cuando `n_rec > n_top` y el árbol existe, pero eso
+significa que **un caso con la discrepancia viva deja de atomizarse** hasta que se aplane el
+lote. Es coste real de tener `#98` abierto.
 
 ---
 

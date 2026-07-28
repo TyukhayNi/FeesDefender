@@ -329,9 +329,10 @@ def test_append_event_invoca_fsync_por_cada_escritura(il, cm, monkeypatch):
 # INTAKE_EVENTS — sanity
 # ---------------------------------------------------------------------------
 
-def test_intake_events_es_frozenset_con_24_eventos(il):
+def test_intake_events_es_frozenset_con_27_eventos(il):
     assert isinstance(il.INTAKE_EVENTS, frozenset)
-    assert len(il.INTAKE_EVENTS) == 26
+    assert len(il.INTAKE_EVENTS) == 27
+    assert "atomizado_email" in il.INTAKE_EVENTS
 
 
 def test_intake_events_contiene_los_canonicos(il):
@@ -347,6 +348,8 @@ def test_intake_events_contiene_los_canonicos(il):
     (OCR+MD, 2026-07-09). ``split_documental`` con el split de bundles
     multi-documento en la Sala de máquina (2026-07-15). ``migracion_layout_intake``
     con la migración bajo demanda al layout de lotes (MEJORAS #54, 2026-07-17).
+    ``atomizado_email`` con el cableado de la atomización de correo en la sala de
+    máquina (2026-07-28).
     """
     expected = {
         "link_expediente",
@@ -375,6 +378,7 @@ def test_intake_events_contiene_los_canonicos(il):
         "split_documental",
         "migracion_layout_intake",
         "archivado",
+        "atomizado_email",
     }
     assert il.INTAKE_EVENTS == expected
 

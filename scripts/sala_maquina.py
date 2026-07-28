@@ -14,12 +14,38 @@ import typer
 from core import sala_maquina as sm
 from core.casos import case_locator
 from core.config import caso_path
+from core.email_atomize import pipeline as atomize
 from core.intake_log import append_event
 
 app = typer.Typer(add_completion=False)
 
 _STATE = "_sala_maquina_state.json"
 _COBERTURA = "_cobertura.json"
+
+_SEP = "=" * 72
+
+_BANNER_FALLO_ATOMIZE = (
+    f"\n{_SEP}\n"
+    "AVISO: la atomización de correo FALLÓ ({tipo}: {exc}).\n"
+    "El OCR continúa (no depende de ella), pero `01_Procesado/Emails` puede haber\n"
+    "quedado a medias con el registro de IDs sin salvar (MEJORAS #99): revísalo antes\n"
+    f"de citar MSG-ids nuevos.\n{_SEP}"
+)
+
+_AVISO_EML_INVISIBLE = (
+    f"\n{_SEP}\n"
+    "AVISO: {n} .eml viven en subcarpetas y el atomizador NO los verá (MEJORAS #98).\n"
+    "Causa típica: exportación con --extraer-adjuntos. Son justo los mensajes con\n"
+    f"adjuntos. `apply` deja los dos conteos en el evento `atomizado_email`.\n{_SEP}"
+)
+
+
+def _registrar_atomizado(case_id: str, details: dict) -> None:
+    """Emite `atomizado_email`; un fallo de log nunca aborta el OCR."""
+    try:
+        append_event(case_id, "atomizado_email", details=details)
+    except Exception as exc:  # noqa: BLE001
+        typer.echo(f"AVISO: no se pudo registrar el evento atomizado_email: {exc}", err=True)
 
 
 def _estado_previo(case_dir: Path) -> set[str]:
@@ -121,6 +147,79 @@ def _resolver_caso(case_id: str) -> tuple[str, Path]:
     return case_id, case_dir
 
 
+def _atomizar_correo(case_id: str, case_dir: Path) -> None:
+    """Atomiza el correo del caso ANTES del OCR (cableado, spec 2026-07-27 §4).
+
+    Garantiza por código el orden intake → atomización → sala de máquina, en vez de
+    dejarlo en la memoria del operador, y hace correr el detector de contaminación
+    cruzada en toda corrida. Recibe el `case_dir` YA resuelto y compone las rutas desde
+    él: no vuelve a localizar el caso (§4.6).
+
+    Lo que este paso NO promete: que `01_Procesado/Emails` quede fresco y consumible
+    sin comprobar nada. El motor no poda `adjuntos/` ni publica de forma atómica
+    (`MEJORAS #99`), así que el consumidor DEBE leer el `status` del evento
+    `atomizado_email`.
+    """
+    fuentes = atomize.emails_src_dirs_de_caso(case_dir)
+    out = atomize.emails_out_dir_de_caso(case_dir)
+    n_top, n_rec = atomize.contar_eml(fuentes)
+    if n_rec > n_top:
+        # No arregla la ceguera (es motor, MEJORAS #98): la vuelve ruidosa. Sin esto,
+        # el cableado propagaría el agujero con apariencia de éxito.
+        typer.echo(_AVISO_EML_INVISIBLE.format(n=n_rec - n_top), err=True)
+
+    # El motor solo puede reconciliar un árbol existente si VE TODO. Con discrepancia
+    # (MEJORAS #98) su poda de idempotencia borraría los `mensajes/*.md` cuyo `.eml`
+    # fuente es invisible —y vaciaría corpus/índices/_revision/vistas— sin poder
+    # regenerarlos: los `.eml` siguen invisibles. "Cero visibles" NO significa "el
+    # letrado retiró el correo". Se declara y se sale sin tocar el árbol.
+    if n_rec > n_top and out.exists():
+        _registrar_atomizado(case_id, {
+            "status": "noop", "eml_nivel_superior": n_top, "eml_totales": n_rec})
+        return
+
+    # Sin correo Y sin árbol previo no se llama al motor: `atomize_dir` hace mkdir de
+    # mensajes/ y adjuntos/ incondicionalmente y sembraría carpetas vacías en todo caso
+    # sin correo. Si hay discrepancia, el rastro no puede quedarse solo en el stderr.
+    if n_top == 0 and not out.exists():
+        if n_rec > n_top:
+            _registrar_atomizado(case_id, {
+                "status": "noop", "eml_nivel_superior": n_top, "eml_totales": n_rec})
+        return
+
+    details: dict[str, object] = {"eml_nivel_superior": n_top, "eml_totales": n_rec}
+    try:
+        report = atomize.atomize_dir(fuentes, out, case_dir=case_dir)
+    except Exception as exc:  # noqa: BLE001 — el OCR no depende de la atomización
+        # Fallo BLANDO para el OCR (una corrida dura ~1h40 y no depende de esto) pero
+        # DURO para el registro: sin evento, este cableado convertiría una avería hoy
+        # ruidosa (traceback del CLI manual) en silenciosa. No se fabrican contadores:
+        # si el motor no terminó, el payload no finge saber cuántos mensajes hay.
+        details["status"] = "fallo"
+        details["errores"] = [f"{type(exc).__name__}: {exc}"]
+        typer.echo(_BANNER_FALLO_ATOMIZE.format(tipo=type(exc).__name__, exc=exc), err=True)
+    else:
+        details["status"] = "parcial" if report.errores else "ok"
+        details.update({
+            "mensajes": report.mensajes,
+            "adjuntos_unicos": report.adjuntos_unicos,
+            "reconstruidos_b": report.reconstruidos_b,
+            "citas_a_revision": report.citas_a_revision,
+            "upgrades": report.upgrades,
+            "notas": list(report.notas),
+            "errores": list(report.errores),
+        })
+        typer.echo(f"Correo atomizado ({details['status']}): {report.resumen()}")
+        for nota in report.notas:
+            # Contaminación cruzada por W-code y vistas rotas: a stderr, ANTES del OCR,
+            # para que el operador pueda abortar y limpiar `00_Input`.
+            typer.echo(f"NOTA: {nota}", err=True)
+
+    # Se emite ANTES de arrancar el OCR: si la corrida larga muere, el rastro ya está
+    # en disco. Un fallo de log tampoco aborta el OCR.
+    _registrar_atomizado(case_id, details)
+
+
 @app.command()
 def plan(case_id: str):
     """Muestra la propuesta (Preview); no escribe nada salvo el manifiesto de
@@ -133,6 +232,14 @@ def plan(case_id: str):
         n = sum(1 for d in nuevos if d.ruta == ruta)
         if n:
             typer.echo(f"  {ruta}: {n}")
+
+    # Preview del cableado: `plan` NO atomiza (es preview), solo informa de lo que
+    # `apply` atomizará, con el MISMO contador que usa `apply` (spec §4.7).
+    n_top, n_rec = atomize.contar_eml(atomize.emails_src_dirs_de_caso(case_dir))
+    if n_top:
+        typer.echo(f"  correo: {n_top} .eml (se atomizarán en apply)")
+    if n_rec > n_top:
+        typer.echo(_AVISO_EML_INVISIBLE.format(n=n_rec - n_top), err=True)
 
     # Pre-detección de bundles (Preview del split): informa de los PDFs multi-documento
     # y deja su manifiesto de segmentación propuesto (editable) para que el letrado lo
@@ -167,6 +274,7 @@ def apply(case_id: str, vision: bool = False, force: bool = False):
     case_id, case_dir = _resolver_caso(case_id)
     if vision:
         _exigir_vision_cableada()          # preflight: aborta antes de procesar
+    _atomizar_correo(case_id, case_dir)   # cableado: atomizar ANTES del OCR (spec §4)
     p = _construir_plan(case_dir, force=force)
     cob_delta = sm.ejecutar(case_dir, p, case_id=case_id, vision=vision, force=force)
 
