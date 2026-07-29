@@ -18,7 +18,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 |---|------|--------|-------------------|------|
 | 1 | [OCR ciego bajo el sello (`MEJORAS #90`)](#siguiente-ocr-ciego-texto-perdido-bajo-el-sello-de-firma-mejoras-90) | **motor arreglado; queda ejecutar (e)** | (a)+(b) construidos y verdes: la causa ya no está viva para casos NUEVOS. (d) decidido 2026-07-27 = `D1`; falta ejecutarla sobre los 17 candidatos sin medir | bajo |
 | 2 | [Infra C — art. 156 LEC](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado (quick win) | bajo |
-| 3 | [Arquitectura dual del expediente activo](#siguiente-dual-workspace-arquitectura-dual-del-expediente-activo-localdrive) | spec **rev. 2** + plan Fase 0 **rev. 3** mergeados (#153/#154/#161); **dos guards** adelantados (#156 lectura, #160 escritura) | ⛔ **DECISIÓN: implementar PR-A o pasar una 3ª revisión** (2ª ya consumida: NO EJECUTABLE, 3 B0). **Absorbe Infra B (scratch)**: `local_scratch`, `--case-dir` y `promover` son piezas de aquí | alto (6 fases + una Fase 0 en 2 PRs) |
+| 3 | [Arquitectura dual del expediente activo](#siguiente-dual-workspace-arquitectura-dual-del-expediente-activo-localdrive) | spec **rev. 2** + plan Fase 0 **rev. 3** mergeados (#153/#154/#161); **dos guards** adelantados (#156 lectura, #160 escritura) | ⛔ **DECIDIDO 2026-07-29: 3ª revisión adversarial de Codex sobre la rev. 3, mañana 2026-07-30.** No se implementa nada hasta adjudicarla. **Absorbe Infra B (scratch)**: `local_scratch`, `--case-dir` y `promover` son piezas de aquí | alto (6 fases + una Fase 0 en 2 PRs) |
 | 4 | [MCP sudespacho F1](#siguiente-mcp-sudespacho-mcp-sudespacho-crm-del-despacho--f1-lectura-spec-hecho-plan-pendiente) | spec lista | gates de despliegue | alto |
 | 5 | [Drive-disco: pasos 5-7 + Claude Code](#siguiente-mcp-drive-disco-pasos-5-7-diferidos) | ✅ desplegado | resto pasivo: check Modo 1 en caso real | medio |
 | 6 | [abrir-caso F3-judicial](#abrir-caso--f1--f2a--f3-ac-mergeadas-f2b-aparcada-f3-judicial-pendiente) | disparador confirmado 2026-07-22 | plan concreto listo (4 piezas, ver bloque) | medio |
@@ -515,10 +515,18 @@ caso: durante un checkout, un proceso escribe en el local y otro en Drive.
       > importa), y su matriz mezclaba caracterización con expectativas normativas. Corregido en la
       > **rev. 3**, que además parte la fase en **dos PRs**. La pasada produjo de rebote el PR #160.
       >
-      > ⛔ **DECISIÓN PENDIENTE de Nikolai:** implementar la rev. 3 (PR-A primero) o pasarle una
-      > **tercera** revisión. Dos rondas seguidas de NO EJECUTABLE aconsejan lo segundo; en contra,
-      > la rev. 3 no introduce mecanismos nuevos —cierra los que ya se discutieron— y las dos
-      > rondas anteriores ya han rendido su valor en forma de dos guards mergeados.
+      > ⛔ **DECIDIDO por Nikolai el 2026-07-29: TERCERA revisión adversarial de Codex sobre la
+      > rev. 3, el 2026-07-30. No se escribe una línea de la Task 0 hasta adjudicarla.** Se pesó la
+      > alternativa (ir directo a PR-A, dado que la rev. 3 no introduce mecanismos nuevos y solo
+      > cierra los ya discutidos) y se eligió revisar: dos rondas seguidas de NO EJECUTABLE, y las
+      > dos han rendido su valor en arreglos de producción —#156 y #160, dos rutas de pérdida de
+      > datos— así que el coste de una tercera es bajo frente a lo que ha estado apareciendo.
+      >
+      > **Al adjudicarla, la disciplina de las dos rondas anteriores:** medir el binario antes de
+      > aceptar un hallazgo sobre rclone (dos sub-puntos cayeron así, y uno mío también); verificar
+      > cada cita `fichero:línea`; y exigir la **tabla de seguimiento** de las rondas 1 y 2 —si cada
+      > corrección arregla el defecto o solo la etiqueta—, que es donde salió el B0 de la Task 1B
+      > fantasma.
 - [ ] **Fase 1 — núcleo de workspace.** `CaseRef`/modos/capacidades/errores, registro privado
       atómico, `CaseCatalog` con `AMBIGUOUS_CASE`, resolver, **modo estricto de `path_for`**
       (mata el fallback que fabrica expedientes fantasma), **`core.intake_log` migrado** y
