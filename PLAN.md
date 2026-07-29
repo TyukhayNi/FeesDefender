@@ -26,7 +26,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 8 | [Intake email — filtro de exclusión de ruido](#siguiente-intake-email-filtro-exclusión-de-ruido-administrativo-y-cruzado) | parcial (2/4) | disparador: W-02VUDR (fuga cruzada de 7 casos ajenos + cartera de litigios) | medio |
 | 9 | [Vista procesal en `05_Procedimiento`](#siguiente-vista-procesal-vista-procesal-del-expediente-en-05_procedimiento) | piezas 1-2 ✅ (#137, #140); spec v3.1 con 2 revisiones consumidas | pieza 3 **bloqueada** por la fila #1 (OCR ciego); plan de la pieza 4 por reescribir | medio |
 | 10 | [`.doc` → LibreOffice headless](#siguiente-doc-libreoffice-doc-binario-sin-md-ni-ocr-conversión-libreoffice-headless) | pendiente | disparador: W-02MA0R, la demanda del ordinario solo existe en `.doc` sin gemelo PDF | bajo |
-| 11 | [Cableado del pipeline de correo (`MEJORAS #68`)](#siguiente-cableado-correo-cableado-del-pipeline-de-correo-encadenar-la-atomización-resto-de-mejoras-68) | casillas 1-2 ✅ (PR #151); casilla 3 ⛔ #98 | solo queda la casilla 3, bloqueada por MEJORAS #98 | medio |
+| 11 | [Cableado del pipeline de correo (`MEJORAS #68`)](#siguiente-cableado-correo-cableado-del-pipeline-de-correo-encadenar-la-atomización-resto-de-mejoras-68) | casillas 1-2 ✅; casilla 3 decidible (#98 cerrado) | verificación en vivo del §7 de la spec de #98 antes de decidir la casilla 3 | medio |
 
 > Detalle de cada ítem en su bloque `[SIGUIENTE-*]` más abajo. Backlog sin
 > promover: `docs/MEJORAS_FUTURAS.md`. Ledger de cerrados: `## Cerrados` (final).
@@ -344,18 +344,19 @@ estado de la atomización declarado en el log, y el detector de contaminación c
       el evento `status: "noop"` cuando el no-op coincide con la discrepancia; `reforzar`
       tampoco atomiza; el motor solo reconcilia un árbol existente si ve TODO el correo (no
       solo si ve cero). +19 tests (16 con doble del motor, 3 contra el motor real).
-- [ ] ⛔ **BLOQUEADA por `MEJORAS #98`** — decidir si `--extraer-adjuntos` pasa a default `True`.
-  No se puede tocar hasta arreglar la enumeración del motor: con el flag activo, el `.eml` de todo
-  mensaje **con adjuntos** se escribe en una subcarpeta (`email_export.py:1123-1132`) y el
-  atomizador solo enumera el nivel superior (`extract.py:53`) → esos mensajes **desaparecen del
-  atomizador en silencio**. Pasar el flag a default `True` generalizaría la ceguera a todos los
-  casos con adjuntos. Corrige el registro previo: `07b0377` no era «la mitad resuelta» de `#68.a`.
+- [ ] **DECIDIBLE** (ya no bloqueada: `MEJORAS #98` **arreglado** en PR #NNN, pendiente de su
+  verificación en vivo) — decidir si
+  `--extraer-adjuntos` pasa a default `True`. El motor ya ve los `.eml` de las subcarpetas, así
+  que activarlo no genera ceguera. Gate antes de encenderlo: la corrida de control del §7 de la
+  spec de `#98` (export real de una etiqueta pequeña a scratch), porque activarlo mueve la
+  superficie de dedup de todo intake futuro.
 
 **Deuda destapada por la revisión adversarial (no bloquea este bloque):** `MEJORAS #98`
-(enumeración no recursiva del motor) y `MEJORAS #99` (el motor no converge bajo borrados —no poda
-`adjuntos/`— y publica sin atomicidad, con riesgo de renumerar IDs congelados). Por eso este bloque
-**no promete** un árbol atomizado fresco: declara su estado en el evento `atomizado_email` y el
-consumidor debe comprobarlo.
+(enumeración no recursiva del motor — arreglada arriba, pendiente de verificación en vivo) y
+`MEJORAS #99` (el motor no converge bajo
+borrados —no poda `adjuntos/`— y publica sin atomicidad, con riesgo de renumerar IDs congelados,
+sigue abierta). Por eso este bloque **no promete** un árbol atomizado fresco: declara su estado en
+el evento `atomizado_email` y el consumidor debe comprobarlo.
 
 ---
 

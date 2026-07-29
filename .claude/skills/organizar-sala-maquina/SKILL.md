@@ -124,10 +124,11 @@ buscable (entre el OCR y el MD), para que cada documento lógico tenga su propio
    - **Atomiza el correo primero.** Antes del OCR, `apply` corre el motor de
      atomización (`core/email_atomize`) sobre los lotes `email` de `00_Input/` y el
      cajón legacy `03_Email`, y deja el resultado en `01_Procesado/Emails/` + un evento
-     `atomizado_email` en `_intake_log.jsonl` con `status` (`ok`/`parcial`/`fallo`/`noop`).
+     `atomizado_email` en `_intake_log.jsonl` con `status` (`ok`/`parcial`/`fallo`).
      Ya no hace falta acordarse de lanzar `python -m scripts.atomize_emails` a mano.
-     **Si el motor falla, el OCR sigue** (no depende de él) y el fallo sale como banner
-     + evento: no lo ignores, revisa `01_Procesado/Emails` antes de citar `MSG-ids`.
+     **Si el motor falla, el OCR sigue** (no depende de él) y el fallo sale como
+     **banner destacado** además de quedar en el evento: no lo ignores, revisa
+     `01_Procesado/Emails` antes de citar `MSG-ids`.
      Si el caso no tiene correo y no tiene árbol previo, este paso no hace nada.
    - **`--vision`** (opcional, off por defecto): refuerza con transcripción de
      visión los documentos que salieron `low`/`empty` tras el OCR. **Requiere un
@@ -179,10 +180,11 @@ buscable (entre el OCR y el MD), para que cada documento lógico tenga su propio
   despacho, revisitar cuando se reinstaure el muro `06_`); no mandes estos MD
   fuera del entorno de trabajo del despacho sin pasar por el pipeline de
   anonimización si el destino lo exige.
-- **La atomización no garantiza un árbol fresco.** El motor poda `mensajes/` pero **no**
-  `adjuntos/` (`MEJORAS #99`), así que un adjunto de un correo retirado sobrevive y
-  `adjuntos_contenido` lo seguirá recogiendo. Y con `--extraer-adjuntos` el `.eml` de un
-  mensaje con adjuntos baja a una subcarpeta que el atomizador **no** enumera
-  (`MEJORAS #98`): `apply` avisa con un banner cuando detecta esos `.eml`. El contenido
-  (texto/OCR) de los adjuntos del correo sigue **fuera** de la sala de máquina, que lee
-  solo `00_Input` (`MEJORAS #87`).
+- **La atomización ve todo el correo, y si no puede verlo NO borra nada.** `apply` atomiza los
+  `.eml` de los lotes `email` y de `03_Email` **incluidas las subcarpetas** (`MEJORAS #98`,
+  cerrado). Si algún `.eml` no se puede **leer** —típico de Drive sin hidratar— no publica nada,
+  deja el árbol anterior intacto y avisa: re-lanza cuando estén disponibles. Si un mensaje no se
+  puede **construir** (`.eml` corrupto), publica el resto pero **no poda**, así que puede quedar
+  alguna ficha rancia; el evento lo declara con `poda_omitida`. El árbol sigue sin garantizar
+  frescura de `adjuntos/` (`MEJORAS #99`), y el contenido de los adjuntos sigue fuera de la sala
+  de máquina (`MEJORAS #87`).

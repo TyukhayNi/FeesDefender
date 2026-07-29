@@ -3790,13 +3790,27 @@ es gratis si se confirma, la (2) ~1 h con guard y test.
 
 ## 98. `--extraer-adjuntos` deja CIEGO al atomizador: los `.eml` en subcarpeta no se procesan
 
+> 🔄 **ARREGLADO, pendiente de la verificación en vivo (PR #NNN).** No se marca ✅ aquí: el cierre
+> definitivo se escribe en el cierre de sesión, tras el paso 2 de la Task 8 (export real de control).
+> Enumeración recursiva en el motor
+> (`enumerar_rutas_eml` vía `os.walk`, que no silencia los directorios ilegibles como sí hace
+> `rglob`), `eml_origen` = ruta relativa POSIX, llave del registro con la fuente delante, y la
+> foto incompleta ya no borra fichas: fallo de lectura/enumeración → **no se publica nada**;
+> fallo de construcción → se publica **sin podar**. Se retiró el andamio del PR #151 (banner,
+> guarda del CLI y `noop`-por-discrepancia), sin pérdida de cobertura: la tabla del §5 de la
+> spec la compara escenario por escenario. Spec:
+> `docs/superpowers/specs/2026-07-28-email-atomize-enumeracion-recursiva-design.md`.
+> **Sigue fuera:** `.EML` en mayúsculas y una carpeta fuente que `emails_src_dirs_de_caso` no
+> devuelva — ninguna de las dos la cubría tampoco la guarda vieja.
+
 **Detectado 2026-07-27** por la revisión adversarial de Codex sobre la spec del cableado de correo
 (`docs/superpowers/specs/2026-07-27-cableado-atomize-sala-maquina-adversarial-review.md`), y
 verificado abriendo el código. **Bug latente en `main`, no introducido por ese PR.**
 
-**Los dos hechos que abren el agujero:**
+**Los dos hechos que abrían el agujero** (diagnóstico de 2026-07-27; el primero ya no describe el
+código actual — la enumeración pasó a `os.walk` recursivo, ver el bloque de arriba):
 
-- `core/email_atomize/extract.py:53` — `iter_avistamientos` enumera con `base.glob("*.eml")`:
+- `core/email_atomize/extract.py:53` **de entonces** — `iter_avistamientos` enumeraba con `base.glob("*.eml")`:
   **solo el nivel superior de cada carpeta fuente**, no recursivo.
 - `core/email_export.py:1123-1132` — `_escribe_mensaje`, cuando `extract_attachments=True` **y** el
   mensaje trae adjuntos, crea una subcarpeta y escribe ahí el `.eml` + los adjuntos sueltos.
@@ -3813,16 +3827,13 @@ de `#68.a`. **No lo es: es una trampa armada.** El flag hace llegar los binarios
 sí funciona y es lo que la sala de máquina lee— pero al precio de sacar esos mensajes del radar del
 atomizador. Hoy no muerde a nadie porque el default es `False`.
 
-**Bloquea.** La casilla 3 del bloque `[SIGUIENTE-CABLEADO-CORREO]` del `PLAN.md` (pasar
-`--extraer-adjuntos` a default `True`) **no se puede tocar hasta resolver esto**: generalizaría la
-ceguera a todos los casos con adjuntos.
+**Bloqueaba** (histórico; ver el arreglo en la nota superior). La casilla 3 del bloque
+`[SIGUIENTE-CABLEADO-CORREO]` del `PLAN.md` (pasar `--extraer-adjuntos` a default `True`) no se
+podía tocar mientras el motor no viera las subcarpetas: generalizar el flag habría generalizado la
+ceguera a todos los casos con adjuntos. Con la enumeración recursiva ya en el motor, la casilla pasa
+a **decidible**, con la verificación en vivo (Task 8) como gate.
 
-**Mitigación YA EN MAIN (no es el arreglo).** `apply` y `plan` emiten un banner cuando
-el conteo recursivo de `.eml` supera al de nivel superior, y el evento `atomizado_email`
-lleva los dos conteos (`eml_nivel_superior` / `eml_totales`) (PR #151, `c845a01`). El agujero es
-ruidoso; sigue abierto.
-
-**Salidas posibles** (ninguna elegida — exige decisión):
+**Salidas posibles** (histórico — **elegida la 1**, ver la nota superior):
 1. **Enumeración recursiva en el motor** (`glob` → `rglob` en `extract.py:53`). Una línea, pero
    cambia el conjunto de entrada del motor: hay que comprobar qué pasa con `eml_origen` (hoy
    `eml.name`, que dejaría de ser único entre subcarpetas) y con el registro de procesados, que
@@ -3832,19 +3843,9 @@ ruidoso; sigue abierto.
 3. **Que `email_export` no use subcarpetas** y desambigüe por nombre. Cambia el layout de intake ya
    desplegado; el más caro.
 
-**Prioridad.** Alta en cuanto alguien use el flag. **Disparador de promoción:** primer caso real
-exportado con `--extraer-adjuntos`, o la decisión de tocar la casilla 3.
-
-**Segundo motivo por el que `#98` bloquea la casilla 3, hallado en la revisión de rama del
-cableado (2026-07-28).** Con un árbol atomizado YA existente, la discrepancia no solo es muda:
-es **destructiva**. Si el conteo de nivel superior baja (todos o parte de los `.eml` en
-subcarpeta), el motor ve menos mensajes de los que hay y su poda de idempotencia
-(`pipeline.py:122-125`) borra los `mensajes/*.md` cuyo `.eml` fuente es invisible, además de
-vaciar `corpus.jsonl`, los índices, `_revision/` y `vistas/` — y no se pueden regenerar
-mientras la ceguera siga, porque esos `.eml` no se ven. El cableado se protege declarando
-`status: "noop"` y no llamando al motor cuando `n_rec > n_top` y el árbol existe, pero eso
-significa que **un caso con la discrepancia viva deja de atomizarse** hasta que se aplane el
-lote. Es coste real de tener `#98` abierto.
+**Prioridad.** Resuelta arriba (opción 1, con desempate determinista del canónico y llave de
+registro con la fuente delante). Queda solo la verificación en vivo de la Task 8 antes de decidir
+la casilla 3.
 
 ---
 

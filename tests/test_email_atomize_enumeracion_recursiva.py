@@ -1,7 +1,7 @@
 """Death tests de la enumeración recursiva (`MEJORAS #98`, spec §6 tests 12-13).
 
 Cruzan enumeración + dedup + publicación: cada tarea puede estar bien por separado y
-estas invariantes seguir rotas. Los cinco escenarios los pidió la revisión adversarial
+estas invariantes seguir rotas. Los seis escenarios los pidió la revisión adversarial
 del diseño.
 """
 from __future__ import annotations
