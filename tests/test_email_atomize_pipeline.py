@@ -6,14 +6,14 @@ from core.email_atomize import pipeline as P
 
 
 def _msg(mid, subject, body="cuerpo", fecha="Thu, 12 Jun 2026 10:00:00 +0200",
-         attachments=None):
+         attachments=None, cuerpo=None):
     m = EmailMessage()
     m["Message-ID"] = mid
     m["Subject"] = subject
     m["Date"] = fecha
     m["From"] = "Jaime <per01c@example.invalid>"
     m["To"] = "b@x"
-    m.set_content(body)
+    m.set_content(cuerpo if cuerpo is not None else body)
     for fn, mime, data in attachments or []:
         maint, _, sub = mime.partition("/")
         m.add_attachment(data, maintype=maint, subtype=sub, filename=fn)
@@ -173,3 +173,147 @@ def test_eml_leidos_cuenta_ficheros_no_atoms(tmp_path):
     assert (rep.eml_enumerados, rep.eml_leidos) == (2, 2)
     assert rep.mensajes == 1
     assert rep.publicado is True and rep.poda_omitida is False
+
+
+# --- Foto incompleta: fail-closed transitorio / sin poda permanente (MEJORAS #98 T4) --
+
+def test_fallo_de_lectura_no_publica_nada(tmp_path, monkeypatch):
+    # Rama TRANSITORIA (Drive sin hidratar): la última publicación completa queda intacta.
+    src = tmp_path / "03_Email"
+    src.mkdir()
+    (src / "a.eml").write_bytes(_msg("<a@x>", "Uno"))
+    (src / "b.eml").write_bytes(_msg("<b@x>", "Dos"))
+    out = tmp_path / "Emails"
+    P.atomize_dir(src, out, case_dir=tmp_path)          # corrida completa previa
+    antes = {p.relative_to(out).as_posix(): p.read_bytes()
+             for p in out.rglob("*") if p.is_file()}
+    assert len(list((out / "mensajes").glob("*.md"))) == 2
+
+    real = Path.read_bytes
+
+    def flaky(self):
+        if self.name == "b.eml":
+            raise OSError("no hidratado")
+        return real(self)
+
+    monkeypatch.setattr(Path, "read_bytes", flaky)
+    rep = P.atomize_dir(src, out, case_dir=tmp_path)
+
+    assert rep.publicado is False
+    assert rep.fallos_lectura and "b.eml" in rep.fallos_lectura[0]
+    assert any("NO PUBLICADA" in n for n in rep.notas)
+    # nada se ha tocado: ni fichas, ni agregados, ni registro. La clave del snapshot es la
+    # ruta RELATIVA, no `p.name`: con subcarpetas dos ficheros homónimos ocultarían un
+    # cambio (hallazgo de la revisión adversarial).
+    assert {p.relative_to(out).as_posix(): p.read_bytes()
+            for p in out.rglob("*") if p.is_file()} == antes
+
+
+def test_fallo_de_construccion_publica_pero_no_poda(tmp_path, monkeypatch):
+    # Rama PERMANENTE (.eml corrupto): se publica lo bueno y NO se borra la ficha del
+    # que falló, para que un solo correo roto no bloquee el caso para siempre.
+    src = tmp_path / "03_Email"
+    src.mkdir()
+    (src / "a.eml").write_bytes(_msg("<a@x>", "Uno"))
+    (src / "b.eml").write_bytes(_msg("<b@x>", "Dos"))
+    out = tmp_path / "Emails"
+    P.atomize_dir(src, out, case_dir=tmp_path)
+    fichas_antes = sorted(p.name for p in (out / "mensajes").glob("*.md"))
+    assert len(fichas_antes) == 2
+
+    real_construir = P._construir_mensaje
+
+    def rompe_b(col, *a, **k):
+        # `col.message_id` está normalizado sin `<>` (`core.email_export.message_id_of`).
+        if col.message_id == "b@x":
+            raise ValueError("cabecera imposible")
+        return real_construir(col, *a, **k)
+
+    # El mensaje bueno CAMBIA antes de la 2ª corrida: sin esto, una implementación que no
+    # publicara absolutamente nada pasaría el test igual, porque el input bueno no varía
+    # (hallazgo de la revisión adversarial).
+    (src / "a.eml").write_bytes(_msg("<a@x>", "Uno", cuerpo="cuerpo NUEVO"))
+    monkeypatch.setattr(P, "_construir_mensaje", rompe_b)
+    rep = P.atomize_dir(src, out, case_dir=tmp_path)
+
+    assert rep.publicado is True and rep.poda_omitida is True
+    assert rep.errores and "cabecera imposible" in rep.errores[0]
+    assert any("poda de mensajes/ OMITIDA" in n for n in rep.notas)
+    # la ficha del que falló SOBREVIVE
+    assert sorted(p.name for p in (out / "mensajes").glob("*.md")) == fichas_antes
+    # y lo bueno SÍ se publicó: la ficha de <a@x> trae el cuerpo nuevo
+    fichas = {p.name: p.read_text(encoding="utf-8")
+              for p in (out / "mensajes").glob("*.md")}
+    assert any("cuerpo NUEVO" in md for md in fichas.values())
+
+
+def test_fallo_de_layer_b_tampoco_poda_el_b_superado(tmp_path, monkeypatch):
+    # El escenario que la poda existe para cubrir: un mensaje B superado por un upgrade
+    # de fidelidad. Si ADEMÁS otro portador falla al reconstruirse, la poda se apaga y el
+    # B rancio sobrevive — es el precio declarado del híbrido, y hay que fijarlo.
+    from core.email_atomize import inline as INL
+    src = tmp_path / "03_Email"
+    src.mkdir()
+    (src / "a.eml").write_bytes(_msg("<a@x>", "Uno"))
+    (src / "b.eml").write_bytes(_msg("<b@x>", "Dos"))
+    out = tmp_path / "Emails"
+    P.atomize_dir(src, out, case_dir=tmp_path)
+    fichas_antes = sorted(p.name for p in (out / "mensajes").glob("*.md"))
+
+    real = INL.reconstruir
+
+    def rompe_uno(m_a, raw, identidades):
+        # `rfc_message_id` está normalizado sin `<>` (`headers._norm_mid`).
+        if m_a.rfc_message_id == "b@x":
+            raise ValueError("portador ilegible")
+        return real(m_a, raw, identidades)
+
+    monkeypatch.setattr(INL, "reconstruir", rompe_uno)
+    rep = P.atomize_dir(src, out, case_dir=tmp_path)
+
+    assert rep.publicado is True and rep.poda_omitida is True
+    assert any("portador ilegible" in e for e in rep.errores)
+    assert sorted(p.name for p in (out / "mensajes").glob("*.md")) == fichas_antes
+
+
+def test_sin_fallos_si_poda(tmp_path):
+    # Contrapartida imprescindible: la poda legítima sigue funcionando.
+    src = tmp_path / "03_Email"
+    src.mkdir()
+    (src / "a.eml").write_bytes(_msg("<a@x>", "Uno"))
+    (src / "b.eml").write_bytes(_msg("<b@x>", "Dos"))
+    out = tmp_path / "Emails"
+    P.atomize_dir(src, out, case_dir=tmp_path)
+    assert len(list((out / "mensajes").glob("*.md"))) == 2
+
+    (src / "b.eml").unlink()
+    rep = P.atomize_dir(src, out, case_dir=tmp_path)
+
+    assert rep.poda_omitida is False and rep.publicado is True
+    assert len(list((out / "mensajes").glob("*.md"))) == 1
+
+
+def test_no_siembra_carpetas_si_no_publica(tmp_path, monkeypatch):
+    # Sin árbol previo y con fallo de lectura: no se crean `mensajes/`/`adjuntos/`.
+    src = tmp_path / "03_Email"
+    src.mkdir()
+    (src / "a.eml").write_bytes(_msg("<a@x>", "Uno"))
+    out = tmp_path / "Emails"
+
+    real = Path.read_bytes
+
+    def falla_los_eml(self):
+        # Acotado a `.eml`: parchear `read_bytes` a secas rompería cualquier otra
+        # lectura binaria de la corrida y el test fallaría por la razón equivocada.
+        if self.suffix == ".eml":
+            raise OSError("no hidratado")
+        return real(self)
+
+    monkeypatch.setattr(Path, "read_bytes", falla_los_eml)
+    rep = P.atomize_dir(src, out, case_dir=tmp_path)
+
+    assert rep.publicado is False
+    # NI la raíz: `load_registro` hacía `mkdir` de `out` y la decisión se toma antes.
+    # Sin este assert, el test pasaba dejando creado `01_Procesado/Emails/` y la corrida
+    # siguiente sin correo ya no haría el no-op estricto (vería «árbol previo»).
+    assert not out.exists()

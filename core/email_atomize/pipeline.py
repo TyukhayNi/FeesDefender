@@ -66,6 +66,17 @@ def _idioma(texto: str) -> str:
     return max((("ca", ca), ("en", en), ("es", es)), key=lambda x: x[1])[0]
 
 
+_NOTA_NO_PUBLICADA = (
+    "ATOMIZACIÓN NO PUBLICADA: {n} .eml no se pudieron leer (¿Drive sin hidratar?). "
+    "El árbol anterior queda intacto. Re-lanza cuando estén disponibles."
+)
+
+_NOTA_PODA_OMITIDA = (
+    "poda de mensajes/ OMITIDA: {n} mensajes no se pudieron construir; el árbol "
+    "conserva fichas cuyo mensaje no se ha reconstruido en esta corrida."
+)
+
+
 def atomize_dir(
     src_dir: Path | str | list[Path | str] | tuple[Path | str, ...],
     out_dir: Path | str,
@@ -91,8 +102,6 @@ def atomize_dir(
     if case_dir is None:
         case_dir = out.parent.parent          # <caso>/01_Procesado/Emails → <caso>
     ident = ID.cargar_identidades(case_dir)
-    (out / "mensajes").mkdir(parents=True, exist_ok=True)
-    (out / "adjuntos").mkdir(parents=True, exist_ok=True)
     report = AtomizeReport()
 
     stats = E.EnumStats()
@@ -100,6 +109,15 @@ def atomize_dir(
     report.eml_enumerados = stats.enumerados
     report.eml_leidos = stats.leidos
     report.fallos_lectura = list(stats.fallos)
+
+    # --- Rama TRANSITORIA (spec §4.3): fail-closed, y antes de tocar disco ---
+    # Sobre `G:` un fallo de lectura casi siempre es Drive sin hidratar y re-correr lo
+    # resuelve; publicar con la foto incompleta borraría fichas cuyo mensaje sigue
+    # existiendo. No se llama a `load_registro` (crearía `out`), no se escribe nada.
+    if report.fallos_lectura:
+        report.publicado = False
+        report.notas.append(_NOTA_NO_PUBLICADA.format(n=len(report.fallos_lectura)))
+        return report
 
     reg = IDS.load_registro(out)          # crea `out`: nada antes de aquí toca disco
     colapsados = D.colapsar(avistamientos)
@@ -129,14 +147,23 @@ def atomize_dir(
     mensajes_b, punteros, upgrades = _pase_layer_b(reg, mensajes, carriers, report, ident)
     mensajes.extend(mensajes_b)
 
+    (out / "mensajes").mkdir(parents=True, exist_ok=True)
+    (out / "adjuntos").mkdir(parents=True, exist_ok=True)
+
     for m in mensajes:
         (out / "mensajes" / R.nombre_md(m)).write_text(R.render_md(m), encoding="utf-8")
-    # Idempotencia: eliminar .md huérfanos (p. ej. un mensaje B superado por un upgrade en una
-    # re-corrida) que ya no están en el conjunto esperado. Solo toca *.md de mensajes/.
-    esperados = {R.nombre_md(m) for m in mensajes}
-    for p in (out / "mensajes").glob("*.md"):
-        if p.name not in esperados:
-            p.unlink()
+    # Permanente (construcción A / Layer B): se publica lo bueno, pero NO se poda — un
+    # `.eml` corrupto no se arregla re-corriendo, y bloquear el caso para siempre es peor
+    # que conservar una ficha rancia. La poda solo retira huérfanos cuando la foto está
+    # completa (p. ej. un mensaje B superado por un upgrade).
+    if report.errores:
+        report.poda_omitida = True
+        report.notas.append(_NOTA_PODA_OMITIDA.format(n=len(report.errores)))
+    else:
+        esperados = {R.nombre_md(m) for m in mensajes}
+        for p in (out / "mensajes").glob("*.md"):
+            if p.name not in esperados:
+                p.unlink()
     report.mensajes = len(mensajes)
     report.reconstruidos_b = len(mensajes_b)
     report.reconstruidos_media = sum(1 for m in mensajes_b if m.confianza == "media-reconstruida")
