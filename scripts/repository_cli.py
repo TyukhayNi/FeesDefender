@@ -30,6 +30,17 @@ Requisitos del piloto codificados como invariantes (INFORME_PILOTO §Hallazgos):
    leer ``_caso.md`` o ``_intake_log.jsonl``, no se escribe, no se libera el lock
    y se sale con 4. Antes se devolvía ``{}``/``[]`` y el push posterior destruía
    los metadatos del caso o el historial forense completo (ver ``ProtocoloIOError``).
+   Lo mismo vale para el **listado** de la bandeja: un ``lsjson`` que no se puede
+   parsear no es una bandeja vacía, y no autoriza a liberar el lock.
+9. **Un fallo de ESCRITURA del protocolo no se reporta como éxito.** Los retornos
+   de los ``copyto`` del lock y del log se ignoraban, así que un fallo de red al
+   liberar dejaba el caso ``prestado`` en el Drive mientras esta CLI imprimía
+   «✓ VERDE … lock liberado» y devolvía 0. Ahora ambos lanzan ``ProtocoloIOError``
+   y el ciclo termina en 4 sin afirmar nada que no haya pasado. La frontera es
+   deliberada: **estado de protocolo** (lock, log de custodia) es fatal;
+   **corroboración** (evidencia del merge, redundancia del ``MANIFEST`` en Drive)
+   es un aviso ruidoso que no bloquea, porque los bytes del caso ya están donde
+   deben y bloquear dejaría el caso prestado por algo accesorio.
 
 Códigos de salida: ``0`` ok · ``1`` error de la operación · ``2`` abortado sin
 efectos (caso no disponible, carrera de lock perdida, ruta local ausente) · ``3``
@@ -477,7 +488,12 @@ def cmd_checkout(args: argparse.Namespace) -> int:
     rc.validar_transicion(estado, "prestado")
     rc.aplicar_lock_prestado(fm_drive, user=user, timestamp=ts, nonce=nonce,
                              maquina=maquina, notas=args.notas)
-    _push_caso_md(fm_drive, destino, work, cuerpo=cuerpo_drive)
+    try:
+        _push_caso_md(fm_drive, destino, work, cuerpo=cuerpo_drive)
+    except ProtocoloIOError as exc:
+        print(f"  ✗ {exc}\n  Abortado: no hay lock y no se copió nada. Reintenta "
+              f"cuando el remote responda.")
+        return 4
     time.sleep(_SYNC_LAG_S)
     pull_check = _pull_caso_md(destino, work)
     if pull_check is None:
@@ -511,7 +527,15 @@ def cmd_checkout(args: argparse.Namespace) -> int:
         # Rollback del lock: no dejar el caso 'prestado' sin copia local útil
         # (evita el estado atascado del runbook §7.1). La re-ejecución converge.
         rc.aplicar_lock_cancelado(fm_check)
-        _push_caso_md(fm_check, destino, work, cuerpo=cuerpo_check)
+        try:
+            _push_caso_md(fm_check, destino, work, cuerpo=cuerpo_check)
+        except ProtocoloIOError as exc:
+            # Doble fallo: la copia no salió Y tampoco se pudo revertir el lock. No
+            # se puede afirmar que quedó revertido, que es lo que hacía antes.
+            print(f"  ✗ rclone copy falló (rc={res.returncode}) y ADEMÁS no se pudo "
+                  f"revertir el lock: {exc}\n  El caso sigue 'prestado' en el Drive: "
+                  f"cancela el checkout explícitamente o reintenta. Ver {log_file}")
+            return 4
         print(f"  ✗ rclone copy falló (rc={res.returncode}). Lock revertido a "
               f"disponible. Ver {log_file}\n{res.stderr[-500:] if res.stderr else ''}")
         return 1
@@ -523,9 +547,17 @@ def cmd_checkout(args: argparse.Namespace) -> int:
     manifest_path = local / "MANIFEST_CHECKOUT.json"
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2),
                              encoding="utf-8")
-    run_rclone(build_copyto_cmd(
+    res_mf = run_rclone(build_copyto_cmd(
         origen=str(manifest_path),
         destino=_remoto(destino, "MANIFEST_CHECKOUT.json")))
+    if res_mf.returncode != 0:
+        # El baseline que el checkin lee es el LOCAL; el del Drive es la redundancia
+        # del §3.3 (sobrevivir a la muerte del Desktop). Se pierde esa red, no la
+        # función: aviso ruidoso, sin bloquear un checkout ya completo.
+        print(f"  ⚠ MANIFEST_CHECKOUT.json no se pudo subir al Drive "
+              f"(rc={res_mf.returncode}). El baseline LOCAL existe y el checkin "
+              f"funcionará desde esta máquina, pero se ha perdido la copia de "
+              f"respaldo del §3.3: si este PC muere, el checkin no tendrá baseline.")
 
     # Evento forense case_checkout en el _intake_log.jsonl del Drive.
     try:
@@ -687,7 +719,14 @@ def cmd_checkin(args: argparse.Namespace) -> int:
                 return 4
             fm, cuerpo_fm = pull_c
             rc.aplicar_estado(fm, "conflicto")
-            _push_caso_md(fm, destino, work, cuerpo=cuerpo_fm)
+            try:
+                _push_caso_md(fm, destino, work, cuerpo=cuerpo_fm)
+            except ProtocoloIOError as exc:
+                print(f"  ✗ Hay conflictos y NO se pudo marcar el estado en el Drive: "
+                      f"{exc}\n  El caso sigue 'prestado' y el local se conserva. "
+                      f"Reintenta el checkin cuando el remote responda.")
+                print(f"  NO se libera el lock. Revisa {log_file} / {check_log}.")
+                return 4
             print(f"  → estado 'conflicto' escrito en el Drive; el local se conserva. "
                   f"Resolver los {len(conflictos)} conflicto(s) (ver DELTA_PREVIO.md) "
                   f"y reintentar el checkin.")
@@ -695,7 +734,12 @@ def cmd_checkin(args: argparse.Namespace) -> int:
         return 0 if semaforo == "amarillo" else 1
 
     # CP9: subir el AUDITLOG (último artefacto) a 07_AI cowork/merge_<TS>/.
-    _upload_evidencia(destino, tsc, [log_file, check_log])
+    evidencia_fallida = _upload_evidencia(destino, tsc, [log_file, check_log])
+    if evidencia_fallida:
+        print(f"  ⚠ No se pudo subir la evidencia del merge al Drive "
+              f"({', '.join(evidencia_fallida)}). El merge está hecho y verificado, "
+              f"pero `ultimo_checkin_auditlog` apuntará a un fichero que no llegó: "
+              f"consérvalo en local ({log_file}).")
 
     # Evento forense case_checkin en el _intake_log.jsonl del Drive.
     try:
@@ -718,7 +762,13 @@ def cmd_checkin(args: argparse.Namespace) -> int:
 
     # CP10: integrar la bandeja _pendiente_checkin/ (escrituras del pipeline
     # durante el préstamo) y vaciarla (§6).
-    integrados, colisiones = _integrar_bandeja(destino)
+    try:
+        integrados, colisiones = _integrar_bandeja(destino)
+    except ProtocoloIOError as exc:
+        print(f"  ⚠ {exc}\n  El merge está subido, verificado y registrado, pero la "
+              f"bandeja no se pudo integrar: NO se libera el lock. Re-ejecuta el "
+              f"checkin (converge).")
+        return 4
     if integrados:
         print(f"  ✓ bandeja integrada: {integrados} fichero(s)"
               + (f", {colisiones} como _reingesta_ (colisión, sin sobrescribir)" if colisiones else ""))
@@ -735,7 +785,15 @@ def cmd_checkin(args: argparse.Namespace) -> int:
     estado_actual = rc.estado_de_fm(fm)
     rc.validar_transicion(estado_actual, "disponible")
     rc.aplicar_lock_liberado(fm, timestamp=ts, auditlog=nombre_auditlog(tsc))
-    _push_caso_md(fm, destino, work, cuerpo=cuerpo_lib)
+    try:
+        _push_caso_md(fm, destino, work, cuerpo=cuerpo_lib)
+    except ProtocoloIOError as exc:
+        # Este era el camino peor: se imprimía «VERDE … lock liberado» y se devolvía
+        # 0 con el caso todavía `prestado` en el Drive.
+        print(f"  ⚠ {exc}\n  El merge está subido, verificado y registrado, pero el "
+              f"caso sigue 'prestado' en el Drive. Re-ejecuta el checkin cuando el "
+              f"remote responda: converge y solo quedará por liberar el lock.")
+        return 4
     print(f"  ✓ VERDE. AUDITLOG subido, case_checkin registrado, lock liberado "
           f"(estado → disponible).")
     return 0
@@ -779,8 +837,21 @@ def _integrar_bandeja(destino: str) -> tuple[int, int]:
     ls = run_rclone(build_lsjson_cmd(destino))
     try:
         inv = parse_inventario_lsjson(ls.stdout)
-    except (json.JSONDecodeError, TypeError):
-        return (0, 0)
+    except (json.JSONDecodeError, TypeError) as exc:
+        # Antes devolvía (0, 0), indistinguible de «la bandeja estaba vacía», y el
+        # checkin seguía hasta LIBERAR EL LOCK creyendo que no quedaba nada por
+        # integrar. Mismo patrón que el guard del pull: un listado que no se pudo
+        # leer no es un listado vacío.
+        raise ProtocoloIOError(
+            f"No se pudo listar el Drive para integrar la bandeja "
+            f"({PENDIENTE_CHECKIN_SUBDIR}/): {exc}. No se libera el lock: podría "
+            f"quedar contenido sin integrar."
+        ) from exc
+    if ls.returncode != 0:
+        raise ProtocoloIOError(
+            f"El listado del Drive para la bandeja terminó con rc={ls.returncode}. "
+            f"No se libera el lock."
+        )
     plan = planificar_integracion_bandeja(set(inv))
     integrados = colisiones = 0
     for item in plan:
@@ -799,13 +870,23 @@ def _integrar_bandeja(destino: str) -> tuple[int, int]:
     return (integrados, colisiones)
 
 
-def _upload_evidencia(destino: str, tsc: str, files: list[str]) -> None:
-    """Sube los logs de evidencia a `07_AI cowork/merge_<TS>/` (CP9)."""
+def _upload_evidencia(destino: str, tsc: str, files: list[str]) -> list[str]:
+    """Sube los logs de evidencia a `07_AI cowork/merge_<TS>/` (CP9).
+
+    Devuelve los nombres que **no** se pudieron subir. La evidencia es
+    corroboración, no el merge: un fallo aquí no puede dejar el caso prestado, pero
+    tampoco puede pasar en silencio — antes se ignoraba el retorno y el checkin
+    escribía `ultimo_checkin_auditlog` apuntando a un fichero que no llegó.
+    """
+    fallidos: list[str] = []
     for f in files:
         p = Path(f)
         if p.exists():
-            run_rclone(build_copyto_cmd(
+            res = run_rclone(build_copyto_cmd(
                 origen=str(p), destino=_remoto(destino, f"07_AI cowork/merge_{tsc}/{p.name}")))
+            if res.returncode != 0:
+                fallidos.append(p.name)
+    return fallidos
 
 
 def _append_evento_drive(
@@ -851,7 +932,15 @@ def _append_evento_drive(
     lineas.append(json.dumps(entry, ensure_ascii=False))
     tmp_out = work_dir / f"_log_push_{ts_compacto()}.jsonl"
     tmp_out.write_text("\n".join(lineas) + "\n", encoding="utf-8")
-    run_rclone(build_copyto_cmd(origen=str(tmp_out), destino=log_remoto))
+    res_push = run_rclone(build_copyto_cmd(origen=str(tmp_out), destino=log_remoto))
+    if res_push.returncode != 0:
+        # Simétrico al guard del pull: el retorno se ignoraba, así que el caller
+        # continuaba —hasta liberar el lock— creyendo registrada una traza que no
+        # llegó al Drive.
+        raise ProtocoloIOError(
+            f"No se pudo subir el _intake_log.jsonl al Drive (rc={res_push.returncode}). "
+            f"El evento {event!r} NO quedó registrado."
+        )
 
 
 def _remoto_existe(ruta_remota: str) -> bool | None:
@@ -907,7 +996,15 @@ def _push_caso_md(fm: dict, destino: str, work_dir: Path, *, cuerpo: str) -> Non
     from core.utils import write_md
     tmp = work_dir / f"_caso_push_{ts_compacto()}.md"
     write_md(tmp, fm, cuerpo or "# Caso\n")
-    run_rclone(build_copyto_cmd(origen=str(tmp), destino=_caso_md_remoto(destino)))
+    res = run_rclone(build_copyto_cmd(origen=str(tmp), destino=_caso_md_remoto(destino)))
+    if res.returncode != 0:
+        # El retorno se ignoraba: un push fallido de la LIBERACIÓN dejaba el caso
+        # `prestado` en el Drive mientras el checkin imprimía «lock liberado» y
+        # devolvía 0. El estado del lock que el caller cree haber escrito no existe.
+        raise ProtocoloIOError(
+            f"No se pudo subir el _caso.md al Drive (rc={res.returncode}). El estado "
+            f"del lock en el Drive NO cambió."
+        )
 
 
 def _leer_manifest(local: Path) -> dict[str, dict[str, Any]]:
