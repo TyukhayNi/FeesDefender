@@ -110,6 +110,12 @@ Código: este directorio (`C:\Users\tnm33\Dev\FeesDefender`), versionado en Git 
   `-Encoding UTF8` (produce mojibake en sistemas cp1252).
 - `subprocess.run` con stderr UTF-8: usar `encoding="utf-8", errors="replace"`
   (NO `text=True` en Windows — decodifica con cp1252 y trunca tildes).
+- **Códigos de salida: nunca leer `$LASTEXITCODE` detrás de un `Select-Object -First N`.**
+  La terminación temprana del pipe puede dejarlo en `0` y hacer pasar por bueno un
+  comando que falló. Medido el 2026-07-29 con rclone: `copyto` de un origen
+  inexistente parecía devolver `0` tras `| Select-Object -First 3` y devuelve **3**
+  sin tubería. Patrón correcto: `$out = & cmd args 2>&1` y leer `$LASTEXITCODE` acto
+  seguido. `Select-String` sí consume el flujo entero y no contamina.
 
 ## Gotchas críticos
 
@@ -214,6 +220,13 @@ Atajo: `/tests` ejecuta la suite completa.
 - **Referencia común sudespacho** (fuente única agnóstica: auth, API de elementos, permisos + presets por
   rol, enums; compartida con El Contable / El Auditor): [`../ElContable/docs/REFERENCIA_SUDESPACHO_API_PERMISOS.md`](../ElContable/docs/REFERENCIA_SUDESPACHO_API_PERMISOS.md)
 - **Callejones sin salida**: `docs/DEAD_ENDS.md` ← consultar antes de reintentar algo
+- **Arquitectura dual del expediente activo (local/Drive) — SSOT del diseño**:
+  `docs/superpowers/specs/2026-07-29-feesdefender-dual-case-workspace-design.md` (**rev. 2**;
+  revisión adversarial adjudicada en `…-adversarial-review.md`, plan de las dos primeras fases en
+  `docs/superpowers/plans/2026-07-29-dual-workspace-fase0-fase1.md`). **Consultarlo antes de tocar
+  la resolución de un caso**: quién decide qué copia es la operativa (`CaseWorkspace`), qué está
+  prohibido durante un checkout y por qué `caso_path`/`CASOS_ROOT` dejan de ser un selector.
+  Absorbe el «expediente scratch» (`MEJORAS #59`).
 - **Plan subdivisión ciudades**: `docs/superpowers/plans/PLAN_SUBDIVISION_CIUDADES.md`
 - **Plan SaRS1 anon**: `docs/superpowers/plans/PLAN_SaRS1_anon_pipeline.md`
 - **Plan pre-relleno LLM**: `docs/superpowers/plans/PLAN_PRERELLENO_LLM_VIABILIDAD.md`

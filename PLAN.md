@@ -18,7 +18,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 |---|------|--------|-------------------|------|
 | 1 | [OCR ciego bajo el sello (`MEJORAS #90`)](#siguiente-ocr-ciego-texto-perdido-bajo-el-sello-de-firma-mejoras-90) | **motor arreglado; queda ejecutar (e)** | (a)+(b) construidos y verdes: la causa ya no está viva para casos NUEVOS. (d) decidido 2026-07-27 = `D1`; falta ejecutarla sobre los 17 candidatos sin medir | bajo |
 | 2 | [Infra C — art. 156 LEC](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado (quick win) | bajo |
-| 3 | [Infra B — expediente scratch](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado | medio |
+| 3 | [Arquitectura dual del expediente activo](#siguiente-dual-workspace-arquitectura-dual-del-expediente-activo-localdrive) | spec **rev. 2** + plan Fase 0 **rev. 2** mergeados (#153/#154); guard adelantado (#156) | ⛔ **2ª revisión adversarial de Codex antes de implementar**. **Absorbe Infra B (scratch)**: `local_scratch`, `--case-dir` y `promover` son piezas de aquí | alto (6 fases + una Fase 0) |
 | 4 | [MCP sudespacho F1](#siguiente-mcp-sudespacho-mcp-sudespacho-crm-del-despacho--f1-lectura-spec-hecho-plan-pendiente) | spec lista | gates de despliegue | alto |
 | 5 | [Drive-disco: pasos 5-7 + Claude Code](#siguiente-mcp-drive-disco-pasos-5-7-diferidos) | ✅ desplegado | resto pasivo: check Modo 1 en caso real | medio |
 | 6 | [abrir-caso F3-judicial](#abrir-caso--f1--f2a--f3-ac-mergeadas-f2b-aparcada-f3-judicial-pendiente) | disparador confirmado 2026-07-22 | plan concreto listo (4 piezas, ver bloque) | medio |
@@ -27,6 +27,8 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 9 | [Vista procesal en `05_Procedimiento`](#siguiente-vista-procesal-vista-procesal-del-expediente-en-05_procedimiento) | piezas 1-2 ✅ (#137, #140); spec v3.1 con 2 revisiones consumidas | pieza 3 **bloqueada** por la fila #1 (OCR ciego); plan de la pieza 4 por reescribir | medio |
 | 10 | [`.doc` → LibreOffice headless](#siguiente-doc-libreoffice-doc-binario-sin-md-ni-ocr-conversión-libreoffice-headless) | pendiente | disparador: W-02MA0R, la demanda del ordinario solo existe en `.doc` sin gemelo PDF | bajo |
 | 11 | [Cableado del pipeline de correo (`MEJORAS #68`)](#siguiente-cableado-correo-cableado-del-pipeline-de-correo-encadenar-la-atomización-resto-de-mejoras-68) | casillas 1-2 ✅; casilla 3 decidible (#98 cerrado) | verificación en vivo del §7 de la spec de #98 antes de decidir la casilla 3 | medio |
+
+| 12 | [La firma no es intercalada: falso positivo que bloquea la Capa B](#siguiente-sandwich-firma-la-firma-no-es-una-respuesta-intercalada) | spec **rev. 2** lista, revisión adversarial consumida | plan TDD pendiente; sin dependencias | bajo |
 
 > Detalle de cada ítem en su bloque `[SIGUIENTE-*]` más abajo. Backlog sin
 > promover: `docs/MEJORAS_FUTURAS.md`. Ledger de cerrados: `## Cerrados` (final).
@@ -364,6 +366,38 @@ el evento `atomizado_email` y el consumidor debe comprobarlo.
 
 ---
 
+## [SIGUIENTE-SANDWICH-FIRMA] La firma no es una respuesta intercalada
+
+*Hallado 2026-07-29 midiendo la verificación en vivo de `MEJORAS #98`, sobre correo real de un caso
+de Valencia con hilos de Gmail. Spec **rev. 2**:
+`docs/superpowers/specs/2026-07-29-sandwich-firma-falso-positivo-design.md` (su §9 adjudica la
+revisión adversarial de Codex, que devolvió NO-SHIP sobre la rev. 1 y obligó a cambiar la decisión).*
+
+**El problema en una frase.** La firma de E&V va en HTML con cada línea en su propio elemento y, en
+los hilos de Gmail, queda **entre** dos bloques de cita; `_sandwich` la cuenta como «el autor escribió
+entre las citas», declara respuesta intercalada y devuelve **cero ancestros** — con lo que **toda la
+Capa B deja de ejecutarse** (body-scan, forma c′ y desanidado del interior no se consultan) y los
+mensajes citados no reciben ficha. El cuerpo, en cambio, sí se recorta, porque eso lo decide otro
+detector que ahí acierta. Resultado: esos mensajes no están ni como ficha ni en el cuerpo del
+portador.
+
+**Medido:** el DOM ve intercalada en 7 de 29 portadores del caso de Gmail y en **1 de 277** de
+W-02VND1. De los 7, en **5** todos los trozos disparadores están bajo `class="gmail_signature"` → los
+arregla la exclusión estructural; en 2 hay texto de autor real → el veto se mantiene. En W-02VND1 la
+regla **no cambia nada**, y su único caso es un contraejemplo legítimo que debe seguir vetado.
+
+**Decisión (rev. 2):** los trozos bajo un contenedor de firma no cuentan como texto de autor a
+efectos del veto. Es estructural, no lexical, y **no puede levantar un veto correcto**: solo resta
+firma del recuento.
+
+- [x] Spec + revisión adversarial adjudicada (rev. 2).
+- [ ] Plan TDD y construcción. Ojo al §6 de la spec: el contrato de tests se reescribió porque dos de
+      los tests de la rev. 1 no mataban el camino inseguro (uno era **inconstruible**).
+- [ ] Verificación en vivo sobre la copia local del caso de Gmail ya exportada (§8): confirmar el
+      reparto (5 segmentan, ~2 producen ficha) y el emparejamiento remitente ↔ cuerpo.
+- Contexto de por qué importa: `MEJORAS #108` (que el árbol sea contexto suficiente para un LLM),
+  con `#105` y `#106` como las otras dos piezas que faltan.
+
 ## [SIGUIENTE-INTAKE-EMAIL-FILTRO] Intake email — filtro de exclusión de ruido administrativo y cruzado
 
 *Disparador: apertura de W-02VUDR (Cr Denia-Javea 14, 2026-07-21). La etiqueta Gmail del
@@ -407,6 +441,97 @@ solo existe como memoria/prosa, nunca como filtro de código.*
 
 ---
 
+## [SIGUIENTE-DUAL-WORKSPACE] Arquitectura dual del expediente activo (local/Drive)
+
+*Abierto 2026-07-29 por **decisión de Nikolai**. Spec:
+`docs/superpowers/specs/2026-07-29-feesdefender-dual-case-workspace-design.md` (**rev. 2**).
+Revisión adversarial adjudicada: `…-adversarial-review.md` (veredicto REQUIERE REVISIÓN;
+4 B0 + 10 A aceptados y resueltos en la rev. 2, §20). Plan de las dos primeras fases:
+`docs/superpowers/plans/2026-07-29-dual-workspace-fase0-fase1.md`. **Absorbe el Cluster B
+(expediente scratch)** del roadmap post-VALERO.*
+
+**El problema en una frase.** No existe un contrato único que determine **qué copia de un
+expediente es la operativa**, así que dos puntos de entrada pueden resolver distinto el mismo
+caso: durante un checkout, un proceso escribe en el local y otro en Drive.
+
+**Lo que la revisión adversarial midió (contra código, no contra la memoria):**
+
+- **432 apariciones** de `caso_path`/`settings.casos_root`/`resolve_ref`/`path_for` en **80
+  ficheros**, y la resolución **no está en las CLIs**: vive dentro de servicios de `core/` que
+  reciben `case_id` (`case_manager` 23, `intake_manual` 10, `anon/api` 9, `sala_lectura` 7,
+  `email_export` 6…, más `streamlit_app.py` 9). Lo que esta migración reescribe es **la capa de
+  servicios de core**, no «los entrypoints».
+- **Cuatro escrituras al canon que ya se saltan el guard hoy**: el `mkdir` de
+  `intake_log.append_event`; el estado de canal de `email_export`
+  (`_save_export_index`/`_save_resolved_links`, que ignoran el destino recibido);
+  `catalogo_documental.save_catalog`; y el `_segmentacion.md` que escribe
+  `sala_maquina plan`, documentado como «no escribe nada».
+- **El doble checkout sigue siendo posible**: `_push_caso_md` es un `copyto` ciego y el
+  write-then-verify solo cubre la adquisición.
+- **`expedientes-xl` puede sobrescribir el `_caso.md` del canon** (`PROTOCOL_EDIT` en
+  `tiers.py`) sin pasar por una línea de Python: la frontera de entrypoints no lo alcanza.
+- **`checkout-caso` reimplementa el protocolo en prosa** y no conoce el registro privado.
+- **La orquestación del checkout/checkin no tiene un solo test** (los 27 de
+  `test_repository_cli.py` son de helpers puros) → por eso hay una **Fase 0**.
+
+**Fases** (cada una: sub-SPEC + plan + revisión adversarial + PR propios):
+
+- [x] **Adelantado — guard de lectura del protocolo.** ✅ **PR #156** (`5f4c81a`). Dos rutas de
+      destrucción de datos que no podían esperar a una fase: un pull fallido del `_caso.md`
+      degradaba el fichero canónico a un stub sin `id_go` (y `resolve_ref` dejaba de encontrar el
+      caso por W-code); un pull fallido del log **reemplazaba todo el `_intake_log.jsonl` por una
+      línea**. Ahora falla cerrado (`ProtocoloIOError`, salida 4, lock conservado). De paso dejó los
+      **primeros 8 tests de orquestación** de `cmd_checkout`/`cmd_checkin` que tiene el repo.
+- [ ] **Fase 0 — banco de pruebas del frontal.** Barrera anti-rclone-real + `Entorno` que inyecta
+      las **cinco** fuentes de no-determinismo (rclone, reloj, hostname, directorio de trabajo,
+      espera) + doble de Drive fijado a **rclone v1.73.5** con fixtures grabadas y **hook de
+      mutación** para interleaving determinista + caracterización de `cmd_checkout`/`cmd_checkin` +
+      matriz de fallos por call-site + los 7 defectos reproducidos en
+      `xfail(strict=True, raises=AssertionError)`. Sin esto los criterios de salida de las Fases 2-3
+      son indemostrables.
+      **Plan ejecutable rev. 2 (8 tareas):**
+      `docs/superpowers/plans/2026-07-29-dual-workspace-fase0-banco-pruebas.md`. Sustituye a las
+      Tareas 1-3 del plan combinado, supersedidas. La rev. 1 recibió **NO EJECUTABLE** de la
+      revisión adversarial de Codex (3 B0 + 5 A + 1 M) y **no se mergeó**: el orden 1→2→3 dejaba sin
+      red el refactor de mayor riesgo, no había barrera contra el Drive real, y el criterio de
+      salida exigía brechas que son de las Fases 1-3 (errata aplicada al §12 de la SPEC).
+
+      > ⛔ **GATE antes de implementar — decisión de Nikolai, 2026-07-29.** La construcción se
+      > aparca para otra sesión, y **antes de escribir la primera línea de la Task 0 hay OTRA
+      > pasada de revisión adversarial de Codex sobre la rev. 2**. Motivo: la rev. 1 llegó a un
+      > veredicto de NO EJECUTABLE y su corrección movió el orden de las tareas, el modelo del
+      > doble y el criterio de salida — bastante superficie nueva como para no darla por buena sin
+      > atacarla. Al adjudicar esa segunda pasada, la disciplina de esta ronda: **medir contra el
+      > binario instalado antes de aceptar un hallazgo** (dos sub-puntos del primer informe se
+      > refutaron ejecutando rclone v1.73.5, no leyendo documentación).
+- [ ] **Fase 1 — núcleo de workspace.** `CaseRef`/modos/capacidades/errores, registro privado
+      atómico, `CaseCatalog` con `AMBIGUOUS_CASE`, resolver, **modo estricto de `path_for`**
+      (mata el fallback que fabrica expedientes fantasma), **`core.intake_log` migrado** y
+      `--case-dir` en `scripts/sala_maquina` (que es lo que hace utilizable el scratch).
+- [ ] **Fase 2 — checkout, scratch y checkin.** Requiere **arreglar `MEJORAS #96` primero**: la
+      proyección local de `_caso.md` es justo el disparador de ese bug. Incluye compare-and-swap
+      del lock, reordenación del checkin, baseline de auditoría, conmutación **atómica** del
+      guard a denegar, y que `checkout-caso` deje de adquirir el lock.
+- [ ] **Fase 3 — primera vertical**: sala de máquina + correo (con el estado de canal dentro del
+      workspace) + `catalogo_documental`.
+- [ ] **Fase 4 — resto de scripts y UI** (Streamlit entera; el `CaseWorkspace` no se cachea en
+      `session_state`).
+- [ ] **Fase 5 — plugins y skills** (el lock entra en la política de zonas de `expedientes-xl`).
+- [ ] **Fase 6 — enforcement** (guardas contra nuevos entrypoints mutantes sin workspace).
+
+**Decisiones cerradas que no se reabren** (spec §3 y §20): Drive es canónico una vez publicado;
+durante el checkout la copia local es la única escribible; no hay edición simultánea; solo el
+titular incorpora documentos; no habrá bandeja nueva de aportaciones; `_pendiente_checkin/` solo
+compatibilidad, con retirada por criterio de inventario; prohibido caer silenciosamente en Drive;
+se adopta `CaseWorkspace`, **no** una abstracción virtual de almacenamiento (§13, con la puerta
+hacia ella conservada en `WorkspaceMaterializer`).
+
+**Deuda anotada, no promovida:** `MEJORAS #101` (residuos `_reingesta_*` de la bandeja),
+`#102` (`errors="replace"` corrompe el log canónico), `#103` (el `CaseWorkspace` no se cachea en
+`st.session_state`).
+
+---
+
 ## [SIGUIENTE-INFRA-POST-VALERO] Roadmap de infraestructura tras la sesión VALERO (2026-07-14)
 
 *Disparador: sesión E2E VALERO (W-02XOR7 / BaRS8) del 2026-07-14 — OCR → sala de máquina → refuerzo por
@@ -431,10 +556,13 @@ B**; D/E/F quedan en backlog. **Actualización: el Cluster A lo completó la ses
   real (preferente la sesión Claude) o que **avise** en vez de no-op (`core/sala_maquina._transcribir_vision`).
   (3) Comando `reforzar` persistente (render→visión→MD+estado+cobertura). *En VALERO la cobertura de 35 filas
   se perdió y el refuerzo de visión hubo que persistirlo a mano.*
-- [ ] **B — Expediente scratch (caso de trabajo local) (`MEJORAS #59`).** Stub `_caso.md` mínimo para que las
-  skills detecten el caso (E&V, terminología, ubicación) sin Drive/CRM + flags `--case-dir`/`--casos-root` +
-  comando de promoción a expediente completo. Resuelve de raíz la mala detección de modo (VALERO cayó en
-  "civil genérico"). Diseño aprobado en la spec citada.
+- [~] **B — Expediente scratch (caso de trabajo local) (`MEJORAS #59`) — ABSORBIDO 2026-07-29 por
+  `[SIGUIENTE-DUAL-WORKSPACE]`.** Nunca se construyó (verificado contra código: `--case-dir` **no existe
+  en ningún script** y `--casos-root` solo en `scripts/migrar_nombres_informe.py`, así que el override de
+  `CASOS_ROOT` por entorno —lo que este cluster venía a eliminar— sigue siendo hoy la única vía). Sus tres
+  piezas pasan a ser piezas de la arquitectura dual: el modo `local_scratch` (§5.2), el flag `--case-dir`
+  (§7.1, Fase 1) y el comando `promover` (§8.6, Fase 2). No se planifica por separado: se cerraría dos
+  veces lo mismo. El diseño `2026-07-14-expediente-scratch-design.md` se conserva como antecedente.
 - [ ] **C — Campos de `gen_solicitud` (`MEJORAS #60`; fichero real `.claude/skills/preparacion-audiencia-previa/scripts/gen_solicitud.py`, no `scripts/` de la raíz) — quick win, en paralelo a A.** Petición subsidiaria de
   averiguación de domicilio (art. 156 LEC) como campo + DNI pendiente que renderice limpio. Disparador:
   la testigo compradora (petición de averiguación de domicilio, art. 156 LEC) y la testigo directora de zona (DNI pendiente) en la AP de VALERO.

@@ -3951,3 +3951,225 @@ en vivo** — es la comprobación pendiente antes de dar por real ese caso.
 **Prioridad.** Baja hasta que alguien no pueda abrir un `.docx` o un `.xlsx` del procesado.
 **Disparador de promoción:** primer fichero de `01_Procesado` que no abra en Word/Excel, o decisión
 de Nikolai.
+
+---
+
+## 101. La bandeja `_pendiente_checkin/` produce ficheros `_reingesta_*` que nadie reconcilia
+
+**Anotado 2026-07-29**, hallazgo M-4 de la revisión adversarial de la arquitectura dual
+(`docs/superpowers/specs/2026-07-29-feesdefender-dual-case-workspace-adversarial-review.md`).
+Hermano de `#96`. **Sin promover:** la arquitectura dual retira la bandeja como camino ordinario
+(su Fase 2), y estos residuos son el rastro que quedará después.
+
+**Estado actual.** `scripts/repository_cli.py:697-724` (`_integrar_bandeja`, CP10) mueve cada
+fichero de la bandeja a su ruta original; cuando **colisiona**, `planificar_integracion_bandeja`
+lo deja como `_reingesta_*` para no sobrescribir. Ese fichero:
+
+- **no aparece en el plan de merge** (la bandeja está en `MERGE_EXCLUSIONS`), así que nunca sale
+  en el `DELTA_PREVIO.md` que revisa el letrado;
+- **no lo cubre la verificación por hash** del CP8, que corre *antes* de la integración;
+- **nadie lo reconcilia después**: se queda con nombre de residuo junto al fichero bueno, y en el
+  siguiente checkout entra al baseline como un documento normal.
+
+**Mejora propuesta.** Al retirar la bandeja (Fase 2 de la arquitectura dual), barrer los
+`_reingesta_*` existentes con un inventario por API y decidir uno a uno; y mientras exista el
+mecanismo, listarlos en el DELTA con su bloqueante, igual que se hizo con `VETO_GRUPO` (`#137`).
+
+**Justificación de no aplicarlo ahora.** Hoy no hay ninguno conocido, y la pieza que los genera
+está en vías de retirada: arreglarla antes de retirarla es trabajo perdido. Lo que **sí** hay que
+evitar es retirar la bandeja y dejar los residuos sin censar.
+
+**Coste estimado.** ~30 min el censo por API; el listado en el DELTA, ~1 h con test.
+
+---
+
+## 102. `errors="replace"` en la lectura del log canónico corrompe evidencia de forma permanente
+
+**Anotado 2026-07-29**, hallazgo M-5 de la misma revisión. **Sin promover** solo porque no se ha
+observado daño todavía; es independiente de la arquitectura dual y la sobrevive.
+
+**Estado actual.** `scripts/repository_cli.py:736-767` (`_append_evento_drive`) no hace append: baja
+el `_intake_log.jsonl` del Drive, lo lee con
+`read_text(encoding="utf-8", errors="replace")`, filtra líneas vacías, reconstruye el fichero con
+`"\n".join(lineas) + "\n"` y lo vuelve a subir. Dos consecuencias sobre el fichero que el proyecto
+usa como **prueba documental**:
+
+1. Cualquier byte no decodificable como UTF-8 se sustituye por `U+FFFD` **y se persiste así**: la
+   siguiente subida ya no contiene el original. La corrupción es silenciosa y acumulativa.
+2. El fichero se normaliza (líneas en blanco eliminadas, salto final forzado), de modo que **no es
+   append-only en la práctica** aunque el docstring lo afirme. Eso es lo que impide comparar
+   prefijos por bytes (ver la spec dual §6.3).
+
+**Mejora propuesta.** Leer en binario y no reescribir: subir solo la línea nueva, o si el remote no
+admite append, reconstruir a partir de los **bytes** originales sin decodificar. Y que un log que no
+decodifica sea un **error declarado**, no un reemplazo silencioso.
+
+**Justificación de no aplicarlo ahora.** Está en el camino que mueve la custodia de los
+expedientes y merece su test propio con el doble de rclone que construye la Fase 0 de la
+arquitectura dual. Antes de ese doble, cualquier arreglo aquí es a ciegas.
+
+**Coste estimado.** ~1 h con el doble ya disponible; sin él, no hacerlo.
+
+---
+
+## 103. El `CaseWorkspace` no debe cachearse en `st.session_state`
+
+**Anotado 2026-07-29**, hallazgo M-3 de la misma revisión. Es una **regla a fijar antes de la
+Fase 4** de la arquitectura dual, no un bug vivo (el `CaseWorkspace` todavía no existe).
+
+**Estado actual.** `streamlit_app.py` tiene **9** resoluciones vía `caso_path`/`resolve_ref` y
+**cero** referencias a `estado_repositorio` o al lock: la UI no sabe hoy que un caso puede estar
+prestado. Y el repo ya tiene el gotcha documentado en `CLAUDE.md`: un sentinel de «ya hecho» en
+`session_state` marcado antes de validar el éxito deja cacheado un fallo durante toda la sesión.
+
+**Riesgo concreto.** Un `CaseWorkspace` guardado en `session_state` es una **autorización
+persistida**: el usuario mantiene la pestaña abierta, otro cierra el checkout desde otra máquina, y
+la UI sigue escribiendo con un modo que ya no es cierto. La spec dual §5.3 lo prohíbe («no debe
+almacenarse entre ejecuciones como autorización permanente»), pero Streamlit es exactamente el
+runtime donde esa regla se rompe sin querer.
+
+**Mejora propuesta.** Al migrar la UI (Fase 4): el workspace se resuelve **por request**, igual que
+`intake_log.set_actor`; en `session_state` solo puede vivir la *identidad* del caso seleccionado
+(`CaseRef`), nunca el workspace ni sus capacidades. Un test que falle si aparece un `CaseWorkspace`
+dentro de `session_state`.
+
+**Coste estimado.** Nada ahora (es una regla); ~30 min el test guardián al llegar a la Fase 4.
+
+---
+
+## 104. La rama Google-native del merge no la ha ejercitado ningún dato real
+
+**Medido el 2026-07-29** al capturar el contrato de rclone para el banco de pruebas de la Fase 0 de
+la arquitectura dual. **Sin promover:** no hay nada roto, pero hay una decisión de diseño de primera
+clase cuyo comportamiento nadie ha visto funcionar.
+
+**El dato.** Barrido de la unidad canónica (`EXPEDIENTES - TYUKHAY LEGAL`) con
+`rclone lsjson -R --files-only --max-depth 6 --fast-list`: **3007 ficheros, CERO entradas
+`application/vnd.google-apps*`**. Ni un Google Doc, ni una Sheet, en seis niveles de profundidad.
+
+**Por qué importa.** `parse_inventario_lsjson` mapea la ausencia de `md5` a `hash: None`, y
+`plan_merge` trata ese `None` como caso de primera clase: emite `ACCION_PRESERVE_DRIVE` con
+`google_native=True` y lo documenta en el docstring del módulo («Google-native (Docs/Sheets sin
+MD5): no se puede comparar por hash → se preserva siempre»). Además `_vetar_grupos` cuenta
+`PRESERVE_DRIVE` como **bloqueante** de un grupo indivisible. Es decir: hay lógica de merge, de
+veto y de semáforo que depende de una condición que **nunca ha ocurrido**.
+
+No es código muerto: ocurriría el día que alguien cree un Doc en la carpeta de un caso desde la UI
+de Drive, o que un `.docx` se convierta al subirlo. Y ese día el comportamiento sería estreno en
+producción, sobre el camino que mueve expedientes.
+
+**Lo que NO hace falta.** Averiguar la forma exacta creando un Doc en el Drive canónico: sería
+mutar el repositorio de expedientes para un experimento. Y es innecesario, porque el contrato del
+parser —`(item.get("Hashes") or {}).get("md5") or None`— trata igual las tres variantes posibles
+(sin clave `Hashes`, `Hashes: {}`, y `Hashes` sin `md5`).
+
+**Mejora propuesta.**
+1. El banco de la Fase 0 emite las **tres** variantes desde una fixture **declarada sintética** y
+   asierta `hash is None` en todas, más un test de `plan_merge` que cubra el veto de grupo con un
+   miembro native. Eso valida la lógica sin datos reales.
+2. Si alguna vez hace falta la forma real, capturarla en una **carpeta de pruebas fuera de
+   `CASOS`**, nunca en un expediente, y con `lsjson` de solo lectura.
+3. Decidir aparte si conviene **prohibir** los Google-native en las carpetas de caso (una nota en
+   el runbook, o una comprobación en el checkin que avise), dado que son incomparables por hash y
+   por tanto inmergeables por diseño.
+
+**Justificación de no aplicarlo ahora.** El punto 1 entra gratis en la Fase 0 (ya está en su
+plan). El 2 no tiene disparador. El 3 es una decisión de Nikolai, no técnica.
+
+**Coste estimado.** Punto 1: incluido en la Fase 0. Punto 3: ~20 min de doctrina si se decide.
+
+## 105. El historial citado que no se puede atribuir desaparece del árbol de MD
+
+**Medido 2026-07-29** sobre una etiqueta real de Gmail (caso `W-02TH0W`, 29 `.eml` exportados a un
+scratch) mientras se verificaba `MEJORAS #98`.
+
+**El mecanismo.** Dos decisiones defendibles por separado que juntas pierden contenido:
+`bodies.extraer_cuerpo` **recorta la cita** para que cada ficha sea un mensaje y no historial
+repetido veinte veces (`cuerpo_recortado_cita: true` lo declara); y la Capa B solo promueve una cita
+a ficha propia si puede **atribuir el remitente** desde una cabecera parseable. Cuando ninguna de las
+dos cosas ocurre, ese texto no está ni como ficha ni dentro del cuerpo del portador: solo en el
+`.eml` crudo.
+
+**Los números, que son lo que evita discutirlo de oído.** De 28 atoms de Capa A, 9 tenían el cuerpo
+recortado. En ellos: **51.721 caracteres de texto plano, 10.728 llegan al `.md`, 40.993 fuera (79 %)**.
+Pero medido **por frase sustancial** (≥8 palabras), de 365 frases cortadas **332 (90 %) ya existen en
+otra ficha** —eran copias del mismo historial citado por varios portadores— y solo **33 (9 %) no
+existen en ningún sitio**, de las cuales **31 salen de un solo hilo** con respuesta intercalada cuyos
+mensajes anteriores nunca llegaron como correo propio a la etiqueta.
+
+**Lo que NO hay que hacer:** promover con el contenido adivinado. Ahí vive la misatribución, que en
+un corpus probatorio es peor que perder texto (un hueco se ve; una atribución falsa no).
+
+**Propuesta (opción B de tres barajadas).** Un fichero hermano por portador,
+`mensajes/<atom>.historial.md`, con el historial citado **verbatim** y una cabecera que declare que
+**nada de ahí está atribuido**. Los atoms se quedan **congelados** (no se reescribe ninguna ficha, no
+se rompe la byte-identidad de Capa A ni la comparación con los `_entregas/` sellados) y tanto el
+letrado como un LLM tienen el hilo al lado de la ficha. Descartada la opción A (una sección dentro
+del atom) precisamente porque reescribe todos los `.md` existentes.
+
+**Disparador de promoción:** un caso donde el 9 % perdido caiga sobre prueba nuclear, o decisión de
+Nikolai. **Coste:** ~2 h con tests. Emparentado con `#106` (sin hilo no basta con tener el texto) y
+con `#108`.
+
+## 106. Los mensajes están, la conversación no: falta hilo reconstruible desde el MD
+
+**Anotado 2026-07-29**, mismo banco de pruebas que `#105`. Es la queja de lectura real, y es
+distinta de perder contenido.
+
+Abres la ficha de un correo y ves **solo su mensaje**. Los otros cuatro de la cadena existen como
+ficheros hermanos, pero **nada dice que sean la misma conversación**: no hay «esto continúa en
+MSG-00008». Para leer un hilo hay que saltar entre ficheros adivinando el orden, y eso *se siente*
+como contenido perdido cuando lo que hay es contenido **inconexo**.
+
+**El obstáculo técnico, ya conocido:** los atoms de Capa B llevan el campo `hilo` **vacío**
+(`model.py`; `construir_b` no lo fija), así que agrupar por `hilo` a ciegas fabricaría pseudo-hilos
+juntando conversaciones sin relación — misatribución de contexto. Está anotado como requisito de
+entrada 2 de `#86`.
+
+**Vías a valorar cuando se promueva:** derivar el hilo en el consumidor vía
+`procedencia[].citado_en` (el portador), que es la vía que `#86` ya apunta y no toca el motor; o
+threading riguroso por `References`/`In-Reply-To` (`#88`), más caro y con su propio coste en Modo 3.
+
+**Disparador:** que alguien tenga que reconstruir un hilo a mano para un escrito. **Coste:** depende
+de la vía; la del consumidor es la barata.
+
+## 107. Test vacuo: `test_seg_html_token_conservacion_no_inventa` no comprueba la conservación
+
+**Detectado 2026-07-29** por la revisión adversarial de Codex sobre la spec del falso positivo de
+`_sandwich`.
+
+`tests/test_email_atomize_inline.py:182` solo comprueba que un atributo sea de tipo `bool`. **Pasaría
+aunque se eliminara por completo la conservación de tokens**, que es la invariante que dice que el
+segmentador no pierde ni inventa texto al repartir el cuerpo entre autor y ancestros.
+
+Es el **cuarto** test vacuo de la misma familia encontrado en una sola sesión (los otros tres: un
+mock que comparaba contra `"<b@x>"` cuando los ids se guardan sin ángulos, un fixture de Layer B que
+no acuñaba ningún mensaje B, y un test de fallo permanente que pasaba aunque no se publicara nada).
+El patrón merece atención por sí mismo: en este motor los tests de invariantes se escriben mirando la
+forma del dato y no el comportamiento.
+
+**Qué hacer:** que el test compare el multiset de tokens del cuerpo de entrada contra la unión de los
+tokens repartidos, y falle si difieren. **Coste:** ~30 min. **Disparador:** la próxima vez que se
+toque `segmentar_html` (p. ej. al implementar la spec de `#98`-sándwich).
+
+## 108. Requisito: que el árbol atomizado sea contexto suficiente para un LLM
+
+**Formulado por Nikolai el 2026-07-29**, tras leer las fichas de un hilo real y no encontrar la
+cadena: *«que el LLM no tenga que leer los `.eml` y pueda leer los `.md` —reenviados, embebidos y
+adjuntos incluidos— rápido, robusto y sin perder cadenas enteras.»*
+
+Es un **requisito paraguas**, no una tarea: sirve para no perder de vista para qué existe el árbol
+cuando se prioricen las piezas. Estado de cada una, medido:
+
+| Pieza | Estado |
+|---|---|
+| Mensajes reenviados y embebidos como ficha propia | **Hecho** cuando hay cabecera atribuible (verificado en vivo: en la muestra los reenviados sí tenían ficha, y la Capa B promovió 7 citas más) |
+| Historial citado no atribuible, disponible sin atribuir | Falta → **`#107`** |
+| Hilo reconstruible desde el `.md` | Falta → **`#107`** |
+| Texto/OCR de los adjuntos en `.md` | Falta → **`#87`**. Hoy la ficha de cada adjunto dice literalmente `(pendiente; OCR en fase 2)`; en la muestra eran 15 adjuntos únicos (8 `.zip`, 2 `.pdf`, 1 `.ics`) sin una línea de su contenido en la carpeta |
+| Falsos positivos que bloquean la promoción | Spec escrita → `docs/superpowers/specs/2026-07-29-sandwich-firma-falso-positivo-design.md` |
+
+**Regla que se deriva de esto y conviene no olvidar:** «que el LLM lo lea» no se resuelve metiendo
+más texto en las fichas. Metió 79 % de caracteres que eran 90 % redundancia. Lo que falta es
+**estructura** (hilo), **contenido inaccesible** (adjuntos) y **cerrar los falsos positivos** que
+impiden que un mensaje llegue a ser ficha.
