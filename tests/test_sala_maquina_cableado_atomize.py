@@ -121,106 +121,6 @@ def test_noop_sin_eml_y_sin_arbol_previo(caso, monkeypatch):
     assert _evento(eventos) == []                            # no se emite evento
 
 
-def test_noop_con_discrepancia_emite_evento_noop(caso, monkeypatch, capsys):
-    # Contrapartida de `test_noop_sin_eml_y_sin_arbol_previo`: sin árbol previo Y sin
-    # .eml de nivel superior el motor sigue sin llamarse (no se siembran carpetas
-    # vacías), pero si hay discrepancia (MEJORAS #98) el rastro no puede quedarse solo
-    # en stderr: es justo el escenario típico del flag (todos los .eml con adjunto).
-    case_dir, eventos = caso
-    src = case_dir / "00_Input" / "03_Email"
-    sub = src / "mensaje_con_adjunto"
-    sub.mkdir()
-    (sub / "a.eml").write_bytes(_eml("<a@x>"))
-    (sub / "b.eml").write_bytes(_eml("<b@x>"))
-    llamadas: list[int] = []
-
-    def fake_atomize(*a, **k):
-        llamadas.append(1)
-        return AtomizeReport()
-
-    monkeypatch.setattr(cli.atomize, "atomize_dir", fake_atomize)
-
-    cli.apply("W-TEST99")
-
-    assert llamadas == []                                       # el motor no se invoca
-    assert not (case_dir / "01_Procesado" / "Emails").exists()   # no se siembran carpetas
-    err = capsys.readouterr().err
-    assert "2 .eml viven en subcarpetas" in err
-    assert _evento(eventos) == [{
-        "status": "noop", "eml_nivel_superior": 0, "eml_totales": 2,
-    }]
-
-
-def test_arbol_previo_con_discrepancia_total_no_llama_al_motor(caso, monkeypatch, capsys):
-    # El defecto real: con arbol YA existente y `n_top == 0` (todos los .eml en
-    # subcarpeta), la guarda vieja (`n_top == 0 and not out.exists()`) no cubria este
-    # caso porque `out.exists()` es True -> caia al motor con CERO avistamientos, que
-    # podaria `mensajes/*.md` (ninguno esperado), vaciaria indices/_revision/vistas, y
-    # el evento diria "ok, mensajes: 0" como si el letrado hubiera retirado el correo.
-    case_dir, eventos = caso
-    mensajes_dir = case_dir / "01_Procesado" / "Emails" / "mensajes"
-    mensajes_dir.mkdir(parents=True)
-    dummy = mensajes_dir / "dummy.md"
-    dummy.write_text("contenido vivo", encoding="utf-8")
-    src = case_dir / "00_Input" / "03_Email"
-    sub = src / "mensaje_con_adjunto"
-    sub.mkdir()
-    (sub / "a.eml").write_bytes(_eml("<a@x>"))
-    (sub / "b.eml").write_bytes(_eml("<b@x>"))
-    llamadas: list[int] = []
-
-    def fake_atomize(*a, **k):
-        llamadas.append(1)
-        return AtomizeReport()
-
-    monkeypatch.setattr(cli.atomize, "atomize_dir", fake_atomize)
-
-    cli.apply("W-TEST99")
-
-    assert llamadas == []                        # el motor NO se invoca: destruiria el arbol
-    assert dummy.exists()                         # el .md vivo sigue ahi, no podado
-    assert dummy.read_text(encoding="utf-8") == "contenido vivo"
-    err = capsys.readouterr().err
-    assert "2 .eml viven en subcarpetas" in err
-    assert _evento(eventos) == [{
-        "status": "noop", "eml_nivel_superior": 0, "eml_totales": 2,
-    }]
-
-
-def test_arbol_previo_con_discrepancia_parcial_no_llama_al_motor(caso, monkeypatch, capsys):
-    # Visibilidad PARCIAL (n_top == 1, n_rec == 3): sin el fix, el motor se llamaria
-    # viendo solo 1 de 3 mensajes y podaria los .md de los otros 2, cuyo .eml fuente es
-    # invisible. La regla es "ve TODO o no reconcilia", no solo "ve cero".
-    case_dir, eventos = caso
-    mensajes_dir = case_dir / "01_Procesado" / "Emails" / "mensajes"
-    mensajes_dir.mkdir(parents=True)
-    dummy = mensajes_dir / "dummy.md"
-    dummy.write_text("contenido vivo", encoding="utf-8")
-    src = case_dir / "00_Input" / "03_Email"
-    (src / "a.eml").write_bytes(_eml("<a@x>"))
-    sub = src / "mensaje_con_adjunto"
-    sub.mkdir()
-    (sub / "b.eml").write_bytes(_eml("<b@x>"))
-    (sub / "c.eml").write_bytes(_eml("<c@x>"))
-    llamadas: list[int] = []
-
-    def fake_atomize(*a, **k):
-        llamadas.append(1)
-        return AtomizeReport()
-
-    monkeypatch.setattr(cli.atomize, "atomize_dir", fake_atomize)
-
-    cli.apply("W-TEST99")
-
-    assert llamadas == []                        # tampoco se llama: visibilidad parcial
-    assert dummy.exists()
-    err = capsys.readouterr().err
-    assert "2 .eml viven en subcarpetas" in err
-    assert _evento(eventos) == [{
-        "status": "noop", "eml_nivel_superior": 1, "eml_totales": 3,
-    }]
-
-
 def test_con_arbol_previo_y_cero_eml_si_se_atomiza(caso, monkeypatch):
     # La retirada de correos (remedio real de W-02VUDR contra la contaminación) debe
     # reflejarse: con árbol previo se llama al motor aunque no quede un solo .eml.
@@ -244,7 +144,8 @@ def test_con_arbol_previo_y_cero_eml_si_se_atomiza(caso, monkeypatch):
     assert out == case_dir / "01_Procesado" / "Emails"
     assert cd == case_dir            # case_dir explícito: no se infiere de out.parent.parent
     assert _evento(eventos)[0]["status"] == "ok"          # reconciliación declarada
-    assert _evento(eventos)[0]["eml_nivel_superior"] == 0
+    assert _evento(eventos)[0]["eml_en_disco"] == 0
+    assert _evento(eventos)[0]["details_schema"] == 2
 
 
 def test_el_caso_se_resuelve_una_sola_vez(caso, monkeypatch):
@@ -295,11 +196,10 @@ def test_fallo_del_motor_no_aborta_el_ocr_y_emite_evento(caso, monkeypatch, caps
     cli.apply("W-TEST99")
 
     assert ejecutado == [1]                      # el OCR corre igual (fallo blando)
-    # Igualdad EXACTA: un payload de fallo sin los dos conteos de .eml también sería un
-    # rastro mutilado, y con `assert status == "fallo"` pasaría igual.
+    # Igualdad EXACTA: la rama de excepción no fabrica contadores — si el motor no
+    # terminó, el payload no finge saber cuántos mensajes hay ni si publicó.
     assert _evento(eventos)[0] == {
-        "status": "fallo",
-        "eml_nivel_superior": 1, "eml_totales": 1,
+        "details_schema": 2, "status": "fallo", "eml_en_disco": 1,
         "errores": ["RuntimeError: motor roto"],
     }
     err = capsys.readouterr().err
@@ -310,18 +210,20 @@ def test_status_parcial_cuando_el_motor_termina_con_errores(caso, monkeypatch):
     case_dir, eventos = caso
     (case_dir / "00_Input" / "03_Email" / "a.eml").write_bytes(_eml("<a@x>"))
     monkeypatch.setattr(cli.atomize, "atomize_dir", lambda *a, **k: AtomizeReport(
+        eml_enumerados=1, eml_leidos=1, publicado=True, poda_omitida=True,
         mensajes=2, errores=["<x@y>: cabecera ilegible"]))
 
     cli.apply("W-TEST99")
 
     # Igualdad exacta también aquí: el motor TERMINÓ, así que el payload debe llevar
-    # todos los contadores del report — no solo `status` y `errores`.
+    # todos los contadores del schema 2. `poda_omitida=True` es lo coherente con que el
+    # motor terminase con errores.
     assert _evento(eventos)[0] == {
-        "status": "parcial",
-        "eml_nivel_superior": 1, "eml_totales": 1,
+        "details_schema": 2, "status": "parcial",
+        "eml_en_disco": 1, "eml_leidos": 1, "publicado": True, "poda_omitida": True,
         "mensajes": 2, "adjuntos_unicos": 0, "reconstruidos_b": 0,
         "citas_a_revision": 0, "upgrades": 0,
-        "notas": [], "errores": ["<x@y>: cabecera ilegible"],
+        "notas": [], "errores": ["<x@y>: cabecera ilegible"], "fallos_lectura": [],
     }
 
 
@@ -330,7 +232,8 @@ def test_payload_atado_a_los_campos_reales_del_report(caso, monkeypatch, capsys)
     # escrito en el payload rompe este test. Igualdad exacta del dict a propósito.
     case_dir, eventos = caso
     (case_dir / "00_Input" / "03_Email" / "a.eml").write_bytes(_eml("<a@x>"))
-    report = AtomizeReport(mensajes=413, adjuntos_unicos=162, reconstruidos_b=136,
+    report = AtomizeReport(eml_enumerados=1, eml_leidos=1, publicado=True, poda_omitida=False,
+                           mensajes=413, adjuntos_unicos=162, reconstruidos_b=136,
                            citas_a_revision=43, upgrades=8,
                            notas=["W-code ajeno en 1 mensaje: W-00000"])
     monkeypatch.setattr(cli.atomize, "atomize_dir", lambda *a, **k: report)
@@ -338,14 +241,33 @@ def test_payload_atado_a_los_campos_reales_del_report(caso, monkeypatch, capsys)
     cli.apply("W-TEST99")
 
     assert _evento(eventos)[0] == {
-        "status": "ok",
-        "eml_nivel_superior": 1, "eml_totales": 1,
+        "details_schema": 2, "status": "ok",
+        "eml_en_disco": 1, "eml_leidos": 1, "publicado": True, "poda_omitida": False,
         "mensajes": 413, "adjuntos_unicos": 162, "reconstruidos_b": 136,
         "citas_a_revision": 43, "upgrades": 8,
-        "notas": ["W-code ajeno en 1 mensaje: W-00000"], "errores": [],
+        "notas": ["W-code ajeno en 1 mensaje: W-00000"], "errores": [], "fallos_lectura": [],
     }
     # objetivo 3 de la spec: la contaminación cruzada se ve ANTES del OCR
     assert "W-code ajeno" in capsys.readouterr().err
+
+
+def test_evento_declara_que_no_publico(caso, monkeypatch):
+    # Rama transitoria (T4): el motor TERMINÓ pero no publicó nada (Drive sin
+    # hidratar). `report.errores` está vacío, así que `status` no puede derivarse de
+    # "parcial si hay errores": sin este caso, un run que publicó CERO se anunciaría
+    # como "ok, mensajes: 0" — peor que un error en un corpus probatorio.
+    case_dir, eventos = caso
+    (case_dir / "00_Input" / "03_Email" / "a.eml").write_bytes(_eml("<a@x>"))
+    monkeypatch.setattr(cli.atomize, "atomize_dir", lambda *a, **k: AtomizeReport(
+        eml_enumerados=1, eml_leidos=0, publicado=False,
+        fallos_lectura=["a.eml: no hidratado"],
+        notas=["ATOMIZACIÓN NO PUBLICADA: 1 .eml no se pudieron leer…"]))
+
+    cli.apply("W-TEST99")
+
+    d = _evento(eventos)[0]
+    assert d["status"] == "fallo" and d["publicado"] is False
+    assert d["fallos_lectura"] == ["a.eml: no hidratado"]
 
 
 def test_un_fallo_de_log_no_aborta_el_ocr(caso, monkeypatch, capsys):
@@ -375,35 +297,6 @@ def test_un_fallo_de_log_no_aborta_el_ocr(caso, monkeypatch, capsys):
     assert "no se pudo registrar el evento atomizado_email" in capsys.readouterr().err
 
 
-def test_aviso_cuando_hay_eml_en_subcarpetas(caso, monkeypatch, capsys):
-    case_dir, eventos = caso
-    src = case_dir / "00_Input" / "03_Email"
-    (src / "a.eml").write_bytes(_eml("<a@x>"))
-    (src / "mensaje_con_adjunto").mkdir()
-    (src / "mensaje_con_adjunto" / "b.eml").write_bytes(_eml("<b@x>"))
-    monkeypatch.setattr(cli.atomize, "atomize_dir", lambda *a, **k: AtomizeReport(mensajes=1))
-
-    cli.apply("W-TEST99")
-
-    err = capsys.readouterr().err
-    assert "1 .eml viven en subcarpetas" in err
-    assert "MEJORAS #98" in err
-    d = _evento(eventos)[0]
-    assert (d["eml_nivel_superior"], d["eml_totales"]) == (1, 2)
-
-
-def test_sin_discrepancia_no_hay_aviso(caso, monkeypatch, capsys):
-    # Prueba NEGATIVA: un aviso que salte siempre es tan inútil como no tenerlo, y el
-    # test positivo de arriba pasaría igual.
-    case_dir, _ = caso
-    (case_dir / "00_Input" / "03_Email" / "a.eml").write_bytes(_eml("<a@x>"))
-    monkeypatch.setattr(cli.atomize, "atomize_dir", lambda *a, **k: AtomizeReport(mensajes=1))
-
-    cli.apply("W-TEST99")
-
-    assert "viven en subcarpetas" not in capsys.readouterr().err
-
-
 def test_plan_no_atomiza_pero_informa_y_avisa(caso, monkeypatch, capsys):
     case_dir, eventos = caso
     src = case_dir / "00_Input" / "03_Email"
@@ -420,8 +313,8 @@ def test_plan_no_atomiza_pero_informa_y_avisa(caso, monkeypatch, capsys):
     cli.plan("W-TEST99")
 
     cap = capsys.readouterr()
-    assert "correo: 2 .eml (se atomizarán en apply)" in cap.out
-    assert "1 .eml viven en subcarpetas" in cap.err
+    # Con el conteo recursivo la subcarpeta cuenta igual: 2 arriba + 1 en `sub/` = 3.
+    assert "correo: 3 .eml (se atomizarán en apply)" in cap.out
     assert _evento(eventos) == []
     # Prohibir `atomize_dir` no basta: `plan` tampoco debe escribir en el árbol por su
     # cuenta. Es preview.
@@ -469,26 +362,23 @@ def test_reforzar_no_atomiza(caso, monkeypatch, capsys):
 
 # --- Grupo 2: contra el MOTOR REAL -------------------------------------------
 
-def test_motor_real_solo_ve_el_nivel_superior(caso, monkeypatch, capsys):
-    # El .eml de la subcarpeta NO se atomiza (glob, no rglob): el evento lo declara
-    # con dos conteos distintos y el aviso lo grita. Si algún día el motor pasa a
-    # enumerar recursivamente (MEJORAS #98), este test lo señalará.
+def test_motor_real_ve_las_subcarpetas(caso, monkeypatch, capsys):
+    # El arreglo de #98 contra el motor REAL: el .eml de la subcarpeta ya se atomiza.
     case_dir, eventos = caso
     src = case_dir / "00_Input" / "03_Email"
     (src / "a.eml").write_bytes(_eml("<a@x>", "Visible"))
-    (src / "mensaje_con_adjunto").mkdir()
-    (src / "mensaje_con_adjunto" / "b.eml").write_bytes(_eml("<b@x>", "Invisible"))
+    (src / "arras").mkdir()
+    (src / "arras" / "b.eml").write_bytes(_eml("<b@x>", "AntesInvisible"))
 
     cli.apply("W-TEST99")
 
     d = _evento(eventos)[0]
-    assert d["status"] == "ok"
-    assert (d["eml_nivel_superior"], d["eml_totales"]) == (1, 2)
-    assert d["mensajes"] == 1                 # el motor solo atomizó el visible
+    assert d["status"] == "ok" and d["publicado"] is True
+    assert (d["eml_en_disco"], d["eml_leidos"]) == (2, 2)
+    assert d["mensajes"] == 2
     mds = list((case_dir / "01_Procesado" / "Emails" / "mensajes").glob("*.md"))
-    assert len(mds) == 1
-    assert "Invisible" not in mds[0].read_text(encoding="utf-8")
-    assert "1 .eml viven en subcarpetas" in capsys.readouterr().err
+    assert len(mds) == 2
+    assert any("AntesInvisible" in p.read_text(encoding="utf-8") for p in mds)
 
 
 def test_transicion_a_cero_fuentes_poda_mensajes_pero_no_adjuntos(caso, monkeypatch):

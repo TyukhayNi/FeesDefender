@@ -32,14 +32,6 @@ _BANNER_FALLO_ATOMIZE = (
     f"de citar MSG-ids nuevos.\n{_SEP}"
 )
 
-_AVISO_EML_INVISIBLE = (
-    f"\n{_SEP}\n"
-    "AVISO: {n} .eml viven en subcarpetas y el atomizador NO los verá (MEJORAS #98).\n"
-    "Causa típica: exportación con --extraer-adjuntos. Son justo los mensajes con\n"
-    f"adjuntos. `apply` deja los dos conteos en el evento `atomizado_email`.\n{_SEP}"
-)
-
-
 def _registrar_atomizado(case_id: str, details: dict) -> None:
     """Emite `atomizado_email`; un fallo de log nunca aborta el OCR."""
     try:
@@ -162,32 +154,15 @@ def _atomizar_correo(case_id: str, case_dir: Path) -> None:
     """
     fuentes = atomize.emails_src_dirs_de_caso(case_dir)
     out = atomize.emails_out_dir_de_caso(case_dir)
-    n_top, n_rec = atomize.contar_eml(fuentes)
-    if n_rec > n_top:
-        # No arregla la ceguera (es motor, MEJORAS #98): la vuelve ruidosa. Sin esto,
-        # el cableado propagaría el agujero con apariencia de éxito.
-        typer.echo(_AVISO_EML_INVISIBLE.format(n=n_rec - n_top), err=True)
+    n = atomize.contar_eml(fuentes)
 
-    # El motor solo puede reconciliar un árbol existente si VE TODO. Con discrepancia
-    # (MEJORAS #98) su poda de idempotencia borraría los `mensajes/*.md` cuyo `.eml`
-    # fuente es invisible —y vaciaría corpus/índices/_revision/vistas— sin poder
-    # regenerarlos: los `.eml` siguen invisibles. "Cero visibles" NO significa "el
-    # letrado retiró el correo". Se declara y se sale sin tocar el árbol.
-    if n_rec > n_top and out.exists():
-        _registrar_atomizado(case_id, {
-            "status": "noop", "eml_nivel_superior": n_top, "eml_totales": n_rec})
+    # No-op estricto: sin correo Y sin árbol previo no se llama al motor — `atomize_dir`
+    # crearía `mensajes/`/`adjuntos/` y sembraría carpetas vacías en todo caso sin
+    # correo. Con árbol previo SÍ se llama, para que la retirada genuina se refleje.
+    if n == 0 and not out.exists():
         return
 
-    # Sin correo Y sin árbol previo no se llama al motor: `atomize_dir` hace mkdir de
-    # mensajes/ y adjuntos/ incondicionalmente y sembraría carpetas vacías en todo caso
-    # sin correo. Si hay discrepancia, el rastro no puede quedarse solo en el stderr.
-    if n_top == 0 and not out.exists():
-        if n_rec > n_top:
-            _registrar_atomizado(case_id, {
-                "status": "noop", "eml_nivel_superior": n_top, "eml_totales": n_rec})
-        return
-
-    details: dict[str, object] = {"eml_nivel_superior": n_top, "eml_totales": n_rec}
+    details: dict[str, object] = {"details_schema": 2, "eml_en_disco": n}
     try:
         report = atomize.atomize_dir(fuentes, out, case_dir=case_dir)
     except Exception as exc:  # noqa: BLE001 — el OCR no depende de la atomización
@@ -199,8 +174,12 @@ def _atomizar_correo(case_id: str, case_dir: Path) -> None:
         details["errores"] = [f"{type(exc).__name__}: {exc}"]
         typer.echo(_BANNER_FALLO_ATOMIZE.format(tipo=type(exc).__name__, exc=exc), err=True)
     else:
-        details["status"] = "parcial" if report.errores else "ok"
+        details["status"] = ("fallo" if not report.publicado
+                             else "parcial" if report.errores else "ok")
         details.update({
+            "eml_leidos": report.eml_leidos,
+            "publicado": report.publicado,
+            "poda_omitida": report.poda_omitida,
             "mensajes": report.mensajes,
             "adjuntos_unicos": report.adjuntos_unicos,
             "reconstruidos_b": report.reconstruidos_b,
@@ -208,6 +187,7 @@ def _atomizar_correo(case_id: str, case_dir: Path) -> None:
             "upgrades": report.upgrades,
             "notas": list(report.notas),
             "errores": list(report.errores),
+            "fallos_lectura": list(report.fallos_lectura),
         })
         typer.echo(f"Correo atomizado ({details['status']}): {report.resumen()}")
         for nota in report.notas:
@@ -235,11 +215,9 @@ def plan(case_id: str):
 
     # Preview del cableado: `plan` NO atomiza (es preview), solo informa de lo que
     # `apply` atomizará, con el MISMO contador que usa `apply` (spec §4.7).
-    n_top, n_rec = atomize.contar_eml(atomize.emails_src_dirs_de_caso(case_dir))
-    if n_top:
-        typer.echo(f"  correo: {n_top} .eml (se atomizarán en apply)")
-    if n_rec > n_top:
-        typer.echo(_AVISO_EML_INVISIBLE.format(n=n_rec - n_top), err=True)
+    n = atomize.contar_eml(atomize.emails_src_dirs_de_caso(case_dir))
+    if n:
+        typer.echo(f"  correo: {n} .eml (se atomizarán en apply)")
 
     # Pre-detección de bundles (Preview del split): informa de los PDFs multi-documento
     # y deja su manifiesto de segmentación propuesto (editable) para que el letrado lo

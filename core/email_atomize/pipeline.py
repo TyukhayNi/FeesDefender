@@ -347,30 +347,16 @@ def emails_out_dir_de_caso(case_dir: Path | str) -> Path:
     return Path(case_dir) / "01_Procesado" / "Emails"
 
 
-def contar_eml(fuentes: Iterable[Path | str]) -> tuple[int, int]:
-    """``(n_top, n_rec)``: los .eml que el motor VERÁ y los que realmente HAY.
+def contar_eml(fuentes: Iterable[Path | str]) -> int:
+    """Cuántos `.eml` verá el motor, con SU MISMO criterio (recursivo).
 
-    ``n_top`` cuenta el mismo subconjunto que enumeraría el motor (``glob("*.eml")``,
-    no recursivo — ``extract.iter_avistamientos``): los que cuelgan directamente de la
-    base, sin subcarpeta. Es el conteo autoritativo para decidir no-op y para el
-    evento. ``n_rec`` (recursivo, vía ``rglob``) cuenta TODOS, y solo sirve para
-    delatar la discrepancia de `MEJORAS #98`: con ``--extraer-adjuntos``, el .eml de
-    un mensaje con adjuntos baja a una subcarpeta y desaparece del atomizador sin
-    error. ``n_rec >= n_top`` siempre. La ceguera a ``.EML`` en mayúsculas es la misma
-    que la del motor, a propósito: los dos conteos han de medir lo mismo. Una sola
-    pasada por fuente (``rglob``); ``n_top`` se deriva del mismo recorrido comparando
-    el padre de cada hallazgo con la base, sin recorrer dos veces el árbol.
+    Reutiliza `extract.enumerar_rutas_eml` en vez de reimplementar el recorrido: así el
+    conteo del CLI y la enumeración del motor no pueden derivar (era el defecto que
+    `MEJORAS #98` volvió visible). Solo sirve para decidir el no-op del cableado: «¿hay
+    correo?». La discrepancia entre lo que hay y lo que se pudo leer la declara el motor
+    en `eml_enumerados`/`eml_leidos`, no este conteo.
     """
-    n_top = n_rec = 0
-    for f in fuentes:
-        base = Path(f)
-        if not base.is_dir():
-            continue
-        for p in base.rglob("*.eml"):
-            n_rec += 1
-            if p.parent == base:
-                n_top += 1
-    return n_top, n_rec
+    return sum(len(E.enumerar_rutas_eml(f)) for f in fuentes if Path(f).is_dir())
 
 
 def emails_src_dirs(case_id: str) -> list[Path]:

@@ -97,16 +97,13 @@ def test_atomize_dir_acepta_varias_fuentes(tmp_path):
 
 # --- Derivadores de ruta y conteo (cableado, spec §4.1/§4.6) ------------------
 
-def test_contar_eml_distingue_nivel_superior_de_recursivo(tmp_path):
+def test_contar_eml_cuenta_tambien_las_subcarpetas(tmp_path):
     src = tmp_path / "2026-07-28_email_01"
-    (src / "mensaje_con_adjunto").mkdir(parents=True)
+    (src / "arras").mkdir(parents=True)
     (src / "a.eml").write_bytes(_msg("<a@x>", "Uno"))
-    (src / "b.eml").write_bytes(_msg("<b@x>", "Dos"))
-    # El layout que deja `--extraer-adjuntos`: el .eml baja a una subcarpeta y el
-    # motor (glob, no rglob) no lo verá — MEJORAS #98.
-    (src / "mensaje_con_adjunto" / "c.eml").write_bytes(_msg("<c@x>", "Tres"))
+    (src / "arras" / "b.eml").write_bytes(_msg("<b@x>", "Dos"))
 
-    assert P.contar_eml([src]) == (2, 3)
+    assert P.contar_eml([src]) == 2
 
 
 def test_contar_eml_suma_fuentes_y_tolera_inexistentes(tmp_path):
@@ -117,8 +114,8 @@ def test_contar_eml_suma_fuentes_y_tolera_inexistentes(tmp_path):
     (lote / "a.eml").write_bytes(_msg("<a@x>", "Uno"))
     (legacy / "b.eml").write_bytes(_msg("<b@x>", "Dos"))
 
-    assert P.contar_eml([lote, legacy, tmp_path / "no_existe"]) == (2, 2)
-    assert P.contar_eml([]) == (0, 0)
+    assert P.contar_eml([lote, legacy, tmp_path / "no_existe"]) == 2
+    assert P.contar_eml([]) == 0
 
 
 def test_emails_src_dirs_de_caso_no_resuelve_el_caso(tmp_path, monkeypatch):
