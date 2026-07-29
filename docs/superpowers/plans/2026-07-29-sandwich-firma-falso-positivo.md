@@ -25,7 +25,8 @@ veredicto, `Segmentacion` lo transporta en un contador y `reconstruir` deja un p
 
 La SPEC §2.2 y §5 afirman que la regla arregla **5 de los 7** portadores vetados de la muestra de
 Gmail. **Medido el 2026-07-29 aplicando la regla propuesta al corpus real** (`_PRUEBA_98_VaRS3`, 29
-`.eml`), con el parser real y el predicado de firma sobre `class`/`id`:
+`.eml`) con una **subclase de `_QuoteHTMLParser`** —hereda el parser del repo y usa su `_html_part`,
+con los tres métodos que propone la Tarea 2— y el predicado de firma sobre `class`/`id`:
 
 | | SPEC rev. 2 | Medido |
 |---|---|---|
@@ -48,7 +49,18 @@ La cifra es **insensible al conjunto de marcadores**: `("gmail_signature",)`,
 **Lo que esto NO cambia:** que la regla no puede levantar un veto correcto — los 4 casos correctos
 siguen vetados, medido. Lo que cambia es el beneficio: **3 portadores desbloqueados, no 5**, y la
 expectativa de la verificación en vivo (§8 de la SPEC habla de «5 segmentan, ~2 producen ficha»; el
-techo real es 3). Ese número se re-mide en la Tarea 5 y la errata se aplica a la SPEC en la Tarea 6.
+techo real es 3).
+
+> **La errata NO se escribe en la SPEC hasta confirmarla con el código integrado** (Tarea 5, paso
+> 1-bis). Las divergencias que la revisión adversarial temía no aplican —el script subclasea el
+> parser real—, pero la cifra va a una SPEC ya adjudicada y la confirmación cuesta una corrida.
+
+**Segunda medición de la misma ronda, y es la que obligó a añadir un guard:** la firma queda **sin
+cerrar** al final del documento en **20 de 271** correos reales (5 de 24 en la prueba de Gmail, 15 de
+247 en W-02VND1). Sin el guard fail-closed de la Tarea 2 (paso 7), en esos casos `_sigdepth` no vuelve
+a 0, **todo** el texto de autor posterior se marca como firma y la exclusión **levanta un veto
+correcto**. En estos dos corpus no llegaba a disparar —el defecto estaba armado y callado, igual que
+`#98`— y el guard **no cuesta ni un portador**: 3 desbloqueados con guard y sin guard.
 
 **Forma real del caso arreglable, medida** (es la que reproduce el fixture de la Tarea 1):
 
@@ -153,8 +165,9 @@ La salida del motor es determinista: no hay `datetime`/`now()` en `render.py`, `
 
 **Interfaces:**
 - Consumes: `core.email_atomize.pipeline.atomize_dir(src_dir, out_dir) -> AtomizeReport` (ya existe).
-- Produces: los helpers `_eml`, `_corpus`, `_hashes_capa_a` y las constantes `_F3`, `_F1`,
-  `_CAB_ANA`, `_CAB_BEA`, que reutilizan las Tareas 3 y 4.
+- Produces: los helpers `_eml`, `_corpus`, `_frontmatter(txt) -> str`, `_capa(txt) -> str`,
+  `_hashes_capa_a(out) -> dict[str, str]` y las constantes `_F3`, `_F1`, `_CAB_ANA`, `_CAB_BEA`,
+  `_HTML_FIRMA_ENTRE_CITAS`, `_HTML_INTERCALADA_REAL`, que reutilizan las Tareas 3 y 4.
 
 - [ ] **Step 1: Escribir el test con el golden a cero (fallará y enseñará los hashes reales)**
 
@@ -164,6 +177,7 @@ Crear `tests/test_email_atomize_firma_veto.py` con este contenido exacto:
 from __future__ import annotations
 
 import hashlib
+import json
 from email.message import EmailMessage
 from pathlib import Path
 
@@ -206,7 +220,14 @@ _HTML_INTERCALADA_REAL = ('<div>Respondo abajo</div><blockquote>cita uno</blockq
 
 def _eml(mid: str, subject: str, *, fecha: str, html: str | None = None,
          texto: str = "cuerpo del portador", de: str = "car@example.invalid") -> bytes:
-    """Un .eml minimo y determinista. Con *html*, multipart/alternative texto+HTML."""
+    """Un .eml minimo y DETERMINISTA. Con *html*, multipart/alternative texto+HTML.
+
+    `set_boundary` no es cosmetico: sin el, la stdlib genera una frontera MIME ALEATORIA en
+    cada `as_bytes()`, el sha256 del raw cambia, y ese sha entra en el frontmatter de la ficha
+    (`render.py:46`), en `corpus.jsonl` y en `_registro.json` -> el golden seria inestable y
+    la suite fallaria en falso. Medido: 4 serializaciones, 4 sha distintos sin esta linea, 1
+    con ella.
+    """
     m = EmailMessage()
     m["Message-ID"] = mid
     m["Subject"] = subject
@@ -216,6 +237,7 @@ def _eml(mid: str, subject: str, *, fecha: str, html: str | None = None,
     m.set_content(texto)
     if html is not None:
         m.add_alternative(f"<html><body>{html}</body></html>", subtype="html")
+        m.set_boundary(f"=====FRONTERA-FIJA-{subject.replace(' ', '-')}=====")
     return m.as_bytes()
 
 
@@ -232,12 +254,27 @@ def _corpus(src: Path) -> None:
              fecha="Sat, 5 Jul 2025 10:00:00 +0200", html=_HTML_FIRMA_ENTRE_CITAS))
 
 
+def _frontmatter(txt: str) -> str:
+    """El primer bloque `---` del .md. `render_md` concatena frontmatter y cuerpo, asi que
+    buscar `capa: A` en todo el documento clasificaria como A una ficha de Capa B que citara
+    un frontmatter en su cuerpo."""
+    partes = txt.split("---\n", 2)
+    return partes[1] if len(partes) > 2 else ""
+
+
+def _capa(txt: str) -> str:
+    for l in _frontmatter(txt).splitlines():
+        if l.startswith("capa:"):
+            return l.split(":", 1)[1].strip()
+    return ""
+
+
 def _hashes_capa_a(out: Path) -> dict[str, str]:
-    """{nombre del .md: sha256} de las fichas cuyo frontmatter dice `capa: A`."""
+    """{nombre del .md: sha256} de las fichas cuyo FRONTMATTER dice `capa: A`."""
     res: dict[str, str] = {}
     for p in sorted((out / "mensajes").glob("*.md")):
         txt = p.read_text(encoding="utf-8")
-        if "\ncapa: A\n" in txt:
+        if _capa(txt) == "A":
             res[p.name] = hashlib.sha256(txt.encode("utf-8")).hexdigest()
     return res
 
@@ -282,16 +319,28 @@ GOLDEN_CAPA_A: dict[str, str] = {
 }
 ```
 
-- [ ] **Step 4: Correr dos veces para confirmar que el golden es estable**
+- [ ] **Step 4: Confirmar que el golden es estable — dos ejes, no uno**
+
+Primero, que el `.eml` sea idéntico byte a byte entre construcciones (es el eje que falló en la
+revisión adversarial, y correr el test dos veces **no** lo habría distinguido de una ruta absoluta
+filtrada):
+
+```bash
+"C:/Users/tnm33/Dev/FeesDefender/.venv/Scripts/python.exe" -c "import hashlib,sys; sys.path.insert(0,'tests'); from test_email_atomize_firma_veto import _eml, _HTML_FIRMA_ENTRE_CITAS as H; print({hashlib.sha256(_eml('<c@example.invalid>','Firma entre citas',fecha='Sat, 5 Jul 2025 10:00:00 +0200',html=H)).hexdigest() for _ in range(4)})"
+```
+
+Esperado: un `set` de **un solo elemento**. Si salen 4, falta el `set_boundary` del paso 1.
+
+Después, el test dos veces seguidas:
 
 ```bash
 "C:/Users/tnm33/Dev/FeesDefender/.venv/Scripts/python.exe" -m pytest -q tests/test_email_atomize_firma_veto.py
 ```
 
-Ejecutar ese comando **dos veces seguidas**. Esperado: **PASS** las dos.
-Si la segunda falla, algo del output no es determinista (una ruta absoluta o un sello de tiempo
-filtrado al `.md`): **parar**, identificar el campo y excluirlo del hash documentando cuál y por qué.
-No relajar el test a «al menos una ficha».
+Esperado: **PASS** las dos. Si la segunda falla con el `.eml` ya estable, el no-determinismo está en
+el motor (una ruta absoluta, un orden de `dict`/`set`, un locale): **parar**, identificar el campo y
+documentarlo. **No** relajar el test a «al menos una ficha» ni excluir el `sha256` del hash — eso
+enmascararía justo lo que el golden vigila.
 
 - [ ] **Step 5: Commit**
 
@@ -324,7 +373,7 @@ git commit -m "test(email_atomize): golden de Capa A capturado ANTES del arreglo
   (`A S5 Q S3 Q S20 A3 Q3`).
 - Test 2 (**ya existe**, línea 175): que el arreglo desactive el detector en el caso ordinario.
 
-- [ ] **Step 1: Escribir los dos tests que fallan**
+- [ ] **Step 1: Escribir los tres tests (dos fallan hoy, uno es guarda verde previa)**
 
 Añadir en `tests/test_email_atomize_inline.py`, justo **después** de
 `test_seg_html_token_conservacion_no_inventa` (línea 184), este bloque:
@@ -365,6 +414,25 @@ def test_seg_html_autor_entre_firmas_mantiene_veto():
             '<blockquote>cita dos</blockquote>')
     s = I.segmentar_html(html)
     assert s.respuesta_intercalada is True and s.ancestros == []
+
+
+def test_seg_html_firma_sin_cerrar_no_levanta_el_veto():
+    """Contrato §6.8 (añadido por la revision adversarial, hallazgo B0). Un
+    `<div class="gmail_signature">` que NUNCA se cierra deja `_sigdepth > 0` para el resto del
+    documento y marca como firma TODO el texto de autor posterior: la exclusion levantaria un
+    veto CORRECTO, que es la unica direccion en la que esta regla no puede fallar.
+
+    Fail-closed: si la firma queda abierta, sus trozos vuelven a contar como autor. Medido: la
+    firma queda abierta en 20 de 271 correos reales (5 de 24 en la prueba de Gmail, 15 de 247
+    en W-02VND1) -- el defecto estaba ARMADO, solo que todavia no habia disparado."""
+    html = ('<blockquote>cita uno</blockquote>'
+            '<div class="gmail_signature">Un saludo'            # <-- nunca se cierra
+            '<div>Esto no lo aceptamos y es texto de autor real</div>'
+            '<blockquote>cita dos</blockquote>')
+    s = I.segmentar_html(html)
+    assert s.respuesta_intercalada is True and s.ancestros == []
+    assert s.motivo == "firma_sin_cerrar"   # y se DECLARA, no se veta en silencio
+    assert s.firma_excluida == 0
 ```
 
 - [ ] **Step 2: Correr los tests para verificar que fallan**
@@ -377,6 +445,10 @@ Esperado:
 - `test_seg_html_firma_entre_citas_no_es_intercalada` → **FAIL**, por
   `AttributeError: 'Segmentacion' object has no attribute 'firma_excluida'` o antes por
   `assert s.respuesta_intercalada is False` (hoy es `True`: es el defecto).
+- `test_seg_html_firma_sin_cerrar_no_levanta_el_veto` → **FAIL** por
+  `AttributeError`/`assert s.motivo == "firma_sin_cerrar"`. Hoy el veto está puesto por la razón
+  equivocada (todo veta), así que este test **no** vale como verde previo: solo prueba algo cuando
+  el guard existe.
 - `test_seg_html_autor_entre_firmas_mantiene_veto` → **PASS** ya hoy (hoy todo veta). Se escribe
   ahora porque su trabajo es **quedarse verde** después del cambio; escrito después, no probaría que
   el arreglo no lo rompió.
@@ -546,10 +618,41 @@ def _sandwich(seq: list[str], *, firma_como_autor: bool = False) -> bool:
     return False
 ```
 
-- [ ] **Step 7: Poblar `firma_excluida` en `segmentar_html`**
+- [ ] **Step 7: El guard fail-closed de la firma sin cerrar**
+
+En `segmentar_html`, sustituir las dos líneas del veto (767-768):
+
+```python
+    if _sandwich(p.seq):
+        return Segmentacion(autor=_html_a_texto(html), ancestros=[], respuesta_intercalada=True)
+```
+
+por:
+
+```python
+    # FAIL-CLOSED (hallazgo B0 de la revision adversarial, reproducido): si al cerrar el
+    # documento queda un contenedor de firma SIN CERRAR, `_sigdepth` nunca volvio a 0 y TODO el
+    # texto de autor posterior quedo marcado como firma. Excluirlo del veto levantaria un veto
+    # CORRECTO -- la unica direccion en la que esta regla NO puede fallar (spec §3). Cuando la
+    # firma no es fiable, sus trozos vuelven a contar como autor.
+    # `HTMLParser.close()` no sintetiza cierres ni lanza excepcion, asi que el fallback a texto
+    # plano de mas abajo no cubre este caso.
+    # Medido: la firma queda abierta en 20 de 271 correos reales (5 de 24 en la prueba de Gmail,
+    # 15 de 247 en W-02VND1) y el guard NO cuesta ni un portador desbloqueado: 3 con guard y 3
+    # sin guard. El defecto estaba armado y no habia disparado.
+    firma_fiable = p._sigdepth == 0
+    if _sandwich(p.seq, firma_como_autor=not firma_fiable):
+        # Se declara SOLO cuando el desbalance es lo que sostiene el veto; si no, seria ruido
+        # en el 7 % de correos que cierran con la firma abierta sin consecuencia.
+        mot = "" if firma_fiable or _sandwich(p.seq) else "firma_sin_cerrar"
+        return Segmentacion(autor=_html_a_texto(html), ancestros=[],
+                            respuesta_intercalada=True, motivo=mot)
+```
+
+- [ ] **Step 8: Poblar `firma_excluida` en `segmentar_html`**
 
 En `segmentar_html`, sustituir el bloque que va desde `autor = "\n".join(...)` hasta el `return`
-final (769-782) por:
+final por:
 
 ```python
     autor = "\n".join(t.strip() for t in p.author_parts).strip()
@@ -560,33 +663,36 @@ final (769-782) por:
         for s in p.segments
     ]
     # Traza (spec §5.1): SOLO cuando la exclusion de firma cambio el veredicto, no en cada correo
-    # con firma. Si la conservacion de tokens veta mas abajo, el resultado final no cambia y su
-    # `motivo` ya lo explica -> no se arrastra la traza a esa rama.
+    # con firma. Llegar aqui ya implica `firma_fiable`.
     firma_excluida = p.firma_trozos if _sandwich(p.seq, firma_como_autor=True) else 0
     # Conservación de tokens (DD §2.4): todo texto enrutado debe repartirse entre autor y
     # segmentos. Si diverge (bug de enrutado), NO segmentar: portador entero a revisión.
+    # `firma_excluida` SI se arrastra a esta rama: la exclusion cambio el veredicto de `_sandwich`
+    # aunque la conservacion vete despues por otra razon, y el puntero de `conservacion_tokens` no
+    # informa de ese cambio (hallazgo A de la revision adversarial, aceptado).
     repartidos = len(autor.split()) + sum(len(a.texto.split()) for a in ancestros)
     if p.tokens_total and abs(repartidos - p.tokens_total) > 0.05 * p.tokens_total:
         return Segmentacion(autor=_html_a_texto(html), ancestros=[],
-                            motivo="conservacion_tokens")
+                            motivo="conservacion_tokens", firma_excluida=firma_excluida)
     return Segmentacion(autor=autor, ancestros=ancestros, respuesta_intercalada=False,
                         firma_excluida=firma_excluida)
 ```
 
-- [ ] **Step 8: Correr los tests de `inline`**
+- [ ] **Step 9: Correr los tests de `inline`**
 
 ```bash
 "C:/Users/tnm33/Dev/FeesDefender/.venv/Scripts/python.exe" -m pytest -q tests/test_email_atomize_inline.py -v
 ```
 
-Esperado: **todo PASS**, y en particular estos tres:
+Esperado: **todo PASS**, y en particular estos cuatro:
 - `test_seg_html_firma_entre_citas_no_es_intercalada` → PASS (era FAIL)
+- `test_seg_html_firma_sin_cerrar_no_levanta_el_veto` → PASS (era FAIL)
 - `test_seg_html_autor_entre_firmas_mantiene_veto` → PASS
 - `test_seg_html_intercalada_no_segmenta` (el que ya existía, test 2 del contrato) → **PASS**. Si
-  este se pone rojo, **el arreglo está desactivando el detector**: parar y revisar el paso 6, no
+  este se pone rojo, **el arreglo está desactivando el detector**: parar y revisar los pasos 6-7, no
   editar el test.
 
-- [ ] **Step 9: Correr el golden de la Tarea 1**
+- [ ] **Step 10: Correr el golden de la Tarea 1**
 
 ```bash
 "C:/Users/tnm33/Dev/FeesDefender/.venv/Scripts/python.exe" -m pytest -q tests/test_email_atomize_firma_veto.py -v
@@ -596,7 +702,7 @@ Esperado: **PASS**. El golden filtra por `capa: A`, así que las fichas de Capa 
 de hacer aparecer no lo afectan. Si falla, una ficha de **Capa A** se ha movido: parar, es el riesgo
 material del cambio y **no** se resuelve actualizando el golden.
 
-- [ ] **Step 10: Commit**
+- [ ] **Step 11: Commit**
 
 ```bash
 git add core/email_atomize/inline.py tests/test_email_atomize_inline.py
@@ -638,18 +744,27 @@ def test_traza_firma_excluida_una_vez_y_sin_intercalada_no_segmentada(tmp_path):
     cola = (out / "_revision" / "cola.md").read_text(encoding="utf-8")
     filas = [l for l in cola.splitlines() if l.startswith("| MSG-")]
 
+    # Los MSG-id se resuelven desde el registro, NO desde la fila encontrada: derivarlos de la
+    # propia traza dejaba pasar el mutante intercambiado (traza para b, `no_seg` para c), que es
+    # exactamente el defecto que este test existe para matar.
+    # TRAMPA: los Message-ID se guardan SIN los angulos (`.strip("<>")`) -> la llave del registro
+    # es "c@example.invalid", nunca "<c@example.invalid>".
+    reg = json.loads((out / "_registro.json").read_text(encoding="utf-8"))
+    msg_b = reg["mensajes"]["b@example.invalid"]["id"]
+    msg_c = reg["mensajes"]["c@example.invalid"]["id"]
+
     trazas = [l for l in filas if "firma_excluida_del_veto" in l]
     assert len(trazas) == 1, f"la traza debe emitirse UNA vez; filas: {filas}"
     assert "| info |" in trazas[0]
     assert "trozos_firma=7" in trazas[0]   # 3 + 1 + 3 lineas de firma en _HTML_FIRMA_ENTRE_CITAS
+    assert trazas[0].split("|")[1].strip() == msg_c, (
+        f"la traza es de OTRO portador: se esperaba {msg_c}; fila: {trazas[0]}")
 
-    # El portador arreglado (c.eml) ya NO se declara sin segmentar...
-    portador_c = trazas[0].split("|")[1].strip()
-    no_seg = [l for l in filas if "intercalada_no_segmentada" in l]
-    assert all(portador_c not in l for l in no_seg), (
-        "el portador arreglado sigue apareciendo como intercalada_no_segmentada")
-    # ...pero el de intercalada REAL (b.eml) SI sigue apareciendo: su veto es correcto.
-    assert len(no_seg) == 1, f"la intercalada real debe seguir declarandose; filas: {filas}"
+    # El portador arreglado (c) deja de declararse sin segmentar; el de intercalada REAL (b)
+    # sigue declarandose, porque su veto es correcto. Se fija la lista EXACTA.
+    no_seg = [l.split("|")[1].strip() for l in filas if "intercalada_no_segmentada" in l]
+    assert no_seg == [msg_b], (
+        f"intercalada_no_segmentada debe ser exactamente [{msg_b}]; es {no_seg}")
 ```
 
 - [ ] **Step 2: Correr el test para verificar que falla**
@@ -734,8 +849,8 @@ def test_firma_excluida_empareja_cada_remitente_con_su_cuerpo(tmp_path):
     fichas = {}
     for p in sorted((out / "mensajes").glob("*.md")):
         txt = p.read_text(encoding="utf-8")
-        if "\ncapa: B\n" in txt:
-            de = next(l.split(":", 1)[1].strip() for l in txt.splitlines()
+        if _capa(txt) == "B":
+            de = next(l.split(":", 1)[1].strip() for l in _frontmatter(txt).splitlines()
                       if l.startswith("de:"))
             fichas[de] = txt
 
@@ -750,6 +865,14 @@ def test_firma_excluida_empareja_cada_remitente_con_su_cuerpo(tmp_path):
     # Medido: exactamente estas dos, ninguna mas.
     assert set(fichas) == {"ana@example.invalid", "bea@example.invalid"}, (
         f"fichas B inesperadas: {sorted(fichas)}")
+
+    # Y la PROCEDENCIA tambien: las dos se reconstruyeron del portador `c`, no de otro. Sin esto,
+    # una procedencia equivocada pasaria el test (hallazgo de la revision adversarial).
+    reg = json.loads((out / "_registro.json").read_text(encoding="utf-8"))
+    msg_c = reg["mensajes"]["c@example.invalid"]["id"]
+    for de, txt in fichas.items():
+        assert f"reconstruido_de: {msg_c}" in _frontmatter(txt), (
+            f"la ficha de {de} dice venir de otro portador; se esperaba {msg_c}")
 ```
 
 - [ ] **Step 2: Correr el test**
@@ -793,14 +916,45 @@ git commit -m "test(email_atomize): cada ficha nueva lleva el cuerpo de SU remit
 "C:/Users/tnm33/Dev/FeesDefender/.venv/Scripts/python.exe" -m pytest -q --tb=short --junit-xml=suite.xml
 ```
 
-Esperado: **0 failures, 0 errors**, y el total en **2547 + 5 nuevos = 2552** (77 skipped). Leer el
+Esperado: **0 failures, 0 errors**, y el total en **2547 + 6 nuevos = 2553** (77 skipped). Leer el
 conteo del `suite.xml`, no del resumen por tubería. Borrar `suite.xml` antes de commitear (no va al
 árbol).
 
 Comprobar a mano que estos dos siguen verdes, porque son los que este cambio podría romper:
 - `tests/test_email_atomize_inline.py::test_seg_html_intercalada_no_segmenta` (test 2 del contrato)
-- `tests/test_email_atomize_segmenter.py::test_cortar_autor_intercalada_no_corta` (test 7 del
-  contrato — regresión de `cortar_autor`, el detector que **no** se ha tocado)
+- `tests/test_email_atomize_segmenter.py::test_cortar_autor_intercalada_no_corta` — regresión de
+  `cortar_autor`, el detector que **no** se ha tocado. **Ojo al alcance:** es **un** caso sintético,
+  no los 16 medidos que pide el §6.7 de la SPEC. Esos 16 son correo real y no pueden vivir como
+  fixture; se comprueban en el paso 2 (verificación en vivo). No dar este test por cobertura del
+  contrato entero — corrección aceptada de la revisión adversarial.
+
+- [ ] **Step 1-bis: Re-medir la errata con el parser INTEGRADO, antes de escribirla**
+
+La cifra 3 se midió con una subclase de `_QuoteHTMLParser` en un script de scratch. Hereda del
+parser real y usa el `_html_part` real, así que las divergencias que la revisión adversarial temía
+(selección MIME, `_MAX_DEPTH`, `_BLOCK_TAGS`, `_anchor_actual`, `_SKIP_TAGS`) **no aplican**. Pero la
+confirmación es barata y la errata va a una SPEC adjudicada, así que se hace con el código
+integrado, llamando a `segmentar(raw)` de verdad:
+
+```python
+# Script de scratch (NO va al repo). Solo agregados; ningun contenido de correo.
+from pathlib import Path
+from core.email_atomize import inline as I
+n_html = n_veto = n_sin_cerrar = 0
+for p in sorted(Path(r"C:\Users\tnm33\Desktop\_PRUEBA_98_VaRS3").rglob("*.eml")):
+    html = I._html_part(p.read_bytes())
+    if not html.strip():
+        continue
+    n_html += 1
+    s = I.segmentar_html(html)
+    n_veto += s.respuesta_intercalada
+    n_sin_cerrar += (s.motivo == "firma_sin_cerrar")
+print(f"con HTML={n_html} vetados AHORA={n_veto} firma_sin_cerrar={n_sin_cerrar}")
+```
+
+Esperado con la medición previa: `con HTML=24`, `vetados AHORA=4` (eran 7 → **3 desbloqueados**),
+`firma_sin_cerrar=0`. **Si el número no es 3, el que vale es este** y la errata de la Tarea 6 se
+escribe con él.
 
 - [ ] **Step 2: Verificación en vivo (SPEC §8) — pedir autorización a Nikolai antes de lanzarla**
 
@@ -829,6 +983,11 @@ Los cuatro puntos de la SPEC §8, con la expectativa **corregida**:
   **4** portadores cuyo veto es correcto siguen declarados como `intercalada_no_segmentada`.
 - (e) `upgrades`: la SPEC espera 0. Si aparecen, significa que esas citas eran copias de mensajes que
   ya son ficha — resultado válido, pero hay que verlo y anotarlo (SPEC §5.1).
+- (f) **El test 7 del contrato, aquí y no en la suite:** los **16 casos de intercalada real medidos**
+  (15 de W-02VND1 + 1 de la prueba) conservan el cuerpo íntegro. Es correo real, así que se comprueba
+  sobre el corpus, no como fixture. Basta el agregado: cuántos de esos 16 tienen
+  `cuerpo_recortado_cita` en su ficha (esperado: ninguno) — la regresión de `cortar_autor`, que este
+  cambio no toca.
 
 - [ ] **Step 3: Contraprueba en W-02VND1 — la regla no debe cambiar nada**
 
@@ -862,31 +1021,70 @@ al dato viejo, como se hizo con el §12 de la SPEC del workspace dual.
 Corregir también la expectativa de §8 («5 segmentan, ~2 producen ficha» → techo 3) con el número que
 midió la Tarea 5.
 
-- [ ] **Step 2: Cerrar la fila 12 en `PLAN.md`**
+- [ ] **Step 2: `PLAN.md` — «en revisión», SIN número de PR ni hash**
 
-En el bloque `[SIGUIENTE-SANDWICH-FIRMA]`: marcar `[x]` «Plan TDD y construcción» y `[x]`
-«Verificación en vivo», con el número de PR y el hash del squash; actualizar la fila 12 de la cola;
-anotar el **reparto real** medido. Añadir el recordatorio de la SPEC §5.1 que es fácil de olvidar:
-**los sellos anteriores son inmutables** — si se revisan las fichas nuevas de un caso con entrega ya
-sellada, hay que **sellar una entrega nueva** (`--entrega`), no dar por actualizada la anterior.
+En el bloque `[SIGUIENTE-SANDWICH-FIRMA]`: dejar la fila 12 y sus casillas en **«construido, en
+revisión»**, y anotar el **reparto real** medido en el paso 2 de la Tarea 5. Añadir el recordatorio
+de la SPEC §5.1 que es fácil de olvidar: **los sellos anteriores son inmutables** — si se revisan las
+fichas nuevas de un caso con entrega ya sellada, hay que **sellar una entrega nueva** (`--entrega`),
+no dar por actualizada la anterior.
 
-- [ ] **Step 3: Borrar el corpus de prueba**
+**No poner aquí el `✅` con el número de PR y el hash del squash:** el PR se abre en el paso 3 y el
+hash no existe hasta el merge, así que no cabe en el commit que va a ser squashado. Eso es trabajo
+del **cierre de sesión**, que es su hogar según `CLAUDE.md` («el estado de ciclo de vida de un ítem
+vive solo en `PLAN.md`… al cerrar un ítem se pone `✅` + hash del PR»). Dependencia temporal
+imposible detectada por la revisión adversarial.
 
-Con la verificación en vivo hecha, borrar del Escritorio `_PRUEBA_98_VaRS3` y
-`_PRUEBA_98_VaRS3_atomizado`: es correo real de cliente y su única razón de estar ahí era esta
-verificación.
-
-- [ ] **Step 4: PR**
+- [ ] **Step 3: PR**
 
 ```bash
 git push -u origin claude/sandwich-firma
 ```
 
 Abrir el PR y esperar `leak-scan` verde. **El CI no corre pytest**: el conteo del paso 1 de la Tarea
-5 es la única red y va en el cuerpo del PR, junto al resultado de la verificación en vivo y la
-errata de la cifra.
+5 es la única red y va en el cuerpo del PR, junto al resultado de la verificación en vivo y la errata
+de la cifra.
+
+- [ ] **Step 4: Tras el merge — cierre y borrado del corpus**
+
+En este orden, y no antes:
+
+1. `✅` + número de PR + hash del squash en `PLAN.md` (fila 12 y su bloque), en el cierre de sesión.
+2. **Pedir autorización explícita a Nikolai** y entonces borrar del Escritorio `_PRUEBA_98_VaRS3` y
+   `_PRUEBA_98_VaRS3_atomizado`. Es correo real de cliente y su única razón de estar ahí era esta
+   verificación — pero **no se borra antes del merge**: si la revisión del PR obliga a repetir una
+   medición, esa evidencia local es la única que hay. Conservar el informe **agregado** de la
+   verificación (cifras, sin contenido) en el cuerpo del PR o en la bitácora.
 
 ---
+
+## Adjudicación de la revisión adversarial (Codex, 2026-07-29) — NO EJECUTABLE, remediado
+
+Veredicto recibido: **NO EJECUTABLE**, 4 bloqueantes + 4 altos + 1 menor. **Ocho aceptados, uno
+parcialmente refutado.** Todo lo aceptado está aplicado arriba. Los dos bloqueantes de fondo se
+**reprodujeron ejecutando**, no por lectura.
+
+| # | Sev | Hallazgo | Adjudicación |
+|---|---|---|---|
+| 1 | B0 | El golden es inestable: `add_alternative()` + `as_bytes()` genera una frontera MIME **aleatoria**, y el sha del raw entra en la ficha | **CONFIRMADO ejecutando**: 4 serializaciones → 4 sha. Y mi paso 4 proponía el arreglo **equivocado** («excluir el campo del hash»), que habría enmascarado justo lo que el golden vigila. Arreglado con `set_boundary` + una comprobación de determinismo del `.eml` separada de la del motor |
+| 2 | B0 | Una firma **sin cerrar** deja `_sigdepth > 0` y **levanta un veto correcto** | **CONFIRMADO ejecutando**: `Q S2 Q`, `_sigdepth=1`, veto `True → False` sobre texto de autor real, y la conservación de tokens no lo bloquea. Contradice la afirmación central de la SPEC §3. Arreglado con guard fail-closed + test propio. **Ampliación medida:** la firma queda abierta en **20 de 271** correos reales (5/24 y 15/247) y en ninguno llegaba a disparar — estaba **armado sin haber disparado**, la misma forma que tenía `#98`. El guard **no cuesta nada**: 3 portadores desbloqueados con y sin él |
+| 3 | B0 | El test de traza derivaba el portador **de la propia fila**, así que el mutante intercambiado pasaba | **ACEPTADO**. Era un test casi vacuo de mi cosecha, exactamente la familia contra la que este repo lleva cuatro. Arreglado resolviendo los `MSG-id` desde `_registro.json` y fijando la lista exacta |
+| 4 | B0 | La Tarea 6 pedía número de PR y hash de squash **antes** de que existieran | **ACEPTADO** en sustancia (la severidad es discutible: es orden de docs, no código roto). El arreglo coincide con la regla de `CLAUDE.md`: el `✅ + hash` es del cierre, tras el merge |
+| 5 | A | `firma_excluida` se perdía en la rama `conservacion_tokens` | **ACEPTADO**. Mi decisión era defendible, pero la lectura literal del §5.1 y el valor informativo ganan: el puntero de `conservacion_tokens` no informa del cambio de veredicto |
+| 6 | A | El test 7 del contrato son **16 casos medidos**, no el único sintético que ya existe | **ACEPTADO**: mi plan sobreafirmaba la cobertura. Los 16 son correo real → van a la verificación en vivo (Tarea 5, punto f), y el test unitario se declara por lo que es |
+| 7 | A | La errata 5→3 se midió con una reimplementación, no con el parser real | **PARCIALMENTE REFUTADO**: el script **subclasea** `_QuoteHTMLParser` y usa el `_html_part` real, así que las divergencias que lista (selección MIME, `qdepth`, `_MAX_DEPTH`, `seg_stack`, HTML malformado) **no aplican** — es el parser del repo con los tres métodos del plan. **Aceptado en su conclusión**: la confirmación con el código integrado es barata y la errata va a una SPEC adjudicada → Tarea 5, paso 1-bis, **antes** de escribirla |
+| 8 | A | El plan borraba el corpus **antes** de abrir y validar el PR | **ACEPTADO**, y con razón doble: pierde la evidencia si la revisión obliga a repetir, y era una acción destructiva sobre correo real sin autorización propia |
+| 9 | M | `capa: A` se buscaba en todo el documento, no solo en el frontmatter | **ACEPTADO**: `render_md` concatena frontmatter y cuerpo. Arreglado con un `_frontmatter()`/`_capa()` que solo miran el primer bloque |
+| — | — | Nota de su §3: el test 4 no comprobaba `reconstruido_de` | **ACEPTADO y verificado**: el campo existe (`model.py:80`, `render.py:66`) — no era un detalle inventado. Añadida la aserción de procedencia |
+
+**Lo que su §4 dio por verificado y coincide con mi propia lectura:** no hay otros consumidores de
+`self._tags`; un contenedor que sea a la vez cita y firma **bien cerrado** queda balanceado; el tope
+`_MAX_DEPTH` no desbalancea `sig`; `estilo`/`motivo` son vocabularios abiertos y `confianza="info"` ya
+se usa; el campo nuevo de `Segmentacion` lleva default; `_sandwich` no tiene otro call-site; y ningún
+fixture existente contiene `gmail_signature`.
+
+**Su §5 no aportó ataque a la decisión de diseño**, y coincido: el fallo de `_sigdepth` es una omisión
+del plan de implementación, no una refutación de la exclusión estructural.
 
 ## Fuera de alcance (registrado, no se construye aquí)
 
