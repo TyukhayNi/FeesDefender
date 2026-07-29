@@ -993,7 +993,7 @@ Los cuatro puntos de la SPEC §8, con la expectativa **corregida**:
 
 La SPEC §8 lo señala como comprobación en sí misma: en W-02VND1 el único portador con veto es un
 contraejemplo legítimo y debe **seguir vetado**. Se hace sobre la **copia local** del Escritorio
-(`BaRS1 - Tibidabo 8 - (W-02VND1) - Vuelta`), nunca sobre `G:`, con el mismo patrón de snapshot.
+(`BaRS1 - [inmueble] - (W-02VND1) - Vuelta`), nunca sobre `G:`, con el mismo patrón de snapshot.
 Esperado: 0 fichas nuevas, 0 trazas de `firma_excluida_del_veto`, Capa A intacta.
 
 > Aviso medido el 2026-07-29 (`MEJORAS #99.5`): esa copia local ya arrastra 4 gemelos NFD de
