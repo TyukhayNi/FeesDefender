@@ -75,6 +75,30 @@ Contenedor observado: `class="gmail_signature"` (15 apariciones). Y **`W-02VND1`
 contraejemplo real** (el `.eml` en posición 145 al ordenar por ruta): DOM `True`, `cortar_autor`
 `True`, y con texto de autor que **no** es firma entre las citas. Ahí el veto debe seguir puesto.
 
+> **Errata 1 (2026-07-29, al construir — la fila «5» de arriba es incorrecta).** Aplicando la regla
+> de §3 al corpus y leyendo el **veredicto** resultante, no la envoltura de los trozos, los
+> portadores que cambian de veredicto son **3, no 5**; y los que conservan el veto, **4, no 2**.
+> Confirmado dos veces: con una subclase del parser real y, después, con el código integrado
+> (`segmentar_html` de verdad: 24 portadores con HTML, 7 vetados antes, **4 vetados después**,
+> 3 trazas emitidas). La cifra es insensible al conjunto de marcadores —`gmail_signature` sola,
+> `+signature` y `+firma` dan los mismos 3—.
+>
+> **Por qué la fila estaba mal:** de los 4 que conservan el veto, 2 no tienen contenedor de firma
+> (los que esta tabla ya preveía) y **2 sí lo tienen** bajo `gmail_signature` pero **además**
+> tienen texto de autor entre la segunda y la tercera cita (forma `A S5 Q S3 Q S20 A3 Q3`): el
+> sándwich les dispara desde ahí, no desde la firma. «Todos los trozos disparadores son firma» se
+> midió sobre parte de la secuencia, no sobre toda. **La decisión de §3 no se toca**: que los 4
+> correctos sigan vetados es precisamente lo que había que demostrar.
+>
+> **Y un defecto que esta medición destapó, ausente de la spec:** una firma **sin cerrar** deja el
+> contador de profundidad de firma por encima de 0 para el resto del documento, marca como firma
+> **todo** el texto de autor posterior y la exclusión **levanta un veto correcto** — la única
+> dirección en la que §3 afirma que la regla no puede fallar. Medido: la firma queda abierta en
+> **20 de 271** correos reales (5 de 24 en la prueba, 15 de 247 en W-02VND1), y en ninguno llegaba
+> a disparar: estaba armado y callado. Resuelto con un guard fail-closed (si la firma no está
+> balanceada, sus trozos vuelven a contar como autor) que **no cuesta ningún portador**: 3
+> desbloqueados con guard y sin guard.
+
 ## 3. Decisión
 
 **Los trozos de texto que viven dentro de un contenedor de firma no cuentan como «texto de autor»
@@ -118,6 +142,29 @@ contador: **no se renumera nada**.
 adversarial, de esos 5 solo **2** generan candidatos (4 fichas nuevas `alta-reconstruida`, 0
 upgrades); los otros 3 tienen bloques citados que el parser deja vacíos y solo producen punteros de
 confianza baja. **Ese reparto se confirma en la verificación en vivo (§8), no antes.**
+
+> **Errata 2 (2026-07-29, medida en la verificación en vivo del §8 — este párrafo promete de más).**
+> No hay **ninguna** ficha nueva: **0**, no 4. El reparto real es 3 portadores desbloqueados (ver
+> Errata 1) y **0 de los 3** genera candidato. La corrida sobre el corpus real dejó el árbol con los
+> mismos 35 mensajes y los mismos 7 reconstruidos B que antes; el **único** fichero que cambió en
+> todo el árbol fue `_revision/cola.md`. 0 upgrades, eso sí se cumplió.
+>
+> **El motivo está en los datos, y es correcto:** los 9 segmentos citados que emergen salen todos
+> `sin_cabecera`. El anclaje de esas citas **es la propia firma** (el acumulador de anclaje recoge
+> cualquier texto, también el de firma), y sus cuerpos citados tampoco traen `De:`/`Enviado:`
+> dentro. No hay nada de donde atribuir, y el motor **se niega a fabricar un remitente**: la prime
+> directive aguanta. Lo que este arreglo entrega, por tanto, no son fichas:
+>
+> | | antes | después |
+> |---|---|---|
+> | Filas de esos 3 portadores en `_revision/cola.md` | 3 (`intercalada_no_segmentada`, sin extracto) | 3 trazas + **9 citas con su extracto** |
+> | Mensajes citados visibles en algún artefacto | **0** | **9** |
+> | Fichas nuevas | 0 | **0** |
+>
+> Nueve mensajes citados que solo existían en el `.eml` crudo pasan a estar en la cola de revisión
+> con su texto, para que el letrado los atribuya a mano. Es menos de lo que este párrafo prometía y
+> es real. **Consecuencia para §7 (backlog):** la «ficha de identidad cierta para intercaladas
+> reales» dejaba de ser un adorno — es justo la pieza que convertiría estos 9 punteros en fichas.
 
 **No cambia:** el recorte del cuerpo (su detector no se toca), la Capa A (byte-idéntica: no se
 reescribe ninguna ficha existente), la atribución (mismas guardas), ni **nada en `W-02VND1`** (0
@@ -185,6 +232,30 @@ aparecen y si el reparto 2-de-5 se cumple, (b) que en cada ficha nueva el **remi
 cuerpo**, (c) que las fichas que ya existían son byte-idénticas, (d) que el puntero de traza está.
 **No** se ejecuta sobre `G:` sin autorización expresa; y en `W-02VND1` la regla no debería cambiar
 nada, lo que es en sí una comprobación.
+
+> **EJECUTADA el 2026-07-29** sobre la copia local, con autorización expresa de Nikolai y sin tocar
+> `G:`. Resultado, punto por punto:
+>
+> - **(a) fichas nuevas: 0** — no las 4 que preveía el §5. Ver **Errata 2**. El reparto real es
+>   3 portadores desbloqueados y ninguno genera candidato; lo que aparece son 9 citas en la cola de
+>   revisión con su extracto, donde antes no había nada.
+> - **(b) remitente ↔ cuerpo: NO EJERCITADO en vivo**, porque sin fichas nuevas no hay nada que
+>   emparejar. Se ejercita en el test 4 del §6 contra el motor real con un portador sintético que
+>   **sí** trae cabecera dentro del cuerpo citado: dos fichas, cada una con su cuerpo, y
+>   `reconstruido_de` verificado. Queda declarado como cobertura de test, no de corpus.
+> - **(c) fichas existentes byte-idénticas: SÍ.** De 73 ficheros del árbol, 0 borrados, 0 nuevos y
+>   **uno solo** con hash distinto: `_revision/cola.md`. `mensajes` 28→28, `mensajes_fp` 7→7,
+>   `adjuntos` 15→15, contadores idénticos: cero renumeraciones.
+> - **(d) puntero de traza: SÍ**, exactamente 3 filas `firma_excluida_del_veto` / `info` /
+>   `trozos_firma=28`, una por portador desbloqueado, y **0** portadores desbloqueados que sigan
+>   declarados `intercalada_no_segmentada`. Los 4 cuyo veto es correcto **sí** siguen declarados.
+> - **(e) upgrades: 0**, como esperaba el §5.1.
+>
+> **Contraprueba de `W-02VND1`: la regla no cambia nada, confirmado.** 247 portadores con HTML,
+> **1 vetado antes y 1 después**, **0 trazas**. Se midió con `segmentar_html` integrado en vez de
+> re-atomizar el árbol: con `firma_excluida = 0` en los 247 la Capa B es idéntica por construcción,
+> y re-correr solo habría añadido a esa copia local los gemelos NFD de `MEJORAS #99.5` — ruido, sin
+> información nueva sobre este cambio.
 
 ## 9. Adjudicación de la revisión adversarial (Codex, 2026-07-29) — NO-SHIP, remediado
 

@@ -28,7 +28,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 10 | [`.doc` → LibreOffice headless](#siguiente-doc-libreoffice-doc-binario-sin-md-ni-ocr-conversión-libreoffice-headless) | pendiente | disparador: W-02MA0R, la demanda del ordinario solo existe en `.doc` sin gemelo PDF | bajo |
 | 11 | [Cableado del pipeline de correo (`MEJORAS #68`)](#siguiente-cableado-correo-cableado-del-pipeline-de-correo-encadenar-la-atomización-resto-de-mejoras-68) | casillas 1-2 ✅; casilla 3 **decidible, sin gates** (#98 cerrado, PR #155) | solo queda la decisión de Nikolai: `--extraer-adjuntos` a default `True` mueve la superficie de dedup de todo intake futuro | bajo |
 
-| 12 | [La firma no es intercalada: falso positivo que bloquea la Capa B](#siguiente-sandwich-firma-la-firma-no-es-una-respuesta-intercalada) | spec **rev. 2** lista, revisión adversarial consumida | plan TDD pendiente; sin dependencias | bajo |
+| 12 | [La firma no es intercalada: falso positivo que bloquea la Capa B](#siguiente-sandwich-firma-la-firma-no-es-una-respuesta-intercalada) | **construido y verificado en vivo, en revisión** (PR abierto) | 2 erratas de la spec medidas al construir: 3 portadores desbloqueados (no 5) y **0 fichas nuevas** (no 4) | bajo |
 
 > Detalle de cada ítem en su bloque `[SIGUIENTE-*]` más abajo. Backlog sin
 > promover: `docs/MEJORAS_FUTURAS.md`. Ledger de cerrados: `## Cerrados` (final).
@@ -392,10 +392,30 @@ efectos del veto. Es estructural, no lexical, y **no puede levantar un veto corr
 firma del recuento.
 
 - [x] Spec + revisión adversarial adjudicada (rev. 2).
-- [ ] Plan TDD y construcción. Ojo al §6 de la spec: el contrato de tests se reescribió porque dos de
-      los tests de la rev. 1 no mataban el camino inseguro (uno era **inconstruible**).
-- [ ] Verificación en vivo sobre la copia local del caso de Gmail ya exportada (§8): confirmar el
-      reparto (5 segmentan, ~2 producen ficha) y el emparejamiento remitente ↔ cuerpo.
+- [x] Plan TDD (`docs/superpowers/plans/2026-07-29-sandwich-firma-falso-positivo.md`), con **su
+      propia revisión adversarial de Codex adjudicada** (veredicto NO EJECUTABLE, 8 de 9 hallazgos
+      aceptados) y **construido**. 6 tests nuevos, suite 2561/0/0. Los dos bloqueantes de fondo se
+      reprodujeron ejecutando: (1) el fixture generaba frontera MIME aleatoria y el golden habría
+      fallado en falso; (2) **una firma sin cerrar levantaba un veto correcto** —la única dirección
+      en la que la spec dice que la regla no puede fallar—, resuelto con un guard fail-closed que no
+      cuesta ningún portador. Los 6 tests pasaron *mutation testing*: retirar el guard mata
+      exactamente su test, y su mensaje de fallo enseña el defecto en vivo.
+- [x] Verificación en vivo (§8) ejecutada sobre la copia local, sin tocar `G:`. **El reparto real no
+      es el que la spec preveía**, y son dos erratas escritas en ella: los portadores desbloqueados
+      son **3, no 5**, y las fichas nuevas son **0, no 4**. Lo que el arreglo entrega son **9
+      mensajes citados** que solo existían en el `.eml` crudo y ahora están en `_revision/cola.md`
+      con su extracto; salen `sin_cabecera` porque el anclaje de esas citas es la propia firma, y el
+      motor **se niega a fabricar un remitente**. Del árbol entero solo cambió `_revision/cola.md`:
+      0 renumeraciones, 3 trazas, 0 upgrades, y los 4 portadores cuyo veto es correcto siguen
+      declarados. En `W-02VND1` la regla no cambia nada (247 con HTML, 1 vetado antes y después).
+- [ ] **En revisión**: PR abierto, pendiente de `leak-scan` y merge. El `✅` con el número de PR y el
+      hash del squash se pone en el cierre de sesión, no aquí.
+- [ ] Tras el merge, y con autorización expresa: borrar del Escritorio `_PRUEBA_98_VaRS3` y
+      `_PRUEBA_98_VaRS3_atomizado` (correo real de cliente). **No antes**: si la revisión obliga a
+      repetir una medición, esa evidencia local es la única que hay.
+- Recordatorio de la spec §5.1 que es fácil de olvidar: **los sellos anteriores son inmutables**. Si
+  se revisan las fichas nuevas de un caso con entrega ya sellada, hay que **sellar una entrega
+  nueva** (`--entrega`), no dar por actualizada la anterior.
 - Contexto de por qué importa: `MEJORAS #108` (que el árbol sea contexto suficiente para un LLM),
   con `#105` y `#106` como las otras dos piezas que faltan.
 
