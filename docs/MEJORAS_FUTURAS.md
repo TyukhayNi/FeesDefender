@@ -4231,7 +4231,7 @@ impiden que un mensaje llegue a ser ficha.
 
 ---
 
-## 109. `blockquote` vacíos en los hilos de Gmail, y el síntoma del hilo de 4-5 mensajes sigue sin explicar
+## 109. El historial citado de un hilo no aparece en ningún artefacto (y con esto queda explicado el hilo de 4-5 mensajes)
 
 **Medido 2026-07-29** al verificar en vivo el arreglo del falso positivo de `_sandwich`
 (`docs/superpowers/specs/2026-07-29-sandwich-firma-falso-positivo-design.md`, ver la **Errata 2** de
@@ -4255,25 +4255,46 @@ firma no es una respuesta intercalada— y produce 6 punteros `sin_cabecera` con
 Recupera **0 contenido**. Queda abierto si esas cáscaras son del cliente de correo o un artefacto de
 la exportación; no se ha mirado.
 
-**Hecho 2, y es el que importa — el síntoma que abrió aquella spec no está explicado.** El disparador
-fue que Nikolai leyó las fichas de un hilo de 4-5 mensajes y encontró **una**. El falso positivo de
-`_sandwich` parecía la causa. Tras arreglarlo y medirlo: los 3 portadores que desbloquea no tenían
-mensajes citados, y los otros 4 que el DOM veta son **intercaladas auténticas** cuyo veto es correcto.
-**Ninguno de los 7 explica los mensajes que faltaban.** El arreglo era necesario (la clasificación
-estaba mal) pero no era la causa del síntoma.
+**Hecho 2 — el síntoma del hilo YA ESTÁ EXPLICADO (medido 2026-07-29, tras el merge del PR #164).**
+El disparador de la spec fue que Nikolai leyó las fichas de un hilo de 4-5 mensajes y encontró **una**.
+Censo de los 29 correos del corpus: 22 hilos, y **uno solo tiene hueco** — 1 `.eml` en disco pero **5
+Message-ID en el hilo**, de los que **1 tiene ficha y 4 no**. Es ese. La explicación son **cuatro
+eslabones, y tres de ellos son correctos**:
 
-**Candidatos, en orden de sospecha:** `#107` (historial citado sin atribuir: si el hilo llega como
-texto plano citado con `>` dentro del cuerpo y sin cabecera parseable, no hay ficha y es correcto que
-no la haya — lo que falta es la vista de historial); que los mensajes del hilo estén **anidados**
-como `message/rfc822` y el desanidado tope en el primero; o que la etiqueta Gmail del caso no
-contuviera los otros mensajes del hilo, que sería intake y no motor.
+| # | Eslabón | ¿Correcto? |
+|---|---|---|
+| 1 | De los 5 mensajes del hilo, **solo 1 llegó como `.eml`** al caso. Capa A acuña una ficha por `.eml`, luego 1 ficha es lo máximo que podía dar | **Sí**, y es intake, no motor |
+| 2 | Los otros 4 existen solo como **cita en texto plano** dentro de ese único correo: **278 líneas** con `>`, **un solo bloque**, profundidad 1, y **0 cabeceras de cita** (`El … escribió:` 0, `On … wrote:` 0, `De:`/`From:` 0) | — |
+| 3 | `cortar_autor` **recorta** ese historial del cuerpo de la ficha: conserva **255 palabras de 1748**. O sea, **1493 palabras de historial salen de la ficha** | **Sí**: la ficha muestra el texto del autor, es el diseño |
+| 4 | La Capa B, que es quien convertiría ese historial en fichas propias, **no llega a ejecutarse**: `_sandwich` veta este portador (forma `A4 S5 Q S3 Q S20 A5 Q3`) y devuelve cero ancestros → `reconstruir` da **0 candidatos y 0 punteros** | El **veto es correcto** (hay texto de autor real entre las citas, no solo firma: medido, veta igual contando la firma o excluyéndola) |
 
-**Cómo cerrarlo, sin adivinar:** tomar el hilo concreto que Nikolai leyó (identificarlo por asunto en
-el corpus de prueba **antes de borrarlo**), contar sus mensajes en el `.eml` crudo y ver, uno a uno,
-por qué cada uno tiene o no ficha. Es una hora de medición y cierra la pregunta que motivó dos
-sesiones de trabajo.
+**El efecto neto, y es el defecto:** esas **1493 palabras de historial del hilo no aparecen en NINGÚN
+artefacto**. No en la ficha (recortadas por diseño), no como fichas propias (la Capa B no corrió), y
+**tampoco como puntero** (`reconstruir` no emite ninguno cuando el veto está puesto; la fila
+`intercalada_no_segmentada` la pone el *pipeline* y no dice nada de los bloques citados). Solo
+sobreviven en el `.eml` crudo — justo lo que el árbol de MD existe para no tener que leer.
 
-**Prioridad.** Media. **Disparador de promoción:** que vuelva a aparecer un hilo con fichas que
-faltan, o decisión de Nikolai. Ojo: el corpus de prueba (`_PRUEBA_98_VaRS3*` del Escritorio) es
-correo real de cliente y está previsto borrarlo tras el merge de esa rama — si se quiere cerrar esto
-con ese hilo, hay que hacerlo antes.
+**Y esto cierra la pregunta que dejó abierta la spec del sándwich:** su arreglo **no podía** resolver
+este hilo. Este portador es uno de los que **conservan el veto con razón**; no es un falso positivo.
+Los 3 que el arreglo desbloquea son otros, y no tenían nada citado (Hecho 1).
+
+**Dos piezas, y conviene no confundirlas:**
+
+1. **La pieza grande es `#107`** (historial citado sin atribuir), y esta medición la afila: no es «falta
+   una vista de historial», es que el historial **se retira activamente** del único artefacto que lo
+   contenía y nada más lo recoge. Sin cabeceras no puede haber ficha —y es correcto que no la haya,
+   la prime directive lo exige—, pero el texto tiene que estar **localizable** en algún sitio.
+2. **La pieza pequeña, barata y de esta misma familia:** cuando `_sandwich` veta, que `reconstruir`
+   emita igualmente los bloques citados como **punteros** (`confianza: baja`/`info`, con extracto y
+   **sin `de`**), en vez de nada. No toca la atribución —no acuña remitente, no crea ficha—, así que no
+   puede misatribuir; solo deja el rastro de que ahí hay N bloques de cita y dónde. Hoy un portador
+   legítimamente vetado pierde incluso el rastro.
+
+**Prioridad.** La pieza 2 es **baja/barata** y cierra la parte no-controvertida. La pieza 1 (`#107`) es
+la que de verdad responde al requisito `#108`. **Disparador de promoción:** decisión de Nikolai, o el
+siguiente hilo cuyas fichas se echen en falta — que volverá a pasar, porque la causa 1 (que el caso
+solo reciba el último correo de un hilo) es la normal, no la excepción.
+
+**Medido sobre:** el corpus de prueba `_PRUEBA_98_VaRS3` del Escritorio (correo real de cliente; solo
+lectura, y de él no salieron al registro ni asuntos ni direcciones ni cuerpos, solo estructura y
+contadores). Con esta medición hecha, **ese corpus ya se puede borrar**: era lo único que lo retenía.
