@@ -39,6 +39,11 @@ class AtomizeReport:
     citas_a_revision: int = 0         # punteros media/baja a _revision/cola.md
     upgrades: int = 0                 # citas resueltas a una copia limpia de Capa A
     vistas_generadas: int = 0
+    eml_enumerados: int = 0           # .eml que la enumeración produjo
+    eml_leidos: int = 0               # de esos, los abiertos sin error
+    fallos_lectura: list[str] = field(default_factory=list)   # ruta: motivo (transitorios)
+    publicado: bool = True            # False si no se publicó nada (spec §4.3, rama transitoria)
+    poda_omitida: bool = False        # True si se publicó sin podar (rama permanente)
     notas: list[str] = field(default_factory=list)
     errores: list[str] = field(default_factory=list)
 
@@ -61,6 +66,22 @@ def _idioma(texto: str) -> str:
     return max((("ca", ca), ("en", en), ("es", es)), key=lambda x: x[1])[0]
 
 
+_NOTA_NO_PUBLICADA = (
+    "ATOMIZACIÓN NO PUBLICADA: {n} .eml no se pudieron leer (¿Drive sin hidratar?). "
+    "El árbol anterior queda intacto. Re-lanza cuando estén disponibles. Si el fallo "
+    "persiste en varios intentos, NO es un problema de hidratación (re-lanzar no lo "
+    "arregla): revisa `fallos_lectura` para las rutas concretas y resuelve el permiso "
+    "(fichero bloqueado por otro proceso, ACL) o saca ese fichero de `00_Input`."
+)
+
+_NOTA_PODA_OMITIDA = (
+    "poda de mensajes/ OMITIDA: {n} fallos al construir/reconstruir mensajes; el árbol "
+    "conserva fichas cuyo mensaje no se ha reconstruido en esta corrida. Los agregados "
+    "(corpus.jsonl, índices, _revision/, vistas) SÍ se reescriben desde el conjunto "
+    "reducido: no son coherentes con el árbol completo hasta la próxima corrida sin errores."
+)
+
+
 def atomize_dir(
     src_dir: Path | str | list[Path | str] | tuple[Path | str, ...],
     out_dir: Path | str,
@@ -73,7 +94,9 @@ def atomize_dir(
             (lotes ``email`` de ``00_Input/`` + cajón legacy ``03_Email`` — spec §8).
             Los avistamientos de todas las fuentes se concatenan; ``colapsar``
             (por Message-ID) hace la deduplicación entre fuentes.
-        out_dir: directorio de salida (se crea si no existe).
+        out_dir: directorio de salida (se crea si no existe; excepción — rama transitoria
+            de `MEJORAS #98`: si algún `.eml` no se puede leer, la corrida es fail-closed
+            ANTES de tocar disco y `out` no llega a crearse — spec §4.3).
         case_dir: raíz del caso donde se busca ``identidades.yaml``/``vistas.yaml``.
             Por defecto ``out.parent.parent`` (layout estándar
             ``<caso>/01_Procesado/Emails``). En tests u otros layouts donde *out*
@@ -86,12 +109,24 @@ def atomize_dir(
     if case_dir is None:
         case_dir = out.parent.parent          # <caso>/01_Procesado/Emails → <caso>
     ident = ID.cargar_identidades(case_dir)
-    (out / "mensajes").mkdir(parents=True, exist_ok=True)
-    (out / "adjuntos").mkdir(parents=True, exist_ok=True)
     report = AtomizeReport()
 
-    reg = IDS.load_registro(out)
-    avistamientos = [a for s in srcs for a in E.iter_avistamientos(s)]
+    stats = E.EnumStats()
+    avistamientos = [a for s in srcs for a in E.iter_avistamientos(s, stats=stats)]
+    report.eml_enumerados = stats.enumerados
+    report.eml_leidos = stats.leidos
+    report.fallos_lectura = list(stats.fallos)
+
+    # --- Rama TRANSITORIA (spec §4.3): fail-closed, y antes de tocar disco ---
+    # Sobre `G:` un fallo de lectura casi siempre es Drive sin hidratar y re-correr lo
+    # resuelve; publicar con la foto incompleta borraría fichas cuyo mensaje sigue
+    # existiendo. No se llama a `load_registro` (crearía `out`), no se escribe nada.
+    if report.fallos_lectura:
+        report.publicado = False
+        report.notas.append(_NOTA_NO_PUBLICADA.format(n=len(report.fallos_lectura)))
+        return report
+
+    reg = IDS.load_registro(out)          # crea `out`: nada antes de aquí toca disco
     colapsados = D.colapsar(avistamientos)
 
     # adjuntos: contar apariciones (para filtro decorativo) sobre los raws canónicos
@@ -109,20 +144,43 @@ def atomize_dir(
             continue
         mensajes.append(m)
         carriers.append((m, col.raw))
-        reg.marcar_procesado(col.eml_origen)
+        # Llave del registro: lleva la fuente delante porque la ruta relativa a CADA
+        # fuente no es única (`sub/a.eml` puede existir en dos lotes). `eml_origen` se
+        # queda como está: es el valor probatorio del frontmatter.
+        reg.marcar_procesado(f"{col.fuente}/{col.eml_origen}" if col.fuente
+                             else col.eml_origen)
 
     # --- Pase Layer B (tras congelar TODOS los IDs de Capa A) ---
     mensajes_b, punteros, upgrades = _pase_layer_b(reg, mensajes, carriers, report, ident)
     mensajes.extend(mensajes_b)
 
+    (out / "mensajes").mkdir(parents=True, exist_ok=True)
+    (out / "adjuntos").mkdir(parents=True, exist_ok=True)
+
     for m in mensajes:
         (out / "mensajes" / R.nombre_md(m)).write_text(R.render_md(m), encoding="utf-8")
-    # Idempotencia: eliminar .md huérfanos (p. ej. un mensaje B superado por un upgrade en una
-    # re-corrida) que ya no están en el conjunto esperado. Solo toca *.md de mensajes/.
-    esperados = {R.nombre_md(m) for m in mensajes}
-    for p in (out / "mensajes").glob("*.md"):
-        if p.name not in esperados:
-            p.unlink()
+    # Permanente (construcción A / Layer B): se publica lo bueno, pero NO se poda — un
+    # `.eml` corrupto no se arregla re-corriendo, y bloquear el caso para siempre es peor
+    # que conservar una ficha rancia. La poda solo retira huérfanos cuando la foto está
+    # completa (p. ej. un mensaje B superado por un upgrade).
+    if report.errores:
+        report.poda_omitida = True
+        report.notas.append(_NOTA_PODA_OMITIDA.format(n=len(report.errores)))
+        # Foto PARCIAL: `eml_procesados` tampoco se reconstruye desde cero (dropearía la
+        # llave de todo `.eml` cuyo mensaje no llegó a marcarse hoy); se sigue apilando
+        # sobre lo que había en disco. Ver `Registro.resolver_procesados`.
+        reg.resolver_procesados(foto_completa=False)
+    else:
+        esperados = {R.nombre_md(m) for m in mensajes}
+        for p in (out / "mensajes").glob("*.md"):
+            if p.name not in esperados:
+                p.unlink()
+        # Foto COMPLETA: gate IDÉNTICO al de la poda de arriba. `eml_procesados` es
+        # estado derivado (todo mensaje publicado pasa por `marcar_procesado`), así que
+        # se puede reconstruir desde cero — purga llaves de forma vieja (p. ej. sin la
+        # fuente delante, anteriores a MEJORAS #98) que de otro modo se acumulan para
+        # siempre, y refleja `.eml` genuinamente retirados.
+        reg.resolver_procesados(foto_completa=True)
     report.mensajes = len(mensajes)
     report.reconstruidos_b = len(mensajes_b)
     report.reconstruidos_media = sum(1 for m in mensajes_b if m.confianza == "media-reconstruida")
@@ -304,30 +362,16 @@ def emails_out_dir_de_caso(case_dir: Path | str) -> Path:
     return Path(case_dir) / "01_Procesado" / "Emails"
 
 
-def contar_eml(fuentes: Iterable[Path | str]) -> tuple[int, int]:
-    """``(n_top, n_rec)``: los .eml que el motor VERÁ y los que realmente HAY.
+def contar_eml(fuentes: Iterable[Path | str]) -> int:
+    """Cuántos `.eml` verá el motor, con SU MISMO criterio (recursivo).
 
-    ``n_top`` cuenta el mismo subconjunto que enumeraría el motor (``glob("*.eml")``,
-    no recursivo — ``extract.iter_avistamientos``): los que cuelgan directamente de la
-    base, sin subcarpeta. Es el conteo autoritativo para decidir no-op y para el
-    evento. ``n_rec`` (recursivo, vía ``rglob``) cuenta TODOS, y solo sirve para
-    delatar la discrepancia de `MEJORAS #98`: con ``--extraer-adjuntos``, el .eml de
-    un mensaje con adjuntos baja a una subcarpeta y desaparece del atomizador sin
-    error. ``n_rec >= n_top`` siempre. La ceguera a ``.EML`` en mayúsculas es la misma
-    que la del motor, a propósito: los dos conteos han de medir lo mismo. Una sola
-    pasada por fuente (``rglob``); ``n_top`` se deriva del mismo recorrido comparando
-    el padre de cada hallazgo con la base, sin recorrer dos veces el árbol.
+    Reutiliza `extract.enumerar_rutas_eml` en vez de reimplementar el recorrido: así el
+    conteo del CLI y la enumeración del motor no pueden derivar (era el defecto que
+    `MEJORAS #98` volvió visible). Solo sirve para decidir el no-op del cableado: «¿hay
+    correo?». La discrepancia entre lo que hay y lo que se pudo leer la declara el motor
+    en `eml_enumerados`/`eml_leidos`, no este conteo.
     """
-    n_top = n_rec = 0
-    for f in fuentes:
-        base = Path(f)
-        if not base.is_dir():
-            continue
-        for p in base.rglob("*.eml"):
-            n_rec += 1
-            if p.parent == base:
-                n_top += 1
-    return n_top, n_rec
+    return sum(len(E.enumerar_rutas_eml(f)) for f in fuentes if Path(f).is_dir())
 
 
 def emails_src_dirs(case_id: str) -> list[Path]:

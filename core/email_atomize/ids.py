@@ -3,6 +3,11 @@
 ``_registro.json``: mapa congelado Message-ID→MSG-id y sha256→ATT-id, más la lista de
 ``.eml`` procesados. Re-ejecutar NUNCA renumera: las claves existentes mandan; lo nuevo
 toma el siguiente número libre.
+
+``eml_procesados`` NO es identidad congelada como lo anterior: es estado DERIVADO (todo
+mensaje publicado repite ``marcar_procesado`` en cada corrida), así que se puede
+reconstruir desde cero — ver :meth:`Registro.resolver_procesados`, invocado por
+``pipeline.atomize_dir`` con la misma condición que gobierna la poda de ``mensajes/``.
 """
 from __future__ import annotations
 
@@ -30,6 +35,10 @@ class Registro:
         self.mensajes_fp: dict[str, dict] = data.get("mensajes_fp", {})
         self.alias: dict[str, str] = data.get("alias", {})
         self.procesados: list[str] = list(data.get("eml_procesados", []))
+        # Llaves marcadas SOLO en esta corrida (independiente de lo cargado de disco).
+        # `resolver_procesados` la usa para decidir si `self.procesados` se reconstruye
+        # desde cero o se conserva el histórico apilado.
+        self._procesados_esta_corrida: list[str] = []
         cont = data.get("_contadores", {})
         self._next_msg = int(cont.get("msg", 0))
         self._next_att = int(cont.get("att", 0))
@@ -75,8 +84,36 @@ class Registro:
         return nuevo
 
     def marcar_procesado(self, eml_name: str) -> None:
+        if eml_name not in self._procesados_esta_corrida:
+            self._procesados_esta_corrida.append(eml_name)
         if eml_name not in self.procesados:
             self.procesados.append(eml_name)
+
+    def resolver_procesados(self, *, foto_completa: bool) -> None:
+        """Fija la lista final de ``eml_procesados`` que persistirá ``save()``.
+
+        Llamar EXACTAMENTE una vez por corrida, con la misma condición que gobierna si
+        ``mensajes/`` se poda (``pipeline.atomize_dir``): ``foto_completa`` es
+        ``report.publicado and not report.errores``.
+
+        - ``foto_completa=True``: la corrida vio y (re)marcó TODO mensaje vigente, así
+          que la lista se reconstruye desde cero (``self._procesados_esta_corrida``).
+          Esto purga llaves de forma vieja que quedaron congeladas para siempre antes de
+          este método (p. ej. ``<fichero>.eml`` sin la fuente delante, anterior a
+          `MEJORAS #98`) y refleja retiradas genuinas de `.eml`.
+        - ``foto_completa=False``: algún mensaje no se pudo construir/reconstruir esta
+          corrida (rama permanente, `pipeline._NOTA_PODA_OMITIDA`), así que reconstruir
+          desde cero DROPEARÍA la llave de todo `.eml` cuyo mensaje no llegó a marcarse
+          hoy aunque sigue existiendo. Se conserva el comportamiento histórico: apilar
+          sobre lo que ya había (``self.procesados`` no se toca; `marcar_procesado` ya
+          lo dejó como unión de lo viejo y lo nuevo).
+
+        NO simplificar a un rebuild incondicional: es exactamente el defecto que este
+        método corrige (revisión final de MEJORAS #98 — la lista acumulaba para siempre
+        dos formas de llave incompatibles porque nada la limpiaba nunca).
+        """
+        if foto_completa:
+            self.procesados = list(self._procesados_esta_corrida)
 
     def save(self) -> None:
         payload = {

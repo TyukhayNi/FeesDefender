@@ -69,16 +69,15 @@ INTAKE_EVENTS: frozenset[str] = frozenset({
                                  # {"lotes": [nombres], "remapeados": {registro: n}}
     "archivado",                # archivo del expediente inviable (RUNBOOK §10; MEJORAS #70.a):
                                  # details = {"motivo": MAYUSCULAS_GUION_BAJO, "fecha": ISO}
-    "atomizado_email",          # atomización de correo encadenada por la sala de máquina
-                                 # (spec 2026-07-27 §4.5): details = {"status": ok|parcial|
-                                 # fallo|noop, "eml_nivel_superior": n, "eml_totales": n,
-                                 # + contadores del AtomizeReport si el motor terminó
-                                 # (ok/parcial/fallo)}. "noop" NO llama al motor: hay .eml
-                                 # invisibles (MEJORAS #98) y, o hay árbol previo que una
-                                 # reconciliación a ciegas podría podar, o no hay ni correo
-                                 # visible ni árbol que sembrar. Su payload lleva SOLO los
-                                 # dos conteos, ningún contador ni "errores". NO lleva
-                                 # "files".
+    "atomizado_email",          # atomización de correo encadenada por la sala de máquina.
+                                 # details_schema 2: {"status": ok|parcial|fallo,
+                                 # "eml_en_disco", "eml_leidos", "publicado",
+                                 # "poda_omitida", + contadores del AtomizeReport si el
+                                 # motor terminó}. El status `noop` que existía en el schema
+                                 # anterior lo emitía la rama de discrepancia de #98, retirada;
+                                 # un evento de schema 2 nunca lo lleva. No lleva "files".
+                                 # Sin `details_schema`: forma 1 (claves
+                                 # `eml_nivel_superior`/`eml_totales`, retiradas en #98).
 })
 
 

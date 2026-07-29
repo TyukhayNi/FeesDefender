@@ -32,6 +32,20 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("usa --ref, o --src junto con --out")
         return 2
 
+    if not report.publicado:
+        # No se ha escrito NADA (rama transitoria, spec §4.3): un resumen en ceros por
+        # stdout + la nota solo en stderr es indistinguible de un caso sin correo. Y
+        # sellar una entrega aquí llamaría `sellar_entrega` -> `mkdir(parents=True)`,
+        # creando el árbol que el motor acaba de negarse a crear (o sellando uno viejo
+        # como si fuera de esta corrida). Se imprime en stdout, se salta `--entrega` y
+        # se devuelve 1 para que cualquier cosa que lea el exit code no lea éxito.
+        print("ATOMIZACIÓN NO PUBLICADA: no se ha escrito nada en esta corrida.")
+        for n in report.notas:
+            print(f"  NOTA: {n}")
+        for e in report.errores:
+            print(f"  ERROR: {e}", file=sys.stderr)
+        return 1
+
     print(report.resumen())
     for n in report.notas:
         print(f"  NOTA: {n}", file=sys.stderr)

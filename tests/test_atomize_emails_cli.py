@@ -48,3 +48,37 @@ def test_cli_entrega_invoca_sellar(monkeypatch, tmp_path, capsys):
     cap = capsys.readouterr()
     assert "Entrega sellada" in cap.out
     assert "NOTA" in cap.err and "no existe" in cap.err   # report.notas surfaced en stderr
+
+
+def test_cli_no_publicado_no_finge_exito(monkeypatch, tmp_path, capsys):
+    # `report.publicado is False` (rama transitoria): el CLI manual no debe imprimir un
+    # resumen en ceros como si fuera un resultado real, ni sellar una entrega sobre un
+    # árbol que el motor se acaba de negar a crear/tocar, ni devolver 0 (hallazgo 2 de
+    # la revisión final: el `--entrega` incondicional llamaba `mkdir(parents=True)`
+    # sobre la raíz que la rama transitoria deja sin crear).
+    from core.email_atomize import pipeline as P
+    from core.email_atomize.pipeline import AtomizeReport
+
+    def fake_atomize_case(ref):
+        return AtomizeReport(
+            mensajes=0, publicado=False,
+            fallos_lectura=["a.eml: no hidratado"],
+            notas=["ATOMIZACIÓN NO PUBLICADA: 1 .eml no se pudieron leer…"])
+
+    llamadas = {}
+
+    def fake_sellar(out_dir, descr):
+        llamadas["se_llamo"] = True
+        return tmp_path / "Emails" / "_entregas" / "2026-06-25_x"
+
+    monkeypatch.setattr(P, "atomize_case", fake_atomize_case)
+    monkeypatch.setattr(P, "emails_out_dir", lambda ref: tmp_path / "Emails")
+    monkeypatch.setattr(P, "sellar_entrega", fake_sellar)
+
+    rc = cli.main(["--ref", "W-02VND1", "--entrega", "entrega instructora"])
+
+    assert rc == 1
+    assert "se_llamo" not in llamadas   # `sellar_entrega` NUNCA se invoca
+    cap = capsys.readouterr()
+    assert "NO PUBLICADA" in cap.out    # visible en stdout, no solo en stderr
+    assert "Entrega sellada" not in cap.out
