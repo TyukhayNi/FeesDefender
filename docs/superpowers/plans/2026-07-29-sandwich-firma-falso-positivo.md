@@ -56,7 +56,7 @@ techo real es 3).
 > parser real—, pero la cifra va a una SPEC ya adjudicada y la confirmación cuesta una corrida.
 
 **Segunda medición de la misma ronda, y es la que obligó a añadir un guard:** la firma queda **sin
-cerrar** al final del documento en **20 de 271** correos reales (5 de 24 en la prueba de Gmail, 15 de
+cerrar** al final del documento en **1 de 271** correos reales (0 de 24 en la prueba de Gmail, 1 de
 247 en W-02VND1). Sin el guard fail-closed de la Tarea 2 (paso 7), en esos casos `_sigdepth` no vuelve
 a 0, **todo** el texto de autor posterior se marca como firma y la exclusión **levanta un veto
 correcto**. En estos dos corpus no llegaba a disparar —el defecto estaba armado y callado, igual que
@@ -423,7 +423,7 @@ def test_seg_html_firma_sin_cerrar_no_levanta_el_veto():
     veto CORRECTO, que es la unica direccion en la que esta regla no puede fallar.
 
     Fail-closed: si la firma queda abierta, sus trozos vuelven a contar como autor. Medido: la
-    firma queda abierta en 20 de 271 correos reales (5 de 24 en la prueba de Gmail, 15 de 247
+    firma queda abierta en 1 de 271 correos reales (0 de 24 en la prueba de Gmail, 1 de 247
     en W-02VND1) -- el defecto estaba ARMADO, solo que todavia no habia disparado."""
     html = ('<blockquote>cita uno</blockquote>'
             '<div class="gmail_signature">Un saludo'            # <-- nunca se cierra
@@ -637,8 +637,8 @@ por:
     # firma no es fiable, sus trozos vuelven a contar como autor.
     # `HTMLParser.close()` no sintetiza cierres ni lanza excepcion, asi que el fallback a texto
     # plano de mas abajo no cubre este caso.
-    # Medido: la firma queda abierta en 20 de 271 correos reales (5 de 24 en la prueba de Gmail,
-    # 15 de 247 en W-02VND1) y el guard NO cuesta ni un portador desbloqueado: 3 con guard y 3
+    # Medido: la firma queda abierta en 1 de 271 correos reales (0 de 24 en la prueba de Gmail,
+    # 1 de 247 en W-02VND1) y el guard NO cuesta ni un portador desbloqueado: 3 con guard y 3
     # sin guard. El defecto estaba armado y no habia disparado.
     firma_fiable = p._sigdepth == 0
     if _sandwich(p.seq, firma_como_autor=not firma_fiable):
@@ -1067,7 +1067,7 @@ parcialmente refutado.** Todo lo aceptado está aplicado arriba. Los dos bloquea
 | # | Sev | Hallazgo | Adjudicación |
 |---|---|---|---|
 | 1 | B0 | El golden es inestable: `add_alternative()` + `as_bytes()` genera una frontera MIME **aleatoria**, y el sha del raw entra en la ficha | **CONFIRMADO ejecutando**: 4 serializaciones → 4 sha. Y mi paso 4 proponía el arreglo **equivocado** («excluir el campo del hash»), que habría enmascarado justo lo que el golden vigila. Arreglado con `set_boundary` + una comprobación de determinismo del `.eml` separada de la del motor |
-| 2 | B0 | Una firma **sin cerrar** deja `_sigdepth > 0` y **levanta un veto correcto** | **CONFIRMADO ejecutando**: `Q S2 Q`, `_sigdepth=1`, veto `True → False` sobre texto de autor real, y la conservación de tokens no lo bloquea. Contradice la afirmación central de la SPEC §3. Arreglado con guard fail-closed + test propio. **Ampliación medida:** la firma queda abierta en **20 de 271** correos reales (5/24 y 15/247) y en ninguno llegaba a disparar — estaba **armado sin haber disparado**, la misma forma que tenía `#98`. El guard **no cuesta nada**: 3 portadores desbloqueados con y sin él |
+| 2 | B0 | Una firma **sin cerrar** deja `_sigdepth > 0` y **levanta un veto correcto** | **CONFIRMADO ejecutando**: `Q S2 Q`, `_sigdepth=1`, veto `True → False` sobre texto de autor real, y la conservación de tokens no lo bloquea. Contradice la afirmación central de la SPEC §3. Arreglado con guard fail-closed + test propio. **Ampliación medida:** la firma queda abierta en **1 de 271** correos reales (0/24 y 1/247 — la cifra de «20 de 271» que se escribio primero era FALSA, medida con marcadores mas anchos que los implementados; la corrigio la revision de rama) y en ninguno llegaba a disparar — estaba **armado sin haber disparado**, la misma forma que tenía `#98`. El guard **no cuesta nada**: 3 portadores desbloqueados con y sin él |
 | 3 | B0 | El test de traza derivaba el portador **de la propia fila**, así que el mutante intercambiado pasaba | **ACEPTADO**. Era un test casi vacuo de mi cosecha, exactamente la familia contra la que este repo lleva cuatro. Arreglado resolviendo los `MSG-id` desde `_registro.json` y fijando la lista exacta |
 | 4 | B0 | La Tarea 6 pedía número de PR y hash de squash **antes** de que existieran | **ACEPTADO** en sustancia (la severidad es discutible: es orden de docs, no código roto). El arreglo coincide con la regla de `CLAUDE.md`: el `✅ + hash` es del cierre, tras el merge |
 | 5 | A | `firma_excluida` se perdía en la rama `conservacion_tokens` | **ACEPTADO**. Mi decisión era defendible, pero la lectura literal del §5.1 y el valor informativo ganan: el puntero de `conservacion_tokens` no informa del cambio de veredicto |
@@ -1085,6 +1085,30 @@ fixture existente contiene `gmail_signature`.
 
 **Su §5 no aportó ataque a la decisión de diseño**, y coincido: el fallo de `_sigdepth` es una omisión
 del plan de implementación, no una refutación de la exclusión estructural.
+
+## Adjudicación de la revisión de rama completa (2026-07-29) — LISTA CON CAMBIOS, aplicados
+
+Segunda revisión de la rama, ya construida. Devolvió **LISTA CON CAMBIOS**: 3 Important + 8 Minor, y
+confirmó por su cuenta —remutando el código— que ninguno de los tests es vacuo. **Los tres Important
+eran ciertos y los tres se reprodujeron ejecutando.** Dos de ellos son errores míos de medición, del
+tipo que llevo señalando en otros.
+
+| # | Sev | Hallazgo | Adjudicación |
+|---|---|---|---|
+| 1 | Important | **El ámbito de la firma se fuga fuera de su elemento** y el guard no lo ve: si la firma se abre dentro de un contenedor que cierra antes que ella, su entrada queda huérfana en la pila; `_sigdepth` sigue alto fuera de la firma y un cierre suelto posterior lo devuelve a 0 → `firma_fiable` vuelve a True con texto de autor marcado como firma → **veto correcto levantado** | **CONFIRMADO ejecutando** su repro exacto: `seq=QSQ`, `_sigdepth=0`, `respuesta_intercalada=False` con 2 ancestros. Segundo agujero en la dirección prohibida, por una vía que el guard fail-closed no cubre. Arreglado con su propuesta —barrer las huérfanas **solo en la dimensión `sig`**, sin tocar `cont`/`qdepth` para no mover la Capa A— + test propio (`test_seg_html_ambito_de_firma_no_sobrevive_a_su_elemento`), que mata el mutante y cuyo mensaje de fallo enseña el defecto. No cuesta portadores: 3 desbloqueados antes y después |
+| 2 | Important | «la firma queda abierta en **20 de 271** correos» **no reproduce**: mide 0 de 24 y ~1 de 247 | **CONFIRMADO, y es un error mío.** Aquella cifra se midió con el conjunto **ancho** de marcadores del script de scratch (`+signature`, `+firma`), no con el que se implementa (`gmail_signature`). Con el predicado real y los dos arreglos: **1 de 271** (0 de 24 y 1 de 247). Corregida en las **cuatro** copias: comentario permanente de `inline.py`, docstring del test, este plan y la errata de la SPEC. La conclusión de coste/beneficio del guard sí se sostiene |
+| 3 | Important | La **Errata 2 promete de más igual que el párrafo que corregía**: las «9 citas» son **6** (3 filas eran preexistentes de portadores ajenos) y **los extractos están vacíos**, así que «con su texto» es falso | **CONFIRMADO ejecutando.** Y midiendo más allá de su hallazgo: los `blockquote` de esos 3 portadores están **genuinamente vacíos** (2 cada uno, 0 palabras), `autor == tokens_total`, **0** marcas de cita y **0** `gmail_quote`. **Esos correos no esconden historial citado: no tienen ninguno.** El arreglo recupera **0 contenido** en este corpus. Errata 2 reescrita con eso, y con la consecuencia que nadie había dicho: **el síntoma que abrió la spec no lo explican estos portadores** → `MEJORAS #109` |
+| — | Minor 1 | La anotación de `_tags` seguía siendo `tuple[str, bool]` | **ACEPTADO**: `tuple[str, bool, bool]` |
+| — | Minor 2 | El comentario «llegar aquí ya implica `firma_fiable`» es **falso** | **ACEPTADO**, y tenía razón: con `_sigdepth > 0` y sin sándwich también se llega. Reformulado |
+| — | Minor 7 | El test de emparejamiento colapsaba dos fichas B con el mismo `de` sin que nada lo notara | **ACEPTADO**: `assert n_b == 2` |
+| — | Minor 3,4,5,6,8 | Dos punteros para el mismo portador en la rama `conservacion_tokens` (deliberado); `citas_a_revision` cuenta no-citas (preexistente); falta test de que la fila `firma_sin_cerrar` llegue a `cola.md` (0 casos medidos); el §6.7 queda sin evidencia en §8; el mensaje del golden no explica la salida deliberada | **ANOTADOS, no aplicados.** Ninguno cambia comportamiento y el revisor mismo no pedía los dos últimos. Quedan aquí por si el §6.7 se quiere cerrar en una pasada futura |
+
+**Lo que el revisor verificó y coincide con mi lectura:** ningún consumidor olvidado de `_tags`; todas
+las demás vías de desbalance de `_sigdepth` probadas una a una y cerradas (`_MAX_DEPTH`, contenedor
+que es cita **y** firma, etiquetas cruzadas, `handle_startendtag`, el `except` de `segmentar_html`);
+el guard y su condición `mot` correctos en las cuatro combinaciones; el contrato §6 punto por punto;
+el orden de commits (golden **antes** del fix, confirmado en `git log`); y el núcleo de las dos
+erratas (7 vetados → 4, solo cambia `_revision/cola.md`, 0 fichas nuevas, 0 upgrades).
 
 ## Fuera de alcance (registrado, no se construye aquí)
 

@@ -402,12 +402,26 @@ firma del recuento.
       exactamente su test, y su mensaje de fallo enseña el defecto en vivo.
 - [x] Verificación en vivo (§8) ejecutada sobre la copia local, sin tocar `G:`. **El reparto real no
       es el que la spec preveía**, y son dos erratas escritas en ella: los portadores desbloqueados
-      son **3, no 5**, y las fichas nuevas son **0, no 4**. Lo que el arreglo entrega son **9
-      mensajes citados** que solo existían en el `.eml` crudo y ahora están en `_revision/cola.md`
-      con su extracto; salen `sin_cabecera` porque el anclaje de esas citas es la propia firma, y el
-      motor **se niega a fabricar un remitente**. Del árbol entero solo cambió `_revision/cola.md`:
-      0 renumeraciones, 3 trazas, 0 upgrades, y los 4 portadores cuyo veto es correcto siguen
-      declarados. En `W-02VND1` la regla no cambia nada (247 con HTML, 1 vetado antes y después).
+      son **3, no 5**, y las fichas nuevas son **0, no 4**. Del árbol entero solo cambió
+      `_revision/cola.md`: 0 renumeraciones, 3 trazas, 6 punteros `sin_cabecera`, 0 upgrades, y los 4
+      portadores cuyo veto es correcto siguen declarados. En `W-02VND1` la regla no cambia nada (247
+      con HTML, 1 vetado antes y después).
+- [x] **Y el resultado incómodo, que solo salió al medirlo:** el arreglo **no recupera contenido** en
+      este corpus. Los `blockquote` de esos 3 portadores están **vacíos** (2 cada uno, 0 palabras;
+      `autor == tokens_total`; 0 marcas de cita; 0 `gmail_quote`): no escondían historial citado. Los
+      6 punteros salen con extracto vacío. El arreglo es correcto —un correo cuyo único texto entre
+      citas es su firma no es una intercalada— pero **el síntoma que abrió la spec (un hilo de 4-5
+      mensajes con una sola ficha) no lo explican estos portadores**, y los otros 4 son intercaladas
+      auténticas. Dónde están esos mensajes queda abierto en **`MEJORAS #109`**, con `#107` como
+      candidato principal. Cerrarlo exige el hilo concreto, así que hay que hacerlo **antes** de
+      borrar el corpus de prueba.
+- [x] **Revisión de rama completa** consumida (veredicto LISTA CON CAMBIOS, 3 Important + 8 Minor;
+      adjudicación en el §correspondiente del plan). Los tres Important eran ciertos y se
+      reprodujeron ejecutando: (1) el ámbito de la firma se **fugaba fuera de su elemento** y
+      levantaba un veto correcto por una vía que el guard no veía —arreglado, con test que mata el
+      mutante—; (2) mi cifra de «20 de 271 correos con la firma abierta» era **falsa** (medida con
+      marcadores más anchos que los implementados): son **1 de 271**, corregida en las cuatro copias;
+      (3) mi propia Errata 2 prometía de más igual que el párrafo que corregía.
 - [ ] **En revisión**: PR abierto, pendiente de `leak-scan` y merge. El `✅` con el número de PR y el
       hash del squash se pone en el cierre de sesión, no aquí.
 - [ ] Tras el merge, y con autorización expresa: borrar del Escritorio `_PRUEBA_98_VaRS3` y

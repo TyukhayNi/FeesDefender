@@ -171,12 +171,16 @@ def test_firma_excluida_empareja_cada_remitente_con_su_cuerpo(tmp_path):
     P.atomize_dir(src, out)
 
     fichas = {}
+    n_b = 0
     for p in sorted((out / "mensajes").glob("*.md")):
         txt = p.read_text(encoding="utf-8")
         if _capa(txt) == "B":
+            n_b += 1
             de = next(l.split(":", 1)[1].strip() for l in _frontmatter(txt).splitlines()
                       if l.startswith("de:"))
             fichas[de] = txt
+    # El dict colapsaria dos fichas B con el mismo `de` y `set(fichas)` seguiria pasando.
+    assert n_b == 2, f"se esperaban 2 fichas de Capa B; hay {n_b}"
 
     # DURO: cada remitente con su cuerpo, en las dos direcciones.
     for de, marca_propia, marca_ajena in (

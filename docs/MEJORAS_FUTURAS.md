@@ -4228,3 +4228,52 @@ cuando se prioricen las piezas. Estado de cada una, medido:
 más texto en las fichas. Metió 79 % de caracteres que eran 90 % redundancia. Lo que falta es
 **estructura** (hilo), **contenido inaccesible** (adjuntos) y **cerrar los falsos positivos** que
 impiden que un mensaje llegue a ser ficha.
+
+---
+
+## 109. `blockquote` vacíos en los hilos de Gmail, y el síntoma del hilo de 4-5 mensajes sigue sin explicar
+
+**Medido 2026-07-29** al verificar en vivo el arreglo del falso positivo de `_sandwich`
+(`docs/superpowers/specs/2026-07-29-sandwich-firma-falso-positivo-design.md`, ver la **Errata 2** de
+su §5). No es un defecto confirmado: son **dos hechos medidos y una pregunta abierta**, anotados para
+no perderlos.
+
+**Hecho 1 — los 3 portadores que el arreglo desbloquea no tenían nada citado.** De los 24 correos con
+HTML del corpus de prueba (caso de Valencia, hilos de Gmail), el arreglo desbloquea 3. En los tres:
+
+| medición | valor |
+|---|---|
+| `blockquote` en el documento | 2 |
+| palabras dentro de cada ancestro | **0 y 0** |
+| palabras en `autor` / `tokens_total` | 279/279, 216/216, 216/216 → **no se pierde ni se enruta mal nada** |
+| marcas de cita (`escribió:`, `De:`, `From:`) en `autor` | **0** |
+| contenedores `gmail_quote` | **0** |
+
+Es decir: sus `blockquote` son **cáscaras vacías** de la plantilla HTML, no citas con contenido. El
+arreglo hace que se segmenten —correctamente, porque un correo cuyo único texto entre citas es su
+firma no es una respuesta intercalada— y produce 6 punteros `sin_cabecera` con **extracto vacío**.
+Recupera **0 contenido**. Queda abierto si esas cáscaras son del cliente de correo o un artefacto de
+la exportación; no se ha mirado.
+
+**Hecho 2, y es el que importa — el síntoma que abrió aquella spec no está explicado.** El disparador
+fue que Nikolai leyó las fichas de un hilo de 4-5 mensajes y encontró **una**. El falso positivo de
+`_sandwich` parecía la causa. Tras arreglarlo y medirlo: los 3 portadores que desbloquea no tenían
+mensajes citados, y los otros 4 que el DOM veta son **intercaladas auténticas** cuyo veto es correcto.
+**Ninguno de los 7 explica los mensajes que faltaban.** El arreglo era necesario (la clasificación
+estaba mal) pero no era la causa del síntoma.
+
+**Candidatos, en orden de sospecha:** `#107` (historial citado sin atribuir: si el hilo llega como
+texto plano citado con `>` dentro del cuerpo y sin cabecera parseable, no hay ficha y es correcto que
+no la haya — lo que falta es la vista de historial); que los mensajes del hilo estén **anidados**
+como `message/rfc822` y el desanidado tope en el primero; o que la etiqueta Gmail del caso no
+contuviera los otros mensajes del hilo, que sería intake y no motor.
+
+**Cómo cerrarlo, sin adivinar:** tomar el hilo concreto que Nikolai leyó (identificarlo por asunto en
+el corpus de prueba **antes de borrarlo**), contar sus mensajes en el `.eml` crudo y ver, uno a uno,
+por qué cada uno tiene o no ficha. Es una hora de medición y cierra la pregunta que motivó dos
+sesiones de trabajo.
+
+**Prioridad.** Media. **Disparador de promoción:** que vuelva a aparecer un hilo con fichas que
+faltan, o decisión de Nikolai. Ojo: el corpus de prueba (`_PRUEBA_98_VaRS3*` del Escritorio) es
+correo real de cliente y está previsto borrarlo tras el merge de esa rama — si se quiere cerrar esto
+con ese hilo, hay que hacerlo antes.

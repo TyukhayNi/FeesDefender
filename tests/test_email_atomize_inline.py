@@ -227,9 +227,10 @@ def test_seg_html_firma_sin_cerrar_no_levanta_el_veto():
     documento y marca como firma TODO el texto de autor posterior: la exclusion levantaria un
     veto CORRECTO, que es la unica direccion en la que esta regla no puede fallar.
 
-    Fail-closed: si la firma queda abierta, sus trozos vuelven a contar como autor. Medido: la
-    firma queda abierta en 20 de 271 correos reales (5 de 24 en la prueba de Gmail, 15 de 247
-    en W-02VND1) -- el defecto estaba ARMADO, solo que todavia no habia disparado."""
+    Fail-closed: si la firma queda abierta, sus trozos vuelven a contar como autor. Medido con
+    el predicado que se implementa: la firma queda abierta en 1 de 271 correos reales (0 de 24
+    en la prueba de Gmail, 1 de 247 en W-02VND1) -- el defecto estaba ARMADO, solo que
+    todavia no habia disparado."""
     html = ('<blockquote>cita uno</blockquote>'
             '<div class="gmail_signature">Un saludo'            # <-- nunca se cierra
             '<div>Esto no lo aceptamos y es texto de autor real</div>'
@@ -238,6 +239,22 @@ def test_seg_html_firma_sin_cerrar_no_levanta_el_veto():
     assert s.respuesta_intercalada is True and s.ancestros == []
     assert s.motivo == "firma_sin_cerrar"   # y se DECLARA, no se veta en silencio
     assert s.firma_excluida == 0
+
+
+def test_seg_html_ambito_de_firma_no_sobrevive_a_su_elemento():
+    """Contrato §6.9 (añadido por la revision de rama, hallazgo Important). El ambito de la
+    firma NO puede fugarse fuera de su elemento.
+
+    Aqui la firma se abre DENTRO de un blockquote y no se cierra antes de que el blockquote
+    cierre; luego un `</div>` suelto la desapila. Sin el barrido de huerfanas de
+    `handle_endtag`, `_sigdepth` volvia a 0 -> `firma_fiable` True -> el texto de autor real
+    seguia marcado como firma y el veto CORRECTO se levantaba (`ancestros=2`). El guard de
+    `segmentar_html` no lo veia porque el desbalance no llega al final del documento."""
+    html = ('<blockquote><div class="gmail_signature">firma</blockquote>'
+            'ESTO ES TEXTO DE AUTOR REAL</div>'
+            '<blockquote>cita dos</blockquote>')
+    s = I.segmentar_html(html)
+    assert s.respuesta_intercalada is True and s.ancestros == []
 
 
 # ---------------------------------------------------------------------------

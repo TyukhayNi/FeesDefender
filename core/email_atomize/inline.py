@@ -698,7 +698,7 @@ class _QuoteHTMLParser(HTMLParser):
         self.seg_stack: list[dict] = []
         self._pending_parts: list[str] = []   # texto previo a un contenedor (anclaje), acumulado
         self.seq: list[str] = []              # "Q"/"A" para el test de sándwich (intercalada)
-        self._tags: list[tuple[str, bool]] = []
+        self._tags: list[tuple[str, bool, bool]] = []   # (tag, es_contenedor, es_firma)
         self._skip = 0                        # >0 dentro de <style>/<script>/<head>
         self.tokens_total = 0                 # tokens de texto enrutado (chequeo conservación)
         self._sigdepth = 0                    # >0 dentro de un contenedor de firma
@@ -749,6 +749,20 @@ class _QuoteHTMLParser(HTMLParser):
         for k in range(len(self._tags) - 1, -1, -1):
             t, cont, sig = self._tags[k]
             if t == tag:
+                # Las entradas POR ENCIMA de k quedaron huerfanas (etiquetas sin cerrar dentro de
+                # este elemento). Se dan por cerradas SOLO en la dimension `sig`: sin esto, el
+                # ambito de una firma sobrevive a su propio elemento y un cierre suelto posterior
+                # lo devuelve a 0, con lo que `firma_fiable` vuelve a ser True mientras hay texto
+                # de autor marcado como firma -> veto correcto levantado. Es la misma direccion
+                # prohibida que cierra el guard de `segmentar_html`, por una via que el guard no
+                # ve (el desbalance no llega al final del documento).
+                # `cont`/`qdepth` NO se tocan a proposito: cambiarlos moveria la segmentacion de
+                # correos que hoy funcionan, y la Capa A tiene que quedar byte-identica.
+                for j in range(k + 1, len(self._tags)):
+                    tj, cj, sj = self._tags[j]
+                    if sj:
+                        self._sigdepth = max(0, self._sigdepth - 1)
+                        self._tags[j] = (tj, cj, False)
                 del self._tags[k]
                 if t in self._SKIP_TAGS:
                     self._skip = max(0, self._skip - 1)
@@ -816,9 +830,11 @@ def segmentar_html(html: str) -> Segmentacion:
     # firma no es fiable, sus trozos vuelven a contar como autor.
     # `HTMLParser.close()` no sintetiza cierres ni lanza excepcion, asi que el fallback a texto
     # plano de arriba no cubre este caso.
-    # Medido: la firma queda abierta en 20 de 271 correos reales (5 de 24 en la prueba de Gmail,
-    # 15 de 247 en W-02VND1) y el guard NO cuesta ni un portador desbloqueado: 3 con guard y 3
-    # sin guard. El defecto estaba armado y no habia disparado.
+    # Medido: la firma queda abierta en 1 de 271 correos reales (0 de 24 en la prueba de
+    # Gmail, 1 de 247 en W-02VND1) y el guard NO cuesta ni un portador desbloqueado: 3 con
+    # guard y 3 sin guard. El defecto estaba armado y no habia disparado.
+    # (La cifra de «20 de 271» de una primera medicion era FALSA: se midio con un conjunto
+    # de marcadores mas ancho que el que se implementa. Corregida por la revision de rama.)
     firma_fiable = p._sigdepth == 0
     if _sandwich(p.seq, firma_como_autor=not firma_fiable):
         # Se declara SOLO cuando el desbalance es lo que sostiene el veto; si no, seria ruido
@@ -834,7 +850,8 @@ def segmentar_html(html: str) -> Segmentacion:
         for s in p.segments
     ]
     # Traza (spec §5.1): SOLO cuando la exclusion de firma cambio el veredicto, no en cada correo
-    # con firma. Llegar aqui ya implica `firma_fiable`.
+    # con firma. Llegar aqui implica que la exclusion no sostiene ningun veto — NO implica
+    # `firma_fiable` (con `_sigdepth > 0` y sin sandwich tambien se llega, y entonces esto da 0).
     firma_excluida = p.firma_trozos if _sandwich(p.seq, firma_como_autor=True) else 0
     # Conservación de tokens (DD §2.4): todo texto enrutado debe repartirse entre autor y
     # segmentos. Si diverge (bug de enrutado), NO segmentar: portador entero a revisión.
