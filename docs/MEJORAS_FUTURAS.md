@@ -4021,3 +4021,98 @@ runtime donde esa regla se rompe sin querer.
 dentro de `session_state`.
 
 **Coste estimado.** Nada ahora (es una regla); ~30 min el test guardián al llegar a la Fase 4.
+## 104. El historial citado que no se puede atribuir desaparece del árbol de MD
+
+**Medido 2026-07-29** sobre una etiqueta real de Gmail (caso `W-02TH0W`, 29 `.eml` exportados a un
+scratch) mientras se verificaba `MEJORAS #98`.
+
+**El mecanismo.** Dos decisiones defendibles por separado que juntas pierden contenido:
+`bodies.extraer_cuerpo` **recorta la cita** para que cada ficha sea un mensaje y no historial
+repetido veinte veces (`cuerpo_recortado_cita: true` lo declara); y la Capa B solo promueve una cita
+a ficha propia si puede **atribuir el remitente** desde una cabecera parseable. Cuando ninguna de las
+dos cosas ocurre, ese texto no está ni como ficha ni dentro del cuerpo del portador: solo en el
+`.eml` crudo.
+
+**Los números, que son lo que evita discutirlo de oído.** De 28 atoms de Capa A, 9 tenían el cuerpo
+recortado. En ellos: **51.721 caracteres de texto plano, 10.728 llegan al `.md`, 40.993 fuera (79 %)**.
+Pero medido **por frase sustancial** (≥8 palabras), de 365 frases cortadas **332 (90 %) ya existen en
+otra ficha** —eran copias del mismo historial citado por varios portadores— y solo **33 (9 %) no
+existen en ningún sitio**, de las cuales **31 salen de un solo hilo** con respuesta intercalada cuyos
+mensajes anteriores nunca llegaron como correo propio a la etiqueta.
+
+**Lo que NO hay que hacer:** promover con el contenido adivinado. Ahí vive la misatribución, que en
+un corpus probatorio es peor que perder texto (un hueco se ve; una atribución falsa no).
+
+**Propuesta (opción B de tres barajadas).** Un fichero hermano por portador,
+`mensajes/<atom>.historial.md`, con el historial citado **verbatim** y una cabecera que declare que
+**nada de ahí está atribuido**. Los atoms se quedan **congelados** (no se reescribe ninguna ficha, no
+se rompe la byte-identidad de Capa A ni la comparación con los `_entregas/` sellados) y tanto el
+letrado como un LLM tienen el hilo al lado de la ficha. Descartada la opción A (una sección dentro
+del atom) precisamente porque reescribe todos los `.md` existentes.
+
+**Disparador de promoción:** un caso donde el 9 % perdido caiga sobre prueba nuclear, o decisión de
+Nikolai. **Coste:** ~2 h con tests. Emparentado con `#105` (sin hilo no basta con tener el texto) y
+con `#107`.
+
+## 105. Los mensajes están, la conversación no: falta hilo reconstruible desde el MD
+
+**Anotado 2026-07-29**, mismo banco de pruebas que `#104`. Es la queja de lectura real, y es
+distinta de perder contenido.
+
+Abres la ficha de un correo y ves **solo su mensaje**. Los otros cuatro de la cadena existen como
+ficheros hermanos, pero **nada dice que sean la misma conversación**: no hay «esto continúa en
+MSG-00008». Para leer un hilo hay que saltar entre ficheros adivinando el orden, y eso *se siente*
+como contenido perdido cuando lo que hay es contenido **inconexo**.
+
+**El obstáculo técnico, ya conocido:** los atoms de Capa B llevan el campo `hilo` **vacío**
+(`model.py`; `construir_b` no lo fija), así que agrupar por `hilo` a ciegas fabricaría pseudo-hilos
+juntando conversaciones sin relación — misatribución de contexto. Está anotado como requisito de
+entrada 2 de `#86`.
+
+**Vías a valorar cuando se promueva:** derivar el hilo en el consumidor vía
+`procedencia[].citado_en` (el portador), que es la vía que `#86` ya apunta y no toca el motor; o
+threading riguroso por `References`/`In-Reply-To` (`#88`), más caro y con su propio coste en Modo 3.
+
+**Disparador:** que alguien tenga que reconstruir un hilo a mano para un escrito. **Coste:** depende
+de la vía; la del consumidor es la barata.
+
+## 106. Test vacuo: `test_seg_html_token_conservacion_no_inventa` no comprueba la conservación
+
+**Detectado 2026-07-29** por la revisión adversarial de Codex sobre la spec del falso positivo de
+`_sandwich`.
+
+`tests/test_email_atomize_inline.py:182` solo comprueba que un atributo sea de tipo `bool`. **Pasaría
+aunque se eliminara por completo la conservación de tokens**, que es la invariante que dice que el
+segmentador no pierde ni inventa texto al repartir el cuerpo entre autor y ancestros.
+
+Es el **cuarto** test vacuo de la misma familia encontrado en una sola sesión (los otros tres: un
+mock que comparaba contra `"<b@x>"` cuando los ids se guardan sin ángulos, un fixture de Layer B que
+no acuñaba ningún mensaje B, y un test de fallo permanente que pasaba aunque no se publicara nada).
+El patrón merece atención por sí mismo: en este motor los tests de invariantes se escriben mirando la
+forma del dato y no el comportamiento.
+
+**Qué hacer:** que el test compare el multiset de tokens del cuerpo de entrada contra la unión de los
+tokens repartidos, y falle si difieren. **Coste:** ~30 min. **Disparador:** la próxima vez que se
+toque `segmentar_html` (p. ej. al implementar la spec de `#98`-sándwich).
+
+## 107. Requisito: que el árbol atomizado sea contexto suficiente para un LLM
+
+**Formulado por Nikolai el 2026-07-29**, tras leer las fichas de un hilo real y no encontrar la
+cadena: *«que el LLM no tenga que leer los `.eml` y pueda leer los `.md` —reenviados, embebidos y
+adjuntos incluidos— rápido, robusto y sin perder cadenas enteras.»*
+
+Es un **requisito paraguas**, no una tarea: sirve para no perder de vista para qué existe el árbol
+cuando se prioricen las piezas. Estado de cada una, medido:
+
+| Pieza | Estado |
+|---|---|
+| Mensajes reenviados y embebidos como ficha propia | **Hecho** cuando hay cabecera atribuible (verificado en vivo: en la muestra los reenviados sí tenían ficha, y la Capa B promovió 7 citas más) |
+| Historial citado no atribuible, disponible sin atribuir | Falta → **`#104`** |
+| Hilo reconstruible desde el `.md` | Falta → **`#105`** |
+| Texto/OCR de los adjuntos en `.md` | Falta → **`#87`**. Hoy la ficha de cada adjunto dice literalmente `(pendiente; OCR en fase 2)`; en la muestra eran 15 adjuntos únicos (8 `.zip`, 2 `.pdf`, 1 `.ics`) sin una línea de su contenido en la carpeta |
+| Falsos positivos que bloquean la promoción | Spec escrita → `docs/superpowers/specs/2026-07-29-sandwich-firma-falso-positivo-design.md` |
+
+**Regla que se deriva de esto y conviene no olvidar:** «que el LLM lo lea» no se resuelve metiendo
+más texto en las fichas. Metió 79 % de caracteres que eran 90 % redundancia. Lo que falta es
+**estructura** (hilo), **contenido inaccesible** (adjuntos) y **cerrar los falsos positivos** que
+impiden que un mensaje llegue a ser ficha.
