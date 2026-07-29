@@ -351,8 +351,12 @@ procedencias pero **no** `eml_origen` ni `profundidad`: los tests 12 y 4 cubren 
   2 a 3 correos**, porque su fixture tiene 2 arriba y 1 en subcarpeta y ahora se cuentan los tres;
   `test_payload_atado_a_los_campos_reales_del_report` pasa a las claves nuevas
   `eml_en_disco`/`eml_leidos`.
-- **Se añade 1:** payload con `status: "parcial"` y `eml_leidos < eml_en_disco` cuando el motor
-  reporta un fallo de lectura.
+- **Se añade 1:** payload de la rama transitoria — `status: "fallo"`, `publicado: false` y
+  `eml_leidos < eml_en_disco` cuando el motor reporta un fallo de lectura. **Corrección de
+  coherencia (rev. 2.1):** esta línea decía `"parcial"`, heredado de la rev. 1, donde el fallo de
+  lectura publicaba sin podar. Con el fail-closed del §4.3 no se publica nada, y `"parcial"`
+  afirmaría una publicación parcial que no ha ocurrido; `"fallo"` es lo que el §4.4 y el plan
+  implementan. `"parcial"` queda para la rama permanente (publica con `poda_omitida`).
 - El resto (orden, no-op, reconciliación, fallo blando, resolución del caso una sola vez, `plan`,
   `reforzar`) queda **intacto**.
 

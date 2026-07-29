@@ -160,7 +160,7 @@ def _eml(mid: str, subj: str) -> bytes:
 python -m pytest tests/test_email_atomize_extract.py -q
 ```
 
-Expected: los 4 nuevos FAIL — `AttributeError: module 'core.email_atomize.extract' has no attribute 'EnumStats'` y, el de origen relativo, por `eml_origen` == nombre (que ya pasa) o por la recursión ausente.
+Expected: **3 RED y 1 ya verde.** Los de subcarpetas, fallo de lectura y fallo de enumeración fallan con `AttributeError: module 'core.email_atomize.extract' has no attribute 'EnumStats'`. `test_origen_de_nivel_superior_es_el_nombre_pelado` **ya pasa** con el código actual: es un test de **caracterización** deliberado, la red que avisará si el cambio de `eml_origen` rompe la byte-identidad de todo caso existente.
 
 - [ ] **Step 3: Write the implementation**
 
@@ -267,7 +267,21 @@ git commit -m "feat(email_atomize): enumeracion recursiva con origen relativo y 
 
 ### Task 2: Desempate determinista en el colapso
 
-Con la enumeración recursiva, «a igualdad de bytes gana el primero que llegó» pasa a depender del layout de carpetas. Este desempate lo vuelve explícito **sin cambiar el ganador en ningún caso actual**: hoy la secuencia de `eml_origen` es no decreciente (los ficheros se recorren en orden de ruta y los anidados heredan el origen del portador), así que el incumbente a igualdad de bytes es ya el origen lexicográficamente menor — que es exactamente lo que elige la regla nueva.
+Con la enumeración recursiva, «a igualdad de bytes gana el primero que llegó» pasa a depender del layout de carpetas. La regla nueva lo vuelve determinista **sin poder cambiar el ganador en ningún caso actual**, y por una razón estructural, no estadística: **solo desplaza cuando las profundidades de ruta difieren**. Como hoy no existe ni un `.eml` en subcarpeta, todos los orígenes están a profundidad 0, las profundidades siempre empatan y **nunca se desplaza nada** — sea cual sea el orden de llegada, haya una fuente o cinco.
+
+> **Corrección de la rev. 1 del plan, tras la revisión adversarial.** La versión anterior desempataba
+> a igualdad de profundidad por orden lexicográfico, apoyándose en que «la secuencia de `eml_origen`
+> es no decreciente». **Eso es falso por dos vías, las dos verificadas:** (1) el orden solo se
+> garantiza *dentro* de cada fuente — el pipeline concatena fuentes en el orden recibido
+> (`pipeline.py:83,94`), así que con `z.eml` en un lote y `a.eml` en `03_Email` la secuencia global no
+> es monótona; (2) en Windows el orden de `Path` no coincide con el de `str`:
+> `sorted([Path("a.eml"), Path("Z.eml")])` da `a.eml, Z.eml`, mientras `sorted(["a.eml","Z.eml"])` da
+> `Z.eml, a.eml`. Comparar rutas como cadenas habría podido mover un canónico existente. La regla de
+> abajo no compara rutas: solo profundidades.
+>
+> **Residual declarado, que NO es regresión:** dos copias del mismo mensaje a la **misma**
+> profundidad y con los mismos bytes siguen resolviéndose por orden de llegada, igual que hoy. Es el
+> statu quo; su no-determinismo entre fuentes pertenece a `MEJORAS #99`, no a este trabajo.
 
 **Files:**
 - Modify: `core/email_atomize/dedup.py:15-53`
@@ -294,6 +308,57 @@ def test_a_bytes_iguales_gana_la_ruta_menos_enterrada():
     # en los dos órdenes de llegada gana el de nivel superior
     assert colapsar([sub, top])[0].eml_origen == "a.eml"
     assert colapsar([top, sub])[0].eml_origen == "a.eml"
+
+
+def test_a_misma_profundidad_no_desplaza_nadie():
+    # LA prueba que protege todo caso actual: con las profundidades empatadas el canónico
+    # es el primero que llegó, exactamente como hoy. Se comprueba en los dos órdenes, con
+    # nombres que en Windows ordenan distinto como Path que como str (`a` vs `Z`), y con
+    # dos FUENTES distintas — las tres vías por las que la regla lexicográfica de la rev. 1
+    # del plan habría movido un canónico existente.
+    raw = _eml("<a@x>", "Oferta")
+    za = Avistamiento(raw=raw, message_id="<a@x>", eml_origen="Z.eml", profundidad=0,
+                      fuente="03_Email")
+    av = Avistamiento(raw=raw, message_id="<a@x>", eml_origen="a.eml", profundidad=0,
+                      fuente="2026-07-28_email_01")
+
+    assert colapsar([za, av])[0].eml_origen == "Z.eml"    # gana el primero, no el menor
+    assert colapsar([av, za])[0].eml_origen == "a.eml"
+
+
+def test_sin_message_id_dos_copias_identicas_tampoco_se_desplazan():
+    # Sin Message-ID la clave de identidad es el sha256 del raw, así que dos copias
+    # byte-idénticas colapsan igual. La regla debe comportarse igual que arriba.
+    m = EmailMessage()
+    m["Subject"] = "Sin id"
+    m["Date"] = "Thu, 12 Jun 2026 10:00:00 +0200"
+    m["From"] = "a@x"
+    m["To"] = "b@x"
+    m.set_content("cuerpo")
+    raw = m.as_bytes()
+    primero = Avistamiento(raw=raw, message_id="", eml_origen="Z.eml", profundidad=0,
+                           fuente="03_Email")
+    segundo = Avistamiento(raw=raw, message_id="", eml_origen="a.eml", profundidad=0,
+                           fuente="lote")
+
+    cols = colapsar([primero, segundo])
+
+    assert len(cols) == 1 and cols[0].eml_origen == "Z.eml"
+
+
+def test_la_fuente_viaja_con_el_canonico():
+    # `fuente` alimenta la llave del registro (Task 3): si no se desplaza con el canónico,
+    # la llave quedaría apuntando a la fuente equivocada.
+    pequena = _eml("<a@x>", "Oferta")
+    grande = _eml("<a@x>", "Oferta", cuerpo="cuerpo largo " * 20)
+    av_p = Avistamiento(raw=pequena, message_id="<a@x>", eml_origen="a.eml",
+                        profundidad=0, fuente="03_Email")
+    av_g = Avistamiento(raw=grande, message_id="<a@x>", eml_origen="sub/a.eml",
+                        profundidad=1, fuente="2026-07-28_email_01")
+
+    col = colapsar([av_p, av_g])[0]
+
+    assert col.eml_origen == "sub/a.eml" and col.fuente == "2026-07-28_email_01"
 
 
 def test_una_copia_de_menor_fidelidad_no_desplaza_al_canonico():
@@ -325,7 +390,7 @@ def test_las_dos_procedencias_se_conservan():
     assert set(col.procedencia[0]) == {"eml_origen", "profundidad", "ruta_anidacion"}
 ```
 
-Si el fichero no tiene un `_eml(mid, subj, cuerpo=...)`, añádelo con el patrón de `tests/test_email_atomize_pipeline.py::_msg`.
+Si el fichero no tiene ya un `_eml(mid, subj, cuerpo="cuerpo")`, añádelo **con ese nombre de parámetro exacto** (`cuerpo`, no `body`), más `from email.message import EmailMessage` y los imports de `Avistamiento`/`colapsar`.
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
@@ -358,28 +423,34 @@ En `core/email_atomize/dedup.py`, añadir `fuente: str = ""` al final de `Mensaj
     return list(por_clave.values())
 
 
-def _rango(origen: str) -> tuple[int, str]:
-    """Orden de preferencia de un origen: menos enterrado primero, luego lexicográfico."""
-    return (origen.count("/"), origen)
+def _hondura(origen: str) -> int:
+    """Cuántas carpetas por debajo de la fuente vive el `.eml` (0 = nivel superior).
+
+    OJO: es la hondura de la RUTA, no `Avistamiento.profundidad`, que cuenta anidamiento
+    MIME (`message/rfc822`). Son dos cosas distintas y aquí decide la primera.
+    """
+    return origen.count("/")
 
 
 def _desplaza(av: Avistamiento, existente: MensajeColapsado) -> bool:
     """¿`av` debe sustituir al canónico actual?
 
     Fidelidad primero: más bytes = MIME más completo (regla original, intacta). A
-    IGUALDAD de bytes NO decide el orden de llegada —que con enumeración recursiva
-    depende del layout de carpetas— sino la ruta: gana la menos enterrada y, en empate,
-    la lexicográficamente menor.
+    IGUALDAD de bytes solo desplaza si `av` está **estrictamente menos enterrado**: la
+    copia de nivel superior gana a la de subcarpeta, y si están a la misma hondura NO se
+    desplaza — se queda el primero que llegó, exactamente como hoy.
 
-    Esto NO cambia el resultado de ningún caso actual: los ficheros se recorren en orden
-    de ruta y los anidados heredan el origen de su portador, así que la secuencia de
-    `eml_origen` es no decreciente y el incumbente ya era el origen menor. Lo que añade
-    es que un mismo mensaje presente arriba y en subcarpeta tenga un canónico
-    **determinista** (spec §4.2).
+    Por qué así y no comparando rutas: comparar cadenas movería canónicos existentes por
+    dos vías verificadas. (1) El orden de enumeración solo está garantizado DENTRO de cada
+    fuente; el pipeline concatena fuentes en el orden recibido, así que la secuencia global
+    de orígenes no es monótona. (2) En Windows `sorted(Path)` y `sorted(str)` discrepan con
+    mayúsculas (`a.eml` vs `Z.eml`). Al decidir solo por hondura, en todo caso actual
+    —donde no hay ni un `.eml` en subcarpeta, luego todas las honduras son 0— el resultado
+    es idéntico al de hoy por construcción, y el layout mixto queda determinista (spec §4.2).
     """
     if len(av.raw) != len(existente.raw):
         return len(av.raw) > len(existente.raw)
-    return _rango(av.eml_origen) < _rango(existente.eml_origen)
+    return _hondura(av.eml_origen) < _hondura(existente.eml_origen)
 ```
 
 - [ ] **Step 4: Run the tests to verify they pass**
@@ -413,7 +484,7 @@ Dos huecos que encontró la revisión adversarial: `eml_leidos` no tenía fuente
 
 - [ ] **Step 1: Write the failing tests**
 
-Añadir a `tests/test_email_atomize_pipeline.py`:
+Añadir a `tests/test_email_atomize_pipeline.py`. **El fichero solo importa `json`, `EmailMessage` y `P`: añade `from pathlib import Path` a su cabecera**, que los tests de la Task 4 lo necesitan para parchear `Path.read_bytes`.
 
 ```python
 def test_llave_del_registro_no_colisiona_entre_fuentes(tmp_path):
@@ -473,12 +544,18 @@ En `core/email_atomize/pipeline.py`, añadir a `AtomizeReport` tras `vistas_gene
 
 Y en `atomize_dir`, sustituir la línea de enumeración (`:94`) y la de `marcar_procesado` (`:112`):
 
+**La enumeración se adelanta a `load_registro`**, que hace `mkdir` de `out` incondicionalmente
+(`ids.py:99-101`): así la Task 4 podrá decidir «no publico nada» **sin haber creado ni la carpeta
+raíz**. Sustituye las dos líneas de `:93-95` por, en este orden:
+
 ```python
     stats = E.EnumStats()
     avistamientos = [a for s in srcs for a in E.iter_avistamientos(s, stats=stats)]
     report.eml_enumerados = stats.enumerados
     report.eml_leidos = stats.leidos
     report.fallos_lectura = list(stats.fallos)
+
+    reg = IDS.load_registro(out)          # crea `out`: nada antes de aquí toca disco
     colapsados = D.colapsar(avistamientos)
 ```
 
@@ -530,7 +607,8 @@ def test_fallo_de_lectura_no_publica_nada(tmp_path, monkeypatch):
     (src / "b.eml").write_bytes(_msg("<b@x>", "Dos"))
     out = tmp_path / "Emails"
     P.atomize_dir(src, out, case_dir=tmp_path)          # corrida completa previa
-    antes = {p.name: p.read_bytes() for p in out.rglob("*") if p.is_file()}
+    antes = {p.relative_to(out).as_posix(): p.read_bytes()
+             for p in out.rglob("*") if p.is_file()}
     assert len(list((out / "mensajes").glob("*.md"))) == 2
 
     real = Path.read_bytes
@@ -546,8 +624,11 @@ def test_fallo_de_lectura_no_publica_nada(tmp_path, monkeypatch):
     assert rep.publicado is False
     assert rep.fallos_lectura and "b.eml" in rep.fallos_lectura[0]
     assert any("NO PUBLICADA" in n for n in rep.notas)
-    # nada se ha tocado: ni fichas, ni agregados, ni registro
-    assert {p.name: p.read_bytes() for p in out.rglob("*") if p.is_file()} == antes
+    # nada se ha tocado: ni fichas, ni agregados, ni registro. La clave del snapshot es la
+    # ruta RELATIVA, no `p.name`: con subcarpetas dos ficheros homónimos ocultarían un
+    # cambio (hallazgo de la revisión adversarial).
+    assert {p.relative_to(out).as_posix(): p.read_bytes()
+            for p in out.rglob("*") if p.is_file()} == antes
 
 
 def test_fallo_de_construccion_publica_pero_no_poda(tmp_path, monkeypatch):
@@ -569,6 +650,10 @@ def test_fallo_de_construccion_publica_pero_no_poda(tmp_path, monkeypatch):
             raise ValueError("cabecera imposible")
         return real_construir(col, *a, **k)
 
+    # El mensaje bueno CAMBIA antes de la 2ª corrida: sin esto, una implementación que no
+    # publicara absolutamente nada pasaría el test igual, porque el input bueno no varía
+    # (hallazgo de la revisión adversarial).
+    (src / "a.eml").write_bytes(_msg("<a@x>", "Uno", cuerpo="cuerpo NUEVO"))
     monkeypatch.setattr(P, "_construir_mensaje", rompe_b)
     rep = P.atomize_dir(src, out, case_dir=tmp_path)
 
@@ -576,6 +661,38 @@ def test_fallo_de_construccion_publica_pero_no_poda(tmp_path, monkeypatch):
     assert rep.errores and "cabecera imposible" in rep.errores[0]
     assert any("poda de mensajes/ OMITIDA" in n for n in rep.notas)
     # la ficha del que falló SOBREVIVE
+    assert sorted(p.name for p in (out / "mensajes").glob("*.md")) == fichas_antes
+    # y lo bueno SÍ se publicó: la ficha de <a@x> trae el cuerpo nuevo
+    fichas = {p.name: p.read_text(encoding="utf-8")
+              for p in (out / "mensajes").glob("*.md")}
+    assert any("cuerpo NUEVO" in md for md in fichas.values())
+
+
+def test_fallo_de_layer_b_tampoco_poda_el_b_superado(tmp_path, monkeypatch):
+    # El escenario que la poda existe para cubrir: un mensaje B superado por un upgrade
+    # de fidelidad. Si ADEMÁS otro portador falla al reconstruirse, la poda se apaga y el
+    # B rancio sobrevive — es el precio declarado del híbrido, y hay que fijarlo.
+    from core.email_atomize import inline as INL
+    src = tmp_path / "03_Email"
+    src.mkdir()
+    (src / "a.eml").write_bytes(_msg("<a@x>", "Uno"))
+    (src / "b.eml").write_bytes(_msg("<b@x>", "Dos"))
+    out = tmp_path / "Emails"
+    P.atomize_dir(src, out, case_dir=tmp_path)
+    fichas_antes = sorted(p.name for p in (out / "mensajes").glob("*.md"))
+
+    real = INL.reconstruir
+
+    def rompe_uno(m_a, raw, identidades):
+        if m_a.rfc_message_id == "<b@x>":
+            raise ValueError("portador ilegible")
+        return real(m_a, raw, identidades)
+
+    monkeypatch.setattr(INL, "reconstruir", rompe_uno)
+    rep = P.atomize_dir(src, out, case_dir=tmp_path)
+
+    assert rep.publicado is True and rep.poda_omitida is True
+    assert any("portador ilegible" in e for e in rep.errores)
     assert sorted(p.name for p in (out / "mensajes").glob("*.md")) == fichas_antes
 
 
@@ -616,7 +733,10 @@ def test_no_siembra_carpetas_si_no_publica(tmp_path, monkeypatch):
     rep = P.atomize_dir(src, out, case_dir=tmp_path)
 
     assert rep.publicado is False
-    assert not (out / "mensajes").exists() and not (out / "adjuntos").exists()
+    # NI la raíz: `load_registro` hacía `mkdir` de `out` y la decisión se toma antes.
+    # Sin este assert, el test pasaba dejando creado `01_Procesado/Emails/` y la corrida
+    # siguiente sin correo ya no haría el no-op estricto (vería «árbol previo»).
+    assert not out.exists()
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -645,18 +765,22 @@ _NOTA_PODA_OMITIDA = (
 
 **Mover** los dos `mkdir` (`:89-90`) para que no corran antes de la decisión: bórralos de ahí y ponlos justo antes del bucle de escritura de `mensajes/`.
 
-Insertar la decisión **después** del pase de Layer B (`:116`, tras `mensajes.extend(mensajes_b)`) y **antes** del bucle de escritura:
+**La rama transitoria decide ANTES de `load_registro`.** Insértala inmediatamente después de poblar los contadores (Task 3) y **antes** de `reg = IDS.load_registro(out)`, porque `load_registro` hace `mkdir` de `out` incondicionalmente (`ids.py:99-101`): decidir después dejaría creada la carpeta raíz del árbol, y una corrida posterior sin correo ya no haría el no-op estricto —vería «árbol previo»— sino reconciliación. Lo encontró la revisión adversarial.
 
 ```python
-    # --- Decisión de publicación (spec §4.3): en memoria, ANTES de escribir nada ---
-    # Transitorio (lectura/enumeración): fail-closed. Sobre `G:` casi siempre es Drive
-    # sin hidratar y re-correr lo resuelve; publicar con la foto incompleta borraría
-    # fichas cuyo mensaje sigue existiendo.
+    # --- Rama TRANSITORIA (spec §4.3): fail-closed, y antes de tocar disco ---
+    # Sobre `G:` un fallo de lectura casi siempre es Drive sin hidratar y re-correr lo
+    # resuelve; publicar con la foto incompleta borraría fichas cuyo mensaje sigue
+    # existiendo. No se llama a `load_registro` (crearía `out`), no se escribe nada.
     if report.fallos_lectura:
         report.publicado = False
         report.notas.append(_NOTA_NO_PUBLICADA.format(n=len(report.fallos_lectura)))
         return report
+```
 
+Y la rama permanente, tras el pase de Layer B (`mensajes.extend(mensajes_b)`), sustituyendo el bucle de escritura y la poda originales:
+
+```python
     (out / "mensajes").mkdir(parents=True, exist_ok=True)
     (out / "adjuntos").mkdir(parents=True, exist_ok=True)
 
@@ -762,6 +886,8 @@ def test_motor_real_ve_las_subcarpetas(caso, monkeypatch, capsys):
 ```
 
 - **Simplificar** `test_plan_no_atomiza_pero_informa_y_avisa`: quitar la aserción del banner en stderr y **cambiar el recuento de 2 a 3** (su fixture tiene 2 arriba y 1 en subcarpeta, y ahora se cuentan los tres); conservar que no llama al motor y que no crea `01_Procesado/Emails`.
+- **Cambiar** `test_con_arbol_previo_y_cero_eml_si_se_atomiza`, que lee `eml_nivel_superior` y daría `KeyError` al retirarse la clave: pasa a `assert _evento(eventos)[0]["eml_en_disco"] == 0` y `assert _evento(eventos)[0]["details_schema"] == 2`.
+- **Cambiar** `test_status_parcial_cuando_el_motor_termina_con_errores`, cuya igualdad exacta lleva las claves viejas: al schema 2 completo (`details_schema`, `eml_en_disco`, `eml_leidos`, `publicado`, `poda_omitida`, `fallos_lectura`), con el doble declarando `poda_omitida=True`, que es lo coherente con que el motor terminase con errores.
 - **Cambiar también** `test_fallo_del_motor_no_aborta_el_ocr_y_emite_evento`: asserta el dict exacto de la rama de excepción, que llevaba las claves viejas. Pasa a:
 
 ```python
@@ -877,8 +1003,9 @@ En `plan`, sustituir las tres líneas del preview por:
                                  # details_schema 2: {"status": ok|parcial|fallo|noop,
                                  # "eml_en_disco", "eml_leidos", "publicado",
                                  # "poda_omitida", + contadores del AtomizeReport si el
-                                 # motor terminó}. `noop` solo lleva status y eml_en_disco.
-                                 # NO lleva "files". Sin `details_schema`: forma 1 (claves
+                                 # motor terminó}. Ya NO hay rama que emita `noop`: la emitía
+                                 # la discrepancia de #98, retirada. No lleva "files".
+                                 # Sin `details_schema`: forma 1 (claves
                                  # `eml_nivel_superior`/`eml_totales`, retiradas en #98).
 ```
 
@@ -1029,7 +1156,35 @@ def test_capa_a_byte_identica_sin_subcarpetas(tmp_path):
 
     assert len(fichas) == 3
     assert all('eml_origen: "m' in md for md in fichas.values())   # nombre pelado
-    assert sorted(e["id"] for e in ids.values()) == ["MSG-00001", "MSG-00002", "MSG-00003"]
+    # El MAPA exacto Message-ID → MSG-id, no el multiconjunto de ids: con el conjunto,
+    # una permutación de qué mensaje recibe qué número pasaría el test (hallazgo de la
+    # revisión adversarial). Los ids se acuñan en el orden de enumeración: m1, m2, m3.
+    assert {mid: e["id"] for mid, e in ids.items()} == {
+        "<a@x>": "MSG-00001", "<b@x>": "MSG-00002", "<c@x>": "MSG-00003"}
+
+
+def test_error_de_enumeracion_no_publica(tmp_path, monkeypatch):
+    # End-to-end del sexto bloqueante: un directorio que no se puede recorrer cuenta como
+    # fallo transitorio y por tanto NO publica. `rglob` lo habría silenciado.
+    import os as _os
+    src = tmp_path / "03_Email"
+    src.mkdir()
+    (src / "a.eml").write_bytes(_msg("<a@x>", "Uno"))
+    out = tmp_path / "Emails"
+    real_walk = _os.walk
+
+    def walk_con_error(top, onerror=None, **kw):
+        yield from real_walk(top, onerror=onerror, **kw)
+        if onerror is not None:
+            exc = OSError("permiso denegado")
+            exc.filename = str(src / "prohibida")
+            onerror(exc)
+
+    monkeypatch.setattr(_os, "walk", walk_con_error)
+    rep = P.atomize_dir(src, out, case_dir=tmp_path)
+
+    assert rep.publicado is False and rep.fallos_lectura
+    assert not out.exists()
 ```
 
 - [ ] **Step 2: Run the tests**
@@ -1059,7 +1214,9 @@ git commit -m "test(email_atomize): death tests de integracion de la enumeracion
 Al principio de la entrada `## 98.`, añadir:
 
 ```markdown
-> ✅ **CERRADO (PR #NNN, `<hash del merge>`).** Enumeración recursiva en el motor
+> 🔄 **ARREGLADO, pendiente de la verificación en vivo (PR #NNN).** No se marca ✅ aquí: el cierre
+> definitivo se escribe en el cierre de sesión, tras el paso 2 de la Task 8 (export real de control).
+> Enumeración recursiva en el motor
 > (`enumerar_rutas_eml` vía `os.walk`, que no silencia los directorios ilegibles como sí hace
 > `rglob`), `eml_origen` = ruta relativa POSIX, llave del registro con la fuente delante, y la
 > foto incompleta ya no borra fichas: fallo de lectura/enumeración → **no se publica nada**;
@@ -1109,7 +1266,7 @@ En la fila de `core/email_atomize/`, añadir al contrato de salida: `eml_origen`
 - [ ] **Step 5: Suite completa y leak-scan**
 
 ```bash
-python -m pytest -q --tb=short --junit-xml=%TEMP%\fd_98.xml
+python -m pytest -q --tb=short --junit-xml="$env:TEMP\fd_98.xml"
 ```
 
 Expected: 0 failures, 0 errors. El resumen de pytest no se captura fiable por tuberías en Windows: el conteo autoritativo está en el JUnit XML. Y:
@@ -1138,13 +1295,17 @@ La ejecuta el controlador **con Nikolai delante**: toca correo real y, en el pas
 ```python
 from pathlib import Path
 from core.email_export import export_label
-rep = export_label("<cuenta>", "<etiqueta pequeña>", Path(r"%TEMP%\scratch_98"),
+import os
+# NO `r"%TEMP%\..."`: Python no lo expande y depositaría correo REAL dentro del
+# worktree, que además vulnera la higiene de datos del repo.
+scratch = Path(os.environ["TEMP"]) / "scratch_98"
+rep = export_label("<cuenta>", "<etiqueta pequeña>", scratch,
                    case_id=None, extract_attachments=True)
 print(rep.messages, rep.attachments)
 ```
 
 - [ ] **Paso 2 — atomizar ese scratch y comprobar.** `python -m scripts.atomize_emails --src <scratch> --out <scratch_out>`. Verificar: los mensajes con adjunto **aparecen**; su `eml_origen` es la ruta relativa; el remitente de cada uno es **literal** del `.eml` (cero misatribución); y una segunda corrida no cambia nada.
-- [ ] **Paso 3 — no-regresión de W-02VND1, SOLO con autorización expresa de Nikolai en el momento.** Snapshot de hashes de los 277 `.md` antes, `atomize_case('W-02VND1')`, snapshot después: **byte-idénticos** y **0 IDs renumerados**. Patrón: `scripts/_verify_live_it3.py`. Demuestra solo «input top-only inalterado ⇒ salida idéntica»; el resto vive en los death tests de la Task 6.
+- [ ] **Paso 3 — no-regresión de W-02VND1, SOLO con autorización expresa de Nikolai en el momento.** Snapshot de hashes de los 277 `.md` antes, `atomize_case('W-02VND1')`, snapshot después: **byte-idénticos** y **0 IDs renumerados**. Procedimiento: el `scripts/_verify_live_it3.py` que citaba la rev. 1 del plan **no existe en este worktree** (era un diagnóstico sin trackear de una iteración anterior), así que se hace con un `python -c` que recorra `01_Procesado/Emails/mensajes/*.md`, guarde `{nombre: sha256}` en un JSON del scratch y, tras la corrida, compare ese mapa y el `{Message-ID: MSG-id}` de `_registro.json`. Demuestra solo «input top-only inalterado ⇒ salida idéntica»; el resto vive en los death tests de la Task 6.
 
 ---
 
