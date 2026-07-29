@@ -4021,7 +4021,51 @@ runtime donde esa regla se rompe sin querer.
 dentro de `session_state`.
 
 **Coste estimado.** Nada ahora (es una regla); ~30 min el test guardián al llegar a la Fase 4.
-## 104. El historial citado que no se puede atribuir desaparece del árbol de MD
+
+---
+
+## 104. La rama Google-native del merge no la ha ejercitado ningún dato real
+
+**Medido el 2026-07-29** al capturar el contrato de rclone para el banco de pruebas de la Fase 0 de
+la arquitectura dual. **Sin promover:** no hay nada roto, pero hay una decisión de diseño de primera
+clase cuyo comportamiento nadie ha visto funcionar.
+
+**El dato.** Barrido de la unidad canónica (`EXPEDIENTES - TYUKHAY LEGAL`) con
+`rclone lsjson -R --files-only --max-depth 6 --fast-list`: **3007 ficheros, CERO entradas
+`application/vnd.google-apps*`**. Ni un Google Doc, ni una Sheet, en seis niveles de profundidad.
+
+**Por qué importa.** `parse_inventario_lsjson` mapea la ausencia de `md5` a `hash: None`, y
+`plan_merge` trata ese `None` como caso de primera clase: emite `ACCION_PRESERVE_DRIVE` con
+`google_native=True` y lo documenta en el docstring del módulo («Google-native (Docs/Sheets sin
+MD5): no se puede comparar por hash → se preserva siempre»). Además `_vetar_grupos` cuenta
+`PRESERVE_DRIVE` como **bloqueante** de un grupo indivisible. Es decir: hay lógica de merge, de
+veto y de semáforo que depende de una condición que **nunca ha ocurrido**.
+
+No es código muerto: ocurriría el día que alguien cree un Doc en la carpeta de un caso desde la UI
+de Drive, o que un `.docx` se convierta al subirlo. Y ese día el comportamiento sería estreno en
+producción, sobre el camino que mueve expedientes.
+
+**Lo que NO hace falta.** Averiguar la forma exacta creando un Doc en el Drive canónico: sería
+mutar el repositorio de expedientes para un experimento. Y es innecesario, porque el contrato del
+parser —`(item.get("Hashes") or {}).get("md5") or None`— trata igual las tres variantes posibles
+(sin clave `Hashes`, `Hashes: {}`, y `Hashes` sin `md5`).
+
+**Mejora propuesta.**
+1. El banco de la Fase 0 emite las **tres** variantes desde una fixture **declarada sintética** y
+   asierta `hash is None` en todas, más un test de `plan_merge` que cubra el veto de grupo con un
+   miembro native. Eso valida la lógica sin datos reales.
+2. Si alguna vez hace falta la forma real, capturarla en una **carpeta de pruebas fuera de
+   `CASOS`**, nunca en un expediente, y con `lsjson` de solo lectura.
+3. Decidir aparte si conviene **prohibir** los Google-native en las carpetas de caso (una nota en
+   el runbook, o una comprobación en el checkin que avise), dado que son incomparables por hash y
+   por tanto inmergeables por diseño.
+
+**Justificación de no aplicarlo ahora.** El punto 1 entra gratis en la Fase 0 (ya está en su
+plan). El 2 no tiene disparador. El 3 es una decisión de Nikolai, no técnica.
+
+**Coste estimado.** Punto 1: incluido en la Fase 0. Punto 3: ~20 min de doctrina si se decide.
+
+## 105. El historial citado que no se puede atribuir desaparece del árbol de MD
 
 **Medido 2026-07-29** sobre una etiqueta real de Gmail (caso `W-02TH0W`, 29 `.eml` exportados a un
 scratch) mientras se verificaba `MEJORAS #98`.
@@ -4051,12 +4095,12 @@ letrado como un LLM tienen el hilo al lado de la ficha. Descartada la opción A 
 del atom) precisamente porque reescribe todos los `.md` existentes.
 
 **Disparador de promoción:** un caso donde el 9 % perdido caiga sobre prueba nuclear, o decisión de
-Nikolai. **Coste:** ~2 h con tests. Emparentado con `#105` (sin hilo no basta con tener el texto) y
-con `#107`.
+Nikolai. **Coste:** ~2 h con tests. Emparentado con `#106` (sin hilo no basta con tener el texto) y
+con `#108`.
 
-## 105. Los mensajes están, la conversación no: falta hilo reconstruible desde el MD
+## 106. Los mensajes están, la conversación no: falta hilo reconstruible desde el MD
 
-**Anotado 2026-07-29**, mismo banco de pruebas que `#104`. Es la queja de lectura real, y es
+**Anotado 2026-07-29**, mismo banco de pruebas que `#105`. Es la queja de lectura real, y es
 distinta de perder contenido.
 
 Abres la ficha de un correo y ves **solo su mensaje**. Los otros cuatro de la cadena existen como
@@ -4076,7 +4120,7 @@ threading riguroso por `References`/`In-Reply-To` (`#88`), más caro y con su pr
 **Disparador:** que alguien tenga que reconstruir un hilo a mano para un escrito. **Coste:** depende
 de la vía; la del consumidor es la barata.
 
-## 106. Test vacuo: `test_seg_html_token_conservacion_no_inventa` no comprueba la conservación
+## 107. Test vacuo: `test_seg_html_token_conservacion_no_inventa` no comprueba la conservación
 
 **Detectado 2026-07-29** por la revisión adversarial de Codex sobre la spec del falso positivo de
 `_sandwich`.
@@ -4095,7 +4139,7 @@ forma del dato y no el comportamiento.
 tokens repartidos, y falle si difieren. **Coste:** ~30 min. **Disparador:** la próxima vez que se
 toque `segmentar_html` (p. ej. al implementar la spec de `#98`-sándwich).
 
-## 107. Requisito: que el árbol atomizado sea contexto suficiente para un LLM
+## 108. Requisito: que el árbol atomizado sea contexto suficiente para un LLM
 
 **Formulado por Nikolai el 2026-07-29**, tras leer las fichas de un hilo real y no encontrar la
 cadena: *«que el LLM no tenga que leer los `.eml` y pueda leer los `.md` —reenviados, embebidos y
@@ -4107,8 +4151,8 @@ cuando se prioricen las piezas. Estado de cada una, medido:
 | Pieza | Estado |
 |---|---|
 | Mensajes reenviados y embebidos como ficha propia | **Hecho** cuando hay cabecera atribuible (verificado en vivo: en la muestra los reenviados sí tenían ficha, y la Capa B promovió 7 citas más) |
-| Historial citado no atribuible, disponible sin atribuir | Falta → **`#104`** |
-| Hilo reconstruible desde el `.md` | Falta → **`#105`** |
+| Historial citado no atribuible, disponible sin atribuir | Falta → **`#107`** |
+| Hilo reconstruible desde el `.md` | Falta → **`#107`** |
 | Texto/OCR de los adjuntos en `.md` | Falta → **`#87`**. Hoy la ficha de cada adjunto dice literalmente `(pendiente; OCR en fase 2)`; en la muestra eran 15 adjuntos únicos (8 `.zip`, 2 `.pdf`, 1 `.ics`) sin una línea de su contenido en la carpeta |
 | Falsos positivos que bloquean la promoción | Spec escrita → `docs/superpowers/specs/2026-07-29-sandwich-firma-falso-positivo-design.md` |
 

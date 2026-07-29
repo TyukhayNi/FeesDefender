@@ -63,11 +63,22 @@ Sin dependencias nuevas.
 
 # FASE 0 — banco de pruebas del frontal
 
+> ⚠️ **SUPERSEDIDA (2026-07-29).** Las Tareas 1-3 de abajo eran un boceto. El plan
+> ejecutable de la Fase 0 vive en
+> **`docs/superpowers/plans/2026-07-29-dual-workspace-fase0-banco-pruebas.md`**:
+> 6 tareas, con las interfaces cerradas (`Entorno` inyecta las **cuatro** fuentes
+> de no-determinismo, no solo rclone), la semántica del doble especificada y los
+> siete `xfail(strict=True)` enumerados uno a uno.
+>
+> **No ejecutar las Tareas 1-3 de este fichero.** Se conservan como registro de
+> cómo se tajó la fase; el hogar del estado sigue siendo `PLAN.md`. **La Fase 1
+> (Tareas 4-11) de este plan sigue vigente** y es lo que se ejecuta después.
+
 Sin esto, las Fases 1-3 no son demostrables: la orquestación del checkout/checkin
 no tiene un solo test hoy (`tests/test_repository_cli.py` cubre 27 helpers puros
 y ningún `cmd_*`).
 
-### Task 1: Puerto inyectable de rclone (refactor puro, cero cambio de comportamiento)
+### Task 1 (supersedida): Puerto inyectable de rclone (refactor puro, cero cambio de comportamiento)
 
 `run_rclone` (`scripts/repository_cli.py:352`) es el único punto de I/O y se
 invoca directamente desde `cmd_checkout`, `cmd_checkin`, `_integrar_bandeja`,
@@ -132,7 +143,7 @@ Expected: los 27 tests previos siguen verdes sin tocarlos.
 
 ---
 
-### Task 2: Doble de Drive con la semántica que muerde
+### Task 2 (supersedida): Doble de Drive con la semántica que muerde
 
 Un `Mock` que devuelve `returncode=0` no sirve: los bugs de esta SPEC salen de la
 consistencia eventual, de los ficheros Google-native y de los `moveto` que
@@ -163,7 +174,7 @@ python -m pytest tests/test_fake_rclone.py -q
 
 ---
 
-### Task 3: Caracterización de `cmd_checkout` / `cmd_checkin` + reproducción de los bugs
+### Task 3 (supersedida): Caracterización de `cmd_checkout` / `cmd_checkin` + reproducción de los bugs
 
 Dos bloques en un solo fichero, separados por comentario de sección: lo que hoy
 funciona (red de seguridad) y lo que hoy está roto (`xfail(strict=True)` con el
