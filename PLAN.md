@@ -472,8 +472,10 @@ caso: durante un checkout, un proceso escribe en el local y otro en Drive.
 - **`expedientes-xl` puede sobrescribir el `_caso.md` del canon** (`PROTOCOL_EDIT` en
   `tiers.py`) sin pasar por una línea de Python: la frontera de entrypoints no lo alcanza.
 - **`checkout-caso` reimplementa el protocolo en prosa** y no conoce el registro privado.
-- **La orquestación del checkout/checkin no tiene un solo test** (los 27 de
+- **La orquestación del checkout/checkin no tenía un solo test** (los 27 de
   `test_repository_cli.py` son de helpers puros) → por eso hay una **Fase 0**.
+  *(Al día 2026-07-29: los PRs #156 y #160 dejaron **16 tests de orquestación** en
+  `test_repository_cli_guard_pull.py`. Lo que sigue faltando es el banco completo.)*
 
 **Fases** (cada una: sub-SPEC + plan + revisión adversarial + PR propios):
 
@@ -498,7 +500,7 @@ caso: durante un checkout, un proceso escribe en el local y otro en Drive.
       matriz de fallos por call-site + los 7 defectos reproducidos en
       `xfail(strict=True, raises=AssertionError)`. Sin esto los criterios de salida de las Fases 2-3
       son indemostrables.
-      **Plan ejecutable rev. 3 (8 tareas en DOS PRs):**
+      **Plan ejecutable rev. 4 — EJECUTABLE, sin más gate (8 tareas en DOS PRs):**
       `docs/superpowers/plans/2026-07-29-dual-workspace-fase0-banco-pruebas.md`. Sustituye a las
       Tareas 1-3 del plan combinado, supersedidas. **PR-A** = barrera + `Entorno` + doble +
       caracterización, con el frontal sin tocar; **PR-B** = enhebrar el `Entorno`, matriz de fallos,
@@ -515,18 +517,26 @@ caso: durante un checkout, un proceso escribe en el local y otro en Drive.
       > importa), y su matriz mezclaba caracterización con expectativas normativas. Corregido en la
       > **rev. 3**, que además parte la fase en **dos PRs**. La pasada produjo de rebote el PR #160.
       >
-      > ⛔ **DECIDIDO por Nikolai el 2026-07-29: TERCERA revisión adversarial de Codex sobre la
-      > rev. 3, el 2026-07-30. No se escribe una línea de la Task 0 hasta adjudicarla.** Se pesó la
-      > alternativa (ir directo a PR-A, dado que la rev. 3 no introduce mecanismos nuevos y solo
-      > cierra los ya discutidos) y se eligió revisar: dos rondas seguidas de NO EJECUTABLE, y las
-      > dos han rendido su valor en arreglos de producción —#156 y #160, dos rutas de pérdida de
-      > datos— así que el coste de una tercera es bajo frente a lo que ha estado apareciendo.
+      > ✅ **GATE CONSUMIDO — 3ª revisión adversarial hecha y adjudicada (2026-07-29).** Veredicto
+      > **REQUIERE REVISIÓN** (de-escalada desde los dos NO EJECUTABLE anteriores): 3 B0 + 2 A.
+      > Adjudicado contra el fuente y contra el binario: **5 confirmados, 1 refutado, 1 sin
+      > verificar**. Corregido en la **rev. 4**, sin tocar arquitectura, orden de fases ni el
+      > reparto en dos PRs.
       >
-      > **Al adjudicarla, la disciplina de las dos rondas anteriores:** medir el binario antes de
-      > aceptar un hallazgo sobre rclone (dos sub-puntos cayeron así, y uno mío también); verificar
-      > cada cita `fichero:línea`; y exigir la **tabla de seguimiento** de las rondas 1 y 2 —si cada
-      > corrección arregla el defecto o solo la etiqueta—, que es donde salió el B0 de la Task 1B
-      > fantasma.
+      > **El bloqueante de PR-A lo creó la propia rev. 3:** al sustituir el helper opt-in de la
+      > barrera por un proxy de `subprocess`, no vio que sus Tasks 3-4 **mandan doblar
+      > `run_rclone`**, que es la **única superficie de `subprocess` del módulo** (`:391`/`:399`) —
+      > doblada, la barrera valida cero comandos justo en los tests que más I/O hacen. Corregido
+      > con un validador de operandos compartido entre barrera y doble, más `raiz_local` explícita
+      > (`CASOS_ROOT` **no** gobierna `args.local`). Los otros dos B0 —protocolo del hook sin
+      > instante de disparo, sin `n_objetivo` ni actor; y `fallos_sub` incapaz de producir `rc≠0`
+      > con JSON parseable, además de aplanar `moveto`(1) y `copyto`(3) a un mismo 3— afectan a
+      > **PR-B** y se cierran con el canal `resultados` y el `armar(n_objetivo, callback)`.
+      >
+      > ⛔ **NO HAY 4ª RONDA, y el motivo está medido:** las rondas 1 y 2 rindieron **dos PRs de
+      > producción** (#156, #160, dos rutas de pérdida de datos); la 3ª rindió **cero hallazgos de
+      > código** y cinco correcciones de redacción. Una cuarta mediría el plan contra sí mismo.
+      > **Siguiente paso: construir PR-A.**
 - [ ] **Fase 1 — núcleo de workspace.** `CaseRef`/modos/capacidades/errores, registro privado
       atómico, `CaseCatalog` con `AMBIGUOUS_CASE`, resolver, **modo estricto de `path_for`**
       (mata el fallback que fabrica expedientes fantasma), **`core.intake_log` migrado** y
