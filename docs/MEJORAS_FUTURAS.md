@@ -3790,8 +3790,7 @@ es gratis si se confirma, la (2) ~1 h con guard y test.
 
 ## 98. `--extraer-adjuntos` deja CIEGO al atomizador: los `.eml` en subcarpeta no se procesan
 
-> 🔄 **ARREGLADO, pendiente de la verificación en vivo (PR #NNN).** No se marca ✅ aquí: el cierre
-> definitivo se escribe en el cierre de sesión, tras el paso 2 de la Task 8 (export real de control).
+> ✅ **CERRADO 2026-07-29 — PR #155 (`03a6f8f`), verificación en vivo del §7 de la spec incluida.**
 > Enumeración recursiva en el motor
 > (`enumerar_rutas_eml` vía `os.walk`, que no silencia los directorios ilegibles como sí hace
 > `rglob`), `eml_origen` = ruta relativa POSIX, llave del registro con la fuente delante, y la
@@ -3802,6 +3801,39 @@ es gratis si se confirma, la (2) ~1 h con guard y test.
 > `docs/superpowers/specs/2026-07-28-email-atomize-enumeracion-recursiva-design.md`.
 > **Sigue fuera:** `.EML` en mayúsculas y una carpeta fuente que `emails_src_dirs_de_caso` no
 > devuelva — ninguna de las dos la cubría tampoco la guarda vieja.
+>
+> **Verificación en vivo — los tres pasos del §7, hechos.** Pasos 1-2 (export real de control de
+> una etiqueta pequeña a scratch, fuera de todo expediente): produjo el layout auténtico del bug
+> —**18 `.eml` arriba + 11 en subcarpeta**— y el motor los ve todos. De ahí salió, además, el
+> falso positivo de `_sandwich` (`[SIGUIENTE-SANDWICH-FIRMA]` del `PLAN.md`). El sub-punto que
+> añadió la revisión final de rama queda **medido y negativo**: las 11 subcarpetas traen
+> exactamente **1 `.eml` cada una**, así que ningún adjunto extraído es a su vez un `.eml` en este
+> corpus. Es un corpus, no una garantía: al generalizar el flag hay que volver a medirlo.
+>
+> **Paso 3 — no-regresión sobre W-02VND1, ejecutado sobre la copia local, no sobre `G:`.**
+> `atomize_case(ref)` es literalmente `atomize_dir(emails_src_dirs(ref), emails_out_dir(ref))`:
+> la vía `--ref` solo añade `path_for(resolve_ref(...))`, que esta rama no toca y que no escribe.
+> Con `--src`/`--out` sobre la copia local se ejerce el motor entero sin tocar el canónico. La
+> copia se verificó fiel por contenido **antes** de correr: 1196 ficheros a cada lado, mismos
+> tamaños, una sola diferencia y no es un `.eml` (un `(1).pdf` en `_enlaces/`). Resultado sobre
+> 908 ficheros hasheados antes y después:
+>
+> | criterio | resultado |
+> |---|---|
+> | byte-identidad de la Capa A | **0 borrados, 0 con hash distinto**; `mensajes/` intacto entero |
+> | cero renumeraciones | `mensajes` 277→277, `mensajes_fp` 143→143, `adjuntos` 162→162, `_contadores` `{msg: 420, att: 162}` idénticos |
+> | migración de `eml_procesados` (§4.5) | aplicada entera: 242 llaves, **242→0** en forma vieja, **0→242** en forma `03_Email/<nombre>` |
+>
+> Aparecieron 5 ficheros, y **ninguno lo causa esta rama**: cuatro son gemelos **NFD** de adjuntos
+> **NFC** ya presentes, con contenido idéntico (ver `99.5` — la normalización la introdujo el viaje
+> por Drive, no el motor), y `_revision/identidades_vigiladas.md` es el nombre que el PR #118
+> (`cd70944`) dio a esa vista de `_revision/`, ya en main: el árbol de la línea base es anterior a
+> ese renombrado, conserva el fichero con el nombre viejo y el motor no poda `_revision/` (`#99`).
+>
+> **Lo que este paso NO demuestra** (acotado en la rev. 2 de la spec y sigue vigente): la
+> transición top→mixto, la copia mayor, la colisión entre fuentes, el fallo con Layer B superado y
+> el error de enumeración de directorio. Viven en los death tests 6, 7, 10, 11 y 12 del §6, porque
+> provocarlos en vivo exigiría corromper un expediente real.
 
 **Detectado 2026-07-27** por la revisión adversarial de Codex sobre la spec del cableado de correo
 (`docs/superpowers/specs/2026-07-27-cableado-atomize-sala-maquina-adversarial-review.md`), y
@@ -3900,9 +3932,32 @@ declare —, pero en un punto que ese arreglo no cubre: `core/email_atomize/extr
 los que ve el parser de Python y reporta la discrepancia). Adoptar `_nested_con_fallback` en
 `extract.py`, o una comprobación equivalente, resolvería esto sin duplicar lógica.
 
-**Relación.** `#98` es el otro defecto del motor (enumeración) y va aparte porque tiene disparador y
-bloqueo propios. `#87` (motor de OCR de adjuntos) y `#86` (consumo por la sala de lectura) dependen
-de que este árbol sea fiable.
+**99.5 — Un viaje por Drive renormaliza los acentos del nombre y la siguiente corrida duplica el
+adjunto (MEDIDO en la verificación en vivo de `#98`, 2026-07-29).** `_escribe_adjunto`
+(`pipeline.py`) nombra el fichero con `att.nombre_original`, que sale **verbatim** de la cabecera
+MIME. Cuando ese nombre trae acentos en **NFD** (`e` + tilde combinante), el fichero se escribe en
+NFD; pero al subir a Drive y bajar de vuelta con rclone el nombre vuelve **normalizado a NFC**. Como
+NTFS trata NFC y NFD como nombres distintos y el motor **no poda `adjuntos/`** (99.1), la corrida
+siguiente escribe el gemelo NFD **junto** al NFC: dos ficheros con el mismo contenido, el mismo
+`ATT-id` y nombres indistinguibles a la vista.
+
+Medido sobre W-02VND1: 2 adjuntos afectados de 162 → **4 ficheros duplicados** (`.docx` + `.md` de
+cada uno). Sin renumeración: el `ATT-id` se acuña por `sha256`, así que la identidad congelada
+aguanta; lo que se degrada es el árbol probatorio (un adjunto aparece dos veces) y el `.contenido.md`
+de la fase 2, que solo existe para la copia vieja. La prueba de que el motor no es la causa: la
+ficha NFC preexistente lleva `nombre_original` en **NFD dentro de su propio texto** — el mismo
+proceso no pudo escribir NFC en el nombre y NFD en el contenido, luego el nombre se normalizó
+después de escribirlo.
+
+Salidas posibles: normalizar el nombre a NFC al escribirlo (una línea, `unicodedata.normalize`; hay
+que comprobar que no cambia el nombre de ningún adjunto ya existente), o que la poda de `adjuntos/`
+de 99.1 colapse los gemelos por `sha256`. **Consecuencia práctica hoy:** re-atomizar un caso que ha
+pasado por Drive **añade** esos gemelos; contar con ello antes de lanzar una corrida sobre el
+canónico y no leerlo como regresión.
+
+**Relación.** `#98` es el otro defecto del motor (enumeración) — **cerrado en el PR #155**; su
+verificación en vivo es la que midió 99.4 y 99.5. `#87` (motor de OCR de adjuntos) y `#86` (consumo
+por la sala de lectura) dependen de que este árbol sea fiable.
 
 **Disparador de promoción:** que se construya `#86` (un consumidor real del árbol atomizado
 convierte 99.1 en pérdida visible), un crash real a media atomización, o decisión de Nikolai.
