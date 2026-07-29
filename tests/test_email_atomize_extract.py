@@ -127,6 +127,11 @@ def test_fallo_al_enumerar_un_directorio_se_declara(tmp_path, monkeypatch):
 
     monkeypatch.setattr(_os, "walk", walk_con_error)
     stats = E.EnumStats()
-    list(E.iter_avistamientos(base, stats=stats))
+    avs = list(E.iter_avistamientos(base, stats=stats))
 
     assert any("prohibida" in f for f in stats.fallos)
+    # El error de un directorio no debe abortar la enumeración del resto: sin este
+    # assert, una implementación que interrumpiera `os.walk` al primer `onerror` pasaría
+    # el test igual (el error se declararía, pero `visible.eml` desaparecería en
+    # silencio — el mismo defecto que la enumeración recursiva vino a corregir).
+    assert [a.eml_origen for a in avs] == ["visible.eml"]

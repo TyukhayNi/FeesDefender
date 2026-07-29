@@ -341,6 +341,94 @@ def test_sin_fallos_si_poda(tmp_path):
     assert len(list((out / "mensajes").glob("*.md"))) == 1
 
 
+# --- `eml_procesados` es derivado: gated como la poda (revisión final MEJORAS #98) ---
+
+def test_eml_procesados_purga_llaves_de_forma_legado(tmp_path):
+    # Pre-existe un `_registro.json` con la llave VIEJA (solo el nombre de fichero, forma
+    # anterior a `MEJORAS #98`) + su mensaje ya congelado. Con la foto de esta corrida
+    # COMPLETA (sin errores), la lista se reconstruye desde cero: la forma vieja no debe
+    # sobrevivir. Es la transición pre→post que ninguna de las tres revisiones anteriores
+    # verificó (`marcar_procesado` solo apilaba, nada limpiaba nunca).
+    src = tmp_path / "03_Email"
+    src.mkdir()
+    (src / "2026-06-12_a.eml").write_bytes(_msg("<a@x>", "Uno"))
+    out = tmp_path / "Emails"
+    out.mkdir(parents=True)
+    (out / "_registro.json").write_text(json.dumps({
+        "version": 2,
+        "_contadores": {"msg": 1, "att": 0},
+        "mensajes": {"a@x": {"id": "MSG-00001", "sha256": "x" * 64}},
+        "mensajes_fp": {}, "alias": {}, "adjuntos": {},
+        "eml_procesados": ["2026-06-12_a.eml"],   # forma vieja: sin la fuente delante
+    }), encoding="utf-8")
+
+    rep = P.atomize_dir(src, out, case_dir=tmp_path)
+
+    assert rep.publicado is True and rep.poda_omitida is False
+    procesados = json.loads(
+        (out / "_registro.json").read_text(encoding="utf-8"))["eml_procesados"]
+    assert procesados == ["03_Email/2026-06-12_a.eml"]
+    assert "2026-06-12_a.eml" not in procesados   # sin la forma vieja colgando
+
+
+def test_eml_procesados_no_se_dropea_con_fallo_de_construccion(tmp_path, monkeypatch):
+    # Rama PERMANENTE (foto parcial): reconstruir desde cero dropearía la llave del `.eml`
+    # cuyo mensaje no llegó a construirse esta corrida, aunque el fichero SIGUE existiendo.
+    # Se conserva el comportamiento histórico: apilar sobre lo que había.
+    src = tmp_path / "03_Email"
+    src.mkdir()
+    (src / "a.eml").write_bytes(_msg("<a@x>", "Uno"))
+    (src / "b.eml").write_bytes(_msg("<b@x>", "Dos"))
+    out = tmp_path / "Emails"
+    out.mkdir(parents=True)
+    (out / "_registro.json").write_text(json.dumps({
+        "version": 2, "_contadores": {"msg": 0, "att": 0},
+        "mensajes": {}, "mensajes_fp": {}, "alias": {}, "adjuntos": {},
+        "eml_procesados": ["viejo_de_otra_corrida.eml"],
+    }), encoding="utf-8")
+
+    real_construir = P._construir_mensaje
+
+    def rompe_b(col, *a, **k):
+        # `col.message_id` normalizado sin `<>` (`core.email_export.message_id_of`).
+        if col.message_id == "b@x":
+            raise ValueError("cabecera imposible")
+        return real_construir(col, *a, **k)
+
+    monkeypatch.setattr(P, "_construir_mensaje", rompe_b)
+    rep = P.atomize_dir(src, out, case_dir=tmp_path)
+
+    assert rep.publicado is True and rep.poda_omitida is True
+    procesados = json.loads(
+        (out / "_registro.json").read_text(encoding="utf-8"))["eml_procesados"]
+    # la llave vieja de otra corrida SOBREVIVE (no se dropea con foto incompleta)
+    assert "viejo_de_otra_corrida.eml" in procesados
+    # y el mensaje bueno de esta corrida SÍ se marcó (apilado, no rebuild)
+    assert "03_Email/a.eml" in procesados
+
+
+def test_eml_procesados_pierde_llave_al_retirar_eml_en_corrida_limpia(tmp_path):
+    # Contrapartida: es el comportamiento que el rebuild compra. Con la foto COMPLETA, un
+    # `.eml` genuinamente retirado desaparece de la lista (no solo de `mensajes/`).
+    src = tmp_path / "03_Email"
+    src.mkdir()
+    (src / "a.eml").write_bytes(_msg("<a@x>", "Uno"))
+    (src / "b.eml").write_bytes(_msg("<b@x>", "Dos"))
+    out = tmp_path / "Emails"
+    P.atomize_dir(src, out, case_dir=tmp_path)
+    procesados1 = json.loads(
+        (out / "_registro.json").read_text(encoding="utf-8"))["eml_procesados"]
+    assert procesados1 == ["03_Email/a.eml", "03_Email/b.eml"]
+
+    (src / "b.eml").unlink()
+    rep2 = P.atomize_dir(src, out, case_dir=tmp_path)
+
+    assert rep2.poda_omitida is False
+    procesados2 = json.loads(
+        (out / "_registro.json").read_text(encoding="utf-8"))["eml_procesados"]
+    assert procesados2 == ["03_Email/a.eml"]
+
+
 def test_no_siembra_carpetas_si_no_publica(tmp_path, monkeypatch):
     # Sin árbol previo y con fallo de lectura: no se crean `mensajes/`/`adjuntos/`.
     src = tmp_path / "03_Email"

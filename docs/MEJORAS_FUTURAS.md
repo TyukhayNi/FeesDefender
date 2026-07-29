@@ -3888,6 +3888,18 @@ declararon «2 corridas → 0 cambios» se hicieron con **entradas inmutables**.
 estabilidad, no **convergencia**: nadie probó qué pasa cuando se retiran entradas, que es justo
 donde 99.1 falla.
 
+**99.4 — Un anidado que falla al decodificarse no deja rastro (residual, hallado en la revisión
+final de `MEJORAS #98`).** `core/email_export.py::iter_nested_originals` hace
+`except Exception: continue` sobre un `message/rfc822` cuyo transfer-encoding no decodifica
+(línea ~281): el anidado se pierde en silencio, sin aparecer en `fallos_lectura` (el `.eml`
+padre SÍ se leyó bien) ni en `errores` (nada llega a intentar construirse). Es la misma familia
+que los dos defectos que `MEJORAS #98` cerró — foto incompleta que activa la poda sin que nada lo
+declare —, pero en un punto que ese arreglo no cubre: `core/email_atomize/extract.py` llama
+`iter_nested_originals` directamente, no la variante con red de seguridad
+`_nested_con_fallback` (que si compara los Message-ID vistos por el rebanado byte-fiel contra
+los que ve el parser de Python y reporta la discrepancia). Adoptar `_nested_con_fallback` en
+`extract.py`, o una comprobación equivalente, resolvería esto sin duplicar lógica.
+
 **Relación.** `#98` es el otro defecto del motor (enumeración) y va aparte porque tiene disparador y
 bloqueo propios. `#87` (motor de OCR de adjuntos) y `#86` (consumo por la sala de lectura) dependen
 de que este árbol sea fiable.

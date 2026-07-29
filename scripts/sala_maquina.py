@@ -189,7 +189,13 @@ def _atomizar_correo(case_id: str, case_dir: Path) -> None:
             "errores": list(report.errores),
             "fallos_lectura": list(report.fallos_lectura),
         })
-        typer.echo(f"Correo atomizado ({details['status']}): {report.resumen()}")
+        if not report.publicado:
+            # `report.publicado is False` no es un "atomizado (fallo)": no se escribió NADA
+            # (el árbol anterior queda intacto). Decirlo "atomizado" con un resumen en ceros
+            # es indistinguible de una corrida vacía real (hallazgo 7 de la revisión final).
+            typer.echo(f"Correo NO atomizado (no publicado): {report.resumen()}")
+        else:
+            typer.echo(f"Correo atomizado ({details['status']}): {report.resumen()}")
         for nota in report.notas:
             # Contaminación cruzada por W-code y vistas rotas: a stderr, ANTES del OCR,
             # para que el operador pueda abortar y limpiar `00_Input`.

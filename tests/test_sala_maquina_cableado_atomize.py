@@ -297,7 +297,7 @@ def test_un_fallo_de_log_no_aborta_el_ocr(caso, monkeypatch, capsys):
     assert "no se pudo registrar el evento atomizado_email" in capsys.readouterr().err
 
 
-def test_plan_no_atomiza_pero_informa_y_avisa(caso, monkeypatch, capsys):
+def test_plan_no_atomiza_pero_informa(caso, monkeypatch, capsys):
     case_dir, eventos = caso
     src = case_dir / "00_Input" / "03_Email"
     (src / "a.eml").write_bytes(_eml("<a@x>"))

@@ -257,9 +257,24 @@ Se separan los dos usos, que hasta ahora eran el mismo valor:
   nombres de las fuentes son únicos por construcción (lotes `AAAA-MM-DD_email_NN` + `03_Email`), así
   que la llave lo es. Es lo que consume `marcar_procesado`.
 
-Migración: ninguna. `eml_procesados` es informativo y nadie lo lee hoy (verificado); la primera
-corrida tras el cambio reescribe la lista con llaves nuevas. Lo que `MEJORAS #86` planea leer pasa a
-ser fiable, que era el objetivo.
+**Corrección (revisión final de rama):** la afirmación original de este párrafo — «la primera
+corrida tras el cambio reescribe la lista con llaves nuevas» — era **falsa**. `marcar_procesado`
+solo apilaba (dedup por igualdad exacta de string) y `save()` nunca purgaba: sobre un caso real
+(`_registro.json` con 277 llaves en la forma vieja, solo el nombre de fichero) la primera corrida
+tras este cambio habría **añadido** 277 llaves nuevas en forma `<fuente>/<eml_origen>` y
+**conservado** las 277 viejas, para siempre, en dos formas mutuamente incompatibles. Ninguna de las
+tres revisiones anteriores de esta spec lo capturó porque los tests partían todos de un
+`_registro.json` vacío.
+
+**Migración real (implementada):** `eml_procesados` es estado DERIVADO, no identidad congelada
+(todo mensaje publicado pasa por `marcar_procesado` en cada corrida), así que se puede
+reconstruir. `Registro.resolver_procesados(*, foto_completa)`, invocada por `atomize_dir` con la
+MISMA condición que gobierna la poda de `mensajes/` (`report.publicado and not report.errores`):
+con la foto completa la lista se reconstruye desde cero — purga la forma vieja y refleja retiradas
+genuinas —; con la foto parcial (algún mensaje no se pudo construir/reconstruir esta corrida) se
+sigue apilando sobre lo que había, porque el rebuild dropearía la llave de un `.eml` cuyo mensaje
+no llegó a marcarse hoy aunque el fichero sigue existiendo. Lo que `MEJORAS #86` planea leer pasa a
+ser fiable en el caso común (foto completa), que era el objetivo.
 
 El no-op sobrevive intacto: `n == 0` y sin árbol previo → no se llama al motor (evitar el `mkdir`
 incondicional de `mensajes/`/`adjuntos/`); con árbol previo sí se llama, para que la retirada
@@ -386,6 +401,15 @@ Plan aprobado por Nikolai:
    con adjunto **aparecen**; su `eml_origen` es la ruta relativa; el remitente de cada uno sale
    **literal** del `.eml` (prime directive: cero misatribución); y una segunda corrida no cambia
    nada.
+   **Añadido en la revisión final de rama:** inventariar si algún adjunto extraído es a su vez un
+   `.eml` (un mensaje guardado a disco y re-adjuntado como fichero, NO `message/rfc822` —
+   `split_eml` sí lo excluye correctamente; `core/email_export.py:1124` lo escribe suelto igual que
+   cualquier otro adjunto). Con `--extraer-adjuntos`, ese fichero se convierte en un avistamiento de
+   primer nivel (`profundidad 0`, `ruta_anidacion` vacía) indistinguible en `mensajes/` de un correo
+   exportado directamente del caso, mientras sigue existiendo como `ATT-` en `adjuntos/`. No hay
+   misatribución (sus cabeceras salen de sus propios bytes), pero sí degradación de procedencia en
+   un corpus probatorio. Decidir, antes de encender la casilla 3: si esos ficheros se excluyen de la
+   enumeración o se marcan de algún modo.
 3. **No-regresión sobre el caso nuclear, con autorización expresa en el momento:** re-correr
    W-02VND1 (277 correos, sin subcarpetas) y demostrar Capa A **byte-idéntica** y **0 IDs
    renumerados**, con el patrón de `scripts/_verify_live_it3.py` (snapshot de hashes antes/después).

@@ -349,7 +349,11 @@ estado de la atomización declarado en el log, y el detector de contaminación c
   `--extraer-adjuntos` pasa a default `True`. El motor ya ve los `.eml` de las subcarpetas, así
   que activarlo no genera ceguera. Gate antes de encenderlo: la corrida de control del §7 de la
   spec de `#98` (export real de una etiqueta pequeña a scratch), porque activarlo mueve la
-  superficie de dedup de todo intake futuro.
+  superficie de dedup de todo intake futuro. **Añadido en la revisión final de rama:** el gate
+  también exige inventariar si algún adjunto extraído es a su vez un `.eml` (mensaje guardado a
+  disco y re-adjuntado como fichero, no `message/rfc822`) — con la enumeración recursiva ese
+  fichero pasa a ser un avistamiento de primer nivel indistinguible de un correo del caso, y hay
+  que decidir si se excluye de la enumeración o se marca antes de generalizar el flag.
 
 **Deuda destapada por la revisión adversarial (no bloquea este bloque):** `MEJORAS #98`
 (enumeración no recursiva del motor — arreglada arriba, pendiente de verificación en vivo) y

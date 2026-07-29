@@ -68,12 +68,17 @@ def _idioma(texto: str) -> str:
 
 _NOTA_NO_PUBLICADA = (
     "ATOMIZACIÓN NO PUBLICADA: {n} .eml no se pudieron leer (¿Drive sin hidratar?). "
-    "El árbol anterior queda intacto. Re-lanza cuando estén disponibles."
+    "El árbol anterior queda intacto. Re-lanza cuando estén disponibles. Si el fallo "
+    "persiste en varios intentos, NO es un problema de hidratación (re-lanzar no lo "
+    "arregla): revisa `fallos_lectura` para las rutas concretas y resuelve el permiso "
+    "(fichero bloqueado por otro proceso, ACL) o saca ese fichero de `00_Input`."
 )
 
 _NOTA_PODA_OMITIDA = (
-    "poda de mensajes/ OMITIDA: {n} mensajes no se pudieron construir; el árbol "
-    "conserva fichas cuyo mensaje no se ha reconstruido en esta corrida."
+    "poda de mensajes/ OMITIDA: {n} fallos al construir/reconstruir mensajes; el árbol "
+    "conserva fichas cuyo mensaje no se ha reconstruido en esta corrida. Los agregados "
+    "(corpus.jsonl, índices, _revision/, vistas) SÍ se reescriben desde el conjunto "
+    "reducido: no son coherentes con el árbol completo hasta la próxima corrida sin errores."
 )
 
 
@@ -161,11 +166,21 @@ def atomize_dir(
     if report.errores:
         report.poda_omitida = True
         report.notas.append(_NOTA_PODA_OMITIDA.format(n=len(report.errores)))
+        # Foto PARCIAL: `eml_procesados` tampoco se reconstruye desde cero (dropearía la
+        # llave de todo `.eml` cuyo mensaje no llegó a marcarse hoy); se sigue apilando
+        # sobre lo que había en disco. Ver `Registro.resolver_procesados`.
+        reg.resolver_procesados(foto_completa=False)
     else:
         esperados = {R.nombre_md(m) for m in mensajes}
         for p in (out / "mensajes").glob("*.md"):
             if p.name not in esperados:
                 p.unlink()
+        # Foto COMPLETA: gate IDÉNTICO al de la poda de arriba. `eml_procesados` es
+        # estado derivado (todo mensaje publicado pasa por `marcar_procesado`), así que
+        # se puede reconstruir desde cero — purga llaves de forma vieja (p. ej. sin la
+        # fuente delante, anteriores a MEJORAS #98) que de otro modo se acumulan para
+        # siempre, y refleja `.eml` genuinamente retirados.
+        reg.resolver_procesados(foto_completa=True)
     report.mensajes = len(mensajes)
     report.reconstruidos_b = len(mensajes_b)
     report.reconstruidos_media = sum(1 for m in mensajes_b if m.confianza == "media-reconstruida")
