@@ -110,6 +110,12 @@ Código: este directorio (`C:\Users\tnm33\Dev\FeesDefender`), versionado en Git 
   `-Encoding UTF8` (produce mojibake en sistemas cp1252).
 - `subprocess.run` con stderr UTF-8: usar `encoding="utf-8", errors="replace"`
   (NO `text=True` en Windows — decodifica con cp1252 y trunca tildes).
+- **Códigos de salida: nunca leer `$LASTEXITCODE` detrás de un `Select-Object -First N`.**
+  La terminación temprana del pipe puede dejarlo en `0` y hacer pasar por bueno un
+  comando que falló. Medido el 2026-07-29 con rclone: `copyto` de un origen
+  inexistente parecía devolver `0` tras `| Select-Object -First 3` y devuelve **3**
+  sin tubería. Patrón correcto: `$out = & cmd args 2>&1` y leer `$LASTEXITCODE` acto
+  seguido. `Select-String` sí consume el flujo entero y no contamina.
 
 ## Gotchas críticos
 

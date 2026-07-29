@@ -808,20 +808,47 @@ adversarial y PR propios.
 
 ### Fase 0 — banco de pruebas del frontal (nueva en la rev. 2, A-9)
 
-Sin esto, los criterios de salida de las Fases 2 y 3 son indemostrables: el
-frontal que mueve los bytes no tiene ni un test y la matriz del §14.1 exige un
-Drive simulado que no existe.
+Sin esto, los criterios de salida de las Fases 2 y 3 son indemostrables: la
+**orquestación** del frontal que mueve los bytes no tenía ni un test (los 27 de
+`tests/test_repository_cli.py` cubren solo helpers puros) y la matriz del §14.1
+exige un Drive simulado que no existe.
 
-- puerto inyectable para rclone (`RcloneRunner`) en `scripts/repository_cli.py`,
-  sin cambio de comportamiento;
-- doble en memoria con semántica de Drive: retraso de propagación
-  (`_SYNC_LAG_S`), ficheros Google-native sin MD5, `moveto` que falla, `lsjson`
-  malformado;
+- barrera de test que impida ejecutar rclone real o alcanzar el Drive real
+  (`tmp_casos_root` **no** es `autouse` y los defaults del frontal son el remote y
+  el `team_drive` reales);
+- puerto inyectable en `scripts/repository_cli.py`, sin cambio de comportamiento,
+  para las **cinco** fuentes de no-determinismo —rclone, reloj, hostname,
+  directorio de trabajo y espera— más nonce, usuario y binario;
+- doble en memoria fijado a una **versión concreta de rclone**, con fixtures
+  grabadas: Google-native sin MD5, `moveto` que falla, `lsjson` malformado,
+  `--files-from` con filtros, `--backup-dir`, y un **hook de mutación por
+  operación** que permita interleaving determinista sin hilos;
 - tests que fijen el comportamiento **actual** del checkout/checkin como red de
   seguridad antes de tocarlo.
 
-**Criterio de salida:** la matriz del §14.1 es ejecutable para el ciclo
-checkout/checkin, y las brechas 8-15 del §11 tienen un test que las reproduce.
+**Criterio de salida (corregido en la errata del 2026-07-29):**
+
+1. la **brecha 14** del §11 queda cerrada: existe doble contractual y hay
+   caracterización de `cmd_checkout`/`cmd_checkin`;
+2. los siete defectos del frontal están reproducidos en
+   `xfail(strict=True, raises=AssertionError)`;
+3. una matriz de fallos cubre todos los retornos que hoy se ignoran;
+4. el arnés de la matriz del §14.1 queda **preparado para consumirse en la Fase
+   1**, no ejecutado íntegramente aquí;
+5. ningún test puede tocar rclone real, el Drive real ni `CASOS_ROOT`.
+
+> **Errata.** La rev. 2 de esta SPEC exigía aquí que «las brechas 8-15 del §11
+> tengan un test». Es incorrecto y lo señaló la revisión adversarial del plan
+> (B0-3): las brechas **8-13 y 15 pertenecen a las Fases 1-3** —`intake_log`,
+> estado de canal de correo, catálogo, `sala_maquina plan`, fallback de
+> `path_for`, `INTAKE_EVENTS` y el guard que lee el lock local— y ninguna es
+> alcanzable desde el frontal. Solo la **14** es de esta fase. Mantener el texto
+> anterior habría permitido declarar cumplido un criterio objetivamente falso.
+
+Plan ejecutable: `docs/superpowers/plans/2026-07-29-dual-workspace-fase0-banco-pruebas.md`
+(rev. 2). **Adelantado y ya mergeado:** el guard de lectura del protocolo
+(`ProtocoloIOError`, PR #156), que cerró dos rutas de destrucción de datos que no
+podían esperar a una fase, y que dejó los primeros 8 tests de orquestación.
 
 ### Fase 1 — núcleo de workspace
 

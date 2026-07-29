@@ -437,9 +437,34 @@ caso: durante un checkout, un proceso escribe en el local y otro en Drive.
 
 **Fases** (cada una: sub-SPEC + plan + revisión adversarial + PR propios):
 
-- [ ] **Fase 0 — banco de pruebas del frontal.** Puerto inyectable de rclone + doble de Drive
-      con la semántica que muerde (sync lag, Google-native sin MD5, `moveto` fallido) + tests de
-      caracterización. Sin esto los criterios de salida de las Fases 2-3 son indemostrables.
+- [x] **Adelantado — guard de lectura del protocolo.** ✅ **PR #156** (`5f4c81a`). Dos rutas de
+      destrucción de datos que no podían esperar a una fase: un pull fallido del `_caso.md`
+      degradaba el fichero canónico a un stub sin `id_go` (y `resolve_ref` dejaba de encontrar el
+      caso por W-code); un pull fallido del log **reemplazaba todo el `_intake_log.jsonl` por una
+      línea**. Ahora falla cerrado (`ProtocoloIOError`, salida 4, lock conservado). De paso dejó los
+      **primeros 8 tests de orquestación** de `cmd_checkout`/`cmd_checkin` que tiene el repo.
+- [ ] **Fase 0 — banco de pruebas del frontal.** Barrera anti-rclone-real + `Entorno` que inyecta
+      las **cinco** fuentes de no-determinismo (rclone, reloj, hostname, directorio de trabajo,
+      espera) + doble de Drive fijado a **rclone v1.73.5** con fixtures grabadas y **hook de
+      mutación** para interleaving determinista + caracterización de `cmd_checkout`/`cmd_checkin` +
+      matriz de fallos por call-site + los 7 defectos reproducidos en
+      `xfail(strict=True, raises=AssertionError)`. Sin esto los criterios de salida de las Fases 2-3
+      son indemostrables.
+      **Plan ejecutable rev. 2 (8 tareas):**
+      `docs/superpowers/plans/2026-07-29-dual-workspace-fase0-banco-pruebas.md`. Sustituye a las
+      Tareas 1-3 del plan combinado, supersedidas. La rev. 1 recibió **NO EJECUTABLE** de la
+      revisión adversarial de Codex (3 B0 + 5 A + 1 M) y **no se mergeó**: el orden 1→2→3 dejaba sin
+      red el refactor de mayor riesgo, no había barrera contra el Drive real, y el criterio de
+      salida exigía brechas que son de las Fases 1-3 (errata aplicada al §12 de la SPEC).
+
+      > ⛔ **GATE antes de implementar — decisión de Nikolai, 2026-07-29.** La construcción se
+      > aparca para otra sesión, y **antes de escribir la primera línea de la Task 0 hay OTRA
+      > pasada de revisión adversarial de Codex sobre la rev. 2**. Motivo: la rev. 1 llegó a un
+      > veredicto de NO EJECUTABLE y su corrección movió el orden de las tareas, el modelo del
+      > doble y el criterio de salida — bastante superficie nueva como para no darla por buena sin
+      > atacarla. Al adjudicar esa segunda pasada, la disciplina de esta ronda: **medir contra el
+      > binario instalado antes de aceptar un hallazgo** (dos sub-puntos del primer informe se
+      > refutaron ejecutando rclone v1.73.5, no leyendo documentación).
 - [ ] **Fase 1 — núcleo de workspace.** `CaseRef`/modos/capacidades/errores, registro privado
       atómico, `CaseCatalog` con `AMBIGUOUS_CASE`, resolver, **modo estricto de `path_for`**
       (mata el fallback que fabrica expedientes fantasma), **`core.intake_log` migrado** y

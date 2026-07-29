@@ -4021,3 +4021,46 @@ runtime donde esa regla se rompe sin querer.
 dentro de `session_state`.
 
 **Coste estimado.** Nada ahora (es una regla); ~30 min el test guardián al llegar a la Fase 4.
+
+---
+
+## 104. La rama Google-native del merge no la ha ejercitado ningún dato real
+
+**Medido el 2026-07-29** al capturar el contrato de rclone para el banco de pruebas de la Fase 0 de
+la arquitectura dual. **Sin promover:** no hay nada roto, pero hay una decisión de diseño de primera
+clase cuyo comportamiento nadie ha visto funcionar.
+
+**El dato.** Barrido de la unidad canónica (`EXPEDIENTES - TYUKHAY LEGAL`) con
+`rclone lsjson -R --files-only --max-depth 6 --fast-list`: **3007 ficheros, CERO entradas
+`application/vnd.google-apps*`**. Ni un Google Doc, ni una Sheet, en seis niveles de profundidad.
+
+**Por qué importa.** `parse_inventario_lsjson` mapea la ausencia de `md5` a `hash: None`, y
+`plan_merge` trata ese `None` como caso de primera clase: emite `ACCION_PRESERVE_DRIVE` con
+`google_native=True` y lo documenta en el docstring del módulo («Google-native (Docs/Sheets sin
+MD5): no se puede comparar por hash → se preserva siempre»). Además `_vetar_grupos` cuenta
+`PRESERVE_DRIVE` como **bloqueante** de un grupo indivisible. Es decir: hay lógica de merge, de
+veto y de semáforo que depende de una condición que **nunca ha ocurrido**.
+
+No es código muerto: ocurriría el día que alguien cree un Doc en la carpeta de un caso desde la UI
+de Drive, o que un `.docx` se convierta al subirlo. Y ese día el comportamiento sería estreno en
+producción, sobre el camino que mueve expedientes.
+
+**Lo que NO hace falta.** Averiguar la forma exacta creando un Doc en el Drive canónico: sería
+mutar el repositorio de expedientes para un experimento. Y es innecesario, porque el contrato del
+parser —`(item.get("Hashes") or {}).get("md5") or None`— trata igual las tres variantes posibles
+(sin clave `Hashes`, `Hashes: {}`, y `Hashes` sin `md5`).
+
+**Mejora propuesta.**
+1. El banco de la Fase 0 emite las **tres** variantes desde una fixture **declarada sintética** y
+   asierta `hash is None` en todas, más un test de `plan_merge` que cubra el veto de grupo con un
+   miembro native. Eso valida la lógica sin datos reales.
+2. Si alguna vez hace falta la forma real, capturarla en una **carpeta de pruebas fuera de
+   `CASOS`**, nunca en un expediente, y con `lsjson` de solo lectura.
+3. Decidir aparte si conviene **prohibir** los Google-native en las carpetas de caso (una nota en
+   el runbook, o una comprobación en el checkin que avise), dado que son incomparables por hash y
+   por tanto inmergeables por diseño.
+
+**Justificación de no aplicarlo ahora.** El punto 1 entra gratis en la Fase 0 (ya está en su
+plan). El 2 no tiene disparador. El 3 es una decisión de Nikolai, no técnica.
+
+**Coste estimado.** Punto 1: incluido en la Fase 0. Punto 3: ~20 min de doctrina si se decide.
