@@ -3826,9 +3826,9 @@ es gratis si se confirma, la (2) ~1 h con guard y test.
 >
 > Aparecieron 5 ficheros, y **ninguno lo causa esta rama**: cuatro son gemelos **NFD** de adjuntos
 > **NFC** ya presentes, con contenido idéntico (ver `99.5` — la normalización la introdujo el viaje
-> por Drive, no el motor), y `_revision/identidades_vigiladas.md` es el renombrado de
-> `del_burgo.md` del PR #118, ya en main, que el árbol de la línea base no tenía y que el motor no
-> poda (`#99`).
+> por Drive, no el motor), y `_revision/identidades_vigiladas.md` es el nombre que el PR #118
+> (`cd70944`) dio a esa vista de `_revision/`, ya en main: el árbol de la línea base es anterior a
+> ese renombrado, conserva el fichero con el nombre viejo y el motor no poda `_revision/` (`#99`).
 >
 > **Lo que este paso NO demuestra** (acotado en la rev. 2 de la spec y sigue vigente): la
 > transición top→mixto, la copia mayor, la colisión entre fuentes, el fallo con Layer B superado y
