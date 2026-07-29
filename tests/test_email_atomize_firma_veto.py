@@ -123,3 +123,35 @@ def test_capa_a_byte_identica_contra_golden(tmp_path):
     assert actual == GOLDEN_CAPA_A, (
         "Capa A movida. Hashes actuales (pega en GOLDEN_CAPA_A SOLO si estas ANTES del "
         f"arreglo):\n{actual}")
+
+
+# --- Test 6 del contrato: la traza se emite una vez, para el portador correcto -----------
+
+def test_traza_firma_excluida_una_vez_y_sin_intercalada_no_segmentada(tmp_path):
+    src, out = tmp_path / "03_Email", tmp_path / "Emails"
+    _corpus(src)
+    P.atomize_dir(src, out)
+    cola = (out / "_revision" / "cola.md").read_text(encoding="utf-8")
+    filas = [l for l in cola.splitlines() if l.startswith("| MSG-")]
+
+    # Los MSG-id se resuelven desde el registro, NO desde la fila encontrada: derivarlos de la
+    # propia traza dejaba pasar el mutante intercambiado (traza para b, `no_seg` para c), que es
+    # exactamente el defecto que este test existe para matar.
+    # TRAMPA: los Message-ID se guardan SIN los angulos (`.strip("<>")`) -> la llave del registro
+    # es "c@example.invalid", nunca "<c@example.invalid>".
+    reg = json.loads((out / "_registro.json").read_text(encoding="utf-8"))
+    msg_b = reg["mensajes"]["b@example.invalid"]["id"]
+    msg_c = reg["mensajes"]["c@example.invalid"]["id"]
+
+    trazas = [l for l in filas if "firma_excluida_del_veto" in l]
+    assert len(trazas) == 1, f"la traza debe emitirse UNA vez; filas: {filas}"
+    assert "| info |" in trazas[0]
+    assert "trozos_firma=7" in trazas[0]   # 3 + 1 + 3 lineas de firma en _HTML_FIRMA_ENTRE_CITAS
+    assert trazas[0].split("|")[1].strip() == msg_c, (
+        f"la traza es de OTRO portador: se esperaba {msg_c}; fila: {trazas[0]}")
+
+    # El portador arreglado (c) deja de declararse sin segmentar; el de intercalada REAL (b)
+    # sigue declarandose, porque su veto es correcto. Se fija la lista EXACTA.
+    no_seg = [l.split("|")[1].strip() for l in filas if "intercalada_no_segmentada" in l]
+    assert no_seg == [msg_b], (
+        f"intercalada_no_segmentada debe ser exactamente [{msg_b}]; es {no_seg}")

@@ -1012,6 +1012,13 @@ def reconstruir(m_a, raw: bytes, identidades: "Identidades | None" = None) -> Re
         res.punteros.append(SegmentoEnterrado(
             portador_msg_id=m_a.msg_id, estilo="carrier", confianza="info",
             motivo=seg_total.motivo, extracto=""))
+    if seg_total.firma_excluida:
+        # spec 2026-07-29 §5.1: la correccion del veto deja rastro. Solo se emite cuando la
+        # exclusion CAMBIO el veredicto (lo garantiza `firma_excluida`), no en cada correo con
+        # firma.
+        res.punteros.append(SegmentoEnterrado(
+            portador_msg_id=m_a.msg_id, estilo="firma_excluida_del_veto", confianza="info",
+            motivo=f"trozos_firma={seg_total.firma_excluida}", extracto=""))
     for seg in seg_total.ancestros:
         texto_exterior_original = seg.texto   # [G-CAPTURA] it.3: copia pre-poda para desanidar el interior
         anc = parsear_anclaje(seg.anclaje_texto or "", seg.estilo)
