@@ -155,3 +155,45 @@ def test_traza_firma_excluida_una_vez_y_sin_intercalada_no_segmentada(tmp_path):
     no_seg = [l.split("|")[1].strip() for l in filas if "intercalada_no_segmentada" in l]
     assert no_seg == [msg_b], (
         f"intercalada_no_segmentada debe ser exactamente [{msg_b}]; es {no_seg}")
+
+
+# --- Test 4 del contrato: remitente <-> cuerpo, contra el motor real ---------------------
+
+def test_firma_excluida_empareja_cada_remitente_con_su_cuerpo(tmp_path):
+    """El portador `c.eml` cita a Ana y a Bea. Tras excluir la firma del veto, la Capa B produce
+    DOS fichas y cada una debe llevar el cuerpo de SU autor. La revision adversarial construyo
+    el adversario contrario (remitente literal + cuerpo de otro): esto lo mata.
+
+    El emparejamiento es la asercion DURA: no se relaja nunca. El numero de fichas esta medido
+    (2), y si el motor diera otro numero hay que entender por que antes de tocar nada."""
+    src, out = tmp_path / "03_Email", tmp_path / "Emails"
+    _corpus(src)
+    P.atomize_dir(src, out)
+
+    fichas = {}
+    for p in sorted((out / "mensajes").glob("*.md")):
+        txt = p.read_text(encoding="utf-8")
+        if _capa(txt) == "B":
+            de = next(l.split(":", 1)[1].strip() for l in _frontmatter(txt).splitlines()
+                      if l.startswith("de:"))
+            fichas[de] = txt
+
+    # DURO: cada remitente con su cuerpo, en las dos direcciones.
+    for de, marca_propia, marca_ajena in (
+            ("ana@example.invalid", "CUERPO-DE-ANA", "CUERPO-DE-BEA"),
+            ("bea@example.invalid", "CUERPO-DE-BEA", "CUERPO-DE-ANA")):
+        assert de in fichas, f"falta la ficha B de {de}; hay: {sorted(fichas)}"
+        assert marca_propia in fichas[de], f"la ficha de {de} no lleva su propio cuerpo"
+        assert marca_ajena not in fichas[de], f"MISATRIBUCION: la ficha de {de} lleva {marca_ajena}"
+
+    # Medido: exactamente estas dos, ninguna mas.
+    assert set(fichas) == {"ana@example.invalid", "bea@example.invalid"}, (
+        f"fichas B inesperadas: {sorted(fichas)}")
+
+    # Y la PROCEDENCIA tambien: las dos se reconstruyeron del portador `c`, no de otro. Sin esto,
+    # una procedencia equivocada pasaria el test (hallazgo de la revision adversarial).
+    reg = json.loads((out / "_registro.json").read_text(encoding="utf-8"))
+    msg_c = reg["mensajes"]["c@example.invalid"]["id"]
+    for de, txt in fichas.items():
+        assert f"reconstruido_de: {msg_c}" in _frontmatter(txt), (
+            f"la ficha de {de} dice venir de otro portador; se esperaba {msg_c}")
