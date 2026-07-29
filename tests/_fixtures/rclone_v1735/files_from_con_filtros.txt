@@ -1,0 +1,1 @@
+2026/07/29 23:44:45 CRITICAL: Failed to initialise global options: failed to reload "filter" options: the usage of --files-from overrides all other filters, it should be used alone or with --files-from-raw

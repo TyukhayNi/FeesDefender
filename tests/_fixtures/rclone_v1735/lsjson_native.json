@@ -1,0 +1,33 @@
+[
+  {
+    "Path": "sin_clave_hashes.gdoc",
+    "Name": "sin_clave_hashes.gdoc",
+    "Size": -1,
+    "MimeType": "application/vnd.google-apps.document",
+    "ModTime": "2026-05-29T07:41:12.000Z",
+    "IsDir": false,
+    "ID": "1SinteticoNativoAAAAAAAAAAAAAAAAA"
+  },
+  {
+    "Path": "hashes_vacio.gsheet",
+    "Name": "hashes_vacio.gsheet",
+    "Size": -1,
+    "MimeType": "application/vnd.google-apps.spreadsheet",
+    "ModTime": "2026-05-29T07:41:12.000Z",
+    "IsDir": false,
+    "ID": "1SinteticoNativoBBBBBBBBBBBBBBBBB",
+    "Hashes": {}
+  },
+  {
+    "Path": "hashes_sin_md5.gslides",
+    "Name": "hashes_sin_md5.gslides",
+    "Size": -1,
+    "MimeType": "application/vnd.google-apps.presentation",
+    "ModTime": "2026-05-29T07:41:12.000Z",
+    "IsDir": false,
+    "ID": "1SinteticoNativoCCCCCCCCCCCCCCCCC",
+    "Hashes": {
+      "sha1": "37044ba3255952faea640566aaed569f116f6653"
+    }
+  }
+]
