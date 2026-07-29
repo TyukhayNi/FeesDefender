@@ -437,9 +437,14 @@ caso: durante un checkout, un proceso escribe en el local y otro en Drive.
 
 **Fases** (cada una: sub-SPEC + plan + revisión adversarial + PR propios):
 
-- [ ] **Fase 0 — banco de pruebas del frontal.** Puerto inyectable de rclone + doble de Drive
-      con la semántica que muerde (sync lag, Google-native sin MD5, `moveto` fallido) + tests de
-      caracterización. Sin esto los criterios de salida de las Fases 2-3 son indemostrables.
+- [ ] **Fase 0 — banco de pruebas del frontal.** `Entorno` que inyecta las cuatro fuentes de
+      no-determinismo (rclone, reloj, hostname, directorio de trabajo) + doble de Drive con la
+      semántica que muerde (lecturas obsoletas, Google-native sin MD5, `moveto` fallido) +
+      caracterización de `cmd_checkout`/`cmd_checkin` + los 7 defectos del frontal reproducidos en
+      `xfail(strict=True)`. Sin esto los criterios de salida de las Fases 2-3 son indemostrables.
+      **Plan ejecutable (6 tareas):**
+      `docs/superpowers/plans/2026-07-29-dual-workspace-fase0-banco-pruebas.md`. Sustituye a las
+      Tareas 1-3 del plan combinado, que quedan marcadas como supersedidas.
 - [ ] **Fase 1 — núcleo de workspace.** `CaseRef`/modos/capacidades/errores, registro privado
       atómico, `CaseCatalog` con `AMBIGUOUS_CASE`, resolver, **modo estricto de `path_for`**
       (mata el fallback que fabrica expedientes fantasma), **`core.intake_log` migrado** y
