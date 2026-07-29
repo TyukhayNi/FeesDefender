@@ -1,6 +1,8 @@
 # Diseño — Enumeración recursiva del atomizador de correo (`MEJORAS #98`) y poda que no borra a ciegas
 
-> **Estado:** rev. 1 (2026-07-28), aprobada por Nikolai en chat antes de escribirse.
+> **Estado:** **rev. 2** (2026-07-29), tras revisión adversarial de Codex con veredicto **NO-SHIP**
+> y 6 bloqueantes, todos aceptados y resueltos (§11). La rev. 1 (2026-07-28) fue aprobada en chat
+> antes de escribirse.
 > **Alcance:** **motor** (`core/email_atomize/`), a diferencia del PR anterior, que era cableado.
 > **Origen:** `MEJORAS #98`, más un segundo defecto de la misma familia hallado al diseñar
 > (el `except OSError` silencioso de `iter_avistamientos`).
@@ -117,11 +119,37 @@ Se conserva a propósito la **ceguera a `.EML` en mayúsculas**: el nombre lo co
 Hoy `eml_origen = eml.name`. Pasa a `eml.relative_to(base).as_posix()` →
 `2026-03-04_arras/2026-03-04_arras.eml`.
 
-**Por qué la Capa A no cambia un byte:** para un `.eml` del nivel superior, `relative_to(base)` es
-el propio nombre. Como hoy **no existe ni un `.eml` en subcarpeta** (§1.2), el frontmatter
-`eml_origen:` de los 277 atoms de W-02VND1 —y de cualquier otro caso— sale idéntico. Los mensajes
-antes invisibles entran como atoms nuevos, con IDs **al final** del contador: `msg_id_for` acuña
-por `Message-ID` y solo incrementa (`ids.py:37-46`), así que no hay renumeración.
+**Byte-identidad: qué se promete exactamente (rebajado en rev. 2).** Para un `.eml` del nivel
+superior, `relative_to(base)` es el propio nombre; y como hoy **no existe ni un `.eml` en
+subcarpeta** (§1.2), `sorted(rglob("*.eml"))` devuelve **exactamente la misma lista** que
+`sorted(glob("*.eml"))` — mismo orden, mismos avistamientos. De ahí que el frontmatter de los 277
+atoms de W-02VND1, y de cualquier caso actual, salga idéntico, y que ningún `MSG-`/`ATT-` se
+renumere (`msg_id_for` acuña por `Message-ID` y solo incrementa, `ids.py:37-46`).
+
+Lo que **no** se puede prometer, y la rev. 1 prometía de más: la byte-identidad vale **mientras el
+conjunto de avistamientos no cambie**. Si un mismo `Message-ID` llega a existir a la vez arriba y
+en subcarpeta, `colapsar` (`dedup.py:29-52`) **siempre añade la procedencia nueva** —y `procedencia`
+va en el frontmatter (`render.py:42`)—, y si la copia nueva trae más bytes se adopta como canónica,
+con lo que pueden cambiar `eml_origen`, `profundidad`, `ruta_anidacion`, el `sha256` y hasta el
+nombre del `.md`.
+
+Cuán alcanzable es ese layout mixto, medido: **el dedup por `Message-ID` del export ignora
+`--force`** (`force` solo vacía el caché `_exported_ids.json`, mientras `vistos` se recalcula
+siempre desde disco/M9 — `email_export.py:982-1003`), así que un re-export con
+`--extraer-adjuntos` **no** crea una segunda copia de un mensaje ya presente. Las vías reales son
+una copia manual o un export sin `case_id` sobre un destino que ya tenía copia plana.
+
+**Dos reglas para que ese caso no mute prueba en silencio:**
+
+1. **Desempate determinista, no orden de enumeración.** A igualdad de bytes gana la copia de
+   **menor profundidad de ruta** y, en empate, el orden lexicográfico POSIX — nunca «la primera que
+   llegó», que con `rglob` depende del layout.
+2. **Una copia de menor fidelidad no cambia el canónico.** Solo un `raw` estrictamente mayor puede
+   sustituir origen/profundidad/ruta, que es la regla actual; se conserva y se hace explícita.
+
+La `procedencia` **sí** gana una entrada en ese caso, y eso es correcto: es el registro de dónde se
+ha visto el mensaje, no una reatribución. Queda declarado como el único camino por el que el
+frontmatter de un atom existente cambia.
 
 `as_posix()` es deliberado: el separador debe ser estable entre Windows y cualquier otra máquina,
 porque este valor se persiste en `_registro.json` y en el frontmatter.
@@ -134,33 +162,64 @@ Alcanza a los tres consumidores del valor, sin cambios en ellos:
 usa** (verificado). Se retira: es privado, tiene un solo llamante, y un parámetro que miente es
 peor que uno que falta.
 
-### 4.3. Fallo de lectura: declarado, y sin poda a ciegas
+### 4.3. Foto incompleta: híbrido según si el fallo es transitorio o permanente
 
-Dos cambios acoplados, porque uno sin el otro no sirve:
+La rev. 1 solo miraba fallos de **lectura** y solo apagaba la poda. La revisión demostró que hay
+más caminos por los que el conjunto esperado sale incompleto y, por tanto, la poda borra fichas
+cuyo mensaje no ha desaparecido:
 
-**(a) Declararlo.** `iter_avistamientos(base, *, fallos: list[str] | None = None)`: en el
-`except OSError as exc`, en vez de `continue` a secas, si `fallos is not None` se le añade
-`f"{ruta_relativa}: {exc}"`. `atomize_dir` pasa una lista, y sus entradas van a
-`report.errores` con prefijo `lectura fallida:`. Efecto inmediato y gratis: el evento forense
-`atomizado_email` sale **`status: "parcial"`**, porque el cableado ya deriva `parcial` de
-`report.errores` no vacío.
+- **lectura** de un `.eml` (`extract.py:54-57`, `except OSError: continue`) — y también el fallo al
+  **enumerar un directorio**, que `rglob` puede silenciar;
+- **construcción** de un mensaje de Capa A (`pipeline.py:104-109` captura y sigue);
+- **reconstrucción** de Capa B de un portador (`pipeline.py:183-188`, ídem).
 
-**(b) No podar.** La poda de `mensajes/*.md` (`pipeline.py:121-124`) se ejecuta **solo si no hubo
-fallos de lectura**. Si hubo, se salta y se añade una **nota** al informe:
+Los tres dejan mensajes fuera de `esperados`; los tres son la misma familia. Pero **no tienen la
+misma naturaleza**, y de ahí la regla (decisión de Nikolai, 2026-07-28):
 
+| Clase de fallo | Naturaleza | Qué hace el motor |
+|---|---|---|
+| **Lectura / enumeración** | **Transitorio.** Sobre `G:` (Drive Stream con caché) un fichero presente puede no estar hidratado; re-correr suele resolverlo | **Fail-closed: no publica nada.** Ni `mensajes/`, ni agregados, ni `_revision/`, ni vistas, ni `reg.save()`. La última publicación completa queda **intacta** |
+| **Construcción A / Layer B** | **Permanente.** Un `.eml` corrupto no se arregla re-corriendo | **Publica lo bueno pero NO poda.** Así no se borra la ficha del que no se pudo construir, y un solo correo roto no bloquea el caso para siempre |
+
+**Por qué no fail-closed en los dos casos** (que es lo que pedía el revisor): un `.eml`
+permanentemente corrupto dejaría el caso **sin poder atomizarse nunca más**, hasta que alguien
+retirase el fichero a mano. El precio del híbrido es que en la rama permanente el árbol puede
+quedar mixto (fichas rancias en `mensajes/` frente a agregados reescritos sin ellas); se declara en
+el evento y en una nota, en vez de fingir que no pasa.
+
+**Cómo se implementa, sin necesidad de la publicación atómica de `#99`:** el pipeline ya construye
+`mensajes` **en memoria** antes de escribir nada (`pipeline.py:93-116`). La decisión se toma ahí,
+antes de la primera escritura — no es un rollback, es no empezar.
+
+**Contadores tipados en `AtomizeReport`** (el revisor tenía razón en que `eml_leidos` no tenía
+fuente de verdad: `report.mensajes` no sirve, porque el dedup y los anidados rompen la igualdad
+«ficheros leídos = atoms»):
+
+```python
+eml_enumerados: int = 0      # .eml que la enumeración produjo
+eml_leidos: int = 0          # de esos, los que se abrieron sin error
+fallos_lectura: list[str] = []   # ruta: motivo (incluye fallos de enumeración de directorio)
 ```
-poda de mensajes/ OMITIDA: N .eml no se pudieron leer; el árbol conserva
-fichas cuyo origen no se ha visto en esta corrida.
-```
 
-Las `notas` sí las escupe el cableado a stderr con prefijo `NOTA:` antes del OCR, así que el
-operador lo ve a tiempo. El coste asumido es un árbol que puede conservar fichas huérfanas —
-preferible a borrar prueba derivada por una foto incompleta, y coherente con que `adjuntos/` ya no
-se poda (`#99`).
+`errores` sigue siendo el cajón de las demás clases (construcción, Layer B, `vistas.yaml`), así que
+la causa queda **mecánicamente distinguible**: `fallos_lectura` no vacío ⇒ rama transitoria.
+
+**Notas y evento.** En la rama transitoria, `publicado: false` en el payload y nota a stderr:
+```
+ATOMIZACIÓN NO PUBLICADA: N .eml no se pudieron leer (Drive sin hidratar?).
+El árbol anterior queda intacto. Re-lanza cuando estén disponibles.
+```
+En la rama permanente, `poda_omitida: true` y nota:
+```
+poda de mensajes/ OMITIDA: N mensajes no se pudieron construir; el árbol
+conserva fichas cuyo mensaje no se ha reconstruido en esta corrida.
+```
+Las `notas` las escupe el cableado a stderr con prefijo `NOTA:` **antes** del OCR, así que el
+operador lo ve a tiempo para abortar.
 
 **Por qué esto vive en el motor y no en el cableado:** el motor es el único que sabe qué ficheros
-abrió de verdad. El cableado solo puede comparar números de disco, que es lo que hizo ayer y lo que
-no cazaba este caso.
+abrió y qué mensajes construyó de verdad. El cableado solo puede comparar números de disco, que es
+lo que hacía la guarda de ayer y lo que no cazaba ninguno de estos tres caminos.
 
 ### 4.4. Se retira el andamio de la discrepancia, y el conteo se simplifica
 
@@ -171,13 +230,36 @@ disco. Por tanto:
   no una tupla. Sigue siendo necesario para el no-op («¿hay correo?»).
 - Desaparecen del CLI el banner `_AVISO_EML_INVISIBLE`, la guarda
   `if n_rec > n_top and out.exists()` y la rama `status: "noop"`-por-discrepancia.
-- El payload del evento cambia sus dos claves de conteo, y con provecho:
-  `eml_en_disco` (lo que hay) y `eml_leidos` (lo que el motor abrió). Que difieran es la huella
-  de §1.3, auditable **desde el log solo**. Sustituyen a `eml_nivel_superior`/`eml_totales`, que
-  medían una discrepancia que ya no existe. El log es append-only: las entradas viejas conservan
-  sus claves, y no hay consumidor productivo que las lea (verificado en el PR anterior:
-  `core/abrir_caso.py:159-166` y `.claude/skills/intake-expediente/scripts/traza.py:50-69`
-  recorren todos los eventos y solo miran `details.files`, que este evento no lleva).
+- El payload del evento cambia sus dos claves de conteo, y con provecho: `eml_en_disco` (lo que la
+  enumeración produjo) y `eml_leidos` (lo que el motor abrió), más `publicado` y `poda_omitida`
+  (§4.3). Que los dos conteos difieran es la huella de §1.3, auditable **desde el log solo**.
+  Sustituyen a `eml_nivel_superior`/`eml_totales`, que medían una discrepancia que ya no existe.
+- **Versionado del payload (rev. 2, a raíz de la revisión).** Sustituir claves en un log
+  append-only deja dos formas bajo el mismo tipo de evento: una auditoría futura que lea
+  `eml_en_disco` no la encontrará en las entradas de ayer. Se añade por eso `details_schema: 2`.
+  **No** se conservan las claves viejas: emitir `eml_nivel_superior` cuando el concepto ha
+  desaparecido es publicar un dato sin significado. Sin `details_schema`, forma 1.
+  Ningún consumidor productivo se rompe — verificado: `core/abrir_caso.py:159-166` y
+  `.claude/skills/intake-expediente/scripts/traza.py:50-69` recorren todos los eventos y solo miran
+  `details.files`, que este evento no lleva; `read_events` no valida schema (`intake_log.py:204-230`).
+
+### 4.5. La llave del registro lleva la fuente; el frontmatter no
+
+La ruta relativa **a cada carpeta fuente** no basta como llave: `2026-07-20_email_01/sub/a.eml` y
+`03_Email/sub/a.eml` producen los dos la cadena `sub/a.eml`, y `marcar_procesado` colapsa por
+igualdad (`ids.py:77-91`), así que el objetivo 2 del §2 no se cumpliría. Lo encontró la revisión.
+
+Se separan los dos usos, que hasta ahora eran el mismo valor:
+
+- **`eml_origen`** (probatorio, va al frontmatter): ruta relativa **a su carpeta fuente**. Para el
+  nivel superior sigue siendo el nombre pelado → la byte-identidad de §4.2 se mantiene.
+- **`eml_key`** (llave del registro, no va al frontmatter): `f"{fuente.name}/{eml_origen}"`. Los
+  nombres de las fuentes son únicos por construcción (lotes `AAAA-MM-DD_email_NN` + `03_Email`), así
+  que la llave lo es. Es lo que consume `marcar_procesado`.
+
+Migración: ninguna. `eml_procesados` es informativo y nadie lo lee hoy (verificado); la primera
+corrida tras el cambio reescribe la lista con llaves nuevas. Lo que `MEJORAS #86` planea leer pasa a
+ser fiable, que era el objetivo.
 
 El no-op sobrevive intacto: `n == 0` y sin árbol previo → no se llama al motor (evitar el `mkdir`
 incondicional de `mensajes/`/`adjuntos/`); con árbol previo sí se llama, para que la retirada
@@ -190,13 +272,23 @@ El PR #151 puso una protección **indirecta**: «si los conteos de disco no cuad
 quedaría (a) código que no puede dispararse y (b) un banner cuyo texto —«el atomizador NO los
 verá»— pasaría a ser **falso**, que es peor que no tener aviso.
 
-La protección **no se pierde: se muda y se vuelve precisa** (§4.3b). Cobertura comparada:
+La protección **no se pierde: se muda y se vuelve precisa** (§4.3). Cobertura comparada, con los
+caminos que añadió la revisión:
 
 | Escenario | Guarda de ayer | Guarda nueva |
 |---|---|---|
 | `.eml` en subcarpeta (`#98`) | detecta | **no aplica: ya no hay invisibles** |
-| `.eml` presente pero ilegible (Drive sin hidratar) | **no detecta** | detecta y no poda |
+| `.eml` presente pero ilegible (Drive sin hidratar) | **no detecta** | fail-closed: no publica |
+| Fallo al enumerar un directorio | **no detecta** (el `try` solo rodea `read_bytes`) | fail-closed: se cuenta como fallo de lectura |
+| Mensaje que falla al construirse / portador de Layer B que falla | **no detecta** | publica sin podar |
 | Retirada genuina de correo | reconcilia (correcto) | reconcilia (correcto) |
+| `.EML` en mayúsculas | **no detecta** (ambos conteos lo omiten) | **no detecta** (ceguera deliberada y simétrica) |
+| Carpeta fuente que `emails_src_dirs_de_caso` no devuelve (lote que no casa `PATRON_LOTE`) | **no detecta** | **no detecta** |
+
+Las dos últimas filas son la corrección de la rev. 1, que afirmaba «el motor ve todo lo que hay en
+disco». Lo correcto es: **todos los `*.eml` enumerables dentro de las fuentes declaradas**. Ninguna
+de las dos la cubría la guarda vieja tampoco, así que retirarla no pierde cobertura — que es lo que
+esta tabla tenía que demostrar.
 
 ## 6. Contrato de tests
 
@@ -208,15 +300,31 @@ La protección **no se pierde: se muda y se vuelve precisa** (§4.3b). Cobertura
 3. **`eml_origen` de una subcarpeta es la ruta relativa con `/`**, no `\`, y no el nombre pelado.
 4. **Colapso:** el mismo mensaje presente arriba **y** en subcarpeta produce **un solo atom** (por
    `Message-ID`), con las dos procedencias.
-5. **Fallo de lectura declarado:** un `.eml` ilegible (permiso denegado o simulando `OSError` en la
-   lectura) deja una entrada `lectura fallida:` en `report.errores` y **no** aborta la corrida.
-6. **Fallo de lectura NO poda:** árbol previo con 2 fichas, una fuente pasa a ilegible → tras la
-   corrida **las 2 fichas siguen ahí** y el informe trae la nota de poda omitida. Es el test que
-   demuestra §1.3.
-7. **Sin fallos sí poda:** el test de transición a cero existente sigue verde, sin tocarlo (poda
+5. **Fallo de lectura declarado:** un `.eml` que lanza `OSError` al leerse deja entrada en
+   `fallos_lectura` (no en `errores`) y **no** aborta la corrida con traceback.
+6. **Fallo de lectura NO PUBLICA (fail-closed):** árbol previo con 2 fichas + agregados; una fuente
+   pasa a ilegible → tras la corrida **las 2 fichas siguen**, `corpus.jsonl` y los índices
+   **no se han reescrito** (comparar bytes), `_registro.json` **no se ha tocado**, y el informe trae
+   `publicado=False` + la nota. Es el test que demuestra §1.3.
+7. **Fallo de construcción SÍ publica pero NO poda:** un `.eml` que hace fallar
+   `_construir_mensaje` → los demás atoms se escriben, la ficha del que falló **sobrevive**,
+   `poda_omitida=True`. Cubre el camino que la rev. 1 dejaba fuera.
+8. **Sin fallos sí poda:** el test de transición a cero existente sigue verde, sin tocarlo (poda
    legítima).
-8. **Idempotencia:** dos corridas seguidas sobre un lote con subcarpetas → 0 cambios, 0
+9. **Idempotencia:** dos corridas seguidas sobre un lote con subcarpetas → 0 cambios, 0
    renumeraciones.
+10. **`eml_leidos` ≠ `mensajes`:** un lote donde el dedup colapsa dos avistamientos del mismo
+    `Message-ID` → `eml_leidos` cuenta ficheros y `mensajes` cuenta atoms, y **no coinciden**. Mata
+    la implementación perezosa `eml_leidos = report.mensajes`.
+11. **Llave del registro sin colisión:** dos fuentes distintas con el mismo relpath interno
+    (`sub/a.eml` en un lote y en `03_Email`, mensajes DISTINTOS) → `eml_procesados` tiene **dos**
+    entradas y los dos atoms existen.
+12. **Transición top-only → mixta, copia igual y copia mayor:** un atom existente cuyo mensaje
+    aparece además en subcarpeta con (a) bytes idénticos → el canónico NO cambia de `eml_origen`
+    (desempate por menor profundidad), y (b) más bytes → sí cambia, y el test lo fija como
+    comportamiento declarado, no accidental. Es el death test del hallazgo 1 de la revisión.
+13. **Todos los `.eml` en subcarpetas** (ninguno arriba): el motor los atomiza todos. Recupera la
+    cobertura del caso que se pierde al retirar los tres tests de la guarda.
 
 **Conteo — a modificar** (`tests/test_email_atomize_pipeline.py`): los dos tests de `contar_eml`
 asertan hoy una **tupla** y pasan a un `int` —
@@ -226,6 +334,11 @@ mantiene su propósito con un solo número.
 
 **Cableado — a modificar** (`tests/test_sala_maquina_cableado_atomize.py`, 19 tests hoy):
 
+**Nota de la revisión:** el test 2 **ya existe casi igual** en
+`tests/test_email_atomize_extract.py:17-27` — se amplía ahí en vez de duplicarlo. Y el test de
+`colapsar` vigente (`tests/test_email_atomize_dedup.py:6-19`) aserta `raw` y el conjunto de
+procedencias pero **no** `eml_origen` ni `profundidad`: los tests 12 y 4 cubren ese hueco.
+
 - **Se retiran 5**, cuya premisa desaparece: `test_noop_con_discrepancia_emite_evento_noop`,
   `test_arbol_previo_con_discrepancia_total_no_llama_al_motor`,
   `test_arbol_previo_con_discrepancia_parcial_no_llama_al_motor`,
@@ -234,7 +347,8 @@ mantiene su propósito con un solo número.
   `test_motor_real_ve_las_subcarpetas` y asserta lo contrario (2 atoms, no 1). Es el test que
   fija el arreglo contra el motor real.
 - **Se simplifican 2:** `test_plan_no_atomiza_pero_informa_y_avisa` pierde la aserción del banner
-  (mantiene la línea informativa y que no escribe en `01_Procesado/Emails`);
+  (mantiene la línea informativa y que no escribe en `01_Procesado/Emails`) y **su recuento pasa de
+  2 a 3 correos**, porque su fixture tiene 2 arriba y 1 en subcarpeta y ahora se cuentan los tres;
   `test_payload_atado_a_los_campos_reales_del_report` pasa a las claves nuevas
   `eml_en_disco`/`eml_leidos`.
 - **Se añade 1:** payload con `status: "parcial"` y `eml_leidos < eml_en_disco` cuando el motor
@@ -272,6 +386,11 @@ Plan aprobado por Nikolai:
    W-02VND1 (277 correos, sin subcarpetas) y demostrar Capa A **byte-idéntica** y **0 IDs
    renumerados**, con el patrón de `scripts/_verify_live_it3.py` (snapshot de hashes antes/después).
    Escribe en `G:`; no se ejecuta sin el sí explícito.
+   **Alcance de lo que esta corrida demuestra, acotado en rev. 2:** solo «input top-only inalterado
+   ⇒ salida idéntica». **No** demuestra la transición top→mixto, ni la copia mayor, ni la colisión
+   entre fuentes, ni el fallo con un Layer B superado, ni el error de enumeración de directorio —
+   esos cinco viven en los death tests 6, 7, 10, 11 y 12 del §6, y ahí se quedan porque provocarlos
+   en vivo exigiría corromper un expediente real.
 
 ## 8. Riesgos
 
@@ -304,3 +423,31 @@ Plan aprobado por Nikolai:
 - **`MEJORAS #86`** — el consumo del árbol atomizado por la sala de lectura; se beneficia de que
   `eml_procesados` deje de ser ambiguo (su requisito de entrada 1).
 - **Casilla 3** del bloque del PLAN: decidible tras §7, en su propio PR.
+
+## 11. Adjudicación de la revisión adversarial (Codex, 2026-07-29) — NO-SHIP, resuelto
+
+`agy` no pudo correr (cupo de Gemini agotado), así que la revisión la hizo Codex en solo lectura.
+**Los 6 bloqueantes se aceptan.** Dónde queda cada uno:
+
+| # | Bloqueante | Resuelto en | Matiz que verifiqué yo |
+|---|---|---|---|
+| 1 | La Capa A puede mutar por selección canónica y por `procedencia` | §4.2 | Real, pero **no afecta a nada existente**: sin subcarpetas `sorted(rglob)` da la misma lista que `sorted(glob)`. Y el layout mixto **no** se alcanza por re-export: el dedup por `Message-ID` ignora `--force` (`email_export.py:982-1003`) |
+| 2 | Un fallo publica un árbol mixto; la guarda no cubre construcción ni Layer B | §4.3 | Confirmado leyendo `pipeline.py:104-109` y `:183-188`. **No** se adopta el fail-closed universal que pedía: un `.eml` permanentemente corrupto bloquearía el caso para siempre → híbrido por naturaleza del fallo (decisión de Nikolai) |
+| 3 | `eml_leidos` sin fuente de verdad tipada | §4.3 | Correcto: `report.mensajes` no vale porque el dedup rompe la igualdad. Contadores tipados + test 10 |
+| 4 | `eml_procesados` sigue colisionando entre fuentes | §4.5 | Correcto y el objetivo 2 del §2 no se cumplía. `eml_origen` (frontmatter) y `eml_key` (registro) se separan |
+| 5 | Faltan death tests | §6 (tests 5-13) | Correcto, incluida la cobertura que se pierde al retirar los tres tests de la guarda |
+| 6 | Fallos al enumerar un directorio fuera de la guarda | §4.3 y tabla del §5 | Correcto; se cuentan como fallo de lectura (rama transitoria) |
+
+**Dos puntos donde no seguí al revisor:**
+
+- **`_enlaces/` no puede contener `.eml`.** Su tabla lo daba por posible; está descartado por
+  medición: los `.eml` rescatados de un enlace se depositan **a primer nivel**
+  (`_deposita_mensaje_rescatado`, `email_export.py:536-556`).
+- **Claves del evento: versionar, no duplicar.** Proponía conservar `eml_nivel_superior`/`eml_totales`
+  por compatibilidad. Emitir una clave cuyo concepto ha desaparecido es publicar un dato sin
+  significado; se resuelve igual con `details_schema: 2` (§4.4).
+
+**Lo que la revisión dejó como UNVERIFIED y sigue así:** la semántica de `Path.rglob` ante enlaces
+simbólicos de directorio, porque el repo solo fija Python `>=3.11` y no una versión concreta. No se
+apoya ninguna decisión en ese comportamiento: los fallos de enumeración caen en la rama transitoria
+de §4.3 sea cual sea su causa.
