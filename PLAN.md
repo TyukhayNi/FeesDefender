@@ -28,7 +28,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 10 | [`.doc` → LibreOffice headless](#siguiente-doc-libreoffice-doc-binario-sin-md-ni-ocr-conversión-libreoffice-headless) | pendiente | disparador: W-02MA0R, la demanda del ordinario solo existe en `.doc` sin gemelo PDF | bajo |
 | 11 | [Cableado del pipeline de correo (`MEJORAS #68`)](#siguiente-cableado-correo-cableado-del-pipeline-de-correo-encadenar-la-atomización-resto-de-mejoras-68) | casillas 1-2 ✅; casilla 3 **decidible, sin gates** (#98 cerrado, PR #155) | solo queda la decisión de Nikolai: `--extraer-adjuntos` a default `True` mueve la superficie de dedup de todo intake futuro | bajo |
 
-| 12 | [La firma no es intercalada: falso positivo que bloquea la Capa B](#siguiente-sandwich-firma-la-firma-no-es-una-respuesta-intercalada) | **construido y verificado en vivo, en revisión** (PR abierto) | 2 erratas de la spec medidas al construir: 3 portadores desbloqueados (no 5) y **0 fichas nuevas** (no 4) | bajo |
+| 12 | [La firma no es intercalada: falso positivo que bloquea la Capa B](#siguiente-sandwich-firma-la-firma-no-es-una-respuesta-intercalada) | ✅ **CERRADO** — PR #164 (`aaf7dc1`) | queda su cola: `MEJORAS #109` (el síntoma original sigue sin explicar) y borrar el corpus de prueba | bajo |
 
 > Detalle de cada ítem en su bloque `[SIGUIENTE-*]` más abajo. Backlog sin
 > promover: `docs/MEJORAS_FUTURAS.md`. Ledger de cerrados: `## Cerrados` (final).
@@ -387,6 +387,10 @@ W-02VND1. De los 7, en **5** todos los trozos disparadores están bajo `class="g
 arregla la exclusión estructural; en 2 hay texto de autor real → el veto se mantiene. En W-02VND1 la
 regla **no cambia nada**, y su único caso es un contraejemplo legítimo que debe seguir vetado.
 
+> **Corregido al construir (ver las dos erratas de la spec):** el «5» es falso — los portadores que
+> cambian de veredicto son **3** y los que conservan el veto **4**; y de esos 3 salen **0 fichas
+> nuevas**, porque sus `blockquote` están vacíos. Lo demás de este párrafo se sostiene.
+
 **Decisión (rev. 2):** los trozos bajo un contenedor de firma no cuentan como texto de autor a
 efectos del veto. Es estructural, no lexical, y **no puede levantar un veto correcto**: solo resta
 firma del recuento.
@@ -422,11 +426,10 @@ firma del recuento.
       mutante—; (2) mi cifra de «20 de 271 correos con la firma abierta» era **falsa** (medida con
       marcadores más anchos que los implementados): son **1 de 271**, corregida en las cuatro copias;
       (3) mi propia Errata 2 prometía de más igual que el párrafo que corregía.
-- [ ] **En revisión**: PR abierto, pendiente de `leak-scan` y merge. El `✅` con el número de PR y el
-      hash del squash se pone en el cierre de sesión, no aquí.
-- [ ] Tras el merge, y con autorización expresa: borrar del Escritorio `_PRUEBA_98_VaRS3` y
-      `_PRUEBA_98_VaRS3_atomizado` (correo real de cliente). **No antes**: si la revisión obliga a
-      repetir una medición, esa evidencia local es la única que hay.
+- [x] ✅ **MERGEADO — PR #164, squash `aaf7dc1`.** Suite final 2562/0/0.
+- [ ] **PENDIENTE, y con orden:** primero medir el hilo de `MEJORAS #109` sobre el corpus de prueba
+      (es la única copia de ese hilo), y solo después borrar del Escritorio `_PRUEBA_98_VaRS3` y
+      `_PRUEBA_98_VaRS3_atomizado` — correo real de cliente, con autorización expresa de Nikolai.
 - Recordatorio de la spec §5.1 que es fácil de olvidar: **los sellos anteriores son inmutables**. Si
   se revisan las fichas nuevas de un caso con entrega ya sellada, hay que **sellar una entrega
   nueva** (`--entrega`), no dar por actualizada la anterior.
