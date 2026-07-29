@@ -3938,3 +3938,86 @@ en vivo** — es la comprobación pendiente antes de dar por real ese caso.
 **Prioridad.** Baja hasta que alguien no pueda abrir un `.docx` o un `.xlsx` del procesado.
 **Disparador de promoción:** primer fichero de `01_Procesado` que no abra en Word/Excel, o decisión
 de Nikolai.
+
+---
+
+## 101. La bandeja `_pendiente_checkin/` produce ficheros `_reingesta_*` que nadie reconcilia
+
+**Anotado 2026-07-29**, hallazgo M-4 de la revisión adversarial de la arquitectura dual
+(`docs/superpowers/specs/2026-07-29-feesdefender-dual-case-workspace-adversarial-review.md`).
+Hermano de `#96`. **Sin promover:** la arquitectura dual retira la bandeja como camino ordinario
+(su Fase 2), y estos residuos son el rastro que quedará después.
+
+**Estado actual.** `scripts/repository_cli.py:697-724` (`_integrar_bandeja`, CP10) mueve cada
+fichero de la bandeja a su ruta original; cuando **colisiona**, `planificar_integracion_bandeja`
+lo deja como `_reingesta_*` para no sobrescribir. Ese fichero:
+
+- **no aparece en el plan de merge** (la bandeja está en `MERGE_EXCLUSIONS`), así que nunca sale
+  en el `DELTA_PREVIO.md` que revisa el letrado;
+- **no lo cubre la verificación por hash** del CP8, que corre *antes* de la integración;
+- **nadie lo reconcilia después**: se queda con nombre de residuo junto al fichero bueno, y en el
+  siguiente checkout entra al baseline como un documento normal.
+
+**Mejora propuesta.** Al retirar la bandeja (Fase 2 de la arquitectura dual), barrer los
+`_reingesta_*` existentes con un inventario por API y decidir uno a uno; y mientras exista el
+mecanismo, listarlos en el DELTA con su bloqueante, igual que se hizo con `VETO_GRUPO` (`#137`).
+
+**Justificación de no aplicarlo ahora.** Hoy no hay ninguno conocido, y la pieza que los genera
+está en vías de retirada: arreglarla antes de retirarla es trabajo perdido. Lo que **sí** hay que
+evitar es retirar la bandeja y dejar los residuos sin censar.
+
+**Coste estimado.** ~30 min el censo por API; el listado en el DELTA, ~1 h con test.
+
+---
+
+## 102. `errors="replace"` en la lectura del log canónico corrompe evidencia de forma permanente
+
+**Anotado 2026-07-29**, hallazgo M-5 de la misma revisión. **Sin promover** solo porque no se ha
+observado daño todavía; es independiente de la arquitectura dual y la sobrevive.
+
+**Estado actual.** `scripts/repository_cli.py:736-767` (`_append_evento_drive`) no hace append: baja
+el `_intake_log.jsonl` del Drive, lo lee con
+`read_text(encoding="utf-8", errors="replace")`, filtra líneas vacías, reconstruye el fichero con
+`"\n".join(lineas) + "\n"` y lo vuelve a subir. Dos consecuencias sobre el fichero que el proyecto
+usa como **prueba documental**:
+
+1. Cualquier byte no decodificable como UTF-8 se sustituye por `U+FFFD` **y se persiste así**: la
+   siguiente subida ya no contiene el original. La corrupción es silenciosa y acumulativa.
+2. El fichero se normaliza (líneas en blanco eliminadas, salto final forzado), de modo que **no es
+   append-only en la práctica** aunque el docstring lo afirme. Eso es lo que impide comparar
+   prefijos por bytes (ver la spec dual §6.3).
+
+**Mejora propuesta.** Leer en binario y no reescribir: subir solo la línea nueva, o si el remote no
+admite append, reconstruir a partir de los **bytes** originales sin decodificar. Y que un log que no
+decodifica sea un **error declarado**, no un reemplazo silencioso.
+
+**Justificación de no aplicarlo ahora.** Está en el camino que mueve la custodia de los
+expedientes y merece su test propio con el doble de rclone que construye la Fase 0 de la
+arquitectura dual. Antes de ese doble, cualquier arreglo aquí es a ciegas.
+
+**Coste estimado.** ~1 h con el doble ya disponible; sin él, no hacerlo.
+
+---
+
+## 103. El `CaseWorkspace` no debe cachearse en `st.session_state`
+
+**Anotado 2026-07-29**, hallazgo M-3 de la misma revisión. Es una **regla a fijar antes de la
+Fase 4** de la arquitectura dual, no un bug vivo (el `CaseWorkspace` todavía no existe).
+
+**Estado actual.** `streamlit_app.py` tiene **9** resoluciones vía `caso_path`/`resolve_ref` y
+**cero** referencias a `estado_repositorio` o al lock: la UI no sabe hoy que un caso puede estar
+prestado. Y el repo ya tiene el gotcha documentado en `CLAUDE.md`: un sentinel de «ya hecho» en
+`session_state` marcado antes de validar el éxito deja cacheado un fallo durante toda la sesión.
+
+**Riesgo concreto.** Un `CaseWorkspace` guardado en `session_state` es una **autorización
+persistida**: el usuario mantiene la pestaña abierta, otro cierra el checkout desde otra máquina, y
+la UI sigue escribiendo con un modo que ya no es cierto. La spec dual §5.3 lo prohíbe («no debe
+almacenarse entre ejecuciones como autorización permanente»), pero Streamlit es exactamente el
+runtime donde esa regla se rompe sin querer.
+
+**Mejora propuesta.** Al migrar la UI (Fase 4): el workspace se resuelve **por request**, igual que
+`intake_log.set_actor`; en `session_state` solo puede vivir la *identidad* del caso seleccionado
+(`CaseRef`), nunca el workspace ni sus capacidades. Un test que falle si aparece un `CaseWorkspace`
+dentro de `session_state`.
+
+**Coste estimado.** Nada ahora (es una regla); ~30 min el test guardián al llegar a la Fase 4.
