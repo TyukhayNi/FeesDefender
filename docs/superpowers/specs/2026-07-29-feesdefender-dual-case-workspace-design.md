@@ -791,13 +791,17 @@ commit `8d9c96c`. Ninguna es teórica y ninguna estaba en la lista de la rev. 1:
     (scratch, promoción, adopción, conflicto resuelto, cancelación unilateral) y
     debe retirar la emisión de `pendiente_checkin` sin romper la lectura
     histórica.
-14. No existe doble de Drive/rclone: `repository_cli` declara en su propio
-    encabezado que «no se ejecuta contra el Drive en los tests». El cerebro puro
-    está cubierto, y `tests/test_repository_cli.py` tiene 27 tests **de los
-    helpers puros** del frontal (constructores de comando, semáforo, inventario,
-    plan de bandeja, DELTA); **ninguno de `cmd_checkout`/`cmd_checkin`** y ningún
-    `monkeypatch` de `run_rclone`. La **orquestación** —donde viven las brechas
-    del lock, del orden del checkin y del log— no tiene test.
+14. No existe doble contractual de Drive/rclone. `tests/test_repository_cli.py`
+    tiene 27 tests **de los helpers puros** del frontal (constructores de comando,
+    semáforo, inventario, plan de bandeja, DELTA) y **ninguno de
+    `cmd_checkout`/`cmd_checkin`**. **Actualización del 2026-07-29:** los PRs #156
+    y #160 dejaron **16 tests de orquestación** de los dos `cmd_*`
+    (`tests/test_repository_cli_guard_pull.py`) con un doble de rclone embrionario,
+    así que la afirmación original —«la orquestación no tiene test»— ya es falsa.
+    Lo que sigue faltando es el **banco completo**: doble fijado a una versión de
+    rclone con fixtures grabadas, caracterización de los caminos felices y de los
+    fallos, y los defectos reproducidos. El encabezado de `repository_cli` está al
+    día en este punto.
 15. `case_manager.guard_escritura` lee el estado del `_caso.md` **local**
     (`MEJORAS #96`). Es dependencia dura de la proyección del §6.3.
 
@@ -830,12 +834,24 @@ exige un Drive simulado que no existe.
 
 1. la **brecha 14** del §11 queda cerrada: existe doble contractual y hay
    caracterización de `cmd_checkout`/`cmd_checkin`;
-2. los siete defectos del frontal están reproducidos en
-   `xfail(strict=True, raises=AssertionError)`;
-3. una matriz de fallos cubre todos los retornos que hoy se ignoran;
+2. los **siete** defectos del frontal están reproducidos en
+   `xfail(strict=True, raises=AssertionError)`. **Se encontraron ocho**; el octavo
+   —`_integrar_bandeja` devolvía `(0,0)` con un `lsjson` ilegible y el checkin
+   liberaba el lock creyendo la bandeja vacía— lo cerró el **PR #160**, así que
+   pasa de `xfail` a caracterización verde;
+3. una matriz de fallos cubre los retornos que sigan sin examinarse. Tras #160 son
+   **dos**: el `lsjson` de CP1 (que juzga por contenido, no por retorno) y el
+   `rmdirs` de la bandeja;
 4. el arnés de la matriz del §14.1 queda **preparado para consumirse en la Fase
    1**, no ejecutado íntegramente aquí;
 5. ningún test puede tocar rclone real, el Drive real ni `CASOS_ROOT`.
+
+**Adelantado y ya mergeado, con lo que la Fase 0 arranca desde más arriba:** el
+guard de **lectura** del protocolo (#156) y el de **escritura** (#160), que entre
+los dos cerraron ocho retornos ignorados y dos rutas de destrucción de datos. Los
+dos salieron de adjudicar revisiones adversariales de este plan, no de revisar
+código: es el argumento más fuerte a favor de haber revisado el plan antes de
+ejecutarlo.
 
 > **Errata.** La rev. 2 de esta SPEC exigía aquí que «las brechas 8-15 del §11
 > tengan un test». Es incorrecto y lo señaló la revisión adversarial del plan

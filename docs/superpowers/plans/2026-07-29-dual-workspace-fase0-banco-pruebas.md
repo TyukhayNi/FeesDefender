@@ -2,114 +2,138 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Estado: rev. 2** (2026-07-29), tras revisión adversarial de Codex con veredicto
-**NO EJECUTABLE EN SU FORMA ACTUAL** (3 B0 + 5 A + 1 M). Todos aceptados salvo dos
-sub-puntos refutados con el binario (§«Contrato de rclone»). La rev. 1 nunca se
-mergeó: se corrige antes de entrar a `main`.
+**Estado: rev. 3** (2026-07-29). La rev. 2 recibió **NO EJECUTABLE EN SU FORMA
+ACTUAL** de la **segunda** pasada adversarial de Codex (3 B0 + 4 A + 1 M), toda ella
+adjudicada contra el fuente y **confirmada sin refutaciones**. La rev. 1 había
+recibido el mismo veredicto por otros tres motivos. Ninguna de las dos se mergeó
+como ejecutable: se corrigen antes de tocar código.
 
 **Goal:** Poner el ciclo `checkout`/`checkin` bajo test de **orquestación** sin
-cambiar su comportamiento. Al terminar: el orden exacto de las operaciones contra
-Drive es observable, los siete defectos que la revisión adversarial encontró en el
-frontal están **reproducidos en código** (no descritos en prosa), y la Fase 2 puede
-tocar el lock con red debajo.
+cambiar su comportamiento, para que la Fase 2 pueda tocar el lock con red debajo.
 
-**Architecture:** Un único punto de inyección, `Entorno`, que agrupa las cinco
-fuentes de no-determinismo del frontal. `ENTORNO_REAL` reproduce exactamente lo de
-hoy. Frente a él, un doble en memoria (`FakeDrive` + `FakeRclone`) que **miente
-como Drive** y cuyo contrato está fijado a **rclone v1.73.5 (Windows amd64)** con
-fixtures grabadas de salidas reales, no fabricadas. Y una **barrera de seguridad**
-que hace imposible que un error de propagación toque el Drive real.
+**Architecture:** Una barrera de test que hace imposible alcanzar rclone o el Drive
+reales; un punto único de inyección (`Entorno`) para las ocho fuentes de
+no-determinismo del frontal; y un doble en memoria fijado a **rclone v1.73.5
+(Windows amd64)** con fixtures grabadas y un **hook de mutación por operación** que
+produce interleaving determinista sin hilos.
 
-**Tech Stack:** Python 3.11+, `argparse` (el frontal), `pytest` (+
-`pytest-randomly`: orden aleatorio), stdlib. Sin dependencias nuevas. **Sin red y
-sin `rclone` instalado.**
+---
 
-## Lo que ya está hecho (y cambia el punto de partida)
+## Lo que ya está hecho, y por qué cambia el plan
 
-El **PR #156** (`5f4c81a`, mergeado antes de este plan) arregló dos rutas de
-destrucción de datos —un pull fallido del `_caso.md` degradaba el fichero canónico
-a un stub sin `id_go`; un pull fallido del log lo reemplazaba por una línea— y de
-paso dejó en el repo:
+Dos PRs se adelantaron a esta fase porque arreglaban pérdida de datos viva, no deuda
+de diseño. **Los dos salieron de adjudicar revisiones de este plan**, no de revisar
+código:
 
-- `tests/test_repository_cli_guard_pull.py`: **8 tests que SÍ ejercitan
-  `cmd_checkout` y `cmd_checkin`**, con un doble mínimo de rclone por `monkeypatch`
-  de `run_rclone`. Son los primeros tests de orquestación del repo.
-- Un `FakeRclone` embrionario que este plan **promueve y extiende**, no reinventa.
-- `ProtocoloIOError`, `_remoto_existe`, `_pull_caso_md → (fm, cuerpo) | None` y
-  `_push_caso_md(..., *, cuerpo)`: firmas ya estables, con las que el `Entorno`
-  tiene que convivir.
+| PR | Qué cerró |
+|---|---|
+| **#156** (`5f4c81a`) | La **lectura** del protocolo: `_pull_caso_md` devolvía `{}` igual si el `_caso.md` faltaba que si rclone falló, y `estado_de_fm({})` vale `disponible` → el checkout creía el caso libre y degradaba el `_caso.md` canónico a un stub sin `id_go`. Y `_append_evento_drive` reemplazaba todo el `_intake_log.jsonl` por una línea cuando el pull fallaba |
+| **#160** (`fec3444`) | La **escritura**: seis retornos de `copyto` ignorados. El peor imprimía «✓ VERDE … lock liberado» y devolvía 0 con el caso aún `prestado`. Incluyó el 8º defecto que Codex destapó: `_integrar_bandeja` devolvía `(0,0)` con un `lsjson` ilegible y el checkin liberaba el lock creyendo la bandeja vacía |
 
-Consecuencia para el orden de tareas: el refactor de la Task 1B ya **no** se hace a
-ciegas (hay 8 tests que cazan una regresión de comportamiento en los `cmd_*`), pero
-sigue sin haber caracterización del camino verde ni de los fallos, así que el tajo
-1A/1B se mantiene.
+Consecuencias para este plan, verificadas contra `main` en `fec3444`:
+
+- Existen ya **16 tests de orquestación** de `cmd_checkout`/`cmd_checkin`
+  (`tests/test_repository_cli_guard_pull.py`) y un `FakeRclone` embrionario con fallos
+  de pull, de push por destino+ocurrencia y por subcomando+ocurrencia. Este plan lo
+  **promueve**, no lo reinventa.
+- El frontal tiene firmas nuevas con las que el `Entorno` debe convivir:
+  `ProtocoloIOError`, `_remoto_existe`, `_pull_caso_md → (fm, cuerpo) | None`,
+  `_push_caso_md(..., *, cuerpo)`, `_upload_evidencia → list[str]`,
+  `_integrar_bandeja` que **lanza**, y el código de salida **4**.
+- **Los defectos a reproducir siguen siendo SIETE, no ocho.** Se encontraron ocho en
+  el frontal; el octavo (listado ilegible de la bandeja) lo cerró #160, así que pasa
+  de `xfail` a caracterización verde. El §20 de la SPEC arrastra el recuento viejo y
+  hay que corregirlo (Task 7).
+- **La matriz de fallos se ha encogido.** Recuento sobre `fec3444`: de las 15 llamadas
+  a `run_rclone`, solo **dos** no examinan el retorno — el `lsjson` de CP1 (que juzga
+  por **contenido** vía `validar_inventario_texto`, no por retorno) y el `rmdirs` de
+  la bandeja. Todo lo demás está comprobado.
+
+**Recuentos correctos, que la rev. 2 tenía mal** (los corrigió Codex y los he
+verificado): **15 call-sites de `run_rclone` en 8 rutinas** (16 apariciones menos la
+del `def`), y **cuatro** `ts_compacto()` sin argumento —dos en `_append_evento_drive`
+y dos que añadió #156 en `_pull_caso_md` y `_push_caso_md`—, no dos.
+
+---
 
 ## Global Constraints
 
-- **Fuente única del diseño:** `docs/superpowers/specs/2026-07-29-feesdefender-dual-case-workspace-design.md` (rev. 2), §12 «Fase 0» y §14. Informe que la justifica: `2026-07-29-feesdefender-dual-case-workspace-adversarial-review.md`.
-- **Este plan SUSTITUYE las Tareas 1-3** de `docs/superpowers/plans/2026-07-29-dual-workspace-fase0-fase1.md`, marcadas allí como supersedidas. La Fase 1 sigue viviendo allí.
-- **Cero cambio de comportamiento.** Con `ENTORNO_REAL` el frontal ejecuta los mismos comandos, en el mismo orden, con los mismos códigos de salida. Los 27 tests de helpers puros **y los 8 del guard** deben pasar sin tocarlos.
-- **Ningún bug se arregla aquí.** Los defectos se reproducen en `xfail(strict=True, raises=AssertionError)` citando su identificador. Un `xfail` que empieza a pasar rompe la suite. **Si al escribir un test descubres que el defecto no existe, para y repórtalo**: puede ser un falso positivo de la revisión de la SPEC, y eso obliga a retirarlo de su §20.
-- **Sin esperas reales.** El `Entorno` inyecta `esperar`; en tests es un no-op que cuenta llamadas.
-- **Sin no-determinismo en los asertos.** Timestamp, hostname, nonce, usuario y directorio de trabajo salen del `Entorno`.
-- **Datos SIEMPRE sintéticos** (`BaRS9 - Prueba - (W-TEST99) - Vuelta`), cero PII. Las fixtures de rclone son **sintéticas en los valores y fieles en la forma**: las capturas reales llevan nombres de ficheros de expedientes y **no entran al repo** (`docs/SEGURIDAD_DATOS.md`).
-- **Rutas Windows.** El doble normaliza a POSIX en su índice, igual que `parse_inventario_lsjson`.
-- **Encoding:** UTF-8 sin BOM. El doble guarda **bytes**, no `str`: media parte de `B0-2` es un byte que no decodifica.
-- **Comandos desde la raíz del worktree.** El worktree no tiene `.venv` propio: usar `C:\Users\tnm33\Dev\FeesDefender\.venv\Scripts\python.exe`.
-- **Suite completa verde antes del PR.** El CI solo corre `leak-scan`. Conteo por `--junit-xml`.
+- **Fuente única del diseño:** `docs/superpowers/specs/2026-07-29-feesdefender-dual-case-workspace-design.md` (rev. 2), §12 «Fase 0» y §14.
+- **Este plan SUSTITUYE las Tareas 1-3** de `docs/superpowers/plans/2026-07-29-dual-workspace-fase0-fase1.md`, allí marcadas como supersedidas. Su Fase 1 sigue vigente.
+- **Cero cambio de comportamiento.** Con `ENTORNO_REAL` el frontal ejecuta los mismos comandos, en el mismo orden, con los mismos códigos de salida. Los 27 tests de helpers puros **y los 16 de orquestación** deben pasar sin tocar sus asertos.
+- **Ningún bug se arregla aquí.** Se reproducen en `xfail(strict=True, raises=AssertionError)`. **Si un `xfail` no falla, para y repórtalo**: sería un falso positivo de la revisión de la SPEC y habría que retirarlo de su §20.
+- **Sin esperas reales, sin no-determinismo en los asertos.** Todo sale del `Entorno`.
+- **Datos sintéticos**, cero PII. Las capturas reales de rclone llevan nombres de expedientes y **no entran al repo**: las fixtures son sintéticas en los valores y fieles en la forma (`docs/SEGURIDAD_DATOS.md`).
+- **Dos PRs, no uno** (ver «Reparto en PRs»). Un solo PR con barrera, doble, refactor de 15 call-sites, ~40 tests y siete `xfail` es demasiado para revisar.
+- **Comandos desde la raíz del worktree**, con el venv de la raíz (`C:\Users\tnm33\Dev\FeesDefender\.venv\Scripts\python.exe`); el worktree no tiene `.venv`.
+- **Suite completa verde antes de cada PR.** El CI solo corre `leak-scan`. Conteo por `--junit-xml`.
+- **Nunca leer `$LASTEXITCODE` detrás de un `Select-Object -First`** al regenerar fixtures: la terminación temprana del pipe lo deja en 0 (ya falseó una medición de este contrato).
+- **Nunca asertar sobre una subcadena que el nombre del test pueda inyectar en la salida capturada.** `tmp_path` contiene el nombre del test y el frontal imprime rutas: en #160, un aserto sobre `"evidencia"` pasó en verde sin que el mensaje existiera. Los asertos sobre mensajes usan **frases con espacios**.
 
 ---
 
 ## Contrato de rclone — v1.73.5, Windows amd64
 
-Medido sobre la versión instalada. **Es el contrato del doble**: si algún día se
-actualiza rclone, se re-mide y se actualizan las fixtures.
+Medido sobre la versión instalada, dos veces (yo y el revisor, con comandos
+distintos). Si rclone se actualiza, se re-mide y se regeneran las fixtures.
 
-**`lsjson` — el backend Drive y el local NO son iguales:**
+**`lsjson` — Drive y local NO son iguales:**
 
 | | Drive | Local |
 |---|---|---|
-| Claves por entrada | `Path, Name, Size, MimeType, ModTime, IsDir, ID, Hashes` | las mismas **menos `ID`** |
-| Algoritmos en `Hashes` | `md5, sha1, sha256` (3) | 13 (`blake3`, `crc32`, `md5`, `quickxor`, `xxh3`…) |
-| `ModTime` | `"2026-05-29T07:41:12.000Z"` (ms + `Z`) | `"…T14:33:51.1997234+02:00"` (7 decimales + offset) |
-| `Path` | barra normal, acentos UTF-8 literales | idéntico |
+| Claves | `Path, Name, Size, MimeType, ModTime, IsDir, ID, Hashes` | las mismas **menos `ID`** |
+| Algoritmos | `md5, sha1, sha256` | 13 |
+| `ModTime` | `"2026-05-29T07:41:12.000Z"` | `"…T14:33:51.1997234+02:00"` |
 
-- Claves de hash **en minúscula en ambos backends**: `.get("md5")` de `parse_inventario_lsjson` es correcto. **Refutada** la premisa `Hashes.MD5` del informe (venía de documentación desactualizada).
-- Directorios: `IsDir: true` y **sin** `Hashes`. De 59 ficheros reales, **0 sin md5**.
-- **No hay backslashes en `Path` ni en el backend local**, así que la fixture «salida Windows con backslashes» que pedía el informe **no existe**: nada que capturar.
+- Claves de hash **en minúscula en los dos backends** (`.get("md5")` es correcto). La tesis `Hashes.MD5` quedó **refutada** en las dos pasadas.
+- Directorios: `IsDir: true`, sin `Hashes`. De 59 ficheros reales, 0 sin md5.
+- **No hay backslashes en `Path`** en ningún backend: la fixture «Windows con backslashes» no existe.
 
-**Filtros:**
+**Filtros y transferencia:**
 
-- `--files-from` + `--exclude` → **`CRITICAL`, exit 1, nada transferido**: *«the usage of --files-from overrides all other filters, it should be used alone or with --files-from-raw»*. El comentario del código (`build_copy_cmd`) acierta; **refutada** la lectura de que los filtros «se ignoran». El doble debe **abortar**, no ignorar.
-- `--files-from` con una entrada **inexistente** → **exit 0, en silencio**.
+- `--files-from` + `--exclude`/`--include`/`--filter` → **`CRITICAL`, exit 1, nada transferido**. **Refutada** la tesis de que los ignora.
+- `--files-from` con entrada inexistente → **exit 0**, se omite en silencio.
+- `--backup-dir` recibe la versión **del destino** sobrescrita, con jerarquía.
+- `--fast-list` no cambia la forma ni el conjunto de `Path`.
 
-**`check`:**
+**Códigos de salida, y no son uniformes:**
 
-- `--one-way` cuenta lo que difiere y lo que falta en destino, e **ignora los extras del destino** (2 diferencias frente a 3 sin el flag). Es justo lo que el checkin necesita: los `PRESERVE_DRIVE` solo existen en Drive.
-- Mismo tamaño y **contenido distinto** → `md5 differ`, exit 1. Es decir: **`verificacion_limpia` es por hash**, aunque `build_check_cmd` no pase `--checksum`.
-- `cmd_checkin` solo lee el `returncode`: el doble **no necesita emular el texto** de las NOTICE.
+| Operación | Código |
+|---|---|
+| `copyto` de origen ausente | **3**, sin crear el destino |
+| `lsjson` de ruta ausente | **3**, `stdout` = `"["` (JSON inválido) |
+| **`moveto` de origen ausente** | **1** — distinto del 3 de `copyto`; un doble que los unifique miente |
+| **`rmdirs` sobre árbol no vacío** | **0**, y no borra nada |
+| `check` con cualquier diferencia | 1 |
 
-**Otros:**
+**`check`:** `--one-way` cuenta lo que difiere y lo que falta en destino e **ignora
+los extras del destino** (2 diferencias frente a 3 sin el flag). Mismo tamaño y
+contenido distinto → `md5 differ`: **compara por hash aunque no se pase
+`--checksum`**, luego `verificacion_limpia` es de fiar. `cmd_checkin` solo lee el
+`returncode`, así que el doble no emula el texto de las NOTICE.
 
-- `--backup-dir` recibe la versión **del destino** que se sobrescribe, con la jerarquía preservada.
-- `--fast-list` no cambia la forma ni el conjunto de `Path`: es cuota y velocidad. El doble no lo modela.
-- `copyto` de un origen inexistente → **exit 3**, y no crea el destino. `lsjson` de una ruta inexistente → **exit 3** con `stdout` = `"["` (JSON inválido, que `validar_inventario_texto` ya rechaza).
+**`--log-file` crea el fichero SOLO si el comando llega a inicializar.** Medido: con
+la combinación ilegal `--files-from` + `--exclude`, rclone aborta en la validación
+global con `rc=1` y **no crea el log**. La rev. 2 lo afirmaba sin condición; el orden
+correcto en el doble es **validar flags primero**.
 
-**Google-native: no se puede capturar.** Barrido de **3007 ficheros hasta
-profundidad 6** en la unidad canónica: **cero** entradas `application/vnd.google-apps*`.
-La rama `hash is None` → `ACCION_PRESERVE_DRIVE` de `plan_merge`, documentada como
-caso de primera clase, **nunca ha sido ejercitada por datos reales**. Su fixture es
-**sintética y se declara como tal**; no se muta el Drive para averiguar su forma
-exacta. No hace falta: el contrato del parser
-(`(item.get("Hashes") or {}).get("md5") or None`) trata igual las tres variantes
-—sin clave `Hashes`, `Hashes: {}`, y `Hashes` sin `md5`—, así que el test emite las
-tres y asierta `hash is None` en todas. Anotado en `docs/MEJORAS_FUTURAS.md` #104.
+**Google-native: no se puede capturar.** 3007 ficheros hasta profundidad 6 en la
+unidad canónica, **cero** entradas `application/vnd.google-apps*` (`MEJORAS #104`). Su
+fixture es **sintética y se declara como tal**; no se muta el Drive para averiguar la
+forma. No hace falta: el contrato del parser
+(`(item.get("Hashes") or {}).get("md5") or None`) trata igual las tres variantes —sin
+clave `Hashes`, `Hashes: {}`, `Hashes` sin `md5`—, así que el test emite las tres y
+asierta `hash is None`. La forma real que emitiría Drive queda **declaradamente sin
+verificar**.
 
-> **Trampa de medición, para quien regenere las fixtures:** en PowerShell,
-> `$LASTEXITCODE` tras un `Select-Object -First N` puede quedar en `0` por
-> terminación temprana del pipe. La primera medición de este contrato dijo que
-> `copyto` de un origen inexistente devolvía 0; sin tubería devuelve 3. Medir
-> asignando a variable y leyendo `$LASTEXITCODE` acto seguido.
+---
+
+## Reparto en PRs
+
+| PR | Tareas | Criterio para pasar al siguiente |
+|---|---|---|
+| **PR-A — red de seguridad** | 0, 1A, 2, 3, 4 | La barrera es comprobable, el doble consume fixtures grabadas, y los dos `cmd_*` están caracterizados **con el frontal sin tocar** (inyección por `monkeypatch` de test) |
+| **PR-B — costura y defectos** | 1B, 5, 6, 7 | El `Entorno` está enhebrado, la caracterización sigue verde **sin cambiar asertos**, y los siete defectos están reproducidos |
 
 ---
 
@@ -117,261 +141,264 @@ tres y asierta `hash is None` en todas. Anotado en `docs/MEJORAS_FUTURAS.md` #10
 
 | Fichero | Responsabilidad | Cambio |
 |---|---|---|
-| `tests/_barrera.py` | Barrera de seguridad: nada de rclone/Drive real | **Crear (Task 0)** |
-| `tests/conftest.py` | Fixtures globales | **Modificar (Task 0):** la barrera es `autouse` |
-| `scripts/repository_cli.py` | Frontal | **Modificar (1A/1B):** `Entorno` + `ENTORNO_REAL`; propagación a los `cmd_*` y helpers |
-| `tests/_dobles/__init__.py`, `tests/_dobles/fake_drive.py` | `FakeDrive` + `FakeRclone` + `entorno_de_prueba` | **Crear (Task 2):** promueve el doble embrionario del PR #156 |
-| `tests/_fixtures/rclone_v1735/*.json` | Salidas grabadas (sintéticas en valores, fieles en forma) | **Crear (Task 2)** |
-| `tests/test_fake_drive.py` | El doble también se prueba, contra las fixtures | **Crear (Task 2)** |
-| `tests/test_repository_cli_guard_pull.py` | Los 8 tests del guard | **Modificar (Task 2):** consumen el doble común en vez del embrionario |
-| `tests/test_repository_cli_checkout.py` | Caracterización de `cmd_checkout` | **Crear (Task 3)** |
-| `tests/test_repository_cli_checkin.py` | Caracterización de `cmd_checkin` | **Crear (Task 4)** |
-| `tests/test_repository_cli_fallos.py` | Matriz de fallos por call-site | **Crear (Task 5)** |
-| `tests/test_repository_cli_defectos.py` | Los 7 `xfail(strict=True)` | **Crear (Task 6)** |
-| `tests/test_repository_cli.py` | Helpers puros | **Modificar (1A):** 2 tests de neutralidad del `Entorno` |
-| `PLAN.md`, `scripts/repository_cli.py` (docstring) | Gobernanza | **Modificar (Task 7)** |
+| `tests/_barrera.py` | Barrera: nada de rclone/Drive/`CASOS_ROOT` reales | **Crear (Task 0)** |
+| `tests/conftest.py` | Fixtures globales | **Modificar (Task 0):** barrera `autouse` de sesión + función |
+| `tests/_dobles/__init__.py`, `tests/_dobles/fake_drive.py` | `FakeDrive`, `FakeRclone`, `entorno_de_prueba` | **Crear (Task 2)** — promueve el doble de #156/#160 |
+| `tests/_fixtures/rclone_v1735/*` | Salidas grabadas, con cabecera de procedencia | **Crear (Task 2)** |
+| `tests/test_fake_drive.py` | El doble se prueba contra las fixtures | **Crear (Task 2)** |
+| `tests/test_repository_cli_guard_pull.py` | Los 16 tests de orquestación existentes | **Modificar (Task 2):** consumen el doble común |
+| `tests/test_repository_cli_checkout.py`, `…_checkin.py` | Caracterización | **Crear (Tasks 3-4)** |
+| `scripts/repository_cli.py` | Frontal | **Modificar (1A):** `Entorno` + `ENTORNO_REAL` y keyword en `run_rclone`. **Modificar (1B):** propagación a los 15 call-sites |
+| `tests/test_repository_cli_fallos.py` | Caracterización de fallos | **Crear (Task 5)** |
+| `tests/test_repository_cli_defectos.py` | Los 7 `xfail` | **Crear (Task 6)** |
+| `tests/test_repository_cli.py` | Helpers puros | **Modificar (1A):** 2 tests de neutralidad |
+| `PLAN.md`, SPEC §11/§14/§20, docstring del frontal | Gobernanza | **Modificar (Task 7)** |
 
 ---
 
-### Task 0: Barrera de seguridad — que un error de propagación no pueda tocar el Drive real
+# PR-A — red de seguridad
 
-**Va primero.** Los defaults del frontal son el remote y el `team_drive` reales
-(`RCLONE_REMOTE_TL`, `TEAM_DRIVE_TL` en `core/config.py`), un solo helper al que no
-se propague el `Entorno` cae en `subprocess.run` de verdad, y `tmp_casos_root`
-**no es `autouse`** (verificado: `tests/conftest.py:44` es un `@pytest.fixture`
-pelado, pese a que el docstring del módulo dice «aísla el CASOS_ROOT en cada
-test»). Es decir: precisamente el bug que la Task 1B podría introducir podría
-intentar operar sobre expedientes reales.
+### Task 0: Barrera — implementable, automática y comprobable
 
-**Files:**
-- Create: `tests/_barrera.py`
-- Modify: `tests/conftest.py`
+La rev. 2 la especificó de forma **no implementable**, y el revisor lo demostró punto
+por punto. Los cinco defectos y su corrección:
 
-**Interfaces:**
-- Fixture `autouse=True, scope="function"` que:
-  1. sustituye `subprocess.run` **en el namespace de `scripts.repository_cli`** por una función que lanza `AssertionError("subprocess real prohibido en tests")`;
-  2. sustituye `shutil.which`/`settings.rclone_binary` por un binario inexistente, para que un `_rclone_bin()` colado no encuentre nada;
-  3. exporta un helper `remote_sintetico()` → `"r,team_drive=T:"`, y un `assert_remote_sintetico(cmds)` que falla si algún comando menciona `gdrive_tl` o el `team_drive` real.
-- La barrera **no** se salta con `monkeypatch` del propio test: si un test necesita ejecutar de verdad, lo declara con un marcador explícito `@pytest.mark.rclone_real` que hoy nadie usa y que la suite salta por defecto.
-- **La prohibición de `monkeypatch` de las Global Constraints aplica al mecanismo de producción, no a esta barrera:** aquí el `monkeypatch` es el instrumento correcto.
-
-- [ ] **Step 1: Write the failing test** — un test que llame a `subprocess.run` desde el namespace del frontal debe fallar con la barrera puesta; y un test que construya un comando con el remote real debe fallar en `assert_remote_sintetico`.
-- [ ] **Step 2: Run to verify it fails** (sin barrera, el subprocess se intentaría).
-- [ ] **Step 3: Implement** la barrera y hacerla `autouse` desde `conftest.py`.
-- [ ] **Step 4: Verify** que los 8 tests del guard y los 27 de helpers puros siguen verdes con la barrera puesta:
-
-```bash
-python -m pytest tests/test_repository_cli.py tests/test_repository_cli_guard_pull.py -q
-```
-
----
-
-### Task 1A: `Entorno` y la costura de `run_rclone` — sin tocar los `cmd_*`
-
-Cinco fuentes de no-determinismo, no una:
-
-| Fuente | Dónde | Por qué bloquea el test |
+| Defecto de la rev. 2 | Por qué no funciona | Corrección |
 |---|---|---|
-| `run_rclone` | 14 llamadas en 7 helpers | ejecuta el binario |
-| `now_iso_utc()` | `cmd_checkout`, `cmd_checkin`, **y `_append_evento_drive`** | entra en el lock y en nombres de artefacto |
-| `socket.gethostname()` | `cmd_checkout` | entra en el lock |
-| `_tmp_dir()` | `mkdtemp` | los artefactos caen donde el test no mira |
-| `time.sleep(_SYNC_LAG_S)` | `cmd_checkout` | 4 s por invocación |
+| «sustituye `subprocess.run` en el namespace de `scripts.repository_cli`» | `repository_cli` hace `import subprocess`: `repository_cli.subprocess` **es** el módulo global. Parchear su `run` afecta a toda la suite | Sustituir el **binding del módulo**: `monkeypatch.setattr(repository_cli, "subprocess", _ProxySubprocess())`, un objeto que delega todo salvo `run`/`Popen`, que lanzan |
+| «sustituye `settings.rclone_binary`» | `Settings` es `@dataclass(frozen=True)`: mutarlo lanza `FrozenInstanceError` | Fijar `RCLONE_BINARY`/`CASOS_ROOT` por **variable de entorno antes de importar** y sustituir el binding cacheado `repository_cli.settings` |
+| «parchear `shutil.which`» | `shutil` **no se importa** en `repository_cli` | Se retira: no cierra nada |
+| `@pytest.mark.rclone_real` como escotilla | No está registrado ni se salta (el `conftest` solo implementa `slow`). Y **nadie lo necesita** | **Se retira.** Esta fase prohíbe rclone real sin excepciones |
+| `assert_remote_sintetico(cmds)` como helper opt-in | Si el autor olvida llamarlo, no hay barrera | El proxy **rechaza en el momento** cualquier comando cuyo remote no case `^r,team_drive=T:` o cuya ruta local caiga fuera de `tmp_path` |
 
-Y tres dependencias más que el informe señaló y hay que cerrar en el contrato:
-`_nonce()` (usa `secrets`), `_usuario_por_defecto()` (usa `get_actor()` → entorno del
-SO) y `_rclone_bin()` (usa `settings.rclone_binary`), más los **dos `ts_compacto()`
-sin argumento** de `_append_evento_drive`.
+Además: la barrera es `autouse` en **dos ámbitos** —sesión (para cubrir colección y
+fixtures de scope superior) y función (aislamiento por test)—, y **prohíbe
+`importlib.reload` de `scripts.repository_cli`** durante los tests de esta fase,
+porque restauraría los bindings reales. `tests/conftest.py::tmp_casos_root` —que **no
+es `autouse`**, pese a lo que dice el docstring del módulo— sigue existiendo para
+quien lo pida; la barrera cubre el hueco de quien no.
 
-**Files:**
-- Modify: `scripts/repository_cli.py` (solo `run_rclone`, `_tmp_dir` y la definición del `Entorno`)
-- Test: `tests/test_repository_cli.py` (añadir al final)
+**Alcance, decidido y escrito:** la barrera aplica a **toda la suite**. Un
+`subprocess.run` real desde `scripts/repository_cli.py` no es legítimo en ningún test
+del repo, y limitarla a esta fase dejaría el agujero abierto para el siguiente test
+que se escriba.
 
-**Interfaces:**
-
-```python
-@dataclass(frozen=True)
-class Entorno:
-    ejecutar: Callable[[list[str]], subprocess.CompletedProcess]
-    ahora: Callable[[], str]            # ISO-8601 UTC con Z
-    hostname: Callable[[], str]
-    work_dir: Callable[[], Path]
-    esperar: Callable[[float], None]
-    nonce: Callable[[], str]
-    usuario: Callable[[], str]
-    binario: Callable[[], str]
-
-ENTORNO_REAL = Entorno(
-    ejecutar=_ejecutar_rclone_real,   # el cuerpo actual de run_rclone, intacto
-    ahora=now_iso_utc, hostname=socket.gethostname,
-    work_dir=lambda: Path(tempfile.mkdtemp(prefix="fd_biblio_")),
-    esperar=time.sleep, nonce=_nonce,
-    usuario=_usuario_por_defecto, binario=_rclone_bin,
-)
-```
-
-- `run_rclone(cmd, *, entorno: Entorno = ENTORNO_REAL)` conserva firma posicional y comportamiento.
-- **En esta tarea NO se toca ningún `cmd_*` ni helper de I/O.** Solo existe el tipo, la instancia real y el keyword de `run_rclone`.
-- `_SYNC_LAG_S` sigue siendo constante del módulo: se inyecta **quién** espera, no cuánto.
-
-- [ ] **Step 1: Write the failing tests** — `run_rclone(entorno=...)` usa el `ejecutar` inyectado; y un test de neutralidad que compruebe que las ocho piezas de `ENTORNO_REAL` son las de hoy (`hostname() == socket.gethostname()`, `esperar is time.sleep`, `work_dir()` con prefijo `fd_biblio_`, `ahora()` acaba en `Z`…).
-- [ ] **Step 2: Run tests to verify they fail** (`AttributeError: … has no attribute 'ENTORNO_REAL'`).
-- [ ] **Step 3: Write the implementation** — extraer el cuerpo de `run_rclone` a `_ejecutar_rclone_real` **sin tocar una línea** (mismos flags, `encoding="utf-8"`, `errors="replace"`).
-- [ ] **Step 4: Verify neutralidad**
+- [ ] **Step 1: Write the failing tests** — un `run_rclone` sin doble falla con `AssertionError` de la barrera; un comando con el remote real falla; una ruta local fuera de `tmp_path` falla; un `importlib.reload(repository_cli)` falla.
+- [ ] **Step 2: Run to verify they fail**
+- [ ] **Step 3: Implement** el proxy y las dos fixtures `autouse`.
+- [ ] **Step 4: Verify** que los 27 + 16 siguen verdes **y que la suite completa no se rompe** — es el riesgo real de esta tarea:
 
 ```bash
-python -m pytest tests/test_repository_cli.py tests/test_repository_checkout.py tests/test_repository_cli_guard_pull.py -q
+python -m pytest -q --tb=short
 ```
-
-Los 35 previos verdes **sin haberlos tocado**. Si alguno cambia, el refactor no es neutral: revísalo, no lo adaptes.
 
 ---
 
-### Task 2: `FakeDrive` — promover el doble del PR #156 y fijarlo al contrato
+### Task 1A: `Entorno` — el tipo y la instancia real, sin tocar los `cmd_*`
 
-**Files:**
-- Create: `tests/_dobles/__init__.py`, `tests/_dobles/fake_drive.py`, `tests/_fixtures/rclone_v1735/`, `tests/test_fake_drive.py`
-- Modify: `tests/test_repository_cli_guard_pull.py` (consumir el doble común)
+Ocho fuentes de no-determinismo, no cuatro ni cinco:
 
-**Interfaces:**
-
-```python
-class FakeDrive:
-    def escribir(self, rel: str, data: bytes, *, google_native: bool = False) -> None
-    def leer(self, rel: str) -> bytes | None
-    def borrar(self, rel: str) -> None
-    def rutas(self) -> list[str]
-    def md5(self, rel: str) -> str | None      # None si google_native
-    def snapshot(self) -> dict[str, str]       # {rel: md5|"<native>"} para death tests
-    def bytes_snapshot(self) -> dict[str, bytes]   # para evidencia y protocolo
-
-class FakeRclone:
-    def __init__(self, drive, *, fallos=None, hook=None) -> None
-    registro: list[list[str]]
-    def __call__(self, cmd) -> subprocess.CompletedProcess
-```
-
-Semántica obligatoria, toda derivada del contrato medido:
-
-- **`fallos`**: `{"moveto": [1], "copyto:00_Input/_caso.md": [2]}` — falla la enésima ocurrencia de ese subcomando (opcionalmente acotada a una ruta). Cada entrada scriptea `returncode`, `stdout` y `stderr`, para poder modelar el inventario truncado.
-- **`hook`**: `Callable[[int, list[str], FakeDrive], None]` invocado **antes** de aplicar la operación N. Es la pieza que permite **interleaving determinista sin hilos** (Task 6) y mutar el Drive a mitad de un flujo. Sustituye a las «lecturas obsoletas» de la rev. 1 (ver Task 6).
-- `--files-from` **junto a** `--exclude`/`--include`/`--filter` → `returncode=1` con el mensaje real. Nunca ignorarlos.
-- `--files-from` con entradas inexistentes → se omiten, `returncode=0`.
-- `check --one-way` → compara **md5**; cuenta diferencias y faltantes en destino; **ignora extras**; `returncode=1` si hay alguna.
-- `--backup-dir` → mueve ahí la versión **del destino** que se sobrescribe, con jerarquía.
-- `--log-file` → **crea el fichero**. Sin esto `_upload_evidencia` hace `if p.exists()` y se salta la subida en silencio: un test de CP9 pasaría por el motivo equivocado.
-- `copyto` de origen ausente → `returncode=3`; `lsjson` de ruta ausente → `returncode=3` y `stdout="["`.
-- Remoto se distingue de local por la cadena de conexión (`remote,team_drive=…:`), como hace `remote_arg`; se reconocen también las formas con `root_folder_id`.
-- Comando o flag **no soportado** → `AssertionError`, no éxito permisivo. Un doble que dice «sí» a todo no prueba nada.
-
-**Fixtures grabadas** en `tests/_fixtures/rclone_v1735/`, cada una con una cabecera
-que diga de dónde salió y si es real-sanitizada o sintética:
-
-| Fixture | Origen |
+| Fuente | Dónde |
 |---|---|
-| `lsjson_drive.json` | captura real del backend Drive, **nombres y hashes sustituidos** |
-| `lsjson_local.json` | captura real del backend local (13 hashes, sin `ID`, otro `ModTime`) |
-| `lsjson_native.json` | **SINTÉTICA** — no existe ninguna en el Drive canónico (0 en 3007) |
-| `lsjson_vacio.json`, `lsjson_truncado.txt` | inventario vacío y `"["` de una ruta ausente |
-| `files_from_con_filtros.txt` | el `stderr` real del `CRITICAL` |
+| `run_rclone` | **15 call-sites en 8 rutinas** |
+| `now_iso_utc()` | `cmd_checkout`, `cmd_checkin`, `_append_evento_drive` |
+| `socket.gethostname()` | `cmd_checkout` |
+| `_tmp_dir()` | `mkdtemp` |
+| `time.sleep(_SYNC_LAG_S)` | `cmd_checkout` |
+| `_nonce()` | `secrets` |
+| `_usuario_por_defecto()` | `get_actor()` → entorno del SO |
+| `_rclone_bin()` | `settings.rclone_binary` |
 
-- [ ] **Step 1: Write the failing tests** — el doble se valida **contra el parser real** `parse_inventario_lsjson` **y contra las fixtures**, no contra JSON construido a su medida. Como mínimo: las tres variantes de native → `hash is None`; `--files-from` + `--exclude` → rc 1; `check` por md5 con extras en destino ignorados; `--backup-dir` recibe la versión del destino; `--log-file` crea el fichero; `hook` se invoca antes de la operación N; comando no soportado → `AssertionError`.
+Y **cuatro** `ts_compacto()` sin argumento, que consumen el reloj de forma encubierta:
+dos en `_append_evento_drive` y dos en `_pull_caso_md`/`_push_caso_md`.
+
+**Interfaces:** `@dataclass(frozen=True) Entorno` con `ejecutar`, `ahora`, `hostname`,
+`work_dir`, `esperar`, `nonce`, `usuario`, `binario`; `ENTORNO_REAL` reproduciendo
+exactamente lo de hoy; `run_rclone(cmd, *, entorno=ENTORNO_REAL)`. **En esta tarea no
+se toca ningún `cmd_*` ni helper de I/O.**
+
+- [ ] **Step 1: Write the failing tests** — `run_rclone` usa el `ejecutar` inyectado; y neutralidad de las ocho piezas de `ENTORNO_REAL`. El test de neutralidad **no deja un temporal real en disco** (hallazgo del revisor): comprueba la fábrica sin invocarla, o la invoca y limpia.
+- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **Step 3: Write the implementation** — extraer el cuerpo de `run_rclone` a `_ejecutar_rclone_real` sin tocar una línea.
+- [ ] **Step 4: Verify** 27 + 16 + 2 verdes, sin tocar los previos.
+
+---
+
+### Task 2: `FakeDrive` — promover el doble y romper su circularidad
+
+**Interfaces:** `FakeDrive` (`escribir/leer/borrar/rutas/md5/snapshot/bytes_snapshot`)
+y `FakeRclone(drive, *, fallos, fallos_push, fallos_sub, hook)`, con `registro` de
+todos los comandos en orden. Los tres `fallos*` ya existen en el doble de #160 y se
+conservan tal cual.
+
+**La circularidad que hay que matar** (A-1 de la 2ª pasada): el doble actual llama a
+`rc.esta_excluido(rel)`, o sea **importa las reglas de producción para decidir la
+transferencia**. Si alguien quitara `_exclusiones_rclone()` del comando, el doble
+seguiría excluyendo y el test pasaría. Contrato nuevo:
+
+- el `copy` del doble decide **solo por los flags presentes en `cmd`**;
+- **sin flags, transfiere también protocolo y notas**;
+- el doble **no importa `core.repository_checkout` ni `core.config`**;
+- hay un test «con flags / sin flags» que lo demuestra.
+
+**Orden de procesamiento del doble**, en este orden y no otro:
+
+1. validar combinaciones ilegales de flags (`--files-from` con filtros → `rc=1`, sin
+   crear log ni transferir nada);
+2. crear el `--log-file` si el comando es válido;
+3. aplicar `fallos*`;
+4. ejecutar la operación.
+
+**Códigos de salida por operación**, del contrato: `copyto` ausente → 3; `lsjson`
+ausente → 3 con `stdout="["`; `moveto` ausente → **1**; `rmdirs` no vacío → **0** sin
+borrar; `check` con diferencias → 1. Un comando o flag **no soportado** →
+`AssertionError`, nunca éxito permisivo.
+
+**El `hook`, con protocolo cerrado** (la rev. 2 lo dejó ambiguo; era su A-2):
+
+- firma `Callable[[int, list[str], FakeDrive], None]`;
+- **contador global por instancia**, incrementado **antes** de invocar el callback, y
+  **las operaciones que fallan también cuentan**;
+- **one-shot**: se desarma al invocarse y solo se rearma si el test lo pide — sin eso,
+  un actor concurrente que reentre recursaría;
+- las operaciones que el propio hook provoque **se numeran en la misma secuencia** y
+  quedan en el `registro`, marcadas con el actor que las emitió;
+- `FakeRclone` expone `traza_actores: list[tuple[str, str]]` (actor, subcomando) para
+  poder asertar la **secuencia causal**, no solo el estado final.
+
+**Fixtures grabadas** en `tests/_fixtures/rclone_v1735/`, cada una con cabecera que
+declare **comando, versión de rclone, backend, fecha y qué campos se sustituyeron**:
+`lsjson_drive.json` (real sanitizada), `lsjson_local.json` (real),
+`lsjson_native.json` (**sintética**, con las tres variantes de md5 ausente),
+`lsjson_vacio.json`, `lsjson_truncado.txt`, `files_from_con_filtros.txt` (el `stderr`
+real del `CRITICAL`).
+
+- [ ] **Step 1: Write the failing tests** — validado **contra el parser real** y contra las fixtures. Mínimo: «con flags / sin flags»; las tres variantes native → `hash is None`; `--files-from`+filtros → rc 1 **y sin log**; `check` por md5 ignorando extras; `moveto` ausente → 1; `rmdirs` no vacío → 0; hook one-shot con contador global y traza de actores; comando no soportado → `AssertionError`.
 - [ ] **Step 2: Run tests to verify they fail**
 - [ ] **Step 3: Write the implementation**
-- [ ] **Step 4: Migrar los 8 tests del guard** a `entorno_de_prueba` + `FakeRclone` comunes, **sin cambiar un solo aserto de comportamiento**. Ese es el criterio de que el doble común es al menos tan capaz como el embrionario.
-
-```bash
-python -m pytest tests/test_fake_drive.py tests/test_repository_cli_guard_pull.py -q
-```
+- [ ] **Step 4: Migrar los 16 tests existentes** al doble común. **El diff se limita a imports y montaje**: cuerpos, asertos y snapshots quedan idénticos. Antes de borrar el doble embrionario, comprobar **paridad** en los tres ejes que pueden cambiar de significado: el `registro` de comandos, las precondiciones de cada escenario y el snapshot final del Drive. Si el doble común es más permisivo en algún punto, la migración es una regresión silenciosa (A-4 de la 2ª pasada).
 
 ---
 
-### Task 3: Caracterización de `cmd_checkout`
+### Tasks 3 y 4: Caracterización de `cmd_checkout` y `cmd_checkin`
 
-**Files:** Create `tests/test_repository_cli_checkout.py`.
-**Interfaces:** helper local `args_checkout(**kw) -> argparse.Namespace`. **Y un smoke test por `build_parser().parse_args([...])`**, para que el entrypoint público no quede fuera (los helpers de `Namespace` lo eluden).
+Se escriben **antes** de 1B, con el frontal **sin tocar**: la inyección es por
+`monkeypatch` de `run_rclone`, `_tmp_dir`, `_SYNC_LAG_S`, `_nonce` y
+`_usuario_por_defecto`, exactamente como hacen hoy los 16 tests de #156/#160.
 
-- [ ] `caso_prestado_aborta_con_2_y_sin_copiar` — **death snapshot** del árbol completo (Drive y local) antes/después, no solo «no hay `copy`».
-- [ ] `caso_en_conflicto_aborta_con_2`
-- [ ] `dry_run_no_escribe_lock_ni_copia` — Drive byte-idéntico.
-- [ ] `nonce_ajeno_tras_el_sync_lag_aborta_sin_copiar` — con `hook`, no con lecturas obsoletas.
-- [ ] `camino_feliz_orden_de_operaciones` — posiciones **relativas** en el `registro`: push del lock → relectura → `copy` → `MANIFEST` → pull del log → push del log.
-- [ ] `camino_feliz_escribe_lock_completo` — `checkout_maquina == "PC-TEST"` y `checkout_timestamp` del `Entorno`, no del reloj real.
-- [ ] `camino_feliz_no_baja_el_protocolo` — sin `_caso.md`, sin `_intake_log.jsonl`, sin `90_Notas personales/` en local.
-- [ ] `camino_feliz_conserva_cuerpo_y_metadatos_del_caso_md` — ya cubierto por el guard; aquí se re-asierta desde el doble común.
-- [ ] `manifest_contiene_el_inventario_y_se_sube`
-- [ ] `fallo_de_copy_revierte_el_lock_y_devuelve_1`
-- [ ] `evento_case_checkout_con_los_campos_del_contrato` — hoy incluye `ruta_local`; **la SPEC §6.1 la retira en la Fase 2**, y este test es el que habrá que actualizar entonces. Dejarlo dicho en el propio test.
-- [ ] `esperar_se_llama_una_vez_con_el_sync_lag` — sin dormir.
+**Files:** `tests/test_repository_cli_checkout.py`, `tests/test_repository_cli_checkin.py`.
+Helpers locales de `Namespace` **más un smoke test por comando construido con
+`build_parser().parse_args([...])`**, para que el entrypoint público no quede fuera.
 
-**Si alguno falla, es un bug vivo que no conocíamos: para y repórtalo.**
+**Checkout:** caso prestado aborta con 2 (**con death snapshot del Drive y del
+local**, no solo «no hay `copy`»); conflicto aborta con 2; `--dry-run` no escribe;
+nonce ajeno tras el sync lag aborta sin copiar; orden relativo del camino feliz; lock
+completo con `checkout_maquina`/`timestamp` **del `Entorno`**; el protocolo no baja a
+local; el `MANIFEST` se genera y se sube; `copy` fallido revierte y devuelve 1; el
+evento lleva los campos del contrato —**incluido `ruta_local`, que la SPEC §6.1 retira
+en la Fase 2: este test es el que habrá que actualizar entonces, y lo dice en su
+docstring**—; `esperar` se llama una vez con `_SYNC_LAG_S`, sin dormir.
 
----
+**Checkin:** ruta local inexistente → 2 con cero comandos; inventario inválido → 1;
+`--dry-run` escribe el DELTA en el `work_dir` inyectado y no toca nada; borrados sin
+`--yes` → 3; el `copy` y el `check` usan la **misma** lista `--files-from`;
+`PRESERVE_DRIVE` no se sube; conflicto escribe estado y no libera; veto de grupo no
+libera; `copy` fallido no propaga borrados; camino verde libera con
+`ultimo_checkin_*`; la bandeja se integra y se vacía; colisión → `_reingesta_*`
+(anotando que `MEJORAS #101` dice que nadie lo reconcilia); **y el listado ilegible de
+la bandeja no libera el lock** (era el 8º defecto; #160 lo arregló, así que aquí es
+caracterización verde).
 
-### Task 4: Caracterización de `cmd_checkin`
+**El orden actual del camino verde se fija DENTRO del test del camino verde**, como un
+tramo de su traza marcado `# contrato temporal (A-2)`, no como test independiente —la
+rev. 2 lo tenía suelto y el revisor propuso integrarlo, con razón: así hay un solo
+sitio que actualizar cuando la Fase 2 cambie el orden.
 
-**Files:** Create `tests/test_repository_cli_checkin.py`. Helpers `args_checkin` + `montar_checkin` + smoke test por `build_parser`.
-
-- [ ] `ruta_local_inexistente_devuelve_2` — y cero comandos.
-- [ ] `inventario_de_drive_invalido_devuelve_1` — con la fixture `lsjson_truncado.txt`.
-- [ ] `dry_run_escribe_delta_y_no_toca_nada` — el `DELTA_PREVIO.md` en el `work_dir` **inyectado**.
-- [ ] `borrados_sin_yes_devuelve_3`
-- [ ] `plan_solo_copy_local_sube_y_verifica_con_la_misma_lista`
-- [ ] `preserve_drive_no_se_sube`
-- [ ] `conflicto_escribe_estado_conflicto_y_no_libera`
-- [ ] `veto_de_grupo_no_libera_el_lock` (N6c)
-- [ ] `fallo_de_copy_no_propaga_borrados` — cero `moveto`.
-- [ ] `camino_verde_libera_el_lock_con_traza` — `ultimo_checkin_timestamp` y `ultimo_checkin_auditlog`.
-- [ ] `bandeja_se_integra_y_se_vacia`
-- [ ] `bandeja_con_colision_va_a_reingesta` — anotando que `MEJORAS #101` dice que nadie lo reconcilia después.
-- [ ] `caracterizacion_temporal_A2_orden_actual_del_camino_verde` — **etiquetado como andamio**: fija el orden que hoy tiene (`check` → evento → bandeja → liberación) y que la Fase 2 va a cambiar. Su docstring debe decir: *«la Fase 2 elimina o actualiza este test en el mismo commit que retira el `xfail` de A-2»*. Es el único aserto que congela un defecto; los demás fijan efectos estables.
+**Si algo de esto falla, es un bug vivo que no conocíamos: para y repórtalo.**
 
 ---
 
-### Task 5: Matriz de fallos por call-site
+# PR-B — costura y defectos
 
-Lo que el informe llamó, con razón, la frontera cuyo retorno decide pérdida,
-auditoría o liberación. **Los cinco puntos de lectura del protocolo ya los cubre el
-PR #156**; esta tarea cubre el resto.
+### Task 1B: enhebrar el `Entorno` por los 15 call-sites
 
-**Files:** Create `tests/test_repository_cli_fallos.py`.
+La rev. 2 **prometió esta tarea cinco veces y no la escribió** —incluida la frase «la
+Task 1B es el punto de mayor riesgo del plan»—, y el revisor lo cazó. Va aquí,
+**después** de la caracterización, que es la única red que la protege.
 
-Tabla que el test implementa, una fila por caso — *call site → fallo inyectado →
-`rc` → snapshot Drive/local → estado del lock*:
+**Files:** `scripts/repository_cli.py`.
 
-| Call site | Fallo | Qué se exige |
+**Los 15 call-sites, por rutina:** `cmd_checkout` (2), `cmd_checkin` (4),
+`_integrar_bandeja` (3), `_append_evento_drive` (2), `_pull_caso_md` (1),
+`_push_caso_md` (1), `_upload_evidencia` (1), `_remoto_existe` (1).
+
+**Y las otras siete fuentes:** `now_iso_utc()` en
+`cmd_checkout`/`cmd_checkin`/`_append_evento_drive`; los **cuatro** `ts_compacto()`
+sin argumento; `socket.gethostname()`; `_tmp_dir()`; `time.sleep`; `_nonce()`;
+`_usuario_por_defecto()`; `_rclone_bin()`.
+
+**Firma:** `cmd_checkout(args, *, entorno=ENTORNO_REAL)` y ídem `cmd_checkin`,
+propagando por **parámetro explícito** a los siete helpers de I/O. Prohibido
+resolverlo por global mutable.
+
+**Qué cambia en los tests, dicho sin eufemismos:** el **montaje** de los tests de las
+Tasks 3-4 y de los 16 migrados pasa de `monkeypatch` de módulo a `entorno=` inyectado.
+**Cuerpos, asertos, snapshots y trazas quedan idénticos** — eso es lo que se promete,
+y no «que no cambia nada del test», que era insostenible porque cambia
+necesariamente cómo se entrega el entorno.
+
+- [ ] **Step 1** — propagar `entorno` a los 7 helpers y a los 2 `cmd_*`, sin tocar lógica.
+- [ ] **Step 2** — migrar el montaje de los tests de Tasks 3-4 y de los 16 previos.
+- [ ] **Step 3: Verify** — la caracterización pasa **con los mismos asertos** y la suite completa está verde. Cualquier aserto que haya que cambiar es señal de que el refactor no fue neutral: **para y repórtalo**.
+
+---
+
+### Task 5: Fallos — dos tablas, no una
+
+La rev. 2 mezclaba caracterización con expectativas normativas, y eso hacía la tabla
+inasertable (B0-3 de la 2ª pasada). Se parte:
+
+**Tabla A — caracterización del comportamiento ACTUAL** (verde, sin cambiar nada):
+
+| Call site | Fallo inyectado | Qué se fija |
 |---|---|---|
-| `_leer_manifest` | fichero ausente | degrada a merge de 2 vías; hoy **en silencio** → que quede declarado en el DELTA |
+| `_leer_manifest` | fichero ausente | devuelve `{}` → merge de **2 vías** en silencio; se fija el `rc`, el plan resultante y el estado del lock |
 | `_leer_manifest` | JSON corrupto | idem, y no revienta |
-| `lsjson` de CP1 | truncado | `InventarioInvalido` → `rc=1`, cero mutación |
-| `lsjson` de `_integrar_bandeja` | truncado | devuelve `(0,0)` y **no** libera creyendo la bandeja vacía |
+| `lsjson` de CP1 | `stdout` truncado | `InventarioInvalido` → `rc=1`, cero mutación |
+| `lsjson` de CP1 | **`rc != 0` con `stdout` parseable** | **pasa**: `validar_inventario_texto` juzga por contenido, no por retorno. Es uno de los dos únicos retornos que siguen sin examinar |
+| `rmdirs` de la bandeja | `rc != 0` | se ignora; quedan directorios vacíos. Es el otro |
 | `check` | `rc=1` | amarillo, lock conservado |
-| semáforo | copia fallida | **el «rojo» de orquestación es inalcanzable**: `cmd_checkin` retorna antes de `clasificar_semaforo`. Fijarlo como hecho y no como intención |
-| subida del `MANIFEST` | falla | hoy el retorno se **ignora**: declararlo |
-| `_upload_evidencia` | falla | idem |
+| `moveto` de un borrado | `rc=1` | `borrado_fallo` → amarillo, lock conservado |
 | artefactos del protocolo | — | **todos** dentro del `work_dir` inyectado; nada en el árbol del caso |
-| CP11 | `estado_repositorio` ausente | `MEJORAS #93-B`: hoy lanza `TransicionInvalida` **después** de mover bytes, registrar el evento e integrar la bandeja. **No se arregla aquí**; se caracteriza en su propio test para que la Fase 2 lo tenga medido |
+| CP11 | `estado_repositorio` ausente | `MEJORAS #93-B`: `TransicionInvalida` **después** de mover bytes, registrar evento e integrar bandeja. Se caracteriza tal cual; **no se arregla aquí** |
+
+**Tabla B — expectativas normativas que hoy NO se cumplen** → van a la Task 6 como
+`xfail`, no aquí. La rev. 2 colaba dos en esta tabla: que un baseline ausente «quede
+declarado en el DELTA» (exigiría cambiar `render_delta`, que hoy solo recibe el plan,
+y por tanto **no es caracterización**) y que un listado ilegible de la bandeja no
+libere el lock (ya arreglado en #160 → Tabla A).
+
+**Hecho, no intención, sobre el semáforo:** el «rojo» de orquestación es
+**inalcanzable** — `cmd_checkin` retorna en el `if copia_fallo` **antes** de llamar a
+`clasificar_semaforo`. Se fija como hecho; la rama roja del helper puro ya está
+cubierta por sus propios tests.
 
 ---
 
-### Task 6: Los siete defectos, reproducidos
+### Task 6: Los SIETE defectos, reproducidos
 
-**Files:** Create `tests/test_repository_cli_defectos.py`, con la cabecera que
-explique el ciclo de vida de los `xfail` y enlace al informe.
+Siete, no ocho: el octavo lo cerró #160. Cada uno con
+`@pytest.mark.xfail(strict=True, raises=AssertionError, reason="…")`, y **las
+precondiciones del montaje lanzan `RuntimeError`**, de modo que el único
+`AssertionError` posible sea el aserto normativo final.
 
-**Reglas, todas derivadas del informe:**
-
-- `@pytest.mark.xfail(strict=True, raises=AssertionError, reason="A-1 · …")`. Sin `raises=`, cualquier excepción de fixture o montaje cuenta como éxito y el «7 xfailed» no demuestra nada.
-- Las precondiciones del montaje deben lanzar **otra** excepción (`RuntimeError`), de modo que el único `AssertionError` posible sea el aserto normativo final.
-- **Nada de lecturas obsoletas.** El informe tiene razón: encolar una lectura antigua *asumía la conclusión*, y la evidencia del repo va en contra (`MEJORAS #94` documenta que el **montaje** miente mientras rclone/API devuelve el contenido real). El interleaving se produce con el `hook` del doble: ambos CP0 terminan antes del primer push, que es un escenario trivialmente real (dos procesos arrancados con segundos de diferencia) y no necesita ninguna propiedad discutible del backend.
-
-- [ ] **`A-1 · doble titular`** — con `hook`: durante el flujo de A, tras su CP0 y antes de su push, se ejecuta el CP0 de B. Hoy ambos terminan con `rc=0` y copia local. Se exige exactamente un titular.
-- [ ] **`A-1 · rollback ajeno`** — con `hook`: A verifica su nonce; **entonces** el hook instala el lock de B; luego falla el `copy`. Hoy A cancela con el frontmatter que tenía en memoria y borra el lock de B. Se exige `LOCK_NOT_MINE` (SPEC §10). *(Sin el hook este test no era construible: `fallos` solo altera retornos, y sembrar B antes hace que A aborte en CP0.)*
+- [ ] **`A-1 · doble titular`** — con el `hook`: tras el CP0 de A y antes de su push, el hook ejecuta el **flujo completo** de B (`cmd_checkout` es monolítico: no se puede pausar a B tras su CP0). Se asierta la **secuencia causal** en `traza_actores`, no solo que ambos acaben en 0.
+- [ ] **`A-1 · rollback ajeno`** — el hook instala el lock de B **después** de que A verifique el suyo y antes de que falle el `copy`. Se exige que A no toque un lock ajeno (`LOCK_NOT_MINE`). El test debe demostrar que B **leyó `disponible` antes**, o solo prueba un estado, no la causa.
 - [ ] **`A-2 · orden del checkin`** — se exige integrar bandeja → verificar → evento → liberar.
-- [ ] **`A-2 · bandeja fallida libera el lock`** — `fallos={"moveto": [1]}`; se exige `estado_repositorio == "prestado"`.
-- [ ] **`A-2 · checkin reentrante duplica el evento`** — dos checkins en verde. **Capturar explícitamente la `TransicionInvalida` de CP11** (`MEJORAS #93-B`) para poder llegar a contar los eventos; si no, el `xfail` se satisface con ese traceback sin comprobar la duplicidad.
-- [ ] **`B0-2 · el log canónico se reescribe y se corrompe`** — sembrar `b'{"event":"a"}\n\n{"event":"\xff"}'` sin salto final; se exige que los bytes de las líneas preexistentes sobrevivan **idénticos**.
-- [ ] **`B0-2 · el baseline no cubre el log`** — **representación cerrada**: se exige un artefacto `MANIFEST_LOG.json` en el `work_dir` del checkout con `{"hash": <md5 del log>, "lineas": <n>}`. Sin fijar el fichero y el contrato, el aserto era inasertable.
+- [ ] **`A-2 · fallo de moveto en la bandeja libera el lock`** — `fallos_sub={"moveto": [n]}`: hoy solo se imprime `⚠` y se libera. (El listado ilegible ya no: #160.)
+- [ ] **`A-2 · checkin reentrante duplica el evento`** — dos checkins en verde. **Capturar explícitamente la `TransicionInvalida` de CP11** (`MEJORAS #93-B`) para poder contar los eventos; sin eso el `xfail` se satisface con ese traceback.
+- [ ] **`B0-2 · el log canónico se reescribe y se corrompe`** — sembrar `b'{"event":"a"}\n\n{"event":"\xff"}'` sin salto final; se exige que los bytes preexistentes sobrevivan **idénticos**.
+- [ ] **`B0-2 · falta el baseline del log`** — **emplazamiento cerrado y durable**: el hash y el número de líneas del log se añaden como **campos del `MANIFEST_CHECKOUT.json`** (`log_hash`, `log_lineas`), que ya se escribe en el local **y se sube al Drive**. La rev. 2 lo ponía en el `work_dir` temporal, que no se comunica al checkin y desaparece con el proceso: cerraba el aserto y no el defecto. El aserto exige que el **checkin lo recupera y lo usa**, no solo que exista.
 
 ```bash
 python -m pytest tests/test_repository_cli_defectos.py -q -rxX
@@ -383,33 +410,35 @@ Expected: **7 xfailed, 0 xpassed**.
 
 ### Task 7: Gobernanza
 
-- [ ] `PLAN.md`: `[x]` a la Fase 0 con el hash del PR.
-- [ ] Docstring de `scripts/repository_cli.py`: actualizar la «Nota de alcance», que el PR #156 ya dejó a medio camino (dice que hay tests de orquestación «del guard»; tras esta fase hay banco completo). Decir qué sigue **sin** cubrir: rclone real, Drive real, cuota de API.
+- [ ] `PLAN.md`: `[x]` a la Fase 0 con los hashes de PR-A y PR-B.
+- [x] **SPEC §11 brecha 14 y §12 criterio de salida: hechos corregidos ya**, con la rev. 3 de este plan — no se esperan al build, porque afirmaban en `main` cosas falsas: que la orquestación no tenía ningún test (hay 16) y que los defectos a reproducir eran siete sin explicar que se encontraron ocho y uno se cerró.
+- [ ] **SPEC §14.2:** repasar si queda alguna afirmación sobre ausencia de tests de orquestación.
+- [ ] Docstring del frontal: la «Nota de alcance» ya menciona los guards; actualizarla al banco completo y decir qué sigue **sin** cubrir (rclone real, Drive real, cuota de API).
 - [ ] Suite completa + guards de docs.
 
-**Criterio de salida de la Fase 0** (corregido; el de la rev. 1 sobreclamaba):
+**Criterio de salida de la Fase 0:**
 
-1. La **brecha 14** del §11 de la SPEC está cerrada: existe doble contractual y hay caracterización de `cmd_checkout`/`cmd_checkin`.
-2. Los **siete defectos** del frontal están reproducidos en `xfail(strict=True, raises=AssertionError)`.
-3. La **matriz de fallos** de la Task 5 cubre todos los retornos hoy ignorados.
-4. El arnés de la matriz del §14.1 queda **preparado para consumirse en la Fase 1** — no ejecutado íntegramente aquí: sus filas de scratch, registro local ausente y resolución por capacidades son de la Fase 1, y las brechas 8-13 y 15 son de las Fases 1-3.
-5. Ningún test puede tocar rclone real, el Drive real ni `CASOS_ROOT`.
+1. la **brecha 14** queda cerrada: doble contractual + caracterización de los dos `cmd_*`;
+2. los **siete** defectos reproducidos en `xfail(strict=True, raises=AssertionError)`;
+3. la Tabla A de la Task 5 cubre los dos retornos que siguen sin examinar y los caminos de fallo que deciden pérdida, auditoría o liberación;
+4. el arnés de la matriz del §14.1 queda **preparado para la Fase 1**, no ejecutado aquí (sus filas de scratch, registro ausente y capacidades son de la Fase 1);
+5. ningún test puede alcanzar rclone real, el Drive real ni `CASOS_ROOT`.
 
 ---
 
 ## Riesgos y trampas conocidas
 
-- **La Task 1B es el punto de mayor riesgo del plan** (toca el camino que mueve los bytes). Mitigación: va **después** de la caracterización, y el juez son los 35 tests previos más los de las Tasks 3-4.
-- **`pytest-randomly`**: orden aleatorio. `FakeDrive` se construye por test, nunca a nivel de módulo.
-- **`tmp_casos_root` no es `autouse`** — la barrera de la Task 0 es lo que cubre ese hueco.
-- **`ts_compacto()` tiene resolución de minuto**: dos pulls en el mismo minuto reutilizan el nombre de fichero temporal. Hoy es inocuo, pero un test que dependa de nombres únicos dentro del mismo minuto es frágil.
-- **`_md5` usa MD5 a propósito** (paridad con la Drive API): el doble usa el mismo algoritmo o los `check` no cuadran.
-- **No confundir «reproducir» con «arreglar»**. Y si un `xfail` no falla, es un resultado valioso: se documenta y se retira del §20 de la SPEC.
+- **La Task 0 es ahora el punto de mayor riesgo del PR-A**, no 1B: el proxy de `subprocess` aplica a **toda la suite** y puede romper tests ajenos. Se verifica con la suite completa antes de seguir.
+- **La Task 1B sigue siendo el punto de mayor riesgo del PR-B** (toca el camino que mueve los bytes), pero ya con 27 + 16 + ~25 tests debajo.
+- **`pytest-randomly`**: `FakeDrive` se construye por test, nunca a nivel de módulo.
+- **`ts_compacto()` tiene resolución de minuto**: dos pulls en el mismo minuto comparten nombre de temporal. Hoy es inocuo; un test que dependa de nombres únicos intra-minuto es frágil.
+- **`_md5` usa MD5 a propósito** (paridad con la Drive API): el doble usa el mismo algoritmo.
+- **No confundir «reproducir» con «arreglar»**. Y si un `xfail` no falla, se documenta y se retira del §20 de la SPEC.
 
 ## Fuera de alcance de la Fase 0
 
-- Arreglar cualquiera de los siete defectos (Fase 2), incluido `MEJORAS #93-B`.
-- Tocar `core/repository_checkout.py` (cerebro puro, ya cubierto).
+- Arreglar cualquiera de los siete defectos, incluido `MEJORAS #93-B`.
+- Tocar `core/repository_checkout.py`.
 - Cualquier pieza del `CaseWorkspace` (Fase 1).
 - Dobles de CRM y Gmail (Fase 3).
 - `MEJORAS #96`, `#101`, `#102`, `#104`.
