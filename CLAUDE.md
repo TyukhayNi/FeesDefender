@@ -214,6 +214,13 @@ Atajo: `/tests` ejecuta la suite completa.
 - **Referencia común sudespacho** (fuente única agnóstica: auth, API de elementos, permisos + presets por
   rol, enums; compartida con El Contable / El Auditor): [`../ElContable/docs/REFERENCIA_SUDESPACHO_API_PERMISOS.md`](../ElContable/docs/REFERENCIA_SUDESPACHO_API_PERMISOS.md)
 - **Callejones sin salida**: `docs/DEAD_ENDS.md` ← consultar antes de reintentar algo
+- **Arquitectura dual del expediente activo (local/Drive) — SSOT del diseño**:
+  `docs/superpowers/specs/2026-07-29-feesdefender-dual-case-workspace-design.md` (**rev. 2**;
+  revisión adversarial adjudicada en `…-adversarial-review.md`, plan de las dos primeras fases en
+  `docs/superpowers/plans/2026-07-29-dual-workspace-fase0-fase1.md`). **Consultarlo antes de tocar
+  la resolución de un caso**: quién decide qué copia es la operativa (`CaseWorkspace`), qué está
+  prohibido durante un checkout y por qué `caso_path`/`CASOS_ROOT` dejan de ser un selector.
+  Absorbe el «expediente scratch» (`MEJORAS #59`).
 - **Plan subdivisión ciudades**: `docs/superpowers/plans/PLAN_SUBDIVISION_CIUDADES.md`
 - **Plan SaRS1 anon**: `docs/superpowers/plans/PLAN_SaRS1_anon_pipeline.md`
 - **Plan pre-relleno LLM**: `docs/superpowers/plans/PLAN_PRERELLENO_LLM_VIABILIDAD.md`
