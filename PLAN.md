@@ -26,7 +26,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 8 | [Intake email — filtro de exclusión de ruido](#siguiente-intake-email-filtro-exclusión-de-ruido-administrativo-y-cruzado) | parcial (2/4) | disparador: W-02VUDR (fuga cruzada de 7 casos ajenos + cartera de litigios) | medio |
 | 9 | [Vista procesal en `05_Procedimiento`](#siguiente-vista-procesal-vista-procesal-del-expediente-en-05_procedimiento) | piezas 1-2 ✅ (#137, #140); spec v3.1 con 2 revisiones consumidas | pieza 3 **bloqueada** por la fila #1 (OCR ciego); plan de la pieza 4 por reescribir | medio |
 | 10 | [`.doc` → LibreOffice headless](#siguiente-doc-libreoffice-doc-binario-sin-md-ni-ocr-conversión-libreoffice-headless) | pendiente | disparador: W-02MA0R, la demanda del ordinario solo existe en `.doc` sin gemelo PDF | bajo |
-| 11 | [Cableado del pipeline de correo (`MEJORAS #68`)](#siguiente-cableado-correo-cableado-del-pipeline-de-correo-encadenar-la-atomización-resto-de-mejoras-68) | casillas 1-2 ✅; casilla 3 decidible (#98 cerrado) | verificación en vivo del §7 de la spec de #98 antes de decidir la casilla 3 | medio |
+| 11 | [Cableado del pipeline de correo (`MEJORAS #68`)](#siguiente-cableado-correo-cableado-del-pipeline-de-correo-encadenar-la-atomización-resto-de-mejoras-68) | casillas 1-2 ✅; casilla 3 **decidible, sin gates** (#98 cerrado, PR #155) | solo queda la decisión de Nikolai: `--extraer-adjuntos` a default `True` mueve la superficie de dedup de todo intake futuro | bajo |
 
 | 12 | [La firma no es intercalada: falso positivo que bloquea la Capa B](#siguiente-sandwich-firma-la-firma-no-es-una-respuesta-intercalada) | spec **rev. 2** lista, revisión adversarial consumida | plan TDD pendiente; sin dependencias | bajo |
 
@@ -346,19 +346,20 @@ estado de la atomización declarado en el log, y el detector de contaminación c
       el evento `status: "noop"` cuando el no-op coincide con la discrepancia; `reforzar`
       tampoco atomiza; el motor solo reconcilia un árbol existente si ve TODO el correo (no
       solo si ve cero). +19 tests (16 con doble del motor, 3 contra el motor real).
-- [ ] **DECIDIBLE** (ya no bloqueada: `MEJORAS #98` **arreglado** en PR #NNN, pendiente de su
-  verificación en vivo) — decidir si
+- [ ] **DECIDIBLE, y sus dos gates ya están pasados** (`MEJORAS #98` **cerrado** en PR #155,
+  `03a6f8f`, verificación en vivo del §7 incluida) — queda **la decisión** de si
   `--extraer-adjuntos` pasa a default `True`. El motor ya ve los `.eml` de las subcarpetas, así
-  que activarlo no genera ceguera. Gate antes de encenderlo: la corrida de control del §7 de la
-  spec de `#98` (export real de una etiqueta pequeña a scratch), porque activarlo mueve la
-  superficie de dedup de todo intake futuro. **Añadido en la revisión final de rama:** el gate
-  también exige inventariar si algún adjunto extraído es a su vez un `.eml` (mensaje guardado a
-  disco y re-adjuntado como fichero, no `message/rfc822`) — con la enumeración recursiva ese
-  fichero pasa a ser un avistamiento de primer nivel indistinguible de un correo del caso, y hay
-  que decidir si se excluye de la enumeración o se marca antes de generalizar el flag.
+  que activarlo no genera ceguera. Gate 1, la corrida de control del §7 (export real de una
+  etiqueta pequeña a scratch): **hecha** — 18 `.eml` arriba + 11 en subcarpeta, el motor los ve
+  todos. Gate 2, el que añadió la revisión final de rama (¿algún adjunto extraído es a su vez un
+  `.eml`, que con la enumeración recursiva pasaría a ser un avistamiento de primer nivel
+  indistinguible de un correo del caso?): **medido y negativo** — las 11 subcarpetas traen
+  exactamente 1 `.eml` cada una. Es un corpus, no una garantía: volver a medirlo al generalizar el
+  flag. Lo que sigue pesando en la decisión es lo de siempre: activarlo mueve la superficie de
+  dedup de todo intake futuro.
 
 **Deuda destapada por la revisión adversarial (no bloquea este bloque):** `MEJORAS #98`
-(enumeración no recursiva del motor — arreglada arriba, pendiente de verificación en vivo) y
+(enumeración no recursiva del motor — **cerrada**, PR #155 `03a6f8f`) y
 `MEJORAS #99` (el motor no converge bajo
 borrados —no poda `adjuntos/`— y publica sin atomicidad, con riesgo de renumerar IDs congelados,
 sigue abierta). Por eso este bloque **no promete** un árbol atomizado fresco: declara su estado en
