@@ -819,7 +819,11 @@ exige un Drive simulado que no existe.
 
 - barrera de test que impida ejecutar rclone real o alcanzar el Drive real
   (`tmp_casos_root` **no** es `autouse` y los defaults del frontal son el remote y
-  el `team_drive` reales);
+  el `team_drive` reales). **La barrera debe seguir validando con `run_rclone`
+  doblado**: es la única superficie de `subprocess` del módulo, así que un doble la
+  desactiva por completo, y los tests de caracterización doblan precisamente esa
+  función. El validador de operandos es por tanto compartido entre la barrera y el
+  doble (3ª revisión adversarial del plan, su B0-1);
 - puerto inyectable en `scripts/repository_cli.py`, sin cambio de comportamiento,
   para las **cinco** fuentes de no-determinismo —rclone, reloj, hostname,
   directorio de trabajo y espera— más nonce, usuario y binario;
@@ -862,9 +866,11 @@ ejecutarlo.
 > anterior habría permitido declarar cumplido un criterio objetivamente falso.
 
 Plan ejecutable: `docs/superpowers/plans/2026-07-29-dual-workspace-fase0-banco-pruebas.md`
-(rev. 2). **Adelantado y ya mergeado:** el guard de lectura del protocolo
-(`ProtocoloIOError`, PR #156), que cerró dos rutas de destrucción de datos que no
-podían esperar a una fase, y que dejó los primeros 8 tests de orquestación.
+(**rev. 4, EJECUTABLE**). Pasó por **tres** revisiones adversariales: las rev. 1 y 2
+recibieron NO EJECUTABLE (3 B0 cada una) y la rev. 3 recibió REQUIERE REVISIÓN (3 B0 + 2
+A), corregida en la rev. 4 sin tocar arquitectura ni el reparto en dos PRs. **No hay más
+gate de revisión**: la 3ª pasada rindió cero hallazgos de código, frente a los dos PRs de
+producción que rindieron las dos primeras.
 
 ### Fase 1 — núcleo de workspace
 
