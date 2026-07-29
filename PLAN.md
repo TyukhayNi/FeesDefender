@@ -456,6 +456,15 @@ caso: durante un checkout, un proceso escribe en el local y otro en Drive.
       revisión adversarial de Codex (3 B0 + 5 A + 1 M) y **no se mergeó**: el orden 1→2→3 dejaba sin
       red el refactor de mayor riesgo, no había barrera contra el Drive real, y el criterio de
       salida exigía brechas que son de las Fases 1-3 (errata aplicada al §12 de la SPEC).
+
+      > ⛔ **GATE antes de implementar — decisión de Nikolai, 2026-07-29.** La construcción se
+      > aparca para otra sesión, y **antes de escribir la primera línea de la Task 0 hay OTRA
+      > pasada de revisión adversarial de Codex sobre la rev. 2**. Motivo: la rev. 1 llegó a un
+      > veredicto de NO EJECUTABLE y su corrección movió el orden de las tareas, el modelo del
+      > doble y el criterio de salida — bastante superficie nueva como para no darla por buena sin
+      > atacarla. Al adjudicar esa segunda pasada, la disciplina de esta ronda: **medir contra el
+      > binario instalado antes de aceptar un hallazgo** (dos sub-puntos del primer informe se
+      > refutaron ejecutando rclone v1.73.5, no leyendo documentación).
 - [ ] **Fase 1 — núcleo de workspace.** `CaseRef`/modos/capacidades/errores, registro privado
       atómico, `CaseCatalog` con `AMBIGUOUS_CASE`, resolver, **modo estricto de `path_for`**
       (mata el fallback que fabrica expedientes fantasma), **`core.intake_log` migrado** y
