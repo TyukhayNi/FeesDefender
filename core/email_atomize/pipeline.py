@@ -89,7 +89,9 @@ def atomize_dir(
             (lotes ``email`` de ``00_Input/`` + cajón legacy ``03_Email`` — spec §8).
             Los avistamientos de todas las fuentes se concatenan; ``colapsar``
             (por Message-ID) hace la deduplicación entre fuentes.
-        out_dir: directorio de salida (se crea si no existe).
+        out_dir: directorio de salida (se crea si no existe; excepción — rama transitoria
+            de `MEJORAS #98`: si algún `.eml` no se puede leer, la corrida es fail-closed
+            ANTES de tocar disco y `out` no llega a crearse — spec §4.3).
         case_dir: raíz del caso donde se busca ``identidades.yaml``/``vistas.yaml``.
             Por defecto ``out.parent.parent`` (layout estándar
             ``<caso>/01_Procesado/Emails``). En tests u otros layouts donde *out*

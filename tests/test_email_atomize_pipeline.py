@@ -6,14 +6,14 @@ from core.email_atomize import pipeline as P
 
 
 def _msg(mid, subject, body="cuerpo", fecha="Thu, 12 Jun 2026 10:00:00 +0200",
-         attachments=None, cuerpo=None):
+         attachments=None):
     m = EmailMessage()
     m["Message-ID"] = mid
     m["Subject"] = subject
     m["Date"] = fecha
     m["From"] = "Jaime <per01c@example.invalid>"
     m["To"] = "b@x"
-    m.set_content(cuerpo if cuerpo is not None else body)
+    m.set_content(body)
     for fn, mime, data in attachments or []:
         maint, _, sub = mime.partition("/")
         m.add_attachment(data, maintype=maint, subtype=sub, filename=fn)
@@ -232,7 +232,7 @@ def test_fallo_de_construccion_publica_pero_no_poda(tmp_path, monkeypatch):
     # El mensaje bueno CAMBIA antes de la 2ª corrida: sin esto, una implementación que no
     # publicara absolutamente nada pasaría el test igual, porque el input bueno no varía
     # (hallazgo de la revisión adversarial).
-    (src / "a.eml").write_bytes(_msg("<a@x>", "Uno", cuerpo="cuerpo NUEVO"))
+    (src / "a.eml").write_bytes(_msg("<a@x>", "Uno", body="cuerpo NUEVO"))
     monkeypatch.setattr(P, "_construir_mensaje", rompe_b)
     rep = P.atomize_dir(src, out, case_dir=tmp_path)
 
@@ -248,32 +248,83 @@ def test_fallo_de_construccion_publica_pero_no_poda(tmp_path, monkeypatch):
 
 
 def test_fallo_de_layer_b_tampoco_poda_el_b_superado(tmp_path, monkeypatch):
-    # El escenario que la poda existe para cubrir: un mensaje B superado por un upgrade
-    # de fidelidad. Si ADEMÁS otro portador falla al reconstruirse, la poda se apaga y el
-    # B rancio sobrevive — es el precio declarado del híbrido, y hay que fijarlo.
+    # El escenario que la poda existe para cubrir: una ficha B legítima que, esta misma
+    # corrida, dejaría de ser esperada si la poda corriera — aquí porque el ÚNICO portador
+    # que la origina falla al reconstruirse, así que sin `poda_omitida` no aportaría
+    # candidatos y la ficha se consideraría huérfana. Reutilizamos el portador de texto
+    # plano de `test_email_atomize_pipeline_b._carrier_outlook_plano` (import directo:
+    # es el mismo fixture ya probado ahí para acuñar un B real, y duplicarlo aquí solo
+    # divergiría con el tiempo) para que el fixture acuñe un B DE VERDAD, no vacío.
     from core.email_atomize import inline as INL
+    from tests.test_email_atomize_pipeline_b import _carrier_outlook_plano
     src = tmp_path / "03_Email"
     src.mkdir()
-    (src / "a.eml").write_bytes(_msg("<a@x>", "Uno"))
-    (src / "b.eml").write_bytes(_msg("<b@x>", "Dos"))
+    (src / "a.eml").write_bytes(_msg("<a@x>", "Uno"))                    # Capa A llana, sin cita
+    (src / "b.eml").write_bytes(_carrier_outlook_plano(
+        "<b@x>", "alguien@x.com", "1 de mayo de 2020", "[inmueble]",
+        "contenido citado suficientemente largo para superar el floor de 24 chars"))
     out = tmp_path / "Emails"
-    P.atomize_dir(src, out, case_dir=tmp_path)
+
+    rep1 = P.atomize_dir(src, out, case_dir=tmp_path)
+    # Prueba de que el fixture NO es vacío: se acuña un B real (Capa A de b@x + su B).
+    assert rep1.reconstruidos_b == 1
     fichas_antes = sorted(p.name for p in (out / "mensajes").glob("*.md"))
+    assert len(fichas_antes) == 3   # a, b (Capa A) + la ficha B reconstruida
+    b_antes = [p.name for p in (out / "mensajes").glob("*.md")
+               if "confianza: media-reconstruida" in p.read_text(encoding="utf-8")]
+    assert len(b_antes) == 1
+    nombre_b = b_antes[0]
 
     real = INL.reconstruir
 
     def rompe_uno(m_a, raw, identidades):
-        # `rfc_message_id` está normalizado sin `<>` (`headers._norm_mid`).
+        # `rfc_message_id` está normalizado sin `<>` (`headers._norm_mid`): comparar
+        # contra "b@x", no "<b@x>". Es el mismo portador que en la 1ª corrida acuñó la
+        # ficha B: sin `poda_omitida`, esta 2ª corrida no volvería a producirla y la
+        # poda la retiraría.
         if m_a.rfc_message_id == "b@x":
             raise ValueError("portador ilegible")
         return real(m_a, raw, identidades)
 
     monkeypatch.setattr(INL, "reconstruir", rompe_uno)
-    rep = P.atomize_dir(src, out, case_dir=tmp_path)
+    rep2 = P.atomize_dir(src, out, case_dir=tmp_path)
 
-    assert rep.publicado is True and rep.poda_omitida is True
-    assert any("portador ilegible" in e for e in rep.errores)
-    assert sorted(p.name for p in (out / "mensajes").glob("*.md")) == fichas_antes
+    assert rep2.publicado is True and rep2.poda_omitida is True
+    assert any("portador ilegible" in e for e in rep2.errores)
+    # la ficha B rancia SOBREVIVE porque la poda está apagada esta corrida
+    fichas_despues = sorted(p.name for p in (out / "mensajes").glob("*.md"))
+    assert nombre_b in fichas_despues
+    assert fichas_despues == fichas_antes
+
+
+def test_poda_retira_b_superado_cuando_no_hay_errores(tmp_path):
+    # Contrapartida de la prueba anterior: con la foto COMPLETA (sin errores), una ficha B
+    # que deja de ser esperada SÍ se poda. La transición real más simple: en la 1ª corrida
+    # solo existe el portador (se acuña la ficha B); en la 2ª aparece la copia LIMPIA del
+    # correo citado y el puente de fidelidad la asciende a upgrade — la ficha B deja de
+    # producirse y, sin errores, la poda la retira.
+    from tests.test_email_atomize_pipeline_b import _carrier_outlook_plano, _eml_limpio
+    cuerpo = "contenido citado suficientemente largo para superar el floor de 24 chars"
+    src = tmp_path / "03_Email"
+    src.mkdir()
+    (src / "2026-06-01_carrier_plano.eml").write_bytes(_carrier_outlook_plano(
+        "<carrier-plano@x>", "alguien@x.com", "1 de mayo de 2020", "[inmueble]", cuerpo))
+    out = tmp_path / "Emails"
+
+    rep1 = P.atomize_dir(src, out, case_dir=tmp_path)
+    assert rep1.reconstruidos_b == 1
+    b_antes = [p for p in (out / "mensajes").glob("*.md")
+               if "confianza: media-reconstruida" in p.read_text(encoding="utf-8")]
+    assert len(b_antes) == 1
+    nombre_b = b_antes[0].name
+
+    (src / "2020-05-01_limpio.eml").write_bytes(_eml_limpio(
+        "<limpio@x>", "alguien@x.com", "Fri, 01 May 2020 09:00:00 +0200", "[inmueble]", cuerpo))
+    rep2 = P.atomize_dir(src, out, case_dir=tmp_path)
+
+    assert rep2.errores == [] and rep2.poda_omitida is False
+    assert rep2.upgrades >= 1
+    assert not (out / "mensajes" / nombre_b).exists()
 
 
 def test_sin_fallos_si_poda(tmp_path):
