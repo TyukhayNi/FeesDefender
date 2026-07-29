@@ -28,6 +28,8 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 10 | [`.doc` → LibreOffice headless](#siguiente-doc-libreoffice-doc-binario-sin-md-ni-ocr-conversión-libreoffice-headless) | pendiente | disparador: W-02MA0R, la demanda del ordinario solo existe en `.doc` sin gemelo PDF | bajo |
 | 11 | [Cableado del pipeline de correo (`MEJORAS #68`)](#siguiente-cableado-correo-cableado-del-pipeline-de-correo-encadenar-la-atomización-resto-de-mejoras-68) | casillas 1-2 ✅ (PR #151); casilla 3 ⛔ #98 | solo queda la casilla 3, bloqueada por MEJORAS #98 | medio |
 
+| 12 | [La firma no es intercalada: falso positivo que bloquea la Capa B](#siguiente-sandwich-firma-la-firma-no-es-una-respuesta-intercalada) | spec **rev. 2** lista, revisión adversarial consumida | plan TDD pendiente; sin dependencias | bajo |
+
 > Detalle de cada ítem en su bloque `[SIGUIENTE-*]` más abajo. Backlog sin
 > promover: `docs/MEJORAS_FUTURAS.md`. Ledger de cerrados: `## Cerrados` (final).
 
@@ -358,6 +360,38 @@ estado de la atomización declarado en el log, y el detector de contaminación c
 consumidor debe comprobarlo.
 
 ---
+
+## [SIGUIENTE-SANDWICH-FIRMA] La firma no es una respuesta intercalada
+
+*Hallado 2026-07-29 midiendo la verificación en vivo de `MEJORAS #98`, sobre correo real de un caso
+de Valencia con hilos de Gmail. Spec **rev. 2**:
+`docs/superpowers/specs/2026-07-29-sandwich-firma-falso-positivo-design.md` (su §9 adjudica la
+revisión adversarial de Codex, que devolvió NO-SHIP sobre la rev. 1 y obligó a cambiar la decisión).*
+
+**El problema en una frase.** La firma de E&V va en HTML con cada línea en su propio elemento y, en
+los hilos de Gmail, queda **entre** dos bloques de cita; `_sandwich` la cuenta como «el autor escribió
+entre las citas», declara respuesta intercalada y devuelve **cero ancestros** — con lo que **toda la
+Capa B deja de ejecutarse** (body-scan, forma c′ y desanidado del interior no se consultan) y los
+mensajes citados no reciben ficha. El cuerpo, en cambio, sí se recorta, porque eso lo decide otro
+detector que ahí acierta. Resultado: esos mensajes no están ni como ficha ni en el cuerpo del
+portador.
+
+**Medido:** el DOM ve intercalada en 7 de 29 portadores del caso de Gmail y en **1 de 277** de
+W-02VND1. De los 7, en **5** todos los trozos disparadores están bajo `class="gmail_signature"` → los
+arregla la exclusión estructural; en 2 hay texto de autor real → el veto se mantiene. En W-02VND1 la
+regla **no cambia nada**, y su único caso es un contraejemplo legítimo que debe seguir vetado.
+
+**Decisión (rev. 2):** los trozos bajo un contenedor de firma no cuentan como texto de autor a
+efectos del veto. Es estructural, no lexical, y **no puede levantar un veto correcto**: solo resta
+firma del recuento.
+
+- [x] Spec + revisión adversarial adjudicada (rev. 2).
+- [ ] Plan TDD y construcción. Ojo al §6 de la spec: el contrato de tests se reescribió porque dos de
+      los tests de la rev. 1 no mataban el camino inseguro (uno era **inconstruible**).
+- [ ] Verificación en vivo sobre la copia local del caso de Gmail ya exportada (§8): confirmar el
+      reparto (5 segmentan, ~2 producen ficha) y el emparejamiento remitente ↔ cuerpo.
+- Contexto de por qué importa: `MEJORAS #108` (que el árbol sea contexto suficiente para un LLM),
+  con `#105` y `#106` como las otras dos piezas que faltan.
 
 ## [SIGUIENTE-INTAKE-EMAIL-FILTRO] Intake email — filtro de exclusión de ruido administrativo y cruzado
 
