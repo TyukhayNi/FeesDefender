@@ -26,12 +26,25 @@ Requisitos del piloto codificados como invariantes (INFORME_PILOTO §Hallazgos):
    ``--log-file`` (la tubería PS corrompe UTF-8 vía CP850 y pierde acentos).
 6. ``--fast-list`` en todos los listados post-merge (cuota API).
 7. Re-ejecución desde cero converge (``--checksum`` salta lo ya hecho).
+8. **Un fallo de LECTURA del protocolo no es contenido vacío.** Si no se puede
+   leer ``_caso.md`` o ``_intake_log.jsonl``, no se escribe, no se libera el lock
+   y se sale con 4. Antes se devolvía ``{}``/``[]`` y el push posterior destruía
+   los metadatos del caso o el historial forense completo (ver ``ProtocoloIOError``).
 
-Nota de alcance (MVP): las funciones PURAS (parseo, validación, semáforo,
-construcción de comandos, plan) están cubiertas por tests. La orquestación real
-contra el Drive no se ha ejecutado en vivo en esta sesión: el piloto la validó a
-mano y Cowork re-correrá los evals de la skill. La CLI y la skill comparten el
-mismo cerebro y los mismos flags.
+Códigos de salida: ``0`` ok · ``1`` error de la operación · ``2`` abortado sin
+efectos (caso no disponible, carrera de lock perdida, ruta local ausente) · ``3``
+gate humano pendiente (borrados sin ``--yes``) · ``4`` **no se pudo leer el
+protocolo o registrar la traza: estado indeterminado, lock conservado,
+recuperación necesaria**.
+
+Nota de alcance: las funciones PURAS (parseo, validación, semáforo, construcción
+de comandos, plan) están cubiertas por tests, y desde 2026-07-29 hay además
+tests de **orquestación** de ``cmd_checkout``/``cmd_checkin`` con un doble de
+rclone (``tests/test_repository_cli_guard_pull.py``; el banco completo llega con
+la Fase 0 de la arquitectura dual). Lo que sigue SIN cubrir: rclone real, el
+Drive real y la cuota de API. El piloto validó el ciclo a mano y Cowork
+re-correrá los evals de la skill. La CLI y la skill comparten el mismo cerebro y
+los mismos flags.
 """
 
 from __future__ import annotations
@@ -63,6 +76,21 @@ from core.utils import now_iso_utc, ts_compacto
 
 class InventarioInvalido(RuntimeError):
     """El inventario de rclone no es JSON válido o está vacío (hallazgo 3)."""
+
+
+class ProtocoloIOError(RuntimeError):
+    """No se pudo LEER un fichero de protocolo (``_caso.md`` / ``_intake_log.jsonl``).
+
+    Se distingue de «no existe»: un fichero ausente es un estado legítimo (caso
+    nuevo sin log), pero un fallo de lectura NO puede tratarse como contenido
+    vacío. Tratarlo así destruía datos: ``estado_de_fm({})`` vale ``disponible``,
+    así que un pull fallido del ``_caso.md`` hacía que el caso pareciera libre y el
+    push posterior lo degradaba a un stub sin ``id_go``; y en el log, un pull
+    fallido reemplazaba todo el historial por la línea nueva.
+
+    Política: *fail closed* — no se muta, no se libera el lock, y el operador
+    recibe el código de salida 4 (recuperación necesaria).
+    """
 
 
 # ---------------------------------------------------------------------------
@@ -423,7 +451,14 @@ def cmd_checkout(args: argparse.Namespace) -> int:
     work = _tmp_dir()
 
     # CP0: leer el lock del Drive (pull _caso.md) y comprobar disponibilidad.
-    fm_drive = _pull_caso_md(destino, work)
+    # Un fallo de lectura NO es «caso disponible»: se aborta sin tocar un byte.
+    pull = _pull_caso_md(destino, work)
+    if pull is None:
+        print("  ✗ No se pudo LEER el _caso.md del Drive (¿red, permisos, ruta?). "
+              "Abortado sin tocar nada: escribir el lock aquí sobrescribiría los "
+              "metadatos canónicos del caso.")
+        return 4
+    fm_drive, cuerpo_drive = pull
     estado = rc.estado_de_fm(fm_drive)
     if estado != "disponible":
         lock = rc.leer_lock_de_fm(fm_drive)
@@ -442,9 +477,18 @@ def cmd_checkout(args: argparse.Namespace) -> int:
     rc.validar_transicion(estado, "prestado")
     rc.aplicar_lock_prestado(fm_drive, user=user, timestamp=ts, nonce=nonce,
                              maquina=maquina, notas=args.notas)
-    _push_caso_md(fm_drive, destino, work)
+    _push_caso_md(fm_drive, destino, work, cuerpo=cuerpo_drive)
     time.sleep(_SYNC_LAG_S)
-    fm_check = _pull_caso_md(destino, work)
+    pull_check = _pull_caso_md(destino, work)
+    if pull_check is None:
+        # El lock se escribió pero no se puede verificar. No se copia y NO se
+        # cancela: cancelar exigiría demostrar que el nonce vigente es el propio,
+        # y eso es justo lo que no se ha podido leer.
+        print("  ✗ El lock se escribió pero NO se pudo releer el _caso.md para "
+              "verificar el nonce. Lock CONSERVADO, nada copiado. Comprueba el "
+              "estado del caso en el Drive antes de reintentar.")
+        return 4
+    fm_check, cuerpo_check = pull_check
     if not rc.verificar_nonce(fm_check, nonce):
         ganador = rc.leer_lock_de_fm(fm_check).get("checkout_user")
         print(f"  ✗ Otro checkout ganó la carrera del lock (usuario={ganador}). "
@@ -467,7 +511,7 @@ def cmd_checkout(args: argparse.Namespace) -> int:
         # Rollback del lock: no dejar el caso 'prestado' sin copia local útil
         # (evita el estado atascado del runbook §7.1). La re-ejecución converge.
         rc.aplicar_lock_cancelado(fm_check)
-        _push_caso_md(fm_check, destino, work)
+        _push_caso_md(fm_check, destino, work, cuerpo=cuerpo_check)
         print(f"  ✗ rclone copy falló (rc={res.returncode}). Lock revertido a "
               f"disponible. Ver {log_file}\n{res.stderr[-500:] if res.stderr else ''}")
         return 1
@@ -484,12 +528,20 @@ def cmd_checkout(args: argparse.Namespace) -> int:
         destino=_remoto(destino, "MANIFEST_CHECKOUT.json")))
 
     # Evento forense case_checkout en el _intake_log.jsonl del Drive.
-    _append_evento_drive(destino, work, case_id=args.case_id,
-                         event="case_checkout", actor=user,
-                         details=rc.evento_checkout_details(
-                             user=user, timestamp=ts, nonce=nonce, maquina=maquina,
-                             ruta_local=str(local), n_ficheros=len(inv),
-                             manifest_hash=_md5(manifest_path)))
+    try:
+        _append_evento_drive(destino, work, case_id=args.case_id,
+                             event="case_checkout", actor=user,
+                             details=rc.evento_checkout_details(
+                                 user=user, timestamp=ts, nonce=nonce, maquina=maquina,
+                                 ruta_local=str(local), n_ficheros=len(inv),
+                                 manifest_hash=_md5(manifest_path)))
+    except ProtocoloIOError as exc:
+        # La copia local es válida y el lock es nuestro; lo que falta es la traza.
+        # No se revierte (el trabajo local sirve) y no se finge éxito.
+        print(f"  ⚠ {exc}\n  El checkout está hecho (copia local + MANIFEST) pero el "
+              f"evento case_checkout NO quedó registrado. Regístralo antes del "
+              f"checkin: la custodia del expediente lo exige.")
+        return 4
     print(f"  ✓ MANIFEST_CHECKOUT.json ({len(inv)} ficheros) subido + case_checkout registrado.")
     return 0
 
@@ -625,9 +677,17 @@ def cmd_checkin(args: argparse.Namespace) -> int:
         # CP7: si hay conflictos → estado 'conflicto' (el local SE CONSERVA);
         # el AMARILLO no libera el lock. El ROJO tampoco.
         if conflictos:
-            fm = _pull_caso_md(destino, work)
+            pull_c = _pull_caso_md(destino, work)
+            if pull_c is None:
+                print("  ✗ Hay conflictos pero NO se pudo leer el _caso.md para marcar "
+                      "el estado. No se escribe nada en el Drive (hacerlo con un "
+                      "frontmatter vacío destruiría los metadatos del caso). El local "
+                      "se conserva y el lock sigue tomado.")
+                print(f"  NO se libera el lock. Revisa {log_file} / {check_log}.")
+                return 4
+            fm, cuerpo_fm = pull_c
             rc.aplicar_estado(fm, "conflicto")
-            _push_caso_md(fm, destino, work)
+            _push_caso_md(fm, destino, work, cuerpo=cuerpo_fm)
             print(f"  → estado 'conflicto' escrito en el Drive; el local se conserva. "
                   f"Resolver los {len(conflictos)} conflicto(s) (ver DELTA_PREVIO.md) "
                   f"y reintentar el checkin.")
@@ -638,15 +698,23 @@ def cmd_checkin(args: argparse.Namespace) -> int:
     _upload_evidencia(destino, tsc, [log_file, check_log])
 
     # Evento forense case_checkin en el _intake_log.jsonl del Drive.
-    _append_evento_drive(destino, work, case_id=args.case_id, event="case_checkin",
-                         actor=args.user or _usuario_por_defecto(),
-                         details=rc.evento_checkin_details(
-                             user=args.user or _usuario_por_defecto(), timestamp=ts,
-                             copiados=resumen[rc.ACCION_COPY_LOCAL],
-                             preservados=resumen[rc.ACCION_PRESERVE_DRIVE],
-                             borrados=resumen[rc.ACCION_DELETE_DRIVE],
-                             conflictos=0, renombrados=resumen[rc.ACCION_RENAME],
-                             resultado="verde", auditlog=nombre_auditlog(tsc)))
+    try:
+        _append_evento_drive(destino, work, case_id=args.case_id, event="case_checkin",
+                             actor=args.user or _usuario_por_defecto(),
+                             details=rc.evento_checkin_details(
+                                 user=args.user or _usuario_por_defecto(), timestamp=ts,
+                                 copiados=resumen[rc.ACCION_COPY_LOCAL],
+                                 preservados=resumen[rc.ACCION_PRESERVE_DRIVE],
+                                 borrados=resumen[rc.ACCION_DELETE_DRIVE],
+                                 conflictos=0, renombrados=resumen[rc.ACCION_RENAME],
+                                 resultado="verde", auditlog=nombre_auditlog(tsc)))
+    except ProtocoloIOError as exc:
+        # Los bytes ya están arriba y verificados, pero sin traza no se cierra el
+        # ciclo: no se integra la bandeja ni se libera el lock. Re-ejecutar converge.
+        print(f"  ⚠ {exc}\n  El merge está subido y verificado, pero el evento "
+              f"case_checkin NO quedó registrado: NO se libera el lock ni se integra "
+              f"la bandeja. Re-ejecuta el checkin (converge).")
+        return 4
 
     # CP10: integrar la bandeja _pendiente_checkin/ (escrituras del pipeline
     # durante el préstamo) y vaciarla (§6).
@@ -656,11 +724,18 @@ def cmd_checkin(args: argparse.Namespace) -> int:
               + (f", {colisiones} como _reingesta_ (colisión, sin sobrescribir)" if colisiones else ""))
 
     # CP11: liberar el lock en el Drive (prestado → disponible).
-    fm = _pull_caso_md(destino, work)
+    pull_lib = _pull_caso_md(destino, work)
+    if pull_lib is None:
+        print("  ⚠ El merge está subido y verificado y el evento registrado, pero NO "
+              "se pudo leer el _caso.md para liberar el lock. El caso sigue 'prestado' "
+              "en el Drive. Re-ejecuta el checkin cuando el remote responda: converge "
+              "y solo quedará por liberar el lock.")
+        return 4
+    fm, cuerpo_lib = pull_lib
     estado_actual = rc.estado_de_fm(fm)
     rc.validar_transicion(estado_actual, "disponible")
     rc.aplicar_lock_liberado(fm, timestamp=ts, auditlog=nombre_auditlog(tsc))
-    _push_caso_md(fm, destino, work)
+    _push_caso_md(fm, destino, work, cuerpo=cuerpo_lib)
     print(f"  ✓ VERDE. AUDITLOG subido, case_checkin registrado, lock liberado "
           f"(estado → disponible).")
     return 0
@@ -750,10 +825,22 @@ def _append_evento_drive(
     """
     log_remoto = _remoto(destino, "00_Input/_intake_log.jsonl")
     tmp_in = work_dir / f"_log_pull_{ts_compacto()}.jsonl"
-    run_rclone(build_copyto_cmd(origen=log_remoto, destino=str(tmp_in)))
+    res = run_rclone(build_copyto_cmd(origen=log_remoto, destino=str(tmp_in)))
     lineas: list[str] = []
-    if tmp_in.exists():
+    if res.returncode == 0 and tmp_in.exists():
         lineas = [ln for ln in tmp_in.read_text(encoding="utf-8", errors="replace").splitlines() if ln.strip()]
+    else:
+        # El pull falló. Antes se seguía con `lineas = []`, y el push de más abajo
+        # REEMPLAZABA todo el historial forense del caso por esta única línea.
+        # Un log ausente sí es legítimo (caso nuevo); un log ilegible, no.
+        existe = _remoto_existe(log_remoto)
+        if existe is not False:
+            raise ProtocoloIOError(
+                f"No se pudo leer el _intake_log.jsonl del Drive (rc={res.returncode}"
+                + ("; el fichero SÍ existe" if existe else "; existencia indeterminada")
+                + "). No se escribe nada: hacerlo borraría el historial. "
+                  "Reintenta cuando el remote responda."
+            )
     entry = {
         "ts": now_iso_utc(),
         "actor": actor or _usuario_por_defecto(),
@@ -767,34 +854,58 @@ def _append_evento_drive(
     run_rclone(build_copyto_cmd(origen=str(tmp_out), destino=log_remoto))
 
 
-def _pull_caso_md(destino: str, work_dir: Path) -> dict:
-    """Descarga `_caso.md` del Drive y devuelve su frontmatter parseado ({} si no hay)."""
+def _remoto_existe(ruta_remota: str) -> bool | None:
+    """¿Existe esa ruta en el remote? ``None`` si no se pudo determinar.
+
+    Contrato verificado con **rclone v1.73.5 (Windows amd64)**: ``lsjson`` de una
+    ruta inexistente devuelve **exit 3** (con ``stdout`` = ``"["``, JSON inválido);
+    de una existente, exit 0. Cualquier otro código es indeterminación, y la
+    indeterminación se trata como fallo (no como ausencia).
+    """
+    res = run_rclone([_rclone_bin(), "lsjson", ruta_remota, "--drive-skip-shortcuts"])
+    if res.returncode == 0:
+        return True
+    if res.returncode == 3:
+        return False
+    return None
+
+
+def _pull_caso_md(destino: str, work_dir: Path) -> tuple[dict, str] | None:
+    """Descarga `_caso.md` del Drive → ``(frontmatter, cuerpo)``, o ``None`` si falla.
+
+    ``None`` significa **no se pudo leer** (rclone falló, el fichero no está, o el
+    contenido no es parseable). El caller NO puede interpretarlo como caso
+    disponible ni como fichero vacío: antes se devolvía ``{}`` para los tres casos y
+    ``estado_de_fm({})`` vale ``disponible``, así que un hipo de red bastaba para
+    que el checkout creyera el caso libre y sobrescribiera el ``_caso.md`` canónico
+    con un stub. Aquí se falla cerrado y decide el caller.
+
+    El **cuerpo** se devuelve junto al frontmatter porque ``_push_caso_md`` lo
+    necesita: reconstruirlo por su cuenta era lo que lo degradaba a ``# Caso``.
+    """
     from core.utils import read_md
     work_dir.mkdir(parents=True, exist_ok=True)
     tmp = work_dir / f"_caso_drive_{ts_compacto()}.md"
     res = run_rclone(build_copyto_cmd(origen=_caso_md_remoto(destino), destino=str(tmp)))
     if res.returncode != 0 or not tmp.exists():
-        return {}
+        return None
     try:
-        fm, _ = read_md(tmp)
-        return fm if isinstance(fm, dict) else {}
+        fm, cuerpo = read_md(tmp)
     except Exception:
-        return {}
+        return None
+    return (fm if isinstance(fm, dict) else {}), cuerpo
 
 
-def _push_caso_md(fm: dict, destino: str, work_dir: Path) -> None:
-    """Escribe el `_caso.md` mutado y lo sube al Drive (copyto)."""
-    from core.utils import read_md, write_md
+def _push_caso_md(fm: dict, destino: str, work_dir: Path, *, cuerpo: str) -> None:
+    """Escribe el `_caso.md` mutado y lo sube al Drive (copyto).
+
+    ``cuerpo`` es **obligatorio** y viene del mismo pull que produjo ``fm``. Antes se
+    adivinaba con ``work_dir.glob("_caso_drive_*.md")`` tomando el primero que
+    saliera: sin pull previo el cuerpo se perdía (``# Caso``), y con dos pulls en el
+    mismo directorio el elegido dependía del orden arbitrario del glob.
+    """
+    from core.utils import write_md
     tmp = work_dir / f"_caso_push_{ts_compacto()}.md"
-    # Conservar el cuerpo si lo teníamos; si no, cuerpo mínimo.
-    cuerpo = ""
-    prev = work_dir.glob("_caso_drive_*.md")
-    for p in prev:
-        try:
-            _, cuerpo = read_md(p)
-            break
-        except Exception:
-            pass
     write_md(tmp, fm, cuerpo or "# Caso\n")
     run_rclone(build_copyto_cmd(origen=str(tmp), destino=_caso_md_remoto(destino)))
 
