@@ -477,12 +477,20 @@ caso: durante un checkout, un proceso escribe en el local y otro en Drive.
 
 **Fases** (cada una: sub-SPEC + plan + revisión adversarial + PR propios):
 
-- [x] **Adelantado — guard de lectura del protocolo.** ✅ **PR #156** (`5f4c81a`). Dos rutas de
+- [x] **Adelantado (1/2) — guard de LECTURA del protocolo.** ✅ **PR #156** (`5f4c81a`). Dos rutas de
       destrucción de datos que no podían esperar a una fase: un pull fallido del `_caso.md`
       degradaba el fichero canónico a un stub sin `id_go` (y `resolve_ref` dejaba de encontrar el
       caso por W-code); un pull fallido del log **reemplazaba todo el `_intake_log.jsonl` por una
       línea**. Ahora falla cerrado (`ProtocoloIOError`, salida 4, lock conservado). De paso dejó los
       **primeros 8 tests de orquestación** de `cmd_checkout`/`cmd_checkin` que tiene el repo.
+- [x] **Adelantado (2/2) — guard de ESCRITURA del protocolo.** ✅ **PR #160** (`fec3444`). Cara B del
+      anterior: seis retornos de `copyto` ignorados. El peor imprimía «✓ VERDE … lock liberado» y
+      devolvía **0** con el caso todavía `prestado` en el Drive. Frontera escrita como invariante 9
+      del módulo: un fallo al escribir **estado de protocolo** (lock, log) es fatal → salida 4 sin
+      liberar; uno al escribir **corroboración** (evidencia, redundancia del `MANIFEST`) es aviso
+      ruidoso que no bloquea. Incluyó el **8º defecto**: `_integrar_bandeja` devolvía `(0,0)` con un
+      `lsjson` ilegible y el checkin liberaba el lock creyendo la bandeja vacía. 16 tests de
+      orquestación en total.
 - [ ] **Fase 0 — banco de pruebas del frontal.** Barrera anti-rclone-real + `Entorno` que inyecta
       las **cinco** fuentes de no-determinismo (rclone, reloj, hostname, directorio de trabajo,
       espera) + doble de Drive fijado a **rclone v1.73.5** con fixtures grabadas y **hook de
@@ -490,21 +498,27 @@ caso: durante un checkout, un proceso escribe en el local y otro en Drive.
       matriz de fallos por call-site + los 7 defectos reproducidos en
       `xfail(strict=True, raises=AssertionError)`. Sin esto los criterios de salida de las Fases 2-3
       son indemostrables.
-      **Plan ejecutable rev. 2 (8 tareas):**
+      **Plan ejecutable rev. 3 (8 tareas en DOS PRs):**
       `docs/superpowers/plans/2026-07-29-dual-workspace-fase0-banco-pruebas.md`. Sustituye a las
-      Tareas 1-3 del plan combinado, supersedidas. La rev. 1 recibió **NO EJECUTABLE** de la
-      revisión adversarial de Codex (3 B0 + 5 A + 1 M) y **no se mergeó**: el orden 1→2→3 dejaba sin
-      red el refactor de mayor riesgo, no había barrera contra el Drive real, y el criterio de
-      salida exigía brechas que son de las Fases 1-3 (errata aplicada al §12 de la SPEC).
+      Tareas 1-3 del plan combinado, supersedidas. **PR-A** = barrera + `Entorno` + doble +
+      caracterización, con el frontal sin tocar; **PR-B** = enhebrar el `Entorno`, matriz de fallos,
+      los siete `xfail` y gobernanza. Ni la rev. 1 ni la rev. 2 se mergearon como ejecutables: las
+      dos recibieron **NO EJECUTABLE** (3 B0 cada una, de motivos distintos y todos confirmados
+      contra el fuente). Los defectos a reproducir son **siete**: se encontraron ocho y el octavo lo
+      cerró el PR #160.
 
-      > ⛔ **GATE antes de implementar — decisión de Nikolai, 2026-07-29.** La construcción se
-      > aparca para otra sesión, y **antes de escribir la primera línea de la Task 0 hay OTRA
-      > pasada de revisión adversarial de Codex sobre la rev. 2**. Motivo: la rev. 1 llegó a un
-      > veredicto de NO EJECUTABLE y su corrección movió el orden de las tareas, el modelo del
-      > doble y el criterio de salida — bastante superficie nueva como para no darla por buena sin
-      > atacarla. Al adjudicar esa segunda pasada, la disciplina de esta ronda: **medir contra el
-      > binario instalado antes de aceptar un hallazgo** (dos sub-puntos del primer informe se
-      > refutaron ejecutando rclone v1.73.5, no leyendo documentación).
+      > ✅ **GATE CONSUMIDO — 2ª revisión adversarial hecha y adjudicada (2026-07-29).** Veredicto
+      > **NO EJECUTABLE** otra vez, 3 B0 + 4 A + 1 M, **todo confirmado contra el fuente y nada
+      > refutado**: la rev. 2 prometía cinco veces una **Task 1B que no existía** (el tajo que la
+      > ronda 1 impuso quedó a medias), su barrera **no era implementable** tal como estaba escrita
+      > (parchear `subprocess.run` en el frontal es global; `Settings` es `frozen`; `shutil` no se
+      > importa), y su matriz mezclaba caracterización con expectativas normativas. Corregido en la
+      > **rev. 3**, que además parte la fase en **dos PRs**. La pasada produjo de rebote el PR #160.
+      >
+      > ⛔ **DECISIÓN PENDIENTE de Nikolai:** implementar la rev. 3 (PR-A primero) o pasarle una
+      > **tercera** revisión. Dos rondas seguidas de NO EJECUTABLE aconsejan lo segundo; en contra,
+      > la rev. 3 no introduce mecanismos nuevos —cierra los que ya se discutieron— y las dos
+      > rondas anteriores ya han rendido su valor en forma de dos guards mergeados.
 - [ ] **Fase 1 — núcleo de workspace.** `CaseRef`/modos/capacidades/errores, registro privado
       atómico, `CaseCatalog` con `AMBIGUOUS_CASE`, resolver, **modo estricto de `path_for`**
       (mata el fallback que fabrica expedientes fantasma), **`core.intake_log` migrado** y
