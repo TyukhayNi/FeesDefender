@@ -49,12 +49,41 @@ class FakeRclone:
     ``drive``: ``{ruta_relativa_posix: bytes}``.
     ``fallos``: ``{ruta_relativa: rc}`` — el PULL de esa ruta devuelve ``rc`` y no
     escribe nada (modela el hipo de red, que es el disparador de los dos defectos).
+    ``fallos_push``: ``{subcadena_del_destino: [ocurrencias 1-based]}`` — el PUSH cuyo
+    destino contiene esa subcadena falla con ``rc=1`` en esas ocurrencias y **no**
+    muta el Drive. Se cuenta por clave: en un checkout hay dos pushes de
+    ``_caso.md`` (adquisición y rollback) y hay que poder fallar solo el segundo.
+    ``fallos_sub``: ``{subcomando: [ocurrencias 1-based]}`` — para fallar el enésimo
+    ``lsjson``/``moveto``… (p. ej. el listado de la bandeja, que es el SEGUNDO
+    ``lsjson`` del checkin; el primero es el inventario de CP1).
     """
 
-    def __init__(self, drive: dict[str, bytes], *, fallos: dict[str, int] | None = None):
+    def __init__(self, drive: dict[str, bytes], *,
+                 fallos: dict[str, int] | None = None,
+                 fallos_push: dict[str, list[int]] | None = None,
+                 fallos_sub: dict[str, list[int]] | None = None):
         self.drive = drive
         self.fallos = fallos or {}
+        self.fallos_push = fallos_push or {}
+        self.fallos_sub = fallos_sub or {}
+        self._n_push: dict[str, int] = {}
+        self._n_sub: dict[str, int] = {}
         self.cmds: list[list[str]] = []
+
+    def _push_falla(self, destino_rel: str) -> bool:
+        for clave, ocurrencias in self.fallos_push.items():
+            if clave in destino_rel:
+                self._n_push[clave] = self._n_push.get(clave, 0) + 1
+                if self._n_push[clave] in ocurrencias:
+                    return True
+        return False
+
+    def _sub_falla(self, sub: str) -> bool:
+        ocurrencias = self.fallos_sub.get(sub)
+        if not ocurrencias:
+            return False
+        self._n_sub[sub] = self._n_sub.get(sub, 0) + 1
+        return self._n_sub[sub] in ocurrencias
 
     # -- helpers
     @staticmethod
@@ -95,6 +124,10 @@ class FakeRclone:
         self.cmds.append(list(cmd))
         sub = cmd[1]
 
+        if self._sub_falla(sub):
+            # `lsjson` de un remote inaccesible: rc != 0 y stdout inválido (v1.73.5).
+            return subprocess.CompletedProcess([], 3, "[" if sub == "lsjson" else "", "fake")
+
         if sub == "copyto":
             origen, destino = cmd[2], cmd[3]
             if self._es_remoto(origen):                      # PULL remoto → local
@@ -111,7 +144,10 @@ class FakeRclone:
             src = Path(origen)
             if not src.exists():
                 return self._err(3, "directory not found")
-            self.drive[self._rel(destino)] = src.read_bytes()
+            destino_rel = self._rel(destino)
+            if self._push_falla(destino_rel):
+                return self._err(1)          # el Drive NO se muta
+            self.drive[destino_rel] = src.read_bytes()
             return self._ok()
 
         if sub == "lsjson":
@@ -366,3 +402,160 @@ def test_checkin_no_marca_conflicto_si_no_puede_leer_el_caso_md(cli, monkeypatch
     assert rc_code != 0
     assert meta_de(drive["00_Input/_caso.md"], tmp_path)["estado_repositorio"] == "prestado"
     assert not pushes_de_caso_md(fake)
+
+
+# ---------------------------------------------------------------------------
+# 4. El otro lado del mismo fallo: un PUSH que falla no puede reportarse como éxito
+#
+# El guard del pull (arriba) cerró la LECTURA del protocolo y dejó la ESCRITURA
+# igual: el retorno de `_push_caso_md` y del push del log se ignoraban, así que un
+# fallo de red al liberar el lock dejaba el caso `prestado` en el Drive mientras la
+# CLI imprimía «✓ VERDE … lock liberado» y devolvía 0.
+#
+# Regla: un fallo al escribir ESTADO DE PROTOCOLO (lock, log de custodia) es fatal
+# (salida 4); un fallo al escribir CORROBORACIÓN (evidencia, redundancia del
+# manifest en Drive) es un aviso ruidoso que no bloquea, porque los bytes del caso
+# ya están donde deben.
+# ---------------------------------------------------------------------------
+
+def test_checkout_no_declara_lock_adquirido_si_el_push_falla(cli, monkeypatch, tmp_path, capsys):
+    original = caso_md()
+    drive = {"00_Input/_caso.md": original, "00_Input/doc.pdf": b"contenido"}
+    fake = FakeRclone(drive, fallos_push={"00_Input/_caso.md": [1]})
+    monkeypatch.setattr(cli, "run_rclone", fake)
+
+    rc_code = cli.cmd_checkout(args_checkout(tmp_path / "local"))
+
+    assert rc_code == 4
+    assert drive["00_Input/_caso.md"] == original, "el Drive no se mutó"
+    assert not [c for c in fake.cmds if c[1] == "copy"], "no se copia sin lock confirmado"
+    assert "lock adquirido" not in capsys.readouterr().out
+
+
+def test_rollback_del_checkout_no_afirma_haber_revertido_si_el_push_falla(
+        cli, monkeypatch, tmp_path, capsys):
+    """El mensaje «Lock revertido a disponible» era una afirmación sin comprobar."""
+    drive = {"00_Input/_caso.md": caso_md(), "00_Input/doc.pdf": b"contenido"}
+    # 1er push (adquisición) OK; falla el 2º, que es el del rollback. Y el `copy`
+    # falla para llegar hasta ahí.
+    fake = FakeRclone(drive, fallos_push={"00_Input/_caso.md": [2]},
+                      fallos_sub={"copy": [1]})
+    monkeypatch.setattr(cli, "run_rclone", fake)
+
+    rc_code = cli.cmd_checkout(args_checkout(tmp_path / "local"))
+    salida = capsys.readouterr().out
+
+    assert rc_code == 4
+    assert meta_de(drive["00_Input/_caso.md"], tmp_path)["estado_repositorio"] == "prestado"
+    # Frase con espacios a propósito: `tmp_path` lleva el NOMBRE DEL TEST y el
+    # frontal imprime rutas, así que un aserto sobre la subcadena "revertido" lo
+    # cumpliría el propio nombre del test. Es la trampa que invalidó la primera
+    # versión de este fichero.
+    assert "Lock revertido a disponible" not in salida, \
+        "no puede afirmar que revirtió si el push falló"
+
+
+def test_checkin_no_declara_lock_liberado_si_el_push_falla(cli, monkeypatch, tmp_path, capsys):
+    prestado = caso_md("prestado", checkout_user="tester", checkout_nonce="abc")
+    drive = {"00_Input/_caso.md": prestado, "00_Input/_intake_log.jsonl": b""}
+    local = montar_checkin(tmp_path, drive)
+    fake = FakeRclone(drive, fallos_push={"00_Input/_caso.md": [1]})
+    monkeypatch.setattr(cli, "run_rclone", fake)
+
+    rc_code = cli.cmd_checkin(args_checkin(local))
+    salida = capsys.readouterr().out
+
+    assert rc_code == 4
+    assert meta_de(drive["00_Input/_caso.md"], tmp_path)["estado_repositorio"] == "prestado"
+    assert "lock liberado" not in salida
+    # `semáforo: VERDE` SÍ debe seguir apareciendo: el merge está subido y
+    # verificado, y eso es cierto. Lo que no puede aparecer es la línea de cierre.
+    assert "AUDITLOG subido" not in salida
+
+
+def test_checkin_no_afirma_conflicto_escrito_si_el_push_falla(cli, monkeypatch, tmp_path, capsys):
+    prestado = caso_md("prestado", checkout_user="tester", checkout_nonce="abc")
+    drive = {"00_Input/_caso.md": prestado, "00_Input/_intake_log.jsonl": b"",
+             "00_Input/doc.pdf": b"DRIVE"}
+    local = tmp_path / "local"
+    (local / "00_Input").mkdir(parents=True)
+    (local / "00_Input" / "doc.pdf").write_bytes(b"LOCAL")
+    (local / "MANIFEST_CHECKOUT.json").write_text(
+        json.dumps({"inventario": {"00_Input/doc.pdf": {
+            "hash": hashlib.md5(b"BASE").hexdigest(), "size": 4}}}), encoding="utf-8")
+    fake = FakeRclone(drive, fallos_push={"00_Input/_caso.md": [1]})
+    monkeypatch.setattr(cli, "run_rclone", fake)
+
+    rc_code = cli.cmd_checkin(args_checkin(local))
+    salida = capsys.readouterr().out
+
+    assert rc_code == 4
+    assert meta_de(drive["00_Input/_caso.md"], tmp_path)["estado_repositorio"] == "prestado"
+    assert "escrito en el Drive" not in salida
+
+
+def test_append_evento_lanza_si_el_push_del_log_falla(cli, monkeypatch, tmp_path):
+    log = b'{"event":"upload_manual"}\n'
+    drive = {"00_Input/_intake_log.jsonl": log}
+    fake = FakeRclone(drive, fallos_push={"_intake_log.jsonl": [1]})
+    monkeypatch.setattr(cli, "run_rclone", fake)
+
+    with pytest.raises(cli.ProtocoloIOError):
+        cli._append_evento_drive(REMOTO, tmp_path, case_id="W-TEST99",
+                                 event="case_checkin", details={}, actor="tester")
+
+    assert drive["00_Input/_intake_log.jsonl"] == log
+
+
+def test_evidencia_fallida_avisa_pero_no_bloquea_el_checkin(cli, monkeypatch, tmp_path, capsys):
+    """La evidencia es corroboración, no el merge: no puede dejar el caso prestado."""
+    prestado = caso_md("prestado", checkout_user="tester", checkout_nonce="abc")
+    drive = {"00_Input/_caso.md": prestado, "00_Input/_intake_log.jsonl": b""}
+    local = montar_checkin(tmp_path, drive)
+    fake = FakeRclone(drive, fallos_push={"07_AI cowork": [1, 2]})
+    monkeypatch.setattr(cli, "run_rclone", fake)
+
+    rc_code = cli.cmd_checkin(args_checkin(local))
+    salida = capsys.readouterr().out
+
+    assert rc_code == 0
+    assert meta_de(drive["00_Input/_caso.md"], tmp_path)["estado_repositorio"] == "disponible"
+    # Ídem: "evidencia" a secas lo cumple el nombre de este test dentro de la ruta
+    # que el frontal imprime. El aserto tiene que ser una frase del mensaje.
+    assert "No se pudo subir la evidencia" in salida
+
+
+def test_manifest_no_subido_avisa_y_el_checkout_no_finge(cli, monkeypatch, tmp_path, capsys):
+    """El MANIFEST local es el baseline real; el del Drive es redundancia (§3.3)."""
+    drive = {"00_Input/_caso.md": caso_md(), "00_Input/doc.pdf": b"contenido"}
+    fake = FakeRclone(drive, fallos_push={"MANIFEST_CHECKOUT.json": [1]})
+    monkeypatch.setattr(cli, "run_rclone", fake)
+    local = tmp_path / "local"
+
+    rc_code = cli.cmd_checkout(args_checkout(local))
+    salida = capsys.readouterr().out
+
+    assert rc_code == 0
+    assert (local / "MANIFEST_CHECKOUT.json").is_file(), "el baseline local sí existe"
+    assert "MANIFEST_CHECKOUT.json" in salida and "no se pudo subir" in salida.lower()
+
+
+def test_bandeja_ilegible_no_libera_el_lock(cli, monkeypatch, tmp_path, capsys):
+    """8º defecto: `_integrar_bandeja` devolvía (0,0) y el checkin liberaba igual.
+
+    Mismo patrón que el guard del pull —un listado que no se pudo leer no es una
+    bandeja vacía— con la misma consecuencia: se libera el lock creyendo que no
+    quedaba nada por integrar.
+    """
+    prestado = caso_md("prestado", checkout_user="tester", checkout_nonce="abc")
+    drive = {"00_Input/_caso.md": prestado, "00_Input/_intake_log.jsonl": b""}
+    local = montar_checkin(tmp_path, drive)
+    # El 1er lsjson es el inventario de CP1; el 2º es el de la bandeja (CP10).
+    fake = FakeRclone(drive, fallos_sub={"lsjson": [2]})
+    monkeypatch.setattr(cli, "run_rclone", fake)
+
+    rc_code = cli.cmd_checkin(args_checkin(local))
+
+    assert rc_code == 4
+    assert meta_de(drive["00_Input/_caso.md"], tmp_path)["estado_repositorio"] == "prestado"
+    assert "lock liberado" not in capsys.readouterr().out
