@@ -185,6 +185,62 @@ def test_seg_html_token_conservacion_no_inventa():
 
 
 # ---------------------------------------------------------------------------
+# T7-bis — la firma no es una respuesta intercalada (spec 2026-07-29, §6)
+# ---------------------------------------------------------------------------
+
+_FIRMA_HTML = ('<div class="gmail_signature"><div>Un saludo</div>'
+               '<div>Nombre Sintetico</div><div>Engel y Voelkers</div></div>')
+
+
+def test_seg_html_firma_entre_citas_no_es_intercalada():
+    """Contrato §6.1: la firma de E&V va linea a linea en su propio elemento y en los hilos de
+    Gmail queda ENTRE dos citas. Eso NO es texto de autor intercalado.
+
+    Forma medida en el corpus real: `S3 Q S Q S3` (aqui, con el saludo delante: A S3 Q S3 Q)."""
+    html = ('<div>Buenos dias, adjunto lo pedido.</div>'
+            + _FIRMA_HTML +
+            '<blockquote>cita uno</blockquote>'
+            + _FIRMA_HTML +
+            '<blockquote>cita dos</blockquote>')
+    s = I.segmentar_html(html)
+    assert s.respuesta_intercalada is False
+    assert len(s.ancestros) == 2
+    assert s.firma_excluida == 6      # 3 lineas x 2 firmas, y el veto cambio de veredicto
+
+
+def test_seg_html_autor_entre_firmas_mantiene_veto():
+    """Contrato §6.3: si entre las citas hay un trozo que NO es firma, el veto sigue puesto.
+    La exclusion es aditiva: resta firma del recuento, nunca levanta un veto correcto.
+    Es la forma real de 2 de los 4 portadores que conservan el veto."""
+    html = ('<blockquote>cita uno</blockquote>'
+            + _FIRMA_HTML +
+            '<div>Esto no lo aceptamos</div>'
+            + _FIRMA_HTML +
+            '<blockquote>cita dos</blockquote>')
+    s = I.segmentar_html(html)
+    assert s.respuesta_intercalada is True and s.ancestros == []
+
+
+def test_seg_html_firma_sin_cerrar_no_levanta_el_veto():
+    """Contrato §6.8 (añadido por la revision adversarial, hallazgo B0). Un
+    `<div class="gmail_signature">` que NUNCA se cierra deja `_sigdepth > 0` para el resto del
+    documento y marca como firma TODO el texto de autor posterior: la exclusion levantaria un
+    veto CORRECTO, que es la unica direccion en la que esta regla no puede fallar.
+
+    Fail-closed: si la firma queda abierta, sus trozos vuelven a contar como autor. Medido: la
+    firma queda abierta en 20 de 271 correos reales (5 de 24 en la prueba de Gmail, 15 de 247
+    en W-02VND1) -- el defecto estaba ARMADO, solo que todavia no habia disparado."""
+    html = ('<blockquote>cita uno</blockquote>'
+            '<div class="gmail_signature">Un saludo'            # <-- nunca se cierra
+            '<div>Esto no lo aceptamos y es texto de autor real</div>'
+            '<blockquote>cita dos</blockquote>')
+    s = I.segmentar_html(html)
+    assert s.respuesta_intercalada is True and s.ancestros == []
+    assert s.motivo == "firma_sin_cerrar"   # y se DECLARA, no se veta en silencio
+    assert s.firma_excluida == 0
+
+
+# ---------------------------------------------------------------------------
 # T8 — clasificación de confianza + guardas anti-misatribución
 # ---------------------------------------------------------------------------
 

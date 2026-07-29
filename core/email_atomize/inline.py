@@ -474,6 +474,9 @@ class Segmentacion:
     ancestros: list = field(default_factory=list)
     respuesta_intercalada: bool = False
     motivo: str = ""
+    # Trozos de firma descartados del veto de `_sandwich`, y SOLO cuando esa exclusion cambio
+    # el veredicto (spec 2026-07-29 §5.1). Transporta la traza hasta `reconstruir`.
+    firma_excluida: int = 0
 
 _RE_FWD_LINE = re.compile(
     r"(?i)^\s*-{2,}\s*(forwarded message|mensaje reenviado|reenviado|begin forwarded message"
@@ -658,6 +661,20 @@ def segmentar_texto(texto: str) -> Segmentacion:
 
 from html.parser import HTMLParser  # noqa: E402
 
+# --- Contenedor de firma (spec 2026-07-29 §3) ------------------------------------------
+# El predicado es ESTRUCTURAL: se escribe sobre `class`/`id`, nunca sobre el texto. Una lista
+# de palabras ya se descarto por fragil y medida: 7 de 21 trozos se escapaban porque eran solo
+# el NOMBRE de la persona. `gmail_signature` es el unico marcador necesario — medido sobre el
+# corpus real: anadir "signature" o "firma" a esta tupla NO cambia ningun veredicto, porque los
+# 28 trozos de firma de la muestra ya caen bajo `gmail_signature` (cubre tambien
+# `gmail_signature_prefix` por ser subcadena). La tupla es el punto de extension cuando
+# aparezca un cliente que marque su firma de otra forma.
+_SIG_MARKERS = ("gmail_signature",)
+
+_TOK_CITA = "Q"      # contenedor de cita
+_TOK_AUTOR = "A"     # texto fuera de la cita
+_TOK_FIRMA = "S"     # texto fuera de la cita PERO bajo un contenedor de firma
+
 
 class _QuoteHTMLParser(HTMLParser):
     """Detecta contenedores de cita (blockquote + Outlook divRplyFwdMsg) y su anidamiento.
@@ -684,6 +701,8 @@ class _QuoteHTMLParser(HTMLParser):
         self._tags: list[tuple[str, bool]] = []
         self._skip = 0                        # >0 dentro de <style>/<script>/<head>
         self.tokens_total = 0                 # tokens de texto enrutado (chequeo conservación)
+        self._sigdepth = 0                    # >0 dentro de un contenedor de firma
+        self.firma_trozos = 0                 # trozos de autor marcados como firma
 
     @staticmethod
     def _is_container(tag: str, attrs: list) -> bool:
@@ -692,21 +711,30 @@ class _QuoteHTMLParser(HTMLParser):
         d = dict(attrs)
         return "divrplyfwdmsg" in (d.get("id") or "").lower()
 
+    @staticmethod
+    def _is_signature(tag: str, attrs: list) -> bool:
+        d = dict(attrs)
+        val = f"{d.get('class') or ''} {d.get('id') or ''}".lower()
+        return any(m in val for m in _SIG_MARKERS)
+
     def _anchor_actual(self) -> str | None:
         return " ".join(p.strip() for p in self._pending_parts).strip() or None
 
     def handle_starttag(self, tag: str, attrs: list) -> None:
         if tag in self._SKIP_TAGS:
             self._skip += 1
-            self._tags.append((tag, False))
+            self._tags.append((tag, False, False))
             return
         cont = self._is_container(tag, attrs)
         if cont and self.qdepth >= self._MAX_DEPTH:
             cont = False  # tope de profundidad: absorbe el contenido en el segmento actual
-        self._tags.append((tag, cont))
+        sig = self._is_signature(tag, attrs)
+        self._tags.append((tag, cont, sig))
+        if sig:
+            self._sigdepth += 1
         if cont:
             self.qdepth += 1
-            self.seq.append("Q")
+            self.seq.append(_TOK_CITA)
             seg = {"depth": self.qdepth, "anchor": self._anchor_actual(), "body": []}
             self.segments.append(seg)
             self.seg_stack.append(seg)
@@ -719,7 +747,7 @@ class _QuoteHTMLParser(HTMLParser):
 
     def handle_endtag(self, tag: str) -> None:
         for k in range(len(self._tags) - 1, -1, -1):
-            t, cont = self._tags[k]
+            t, cont, sig = self._tags[k]
             if t == tag:
                 del self._tags[k]
                 if t in self._SKIP_TAGS:
@@ -729,6 +757,8 @@ class _QuoteHTMLParser(HTMLParser):
                     if self.seg_stack:
                         self.seg_stack.pop()
                     self._pending_parts = []   # texto tras una cita cerrada no es anclaje de la anterior
+                if sig:
+                    self._sigdepth = max(0, self._sigdepth - 1)
                 break
 
     def handle_data(self, data: str) -> None:
@@ -736,22 +766,37 @@ class _QuoteHTMLParser(HTMLParser):
             return
         self.tokens_total += len(data.split())
         if self.qdepth == 0 or not self.seg_stack:   # guard: nunca se cae texto al vacío
-            self.author_parts.append(data)
-            self.seq.append("A")
+            self.author_parts.append(data)           # el enrutado NO cambia (spec §3)
+            if self._sigdepth:
+                self.seq.append(_TOK_FIRMA)
+                self.firma_trozos += 1
+            else:
+                self.seq.append(_TOK_AUTOR)
         else:
             self.seg_stack[-1]["body"].append(data)
         self._pending_parts.append(data)
 
 
-def _sandwich(seq: list[str]) -> bool:
-    """¿Hay texto de autor (A) ENTRE dos citas (Q)? = respuesta intercalada en HTML."""
+def _sandwich(seq: list[str], *, firma_como_autor: bool = False) -> bool:
+    """¿Hay texto de autor (A) ENTRE dos citas (Q)? = respuesta intercalada en HTML.
+
+    Los trozos bajo un contenedor de firma llegan como ``_TOK_FIRMA`` y NO cuentan como texto
+    de autor (spec 2026-07-29 §3): la firma de E&V va linea a linea en su propio elemento y en
+    los hilos de Gmail queda ENTRE dos citas. La exclusion es ADITIVA — si queda un trozo de
+    autor real, esto sigue devolviendo True (medido: 4 de los 7 portadores vetados de la muestra
+    lo siguen estando).
+
+    *firma_como_autor* recupera el veredicto de ANTES de la exclusion. Sus dos usos: saber si la
+    exclusion cambio el veredicto (para emitir la traza, §5.1) y el guard fail-closed de
+    `segmentar_html` cuando la firma queda sin cerrar.
+    """
     seen_q = seen_a_after_q = False
     for t in seq:
-        if t == "Q":
+        if t == _TOK_CITA:
             if seen_a_after_q:
                 return True
             seen_q = True
-        elif t == "A" and seen_q:
+        elif seen_q and (t == _TOK_AUTOR or (firma_como_autor and t == _TOK_FIRMA)):
             seen_a_after_q = True
     return False
 
@@ -764,8 +809,23 @@ def segmentar_html(html: str) -> Segmentacion:
         p.close()
     except Exception:  # noqa: BLE001 — HTML malformado → fallback a plano
         return segmentar_texto(_html_a_texto(html))
-    if _sandwich(p.seq):
-        return Segmentacion(autor=_html_a_texto(html), ancestros=[], respuesta_intercalada=True)
+    # FAIL-CLOSED (hallazgo B0 de la revision adversarial, reproducido): si al cerrar el
+    # documento queda un contenedor de firma SIN CERRAR, `_sigdepth` nunca volvio a 0 y TODO el
+    # texto de autor posterior quedo marcado como firma. Excluirlo del veto levantaria un veto
+    # CORRECTO -- la unica direccion en la que esta regla NO puede fallar (spec §3). Cuando la
+    # firma no es fiable, sus trozos vuelven a contar como autor.
+    # `HTMLParser.close()` no sintetiza cierres ni lanza excepcion, asi que el fallback a texto
+    # plano de arriba no cubre este caso.
+    # Medido: la firma queda abierta en 20 de 271 correos reales (5 de 24 en la prueba de Gmail,
+    # 15 de 247 en W-02VND1) y el guard NO cuesta ni un portador desbloqueado: 3 con guard y 3
+    # sin guard. El defecto estaba armado y no habia disparado.
+    firma_fiable = p._sigdepth == 0
+    if _sandwich(p.seq, firma_como_autor=not firma_fiable):
+        # Se declara SOLO cuando el desbalance es lo que sostiene el veto; si no, seria ruido
+        # en el 7 % de correos que cierran con la firma abierta sin consecuencia.
+        mot = "" if firma_fiable or _sandwich(p.seq) else "firma_sin_cerrar"
+        return Segmentacion(autor=_html_a_texto(html), ancestros=[],
+                            respuesta_intercalada=True, motivo=mot)
     autor = "\n".join(t.strip() for t in p.author_parts).strip()
     ancestros = [
         Segmento(texto="\n".join(t.strip() for t in s["body"]).strip(),
@@ -773,13 +833,20 @@ def segmentar_html(html: str) -> Segmentacion:
                  estructural=True)
         for s in p.segments
     ]
+    # Traza (spec §5.1): SOLO cuando la exclusion de firma cambio el veredicto, no en cada correo
+    # con firma. Llegar aqui ya implica `firma_fiable`.
+    firma_excluida = p.firma_trozos if _sandwich(p.seq, firma_como_autor=True) else 0
     # Conservación de tokens (DD §2.4): todo texto enrutado debe repartirse entre autor y
     # segmentos. Si diverge (bug de enrutado), NO segmentar: portador entero a revisión.
+    # `firma_excluida` SI se arrastra a esta rama: la exclusion cambio el veredicto de `_sandwich`
+    # aunque la conservacion vete despues por otra razon, y el puntero de `conservacion_tokens` no
+    # informa de ese cambio (hallazgo A de la revision adversarial, aceptado).
     repartidos = len(autor.split()) + sum(len(a.texto.split()) for a in ancestros)
     if p.tokens_total and abs(repartidos - p.tokens_total) > 0.05 * p.tokens_total:
         return Segmentacion(autor=_html_a_texto(html), ancestros=[],
-                            motivo="conservacion_tokens")
-    return Segmentacion(autor=autor, ancestros=ancestros, respuesta_intercalada=False)
+                            motivo="conservacion_tokens", firma_excluida=firma_excluida)
+    return Segmentacion(autor=autor, ancestros=ancestros, respuesta_intercalada=False,
+                        firma_excluida=firma_excluida)
 
 
 def _html_part(raw: bytes) -> str:
