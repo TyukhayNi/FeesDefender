@@ -1,6 +1,7 @@
 from __future__ import annotations
 import json
 from email.message import EmailMessage
+from pathlib import Path
 from core.email_atomize import pipeline as P
 
 
@@ -137,3 +138,38 @@ def test_emails_src_dirs_de_caso_no_resuelve_el_caso(tmp_path, monkeypatch):
     fuentes = P.emails_src_dirs_de_caso(case_dir)
     assert [f.name for f in fuentes] == ["2026-07-28_email_01", "03_Email"]
     assert P.emails_out_dir_de_caso(case_dir) == case_dir / "01_Procesado" / "Emails"
+
+
+def test_llave_del_registro_no_colisiona_entre_fuentes(tmp_path):
+    # `sub/a.eml` en dos fuentes distintas, mensajes DISTINTOS: el registro debe
+    # distinguirlos (hallazgo 4 de la revisión adversarial).
+    lote = tmp_path / "2026-07-28_email_01"
+    legacy = tmp_path / "03_Email"
+    (lote / "sub").mkdir(parents=True)
+    (legacy / "sub").mkdir(parents=True)
+    (lote / "sub" / "a.eml").write_bytes(_msg("<uno@x>", "Uno"))
+    (legacy / "sub" / "a.eml").write_bytes(_msg("<dos@x>", "Dos"))
+    out = tmp_path / "Emails"
+
+    rep = P.atomize_dir([lote, legacy], out, case_dir=tmp_path)
+
+    assert rep.mensajes == 2
+    procesados = set(json.loads((out / "_registro.json").read_text(encoding="utf-8"))
+                     ["eml_procesados"])
+    assert procesados == {"2026-07-28_email_01/sub/a.eml", "03_Email/sub/a.eml"}
+
+
+def test_eml_leidos_cuenta_ficheros_no_atoms(tmp_path):
+    # Mata la implementación perezosa `eml_leidos = report.mensajes`: con dedup, dos
+    # ficheros pueden dar un solo atom.
+    src = tmp_path / "03_Email"
+    src.mkdir()
+    raw = _msg("<a@x>", "Oferta")
+    (src / "copia_1.eml").write_bytes(raw)
+    (src / "copia_2.eml").write_bytes(raw)
+
+    rep = P.atomize_dir(src, tmp_path / "Emails", case_dir=tmp_path)
+
+    assert (rep.eml_enumerados, rep.eml_leidos) == (2, 2)
+    assert rep.mensajes == 1
+    assert rep.publicado is True and rep.poda_omitida is False

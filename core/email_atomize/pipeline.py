@@ -39,6 +39,11 @@ class AtomizeReport:
     citas_a_revision: int = 0         # punteros media/baja a _revision/cola.md
     upgrades: int = 0                 # citas resueltas a una copia limpia de Capa A
     vistas_generadas: int = 0
+    eml_enumerados: int = 0           # .eml que la enumeración produjo
+    eml_leidos: int = 0               # de esos, los abiertos sin error
+    fallos_lectura: list[str] = field(default_factory=list)   # ruta: motivo (transitorios)
+    publicado: bool = True            # False si no se publicó nada (spec §4.3, rama transitoria)
+    poda_omitida: bool = False        # True si se publicó sin podar (rama permanente)
     notas: list[str] = field(default_factory=list)
     errores: list[str] = field(default_factory=list)
 
@@ -90,8 +95,13 @@ def atomize_dir(
     (out / "adjuntos").mkdir(parents=True, exist_ok=True)
     report = AtomizeReport()
 
-    reg = IDS.load_registro(out)
-    avistamientos = [a for s in srcs for a in E.iter_avistamientos(s)]
+    stats = E.EnumStats()
+    avistamientos = [a for s in srcs for a in E.iter_avistamientos(s, stats=stats)]
+    report.eml_enumerados = stats.enumerados
+    report.eml_leidos = stats.leidos
+    report.fallos_lectura = list(stats.fallos)
+
+    reg = IDS.load_registro(out)          # crea `out`: nada antes de aquí toca disco
     colapsados = D.colapsar(avistamientos)
 
     # adjuntos: contar apariciones (para filtro decorativo) sobre los raws canónicos
@@ -109,7 +119,11 @@ def atomize_dir(
             continue
         mensajes.append(m)
         carriers.append((m, col.raw))
-        reg.marcar_procesado(col.eml_origen)
+        # Llave del registro: lleva la fuente delante porque la ruta relativa a CADA
+        # fuente no es única (`sub/a.eml` puede existir en dos lotes). `eml_origen` se
+        # queda como está: es el valor probatorio del frontmatter.
+        reg.marcar_procesado(f"{col.fuente}/{col.eml_origen}" if col.fuente
+                             else col.eml_origen)
 
     # --- Pase Layer B (tras congelar TODOS los IDs de Capa A) ---
     mensajes_b, punteros, upgrades = _pase_layer_b(reg, mensajes, carriers, report, ident)
