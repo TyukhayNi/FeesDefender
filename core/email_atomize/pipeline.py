@@ -21,6 +21,7 @@ from . import corpus as C
 from . import dedup as D
 from . import extract as E
 from . import headers as H
+from . import historial as HIST
 from . import ids as IDS
 from . import identidades as ID
 from . import inline as INL
@@ -136,14 +137,17 @@ def atomize_dir(
     unicos: dict[str, AdjuntoUnico] = {}      # sha -> AdjuntoUnico
     mensajes: list[RegistroMensaje] = []
     carriers: list[tuple[RegistroMensaje, bytes]] = []
+    restos: dict[str, str] = {}          # msg_id -> historial citado que `cortar_autor` retiro
     for col in colapsados:
         try:
-            m = _construir_mensaje(col, reg, apariciones, unicos, report)
+            m, resto = _construir_mensaje(col, reg, apariciones, unicos, report)
         except Exception as exc:  # noqa: BLE001 — un mensaje no aborta la corrida
             report.errores.append(f"{col.message_id or '(sin id)'}: {exc}")
             continue
         mensajes.append(m)
         carriers.append((m, col.raw))
+        if resto and resto.strip():
+            restos[m.msg_id] = resto
         # Llave del registro: lleva la fuente delante porque la ruta relativa a CADA
         # fuente no es única (`sub/a.eml` puede existir en dos lotes). `eml_origen` se
         # queda como está: es el valor probatorio del frontmatter.
@@ -159,6 +163,40 @@ def atomize_dir(
 
     for m in mensajes:
         (out / "mensajes" / R.nombre_md(m)).write_text(R.render_md(m), encoding="utf-8")
+
+    # `MEJORAS #105`: el historial citado que `cortar_autor` retiro no estaba en ningun
+    # artefacto. Se escribe VERBATIM en un fichero hermano, con los duplicados marcados y SIN
+    # atribuir nada. El indice se construye con las fichas de Capa A y B ya conocidas.
+    # `historiales_esperados` NO es lo mismo que "los que se han escrito": lleva el fichero de
+    # TODO portador con texto recortado, escriba o no. Es lo que la poda debe conservar.
+    # Si solo llevara los escritos con exito, un fallo transitorio (disco, permiso, Drive sin
+    # hidratar) en la corrida N haria que la poda BORRASE la copia buena que dejo la corrida
+    # N-1: un error pasajero destruyendo prueba, y la nota diciendo apenas «no escrito». Un
+    # historial rancio es mucho mejor que ninguno. (Hallazgo de la revision adversarial.)
+    historiales_esperados: set[str] = set()
+    if restos:
+        indice = HIST.indice_frases(mensajes)
+        por_id = {m.msg_id: m for m in mensajes}
+        for msg_id, resto in restos.items():
+            m = por_id.get(msg_id)
+            if m is None:
+                continue
+            nombre = R.nombre_historial(m)
+            historiales_esperados.add(nombre)
+            try:
+                (out / "mensajes" / nombre).write_text(
+                    HIST.render_historial(portador_msg_id=msg_id, nombre_ficha=R.nombre_md(m),
+                                          resto_citado=resto, indice=indice),
+                    encoding="utf-8")
+            except Exception as exc:  # noqa: BLE001
+                # Vista derivada: su fallo NO entra en `report.errores` (eso apagaria la poda del
+                # arbol entero). Se captura `Exception` y no solo `OSError` a proposito: un fallo
+                # del RENDER (p. ej. un `ValueError`) abortaria la atomizacion con las fichas ya
+                # escritas, que es peor que no tener esta vista.
+                report.notas.append(
+                    f"historial de {msg_id} no escrito ({exc}); si habia uno de una corrida "
+                    f"anterior, se conserva y puede estar rancio")
+                continue
     # Permanente (construcción A / Layer B): se publica lo bueno, pero NO se poda — un
     # `.eml` corrupto no se arregla re-corriendo, y bloquear el caso para siempre es peor
     # que conservar una ficha rancia. La poda solo retira huérfanos cuando la foto está
@@ -171,7 +209,12 @@ def atomize_dir(
         # sobre lo que había en disco. Ver `Registro.resolver_procesados`.
         reg.resolver_procesados(foto_completa=False)
     else:
-        esperados = {R.nombre_md(m) for m in mensajes}
+        # `historiales` entra en `esperados` porque el glob "*.md" de abajo tambien
+        # matchea "*.historial.md": sin esto, el fichero que se acaba de escribir en este
+        # MISMO `atomize_dir` se borraria como "huerfano" antes de que la funcion retorne
+        # (colision detectada al ejecutar los tests de esta tarea, no prevista en el brief;
+        # la poda cross-corrida completa sigue siendo alcance de la Tarea 3).
+        esperados = {R.nombre_md(m) for m in mensajes} | historiales_esperados
         for p in (out / "mensajes").glob("*.md"):
             if p.name not in esperados:
                 p.unlink()
@@ -278,11 +321,11 @@ def _pase_layer_b(reg, mensajes, carriers, report, identidades):
     return mensajes_b, punteros, upgrades
 
 
-def _construir_mensaje(col, reg, apariciones, unicos, report) -> RegistroMensaje:
+def _construir_mensaje(col, reg, apariciones, unicos, report) -> tuple[RegistroMensaje, str | None]:
     sha = compute_sha256_bytes(col.raw)
     msg_id = reg.msg_id_for(col.message_id, sha=sha)
     cab = H.parse_cabeceras(col.raw)
-    cuerpo = B.extraer_cuerpo(col.raw)
+    cuerpo = B.extraer_cuerpo(col.raw, conservar_resto=True)
 
     _eml, adjuntos = split_eml(col.raw)
     refs: list[AdjuntoRef] = []
@@ -302,7 +345,7 @@ def _construir_mensaje(col, reg, apariciones, unicos, report) -> RegistroMensaje
         elif msg_id not in u.mensajes:
             u.mensajes.append(msg_id)
 
-    return RegistroMensaje(
+    m = RegistroMensaje(
         msg_id=msg_id, rfc_message_id=cab.rfc_message_id, in_reply_to=cab.in_reply_to,
         hilo=cab.hilo, fecha_iso=cab.fecha_iso, hora=cab.hora, fecha_tz=cab.fecha_tz,
         de=cab.de, de_nombre=cab.de_nombre, para=cab.para, cc=cab.cc, cco=[],
@@ -316,6 +359,7 @@ def _construir_mensaje(col, reg, apariciones, unicos, report) -> RegistroMensaje
         charset_recuperado=cuerpo.charset_recuperado, mojibake_marcado=cuerpo.mojibake_marcado,
         raw=col.raw,
     )
+    return m, cuerpo.resto_citado
 
 
 def _escribe_adjunto(out: Path, att: AdjuntoUnico) -> None:

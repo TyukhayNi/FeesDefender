@@ -4162,6 +4162,30 @@ se rompe la byte-identidad de Capa A ni la comparación con los `_entregas/` sel
 letrado como un LLM tienen el hilo al lado de la ficha. Descartada la opción A (una sección dentro
 del atom) precisamente porque reescribe todos los `.md` existentes.
 
+> ✅ **CONSTRUIDO 2026-07-30 — PR #NNN.** Spec:
+> `docs/superpowers/specs/2026-07-30-historial-citado-localizable-design.md`; plan:
+> `docs/superpowers/plans/2026-07-30-historial-citado-localizable.md`. Módulo puro
+> `core/email_atomize/historial.py` + tres puntos de cableado en `pipeline.py` + el arreglo de la poda.
+> 12 tests, todos con *mutation testing*.
+>
+> **La propuesta de abajo se mantiene** (fichero hermano, opción B) con **tres correcciones que la
+> medición obligó**, y por eso se conserva el texto original debajo:
+>
+> 1. El contenido va verbatim **marcando** los duplicados, no filtrándolos: por los números de esta
+>    misma entrada, filtrar dejaría 33 frases de 365 — atractivo, y por eso peligroso, porque un filtro
+>    que falla oculta prueba sin que nadie lo note.
+> 2. La fuente es `Cuerpo.resto_citado` (lo que `cortar_autor` recortó) y **no** los bloques del
+>    segmentador, que pueden venir vacíos (medido: tres portadores con `blockquote` vacíos y el
+>    historial en la parte de texto plano).
+> 3. **El choque que esta entrada no vio:** la poda de `pipeline.py` borra todo `mensajes/*.md` ajeno a
+>    `esperados`, y corre **dentro de la misma llamada**, así que el fichero hermano se autodestruía
+>    antes de que `atomize_dir` retornase. `esperados` pasa a incluir los historiales escritos en la
+>    corrida, y un huérfano sigue podándose.
+>
+> **Deuda declarada:** compartir `mensajes/` y el sufijo `.md` hace que todo consumidor con
+> `glob("*.md")` cuente el historial como ficha. En la suite rompieron 4 de ~40; fuera de la suite
+> (skills, sala de lectura, `#86`) no hay quien avise. Ver §5.3-bis de la spec.
+
 **Disparador de promoción:** un caso donde el 9 % perdido caiga sobre prueba nuclear, o decisión de
 Nikolai. **Coste:** ~2 h con tests. Emparentado con `#106` (sin hilo no basta con tener el texto) y
 con `#108`.
@@ -4219,8 +4243,8 @@ cuando se prioricen las piezas. Estado de cada una, medido:
 | Pieza | Estado |
 |---|---|
 | Mensajes reenviados y embebidos como ficha propia | **Hecho** cuando hay cabecera atribuible (verificado en vivo: en la muestra los reenviados sí tenían ficha, y la Capa B promovió 7 citas más) |
-| Historial citado no atribuible, disponible sin atribuir | Falta → **`#107`** |
-| Hilo reconstruible desde el `.md` | Falta → **`#107`** |
+| Historial citado no atribuible, disponible sin atribuir | Falta → **`#105`** |
+| Hilo reconstruible desde el `.md` | Falta → **`#106`** |
 | Texto/OCR de los adjuntos en `.md` | Falta → **`#87`**. Hoy la ficha de cada adjunto dice literalmente `(pendiente; OCR en fase 2)`; en la muestra eran 15 adjuntos únicos (8 `.zip`, 2 `.pdf`, 1 `.ics`) sin una línea de su contenido en la carpeta |
 | Falsos positivos que bloquean la promoción | Spec escrita → `docs/superpowers/specs/2026-07-29-sandwich-firma-falso-positivo-design.md` |
 
@@ -4280,7 +4304,7 @@ Los 3 que el arreglo desbloquea son otros, y no tenían nada citado (Hecho 1).
 
 **Dos piezas, y conviene no confundirlas:**
 
-1. **La pieza grande es `#107`** (historial citado sin atribuir), y esta medición la afila: no es «falta
+1. **La pieza grande es `#105`** (historial citado sin atribuir), y esta medición la afila: no es «falta
    una vista de historial», es que el historial **se retira activamente** del único artefacto que lo
    contenía y nada más lo recoge. Sin cabeceras no puede haber ficha —y es correcto que no la haya,
    la prime directive lo exige—, pero el texto tiene que estar **localizable** en algún sitio.
@@ -4295,8 +4319,9 @@ Los 3 que el arreglo desbloquea son otros, y no tenían nada citado (Hecho 1).
    citas mata 3; ponerles `de` mata el test anti-misatribución; **mandarlas a `ancestros`** —el error
    peligroso— mata el test de la invariante; y retirar el filtro de vacías mata el suyo.
 
-**Estado.** Pieza 2 **hecha**. Queda la pieza 1 (`#107`), que es la que de verdad responde al
-requisito `#108`. **Disparador de promoción:** decisión de Nikolai, o el siguiente hilo cuyas fichas
+**Estado.** Las **dos piezas hechas**: la pequeña (punteros del portador vetado, PR #169
+`5076823`) y la grande (`#105`, el fichero hermano de historial, PR #NNN). Lo que sigue faltando
+para el requisito `#108` es **`#106`**: tener el texto no da la conversación — falta el hilo. **Disparador de promoción:** decisión de Nikolai, o el siguiente hilo cuyas fichas
 se echen en falta — que volverá a pasar, porque la causa 1 (que el caso solo reciba el último correo
 de un hilo) es la normal, no la excepción.
 
@@ -4313,7 +4338,7 @@ de un hilo) es la normal, no la excepción.
   prueba se borró (con autorización) inmediatamente después de la medición del hilo, y no se registró
   si los `blockquote` de ese portador vetado llevaban texto o eran cáscaras vacías como los de los
   otros tres. Si eran cáscaras, esta pieza no le añade nada y el historial de ese hilo sigue
-  necesitando `#107`. **Cómo cerrarlo cuando se quiera:** re-exportar una etiqueta pequeña a un
+  necesitando `#105`. **Cómo cerrarlo cuando se quiera:** re-exportar una etiqueta pequeña a un
   scratch fuera de todo expediente —el mismo procedimiento con el que se creó ese corpus— y mirar los
   punteros `cita_en_portador_vetado` que salgan.
 

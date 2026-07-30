@@ -22,6 +22,7 @@ sys.path.insert(0, r"C:\Users\tnm33\Dev\FeesDefender")
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 from core.email_atomize.inline import _parse_fecha  # noqa: E402
+from core.email_atomize.render import es_ficha_md  # noqa: E402
 from core.email_export import _slug_descripcion  # noqa: E402
 
 BASE = Path(
@@ -234,7 +235,11 @@ def detectar(body: str):
 # --------------------------------------------------------------------------- #
 findings = []
 total_citas = 0
-md_files = sorted(MENSAJES.glob("*.md"))
+# `es_ficha_md` excluye los `<atom>.historial.md` de `MEJORAS #105`: son verbatim citado,
+# lleno de cabeceras `De:`/`Enviado:`, y este escaner los tomaria por portadores (su
+# `fm_get(fm, "msg_id") or md.stem` cae al stem cuando no hay frontmatter) reportando
+# decenas de "citas no separadas" falsas.
+md_files = sorted(p for p in MENSAJES.glob("*.md") if es_ficha_md(p))
 for md in md_files:
     text = md.read_text(encoding="utf-8", errors="replace")
     fm, body = split_front(text)

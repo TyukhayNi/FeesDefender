@@ -9,6 +9,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from core.email_atomize.render import es_ficha_md
+
 from .config import caso_path
 from .utils import build_frontmatter, now_iso, read_md
 
@@ -19,7 +21,13 @@ def _all_md(case_dir: Path) -> list[Path]:
                 "04_Output predemanda", "05_Procedimiento", "06_Anonimizado", "07_AI cowork"):
         d = case_dir / sub
         if d.exists():
-            out.extend(sorted(d.rglob("*.md")))
+            # `es_ficha_md` excluye los `<atom>.historial.md` de `MEJORAS #105`. No es cosmetico:
+            # `crosslink` inyecta `[[...]]` en el cuerpo y reescribe el fichero con
+            # `build_frontmatter`, asi que sobre un historial (1) contaminaria su bloque VERBATIM,
+            # que es su unica razon de existir, (2) le anadiria un frontmatter que nunca tuvo, y
+            # (3) lo dejaria en churn perpetuo: el atomizador lo reescribe, el linker lo vuelve a
+            # contaminar. `rglob` sobre `01_Procesado` SI alcanza `Emails/mensajes/`.
+            out.extend(sorted(p for p in d.rglob("*.md") if es_ficha_md(p)))
     return out
 
 
