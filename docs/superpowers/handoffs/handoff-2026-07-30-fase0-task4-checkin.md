@@ -1,4 +1,5 @@
 ---
+tipo: handoff
 estado: consumido
 creado: 2026-07-30
 origen: sesión que construyó las Tasks 0-3 del PR-A
