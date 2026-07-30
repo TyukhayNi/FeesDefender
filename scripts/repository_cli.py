@@ -48,14 +48,27 @@ gate humano pendiente (borrados sin ``--yes``) · ``4`` **no se pudo leer el
 protocolo o registrar la traza: estado indeterminado, lock conservado,
 recuperación necesaria**.
 
-Nota de alcance: las funciones PURAS (parseo, validación, semáforo, construcción
-de comandos, plan) están cubiertas por tests, y desde 2026-07-29 hay además
-tests de **orquestación** de ``cmd_checkout``/``cmd_checkin`` con un doble de
-rclone (``tests/test_repository_cli_guard_pull.py``; el banco completo llega con
-la Fase 0 de la arquitectura dual). Lo que sigue SIN cubrir: rclone real, el
-Drive real y la cuota de API. El piloto validó el ciclo a mano y Cowork
-re-correrá los evals de la skill. La CLI y la skill comparten el mismo cerebro y
-los mismos flags.
+Nota de alcance (al día tras la **Fase 0** de la arquitectura dual, 2026-07-30). El
+banco de pruebas del frontal está completo:
+
+- helpers **PUROS** (parseo, validación, semáforo, construcción de comandos, plan);
+- **orquestación** de ``cmd_checkout``/``cmd_checkin`` contra un doble contractual de
+  rclone fijado a **v1.73.5** con fixtures grabadas (``tests/_dobles/fake_drive.py``):
+  caracterización de los dos comandos, matriz de caminos de FALLO —incluidos los dos
+  únicos retornos de ``run_rclone`` que este módulo no examina, el ``lsjson`` del CP1 y
+  el ``rmdirs`` de la bandeja— y los **siete** defectos vivos reproducidos en
+  ``xfail(strict=True)`` (``tests/test_repository_cli_defectos.py``). Reproducidos, **no
+  arreglados**: el doble titular, el rollback sobre lock ajeno, el orden del checkin, el
+  ``moveto`` de bandeja que libera igual, el checkin reentrante que duplica el evento y
+  los dos del log canónico siguen ahí;
+- una **barrera** de suite (``tests/_barrera.py``) por la que ningún test puede alcanzar
+  rclone real, el Drive real ni ``CASOS_ROOT``. Toda inyección entra por el ``Entorno``.
+
+Lo que sigue SIN cubrir, y conviene no confundirlo con lo anterior: **rclone real, el
+Drive real y la cuota de API**. Nada de esto prueba que el ciclo funcione contra el Drive
+del despacho; eso lo validó el piloto a mano (W-02VND1 / W-02THLJ). Los dobles de CRM y
+Gmail son de la Fase 3. La CLI y la skill ``checkin-caso`` comparten cerebro y flags, y
+Cowork re-corre los evals de la skill.
 """
 
 from __future__ import annotations
@@ -233,14 +246,19 @@ def build_copy_cmd(
     log_file: str,
     transfers: int = 4,
     files_from: str | None = None,
+    binario: str | None = None,
 ) -> list[str]:
     """Comando ``rclone copy`` local→Drive con los flags validados en el piloto.
 
     Con ``files_from`` (lista de rutas del plan) la copia se acota a esos
     ficheros — honra el merge de 3 vías por-fichero.
+
+    ``binario`` viene del ``Entorno`` cuando lo llama la orquestación (Task 1B). El
+    default a ``_rclone_bin()`` existe para no tocar los tests de los helpers PUROS,
+    que asertan sobre la salida y no sobre el puerto de inyección.
     """
     cmd = [
-        _rclone_bin(), "copy", origen, destino,
+        binario or _rclone_bin(), "copy", origen, destino,
         "--checksum", "--drive-skip-shortcuts",
         "--transfers", str(transfers),
     ]
@@ -264,6 +282,7 @@ def build_check_cmd(
     destino: str,
     log_file: str,
     files_from: str | None = None,
+    binario: str | None = None,
 ) -> list[str]:
     """Comando ``rclone check --one-way --fast-list`` (verificación por hash).
 
@@ -272,7 +291,7 @@ def build_check_cmd(
     diferencia.
     """
     cmd = [
-        _rclone_bin(), "check", local, destino,
+        binario or _rclone_bin(), "check", local, destino,
         "--one-way", "--drive-skip-shortcuts", "--fast-list",
     ]
     # --files-from no admite --exclude (ver build_copy_cmd).
@@ -284,27 +303,27 @@ def build_check_cmd(
     return cmd
 
 
-def build_lsjson_cmd(destino: str) -> list[str]:
+def build_lsjson_cmd(destino: str, *, binario: str | None = None) -> list[str]:
     """Comando ``rclone lsjson -R --hash --fast-list`` (inventario del Drive)."""
     return [
-        _rclone_bin(), "lsjson", destino,
+        binario or _rclone_bin(), "lsjson", destino,
         "-R", "--hash", "--fast-list", "--drive-skip-shortcuts",
     ]
 
 
-def build_copyto_cmd(*, origen: str, destino: str) -> list[str]:
+def build_copyto_cmd(*, origen: str, destino: str, binario: str | None = None) -> list[str]:
     """Comando ``rclone copyto`` para un único fichero (p. ej. ``_caso.md``)."""
-    return [_rclone_bin(), "copyto", origen, destino, "--drive-skip-shortcuts"]
+    return [binario or _rclone_bin(), "copyto", origen, destino, "--drive-skip-shortcuts"]
 
 
-def build_moveto_cmd(*, origen: str, destino: str) -> list[str]:
+def build_moveto_cmd(*, origen: str, destino: str, binario: str | None = None) -> list[str]:
     """Comando ``rclone moveto`` de un fichero (borrado/renombrado → backup-dir).
 
     ``rclone copy`` NO borra en el destino; los borrados (caso 5) y el origen de
     los renombrados (caso 9) se propagan moviendo el fichero al ``--backup-dir``
     (queda recuperable, D2) — nunca con un borrado ciego ni con ``sync``.
     """
-    return [_rclone_bin(), "moveto", origen, destino, "--drive-skip-shortcuts"]
+    return [binario or _rclone_bin(), "moveto", origen, destino, "--drive-skip-shortcuts"]
 
 
 def nombre_auditlog(ts: str) -> str:
@@ -506,23 +525,23 @@ def render_delta(plan: list[rc.AccionMerge]) -> str:
 # re-ejecutar desde cero (doctrina §4.4).
 # ===========================================================================
 
-def cmd_checkout(args: argparse.Namespace) -> int:
+def cmd_checkout(args: argparse.Namespace, *, entorno: Entorno = ENTORNO_REAL) -> int:
     remote = args.remote or RCLONE_REMOTE_TL
     team = args.team_drive or TEAM_DRIVE_TL
     destino = remote_arg(remote, team, args.remote_path or "", args.folder_id)
     local = Path(args.local)
-    ts = now_iso_utc()
-    user = args.user or _usuario_por_defecto()
-    maquina = socket.gethostname()
+    ts = entorno.ahora()
+    user = args.user or entorno.usuario()
+    maquina = entorno.hostname()
 
     print(f"[checkout] {args.case_id}")
     print(f"  remote : {destino}")
     print(f"  local  : {local}")
-    work = _tmp_dir()
+    work = entorno.work_dir()
 
     # CP0: leer el lock del Drive (pull _caso.md) y comprobar disponibilidad.
     # Un fallo de lectura NO es «caso disponible»: se aborta sin tocar un byte.
-    pull = _pull_caso_md(destino, work)
+    pull = _pull_caso_md(destino, work, entorno=entorno)
     if pull is None:
         print("  ✗ No se pudo LEER el _caso.md del Drive (¿red, permisos, ruta?). "
               "Abortado sin tocar nada: escribir el lock aquí sobrescribiría los "
@@ -543,18 +562,18 @@ def cmd_checkout(args: argparse.Namespace) -> int:
 
     # Adquirir lock (§2.2): escribir prestado + nonce, esperar el sync lag,
     # releer por API y confirmar que el nonce ganador es el propio.
-    nonce = _nonce()
+    nonce = entorno.nonce()
     rc.validar_transicion(estado, "prestado")
     rc.aplicar_lock_prestado(fm_drive, user=user, timestamp=ts, nonce=nonce,
                              maquina=maquina, notas=args.notas)
     try:
-        _push_caso_md(fm_drive, destino, work, cuerpo=cuerpo_drive)
+        _push_caso_md(fm_drive, destino, work, cuerpo=cuerpo_drive, entorno=entorno)
     except ProtocoloIOError as exc:
         print(f"  ✗ {exc}\n  Abortado: no hay lock y no se copió nada. Reintenta "
               f"cuando el remote responda.")
         return 4
-    time.sleep(_SYNC_LAG_S)
-    pull_check = _pull_caso_md(destino, work)
+    entorno.esperar(_SYNC_LAG_S)
+    pull_check = _pull_caso_md(destino, work, entorno=entorno)
     if pull_check is None:
         # El lock se escribió pero no se puede verificar. No se copia y NO se
         # cancela: cancelar exigiría demostrar que el nonce vigente es el propio,
@@ -576,18 +595,18 @@ def cmd_checkout(args: argparse.Namespace) -> int:
     local.mkdir(parents=True, exist_ok=True)
     log_file = str(work / f"checkout_{ts_compacto(ts)}.log")
     cmd = [
-        _rclone_bin(), "copy", destino, str(local),
+        entorno.binario(), "copy", destino, str(local),
         "--checksum", "--drive-skip-shortcuts", "--transfers", "4",
         *_exclusiones_rclone(),
         "--log-level", "INFO", "--log-file", log_file,
     ]
-    res = run_rclone(cmd)
+    res = run_rclone(cmd, entorno=entorno)
     if res.returncode != 0:
         # Rollback del lock: no dejar el caso 'prestado' sin copia local útil
         # (evita el estado atascado del runbook §7.1). La re-ejecución converge.
         rc.aplicar_lock_cancelado(fm_check)
         try:
-            _push_caso_md(fm_check, destino, work, cuerpo=cuerpo_check)
+            _push_caso_md(fm_check, destino, work, cuerpo=cuerpo_check, entorno=entorno)
         except ProtocoloIOError as exc:
             # Doble fallo: la copia no salió Y tampoco se pudo revertir el lock. No
             # se puede afirmar que quedó revertido, que es lo que hacía antes.
@@ -608,7 +627,8 @@ def cmd_checkout(args: argparse.Namespace) -> int:
                              encoding="utf-8")
     res_mf = run_rclone(build_copyto_cmd(
         origen=str(manifest_path),
-        destino=_remoto(destino, "MANIFEST_CHECKOUT.json")))
+        destino=_remoto(destino, "MANIFEST_CHECKOUT.json"),
+        binario=entorno.binario()), entorno=entorno)
     if res_mf.returncode != 0:
         # El baseline que el checkin lee es el LOCAL; el del Drive es la redundancia
         # del §3.3 (sobrevivir a la muerte del Desktop). Se pierde esa red, no la
@@ -621,7 +641,7 @@ def cmd_checkout(args: argparse.Namespace) -> int:
     # Evento forense case_checkout en el _intake_log.jsonl del Drive.
     try:
         _append_evento_drive(destino, work, case_id=args.case_id,
-                             event="case_checkout", actor=user,
+                             event="case_checkout", actor=user, entorno=entorno,
                              details=rc.evento_checkout_details(
                                  user=user, timestamp=ts, nonce=nonce, maquina=maquina,
                                  ruta_local=str(local), n_ficheros=len(inv),
@@ -637,12 +657,12 @@ def cmd_checkout(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_checkin(args: argparse.Namespace) -> int:
+def cmd_checkin(args: argparse.Namespace, *, entorno: Entorno = ENTORNO_REAL) -> int:
     remote = args.remote or RCLONE_REMOTE_TL
     team = args.team_drive or TEAM_DRIVE_TL
     destino = remote_arg(remote, team, args.remote_path or "", args.folder_id)
     local = Path(args.local)
-    ts = now_iso_utc()
+    ts = entorno.ahora()
     tsc = ts_compacto(ts)
 
     print(f"[checkin] {args.case_id}")
@@ -650,11 +670,11 @@ def cmd_checkin(args: argparse.Namespace) -> int:
         print(f"  ✗ Ruta local inexistente: {local} (runbook §7.1: señalar nueva "
               f"ruta o cancelar checkout).")
         return 2
-    work = _tmp_dir()
+    work = entorno.work_dir()
 
     # CP1: inventarios L / D / B (validados por contenido).
     inv_local = inventario_local(local)
-    ls = run_rclone(build_lsjson_cmd(destino))
+    ls = run_rclone(build_lsjson_cmd(destino, binario=entorno.binario()), entorno=entorno)
     try:
         inv_drive = validar_inventario_texto(ls.stdout)
     except InventarioInvalido as exc:
@@ -708,7 +728,8 @@ def cmd_checkin(args: argparse.Namespace) -> int:
         Path(files_from).write_text("\n".join(a_copiar) + "\n", encoding="utf-8")
         copia = run_rclone(build_copy_cmd(
             origen=str(local), destino=destino, backup_dir=backup,
-            log_file=log_file, files_from=files_from))
+            log_file=log_file, files_from=files_from,
+            binario=entorno.binario()), entorno=entorno)
         copia_fallo = copia.returncode != 0
     else:
         # Nada que subir (solo preservar/conflicto/skip). Log mínimo para CP9.
@@ -733,7 +754,8 @@ def cmd_checkin(args: argparse.Namespace) -> int:
         if origen_borrado:
             mv = run_rclone(build_moveto_cmd(
                 origen=_remoto(destino, origen_borrado),
-                destino=f"{backup}/{origen_borrado}"))
+                destino=f"{backup}/{origen_borrado}",
+                binario=entorno.binario()), entorno=entorno)
             if mv.returncode != 0:
                 borrado_fallo = True
                 print(f"  ⚠ no se pudo mover a backup: {origen_borrado} (rc={mv.returncode})")
@@ -743,7 +765,8 @@ def cmd_checkin(args: argparse.Namespace) -> int:
     check_log = str(work / f"check_{tsc}.log")
     if a_copiar:
         chk = run_rclone(build_check_cmd(local=str(local), destino=destino,
-                                         log_file=check_log, files_from=files_from))
+                                         log_file=check_log, files_from=files_from,
+                                         binario=entorno.binario()), entorno=entorno)
         verificacion_limpia = chk.returncode == 0 and not borrado_fallo
     else:
         Path(check_log).write_text("sin ficheros que verificar\n", encoding="utf-8")
@@ -768,7 +791,7 @@ def cmd_checkin(args: argparse.Namespace) -> int:
         # CP7: si hay conflictos → estado 'conflicto' (el local SE CONSERVA);
         # el AMARILLO no libera el lock. El ROJO tampoco.
         if conflictos:
-            pull_c = _pull_caso_md(destino, work)
+            pull_c = _pull_caso_md(destino, work, entorno=entorno)
             if pull_c is None:
                 print("  ✗ Hay conflictos pero NO se pudo leer el _caso.md para marcar "
                       "el estado. No se escribe nada en el Drive (hacerlo con un "
@@ -779,7 +802,7 @@ def cmd_checkin(args: argparse.Namespace) -> int:
             fm, cuerpo_fm = pull_c
             rc.aplicar_estado(fm, "conflicto")
             try:
-                _push_caso_md(fm, destino, work, cuerpo=cuerpo_fm)
+                _push_caso_md(fm, destino, work, cuerpo=cuerpo_fm, entorno=entorno)
             except ProtocoloIOError as exc:
                 print(f"  ✗ Hay conflictos y NO se pudo marcar el estado en el Drive: "
                       f"{exc}\n  El caso sigue 'prestado' y el local se conserva. "
@@ -793,7 +816,7 @@ def cmd_checkin(args: argparse.Namespace) -> int:
         return 0 if semaforo == "amarillo" else 1
 
     # CP9: subir el AUDITLOG (último artefacto) a 07_AI cowork/merge_<TS>/.
-    evidencia_fallida = _upload_evidencia(destino, tsc, [log_file, check_log])
+    evidencia_fallida = _upload_evidencia(destino, tsc, [log_file, check_log], entorno=entorno)
     if evidencia_fallida:
         print(f"  ⚠ No se pudo subir la evidencia del merge al Drive "
               f"({', '.join(evidencia_fallida)}). El merge está hecho y verificado, "
@@ -803,9 +826,9 @@ def cmd_checkin(args: argparse.Namespace) -> int:
     # Evento forense case_checkin en el _intake_log.jsonl del Drive.
     try:
         _append_evento_drive(destino, work, case_id=args.case_id, event="case_checkin",
-                             actor=args.user or _usuario_por_defecto(),
+                             actor=args.user or entorno.usuario(), entorno=entorno,
                              details=rc.evento_checkin_details(
-                                 user=args.user or _usuario_por_defecto(), timestamp=ts,
+                                 user=args.user or entorno.usuario(), timestamp=ts,
                                  copiados=resumen[rc.ACCION_COPY_LOCAL],
                                  preservados=resumen[rc.ACCION_PRESERVE_DRIVE],
                                  borrados=resumen[rc.ACCION_DELETE_DRIVE],
@@ -822,7 +845,7 @@ def cmd_checkin(args: argparse.Namespace) -> int:
     # CP10: integrar la bandeja _pendiente_checkin/ (escrituras del pipeline
     # durante el préstamo) y vaciarla (§6).
     try:
-        integrados, colisiones = _integrar_bandeja(destino)
+        integrados, colisiones = _integrar_bandeja(destino, entorno=entorno)
     except ProtocoloIOError as exc:
         print(f"  ⚠ {exc}\n  El merge está subido, verificado y registrado, pero la "
               f"bandeja no se pudo integrar: NO se libera el lock. Re-ejecuta el "
@@ -833,7 +856,7 @@ def cmd_checkin(args: argparse.Namespace) -> int:
               + (f", {colisiones} como _reingesta_ (colisión, sin sobrescribir)" if colisiones else ""))
 
     # CP11: liberar el lock en el Drive (prestado → disponible).
-    pull_lib = _pull_caso_md(destino, work)
+    pull_lib = _pull_caso_md(destino, work, entorno=entorno)
     if pull_lib is None:
         print("  ⚠ El merge está subido y verificado y el evento registrado, pero NO "
               "se pudo leer el _caso.md para liberar el lock. El caso sigue 'prestado' "
@@ -845,7 +868,7 @@ def cmd_checkin(args: argparse.Namespace) -> int:
     rc.validar_transicion(estado_actual, "disponible")
     rc.aplicar_lock_liberado(fm, timestamp=ts, auditlog=nombre_auditlog(tsc))
     try:
-        _push_caso_md(fm, destino, work, cuerpo=cuerpo_lib)
+        _push_caso_md(fm, destino, work, cuerpo=cuerpo_lib, entorno=entorno)
     except ProtocoloIOError as exc:
         # Este era el camino peor: se imprimía «VERDE … lock liberado» y se devolvía
         # 0 con el caso todavía `prestado` en el Drive.
@@ -886,14 +909,14 @@ def _caso_md_remoto(destino: str) -> str:
     return _remoto(destino, "00_Input/_caso.md")
 
 
-def _integrar_bandeja(destino: str) -> tuple[int, int]:
+def _integrar_bandeja(destino: str, *, entorno: Entorno = ENTORNO_REAL) -> tuple[int, int]:
     """CP10: integra la bandeja `_pendiente_checkin/` del Drive y la vacía (§6).
 
     Mueve cada fichero de la bandeja a su ruta original (o a ``_reingesta_*`` si
     colisiona, sin sobrescribir), según ``planificar_integracion_bandeja``, y
     limpia los directorios vacíos. Devuelve ``(integrados, colisiones)``.
     """
-    ls = run_rclone(build_lsjson_cmd(destino))
+    ls = run_rclone(build_lsjson_cmd(destino, binario=entorno.binario()), entorno=entorno)
     try:
         inv = parse_inventario_lsjson(ls.stdout)
     except (json.JSONDecodeError, TypeError) as exc:
@@ -916,7 +939,8 @@ def _integrar_bandeja(destino: str) -> tuple[int, int]:
     for item in plan:
         mv = run_rclone(build_moveto_cmd(
             origen=_remoto(destino, item["origen"]),
-            destino=_remoto(destino, item["destino"])))
+            destino=_remoto(destino, item["destino"]),
+            binario=entorno.binario()), entorno=entorno)
         if mv.returncode == 0:
             colisiones += int(item["colision"])
             integrados += 1
@@ -924,12 +948,13 @@ def _integrar_bandeja(destino: str) -> tuple[int, int]:
             print(f"  ⚠ no se pudo integrar de la bandeja: {item['origen']} (rc={mv.returncode})")
     if plan:
         # Limpiar los directorios vacíos de la bandeja.
-        run_rclone([_rclone_bin(), "rmdirs", _remoto(destino, PENDIENTE_CHECKIN_SUBDIR),
-                    "--drive-skip-shortcuts"])
+        run_rclone([entorno.binario(), "rmdirs", _remoto(destino, PENDIENTE_CHECKIN_SUBDIR),
+                    "--drive-skip-shortcuts"], entorno=entorno)
     return (integrados, colisiones)
 
 
-def _upload_evidencia(destino: str, tsc: str, files: list[str]) -> list[str]:
+def _upload_evidencia(destino: str, tsc: str, files: list[str], *,
+                      entorno: Entorno = ENTORNO_REAL) -> list[str]:
     """Sube los logs de evidencia a `07_AI cowork/merge_<TS>/` (CP9).
 
     Devuelve los nombres que **no** se pudieron subir. La evidencia es
@@ -942,7 +967,8 @@ def _upload_evidencia(destino: str, tsc: str, files: list[str]) -> list[str]:
         p = Path(f)
         if p.exists():
             res = run_rclone(build_copyto_cmd(
-                origen=str(p), destino=_remoto(destino, f"07_AI cowork/merge_{tsc}/{p.name}")))
+                origen=str(p), destino=_remoto(destino, f"07_AI cowork/merge_{tsc}/{p.name}"),
+                binario=entorno.binario()), entorno=entorno)
             if res.returncode != 0:
                 fallidos.append(p.name)
     return fallidos
@@ -956,6 +982,7 @@ def _append_evento_drive(
     event: str,
     details: dict,
     actor: str | None = None,
+    entorno: Entorno = ENTORNO_REAL,
 ) -> None:
     """Añade un evento al `_intake_log.jsonl` del Drive por unión (pull→append→push).
 
@@ -964,8 +991,9 @@ def _append_evento_drive(
     ``{ts, actor, event, case_id, details}``, igual que ``intake_log``), push.
     """
     log_remoto = _remoto(destino, "00_Input/_intake_log.jsonl")
-    tmp_in = work_dir / f"_log_pull_{ts_compacto()}.jsonl"
-    res = run_rclone(build_copyto_cmd(origen=log_remoto, destino=str(tmp_in)))
+    tmp_in = work_dir / f"_log_pull_{ts_compacto(entorno.ahora())}.jsonl"
+    res = run_rclone(build_copyto_cmd(origen=log_remoto, destino=str(tmp_in),
+                                      binario=entorno.binario()), entorno=entorno)
     lineas: list[str] = []
     if res.returncode == 0 and tmp_in.exists():
         lineas = [ln for ln in tmp_in.read_text(encoding="utf-8", errors="replace").splitlines() if ln.strip()]
@@ -973,7 +1001,7 @@ def _append_evento_drive(
         # El pull falló. Antes se seguía con `lineas = []`, y el push de más abajo
         # REEMPLAZABA todo el historial forense del caso por esta única línea.
         # Un log ausente sí es legítimo (caso nuevo); un log ilegible, no.
-        existe = _remoto_existe(log_remoto)
+        existe = _remoto_existe(log_remoto, entorno=entorno)
         if existe is not False:
             raise ProtocoloIOError(
                 f"No se pudo leer el _intake_log.jsonl del Drive (rc={res.returncode}"
@@ -982,16 +1010,17 @@ def _append_evento_drive(
                   "Reintenta cuando el remote responda."
             )
     entry = {
-        "ts": now_iso_utc(),
-        "actor": actor or _usuario_por_defecto(),
+        "ts": entorno.ahora(),
+        "actor": actor or entorno.usuario(),
         "event": event,
         "case_id": case_id,
         "details": details,
     }
     lineas.append(json.dumps(entry, ensure_ascii=False))
-    tmp_out = work_dir / f"_log_push_{ts_compacto()}.jsonl"
+    tmp_out = work_dir / f"_log_push_{ts_compacto(entorno.ahora())}.jsonl"
     tmp_out.write_text("\n".join(lineas) + "\n", encoding="utf-8")
-    res_push = run_rclone(build_copyto_cmd(origen=str(tmp_out), destino=log_remoto))
+    res_push = run_rclone(build_copyto_cmd(origen=str(tmp_out), destino=log_remoto,
+                                           binario=entorno.binario()), entorno=entorno)
     if res_push.returncode != 0:
         # Simétrico al guard del pull: el retorno se ignoraba, así que el caller
         # continuaba —hasta liberar el lock— creyendo registrada una traza que no
@@ -1002,7 +1031,7 @@ def _append_evento_drive(
         )
 
 
-def _remoto_existe(ruta_remota: str) -> bool | None:
+def _remoto_existe(ruta_remota: str, *, entorno: Entorno = ENTORNO_REAL) -> bool | None:
     """¿Existe esa ruta en el remote? ``None`` si no se pudo determinar.
 
     Contrato verificado con **rclone v1.73.5 (Windows amd64)**: ``lsjson`` de una
@@ -1010,7 +1039,8 @@ def _remoto_existe(ruta_remota: str) -> bool | None:
     de una existente, exit 0. Cualquier otro código es indeterminación, y la
     indeterminación se trata como fallo (no como ausencia).
     """
-    res = run_rclone([_rclone_bin(), "lsjson", ruta_remota, "--drive-skip-shortcuts"])
+    res = run_rclone([entorno.binario(), "lsjson", ruta_remota, "--drive-skip-shortcuts"],
+                     entorno=entorno)
     if res.returncode == 0:
         return True
     if res.returncode == 3:
@@ -1018,7 +1048,8 @@ def _remoto_existe(ruta_remota: str) -> bool | None:
     return None
 
 
-def _pull_caso_md(destino: str, work_dir: Path) -> tuple[dict, str] | None:
+def _pull_caso_md(destino: str, work_dir: Path, *,
+                  entorno: Entorno = ENTORNO_REAL) -> tuple[dict, str] | None:
     """Descarga `_caso.md` del Drive → ``(frontmatter, cuerpo)``, o ``None`` si falla.
 
     ``None`` significa **no se pudo leer** (rclone falló, el fichero no está, o el
@@ -1033,8 +1064,9 @@ def _pull_caso_md(destino: str, work_dir: Path) -> tuple[dict, str] | None:
     """
     from core.utils import read_md
     work_dir.mkdir(parents=True, exist_ok=True)
-    tmp = work_dir / f"_caso_drive_{ts_compacto()}.md"
-    res = run_rclone(build_copyto_cmd(origen=_caso_md_remoto(destino), destino=str(tmp)))
+    tmp = work_dir / f"_caso_drive_{ts_compacto(entorno.ahora())}.md"
+    res = run_rclone(build_copyto_cmd(origen=_caso_md_remoto(destino), destino=str(tmp),
+                                      binario=entorno.binario()), entorno=entorno)
     if res.returncode != 0 or not tmp.exists():
         return None
     try:
@@ -1044,7 +1076,8 @@ def _pull_caso_md(destino: str, work_dir: Path) -> tuple[dict, str] | None:
     return (fm if isinstance(fm, dict) else {}), cuerpo
 
 
-def _push_caso_md(fm: dict, destino: str, work_dir: Path, *, cuerpo: str) -> None:
+def _push_caso_md(fm: dict, destino: str, work_dir: Path, *, cuerpo: str,
+                  entorno: Entorno = ENTORNO_REAL) -> None:
     """Escribe el `_caso.md` mutado y lo sube al Drive (copyto).
 
     ``cuerpo`` es **obligatorio** y viene del mismo pull que produjo ``fm``. Antes se
@@ -1053,9 +1086,10 @@ def _push_caso_md(fm: dict, destino: str, work_dir: Path, *, cuerpo: str) -> Non
     mismo directorio el elegido dependía del orden arbitrario del glob.
     """
     from core.utils import write_md
-    tmp = work_dir / f"_caso_push_{ts_compacto()}.md"
+    tmp = work_dir / f"_caso_push_{ts_compacto(entorno.ahora())}.md"
     write_md(tmp, fm, cuerpo or "# Caso\n")
-    res = run_rclone(build_copyto_cmd(origen=str(tmp), destino=_caso_md_remoto(destino)))
+    res = run_rclone(build_copyto_cmd(origen=str(tmp), destino=_caso_md_remoto(destino),
+                                      binario=entorno.binario()), entorno=entorno)
     if res.returncode != 0:
         # El retorno se ignoraba: un push fallido de la LIBERACIÓN dejaba el caso
         # `prestado` en el Drive mientras el checkin imprimía «lock liberado» y

@@ -1,14 +1,14 @@
 """Task 4 de la Fase 0: caracterización de `cmd_checkin`. Fija lo que HACE HOY.
 
-**Red de seguridad, no especificación.** Como la Task 3, se escribe ANTES de enhebrar el
-`Entorno` por los `cmd_*` (Task 1B) y con el frontal **sin tocar**: la inyección es por
-`monkeypatch` de `_tmp_dir` y `_usuario_por_defecto`, igual que los 16 tests de
-#156/#160. En la Task 1B cambiará el **montaje** a `entorno=` inyectado; **asertos,
-snapshots y trazas quedan idénticos**, y cualquier aserto que haya que cambiar es señal
-de que el refactor no fue neutral.
+**Red de seguridad, no especificación.** Se escribió ANTES de enhebrar el `Entorno`
+(Task 1B) y con el frontal sin tocar, inyectando por `monkeypatch` de módulo. **La
+Task 1B migró el montaje a `entorno=` inyectado y ni un solo aserto cambió**: lo único
+que se tocó dentro de un `assert` fue la línea de llamada (`cmd_checkin(args,
+entorno=…)`), no el valor comparado. Ese es el resultado que hacía de esta red la
+condición para permitirse el refactor.
 
-`cmd_checkin` no duerme ni usa nonce —eso es del checkout—, así que aquí no hacen falta
-`_SYNC_LAG_S` ni `_nonce`: el montaje se limita a lo que este comando sí consulta.
+`cmd_checkin` no duerme ni usa nonce —eso es del checkout—, así que el `Entorno` de
+prueba solo necesita fijar aquí el `work_dir` y el `usuario`.
 
 Este es el camino que decide **pérdida de datos**: propaga borrados moviendo al
 `--backup-dir`, veta grupos indivisibles, integra la bandeja del guard de escritura y
@@ -99,15 +99,23 @@ def montar_local(tmp_path: Path, contenido: dict[str, bytes], *,
 
 
 @pytest.fixture
-def cli(monkeypatch, tmp_path):
+def cli(tmp_path):
+    """El frontal, con su directorio de trabajo ya creado.
+
+    Desde la Task 1B **ya no hay `monkeypatch` de módulo**: la inyección entra por el
+    puerto `entorno=` (ver `_entorno`). El work_dir sigue siendo `tmp_path / "work"`
+    a propósito, para que los asertos que lo nombran no cambien de valor: lo que
+    cambia es el montaje, no lo que se comprueba.
+    """
     from scripts import repository_cli
-    work = tmp_path / "work"
-    work.mkdir()
-    # `_tmp_dir` es indispensable: su `mkdtemp` cae fuera de `tmp_path` y la barrera
-    # rechazaría el operando. Además deja el DELTA y los logs inspeccionables.
-    monkeypatch.setattr(repository_cli, "_tmp_dir", lambda: work)
-    monkeypatch.setattr(repository_cli, "_usuario_por_defecto", lambda: "tester")
+    (tmp_path / "work").mkdir(exist_ok=True)
     return repository_cli
+
+
+def _entorno(cli, fake, tmp_path):
+    """`Entorno` determinista con el doble dentro. `usuario` fija el actor por defecto."""
+    from tests._dobles import entorno_de_prueba
+    return entorno_de_prueba(cli, fake, work_dir=tmp_path / "work", usuario="tester")
 
 
 def args_checkin(local: Path, **kw) -> argparse.Namespace:
@@ -118,11 +126,11 @@ def args_checkin(local: Path, **kw) -> argparse.Namespace:
     return argparse.Namespace(**base)
 
 
-def _correr(cli, monkeypatch, tmp_path, drive, local, **kw):
-    """Monta el doble, lo inyecta en `run_rclone` y ejecuta el checkin."""
+def _correr(cli, tmp_path, drive, local, **kw):
+    """Monta el doble, lo inyecta por el `Entorno` y ejecuta el checkin."""
     fake = FakeRclone(drive, raiz_local=tmp_path)
-    monkeypatch.setattr(cli, "run_rclone", fake)
-    return cli.cmd_checkin(args_checkin(local, **kw)), fake
+    rc_ = cli.cmd_checkin(args_checkin(local, **kw), entorno=_entorno(cli, fake, tmp_path))
+    return rc_, fake
 
 
 def _subs(fake) -> list[str]:
@@ -172,14 +180,14 @@ def eventos_del_log(drive: dict[str, bytes]) -> list[dict]:
 # 1-2. Abortos antes de tocar nada
 # ---------------------------------------------------------------------------
 
-def test_ruta_local_inexistente_aborta_con_2_y_cero_comandos(cli, monkeypatch, tmp_path):
+def test_ruta_local_inexistente_aborta_con_2_y_cero_comandos(cli, tmp_path):
     """Sale ANTES de pedir el directorio de trabajo: ni un solo comando rclone."""
     drive = drive_de({"00_Input/doc.pdf": b"contenido"})
     antes = dict(drive)
     fake = FakeRclone(drive, raiz_local=tmp_path)
-    monkeypatch.setattr(cli, "run_rclone", fake)
 
-    rc_ = cli.cmd_checkin(args_checkin(tmp_path / "no-existe"))
+    rc_ = cli.cmd_checkin(args_checkin(tmp_path / "no-existe"),
+                          entorno=_entorno(cli, fake, tmp_path))
 
     assert rc_ == 2
     assert fake.cmds == [], "cero comandos: ni el inventario del Drive se pide"
@@ -192,7 +200,7 @@ def test_ruta_local_inexistente_aborta_con_2_y_cero_comandos(cli, monkeypatch, t
     ("[", "no es JSON válido"),
     ("[]", "Inventario vacío"),
 ], ids=["json_truncado", "inventario_vacio"])
-def test_inventario_de_drive_invalido_aborta_con_1(cli, monkeypatch, tmp_path, capsys,
+def test_inventario_de_drive_invalido_aborta_con_1(cli, tmp_path, capsys,
                                                    stdout, frase):
     """Hallazgo 3 del piloto: se valida por CONTENIDO, no por código de salida.
 
@@ -207,9 +215,8 @@ def test_inventario_de_drive_invalido_aborta_con_1(cli, monkeypatch, tmp_path, c
                          base={"00_Input/doc.pdf": b"contenido"})
     fake = FakeRclone(drive, raiz_local=tmp_path,
                       resultados={("lsjson", 1): (0, stdout, "")})
-    monkeypatch.setattr(cli, "run_rclone", fake)
 
-    rc_ = cli.cmd_checkin(args_checkin(local))
+    rc_ = cli.cmd_checkin(args_checkin(local), entorno=_entorno(cli, fake, tmp_path))
 
     assert rc_ == 1
     assert frase in capsys.readouterr().out
@@ -221,13 +228,13 @@ def test_inventario_de_drive_invalido_aborta_con_1(cli, monkeypatch, tmp_path, c
 # 3-4. Los dos frenos previos: dry-run y gate humano de los borrados
 # ---------------------------------------------------------------------------
 
-def test_dry_run_escribe_el_delta_en_el_work_dir_y_no_toca_nada(cli, monkeypatch, tmp_path):
+def test_dry_run_escribe_el_delta_en_el_work_dir_y_no_toca_nada(cli, tmp_path):
     drive = drive_de({"00_Input/doc.pdf": b"DRIVE viejo"})
     antes = dict(drive)
     local = montar_local(tmp_path, {"00_Input/doc.pdf": b"LOCAL nuevo"},
                          base={"00_Input/doc.pdf": b"DRIVE viejo"})
 
-    rc_, fake = _correr(cli, monkeypatch, tmp_path, drive, local, dry_run=True)
+    rc_, fake = _correr(cli, tmp_path, drive, local, dry_run=True)
 
     assert rc_ == 0
     delta = tmp_path / "work" / "DELTA_PREVIO.md"
@@ -239,13 +246,13 @@ def test_dry_run_escribe_el_delta_en_el_work_dir_y_no_toca_nada(cli, monkeypatch
     assert _subs(fake) == ["lsjson"]
 
 
-def test_borrados_sin_yes_devuelven_3_sin_tocar_el_drive(cli, monkeypatch, tmp_path, capsys):
+def test_borrados_sin_yes_devuelven_3_sin_tocar_el_drive(cli, tmp_path, capsys):
     """Gate humano del CP3: un borrado propuesto no se ejecuta sin `--yes`."""
     drive = drive_de({"00_Input/doc.pdf": b"contenido"})
     antes = dict(drive)
     local = montar_local(tmp_path, {}, base={"00_Input/doc.pdf": b"contenido"})
 
-    rc_, fake = _correr(cli, monkeypatch, tmp_path, drive, local, yes=False)
+    rc_, fake = _correr(cli, tmp_path, drive, local, yes=False)
 
     assert rc_ == 3
     assert drive == antes
@@ -260,7 +267,7 @@ def test_borrados_sin_yes_devuelven_3_sin_tocar_el_drive(cli, monkeypatch, tmp_p
 # 5-6. El plan por fichero se honra: la misma lista, y lo preservado no sube
 # ---------------------------------------------------------------------------
 
-def test_el_copy_y_el_check_usan_la_misma_lista_files_from(cli, monkeypatch, tmp_path):
+def test_el_copy_y_el_check_usan_la_misma_lista_files_from(cli, tmp_path):
     """Verificar una lista distinta de la subida daría un verde sin cobertura.
 
     Es lo que hace de `verificacion_limpia` una prueba y no un adorno: la lista es
@@ -271,7 +278,7 @@ def test_el_copy_y_el_check_usan_la_misma_lista_files_from(cli, monkeypatch, tmp
                                     "00_Input/nuevo.pdf": b"NUEVO"},
                          base={"00_Input/viejo.pdf": b"BASE"})
 
-    rc_, fake = _correr(cli, monkeypatch, tmp_path, drive, local)
+    rc_, fake = _correr(cli, tmp_path, drive, local)
 
     assert rc_ == 0
     copy, check = _unico(fake, "copy"), _unico(fake, "check")
@@ -280,7 +287,7 @@ def test_el_copy_y_el_check_usan_la_misma_lista_files_from(cli, monkeypatch, tmp
     assert "--one-way" in check, "el check ignora los extras del destino"
 
 
-def test_preserve_drive_no_se_sube(cli, monkeypatch, tmp_path):
+def test_preserve_drive_no_se_sube(cli, tmp_path):
     """Caso 3 de la tabla: solo cambió Drive. El local NO lo pisa.
 
     Con un `copy` en marcha a la vez, que es donde una copia en bloque haría el daño:
@@ -293,7 +300,7 @@ def test_preserve_drive_no_se_sube(cli, monkeypatch, tmp_path):
                          base={"00_Input/solo_drive.pdf": b"BASE",
                                "00_Input/solo_local.pdf": b"BASE"})
 
-    rc_, fake = _correr(cli, monkeypatch, tmp_path, drive, local)
+    rc_, fake = _correr(cli, tmp_path, drive, local)
 
     assert rc_ == 0
     assert drive["00_Input/solo_drive.pdf"] == b"DRIVE cambio", \
@@ -307,7 +314,7 @@ def test_preserve_drive_no_se_sube(cli, monkeypatch, tmp_path):
 # 7-8. Los dos amarillos que NO liberan el lock
 # ---------------------------------------------------------------------------
 
-def test_conflicto_escribe_el_estado_y_no_libera_el_lock(cli, monkeypatch, tmp_path, capsys):
+def test_conflicto_escribe_el_estado_y_no_libera_el_lock(cli, tmp_path, capsys):
     """CP7: estado `conflicto` en el Drive, local conservado, lock intacto.
 
     Se caracteriza también que el AMARILLO **sale con 0**: el frontal reserva el 1 para
@@ -318,7 +325,7 @@ def test_conflicto_escribe_el_estado_y_no_libera_el_lock(cli, monkeypatch, tmp_p
     local = montar_local(tmp_path, {"00_Input/doc.pdf": b"LOCAL"},
                          base={"00_Input/doc.pdf": b"BASE"})
 
-    rc_, fake = _correr(cli, monkeypatch, tmp_path, drive, local)
+    rc_, fake = _correr(cli, tmp_path, drive, local)
     salida = capsys.readouterr().out
 
     assert rc_ == 0
@@ -335,7 +342,7 @@ def test_conflicto_escribe_el_estado_y_no_libera_el_lock(cli, monkeypatch, tmp_p
         "inventario, pull del _caso.md y push del estado: nada más"
 
 
-def test_veto_de_grupo_no_libera_el_lock_ni_sube_al_grupo(cli, monkeypatch, tmp_path, capsys):
+def test_veto_de_grupo_no_libera_el_lock_ni_sube_al_grupo(cli, tmp_path, capsys):
     """N6c: sin conflictos, pero un grupo indivisible quedó descuadrado.
 
     El miembro que iba a subir se queda en tierra, y el checkin no escribe **nada** en
@@ -347,7 +354,7 @@ def test_veto_de_grupo_no_libera_el_lock_ni_sube_al_grupo(cli, monkeypatch, tmp_
     local = montar_local(tmp_path, {MAPA: b"LOCAL mapa", OCURRENCIAS: b"BASE ocurrencias"},
                          base={MAPA: b"BASE mapa", OCURRENCIAS: b"BASE ocurrencias"})
 
-    rc_, fake = _correr(cli, monkeypatch, tmp_path, drive, local)
+    rc_, fake = _correr(cli, tmp_path, drive, local)
     salida = capsys.readouterr().out
 
     assert rc_ == 0
@@ -362,7 +369,7 @@ def test_veto_de_grupo_no_libera_el_lock_ni_sube_al_grupo(cli, monkeypatch, tmp_
 # 9. El rojo: un copy fallido no puede propagar borrados
 # ---------------------------------------------------------------------------
 
-def test_copy_fallido_no_propaga_los_borrados(cli, monkeypatch, tmp_path, capsys):
+def test_copy_fallido_no_propaga_los_borrados(cli, tmp_path, capsys):
     """Borrar sobre un merge incompleto es la pérdida de datos que no se recupera.
 
     El fallo se guioniza con `resultados` y no con `fallos_sub`: este último aplana todo
@@ -373,9 +380,8 @@ def test_copy_fallido_no_propaga_los_borrados(cli, monkeypatch, tmp_path, capsys
                          base={"00_Input/borrado.pdf": b"sigue aqui"})
     fake = FakeRclone(drive, raiz_local=tmp_path,
                       resultados={("copy", 1): (1, "", "boom")})
-    monkeypatch.setattr(cli, "run_rclone", fake)
 
-    rc_ = cli.cmd_checkin(args_checkin(local))
+    rc_ = cli.cmd_checkin(args_checkin(local), entorno=_entorno(cli, fake, tmp_path))
     salida = capsys.readouterr().out
 
     assert rc_ == 1
@@ -392,7 +398,7 @@ def test_copy_fallido_no_propaga_los_borrados(cli, monkeypatch, tmp_path, capsys
 # 10. El camino verde, con su orden dentro
 # ---------------------------------------------------------------------------
 
-def test_camino_verde_libera_el_lock_con_ultimo_checkin(cli, monkeypatch, tmp_path, capsys):
+def test_camino_verde_libera_el_lock_con_ultimo_checkin(cli, tmp_path, capsys):
     """Cierre completo del ciclo, y el ORDEN de las operaciones como tramo de su traza.
 
     El orden se fija **dentro** de este test, marcado `# contrato temporal (A-2)`, para
@@ -402,7 +408,7 @@ def test_camino_verde_libera_el_lock_con_ultimo_checkin(cli, monkeypatch, tmp_pa
     local = montar_local(tmp_path, {"00_Input/doc.pdf": b"LOCAL"},
                          base={"00_Input/doc.pdf": b"BASE"})
 
-    rc_, fake = _correr(cli, monkeypatch, tmp_path, drive, local)
+    rc_, fake = _correr(cli, tmp_path, drive, local)
     salida = capsys.readouterr().out
 
     assert rc_ == 0
@@ -427,7 +433,7 @@ def test_camino_verde_libera_el_lock_con_ultimo_checkin(cli, monkeypatch, tmp_pa
     assert "AUDITLOG subido, case_checkin registrado, lock liberado" in salida
 
 
-def test_el_evento_case_checkin_lleva_el_resumen_del_plan(cli, monkeypatch, tmp_path):
+def test_el_evento_case_checkin_lleva_el_resumen_del_plan(cli, tmp_path):
     """El evento forense se AÑADE al log y resume el plan por tipo de acción."""
     drive = drive_de({"00_Input/preservado.pdf": b"DRIVE cambio",
                       "00_Input/borrado.pdf": b"a la papelera"})
@@ -436,7 +442,7 @@ def test_el_evento_case_checkin_lleva_el_resumen_del_plan(cli, monkeypatch, tmp_
                          base={"00_Input/preservado.pdf": b"BASE",
                                "00_Input/borrado.pdf": b"a la papelera"})
 
-    rc_, fake = _correr(cli, monkeypatch, tmp_path, drive, local)
+    rc_, fake = _correr(cli, tmp_path, drive, local)
 
     assert rc_ == 0
     eventos = eventos_del_log(drive)
@@ -456,7 +462,7 @@ def test_el_evento_case_checkin_lleva_el_resumen_del_plan(cli, monkeypatch, tmp_
     assert d["conflictos"] == 0
 
 
-def test_el_borrado_va_al_backup_dir_no_a_la_nada(cli, monkeypatch, tmp_path):
+def test_el_borrado_va_al_backup_dir_no_a_la_nada(cli, tmp_path):
     """CP6: `rclone copy` no borra; el borrado se **mueve** al `--backup-dir` (D2).
 
     Es lo que hace el borrado recuperable, así que la caracterización tiene que mirar
@@ -466,7 +472,7 @@ def test_el_borrado_va_al_backup_dir_no_a_la_nada(cli, monkeypatch, tmp_path):
     local = montar_local(tmp_path, {"00_Input/nuevo.pdf": b"NUEVO"},
                          base={"00_Input/borrado.pdf": b"a la papelera"})
 
-    rc_, fake = _correr(cli, monkeypatch, tmp_path, drive, local)
+    rc_, fake = _correr(cli, tmp_path, drive, local)
 
     assert rc_ == 0
     assert "00_Input/borrado.pdf" not in drive
@@ -484,14 +490,14 @@ def test_el_borrado_va_al_backup_dir_no_a_la_nada(cli, monkeypatch, tmp_path):
 # 11-13. La bandeja del guard de escritura (CP10)
 # ---------------------------------------------------------------------------
 
-def test_la_bandeja_se_integra_y_se_vacia(cli, monkeypatch, tmp_path, capsys):
+def test_la_bandeja_se_integra_y_se_vacia(cli, tmp_path, capsys):
     """Lo que el pipeline escribió durante el préstamo vuelve a su ruta original."""
     bandeja = "_pendiente_checkin/pipeline/01_Procesado/informe.md"
     drive = drive_de({"00_Input/doc.pdf": b"igual", bandeja: b"escrito en el prestamo"})
     local = montar_local(tmp_path, {"00_Input/doc.pdf": b"igual"},
                          base={"00_Input/doc.pdf": b"igual"})
 
-    rc_, fake = _correr(cli, monkeypatch, tmp_path, drive, local)
+    rc_, fake = _correr(cli, tmp_path, drive, local)
 
     assert rc_ == 0
     assert drive["01_Procesado/informe.md"] == b"escrito en el prestamo"
@@ -501,7 +507,7 @@ def test_la_bandeja_se_integra_y_se_vacia(cli, monkeypatch, tmp_path, capsys):
     assert meta_de(drive["00_Input/_caso.md"], tmp_path)["estado_repositorio"] == "disponible"
 
 
-def test_colision_en_la_bandeja_va_a_reingesta_sin_sobrescribir(cli, monkeypatch, tmp_path,
+def test_colision_en_la_bandeja_va_a_reingesta_sin_sobrescribir(cli, tmp_path,
                                                                 capsys):
     """La bandeja NUNCA pisa lo recién mergeado: se renombra a `_reingesta_*`.
 
@@ -514,7 +520,7 @@ def test_colision_en_la_bandeja_va_a_reingesta_sin_sobrescribir(cli, monkeypatch
     local = montar_local(tmp_path, {"00_Input/doc.pdf": b"el mergeado"},
                          base={"00_Input/doc.pdf": b"el mergeado"})
 
-    rc_, fake = _correr(cli, monkeypatch, tmp_path, drive, local)
+    rc_, fake = _correr(cli, tmp_path, drive, local)
 
     assert rc_ == 0
     assert drive["00_Input/doc.pdf"] == b"el mergeado", "no se pisa lo mergeado"
@@ -524,7 +530,7 @@ def test_colision_en_la_bandeja_va_a_reingesta_sin_sobrescribir(cli, monkeypatch
 
 
 def test_bandeja_ilegible_no_libera_el_lock_ni_deja_contenido_integrado(
-        cli, monkeypatch, tmp_path, capsys):
+        cli, tmp_path, capsys):
     """Caracterización VERDE del 8º defecto: un listado ilegible no es una bandeja vacía.
 
     Lo cerró el PR #160, así que aquí no hay `xfail`. Complementa a
@@ -538,9 +544,8 @@ def test_bandeja_ilegible_no_libera_el_lock_ni_deja_contenido_integrado(
                          base={"00_Input/doc.pdf": b"igual"})
     # El 1er lsjson es el inventario del CP1; el 2º, el de la bandeja (CP10).
     fake = FakeRclone(drive, raiz_local=tmp_path, fallos_sub={"lsjson": [2]})
-    monkeypatch.setattr(cli, "run_rclone", fake)
 
-    rc_ = cli.cmd_checkin(args_checkin(local))
+    rc_ = cli.cmd_checkin(args_checkin(local), entorno=_entorno(cli, fake, tmp_path))
 
     assert rc_ == 4
     assert _subs(fake).count("lsjson") == 2, "falló el listado de la bandeja, no el CP1"
@@ -556,13 +561,12 @@ def test_bandeja_ilegible_no_libera_el_lock_ni_deja_contenido_integrado(
 # El entrypoint público
 # ---------------------------------------------------------------------------
 
-def test_smoke_del_parser_publico(cli, monkeypatch, tmp_path):
+def test_smoke_del_parser_publico(cli, tmp_path):
     """Sin esto, el `Namespace` a mano podría divergir del que produce la CLI real."""
     drive = drive_de({"00_Input/doc.pdf": b"BASE"})
     local = montar_local(tmp_path, {"00_Input/doc.pdf": b"LOCAL"},
                          base={"00_Input/doc.pdf": b"BASE"})
     fake = FakeRclone(drive, raiz_local=tmp_path)
-    monkeypatch.setattr(cli, "run_rclone", fake)
 
     args = cli.build_parser().parse_args([
         "checkin", CASE_ID, "--local", str(local), "--remote-path", "",
@@ -570,6 +574,6 @@ def test_smoke_del_parser_publico(cli, monkeypatch, tmp_path):
         "--wcode", "W-TEST99", "--yes",
     ])
 
-    assert cli.cmd_checkin(args) == 0
+    assert cli.cmd_checkin(args, entorno=_entorno(cli, fake, tmp_path)) == 0
     assert meta_de(drive["00_Input/_caso.md"], tmp_path)["estado_repositorio"] == "disponible"
     assert drive["00_Input/doc.pdf"] == b"LOCAL"

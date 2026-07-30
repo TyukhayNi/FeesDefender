@@ -18,7 +18,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 |---|------|--------|-------------------|------|
 | 1 | [OCR ciego bajo el sello (`MEJORAS #90`)](#siguiente-ocr-ciego-texto-perdido-bajo-el-sello-de-firma-mejoras-90) | **motor arreglado; queda ejecutar (e)** | (a)+(b) construidos y verdes: la causa ya no está viva para casos NUEVOS. (d) decidido 2026-07-27 = `D1`; falta ejecutarla sobre los 17 candidatos sin medir | bajo |
 | 2 | [Infra C — art. 156 LEC](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado (quick win) | bajo |
-| 3 | [Arquitectura dual del expediente activo](#siguiente-dual-workspace-arquitectura-dual-del-expediente-activo-localdrive) | spec **rev. 2** + plan Fase 0 **rev. 3** mergeados (#153/#154/#161); **dos guards** adelantados (#156 lectura, #160 escritura) | ⛔ **DECIDIDO 2026-07-29: 3ª revisión adversarial de Codex sobre la rev. 3, mañana 2026-07-30.** No se implementa nada hasta adjudicarla. **Absorbe Infra B (scratch)**: `local_scratch`, `--case-dir` y `promover` son piezas de aquí | alto (6 fases + una Fase 0 en 2 PRs) |
+| 3 | [Arquitectura dual del expediente activo](#siguiente-dual-workspace-arquitectura-dual-del-expediente-activo-localdrive) | spec **rev. 2** + plan Fase 0 **rev. 4**; **Fase 0 ✅ CERRADA** (#170 PR-A + #174 PR-B) y los **dos guards** adelantados (#156 lectura, #160 escritura) | Gate de revisión **consumido** (3 pasadas adjudicadas, sin 4ª). **Siguiente = Fase 1**, cuyo plan **no ha pasado revisión adversarial**. Los **7 defectos del frontal siguen vivos**: reproducidos en `xfail`, se arreglan en la Fase 2. **Absorbe Infra B (scratch)**: `local_scratch`, `--case-dir` y `promover` son piezas de aquí | alto (5 fases restantes; la Fase 0 ya hecha) |
 | 4 | [MCP sudespacho F1](#siguiente-mcp-sudespacho-mcp-sudespacho-crm-del-despacho--f1-lectura-spec-hecho-plan-pendiente) | spec lista | gates de despliegue | alto |
 | 5 | [Drive-disco: pasos 5-7 + Claude Code](#siguiente-mcp-drive-disco-pasos-5-7-diferidos) | ✅ desplegado | resto pasivo: check Modo 1 en caso real | medio |
 | 6 | [abrir-caso F3-judicial](#abrir-caso--f1--f2a--f3-ac-mergeadas-f2b-aparcada-f3-judicial-pendiente) | disparador confirmado 2026-07-22 | plan concreto listo (4 piezas, ver bloque) | medio |
@@ -530,13 +530,22 @@ caso: durante un checkout, un proceso escribe en el local y otro en Drive.
       ruidoso que no bloquea. Incluyó el **8º defecto**: `_integrar_bandeja` devolvía `(0,0)` con un
       `lsjson` ilegible y el checkin liberaba el lock creyendo la bandeja vacía. 16 tests de
       orquestación en total.
-- [ ] **Fase 0 — banco de pruebas del frontal.** Barrera anti-rclone-real + `Entorno` que inyecta
-      las **cinco** fuentes de no-determinismo (rclone, reloj, hostname, directorio de trabajo,
-      espera) + doble de Drive fijado a **rclone v1.73.5** con fixtures grabadas y **hook de
-      mutación** para interleaving determinista + caracterización de `cmd_checkout`/`cmd_checkin` +
-      matriz de fallos por call-site + los 7 defectos reproducidos en
-      `xfail(strict=True, raises=AssertionError)`. Sin esto los criterios de salida de las Fases 2-3
-      son indemostrables.
+- [x] **Fase 0 — banco de pruebas del frontal.** ✅ **PR #170** (`4dba135`, PR-A: barrera + `Entorno`
+      + doble + caracterización) y **PR #174** (PR-B: costura, matriz de fallos, los 7 `xfail` y
+      gobernanza). Barrera anti-rclone-real + `Entorno` que inyecta las **ocho** fuentes de
+      no-determinismo (rclone, reloj, hostname, directorio de trabajo, espera, nonce, usuario y
+      binario — eran cinco en la rev. 2 del plan y se contaron mal) + doble de Drive fijado a
+      **rclone v1.73.5** con fixtures grabadas y **hook de mutación** para interleaving determinista
+      + caracterización de `cmd_checkout`/`cmd_checkin` + matriz de fallos por call-site + los 7
+      defectos reproducidos en `xfail(strict=True, raises=AssertionError)`. Sin esto los criterios de
+      salida de las Fases 2-3 eran indemostrables.
+      **Lo que la fase dejó medido y no hay que volver a medir:** el camino verde del checkin son
+      **diez** operaciones rclone y el del checkout **ocho, no siete** (la octava es la sonda
+      `_remoto_existe` cuando el `_intake_log.jsonl` aún no existe); el **AMARILLO sale con `0`**, no
+      con 1, así que todo aserto de código de salida va emparejado con el estado del lock; y el
+      **ROJO de orquestación es inalcanzable** (se retorna antes de clasificar el semáforo).
+      **Los siete defectos siguen vivos**: están reproducidos, no arreglados, y su arreglo no es de
+      esta fase.
       **Plan ejecutable rev. 4 — EJECUTABLE, sin más gate (8 tareas en DOS PRs):**
       `docs/superpowers/plans/2026-07-29-dual-workspace-fase0-banco-pruebas.md`. Sustituye a las
       Tareas 1-3 del plan combinado, supersedidas. **PR-A** = barrera + `Entorno` + doble +

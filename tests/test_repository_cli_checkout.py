@@ -1,12 +1,12 @@
 """Task 3 de la Fase 0: caracterización de `cmd_checkout`. Fija lo que HACE HOY.
 
-**Red de seguridad, no especificación.** Estos tests se escriben ANTES de enhebrar el
-`Entorno` por los `cmd_*` (Task 1B), y con el frontal **sin tocar**: la inyección es por
-`monkeypatch` de `run_rclone`, `_tmp_dir`, `_SYNC_LAG_S`, `_nonce` y
-`_usuario_por_defecto`, exactamente como hacen los 16 tests de #156/#160. En la Task 1B
-cambiará el **montaje** a `entorno=` inyectado; **asertos, snapshots y trazas quedan
-idénticos**, y cualquier aserto que haya que cambiar es señal de que el refactor no fue
-neutral.
+**Red de seguridad, no especificación.** Se escribieron ANTES de enhebrar el `Entorno`
+por los `cmd_*` (Task 1B) y con el frontal sin tocar, inyectando por `monkeypatch` de
+módulo. **La Task 1B migró el montaje a `entorno=` y ni un solo aserto cambió**: lo único
+tocado dentro de un `assert` fue la línea de llamada del smoke test. Para que fuera así
+hubo que pasar al `Entorno` de prueba el `nonce` y el `usuario` **explícitos** —sus
+valores por defecto son otros— y encaminar la espera del sync lag por `esperas=`, que es
+lo que el test de la espera ya anticipaba en su docstring.
 
 **Si algo de aquí falla, es un bug vivo que no conocíamos: para y repórtalo.** No se
 arregla nada en la Fase 0.
@@ -44,15 +44,25 @@ def meta_de(data: bytes, tmp_path: Path) -> dict:
 
 
 @pytest.fixture
-def cli(monkeypatch, tmp_path):
+def cli(tmp_path):
+    """El frontal, con su directorio de trabajo ya creado.
+
+    Desde la Task 1B la inyección entra por `entorno=` y no por `monkeypatch` de módulo.
+    El `Entorno` de prueba recibe **explícitamente** el nonce y el usuario que antes
+    fijaba el `monkeypatch`: sus valores por defecto son otros, y aceptarlos habría
+    obligado a reescribir asertos —justo la señal que el plan manda tratar como refactor
+    no neutral—. Ya no hace falta tocar `_SYNC_LAG_S`: el `esperar` del `Entorno` no
+    duerme.
+    """
     from scripts import repository_cli
-    work = tmp_path / "work"
-    work.mkdir()
-    monkeypatch.setattr(repository_cli, "_SYNC_LAG_S", 0)
-    monkeypatch.setattr(repository_cli, "_tmp_dir", lambda: work)
-    monkeypatch.setattr(repository_cli, "_nonce", lambda: NONCE_FIJO)
-    monkeypatch.setattr(repository_cli, "_usuario_por_defecto", lambda: "tester")
+    (tmp_path / "work").mkdir(exist_ok=True)
     return repository_cli
+
+
+def _entorno(cli, fake, tmp_path, *, esperas=None):
+    from tests._dobles import entorno_de_prueba
+    return entorno_de_prueba(cli, fake, work_dir=tmp_path / "work", esperas=esperas,
+                             nonce=NONCE_FIJO, usuario="tester")
 
 
 def args_checkout(local: Path, **kw) -> argparse.Namespace:
@@ -63,12 +73,11 @@ def args_checkout(local: Path, **kw) -> argparse.Namespace:
     return argparse.Namespace(**base)
 
 
-def _correr(cli, monkeypatch, tmp_path, drive, **kw):
-    """Monta el doble, lo inyecta en `run_rclone` y ejecuta el checkout."""
+def _correr(cli, tmp_path, drive, **kw):
+    """Monta el doble, lo inyecta por el `Entorno` y ejecuta el checkout."""
     local = tmp_path / "local"
     fake = FakeRclone(drive, raiz_local=tmp_path)
-    monkeypatch.setattr(cli, "run_rclone", fake)
-    rc_ = cli.cmd_checkout(args_checkout(local, **kw))
+    rc_ = cli.cmd_checkout(args_checkout(local, **kw), entorno=_entorno(cli, fake, tmp_path))
     return rc_, fake, local
 
 
@@ -80,7 +89,7 @@ def _subs(fake) -> list[str]:
 # Abortos sin efectos
 # ---------------------------------------------------------------------------
 
-def test_caso_prestado_aborta_con_2_sin_tocar_drive_ni_local(cli, monkeypatch, tmp_path):
+def test_caso_prestado_aborta_con_2_sin_tocar_drive_ni_local(cli, tmp_path):
     """Death snapshot de las DOS caras, no solo «no hay copy».
 
     Comprobar únicamente la ausencia del `copy` dejaría pasar una escritura del lock o
@@ -90,7 +99,7 @@ def test_caso_prestado_aborta_con_2_sin_tocar_drive_ni_local(cli, monkeypatch, t
              "00_Input/doc.pdf": b"contenido"}
     antes = dict(drive)
 
-    rc_, fake, local = _correr(cli, monkeypatch, tmp_path, drive)
+    rc_, fake, local = _correr(cli, tmp_path, drive)
 
     assert rc_ == 2
     assert drive == antes, "el Drive no se toca al encontrar el caso prestado"
@@ -98,22 +107,22 @@ def test_caso_prestado_aborta_con_2_sin_tocar_drive_ni_local(cli, monkeypatch, t
     assert _subs(fake) == ["copyto"], "solo el pull del CP0"
 
 
-def test_caso_en_conflicto_aborta_con_2(cli, monkeypatch, tmp_path):
+def test_caso_en_conflicto_aborta_con_2(cli, tmp_path):
     drive = {"00_Input/_caso.md": caso_md("conflicto"), "00_Input/doc.pdf": b"x"}
     antes = dict(drive)
 
-    rc_, fake, local = _correr(cli, monkeypatch, tmp_path, drive)
+    rc_, fake, local = _correr(cli, tmp_path, drive)
 
     assert rc_ == 2
     assert drive == antes
     assert "copy" not in _subs(fake)
 
 
-def test_dry_run_no_escribe_nada(cli, monkeypatch, tmp_path):
+def test_dry_run_no_escribe_nada(cli, tmp_path):
     drive = {"00_Input/_caso.md": caso_md(), "00_Input/doc.pdf": b"x"}
     antes = dict(drive)
 
-    rc_, fake, local = _correr(cli, monkeypatch, tmp_path, drive, dry_run=True)
+    rc_, fake, local = _correr(cli, tmp_path, drive, dry_run=True)
 
     assert rc_ == 0
     assert drive == antes, "un dry-run que escribe el lock sería el peor de los bugs"
@@ -121,7 +130,7 @@ def test_dry_run_no_escribe_nada(cli, monkeypatch, tmp_path):
     assert _subs(fake) == ["copyto"]
 
 
-def test_nonce_ajeno_tras_el_sync_lag_aborta_sin_copiar(cli, monkeypatch, tmp_path):
+def test_nonce_ajeno_tras_el_sync_lag_aborta_sin_copiar(cli, tmp_path):
     """Otro checkout ganó la carrera: se abandona sin copiar y sin pisar su lock."""
     drive = {"00_Input/_caso.md": caso_md(), "00_Input/doc.pdf": b"x"}
     fake = FakeRclone(drive, raiz_local=tmp_path)
@@ -129,10 +138,9 @@ def test_nonce_ajeno_tras_el_sync_lag_aborta_sin_copiar(cli, monkeypatch, tmp_pa
     fake.armar(2, lambda n, cmd, d: d.escribir(
         "00_Input/_caso.md",
         caso_md("prestado", checkout_user="otro", checkout_nonce="9999999999999999")))
-    monkeypatch.setattr(cli, "run_rclone", fake)
     local = tmp_path / "local"
 
-    rc_ = cli.cmd_checkout(args_checkout(local))
+    rc_ = cli.cmd_checkout(args_checkout(local), entorno=_entorno(cli, fake, tmp_path))
 
     assert rc_ == 2
     assert "copy" not in _subs(fake), "no se copia sin ganar la carrera del lock"
@@ -144,7 +152,7 @@ def test_nonce_ajeno_tras_el_sync_lag_aborta_sin_copiar(cli, monkeypatch, tmp_pa
 # Camino feliz
 # ---------------------------------------------------------------------------
 
-def test_camino_feliz_orden_relativo_y_lock_completo(cli, monkeypatch, tmp_path):
+def test_camino_feliz_orden_relativo_y_lock_completo(cli, tmp_path):
     """Orden de operaciones y contenido del lock, en un solo sitio.
 
     El orden se fija **dentro** del test del camino feliz, como tramo de su traza, para
@@ -153,7 +161,7 @@ def test_camino_feliz_orden_relativo_y_lock_completo(cli, monkeypatch, tmp_path)
     drive = {"00_Input/_caso.md": caso_md(), "00_Input/doc.pdf": b"contenido",
              "90_Notas personales/n.md": b"privado"}
 
-    rc_, fake, local = _correr(cli, monkeypatch, tmp_path, drive)
+    rc_, fake, local = _correr(cli, tmp_path, drive)
 
     assert rc_ == 0
     # contrato temporal (A-2): pull CP0 → push lock → pull verificación → copy →
@@ -179,7 +187,7 @@ def test_camino_feliz_orden_relativo_y_lock_completo(cli, monkeypatch, tmp_path)
     assert meta["id_go"] == "W-TEST99", "los metadatos canónicos sobreviven al lock"
 
 
-def test_el_protocolo_no_baja_a_local(cli, monkeypatch, tmp_path):
+def test_el_protocolo_no_baja_a_local(cli, tmp_path):
     """`_caso.md` y `_intake_log.jsonl` son proyección protocolaria, no contenido.
 
     Es el fichero cuya materialización dispara `MEJORAS #96`, así que la Fase 2 se
@@ -190,7 +198,7 @@ def test_el_protocolo_no_baja_a_local(cli, monkeypatch, tmp_path):
              "00_Input/doc.pdf": b"contenido",
              "90_Notas personales/n.md": b"privado"}
 
-    rc_, fake, local = _correr(cli, monkeypatch, tmp_path, drive)
+    rc_, fake, local = _correr(cli, tmp_path, drive)
 
     assert rc_ == 0
     assert (local / "00_Input/doc.pdf").exists()
@@ -199,10 +207,10 @@ def test_el_protocolo_no_baja_a_local(cli, monkeypatch, tmp_path):
     assert not (local / "90_Notas personales").exists()
 
 
-def test_el_manifest_se_genera_en_local_y_se_sube(cli, monkeypatch, tmp_path):
+def test_el_manifest_se_genera_en_local_y_se_sube(cli, tmp_path):
     drive = {"00_Input/_caso.md": caso_md(), "00_Input/doc.pdf": b"contenido"}
 
-    rc_, fake, local = _correr(cli, monkeypatch, tmp_path, drive)
+    rc_, fake, local = _correr(cli, tmp_path, drive)
 
     assert rc_ == 0
     mf = local / "MANIFEST_CHECKOUT.json"
@@ -213,7 +221,7 @@ def test_el_manifest_se_genera_en_local_y_se_sube(cli, monkeypatch, tmp_path):
     assert "MANIFEST_CHECKOUT.json" in drive, "y se sube como redundancia del §3.3"
 
 
-def test_el_evento_lleva_los_campos_del_contrato(cli, monkeypatch, tmp_path):
+def test_el_evento_lleva_los_campos_del_contrato(cli, tmp_path):
     """Incluye `ruta_local`, que la SPEC §6.1 **retira en la Fase 2**.
 
     Este es el test que habrá que actualizar entonces: hoy caracteriza que se publica,
@@ -221,7 +229,7 @@ def test_el_evento_lleva_los_campos_del_contrato(cli, monkeypatch, tmp_path):
     """
     drive = {"00_Input/_caso.md": caso_md(), "00_Input/doc.pdf": b"contenido"}
 
-    rc_, fake, local = _correr(cli, monkeypatch, tmp_path, drive)
+    rc_, fake, local = _correr(cli, tmp_path, drive)
 
     assert rc_ == 0
     lineas = drive["00_Input/_intake_log.jsonl"].decode("utf-8").strip().splitlines()
@@ -243,13 +251,13 @@ def test_esperar_el_sync_lag_ocurre_una_vez_y_no_duerme(cli, monkeypatch, tmp_pa
     `time.sleep`. En la Task 1B esto pasa a `entorno.esperar` y el **montaje** cambia;
     el aserto —una espera, con el valor del módulo— no.
     """
-    import time as _time
     dormido: list[float] = []
     monkeypatch.setattr(cli, "_SYNC_LAG_S", 4)
-    monkeypatch.setattr(_time, "sleep", dormido.append)
     drive = {"00_Input/_caso.md": caso_md(), "00_Input/doc.pdf": b"x"}
+    fake = FakeRclone(drive, raiz_local=tmp_path)
 
-    rc_, fake, local = _correr(cli, monkeypatch, tmp_path, drive)
+    rc_ = cli.cmd_checkout(args_checkout(tmp_path / "local"),
+                           entorno=_entorno(cli, fake, tmp_path, esperas=dormido))
 
     assert rc_ == 0
     assert dormido == [4], "una sola espera, con el sync lag del módulo"
@@ -259,14 +267,13 @@ def test_esperar_el_sync_lag_ocurre_una_vez_y_no_duerme(cli, monkeypatch, tmp_pa
 # Fallo de la copia
 # ---------------------------------------------------------------------------
 
-def test_copy_fallido_revierte_el_lock_y_devuelve_1(cli, monkeypatch, tmp_path):
+def test_copy_fallido_revierte_el_lock_y_devuelve_1(cli, tmp_path):
     drive = {"00_Input/_caso.md": caso_md(), "00_Input/doc.pdf": b"contenido"}
     fake = FakeRclone(drive, raiz_local=tmp_path,
                       resultados={("copy", 1): (1, "", "boom")})
-    monkeypatch.setattr(cli, "run_rclone", fake)
     local = tmp_path / "local"
 
-    rc_ = cli.cmd_checkout(args_checkout(local))
+    rc_ = cli.cmd_checkout(args_checkout(local), entorno=_entorno(cli, fake, tmp_path))
 
     assert rc_ == 1
     meta = meta_de(drive["00_Input/_caso.md"], tmp_path)
@@ -279,11 +286,10 @@ def test_copy_fallido_revierte_el_lock_y_devuelve_1(cli, monkeypatch, tmp_path):
 # El entrypoint público
 # ---------------------------------------------------------------------------
 
-def test_smoke_del_parser_publico(cli, monkeypatch, tmp_path):
+def test_smoke_del_parser_publico(cli, tmp_path):
     """Sin esto, el `Namespace` a mano podría divergir del que produce la CLI real."""
     drive = {"00_Input/_caso.md": caso_md(), "00_Input/doc.pdf": b"x"}
     fake = FakeRclone(drive, raiz_local=tmp_path)
-    monkeypatch.setattr(cli, "run_rclone", fake)
     local = tmp_path / "local"
 
     args = cli.build_parser().parse_args([
@@ -292,5 +298,5 @@ def test_smoke_del_parser_publico(cli, monkeypatch, tmp_path):
         "--remote", "r", "--team-drive", "T", "--user", "tester",
     ])
 
-    assert cli.cmd_checkout(args) == 0
+    assert cli.cmd_checkout(args, entorno=_entorno(cli, fake, tmp_path)) == 0
     assert (local / "00_Input/doc.pdf").exists()
