@@ -55,10 +55,28 @@ def _guardar_estado(case_dir: Path, shas: set[str]) -> None:
 
 
 def _cobertura_previa(case_dir: Path) -> list[sm.DocCobertura]:
-    """Cobertura estructurada persistida (`_cobertura.json`); `[]` si no hay."""
-    f = sm._sala_maquina_dir(case_dir) / _COBERTURA
+    """Cobertura estructurada persistida (`_cobertura.json`).
+
+    Si falta —caso procesado antes de que ese fichero existiera (#84)— se reconstruye
+    del frontmatter de `03_MD/` en vez de devolver `[]`: con `[]`, la fusión de una
+    corrida incremental reducía el registro al delta y `_escribir_cobertura_md` borraba
+    el resto del `_cobertura.md` (169 filas → 2 en W-02XOR7, medido el 2026-07-30).
+    """
+    sm_dir = sm._sala_maquina_dir(case_dir)
+    f = sm_dir / _COBERTURA
     if not f.exists():
-        return []
+        cob = sm.reconstruir_cobertura_desde_md(sm_dir)
+        if cob:
+            # Parcial por construcción: los `sin_soporte` no dejan MD, así que su fila
+            # solo vivía en la vista `_cobertura.md` y se pierde igual. Decirlo, no
+            # presentar como total un arreglo que no lo es.
+            typer.echo(
+                f"AVISO: sin `_cobertura.json`; {len(cob)} filas RECONSTRUIDAS del "
+                f"frontmatter de 03_MD/ (sin sha de origen ni campos de bundle). Los "
+                f"documentos que no dejaron MD (p. ej. `sin_soporte`) no son "
+                f"reconstruibles: para un registro completo, `apply --force` del caso.",
+                err=True)
+        return cob
     return sm.cobertura_desde_dicts(json.loads(f.read_text(encoding="utf-8")))
 
 
@@ -253,13 +271,31 @@ def plan(case_id: str):
 
 
 @app.command()
-def apply(case_id: str, vision: bool = False, force: bool = False):
+def apply(case_id: str, vision: bool = False, force: bool = False,
+          solo: list[str] = typer.Option(
+              None, "--solo",
+              help="Ruta relativa de 00_Input a reprocesar aunque su sha ya esté hecho "
+                   "(repetible). Nada más se toca. Para D1 de MEJORAS #90.")):
     """Ejecuta OCR+MD y escribe la Sala de máquina + cobertura + log."""
+    # Los tests del CLI invocan estas funciones directamente (idiom del repo), así que
+    # sin llamada de typer `solo` llega como OptionInfo, no como lista.
+    rutas = list(solo) if isinstance(solo, list) else []
+    if rutas and force:
+        typer.echo(
+            "ERROR: --solo y --force no se combinan. --force es autoritativo sobre el "
+            "caso entero (cobertura fresca y estado reescrito); --solo es incremental y "
+            "acotado. Mezclarlos borraría la cobertura y el estado de los documentos no "
+            "pedidos.", err=True)
+        raise typer.Exit(2)
     case_id, case_dir = _resolver_caso(case_id)
     if vision:
         _exigir_vision_cableada()          # preflight: aborta antes de procesar
     _atomizar_correo(case_id, case_dir)   # cableado: atomizar ANTES del OCR (spec §4)
-    p = _construir_plan(case_dir, force=force)
+    try:
+        p = sm.acotar_plan(_construir_plan(case_dir, force=force), rutas)
+    except ValueError as exc:              # errata en --solo: parar antes de OCR-izar
+        typer.echo(f"ERROR: {exc}", err=True)
+        raise typer.Exit(2) from exc
     cob_delta = sm.ejecutar(case_dir, p, case_id=case_id, vision=vision, force=force)
 
     # Cobertura ACUMULATIVA: una corrida incremental procesa solo el delta, así que

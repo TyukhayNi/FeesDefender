@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 import tempfile
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, fields, replace
 from pathlib import Path
 
 from core.extractor import (
@@ -188,6 +188,102 @@ def plan(inventario: list[dict], estado_previo: set[str]) -> list[DocPlan]:
             slug=output_slug(rel, sha),
             skip=sha in estado_previo,
         ))
+    return out
+
+
+NOTA_RECONSTRUIDA = "fila reconstruida del MD (sin _cobertura.json)"
+
+
+def _frontmatter_md(md: Path) -> dict:
+    """Frontmatter del MD **sin cargar el cuerpo**, que puede pesar cientos de KB.
+
+    Mismo motivo que `detectar_ocr_ciego._frontmatter`: reconstruir el registro de un
+    caso entero son ~170 ficheros, y sobre Drive el cuerpo es I/O que no se necesita.
+    """
+    import yaml
+
+    lineas: list[str] = []
+    with md.open("r", encoding="utf-8", errors="replace") as fh:
+        if fh.readline().strip() != "---":
+            return {}
+        for linea in fh:
+            if linea.strip() == "---":
+                break
+            lineas.append(linea)
+    try:
+        return yaml.safe_load("".join(lineas)) or {}
+    except yaml.YAMLError:
+        return {}
+
+
+def reconstruir_cobertura_desde_md(sm_dir: Path) -> list[DocCobertura]:
+    """Cobertura reconstruida del frontmatter de `03_MD/`, para casos sin `_cobertura.json`.
+
+    Los casos procesados antes de que existiera ese fichero (#84) solo tienen la vista
+    `_cobertura.md`, que `_escribir_cobertura_md` REESCRIBE en cada corrida. Sin esto,
+    una corrida incremental fusiona contra vacío y reduce el registro al delta: en
+    W-02XOR7 eran 169 filas → 2, en silencio (medido el 2026-07-30 ejecutando D1).
+
+    La reconstrucción es honesta, no completa: `_escribir_md` persiste `source_path`,
+    `extractor`, `chars`, `ocr` y `ocr_quality`, pero **no** el `sha256` del origen ni
+    los campos de bundle (`parent_*`, `role`, `paginas`). Esas filas salen con sha vacío
+    y `nota` que lo declara — preservar el registro no es inventar lo que no está. Una
+    corrida `--force` posterior las sustituye por filas completas.
+    """
+    md_dir = sm_dir / "03_MD"
+    if not md_dir.is_dir():
+        return []
+    out: list[DocCobertura] = []
+    for md in sorted(md_dir.glob("*.md")):
+        meta = _frontmatter_md(md)
+        rel = meta.get("source_path")
+        if not rel:
+            continue                      # sin origen no hay fila de custodia que valga
+        out.append(DocCobertura(
+            slug=md.stem,
+            rel_path=str(rel),
+            metodo=str(meta.get("extractor", "")),
+            estado=str(meta.get("ocr_quality", "")),
+            chars=int(meta.get("chars") or 0),
+            ocr=bool(meta.get("ocr")),
+            nota=NOTA_RECONSTRUIDA,
+        ))
+    return out
+
+
+def _norm_rel(rel: str) -> str:
+    """`rel_path` comparable: el informe del detector y el shell de Windows dan `\\`."""
+    return rel.replace("\\", "/")
+
+
+def acotar_plan(plan: list[DocPlan], solo: list[str]) -> list[DocPlan]:
+    """Acota la corrida a `solo` (rutas relativas de `00_Input`) forzando su reproceso.
+
+    Es el «force acotado» que pide D1 (`MEJORAS #90`): los documentos pedidos entran
+    aunque su sha ya esté en el estado, y **todo lo demás se marca `skip`**. Así el
+    llamador conserva la semántica INCREMENTAL de cobertura y estado (fusionar / unir),
+    que es la correcta aquí: un acotado no es autoritativo sobre el caso entero.
+
+    Un `solo` que no case con ningún `rel_path` es un error, no una corrida vacía: sin
+    esto, una errata en una de las 17 rutas daría «0 documentos» y se leería como «ya
+    estaba todo bien» (el patrón del bug de W-02ZIIF).
+    """
+    if not solo:
+        return plan
+    pedidos = {_norm_rel(s) for s in solo}
+    encontrados: set[str] = set()
+    out: list[DocPlan] = []
+    for d in plan:
+        rel = _norm_rel(d.rel_path)
+        if rel in pedidos:
+            encontrados.add(rel)
+            out.append(replace(d, skip=False))
+        else:
+            out.append(replace(d, skip=True))
+    if faltan := sorted(pedidos - encontrados):
+        raise ValueError(
+            "rutas de --solo que no existen en el inventario de 00_Input: "
+            + ", ".join(faltan))
     return out
 
 
