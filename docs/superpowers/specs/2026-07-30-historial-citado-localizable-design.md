@@ -113,14 +113,33 @@ for p in (out / "mensajes").glob("*.md"):
         p.unlink()
 ```
 
-Un `<atom>.historial.md` en `mensajes/` **se autodestruye en la corrida siguiente**: el glob lo coge y
-su nombre no está en `esperados`. La propuesta de `#105` tal cual no sobrevive a su propia
-idempotencia.
+Un `<atom>.historial.md` en `mensajes/` **se autodestruye antes de que `atomize_dir` retorne**: esa
+poda corre en la **misma llamada**, unas líneas más abajo de donde se escriben los historiales, así
+que el glob lo coge y su nombre no está en `esperados`. La propuesta de `#105` tal cual no sobrevive a
+su propia idempotencia.
+
+> **Errata (2026-07-30, al construir).** Una primera versión de este párrafo decía «se autodestruye
+> en la corrida **siguiente**». Es peor: es **la misma corrida**. La consecuencia práctica es de
+> planificación, no de diseño: el arreglo **no es separable** en una tarea posterior a la del
+> cableado —sin él los tests del cableado no pueden pasar nunca—, y así se ejecutó.
 
 **Arreglo:** `esperados` pasa a ser *nombres de ficha* ∪ *nombres de historial escritos en esta
 corrida*. Con eso el historial persiste, pero uno **huérfano** —portador desaparecido, o portador que
 ya no tiene texto recortado— **sigue podándose**. La convergencia que esa poda protege no se debilita:
 se extiende al artefacto nuevo.
+
+### 5.3-bis. El coste de compartir directorio y sufijo con las fichas (medido al construir)
+
+Colocar el artefacto en `mensajes/` con sufijo `.md` hace que **todo consumidor que haga
+`glob("*.md")` cuente el historial como si fuera una ficha**. Medido: en la suite hay ~40 de esos
+globs sobre `mensajes/` y **rompieron cuatro**, en tres ficheros, todos contando «fichas de mensaje»;
+la corrección es excluir `*.historial.md` y queda comentada en cada sitio.
+
+Cuatro de cuarenta es asumible y por eso el fichero hermano se mantiene. Pero **fuera de la suite no
+hay quien avise**: cualquier skill, la sala de lectura o el futuro consumidor de `MEJORAS #86` que
+cuente `mensajes/*.md` verá un artefacto de más. Las dos alternativas que lo evitarían de raíz —un
+sufijo que no case con `*.md`, o un subdirectorio— pierden la adyacencia al ordenar el directorio, que
+es el argumento de `#105` para el fichero hermano. Queda como deuda declarada, no como sorpresa.
 
 ### 5.4. Entregas selladas
 

@@ -128,3 +128,77 @@ def test_un_historial_que_falla_al_escribirse_se_declara_y_no_degrada_la_corrida
         f"la ausencia debe declararse nombrando al portador; notas: {rep.notas}"
     # Y la ficha del portador SI se publica: la vista derivada no arrastra al artefacto principal.
     assert len(list((out / "mensajes").glob("*.md"))) == 1
+
+
+def test_la_poda_conserva_los_historiales_pero_se_lleva_los_huerfanos(tmp_path):
+    """El arreglo del §5.3 tiene DOS direcciones y las dos importan: el historial legitimo
+    sobrevive a la corrida siguiente, y uno huerfano --portador desaparecido, o portador que ya
+    no tiene texto recortado-- se poda. Si solo se vigilara la primera, `esperados` podria
+    crecer sin limite y la poda dejaria de converger, que es lo que esa poda existe para
+    garantizar."""
+    src, out = tmp_path / "03_Email", tmp_path / "Emails"
+    src.mkdir(parents=True)
+    (src / "a.eml").write_bytes(
+        _eml("<a@example.invalid>", "Con historial", fecha="Tue, 28 Jul 2026 10:00:00 +0200",
+             cuerpo=_con_historial("Mi respuesta breve.")))
+
+    P.atomize_dir(src, out)
+    primera = [p.name for p in _historiales(out)]
+    assert len(primera) == 1
+
+    huerfano = out / "mensajes" / "2020-01-01_0000_fantasma_MSG-09999.historial.md"
+    huerfano.write_text("<!-- viejo -->\n", encoding="utf-8")
+
+    P.atomize_dir(src, out)
+
+    assert [p.name for p in _historiales(out)] == primera, \
+        "la segunda corrida se ha llevado el historial legitimo"
+    assert not huerfano.exists(), "un historial huerfano debe podarse: la poda tiene que converger"
+
+
+def test_el_historial_es_byte_identico_entre_corridas(tmp_path):
+    """Idempotencia del CONTENIDO, no solo de la existencia: re-atomizar no debe reescribir el
+    fichero con bytes distintos, o el arbol churnearia en cada corrida y ensuciaria el Drive y la
+    comparacion con los `_entregas/` sellados. Sobrevivir a la poda (test anterior) no implica
+    ser estable.
+
+    QUE CAZA Y QUE NO, medido por mutacion y escrito aqui para que nadie le atribuya mas:
+    - **Caza** el no-determinismo real (iterar un `set`, `random`, orden que cambie entre
+      llamadas): con un `shuffle` del recorrido del indice, este test muere.
+    - **NO caza** un orden distinto pero FIJO — p. ej. recorrer `mensajes` al reves. Las dos
+      corridas comparten el build, luego comparten el orden, y los bytes coinciden. Eso no es un
+      defecto que este test deba pillar: el fichero tendria otro contenido fijo, no inestable.
+
+    El fixture tampoco es cualquiera: para que el orden pueda influir, la frase citada tiene que
+    existir en DOS fichas ajenas, de modo que la columna «donde vive» liste dos `MSG-id`. Con un
+    fixture donde todo saliera EXCLUSIVA esa columna seria siempre `—` y el test no vigilaria
+    nada -- que es como estaba escrito primero, y lo destapo el mutation testing."""
+    import hashlib
+
+    src, out = tmp_path / "03_Email", tmp_path / "Emails"
+    src.mkdir(parents=True)
+    compartida = "Esta frase compartida tiene mas de ocho palabras y vive en dos fichas ajenas."
+    # Dos portadores cuyo CUERPO (no su cita) contiene la frase -> dos fichas la contienen.
+    for i, mid in enumerate(("a", "b")):
+        (src / f"{mid}.eml").write_bytes(
+            _eml(f"<{mid}@example.invalid>", f"Asunto {mid}",
+                 fecha=f"Mon, 27 Jul 2026 0{i + 8}:00:00 +0200", cuerpo=compartida))
+    # Y un tercero que la cita: su historial la marcara «duplicada» con DOS MSG-id.
+    (src / "c.eml").write_bytes(
+        _eml("<c@example.invalid>", "Asunto c", fecha="Tue, 28 Jul 2026 10:00:00 +0200",
+             cuerpo=_con_historial("Respuesta c.", historial=compartida)))
+
+    def huellas() -> dict[str, str]:
+        return {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in _historiales(out)}
+
+    P.atomize_dir(src, out)
+    primera = huellas()
+    assert len(primera) == 1
+    # Precondicion del test: si esto falla, el fixture no ejercita el orden y el test es vacuo.
+    txt = _historiales(out)[0].read_text(encoding="utf-8")
+    assert "- ya presentes en otra ficha: 1" in txt, txt
+    assert "MSG-00001, MSG-00002" in txt or "MSG-00002, MSG-00001" in txt, \
+        "la frase debe listar DOS MSG-id, o el orden no se puede notar"
+
+    P.atomize_dir(src, out)
+    assert huellas() == primera, "el historial cambia entre corridas: el orden no es determinista"
