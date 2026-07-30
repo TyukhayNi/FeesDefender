@@ -253,13 +253,31 @@ def plan(case_id: str):
 
 
 @app.command()
-def apply(case_id: str, vision: bool = False, force: bool = False):
+def apply(case_id: str, vision: bool = False, force: bool = False,
+          solo: list[str] = typer.Option(
+              None, "--solo",
+              help="Ruta relativa de 00_Input a reprocesar aunque su sha ya esté hecho "
+                   "(repetible). Nada más se toca. Para D1 de MEJORAS #90.")):
     """Ejecuta OCR+MD y escribe la Sala de máquina + cobertura + log."""
+    # Los tests del CLI invocan estas funciones directamente (idiom del repo), así que
+    # sin llamada de typer `solo` llega como OptionInfo, no como lista.
+    rutas = list(solo) if isinstance(solo, list) else []
+    if rutas and force:
+        typer.echo(
+            "ERROR: --solo y --force no se combinan. --force es autoritativo sobre el "
+            "caso entero (cobertura fresca y estado reescrito); --solo es incremental y "
+            "acotado. Mezclarlos borraría la cobertura y el estado de los documentos no "
+            "pedidos.", err=True)
+        raise typer.Exit(2)
     case_id, case_dir = _resolver_caso(case_id)
     if vision:
         _exigir_vision_cableada()          # preflight: aborta antes de procesar
     _atomizar_correo(case_id, case_dir)   # cableado: atomizar ANTES del OCR (spec §4)
-    p = _construir_plan(case_dir, force=force)
+    try:
+        p = sm.acotar_plan(_construir_plan(case_dir, force=force), rutas)
+    except ValueError as exc:              # errata en --solo: parar antes de OCR-izar
+        typer.echo(f"ERROR: {exc}", err=True)
+        raise typer.Exit(2) from exc
     cob_delta = sm.ejecutar(case_dir, p, case_id=case_id, vision=vision, force=force)
 
     # Cobertura ACUMULATIVA: una corrida incremental procesa solo el delta, así que

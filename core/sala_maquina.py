@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 import tempfile
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, fields, replace
 from pathlib import Path
 
 from core.extractor import (
@@ -188,6 +188,42 @@ def plan(inventario: list[dict], estado_previo: set[str]) -> list[DocPlan]:
             slug=output_slug(rel, sha),
             skip=sha in estado_previo,
         ))
+    return out
+
+
+def _norm_rel(rel: str) -> str:
+    """`rel_path` comparable: el informe del detector y el shell de Windows dan `\\`."""
+    return rel.replace("\\", "/")
+
+
+def acotar_plan(plan: list[DocPlan], solo: list[str]) -> list[DocPlan]:
+    """Acota la corrida a `solo` (rutas relativas de `00_Input`) forzando su reproceso.
+
+    Es el «force acotado» que pide D1 (`MEJORAS #90`): los documentos pedidos entran
+    aunque su sha ya esté en el estado, y **todo lo demás se marca `skip`**. Así el
+    llamador conserva la semántica INCREMENTAL de cobertura y estado (fusionar / unir),
+    que es la correcta aquí: un acotado no es autoritativo sobre el caso entero.
+
+    Un `solo` que no case con ningún `rel_path` es un error, no una corrida vacía: sin
+    esto, una errata en una de las 17 rutas daría «0 documentos» y se leería como «ya
+    estaba todo bien» (el patrón del bug de W-02ZIIF).
+    """
+    if not solo:
+        return plan
+    pedidos = {_norm_rel(s) for s in solo}
+    encontrados: set[str] = set()
+    out: list[DocPlan] = []
+    for d in plan:
+        rel = _norm_rel(d.rel_path)
+        if rel in pedidos:
+            encontrados.add(rel)
+            out.append(replace(d, skip=False))
+        else:
+            out.append(replace(d, skip=True))
+    if faltan := sorted(pedidos - encontrados):
+        raise ValueError(
+            "rutas de --solo que no existen en el inventario de 00_Input: "
+            + ", ".join(faltan))
     return out
 
 
