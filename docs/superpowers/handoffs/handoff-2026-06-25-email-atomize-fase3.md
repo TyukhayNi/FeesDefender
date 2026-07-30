@@ -1,6 +1,9 @@
 ---
 tipo: handoff
 estado: consumido
+creado: 2026-06-25
+origen: sesión de Claude Code del motor de atomización (cierre de Fases 1-2 y diagnóstico del piloto, 2026-06-25)
+destino: sesión nueva de Claude Code, sin memoria previa — arrancar la Fase 3 (capa de caso)
 consumido_por: "core/email_atomize (F3 en main)"
 migrado: "2026-07-19 (regla MEJORAS #77 / GOBERNANZA §5)"
 ---

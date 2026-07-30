@@ -1,6 +1,9 @@
 ---
 tipo: handoff
 estado: consumido
+creado: 2026-07-13
+origen: brainstorming en Cowork con Nikolai (jurídico/planificación); Cowork no tocó el repo ni el código
+destino: sesión nueva de Claude Code — ubicarlo en docs/superpowers/ y encadenar el flujo spec → plan
 consumido_por: "spec 2026-07-13-mcp-sudespacho-design.md"
 migrado: "2026-07-19 (regla MEJORAS #77 / GOBERNANZA §5)"
 ---

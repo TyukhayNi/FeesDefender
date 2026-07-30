@@ -1,6 +1,9 @@
 ---
 tipo: handoff
 estado: historico
+creado: 2026-07-17
+origen: sesión de apertura E2E del caso W-046G2R (2026-07-17; una de las 3 aperturas hechas ese día en sesiones/worktrees distintos)
+destino: sesión dedicada de mejora de proceso que consolida los 3 handoffs de las aperturas del 2026-07-17
 consumido_por: "RUNBOOK_APERTURA_EXPEDIENTE.md"
 migrado: "2026-07-19 (regla MEJORAS #77 / GOBERNANZA §5)"
 ---

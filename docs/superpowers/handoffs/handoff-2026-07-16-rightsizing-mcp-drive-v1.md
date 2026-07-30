@@ -1,6 +1,9 @@
 ---
 tipo: handoff
 estado: consumido
+creado: 2026-07-16
+origen: ronda de análisis multi-agente Fable del 2026-07-16 (4 lentes independientes + refutadores adversariales; 13 agentes)
+destino: hilo del spec 2026-07-16-mcp-drive-disco-local-design.md (rev 2) — right-sizing del V1
 consumido_por: "spec 2026-07-16-mcp-drive-disco-local-design.md + build PR #52"
 migrado: "2026-07-19 (regla MEJORAS #77 / GOBERNANZA §5)"
 ---

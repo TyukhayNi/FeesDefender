@@ -1,6 +1,9 @@
 ---
 tipo: handoff
 estado: historico
+creado: 2026-07-17
+origen: sesión de apertura E2E del caso W-02T3XO (2026-07-17)
+destino: sesión dedicada que consolida los 3 handoffs de las aperturas del 2026-07-17
 consumido_por: "RUNBOOK_APERTURA_EXPEDIENTE.md"
 migrado: "2026-07-19 (regla MEJORAS #77 / GOBERNANZA §5)"
 ---
