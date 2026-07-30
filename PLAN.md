@@ -167,7 +167,7 @@ ser cambiar una bandera.
       de esos 24 candidatos— y no reescribe nada que hoy funcione. D2 solo habría compensado si se
       quisiera además una cobertura homogénea de cara a la vista procesal.
 
-- [ ] **(e) Ejecutar D1** — **herramienta CONSTRUIDA (PR #175), ejecución A MEDIAS.** Los pasos 1 y 2
+- [ ] **(e) Ejecutar D1** — **herramienta CONSTRUIDA, ejecución A MEDIAS.** Los pasos 1 y 2
       están hechos; el 3 cubre 1 de los 3 casos y W-02VND1 quedó reprocesándose al cerrar la sesión.
       1. [x] Detector re-corrido: **la lista viva coincide en número (17) pero NO en composición**
          con la del 2026-07-27. Los cuatro AcroForm de W-02VND1 (cuentas anuales, tasación) que
@@ -195,7 +195,7 @@ ser cambiar una bandera.
       relanzar sin comprobar que la corrida anterior terminó.
 
 - [ ] **(f) Dos defectos destapados al ejecutar (e)** — ninguno lo introduce `--solo`; los activa.
-      El primero está arreglado en el PR #175, el segundo NO:
+      El primero está arreglado en esta misma rama, el segundo NO:
       - [x] **Cobertura de caso legacy sin `_cobertura.json`.** W-02XOR7 solo tiene la vista
         `_cobertura.md` (169 filas) y `_sala_maquina_state.json`. `_cobertura_previa` devolvía `[]`,
         la fusión se quedaba con el delta y `_escribir_cobertura_md` reescribía la vista: 169 filas
