@@ -96,6 +96,21 @@ def test_el_json_gana_al_md_cuando_existe(caso_legacy):
     assert cob[0].sha256 == "c" * 64
 
 
+def test_avisa_de_que_el_registro_va_reconstruido_y_es_parcial(caso_legacy, capsys):
+    """La reconstrucción NO es completa y no puede callarlo.
+
+    Solo alcanza a los documentos que dejaron MD: los `sin_soporte` no generan ninguno,
+    así que su fila vivía únicamente en el `_cobertura.md` y se pierde igual al fusionar.
+    Medido en W-02XOR7: 169 filas en la vista, 113 MD → 113 reconstruidas, 56 no.
+    Un arreglo parcial que se presenta como total es peor que uno declarado.
+    """
+    cli._cobertura_previa(caso_legacy)
+
+    err = capsys.readouterr().err
+    assert "reconstruid" in err.lower()
+    assert "2" in err, "el aviso debe decir cuántas filas se reconstruyeron"
+
+
 def test_el_acotado_no_borra_el_registro_de_los_demas_en_un_caso_legacy(caso_legacy,
                                                                        monkeypatch):
     """El defecto que motivó todo esto, sobre el caso completo.

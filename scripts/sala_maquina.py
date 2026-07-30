@@ -65,7 +65,18 @@ def _cobertura_previa(case_dir: Path) -> list[sm.DocCobertura]:
     sm_dir = sm._sala_maquina_dir(case_dir)
     f = sm_dir / _COBERTURA
     if not f.exists():
-        return sm.reconstruir_cobertura_desde_md(sm_dir)
+        cob = sm.reconstruir_cobertura_desde_md(sm_dir)
+        if cob:
+            # Parcial por construcción: los `sin_soporte` no dejan MD, así que su fila
+            # solo vivía en la vista `_cobertura.md` y se pierde igual. Decirlo, no
+            # presentar como total un arreglo que no lo es.
+            typer.echo(
+                f"AVISO: sin `_cobertura.json`; {len(cob)} filas RECONSTRUIDAS del "
+                f"frontmatter de 03_MD/ (sin sha de origen ni campos de bundle). Los "
+                f"documentos que no dejaron MD (p. ej. `sin_soporte`) no son "
+                f"reconstruibles: para un registro completo, `apply --force` del caso.",
+                err=True)
+        return cob
     return sm.cobertura_desde_dicts(json.loads(f.read_text(encoding="utf-8")))
 
 
