@@ -4284,16 +4284,38 @@ Los 3 que el arreglo desbloquea son otros, y no tenían nada citado (Hecho 1).
    una vista de historial», es que el historial **se retira activamente** del único artefacto que lo
    contenía y nada más lo recoge. Sin cabeceras no puede haber ficha —y es correcto que no la haya,
    la prime directive lo exige—, pero el texto tiene que estar **localizable** en algún sitio.
-2. **La pieza pequeña, barata y de esta misma familia:** cuando `_sandwich` veta, que `reconstruir`
-   emita igualmente los bloques citados como **punteros** (`confianza: baja`/`info`, con extracto y
-   **sin `de`**), en vez de nada. No toca la atribución —no acuña remitente, no crea ficha—, así que no
-   puede misatribuir; solo deja el rastro de que ahí hay N bloques de cita y dónde. Hoy un portador
-   legítimamente vetado pierde incluso el rastro.
+2. ✅ **HECHA — la pieza pequeña.** Cuando `_sandwich` veta, `reconstruir` emite igualmente los
+   bloques citados como **punteros** `confianza: baja`, `motivo: cita_en_portador_vetado`, con
+   extracto y **sin `de`, sin fecha y sin fingerprint**. `Segmentacion` gana `citas_vetadas`, que va
+   **aparte de `ancestros`** a propósito: `ancestros` gobierna la Capa B y con el veto puesto tiene
+   que seguir vacío, así que no hay atribución posible. Sin `de` no puede misatribuir; sin
+   fingerprint no puede colapsar ni promoverse; no entra en `candidatos`. Una cáscara vacía no
+   produce puntero —la forma no es hipotética: tres portadores del corpus medido tenían los dos
+   `blockquote` genuinamente vacíos—. 4 tests, los cuatro con *mutation testing*: no conservar las
+   citas mata 3; ponerles `de` mata el test anti-misatribución; **mandarlas a `ancestros`** —el error
+   peligroso— mata el test de la invariante; y retirar el filtro de vacías mata el suyo.
 
-**Prioridad.** La pieza 2 es **baja/barata** y cierra la parte no-controvertida. La pieza 1 (`#107`) es
-la que de verdad responde al requisito `#108`. **Disparador de promoción:** decisión de Nikolai, o el
-siguiente hilo cuyas fichas se echen en falta — que volverá a pasar, porque la causa 1 (que el caso
-solo reciba el último correo de un hilo) es la normal, no la excepción.
+**Estado.** Pieza 2 **hecha**. Queda la pieza 1 (`#107`), que es la que de verdad responde al
+requisito `#108`. **Disparador de promoción:** decisión de Nikolai, o el siguiente hilo cuyas fichas
+se echen en falta — que volverá a pasar, porque la causa 1 (que el caso solo reciba el último correo
+de un hilo) es la normal, no la excepción.
+
+**Límites de la pieza 2, declarados para que nadie los descubra como sorpresa:**
+
+- **Solo el camino HTML.** `segmentar_texto` también descarta sus segmentos al vetar
+  (`_intercalada_plain`), y ahí NO se emiten punteros. Deliberado: en ese camino los segmentos
+  habría que calcularlos con una pasada cuyo resultado el propio veto declara poco fiable, así que
+  los extractos podrían engañar. El defecto medido estaba en el camino HTML.
+- **Tampoco en la rama `conservacion_tokens`.** Si el reparto de texto no cuadra, los segmentos son
+  justamente lo que no es de fiar; emitir extractos desde un enrutado roto sería peor que no
+  emitirlos.
+- **Su valor sobre el portador que motivó todo esto está SIN VERIFICAR en dato real.** El corpus de
+  prueba se borró (con autorización) inmediatamente después de la medición del hilo, y no se registró
+  si los `blockquote` de ese portador vetado llevaban texto o eran cáscaras vacías como los de los
+  otros tres. Si eran cáscaras, esta pieza no le añade nada y el historial de ese hilo sigue
+  necesitando `#107`. **Cómo cerrarlo cuando se quiera:** re-exportar una etiqueta pequeña a un
+  scratch fuera de todo expediente —el mismo procedimiento con el que se creó ese corpus— y mirar los
+  punteros `cita_en_portador_vetado` que salgan.
 
 **Medido sobre:** el corpus de prueba `_PRUEBA_98_VaRS3` del Escritorio (correo real de cliente; solo
 lectura, y de él no salieron al registro ni asuntos ni direcciones ni cuerpos, solo estructura y
