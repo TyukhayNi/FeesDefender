@@ -90,7 +90,12 @@ Ante cualquier lío: **mirar → entender → acción reversible → verificar.*
 - Terminal en un directorio raro (`C:\WINDOWS\system32`) → los git dan "not a git repository";
   `cd` al repo y repetir (no se ejecutó nada).
 - No borrar en caliente un worktree que es el *cwd* vivo de una sesión (Windows lo bloquea);
-  `git worktree prune` limpia el registro y el directorio se borra tras cerrar esa sesión.
+  el directorio se borra tras cerrar esa sesión. **Si el `git worktree remove` de la Fase 4 ya
+  se lanzó, el registro está limpio y `git worktree prune` es un no-op** — `prune` solo retira
+  entradas cuyo directorio ya no existe, y aquí lo que sobra es el directorio, no la entrada.
+  Que ese `remove` acabe en `Permission denied` es lo NORMAL al cerrar una sesión-en-worktree,
+  no un fallo: desregistra y vacía el contenido, y solo deja la carcasa. Detalle y señales:
+  `DEAD_ENDS.md` §«Worktree muerto como *cwd* de sesión».
 
 ---
 
