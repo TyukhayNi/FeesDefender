@@ -167,7 +167,13 @@ def atomize_dir(
     # `MEJORAS #105`: el historial citado que `cortar_autor` retiro no estaba en ningun
     # artefacto. Se escribe VERBATIM en un fichero hermano, con los duplicados marcados y SIN
     # atribuir nada. El indice se construye con las fichas de Capa A y B ya conocidas.
-    historiales: set[str] = set()
+    # `historiales_esperados` NO es lo mismo que "los que se han escrito": lleva el fichero de
+    # TODO portador con texto recortado, escriba o no. Es lo que la poda debe conservar.
+    # Si solo llevara los escritos con exito, un fallo transitorio (disco, permiso, Drive sin
+    # hidratar) en la corrida N haria que la poda BORRASE la copia buena que dejo la corrida
+    # N-1: un error pasajero destruyendo prueba, y la nota diciendo apenas «no escrito». Un
+    # historial rancio es mucho mejor que ninguno. (Hallazgo de la revision adversarial.)
+    historiales_esperados: set[str] = set()
     if restos:
         indice = HIST.indice_frases(mensajes)
         por_id = {m.msg_id: m for m in mensajes}
@@ -176,17 +182,21 @@ def atomize_dir(
             if m is None:
                 continue
             nombre = R.nombre_historial(m)
+            historiales_esperados.add(nombre)
             try:
                 (out / "mensajes" / nombre).write_text(
                     HIST.render_historial(portador_msg_id=msg_id, nombre_ficha=R.nombre_md(m),
                                           resto_citado=resto, indice=indice),
                     encoding="utf-8")
-            except OSError as exc:
-                # Vista derivada: su fallo NO entra en `report.errores` (eso apagaria la poda
-                # del arbol entero). Se declara nombrando al portador y se sigue.
-                report.notas.append(f"historial de {msg_id} no escrito: {exc}")
+            except Exception as exc:  # noqa: BLE001
+                # Vista derivada: su fallo NO entra en `report.errores` (eso apagaria la poda del
+                # arbol entero). Se captura `Exception` y no solo `OSError` a proposito: un fallo
+                # del RENDER (p. ej. un `ValueError`) abortaria la atomizacion con las fichas ya
+                # escritas, que es peor que no tener esta vista.
+                report.notas.append(
+                    f"historial de {msg_id} no escrito ({exc}); si habia uno de una corrida "
+                    f"anterior, se conserva y puede estar rancio")
                 continue
-            historiales.add(nombre)
     # Permanente (construcción A / Layer B): se publica lo bueno, pero NO se poda — un
     # `.eml` corrupto no se arregla re-corriendo, y bloquear el caso para siempre es peor
     # que conservar una ficha rancia. La poda solo retira huérfanos cuando la foto está
@@ -204,7 +214,7 @@ def atomize_dir(
         # MISMO `atomize_dir` se borraria como "huerfano" antes de que la funcion retorne
         # (colision detectada al ejecutar los tests de esta tarea, no prevista en el brief;
         # la poda cross-corrida completa sigue siendo alcance de la Tarea 3).
-        esperados = {R.nombre_md(m) for m in mensajes} | historiales
+        esperados = {R.nombre_md(m) for m in mensajes} | historiales_esperados
         for p in (out / "mensajes").glob("*.md"):
             if p.name not in esperados:
                 p.unlink()

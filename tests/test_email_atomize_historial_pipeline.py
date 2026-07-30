@@ -25,17 +25,16 @@ def _eml(mid: str, subject: str, *, fecha: str, cuerpo: str) -> bytes:
 def _con_historial(texto_autor: str, historial: str = _HISTORIAL) -> str:
     """Cuerpo con cola citada: autor arriba, marcador de cita, historial debajo.
 
-    Marcador sin campos de cabecera (`-----Mensaje original-----`, la alternativa que el propio
-    brief de esta tarea preve para el caso en que `cortar_autor` no reconozca el marcador con
-    bloque `De:`/`Enviado:`): un bloque `De:`/`Enviado:`/`Para:`/`Asunto:` sintetico aqui dispara
-    dos defectos AJENOS a esta tarea, verificados por separado (ver informe): (1) la Capa B
-    reconstruye ese bloque como un mensaje propio y atribuido -- comportamiento correcto y
-    preexistente, pero que infla el recuento de `.md` sin relacion con el historial; y (2)
-    `frases_sustanciales` (modulo de la Tarea 1, `core/email_atomize/historial.py`, con su propio
-    umbral congelado "no cambiar sin re-medir") no trata una linea de cabecera sin puntuacion
-    terminal como limite de frase, y la pega a la primera frase citada real, dando una
-    "exclusiva" espuria. Este marcador ejercita `cortar_autor`/el recorte igual (`cuerpo_recortado_
-    cita=True`, ver comprobacion de precondicion) sin arrastrar ninguno de los dos.
+    Marcador SIN campos de cabecera (`-----Mensaje original-----`) por una sola razon, que sigue
+    viva: un bloque `De:`/`Enviado:`/`Para:`/`Asunto:` hace que la Capa B reconstruya ese mensaje
+    como ficha propia y atribuida --comportamiento correcto y preexistente-- lo que cambia el
+    recuento de fichas y estorba a los tests que cuentan. La forma realista con cabecera se cubre
+    aparte, en `test_un_historial_con_cabeceras_de_cita_no_inventa_exclusivas`.
+
+    (Una version anterior de este comentario alegaba un segundo motivo: que las lineas de
+    cabecera se pegaban a la primera frase citada y producian una «exclusiva» espuria. Era cierto
+    y era un DEFECTO, no una razon para cambiar el fixture; lo destapo la revision adversarial y
+    esta arreglado -- `frases_sustanciales` retira ahora esas lineas.)
     """
     return (f"{texto_autor}\n"
             "-----Mensaje original-----\n\n"
@@ -202,3 +201,102 @@ def test_el_historial_es_byte_identico_entre_corridas(tmp_path):
 
     P.atomize_dir(src, out)
     assert huellas() == primera, "el historial cambia entre corridas: el orden no es determinista"
+
+
+def test_un_fallo_al_reescribir_NO_borra_el_historial_de_la_corrida_anterior(tmp_path,
+                                                                            monkeypatch):
+    """Hallazgo B0 de la revision adversarial, y es perdida de datos por un error TRANSITORIO.
+
+    `historiales_esperados` lleva el fichero de todo portador con texto recortado, ESCRIBA O NO.
+    Si solo llevara los escritos con exito, un fallo pasajero (disco, permiso, Drive sin hidratar)
+    haria que la poda borrase la copia buena de la corrida anterior, con la nota diciendo apenas
+    «no escrito». Un historial rancio es muchisimo mejor que ninguno."""
+    src, out = tmp_path / "03_Email", tmp_path / "Emails"
+    src.mkdir(parents=True)
+    (src / "a.eml").write_bytes(
+        _eml("<a@example.invalid>", "Con historial", fecha="Tue, 28 Jul 2026 10:00:00 +0200",
+             cuerpo=_con_historial("Mi respuesta breve.")))
+
+    P.atomize_dir(src, out)
+    hs = _historiales(out)
+    assert len(hs) == 1
+    contenido_bueno = hs[0].read_bytes()
+
+    # 2a corrida: la escritura del historial falla, la de las fichas no.
+    real = Path.write_text
+
+    def falla_solo_el_historial(self, *a, **k):
+        if self.name.endswith(".historial.md"):
+            raise OSError("disco lleno de mentira")
+        return real(self, *a, **k)
+
+    monkeypatch.setattr(Path, "write_text", falla_solo_el_historial)
+    rep = P.atomize_dir(src, out)
+
+    supervivientes = _historiales(out)
+    assert len(supervivientes) == 1, "LA PODA SE HA COMIDO EL HISTORIAL BUENO tras un fallo"
+    assert supervivientes[0].read_bytes() == contenido_bueno, "se conserva la copia anterior"
+    assert rep.errores == [], "un historial fallido no puede entrar en errores"
+    assert any("puede estar rancio" in n for n in rep.notas), \
+        f"la nota debe avisar de que lo que queda es de una corrida anterior; notas: {rep.notas}"
+
+
+def test_un_fallo_del_RENDER_tampoco_aborta_la_atomizacion(tmp_path, monkeypatch):
+    """Hallazgo A de la revision adversarial: solo se capturaba `OSError`, asi que un
+    `ValueError` del renderizador propagaba y abortaba `atomize_dir` DESPUES de haber escrito las
+    fichas. Una vista derivada no puede tumbar la corrida."""
+    src, out = tmp_path / "03_Email", tmp_path / "Emails"
+    src.mkdir(parents=True)
+    (src / "a.eml").write_bytes(
+        _eml("<a@example.invalid>", "Con historial", fecha="Tue, 28 Jul 2026 10:00:00 +0200",
+             cuerpo=_con_historial("Mi respuesta breve.")))
+
+    from core.email_atomize import historial as HIST
+
+    def revienta(**k):
+        raise ValueError("renderizador roto de mentira")
+
+    monkeypatch.setattr(HIST, "render_historial", revienta)
+    rep = P.atomize_dir(src, out)
+
+    assert _historiales(out) == []
+    assert rep.errores == []
+    assert rep.poda_omitida is False
+    assert any("renderizador roto de mentira" in n for n in rep.notas), rep.notas
+    # Y la ficha SI se publica: el artefacto principal no se arrastra.
+    assert len([p for p in (out / "mensajes").glob("*.md")
+                if not p.name.endswith(".historial.md")]) == 1
+
+
+def test_un_historial_con_cabeceras_de_cita_no_inventa_exclusivas(tmp_path):
+    """La forma DOMINANTE del correo real: el historial citado llega con su bloque
+    `De:`/`Enviado:`/`Para:`/`Asunto:`. Esas lineas no terminan en puntuacion, asi que antes se
+    pegaban a la primera frase citada y esa frase compuesta no casaba con su gemela de la ficha
+    limpia -> «exclusiva» espuria. Con el historial 100 % duplicado el recuento tiene que ser 0
+    exclusivas: si sale 1, el defecto ha vuelto."""
+    src, out = tmp_path / "03_Email", tmp_path / "Emails"
+    src.mkdir(parents=True)
+    # El mensaje anterior del hilo, como .eml propio: su cuerpo ES el historial.
+    (src / "a.eml").write_bytes(
+        _eml("<a@example.invalid>", "Original", fecha="Mon, 27 Jul 2026 09:00:00 +0200",
+             cuerpo=_HISTORIAL))
+    # Y el portador lo cita CON cabecera, como llega de verdad.
+    con_cabecera = ("Mi respuesta breve.\n"
+                    "De: Otro <otro@example.invalid>\n"
+                    "Enviado: lunes, 27 de julio de 2026 9:00\n"
+                    "Para: dest@example.invalid\n"
+                    "Asunto: Re: Original\n"
+                    + _HISTORIAL)
+    (src / "b.eml").write_bytes(
+        _eml("<b@example.invalid>", "Respuesta", fecha="Tue, 28 Jul 2026 10:00:00 +0200",
+             cuerpo=con_cabecera))
+
+    P.atomize_dir(src, out)
+
+    hs = _historiales(out)
+    assert len(hs) == 1, f"se esperaba un historial; hay {[p.name for p in hs]}"
+    txt = hs[0].read_text(encoding="utf-8")
+    assert "- **exclusivas de este fichero: 0**" in txt, (
+        "las cabeceras de cita se estan pegando a la frase y fabricando una exclusiva:\n" + txt)
+    # El bloque de texto sigue siendo VERBATIM: las cabeceras estan ahi, solo salen del INDICE.
+    assert "De: Otro <otro@example.invalid>" in txt

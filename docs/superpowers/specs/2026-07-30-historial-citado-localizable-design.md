@@ -235,6 +235,32 @@ descubierto justamente porque al mutar el código no moría ninguno.
   mirando los `.historial.md` que salgan. Hasta entonces, los números del §1 son de la medición
   anterior y la construcción se valida solo con tests.
 
+## 10-bis. Adjudicación de la revisión adversarial (Codex, 2026-07-30) — NO EJECUTABLE, remediado
+
+Veredicto: **NO EJECUTABLE**, 7 B0 + 4 A + 2 M. **Todos los de comportamiento eran ciertos y están
+arreglados**; los de fuerza de test también. Dos merecen destacarse porque son de la familia que este
+repo lleva la semana cazando, y un tercero lo encontré yo auditando lo que el informe abrió.
+
+| # | Sev | Hallazgo | Adjudicación |
+|---|---|---|---|
+| 9 | B0 | **Pérdida de datos en un fallo transitorio.** El nombre solo entraba en `historiales` tras escribir con éxito, así que un fallo pasajero en la corrida N hacía que la poda **borrase la copia buena de la corrida N-1**, con la nota diciendo apenas «no escrito» | **CONFIRMADO** leyendo. Arreglado separando `historiales_esperados` (todo portador con resto, escriba o no) de lo escrito. Un historial rancio es muchísimo mejor que ninguno, y la nota lo dice |
+| 1 | B0 | Las **líneas de cabecera** de la cita se pegaban a la primera frase citada, que así no casaba con su gemela limpia → «exclusiva» espuria | **CONFIRMADO ejecutando.** Y no era del fixture: en correo real el historial está lleno de esas líneas, luego degradaba el artefacto **en su función principal**. `frases_sustanciales` las retira ahora, reutilizando el vocabulario de `inline` (`_RE_ANYLABEL` y compañía) en vez de duplicarlo. Nota incómoda: el subagente que construyó la Tarea 2 encontró este mismo defecto y lo **rodeó cambiando el fixture** del plan; lo documentó con honestidad, pero dejó el defecto en producción y la suite sin cubrir la forma dominante |
+| 13 | M | **Un consumidor real fuera de tests**: `audit_correos_no_separados.py` tomaba el historial por un portador | **CONFIRMADO.** La «deuda declarada» del §5.3-bis no era hipotética: había uno vivo. Arreglado, y con un **helper canónico** `render.es_ficha_md` para que el siguiente no lo repita |
+| — | — | **Y uno que el informe NO vio, encontrado al auditar el resto de consumidores:** `core/linker.py::_all_md` hace `rglob("*.md")` sobre `01_Procesado`, que **alcanza `Emails/mensajes/`**, y `crosslink` inyecta `[[…]]` y reescribe el fichero con `build_frontmatter`. Sobre un historial habría contaminado su bloque **verbatim**, le habría añadido un frontmatter que nunca tuvo y lo habría dejado en churn perpetuo con el atomizador. Es código **vivo**: lo llama `core/pipeline.py:112` | Arreglado con el mismo helper, y con test propio |
+| 8 | A | Solo se capturaba `OSError`: un `ValueError` del render abortaba la atomización con las fichas ya escritas | **CONFIRMADO**. Se captura `Exception`: una vista derivada no puede tumbar la corrida |
+| 10 | A | Una frase que normaliza a vacío se marcaba **EXCLUSIVA**, que es una afirmación falsa | **CONFIRMADO** ejecutando (`normaliza_cuerpo` trunca en el marcador de firma). Categoría **NO COMPARABLE** con contador propio |
+| 11 | A | El índice truncaba a 120 caracteres en silencio, contra el «repite la frase» de esta spec | **CONFIRMADO**. No se trunca |
+| 3, 4, 5, 6 | B0 | Cuatro tests no mataban lo que decían: el de las marcas `>` no mataba invertir el orden; el del índice usaba frases byte-idénticas; el umbral no quedaba fijado en 8; el «verbatim» solo comprobaba una subcadena | **CONFIRMADOS**. Reescritos: continuación sin puntuación que atraviesa el salto, variantes de mayúsculas/tildes/espaciado, los dos bordes 7/8, y el bloque comparado de verdad |
+| 2, 7 | B0 | Rompe tests que cuentan `mensajes/*.md`; el de idempotencia es vacuo respecto al orden | **YA RESUELTOS** en la construcción, antes de recibir el informe. El de idempotencia lo encontré mutándolo y lo arreglé como recomienda |
+| 12 | M | El partidor falla en ambas direcciones sobre prosa jurídica | **ACEPTADO como deuda medida.** Su propio §4 confirma que **degrada la anotación, no el texto**, que era mi posición. La batería jurídica queda pendiente |
+
+**Lo que su §4 confirma de esta spec:** `conservar_resto` aditivo, las fichas B llevan `cuerpo`, los
+dos monkeypatches transparentes, sin colisión de nombres, las entregas por `copytree`, la redundancia
+con los punteros de `#109` aceptable, y que el coste es aproximadamente lineal.
+
+**Único hallazgo sin test:** el del script de auditoría (`#13`). Su código vive a nivel de módulo y
+testearlo exigiría contorsionarlo; el helper que usa **sí** está cubierto. Declarado, no silenciado.
+
 ## 11. Errata que esta spec corrige de paso
 
 `MEJORAS #109` (tres veces) y la tabla de `MEJORAS #108` apuntan a **`#107`** cuando la pieza grande

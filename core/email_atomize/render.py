@@ -15,10 +15,28 @@ def nombre_md(m: RegistroMensaje) -> str:
     return f"{m.fecha_iso}_{hora}_{slug}_{m.msg_id}.md"
 
 
+SUFIJO_HISTORIAL = ".historial.md"
+
+
 def nombre_historial(m: RegistroMensaje) -> str:
     """El fichero hermano del historial citado de *m* (`MEJORAS #105`). Mismo nombre que su
     ficha con el sufijo cambiado, para que salgan adyacentes al ordenar el directorio."""
-    return nombre_md(m).removesuffix(".md") + ".historial.md"
+    return nombre_md(m).removesuffix(".md") + SUFIJO_HISTORIAL
+
+
+def es_ficha_md(p) -> bool:
+    """¿Es *p* una FICHA de mensaje, y no otro artefacto con sufijo `.md`?
+
+    Existe porque `mensajes/` dejo de contener solo fichas: `MEJORAS #105` anadio
+    `<atom>.historial.md`, que tambien casa con `glob("*.md")`. Todo consumidor que cuente o
+    recorra fichas debe filtrar por aqui en vez de reimplementar la condicion — cuando se anada
+    un tercer artefacto, este es el unico sitio que hay que tocar.
+
+    Ya mordio: `scripts/audit_correos_no_separados.py` tomaba el historial por un portador (su
+    `fm_get(fm, "msg_id") or md.stem` cae al stem cuando no hay frontmatter) y escaneaba el
+    verbatim citado, que esta lleno de cabeceras `De:`/`Enviado:`.
+    """
+    return p.name.endswith(".md") and not p.name.endswith(SUFIJO_HISTORIAL)
 
 
 def _yaml_lista(nombre: str, valores: list[str]) -> str:

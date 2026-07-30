@@ -13,7 +13,13 @@ from __future__ import annotations
 
 import re
 
-from .inline import normaliza_cuerpo
+from .inline import (
+    _RE_ANYLABEL,
+    _RE_APPLE_EN_LINE,
+    _RE_APPLE_ES_LINE,
+    _RE_FWD_LINE,
+    normaliza_cuerpo,
+)
 
 # "Frase sustancial": la unidad sobre la que `MEJORAS #105` midio que el 90 % del texto
 # recortado ya existia en otra ficha. No cambiar sin re-medir.
@@ -24,6 +30,25 @@ _MIN_PALABRAS = 8
 # de linea) no las limpiaria, y ninguna frase del historial casaria con su gemela de una ficha
 # -> el fichero saldria con «100 % exclusivas» siempre.
 _RE_MARCA_CITA = re.compile(r"(?m)^\s*>+\s?")
+
+# Lineas de CABECERA de cita, que no son prosa: `De:`/`Enviado:`/`Para:`/`Asunto:`, la
+# atribucion "El ... escribio:" / "On ... wrote:" y el separador "-----Mensaje original-----".
+# Se RETIRAN antes de partir en frases, y no es cosmetico: ninguna termina en puntuacion, asi
+# que sin esto se pegan a la primera frase citada real y esa frase compuesta NO CASA con su
+# gemela de una ficha limpia -> «exclusiva» espuria. En correo real el historial esta lleno de
+# estas lineas, luego el defecto degradaba el artefacto justo en su funcion principal: decir
+# que hay aqui que no este en ningun otro sitio. (Hallazgo de la revision adversarial de la
+# spec; el vocabulario se reutiliza de `inline` en vez de duplicarlo, que derivaria.)
+# Solo afecta al INDICE: el bloque de texto sigue siendo verbatim, cabeceras incluidas.
+# Se prueban una a una en vez de componerlas en un solo patron: cada una trae sus propias flags
+# inline (`(?im)`), y Python las exige al principio de la expresion completa — concatenarlas da
+# `re.PatternError: global flags not at the start`.
+_RES_CABECERA = (_RE_ANYLABEL, _RE_APPLE_ES_LINE, _RE_APPLE_EN_LINE, _RE_FWD_LINE)
+
+
+def _sin_lineas_de_cabecera(texto: str) -> str:
+    return "\n".join(l for l in texto.splitlines()
+                     if not any(rx.search(l) for rx in _RES_CABECERA))
 
 # Fin de frase: puntuacion terminal seguida de espacio, o linea en blanco.
 _RE_FIN_FRASE = re.compile(r"(?<=[.!?…])\s+|\n{2,}")
@@ -38,6 +63,7 @@ _CABECERA = (
     "tendria su propia ficha; no la tiene.\n\n"
     "- frases sustanciales (>=8 palabras): {n_frases}\n"
     "- ya presentes en otra ficha: {n_dup}\n"
+    "- no comparables (normalizan a vacio): {n_nc}\n"
     "- **exclusivas de este fichero: {n_exc}**\n"
 )
 
@@ -45,10 +71,18 @@ _CABECERA = (
 def frases_sustanciales(texto: str) -> list[str]:
     """Las frases de *texto* con >= 8 palabras, en orden y ya aplanadas a una linea.
 
-    Devuelve el texto legible (sin marcas de cita, sin saltos), NO normalizado: estas frases se
-    imprimen en el indice del `.historial.md`. La normalizacion es solo para comparar.
+    Devuelve el texto legible (sin marcas de cita, sin lineas de cabecera, sin saltos), NO
+    normalizado: estas frases se imprimen en el indice del `.historial.md`. La normalizacion es
+    solo para comparar.
+
+    Orden de las tres operaciones, y ninguna es intercambiable:
+    1. quitar las marcas de cita `>` (si no, quedan a mitad de cadena al aplanar y nada casa);
+    2. retirar las lineas de CABECERA (si no, se pegan a la primera frase real porque no
+       terminan en puntuacion, y esa frase compuesta no casa con su gemela limpia);
+    3. partir en frases y aplanar cada una.
     """
     limpio = _RE_MARCA_CITA.sub("", texto or "")
+    limpio = _sin_lineas_de_cabecera(limpio)
     frases = []
     for bruto in _RE_FIN_FRASE.split(limpio):
         f = " ".join(bruto.split())
@@ -84,17 +118,27 @@ def render_historial(*, portador_msg_id: str, nombre_ficha: str, resto_citado: s
     cuenta como «ya presente en otra ficha».
     """
     frases = frases_sustanciales(resto_citado)
-    filas, n_dup = [], 0
+    filas, n_dup, n_nc = [], 0, 0
     for i, f in enumerate(frases, 1):
-        otros = [x for x in indice.get(normaliza_cuerpo(f), []) if x != portador_msg_id]
+        clave = normaliza_cuerpo(f)
+        if not clave:
+            # `normaliza_cuerpo` TRUNCA en el marcador de firma (`-- `, «Enviado desde mi…»), asi
+            # que una frase que empiece por ahi normaliza a cadena vacia. Sin esta rama caeria en
+            # el `else` y se declararia EXCLUSIVA: una afirmacion FALSA, porque no se ha podido
+            # comparar con nada. Categoria propia y contador propio (hallazgo de la revision
+            # adversarial de la spec).
+            n_nc += 1
+            filas.append(f"| {i} | NO COMPARABLE | — | {_celda(f)} |")
+            continue
+        otros = [x for x in indice.get(clave, []) if x != portador_msg_id]
         if otros:
             n_dup += 1
             filas.append(f"| {i} | duplicada | {', '.join(otros)} | {_celda(f)} |")
         else:
             filas.append(f"| {i} | **EXCLUSIVA** | — | {_celda(f)} |")
     partes = [_CABECERA.format(portador=portador_msg_id, ficha=nombre_ficha,
-                               n_frases=len(frases), n_dup=n_dup,
-                               n_exc=len(frases) - n_dup)]
+                               n_frases=len(frases), n_dup=n_dup, n_nc=n_nc,
+                               n_exc=len(frases) - n_dup - n_nc)]
     partes.append("\n## Indice de frases\n")
     partes.append("| # | estado | donde vive | frase |")
     partes.append("|---|---|---|---|")
@@ -107,5 +151,11 @@ def render_historial(*, portador_msg_id: str, nombre_ficha: str, resto_citado: s
 
 
 def _celda(f: str) -> str:
-    """La frase, apta para una celda de tabla Markdown: sin `|` y acotada."""
-    return f.replace("|", " ")[:120]
+    """La frase COMPLETA, apta para una celda de tabla Markdown: solo se neutraliza el `|`.
+
+    NO se trunca. Una version anterior cortaba a 120 caracteres en silencio, y eso hacia que
+    dos proposiciones que difieren mas alla de ese punto se vieran identicas en la tabla —
+    contra el «el indice repite la frase» de la spec, que existe para poder leer la columna de
+    exclusivas sin cotejar a mano con el bloque. Fila larga es peor de ver y mejor de auditar.
+    """
+    return f.replace("|", " ")
