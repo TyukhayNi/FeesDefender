@@ -43,7 +43,11 @@ def test_headerless_no_inventa(tmp_path):
     m.set_content("Nota del autor.\n> cita sin cabecera parseable\n> mas cita\n")
     (src / "a.eml").write_bytes(m.as_bytes())
     P.atomize_dir(src, out)
-    assert len(list((out / "mensajes").glob("*.md"))) == 1   # solo el portador
+    # Excluye `*.historial.md`: la cita recortada del portador (>= 8 palabras) tambien
+    # produce su fichero hermano de historial (`MEJORAS #105`); esta prueba cuenta
+    # FICHAS de mensaje, no cualquier artefacto con sufijo `.md`.
+    assert len([p for p in (out / "mensajes").glob("*.md")
+               if not p.name.endswith(".historial.md")]) == 1   # solo el portador
 
 
 def test_fecha_posterior_nunca_alta():

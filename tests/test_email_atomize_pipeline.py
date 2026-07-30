@@ -265,10 +265,16 @@ def test_fallo_de_layer_b_tampoco_poda_el_b_superado(tmp_path, monkeypatch):
     rep1 = P.atomize_dir(src, out, case_dir=tmp_path)
     # Prueba de que el fixture NO es vacío: se acuña un B real (Capa A de b@x + su B).
     assert rep1.reconstruidos_b == 1
-    fichas_antes = sorted(p.name for p in (out / "mensajes").glob("*.md"))
+    # Excluye `*.historial.md`: el fixture de b@x tiene cita recortada de sobra (>24 chars,
+    # a proposito para superar el floor de Layer B) y por tanto TAMBIEN produce su fichero
+    # hermano de historial (`MEJORAS #105`); esta prueba cuenta FICHAS de mensaje, no
+    # cualquier artefacto con sufijo `.md`.
+    fichas_antes = sorted(p.name for p in (out / "mensajes").glob("*.md")
+                          if not p.name.endswith(".historial.md"))
     assert len(fichas_antes) == 3   # a, b (Capa A) + la ficha B reconstruida
     b_antes = [p.name for p in (out / "mensajes").glob("*.md")
-               if "confianza: media-reconstruida" in p.read_text(encoding="utf-8")]
+               if not p.name.endswith(".historial.md")
+               and "confianza: media-reconstruida" in p.read_text(encoding="utf-8")]
     assert len(b_antes) == 1
     nombre_b = b_antes[0]
 
@@ -289,7 +295,8 @@ def test_fallo_de_layer_b_tampoco_poda_el_b_superado(tmp_path, monkeypatch):
     assert rep2.publicado is True and rep2.poda_omitida is True
     assert any("portador ilegible" in e for e in rep2.errores)
     # la ficha B rancia SOBREVIVE porque la poda está apagada esta corrida
-    fichas_despues = sorted(p.name for p in (out / "mensajes").glob("*.md"))
+    fichas_despues = sorted(p.name for p in (out / "mensajes").glob("*.md")
+                            if not p.name.endswith(".historial.md"))
     assert nombre_b in fichas_despues
     assert fichas_despues == fichas_antes
 

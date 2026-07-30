@@ -21,6 +21,7 @@ from . import corpus as C
 from . import dedup as D
 from . import extract as E
 from . import headers as H
+from . import historial as HIST
 from . import ids as IDS
 from . import identidades as ID
 from . import inline as INL
@@ -136,14 +137,17 @@ def atomize_dir(
     unicos: dict[str, AdjuntoUnico] = {}      # sha -> AdjuntoUnico
     mensajes: list[RegistroMensaje] = []
     carriers: list[tuple[RegistroMensaje, bytes]] = []
+    restos: dict[str, str] = {}          # msg_id -> historial citado que `cortar_autor` retiro
     for col in colapsados:
         try:
-            m = _construir_mensaje(col, reg, apariciones, unicos, report)
+            m, resto = _construir_mensaje(col, reg, apariciones, unicos, report)
         except Exception as exc:  # noqa: BLE001 — un mensaje no aborta la corrida
             report.errores.append(f"{col.message_id or '(sin id)'}: {exc}")
             continue
         mensajes.append(m)
         carriers.append((m, col.raw))
+        if resto and resto.strip():
+            restos[m.msg_id] = resto
         # Llave del registro: lleva la fuente delante porque la ruta relativa a CADA
         # fuente no es única (`sub/a.eml` puede existir en dos lotes). `eml_origen` se
         # queda como está: es el valor probatorio del frontmatter.
@@ -159,6 +163,30 @@ def atomize_dir(
 
     for m in mensajes:
         (out / "mensajes" / R.nombre_md(m)).write_text(R.render_md(m), encoding="utf-8")
+
+    # `MEJORAS #105`: el historial citado que `cortar_autor` retiro no estaba en ningun
+    # artefacto. Se escribe VERBATIM en un fichero hermano, con los duplicados marcados y SIN
+    # atribuir nada. El indice se construye con las fichas de Capa A y B ya conocidas.
+    historiales: set[str] = set()
+    if restos:
+        indice = HIST.indice_frases(mensajes)
+        por_id = {m.msg_id: m for m in mensajes}
+        for msg_id, resto in restos.items():
+            m = por_id.get(msg_id)
+            if m is None:
+                continue
+            nombre = R.nombre_historial(m)
+            try:
+                (out / "mensajes" / nombre).write_text(
+                    HIST.render_historial(portador_msg_id=msg_id, nombre_ficha=R.nombre_md(m),
+                                          resto_citado=resto, indice=indice),
+                    encoding="utf-8")
+            except OSError as exc:
+                # Vista derivada: su fallo NO entra en `report.errores` (eso apagaria la poda
+                # del arbol entero). Se declara nombrando al portador y se sigue.
+                report.notas.append(f"historial de {msg_id} no escrito: {exc}")
+                continue
+            historiales.add(nombre)
     # Permanente (construcción A / Layer B): se publica lo bueno, pero NO se poda — un
     # `.eml` corrupto no se arregla re-corriendo, y bloquear el caso para siempre es peor
     # que conservar una ficha rancia. La poda solo retira huérfanos cuando la foto está
@@ -171,7 +199,12 @@ def atomize_dir(
         # sobre lo que había en disco. Ver `Registro.resolver_procesados`.
         reg.resolver_procesados(foto_completa=False)
     else:
-        esperados = {R.nombre_md(m) for m in mensajes}
+        # `historiales` entra en `esperados` porque el glob "*.md" de abajo tambien
+        # matchea "*.historial.md": sin esto, el fichero que se acaba de escribir en este
+        # MISMO `atomize_dir` se borraria como "huerfano" antes de que la funcion retorne
+        # (colision detectada al ejecutar los tests de esta tarea, no prevista en el brief;
+        # la poda cross-corrida completa sigue siendo alcance de la Tarea 3).
+        esperados = {R.nombre_md(m) for m in mensajes} | historiales
         for p in (out / "mensajes").glob("*.md"):
             if p.name not in esperados:
                 p.unlink()
@@ -278,11 +311,11 @@ def _pase_layer_b(reg, mensajes, carriers, report, identidades):
     return mensajes_b, punteros, upgrades
 
 
-def _construir_mensaje(col, reg, apariciones, unicos, report) -> RegistroMensaje:
+def _construir_mensaje(col, reg, apariciones, unicos, report) -> tuple[RegistroMensaje, str | None]:
     sha = compute_sha256_bytes(col.raw)
     msg_id = reg.msg_id_for(col.message_id, sha=sha)
     cab = H.parse_cabeceras(col.raw)
-    cuerpo = B.extraer_cuerpo(col.raw)
+    cuerpo = B.extraer_cuerpo(col.raw, conservar_resto=True)
 
     _eml, adjuntos = split_eml(col.raw)
     refs: list[AdjuntoRef] = []
@@ -302,7 +335,7 @@ def _construir_mensaje(col, reg, apariciones, unicos, report) -> RegistroMensaje
         elif msg_id not in u.mensajes:
             u.mensajes.append(msg_id)
 
-    return RegistroMensaje(
+    m = RegistroMensaje(
         msg_id=msg_id, rfc_message_id=cab.rfc_message_id, in_reply_to=cab.in_reply_to,
         hilo=cab.hilo, fecha_iso=cab.fecha_iso, hora=cab.hora, fecha_tz=cab.fecha_tz,
         de=cab.de, de_nombre=cab.de_nombre, para=cab.para, cc=cab.cc, cco=[],
@@ -316,6 +349,7 @@ def _construir_mensaje(col, reg, apariciones, unicos, report) -> RegistroMensaje
         charset_recuperado=cuerpo.charset_recuperado, mojibake_marcado=cuerpo.mojibake_marcado,
         raw=col.raw,
     )
+    return m, cuerpo.resto_citado
 
 
 def _escribe_adjunto(out: Path, att: AdjuntoUnico) -> None:

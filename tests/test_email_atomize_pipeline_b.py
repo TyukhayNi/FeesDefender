@@ -55,7 +55,10 @@ def test_layerb_headerless_no_promueve_va_a_cola(tmp_path):
     m.set_content("Mi nota.\n> cita sin cabecera parseable\n> mas cita\n")
     (src / "2026-06-01_c.eml").write_bytes(m.as_bytes())
     P.atomize_dir(src, out)
-    assert len(sorted((out / "mensajes").glob("*.md"))) == 1   # no se promueve nada
+    # Excluye `*.historial.md`: la cita recortada del portador tambien produce su
+    # fichero hermano de historial (`MEJORAS #105`), sin relacion con la promocion Layer B.
+    assert len([p for p in (out / "mensajes").glob("*.md")
+               if not p.name.endswith(".historial.md")]) == 1   # no se promueve nada
     assert (out / "_revision" / "cola.md").exists()
     assert "MSG-00001" in (out / "_revision" / "cola.md").read_text(encoding="utf-8")
 
@@ -82,8 +85,11 @@ def test_layerb_outlook_plano_promueve_media_reconstruida(tmp_path):
         "<carrier-plano@x>", "alguien@x.com", "1 de mayo de 2020", "[inmueble]",
         "contenido citado suficientemente largo para superar el floor de 24 chars"))
     rep = P.atomize_dir(src, out, case_dir=tmp_path)
-    # Capa A: 1 portador; Capa B: 1 media-reconstruida
-    mds = sorted((out / "mensajes").glob("*.md"))
+    # Capa A: 1 portador; Capa B: 1 media-reconstruida. Excluye `*.historial.md`: el
+    # portador tiene cita recortada de sobra y por tanto TAMBIEN produce su fichero
+    # hermano de historial (`MEJORAS #105`), sin relacion con la promocion Layer B.
+    mds = sorted(p for p in (out / "mensajes").glob("*.md")
+                if not p.name.endswith(".historial.md"))
     assert len(mds) == 2
     # Aislar el atom B por su contenido (no por nombre de fichero):
     b_mds = [p for p in mds if "confianza: media-reconstruida" in p.read_text(encoding="utf-8")]
@@ -107,7 +113,11 @@ def test_layerb_outlook_plano_promueve_media_reconstruida(tmp_path):
     P.atomize_dir(src, out, case_dir=tmp_path)
     reg2 = json.loads((out / "_registro.json").read_text(encoding="utf-8"))
     assert reg2["mensajes_fp"] == reg["mensajes_fp"]
-    assert len(sorted((out / "mensajes").glob("*.md"))) == 2
+    # Excluye `*.historial.md`, igual que arriba: cuenta FICHAS, no cualquier artefacto con
+    # sufijo `.md`. Y de paso fija que la 2a corrida no DUPLICA el historial.
+    assert len([p for p in (out / "mensajes").glob("*.md")
+                if not p.name.endswith(".historial.md")]) == 2
+    assert len(list((out / "mensajes").glob("*.historial.md"))) == 1
 
 
 def _eml_limpio(mid, de, fecha_rfc, asunto, cuerpo):
