@@ -15,6 +15,12 @@ def nombre_md(m: RegistroMensaje) -> str:
     return f"{m.fecha_iso}_{hora}_{slug}_{m.msg_id}.md"
 
 
+def nombre_historial(m: RegistroMensaje) -> str:
+    """El fichero hermano del historial citado de *m* (`MEJORAS #105`). Mismo nombre que su
+    ficha con el sufijo cambiado, para que salgan adyacentes al ordenar el directorio."""
+    return nombre_md(m).removesuffix(".md") + ".historial.md"
+
+
 def _yaml_lista(nombre: str, valores: list[str]) -> str:
     if not valores:
         return f"{nombre}: []"
