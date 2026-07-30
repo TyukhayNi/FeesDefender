@@ -167,18 +167,47 @@ ser cambiar una bandera.
       de esos 24 candidatos— y no reescribe nada que hoy funcione. D2 solo habría compensado si se
       quisiera además una cobertura homogénea de cara a la vista procesal.
 
-- [ ] **(e) Ejecutar D1** — pendiente, es el siguiente paso de este bloque:
-      1. Re-correr el detector (`python -m scripts.detectar_ocr_ciego todos --salida <fuera-del-repo>.md`)
-         para partir de la lista viva, no de la del 2026-07-27.
-      2. Dar a `sala_maquina apply` la capacidad de acotar por documento (~1 h). Hoy no existe:
-         `--force` reprocesa el caso entero y `reforzar` solo recoge `low`/`empty`, y estos están
-         `ok`. Variante sin código, si se prefiere no tocar el CLI: retirar a mano los sha de esos
-         documentos del `_sala_maquina_state.json` y lanzar `apply` normal.
-      3. Correrlo y comparar chars antes/después, como en (c1)/(c2) — el cribado sobre-marca, así
-         que la medición es la única prueba de que hubo pérdida.
+- [ ] **(e) Ejecutar D1** — **herramienta CONSTRUIDA (PR #175), ejecución A MEDIAS.** Los pasos 1 y 2
+      están hechos; el 3 cubre 1 de los 3 casos y W-02VND1 quedó reprocesándose al cerrar la sesión.
+      1. [x] Detector re-corrido: **la lista viva coincide en número (17) pero NO en composición**
+         con la del 2026-07-27. Los cuatro AcroForm de W-02VND1 (cuentas anuales, tasación) que
+         motivaron la restricción dura **ya no aparecen**, y ningún candidato vivo es AcroForm.
+         Reparto: W-02VND1 **14** (11 ficheros físicos, del lote judicial `2026-07-23_manual_01`),
+         W-02XOR7 **2**, W-02VUDR **1**.
+      2. [x] `apply --solo <rel_path>` (repetible) — «force acotado»: procesa esos documentos aunque
+         su sha esté hecho y marca skip todo lo demás, conservando la semántica incremental de
+         cobertura y estado. Excluyente con `--force`. Una ruta que no case aborta con salida 2
+         antes de OCR-izar. `core.sala_maquina.acotar_plan` + 12 tests.
+      3. [ ] Medición: **W-02VUDR = falso positivo** (13.977 → 13.870, −1 % de ruido; su MD ya era
+         `extractor=ocr`, o sea que la pérdida estaba recuperada de antes). **W-02VND1 = pérdida
+         real confirmada**: sus 14 se procesaron el 2026-07-23 con `pypdf`/`ocr=False`, cuatro días
+         antes de que existiera la escalera (`f15f2f8`, 2026-07-27 22:42), y el primer segmento
+         medido subió 160.685 → 166.324 (**+5.639**). **Queda: terminar esa corrida y medirla
+         entera, y lanzar los 2 de W-02XOR7.** Comando exacto en la bitácora del 49º cierre.
 
-      Cautelas: no lanzar sobre un caso con checkout abierto sin cerrarlo antes, y no relanzar sin
-      comprobar que la corrida anterior terminó.
+      **Lo que el cribado es, medido:** marca por estructura (páginas que `--skip-text` saltaría +
+      firma repetida), no por «le falta texto», así que sigue marcando documentos YA recuperados.
+      La medición es el único veredicto — confirmado con el falso positivo de W-02VUDR.
+
+      Cautelas: no lanzar sobre un caso con checkout abierto sin cerrarlo antes (verificado en
+      W-02VND1: `estado_repositorio: disponible`, campos `checkout_*` en null, último checkin
+      2026-07-27T17:56:49Z; el `_caso.md` vive en `00_Input/`, no en la raíz del caso), y no
+      relanzar sin comprobar que la corrida anterior terminó.
+
+- [ ] **(f) Dos defectos destapados al ejecutar (e)** — ninguno lo introduce `--solo`; los activa.
+      El primero está arreglado en el PR #175, el segundo NO:
+      - [x] **Cobertura de caso legacy sin `_cobertura.json`.** W-02XOR7 solo tiene la vista
+        `_cobertura.md` (169 filas) y `_sala_maquina_state.json`. `_cobertura_previa` devolvía `[]`,
+        la fusión se quedaba con el delta y `_escribir_cobertura_md` reescribía la vista: 169 filas
+        de custodia → 2, sin error. Le pasaba igual a `apply` normal. Arreglado con
+        `reconstruir_cobertura_desde_md` (lee solo la cabecera del MD). **Parcial y declarado:**
+        recupera 113 de 169 — los `sin_soporte` no dejan MD y no son reconstruibles; emite aviso.
+      - [ ] **El slug de un segmento de bundle depende de su contenido, así que el reproceso no
+        sustituye: añade.** Medido en vivo: `completo__c170a0f5__seg03_DOCUMENTO__60732e16` se
+        reprocesó como `…__441883cc`. `fusionar_cobertura` indexa por `(rel_path, slug)`, de modo
+        que quedan **dos filas y dos MD** del mismo segmento, uno con el texto pobre, y la sala de
+        lectura puede coger el viejo. Afecta a todo reproceso de bundles, no solo a D1. **Sin
+        decidir**: ¿retirar la fila huérfana por `parent_sha256`+`role`+`paginas`, o versionar?
 
 **Herramienta ya disponible:** `python -m scripts.detectar_ocr_ciego todos --salida <fuera-del-repo>.md`
 (read-only). Es un **cribado**, no un veredicto: de 24 candidatos, 6 eran reales; medir la pérdida
