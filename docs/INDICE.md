@@ -83,6 +83,7 @@ fecha: 2026-07-05
 
 | Documento (en `docs/superpowers/handoffs/`) | Estado | Qué es |
 |---|---|---|
+| `handoff-2026-07-30-fase0-task4-checkin.md` | consumido | Task 4 de la Fase 0 dual: caracterización de `cmd_checkin` (`tests/test_repository_cli_checkin.py`, PR-A). |
 | `2026-07-27-vista-procesal-codex-review-2.md` | consumido | 2ª pasada adversarial de Codex sobre el spec v3.1 de la vista procesal (NO SHIP, 6 hallazgos `N1`-`N6`). Adjudicada en PR #137: N6 al código, N1 → pieza 2 (PR #140), N3 → pieza 3 (abierta). |
 | `2026-07-27-vista-procesal-codex-informe.md` | consumido | Informe completo de la **1ª pasada** adversarial de Codex (NO SHIP, 25 hallazgos), texto recibido sin modificar; adjudicación hallazgo → sección en §10 del spec `2026-07-27-vista-procesal-…-design.md` (PR #137). |
 | `2026-07-27-vista-procesal-codex-review.md` | consumido | Handoff resumido de esa misma 1ª pasada (los bloqueantes); su adjudicación acabó en §10 del spec, no en el propio fichero. |

@@ -41,6 +41,21 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker(skip_slow)
 
 
+@pytest.fixture(autouse=True)
+def _barrera_frontal(tmp_path, monkeypatch):
+    """Barrera de la Fase 0, `autouse` en TODA la suite: ver `tests/_barrera.py`.
+
+    Es de scope **función** y no de sesión a propósito: una fixture de sesión se monta
+    en el setup del primer test —después de la colección— y no puede proteger un efecto
+    de import. `autouse` porque un helper opt-in que el autor olvide llamar no es una
+    barrera; `tmp_casos_root` (abajo) sigue siendo opt-in porque prepara datos, no
+    protege nada.
+    """
+    from tests import _barrera
+
+    _barrera.instalar(monkeypatch, raiz_local=tmp_path)
+
+
 @pytest.fixture
 def tmp_casos_root(tmp_path, monkeypatch):
     root = tmp_path / "CASOS"

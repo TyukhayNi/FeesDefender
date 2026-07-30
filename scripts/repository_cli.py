@@ -61,6 +61,7 @@ los mismos flags.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import hashlib
 import json
 import socket
@@ -68,6 +69,8 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -388,7 +391,7 @@ def inventario_local(root: Path) -> dict[str, dict[str, Any]]:
 # Runner de rclone (I/O) — subprocess UTF-8, jamás pipe de PowerShell
 # ---------------------------------------------------------------------------
 
-def run_rclone(cmd: list[str]) -> subprocess.CompletedProcess:
+def _ejecutar_rclone_real(cmd: list[str]) -> subprocess.CompletedProcess:
     """Ejecuta rclone capturando stdout/stderr con ``encoding="utf-8"``.
 
     NUNCA se canaliza por PowerShell (`| Out-File`): la captura es un pipe de SO
@@ -399,6 +402,62 @@ def run_rclone(cmd: list[str]) -> subprocess.CompletedProcess:
     return subprocess.run(
         cmd, capture_output=True, encoding="utf-8", errors="replace", check=False,
     )
+
+
+@dataclass(frozen=True)
+class Entorno:
+    """Puerto único de inyección de las OCHO fuentes de no-determinismo del frontal.
+
+    Sin esto la orquestación no es asertable: no solo rclone, también el reloj, el
+    hostname, el directorio temporal, la espera del sync lag, el nonce, el usuario del
+    SO y el binario. Cinco de las ocho impiden asertar aunque rclone esté doblado.
+
+    **Las ocho son *callables*, no valores**, y no es un detalle de estilo: capturar el
+    valor al importar el módulo rompería el enlace tardío del que dependen los tests de
+    orquestación ya existentes, que sustituyen `_tmp_dir`/`_nonce` por `monkeypatch` de
+    módulo. Así el `Entorno` y el `monkeypatch` conviven en vez de competir.
+
+    `ENTORNO_REAL` reproduce **exactamente** el comportamiento de hoy: con él, el
+    frontal ejecuta los mismos comandos, en el mismo orden, con los mismos códigos de
+    salida (invariante de «cero cambio de comportamiento» de la Fase 0).
+    """
+
+    ejecutar: Callable[[list[str]], subprocess.CompletedProcess]
+    ahora: Callable[[], str]
+    hostname: Callable[[], str]
+    work_dir: Callable[[], Path]
+    esperar: Callable[[float], None]
+    nonce: Callable[[], str]
+    usuario: Callable[[], str]
+    binario: Callable[[], str]
+
+    def con(self, **cambios: Any) -> Entorno:
+        """Copia con algunas piezas sustituidas (`Entorno` es frozen)."""
+        return dataclasses.replace(self, **cambios)
+
+
+#: Instancia que reproduce lo de hoy. Los `lambda` NO son adorno: mantienen el enlace
+#: tardío (y resuelven las referencias a helpers definidos más abajo en el módulo).
+ENTORNO_REAL = Entorno(
+    ejecutar=lambda cmd: _ejecutar_rclone_real(cmd),
+    ahora=lambda: now_iso_utc(),
+    hostname=lambda: socket.gethostname(),
+    work_dir=lambda: _tmp_dir(),
+    esperar=lambda segundos: time.sleep(segundos),
+    nonce=lambda: _nonce(),
+    usuario=lambda: _usuario_por_defecto(),
+    binario=lambda: _rclone_bin(),
+)
+
+
+def run_rclone(cmd: list[str], *, entorno: Entorno = ENTORNO_REAL) -> subprocess.CompletedProcess:
+    """Punto único por el que pasa TODA llamada a rclone (15 call-sites, 8 rutinas).
+
+    En la Task 1A solo se abre el puerto: ningún `cmd_*` ni helper de I/O propaga
+    todavía el `entorno` (eso es la Task 1B, que va **después** de la caracterización,
+    que es su única red).
+    """
+    return entorno.ejecutar(cmd)
 
 
 # ---------------------------------------------------------------------------
