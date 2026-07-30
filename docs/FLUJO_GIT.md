@@ -63,7 +63,9 @@ fecha: 2026-07-20
 > `leak-scan` es el **único** check del CI — **no corre pytest**. Por eso `session_close`
 > (pytest local) es la red real; córrelo antes de mergear, sobre todo si tocas guards o `.py`.
 
-> **Gotcha del paso 4 (visto 2026-07-28, PR #151):** lanzado desde un worktree,
+> **Gotcha del paso 4 (visto 2026-07-28 en el PR #151 y OTRA VEZ el 2026-07-30 en el #174;
+> 2ª recurrencia, así que asúmelo como el comportamiento normal y no como una rareza):**
+> lanzado desde un worktree,
 > `gh pr merge --squash --delete-branch` **falla su paso local** con
 > `fatal: 'main' is already used by worktree at 'C:/Users/tnm33/Dev/FeesDefender'` —
 > intenta volver a `main`, que la tiene tomada la raíz compartida. **El merge ya ha entrado
