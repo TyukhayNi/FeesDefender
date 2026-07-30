@@ -1,11 +1,14 @@
 ---
+tipo: handoff
+estado: consumido
+creado: 2026-07-27
+origen: revisión adversarial de Codex (chat, solo lectura) — handoff resumido de la 1ª pasada sobre el diseño de la vista procesal
+destino: sesión Claude Code — adjudicar los hallazgos contra la fuente y reescribir el spec
+consumido_por: "PR #137 (`12c8a91`): la adjudicación acabó en §10 de `docs/superpowers/specs/2026-07-27-vista-procesal-05-procedimiento-design.md` (v3), no en este fichero como anunciaba su cuerpo. El informe completo de la misma pasada se incorporó como `2026-07-27-vista-procesal-codex-informe.md`."
 titulo: Revisión adversarial Codex — vista procesal 05_Procedimiento
-fecha: 2026-07-27
 revisor: Codex
 spec: docs/superpowers/specs/2026-07-27-vista-procesal-05-procedimiento-design.md
 veredicto: NO SHIP
-estado: abierto
-adjudicacion: pendiente
 ---
 
 > **Andamio efímero** (gobernanza §5). Texto **recibido de Codex por chat, sin modificar**:
@@ -13,6 +16,11 @@ adjudicacion: pendiente
 > contra la fuente la hace Claude Code y se anota en este mismo fichero cuando se cierre.
 >
 > Existe además un **informe completo** en poder de Nikolai, no incorporado aquí todavía.
+>
+> **Cierre (anotado el 2026-07-30, al reconstruir la vista derivada del `INDICE`).** Las dos frases
+> de arriba quedaron desfasadas: la adjudicación **no** se anotó en este fichero sino en **§10 del
+> spec** (`…-05-procedimiento-design.md`, v3), y el informe completo **sí** entró al repo, como
+> `2026-07-27-vista-procesal-codex-informe.md`. Ambas cosas llegaron con el **PR #137** (`12c8a91`).
 
 # Handoff para Claude Code — revisión del diseño `05_Procedimiento`
 

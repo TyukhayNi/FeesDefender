@@ -1,11 +1,14 @@
 ---
+tipo: handoff
+estado: consumido
+creado: 2026-07-27
+origen: revisión adversarial de Codex (chat, solo lectura sobre HEAD desacoplado) — informe completo de la 1ª pasada sobre el diseño de la vista procesal
+destino: sesión Claude Code — adjudicar los 25 hallazgos contra la fuente y reescribir el spec
+consumido_por: "PR #137 (`12c8a91`): los 25 hallazgos se aceptaron en sustancia (seis ajustes de severidad, dos recortes de alcance) y la adjudicación hallazgo → sección vive en §10 de `docs/superpowers/specs/2026-07-27-vista-procesal-05-procedimiento-design.md` (v3; la v3.1 cierra §11)."
 titulo: Revisión adversarial Codex — informe completo (vista procesal 05_Procedimiento)
-fecha: 2026-07-27
 revisor: Codex
 spec: docs/superpowers/specs/2026-07-27-vista-procesal-05-procedimiento-design.md
 veredicto: NO SHIP
-estado: abierto
-adjudicacion: pendiente
 handoff: docs/superpowers/handoffs/2026-07-27-vista-procesal-codex-review.md
 ---
 

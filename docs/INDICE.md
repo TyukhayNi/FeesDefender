@@ -84,6 +84,11 @@ fecha: 2026-07-05
 | Documento (en `docs/superpowers/handoffs/`) | Estado | Qué es |
 |---|---|---|
 | `handoff-2026-07-30-fase0-task4-checkin.md` | consumido | Task 4 de la Fase 0 dual: caracterización de `cmd_checkin` (`tests/test_repository_cli_checkin.py`, PR-A). |
+| `2026-07-27-vista-procesal-codex-review-2.md` | consumido | 2ª pasada adversarial de Codex sobre el spec v3.1 de la vista procesal (NO SHIP, 6 hallazgos `N1`-`N6`). Adjudicada en PR #137: N6 al código, N1 → pieza 2 (PR #140), N3 → pieza 3 (abierta). |
+| `2026-07-27-vista-procesal-codex-informe.md` | consumido | Informe completo de la **1ª pasada** adversarial de Codex (NO SHIP, 25 hallazgos), texto recibido sin modificar; adjudicación hallazgo → sección en §10 del spec `2026-07-27-vista-procesal-…-design.md` (PR #137). |
+| `2026-07-27-vista-procesal-codex-review.md` | consumido | Handoff resumido de esa misma 1ª pasada (los bloqueantes); su adjudicación acabó en §10 del spec, no en el propio fichero. |
+| `handoff-2026-07-27-sala-maquina-ocr-gaps.md` | consumido | Tres huecos de OCR del motor de sala de máquina, verificados contra el código; promovidos a `MEJORAS_FUTURAS.md` #90/#91 (PR #134), el tercero descartado con motivo. |
+| `handoff-2026-07-26-gobernanza-indice-adversarial.md` | consumido | Diagnóstico de gobernanza documental lanzado a revisión adversarial; veredicto en `../specs/2026-07-26-gobernanza-indice-adversarial-review.md` (4 de 5 refutados) y remediación completa en PR #127/#128/#129. |
 | `handoff-2026-07-19-triaje-plan.md` | consumido | Triaje de la cola de planificación (informe aplicado). |
 | `handoff-2026-07-17-apertura-W-{02T3XO,02TH0W,046G2R}-mejoras-proceso.md` | historico | 3 aperturas E2E; consolidados en `RUNBOOK_APERTURA_EXPEDIENTE.md`. |
 | `handoff-2026-07-16-rightsizing-mcp-drive-v1.md` | consumido | Right-sizing V1 del MCP Drive-disco (spec `2026-07-16-…` + build PR #52). |
@@ -97,3 +102,8 @@ fecha: 2026-07-05
 | `handoff-2026-06-05-prerelleno-viabilidad-experiencia.md` | historico | Conocimiento cristalizado que originó la skill `viabilidad-prerelleno`. |
 | `prompt_handoff_expedientes_seguros.md` | historico | Absorción del Anonimizador (`core/anon`). |
 | `../specs/cronologia-handoffs/handoff_F*.md` (7) | consumido | Stress-tests de la Cronología v7 (excepción de ubicación: agrupados con su spec). |
+
+> **Excepción de nombre:** los tres `2026-07-27-vista-procesal-codex-*.md` no llevan el prefijo
+> `handoff-` que pide el §5. Se conservan así a propósito: renombrarlos rompería los enlaces
+> entrantes del spec de la vista procesal y del bloque `[SIGUIENTE-VISTA-PROCESAL]` de `PLAN.md`.
+> Lo mismo vale para `prompt_handoff_expedientes_seguros.md`, anterior a la regla.
