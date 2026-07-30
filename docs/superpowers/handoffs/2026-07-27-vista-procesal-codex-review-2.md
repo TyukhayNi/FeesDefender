@@ -1,12 +1,15 @@
 ---
+tipo: handoff
+estado: consumido
+creado: 2026-07-27
+origen: revisión adversarial de Codex (chat, solo lectura) — 2ª pasada sobre el spec v3.1, commit `972da2d`
+destino: sesión Claude Code — adjudicar los 6 hallazgos nuevos (N1-N6) y decidir el reparto del trabajo
+consumido_por: "PR #137 (`12c8a91`): los 6 se aceptaron en sustancia. N6 se arregló en el propio PR (`core/repository_checkout.py`); el resto se repartió en las cuatro piezas del bloque `[SIGUIENTE-VISTA-PROCESAL]` de `PLAN.md` — N1 → pieza 2 (PR #140, `86e3abd`), N3 → pieza 3 (aún abierta) — y en el spec v3.1 (el `eco_crm` de N5, en §1.1)."
 titulo: Revisión adversarial 2ª pasada — vista procesal 05_Procedimiento v3.1
-fecha: 2026-07-27
 revisor: Codex
 spec: docs/superpowers/specs/2026-07-27-vista-procesal-05-procedimiento-design.md
 commit_revisado: 972da2d
 veredicto: NO SHIP
-estado: abierto
-adjudicacion: pendiente
 pasada_anterior: docs/superpowers/handoffs/2026-07-27-vista-procesal-codex-informe.md
 ---
 
