@@ -530,13 +530,22 @@ caso: durante un checkout, un proceso escribe en el local y otro en Drive.
       ruidoso que no bloquea. Incluyó el **8º defecto**: `_integrar_bandeja` devolvía `(0,0)` con un
       `lsjson` ilegible y el checkin liberaba el lock creyendo la bandeja vacía. 16 tests de
       orquestación en total.
-- [ ] **Fase 0 — banco de pruebas del frontal.** Barrera anti-rclone-real + `Entorno` que inyecta
-      las **cinco** fuentes de no-determinismo (rclone, reloj, hostname, directorio de trabajo,
-      espera) + doble de Drive fijado a **rclone v1.73.5** con fixtures grabadas y **hook de
-      mutación** para interleaving determinista + caracterización de `cmd_checkout`/`cmd_checkin` +
-      matriz de fallos por call-site + los 7 defectos reproducidos en
-      `xfail(strict=True, raises=AssertionError)`. Sin esto los criterios de salida de las Fases 2-3
-      son indemostrables.
+- [x] **Fase 0 — banco de pruebas del frontal.** ✅ **PR #170** (`4dba135`, PR-A: barrera + `Entorno`
+      + doble + caracterización) y **PR #174** (PR-B: costura, matriz de fallos, los 7 `xfail` y
+      gobernanza). Barrera anti-rclone-real + `Entorno` que inyecta las **ocho** fuentes de
+      no-determinismo (rclone, reloj, hostname, directorio de trabajo, espera, nonce, usuario y
+      binario — eran cinco en la rev. 2 del plan y se contaron mal) + doble de Drive fijado a
+      **rclone v1.73.5** con fixtures grabadas y **hook de mutación** para interleaving determinista
+      + caracterización de `cmd_checkout`/`cmd_checkin` + matriz de fallos por call-site + los 7
+      defectos reproducidos en `xfail(strict=True, raises=AssertionError)`. Sin esto los criterios de
+      salida de las Fases 2-3 eran indemostrables.
+      **Lo que la fase dejó medido y no hay que volver a medir:** el camino verde del checkin son
+      **diez** operaciones rclone y el del checkout **ocho, no siete** (la octava es la sonda
+      `_remoto_existe` cuando el `_intake_log.jsonl` aún no existe); el **AMARILLO sale con `0`**, no
+      con 1, así que todo aserto de código de salida va emparejado con el estado del lock; y el
+      **ROJO de orquestación es inalcanzable** (se retorna antes de clasificar el semáforo).
+      **Los siete defectos siguen vivos**: están reproducidos, no arreglados, y su arreglo no es de
+      esta fase.
       **Plan ejecutable rev. 4 — EJECUTABLE, sin más gate (8 tareas en DOS PRs):**
       `docs/superpowers/plans/2026-07-29-dual-workspace-fase0-banco-pruebas.md`. Sustituye a las
       Tareas 1-3 del plan combinado, supersedidas. **PR-A** = barrera + `Entorno` + doble +

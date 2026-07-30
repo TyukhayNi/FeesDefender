@@ -48,14 +48,27 @@ gate humano pendiente (borrados sin ``--yes``) · ``4`` **no se pudo leer el
 protocolo o registrar la traza: estado indeterminado, lock conservado,
 recuperación necesaria**.
 
-Nota de alcance: las funciones PURAS (parseo, validación, semáforo, construcción
-de comandos, plan) están cubiertas por tests, y desde 2026-07-29 hay además
-tests de **orquestación** de ``cmd_checkout``/``cmd_checkin`` con un doble de
-rclone (``tests/test_repository_cli_guard_pull.py``; el banco completo llega con
-la Fase 0 de la arquitectura dual). Lo que sigue SIN cubrir: rclone real, el
-Drive real y la cuota de API. El piloto validó el ciclo a mano y Cowork
-re-correrá los evals de la skill. La CLI y la skill comparten el mismo cerebro y
-los mismos flags.
+Nota de alcance (al día tras la **Fase 0** de la arquitectura dual, 2026-07-30). El
+banco de pruebas del frontal está completo:
+
+- helpers **PUROS** (parseo, validación, semáforo, construcción de comandos, plan);
+- **orquestación** de ``cmd_checkout``/``cmd_checkin`` contra un doble contractual de
+  rclone fijado a **v1.73.5** con fixtures grabadas (``tests/_dobles/fake_drive.py``):
+  caracterización de los dos comandos, matriz de caminos de FALLO —incluidos los dos
+  únicos retornos de ``run_rclone`` que este módulo no examina, el ``lsjson`` del CP1 y
+  el ``rmdirs`` de la bandeja— y los **siete** defectos vivos reproducidos en
+  ``xfail(strict=True)`` (``tests/test_repository_cli_defectos.py``). Reproducidos, **no
+  arreglados**: el doble titular, el rollback sobre lock ajeno, el orden del checkin, el
+  ``moveto`` de bandeja que libera igual, el checkin reentrante que duplica el evento y
+  los dos del log canónico siguen ahí;
+- una **barrera** de suite (``tests/_barrera.py``) por la que ningún test puede alcanzar
+  rclone real, el Drive real ni ``CASOS_ROOT``. Toda inyección entra por el ``Entorno``.
+
+Lo que sigue SIN cubrir, y conviene no confundirlo con lo anterior: **rclone real, el
+Drive real y la cuota de API**. Nada de esto prueba que el ciclo funcione contra el Drive
+del despacho; eso lo validó el piloto a mano (W-02VND1 / W-02THLJ). Los dobles de CRM y
+Gmail son de la Fase 3. La CLI y la skill ``checkin-caso`` comparten cerebro y flags, y
+Cowork re-corre los evals de la skill.
 """
 
 from __future__ import annotations
