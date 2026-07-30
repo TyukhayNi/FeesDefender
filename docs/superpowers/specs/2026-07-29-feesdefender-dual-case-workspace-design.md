@@ -1094,18 +1094,24 @@ estado y efectos.
 - unitarias del resolver, estados, capacidades y mensajes;
 - contractuales reutilizables por CLI, UI, plugins y skills;
 - integración con árboles temporales y dobles de Drive/CRM/Gmail. **El doble de
-  Drive/rclone no existe y es la Fase 0**: `repository_cli` llama a `run_rclone`
-  directamente, sin puerto inyectable, y los 27 tests de
-  `tests/test_repository_cli.py` cubren solo sus helpers puros. Mientras no
-  exista, las filas «Drive disponible» y «Checkout ajeno» del §14.1 no son
-  ejecutables para el ciclo checkout/checkin;
+  Drive/rclone ya existe: lo construyó la Fase 0** (`tests/_dobles/fake_drive.py`,
+  fijado a rclone v1.73.5 con fixtures grabadas), y `repository_cli` tiene puerto
+  inyectable —`Entorno` con las ocho fuentes de no-determinismo, enhebrado por sus
+  15 call-sites—, más caracterización de los dos `cmd_*` y una barrera que impide a
+  cualquier test alcanzar rclone real, el Drive real o `CASOS_ROOT`. Las filas
+  «Drive disponible» y «Checkout ajeno» del §14.1 **ya son ejecutables** para el
+  ciclo checkout/checkin. Los dobles de **CRM y Gmail** siguen sin existir (Fase 3);
 - death tests que comparen inventario y hashes antes/después de un bloqueo, **en
   los cuatro planos del §3.2-bis** (árbol, canon incluidas carpetas, servicios
   externos, estado local);
 - pruebas de reentrada en checkout, checkin y promoción, incluida la de que un
-  reintento **no** duplica `case_checkin`;
+  reintento **no** duplica `case_checkin`. **Hoy sí lo duplica**: queda reproducido
+  como `xfail(strict=True)` en `tests/test_repository_cli_defectos.py` (Fase 0, Task 6),
+  no satisfecho — el arreglo no es de la Fase 0;
 - una prueba de carrera de lock: dos adquisiciones que leen `disponible` antes de
-  que ninguna escriba deben producir exactamente un titular;
+  que ninguna escriba deben producir exactamente un titular. **Hoy producen dos**, y
+  también está reproducida como `xfail` en el mismo fichero, con la secuencia causal
+  asertada sobre `traza_actores` y no solo con los dos códigos de salida;
 - pruebas de compatibilidad con casos sin campos nuevos;
 - tests anti-drift de skills y plugin.
 
