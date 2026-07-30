@@ -57,7 +57,16 @@ Las cuatro se cerraron en el brainstorming del 2026-07-30.
 **Decisión de formato, mía y señalada como tal para que se pueda revocar:** el texto va **verbatim de
 verdad**, en un bloque intacto, y las anotaciones van **al lado** en un índice — no intercaladas como
 prefijos por línea. Un bloque verbatim se audita carácter a carácter contra el `.eml`; uno con
-prefijos inyectados, ya no.
+prefijos inyectados, ya no. El índice **repite la frase** (columna `frase`): sin ella, una tabla de
+números y estados no dice nada sin cotejarla a mano con el bloque, y el caso de uso principal —«¿qué
+hay aquí que no esté en ninguna otra ficha?»— se responde leyendo solo esa columna.
+
+**Detalle que decide si esto funciona, y es fácil de perder:** las frases del historial vienen
+**marcadas con `>`**, y las de las fichas no. La normalización de comparación (`normaliza_cuerpo`)
+quita las marcas de cita solo **al principio de línea**; si las frases se aplanan a una sola línea
+*antes* de quitarlas, los `>` quedan a mitad de cadena, no se limpian, y **ninguna frase casa nunca**
+— el fichero saldría con «100 % exclusivas» siempre. El orden correcto es: quitar marcas de cita →
+aplanar → normalizar.
 
 ## 4. Alternativas descartadas
 
@@ -138,11 +147,11 @@ fiable, y el motor no inventa remitentes.
 
 ## Índice de frases
 
-| # | estado | dónde vive si no es exclusiva |
-|---|---|---|
-| 1 | duplicada | MSG-00007 |
-| 2 | duplicada | MSG-00007, MSG-00011 |
-| 3 | **EXCLUSIVA** | — |
+| # | estado | dónde vive | frase |
+|---|---|---|---|
+| 1 | duplicada | MSG-00007 | Buenos días, adjunto la propuesta revisada… |
+| 2 | duplicada | MSG-00007, MSG-00011 | Quedo a la espera de su confirmación para… |
+| 3 | **EXCLUSIVA** | — | En cuanto a la cláusula tercera, el plazo… |
 
 ## Texto retirado (verbatim)
 
@@ -150,6 +159,13 @@ fiable, y el motor no inventa remitentes.
 …el resto_citado, íntegro y sin tocar…
 ```
 ````
+
+**Matiz que el propio fichero tiene que declarar, medido al validar los fixtures del plan:** el
+`resto_citado` incluye los bloques `De:`/`Enviado:`/`Para:`/`Asunto:` de la cita —van dentro de lo que
+`cortar_autor` recorta—, así que el `.historial.md` **contiene texto que parece una atribución sin
+serlo**. Alguien podría leer `De: Otro <…>` y creer que el motor atribuyó ese mensaje. La cabecera del
+fichero lo dice explícitamente: esos bloques se reproducen **tal cual porque son parte del texto
+citado**, y si ese mensaje tuviera cabecera atribuible ya tendría su propia ficha.
 
 ## 7. Errores
 
