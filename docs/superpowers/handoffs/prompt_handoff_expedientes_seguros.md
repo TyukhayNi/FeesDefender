@@ -1,5 +1,10 @@
 ---
+tipo: handoff
 estado: historico
+creado: 2026-05-07  # fecha del commit que lo introduce (d64d0ca); el documento no lleva fecha propia ni en el nombre
+origen: Nikolai Tyukhay, lado FeesDefender — prompt redactado para reclamar la ficha técnica de Expedientes Seguros
+destino: hilo del proyecto Expedientes Seguros — devolver la información técnica de su pipeline para ejecutar la absorción
+consumido_por: "core/anon/ — absorción del Anonimizador, Fases 0-4 (commit d64d0ca, 2026-05-07)"
 dueño: Nikolai Tyukhay
 ---
 

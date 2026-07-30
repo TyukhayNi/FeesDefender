@@ -1,6 +1,9 @@
 ---
 tipo: handoff
 estado: consumido
+creado: 2026-06-18
+origen: hilo de Claude Code en FeesDefender (la decisión de unificar las dos salas se tomó en otro hilo)
+destino: hilo nuevo de Claude Code, en frío — unificar las dos salas de lectura en una sola skill
 consumido_por: "skill organizar-sala-lectura v1.3+ / spec 2026-06-18-sala-lectura-unica-design.md"
 migrado: "2026-07-19 (regla MEJORAS #77 / GOBERNANZA §5)"
 ---

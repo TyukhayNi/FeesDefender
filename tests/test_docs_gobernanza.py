@@ -154,3 +154,94 @@ def test_todo_doc_de_raiz_esta_en_el_indice():
     ausentes = [p.name for p in sorted((ROOT / "docs").glob("*.md"))
                 if p != indice and p.name not in txt]
     assert not ausentes, f"docs de raiz sin fila en INDICE.md: {ausentes}"
+
+
+# ===========================================================================
+# G4-G6 — poblacion de HANDOFFS (docs/superpowers/handoffs/).
+#
+# ⚠️ Estos guards son DELIBERADAMENTE independientes de los de arriba. Los
+# handoffs tienen vocabulario y reglas propios (GOBERNANZA_FUENTES_VERDAD §5);
+# los docs de raiz de docs/, otros (_ESTADOS_DOCS). Son dos poblaciones, no una
+# deriva: aqui NO se toca _ESTADOS_DOCS ni se vuelve recursivo el glob de
+# _docs_con_frontmatter — eso es exactamente la trampa D3 que documenta la
+# cabecera de este fichero, y unificar los sets rompe 11 ficheros al instante.
+# Cada poblacion se guarda por separado.
+#
+# Nacen de los cuatro incumplimientos de los tres `…-vista-procesal-codex-*`
+# detectados el 2026-07-30: frontmatter de vocabulario ajeno, `estado: abierto`
+# (fuera del set), nombre sin el prefijo `handoff-` y ausencia de la tabla del
+# INDICE que promete cubrir la carpeta. Ninguno lo cazaba ningun test.
+# ===========================================================================
+
+_HANDOFFS = ROOT / "docs" / "superpowers" / "handoffs"
+_ESTADOS_HANDOFF = {"activo", "consumido", "historico"}
+# Excepcion de nombre heredada. Su HOGAR es GOBERNANZA §5; esta lista es la
+# copia ejecutable, y el §5 avisa de que anadir una obliga a tocar las dos.
+_HANDOFFS_NOMBRE_EXENTO = {"prompt_handoff_expedientes_seguros.md"}
+# El §5 fija prefijo + fecha; el <tema-kebab> queda permisivo a proposito,
+# porque hay refs de caso en mayusculas (`…-apertura-W-02T3XO-mejoras-proceso`).
+_RE_NOMBRE_HANDOFF = re.compile(r"^handoff-\d{4}-\d{2}-\d{2}-[A-Za-z0-9-]+\.md$")
+_RE_NOMBRE_MD = re.compile(_NOMBRE)
+
+
+def _handoffs():
+    """(path, dict del frontmatter) de cada `docs/superpowers/handoffs/*.md`."""
+    for p in sorted(_HANDOFFS.glob("*.md")):
+        txt = p.read_text(encoding="utf-8")
+        fm = txt.split("---")[1] if txt.startswith("---") else ""
+        yield p, dict(re.findall(r"^([a-z_]+):\s*(.+)$", fm, re.MULTILINE))
+
+
+def test_handoffs_frontmatter_valido():
+    """G4 — `estado:` del set del §5 + los campos que el §5 exige.
+
+    Caza dos de los cuatro incumplimientos de los `codex-*`: el `estado:
+    abierto` (palabra fuera del ciclo de vida) y el frontmatter de vocabulario
+    ajeno, que no traia `creado`/`origen`/`destino`/`consumido_por`.
+
+    Campos ANADIDOS son libres (`revisor`, `veredicto`, `spec`…): el §5 fija un
+    minimo obligatorio, no un vocabulario cerrado. Por eso esto comprueba
+    presencia, nunca ausencia.
+    """
+    malos: dict[str, list[str]] = {}
+    for p, fm in _handoffs():
+        fallos = []
+        estado = fm.get("estado")
+        if estado not in _ESTADOS_HANDOFF:
+            fallos.append(f"estado={estado!r} (set del §5: {sorted(_ESTADOS_HANDOFF)})")
+        fallos += [f"falta {k}" for k in ("creado", "origen", "destino") if not fm.get(k)]
+        # Ciclo de vida del §5: `consumido_por` se rellena AL pasar a consumido.
+        # Un `activo` legitimamente aun no lo tiene.
+        if estado in {"consumido", "historico"} and not fm.get("consumido_por"):
+            fallos.append("falta consumido_por")
+        if fallos:
+            malos[p.name] = fallos
+    assert not malos, f"handoffs que incumplen GOBERNANZA §5: {malos}"
+
+
+def test_handoffs_nombre_canonico():
+    """G5 — `handoff-AAAA-MM-DD-<tema>.md`, salvo la exencion declarada.
+
+    Caza el tercer incumplimiento: los tres `codex-*` entraron el 2026-07-27
+    sin el prefijo, ocho dias despues de aprobarse la regla.
+    """
+    malos = [p.name for p in sorted(_HANDOFFS.glob("*.md"))
+             if p.name not in _HANDOFFS_NOMBRE_EXENTO
+             and not _RE_NOMBRE_HANDOFF.match(p.name)]
+    assert not malos, (
+        f"handoffs con nombre fuera del §5 (esperado handoff-AAAA-MM-DD-<tema>.md): {malos}")
+
+
+def test_todo_handoff_esta_en_el_indice():
+    """G6 — todo handoff tiene fila en `INDICE.md §Handoffs`.
+
+    Caza el cuarto: los tres `codex-*` faltaban de la tabla que el propio
+    INDICE promete que cubre la carpeta. Hermano de G3, para la otra poblacion.
+    Expande las llaves porque el INDICE agrupa filas (`…-W-{02T3XO,02TH0W,…}-…`).
+    """
+    txt = (ROOT / "docs" / "INDICE.md").read_text(encoding="utf-8")
+    citados = {Path(n).name
+               for tok in _RE_NOMBRE_MD.findall(txt)
+               for n in _expandir_llaves(tok)}
+    ausentes = [p.name for p in sorted(_HANDOFFS.glob("*.md")) if p.name not in citados]
+    assert not ausentes, f"handoffs sin fila en INDICE.md §Handoffs: {ausentes}"

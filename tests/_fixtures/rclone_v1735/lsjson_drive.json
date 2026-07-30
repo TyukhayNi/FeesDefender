@@ -1,0 +1,39 @@
+[
+  {
+    "Path": "00_Input",
+    "Name": "00_Input",
+    "Size": -1,
+    "MimeType": "inode/directory",
+    "ModTime": "2026-05-29T07:41:12.000Z",
+    "IsDir": true,
+    "ID": "1SinteticoDirAAAAAAAAAAAAAAAAAAAA"
+  },
+  {
+    "Path": "00_Input/a.pdf",
+    "Name": "a.pdf",
+    "Size": 21,
+    "MimeType": "application/pdf",
+    "ModTime": "2026-05-29T07:41:12.000Z",
+    "IsDir": false,
+    "ID": "1SinteticoFicheroAAAAAAAAAAAAAAAA",
+    "Hashes": {
+      "md5": "da2859ec2a07a2a1e8d50ae90700141f",
+      "sha1": "37044ba3255952faea640566aaed569f116f6653",
+      "sha256": "cdbe302e5ceacc0b1790b6578804a4bd5d4471d9f871e813be4fe1927c18860c"
+    }
+  },
+  {
+    "Path": "01_Procesado/INDICE.md",
+    "Name": "INDICE.md",
+    "Size": 21,
+    "MimeType": "text/markdown",
+    "ModTime": "2026-05-29T07:41:12.000Z",
+    "IsDir": false,
+    "ID": "1SinteticoFicheroBBBBBBBBBBBBBBBB",
+    "Hashes": {
+      "md5": "6f0f6a1b2c3d4e5f60718293a4b5c6d7",
+      "sha1": "0000000000000000000000000000000000000000",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  }
+]

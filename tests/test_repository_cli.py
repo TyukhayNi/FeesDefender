@@ -296,3 +296,88 @@ def test_delta_lista_los_vetados_con_su_bloqueante(cli):
     assert "_MANIFIESTO_PROCESAL.json" in md
     assert "_mapa_procesal.yaml" in md
     assert "grupo" in md.lower()
+
+
+# ---------------------------------------------------------------------------
+# Task 1A — `Entorno`: el puerto de inyección, y su neutralidad
+# ---------------------------------------------------------------------------
+# El frontal tiene OCHO fuentes de no-determinismo, no cinco: `run_rclone` (15
+# call-sites en 8 rutinas), `now_iso_utc`, `socket.gethostname`, `_tmp_dir`,
+# `time.sleep(_SYNC_LAG_S)`, `_nonce`, `_usuario_por_defecto` y `_rclone_bin`.
+# Más CUATRO `ts_compacto()` sin argumento, que consumen el reloj de forma
+# encubierta. Aquí solo se crea el puerto: NINGÚN `cmd_*` ni helper de I/O se
+# toca (eso es la Task 1B, que va después de la caracterización).
+
+
+def test_run_rclone_usa_el_ejecutar_inyectado(cli):
+    """El único punto por el que un test entrega su doble."""
+    visto = []
+
+    def _doble(cmd):
+        visto.append(cmd)
+        import subprocess
+        return subprocess.CompletedProcess(cmd, 0, "salida-del-doble", "")
+
+    entorno = cli.ENTORNO_REAL.con(ejecutar=_doble)
+    res = cli.run_rclone(["bin", "lsjson", "r,team_drive=T:x"], entorno=entorno)
+
+    assert res.stdout == "salida-del-doble"
+    assert visto == [["bin", "lsjson", "r,team_drive=T:x"]]
+
+
+def test_entorno_real_es_neutral_en_las_ocho_piezas(cli, monkeypatch):
+    """`ENTORNO_REAL` reproduce EXACTAMENTE lo de hoy, sin efectos de disco.
+
+    Las ocho piezas son *callables* a propósito, no valores capturados al importar:
+    así siguen resolviéndose tarde y un `monkeypatch` de módulo las sigue alcanzando
+    —que es de lo que dependen los 16 tests de orquestación ya existentes—. Cada una
+    se comprueba **por delegación**: se sustituye el destino y se exige que el
+    `Entorno` lo alcance. Eso demuestra el enlace tardío y, de paso, evita los dos
+    efectos que un test no puede permitirse: dormir 4 s y dejar un `mkdtemp` en disco.
+    """
+    import socket
+    import time
+
+    from core.utils import now_iso_utc
+
+    e = cli.ENTORNO_REAL
+
+    # Reloj: el mismo `now_iso_utc` del módulo, comparado al minuto (no al segundo,
+    # que haría el test intermitente en el cambio de segundo).
+    assert e.ahora()[:16] == now_iso_utc()[:16]
+
+    # Hostname, binario y usuario: delegan en lo de siempre.
+    assert e.hostname() == socket.gethostname()
+    assert e.binario() == cli._rclone_bin()
+    assert e.usuario() == cli._usuario_por_defecto()
+
+    # Nonce: 16 hex de `secrets`, distinto en cada llamada.
+    n1, n2 = e.nonce(), e.nonce()
+    assert len(n1) == 16 and int(n1, 16) >= 0 and n1 != n2
+
+    # Espera: delega en `time.sleep` con el argumento intacto, SIN dormir de verdad.
+    dormido = []
+    monkeypatch.setattr(time, "sleep", dormido.append)
+    e.esperar(cli._SYNC_LAG_S)
+    assert dormido == [4], "esperar() debe pasar los segundos tal cual a time.sleep"
+
+    # Fábrica de temporales: delega en `_tmp_dir`, y por eso NO crea nada aquí.
+    monkeypatch.setattr(cli, "_tmp_dir", lambda: "centinela-no-es-un-directorio")
+    assert e.work_dir() == "centinela-no-es-un-directorio"
+
+    # Ejecutar: delega en el cuerpo original extraído, sin lógica añadida.
+    monkeypatch.setattr(cli, "_ejecutar_rclone_real", lambda cmd: ("visto", cmd))
+    assert e.ejecutar(["x"]) == ("visto", ["x"])
+
+
+def test_el_default_de_run_rclone_sigue_siendo_el_real(cli):
+    """Sin `entorno=`, `run_rclone` va al ejecutor real — y la barrera lo demuestra.
+
+    Que la barrera de la Task 0 lo intercepte ES la prueba de que el camino por
+    defecto sigue llegando a `subprocess`: si `ENTORNO_REAL` se hubiera quedado con
+    un doble por accidente, este test no vería la barrera.
+    """
+    from tests._barrera import BINARIO_SINTETICO, BarreraViolada
+
+    with pytest.raises(BarreraViolada):
+        cli.run_rclone([BINARIO_SINTETICO, "lsjson", "r,team_drive=T:x"])

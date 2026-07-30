@@ -36,161 +36,25 @@ from pathlib import Path
 
 import pytest
 
-REMOTO = "r,team_drive=T:"
+from tests._barrera import REMOTO_SINTETICO as REMOTO   # fuente unica del remote
 
 
 # ---------------------------------------------------------------------------
 # Doble mínimo de rclone (se sustituye por el de la Fase 0 cuando exista)
 # ---------------------------------------------------------------------------
 
-class FakeRclone:
-    """Interpreta los subcomandos que el frontal usa, sobre un Drive en memoria.
-
-    ``drive``: ``{ruta_relativa_posix: bytes}``.
-    ``fallos``: ``{ruta_relativa: rc}`` — el PULL de esa ruta devuelve ``rc`` y no
-    escribe nada (modela el hipo de red, que es el disparador de los dos defectos).
-    ``fallos_push``: ``{subcadena_del_destino: [ocurrencias 1-based]}`` — el PUSH cuyo
-    destino contiene esa subcadena falla con ``rc=1`` en esas ocurrencias y **no**
-    muta el Drive. Se cuenta por clave: en un checkout hay dos pushes de
-    ``_caso.md`` (adquisición y rollback) y hay que poder fallar solo el segundo.
-    ``fallos_sub``: ``{subcomando: [ocurrencias 1-based]}`` — para fallar el enésimo
-    ``lsjson``/``moveto``… (p. ej. el listado de la bandeja, que es el SEGUNDO
-    ``lsjson`` del checkin; el primero es el inventario de CP1).
-    """
-
-    def __init__(self, drive: dict[str, bytes], *,
-                 fallos: dict[str, int] | None = None,
-                 fallos_push: dict[str, list[int]] | None = None,
-                 fallos_sub: dict[str, list[int]] | None = None):
-        self.drive = drive
-        self.fallos = fallos or {}
-        self.fallos_push = fallos_push or {}
-        self.fallos_sub = fallos_sub or {}
-        self._n_push: dict[str, int] = {}
-        self._n_sub: dict[str, int] = {}
-        self.cmds: list[list[str]] = []
-
-    def _push_falla(self, destino_rel: str) -> bool:
-        for clave, ocurrencias in self.fallos_push.items():
-            if clave in destino_rel:
-                self._n_push[clave] = self._n_push.get(clave, 0) + 1
-                if self._n_push[clave] in ocurrencias:
-                    return True
-        return False
-
-    def _sub_falla(self, sub: str) -> bool:
-        ocurrencias = self.fallos_sub.get(sub)
-        if not ocurrencias:
-            return False
-        self._n_sub[sub] = self._n_sub.get(sub, 0) + 1
-        return self._n_sub[sub] in ocurrencias
-
-    # -- helpers
-    @staticmethod
-    def _es_remoto(arg: str) -> bool:
-        return arg.startswith(REMOTO)
-
-    @staticmethod
-    def _rel(arg: str) -> str:
-        return arg[len(REMOTO):]
-
-    def _ok(self, stdout: str = "") -> subprocess.CompletedProcess:
-        return subprocess.CompletedProcess([], 0, stdout, "")
-
-    def _err(self, rc: int, stderr: str = "fake") -> subprocess.CompletedProcess:
-        return subprocess.CompletedProcess([], rc, "", stderr)
-
-    def _inventario_json(self, prefijo: str = "") -> str:
-        items = []
-        for rel, data in sorted(self.drive.items()):
-            if prefijo and not rel.startswith(prefijo):
-                continue
-            items.append({
-                "Path": rel[len(prefijo):] if prefijo else rel,
-                "Name": rel.rsplit("/", 1)[-1],
-                "Size": len(data),
-                "MimeType": "application/octet-stream",
-                "ModTime": "2026-07-29T10:00:00.000Z",
-                "IsDir": False,
-                "ID": "fake-id",
-                # v1.73.5 backend Drive: claves en minúscula, 3 algoritmos.
-                "Hashes": {"md5": hashlib.md5(data).hexdigest(),
-                           "sha1": "0" * 40, "sha256": "0" * 64},
-            })
-        return json.dumps(items)
-
-    # -- dispatch
-    def __call__(self, cmd: list[str]) -> subprocess.CompletedProcess:
-        self.cmds.append(list(cmd))
-        sub = cmd[1]
-
-        if self._sub_falla(sub):
-            # `lsjson` de un remote inaccesible: rc != 0 y stdout inválido (v1.73.5).
-            return subprocess.CompletedProcess([], 3, "[" if sub == "lsjson" else "", "fake")
-
-        if sub == "copyto":
-            origen, destino = cmd[2], cmd[3]
-            if self._es_remoto(origen):                      # PULL remoto → local
-                rel = self._rel(origen)
-                if rel in self.fallos:
-                    return self._err(self.fallos[rel])
-                if rel not in self.drive:
-                    return self._err(3, "directory not found")   # contrato v1.73.5
-                p = Path(destino)
-                p.parent.mkdir(parents=True, exist_ok=True)
-                p.write_bytes(self.drive[rel])
-                return self._ok()
-            # PUSH local → remoto
-            src = Path(origen)
-            if not src.exists():
-                return self._err(3, "directory not found")
-            destino_rel = self._rel(destino)
-            if self._push_falla(destino_rel):
-                return self._err(1)          # el Drive NO se muta
-            self.drive[destino_rel] = src.read_bytes()
-            return self._ok()
-
-        if sub == "lsjson":
-            destino = cmd[2]
-            rel = self._rel(destino)
-            if rel and rel not in self.drive and not any(
-                    k.startswith(rel.rstrip("/") + "/") for k in self.drive):
-                return subprocess.CompletedProcess([], 3, "[", "directory not found")
-            if rel in self.drive:                            # lsjson de UN fichero
-                return self._ok(self._inventario_json(prefijo=rel.rsplit("/", 1)[0] + "/"
-                                                      if "/" in rel else ""))
-            return self._ok(self._inventario_json())
-
-        if sub == "copy":
-            # Drive→local (checkout): materializa lo que no está excluido.
-            origen, destino = cmd[2], cmd[3]
-            if self._es_remoto(origen):
-                from core import repository_checkout as rc
-                for rel, data in self.drive.items():
-                    if rc.esta_excluido(rel):
-                        continue
-                    p = Path(destino) / rel
-                    p.parent.mkdir(parents=True, exist_ok=True)
-                    p.write_bytes(data)
-            self._crear_log_si_procede(cmd)
-            return self._ok()
-
-        if sub == "check":
-            self._crear_log_si_procede(cmd)
-            return self._ok()
-
-        if sub in ("moveto", "rmdirs"):
-            return self._ok()
-
-        return self._ok()
-
-    @staticmethod
-    def _crear_log_si_procede(cmd: list[str]) -> None:
-        """rclone crea el ``--log-file``; sin esto ``_upload_evidencia`` lo saltaría."""
-        if "--log-file" in cmd:
-            p = Path(cmd[cmd.index("--log-file") + 1])
-            p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text("fake log\n", encoding="utf-8")
+# El doble vive ahora en `tests/_dobles/fake_drive.py` (Task 2 de la Fase 0), que
+# PROMUEVE el embrionario que estaba aqui: mismos `fallos`/`fallos_push`/`fallos_sub`,
+# mas el canal `resultados` y el hook con `armar(n_objetivo, callback)`. La migracion
+# solo toca imports y montaje: ningun aserto de este fichero cambia.
+#
+# Paridad comprobada en los tres ejes antes de borrar el doble viejo:
+#  - `registro` de comandos: `.cmds` se conserva como ALIAS contractual;
+#  - precondiciones: mismo remote sintetico (ahora importado, no redefinido) y
+#    `FakeDrive` guarda la REFERENCIA al dict del test, no una copia — copiarla
+#    habria dejado los asertos `drive[...] == original` mirando un objeto congelado;
+#  - snapshot final del Drive: identico, comprobado corriendo los 16 sin tocarlos.
+from tests._dobles import FakeRclone
 
 
 CASO_MD_CUERPO = "# Caso W-TEST99\n\nDatos canónicos que NO se deben perder.\n"
@@ -260,7 +124,7 @@ def test_checkout_aborta_si_no_puede_leer_el_caso_md(cli, monkeypatch, tmp_path)
     """Un pull fallido NO es un caso disponible: se aborta sin tocar el Drive."""
     original = caso_md()
     drive = {"00_Input/_caso.md": original, "00_Input/doc.pdf": b"contenido"}
-    fake = FakeRclone(drive, fallos={"00_Input/_caso.md": 3})
+    fake = FakeRclone(drive, raiz_local=tmp_path, fallos={"00_Input/_caso.md": 3})
     monkeypatch.setattr(cli, "run_rclone", fake)
 
     rc_code = cli.cmd_checkout(args_checkout(tmp_path / "local"))
@@ -274,7 +138,7 @@ def test_checkout_conserva_el_cuerpo_y_los_metadatos_al_adquirir_el_lock(
         cli, monkeypatch, tmp_path):
     """El push del lock no puede degradar el `_caso.md` a un stub `# Caso`."""
     drive = {"00_Input/_caso.md": caso_md(), "00_Input/doc.pdf": b"contenido"}
-    fake = FakeRclone(drive)
+    fake = FakeRclone(drive, raiz_local=tmp_path)
     monkeypatch.setattr(cli, "run_rclone", fake)
 
     rc_code = cli.cmd_checkout(args_checkout(tmp_path / "local"))
@@ -290,7 +154,7 @@ def test_checkout_conserva_el_cuerpo_y_los_metadatos_al_adquirir_el_lock(
 def test_checkout_no_verificable_conserva_el_lock_y_no_copia(cli, monkeypatch, tmp_path):
     """Si la relectura del nonce no se puede leer: no se copia y NO se cancela el lock."""
     drive = {"00_Input/_caso.md": caso_md(), "00_Input/doc.pdf": b"contenido"}
-    fake = FakeRclone(drive)
+    fake = FakeRclone(drive, raiz_local=tmp_path)
     llamadas = {"n": 0}
     real = fake.__call__
 
@@ -327,7 +191,7 @@ def test_append_evento_no_trunca_el_log_si_falla_el_pull(cli, monkeypatch, tmp_p
            b'{"event":"pull_crm"}\n'
            b'{"event":"procesado_sala_maquina"}\n')
     drive = {"00_Input/_intake_log.jsonl": log}
-    fake = FakeRclone(drive, fallos={"00_Input/_intake_log.jsonl": 3})
+    fake = FakeRclone(drive, raiz_local=tmp_path, fallos={"00_Input/_intake_log.jsonl": 3})
     monkeypatch.setattr(cli, "run_rclone", fake)
 
     with pytest.raises(cli.ProtocoloIOError):
@@ -340,7 +204,7 @@ def test_append_evento_no_trunca_el_log_si_falla_el_pull(cli, monkeypatch, tmp_p
 def test_append_evento_trata_un_log_ausente_como_log_vacio(cli, monkeypatch, tmp_path):
     """Un caso sin log todavía es legítimo: se crea con el evento nuevo."""
     drive: dict[str, bytes] = {"00_Input/_caso.md": caso_md()}
-    fake = FakeRclone(drive)
+    fake = FakeRclone(drive, raiz_local=tmp_path)
     monkeypatch.setattr(cli, "run_rclone", fake)
 
     cli._append_evento_drive(REMOTO, tmp_path, case_id="W-TEST99",
@@ -372,7 +236,7 @@ def test_checkin_no_libera_el_lock_si_no_puede_leer_el_caso_md(cli, monkeypatch,
     prestado = caso_md("prestado", checkout_user="tester", checkout_nonce="abc")
     drive = {"00_Input/_caso.md": prestado, "00_Input/_intake_log.jsonl": b""}
     local = montar_checkin(tmp_path, drive)
-    fake = FakeRclone(drive, fallos={"00_Input/_caso.md": 3})
+    fake = FakeRclone(drive, raiz_local=tmp_path, fallos={"00_Input/_caso.md": 3})
     monkeypatch.setattr(cli, "run_rclone", fake)
 
     rc_code = cli.cmd_checkin(args_checkin(local))
@@ -394,7 +258,7 @@ def test_checkin_no_marca_conflicto_si_no_puede_leer_el_caso_md(cli, monkeypatch
     inv = {"00_Input/doc.pdf": {"hash": hashlib.md5(b"BASE").hexdigest(), "size": 4}}
     (local / "MANIFEST_CHECKOUT.json").write_text(
         json.dumps({"inventario": inv}), encoding="utf-8")
-    fake = FakeRclone(drive, fallos={"00_Input/_caso.md": 3})
+    fake = FakeRclone(drive, raiz_local=tmp_path, fallos={"00_Input/_caso.md": 3})
     monkeypatch.setattr(cli, "run_rclone", fake)
 
     rc_code = cli.cmd_checkin(args_checkin(local))
@@ -421,7 +285,7 @@ def test_checkin_no_marca_conflicto_si_no_puede_leer_el_caso_md(cli, monkeypatch
 def test_checkout_no_declara_lock_adquirido_si_el_push_falla(cli, monkeypatch, tmp_path, capsys):
     original = caso_md()
     drive = {"00_Input/_caso.md": original, "00_Input/doc.pdf": b"contenido"}
-    fake = FakeRclone(drive, fallos_push={"00_Input/_caso.md": [1]})
+    fake = FakeRclone(drive, raiz_local=tmp_path, fallos_push={"00_Input/_caso.md": [1]})
     monkeypatch.setattr(cli, "run_rclone", fake)
 
     rc_code = cli.cmd_checkout(args_checkout(tmp_path / "local"))
@@ -438,7 +302,7 @@ def test_rollback_del_checkout_no_afirma_haber_revertido_si_el_push_falla(
     drive = {"00_Input/_caso.md": caso_md(), "00_Input/doc.pdf": b"contenido"}
     # 1er push (adquisición) OK; falla el 2º, que es el del rollback. Y el `copy`
     # falla para llegar hasta ahí.
-    fake = FakeRclone(drive, fallos_push={"00_Input/_caso.md": [2]},
+    fake = FakeRclone(drive, raiz_local=tmp_path, fallos_push={"00_Input/_caso.md": [2]},
                       fallos_sub={"copy": [1]})
     monkeypatch.setattr(cli, "run_rclone", fake)
 
@@ -459,7 +323,7 @@ def test_checkin_no_declara_lock_liberado_si_el_push_falla(cli, monkeypatch, tmp
     prestado = caso_md("prestado", checkout_user="tester", checkout_nonce="abc")
     drive = {"00_Input/_caso.md": prestado, "00_Input/_intake_log.jsonl": b""}
     local = montar_checkin(tmp_path, drive)
-    fake = FakeRclone(drive, fallos_push={"00_Input/_caso.md": [1]})
+    fake = FakeRclone(drive, raiz_local=tmp_path, fallos_push={"00_Input/_caso.md": [1]})
     monkeypatch.setattr(cli, "run_rclone", fake)
 
     rc_code = cli.cmd_checkin(args_checkin(local))
@@ -483,7 +347,7 @@ def test_checkin_no_afirma_conflicto_escrito_si_el_push_falla(cli, monkeypatch, 
     (local / "MANIFEST_CHECKOUT.json").write_text(
         json.dumps({"inventario": {"00_Input/doc.pdf": {
             "hash": hashlib.md5(b"BASE").hexdigest(), "size": 4}}}), encoding="utf-8")
-    fake = FakeRclone(drive, fallos_push={"00_Input/_caso.md": [1]})
+    fake = FakeRclone(drive, raiz_local=tmp_path, fallos_push={"00_Input/_caso.md": [1]})
     monkeypatch.setattr(cli, "run_rclone", fake)
 
     rc_code = cli.cmd_checkin(args_checkin(local))
@@ -497,7 +361,7 @@ def test_checkin_no_afirma_conflicto_escrito_si_el_push_falla(cli, monkeypatch, 
 def test_append_evento_lanza_si_el_push_del_log_falla(cli, monkeypatch, tmp_path):
     log = b'{"event":"upload_manual"}\n'
     drive = {"00_Input/_intake_log.jsonl": log}
-    fake = FakeRclone(drive, fallos_push={"_intake_log.jsonl": [1]})
+    fake = FakeRclone(drive, raiz_local=tmp_path, fallos_push={"_intake_log.jsonl": [1]})
     monkeypatch.setattr(cli, "run_rclone", fake)
 
     with pytest.raises(cli.ProtocoloIOError):
@@ -512,7 +376,7 @@ def test_evidencia_fallida_avisa_pero_no_bloquea_el_checkin(cli, monkeypatch, tm
     prestado = caso_md("prestado", checkout_user="tester", checkout_nonce="abc")
     drive = {"00_Input/_caso.md": prestado, "00_Input/_intake_log.jsonl": b""}
     local = montar_checkin(tmp_path, drive)
-    fake = FakeRclone(drive, fallos_push={"07_AI cowork": [1, 2]})
+    fake = FakeRclone(drive, raiz_local=tmp_path, fallos_push={"07_AI cowork": [1, 2]})
     monkeypatch.setattr(cli, "run_rclone", fake)
 
     rc_code = cli.cmd_checkin(args_checkin(local))
@@ -528,7 +392,7 @@ def test_evidencia_fallida_avisa_pero_no_bloquea_el_checkin(cli, monkeypatch, tm
 def test_manifest_no_subido_avisa_y_el_checkout_no_finge(cli, monkeypatch, tmp_path, capsys):
     """El MANIFEST local es el baseline real; el del Drive es redundancia (§3.3)."""
     drive = {"00_Input/_caso.md": caso_md(), "00_Input/doc.pdf": b"contenido"}
-    fake = FakeRclone(drive, fallos_push={"MANIFEST_CHECKOUT.json": [1]})
+    fake = FakeRclone(drive, raiz_local=tmp_path, fallos_push={"MANIFEST_CHECKOUT.json": [1]})
     monkeypatch.setattr(cli, "run_rclone", fake)
     local = tmp_path / "local"
 
@@ -551,7 +415,7 @@ def test_bandeja_ilegible_no_libera_el_lock(cli, monkeypatch, tmp_path, capsys):
     drive = {"00_Input/_caso.md": prestado, "00_Input/_intake_log.jsonl": b""}
     local = montar_checkin(tmp_path, drive)
     # El 1er lsjson es el inventario de CP1; el 2º es el de la bandeja (CP10).
-    fake = FakeRclone(drive, fallos_sub={"lsjson": [2]})
+    fake = FakeRclone(drive, raiz_local=tmp_path, fallos_sub={"lsjson": [2]})
     monkeypatch.setattr(cli, "run_rclone", fake)
 
     rc_code = cli.cmd_checkin(args_checkin(local))

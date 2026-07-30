@@ -6,7 +6,7 @@ flujo de régimen (§1.1, con `eco_crm`) y el hueco sin dueño de la documental 
 _**v3 — reescrita tras la revisión adversarial de Codex (veredicto NO SHIP, 25 hallazgos).**
 Los 25 se aceptaron en sustancia, con seis ajustes de severidad y dos recortes de alcance; la
 adjudicación hallazgo → sección está en §10. Informe y handoff:
-`docs/superpowers/handoffs/2026-07-27-vista-procesal-codex-informe.md` y
+`docs/superpowers/handoffs/handoff-2026-07-27-vista-procesal-codex-informe.md` y
 `…-codex-review.md`._
 _Origen: petición de Nikolai sobre el expediente judicial CRM **487** (caso `W-02MA0R`) —
 «que en Procedimiento acabe la demanda de monitorio con documentos en una carpeta, en otra la
