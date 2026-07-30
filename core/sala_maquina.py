@@ -191,6 +191,66 @@ def plan(inventario: list[dict], estado_previo: set[str]) -> list[DocPlan]:
     return out
 
 
+NOTA_RECONSTRUIDA = "fila reconstruida del MD (sin _cobertura.json)"
+
+
+def _frontmatter_md(md: Path) -> dict:
+    """Frontmatter del MD **sin cargar el cuerpo**, que puede pesar cientos de KB.
+
+    Mismo motivo que `detectar_ocr_ciego._frontmatter`: reconstruir el registro de un
+    caso entero son ~170 ficheros, y sobre Drive el cuerpo es I/O que no se necesita.
+    """
+    import yaml
+
+    lineas: list[str] = []
+    with md.open("r", encoding="utf-8", errors="replace") as fh:
+        if fh.readline().strip() != "---":
+            return {}
+        for linea in fh:
+            if linea.strip() == "---":
+                break
+            lineas.append(linea)
+    try:
+        return yaml.safe_load("".join(lineas)) or {}
+    except yaml.YAMLError:
+        return {}
+
+
+def reconstruir_cobertura_desde_md(sm_dir: Path) -> list[DocCobertura]:
+    """Cobertura reconstruida del frontmatter de `03_MD/`, para casos sin `_cobertura.json`.
+
+    Los casos procesados antes de que existiera ese fichero (#84) solo tienen la vista
+    `_cobertura.md`, que `_escribir_cobertura_md` REESCRIBE en cada corrida. Sin esto,
+    una corrida incremental fusiona contra vacío y reduce el registro al delta: en
+    W-02XOR7 eran 169 filas → 2, en silencio (medido el 2026-07-30 ejecutando D1).
+
+    La reconstrucción es honesta, no completa: `_escribir_md` persiste `source_path`,
+    `extractor`, `chars`, `ocr` y `ocr_quality`, pero **no** el `sha256` del origen ni
+    los campos de bundle (`parent_*`, `role`, `paginas`). Esas filas salen con sha vacío
+    y `nota` que lo declara — preservar el registro no es inventar lo que no está. Una
+    corrida `--force` posterior las sustituye por filas completas.
+    """
+    md_dir = sm_dir / "03_MD"
+    if not md_dir.is_dir():
+        return []
+    out: list[DocCobertura] = []
+    for md in sorted(md_dir.glob("*.md")):
+        meta = _frontmatter_md(md)
+        rel = meta.get("source_path")
+        if not rel:
+            continue                      # sin origen no hay fila de custodia que valga
+        out.append(DocCobertura(
+            slug=md.stem,
+            rel_path=str(rel),
+            metodo=str(meta.get("extractor", "")),
+            estado=str(meta.get("ocr_quality", "")),
+            chars=int(meta.get("chars") or 0),
+            ocr=bool(meta.get("ocr")),
+            nota=NOTA_RECONSTRUIDA,
+        ))
+    return out
+
+
 def _norm_rel(rel: str) -> str:
     """`rel_path` comparable: el informe del detector y el shell de Windows dan `\\`."""
     return rel.replace("\\", "/")

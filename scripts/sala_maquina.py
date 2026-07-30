@@ -55,10 +55,17 @@ def _guardar_estado(case_dir: Path, shas: set[str]) -> None:
 
 
 def _cobertura_previa(case_dir: Path) -> list[sm.DocCobertura]:
-    """Cobertura estructurada persistida (`_cobertura.json`); `[]` si no hay."""
-    f = sm._sala_maquina_dir(case_dir) / _COBERTURA
+    """Cobertura estructurada persistida (`_cobertura.json`).
+
+    Si falta —caso procesado antes de que ese fichero existiera (#84)— se reconstruye
+    del frontmatter de `03_MD/` en vez de devolver `[]`: con `[]`, la fusión de una
+    corrida incremental reducía el registro al delta y `_escribir_cobertura_md` borraba
+    el resto del `_cobertura.md` (169 filas → 2 en W-02XOR7, medido el 2026-07-30).
+    """
+    sm_dir = sm._sala_maquina_dir(case_dir)
+    f = sm_dir / _COBERTURA
     if not f.exists():
-        return []
+        return sm.reconstruir_cobertura_desde_md(sm_dir)
     return sm.cobertura_desde_dicts(json.loads(f.read_text(encoding="utf-8")))
 
 
