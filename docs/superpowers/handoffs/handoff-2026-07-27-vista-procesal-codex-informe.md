@@ -9,7 +9,7 @@ titulo: Revisión adversarial Codex — informe completo (vista procesal 05_Proc
 revisor: Codex
 spec: docs/superpowers/specs/2026-07-27-vista-procesal-05-procedimiento-design.md
 veredicto: NO SHIP
-handoff: docs/superpowers/handoffs/2026-07-27-vista-procesal-codex-review.md
+handoff: docs/superpowers/handoffs/handoff-2026-07-27-vista-procesal-codex-review.md
 ---
 
 > **Andamio efímero** (gobernanza §5). Texto **recibido de Codex por chat, sin modificar**.
