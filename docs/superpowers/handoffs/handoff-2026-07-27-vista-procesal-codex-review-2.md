@@ -10,7 +10,7 @@ revisor: Codex
 spec: docs/superpowers/specs/2026-07-27-vista-procesal-05-procedimiento-design.md
 commit_revisado: 972da2d
 veredicto: NO SHIP
-pasada_anterior: docs/superpowers/handoffs/2026-07-27-vista-procesal-codex-informe.md
+pasada_anterior: docs/superpowers/handoffs/handoff-2026-07-27-vista-procesal-codex-informe.md
 ---
 
 > **Andamio efímero** (gobernanza §5). Texto **recibido de Codex por chat, sin modificar**.

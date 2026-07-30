@@ -200,7 +200,7 @@ sin salir de su carpeta**, con el PDF buscable.
 NO SHIP; 25 + 6 hallazgos, aceptados en sustancia). El plan viejo
 (`2026-07-27-vista-procesal-05-procedimiento.md`) está marcado **OBSOLETO**: sus Tareas 1-2 eran el
 cambio de esquema de `intake_manifest`, que se cayó al elegir la **opción B** (registro de
-ocurrencias nuevo y regenerable). Handoffs en `docs/superpowers/handoffs/2026-07-27-vista-procesal-codex-*`.
+ocurrencias nuevo y regenerable). Handoffs en `docs/superpowers/handoffs/handoff-2026-07-27-vista-procesal-codex-*`.
 
 **Partido en cuatro piezas** (decisión de Nikolai, 2026-07-27), porque el diseño acumuló tres
 dependencias aguas arriba que no son suyas:

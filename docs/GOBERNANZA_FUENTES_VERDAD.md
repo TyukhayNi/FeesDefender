@@ -170,9 +170,19 @@ sesión/agente. **No es fuente de verdad**: su contenido durable se promueve a s
 - **Ubicación única:** `docs/superpowers/handoffs/`. Lo que deba sobrevivir a la sesión va al **repo,
   nunca a `scratchpad`** (scratchpad solo para andamios de usar-y-tirar intra-sesión). Excepción heredada:
   los stress-tests de la Cronología viven agrupados en `docs/superpowers/specs/cronologia-handoffs/`.
-- **Nombre:** `handoff-AAAA-MM-DD-<tema-kebab>.md`.
+- **Nombre:** `handoff-AAAA-MM-DD-<tema-kebab>.md`. Excepción heredada, la única: el pre-regla
+  `prompt_handoff_expedientes_seguros.md` (2026-05-07) conserva su nombre. Las excepciones de nombre
+  se declaran **aquí**, no en la vista derivada del `INDICE`; el guard de
+  `tests/test_docs_gobernanza.py` lleva la misma lista, así que añadir una obliga a tocar las dos.
 - **Estado en el frontmatter (hogar único del estado):** `estado: activo | consumido | historico` +
   `creado`, `origen`, `destino`, `consumido_por` (el spec/plan/PR/runbook donde acabó su contenido durable).
+  Campos **añadidos** son libres (p. ej. `revisor`/`veredicto`/`spec` en los handoffs de revisión
+  adversarial recibida): el §5 fija un mínimo obligatorio, no un vocabulario cerrado.
+- **Qué NO es un handoff:** las revisiones adversariales **producidas dentro del proyecto** como acta
+  de adjudicación de un spec no son handoffs; viven junto a su spec como
+  `docs/superpowers/specs/AAAA-MM-DD-<tema>-adversarial-review.md` y no llevan este frontmatter.
+  Un informe **recibido de un agente externo** para arrancar trabajo aquí sí es un handoff
+  (decisión de Nikolai, 2026-07-30, sobre los tres `handoff-2026-07-27-vista-procesal-codex-*`).
 - **Ciclo de vida:** `activo` (creado, sin consumir) → `consumido` (la tarea arrancó y su contenido durable
   ya vive en su SSOT; se rellena `consumido_por`) → `historico` (se conserva por trazabilidad). El
   `docs/INDICE.md §Handoffs` es **vista derivada** (lista/enlaza), NO el hogar del estado. Un `activo`
