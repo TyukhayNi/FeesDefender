@@ -703,6 +703,33 @@ def test_la_poda_conserva_los_historiales_pero_se_lleva_los_huerfanos(tmp_path):
     assert [p.name for p in _historiales(out)] == primera, \
         "la segunda corrida se ha llevado el historial legitimo"
     assert not huerfano.exists(), "un historial huerfano debe podarse: la poda tiene que converger"
+
+
+def test_el_historial_es_byte_identico_entre_corridas(tmp_path):
+    """Idempotencia del CONTENIDO, no solo de la existencia. El indice depende del orden de
+    `mensajes`; si ese orden no fuera determinista, el fichero cambiaria en cada corrida y
+    ensuciaria el Drive y la comparacion con los `_entregas/` sellados. Sobrevivir a la poda
+    (test anterior) no implica ser estable."""
+    import hashlib
+
+    src, out = tmp_path / "03_Email", tmp_path / "Emails"
+    src.mkdir(parents=True)
+    # Varios portadores con historial: si el orden del indice fuera inestable, se veria aqui.
+    for i, mid in enumerate(("a", "b", "c")):
+        (src / f"{mid}.eml").write_bytes(
+            _eml(f"<{mid}@example.invalid>", f"Asunto {mid}",
+                 fecha=f"Tue, 28 Jul 2026 1{i}:00:00 +0200",
+                 cuerpo=_con_historial(f"Respuesta {mid}.")))
+
+    def huellas() -> dict[str, str]:
+        return {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in _historiales(out)}
+
+    P.atomize_dir(src, out)
+    primera = huellas()
+    assert len(primera) == 3
+
+    P.atomize_dir(src, out)
+    assert huellas() == primera, "el historial cambia entre corridas: el orden no es determinista"
 ```
 
 - [ ] **Step 2: Correr el test para verificar que falla**
@@ -739,7 +766,7 @@ por:
 "C:/Users/tnm33/Dev/FeesDefender/.venv/Scripts/python.exe" -m pytest -q tests/test_email_atomize_historial_pipeline.py -v
 ```
 
-Esperado: **5 passed**.
+Esperado: **6 passed**.
 
 - [ ] **Step 5: Mutation testing del arreglo**
 
@@ -771,7 +798,7 @@ git commit -m "fix(email_atomize): la poda conserva los historiales y sigue poda
 "C:/Users/tnm33/Dev/FeesDefender/.venv/Scripts/python.exe" -m pytest -q --tb=short --junit-xml=suite.xml
 ```
 
-Esperado: **0 failures, 0 errors**, total **2566 + 11 nuevos = 2577** (77 skipped). Leer el conteo del
+Esperado: **0 failures, 0 errors**, total **2566 + 12 nuevos = 2578** (77 skipped). Leer el conteo del
 `suite.xml`. Borrar `suite.xml` antes de commitear.
 
 - [ ] **Step 2: Cerrar `#105` y marcar la pieza 1 de `#109`**
