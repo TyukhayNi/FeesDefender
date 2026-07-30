@@ -4162,7 +4162,7 @@ se rompe la byte-identidad de Capa A ni la comparación con los `_entregas/` sel
 letrado como un LLM tienen el hilo al lado de la ficha. Descartada la opción A (una sección dentro
 del atom) precisamente porque reescribe todos los `.md` existentes.
 
-> ✅ **CONSTRUIDO 2026-07-30 — PR #NNN.** Spec:
+> ✅ **CONSTRUIDO 2026-07-30 — PR #175 (`31b5943`).** Spec:
 > `docs/superpowers/specs/2026-07-30-historial-citado-localizable-design.md`; plan:
 > `docs/superpowers/plans/2026-07-30-historial-citado-localizable.md`. Módulo puro
 > `core/email_atomize/historial.py` + tres puntos de cableado en `pipeline.py` + el arreglo de la poda.
@@ -4320,7 +4320,7 @@ Los 3 que el arreglo desbloquea son otros, y no tenían nada citado (Hecho 1).
    peligroso— mata el test de la invariante; y retirar el filtro de vacías mata el suyo.
 
 **Estado.** Las **dos piezas hechas**: la pequeña (punteros del portador vetado, PR #169
-`5076823`) y la grande (`#105`, el fichero hermano de historial, PR #NNN). Lo que sigue faltando
+`5076823`) y la grande (`#105`, el fichero hermano de historial, PR #175 `31b5943`). Lo que sigue faltando
 para el requisito `#108` es **`#106`**: tener el texto no da la conversación — falta el hilo. **Disparador de promoción:** decisión de Nikolai, o el siguiente hilo cuyas fichas
 se echen en falta — que volverá a pasar, porque la causa 1 (que el caso solo reciba el último correo
 de un hilo) es la normal, no la excepción.
