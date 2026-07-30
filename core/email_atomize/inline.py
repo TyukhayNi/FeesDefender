@@ -477,6 +477,11 @@ class Segmentacion:
     # Trozos de firma descartados del veto de `_sandwich`, y SOLO cuando esa exclusion cambio
     # el veredicto (spec 2026-07-29 §5.1). Transporta la traza hasta `reconstruir`.
     firma_excluida: int = 0
+    # Bloques citados de un portador VETADO (`MEJORAS #109`, pieza barata). Van aparte de
+    # `ancestros` a proposito: `ancestros` gobierna la Capa B, y con el veto puesto tiene que
+    # seguir vacio. Esto es solo material para PUNTEROS sin atribucion — hacer localizable el
+    # texto que hoy no aparece en ningun artefacto.
+    citas_vetadas: list = field(default_factory=list)
 
 _RE_FWD_LINE = re.compile(
     r"(?i)^\s*-{2,}\s*(forwarded message|mensaje reenviado|reenviado|begin forwarded message"
@@ -815,6 +820,17 @@ def _sandwich(seq: list[str], *, firma_como_autor: bool = False) -> bool:
     return False
 
 
+def _segmentos_html(p: "_QuoteHTMLParser") -> list:
+    """Los bloques citados que vio el parser, como ``Segmento``. Un solo sitio: lo consumen la
+    rama normal (como ``ancestros``) y la rama vetada (como ``citas_vetadas``)."""
+    return [
+        Segmento(texto="\n".join(t.strip() for t in s["body"]).strip(),
+                 anclaje_texto=s["anchor"], profundidad=s["depth"], estilo="html_quote",
+                 estructural=True)
+        for s in p.segments
+    ]
+
+
 def segmentar_html(html: str) -> Segmentacion:
     from .bodies import _html_a_texto
     p = _QuoteHTMLParser()
@@ -840,15 +856,15 @@ def segmentar_html(html: str) -> Segmentacion:
         # Se declara SOLO cuando el desbalance es lo que sostiene el veto; si no, seria ruido
         # en el 7 % de correos que cierran con la firma abierta sin consecuencia.
         mot = "" if firma_fiable or _sandwich(p.seq) else "firma_sin_cerrar"
+        # `MEJORAS #109`: las citas se conservan para emitir PUNTEROS, no ancestros. El veto
+        # sigue dando `ancestros=[]`, asi que la Capa B no corre y no hay atribucion posible;
+        # lo unico que se gana es que el texto citado deje de desaparecer de todo artefacto
+        # (medido: 1493 palabras de historial de un hilo solo sobrevivian en el `.eml` crudo).
         return Segmentacion(autor=_html_a_texto(html), ancestros=[],
-                            respuesta_intercalada=True, motivo=mot)
+                            respuesta_intercalada=True, motivo=mot,
+                            citas_vetadas=_segmentos_html(p))
     autor = "\n".join(t.strip() for t in p.author_parts).strip()
-    ancestros = [
-        Segmento(texto="\n".join(t.strip() for t in s["body"]).strip(),
-                 anclaje_texto=s["anchor"], profundidad=s["depth"], estilo="html_quote",
-                 estructural=True)
-        for s in p.segments
-    ]
+    ancestros = _segmentos_html(p)
     # Traza (spec §5.1): SOLO cuando la exclusion de firma cambio el veredicto, no en cada correo
     # con firma. Llegar aqui implica que la exclusion no sostiene ningun veto — NO implica
     # `firma_fiable` (con `_sigdepth > 0` y sin sandwich tambien se llega, y entonces esto da 0).
@@ -1036,6 +1052,19 @@ def reconstruir(m_a, raw: bytes, identidades: "Identidades | None" = None) -> Re
         res.punteros.append(SegmentoEnterrado(
             portador_msg_id=m_a.msg_id, estilo="firma_excluida_del_veto", confianza="info",
             motivo=f"trozos_firma={seg_total.firma_excluida}", extracto=""))
+    for cita in seg_total.citas_vetadas:
+        # `MEJORAS #109`, pieza barata: con el veto puesto la Capa B no corre, y hasta ahora los
+        # bloques citados no aparecian en NINGUN artefacto -- ni ficha (correcto: sin cabecera no
+        # se puede atribuir) ni puntero (ese era el defecto). Se emiten como localizadores:
+        # SIN `de`, SIN fecha, SIN fingerprint. No pueden misatribuir porque no acunan remitente,
+        # no pueden colapsar ni promoverse porque no llevan fingerprint, y no entran en
+        # `candidatos`. Lo unico que aportan es "aqui hay una cita, y dice esto".
+        if not cita.texto.strip():
+            continue                      # una cascara vacia no es un localizador de nada
+        res.punteros.append(SegmentoEnterrado(
+            portador_msg_id=m_a.msg_id, estilo=cita.estilo, profundidad=cita.profundidad,
+            confianza="baja", motivo="cita_en_portador_vetado",
+            extracto=cita.texto[:200]))
     for seg in seg_total.ancestros:
         texto_exterior_original = seg.texto   # [G-CAPTURA] it.3: copia pre-poda para desanidar el interior
         anc = parsear_anclaje(seg.anclaje_texto or "", seg.estilo)
