@@ -83,6 +83,7 @@ fecha: 2026-07-05
 
 | Documento (en `docs/superpowers/handoffs/`) | Estado | Qué es |
 |---|---|---|
+| `handoff-2026-07-30-fase0-task4-checkin.md` | consumido | Task 4 de la Fase 0 dual: caracterización de `cmd_checkin` (`tests/test_repository_cli_checkin.py`, PR-A). |
 | `handoff-2026-07-19-triaje-plan.md` | consumido | Triaje de la cola de planificación (informe aplicado). |
 | `handoff-2026-07-17-apertura-W-{02T3XO,02TH0W,046G2R}-mejoras-proceso.md` | historico | 3 aperturas E2E; consolidados en `RUNBOOK_APERTURA_EXPEDIENTE.md`. |
 | `handoff-2026-07-16-rightsizing-mcp-drive-v1.md` | consumido | Right-sizing V1 del MCP Drive-disco (spec `2026-07-16-…` + build PR #52). |

@@ -1,13 +1,16 @@
 ---
-estado: vigente
-dueño: Nikolai Tyukhay
-fecha: 2026-07-30
+estado: consumido
+creado: 2026-07-30
+origen: sesión que construyó las Tasks 0-3 del PR-A
+destino: sesión de la Task 4
+consumido_por: PR-A de la Fase 0 — `tests/test_repository_cli_checkin.py` (Task 4)
 ---
 
 # Handoff — Fase 0, Task 4: caracterización de `cmd_checkin`
 
-**Andamio efímero.** Cuando la Task 4 esté mergeada, este fichero pasa a
-`estado: historico` o se borra. El hogar autoritativo del estado del ítem es `PLAN.md`,
+**Andamio efímero, ya consumido.** La Task 4 se escribió en
+`tests/test_repository_cli_checkin.py` (PR-A); cuando el PR-B cierre la Fase 0 este
+fichero pasa a `estado: historico`. El hogar autoritativo del estado del ítem es `PLAN.md`,
 bloque `[SIGUIENTE-DUAL-WORKSPACE]`; el hogar del plan es
 `docs/superpowers/plans/2026-07-29-dual-workspace-fase0-banco-pruebas.md` (**rev. 4**).
 
