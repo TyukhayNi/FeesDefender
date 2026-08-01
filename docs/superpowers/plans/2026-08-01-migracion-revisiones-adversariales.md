@@ -876,19 +876,15 @@ Si alguno **no** coincide con su `sha256_informe`, la transcripción difiere del
 
 Esquema: `AAAA-MM-DD-<tema>-<objeto>-r<N>[-<revisor>]-adversarial-review.md`.
 
-```bash
-git mv docs/superpowers/specs/2026-08-01-gobernanza-revisiones-adversariales-adversarial-review.md docs/superpowers/specs/2026-08-01-gobernanza-revisiones-spec-r1-adversarial-review.md
-```
+**Este plan no puede escribir los tres nombres destino**, y la razón es la misma restricción que manda el informe de Codex a `%TEMP%`: `test_citas_a_specs_y_plans_existen` (G2) exige que toda cita a un fichero de `docs/superpowers/specs|plans` **resuelva en disco**, y el destino no existe hasta que corras el `git mv`. Escribirlo aquí deja la suite en rojo desde el momento en que se commitea el plan. Se da como **regla de transformación**:
 
-```bash
-git mv docs/superpowers/specs/2026-08-01-gobernanza-revisiones-adversariales-adversarial-review-r2.md docs/superpowers/specs/2026-08-01-gobernanza-revisiones-spec-r2-adversarial-review.md
-```
+| Parte del nombre | Actual | Nuevo |
+|---|---|---|
+| tema | `…-gobernanza-revisiones-adversariales-…` | `…-gobernanza-revisiones-…` |
+| objeto + ronda | sufijo `-adversarial-review.md`, `-adversarial-review-r2.md`, `-adversarial-review-r3.md` | infijo `-spec-r1-`, `-spec-r2-`, `-spec-r3-` antes de `adversarial-review.md` |
+| revisor | — | se omite: los tres son de Codex y no hay colisión |
 
-```bash
-git mv docs/superpowers/specs/2026-08-01-gobernanza-revisiones-adversariales-adversarial-review-r3.md docs/superpowers/specs/2026-08-01-gobernanza-revisiones-spec-r3-adversarial-review.md
-```
-
-El `<revisor>` se omite: los tres son de Codex y no hay colisión.
+Construye cada destino aplicando esa regla y ejecútalo con `git mv`, un fichero por comando. Verifica antes con `git mv --dry-run` y después con `ls docs/superpowers/specs/*adversarial-review*.md`, que debe listar siete ficheros: las cuatro heredadas y las tres renombradas.
 
 - [ ] **Step 6: Actualizar las tres referencias del spec**
 
@@ -1031,7 +1027,7 @@ def test_censo_postcorte_completo():
     """
     esperado = {
         "2026-07-23-emails-atomizados-sala-lectura-design.md": 2,
-        "2026-07-26-gobernanza-indice-adversarial.md": 1,
+        "handoff-2026-07-26-gobernanza-indice-adversarial.md": 1,
         "2026-07-27-cableado-atomize-sala-maquina-design.md": 1,
         "2026-07-27-vista-procesal-05-procedimiento-design.md": 2,
         "2026-07-28-cableado-atomize-sala-maquina.md": 2,
