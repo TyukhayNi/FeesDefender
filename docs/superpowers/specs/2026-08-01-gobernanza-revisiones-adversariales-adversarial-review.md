@@ -3,9 +3,12 @@ tipo: revision-adversarial
 objeto: docs/superpowers/specs/2026-08-01-gobernanza-revisiones-adversariales-design.md
 objeto_rev: "1"
 commit: 3126214
+ronda: "1"
+clase: A-diseño
 revisor: Codex
 cobertura: ejecutada
 veredicto: NO-SHIP
+sha256_informe: 4f45f867de828badfdcd9f583e1731856001265ee345bb910f450b5142663f58
 adjudicado_en: docs/superpowers/specs/2026-08-01-gobernanza-revisiones-adversariales-design.md §14
 ---
 
