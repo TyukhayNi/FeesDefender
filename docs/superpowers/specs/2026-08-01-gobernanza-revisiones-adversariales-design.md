@@ -493,14 +493,25 @@ Este spec llegó a **cuatro revisiones y tres rondas** de revisión adversarial.
 justificado en un documento de gobernanza, y aun así no había ninguna regla que dijera cuándo parar:
 se decidió a ojo cada vez. La regla, para `CLAUDE.md`:
 
-> Con veredicto **`LISTA-CON-CAMBIOS`** se aplican los cambios y se cierra. **No se abre otra ronda
-> para atacar el material escrito en la remediación**, salvo que esa remediación **cambie una
-> decisión** — y entonces la ronda va **acotada a esa decisión**, no al documento entero.
+> Con veredicto **`LISTA-CON-CAMBIOS`** se aplican los cambios y **se cierra la ronda**: no se abre
+> otra para atacar el material de la remediación **mientras el documento siga siendo un borrador**.
+>
+> Pero la remediación es **material sin revisar, y acumula**. Antes de que el documento **pase a
+> doctrina o abra la ejecución de un plan**, se le hace **una pasada completa sobre todas las capas
+> sin revisar** — no acotada. Ese es el momento en que el radio de daño de un defecto deja de ser un
+> documento y pasa a ser el repo.
+>
 > Con `NO-SHIP`, `REQUIERE-REVISION` o `NO-EJECUTABLE` se remedia y se vuelve a pasar.
 
-El riesgo que cierra es el de que el proceso se coma al trabajo: cada ronda encuentra defectos en el
-material nuevo, y el material nuevo siempre existe. Sin regla de parada, la convergencia es una
-decisión de ánimo.
+El riesgo que cierra la primera mitad es que el proceso se coma al trabajo: cada ronda encuentra
+defectos en el material nuevo, y el material nuevo siempre existe. Sin regla de parada, la
+convergencia es una decisión de ánimo.
+
+El que cierra la segunda mitad lo destapó Nikolai en la **primera aplicación de esta regla**. La
+versión inicial —«se aplica y se cierra», con ronda acotada solo si cambia una decisión— habría metido
+en `CLAUDE.md` **dos capas sin revisar apiladas**: los siete remedios de la rev. 4 y las cinco mejoras
+de la rev. 5. Una excepción que aparece la primera vez que se usa una regla no es un caso especial: es
+una regla mal escrita. La corrección es esta, no una nota al pie.
 
 ## 11. Riesgos
 
@@ -554,13 +565,19 @@ que su trazabilidad no dependa de esta prosa:
 | M-4 | El alcance real de G8: el ancla de la cadena es git, no el guard | §6.1 | No: corrige una insinuación |
 | M-5 | Regla de parada de rondas | §10.2 | No: aditivo |
 
-**Cobertura declarada, aplicando el §10.2 a este mismo documento.** M-1 y M-3 **cambian decisiones**
-—qué acredita cobertura, y cómo se captura el informe de una rama—, así que por la regla que la propia
-rev. 5 introduce **procede una cuarta ronda acotada a esas dos**, y no al documento entero. Hasta que
-se ejecute, **su cobertura es ausente y así consta**: no se da por revisado lo que nadie ha mirado, que
-es la doctrina de `docs/DEAD_ENDS.md` aplicada al autor en vez de al proveedor.
+**Cobertura declarada, aplicando el §10.2 a este mismo documento.** Procede una **cuarta ronda
+completa**, no acotada, y por dos motivos que se suman:
 
-M-2, M-4 y M-5 son aditivos o correctivos de una afirmación propia, y se cierran sin ronda.
+1. M-1 y M-3 **cambian decisiones** —qué acredita cobertura, y cómo se captura el informe de una rama—.
+2. Y sobre todo: este documento está **a punto de pasar a doctrina** (`CLAUDE.md`, `AGENTS.md`) y de
+   **abrir la ejecución de un plan de diez tareas**. Con la segunda mitad del §10.2, ese es
+   precisamente el momento de la pasada completa sobre **todas las capas sin revisar**, que aquí son
+   dos: los siete remedios de la rev. 4 —el hash de G8, los marcadores, el esquema de nombres, el
+   modelo de tres clases— y las cinco mejoras de la rev. 5. **Ninguna de las doce la ha mirado nadie.**
+
+Hasta que esa ronda se ejecute, **la cobertura de ambas capas es ausente y así consta**: no se da por
+revisado lo que nadie ha mirado, que es la doctrina de `docs/DEAD_ENDS.md` aplicada al autor en vez de
+al proveedor.
 
 ### 13.2 Qué queda sin atacar
 
