@@ -16,9 +16,9 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 
 | # | Ítem | Estado | Gate / disparador | Esf. |
 |---|------|--------|-------------------|------|
-| 1 | [OCR ciego bajo el sello (`MEJORAS #90`)](#siguiente-ocr-ciego-texto-perdido-bajo-el-sello-de-firma-mejoras-90) | **motor arreglado; (e) CERRADA sin rendimiento; queda construir (f)** | (a)+(b) construidos y verdes: la causa ya no está viva para casos NUEVOS. **(e) cerrada 2026-08-01**: lo medido en los 3 casos da +0/−6/+288 chars y membrete de fabricante, así que los 11 candidatos restantes **no se corren**. Vivo: **(f)** con diseño cerrado y sin construir, y `MEJORAS #111` (el reproceso pierde cifras) | bajo |
+| 1 | [OCR ciego bajo el sello (`MEJORAS #90`)](#siguiente-ocr-ciego-texto-perdido-bajo-el-sello-de-firma-mejoras-90) | **(e) CERRADA sin rendimiento; (f) spec rev. 3, partida en A (construible) y B (bloqueada)** | (a)+(b) construidos y verdes. **(e) cerrada 2026-08-01**: lo medido da +0/−6/+288 chars y membrete de fabricante → los 11 restantes **no se corren**. **(f) pieza A sin dependencias; pieza B bloqueada por el lock roto → gate en la Fase 2 de la fila #3.** Vivo también `MEJORAS #111` | **A: medio · B: alto** (era «bajo»: mal estimado) |
 | 2 | [Infra C — art. 156 LEC](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado (quick win) | bajo |
-| 3 | [Arquitectura dual del expediente activo](#siguiente-dual-workspace-arquitectura-dual-del-expediente-activo-localdrive) | spec **rev. 2** + plan Fase 0 **rev. 4**; **Fase 0 ✅ CERRADA** (#170 PR-A + #174 PR-B) y los **dos guards** adelantados (#156 lectura, #160 escritura) | Gate de revisión **consumido** (3 pasadas adjudicadas, sin 4ª). **Siguiente = Fase 1**, cuyo plan **no ha pasado revisión adversarial**. Los **7 defectos del frontal siguen vivos**: reproducidos en `xfail`, se arreglan en la Fase 2. **Absorbe Infra B (scratch)**: `local_scratch`, `--case-dir` y `promover` son piezas de aquí | alto (5 fases restantes; la Fase 0 ya hecha) |
+| 3 | [Arquitectura dual del expediente activo](#siguiente-dual-workspace-arquitectura-dual-del-expediente-activo-localdrive) | spec **rev. 2** + plan Fase 0 **rev. 4**; **Fase 0 ✅ CERRADA** (#170 PR-A + #174 PR-B) y los **dos guards** adelantados (#156 lectura, #160 escritura) | Gate de revisión **consumido** (3 pasadas adjudicadas, sin 4ª). **Siguiente = Fase 1**, cuyo plan **no ha pasado revisión adversarial**. Los **7 defectos del frontal siguen vivos**: reproducidos en `xfail`, se arreglan en la Fase 2. **Absorbe Infra B (scratch)**: `local_scratch`, `--case-dir` y `promover` son piezas de aquí. **Nota cruzada (2026-08-01): su Fase 2 es ahora el gate de la pieza B de la fila #1** — el saneamiento de los segmentos duplicados no puede correr mientras `test_defecto_doble_titular` siga en `xfail`, porque una copia local stale resucita los slugs retirados | alto (5 fases restantes; la Fase 0 ya hecha) |
 | 4 | [MCP sudespacho F1](#siguiente-mcp-sudespacho-mcp-sudespacho-crm-del-despacho--f1-lectura-spec-hecho-plan-pendiente) | spec lista | gates de despliegue | alto |
 | 5 | [Drive-disco: pasos 5-7 + Claude Code](#siguiente-mcp-drive-disco-pasos-5-7-diferidos) | ✅ desplegado | resto pasivo: check Modo 1 en caso real | medio |
 | 6 | [abrir-caso F3-judicial](#abrir-caso--f1--f2a--f3-ac-mergeadas-f2b-aparcada-f3-judicial-pendiente) | disparador confirmado 2026-07-22 | plan concreto listo (4 piezas, ver bloque) | medio |
@@ -245,11 +245,26 @@ ser cambiar una bandera.
       - [ ] **El slug de un segmento de bundle depende de su contenido, así que el reproceso no
         sustituye: añade.** `fusionar_cobertura` indexa por `(rel_path, slug)` y nada poda, de modo
         que cada reproceso deja los artefactos anteriores en disco. Afecta a todo reproceso de
-        bundles, no solo a D1. **DISEÑO CERRADO 2026-08-01** —
-        `docs/superpowers/specs/2026-08-01-identidad-segmento-bundle-design.md`: identidad
-        **posicional** (`{parent_slug}__seg{NN}_{TIPO}`, sin el sha del segmento), que elimina la
-        asimetría con los documentos sueltos en vez de limpiar detrás de ella, más un script de
-        migración y saneamiento re-ejecutable. **Pendiente de construir.**
+        bundles, no solo a D1. **SPEC rev. 3, con DOS revisiones adversariales consumidas (ambas NO
+        SHIP)** — `docs/superpowers/specs/2026-08-01-identidad-segmento-bundle-design.md`. La
+        decisión sobrevivió en dirección pero no en mecanismo: la identidad es un **`doc_id`
+        persistente** con ledger monotónico, **no** el ordinal `seg` (que se rompe con `--force`,
+        hallazgo B0-2 de la 1ª pasada). **Partida en dos piezas** (decisión de Nikolai, 2026-08-01):
+
+        - **Pieza A — motor y esquema. CONSTRUIBLE YA, sin dependencias.** `doc_id` con formato
+          canónico validado antes de tocar disco, `next_doc_id` + tombstones, reconciliación del
+          manifiesto en `--force`, preflight de todos los manifiestos antes de escribir nada,
+          publicación por generación y guard **bidireccional** que aborta. No toca ningún caso real.
+        - **Pieza B — retrofit y saneamiento de los 5 grupos. ⛔ BLOQUEADA.** Depende de un lock de
+          exclusión que **hoy está roto**: `test_defecto_doble_titular` sigue vivo como `xfail`
+          («el write-then-verify no impide dos titulares») y `cmd_checkin` no verifica nonce al
+          empezar, de modo que una copia local stale puede **resucitar** un slug retirado vía
+          `COPY_LOCAL`. **Gate: la Fase 2 de la fila #3** (arquitectura dual), que es quien arregla
+          esos defectos. Ver la nota cruzada en esa fila.
+
+        ⚠️ **La estimación de esfuerzo «bajo» de la cabecera de esta fila ya no describe la pieza.**
+        El contrato pasó de «una función y un script» a identidad, ledger, reconciliación, preflight,
+        custodia, guard, journal, retrofit y exclusión. Corregido en la tabla de la cola.
 
         **Censo del daño (2026-08-01, read-only sobre los 5 casos):** 5 segmentos duplicados y 12
         ficheros huérfanos, en 2 casos — W-02VND1 (3 segmentos × 2 versiones) y W-02VUDR (2 × **3**).
