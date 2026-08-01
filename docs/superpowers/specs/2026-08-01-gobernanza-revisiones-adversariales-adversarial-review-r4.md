@@ -9,7 +9,7 @@ independencia: independiente
 revisor: Codex
 cobertura: ejecutada
 veredicto: NO-SHIP
-mandato: §13.2 de la rev. 5 del objeto (git 24f8abe)
+mandato: docs/superpowers/specs/2026-08-01-gobernanza-revisiones-adversariales-design.md §13.2
 marcador_nonce: zx7q
 sha256_informe: f67d6ec53f8070898e75920a6913f0a1857b4e11da9c27439e38f003d47ad089
 adjudicado_en: docs/superpowers/specs/2026-08-01-gobernanza-revisiones-adversariales-design.md §17
