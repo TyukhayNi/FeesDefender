@@ -783,8 +783,9 @@ puro + orquestadores finos. Spec: `docs/superpowers/specs/2026-07-09-abrir-caso-
   estaba incompleto — el mecanismo real es una relación CON ATRIBUTOS PROPIOS vía el
   elemento intermedio `autos` (secuencia REST de 4 llamadas confirmada en vivo, detalle en
   `docs/INTEGRACION_SUDESPACHO.md §12.5`). Piezas concretas a construir (esfuerzo bajo,
-  mirroring mecánico desde plantillas ya existentes — candidato a delegar a Gemini/agy con
-  revisión de Claude, no rediseño):
+  mirroring mecánico desde plantillas ya existentes — construcción directa o subagentes, **no
+  rediseño**; la nota anterior lo daba como «candidato a delegar a Gemini/agy», vía retirada el
+  2026-08-01, ver `docs/DEAD_ENDS.md`):
   1. `get_expediente_judicial()`/`update_expediente_judicial()` en `sudespacho_create.py`
      (mirror de `get_expediente`/`update_expediente`).
   2. `ensure_contrario_vinculado_judicial()` en `sudespacho_relations.py` (mirror de
