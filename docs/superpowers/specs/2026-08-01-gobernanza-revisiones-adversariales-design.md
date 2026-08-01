@@ -1,9 +1,10 @@
 # Gobernanza de las revisiones adversariales — población, hogar y formato
 
-> **Estado:** **rev. 4** (2026-08-01), tras **tres** revisiones adversariales de Codex:
-> NO-SHIP (6 hallazgos), NO-SHIP (3) y **LISTA-CON-CAMBIOS (7)**. Los dieciséis confirmados, ninguno
-> refutado. Adjudicaciones en §14, §15 y §16; informes literales en las tres actas
-> `2026-08-01-gobernanza-revisiones-adversariales-adversarial-review*.md`.
+> **Estado:** **rev. 5** (2026-08-01). La rev. 4 cerró **tres** revisiones adversariales de Codex —
+> NO-SHIP (6 hallazgos), NO-SHIP (3) y **LISTA-CON-CAMBIOS (7)**, los dieciséis confirmados y ninguno
+> refutado; adjudicaciones en §14, §15 y §16 e informes literales en las tres actas
+> `2026-08-01-gobernanza-revisiones-adversariales-adversarial-review*.md`. La **rev. 5** añade cinco
+> mejoras de **origen propio, sin revisión externa todavía**: su cobertura se declara en el §13.
 > **Objeto:** cómo se documenta y se audita la revisión adversarial en este proyecto — sus clases, no
 > solo el intercambio con Codex.
 > **Origen:** pregunta de Nikolai (2026-08-01) sobre si el «diálogo interno» necesita documentarse,
@@ -54,6 +55,14 @@ Opus de otra sesión o un subagente. La rev. 3 la exigía solo con «informe ext
 protege nada: lo que hay que conservar es la **voz independiente**, y un subagente que escribe
 hallazgos la tiene. `sin informe` queda para lo histórico y para un proceso que genuinamente solo
 emitiera un estado estructurado.
+
+> **«Recuperable» es una obligación del encargo, no una propiedad del revisor** (rev. 5). El revisor
+> de rama suele ser un Opus de otra sesión o un subagente, cuyo texto vive en un transcript que puede
+> desaparecer. Por eso **el encargo de una revisión de clase `rama` debe exigir que el informe se
+> escriba a un fichero fuera del repo antes de que empiece la adjudicación**. Si no se capturó en su
+> momento, la ficha lo dice —`no capturado (revisión inline sin volcado)`— y eso **no es una opción
+> normal: es un defecto de proceso declarado**, porque deja la clase con más riesgo material sin voz
+> independiente. Era el agujero que la rev. 4 dejaba abierto sin verlo.
 
 Por eso la `autorrevision` no lleva acta: el revisor y el adjudicador son la misma persona, así que no
 hay voz independiente que preservar. El acta no es burocracia de simetría; existe para que la parte
@@ -131,7 +140,7 @@ de migración.
 
 | Artefacto | Hogar | Obligatorio en |
 |---|---|---|
-| **Mandato** (qué se pidió atacar) | El propio objeto, §«Revisión adversarial» previa | Recomendado siempre |
+| **Mandato** (qué se pidió atacar) | Acta, §0 — o puntero `mandato:` en su frontmatter | **`diseño` y `rama`** |
 | **Informe recibido**, literal + `sha256` | Acta hermana `…-adversarial-review.md` | `diseño` y `rama`, siempre que haya respuesta textual recuperable |
 | **Adjudicación** (veredicto + hallazgo → decisión → remedio) | Sección embebida en el objeto | **Todas las clases** |
 | **Cobertura** | Ficha, campo `Cobertura` | Siempre |
@@ -148,6 +157,14 @@ por tarea agregadas, motivo de la ausencia). Sin cobertura no hay veredicto (doc
 `docs/DEAD_ENDS.md`). `no-ejecutada` describe **un encargo que terminó sin sustituto y sin
 adjudicación**; un encargo fallido a un proveedor que otro revisor cubrió **no** lo es — los cuatro
 fallos de `agy` son indisponibilidad de proveedor, y ese hecho vive en `DEAD_ENDS.md`.
+
+**Cobertura ejecutada ≠ cobertura independiente** (rev. 5). Una `autorrevision` cuenta como revisión
+—entra en la población, lleva encabezado y ficha— pero **no acredita cobertura**: revisor y adjudicador
+son la misma persona y nada impide que sea un sello de goma. Por tanto, **un objeto cuyas únicas
+revisiones sean autorrevisiones está, a efectos de la revisión obligatoria de `CLAUDE.md`, sin
+revisar**, y su ficha lo declara con el matiz `ejecutada (sin revisión independiente)`. La rev. 4
+trataba las tres clases como ciudadanas iguales del censo, y eso permitía que una pasada propia
+aparentase cobertura.
 
 **`veredicto`** — lo que dijo el revisor:
 
@@ -187,7 +204,7 @@ El calificador opcional cubre `del PLAN` y `de rama completa`. Debajo, **ocho l�
 - **Ronda:** 1 | 2 | 3
 - **Revisor:** Codex (solo lectura) | Claude (no independiente: autor del objeto) | <otro>
 - **Cobertura:** ejecutada | ejecutada (N revisiones por tarea agregadas) | no-ejecutada — <motivo>
-- **Informe recibido:** `<acta>.md` | sin informe (autorrevisión) | no archivado (anterior a esta regla)
+- **Informe recibido:** `<acta>.md` | sin informe (autorrevisión) | no archivado (anterior a esta regla) | no capturado (revisión inline sin volcado)
 - **Hallazgos:** N confirmados · N rebajados · N refutados · N escalados · N sin verificar
 - **Remediado en:** PR #NNN (`hash`) | rev. N de este documento | pendiente
 ```
@@ -269,6 +286,7 @@ clase: diseño
 revisor: Codex
 cobertura: ejecutada
 veredicto: NO-SHIP
+mandato: §0 de este acta | §13 de la rev. 1 del objeto
 sha256_informe: <hash en minusculas> | no-disponible-legacy
 adjudicado_en: docs/superpowers/specs/<fichero>.md §14
 ---
@@ -277,8 +295,13 @@ adjudicado_en: docs/superpowers/specs/<fichero>.md §14
 `adjudicado_por` y `estado_remediacion` **no van aquí**: describen la decisión, y el segundo es
 mutable. `veredicto` sí: es inmutable.
 
-**Contenido, dos secciones.** **§1 Informe recibido, sin modificar**, con el bloque literal delimitado
-por marcadores explícitos:
+**Contenido, tres secciones.** **§0 Mandato** —qué se pidió atacar, numerado y en el orden de daño con
+que se entregó—, salvo que el mandato ya viva en el objeto y el frontmatter apunte allí con `mandato:`.
+No es adorno: sin él, quien lea el acta **no puede distinguir si el revisor pasó algo por alto o si
+nunca se le pidió**. La rev. 4 lo marcaba «recomendado» siendo lo que más subió la calidad medible de
+las tres rondas; eso estaba al revés.
+
+**§1 Informe recibido, sin modificar**, con el bloque literal delimitado por marcadores explícitos:
 
 ```
 <!-- informe-literal:inicio -->
@@ -303,6 +326,13 @@ de origen**.
 **Después, el acta se autoverifica.** Recomputando el bloque literal se detecta cualquier alteración
 posterior aunque la copia externa desaparezca. Lo que se pierde sin original no es la detección de
 manipulación: es la prueba de que el digest inicial venía del informe recibido.
+
+**Hasta dónde llega G8, dicho sin adornos** (rev. 5). G8 detecta que alteren **el bloque**. Si alguien
+cambia el bloque **y** el `sha256_informe` en la misma edición, G8 sigue verde: la huella deja de ser
+una garantía criptográfica y pasa a ser una comprobación de consistencia interna. Lo que hace inútil
+esa edición coordinada es **git**: el diff muestra las dos modificaciones juntas y el historial es, en
+la práctica, de solo-añadir. Así que el ancla de la cadena es el commit, no el guard. La rev. 4
+insinuaba más de lo que entregaba, y conviene que quien audite sepa dónde mirar.
 
 Corolario, contra lo que decía la rev. 3: **`%TEMP%` no es almacenamiento duradero y no hace falta que
 lo sea**, siempre que la verificación al recibir sea obligatoria. Lo que sí se exige es no sobrescribir
@@ -352,7 +382,10 @@ adjudicación del proyecto.
   custodia rota en suite verde;
 - `sha256_informe: no-disponible-legacy` **solo** en los cuatro nombres de la allowlist, y en ese caso
   se omiten la comprobación de digest y la de cuerpo;
-- para toda acta fuera de la allowlist: existen las dos secciones del §6 y los dos marcadores.
+- `mandato` presente (puntero o `§0 de este acta`). Se comprueba **presencia**, no resolución: exigir
+  que resuelva es lo que encareció `adjudicado_en`, y aquí no lo vale;
+- para toda acta fuera de la allowlist: existen las **tres** secciones del §6 —o dos, si `mandato`
+  apunta fuera— y los dos marcadores.
 
 **Anti-automatch:** el corpus de G7 incluye este mismo spec. Si vuelve a detectar la plantilla del §5
 dentro de su cerca, G7 falla.
@@ -397,7 +430,7 @@ La política que el plan debe respetar:
 
 | Documento | Cambio |
 |---|---|
-| `CLAUDE.md` §Revisión adversarial | Resolver el «o»; las clases y su traza; acta siempre que haya respuesta textual recuperable |
+| `CLAUDE.md` §Revisión adversarial | Resolver el «o»; las clases y su traza; acta siempre que haya respuesta textual recuperable; **la autorrevisión no acredita cobertura** (§4); **la regla de parada de rondas** (§10.2) |
 | `AGENTS.md` | Cuatro cambios al contrato del revisor: **§10.1** |
 | `docs/GOBERNANZA_FUENTES_VERDAD.md` §5 | El acta es el hogar del informe recibido; excepción histórica de los tres `codex-*` |
 | `tests/test_docs_gobernanza.py` | Cabecera: tercera población de vocabularios |
@@ -443,10 +476,31 @@ que se lleva por delante el objetivo solo lo puede hacer quien tiene la intenci�
 objeto anclado a un **commit**. Es lo que más subió la calidad de las tres rondas: sin el anclaje no se
 puede pedir «reproduce mi medición».
 
+**5. El encargo de una revisión de rama exige volcado del informe** (rev. 5). Quien despacha una
+revisión de clase `rama` —a Codex, a un Opus de otra sesión o a un subagente— **pide el informe en un
+fichero fuera del repo antes de adjudicar**. No es una preferencia de formato: es la única forma de que
+«respuesta textual recuperable» (§1.2) sea cierta en la clase donde el revisor no es un proceso externo
+con su propio disco.
+
 **Independencia, y lo que pasó con ella.** El punto 1 parecía ampliar los permisos del propio revisor,
 y por eso se declaró su opinión como insumo y no veredicto. Resultó que **argumentó contra su propia
 ampliación** y que quien se equivocaba era el autor. La cautela era correcta; la dirección del sesgo,
 no la que se esperaba.
+
+### 10.2 Regla de parada de rondas
+
+Este spec llegó a **cuatro revisiones y tres rondas** de revisión adversarial. Puede estar
+justificado en un documento de gobernanza, y aun así no había ninguna regla que dijera cuándo parar:
+se decidió a ojo cada vez. La regla, para `CLAUDE.md`:
+
+> Con veredicto **`LISTA-CON-CAMBIOS`** se aplican los cambios y se cierra. **No se abre otra ronda
+> para atacar el material escrito en la remediación**, salvo que esa remediación **cambie una
+> decisión** — y entonces la ronda va **acotada a esa decisión**, no al documento entero.
+> Con `NO-SHIP`, `REQUIERE-REVISION` o `NO-EJECUTABLE` se remedia y se vuelve a pasar.
+
+El riesgo que cierra es el de que el proceso se coma al trabajo: cada ronda encuentra defectos en el
+material nuevo, y el material nuevo siempre existe. Sin regla de parada, la convergencia es una
+decisión de ánimo.
 
 ## 11. Riesgos
 
@@ -469,7 +523,10 @@ no la que se esperaba.
 3. G7 corre sobre este spec y **no** detecta la plantilla del §5; su fixture es la única fuente de los
    totales vivos, y añadir una adjudicación nueva lo hace fallar hasta actualizarlo.
 4. G8 rechaza: un acta con frontmatter válido y cuerpo vacío; una cuyo `adjudicado_en` apunte a una
-   sección inexistente; y **una cuyo bloque literal haya sido alterado** respecto de su digest.
+   sección inexistente; **una cuyo bloque literal haya sido alterado** respecto de su digest; y una
+   **sin `mandato`**.
+4-bis. Ningún objeto queda declarado «revisado» cuando sus únicas revisiones son de clase
+   `autorrevision`: su ficha lleva el matiz `ejecutada (sin revisión independiente)`.
 5. Toda revisión de la población postcorte tiene encabezado y ficha en su objeto, con clase y ronda —
    incluidas las que hoy solo viven en un acta.
 6. **Cada revisión postcorte está representada exactamente una vez**, acreditado por la matriz
@@ -481,13 +538,36 @@ no la que se esperaba.
 ## 13. Estado de la revisión adversarial de este spec
 
 Tres rondas, veredictos NO-SHIP → NO-SHIP → **LISTA-CON-CAMBIOS**, dieciséis hallazgos, todos
-confirmados. La tercera declara la arquitectura aceptable y los cambios locales, así que **no se pide
-una cuarta pasada**: la rev. 4 aplica los siete remedios y el siguiente paso es el plan de migración.
+confirmados. La tercera declaró la arquitectura aceptable y los cambios locales; la rev. 4 aplicó los
+siete remedios.
 
-Si se quisiera una cuarta, esto es lo que queda sin atacar: los marcadores `informe-literal` y la
-canonicalización del §8 (nuevos); el esquema de nombre del §6.1 (nuevo); la exigencia de acta a las
-revisiones de rama, que sube el coste en la clase más frecuente; y si el criterio 6 es verificable con
-la matriz del plan o sigue siendo aspiracional.
+### 13.1 Las cinco mejoras de la rev. 5, y su cobertura
+
+Salieron de una revisión **propia** a petición de Nikolai, no de un revisor externo. Se numeran para
+que su trazabilidad no dependa de esta prosa:
+
+| # | Mejora | Dónde | ¿Cambia una decisión? |
+|---|---|---|---|
+| M-1 | El encargo de una revisión de `rama` exige volcado del informe a fichero | §1.2, §5, §10.1.5 | **Sí** |
+| M-2 | El mandato pasa a obligatorio, en §0 del acta o por puntero `mandato:` | §3, §6, §8 | No: aditivo |
+| M-3 | La autorrevisión no acredita cobertura independiente | §4, §10 | **Sí** |
+| M-4 | El alcance real de G8: el ancla de la cadena es git, no el guard | §6.1 | No: corrige una insinuación |
+| M-5 | Regla de parada de rondas | §10.2 | No: aditivo |
+
+**Cobertura declarada, aplicando el §10.2 a este mismo documento.** M-1 y M-3 **cambian decisiones**
+—qué acredita cobertura, y cómo se captura el informe de una rama—, así que por la regla que la propia
+rev. 5 introduce **procede una cuarta ronda acotada a esas dos**, y no al documento entero. Hasta que
+se ejecute, **su cobertura es ausente y así consta**: no se da por revisado lo que nadie ha mirado, que
+es la doctrina de `docs/DEAD_ENDS.md` aplicada al autor en vez de al proveedor.
+
+M-2, M-4 y M-5 son aditivos o correctivos de una afirmación propia, y se cierran sin ronda.
+
+### 13.2 Qué queda sin atacar
+
+Los marcadores `informe-literal` y la canonicalización del §8; el esquema de nombre del §6; la
+exigencia de acta a las revisiones de rama, que sube el coste en la clase más frecuente; si el
+criterio 6 es verificable con la matriz del plan o sigue siendo aspiracional; y las cinco mejoras del
+§13.1.
 
 ## 14. Adjudicación de la revisión adversarial (Codex, 2026-08-01) — NO-SHIP, remediado
 
