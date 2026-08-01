@@ -501,6 +501,10 @@ se decidió a ojo cada vez. La regla, para `CLAUDE.md`:
 > sin revisar** — no acotada. Ese es el momento en que el radio de daño de un defecto deja de ser un
 > documento y pasa a ser el repo.
 >
+> **Esa pasada es UNA.** Su propia remediación **no dispara otra**: se acepta como **riesgo residual
+> declarado** y se anota en el documento. Sin esta cláusula la regla no termina — cada pasada genera
+> material nuevo sin revisar, que exigiría otra pasada, indefinidamente.
+>
 > Con `NO-SHIP`, `REQUIERE-REVISION` o `NO-EJECUTABLE` se remedia y se vuelve a pasar.
 
 El riesgo que cierra la primera mitad es que el proceso se coma al trabajo: cada ronda encuentra
