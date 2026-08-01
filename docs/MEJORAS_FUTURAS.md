@@ -4390,3 +4390,29 @@ expediente. Lo que queda vivo es la duda del punto 2 sobre las recuperaciones de
 
 **Coste estimado.** ~1 h la medición de los tres puntos, sobre material ya en disco y sin re-OCR. El
 arreglo, si lo hay, depende de lo que diga.
+
+## 112. `test_resumen_cuenta_por_estado` depende en silencio de dónde viva el `basetemp` de pytest
+
+**Medido 2026-08-01.** Correr la suite con `--basetemp` largo —166 caracteres, que es lo que mide el
+scratchpad de una sesión de Claude Code— hace fallar
+`tests/test_migrar_nombres_informe.py::test_resumen_cuenta_por_estado` con `assert 2 == 0`. Con un
+`basetemp` de 37 caracteres pasa. Reproducible en ambos sentidos, no es flakiness ni contaminación
+entre módulos.
+
+**Causa.** El test asserta `conteo["fuera_de_presupuesto"] == 0` contra `RUTA_OFFICE_MAX = 240`
+(el guardarraíl de longitud de ruta del 43º cierre). Monta sus casos bajo `tmp_path`, así que el
+presupuesto que mide **incluye la ruta de la carpeta temporal**. Si esa base es larga, los casos
+sintéticos se pasan de 240 y el conteo deja de ser 0 — el test mide el entorno, no el código.
+
+**Por qué importa más de lo que parece.** El síntoma es un fallo que aparece y desaparece según
+**quién** corre la suite y desde dónde, que es el modo de fallo más caro de diagnosticar: invita a
+teorizar sobre orden aleatorio y a culpar al entorno. Me costó una ronda de diagnóstico y solo se
+cerró reproduciéndolo con las dos longitudes.
+
+**Mejora propuesta.** Que el test no dependa de la longitud del `basetemp`: o monta bajo una raíz
+corta propia, o parametriza `RUTA_OFFICE_MAX` en la llamada, o asserta sobre la diferencia
+—«ninguno de estos dos casos añade `fuera_de_presupuesto` por sí mismo»— en vez de sobre el cero
+absoluto. Cualquiera de las tres quita la dependencia oculta sin perder lo que el test comprueba.
+
+**Coste estimado.** ~15 min. No bloquea: la suite pasa con el `basetemp` por defecto y con cualquiera
+razonablemente corto.
