@@ -29,9 +29,30 @@ una instrucción divergente es peor que ninguna.
   helpers en `.claude/skills/_shared/`). El árbol `.agents/skills/` es un espejo local **no
   versionado** que ya ha divergido de la fuente; no lo edites ni te fíes de él. Ver `MEJORAS #97`.
 - **Codex es el revisor adversarial del proyecto** (desde 2026-08-01; sustituye a Gemini/`agy`, que
-  se retiró por cupo agotado — ver `docs/DEAD_ENDS.md`). Cuando te llamen para eso: trabajas en
-  **solo lectura**, no escribes en el repo, y dejas los hallazgos en un fichero **fuera** de él
-  (`%TEMP%\...`). Contrasta cada hallazgo **contra el código real**, no solo contra el diff: un
-  hallazgo que solo se sostiene mirando el diff suele ser un falso positivo. **Claude adjudica** y
-  registra el resultado en el spec o el plan; tu informe se recibe sin modificar. Detalle del
-  contrato en `CLAUDE.md` §«Revisión adversarial».
+  se retiró por cupo agotado — ver `docs/DEAD_ENDS.md`). Contrata así:
+
+  - **Solo lectura, y qué significa.** El repo, los ficheros ignorados por git, `data/CASOS/` y los
+    sistemas externos (CRM, Drive) son **entradas de solo lectura durante toda la revisión**. Sí
+    puedes **ejecutar código y tests** cuando todas sus escrituras van fuera del repo y no hay
+    efectos externos: `PYTHONDONTWRITEBYTECODE=1`, `-p no:cacheprovider`, `--basetemp` fuera del
+    árbol. `git status --porcelain --untracked-files=all` antes y después es evidencia adicional,
+    **no sustituto** de la prohibición.
+  - **Contrasta contra el código real**, no solo contra el diff: un hallazgo que solo se sostiene
+    mirando el diff suele ser un falso positivo.
+  - **La ruta del informe la fija el encargo**, fuera del repo, derivada de la identidad de la
+    revisión. **No sobrescribas informes anteriores:** sus digests son la cadena de custodia.
+  - **Devuelve `ruta` y `sha256` canónico** —UTF-8, `LF`, un único salto final— **antes de que se
+    adjudique**, por un canal separado del fichero. Sin esa declaración tuya, la prueba de origen se
+    reduce a que el autor calcule y escriba los dos lados.
+  - **El mandato te llega numerado y ordenado por daño**, con el objeto anclado a un **commit**.
+    Contéstalo **punto por punto en una sección propia**, y numera tus hallazgos `H-NN` con
+    severidad. Es lo que más subió la calidad medible de las seis rondas del 2026-08-01: sin el
+    anclaje no se te puede pedir «reproduce mi medición».
+  - **Tú no adjudicas, y conviene saber por qué.** Un hallazgo puede ser correcto y su remedio
+    pasarse de rosca: en la primera ronda de aquella serie, un hallazgo acertado exigía suprimir dos
+    criterios de aceptación, y uno era el objetivo del encargo. Distinguirlo solo lo puede hacer
+    quien tiene la intención del encargo en la mano.
+  - **Tu informe se archiva literal**, con su digest, en un acta hermana del objeto revisado. La
+    adjudicación va aparte, embebida en el spec o el plan. Contrato completo en
+    `docs/superpowers/specs/2026-08-01-gobernanza-revisiones-adversariales-design.md` y resumen en
+    `CLAUDE.md` §«Revisión adversarial».
