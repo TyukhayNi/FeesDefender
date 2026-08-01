@@ -611,6 +611,38 @@ Cuantifica y matiza el hallazgo anterior con mediciones reales desde Cowork (wal
 
 ---
 
+## Delegar a Gemini vía `agy` (Antigravity): cupo agotado de forma persistente — vía RETIRADA
+
+- **Intentado:** delegar el trabajo pesado/mecánico —y sobre todo la **revisión adversarial de
+  código y de planes/specs**— a Gemini con la CLI `agy` de Antigravity
+  (`C:\Users\tnm33\AppData\Local\agy\bin\agy.exe -p "..." --model "Gemini 3.1 Pro (High)"`), según
+  mandaba `CLAUDE.md` hasta 2026-08-01 («OBLIGATORIO, no opcional»).
+- **Resultado:** **no corría**. Cuatro encargos consecutivos en tres días murieron por «cupo de
+  Gemini agotado», dejando la revisión sin hacer:
+  - 2026-07-27 — `specs/2026-07-27-cableado-atomize-sala-maquina-adversarial-review.md`: «**`agy` NO
+    se ejecutó** — cupo individual de Gemini agotado (reset ~36 h)», y su §final registra la
+    cobertura como ausente y **no sustituida**.
+  - 2026-07-27 — `specs/2026-07-27-cableado-atomize-sala-maquina-design.md`: ídem.
+  - 2026-07-28 — `specs/2026-07-28-email-atomize-enumeracion-recursiva-design.md` y
+    `plans/2026-07-28-cableado-atomize-sala-maquina.md`: «`agy` no pudo correr (cupo de Gemini
+    agotado), así que la revisión la hizo **Codex** en solo lectura».
+  - 2026-07-29 — `specs/2026-07-29-feesdefender-dual-case-workspace-adversarial-review.md`: se
+    intenta delegar el barrido mecánico, no corre.
+- **Confirmado:** 2026-08-01 (retirada), sobre evidencia acumulada del 27 al 29 de julio de 2026.
+- **El daño real no era la lentitud, era el silencio.** Una doctrina que declara obligatoria una
+  revisión que el ejecutor no puede correr produce **revisiones fantasma**: el paso figura como
+  cubierto en el proceso y nadie miró el código. Un revisor sin cupo **no refuta: deja sin
+  verificar**, y eso hay que declararlo, no dar por bueno.
+- **Conclusión:** **no reintentar `agy`.** El revisor adversarial del proyecto es **Codex**, que ya
+  cubrió de hecho tres revisiones (las dos pasadas de `vista-procesal` y el plan de `email-atomize`)
+  y tiene bolsa de tokens propia. Contrato en `CLAUDE.md` §«Revisión adversarial» y en `AGENTS.md`.
+  El trabajo mecánico pesado (barridos de corpus, OCR, resúmenes masivos, boilerplate) vuelve a
+  Claude: se trocea o se paraleliza con subagentes, no se delega en bloque.
+- **Acción pendiente:** si Gemini recupera cupo estable y se quiere reabrir la vía, **medirlo antes
+  de volver a declararlo obligatorio** — la lección es que el mandato precedió a la capacidad.
+
+---
+
 ## Plantilla para nuevas entradas
 
 ```markdown
