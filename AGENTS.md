@@ -56,3 +56,28 @@ una instrucción divergente es peor que ninguna.
     adjudicación va aparte, embebida en el spec o el plan. Contrato completo en
     `docs/superpowers/specs/2026-08-01-gobernanza-revisiones-adversariales-design.md` y resumen en
     `CLAUDE.md` §«Revisión adversarial».
+
+- **Revisor sustituto cuando Codex no puede correr** (regla del 2026-08-01, con Codex sin cupo hasta
+  el 2026-08-08). No repetir el error de `agy`: lo caro no fue la lentitud, fue que el paso figurase
+  cubierto sin que nadie mirara.
+
+  - **Cuándo.** Solo por **indisponibilidad real** del revisor —sin cupo, caído—, nunca por
+    comodidad ni por prisa. Si no hay sustituto, la cobertura se declara ausente y se sigue; **un
+    revisor que no corre no refuta**.
+  - **Quién.** Una sesión **limpia** de Claude Code: chat nuevo, **sin el contexto de autoría** y sin
+    la adjudicación del autor. Se le da el objeto anclado a un commit y el mandato, nada más. El
+    resto del contrato de arriba se aplica igual: ruta fijada, `ruta + sha256` de vuelta, informe
+    archivado literal.
+  - **Qué pierde, y cómo se compensa.** Mismo modelo, **puntos ciegos compartidos**, y sin la tensión
+    de interés que hizo que Codex argumentara contra la ampliación de sus propios permisos. Se
+    compensa con **subagentes en paralelo, una lente por hallazgo**, y con un mandato que prohíba dar
+    nada por bueno sin abrir el fichero y le exija **reproducir las mediciones** en vez de creerlas.
+  - **Cómo se registra, sin maquillaje.** `revisor: Claude Code (sesión independiente)` en el acta —
+    **nunca «Codex»**— y la adjudicación declara en prosa que la independencia es **más débil**
+    porque autor y revisor son el mismo modelo. Si eso no se escribe, el registro miente y el
+    mecanismo pierde su único sentido.
+  - **Lo que el sustituto NO cubre.** Revisar **el propio contrato de revisión** o cualquier objeto
+    donde el sesgo compartido sea precisamente el riesgo: eso espera a Codex. Precedente medido: la
+    revisión de Claude sobre el spec del dual workspace —objeto escrito por **Codex**— dio 19
+    hallazgos, y la de gobernanza con cinco subagentes refutó 4 de 5. Claude como revisor funciona
+    **cuando el autor es otro**.

@@ -38,6 +38,11 @@ en `docs/DEAD_ENDS.md`. **No la reintentes.**
   venga redactado.
 - **Un revisor que no corre no refuta: deja sin verificar.** Si la revisión no se ejecuta, se declara
   la cobertura ausente en el documento — nunca se da por refutado lo que nadie miró.
+- **Si Codex no puede correr** (sin cupo, caído), cabe un **revisor sustituto**: una sesión limpia de
+  Claude Code, chat nuevo y sin el contexto de autoría. Condiciones, límites y —sobre todo— **cómo se
+  registra sin maquillarlo** (`revisor: Claude Code (sesión independiente)`, nunca «Codex»), en
+  `AGENTS.md` §«Revisor sustituto». **No cubre revisar el propio contrato de revisión:** ahí el sesgo
+  compartido es justo el riesgo, y eso espera a Codex.
 - **Se queda en Claude, sin delegar:** juicio jurídico, escritos con la voz del despacho, veredictos,
   anclaje a fuente y revisión final.
 - **El trabajo mecánico pesado vuelve a Claude** (barridos de corpus, OCR/extracción, resúmenes
