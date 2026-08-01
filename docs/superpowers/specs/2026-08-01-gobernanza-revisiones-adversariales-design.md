@@ -363,8 +363,10 @@ specs ni a planes; no juzgan el contenido de la adjudicación. **No hay G9.**
 
 ## 9. Política de migración
 
-El inventario, las tareas y el orden de PRs **salen de este spec** a un plan de migración propio, en
-`docs/superpowers/plans/`, todavía sin escribir. El spec fija el contrato; el plan ejecuta. Si el inventario siguiera creciendo aquí, el spec dejaría de ser un contrato y
+El inventario, las tareas y el orden de PRs **salen de este spec** a
+`docs/superpowers/plans/2026-08-01-migracion-revisiones-adversariales.md`, que publica el censo —**28
+revisiones postcorte**, una fila por identidad— y lo troceo en diez tareas. El spec fija el contrato;
+el plan ejecuta. Si el inventario siguiera creciendo aquí, el spec dejaría de ser un contrato y
 pasaría a ser un registro — el defecto que existe para arreglar.
 
 La política que el plan debe respetar:
