@@ -4345,3 +4345,74 @@ de un hilo) es la normal, no la excepción.
 **Medido sobre:** el corpus de prueba `_PRUEBA_98_VaRS3` del Escritorio (correo real de cliente; solo
 lectura, y de él no salieron al registro ni asuntos ni direcciones ni cuerpos, solo estructura y
 contadores). Con esta medición hecha, **ese corpus ya se puede borrar**: era lo único que lo retenía.
+
+## 111. El reproceso de un PDF con capa de texto NO es aditivo: pierde cifras y fechas
+
+**Medido 2026-08-01**, al comprobar el estado real de `W-02VND1` tras la corrida de D1 de
+`MEJORAS #90` (fila #1 de `PLAN.md`). Se numera **111** y no 110 porque el 110 lo ocupa un PR abierto
+(#185).
+
+**Lo que la documentación afirma y resulta ser falso.** El punto (c2) de `[SIGUIENTE-OCR-CIEGO]` en
+`PLAN.md` dice del peldaño 1 de la escalera: «el **100 %** de las palabras del original sobrevive en
+todas ellas y ninguna pierde texto». Medido sobre los tres segmentos de `W-02VND1` reprocesados el
+2026-07-30 (`pypdf` → escalera con `ocr`):
+
+| segmento | chars antes | chars después | delta | palabras únicas del viejo ausentes en el nuevo |
+|---|---|---|---|---|
+| seg01 | 9.204 | 9.204 | +0 | 0 de 502 |
+| seg02 | 44.639 | 44.633 | **−6** | **2** de 2.623 |
+| seg03 | 160.685 | 160.973 | +288 | **77** de 6.405 (1,2 %) |
+
+Muestra de lo que desaparece en seg03: `340482060416`, `26/12/2085`, `1/03/203`, `18:39`, `223`,
+`377655`, `%`. **Son cifras, fechas y horas** — exactamente lo que no se puede perder en prueba
+documental. La ganancia (+288 chars) es de un orden inferior al riesgo que introduce.
+
+**Lo que NO se sabe todavía, y hay que medir antes de proponer arreglo:**
+
+1. **Dónde se pierde.** Puede ser en el OCR (Tesseract re-renderiza una página que ya traía capa
+   digital y la reconoce peor) o en la extracción (`_try_pypdf` sobre el PDF recompuesto). Se
+   distingue comparando el texto **página a página** entre el PDF original y el de la escalera.
+2. **Si afecta a las recuperaciones ya dadas por buenas.** Los documentos de (c1) y (c2) —cuentas
+   anuales 2022-2024 y tasación TECNITASA de `W-02VND1`, exposés de `W-02XOR7` y `W-02VUDR`— se
+   verificaron por conteo de caracteres y por presencia de términos clave, **no por conservación
+   palabra a palabra**. Con el original guardado en
+   `99_Versiones anteriores/recuperacion_ocr_2026-07-27/`, la comparación es barata y no exige volver
+   a OCR-izar nada.
+3. **Si el peldaño 2 es inmune.** El §(c2) sostiene que el peldaño 2 deja las páginas digitales
+   byte-idénticas. Si es cierto, la pérdida solo puede venir de las páginas que sí se re-OCR-izan, y
+   el remedio pasaría por preferir el peldaño 2 siempre que haya capa de texto real.
+
+**Por qué no bloquea hoy.** D1 se cerró por falta de rendimiento el 2026-08-01, así que no hay
+reprocesos previstos, y el saneamiento diseñado en
+`docs/superpowers/specs/2026-08-01-identidad-segmento-bundle-design.md` **conserva la versión que
+cita el registro** (la anterior al reproceso), de modo que ninguna de estas pérdidas entra en el
+expediente. Lo que queda vivo es la duda del punto 2 sobre las recuperaciones de (c1)/(c2).
+
+**Coste estimado.** ~1 h la medición de los tres puntos, sobre material ya en disco y sin re-OCR. El
+arreglo, si lo hay, depende de lo que diga.
+
+## 112. `test_resumen_cuenta_por_estado` depende en silencio de dónde viva el `basetemp` de pytest
+
+**Medido 2026-08-01.** Correr la suite con `--basetemp` largo —166 caracteres, que es lo que mide el
+scratchpad de una sesión de Claude Code— hace fallar
+`tests/test_migrar_nombres_informe.py::test_resumen_cuenta_por_estado` con `assert 2 == 0`. Con un
+`basetemp` de 37 caracteres pasa. Reproducible en ambos sentidos, no es flakiness ni contaminación
+entre módulos.
+
+**Causa.** El test asserta `conteo["fuera_de_presupuesto"] == 0` contra `RUTA_OFFICE_MAX = 240`
+(el guardarraíl de longitud de ruta del 43º cierre). Monta sus casos bajo `tmp_path`, así que el
+presupuesto que mide **incluye la ruta de la carpeta temporal**. Si esa base es larga, los casos
+sintéticos se pasan de 240 y el conteo deja de ser 0 — el test mide el entorno, no el código.
+
+**Por qué importa más de lo que parece.** El síntoma es un fallo que aparece y desaparece según
+**quién** corre la suite y desde dónde, que es el modo de fallo más caro de diagnosticar: invita a
+teorizar sobre orden aleatorio y a culpar al entorno. Me costó una ronda de diagnóstico y solo se
+cerró reproduciéndolo con las dos longitudes.
+
+**Mejora propuesta.** Que el test no dependa de la longitud del `basetemp`: o monta bajo una raíz
+corta propia, o parametriza `RUTA_OFFICE_MAX` en la llamada, o asserta sobre la diferencia
+—«ninguno de estos dos casos añade `fuera_de_presupuesto` por sí mismo»— en vez de sobre el cero
+absoluto. Cualquiera de las tres quita la dependencia oculta sin perder lo que el test comprueba.
+
+**Coste estimado.** ~15 min. No bloquea: la suite pasa con el `basetemp` por defecto y con cualquiera
+razonablemente corto.
