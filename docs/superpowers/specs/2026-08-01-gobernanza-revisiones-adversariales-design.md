@@ -371,12 +371,56 @@ disimula.
 | Documento | Cambio |
 |---|---|
 | `CLAUDE.md` §Revisión adversarial | Resolver el «o»; las cuatro clases y su traza; acta siempre que haya informe |
-| `AGENTS.md` | Hallazgos `H-NN`; informe archivable literal; **ruta estable por `(objeto, ronda)`**, no nombre fijo; qué significa «solo lectura» cuando el revisor ejecuta tests |
+| `AGENTS.md` | Cuatro cambios al contrato del revisor: **§10.1** |
 | `docs/GOBERNANZA_FUENTES_VERDAD.md` §5 | El acta es el hogar del informe recibido; excepción histórica de los tres `codex-*` |
 | `tests/test_docs_gobernanza.py` | Cabecera: tercera población de vocabularios |
 
 `docs/INDICE.md` **no** se toca: sin registro versionado no hay documento nuevo de raíz, y su
 `:23-28` excluye deliberadamente los specs fechados.
+
+### 10.1 El contrato del revisor (`AGENTS.md`)
+
+Cuatro cambios, cada uno con evidencia de las dos rondas de esta misma sesión.
+
+**1. «Solo lectura» está mal recortado.** `AGENTS.md` dice «solo lectura» y a la vez exige contrastar
+cada hallazgo **contra el código real, no contra el diff**. Las dos cosas no caben: Codex ejecutó
+`pytest` en las dos rondas —`-p no:cacheprovider`, `PYTHONDONTWRITEBYTECODE=1` y `--basetemp` fuera
+del árbol— y su verificación más fuerte vino precisamente de ejecutar: **reprodujo** la medición
+9/3/2/1/6 en lugar de deducirla. Tal como está redactado, la norma invita a un revisor futuro a
+limitarse a leer el diff, que es lo que el propio `AGENTS.md` llama fuente de falsos positivos.
+
+La invariante correcta **no** es «no mutas ficheros trackeados» —deja pasar basura sin trackear y no
+dice nada de `data/CASOS/`, que está gitignoreado y es sagrado— sino: **el árbol queda idéntico
+(`git status` limpio, sin ficheros nuevos) y los artefactos de ejecución viven fuera del repo**. Las
+tres banderas se escriben como receta; no se redescubren en cada encargo.
+
+Una doctrina que miente sobre la práctica es el modo de fallo que `docs/DEAD_ENDS.md` ya nombra: el
+mandato precedió a la capacidad y el paso figuraba cubierto sin que nadie mirase.
+
+**2. Ruta del informe: estable y nombrada por `(objeto, ronda)`.** La razón documentada del `%TEMP%`
+con nombre fijo era el guard G2, y Codex refutó ese ciclo. La conclusión **no se invierte**: el
+informe sigue fuera del repo por una razón mejor —el revisor no escribe en el repo que revisa—. Lo
+que cambia es el nombre. Esta sesión hubo que inventar el sufijo `-rev2` a mano; con otro orden de
+operaciones habría pisado un informe todavía sin archivar. Y con `sha256_informe` (§6) la copia
+externa pasa a ser verificable, así que su permanencia deja de ser cortesía y se declara.
+
+**3. El porqué, con el caso resuelto.** La norma ya dice que el revisor no adjudica. Lo que le falta
+es el caso: el H-04 de la ronda 1 era **correcto**, y lo que se pasó de rosca fue **el remedio** —
+exigía suprimir los criterios de aceptación 2 y 6, y el 6 era el objetivo del encargo—. Distinguir un
+hallazgo bueno de un remedio que se lleva por delante el objetivo solo lo puede hacer quien tiene la
+intención del encargo en la mano. Ese ejemplo entra en `AGENTS.md`: persuade más que la regla.
+
+**4. Mandato numerado y jerarquizado por daño.** Lo que más subió la calidad de las dos rondas no fue
+una regla de permisos: fue entregar un §13 ordenado por daño y recibir un informe que lo contesta
+punto por punto en sección propia. Se codifica como contrato de ambos lados, junto con anclar el
+objeto a un **commit** — sin eso no se puede pedir «reproduce mi medición», que es lo que convirtió
+la 2ª pasada en algo adjudicable.
+
+**Independencia.** El punto 1 **amplía los permisos del propio revisor**. Su opinión ahí es insumo,
+no veredicto: Claude adjudica, como en todo lo demás.
+
+**Momento.** `AGENTS.md` no se toca hasta que cierre la 3ª pasada. Registrar el cambio en este spec
+**no es** cambiar el contrato: el contrato vive en `AGENTS.md` y sigue intacto.
 
 ## 11. Riesgos
 
@@ -423,6 +467,10 @@ disimula.
    nadie cobrará nunca?
 6. **La migración del §9.** ¿Es ejecutable en PRs por clase, o hay dependencias entre clases que la
    obligan a ser un solo PR gigante?
+7. **El §10.1, y en especial su punto 1**, donde eres la parte interesada: se te amplían los
+   permisos. ¿La invariante «árbol idéntico + artefactos fuera» cubre lo que hace falta cubrir, o
+   deja un hueco —caché, ficheros sin trackear, `data/CASOS/`— que «solo lectura» sí cerraba? Y al
+   revés: ¿hay algo que necesitas ejecutar y que esa invariante te sigue prohibiendo?
 
 ## 14. Adjudicación de la revisión adversarial (Codex, 2026-08-01) — NO-SHIP, remediado
 
