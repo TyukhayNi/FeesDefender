@@ -22,14 +22,27 @@ Antigravity; esa vía se retiró por cupo agotado de forma persistente — el po
 en `docs/DEAD_ENDS.md`. **No la reintentes.**
 
 - **Patrón:** Codex ataca (**solo lectura, sin escribir en el repo**) → escribe sus hallazgos a un
-  fichero **fuera del repo** (`%TEMP%\...`; el guard `test_citas_a_specs_y_plans_existen` rompe si un
-  `.md` trackeado cita un fichero de `docs/superpowers/` que aún no existe) → **Claude adjudica** cada
-  hallazgo contra el código real y registra la adjudicación en el spec o el plan.
+  fichero **fuera del repo**, en la ruta que fija el encargo → devuelve **ruta y `sha256` canónico**
+  → **Claude adjudica** cada hallazgo contra el código real.
+- **Dónde va cada cosa** (esto era el «o» ambiguo, resuelto el 2026-08-01):
+  la **adjudicación** va *embebida* en el spec o el plan revisado, con el encabezado canónico y su
+  ficha; el **informe del revisor** va *literal* a un **acta hermana** `…-adversarial-review.md`, con
+  su digest. Nunca al revés: la decisión pertenece al documento que la decisión modificó, y el acta
+  es el archivo de la voz del revisor, no un segundo hogar de la decisión. Los guards **G7 y G8** de
+  `tests/test_docs_gobernanza.py` lo comprueban y recomputan el digest — una desigualdad es roja.
+  Contrato completo: `docs/superpowers/specs/2026-08-01-gobernanza-revisiones-adversariales-design.md`.
+- **Para qué sirve el acta, en una frase:** yo soy la parte revisada, así que sin el original
+  archivado nadie puede contrastar **qué dijo el revisor** con **qué decidí yo que dijo**.
 - **Claude es siempre el juez.** Codex nunca tiene la última palabra sobre corrección. Un hallazgo
   se confirma o se refuta **contra la fuente**, no contra el diff ni contra la seguridad con que
   venga redactado.
 - **Un revisor que no corre no refuta: deja sin verificar.** Si la revisión no se ejecuta, se declara
   la cobertura ausente en el documento — nunca se da por refutado lo que nadie miró.
+- **Si Codex no puede correr** (sin cupo, caído), cabe un **revisor sustituto**: una sesión limpia de
+  Claude Code, chat nuevo y sin el contexto de autoría. Condiciones, límites y —sobre todo— **cómo se
+  registra sin maquillarlo** (`revisor: Claude Code (sesión independiente)`, nunca «Codex»), en
+  `AGENTS.md` §«Revisor sustituto». **No cubre revisar el propio contrato de revisión:** ahí el sesgo
+  compartido es justo el riesgo, y eso espera a Codex.
 - **Se queda en Claude, sin delegar:** juicio jurídico, escritos con la voz del despacho, veredictos,
   anclaje a fuente y revisión final.
 - **El trabajo mecánico pesado vuelve a Claude** (barridos de corpus, OCR/extracción, resúmenes
