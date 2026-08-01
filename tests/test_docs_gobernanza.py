@@ -1,5 +1,6 @@
 """Guards de gobernanza de docs: frontmatter estado: valido en docs/*.md."""
 
+import hashlib
 import re
 import subprocess
 from pathlib import Path
@@ -245,3 +246,379 @@ def test_todo_handoff_esta_en_el_indice():
                for n in _expandir_llaves(tok)}
     ausentes = [p.name for p in sorted(_HANDOFFS.glob("*.md")) if p.name not in citados]
     assert not ausentes, f"handoffs sin fila en INDICE.md §Handoffs: {ausentes}"
+
+
+# ===========================================================================
+# G7-G8 — poblacion de REVISIONES ADVERSARIALES.
+#
+# Contrato: docs/superpowers/specs/2026-08-01-gobernanza-revisiones-adversariales-design.md
+# rev. 8, sus §4, §5 y §6.
+#
+# ⚠️ TERCERA POBLACION de vocabularios. NO comparte set con _ESTADOS_DOCS (docs
+# de raiz de docs/) ni con _ESTADOS_HANDOFF (handoffs). El campo se llama
+# `estado_remediacion` y NO `estado` precisamente para que la colision sea
+# imposible por construccion. Misma disciplina que G4-G6: son poblaciones con
+# reglas distintas, no una deriva. NO unificar los sets, NO volver recursivo el
+# glob de _docs_con_frontmatter (trampa D3, cabecera de este fichero).
+# ===========================================================================
+
+_SP = ROOT / "docs" / "superpowers"
+
+_VEREDICTOS_REV = frozenset({
+    "SHIP", "LISTA-CON-CAMBIOS", "REQUIERE-REVISION",
+    "NO-SHIP", "NO-EJECUTABLE", "SIN-VEREDICTO",
+})
+_ESTADOS_REM = frozenset({"remediado", "parcial", "sin-cambios", "pendiente"})
+
+# El disparador NO es el regex: el guard busca todo encabezado que CONTENGA esta
+# frase y exige que case. Sin eso, un encabezado mal formado no se detecta y pasa
+# en silencio, que es el modo de fallo caro.
+_DISPARADOR_ADJ = "Adjudicación de la revisión"
+
+_RE_ADJUDICACION = re.compile(
+    r"^#{2,3}\s+(?:\S+\s+)?"                    # ## o ###, numeracion opcional (10., 10-bis.)
+    r"Adjudicación de la revisión adversarial"
+    r"[^(\n]*"                                  # calificador: "del PLAN", "de rama completa"
+    r"\((?P<revisor>[^,)]+),\s*(?P<fecha>\d{4}-\d{2}-\d{2})\)"
+    r"\s*—\s*(?P<veredicto>[A-Z-]+),\s*(?P<estado>[a-z-]+)\s*$")
+
+_CAMPOS_FICHA = ("Objeto revisado", "Ronda", "Revisor", "Informe recibido",
+                 "Hallazgos", "Remediado en")
+_RE_CAMPO = re.compile(r"^- \*\*(?P<campo>[^:*]+):\*\*\s*(?P<valor>.+)$")
+
+# EXCLUSION, no allowlist — la polaridad es la decision. Una lista de INCLUSION
+# ("el corpus son los ficheros que ya cumplen") deja escapar cualquier fichero
+# NUEVO con una adjudicacion mal formada. Esta cubre el futuro por defecto y solo
+# puede encoger. Son los 7 ficheros con los 8 encabezados heredados que el spec
+# rev. 8 §7 declara NO migrados: casan el formato 1 de 8 y ninguno lleva ficha.
+_ADJ_LEGACY = frozenset({
+    "2026-07-27-vista-procesal-05-procedimiento-design.md",
+    "2026-07-28-cableado-atomize-sala-maquina.md",
+    "2026-07-28-email-atomize-enumeracion-recursiva-design.md",
+    "2026-07-29-feesdefender-dual-case-workspace-design.md",
+    "2026-07-29-sandwich-firma-falso-positivo-design.md",
+    "2026-07-29-sandwich-firma-falso-positivo.md",
+    "2026-07-30-historial-citado-localizable-design.md",
+})
+
+_CLAVES_ACTA = ("tipo", "objeto", "objeto_rev", "commit", "ronda", "revisor",
+                "veredicto", "marcador_nonce", "sha256_informe", "adjudicado_en")
+_RE_SECCION = re.compile(r"§(\d+[\w-]*)")
+
+
+def _sin_cercas(txt: str) -> list[str]:
+    """Lineas de `txt` con el contenido de los bloques ``` vaciado.
+
+    Imprescindible: la PLANTILLA del §5 del spec vive dentro de una cerca y
+    empieza por `## … Adjudicación de la revisión…`. Sin este filtro el guard se
+    autodetecta — defecto OBSERVADO en la ronda 1, no deducido.
+    """
+    fuera, dentro = [], False
+    for ln in txt.splitlines():
+        if ln.lstrip().startswith("```"):
+            dentro = not dentro
+            fuera.append("")
+            continue
+        fuera.append("" if dentro else ln)
+    return fuera
+
+
+def _adjudicaciones(txt: str) -> list[tuple[int, str]]:
+    """(indice de linea, linea) de cada encabezado disparador fuera de cerca."""
+    return [(i, ln) for i, ln in enumerate(_sin_cercas(txt))
+            if ln.startswith("#") and _DISPARADOR_ADJ in ln]
+
+
+def _ficha(lineas: list[str], desde: int) -> dict[str, str]:
+    """Campos `- **Campo:** valor` contiguos tras el encabezado (salta blancos)."""
+    campos, i = {}, desde + 1
+    while i < len(lineas) and not lineas[i].strip():
+        i += 1
+    while i < len(lineas):
+        m = _RE_CAMPO.match(lineas[i])
+        if not m:
+            break
+        campos[m.group("campo").strip()] = m.group("valor").strip()
+        i += 1
+    return campos
+
+
+def _fm(txt: str) -> dict[str, str]:
+    fm = txt.split("---")[1] if txt.startswith("---") else ""
+    return dict(re.findall(r"^([a-z0-9_]+):\s*(.+)$", fm, re.MULTILINE))
+
+
+def _es_acta(txt: str) -> bool:
+    return txt.startswith("---") and "tipo: revision-adversarial" in txt[:600]
+
+
+def _md_superpowers():
+    for p in sorted(_SP.rglob("*.md")):
+        yield p, p.read_text(encoding="utf-8")
+
+
+def _errores_adjudicacion(txt: str) -> list[str]:
+    """Incumplimientos del §5 en `txt`. Lista vacia = conforme."""
+    lineas, fallos = _sin_cercas(txt), []
+    for i, ln in _adjudicaciones(txt):
+        m = _RE_ADJUDICACION.match(ln)
+        if not m:
+            fallos.append("encabezado fuera de formato: " + repr(ln[:90]))
+        else:
+            if m.group("veredicto") not in _VEREDICTOS_REV:
+                fallos.append("veredicto " + repr(m.group("veredicto")) + " fuera del set")
+            if m.group("estado") not in _ESTADOS_REM:
+                fallos.append("estado_remediacion " + repr(m.group("estado")) + " fuera del set")
+        faltan = [c for c in _CAMPOS_FICHA if c not in _ficha(lineas, i)]
+        if faltan:
+            fallos.append("ficha incompleta, faltan " + repr(faltan))
+    return fallos
+
+
+def test_adjudicaciones_bien_formadas():
+    """G7 — encabezado canonico + ficha de 6 campos, con vocabulario cerrado.
+
+    Corpus: todo `docs/superpowers/**/*.md` MENOS las actas (su informe literal
+    puede contener cualquier encabezado y no debe reinterpretarse como
+    adjudicacion del proyecto) y menos `_ADJ_LEGACY`.
+    """
+    malos: dict[str, list[str]] = {}
+    for p, txt in _md_superpowers():
+        if _es_acta(txt) or p.name in _ADJ_LEGACY:
+            continue
+        fallos = _errores_adjudicacion(txt)
+        if fallos:
+            malos[p.name] = fallos
+    assert not malos, (
+        "adjudicaciones que incumplen el §5 del contrato: " + repr(malos) + "\n\n"
+        "Forma esperada (OJO a la raya larga «—», que NO es un guion, y a las tildes):\n"
+        "  ## N. Adjudicación de la revisión adversarial (Revisor, AAAA-MM-DD) — VEREDICTO, estado\n"
+        "  veredicto = " + repr(sorted(_VEREDICTOS_REV)) + "\n"
+        "  estado    = " + repr(sorted(_ESTADOS_REM)) + "\n"
+        "  ficha     = " + repr(list(_CAMPOS_FICHA)))
+
+
+def test_g7_no_se_autodetecta_en_la_plantilla_del_spec():
+    """G7-bis — la plantilla cercada del §5 NO cuenta como adjudicacion.
+
+    Regresion del defecto de la ronda 1: un grep de encabezados sobre
+    docs/superpowers/ devolvia la linea de la plantilla del propio spec.
+    """
+    spec = _SP / "specs" / "2026-08-01-gobernanza-revisiones-adversariales-design.md"
+    txt = spec.read_text(encoding="utf-8")
+    crudos = [ln for ln in txt.splitlines()
+              if ln.startswith("#") and _DISPARADOR_ADJ in ln]
+    fuera = [ln for _, ln in _adjudicaciones(txt)]
+    assert len(crudos) > len(fuera), (
+        "el spec deberia llevar al menos una plantilla cercada que el filtro descarte")
+    assert _errores_adjudicacion(txt) == [], (
+        "las adjudicaciones reales del spec deben ser el ejemplo de referencia")
+
+
+# --- G7, fixtures negativas ---------------------------------------------------
+
+_ADJ_OK = """## 3. Adjudicación de la revisión adversarial (Codex, 2026-08-01) — NO-SHIP, remediado
+
+- **Objeto revisado:** `docs/x.md` rev. 1, commit `abc1234`
+- **Ronda:** 1
+- **Revisor:** Codex (solo lectura)
+- **Informe recibido:** `x-adversarial-review.md`
+- **Hallazgos:** 1 confirmados · 0 rebajados · 0 refutados · 0 escalados · 0 sin verificar
+- **Remediado en:** PR #1 (`abc1234`)
+"""
+
+
+def test_g7_acepta_la_forma_canonica():
+    assert _errores_adjudicacion(_ADJ_OK) == []
+
+
+def test_g7_rechaza_estado_fuera_del_set():
+    # `resuelto` es el token real de email-enumeracion §11, uno de los legacy.
+    roto = _ADJ_OK.replace("NO-SHIP, remediado", "NO-SHIP, resuelto")
+    assert any("estado_remediacion" in f for f in _errores_adjudicacion(roto))
+
+
+def test_g7_rechaza_veredicto_con_espacios():
+    # `NO EJECUTABLE` es el token real de historial §10-bis y de sandwich plan.
+    roto = _ADJ_OK.replace("NO-SHIP, remediado", "NO EJECUTABLE, remediado")
+    assert any("encabezado" in f for f in _errores_adjudicacion(roto))
+
+
+def test_g7_rechaza_ficha_incompleta():
+    roto = _ADJ_OK.replace("- **Ronda:** 1\n", "")
+    assert any("ficha incompleta" in f for f in _errores_adjudicacion(roto))
+
+
+def test_g7_rechaza_encabezado_sin_revisor_ni_fecha():
+    # Forma real de vista procesal §10 y de dual workspace §20.
+    roto = _ADJ_OK.replace(
+        "## 3. Adjudicación de la revisión adversarial (Codex, 2026-08-01) — NO-SHIP, remediado",
+        "## 10. Adjudicación de la revisión adversarial")
+    assert any("encabezado" in f for f in _errores_adjudicacion(roto))
+
+
+def test_g7_admite_numeracion_bis_y_calificador():
+    encabezados = (
+        "## 10-bis. Adjudicación de la revisión adversarial (Codex, 2026-08-01) — NO-SHIP, remediado",
+        "## Adjudicación de la revisión adversarial del PLAN (Codex, 2026-08-01) — NO-SHIP, remediado",
+        "## Adjudicación de la revisión adversarial de rama completa (Opus, 2026-08-01) — SHIP, sin-cambios",
+    )
+    for enc in encabezados:
+        txt = _ADJ_OK.replace(_ADJ_OK.splitlines()[0], enc)
+        assert _errores_adjudicacion(txt) == [], "deberia aceptar: " + enc
+
+
+def test_g7_ignora_lo_que_esta_en_cerca():
+    assert _adjudicaciones("```\n" + _ADJ_OK + "```\n") == []
+
+
+# --- G8: acta bien formada y cadena integra ----------------------------------
+
+def _marcadores(nonce: str) -> tuple[str, str]:
+    return ("<!-- informe-literal:inicio:" + nonce + " -->",
+            "<!-- informe-literal:fin:" + nonce + " -->")
+
+
+def _errores_cadena(txt: str) -> list[str]:
+    """Marcadores + digest del bloque literal. Sin tocar disco."""
+    fm, fallos = _fm(txt), []
+    nonce = fm.get("marcador_nonce", "")
+    ini, fin = _marcadores(nonce)
+    n_ini, n_fin = txt.count(ini), txt.count(fin)
+    if (n_ini, n_fin) != (1, 1):
+        return ["se esperaba exactamente un par de marcadores con nonce "
+                + repr(nonce) + "; hay " + str(n_ini) + " inicio / " + str(n_fin) + " fin"]
+    if txt.index(ini) > txt.index(fin):
+        return ["el marcador de fin precede al de inicio"]
+    cuerpo = txt.split(ini, 1)[1].split(fin, 1)[0]
+    # Canonicalizacion explicita del §4: UTF-8, LF, un unico salto final. La
+    # misma forma al recibir el informe y aqui.
+    canon = (cuerpo.replace("\r\n", "\n").strip("\n") + "\n").encode("utf-8")
+    real = hashlib.sha256(canon).hexdigest()
+    if real != fm.get("sha256_informe"):
+        fallos.append("CADENA ROTA: sha256_informe declarado "
+                      + repr(fm.get("sha256_informe")) + " != recomputado " + repr(real))
+    if nonce and nonce in cuerpo:
+        fallos.append("el nonce " + repr(nonce) + " aparece DENTRO del informe: "
+                      "la delimitacion deja de ser inequivoca")
+    return fallos
+
+
+def _actas_con_nonce():
+    """Actas que declaran `marcador_nonce`: la adhesion al contrato es el campo.
+
+    Frontera declarada (spec §6): las tres primeras actas delimitan con `---` y
+    quedan fuera. No se retrofitan y no hay lista que mantener. El precio, dicho
+    en el spec: omitir el campo seria una via para escapar del digest.
+    """
+    for p, txt in _md_superpowers():
+        if _es_acta(txt) and _fm(txt).get("marcador_nonce"):
+            yield p, txt
+
+
+def test_actas_bien_formadas():
+    """G8 — frontmatter del §4, `adjudicado_en` a fichero Y seccion, §1 y §2."""
+    malos: dict[str, list[str]] = {}
+    for p, txt in _actas_con_nonce():
+        fm, fallos = _fm(txt), []
+        fallos += ["falta " + k for k in _CLAVES_ACTA if not fm.get(k)]
+        if fm.get("veredicto") and fm["veredicto"] not in _VEREDICTOS_REV:
+            fallos.append("veredicto " + repr(fm["veredicto"]) + " fuera del set")
+        # Por NUMERO y prefijo, no por la frase completa: el §4 titula «Informe
+        # recibido, sin modificar» y las actas reales insertan el nombre del
+        # revisor («Informe recibido DE CODEX, sin modificar»). Lo estable del
+        # contrato es que §1 sea el informe y §2 la evidencia; el resto del
+        # titular es libre.
+        for num, prefijo in ((1, "Informe recibido"), (2, "Evidencia verificada")):
+            if not re.search(r"^##\s+" + str(num) + r"\.\s+" + prefijo,
+                             txt, re.MULTILINE):
+                fallos.append("falta la seccion §" + str(num) + " «" + prefijo + "…»")
+        destino = fm.get("adjudicado_en", "")
+        ruta = destino.split("§")[0].strip()
+        if ruta:
+            f = ROOT / ruta
+            if not f.exists():
+                fallos.append("adjudicado_en apunta a un fichero inexistente: " + ruta)
+            else:
+                m = _RE_SECCION.search(destino)
+                if not m:
+                    fallos.append("adjudicado_en sin §seccion")
+                elif not re.search(r"^#{1,3}\s+" + re.escape(m.group(1)) + r"\.\s",
+                                   f.read_text(encoding="utf-8"), re.MULTILINE):
+                    fallos.append("adjudicado_en apunta a §" + m.group(1)
+                                  + ", que no existe en " + ruta)
+        if fallos:
+            malos[p.name] = fallos
+    assert not malos, "actas que incumplen el §4 del contrato: " + repr(malos)
+
+
+def test_actas_cadena_de_custodia():
+    """G8 — el digest del bloque literal DEBE coincidir con `sha256_informe`.
+
+    Presencia no es comparacion: una transcripcion alterada con un hash
+    meramente presente pasaba el guard de una version anterior. Una desigualdad
+    es ROJA, nunca aviso: un aviso convierte una cadena de custodia rota en
+    suite verde.
+    """
+    malos = {}
+    for p, txt in _actas_con_nonce():
+        fallos = _errores_cadena(txt)
+        if fallos:
+            malos[p.name] = fallos
+    assert not malos, "actas con la cadena de custodia rota: " + repr(malos)
+
+
+def test_g8_cubre_las_actas_que_declaran_nonce():
+    """Que el guard no quede vacio en silencio: si nadie declara el campo, no hay
+    nada comprobado, y eso debe verse."""
+    cubiertas = [p.name for p, _ in _actas_con_nonce()]
+    assert len(cubiertas) >= 2, (
+        "G8 deberia cubrir al menos las dos actas con nonce; cubre " + repr(cubiertas))
+
+
+# --- G8, fixtures negativas --------------------------------------------------
+
+def _acta_sintetica(cuerpo="informe\n", nonce="zx7q", digest=None):
+    ini, fin = _marcadores(nonce)
+    canon = (cuerpo.replace("\r\n", "\n").strip("\n") + "\n").encode("utf-8")
+    d = digest if digest is not None else hashlib.sha256(canon).hexdigest()
+    return ("---\nmarcador_nonce: " + nonce + "\nsha256_informe: " + d + "\n---\n\n"
+            + ini + "\n" + cuerpo + fin + "\n")
+
+
+def test_g8_acepta_una_cadena_coherente():
+    assert _errores_cadena(_acta_sintetica()) == []
+
+
+def test_g8_rechaza_el_bloque_alterado():
+    alterada = _acta_sintetica().replace("informe\n", "informe manipulado\n", 1)
+    fallos = _errores_cadena(alterada)
+    assert any("CADENA ROTA" in f for f in fallos), fallos
+
+
+def test_g8_rechaza_digest_que_no_cuadra():
+    fallos = _errores_cadena(_acta_sintetica(digest="0" * 64))
+    assert any("CADENA ROTA" in f for f in fallos), fallos
+
+
+def test_g8_rechaza_dos_pares_de_marcadores():
+    ini, fin = _marcadores("zx7q")
+    acta = _acta_sintetica() + "\n" + ini + "\notro\n" + fin + "\n"
+    fallos = _errores_cadena(acta)
+    assert any("exactamente un par" in f for f in fallos), fallos
+
+
+def test_g8_rechaza_marcadores_en_orden_invertido():
+    ini, fin = _marcadores("zx7q")
+    acta = ("---\nmarcador_nonce: zx7q\nsha256_informe: " + "0" * 64 + "\n---\n\n"
+            + fin + "\ninforme\n" + ini + "\n")
+    fallos = _errores_cadena(acta)
+    assert any("precede" in f for f in fallos), fallos
+
+
+def test_g8_rechaza_nonce_presente_en_el_informe():
+    """El §4 exige elegir el nonce de modo que no aparezca en el informe. Si
+    aparece, la delimitacion deja de ser inequivoca — es el caso real del informe
+    de la ronda 4, que contenia el token de fin plano."""
+    fallos = _errores_cadena(_acta_sintetica(cuerpo="cita del nonce zx7q\n"))
+    assert any("aparece DENTRO" in f for f in fallos), fallos

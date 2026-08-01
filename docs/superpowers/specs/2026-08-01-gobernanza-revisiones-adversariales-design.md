@@ -80,7 +80,9 @@ de la rev. 7 —exigir que apareciera en el bloque literal— resultó inútil p
 `NO-SHIP`. Lo que delata una edición es el diff del commit.
 
 **Contenido:** **§0 Mandato** (literal, numerado y en el orden de daño en que se entregó), **§1 Informe
-recibido, sin modificar**, **§2 Evidencia verificada** por mí al adjudicar, con ruta y línea.
+recibido, sin modificar**, **§2 Evidencia verificada** por mí al adjudicar, con ruta y línea. Lo que el
+guard exige es el **número y el prefijo** —`## 1. Informe recibido…` y `## 2. Evidencia verificada…`—; el
+resto del titular es libre, y de hecho las actas insertan ahí el nombre del revisor.
 
 El mandato va **siempre en §0 y literal**. Las versiones anteriores admitían un puntero al objeto, y eso
 produjo dos defectos seguidos: un puntero con sintaxis inválida y otro que resolvía a una sección donde
@@ -192,8 +194,10 @@ adjudicación.
 **Construir:** G7 y G8, con sus fixtures negativas. Es una tarde.
 
 **No se migra:** los ocho encabezados de adjudicación heredados —que casan el formato 1 de 8— **se quedan
-como están**, y por tanto **quedan fuera del corpus de los guards**, que se acotan a los ficheros que ya
-cumplen. Se declara aquí en vez de dejarlo implícito.
+como están** y salen del corpus de G7 mediante una **lista de exclusión de siete ficheros**, no una de
+inclusión. La polaridad es la decisión: una lista de inclusión («el corpus son los ficheros que ya
+cumplen») dejaría escapar cualquier fichero **nuevo** con una adjudicación mal formada; la de exclusión
+cubre el futuro por defecto y **solo puede encoger**.
 
 **Doctrina a tocar:** `CLAUDE.md` §Revisión adversarial resuelve el «o» —la adjudicación va embebida y el
 informe al acta— y `AGENTS.md` añade tres cosas que sí compraron calidad medible en las seis rondas: el
