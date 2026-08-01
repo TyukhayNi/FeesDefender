@@ -1,598 +1,489 @@
 # Gobernanza de las revisiones adversariales — población, hogar y formato
 
-> **Estado:** **rev. 5** (2026-08-01). La rev. 4 cerró **tres** revisiones adversariales de Codex —
-> NO-SHIP (6 hallazgos), NO-SHIP (3) y **LISTA-CON-CAMBIOS (7)**, los dieciséis confirmados y ninguno
-> refutado; adjudicaciones en §14, §15 y §16 e informes literales en las tres actas
-> `2026-08-01-gobernanza-revisiones-adversariales-adversarial-review*.md`. La **rev. 5** añade cinco
-> mejoras de **origen propio, sin revisión externa todavía**: su cobertura se declara en el §13.
-> **Objeto:** cómo se documenta y se audita la revisión adversarial en este proyecto — sus clases, no
-> solo el intercambio con Codex.
+> **Estado:** **rev. 6** (2026-08-01), tras **cuatro** revisiones adversariales de Codex:
+> NO-SHIP (6) → NO-SHIP (3) → LISTA-CON-CAMBIOS (7) → **NO-SHIP (8)**. **24 hallazgos, 24
+> confirmados, ninguno refutado.** Adjudicaciones en §14-§17; informes literales en las cuatro actas
+> `2026-08-01-gobernanza-revisiones-adversariales-adversarial-review*.md`.
+> **Objeto:** cómo se documenta y se audita la revisión adversarial en este proyecto.
 > **Origen:** pregunta de Nikolai (2026-08-01) sobre si el «diálogo interno» necesita documentarse,
-> cómo se estructura y cómo puede auditarse. **Alcance ampliado por decisión suya** el mismo día:
-> gobernar todas las clases de revisión, no solo la que produce informe externo.
+> cómo se estructura y cómo puede auditarse.
+>
+> **Nota de forma de la rev. 6.** Es más corta que la rev. 5 a propósito. El patrón de las cuatro
+> rondas fue estable: cada remediación cerraba su defecto y abría otro **en la costura de al lado**,
+> casi siempre porque la prosa restataba una regla con palabras distintas en dos sitios. La rev. 6
+> **dice cada regla una vez**; la narración de por qué cambió vive en las adjudicaciones §14-§17 y en
+> las actas.
 
 ## 1. La población
 
-No hay diálogo: hay un intercambio de dos turnos con bus humano. Claude escribe el objeto → se
-encarga la revisión → el revisor ataca y entrega hallazgos → Claude adjudica contra la fuente. Lo que
-se parece a diálogo son las **rondas**.
-
-La rev. 2 definió cómo distinguir dos revisiones sin decir qué cuenta como revisión. La rev. 3 definió
-el predicado y lo dejó más estrecho que la práctica que ella misma migraba. Orden correcto: quién
-entra, qué rastro deja, y solo entonces cuántas hay.
+No hay diálogo: hay un intercambio de dos turnos con bus humano. Claude escribe el objeto → se encarga
+la revisión → el revisor ataca y entrega hallazgos → Claude adjudica contra la fuente. Lo que se parece
+a diálogo son las **rondas**.
 
 ### 1.1 Predicado de inclusión
 
-> Un proceso pertenece a la población si **(a)** su mandato es **atacar** un artefacto concreto y
-> versionable del proyecto —refutarlo o buscarle defectos—, acreditado por el encargo o por el propio
-> informe, y **(b)** produce hallazgos o veredicto.
+> **Prospectivo.** Un proceso pertenece a la población cuando **el encargo lo declara expresamente
+> revisión adversarial**, nombrando **el objeto** y **el gate** que debe satisfacer, y produce
+> hallazgos o veredicto.
 
-**Artefacto** incluye spec, plan, diagnóstico, **handoff**, diff y rama. La rev. 3 lo limitaba a
-«spec, plan, diff o rama» y por eso excluía un objeto cuya acta ella misma mandaba migrar: la del
-2026-07-26 revisa `handoff-2026-07-26-gobernanza-indice-adversarial.md`.
+La pertenencia se decide por **lo que se encargó**, no por la forma del resultado. La rev. 5 la hacía
+depender de que el proceso «atacara un artefacto» y produjera «hallazgos o veredicto», y con eso
+entraba cualquier `code-review` y cualquier comprobación por tarea.
 
-**El mandato se acredita por su función, no por un token.** Un panel «4 lentes» que consolida
-perspectivas y produce correcciones es una revisión aunque no use la palabra «refutar».
+**Excluidos por definición**, no por etiqueta:
 
-No exige que alguien lo haya adjudicado: una revisión sin adjudicar es precisamente el caso que hay
-que poder ver. **Quedan fuera**, y se declara: el `code-review` de rutina sin veredicto adversarial,
-la revisión de estilo (`pase-de-estilo`), los tests automáticos y el brainstorming.
+- **Las comprobaciones subordinadas por tarea** de un build. Revisan un **fragmento en construcción**,
+  no el objeto, y no pueden satisfacer su gate. Sus respuestas recuperables se **incorporan o enlazan,
+  con autor y hash**, en el informe consolidado de la revisión de rama. Si se quiere que una cuente,
+  necesita **su propia identidad y su acta**: no puede entrar en la población y desaparecer del censo.
+- El `code-review` de rutina, `pase-de-estilo`, los tests automáticos y el brainstorming: su encargo no
+  las declara revisión adversarial.
 
-**Adjudicador.** Es Claude por defecto (`CLAUDE.md`). Puede no serlo —el acta de gobernanza de
-2026-07-26 quedó a adjudicación de Nikolai—; cuando no lo sea, se dice en la prosa de la adjudicación.
-No se añade campo para eso.
+**Retrospectivo (solo migración).** Para lo anterior a la regla se aplica una heurística: lo que el
+proyecto trató como revisión adversarial, según el inventario del plan de migración. Es una heurística
+de reconstrucción, no el predicado.
 
-### 1.2 Las clases y la traza que se les exige
+**Adjudicador.** Claude por defecto (`CLAUDE.md`); puede ser Nikolai. Cuando no sea Claude, se dice en
+la prosa de la adjudicación. **La independencia no se mide contra el adjudicador** (§1.2).
 
-| Clase | Qué es | Traza exigida |
+### 1.2 Dos ejes: qué se revisó y quién lo revisó
+
+La rev. 5 los mezclaba en un solo campo, y por eso una pasada propia sobre un spec podía etiquetarse
+honestamente `diseño` y reclamar cobertura.
+
+| Eje | Campo | Valores |
 |---|---|---|
-| **`diseño`** | spec, plan, diagnóstico o handoff atacado por un revisor | **Acta** + encabezado canónico + ficha |
-| **`rama`** | revisión de un diff o de la rama completa, antes del PR | **Acta** + encabezado + ficha en el plan |
-| **`autorrevision`** | pasada propia de Claude sobre su propio objeto | Encabezado + ficha; **sin acta** |
+| **Qué se revisó** | `clase` | `diseño` (spec, plan, diagnóstico, handoff) · `rama` (diff o rama completa) |
+| **Quién lo revisó** | `independencia` | `independiente` · `autor` |
 
-**El acta se exige siempre que exista una respuesta textual recuperable del revisor**, sea Codex, un
-Opus de otra sesión o un subagente. La rev. 3 la exigía solo con «informe externo», y esa frontera no
-protege nada: lo que hay que conservar es la **voz independiente**, y un subagente que escribe
-hallazgos la tiene. `sin informe` queda para lo histórico y para un proceso que genuinamente solo
-emitiera un estado estructurado.
+**`independencia` se mide contra el autor del objeto**, no contra el adjudicador. Claude revisando su
+propio spec es `autor` aunque adjudique Nikolai. Codex revisando un objeto de Claude es `independiente`
+aunque adjudique Claude.
 
-> **«Recuperable» es una obligación del encargo, no una propiedad del revisor** (rev. 5). El revisor
-> de rama suele ser un Opus de otra sesión o un subagente, cuyo texto vive en un transcript que puede
-> desaparecer. Por eso **el encargo de una revisión de clase `rama` debe exigir que el informe se
-> escriba a un fichero fuera del repo antes de que empiece la adjudicación**. Si no se capturó en su
-> momento, la ficha lo dice —`no capturado (revisión inline sin volcado)`— y eso **no es una opción
-> normal: es un defecto de proceso declarado**, porque deja la clase con más riesgo material sin voz
-> independiente. Era el agujero que la rev. 4 dejaba abierto sin verlo.
+**La cobertura de la revisión obligatoria de `CLAUDE.md` la acredita solo una revisión con
+`independencia: independiente`.** Una de `autor` se registra —entra en la población, lleva encabezado y
+ficha— y **no satisface el gate**.
 
-Por eso la `autorrevision` no lleva acta: el revisor y el adjudicador son la misma persona, así que no
-hay voz independiente que preservar. El acta no es burocracia de simetría; existe para que la parte
-revisada no sea la única narradora.
+### 1.3 Traza exigida, y por qué es fail-closed
 
-**Las revisiones por tarea no son una clase.** En la rev. 3 eran «clase C» y a la vez «se cuentan como
-una revisión B»: figuraban en la población y desaparecían al aplicar el criterio de encabezado. Ahora
-son **cobertura de su revisión de rama**, declarada en su ficha (`Cobertura: ejecutada (7 revisiones
-por tarea agregadas)`), y **la adjudicación de la rama enumera sus hallazgos sustantivos y su
-procedencia**. Si alguna produjera un veredicto sobre el objeto y no sobre su porción, deja de ser
-cobertura y es una revisión de rama propia.
+**Acta obligatoria para toda revisión de la población que haya producido respuesta textual
+recuperable**, sea Codex, un Opus de otra sesión o un subagente. Lo que se conserva es la **voz del
+revisor**, y eso no depende del eje ni del proveedor.
 
-### 1.3 Identidad
+> **`cobertura: ejecutada` exige que `Informe recibido` resuelva a un acta existente y válida.** Sin
+> acta no hay cobertura: la revisión **no es adjudicable** y el gate queda sin satisfacer.
+
+`no capturado` **no es un valor de uso corriente**: solo se admite para el corpus anterior a esta regla,
+por **lista cerrada** en el guard. En un encargo nuevo, perder el informe obliga a **repetir la
+revisión**. La rev. 5 lo llamaba «defecto de proceso declarado» sin asignarle consecuencia, que es la
+forma exacta en que una excepción visible se convierte en la vía normal.
+
+Para que eso sea cumplible, **el encargo fija la ruta de destino antes de empezar y exige que el
+revisor devuelva `ruta + sha256` antes de que se adjudique** (§10.1.5). Es lo que hace que la prueba de
+origen no dependa de que el autor calcule los dos lados.
+
+### 1.4 Identidad
 
 > Una **revisión** es la tupla **`(objeto, commit o rev. del objeto, ronda, revisor, fecha de
-> entrega)`**, con su **clase**.
+> entrega)`**, con su `clase` y su `independencia`.
 
-Consecuencias, verificadas sobre el corpus:
-
-- El acta dual y el §20 de su spec **son la misma revisión** en dos hogares.
-- `handoff-…-codex-informe.md` y `…-review.md` son informe completo y resumen de la **misma** primera
-  pasada; `…-review-2.md` es otra ronda.
+- El acta dual y el §20 de su spec son **la misma** revisión en dos hogares.
+- `handoff-…-codex-informe.md` y `…-review.md` son dos formatos de la **misma** primera pasada;
+  `…-review-2.md` es otra ronda.
 - El acta de emails declara una «segunda revisión, independiente»: **son dos**.
-- Las tres pasadas sobre el plan de la Fase 0 son **tres revisiones**.
-- Un objeto revisado por dos revisores en la misma ronda son **dos revisiones**. La rev. 2 escribió
-  esta regla y la incumplió agrupando «Codex + Claude» en una fila.
-- Un panel con orquestador y subagentes en paralelo es **una** revisión si hubo un mandato único y un
-  veredicto consolidado; sus lentes son metodología, no revisiones distintas.
+- Las tres pasadas sobre el plan de la Fase 0 son **tres**.
+- Dos revisores del mismo objeto y ronda son **dos**.
+- Un panel con orquestador y subagentes en paralelo es **una** si hubo mandato único y veredicto
+  consolidado: sus lentes son metodología.
 
-### 1.4 Corte temporal
+### 1.5 Corte temporal y cardinalidad
 
-**Se migra desde el 2026-07-23**, primera acta y arranque de hecho del contrato con Codex. Antes hubo
-revisiones adjudicadas —`PLAN.md:924-928`, `:933`, `:953`, `:1033-1044`— que **quedan fuera de alcance
-y se declaran aquí**: no había contrato de revisor estable, no hay informe que archivar, y
-reconstruir la tupla desde párrafos fingiría exactitud. `PLAN.md` sigue siendo su registro. El corte
-**no amnistía nada**: todas las omisiones detectadas en las tres rondas son posteriores.
+**Se migra desde el 2026-07-23**, primera acta y arranque de hecho del contrato con Codex. Lo anterior
+—`PLAN.md:924-928`, `:933`, `:953`, `:1033-1044`— **queda fuera de alcance y se declara aquí**: no había
+contrato de revisor estable, no hay informe que archivar, y reconstruir la tupla desde párrafos
+fingiría exactitud. El corte **no amnistía nada**: todas las omisiones detectadas en las cuatro rondas
+son posteriores.
 
-### 1.5 La cardinalidad no se publica aquí
+**Aquí no se publica ninguna cardinalidad.** El censo, con una fila por identidad, lo produce el plan
+de migración. La rev. 1 dijo «≥15» y la rev. 2 dijo 16; ambas eran falsas.
 
-La rev. 1 dijo «≥15». La rev. 2 dijo 16 y era falso: se documentaron **al menos 24**, con evidencia en
-`docs/bitacora/2026.md:70,138,144,150` y `PLAN.md:383-386,757-768`. Publicar una tercera cifra sin
-haber aplicado el predicado sería el mismo error por tercera vez.
+## 2. Alcance
 
-**El censo lo produce el plan de migración** (§9), aplicando §1.1 y §1.2 fuente por fuente, con una
-fila por identidad. Aquí no se publica ninguna cardinalidad.
+**Dentro:** el predicado; los dos ejes; la traza fail-closed; el hogar de cada artefacto; un formato de
+adjudicación parseable; el archivo verificable del informe; dos guards; la política de migración; y la
+regla de parada.
 
-### 1.6 Por qué está disperso
+**Fuera, explícitamente:** exigir que todo objeto tenga revisión (el guard no juzga eso); un registro
+central versionado y G9; `scripts/censo_revisiones.py`; el inventario y las tareas de migración, que
+viven en su plan; automatizar el puente con el revisor; frontmatter en specs y planes; las revisiones
+anteriores al corte; cambiar quién adjudica; y **una cadena de custodia resistente al administrador del
+repo** (§6.1).
 
-- `CLAUDE.md` dice que la adjudicación «se registra en el spec **o** el plan». Ese «o» es la dispersión
-  escrita como norma.
-- `GOBERNANZA_FUENTES_VERDAD.md` §5 añade una partición ortogonal —informe de fuera → handoff; acta de
-  dentro → junto al spec— y un evento de revisión es las dos cosas.
-- Solo **14 de 53** specs y **14 de 62** planes llevan frontmatter: exigirlo son 87 ficheros de
-  migración. **Descartado.**
+## 3. Los cuatro artefactos
 
-## 2. Qué se corrige y qué no
-
-**En alcance:** el predicado y las clases; la traza por clase; el hogar de cada artefacto; un formato
-de adjudicación parseable; el archivo **verificable** del informe recibido; dos guards; y la política
-de migración.
-
-**Fuera de alcance, explícitamente:**
-
-- Exigir que todo spec o plan tenga revisión. El guard no juzga si algo debió revisarse.
-- Un registro central versionado y su guard G9. Descartados en la rev. 2.
-- `scripts/censo_revisiones.py`. Diferido en la rev. 3 (§7).
-- **El inventario de migración, sus tareas y su orden de PRs.** Salen a un plan propio en la rev. 4
-  (§9); si siguieran creciendo dentro del spec, el spec dejaría de ser un contrato.
-- Automatizar el puente con el revisor: sigue siendo manual y mediado por Nikolai.
-- Frontmatter en specs y planes.
-- Revisiones anteriores al 2026-07-23.
-- Cambiar quién adjudica.
-
-## 3. Modelo: cuatro artefactos
-
-| Artefacto | Hogar | Obligatorio en |
+| Artefacto | Hogar | Obligatorio |
 |---|---|---|
-| **Mandato** (qué se pidió atacar) | Acta, §0 — o puntero `mandato:` en su frontmatter | **`diseño` y `rama`** |
-| **Informe recibido**, literal + `sha256` | Acta hermana `…-adversarial-review.md` | `diseño` y `rama`, siempre que haya respuesta textual recuperable |
-| **Adjudicación** (veredicto + hallazgo → decisión → remedio) | Sección embebida en el objeto | **Todas las clases** |
-| **Cobertura** | Ficha, campo `Cobertura` | Siempre |
+| **Mandato** | Acta §0, o puntero `mandato:` a `<ruta> §N` del objeto en su commit | **Sí** |
+| **Informe recibido**, canonicalizado + digest | Acta, §1, entre marcadores con nonce | **Sí**, si hubo respuesta textual recuperable |
+| **Adjudicación** | Sección embebida en el objeto | **Sí** |
+| **Cobertura** | Ficha, campo `Cobertura` | **Sí** |
 
-La adjudicación se queda **embebida** porque la decisión pertenece al documento que la decisión
-modificó. El **acta** es el archivo de la voz del revisor, no un segundo hogar de la decisión.
+La adjudicación va **embebida** porque la decisión pertenece al documento que la decisión modificó. El
+acta es el archivo de la voz del revisor, **no** un segundo hogar de la decisión: no lleva
+`adjudicado_por` ni `estado_remediacion`.
 
 ## 4. Vocabularios cerrados
 
-**`clase`** — `diseño` · `rama` · `autorrevision`.
+`clase` — `diseño` · `rama`.
+`independencia` — `independiente` · `autor`.
+`cobertura` — `ejecutada` · `no-ejecutada`, con matiz libre entre paréntesis.
+`estado_remediacion` — `remediado` · `parcial` · `sin-cambios` · `pendiente`.
 
-**`cobertura`** — `ejecutada` · `no-ejecutada`, con matiz libre entre paréntesis (número de revisiones
-por tarea agregadas, motivo de la ausencia). Sin cobertura no hay veredicto (doctrina de
-`docs/DEAD_ENDS.md`). `no-ejecutada` describe **un encargo que terminó sin sustituto y sin
-adjudicación**; un encargo fallido a un proveedor que otro revisor cubrió **no** lo es — los cuatro
-fallos de `agy` son indisponibilidad de proveedor, y ese hecho vive en `DEAD_ENDS.md`.
-
-**Cobertura ejecutada ≠ cobertura independiente** (rev. 5). Una `autorrevision` cuenta como revisión
-—entra en la población, lleva encabezado y ficha— pero **no acredita cobertura**: revisor y adjudicador
-son la misma persona y nada impide que sea un sello de goma. Por tanto, **un objeto cuyas únicas
-revisiones sean autorrevisiones está, a efectos de la revisión obligatoria de `CLAUDE.md`, sin
-revisar**, y su ficha lo declara con el matiz `ejecutada (sin revisión independiente)`. La rev. 4
-trataba las tres clases como ciudadanas iguales del censo, y eso permitía que una pasada propia
-aparentase cobertura.
-
-**`veredicto`** — lo que dijo el revisor:
+`veredicto`:
 
 | Valor | Significado |
 |---|---|
 | `SHIP` | Sin bloqueantes. |
 | `LISTA-CON-CAMBIOS` | Se acepta aplicando cambios acotados. |
-| `REQUIERE-REVISION` | El objeto necesita reescritura antes de avanzar. |
+| `REQUIERE-REVISION` | Necesita reescritura antes de avanzar. |
 | `NO-SHIP` | Bloqueante. |
-| `NO-EJECUTABLE` | El objeto no se puede ejecutar ni verificar tal como está. |
+| `NO-EJECUTABLE` | No se puede ejecutar ni verificar tal como está. |
 | `SIN-VEREDICTO` | El revisor no se pronunció globalmente. |
 
-**`estado_remediacion`** — `remediado` · `parcial` · `sin-cambios` · `pendiente`.
-
 **Recuento** — `confirmados · rebajados · refutados · escalados · sin-verificar`. Un hallazgo aceptado
-**con un remedio distinto del exigido** cuenta como confirmado; la divergencia se razona en la prosa.
+con **remedio distinto** del exigido cuenta como confirmado; la divergencia se razona en la prosa.
 
-**Migración de tokens.** El corpus usa `resuelto`, `aplicados`, `NO EJECUTABLE` y `LISTA CON CAMBIOS`.
-Se normalizan; el veredicto literal queda en el acta.
+`no-ejecutada` describe **un encargo que terminó sin sustituto y sin adjudicación**. Un encargo fallido
+a un proveedor que otro revisor cubrió **no** lo es: los cuatro fallos de `agy` son indisponibilidad de
+proveedor y ese hecho vive en `docs/DEAD_ENDS.md`.
 
-> **Tercera población de vocabularios.** Estos ejes NO comparten set con `_ESTADOS_DOCS` ni con
-> `_ESTADOS_HANDOFF`. La cabecera de `tests/test_docs_gobernanza.py` documenta por qué unificarlos
-> rompe 11 ficheros (trampa D3). El campo se llama `estado_remediacion` y no `estado`: colisión
-> imposible por construcción.
+**Migración de tokens.** El corpus usa `resuelto`, `aplicados`, `NO EJECUTABLE` y `LISTA CON CAMBIOS`;
+se normalizan. El veredicto literal queda en el acta.
 
-## 5. Encabezado canónico, ficha y parser
+> **Tercera población de vocabularios.** No comparte set con `_ESTADOS_DOCS` ni con
+> `_ESTADOS_HANDOFF`. La cabecera de `tests/test_docs_gobernanza.py` documenta por qué unificarlos rompe
+> 11 ficheros (trampa D3). El campo se llama `estado_remediacion` y no `estado`: colisión imposible por
+> construcción.
+
+## 5. Encabezado canónico y ficha
 
 ```
 ## [N.] Adjudicación de la revisión adversarial [<calificador>] (<revisor>, <AAAA-MM-DD>) — <VEREDICTO>, <estado_remediacion>
 ```
 
-El calificador opcional cubre `del PLAN` y `de rama completa`. Debajo, **ocho líneas**:
+Calificador opcional: `del PLAN`, `de rama completa`. Debajo, **nueve líneas**:
 
 ```markdown
-- **Clase:** diseño | rama | autorrevision
+- **Clase:** diseño | rama
+- **Independencia:** independiente | autor
 - **Objeto revisado:** `<ruta>` rev. N, commit `abc1234`
-- **Ronda:** 1 | 2 | 3
-- **Revisor:** Codex (solo lectura) | Claude (no independiente: autor del objeto) | <otro>
-- **Cobertura:** ejecutada | ejecutada (N revisiones por tarea agregadas) | no-ejecutada — <motivo>
-- **Informe recibido:** `<acta>.md` | sin informe (autorrevisión) | no archivado (anterior a esta regla) | no capturado (revisión inline sin volcado)
+- **Ronda:** 1
+- **Revisor:** Codex (solo lectura)
+- **Cobertura:** ejecutada | no-ejecutada — <motivo>
+- **Informe recibido:** `<acta>.md` | sin informe (revisión del autor) | no capturado (excepción histórica cerrada)
 - **Hallazgos:** N confirmados · N rebajados · N refutados · N escalados · N sin verificar
 - **Remediado en:** PR #NNN (`hash`) | rev. N de este documento | pendiente
 ```
 
-`Ronda` y `Clase` son parte de la identidad (§1.3) y de la traza (§1.2): sin ellas ninguna lectura
-distingue dos revisiones del mismo objeto por el mismo revisor el mismo día — el caso de §14, §15 y
-§16 de este documento.
+Cuando el objeto es un diff, «Objeto revisado» admite `rama <nombre>` o `PR #NNN`. `commit: no
+registrado` es legítimo al migrar: **no se inventa lo que no consta**.
 
-Cuando el objeto es un diff, «Objeto revisado» admite `rama <nombre>` o `PR #NNN`.
-`commit: no registrado` es legítimo al migrar: **no se inventa lo que no consta**.
-
-### 5.1 El parser, especificado
+### 5.1 El parser
 
 ```python
 _RE_ADJUDICACION = re.compile(
     r"^#{2,3}\s+(?:\S+\s+)?"                       # ## o ###, numeracion opcional (10., 10-bis.)
     r"Adjudicación de la revisión adversarial"
-    r"[^(\n]*"                                     # calificador libre: "del PLAN", "de rama completa"
+    r"[^(\n]*"                                     # calificador: "del PLAN", "de rama completa"
     r"\((?P<revisor>[^,)]+),\s*(?P<fecha>\d{4}-\d{2}-\d{2})\)"
     r"\s*—\s*(?P<veredicto>[A-Z-]+),\s*(?P<estado>[a-z-]+)\s*$",
     re.MULTILINE)
 ```
 
-**Disparador y bloques cercados.** El guard no busca solo lo que casa: busca **toda línea de encabezado
-que contenga «Adjudicación de la revisión»** y exige que case. Sin eso, un encabezado mal formado no se
-detecta y pasa en silencio, que es el modo de fallo caro.
+**Disparador:** el guard busca **toda línea de encabezado que contenga «Adjudicación de la revisión»** y
+exige que case. Sin eso, un encabezado mal formado pasa en silencio.
 
-**Antes de cualquier match se eliminan los bloques cercados** (``` … ```). La plantilla de arriba,
-dentro de su cerca, fue detectada como encabezado real por el grep de censo de la rev. 1: el defecto se
-observó, no se dedujo.
+**Bloques cercados:** se eliminan **antes** de cualquier match. La plantilla de arriba, dentro de su
+cerca, fue detectada como encabezado real por el grep de censo de la rev. 1.
 
-**La medición no vive en esta prosa, y hay una razón medida.** La rev. 3 publicaba la foto de la
-rev. 2 (9/3/2/1/6) porque añadir el §15 la dejó obsoleta; al corregirla en la rev. 4 volvió a quedar
-obsoleta **en el mismo acto**, porque el §16 sumó un disparador más. Un total que cambia cada vez que
-se adjudica una revisión no puede tener su hogar en un párrafo.
+**La medición no vive en esta prosa.** El **corpus legacy es estable** hasta la migración: **ocho**
+encabezados, de los que **1 casa**, **1 falla solo por token** (`resuelto`) y **6 fallan estructura** —
+reproducido por Claude y por Codex por separado. Los **totales vivos** se fijan en el **fixture de G7**,
+porque cada adjudicación nueva los mueve y el guard es lo que debe notarlo.
 
-Se separan dos cosas:
+## 6. El acta
 
-- **El corpus legacy es estable** hasta que lo toque la migración: **ocho** encabezados, de los que
-  **1 casa** (sandwich §9), **1 falla solo por token** (`resuelto`, email enumeración §11) y **6 fallan
-  estructura**. Reproducido por Claude y por Codex por separado. Ese desglose sí se declara aquí,
-  porque es el alcance del retrofit.
-- **Los totales vivos** —disparadores fuera de cerca y cuántos casan— se fijan en el **fixture de
-  G7**, que es su única fuente. Cada adjudicación nueva los mueve, y el guard es lo que debe notarlo.
-
-## 6. El acta hermana
-
-**Ubicación y nombre:** junto a su objeto —`specs/` o `plans/`— como
+**Nombre**, función inmutable de la identidad:
 
 ```
-AAAA-MM-DD-<tema>-<objeto>-r<N>[-<revisor>]-adversarial-review.md
+AAAA-MM-DD-<tema>-<objeto>-r<N>-<revisor>-<commit7>-adversarial-review.md
 ```
 
-`<objeto>` ∈ `spec` · `plan` · `rama` · `handoff` · `diff`, y `<revisor>` **solo** cuando dos
-revisores comparten objeto y ronda. El nombre de la rev. 3 —solo fecha, tema y ronda— **no era
-inyectivo** respecto de la identidad del §1.3: dos revisores del mismo objeto y ronda escribirían el
-mismo fichero, y una revisión de spec y otra de plan del mismo tema y día colisionan (la enumeración
-recursiva demuestra que ocurre). Si el objeto es un diff sin plan, el acta va junto al spec del que
-deriva.
+`<objeto>` ∈ `spec` · `plan` · `diagnostico` · `handoff` · `rama` · `diff`. **Revisor y commit van
+siempre**, no solo al colisionar: si se omiten hasta que aparece un segundo revisor, la primera acta hay
+que renombrarla y se rompen los punteros ya escritos. Si el objeto es un diff sin plan, el acta va junto
+al spec del que deriva; si no hay ninguno, en `specs/`.
 
-> **Las tres actas de este spec conservan el nombre antiguo** (`…-adversarial-review.md`, `-r2`,
-> `-r3`) hasta que el plan de migración las renombre. No hay colisión entre ellas: mismo objeto,
-> mismo revisor, rondas distintas.
+**Un acta por ronda.** El frontmatter es escalar; el acta heredada de emails, que contiene dos
+revisiones, es por eso `formato: hibrido-legacy`.
 
-**Un acta por ronda, no por objeto.** Lo impone el frontmatter: `ronda`, `commit`, `veredicto` y
-`sha256_informe` son escalares. El acta heredada de emails, que contiene dos revisiones, es por eso
-`formato: hibrido-legacy`.
+> Las cuatro actas de este spec conservan nombres anteriores a este esquema hasta que el plan de
+> migración las renombre. No colisionan entre sí.
 
-**Frontmatter obligatorio:**
+**Frontmatter:**
 
 ```yaml
 ---
 tipo: revision-adversarial
 objeto: docs/superpowers/specs/<fichero>.md
 objeto_rev: "1"
-commit: 3126214
+commit: abc1234
 ronda: "1"
 clase: diseño
+independencia: independiente
 revisor: Codex
 cobertura: ejecutada
 veredicto: NO-SHIP
-mandato: §0 de este acta | §13 de la rev. 1 del objeto
-sha256_informe: <hash en minusculas> | no-disponible-legacy
+mandato: §0 de este acta | docs/…/<fichero>.md §13
+marcador_nonce: zx7q
+sha256_informe: <digest canonico, 64 hex>
+sha256_recibido: <opcional: digest del fichero tal como llego, si difiere del canonico>
 adjudicado_en: docs/superpowers/specs/<fichero>.md §14
 ---
 ```
 
-`adjudicado_por` y `estado_remediacion` **no van aquí**: describen la decisión, y el segundo es
-mutable. `veredicto` sí: es inmutable.
+**Contenido, tres secciones.** **§0 Mandato** —qué se pidió atacar, numerado y en su orden de daño—
+salvo que `mandato:` apunte al objeto. Sin él, quien lea el acta no puede distinguir **si el revisor
+pasó algo por alto o si nunca se le pidió**. **§1 Informe recibido, sin modificar.** **§2 Evidencia
+verificada** por Claude al adjudicar, con ruta y línea. La adjudicación **no** se repite aquí.
 
-**Contenido, tres secciones.** **§0 Mandato** —qué se pidió atacar, numerado y en el orden de daño con
-que se entregó—, salvo que el mandato ya viva en el objeto y el frontmatter apunte allí con `mandato:`.
-No es adorno: sin él, quien lea el acta **no puede distinguir si el revisor pasó algo por alto o si
-nunca se le pidió**. La rev. 4 lo marcaba «recomendado» siendo lo que más subió la calidad medible de
-las tres rondas; eso estaba al revés.
-
-**§1 Informe recibido, sin modificar**, con el bloque literal delimitado por marcadores explícitos:
+**Marcadores con nonce**, obligatorios:
 
 ```
-<!-- informe-literal:inicio -->
-…texto del informe, byte a byte…
-<!-- informe-literal:fin -->
+<!-- informe-literal:inicio:<nonce> -->
+…el informe…
+<!-- informe-literal:fin:<nonce> -->
 ```
 
-Los marcadores no son adorno: sin una delimitación inequívoca, «recomputar el hash del bloque
-literal» (§8) no es implementable, porque el propio informe puede contener separadores `---`. **§2
-Evidencia verificada**: qué abrió Claude para adjudicar, con ruta y línea. La adjudicación **no** se
-repite aquí.
+El nonce se declara en `marcador_nonce` y **se elige de modo que no aparezca en el informe**;
+conviene que lleve letras **no hexadecimales**, porque un informe sobre este contrato cita digests y un
+nonce hexadecimal puede esconderse dentro de uno. No es teoría: el informe de la ronda 4 **contiene el
+token de fin**, y con los marcadores planos de la rev. 5 su archivado se habría cortado por la mitad.
+G8 exige **exactamente un par** con ese nonce y en orden.
 
-### 6.1 Integridad: el hash y su alcance real
+### 6.1 Integridad: una sola semántica, y su frontera de confianza
 
-`sha256_informe` es el digest del **fichero recibido**. Cierra el agujero de que el §1 lo transcribe
-Claude, que es la parte revisada, y nadie verificaba la literalidad.
+**`sha256_informe` es el digest del texto canonicalizado** del informe: UTF-8, finales `LF`, un único
+salto final. **La misma forma al recibir y en G8.** La rev. 5 definía el digest sobre «el fichero
+recibido» y hacía que G8 recomputase otro objeto: un informe con CRLF —el caso natural en Windows— no
+podía satisfacer ambas reglas ni con una transcripción perfecta. Se abandona «fichero» y «byte a byte»:
+lo que se conserva y se hashea es **el texto**.
 
-**Verificación al recibir, obligatoria.** Claude calcula el digest de la copia externa al archivarla y
-lo compara con el que declara el revisor. Ese es el único momento en que existe **prueba independiente
-de origen**.
+Cuando el fichero tal como llegó difiere del canónico, su digest se anota además en
+`sha256_recibido`. Así la **prueba independiente de origen** sobrevive sin romper la comprobación
+automática.
 
-**Después, el acta se autoverifica.** Recomputando el bloque literal se detecta cualquier alteración
-posterior aunque la copia externa desaparezca. Lo que se pierde sin original no es la detección de
-manipulación: es la prueba de que el digest inicial venía del informe recibido.
+**Verificación al recibir, obligatoria.** Claude calcula el digest canónico de la copia externa al
+archivarla y lo compara con el que declara el revisor (§1.3). Ese es el único momento en que existe
+prueba independiente de origen. Después, el acta se autoverifica: recomputar el bloque detecta
+cualquier alteración posterior aunque la copia externa desaparezca.
 
-**Hasta dónde llega G8, dicho sin adornos** (rev. 5). G8 detecta que alteren **el bloque**. Si alguien
-cambia el bloque **y** el `sha256_informe` en la misma edición, G8 sigue verde: la huella deja de ser
-una garantía criptográfica y pasa a ser una comprobación de consistencia interna. Lo que hace inútil
-esa edición coordinada es **git**: el diff muestra las dos modificaciones juntas y el historial es, en
-la práctica, de solo-añadir. Así que el ancla de la cadena es el commit, no el guard. La rev. 4
-insinuaba más de lo que entregaba, y conviene que quien audite sepa dónde mirar.
-
-Corolario, contra lo que decía la rev. 3: **`%TEMP%` no es almacenamiento duradero y no hace falta que
-lo sea**, siempre que la verificación al recibir sea obligatoria. Lo que sí se exige es no sobrescribir
-un informe anterior — de ahí el nombre por identidad.
+**Frontera de confianza, declarada.** G8 detecta que alteren **el bloque**. Una edición coordinada de
+bloque **y** digest pasa verde, y lo que la delata es el diff del commit. Pero **eso no es
+inmutabilidad**: `STATUS.md:6` documenta que **el historial de git fue reescrito y el repo recreado el
+2026-07-07**, sin ancestro común. El supuesto «append-only» es una **política revocable por quien
+administra el repo**, no una propiedad del sistema. Por tanto la garantía real es: **consistente bajo el
+historial Git retenido**. Resistencia frente al administrador exigiría un ancla fuera de ese historial
+—tag firmado o publicación externa del digest— y **no se construye**: se declara el límite.
 
 **Las cuatro actas heredadas** llevan `formato: hibrido-legacy` con **allowlist cerrada de cuatro
-nombres**: nacieron con informe y adjudicación juntos, se les añade frontmatter y no se les mueve
-nada. Sus informes crudos se perdieron, así que llevan `sha256_informe: no-disponible-legacy` — un
-**token tipado**, no una omisión, para que no contradigan la regla general (§8).
+nombres**, `sha256_informe: no-disponible-legacy` —token tipado, no omisión— y conservan su adjudicación
+donde está.
 
 ## 7. El censo se calcula, no se mantiene
 
-**No hay registro versionado** (rev. 2) y **no se escribe el generador** (rev. 3).
+No hay registro versionado y **no se escribe el generador**. La rev. 2 lo especificó sobre artefactos que
+no contenían sus columnas y sin ningún consumidor. Secuencia correcta: **primero representable, después
+legible.**
 
-La rev. 2 especificó `scripts/censo_revisiones.py` como lector de encabezados y actas. No podía
-funcionar: sus columnas pedían `ronda` y `cobertura`, y ninguna existía en la ficha; un acta con dos
-revisiones no cabe en un frontmatter escalar; y una ronda de vista procesal solo vive en un handoff que
-el lector no recorría. Habría necesitado excepciones a mano — el ledger escondido en Python. Y tenía
-**cero consumidores**.
-
-Secuencia correcta: **primero representable, después legible.**
-
-1. La ficha (§5) y el frontmatter (§6) contienen `clase`, `ronda`, `cobertura` y `sha256`. Cada
-   revisión es representable y la relación revisión ↔ artefacto es uno-a-uno para todo lo nuevo.
-2. El **plan de migración** (§9) produce el censo una vez, con una fila por identidad.
-3. El generador se escribe **cuando exista un consumidor real** —cierre de sesión, runbook o petición
+1. Ficha (§5) y frontmatter (§6) contienen `clase`, `independencia`, `ronda`, `cobertura` y los digests.
+2. El **plan de migración** produce el censo una vez, con una fila por identidad.
+3. El generador se escribe **cuando exista un consumidor real** —cierre de sesión, runbook, petición
    concreta— y no antes.
 
 ## 8. Guards
 
-Dos tests nuevos en `tests/test_docs_gobernanza.py`, **población separada** con vocabulario propio.
+Dos tests en `tests/test_docs_gobernanza.py`, **población separada** con vocabulario propio.
 
-**G7 — adjudicación bien formada.** Toda línea de encabezado que contenga «Adjudicación de la
-revisión», fuera de bloques cercados, casa `_RE_ADJUDICACION` con `veredicto` y `estado_remediacion` de
-los sets del §4, y va seguida de las ocho líneas de la ficha con `clase` y `cobertura` de vocabulario
-válido. Su fixture fija la medición del §5.1. Los ficheros con `tipo: revision-adversarial` quedan
-fuera: el informe literal puede contener cualquier encabezado y no debe reinterpretarse como
-adjudicación del proyecto.
+**G7 — adjudicación bien formada.** Toda línea de encabezado que contenga «Adjudicación de la revisión»,
+fuera de cercas, casa `_RE_ADJUDICACION` con `veredicto` y `estado_remediacion` de los sets del §4, y va
+seguida de las **nueve** líneas de la ficha con `clase`, `independencia` y `cobertura` válidos. Además
+**aplica la relación del §1.3**: si `Cobertura` empieza por `ejecutada`, `Informe recibido` **resuelve a
+un acta existente**, salvo que el fichero esté en la lista cerrada de excepciones históricas. Su fixture
+fija los totales vivos. Los ficheros con `tipo: revision-adversarial` quedan fuera: el informe literal
+puede contener cualquier encabezado.
 
 **G8 — acta bien formada y cadena íntegra.**
 
-- frontmatter con las claves del §6 y vocabulario válido;
-- `adjudicado_en` apunta a un fichero **y a una sección que existen** — no solo al fichero;
-- **el digest del bloque literal se recomputa y debe coincidir** con `sha256_informe`. Canonicalización
-  explícita: extraer lo que hay entre los marcadores del §6, codificar en UTF-8, finales de línea `LF`,
-  un único salto final. **Una desigualdad es rojo, nunca aviso**: un aviso convierte una cadena de
-  custodia rota en suite verde;
-- `sha256_informe: no-disponible-legacy` **solo** en los cuatro nombres de la allowlist, y en ese caso
-  se omiten la comprobación de digest y la de cuerpo;
-- `mandato` presente (puntero o `§0 de este acta`). Se comprueba **presencia**, no resolución: exigir
-  que resuelva es lo que encareció `adjudicado_en`, y aquí no lo vale;
-- para toda acta fuera de la allowlist: existen las **tres** secciones del §6 —o dos, si `mandato`
-  apunta fuera— y los dos marcadores.
+- claves del §6 con vocabulario válido, incluidas `independencia`, `mandato` y `marcador_nonce`;
+- `adjudicado_en` resuelve a fichero **y** sección;
+- `mandato` resuelve: `§0 de este acta` **con §0 presente**, o `<ruta> §N` que exista **en el `commit`
+  del frontmatter**, no en el HEAD mutable. Mismo helper que `adjudicado_en`;
+- **exactamente un par** de marcadores con el `marcador_nonce`, en orden;
+- el digest del bloque canonicalizado **se recomputa y debe coincidir** con `sha256_informe`. **Una
+  desigualdad es roja, nunca aviso**: un aviso convierte una cadena rota en suite verde;
+- allowlist cerrada de cuatro nombres para `formato: hibrido-legacy` y `no-disponible-legacy`, que
+  eximen digest y cuerpo;
+- fuera de la allowlist: existen §1 y §2, y §0 si `mandato` apunta a él.
 
-**Anti-automatch:** el corpus de G7 incluye este mismo spec. Si vuelve a detectar la plantilla del §5
-dentro de su cerca, G7 falla.
+**Anti-automatch:** el corpus de G7 incluye este spec. Si vuelve a detectar la plantilla del §5 dentro de
+su cerca, G7 falla.
 
-**Lo que los guards NO hacen:** no exigen que un spec tenga revisión; no tocan `_ESTADOS_DOCS` ni
-`_ESTADOS_HANDOFF` ni vuelven recursivo el glob de `_docs_con_frontmatter`; no piden frontmatter a
-specs ni a planes; no juzgan el contenido de la adjudicación. **No hay G9.**
+**Lo que NO hacen:** no exigen que un objeto tenga revisión; no tocan `_ESTADOS_DOCS` ni
+`_ESTADOS_HANDOFF` ni vuelven recursivo el glob de `_docs_con_frontmatter`; no piden frontmatter a specs
+ni planes; no juzgan el contenido de la adjudicación. **No hay G9.**
 
 ## 9. Política de migración
 
-El inventario, las tareas y el orden de PRs **salen de este spec** a
-`docs/superpowers/plans/2026-08-01-migracion-revisiones-adversariales.md`, que publica el censo —**28
-revisiones postcorte**, una fila por identidad— y lo troceo en diez tareas. El spec fija el contrato;
-el plan ejecuta. Si el inventario siguiera creciendo aquí, el spec dejaría de ser un contrato y
-pasaría a ser un registro — el defecto que existe para arreglar.
+El inventario, las tareas y el orden de PRs viven en el plan de migración, en
+`docs/superpowers/plans/`. El spec fija el contrato; el plan ejecuta. La política que el plan respeta:
 
-La política que el plan debe respetar:
-
-1. **Los guards se activan en el ÚLTIMO PR.** G7 y G8 recorren toda la población, así que estarán en
-   rojo hasta completar el retrofit. Activarlos antes obliga a un PR gigante; activarlos al final
-   permite trocear.
-2. **Troceo por vertical y dependencia**, no por clase pura: `diseño` con sus actas y encabezados →
-   `rama` junto con la cobertura por tarea que agrega → `autorrevision`. G2 solo exige que cada
-   referencia y su acta entren en el mismo PR.
-3. **Los objetos de las actas heredadas reciben encabezado, ficha y puntero**, aunque el cuerpo del
-   acta no se toque. Sin eso, §3 y el criterio 5 quedan incumplidos: hoy solo dual workspace tiene su
-   §20, mientras emails, cableado y la gobernanza de 2026-07-26 no tienen encabezado en su objeto.
-4. **Retrofit declarado de siete de ocho encabezados.** El formato casa 1 de 8. La rev. 1 afirmaba que
-   «formaliza la línea que ya se escribe sola»: era falso, converge la forma y no los tokens. Se elige
-   el retrofit —siete ediciones, una vez— frente a un parser permisivo permanente, cuya complejidad se
-   paga siempre. Grados medidos: **1 casa** (sandwich §9), **1 solo-token** (`resuelto` en email
-   enumeración §11), **6 estructurales** (historial §10-bis, sandwich plan, cableado plan, vista
-   procesal §10, dual §20, rama completa §1089).
-5. **Una fila por identidad**, incluidas las revisiones que hoy solo viven en un acta, y los tres
-   marcadores `informe-literal` que las actas de este spec aún no llevan.
-6. **Renombrado de las tres actas de este spec** al esquema del §6.
-7. **Los tres handoffs `…-codex-*`** se quedan, declarados excepción histórica en la gobernanza §5.
-8. **Informes crudos anteriores a esta regla:** perdidos. `no archivado (anterior a esta regla)` en la
-   ficha y `no-disponible-legacy` en el acta. Se declara, no se disimula.
+1. **Los guards se activan en el ÚLTIMO PR** o crecen sobre una población migrada explícita que la
+   última tarea retira. Recorren todo el corpus: activarlos de golpe al principio obliga a un PR
+   gigante.
+2. **Troceo por vertical y dependencia:** `diseño` con sus actas y encabezados → `rama` con la cobertura
+   por tarea que incorpora → revisiones de `independencia: autor`. G2 solo exige que cada referencia y su
+   acta entren en el mismo PR.
+3. **Los objetos de las actas heredadas reciben encabezado, ficha y puntero**, aunque el cuerpo del acta
+   no se toque.
+4. **Retrofit declarado de siete de ocho encabezados**, medido: 1 casa, 1 solo-token, 6 estructurales. Se
+   elige el retrofit frente a un parser permisivo permanente, cuya complejidad se paga siempre.
+5. **Una fila por identidad**, incluidas las revisiones que hoy solo viven en un acta.
+6. **Renombrado de las cuatro actas de este spec** al esquema del §6.
+7. **Los tres handoffs `…-codex-*`** se quedan, excepción histórica declarada en la gobernanza §5.
+8. **Informes crudos anteriores a esta regla:** perdidos. `no capturado (excepción histórica cerrada)` en
+   la ficha y `no-disponible-legacy` en el acta.
 
 ## 10. Doctrina a modificar
 
 | Documento | Cambio |
 |---|---|
-| `CLAUDE.md` §Revisión adversarial | Resolver el «o»; las clases y su traza; acta siempre que haya respuesta textual recuperable; **la autorrevisión no acredita cobertura** (§4); **la regla de parada de rondas** (§10.2) |
-| `AGENTS.md` | Cuatro cambios al contrato del revisor: **§10.1** |
+| `CLAUDE.md` §Revisión adversarial | Resolver el «o»; los dos ejes; **solo `independencia: independiente` acredita cobertura**; acta obligatoria y fail-closed; la regla de parada del §10.2 |
+| `AGENTS.md` | El contrato del revisor: **§10.1** |
 | `docs/GOBERNANZA_FUENTES_VERDAD.md` §5 | El acta es el hogar del informe recibido; excepción histórica de los tres `codex-*` |
 | `tests/test_docs_gobernanza.py` | Cabecera: tercera población de vocabularios |
 
-`docs/INDICE.md` **no** se toca: sin registro versionado no hay documento nuevo de raíz, y su `:23-28`
-excluye deliberadamente los specs fechados.
+`docs/INDICE.md` **no** se toca: sin registro versionado no hay documento nuevo de raíz.
 
 ### 10.1 El contrato del revisor (`AGENTS.md`)
 
-**1. La prohibición continua se conserva; lo que falta es declarar la capacidad.** La rev. 3 decía que
-«solo lectura» estaba mal recortado y que invitaba a leer solo el diff. **Era falso, y el error era
-mío:** `AGENTS.md:33` dice «**solo lectura**, no escribes en el repo» —la prohibición está glosada como
-*no escribir*, no como *no ejecutar*— y el mismo fichero ya ordena contrastar «contra el código real,
-no solo contra el diff». Las tres rondas ejecutaron `pytest` sin que nadie cambiara nada.
+**1. Prohibición continua, capacidad declarada.** El repo, los ficheros ignorados por git,
+`data/CASOS/` y los sistemas externos (CRM, Drive) son **entradas de solo lectura durante toda la
+revisión**. Se permite **ejecutar código y tests** cuando todas sus escrituras van fuera del repo y no
+hay efectos externos: `PYTHONDONTWRITEBYTECODE=1`, `-p no:cacheprovider`, `--basetemp` fuera del árbol.
+`git status --porcelain --untracked-files=all` antes y después es **evidencia adicional, no sustituto**.
 
-Peor: la invariante que la rev. 3 proponía en su lugar —«árbol idéntico, `git status` limpio, sin
-ficheros nuevos»— era **más débil** que la regla vigente. Permite escribir y revertir antes de la
-comprobación; no ve modificaciones de ficheros **ignorados preexistentes**, y `.gitignore` excluye
-`__pycache__/`, `.pytest_cache/`, `.coverage`, `dist/`, `.env*` y **`data/CASOS/*`**; y no cubre
-escrituras en CRM, Drive u otros sistemas externos. Habría autorizado tocar un expediente real y pasar
-la comprobación.
+La rev. 3 sostuvo que «solo lectura» estaba mal recortado; era falso —`AGENTS.md:33` dice «solo lectura,
+**no escribes en el repo**»— y la invariante que se propuso en su lugar era **más débil**: `git status`
+no ve modificaciones de ficheros ignorados preexistentes, y `.gitignore` excluye `data/CASOS/*`.
 
-Redacción correcta: **el repo, los ficheros ignorados, `data/CASOS/` y los sistemas externos son
-entradas de solo lectura durante toda la revisión; se permite ejecutar código y tests cuando todas sus
-escrituras están redirigidas fuera del repo y no hay efectos externos.** `git status --porcelain
---untracked-files=all` antes y después es **evidencia adicional, no sustituto**. La receta se escribe:
-`PYTHONDONTWRITEBYTECODE=1`, `-p no:cacheprovider`, `--basetemp` fuera del árbol. No queda prohibida
-ninguna ejecución que las tres rondas necesitaran.
+**2. Ruta del informe, fijada por el encargo.** El informe vive **fuera del repo** porque el revisor no
+escribe en el repo que revisa. El encargo **fija la ruta y el nombre antes de empezar**, derivados de la
+identidad (§1.4), y **prohíbe sobrescribir** informes anteriores: sus digests son la cadena.
 
-**2. Ruta del informe: nombrada por identidad, sin sobrescribir.** La razón documentada del `%TEMP%`
-con nombre fijo era el guard G2, y ese ciclo se refutó. La conclusión **no se invierte** —el informe
-sigue fuera del repo porque el revisor no escribe en el repo que revisa—, pero el nombre pasa a
-`(objeto, ronda)`: esta sesión hubo que inventar `-rev2` a mano y con otro orden habría pisado un
-informe sin archivar. Con la verificación al recibir (§6.1), la permanencia de la copia externa deja de
-ser crítica; **no sobrescribirla, sí**.
-
-**3. El porqué, con el caso resuelto.** La norma ya dice que el revisor no adjudica. Le falta el caso:
-el H-04 de la ronda 1 era **correcto**, y lo que se pasó de rosca fue **el remedio** —exigía suprimir
-los criterios 2 y 6, y el 6 era el objetivo del encargo—. Distinguir un hallazgo bueno de un remedio
-que se lleva por delante el objetivo solo lo puede hacer quien tiene la intención del encargo.
+**3. El revisor devuelve `ruta + sha256` antes de la adjudicación.** Por un canal separado del fichero.
+Sin esa declaración, la «prueba independiente de origen» del §6.1 se reduce a que el autor calcule y
+escriba los dos lados.
 
 **4. Mandato numerado y jerarquizado por daño**, contestado punto por punto en sección propia, con el
-objeto anclado a un **commit**. Es lo que más subió la calidad de las tres rondas: sin el anclaje no se
+objeto anclado a un **commit**. Es lo que más subió la calidad de las cuatro rondas: sin el anclaje no se
 puede pedir «reproduce mi medición».
 
-**5. El encargo de una revisión de rama exige volcado del informe** (rev. 5). Quien despacha una
-revisión de clase `rama` —a Codex, a un Opus de otra sesión o a un subagente— **pide el informe en un
-fichero fuera del repo antes de adjudicar**. No es una preferencia de formato: es la única forma de que
-«respuesta textual recuperable» (§1.2) sea cierta en la clase donde el revisor no es un proceso externo
-con su propio disco.
+**5. El revisor no adjudica, y el caso que lo explica.** El H-04 de la ronda 1 era **correcto**, y lo que
+se pasó de rosca fue **el remedio**: exigía suprimir dos criterios de aceptación, y uno era el objetivo
+del encargo. Distinguir un hallazgo bueno de un remedio que se lleva por delante el objetivo solo lo
+puede hacer quien tiene la intención del encargo.
 
-**Independencia, y lo que pasó con ella.** El punto 1 parecía ampliar los permisos del propio revisor,
-y por eso se declaró su opinión como insumo y no veredicto. Resultó que **argumentó contra su propia
-ampliación** y que quien se equivocaba era el autor. La cautela era correcta; la dirección del sesgo,
-no la que se esperaba.
+**Independencia, y lo que pasó con ella.** El punto 1 parecía ampliar los permisos del propio revisor, y
+por eso se declaró su opinión insumo y no veredicto. **Argumentó contra su propia ampliación**, y quien
+se equivocaba era el autor.
 
 ### 10.2 Regla de parada de rondas
 
-Este spec llegó a **cuatro revisiones y tres rondas** de revisión adversarial. Puede estar
-justificado en un documento de gobernanza, y aun así no había ninguna regla que dijera cuándo parar:
-se decidió a ojo cada vez. La regla, para `CLAUDE.md`:
-
-> Con veredicto **`LISTA-CON-CAMBIOS`** se aplican los cambios y **se cierra la ronda**: no se abre
-> otra para atacar el material de la remediación **mientras el documento siga siendo un borrador**.
+> Con **`LISTA-CON-CAMBIOS`** se aplican los cambios y **se cierra la ronda**: no se abre otra para
+> atacar el material de la remediación mientras el documento siga siendo borrador.
 >
-> Pero la remediación es **material sin revisar, y acumula**. Antes de que el documento **pase a
-> doctrina o abra la ejecución de un plan**, se le hace **una pasada completa sobre todas las capas
-> sin revisar** — no acotada. Ese es el momento en que el radio de daño de un defecto deja de ser un
-> documento y pasa a ser el repo.
+> La remediación **acumula**. Antes de que el objeto **pase a doctrina o abra la ejecución de un plan**
+> se le hace **una pasada completa sobre todas las capas sin revisar**.
 >
-> **Esa pasada es UNA.** Su propia remediación **no dispara otra**: se acepta como **riesgo residual
-> declarado** y se anota en el documento. Sin esta cláusula la regla no termina — cada pasada genera
-> material nuevo sin revisar, que exigiría otra pasada, indefinidamente.
+> **Cierre por naturaleza del cambio, no por número de pasadas.** Esa pasada cierra con `SHIP`. Con
+> `LISTA-CON-CAMBIOS` cierra sin nueva revisión **solo si la adjudicación enumera los cambios y
+> atestigua que ninguno toca**: población o predicado, obligaciones de traza, vocabularios, guards,
+> permisos del revisor, o esta regla. Si toca alguno de esos ejes, hace falta una **comprobación
+> dirigida del diff final**, acotada a los ejes tocados — **no** otra pasada completa.
+>
+> Una renuncia a esa comprobación es **decisión expresa de Nikolai**, con los cambios y el riesgo
+> enumerados.
+>
+> **El gate es observable:** el commit que promociona a `CLAUDE.md`/`AGENTS.md`, o que abre la primera
+> tarea del plan, **enlaza la revisión de cierre**. Sin ese enlace, el gate no está satisfecho.
 >
 > Con `NO-SHIP`, `REQUIERE-REVISION` o `NO-EJECUTABLE` se remedia y se vuelve a pasar.
 
-El riesgo que cierra la primera mitad es que el proceso se coma al trabajo: cada ronda encuentra
-defectos en el material nuevo, y el material nuevo siempre existe. Sin regla de parada, la
-convergencia es una decisión de ánimo.
-
-El que cierra la segunda mitad lo destapó Nikolai en la **primera aplicación de esta regla**. La
-versión inicial —«se aplica y se cierra», con ronda acotada solo si cambia una decisión— habría metido
-en `CLAUDE.md` **dos capas sin revisar apiladas**: los siete remedios de la rev. 4 y las cinco mejoras
-de la rev. 5. Una excepción que aparece la primera vez que se usa una regla no es un caso especial: es
-una regla mal escrita. La corrección es esta, no una nota al pie.
+La primera mitad evita que el proceso se coma al trabajo. La segunda evita lo contrario, y su necesidad
+está medida: la rev. 5 decía que la remediación final se acepta como «riesgo residual declarado», y la
+ronda 3 —`LISTA-CON-CAMBIOS`— había cambiado con su remediación el predicado, las clases, el contrato de
+actas, el hash, los nombres y la migración. El token del veredicto **no acota** el radio material.
 
 ## 11. Riesgos
 
-- **G7 y G8 son parsers de prosa.** Acotados a encabezado con frase fija, ocho líneas con prefijo
-  `- **Campo:**`, marcadores explícitos para el bloque literal y eliminación previa de cercas.
-- **La migración es el 80 % del trabajo.** Vive en su plan, troceada por vertical, con los guards al
-  final.
-- **La cobertura por tarea puede ocultar.** Agregar siete revisiones por tarea en la ficha de su rama
-  es proporcionado; treinta con hallazgos sustantivos, no. Señal de revisión: cuando una revisión por
-  tarea produzca un veredicto sobre el objeto y no sobre su porción, se separa.
-- **Coste por revisión.** Sube: un acta con su hash y una ficha de ocho líneas, ahora también en las
-  revisiones de rama. Compra la única cosa que no existía — poder contrastar lo que el revisor dijo con
-  lo que el autor decidió que dijo.
+- **G7 y G8 son parsers de prosa.** Acotados a encabezado con frase fija, nueve líneas con prefijo
+  `- **Campo:**`, marcadores con nonce y eliminación previa de cercas.
+- **La migración es el 80 % del trabajo**, vive en su plan y se trocea por vertical.
+- **Coste por revisión.** Un acta con mandato, informe y digest, y una ficha de nueve líneas. Compra lo
+  único que no existía: poder contrastar lo que el revisor dijo con lo que el autor decidió que dijo.
+- **La cadena no resiste al administrador del repo** (§6.1). Declarado, no mitigado.
+- **Cuatro rondas y 24 hallazgos confirmados** dicen que este contrato es difícil de mantener coherente.
+  La rev. 6 responde acortando y diciendo cada regla una vez; si la quinta ronda encuentra otra costura,
+  la conclusión razonable no será otra rev. 7 sino recortar alcance.
 
 ## 12. Criterios de aceptación
 
 1. `python -m pytest -q --tb=no` verde, con G7 y G8 incluidos.
 2. Los ocho encabezados casan G7 tras el retrofit; las cuatro actas heredadas casan G8 con
-   `formato: hibrido-legacy` y `sha256_informe: no-disponible-legacy`.
+   `formato: hibrido-legacy` y `no-disponible-legacy`.
 3. G7 corre sobre este spec y **no** detecta la plantilla del §5; su fixture es la única fuente de los
-   totales vivos, y añadir una adjudicación nueva lo hace fallar hasta actualizarlo.
-4. G8 rechaza: un acta con frontmatter válido y cuerpo vacío; una cuyo `adjudicado_en` apunte a una
-   sección inexistente; **una cuyo bloque literal haya sido alterado** respecto de su digest; y una
-   **sin `mandato`**.
-4-bis. Ningún objeto queda declarado «revisado» cuando sus únicas revisiones son de clase
-   `autorrevision`: su ficha lleva el matiz `ejecutada (sin revisión independiente)`.
-5. Toda revisión de la población postcorte tiene encabezado y ficha en su objeto, con clase y ronda —
-   incluidas las que hoy solo viven en un acta.
-6. **Cada revisión postcorte está representada exactamente una vez**, acreditado por la matriz
-   fuente → identidad → encabezado/acta del plan de migración. *(Reformulado: «representable» era
-   propiedad del esquema y se cumplía con datos ausentes.)*
-7. No existe `docs/REVISIONES_ADVERSARIALES.md`, ni G9, ni `scripts/censo_revisiones.py`.
-8. Ninguna población de vocabulario existente se ha tocado.
+   totales vivos.
+4. G8 rechaza: acta con cuerpo vacío; `adjudicado_en` a sección inexistente; `mandato` que no resuelve;
+   bloque literal alterado; y **más o menos de un par de marcadores** con el nonce.
+5. G7 rechaza una ficha con `Cobertura: ejecutada` cuyo `Informe recibido` no resuelva a un acta, salvo
+   excepción histórica de lista cerrada.
+6. Toda revisión de la población postcorte tiene encabezado y ficha en su objeto, con `clase`,
+   `independencia` y `ronda`.
+7. **Cada revisión postcorte está representada exactamente una vez**, acreditado por la matriz
+   fuente → identidad → encabezado/acta del plan.
+8. Ningún objeto cuenta como cubierto sin al menos una revisión con `independencia: independiente`.
+9. No existe `docs/REVISIONES_ADVERSARIALES.md`, ni G9, ni `scripts/censo_revisiones.py`.
+10. Ninguna población de vocabulario existente se ha tocado.
 
-## 13. Estado de la revisión adversarial de este spec
+## 13. Estado de la revisión de este spec
 
-Tres rondas, veredictos NO-SHIP → NO-SHIP → **LISTA-CON-CAMBIOS**, dieciséis hallazgos, todos
-confirmados. La tercera declaró la arquitectura aceptable y los cambios locales; la rev. 4 aplicó los
-siete remedios.
+Cuatro rondas: NO-SHIP (6) → NO-SHIP (3) → LISTA-CON-CAMBIOS (7) → NO-SHIP (8). **24 de 24
+confirmados, cero refutados.**
 
-### 13.1 Las cinco mejoras de la rev. 5, y su cobertura
+**Camino de salida, el que fijó la ronda 4 y que la rev. 6 sigue:** cerrados H-01 a H-08, procede una
+**comprobación dirigida del diff `24f8abe` → HEAD**, acotada a los ejes que la rev. 6 toca —predicado,
+ejes de clasificación, traza fail-closed, semántica del digest, marcadores, guards y regla de parada—.
+**No otra pasada completa del corpus histórico.** Es exactamente lo que ordena el §10.2, aplicado a sí
+mismo: la rev. 6 cambia varios de esos ejes, así que no puede cerrarse por atestiguación.
 
-Salieron de una revisión **propia** a petición de Nikolai, no de un revisor externo. Se numeran para
-que su trazabilidad no dependa de esta prosa:
-
-| # | Mejora | Dónde | ¿Cambia una decisión? |
-|---|---|---|---|
-| M-1 | El encargo de una revisión de `rama` exige volcado del informe a fichero | §1.2, §5, §10.1.5 | **Sí** |
-| M-2 | El mandato pasa a obligatorio, en §0 del acta o por puntero `mandato:` | §3, §6, §8 | No: aditivo |
-| M-3 | La autorrevisión no acredita cobertura independiente | §4, §10 | **Sí** |
-| M-4 | El alcance real de G8: el ancla de la cadena es git, no el guard | §6.1 | No: corrige una insinuación |
-| M-5 | Regla de parada de rondas | §10.2 | No: aditivo |
-
-**Cobertura declarada, aplicando el §10.2 a este mismo documento.** Procede una **cuarta ronda
-completa**, no acotada, y por dos motivos que se suman:
-
-1. M-1 y M-3 **cambian decisiones** —qué acredita cobertura, y cómo se captura el informe de una rama—.
-2. Y sobre todo: este documento está **a punto de pasar a doctrina** (`CLAUDE.md`, `AGENTS.md`) y de
-   **abrir la ejecución de un plan de diez tareas**. Con la segunda mitad del §10.2, ese es
-   precisamente el momento de la pasada completa sobre **todas las capas sin revisar**, que aquí son
-   dos: los siete remedios de la rev. 4 —el hash de G8, los marcadores, el esquema de nombres, el
-   modelo de tres clases— y las cinco mejoras de la rev. 5. **Ninguna de las doce la ha mirado nadie.**
-
-Hasta que esa ronda se ejecute, **la cobertura de ambas capas es ausente y así consta**: no se da por
-revisado lo que nadie ha mirado, que es la doctrina de `docs/DEAD_ENDS.md` aplicada al autor en vez de
-al proveedor.
-
-### 13.2 Qué queda sin atacar
-
-Los marcadores `informe-literal` y la canonicalización del §8; el esquema de nombre del §6; la
-exigencia de acta a las revisiones de rama, que sube el coste en la clase más frecuente; si el
-criterio 6 es verificable con la matriz del plan o sigue siendo aspiracional; y las cinco mejoras del
-§13.1.
+**Sin esa comprobación dirigida, el gate no está satisfecho** y no se toca `CLAUDE.md` ni `AGENTS.md` ni
+se abre la Tarea 1 del plan.
 
 ## 14. Adjudicación de la revisión adversarial (Codex, 2026-08-01) — NO-SHIP, remediado
 
 - **Clase:** diseño
+- **Independencia:** independiente
 - **Objeto revisado:** `docs/superpowers/specs/2026-08-01-gobernanza-revisiones-adversariales-design.md` rev. 1, commit `3126214`
 - **Ronda:** 1
 - **Revisor:** Codex (solo lectura)
@@ -601,25 +492,23 @@ criterio 6 es verificable con la matriz del plan o sigue siendo aspiracional; y 
 - **Hallazgos:** 6 confirmados · 0 rebajados · 0 refutados · 0 escalados · 0 sin verificar
 - **Remediado en:** rev. 2 de este documento
 
-| Hallazgo | Severidad | Veredicto | Dónde se remedia |
+| Hallazgo | Severidad | Veredicto | Remedio |
 |---|---|---|---|
-| H-01 censo sin identidad; omite precedentes de `PLAN.md` | CRÍTICA | **Confirmado** | §1.3, §1.4 |
+| H-01 censo sin identidad; omite `PLAN.md` | CRÍTICA | **Confirmado** | §1.4, §1.5 |
 | H-02 los cuatro de `DEAD_ENDS` no son cobertura ausente | ALTA | **Confirmado** | §4 |
 | H-03 G7 casa 1/8 y se autodetecta en la cerca | ALTA | **Confirmado** | §5.1, §9.4 |
 | H-04 el registro central sobra | ALTA | **Confirmado, remedio acotado** | §7 |
-| H-05 G9 rechaza las filas `no-ejecutada` | ALTA | **Confirmado** | Disuelto al retirar G9 |
-| H-06 el frontmatter invade el hogar de la decisión | MEDIA | **Confirmado** | §6 |
+| H-05 G9 rechaza las filas `no-ejecutada` | ALTA | **Confirmado** | G9 retirado |
+| H-06 el frontmatter invade el hogar de la decisión | MEDIA | **Confirmado** | §3, §6 |
 
-**Divergencia sobre H-04, y su desenlace.** Acepté el hallazgo y retiré la tabla y G9, pero rechacé
-suprimir los criterios 2 y 6 y añadí un generador. La 2ª ronda demostró que fue **medio equivocada**:
-acerté conservando el objetivo —Codex concede que el criterio 2 debía quedarse— y me equivoqué al
-materializarlo ya como script. Única divergencia de las tres rondas.
-
-**Refutado a favor del spec:** el §13.4 de la rev. 1 temía un ciclo entre G9 y G2. No existe.
+**Divergencia sobre H-04.** Acepté el hallazgo y retiré tabla y G9, pero rechacé suprimir dos criterios
+de aceptación y añadí un generador. La ronda 2 demostró que fue **medio equivocada**: acerté conservando
+el objetivo, me equivoqué al materializarlo como script. Única divergencia de las cuatro rondas.
 
 ## 15. Adjudicación de la revisión adversarial (Codex, 2026-08-01) — NO-SHIP, remediado
 
 - **Clase:** diseño
+- **Independencia:** independiente
 - **Objeto revisado:** `docs/superpowers/specs/2026-08-01-gobernanza-revisiones-adversariales-design.md` rev. 2, commit `2c2a6d0`
 - **Ronda:** 2
 - **Revisor:** Codex (solo lectura)
@@ -628,25 +517,22 @@ materializarlo ya como script. Única divergencia de las tres rondas.
 - **Hallazgos:** 3 confirmados · 0 rebajados · 0 refutados · 0 escalados · 0 sin verificar
 - **Remediado en:** rev. 3 de este documento
 
-| Hallazgo | Severidad | Veredicto | Dónde se remedia |
+| Hallazgo | Severidad | Veredicto | Remedio |
 |---|---|---|---|
 | H-01 el censo da ≥24, no 16; falta el predicado | CRÍTICA | **Confirmado** | §1.1, §1.2, §1.5 |
-| H-02 el generador no puede derivar y no tiene consumidor | ALTA | **Confirmado** | §7, §5 |
-| H-03 G8 no verifica el cuerpo del §6; exención global | ALTA | **Confirmado** | §6.1, §8 |
+| H-02 el generador no puede derivar ni tiene consumidor | ALTA | **Confirmado** | §7 |
+| H-03 G8 no verifica el cuerpo; exención global | ALTA | **Confirmado** | §6.1, §8 |
 
 **Contradicción propia que destapó:** la rev. 2 escribió que dos revisores son dos revisiones y agrupó
 «Codex + Claude» como una en la tabla siguiente.
 
-**Lo que resistió:** el regex y el desglose del retrofit; que las filas 1-2 y 6-7 son dos revisiones
-cada una; el corte del 23 de julio; la retirada del registro y de G9; no tocar `INDICE.md`; y la
-corrección sobre `DEAD_ENDS`. La primera acta cumple su propio §6: 106/106 líneas literales.
-
 **Decisión de alcance de Nikolai, contra mi recomendación.** Recomendé estrechar la población a las
-revisiones con informe externo. Decidió gobernarlas todas. La rev. 3 lo implementó entero.
+revisiones con informe externo; decidió gobernarlas todas.
 
 ## 16. Adjudicación de la revisión adversarial (Codex, 2026-08-01) — LISTA-CON-CAMBIOS, remediado
 
 - **Clase:** diseño
+- **Independencia:** independiente
 - **Objeto revisado:** `docs/superpowers/specs/2026-08-01-gobernanza-revisiones-adversariales-design.md` rev. 3, commit `1a6e3d8`
 - **Ronda:** 3
 - **Revisor:** Codex (solo lectura)
@@ -655,35 +541,63 @@ revisiones con informe externo. Decidió gobernarlas todas. La rev. 3 lo impleme
 - **Hallazgos:** 7 confirmados · 0 rebajados · 0 refutados · 0 escalados · 0 sin verificar
 - **Remediado en:** rev. 4 de este documento
 
-| Hallazgo | Severidad | Veredicto | Dónde se remedia |
+| Hallazgo | Severidad | Veredicto | Remedio |
 |---|---|---|---|
-| H-01 el predicado excluye un objeto que el propio spec migra; clase C incoherente | ALTA | **Confirmado** | §1.1 (artefacto amplio, mandato por función), §1.2 (tres clases; por-tarea = cobertura) |
-| H-02 la clase B puede perder el texto del revisor | ALTA | **Confirmado** | §1.2 (acta por respuesta textual recuperable), §3 |
-| H-03 §10.1 debilitaba «solo lectura» | ALTA | **Confirmado contra el autor** | §10.1.1, reescrito |
-| H-04 G8 exige el hash pero no lo compara; §8 contradice §9 | ALTA | **Confirmado** | §6 (marcadores), §6.1, §8 (recómputo, rojo, token legacy) |
-| H-05 la migración no crea los encabezados que exige | MEDIA | **Confirmado** | §9 (política; inventario al plan), §9.3 |
-| H-06 `-rN` no es inyectivo | MEDIA | **Confirmado** | §6 (nombre por identidad) |
-| H-07 la medición del §5.1 quedó obsoleta | BAJA | **Confirmado, y reproducido al remediarlo** | §5.1 (corpus legacy estable en prosa; totales vivos al fixture) |
+| H-01 predicado estrecho; clase C incoherente | ALTA | **Confirmado** | §1.1, §1.2 |
+| H-02 la clase rama puede perder el texto del revisor | ALTA | **Confirmado** | §1.3 |
+| H-03 §10.1 debilitaba «solo lectura» | ALTA | **Confirmado contra el autor** | §10.1.1 |
+| H-04 G8 exige el hash pero no lo compara | ALTA | **Confirmado** | §6.1, §8 |
+| H-05 la migración no crea los encabezados que exige | MEDIA | **Confirmado** | §9 |
+| H-06 `-rN` no es inyectivo | MEDIA | **Confirmado** | §6 |
+| H-07 la medición del §5.1 quedó obsoleta | BAJA | **Confirmado, y reproducido al remediarlo** | §5.1 |
 
-**El hallazgo de más valor es H-03, y conviene dejar escrito por qué.** El revisor argumentó **contra
-la ampliación de sus propios permisos**. La rev. 3 sostenía que «solo lectura» estaba mal recortado;
-`AGENTS.md:33` lo desmiente —dice «solo lectura, **no escribes en el repo**»— y la invariante que se
-proponía en su lugar era más débil que la vigente: `git status` no ve modificaciones de ficheros
-ignorados preexistentes, y `.gitignore` excluye `data/CASOS/*`. Habría autorizado tocar un expediente
-real de un cliente y pasar la comprobación. Es lo más peligroso escrito en las tres rondas, lo escribí
-yo, y lo paró la parte interesada.
+**El de más valor fue H-03, y va contra el autor.** `AGENTS.md:33` desmiente que «solo lectura» prohíba
+ejecutar, y la invariante que se proponía en su lugar era más débil que la vigente: habría autorizado
+modificar un expediente real de cliente bajo `data/CASOS/` y pasar la comprobación. Lo paró la parte
+interesada.
 
-**Añadido al adjudicar, más ancho que el hallazgo.** Al abrir el acta de gobernanza para verificar
-H-01 aparecieron dos cosas que el informe no menciona: su revisor es «Claude Code (orquestador + 5
-subagentes en paralelo, uno por hallazgo)», una forma que las clases no cubrían, y su adjudicador
-declarado es **Nikolai**, no Claude. Ambas entran en §1.1 y §1.3.
+## 17. Adjudicación de la revisión adversarial (Codex, 2026-08-01) — NO-SHIP, remediado
 
-**Cómo se verificó.** H-01, H-04 y H-05 son contradicciones **entre secciones vecinas del propio
-documento**, comprobables sin fuente externa. H-03 se verificó contra `AGENTS.md:33` y `.gitignore`.
-H-07 contra mi propia sonda, que ya imprimía 10 y 3 mientras el §5.1 decía 9 y 2. El detalle, en el §2
-del acta.
+- **Clase:** diseño
+- **Independencia:** independiente
+- **Objeto revisado:** `docs/superpowers/specs/2026-08-01-gobernanza-revisiones-adversariales-design.md` rev. 5, commit `24f8abe`
+- **Ronda:** 4
+- **Revisor:** Codex (solo lectura)
+- **Cobertura:** ejecutada
+- **Informe recibido:** `2026-08-01-gobernanza-revisiones-adversariales-adversarial-review-r4.md`
+- **Hallazgos:** 8 confirmados · 0 rebajados · 0 refutados · 0 escalados · 0 sin verificar
+- **Remediado en:** rev. 6 de este documento
 
-**Nota de método.** Dieciséis de dieciséis confirmados en tres rondas, cero refutados. Dos lecturas, y
-las dos importan: el revisor encuentra defectos reales, y mi autorrevisión no detecta contradicciones
-entre secciones adyacentes del mismo documento — H-01, H-04 y H-05 son todas de esa forma, y no ha
-mejorado en tres rondas.
+| Hallazgo | Severidad | Veredicto | Remedio |
+|---|---|---|---|
+| H-05 la cláusula de cierre promueve remediación normativa sin revisar | **CRÍTICA** | **Confirmado** | §10.2, cierre por naturaleza del cambio + gate observable |
+| H-01 `no capturado` deja la obligación de informe *fail-open* | ALTA | **Confirmado** | §1.3, §5, §8 (G7 aplica la relación), §10.1.2-3 |
+| H-02 `clase` mezcla tipo de objeto e independencia | ALTA | **Confirmado** | §1.2, dos ejes; `independencia` medida contra el **autor** |
+| H-03 el predicado incluye lo que §1.2 expulsa | ALTA | **Confirmado** | §1.1, predicado por **declaración del encargo** |
+| H-04 dos digests distintos; marcadores ambiguos | ALTA | **Confirmado** | §6 nonce, §6.1 una sola semántica + `sha256_recibido` |
+| H-06 `mandato` obligatorio pero sin resolver | MEDIA | **Confirmado** | §8, resuelve contra el `commit` del frontmatter |
+| H-07 el nombre no es función estable de la identidad | MEDIA | **Confirmado** | §6, revisor y commit **siempre**; `diagnostico` añadido |
+| H-08 la confianza en git es revocable, y se revocó | MEDIA | **Confirmado** | §6.1, frontera de confianza declarada |
+
+**Cinco de los ocho eran contradicciones internas** verificables sin salir del documento. El único que
+exigía fuente externa es el más elegante: `STATUS.md:6` documenta que el historial de git fue reescrito
+y el repo recreado el 2026-07-07, así que llamar «append-only» al historial era un supuesto que este
+proyecto **ya revocó una vez**.
+
+**H-04 se materializó al archivar el propio informe:** contiene el token de fin, y con los marcadores
+planos de la rev. 5 el bloque se habría cortado por la mitad. El acta de la ronda 4 es la primera con
+nonce, y su digest recomputado coincide — 169 líneas.
+
+**Agravante propio en H-04:** el plan de migración **ya** definía el digest sobre la forma canónica. Lo
+supe al escribir el plan y no lo llevé al spec, así que spec y plan discrepaban entre sí.
+
+**Y la decisión de Nikolai fue la correcta.** Pidió revisar la rev. 5 **completa** en contra de la regla
+de parada que yo acababa de escribir. Esa regla, tal como estaba, habría dejado pasar a doctrina las dos
+capas sin revisar donde vivía la CRÍTICA. La regla se corrigió, y su corrección es lo que ahora obliga a
+la comprobación dirigida del §13.
+
+**Nota de método.** 24 de 24 en cuatro rondas. El patrón fue estable y conviene no adornarlo: cada
+remediación cerraba su defecto y abría otro en la costura de al lado, casi siempre por restatar una
+regla con palabras distintas en dos sitios. La rev. 6 responde acortando el documento y diciendo cada
+regla una vez. Si la comprobación dirigida encuentra otra costura, la conclusión razonable no es una
+rev. 7: es recortar alcance.

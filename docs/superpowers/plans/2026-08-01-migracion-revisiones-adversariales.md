@@ -2,6 +2,26 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> 🔴 **NO EJECUTAR TODAVÍA — este plan está alineado con la rev. 5 del spec y la vigente es la rev. 6.**
+> La ronda 4 devolvió NO-SHIP con ocho hallazgos (§17 del spec) y la rev. 6 cambió el contrato en cinco
+> puntos que este plan codifica literalmente:
+>
+> 1. **`clase` se parte en dos ejes**: `clase: diseño | rama` **más** `independencia: independiente |
+>    autor`. Desaparece `autorrevision` como clase → afecta a `_CLASES` (Tarea 1) y a la **Tarea 8**
+>    entera.
+> 2. **La ficha pasa de ocho a nueve líneas** (entra `Independencia`) → `_CAMPOS_FICHA` y todas las
+>    fichas de las Tareas 2, 3, 6, 7 y 8.
+> 3. **G7 aplica una relación nueva y fail-closed**: `Cobertura: ejecutada` exige que `Informe recibido`
+>    resuelva a un acta existente. Cambia el cuerpo del test de la Tarea 1.
+> 4. **El frontmatter del acta gana `independencia` y `marcador_nonce`**, y los marcadores llevan nonce
+>    → `_CLAVES_ACTA` (Tarea 4) y el extractor del bloque literal (Tarea 5).
+> 5. **El nombre del acta lleva revisor y commit siempre** y admite `diagnostico` → la regla de
+>    renombrado de la Tarea 5.
+>
+> **Orden correcto:** primero la **comprobación dirigida del diff `24f8abe` → HEAD** que ordena el §13
+> del spec; después se realinea este plan; después se ejecuta. Realinearlo ahora sería retrabajo, porque
+> esa comprobación puede tocar los mismos ejes.
+
 **Goal:** llevar el corpus de revisiones adversariales postcorte al contrato del spec —encabezado canónico, ficha de ocho campos, acta con informe literal verificable por hash— y cerrar el cambio con dos guards que impidan la regresión.
 
 **Architecture:** migración documental en verticales por clase (`diseño` → `rama` → `autorrevision`), con los guards G7/G8 creciendo desde el primer PR sobre una **población migrada explícita** que se amplía en cada tarea y se retira en la última. Nada de código de producción: solo `docs/` y `tests/test_docs_gobernanza.py`.
