@@ -13,14 +13,28 @@ intermediación inmobiliaria en España. Cliente principal: Engel & Völkers
 Responder siempre en castellano salvo que el usuario inicie en otro idioma.
 Las comunicaciones a clientes de origen ruso o ex-URSS van en ruso por defecto.
 
-## Ahorro de cupo: delegar en Antigravity (`agy`) es OBLIGATORIO, no opcional
+## Revisión adversarial: OBLIGATORIA, la ejecuta Codex, la adjudica Claude
 
-Nikolai quema rápido su límite semanal de Claude y paga Gemini Pro aparte (bolsa de tokens de Antigravity). Por eso **delegar el trabajo pesado/mecánico a Gemini vía la CLI `agy` es la conducta por defecto siempre que ahorre cupo de Claude — no es opcional.** Antes de leer corpus enteros, generar boilerplate o revisar un diff a mano, pregúntate si eso lo debe hacer `agy`.
+**Todo diseño (spec/plan) y todo diff de código no trivial pasa por una revisión adversarial
+antes de mergearse.** Eso no es opcional y no ha cambiado. Lo que cambió (2026-08-01) es quién la
+ejecuta: **Codex**, con su propia bolsa de tokens. Antes se delegaba a Gemini vía la CLI `agy` de
+Antigravity; esa vía se retiró por cupo agotado de forma persistente — el porqué, con la evidencia,
+en `docs/DEAD_ENDS.md`. **No la reintentes.**
 
-- **Patrón:** Gemini lee / busca / extrae / borra → escribe a fichero → Claude **juzga** desde ese fichero.
-- **Delega (obligatorio donde toque):** primer barrido de expedientes, OCR / extracción / atomización, resúmenes masivos, **revisión adversarial de código y de planes/specs**, boilerplate.
-- **Se queda en Claude:** juicio jurídico, escritos con la voz del despacho, veredictos, anclaje a fuente y revisión final. Claude siempre es el juez; Gemini nunca tiene la última palabra sobre corrección.
-- **Recetas listas + qué NO delegar:** `C:\Users\tnm33\Dev\Antigravity\PLAYBOOK_AGY.md`. Protocolo y modelos de `agy`: `CLAUDE.md` global (`~/.claude/CLAUDE.md`).
+- **Patrón:** Codex ataca (**solo lectura, sin escribir en el repo**) → escribe sus hallazgos a un
+  fichero **fuera del repo** (`%TEMP%\...`; el guard `test_citas_a_specs_y_plans_existen` rompe si un
+  `.md` trackeado cita un fichero de `docs/superpowers/` que aún no existe) → **Claude adjudica** cada
+  hallazgo contra el código real y registra la adjudicación en el spec o el plan.
+- **Claude es siempre el juez.** Codex nunca tiene la última palabra sobre corrección. Un hallazgo
+  se confirma o se refuta **contra la fuente**, no contra el diff ni contra la seguridad con que
+  venga redactado.
+- **Un revisor que no corre no refuta: deja sin verificar.** Si la revisión no se ejecuta, se declara
+  la cobertura ausente en el documento — nunca se da por refutado lo que nadie miró.
+- **Se queda en Claude, sin delegar:** juicio jurídico, escritos con la voz del despacho, veredictos,
+  anclaje a fuente y revisión final.
+- **El trabajo mecánico pesado vuelve a Claude** (barridos de corpus, OCR/extracción, resúmenes
+  masivos, boilerplate): con `agy` fuera ya no hay a quién delegarlo en bloque. Para lo paralelizable,
+  subagentes; para lo grande, trocearlo.
 
 ## Al iniciar cada sesión
 
