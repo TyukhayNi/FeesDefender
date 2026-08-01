@@ -16,7 +16,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 
 | # | Ítem | Estado | Gate / disparador | Esf. |
 |---|------|--------|-------------------|------|
-| 1 | [OCR ciego bajo el sello (`MEJORAS #90`)](#siguiente-ocr-ciego-texto-perdido-bajo-el-sello-de-firma-mejoras-90) | **motor arreglado; queda ejecutar (e)** | (a)+(b) construidos y verdes: la causa ya no está viva para casos NUEVOS. (d) decidido 2026-07-27 = `D1`; falta ejecutarla sobre los 17 candidatos sin medir | bajo |
+| 1 | [OCR ciego bajo el sello (`MEJORAS #90`)](#siguiente-ocr-ciego-texto-perdido-bajo-el-sello-de-firma-mejoras-90) | **motor arreglado; (e) CERRADA sin rendimiento; queda construir (f)** | (a)+(b) construidos y verdes: la causa ya no está viva para casos NUEVOS. **(e) cerrada 2026-08-01**: lo medido en los 3 casos da +0/−6/+288 chars y membrete de fabricante, así que los 11 candidatos restantes **no se corren**. Vivo: **(f)** con diseño cerrado y sin construir, y `MEJORAS #111` (el reproceso pierde cifras) | bajo |
 | 2 | [Infra C — art. 156 LEC](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado (quick win) | bajo |
 | 3 | [Arquitectura dual del expediente activo](#siguiente-dual-workspace-arquitectura-dual-del-expediente-activo-localdrive) | spec **rev. 2** + plan Fase 0 **rev. 4**; **Fase 0 ✅ CERRADA** (#170 PR-A + #174 PR-B) y los **dos guards** adelantados (#156 lectura, #160 escritura) | Gate de revisión **consumido** (3 pasadas adjudicadas, sin 4ª). **Siguiente = Fase 1**, cuyo plan **no ha pasado revisión adversarial**. Los **7 defectos del frontal siguen vivos**: reproducidos en `xfail`, se arreglan en la Fase 2. **Absorbe Infra B (scratch)**: `local_scratch`, `--case-dir` y `promover` son piezas de aquí | alto (5 fases restantes; la Fase 0 ya hecha) |
 | 4 | [MCP sudespacho F1](#siguiente-mcp-sudespacho-mcp-sudespacho-crm-del-despacho--f1-lectura-spec-hecho-plan-pendiente) | spec lista | gates de despliegue | alto |
@@ -134,6 +134,15 @@ ser cambiar una bandera.
       pierde texto — lo que gana es el texto incrustado en imágenes pequeñas dentro de esas páginas. Aun
       así, para documentos donde las cifras sean críticas conviene forzar el peldaño 2.
 
+      > ⚠️ **ERRATA (2026-08-01): la frase «el 100 % de las palabras del original sobrevive» es
+      > FALSA como afirmación general, y se midió sobre estos dos exposés, no sobre el motor.** En
+      > los tres segmentos de W-02VND1 reprocesados el 2026-07-30, seg03 pierde **77 palabras únicas
+      > de 6.405** (1,2 %) y seg02 pierde 2 — cifras, fechas y horas (`340482060416`, `26/12/2085`,
+      > `18:39`). Alta con la medición y con lo que falta por medir: **`MEJORAS #111`**. La cautela
+      > final del párrafo («para documentos donde las cifras sean críticas, forzar el peldaño 2»)
+      > pasa de consejo a **hipótesis por verificar**: que el peldaño 2 sea inmune es justo el
+      > punto 3 de `#111`.
+
       Calidad: gibberish 2,6 % (tasación) / 4,0-4,6 % (exposés); tasación con 6/6 términos de tasación
       presentes; páginas conservadas 34/35/45. `00_Input/` intacto en los tres casos; respaldos en
       `99_Versiones anteriores/recuperacion_ocr_2026-07-27/`; `_cobertura.json` actualizado donde
@@ -167,8 +176,12 @@ ser cambiar una bandera.
       de esos 24 candidatos— y no reescribe nada que hoy funcione. D2 solo habría compensado si se
       quisiera además una cobertura homogénea de cara a la vista procesal.
 
-- [ ] **(e) Ejecutar D1** — **herramienta CONSTRUIDA, ejecución A MEDIAS.** Los pasos 1 y 2
-      están hechos; el 3 cubre 1 de los 3 casos y W-02VND1 quedó reprocesándose al cerrar la sesión.
+- [x] **(e) Ejecutar D1 — CERRADA 2026-08-01 por falta de rendimiento (decisión de Nikolai).**
+      Herramienta construida y ejecutada sobre los tres casos; el veredicto de la medición es que
+      **D1 no recupera nada**: +0, −6 y +288 chars en los tres segmentos de W-02VND1, membrete del
+      fabricante en W-02XOR7, ruido en W-02VUDR. Los 11 candidatos restantes de W-02VND1 se declaran
+      **no se corren**. Lo que queda vivo de este bloque es (f) —limpiar lo que D1 ensució— y el
+      hallazgo de que **el reproceso puede perder texto** (`MEJORAS #111`).
       1. [x] Detector re-corrido: **la lista viva coincide en número (17) pero NO en composición**
          con la del 2026-07-27. Los cuatro AcroForm de W-02VND1 (cuentas anuales, tasación) que
          motivaron la restricción dura **ya no aparecen**, y ningún candidato vivo es AcroForm.
@@ -179,11 +192,38 @@ ser cambiar una bandera.
          cobertura y estado. Excluyente con `--force`. Una ruta que no case aborta con salida 2
          antes de OCR-izar. `core.sala_maquina.acotar_plan` + 12 tests.
       3. [ ] Medición: **W-02VUDR = falso positivo** (13.977 → 13.870, −1 % de ruido; su MD ya era
-         `extractor=ocr`, o sea que la pérdida estaba recuperada de antes). **W-02VND1 = pérdida
-         real confirmada**: sus 14 se procesaron el 2026-07-23 con `pypdf`/`ocr=False`, cuatro días
-         antes de que existiera la escalera (`f15f2f8`, 2026-07-27 22:42), y el primer segmento
-         medido subió 160.685 → 166.324 (**+5.639**). **Queda: terminar esa corrida y medirla
-         entera, y lanzar los 2 de W-02XOR7.** Comando exacto en la bitácora del 49º cierre.
+         `extractor=ocr`, o sea que la pérdida estaba recuperada de antes). **W-02XOR7 = falso
+         positivo también, y CERRADO sin escribir en `G:` (2026-08-01)**, medido en seco sobre copia
+         al scratchpad: de sus 2 candidatos, el **Exposé** ya venía recuperado en (c2) (`extractor:
+         ocr`, `2026-07-27T16:42Z`, `nota_recuperacion` en el frontmatter) y
+         **`753_informeSaintGobainMedidasMejora`** —el único con pérdida técnica real
+         (`extractor: pypdf`, `ocr: false`, 2026-07-13, páginas ciegas 4 y 6)— **recupera 8.959 →
+         9.291 (+332, +3,7 %) y lo recuperado es la banda de membrete del fabricante** (logos
+         rasterizados, domicilio social, CIF), con ruido de OCR (`С/` cirílico, `G о BAI N`). Cero
+         contenido probatorio: **no se reprocesa**. La escalera se comportó bien (peldaño 2,
+         `degradado=False`, `split.detectar` = 1 segmento → passthrough, luego el defecto (f) no le
+         aplicaba). **W-02VND1 = TAMBIÉN falso positivo, y la cifra que este punto declaraba estaba
+         mal medida.** Decía que el primer segmento subió «160.685 → 166.324 (**+5.639**)»: 160.685
+         son **chars** del frontmatter y 166.324 son los **bytes del fichero MD nuevo**, que incluyen
+         frontmatter y multibyte UTF-8. Comparadas las mismas unidades, los tres segmentos que sí se
+         reprocesaron el 2026-07-30 dan:
+
+         | segmento | chars antes (`pypdf`) | chars después (`ocr`) | delta | palabras del viejo ausentes en el nuevo |
+         |---|---|---|---|---|
+         | seg01 | 9.204 | 9.204 | **+0** | 0 de 502 |
+         | seg02 | 44.639 | 44.633 | **−6** | 2 de 2.623 |
+         | seg03 | 160.685 | 160.973 | **+288 (+0,18 %)** | **77 de 6.405 (1,2 %)** |
+
+         **Los 11 restantes de W-02VND1 NO se corren.** Son del mismo lote y de la misma naturaleza,
+         y la muestra medida no da nada.
+
+         **Dos cautelas medidas al cerrar XOR7, aplicables a cualquier `apply --solo` futuro:**
+         (1) `apply` **atomiza el correo incondicionalmente** antes del OCR (cableado de PR #151, sin
+         flag para saltarlo): en XOR7 eso habría creado por primera vez el árbol de atomización de
+         **47 `.eml`** en el Drive, efecto colateral mucho mayor que la corrida pedida. (2) XOR7 no
+         tiene `_cobertura.json`, así que la reconstrucción parcial de (f) habría **encogido la vista
+         `_cobertura.md` de 169 filas a ~114** (los `sin_soporte` no son reconstruibles). Medir en
+         seco antes de correr en vivo evita ambas.
 
       **Lo que el cribado es, medido:** marca por estructura (páginas que `--skip-text` saltaría +
       firma repetida), no por «le falta texto», así que sigue marcando documentos YA recuperados.
@@ -203,11 +243,23 @@ ser cambiar una bandera.
         `reconstruir_cobertura_desde_md` (lee solo la cabecera del MD). **Parcial y declarado:**
         recupera 113 de 169 — los `sin_soporte` no dejan MD y no son reconstruibles; emite aviso.
       - [ ] **El slug de un segmento de bundle depende de su contenido, así que el reproceso no
-        sustituye: añade.** Medido en vivo: `completo__c170a0f5__seg03_DOCUMENTO__60732e16` se
-        reprocesó como `…__441883cc`. `fusionar_cobertura` indexa por `(rel_path, slug)`, de modo
-        que quedan **dos filas y dos MD** del mismo segmento, uno con el texto pobre, y la sala de
-        lectura puede coger el viejo. Afecta a todo reproceso de bundles, no solo a D1. **Sin
-        decidir**: ¿retirar la fila huérfana por `parent_sha256`+`role`+`paginas`, o versionar?
+        sustituye: añade.** `fusionar_cobertura` indexa por `(rel_path, slug)` y nada poda, de modo
+        que cada reproceso deja los artefactos anteriores en disco. Afecta a todo reproceso de
+        bundles, no solo a D1. **DISEÑO CERRADO 2026-08-01** —
+        `docs/superpowers/specs/2026-08-01-identidad-segmento-bundle-design.md`: identidad
+        **posicional** (`{parent_slug}__seg{NN}_{TIPO}`, sin el sha del segmento), que elimina la
+        asimetría con los documentos sueltos en vez de limpiar detrás de ella, más un script de
+        migración y saneamiento re-ejecutable. **Pendiente de construir.**
+
+        **Censo del daño (2026-08-01, read-only sobre los 5 casos):** 5 segmentos duplicados y 12
+        ficheros huérfanos, en 2 casos — W-02VND1 (3 segmentos × 2 versiones) y W-02VUDR (2 × **3**).
+        **El defecto es anterior a D1:** los de W-02VUDR están fechados el 2026-07-21. Y W-02VND1
+        quedó **internamente incoherente**: su `_cobertura.json` cita los segmentos del 23/07
+        mientras el `indice.json` del bundle, regenerado el 30/07, cita los del 30/07.
+
+        La clave que este punto proponía —`parent_sha256`+`role`+`paginas`— **no sirve**: `role` vale
+        `"documento"` en los 35 segmentos censados y `paginas` cambia si el letrado edita el
+        manifiesto. La clave correcta es `seg`.
 
 **Herramienta ya disponible:** `python -m scripts.detectar_ocr_ciego todos --salida <fuera-del-repo>.md`
 (read-only). Es un **cribado**, no un veredicto: de 24 candidatos, 6 eran reales; medir la pérdida
