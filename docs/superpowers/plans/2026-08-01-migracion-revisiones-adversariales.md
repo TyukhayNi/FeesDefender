@@ -1208,17 +1208,13 @@ Datos de `docs/bitacora/2026.md:144`: PR #147, `MEJORAS #90` (a)+(b), y la revis
 - **Remediado en:** PR #147
 ```
 
-- [ ] **Step 3: Cerrar el censo en 28**
+- [ ] **Step 3: Cerrar el censo**
 
-Actualiza `esperado` con las dos nuevas y comprueba que la suma de sus valores es **28**, igual que las filas de la tabla del censo:
+Extrae `esperado` a constante de módulo `_CENSO_ESPERADO` y añade las dos autorrevisiones.
 
-```python
-def test_censo_suma_28():
-    """El censo del plan de migracion declara 28 revisiones postcorte."""
-    assert sum(esperado.values()) == 28  # mover `esperado` a constante de modulo
-```
+**NO escribas un test que afirme un total literal** (`sum(...) == 28`). Sería el defecto H-07 por tercera vez: un número que la siguiente adjudicación invalida — y la siguiente es la de **este mismo plan**, que al adjudicarse añade una fila y sube el censo a 29. `_CENSO_ESPERADO` ya obliga a actualizarlo cuando entra una revisión nueva, y eso es exactamente lo que debe hacer el guard; un total agregado no añade cobertura y sí añade una trampa.
 
-Extrae `esperado` a constante de módulo `_CENSO_ESPERADO` para que ambos tests la compartan.
+Comprueba a mano, una vez, que `sum(_CENSO_ESPERADO.values())` coincide con las filas de la tabla del censo de este plan, y deja constancia en el mensaje de commit. Ese cuadre es una verificación de migración, no un invariante permanente.
 
 - [ ] **Step 4: Verde, suite y commit**
 
