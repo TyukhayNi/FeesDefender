@@ -10,7 +10,8 @@
 
 ## Global Constraints
 
-- **Fuente única del diseño:** `docs/superpowers/specs/2026-08-01-gobernanza-revisiones-adversariales-design.md` **rev. 4** (commit `f32e19c`). No reabrir sus decisiones cerradas. Las tres adjudicaciones (§14, §15, §16) y las tres actas son el ejemplo de referencia: ante duda de formato, copiar de ahí.
+- **Fuente única del diseño:** `docs/superpowers/specs/2026-08-01-gobernanza-revisiones-adversariales-design.md` **rev. 5** (commit `5558dfd`). No reabrir sus decisiones cerradas. Las tres adjudicaciones (§14, §15, §16) y las tres actas son el ejemplo de referencia: ante duda de formato, copiar de ahí.
+- **La rev. 5 añade cinco mejoras (§13.1) que este plan ya incorpora:** el `mandato` obligatorio en el frontmatter del acta (M-2, Tareas 4 y 5), el alcance real de G8 (M-4, sin efecto en el código) y la regla de parada de rondas (M-5, doctrina, Tarea 9). **M-1 y M-3 cambian decisiones y su cobertura es ausente y declarada:** si la cuarta ronda acotada las modifica, este plan se ajusta antes de ejecutar las Tareas 7 y 9.
 - **Vocabularios cerrados** (spec §4), literales: `clase` ∈ `diseño` · `rama` · `autorrevision`; `veredicto` ∈ `SHIP` · `LISTA-CON-CAMBIOS` · `REQUIERE-REVISION` · `NO-SHIP` · `NO-EJECUTABLE` · `SIN-VEREDICTO`; `estado_remediacion` ∈ `remediado` · `parcial` · `sin-cambios` · `pendiente`; `cobertura` ∈ `ejecutada` · `no-ejecutada`.
 - **Tercera población de vocabularios.** NO tocar `_ESTADOS_DOCS` ni `_ESTADOS_HANDOFF`, NO volver recursivo el glob de `_docs_con_frontmatter`. Es la trampa D3 que documenta la cabecera de `tests/test_docs_gobernanza.py`: unificar los sets rompe 11 ficheros al instante.
 - **No se inventa lo que no consta.** Si un campo no está en la fuente, el valor es `no registrado`. Prohibido reconstruir un commit, un recuento o un veredicto «a ojo».
@@ -223,7 +224,13 @@ def test_adjudicaciones_bien_formadas():
                     fallos.append(f"Cobertura {fi['Cobertura']!r} fuera del set")
             if fallos:
                 malos.setdefault(f"{p.name}:{i + 1}", []).extend(fallos)
-    assert not malos, f"adjudicaciones que incumplen el spec §5: {malos}"
+    assert not malos, (
+        f"adjudicaciones que incumplen el spec §5: {malos}\n\n"
+        f"Forma esperada (ojo a la raya larga `—`, NO un guion, y a las tildes):\n"
+        f"  ## N. Adjudicación de la revisión adversarial (Revisor, AAAA-MM-DD) — VEREDICTO, estado\n"
+        f"  veredicto ∈ {sorted(_VEREDICTOS_REV)}\n"
+        f"  estado    ∈ {sorted(_ESTADOS_REM)}\n"
+        f"  ficha     = {list(_CAMPOS_FICHA)}")
 
 
 def test_g7_no_se_autodetecta_en_la_plantilla_del_spec():
@@ -613,7 +620,7 @@ _ALLOWLIST_HIBRIDA = frozenset({
 })
 
 _CLAVES_ACTA = ("tipo", "objeto", "objeto_rev", "commit", "ronda", "clase",
-                "revisor", "cobertura", "veredicto", "sha256_informe",
+                "revisor", "cobertura", "veredicto", "mandato", "sha256_informe",
                 "adjudicado_en")
 _RE_SECCION = re.compile(r"§(\d+[\w-]*)")
 
@@ -831,7 +838,12 @@ def test_actas_cadena_de_custodia():
         real = hashlib.sha256(bloque).hexdigest()
         if real != declarado:
             malos[p.name] = f"sha256 declarado {declarado[:12]}… != recomputado {real[:12]}…"
-        for sec in ("Informe recibido, sin modificar", "Evidencia verificada"):
+        secciones = ["Informe recibido, sin modificar", "Evidencia verificada"]
+        # M-2 (spec rev. 5): el §0 Mandato es obligatorio en el CUERPO solo si el
+        # frontmatter no apunta fuera. `mandato` en si lo exige _CLAVES_ACTA.
+        if fm.get("mandato", "").strip().startswith("§0"):
+            secciones.append("Mandato")
+        for sec in secciones:
             if sec not in txt:
                 malos[p.name] = f"falta la sección «{sec}» del spec §6"
     assert not malos, f"actas con cadena de custodia rota: {malos}"
@@ -855,6 +867,21 @@ En cada una de las tres actas, el bloque literal es lo que hoy va entre la líne
 -  ---
 +  <!-- informe-literal:fin -->
 ```
+
+- [ ] **Step 3-bis: Añadir `mandato:` a las tres actas (M-2 de la rev. 5)**
+
+Los tres mandatos existen y están publicados: son el §13 del spec **en la revisión que se atacó**. No
+se copian al acta; se apunta a ellos con su hash, que es lo que los hace localizables:
+
+| Acta | Valor de `mandato:` |
+|---|---|
+| ronda 1 | `§13 de la rev. 1 del objeto (git 3126214)` |
+| ronda 2 | `§13 de la rev. 2 del objeto (git 2c2a6d0)` |
+| ronda 3 | `§13 de la rev. 3 del objeto (git 1a6e3d8)` |
+
+Como ninguno usa `§0 de este acta`, **el cuerpo no necesita una sección `Mandato`** y el guard no la
+exige. Las cuatro actas heredadas de la Tarea 4 llevan `mandato: no registrado`: sus encargos no se
+publicaron en ningún sitio, y eso se declara en vez de reconstruirse.
 
 - [ ] **Step 4: Verificar el digest y corregirlo si no cuadra**
 
