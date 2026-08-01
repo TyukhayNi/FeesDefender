@@ -9,7 +9,7 @@ revisor: Codex
 cobertura: ejecutada
 veredicto: LISTA-CON-CAMBIOS
 sha256_informe: 43b945e24a9aa990bc7aea1ffc0d4aae205e21a55f6f3241383bc6781587a325
-adjudicado_en: docs/superpowers/specs/2026-08-01-gobernanza-revisiones-adversariales-design.md §16
+adjudicado_en: docs/superpowers/specs/2026-08-01-gobernanza-revisiones-adversariales-design.md §11
 ---
 
 # Revisión adversarial — gobernanza de las revisiones adversariales (rev. 3, ronda 3)

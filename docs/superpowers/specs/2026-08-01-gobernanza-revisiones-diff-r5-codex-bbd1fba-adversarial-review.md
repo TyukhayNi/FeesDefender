@@ -1,6 +1,6 @@
 ---
 tipo: revision-adversarial
-objeto: docs/superpowers/specs/2026-08-01-gobernanza-revisiones-adversariales-design.md
+objeto: diff 24f8abe..bbd1fba de docs/superpowers/specs/2026-08-01-gobernanza-revisiones-adversariales-design.md
 objeto_rev: "6"
 commit: bbd1fba
 ronda: "5"
@@ -12,7 +12,7 @@ veredicto: NO-SHIP
 mandato: docs/superpowers/specs/2026-08-01-gobernanza-revisiones-adversariales-design.md §13
 marcador_nonce: qw5v
 sha256_informe: 0f8a95dcd4c908e26c62db3b4c66d950a1e9f6111e106343d4009bed6f46825e
-adjudicado_en: docs/superpowers/specs/2026-08-01-gobernanza-revisiones-adversariales-design.md §18
+adjudicado_en: docs/superpowers/specs/2026-08-01-gobernanza-revisiones-adversariales-design.md §13
 ---
 
 # Comprobación dirigida — gobernanza de las revisiones adversariales (rev. 6, ronda 5)

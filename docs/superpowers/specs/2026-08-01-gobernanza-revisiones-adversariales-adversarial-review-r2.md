@@ -9,7 +9,7 @@ revisor: Codex
 cobertura: ejecutada
 veredicto: NO-SHIP
 sha256_informe: 20c45f93c0460a8f91ba426c9570ac918b01882a43f07aec9f549166070f4114
-adjudicado_en: docs/superpowers/specs/2026-08-01-gobernanza-revisiones-adversariales-design.md §15
+adjudicado_en: docs/superpowers/specs/2026-08-01-gobernanza-revisiones-adversariales-design.md §10
 ---
 
 # Revisión adversarial — gobernanza de las revisiones adversariales (rev. 2, ronda 2)

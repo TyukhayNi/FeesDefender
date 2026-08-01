@@ -2,6 +2,15 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> ⛔ **ARCHIVADO SIN EJECUTAR (2026-08-01).** El alcance del spec se recortó tras el H-07 de la sexta
+> revisión: el censo de 28 revisiones, el retrofit de los ocho encabezados heredados y la migración por
+> verticales **quedan fuera**. Este plan se conserva por dos motivos: su **censo** es el único inventario
+> que existe de las revisiones adversariales del proyecto desde el 2026-07-23, y su estructura de tareas
+> sirve de punto de partida si algún día hay un caso real que justifique la migración. **No lo ejecutes
+> tal cual: codifica un contrato que ya no está vigente.** El contrato vigente es la **rev. 8** del spec.
+>
+> El aviso anterior, que queda como historia:
+>
 > 🔴 **NO EJECUTAR TODAVÍA — este plan está alineado con la rev. 5 del spec y la vigente es la rev. 6.**
 > La ronda 4 devolvió NO-SHIP con ocho hallazgos (§17 del spec) y la rev. 6 cambió el contrato en cinco
 > puntos que este plan codifica literalmente:
