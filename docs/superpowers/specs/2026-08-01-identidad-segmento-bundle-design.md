@@ -1,10 +1,13 @@
 # Diseño — La identidad de un segmento de bundle: que el reproceso sustituya en vez de añadir
 
-> **Estado:** **rev. 3** (2026-08-01), tras **dos** revisiones adversariales de Codex, ambas
-> **NO SHIP** (rev. 1: 2 B0 + 5 A + 3 M; rev. 2: 4 B0 + 5 A + 2 M). La rev. 2 cambió la decisión
-> central —del ordinal `seg` a un `doc_id` persistente— y la rev. 3 **parte el trabajo en dos
-> piezas** y corrige el ciclo de vida de ese `doc_id`, que la rev. 2 dejó sin contrato seguro.
-> Adjudicación de las dos pasadas en §13.
+> **Estado:** **rev. 4** (2026-08-02), tras **tres** revisiones adversariales, las tres **NO SHIP**
+> (rev. 1: 2 B0 + 5 A + 3 M · rev. 2: 4 B0 + 5 A + 2 M · rev. 3: 2 B0 + 13 A + 9 M). Las dos primeras
+> las hizo Codex; la tercera, **un revisor sustituto** —sesión limpia de Claude Code, mismo modelo que
+> el autor— porque Codex está sin cupo hasta el 2026-08-08: su independencia es **más débil** y el
+> §14 lo declara. La rev. 2 cambió la decisión central —del ordinal `seg` a un `doc_id` persistente—,
+> la rev. 3 **partió el trabajo en dos piezas**, y la **rev. 4** cierra el agujero que la pieza A
+> tenía por la puerta del **passthrough** (§6 y §7) y acota tres promesas que no se cumplían.
+> Adjudicación de las dos primeras pasadas en §13; de la tercera, en §14.
 > **Disparador:** destapado al ejecutar D1 de `MEJORAS #90` (fila #1 de `PLAN.md`, punto (f)) y
 > medido en los 5 casos con sala de máquina: el defecto **ya estaba vivo antes de D1**.
 > **Fuera de alcance:** D1 (cerrada por falta de rendimiento el 2026-08-01) y la pérdida de texto del
@@ -93,8 +96,17 @@ letrado** directamente en una ruta, aparece el traversal: `destino_seguro` prote
 (`sala_maquina.py:582`) pero **no** el `destino_pdf` que arma `materializar` (`:312`), y la 2ª
 revisión lo ejecutó: un `doc_id` con separadores escribió fuera del bundle.
 
-Además del formato, **cada destino final se valida con `destino_seguro` contra `carpeta_bundle`**.
-Cinturón y tirantes, porque el coste es una línea y el fallo es escribir fuera del expediente.
+Además del formato, **cada destino final se valida por contención contra `carpeta_bundle`**, porque
+el coste es una línea y el fallo es escribir fuera del expediente.
+
+> **Lo que esa segunda comprobación NO es** (corregido en la rev. 4, hallazgo H-08, medido): no es un
+> cinturón equivalente al formato. El slug antepone `parent_slug__`, así que un `doc_id` como
+> `..\..\fuera` produce `…/bundle/bundle-slug__..\..\fuera_X.pdf`, que **resuelve dentro** de la
+> carpeta —el prefijo absorbe el primer `..`— y la contención no lo caza. Sí caza las formas que de
+> verdad escapan (`d01/../../fuera` → `…/02_Documentos/fuera_X.pdf`). **El gate real es el formato
+> canónico**; la contención cubre el resto del espacio, no la forma concreta que ejecutó la 2ª
+> revisión. El test lo ejerce con `d01/../../fuera`, no con `..\..\fuera`, que pasaría por razones
+> equivocadas.
 
 ### 3.2 Ledger monotónico: `next_doc_id` y tombstones
 
@@ -133,7 +145,17 @@ primero ya escribió y **sus filas se pierden**.
 Por eso la rev. 3 **no** abre un agujero en el aislamiento de `ejecutar` (que era la vía de la
 rev. 2): se hace **preflight de todos los manifiestos y reconciliaciones del plan antes de procesar
 el primer documento**. `ManifestValidationError` con bundle y entrada culpables, salida distinta de
-cero, **cero bytes escritos**. El aislamiento por documento de `ejecutar` queda intacto.
+cero, y **cero artefactos de Sala de máquina escritos**. El aislamiento por documento de `ejecutar`
+queda intacto.
+
+> **La promesa, acotada a lo cierto** (rev. 4, hallazgo H-04). Decía «cero bytes escritos» y era
+> falso: `apply` **atomiza el correo antes** (`scripts/sala_maquina.py:293`), lo que crea
+> `01_Procesado/Emails/` y añade una línea a `00_Input/_intake_log.jsonl`. El preflight en sí no
+> escribe nada —verificado—, pero la corrida ya escribió cuando él corre. Lo que se garantiza es lo
+> de arriba: **ningún artefacto de Sala de máquina**, que es lo que el preflight existe para
+> proteger. Mover el preflight delante de la atomización haría cierta la frase original y **no se
+> hace**: es un reorden del CLI que no pertenece a esta pieza. Ningún test puede cazar esto, porque
+> todos doblan la atomización a un no-op.
 
 ## 5. Reconciliación del manifiesto, con la promesa que de verdad se puede cumplir
 
@@ -157,6 +179,18 @@ través de re-segmentaciones, y la spec ya no lo insinúa.
 Consecuencia declarada: los `doc_id` **dejan de ir en orden de página** al insertar un segmento. El
 orden de lectura lo da `pp`, no el nombre.
 
+**Dos precisiones de la rev. 4, las dos medidas sobre el código de la rev. 3:**
+
+- **El emparejamiento es por RANGO, no por la cadena `pp`** (H-06). Indexar por la cadena hacía que un
+  `01-03` escrito por el letrado —mismo rango que `1-3`— rompiera la herencia y, peor, abortara
+  `--force` con un mensaje que decía «solapa» sobre un rango idéntico a sí mismo. El manifiesto es un
+  fichero que una persona edita: `pp` se normaliza con `_pp_a_rango` antes de comparar.
+- **El manifiesto MIXTO se declara, no se acuña en silencio** (H-07). Bajo `--force`, una entrada
+  anterior sin `doc_id` no tiene identidad que heredar y su segmento acuña una nueva. Eso es
+  correcto, pero **hacerlo callando contradice el fail-closed** que justifica abortar en la corrida
+  normal: se emite aviso por `stderr` y queda en el evento `split_documental`
+  (`identidades_acunadas_por_legacy`). Cierra lo que §11 pedía «definido explícitamente».
+
 ## 6. `doc_id` como campo estructurado, y la fusión por identidad
 
 `DocLogico` y `DocCobertura` ganan `doc_id`. `fusionar_cobertura` indexa:
@@ -171,6 +205,34 @@ se dispara, y la fusión por slug conservaba **dos filas del mismo `doc_id`** (r
 fila con slug nuevo → renombrado detectable, y sus tres representaciones se archivan y reescriben
 como grupo.
 
+### 6.1 La corrida es AUTORITATIVA sobre los documentos que reprocesa (rev. 4)
+
+Cambiar la clave no basta, y la rev. 3 se quedó ahí. **Una fusión que solo sabe añadir no puede
+sustituir**, por muy buena que sea su clave: sobreviven las filas de cualquier generación anterior
+cuya clave no coincida con ninguna nueva. Dos formas medidas de que eso ocurra:
+
+- una fila **reconstruida del MD** (`doc_id=""`, porque el frontmatter no lo guarda) conviviendo con
+  la fila fresca del mismo documento lógico: **dos filas con el mismo slug**, una de ellas con `sha`
+  vacío (H-05);
+- un bundle que en el reproceso **deja de serlo** y pasa a passthrough: sus N filas de segmento
+  sobreviven junto a la fila nueva del documento suelto (H-01).
+
+Regla, por tanto: **al fusionar, las filas previas de un `rel_path` que esta corrida ha reprocesado
+se descartan**; se conservan íntegras las de los `rel_path` que no se tocaron. Es la traducción
+exacta del objetivo de esta spec —«el reproceso sustituye»— al registro, y no al solo nombre del
+fichero.
+
+```python
+fusionar_cobertura(previa, nueva, rel_paths_reprocesados)
+```
+
+El conjunto lo pone el llamador desde el **plan** (`{d.rel_path for d in p if not d.skip}`), la misma
+fuente que el alcance del guard y por el mismo motivo: cuando un documento falla, sus filas no
+existen, y derivar el conjunto de las filas dejaría fuera justo el caso que hay que cubrir.
+
+**Lo que esta regla NO hace:** no toca las filas de documentos no reprocesados (una corrida acotada
+sigue siendo acotada), y no poda ficheros — de eso se encarga §7.
+
 ## 7. Custodia: publicar por generación, y un guard que mire en los dos sentidos
 
 Sacar el sha del nombre tiene un precio: `emitido.replace(destino_pdf)` sobrescribe, y la fila de
@@ -179,8 +241,22 @@ media generación deja la fila declarando un sha que ya no corresponde a esos by
 
 1. **Publicación por generación.** Las tres representaciones (PDF, MD, `raw_text`) se escriben a
    *staging* dentro de la carpeta del bundle y se publican por renames al final. La generación
-   anterior se mueve a `99_Versiones anteriores/reproceso_<fecha>/` **como conjunto**: si el
+   anterior se mueve a `99_Versiones anteriores/reproceso_<sello>/` **como conjunto**: si el
    archivado no puede completar las tres, no se publica ninguna.
+
+   > **Acotación de la rev. 4** (H-09): «como conjunto» describe la **publicación**, que sí es
+   > todo-o-nada, no el **archivado**, que es un bucle de renames y no es transaccional. Si falla al
+   > mover el tercero de quince, catorce quedan movidos y **no se publica nada** —la propiedad que
+   > importa se conserva—, pero la generación anterior queda **partida entre dos ubicaciones**. Se
+   > declara en vez de prometer atomicidad que no hay; el remedio operativo es que ni una copia ni la
+   > otra se pierden y el guard aborta.
+
+   **Solo se publica lo que el manifiesto declara** (H-10). El bucle final vaciaba el *staging* sin
+   filtrar, de modo que un residuo de una corrida abortada —que `shutil.rmtree(..., ignore_errors=True)`
+   puede no haber podido borrar bajo un *sharing violation* de Windows— se publicaba como si fuera de
+   esta generación. Y los `.md`/`.txt` rancios aterrizaban **en la carpeta del bundle**, donde ningún
+   guard los miraba nunca. Ahora: del *staging* solo salen los slugs publicados y el índice del
+   bundle; lo demás se archiva.
 2. **El fallo del evento no descarta el trabajo.** `_split_o_md` devuelve sus filas aunque
    `append_event` (`:602`) falle. Hoy, una excepción ahí sube a `ejecutar:732` y **se pierden las
    filas de todos los segmentos** del bundle.
@@ -189,8 +265,44 @@ media generación deja la fila declarando un sha que ya no corresponde a esos by
    con `--force` además `previa=[]`. El guard de la rev. 2 estaba **ciego justo en el caso para el
    que se escribió**. Ahora:
    - fila → fichero: las **tres** representaciones existen y su sha casa con el declarado;
-   - fichero → fila: todo `02_Documentos/<parent>/*.pdf` tiene fila;
+   - fichero → fila: todo `02_Documentos/<parent>/*.pdf` tiene fila, **y la carpeta no contiene
+     `.md` ni `.txt`** (rev. 4, H-10: ahí no vive ninguna representación legítima, así que uno
+     rancio solo puede venir de una publicación sucia, y nadie lo miraba);
    - discrepancia → **salida distinta de cero**, nombrando segmento y representación. No un aviso.
+
+   **El guard DETECTA; no previene** (rev. 4, H-14). El párrafo que abre este §7 dice que un fallo a
+   media generación deja la fila declarando un sha que ya no corresponde: la publicación por
+   *staging* estrecha muchísimo esa ventana, pero **no hay rollback**, así que si se rompe entre el
+   PDF y el MD el estado incoherente existe y lo que hace el guard es **cerrar la corrida en rojo con
+   el segmento nombrado**. Prometer prevención sería falso.
+
+### 7.1 El passthrough también publica (rev. 4, hallazgo H-01 — B0)
+
+Toda la maquinaria de arriba vivía en la rama *split* de `_split_o_md`. La rama **passthrough** —la
+que corre cuando `detectar` devuelve un solo segmento, o cuando lanza y el motor degrada a propósito
+(`core/sala_maquina.py:559-579`)— escribía su MD suelto y no archivaba nada. Con eso, un bundle que
+en un reproceso deja de detectarse como tal:
+
+- con `--force` dejaba sus N PDF de segmento **huérfanos** → el guard aborta con salida 3, y volver a
+  lanzar da lo mismo porque la detección sigue degradando: **caso real sin salida dentro de la
+  herramienta**;
+- sin `--force` conservaba las N filas viejas junto a la nueva: **el defecto que esta spec existe
+  para eliminar, reintroducido en silencio y con el guard ciego**.
+
+Y no es hipotético: el delimitador de segmento exige `len(txt.strip()) < 10`
+(`core/split_documental.py:25,144-158`), así que **diez caracteres de ruido de OCR** en la hoja en
+blanco colapsan N→1. Que el reproceso cambia el texto de forma no aditiva está medido en este mismo
+proyecto (`MEJORAS #111`).
+
+**Regla:** cuando un documento se resuelve como passthrough y existe carpeta de bundle previa para su
+`parent_slug`, esa generación se **archiva entera** —PDF, MD, `raw_text`, `indice.json` y el
+manifiesto— en `99_Versiones anteriores/reproceso_<sello>/`, y el `doc_id` de cada entrada retirada
+va a `retirados`. Junto con §6.1 (la corrida es autoritativa sobre lo que reprocesa), eso deja el
+registro y el disco coincidiendo en la única lectura correcta: **ese `rel_path` ya no tiene
+segmentos**.
+
+*(La frecuencia real de esta transición en el corpus no está medida: lo que está establecido es que
+sus dos mecanismos existen en el código.)*
 
 ## 8. Contrato de tests — Pieza A
 
@@ -223,13 +335,50 @@ hashes coherentes entre sí y con la fila.
 Los asertos sobre mensajes usan frases con espacios, nunca subcadenas que el nombre del test pueda
 inyectar en la salida capturada.
 
+> **Y hay que cumplirla, no solo escribirla** (rev. 4, H-12). El plan de la rev. 1 la incumplía: sus
+> asertos `any("MD" in f)` y `any("raw_text" in f)` casaban con los **componentes de ruta** `03_MD` y
+> `raw_text` que van dentro del propio mensaje, de modo que un mutante que etiquetara mal las tres
+> representaciones sobrevivía. Y la inyección por nombre de test que la regla veta **ocurría
+> literalmente**: el tmpdir de `test_guard_detecta_el_sha_que_no_casa` es
+> `test_guard_detecta_el_sha_que_0`, que contiene `"sha"`.
+
+### 8.1 Lo que la rev. 4 añade al contrato
+
+Once tests más, cada uno con su mutante nombrado. Los cuatro primeros son los que cerraron un
+mutante **vivo** o un `B0`:
+
+| # | Propiedad | Mutante que debe morir |
+|---|---|---|
+| 11 | **N→1**: un bundle que pasa a passthrough archiva su generación anterior entera, deja la carpeta sin PDF de segmento y **una sola fila** para ese `rel_path` | la rama passthrough sin archivado (el estado de la rev. 3) |
+| 12 | **`retirados` acumula**: previo con un tombstone **y** una retirada nueva → los dos en el ledger, y el retirado sigue sin poder reutilizarse | `retirados` que no concatena el previo (H-22: pasaba la suite entera) |
+| 13 | **Custodia, las tres representaciones y la cobertura**: bytes de PDF, MD y `raw_text` antes y después, más las filas | `materializar` sin *staging* para el PDF, que destruye la generación anterior y hoy pasaría en verde (H-23) |
+| 14 | **Fusión autoritativa**: fila reconstruida del MD + fila fresca del mismo segmento → **una** fila | la fusión que solo añade (H-05) |
+| 15 | `pp` no canónico (`01-03`, `1 - 3`) hereda igual que `1-3` | indexar `por_pp` por la cadena |
+| 16 | Manifiesto mixto bajo `--force`: acuña **y avisa** (stderr + evento) | acuñar en silencio |
+| 17 | `segmentos: []` aborta | validación que acepta la lista vacía y vacía el bundle con exit 0 |
+| 18 | `doc_id` con salto de línea o dígitos no ASCII: rechazado **antes** de tocar disco | `re.match` con `$` en vez de `re.fullmatch` ASCII |
+| 19 | `_segmentacion.json` corrupto → salida 2, no traceback | `except` que solo captura `ManifestValidationError` |
+| 20 | `reforzar` con manifiesto legacy: preflight, salida 2 **sin escribir** | preflight cableado solo en `apply` |
+| 21 | *Staging* residual: no se publica lo que el manifiesto no declara | bucle final que vacía el *staging* sin filtrar |
+
 ## 9. Criterio de salida — Pieza A
 
-- Los tests 2, 6, 7 y 8 pasan y **mueren al retirarles su arreglo** (mutación verificada, incluida la
-  de «acuñar siempre»).
-- Preflight: manifiesto inválido aborta desde la CLI con exit ≠ 0 y cero bytes escritos.
-- Suite verde (base: 2612 passed, 77 skipped, 7 xfailed).
-- Ningún caso real tocado.
+- Los tests 2, 6, 7, 8 y **11-14** pasan y **mueren al retirarles su arreglo** (mutación verificada,
+  incluida la de «acuñar siempre» y la de «no acumular tombstones»).
+- Preflight: manifiesto inválido aborta desde la CLI con exit ≠ 0 y **cero artefactos de Sala de
+  máquina** escritos (§4: la atomización de correo ya ha escrito antes, y eso está declarado).
+- Suite verde contra la base **medida al empezar**, no contra una cifra escrita. Medición del
+  2026-08-02 sobre el commit `a7f168c`: **2630 passed, 77 skipped, 7 xfailed** (2714 total, 0
+  failures), con `--basetemp` corto — con ruta larga,
+  `test_migrar_nombres_informe::test_resumen_cuenta_por_estado` falla por presupuesto de `MAX_PATH`
+  y **no es un fallo real**. La cifra que esta línea declaraba antes (2612) estaba desfasada en 18
+  (H-21).
+- Los tests que ejercen el e2e del split se corren **con `--runslow`**: `test_split_sala_maquina_e2e.py`
+  está marcado `slow` y `tests/conftest.py` lo salta por defecto, así que sin la bandera el verde es
+  vacuo (H-18).
+- Ningún caso real tocado — y eso incluye el evento del log: `core.sala_maquina` importa
+  `append_event` por su cuenta, así que doblarlo solo en el CLI deja los tests escribiendo en el
+  `CASOS_ROOT` real (H-17).
 
 ---
 
@@ -323,14 +472,14 @@ pasada tuvo razón en decirlo— B0-1, A-1, A-4, A-5 y M-2.
 caso de fallo real, y di A-5 por resuelto apoyándome en un mecanismo que no excluye. Las dos estaban
 adjudicadas con optimismo.
 
-## 14. Adjudicación de la revisión adversarial (Claude Code [sesión independiente], 2026-08-02) — NO-SHIP, pendiente
+## 14. Adjudicación de la revisión adversarial (Claude Code [sesión independiente], 2026-08-02) — NO-SHIP, remediado
 
 - **Objeto revisado:** `docs/superpowers/plans/2026-08-02-identidad-segmento-bundle-pieza-a.md` (rev. 1) + este spec rev. 3 (§0 y §3-§9), commit `a7f168c`
 - **Ronda:** 1
 - **Revisor:** Claude Code (sesión independiente) — revisor sustituto, solo lectura
 - **Informe recibido:** `2026-08-02-identidad-segmento-bundle-pieza-a-r1-claude-adversarial-review.md`
 - **Hallazgos:** 23 confirmados · 1 rebajados · 0 refutados · 0 escalados · 0 sin verificar
-- **Remediado en:** pendiente — alcance por decidir con Nikolai (ver §14.4)
+- **Remediado en:** rev. 4 de este spec (§3.1, §4, §5, §6.1, §7, §7.1, §8.1, §9) + rev. 2 del plan
 
 ### 14.1 La independencia de esta ronda es más débil, y el resultado lo enseña
 
@@ -400,6 +549,9 @@ se cierran editando dos documentos, no tocando código en producción.
 | **1. Mecánico y de redacción** (H-04, H-08, H-09, H-13, H-14, H-15, H-16, H-19, H-21, H-24, H-11, H-12, H-20, H-06, H-07, H-02, H-03, H-17, H-18, H-22, H-23) | rev. 2 del plan + rev. 4 de este spec | alto en volumen, nulo en riesgo |
 | **2. Cambio de diseño** (H-01, y H-05 de rebote) | la rama passthrough archiva la generación anterior, y la fusión pasa a ser **autoritativa por `rel_path` reprocesado** en vez de acumular | cambia §6 y §7 |
 
-La pregunta abierta es si el bloque 2 se construye tras esta ronda o **espera una pasada de Codex**
-(disponible el 2026-08-08): lo encontró el revisor sustituto, y es precisamente el tipo de cambio
-—identidad y custodia de artefactos— donde el sesgo compartido pesa más.
+**Decisión de Nikolai (2026-08-02): se rediseña y se construye sin esperar a Codex.** Los dos bloques
+entran en la rev. 4 de este spec y en la rev. 2 del plan, y la construcción arranca a continuación.
+Queda dicho lo que eso implica, porque el registro no debe maquillarlo: **la revisión de Codex, si se
+hace, llegará sobre código ya escrito**, invirtiendo el orden que el contrato del proyecto fija para
+un cambio de diseño; y el único ojo que ha visto este diseño nuevo es el de un revisor que comparte
+modelo con su autor. Es una decisión de ritmo tomada con el coste a la vista, no un descuido.
