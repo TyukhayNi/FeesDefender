@@ -9,6 +9,7 @@ extractor. Ver docs/superpowers/specs/2026-07-09-organizar-sala-maquina-design.m
 """
 from __future__ import annotations
 
+import json
 import re
 import tempfile
 from dataclasses import asdict, dataclass, fields, replace
@@ -414,6 +415,58 @@ def destino_seguro(dst: Path, case_dir: Path) -> Path:
 
 def _sala_maquina_dir(case_dir: Path) -> Path:
     return case_dir / "01_Procesado" / "02_Sala de máquina"
+
+
+def carpeta_bundle_de(case_dir: Path, slug: str) -> Path:
+    """Carpeta de artefactos de un bundle. Un solo sitio que la componga."""
+    return destino_seguro(_sala_maquina_dir(case_dir) / "02_Documentos" / slug, case_dir)
+
+
+def baseline_doc_ids(cobertura: list[DocCobertura], parent_slug: str) -> dict[str, str]:
+    """Mapa `doc_id → pp` de la última materialización de ese bundle (spec §3.3)."""
+    return {c.doc_id: c.paginas for c in cobertura
+            if c.parent_slug == parent_slug and c.doc_id}
+
+
+def preflight_manifiestos(case_dir: Path, docs: list[DocPlan],
+                          cobertura_previa: list[DocCobertura], *,
+                          force: bool = False) -> None:
+    """Valida los manifiestos en juego ANTES de procesar el primer documento (spec §4).
+
+    `validar_manifiesto` corre hoy dentro de `_split_o_md`, documento a documento, y
+    `apply` solo persiste cobertura, estado y evento cuando `ejecutar` retorna: si el
+    manifiesto inválido es el del segundo bundle, el primero ya publicó su generación.
+    Aquí no se escribe nada —solo se leen JSON—, así que la corrida muere antes de tocar
+    ningún artefacto de la Sala de máquina.
+
+    Alcance declarado: se validan IDENTIDAD y EDICIÓN de los manifiestos ya en disco de
+    los documentos que esta corrida va a procesar. Los rangos exigen el nº de páginas del
+    buscable, que para un escaneado todavía no existe, y se siguen validando en
+    `_split_o_md` con el total real. La reconciliación de `--force` tampoco es
+    preflightable por lo mismo: la cubren el aislamiento por documento y el guard
+    bidireccional.
+    """
+    case_dir = Path(case_dir)
+    for d in docs:
+        if d.skip or d.ruta not in ("pdf", "imagen"):
+            continue
+        carpeta = carpeta_bundle_de(case_dir, d.slug)
+        if not split.manifiesto_existe(carpeta):
+            continue
+        try:
+            manifiesto = split.leer_manifiesto(carpeta)
+        except json.JSONDecodeError as exc:
+            # `leer_manifiesto` es un `json.loads` pelado y el JSON truncado es el fallo
+            # más probable del único fichero que el letrado edita a mano. Sin esto
+            # escapaba del `except` del CLI como traceback en vez de salida 2.
+            raise split.ManifestValidationError(
+                f"`_segmentacion.json` ilegible en {carpeta}: {exc}. Es un JSON editado a "
+                f"mano: revísalo, o bórralo y deja que `apply` lo regenere.") from exc
+        # Con --force el manifiesto en disco se RECONCILIA (no se consume tal cual), así
+        # que un esquema viejo sin doc_id no bloquea: se le acuñan identidades nuevas.
+        split.validar_identidad(manifiesto, exigir_doc_id=not force)
+        if not force:
+            split.validar_edicion(manifiesto, baseline_doc_ids(cobertura_previa, d.slug))
 
 
 _NATIVO_EXTRACTORES = {

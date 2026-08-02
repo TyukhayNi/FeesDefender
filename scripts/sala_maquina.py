@@ -16,6 +16,7 @@ from core.casos import case_locator
 from core.config import caso_path
 from core.email_atomize import pipeline as atomize
 from core.intake_log import append_event
+from core import split_documental as split
 
 app = typer.Typer(add_completion=False)
 
@@ -296,14 +297,28 @@ def apply(case_id: str, vision: bool = False, force: bool = False,
     except ValueError as exc:              # errata en --solo: parar antes de OCR-izar
         typer.echo(f"ERROR: {exc}", err=True)
         raise typer.Exit(2) from exc
-    cob_delta = sm.ejecutar(case_dir, p, case_id=case_id, vision=vision, force=force)
 
     # Cobertura ACUMULATIVA: una corrida incremental procesa solo el delta, así que
     # la cobertura debe fusionarse con la persistida (si no, se pierden las filas de
     # corridas anteriores — bug de VALERO). Con --force, foto fresca (previa=[]):
     # nada se saltó, la corrida es autoritativa (simétrico con el estado).
+    # Se lee AQUÍ, antes de procesar, porque el preflight la necesita como baseline de
+    # identidades y porque leerla dos veces duplicaría su aviso de reconstrucción.
     previa = [] if force else _cobertura_previa(case_dir)
-    cob = sm.fusionar_cobertura(previa, cob_delta)
+    try:
+        sm.preflight_manifiestos(case_dir, p, previa, force=force)
+    except split.ManifestValidationError as exc:
+        typer.echo(f"ERROR: manifiesto de segmentación inválido; no se ha procesado "
+                   f"nada.\n{exc}", err=True)
+        raise typer.Exit(2) from exc
+
+    cob_delta = sm.ejecutar(case_dir, p, case_id=case_id, vision=vision, force=force)
+
+    # La corrida es AUTORITATIVA sobre lo que reprocesa (spec §6.1): sus filas previas se
+    # descartan. El conjunto sale del PLAN, no de las filas, porque cuando un documento
+    # falla no hay filas suyas que mirar.
+    cob = sm.fusionar_cobertura(previa, cob_delta,
+                                rel_paths_reprocesados={d.rel_path for d in p if not d.skip})
     _guardar_cobertura(case_dir, cob)
     _escribir_cobertura_md(case_dir, cob)
 
