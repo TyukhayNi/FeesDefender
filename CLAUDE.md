@@ -227,8 +227,15 @@ global, no en el repo) la actualizo yo en el chat antes de cerrar.
 - Framework: `pytest`.
 - Comando rápido: `python -m pytest -q --tb=no`.
 - Comando con cobertura por fichero: `python -m pytest -q --tb=no <ruta>`.
-- 546/546 verdes en s20 (2026-05-19). Cualquier número distinto debe ser
-  explicado en `STATUS.md`.
+- **El conteo de la suite NO se transcribe aquí.** La cifra de referencia es la del
+  **último cierre** en `docs/bitacora/AAAA.md`, que se mide en cada sesión; el estado
+  vigente, con su fecha, en `STATUS.md`. Esta línea dijo «546/546 verdes en s20
+  (2026-05-19)» durante dos meses y medio y ~2.100 tests de desfase: un número fijo
+  en el fichero que se carga en cada sesión queda rancio por construcción, porque nada
+  lo actualiza (`session_close` no lo toca).
+- **La regla que sí se mantiene:** cualquier variación del conteo entre dos cierres
+  que no esté explicada es una bandera roja — se explica en el bloque de cierre
+  (tests nuevos, `skip` nuevo, módulo retirado), no se normaliza en silencio.
 
 Atajo: `/tests` ejecuta la suite completa.
 
