@@ -3994,6 +3994,30 @@ visores más tolerantes que Office, por lo que **nadie se ha quejado todavía**.
 del espejo de BaRS3 a **345** caracteres: Word comparte el límite de Excel, pero **no lo he probado
 en vivo** — es la comprobación pendiente antes de dar por real ese caso.
 
+**100.3 — El disparador ha saltado, y por el crudo, no por el procesado (2026-07-30).** Nikolai
+reporta que **no puede abrir los ficheros** de
+`00_Input/01_Drive EV/OFERTAS/OFERTA 3 - SANTES CREUS - ALEX RUIZ/` en BaRS8 `W-02XOR7`. Medido: el
+`.docx` de arras da **291** caracteres y el PDF del contrato de oferta firmado **280**. Esto cierra la
+comprobación que §100.2 dejaba pendiente («Word comparte el límite de Excel, pero no lo he probado en
+vivo»): **confirmado en vivo sobre un `.docx` de 291**. Con esto se cumplen los dos disparadores de
+promoción a la vez — fichero que no abre, y decisión de Nikolai («hay que tomar nota de mejorar
+FeesDefender»).
+
+**La medición completa del caso, que da la escala real.** De 571 ficheros de BaRS8 (excluido
+`90_Notas personales`), **141 pasan de 260 caracteres (24,7 %)** y **256 pasan del presupuesto
+`RUTA_OFFICE_MAX = 240`**. Reparto del gasto antes de llegar a contenido: 67 caracteres del prefijo
+`G:\Unidades compartidas\EXPEDIENTES - TYUKHAY LEGAL\CASOS\Barcelona` + 81 del nombre de la carpeta
+de caso = **149, el 57 % del MAX_PATH consumido antes de `00_Input`**, y solo ~111 para todo el árbol
+interno más el nombre del fichero. Los peores del caso llegan a **301** (`KO OFERTA 2`) y hay 19
+`.opus` a 297 en `CHATS WHATSAPP/WhatsApp Chat - Propi Natividad Bello Santes Creus 13 Montcada/`,
+carpeta cuyo nombre repite la dirección que ya está en el nombre del caso.
+
+**El puente que hoy salva la papeleta, y por qué no basta.** Los cinco ficheros de `OFERTA 3` tienen
+copia en la sala de lectura con nombre canónico corto y **hash idéntico**, entre 219 y 242
+caracteres, así que sí se abren desde ahí. Es la misma «suerte, no garantía» que ya señalaba §100.1:
+dos de esas cinco copias (242 y 241) **ya exceden el presupuesto de 240** y solo se salvan porque el
+límite duro de Office es 260. La salida 1 dejaría de depender de la suerte.
+
 **Salidas posibles** (ninguna elegida):
 1. **Presupuesto compartido**: subir `RUTA_OFFICE_MAX` a constante de `core/config.py` y aplicarla al
    nombrar en sala de lectura y sala de máquina (truncando el descriptor, que ahí sí es libre y no
@@ -4002,10 +4026,14 @@ en vivo** — es la comprobación pendiente antes de dar por real ese caso.
    por caso. Cero riesgo, no arregla nada por sí solo.
 3. **Acortar los nombres de las carpetas de caso**, que son el tramo común de 160+ caracteres. El más
    efectivo y el más caro: rompe la llave de `checkout`/`checkin` y las referencias en bitácora.
+4. **Ninguna de las tres arregla el crudo** (§100.1: `00_Input` es espejo intocable). Para el crudo
+   las únicas salidas reales son la 3 —acortar la carpeta de caso, que es tramo común y sí recorta
+   los 301— o **documentar el puente**: que la sala de lectura garantice copia bajo presupuesto de
+   todo el crudo y que el manual diga que el crudo largo se abre desde ahí, nunca desde `00_Input`.
 
-**Prioridad.** Baja hasta que alguien no pueda abrir un `.docx` o un `.xlsx` del procesado.
-**Disparador de promoción:** primer fichero de `01_Procesado` que no abra en Word/Excel, o decisión
-de Nikolai.
+**Prioridad.** ~~Baja~~ → **MEDIA-ALTA: promovible ya.** Los dos disparadores se han cumplido
+(2026-07-30). Falta solo la decisión de Nikolai sobre **qué salida** se toma, porque la 3 es la única
+que arregla el crudo y es también la más cara.
 
 ---
 
@@ -4345,6 +4373,48 @@ de un hilo) es la normal, no la excepción.
 **Medido sobre:** el corpus de prueba `_PRUEBA_98_VaRS3` del Escritorio (correo real de cliente; solo
 lectura, y de él no salieron al registro ni asuntos ni direcciones ni cuerpos, solo estructura y
 contadores). Con esta medición hecha, **ese corpus ya se puede borrar**: era lo único que lo retenía.
+
+---
+
+## 110. La sala de lectura bautiza con la terminología proscrita (`vendedor` / `comprador`)
+
+**Detectado 2026-07-30** en BaRS8 `W-02XOR7`, de rebote al buscar rutas cortas para los ficheros de
+`OFERTA 3` (ver `#100.3`). Los nombres canónicos que genera `organizar-sala-lectura` sustituyen el
+nombre de la parte por su rol, y el rol que escribe es el **prohibido** por la doctrina del despacho:
+
+- `2025-11-27_n_vendedor_i_c_vendedor_contracte_d_oferta_de_comp.pdf` ← `N. BELLO i C. ÀVILA-Contracte d'oferta…pdf`
+- `0000-00-00_oferta_santes_creus_15_comprador_1.pdf` ← `OFERTA SANTES CREUS 15_Bàrbara & Joan (1).pdf`
+- `2024-10-09_p_vendedor_d_n_i.pdf`, `0000-00-00_anexo_1_vendedor.pdf`, `0000-00-00_nie_comprador_2.jpg`
+
+No es un caso aislado: en `indice_documental.yaml` de BaRS8 el patrón aparece de forma sistemática en
+`nombre_canonico`. La sustitución del nombre propio por el rol está **bien** (evita PII en la ruta);
+lo que está mal es el rol elegido.
+
+**Es divergencia implementación ↔ especificación, no un olvido de doctrina.** El plan de la propia
+skill lo impone: `docs/superpowers/plans/2026-06-18-organizar-sala-lectura-y-triaje-drive.md:315` —
+«Terminología: propietario / buscador (nunca vendedor/comprador), aun cuando el documento diga otra
+cosa». Y lo repiten `#2407` de este mismo fichero, `docs/migracion_claude_code/CLAUDE.md:36-37` y la
+regla de oro 5 de `viabilidad-prerelleno`. El plan de la sala de lectura (`:367`) contempla además el
+rol `tercero`, que tampoco aparece en los nombres generados.
+
+**Por qué importa más de lo que parece.** Estos nombres no se quedan en el disco: viajan a
+`_MANIFIESTO.md`, a `nombre_canonico` de `indice_documental.yaml`, y de ahí a las citas `[doc: …]` de
+los informes de viabilidad — texto que lee el CFO y que, reescrito, acaba en un escrito procesal. Un
+expediente que llama «vendedor» al propietario contradice el escrito que se redacta encima de él, y
+obliga a normalizar a mano en cada cita (es lo que ha habido que hacer hoy en `W-02XOR7`).
+
+**Coste.** El mapeo de rol vive en la generación del descriptor: cambiarlo es barato. Lo caro es la
+retroactividad — renombrar rompe `nombre_canonico` en los `indice_documental.yaml` ya emitidos y las
+citas ya escritas en informes. Salidas: (a) arreglar solo para casos nuevos y dejar los existentes;
+(b) arreglar y migrar con tabla de equivalencias, como se hizo con el nombre del informe en `#100`;
+(c) dejar de inferir rol y conservar iniciales o hash, que elimina el problema de raíz pero pierde
+legibilidad.
+
+**Prioridad.** Media. No rompe nada técnico y el trabajo sigue saliendo, pero es deuda de doctrina
+en artefactos que se citan, y la doctrina está escrita en el plan de la propia skill.
+**Disparador de promoción:** primera vez que un nombre con `vendedor`/`comprador` se cite tal cual en
+un escrito procesal, o que se toque el generador de descriptores por otro motivo (arreglar entonces
+de paso).
 
 ## 111. El reproceso releé lo ilegible, no pierde prueba — la alarma original quedó REFUTADA
 
