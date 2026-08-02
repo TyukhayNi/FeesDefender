@@ -56,6 +56,18 @@ fecha: 2026-07-05
 | `MEJORAS_FUTURAS.md` | Backlog técnico (todo el repo). |
 | `MEJORA_CONTINUA_SKILLS.md` | Ciclo de mejora de las skills. |
 
+## Archivo de las revisiones adversariales
+
+Dónde vive cada pieza del rastro de una revisión. Esta tabla solo dice **dónde buscar**; el contrato
+está en el spec.
+
+| Documento | Estado | Qué es |
+|---|---|---|
+| `docs/superpowers/specs/2026-08-01-gobernanza-revisiones-adversariales-design.md` | vigente | **Contrato.** El acta, la adjudicación embebida en el documento revisado, y los guards G7/G8 de `tests/test_docs_gobernanza.py`. |
+| `docs/superpowers/plans/2026-08-01-migracion-revisiones-adversariales.md`, §Censo | archivado, **congelado** | **El único inventario** de las revisiones adversariales desde el 2026-07-23: 28 filas, una por identidad, con su fuente. El plan que lo aloja **no se ejecuta**; el censo se conserva por el inventario. Congelado el 2026-08-01 y ya incompleto — su propio encabezado dice qué le falta y qué columnas están muertas. |
+| `docs/superpowers/specs/*-adversarial-review.md` | vigente | **Las actas:** el informe del revisor, literal y con su digest. Nueve al 2026-08-02. |
+| `docs/superpowers/handoffs/handoff-*-codex-*.md` | vigente | Informes de Codex archivados como **handoff**, no como acta (`GOBERNANZA_FUENTES_VERDAD.md` §5, decisión de Nikolai del 2026-07-30). **Sin digest:** su integridad no es comprobable. Cinco al 2026-08-02. |
+
 ## Planes de diseño legacy (`docs/superpowers/plans/PLAN_*.md`)
 
 | Documento | Estado | Qué es |

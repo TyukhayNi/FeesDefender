@@ -53,7 +53,27 @@
 
 ## Censo de la población postcorte
 
-Una fila por identidad `(objeto, rev./commit, ronda, revisor, fecha)`, spec §1.3. **28 revisiones** desde el corte del 2026-07-23. Es el inventario que el spec §1.5 delega en este plan, y la base del criterio 6.
+> 📌 **Lo único de este plan que sigue vivo, y la razón de que el plan no se borre.** El plan está
+> archivado sin ejecutar; **el censo no**. Es el único inventario que existe de las revisiones
+> adversariales del proyecto desde el 2026-07-23. Indexado desde `docs/INDICE.md` para que se pueda
+> encontrar sin saber que este fichero existe.
+>
+> **Congelado el 2026-08-01: no se actualiza, y ya no está completo.** Le faltan, como mínimo, las
+> rondas 4, 5 y 6 sobre el spec de gobernanza (su §8 las publica) y las dos de
+> `2026-08-01-identidad-segmento-bundle-design.md`. Se declara incompleto en vez de mantenerlo al
+> día: el contrato §2 excluye expresamente un registro central, y un inventario actualizado a mano
+> es justo eso, mal hecho. Para «qué se revisó» a partir de aquí: esta tabla, más `git log`.
+>
+> **Columnas muertas.** `Clase` codifica la taxonomía diseño/rama/autorrevisión, que el recorte
+> retiró. `Tarea` remite a las diez tareas de este plan, que no se ejecutan. Y las referencias a
+> `spec §1.3`, `§1.5` y «criterio 6» apuntaban a la **rev. 5** del spec, cuyas secciones ya no
+> existen. **Sigue valiendo el resto:** objeto, ronda, revisor y «dónde consta hoy».
+>
+> **Superado por el retrofit del 2026-08-02.** Las notas de conformidad de las filas 14, 17 y 26-28
+> («único que ya casa», «ya conforme») describen el estado *anterior* al retrofit. Hoy los nueve
+> encabezados de adjudicación del corpus casan el formato canónico y llevan ficha.
+
+Una fila por identidad `(objeto, rev./commit, ronda, revisor, fecha)`. **28 revisiones** desde el corte del 2026-07-23.
 
 | # | Objeto | Clase | Ronda | Revisor | Dónde consta hoy | Tarea |
 |---|---|---|---|---|---|---|
