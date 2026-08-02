@@ -10,8 +10,9 @@
 > Adjudicación de las dos primeras pasadas en §13; de la tercera, en §14.
 > **Disparador:** destapado al ejecutar D1 de `MEJORAS #90` (fila #1 de `PLAN.md`, punto (f)) y
 > medido en los 5 casos con sala de máquina: el defecto **ya estaba vivo antes de D1**.
-> **Fuera de alcance:** D1 (cerrada por falta de rendimiento el 2026-08-01) y la pérdida de texto del
-> reproceso (`MEJORAS #111`).
+> **Fuera de alcance:** D1 (cerrada por falta de rendimiento el 2026-08-01) y el comportamiento del
+> reproceso sobre el texto (`MEJORAS #111`, **cuya alarma original quedó REFUTADA al medirla** el
+> 2026-08-02: el reproceso relee lo ilegible, no pierde prueba).
 >
 > ⚠️ **Corrección de estimación.** Esta pieza entró en la cola como esfuerzo **bajo** («retirar la
 > fila huérfana o versionar»). No lo es. El contrato incluye identidad, ledger monotónico,
@@ -293,8 +294,17 @@ en un reproceso deja de detectarse como tal:
 
 Y no es hipotético: el delimitador de segmento exige `len(txt.strip()) < 10`
 (`core/split_documental.py:25,144-158`), así que **diez caracteres de ruido de OCR** en la hoja en
-blanco colapsan N→1. Que el reproceso cambia el texto de forma no aditiva está medido en este mismo
-proyecto (`MEJORAS #111`).
+blanco colapsan N→1.
+
+> **Cita reapuntada (2026-08-02, tras el PR #190).** La rev. 4 escribió aquí «que el reproceso cambia
+> el texto de forma no aditiva está medido (`MEJORAS #111`)» cuando esa entrada aún sostenía que el
+> reproceso **perdía** cifras y fechas. **Esa alarma quedó REFUTADA al medirla:** lo que hay son
+> re-lecturas, no pérdidas — en seg03 el texto pasa de 5.414 a 5.453 tokens únicos, y lo que parecía
+> perdido era un DNI que la versión vieja partía y la nueva trae entero. Lo que **sí** sigue medido, y
+> es lo único que este párrafo necesita, es que **el texto cambia** entre generaciones (seg01 = 0,
+> seg02 = 2, seg03 ≈ 66 tokens de diferencia): basta para que diez caracteres caigan sobre una hoja en
+> blanco. Y el mecanismo que ejercita el test —que `detectar` reviente y el motor degrade a
+> passthrough a propósito— **no depende de esto en absoluto**.
 
 **Regla:** cuando un documento se resuelve como passthrough y existe carpeta de bundle previa para su
 `parent_slug`, esa generación se **archiva entera** —PDF, MD, `raw_text`, `indice.json` y el
@@ -420,10 +430,21 @@ segunda:
 | 0 | no decidir: avisar, intacto |
 | N > 1 | abortar el grupo: el registro reclama dos versiones del mismo documento lógico |
 
-Manda el registro, no la fecha (decisión de Nikolai). En `W-02VND1` eso conserva la del 23/07,
-anterior a D1, lo que evita importar la pérdida de texto de `MEJORAS #111`. Casos legacy sin
-`_cobertura.json`: **no migrables automáticamente** — hoy cuesta cero, `W-02XOR7` es el único y no
-tiene segmentos.
+Manda el registro, no la fecha (decisión de Nikolai). Casos legacy sin `_cobertura.json`: **no
+migrables automáticamente** — hoy cuesta cero, `W-02XOR7` es el único y no tiene segmentos.
+
+> ⚠️ **La justificación de esta regla se cayó, y la regla se queda** (2026-08-02, tras el PR #190).
+> La rev. 4 la razonaba así: «en `W-02VND1` eso conserva la del 23/07, anterior a D1, lo que evita
+> importar la pérdida de texto de `MEJORAS #111`». **No hay pérdida que evitar** —esa alarma quedó
+> refutada al medirla— y, peor para el argumento, la medición dice que en seg03 la del 23/07 es **la
+> peor de las dos**: un DNI partido frente al mismo DNI entero, y nombres propios sin acentuar. La
+> regla sobrevive porque es una **decisión de Nikolai** sobre quién manda —el registro, no la
+> fecha—, no porque la versión que manda sea la mejor.
+>
+> **Queda abierto, y es de Nikolai, no del motor:** qué hace el saneamiento cuando la versión que el
+> registro reclama es la de peor calidad. El archivado de la generación retirada garantiza que la
+> otra **no se pierde** (§7.1), solo que no es la operativa. Decisión pendiente, y la pieza B sigue
+> bloqueada de todos modos.
 
 **Journal**, con lo que faltaba: ruta determinista y durable (no «junto al informe»), escritura
 atómica, `case_id` + `run_id`, versión de esquema, y comandos explícitos de `resume` / `rollback` /

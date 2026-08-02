@@ -2583,5 +2583,8 @@ git commit -m "test+docs(split): aceptacion del reproceso que sustituye, y limit
   la Fase 2 de la fila #3 de `PLAN.md`.
 - **Auditar el daño histórico** (5 segmentos duplicados y 12 ficheros huérfanos en W-02VND1 y
   W-02VUDR): es de la pieza B. El guard mira solo lo que la corrida toca.
-- **`MEJORAS #111`** (el reproceso puede perder palabras: 77 de 6.405 en un segmento medido). Es un
-  problema del motor de OCR, no de la identidad, y sigue abierto.
+- **`MEJORAS #111`** — **cerrada por refutación, no por arreglo** (PR #190, 2026-08-02). Este plan
+  nació diciendo que «el reproceso puede perder palabras: 77 de 6.405 en un segmento medido»; medido,
+  eso es falso: son re-lecturas, no pérdidas (seg03 pasa de 5.414 a 5.453 tokens únicos, y el DNI que
+  parecía perdido lo partía la versión **vieja**). Nada que hacer aquí, y nada en lo que apoyarse:
+  la entrada llegó a operar como gate de esta misma pieza mientras estuvo mal escrita.
