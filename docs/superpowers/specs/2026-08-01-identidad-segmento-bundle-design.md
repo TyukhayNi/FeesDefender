@@ -26,7 +26,7 @@
 | Qué | `doc_id` con ledger, validación canónica, reconciliación, preflight, custodia y guard | Retrofit de los manifiestos existentes, saneamiento de los 5 grupos duplicados, journal |
 | Toca datos reales | **No.** Solo código y tests | **Sí**: los 5 casos del Drive |
 | Depende de | Nada externo | Helpers ya cerrados de A **y del lock de exclusión** (§9) |
-| Estado | **Construible ya** | **BLOQUEADA** hasta la Fase 2 de la fila #3 |
+| Estado | ✅ **CONSTRUIDA** (2026-08-02) | **BLOQUEADA** hasta la Fase 2 de la fila #3 |
 
 El corte lo propuso la 2ª revisión (N-M-2) y lo decidió Nikolai: son dos superficies con modos de
 fallo y despliegues distintos. Cambiar el motor es permanente y reversible por git; migrar datos

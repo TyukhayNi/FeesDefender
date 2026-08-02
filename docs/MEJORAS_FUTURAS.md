@@ -4654,3 +4654,77 @@ sugiere que la respuesta no es «mantener» ni «quitar», sino **condicionar**.
 **No se promueve a la cola:** no hay disparador en el sentido de `CLAUDE.md` (ni caso real bloqueado ni
 bug), es una decisión de diseño de proceso. **Coste estimado:** la decisión es de Nikolai; (a) y (b) son
 cambios de `SKILL.md` + re-empaquetado, no de código.
+
+## 117. Límites declarados de la identidad persistente del segmento (pieza A)
+
+*Abierta 2026-08-02 al construir la pieza A de
+`docs/superpowers/specs/2026-08-01-identidad-segmento-bundle-design.md` (rev. 4). No son bugs: son
+las fronteras que la pieza A deja dibujadas a propósito, escritas para que nadie las descubra al
+pisarlas. Se numera **117** y no 113 porque #113-#116 se ocuparon el 2026-08-02 (PR #190 y #191)
+mientras la pieza A se construía sobre una `main` anterior.*
+
+### Las fronteras del motor
+
+1. **El preflight valida identidad, no rangos.** Los rangos exigen el nº de páginas del buscable, que
+   en un escaneado no existe antes del OCR: pasar `total_pag=0` marcaría como «fuera de rango» todo
+   manifiesto válido. Se siguen validando dentro de `_split_o_md`, con el total real. Consecuencia: un
+   manifiesto con rangos imposibles muere documento a documento, no en el preflight.
+2. **La reconciliación de `--force` sobre un escaneado tampoco es preflightable** (su manifiesto
+   propuesto sale de `detectar`, que exige el buscable). La cubren el aislamiento por documento y el
+   guard bidireccional, que aborta con **salida 3**.
+3. **Un manifiesto legacy sin `doc_id` aborta la corrida normal** de ese bundle. Se eligió fail-closed
+   porque acuñar identidades en silencio congelaría la identidad equivocada si un `--force` histórico
+   renumeró los `seg`. **Hay dos salidas, y conviene saber las dos:** `apply --force` sobre el caso
+   entero, **o** borrar el `_segmentacion.json` de ese bundle y lanzar `apply --solo <ruta>`, que
+   reconcilia contra `previo=None` y acuña identidades nuevas. La segunda es la acotada, y hace falta
+   saberla porque `--solo` **no se combina con `--force`** (`scripts/sala_maquina.py:283-289`).
+4. **«Cero bytes escritos» del preflight es «cero artefactos de Sala de máquina».** `apply` atomiza el
+   correo antes (`scripts/sala_maquina.py:293`), lo que crea `01_Procesado/Emails/` y añade una línea
+   a `00_Input/_intake_log.jsonl`. Mover el preflight delante de la atomización haría cierta la frase
+   original; no se hace en esta pieza. Ningún test puede cazarlo, porque todos doblan la atomización.
+5. **El guard detecta, no previene.** La publicación por *staging* estrecha muchísimo la ventana, pero
+   no hay rollback: si se rompe entre el PDF y el MD, el estado incoherente existe y lo que hace el
+   guard es cerrar la corrida en rojo con el segmento nombrado.
+
+### El daño de la pieza B que la pieza A va a tocar (medido, 2026-08-02, read-only)
+
+Corrido `verificar_integridad_bundles` sobre los 5 casos con sala de máquina, sin escribir nada:
+
+| caso | filas | bundles | huérfanos sin fila |
+|---|---:|---:|---|
+| `W-02VND1` | 188 | 7 | **3** — `completo__c170a0f5__seg01/02/03`, esquema viejo |
+| `W-02VUDR` | 225 | 10 | **4** — el poder notarial, con **seg01 y seg02 duplicados** (dos sha cada uno) |
+| `W-02T3XO` | 30 | 0 | 0 |
+| `W-02TH0W` | 54 | 0 | 0 |
+| `W-02XOR7` | — | — | **sin `_cobertura.json`**: no medible sin reconstruir |
+
+Son parte del censo de la pieza B (5 grupos duplicados, 21 ficheros excedentes). **Lo que importa
+saber:** el barrido de generación ajena de `publicar_segmentos` **no depende de `--force`**, así que
+esos 7 ficheros se archivarán solos la primera vez que se republique su bundle, con o sin la bandera.
+El guard solo abortaría si la corrida muriese **antes** de publicar ese bundle. No hay bloqueo
+operativo previsto, pero **la pieza A va a tocar daño de la pieza B** y eso debe constar antes de que
+ocurra, no después.
+
+*(Y una trampa del arnés, apuntada donde se busca: `settings.casos_root` en un **worktree** resuelve a
+`data/CASOS` del propio worktree, porque los worktrees no heredan `.env`. La primera corrida de esta
+medición dijo «no encontrado» en los cinco casos. Que dijera eso y no «0 discrepancias» es la
+diferencia entre un nulo honesto y un falso verde.)*
+
+## 118. El acta de una revisión archiva el digest del INFORME, pero no el del OBJETO revisado
+
+*Abierta 2026-08-02. Hallazgo de la sesión revisora de la ronda 1 de la pieza A, suscrito al
+adjudicar. **No se toca desde aquí:** es el contrato de revisión adversarial, y `CLAUDE.md` reserva
+revisar el propio contrato de revisión para Codex — el sesgo compartido es justo el riesgo.*
+
+`G8` recomputa el `sha256_informe` y compara, de modo que alterar el informe archivado pone la suite
+en rojo. Pero el acta declara el objeto revisado como `commit: <hash>` **sin digest**, y nada
+comprueba que el revisor mirase de verdad ese commit. Un revisor anclado por error a otro commit
+—o a un working tree sucio— produce un acta **perfectamente válida**: la cadena de custodia cubre lo
+que dijo el revisor, no sobre qué lo dijo.
+
+En la ronda 1 de la pieza A el anclaje se verificó a mano (`git rev-parse` de los dos ficheros contra
+`a7f168c` y contra el tip), y esa verificación **no deja rastro comprobable** en el acta.
+
+**Qué habría que decidir:** si el acta gana un `sha256_objeto` (digest canónico del fichero o
+ficheros revisados en el commit anclado) y si `G8` lo recomputa como hace con el informe. Coste
+estimado: un campo, una comprobación y el retrofit de las actas que puedan recalcularse.
