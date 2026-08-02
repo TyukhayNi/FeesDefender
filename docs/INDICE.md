@@ -83,6 +83,7 @@ fecha: 2026-07-05
 
 | Documento (en `docs/superpowers/handoffs/`) | Estado | Qué es |
 |---|---|---|
+| `handoff-2026-08-02-identidad-pieza-a-encargo-revision.md` | activo | **Mandato literal** de la revisión adversarial (ronda 1) de la **pieza A**: spec rev. 3 + plan TDD, anclados al commit `a7f168c`. Revisor **sustituto** (sesión limpia de Claude Code) por indisponibilidad real de Codex, sin cupo hasta el 2026-08-08. Al archivar la revisión se copia entero al §0 del acta. |
 | `handoff-2026-08-01-identidad-segmento-codex-review-2.md` | consumido | **2ª pasada** sobre la rev. 2 (NO SHIP, 4 B0 + 5 A + 2 M). Adjudicada en el §13 de la spec: los 4 B0 confirmados, tres de ellos introducidos por la propia rev. 2. `N-M-2` partió el trabajo en **pieza A** (motor, construible) y **pieza B** (retrofit/saneamiento, **bloqueada** por el lock de `N-B0-4`). |
 | `handoff-2026-08-01-identidad-segmento-codex-review.md` | consumido | 1ª pasada adversarial de Codex sobre la rev. 1 de `2026-08-01-identidad-segmento-bundle-design.md` (NO SHIP, 2 B0 + 5 A + 3 M). Adjudicada en el §13 de la spec; **B0-2 cambió la decisión central** (del ordinal `seg` a un `doc_id` persistente). |
 | `handoff-2026-07-30-fase0-task4-checkin.md` | consumido | Task 4 de la Fase 0 dual: caracterización de `cmd_checkin` (`tests/test_repository_cli_checkin.py`, PR-A). |
