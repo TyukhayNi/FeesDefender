@@ -180,7 +180,9 @@ sesión/agente. **No es fuente de verdad**: su contenido durable se promueve a s
   adversarial recibida): el §5 fija un mínimo obligatorio, no un vocabulario cerrado.
 - **Qué NO es un handoff:** las revisiones adversariales **producidas dentro del proyecto** como acta
   de adjudicación de un spec no son handoffs; viven junto a su spec como
-  `docs/superpowers/specs/AAAA-MM-DD-<tema>-adversarial-review.md` y no llevan este frontmatter.
+  `docs/superpowers/specs/AAAA-MM-DD-<tema>-r<N>[-<revisor>]-adversarial-review.md` y no llevan este
+  frontmatter. **El `-r<N>` no es opcional:** hay un acta por ronda, y sin él el nombre deja de ser
+  función de la identidad. Forma canónica y única: §4 del contrato.
 - **El informe de una revisión adversarial va al ACTA, no al handoff** (decisión de Nikolai,
   2026-08-02). Vale para el informe de una revisión **de un spec, un plan o un diff**, venga de
   dentro o de fuera: su hogar es el acta, con marcadores y `sha256_informe`. El handoff sigue siendo

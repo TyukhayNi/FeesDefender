@@ -26,7 +26,8 @@ en `docs/DEAD_ENDS.md`. **No la reintentes.**
   → **Claude adjudica** cada hallazgo contra el código real.
 - **Dónde va cada cosa** (esto era el «o» ambiguo, resuelto el 2026-08-01):
   la **adjudicación** va *embebida* en el spec o el plan revisado, con el encabezado canónico y su
-  ficha; el **informe del revisor** va *literal* a un **acta hermana** `…-adversarial-review.md`, con
+  ficha; el **informe del revisor** va *literal* a un **acta hermana** `…-r<N>-adversarial-review.md`
+  (una por ronda; el `-r<N>` no es opcional), con
   su digest. Nunca al revés: la decisión pertenece al documento que la decisión modificó, y el acta
   es el archivo de la voz del revisor, no un segundo hogar de la decisión. Los guards **G7 y G8** de
   `tests/test_docs_gobernanza.py` lo comprueban y recomputan el digest — una desigualdad es roja.

@@ -65,8 +65,8 @@ está en el spec.
 |---|---|---|
 | `docs/superpowers/specs/2026-08-01-gobernanza-revisiones-adversariales-design.md` | vigente | **Contrato.** El acta, la adjudicación embebida en el documento revisado, y los guards G7/G8 de `tests/test_docs_gobernanza.py`. |
 | `docs/superpowers/plans/2026-08-01-migracion-revisiones-adversariales.md`, §Censo | archivado, **congelado** | **El único inventario** de las revisiones adversariales desde el 2026-07-23: 28 filas, una por identidad, con su fuente. El plan que lo aloja **no se ejecuta**; el censo se conserva por el inventario. Congelado el 2026-08-01 y ya incompleto — su propio encabezado dice qué le falta y qué columnas están muertas. |
-| `docs/superpowers/specs/*-adversarial-review.md` | vigente | **Las actas:** el informe del revisor, literal y con su digest. Nueve al 2026-08-02. |
-| `docs/superpowers/handoffs/handoff-*-codex-*.md` | vigente | Informes de Codex archivados como **handoff**, no como acta (`GOBERNANZA_FUENTES_VERDAD.md` §5, decisión de Nikolai del 2026-07-30). **Sin digest:** su integridad no es comprobable. Cinco al 2026-08-02. |
+| `docs/superpowers/specs/*-adversarial-review.md` | vigente | **Las actas:** el informe del revisor, literal. **Nueve ficheros al 2026-08-02, y la garantía NO es uniforme:** 5 declaran `sha256_informe` y solo **2** las recomputa G8 (las que llevan `marcador_nonce`); las 4 de julio no tienen ni frontmatter. La frontera, en el §6 del contrato. |
+| `docs/superpowers/handoffs/handoff-*-codex-*.md` | **cerrado — no crece** | Cinco informes de Codex archivados como **handoff** en vez de como acta, del 2026-07-27 y 2026-08-01. **Conjunto cerrado y nombrado en el §3.1 del contrato**, que desde el 2026-08-02 manda el informe de una revisión al **acta**: un informe nuevo NO va aquí. **Sin digest:** su integridad no es comprobable. |
 
 ## Planes de diseño legacy (`docs/superpowers/plans/PLAN_*.md`)
 

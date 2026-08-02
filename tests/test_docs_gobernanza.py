@@ -394,6 +394,28 @@ def test_adjudicaciones_bien_formadas():
         "  ficha     = " + repr(list(_CAMPOS_FICHA)))
 
 
+def test_g7_cubre_las_adjudicaciones_del_corpus():
+    """Que G7 no quede VACIO en silencio, hermano del guard equivalente de G8.
+
+    Sin esto, renombrar los encabezados —p. ej. al plural, que es una vía medida
+    y declarada en el §6— deja 0 adjudicaciones observadas y G7 VERDE: el guard
+    certificaria un corpus que ya no mira. Reproducido el 2026-08-02 mutando los
+    15 encabezados reales: 0 vistos, 0 errores, modulo entero verde.
+
+    El umbral es un SUELO deliberadamente por debajo del recuento real (15), no
+    una cifra exacta: un total exacto obliga a tocar el test cada vez que entra
+    una adjudicacion legitima, y esa friccion acaba en que alguien lo relaje.
+    """
+    vistos = sum(len(_adjudicaciones(txt)) for _, txt in _md_superpowers()
+                 if not _es_acta(txt))
+    assert vistos >= 10, (
+        "G7 observa " + str(vistos) + " adjudicaciones en docs/superpowers/; se "
+        "esperaban >=10. O han desaparecido del corpus, o el disparador dejo de "
+        "verlas (§6 del contrato: la deteccion es por la cadena literal "
+        + repr(_DISPARADOR_ADJ) + "). Un G7 sin nada que mirar pasa en verde y no "
+        "certifica nada.")
+
+
 def test_g7_no_se_autodetecta_en_la_plantilla_del_spec():
     """G7-bis — la plantilla cercada del §5 NO cuenta como adjudicacion.
 

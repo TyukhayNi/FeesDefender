@@ -58,20 +58,33 @@
 > adversariales del proyecto desde el 2026-07-23. Indexado desde `docs/INDICE.md` para que se pueda
 > encontrar sin saber que este fichero existe.
 >
-> **Congelado el 2026-08-01: no se actualiza, y ya no está completo.** Le faltan, como mínimo, las
-> rondas 4, 5 y 6 sobre el spec de gobernanza (su §8 las publica) y las dos de
-> `2026-08-01-identidad-segmento-bundle-design.md`. Se declara incompleto en vez de mantenerlo al
-> día: el contrato §2 excluye expresamente un registro central, y un inventario actualizado a mano
-> es justo eso, mal hecho. Para «qué se revisó» a partir de aquí: esta tabla, más `git log`.
+> **Congelado el 2026-08-01: no se actualiza, y ya no está completo.** Le faltan, como mínimo: las
+> rondas 4, 5 y 6 sobre el spec de gobernanza (su §8 las publica), las dos de
+> `2026-08-01-identidad-segmento-bundle-design.md`, y —esto no es una ausencia nueva sino una que el
+> propio censo declara más abajo— las **7 revisiones por tarea** del build de cableado, que no tienen
+> fila y se agregaban en la columna `Cobertura` por una regla del `spec §1.2` que el recorte eliminó.
+> O sea: 28 filas para **al menos 42 revisiones**. Se declara incompleto en vez de mantenerlo al día:
+> el contrato §2 excluye expresamente un registro central, y un inventario actualizado a mano es justo
+> eso, mal hecho. Para «qué se revisó» a partir de aquí: esta tabla, más `git log`.
 >
 > **Columnas muertas.** `Clase` codifica la taxonomía diseño/rama/autorrevisión, que el recorte
-> retiró. `Tarea` remite a las diez tareas de este plan, que no se ejecutan. Y las referencias a
-> `spec §1.3`, `§1.5` y «criterio 6» apuntaban a la **rev. 5** del spec, cuyas secciones ya no
-> existen. **Sigue valiendo el resto:** objeto, ronda, revisor y «dónde consta hoy».
+> retiró. `Tarea` remite a las diez tareas de este plan, que no se ejecutan. `Cobertura` la nombra el
+> párrafo de las 7 por tarea y tampoco existe ya. Y las referencias a `spec §1.2`, `§1.3`, `§1.5` y
+> «criterio 6» apuntaban a la **rev. 5** del spec, cuyas secciones ya no existen.
+>
+> **Lo que NO se avala.** Este marco **no certifica el contenido de ninguna columna**, y hay que
+> decirlo porque una versión anterior de este párrafo avaló «objeto, ronda, revisor y dónde consta
+> hoy» sin comprobarlos, y la revisión adversarial del 2026-08-02 encontró celdas rotas en las tres:
+> el `revisor` de las filas 16 y 19 lo contradice `docs/bitacora/2026.md:146` y `:162` (fue **opus**,
+> no `no registrado` ni `Codex`), y **los punteros por número de línea a `docs/bitacora/` caducan en
+> el cierre siguiente**, porque el bloque se escribe reciente primero. Úsese la columna «dónde consta
+> hoy» como pista de dónde buscar, **nunca como cita**.
 >
 > **Superado por el retrofit del 2026-08-02.** Las notas de conformidad de las filas 14, 17 y 26-28
-> («único que ya casa», «ya conforme») describen el estado *anterior* al retrofit. Hoy los nueve
-> encabezados de adjudicación del corpus casan el formato canónico y llevan ficha.
+> («único que ya casa», «ya conforme») describen el estado *anterior* al retrofit, y la de la fila 14
+> además cita un token de estado (`resuelto`) que el retrofit cambió. Hoy los **15** encabezados de
+> adjudicación que G7 ve en el corpus casan el formato canónico; el retrofit tocó **10** de ellos (los
+> 8 heredados más los 2 en que se partió el noveno), y los otros 5 ya cumplían.
 
 Una fila por identidad `(objeto, rev./commit, ronda, revisor, fecha)`. **28 revisiones** desde el corte del 2026-07-23.
 
