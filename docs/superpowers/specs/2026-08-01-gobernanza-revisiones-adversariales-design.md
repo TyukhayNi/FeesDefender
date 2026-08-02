@@ -1,6 +1,11 @@
 # Archivo verificable de las revisiones adversariales
 
-> **Estado:** **rev. 8** (2026-08-01). **Alcance recortado por decisión de Nikolai**, sobre el H-07 de la
+> **Estado:** **rev. 9** (2026-08-02). La rev. 9 **no reabre nada del recorte**: registra que el
+> retrofit de los encabezados heredados se ejecutó (§7), fija la frontera entre acta y handoff que
+> el §3 y `GOBERNANZA_FUENTES_VERDAD.md` §5 contradecían (§3.1), y declara una ceguera medida de G7
+> (§6). Todo lo demás sigue como en la rev. 8, cuyo encabezado se conserva íntegro debajo.
+>
+> **Estado anterior:** **rev. 8** (2026-08-01). **Alcance recortado por decisión de Nikolai**, sobre el H-07 de la
 > sexta revisión: el disparador del §11 de la rev. 6 decía «otra costura», aparecieron siete, y yo
 > redefiní el disparador después. Un revisor sin nada invertido lo llamó racionalización *ex post* y
 > tenía razón. Este documento es lo que queda tras el recorte: **el núcleo probatorio, y nada más**.
@@ -28,9 +33,18 @@ externo** — hoy, en la práctica, las de Codex.
 - El predicado de población y la taxonomía de clases e independencia.
 - La regla *fail-closed* que ligaba cobertura a la existencia del acta, y sus allowlists.
 - La regla de parada de rondas y el trailer `Revision-cierre:`.
-- El censo de las 28 revisiones postcorte y el retrofit de los ocho encabezados heredados.
+- El censo de las 28 revisiones postcorte **como artefacto normativo**. Sigue fuera: no se mantiene
+  al día ni lo comprueba ningún guard. Lo que sí se hizo el 2026-08-02 fue **congelarlo, declararlo
+  incompleto e indexarlo** desde `docs/INDICE.md`, para que se pueda encontrar. Vive donde nació,
+  en el §Censo del plan archivado.
 - El plan de migración de diez tareas, **archivado sin ejecutar**.
 - Un registro central, un generador de censo y cualquier guard G9.
+
+> **Lo que sí entró después, y por qué no es reabrir el recorte.** La rev. 8 dejaba fuera el
+> **retrofit de los ocho encabezados heredados**; Nikolai lo encargó el 2026-08-02 y está hecho
+> (§7). Era la mitad barata de lo que cayó —trabajo documental acotado, sin norma nueva— y su
+> resultado es que el corpus de G7 ya no tiene exclusiones. Lo que sigue fuera es lo caro y lo
+> normativo: predicado, taxonomía, *fail-closed*, regla de parada, trailer de gate y generador.
 
 **Lo que se pierde, dicho claro:** las revisiones de rama —que son las que más defectos caros han
 comprado en este proyecto— vuelven a no dejar rastro obligatorio, y no hay forma de responder «qué se
@@ -48,6 +62,29 @@ de uno grande que no se termina.
 La adjudicación va embebida porque la decisión pertenece al documento que la decisión modificó. El acta
 es el archivo de la voz del revisor, **no** un segundo hogar de la decisión: no lleva estado de
 remediación.
+
+### 3.1. Acta o handoff: la frontera, y los cinco que se quedan fuera
+
+Este §3 y el §5 de `GOBERNANZA_FUENTES_VERDAD.md` decían cosas distintas y ninguno lo declaraba. El
+§5 recoge una **decisión de Nikolai del 2026-07-30**: un informe **recibido de un agente externo**
+para arrancar trabajo aquí es un handoff. Codex es un agente externo, así que un informe suyo caía
+en las dos reglas a la vez. Resuelto el 2026-08-02, decisión de Nikolai:
+
+- **Hacia delante:** el informe de una revisión adversarial **de un spec, un plan o un diff** va al
+  **acta**, con sus marcadores y su digest. Manda este contrato.
+- **Handoff** sigue siendo el hogar del traspaso de contexto que **no** es un informe de revisión.
+- **Los cinco que ya están archivados como handoff se quedan donde están**, como conjunto **cerrado
+  y nombrado**: `handoff-2026-07-27-vista-procesal-codex-{informe,review,review-2}.md` y
+  `handoff-2026-08-01-identidad-segmento-codex-review{,-2}.md`.
+
+**El precio, dicho entero:** esos cinco **no tienen digest y nunca lo tendrán**. El §4 fija que el
+valor probatorio del hash viene de calcularlo **al recibir** y contrastarlo con el que declara el
+revisor; para estos cinco ese momento pasó. Sellarlos hoy produciría un autosello con aspecto de
+prueba —el revisado firmando su propia transcripción—, que es exactamente lo que este documento
+existe para impedir. Su integridad la sostiene solo el historial de git. Queda declarado.
+
+**No son «excepción histórica»**, y la palabra importa: dos de los cinco entraron el 2026-08-01, un
+commit antes de que mergeara este contrato. Era la práctica viva, no un residuo de julio.
 
 ## 4. El acta
 
@@ -189,15 +226,37 @@ existencia del acta; no tocan `_ESTADOS_DOCS` ni `_ESTADOS_HANDOFF` ni vuelven r
 `_docs_con_frontmatter`; no piden frontmatter a specs ni planes; no juzgan el contenido de la
 adjudicación.
 
+**Y una ceguera medida, no deducida.** G7 valida las adjudicaciones que **encuentra**, y las
+encuentra por una cadena literal: `Adjudicación de la revisión`. Un encabezado que diga
+`Adjudicación de las revisiones` —plural— no dispara el guard, y **el corpus se queda verde**. No es
+hipótesis: es lo que pasó con el §13 de `2026-08-01-identidad-segmento-bundle-design.md` durante el
+día que estuvo en `main`, y se reprodujo el 2026-08-02 mutando el encabezado retrofitado de vuelta al
+plural — G7 en verde con la adjudicación fuera de formato.
+
+Ampliar el disparador es barato y cerraría esta vía. **No se hace en la rev. 9** porque el encargo
+del retrofit no lo incluía y ampliarlo por mi cuenta sería la misma deriva que causó el recorte. Se
+declara con su evidencia, y la decisión de tocarlo o no es de Nikolai o del siguiente revisor.
+
 ## 7. Qué hay que construir, y qué no se migra
 
 **Construir:** G7 y G8, con sus fixtures negativas. Es una tarde.
 
-**No se migra:** los ocho encabezados de adjudicación heredados —que casan el formato 1 de 8— **se quedan
-como están** y salen del corpus de G7 mediante una **lista de exclusión de siete ficheros**, no una de
-inclusión. La polaridad es la decisión: una lista de inclusión («el corpus son los ficheros que ya
-cumplen») dejaría escapar cualquier fichero **nuevo** con una adjudicación mal formada; la de exclusión
-cubre el futuro por defecto y **solo puede encoger**.
+**Migrado el 2026-08-02, por encargo de Nikolai.** La rev. 8 dejaba los ocho encabezados heredados
+«como están», fuera del corpus de G7 por una **lista de exclusión de siete ficheros** —de exclusión y
+no de inclusión, porque una de inclusión («el corpus son los ficheros que ya cumplen») dejaría escapar
+cualquier fichero **nuevo** con una adjudicación mal formada—. Esa lista **solo podía encoger**, y
+encogió a cero: los ocho llevan hoy encabezado canónico y ficha, y `_ADJ_LEGACY` se retiró vacía. El
+corpus de G7 es ahora todo `docs/superpowers/**/*.md` menos las actas.
+
+**Y apareció un noveno**, que nadie había contado: el §13 de
+`2026-08-01-identidad-segmento-bundle-design.md` adjudicaba dos rondas reales de Codex bajo el título
+«Adjudicación de **las revisiones** adversariales», en plural. No estaba en la lista de exclusión
+porque nadie sabía que estaba. Retrofitado también, partido en `13.1` y `13.2` —una adjudicación por
+ronda— sin renumerar, para que las citas al §13 sigan resolviendo.
+
+**Cómo se escribieron los recuentos, que es donde se inventa sin querer:** se **copia** lo que cada
+documento publica; donde no publica desglose y dice que aceptó todo, el total va a `confirmados`. No
+se deriva ni se estima ninguno, y los `escalados` se declaran solo con destino verificado.
 
 **Doctrina a tocar:** `CLAUDE.md` §Revisión adversarial resuelve el «o» —la adjudicación va embebida y el
 informe al acta— y `AGENTS.md` añade tres cosas que sí compraron calidad medible en las seis rondas: el

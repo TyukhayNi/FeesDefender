@@ -181,8 +181,20 @@ sesión/agente. **No es fuente de verdad**: su contenido durable se promueve a s
 - **Qué NO es un handoff:** las revisiones adversariales **producidas dentro del proyecto** como acta
   de adjudicación de un spec no son handoffs; viven junto a su spec como
   `docs/superpowers/specs/AAAA-MM-DD-<tema>-adversarial-review.md` y no llevan este frontmatter.
-  Un informe **recibido de un agente externo** para arrancar trabajo aquí sí es un handoff
-  (decisión de Nikolai, 2026-07-30, sobre los tres `handoff-2026-07-27-vista-procesal-codex-*`).
+- **El informe de una revisión adversarial va al ACTA, no al handoff** (decisión de Nikolai,
+  2026-08-02). Vale para el informe de una revisión **de un spec, un plan o un diff**, venga de
+  dentro o de fuera: su hogar es el acta, con marcadores y `sha256_informe`. El handoff sigue siendo
+  el andamio del **traspaso de contexto que no es un informe de revisión**. Contrato:
+  `docs/superpowers/specs/2026-08-01-gobernanza-revisiones-adversariales-design.md` §3.1.
+  - **Esto acota la decisión anterior** (2026-07-30, sobre los tres
+    `handoff-2026-07-27-vista-procesal-codex-*`), que declaraba handoff todo informe **recibido de un
+    agente externo**. Chocaba con el contrato, y ninguno de los dos documentos lo decía.
+  - **Conjunto cerrado que se queda como está**, sin renombrar ni convertir: los tres de vista
+    procesal y `handoff-2026-08-01-identidad-segmento-codex-review{,-2}.md`. **Cinco.**
+  - **Y lo que eso cuesta, dicho:** esos cinco **no llevan digest y no pueden llevarlo**. El hash
+    solo prueba origen si se calcula al recibir y se contrasta con el del revisor; ese momento pasó.
+    Sellarlos ahora sería el revisado firmando su propia transcripción. Su integridad la sostiene
+    solo el historial de git. **No son «excepción histórica»:** dos entraron el 2026-08-01.
 - **Ciclo de vida:** `activo` (creado, sin consumir) → `consumido` (la tarea arrancó y su contenido durable
   ya vive en su SSOT; se rellena `consumido_por`) → `historico` (se conserva por trazabilidad). El
   `docs/INDICE.md §Handoffs` es **vista derivada** (lista/enlaza), NO el hogar del estado. Un `activo`
