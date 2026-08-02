@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import tempfile
 from dataclasses import asdict, dataclass, fields, replace
 from pathlib import Path
@@ -422,6 +423,123 @@ def carpeta_bundle_de(case_dir: Path, slug: str) -> Path:
     return destino_seguro(_sala_maquina_dir(case_dir) / "02_Documentos" / slug, case_dir)
 
 
+VERSIONES_ANTERIORES = "99_Versiones anteriores"
+
+
+def _rutas_de(sm_dir: Path, carpeta_bundle: Path, slug: str) -> tuple[Path, Path, Path]:
+    """Las TRES representaciones de un documento lógico: PDF, MD y raw_text."""
+    return (carpeta_bundle / f"{slug}.pdf",
+            sm_dir / "03_MD" / f"{slug}.md",
+            sm_dir / "raw_text" / f"{slug}.txt")
+
+
+def _rutas_staging(staging: Path, slug: str) -> tuple[Path, Path, Path]:
+    """Las mismas tres, en el staging del bundle (juntas, para publicar por renames)."""
+    return staging / f"{slug}.pdf", staging / f"{slug}.md", staging / f"{slug}.txt"
+
+
+def _sello_reproceso() -> str:
+    """`AAAA-MM-DD_HHMMSS`: dos reprocesos del mismo día no se pisan el archivo."""
+    return now_iso()[:19].replace(":", "").replace("T", "_")
+
+
+def publicar_segmentos(case_dir: Path, sm_dir: Path, carpeta_bundle: Path, *,
+                       publicaciones: list[tuple[str, str]], retirados: list[str],
+                       sello: str) -> list[str]:
+    """Publica la generación nueva por renames, archivando la anterior COMO CONJUNTO (§7).
+
+    Sacar el sha del nombre tiene un precio: el destino ya existe y `replace` sobrescribe,
+    de modo que un fallo a media generación dejaría la fila de cobertura declarando un sha
+    que ya no corresponde a esos bytes. Por eso las tres representaciones se escriben a
+    `<bundle>/_staging/` y solo al final se mueven; y por eso la anterior se archiva antes
+    de publicar nada: **si el archivado no puede completarse, no se publica ninguna**.
+
+    Se archiva además **toda generación ajena al manifiesto** que quede en la carpeta: los
+    slugs del esquema viejo (con sha) no son derivables del manifiesto, así que sin esto un
+    `--force` sobre un bundle legacy publicaría los nombres nuevos y dejaría los viejos al
+    lado — huérfanos sin fila, que el guard vería y abortaría, inutilizando la única vía de
+    escape que la pieza A ofrece hasta que se desbloquee la pieza B.
+
+    `publicaciones`: `(slug_nuevo, slug_previo)` — el previo solo cuando el TIPO cambió y
+    el slug con él. `retirados`: slugs dados de baja, que se archivan sin republicar.
+    """
+    staging = carpeta_bundle / split.STAGING
+    archivo = destino_seguro(Path(case_dir) / VERSIONES_ANTERIORES / f"reproceso_{sello}",
+                             Path(case_dir))
+
+    publicados = {slug for slug, _ in publicaciones}
+    a_archivar: list[Path] = []
+    for slug in [s for par in publicaciones for s in par if s] + list(retirados):
+        a_archivar += [p for p in _rutas_de(sm_dir, carpeta_bundle, slug) if p.exists()]
+    for pdf in sorted(carpeta_bundle.glob("*.pdf")):
+        if pdf.stem not in publicados:
+            a_archivar += [p for p in _rutas_de(sm_dir, carpeta_bundle, pdf.stem)
+                           if p.exists()]
+    archivados: list[str] = []
+    if a_archivar:
+        archivo.mkdir(parents=True, exist_ok=True)
+        for p in dict.fromkeys(a_archivar):        # sin duplicados, orden estable
+            p.replace(archivo / p.name)            # si falla, sube: no se publica NADA
+            archivados.append(p.name)
+
+    for slug_nuevo, _ in publicaciones:
+        for origen, destino in zip(_rutas_staging(staging, slug_nuevo),
+                                   _rutas_de(sm_dir, carpeta_bundle, slug_nuevo)):
+            destino.parent.mkdir(parents=True, exist_ok=True)
+            origen.replace(destino)
+
+    # Del staging solo sale lo de ESTA generación: los slugs publicados (ya movidos
+    # arriba) y el índice del bundle. Lo demás se archiva: el `rmtree` que limpia el
+    # staging usa `ignore_errors=True` y en Windows puede no haber podido borrar un
+    # residuo (sharing violation del cliente de Drive, un visor abierto), y publicarlo
+    # sin filtrar lo colaría como si fuera de ahora.
+    if staging.is_dir():
+        for resto in sorted(staging.iterdir()):
+            if not resto.is_file():
+                continue
+            if resto.stem in publicados or resto.name.startswith("indice."):
+                resto.replace(carpeta_bundle / resto.name)
+            else:
+                archivo.mkdir(parents=True, exist_ok=True)
+                resto.replace(archivo / resto.name)
+                archivados.append(resto.name)
+        shutil.rmtree(staging, ignore_errors=True)
+    return archivados
+
+
+def archivar_bundle_entero(case_dir: Path, sm_dir: Path, carpeta_bundle: Path, *,
+                           sello: str) -> list[str]:
+    """Retira la generación de un bundle que ha DEJADO de serlo (spec §7.1).
+
+    Cuando un reproceso resuelve como passthrough —basta con que diez caracteres de ruido
+    de OCR maten la hoja en blanco que separaba— la rama passthrough escribía su MD suelto
+    y no tocaba nada más. Resultado: con `--force`, N PDF de segmento sin fila y el guard
+    abortando en un bucle del que no se sale; sin `--force`, las N filas viejas conviviendo
+    con la nueva, que es exactamente el defecto que esta pieza existe para eliminar.
+
+    Aquí se archiva la carpeta entera —las tres representaciones de cada segmento, el
+    índice y el propio manifiesto— y la carpeta se retira. El ledger se va con el
+    manifiesto: no queda bundle a quien conservárselo, y si el documento vuelve a
+    detectarse como tal, `reconciliar_manifiesto(None, …)` acuña desde cero.
+    """
+    carpeta_bundle = Path(carpeta_bundle)
+    if not carpeta_bundle.is_dir():
+        return []
+    archivo = destino_seguro(Path(case_dir) / VERSIONES_ANTERIORES / f"reproceso_{sello}",
+                             Path(case_dir))
+    slugs = [p.stem for p in sorted(carpeta_bundle.glob("*.pdf"))]
+    a_archivar = [p for s in slugs for p in _rutas_de(sm_dir, carpeta_bundle, s) if p.exists()]
+    a_archivar += [p for p in sorted(carpeta_bundle.rglob("*")) if p.is_file()]
+    archivados: list[str] = []
+    if a_archivar:
+        archivo.mkdir(parents=True, exist_ok=True)
+        for p in dict.fromkeys(a_archivar):
+            p.replace(archivo / p.name)
+            archivados.append(p.name)
+    shutil.rmtree(carpeta_bundle, ignore_errors=True)
+    return archivados
+
+
 def baseline_doc_ids(cobertura: list[DocCobertura], parent_slug: str) -> dict[str, str]:
     """Mapa `doc_id → pp` de la última materialización de ese bundle (spec §3.3)."""
     return {c.doc_id: c.paginas for c in cobertura
@@ -573,10 +691,13 @@ def _aplicar_vision(fuente_render: Path, texto: str, estado: str, nota: str,
     return texto, estado, nota
 
 
-def _escribir_md(case_dir, case_id, slug, rel_path, texto, metodo, ocr, estado):
+def _escribir_md(case_dir, case_id, slug, rel_path, texto, metodo, ocr, estado,
+                 *, md_path: Path | None = None, raw_path: Path | None = None):
+    """Escribe el MD y su `raw_text`. Con `md_path`/`raw_path` explícitos escribe al
+    staging del bundle, para que la generación se publique entera o no se publique."""
     sm_dir = _sala_maquina_dir(case_dir)
-    md_path = destino_seguro(sm_dir / "03_MD" / f"{slug}.md", case_dir)
-    raw_path = destino_seguro(sm_dir / "raw_text" / f"{slug}.txt", case_dir)
+    md_path = destino_seguro(md_path or sm_dir / "03_MD" / f"{slug}.md", case_dir)
+    raw_path = destino_seguro(raw_path or sm_dir / "raw_text" / f"{slug}.txt", case_dir)
     raw_path.parent.mkdir(parents=True, exist_ok=True)
     raw_path.write_text(texto, encoding="utf-8")
     meta = {
@@ -641,44 +762,94 @@ def _split_o_md(case_dir: Path, sm_dir: Path, case_id: str, d: DocPlan,
 
     if not segmentos or len(segmentos) <= 1:
         # passthrough: un solo documento lógico → MD único, como antes del split.
+        # PERO si este documento YA fue un bundle, su generación anterior se retira aquí:
+        # dejarla en disco dejaba los N PDF de segmento sin fila (con --force, guard en
+        # rojo del que no se sale; sin --force, duplicación silenciosa). La cobertura la
+        # resuelve la fusión autoritativa: la corrida manda sobre el rel_path que rehace.
+        archivados = archivar_bundle_entero(case_dir, sm_dir,
+                                            carpeta_bundle_de(case_dir, d.slug),
+                                            sello=_sello_reproceso())
         texto = _try_pypdf(buscable) or ""
         estado, nota = _calidad(texto, buscable)
         texto, estado, nota = _aplicar_vision(buscable, texto, estado, nota, vision)
         if split_err:
             aviso = f"segmentación omitida ({split_err})"
             nota = f"{nota} · {aviso}" if nota else aviso
+        if archivados:
+            aviso = (f"ya no se detecta como bundle: {len(archivados)} artefactos de la "
+                     f"generación anterior archivados en {VERSIONES_ANTERIORES}/")
+            nota = f"{nota} · {aviso}" if nota else aviso
+            try:
+                append_event(case_id, "split_documental", details={
+                    "bundle": d.rel_path, "bundle_sha256": d.sha256, "n_segmentos": 0,
+                    "modo": "passthrough_retira_bundle", "archivados": archivados,
+                })
+            except Exception as exc:  # noqa: BLE001 — el trabajo ya está en disco
+                nota = f"{nota} · evento split_documental no registrado: {exc}"
         _escribir_md(case_dir, case_id, d.slug, d.rel_path, texto, metodo_base, ocr, estado)
         tipo_pass = segmentos[0].tipo if segmentos else ""
         return [DocCobertura(d.slug, d.rel_path, metodo_base, estado, len(texto), ocr, nota,
                              d.sha256, parent_sha256=d.sha256, tipo=tipo_pass)]
 
-    # split: manifiesto (editable) → materializar → un MD por documento lógico.
-    carpeta_bundle = destino_seguro(sm_dir / "02_Documentos" / d.slug, case_dir)
-    usar_previo = split.manifiesto_existe(carpeta_bundle) and not force
-    manifiesto = (split.leer_manifiesto(carpeta_bundle) if usar_previo
-                  else split.construir_manifiesto(d.rel_path, d.sha256, segmentos, blancos))
+    # split: manifiesto (editable) → reconciliar → materializar a staging → publicar.
+    carpeta_bundle = carpeta_bundle_de(case_dir, d.slug)
+    previo = (split.leer_manifiesto(carpeta_bundle)
+              if split.manifiesto_existe(carpeta_bundle) else None)
+    if previo is not None and not force:
+        manifiesto, rec = previo, None
+    else:
+        # --force RECONCILIA en vez de sustituir: sin esto, el manifiesto nuevo perdería
+        # las identidades y el reproceso volvería a renombrarlo todo (spec §5).
+        rec = split.reconciliar_manifiesto(
+            previo, split.construir_manifiesto(d.rel_path, d.sha256, segmentos, blancos))
+        manifiesto = rec.manifiesto
     split.validar_manifiesto(manifiesto, _pdf_num_paginas(buscable) or 0)
-    if not usar_previo:
+    if rec is not None:
         split.escribir_manifiesto(carpeta_bundle, manifiesto)
+
+    staging = carpeta_bundle / split.STAGING
+    shutil.rmtree(staging, ignore_errors=True)     # restos de una corrida abortada
     doclogicos = split.materializar(buscable, manifiesto, carpeta_bundle,
                                     parent_slug=d.slug, parent_sha256=d.sha256,
-                                    bundle_rel_path=d.rel_path)
+                                    bundle_rel_path=d.rel_path, carpeta_salida=staging)
+    tipos_previos = {e["doc_id"]: e["tipo"]
+                     for e in (previo or {}).get("segmentos", []) if e.get("doc_id")}
     filas: list[DocCobertura] = []
+    publicaciones: list[tuple[str, str]] = []
     for dl in doclogicos:
-        seg_pdf = carpeta_bundle / f"{dl.slug}.pdf"
+        seg_pdf = staging / f"{dl.slug}.pdf"
         texto = _try_pypdf(seg_pdf) or ""
         estado, nota = _calidad(texto, seg_pdf)
         texto, estado, nota = _aplicar_vision(seg_pdf, texto, estado, nota, vision)
-        _escribir_md(case_dir, case_id, dl.slug, d.rel_path, texto, metodo_base, ocr, estado)
+        _escribir_md(case_dir, case_id, dl.slug, d.rel_path, texto, metodo_base, ocr, estado,
+                     md_path=staging / f"{dl.slug}.md", raw_path=staging / f"{dl.slug}.txt")
+        tipo_previo = tipos_previos.get(dl.doc_id)
+        slug_previo = (split._slug_seg(d.slug, dl.doc_id, tipo_previo)
+                       if tipo_previo and tipo_previo != dl.tipo else "")
+        publicaciones.append((dl.slug, slug_previo))
         filas.append(DocCobertura(dl.slug, d.rel_path, metodo_base, estado, len(texto), ocr, nota,
                                   dl.seg_sha256, parent_slug=dl.parent_slug, parent_sha256=d.sha256,
                                   role=dl.role_in_bundle, paginas=dl.paginas, tipo=dl.tipo,
                                   doc_id=dl.doc_id))
+    retirados = [split._slug_seg(d.slug, e["doc_id"], e["tipo"])
+                 for e in (rec.retirados if rec else [])]
+    archivados = publicar_segmentos(case_dir, sm_dir, carpeta_bundle,
+                                    publicaciones=publicaciones, retirados=retirados,
+                                    sello=_sello_reproceso())
+    if rec and rec.legacy_sin_identidad:
+        # Acuñar sobre entradas legacy es correcto, callarlo no. Va a la nota de cobertura
+        # —la worklist que el letrado mira— y al evento, no solo a un log.
+        _anotar(filas, f"identidades nuevas acuñadas sobre {len(rec.legacy_sin_identidad)} "
+                       f"entradas del manifiesto anterior sin doc_id "
+                       f"({', '.join(rec.legacy_sin_identidad)})")
     append_event(case_id, "split_documental", details={
         "bundle": d.rel_path, "bundle_sha256": d.sha256, "n_segmentos": len(doclogicos),
-        "segmentos": [{"slug": dl.slug, "seg_sha256": dl.seg_sha256, "tipo": dl.tipo,
-                       "paginas": dl.paginas} for dl in doclogicos],
+        "segmentos": [{"slug": dl.slug, "doc_id": dl.doc_id, "seg_sha256": dl.seg_sha256,
+                       "tipo": dl.tipo, "paginas": dl.paginas} for dl in doclogicos],
         "delimitadores": manifiesto["delimitadores"],
+        "archivados": archivados,
+        "retirados": [e["doc_id"] for e in (rec.retirados if rec else [])],
+        "legacy_sin_identidad": list(rec.legacy_sin_identidad) if rec else [],
     })
     return filas
 
