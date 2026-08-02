@@ -235,7 +235,23 @@ descubierto justamente porque al mutar el código no moría ninguno.
   mirando los `.historial.md` que salgan. Hasta entonces, los números del §1 son de la medición
   anterior y la construcción se valida solo con tests.
 
-## 10-bis. Adjudicación de la revisión adversarial (Codex, 2026-07-30) — NO EJECUTABLE, remediado
+## 10-bis. Adjudicación de la revisión adversarial de rama completa (Codex, 2026-07-30) — NO-EJECUTABLE, parcial
+
+- **Objeto revisado:** rama construida de esta spec (`MEJORAS #105`), commit `no registrado`
+- **Ronda:** 1
+- **Revisor:** Codex (solo lectura)
+- **Informe recibido:** no capturado — llegó por chat, antes del contrato de actas
+- **Hallazgos:** 13 confirmados · 0 rebajados · 0 refutados · 0 escalados · 0 sin verificar
+- **Remediado en:** PR #175 (`31b5943`), salvo la fila 12
+
+**13 es el total y cuadra por las dos vías, pero los desgloses no coinciden entre sí:** la prosa de
+abajo dice 7 B0 + 4 A + 2 M y **contando la columna `Sev` de la tabla salen 8 B0 + 3 A + 2 M**. No se
+elige uno: se deja constancia de que el documento publica dos, porque el informe no se archivó y no
+hay tercera fuente que dirima. El defecto de `core/linker.py::_all_md` no entra en el recuento porque
+lo encontré yo auditando, no el informe.
+
+`parcial` y no `remediado`: la **fila 12** se aceptó «como deuda medida» y su batería jurídica queda
+pendiente, así que no todo el hallazgo aceptado está aplicado.
 
 Veredicto: **NO EJECUTABLE**, 7 B0 + 4 A + 2 M. **Todos los de comportamiento eran ciertos y están
 arreglados**; los de fuerza de test también. Dos merecen destacarse porque son de la familia que este

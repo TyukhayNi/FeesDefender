@@ -16,6 +16,7 @@ from core.casos import case_locator
 from core.config import caso_path
 from core.email_atomize import pipeline as atomize
 from core.intake_log import append_event
+from core import split_documental as split
 
 app = typer.Typer(add_completion=False)
 
@@ -132,6 +133,33 @@ def _exitosos_por_bundle(cob_delta: list[sm.DocCobertura]) -> set[str]:
         por_fisico[c.parent_sha256 or c.sha256].append(c)
     return {sha for sha, filas in por_fisico.items()
             if all(f.estado in ("ok", "low") for f in filas)}
+
+
+def _exigir_integridad(case_dir: Path, cob: list[sm.DocCobertura],
+                       procesados: set[str]) -> None:
+    """Aborta si la corrida dejó la Sala de máquina incoherente (spec §7.3).
+
+    `procesados` son los slugs de los documentos que esta corrida procesó, tomados del
+    PLAN y no de las filas resultantes. La diferencia es justo el caso para el que se
+    escribe el guard: cuando un bundle revienta, `ejecutar` aísla el fallo y emite UNA
+    fila de error con el slug del documento físico y **sin `parent_slug`**, así que un
+    alcance derivado de las filas saldría vacío y el guard se quedaría ciego.
+
+    Corre DESPUÉS de persistir: abortar antes de escribir perdería justo las filas que el
+    guard existe para proteger, y dejaría el disco sin registro de lo que sí se publicó.
+    Salida 3 (distinta de la 2 de los errores de uso y preflight): el operador debe poder
+    distinguir «no empecé» de «terminé mal».
+    """
+    fallos = sm.verificar_integridad_bundles(case_dir, cob, procesados)
+    if not fallos:
+        return
+    typer.echo("ERROR: la Sala de máquina quedó incoherente tras esta corrida "
+               "(cobertura y artefactos no se corresponden):", err=True)
+    for f in fallos:
+        typer.echo(f"  - {f}", err=True)
+    typer.echo("La cobertura y el estado SÍ se han persistido: revisa los segmentos "
+               "citados antes de volver a lanzar.", err=True)
+    raise typer.Exit(3)
 
 
 def _resolver_caso(case_id: str) -> tuple[str, Path]:
@@ -296,14 +324,28 @@ def apply(case_id: str, vision: bool = False, force: bool = False,
     except ValueError as exc:              # errata en --solo: parar antes de OCR-izar
         typer.echo(f"ERROR: {exc}", err=True)
         raise typer.Exit(2) from exc
-    cob_delta = sm.ejecutar(case_dir, p, case_id=case_id, vision=vision, force=force)
 
     # Cobertura ACUMULATIVA: una corrida incremental procesa solo el delta, así que
     # la cobertura debe fusionarse con la persistida (si no, se pierden las filas de
     # corridas anteriores — bug de VALERO). Con --force, foto fresca (previa=[]):
     # nada se saltó, la corrida es autoritativa (simétrico con el estado).
+    # Se lee AQUÍ, antes de procesar, porque el preflight la necesita como baseline de
+    # identidades y porque leerla dos veces duplicaría su aviso de reconstrucción.
     previa = [] if force else _cobertura_previa(case_dir)
-    cob = sm.fusionar_cobertura(previa, cob_delta)
+    try:
+        sm.preflight_manifiestos(case_dir, p, previa, force=force)
+    except split.ManifestValidationError as exc:
+        typer.echo(f"ERROR: manifiesto de segmentación inválido; no se ha procesado "
+                   f"nada.\n{exc}", err=True)
+        raise typer.Exit(2) from exc
+
+    cob_delta = sm.ejecutar(case_dir, p, case_id=case_id, vision=vision, force=force)
+
+    # La corrida es AUTORITATIVA sobre lo que reprocesa (spec §6.1): sus filas previas se
+    # descartan. El conjunto sale del PLAN, no de las filas, porque cuando un documento
+    # falla no hay filas suyas que mirar.
+    cob = sm.fusionar_cobertura(previa, cob_delta,
+                                rel_paths_reprocesados={d.rel_path for d in p if not d.skip})
     _guardar_cobertura(case_dir, cob)
     _escribir_cobertura_md(case_dir, cob)
 
@@ -325,6 +367,7 @@ def apply(case_id: str, vision: bool = False, force: bool = False,
         "files": [{"path": c.rel_path, "sha256": c.sha256, "slug": c.slug,
                    "metodo": c.metodo, "estado": c.estado} for c in cob_delta],
     })
+    _exigir_integridad(case_dir, cob, {d.slug for d in p if not d.skip})
     dudosos = [c for c in cob if c.estado != "ok"]
     typer.echo(f"Sala de máquina actualizada: {len(cob)} documentos, {len(dudosos)} a revisar.")
     typer.echo("Siguiente paso sugerido: organizar-sala-lectura sobre este caso.")
@@ -367,6 +410,18 @@ def reforzar(case_id: str):
         typer.echo(f"Los {len(objetivos)} documentos dudosos ya no están en "
                    "00_Input (borrados o renombrados); nada que reforzar.")
         return
+
+    # `reforzar` es el otro comando que entra en `_split_o_md`, no acepta `--force` y no
+    # tenía válvula propia: con un manifiesto legacy, `validar_manifiesto` lanzaba dentro
+    # de `ejecutar`, el fallo quedaba aislado y la corrida cerraba en salida 3 DESPUÉS de
+    # haber escrito.
+    try:
+        sm.preflight_manifiestos(case_dir, plan, previa)
+    except split.ManifestValidationError as exc:
+        typer.echo(f"ERROR: manifiesto de segmentación inválido; no se ha reforzado "
+                   f"nada.\n{exc}", err=True)
+        raise typer.Exit(2) from exc
+
     cob_delta = sm.ejecutar(case_dir, plan, case_id=case_id, vision=True)
 
     cob = sm.fusionar_cobertura(previa, cob_delta)
@@ -381,6 +436,7 @@ def reforzar(case_id: str):
         "files": [{"path": c.rel_path, "sha256": c.sha256, "slug": c.slug,
                    "metodo": c.metodo, "estado": c.estado} for c in cob_delta],
     })
+    _exigir_integridad(case_dir, cob, {d.slug for d in plan})
     mejorados = sum(1 for c in cob_delta if c.estado == "ok")
     dudosos = [c for c in cob if c.estado != "ok"]
     typer.echo(f"Reforzados {len(cob_delta)} documentos ({mejorados} ahora ok); "

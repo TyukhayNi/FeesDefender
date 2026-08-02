@@ -13,14 +13,42 @@ intermediación inmobiliaria en España. Cliente principal: Engel & Völkers
 Responder siempre en castellano salvo que el usuario inicie en otro idioma.
 Las comunicaciones a clientes de origen ruso o ex-URSS van en ruso por defecto.
 
-## Ahorro de cupo: delegar en Antigravity (`agy`) es OBLIGATORIO, no opcional
+## Revisión adversarial: OBLIGATORIA, la ejecuta Codex, la adjudica Claude
 
-Nikolai quema rápido su límite semanal de Claude y paga Gemini Pro aparte (bolsa de tokens de Antigravity). Por eso **delegar el trabajo pesado/mecánico a Gemini vía la CLI `agy` es la conducta por defecto siempre que ahorre cupo de Claude — no es opcional.** Antes de leer corpus enteros, generar boilerplate o revisar un diff a mano, pregúntate si eso lo debe hacer `agy`.
+**Todo diseño (spec/plan) y todo diff de código no trivial pasa por una revisión adversarial
+antes de mergearse.** Eso no es opcional y no ha cambiado. Lo que cambió (2026-08-01) es quién la
+ejecuta: **Codex**, con su propia bolsa de tokens. Antes se delegaba a Gemini vía la CLI `agy` de
+Antigravity; esa vía se retiró por cupo agotado de forma persistente — el porqué, con la evidencia,
+en `docs/DEAD_ENDS.md`. **No la reintentes.**
 
-- **Patrón:** Gemini lee / busca / extrae / borra → escribe a fichero → Claude **juzga** desde ese fichero.
-- **Delega (obligatorio donde toque):** primer barrido de expedientes, OCR / extracción / atomización, resúmenes masivos, **revisión adversarial de código y de planes/specs**, boilerplate.
-- **Se queda en Claude:** juicio jurídico, escritos con la voz del despacho, veredictos, anclaje a fuente y revisión final. Claude siempre es el juez; Gemini nunca tiene la última palabra sobre corrección.
-- **Recetas listas + qué NO delegar:** `C:\Users\tnm33\Dev\Antigravity\PLAYBOOK_AGY.md`. Protocolo y modelos de `agy`: `CLAUDE.md` global (`~/.claude/CLAUDE.md`).
+- **Patrón:** Codex ataca (**solo lectura, sin escribir en el repo**) → escribe sus hallazgos a un
+  fichero **fuera del repo**, en la ruta que fija el encargo → devuelve **ruta y `sha256` canónico**
+  → **Claude adjudica** cada hallazgo contra el código real.
+- **Dónde va cada cosa** (esto era el «o» ambiguo, resuelto el 2026-08-01):
+  la **adjudicación** va *embebida* en el spec o el plan revisado, con el encabezado canónico y su
+  ficha; el **informe del revisor** va *literal* a un **acta hermana** `…-r<N>-adversarial-review.md`
+  (una por ronda; el `-r<N>` no es opcional), con
+  su digest. Nunca al revés: la decisión pertenece al documento que la decisión modificó, y el acta
+  es el archivo de la voz del revisor, no un segundo hogar de la decisión. Los guards **G7 y G8** de
+  `tests/test_docs_gobernanza.py` lo comprueban y recomputan el digest — una desigualdad es roja.
+  Contrato completo: `docs/superpowers/specs/2026-08-01-gobernanza-revisiones-adversariales-design.md`.
+- **Para qué sirve el acta, en una frase:** yo soy la parte revisada, así que sin el original
+  archivado nadie puede contrastar **qué dijo el revisor** con **qué decidí yo que dijo**.
+- **Claude es siempre el juez.** Codex nunca tiene la última palabra sobre corrección. Un hallazgo
+  se confirma o se refuta **contra la fuente**, no contra el diff ni contra la seguridad con que
+  venga redactado.
+- **Un revisor que no corre no refuta: deja sin verificar.** Si la revisión no se ejecuta, se declara
+  la cobertura ausente en el documento — nunca se da por refutado lo que nadie miró.
+- **Si Codex no puede correr** (sin cupo, caído), cabe un **revisor sustituto**: una sesión limpia de
+  Claude Code, chat nuevo y sin el contexto de autoría. Condiciones, límites y —sobre todo— **cómo se
+  registra sin maquillarlo** (`revisor: Claude Code (sesión independiente)`, nunca «Codex»), en
+  `AGENTS.md` §«Revisor sustituto». **No cubre revisar el propio contrato de revisión:** ahí el sesgo
+  compartido es justo el riesgo, y eso espera a Codex.
+- **Se queda en Claude, sin delegar:** juicio jurídico, escritos con la voz del despacho, veredictos,
+  anclaje a fuente y revisión final.
+- **El trabajo mecánico pesado vuelve a Claude** (barridos de corpus, OCR/extracción, resúmenes
+  masivos, boilerplate): con `agy` fuera ya no hay a quién delegarlo en bloque. Para lo paralelizable,
+  subagentes; para lo grande, trocearlo.
 
 ## Al iniciar cada sesión
 
@@ -199,8 +227,15 @@ global, no en el repo) la actualizo yo en el chat antes de cerrar.
 - Framework: `pytest`.
 - Comando rápido: `python -m pytest -q --tb=no`.
 - Comando con cobertura por fichero: `python -m pytest -q --tb=no <ruta>`.
-- 546/546 verdes en s20 (2026-05-19). Cualquier número distinto debe ser
-  explicado en `STATUS.md`.
+- **El conteo de la suite NO se transcribe aquí.** La cifra de referencia es la del
+  **último cierre** en `docs/bitacora/AAAA.md`, que se mide en cada sesión; el estado
+  vigente, con su fecha, en `STATUS.md`. Esta línea dijo «546/546 verdes en s20
+  (2026-05-19)» durante dos meses y medio y ~2.100 tests de desfase: un número fijo
+  en el fichero que se carga en cada sesión queda rancio por construcción, porque nada
+  lo actualiza (`session_close` no lo toca).
+- **La regla que sí se mantiene:** cualquier variación del conteo entre dos cierres
+  que no esté explicada es una bandera roja — se explica en el bloque de cierre
+  (tests nuevos, `skip` nuevo, módulo retirado), no se normaliza en silencio.
 
 Atajo: `/tests` ejecuta la suite completa.
 

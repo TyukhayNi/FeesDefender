@@ -1,7 +1,9 @@
 """Guards de gobernanza de docs: frontmatter estado: valido en docs/*.md."""
 
+import hashlib
 import re
 import subprocess
+import unicodedata
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -99,6 +101,32 @@ _RE_PLACEHOLDER = re.compile(
     r"|(?<=[_-])[A-Z](?=[._-])"      # metavariable de una letra: PLAN_X.md
 )
 
+# Una ruta ABSOLUTA de maquina (`C:\...`) no es una cita a un spec/plan del repo, y
+# citarla es OBLIGATORIO: el contrato de revisiones adversariales
+# (`2026-08-01-gobernanza-revisiones-adversariales-design.md` §4) exige que el informe
+# del revisor viva FUERA del repo y que el encargo FIJE su ruta. Sin este descarte, el
+# primer encargo que cumplia el contrato ponia el guard en rojo — observado el
+# 2026-08-02, no deducido. Se descarta por PATRON (letra de unidad + `\`), no por lista
+# de excepciones, y solo se pierden las citas en estilo Windows a un spec del repo, que
+# nadie escribe: las del repo van con `/` y las caza `_RE_RUTA_SP`.
+_RE_RUTA_ABSOLUTA = re.compile(r"[A-Za-z]:\\[^\s`\"'<>|]+")
+
+
+def _citas_rotas_en(txt: str, nombres: set[str]) -> list[str]:
+    """Citas a specs/plans de `txt` que no resuelven. Puro, para poder probarlo."""
+    txt = _RE_RUTA_ABSOLUTA.sub(" ", txt)
+    candidatos = [(t, True) for t in _RE_RUTA_SP.findall(txt)]
+    candidatos += [(t, False) for t in _RE_STEM_FECHADO.findall(txt)]
+    rotas: list[str] = []
+    for token, es_ruta in candidatos:
+        if _RE_PLACEHOLDER.search(token):
+            continue
+        for cand in _expandir_llaves(token):
+            existe = (ROOT / cand).exists() if es_ruta else Path(cand).name in nombres
+            if not existe:
+                rotas.append(cand)
+    return rotas
+
 
 def _expandir_llaves(token: str) -> list[str]:
     """`a-{x,y}.md` -> ['a-x.md', 'a-y.md']. Recursivo para varios grupos."""
@@ -127,17 +155,24 @@ def test_citas_a_specs_y_plans_existen():
     rotas: dict[str, list[str]] = {}
     for f in _md_trackeados():
         txt = f.read_text(encoding="utf-8", errors="replace")
-        rel = f.relative_to(ROOT).as_posix()
-        candidatos = [(t, True) for t in _RE_RUTA_SP.findall(txt)]
-        candidatos += [(t, False) for t in _RE_STEM_FECHADO.findall(txt)]
-        for token, es_ruta in candidatos:
-            if _RE_PLACEHOLDER.search(token):
-                continue
-            for cand in _expandir_llaves(token):
-                existe = (ROOT / cand).exists() if es_ruta else Path(cand).name in nombres
-                if not existe:
-                    rotas.setdefault(rel, []).append(cand)
+        malas = _citas_rotas_en(txt, nombres)
+        if malas:
+            rotas[f.relative_to(ROOT).as_posix()] = malas
     assert not rotas, f"citas a specs/plans que no existen en disco: {rotas}"
+
+
+def test_g2_no_confunde_una_ruta_absoluta_con_una_cita_al_repo():
+    """G2-bis — el informe del revisor vive FUERA del repo y su ruta se cita.
+
+    Las dos direcciones, porque el descarte por patron solo vale si no abre un hueco:
+    una ruta absoluta de maquina se ignora, y una cita rota en el mismo texto se sigue
+    cazando.
+    """
+    nombres = {"2026-08-01-identidad-segmento-bundle-design.md"}
+    absoluta = r"ruta: C:\Users\tnm33\Dev\_revisiones\2026-08-02-informe-que-no-esta-en-el-repo.md"
+    assert _citas_rotas_en(absoluta, nombres) == []
+    assert _citas_rotas_en(absoluta + "\ny ademas `2026-06-25-cita-rota.md`", nombres) == [
+        "2026-06-25-cita-rota.md"]
 
 
 def test_todo_doc_de_raiz_esta_en_el_indice():
@@ -245,3 +280,584 @@ def test_todo_handoff_esta_en_el_indice():
                for n in _expandir_llaves(tok)}
     ausentes = [p.name for p in sorted(_HANDOFFS.glob("*.md")) if p.name not in citados]
     assert not ausentes, f"handoffs sin fila en INDICE.md §Handoffs: {ausentes}"
+
+
+# ===========================================================================
+# G7-G8 — poblacion de REVISIONES ADVERSARIALES.
+#
+# Contrato: docs/superpowers/specs/2026-08-01-gobernanza-revisiones-adversariales-design.md
+# rev. 8, sus §4, §5 y §6.
+#
+# ⚠️ TERCERA POBLACION de vocabularios. NO comparte set con _ESTADOS_DOCS (docs
+# de raiz de docs/) ni con _ESTADOS_HANDOFF (handoffs). El campo se llama
+# `estado_remediacion` y NO `estado` precisamente para que la colision sea
+# imposible por construccion. Misma disciplina que G4-G6: son poblaciones con
+# reglas distintas, no una deriva. NO unificar los sets, NO volver recursivo el
+# glob de _docs_con_frontmatter (trampa D3, cabecera de este fichero).
+# ===========================================================================
+
+_SP = ROOT / "docs" / "superpowers"
+
+_VEREDICTOS_REV = frozenset({
+    "SHIP", "LISTA-CON-CAMBIOS", "REQUIERE-REVISION",
+    "NO-SHIP", "NO-EJECUTABLE", "SIN-VEREDICTO",
+})
+_ESTADOS_REM = frozenset({"remediado", "parcial", "sin-cambios", "pendiente"})
+
+# El disparador NO es el regex: el guard busca todo encabezado que PAREZCA una
+# adjudicacion y exige que case el formato. Sin eso, un encabezado mal formado no
+# se detecta y pasa en silencio, que es el modo de fallo caro.
+#
+# AMPLIADO el 2026-08-02 por decision de Nikolai, sobre las siete vias de evasion
+# que midio la revision adversarial (contrato §6). Hasta entonces el disparador
+# era la cadena literal "Adjudicación de la revisión", y bastaba un plural, una
+# tilde o una sangria para que el corpus se quedara verde con una adjudicacion
+# fuera de formato. Se compara sobre texto NORMALIZADO (sin tildes, minusculas,
+# espacios colapsados) y admite las variantes de numero y los sinonimos que se
+# encontraron escritos en este repo.
+_DISPARADOR_ADJ = "Adjudicación de la revisión"          # forma canonica, para mensajes
+
+_RE_DISPARADOR = re.compile(
+    r"adjudicacion de (?:la revision|las revisiones"     # singular y PLURAL
+    r"|la autorrevision|las autorrevisiones)"            # sinonimo ya escrito en el repo
+    r"|adjudicacion del veredicto")                      # sinonimo medido
+
+# Encabezado ATX con la sangria que CommonMark permite (hasta 3 espacios). Se
+# detecta sangrado y luego el regex estricto lo RECHAZA, que es lo que se quiere:
+# la forma canonica del §5 no lleva sangria.
+_RE_ENCABEZADO = re.compile(r"^ {0,3}#{1,6}\s")
+# Subrayado setext: `texto` + `---`/`===`. Es un encabezado valido en CommonMark y
+# el disparador viejo no lo veia porque no empieza por `#`.
+_RE_SETEXT = re.compile(r"^ {0,3}(?:-{3,}|={3,})\s*$")
+
+
+def _norm_enc(linea: str) -> str:
+    """Sin tildes, minusculas, espacios colapsados. Para el disparador, nunca
+    para el regex estricto: lo que se valida es la linea tal como esta escrita."""
+    d = unicodedata.normalize("NFD", linea)
+    return re.sub(r"\s+", " ", "".join(c for c in d
+                                       if unicodedata.category(c) != "Mn")).strip().lower()
+
+_RE_ADJUDICACION = re.compile(
+    r"^#{2,3}\s+(?:\S+\s+)?"                    # ## o ###, numeracion opcional (10., 10-bis.)
+    r"Adjudicación de la revisión adversarial"
+    r"[^(\n]*"                                  # calificador: "del PLAN", "de rama completa"
+    r"\((?P<revisor>[^,)]+),\s*(?P<fecha>\d{4}-\d{2}-\d{2})\)"
+    r"\s*—\s*(?P<veredicto>[A-Z-]+),\s*(?P<estado>[a-z-]+)\s*$")
+
+_CAMPOS_FICHA = ("Objeto revisado", "Ronda", "Revisor", "Informe recibido",
+                 "Hallazgos", "Remediado en")
+_RE_CAMPO = re.compile(r"^- \*\*(?P<campo>[^:*]+):\*\*\s*(?P<valor>.+)$")
+
+# La `_ADJ_LEGACY` de siete ficheros existio mientras los ocho encabezados
+# heredados de julio estaban sin migrar; el retrofit del 2026-08-02 los dejo
+# conformes y la lista se retiro VACIA (spec rev. 9 §7).
+#
+# La unica exencion que queda es `_ACTAS_PRE_NONCE`, mas abajo, y respeta la
+# polaridad que manda el contrato: se excluye por NOMBRE, en una lista que SOLO
+# PUEDE ENCOGER. Nunca se define el corpus por INCLUSION ("el corpus son los
+# ficheros que ya cumplen"), que dejaria escapar cualquier fichero NUEVO con una
+# adjudicacion mal formada — el modo de fallo caro.
+
+# Las siete actas ANTERIORES al contrato de marcadores del §4: no tienen
+# `marcador_nonce`, asi que no se puede delimitar su informe literal y se salta el
+# fichero entero. Es una exclusion POR NOMBRE —la polaridad que manda el §7— y
+# SOLO PUEDE ENCOGER: un acta nueva no puede entrar aqui, porque el §4 le exige
+# `marcador_nonce` y con el se le vacia solo el informe.
+_ACTAS_PRE_NONCE = frozenset({
+    "2026-07-23-emails-atomizados-sala-lectura-adversarial-review.md",
+    "2026-07-26-gobernanza-indice-adversarial-review.md",
+    "2026-07-27-cableado-atomize-sala-maquina-adversarial-review.md",
+    "2026-07-29-feesdefender-dual-case-workspace-adversarial-review.md",
+    "2026-08-01-gobernanza-revisiones-adversariales-adversarial-review.md",
+    "2026-08-01-gobernanza-revisiones-adversariales-adversarial-review-r2.md",
+    "2026-08-01-gobernanza-revisiones-adversariales-adversarial-review-r3.md",
+})
+
+_CLAVES_ACTA = ("tipo", "objeto", "objeto_rev", "commit", "ronda", "revisor",
+                "veredicto", "marcador_nonce", "sha256_informe", "adjudicado_en")
+_RE_SECCION = re.compile(r"§(\d+[\w-]*)")
+
+
+def _sin_cercas(txt: str) -> list[str]:
+    """Lineas de `txt` con el contenido de los bloques ``` vaciado.
+
+    Imprescindible: la PLANTILLA del §5 del spec vive dentro de una cerca y
+    empieza por `## … Adjudicación de la revisión…`. Sin este filtro el guard se
+    autodetecta — defecto OBSERVADO en la ronda 1, no deducido.
+    """
+    fuera, dentro = [], False
+    for ln in txt.splitlines():
+        if ln.lstrip().startswith("```"):
+            dentro = not dentro
+            fuera.append("")
+            continue
+        fuera.append("" if dentro else ln)
+    return fuera
+
+
+def _region_informe(txt: str) -> tuple[int, int] | None:
+    """Rango de lineas del bloque literal de un acta, por sus marcadores con nonce.
+
+    Sustituye a la exclusion por fichero completo: un acta puede contener
+    cualquier encabezado DENTRO de su informe, pero no fuera. Antes se saltaba el
+    fichero entero en cuanto declaraba `tipo: revision-adversarial`, asi que
+    anteponer esas dos lineas a cualquier documento lo sacaba del corpus.
+    """
+    nonce = _fm(txt).get("marcador_nonce")
+    if not nonce:
+        return None
+    ini, fin = _marcadores(nonce)
+    lineas = txt.splitlines()
+    a = next((i for i, l in enumerate(lineas) if ini in l), None)
+    b = next((i for i, l in enumerate(lineas) if fin in l), None)
+    return (a, b) if a is not None and b is not None and a < b else None
+
+
+def _visibles(txt: str) -> list[str]:
+    """Lineas de `txt` con las cercas Y el informe literal de un acta vaciados."""
+    lineas = _sin_cercas(txt)
+    reg = _region_informe(txt)
+    if reg:
+        for i in range(reg[0], reg[1] + 1):
+            lineas[i] = ""
+    return lineas
+
+
+def _adjudicaciones(txt: str) -> list[tuple[int, str]]:
+    """(indice, linea) de cada encabezado que el disparador reconoce, visible.
+
+    Cubre ATX (con o sin sangria) y setext. La linea se devuelve CRUDA: el regex
+    estricto debe rechazar la sangria y el setext, no normalizarlos.
+    """
+    lineas, fuera = _visibles(txt), []
+    for i, ln in enumerate(lineas):
+        if not _RE_DISPARADOR.search(_norm_enc(ln)):
+            continue
+        es_atx = bool(_RE_ENCABEZADO.match(ln))
+        es_setext = (i + 1 < len(lineas) and _RE_SETEXT.match(lineas[i + 1])
+                     and ln.strip() and ":" not in ln.split()[0])
+        if es_atx or es_setext:
+            fuera.append((i, ln))
+    return fuera
+
+
+def _cerca_impar_oculta_adjudicacion(txt: str) -> bool:
+    """Cerca ``` sin cerrar que apaga la cola del fichero y con ella una
+    adjudicacion. Solo es error si de hecho ESCONDE una: cuatro ficheros del
+    corpus tienen cuenta impar y ninguno adjudica nada."""
+    if sum(1 for l in txt.splitlines() if l.lstrip().startswith("```")) % 2 == 0:
+        return False
+    crudas = sum(1 for l in txt.splitlines()
+                 if _RE_ENCABEZADO.match(l) and _RE_DISPARADOR.search(_norm_enc(l)))
+    return crudas > len(_adjudicaciones(txt))
+
+
+def _ficha(lineas: list[str], desde: int) -> dict[str, str]:
+    """Campos `- **Campo:** valor` contiguos tras el encabezado (salta blancos)."""
+    campos, i = {}, desde + 1
+    while i < len(lineas) and not lineas[i].strip():
+        i += 1
+    while i < len(lineas):
+        m = _RE_CAMPO.match(lineas[i])
+        if not m:
+            break
+        campos[m.group("campo").strip()] = m.group("valor").strip()
+        i += 1
+    return campos
+
+
+def _fm(txt: str) -> dict[str, str]:
+    fm = txt.split("---")[1] if txt.startswith("---") else ""
+    return dict(re.findall(r"^([a-z0-9_]+):\s*(.+)$", fm, re.MULTILINE))
+
+
+def _es_acta(txt: str) -> bool:
+    return txt.startswith("---") and "tipo: revision-adversarial" in txt[:600]
+
+
+def _md_superpowers():
+    for p in sorted(_SP.rglob("*.md")):
+        yield p, p.read_text(encoding="utf-8")
+
+
+def _errores_adjudicacion(txt: str) -> list[str]:
+    """Incumplimientos del §5 en `txt`. Lista vacia = conforme."""
+    lineas, fallos = _visibles(txt), []
+    if _cerca_impar_oculta_adjudicacion(txt):
+        fallos.append("cerca ``` sin cerrar: la cola del fichero queda invisible "
+                      "al guard y esconde al menos una adjudicacion")
+    for i, ln in _adjudicaciones(txt):
+        m = _RE_ADJUDICACION.match(ln)
+        if not m:
+            fallos.append("encabezado fuera de formato: " + repr(ln[:90]))
+        else:
+            if m.group("veredicto") not in _VEREDICTOS_REV:
+                fallos.append("veredicto " + repr(m.group("veredicto")) + " fuera del set")
+            if m.group("estado") not in _ESTADOS_REM:
+                fallos.append("estado_remediacion " + repr(m.group("estado")) + " fuera del set")
+        faltan = [c for c in _CAMPOS_FICHA if c not in _ficha(lineas, i)]
+        if faltan:
+            fallos.append("ficha incompleta, faltan " + repr(faltan))
+    return fallos
+
+
+def test_adjudicaciones_bien_formadas():
+    """G7 — encabezado canonico + ficha de 6 campos, con vocabulario cerrado.
+
+    Corpus: todo `docs/superpowers/**/*.md` menos `_ACTAS_PRE_NONCE`.
+
+    En un acta CON `marcador_nonce` no se salta el fichero: se vacia solo su
+    informe literal (`_visibles`). Antes se saltaba el fichero entero en cuanto
+    declaraba `tipo: revision-adversarial`, asi que anteponer esas dos lineas a
+    cualquier documento lo sacaba del corpus — exclusion por CONTENIDO y
+    autodeclarada, justo la polaridad que el §7 del contrato rechaza.
+    """
+    malos: dict[str, list[str]] = {}
+    for p, txt in _md_superpowers():
+        if p.name in _ACTAS_PRE_NONCE:
+            continue
+        fallos = _errores_adjudicacion(txt)
+        if fallos:
+            malos[p.name] = fallos
+    assert not malos, (
+        "adjudicaciones que incumplen el §5 del contrato: " + repr(malos) + "\n\n"
+        "Forma esperada (OJO a la raya larga «—», que NO es un guion, y a las tildes):\n"
+        "  ## N. Adjudicación de la revisión adversarial (Revisor, AAAA-MM-DD) — VEREDICTO, estado\n"
+        "  veredicto = " + repr(sorted(_VEREDICTOS_REV)) + "\n"
+        "  estado    = " + repr(sorted(_ESTADOS_REM)) + "\n"
+        "  ficha     = " + repr(list(_CAMPOS_FICHA)))
+
+
+def test_g7_cubre_las_adjudicaciones_del_corpus():
+    """Que G7 no quede VACIO en silencio, hermano del guard equivalente de G8.
+
+    Sin esto, renombrar los encabezados —p. ej. al plural, que es una vía medida
+    y declarada en el §6— deja 0 adjudicaciones observadas y G7 VERDE: el guard
+    certificaria un corpus que ya no mira. Reproducido el 2026-08-02 mutando los
+    15 encabezados reales: 0 vistos, 0 errores, modulo entero verde.
+
+    El umbral es un SUELO deliberadamente por debajo del recuento real (15), no
+    una cifra exacta: un total exacto obliga a tocar el test cada vez que entra
+    una adjudicacion legitima, y esa friccion acaba en que alguien lo relaje.
+    """
+    vistos = sum(len(_adjudicaciones(txt)) for _, txt in _md_superpowers()
+                 if not _es_acta(txt))
+    assert vistos >= 10, (
+        "G7 observa " + str(vistos) + " adjudicaciones en docs/superpowers/; se "
+        "esperaban >=10. O han desaparecido del corpus, o el disparador dejo de "
+        "verlas (§6 del contrato: la deteccion es por la cadena literal "
+        + repr(_DISPARADOR_ADJ) + "). Un G7 sin nada que mirar pasa en verde y no "
+        "certifica nada.")
+
+
+def test_g7_no_se_autodetecta_en_la_plantilla_del_spec():
+    """G7-bis — la plantilla cercada del §5 NO cuenta como adjudicacion.
+
+    Regresion del defecto de la ronda 1: un grep de encabezados sobre
+    docs/superpowers/ devolvia la linea de la plantilla del propio spec.
+    """
+    spec = _SP / "specs" / "2026-08-01-gobernanza-revisiones-adversariales-design.md"
+    txt = spec.read_text(encoding="utf-8")
+    crudos = [ln for ln in txt.splitlines()
+              if ln.startswith("#") and _DISPARADOR_ADJ in ln]
+    fuera = [ln for _, ln in _adjudicaciones(txt)]
+    assert len(crudos) > len(fuera), (
+        "el spec deberia llevar al menos una plantilla cercada que el filtro descarte")
+    assert _errores_adjudicacion(txt) == [], (
+        "las adjudicaciones reales del spec deben ser el ejemplo de referencia")
+
+
+# --- G7, fixtures negativas ---------------------------------------------------
+
+_ADJ_OK = """## 3. Adjudicación de la revisión adversarial (Codex, 2026-08-01) — NO-SHIP, remediado
+
+- **Objeto revisado:** `docs/x.md` rev. 1, commit `abc1234`
+- **Ronda:** 1
+- **Revisor:** Codex (solo lectura)
+- **Informe recibido:** `x-adversarial-review.md`
+- **Hallazgos:** 1 confirmados · 0 rebajados · 0 refutados · 0 escalados · 0 sin verificar
+- **Remediado en:** PR #1 (`abc1234`)
+"""
+
+
+def test_g7_acepta_la_forma_canonica():
+    assert _errores_adjudicacion(_ADJ_OK) == []
+
+
+def test_g7_rechaza_estado_fuera_del_set():
+    # `resuelto` es el token real de email-enumeracion §11, uno de los legacy.
+    roto = _ADJ_OK.replace("NO-SHIP, remediado", "NO-SHIP, resuelto")
+    assert any("estado_remediacion" in f for f in _errores_adjudicacion(roto))
+
+
+def test_g7_rechaza_veredicto_con_espacios():
+    # `NO EJECUTABLE` es el token real de historial §10-bis y de sandwich plan.
+    roto = _ADJ_OK.replace("NO-SHIP, remediado", "NO EJECUTABLE, remediado")
+    assert any("encabezado" in f for f in _errores_adjudicacion(roto))
+
+
+def test_g7_rechaza_ficha_incompleta():
+    roto = _ADJ_OK.replace("- **Ronda:** 1\n", "")
+    assert any("ficha incompleta" in f for f in _errores_adjudicacion(roto))
+
+
+def test_g7_rechaza_encabezado_sin_revisor_ni_fecha():
+    # Forma real de vista procesal §10 y de dual workspace §20.
+    roto = _ADJ_OK.replace(
+        "## 3. Adjudicación de la revisión adversarial (Codex, 2026-08-01) — NO-SHIP, remediado",
+        "## 10. Adjudicación de la revisión adversarial")
+    assert any("encabezado" in f for f in _errores_adjudicacion(roto))
+
+
+def test_g7_admite_numeracion_bis_y_calificador():
+    encabezados = (
+        "## 10-bis. Adjudicación de la revisión adversarial (Codex, 2026-08-01) — NO-SHIP, remediado",
+        "## Adjudicación de la revisión adversarial del PLAN (Codex, 2026-08-01) — NO-SHIP, remediado",
+        "## Adjudicación de la revisión adversarial de rama completa (Opus, 2026-08-01) — SHIP, sin-cambios",
+    )
+    for enc in encabezados:
+        txt = _ADJ_OK.replace(_ADJ_OK.splitlines()[0], enc)
+        assert _errores_adjudicacion(txt) == [], "deberia aceptar: " + enc
+
+
+def test_g7_ignora_lo_que_esta_en_cerca():
+    assert _adjudicaciones("```\n" + _ADJ_OK + "```\n") == []
+
+
+# --- G7, las siete vias de evasion del disparador (contrato §6) ---------------
+#
+# Las siete las MIDIO la revision adversarial del 2026-08-02 sobre el corpus real:
+# con el disparador literal anterior, las siete dejaban G7 en VERDE con una
+# adjudicacion fuera de formato. Nikolai decidio ampliarlo. Cada test de abajo es
+# una de ellas, y todos comprueban que AHORA se detecta y se rechaza — detectar es
+# la mitad: la otra es que el regex estricto no las bendiga.
+
+_CANON = _ADJ_OK.splitlines()[0]
+
+
+def _con_encabezado(enc: str) -> str:
+    return _ADJ_OK.replace(_CANON, enc, 1)
+
+
+def test_g7_via1_plural():
+    roto = _con_encabezado(_CANON.replace("de la revisión adversarial",
+                                          "de las revisiones adversariales"))
+    assert _adjudicaciones(roto), "el disparador debe VER el plural"
+    assert any("encabezado" in f for f in _errores_adjudicacion(roto))
+
+
+def test_g7_via2_sin_tildes():
+    roto = _con_encabezado(_CANON.replace("Adjudicación de la revisión",
+                                          "Adjudicacion de la revision"))
+    assert _adjudicaciones(roto), "el disparador debe VER la forma sin tildes"
+    assert any("encabezado" in f for f in _errores_adjudicacion(roto))
+
+
+def test_g7_via3_minuscula_inicial():
+    roto = _con_encabezado(_CANON.replace("Adjudicación", "adjudicación"))
+    assert _adjudicaciones(roto), "el disparador debe VER la minuscula"
+    assert any("encabezado" in f for f in _errores_adjudicacion(roto))
+
+
+def test_g7_via4_encabezado_sangrado():
+    """Hasta 3 espacios es ATX valido en CommonMark; la forma del §5 no lleva."""
+    roto = _con_encabezado("   " + _CANON)
+    assert _adjudicaciones(roto), "el disparador debe VER el encabezado sangrado"
+    assert any("encabezado" in f for f in _errores_adjudicacion(roto))
+
+
+def test_g7_via5_setext():
+    roto = _con_encabezado(_CANON.lstrip("# 3.").strip() + "\n---")
+    assert _adjudicaciones(roto), "el disparador debe VER el encabezado setext"
+    assert any("encabezado" in f for f in _errores_adjudicacion(roto))
+
+
+def test_g7_via6_sinonimos():
+    for enc in ("## 3. Adjudicación de la autorrevisión (Claude, 2026-07-27) — SIN-VEREDICTO, remediado",
+                "## 3. Adjudicación del veredicto adversarial (Codex, 2026-08-01) — NO-SHIP, remediado"):
+        roto = _con_encabezado(enc)
+        assert _adjudicaciones(roto), "el disparador debe VER: " + enc
+        assert any("encabezado" in f for f in _errores_adjudicacion(roto)), enc
+
+
+def test_g7_via7_cerca_impar_aguas_arriba():
+    """Una cerca sin cerrar apagaba el resto del fichero para el guard."""
+    roto = "```\nejemplo sin cerrar\n\n" + _ADJ_OK
+    assert _adjudicaciones(roto) == [], "la cerca impar sigue ocultandola…"
+    assert any("sin cerrar" in f for f in _errores_adjudicacion(roto)), \
+        "…pero el guard debe DECIRLO en vez de quedarse verde"
+
+
+def test_g7_via8_frontmatter_de_acta_antepuesto_no_exime():
+    """Anteponer `tipo: revision-adversarial` sacaba el fichero ENTERO del corpus.
+
+    Ahora la exencion es por nombre (`_ACTAS_PRE_NONCE`) y el informe de un acta
+    se vacia por sus marcadores, no por lo que el fichero declare de si mismo.
+    """
+    disfraz = "---\ntipo: revision-adversarial\n---\n\n" + _ADJ_OK.replace(
+        "- **Ronda:** 1\n", "")
+    assert _visibles(disfraz) != [""] * len(_visibles(disfraz))
+    assert any("ficha incompleta" in f for f in _errores_adjudicacion(disfraz))
+
+
+def test_g7_lista_de_actas_pre_nonce_solo_puede_encoger():
+    """Son las siete anteriores al contrato de marcadores. Un acta NUEVA no puede
+    entrar: el §4 le exige `marcador_nonce`, y con el se le vacia solo el informe."""
+    assert len(_ACTAS_PRE_NONCE) == 7
+    con_nonce = {p.name for p, _ in _actas_con_nonce()}
+    assert not (_ACTAS_PRE_NONCE & con_nonce), (
+        "un acta con nonce no debe estar exenta por nombre: "
+        + repr(sorted(_ACTAS_PRE_NONCE & con_nonce)))
+
+
+# --- G8: acta bien formada y cadena integra ----------------------------------
+
+def _marcadores(nonce: str) -> tuple[str, str]:
+    return ("<!-- informe-literal:inicio:" + nonce + " -->",
+            "<!-- informe-literal:fin:" + nonce + " -->")
+
+
+def _errores_cadena(txt: str) -> list[str]:
+    """Marcadores + digest del bloque literal. Sin tocar disco."""
+    fm, fallos = _fm(txt), []
+    nonce = fm.get("marcador_nonce", "")
+    ini, fin = _marcadores(nonce)
+    n_ini, n_fin = txt.count(ini), txt.count(fin)
+    if (n_ini, n_fin) != (1, 1):
+        return ["se esperaba exactamente un par de marcadores con nonce "
+                + repr(nonce) + "; hay " + str(n_ini) + " inicio / " + str(n_fin) + " fin"]
+    if txt.index(ini) > txt.index(fin):
+        return ["el marcador de fin precede al de inicio"]
+    cuerpo = txt.split(ini, 1)[1].split(fin, 1)[0]
+    # Canonicalizacion explicita del §4: UTF-8, LF, un unico salto final. La
+    # misma forma al recibir el informe y aqui.
+    canon = (cuerpo.replace("\r\n", "\n").strip("\n") + "\n").encode("utf-8")
+    real = hashlib.sha256(canon).hexdigest()
+    if real != fm.get("sha256_informe"):
+        fallos.append("CADENA ROTA: sha256_informe declarado "
+                      + repr(fm.get("sha256_informe")) + " != recomputado " + repr(real))
+    if nonce and nonce in cuerpo:
+        fallos.append("el nonce " + repr(nonce) + " aparece DENTRO del informe: "
+                      "la delimitacion deja de ser inequivoca")
+    return fallos
+
+
+def _actas_con_nonce():
+    """Actas que declaran `marcador_nonce`: la adhesion al contrato es el campo.
+
+    Frontera declarada (spec §6): las tres primeras actas delimitan con `---` y
+    quedan fuera. No se retrofitan y no hay lista que mantener. El precio, dicho
+    en el spec: omitir el campo seria una via para escapar del digest.
+    """
+    for p, txt in _md_superpowers():
+        if _es_acta(txt) and _fm(txt).get("marcador_nonce"):
+            yield p, txt
+
+
+def test_actas_bien_formadas():
+    """G8 — frontmatter del §4, `adjudicado_en` a fichero Y seccion, §1 y §2."""
+    malos: dict[str, list[str]] = {}
+    for p, txt in _actas_con_nonce():
+        fm, fallos = _fm(txt), []
+        fallos += ["falta " + k for k in _CLAVES_ACTA if not fm.get(k)]
+        if fm.get("veredicto") and fm["veredicto"] not in _VEREDICTOS_REV:
+            fallos.append("veredicto " + repr(fm["veredicto"]) + " fuera del set")
+        # Por NUMERO y prefijo, no por la frase completa: el §4 titula «Informe
+        # recibido, sin modificar» y las actas reales insertan el nombre del
+        # revisor («Informe recibido DE CODEX, sin modificar»). Lo estable del
+        # contrato es que §1 sea el informe y §2 la evidencia; el resto del
+        # titular es libre.
+        for num, prefijo in ((1, "Informe recibido"), (2, "Evidencia verificada")):
+            if not re.search(r"^##\s+" + str(num) + r"\.\s+" + prefijo,
+                             txt, re.MULTILINE):
+                fallos.append("falta la seccion §" + str(num) + " «" + prefijo + "…»")
+        destino = fm.get("adjudicado_en", "")
+        ruta = destino.split("§")[0].strip()
+        if ruta:
+            f = ROOT / ruta
+            if not f.exists():
+                fallos.append("adjudicado_en apunta a un fichero inexistente: " + ruta)
+            else:
+                m = _RE_SECCION.search(destino)
+                if not m:
+                    fallos.append("adjudicado_en sin §seccion")
+                elif not re.search(r"^#{1,3}\s+" + re.escape(m.group(1)) + r"\.\s",
+                                   f.read_text(encoding="utf-8"), re.MULTILINE):
+                    fallos.append("adjudicado_en apunta a §" + m.group(1)
+                                  + ", que no existe en " + ruta)
+        if fallos:
+            malos[p.name] = fallos
+    assert not malos, "actas que incumplen el §4 del contrato: " + repr(malos)
+
+
+def test_actas_cadena_de_custodia():
+    """G8 — el digest del bloque literal DEBE coincidir con `sha256_informe`.
+
+    Presencia no es comparacion: una transcripcion alterada con un hash
+    meramente presente pasaba el guard de una version anterior. Una desigualdad
+    es ROJA, nunca aviso: un aviso convierte una cadena de custodia rota en
+    suite verde.
+    """
+    malos = {}
+    for p, txt in _actas_con_nonce():
+        fallos = _errores_cadena(txt)
+        if fallos:
+            malos[p.name] = fallos
+    assert not malos, "actas con la cadena de custodia rota: " + repr(malos)
+
+
+def test_g8_cubre_las_actas_que_declaran_nonce():
+    """Que el guard no quede vacio en silencio: si nadie declara el campo, no hay
+    nada comprobado, y eso debe verse."""
+    cubiertas = [p.name for p, _ in _actas_con_nonce()]
+    assert len(cubiertas) >= 2, (
+        "G8 deberia cubrir al menos las dos actas con nonce; cubre " + repr(cubiertas))
+
+
+# --- G8, fixtures negativas --------------------------------------------------
+
+def _acta_sintetica(cuerpo="informe\n", nonce="zx7q", digest=None):
+    ini, fin = _marcadores(nonce)
+    canon = (cuerpo.replace("\r\n", "\n").strip("\n") + "\n").encode("utf-8")
+    d = digest if digest is not None else hashlib.sha256(canon).hexdigest()
+    return ("---\nmarcador_nonce: " + nonce + "\nsha256_informe: " + d + "\n---\n\n"
+            + ini + "\n" + cuerpo + fin + "\n")
+
+
+def test_g8_acepta_una_cadena_coherente():
+    assert _errores_cadena(_acta_sintetica()) == []
+
+
+def test_g8_rechaza_el_bloque_alterado():
+    alterada = _acta_sintetica().replace("informe\n", "informe manipulado\n", 1)
+    fallos = _errores_cadena(alterada)
+    assert any("CADENA ROTA" in f for f in fallos), fallos
+
+
+def test_g8_rechaza_digest_que_no_cuadra():
+    fallos = _errores_cadena(_acta_sintetica(digest="0" * 64))
+    assert any("CADENA ROTA" in f for f in fallos), fallos
+
+
+def test_g8_rechaza_dos_pares_de_marcadores():
+    ini, fin = _marcadores("zx7q")
+    acta = _acta_sintetica() + "\n" + ini + "\notro\n" + fin + "\n"
+    fallos = _errores_cadena(acta)
+    assert any("exactamente un par" in f for f in fallos), fallos
+
+
+def test_g8_rechaza_marcadores_en_orden_invertido():
+    ini, fin = _marcadores("zx7q")
+    acta = ("---\nmarcador_nonce: zx7q\nsha256_informe: " + "0" * 64 + "\n---\n\n"
+            + fin + "\ninforme\n" + ini + "\n")
+    fallos = _errores_cadena(acta)
+    assert any("precede" in f for f in fallos), fallos
+
+
+def test_g8_rechaza_nonce_presente_en_el_informe():
+    """El §4 exige elegir el nonce de modo que no aparezca en el informe. Si
+    aparece, la delimitacion deja de ser inequivoca — es el caso real del informe
+    de la ronda 4, que contenia el token de fin plano."""
+    fallos = _errores_cadena(_acta_sintetica(cuerpo="cita del nonce zx7q\n"))
+    assert any("aparece DENTRO" in f for f in fallos), fallos

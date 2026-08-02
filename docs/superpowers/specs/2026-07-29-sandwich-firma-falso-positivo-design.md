@@ -286,6 +286,16 @@ nada, lo que es en sí una comprobación.
 
 ## 9. Adjudicación de la revisión adversarial (Codex, 2026-07-29) — NO-SHIP, remediado
 
+- **Objeto revisado:** `docs/superpowers/specs/2026-07-29-sandwich-firma-falso-positivo-design.md` rev. 1, commit `no registrado`
+- **Ronda:** 1
+- **Revisor:** Codex (solo lectura)
+- **Informe recibido:** no capturado — llegó por chat, antes del contrato de actas
+- **Hallazgos:** 3 confirmados · 0 rebajados · 0 refutados · 1 escalados · 0 sin verificar
+- **Remediado en:** rev. 2 de este documento; el escalado, en `MEJORAS #107`
+
+El escalado es el hallazgo suyo fuera del alcance de esta spec (el cuarto test vacuo), que abajo se
+anota y tiene entrada propia en el backlog.
+
 **Los tres bloqueantes se aceptan; el primero obligó a cambiar la decisión.**
 
 | # | Bloqueante | Verificación propia | Dónde queda |

@@ -16,9 +16,9 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 
 | # | Ítem | Estado | Gate / disparador | Esf. |
 |---|------|--------|-------------------|------|
-| 1 | [OCR ciego bajo el sello (`MEJORAS #90`)](#siguiente-ocr-ciego-texto-perdido-bajo-el-sello-de-firma-mejoras-90) | **motor arreglado; queda ejecutar (e)** | (a)+(b) construidos y verdes: la causa ya no está viva para casos NUEVOS. (d) decidido 2026-07-27 = `D1`; falta ejecutarla sobre los 17 candidatos sin medir | bajo |
+| 1 | [OCR ciego bajo el sello (`MEJORAS #90`)](#siguiente-ocr-ciego-texto-perdido-bajo-el-sello-de-firma-mejoras-90) | **(e) CERRADA sin rendimiento; (f) spec rev. 3, partida en A (construible) y B (bloqueada)** | (a)+(b) construidos y verdes. **(e) cerrada 2026-08-01**: lo medido da +0/−6/+288 chars y membrete de fabricante → los 11 restantes **no se corren**. **(f) pieza A sin dependencias; pieza B bloqueada por el lock roto → gate en la Fase 2 de la fila #3.** `MEJORAS #111` **REFUTADA al medirla (2026-08-02)**: el reproceso no destruye prueba → la pieza A ya no tiene ese gate; le queda una decisión de diseño (qué versión conserva el saneamiento) | **A: medio · B: alto** (era «bajo»: mal estimado) |
 | 2 | [Infra C — art. 156 LEC](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado (quick win) | bajo |
-| 3 | [Arquitectura dual del expediente activo](#siguiente-dual-workspace-arquitectura-dual-del-expediente-activo-localdrive) | spec **rev. 2** + plan Fase 0 **rev. 4**; **Fase 0 ✅ CERRADA** (#170 PR-A + #174 PR-B) y los **dos guards** adelantados (#156 lectura, #160 escritura) | Gate de revisión **consumido** (3 pasadas adjudicadas, sin 4ª). **Siguiente = Fase 1**, cuyo plan **no ha pasado revisión adversarial**. Los **7 defectos del frontal siguen vivos**: reproducidos en `xfail`, se arreglan en la Fase 2. **Absorbe Infra B (scratch)**: `local_scratch`, `--case-dir` y `promover` son piezas de aquí | alto (5 fases restantes; la Fase 0 ya hecha) |
+| 3 | [Arquitectura dual del expediente activo](#siguiente-dual-workspace-arquitectura-dual-del-expediente-activo-localdrive) | spec **rev. 2** + plan Fase 0 **rev. 4**; **Fase 0 ✅ CERRADA** (#170 PR-A + #174 PR-B) y los **dos guards** adelantados (#156 lectura, #160 escritura) | Gate de revisión **consumido** (3 pasadas adjudicadas, sin 4ª). **Siguiente = Fase 1**, cuyo plan **no ha pasado revisión adversarial**. Los **7 defectos del frontal siguen vivos**: reproducidos en `xfail`, se arreglan en la Fase 2. **Absorbe Infra B (scratch)**: `local_scratch`, `--case-dir` y `promover` son piezas de aquí. **Nota cruzada (2026-08-01): su Fase 2 es ahora el gate de la pieza B de la fila #1** — el saneamiento de los segmentos duplicados no puede correr mientras `test_defecto_doble_titular` siga en `xfail`, porque una copia local stale resucita los slugs retirados | alto (5 fases restantes; la Fase 0 ya hecha) |
 | 4 | [MCP sudespacho F1](#siguiente-mcp-sudespacho-mcp-sudespacho-crm-del-despacho--f1-lectura-spec-hecho-plan-pendiente) | spec lista | gates de despliegue | alto |
 | 5 | [Drive-disco: pasos 5-7 + Claude Code](#siguiente-mcp-drive-disco-pasos-5-7-diferidos) | ✅ desplegado | resto pasivo: check Modo 1 en caso real | medio |
 | 6 | [abrir-caso F3-judicial](#abrir-caso--f1--f2a--f3-ac-mergeadas-f2b-aparcada-f3-judicial-pendiente) | disparador confirmado 2026-07-22 | plan concreto listo (4 piezas, ver bloque) | medio |
@@ -134,6 +134,29 @@ ser cambiar una bandera.
       pierde texto — lo que gana es el texto incrustado en imágenes pequeñas dentro de esas páginas. Aun
       así, para documentos donde las cifras sean críticas conviene forzar el peldaño 2.
 
+      > ⚠️ **ERRATA (2026-08-01): la frase «el 100 % de las palabras del original sobrevive» es
+      > FALSA como afirmación general, y se midió sobre estos dos exposés, no sobre el motor.** En
+      > los tres segmentos de W-02VND1 reprocesados el 2026-07-30, seg03 pierde **77 palabras únicas
+      > de 6.405** (1,2 %) y seg02 pierde 2 — cifras, fechas y horas (`340482060416`, `26/12/2085`,
+      > `18:39`). Alta con la medición y con lo que falta por medir: **`MEJORAS #111`**. La cautela
+      > final del párrafo («para documentos donde las cifras sean críticas, forzar el peldaño 2»)
+      > pasa de consejo a **hipótesis por verificar**: que el peldaño 2 sea inmune es justo el
+      > punto 3 de `#111`.
+      >
+      > ✅ **CONTRA-ERRATA (2026-08-02): medido, y la errata de arriba se pasó de frenada. La frase
+      > original se sostiene para el corpus que describe.** Los dos exposés conservan el **100 %** de
+      > sus palabras (0 de 583 y 0 de 579 ausentes), y con ellos los otros cinco documentos de
+      > (c1)/(c2): **7 de 7 limpios, en los dos peldaños**. Y las «77 palabras» de seg03 **no son
+      > pérdida**: son otra transcripción del mismo trozo ilegible —un sello de registro de salida y
+      > un teléfono de membrete, ambos leídos de dos formas distintas y ninguna fiable—, y donde hay
+      > pasaje comparable el nuevo es **más completo**: un DNI que el viejo partía en dos fragmentos
+      > el nuevo lo trae entero. Los 2 de seg02 eran artefacto del tokenizador: el sello de firma
+      > electrónica sobrevive entero, con recuentos idénticos en sus seis marcas.
+      >
+      > Por tanto: **la cautela final del párrafo se retira**, no como consejo desmentido sino como
+      > hipótesis medida y sin soporte — ninguno de los dos peldaños perdió nada. Detalle,
+      > control positivo del arnés y alcance de lo medido: **`MEJORAS #111`**, reescrita.
+
       Calidad: gibberish 2,6 % (tasación) / 4,0-4,6 % (exposés); tasación con 6/6 términos de tasación
       presentes; páginas conservadas 34/35/45. `00_Input/` intacto en los tres casos; respaldos en
       `99_Versiones anteriores/recuperacion_ocr_2026-07-27/`; `_cobertura.json` actualizado donde
@@ -167,8 +190,17 @@ ser cambiar una bandera.
       de esos 24 candidatos— y no reescribe nada que hoy funcione. D2 solo habría compensado si se
       quisiera además una cobertura homogénea de cara a la vista procesal.
 
-- [ ] **(e) Ejecutar D1** — **herramienta CONSTRUIDA, ejecución A MEDIAS.** Los pasos 1 y 2
-      están hechos; el 3 cubre 1 de los 3 casos y W-02VND1 quedó reprocesándose al cerrar la sesión.
+- [x] **(e) Ejecutar D1 — CERRADA 2026-08-01 por falta de rendimiento (decisión de Nikolai).**
+      Herramienta construida y ejecutada sobre los tres casos; el veredicto de la medición es que
+      **D1 no recupera nada**: +0, −6 y +288 chars en los tres segmentos de W-02VND1, membrete del
+      fabricante en W-02XOR7, ruido en W-02VUDR. Los 11 candidatos restantes de W-02VND1 se declaran
+      **no se corren**. Lo que queda vivo de este bloque es (f) —limpiar lo que D1 ensució—. El otro
+      hallazgo, que **el reproceso podía perder texto** (`MEJORAS #111`), **quedó REFUTADO al medirlo
+      el 2026-08-02**: el reproceso releé lo ilegible, no destruye prueba; las 7 recuperaciones de
+      (c1)/(c2) conservan el 100 % de sus palabras. Lo que sí queda de `#111` es (i) que el reproceso
+      **no es idempotente a nivel de token y no puede serlo** —así que ningún guard debe assertar
+      identidad byte o token— y (ii) una decisión de diseño para la pieza A: el saneamiento conserva
+      «la versión que cita el registro», que en seg03 es **la peor de las dos**.
       1. [x] Detector re-corrido: **la lista viva coincide en número (17) pero NO en composición**
          con la del 2026-07-27. Los cuatro AcroForm de W-02VND1 (cuentas anuales, tasación) que
          motivaron la restricción dura **ya no aparecen**, y ningún candidato vivo es AcroForm.
@@ -179,11 +211,38 @@ ser cambiar una bandera.
          cobertura y estado. Excluyente con `--force`. Una ruta que no case aborta con salida 2
          antes de OCR-izar. `core.sala_maquina.acotar_plan` + 12 tests.
       3. [ ] Medición: **W-02VUDR = falso positivo** (13.977 → 13.870, −1 % de ruido; su MD ya era
-         `extractor=ocr`, o sea que la pérdida estaba recuperada de antes). **W-02VND1 = pérdida
-         real confirmada**: sus 14 se procesaron el 2026-07-23 con `pypdf`/`ocr=False`, cuatro días
-         antes de que existiera la escalera (`f15f2f8`, 2026-07-27 22:42), y el primer segmento
-         medido subió 160.685 → 166.324 (**+5.639**). **Queda: terminar esa corrida y medirla
-         entera, y lanzar los 2 de W-02XOR7.** Comando exacto en la bitácora del 49º cierre.
+         `extractor=ocr`, o sea que la pérdida estaba recuperada de antes). **W-02XOR7 = falso
+         positivo también, y CERRADO sin escribir en `G:` (2026-08-01)**, medido en seco sobre copia
+         al scratchpad: de sus 2 candidatos, el **Exposé** ya venía recuperado en (c2) (`extractor:
+         ocr`, `2026-07-27T16:42Z`, `nota_recuperacion` en el frontmatter) y
+         **`753_informeSaintGobainMedidasMejora`** —el único con pérdida técnica real
+         (`extractor: pypdf`, `ocr: false`, 2026-07-13, páginas ciegas 4 y 6)— **recupera 8.959 →
+         9.291 (+332, +3,7 %) y lo recuperado es la banda de membrete del fabricante** (logos
+         rasterizados, domicilio social, CIF), con ruido de OCR (`С/` cirílico, `G о BAI N`). Cero
+         contenido probatorio: **no se reprocesa**. La escalera se comportó bien (peldaño 2,
+         `degradado=False`, `split.detectar` = 1 segmento → passthrough, luego el defecto (f) no le
+         aplicaba). **W-02VND1 = TAMBIÉN falso positivo, y la cifra que este punto declaraba estaba
+         mal medida.** Decía que el primer segmento subió «160.685 → 166.324 (**+5.639**)»: 160.685
+         son **chars** del frontmatter y 166.324 son los **bytes del fichero MD nuevo**, que incluyen
+         frontmatter y multibyte UTF-8. Comparadas las mismas unidades, los tres segmentos que sí se
+         reprocesaron el 2026-07-30 dan:
+
+         | segmento | chars antes (`pypdf`) | chars después (`ocr`) | delta | palabras del viejo ausentes en el nuevo |
+         |---|---|---|---|---|
+         | seg01 | 9.204 | 9.204 | **+0** | 0 de 502 |
+         | seg02 | 44.639 | 44.633 | **−6** | 2 de 2.623 |
+         | seg03 | 160.685 | 160.973 | **+288 (+0,18 %)** | **77 de 6.405 (1,2 %)** |
+
+         **Los 11 restantes de W-02VND1 NO se corren.** Son del mismo lote y de la misma naturaleza,
+         y la muestra medida no da nada.
+
+         **Dos cautelas medidas al cerrar XOR7, aplicables a cualquier `apply --solo` futuro:**
+         (1) `apply` **atomiza el correo incondicionalmente** antes del OCR (cableado de PR #151, sin
+         flag para saltarlo): en XOR7 eso habría creado por primera vez el árbol de atomización de
+         **47 `.eml`** en el Drive, efecto colateral mucho mayor que la corrida pedida. (2) XOR7 no
+         tiene `_cobertura.json`, así que la reconstrucción parcial de (f) habría **encogido la vista
+         `_cobertura.md` de 169 filas a ~114** (los `sin_soporte` no son reconstruibles). Medir en
+         seco antes de correr en vivo evita ambas.
 
       **Lo que el cribado es, medido:** marca por estructura (páginas que `--skip-text` saltaría +
       firma repetida), no por «le falta texto», así que sigue marcando documentos YA recuperados.
@@ -203,11 +262,48 @@ ser cambiar una bandera.
         `reconstruir_cobertura_desde_md` (lee solo la cabecera del MD). **Parcial y declarado:**
         recupera 113 de 169 — los `sin_soporte` no dejan MD y no son reconstruibles; emite aviso.
       - [ ] **El slug de un segmento de bundle depende de su contenido, así que el reproceso no
-        sustituye: añade.** Medido en vivo: `completo__c170a0f5__seg03_DOCUMENTO__60732e16` se
-        reprocesó como `…__441883cc`. `fusionar_cobertura` indexa por `(rel_path, slug)`, de modo
-        que quedan **dos filas y dos MD** del mismo segmento, uno con el texto pobre, y la sala de
-        lectura puede coger el viejo. Afecta a todo reproceso de bundles, no solo a D1. **Sin
-        decidir**: ¿retirar la fila huérfana por `parent_sha256`+`role`+`paginas`, o versionar?
+        sustituye: añade.** `fusionar_cobertura` indexa por `(rel_path, slug)` y nada poda, de modo
+        que cada reproceso deja los artefactos anteriores en disco. Afecta a todo reproceso de
+        bundles, no solo a D1. **SPEC rev. 3, con DOS revisiones adversariales consumidas (ambas NO
+        SHIP)** — `docs/superpowers/specs/2026-08-01-identidad-segmento-bundle-design.md`. La
+        decisión sobrevivió en dirección pero no en mecanismo: la identidad es un **`doc_id`
+        persistente** con ledger monotónico, **no** el ordinal `seg` (que se rompe con `--force`,
+        hallazgo B0-2 de la 1ª pasada). **Partida en dos piezas** (decisión de Nikolai, 2026-08-01):
+
+        - **Pieza A — motor y esquema. ✅ CONSTRUIDA** (2026-08-02, rama
+          `claude/plan-next-step-a429e7`, pendiente de PR). `doc_id` con formato canónico validado
+          antes de tocar disco, `next_doc_id` + tombstones, reconciliación del manifiesto en
+          `--force`, preflight de todos los manifiestos antes de escribir nada, publicación por
+          generación y guard **bidireccional** que aborta con salida 3. No toca ningún caso real.
+          Spec **rev. 4** + plan **rev. 2** tras la **ronda 1 de revisión adversarial** (NO-SHIP,
+          2 B0 + 13 A + 9 M; 23 confirmados, 1 rebajado), hecha por un **revisor sustituto** —sesión
+          limpia de Claude Code, mismo modelo que el autor, con Codex sin cupo—: acta
+          `2026-08-02-identidad-segmento-bundle-pieza-a-r1-claude-adversarial-review.md`,
+          adjudicación en el §14 del spec. El `B0` que destapó era de diseño: la rama **passthrough**
+          no archivaba, así que un bundle que dejaba de detectarse como tal dejaba el caso sin salida
+          con `--force` y reintroducía el defecto en silencio sin él. Límites declarados en
+          `MEJORAS #117`. **Ronda 2 pendiente**, y el cambio de diseño de la rev. 4 (§6.1 y §7.1)
+          **no lo ha mirado ningún revisor de otro modelo**.
+        - **Pieza B — retrofit y saneamiento de los 5 grupos. ⛔ BLOQUEADA.** Depende de un lock de
+          exclusión que **hoy está roto**: `test_defecto_doble_titular` sigue vivo como `xfail`
+          («el write-then-verify no impide dos titulares») y `cmd_checkin` no verifica nonce al
+          empezar, de modo que una copia local stale puede **resucitar** un slug retirado vía
+          `COPY_LOCAL`. **Gate: la Fase 2 de la fila #3** (arquitectura dual), que es quien arregla
+          esos defectos. Ver la nota cruzada en esa fila.
+
+        ⚠️ **La estimación de esfuerzo «bajo» de la cabecera de esta fila ya no describe la pieza.**
+        El contrato pasó de «una función y un script» a identidad, ledger, reconciliación, preflight,
+        custodia, guard, journal, retrofit y exclusión. Corregido en la tabla de la cola.
+
+        **Censo del daño (2026-08-01, read-only sobre los 5 casos):** 5 segmentos duplicados y 12
+        ficheros huérfanos, en 2 casos — W-02VND1 (3 segmentos × 2 versiones) y W-02VUDR (2 × **3**).
+        **El defecto es anterior a D1:** los de W-02VUDR están fechados el 2026-07-21. Y W-02VND1
+        quedó **internamente incoherente**: su `_cobertura.json` cita los segmentos del 23/07
+        mientras el `indice.json` del bundle, regenerado el 30/07, cita los del 30/07.
+
+        La clave que este punto proponía —`parent_sha256`+`role`+`paginas`— **no sirve**: `role` vale
+        `"documento"` en los 35 segmentos censados y `paginas` cambia si el letrado edita el
+        manifiesto. La clave correcta es `seg`.
 
 **Herramienta ya disponible:** `python -m scripts.detectar_ocr_ciego todos --salida <fuera-del-repo>.md`
 (read-only). Es un **cribado**, no un veredicto: de 24 candidatos, 6 eran reales; medir la pérdida
@@ -716,8 +812,9 @@ puro + orquestadores finos. Spec: `docs/superpowers/specs/2026-07-09-abrir-caso-
   estaba incompleto — el mecanismo real es una relación CON ATRIBUTOS PROPIOS vía el
   elemento intermedio `autos` (secuencia REST de 4 llamadas confirmada en vivo, detalle en
   `docs/INTEGRACION_SUDESPACHO.md §12.5`). Piezas concretas a construir (esfuerzo bajo,
-  mirroring mecánico desde plantillas ya existentes — candidato a delegar a Gemini/agy con
-  revisión de Claude, no rediseño):
+  mirroring mecánico desde plantillas ya existentes — construcción directa o subagentes, **no
+  rediseño**; la nota anterior lo daba como «candidato a delegar a Gemini/agy», vía retirada el
+  2026-08-01, ver `docs/DEAD_ENDS.md`):
   1. `get_expediente_judicial()`/`update_expediente_judicial()` en `sudespacho_create.py`
      (mirror de `get_expediente`/`update_expediente`).
   2. `ensure_contrario_vinculado_judicial()` en `sudespacho_relations.py` (mirror de
@@ -2121,6 +2218,8 @@ trabajo para que no contamine).
 > Ciclo de vida cerrado. Narrativa completa: `git log` + el spec/plan enlazado.
 > Lista plana, reciente primero. Promover a agrupación por área cuando supere ~30
 > entradas (lo avisa `session_close`).
+
+- ✅ **[GOBERNANZA-REVISIONES]** Archivo verificable de las revisiones adversariales — el informe del revisor se archiva **literal** entre marcadores con nonce y con su digest canónico verificado al recibirlo; la adjudicación va embebida en el documento revisado con encabezado canónico y ficha; y **G7/G8** lo comprueban recomputando el digest (desigualdad = rojo). Nació de la pregunta «¿hace falta documentar el diálogo Code ↔ Codex?» y pasó por **seis rondas de revisión adversarial sobre sí mismo: 38 hallazgos, 38 confirmados, cero refutados**, que pararon (a) una invariante que habría autorizado modificar un expediente real bajo `data/CASOS/`, (b) una cláusula que promovía doctrina sin revisar y (c) mi propia redefinición de la regla de parada. **Alcance recortado por Nikolai** sobre ese último hallazgo: fuera el predicado de población, los ejes de clasificación, el *fail-closed*, el censo de 28 y el retrofit de los ocho encabezados heredados; el plan de migración queda **archivado sin ejecutar** conservando su censo. **El retrofit dejó de estar fuera el 2026-08-02** (encargo de Nikolai): los 8 heredados y un noveno que nadie había contado pasan al formato, `_ADJ_LEGACY` se retira vacía, el censo se congela e indexa, y el contrato va a **rev. 9** con la frontera acta/handoff dirimida — ver la entrada `[AUDIT-LOG-REVISIONES]`. El censo sigue fuera como artefacto normativo. Spec: `docs/superpowers/specs/2026-08-01-gobernanza-revisiones-adversariales-design.md` (rev. 9) + cinco actas. Doctrina en `CLAUDE.md` y `AGENTS.md`, con el **revisor sustituto** mientras Codex esté sin cupo. Suite 2696 → 2714. **PR #188**.
 
 - ✅ **[MAXPATH-INFORME]** El informe de viabilidad que Excel no abría — el nombre repetía el `case_id` completo dentro de la carpeta que ya se llama `case_id` (269 car. de ruta en `W-02XOR7`), y **el límite no era el sistema de ficheros sino Office** (`LongPathsEnabled=1`, `openpyxl` lo abría). Política nueva: **solo el ID GO** (`Informe viabilidad - <id_go>.xlsx`) + guardarraíl `RUTA_OFFICE_MAX = 240` + `_find_informe_existente` (sin ella `ensure_case` dejaba una plantilla en blanco junto al informe ya trabajado). Mismo fix en el informe **LLM** de `viabilidad-prerelleno` (298 car. en `W-02TH0W`). Migración `core/migrar_nombres_informe.py` + CLI: **14 renombrados en el Drive**, idempotente. Residuo (crudo de E&V intocable a 287, `01_Procesado` hasta 377) en `MEJORAS #100`; el corolario de diagnóstico en `docs/DEAD_ENDS.md`. Suite 2493/0/0. **Tail:** re-empaquetar/re-importar el `.skill` desde la raíz (2026-07-28)
 - ✅ **[SIGUIENTE-SALA-HILOS]** Bundle por hilo de correo en la sala de lectura (Slice 1 del re-tajo del spec de emails atomizados) — la correspondencia ocupa **una entrada por hilo**, no una por mensaje, y `INDICE.md` colapsa los bundles a una línea `(+N anexos)` (`CRONOLOGIA.md` intacta). Clave de `agrupar_por_hilo` cambiada a la **descripción** del nombre (la anterior solo unía colisiones del mismo día y asunto) y `layout_bundle_hilo` con **nombres como función pura del fichero de origen**, tras una revisión final que encontró tres caminos de pérdida/sobrescritura de documentos ya copiados. Skill **v1.14**, suite 2366/0/0. **PR #131** (`d27172b`). Spec `2026-07-23-emails-atomizados-sala-lectura-design.md` + plan `2026-07-26-sala-lectura-bundle-por-hilo.md`. Slices 2 y 3 sin promover: `MEJORAS #86`/`#87`; threading RFC en `#88`. **Tail:** re-importar el `.skill` en Cowork.

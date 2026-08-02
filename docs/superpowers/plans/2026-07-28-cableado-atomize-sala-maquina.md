@@ -1164,11 +1164,17 @@ gh pr create --fill
 
 ## Revisión adversarial (obligatoria antes del PR)
 
-Por `CLAUDE.md`, la revisión adversarial de código se delega a Gemini vía `agy` y **Claude adjudica**. La salida va **fuera del repo** (el guard `test_citas_a_specs_y_plans_existen` rompe si un `.md` trackeado cita un fichero de `docs/superpowers/` que aún no existe); la adjudicación se registra luego en este plan, como se hizo con la revisión del plan:
+Por `CLAUDE.md`, la revisión adversarial de código la ejecuta **Codex** en solo lectura y **Claude adjudica**. La salida va **fuera del repo** (el guard `test_citas_a_specs_y_plans_existen` rompe si un `.md` trackeado cita un fichero de `docs/superpowers/` que aún no existe); la adjudicación se registra luego en este plan, como se hizo con la revisión del plan.
 
-```bash
-& "C:\Users\tnm33\AppData\Local\agy\bin\agy.exe" -p "Revisa adversarialmente el diff de esta rama contra main (cableado de la atomizacion de correo en scripts/sala_maquina.py). Contrasta CADA hallazgo contra el codigo real, no solo contra el diff. Busca: (1) que el no-op no siembre carpetas, (2) que un fallo del motor no aborte el OCR pero si emita evento, (3) que el payload del evento no invente contadores, (4) que plan no escriba en 01_Procesado/Emails, (5) que no se re-resuelva el caso. Escribe el resultado en %TEMP%\\revision_cableado_correo.md y responde solo HECHO" --model "Gemini 3.1 Pro (High)" --add-dir "." --dangerously-skip-permissions
-```
+> **Actualizado 2026-08-01.** Este bloque prescribía delegar a Gemini vía `agy`, con el comando literal de la CLI. Esa vía se retiró (cupo agotado de forma persistente: ver `docs/DEAD_ENDS.md`) — de hecho la revisión del plan de este mismo documento ya la hizo Codex por ese motivo, como registra abajo la §«Adjudicación de la revisión adversarial del PLAN». Cambia el ejecutor; **los cinco puntos de ataque de abajo siguen siendo los buenos**.
+
+Encargo a Codex — revisar adversarialmente el diff de la rama contra `main` (cableado de la atomización de correo en `scripts/sala_maquina.py`), contrastando **cada hallazgo contra el código real, no solo contra el diff**, y volcando el resultado a un fichero fuera del repo (`%TEMP%\revision_cableado_correo.md`):
+
+1. que el no-op **no siembre carpetas**;
+2. que un fallo del motor **no aborte el OCR** pero **sí emita evento**;
+3. que el payload del evento **no invente contadores**;
+4. que `plan` **no escriba** en `01_Procesado/Emails`;
+5. que **no se re-resuelva** el caso.
 
 Al adjudicar: un hallazgo que solo mira el diff suele ser falso positivo, y la convergencia de dos revisores **no** exime de verificar contra la fuente. Claude es el juez.
 
@@ -1211,7 +1217,19 @@ se aplane el lote — documentado también en `MEJORAS #98`.
 
 ---
 
-## Adjudicación de la revisión adversarial del PLAN (Codex, 2026-07-28) — veredicto NO-SHIP, remediado
+## Adjudicación de la revisión adversarial del PLAN (Codex, 2026-07-28) — NO-SHIP, remediado
+
+- **Objeto revisado:** `docs/superpowers/plans/2026-07-28-cableado-atomize-sala-maquina.md`, rev. `no registrado`, commit `no registrado`
+- **Ronda:** 1
+- **Revisor:** Codex (solo lectura)
+- **Informe recibido:** no capturado — llegó por chat, antes del contrato de actas
+- **Hallazgos:** 6 confirmados · 0 rebajados · 2 refutados · 0 escalados · 0 sin verificar
+- **Remediado en:** incorporado en este mismo plan antes de construir; build en PR #151
+
+Los 6 son la tabla de «Aceptados y corregidos»; los 2 refutados, los dos de «Rechazados, con
+motivo». **La prosa del párrafo siguiente dice «4 bloqueantes» y la tabla no publica severidades**,
+así que qué cuatro de los seis lo eran queda **sin verificar**: el informe no se archivó y no hay
+fuente que lo dirima.
 
 `agy` no pudo correr (cupo de Gemini agotado), así que la revisión del plan la hizo Codex en solo
 lectura. **Veredicto NO-SHIP con 4 bloqueantes; los 4 aceptados y ya incorporados arriba.**

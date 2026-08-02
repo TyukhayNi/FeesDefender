@@ -56,6 +56,18 @@ fecha: 2026-07-05
 | `MEJORAS_FUTURAS.md` | Backlog técnico (todo el repo). |
 | `MEJORA_CONTINUA_SKILLS.md` | Ciclo de mejora de las skills. |
 
+## Archivo de las revisiones adversariales
+
+Dónde vive cada pieza del rastro de una revisión. Esta tabla solo dice **dónde buscar**; el contrato
+está en el spec.
+
+| Documento | Estado | Qué es |
+|---|---|---|
+| `docs/superpowers/specs/2026-08-01-gobernanza-revisiones-adversariales-design.md` | vigente | **Contrato.** El acta, la adjudicación embebida en el documento revisado, y los guards G7/G8 de `tests/test_docs_gobernanza.py`. |
+| `docs/superpowers/plans/2026-08-01-migracion-revisiones-adversariales.md`, §Censo | archivado, **congelado** | **El único inventario** de las revisiones adversariales desde el 2026-07-23: 28 filas, una por identidad, con su fuente. El plan que lo aloja **no se ejecuta**; el censo se conserva por el inventario. Congelado el 2026-08-01 y ya incompleto — su propio encabezado dice qué le falta y qué columnas están muertas. |
+| `docs/superpowers/specs/*-adversarial-review.md` | vigente | **Las actas:** el informe del revisor, literal. **Nueve ficheros al 2026-08-02, y la garantía NO es uniforme:** 5 declaran `sha256_informe` y solo **2** las recomputa G8 (las que llevan `marcador_nonce`); las 4 de julio no tienen ni frontmatter. La frontera, en el §6 del contrato. |
+| `docs/superpowers/handoffs/handoff-*-codex-*.md` | **cerrado — no crece** | Cinco informes de Codex archivados como **handoff** en vez de como acta, del 2026-07-27 y 2026-08-01. **Conjunto cerrado y nombrado en el §3.1 del contrato**, que desde el 2026-08-02 manda el informe de una revisión al **acta**: un informe nuevo NO va aquí. **Sin digest:** su integridad no es comprobable. |
+
 ## Planes de diseño legacy (`docs/superpowers/plans/PLAN_*.md`)
 
 | Documento | Estado | Qué es |
@@ -83,6 +95,9 @@ fecha: 2026-07-05
 
 | Documento (en `docs/superpowers/handoffs/`) | Estado | Qué es |
 |---|---|---|
+| `handoff-2026-08-02-identidad-pieza-a-encargo-revision.md` | consumido | **Mandato literal** de la revisión adversarial (ronda 1) de la **pieza A**: spec rev. 3 + plan TDD, anclados al commit `a7f168c`. Revisor **sustituto** (sesión limpia de Claude Code) por indisponibilidad real de Codex. Archivado como §0 del acta `../specs/2026-08-02-identidad-segmento-bundle-pieza-a-r1-claude-adversarial-review.md`; adjudicación (NO-SHIP, 23 confirmados + 1 rebajado) en el §14 del spec de la identidad del segmento. |
+| `handoff-2026-08-01-identidad-segmento-codex-review-2.md` | consumido | **2ª pasada** sobre la rev. 2 (NO SHIP, 4 B0 + 5 A + 2 M). Adjudicada en el §13 de la spec: los 4 B0 confirmados, tres de ellos introducidos por la propia rev. 2. `N-M-2` partió el trabajo en **pieza A** (motor, construible) y **pieza B** (retrofit/saneamiento, **bloqueada** por el lock de `N-B0-4`). |
+| `handoff-2026-08-01-identidad-segmento-codex-review.md` | consumido | 1ª pasada adversarial de Codex sobre la rev. 1 de `2026-08-01-identidad-segmento-bundle-design.md` (NO SHIP, 2 B0 + 5 A + 3 M). Adjudicada en el §13 de la spec; **B0-2 cambió la decisión central** (del ordinal `seg` a un `doc_id` persistente). |
 | `handoff-2026-07-30-fase0-task4-checkin.md` | consumido | Task 4 de la Fase 0 dual: caracterización de `cmd_checkin` (`tests/test_repository_cli_checkin.py`, PR-A). |
 | `handoff-2026-07-27-vista-procesal-codex-review-2.md` | consumido | 2ª pasada adversarial de Codex sobre el spec v3.1 de la vista procesal (NO SHIP, 6 hallazgos `N1`-`N6`). Adjudicada en PR #137: N6 al código, N1 → pieza 2 (PR #140), N3 → pieza 3 (abierta). |
 | `handoff-2026-07-27-vista-procesal-codex-informe.md` | consumido | Informe completo de la **1ª pasada** adversarial de Codex (NO SHIP, 25 hallazgos), texto recibido sin modificar; adjudicación hallazgo → sección en §10 del spec `2026-07-27-vista-procesal-…-design.md` (PR #137). |

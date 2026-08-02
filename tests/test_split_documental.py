@@ -200,8 +200,9 @@ def test_materializar_corta_y_devuelve_doclogicos(tmp_path):
     assert d0.parent_slug == "bundle-slug"
     assert d0.role_in_bundle == "documento"
     assert d0.paginas == "1-1"
-    assert len(d0.seg_sha256) == 64
-    assert d0.slug.endswith(d0.seg_sha256[:8])
+    assert len(d0.seg_sha256) == 64          # el sha sigue en la CUSTODIA…
+    assert d0.doc_id == "d01"
+    assert d0.slug == "bundle-slug__d01_CEDULA_EMPLAZAMIENTO"   # …pero ya no en el NOMBRE
     assert d0.fuentes == ["01_Drive EV/j.pdf"]
 
 

@@ -8,6 +8,14 @@ depende_de: Cluster A (cobertura acumulativa + --vision + reforzar sobre core/sa
 
 # SPEC — Split de bundles multi-documento en la Sala de máquina
 
+> ⚠️ **El contrato de NOMBRES de este documento está SUPERADO desde el 2026-08-02.** Donde aquí se lee
+> `{bundle_sha8}__seg{NN}_{TIPO}__{seg_sha8}` (líneas 113, 241, 286-287 y 344), el motor produce hoy
+> `{parent_slug}__{doc_id}_{TIPO}` — sin el sha del segmento. El sha seguía al artefacto **derivado**,
+> así que re-OCR-izar renombraba todo y el reproceso **añadía** una generación en vez de sustituirla.
+> Contrato vigente: `2026-08-01-identidad-segmento-bundle-design.md` (rev. 4, pieza A). **El resto de
+> este documento sigue vigente** —corte por hoja en blanco, manifiesto editable, `separar.py` como
+> librería— y su historia no se reescribe: describe lo que se decidió el 2026-07-14.
+
 **Versión:** 1.0 (diseño cerrado; anclado al código real de FeesDefender)
 **Fecha:** 2026-07-14
 **Naturaleza:** documento de DISEÑO. El siguiente paso es `writing-plans`, NO construir.
