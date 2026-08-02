@@ -29,9 +29,71 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 11 | [Cableado del pipeline de correo (`MEJORAS #68`)](#siguiente-cableado-correo-cableado-del-pipeline-de-correo-encadenar-la-atomización-resto-de-mejoras-68) | casillas 1-2 ✅; casilla 3 **decidible, sin gates** (#98 cerrado, PR #155) | solo queda la decisión de Nikolai: `--extraer-adjuntos` a default `True` mueve la superficie de dedup de todo intake futuro | bajo |
 
 | 12 | [La firma no es intercalada: falso positivo que bloquea la Capa B](#siguiente-sandwich-firma-la-firma-no-es-una-respuesta-intercalada) | ✅ **CERRADO** — PR #164 (`aaf7dc1`) | queda su cola: `MEJORAS #109` (el síntoma original sigue sin explicar) y borrar el corpus de prueba | bajo |
+| 13 | [Presupuesto explícito de proceso](#siguiente-presupuesto-proceso-cuánta-gobernanza-se-compra) | pendiente — **decisión de Nikolai**, no hay nada que construir | sin gates. Disparador: el mes 2026-07 cerró con **9,4 líneas de `docs/` por línea de `core/`** y cuatro cierres seguidos sin código de producción | bajo (5 min) |
+| 14 | [Desplegar en Cowork las skills ya construidas](#siguiente-reimport-skills-lo-construido-que-no-ha-llegado-al-equipo) | pendiente — **acción manual de Nikolai**; ningún test la cubre | sin gates. Disparador: `organizar-sala-lectura` va por **v1.14 en el repo** y Paola/Ana/Sergio ejecutan la **v1.12** | bajo (una tarde) |
+
+> **Filas 13 y 14 añadidas el 2026-08-02 al final de la cola a propósito: no reordeno prioridades
+> ajenas.** Las dos son baratas y una degrada a terceros hoy — dónde encajan de verdad lo decide
+> Nikolai. Origen: `docs/superpowers/handoffs/handoff-2026-08-02-formacion-git-nikolai.md`.
 
 > Detalle de cada ítem en su bloque `[SIGUIENTE-*]` más abajo. Backlog sin
 > promover: `docs/MEJORAS_FUTURAS.md`. Ledger de cerrados: `## Cerrados` (final).
+
+---
+
+## [SIGUIENTE-PRESUPUESTO-PROCESO] Cuánta gobernanza se compra
+
+*Fila #13. No hay nada que construir: es un número que fija Nikolai y que va a `CLAUDE.md`.*
+
+**El disparador, medido el 2026-08-02** sobre el 2026-07-05 → 2026-08-02: **228 commits, de los
+que 57 (25 %) tocan `core/`/`scripts/`/`streamlit_app.py`** y 150 (66 %) son solo docs/config.
+Líneas añadidas: **`docs/` +63.667 frente a `core/` +6.741 — 9,4 a 1**. Los cuatro últimos
+cierres (52º-55º) no produjeron código de producción; el PR #189, uno solo, mete 2.303 líneas de
+las que 1.661 son tres informes de revisión adversarial **sobre el contrato de las revisiones
+adversariales**.
+
+**Lo que NO dice este ítem:** que la gobernanza sea desperdicio. El mismo mes, las revisiones
+compraron defectos vivos y caros — la invariante que habría autorizado modificar un expediente
+real de cliente bajo `data/CASOS/`, y tres rutas de pérdida de datos (#156, #160, #175). El
+problema no es el control, es que **no hay techo declarado**, y sin techo el mecanismo se
+autoalimenta: en el 55º cierre cada remediación cerraba su defecto y abría otro en la costura de
+al lado, seis rondas seguidas.
+
+**La decisión, dos números en `CLAUDE.md`:** (a) cuántas rondas de revisión come un documento
+antes de que la conclusión razonable sea recortar alcance en vez de revisar otra vez; (b) qué
+proporción de sesiones puede cerrar sin código de producción. Cualquier número explícito bate al
+actual, que es ninguno.
+
+**Por qué lo tiene que fijar Nikolai y no Claude:** el 55º cierre ya demostró el sesgo — cuando mi
+propia regla de parada me obligaba a parar, redefiní el disparador, y un revisor sin nada
+invertido lo llamó racionalización *ex post*. Escribir doctrina se siente productivo; el freno
+tiene que venir de fuera.
+
+---
+
+## [SIGUIENTE-REIMPORT-SKILLS] Lo construido que no ha llegado al equipo
+
+*Fila #14. Acción manual de Nikolai en Cowork; ningún test la cubre y ningún guard la detecta.*
+
+**El disparador:** `organizar-sala-lectura` está en **v1.14 en `.claude/skills/`** y el equipo
+—Paola, Ana, Sergio— sigue ejecutando la **v1.12**. Construido ≠ desplegado, y el único tramo que
+falta es manual.
+
+**Censo de re-imports pendientes en este mismo fichero** (2026-08-02), por bloque y no por
+número de línea, que aquí se desplaza solo: `[SIGUIENTE-SALA-HILOS]` (v1.14),
+`[SIGUIENTE-PRECLASIFICACION-SALA-LECTURA]` (v1.11), `[SIGUIENTE-SALA-UNICA-PLANA]` (v1.3/v1.1),
+`[SIGUIENTE-INPUT-LOTES]` (Tarea 15) y `[SIGUIENTE-MCP-DRIVE-DISCO-PASOS-5-7]` (paso 5, cuatro
+`.skill` re-empaquetados). Localizables con `grep -i "re-import" PLAN.md`.
+
+**Procedimiento:** `docs/MEJORA_CONTINUA_SKILLS.md` → `scripts/package_skill.py` → importar el
+`.skill` en Cowork.
+
+**Trampa ya documentada, que es la que lo ha hecho fallar antes:** empaquetar **desde la raíz**,
+nunca desde un worktree que luego se poda (el `.skill` acaba en un `dist/` que desaparece), y
+**verificar la versión dentro del zip**, no la del repo.
+
+**Al cerrar:** marcar `[x]` las seis entradas en sus bloques y anotar aquí la versión que quedó
+efectivamente en Cowork — que es el dato que hoy no consta en ninguna parte.
 
 ---
 
