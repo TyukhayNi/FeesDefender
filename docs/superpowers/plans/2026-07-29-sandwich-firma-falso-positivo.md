@@ -1058,7 +1058,20 @@ En este orden, y no antes:
 
 ---
 
-## Adjudicación de la revisión adversarial (Codex, 2026-07-29) — NO EJECUTABLE, remediado
+## Adjudicación de la revisión adversarial del PLAN (Codex, 2026-07-29) — NO-EJECUTABLE, remediado
+
+- **Objeto revisado:** `docs/superpowers/plans/2026-07-29-sandwich-firma-falso-positivo.md`, rev. `no registrado`, commit `no registrado`
+- **Ronda:** 1
+- **Revisor:** Codex (solo lectura)
+- **Informe recibido:** no capturado — llegó por chat, antes del contrato de actas
+- **Hallazgos:** 10 confirmados · 0 rebajados · 0 refutados · 0 escalados · 0 sin verificar
+- **Remediado en:** incorporado en este mismo plan; build en PR #164 (`aaf7dc1`)
+
+**10, no 9.** La prosa de abajo dice «ocho aceptados, uno parcialmente refutado» y cuenta las filas
+numeradas `#1`-`#9`; la tabla lleva **una décima sin numerar** («Nota de su §3»), que también es del
+informe y también se aceptó. El **#7** va a `confirmados` y no a un bucket propio: se refuta el
+método —el script sí subclasea el parser real— y **se acepta la conclusión**, y el §5 del contrato
+dice que un hallazgo aceptado con remedio distinto cuenta como confirmado.
 
 Veredicto recibido: **NO EJECUTABLE**, 4 bloqueantes + 4 altos + 1 menor. **Ocho aceptados, uno
 parcialmente refutado.** Todo lo aceptado está aplicado arriba. Los dos bloqueantes de fondo se
@@ -1086,7 +1099,19 @@ fixture existente contiene `gmail_signature`.
 **Su §5 no aportó ataque a la decisión de diseño**, y coincido: el fallo de `_sigdepth` es una omisión
 del plan de implementación, no una refutación de la exclusión estructural.
 
-## Adjudicación de la revisión de rama completa (2026-07-29) — LISTA CON CAMBIOS, aplicados
+## Adjudicación de la revisión adversarial de rama completa (no registrado, 2026-07-29) — LISTA-CON-CAMBIOS, parcial
+
+- **Objeto revisado:** rama construida de este plan, commit `no registrado`
+- **Ronda:** 1
+- **Revisor:** Opus (según `docs/bitacora/2026.md:146`; este documento no lo nombra)
+- **Informe recibido:** no capturado — llegó por chat, antes del contrato de actas
+- **Hallazgos:** 11 confirmados · 0 rebajados · 0 refutados · 0 escalados · 0 sin verificar
+- **Remediado en:** PR #164 (`aaf7dc1`), los 6 aplicados; los 5 Minor siguen sin aplicar
+
+Los 11 son 3 Important + 8 Minor. **No son «escalados»:** escalar exige destino, y el de estos cinco
+sería «aquí» —ni entrada en `MEJORAS_FUTURAS.md` ni en `PLAN.md`—, así que son confirmados sin
+remediar, que es exactamente lo que dice `parcial`. `parcial` y no el «aplicados» del encabezado
+anterior, que los daba por cerrados.
 
 Segunda revisión de la rama, ya construida. Devolvió **LISTA CON CAMBIOS**: 3 Important + 8 Minor, y
 confirmó por su cuenta —remutando el código— que ninguno de los tests es vacuo. **Los tres Important

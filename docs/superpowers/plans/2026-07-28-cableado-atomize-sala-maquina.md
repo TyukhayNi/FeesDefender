@@ -1217,7 +1217,19 @@ se aplane el lote — documentado también en `MEJORAS #98`.
 
 ---
 
-## Adjudicación de la revisión adversarial del PLAN (Codex, 2026-07-28) — veredicto NO-SHIP, remediado
+## Adjudicación de la revisión adversarial del PLAN (Codex, 2026-07-28) — NO-SHIP, remediado
+
+- **Objeto revisado:** `docs/superpowers/plans/2026-07-28-cableado-atomize-sala-maquina.md`, rev. `no registrado`, commit `no registrado`
+- **Ronda:** 1
+- **Revisor:** Codex (solo lectura)
+- **Informe recibido:** no capturado — llegó por chat, antes del contrato de actas
+- **Hallazgos:** 6 confirmados · 0 rebajados · 2 refutados · 0 escalados · 0 sin verificar
+- **Remediado en:** incorporado en este mismo plan antes de construir; build en PR #151
+
+Los 6 son la tabla de «Aceptados y corregidos»; los 2 refutados, los dos de «Rechazados, con
+motivo». **La prosa del párrafo siguiente dice «4 bloqueantes» y la tabla no publica severidades**,
+así que qué cuatro de los seis lo eran queda **sin verificar**: el informe no se archivó y no hay
+fuente que lo dirima.
 
 `agy` no pudo correr (cupo de Gemini agotado), así que la revisión del plan la hizo Codex en solo
 lectura. **Veredicto NO-SHIP con 4 bloqueantes; los 4 aceptados y ya incorporados arriba.**

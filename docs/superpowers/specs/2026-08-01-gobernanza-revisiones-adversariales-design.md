@@ -1,6 +1,11 @@
 # Archivo verificable de las revisiones adversariales
 
-> **Estado:** **rev. 8** (2026-08-01). **Alcance recortado por decisión de Nikolai**, sobre el H-07 de la
+> **Estado:** **rev. 9** (2026-08-02). La rev. 9 **no reabre nada del recorte**: registra que el
+> retrofit de los encabezados heredados se ejecutó (§7), fija la frontera entre acta y handoff que
+> el §3 y `GOBERNANZA_FUENTES_VERDAD.md` §5 contradecían (§3.1), y declara una ceguera medida de G7
+> (§6). Todo lo demás sigue como en la rev. 8, cuyo encabezado se conserva íntegro debajo.
+>
+> **Estado anterior:** **rev. 8** (2026-08-01). **Alcance recortado por decisión de Nikolai**, sobre el H-07 de la
 > sexta revisión: el disparador del §11 de la rev. 6 decía «otra costura», aparecieron siete, y yo
 > redefiní el disparador después. Un revisor sin nada invertido lo llamó racionalización *ex post* y
 > tenía razón. Este documento es lo que queda tras el recorte: **el núcleo probatorio, y nada más**.
@@ -28,9 +33,18 @@ externo** — hoy, en la práctica, las de Codex.
 - El predicado de población y la taxonomía de clases e independencia.
 - La regla *fail-closed* que ligaba cobertura a la existencia del acta, y sus allowlists.
 - La regla de parada de rondas y el trailer `Revision-cierre:`.
-- El censo de las 28 revisiones postcorte y el retrofit de los ocho encabezados heredados.
+- El censo de las 28 revisiones postcorte **como artefacto normativo**. Sigue fuera: no se mantiene
+  al día ni lo comprueba ningún guard. Lo que sí se hizo el 2026-08-02 fue **congelarlo, declararlo
+  incompleto e indexarlo** desde `docs/INDICE.md`, para que se pueda encontrar. Vive donde nació,
+  en el §Censo del plan archivado.
 - El plan de migración de diez tareas, **archivado sin ejecutar**.
 - Un registro central, un generador de censo y cualquier guard G9.
+
+> **Lo que sí entró después, y por qué no es reabrir el recorte.** La rev. 8 dejaba fuera el
+> **retrofit de los ocho encabezados heredados**; Nikolai lo encargó el 2026-08-02 y está hecho
+> (§7). Era la mitad barata de lo que cayó —trabajo documental acotado, sin norma nueva— y su
+> resultado es que el corpus de G7 ya no tiene exclusiones. Lo que sigue fuera es lo caro y lo
+> normativo: predicado, taxonomía, *fail-closed*, regla de parada, trailer de gate y generador.
 
 **Lo que se pierde, dicho claro:** las revisiones de rama —que son las que más defectos caros han
 comprado en este proyecto— vuelven a no dejar rastro obligatorio, y no hay forma de responder «qué se
@@ -48,6 +62,33 @@ de uno grande que no se termina.
 La adjudicación va embebida porque la decisión pertenece al documento que la decisión modificó. El acta
 es el archivo de la voz del revisor, **no** un segundo hogar de la decisión: no lleva estado de
 remediación.
+
+### 3.1. Acta o handoff: la frontera, y los cinco que se quedan fuera
+
+Este §3 y el §5 de `GOBERNANZA_FUENTES_VERDAD.md` decían cosas distintas y ninguno lo declaraba. El
+§5 recoge una **decisión de Nikolai del 2026-07-30**: un informe **recibido de un agente externo**
+para arrancar trabajo aquí es un handoff. Codex es un agente externo, así que un informe suyo caía
+en las dos reglas a la vez. Resuelto el 2026-08-02, decisión de Nikolai:
+
+- **Hacia delante:** el informe de una revisión adversarial **de un spec, un plan o un diff** va al
+  **acta**, con sus marcadores y su digest. Manda este contrato.
+- **Handoff** sigue siendo el hogar del traspaso de contexto que **no** es un informe de revisión.
+- **Los cinco que ya están archivados como handoff se quedan donde están**, como conjunto **cerrado
+  y nombrado**: `handoff-2026-07-27-vista-procesal-codex-{informe,review,review-2}.md` y
+  `handoff-2026-08-01-identidad-segmento-codex-review{,-2}.md`. **Cinco ficheros, cuatro
+  revisiones:** la 1ª pasada de vista procesal tiene dos —el informe completo y un handoff
+  *resumido*—, y el resumido no era una excepción necesaria: por la frontera de arriba, un resumen de
+  traspaso es handoff de pleno derecho. Se incluye en el conjunto cerrado por trazabilidad, no porque
+  lo exija la regla.
+
+**El precio, dicho entero:** esos cinco **no tienen digest y nunca lo tendrán**. El §4 fija que el
+valor probatorio del hash viene de calcularlo **al recibir** y contrastarlo con el que declara el
+revisor; para estos cinco ese momento pasó. Sellarlos hoy produciría un autosello con aspecto de
+prueba —el revisado firmando su propia transcripción—, que es exactamente lo que este documento
+existe para impedir. Su integridad la sostiene solo el historial de git. Queda declarado.
+
+**No son «excepción histórica»**, y la palabra importa: dos de los cinco entraron el 2026-08-01, un
+commit antes de que mergeara este contrato. Era la práctica viva, no un residuo de julio.
 
 ## 4. El acta
 
@@ -189,18 +230,93 @@ existencia del acta; no tocan `_ESTADOS_DOCS` ni `_ESTADOS_HANDOFF` ni vuelven r
 `_docs_con_frontmatter`; no piden frontmatter a specs ni planes; no juzgan el contenido de la
 adjudicación.
 
+**El disparador: era una cadena literal, y era una FAMILIA de vías de evasión, no una.** Hasta el
+2026-08-02 G7 encontraba las adjudicaciones buscando `Adjudicación de la revisión` en líneas que
+empiezan por `#`, sobre el texto ya descercado. Todo lo que se saliera de ahí era invisible y **el
+corpus se quedaba verde con una adjudicación fuera de formato**. La revisión adversarial midió ocho
+vías sobre el corpus real. **Ampliado por decisión de Nikolai; las ocho muerden hoy**, cada una
+verificada mutando el corpus real y no una fixture sintética:
+
+| Vía | Antes | Ahora | Cómo se cierra |
+|---|---|---|---|
+| plural: `Adjudicación de **las revisiones**` | verde | **roja** | disparador sobre texto normalizado |
+| sin tildes: `Adjudicacion de la revision` | verde | **roja** | ídem (NFD, se quitan diacríticos) |
+| minúscula inicial | verde | **roja** | ídem (comparación en minúsculas) |
+| encabezado **sangrado** (hasta 3 espacios, ATX válido) | verde | **roja** | se detecta con sangría y el regex estricto la rechaza |
+| encabezado **setext** (`texto` + `---`) | verde | **roja** | se detecta el subrayado; el estricto lo rechaza |
+| sinónimos: `del veredicto`, `de la **autorrevisión**` | verde | **roja** | los dos entran al disparador |
+| cerca ` ``` ` **impar aguas arriba** | verde | **roja** | se declara error, y solo si de hecho oculta una adjudicación |
+| anteponer `---\ntipo: revision-adversarial\n---` | verde, el fichero **entero** salía | **roja** | la exención pasa a ser **por nombre** |
+
+**Detectar es la mitad; la otra es no bendecir.** El disparador se ensancha, pero el regex estricto del
+§5 no se toca: una forma no canónica se **ve** y se **rechaza** como «encabezado fuera de formato». La
+comparación normalizada es solo del disparador — lo que se valida es la línea tal como está escrita.
+
+Dos cosas que hay que decir sin adornarlas. **La del plural no era hipótesis:** es lo que pasó con el
+§13 de `2026-08-01-identidad-segmento-bundle-design.md` el día que estuvo en `main`. **Y la de la
+autorrevisión estaba escrita en este repo desde antes**, con su aviso, en
+`plans/2026-08-01-migracion-revisiones-adversariales.md:1262`; la rev. 9 la enumeró solo después de que
+un revisor la señalara.
+
+**La exención de las actas deja de ser por contenido.** Antes bastaba que un fichero declarara
+`tipo: revision-adversarial` para salir del corpus entero: exclusión autodeclarada y que podía crecer
+sin tocar el test, justo la polaridad que el §7 rechaza. Ahora, en un acta **con `marcador_nonce`** se
+vacía únicamente su **informe literal**, delimitado por los marcadores, y el resto se valida. Solo las
+**siete actas anteriores** a ese contrato quedan exentas, **por nombre**, en una lista que **solo puede
+encoger**: un acta nueva no puede entrar en ella porque el §4 le exige el nonce.
+
+**Lo que sigue abierto, y no se cierra ampliando nada.** El disparador reconoce las variantes de la
+frase canónica y sus dos sinónimos medidos; **no** reconoce una adjudicación titulada de otra forma
+—`## Adjudicación`, `## Tabla de adjudicación`, `## Auto-revisión`, `## Veredicto de la revisión`—, y
+hay unas diez así en el corpso, precorte o en actas de julio. Ensanchar el disparador hasta ellas
+pondría en rojo una población cuyo retrofit **no** está encargado, así que quedan declaradas aquí, con
+sus formas, en vez de disimuladas. Y el §6 sigue sin juzgar el contenido: un `999 confirmados` pasa.
+
+**Lo que sí se cerró, porque era una regresión de la propia rev. 9:** retirar `_ADJ_LEGACY` dejó el
+corpus sin ninguna lista que nombrara población, y G7 **no comprobaba que estuviera viendo algo**.
+Mutando los 15 encabezados al plural: 0 observados, 0 errores, módulo verde — un guard certificando un
+corpus que ya no mira. `test_g7_cubre_las_adjudicaciones_del_corpus` es el hermano del guard que G8 ya
+tenía para lo mismo. **No arregla la familia de arriba**: la hace ruidosa cuando se aplica en bloque.
+
 ## 7. Qué hay que construir, y qué no se migra
 
-**Construir:** G7 y G8, con sus fixtures negativas. Es una tarde.
+**Construido** (PR #188, `8f98133`): G7 y G8 con sus fixtures negativas. Fue una tarde.
 
-**No se migra:** los ocho encabezados de adjudicación heredados —que casan el formato 1 de 8— **se quedan
-como están** y salen del corpus de G7 mediante una **lista de exclusión de siete ficheros**, no una de
-inclusión. La polaridad es la decisión: una lista de inclusión («el corpus son los ficheros que ya
-cumplen») dejaría escapar cualquier fichero **nuevo** con una adjudicación mal formada; la de exclusión
-cubre el futuro por defecto y **solo puede encoger**.
+**Migrado el 2026-08-02, por encargo de Nikolai.** La rev. 8 dejaba los ocho encabezados heredados
+«como están», fuera del corpus de G7 por una **lista de exclusión de siete ficheros**. Encogió a cero:
+los ocho llevan hoy encabezado canónico y ficha, y `_ADJ_LEGACY` se retiró vacía.
 
-**Doctrina a tocar:** `CLAUDE.md` §Revisión adversarial resuelve el «o» —la adjudicación va embebida y el
-informe al acta— y `AGENTS.md` añade tres cosas que sí compraron calidad medible en las seis rondas: el
+**La regla de polaridad sigue siendo norma de este contrato, no nota de un test.** Si algún día hay
+que volver a excluir un fichero del corpus, se excluye **por nombre**, en una lista que **solo puede
+encoger**. Nunca se define el corpus por **inclusión** («el corpus son los ficheros que ya cumplen»):
+eso deja escapar cualquier fichero **nuevo** con una adjudicación mal formada, que es el modo de fallo
+caro. Vale para el futuro, no solo para la lista que ya se fue.
+
+**Y el corpus, con precisión, porque «menos las actas» no es exacto.** G7 escanea todo
+`docs/superpowers/**/*.md` menos lo que `_es_acta` reconoce, que es `---` inicial + `tipo:
+revision-adversarial`. De los nueve `*-adversarial-review.md`, eso reconoce **cinco**: las cuatro de
+julio no tienen frontmatter y **están dentro** del corpus. Hoy no rompe nada porque sus encabezados no
+disparan, pero conviene no leer «menos las actas» como una frontera limpia. Y esa exclusión es **por
+contenido y autodeclarada** —un fichero puede salirse solo, añadiéndose esas dos líneas—, lo que es
+justo la polaridad que el párrafo anterior rechaza: queda declarado, no resuelto.
+
+**Cobertura de ficheros ≠ cobertura de adjudicaciones**, y la diferencia importa: que el corpus ya no
+tenga exclusiones **no** significa que toda adjudicación del proyecto esté guardada. La mayoría de las
+filas del censo constan solo en `PLAN.md` o en `docs/bitacora/2026.md`, fuera del alcance de G7 por
+diseño (§6: los guards no exigen que un documento tenga revisión).
+
+**Y apareció un noveno**, que nadie había contado: el §13 de
+`2026-08-01-identidad-segmento-bundle-design.md` adjudicaba dos rondas reales de Codex bajo el título
+«Adjudicación de **las revisiones** adversariales», en plural. No estaba en la lista de exclusión
+porque nadie sabía que estaba. Retrofitado también, partido en `13.1` y `13.2` —una adjudicación por
+ronda— sin renumerar, para que las citas al §13 sigan resolviendo.
+
+**Cómo se escribieron los recuentos, que es donde se inventa sin querer:** se **copia** lo que cada
+documento publica; donde no publica desglose y dice que aceptó todo, el total va a `confirmados`. No
+se deriva ni se estima ninguno, y los `escalados` se declaran solo con destino verificado.
+
+**Doctrina tocada, también en el PR #188:** `CLAUDE.md` §Revisión adversarial resolvió el «o» —la adjudicación va embebida y el
+informe al acta— y `AGENTS.md` añadió tres cosas que sí compraron calidad medible en las seis rondas: el
 encargo **fija la ruta del informe** y prohíbe sobrescribir los anteriores; el revisor **devuelve `ruta` y
 `sha256` canónico** antes de que se adjudique; y el mandato llega **numerado y ordenado por daño**, con el
 objeto anclado a un **commit**, y el informe lo contesta punto por punto.
@@ -335,3 +451,80 @@ Más: el *fail-closed* hacía imposible una salida que la ficha seguía publican
 cerraba por fichero, amnistiando cualquier adjudicación futura en el mismo anfitrión; **la primera acta del
 contrato incumplía el contrato** en la gramática de `mandato`; el enlace del gate no tenía sintaxis; y una
 referencia cruzada apuntaba a la sección equivocada.
+
+## 14. Adjudicación de la revisión adversarial de rama completa (Claude Code sesión independiente, 2026-08-02) — REQUIERE-REVISION, parcial
+
+- **Objeto revisado:** diff `8f98133..ec5bdc4` de la rama `claude/audit-log-adversarial-reviews-df1d84`, commit `ec5bdc4`
+- **Ronda:** 1
+- **Revisor:** Claude Code (sesión independiente), tres lentes en paralelo, solo lectura
+- **Informe recibido:** `2026-08-02-audit-log-revisiones-r1-{L1-fidelidad,L2-guard,L3-coherencia}-adversarial-review.md`, los tres con digest verificado al recibirlos
+- **Hallazgos:** 38 confirmados · 2 rebajados · 0 refutados · 0 escalados · 0 sin verificar
+- **Remediado en:** esta rev. 9 y los commits de remediación de esta rama; `parcial` por lo que se declara y no se arregla, abajo
+
+**Quién revisó, y qué vale menos por eso.** Codex está sin cupo hasta el 2026-08-08, así que corrió el
+**revisor sustituto** de `AGENTS.md`: tres sesiones limpias de Claude Code, sin contexto de autoría ni
+acceso a mi adjudicación, con mandato numerado y ordenado por daño. **No es Codex y no se registra como
+tal.** Misma familia de modelo que el autor: puntos ciegos compartidos, y sin la tensión de interés que
+en la ronda 3 hizo que Codex argumentara contra la ampliación de sus propios permisos. Compensado con
+tres lentes —fidelidad a la fuente, cobertura del guard, coherencia doctrinal— y con la prohibición
+expresa de dar nada por bueno sin abrir el fichero. Veredictos: REQUIERE-REVISION, LISTA-CON-CAMBIOS,
+REQUIERE-REVISION; se toma el peor.
+
+**Y el hueco de cobertura, que lo encontró el propio revisor (L3 H-01) y es lo primero que hay que
+leer.** `AGENTS.md` §«Revisor sustituto» y `CLAUDE.md` dicen sin matices que el sustituto **no cubre
+revisar el propio contrato de revisión: eso espera a Codex**. Esta rev. 9 **es** el contrato. Cuando
+Nikolai encargó el trabajo el alcance era retrofit y la exclusión no aplicaba; el alcance que yo
+propuse y él aprobó incluyó enmendar el contrato, y con eso la exclusión pasó a aplicar a parte de mi
+propio trabajo. Consecuencia, sin adornarla: **el contenido normativo del §2, del §3.1 y del §7 queda
+SIN VERIFICAR hasta que Codex pueda correr.** Lo que los tres revisores sí cubren de esos párrafos es
+si sus afirmaciones **fácticas** son ciertas — y encontraron que varias no lo eran.
+
+**Los tres que más pesan, y los tres son míos.**
+
+1. **Declaré ausente lo que la fuente que yo mismo citaba registraba.** La ficha de vista procesal
+   decía `commit: no registrado`, y el commit `2955f65` está escrito en la línea 34 del handoff que esa
+   misma ficha nombra como su informe. El §5 admite `no registrado` para **no inventar**; no ampara lo
+   contrario. Igual con el revisor de la rama del sándwich: `no registrado` cuando
+   `docs/bitacora/2026.md:146` dice «La de rama (opus)».
+2. **Avalé en bloque columnas que no comprobé.** El marco del censo decía «sigue valiendo el resto:
+   objeto, ronda, revisor y dónde consta hoy», y las tres tienen celdas rotas — incluida una que
+   **rompió este mismo diff** al desplazar diez líneas el encabezado que una fila citaba por número.
+   Reescrito para no certificar ninguna columna y para advertir de que los punteros por línea a la
+   bitácora caducan en el cierre siguiente.
+3. **G7 se había quedado vacuo por mi causa.** Retirar `_ADJ_LEGACY` dejó el corpus sin ninguna lista
+   que nombrara población, y el guard no comprobaba estar viendo algo: mutando los 15 encabezados al
+   plural, 0 observados y módulo verde. Cerrado con
+   `test_g7_cubre_las_adjudicaciones_del_corpus`, hermano del que G8 ya tenía. Es el único defecto de
+   código de la ronda, y es una regresión que introdujo la propia rev. 9.
+
+**Más, todos confirmados y corregidos:** la fila del `INDICE` prometía digest en nueve actas cuando son
+cinco y G8 solo recomputa dos; «los nueve encabezados del corpus» son quince y el retrofit tocó diez;
+cinco «escalados» cuyo destino era «aquí», contra la regla que este mismo commit estrena; dos desgloses
+incompatibles en historial §10-bis certificados como «de la tabla» sin contarla; `10 no 9` en el plan
+del sándwich; dos fichas con `rev. 1` derivada donde tocaba `no registrado`; «las dos divergencias son
+de remedio» cuando una refuta una premisa; la lista de ausencias del censo, que omitía siete revisiones
+más; el §7 aún en futuro para G7/G8 y la doctrina, ya mergeadas; la regla de polaridad degradada de
+norma a comentario de test, devuelta al contrato; y el nombre del acta escrito de tres formas, dos sin
+el `-r<N>` que lo hace función de la identidad — alineadas `GOBERNANZA` §5 y `CLAUDE.md`.
+
+**Las dos rebajas, razonadas.** (a) L3 sostiene que el criterio «no estaba en el encargo» se aplica al
+regex y no al reencuadre del censo ni a la reescritura del §2 — **el argumento es bueno pero le falta un
+dato que no podía tener**: las dos cosas que cita estaban en el alcance que Nikolai aprobó
+explícitamente, y ampliar el disparador no. Acepto lo que sí se sostiene: la declaración vendía como un
+renglón la reparación de una familia de siete puertas, y eso está corregido. (b) L1 pide contar en `sin
+verificar` los huecos de cobertura que las fuentes declaran; el bucket cuenta **hallazgos**, no
+premisas, así que los recuentos no cambian, pero los huecos ahora constan en prosa en las dos fichas
+donde la fuente los publica.
+
+**Lo que se declara y NO se arregla, para que nadie lo lea como cubierto.** La familia de vías de
+evasión del disparador (§6), la laxitud de `_ficha` —seis campos vacíos son formalmente conformes, y una
+cerca intermedia deja atribuir a un encabezado la ficha de otro—, y que `_es_acta` sea una exclusión por
+contenido y autodeclarada, con cuatro actas de julio dentro del corpus. Ninguna la introdujo este
+trabajo; todas quedan escritas con su evidencia, y ninguna es mía de arreglar sin encargo.
+
+**Lo que los revisores intentaron refutar y no pudieron**, que es donde está el riesgo residual: el
+retrofit es portante —los ocho heredados habrían puesto G7 en rojo, verificado ejecutando el guard de
+`HEAD` contra el texto de `8f98133`—, `_ADJ_LEGACY` cubría exactamente los siete ficheros que fallaban,
+ningún PR ni hash citado es inexistente o está mal atribuido, la suite cuadra al test con la base
+(2714/0/84), ninguna de las siete cosas del §2 vuelve a entrar en sustancia, y el censo no se convierte
+en registro central: nadie está obligado a escribir en él y ningún guard lo mira.

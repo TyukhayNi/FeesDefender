@@ -668,7 +668,26 @@ confianza (§2.1), pero no lo arregla.
   contrario** es byte-idéntico a nuestra `D 08 - OFERTA COMPRA`. Conviene tenerlas localizadas antes
   de la audiencia previa.
 
-## 10. Adjudicación de la revisión adversarial
+## 10. Adjudicación de la revisión adversarial (Codex, 2026-07-27) — NO-SHIP, parcial
+
+- **Objeto revisado:** `docs/superpowers/specs/2026-07-27-vista-procesal-05-procedimiento-design.md`, commit `2955f65` (la `v3` es lo que esta revisión produjo, no lo que revisó)
+- **Ronda:** 1
+- **Revisor:** Codex (solo lectura)
+- **Informe recibido:** `docs/superpowers/handoffs/handoff-2026-07-27-vista-procesal-codex-informe.md` — archivado como **handoff**, no como acta, y por tanto **sin digest**
+- **Hallazgos:** 25 confirmados · 0 rebajados · 0 refutados · 0 escalados · 0 sin verificar
+- **Remediado en:** PR #137 (`12c8a91`); H23 y H24 quedan pendientes, de ahí `parcial`
+
+El commit sale del propio informe (`…-codex-informe.md:34`: «El spec se revisó desde la rama local
+`claude/intake-crm-sudespacho-a7fc5a` (`2955f65`)»).
+
+El informe vive entre los handoffs por decisión de Nikolai del 2026-07-30, acotada el 2026-08-02
+(`docs/GOBERNANZA_FUENTES_VERDAD.md` §5 y §3.1 del contrato). La consecuencia, declarada: su texto
+no está sellado por hash y su integridad no es comprobable — solo lo sostiene el historial de git.
+
+**Y los `0 sin verificar` cuentan hallazgos, no cobertura.** El informe dedica una sección entera
+(`:265-273`) a **siete premisas de esta spec que no pudo verificar**, y el cierre de abajo añade que
+nada que dependa de haber ejecutado la suite quedó verificado por esta revisión. La ficha no lo
+recoge porque el bucket es de hallazgos; el hueco de cobertura está aquí dicho.
 
 Los 25 hallazgos se aceptan en sustancia. Seis ajustes de severidad y dos recortes de alcance.
 
