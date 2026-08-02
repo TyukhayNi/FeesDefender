@@ -53,10 +53,13 @@ ciegos y no tienes la tensión de interés que hace útil a un revisor externo. 
 ```text
 worktree: C:\Users\tnm33\Dev\FeesDefender\.claude\worktrees\plan-next-step-a429e7
 rama:     claude/plan-next-step-a429e7
-commit:   a7f168c
+objeto en:  a7f168c   ← el commit que introduce el plan
+tip:        2cfccfe+  ← añade SOLO este encargo y su fila en docs/INDICE.md
 ```
 
-Comprueba el commit y que el árbol está limpio antes de empezar, y vuelve a comprobarlo al terminar.
+Los dos documentos revisados son **byte-idénticos** entre `a7f168c` y el tip
+(`git diff a7f168c -- <los dos ficheros>` sale vacío): trabaja sobre el tip. Comprueba que el árbol
+está limpio antes de empezar, y vuelve a comprobarlo al terminar.
 
 **Se revisan dos documentos, juntos:**
 
