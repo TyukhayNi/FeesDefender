@@ -167,6 +167,7 @@ class DocCobertura:
     role: str = "documento"  # role_in_bundle (documento | anexo | ...)
     paginas: str = ""        # rango de páginas en el bundle ("1-4"); vacío si no aplica
     tipo: str = ""           # tipo clasificado del documento lógico
+    doc_id: str = ""         # identidad persistente del segmento; vacío = documento suelto
 
 
 def plan(inventario: list[dict], estado_previo: set[str]) -> list[DocPlan]:
@@ -320,9 +321,19 @@ def render_cobertura(cobertura: list[DocCobertura]) -> str:
     return "\n".join(lineas) + "\n"
 
 
-def fusionar_cobertura(previa: list[DocCobertura],
-                       nueva: list[DocCobertura]) -> list[DocCobertura]:
-    """Une la cobertura previa con la de esta corrida: la nueva gana por `rel_path`.
+def _clave_cobertura(d: DocCobertura) -> tuple[str, str]:
+    """Identidad de una fila de cobertura: `doc_id` si es segmento, `slug` si es suelto.
+
+    El slug de un segmento cambia cuando cambia su TIPO (y cambiaba, antes, con sus
+    bytes), así que indexar por slug dejaba DOS filas del mismo documento lógico. El
+    documento suelto no tiene doc_id y conserva la clave de siempre.
+    """
+    return (d.rel_path, d.doc_id) if d.doc_id else (d.rel_path, d.slug)
+
+
+def fusionar_cobertura(previa: list[DocCobertura], nueva: list[DocCobertura],
+                       rel_paths_reprocesados: set[str] | None = None) -> list[DocCobertura]:
+    """Une la cobertura previa con la de esta corrida: la nueva gana por identidad.
 
     Simétrico con el estado idempotente (`previo | nuevo`), pero conservando el
     registro COMPLETO en vez de solo el conjunto de shas: una corrida incremental
@@ -331,25 +342,35 @@ def fusionar_cobertura(previa: list[DocCobertura],
     previas en su orden (con la versión nueva si se re-tocó ese documento), luego
     las nuevas no vistas.
 
-    Se indexa por la clave compuesta `(rel_path, slug)`: (a) dos ficheros
+    La clave la fija `_clave_cobertura` y cubre tres cosas: (a) dos ficheros
     byte-idénticos con el mismo nombre en carpetas distintas (mismo `slug`, porque
     `output_slug` = stem + sha8 descarta la carpeta; p. ej. el mismo encargo por
     Drive y como adjunto de correo) siguen siendo DOS filas de custodia porque su
-    `rel_path` difiere; y (b) los N documentos lógicos de un bundle multi-documento
-    (mismo `rel_path`, un `slug` propio por segmento) son N filas y NO colapsan.
-    Indexar solo por `rel_path` colapsaría los segmentos a 1 (perdiendo N-1 en
-    silencio, el defecto detectado en la validación); indexar solo por `slug`
-    colapsaría las dos rutas byte-idénticas.
+    `rel_path` difiere; (b) los N documentos lógicos de un bundle multi-documento
+    (mismo `rel_path`) son N filas y NO colapsan; y (c) un segmento se identifica por
+    su `doc_id`, no por su slug, que cambia si cambia el TIPO.
+
+    `rel_paths_reprocesados` (spec §6.1) hace la corrida **autoritativa** sobre lo que
+    ha reprocesado: las filas previas de esos `rel_path` que ninguna fila nueva reclama
+    se descartan. Cambiar la clave no bastaba —una fusión que solo sabe añadir no puede
+    sustituir—, y sin esto sobrevivían la fila reconstruida del MD (`doc_id=""`) junto a
+    la fresca del mismo segmento, y las N filas de un bundle que en el reproceso pasó a
+    passthrough. El conjunto lo pone el llamador desde el PLAN y no desde las filas:
+    cuando un documento falla, sus filas no existen. Omitirlo conserva el comportamiento
+    aditivo de siempre, que es lo que quiere `reforzar`.
     """
-    por_clave = {(d.rel_path, d.slug): d for d in nueva}
+    reprocesados = rel_paths_reprocesados or set()
+    por_clave = {_clave_cobertura(d): d for d in nueva}
     vistos: set[tuple[str, str]] = set()
     out: list[DocCobertura] = []
     for d in previa:
-        clave = (d.rel_path, d.slug)
+        clave = _clave_cobertura(d)
+        if clave not in por_clave and d.rel_path in reprocesados:
+            continue          # generación anterior de un documento que esta corrida rehízo
         out.append(por_clave.get(clave, d))
         vistos.add(clave)
     for d in nueva:
-        clave = (d.rel_path, d.slug)
+        clave = _clave_cobertura(d)
         if clave not in vistos:
             out.append(d)
             vistos.add(clave)
@@ -598,7 +619,8 @@ def _split_o_md(case_dir: Path, sm_dir: Path, case_id: str, d: DocPlan,
         _escribir_md(case_dir, case_id, dl.slug, d.rel_path, texto, metodo_base, ocr, estado)
         filas.append(DocCobertura(dl.slug, d.rel_path, metodo_base, estado, len(texto), ocr, nota,
                                   dl.seg_sha256, parent_slug=dl.parent_slug, parent_sha256=d.sha256,
-                                  role=dl.role_in_bundle, paginas=dl.paginas, tipo=dl.tipo))
+                                  role=dl.role_in_bundle, paginas=dl.paginas, tipo=dl.tipo,
+                                  doc_id=dl.doc_id))
     append_event(case_id, "split_documental", details={
         "bundle": d.rel_path, "bundle_sha256": d.sha256, "n_segmentos": len(doclogicos),
         "segmentos": [{"slug": dl.slug, "seg_sha256": dl.seg_sha256, "tipo": dl.tipo,
