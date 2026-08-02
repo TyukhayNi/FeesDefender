@@ -16,7 +16,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 
 | # | Ítem | Estado | Gate / disparador | Esf. |
 |---|------|--------|-------------------|------|
-| 1 | [OCR ciego bajo el sello (`MEJORAS #90`)](#siguiente-ocr-ciego-texto-perdido-bajo-el-sello-de-firma-mejoras-90) | **(e) CERRADA sin rendimiento; (f) spec rev. 3, partida en A (construible) y B (bloqueada)** | (a)+(b) construidos y verdes. **(e) cerrada 2026-08-01**: lo medido da +0/−6/+288 chars y membrete de fabricante → los 11 restantes **no se corren**. **(f) pieza A sin dependencias; pieza B bloqueada por el lock roto → gate en la Fase 2 de la fila #3.** Vivo también `MEJORAS #111` | **A: medio · B: alto** (era «bajo»: mal estimado) |
+| 1 | [OCR ciego bajo el sello (`MEJORAS #90`)](#siguiente-ocr-ciego-texto-perdido-bajo-el-sello-de-firma-mejoras-90) | **(e) CERRADA sin rendimiento; (f) spec rev. 3, partida en A (construible) y B (bloqueada)** | (a)+(b) construidos y verdes. **(e) cerrada 2026-08-01**: lo medido da +0/−6/+288 chars y membrete de fabricante → los 11 restantes **no se corren**. **(f) pieza A sin dependencias; pieza B bloqueada por el lock roto → gate en la Fase 2 de la fila #3.** `MEJORAS #111` **REFUTADA al medirla (2026-08-02)**: el reproceso no destruye prueba → la pieza A ya no tiene ese gate; le queda una decisión de diseño (qué versión conserva el saneamiento) | **A: medio · B: alto** (era «bajo»: mal estimado) |
 | 2 | [Infra C — art. 156 LEC](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado (quick win) | bajo |
 | 3 | [Arquitectura dual del expediente activo](#siguiente-dual-workspace-arquitectura-dual-del-expediente-activo-localdrive) | spec **rev. 2** + plan Fase 0 **rev. 4**; **Fase 0 ✅ CERRADA** (#170 PR-A + #174 PR-B) y los **dos guards** adelantados (#156 lectura, #160 escritura) | Gate de revisión **consumido** (3 pasadas adjudicadas, sin 4ª). **Siguiente = Fase 1**, cuyo plan **no ha pasado revisión adversarial**. Los **7 defectos del frontal siguen vivos**: reproducidos en `xfail`, se arreglan en la Fase 2. **Absorbe Infra B (scratch)**: `local_scratch`, `--case-dir` y `promover` son piezas de aquí. **Nota cruzada (2026-08-01): su Fase 2 es ahora el gate de la pieza B de la fila #1** — el saneamiento de los segmentos duplicados no puede correr mientras `test_defecto_doble_titular` siga en `xfail`, porque una copia local stale resucita los slugs retirados | alto (5 fases restantes; la Fase 0 ya hecha) |
 | 4 | [MCP sudespacho F1](#siguiente-mcp-sudespacho-mcp-sudespacho-crm-del-despacho--f1-lectura-spec-hecho-plan-pendiente) | spec lista | gates de despliegue | alto |
@@ -142,6 +142,20 @@ ser cambiar una bandera.
       > final del párrafo («para documentos donde las cifras sean críticas, forzar el peldaño 2»)
       > pasa de consejo a **hipótesis por verificar**: que el peldaño 2 sea inmune es justo el
       > punto 3 de `#111`.
+      >
+      > ✅ **CONTRA-ERRATA (2026-08-02): medido, y la errata de arriba se pasó de frenada. La frase
+      > original se sostiene para el corpus que describe.** Los dos exposés conservan el **100 %** de
+      > sus palabras (0 de 583 y 0 de 579 ausentes), y con ellos los otros cinco documentos de
+      > (c1)/(c2): **7 de 7 limpios, en los dos peldaños**. Y las «77 palabras» de seg03 **no son
+      > pérdida**: son otra transcripción del mismo trozo ilegible —un sello de registro de salida y
+      > un teléfono de membrete, ambos leídos de dos formas distintas y ninguna fiable—, y donde hay
+      > pasaje comparable el nuevo es **más completo**: un DNI que el viejo partía en dos fragmentos
+      > el nuevo lo trae entero. Los 2 de seg02 eran artefacto del tokenizador: el sello de firma
+      > electrónica sobrevive entero, con recuentos idénticos en sus seis marcas.
+      >
+      > Por tanto: **la cautela final del párrafo se retira**, no como consejo desmentido sino como
+      > hipótesis medida y sin soporte — ninguno de los dos peldaños perdió nada. Detalle,
+      > control positivo del arnés y alcance de lo medido: **`MEJORAS #111`**, reescrita.
 
       Calidad: gibberish 2,6 % (tasación) / 4,0-4,6 % (exposés); tasación con 6/6 términos de tasación
       presentes; páginas conservadas 34/35/45. `00_Input/` intacto en los tres casos; respaldos en
@@ -180,8 +194,13 @@ ser cambiar una bandera.
       Herramienta construida y ejecutada sobre los tres casos; el veredicto de la medición es que
       **D1 no recupera nada**: +0, −6 y +288 chars en los tres segmentos de W-02VND1, membrete del
       fabricante en W-02XOR7, ruido en W-02VUDR. Los 11 candidatos restantes de W-02VND1 se declaran
-      **no se corren**. Lo que queda vivo de este bloque es (f) —limpiar lo que D1 ensució— y el
-      hallazgo de que **el reproceso puede perder texto** (`MEJORAS #111`).
+      **no se corren**. Lo que queda vivo de este bloque es (f) —limpiar lo que D1 ensució—. El otro
+      hallazgo, que **el reproceso podía perder texto** (`MEJORAS #111`), **quedó REFUTADO al medirlo
+      el 2026-08-02**: el reproceso releé lo ilegible, no destruye prueba; las 7 recuperaciones de
+      (c1)/(c2) conservan el 100 % de sus palabras. Lo que sí queda de `#111` es (i) que el reproceso
+      **no es idempotente a nivel de token y no puede serlo** —así que ningún guard debe assertar
+      identidad byte o token— y (ii) una decisión de diseño para la pieza A: el saneamiento conserva
+      «la versión que cita el registro», que en seg03 es **la peor de las dos**.
       1. [x] Detector re-corrido: **la lista viva coincide en número (17) pero NO en composición**
          con la del 2026-07-27. Los cuatro AcroForm de W-02VND1 (cuentas anuales, tasación) que
          motivaron la restricción dura **ya no aparecen**, y ningún candidato vivo es AcroForm.
