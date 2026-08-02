@@ -18,9 +18,23 @@ carpeta del bundle y se publican por renames, archivando la generación anterior
 PowerShell.
 
 **Spec (fuente única del diseño; no reabrir sus decisiones):**
-`docs/superpowers/specs/2026-08-01-identidad-segmento-bundle-design.md` — **rev. 3**, secciones
+`docs/superpowers/specs/2026-08-01-identidad-segmento-bundle-design.md` — **rev. 4**, secciones
 §0 y §3-§9. La **pieza B** (retrofit y saneamiento de los 5 grupos duplicados) está **⛔ BLOQUEADA**
 por el lock de exclusión roto y **no entra en este plan**: nada de lo que sigue toca un caso real.
+
+> **Estado: rev. 2** (2026-08-02), tras la **revisión adversarial de ronda 1** (NO-SHIP; 2 B0 + 13 A
+> + 9 M; 23 confirmados y 1 rebajado). Adjudicación en el **§14 del spec**; informe literal y digest
+> en el acta `…-pieza-a-r1-claude-adversarial-review.md`. **El revisor fue un sustituto —sesión
+> limpia de Claude Code, mismo modelo que el autor— porque Codex está sin cupo hasta el 2026-08-08**,
+> así que la independencia de esa ronda es más débil y no refutó ni un hallazgo. Nikolai decidió
+> **rediseñar y construir sin esperar a Codex**: la revisión de Codex, si llega, lo hará sobre código
+> ya escrito.
+>
+> **Qué cambió respecto de la rev. 1:** dos tareas nuevas de fondo —el passthrough archiva
+> (Tarea 5) y la fusión es autoritativa por `rel_path` reprocesado (Tarea 3)—, `re.fullmatch` para el
+> `doc_id`, `pp` normalizado, manifiesto mixto declarado, `≥1` segmento, `JSONDecodeError` capturado,
+> preflight en `reforzar`, guard que también audita `.md`/`.txt`, once tests nuevos con su mutante, y
+> el arnés de tests arreglado (`sm.append_event` doblado y `--runslow` donde toca).
 
 ---
 
@@ -28,6 +42,13 @@ por el lock de exclusión roto y **no entra en este plan**: nada de lo que sigue
 
 - **Ningún caso real se toca.** Todo el trabajo es código y tests bajo `tmp_path`. El único paso que
   mira a `G:` es la medición read-only de la Tarea 8, que **no escribe**.
+  **Y eso incluye el log** (H-17): `core/sala_maquina.py:26` importa `append_event` **por su cuenta**,
+  así que doblar solo `cli.append_event` deja el evento `split_documental` escribiendo en
+  `<CASOS_ROOT real>/W-TEST99/00_Input/_intake_log.jsonl`. Todo test que llegue a `_split_o_md`
+  doblará **las dos** ligaduras.
+- **Los tests `slow` no se corren solos** (H-18): `tests/test_split_sala_maquina_e2e.py` está marcado
+  `slow` y `tests/conftest.py:35-41` lo salta salvo `--runslow`. Toda orden de este plan que incluya
+  ese fichero **lleva `--runslow`**; sin la bandera, el «Expected: PASS» es vacuo.
 - **Windows + PowerShell.** Los comandos van desde la raíz del worktree. Encoding UTF-8 sin BOM
   siempre (`write_text(..., encoding="utf-8")`; nunca `Add-Content` sin `-Encoding UTF8`).
 - **`main` está protegida:** rama + PR, nunca commit directo. Instalar los hooks en el worktree:
@@ -94,10 +115,15 @@ Se escriben aquí para que el revisor adversarial las ataque explícitamente:
    corrida va a procesar. La reconciliación de `--force` sobre un escaneado no se puede preflightar
    por la misma razón que (2); la cubren el aislamiento por documento y el guard.
 4. **Manifiesto legacy sin `doc_id`:** en corrida normal **aborta** con un mensaje que nombra el
-   bundle y apunta al retrofit (pieza B) y a la salida disponible hoy (`--force`, que reconcilia y
-   acuña). No se acuñan identidades en silencio: el `segNN` de un artefacto puede no representar el
-   `pp` actual si un `--force` histórico renumeró, y congelar esa identidad equivocada es
-   exactamente lo que §11 quiere evitar. El coste operativo está declarado en la entrada #113.
+   bundle y apunta al retrofit (pieza B) y a las salidas disponibles hoy. No se acuñan identidades en
+   silencio: el `segNN` de un artefacto puede no representar el `pp` actual si un `--force` histórico
+   renumeró, y congelar esa identidad equivocada es exactamente lo que §11 quiere evitar.
+   **Las salidas son DOS, y la rev. 1 solo declaraba una** (H-03, rebajado): `apply --force` del caso
+   entero, **o** borrar el `_segmentacion.json` de ese bundle y lanzar `apply --solo <ruta>`, que
+   reconcilia contra `previo=None`, acuña identidades nuevas y deja que el barrido de la decisión 10
+   archive lo viejo. La segunda es la acotada, y es la que `--solo` hace posible: `--solo` **no** se
+   combina con `--force` (`scripts/sala_maquina.py:283-289`), así que sin ella la única vía era
+   reprocesar el caso completo. Las dos van en `MEJORAS #113`.
 5. **El baseline de la comprobación de permutación** (§3.3) son las filas de cobertura del bundle
    (`doc_id → paginas`). Sin baseline (primera corrida, o caso legacy sin `_cobertura.json`) la
    comprobación **no corre y se declara**; no se finge cobertura.
@@ -121,6 +147,17 @@ Se escriben aquí para que el revisor adversarial las ataque explícitamente:
     manda usar. **Esto no invade la pieza B:** aquí no se elige superviviente ni se migra nada — se
     publica la generación que el manifiesto declara y lo demás se archiva, reversible. La pieza B
     sigue siendo necesaria para los grupos duplicados que nadie va a reprocesar.
+11. **El passthrough también archiva** (rev. 2, H-01 — era `B0`). Cuando un documento se resuelve
+    como passthrough y existe carpeta de bundle previa, esa generación se archiva entera y sus
+    `doc_id` van a `retirados`. Sin esto, un bundle que deja de detectarse como tal —bastan diez
+    caracteres de ruido de OCR en la hoja en blanco, `split_documental.py:25,144-158`— dejaba el caso
+    **sin salida** con `--force` (huérfanos → salida 3, y relanzar no cambia nada) y **reintroducía
+    el defecto en silencio** sin `--force`. Spec §7.1.
+12. **La fusión es autoritativa por `rel_path` reprocesado** (rev. 2, H-01/H-05). Cambiar la clave de
+    la cobertura no basta: una fusión que solo sabe añadir no puede sustituir. Las filas previas de
+    un `rel_path` que esta corrida reprocesó se descartan; las de los `rel_path` no tocados se
+    conservan íntegras. El conjunto sale del **plan**, no de las filas, por el mismo motivo que el
+    alcance del guard. Spec §6.1.
 
 ---
 
@@ -131,6 +168,8 @@ Se escriben aquí para que el revisor adversarial las ataque explícitamente:
   `construir_manifiesto:220-229`; `escribir_manifiesto:232-248`; `_slug_seg:280-283`;
   `materializar:286-322`)
 - Modify: `tests/test_split_documental.py:174-205` (dos asertos del slug viejo)
+- Modify: `tests/test_split_sala_maquina_e2e.py:90-94` (el manifiesto a mano, que pasa a llevar
+  identidad — movido aquí desde la Tarea 2 por H-19)
 - Test: `tests/test_split_doc_id.py` (nuevo)
 
 **Interfaces:**
@@ -177,9 +216,14 @@ def test_slug_no_depende_del_contenido():
 
 
 @pytest.mark.parametrize("malo", ["../fuera", "d1", "D01", "d 01", "d01/x", "d01.pdf",
-                                  "", "1", None, 7])
+                                  "", "1", None, 7, "d01\n", "d١٢"])
 def test_doc_id_no_canonico_se_rechaza(malo):
-    """El formato es cerrado porque el `doc_id` es un campo EDITABLE que entra en una ruta."""
+    """El formato es cerrado porque el `doc_id` es un campo EDITABLE que entra en una ruta.
+
+    Los dos últimos son del hallazgo H-24, medidos: con `re.match(r"^d\\d{2,}$")` el `$`
+    casaba antes del salto final (`"d01\\n"` pasaba y reventaba como OSError DENTRO de
+    `materializar`) y `\\d` aceptaba dígitos árabes (`"d١٢"`, con `int(...) == 12`).
+    """
     with pytest.raises(ManifestValidationError):
         split.validar_doc_id(malo)
 
@@ -209,10 +253,21 @@ def test_el_espejo_md_ensena_el_doc_id_y_pide_no_tocarlo(tmp_path):
 
 
 def test_destino_en_bundle_rechaza_una_ruta_que_se_sale(tmp_path):
-    """Cinturón y tirantes de §3.1: además del formato, el destino final se contiene."""
+    """§3.1: además del formato, el destino final se contiene.
+
+    Y lo que NO hace, medido (H-08): con el prefijo `parent_slug__` delante, un doc_id
+    `..\\..\\fuera` resuelve DENTRO de la carpeta —el prefijo absorbe el primer `..`— y
+    la contención no lo caza. A ese lo para el formato canónico. Este test ejerce una
+    forma que de verdad escapa, para no pasar por la razón equivocada.
+    """
     carpeta = tmp_path / "02_Documentos" / "bundle"
     with pytest.raises(ManifestValidationError):
         split._destino_en_bundle(carpeta / ".." / "otro.pdf", carpeta)
+    with pytest.raises(ManifestValidationError):
+        split._destino_en_bundle(carpeta / "bundle__d01/../../fuera_X.pdf", carpeta)
+    # …y la forma que la contención NO caza, documentada como tal:
+    absorbida = carpeta / "bundle__..\\..\\fuera_X.pdf"
+    assert split._destino_en_bundle(absorbida, carpeta) == absorbida
 
 
 def test_materializar_rechaza_doc_id_no_canonico_antes_de_tocar_el_disco(tmp_path):
@@ -248,6 +303,23 @@ viejo (líneas 203-204), sustituyéndolos por:
     assert d0.slug == "bundle-slug__d01_CEDULA_EMPLAZAMIENTO"   # …pero ya no en el NOMBRE
 ```
 
+Y **en esta misma tarea** (no en la 2 — H-19: dejarlo para después deja el árbol rojo en medio, y
+por H-18 nadie lo vería) actualizar el manifiesto escrito a mano de
+`tests/test_split_sala_maquina_e2e.py:90-94`, que a partir de aquí es un esquema legacy:
+
+```python
+    # Manifiesto editado a mano: FUSIONA los 3 en 2 (letrado juntó cédula+auto). Lleva
+    # identidad porque el motor ya la exige: el esquema sin `doc_id` es legacy y aborta
+    # pidiendo el retrofit (pieza B), un --force, o borrar este fichero y relanzar.
+    split.escribir_manifiesto(carpeta, {
+        "fuente": d.rel_path, "bundle_sha256": d.sha256,
+        "segmentos": [{"seg": 1, "doc_id": "d01", "pp": "1-3", "tipo": "EXPEDIENTE",
+                       "role": "documento"},
+                      {"seg": 2, "doc_id": "d02", "pp": "5-5", "tipo": "DOC_FACTURA",
+                       "role": "documento"}],
+        "delimitadores": [4], "next_doc_id": "d03", "retirados": []})
+```
+
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `python -m pytest tests/test_split_doc_id.py -x -q`
@@ -269,7 +341,11 @@ class ManifestValidationError(ValueError):
 
 DOC_ID_INICIAL = "d01"
 STAGING = "_staging"          # subcarpeta de publicación por generación (sala_maquina)
-_DOC_ID_RE = re.compile(r"^d\d{2,}$")
+# `fullmatch` con clase ASCII explícita, NO `re.match(r"^d\d{2,}$")` (H-24, medido):
+# el `$` casa antes de un salto final, así que `"d01\n"` pasaba y reventaba como OSError
+# DENTRO de `materializar` —rompiendo el «se valida antes de cualquier I/O»—; y `\d`
+# acepta dígitos Unicode, con lo que `"d١٢"` pasaba y su `int()` daba 12.
+_DOC_ID_RE = re.compile(r"d[0-9]{2,}")
 
 
 def validar_doc_id(doc_id: object, *, contexto: str = "") -> str:
@@ -281,9 +357,10 @@ def validar_doc_id(doc_id: object, *, contexto: str = "") -> str:
     traversal.
     """
     sufijo = f" ({contexto})" if contexto else ""
-    if not isinstance(doc_id, str) or not _DOC_ID_RE.match(doc_id):
+    if not isinstance(doc_id, str) or not _DOC_ID_RE.fullmatch(doc_id):
         raise ManifestValidationError(
-            f"doc_id inválido {doc_id!r}{sufijo}: debe casar ^d\\d{{2,}}$ (p. ej. d01)")
+            f"doc_id inválido {doc_id!r}{sufijo}: debe ser d + dos o más dígitos ASCII "
+            f"(p. ej. d01), sin espacios ni saltos de línea")
     return doc_id
 
 
@@ -432,8 +509,9 @@ def materializar(pdf_path: Path, manifiesto: dict, carpeta_bundle: Path, *,
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `python -m pytest tests/test_split_doc_id.py tests/test_split_documental.py -q`
-Expected: PASS (todos).
+Run: `python -m pytest tests/test_split_doc_id.py tests/test_split_documental.py tests/test_split_sala_maquina_e2e.py -q --runslow`
+Expected: PASS (todos). **`--runslow` no es opcional**: sin él, el e2e ni se colecta y la corrección
+del manifiesto de arriba no se ejercita (H-18).
 
 Mutación obligatoria: quitar la línea `validar_doc_id(...)` de `_slug_seg` → debe morir
 `test_materializar_rechaza_doc_id_no_canonico_antes_de_tocar_el_disco`. Restaurarla.
@@ -441,7 +519,7 @@ Mutación obligatoria: quitar la línea `validar_doc_id(...)` de `_slug_seg` →
 - [ ] **Step 5: Commit**
 
 ```bash
-git add core/split_documental.py tests/test_split_doc_id.py tests/test_split_documental.py
+git add core/split_documental.py tests/test_split_doc_id.py tests/test_split_documental.py tests/test_split_sala_maquina_e2e.py
 ```
 
 ```bash
@@ -455,7 +533,6 @@ git commit -m "feat(split): doc_id persistente, ledger y slug de segmento indepe
 **Files:**
 - Modify: `core/split_documental.py` (`validar_manifiesto:261-270`; nuevas `validar_identidad`,
   `validar_edicion`, `reconciliar_manifiesto`, `Reconciliacion`)
-- Modify: `tests/test_split_sala_maquina_e2e.py:90-94` (el manifiesto escrito a mano)
 - Test: `tests/test_split_reconciliacion.py` (nuevo)
 
 **Interfaces:**
@@ -611,21 +688,60 @@ def test_validar_manifiesto_sigue_mirando_los_rangos_primero():
         split.validar_manifiesto(man, total_pag=20)
 ```
 
-Y **actualizar** el manifiesto escrito a mano de `tests/test_split_sala_maquina_e2e.py:90-94`
-(`test_manifiesto_editado_se_respeta`), que hoy no lleva identidad y a partir de esta tarea sería un
-esquema legacy — el propio comportamiento que estamos fijando:
+*(El manifiesto a mano de `test_split_sala_maquina_e2e.py` se corrigió ya en la **Tarea 1**: dejarlo
+para aquí dejaba el árbol rojo en medio — H-19.)*
+
+Y estos cuatro tests más, que son los mutantes que la ronda 1 dejó vivos o abrió:
 
 ```python
-    # Manifiesto editado a mano: FUSIONA los 3 en 2 (letrado juntó cédula+auto). Lleva
-    # identidad porque el motor ya la exige: el esquema sin `doc_id` es legacy y aborta
-    # pidiendo el retrofit (pieza B) o un --force.
-    split.escribir_manifiesto(carpeta, {
-        "fuente": d.rel_path, "bundle_sha256": d.sha256,
-        "segmentos": [{"seg": 1, "doc_id": "d01", "pp": "1-3", "tipo": "EXPEDIENTE",
-                       "role": "documento"},
-                      {"seg": 2, "doc_id": "d02", "pp": "5-5", "tipo": "DOC_FACTURA",
-                       "role": "documento"}],
-        "delimitadores": [4], "next_doc_id": "d03", "retirados": []})
+def test_retirados_acumula_los_tombstones_previos():
+    """§8.4 lo exige por escrito y NINGÚN test lo comprobaba (H-22, mutante vivo).
+
+    El mutante —`retirados` que no concatena el previo— pasaba los dos tests que tocan
+    el ledger, porque uno no asserta `retirados` y el otro parte de `retirados=[]`.
+    Perdido el tombstone, `validar_identidad` deja de vetar ese doc_id y el fallback de
+    `_next_doc_id_de` recalcula un high-water MÁS BAJO: es N-B0-2 por la puerta de atrás.
+    """
+    previo = _man([("d01", "1-3", "A"), ("d03", "5-9", "B")], next_doc_id="d04",
+                  retirados=["d02"])
+    rec = split.reconciliar_manifiesto(previo, _propuesto([("1-3", "A")]))
+    assert rec.manifiesto["retirados"] == ["d02", "d03"], "se perdió un tombstone previo"
+    con_d02 = {**rec.manifiesto,
+               "segmentos": [{"seg": 1, "doc_id": "d02", "pp": "1-3", "tipo": "A",
+                              "role": "documento"}]}
+    with pytest.raises(ManifestValidationError, match="retirados"):
+        split.validar_identidad(con_d02)
+
+
+def test_pp_no_canonico_hereda_igual():
+    """El manifiesto lo edita una persona: `01-03` es el mismo rango que `1-3` (H-06).
+
+    Con el índice por cadena, la herencia fallaba Y el chequeo de solape casaba, así que
+    `--force` abortaba diciendo que `1-3` «solapa con ['01-03']» — sobre sí mismo, y sin
+    salida posible salvo editar el fichero a mano.
+    """
+    previo = _man([("d01", "01-03", "A"), ("d02", " 5 - 9 ", "B")], next_doc_id="d03")
+    rec = split.reconciliar_manifiesto(previo, _propuesto([("1-3", "A"), ("5-9", "B")]))
+    assert [e["doc_id"] for e in rec.manifiesto["segmentos"]] == ["d01", "d02"]
+    assert rec.acunados == []
+
+
+def test_manifiesto_mixto_acuna_pero_lo_declara():
+    """Acuñar sobre una entrada legacy es correcto; hacerlo callando, no (H-07)."""
+    previo = {"fuente": "01_Drive EV/b.pdf", "bundle_sha256": "a" * 64,
+              "delimitadores": [], "next_doc_id": "d02", "retirados": [],
+              "segmentos": [{"seg": 1, "doc_id": "d01", "pp": "1-3", "tipo": "A",
+                             "role": "documento"},
+                            {"seg": 2, "pp": "5-9", "tipo": "B", "role": "documento"}]}
+    rec = split.reconciliar_manifiesto(previo, _propuesto([("1-3", "A"), ("5-9", "B")]))
+    assert rec.acunados == ["d02"]
+    assert rec.legacy_sin_identidad == ["5-9"], "la entrada legacy debe quedar declarada"
+
+
+def test_manifiesto_sin_segmentos_aborta():
+    """`segmentos: []` archivaba el bundle entero, no publicaba nada y salía 0 (H-11)."""
+    with pytest.raises(ManifestValidationError, match="al menos un segmento"):
+        split.validar_identidad(_man([], next_doc_id="d01"))
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -663,6 +779,13 @@ def validar_identidad(manifiesto: dict, *, exigir_doc_id: bool = True) -> None:
     fuente = manifiesto.get("fuente", "?")
     vistos: set[str] = set()
     retirados = set(manifiesto.get("retirados") or [])
+    if not manifiesto.get("segmentos"):
+        # H-11: con la lista vacía pasaban las dos validaciones, `materializar` devolvía
+        # [], el barrido archivaba TODOS los PDF del bundle, no se publicaba nada y la
+        # corrida salía 0. Un bundle sin documentos lógicos no es un estado válido.
+        raise ManifestValidationError(
+            f"el manifiesto de {fuente} no declara ni un segmento: un bundle tiene al "
+            f"menos un segmento (con la lista vacía se archivaría el bundle entero)")
     for e in manifiesto.get("segmentos", []):
         if "doc_id" not in e:
             if not exigir_doc_id:
@@ -743,6 +866,7 @@ class Reconciliacion:
     heredados: list[str]       # doc_id que conservan identidad
     acunados: list[str]        # doc_id nuevos
     retirados: list[dict]      # entradas ANTERIORES dadas de baja (doc_id + tipo, para archivar)
+    legacy_sin_identidad: list[str] = field(default_factory=list)  # `pp` previos sin doc_id (H-07)
 
 
 def reconciliar_manifiesto(previo: dict | None, propuesto: dict) -> Reconciliacion:
@@ -762,56 +886,69 @@ def reconciliar_manifiesto(previo: dict | None, propuesto: dict) -> Reconciliaci
                               [e["doc_id"] for e in propuesto["segmentos"]], [])
 
     validar_identidad(previo, exigir_doc_id=False)
-    por_pp = {e["pp"]: e for e in previo.get("segmentos", []) if e.get("doc_id")}
+    # Indexado por RANGO, no por la cadena `pp` (H-06): el manifiesto lo edita una
+    # persona, y `01-03` o `1 - 3` son el mismo rango que `1-3`. Con el índice por
+    # cadena la herencia fallaba y `--force` abortaba diciendo que un rango «solapa»
+    # consigo mismo, sin salida salvo editar el fichero a mano.
+    por_pp = {_pp_a_rango(e["pp"]): e for e in previo.get("segmentos", []) if e.get("doc_id")}
+    # Las entradas legacy (sin doc_id) no tienen identidad que heredar: sus segmentos
+    # acuñarán una nueva. Correcto, pero se DECLARA (H-07) — hacerlo callando contradice
+    # el fail-closed que justifica abortar en la corrida normal.
+    legacy = [e["pp"] for e in previo.get("segmentos", []) if not e.get("doc_id")]
     next_id = _next_doc_id_de(previo)
 
     entradas: list[dict] = []
     heredados: list[str] = []
     acunados: list[str] = []
-    usados: set[str] = set()
+    usados: set[tuple[int, int]] = set()
     for e in propuesto["segmentos"]:
-        pp = e["pp"]
-        anterior = por_pp.get(pp)
+        rango = _pp_a_rango(e["pp"])
+        anterior = por_pp.get(rango)
         if anterior is not None:
             did = anterior["doc_id"]
             heredados.append(did)
-            usados.add(pp)
+            usados.add(rango)
         else:
-            rango = _pp_a_rango(pp)
-            chocan = sorted((p for p in por_pp if _solapa(rango, _pp_a_rango(p))),
-                            key=_pp_a_rango)
+            chocan = sorted(p for p in por_pp if _solapa(rango, p))
             if chocan:
                 raise ManifestValidationError(
                     f"reconciliación imposible en {propuesto.get('fuente', '?')}: el "
-                    f"segmento {pp} no iguala ninguna entrada anterior y solapa con "
-                    f"{chocan}. --force se detiene: reconcilia _segmentacion.json a mano "
-                    f"(ajusta los pp o retira las entradas viejas) y vuelve a lanzar.")
+                    f"segmento {e['pp']} no iguala ninguna entrada anterior y solapa con "
+                    f"{[f'{a}-{b}' for a, b in chocan]}. --force se detiene: reconcilia "
+                    f"_segmentacion.json a mano (ajusta los pp o retira las entradas "
+                    f"viejas) y vuelve a lanzar.")
             did = next_id
             next_id = siguiente_doc_id(next_id)
             acunados.append(did)
         entradas.append({**e, "doc_id": did})
 
-    retirados_entradas = [e for pp, e in sorted(por_pp.items(), key=lambda kv: _pp_a_rango(kv[0]))
-                          if pp not in usados]
+    retirados_entradas = [e for rango, e in sorted(por_pp.items()) if rango not in usados]
     manifiesto = {**propuesto, "segmentos": entradas, "next_doc_id": next_id,
                   "retirados": list(previo.get("retirados") or [])
                   + [e["doc_id"] for e in retirados_entradas]}
-    return Reconciliacion(manifiesto, heredados, acunados, retirados_entradas)
+    return Reconciliacion(manifiesto, heredados, acunados, retirados_entradas, legacy)
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `python -m pytest tests/test_split_reconciliacion.py tests/test_split_doc_id.py tests/test_split_documental.py tests/test_split_sala_maquina_e2e.py -q`
+Run: `python -m pytest tests/test_split_reconciliacion.py tests/test_split_doc_id.py tests/test_split_documental.py tests/test_split_sala_maquina_e2e.py -q --runslow`
 Expected: PASS.
 
-Mutación obligatoria (la que pidió N-M-1: el test 6 no puede admitir un «acuña siempre»):
-sustituir en `reconciliar_manifiesto` la rama `if anterior is not None:` por un `if False:` →
-debe morir `test_pp_identico_hereda_la_identidad`. Restaurar.
+Mutaciones obligatorias, **las tres**:
+1. La que pidió N-M-1 («acuña siempre»): sustituir la rama `if anterior is not None:` por
+   `if False:` → debe morir `test_pp_identico_hereda_la_identidad`. *(Ojo: muere por la excepción de
+   solape, no por el aserto de herencia. El mutante que ejerce literalmente «acuña siempre» es
+   vaciar `por_pp`, y también debe morir.)*
+2. La de H-22: `"retirados": [e["doc_id"] for e in retirados_entradas]` (sin concatenar el previo) →
+   debe morir `test_retirados_acumula_los_tombstones_previos`. **Antes de la rev. 2 no moría
+   ninguno.**
+3. La de H-06: volver a indexar `por_pp` por `e["pp"]` → debe morir
+   `test_pp_no_canonico_hereda_igual`.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add core/split_documental.py tests/test_split_reconciliacion.py tests/test_split_sala_maquina_e2e.py
+git add core/split_documental.py tests/test_split_reconciliacion.py
 ```
 
 ```bash
@@ -832,7 +969,9 @@ git commit -m "feat(split): reconciliacion del manifiesto en --force, tombstones
 - Produces:
   - `DocCobertura.doc_id: str = ""`
   - `_clave_cobertura(d: DocCobertura) -> tuple[str, str]`
-  - `fusionar_cobertura` indexando por `(rel_path, doc_id)` cuando hay `doc_id`.
+  - `fusionar_cobertura(previa, nueva, rel_paths_reprocesados: set[str] | None = None)` — indexa por
+    `(rel_path, doc_id)` cuando hay `doc_id`, y es **autoritativa** sobre los `rel_path` del conjunto
+    (spec §6.1). El tercer parámetro es opcional para no romper a `reforzar`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -868,6 +1007,48 @@ def test_fusionar_sin_doc_id_sigue_indexando_por_slug():
     b = DocCobertura("factura__eeff0011", "01_Drive EV/factura.pdf", "pypdf", "ok")
 
     assert len(fusionar_cobertura([a], [b])) == 2
+
+
+def test_la_corrida_es_autoritativa_sobre_lo_que_reprocesa():
+    """Cambiar la clave no basta: una fusión que solo AÑADE no puede sustituir (H-05).
+
+    La fila reconstruida del MD sale con `doc_id=""` porque el frontmatter no lo guarda;
+    la fila fresca del mismo documento lógico lleva `doc_id`. Con claves distintas
+    quedaban DOS filas con el mismo slug, una de ellas con sha vacío — la clase de
+    defecto que esta pieza existe para eliminar, entrando por la reconstrucción.
+    """
+    from core.sala_maquina import DocCobertura, fusionar_cobertura
+    reconstruida = DocCobertura("b__d01_DOC_ARRAS", "01_Drive EV/b.pdf", "pypdf", "ok",
+                                nota="fila reconstruida del MD (sin _cobertura.json)")
+    fresca = DocCobertura("b__d01_DOC_ARRAS", "01_Drive EV/b.pdf", "ocr", "ok", 120, True,
+                          "", "c" * 64, parent_slug="b", paginas="1-3", tipo="DOC_ARRAS",
+                          doc_id="d01")
+
+    out = fusionar_cobertura([reconstruida], [fresca],
+                             rel_paths_reprocesados={"01_Drive EV/b.pdf"})
+
+    assert len(out) == 1 and out[0].sha256 == "c" * 64
+
+
+def test_lo_no_reprocesado_se_conserva_intacto():
+    """Una corrida acotada sigue siendo acotada: la autoridad es por `rel_path` tocado."""
+    from core.sala_maquina import DocCobertura, fusionar_cobertura
+    otro = DocCobertura("informe__bbbbbbbb", "01_Drive EV/informe.pdf", "ocr", "ok", 8912)
+    nueva = DocCobertura("b__d01_A", "01_Drive EV/b.pdf", "ocr", "ok", 10, True, "",
+                         "c" * 64, parent_slug="b", doc_id="d01")
+
+    out = fusionar_cobertura([otro], [nueva], rel_paths_reprocesados={"01_Drive EV/b.pdf"})
+
+    assert {c.rel_path for c in out} == {"01_Drive EV/informe.pdf", "01_Drive EV/b.pdf"}
+
+
+def test_sin_conjunto_autoritativo_se_comporta_como_antes():
+    """Compatibilidad: `reforzar` y los llamadores viejos no pasan el conjunto."""
+    from core.sala_maquina import DocCobertura, fusionar_cobertura
+    vieja = DocCobertura("b__d01_A", "01_Drive EV/b.pdf", "pypdf", "ok", doc_id="d01")
+    otra = DocCobertura("b__d02_B", "01_Drive EV/b.pdf", "pypdf", "ok", doc_id="d02")
+
+    assert len(fusionar_cobertura([vieja], [otra])) == 2
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -898,8 +1079,8 @@ def _clave_cobertura(d: DocCobertura) -> tuple[str, str]:
     return (d.rel_path, d.doc_id) if d.doc_id else (d.rel_path, d.slug)
 
 
-def fusionar_cobertura(previa: list[DocCobertura],
-                       nueva: list[DocCobertura]) -> list[DocCobertura]:
+def fusionar_cobertura(previa: list[DocCobertura], nueva: list[DocCobertura],
+                       rel_paths_reprocesados: set[str] | None = None) -> list[DocCobertura]:
     """Une la cobertura previa con la de esta corrida: la nueva gana por identidad.
 
     Simétrico con el estado idempotente (`previo | nuevo`), pero conservando el
@@ -915,12 +1096,24 @@ def fusionar_cobertura(previa: list[DocCobertura],
     porque su `rel_path` difiere; (b) los N documentos lógicos de un bundle (mismo
     `rel_path`) son N filas y NO colapsan; y (c) un segmento se identifica por su
     `doc_id`, no por su slug, que cambia si cambia el TIPO.
+
+    `rel_paths_reprocesados` (spec §6.1) hace la corrida **autoritativa** sobre lo que ha
+    reprocesado: las filas previas de esos `rel_path` que ninguna fila nueva reclama se
+    descartan. Cambiar la clave no bastaba — una fusión que solo sabe añadir no puede
+    sustituir—, y sin esto sobrevivían la fila reconstruida del MD (`doc_id=""`) junto a
+    la fresca del mismo segmento, y las N filas de un bundle que en el reproceso pasó a
+    passthrough. El conjunto lo pone el llamador desde el PLAN y no desde las filas:
+    cuando un documento falla, sus filas no existen. Omitirlo conserva el comportamiento
+    aditivo de siempre, que es lo que quiere `reforzar`.
     """
+    reprocesados = rel_paths_reprocesados or set()
     por_clave = {_clave_cobertura(d): d for d in nueva}
     vistos: set[tuple[str, str]] = set()
     out: list[DocCobertura] = []
     for d in previa:
         clave = _clave_cobertura(d)
+        if clave not in por_clave and d.rel_path in reprocesados:
+            continue          # generación anterior de un documento que esta corrida rehízo
         out.append(por_clave.get(clave, d))
         vistos.add(clave)
     for d in nueva:
@@ -946,8 +1139,18 @@ Run: `python -m pytest tests/test_sala_maquina.py tests/test_split_documental.py
 Expected: PASS. `test_fusionar_cobertura_conserva_n_segmentos_mismo_bundle` (filas sin `doc_id`)
 sigue dando 3.
 
-Mutación: hacer que `_clave_cobertura` devuelva siempre `(d.rel_path, d.slug)` → debe morir
-`test_fusionar_por_doc_id_colapsa_el_cambio_de_tipo`.
+Mutaciones: (1) `_clave_cobertura` devolviendo siempre `(d.rel_path, d.slug)` → muere
+`test_fusionar_por_doc_id_colapsa_el_cambio_de_tipo`; (2) ignorar `rel_paths_reprocesados` (no
+descartar nunca) → muere `test_la_corrida_es_autoritativa_sobre_lo_que_reprocesa`; (3) descartar
+todas las previas en vez de solo las reprocesadas → muere
+`test_lo_no_reprocesado_se_conserva_intacto`.
+
+Y en el CLI (`scripts/sala_maquina.py::apply`), pasar el conjunto — el mismo que alimenta el guard:
+
+```python
+    cob = sm.fusionar_cobertura(previa, cob_delta,
+                                rel_paths_reprocesados={d.rel_path for d in p if not d.skip})
+```
 
 - [ ] **Step 5: Commit**
 
@@ -1002,11 +1205,19 @@ from tests._pdf_fixtures import build_pdf
 
 
 def _caso(tmp_path, monkeypatch):
-    """Caso mínimo cableado al CLI (idiom del repo: se doblan las 3 dependencias externas)."""
+    """Caso mínimo cableado al CLI (idiom del repo: se doblan las dependencias externas).
+
+    Las DOS ligaduras de `append_event`, no una (H-17): `core/sala_maquina.py:26` lo
+    importa por su cuenta y `:602` lo llama desde `_split_o_md`, así que doblar solo el
+    del CLI dejaba los tests escribiendo `<CASOS_ROOT real>/W-TEST99/00_Input/
+    _intake_log.jsonl` — en el Drive, en cada corrida de la suite — contra la restricción
+    global nº 1 de este plan.
+    """
     case_dir = tmp_path / "BaRS9 - Prueba - (W-TEST99) - Negativa oferta aceptada"
     (case_dir / "00_Input" / "01_Drive EV").mkdir(parents=True)
     monkeypatch.setattr(cli, "caso_path", lambda cid: case_dir)
     monkeypatch.setattr(cli, "append_event", lambda cid, ev, *, details=None: None)
+    monkeypatch.setattr(sm, "append_event", lambda cid, ev, *, details=None: None)
     monkeypatch.setattr(cli, "_atomizar_correo", lambda cid, cd: None)
     monkeypatch.setattr(cli.case_locator, "resolve_ref", lambda ref: ref)
     return case_dir
@@ -1109,6 +1320,20 @@ def test_preflight_no_mira_los_documentos_saltados(tmp_path, monkeypatch):
 
     with pytest.raises(split.ManifestValidationError, match="retrofit"):
         sm.preflight_manifiestos(case_dir, docs, [])
+
+
+def test_preflight_convierte_un_json_corrupto_en_salida_2(tmp_path, monkeypatch):
+    """El fichero que el letrado edita a mano se rompe: eso es salida 2, no traceback."""
+    case_dir = _caso(tmp_path, monkeypatch)
+    _bundle(case_dir, "a.pdf")
+    cli.plan("W-TEST99")
+    carpeta, _ = _manifiesto_de(case_dir, "01_Drive EV/a.pdf")
+    (carpeta / "_segmentacion.json").write_text('{"segmentos": [', encoding="utf-8")
+
+    with pytest.raises(typer.Exit) as exc:
+        cli.apply("W-TEST99")
+
+    assert exc.value.exit_code == 2
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -1157,7 +1382,15 @@ def preflight_manifiestos(case_dir: Path, docs: list[DocPlan],
         carpeta = carpeta_bundle_de(case_dir, d.slug)
         if not split.manifiesto_existe(carpeta):
             continue
-        manifiesto = split.leer_manifiesto(carpeta)
+        try:
+            manifiesto = split.leer_manifiesto(carpeta)
+        except json.JSONDecodeError as exc:
+            # H-20: `leer_manifiesto` es un `json.loads` pelado y el JSON truncado es el
+            # fallo MÁS probable del único fichero que el letrado edita a mano. Sin esto
+            # escapaba del `except` del CLI como traceback en vez de salida 2.
+            raise ManifestValidationError(
+                f"`_segmentacion.json` ilegible en {carpeta}: {exc}. Es un JSON editado a "
+                f"mano: revísalo, o bórralo y deja que `apply` lo regenere.") from exc
         # Con --force el manifiesto en disco se RECONCILIA (no se consume tal cual), así
         # que un esquema viejo sin doc_id no bloquea: se le acuñan identidades nuevas.
         split.validar_identidad(manifiesto, exigir_doc_id=not force)
@@ -1318,6 +1551,64 @@ def test_publicar_archiva_la_generacion_del_esquema_viejo(tmp_path):
         "b__seg01_A__aabbccdd.md", "b__seg01_A__aabbccdd.pdf", "b__seg01_A__aabbccdd.txt"]
 
 
+def test_un_bundle_que_deja_de_serlo_retira_su_generacion(tmp_path, monkeypatch):
+    """El `B0` de la ronda 1 (H-01), de punta a punta.
+
+    Un reproceso en el que `detectar` ya no ve el bundle —diez chars de ruido en la hoja
+    en blanco bastan, o un fallo del detector que degrada a propósito— dejaba los N PDF de
+    segmento sin fila: con `--force` el guard abortaba con salida 3 y relanzar no cambiaba
+    nada; sin `--force` las N filas viejas convivían con la nueva. Ahora la generación se
+    archiva entera y la corrida cierra en 0 con UNA sola fila para ese `rel_path`.
+    """
+    case_dir = _caso(tmp_path, monkeypatch)
+    _bundle(case_dir, "a.pdf")
+    cli.apply("W-TEST99")                                  # generación de bundle: 3 segmentos
+    sm_dir = sm._sala_maquina_dir(case_dir)
+    carpeta, slug = _manifiesto_de(case_dir, "01_Drive EV/a.pdf")
+    assert len(list(carpeta.glob("*.pdf"))) == 3
+
+    # El detector deja de ver el bundle (el mecanismo real: `detectar` lanza y el motor
+    # degrada a passthrough a propósito, `core/sala_maquina.py:562-566`).
+    monkeypatch.setattr(sm.split, "detectar",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("PDF ilegible")))
+
+    cli.apply("W-TEST99", force=True)                      # no debe lanzar typer.Exit
+
+    filas = json.loads((sm_dir / "_cobertura.json").read_text(encoding="utf-8"))
+    de_este = [f for f in filas if f["rel_path"] == "01_Drive EV/a.pdf"]
+    assert len(de_este) == 1 and not de_este[0]["doc_id"], "sobrevivieron filas de segmento"
+    assert not carpeta.exists(), "la carpeta del bundle debe quedar retirada"
+    archivados = sorted((case_dir / sm.VERSIONES_ANTERIORES).glob("reproceso_*/*"))
+    assert len(archivados) >= 9 + 2, "3 segmentos × 3 representaciones + índice + manifiesto"
+    assert (sm_dir / "03_MD" / f"{slug}.md").exists(), "el MD suelto del passthrough"
+
+
+def test_el_staging_residual_no_se_publica_sin_filtrar(tmp_path):
+    """H-10: un residuo que `rmtree(ignore_errors=True)` no pudo borrar no es de ahora.
+
+    Y los `.md`/`.txt` rancios aterrizaban en la carpeta del bundle, donde no vive ninguna
+    representación legítima y donde ningún guard los miraba nunca.
+    """
+    case_dir = tmp_path / "caso"
+    sm_dir = sm._sala_maquina_dir(case_dir)
+    carpeta = sm_dir / "02_Documentos" / "b"
+    staging = carpeta / split.STAGING
+    staging.mkdir(parents=True)
+    for ext in ("pdf", "md", "txt"):
+        (staging / f"b__d01_A.{ext}").write_text("nuevo", encoding="utf-8")
+    (staging / "indice.json").write_text("{}", encoding="utf-8")
+    for nombre in ("b__d09_RANCIO.md", "b__d09_RANCIO.txt", "b__d09_RANCIO.pdf"):
+        (staging / nombre).write_text("residuo de una corrida abortada", encoding="utf-8")
+
+    sm.publicar_segmentos(case_dir, sm_dir, carpeta, publicaciones=[("b__d01_A", "")],
+                          retirados=[], sello="2026-08-02_101010")
+
+    assert sorted(p.name for p in carpeta.iterdir()) == ["b__d01_A.pdf", "indice.json"]
+    archivo = case_dir / sm.VERSIONES_ANTERIORES / "reproceso_2026-08-02_101010"
+    assert sorted(p.name for p in archivo.iterdir()) == [
+        "b__d09_RANCIO.md", "b__d09_RANCIO.pdf", "b__d09_RANCIO.txt"]
+
+
 def test_si_el_archivado_falla_no_se_publica_ninguna(tmp_path, monkeypatch):
     """El conjunto manda: un archivado a medias deja la generación nueva SIN publicar."""
     case_dir = tmp_path / "caso"
@@ -1429,13 +1720,57 @@ def publicar_segmentos(case_dir: Path, sm_dir: Path, carpeta_bundle: Path, *,
             destino.parent.mkdir(parents=True, exist_ok=True)
             origen.replace(destino)
 
-    # Lo que quede en staging es el índice del bundle (`indice.json` y su resumen): se
-    # publica igual, sin enumerarlo por nombre para no atarse a los que escriba `separar`.
+    # Del staging solo sale lo de ESTA generación: los slugs publicados (ya movidos
+    # arriba) y el índice del bundle. Lo demás se archiva (H-10): el `rmtree` de arriba
+    # usa `ignore_errors=True` y en Windows puede no haber podido borrar un residuo
+    # (sharing violation del cliente de Drive, un visor abierto), y el bucle sin filtrar
+    # lo publicaba como si fuera de ahora. Peor: los `.md`/`.txt` rancios aterrizaban en
+    # la carpeta del bundle, donde no vive ninguna representación legítima y donde ningún
+    # guard los miraba nunca.
     if staging.is_dir():
         for resto in sorted(staging.iterdir()):
-            if resto.is_file():
+            if not resto.is_file():
+                continue
+            if resto.stem in publicados or resto.name.startswith("indice."):
                 resto.replace(carpeta_bundle / resto.name)
+            else:
+                archivo.mkdir(parents=True, exist_ok=True)
+                resto.replace(archivo / resto.name)
+                archivados.append(resto.name)
         shutil.rmtree(staging, ignore_errors=True)
+    return archivados
+
+
+def archivar_bundle_entero(case_dir: Path, sm_dir: Path, carpeta_bundle: Path, *,
+                           sello: str) -> list[str]:
+    """Retira la generación de un bundle que ha DEJADO de serlo (spec §7.1, H-01).
+
+    Cuando un reproceso resuelve como passthrough —basta con que diez caracteres de ruido
+    de OCR maten la hoja en blanco que separaba— la rama passthrough escribía su MD suelto
+    y no tocaba nada más. Resultado: con `--force`, N PDF de segmento sin fila y el guard
+    abortando en un bucle del que no se sale; sin `--force`, las N filas viejas conviviendo
+    con la nueva, que es exactamente el defecto que esta pieza existe para eliminar.
+
+    Aquí se archiva la carpeta entera —las tres representaciones de cada segmento, el
+    índice y el propio manifiesto— y la carpeta se retira. El ledger se va con el
+    manifiesto: no queda bundle a quien conservárselo, y si el documento vuelve a
+    detectarse como tal, `reconciliar_manifiesto(None, …)` acuña desde cero.
+    """
+    carpeta_bundle = Path(carpeta_bundle)
+    if not carpeta_bundle.is_dir():
+        return []
+    archivo = destino_seguro(Path(case_dir) / VERSIONES_ANTERIORES / f"reproceso_{sello}",
+                             Path(case_dir))
+    slugs = [p.stem for p in sorted(carpeta_bundle.glob("*.pdf"))]
+    a_archivar = [p for s in slugs for p in _rutas_de(sm_dir, carpeta_bundle, s) if p.exists()]
+    a_archivar += [p for p in sorted(carpeta_bundle.rglob("*")) if p.is_file()]
+    archivados: list[str] = []
+    if a_archivar:
+        archivo.mkdir(parents=True, exist_ok=True)
+        for p in dict.fromkeys(a_archivar):
+            p.replace(archivo / p.name)
+            archivados.append(p.name)
+    shutil.rmtree(carpeta_bundle, ignore_errors=True)
     return archivados
 ```
 
@@ -1458,6 +1793,43 @@ def _escribir_md(case_dir, case_id, slug, rel_path, texto, metodo, ocr, estado,
         "text_sha256": text_sha256(texto),
     }
     write_md(md_path, meta, texto)
+```
+
+Y la **rama passthrough** deja de ser un callejón sin salida: antes de escribir su MD suelto, retira
+la generación de bundle que hubiera (spec §7.1). Sustituir el bloque `if not segmentos or len(...) <= 1:`
+por este:
+
+```python
+    if not segmentos or len(segmentos) <= 1:
+        # passthrough: un solo documento lógico → MD único, como antes del split.
+        # PERO si este documento YA fue un bundle, su generación anterior se retira aquí:
+        # dejarla en disco es el hallazgo H-01 (huérfanos con --force, duplicación
+        # silenciosa sin él). La cobertura la resuelve §6.1: la corrida es autoritativa
+        # sobre el rel_path que reprocesa, así que las N filas viejas desaparecen solas.
+        archivados = archivar_bundle_entero(case_dir, sm_dir,
+                                            carpeta_bundle_de(case_dir, d.slug),
+                                            sello=_sello_reproceso())
+        texto = _try_pypdf(buscable) or ""
+        estado, nota = _calidad(texto, buscable)
+        texto, estado, nota = _aplicar_vision(buscable, texto, estado, nota, vision)
+        if split_err:
+            aviso = f"segmentación omitida ({split_err})"
+            nota = f"{nota} · {aviso}" if nota else aviso
+        if archivados:
+            aviso = (f"ya no se detecta como bundle: {len(archivados)} artefactos de la "
+                     f"generación anterior archivados en {VERSIONES_ANTERIORES}/")
+            nota = f"{nota} · {aviso}" if nota else aviso
+            try:
+                append_event(case_id, "split_documental", details={
+                    "bundle": d.rel_path, "bundle_sha256": d.sha256, "n_segmentos": 0,
+                    "modo": "passthrough_retira_bundle", "archivados": archivados,
+                })
+            except Exception as exc:  # noqa: BLE001 — el trabajo ya está en disco
+                nota = f"{nota} · evento split_documental no registrado: {exc}"
+        _escribir_md(case_dir, case_id, d.slug, d.rel_path, texto, metodo_base, ocr, estado)
+        tipo_pass = segmentos[0].tipo if segmentos else ""
+        return [DocCobertura(d.slug, d.rel_path, metodo_base, estado, len(texto), ocr, nota,
+                             d.sha256, parent_sha256=d.sha256, tipo=tipo_pass)]
 ```
 
 Y la rama de split de `_split_o_md` pasa a reconciliar, estacionar y publicar:
@@ -1508,6 +1880,12 @@ Y la rama de split de `_split_o_md` pasa a reconciliar, estacionar y publicar:
     archivados = publicar_segmentos(case_dir, _sala_maquina_dir(case_dir), carpeta_bundle,
                                     publicaciones=publicaciones, retirados=retirados,
                                     sello=_sello_reproceso())
+    if rec and rec.legacy_sin_identidad:
+        # H-07: acuñar sobre entradas legacy es correcto, callarlo no. Va a la nota de
+        # cobertura —la worklist que el letrado mira— y al evento, no solo a un log.
+        _anotar(filas, f"identidades nuevas acuñadas sobre {len(rec.legacy_sin_identidad)} "
+                       f"entradas del manifiesto anterior sin doc_id "
+                       f"({', '.join(rec.legacy_sin_identidad)})")
     append_event(case_id, "split_documental", details={
         "bundle": d.rel_path, "bundle_sha256": d.sha256, "n_segmentos": len(doclogicos),
         "segmentos": [{"slug": dl.slug, "doc_id": dl.doc_id, "seg_sha256": dl.seg_sha256,
@@ -1515,6 +1893,7 @@ Y la rama de split de `_split_o_md` pasa a reconciliar, estacionar y publicar:
         "delimitadores": manifiesto["delimitadores"],
         "archivados": archivados,
         "retirados": [e["doc_id"] for e in (rec.retirados if rec else [])],
+        "legacy_sin_identidad": list(rec.legacy_sin_identidad) if rec else [],
     })
     return filas
 ```
@@ -1638,6 +2017,13 @@ def _cob_seg(slug, *, parent, doc_id, sha):
 
 
 def test_guard_detecta_la_fila_sin_fichero(tmp_path):
+    """Los asertos van sobre FRASES CON ESPACIOS, no subcadenas (H-12).
+
+    `any("MD" in f)` casaba con el componente de ruta `03_MD` que va dentro del propio
+    mensaje, y `any("raw_text" in f)` con la carpeta `raw_text`: un mutante que etiquetara
+    mal las tres representaciones sobrevivía. Es la regla que el §8 del spec impone y que
+    la rev. 1 de este plan incumplía.
+    """
     case_dir = tmp_path / "caso"
     sm_dir = sm._sala_maquina_dir(case_dir)
     carpeta = sm_dir / "02_Documentos" / "b"
@@ -1649,7 +2035,9 @@ def test_guard_detecta_la_fila_sin_fichero(tmp_path):
 
     fallos = sm.verificar_integridad_bundles(case_dir, [fila], {"b"})
 
-    assert any("MD" in f for f in fallos) and any("raw_text" in f for f in fallos)
+    assert any("falta la representación MD " in f for f in fallos)
+    assert any("falta la representación raw_text " in f for f in fallos)
+    assert not any("falta la representación PDF " in f for f in fallos)
 
 
 def test_guard_detecta_el_fichero_sin_fila(tmp_path):
@@ -1679,7 +2067,11 @@ def test_guard_detecta_el_sha_que_no_casa(tmp_path):
     fallos = sm.verificar_integridad_bundles(
         case_dir, [_cob_seg("b__d01_A", parent="b", doc_id="d01", sha="f" * 64)], {"b"})
 
-    assert any("sha" in f for f in fallos)
+    # Frase con espacios, no `"sha" in f` (H-12): el tmpdir de este test se llama
+    # `test_guard_detecta_el_sha_que_0` y las rutas van DENTRO del mensaje, así que
+    # `"sha"` casaría con cualquier fallo — la inyección por nombre de test que el §8
+    # prohíbe, ocurriendo literalmente.
+    assert any("el sha del PDF no casa" in f for f in fallos)
 
 
 def test_guard_no_audita_los_bundles_que_esta_corrida_no_toco(tmp_path):
@@ -1737,8 +2129,33 @@ def test_un_fallo_a_media_publicacion_deja_la_anterior_intacta_y_el_guard_aborta
 
     assert exc.value.exit_code == 3
     archivo = next((case_dir / sm.VERSIONES_ANTERIORES).glob("reproceso_*"))
-    assert {p.name: p.read_bytes() for p in archivo.glob("*.md")} == md_previos, \
-        "la generación anterior tiene que quedar íntegra en el archivo"
+
+    # LAS TRES representaciones y la cobertura, que es lo que §8.8 exige por escrito
+    # (H-23: assertar solo los `.md` dejaba pasar en verde una implementación SIN staging
+    # para el PDF, que destruye los PDF de la generación anterior sobrescribiéndolos in
+    # situ y archiva íntegros los MD/txt).
+    for etiqueta, previos in (("md", md_previos), ("pdf", pdf_previos), ("txt", txt_previos)):
+        archivados = {p.name: p.read_bytes() for p in archivo.glob(f"*.{etiqueta}")}
+        assert archivados == previos, f"la generación anterior de {etiqueta} no está íntegra"
+
+    # Y la cobertura, la otra mitad de §8.8. NO se comprueba que quede intacta —con
+    # `--force` se reescribe, y la decisión 7 dice que se persiste ANTES de abortar—, sino
+    # que **no declare nada que no esté**: queda la fila de error del documento físico y
+    # ninguna fila de segmento reclamando bytes que se acaban de archivar.
+    filas = json.loads((sm_dir / "_cobertura.json").read_text(encoding="utf-8"))
+    de_este = [f for f in filas if f["rel_path"] == "01_Drive EV/a.pdf"]
+    assert [f["estado"] for f in de_este] == ["empty"] and not any(f["doc_id"] for f in de_este)
+```
+
+y en el arranque de ese mismo test, capturar las tres representaciones antes de romper nada:
+
+```python
+    sm_dir = sm._sala_maquina_dir(case_dir)
+    carpeta, _ = _manifiesto_de(case_dir, "01_Drive EV/a.pdf")
+    md_previos = {p.name: p.read_bytes() for p in (sm_dir / "03_MD").glob("*.md")}
+    pdf_previos = {p.name: p.read_bytes() for p in carpeta.glob("*.pdf")}
+    txt_previos = {p.name: p.read_bytes() for p in (sm_dir / "raw_text").glob("*.txt")}
+    assert len(md_previos) == len(pdf_previos) == len(txt_previos) == 3
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -1791,6 +2208,14 @@ def verificar_integridad_bundles(case_dir: Path, cobertura: list[DocCobertura],
         for pdf in sorted(carpeta.glob("*.pdf")):
             if pdf.stem not in con_fila:
                 fallos.append(f"{pdf.name}: PDF de segmento sin fila en la cobertura")
+        for suelto in sorted(list(carpeta.glob("*.md")) + list(carpeta.glob("*.txt"))):
+            # H-10: en la carpeta del bundle no vive ninguna representación legítima —el
+            # MD va a 03_MD/ y el texto a raw_text/—, así que uno aquí solo puede venir de
+            # una publicación sucia. Antes el guard solo miraba `*.pdf` y estos no los
+            # veía nadie: un Markdown de un documento jurídico, rancio, junto a los PDF
+            # vigentes e indistinguible de un artefacto actual.
+            fallos.append(f"{suelto.name}: representación suelta en la carpeta del bundle "
+                          f"(el MD va a 03_MD y el texto a raw_text)")
     return fallos
 ```
 
@@ -1838,6 +2263,44 @@ trae saltados:
     _exigir_integridad(case_dir, cob, {d.slug for d in plan})
 ```
 
+**Y `reforzar` gana también el preflight** (H-02). Es el otro comando que entra en `_split_o_md`, no
+acepta `--force` y no tenía válvula propia: con un manifiesto legacy, `validar_manifiesto` lanzaba
+dentro de `ejecutar`, el fallo quedaba aislado, y la corrida cerraba con **salida 3 después de haber
+escrito**. Justo antes de `cob_delta = sm.ejecutar(...)`:
+
+```python
+    try:
+        sm.preflight_manifiestos(case_dir, plan, previa)
+    except split.ManifestValidationError as exc:
+        typer.echo(f"ERROR: manifiesto de segmentación inválido; no se ha reforzado "
+                   f"nada.\n{exc}", err=True)
+        raise typer.Exit(2) from exc
+```
+
+con su test:
+
+```python
+def test_reforzar_tambien_preflighta(tmp_path, monkeypatch):
+    """H-02: sin esto, `reforzar` sobre un manifiesto legacy sale 3 DESPUÉS de escribir."""
+    case_dir = _caso(tmp_path, monkeypatch)
+    _bundle(case_dir, "a.pdf")
+    cli.plan("W-TEST99")
+    carpeta, slug = _manifiesto_de(case_dir, "01_Drive EV/a.pdf")
+    man = split.leer_manifiesto(carpeta)
+    for e in man["segmentos"]:
+        del e["doc_id"]                       # manifiesto del esquema viejo
+    split.escribir_manifiesto(carpeta, man)
+    cli._guardar_cobertura(case_dir, [sm.DocCobertura(
+        f"{slug}__d01_X", "01_Drive EV/a.pdf", "pypdf", "low", 10, False, "", "a" * 64,
+        parent_slug=slug, doc_id="d01")])
+    monkeypatch.setattr(sm, "vision_cableada", lambda: True)
+
+    with pytest.raises(typer.Exit) as exc:
+        cli.reforzar("W-TEST99")
+
+    assert exc.value.exit_code == 2
+```
+
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `python -m pytest tests/test_sala_maquina_generacion.py -q`
@@ -1864,6 +2327,12 @@ git commit -m "feat(sala-maquina): guard bidireccional de artefactos de bundle, 
 - Modify: `docs/superpowers/specs/2026-08-01-identidad-segmento-bundle-design.md` (cabecera)
 - Modify: `PLAN.md` (fila #1, punto (f), pieza A)
 - Modify: `docs/MEJORAS_FUTURAS.md` (entrada nueva **#113**)
+- Modify: `.claude/skills/organizar-sala-maquina/SKILL.md:78-81` — el bloque de layout promete
+  `03_MD/ {slug__sha8}.md … (uno por documento lógico)`, y los MD de segmento dejan de llevar sha8.
+  Es lo que un agente de Cowork lee para saber qué encontrará en disco (H-13)
+- Modify: `docs/superpowers/specs/2026-07-14-split-sala-maquina-design.md:113,241,286-287,344` — el
+  contrato de nombres viejo (`{bundle_sha8}__seg{NN}_{TIPO}__{seg_sha8}`), al que apunta
+  `docs/MEJORAS_FUTURAS.md:3104`. Se anota como superado, sin reescribir su historia (H-13)
 
 **Interfaces:**
 - Consumes: todo lo anterior. No produce API nueva.
@@ -1973,10 +2442,22 @@ def test_reprocesar_sustituye_en_vez_de_anadir(caso, monkeypatch):
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `python -m pytest tests/test_split_reproceso_e2e.py -x -q`
-Expected: **PASS** si las Tareas 1-7 están bien. Para comprobar que el test **mide el defecto** y no
-es vacuo, revertir temporalmente `_slug_seg` a la forma vieja
-(`f"{parent_slug}__seg{seg:02d}_{_norm_tipo(tipo)}__{seg_sha256[:8]}"`, con su llamada) y volver a
-correrlo: debe fallar con 6 PDFs y 6 filas. Restaurar después.
+Expected: **PASS** si las Tareas 1-7 están bien.
+
+**Comprobación de vacuidad, corregida** (H-16). La rev. 1 mandaba «revertir `_slug_seg` a la forma
+vieja con su llamada» y predecía «6 PDFs y 6 filas». Las dos cosas eran falsas: hay **tres**
+llamadas a `_slug_seg` tras la Tarea 1 —la de pre-validación (antes de que exista `seg_sha`), la del
+slug previo por cambio de tipo y la de los retirados, estas dos sobre generaciones cuyo sha se
+desconoce—, así que «revertirla» es una refactorización de tres sitios; y aunque se hiciera, el
+barrido de la decisión 10 archivaría los sobrantes y saldrían **3 PDFs, 3 filas y 9 archivados**
+(medido por el revisor). La propiedad «sustituye en vez de añadir» la entrega la decisión 10 tanto
+como el `doc_id`.
+
+El mutante que sí mide lo que este test dice medir es **retirar el barrido de la decisión 10** (el
+bucle `for pdf in sorted(carpeta_bundle.glob("*.pdf"))` de `publicar_segmentos`) y, con él,
+`_slug_seg` revertido a incluir `seg_sha256[:8]` **solo en la publicación**: entonces sí quedan 6
+PDF y el test muere por el conteo, no por un aserto de nombre. Hacerlo, comprobar que muere,
+restaurar.
 
 - [ ] **Step 3: Suite completa, medición read-only y documentación**
 
@@ -1990,15 +2471,35 @@ Medición **read-only** sobre los 5 casos con Sala de máquina — comprueba si 
 daño histórico (decisión 8 del plan). **No escribe nada**; si abortase en algún caso, es un hallazgo
 para Nikolai, no una razón para relajar el guard:
 
-```powershell
-python -c "import json,pathlib,sys; sys.path.insert(0,'.'); from core import sala_maquina as sm; from core.config import CASOS_ROOT
-for caso in pathlib.Path(CASOS_ROOT).rglob('_cobertura.json'):
-    cd = caso.parent.parent.parent
-    cob = sm.cobertura_desde_dicts(json.loads(caso.read_text(encoding='utf-8')))
-    parents = {c.parent_slug for c in cob if c.parent_slug}
-    fallos = sm.verificar_integridad_bundles(cd, cob, parents)
-    print(cd.name, len(parents), 'bundles ->', len(fallos), 'discrepancias')"
+Escribir `scripts/_medir_guard_readonly.py` **fuera del repo** (scratchpad) con este contenido y
+ejecutarlo. Dos correcciones respecto de la rev. 1, las dos de H-15: **`CASOS_ROOT` no existe**
+(`from core.config import CASOS_ROOT` → `ImportError`; el nombre es `settings.casos_root`), y un
+`rglob` sobre esa raíz **recorrería el Drive entero** en vez de los cinco casos con sala de máquina.
+
+```python
+import json
+from pathlib import Path
+from core import sala_maquina as sm
+from core.config import settings
+
+CASOS = ["W-02VND1", "W-02VUDR", "W-02T3XO", "W-02XOR7", "W-02TH0W"]   # los 5 con sala de máquina
+for w in CASOS:
+    for caso in sorted(Path(settings.casos_root).glob(f"*/*{w}*")):
+        cob_json = sm._sala_maquina_dir(caso) / "_cobertura.json"
+        if not cob_json.is_file():
+            print(f"{w}: sin _cobertura.json (no medible sin reconstruir)")
+            continue
+        cob = sm.cobertura_desde_dicts(json.loads(cob_json.read_text(encoding="utf-8")))
+        parents = {c.parent_slug for c in cob if c.parent_slug}
+        fallos = sm.verificar_integridad_bundles(caso, cob, parents)
+        print(f"{w}: {len(parents)} bundles -> {len(fallos)} discrepancias")
+        for f in fallos[:5]:
+            print("   ", f)
 ```
+
+**Read-only de verdad:** solo `glob`, `read_text` y `file_sha256`. Si algún caso saliera con
+discrepancias, **es un hallazgo para Nikolai, no una razón para relajar el guard**: significa que el
+daño histórico de la pieza B alcanza a un bundle que alguien podría reprocesar.
 
 Documentación:
 
@@ -2022,12 +2523,17 @@ descubra al pisarlas.*
 2. **La reconciliación de `--force` sobre un escaneado tampoco es preflightable** (su
    manifiesto propuesto sale de `detectar`, que exige el buscable). La cubren el
    aislamiento por documento y el guard bidireccional, que aborta con salida 3.
-3. **Un manifiesto legacy sin `doc_id` aborta la corrida normal** de ese bundle, con un
-   mensaje que apunta al retrofit de la pieza B y a la salida disponible hoy (`--force`).
-   Coste operativo real: hasta que la pieza B se desbloquee, un bundle ya materializado
-   con el esquema viejo solo se reprocesa con `--force`. Se eligió fail-closed porque
-   acuñar identidades en silencio congelaría la identidad equivocada si un `--force`
-   histórico renumeró los `seg`.
+3. **Un manifiesto legacy sin `doc_id` aborta la corrida normal** de ese bundle. Se eligió
+   fail-closed porque acuñar identidades en silencio congelaría la identidad equivocada si
+   un `--force` histórico renumeró los `seg`. **Hay dos salidas, y conviene saber las dos**
+   porque la primera versión de esta nota solo declaraba una:
+   - `apply --force` sobre el caso **entero**; o
+   - **borrar el `_segmentacion.json` de ese bundle** y lanzar `apply --solo <ruta>`, que
+     reconcilia contra `previo=None`, acuña identidades nuevas y deja que el barrido de la
+     publicación archive lo viejo. Esta es la vía acotada, y hace falta saberla porque
+     `--solo` **no se combina con `--force`** (`scripts/sala_maquina.py:283-289`): sin ella,
+     el único remedio sería reprocesar el caso completo, que es justo lo que `--solo` se
+     construyó para evitar.
 ```
 
 - [ ] **Step 4: Verificar**
@@ -2053,10 +2559,15 @@ git commit -m "test+docs(split): aceptacion del reproceso que sustituye, y limit
 
 ## Criterio de salida (spec §9)
 
-- [ ] Los tests de reconciliación (6), preflight (7) y custodia (8) pasan **y mueren al retirarles su
-      arreglo** — mutación verificada, incluida la de «acuñar siempre».
-- [ ] Preflight: manifiesto inválido aborta desde la CLI con exit ≠ 0 y **cero artefactos escritos**.
-- [ ] Suite verde contra la base medida en el Paso 0; `xfail` sin `XPASS`.
+- [ ] Los tests de reconciliación (6), preflight (7), custodia (8) y los **cuatro nuevos de la rev. 2**
+      —N→1 (11), tombstones (12), tres representaciones (13) y fusión autoritativa (14)— pasan **y
+      mueren al retirarles su arreglo**. Los mutantes de H-22 y H-23 eran los dos únicos vivos tras
+      la ronda 1: comprobar que ahora mueren es el criterio, no que los tests estén escritos.
+- [ ] Preflight: manifiesto inválido aborta desde la CLI con exit ≠ 0 y **cero artefactos de Sala de
+      máquina escritos** (la atomización de correo ya escribió antes; está declarado en el spec §4).
+- [ ] Suite verde contra la base medida en el Paso 0 —**2630 passed / 77 skipped / 7 xfailed** el
+      2026-08-02 sobre `a7f168c`, con `--basetemp` corto—; `xfail` sin `XPASS`.
+- [ ] La corrida de los tests que tocan el e2e del split lleva **`--runslow`**.
 - [ ] **Ningún caso real tocado** (la única mirada a `G:` es read-only y no escribe).
 - [ ] Revisión adversarial de este plan **y** de la rev. 3 del spec consumida y adjudicada: la
       adjudicación va embebida en el documento revisado con su encabezado canónico, y el informe

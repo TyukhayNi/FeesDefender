@@ -188,8 +188,10 @@ orden de lectura lo da `pp`, no el nombre.
 - **El manifiesto MIXTO se declara, no se acuña en silencio** (H-07). Bajo `--force`, una entrada
   anterior sin `doc_id` no tiene identidad que heredar y su segmento acuña una nueva. Eso es
   correcto, pero **hacerlo callando contradice el fail-closed** que justifica abortar en la corrida
-  normal: se emite aviso por `stderr` y queda en el evento `split_documental`
-  (`identidades_acunadas_por_legacy`). Cierra lo que §11 pedía «definido explícitamente».
+  normal: queda en la **nota de cobertura** de los segmentos afectados —que es la worklist que el
+  letrado mira— y en el evento `split_documental` (`legacy_sin_identidad`). Cierra lo que §11 pedía
+  «definido explícitamente». También el passthrough que retira un bundle deja su nota y su evento
+  (§7.1); ninguna retirada de artefactos ocurre en silencio.
 
 ## 6. `doc_id` como campo estructurado, y la fusión por identidad
 
