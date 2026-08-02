@@ -4577,3 +4577,80 @@ cosa.
 
 **Coste estimado.** Las decisiones son de Nikolai; una vez cerradas, el cambio es de `SKILL.md` +
 `references/criterios_triaje.md` (+ re-empaquetado), no de código.
+
+## 116. La taxonomía documental E&V no la consume nadie aguas abajo: decidir si se sigue pagando por adelantado
+
+**Verificado contra código y skills el 2026-08-02**, a raíz de la pregunta de Nikolai: *«¿para qué sirve
+clasificar los documentos (OFERTAS, PBC, RECLAMACIONES…)? Me parece una pérdida de tiempo.»* No es la
+primera vez que sale —el patrón es siempre el mismo: ROI evidente en casos grandes, sensación de peaje
+en los pequeños que el letrado ya conoce— pero hasta ahora se había contestado por sensación. Esta
+entrada existe para que se pueda decidir con el censo delante.
+
+**Qué es.** `TAXONOMIA_EV` (`core/config.py:564`): 8 categorías, de `00. FOTOS` a
+`08. PENDIENTE DE CLASIFICAR`. **No es vocabulario del despacho: es el de E&V**, declarado como
+«Taxonomía documental E&V» en `.claude/skills/engel-volkers/SKILL.md:193`.
+
+### Censo de consumidores
+
+| consumidor | qué hace con la categoría |
+|---|---|
+| `preparacion-litigio-civil` | **nada** (0 referencias) |
+| `preparacion-audiencia-previa` | **nada** (1 referencia, incidental) |
+| `preparacion-juicio-oral` | **nada** — sus 11 coincidencias son «criterios de **activaci**ón», falso positivo del patrón de búsqueda |
+| `triaje-viabilidad` | solo `INDICE.md` como **atajo de navegación**; su `SKILL.md:56` dice explícitamente «verifica siempre contra `00_Input`» — no se fía de la clasificación |
+| `viabilidad-prerelleno` | **nada de la taxonomía**: sus 36 coincidencias son los **14 hitos** y las preguntas del cuestionario (ver abajo) |
+| scripts de `organizar-sala-lectura` | los suyos propios: `preclasificar.py`, `indices_desde_manifiesto.py`, `manifiesto_a_catalogo.py`, `manifiesto_parser.py` |
+| `core/` | `local_organizer.py` (vivo, vía `streamlit_app.py` y `scripts/organizar_local.py`) y `sala_lectura.py` (**DEPRECADO**, superado por la skill) |
+
+**Falsos positivos descartados al medir**, anotados para que nadie repita el grep y concluya otra cosa:
+un patrón que incluya `ACTIVACI` captura «criterios de activación», y uno que incluya `OFERTAS`/`ARRAS`
+captura el vocabulario **de negocio** (¿cuántas ofertas hizo el buscador?, ¿se firmaron arras?), que
+aparece en cualquier skill de honorarios sin tener nada que ver con la taxonomía.
+
+### Los dos hallazgos
+
+**1. Es circular.** La clasificación la consume, casi en exclusiva, la maquinaria que la produce. Y como
+las categorías viven en `INDICE.md` y **no en carpetas** —decisión deliberada de
+`2026-06-18-sala-lectura-unica-design.md`—, clasificar **no mueve ni un fichero**: produce una vista,
+no un orden.
+
+**2. Hay dos vocabularios paralelos y solo uno trabaja.** Los **14 hitos** de `viabilidad-prerelleno`
+(`ENCARGO`, `IDENT_PROPIETARIO`, `TITULARIDAD`, `HOJA_VISITA`, `OFERTA`, `ARRAS_ARRENDAMIENTO`,
+`RECON_HON_*`, `ESCRITURA`, `RECLAMACION_JURIDICO`…) **sí** los consume maquinaria real: el
+cuestionario, el scoring y `render_informe.py`. La taxonomía no. Y son ejes distintos: **el hito es un
+hecho que hay que probar; la categoría es un cajón donde archivar.** Se parecen en las palabras y no en
+la función. Consecuencia incómoda: **clasificar no alimenta los hitos**, que es lo que produce el
+entregable al cliente.
+
+**Ni `06. PBC` se sostiene** como categoría: `references/taxonomia_ev.md` enruta la identidad/PBC **por
+parte** (propietario → `01. ACTIVACIÓN`, buscador → `03. OFERTAS`) y deja `06. PBC` como residual.
+
+### Dónde sí rinde (estrecho, pero real)
+
+1. **Es el idioma del cliente, no el nuestro.** Al pedir documentación que falta, «faltan la ACTIVACIÓN
+   y las ofertas 2 y 3» es accionable para E&V; «falta el documento del 12/03/2024» no lo es. Es un uso
+   de **comunicación**, no de análisis.
+2. **Escala.** En un caso de 20 documentos que el letrado ya conoce, valor cero. En `W-02VND1` —188
+   documentos solo en la sala de máquina— es lo que convierte «léetelo todo» en «léete las ofertas».
+3. **Es el eje que la cronología no da.** `CRONOLOGIA.md` ordena por tiempo; el relato que decide una
+   reclamación de honorarios es *encargo → visita → oferta → arras → cierre → impago*, que es una
+   secuencia de **categorías**. Dos documentos del mismo día pertenecen a hilos distintos y la fecha no
+   lo dice.
+
+### El diagnóstico: el problema no es la taxonomía, es cuándo se paga
+
+Hoy clasificar es una **puerta** que hay que cruzar —con visto bueno humano— antes de poder leer. En un
+caso que el letrado ya conoce, eso es un impuesto puro. Que la queja se repita con la misma forma
+sugiere que la respuesta no es «mantener» ni «quitar», sino **condicionar**.
+
+**Decisión pendiente (de Nikolai), opciones:**
+
+- **(a) Subproducto en vez de fase.** `preclasificar.py` ya clasifica mecánicamente; que corra sin gate
+  y solo se revise lo ambiguo (o nada). Conserva los usos 1 y 2 sin el peaje.
+- **(b) Condicionar por tamaño.** Umbral de nº de documentos por debajo del cual no se clasifica.
+- **(c) Dejarlo como está**, asumiendo el coste como precio de hablar el idioma de E&V.
+- **(d) Retirarla del flujo del despacho** y conservarla solo al comunicarse con E&V.
+
+**No se promueve a la cola:** no hay disparador en el sentido de `CLAUDE.md` (ni caso real bloqueado ni
+bug), es una decisión de diseño de proceso. **Coste estimado:** la decisión es de Nikolai; (a) y (b) son
+cambios de `SKILL.md` + re-empaquetado, no de código.
