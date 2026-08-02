@@ -100,6 +100,32 @@ _RE_PLACEHOLDER = re.compile(
     r"|(?<=[_-])[A-Z](?=[._-])"      # metavariable de una letra: PLAN_X.md
 )
 
+# Una ruta ABSOLUTA de maquina (`C:\...`) no es una cita a un spec/plan del repo, y
+# citarla es OBLIGATORIO: el contrato de revisiones adversariales
+# (`2026-08-01-gobernanza-revisiones-adversariales-design.md` §4) exige que el informe
+# del revisor viva FUERA del repo y que el encargo FIJE su ruta. Sin este descarte, el
+# primer encargo que cumplia el contrato ponia el guard en rojo — observado el
+# 2026-08-02, no deducido. Se descarta por PATRON (letra de unidad + `\`), no por lista
+# de excepciones, y solo se pierden las citas en estilo Windows a un spec del repo, que
+# nadie escribe: las del repo van con `/` y las caza `_RE_RUTA_SP`.
+_RE_RUTA_ABSOLUTA = re.compile(r"[A-Za-z]:\\[^\s`\"'<>|]+")
+
+
+def _citas_rotas_en(txt: str, nombres: set[str]) -> list[str]:
+    """Citas a specs/plans de `txt` que no resuelven. Puro, para poder probarlo."""
+    txt = _RE_RUTA_ABSOLUTA.sub(" ", txt)
+    candidatos = [(t, True) for t in _RE_RUTA_SP.findall(txt)]
+    candidatos += [(t, False) for t in _RE_STEM_FECHADO.findall(txt)]
+    rotas: list[str] = []
+    for token, es_ruta in candidatos:
+        if _RE_PLACEHOLDER.search(token):
+            continue
+        for cand in _expandir_llaves(token):
+            existe = (ROOT / cand).exists() if es_ruta else Path(cand).name in nombres
+            if not existe:
+                rotas.append(cand)
+    return rotas
+
 
 def _expandir_llaves(token: str) -> list[str]:
     """`a-{x,y}.md` -> ['a-x.md', 'a-y.md']. Recursivo para varios grupos."""
@@ -128,17 +154,24 @@ def test_citas_a_specs_y_plans_existen():
     rotas: dict[str, list[str]] = {}
     for f in _md_trackeados():
         txt = f.read_text(encoding="utf-8", errors="replace")
-        rel = f.relative_to(ROOT).as_posix()
-        candidatos = [(t, True) for t in _RE_RUTA_SP.findall(txt)]
-        candidatos += [(t, False) for t in _RE_STEM_FECHADO.findall(txt)]
-        for token, es_ruta in candidatos:
-            if _RE_PLACEHOLDER.search(token):
-                continue
-            for cand in _expandir_llaves(token):
-                existe = (ROOT / cand).exists() if es_ruta else Path(cand).name in nombres
-                if not existe:
-                    rotas.setdefault(rel, []).append(cand)
+        malas = _citas_rotas_en(txt, nombres)
+        if malas:
+            rotas[f.relative_to(ROOT).as_posix()] = malas
     assert not rotas, f"citas a specs/plans que no existen en disco: {rotas}"
+
+
+def test_g2_no_confunde_una_ruta_absoluta_con_una_cita_al_repo():
+    """G2-bis — el informe del revisor vive FUERA del repo y su ruta se cita.
+
+    Las dos direcciones, porque el descarte por patron solo vale si no abre un hueco:
+    una ruta absoluta de maquina se ignora, y una cita rota en el mismo texto se sigue
+    cazando.
+    """
+    nombres = {"2026-08-01-identidad-segmento-bundle-design.md"}
+    absoluta = r"ruta: C:\Users\tnm33\Dev\_revisiones\2026-08-02-informe-que-no-esta-en-el-repo.md"
+    assert _citas_rotas_en(absoluta, nombres) == []
+    assert _citas_rotas_en(absoluta + "\ny ademas `2026-06-25-cita-rota.md`", nombres) == [
+        "2026-06-25-cita-rota.md"]
 
 
 def test_todo_doc_de_raiz_esta_en_el_indice():

@@ -322,3 +322,84 @@ pasada tuvo razón en decirlo— B0-1, A-1, A-4, A-5 y M-2.
 **Y su crítica a mi adjudicación era correcta:** cerré B0-1 con una solución barata que no cubría el
 caso de fallo real, y di A-5 por resuelto apoyándome en un mecanismo que no excluye. Las dos estaban
 adjudicadas con optimismo.
+
+## 14. Adjudicación de la revisión adversarial (Claude Code [sesión independiente], 2026-08-02) — NO-SHIP, pendiente
+
+- **Objeto revisado:** `docs/superpowers/plans/2026-08-02-identidad-segmento-bundle-pieza-a.md` (rev. 1) + este spec rev. 3 (§0 y §3-§9), commit `a7f168c`
+- **Ronda:** 1
+- **Revisor:** Claude Code (sesión independiente) — revisor sustituto, solo lectura
+- **Informe recibido:** `2026-08-02-identidad-segmento-bundle-pieza-a-r1-claude-adversarial-review.md`
+- **Hallazgos:** 23 confirmados · 1 rebajados · 0 refutados · 0 escalados · 0 sin verificar
+- **Remediado en:** pendiente — alcance por decidir con Nikolai (ver §14.4)
+
+### 14.1 La independencia de esta ronda es más débil, y el resultado lo enseña
+
+El revisor **no fue Codex** —sin cupo hasta el 2026-08-08— sino una **sesión limpia de Claude Code**:
+el mismo modelo que escribió el objeto. Comparte por tanto sus puntos ciegos y no tiene la tensión de
+interés de un revisor externo. Se compensó como manda `AGENTS.md` §«Revisor sustituto», y aun así
+**esta ronda no sustituye a una de Codex**.
+
+El dato que lo muestra sin discusión: **de 24 hallazgos no refuté ninguno**. Rebajé uno. Cuando autor
+y revisor comparten priors, la coincidencia no es evidencia de acierto — es lo esperable. Por eso el
+cambio de diseño que sale de aquí (§14.4, H-01) **debería pasar por Codex** antes de construirse,
+aunque el resto se remedie ya.
+
+### 14.2 Adjudicación hallazgo a hallazgo
+
+Cada uno contra la fuente, abriendo el fichero o ejecutando; la evidencia con ruta y línea está en el
+§2 del acta.
+
+| ID | Sev. | Adjudicación | Dónde se remedia |
+|---|---|---|---|
+| H-01 | **B0** | **CONFIRMADO.** Verificado en `core/sala_maquina.py:559-579`: la rama passthrough degrada a propósito, escribe un MD suelto y no llama a nada de la maquinaria nueva, que vive entera en la rama split. Las dos mitades se sostienen: con `--force` los N PDF viejos quedan huérfanos → salida 3 sin salida; sin `--force` la fusión conserva las filas viejas (clave `(rel_path, doc_id)`) junto a la nueva (`(rel_path, slug)`) y **reintroduce el defecto que esta spec existe para eliminar**, con el guard ciego. El disparador es plausible y está en código (`split_documental.py:25,144-158`: diez chars de ruido matan el separador), pero **su frecuencia real no se midió** | **Cambio de diseño** — §6 y §7 de este spec (rev. 4) + plan Tareas 3, 5 y 7 |
+| H-15 | **B0** | **CONFIRMADO, mecánico.** Ejecutado: `from core.config import CASOS_ROOT` → `ImportError`; el nombre es `settings.casos_root` | plan Tarea 8, Step 3 |
+| H-17 | A | **CONFIRMADO.** `core/sala_maquina.py:26` importa `append_event` por su cuenta y `:602` lo llama; el helper `_caso` solo parchea `cli.append_event`. Los dos tests que corren `cli.apply` de punta a punta escribirían en el `CASOS_ROOT` real, contra la restricción global nº 1 del propio plan | plan Tarea 4 (`_caso`) |
+| H-02 | A | **CONFIRMADO.** `reforzar` llama a `ejecutar` sin `force` (`scripts/sala_maquina.py:338-387`) y el plan solo cablea el preflight en `apply`: un manifiesto legacy lo lleva a salida 3 **después** de escribir | plan Tarea 7 |
+| H-03 | A | **REBAJADO.** El hecho es cierto y lo verifiqué (`acotar_plan` fuerza `skip=False` → preflight con `force=False` → aborta; y `--solo`+`--force` se rechazan en `scripts/sala_maquina.py:283-289`). Pero su consecuencia —«el único remedio es `--force` de todo el caso»— **es falsa**: borrar el `_segmentacion.json` de ESE bundle deja a `--solo` reconciliar contra `previo=None` y acuñar identidades nuevas, con el barrido de la decisión 10 archivando lo viejo. La vía acotada existe; lo que falta es declararla | `MEJORAS #113` punto 3 |
+| H-04 | A | **CONFIRMADO.** `_atomizar_correo` (`scripts/sala_maquina.py:293`) escribe antes del preflight, y `_registrar_atomizado` añade una línea a `00_Input/_intake_log.jsonl`. El preflight en sí no escribe: lo falso es la promesa sobre **la corrida**. **Remedio acotado a redacción** (decisión de Nikolai): mover el preflight delante de la atomización la haría cierta y **no se hace en esta ronda** | §4 y §9 de este spec + docstring de la Tarea 4 |
+| H-05 | A | **CONFIRMADO, con el alcance más estrecho de lo que sugiere.** La fila reconstruida sale con `doc_id=""` y la fresca con `doc_id`, así que dejan de colapsar. Matiz que el informe no separa: solo muerde cuando el MD **ya se escribió con el nombre nuevo** y falta `_cobertura.json`; con MD de nombre viejo son dos filas también hoy. **Qué casos reales carecen de `_cobertura.json` sigue sin verificar** | cubierto por el remedio de H-01(b); si no se adopta, plan Tarea 3 |
+| H-06 | A | **CONFIRMADO.** `por_pp` se indexa por la cadena `pp`: `01-03` vs `1-3` rompe la herencia y el mensaje dice «solapa» sobre el mismo rango | plan Tarea 2 |
+| H-07 | A | **CONFIRMADO.** Bajo `--force`, las entradas sin `doc_id` quedan fuera de `por_pp` y se les acuña identidad sin aviso — justo lo que la decisión 4 dice no hacer | plan Tarea 2 |
+| H-08 | A | **CONFIRMADO, ejecutado.** `..\..\fuera` resuelve **dentro** de la carpeta (el prefijo `parent_slug__` absorbe el primer `..`), así que `_destino_en_bundle` no caza la forma que ejecutó la 2ª revisión; `d01/../../fuera` sí. **Remedio: redacción** de §3.1 (el «cinturón y tirantes» no es lo que dice ser) + que el test ejerza una forma que de verdad escape | §3.1 + plan Tarea 1 (solo el test) |
+| H-09 | A | **CONFIRMADO.** El bucle de archivado no es transaccional: «la generación anterior queda íntegra» es falso si falla a medias. **Remedio: redacción** — lo que sí se cumple es «no se publica ninguna» | §8.8(a) + plan Tarea 5 |
+| H-14 | A | **CONFIRMADO.** El guard **detecta** la fila con sha que no casa; §7 promete **prevenir**. **Remedio: redacción** | §7 |
+| H-18 | A | **CONFIRMADO.** `tests/conftest.py:35-41` salta los `slow` salvo `--runslow`, que el plan nunca pasa: todo «Expected: PASS» que incluya el e2e es vacuo y la corrección de manifiesto de la Tarea 2 no se ejecutaría nunca | plan Tareas 2, 5 y 8 |
+| H-22 | A | **CONFIRMADO.** Ninguno de los dos tests que tocan `retirados` asserta la acumulación con un tombstone previo: el mutante «no acumula» pasa la suite y reabre N-B0-2 | plan Tarea 2 |
+| H-23 | A | **CONFIRMADO como hueco de cobertura**, que es lo que §8.8 exige por escrito («los bytes de las tres representaciones **y** la cobertura»): el test asserta solo los `.md`. El mutante concreto —materializar sin staging para el PDF— está **trazado contra el código, no ejecutado** de punta a punta | plan Tarea 7 |
+| H-10 | M | **CONFIRMADO.** El bucle final publica todo lo que quede en staging sin filtrar por el manifiesto, y el guard solo audita `*.pdf`: un `.md` rancio en la carpeta del bundle no lo mira nadie nunca | plan Tareas 5 y 7 |
+| H-24 | M | **CONFIRMADO, ejecutado.** `^d\d{2,}$` acepta `'d01\n'` y dígitos árabes (`int(…)==12`); `re.fullmatch(r"d[0-9]{2,}")` cierra los dos | plan Tarea 1 |
+| H-11 | M | **CONFIRMADO.** Nada exige ≥1 segmento: con `segmentos: []` se archiva el bundle entero, no se publica nada y sale 0 | plan Tarea 2 |
+| H-12 | M | **CONFIRMADO en sustancia:** `any("MD" in f)` y `any("raw_text" in f)` casan con componentes de ruta, no con la etiqueta. **El recuento «10 de 11 asertos» no lo he recontado** y queda sin verificar | plan Tarea 7 |
+| H-13 | M | **CONFIRMADO, leído.** `organizar-sala-maquina/SKILL.md:78-81` y `2026-07-14-split-sala-maquina-design.md:113,241,286-287,344` documentan el contrato de nombres viejo y quedan falsos | plan Tarea 8 (lista de ficheros) |
+| H-16 | M | **CONFIRMADO.** El paso de vacuidad esconde una refactorización de tres sitios y su predicción «6 PDFs y 6 filas» es falsa | plan Tarea 8, Step 2 |
+| H-19 | M | **CONFIRMADO.** La Tarea 1 deja el árbol rojo hasta la 2, y por H-18 nadie lo vería | plan Tareas 1-2 |
+| H-20 | M | **CONFIRMADO.** `leer_manifiesto` es un `json.loads` pelado: el JSON truncado —el fallo más probable en el fichero que edita el letrado— escapa como traceback | plan Tarea 4 |
+| H-21 | M | **CONFIRMADO, medido por mí** en el commit anclado con `--basetemp` corto: la cifra de §9 (2612) está desfasada | §9 |
+
+### 14.3 Dos defectos que salieron al adjudicar, y no son del revisor
+
+- **El encabezado de adjudicación que el propio encargo proponía no pasa G7.** El grupo `revisor` del
+  regex es `[^,)]+` y no admite paréntesis anidados, así que
+  `(Claude Code (sesión independiente), 2026-08-02)` falla. Medido contra el regex real
+  (`tests/test_docs_gobernanza.py:278-283`). Por eso este encabezado usa
+  `Claude Code [sesión independiente]`, con la forma larga en el frontmatter del acta y en la ficha.
+- **El guard G2 daba un falso positivo con la ruta del informe, y mi verde previo era falso.** El
+  contrato de revisiones exige que el informe viva **fuera** del repo y que el encargo **fije** su
+  ruta; G2 leía esa ruta absoluta como una cita a un spec inexistente. Arreglado por patrón —no por
+  lista de excepciones— en `tests/test_docs_gobernanza.py`, con test en las dos direcciones. La
+  lección operativa: **G2 solo mira ficheros trackeados**, así que correr la suite antes de commitear
+  da un verde que no vale.
+
+### 14.4 Reparto de la remediación (propuesta, pendiente de Nikolai)
+
+Nada de esto está construido: la pieza A es un plan. Eso abarata casi todo — 22 de los 24 hallazgos
+se cierran editando dos documentos, no tocando código en producción.
+
+| bloque | qué | coste |
+|---|---|---|
+| **1. Mecánico y de redacción** (H-04, H-08, H-09, H-13, H-14, H-15, H-16, H-19, H-21, H-24, H-11, H-12, H-20, H-06, H-07, H-02, H-03, H-17, H-18, H-22, H-23) | rev. 2 del plan + rev. 4 de este spec | alto en volumen, nulo en riesgo |
+| **2. Cambio de diseño** (H-01, y H-05 de rebote) | la rama passthrough archiva la generación anterior, y la fusión pasa a ser **autoritativa por `rel_path` reprocesado** en vez de acumular | cambia §6 y §7 |
+
+La pregunta abierta es si el bloque 2 se construye tras esta ronda o **espera una pasada de Codex**
+(disponible el 2026-08-08): lo encontró el revisor sustituto, y es precisamente el tipo de cambio
+—identidad y custodia de artefactos— donde el sesgo compartido pesa más.

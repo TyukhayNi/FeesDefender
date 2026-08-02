@@ -1,6 +1,7 @@
 ---
 tipo: handoff
-estado: activo
+estado: consumido
+consumido_por: "Revisión ejecutada y archivada. Informe literal + digest en el acta `docs/superpowers/specs/2026-08-02-identidad-segmento-bundle-pieza-a-r1-claude-adversarial-review.md` (este mandato es su §0); adjudicación de los 24 hallazgos en el §14 del spec `2026-08-01-identidad-segmento-bundle-design.md` — NO-SHIP, 23 confirmados + 1 rebajado."
 creado: 2026-08-02
 origen: sesión Claude Code autora del plan de la pieza A (rama `claude/plan-next-step-a429e7`)
 destino: revisor adversarial SUSTITUTO — sesión limpia de Claude Code (Opus), chat nuevo, sin el contexto de autoría
