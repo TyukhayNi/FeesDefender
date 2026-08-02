@@ -230,30 +230,47 @@ existencia del acta; no tocan `_ESTADOS_DOCS` ni `_ESTADOS_HANDOFF` ni vuelven r
 `_docs_con_frontmatter`; no piden frontmatter a specs ni planes; no juzgan el contenido de la
 adjudicación.
 
-**Una ceguera medida, y es una FAMILIA, no una vía.** G7 valida las adjudicaciones que **encuentra**,
-y las encuentra por una cadena literal —`Adjudicación de la revisión`— buscada en líneas que empiezan
-por `#` sobre el texto ya descercado. Todo lo que se salga de ahí es invisible, y **el corpus se queda
-verde**. Medido por la revisión adversarial del 2026-08-02 sobre el corpus real, cada una reproducida:
+**El disparador: era una cadena literal, y era una FAMILIA de vías de evasión, no una.** Hasta el
+2026-08-02 G7 encontraba las adjudicaciones buscando `Adjudicación de la revisión` en líneas que
+empiezan por `#`, sobre el texto ya descercado. Todo lo que se saliera de ahí era invisible y **el
+corpus se quedaba verde con una adjudicación fuera de formato**. La revisión adversarial midió ocho
+vías sobre el corpus real. **Ampliado por decisión de Nikolai; las ocho muerden hoy**, cada una
+verificada mutando el corpus real y no una fixture sintética:
 
-| Vía | G7 |
-|---|---|
-| plural: `Adjudicación de **las revisiones** adversariales` | verde |
-| sin tildes; minúscula inicial | verde |
-| encabezado sangrado (ATX válido) o *setext* (`----`) | verde |
-| sinónimos: `Adjudicación **del veredicto**`, `Adjudicación de la **autorrevisión**` | verde |
-| una cerca ` ``` ` **impar aguas arriba** apaga el resto del fichero | verde |
-| anteponer `---\ntipo: revision-adversarial\n---` saca el fichero **entero** | verde |
+| Vía | Antes | Ahora | Cómo se cierra |
+|---|---|---|---|
+| plural: `Adjudicación de **las revisiones**` | verde | **roja** | disparador sobre texto normalizado |
+| sin tildes: `Adjudicacion de la revision` | verde | **roja** | ídem (NFD, se quitan diacríticos) |
+| minúscula inicial | verde | **roja** | ídem (comparación en minúsculas) |
+| encabezado **sangrado** (hasta 3 espacios, ATX válido) | verde | **roja** | se detecta con sangría y el regex estricto la rechaza |
+| encabezado **setext** (`texto` + `---`) | verde | **roja** | se detecta el subrayado; el estricto lo rechaza |
+| sinónimos: `del veredicto`, `de la **autorrevisión**` | verde | **roja** | los dos entran al disparador |
+| cerca ` ``` ` **impar aguas arriba** | verde | **roja** | se declara error, y solo si de hecho oculta una adjudicación |
+| anteponer `---\ntipo: revision-adversarial\n---` | verde, el fichero **entero** salía | **roja** | la exención pasa a ser **por nombre** |
 
-Dos cosas que hay que decir sin adornarlas. **La del plural no es hipótesis:** es lo que pasó con el
+**Detectar es la mitad; la otra es no bendecir.** El disparador se ensancha, pero el regex estricto del
+§5 no se toca: una forma no canónica se **ve** y se **rechaza** como «encabezado fuera de formato». La
+comparación normalizada es solo del disparador — lo que se valida es la línea tal como está escrita.
+
+Dos cosas que hay que decir sin adornarlas. **La del plural no era hipótesis:** es lo que pasó con el
 §13 de `2026-08-01-identidad-segmento-bundle-design.md` el día que estuvo en `main`. **Y la de la
 autorrevisión estaba escrita en este repo desde antes**, con su aviso, en
-`plans/2026-08-01-migracion-revisiones-adversariales.md:1262` — la rev. 9 la enumeró aquí solo después
-de que un revisor la señalara.
+`plans/2026-08-01-migracion-revisiones-adversariales.md:1262`; la rev. 9 la enumeró solo después de que
+un revisor la señalara.
 
-Ampliar el disparador **no cierra la familia**: no cierra el sangrado, ni el setext, ni la cerca
-impar, ni el frontmatter antepuesto. **No se amplía en la rev. 9** porque el encargo del retrofit no
-lo incluía y hacerlo por mi cuenta sería la misma deriva que causó el recorte; queda como decisión de
-Nikolai, ahora con el mapa entero delante en vez de con un vector suelto.
+**La exención de las actas deja de ser por contenido.** Antes bastaba que un fichero declarara
+`tipo: revision-adversarial` para salir del corpus entero: exclusión autodeclarada y que podía crecer
+sin tocar el test, justo la polaridad que el §7 rechaza. Ahora, en un acta **con `marcador_nonce`** se
+vacía únicamente su **informe literal**, delimitado por los marcadores, y el resto se valida. Solo las
+**siete actas anteriores** a ese contrato quedan exentas, **por nombre**, en una lista que **solo puede
+encoger**: un acta nueva no puede entrar en ella porque el §4 le exige el nonce.
+
+**Lo que sigue abierto, y no se cierra ampliando nada.** El disparador reconoce las variantes de la
+frase canónica y sus dos sinónimos medidos; **no** reconoce una adjudicación titulada de otra forma
+—`## Adjudicación`, `## Tabla de adjudicación`, `## Auto-revisión`, `## Veredicto de la revisión`—, y
+hay unas diez así en el corpso, precorte o en actas de julio. Ensanchar el disparador hasta ellas
+pondría en rojo una población cuyo retrofit **no** está encargado, así que quedan declaradas aquí, con
+sus formas, en vez de disimuladas. Y el §6 sigue sin juzgar el contenido: un `999 confirmados` pasa.
 
 **Lo que sí se cerró, porque era una regresión de la propia rev. 9:** retirar `_ADJ_LEGACY` dejó el
 corpus sin ninguna lista que nombrara población, y G7 **no comprobaba que estuviera viendo algo**.
