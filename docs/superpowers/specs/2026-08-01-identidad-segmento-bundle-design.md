@@ -445,16 +445,36 @@ La última fila es doctrina: el log es forense y append-only. **Seguirá citando
 siempre, y eso es correcto** — describe lo que pasó cuando pasó. La 2ª revisión buscó un consumidor
 productivo que cruzase esos slugs históricos con la cobertura vigente y **no encontró ninguno**.
 
-## 13. Adjudicación de las revisiones adversariales
+## 13. Las dos revisiones adversariales de Codex
 
 Handoffs: `docs/superpowers/handoffs/handoff-2026-08-01-identidad-segmento-codex-review.md` (1ª) y
-`…-review-2.md` (2ª).
+`…-review-2.md` (2ª). Los dos informes viven entre los handoffs, no como acta, por la decisión de
+Nikolai del 2026-07-30 (`docs/GOBERNANZA_FUENTES_VERDAD.md` §5): **no llevan digest** y su
+integridad no es comprobable, solo la sostiene el historial de git.
 
-**1ª pasada (NO SHIP, sobre rev. 1):** B0-2 dirimente, cambió la decisión central. Cerrados en la
+### 13.1. Adjudicación de la revisión adversarial (Codex, 2026-08-01) — NO-SHIP, remediado
+
+- **Objeto revisado:** `docs/superpowers/specs/2026-08-01-identidad-segmento-bundle-design.md` rev. 1, commit `f965716`
+- **Ronda:** 1
+- **Revisor:** Codex (solo lectura)
+- **Informe recibido:** `docs/superpowers/handoffs/handoff-2026-08-01-identidad-segmento-codex-review.md` — handoff, **sin digest**
+- **Hallazgos:** 10 confirmados · 0 rebajados · 0 refutados · 0 escalados · 0 sin verificar
+- **Remediado en:** rev. 2 de este documento y, lo que quedó a medias, rev. 3
+
+Los 10 son 2 B0 + 5 A + 3 M. B0-2 fue dirimente: cambió la decisión central. Cerrados en la
 rev. 2 y confirmados por la 2ª pasada: B0-2, A-2, A-3, M-1, M-3. Quedaron **a medias** —y la 2ª
 pasada tuvo razón en decirlo— B0-1, A-1, A-4, A-5 y M-2.
 
-**2ª pasada (NO SHIP, sobre rev. 2):**
+### 13.2. Adjudicación de la revisión adversarial (Codex, 2026-08-01) — NO-SHIP, remediado
+
+- **Objeto revisado:** `docs/superpowers/specs/2026-08-01-identidad-segmento-bundle-design.md` rev. 2, commit `05d985f`
+- **Ronda:** 2
+- **Revisor:** Codex (solo lectura)
+- **Informe recibido:** `docs/superpowers/handoffs/handoff-2026-08-01-identidad-segmento-codex-review-2.md` — handoff, **sin digest**
+- **Hallazgos:** 11 confirmados · 0 rebajados · 0 refutados · 0 escalados · 0 sin verificar
+- **Remediado en:** rev. 3 de este documento; N-B0-4 deja la **pieza B bloqueada** (§10)
+
+Los 11 son los de la tabla, y los once se sostienen contra la fuente:
 
 | ID | Adjudicación | Dónde se resuelve |
 |---|---|---|

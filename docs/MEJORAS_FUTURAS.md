@@ -4346,50 +4346,94 @@ de un hilo) es la normal, no la excepción.
 lectura, y de él no salieron al registro ni asuntos ni direcciones ni cuerpos, solo estructura y
 contadores). Con esta medición hecha, **ese corpus ya se puede borrar**: era lo único que lo retenía.
 
-## 111. El reproceso de un PDF con capa de texto NO es aditivo: pierde cifras y fechas
+## 111. El reproceso releé lo ilegible, no pierde prueba — la alarma original quedó REFUTADA
 
-**Medido 2026-08-01**, al comprobar el estado real de `W-02VND1` tras la corrida de D1 de
-`MEJORAS #90` (fila #1 de `PLAN.md`). Se numera **111** y no 110 porque el 110 lo ocupa un PR abierto
-(#185).
+**Abierta el 2026-08-01 y MEDIDA el 2026-08-02.** Se numera **111** y no 110 porque el 110 lo ocupa un
+PR abierto (#185).
 
-**Lo que la documentación afirma y resulta ser falso.** El punto (c2) de `[SIGUIENTE-OCR-CIEGO]` en
-`PLAN.md` dice del peldaño 1 de la escalera: «el **100 %** de las palabras del original sobrevive en
-todas ellas y ninguna pierde texto». Medido sobre los tres segmentos de `W-02VND1` reprocesados el
-2026-07-30 (`pypdf` → escalera con `ocr`):
+> ⚠️ **Esta entrada afirmaba lo contrario de lo que dice hoy.** Su título era «El reproceso de un PDF
+> con capa de texto NO es aditivo: pierde cifras y fechas», y sostenía que seg03 perdía **77 palabras
+> únicas de 6.405** y seg02 dos, «cifras, fechas y horas — exactamente lo que no se puede perder en
+> prueba documental». **Medido, esa lectura es falsa.** Se conserva el enunciado viejo aquí porque la
+> entrada llegó a operar como gate: frenó la pieza A de `MEJORAS #90` mientras estuvo escrita así.
 
-| segmento | chars antes | chars después | delta | palabras únicas del viejo ausentes en el nuevo |
+### Lo medido (2026-08-02, read-only, sin re-OCR)
+
+**Punto 2 — ¿afectó a las recuperaciones ya dadas por buenas? NO.** Comparados los 7 documentos de
+(c1)/(c2) contra sus originales de `99_Versiones anteriores/recuperacion_ocr_2026-07-27/`, en
+**caracteres decodificados** (no bytes — la unidad fue el error de la vez anterior):
+
+| documento | peldaño | chars antes | chars después | palabras ausentes |
 |---|---|---|---|---|
-| seg01 | 9.204 | 9.204 | +0 | 0 de 502 |
-| seg02 | 44.639 | 44.633 | **−6** | **2** de 2.623 |
-| seg03 | 160.685 | 160.973 | +288 | **77** de 6.405 (1,2 %) |
+| Tasación TECNITASA (2 copias de custodia) | 2 | 47.033 | 64.103 | **0** de 1.786 |
+| Cuentas anuales 2022 | 2 | 10.539 | 56.021 | **0** de 281 |
+| Cuentas anuales 2023 | 2 | 10.235 | 54.708 | **0** de 281 |
+| Cuentas anuales 2024 | 2 | 11.147 | 66.160 | **0** de 281 |
+| Exposé W-02XOR7 | 1 | 10.127 | 14.322 | **0** de 583 |
+| Exposé W-02VUDR | 1 | 12.864 | 14.384 | **0** de 579 |
 
-Muestra de lo que desaparece en seg03: `340482060416`, `26/12/2085`, `1/03/203`, `18:39`, `223`,
-`377655`, `%`. **Son cifras, fechas y horas** — exactamente lo que no se puede perder en prueba
-documental. La ganancia (+288 chars) es de un orden inferior al riesgo que introduce.
+Conservación palabra a palabra completa, en los dos peldaños, sin excepción. **Las cuentas anuales y
+la tasación que están en el Drive son sólidas y no hay que reverificarlas.**
 
-**Lo que NO se sabe todavía, y hay que medir antes de proponer arreglo:**
+**Punto 1 — dónde se pierde: no se pierde, se releé.** Las 11 pérdidas con dígito de seg03 son otra
+transcripción del mismo trozo ilegible, verificadas emparejando pasajes uno a uno. Los cinco pares
+comprobados (valores redactados: son de un caso real):
 
-1. **Dónde se pierde.** Puede ser en el OCR (Tesseract re-renderiza una página que ya traía capa
-   digital y la reconoce peor) o en la extracción (`_try_pypdf` sobre el PDF recompuesto). Se
-   distingue comparando el texto **página a página** entre el PDF original y el de la escalera.
-2. **Si afecta a las recuperaciones ya dadas por buenas.** Los documentos de (c1) y (c2) —cuentas
-   anuales 2022-2024 y tasación TECNITASA de `W-02VND1`, exposés de `W-02XOR7` y `W-02VUDR`— se
-   verificaron por conteo de caracteres y por presencia de términos clave, **no por conservación
-   palabra a palabra**. Con el original guardado en
-   `99_Versiones anteriores/recuperacion_ocr_2026-07-27/`, la comparación es barata y no exige volver
-   a OCR-izar nada.
-3. **Si el peldaño 2 es inmune.** El §(c2) sostiene que el peldaño 2 deja las páginas digitales
-   byte-idénticas. Si es cierto, la pérdida solo puede venir de las páginas que sí se re-OCR-izan, y
-   el remedio pasaría por preferir el peldaño 2 siempre que haya capa de texto real.
+| zona del documento | el viejo | el nuevo |
+|---|---|---|
+| sello de registro de salida de un ministerio | fecha y hora con dígitos imposibles (año en el futuro) | la misma franja leída como un número corrido, sin separadores |
+| teléfono del membrete del despacho contrario | 12 dígitos | los mismos, con uno menos |
+| segundo fragmento del mismo membrete | 6 dígitos sueltos | 10 dígitos, absorbiendo el fragmento contiguo |
+| dirección del pie de una notaría | número + basura con contrabarra | número + basura sin contrabarra, y **el nuevo recupera los acentos** del nombre del notario |
+| cabecera de un certificado energético en catalán | `Institut Catala d9Energia` | `QUALIFICACIÓ ENERGÈTICA … L'EDIFICI` |
 
-**Por qué no bloquea hoy.** D1 se cerró por falta de rendimiento el 2026-08-01, así que no hay
-reprocesos previstos, y el saneamiento diseñado en
-`docs/superpowers/specs/2026-08-01-identidad-segmento-bundle-design.md` **conserva la versión que
-cita el registro** (la anterior al reproceso), de modo que ninguna de estas pérdidas entra en el
-expediente. Lo que queda vivo es la duda del punto 2 sobre las recuperaciones de (c1)/(c2).
+Ninguno de los dos lados es una lectura fiable: son zonas que **no se dejan leer** (sellos, membretes,
+logotipos rasterizados). Donde existe pasaje homólogo localizable, **el nuevo es más completo**: en un
+documento notarial el viejo partía un DNI en un fragmento truncado más un número suelto flotando, y el
+nuevo lo trae **entero y bien formado**. En agregado seg03 pasa de 5.414 a 5.453 tokens únicos y de
+24.799 a 24.861 ocurrencias: pierde 66 y gana 105.
 
-**Coste estimado.** ~1 h la medición de los tres puntos, sobre material ya en disco y sin re-OCR. El
-arreglo, si lo hay, depende de lo que diga.
+**Los 2 de seg02 eran artefacto de medición.** Parecía desaparecer la marca temporal del **sello de
+firma electrónica cualificada** de un escrito. El sello está entero: las seis marcas comprobadas (DNI
+del firmante ×2, emisor del certificado, hora, huso y fecha) tienen **recuentos idénticos** en ambas
+versiones. El nuevo escribe la fecha pegada a su etiqueta, sin espacio, y un tokenizador por espacios
+la cuenta como otro token. El segundo «perdido» era ruido de OCR del viejo dentro del mismo sello.
+
+**Punto 3 — ¿es inmune el peldaño 2? La pregunta se disuelve.** Presupone que el peldaño 1 no lo es, y
+ninguno de los dos perdió nada. El consejo «para documentos donde las cifras sean críticas conviene
+forzar el peldaño 2» era una hipótesis, **se ha medido y no tiene soporte empírico**: puede retirarse
+(anotado también en el §(c2) de `[SIGUIENTE-OCR-CIEGO]`).
+
+### Método: el control positivo, sin el cual el cero no valía nada
+
+Siete ceros seguidos son sospechosos. El mismo arnés se corrió contra el caso donde la medición del
+2026-08-01 **sí** halló diferencias, y las reprodujo: seg01 = 0, seg02 = 2, seg03 ≈ 66 (frente a los 77
+originales; tokenizador algo menos granular, misma magnitud). Sin ese control, los ceros de la tabla de
+arriba no serían prueba de conservación sino, posiblemente, de un instrumento roto.
+
+### Lo que SÍ queda como hecho, y es lo aprovechable
+
+**El reproceso no es idempotente a nivel de token, y no puede serlo.** Releer un sello borroso da otra
+cosa cada vez que cambia el renderizado de entrada. Consecuencia práctica: **cualquier guard que
+asserte identidad byte o token entre dos corridas será vacuo por diseño** y acabará desactivado o
+ignorado. Si hace falta un guard de no-regresión sobre el reproceso, tiene que medir otra cosa
+(conservación de tokens *de contenido*, presencia de términos ancla, o densidad), no identidad.
+
+### Consecuencias
+
+1. **Se levanta el gate de la pieza A** de `MEJORAS #90`: el reproceso no destruye prueba.
+2. **Hallazgo de diseño para esa pieza A**, que sí sigue vivo: el saneamiento previsto conserva «la
+   versión que cita el registro», que en `W-02VND1` es la del 23/07 — y en seg03 es **la peor de las
+   dos** (un DNI partido frente al mismo DNI entero; nombres propios sin acentuar frente a los mismos
+   acentuados). Conviene decidir esa regla a propósito y no por omisión. Spec:
+   `docs/superpowers/specs/2026-08-01-identidad-segmento-bundle-design.md`.
+
+**Coste consumido.** ~40 min. **Pendiente:** nada de medición. Queda solo el punto 2 de Consecuencias,
+que es una decisión de diseño de la pieza A, no una medición.
+
+**Alcance de lo medido, para no sobreleer.** 10 documentos (7 recuperaciones + 3 segmentos) de 3 casos.
+Retira la alarma y retira el consejo sin base; **no** autoriza a dar por buena cualquier corrida futura
+sin mirarla.
 
 ## 112. `test_resumen_cuenta_por_estado` depende en silencio de dónde viva el `basetemp` de pytest
 
@@ -4416,3 +4460,197 @@ absoluto. Cualquiera de las tres quita la dependencia oculta sin perder lo que e
 
 **Coste estimado.** ~15 min. No bloquea: la suite pasa con el `basetemp` por defecto y con cualquiera
 razonablemente corto.
+
+## 113. El pull del CRM no lo encadena nadie, y su `--run-pipeline` llama al motor jubilado
+
+**Verificado contra código el 2026-08-02**, al preguntarse Nikolai por qué los documentos de un
+expediente del CRM no aterrizan solos en crudo → sala de máquina → sala de lectura.
+
+**Lo que sí funciona, y conviene saber que funciona.** Las cuatro piezas existen y encajan:
+
+- `python -m scripts.sync_sudespacho pull --case <id> --expediente <id_crm>` descarga los documentos del
+  gestor documental (con `--incremental` y `--force`).
+- Aterrizan en el sitio correcto: `case_manager.crm_branch_path` los coloca en
+  `00_Input/05_CRM/<bucket>`, buckets planos por rama procesal (reorg del 2026-06-10).
+- La sala de máquina los ve sin flags: `sala_maquina.inventariar` recorre **todo** `00_Input`.
+- La sala de lectura los declara entre sus fuentes (`01_Drive EV`/`05_CRM` en el `SKILL.md`).
+
+**Los tres huecos.**
+
+1. **`abrir_caso` no acepta `--fuente crm`.** `_FUENTES_CLI = ("drive_ev", "manual", "whatsapp", "email")`
+   en `scripts/abrir_caso.py`. Abrir el caso y bajarle el CRM son dos comandos distintos y el segundo
+   hay que acordarse.
+2. **El único encadenado que existe apunta al motor muerto, y es una trampa activa.** El flag
+   `--run-pipeline` del pull llama a `pipeline.run(case, do_sync=False, do_demanda=True)`
+   (`scripts/sync_sudespacho.py:196`) — el pipeline viejo: Docling, tope de 30 páginas, salida a
+   `raw_text/` + `MD/` legacy. **No es la sala de máquina.** Quien lo use creyendo que procesa el
+   expediente produce artefactos del motor que la sala de máquina vino a sustituir. Aparece también en
+   `intake_judicial` y en `sync_all`.
+3. **Entre sala de máquina y sala de lectura tampoco hay encadenado**: la primera «sugiere» la segunda,
+   en prosa, en su `SKILL.md`.
+
+**Por qué importa más de lo que parece.** Es el **mismo defecto** que el bloque
+`[SIGUIENTE-CABLEADO-CORREO]` de `PLAN.md` («las cinco piezas del pipeline de correo están construidas y
+ninguna llama a la siguiente»), que se resolvió en el PR #151 metiendo la llamada dentro de
+`sala_maquina apply`. Se trató como un incidente del correo y no se generalizó: la misma clase de
+problema sigue viva en el CRM y no tiene fila.
+
+**Mejora propuesta.** (a) `--fuente crm` en `abrir_caso`, delegando en el pull existente como ya hace con
+las otras cuatro fuentes; (b) reapuntar `--run-pipeline` a la sala de máquina **o retirarlo**, que es lo
+mínimo — un flag que hace algo distinto de lo que promete es peor que no tenerlo.
+
+**Coste estimado.** Bajo. (b) por sí solo son minutos y cierra la trampa.
+
+## 114. No hay contrato de «dame el mejor texto de este documento», y `01_OCR/` no lo lee nadie
+
+**Verificado en todo el repo el 2026-08-02.**
+
+**La escalera existe una sola vez, y como prosa.** El §8 de `.claude/skills/viabilidad-prerelleno/SKILL.md`
+define la vía de lectura correcta: si hay `02_Sala de máquina/03_MD/<slug>.md` con estado `ok` en
+`_cobertura.md` → léelo de ahí; si es `low`/`empty` o no existe → lee el crudo de `00_Input`; y anota de
+qué vía vino (`[doc: fichero, vía MD]` frente a `[doc: fichero, crudo]`). Está bien pensada. El problema
+es que es una instrucción al modelo, no un contrato, y los otros consumidores hacen otra cosa:
+
+| consumidor | qué lee |
+|---|---|
+| `viabilidad-prerelleno` | la escalera completa |
+| `triaje-viabilidad` | «Lee `00_Input/` directo». No toca la sala de máquina (ver `#115`) |
+| `organizar-sala-lectura` | lee `00_Input`; su `preclasificar.py` sí abre el MD, pero **para clasificar**, no para leer, y la sala que produce contiene copias del crudo |
+
+**No existe** en `core/` una función tipo `mejor_texto(documento) → (texto, vía, calidad)` que resuelva la
+escalera una vez.
+
+**Y el peldaño intermedio no tiene consumidor.** `01_OCR/` (los PDF buscables) aparece en
+`core/sala_maquina.py` —que los produce—, en su propia skill, en tests y en documentación. **Cero
+lectores.** Es el único artefacto que sirve a la vez para lo textual y para lo **visual** (¿está firmado?,
+¿sello?, ¿copia u original?), porque es la página original *con* capa de texto.
+
+**Matiz que acota el valor, medido.** Censo de 4 casos con sala de máquina, 497 documentos: 292 `ok`
+(159 `pypdf`, 91 `nativo`, **42 `ocr`**), 139 `empty`, 66 `sin_soporte`. Para **205 de 497 (41 %)** la sala
+de máquina no tiene nada que ofrecer, y los 250 digitales se leen bien en crudo: **el MD solo aporta de
+verdad en los 42 escaneados (8,5 %)**. Ese 8,5 % no es cualquiera — ver `#115` —, pero conviene no
+vender la mejora como más grande de lo que es.
+
+**Mejora propuesta.** Sacar la escalera del `SKILL.md` a `core/` y que los tres consumidores la usen, con
+el rastro de vía unificado. Decidir de paso quién debería consumir `01_OCR/` (candidato natural: las
+comprobaciones visuales del triaje y de la viabilidad).
+
+**Coste estimado.** Bajo la función; el retrofit de las skills exige re-empaquetar y re-importar en Cowork.
+
+## 115. `triaje-viabilidad`: tres definiciones incompatibles de su entrada, y ninguna política de escaneados
+
+**Verificado el 2026-08-02**, y con la intención de diseño reconfirmada por Nikolai en esa misma sesión.
+
+**Tres respuestas en circulación sobre qué lee la skill**, cada una aguas arriba de la anterior:
+
+| fuente | qué dice que lee |
+|---|---|
+| `docs/superpowers/specs/2026-06-18-organizacion-sala-lectura-drive-triaje-design.md` §5 | «Lee la sala **ya organizada**», y corre sobre el **Drive del despacho** |
+| `.claude/skills/triaje-viabilidad/SKILL.md` v1.1 (lo instalado) | «Lee **`00_Input/` directo** del expediente» |
+| Intención de diseño (Nikolai, 2026-07-13 y 2026-08-02) | La carpeta del caso en el **Drive de Engel**, normalmente **sin intake**; como mucho con el intake de Drive hecho y sin salas |
+
+**Y la skill no tiene ni una instrucción sobre escaneados.** Buscado en toda su carpeta: ni render, ni
+visión, ni «no evaluable». El `SKILL.md` asume implícitamente que todo documento se deja leer.
+
+**Por qué eso es caro, medido.** El documento que decide el semáforo suele ser un escaneado. De los 42
+`ocr` del censo de `#114`, los que llevan peso probatorio son: la **hoja de encargo** de `W-02T3XO`
+(6.888 ch) y la de `W-02VUDR` (17.574 ch, junto con los poderes), la **hoja de visita** de `W-02VUDR`
+(3.894 ch) —que es la prueba de la intermediación—, los **dos poderes** de EV MMC y los **DNI** de las
+partes. **La hoja de encargo está escaneada en 2 de los 3 casos** con documentos escaneados. En los
+escenarios reales de uso (Drive de Engel sin intake, o
+intake sin salas) no hay OCR corrido ni MD al que caer: el factor nuclear sale `débil — ilegible` de
+serie, que es justamente el veredicto que el triaje existe para evitar.
+
+**Consecuencia para `#114`:** añadirle la escalera MD/crudo al triaje **aporta poco**, porque solo aplica
+con las salas ya montadas, que es el menos frecuente de los tres escenarios. Lo que falta aquí es otra
+cosa.
+
+**Decisiones pendientes (las aparcó Nikolai el 2026-07-13 como «dejar abiertas»; las reabrió el
+2026-08-02 al plantear el caso de uso).**
+
+1. **Cuál es el hogar de la skill**: carpeta de Engel sin expediente, `00_Input`, o entrada polimórfica.
+   Hoy la `description` dice `00_Input` — o sea que el disparador puede no activarse cuando se la quiere,
+   o activarse presuponiendo un expediente que no existe.
+2. **Qué hace ante un escaneado sin OCR**: render de páginas + visión (lo que decía la intención de
+   diseño, validado en W-02XOR7), marcarlo no evaluable y pedirlo en la lista de documentación, o
+   degradar el semáforo. Gobierna el valor entero del triaje, porque cae sobre el factor nuclear.
+
+**Coste estimado.** Las decisiones son de Nikolai; una vez cerradas, el cambio es de `SKILL.md` +
+`references/criterios_triaje.md` (+ re-empaquetado), no de código.
+
+## 116. La taxonomía documental E&V no la consume nadie aguas abajo: decidir si se sigue pagando por adelantado
+
+**Verificado contra código y skills el 2026-08-02**, a raíz de la pregunta de Nikolai: *«¿para qué sirve
+clasificar los documentos (OFERTAS, PBC, RECLAMACIONES…)? Me parece una pérdida de tiempo.»* No es la
+primera vez que sale —el patrón es siempre el mismo: ROI evidente en casos grandes, sensación de peaje
+en los pequeños que el letrado ya conoce— pero hasta ahora se había contestado por sensación. Esta
+entrada existe para que se pueda decidir con el censo delante.
+
+**Qué es.** `TAXONOMIA_EV` (`core/config.py:564`): 8 categorías, de `00. FOTOS` a
+`08. PENDIENTE DE CLASIFICAR`. **No es vocabulario del despacho: es el de E&V**, declarado como
+«Taxonomía documental E&V» en `.claude/skills/engel-volkers/SKILL.md:193`.
+
+### Censo de consumidores
+
+| consumidor | qué hace con la categoría |
+|---|---|
+| `preparacion-litigio-civil` | **nada** (0 referencias) |
+| `preparacion-audiencia-previa` | **nada** (1 referencia, incidental) |
+| `preparacion-juicio-oral` | **nada** — sus 11 coincidencias son «criterios de **activaci**ón», falso positivo del patrón de búsqueda |
+| `triaje-viabilidad` | solo `INDICE.md` como **atajo de navegación**; su `SKILL.md:56` dice explícitamente «verifica siempre contra `00_Input`» — no se fía de la clasificación |
+| `viabilidad-prerelleno` | **nada de la taxonomía**: sus 36 coincidencias son los **14 hitos** y las preguntas del cuestionario (ver abajo) |
+| scripts de `organizar-sala-lectura` | los suyos propios: `preclasificar.py`, `indices_desde_manifiesto.py`, `manifiesto_a_catalogo.py`, `manifiesto_parser.py` |
+| `core/` | `local_organizer.py` (vivo, vía `streamlit_app.py` y `scripts/organizar_local.py`) y `sala_lectura.py` (**DEPRECADO**, superado por la skill) |
+
+**Falsos positivos descartados al medir**, anotados para que nadie repita el grep y concluya otra cosa:
+un patrón que incluya `ACTIVACI` captura «criterios de activación», y uno que incluya `OFERTAS`/`ARRAS`
+captura el vocabulario **de negocio** (¿cuántas ofertas hizo el buscador?, ¿se firmaron arras?), que
+aparece en cualquier skill de honorarios sin tener nada que ver con la taxonomía.
+
+### Los dos hallazgos
+
+**1. Es circular.** La clasificación la consume, casi en exclusiva, la maquinaria que la produce. Y como
+las categorías viven en `INDICE.md` y **no en carpetas** —decisión deliberada de
+`2026-06-18-sala-lectura-unica-design.md`—, clasificar **no mueve ni un fichero**: produce una vista,
+no un orden.
+
+**2. Hay dos vocabularios paralelos y solo uno trabaja.** Los **14 hitos** de `viabilidad-prerelleno`
+(`ENCARGO`, `IDENT_PROPIETARIO`, `TITULARIDAD`, `HOJA_VISITA`, `OFERTA`, `ARRAS_ARRENDAMIENTO`,
+`RECON_HON_*`, `ESCRITURA`, `RECLAMACION_JURIDICO`…) **sí** los consume maquinaria real: el
+cuestionario, el scoring y `render_informe.py`. La taxonomía no. Y son ejes distintos: **el hito es un
+hecho que hay que probar; la categoría es un cajón donde archivar.** Se parecen en las palabras y no en
+la función. Consecuencia incómoda: **clasificar no alimenta los hitos**, que es lo que produce el
+entregable al cliente.
+
+**Ni `06. PBC` se sostiene** como categoría: `references/taxonomia_ev.md` enruta la identidad/PBC **por
+parte** (propietario → `01. ACTIVACIÓN`, buscador → `03. OFERTAS`) y deja `06. PBC` como residual.
+
+### Dónde sí rinde (estrecho, pero real)
+
+1. **Es el idioma del cliente, no el nuestro.** Al pedir documentación que falta, «faltan la ACTIVACIÓN
+   y las ofertas 2 y 3» es accionable para E&V; «falta el documento del 12/03/2024» no lo es. Es un uso
+   de **comunicación**, no de análisis.
+2. **Escala.** En un caso de 20 documentos que el letrado ya conoce, valor cero. En `W-02VND1` —188
+   documentos solo en la sala de máquina— es lo que convierte «léetelo todo» en «léete las ofertas».
+3. **Es el eje que la cronología no da.** `CRONOLOGIA.md` ordena por tiempo; el relato que decide una
+   reclamación de honorarios es *encargo → visita → oferta → arras → cierre → impago*, que es una
+   secuencia de **categorías**. Dos documentos del mismo día pertenecen a hilos distintos y la fecha no
+   lo dice.
+
+### El diagnóstico: el problema no es la taxonomía, es cuándo se paga
+
+Hoy clasificar es una **puerta** que hay que cruzar —con visto bueno humano— antes de poder leer. En un
+caso que el letrado ya conoce, eso es un impuesto puro. Que la queja se repita con la misma forma
+sugiere que la respuesta no es «mantener» ni «quitar», sino **condicionar**.
+
+**Decisión pendiente (de Nikolai), opciones:**
+
+- **(a) Subproducto en vez de fase.** `preclasificar.py` ya clasifica mecánicamente; que corra sin gate
+  y solo se revise lo ambiguo (o nada). Conserva los usos 1 y 2 sin el peaje.
+- **(b) Condicionar por tamaño.** Umbral de nº de documentos por debajo del cual no se clasifica.
+- **(c) Dejarlo como está**, asumiendo el coste como precio de hablar el idioma de E&V.
+- **(d) Retirarla del flujo del despacho** y conservarla solo al comunicarse con E&V.
+
+**No se promueve a la cola:** no hay disparador en el sentido de `CLAUDE.md` (ni caso real bloqueado ni
+bug), es una decisión de diseño de proceso. **Coste estimado:** la decisión es de Nikolai; (a) y (b) son
+cambios de `SKILL.md` + re-empaquetado, no de código.

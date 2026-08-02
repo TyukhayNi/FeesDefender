@@ -1222,7 +1222,17 @@ Un hallazgo contra cualquiera de estos puntos debe corregir el contrato antes
 de escribir el plan de la Fase 1. No se responde añadiendo excepciones locales
 en scripts o skills.
 
-## 20. Adjudicación de la revisión adversarial (rev. 2)
+## 20. Adjudicación de la revisión adversarial (Claude Code, 2026-07-29) — REQUIERE-REVISION, remediado
+
+- **Objeto revisado:** `docs/superpowers/specs/2026-07-29-feesdefender-dual-case-workspace-design.md` rev. 1, commit `8d9c96c`
+- **Ronda:** 1
+- **Revisor:** Claude Code (Opus 5), en solo lectura — el objeto lo escribió Codex en `codex/feesdefender-dual-spec`
+- **Informe recibido:** `2026-07-29-feesdefender-dual-case-workspace-adversarial-review.md`
+- **Hallazgos:** 16 confirmados · 0 rebajados · 0 refutados · 3 escalados · 0 sin verificar
+- **Remediado en:** rev. 2 de este documento; los escalados, en `MEJORAS #101`, `#102` y `#103`
+
+Recuento contado sobre los identificadores del acta: 4 B0 + 10 A + 5 M = 19. Confirmados los 4 B0,
+los 10 A y los dos M que la rev. 2 absorbe (M-1 → §16, M-2 → §6.2); escalados M-3, M-4 y M-5.
 
 Informe: `2026-07-29-feesdefender-dual-case-workspace-adversarial-review.md`.
 Veredicto **REQUIERE REVISIÓN** — la arquitectura y la elección de la opción 2

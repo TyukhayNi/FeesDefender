@@ -3,6 +3,7 @@
 import hashlib
 import re
 import subprocess
+import unicodedata
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -303,10 +304,39 @@ _VEREDICTOS_REV = frozenset({
 })
 _ESTADOS_REM = frozenset({"remediado", "parcial", "sin-cambios", "pendiente"})
 
-# El disparador NO es el regex: el guard busca todo encabezado que CONTENGA esta
-# frase y exige que case. Sin eso, un encabezado mal formado no se detecta y pasa
-# en silencio, que es el modo de fallo caro.
-_DISPARADOR_ADJ = "Adjudicación de la revisión"
+# El disparador NO es el regex: el guard busca todo encabezado que PAREZCA una
+# adjudicacion y exige que case el formato. Sin eso, un encabezado mal formado no
+# se detecta y pasa en silencio, que es el modo de fallo caro.
+#
+# AMPLIADO el 2026-08-02 por decision de Nikolai, sobre las siete vias de evasion
+# que midio la revision adversarial (contrato §6). Hasta entonces el disparador
+# era la cadena literal "Adjudicación de la revisión", y bastaba un plural, una
+# tilde o una sangria para que el corpus se quedara verde con una adjudicacion
+# fuera de formato. Se compara sobre texto NORMALIZADO (sin tildes, minusculas,
+# espacios colapsados) y admite las variantes de numero y los sinonimos que se
+# encontraron escritos en este repo.
+_DISPARADOR_ADJ = "Adjudicación de la revisión"          # forma canonica, para mensajes
+
+_RE_DISPARADOR = re.compile(
+    r"adjudicacion de (?:la revision|las revisiones"     # singular y PLURAL
+    r"|la autorrevision|las autorrevisiones)"            # sinonimo ya escrito en el repo
+    r"|adjudicacion del veredicto")                      # sinonimo medido
+
+# Encabezado ATX con la sangria que CommonMark permite (hasta 3 espacios). Se
+# detecta sangrado y luego el regex estricto lo RECHAZA, que es lo que se quiere:
+# la forma canonica del §5 no lleva sangria.
+_RE_ENCABEZADO = re.compile(r"^ {0,3}#{1,6}\s")
+# Subrayado setext: `texto` + `---`/`===`. Es un encabezado valido en CommonMark y
+# el disparador viejo no lo veia porque no empieza por `#`.
+_RE_SETEXT = re.compile(r"^ {0,3}(?:-{3,}|={3,})\s*$")
+
+
+def _norm_enc(linea: str) -> str:
+    """Sin tildes, minusculas, espacios colapsados. Para el disparador, nunca
+    para el regex estricto: lo que se valida es la linea tal como esta escrita."""
+    d = unicodedata.normalize("NFD", linea)
+    return re.sub(r"\s+", " ", "".join(c for c in d
+                                       if unicodedata.category(c) != "Mn")).strip().lower()
 
 _RE_ADJUDICACION = re.compile(
     r"^#{2,3}\s+(?:\S+\s+)?"                    # ## o ###, numeracion opcional (10., 10-bis.)
@@ -319,19 +349,29 @@ _CAMPOS_FICHA = ("Objeto revisado", "Ronda", "Revisor", "Informe recibido",
                  "Hallazgos", "Remediado en")
 _RE_CAMPO = re.compile(r"^- \*\*(?P<campo>[^:*]+):\*\*\s*(?P<valor>.+)$")
 
-# EXCLUSION, no allowlist — la polaridad es la decision. Una lista de INCLUSION
-# ("el corpus son los ficheros que ya cumplen") deja escapar cualquier fichero
-# NUEVO con una adjudicacion mal formada. Esta cubre el futuro por defecto y solo
-# puede encoger. Son los 7 ficheros con los 8 encabezados heredados que el spec
-# rev. 8 §7 declara NO migrados: casan el formato 1 de 8 y ninguno lleva ficha.
-_ADJ_LEGACY = frozenset({
-    "2026-07-27-vista-procesal-05-procedimiento-design.md",
-    "2026-07-28-cableado-atomize-sala-maquina.md",
-    "2026-07-28-email-atomize-enumeracion-recursiva-design.md",
-    "2026-07-29-feesdefender-dual-case-workspace-design.md",
-    "2026-07-29-sandwich-firma-falso-positivo-design.md",
-    "2026-07-29-sandwich-firma-falso-positivo.md",
-    "2026-07-30-historial-citado-localizable-design.md",
+# La `_ADJ_LEGACY` de siete ficheros existio mientras los ocho encabezados
+# heredados de julio estaban sin migrar; el retrofit del 2026-08-02 los dejo
+# conformes y la lista se retiro VACIA (spec rev. 9 §7).
+#
+# La unica exencion que queda es `_ACTAS_PRE_NONCE`, mas abajo, y respeta la
+# polaridad que manda el contrato: se excluye por NOMBRE, en una lista que SOLO
+# PUEDE ENCOGER. Nunca se define el corpus por INCLUSION ("el corpus son los
+# ficheros que ya cumplen"), que dejaria escapar cualquier fichero NUEVO con una
+# adjudicacion mal formada — el modo de fallo caro.
+
+# Las siete actas ANTERIORES al contrato de marcadores del §4: no tienen
+# `marcador_nonce`, asi que no se puede delimitar su informe literal y se salta el
+# fichero entero. Es una exclusion POR NOMBRE —la polaridad que manda el §7— y
+# SOLO PUEDE ENCOGER: un acta nueva no puede entrar aqui, porque el §4 le exige
+# `marcador_nonce` y con el se le vacia solo el informe.
+_ACTAS_PRE_NONCE = frozenset({
+    "2026-07-23-emails-atomizados-sala-lectura-adversarial-review.md",
+    "2026-07-26-gobernanza-indice-adversarial-review.md",
+    "2026-07-27-cableado-atomize-sala-maquina-adversarial-review.md",
+    "2026-07-29-feesdefender-dual-case-workspace-adversarial-review.md",
+    "2026-08-01-gobernanza-revisiones-adversariales-adversarial-review.md",
+    "2026-08-01-gobernanza-revisiones-adversariales-adversarial-review-r2.md",
+    "2026-08-01-gobernanza-revisiones-adversariales-adversarial-review-r3.md",
 })
 
 _CLAVES_ACTA = ("tipo", "objeto", "objeto_rev", "commit", "ronda", "revisor",
@@ -356,10 +396,61 @@ def _sin_cercas(txt: str) -> list[str]:
     return fuera
 
 
+def _region_informe(txt: str) -> tuple[int, int] | None:
+    """Rango de lineas del bloque literal de un acta, por sus marcadores con nonce.
+
+    Sustituye a la exclusion por fichero completo: un acta puede contener
+    cualquier encabezado DENTRO de su informe, pero no fuera. Antes se saltaba el
+    fichero entero en cuanto declaraba `tipo: revision-adversarial`, asi que
+    anteponer esas dos lineas a cualquier documento lo sacaba del corpus.
+    """
+    nonce = _fm(txt).get("marcador_nonce")
+    if not nonce:
+        return None
+    ini, fin = _marcadores(nonce)
+    lineas = txt.splitlines()
+    a = next((i for i, l in enumerate(lineas) if ini in l), None)
+    b = next((i for i, l in enumerate(lineas) if fin in l), None)
+    return (a, b) if a is not None and b is not None and a < b else None
+
+
+def _visibles(txt: str) -> list[str]:
+    """Lineas de `txt` con las cercas Y el informe literal de un acta vaciados."""
+    lineas = _sin_cercas(txt)
+    reg = _region_informe(txt)
+    if reg:
+        for i in range(reg[0], reg[1] + 1):
+            lineas[i] = ""
+    return lineas
+
+
 def _adjudicaciones(txt: str) -> list[tuple[int, str]]:
-    """(indice de linea, linea) de cada encabezado disparador fuera de cerca."""
-    return [(i, ln) for i, ln in enumerate(_sin_cercas(txt))
-            if ln.startswith("#") and _DISPARADOR_ADJ in ln]
+    """(indice, linea) de cada encabezado que el disparador reconoce, visible.
+
+    Cubre ATX (con o sin sangria) y setext. La linea se devuelve CRUDA: el regex
+    estricto debe rechazar la sangria y el setext, no normalizarlos.
+    """
+    lineas, fuera = _visibles(txt), []
+    for i, ln in enumerate(lineas):
+        if not _RE_DISPARADOR.search(_norm_enc(ln)):
+            continue
+        es_atx = bool(_RE_ENCABEZADO.match(ln))
+        es_setext = (i + 1 < len(lineas) and _RE_SETEXT.match(lineas[i + 1])
+                     and ln.strip() and ":" not in ln.split()[0])
+        if es_atx or es_setext:
+            fuera.append((i, ln))
+    return fuera
+
+
+def _cerca_impar_oculta_adjudicacion(txt: str) -> bool:
+    """Cerca ``` sin cerrar que apaga la cola del fichero y con ella una
+    adjudicacion. Solo es error si de hecho ESCONDE una: cuatro ficheros del
+    corpus tienen cuenta impar y ninguno adjudica nada."""
+    if sum(1 for l in txt.splitlines() if l.lstrip().startswith("```")) % 2 == 0:
+        return False
+    crudas = sum(1 for l in txt.splitlines()
+                 if _RE_ENCABEZADO.match(l) and _RE_DISPARADOR.search(_norm_enc(l)))
+    return crudas > len(_adjudicaciones(txt))
 
 
 def _ficha(lineas: list[str], desde: int) -> dict[str, str]:
@@ -392,7 +483,10 @@ def _md_superpowers():
 
 def _errores_adjudicacion(txt: str) -> list[str]:
     """Incumplimientos del §5 en `txt`. Lista vacia = conforme."""
-    lineas, fallos = _sin_cercas(txt), []
+    lineas, fallos = _visibles(txt), []
+    if _cerca_impar_oculta_adjudicacion(txt):
+        fallos.append("cerca ``` sin cerrar: la cola del fichero queda invisible "
+                      "al guard y esconde al menos una adjudicacion")
     for i, ln in _adjudicaciones(txt):
         m = _RE_ADJUDICACION.match(ln)
         if not m:
@@ -411,13 +505,17 @@ def _errores_adjudicacion(txt: str) -> list[str]:
 def test_adjudicaciones_bien_formadas():
     """G7 — encabezado canonico + ficha de 6 campos, con vocabulario cerrado.
 
-    Corpus: todo `docs/superpowers/**/*.md` MENOS las actas (su informe literal
-    puede contener cualquier encabezado y no debe reinterpretarse como
-    adjudicacion del proyecto) y menos `_ADJ_LEGACY`.
+    Corpus: todo `docs/superpowers/**/*.md` menos `_ACTAS_PRE_NONCE`.
+
+    En un acta CON `marcador_nonce` no se salta el fichero: se vacia solo su
+    informe literal (`_visibles`). Antes se saltaba el fichero entero en cuanto
+    declaraba `tipo: revision-adversarial`, asi que anteponer esas dos lineas a
+    cualquier documento lo sacaba del corpus — exclusion por CONTENIDO y
+    autodeclarada, justo la polaridad que el §7 del contrato rechaza.
     """
     malos: dict[str, list[str]] = {}
     for p, txt in _md_superpowers():
-        if _es_acta(txt) or p.name in _ADJ_LEGACY:
+        if p.name in _ACTAS_PRE_NONCE:
             continue
         fallos = _errores_adjudicacion(txt)
         if fallos:
@@ -429,6 +527,28 @@ def test_adjudicaciones_bien_formadas():
         "  veredicto = " + repr(sorted(_VEREDICTOS_REV)) + "\n"
         "  estado    = " + repr(sorted(_ESTADOS_REM)) + "\n"
         "  ficha     = " + repr(list(_CAMPOS_FICHA)))
+
+
+def test_g7_cubre_las_adjudicaciones_del_corpus():
+    """Que G7 no quede VACIO en silencio, hermano del guard equivalente de G8.
+
+    Sin esto, renombrar los encabezados —p. ej. al plural, que es una vía medida
+    y declarada en el §6— deja 0 adjudicaciones observadas y G7 VERDE: el guard
+    certificaria un corpus que ya no mira. Reproducido el 2026-08-02 mutando los
+    15 encabezados reales: 0 vistos, 0 errores, modulo entero verde.
+
+    El umbral es un SUELO deliberadamente por debajo del recuento real (15), no
+    una cifra exacta: un total exacto obliga a tocar el test cada vez que entra
+    una adjudicacion legitima, y esa friccion acaba en que alguien lo relaje.
+    """
+    vistos = sum(len(_adjudicaciones(txt)) for _, txt in _md_superpowers()
+                 if not _es_acta(txt))
+    assert vistos >= 10, (
+        "G7 observa " + str(vistos) + " adjudicaciones en docs/superpowers/; se "
+        "esperaban >=10. O han desaparecido del corpus, o el disparador dejo de "
+        "verlas (§6 del contrato: la deteccion es por la cadena literal "
+        + repr(_DISPARADOR_ADJ) + "). Un G7 sin nada que mirar pasa en verde y no "
+        "certifica nada.")
 
 
 def test_g7_no_se_autodetecta_en_la_plantilla_del_spec():
@@ -503,6 +623,92 @@ def test_g7_admite_numeracion_bis_y_calificador():
 
 def test_g7_ignora_lo_que_esta_en_cerca():
     assert _adjudicaciones("```\n" + _ADJ_OK + "```\n") == []
+
+
+# --- G7, las siete vias de evasion del disparador (contrato §6) ---------------
+#
+# Las siete las MIDIO la revision adversarial del 2026-08-02 sobre el corpus real:
+# con el disparador literal anterior, las siete dejaban G7 en VERDE con una
+# adjudicacion fuera de formato. Nikolai decidio ampliarlo. Cada test de abajo es
+# una de ellas, y todos comprueban que AHORA se detecta y se rechaza — detectar es
+# la mitad: la otra es que el regex estricto no las bendiga.
+
+_CANON = _ADJ_OK.splitlines()[0]
+
+
+def _con_encabezado(enc: str) -> str:
+    return _ADJ_OK.replace(_CANON, enc, 1)
+
+
+def test_g7_via1_plural():
+    roto = _con_encabezado(_CANON.replace("de la revisión adversarial",
+                                          "de las revisiones adversariales"))
+    assert _adjudicaciones(roto), "el disparador debe VER el plural"
+    assert any("encabezado" in f for f in _errores_adjudicacion(roto))
+
+
+def test_g7_via2_sin_tildes():
+    roto = _con_encabezado(_CANON.replace("Adjudicación de la revisión",
+                                          "Adjudicacion de la revision"))
+    assert _adjudicaciones(roto), "el disparador debe VER la forma sin tildes"
+    assert any("encabezado" in f for f in _errores_adjudicacion(roto))
+
+
+def test_g7_via3_minuscula_inicial():
+    roto = _con_encabezado(_CANON.replace("Adjudicación", "adjudicación"))
+    assert _adjudicaciones(roto), "el disparador debe VER la minuscula"
+    assert any("encabezado" in f for f in _errores_adjudicacion(roto))
+
+
+def test_g7_via4_encabezado_sangrado():
+    """Hasta 3 espacios es ATX valido en CommonMark; la forma del §5 no lleva."""
+    roto = _con_encabezado("   " + _CANON)
+    assert _adjudicaciones(roto), "el disparador debe VER el encabezado sangrado"
+    assert any("encabezado" in f for f in _errores_adjudicacion(roto))
+
+
+def test_g7_via5_setext():
+    roto = _con_encabezado(_CANON.lstrip("# 3.").strip() + "\n---")
+    assert _adjudicaciones(roto), "el disparador debe VER el encabezado setext"
+    assert any("encabezado" in f for f in _errores_adjudicacion(roto))
+
+
+def test_g7_via6_sinonimos():
+    for enc in ("## 3. Adjudicación de la autorrevisión (Claude, 2026-07-27) — SIN-VEREDICTO, remediado",
+                "## 3. Adjudicación del veredicto adversarial (Codex, 2026-08-01) — NO-SHIP, remediado"):
+        roto = _con_encabezado(enc)
+        assert _adjudicaciones(roto), "el disparador debe VER: " + enc
+        assert any("encabezado" in f for f in _errores_adjudicacion(roto)), enc
+
+
+def test_g7_via7_cerca_impar_aguas_arriba():
+    """Una cerca sin cerrar apagaba el resto del fichero para el guard."""
+    roto = "```\nejemplo sin cerrar\n\n" + _ADJ_OK
+    assert _adjudicaciones(roto) == [], "la cerca impar sigue ocultandola…"
+    assert any("sin cerrar" in f for f in _errores_adjudicacion(roto)), \
+        "…pero el guard debe DECIRLO en vez de quedarse verde"
+
+
+def test_g7_via8_frontmatter_de_acta_antepuesto_no_exime():
+    """Anteponer `tipo: revision-adversarial` sacaba el fichero ENTERO del corpus.
+
+    Ahora la exencion es por nombre (`_ACTAS_PRE_NONCE`) y el informe de un acta
+    se vacia por sus marcadores, no por lo que el fichero declare de si mismo.
+    """
+    disfraz = "---\ntipo: revision-adversarial\n---\n\n" + _ADJ_OK.replace(
+        "- **Ronda:** 1\n", "")
+    assert _visibles(disfraz) != [""] * len(_visibles(disfraz))
+    assert any("ficha incompleta" in f for f in _errores_adjudicacion(disfraz))
+
+
+def test_g7_lista_de_actas_pre_nonce_solo_puede_encoger():
+    """Son las siete anteriores al contrato de marcadores. Un acta NUEVA no puede
+    entrar: el §4 le exige `marcador_nonce`, y con el se le vacia solo el informe."""
+    assert len(_ACTAS_PRE_NONCE) == 7
+    con_nonce = {p.name for p, _ in _actas_con_nonce()}
+    assert not (_ACTAS_PRE_NONCE & con_nonce), (
+        "un acta con nonce no debe estar exenta por nombre: "
+        + repr(sorted(_ACTAS_PRE_NONCE & con_nonce)))
 
 
 # --- G8: acta bien formada y cadena integra ----------------------------------
