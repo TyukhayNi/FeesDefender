@@ -281,6 +281,34 @@ def test_si_el_archivado_falla_no_se_publica_ninguna(tmp_path, monkeypatch):
     assert _tres(sm_dir, carpeta, "b__d01_A")[1].read_text(encoding="utf-8") == "viejo"
 
 
+# --- Tarea 6: el registro no manda sobre el trabajo ya publicado ---------------
+
+def test_un_fallo_al_registrar_el_evento_no_tira_las_filas(tmp_path, monkeypatch):
+    """§7.2: hoy la excepción sube a `ejecutar` y se pierden las filas de TODOS los
+    segmentos del bundle — el trabajo ya está en disco y el registro lo negaría.
+
+    Y no es un fallo de laboratorio: `append_event` escribe en `_intake_log.jsonl`, que
+    vive en el Drive; un fichero bloqueado por el cliente de sincronización basta.
+    """
+    case_dir = _caso(tmp_path, monkeypatch)
+    _bundle(case_dir, "a.pdf")
+
+    def _revienta(case_id, evento, *, details=None):
+        raise OSError("log bloqueado por otro proceso")
+    monkeypatch.setattr(sm, "append_event", _revienta)
+
+    docs = sm.plan(sm.inventariar(case_dir), estado_previo=set())
+    cob = sm.ejecutar(case_dir, docs, case_id="W-TEST99")
+
+    segmentos = [c for c in cob if c.doc_id]
+    assert len(segmentos) == 3, "se perdieron las filas por un fallo de log"
+    assert all("evento split_documental no registrado" in c.nota for c in segmentos), \
+        "el fallo del registro debe quedar declarado en la cobertura"
+    sm_dir = sm._sala_maquina_dir(case_dir)
+    carpeta, _ = _manifiesto_de(case_dir, "01_Drive EV/a.pdf")
+    assert len(list(carpeta.glob("*.pdf"))) == 3, "y el trabajo publicado sigue publicado"
+
+
 def test_un_bundle_que_deja_de_serlo_retira_su_generacion(tmp_path, monkeypatch):
     """El `B0` de la ronda 1 (H-01), de punta a punta.
 

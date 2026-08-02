@@ -842,15 +842,22 @@ def _split_o_md(case_dir: Path, sm_dir: Path, case_id: str, d: DocPlan,
         _anotar(filas, f"identidades nuevas acuñadas sobre {len(rec.legacy_sin_identidad)} "
                        f"entradas del manifiesto anterior sin doc_id "
                        f"({', '.join(rec.legacy_sin_identidad)})")
-    append_event(case_id, "split_documental", details={
-        "bundle": d.rel_path, "bundle_sha256": d.sha256, "n_segmentos": len(doclogicos),
-        "segmentos": [{"slug": dl.slug, "doc_id": dl.doc_id, "seg_sha256": dl.seg_sha256,
-                       "tipo": dl.tipo, "paginas": dl.paginas} for dl in doclogicos],
-        "delimitadores": manifiesto["delimitadores"],
-        "archivados": archivados,
-        "retirados": [e["doc_id"] for e in (rec.retirados if rec else [])],
-        "legacy_sin_identidad": list(rec.legacy_sin_identidad) if rec else [],
-    })
+    try:
+        append_event(case_id, "split_documental", details={
+            "bundle": d.rel_path, "bundle_sha256": d.sha256, "n_segmentos": len(doclogicos),
+            "segmentos": [{"slug": dl.slug, "doc_id": dl.doc_id, "seg_sha256": dl.seg_sha256,
+                           "tipo": dl.tipo, "paginas": dl.paginas} for dl in doclogicos],
+            "delimitadores": manifiesto["delimitadores"],
+            "archivados": archivados,
+            "retirados": [e["doc_id"] for e in (rec.retirados if rec else [])],
+            "legacy_sin_identidad": list(rec.legacy_sin_identidad) if rec else [],
+        })
+    except Exception as exc:  # noqa: BLE001 — el trabajo YA está publicado en disco
+        # Sin esto la excepción sube a `ejecutar`, que emite UNA fila de error con el slug
+        # del documento físico: los artefactos quedan en disco y la cobertura los niega.
+        # El guard bidireccional abortaría después, con razón, por un fallo de log — y el
+        # log vive en el Drive, así que un fichero bloqueado basta para provocarlo.
+        _anotar(filas, f"evento split_documental no registrado: {exc}")
     return filas
 
 
