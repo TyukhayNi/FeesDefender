@@ -1058,7 +1058,17 @@ En este orden, y no antes:
 
 ---
 
-## Adjudicación de la revisión adversarial (Codex, 2026-07-29) — NO EJECUTABLE, remediado
+## Adjudicación de la revisión adversarial del PLAN (Codex, 2026-07-29) — NO-EJECUTABLE, remediado
+
+- **Objeto revisado:** `docs/superpowers/plans/2026-07-29-sandwich-firma-falso-positivo.md` rev. 1, commit `no registrado`
+- **Ronda:** 1
+- **Revisor:** Codex (solo lectura)
+- **Informe recibido:** no capturado — llegó por chat, antes del contrato de actas
+- **Hallazgos:** 8 confirmados · 1 rebajados · 0 refutados · 0 escalados · 0 sin verificar
+- **Remediado en:** incorporado en este mismo plan; build en PR #164 (`aaf7dc1`)
+
+El rebajado es el **#7**, que este documento llama «parcialmente refutado»: se refuta el método
+—el script sí subclasea el parser real— y se acepta la conclusión.
 
 Veredicto recibido: **NO EJECUTABLE**, 4 bloqueantes + 4 altos + 1 menor. **Ocho aceptados, uno
 parcialmente refutado.** Todo lo aceptado está aplicado arriba. Los dos bloqueantes de fondo se
@@ -1086,7 +1096,17 @@ fixture existente contiene `gmail_signature`.
 **Su §5 no aportó ataque a la decisión de diseño**, y coincido: el fallo de `_sigdepth` es una omisión
 del plan de implementación, no una refutación de la exclusión estructural.
 
-## Adjudicación de la revisión de rama completa (2026-07-29) — LISTA CON CAMBIOS, aplicados
+## Adjudicación de la revisión adversarial de rama completa (no registrado, 2026-07-29) — LISTA-CON-CAMBIOS, parcial
+
+- **Objeto revisado:** rama construida de este plan, commit `no registrado`
+- **Ronda:** 1
+- **Revisor:** no registrado — este documento no lo nombra
+- **Informe recibido:** no capturado — llegó por chat, antes del contrato de actas
+- **Hallazgos:** 6 confirmados · 0 rebajados · 0 refutados · 5 escalados · 0 sin verificar
+- **Remediado en:** PR #164 (`aaf7dc1`), los 6; los 5 Minor quedan anotados aquí sin aplicar
+
+`parcial`, no `remediado`: los Minor 3, 4, 5, 6 y 8 se aceptaron como anotación y **no** se
+aplicaron. El token anterior de este encabezado decía «aplicados», que los daba por cerrados.
 
 Segunda revisión de la rama, ya construida. Devolvió **LISTA CON CAMBIOS**: 3 Important + 8 Minor, y
 confirmó por su cuenta —remutando el código— que ninguno de los tests es vacuo. **Los tres Important

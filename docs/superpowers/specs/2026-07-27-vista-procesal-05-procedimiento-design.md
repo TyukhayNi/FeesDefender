@@ -668,7 +668,18 @@ confianza (§2.1), pero no lo arregla.
   contrario** es byte-idéntico a nuestra `D 08 - OFERTA COMPRA`. Conviene tenerlas localizadas antes
   de la audiencia previa.
 
-## 10. Adjudicación de la revisión adversarial
+## 10. Adjudicación de la revisión adversarial (Codex, 2026-07-27) — NO-SHIP, parcial
+
+- **Objeto revisado:** `docs/superpowers/specs/2026-07-27-vista-procesal-05-procedimiento-design.md` v3, commit `no registrado`
+- **Ronda:** 1
+- **Revisor:** Codex (solo lectura)
+- **Informe recibido:** `docs/superpowers/handoffs/handoff-2026-07-27-vista-procesal-codex-informe.md` — archivado como **handoff**, no como acta, y por tanto **sin digest**
+- **Hallazgos:** 25 confirmados · 0 rebajados · 0 refutados · 0 escalados · 0 sin verificar
+- **Remediado en:** PR #137 (`12c8a91`); H23 y H24 quedan pendientes, de ahí `parcial`
+
+El informe vive entre los handoffs por decisión de Nikolai del 2026-07-30
+(`docs/GOBERNANZA_FUENTES_VERDAD.md` §5). La consecuencia, declarada: su texto no está sellado por
+hash y su integridad no es comprobable — solo lo sostiene el historial de git.
 
 Los 25 hallazgos se aceptan en sustancia. Seis ajustes de severidad y dos recortes de alcance.
 

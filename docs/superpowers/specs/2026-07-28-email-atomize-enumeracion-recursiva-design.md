@@ -452,7 +452,17 @@ Plan aprobado por Nikolai:
   `eml_procesados` deje de ser ambiguo (su requisito de entrada 1).
 - **Casilla 3** del bloque del PLAN: decidible tras §7, en su propio PR.
 
-## 11. Adjudicación de la revisión adversarial (Codex, 2026-07-29) — NO-SHIP, resuelto
+## 11. Adjudicación de la revisión adversarial (Codex, 2026-07-29) — NO-SHIP, remediado
+
+- **Objeto revisado:** `docs/superpowers/specs/2026-07-28-email-atomize-enumeracion-recursiva-design.md` rev. 1, commit `no registrado`
+- **Ronda:** 1
+- **Revisor:** Codex (solo lectura)
+- **Informe recibido:** no capturado — llegó por chat, antes del contrato de actas
+- **Hallazgos:** 6 confirmados · 0 rebajados · 0 refutados · 0 escalados · 0 sin verificar
+- **Remediado en:** rev. 2 de este documento
+
+Los 6 son los bloqueantes de la tabla. Las dos divergencias de abajo son de **remedio**, no de
+hallazgo, y por eso no restan del recuento (contrato §5).
 
 `agy` no pudo correr (cupo de Gemini agotado), así que la revisión la hizo Codex en solo lectura.
 **Los 6 bloqueantes se aceptan.** Dónde queda cada uno:

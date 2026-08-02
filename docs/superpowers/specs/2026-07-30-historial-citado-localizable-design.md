@@ -235,7 +235,17 @@ descubierto justamente porque al mutar el código no moría ninguno.
   mirando los `.historial.md` que salgan. Hasta entonces, los números del §1 son de la medición
   anterior y la construcción se valida solo con tests.
 
-## 10-bis. Adjudicación de la revisión adversarial (Codex, 2026-07-30) — NO EJECUTABLE, remediado
+## 10-bis. Adjudicación de la revisión adversarial de rama completa (Codex, 2026-07-30) — NO-EJECUTABLE, remediado
+
+- **Objeto revisado:** rama construida de esta spec (`MEJORAS #105`), commit `no registrado`
+- **Ronda:** 1
+- **Revisor:** Codex (solo lectura)
+- **Informe recibido:** no capturado — llegó por chat, antes del contrato de actas
+- **Hallazgos:** 13 confirmados · 0 rebajados · 0 refutados · 0 escalados · 0 sin verificar
+- **Remediado en:** PR #175 (`31b5943`)
+
+Los 13 son los 7 B0 + 4 A + 2 M de la tabla; el defecto de `core/linker.py::_all_md` no cuenta
+porque lo encontré yo auditando, no el informe.
 
 Veredicto: **NO EJECUTABLE**, 7 B0 + 4 A + 2 M. **Todos los de comportamiento eran ciertos y están
 arreglados**; los de fuerza de test también. Dos merecen destacarse porque son de la familia que este

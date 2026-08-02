@@ -286,20 +286,16 @@ _CAMPOS_FICHA = ("Objeto revisado", "Ronda", "Revisor", "Informe recibido",
                  "Hallazgos", "Remediado en")
 _RE_CAMPO = re.compile(r"^- \*\*(?P<campo>[^:*]+):\*\*\s*(?P<valor>.+)$")
 
-# EXCLUSION, no allowlist — la polaridad es la decision. Una lista de INCLUSION
+# SIN lista de exclusion: el corpus de G7 es TODO `docs/superpowers/**/*.md`
+# menos las actas. La `_ADJ_LEGACY` de siete ficheros existio mientras los ocho
+# encabezados heredados de julio estaban sin migrar; el retrofit del 2026-08-02
+# los dejo conformes y la lista se retiro vacia (spec rev. 9 §7).
+#
+# La polaridad importaba y se deja dicha por si alguien vuelve a necesitarla: si
+# hiciera falta excluir algo, se excluye por NOMBRE en una lista que solo puede
+# encoger, nunca se define el corpus por INCLUSION — una lista de inclusion
 # ("el corpus son los ficheros que ya cumplen") deja escapar cualquier fichero
-# NUEVO con una adjudicacion mal formada. Esta cubre el futuro por defecto y solo
-# puede encoger. Son los 7 ficheros con los 8 encabezados heredados que el spec
-# rev. 8 §7 declara NO migrados: casan el formato 1 de 8 y ninguno lleva ficha.
-_ADJ_LEGACY = frozenset({
-    "2026-07-27-vista-procesal-05-procedimiento-design.md",
-    "2026-07-28-cableado-atomize-sala-maquina.md",
-    "2026-07-28-email-atomize-enumeracion-recursiva-design.md",
-    "2026-07-29-feesdefender-dual-case-workspace-design.md",
-    "2026-07-29-sandwich-firma-falso-positivo-design.md",
-    "2026-07-29-sandwich-firma-falso-positivo.md",
-    "2026-07-30-historial-citado-localizable-design.md",
-})
+# NUEVO con una adjudicacion mal formada, que es el modo de fallo caro.
 
 _CLAVES_ACTA = ("tipo", "objeto", "objeto_rev", "commit", "ronda", "revisor",
                 "veredicto", "marcador_nonce", "sha256_informe", "adjudicado_en")
@@ -378,13 +374,13 @@ def _errores_adjudicacion(txt: str) -> list[str]:
 def test_adjudicaciones_bien_formadas():
     """G7 — encabezado canonico + ficha de 6 campos, con vocabulario cerrado.
 
-    Corpus: todo `docs/superpowers/**/*.md` MENOS las actas (su informe literal
+    Corpus: todo `docs/superpowers/**/*.md` MENOS las actas — su informe literal
     puede contener cualquier encabezado y no debe reinterpretarse como
-    adjudicacion del proyecto) y menos `_ADJ_LEGACY`.
+    adjudicacion del proyecto. Sin exclusiones desde el retrofit del 2026-08-02.
     """
     malos: dict[str, list[str]] = {}
     for p, txt in _md_superpowers():
-        if _es_acta(txt) or p.name in _ADJ_LEGACY:
+        if _es_acta(txt):
             continue
         fallos = _errores_adjudicacion(txt)
         if fallos:
