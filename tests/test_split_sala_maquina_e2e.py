@@ -86,12 +86,16 @@ def test_manifiesto_editado_se_respeta(tmp_path, monkeypatch):
     d = next(x for x in docs if x.ruta == "pdf")
     carpeta = case_dir / "01_Procesado" / "02_Sala de máquina" / "02_Documentos" / d.slug
     carpeta.mkdir(parents=True)
-    # Manifiesto editado a mano: FUSIONA los 3 en 2 (letrado juntó cédula+auto).
+    # Manifiesto editado a mano: FUSIONA los 3 en 2 (letrado juntó cédula+auto). Lleva
+    # identidad porque el motor ya la exige: el esquema sin `doc_id` es legacy y aborta
+    # pidiendo el retrofit (pieza B), un --force, o borrar este fichero y relanzar.
     split.escribir_manifiesto(carpeta, {
         "fuente": d.rel_path, "bundle_sha256": d.sha256,
-        "segmentos": [{"seg": 1, "pp": "1-3", "tipo": "EXPEDIENTE", "role": "documento"},
-                      {"seg": 2, "pp": "5-5", "tipo": "DOC_FACTURA", "role": "documento"}],
-        "delimitadores": [4]})
+        "segmentos": [{"seg": 1, "doc_id": "d01", "pp": "1-3", "tipo": "EXPEDIENTE",
+                       "role": "documento"},
+                      {"seg": 2, "doc_id": "d02", "pp": "5-5", "tipo": "DOC_FACTURA",
+                       "role": "documento"}],
+        "delimitadores": [4], "next_doc_id": "d03", "retirados": []})
     cob = sm.ejecutar(case_dir, docs, case_id="W-TEST02")
     seg_rows = [c for c in cob if c.parent_slug]
     assert len(seg_rows) == 2   # respeta la fusión del letrado, no re-detecta 3

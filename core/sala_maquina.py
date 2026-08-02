@@ -9,7 +9,9 @@ extractor. Ver docs/superpowers/specs/2026-07-09-organizar-sala-maquina-design.m
 """
 from __future__ import annotations
 
+import json
 import re
+import shutil
 import tempfile
 from dataclasses import asdict, dataclass, fields, replace
 from pathlib import Path
@@ -167,6 +169,7 @@ class DocCobertura:
     role: str = "documento"  # role_in_bundle (documento | anexo | ...)
     paginas: str = ""        # rango de páginas en el bundle ("1-4"); vacío si no aplica
     tipo: str = ""           # tipo clasificado del documento lógico
+    doc_id: str = ""         # identidad persistente del segmento; vacío = documento suelto
 
 
 def plan(inventario: list[dict], estado_previo: set[str]) -> list[DocPlan]:
@@ -320,9 +323,19 @@ def render_cobertura(cobertura: list[DocCobertura]) -> str:
     return "\n".join(lineas) + "\n"
 
 
-def fusionar_cobertura(previa: list[DocCobertura],
-                       nueva: list[DocCobertura]) -> list[DocCobertura]:
-    """Une la cobertura previa con la de esta corrida: la nueva gana por `rel_path`.
+def _clave_cobertura(d: DocCobertura) -> tuple[str, str]:
+    """Identidad de una fila de cobertura: `doc_id` si es segmento, `slug` si es suelto.
+
+    El slug de un segmento cambia cuando cambia su TIPO (y cambiaba, antes, con sus
+    bytes), así que indexar por slug dejaba DOS filas del mismo documento lógico. El
+    documento suelto no tiene doc_id y conserva la clave de siempre.
+    """
+    return (d.rel_path, d.doc_id) if d.doc_id else (d.rel_path, d.slug)
+
+
+def fusionar_cobertura(previa: list[DocCobertura], nueva: list[DocCobertura],
+                       rel_paths_reprocesados: set[str] | None = None) -> list[DocCobertura]:
+    """Une la cobertura previa con la de esta corrida: la nueva gana por identidad.
 
     Simétrico con el estado idempotente (`previo | nuevo`), pero conservando el
     registro COMPLETO en vez de solo el conjunto de shas: una corrida incremental
@@ -331,25 +344,35 @@ def fusionar_cobertura(previa: list[DocCobertura],
     previas en su orden (con la versión nueva si se re-tocó ese documento), luego
     las nuevas no vistas.
 
-    Se indexa por la clave compuesta `(rel_path, slug)`: (a) dos ficheros
+    La clave la fija `_clave_cobertura` y cubre tres cosas: (a) dos ficheros
     byte-idénticos con el mismo nombre en carpetas distintas (mismo `slug`, porque
     `output_slug` = stem + sha8 descarta la carpeta; p. ej. el mismo encargo por
     Drive y como adjunto de correo) siguen siendo DOS filas de custodia porque su
-    `rel_path` difiere; y (b) los N documentos lógicos de un bundle multi-documento
-    (mismo `rel_path`, un `slug` propio por segmento) son N filas y NO colapsan.
-    Indexar solo por `rel_path` colapsaría los segmentos a 1 (perdiendo N-1 en
-    silencio, el defecto detectado en la validación); indexar solo por `slug`
-    colapsaría las dos rutas byte-idénticas.
+    `rel_path` difiere; (b) los N documentos lógicos de un bundle multi-documento
+    (mismo `rel_path`) son N filas y NO colapsan; y (c) un segmento se identifica por
+    su `doc_id`, no por su slug, que cambia si cambia el TIPO.
+
+    `rel_paths_reprocesados` (spec §6.1) hace la corrida **autoritativa** sobre lo que
+    ha reprocesado: las filas previas de esos `rel_path` que ninguna fila nueva reclama
+    se descartan. Cambiar la clave no bastaba —una fusión que solo sabe añadir no puede
+    sustituir—, y sin esto sobrevivían la fila reconstruida del MD (`doc_id=""`) junto a
+    la fresca del mismo segmento, y las N filas de un bundle que en el reproceso pasó a
+    passthrough. El conjunto lo pone el llamador desde el PLAN y no desde las filas:
+    cuando un documento falla, sus filas no existen. Omitirlo conserva el comportamiento
+    aditivo de siempre, que es lo que quiere `reforzar`.
     """
-    por_clave = {(d.rel_path, d.slug): d for d in nueva}
+    reprocesados = rel_paths_reprocesados or set()
+    por_clave = {_clave_cobertura(d): d for d in nueva}
     vistos: set[tuple[str, str]] = set()
     out: list[DocCobertura] = []
     for d in previa:
-        clave = (d.rel_path, d.slug)
+        clave = _clave_cobertura(d)
+        if clave not in por_clave and d.rel_path in reprocesados:
+            continue          # generación anterior de un documento que esta corrida rehízo
         out.append(por_clave.get(clave, d))
         vistos.add(clave)
     for d in nueva:
-        clave = (d.rel_path, d.slug)
+        clave = _clave_cobertura(d)
         if clave not in vistos:
             out.append(d)
             vistos.add(clave)
@@ -393,6 +416,232 @@ def destino_seguro(dst: Path, case_dir: Path) -> Path:
 
 def _sala_maquina_dir(case_dir: Path) -> Path:
     return case_dir / "01_Procesado" / "02_Sala de máquina"
+
+
+def carpeta_bundle_de(case_dir: Path, slug: str) -> Path:
+    """Carpeta de artefactos de un bundle. Un solo sitio que la componga."""
+    return destino_seguro(_sala_maquina_dir(case_dir) / "02_Documentos" / slug, case_dir)
+
+
+VERSIONES_ANTERIORES = "99_Versiones anteriores"
+
+# Lo único que vive legítimamente en la carpeta de un bundle además de los PDF de sus
+# segmentos: el índice que escribe `separar.generar_indice` (`indice.json` + su resumen
+# `indice.txt`) y el manifiesto editable con su espejo. Un `.md` o un `.txt` que no sea
+# de estos solo puede venir de una publicación sucia. La lista la comparten el filtro de
+# publicación y el guard: si divergieran, uno publicaría lo que el otro marca en rojo.
+_FICHEROS_DE_BUNDLE = ("indice.", "_segmentacion")
+
+
+def _rutas_de(sm_dir: Path, carpeta_bundle: Path, slug: str) -> tuple[Path, Path, Path]:
+    """Las TRES representaciones de un documento lógico: PDF, MD y raw_text."""
+    return (carpeta_bundle / f"{slug}.pdf",
+            sm_dir / "03_MD" / f"{slug}.md",
+            sm_dir / "raw_text" / f"{slug}.txt")
+
+
+def _rutas_staging(staging: Path, slug: str) -> tuple[Path, Path, Path]:
+    """Las mismas tres, en el staging del bundle (juntas, para publicar por renames)."""
+    return staging / f"{slug}.pdf", staging / f"{slug}.md", staging / f"{slug}.txt"
+
+
+def _sello_reproceso() -> str:
+    """`AAAA-MM-DD_HHMMSS`: dos reprocesos del mismo día no se pisan el archivo."""
+    return now_iso()[:19].replace(":", "").replace("T", "_")
+
+
+def publicar_segmentos(case_dir: Path, sm_dir: Path, carpeta_bundle: Path, *,
+                       publicaciones: list[tuple[str, str]], retirados: list[str],
+                       sello: str) -> list[str]:
+    """Publica la generación nueva por renames, archivando la anterior COMO CONJUNTO (§7).
+
+    Sacar el sha del nombre tiene un precio: el destino ya existe y `replace` sobrescribe,
+    de modo que un fallo a media generación dejaría la fila de cobertura declarando un sha
+    que ya no corresponde a esos bytes. Por eso las tres representaciones se escriben a
+    `<bundle>/_staging/` y solo al final se mueven; y por eso la anterior se archiva antes
+    de publicar nada: **si el archivado no puede completarse, no se publica ninguna**.
+
+    Se archiva además **toda generación ajena al manifiesto** que quede en la carpeta: los
+    slugs del esquema viejo (con sha) no son derivables del manifiesto, así que sin esto un
+    `--force` sobre un bundle legacy publicaría los nombres nuevos y dejaría los viejos al
+    lado — huérfanos sin fila, que el guard vería y abortaría, inutilizando la única vía de
+    escape que la pieza A ofrece hasta que se desbloquee la pieza B.
+
+    `publicaciones`: `(slug_nuevo, slug_previo)` — el previo solo cuando el TIPO cambió y
+    el slug con él. `retirados`: slugs dados de baja, que se archivan sin republicar.
+    """
+    staging = carpeta_bundle / split.STAGING
+    archivo = destino_seguro(Path(case_dir) / VERSIONES_ANTERIORES / f"reproceso_{sello}",
+                             Path(case_dir))
+
+    publicados = {slug for slug, _ in publicaciones}
+    a_archivar: list[Path] = []
+    for slug in [s for par in publicaciones for s in par if s] + list(retirados):
+        a_archivar += [p for p in _rutas_de(sm_dir, carpeta_bundle, slug) if p.exists()]
+    for pdf in sorted(carpeta_bundle.glob("*.pdf")):
+        if pdf.stem not in publicados:
+            a_archivar += [p for p in _rutas_de(sm_dir, carpeta_bundle, pdf.stem)
+                           if p.exists()]
+    archivados: list[str] = []
+    if a_archivar:
+        archivo.mkdir(parents=True, exist_ok=True)
+        for p in dict.fromkeys(a_archivar):        # sin duplicados, orden estable
+            p.replace(archivo / p.name)            # si falla, sube: no se publica NADA
+            archivados.append(p.name)
+
+    for slug_nuevo, _ in publicaciones:
+        for origen, destino in zip(_rutas_staging(staging, slug_nuevo),
+                                   _rutas_de(sm_dir, carpeta_bundle, slug_nuevo)):
+            destino.parent.mkdir(parents=True, exist_ok=True)
+            origen.replace(destino)
+
+    # Del staging solo sale lo de ESTA generación: los slugs publicados (ya movidos
+    # arriba) y el índice del bundle. Lo demás se archiva: el `rmtree` que limpia el
+    # staging usa `ignore_errors=True` y en Windows puede no haber podido borrar un
+    # residuo (sharing violation del cliente de Drive, un visor abierto), y publicarlo
+    # sin filtrar lo colaría como si fuera de ahora.
+    if staging.is_dir():
+        for resto in sorted(staging.iterdir()):
+            if not resto.is_file():
+                continue
+            if resto.stem in publicados or resto.name.startswith(_FICHEROS_DE_BUNDLE):
+                resto.replace(carpeta_bundle / resto.name)
+            else:
+                archivo.mkdir(parents=True, exist_ok=True)
+                resto.replace(archivo / resto.name)
+                archivados.append(resto.name)
+        shutil.rmtree(staging, ignore_errors=True)
+    return archivados
+
+
+def archivar_bundle_entero(case_dir: Path, sm_dir: Path, carpeta_bundle: Path, *,
+                           sello: str) -> list[str]:
+    """Retira la generación de un bundle que ha DEJADO de serlo (spec §7.1).
+
+    Cuando un reproceso resuelve como passthrough —basta con que diez caracteres de ruido
+    de OCR maten la hoja en blanco que separaba— la rama passthrough escribía su MD suelto
+    y no tocaba nada más. Resultado: con `--force`, N PDF de segmento sin fila y el guard
+    abortando en un bucle del que no se sale; sin `--force`, las N filas viejas conviviendo
+    con la nueva, que es exactamente el defecto que esta pieza existe para eliminar.
+
+    Aquí se archiva la carpeta entera —las tres representaciones de cada segmento, el
+    índice y el propio manifiesto— y la carpeta se retira. El ledger se va con el
+    manifiesto: no queda bundle a quien conservárselo, y si el documento vuelve a
+    detectarse como tal, `reconciliar_manifiesto(None, …)` acuña desde cero.
+    """
+    carpeta_bundle = Path(carpeta_bundle)
+    if not carpeta_bundle.is_dir():
+        return []
+    archivo = destino_seguro(Path(case_dir) / VERSIONES_ANTERIORES / f"reproceso_{sello}",
+                             Path(case_dir))
+    slugs = [p.stem for p in sorted(carpeta_bundle.glob("*.pdf"))]
+    a_archivar = [p for s in slugs for p in _rutas_de(sm_dir, carpeta_bundle, s) if p.exists()]
+    a_archivar += [p for p in sorted(carpeta_bundle.rglob("*")) if p.is_file()]
+    archivados: list[str] = []
+    if a_archivar:
+        archivo.mkdir(parents=True, exist_ok=True)
+        for p in dict.fromkeys(a_archivar):
+            p.replace(archivo / p.name)
+            archivados.append(p.name)
+    shutil.rmtree(carpeta_bundle, ignore_errors=True)
+    return archivados
+
+
+def baseline_doc_ids(cobertura: list[DocCobertura], parent_slug: str) -> dict[str, str]:
+    """Mapa `doc_id → pp` de la última materialización de ese bundle (spec §3.3)."""
+    return {c.doc_id: c.paginas for c in cobertura
+            if c.parent_slug == parent_slug and c.doc_id}
+
+
+def verificar_integridad_bundles(case_dir: Path, cobertura: list[DocCobertura],
+                                 parents: set[str]) -> list[str]:
+    """Guard BIDIRECCIONAL sobre los bundles tocados por esta corrida (spec §7.3).
+
+    No basta con recorrer las filas: en el fallo real no hay filas de segmento —`ejecutar`
+    emite UNA fila de error con el slug del documento físico— y con `--force` además la
+    cobertura previa va vacía. Un guard que solo mirase filas estaría ciego justo en el
+    caso para el que se escribe. Por eso se mira en los dos sentidos:
+
+    - fila → fichero: las tres representaciones existen y el sha del PDF casa con el
+      declarado en la cobertura;
+    - fichero → fila: todo `02_Documentos/<parent>/*.pdf` tiene fila, y la carpeta no
+      contiene `.md` ni `.txt` (ahí no vive ninguna representación legítima, así que uno
+      suelto solo puede venir de una publicación sucia).
+
+    `parents` son los slugs de los documentos que la corrida procesó, y los pone el
+    llamador desde el PLAN: derivarlos de las filas dejaría el alcance vacío justo cuando
+    el bundle falla. El daño histórico censado —segmentos duplicados de antes de la
+    identidad persistente— es de la pieza B; auditarlo aquí bloquearía dos casos reales
+    mientras B siga bloqueada.
+    """
+    case_dir = Path(case_dir)
+    sm_dir = _sala_maquina_dir(case_dir)
+    con_fila = {c.slug for c in cobertura}
+    fallos: list[str] = []
+    for parent in sorted(parents):
+        carpeta = sm_dir / "02_Documentos" / parent
+        if not carpeta.is_dir():
+            continue
+        for c in cobertura:
+            if c.parent_slug != parent or not c.doc_id:
+                continue
+            pdf, md, txt = _rutas_de(sm_dir, carpeta, c.slug)
+            for etiqueta, p in (("PDF", pdf), ("MD", md), ("raw_text", txt)):
+                if not p.exists():
+                    fallos.append(f"{c.slug}: falta la representación {etiqueta} ({p})")
+            if pdf.exists() and c.sha256 and file_sha256(pdf) != c.sha256:
+                fallos.append(
+                    f"{c.slug}: el sha del PDF no casa con el declarado en la cobertura")
+        for pdf in sorted(carpeta.glob("*.pdf")):
+            if pdf.stem not in con_fila:
+                fallos.append(f"{pdf.name}: PDF de segmento sin fila en la cobertura")
+        for suelto in sorted(list(carpeta.glob("*.md")) + list(carpeta.glob("*.txt"))):
+            if suelto.name.startswith(_FICHEROS_DE_BUNDLE):
+                continue          # índice y manifiesto sí viven aquí
+            fallos.append(f"{suelto.name}: representación suelta en la carpeta del bundle "
+                          f"(el MD va a 03_MD y el texto a raw_text)")
+    return fallos
+
+
+def preflight_manifiestos(case_dir: Path, docs: list[DocPlan],
+                          cobertura_previa: list[DocCobertura], *,
+                          force: bool = False) -> None:
+    """Valida los manifiestos en juego ANTES de procesar el primer documento (spec §4).
+
+    `validar_manifiesto` corre hoy dentro de `_split_o_md`, documento a documento, y
+    `apply` solo persiste cobertura, estado y evento cuando `ejecutar` retorna: si el
+    manifiesto inválido es el del segundo bundle, el primero ya publicó su generación.
+    Aquí no se escribe nada —solo se leen JSON—, así que la corrida muere antes de tocar
+    ningún artefacto de la Sala de máquina.
+
+    Alcance declarado: se validan IDENTIDAD y EDICIÓN de los manifiestos ya en disco de
+    los documentos que esta corrida va a procesar. Los rangos exigen el nº de páginas del
+    buscable, que para un escaneado todavía no existe, y se siguen validando en
+    `_split_o_md` con el total real. La reconciliación de `--force` tampoco es
+    preflightable por lo mismo: la cubren el aislamiento por documento y el guard
+    bidireccional.
+    """
+    case_dir = Path(case_dir)
+    for d in docs:
+        if d.skip or d.ruta not in ("pdf", "imagen"):
+            continue
+        carpeta = carpeta_bundle_de(case_dir, d.slug)
+        if not split.manifiesto_existe(carpeta):
+            continue
+        try:
+            manifiesto = split.leer_manifiesto(carpeta)
+        except json.JSONDecodeError as exc:
+            # `leer_manifiesto` es un `json.loads` pelado y el JSON truncado es el fallo
+            # más probable del único fichero que el letrado edita a mano. Sin esto
+            # escapaba del `except` del CLI como traceback en vez de salida 2.
+            raise split.ManifestValidationError(
+                f"`_segmentacion.json` ilegible en {carpeta}: {exc}. Es un JSON editado a "
+                f"mano: revísalo, o bórralo y deja que `apply` lo regenere.") from exc
+        # Con --force el manifiesto en disco se RECONCILIA (no se consume tal cual), así
+        # que un esquema viejo sin doc_id no bloquea: se le acuñan identidades nuevas.
+        split.validar_identidad(manifiesto, exigir_doc_id=not force)
+        if not force:
+            split.validar_edicion(manifiesto, baseline_doc_ids(cobertura_previa, d.slug))
 
 
 _NATIVO_EXTRACTORES = {
@@ -499,10 +748,13 @@ def _aplicar_vision(fuente_render: Path, texto: str, estado: str, nota: str,
     return texto, estado, nota
 
 
-def _escribir_md(case_dir, case_id, slug, rel_path, texto, metodo, ocr, estado):
+def _escribir_md(case_dir, case_id, slug, rel_path, texto, metodo, ocr, estado,
+                 *, md_path: Path | None = None, raw_path: Path | None = None):
+    """Escribe el MD y su `raw_text`. Con `md_path`/`raw_path` explícitos escribe al
+    staging del bundle, para que la generación se publique entera o no se publique."""
     sm_dir = _sala_maquina_dir(case_dir)
-    md_path = destino_seguro(sm_dir / "03_MD" / f"{slug}.md", case_dir)
-    raw_path = destino_seguro(sm_dir / "raw_text" / f"{slug}.txt", case_dir)
+    md_path = destino_seguro(md_path or sm_dir / "03_MD" / f"{slug}.md", case_dir)
+    raw_path = destino_seguro(raw_path or sm_dir / "raw_text" / f"{slug}.txt", case_dir)
     raw_path.parent.mkdir(parents=True, exist_ok=True)
     raw_path.write_text(texto, encoding="utf-8")
     meta = {
@@ -567,44 +819,102 @@ def _split_o_md(case_dir: Path, sm_dir: Path, case_id: str, d: DocPlan,
 
     if not segmentos or len(segmentos) <= 1:
         # passthrough: un solo documento lógico → MD único, como antes del split.
+        # PERO si este documento YA fue un bundle, su generación anterior se retira aquí:
+        # dejarla en disco dejaba los N PDF de segmento sin fila (con --force, guard en
+        # rojo del que no se sale; sin --force, duplicación silenciosa). La cobertura la
+        # resuelve la fusión autoritativa: la corrida manda sobre el rel_path que rehace.
+        archivados = archivar_bundle_entero(case_dir, sm_dir,
+                                            carpeta_bundle_de(case_dir, d.slug),
+                                            sello=_sello_reproceso())
         texto = _try_pypdf(buscable) or ""
         estado, nota = _calidad(texto, buscable)
         texto, estado, nota = _aplicar_vision(buscable, texto, estado, nota, vision)
         if split_err:
             aviso = f"segmentación omitida ({split_err})"
             nota = f"{nota} · {aviso}" if nota else aviso
+        if archivados:
+            aviso = (f"ya no se detecta como bundle: {len(archivados)} artefactos de la "
+                     f"generación anterior archivados en {VERSIONES_ANTERIORES}/")
+            nota = f"{nota} · {aviso}" if nota else aviso
+            try:
+                append_event(case_id, "split_documental", details={
+                    "bundle": d.rel_path, "bundle_sha256": d.sha256, "n_segmentos": 0,
+                    "modo": "passthrough_retira_bundle", "archivados": archivados,
+                })
+            except Exception as exc:  # noqa: BLE001 — el trabajo ya está en disco
+                nota = f"{nota} · evento split_documental no registrado: {exc}"
         _escribir_md(case_dir, case_id, d.slug, d.rel_path, texto, metodo_base, ocr, estado)
         tipo_pass = segmentos[0].tipo if segmentos else ""
         return [DocCobertura(d.slug, d.rel_path, metodo_base, estado, len(texto), ocr, nota,
                              d.sha256, parent_sha256=d.sha256, tipo=tipo_pass)]
 
-    # split: manifiesto (editable) → materializar → un MD por documento lógico.
-    carpeta_bundle = destino_seguro(sm_dir / "02_Documentos" / d.slug, case_dir)
-    usar_previo = split.manifiesto_existe(carpeta_bundle) and not force
-    manifiesto = (split.leer_manifiesto(carpeta_bundle) if usar_previo
-                  else split.construir_manifiesto(d.rel_path, d.sha256, segmentos, blancos))
+    # split: manifiesto (editable) → reconciliar → materializar a staging → publicar.
+    carpeta_bundle = carpeta_bundle_de(case_dir, d.slug)
+    previo = (split.leer_manifiesto(carpeta_bundle)
+              if split.manifiesto_existe(carpeta_bundle) else None)
+    if previo is not None and not force:
+        manifiesto, rec = previo, None
+    else:
+        # --force RECONCILIA en vez de sustituir: sin esto, el manifiesto nuevo perdería
+        # las identidades y el reproceso volvería a renombrarlo todo (spec §5).
+        rec = split.reconciliar_manifiesto(
+            previo, split.construir_manifiesto(d.rel_path, d.sha256, segmentos, blancos))
+        manifiesto = rec.manifiesto
     split.validar_manifiesto(manifiesto, _pdf_num_paginas(buscable) or 0)
-    if not usar_previo:
+    if rec is not None:
         split.escribir_manifiesto(carpeta_bundle, manifiesto)
+
+    staging = carpeta_bundle / split.STAGING
+    shutil.rmtree(staging, ignore_errors=True)     # restos de una corrida abortada
     doclogicos = split.materializar(buscable, manifiesto, carpeta_bundle,
                                     parent_slug=d.slug, parent_sha256=d.sha256,
-                                    bundle_rel_path=d.rel_path)
+                                    bundle_rel_path=d.rel_path, carpeta_salida=staging)
+    tipos_previos = {e["doc_id"]: e["tipo"]
+                     for e in (previo or {}).get("segmentos", []) if e.get("doc_id")}
     filas: list[DocCobertura] = []
+    publicaciones: list[tuple[str, str]] = []
     for dl in doclogicos:
-        seg_pdf = carpeta_bundle / f"{dl.slug}.pdf"
+        seg_pdf = staging / f"{dl.slug}.pdf"
         texto = _try_pypdf(seg_pdf) or ""
         estado, nota = _calidad(texto, seg_pdf)
         texto, estado, nota = _aplicar_vision(seg_pdf, texto, estado, nota, vision)
-        _escribir_md(case_dir, case_id, dl.slug, d.rel_path, texto, metodo_base, ocr, estado)
+        _escribir_md(case_dir, case_id, dl.slug, d.rel_path, texto, metodo_base, ocr, estado,
+                     md_path=staging / f"{dl.slug}.md", raw_path=staging / f"{dl.slug}.txt")
+        tipo_previo = tipos_previos.get(dl.doc_id)
+        slug_previo = (split._slug_seg(d.slug, dl.doc_id, tipo_previo)
+                       if tipo_previo and tipo_previo != dl.tipo else "")
+        publicaciones.append((dl.slug, slug_previo))
         filas.append(DocCobertura(dl.slug, d.rel_path, metodo_base, estado, len(texto), ocr, nota,
                                   dl.seg_sha256, parent_slug=dl.parent_slug, parent_sha256=d.sha256,
-                                  role=dl.role_in_bundle, paginas=dl.paginas, tipo=dl.tipo))
-    append_event(case_id, "split_documental", details={
-        "bundle": d.rel_path, "bundle_sha256": d.sha256, "n_segmentos": len(doclogicos),
-        "segmentos": [{"slug": dl.slug, "seg_sha256": dl.seg_sha256, "tipo": dl.tipo,
-                       "paginas": dl.paginas} for dl in doclogicos],
-        "delimitadores": manifiesto["delimitadores"],
-    })
+                                  role=dl.role_in_bundle, paginas=dl.paginas, tipo=dl.tipo,
+                                  doc_id=dl.doc_id))
+    retirados = [split._slug_seg(d.slug, e["doc_id"], e["tipo"])
+                 for e in (rec.retirados if rec else [])]
+    archivados = publicar_segmentos(case_dir, sm_dir, carpeta_bundle,
+                                    publicaciones=publicaciones, retirados=retirados,
+                                    sello=_sello_reproceso())
+    if rec and rec.legacy_sin_identidad:
+        # Acuñar sobre entradas legacy es correcto, callarlo no. Va a la nota de cobertura
+        # —la worklist que el letrado mira— y al evento, no solo a un log.
+        _anotar(filas, f"identidades nuevas acuñadas sobre {len(rec.legacy_sin_identidad)} "
+                       f"entradas del manifiesto anterior sin doc_id "
+                       f"({', '.join(rec.legacy_sin_identidad)})")
+    try:
+        append_event(case_id, "split_documental", details={
+            "bundle": d.rel_path, "bundle_sha256": d.sha256, "n_segmentos": len(doclogicos),
+            "segmentos": [{"slug": dl.slug, "doc_id": dl.doc_id, "seg_sha256": dl.seg_sha256,
+                           "tipo": dl.tipo, "paginas": dl.paginas} for dl in doclogicos],
+            "delimitadores": manifiesto["delimitadores"],
+            "archivados": archivados,
+            "retirados": [e["doc_id"] for e in (rec.retirados if rec else [])],
+            "legacy_sin_identidad": list(rec.legacy_sin_identidad) if rec else [],
+        })
+    except Exception as exc:  # noqa: BLE001 — el trabajo YA está publicado en disco
+        # Sin esto la excepción sube a `ejecutar`, que emite UNA fila de error con el slug
+        # del documento físico: los artefactos quedan en disco y la cobertura los niega.
+        # El guard bidireccional abortaría después, con razón, por un fallo de log — y el
+        # log vive en el Drive, así que un fichero bloqueado basta para provocarlo.
+        _anotar(filas, f"evento split_documental no registrado: {exc}")
     return filas
 
 

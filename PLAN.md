@@ -270,10 +270,20 @@ ser cambiar una bandera.
         persistente** con ledger monotónico, **no** el ordinal `seg` (que se rompe con `--force`,
         hallazgo B0-2 de la 1ª pasada). **Partida en dos piezas** (decisión de Nikolai, 2026-08-01):
 
-        - **Pieza A — motor y esquema. CONSTRUIBLE YA, sin dependencias.** `doc_id` con formato
-          canónico validado antes de tocar disco, `next_doc_id` + tombstones, reconciliación del
-          manifiesto en `--force`, preflight de todos los manifiestos antes de escribir nada,
-          publicación por generación y guard **bidireccional** que aborta. No toca ningún caso real.
+        - **Pieza A — motor y esquema. ✅ CONSTRUIDA** (2026-08-02, rama
+          `claude/plan-next-step-a429e7`, pendiente de PR). `doc_id` con formato canónico validado
+          antes de tocar disco, `next_doc_id` + tombstones, reconciliación del manifiesto en
+          `--force`, preflight de todos los manifiestos antes de escribir nada, publicación por
+          generación y guard **bidireccional** que aborta con salida 3. No toca ningún caso real.
+          Spec **rev. 4** + plan **rev. 2** tras la **ronda 1 de revisión adversarial** (NO-SHIP,
+          2 B0 + 13 A + 9 M; 23 confirmados, 1 rebajado), hecha por un **revisor sustituto** —sesión
+          limpia de Claude Code, mismo modelo que el autor, con Codex sin cupo—: acta
+          `2026-08-02-identidad-segmento-bundle-pieza-a-r1-claude-adversarial-review.md`,
+          adjudicación en el §14 del spec. El `B0` que destapó era de diseño: la rama **passthrough**
+          no archivaba, así que un bundle que dejaba de detectarse como tal dejaba el caso sin salida
+          con `--force` y reintroducía el defecto en silencio sin él. Límites declarados en
+          `MEJORAS #117`. **Ronda 2 pendiente**, y el cambio de diseño de la rev. 4 (§6.1 y §7.1)
+          **no lo ha mirado ningún revisor de otro modelo**.
         - **Pieza B — retrofit y saneamiento de los 5 grupos. ⛔ BLOQUEADA.** Depende de un lock de
           exclusión que **hoy está roto**: `test_defecto_doble_titular` sigue vivo como `xfail`
           («el write-then-verify no impide dos titulares») y `cmd_checkin` no verifica nonce al

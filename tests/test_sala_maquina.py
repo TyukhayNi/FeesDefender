@@ -275,6 +275,77 @@ def test_vision_cableada_detecta_stub_y_monkeypatch(monkeypatch):
 
 # --- Task 13B: cobertura por documento lógico (no colapsar segmentos) --------
 
+def test_fusionar_por_doc_id_colapsa_el_cambio_de_tipo():
+    """Cambiar el TIPO de un segmento deja UNA fila, no dos (spec §6).
+
+    La rev. 2 del spec daba el cambio de TIPO por inocuo. No lo era: el destino nuevo no
+    existe, así que la regla «si el destino existe, archivar» no se dispara y la fusión
+    por slug conservaba dos filas del MISMO doc_id.
+    """
+    from core.sala_maquina import DocCobertura, fusionar_cobertura
+    vieja = DocCobertura("b__d01_DOC_A", "01_Drive EV/b.pdf", "pypdf", "ok", 100, False,
+                         "", "a" * 64, parent_slug="b", paginas="1-3", tipo="DOC_A",
+                         doc_id="d01")
+    nueva = DocCobertura("b__d01_DOC_B", "01_Drive EV/b.pdf", "pypdf", "ok", 120, False,
+                         "", "c" * 64, parent_slug="b", paginas="1-3", tipo="DOC_B",
+                         doc_id="d01")
+
+    out = fusionar_cobertura([vieja], [nueva])
+
+    assert [c.slug for c in out] == ["b__d01_DOC_B"]
+
+
+def test_fusionar_sin_doc_id_sigue_indexando_por_slug():
+    """Los documentos sueltos (y las filas reconstruidas del MD) no tienen doc_id."""
+    from core.sala_maquina import DocCobertura, fusionar_cobertura
+    a = DocCobertura("encargo__aabbccdd", "01_Drive EV/encargo.pdf", "pypdf", "ok")
+    b = DocCobertura("factura__eeff0011", "01_Drive EV/factura.pdf", "pypdf", "ok")
+
+    assert len(fusionar_cobertura([a], [b])) == 2
+
+
+def test_la_corrida_es_autoritativa_sobre_lo_que_reprocesa():
+    """Cambiar la clave no basta: una fusión que solo AÑADE no puede sustituir (H-05).
+
+    La fila reconstruida del MD sale con `doc_id=""` porque el frontmatter no lo guarda;
+    la fila fresca del mismo documento lógico lleva `doc_id`. Con claves distintas
+    quedaban DOS filas con el mismo slug, una de ellas con sha vacío — la clase de
+    defecto que esta pieza existe para eliminar, entrando por la reconstrucción.
+    """
+    from core.sala_maquina import DocCobertura, fusionar_cobertura
+    reconstruida = DocCobertura("b__d01_DOC_ARRAS", "01_Drive EV/b.pdf", "pypdf", "ok",
+                                nota="fila reconstruida del MD (sin _cobertura.json)")
+    fresca = DocCobertura("b__d01_DOC_ARRAS", "01_Drive EV/b.pdf", "ocr", "ok", 120, True,
+                          "", "c" * 64, parent_slug="b", paginas="1-3", tipo="DOC_ARRAS",
+                          doc_id="d01")
+
+    out = fusionar_cobertura([reconstruida], [fresca],
+                             rel_paths_reprocesados={"01_Drive EV/b.pdf"})
+
+    assert len(out) == 1 and out[0].sha256 == "c" * 64
+
+
+def test_lo_no_reprocesado_se_conserva_intacto():
+    """Una corrida acotada sigue siendo acotada: la autoridad es por `rel_path` tocado."""
+    from core.sala_maquina import DocCobertura, fusionar_cobertura
+    otro = DocCobertura("informe__bbbbbbbb", "01_Drive EV/informe.pdf", "ocr", "ok", 8912)
+    nueva = DocCobertura("b__d01_A", "01_Drive EV/b.pdf", "ocr", "ok", 10, True, "",
+                         "c" * 64, parent_slug="b", doc_id="d01")
+
+    out = fusionar_cobertura([otro], [nueva], rel_paths_reprocesados={"01_Drive EV/b.pdf"})
+
+    assert {c.rel_path for c in out} == {"01_Drive EV/informe.pdf", "01_Drive EV/b.pdf"}
+
+
+def test_sin_conjunto_autoritativo_se_comporta_como_antes():
+    """Compatibilidad: `reforzar` y los llamadores viejos no pasan el conjunto."""
+    from core.sala_maquina import DocCobertura, fusionar_cobertura
+    vieja = DocCobertura("b__d01_A", "01_Drive EV/b.pdf", "pypdf", "ok", doc_id="d01")
+    otra = DocCobertura("b__d02_B", "01_Drive EV/b.pdf", "pypdf", "ok", doc_id="d02")
+
+    assert len(fusionar_cobertura([vieja], [otra])) == 2
+
+
 def test_fusionar_cobertura_conserva_n_segmentos_mismo_bundle():
     # 3 segmentos del MISMO bundle (mismo rel_path) con slug propio NO deben colapsar.
     from core.sala_maquina import DocCobertura, fusionar_cobertura

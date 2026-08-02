@@ -77,8 +77,9 @@ revisa, no ejecuta OCR.
     ├── 02_Sala de máquina/
     │   ├── 01_OCR/         {slug__sha8}.pdf   PDFs BUSCABLES (custodia)
     │   ├── 02_Documentos/  {bundle}/…         segmentos de bundles multi-doc + _segmentacion.md/.json
-    │   ├── 03_MD/          {slug__sha8}.md     markdown legible + frontmatter (uno por documento lógico)
-    │   └── raw_text/       {slug__sha8}.txt    texto intermedio (idempotencia)
+    │   ├── 03_MD/          {slug__sha8}.md     markdown legible + frontmatter (documento suelto)
+    │   │                   {bundle__dNN_TIPO}.md   ídem, uno por documento lógico de un bundle
+    │   └── raw_text/       {slug__sha8}.txt    texto intermedio (idempotencia; ídem para segmentos)
     └── _revisar/
         └── _cobertura.md                     worklist de revisión (ok/low/empty)
 ```
