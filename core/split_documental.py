@@ -21,6 +21,66 @@ _LOG = logging.getLogger("split_documental")
 if not _LOG.handlers:
     _LOG.addHandler(logging.NullHandler())
 
+
+class ManifestValidationError(ValueError):
+    """Manifiesto de segmentación inválido: identidad, ledger o destino.
+
+    Hereda de `ValueError` a propósito: `validar_manifiesto` ya lanzaba `ValueError`
+    (rangos, solapes) y hay llamadores y tests que lo esperan. Heredar conserva ese
+    contrato y a la vez permite un `except` específico en el preflight del CLI.
+    """
+
+
+DOC_ID_INICIAL = "d01"
+STAGING = "_staging"          # subcarpeta de publicación por generación (sala_maquina)
+# `fullmatch` con clase ASCII explícita, NO `re.match(r"^d\d{2,}$")`: el `$` casa antes de
+# un salto final, así que `"d01\n"` pasaba y reventaba como OSError DENTRO de
+# `materializar` —rompiendo el «se valida antes de cualquier I/O»—; y `\d` acepta dígitos
+# Unicode, con lo que `"d١٢"` pasaba y su `int()` daba 12. Medido en la revisión r1.
+_DOC_ID_RE = re.compile(r"d[0-9]{2,}")
+
+
+def validar_doc_id(doc_id: object, *, contexto: str = "") -> str:
+    """Formato canónico del `doc_id`, validado ANTES de cualquier I/O (spec §3.1).
+
+    No es celo: el `doc_id` es un campo del manifiesto que **edita el letrado** y que
+    entra directamente en el nombre de un fichero. El slug era seguro por construcción
+    mientras venía de `f"{seg:02d}"`; en cuanto lo escribe una persona, aparece el
+    traversal.
+    """
+    sufijo = f" ({contexto})" if contexto else ""
+    if not isinstance(doc_id, str) or not _DOC_ID_RE.fullmatch(doc_id):
+        raise ManifestValidationError(
+            f"doc_id inválido {doc_id!r}{sufijo}: debe ser d + dos o más dígitos ASCII "
+            f"(p. ej. d01), sin espacios ni saltos de línea")
+    return doc_id
+
+
+def siguiente_doc_id(doc_id: str) -> str:
+    """Acuña el siguiente `doc_id`. Ancho mínimo 2, sin tope: d99 → d100."""
+    validar_doc_id(doc_id, contexto="next_doc_id")
+    return f"d{int(doc_id[1:]) + 1:02d}"
+
+
+def _destino_en_bundle(destino: Path, carpeta_bundle: Path) -> Path:
+    """El destino final cae DENTRO de la carpeta del bundle (spec §3.1).
+
+    No se reutiliza `sala_maquina.destino_seguro` —el equivalente contra el `case_dir`—
+    porque importarlo aquí crearía un ciclo: `sala_maquina` ya importa este módulo.
+
+    Lo que NO hace, medido: con el prefijo `parent_slug__` delante, un `doc_id` como
+    `..\\..\\fuera` resuelve DENTRO de la carpeta (el prefijo absorbe el primer `..`), así
+    que a esa forma la para el formato canónico, no esta comprobación. Aquí se cazan las
+    que de verdad escapan (`d01/../../fuera`).
+    """
+    destino, carpeta_bundle = Path(destino), Path(carpeta_bundle)
+    try:
+        destino.resolve().relative_to(carpeta_bundle.resolve())
+    except ValueError:
+        raise ManifestValidationError(
+            f"destino fuera de la carpeta del bundle: {destino} (bundle: {carpeta_bundle})")
+    return destino
+
 # Umbrales del detector de blanco (calibrar contra el bundle real en F0, Task 8b).
 UMBRAL_CHARS_BLANCO = 10       # < → candidata a blanco (cribado barato por chars OCR)
 UMBRAL_TINTA_BLANCO = 0.008    # fracción de píxeles con tinta; < → blanco confirmado
@@ -69,6 +129,7 @@ class DocLogico:
     role_in_bundle: str
     paginas: str | None
     fuentes: list[str] = field(default_factory=list)
+    doc_id: str = ""      # identidad persistente del documento lógico (vacío = suelto)
 
 
 def segmentar_por_blancos(total_pag: int, blancos: set[int]) -> list[tuple[int, int]]:
@@ -219,13 +280,21 @@ def _pp_a_rango(pp: str) -> tuple[int, int]:
 
 def construir_manifiesto(bundle_rel_path: str, bundle_sha256: str,
                          segmentos: list[Segmento], blancos: set[int]) -> dict:
-    """Construye el manifiesto (dict serializable) propuesto por `plan` a partir de `detectar`."""
+    """Manifiesto propuesto por `plan`, ya con identidad acuñada y ledger abierto."""
+    entradas: list[dict] = []
+    doc_id = DOC_ID_INICIAL
+    for s in segmentos:
+        entradas.append({"seg": s.seg, "doc_id": doc_id,
+                         "pp": _pp(s.pagina_inicio, s.pagina_fin),
+                         "tipo": s.tipo, "role": s.role})
+        doc_id = siguiente_doc_id(doc_id)
     return {
         "fuente": bundle_rel_path,
         "bundle_sha256": bundle_sha256,
-        "segmentos": [{"seg": s.seg, "pp": _pp(s.pagina_inicio, s.pagina_fin),
-                       "tipo": s.tipo, "role": s.role} for s in segmentos],
+        "segmentos": entradas,
         "delimitadores": sorted(blancos),
+        "next_doc_id": doc_id,     # high-water mark: nunca decrece (spec §3.2)
+        "retirados": [],           # tombstones: un doc_id de baja no se reutiliza
     }
 
 
@@ -237,13 +306,16 @@ def escribir_manifiesto(carpeta_bundle: Path, manifiesto: dict) -> None:
         json.dumps(manifiesto, ensure_ascii=False, indent=2), encoding="utf-8")
     lineas = [
         "<!-- GENERADO — editable: ajusta pp/tipo/role y re-ejecuta apply -->",
+        "<!-- NO toques `doc_id`: es la identidad persistente del documento lógico. "
+        "Cambiarlo o intercambiarlo entre filas aborta la corrida. -->",
         f"# Segmentación propuesta — {manifiesto['fuente']}",
         "",
-        "| seg | páginas | tipo | role |",
-        "|---|---|---|---|",
+        "| seg | doc_id | páginas | tipo | role |",
+        "|---|---|---|---|---|",
     ]
     for e in manifiesto["segmentos"]:
-        lineas.append(f"| {e['seg']} | {e['pp']} | {e['tipo']} | {e['role']} |")
+        lineas.append(f"| {e['seg']} | {e.get('doc_id', '')} | {e['pp']} | "
+                      f"{e['tipo']} | {e['role']} |")
     lineas += ["", f"Delimitadores (hojas en blanco descartadas): {manifiesto['delimitadores']}", ""]
     (carpeta_bundle / _MANIFIESTO_MD).write_text("\n".join(lineas) + "\n", encoding="utf-8")
 
@@ -277,24 +349,44 @@ def _norm_tipo(tipo: str) -> str:
     return re.sub(r"[^A-Z0-9]+", "_", (tipo or "").upper()).strip("_") or "DOCUMENTO"
 
 
-def _slug_seg(parent_slug: str, seg: int, tipo: str, seg_sha256: str) -> str:
-    # parent_slug ya viene de output_slug (path-safe). TIPO por _norm_tipo (mayúsculas),
-    # NO slugify: slugify lo pasaría a minúsculas (D5).
-    return f"{parent_slug}__seg{seg:02d}_{_norm_tipo(tipo)}__{seg_sha256[:8]}"
+def _slug_seg(parent_slug: str, doc_id: str, tipo: str) -> str:
+    """Nombre del segmento por IDENTIDAD, no por contenido.
+
+    `parent_slug` ya viene de `output_slug` (path-safe) y `TIPO` de `_norm_tipo`
+    (mayúsculas, NO slugify: bajaría el case — decisión D5 de 2026-07-15). El sha del
+    segmento sale del nombre: sigue en la cobertura como cadena de custodia.
+    """
+    validar_doc_id(doc_id, contexto=f"segmento de {parent_slug}")
+    return f"{parent_slug}__{doc_id}_{_norm_tipo(tipo)}"
 
 
 def materializar(pdf_path: Path, manifiesto: dict, carpeta_bundle: Path, *,
                  parent_slug: str, parent_sha256: str, bundle_rel_path: str,
+                 carpeta_salida: Path | None = None,
                  log: logging.Logger | None = None) -> list[DocLogico]:
-    """Corta el bundle según el manifiesto → PDFs en carpeta_bundle + DocLogico por segmento.
+    """Corta el bundle según el manifiesto → PDFs + `DocLogico` por documento lógico.
 
     Reutiliza separar.separar_pdf (cortador atómico Windows-safe) y separar.generar_indice.
-    Renombra cada PDF a {seg_slug}.pdf (identidad estable por contenido).
+    Renombra cada PDF a {slug}.pdf, con el slug derivado del `doc_id` (identidad estable).
+
+    `carpeta_salida` (default: la propia `carpeta_bundle`) es dónde aterrizan los PDFs y
+    el `indice.json`; `sala_maquina` la apunta al *staging* para publicar por generación.
+    La contención se valida SIEMPRE contra `carpeta_bundle`, que es la frontera real.
     """
     log = log or _LOG
     pdf_path = Path(pdf_path)
     carpeta_bundle = Path(carpeta_bundle)
-    carpeta_bundle.mkdir(parents=True, exist_ok=True)
+    carpeta_salida = Path(carpeta_salida) if carpeta_salida else carpeta_bundle
+
+    # Validación COMPLETA antes de tocar disco (ni mkdir): un doc_id no canónico no puede
+    # llegar a formar parte de una ruta que se escriba.
+    slugs = []
+    for e in manifiesto["segmentos"]:
+        slug = _slug_seg(parent_slug, e.get("doc_id"), e["tipo"])
+        _destino_en_bundle(carpeta_salida / f"{slug}.pdf", carpeta_bundle)
+        slugs.append(slug)
+
+    carpeta_salida.mkdir(parents=True, exist_ok=True)
 
     segs_sep = []
     for e in manifiesto["segmentos"]:
@@ -302,21 +394,20 @@ def materializar(pdf_path: Path, manifiesto: dict, carpeta_bundle: Path, *,
         segs_sep.append({"tipo": e["tipo"], "num_doc": e["seg"],
                          "pagina_inicio": ini, "pagina_fin": fin, "lineas_inicio": []})
 
-    resultados = separar.separar_pdf(pdf_path, segs_sep, carpeta_bundle, log)
+    resultados = separar.separar_pdf(pdf_path, segs_sep, carpeta_salida, log)
 
     docs: list[DocLogico] = []
-    for e, r in zip(manifiesto["segmentos"], resultados):
-        emitido = carpeta_bundle / r["archivo"]
-        seg_sha = file_sha256(emitido)
-        slug = _slug_seg(parent_slug, e["seg"], e["tipo"], seg_sha)
-        destino_pdf = carpeta_bundle / f"{slug}.pdf"
-        emitido.replace(destino_pdf)   # renombrar a identidad estable por contenido
+    for e, r, slug in zip(manifiesto["segmentos"], resultados, slugs):
+        emitido = carpeta_salida / r["archivo"]
+        destino_pdf = carpeta_salida / f"{slug}.pdf"
+        emitido.replace(destino_pdf)          # renombrar a identidad persistente
+        seg_sha = file_sha256(destino_pdf)    # custodia: el sha se mide, ya no nombra
         r["archivo"] = f"{slug}.pdf"   # que generar_indice registre el nombre final, no el temporal de separar_pdf
         docs.append(DocLogico(
             slug=slug, seg_sha256=seg_sha, destino="split", tipo=e["tipo"],
             parent_slug=parent_slug, parent_sha256=parent_sha256,
             role_in_bundle=e.get("role", "documento"), paginas=r["paginas"],
-            fuentes=[bundle_rel_path],
+            fuentes=[bundle_rel_path], doc_id=e["doc_id"],
         ))
-    separar.generar_indice(resultados, pdf_path, carpeta_bundle, log)
+    separar.generar_indice(resultados, pdf_path, carpeta_salida, log)
     return docs
