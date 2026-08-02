@@ -330,8 +330,103 @@ def manifiesto_existe(carpeta_bundle: Path) -> bool:
     return (Path(carpeta_bundle) / _MANIFIESTO_JSON).exists()
 
 
+def _solapa(a: tuple[int, int], b: tuple[int, int]) -> bool:
+    return a[0] <= b[1] and b[0] <= a[1]
+
+
+def _next_doc_id_de(manifiesto: dict) -> str:
+    """`next_doc_id` del manifiesto, o el que le correspondería si no lo trae (legacy)."""
+    declarado = manifiesto.get("next_doc_id")
+    if isinstance(declarado, str) and _DOC_ID_RE.fullmatch(declarado):
+        return declarado
+    usados = [e["doc_id"] for e in manifiesto.get("segmentos", []) if e.get("doc_id")]
+    usados += list(manifiesto.get("retirados") or [])
+    if not usados:
+        return DOC_ID_INICIAL
+    return siguiente_doc_id(max(usados, key=lambda d: int(d[1:])))
+
+
+def validar_identidad(manifiesto: dict, *, exigir_doc_id: bool = True) -> None:
+    """Formato, unicidad, tombstones y high-water mark del ledger (spec §3.1-§3.2).
+
+    `exigir_doc_id=False` para el manifiesto PREVIO en una reconciliación: bajo `--force`
+    un esquema viejo no bloquea (sus entradas simplemente no tienen identidad que heredar).
+    """
+    fuente = manifiesto.get("fuente", "?")
+    vistos: set[str] = set()
+    retirados = set(manifiesto.get("retirados") or [])
+    if not manifiesto.get("segmentos"):
+        # Con la lista vacía pasaban las dos validaciones, `materializar` devolvía [], el
+        # barrido de la publicación archivaba TODOS los PDF del bundle, no se publicaba
+        # nada y la corrida salía 0. Un bundle sin documentos lógicos no es un estado
+        # válido (hallazgo H-11 de la revisión r1).
+        raise ManifestValidationError(
+            f"el manifiesto de {fuente} no declara ni un segmento: un bundle tiene al "
+            f"menos un segmento (con la lista vacía se archivaría el bundle entero)")
+    for e in manifiesto["segmentos"]:
+        if "doc_id" not in e:
+            if not exigir_doc_id:
+                continue
+            raise ManifestValidationError(
+                f"manifiesto sin `doc_id` (esquema anterior a la identidad persistente) "
+                f"en {fuente}, seg={e.get('seg')}: requiere el retrofit de la pieza B "
+                f"(spec 2026-08-01-identidad-segmento-bundle §11). Salidas disponibles "
+                f"hoy: `apply --force` sobre el caso, o borrar este `_segmentacion.json` "
+                f"y lanzar `apply --solo` sobre el documento. No se acuñan identidades en "
+                f"silencio: si un --force histórico renumeró, el segNN del artefacto "
+                f"puede no representar el pp actual.")
+        did = validar_doc_id(e["doc_id"], contexto=f"{fuente}, seg={e.get('seg')}")
+        if did in vistos:
+            raise ManifestValidationError(f"doc_id repetido en {fuente}: {did}")
+        if did in retirados:
+            raise ManifestValidationError(
+                f"doc_id {did} está en `retirados` (dado de baja) en {fuente} y no puede "
+                f"volver a usarse: el ledger es monotónico.")
+        vistos.add(did)
+    nxt = _next_doc_id_de(manifiesto)
+    validar_doc_id(nxt, contexto=f"next_doc_id de {fuente}")
+    tope = max((int(d[1:]) for d in vistos | retirados), default=-1)
+    if tope >= int(nxt[1:]):
+        raise ManifestValidationError(
+            f"next_doc_id ({nxt}) no es un high-water mark en {fuente}: hay doc_id ≥ él")
+
+
+def validar_edicion(manifiesto: dict, baseline: dict[str, str]) -> None:
+    """La correspondencia `doc_id → pp` ya establecida no se reasigna a mano (spec §3.3).
+
+    `baseline`: mapa `doc_id → pp` de la última materialización (filas de cobertura del
+    bundle). Sin baseline —primera corrida, o caso legacy sin `_cobertura.json`— no hay
+    nada contra qué comparar y la comprobación NO corre: se declara, no se finge.
+
+    Editar el `pp` de un doc_id a un rango nuevo es legítimo (el manifiesto es el gate del
+    letrado). Lo que se rechaza es la PERMUTACIÓN: mismo conjunto de rangos, distinta
+    correspondencia, que cruza dos identidades semánticas sin que nada lo delate.
+    """
+    if not baseline:
+        return
+    actual = {e["doc_id"]: e["pp"] for e in manifiesto.get("segmentos", [])
+              if e.get("doc_id")}
+    comunes = sorted(set(actual) & set(baseline))
+    if not comunes:
+        return
+    if {_pp_a_rango(actual[d]) for d in comunes} != {_pp_a_rango(baseline[d]) for d in comunes}:
+        return          # el conjunto de rangos cambió: re-segmentación, permitida
+    cruzados = [d for d in comunes if _pp_a_rango(actual[d]) != _pp_a_rango(baseline[d])]
+    if cruzados:
+        raise ManifestValidationError(
+            f"permutación de identidades en {manifiesto.get('fuente', '?')}: los doc_id "
+            f"{cruzados} han intercambiado su rango de páginas sin que cambie el conjunto "
+            f"de rangos. Si querías re-segmentar, cambia los `pp`; renombrar no se hace "
+            f"a mano.")
+
+
 def validar_manifiesto(manifiesto: dict, total_pag: int) -> None:
-    """Falla claro si algún rango está fuera de [1, total_pag] o solapa/está desordenado."""
+    """Rangos y solapes (como siempre) Y la identidad (spec §3).
+
+    Los rangos van PRIMERO a propósito: sus mensajes son los que ya conocen los llamadores
+    y los tests, y un manifiesto con rango imposible es un error más básico que uno con
+    identidad mal puesta.
+    """
     ultimo_fin = 0
     for e in sorted(manifiesto["segmentos"], key=lambda x: _pp_a_rango(x["pp"])[0]):
         ini, fin = _pp_a_rango(e["pp"])
@@ -340,6 +435,76 @@ def validar_manifiesto(manifiesto: dict, total_pag: int) -> None:
         if ini <= ultimo_fin:
             raise ValueError(f"Segmento {e['seg']} solapa con el anterior: {e['pp']}")
         ultimo_fin = fin
+    validar_identidad(manifiesto)
+
+
+@dataclass
+class Reconciliacion:
+    manifiesto: dict
+    heredados: list[str]       # doc_id que conservan identidad
+    acunados: list[str]        # doc_id nuevos
+    retirados: list[dict]      # entradas ANTERIORES dadas de baja (doc_id + tipo, para archivar)
+    legacy_sin_identidad: list[str] = field(default_factory=list)  # `pp` previos sin doc_id
+
+
+def reconciliar_manifiesto(previo: dict | None, propuesto: dict) -> Reconciliacion:
+    """`--force` RECONCILIA el manifiesto en vez de sustituirlo (spec §5).
+
+    1. `pp` idéntico → hereda el doc_id (el caso real: re-OCR sin cambiar segmentación).
+    2. Sin igualdad y sin solape → acuña del `next_doc_id`.
+    3. Sin igualdad pero con solape → se detiene: no hay emparejamiento difuso.
+    4. Entrada anterior sin pareja → tombstone + sus artefactos se archivan (el llamador).
+
+    Lo que esto NO promete (hallazgo N-A-3): un split o merge real de límites no conserva
+    ninguna identidad, porque ningún rango nuevo iguala al viejo. Es correcto: el
+    documento lógico cambió.
+    """
+    if previo is None:
+        return Reconciliacion(dict(propuesto), [],
+                              [e["doc_id"] for e in propuesto["segmentos"]], [])
+
+    validar_identidad(previo, exigir_doc_id=False)
+    # Indexado por RANGO, no por la cadena `pp`: el manifiesto lo edita una persona, y
+    # `01-03` o `1 - 3` son el mismo rango que `1-3`. Con el índice por cadena la herencia
+    # fallaba y `--force` abortaba diciendo que un rango «solapa» consigo mismo, sin salida
+    # salvo editar el fichero a mano (hallazgo H-06).
+    por_pp = {_pp_a_rango(e["pp"]): e for e in previo.get("segmentos", []) if e.get("doc_id")}
+    # Las entradas legacy (sin doc_id) no tienen identidad que heredar: sus segmentos
+    # acuñarán una nueva. Correcto, pero se DECLARA (H-07) — hacerlo callando contradice
+    # el fail-closed que justifica abortar en la corrida normal.
+    legacy = [e["pp"] for e in previo.get("segmentos", []) if not e.get("doc_id")]
+    next_id = _next_doc_id_de(previo)
+
+    entradas: list[dict] = []
+    heredados: list[str] = []
+    acunados: list[str] = []
+    usados: set[tuple[int, int]] = set()
+    for e in propuesto["segmentos"]:
+        rango = _pp_a_rango(e["pp"])
+        anterior = por_pp.get(rango)
+        if anterior is not None:
+            did = anterior["doc_id"]
+            heredados.append(did)
+            usados.add(rango)
+        else:
+            chocan = sorted(p for p in por_pp if _solapa(rango, p))
+            if chocan:
+                raise ManifestValidationError(
+                    f"reconciliación imposible en {propuesto.get('fuente', '?')}: el "
+                    f"segmento {e['pp']} no iguala ninguna entrada anterior y solapa con "
+                    f"{[f'{a}-{b}' for a, b in chocan]}. --force se detiene: reconcilia "
+                    f"_segmentacion.json a mano (ajusta los pp o retira las entradas "
+                    f"viejas) y vuelve a lanzar.")
+            did = next_id
+            next_id = siguiente_doc_id(next_id)
+            acunados.append(did)
+        entradas.append({**e, "doc_id": did})
+
+    retirados_entradas = [e for rango, e in sorted(por_pp.items()) if rango not in usados]
+    manifiesto = {**propuesto, "segmentos": entradas, "next_doc_id": next_id,
+                  "retirados": list(previo.get("retirados") or [])
+                  + [e["doc_id"] for e in retirados_entradas]}
+    return Reconciliacion(manifiesto, heredados, acunados, retirados_entradas, legacy)
 
 
 def _norm_tipo(tipo: str) -> str:
