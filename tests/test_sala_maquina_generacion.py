@@ -338,3 +338,185 @@ def test_un_bundle_que_deja_de_serlo_retira_su_generacion(tmp_path, monkeypatch)
     archivados = sorted((case_dir / sm.VERSIONES_ANTERIORES).glob("reproceso_*/*"))
     assert len(archivados) >= 9 + 2, "3 segmentos × 3 representaciones + índice + manifiesto"
     assert (sm_dir / "03_MD" / f"{slug}.md").exists(), "el MD suelto del passthrough"
+
+
+# --- Tarea 7: guard bidireccional ---------------------------------------------
+
+def _cob_seg(slug, *, parent, doc_id, sha):
+    return sm.DocCobertura(slug, "01_Drive EV/a.pdf", "pypdf", "ok", 10, False, "", sha,
+                           parent_slug=parent, paginas="1-1", tipo="A", doc_id=doc_id)
+
+
+def test_guard_detecta_la_fila_sin_fichero(tmp_path):
+    """Los asertos van sobre FRASES CON ESPACIOS, no subcadenas.
+
+    `any("MD" in f)` casaría con el componente de ruta `03_MD` que va dentro del propio
+    mensaje, y `any("raw_text" in f)` con la carpeta `raw_text`: un mutante que etiquetara
+    mal las tres representaciones sobreviviría. Es la regla que el §8 del spec impone.
+    """
+    case_dir = tmp_path / "caso"
+    sm_dir = sm._sala_maquina_dir(case_dir)
+    carpeta = sm_dir / "02_Documentos" / "b"
+    carpeta.mkdir(parents=True)
+    (carpeta / "b__d01_A.pdf").write_text("pdf", encoding="utf-8")
+    from core.utils import file_sha256
+    fila = _cob_seg("b__d01_A", parent="b", doc_id="d01",
+                    sha=file_sha256(carpeta / "b__d01_A.pdf"))
+
+    fallos = sm.verificar_integridad_bundles(case_dir, [fila], {"b"})
+
+    assert any("falta la representación MD " in f for f in fallos)
+    assert any("falta la representación raw_text " in f for f in fallos)
+    assert not any("falta la representación PDF " in f for f in fallos)
+
+
+def test_guard_detecta_el_fichero_sin_fila(tmp_path):
+    """El caso para el que se escribe: el bundle revienta y `ejecutar` aísla el fallo.
+
+    La única fila que queda es la de error, con el slug del documento FÍSICO y sin
+    `parent_slug`; con `--force`, además, la cobertura previa va vacía. Un guard que solo
+    recorriera filas estaría ciego justo aquí.
+    """
+    case_dir = tmp_path / "caso"
+    carpeta = sm._sala_maquina_dir(case_dir) / "02_Documentos" / "b"
+    carpeta.mkdir(parents=True)
+    (carpeta / "b__d01_A.pdf").write_text("pdf publicado", encoding="utf-8")
+    error = sm.DocCobertura("b", "01_Drive EV/a.pdf", "error", "empty", 0, False,
+                            "fallo al procesar: X", "a" * 64)
+
+    fallos = sm.verificar_integridad_bundles(case_dir, [error], {"b"})
+
+    assert any("sin fila en la cobertura" in f for f in fallos)
+
+
+def test_guard_detecta_el_sha_que_no_casa(tmp_path):
+    case_dir = tmp_path / "caso"
+    sm_dir = sm._sala_maquina_dir(case_dir)
+    carpeta = sm_dir / "02_Documentos" / "b"
+    _sembrar(sm_dir, carpeta, "b__d01_A", "x")
+
+    fallos = sm.verificar_integridad_bundles(
+        case_dir, [_cob_seg("b__d01_A", parent="b", doc_id="d01", sha="f" * 64)], {"b"})
+
+    # Frase con espacios, no `"sha" in f`: el tmpdir de este test se llama
+    # `test_guard_detecta_el_sha_que_0` y las rutas van DENTRO del mensaje, así que
+    # `"sha"` casaría con cualquier fallo — la inyección por nombre de test que el §8
+    # prohíbe, ocurriendo literalmente.
+    assert any("el sha del PDF no casa" in f for f in fallos)
+
+
+def test_guard_detecta_una_representacion_suelta_en_la_carpeta_del_bundle(tmp_path):
+    """Ahí no vive ningún MD ni ningún txt legítimo: solo pueden venir de una
+    publicación sucia, y antes no los miraba nadie nunca."""
+    case_dir = tmp_path / "caso"
+    sm_dir = sm._sala_maquina_dir(case_dir)
+    carpeta = sm_dir / "02_Documentos" / "b"
+    _sembrar(sm_dir, carpeta, "b__d01_A", "x")
+    (carpeta / "b__d09_RANCIO.md").write_text("residuo", encoding="utf-8")
+    from core.utils import file_sha256
+    fila = _cob_seg("b__d01_A", parent="b", doc_id="d01",
+                    sha=file_sha256(carpeta / "b__d01_A.pdf"))
+
+    fallos = sm.verificar_integridad_bundles(case_dir, [fila], {"b"})
+
+    assert any("representación suelta en la carpeta del bundle" in f for f in fallos)
+
+
+def test_guard_no_audita_los_bundles_que_esta_corrida_no_toco(tmp_path):
+    """El daño histórico (5 grupos duplicados en 2 casos) es de la pieza B: convertirlo en
+    aborto dejaría esos casos sin poder procesarse mientras B siga bloqueada."""
+    case_dir = tmp_path / "caso"
+    carpeta = sm._sala_maquina_dir(case_dir) / "02_Documentos" / "viejo"
+    carpeta.mkdir(parents=True)
+    (carpeta / "viejo__seg01_A__aabbccdd.pdf").write_text("huérfano", encoding="utf-8")
+
+    assert sm.verificar_integridad_bundles(case_dir, [], set()) == []
+
+
+def test_apply_sale_con_3_si_la_corrida_deja_la_sala_incoherente(tmp_path, monkeypatch):
+    """Y persiste ANTES de abortar: abortar sin escribir perdería justo lo que protege."""
+    case_dir = _caso(tmp_path, monkeypatch)
+    _bundle(case_dir, "a.pdf")
+    monkeypatch.setattr(sm, "verificar_integridad_bundles",
+                        lambda cd, cob, parents: ["b__d01_A: falta la representación MD"])
+
+    with pytest.raises(typer.Exit) as exc:
+        cli.apply("W-TEST99")
+
+    assert exc.value.exit_code == 3
+    assert (sm._sala_maquina_dir(case_dir) / "_cobertura.json").exists(), \
+        "la cobertura debe quedar en disco para poder inspeccionarla"
+
+
+def test_un_fallo_a_media_publicacion_deja_la_anterior_intacta_y_el_guard_aborta(
+        tmp_path, monkeypatch):
+    """§8.8(a): fallo TRAS publicar el PDF y ANTES del MD, de punta a punta.
+
+    Las dos mitades del contrato en un solo test: la generación anterior está entera en
+    `99_Versiones anteriores/` —las TRES representaciones, no solo los `.md`— y el guard
+    aborta. Assertar solo los `.md` dejaba pasar en verde una implementación sin staging
+    para el PDF, que destruye los PDF de la generación anterior sobrescribiéndolos.
+    """
+    case_dir = _caso(tmp_path, monkeypatch)
+    _bundle(case_dir, "a.pdf")
+    cli.apply("W-TEST99")
+    sm_dir = sm._sala_maquina_dir(case_dir)
+    carpeta, _ = _manifiesto_de(case_dir, "01_Drive EV/a.pdf")
+    md_previos = {p.name: p.read_bytes() for p in (sm_dir / "03_MD").glob("*.md")}
+    pdf_previos = {p.name: p.read_bytes() for p in carpeta.glob("*.pdf")}
+    txt_previos = {p.name: p.read_bytes() for p in (sm_dir / "raw_text").glob("*.txt")}
+    assert len(md_previos) == len(pdf_previos) == len(txt_previos) == 3
+
+    real = Path.replace
+
+    def _falla_al_publicar_el_md(self, destino):
+        if Path(destino).suffix == ".md" and "03_MD" in str(destino):
+            raise OSError("disco lleno")
+        return real(self, destino)
+
+    monkeypatch.setattr(Path, "replace", _falla_al_publicar_el_md)
+
+    with pytest.raises(typer.Exit) as exc:
+        cli.apply("W-TEST99", force=True)
+
+    assert exc.value.exit_code == 3
+    archivo = next((case_dir / sm.VERSIONES_ANTERIORES).glob("reproceso_*"))
+    for etiqueta, previos in (("md", md_previos), ("pdf", pdf_previos),
+                              ("txt", txt_previos)):
+        archivados = {p.name: p.read_bytes() for p in archivo.glob(f"*.{etiqueta}")}
+        assert archivados == previos, f"la generación anterior de {etiqueta} no está íntegra"
+
+    # Y la cobertura, la otra mitad de §8.8. NO se comprueba que quede intacta —con
+    # `--force` se reescribe, y se persiste ANTES de abortar—, sino que **no declare nada
+    # que no esté**: queda la fila de error del documento físico y ninguna fila de
+    # segmento reclamando bytes que se acaban de archivar.
+    filas = json.loads((sm_dir / "_cobertura.json").read_text(encoding="utf-8"))
+    de_este = [f for f in filas if f["rel_path"] == "01_Drive EV/a.pdf"]
+    assert [f["estado"] for f in de_este] == ["empty"]
+    assert not any(f["doc_id"] for f in de_este)
+
+
+def test_reforzar_tambien_preflighta(tmp_path, monkeypatch):
+    """Sin esto, `reforzar` sobre un manifiesto legacy sale 3 DESPUÉS de escribir.
+
+    Es el otro comando que entra en `_split_o_md`, no acepta `--force` y no tenía válvula
+    propia.
+    """
+    case_dir = _caso(tmp_path, monkeypatch)
+    _bundle(case_dir, "a.pdf")
+    cli.plan("W-TEST99")
+    carpeta, slug = _manifiesto_de(case_dir, "01_Drive EV/a.pdf")
+    man = split.leer_manifiesto(carpeta)
+    for e in man["segmentos"]:
+        del e["doc_id"]                       # manifiesto del esquema viejo
+    split.escribir_manifiesto(carpeta, man)
+    cli._guardar_cobertura(case_dir, [sm.DocCobertura(
+        f"{slug}__d01_X", "01_Drive EV/a.pdf", "pypdf", "low", 10, False, "", "a" * 64,
+        parent_slug=slug, doc_id="d01")])
+    monkeypatch.setattr(sm, "vision_cableada", lambda: True)
+    monkeypatch.setattr(sm, "_transcribir_vision", lambda imgs: "texto")
+
+    with pytest.raises(typer.Exit) as exc:
+        cli.reforzar("W-TEST99")
+
+    assert exc.value.exit_code == 2

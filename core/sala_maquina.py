@@ -425,6 +425,13 @@ def carpeta_bundle_de(case_dir: Path, slug: str) -> Path:
 
 VERSIONES_ANTERIORES = "99_Versiones anteriores"
 
+# Lo único que vive legítimamente en la carpeta de un bundle además de los PDF de sus
+# segmentos: el índice que escribe `separar.generar_indice` (`indice.json` + su resumen
+# `indice.txt`) y el manifiesto editable con su espejo. Un `.md` o un `.txt` que no sea
+# de estos solo puede venir de una publicación sucia. La lista la comparten el filtro de
+# publicación y el guard: si divergieran, uno publicaría lo que el otro marca en rojo.
+_FICHEROS_DE_BUNDLE = ("indice.", "_segmentacion")
+
 
 def _rutas_de(sm_dir: Path, carpeta_bundle: Path, slug: str) -> tuple[Path, Path, Path]:
     """Las TRES representaciones de un documento lógico: PDF, MD y raw_text."""
@@ -497,7 +504,7 @@ def publicar_segmentos(case_dir: Path, sm_dir: Path, carpeta_bundle: Path, *,
         for resto in sorted(staging.iterdir()):
             if not resto.is_file():
                 continue
-            if resto.stem in publicados or resto.name.startswith("indice."):
+            if resto.stem in publicados or resto.name.startswith(_FICHEROS_DE_BUNDLE):
                 resto.replace(carpeta_bundle / resto.name)
             else:
                 archivo.mkdir(parents=True, exist_ok=True)
@@ -544,6 +551,56 @@ def baseline_doc_ids(cobertura: list[DocCobertura], parent_slug: str) -> dict[st
     """Mapa `doc_id → pp` de la última materialización de ese bundle (spec §3.3)."""
     return {c.doc_id: c.paginas for c in cobertura
             if c.parent_slug == parent_slug and c.doc_id}
+
+
+def verificar_integridad_bundles(case_dir: Path, cobertura: list[DocCobertura],
+                                 parents: set[str]) -> list[str]:
+    """Guard BIDIRECCIONAL sobre los bundles tocados por esta corrida (spec §7.3).
+
+    No basta con recorrer las filas: en el fallo real no hay filas de segmento —`ejecutar`
+    emite UNA fila de error con el slug del documento físico— y con `--force` además la
+    cobertura previa va vacía. Un guard que solo mirase filas estaría ciego justo en el
+    caso para el que se escribe. Por eso se mira en los dos sentidos:
+
+    - fila → fichero: las tres representaciones existen y el sha del PDF casa con el
+      declarado en la cobertura;
+    - fichero → fila: todo `02_Documentos/<parent>/*.pdf` tiene fila, y la carpeta no
+      contiene `.md` ni `.txt` (ahí no vive ninguna representación legítima, así que uno
+      suelto solo puede venir de una publicación sucia).
+
+    `parents` son los slugs de los documentos que la corrida procesó, y los pone el
+    llamador desde el PLAN: derivarlos de las filas dejaría el alcance vacío justo cuando
+    el bundle falla. El daño histórico censado —segmentos duplicados de antes de la
+    identidad persistente— es de la pieza B; auditarlo aquí bloquearía dos casos reales
+    mientras B siga bloqueada.
+    """
+    case_dir = Path(case_dir)
+    sm_dir = _sala_maquina_dir(case_dir)
+    con_fila = {c.slug for c in cobertura}
+    fallos: list[str] = []
+    for parent in sorted(parents):
+        carpeta = sm_dir / "02_Documentos" / parent
+        if not carpeta.is_dir():
+            continue
+        for c in cobertura:
+            if c.parent_slug != parent or not c.doc_id:
+                continue
+            pdf, md, txt = _rutas_de(sm_dir, carpeta, c.slug)
+            for etiqueta, p in (("PDF", pdf), ("MD", md), ("raw_text", txt)):
+                if not p.exists():
+                    fallos.append(f"{c.slug}: falta la representación {etiqueta} ({p})")
+            if pdf.exists() and c.sha256 and file_sha256(pdf) != c.sha256:
+                fallos.append(
+                    f"{c.slug}: el sha del PDF no casa con el declarado en la cobertura")
+        for pdf in sorted(carpeta.glob("*.pdf")):
+            if pdf.stem not in con_fila:
+                fallos.append(f"{pdf.name}: PDF de segmento sin fila en la cobertura")
+        for suelto in sorted(list(carpeta.glob("*.md")) + list(carpeta.glob("*.txt"))):
+            if suelto.name.startswith(_FICHEROS_DE_BUNDLE):
+                continue          # índice y manifiesto sí viven aquí
+            fallos.append(f"{suelto.name}: representación suelta en la carpeta del bundle "
+                          f"(el MD va a 03_MD y el texto a raw_text)")
+    return fallos
 
 
 def preflight_manifiestos(case_dir: Path, docs: list[DocPlan],
