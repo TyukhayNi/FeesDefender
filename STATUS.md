@@ -3,8 +3,6 @@
 > **Fuente de verdad única del proyecto.**
 > Actualizar al cerrar cada sesión con `python -m scripts.session_close`.
 
-> 🔴 **AVISO A TODO CLON / COWORK / OTRA MÁQUINA (2026-07-07):** el **historial de git fue reescrito** y el repo GitHub **recreado** (saneado de PII, Fase 2). Los SHAs cambiaron por completo y **no hay ancestro común** con el historial anterior → **`git pull`/`fetch` NO reconcilian**. **RE-CLONA desde cero** (`git clone https://github.com/TyukhayNi/FeesDefender.git`) y descarta cualquier copia previa. Nuevo `main` = `a40b27f` (o posterior). Borra este aviso cuando todos los clones estén regenerados.
-
 ## Bitácora de cierres → docs/bitacora/2026.md
 
 El histórico de cierres de sesión se rota a `docs/bitacora/AAAA.md`. La última
