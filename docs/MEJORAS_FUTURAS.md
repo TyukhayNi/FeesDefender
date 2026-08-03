@@ -4469,7 +4469,7 @@ lo que está mal es el rol elegido.
 **Es divergencia implementación ↔ especificación, no un olvido de doctrina.** El plan de la propia
 skill lo impone: `docs/superpowers/plans/2026-06-18-organizar-sala-lectura-y-triaje-drive.md:315` —
 «Terminología: propietario / buscador (nunca vendedor/comprador), aun cuando el documento diga otra
-cosa». Y lo repiten `#2407` de este mismo fichero, `docs/migracion_claude_code/CLAUDE.md:36-37` y la
+cosa». Y lo repiten `#2407` de este mismo fichero, `CLAUDE.md` §«Reglas que nunca se rompen» y la
 regla de oro 5 de `viabilidad-prerelleno`. El plan de la sala de lectura (`:367`) contempla además el
 rol `tercero`, que tampoco aparece en los nombres generados.
 
