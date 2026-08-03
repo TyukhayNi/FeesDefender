@@ -16,7 +16,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 
 | # | Ítem | Estado | Gate / disparador | Esf. |
 |---|------|--------|-------------------|------|
-| 1 | [OCR ciego bajo el sello (`MEJORAS #90`)](#siguiente-ocr-ciego-texto-perdido-bajo-el-sello-de-firma-mejoras-90) | **(e) CERRADA sin rendimiento; (f) spec rev. 3, partida en A (construible) y B (bloqueada)** | (a)+(b) construidos y verdes. **(e) cerrada 2026-08-01**: lo medido da +0/−6/+288 chars y membrete de fabricante → los 11 restantes **no se corren**. **(f) pieza A sin dependencias; pieza B bloqueada por el lock roto → gate en la Fase 2 de la fila #3.** `MEJORAS #111` **REFUTADA al medirla (2026-08-02)**: el reproceso no destruye prueba → la pieza A ya no tiene ese gate; le queda una decisión de diseño (qué versión conserva el saneamiento) | **A: medio · B: alto** (era «bajo»: mal estimado) |
+| 1 | [OCR ciego bajo el sello (`MEJORAS #90`)](#siguiente-ocr-ciego-texto-perdido-bajo-el-sello-de-firma-mejoras-90) | **(e) CERRADA sin rendimiento; (f) pieza A ✅ CONSTRUIDA (PR #193, `88339aa`), pieza B ⛔ bloqueada** | (a)+(b) construidos y verdes. **(e) cerrada 2026-08-01**: lo medido da +0/−6/+288 chars y membrete de fabricante → los 11 restantes **no se corren**. **(f) pieza A sin dependencias; pieza B bloqueada por el lock roto → gate en la Fase 2 de la fila #3.** `MEJORAS #111` **REFUTADA al medirla (2026-08-02)**: el reproceso no destruye prueba → la pieza A ya no tiene ese gate; le queda una decisión de diseño (qué versión conserva el saneamiento) | **A: medio · B: alto** (era «bajo»: mal estimado) |
 | 2 | [Infra C — art. 156 LEC](#siguiente-infra-post-valero-roadmap-de-infraestructura-tras-la-sesión-valero-2026-07-14) | pendiente | desbloqueado (quick win) | bajo |
 | 3 | [Arquitectura dual del expediente activo](#siguiente-dual-workspace-arquitectura-dual-del-expediente-activo-localdrive) | spec **rev. 2** + plan Fase 0 **rev. 4**; **Fase 0 ✅ CERRADA** (#170 PR-A + #174 PR-B) y los **dos guards** adelantados (#156 lectura, #160 escritura) | Gate de revisión **consumido** (3 pasadas adjudicadas, sin 4ª). **Siguiente = Fase 1**, cuyo plan **no ha pasado revisión adversarial**. Los **7 defectos del frontal siguen vivos**: reproducidos en `xfail`, se arreglan en la Fase 2. **Absorbe Infra B (scratch)**: `local_scratch`, `--case-dir` y `promover` son piezas de aquí. **Nota cruzada (2026-08-01): su Fase 2 es ahora el gate de la pieza B de la fila #1** — el saneamiento de los segmentos duplicados no puede correr mientras `test_defecto_doble_titular` siga en `xfail`, porque una copia local stale resucita los slugs retirados | alto (5 fases restantes; la Fase 0 ya hecha) |
 | 4 | [MCP sudespacho F1](#siguiente-mcp-sudespacho-mcp-sudespacho-crm-del-despacho--f1-lectura-spec-hecho-plan-pendiente) | spec lista | gates de despliegue | alto |
@@ -29,9 +29,71 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 11 | [Cableado del pipeline de correo (`MEJORAS #68`)](#siguiente-cableado-correo-cableado-del-pipeline-de-correo-encadenar-la-atomización-resto-de-mejoras-68) | casillas 1-2 ✅; casilla 3 **decidible, sin gates** (#98 cerrado, PR #155) | solo queda la decisión de Nikolai: `--extraer-adjuntos` a default `True` mueve la superficie de dedup de todo intake futuro | bajo |
 
 | 12 | [La firma no es intercalada: falso positivo que bloquea la Capa B](#siguiente-sandwich-firma-la-firma-no-es-una-respuesta-intercalada) | ✅ **CERRADO** — PR #164 (`aaf7dc1`) | queda su cola: `MEJORAS #109` (el síntoma original sigue sin explicar) y borrar el corpus de prueba | bajo |
+| 13 | [Presupuesto explícito de proceso](#siguiente-presupuesto-proceso-cuánta-gobernanza-se-compra) | pendiente — **decisión de Nikolai**, no hay nada que construir | sin gates. Disparador: el mes 2026-07 cerró con **9,4 líneas de `docs/` por línea de `core/`** y cuatro cierres seguidos sin código de producción | bajo (5 min) |
+| 14 | [Desplegar en Cowork las skills ya construidas](#siguiente-reimport-skills-lo-construido-que-no-ha-llegado-al-equipo) | pendiente — **acción manual de Nikolai**; ningún test la cubre | sin gates. Disparador: `organizar-sala-lectura` va por **v1.14 en el repo** y Paola/Ana/Sergio ejecutan la **v1.12** | bajo (una tarde) |
+
+> **Filas 13 y 14 añadidas el 2026-08-02 al final de la cola a propósito: no reordeno prioridades
+> ajenas.** Las dos son baratas y una degrada a terceros hoy — dónde encajan de verdad lo decide
+> Nikolai. Origen: `docs/superpowers/handoffs/handoff-2026-08-02-formacion-git-nikolai.md`.
 
 > Detalle de cada ítem en su bloque `[SIGUIENTE-*]` más abajo. Backlog sin
 > promover: `docs/MEJORAS_FUTURAS.md`. Ledger de cerrados: `## Cerrados` (final).
+
+---
+
+## [SIGUIENTE-PRESUPUESTO-PROCESO] Cuánta gobernanza se compra
+
+*Fila #13. No hay nada que construir: es un número que fija Nikolai y que va a `CLAUDE.md`.*
+
+**El disparador, medido el 2026-08-02** sobre el 2026-07-05 → 2026-08-02: **228 commits, de los
+que 57 (25 %) tocan `core/`/`scripts/`/`streamlit_app.py`** y 150 (66 %) son solo docs/config.
+Líneas añadidas: **`docs/` +63.667 frente a `core/` +6.741 — 9,4 a 1**. Los cuatro últimos
+cierres (52º-55º) no produjeron código de producción; el PR #189, uno solo, mete 2.303 líneas de
+las que 1.661 son tres informes de revisión adversarial **sobre el contrato de las revisiones
+adversariales**.
+
+**Lo que NO dice este ítem:** que la gobernanza sea desperdicio. El mismo mes, las revisiones
+compraron defectos vivos y caros — la invariante que habría autorizado modificar un expediente
+real de cliente bajo `data/CASOS/`, y tres rutas de pérdida de datos (#156, #160, #175). El
+problema no es el control, es que **no hay techo declarado**, y sin techo el mecanismo se
+autoalimenta: en el 55º cierre cada remediación cerraba su defecto y abría otro en la costura de
+al lado, seis rondas seguidas.
+
+**La decisión, dos números en `CLAUDE.md`:** (a) cuántas rondas de revisión come un documento
+antes de que la conclusión razonable sea recortar alcance en vez de revisar otra vez; (b) qué
+proporción de sesiones puede cerrar sin código de producción. Cualquier número explícito bate al
+actual, que es ninguno.
+
+**Por qué lo tiene que fijar Nikolai y no Claude:** el 55º cierre ya demostró el sesgo — cuando mi
+propia regla de parada me obligaba a parar, redefiní el disparador, y un revisor sin nada
+invertido lo llamó racionalización *ex post*. Escribir doctrina se siente productivo; el freno
+tiene que venir de fuera.
+
+---
+
+## [SIGUIENTE-REIMPORT-SKILLS] Lo construido que no ha llegado al equipo
+
+*Fila #14. Acción manual de Nikolai en Cowork; ningún test la cubre y ningún guard la detecta.*
+
+**El disparador:** `organizar-sala-lectura` está en **v1.14 en `.claude/skills/`** y el equipo
+—Paola, Ana, Sergio— sigue ejecutando la **v1.12**. Construido ≠ desplegado, y el único tramo que
+falta es manual.
+
+**Censo de re-imports pendientes en este mismo fichero** (2026-08-02), por bloque y no por
+número de línea, que aquí se desplaza solo: `[SIGUIENTE-SALA-HILOS]` (v1.14),
+`[SIGUIENTE-PRECLASIFICACION-SALA-LECTURA]` (v1.11), `[SIGUIENTE-SALA-UNICA-PLANA]` (v1.3/v1.1),
+`[SIGUIENTE-INPUT-LOTES]` (Tarea 15) y `[SIGUIENTE-MCP-DRIVE-DISCO-PASOS-5-7]` (paso 5, cuatro
+`.skill` re-empaquetados). Localizables con `grep -i "re-import" PLAN.md`.
+
+**Procedimiento:** `docs/MEJORA_CONTINUA_SKILLS.md` → `scripts/package_skill.py` → importar el
+`.skill` en Cowork.
+
+**Trampa ya documentada, que es la que lo ha hecho fallar antes:** empaquetar **desde la raíz**,
+nunca desde un worktree que luego se poda (el `.skill` acaba en un `dist/` que desaparece), y
+**verificar la versión dentro del zip**, no la del repo.
+
+**Al cerrar:** marcar `[x]` las seis entradas en sus bloques y anotar aquí la versión que quedó
+efectivamente en Cowork — que es el dato que hoy no consta en ninguna parte.
 
 ---
 
@@ -269,6 +331,12 @@ ser cambiar una bandera.
         decisión sobrevivió en dirección pero no en mecanismo: la identidad es un **`doc_id`
         persistente** con ledger monotónico, **no** el ordinal `seg` (que se rompe con `--force`,
         hallazgo B0-2 de la 1ª pasada). **Partida en dos piezas** (decisión de Nikolai, 2026-08-01):
+
+        ⚠️ **Cruce con el motor documental (`MEJORAS #48`), anotado 2026-08-02.** Este `doc_id` es de
+        ámbito **bundle**; el `doc-NNN` del id dual de **F1** es de ámbito **caso**, y hasta hoy los
+        dos documentos no se citaban. Se parecen y no son lo mismo: F1 tendrá que envolver este
+        ledger o migrarlo, nunca abrir un segundo espacio de nombres en paralelo. Ficha del cruce en
+        el **§0.1** del spec y en el aviso de **§G.3** de `PLAN_MOTOR_DOCUMENTAL.md`.
 
         - **Pieza A — motor y esquema. ✅ CONSTRUIDA** (2026-08-02, rama
           `claude/plan-next-step-a429e7`, pendiente de PR). `doc_id` con formato canónico validado
@@ -1105,7 +1173,7 @@ script manual · OCRmyPDF en anon), hueco de escaneados >30pp que salen vacíos,
 
 **Orden de ejecución (fases, resecuenciado §L+§M).**
 - [ ] **F(-1) — fundaciones sin riesgo:** golden fixture de W-02VND1 (M1) + auditoría "antes" de documentos ciegos (M6).
-- [ ] **F1 — registro ÚNICO de caso** (elevar+extender `indice_documental.yaml` a ámbito caso, esquema estilo Vassal `index.yaml`) + **id dual** (`sha8`+`doc-NNN`) + **fachada fina** `procesar_expediente()` (M4) + vistas humanas derivadas. Piedra angular.
+- [ ] **F1 — registro ÚNICO de caso** (elevar+extender `indice_documental.yaml` a ámbito caso, esquema estilo Vassal `index.yaml`) + **id dual** (`sha8`+`doc-NNN`) + **fachada fina** `procesar_expediente()` (M4) + vistas humanas derivadas. Piedra angular. ⚠️ **Antes de empezar, leer el §0.1 de `docs/superpowers/specs/2026-08-01-identidad-segmento-bundle-design.md` y el aviso de §G.3 del doc**: la pieza A de `MEJORAS #90` (fila #1) ya construyó un `doc_id` de ámbito **bundle** (`d01`, con ledger y tombstones) que F1 tiene que envolver o migrar — no duplicar.
 - [ ] **F0 — layout + botón reorganizar:** renombrar `Sala lectura` → `01_Sala de lectura`, crear `02_Sala de máquina/`; **botón `reorganizar_caso`** (`plan`/`apply`, `--todos`, journal reversible estilo `migrate_05crm_buckets`); sello **`layout_version`**; **cablear `--force`**; alinear umbrales, docstring/etiqueta, extensiones + HEIC. Ver §J.
 - [ ] **F3 — motor OCR + reocr + espejos:** **OCRmyPDF** → PDF buscable (fijado). **Extractor→MD = decisión aplazada tras la junta; bake-off MinerU vs Docling** sobre fixture + casos duros (escritura/catalán/ruso/tabla/manuscrito), gate hardware(CPU/OOM)/catalán/licencia — MinerU favorito (local, CPU, determinista, tablas+manuscrito, sin PII; si cumple, elimina Claude visión). Persistir en `02_Sala de máquina/{01_OCR,02_Documentos,03_MD}` con espejo de `00_Input/`; dejar de borrar el PDF del OCR en anon. **Validado antes con walking skeleton (M3).** Ver §F/§G.
 - [ ] **F4 — conector MCP + empaquetado + botón reformar plugin** (aislamiento por subproceso, versión/modelos pinneados, sin fuga de datos, preservar `core/anon`) + **preflight (M8)** + **doctor/manifiesto (M9)**. **Botón `rebuild_plugin`** mecánico + señalización semántica (handoff `motor_mejora`) + hook de drift (`session-start-hook`). Ver §K.

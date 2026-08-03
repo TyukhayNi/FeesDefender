@@ -4,6 +4,20 @@ Formato: una entrada por versión, la más reciente arriba. Cada entrada cita la
 **evidencia** que motivó el cambio (uso real, delta borrador↔firmado, decisión
 del letrado) — cultura source-locked del despacho.
 
+## 1.4 — 2026-08-02
+
+- **El MD de un segmento ya no lleva sha8 en el nombre (PR #193).** El bloque de layout
+  prometía `03_MD/{slug__sha8}.md` «uno por documento lógico», y eso dejó de ser cierto: el
+  segmento de un bundle se nombra ahora por su **identidad persistente**,
+  `{bundle}__{dNN}_{TIPO}.md`. El documento suelto sigue con `{slug__sha8}`. **Evidencia:** el
+  sha seguía a un artefacto derivado —el PDF ya recortado—, así que re-OCR-izar renombraba todo
+  y el reproceso **añadía** una generación en vez de sustituirla; medido, 5 documentos
+  duplicados y 21 ficheros excedentes en 2 casos reales. Contrato:
+  `docs/superpowers/specs/2026-08-01-identidad-segmento-bundle-design.md` (rev. 4).
+- **Lo que esto cambia para quien dirige la skill desde Cowork:** nada en el flujo, pero al leer
+  `02_Documentos/<bundle>/` los nombres ya no cambian entre corridas — si ves dos versiones del
+  mismo documento, es daño anterior al PR #193 y se archiva solo al republicar el bundle.
+
 ## 1.3 — 2026-07-21
 
 - **Split de bundles multi-documento (Fase F2, PR #109).** Un PDF que reúne varios
