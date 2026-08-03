@@ -799,3 +799,96 @@ def test_artefacto_atlas_coherente_con_su_fase_b():
     # D1 en el artefacto: el documento no puede ordenar el comando que lo borra
     assert "discover --phase all" in txt
     assert "discover --phase a." not in txt
+
+
+# --- Convenciones de query (Fase A) ----------------------------------------
+# El atlas ya parseaba los `parameters` de cada operación pero solo renderizaba
+# su NÚMERO ("| ... | apiKey | 22 |"), así que la gramática de `filterGroup` que
+# el OpenAPI declara literalmente quedaba invisible. De ahí salió el bug de la
+# facturación EV en El Contable (filtros construidos con la raíz en plural, que
+# la API ignora en silencio). Ver INTEGRACION_SUDESPACHO §14.2.
+
+_SPEC_QUERY = {
+    "openapi": "3.0.0",
+    "info": {},
+    "security": [{"apiKey": []}],
+    "components": {"securitySchemes": {}},
+    "paths": {
+        "/api/element_registries/{element}": {
+            "get": {
+                "operationId": "get_registries",
+                "tags": ["ElementRegistries"],
+                "summary": "Retrieves the collection of Register.",
+                "parameters": [
+                    {"name": "element", "in": "path", "schema": {"type": "string"}},
+                    {"name": "properties[]", "in": "query", "schema": {"type": "array"}},
+                    {"name": "sort[0][property]", "in": "query", "schema": {"type": "string"}},
+                    {"name": "sort[0][direction]", "in": "query", "schema": {"type": "string"}},
+                    {"name": "filterGroup[condition]", "in": "query", "schema": {"type": "string"}},
+                    {"name": "filterGroup[filters][0][operator]", "in": "query",
+                     "schema": {"type": "string"}},
+                    {"name": "filterGroup[filters][0][value][]", "in": "query",
+                     "schema": {"type": "array"}},
+                    {"name": "filterGroup[filterGroups][]", "in": "query",
+                     "schema": {"type": "string"}},
+                ],
+            }
+        },
+        "/api/element_registries/summary/{element}": {
+            "get": {
+                "operationId": "get_summary",
+                "tags": ["ElementRegistries"],
+                "summary": "Retrieves the summation collection of Register.",
+                "parameters": [
+                    {"name": "filterGroup[condition]", "in": "query", "schema": {"type": "string"}},
+                    {"name": "filterGroup[filters][0][value][]", "in": "query",
+                     "schema": {"type": "array"}},
+                ],
+            }
+        },
+    },
+}
+
+
+def test_render_markdown_lista_los_nombres_de_parametro_de_query():
+    """La sección de convenciones hace visible la gramática, no solo su recuento."""
+    atlas = build_atlas_phase_a(_SPEC_QUERY, tenant="tnm")
+    md = render_markdown(atlas)
+    assert "## Convenciones de query" in md
+    # la familia, con su recuento de operaciones (las 2 la usan)
+    assert "`filterGroup[..]`" in md
+    # y las variantes literales — esto es lo que habría evitado el bug
+    assert "filterGroup[filters][0][value][]" in md
+    assert "filterGroup[filterGroups][]" in md
+    assert "`sort[..]`" in md
+
+
+def test_convenciones_de_query_ignora_los_parametros_de_path():
+    """Solo `in=query`: `element` es de path y no es una convención de query."""
+    atlas = build_atlas_phase_a(_SPEC_QUERY, tenant="tnm")
+    seccion = render_markdown(atlas).split("## Convenciones de query")[1]
+    assert "filterGroup" in seccion
+    assert "`element`" not in seccion
+
+
+def test_render_digest_incluye_la_superficie_de_query_para_ver_su_deriva():
+    """El digest es la superficie de deriva: la de query entra como cuenta + hash."""
+    atlas = build_atlas_phase_a(_SPEC_QUERY, tenant="tnm")
+    dig = render_digest(atlas)
+    linea = [x for x in dig.splitlines() if x.startswith("- query:")]
+    assert linea, dig
+    assert "nombres" in linea[0] and "familias" in linea[0]
+
+
+def test_la_superficie_de_query_cambia_de_hash_si_cambia_un_parametro():
+    """Si la API renombra un parámetro, el digest lo delata en el diff."""
+    import copy
+
+    otro = copy.deepcopy(_SPEC_QUERY)
+    params = otro["paths"]["/api/element_registries/{element}"]["get"]["parameters"]
+    params[5]["name"] = "filterGroup[filters][0][value]"  # escalar en vez de array
+    a = render_digest(build_atlas_phase_a(_SPEC_QUERY, tenant="tnm"))
+    b = render_digest(build_atlas_phase_a(otro, tenant="tnm"))
+    linea_a = [x for x in a.splitlines() if x.startswith("- query:")][0]
+    linea_b = [x for x in b.splitlines() if x.startswith("- query:")][0]
+    assert linea_a != linea_b
