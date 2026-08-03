@@ -222,6 +222,24 @@ STATUS mantiene solo estado vigente + puntero a la bitácora (el aviso E1 de
 `docs/GOBERNANZA_FUENTES_VERDAD.md`. La memoria persistente (en mi memoria
 global, no en el repo) la actualizo yo en el chat antes de cerrar.
 
+**La fecha se toma del sistema, NUNCA del contexto de la sesión.** Antes de escribir
+cualquier fecha —el bloque de cierre, un `Confirmado:` de `DEAD_ENDS`, un `creado:` de
+handoff, el nombre de un fichero fechado, un «medido el»— se lee del reloj o de git:
+
+```powershell
+Get-Date -Format "yyyy-MM-dd"      # o: git log -1 --date=short --format=%ad
+```
+
+**Por qué, medido el 2026-08-03:** el banner de contexto de la sesión decía «Today's date
+is 2026-08-02» y **tres sesiones concurrentes lo escribieron así** — los cierres 56º, 57º y
+58º nacieron fechados un día antes, con sus commits fechados 08-03 desmintiéndolos. Costó
+dos PRs de corrección (#205, #206) sobre seis ficheros y un renombrado de handoff. El
+contexto puede venir rancio; el reloj y `git log` no.
+
+**Y al corregir una fecha, distinguir el acto de la ventana:** «medido el 2026-08-03» y
+«del 2026-07-05 al 2026-08-02: 228 commits» pueden ser ciertas a la vez —una es cuándo se
+midió, la otra qué se midió—. Un reemplazo global de la fecha rompe la segunda.
+
 ## Tests
 
 - Framework: `pytest`.
