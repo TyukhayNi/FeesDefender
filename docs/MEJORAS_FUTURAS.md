@@ -4991,3 +4991,51 @@ tiene que ser **por fichero declarado** y decir explícitamente que no cubre el 
 sesión que ahora lo reformula. Decidir construirlo era la opción cómoda; lo que se decide es que su
 versión elaborada no compra lo que promete, que una frase en el encargo compra casi todo, y que el
 resto espera cinco días a un revisor que no comparta los mismos puntos ciegos.
+
+## 119. `STATUS.md` se contradice sobre cuántos tags del CRM se auditaron: 96 vs 87
+
+**Detectado el 2026-08-03** al retirar el aviso de re-clonado de `STATUS.md`. No es una cifra
+rancia —esas se corrigieron ese mismo día, PR #192— sino **dos afirmaciones incompatibles sobre el
+mismo hecho, ambas vivas y ambas de la misma fecha**:
+
+| Dónde | Qué dice |
+|---|---|
+| `STATUS.md`, tabla *Estado general* | «Tags CRM verificados ✅ — **96 extrajudicial auditados + 10 nuevos mapeados** (2026-05-06)» |
+| `STATUS.md`, §*Creación expediente en sudespacho* | «Tags CRM mapeados ✅ — **87 tags auditados**, IDs constantes en `sudespacho_create.py`» |
+
+**Por qué no se arregló al detectarlo, que es lo que hay que entender antes de tocarlo.** No se
+puede dirimir desde el repo, y **el código no sirve de árbitro** porque mide otra cosa: lo que
+`core/sudespacho_create.py` contiene son los tags **mapeados** —medido el 2026-08-03: **13
+`TAG_VERDE` + 4 `TAG_LILA` + 7 `TAG_AZUL` = 24 constantes**—, no los **auditados** del catálogo del
+CRM, que es a lo que se refieren el 96 y el 87. Inventar un número para que cuadre habría sido peor
+que la contradicción.
+
+**Hipótesis de reconciliación, sin confirmar:** que 87 y 96 sean dos momentos de la misma auditoría
+(87 antes, +9 después) o que 96 sea el catálogo completo y 87 los efectivamente revisados. Las dos
+son plausibles y ninguna está anclada.
+
+**Cómo se dirime, y es más barato de lo que parece.** El atlas del CRM registra un endpoint de
+lectura que no requiere UI:
+
+```
+GET /api/tags/{id}    → "Retrieves the collection of Tags", auth apiKey, 2 params
+```
+
+(`docs/CRM_SUDESPACHO_ATLAS.md` §Tag, junto a `POST`/`PUT`/`DELETE`.) **Cautela:** el path declara
+`{id}` pero la descripción dice «collection» — en esta API el segmento suele ser el **tipo de
+elemento** (`{element}` en el resto de la familia), así que la primera llamada es de descubrimiento.
+Con la colección en mano se cuenta, se compara contra las 24 constantes de `sudespacho_create.py` y
+se deja **una sola** cifra en `STATUS.md`, con su fecha de medición, según la forma que ese fichero
+adoptó el 2026-08-03.
+
+**Prioridad: baja.** Ningún módulo consume esos dos números —son prosa histórica de mayo— y el
+sistema de tags funciona: `tag_defaults_for_tipo_caso` resuelve por las 24 constantes, no por el
+recuento. El coste de dejarlo es que `STATUS.md`, que se declara «fuente de verdad única», contiene
+una contradicción interna sobre un dato del CRM.
+
+**Disparador de promoción:** que haya que tocar el catálogo de tags (alta de un tipo de caso nuevo,
+cambio de color en el CRM) — ahí conviene partir de un censo real, no de dos cifras que no cuadran.
+O decisión de Nikolai.
+
+**Coste estimado.** Bajo: una llamada de descubrimiento, un recuento y una línea en `STATUS.md`.
+Lo caro sería auditar los 96 tags a mano por la UI, y eso no hace falta para cerrar esto.
