@@ -1,4 +1,32 @@
+---
+estado: historico
+dueño: Nikolai Tyukhay
+fecha: 2026-05-21
+---
+
 # Migración FeesDefender — Cowork → Claude Code
+
+> ⛔ **KIT CONSUMIDO — NO COPIES NADA DE AQUÍ** (marcado el 2026-08-03).
+>
+> La migración se ejecutó en mayo de 2026 y Claude Code es desde entonces el entorno de
+> desarrollo. Este paquete es un **snapshot congelado del 2026-05-21** que se conserva como
+> registro de la decisión, no como plantilla.
+>
+> **Los ficheros vivos son los de la raíz del repo y `.claude/`.** Los de esta carpeta son
+> segundos ejemplares y **ya han derivado**: medido el 2026-08-03, los `commands/cierre.md`,
+> `commands/status.md` y `commands/tests.md` de aquí difieren de los vigentes, y
+> `CLAUDE_snapshot_2026-05-21.md` sigue afirmando «546/546 verdes en s20», cifra retirada del
+> fichero vivo el 2026-08-03 por rancia (PR #192).
+>
+> **Por qué el snapshot ya no se llama `CLAUDE.md`:** Claude Code carga automáticamente
+> cualquier fichero con ese nombre en el directorio en que se trabaja. Una copia de mayo con
+> ese nombre era una instrucción latente esperando a que alguien abriese una sesión aquí.
+> Renombrado el 2026-08-03; el contenido no se tocó.
+>
+> **No está indexado en `docs/INDICE.md` a propósito:** la población que ese índice cubre —y
+> que vigilan sus guards— es `docs/*.md` **no recursivo**. Meter una fila de un fichero
+> anidado mezclaría vocabularios (la trampa D3 de `GOBERNANZA_FUENTES_VERDAD.md`). Su estado
+> vive aquí, en este frontmatter, que es su hogar.
 
 > Paquete preparado en sesión 23 (2026-05-21).
 > Objetivo: dejar el desarrollo del repo en Claude Code (CLI nativo Windows con PowerShell directo) y reservar Cowork solo para trabajo legal (escritos, comunicaciones, investigación CENDOJ).

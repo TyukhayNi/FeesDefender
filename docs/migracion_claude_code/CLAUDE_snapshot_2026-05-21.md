@@ -1,3 +1,25 @@
+---
+estado: historico
+dueño: Nikolai Tyukhay
+fecha: 2026-05-21
+---
+
+# ⛔ SNAPSHOT CONGELADO DEL 2026-05-21 — NO SON LAS INSTRUCCIONES VIGENTES
+
+> **No sigas nada de este fichero.** Las instrucciones del proyecto vivas están en
+> **`CLAUDE.md`, en la raíz del repo**. Esto es una copia del kit de migración de la sesión 23,
+> conservada como registro; llevaba dos meses y medio sin actualizarse cuando se marcó
+> (2026-08-03) y contiene al menos una afirmación ya retirada del fichero vivo por rancia:
+> «546/546 verdes en s20» (PR #192).
+>
+> Se llamaba `CLAUDE.md` y se renombró el 2026-08-03 precisamente porque Claude Code carga
+> automáticamente cualquier fichero con ese nombre en el directorio en que se trabaja: una
+> sesión abierta aquí habría cargado instrucciones de mayo creyéndolas vigentes. **El contenido
+> de abajo no se ha tocado** — sigue diciendo lo que decía, incluida la línea siguiente, que era
+> cierta cuando el fichero se llamaba `CLAUDE.md` y ya no lo es.
+
+---
+
 # FeesDefender — Instrucciones del proyecto (Claude Code)
 
 > Equivalente al "Project instructions" de Cowork. Se carga automáticamente al abrir Claude Code en este directorio.
