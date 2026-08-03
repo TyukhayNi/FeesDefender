@@ -350,7 +350,10 @@ ser cambiar una bandera.
           adjudicación en el §14 del spec. El `B0` que destapó era de diseño: la rama **passthrough**
           no archivaba, así que un bundle que dejaba de detectarse como tal dejaba el caso sin salida
           con `--force` y reintroducía el defecto en silencio sin él. Límites declarados en
-          `MEJORAS #117`. **Ronda 2 pendiente**, y el cambio de diseño de la rev. 4 (§6.1 y §7.1)
+          `MEJORAS #117`. **Ronda 2 DECIDIDA (Nikolai, 2026-08-03): la hace Codex el 2026-08-08**, sobre el
+          código mergeado (`88339aa`); mandato ya escrito y anclado en
+          `docs/superpowers/handoffs/handoff-2026-08-03-identidad-pieza-a-r2-codex-encargo.md`, con su
+          adjudicación prevista como §15 del spec. Hasta entonces, el cambio de diseño de la rev. 4 (§6.1 y §7.1)
           **no lo ha mirado ningún revisor de otro modelo**.
         - **Pieza B — retrofit y saneamiento de los 5 grupos. ⛔ BLOQUEADA.** Depende de un lock de
           exclusión que **hoy está roto**: `test_defecto_doble_titular` sigue vivo como `xfail`
