@@ -1453,10 +1453,16 @@ sudespacho expone casi todo como "elementos" con un patrón uniforme. FeesDefend
     tabla entera de actuaciones.
   - **Codificación del valor: depende del operador, y no hay una que valga para todos.**
     - `in` · `not-in` · `between` · `is-empty` · `is-not-empty` → **indexada** `[value][0]`
-      (y `[value][1]` en `between`). Con escalar `[value]`, los filtros **sobre relación** dan 500
-      («foreach() argument must be of type array|object, string given»); sobre propiedad plana el
-      escalar cuela (mismo total), así que la indexada es el defecto seguro. Omitir el valor en
-      `is-empty`/`is-not-empty` da 500 («Undefined array key "value"»).
+      (y `[value][1]` en `between`). Es el defecto seguro porque `between` **necesita** los dos
+      extremos indexados. Omitir el valor en `is-empty`/`is-not-empty` da 500 («Undefined array
+      key "value"»): el valor hay que mandarlo siempre, aunque el operador no lo use.
+      > ⚠️ **Matiz, verificado el 2026-08-03 en una segunda pasada:** el escalar **también funciona**
+      > en `equal`, `like`, `in`, `not-in` e `is-empty`, incluso sobre propiedades de relación
+      > (`right.conceptos_honorario.facturado not-in S` escalar → **200**, mismo total que indexado).
+      > El 500 «foreach() argument must be of type array|object» que se anotó antes para el escalar
+      > sobre relación **no se reproduce** con ese filtro; queda como pendiente de acotar en qué
+      > combinación aparece. No cambia la recomendación —indexada por defecto—, pero **no es cierto
+      > que el escalar esté prohibido** fuera de `between`.
     - **`associated` → al revés: exige el valor ESCALAR** `[value]=<id>`, sin índice. Con `[value][0]`
       responde 500 («Warning: Array to string conversion»). Verificado en vivo el 2026-08-03 sobre
       `actuaciones`: `left.expedientes_judiciales.id associated 588` → escalar **200** (5 filas),
