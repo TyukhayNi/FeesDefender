@@ -95,7 +95,7 @@ directo; el bloque de cierre va a `docs/bitacora/AAAA.md`, **no** a este fichero
 | Sidebar session_state (expander persistente) | ✅ Fix 2026-05-04 |
 | UI `_email_input_with_crm` + botón 🔍 | ✅ End-to-end verificado 2026-05-04 — fix preset-key, búsqueda REST instantánea tras pre-calentamiento |
 | `run_app.bat` | ✅ Lanzador para usuarios finales (Paola, Ana) |
-| Tags CRM verificados | ✅ 96 extrajudicial auditados + 10 nuevos mapeados (2026-05-06) |
+| Tags CRM verificados | ✅ 96 extrajudicial auditados + 10 nuevos mapeados (2026-05-06). ⚠️ **Esta cifra contradice el «87 tags auditados» de §«Creación expediente en sudespacho», más abajo, y no se puede dirimir desde el repo** — cómo se resuelve, en `docs/MEJORAS_FUTURAS.md` **#119** |
 | Notas de expediente | ✅ 13 NOTA_* alineadas con Manual 1.1.4 |
 | `session_close.py` | ✅ Simplificado — solo pytest, sin interactividad |
 | `docs/DEAD_ENDS.md` | ✅ **33 secciones / 57 entradas** (medido 2026-08-03; decía «8 callejones» desde mayo). Consultar **antes** de reintentar algo que falló raro |
