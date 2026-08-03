@@ -14,6 +14,7 @@ leen datos de registros ni se escribe en el CRM. Las funciones de parseo son pur
 from __future__ import annotations
 
 import concurrent.futures
+import hashlib
 import json
 import os
 import random
@@ -352,6 +353,71 @@ def build_atlas_phase_a(
     }
 
 
+def query_param_families(atlas: dict) -> list[dict]:
+    """Agrupa los nombres de parámetro `in=query` por familia (`filterGroup[..]`, `sort[..]`…).
+
+    El atlas parsea los `parameters` de cada operación desde el OpenAPI, pero las tablas
+    de endpoints solo emiten su **recuento**. Eso dejaba invisible la gramática que el
+    spec declara literalmente —`filterGroup[filters][0][value][]` y compañía—, y de ahí
+    salió un bug real en El Contable: filtros construidos con la raíz en plural, que la
+    API **ignora en silencio** devolviendo 200 con el listado completo
+    (INTEGRACION_SUDESPACHO §14.2).
+
+    Devuelve, ordenado por familia (alfabético, para que el `git diff` entre corridas sea
+    legible y añadir un parámetro no reordene la tabla):
+    `[{familia, nombres:[...], ops:<nº de operaciones que la usan>}]`.
+    """
+    variantes: dict[str, set[str]] = {}
+    ops: dict[str, set[tuple[str, str]]] = {}
+    for ep in atlas.get("endpoints", []):
+        for p in ep.get("parameters") or []:
+            if p.get("location") != "query":
+                continue
+            nombre = p.get("name") or ""
+            if not nombre:
+                continue
+            familia = nombre.split("[")[0] + ("[..]" if "[" in nombre else "")
+            variantes.setdefault(familia, set()).add(nombre)
+            ops.setdefault(familia, set()).add((ep.get("method", ""), ep.get("path", "")))
+    return [
+        {"familia": fam, "nombres": sorted(variantes[fam]), "ops": len(ops[fam])}
+        for fam in sorted(variantes)
+    ]
+
+
+def _render_query_conventions(atlas: dict) -> list[str]:
+    familias = query_param_families(atlas)
+    if not familias:
+        return []
+    n_nombres = sum(len(f["nombres"]) for f in familias)
+    estructuradas = [f for f in familias if len(f["nombres"]) > 1]
+    simples = [f for f in familias if len(f["nombres"]) == 1]
+    lines = ["## Convenciones de query (Fase A)", ""]
+    lines.append(
+        f"Nombres de parámetro `in=query` que declara el OpenAPI: **{n_nombres} distintos** en "
+        f"**{len(familias)} familias**. Las tablas de arriba solo dan el *recuento* por operación "
+        "(columna `Params`); aquí están los nombres, que es lo que hace falta para construir la "
+        "query. Se listan una sola vez por familia: las que se repiten en decenas de operaciones "
+        "comparten forma."
+    )
+    lines.append("")
+    if estructuradas:
+        lines.append("### Familias con varias variantes")
+        lines.append("")
+        lines.append("| Familia | Ops | Nombres declarados |")
+        lines.append("|---|---|---|")
+        for f in estructuradas:
+            nombres = ", ".join(f"`{_md_escape(n)}`" for n in f["nombres"])
+            lines.append(f"| `{_md_escape(f['familia'])}` | {f['ops']} | {nombres} |")
+        lines.append("")
+    if simples:
+        lines.append("### Parámetros simples")
+        lines.append("")
+        lines.append(", ".join(f"`{_md_escape(f['nombres'][0])}`" for f in simples))
+        lines.append("")
+    return lines
+
+
 def _md_escape(text: str | None) -> str:
     if not text:
         return ""
@@ -461,6 +527,8 @@ def render_markdown(atlas: dict) -> str:
             )
         lines.append("")
 
+    lines.extend(_render_query_conventions(atlas))
+
     orphans = atlas.get("paths_without_operations", [])
     if orphans:
         lines.append("## Paths declarados sin operación documentada")
@@ -539,6 +607,15 @@ def render_digest(atlas: dict) -> str:
     out.append(f"- endpoints: {summ.get('total_operations', '?')} ops / "
                f"{summ.get('total_path_keys', '?')} paths "
                f"({summ.get('paths_without_operations', 0)} huérfanos)")
+    familias = query_param_families(atlas)
+    if familias:
+        # La superficie de query también deriva: si el CRM renombra un parámetro (o cambia
+        # `[value][]` por `[value]`), el hash lo delata en el diff.
+        blob = json.dumps([{f["familia"]: f["nombres"]} for f in familias],
+                          sort_keys=True, ensure_ascii=False)
+        h = hashlib.sha256(blob.encode("utf-8")).hexdigest()[:12]
+        n_nombres = sum(len(f["nombres"]) for f in familias)
+        out.append(f"- query: {n_nombres} nombres / {len(familias)} familias · {h}")
     out.append("")
     out.append("### Endpoints por módulo")
     for tag, n in summ.get("by_tag", {}).items():
@@ -553,7 +630,6 @@ def render_digest(atlas: dict) -> str:
                  "enums": el.get("enums")},
                 sort_keys=True, ensure_ascii=False,
             )
-            import hashlib
             h = hashlib.sha256(blob.encode("utf-8")).hexdigest()[:12]
             out.append(f"- {el['slug']}: {len(el.get('fields') or [])} campos · {h}")
     return "\n".join(out) + "\n"
