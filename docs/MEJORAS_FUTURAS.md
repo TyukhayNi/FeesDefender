@@ -810,6 +810,32 @@ sea costosa. No por completitud de diseño.
 
 **Prioridad.** Media — diferido hasta caso real disparador.
 
+**Evaluado y NO adoptado: `firecrawl/pdf-inspector` (2026-08-03).** Librería Rust (MIT, bindings PyO3
+con wheels `win_amd64`) que clasifica PDFs y extrae texto **sin OCR**, con conversión a Markdown
+estructurado. Su benchmark publicado —200 PDFs de opendataloader-bench, **con OCR desactivado**— le da
+0,875 global frente a **0,589 de markitdown**, y 0,788 en encabezados frente a **0,000**.
+
+**Por qué no se adopta, medido contra el censo de `#114`:**
+
+1. **El claim es cierto e irrelevante aquí.** markitdown **no está en el código** de FeesDefender: solo
+   se cita en esta §24 como candidato y en `PLAN_PRERELLENO_LLM_VIABILIDAD.md` como «pendiente bench».
+   Y batir a markitdown en estructura de PDF es ganar por incomparecencia: markitdown usa
+   `pdfminer.six` a pelo. **Docling —el motor que sí usamos— no está en la tabla.**
+2. **Mejora los documentos cuyo MD casi nadie necesita.** Donde daría encabezados y tablas es en los
+   **159 `pypdf`** del censo (digitales), que son justo los que se leen bien en crudo.
+3. **No hace OCR** (declarado en su `docs/python.md`): no toca los **42 escaneados (8,5 %)**, que son
+   donde el MD es la única vía y donde está el peso probatorio (hoja de encargo, hoja de visita).
+4. **v0.2.6, publicada el 2026-07-31**, 22 PRs abiertos. Parser único `lopdf`, sin callo medido sobre
+   PDFs de LexNET/juzgados. Y cambiar el extractor obliga a subir `EXTRACTOR_VERSION` → reextracción
+   de todos los casos.
+
+**Lo único que quedaría vivo** es `detect_pdf()` (10-50 ms) como triaje pre-OCR, porque devuelve
+`mixed` + **lista de páginas** que necesitan OCR — pero compite con
+[`core/pdf_paginas.py`](../core/pdf_paginas.py), que ya da el discriminante de página ciega con `pypdf`
+y **sin dependencia nueva**. **Disparador para reabrir:** un caso real donde la pérdida de estructura
+en un PDF digital (tabla de comisiones, escritura a dos columnas) rompa la lectura; y entonces el
+bake-off es **contra Docling**, no contra markitdown.
+
 ---
 
 ## 25. Marcado de no-textuales en el `.md` anonimizado
@@ -2265,6 +2291,56 @@ de máquina continúa leyendo solo `00_Input`, así que el contenido de los adju
 atomizados sigue fuera (`MEJORAS #87`), y el consumo del árbol atomizado por la sala de
 lectura es `MEJORAS #86`. La parte de este ítem que era «encadenar» está cerrada; la que
 era «alimentar» no.
+
+### 55.1 El caso de tensión que acota qué debe hacer la «explosión»: correo → correos anidados → zips de WhatsApp
+
+**Trazado contra código el 2026-08-03**, a partir de dos preguntas de Nikolai: un correo con un zip de
+WhatsApp adjunto, y luego un correo con **varios correos adjuntos**, cada uno con su zip. No es un caso
+confirmado en un expediente: se traza para que la «explosión» de esta entrada se diseñe con él delante.
+**No promovido a `PLAN.md`** — falta el caso real.
+
+**Lo que ya funciona, y bien.** El aplanado de correos anidados es sólido:
+`email_export.iter_nested_originals` desciende **a las hojas**, byte-fiel (rebana el crudo y decodifica el
+transfer-encoding), con `_nested_con_fallback` comparando el multiset de `Message-ID` contra `msg.walk()`
+y cayendo a re-serializado **con aviso** en vez de perder un mensaje. La atomización conserva la
+**genealogía**: `Avistamiento` lleva `profundidad` y `ruta_anidacion`, y `dedup.py` funde por `Message-ID`
+preservando procedencias. Los N correos adjuntos se recuperan enteros y ordenados.
+
+**Dónde se rompe, y son tres cortes distintos:**
+
+1. **Bifurcación MIME, no declarada en ningún sitio.** «Email con emails adjuntos» tiene dos formas: partes
+   `message/rfc822`, que el aplanado ve recursivo; y **ficheros `.eml` adjuntos con MIME genérico**
+   (`application/octet-stream`), que **no** son `message/rfc822` y que `extract.py:117` descarta por el
+   fast-path. Estos solo aparecen si `--extraer-adjuntos` los escribe a disco y `enumerar_rutas_eml` los
+   recoge (el arreglo de `#98`). Con el flag en `False` —el default— son **invisibles**.
+2. **El zip no lo abre nadie.** `clasificar_ruta(".zip")` → **`sin_soporte`** en la sala de máquina; y
+   `adjuntos_contenido/router.py:13` lo excluye explícitamente (`_EXT_OMITIDO = {".emz", ".zip"}`). En la
+   muestra de `#87`, de 15 adjuntos únicos **8 eran `.zip`**, todos con ficha
+   `(pendiente; OCR en fase 2)`.
+3. **El motor que sabe abrirlo existe y nadie lo llama.** `core/whatsapp_intake.py` descomprime **verbatim**
+   a su propio lote (`_chat.txt` + media + el zip original), dedup por hash del zip, evento
+   `upload_whatsapp`, y `whatsapp_export.parse_chat` + `referencias_adjuntos` **casan cada media con el
+   mensaje que lo cita** (con `safe_zip_members` contra zip-slip). Incluso la detección sin escribir ya
+   está: `ChatPreview` da mensajes, rango de fechas y **adjuntos faltantes**. Pero es glue de UI: nada lo
+   encadena a un adjunto de correo.
+
+**Dos exigencias que este caso añade al diseño de la explosión:**
+
+- **Enrutado por tipo de zip, no descompresión genérica.** Un export de WhatsApp no es un zip cualquiera:
+  descomprimirlo a pelo deja el `_chat.txt` suelto y los media huérfanos, perdiendo justo lo que
+  `whatsapp_intake` sabe hacer. El router debe preguntar *¿trae un `_chat.txt` parseable?* (`ChatPreview`,
+  read-only) → `whatsapp_intake`; si no → descompresión genérica.
+- **Dedup entre exports del mismo chat, que hoy no existe.** `whatsapp_intake` deduplica **por hash del
+  zip**: dos exports del mismo chat en fechas distintas tienen hash distinto y entran los dos. Y los
+  mensajes de WhatsApp **no tienen `Message-ID`**, así que el dedup del atomizador de correo no aplica y
+  `parse_chat` no reconcilia entre exports. Con cinco correos trayendo cinco exports del mismo chat —el
+  patrón «cada consultor manda su copia»— el mismo mensaje se contaría hasta cinco veces. Para una
+  cronología probatoria eso es **peor que no tenerlo**. Es la «duplicación cross-fuente» que `#54` declara
+  obligatoria, convertida aquí en cross-**lote** dentro de una sola fuente.
+
+**Mitigación manual mientras tanto:** comprobar el `Content-Type` de los adjuntos, atomizar (eso funciona),
+y dar de alta **un solo** export —el más completo según `ChatPreview`— anotando en `_caso.md` de qué correo
+vino, porque esa relación no la guarda nadie.
 
 ---
 
@@ -4607,6 +4683,53 @@ comprobaciones visuales del triaje y de la viabilidad).
 
 **Coste estimado.** Bajo la función; el retrofit de las skills exige re-empaquetar y re-importar en Cowork.
 
+### 114.1 `01_OCR/` no es el único sin lector: `raw_text/` tampoco, y además está duplicado
+
+**Verificado el 2026-08-03**, al preguntar Nikolai por qué la sala de máquina en sentido amplio está
+partida en intake → OCR → raw → MD y si eso no repite ficheros.
+
+**`raw_text/` no lo lee nadie.** Lo escribe `_escribir_md` junto al MD
+([`sala_maquina.py:753-757`](../core/sala_maquina.py:753)); lo único que lo mira es el **guard de
+integridad de bundles** (`:589`), para comprobar que el fichero existe. Buscado en `core/`, `scripts/` y
+`.claude/`: **ningún consumidor de su contenido**. Es el MD **menos el frontmatter**, y quitar el
+frontmatter cuesta un `re.sub` de una línea —`preclasificar.py:212` ya lo hace—. En el censo de
+duplicados del spec de identidad de segmento son **7 de los 21 ficheros excedentes**.
+
+**Y hay dos `raw_text` distintos**, o sea duplicación de *concepto* y no solo de fichero:
+`01_Procesado/raw_text/` (del extractor antiguo, [`extractor.py:342`](../core/extractor.py:342)) y
+`01_Procesado/02_Sala de máquina/raw_text/`.
+
+**Matiz que evita el recorte fácil.** De las cuatro capas, **tres son funciones que ningún artefacto
+único sirve a la vez**: el crudo es prueba y cadena de custodia; `01_OCR/` es la página original *con*
+capa de texto, luego sirve para lo **visual y procesal** (¿firmada?, ¿sellada?, ¿copia u original?, cita
+por página); `03_MD/` es el texto para el modelo. La capa injustificada es **`raw_text/`**, no el número
+de capas. Vassal tiene la misma estratificación (`raw/` + `mirrors/` + copias de trabajo) y no acumula
+huérfanos porque su `index.yaml` es el vínculo: **la ruta no es la identidad**.
+
+**Mejora propuesta.** (a) **Colapsar `raw_text/` en `03_MD/`** — elimina un tercio de los excedentes por
+construcción y una duplicación conceptual entera, sin esperar a F1. (b) Retirar el `raw_text` del
+extractor antiguo o declararlo legacy. (c) `01_OCR/`: darle consumidor (lo visual del triaje y la
+viabilidad) o dejar de producirlo — hoy es el artefacto más caro y con cero lectores.
+
+**Coste estimado.** (a) bajo y aislado. (c) es decisión, no código.
+
+### 114.2 `texto_espejo_md` devuelve al primer match: de un bundle solo se lee el primer segmento
+
+**Verificado el 2026-08-03.** `texto_espejo_md`
+(`.claude/skills/organizar-sala-lectura/scripts/preclasificar.py:195-213`) recorre `_cobertura.json`
+buscando la fila cuyo `parent_sha256` (o `sha256`) case con el sha del crudo, y **retorna en el primer
+match**. Para un documento suelto es correcto. Para un **bundle** —un LexNET con demanda + N anexos— un
+único fichero de `00_Input` produce N filas, así que el preclasificador lee el MD de `d01` y **ninguno de
+los demás**.
+
+**Por qué importa poco y a la vez importa.** Para *clasificar* puede bastar: la portada de la demanda
+decide la categoría. Pero es **truncación silenciosa** —nada la declara— y significa que los anexos
+escaneados no influyen en dónde acaba el documento ni en su fecha canónica.
+
+**Mejora propuesta.** Recoger **todas** las filas del bundle y concatenar (o al menos declarar en el
+reporte que se leyó 1 de N). Encaja en el contrato `mejor_texto()` de esta entrada: la escalera debería
+recibir un documento **lógico**, no un fichero físico.
+
 ## 115. `triaje-viabilidad`: tres definiciones incompatibles de su entrada, y ninguna política de escaneados
 
 **Verificado el 2026-08-02**, y con la intención de diseño reconfirmada por Nikolai en esa misma sesión.
@@ -4647,6 +4770,29 @@ cosa.
 
 **Coste estimado.** Las decisiones son de Nikolai; una vez cerradas, el cambio es de `SKILL.md` +
 `references/criterios_triaje.md` (+ re-empaquetado), no de código.
+
+### 115.1 El mismo patrón en `viabilidad-prerelleno`, dentro de un solo fichero
+
+**Verificado el 2026-08-03.** No hacen falta tres documentos para que la entrada de una skill sea
+ambigua: basta un `SKILL.md`. En `viabilidad-prerelleno`, su **`description`** (líneas 5-6) dice que
+«lee la documental no anonimizada de **`00_Input`**» y no menciona la sala de máquina; su **regla de oro
+8** (línea 52), cuarenta líneas más abajo, añade la escalera `03_MD` → crudo. La `description` es lo
+único que se carga siempre y lo que dispara la skill.
+
+**Menos grave que en `triaje-viabilidad`** —aquí las dos definiciones no se contradicen, una es
+superconjunto de la otra— pero es el mismo mecanismo de deriva, y la asimetría tiene efecto: quien
+dispare por `description` no espera que la skill se apoye en artefactos de `01_Procesado`.
+
+**Y el punto donde muerde.** La regla 8.1 justifica fiarse del MD porque «su calidad ya fue verificada
+(densidad de texto, sin gibberish)» y añade que releer el crudo «sería releer lo mismo por una vía más
+lenta» — o sea, **le dice al modelo que no vuelva al crudo**. `#90` demostró que esa verificación puede
+devolver `ok` sobre páginas cuyo cuerpo se perdió bajo el sello. Con los peldaños (a) y (b) construidos
+el riesgo baja para corridas nuevas, pero **un caso procesado antes conserva la cobertura vieja**: la
+skill hereda un `ok` caducado sin forma de notarlo. Ya recogido como dependencia en `PLAN.md` (fila #3,
+pieza 3: «`estado: ok` puede ser mentira»); se anota aquí el consumidor concreto.
+
+**Mejora propuesta.** Que la `description` declare la entrada real (una frase), y que la regla 8.1 admita
+la excepción: si la cobertura del caso es anterior al arreglo de `#90`, no fiarse del `ok`.
 
 ## 116. La taxonomía documental E&V no la consume nadie aguas abajo: decidir si se sigue pagando por adelantado
 
