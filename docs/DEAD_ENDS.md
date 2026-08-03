@@ -57,6 +57,32 @@ Borrar la rama remota aparte (`git push origin --delete <rama>`); la LOCAL se po
 
 ---
 
+## `git show <rev>:<ruta>` desde Git Bash: la ruta se corrompe y el fallo es SILENCIOSO dos veces
+
+**Regla corta: la verificación por contenido de un merge se hace en PowerShell, no en Bash.** Es la
+comprobación que existe precisamente para no fiarse de `gh pr merge` (§9), así que un falso negativo
+aquí es especialmente caro: dice «tu cambio no llegó a `main`» cuando sí llegó.
+
+- **Intentado:** `git show "origin/main:.claude/commands/encargo.md"` desde el Bash de Claude Code,
+  para comprobar por contenido que un PR recién mergeado había aterrizado.
+- **Resultado:** `fatal: ambiguous argument 'origin\main;.claude\commands\encargo.md': unknown
+  revision or path not in the working tree`. La conversión de rutas de MSYS reescribe `/`→`\` y,
+  lo determinante, **`:`→`;`**, con lo que git deja de ver una revisión y lo interpreta como una ruta
+  inexistente. **Se lee como «el fichero no existe en `main`».**
+- **Y engaña por segunda vez, en el código de salida.** Medido: sin tubería devuelve **128**; con
+  `| head` devuelve **0**, porque `$?` es el de `head`. Es el modo de engaño de la regla de
+  `$LASTEXITCODE` de `CLAUDE.md`, aquí en Bash — **2ª recurrencia**, tras el `git worktree remove`
+  del §36 / PR #178.
+- **Confirmado:** 2026-08-02, verificando el merge del PR #194; reproducido en los dos sentidos.
+- **Solución:** hacer la comprobación en **PowerShell**
+  (`git show "origin/main:<ruta>" | Select-String "<frase>"`), que además es la regla del proyecto
+  para rutas de Windows. Si tiene que ser Bash: **`MSYS_NO_PATHCONV=1 git show …`** — verificado,
+  devuelve el fichero.
+- **Parentesco:** misma familia que el §51 (la línea de resumen de pytest que no sobrevive a Git
+  Bash), causa distinta: allí es la decodificación cp1252, aquí la conversión de rutas.
+
+---
+
 ## `LongPathsEnabled` / prefijo `\\?\` NO hacen que Excel abra una ruta larga
 
 - **Intentado:** que Excel abriese `02_Analisis/Informe viabilidad - <case_id>.xlsx` de `W-02XOR7`, **269 caracteres** de ruta. La vía tentadora es tratarlo como límite del sistema de ficheros: activar `LongPathsEnabled` en el registro, o prefijar con `\\?\` (que es lo que hacen `plugins/expedientes_xl/winio.py::long_path` y `readops._abrible`).

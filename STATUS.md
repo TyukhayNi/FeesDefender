@@ -100,7 +100,7 @@ directo; el bloque de cierre va a `docs/bitacora/AAAA.md`, **no** a este fichero
 | Tags CRM verificados | ✅ 96 extrajudicial auditados + 10 nuevos mapeados (2026-05-06) |
 | Notas de expediente | ✅ 13 NOTA_* alineadas con Manual 1.1.4 |
 | `session_close.py` | ✅ Simplificado — solo pytest, sin interactividad |
-| `docs/DEAD_ENDS.md` | ✅ **31 secciones / 57 entradas** (medido 2026-08-02; decía «8 callejones» desde mayo). Consultar **antes** de reintentar algo que falló raro |
+| `docs/DEAD_ENDS.md` | ✅ **32 secciones / 57 entradas** (medido 2026-08-02; decía «8 callejones» desde mayo). Consultar **antes** de reintentar algo que falló raro |
 | `docs/INTEGRACION_SUDESPACHO.md` | ✅ Actualizado 2026-05-06: endpoints REST creación confirmados + mapping propiedades CamelCase vs lowercase + dead ends saveselect |
 | `docs/ARQUITECTURA.md` | ✅ Mapa de dependencias + convención commits |
 | Protocolo de sesión | ✅ 4 momentos — Claude presenta → aprueba → ejecuta → PS |
