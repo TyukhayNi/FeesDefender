@@ -4795,6 +4795,53 @@ que dijo el revisor, no sobre qué lo dijo.
 En la ronda 1 de la pieza A el anclaje se verificó a mano (`git rev-parse` de los dos ficheros contra
 `a7f168c` y contra el tip), y esa verificación **no deja rastro comprobable** en el acta.
 
-**Qué habría que decidir:** si el acta gana un `sha256_objeto` (digest canónico del fichero o
-ficheros revisados en el commit anclado) y si `G8` lo recomputa como hace con el informe. Coste
-estimado: un campo, una comprobación y el retrofit de las actas que puedan recalcularse.
+### DECIDIDO 2026-08-03: se reduce a una frase del mandato; el campo y el guard quedan aparcados
+
+> La formulación original de esta entrada —«que el acta gane un `sha256_objeto` y que `G8` lo
+> recompute como hace con el informe»— **invitaba a construir la variante que no sirve**. Se conserva
+> arriba el diagnóstico, que es correcto, y se sustituye la propuesta.
+
+**1. Recomputar el digest desde el commit anclado sería un guard vacuo.** `G8` calcularía
+`sha256(git show <commit>:<objeto>)` y lo compararía con un campo que el autor rellenó de la misma
+forma: la comprobación no dice nada sobre qué leyó el revisor. Es la clase de defecto que este
+proyecto ya tiene censada en **`MEJORAS #107`** (test vacuo). Solo tiene valor si el **revisor**
+declara el digest a partir de los bytes que leyó de verdad y el guard lo contrasta con el commit.
+
+**2. Y entonces cubre un caso, no el que el párrafo de arriba evoca.**
+
+| caso | ¿lo detecta el digest? |
+|---|---|
+| Declaró el commit X y leyó otros bytes (típicamente un **working tree sucio**) | **Sí.** Riesgo real: las sesiones trabajan en worktrees con cambios sin commitear |
+| **Anclaje equivocado**: declara y lee el commit que no debía | **No, y ningún esquema de digest puede** — no hay inconsistencia que detectar |
+
+El segundo es el que la redacción original sugiere («un revisor anclado por error a otro commit») y
+es justamente el que **no** se cierra por aquí. Ése lo cierra el encargo, no el acta.
+
+**3. El alcance del «objeto» no está resuelto y no es menor.** El objeto no es un fichero: el acta de
+la ronda 1 de la pieza A declara `objeto` y `objeto_secundario`, y la revisión leyó además cinco
+ficheros de test y cuatro de `core/`. Un digest de lo declarado deja fuera la mayor parte de lo
+revisado; un digest de «todo lo que abrió» no es enumerable ni recomputable. Si algún día se hace,
+tiene que ser **por fichero declarado** y decir explícitamente que no cubre el resto.
+
+**Qué se hace, entonces:**
+
+- **AHORA, y cuesta una frase: al próximo encargo, no al contrato.** Que el mandato incluya «declara
+  el commit y el `sha256` de cada fichero que abriste». El revisor honesto lo cumple, el descuidado
+  se delata, y no hace falta campo, guard ni retrofit. **No es teoría:** es lo que la sesión revisora
+  hizo por su cuenta en la ronda 1 —comprobó los blobs contra `a7f168c` y contra el tip— y fue eso lo
+  que le permitió refutar en un movimiento un diagnóstico ajeno que era falso.
+  **Como práctica primero y doctrina después:** meterlo hoy en `AGENTS.md` o en el §del contrato es
+  editar el contrato de revisión, con el gate del punto siguiente; aplicarlo en un encargo concreto
+  es una instancia y no lo necesita. Si en dos o tres rondas demuestra que sirve, sube a doctrina.
+- **APARCADO con disparador: el campo `sha256_objeto` + su comprobación en `G8`.** Disparador,
+  cualquiera de los dos: (a) que aparezca un acta cuyo digest declarado no cuadre con su commit
+  —señal de que el fallo es real y no hipotético—; (b) que Codex, con cupo, lo quiera.
+- **Gate de quién lo toca:** sigue en pie lo de la cabecera. Es el contrato de revisión adversarial y
+  `CLAUDE.md` reserva su revisión a Codex (cupo el **2026-08-08**). Revisor sustituto **no cabe**
+  aquí: el cambio toca el mecanismo que existe para detectar el sesgo del autor, y ahí el sesgo
+  compartido es el riesgo entero.
+
+**Nota de independencia, que corresponde dejar escrita.** Media autoría de este hallazgo es de la
+sesión que ahora lo reformula. Decidir construirlo era la opción cómoda; lo que se decide es que su
+versión elaborada no compra lo que promete, que una frase en el encargo compra casi todo, y que el
+resto espera cinco días a un revisor que no comparta los mismos puntos ciegos.
