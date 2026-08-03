@@ -114,6 +114,7 @@ data/_config/pii_blocklist.txt
 data/_audit/
 
 # Excel lock files
+~$*.md
 ~$*.xlsx
 ~$*.xls
 ~$*.xlsm

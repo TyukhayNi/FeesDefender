@@ -477,7 +477,12 @@ def _es_acta(txt: str) -> bool:
 
 
 def _md_superpowers():
+    # `~$*` son ficheros de bloqueo de Office: aparecen al abrir un .md en Word,
+    # son BINARIOS y reventaban la suite entera con UnicodeDecodeError (visto el
+    # 2026-08-03 con la spec del MCP sudespacho abierta). No son documentación.
     for p in sorted(_SP.rglob("*.md")):
+        if p.name.startswith("~$"):
+            continue
         yield p, p.read_text(encoding="utf-8")
 
 
@@ -861,3 +866,17 @@ def test_g8_rechaza_nonce_presente_en_el_informe():
     de la ronda 4, que contenia el token de fin plano."""
     fallos = _errores_cadena(_acta_sintetica(cuerpo="cita del nonce zx7q\n"))
     assert any("aparece DENTRO" in f for f in fallos), fallos
+
+
+def test_un_word_abierto_no_puede_romper_la_suite(tmp_path, monkeypatch):
+    """Un fichero de bloqueo de Office (`~$*.md`) no es documentación: se ignora.
+
+    Regresión del 2026-08-03: abrir una spec en Word dejaba
+    `docs/superpowers/specs/~$....md` —binario— y `_md_superpowers()` reventaba con
+    UnicodeDecodeError, tumbando SEIS tests de gobernanza a la vez.
+    """
+    (tmp_path / "real.md").write_text("---\ntipo: spec\n---\n", encoding="utf-8")
+    (tmp_path / "~$real.md").write_bytes(b"\x50\x4b\x03\x04\xe6\xff binario de Word")
+    monkeypatch.setattr("tests.test_docs_gobernanza._SP", tmp_path)
+    nombres = [p.name for p, _ in _md_superpowers()]
+    assert nombres == ["real.md"]
