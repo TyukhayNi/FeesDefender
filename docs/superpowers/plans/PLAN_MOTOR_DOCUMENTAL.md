@@ -266,6 +266,20 @@ por tipo procesal; y el nombre canónico legible `AAAA-MM-DD_descripción`. Deci
 - El registro (§H) **mapea `doc-NNN ↔ sha8 ↔ rutas`**; el nombre canónico legible se reserva a la
   vista de la Sala de lectura, no a los ficheros del pipeline.
 
+> ⚠️ **Ya hay un identificador construido, de otra cola — leerlo antes de tocar esto** (anotado
+> 2026-08-02). La pieza A de
+> [`2026-08-01-identidad-segmento-bundle-design.md`](../specs/2026-08-01-identidad-segmento-bundle-design.md)
+> (nacida de `MEJORAS #90`, no de #48) se construyó el 2026-08-02 y acuña un **`doc_id` de ámbito
+> BUNDLE**: `d` + ≥2 dígitos ([`split_documental.py:34-60`](../../../core/split_documental.py:34)),
+> con ledger `next_doc_id` monotónico, tombstones `retirados`, validación previa a I/O —lo edita el
+> letrado— y entrada directa en el nombre del artefacto del segmento.
+>
+> `doc-NNN` (caso) y `dNN` (bundle) **se parecen y no son lo mismo**. F1 debe decidir explícitamente
+> si el de caso **envuelve** al de bundle (probable: `doc-014` identifica el bundle y `d03` el
+> segmento dentro) o lo sustituye —y entonces hay que migrar ledger, tombstones y nombres ya
+> acuñados—. Lo que no cabe es abrir un segundo espacio de nombres sin resolverlo. Ficha completa
+> del cruce en el §0.1 de ese spec.
+
 ### G.4 Registro de cobertura → registro ÚNICO de caso (ver §H)
 El registro de cobertura deja de ser de fase y se eleva a **ámbito CASO** (decisión), consolidando los
 registros que hoy solapan. Diseño completo en **§H**. Sigue siendo la respuesta a §E.13 (consultable) y
@@ -440,6 +454,7 @@ conectores del plugin deben reconstruirse. Se necesita un botón que lo haga y a
 
 - **F(-1) · Fundaciones sin riesgo:** golden fixture de W-02VND1 (M1) + auditoría "antes" de documentos ciegos (M6).
 - **F1 · Registro único de caso** (§H, piedra angular M2) + id dual (§G.3) + **fachada fina** `procesar_expediente()` (M4).
+  **Prerrequisito de lectura:** el aviso de §G.3 sobre el `doc_id` de bundle ya construido (pieza A de `MEJORAS #90`).
 - **F0 · Layout:** renombrar `Sala lectura` → `01_Sala de lectura`, crear `02_Sala de máquina/`, **botón
   `reorganizar_caso`** + `layout_version` (§J), migrar W-02VND1; alinear umbrales (B.3), corregir
   docstring/etiqueta (B.4, B.5), unificar extensiones de imagen + HEIC (C).
