@@ -347,10 +347,194 @@ def build_atlas_phase_a(
         },
         "summary": summary,
         "endpoints": [asdict(ep) for ep in endpoints],
+        "schemas_peticion": resolver_schemas_peticion(spec, endpoints),
         "paths_without_operations": orphans,
         "elements": [],
         "warnings": warnings,
     }
+
+
+_DETALLES_PROPIEDAD = ("format", "example", "enum", "nullable", "default", "description")
+
+
+def _tipo_de_propiedad(schema: Any) -> str | None:
+    """Tipo legible de una propiedad: `$ref`, `array[Ref]`, `oneOf/anyOf` o `_param_type`."""
+    if not isinstance(schema, dict):
+        return None
+    ref = schema.get("$ref")
+    if isinstance(ref, str):
+        return ref.rsplit("/", 1)[-1]
+    items = schema.get("items")
+    if schema.get("type") == "array" and isinstance(items, dict) and items.get("$ref"):
+        return f"array[{items['$ref'].rsplit('/', 1)[-1]}]"
+    for clave in ("oneOf", "anyOf"):
+        variantes = schema.get(clave)
+        if isinstance(variantes, list) and variantes:
+            tipos = [t for t in (_tipo_de_propiedad(v) for v in variantes) if t]
+            if tipos:
+                return "|".join(dict.fromkeys(tipos))
+    return _param_type(schema)
+
+
+def _detalles_de_propiedad(schema: Any) -> dict[str, Any]:
+    """Metadatos que ahorran prueba y error: `format`, `example`, `enum`, `nullable`…"""
+    if not isinstance(schema, dict):
+        return {}
+    return {k: schema[k] for k in _DETALLES_PROPIEDAD if k in schema and schema[k] != ""}
+
+
+def resolver_schemas_peticion(spec: dict, endpoints: list[Endpoint]) -> dict[str, dict]:
+    """Resuelve los `requestBody.$ref` de las operaciones a su contenido.
+
+    `Endpoint.request_schema` guardaba solo el **nombre** del ref, con lo que el
+    cuerpo que hay que enviar para escribir quedaba invisible en el atlas. Sobre el
+    tenant `tnm`: 244 operaciones declaran ref y **107 resuelven a un schema con
+    `properties`**; las otras 137 son `{type: object}` sin propiedades y se marcan
+    `stub` en vez de ocultarlas (un stub es información: el contrato no está
+    declarado y hay que capturarlo del front).
+
+    **`readOnly` se separa** (737 propiedades del tenant lo llevan): son de SALIDA y
+    enviarlas es un error, así que no pueden aparecer mezcladas con las enviables —
+    listarlas juntas invita a mandarlas. Ídem `writeOnly` (33), al revés.
+
+    Devuelve `{nombre: {propiedades, solo_lectura, solo_escritura, obligatorias,
+    detalles, stub, operaciones}}`, ordenado. `propiedades` son **solo las
+    enviables**.
+    """
+    schemas = (spec.get("components") or {}).get("schemas") or {}
+    ops_por_schema: dict[str, set[str]] = {}
+    for ep in endpoints:
+        if ep.request_schema:
+            ops_por_schema.setdefault(ep.request_schema, set()).add(f"{ep.method} {ep.path}")
+    salida: dict[str, dict] = {}
+    for nombre in sorted(ops_por_schema):
+        sch = schemas.get(nombre) or {}
+        props = {n: d for n, d in (sch.get("properties") or {}).items() if isinstance(n, str)}
+        solo_lectura = sorted(
+            n for n, d in props.items() if isinstance(d, dict) and d.get("readOnly")
+        )
+        solo_escritura = sorted(
+            n for n, d in props.items() if isinstance(d, dict) and d.get("writeOnly")
+        )
+        enviables = {
+            n: _tipo_de_propiedad(d) for n, d in props.items() if n not in solo_lectura
+        }
+        detalles = {
+            n: det for n, d in props.items() if (det := _detalles_de_propiedad(d))
+        }
+        salida[nombre] = {
+            "propiedades": enviables,
+            "solo_lectura": solo_lectura,
+            "solo_escritura": solo_escritura,
+            "obligatorias": sorted(sch.get("required") or []),
+            "detalles": detalles,
+            "stub": not props,
+            "operaciones": sorted(ops_por_schema[nombre]),
+        }
+    return salida
+
+
+def _render_flags_de_vista(elemento: dict) -> list[str]:
+    """Del alta rápida: qué campos participan, cuáles obligatorios, cuáles protegidos.
+
+    Se renderiza **solo `quick_creation`** (el flujo de creación, que es lo que hace
+    falta para escribir) más los `protected` vistos en cualquier vista. Las cuatro
+    vistas completas viven en `atlas.json`, que es lo que consumiría un agente.
+    """
+    vistas = elemento.get("vistas") or {}
+    if not vistas:
+        return []
+    lines: list[str] = []
+    alta = vistas.get("quick_creation") or []
+    if alta:
+        piezas = []
+        for c in alta:
+            marca = "**obligatorio**" if c.get("mandatory") else ("requerido" if c.get("required") else "")
+            extra = f"={c['defaultValue']}" if c.get("defaultValue") is not None else ""
+            piezas.append(
+                f"`{_md_escape(c['name'])}{extra}`" + (f" ({marca})" if marca else "")
+            )
+        lines.append("- Alta rápida (`view/quick_creation`): " + ", ".join(piezas))
+    protegidos = sorted({
+        c["name"] for campos in vistas.values() for c in campos if c.get("protected")
+    })
+    if protegidos:
+        lines.append(
+            "- **protegidos** (no escribir): "
+            + ", ".join(f"`{_md_escape(n)}`" for n in protegidos)
+        )
+    otras = sorted(v for v in vistas if v != "quick_creation")
+    if otras:
+        lines.append(
+            "- otras vistas con flags (en `atlas.json`): "
+            + ", ".join(f"`{v}` ({len(vistas[v])})" for v in otras)
+        )
+    return lines
+
+
+def _sufijo_propiedad(tipo: str | None, detalles: dict | None, solo_escritura: bool) -> str:
+    """`(string, date-time, ej. 2024-12-25)` — lo que evita descubrirlo por 500s."""
+    partes: list[str] = []
+    if tipo:
+        partes.append(_md_escape(tipo) or "")
+    for clave, plantilla in (("format", "{}"), ("enum", "enum: {}"), ("example", "ej. {}")):
+        valor = (detalles or {}).get(clave)
+        if valor is None:
+            continue
+        texto = ", ".join(str(v) for v in valor) if isinstance(valor, list) else str(valor)
+        partes.append(plantilla.format(_md_escape(texto)))
+    if (detalles or {}).get("nullable"):
+        partes.append("nullable")
+    if solo_escritura:
+        partes.append("solo escritura")
+    return f" ({'; '.join(p for p in partes if p)})" if partes else ""
+
+
+def _render_cuerpos_escritura(atlas: dict) -> list[str]:
+    esquemas = atlas.get("schemas_peticion") or {}
+    if not esquemas:
+        return []
+    con_props = {n: e for n, e in esquemas.items() if not e["stub"]}
+    stubs = sorted(n for n, e in esquemas.items() if e["stub"])
+    lines = ["## Cuerpos de escritura declarados", ""]
+    lines.append(
+        f"Los `requestBody` que el OpenAPI declara, resueltos: **{len(esquemas)} schemas** "
+        f"referenciados por las operaciones de escritura, de los que **{len(con_props)} traen "
+        "`properties`**. Es el contrato de lo que hay que enviar; sin él solo se aprende a base "
+        "de 500s. Cada schema se lista **una vez**, con las operaciones que lo usan (las parejas "
+        "crear/actualizar suelen compartirlo). Las **obligatorias** (`required` del spec) van en "
+        "negrita."
+    )
+    lines.append("")
+    if con_props:
+        lines.append(
+            "⚠️ Las **`readOnly`** van en su propia columna: son de SALIDA y **no se envían**."
+        )
+        lines.append("")
+        lines.append("| Schema | Operaciones | Propiedades a enviar | Solo lectura (no enviar) |")
+        lines.append("|---|---|---|---|")
+        for nombre in sorted(con_props):
+            e = con_props[nombre]
+            obl = set(e["obligatorias"])
+            props = ", ".join(
+                (f"**`{_md_escape(n)}`**" if n in obl else f"`{_md_escape(n)}`")
+                + _sufijo_propiedad(t, e["detalles"].get(n), n in e["solo_escritura"])
+                for n, t in sorted(e["propiedades"].items())
+            )
+            solo = ", ".join(f"`{_md_escape(n)}`" for n in e["solo_lectura"]) or "—"
+            ops = "<br>".join(f"`{_md_escape(o)}`" for o in e["operaciones"])
+            lines.append(f"| `{_md_escape(nombre)}` | {ops} | {props} | {solo} |")
+        lines.append("")
+    if stubs:
+        lines.append(
+            f"**{len(stubs)} schemas declarados sin `properties`** (`{{type: object}}` a secas). "
+            "El ref existe pero el contrato no está declarado: hay que capturarlo del front antes "
+            "de escribir contra ellos."
+        )
+        lines.append("")
+        lines.append(", ".join(f"`{_md_escape(n)}`" for n in stubs))
+        lines.append("")
+    return lines
 
 
 def query_param_families(atlas: dict) -> list[dict]:
@@ -528,6 +712,7 @@ def render_markdown(atlas: dict) -> str:
         lines.append("")
 
     lines.extend(_render_query_conventions(atlas))
+    lines.extend(_render_cuerpos_escritura(atlas))
 
     orphans = atlas.get("paths_without_operations", [])
     if orphans:
@@ -583,6 +768,7 @@ def render_markdown(atlas: dict) -> str:
             if ftne:
                 lines.append(f"- campos no enumerados (por tipo): "
                              + ", ".join(f"`{k}`={v}" for k, v in sorted(ftne.items())))
+            lines.extend(_render_flags_de_vista(e))
             lines.append("")
     return "\n".join(lines) + "\n"
 
@@ -616,6 +802,17 @@ def render_digest(atlas: dict) -> str:
         h = hashlib.sha256(blob.encode("utf-8")).hexdigest()[:12]
         n_nombres = sum(len(f["nombres"]) for f in familias)
         out.append(f"- query: {n_nombres} nombres / {len(familias)} familias · {h}")
+    esquemas = atlas.get("schemas_peticion") or {}
+    if esquemas:
+        # Si el CRM cambia un cuerpo de escritura (campo nuevo, uno que pasa a
+        # obligatorio), el hash lo delata en el diff antes de que falle una alta.
+        blob = json.dumps(esquemas, sort_keys=True, ensure_ascii=False)
+        h = hashlib.sha256(blob.encode("utf-8")).hexdigest()[:12]
+        con_props = sum(1 for e in esquemas.values() if not e["stub"])
+        out.append(
+            f"- cuerpos: {len(esquemas)} schemas de peticion "
+            f"({con_props} con properties) · {h}"
+        )
     out.append("")
     out.append("### Endpoints por módulo")
     for tag, n in summ.get("by_tag", {}).items():
@@ -655,6 +852,13 @@ def _anchor(text: str) -> str:
 # ===========================================================================
 
 SELECT_TYPE = "Select"
+
+# C1 — vistas que exponen `headers[].elementProperty` con los flags de escritura.
+# Verificadas en vivo (2026-08-03) sobre `actuaciones`: quick_creation=3 campos,
+# preview_view=11, global_quick_search=3, mass_update=15. Son las que aceptan
+# `{elemento}` en la ruta; el resto (`view/list/{id}`, `view/search/{id}`…) van por
+# id de vista y no se pueden recorrer por elemento.
+VISTAS_CON_METADATOS = ("quick_creation", "preview_view", "global_quick_search", "mass_update")
 # Tipos dinámicos respaldados por tabla — sus VALORES nunca se vuelcan (PII/config):
 ENUM_DENYLIST = frozenset({
     "ListaUsuarios", "ListaBancos", "ListaGrupos", "ListaElemento",
@@ -772,6 +976,39 @@ def parse_invalid_property_probe(resp: httpx.Response) -> list[str] | None:
     return [f.strip() for f in m.group(1).replace(".", "").split(",") if f.strip()]
 
 
+def parse_view_fields(payload: Any) -> list[dict]:
+    """Campos de una vista (`/api/view/{vista}/{elemento}`) con sus flags de escritura.
+
+    `view/config/{el}/fields` (4a) solo trae `id,name,label,type,active,deleted`. Los
+    flags que hacen falta para **escribir** —`required`, `mandatory`, `protected`—
+    viven aquí, dentro de `headers[].elementProperty`.
+
+    ⚠️ **Son flags de la VISTA, no del campo:** `Subject` en `actuaciones` es
+    `mandatory=true` en `quick_creation` y `false` en `mass_update`. Por eso se
+    guardan por vista y nunca se colapsan a un invariante.
+    """
+    headers = payload.get("headers") or [] if isinstance(payload, dict) else []
+    campos: list[dict] = []
+    for h in headers:
+        if not isinstance(h, dict):
+            continue
+        ep = h.get("elementProperty")
+        if not isinstance(ep, dict) or not ep.get("name"):
+            continue
+        campo = {
+            "name": ep["name"],
+            "type": ep.get("type"),
+            "label": ep.get("label"),
+            "required": bool(ep.get("required")),
+            "mandatory": bool(ep.get("mandatory")),
+            "protected": bool(ep.get("protected")),
+        }
+        if ep.get("defaultValue") not in (None, ""):
+            campo["defaultValue"] = ep["defaultValue"]
+        campos.append(campo)
+    return sorted(campos, key=lambda c: c["name"])
+
+
 def parse_relations_config(payload: Any) -> dict:
     """5a: `{parent:[...],children:[...]}` (ordenado; tolera claves ausentes)."""
     if not isinstance(payload, dict):
@@ -848,13 +1085,32 @@ def discover_element(client: httpx.Client, slug: str) -> dict:
                 probes["enums"] = "failed"
         except CrmAtlasError:
             probes["enums"] = "failed"
+    # C1 — metadatos por vista (`required`/`mandatory`/`protected`/`defaultValue`).
+    # Van en `probes_vistas`, NO en `probes`: una vista ausente no debe marcar el
+    # elemento como degradado (`is_resolved`) ni disparar el circuit breaker.
+    vistas: dict[str, list[dict]] = {}
+    probes_vistas: dict[str, str] = {}
+    for vista in VISTAS_CON_METADATOS:
+        try:
+            r = get_with_retry(client, f"/api/view/{vista}/{slug}")
+            if r.status_code == 200:
+                campos = parse_view_fields(r.json())
+                probes_vistas[vista] = "ok"
+                if campos:
+                    vistas[vista] = campos
+            else:
+                probes_vistas[vista] = "failed"
+        except CrmAtlasError:
+            probes_vistas[vista] = "failed"
     return {
         "slug": slug,
         "fields": [asdict(f) for f in fields],
         "relations": relations,
         "enums": enums,
         "field_types_no_enumerados": field_types_no_enumerados,
+        "vistas": vistas,
         "probes": probes,
+        "probes_vistas": probes_vistas,
     }
 
 

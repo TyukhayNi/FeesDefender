@@ -892,3 +892,307 @@ def test_la_superficie_de_query_cambia_de_hash_si_cambia_un_parametro():
     linea_a = [x for x in a.splitlines() if x.startswith("- query:")][0]
     linea_b = [x for x in b.splitlines() if x.startswith("- query:")][0]
     assert linea_a != linea_b
+
+
+# --- C5: cuerpos de escritura declarados -----------------------------------
+# El spec declara `requestBody.$ref` en 244 operaciones, de las que 107 resuelven
+# a un schema con `properties`. El atlas guardaba solo el NOMBRE del ref, así que
+# el cuerpo que hay que mandar para escribir quedaba invisible. Un MCP que escriba
+# lo necesita: sin esto aprende el contrato a base de 500s.
+
+_SPEC_CUERPOS = {
+    "openapi": "3.0.0",
+    "info": {},
+    "security": [{"apiKey": []}],
+    "components": {
+        "securitySchemes": {},
+        "schemas": {
+            "Absences": {
+                "type": "object",
+                "required": ["asunto"],
+                "properties": {
+                    "asunto": {"type": "string"},
+                    "numero_dias": {"type": "integer"},
+                    "document": {"$ref": "#/components/schemas/Doc"},
+                },
+            },
+            "Doc": {"type": "object", "properties": {"id": {"type": "integer"}}},
+            "Vacio": {"type": "object", "description": ""},
+        },
+    },
+    "paths": {
+        "/api/absences": {
+            "post": {
+                "operationId": "post_absences",
+                "tags": ["Absences"],
+                "summary": "Creates an Absences resource.",
+                "requestBody": {
+                    "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Absences"}}}
+                },
+            },
+            "patch": {
+                "operationId": "patch_absences",
+                "tags": ["Absences"],
+                "summary": "Updates an Absences resource.",
+                "requestBody": {
+                    "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Absences"}}}
+                },
+            },
+        },
+        "/api/stub": {
+            "post": {
+                "operationId": "post_stub",
+                "tags": ["Absences"],
+                "summary": "Stub",
+                "requestBody": {
+                    "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Vacio"}}}
+                },
+            }
+        },
+        "/api/sincuerpo": {
+            "get": {"operationId": "get_x", "tags": ["Absences"], "summary": "Sin cuerpo"}
+        },
+    },
+}
+
+
+def test_atlas_resuelve_los_schemas_de_peticion():
+    from core.crm_atlas import build_atlas_phase_a
+
+    atlas = build_atlas_phase_a(_SPEC_CUERPOS, tenant="tnm")
+    esquemas = atlas["schemas_peticion"]
+    assert esquemas["Absences"]["propiedades"] == {
+        "asunto": "string",
+        "numero_dias": "integer",
+        "document": "Doc",
+    }
+    assert esquemas["Absences"]["obligatorias"] == ["asunto"]
+    assert esquemas["Absences"]["operaciones"] == ["PATCH /api/absences", "POST /api/absences"]
+
+
+def test_los_schemas_stub_se_declaran_como_tales_no_se_ocultan():
+    """137 de los 244 refs del tenant son `{type:object}` sin properties: hay que decirlo."""
+    from core.crm_atlas import build_atlas_phase_a
+
+    atlas = build_atlas_phase_a(_SPEC_CUERPOS, tenant="tnm")
+    assert atlas["schemas_peticion"]["Vacio"]["propiedades"] == {}
+    assert atlas["schemas_peticion"]["Vacio"]["stub"] is True
+    assert atlas["schemas_peticion"]["Absences"]["stub"] is False
+
+
+def test_render_markdown_lista_los_cuerpos_de_escritura():
+    from core.crm_atlas import build_atlas_phase_a, render_markdown
+
+    md = render_markdown(build_atlas_phase_a(_SPEC_CUERPOS, tenant="tnm"))
+    assert "## Cuerpos de escritura declarados" in md
+    assert "`Absences`" in md
+    assert "asunto" in md and "numero_dias" in md
+    # el schema se lista UNA vez con las dos operaciones que lo usan
+    assert md.count("| `Absences` |") == 1
+    assert "POST /api/absences" in md and "PATCH /api/absences" in md
+
+
+def test_los_cuerpos_marcan_las_propiedades_obligatorias():
+    from core.crm_atlas import build_atlas_phase_a, render_markdown
+
+    md = render_markdown(build_atlas_phase_a(_SPEC_CUERPOS, tenant="tnm"))
+    seccion = md.split("## Cuerpos de escritura declarados")[1]
+    assert "asunto" in seccion
+    assert "obligatoria" in seccion.lower()
+
+
+def test_el_digest_cuenta_los_cuerpos_para_ver_su_deriva():
+    from core.crm_atlas import build_atlas_phase_a, render_digest
+
+    dig = render_digest(build_atlas_phase_a(_SPEC_CUERPOS, tenant="tnm"))
+    linea = [x for x in dig.splitlines() if x.startswith("- cuerpos:")]
+    assert linea, dig
+    assert "2 con properties" in linea[0] or "con properties" in linea[0]
+
+
+# --- C5-bis: readOnly, ejemplos y tipos compuestos --------------------------
+# El render de `/api/docs` marca `readOnly: true` en propiedades como
+# `Invoice.Concepts.honorarium`. Son de SALIDA: enviarlas es un error. La primera
+# pasada las listaba mezcladas con las enviables, o sea invitaba a mandarlas.
+# En el tenant: 737 propiedades `readOnly`, 33 `writeOnly`, 137 con `example`,
+# 349 `nullable`, 52 con `format`, 6 con `enum`, y 160 `oneOf` + 44 `anyOf` que
+# quedaban sin tipo.
+
+_SPEC_RICO = {
+    "openapi": "3.0.0",
+    "info": {},
+    "security": [{"apiKey": []}],
+    "components": {
+        "securitySchemes": {},
+        "schemas": {
+            "ConceptInput": {"type": "object", "properties": {"id": {"type": "integer"}}},
+            "Invoice.Concepts": {
+                "type": "object",
+                "required": ["concepts"],
+                "properties": {
+                    "concepts": {"type": "array", "items": {"$ref": "#/components/schemas/ConceptInput"}},
+                    "honorarium": {"readOnly": True, "type": "boolean"},
+                    "fecha_inicio": {"example": "2024-12-25", "type": "string", "format": "date-time"},
+                    "estado": {"type": "string", "enum": ["NC", "C"], "nullable": True},
+                    "clave": {"writeOnly": True, "type": "string"},
+                    "mixto": {"oneOf": [{"type": "string"}, {"type": "integer"}]},
+                },
+            },
+        },
+    },
+    "paths": {
+        "/api/invoices": {
+            "post": {
+                "operationId": "post_invoices",
+                "tags": ["Invoice"],
+                "summary": "Creates an Invoice.",
+                "requestBody": {
+                    "content": {
+                        "application/json": {"schema": {"$ref": "#/components/schemas/Invoice.Concepts"}}
+                    }
+                },
+            }
+        }
+    },
+}
+
+
+def _esquema_rico() -> dict:
+    from core.crm_atlas import build_atlas_phase_a
+
+    return build_atlas_phase_a(_SPEC_RICO, tenant="tnm")["schemas_peticion"]["Invoice.Concepts"]
+
+
+def test_los_cuerpos_separan_las_propiedades_de_solo_lectura():
+    e = _esquema_rico()
+    assert e["solo_lectura"] == ["honorarium"]
+    assert "honorarium" not in e["propiedades"]
+    assert e["solo_escritura"] == ["clave"]
+
+
+def test_los_cuerpos_resuelven_arrays_de_ref_y_tipos_compuestos():
+    props = _esquema_rico()["propiedades"]
+    assert props["concepts"] == "array[ConceptInput]"
+    assert props["mixto"] == "string|integer"
+
+
+def test_los_cuerpos_recogen_format_example_enum_y_nullable():
+    detalles = _esquema_rico()["detalles"]
+    assert detalles["fecha_inicio"]["format"] == "date-time"
+    assert detalles["fecha_inicio"]["example"] == "2024-12-25"
+    assert detalles["estado"]["enum"] == ["NC", "C"]
+    assert detalles["estado"]["nullable"] is True
+    assert "concepts" not in detalles  # sin metadatos → no ensucia
+
+
+def test_el_render_avisa_de_no_enviar_las_de_solo_lectura():
+    from core.crm_atlas import build_atlas_phase_a, render_markdown
+
+    md = render_markdown(build_atlas_phase_a(_SPEC_RICO, tenant="tnm"))
+    seccion = md.split("## Cuerpos de escritura declarados")[1]
+    assert "honorarium" in seccion
+    assert "no enviar" in seccion.lower()
+    # el ejemplo y el enum salen, que es lo que ahorra la prueba y error
+    assert "2024-12-25" in seccion
+    assert "NC" in seccion
+
+
+# --- C1: metadatos de campo por vista --------------------------------------
+# `view/config/{el}/fields` solo trae `id,name,label,type,active,deleted`. Los flags
+# que un agente necesita para ESCRIBIR —`required`, `mandatory`, `protected`— viven
+# en los endpoints `/api/view/{vista}/{elemento}`, dentro de `headers[].elementProperty`.
+# Y varían POR VISTA: `Subject` es mandatory en `quick_creation` y no en `mass_update`.
+# Por eso se guardan por vista, no como invariante del campo.
+
+_VISTA_QUICK = {
+    "id": "actuaciones", "label": "CustomQuickCreation", "elementId": {"value": "actuaciones"},
+    "headers": [
+        {"name": "Subject", "elementProperty": {
+            "name": "Subject", "label": "Asunto", "type": "TextArea",
+            "required": False, "mandatory": True, "protected": False}},
+        {"name": "id_creador", "elementProperty": {
+            "name": "id_creador", "label": "Creador", "type": "ListaUsuarios",
+            "required": False, "mandatory": False, "protected": True}},
+    ],
+}
+_VISTA_MASS = {
+    "id": "actuaciones", "label": "MassUpdate",
+    "headers": [
+        {"name": "Subject", "elementProperty": {
+            "name": "Subject", "label": "Asunto", "type": "TextArea",
+            "required": False, "mandatory": False, "protected": False}},
+        {"name": "sin_metadatos"},
+    ],
+}
+
+
+def test_parse_view_fields_extrae_los_flags():
+    from core.crm_atlas import parse_view_fields
+
+    campos = parse_view_fields(_VISTA_QUICK)
+    por_nombre = {c["name"]: c for c in campos}
+    assert por_nombre["Subject"]["mandatory"] is True
+    assert por_nombre["Subject"]["required"] is False
+    assert por_nombre["id_creador"]["protected"] is True
+    assert por_nombre["id_creador"]["type"] == "ListaUsuarios"
+
+
+def test_parse_view_fields_tolera_headers_sin_elementProperty():
+    from core.crm_atlas import parse_view_fields
+
+    assert [c["name"] for c in parse_view_fields(_VISTA_MASS)] == ["Subject"]
+
+
+def test_discover_element_recoge_las_vistas_sin_afectar_a_is_resolved():
+    """Una vista que falla NO degrada el elemento: rompería el circuit breaker."""
+    import core.crm_atlas as m
+
+    def handler(req):
+        p = req.url.path
+        if p.endswith("/view/config/x/fields"):
+            return httpx.Response(200, json={"items": [
+                {"name": "Subject", "type": "TextArea", "label": "A", "active": True,
+                 "deleted": False}]})
+        if p.endswith("/view/config/x/relations"):
+            return httpx.Response(200, json={"parent": [], "children": []})
+        if "/view/quick_creation/x" in p:
+            return httpx.Response(200, json=_VISTA_QUICK)
+        if "/view/mass_update/x" in p:
+            return httpx.Response(500, json={"detail": "boom"})
+        return httpx.Response(404)
+
+    with _mock_client(handler) as c:
+        el = m.discover_element(c, "x")
+    assert el["vistas"]["quick_creation"][0]["name"] == "Subject"
+    assert el["probes_vistas"]["quick_creation"] == "ok"
+    assert el["probes_vistas"]["mass_update"] == "failed"
+    # las vistas NO entran en `probes`, así que el elemento sigue resuelto
+    assert "mass_update" not in el["probes"]
+    assert m.is_resolved(el) is True
+
+
+def test_render_marca_los_campos_del_alta_y_los_protegidos():
+    from core.crm_atlas import render_markdown
+
+    atlas = {
+        "meta": {"tenant": "tnm", "phase_b": {"complete": True, "elements_total": 1,
+                                              "elements_ok": 1}},
+        "elements": [{
+            "slug": "actuaciones",
+            "fields": [{"name": "Subject", "type": "TextArea", "label": "A", "active": True}],
+            "relations": {"parent": [], "children": []},
+            "enums": {},
+            "vistas": {"quick_creation": [
+                {"name": "Subject", "type": "TextArea", "label": "Asunto",
+                 "required": False, "mandatory": True, "protected": False},
+                {"name": "id_creador", "type": "ListaUsuarios", "label": "Creador",
+                 "required": False, "mandatory": False, "protected": True},
+            ]},
+            "probes": {"fields": "view/config/fields", "relations": "ok", "enums": "ok"},
+            "probes_vistas": {"quick_creation": "ok"},
+        }],
+    }
+    md = render_markdown(atlas)
+    assert "Alta rápida" in md or "alta rápida" in md
+    assert "Subject" in md and "obligatorio" in md.lower()
+    assert "protegido" in md.lower() and "id_creador" in md
