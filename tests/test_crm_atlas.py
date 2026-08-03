@@ -892,3 +892,119 @@ def test_la_superficie_de_query_cambia_de_hash_si_cambia_un_parametro():
     linea_a = [x for x in a.splitlines() if x.startswith("- query:")][0]
     linea_b = [x for x in b.splitlines() if x.startswith("- query:")][0]
     assert linea_a != linea_b
+
+
+# --- C5: cuerpos de escritura declarados -----------------------------------
+# El spec declara `requestBody.$ref` en 244 operaciones, de las que 107 resuelven
+# a un schema con `properties`. El atlas guardaba solo el NOMBRE del ref, así que
+# el cuerpo que hay que mandar para escribir quedaba invisible. Un MCP que escriba
+# lo necesita: sin esto aprende el contrato a base de 500s.
+
+_SPEC_CUERPOS = {
+    "openapi": "3.0.0",
+    "info": {},
+    "security": [{"apiKey": []}],
+    "components": {
+        "securitySchemes": {},
+        "schemas": {
+            "Absences": {
+                "type": "object",
+                "required": ["asunto"],
+                "properties": {
+                    "asunto": {"type": "string"},
+                    "numero_dias": {"type": "integer"},
+                    "document": {"$ref": "#/components/schemas/Doc"},
+                },
+            },
+            "Doc": {"type": "object", "properties": {"id": {"type": "integer"}}},
+            "Vacio": {"type": "object", "description": ""},
+        },
+    },
+    "paths": {
+        "/api/absences": {
+            "post": {
+                "operationId": "post_absences",
+                "tags": ["Absences"],
+                "summary": "Creates an Absences resource.",
+                "requestBody": {
+                    "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Absences"}}}
+                },
+            },
+            "patch": {
+                "operationId": "patch_absences",
+                "tags": ["Absences"],
+                "summary": "Updates an Absences resource.",
+                "requestBody": {
+                    "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Absences"}}}
+                },
+            },
+        },
+        "/api/stub": {
+            "post": {
+                "operationId": "post_stub",
+                "tags": ["Absences"],
+                "summary": "Stub",
+                "requestBody": {
+                    "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Vacio"}}}
+                },
+            }
+        },
+        "/api/sincuerpo": {
+            "get": {"operationId": "get_x", "tags": ["Absences"], "summary": "Sin cuerpo"}
+        },
+    },
+}
+
+
+def test_atlas_resuelve_los_schemas_de_peticion():
+    from core.crm_atlas import build_atlas_phase_a
+
+    atlas = build_atlas_phase_a(_SPEC_CUERPOS, tenant="tnm")
+    esquemas = atlas["schemas_peticion"]
+    assert esquemas["Absences"]["propiedades"] == {
+        "asunto": "string",
+        "numero_dias": "integer",
+        "document": "Doc",
+    }
+    assert esquemas["Absences"]["obligatorias"] == ["asunto"]
+    assert esquemas["Absences"]["operaciones"] == ["PATCH /api/absences", "POST /api/absences"]
+
+
+def test_los_schemas_stub_se_declaran_como_tales_no_se_ocultan():
+    """137 de los 244 refs del tenant son `{type:object}` sin properties: hay que decirlo."""
+    from core.crm_atlas import build_atlas_phase_a
+
+    atlas = build_atlas_phase_a(_SPEC_CUERPOS, tenant="tnm")
+    assert atlas["schemas_peticion"]["Vacio"]["propiedades"] == {}
+    assert atlas["schemas_peticion"]["Vacio"]["stub"] is True
+    assert atlas["schemas_peticion"]["Absences"]["stub"] is False
+
+
+def test_render_markdown_lista_los_cuerpos_de_escritura():
+    from core.crm_atlas import build_atlas_phase_a, render_markdown
+
+    md = render_markdown(build_atlas_phase_a(_SPEC_CUERPOS, tenant="tnm"))
+    assert "## Cuerpos de escritura declarados" in md
+    assert "`Absences`" in md
+    assert "asunto" in md and "numero_dias" in md
+    # el schema se lista UNA vez con las dos operaciones que lo usan
+    assert md.count("| `Absences` |") == 1
+    assert "POST /api/absences" in md and "PATCH /api/absences" in md
+
+
+def test_los_cuerpos_marcan_las_propiedades_obligatorias():
+    from core.crm_atlas import build_atlas_phase_a, render_markdown
+
+    md = render_markdown(build_atlas_phase_a(_SPEC_CUERPOS, tenant="tnm"))
+    seccion = md.split("## Cuerpos de escritura declarados")[1]
+    assert "asunto" in seccion
+    assert "obligatoria" in seccion.lower()
+
+
+def test_el_digest_cuenta_los_cuerpos_para_ver_su_deriva():
+    from core.crm_atlas import build_atlas_phase_a, render_digest
+
+    dig = render_digest(build_atlas_phase_a(_SPEC_CUERPOS, tenant="tnm"))
+    linea = [x for x in dig.splitlines() if x.startswith("- cuerpos:")]
+    assert linea, dig
+    assert "2 con properties" in linea[0] or "con properties" in linea[0]

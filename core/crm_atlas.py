@@ -347,10 +347,98 @@ def build_atlas_phase_a(
         },
         "summary": summary,
         "endpoints": [asdict(ep) for ep in endpoints],
+        "schemas_peticion": resolver_schemas_peticion(spec, endpoints),
         "paths_without_operations": orphans,
         "elements": [],
         "warnings": warnings,
     }
+
+
+def _tipo_de_propiedad(schema: Any) -> str | None:
+    """Tipo legible de una propiedad de schema: `$ref` → nombre; resto → `_param_type`."""
+    if not isinstance(schema, dict):
+        return None
+    ref = schema.get("$ref")
+    if isinstance(ref, str):
+        return ref.rsplit("/", 1)[-1]
+    items = schema.get("items")
+    if schema.get("type") == "array" and isinstance(items, dict) and items.get("$ref"):
+        return f"array[{items['$ref'].rsplit('/', 1)[-1]}]"
+    return _param_type(schema)
+
+
+def resolver_schemas_peticion(spec: dict, endpoints: list[Endpoint]) -> dict[str, dict]:
+    """Resuelve los `requestBody.$ref` de las operaciones a su contenido.
+
+    `Endpoint.request_schema` guardaba solo el **nombre** del ref, con lo que el
+    cuerpo que hay que enviar para escribir quedaba invisible en el atlas. Sobre el
+    tenant `tnm`: 244 operaciones declaran ref y **107 resuelven a un schema con
+    `properties`**; las otras 137 son `{type: object}` sin propiedades y se marcan
+    `stub` en vez de ocultarlas (un stub es información: el contrato no está
+    declarado y hay que capturarlo del front).
+
+    Devuelve `{nombre: {propiedades, obligatorias, stub, operaciones}}`, ordenado.
+    """
+    schemas = (spec.get("components") or {}).get("schemas") or {}
+    ops_por_schema: dict[str, set[str]] = {}
+    for ep in endpoints:
+        if ep.request_schema:
+            ops_por_schema.setdefault(ep.request_schema, set()).add(f"{ep.method} {ep.path}")
+    salida: dict[str, dict] = {}
+    for nombre in sorted(ops_por_schema):
+        sch = schemas.get(nombre) or {}
+        props = sch.get("properties") or {}
+        propiedades = {
+            n: _tipo_de_propiedad(d) for n, d in props.items() if isinstance(n, str)
+        }
+        salida[nombre] = {
+            "propiedades": propiedades,
+            "obligatorias": sorted(sch.get("required") or []),
+            "stub": not propiedades,
+            "operaciones": sorted(ops_por_schema[nombre]),
+        }
+    return salida
+
+
+def _render_cuerpos_escritura(atlas: dict) -> list[str]:
+    esquemas = atlas.get("schemas_peticion") or {}
+    if not esquemas:
+        return []
+    con_props = {n: e for n, e in esquemas.items() if not e["stub"]}
+    stubs = sorted(n for n, e in esquemas.items() if e["stub"])
+    lines = ["## Cuerpos de escritura declarados", ""]
+    lines.append(
+        f"Los `requestBody` que el OpenAPI declara, resueltos: **{len(esquemas)} schemas** "
+        f"referenciados por las operaciones de escritura, de los que **{len(con_props)} traen "
+        "`properties`**. Es el contrato de lo que hay que enviar; sin él solo se aprende a base "
+        "de 500s. Cada schema se lista **una vez**, con las operaciones que lo usan (las parejas "
+        "crear/actualizar suelen compartirlo). Las **obligatorias** (`required` del spec) van en "
+        "negrita."
+    )
+    lines.append("")
+    if con_props:
+        lines.append("| Schema | Operaciones | Propiedades declaradas |")
+        lines.append("|---|---|---|")
+        for nombre in sorted(con_props):
+            e = con_props[nombre]
+            obl = set(e["obligatorias"])
+            props = ", ".join(
+                (f"**`{n}`**" if n in obl else f"`{n}`") + (f" ({t})" if t else "")
+                for n, t in sorted(e["propiedades"].items())
+            )
+            ops = "<br>".join(f"`{_md_escape(o)}`" for o in e["operaciones"])
+            lines.append(f"| `{_md_escape(nombre)}` | {ops} | {props} |")
+        lines.append("")
+    if stubs:
+        lines.append(
+            f"**{len(stubs)} schemas declarados sin `properties`** (`{{type: object}}` a secas). "
+            "El ref existe pero el contrato no está declarado: hay que capturarlo del front antes "
+            "de escribir contra ellos."
+        )
+        lines.append("")
+        lines.append(", ".join(f"`{_md_escape(n)}`" for n in stubs))
+        lines.append("")
+    return lines
 
 
 def query_param_families(atlas: dict) -> list[dict]:
@@ -528,6 +616,7 @@ def render_markdown(atlas: dict) -> str:
         lines.append("")
 
     lines.extend(_render_query_conventions(atlas))
+    lines.extend(_render_cuerpos_escritura(atlas))
 
     orphans = atlas.get("paths_without_operations", [])
     if orphans:
@@ -616,6 +705,17 @@ def render_digest(atlas: dict) -> str:
         h = hashlib.sha256(blob.encode("utf-8")).hexdigest()[:12]
         n_nombres = sum(len(f["nombres"]) for f in familias)
         out.append(f"- query: {n_nombres} nombres / {len(familias)} familias · {h}")
+    esquemas = atlas.get("schemas_peticion") or {}
+    if esquemas:
+        # Si el CRM cambia un cuerpo de escritura (campo nuevo, uno que pasa a
+        # obligatorio), el hash lo delata en el diff antes de que falle una alta.
+        blob = json.dumps(esquemas, sort_keys=True, ensure_ascii=False)
+        h = hashlib.sha256(blob.encode("utf-8")).hexdigest()[:12]
+        con_props = sum(1 for e in esquemas.values() if not e["stub"])
+        out.append(
+            f"- cuerpos: {len(esquemas)} schemas de peticion "
+            f"({con_props} con properties) · {h}"
+        )
     out.append("")
     out.append("### Endpoints por módulo")
     for tag, n in summ.get("by_tag", {}).items():
