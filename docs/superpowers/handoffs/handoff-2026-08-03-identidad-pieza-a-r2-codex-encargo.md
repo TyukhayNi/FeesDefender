@@ -152,7 +152,7 @@ más rentable está fuera de esta lista, dilo.
 
 ## 6. Cómo se registrará
 
-Tu informe se archiva **literal**, con su digest, en un acta hermana
-(`2026-08-08-identidad-segmento-bundle-pieza-a-r2-codex-adversarial-review.md`), y la adjudicación va
-embebida en el spec, como **§15**. El acta llevará `revisor: Codex` e `independencia: independiente`
+Tu informe se archiva **literal**, con su digest, en un acta hermana —nombre canónico del §4 del
+contrato: `…-pieza-a-r2-codex-adversarial-review.md`, fechada el día de la revisión— y la adjudicación
+va embebida en el spec, como **§15**. El acta llevará `revisor: Codex` e `independencia: independiente`
 — por primera vez en esta pieza, con verdad.
