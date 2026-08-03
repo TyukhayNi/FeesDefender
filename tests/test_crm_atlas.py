@@ -1095,3 +1095,104 @@ def test_el_render_avisa_de_no_enviar_las_de_solo_lectura():
     # el ejemplo y el enum salen, que es lo que ahorra la prueba y error
     assert "2024-12-25" in seccion
     assert "NC" in seccion
+
+
+# --- C1: metadatos de campo por vista --------------------------------------
+# `view/config/{el}/fields` solo trae `id,name,label,type,active,deleted`. Los flags
+# que un agente necesita para ESCRIBIR —`required`, `mandatory`, `protected`— viven
+# en los endpoints `/api/view/{vista}/{elemento}`, dentro de `headers[].elementProperty`.
+# Y varían POR VISTA: `Subject` es mandatory en `quick_creation` y no en `mass_update`.
+# Por eso se guardan por vista, no como invariante del campo.
+
+_VISTA_QUICK = {
+    "id": "actuaciones", "label": "CustomQuickCreation", "elementId": {"value": "actuaciones"},
+    "headers": [
+        {"name": "Subject", "elementProperty": {
+            "name": "Subject", "label": "Asunto", "type": "TextArea",
+            "required": False, "mandatory": True, "protected": False}},
+        {"name": "id_creador", "elementProperty": {
+            "name": "id_creador", "label": "Creador", "type": "ListaUsuarios",
+            "required": False, "mandatory": False, "protected": True}},
+    ],
+}
+_VISTA_MASS = {
+    "id": "actuaciones", "label": "MassUpdate",
+    "headers": [
+        {"name": "Subject", "elementProperty": {
+            "name": "Subject", "label": "Asunto", "type": "TextArea",
+            "required": False, "mandatory": False, "protected": False}},
+        {"name": "sin_metadatos"},
+    ],
+}
+
+
+def test_parse_view_fields_extrae_los_flags():
+    from core.crm_atlas import parse_view_fields
+
+    campos = parse_view_fields(_VISTA_QUICK)
+    por_nombre = {c["name"]: c for c in campos}
+    assert por_nombre["Subject"]["mandatory"] is True
+    assert por_nombre["Subject"]["required"] is False
+    assert por_nombre["id_creador"]["protected"] is True
+    assert por_nombre["id_creador"]["type"] == "ListaUsuarios"
+
+
+def test_parse_view_fields_tolera_headers_sin_elementProperty():
+    from core.crm_atlas import parse_view_fields
+
+    assert [c["name"] for c in parse_view_fields(_VISTA_MASS)] == ["Subject"]
+
+
+def test_discover_element_recoge_las_vistas_sin_afectar_a_is_resolved():
+    """Una vista que falla NO degrada el elemento: rompería el circuit breaker."""
+    import core.crm_atlas as m
+
+    def handler(req):
+        p = req.url.path
+        if p.endswith("/view/config/x/fields"):
+            return httpx.Response(200, json={"items": [
+                {"name": "Subject", "type": "TextArea", "label": "A", "active": True,
+                 "deleted": False}]})
+        if p.endswith("/view/config/x/relations"):
+            return httpx.Response(200, json={"parent": [], "children": []})
+        if "/view/quick_creation/x" in p:
+            return httpx.Response(200, json=_VISTA_QUICK)
+        if "/view/mass_update/x" in p:
+            return httpx.Response(500, json={"detail": "boom"})
+        return httpx.Response(404)
+
+    with _mock_client(handler) as c:
+        el = m.discover_element(c, "x")
+    assert el["vistas"]["quick_creation"][0]["name"] == "Subject"
+    assert el["probes_vistas"]["quick_creation"] == "ok"
+    assert el["probes_vistas"]["mass_update"] == "failed"
+    # las vistas NO entran en `probes`, así que el elemento sigue resuelto
+    assert "mass_update" not in el["probes"]
+    assert m.is_resolved(el) is True
+
+
+def test_render_marca_los_campos_del_alta_y_los_protegidos():
+    from core.crm_atlas import render_markdown
+
+    atlas = {
+        "meta": {"tenant": "tnm", "phase_b": {"complete": True, "elements_total": 1,
+                                              "elements_ok": 1}},
+        "elements": [{
+            "slug": "actuaciones",
+            "fields": [{"name": "Subject", "type": "TextArea", "label": "A", "active": True}],
+            "relations": {"parent": [], "children": []},
+            "enums": {},
+            "vistas": {"quick_creation": [
+                {"name": "Subject", "type": "TextArea", "label": "Asunto",
+                 "required": False, "mandatory": True, "protected": False},
+                {"name": "id_creador", "type": "ListaUsuarios", "label": "Creador",
+                 "required": False, "mandatory": False, "protected": True},
+            ]},
+            "probes": {"fields": "view/config/fields", "relations": "ok", "enums": "ok"},
+            "probes_vistas": {"quick_creation": "ok"},
+        }],
+    }
+    md = render_markdown(atlas)
+    assert "Alta rápida" in md or "alta rápida" in md
+    assert "Subject" in md and "obligatorio" in md.lower()
+    assert "protegido" in md.lower() and "id_creador" in md

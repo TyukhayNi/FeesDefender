@@ -434,6 +434,44 @@ def resolver_schemas_peticion(spec: dict, endpoints: list[Endpoint]) -> dict[str
     return salida
 
 
+def _render_flags_de_vista(elemento: dict) -> list[str]:
+    """Del alta rápida: qué campos participan, cuáles obligatorios, cuáles protegidos.
+
+    Se renderiza **solo `quick_creation`** (el flujo de creación, que es lo que hace
+    falta para escribir) más los `protected` vistos en cualquier vista. Las cuatro
+    vistas completas viven en `atlas.json`, que es lo que consumiría un agente.
+    """
+    vistas = elemento.get("vistas") or {}
+    if not vistas:
+        return []
+    lines: list[str] = []
+    alta = vistas.get("quick_creation") or []
+    if alta:
+        piezas = []
+        for c in alta:
+            marca = "**obligatorio**" if c.get("mandatory") else ("requerido" if c.get("required") else "")
+            extra = f"={c['defaultValue']}" if c.get("defaultValue") is not None else ""
+            piezas.append(
+                f"`{_md_escape(c['name'])}{extra}`" + (f" ({marca})" if marca else "")
+            )
+        lines.append("- Alta rápida (`view/quick_creation`): " + ", ".join(piezas))
+    protegidos = sorted({
+        c["name"] for campos in vistas.values() for c in campos if c.get("protected")
+    })
+    if protegidos:
+        lines.append(
+            "- **protegidos** (no escribir): "
+            + ", ".join(f"`{_md_escape(n)}`" for n in protegidos)
+        )
+    otras = sorted(v for v in vistas if v != "quick_creation")
+    if otras:
+        lines.append(
+            "- otras vistas con flags (en `atlas.json`): "
+            + ", ".join(f"`{v}` ({len(vistas[v])})" for v in otras)
+        )
+    return lines
+
+
 def _sufijo_propiedad(tipo: str | None, detalles: dict | None, solo_escritura: bool) -> str:
     """`(string, date-time, ej. 2024-12-25)` — lo que evita descubrirlo por 500s."""
     partes: list[str] = []
@@ -730,6 +768,7 @@ def render_markdown(atlas: dict) -> str:
             if ftne:
                 lines.append(f"- campos no enumerados (por tipo): "
                              + ", ".join(f"`{k}`={v}" for k, v in sorted(ftne.items())))
+            lines.extend(_render_flags_de_vista(e))
             lines.append("")
     return "\n".join(lines) + "\n"
 
@@ -813,6 +852,13 @@ def _anchor(text: str) -> str:
 # ===========================================================================
 
 SELECT_TYPE = "Select"
+
+# C1 — vistas que exponen `headers[].elementProperty` con los flags de escritura.
+# Verificadas en vivo (2026-08-03) sobre `actuaciones`: quick_creation=3 campos,
+# preview_view=11, global_quick_search=3, mass_update=15. Son las que aceptan
+# `{elemento}` en la ruta; el resto (`view/list/{id}`, `view/search/{id}`…) van por
+# id de vista y no se pueden recorrer por elemento.
+VISTAS_CON_METADATOS = ("quick_creation", "preview_view", "global_quick_search", "mass_update")
 # Tipos dinámicos respaldados por tabla — sus VALORES nunca se vuelcan (PII/config):
 ENUM_DENYLIST = frozenset({
     "ListaUsuarios", "ListaBancos", "ListaGrupos", "ListaElemento",
@@ -930,6 +976,39 @@ def parse_invalid_property_probe(resp: httpx.Response) -> list[str] | None:
     return [f.strip() for f in m.group(1).replace(".", "").split(",") if f.strip()]
 
 
+def parse_view_fields(payload: Any) -> list[dict]:
+    """Campos de una vista (`/api/view/{vista}/{elemento}`) con sus flags de escritura.
+
+    `view/config/{el}/fields` (4a) solo trae `id,name,label,type,active,deleted`. Los
+    flags que hacen falta para **escribir** —`required`, `mandatory`, `protected`—
+    viven aquí, dentro de `headers[].elementProperty`.
+
+    ⚠️ **Son flags de la VISTA, no del campo:** `Subject` en `actuaciones` es
+    `mandatory=true` en `quick_creation` y `false` en `mass_update`. Por eso se
+    guardan por vista y nunca se colapsan a un invariante.
+    """
+    headers = payload.get("headers") or [] if isinstance(payload, dict) else []
+    campos: list[dict] = []
+    for h in headers:
+        if not isinstance(h, dict):
+            continue
+        ep = h.get("elementProperty")
+        if not isinstance(ep, dict) or not ep.get("name"):
+            continue
+        campo = {
+            "name": ep["name"],
+            "type": ep.get("type"),
+            "label": ep.get("label"),
+            "required": bool(ep.get("required")),
+            "mandatory": bool(ep.get("mandatory")),
+            "protected": bool(ep.get("protected")),
+        }
+        if ep.get("defaultValue") not in (None, ""):
+            campo["defaultValue"] = ep["defaultValue"]
+        campos.append(campo)
+    return sorted(campos, key=lambda c: c["name"])
+
+
 def parse_relations_config(payload: Any) -> dict:
     """5a: `{parent:[...],children:[...]}` (ordenado; tolera claves ausentes)."""
     if not isinstance(payload, dict):
@@ -1006,13 +1085,32 @@ def discover_element(client: httpx.Client, slug: str) -> dict:
                 probes["enums"] = "failed"
         except CrmAtlasError:
             probes["enums"] = "failed"
+    # C1 — metadatos por vista (`required`/`mandatory`/`protected`/`defaultValue`).
+    # Van en `probes_vistas`, NO en `probes`: una vista ausente no debe marcar el
+    # elemento como degradado (`is_resolved`) ni disparar el circuit breaker.
+    vistas: dict[str, list[dict]] = {}
+    probes_vistas: dict[str, str] = {}
+    for vista in VISTAS_CON_METADATOS:
+        try:
+            r = get_with_retry(client, f"/api/view/{vista}/{slug}")
+            if r.status_code == 200:
+                campos = parse_view_fields(r.json())
+                probes_vistas[vista] = "ok"
+                if campos:
+                    vistas[vista] = campos
+            else:
+                probes_vistas[vista] = "failed"
+        except CrmAtlasError:
+            probes_vistas[vista] = "failed"
     return {
         "slug": slug,
         "fields": [asdict(f) for f in fields],
         "relations": relations,
         "enums": enums,
         "field_types_no_enumerados": field_types_no_enumerados,
+        "vistas": vistas,
         "probes": probes,
+        "probes_vistas": probes_vistas,
     }
 
 
