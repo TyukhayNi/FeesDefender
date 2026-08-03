@@ -25,7 +25,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 7 | [Google MCP F4 (Calendar)](#siguiente-google-mcp-f1-lectura--mergeada--f2-escriturapermisosnavegación--mergeada--f3f4-pendientes) | diferida | disparador | medio |
 | 8 | [Intake email — filtro de exclusión de ruido](#siguiente-intake-email-filtro-exclusión-de-ruido-administrativo-y-cruzado) | parcial (2/4) | disparador: W-02VUDR (fuga cruzada de 7 casos ajenos + cartera de litigios) | medio |
 | 9 | [Vista procesal en `05_Procedimiento`](#siguiente-vista-procesal-vista-procesal-del-expediente-en-05_procedimiento) | piezas 1-2 ✅ (#137, #140); spec v3.1 con 2 revisiones consumidas | pieza 3 **bloqueada** por la fila #1 (OCR ciego); plan de la pieza 4 por reescribir | medio |
-| 10 | [`.doc` → LibreOffice headless](#siguiente-doc-libreoffice-doc-binario-sin-md-ni-ocr-conversión-libreoffice-headless) | pendiente | disparador: W-02MA0R, la demanda del ordinario solo existe en `.doc` sin gemelo PDF | bajo |
+| 10 | [`.doc` → LibreOffice headless](#siguiente-doc-libreoffice-doc-binario-sin-md-ni-ocr-conversión-libreoffice-headless) | pendiente | disparador: W-02MA0R, la demanda del ordinario solo existe en `.doc` sin gemelo PDF. **Sin gate, y el único ítem de la cola donde un documento es hoy ILEGIBLE del todo** (`.doc` → `sin_soporte`: ni MD ni OCR) — ver «Por qué es el siguiente paso que mejora la LECTURA» en su bloque | bajo |
 | 11 | [Cableado del pipeline de correo (`MEJORAS #68`)](#siguiente-cableado-correo-cableado-del-pipeline-de-correo-encadenar-la-atomización-resto-de-mejoras-68) | casillas 1-2 ✅; casilla 3 **decidible, sin gates** (#98 cerrado, PR #155) | solo queda la decisión de Nikolai: `--extraer-adjuntos` a default `True` mueve la superficie de dedup de todo intake futuro | bajo |
 
 | 12 | [La firma no es intercalada: falso positivo que bloquea la Capa B](#siguiente-sandwich-firma-la-firma-no-es-una-respuesta-intercalada) | ✅ **CERRADO** — PR #164 (`aaf7dc1`) | queda su cola: `MEJORAS #109` (el síntoma original sigue sin explicar) y borrar el corpus de prueba | bajo |
@@ -452,6 +452,37 @@ crudo), cómo se registra su procedencia, qué pasa si `soffice` no está instal
 
 **No entra:** los otros dos puntos de `MEJORAS #61` (localizador de página en escaneado, extractor
 de entidades con visión) siguen en backlog, sin disparador.
+
+### Por qué es el siguiente paso que mejora la LECTURA (anotado 2026-08-03)
+
+Escrito al cerrar la pieza A de la fila #1, porque el razonamiento vivía solo en un chat y esta cola
+es su hogar. **La pregunta que lo motiva fue de Nikolai:** ¿cuál es el paso que mejora la lectura de
+los expedientes?
+
+**El contraste que hay que tener delante.** La fila #1 nació como problema de calidad de OCR y lo
+resolvió de verdad: (a)+(b) recuperaron **~200.000 caracteres** de prueba en 7 documentos (cuentas
+anuales, tasación, exposés). Pero de lo que quedaba, **las dos cosas que habrían mejorado la calidad
+se cayeron al medirlas**: **D1** cerró *sin rendimiento* (+0/−6/+288 chars) y **`MEJORAS #111`** quedó
+**refutada** (el reproceso relee, no pierde). Lo construido después —la identidad del segmento, PR
+#193— es **fontanería**: hace seguro reprocesar, que es la *precondición* de cualquier mejora de
+lectura, no la mejora.
+
+**Esta fila es el único sitio de la cola donde un documento es hoy ILEGIBLE del todo.** Verificado en
+`core/sala_maquina.py`: `_EXTS_NATIVO` no incluye `.doc`, así que cae a `sin_soporte` — ni espejo
+Markdown ni OCR, solo el crudo, que ningún LLM abre. Y el disparador tiene nombre: la **demanda del
+ordinario de W-02MA0R**, documento central para su audiencia previa. Esfuerzo bajo y **sin gate**.
+
+**La otra sin gate es `MEJORAS #114`** («no hay contrato de *dame el mejor texto de este documento*, y
+`01_OCR/` no lo lee nadie»): calidad **ya pagada** que se queda en el suelo, porque el OCR produce
+buscables que ningún consumidor aguas abajo lee. No se promueve aquí —le falta disparador en el
+sentido de `CLAUDE.md`— pero es la segunda candidata si el criterio es legibilidad.
+
+**Y un gate que puede estar rancio, que conviene medir antes de creerlo:** la **pieza 3 de la fila #9**
+(vista procesal) se declaró bloqueada «por la fila #1». Lo que la bloqueaba era que `estado: ok`
+pudiera ser mentira en documentos con sello de firma, y eso lo cerraron (a)+(b) en julio. **No se
+afirma que esté desbloqueada** —el texto de esa fila sigue diciendo lo contrario— pero es lo primero
+que hay que comprobar si se busca lectura: detrás está *leer un procedimiento entero sin salir de su
+carpeta*, con el PDF buscable.
 
 ---
 
