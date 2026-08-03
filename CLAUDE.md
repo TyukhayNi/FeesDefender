@@ -197,6 +197,11 @@ Atajo: `/status` ejecuta los 3 comandos y muestra un resumen.
 - Cambios en `core/` → siempre acompañados de tests en `tests/`.
 - Antes de tocar un endpoint del CRM: leer `docs/INTEGRACION_SUDESPACHO.md`
   y consultar HAR si lo hay (`docs/captura/`).
+- **Antes de sondear el CRM en vivo: leer el contrato declarado.** `/api/docs.json` es **público**
+  (es la Fase A del atlas) y `/api/docs` —la UI— dice **más** que el JSON. Un día de sondeo del
+  2026-08-03 salió de no abrirlo. Método completo, catálogo de errores que revelan el contrato y
+  protocolo para descubrir una **escritura sin HAR**: `INTEGRACION_SUDESPACHO.md` **§14.6**.
+  Regla dura de ese método: **verificar por resultado, nunca por status.**
 - Antes de reintentar algo que falló raro: leer `docs/DEAD_ENDS.md`.
 - **Para abrir un expediente nuevo** (alta → intake → sala de máquina → sala de
   lectura → viabilidad → ficha CRM → archivo → cierre): seguir
