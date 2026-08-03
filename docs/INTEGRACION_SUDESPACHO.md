@@ -1676,3 +1676,52 @@ como en el lenguaje coloquial del despacho).
 
 **Implementación:** aún sin promover a `core/sudespacho_relations.py` (ejecutado con `httpx` directo esta
 sesión). Construir cuando haya un segundo caso — mismo criterio que el resto de hallazgos de esta sesión.
+
+---
+
+### 14.6 Método de descubrimiento — cómo se averigua un contrato que el spec no declara — **(propagado de la referencia común §9)**
+
+> **Fuente completa:** `../ElContable/docs/REFERENCIA_SUDESPACHO_API_PERMISOS.md` **§9** (procedimiento
+> íntegro, catálogo entero y protocolo de escritura). Aquí lo que este repo usa a diario; **no se
+> duplica el resto** (un hecho, un hogar). Cristaliza la sesión del 2026-08-03, donde el método resolvió
+> la gramática de `filterGroup` y el cuerpo del `PUT /api/permission/{userId}` **sin capturar el front**.
+
+**El orden: `docs.json` → la UI → medir solo el hueco.** El JSON es la Fase A del atlas; la **UI dice
+más** (renderiza la forma hydra de las respuestas que el JSON deja en `schema: null`), pero no sirve para
+ejecutar (manda la clave en `Authorization` → 401; el header operativo es `x-api-key`). Y **el spec es una
+hipótesis:** hay tres divergencias verificadas (`associated` exige escalar donde declara array;
+`commonValues` se declara `array/string` con `example` de objeto; `properties` declarado `required` que
+funciona sin enviarse). Cuando chocan, manda la implementación.
+
+**Los errores de este CRM son el contrato hablando** — es un PHP que filtra sus warnings en `detail`, con
+`trace[]` dando fichero y línea del parser. Este repo **ya explota una de estas filas**:
+`core/crm_atlas.py::parse_invalid_property_probe` usa el primer mensaje como fallback de Fase B.
+
+| Mensaje | Qué te está diciendo |
+|---|---|
+| `ElementProperty not found : X. The properties are: a,b,c…` | la **lista completa** de propiedades válidas (← el fallback del atlas) |
+| `Undefined array key "<clave>"` | la **clave exacta** que falta en el cuerpo |
+| `foreach() argument must be of type array\|object` | ese valor va **como array** (tipo `Tags`) |
+| `Array to string conversion` | ese valor va **escalar** (`associated`) |
+| `Filter group condition is required` | falta un `[condition]` en algún grupo |
+| **200 con el listado completo** | 🕳️ **los filtros se ignoraron, y no hay error** |
+
+⚠️ La última no da señal ninguna: de ahí la regla dura de **verificar por resultado, nunca por status**.
+
+**Para descubrir una ESCRITURA sin HAR** (protocolo íntegro en §9.3): snapshot fuera del repo · sujeto
+**sacrificable** sin consumidores, dejando para el final el que importa · el cambio más pequeño
+verificable · **formas candidatas de una en una, cada una derivada del error de la anterior** ·
+verificación por `GET` tras cada intento · abortar ante cualquier cambio no pedido. Implementación de
+referencia: `scripts/permisos_crm.py` de El Contable (resolvió su caso en dos iteraciones).
+
+**El HAR sigue siendo inevitable** cuando el error es opaco, cuando el flujo son varias llamadas
+encadenadas con ids intermedios (subida de PDF en 3 pasos, §8.x) o cuando el endpoint no está en el spec
+(los 62 paths huérfanos que el propio atlas lista).
+
+**Dónde NO se sondea a ciegas:** `Cron`, `Patch`, `Data Migration`, `Restore Registers`,
+`RecalculateAllConcepts`, `Taxes (massive creation)`, `MassiveDelivery`, `Exporter/Importer`, y los dos
+borrados en masa (`element_register/bulk-deletion/{element}`, `taxes/bulk/delete/{ids}`). Los **62 paths
+huérfanos** caen justo ahí: lista acordada endpoint por endpoint, o nada.
+
+> ℹ️ **Contexto de permisos (2026-08-03):** `Delete` se retiró de los cuatro `api.key.*`, así que un
+> sondeo accidental ya no puede borrar. `facturas`-Create **sigue ON**. Detalle en la referencia común §3.
