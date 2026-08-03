@@ -1,8 +1,8 @@
 ---
 tipo: handoff
 estado: activo
-creado: 2026-08-02
-origen: sesión de consulta del 2026-08-02 — lectura del histórico del último mes (cierres 16º-55º, 228 commits) y diagnóstico de dónde se va el tiempo
+creado: 2026-08-03
+origen: sesión de consulta del 2026-08-03 — lectura del histórico del último mes (cierres 16º-55º, 228 commits) y diagnóstico de dónde se va el tiempo
 destino: Nikolai, en sesiones propias fuera de Claude Code; y las sesiones de Code que ejecuten las filas de `PLAN.md` que salen de aquí
 ---
 
@@ -18,9 +18,10 @@ comprueba.
 El estado de ciclo de vida de las acciones que salen de aquí vive en **`PLAN.md`**, no en
 este fichero.
 
-## El diagnóstico que lo motiva (medido, 2026-08-02)
+## El diagnóstico que lo motiva (medido el 2026-08-03)
 
-Del 2026-07-05 al 2026-08-02: **228 commits, 40 cierres** (~2,5 sesiones/día).
+Ventana de los datos: del 2026-07-05 al 2026-08-02 —**228 commits, 40 cierres** (~2,5
+sesiones/día)—, medida el 2026-08-03 sobre el último commit de esa ventana (`42d2b39`).
 
 | | |
 |---|---|
@@ -122,7 +123,7 @@ Falla con `'main' is already used by worktree at ...`. **Ésa es la causa exacta
 git show "origin/main:.claude/commands/encargo.md" | Select-String "por si acaso"
 ```
 
-**El matiz que ahorra un susto, y que pasó de verdad el 2026-08-02:** esa misma comprobación
+**El matiz que ahorra un susto, y que pasó de verdad el 2026-08-03:** esa misma comprobación
 lanzada desde Git Bash respondió que **el fichero no existía**. Era falso — Bash convirtió
 `origin/main:.claude/...` en `origin\main;.claude\...`. Si se hubiera creído esa salida, se
 habría reportado que el merge no llegó. **La herramienta de verificación también miente:
@@ -196,9 +197,9 @@ la raíz, nunca desde un worktree que se poda, y verificar la versión *dentro* 
 
 ---
 
-## Cómo se sabrá si sirvió (revisar el 2026-09-02)
+## Cómo se sabrá si sirvió (revisar el 2026-09-03)
 
-| Métrica | 2026-08-02 | Objetivo |
+| Métrica | 2026-08-03 | Objetivo |
 |---|---|---|
 | Sesiones perdidas por trabajo duplicado o mal declarado como hecho | 3-4 al mes | **0** |
 | Veces que se pregunta a Claude «¿esto está mergeado?» en vez de comprobarlo | siempre | **0** |
