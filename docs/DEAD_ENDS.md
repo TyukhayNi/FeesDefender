@@ -48,6 +48,53 @@ Borrar la rama remota aparte (`git push origin --delete <rama>`); la LOCAL se po
 
 ---
 
+## Worktree VIVO devuelto a su rama nominal sin avisar: la rama en la que crees estar no es la tuya
+
+**Regla corta: en un worktree creado por el arnés, «estoy en la rama X» caduca. Antes de
+commitear, `git status -sb`.** Distinto del §36, que trata un worktree **muerto**: aquí el
+worktree funciona, y lo que se mueve bajo los pies es **a qué rama apunta su `HEAD`**.
+
+- **Observado:** en el worktree `.claude/worktrees/estudio-codigo-2d394e`, tras crear a mano
+  `claude/encargo-anclado` y trabajar en ella, una comprobación rutinaria de `git status -sb`
+  devolvió `claude/estudio-codigo-2d394e` — **la rama nominal del worktree, la que coincide con
+  el nombre del directorio**. Ninguna orden mía lo pidió.
+- **El reflog dice que no es aleatorio, y es lo que hace la entrada útil.** El patrón es
+  **desacoplar en el commit actual y reacoplar a la rama nominal**, y ocurrió **dos veces** en
+  una sesión:
+
+  ```
+  13:50:23  checkout: moving from claude/estudio-codigo-2d394e to HEAD
+  13:50:47  checkout: moving from b3ac062… to claude/estudio-codigo-2d394e   ← sin efecto visible
+  14:00:23  checkout: moving from claude/encargo-anclado to HEAD
+  14:03:09  checkout: moving from 4ff5b65… to claude/estudio-codigo-2d394e   ← saca de la rama propia
+  ```
+
+  El primer ciclo pasó inadvertido porque ya estaba en la rama nominal. **Solo se nota si entre
+  medias te has cambiado a una rama tuya.**
+- **Por qué importa más de lo que parece.** La rama nominal a la que devuelve puede estar **ya
+  mergeada y cerrada** (aquí, `claude/estudio-codigo-2d394e` = PR #192, mergeado): se sigue
+  trabajando sobre una rama muerta y 3 commits por detrás de `origin/main`. El daño no es
+  pérdida de datos —los cambios sin commitear sobrevivieron intactos en los dos ciclos,
+  verificado— sino **atribución falsa del estado**: medir «¿está publicado mi trabajo?» por el
+  `HEAD` local lleva a concluir que sigue pendiente. Es la misma trampa del §9 (verificar por
+  contenido, no por lo que diga git de las ramas).
+- **Señal:** `git status -sb` nombra una rama que no elegiste, típicamente `claude/<nombre del
+  directorio del worktree>`; y `git reflog show HEAD` muestra el par
+  `moving from <rama> to HEAD` → `moving from <sha> to <rama nominal>` con minutos de diferencia.
+- **Confirmado:** 2026-08-02 (sesión del 57º cierre), dos ciclos en el reflog.
+- **Lo que NO está aislado, y no se afirma:** el disparador. No se sabe qué provoca el
+  desacople/reacople —arnés, hook, otra sesión— y por tanto **no hay forma conocida de
+  prevenirlo**, solo de detectarlo. Si aparece un tercer caso con contexto distinto, ese
+  contexto es la pista que falta.
+- **Qué hacer:** (1) `git status -sb` **antes de cada `git add`/`commit`**, no al final;
+  (2) si te ha movido, **no** dar por perdido nada: crear la rama desde `origin/main`
+  (`git switch -c <rama> origin/main`) arrastra los cambios sin commitear si los ficheros no
+  difieren entre las dos bases — compruébalo con `git diff --stat HEAD origin/main -- <ficheros>`
+  antes de mover; (3) nunca deducir el estado de publicación del `HEAD` local:
+  `gh pr view <n> --json state,mergeCommit` y verificación por contenido.
+
+---
+
 ## pytest — la línea de resumen (`N passed`) no se captura en Git Bash (Windows)
 
 - **Intentado:** leer el conteo final de pytest (`N passed, M skipped`) con `pytest -q | tail`, `| grep passed`, o PowerShell `Select-String` a través del Bash tool en Windows.
