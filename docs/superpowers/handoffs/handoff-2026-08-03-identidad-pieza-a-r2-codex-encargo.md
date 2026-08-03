@@ -141,6 +141,18 @@ más rentable está fuera de esta lista, dilo.
 
 - **Devuelve `ruta` y `sha256` canónico** —UTF-8, `LF`, un único salto final— **antes de que se
   adjudique**, por un canal separado del fichero.
+- **Y declara tu anclaje: el commit sobre el que trabajaste y el `sha256` de CADA fichero que
+  abriste.** No es burocracia, y no cubre lo que parece. Sirve para un caso y no para otro:
+  - **detecta** que declararas un commit y leyeras otros bytes (árbol sucio, worktree ajeno, copia
+    stale) — riesgo real;
+  - **no detecta** que el anclaje mismo fuese el equivocado: si declaras y lees el commit que no
+    tocaba, todo es consistente y **ningún digest puede verlo**. Ese caso lo cierra este mandato al
+    fijarte el objeto, no tu informe.
+
+  Y es práctica probada, no teoría: en la ronda 1 el revisor comprobó por su cuenta los blobs contra
+  `a7f168c` y contra el tip de la rama, y **fue eso lo que le permitió refutar en un movimiento un
+  diagnóstico ajeno que era falso**. Se te pide en el encargo y no en el contrato del acta a
+  propósito (`MEJORAS #118`): práctica primero, doctrina después.
 - **Veredicto** del vocabulario cerrado, en la primera línea: `SHIP` · `LISTA-CON-CAMBIOS` ·
   `REQUIERE-REVISION` · `NO-SHIP` · `NO-EJECUTABLE` · `SIN-VEREDICTO`.
 - **Secciones obligatorias**, además de la respuesta al §3 y la tabla de hallazgos: `## Verificado
