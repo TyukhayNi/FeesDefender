@@ -40,7 +40,7 @@ directo; el bloque de cierre va a `docs/bitacora/AAAA.md`, **no** a este fichero
 
 | Ítem | Estado |
 |------|--------|
-| Tests | ✅ 668/668 (Anonimizador absorbido: +51 — 2026-05-07; sufijo captador Drive: +2 — 2026-05-11 s4; Numero_Expediente extrajudicial: +10 — 2026-05-11 s6; tests v2 dedicados paso 8: +113 — 2026-05-11 s7; rename informe_viabilidad: +9 — 2026-05-11 s7; verify_expediente_referencia: +15 — 2026-05-11 s8; categoría OTROS + clientes propios: +22 — 2026-05-11 s9; deanonimizar `_mapa_caso.json` 4 niveles: +13 — 2026-05-12 s11; subdivisión ciudades Fase 0: +36 — 2026-05-12 s16; retry rate-limit Drive API: +5 — 2026-05-12 s18; renovación proactiva access_token gdrive_ev: +14 — 2026-05-19 s20; subdivisión ciudades Fase 1 case_locator: +41 — 2026-05-21 s25; subdivisión ciudades Fase 4 script migración: +9 — 2026-05-21 s25; neutralizar_case_id §23: +9 — 2026-06-07 s31; doble OCR pipeline + skip incremental extracción/markdown: +4 — 2026-06-07 s32) |
+| Tests | ✅ **2.640 passed · 77 skipped · 7 xfailed** (2.724 recogidos) · 0 fallos, 0 errores — **medido el 2026-08-02** sobre `main` (`42d2b39`), 174 s. Los **7 `xfail`** son los defectos del frontal de la biblioteca reproducidos a propósito en la Fase 0 de la arquitectura dual; se arreglan en su Fase 2 (`PLAN.md` fila #3). Histórico por sesión: bitácora de cierres. *(Esta celda mantuvo «668/668» y un changelog de incrementos de mayo-junio hasta el 2026-08-02; el detalle de esos incrementos está en `git log`.)* |
 | Plan subdivisión CASOS_ROOT por ciudades | ✅ 2026-05-21 s25 — Fases 0-6 cerradas. Fase 0 (s16): `core/ciudades.py` extraído. Fase 1 (s25): `core/casos/case_locator.py` + refactor de call-sites en `core/case_manager`, `core/config`, `scripts/{audit_referencias_casos,scheduled_sync,sync_sudespacho}`. Fase 2 (s25): campo `ciudad` en `CaseMeta`/`_caso.md` y en `ensure_case`. Fase 3 (s25): validación blanda prefijo↔ciudad en UI Streamlit (alta) + expander «🏙️ Reasignar ciudad» en tab Casos + pestaña admin con histórico `relocations.jsonl` (visible solo para Nikolai). Fase 4 (s25): `scripts/migrate_to_city_structure.py` + migración inicial ejecutada (9 expedientes en 5 ciudades; audit log + snapshot rollback en `_audit/`). Fase 5 (s25): `docs/ARQUITECTURA.md` y `README.md` actualizados. Fase 6 (s25): `scripts/verify_city_layout.py` (0 errores, 0 avisos sobre los 9 expedientes); idempotencia del script de migración confirmada; smoke manual de UI «Reasignar ciudad» confirmado por el usuario el 2026-05-21. Plan cerrado al 100 %. |
 | SaRS1 — H2 split + troceo manual | ✅ 2026-05-12 s12 — split automático generó 2 piezas vs 4 lógicas (cédula+decreto absorbidos por DEMANDA; PDF2 sin marcadores); troceo manual `pypdf` → 4 piezas (`01_CEDULA_EMPLAZAMIENTO_01.pdf` + `02_DECRETO_01.pdf` + `03_DEMANDA_01.pdf` + `01_DOC_ANEXO_01.pdf`); sanity 74/74; `07_AI cowork/_revision_anon_SaRS1.md` con 2 incidencias SPLIT para H5 |
 | SaRS1 — H5b parche cobertura | ✅ 2026-05-12 s17 — script `_h5b_sars1_cobertura_completa.py` cubre 37 hits PII residuales que H5 dejó (+5 entidades nuevas incluyendo categoría `[URL]`/`[URL_2]`; 16 reglas FN ampliadas; 35 sustituciones automáticas + 1 parche puntual); 169 etiquetas totales en `08_Para frontier/` (+68 vs H5); 0 hits PII residuales tras parche; frontmatter del motor neutralizado en copia al frontier |
@@ -100,7 +100,7 @@ directo; el bloque de cierre va a `docs/bitacora/AAAA.md`, **no** a este fichero
 | Tags CRM verificados | ✅ 96 extrajudicial auditados + 10 nuevos mapeados (2026-05-06) |
 | Notas de expediente | ✅ 13 NOTA_* alineadas con Manual 1.1.4 |
 | `session_close.py` | ✅ Simplificado — solo pytest, sin interactividad |
-| `docs/DEAD_ENDS.md` | ✅ 8 callejones documentados (+ SPA login NO crea PHPSESSID, 2026-05-04) |
+| `docs/DEAD_ENDS.md` | ✅ **31 secciones / 57 entradas** (medido 2026-08-02; decía «8 callejones» desde mayo). Consultar **antes** de reintentar algo que falló raro |
 | `docs/INTEGRACION_SUDESPACHO.md` | ✅ Actualizado 2026-05-06: endpoints REST creación confirmados + mapping propiedades CamelCase vs lowercase + dead ends saveselect |
 | `docs/ARQUITECTURA.md` | ✅ Mapa de dependencias + convención commits |
 | Protocolo de sesión | ✅ 4 momentos — Claude presenta → aprueba → ejecuta → PS |
@@ -236,14 +236,19 @@ Las subcarpetas canónicas de cada expediente están en `core/config.CASO_SUBDIR
 
 ---
 
-## Tests — última ejecución
+## Tests → fila «Tests» de *Estado general*
 
+**Hogar único de la cifra en este fichero:** la fila **Tests** de la tabla de *Estado
+general*, con su fecha de medición. El histórico por sesión vive en la bitácora de
+cierres (`docs/bitacora/AAAA.md`); el detalle fino, en `git log`.
+
+```powershell
+python -m pytest -q --tb=no
 ```
-pytest -q   →   verde / exit 0 (2026-05-30, sesión 28)
-```
-Sesión 28: `+5` tests en `test_local_organizer.py` (`estado_precondiciones`) → 16/16 en el módulo.
-Módulos cubiertos: `case_manager`, `inventory`, `utils`,
-`sync_sudespacho` (+26 nuevos: REST gdocu), `sync_sudespacho_legacy` (+8 nuevos: JWT refresh),
-`sudespacho_relations` (+8 REST colaboradores, +12 REST relation_element, +2 retry 401),
-`sudespacho_create` (+31 nuevos: REST extrajudicial + judicial, tags, payloads, REST-first fallback, +3 retry 401),
-`intake_drive` (+5 nuevos: `get_drive_folder_info` token OK/sin token/API 401/rclone falla/nombre vacío).
+
+> **Por qué este bloque ya no lleva cifra** (2026-08-02): era un **segundo hogar** del
+> mismo hecho — decía «verde / exit 0 (2026-05-30, sesión 28)» mientras la tabla de
+> arriba decía «668/668» y la suite real iba por 2.724. Dos sitios para el mismo dato
+> no son redundancia útil: son un generador de drift. Fundamento:
+> `docs/GOBERNANZA_FUENTES_VERDAD.md`. El inventario de módulos cubiertos que vivía
+> aquí (mayo de 2026) quedó obsoleto y está en `git log`.

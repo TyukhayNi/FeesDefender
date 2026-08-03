@@ -32,6 +32,28 @@ El corte lo propuso la 2ª revisión (N-M-2) y lo decidió Nikolai: son dos supe
 fallo y despliegues distintos. Cambiar el motor es permanente y reversible por git; migrar datos
 reales bajo protocolo de préstamo, no.
 
+### 0.1 Relación con el motor documental (`MEJORAS #48`) — leer antes de construir F1
+
+**Anotado 2026-08-02.** Este spec nace de `MEJORAS #90` (fila #1 de `PLAN.md`, punto (f)), no del
+plan del motor documental. Pero **las dos colas están diseñando la identidad del documento a la vez
+y hasta hoy no se citaban**, que es justo el tipo de deriva que gobierna
+`docs/GOBERNANZA_FUENTES_VERDAD.md`.
+
+Lo que hay que saber al cruzarlas:
+
+| | este spec (pieza A, ✅ construida) | `PLAN_MOTOR_DOCUMENTAL.md` §G.3 (F1, sin empezar) |
+|---|---|---|
+| identificador | `doc_id` = `d` + ≥2 dígitos (`d01`, `d100`) | `doc-NNN` (asa legible) + `sha8` (interno) |
+| ámbito | **bundle** — vive en el manifiesto del bundle | **caso** — vive en el registro único (§H) |
+| quién lo acuña | `construir_manifiesto` / `siguiente_doc_id`, con `next_doc_id` high-water y `retirados` (tombstones) | el registro de caso |
+| lo edita el letrado | **sí** — de ahí `validar_doc_id` antes de cualquier I/O | pendiente de decidir |
+
+**El riesgo concreto:** `doc-NNN` y `dNN` se parecen y no son lo mismo. Quien construya F1 debe
+decidir explícitamente si el `doc-NNN` de caso **envuelve** al `doc_id` de bundle (probable:
+`doc-014` → bundle, y `d03` identifica el segmento dentro de él) o si lo sustituye — en cuyo caso
+hay que migrar el ledger, los tombstones y los nombres de fichero ya acuñados, no reescribir el
+esquema y ya. No duplicar un segundo espacio de nombres sin resolver esto.
+
 ## 1. El defecto
 
 `_slug_seg` (`core/split_documental.py:280`) nombra el segmento con el sha del **PDF ya recortado**,

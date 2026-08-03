@@ -270,6 +270,12 @@ ser cambiar una bandera.
         persistente** con ledger monotónico, **no** el ordinal `seg` (que se rompe con `--force`,
         hallazgo B0-2 de la 1ª pasada). **Partida en dos piezas** (decisión de Nikolai, 2026-08-01):
 
+        ⚠️ **Cruce con el motor documental (`MEJORAS #48`), anotado 2026-08-02.** Este `doc_id` es de
+        ámbito **bundle**; el `doc-NNN` del id dual de **F1** es de ámbito **caso**, y hasta hoy los
+        dos documentos no se citaban. Se parecen y no son lo mismo: F1 tendrá que envolver este
+        ledger o migrarlo, nunca abrir un segundo espacio de nombres en paralelo. Ficha del cruce en
+        el **§0.1** del spec y en el aviso de **§G.3** de `PLAN_MOTOR_DOCUMENTAL.md`.
+
         - **Pieza A — motor y esquema. ✅ CONSTRUIDA** (2026-08-02, rama
           `claude/plan-next-step-a429e7`, pendiente de PR). `doc_id` con formato canónico validado
           antes de tocar disco, `next_doc_id` + tombstones, reconciliación del manifiesto en
@@ -1105,7 +1111,7 @@ script manual · OCRmyPDF en anon), hueco de escaneados >30pp que salen vacíos,
 
 **Orden de ejecución (fases, resecuenciado §L+§M).**
 - [ ] **F(-1) — fundaciones sin riesgo:** golden fixture de W-02VND1 (M1) + auditoría "antes" de documentos ciegos (M6).
-- [ ] **F1 — registro ÚNICO de caso** (elevar+extender `indice_documental.yaml` a ámbito caso, esquema estilo Vassal `index.yaml`) + **id dual** (`sha8`+`doc-NNN`) + **fachada fina** `procesar_expediente()` (M4) + vistas humanas derivadas. Piedra angular.
+- [ ] **F1 — registro ÚNICO de caso** (elevar+extender `indice_documental.yaml` a ámbito caso, esquema estilo Vassal `index.yaml`) + **id dual** (`sha8`+`doc-NNN`) + **fachada fina** `procesar_expediente()` (M4) + vistas humanas derivadas. Piedra angular. ⚠️ **Antes de empezar, leer el §0.1 de `docs/superpowers/specs/2026-08-01-identidad-segmento-bundle-design.md` y el aviso de §G.3 del doc**: la pieza A de `MEJORAS #90` (fila #1) ya construyó un `doc_id` de ámbito **bundle** (`d01`, con ledger y tombstones) que F1 tiene que envolver o migrar — no duplicar.
 - [ ] **F0 — layout + botón reorganizar:** renombrar `Sala lectura` → `01_Sala de lectura`, crear `02_Sala de máquina/`; **botón `reorganizar_caso`** (`plan`/`apply`, `--todos`, journal reversible estilo `migrate_05crm_buckets`); sello **`layout_version`**; **cablear `--force`**; alinear umbrales, docstring/etiqueta, extensiones + HEIC. Ver §J.
 - [ ] **F3 — motor OCR + reocr + espejos:** **OCRmyPDF** → PDF buscable (fijado). **Extractor→MD = decisión aplazada tras la junta; bake-off MinerU vs Docling** sobre fixture + casos duros (escritura/catalán/ruso/tabla/manuscrito), gate hardware(CPU/OOM)/catalán/licencia — MinerU favorito (local, CPU, determinista, tablas+manuscrito, sin PII; si cumple, elimina Claude visión). Persistir en `02_Sala de máquina/{01_OCR,02_Documentos,03_MD}` con espejo de `00_Input/`; dejar de borrar el PDF del OCR en anon. **Validado antes con walking skeleton (M3).** Ver §F/§G.
 - [ ] **F4 — conector MCP + empaquetado + botón reformar plugin** (aislamiento por subproceso, versión/modelos pinneados, sin fuga de datos, preservar `core/anon`) + **preflight (M8)** + **doctor/manifiesto (M9)**. **Botón `rebuild_plugin`** mecánico + señalización semántica (handoff `motor_mejora`) + hook de drift (`session-start-hook`). Ver §K.
