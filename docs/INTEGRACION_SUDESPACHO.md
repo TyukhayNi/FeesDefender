@@ -1451,7 +1451,7 @@ sudespacho expone casi todo como "elementos" con un patrón uniforme. FeesDefend
     (20.564 filas en `actuaciones`, idéntico a no filtrar). No hay error ni warning: parece que filtra
     y no filtra. En El Contable eso habría hecho que la lectura del periodo de facturación leyera la
     tabla entera de actuaciones.
-  - **Codificación del valor: depende del operador, y no hay una que valga para todos.**
+  - **Codificación del valor: depende del operador *y* de la propiedad; no hay una que valga para todos.**
     - `in` · `not-in` · `between` · `is-empty` · `is-not-empty` → **indexada** `[value][0]`
       (y `[value][1]` en `between`). Es el defecto seguro porque `between` **necesita** los dos
       extremos indexados. Omitir el valor en `is-empty`/`is-not-empty` da 500 («Undefined array
@@ -1459,10 +1459,27 @@ sudespacho expone casi todo como "elementos" con un patrón uniforme. FeesDefend
       > ⚠️ **Matiz, verificado el 2026-08-03 en una segunda pasada:** el escalar **también funciona**
       > en `equal`, `like`, `in`, `not-in` e `is-empty`, incluso sobre propiedades de relación
       > (`right.conceptos_honorario.facturado not-in S` escalar → **200**, mismo total que indexado).
-      > El 500 «foreach() argument must be of type array|object» que se anotó antes para el escalar
-      > sobre relación **no se reproduce** con ese filtro; queda como pendiente de acotar en qué
-      > combinación aparece. No cambia la recomendación —indexada por defecto—, pero **no es cierto
-      > que el escalar esté prohibido** fuera de `between`.
+      > No es cierto que el escalar esté prohibido fuera de `between`. No cambia la recomendación:
+      > indexada por defecto.
+    - **🕳️ Segunda excepción, y es de otro eje: las propiedades-COLECCIÓN exigen array con
+      CUALQUIER operador.** Es lo que acota el «pendiente» del matiz anterior: el 500
+      «foreach() argument must be of type array|object» **no** depende del operador ni de que la
+      propiedad sea de relación, sino de que la propiedad sea **una lista**. Verificado el 2026-08-03
+      sobre `actuaciones`, en las dos raíces (plana y anidada, mismo resultado):
+
+      | Caso | `[value]` escalar | `[value][0]` |
+      |---|---|---|
+      | `left.clientes_propios.tags in 325` | **500** `foreach()` | 200 — 15.515 |
+      | `left.clientes_propios.tags not-in 325` | **500** | 200 — 3.418 |
+      | `left.clientes_propios.tags equal 325` | **500** | 200 — 15.515 |
+      | `right.conceptos_honorario.facturado not-in S` | 200 — 17 | 200 — 17 |
+      | `left.extrajudiciales.id is-not-empty 1` | 200 — 7.015 | 200 — 7.015 |
+      | `left.clientes_propios.id in 2` | 200 — 15.468 | 200 — 15.468 |
+
+      `tags` es una lista y la API hace `foreach` sobre el valor; `facturado`, `id` y
+      `Numero_Expediente` son campos escalares del elemento relacionado y aceptan las dos formas.
+      **Para este repo:** cualquier filtro sobre un `…tags` (o cualquier propiedad multivalor) va
+      indexado; los `associated` por `…id` siguen escalares, como están.
     - **`associated` → al revés: exige el valor ESCALAR** `[value]=<id>`, sin índice. Con `[value][0]`
       responde 500 («Warning: Array to string conversion»). Verificado en vivo el 2026-08-03 sobre
       `actuaciones`: `left.expedientes_judiciales.id associated 588` → escalar **200** (5 filas),
