@@ -81,7 +81,7 @@ worktree funciona, y lo que se mueve bajo los pies es **a qué rama apunta su `H
 - **Señal:** `git status -sb` nombra una rama que no elegiste, típicamente `claude/<nombre del
   directorio del worktree>`; y `git reflog show HEAD` muestra el par
   `moving from <rama> to HEAD` → `moving from <sha> to <rama nominal>` con minutos de diferencia.
-- **Confirmado:** 2026-08-02 (sesión del 57º cierre), dos ciclos en el reflog.
+- **Confirmado:** 2026-08-03 (sesión del 57º cierre), dos ciclos en el reflog.
 - **Lo que NO está aislado, y no se afirma:** el disparador. No se sabe qué provoca el
   desacople/reacople —arnés, hook, otra sesión— y por tanto **no hay forma conocida de
   prevenirlo**, solo de detectarlo. Si aparece un tercer caso con contexto distinto, ese
@@ -120,7 +120,7 @@ aquí es especialmente caro: dice «tu cambio no llegó a `main`» cuando sí ll
   `| head` devuelve **0**, porque `$?` es el de `head`. Es el modo de engaño de la regla de
   `$LASTEXITCODE` de `CLAUDE.md`, aquí en Bash — **2ª recurrencia**, tras el `git worktree remove`
   del §36 / PR #178.
-- **Confirmado:** 2026-08-02, verificando el merge del PR #194; reproducido en los dos sentidos.
+- **Confirmado:** 2026-08-03, verificando el merge del PR #194; reproducido en los dos sentidos.
 - **Solución:** hacer la comprobación en **PowerShell**
   (`git show "origin/main:<ruta>" | Select-String "<frase>"`), que además es la regla del proyecto
   para rutas de Windows. Si tiene que ser Bash: **`MSYS_NO_PATHCONV=1 git show …`** — verificado,

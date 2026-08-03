@@ -32,9 +32,9 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 13 | [Presupuesto explícito de proceso](#siguiente-presupuesto-proceso-cuánta-gobernanza-se-compra) | pendiente — **decisión de Nikolai**, no hay nada que construir | sin gates. Disparador: el mes 2026-07 cerró con **9,4 líneas de `docs/` por línea de `core/`** y cuatro cierres seguidos sin código de producción | bajo (5 min) |
 | 14 | [Desplegar en Cowork las skills ya construidas](#siguiente-reimport-skills-lo-construido-que-no-ha-llegado-al-equipo) | pendiente — **acción manual de Nikolai**; ningún test la cubre | sin gates. Disparador: `organizar-sala-lectura` va por **v1.14 en el repo** y Paola/Ana/Sergio ejecutan la **v1.12** | bajo (una tarde) |
 
-> **Filas 13 y 14 añadidas el 2026-08-02 al final de la cola a propósito: no reordeno prioridades
+> **Filas 13 y 14 añadidas el 2026-08-03 al final de la cola a propósito: no reordeno prioridades
 > ajenas.** Las dos son baratas y una degrada a terceros hoy — dónde encajan de verdad lo decide
-> Nikolai. Origen: `docs/superpowers/handoffs/handoff-2026-08-02-formacion-git-nikolai.md`.
+> Nikolai. Origen: `docs/superpowers/handoffs/handoff-2026-08-03-formacion-git-nikolai.md`.
 
 > Detalle de cada ítem en su bloque `[SIGUIENTE-*]` más abajo. Backlog sin
 > promover: `docs/MEJORAS_FUTURAS.md`. Ledger de cerrados: `## Cerrados` (final).
@@ -45,7 +45,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 
 *Fila #13. No hay nada que construir: es un número que fija Nikolai y que va a `CLAUDE.md`.*
 
-**El disparador, medido el 2026-08-02** sobre el 2026-07-05 → 2026-08-02: **228 commits, de los
+**El disparador, medido el 2026-08-03** sobre el 2026-07-05 → 2026-08-02: **228 commits, de los
 que 57 (25 %) tocan `core/`/`scripts/`/`streamlit_app.py`** y 150 (66 %) son solo docs/config.
 Líneas añadidas: **`docs/` +63.667 frente a `core/` +6.741 — 9,4 a 1**. Los cuatro últimos
 cierres (52º-55º) no produjeron código de producción; el PR #189, uno solo, mete 2.303 líneas de
@@ -79,7 +79,7 @@ tiene que venir de fuera.
 —Paola, Ana, Sergio— sigue ejecutando la **v1.12**. Construido ≠ desplegado, y el único tramo que
 falta es manual.
 
-**Censo de re-imports pendientes en este mismo fichero** (2026-08-02), por bloque y no por
+**Censo de re-imports pendientes en este mismo fichero** (2026-08-03), por bloque y no por
 número de línea, que aquí se desplaza solo: `[SIGUIENTE-SALA-HILOS]` (v1.14),
 `[SIGUIENTE-PRECLASIFICACION-SALA-LECTURA]` (v1.11), `[SIGUIENTE-SALA-UNICA-PLANA]` (v1.3/v1.1),
 `[SIGUIENTE-INPUT-LOTES]` (Tarea 15) y `[SIGUIENTE-MCP-DRIVE-DISCO-PASOS-5-7]` (paso 5, cuatro
