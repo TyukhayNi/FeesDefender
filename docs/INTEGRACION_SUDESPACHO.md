@@ -1451,7 +1451,7 @@ sudespacho expone casi todo como "elementos" con un patrón uniforme. FeesDefend
     (20.564 filas en `actuaciones`, idéntico a no filtrar). No hay error ni warning: parece que filtra
     y no filtra. En El Contable eso habría hecho que la lectura del periodo de facturación leyera la
     tabla entera de actuaciones.
-  - **Codificación del valor: depende del operador, y no hay una que valga para todos.**
+  - **Codificación del valor: depende del operador *y* de la propiedad; no hay una que valga para todos.**
     - `in` · `not-in` · `between` · `is-empty` · `is-not-empty` → **indexada** `[value][0]`
       (y `[value][1]` en `between`). Es el defecto seguro porque `between` **necesita** los dos
       extremos indexados. Omitir el valor en `is-empty`/`is-not-empty` da 500 («Undefined array
@@ -1459,10 +1459,46 @@ sudespacho expone casi todo como "elementos" con un patrón uniforme. FeesDefend
       > ⚠️ **Matiz, verificado el 2026-08-03 en una segunda pasada:** el escalar **también funciona**
       > en `equal`, `like`, `in`, `not-in` e `is-empty`, incluso sobre propiedades de relación
       > (`right.conceptos_honorario.facturado not-in S` escalar → **200**, mismo total que indexado).
-      > El 500 «foreach() argument must be of type array|object» que se anotó antes para el escalar
-      > sobre relación **no se reproduce** con ese filtro; queda como pendiente de acotar en qué
-      > combinación aparece. No cambia la recomendación —indexada por defecto—, pero **no es cierto
-      > que el escalar esté prohibido** fuera de `between`.
+      > No es cierto que el escalar esté prohibido fuera de `between`. No cambia la recomendación:
+      > indexada por defecto.
+    - **🕳️ Segunda excepción, y es de otro eje: las propiedades de tipo `Tags` exigen array con
+      CUALQUIER operador.** Es lo que acota el «pendiente» del matiz anterior: el 500
+      «foreach() argument must be of type array|object» **no** depende del operador ni de que la
+      propiedad sea de relación, sino del **tipo de la propiedad** — y el tipo ya lo tenemos escrito
+      en `CRM_SUDESPACHO_ATLAS.md` (Fase B), donde `tags` figura como tipo propio **`Tags`**.
+      Verificado el 2026-08-03 sobre `actuaciones`, en las dos raíces (plana y anidada, mismo resultado):
+
+      | Caso | `[value]` escalar | `[value][0]` |
+      |---|---|---|
+      | `left.clientes_propios.tags in 325` | **500** `foreach()` | 200 — 15.515 |
+      | `left.clientes_propios.tags not-in 325` | **500** | 200 — 3.418 |
+      | `left.clientes_propios.tags equal 325` | **500** | 200 — 15.515 |
+      | `right.conceptos_honorario.facturado not-in S` | 200 — 17 | 200 — 17 |
+      | `left.extrajudiciales.id is-not-empty 1` | 200 — 7.015 | 200 — 7.015 |
+      | `left.clientes_propios.id in 2` | 200 — 15.468 | 200 — 15.468 |
+
+      `facturado`, `id` y `Numero_Expediente` son campos escalares del elemento relacionado y aceptan
+      las dos formas, así que tampoco es «de relación vs plana».
+
+      **El atlas de este repo permite predecirlo sin probar filtro a filtro.** Recorriendo los tipos de
+      `actuaciones` que lista la Fase B, con `in`, escalar vs indexado — **solo `Tags` exige el array**:
+
+      | propiedad | tipo (atlas) | escalar | indexado |
+      |---|---|---|---|
+      | `tags` | **`Tags`** | **500 `foreach()`** | 200 |
+      | `profesional_asignado` | `ListaUsuarios` | 200 — 2.348 | 200 — 2.348 |
+      | `id_carpeta` | `Carpetable` | 200 — 7 | 200 — 7 |
+      | `tipo_actuacion` | `Select` | 200 — 1 | 200 — 1 |
+      | `Estado` | `Select`/enum | 200 — 18.536 | 200 — 18.536 |
+      | `total` | `Moneda` | 200 — 13.343 | 200 — 13.343 |
+      | `facturar` | `CheckBox` | 200 — 4.307 | 200 — 4.307 |
+      | `Subject` | `TextArea` | 200 | 200 |
+      | `duracion` | `Cronometro` | 200 | 200 |
+
+      ⚠️ **No generalizar a «propiedades multivalor»:** `ListaUsuarios` también es una lista y **sí**
+      acepta el escalar. Lo verificado es el tipo `Tags`.
+      **Para este repo:** un filtro sobre cualquier propiedad de tipo `Tags` va indexado; los
+      `associated` por `…id` siguen escalares, como están. Hoy no hay ningún filtro por `…tags`.
     - **`associated` → al revés: exige el valor ESCALAR** `[value]=<id>`, sin índice. Con `[value][0]`
       responde 500 («Warning: Array to string conversion»). Verificado en vivo el 2026-08-03 sobre
       `actuaciones`: `left.expedientes_judiciales.id associated 588` → escalar **200** (5 filas),
