@@ -1008,3 +1008,90 @@ def test_el_digest_cuenta_los_cuerpos_para_ver_su_deriva():
     linea = [x for x in dig.splitlines() if x.startswith("- cuerpos:")]
     assert linea, dig
     assert "2 con properties" in linea[0] or "con properties" in linea[0]
+
+
+# --- C5-bis: readOnly, ejemplos y tipos compuestos --------------------------
+# El render de `/api/docs` marca `readOnly: true` en propiedades como
+# `Invoice.Concepts.honorarium`. Son de SALIDA: enviarlas es un error. La primera
+# pasada las listaba mezcladas con las enviables, o sea invitaba a mandarlas.
+# En el tenant: 737 propiedades `readOnly`, 33 `writeOnly`, 137 con `example`,
+# 349 `nullable`, 52 con `format`, 6 con `enum`, y 160 `oneOf` + 44 `anyOf` que
+# quedaban sin tipo.
+
+_SPEC_RICO = {
+    "openapi": "3.0.0",
+    "info": {},
+    "security": [{"apiKey": []}],
+    "components": {
+        "securitySchemes": {},
+        "schemas": {
+            "ConceptInput": {"type": "object", "properties": {"id": {"type": "integer"}}},
+            "Invoice.Concepts": {
+                "type": "object",
+                "required": ["concepts"],
+                "properties": {
+                    "concepts": {"type": "array", "items": {"$ref": "#/components/schemas/ConceptInput"}},
+                    "honorarium": {"readOnly": True, "type": "boolean"},
+                    "fecha_inicio": {"example": "2024-12-25", "type": "string", "format": "date-time"},
+                    "estado": {"type": "string", "enum": ["NC", "C"], "nullable": True},
+                    "clave": {"writeOnly": True, "type": "string"},
+                    "mixto": {"oneOf": [{"type": "string"}, {"type": "integer"}]},
+                },
+            },
+        },
+    },
+    "paths": {
+        "/api/invoices": {
+            "post": {
+                "operationId": "post_invoices",
+                "tags": ["Invoice"],
+                "summary": "Creates an Invoice.",
+                "requestBody": {
+                    "content": {
+                        "application/json": {"schema": {"$ref": "#/components/schemas/Invoice.Concepts"}}
+                    }
+                },
+            }
+        }
+    },
+}
+
+
+def _esquema_rico() -> dict:
+    from core.crm_atlas import build_atlas_phase_a
+
+    return build_atlas_phase_a(_SPEC_RICO, tenant="tnm")["schemas_peticion"]["Invoice.Concepts"]
+
+
+def test_los_cuerpos_separan_las_propiedades_de_solo_lectura():
+    e = _esquema_rico()
+    assert e["solo_lectura"] == ["honorarium"]
+    assert "honorarium" not in e["propiedades"]
+    assert e["solo_escritura"] == ["clave"]
+
+
+def test_los_cuerpos_resuelven_arrays_de_ref_y_tipos_compuestos():
+    props = _esquema_rico()["propiedades"]
+    assert props["concepts"] == "array[ConceptInput]"
+    assert props["mixto"] == "string|integer"
+
+
+def test_los_cuerpos_recogen_format_example_enum_y_nullable():
+    detalles = _esquema_rico()["detalles"]
+    assert detalles["fecha_inicio"]["format"] == "date-time"
+    assert detalles["fecha_inicio"]["example"] == "2024-12-25"
+    assert detalles["estado"]["enum"] == ["NC", "C"]
+    assert detalles["estado"]["nullable"] is True
+    assert "concepts" not in detalles  # sin metadatos → no ensucia
+
+
+def test_el_render_avisa_de_no_enviar_las_de_solo_lectura():
+    from core.crm_atlas import build_atlas_phase_a, render_markdown
+
+    md = render_markdown(build_atlas_phase_a(_SPEC_RICO, tenant="tnm"))
+    seccion = md.split("## Cuerpos de escritura declarados")[1]
+    assert "honorarium" in seccion
+    assert "no enviar" in seccion.lower()
+    # el ejemplo y el enum salen, que es lo que ahorra la prueba y error
+    assert "2024-12-25" in seccion
+    assert "NC" in seccion

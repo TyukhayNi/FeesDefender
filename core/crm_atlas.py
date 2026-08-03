@@ -354,8 +354,11 @@ def build_atlas_phase_a(
     }
 
 
+_DETALLES_PROPIEDAD = ("format", "example", "enum", "nullable", "default", "description")
+
+
 def _tipo_de_propiedad(schema: Any) -> str | None:
-    """Tipo legible de una propiedad de schema: `$ref` → nombre; resto → `_param_type`."""
+    """Tipo legible de una propiedad: `$ref`, `array[Ref]`, `oneOf/anyOf` o `_param_type`."""
     if not isinstance(schema, dict):
         return None
     ref = schema.get("$ref")
@@ -364,7 +367,20 @@ def _tipo_de_propiedad(schema: Any) -> str | None:
     items = schema.get("items")
     if schema.get("type") == "array" and isinstance(items, dict) and items.get("$ref"):
         return f"array[{items['$ref'].rsplit('/', 1)[-1]}]"
+    for clave in ("oneOf", "anyOf"):
+        variantes = schema.get(clave)
+        if isinstance(variantes, list) and variantes:
+            tipos = [t for t in (_tipo_de_propiedad(v) for v in variantes) if t]
+            if tipos:
+                return "|".join(dict.fromkeys(tipos))
     return _param_type(schema)
+
+
+def _detalles_de_propiedad(schema: Any) -> dict[str, Any]:
+    """Metadatos que ahorran prueba y error: `format`, `example`, `enum`, `nullable`…"""
+    if not isinstance(schema, dict):
+        return {}
+    return {k: schema[k] for k in _DETALLES_PROPIEDAD if k in schema and schema[k] != ""}
 
 
 def resolver_schemas_peticion(spec: dict, endpoints: list[Endpoint]) -> dict[str, dict]:
@@ -377,7 +393,13 @@ def resolver_schemas_peticion(spec: dict, endpoints: list[Endpoint]) -> dict[str
     `stub` en vez de ocultarlas (un stub es información: el contrato no está
     declarado y hay que capturarlo del front).
 
-    Devuelve `{nombre: {propiedades, obligatorias, stub, operaciones}}`, ordenado.
+    **`readOnly` se separa** (737 propiedades del tenant lo llevan): son de SALIDA y
+    enviarlas es un error, así que no pueden aparecer mezcladas con las enviables —
+    listarlas juntas invita a mandarlas. Ídem `writeOnly` (33), al revés.
+
+    Devuelve `{nombre: {propiedades, solo_lectura, solo_escritura, obligatorias,
+    detalles, stub, operaciones}}`, ordenado. `propiedades` son **solo las
+    enviables**.
     """
     schemas = (spec.get("components") or {}).get("schemas") or {}
     ops_por_schema: dict[str, set[str]] = {}
@@ -387,17 +409,47 @@ def resolver_schemas_peticion(spec: dict, endpoints: list[Endpoint]) -> dict[str
     salida: dict[str, dict] = {}
     for nombre in sorted(ops_por_schema):
         sch = schemas.get(nombre) or {}
-        props = sch.get("properties") or {}
-        propiedades = {
-            n: _tipo_de_propiedad(d) for n, d in props.items() if isinstance(n, str)
+        props = {n: d for n, d in (sch.get("properties") or {}).items() if isinstance(n, str)}
+        solo_lectura = sorted(
+            n for n, d in props.items() if isinstance(d, dict) and d.get("readOnly")
+        )
+        solo_escritura = sorted(
+            n for n, d in props.items() if isinstance(d, dict) and d.get("writeOnly")
+        )
+        enviables = {
+            n: _tipo_de_propiedad(d) for n, d in props.items() if n not in solo_lectura
+        }
+        detalles = {
+            n: det for n, d in props.items() if (det := _detalles_de_propiedad(d))
         }
         salida[nombre] = {
-            "propiedades": propiedades,
+            "propiedades": enviables,
+            "solo_lectura": solo_lectura,
+            "solo_escritura": solo_escritura,
             "obligatorias": sorted(sch.get("required") or []),
-            "stub": not propiedades,
+            "detalles": detalles,
+            "stub": not props,
             "operaciones": sorted(ops_por_schema[nombre]),
         }
     return salida
+
+
+def _sufijo_propiedad(tipo: str | None, detalles: dict | None, solo_escritura: bool) -> str:
+    """`(string, date-time, ej. 2024-12-25)` — lo que evita descubrirlo por 500s."""
+    partes: list[str] = []
+    if tipo:
+        partes.append(_md_escape(tipo) or "")
+    for clave, plantilla in (("format", "{}"), ("enum", "enum: {}"), ("example", "ej. {}")):
+        valor = (detalles or {}).get(clave)
+        if valor is None:
+            continue
+        texto = ", ".join(str(v) for v in valor) if isinstance(valor, list) else str(valor)
+        partes.append(plantilla.format(_md_escape(texto)))
+    if (detalles or {}).get("nullable"):
+        partes.append("nullable")
+    if solo_escritura:
+        partes.append("solo escritura")
+    return f" ({'; '.join(p for p in partes if p)})" if partes else ""
 
 
 def _render_cuerpos_escritura(atlas: dict) -> list[str]:
@@ -417,17 +469,23 @@ def _render_cuerpos_escritura(atlas: dict) -> list[str]:
     )
     lines.append("")
     if con_props:
-        lines.append("| Schema | Operaciones | Propiedades declaradas |")
-        lines.append("|---|---|---|")
+        lines.append(
+            "⚠️ Las **`readOnly`** van en su propia columna: son de SALIDA y **no se envían**."
+        )
+        lines.append("")
+        lines.append("| Schema | Operaciones | Propiedades a enviar | Solo lectura (no enviar) |")
+        lines.append("|---|---|---|---|")
         for nombre in sorted(con_props):
             e = con_props[nombre]
             obl = set(e["obligatorias"])
             props = ", ".join(
-                (f"**`{n}`**" if n in obl else f"`{n}`") + (f" ({t})" if t else "")
+                (f"**`{_md_escape(n)}`**" if n in obl else f"`{_md_escape(n)}`")
+                + _sufijo_propiedad(t, e["detalles"].get(n), n in e["solo_escritura"])
                 for n, t in sorted(e["propiedades"].items())
             )
+            solo = ", ".join(f"`{_md_escape(n)}`" for n in e["solo_lectura"]) or "—"
             ops = "<br>".join(f"`{_md_escape(o)}`" for o in e["operaciones"])
-            lines.append(f"| `{_md_escape(nombre)}` | {ops} | {props} |")
+            lines.append(f"| `{_md_escape(nombre)}` | {ops} | {props} | {solo} |")
         lines.append("")
     if stubs:
         lines.append(
