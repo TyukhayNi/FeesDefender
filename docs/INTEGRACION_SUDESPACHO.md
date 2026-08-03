@@ -2,8 +2,10 @@
 
 > Conocimiento empírico acumulado sobre la API de sudespacho.net.  
 > Todo lo aquí documentado ha sido verificado contra el tenant `tnm.sudespacho.net`  
-> (commons-pro). Última actualización: 2026-07-12 (§14: enums por API, gramática `filterGroup`, 3ª
-> variante `tipo_operaciones_iva`).
+> (commons-pro). Última actualización: **2026-08-03** (§14.2: gramática `filterGroup` corregida —la
+> documentada aquí **no filtraba**—, codificación del valor por operador, filtros sobre relación =
+> inner join, forma de respuesta dependiente de `Accept`; el código de este repo **no está afectado**).
+> Anterior: 2026-07-12 (§14: enums por API, gramática `filterGroup`, 3ª variante `tipo_operaciones_iva`).
 
 ---
 
@@ -416,13 +418,24 @@ El cliente lo aplana a un dict simple para uso interno. Ver `get_document_metada
 
 ```
 GET /api/element_registries/gdocu
-    ?filterGroup[filterGroups][0][filters][0][operator]=associated
-    &filterGroup[filterGroups][0][filters][0][value]={expediente_id}
+    ?filterGroup[condition]=AND                                  # ← imprescindible (ver nota)
+    &filterGroup[filterGroups][0][condition]=AND                 # ← imprescindible (ver nota)
+    &filterGroup[filterGroups][0][filters][0][operator]=associated
+    &filterGroup[filterGroups][0][filters][0][value]={expediente_id}    # escalar, sin [0]
     &filterGroup[filterGroups][0][filters][0][property]=left.expedientes_judiciales.id
     &properties[2]=nombrefinal&properties[4]=mime&properties[9]=tamano&...
     &return_totals=true
     → JSON {"hydra:member": [{id: 40054, values: [...]}, ...]}
     → extraer doc_id (campo "id") y nombrefinal de cada registro
+```
+
+> ⚠️ **Corregido 2026-08-03:** este ejemplo se documentaba **sin las dos claves `[condition]`** y, tal
+> cual, **devuelve 404 «Filter group condition is required»** (verificado en vivo sobre el expediente
+> 588: sin ellas 404; con `filterGroup[condition]` solo, 404 también; con las dos, **200** y 20
+> documentos). En la forma anidada hacen falta **las dos**. El `hydra:member` de la respuesta es
+> coherente con §14.2: sin cabecera `Accept` la API serializa en hydra.
+
+```
 
 Para cada doc_id:
     GET /api/files/presigned_download_url/{doc_id}
@@ -1393,7 +1406,9 @@ El Manual establece `RIESGO_POSIBLE` como el default para todos los asuntos defe
 > lo ya cubierto arriba: para auth y endpoints se cross-referencian las secciones existentes; **permisos y
 > enums son contenido nuevo**. Verificado en navegador 2026-06-01/02 (F0), 2026-06-08 (facturación) y
 > 2026-07-12 (descubrimiento de enums por API + corrección gramática `filterGroup` + 3ª variante de
-> `tipo_operaciones_iva`).
+> `tipo_operaciones_iva`); **§14.2 re-verificada contra la API el 2026-08-03** (gramática de
+> `filterGroup`, codificación del valor por operador, inner join de los filtros sobre relación y
+> dependencia de `Accept`) — origen: el bug que destapó El Contable, ver §14.2.
 
 ### 14.1 Auth y hosts — *delta* sobre §2
 
@@ -1420,23 +1435,57 @@ sudespacho expone casi todo como "elementos" con un patrón uniforme. FeesDefend
 | Relacionar | `POST /api/relation_element/{element}/{id}` con body `["left|right.<element>.<id>", ...]` |
 
 - **`properties[]`** hay que pedirlas explícitamente; sin ellas muchas devuelven **500**. Soportan
-  relaciones `left.<element>.<campo>` / `right.<element>.<campo>` y agregados `sum(campo)`.
-- **`filterGroup` (gramática anidada):**
-  `filterGroup[condition]=AND|OR` → `filterGroups[i][condition]` →
-  `filterGroups[i][filterGroups][j][filters][k]` con `[operator] [property] [value]`
-  (valores `in`/`between` usan `[value][0]`, `[value][1]`). Operadores: `in`, `not-in`, `equal`,
-  `between`, `is-empty`, `is-not-empty`, `associated`.
-  - **⚠️ Corrección verificada 2026-07-12 (`associated`): la forma que acepta el API tiene 2 niveles,
-    no 3.** El front real usa `filterGroup[filterGroups][0][filters][0][...]` (los `filters` cuelgan
-    directamente del primer `filterGroups`, sin el `filterGroups[j]` intermedio de la gramática
-    genérica de arriba). Con la forma de 3 niveles el API responde «Filter group condition is
-    required». **El cliente REST de este repo ya construye la forma correcta de 2 niveles** en todas
-    sus consultas (`core/sync_sudespacho.py` `associated`, `core/sudespacho_relations.py`,
-    `core/procurador_search.py`, `core/sudespacho_create.py`), y los ejemplos de §3.1/§5.1 también son
-    2 niveles — **no hay bug latente en el código actual**. La trampa solo mordería a código nuevo que
-    copie literalmente la gramática de 3 niveles.
-- **Forma de respuesta (listado):**
-  `{ totalItems, currentPage, itemsPerPage, items:[ { id, isPrimary, values:[ {property:{name}, value, label?} ] } ] }`.
+  relaciones `left.<element>.<campo>` / `right.<element>.<campo>`. ⚠️ Los agregados `sum(campo)` **no**
+  se piden por aquí (500) — ver el punto de `summary` más abajo.
+- **`filterGroup` (gramática) — ⚠️ corregida 2026-08-03; la raíz es `filterGroup[`, en singular.**
+  Dos formas válidas, **verificadas en vivo** (`GET element_registries/actuaciones`, x-api-key,
+  `itemsPerPage=1`, comparando `totalItems` entre variantes):
+  - **Plana** (basta cuando todo es un AND): `filterGroup[condition]=AND|OR` +
+    `filterGroup[filters][i][operator|property|value…]`.
+  - **Anidada** (para mezclar AND/OR, y la que usa el front): `filterGroup[filterGroups][i][condition]`
+    + `filterGroup[filterGroups][i][filters][k][…]`. **Cada grupo necesita su `[condition]`**; sin él,
+    «Filter group condition is required». Las dos formas dan **los mismos totales**.
+  - **🕳️ Trampa silenciosa (de aquí salió un bug real en El Contable):** con la raíz en **plural**
+    (`filterGroups[i][…]`, sin envolver en `filterGroup[`) —que es lo que este párrafo documentaba
+    hasta hoy— la API **descarta los filtros sin avisar y responde 200 con el listado completo**
+    (20.564 filas en `actuaciones`, idéntico a no filtrar). No hay error ni warning: parece que filtra
+    y no filtra. En El Contable eso habría hecho que la lectura del periodo de facturación leyera la
+    tabla entera de actuaciones.
+  - **Codificación del valor: depende del operador, y no hay una que valga para todos.**
+    - `in` · `not-in` · `between` · `is-empty` · `is-not-empty` → **indexada** `[value][0]`
+      (y `[value][1]` en `between`). Con escalar `[value]`, los filtros **sobre relación** dan 500
+      («foreach() argument must be of type array|object, string given»); sobre propiedad plana el
+      escalar cuela (mismo total), así que la indexada es el defecto seguro. Omitir el valor en
+      `is-empty`/`is-not-empty` da 500 («Undefined array key "value"»).
+    - **`associated` → al revés: exige el valor ESCALAR** `[value]=<id>`, sin índice. Con `[value][0]`
+      responde 500 («Warning: Array to string conversion»). Verificado en vivo el 2026-08-03 sobre
+      `actuaciones`: `left.expedientes_judiciales.id associated 588` → escalar **200** (5 filas),
+      indexado **500**, y esto es **independiente** de que la forma sea plana o anidada.
+      > ✅ **El código de este repo ya lo hace bien y NO hay que "arreglarlo":** `associated` con
+      > `[value]` escalar en `core/sync_sudespacho.py`, `core/sudespacho_relations.py`,
+      > `core/procurador_search.py`, `core/sudespacho_create.py`, `scripts/debug_search*.py`, y los
+      > ejemplos de §3.1/§5.1. Todos usan además la raíz correcta `filterGroup[`. **Ojo a un
+      > cambio-en-masa "por coherencia" a `[value][0]`: rompería todas las consultas `associated`.**
+  - Operadores vistos: `in`, `not-in`, `equal`, `between`, `is-empty`, `is-not-empty`, `associated`.
+  - **⚠️ Los filtros sobre relación (`right.<B>.<campo>`) son un INNER JOIN:** exigen que la relación
+    **exista**. En `actuaciones`, `right.conceptos_honorario.facturado not-in [S]` devuelve 16 filas
+    —idéntico a `in [N]`—, **no** las 16.406 que no tienen concepto. Corolario práctico: `not-in` sobre
+    relación **no** incluye las filas sin relacionado, así que ANDearlo con `…id is-empty` da **0
+    siempre**. Para «sin relacionado **o** relacionado que cumple X» hace falta un `filterGroups` con
+    `condition=OR`.
+- **Forma de respuesta (listado) — depende de la cabecera `Accept`** (verificado 2026-08-03):
+  - `Accept: application/json` (o `*/*`) → **plana**:
+    `{ totalItems, currentPage, itemsPerPage, items:[ { id, isPrimary, values:[ {property:{name, elementProperty?}, value, label?} ] } ] }`.
+  - `Accept: application/ld+json` **o sin cabecera `Accept`** → **hydra**:
+    `{ @context, @id, @type, hydra:member:[…], hydra:totalItems, hydra:view }`, con los mismos elementos dentro.
+  - Regla del cliente: **enviar siempre `Accept: application/json`** y, aun así, **tolerar las dos
+    formas** al parsear (`items`/`hydra:member`, `totalItems`/`hydra:totalItems`). El fallo caro no es
+    el parseo: es la **paginación**, que se corta en la página 1 en silencio si lee el total por la
+    clave que no está. `id` puede venir **string** (`"20404"`).
+- **`sum(campo)` NO vale en `properties[]`:** devuelve 500 («ElementProperty not found : sum(total)»),
+  a pesar de lo que dice el punto de `properties[]` de arriba. El endpoint `summary/{element}` ya
+  calcula las sumas por su cuenta y responde `{label, summations:[{label, name, type, value, symbol?}]}`
+  con los mismos filtros del listado.
 - **Relación many-to-many:** desde A, el relacionado es `right.<B>` (o `left.<B>`); se filtra con
   `operator=associated, property=right.<B>.id, value=<id>`. El CRM puede auto-añadir relaciones
   implícitas (p. ej. extrajudicial+cliente); **excluir una = omitirla del array**.
