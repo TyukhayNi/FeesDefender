@@ -13,6 +13,7 @@ from pathlib import Path
 import typer
 
 from core import sala_maquina as sm
+from core.adjuntos_contenido import pipeline as contenido
 from core.casos import case_locator
 from core.config import caso_path
 from core.email_atomize import pipeline as atomize
@@ -354,6 +355,61 @@ def _atomizar_correo(case_id: str, case_dir: Path) -> None:
     _registrar_atomizado(case_id, details)
 
 
+def _adjuntos_dir_de(case_dir: Path) -> Path:
+    """Carpeta de adjuntos del árbol atomizado. Un solo sitio que la componga."""
+    return atomize.emails_out_dir_de_caso(case_dir) / "adjuntos"
+
+
+def _procesar_adjuntos(case_id: str, case_dir: Path) -> None:
+    """Extrae el texto de los adjuntos de correo. Cableado de `MEJORAS #87`, pieza 1.
+
+    Hasta el 2026-08-04 `core.adjuntos_contenido` **no tenía ningún llamador** fuera de su
+    propio paquete: la única vía era `python -m core.adjuntos_contenido <case_id>`, a mano,
+    y ninguna skill ni el RUNBOOK la mencionaban. El contenido de los adjuntos, por tanto,
+    no existía en el árbol de ningún caso.
+
+    Va DESPUÉS de atomizar (los adjuntos solo existen en disco tras atomizar) y ANTES del
+    OCR (si la corrida larga muere, el rastro del contenido ya está escrito). Se le pasa la
+    RUTA y no el `case_id`: `procesar_caso` volvería a localizar el caso —`apply` ya lo
+    resolvió— y en un checkout apuntaría al árbol equivocado.
+
+    Fallo BLANDO para el OCR, DURO para el registro: mismo criterio que la atomización.
+    """
+    adjuntos_dir = _adjuntos_dir_de(case_dir)
+    if not adjuntos_dir.is_dir():
+        return                              # no-op estricto: sin correo no hay adjuntos
+
+    details: dict = {}
+    try:
+        report = contenido.procesar_dir(adjuntos_dir)
+    except Exception as exc:  # noqa: BLE001 — el OCR no depende de esto
+        details = {"status": "fallo", "errores": [f"{type(exc).__name__}: {exc}"]}
+        typer.echo(
+            f"AVISO: el contenido de los adjuntos FALLÓ ({type(exc).__name__}: {exc}). "
+            f"El OCR continúa; las fichas de `adjuntos/` se quedan sin texto.", err=True)
+    else:
+        details = {
+            "status": "parcial" if report.errores else "ok",
+            "extraidos": report.extraidos, "omitidos": report.omitidos,
+            "sin_texto": report.sin_texto, "saltados": report.saltados,
+            "podados": report.podados,
+            "pendientes_vision": report.pendientes_vision,
+            "errores": list(report.errores),
+        }
+        typer.echo(
+            f"Adjuntos ({details['status']}): {report.extraidos} con texto, "
+            f"{report.sin_texto} sin texto, {report.omitidos} omitidos, "
+            f"{report.saltados} ya hechos, {report.pendientes_vision} a visión")
+        for e in report.errores:
+            typer.echo(f"NOTA (adjuntos): {e}", err=True)
+
+    try:
+        append_event(case_id, "contenido_adjuntos", details=details)
+    except Exception as exc:  # noqa: BLE001
+        typer.echo(f"AVISO: no se pudo registrar el evento contenido_adjuntos: {exc}",
+                   err=True)
+
+
 @app.command()
 def plan(case_id: str):
     """Muestra la propuesta (Preview); no escribe nada salvo el manifiesto de
@@ -366,6 +422,13 @@ def plan(case_id: str):
     if agotados:
         typer.echo(f"  {len(agotados)} documento(s) con intentos agotados (se saltan; "
                    f"--force o --solo para reintentar)")
+    # Los adjuntos NO se procesan en preview, pero callar cuántos hay esconde el coste que
+    # `apply` va a pagar — y ese coste es nuevo desde que se cableó (`MEJORAS #87`).
+    _adj_dir = _adjuntos_dir_de(case_dir)
+    if _adj_dir.is_dir():
+        n_adj = len(contenido.descubrir(_adj_dir))
+        if n_adj:
+            typer.echo(f"  adjuntos: {n_adj} (se extraerá su texto en apply)")
     typer.echo(f"Caso: {case_id}")
     for ruta in ("pdf", "imagen", "nativo", "sin_soporte"):
         n = sum(1 for d in nuevos if d.ruta == ruta)
@@ -426,6 +489,7 @@ def apply(case_id: str, vision: bool = False, force: bool = False,
     if vision:
         _exigir_vision_cableada()          # preflight: aborta antes de procesar
     _atomizar_correo(case_id, case_dir)   # cableado: atomizar ANTES del OCR (spec §4)
+    _procesar_adjuntos(case_id, case_dir)  # cableado: contenido de adjuntos (MEJORAS #87)
     t_corrida = time.perf_counter()
     try:
         p_bruto, cache_nueva, ms_inv, n_hasheados, agotados = \

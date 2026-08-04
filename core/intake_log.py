@@ -69,6 +69,13 @@ INTAKE_EVENTS: frozenset[str] = frozenset({
                                  # {"lotes": [nombres], "remapeados": {registro: n}}
     "archivado",                # archivo del expediente inviable (RUNBOOK §10; MEJORAS #70.a):
                                  # details = {"motivo": MAYUSCULAS_GUION_BAJO, "fecha": ISO}
+    "contenido_adjuntos",       # extracción del texto de los adjuntos de correo,
+                                # encadenada por la sala de máquina (`MEJORAS #87`).
+                                # details = {"status": ok|parcial|fallo, "extraidos",
+                                # "omitidos", "sin_texto", "saltados", "podados",
+                                # "pendientes_vision", "errores"}. En la rama de
+                                # excepción SOLO lleva status + errores: si el motor no
+                                # terminó, el payload no finge saber cuántos hay.
     "atomizado_email",          # atomización de correo encadenada por la sala de máquina.
                                  # details_schema 2: {"status": ok|parcial|fallo,
                                  # "eml_en_disco", "eml_leidos", "publicado",

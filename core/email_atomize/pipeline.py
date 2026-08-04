@@ -370,13 +370,22 @@ def _escribe_adjunto(out: Path, att: AdjuntoUnico) -> None:
     base = f"{att.primera_aparicion}_{slug}_{att.att_id}"
     (out / "adjuntos" / f"{base}{ext}").write_bytes(att.data)
     ficha_suffix = ".ficha.md" if ext.lower() == ".md" else ".md"
+    # La Descripción APUNTA al contenido; no lo contiene ni promete tenerlo algún día.
+    # Decía «(pendiente; OCR en fase 2)», y esta función reescribe la ficha en CADA
+    # corrida: como `sala_maquina apply` atomiza siempre, cualquier actualización que
+    # hiciera `core.adjuntos_contenido` sobre la ficha quedaba pisada a la corrida
+    # siguiente. Un puntero es inmune a eso porque no hay nada que pisar (`MEJORAS #87`).
     ficha = (
         f"# GENERADO por core.email_atomize — NO editar.\n\n"
         f"- att_id: {att.att_id}\n- nombre_original: {att.nombre_original}\n"
         f"- tipo: {att.tipo}\n- sha256: {att.sha256}\n"
         f"- primera_aparicion: {att.primera_aparicion}\n"
         f"- mensajes: {', '.join(att.mensajes)}\n- etiquetas: []\n\n"
-        f"## Descripción\n\n(pendiente; OCR en fase 2)\n"
+        f"## Descripción\n\n"
+        f"El texto de este adjunto vive en `{base}.contenido.md`, que escribe "
+        f"`core.adjuntos_contenido` al correr la sala de máquina. Si ese fichero no está, "
+        f"no se ha ejecutado; si está y no trae texto, su `metodo_extraccion` y su "
+        f"`confianza` dicen por qué.\n"
     )
     (out / "adjuntos" / f"{base}{ficha_suffix}").write_text(ficha, encoding="utf-8")
 
