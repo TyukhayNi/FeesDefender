@@ -28,6 +28,9 @@ class Extraccion:
     #: que es adivinar por el nombre del motor: un escaneado que salía por pypdf con el
     #: cuerpo perdido declaraba `ocr_aplicado: false` y `confianza: alta` a la vez.
     ocr: bool = False
+    #: Identidad del CHAT de un export de WhatsApp (`MEJORAS #55.1`). Dos exports del mismo
+    #: chat la comparten aunque su sha256 difiera, que es lo que hace visible el solape.
+    chat_huella: str = ""
 
 
 @dataclass
