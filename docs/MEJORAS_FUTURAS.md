@@ -1800,6 +1800,22 @@ apareció el mismo día, independientemente, en la revisión adversarial de
 `docs/superpowers/specs/2026-07-23-emails-atomizados-sala-lectura-adversarial-review.md` (hallazgo P0.1:
 `corpus.jsonl` de `email_atomize` tampoco reconcilia contra el inventario real de `00_Input`). No
 promuevo — solo dejo la evidencia para cuando se decida desaparcar.
+
+> ✅ **Los dos costes de esa anotación, CERRADOS el 2026-08-04** (los dos eran de velocidad de
+> montaje, que es la prioridad que fijó Nikolai ese día):
+>
+> - **El rehash completo**, con `sm.inventariar_cacheado` y la caché persistida en el estado. **No se
+>   hizo leyendo `_intake_hashes.json`, como decía esta anotación**, y conviene que quede el porqué:
+>   el manifiesto M9 está indexado **sha → rutas**, no ruta → sha, así que no es la caché que hace
+>   falta; **no guarda `size` ni `mtime`**, luego no hay con qué validar que su hash siga vigente —y
+>   dar por bueno un hash sin validarlo debilita la cadena de custodia por la que el sha existe—; y
+>   está incompleto, como la propia anotación reconocía. La caché nueva se invalida por
+>   `(size, mtime_ns)` y falla al lado seguro: si el mtime baila —lo hace, en `G:`, al rehidratar— se
+>   rehashea. Más lento, nunca incorrecto.
+> - **Los ~169 reintentos sin límite**, en `#84`.
+>
+> Lo que esa anotación decía sobre el **registro único de caso** sigue en pie: nada de esto lo
+> construye. La caché es un fichero de estado por caso, no el registro de `§H`.
 ---
 
 ## 85. Endurecimiento del robot CENDOJ (`cendoj-descarga`)
@@ -3314,6 +3330,29 @@ bloqueado por esto — solo es más lento de lo necesario.
 **Coste estimado.** (a) contador+tope: ~1h (campo nuevo en `DocCobertura`, chequeo en `plan()`,
 test). (b) solo visibilidad: ~30 min (contar en `plan`, sin cambiar `apply`).
 
+### ✅ CERRADO el 2026-08-04 — se construyeron (a) **y** (b), porque (a) sin (b) es peligrosa
+
+La entrada planteaba (a) tope o (b) visibilidad como alternativas y esperaba que Nikolai eligiera. Al
+construirlo se ve que **no son alternativas**: el tope solo es seguro si además se ve.
+
+- **(a) Contador con tope.** `intentos` en `_sala_maquina_state.json` y `sm.MAX_INTENTOS = 3`;
+  `plan()` acepta `agotados` y los marca `skip`. El contador **se borra al primer éxito**, para que un
+  fallo transitorio no deje deuda acumulada.
+- **(b) Visibilidad, y por qué es obligatoria.** El tope tiene un footgun: si falta el motor de OCR
+  —`#91`, que sigue sin preflight en este camino— **fallan todos** los documentos y **agotan todos** el
+  contador; desde ahí el caso se procesaría «en verde» saltándose el expediente entero. Por eso
+  `apply` imprime en **cada** corrida cuántos hay agotados y sugiere sospechar del motor si son todos,
+  y `plan` los cuenta en su preview. Vía de escape: `--force` o `--solo <ruta>`.
+- **Lo que NO se hizo:** el estado `descartado` en la cobertura que proponía (a). La fila previa del
+  documento fallido ya sobrevive en `_cobertura.md` como `empty`/`low` vía `fusionar_cobertura`, así
+  que un estado nuevo sería un segundo hogar del mismo hecho.
+- **El resto de esta entrada, resuelto por otra vía:** la falta de `_cobertura.json` en W-02VND1 ya la
+  cubre `_cobertura_previa`, que reconstruye las filas del frontmatter de `03_MD/` y **avisa de que la
+  reconstrucción es parcial** (los `sin_soporte` no dejan MD).
+- **Y una consecuencia que sube la prioridad de `#91`:** con el tope puesto, la ausencia de preflight
+  del motor pasa de molestia a fallo silencioso posible. Las tres mitigaciones lo hacen ruidoso, no
+  imposible.
+
 ## 86. Consumo de las fuentes atomizadas por la sala de lectura (Slice 2 del re-tajo)  [ex-`#75`, parte de consumo]
 
 **Origen.** Es el objetivo original del spec
@@ -3583,6 +3622,15 @@ entorno.
 
 **Coste estimado.** ~30 min: helper reutilizable extraído de `health_check.py`, llamada desde `apply`, y
 un test con el binario mockeado.
+
+> ⚠️ **La justificación de arriba caducó el 2026-08-04, y esto ya NO es solo conveniencia.** Al cerrar
+> `#84` se puso tope de intentos a los documentos que no se resuelven. Con el tope, un motor de OCR
+> ausente ya no cuesta una corrida lenta: **fallan todos los documentos, agotan todos el contador, y a
+> partir de la tercera corrida el caso se procesa saltándose el expediente entero**. Las mitigaciones
+> puestas (margen de 3, recuento de agotados impreso en cada corrida sugiriendo sospechar del motor, y
+> `--force`/`--solo`) lo hacen **ruidoso**, no imposible: siguen dependiendo de que alguien lea la
+> salida. El preflight es lo que lo haría imposible. Sigue sin disparador formal —nadie está
+> bloqueado—, pero su coste de oportunidad cambió de signo.
 
 ## 92. Integridad del manifiesto de intake: entradas de un expediente ajeno + evento de saneamiento
 
