@@ -329,10 +329,14 @@ def test_append_event_invoca_fsync_por_cada_escritura(il, cm, monkeypatch):
 # INTAKE_EVENTS — sanity
 # ---------------------------------------------------------------------------
 
-def test_intake_events_es_frozenset_con_27_eventos(il):
+def test_intake_events_es_frozenset_con_28_eventos(il):
+    # 28 desde el 2026-08-04: alta de `contenido_adjuntos` (`MEJORAS #87`, el cableado del
+    # texto de los adjuntos de correo en la sala de máquina). Este test existe para que
+    # ampliar el vocabulario sea un acto deliberado y no un efecto colateral.
     assert isinstance(il.INTAKE_EVENTS, frozenset)
-    assert len(il.INTAKE_EVENTS) == 27
+    assert len(il.INTAKE_EVENTS) == 28
     assert "atomizado_email" in il.INTAKE_EVENTS
+    assert "contenido_adjuntos" in il.INTAKE_EVENTS
 
 
 def test_intake_events_contiene_los_canonicos(il):
@@ -379,6 +383,7 @@ def test_intake_events_contiene_los_canonicos(il):
         "migracion_layout_intake",
         "archivado",
         "atomizado_email",
+        "contenido_adjuntos",
     }
     assert il.INTAKE_EVENTS == expected
 

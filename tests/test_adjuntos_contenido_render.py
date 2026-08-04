@@ -38,15 +38,37 @@ def test_render_estructura_y_frontmatter():
     assert "## Texto\n\nTexto fiel del contrato." in md
 
 
-def test_render_docling_marca_ocr_y_por_verificar():
+def test_render_declara_el_ocr_por_el_flag_y_no_por_el_motor():
+    """`ocr_aplicado` sale del flag explícito (`MEJORAS #87`, 2026-08-04).
+
+    Antes se infería de `metodo == "docling"`. Era adivinar por el nombre del motor: un
+    escaneado que salía por pypdf con el cuerpo perdido declaraba `ocr_aplicado: false` y
+    `confianza: alta` a la vez. Lo que este test protege —que el frontmatter lleva las dos
+    etiquetas— no cambia; cambia de dónde sale una de ellas.
+    """
     md = render.render_contenido(
         att_id="ATT-1", nombre_original="x.pdf", tipo="application/pdf", sha256="s",
-        metodo="docling", caracteres=10, confianza="por-verificar",
+        metodo="ocr", caracteres=10, confianza="por-verificar",
         resumen_estado="pendiente", vision_estado="n/a", mensajes=["MSG-1"],
-        resumen=None, texto="ocr",
+        resumen=None, texto="ocr", ocr_aplicado=True,
     )
     assert "ocr_aplicado: true" in md
     assert "confianza: por-verificar" in md
+
+
+def test_render_docling_ya_no_implica_ocr():
+    """Docling solo ve tipos que no llevan OCR (`.docx`, `.pptx`, `.html`).
+
+    Los PDF se fueron al motor de la sala de máquina, así que `false` es ahora la verdad
+    y no una omisión.
+    """
+    md = render.render_contenido(
+        att_id="ATT-2", nombre_original="escrito.docx", tipo="application/vnd...",
+        sha256="s", metodo="docling", caracteres=10, confianza="por-verificar",
+        resumen_estado="pendiente", vision_estado="n/a", mensajes=["MSG-1"],
+        resumen=None, texto="contestación",
+    )
+    assert "ocr_aplicado: false" in md
 
 
 def test_parsear_y_reemplazar_resumen_preserva_texto():

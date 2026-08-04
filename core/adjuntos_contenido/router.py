@@ -32,6 +32,24 @@ def extraer(ruta: Path, mime: str) -> Extraccion:
         return Extraccion(texto="", metodo="vision", ok=True, confianza="por-verificar",
                           vision_estado="pendiente")
 
+    # PDF → el motor de la SALA DE MÁQUINA, no el extractor viejo (`MEJORAS #87`). Antes
+    # bajaba por `_extract_one`: pypdf, y Docling solo si ≤30 páginas, así que un
+    # escaneado largo daba `sin_texto` (cero texto) y uno con pie de LexNET salía por
+    # pypdf con el cuerpo perdido. Import perezoso: `sala_maquina` arrastra el split y el
+    # log, y no hace falta para un `.docx`.
+    if ext == ".pdf" or mime == "application/pdf":
+        from core.sala_maquina import texto_de_pdf
+        r = texto_de_pdf(ruta)
+        if not r.texto.strip():
+            return Extraccion(texto="", metodo="sin_texto", ok=False, confianza="omitido",
+                              motivo=r.nota or "PDF sin texto recuperable")
+        # La confianza sale de la CALIDAD, no del nombre del motor. Con la regla vieja
+        # (`alta` si no fue Docling) un escaneado con el cuerpo perdido se etiquetaba
+        # `alta`: la etiqueta mentía justo en el caso de `MEJORAS #90`.
+        return Extraccion(texto=r.texto, metodo=r.metodo, ok=True,
+                          confianza="alta" if r.estado == "ok" else "por-verificar",
+                          motivo=r.nota, ocr=r.ocr)
+
     try:
         texto, metodo = _extract_one(ruta)
     # Cualificado por módulo (no `from ... import ExtractionError`): si un test recarga

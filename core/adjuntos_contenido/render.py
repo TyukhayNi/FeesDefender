@@ -11,8 +11,8 @@ _TEXTO_VACIO = "_(sin texto extraído)_"
 def render_contenido(*, att_id: str, nombre_original: str, tipo: str, sha256: str,
                      metodo: str, caracteres: int, confianza: str, resumen_estado: str,
                      vision_estado: str, mensajes: list[str], resumen: str | None,
-                     texto: str) -> str:
-    ocr = "true" if metodo == "docling" else "false"
+                     texto: str, ocr_aplicado: bool = False) -> str:
+    ocr = "true" if ocr_aplicado else "false"
     resumen_body = resumen.strip() if (resumen and resumen.strip()) else _RESUMEN_PENDIENTE
     texto_body = texto if texto.strip() else _TEXTO_VACIO
     return (

@@ -24,6 +24,10 @@ class Extraccion:
     confianza: str
     vision_estado: str = "n/a"
     motivo: str = ""
+    #: ¿se aplicó OCR de verdad? Antes se derivaba de `metodo == "docling"` en el render,
+    #: que es adivinar por el nombre del motor: un escaneado que salía por pypdf con el
+    #: cuerpo perdido declaraba `ocr_aplicado: false` y `confianza: alta` a la vez.
+    ocr: bool = False
 
 
 @dataclass

@@ -4,7 +4,10 @@ import json
 from pathlib import Path
 
 # Súbela cuando cambie la lógica de extracción/render para invalidar el caché.
-CONTENIDO_VERSION = 1
+# 2 (2026-08-04): los PDF pasan por el motor de la sala de máquina
+# (`MEJORAS #87`). Sin este bump, los adjuntos ya procesados conservarían el
+# texto del extractor viejo — incluido el `sin_texto` de los escaneados largos.
+CONTENIDO_VERSION = 2
 _ESTADO = "_contenido_estado.json"
 
 

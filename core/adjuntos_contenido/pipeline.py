@@ -52,7 +52,7 @@ def procesar_dir(adjuntos_dir: Path, *, forzar: bool = False) -> ContenidoReport
             sha256=adj.sha256, metodo=ext.metodo, caracteres=len(ext.texto),
             confianza=ext.confianza, resumen_estado=resumen_estado,
             vision_estado=ext.vision_estado, mensajes=adj.mensajes,
-            resumen=None, texto=ext.texto)
+            resumen=None, texto=ext.texto, ocr_aplicado=ext.ocr)
         destino.write_text(md, encoding="utf-8")
 
         entry = {"metodo": ext.metodo, "chars": len(ext.texto), "ok": ext.ok,

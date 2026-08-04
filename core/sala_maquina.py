@@ -997,6 +997,91 @@ def _ocr_y_extraer(case_dir: Path, sm_dir: Path, case_id: str, d: DocPlan,
     return filas
 
 
+@dataclass
+class TextoPdf:
+    """Texto de un PDF con la etiqueta de cómo salió y de si es fiable."""
+    texto: str
+    metodo: str          # pypdf | ocr | sin_texto
+    estado: str          # ok | low | empty
+    nota: str = ""
+    ocr: bool = False
+
+
+def texto_de_pdf(pdf: Path, *, ocr_salida: Path | None = None) -> TextoPdf:
+    """«Dame el mejor texto de este PDF», con la etiqueta de calidad puesta.
+
+    Es el motor de la sala de máquina expuesto **sin sus artefactos**: mismo enrutado,
+    misma escalera, mismos discriminantes, misma `ocr_quality`, pero sin escribir MD ni
+    hacer split. Existe para que el camino de los adjuntos de correo deje de tener su
+    propio motor (`MEJORAS #87`): hasta el 2026-08-04 un adjunto bajaba por
+    `extractor._extract_one` —pypdf, y Docling solo si ≤30 páginas—, así que un escaneado
+    largo daba **cero texto** y un escaneado con pie de LexNET salía por pypdf con el
+    cuerpo perdido y etiqueta `alta`.
+
+    Vive aquí, y no en un módulo nuevo, a propósito: la escalera, el discriminante de
+    página ciega y `ocr_quality` ya viven aquí. Un módulo aparte habría creado una
+    TERCERA superficie en vez de unificar dos.
+
+    Enrutado, idéntico al de `ejecutar`:
+      1. Capa de texto suficiente y **sin** páginas ciegas → `pypdf`, sin pagar OCR.
+      2. Capa de texto suficiente **con** páginas ciegas → escalera en modo
+         **conservador** (`MEJORAS #90`): no reescribe las páginas digitales.
+      3. Sin capa suficiente (escaneado) → escalera completa, **sin tope de páginas**.
+
+    `ocr_salida`: si se indica, ahí queda el PDF buscable (artefacto de custodia). Si no,
+    va a un temporal y se descarta — el llamador de adjuntos no tiene dónde guardarlo, y
+    afirmar una custodia que no existe sería peor que no tenerla.
+    """
+    texto = _try_pypdf(pdf) or ""
+    npags = _pdf_num_paginas(pdf)
+    ciegas = _paginas_ciegas(pdf)
+    digital = bool(texto.strip()) and _texto_suficiente(texto, npags)
+
+    if digital and not ciegas:
+        estado, nota = ocr_quality(texto, npags)
+        return TextoPdf(texto, "pypdf", estado, nota, False)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        destino = Path(ocr_salida) if ocr_salida else Path(tmp) / f"{pdf.stem}__ocr.pdf"
+        try:
+            res = ocr_pdf_escalera(pdf, destino, conservador=digital)
+        except Exception as e:  # noqa: BLE001 — cifrado, corrupto, firmado…
+            # No se tira el residuo: un sello de registro es poco, pero es lo que hay, y
+            # el motivo viaja para que el lector sepa que está viendo un resto.
+            estado, nota = ocr_quality(texto, npags)
+            motivo = f"OCR falló: {e}" + (f"; {nota}" if nota else "")
+            return TextoPdf(texto, "pypdf" if texto.strip() else "sin_texto",
+                            estado, motivo, False)
+
+        buscable = Path(res.ruta)
+        persistido = buscable == destino and destino.exists()
+        texto_ocr = (_try_pypdf(buscable) or "") if persistido else ""
+        final = texto_ocr if texto_ocr.strip() else texto
+        estado, nota = ocr_quality(final, npags)
+
+        if persistido:
+            # `#90` (b): la señal por página rompe la dilución del promedio — 4 escaneos
+            # mudos entre 36 páginas densas salen `ok` sin esto. Nunca sube la calidad.
+            try:
+                estado_pag, nota_pag = calidad_por_pagina(
+                    pdf_paginas.perfilar_paginas(buscable))
+            except Exception:  # noqa: BLE001 — la señal es un extra, no un requisito
+                estado_pag, nota_pag = "", ""
+            if estado_pag == "low":
+                estado, nota = "low", nota_pag if not nota else f"{nota}; {nota_pag}"
+
+        if res.degradado and estado == "ok":
+            estado = "low"
+        for extra in (res.nota, "escalera degradada: queda texto ciego sin recuperar"
+                      if res.degradado else ""):
+            if extra:
+                nota = f"{nota}; {extra}" if nota else extra
+
+        if not final.strip():
+            return TextoPdf("", "sin_texto", "empty", nota or "sin texto recuperable", False)
+        return TextoPdf(final, "ocr" if persistido else "pypdf", estado, nota, persistido)
+
+
 def ejecutar(case_dir: Path, docs: list[DocPlan], *, case_id: str,
              vision: bool = False, force: bool = False,
              on_documento: "Callable[[DocPlan, int, list[DocCobertura]], None] | None" = None,

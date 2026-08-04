@@ -56,11 +56,18 @@ def test_rtf_extrae_texto_alta_confianza(tmp_path: Path):
 
 
 def test_docling_se_marca_por_verificar(tmp_path: Path, monkeypatch):
-    p = tmp_path / "escaneado.pdf"
-    p.write_bytes(b"%PDF-1.4 fake")
+    """Intención intacta; vehículo cambiado (`MEJORAS #87`, 2026-08-04).
+
+    El vehículo era un `.pdf`, y los PDF ya no bajan por `_extract_one`: van al motor de
+    la sala de máquina. Un `.docx` es un tipo que docling SÍ sigue cubriendo, así que la
+    regla que este test fija —una extracción docling no se etiqueta `alta`— se comprueba
+    igual. Que un PDF ya no llegue aquí lo fija `test_adjuntos_contenido_motor.py`.
+    """
+    p = tmp_path / "escrito.docx"
+    p.write_bytes(b"PK fake")
     monkeypatch.setattr("core.adjuntos_contenido.router._extract_one",
-                        lambda ruta: ("texto OCR", "docling"))
-    ext = extraer(p, "application/pdf")
+                        lambda ruta: ("texto extraído", "docling"))
+    ext = extraer(p, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
     assert ext.metodo == "docling"
     assert ext.confianza == "por-verificar"
 
