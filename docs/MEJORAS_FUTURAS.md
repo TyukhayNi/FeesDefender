@@ -1800,6 +1800,22 @@ apareció el mismo día, independientemente, en la revisión adversarial de
 `docs/superpowers/specs/2026-07-23-emails-atomizados-sala-lectura-adversarial-review.md` (hallazgo P0.1:
 `corpus.jsonl` de `email_atomize` tampoco reconcilia contra el inventario real de `00_Input`). No
 promuevo — solo dejo la evidencia para cuando se decida desaparcar.
+
+> ✅ **Los dos costes de esa anotación, CERRADOS el 2026-08-04** (los dos eran de velocidad de
+> montaje, que es la prioridad que fijó Nikolai ese día):
+>
+> - **El rehash completo**, con `sm.inventariar_cacheado` y la caché persistida en el estado. **No se
+>   hizo leyendo `_intake_hashes.json`, como decía esta anotación**, y conviene que quede el porqué:
+>   el manifiesto M9 está indexado **sha → rutas**, no ruta → sha, así que no es la caché que hace
+>   falta; **no guarda `size` ni `mtime`**, luego no hay con qué validar que su hash siga vigente —y
+>   dar por bueno un hash sin validarlo debilita la cadena de custodia por la que el sha existe—; y
+>   está incompleto, como la propia anotación reconocía. La caché nueva se invalida por
+>   `(size, mtime_ns)` y falla al lado seguro: si el mtime baila —lo hace, en `G:`, al rehidratar— se
+>   rehashea. Más lento, nunca incorrecto.
+> - **Los ~169 reintentos sin límite**, en `#84`.
+>
+> Lo que esa anotación decía sobre el **registro único de caso** sigue en pie: nada de esto lo
+> construye. La caché es un fichero de estado por caso, no el registro de `§H`.
 ---
 
 ## 85. Endurecimiento del robot CENDOJ (`cendoj-descarga`)
@@ -2341,6 +2357,46 @@ preservando procedencias. Los N correos adjuntos se recuperan enteros y ordenado
 **Mitigación manual mientras tanto:** comprobar el `Content-Type` de los adjuntos, atomizar (eso funciona),
 y dar de alta **un solo** export —el más completo según `ChatPreview`— anotando en `_caso.md` de qué correo
 vino, porque esa relación no la guarda nadie.
+
+#### ✅ Cortes 2 y 3 CERRADOS el 2026-08-04 (promovido por decisión de Nikolai)
+
+Los `.zip` adjuntos ya tienen contenido. `core/adjuntos_contenido/zips.py`, enrutado por TIPO de zip
+como exigía esta entrada: se pregunta primero si trae un chat parseable y solo si no, descompresión.
+La detección es **más estricta** que `whatsapp_intake._find_chat_txt`, que cae a «cualquier `.txt`»:
+aquí hace falta que `parse_chat` saque al menos un mensaje. Sin eso, un zip con un `.txt` cualquiera
+se clasificaría como conversación de WhatsApp — comprobado por mutación (relajar el criterio pone en
+rojo cinco tests del camino genérico).
+
+**El dedup entre exports: NO se ha construido, y esta entrada tenía razón en que no debía hacerse a
+la ligera.** La salida fue no fundir y hacer el solape visible:
+
+- `huella_chat` identifica el **chat** por su primer mensaje, así que dos exports del mismo chat la
+  comparten aunque su sha256 difiera — que es exactamente lo que `whatsapp_intake` no puede
+  deduplicar, porque su dedup es por hash del zip, como decía esta entrada.
+- Cuando dos adjuntos del caso comparten huella, cada `.contenido.md` **nombra al otro** y dice
+  «no se han fundido; al construir una cronología, contar UNO solo». El conteo quíntuple que esta
+  entrada temía solo puede nacer en quien construya la cronología, y ahora ese alguien tiene el aviso
+  delante en vez de cinco documentos que parecen cinco conversaciones.
+- Límite del método, declarado en el docstring: un export recortado por fecha no empieza por el primer
+  mensaje del chat y su huella no coincidirá. Falso **negativo** (dos copias parecerán chats
+  distintos), nunca falso positivo.
+
+**Zip genérico:** sus miembros con texto pasan por el mismo router, así que un PDF dentro de un zip ya
+usa el motor de la sala de máquina (`#87`). Tres topes, los tres declarados en la nota del artefacto:
+profundidad 1 (un zip anidado se lista, no se abre), `MAX_MIEMBROS`, `MAX_BYTES_MIEMBRO`.
+
+**Lo que sigue abierto de esta entrada:**
+
+- **El corte 1** (la bifurcación MIME no declarada: `.eml` adjuntos con `application/octet-stream`
+  invisibles con `--extraer-adjuntos` en su default `False`). Intacto.
+- **La reconciliación de verdad** entre exports del mismo chat, que es lo que haría falta para una
+  cronología unificada de WhatsApp. Sigue sin construirse, y ahora al menos el solape es visible para
+  quien lo intente.
+- **El alta como lote** (`whatsapp_intake.deposit_export`) desde un adjunto de correo: aquí el export
+  se **lee**, no se ingesta. Ingestarlo escribiría en `00_Input` y eso es la decisión de layout de
+  `#54`, no un efecto colateral del contenido de un adjunto.
+- **La mitigación manual de arriba deja de ser necesaria para leer**, pero sigue siéndolo para
+  ingestar: si quieres el chat como lote del caso, sigue siendo un solo export elegido a mano.
 
 ---
 
@@ -3314,6 +3370,29 @@ bloqueado por esto — solo es más lento de lo necesario.
 **Coste estimado.** (a) contador+tope: ~1h (campo nuevo en `DocCobertura`, chequeo en `plan()`,
 test). (b) solo visibilidad: ~30 min (contar en `plan`, sin cambiar `apply`).
 
+### ✅ CERRADO el 2026-08-04 — se construyeron (a) **y** (b), porque (a) sin (b) es peligrosa
+
+La entrada planteaba (a) tope o (b) visibilidad como alternativas y esperaba que Nikolai eligiera. Al
+construirlo se ve que **no son alternativas**: el tope solo es seguro si además se ve.
+
+- **(a) Contador con tope.** `intentos` en `_sala_maquina_state.json` y `sm.MAX_INTENTOS = 3`;
+  `plan()` acepta `agotados` y los marca `skip`. El contador **se borra al primer éxito**, para que un
+  fallo transitorio no deje deuda acumulada.
+- **(b) Visibilidad, y por qué es obligatoria.** El tope tiene un footgun: si falta el motor de OCR
+  —`#91`, que sigue sin preflight en este camino— **fallan todos** los documentos y **agotan todos** el
+  contador; desde ahí el caso se procesaría «en verde» saltándose el expediente entero. Por eso
+  `apply` imprime en **cada** corrida cuántos hay agotados y sugiere sospechar del motor si son todos,
+  y `plan` los cuenta en su preview. Vía de escape: `--force` o `--solo <ruta>`.
+- **Lo que NO se hizo:** el estado `descartado` en la cobertura que proponía (a). La fila previa del
+  documento fallido ya sobrevive en `_cobertura.md` como `empty`/`low` vía `fusionar_cobertura`, así
+  que un estado nuevo sería un segundo hogar del mismo hecho.
+- **El resto de esta entrada, resuelto por otra vía:** la falta de `_cobertura.json` en W-02VND1 ya la
+  cubre `_cobertura_previa`, que reconstruye las filas del frontmatter de `03_MD/` y **avisa de que la
+  reconstrucción es parcial** (los `sin_soporte` no dejan MD).
+- **Y una consecuencia que sube la prioridad de `#91`:** con el tope puesto, la ausencia de preflight
+  del motor pasa de molestia a fallo silencioso posible. Las tres mitigaciones lo hacen ruidoso, no
+  imposible.
+
 ## 86. Consumo de las fuentes atomizadas por la sala de lectura (Slice 2 del re-tajo)  [ex-`#75`, parte de consumo]
 
 **Origen.** Es el objetivo original del spec
@@ -3375,6 +3454,59 @@ mapeo de confianza del router, que hoy depende del nombre del motor.
 
 **Disparador de promoción a `PLAN.md`:** un adjunto largo truncado en silencio que afecte a un caso
 real, o una divergencia de texto observada entre los dos caminos. **No** promover por limpieza.
+
+### ✅ CERRADO el 2026-08-04 — y el agujero grande no era el que esta entrada describe
+
+Promovido por **decisión explícita de Nikolai** (disparador válido de `CLAUDE.md`), con
+prioridad de **fidelidad del contexto para el LLM y para el humano**. Al abrirlo apareció algo
+que esta entrada no contemplaba y que dominaba todo lo demás:
+
+**Nadie ejecutaba el pipeline.** `git grep` sobre `core/`, `scripts/`, `streamlit_app.py` y
+`.claude/skills`: **cero llamadores** de `core.adjuntos_contenido` fuera de su propio paquete. La
+única vía era `python -m core.adjuntos_contenido <case_id>`, a mano, y no la mencionaba ninguna
+skill ni el RUNBOOK. O sea: el motor divergente que esta entrada describe **no llegaba a correr**.
+El contenido de los adjuntos no existía en el árbol de ningún caso. Misma clase de defecto que
+`#113` y que el cableado del correo (PR #151): piezas construidas y ninguna llama a la siguiente.
+
+Tres piezas, en orden de fidelidad por esfuerzo:
+
+1. **Cableado.** `sala_maquina apply` llama a `contenido.procesar_dir` después de atomizar (los
+   adjuntos solo existen en disco tras atomizar) y antes del OCR (si la corrida larga muere, el
+   rastro ya está escrito). Se le pasa la RUTA, no el `case_id`: `procesar_caso` re-localizaría el
+   caso y en un checkout apuntaría al árbol equivocado. Evento nuevo `contenido_adjuntos`
+   (vocabulario 27 → 28). `plan` cuenta los adjuntos sin procesarlos.
+2. **La ficha deja de mentir.** Decía `## Descripción
+
+(pendiente; OCR en fase 2)`, y
+   `_escribe_adjunto` la reescribe en CADA corrida: como `apply` atomiza siempre, cualquier
+   actualización de la ficha por `adjuntos_contenido` quedaba **pisada** a la corrida siguiente.
+   La salida no era actualizarla mejor: es que **nunca sea el hogar del contenido**. Ahora nombra
+   su `.contenido.md` y explica qué significa que no esté. Un puntero es inmune al clobber.
+3. **El motor** (esta entrada). `sala_maquina.texto_de_pdf`: el motor de la sala de máquina sin sus
+   artefactos. Cierra el `sin_texto` de los escaneados de >30 páginas, mira las páginas ciegas de
+   `#90`, y —lo más sucio de lo que había— quita la etiqueta `confianza: alta` que se ponía «porque
+   el motor no fue Docling» a documentos con el cuerpo perdido. `ocr_aplicado` pasa a ser un flag
+   explícito. `CONTENIDO_VERSION` 1 → 2, o los adjuntos ya procesados conservarían el texto viejo.
+
+**Dónde vive el adaptador, y por qué no en un módulo nuevo.** La escalera, el discriminante de
+página ciega y `ocr_quality` ya viven en `core/sala_maquina.py`. Un `core/ocr_texto.py` habría
+creado una **tercera** superficie en vez de unificar dos. Con el adaptador dentro, la convergencia
+que queda —que `_ocr_y_extraer` lo use también, en vez de duplicar el enrutado— es un refactor
+**local** dentro de un módulo, y no se ha hecho aquí a propósito: ese camino lleva el split, las
+notas de custodia y la lógica de `#90`, con ~2.860 tests alrededor.
+
+**Lo que sigue abierto, y conviene no confundirlo con esto:**
+
+- **Los `.zip` siguen excluidos** del router (`_EXT_OMITIDO`). Eran **8 de los 15** adjuntos únicos
+  de la muestra de esta entrada, así que la cifra que más se cita de `#87` **no la arregla `#87`**:
+  es `#55.1`, y necesita enrutado por tipo de zip (un export de WhatsApp no es un zip cualquiera:
+  `whatsapp_intake` sabe abrirlo y nadie lo encadena) más un dedup entre exports del mismo chat
+  que hoy no existe.
+- **La convergencia de `_ocr_y_extraer`** sobre `texto_de_pdf`.
+- **El coste en tiempo del cableado**: `apply` procesa ahora adjuntos que antes no procesaba. La
+  caché por sha256 hace que se pague una vez por adjunto, pero la primera corrida de un caso grande
+  crece. Es un intercambio deliberado de velocidad por fidelidad, y por primera vez se puede medir:
+  el `_tiempos.jsonl` de la misma sesión lo registra.
 
 ## 88. Threading riguroso de correo por cabeceras RFC (`References`/`In-Reply-To`)
 
@@ -3583,6 +3715,15 @@ entorno.
 
 **Coste estimado.** ~30 min: helper reutilizable extraído de `health_check.py`, llamada desde `apply`, y
 un test con el binario mockeado.
+
+> ⚠️ **La justificación de arriba caducó el 2026-08-04, y esto ya NO es solo conveniencia.** Al cerrar
+> `#84` se puso tope de intentos a los documentos que no se resuelven. Con el tope, un motor de OCR
+> ausente ya no cuesta una corrida lenta: **fallan todos los documentos, agotan todos el contador, y a
+> partir de la tercera corrida el caso se procesa saltándose el expediente entero**. Las mitigaciones
+> puestas (margen de 3, recuento de agotados impreso en cada corrida sugiriendo sospechar del motor, y
+> `--force`/`--solo`) lo hacen **ruidoso**, no imposible: siguen dependiendo de que alguien lea la
+> salida. El preflight es lo que lo haría imposible. Sigue sin disparador formal —nadie está
+> bloqueado—, pero su coste de oportunidad cambió de signo.
 
 ## 92. Integridad del manifiesto de intake: entradas de un expediente ajeno + evento de saneamiento
 
@@ -4618,6 +4759,11 @@ expediente del CRM no aterrizan solos en crudo → sala de máquina → sala de 
   gestor documental (con `--incremental` y `--force`).
 - Aterrizan en el sitio correcto: `case_manager.crm_branch_path` los coloca en
   `00_Input/05_CRM/<bucket>`, buckets planos por rama procesal (reorg del 2026-06-10).
+
+  > ❌ **ESTA AFIRMACIÓN ERA FALSA, y de ella salió la mitad del arreglo (medido el 2026-08-04).**
+  > Es cierta de `intake_judicial`, que usa `pull_expediente_v2`, y **falsa de `pull`, `sync_all` y
+  > `scheduled_sync`**, que usaban `pull_expediente` (v1) → `00_Input/sudespacho_<id>/`. Se escribió
+  > verificando un camino y generalizando a los otros tres. Ver el hueco 2-bis, abajo.
 - La sala de máquina los ve sin flags: `sala_maquina.inventariar` recorre **todo** `00_Input`.
 - La sala de lectura los declara entre sus fuentes (`01_Drive EV`/`05_CRM` en el `SKILL.md`).
 
@@ -4632,6 +4778,42 @@ expediente del CRM no aterrizan solos en crudo → sala de máquina → sala de 
    `raw_text/` + `MD/` legacy. **No es la sala de máquina.** Quien lo use creyendo que procesa el
    expediente produce artefactos del motor que la sala de máquina vino a sustituir. Aparece también en
    `intake_judicial` y en `sync_all`.
+
+   ✅ **CERRADO el 2026-08-04**, y eran **cinco** call sites, no tres: `pull`, `intake_judicial`,
+   `sync_all`, `scheduled_sync` y —el peor— el **checkbox del intake judicial de Streamlit**, cuya
+   etiqueta decía «Encadenar pipeline (anon → MD → frontier)» y cuyo spinner decía «Ejecutando
+   pipeline (OCR → MD → anon)»: tres descripciones distintas de lo mismo y ninguna cierta, en la
+   superficie que usan Paola y Ana. Retirados los cinco, junto con
+   `--anonimizar`/`--politica`/`--tipo-proc`, que solo existían para alimentar el flag. Cada comando
+   **señaliza** ahora qué correr (`scripts.sala_maquina apply`, y `scripts.anonimizar_caso` donde
+   antes encadenaba anon): retirar el flag sin decir con qué se sustituye habría cambiado una promesa
+   falsa por un silencio. **El botón «Ejecutar pipeline» del tab de análisis se conserva**: es la
+   superficie honesta del motor viejo, como `scripts/run_pipeline.py`; retirar ese motor es otra
+   decisión y no se ha tomado.
+
+2-bis. **Y el defecto gordo, que no estaba en esta entrada: tres de los cuatro comandos usaban el
+   pull v1.** `pull`, `sync_all` y `scheduled_sync` llamaban a `pull_expediente`, que escribe en
+   `00_Input/sudespacho_<id>/`. Tres consecuencias, verificadas contra código el 2026-08-04:
+
+   - **`is_legacy_intake_v1` declara ese layout congelado** y `pull_expediente_v2` devuelve
+     `blocked_legacy_v1` sin escribir nada. O sea: **un `pull` inutilizaba el caso para
+     `intake_judicial`**. Y la carpeta nace de un `mkdir` **antes** de bajar el primer byte, así que
+     bastaba un pull que fallara o que se saltara por marcador.
+   - Queda **fuera de las fuentes que declara `organizar-sala-lectura`** (`01_Drive EV`, `05_CRM` +
+     cajones legacy).
+   - **Se salta el guard de escritura del caso prestado.** `_pendiente_checkin` solo aparece en v2
+     (`sync_sudespacho.py:1481`), así que un pull v1 sobre un caso en checkout escribía en el árbol
+     vivo — exactamente la ruta de pérdida de datos que cerraron los PR #156/#160, con este call site
+     sin cubrir.
+
+   ✅ **CERRADO el 2026-08-04**: los tres pasan a `pull_expediente_v2`. `--force` y `--incremental`
+   desaparecen (v2 es idempotente por hash del manifiesto M9 y su docstring ya lo declaraba). Un caso
+   ya envenenado deja de hundirse más en cada pull: se reporta bloqueado con la migración manual, y en
+   los dos barridos no aborta el recorrido. **`pull_expediente` (v1) NO se retira**:
+   `scripts/bulk_pull_expedientes.py` lo usa y tiene tests propios; queda marcado legacy en su
+   docstring y avisado en el script. **Migrar ese script es lo único que queda vivo de este punto**, y
+   no urge: su fuente es el listado paginado del frontal heredado.
+
 3. **Entre sala de máquina y sala de lectura tampoco hay encadenado**: la primera «sugiere» la segunda,
    en prosa, en su `SKILL.md`.
 
@@ -4646,6 +4828,39 @@ las otras cuatro fuentes; (b) reapuntar `--run-pipeline` a la sala de máquina *
 mínimo — un flag que hace algo distinto de lo que promete es peor que no tenerlo.
 
 **Coste estimado.** Bajo. (b) por sí solo son minutos y cierra la trampa.
+
+### Estado (2026-08-04)
+
+- **(b) HECHA**, con el alcance ampliado que se describe en los puntos 2 y 2-bis: retirado el flag en
+  los cinco call sites y migrados los tres comandos al pull v2. +15 tests
+  (`tests/test_guard_sync_cli_pull_v2.py`), con **prueba de mutación** del guard estructural:
+  reintroducir `pipeline.run(` en `scheduled_sync` y una llamada a `pull_expediente(` en
+  `sync_sudespacho` pone en rojo las asserts que les corresponden, y `pull_expediente_v2(` no las
+  dispara por falso positivo.
+- **(a) SIGUE PENDIENTE** — `abrir_caso` no acepta `--fuente crm`.
+- **(3) SIGUE PENDIENTE** — sala de máquina → sala de lectura no encadena.
+- **Nuevo pendiente que destapa el arreglo:** `scripts/bulk_pull_expedientes.py` sigue en v1 (ver 2-bis).
+- **Lo que la corrección deja peor a corto plazo, dicho sin adornos:** los casos que ya tienen
+  `00_Input/sudespacho_*/` (el `is_legacy_intake_v1` cita **BaRR3 y MaRS15**) pasan de «el pull
+  funcionaba y hundía el caso» a «el pull no funciona y lo dice». Es lo correcto —el guard existía y lo
+  que fallaba era que el CLI no lo cruzaba— pero **hasta migrarlos a mano no se les puede bajar el
+  CRM**. La migración (borrar `sudespacho_*/` + repetir el pull) es destructiva sobre documentos ya
+  descargados, así que **no se automatiza aquí**: pide Preview→Apply (principio M7) y es trabajo
+  aparte. No se promueve a `PLAN.md` sin que Nikolai lo mire: hay que censar antes cuántos casos
+  reales están en v1, y ese censo se hace contra `G:`, no contra el repo.
+
+### 113.1 Los dos barridos son el mismo programa escrito dos veces
+
+**Verificado el 2026-08-04** al migrarlos: `sync_sudespacho sync_all` y `scheduled_sync` hacen lo mismo
+—recorrer los casos, leer `sudespacho_expedientes` del frontmatter, pull de cada uno— con dos
+implementaciones distintas: el primero lista con `case_manager.list_cases()` y parsea el frontmatter en
+línea; el segundo usa `case_locator.list_cases` y su propio `_read_expedientes`. La diferencia real es
+solo la envoltura (logging a fichero, código de salida, keep-alive de `gdrive_ev`).
+
+**Por qué importa:** todo arreglo en esa zona hay que hacerlo por duplicado, y este mismo cambio lo pagó.
+
+**Mejora propuesta.** Que `scheduled_sync` sea una envoltura de la función de barrido, no una copia.
+**Disparador:** el siguiente cambio que toque el barrido. Sin él, no urge.
 
 ## 114. No hay contrato de «dame el mejor texto de este documento», y `01_OCR/` no lo lee nadie
 

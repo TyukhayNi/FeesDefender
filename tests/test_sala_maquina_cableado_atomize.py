@@ -71,7 +71,11 @@ def test_atomiza_antes_de_construir_el_plan_de_ocr(caso, monkeypatch):
 
     def fake_plan(cd, force):
         orden.append("plan")
-        return []
+        # Desde 2026-08-04 `_construir_plan` devuelve además las mediciones del
+        # inventario: `(plan, cache, ms_inventario, n_hasheados, agotados)`. El doble
+        # cambia de forma, no de propósito — lo que este test fija sigue siendo el ORDEN
+        # de las etapas, no lo que el plan contiene.
+        return [], {}, 0, 0, frozenset()
 
     def fake_ejecutar(*a, **k):
         orden.append("ejecutar")

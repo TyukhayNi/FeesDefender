@@ -13,6 +13,8 @@ import json
 import re
 import shutil
 import tempfile
+import time
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, fields, replace
 from pathlib import Path
 
@@ -172,10 +174,30 @@ class DocCobertura:
     doc_id: str = ""         # identidad persistente del segmento; vacío = documento suelto
 
 
-def plan(inventario: list[dict], estado_previo: set[str]) -> list[DocPlan]:
+#: Veces que se reintenta un documento que no se resuelve antes de dejarlo en paz.
+#: Hasta el 2026-08-04 no había tope: el estado guardaba solo los ÉXITOS, así que un
+#: documento que falla volvía a pagar OCR real en cada `apply`, indefinidamente
+#: (~169 documentos en W-02VND1 — `MEJORAS #84`).
+#:
+#: Son 3 y no 2 a propósito. El tope tiene un footgun: si falta el motor de OCR
+#: (`MEJORAS #91`: `apply` no lo comprueba antes de una corrida larga) fallan TODOS los
+#: documentos y agotan TODOS el contador, y desde ahí el caso se procesaría «en verde»
+#: saltándose el expediente entero. El margen extra, el recuento de agotados que `apply`
+#: imprime en cada corrida y la vía de escape de `--force`/`--solo` son las tres
+#: mitigaciones; el arreglo de fondo es el preflight del motor, que sigue pendiente.
+MAX_INTENTOS = 3
+
+
+def plan(inventario: list[dict], estado_previo: set[str],
+         agotados: frozenset[str] = frozenset()) -> list[DocPlan]:
     """Puro: enruta cada fichero y marca skip si su sha ya fue procesado.
 
     Excluye 90_Notas personales/ (zona del abogado, invariante del proyecto).
+
+    `agotados`: sha de documentos que ya gastaron :data:`MAX_INTENTOS` sin resolverse.
+    Se saltan igual que los hechos, pero por un motivo distinto — el llamador es quien
+    lo distingue y lo declara, porque saltarse algo en silencio es el defecto que este
+    tope podría introducir si nadie lo cuenta.
     """
     out: list[DocPlan] = []
     for f in inventario:
@@ -189,7 +211,7 @@ def plan(inventario: list[dict], estado_previo: set[str]) -> list[DocPlan]:
             ext=f["ext"],
             ruta=clasificar_ruta(f["ext"]),
             slug=output_slug(rel, sha),
-            skip=sha in estado_previo,
+            skip=sha in estado_previo or sha in agotados,
         ))
     return out
 
@@ -975,9 +997,104 @@ def _ocr_y_extraer(case_dir: Path, sm_dir: Path, case_id: str, d: DocPlan,
     return filas
 
 
+@dataclass
+class TextoPdf:
+    """Texto de un PDF con la etiqueta de cómo salió y de si es fiable."""
+    texto: str
+    metodo: str          # pypdf | ocr | sin_texto
+    estado: str          # ok | low | empty
+    nota: str = ""
+    ocr: bool = False
+
+
+def texto_de_pdf(pdf: Path, *, ocr_salida: Path | None = None) -> TextoPdf:
+    """«Dame el mejor texto de este PDF», con la etiqueta de calidad puesta.
+
+    Es el motor de la sala de máquina expuesto **sin sus artefactos**: mismo enrutado,
+    misma escalera, mismos discriminantes, misma `ocr_quality`, pero sin escribir MD ni
+    hacer split. Existe para que el camino de los adjuntos de correo deje de tener su
+    propio motor (`MEJORAS #87`): hasta el 2026-08-04 un adjunto bajaba por
+    `extractor._extract_one` —pypdf, y Docling solo si ≤30 páginas—, así que un escaneado
+    largo daba **cero texto** y un escaneado con pie de LexNET salía por pypdf con el
+    cuerpo perdido y etiqueta `alta`.
+
+    Vive aquí, y no en un módulo nuevo, a propósito: la escalera, el discriminante de
+    página ciega y `ocr_quality` ya viven aquí. Un módulo aparte habría creado una
+    TERCERA superficie en vez de unificar dos.
+
+    Enrutado, idéntico al de `ejecutar`:
+      1. Capa de texto suficiente y **sin** páginas ciegas → `pypdf`, sin pagar OCR.
+      2. Capa de texto suficiente **con** páginas ciegas → escalera en modo
+         **conservador** (`MEJORAS #90`): no reescribe las páginas digitales.
+      3. Sin capa suficiente (escaneado) → escalera completa, **sin tope de páginas**.
+
+    `ocr_salida`: si se indica, ahí queda el PDF buscable (artefacto de custodia). Si no,
+    va a un temporal y se descarta — el llamador de adjuntos no tiene dónde guardarlo, y
+    afirmar una custodia que no existe sería peor que no tenerla.
+    """
+    texto = _try_pypdf(pdf) or ""
+    npags = _pdf_num_paginas(pdf)
+    ciegas = _paginas_ciegas(pdf)
+    digital = bool(texto.strip()) and _texto_suficiente(texto, npags)
+
+    if digital and not ciegas:
+        estado, nota = ocr_quality(texto, npags)
+        return TextoPdf(texto, "pypdf", estado, nota, False)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        destino = Path(ocr_salida) if ocr_salida else Path(tmp) / f"{pdf.stem}__ocr.pdf"
+        try:
+            res = ocr_pdf_escalera(pdf, destino, conservador=digital)
+        except Exception as e:  # noqa: BLE001 — cifrado, corrupto, firmado…
+            # No se tira el residuo: un sello de registro es poco, pero es lo que hay, y
+            # el motivo viaja para que el lector sepa que está viendo un resto.
+            estado, nota = ocr_quality(texto, npags)
+            motivo = f"OCR falló: {e}" + (f"; {nota}" if nota else "")
+            return TextoPdf(texto, "pypdf" if texto.strip() else "sin_texto",
+                            estado, motivo, False)
+
+        buscable = Path(res.ruta)
+        persistido = buscable == destino and destino.exists()
+        texto_ocr = (_try_pypdf(buscable) or "") if persistido else ""
+        final = texto_ocr if texto_ocr.strip() else texto
+        estado, nota = ocr_quality(final, npags)
+
+        if persistido:
+            # `#90` (b): la señal por página rompe la dilución del promedio — 4 escaneos
+            # mudos entre 36 páginas densas salen `ok` sin esto. Nunca sube la calidad.
+            try:
+                estado_pag, nota_pag = calidad_por_pagina(
+                    pdf_paginas.perfilar_paginas(buscable))
+            except Exception:  # noqa: BLE001 — la señal es un extra, no un requisito
+                estado_pag, nota_pag = "", ""
+            if estado_pag == "low":
+                estado, nota = "low", nota_pag if not nota else f"{nota}; {nota_pag}"
+
+        if res.degradado and estado == "ok":
+            estado = "low"
+        for extra in (res.nota, "escalera degradada: queda texto ciego sin recuperar"
+                      if res.degradado else ""):
+            if extra:
+                nota = f"{nota}; {extra}" if nota else extra
+
+        if not final.strip():
+            return TextoPdf("", "sin_texto", "empty", nota or "sin texto recuperable", False)
+        return TextoPdf(final, "ocr" if persistido else "pypdf", estado, nota, persistido)
+
+
 def ejecutar(case_dir: Path, docs: list[DocPlan], *, case_id: str,
-             vision: bool = False, force: bool = False) -> list[DocCobertura]:
+             vision: bool = False, force: bool = False,
+             on_documento: "Callable[[DocPlan, int, list[DocCobertura]], None] | None" = None,
+             ) -> list[DocCobertura]:
     """Recorre el plan escribiendo 01_OCR/, raw_text/, 03_MD/. Devuelve cobertura.
+
+    `on_documento(doc, ms, filas)`: gancho de instrumentación, llamado tras CADA
+    documento con lo que tardó y las filas que produjo. Existe porque nadie había medido
+    dónde se va el tiempo del montaje, y sin ese reparto no se puede decidir si
+    paralelizar el OCR compra algo: `ocr_pdf` no pasa `jobs`, así que ocrmypdf ya
+    paraleliza por página con todos los núcleos, y el paralelismo externo puede ser un
+    salto o ser nada según el reparto de páginas del caso. El gancho no altera el
+    resultado: si es `None` no se mide.
 
     Rutas (spec §5): PDF con capa de texto → pypdf sin OCR; PDF escaneado o
     imagen/`.heic` → `imagen_a_pdf` (si aplica) → OCRmyPDF → PDF buscable
@@ -994,6 +1111,8 @@ def ejecutar(case_dir: Path, docs: list[DocPlan], *, case_id: str,
     for d in docs:
         if d.skip:
             continue
+        _n_antes = len(cobertura)
+        _t0 = time.perf_counter()
         # spec §9: aislar el fallo por documento. Un error en uno (lock ~$ de
         # Office, disco lleno, PDF corrupto que revienta pypdf) se registra en
         # cobertura y NO aborta el lote — así apply() siempre llega a escribir
@@ -1041,7 +1160,12 @@ def ejecutar(case_dir: Path, docs: list[DocPlan], *, case_id: str,
                 cobertura.append(DocCobertura(d.slug, d.rel_path, "sin_soporte", "sin_soporte", 0, False, "sin soporte para esta extensión", d.sha256))
         except Exception as e:  # cualquier fallo del documento: no tumbar el lote
             cobertura.append(DocCobertura(d.slug, d.rel_path, "error", "empty", 0, False, f"fallo al procesar: {e}", d.sha256))
-            continue
+        finally:
+            # `finally` y no al final del `try`: un documento que revienta también
+            # cuesta tiempo, y es justo el que interesa medir (el que se reintenta).
+            if on_documento is not None:
+                ms = int((time.perf_counter() - _t0) * 1000)
+                on_documento(d, ms, cobertura[_n_antes:])
     return cobertura
 
 
@@ -1053,22 +1177,58 @@ def inventariar(case_dir: Path) -> list[dict]:
 
     NO excluye 90_Notas personales aquí (lo hace plan(), único punto de verdad),
     pero sí los ficheros de control del intake.
+
+    Hashea TODO: es la forma correcta para un llamador sin estado (un script puntual,
+    un test). Quien re-corra sobre el mismo caso debe usar
+    :func:`inventariar_cacheado`, que es donde está el ahorro.
+    """
+    return inventariar_cacheado(case_dir, cache={})[0]
+
+
+def inventariar_cacheado(case_dir: Path,
+                         cache: dict[str, list]) -> tuple[list[dict], dict[str, list]]:
+    """Como :func:`inventariar`, reutilizando el sha de los ficheros no tocados.
+
+    `cache` mapea `rel_path -> [size, mtime_ns, sha256, ext]`. Se devuelve la caché
+    **nueva**, ya podada de lo que no existe (sin poda, un caso grande la engorda sin
+    techo a cada renombrado). No muta la que se le pasa.
+
+    **Validez por `(size, mtime_ns)`, y falla al lado seguro.** Cualquier discrepancia
+    —incluido un mtime que cambió sin que cambiara el contenido, que es lo que hace Drive
+    for Desktop al rehidratar— provoca rehash: se paga el hash y sale el mismo sha. El
+    error inverso (dar por bueno el sha porque el mtime no se movió cuando el contenido
+    sí) sería corrupción de la cadena de custodia, y por eso la clave incluye el tamaño.
+
+    **Por qué no se lee `00_Input/_intake_hashes.json`** (que es lo que sugería
+    `MEJORAS #48`): el manifiesto M9 está indexado **sha → rutas**, no ruta → sha; no
+    guarda `size` ni `mtime`, así que no hay con qué validar su hash; y está incompleto
+    —`core/intake_drive.py` no registra en él—. Serviría para deduplicar, no para saber
+    si el fichero de disco sigue siendo el que se hasheó.
     """
     root = Path(case_dir) / "00_Input"
     out: list[dict] = []
+    nueva: dict[str, list] = {}
     for p in sorted(root.rglob("*")):
         if not p.is_file() or p.name in _IGNORAR:
             continue
-        ext = p.suffix.lower()
-        if clasificar_ruta(ext) == "sin_soporte":
-            with p.open("rb") as fh:
-                head = fh.read(16)
-            detectada = _sniff_ext_por_contenido(head)
-            if detectada is not None:
-                ext = detectada
-        out.append({
-            "rel_path": p.relative_to(root).as_posix(),
-            "sha256": file_sha256(p),
-            "ext": ext,
-        })
-    return out
+        rel = p.relative_to(root).as_posix()
+        try:
+            st = p.stat()
+        except OSError:      # desapareció entre el rglob y el stat
+            continue
+        previa = cache.get(rel)
+        if previa is not None and len(previa) == 4 \
+                and previa[0] == st.st_size and previa[1] == st.st_mtime_ns:
+            sha, ext = previa[2], previa[3]
+        else:
+            ext = p.suffix.lower()
+            if clasificar_ruta(ext) == "sin_soporte":
+                with p.open("rb") as fh:
+                    head = fh.read(16)
+                detectada = _sniff_ext_por_contenido(head)
+                if detectada is not None:
+                    ext = detectada
+            sha = file_sha256(p)
+        nueva[rel] = [st.st_size, st.st_mtime_ns, sha, ext]
+        out.append({"rel_path": rel, "sha256": sha, "ext": ext})
+    return out, nueva

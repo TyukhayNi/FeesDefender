@@ -973,6 +973,16 @@ def pull_expediente(
     """Descarga al `00_INPUT/sudespacho_{id}/` del caso todos los documentos
     del expediente.
 
+    ⚠️ **LEGACY (2026-08-04). Para código nuevo usa :func:`pull_expediente_v2`.**
+    El layout que escribe esta función —`00_Input/sudespacho_<id>/`— es el que
+    :func:`is_legacy_intake_v1` declara **congelado**: en cuanto existe esa carpeta, el
+    pull v2 y el intake judicial se bloquean, el árbol queda fuera de las fuentes que
+    declara `organizar-sala-lectura` (`01_Drive EV`, `05_CRM`) y —lo caro— las
+    escrituras **no pasan por el guard del caso prestado**, que solo existe en v2. Los
+    tres CLI de sync (`pull`, `sync_all`, `scheduled_sync`) se migraron a v2 por eso
+    (`MEJORAS #113`). Aquí sigue por `scripts/bulk_pull_expedientes.py`, que recorre el
+    listado paginado del frontal heredado y todavía no se ha migrado.
+
     Convención de carpetas:
 
         data/CASOS/{case_id}/00_INPUT/

@@ -5,6 +5,13 @@ Recorre el listado paginado del frontal heredado, filtra por cliente
 de cada uno al árbol local. Idempotente: cada expediente lleva su
 propio marcador `.pulled` en `00_INPUT/sudespacho/`.
 
+⚠️ **Sigue en el pull v1 (`pull_expediente`), y por tanto escribe el layout
+`00_Input/sudespacho_<id>/` que `is_legacy_intake_v1` declara congelado**: un caso
+tocado por este script queda bloqueado para el pull v2, para el intake judicial y para
+el guard de escritura del caso prestado. Los tres CLI de sync se migraron a v2 el
+2026-08-04 (`MEJORAS #113`); este no, porque su fuente es el listado paginado del
+frontal heredado y la migración es un trabajo aparte. Úsalo sabiéndolo.
+
 Uso típico:
 
     # Solo listar, no descargar (dry-run)

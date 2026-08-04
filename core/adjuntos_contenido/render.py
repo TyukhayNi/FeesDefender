@@ -11,8 +11,9 @@ _TEXTO_VACIO = "_(sin texto extraído)_"
 def render_contenido(*, att_id: str, nombre_original: str, tipo: str, sha256: str,
                      metodo: str, caracteres: int, confianza: str, resumen_estado: str,
                      vision_estado: str, mensajes: list[str], resumen: str | None,
-                     texto: str) -> str:
-    ocr = "true" if metodo == "docling" else "false"
+                     texto: str, ocr_aplicado: bool = False,
+                     chat_huella: str = "") -> str:
+    ocr = "true" if ocr_aplicado else "false"
     resumen_body = resumen.strip() if (resumen and resumen.strip()) else _RESUMEN_PENDIENTE
     texto_body = texto if texto.strip() else _TEXTO_VACIO
     return (
@@ -29,7 +30,12 @@ def render_contenido(*, att_id: str, nombre_original: str, tipo: str, sha256: st
         f"resumen_estado: {resumen_estado}\n"
         f"vision_estado: {vision_estado}\n"
         f"mensajes: [{', '.join(mensajes)}]\n"
-        "---\n\n"
+        # Solo para exports de WhatsApp (`MEJORAS #55.1`). Las dos líneas se emiten juntas
+        # porque el pipeline parchea `chat_solape` con `set_frontmatter` cuando ya ha visto
+        # todos los adjuntos del caso, y esa función necesita la línea ya existente.
+        + (f"chat_huella: {chat_huella}\nchat_solape: ninguno detectado\n"
+           if chat_huella else "")
+        + "---\n\n"
         "## Resumen\n\n"
         f"{resumen_body}\n\n"
         "## Texto\n\n"

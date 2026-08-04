@@ -112,7 +112,13 @@ El ID está en la URL de la vista del expediente:
 `https://tnm.sudespacho.net/.../expedientes_judiciales/miembro/<ID>`.
 El segmento final tras `miembro/` es el ID que pasarás a `--expediente`.
 
-### 6. Descarga y procesa
+### 6. Descarga (y luego procesa, aparte)
+
+> **2026-08-04:** el pull deposita en `00_Input/05_CRM/<rama>/` y es **idempotente por
+> hash** — no hay `--force` ni `--incremental`. Y **no procesa**: el flag
+> `--run-pipeline` que aquí se documentaba llamaba al motor jubilado, y se retiró
+> (`MEJORAS #113`). Si el caso tiene una carpeta `00_Input/sudespacho_*/` (layout v1,
+> congelado), el pull se bloquea y explica la migración.
 
 ```bash
 # Solo descarga
@@ -121,11 +127,8 @@ python -m scripts.sync_sudespacho pull \
     --expediente 649 \
     --titulo "Reclamación honorarios E&V — calle X"
 
-# Descarga + pipeline completo (scoring, viabilidad, demanda)
-python -m scripts.sync_sudespacho pull \
-    --case EV-2026-001 \
-    --expediente 649 \
-    --run-pipeline
+# El pull NO procesa. El motor documental es la sala de máquina, aparte:
+python -m scripts.sala_maquina apply "EV-2026-001"
 
 # Expedientes extrajudiciales
 python -m scripts.sync_sudespacho pull \
