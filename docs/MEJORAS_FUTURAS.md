@@ -3415,6 +3415,59 @@ mapeo de confianza del router, que hoy depende del nombre del motor.
 **Disparador de promoción a `PLAN.md`:** un adjunto largo truncado en silencio que afecte a un caso
 real, o una divergencia de texto observada entre los dos caminos. **No** promover por limpieza.
 
+### ✅ CERRADO el 2026-08-04 — y el agujero grande no era el que esta entrada describe
+
+Promovido por **decisión explícita de Nikolai** (disparador válido de `CLAUDE.md`), con
+prioridad de **fidelidad del contexto para el LLM y para el humano**. Al abrirlo apareció algo
+que esta entrada no contemplaba y que dominaba todo lo demás:
+
+**Nadie ejecutaba el pipeline.** `git grep` sobre `core/`, `scripts/`, `streamlit_app.py` y
+`.claude/skills`: **cero llamadores** de `core.adjuntos_contenido` fuera de su propio paquete. La
+única vía era `python -m core.adjuntos_contenido <case_id>`, a mano, y no la mencionaba ninguna
+skill ni el RUNBOOK. O sea: el motor divergente que esta entrada describe **no llegaba a correr**.
+El contenido de los adjuntos no existía en el árbol de ningún caso. Misma clase de defecto que
+`#113` y que el cableado del correo (PR #151): piezas construidas y ninguna llama a la siguiente.
+
+Tres piezas, en orden de fidelidad por esfuerzo:
+
+1. **Cableado.** `sala_maquina apply` llama a `contenido.procesar_dir` después de atomizar (los
+   adjuntos solo existen en disco tras atomizar) y antes del OCR (si la corrida larga muere, el
+   rastro ya está escrito). Se le pasa la RUTA, no el `case_id`: `procesar_caso` re-localizaría el
+   caso y en un checkout apuntaría al árbol equivocado. Evento nuevo `contenido_adjuntos`
+   (vocabulario 27 → 28). `plan` cuenta los adjuntos sin procesarlos.
+2. **La ficha deja de mentir.** Decía `## Descripción
+
+(pendiente; OCR en fase 2)`, y
+   `_escribe_adjunto` la reescribe en CADA corrida: como `apply` atomiza siempre, cualquier
+   actualización de la ficha por `adjuntos_contenido` quedaba **pisada** a la corrida siguiente.
+   La salida no era actualizarla mejor: es que **nunca sea el hogar del contenido**. Ahora nombra
+   su `.contenido.md` y explica qué significa que no esté. Un puntero es inmune al clobber.
+3. **El motor** (esta entrada). `sala_maquina.texto_de_pdf`: el motor de la sala de máquina sin sus
+   artefactos. Cierra el `sin_texto` de los escaneados de >30 páginas, mira las páginas ciegas de
+   `#90`, y —lo más sucio de lo que había— quita la etiqueta `confianza: alta` que se ponía «porque
+   el motor no fue Docling» a documentos con el cuerpo perdido. `ocr_aplicado` pasa a ser un flag
+   explícito. `CONTENIDO_VERSION` 1 → 2, o los adjuntos ya procesados conservarían el texto viejo.
+
+**Dónde vive el adaptador, y por qué no en un módulo nuevo.** La escalera, el discriminante de
+página ciega y `ocr_quality` ya viven en `core/sala_maquina.py`. Un `core/ocr_texto.py` habría
+creado una **tercera** superficie en vez de unificar dos. Con el adaptador dentro, la convergencia
+que queda —que `_ocr_y_extraer` lo use también, en vez de duplicar el enrutado— es un refactor
+**local** dentro de un módulo, y no se ha hecho aquí a propósito: ese camino lleva el split, las
+notas de custodia y la lógica de `#90`, con ~2.860 tests alrededor.
+
+**Lo que sigue abierto, y conviene no confundirlo con esto:**
+
+- **Los `.zip` siguen excluidos** del router (`_EXT_OMITIDO`). Eran **8 de los 15** adjuntos únicos
+  de la muestra de esta entrada, así que la cifra que más se cita de `#87` **no la arregla `#87`**:
+  es `#55.1`, y necesita enrutado por tipo de zip (un export de WhatsApp no es un zip cualquiera:
+  `whatsapp_intake` sabe abrirlo y nadie lo encadena) más un dedup entre exports del mismo chat
+  que hoy no existe.
+- **La convergencia de `_ocr_y_extraer`** sobre `texto_de_pdf`.
+- **El coste en tiempo del cableado**: `apply` procesa ahora adjuntos que antes no procesaba. La
+  caché por sha256 hace que se pague una vez por adjunto, pero la primera corrida de un caso grande
+  crece. Es un intercambio deliberado de velocidad por fidelidad, y por primera vez se puede medir:
+  el `_tiempos.jsonl` de la misma sesión lo registra.
+
 ## 88. Threading riguroso de correo por cabeceras RFC (`References`/`In-Reply-To`)
 
 **Estado.** Limitación **aceptada y documentada** en el Slice 1 (spec de 2026-07-23 §5), no un bug.
