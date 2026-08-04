@@ -12,18 +12,19 @@ Uso:
     python -m scripts.sync_sudespacho show --expediente 12345
 
     # Descargar todos los documentos del expediente al caso local
-    # (vía frontal heredado — listado + descarga)
+    # (API REST; depositados en 00_Input/05_CRM/<rama>/)
     python -m scripts.sync_sudespacho pull \\
         --case EV-2026-001 \\
         --expediente 12345
 
-    # Descarga + pipeline completo
-    python -m scripts.sync_sudespacho pull \\
-        --case EV-2026-001 --expediente 12345 --run-pipeline
+Procesar lo descargado NO es parte de este CLI: el motor documental es la sala de
+máquina (`python -m scripts.sala_maquina apply "<case_id>"`). Hasta el 2026-08-04 estos
+comandos traían un flag `--run-pipeline` que llamaba a `core.pipeline.run` —el motor
+jubilado: Docling con tope de 30 páginas y salida a `raw_text/` + `MD/` legacy— mientras
+su ayuda prometía «OCR → MD». Se retiró: `MEJORAS #113`.
 
-    # Forzar re-descarga aunque exista marcador
-    python -m scripts.sync_sudespacho pull \\
-        --case EV-2026-001 --expediente 12345 --force
+El pull es **idempotente por hash** (manifiesto M9), así que no hay `--force` ni
+`--incremental`: volver a llamarlo salta lo que ya está.
 """
 
 from __future__ import annotations
@@ -32,13 +33,13 @@ import json
 
 import typer
 
-from core import case_manager, pipeline
+from core import case_manager
 from core.judicial_intake import intake_demanda_contestacion
 from core.sudespacho_relations import verify_expediente_referencia
 from core.sync_sudespacho import (
     SudespachoClient,
     SudespachoError,
-    pull_expediente,
+    pull_expediente_v2,
 )
 from core.sync_sudespacho_legacy import (
     SudespachoLegacyClient,
@@ -46,6 +47,39 @@ from core.sync_sudespacho_legacy import (
 )
 
 app = typer.Typer(add_completion=False, help="Sincronización con sudespacho.net")
+
+
+def _siguiente_paso(case: str, *, con_anonimizacion: bool = False) -> None:
+    """Señaliza el motor documental. Este CLI descarga; no procesa.
+
+    Retirar `--run-pipeline` sin decir con qué se sustituye convertiría una promesa
+    falsa en un silencio, que era el otro defecto del mismo fichero (`MEJORAS #113`).
+    """
+    typer.echo("\n▶ Siguiente paso — este comando descarga, NO procesa:")
+    typer.echo(f'    python -m scripts.sala_maquina apply "{case}"')
+    if con_anonimizacion:
+        typer.echo("  Y si el caso necesita la capa tapada para el LLM externo:")
+        typer.echo(f'    python -m scripts.anonimizar_caso "{case}"')
+
+
+def _abortar_si_legacy_v1(result) -> None:
+    """Un caso con `00_Input/sudespacho_*/` está congelado y el pull v2 no escribe nada.
+
+    Hasta el 2026-08-04 esto no se veía: el CLI bajaba por el pull v1, que escribía en
+    ese mismo layout y así mantenía el caso fuera del intake judicial, de las fuentes
+    que declara la sala de lectura y del guard de escritura del caso prestado.
+    """
+    if not result.blocked_legacy_v1:
+        return
+    typer.echo("⛔ Caso con estructura v1 de intake — no se ha descargado nada.")
+    for e in result.errors:
+        typer.echo(f"   {e}")
+    typer.echo(
+        "   Migración manual (revísala antes de ejecutarla): borrar las carpetas "
+        "`00_Input/sudespacho_*/` del caso y repetir este pull; los documentos "
+        "volverán a bajar a `00_Input/05_CRM/<rama>/`."
+    )
+    raise typer.Exit(2)
 
 
 @app.command()
@@ -115,18 +149,12 @@ def pull(
                                    help="Referencia CRM (ej. 'BaRR3 - Roser 39 - Art 20 LAU')"),
     cliente: str = typer.Option(None, "--cliente"),
     contraparte: str = typer.Option(None, "--contraparte"),
-    force: bool = typer.Option(False, "--force/--no-force",
-                               help="Re-descarga aunque exista marcador previo"),
-    incremental: bool = typer.Option(False, "--incremental/--no-incremental",
-                                     help="Solo descarga docs nuevos respecto al último pull"),
-    run_pipeline: bool = typer.Option(False, "--run-pipeline/--no-run-pipeline"),
 ) -> None:
-    """Descarga el expediente al caso local (subcarpeta sudespacho_{id}/).
+    """Descarga el expediente al árbol del caso: `00_Input/05_CRM/<rama>/`.
 
-    Modos:
-      (default)     Skip si .pulled existe. Para pull inicial.
-      --incremental Solo descarga docs nuevos. Para actualizaciones periódicas.
-      --force       Re-descarga todo aunque .pulled exista.
+    Idempotente por hash (manifiesto M9): re-llamarlo salta lo que ya está, así que no
+    hay `--force` ni `--incremental`. Si el caso tiene estructura v1
+    (`00_Input/sudespacho_*/`) el pull se bloquea y explica la migración.
     """
     case_manager.ensure_case(
         case,
@@ -172,30 +200,26 @@ def pull(
             typer.echo("✓ Referencia CRM coincide con caso local.")
 
     try:
-        result = pull_expediente(
-            case, expediente,
-            element=elem,
-            force=force,
-            incremental=incremental,
-        )
+        result = pull_expediente_v2(case, expediente, element=elem)
     except (SudespachoError, SudespachoLegacyError) as exc:
         typer.echo(f"❌ {exc}")
         raise typer.Exit(code=1)
 
+    _abortar_si_legacy_v1(result)
+
     typer.echo(json.dumps({
         "case_id": result.case_id,
         "expediente_id": result.expediente_id,
-        "documents_total": result.documents_total,
-        "documents_downloaded": result.documents_downloaded,
-        "bytes_downloaded": result.bytes_downloaded,
-        "folders_processed": result.folders_processed,
+        "documents_total_crm": result.documents_total_crm,
+        "documents_written": result.documents_written,
+        "documents_skipped_dedup": result.documents_skipped_dedup,
+        "documents_overlap": result.documents_overlap,
+        "documents_failed": result.documents_failed,
+        "by_carpeta": result.by_carpeta,
         "errors": result.errors,
     }, ensure_ascii=False, indent=2))
 
-    if run_pipeline:
-        pr = pipeline.run(case, do_sync=False, do_demanda=True)
-        for s in pr.steps:
-            typer.echo(f"  {'✅' if s.ok else '❌'} {s.name}: {s.detail or s.artifact or ''}")
+    _siguiente_paso(case)
 
 
 @app.command()
@@ -208,16 +232,6 @@ def intake_judicial(
                               help="Baja el expediente COMPLETO (no solo demanda+contestación), "
                                    "dejando 05_CRM físicamente completo. La clasificación pasa a "
                                    "ser etiquetado: los roles ambiguos se avisan pero no bloquean."),
-    run_pipeline: bool = typer.Option(False, "--run-pipeline/--no-run-pipeline",
-                                      help="Encadena el pipeline (OCR → MD → anon) sobre el caso completo "
-                                           "tras el intake. Incremental por hash: solo procesa los docs nuevos."),
-    anonimizar: bool = typer.Option(True, "--anonimizar/--no-anonimizar",
-                                    help="Al encadenar el pipeline, anonimiza el caso completo "
-                                         "(deja el resultado en 06_Anonimizado/). Activo por defecto."),
-    politica: str = typer.Option("SALTAR", "--politica",
-                                 help="Política de anonimización (p. ej. SALTAR)."),
-    tipo_proc: str = typer.Option("Juicio Ordinario", "--tipo-proc",
-                                  help="Tipo de procedimiento para la anonimización."),
 ) -> None:
     """Intake del expediente judicial en el árbol del caso.
 
@@ -281,32 +295,19 @@ def intake_judicial(
             "Súbelos a mano con el expander «📂 Subir al árbol CRM» si procede."
         )
 
-    if run_pipeline and result.pull and (
-        result.pull.documents_written or result.pull.documents_overlap
-    ):
-        # OCR (incremental por hash) → MD → anonimización del caso COMPLETO.
-        # No se regenera la demanda (do_demanda=False): el intake judicial no
-        # produce borrador, solo deja el expediente procesado y anonimizado.
-        pr = pipeline.run(
-            case, do_sync=False, do_demanda=False,
-            do_anonimizar=anonimizar,
-            politica_anonimizar=politica,
-            tipo_proc_anonimizar=tipo_proc,
-        )
-        for s in pr.steps:
-            typer.echo(f"  {'✅' if s.ok else '❌'} {s.name}: {s.detail or s.artifact or ''}")
+    if result.pull and (result.pull.documents_written or result.pull.documents_overlap):
+        _siguiente_paso(case, con_anonimizacion=True)
 
 
 @app.command()
-def sync_all(
-    incremental: bool = typer.Option(True, "--incremental/--no-incremental",
-                                     help="Solo descarga docs nuevos (default: True)"),
-    run_pipeline: bool = typer.Option(False, "--run-pipeline/--no-run-pipeline"),
-) -> None:
+def sync_all() -> None:
     """Sincroniza TODOS los casos activos con sus expedientes registrados.
 
-    Recorre data/CASOS/, lee los expedientes vinculados en _caso.md,
-    y ejecuta pull incremental para cada uno. Diseñado para tarea programada.
+    Recorre data/CASOS/, lee los expedientes vinculados en _caso.md y ejecuta el pull
+    de cada uno. Idempotente por hash: no hay flag `--incremental`.
+
+    Los casos con estructura v1 (`00_Input/sudespacho_*/`) se reportan como bloqueados y
+    NO abortan el barrido: se sigue con los demás y se resumen al final.
     """
     from core.config import caso_path, settings
     import yaml as _yaml
@@ -318,6 +319,8 @@ def sync_all(
 
     total_new = 0
     errors_global: list[str] = []
+    bloqueados: list[str] = []
+    tocados: list[str] = []
 
     for case_id in casos:
         index = caso_path(case_id) / "00_Input" / "_caso.md"
@@ -342,37 +345,47 @@ def sync_all(
                 continue
 
             try:
-                result = pull_expediente(
-                    case_id, exp_id,
-                    element=elem,
-                    incremental=incremental,
-                    force=False,
-                )
+                result = pull_expediente_v2(case_id, exp_id, element=elem)
             except (SudespachoError, SudespachoLegacyError) as exc:
                 msg = f"  ❌ {exp_id}: {exc}"
                 typer.echo(msg)
                 errors_global.append(f"{case_id}/{exp_id}: {exc}")
                 continue
 
-            new = result.documents_downloaded
+            if result.blocked_legacy_v1:
+                typer.echo(f"  ⛔ {elem} {exp_id}: caso con estructura v1 — nada descargado")
+                if case_id not in bloqueados:
+                    bloqueados.append(case_id)
+                continue
+
+            new = result.documents_written
             total_new += new
             status = f"+{new} docs" if new else "sin cambios"
             icon = "🆕" if new else "✓"
             typer.echo(f"  {icon} {elem} {exp_id}: {status}")
+            if new and case_id not in tocados:
+                tocados.append(case_id)
             if result.errors:
                 for e in result.errors:
                     typer.echo(f"     ⚠️  {e}")
 
-            if run_pipeline and new:
-                pr = pipeline.run(case_id, do_sync=False, do_demanda=False)
-                for s in pr.steps:
-                    typer.echo(f"     {'✅' if s.ok else '❌'} {s.name}")
-
     typer.echo(f"\n✅ Sync completado — {total_new} doc(s) nuevos en {len(casos)} caso(s)")
+    if bloqueados:
+        typer.echo(
+            f"⛔ {len(bloqueados)} caso(s) con estructura v1 de intake "
+            "(`00_Input/sudespacho_*/`), que el pull no toca. Migración manual: borrar "
+            "esas carpetas y repetir el pull del caso."
+        )
+        for c in bloqueados:
+            typer.echo(f"   {c}")
     if errors_global:
         typer.echo(f"⚠️  {len(errors_global)} error(s):")
         for e in errors_global:
             typer.echo(f"   {e}")
+    if tocados:
+        typer.echo("\n▶ Siguiente paso — este comando descarga, NO procesa. Por cada caso:")
+        for c in tocados:
+            typer.echo(f'    python -m scripts.sala_maquina apply "{c}"')
 
 
 if __name__ == "__main__":
