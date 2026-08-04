@@ -2358,6 +2358,46 @@ preservando procedencias. Los N correos adjuntos se recuperan enteros y ordenado
 y dar de alta **un solo** export —el más completo según `ChatPreview`— anotando en `_caso.md` de qué correo
 vino, porque esa relación no la guarda nadie.
 
+#### ✅ Cortes 2 y 3 CERRADOS el 2026-08-04 (promovido por decisión de Nikolai)
+
+Los `.zip` adjuntos ya tienen contenido. `core/adjuntos_contenido/zips.py`, enrutado por TIPO de zip
+como exigía esta entrada: se pregunta primero si trae un chat parseable y solo si no, descompresión.
+La detección es **más estricta** que `whatsapp_intake._find_chat_txt`, que cae a «cualquier `.txt`»:
+aquí hace falta que `parse_chat` saque al menos un mensaje. Sin eso, un zip con un `.txt` cualquiera
+se clasificaría como conversación de WhatsApp — comprobado por mutación (relajar el criterio pone en
+rojo cinco tests del camino genérico).
+
+**El dedup entre exports: NO se ha construido, y esta entrada tenía razón en que no debía hacerse a
+la ligera.** La salida fue no fundir y hacer el solape visible:
+
+- `huella_chat` identifica el **chat** por su primer mensaje, así que dos exports del mismo chat la
+  comparten aunque su sha256 difiera — que es exactamente lo que `whatsapp_intake` no puede
+  deduplicar, porque su dedup es por hash del zip, como decía esta entrada.
+- Cuando dos adjuntos del caso comparten huella, cada `.contenido.md` **nombra al otro** y dice
+  «no se han fundido; al construir una cronología, contar UNO solo». El conteo quíntuple que esta
+  entrada temía solo puede nacer en quien construya la cronología, y ahora ese alguien tiene el aviso
+  delante en vez de cinco documentos que parecen cinco conversaciones.
+- Límite del método, declarado en el docstring: un export recortado por fecha no empieza por el primer
+  mensaje del chat y su huella no coincidirá. Falso **negativo** (dos copias parecerán chats
+  distintos), nunca falso positivo.
+
+**Zip genérico:** sus miembros con texto pasan por el mismo router, así que un PDF dentro de un zip ya
+usa el motor de la sala de máquina (`#87`). Tres topes, los tres declarados en la nota del artefacto:
+profundidad 1 (un zip anidado se lista, no se abre), `MAX_MIEMBROS`, `MAX_BYTES_MIEMBRO`.
+
+**Lo que sigue abierto de esta entrada:**
+
+- **El corte 1** (la bifurcación MIME no declarada: `.eml` adjuntos con `application/octet-stream`
+  invisibles con `--extraer-adjuntos` en su default `False`). Intacto.
+- **La reconciliación de verdad** entre exports del mismo chat, que es lo que haría falta para una
+  cronología unificada de WhatsApp. Sigue sin construirse, y ahora al menos el solape es visible para
+  quien lo intente.
+- **El alta como lote** (`whatsapp_intake.deposit_export`) desde un adjunto de correo: aquí el export
+  se **lee**, no se ingesta. Ingestarlo escribiría en `00_Input` y eso es la decisión de layout de
+  `#54`, no un efecto colateral del contenido de un adjunto.
+- **La mitigación manual de arriba deja de ser necesaria para leer**, pero sigue siéndolo para
+  ingestar: si quieres el chat como lote del caso, sigue siendo un solo export elegido a mano.
+
 ---
 
 ## 56. Mejora del proceso de sala de lectura: motor determinista + tool MCP, cronología + nombres que hablan  [pieza de #54/#55] [DESCARTADO 2026-07-23 — ver #75 / PR #124]
