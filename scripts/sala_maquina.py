@@ -7,6 +7,7 @@ Uso:
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 import typer
@@ -17,6 +18,7 @@ from core.config import caso_path
 from core.email_atomize import pipeline as atomize
 from core.intake_log import append_event
 from core import split_documental as split
+from core.utils import now_iso
 
 app = typer.Typer(add_completion=False)
 
@@ -41,18 +43,99 @@ def _registrar_atomizado(case_id: str, details: dict) -> None:
         typer.echo(f"AVISO: no se pudo registrar el evento atomizado_email: {exc}", err=True)
 
 
-def _estado_previo(case_dir: Path) -> set[str]:
+def _leer_estado(case_dir: Path) -> dict:
+    """Estado completo: `procesados` (éxitos), `intentos` (fallos) y `hashes` (caché).
+
+    Tolerante al esquema viejo (solo `procesados`): un caso ya procesado por el motor
+    anterior estrena caché vacía y contadores a cero, que es lo correcto — no hay de
+    dónde sacar los mtime de entonces.
+    """
     f = sm._sala_maquina_dir(case_dir) / _STATE
     if not f.exists():
-        return set()
-    return set(json.loads(f.read_text(encoding="utf-8")).get("procesados", []))
+        return {}
+    try:
+        return json.loads(f.read_text(encoding="utf-8")) or {}
+    except (json.JSONDecodeError, OSError):
+        # Estado ilegible: se trata como ausente. Se paga una corrida completa, que es
+        # el lado seguro — lo contrario sería saltarse documentos por un fichero roto.
+        return {}
 
 
-def _guardar_estado(case_dir: Path, shas: set[str]) -> None:
+def _estado_previo(case_dir: Path) -> set[str]:
+    return set(_leer_estado(case_dir).get("procesados", []))
+
+
+def _intentos_previos(case_dir: Path) -> dict[str, int]:
+    crudo = _leer_estado(case_dir).get("intentos", {})
+    return {k: int(v) for k, v in crudo.items()} if isinstance(crudo, dict) else {}
+
+
+def _cache_hashes(case_dir: Path) -> dict[str, list]:
+    crudo = _leer_estado(case_dir).get("hashes", {})
+    return crudo if isinstance(crudo, dict) else {}
+
+
+def _guardar_estado(case_dir: Path, shas: set[str], *,
+                    intentos: dict[str, int] | None = None,
+                    hashes: dict[str, list] | None = None) -> None:
+    """Persiste el estado. `intentos`/`hashes` a `None` = conservar lo que hubiera.
+
+    Conservar y no vaciar importa: `reforzar` y otros caminos llaman aquí sin saber nada
+    de la caché, y vaciarla haría que la corrida siguiente rehashease el caso entero.
+    """
     d = sm._sala_maquina_dir(case_dir)
     d.mkdir(parents=True, exist_ok=True)
-    (d / _STATE).write_text(json.dumps({"procesados": sorted(shas)}, ensure_ascii=False, indent=2),
+    payload = {
+        "procesados": sorted(shas),
+        "intentos": _intentos_previos(case_dir) if intentos is None else
+                    {k: v for k, v in sorted(intentos.items()) if v},
+        "hashes": _cache_hashes(case_dir) if hashes is None else hashes,
+    }
+    (d / _STATE).write_text(json.dumps(payload, ensure_ascii=False, indent=2),
                             encoding="utf-8")
+
+
+def _resumir_tiempos(tiempos: list[dict], ms_total: int, ms_inv: int,
+                     n_hasheados: int, n_inventariados: int) -> None:
+    """Resumen por consola. Es el consumidor inmediato del rastro.
+
+    Se imprime siempre, incluso cuando no se procesó ni un documento: ese es justo el
+    caso que contesta la pregunta —una re-corrida sin cambios donde el inventario es el
+    100 % del coste—.
+    """
+    typer.echo(
+        f"  tiempos: total {ms_total/1000:.1f} s · inventario {ms_inv/1000:.1f} s "
+        f"({n_hasheados} de {n_inventariados} ficheros hasheados)")
+    if not tiempos:
+        return
+    por_metodo: dict[str, list[int]] = {}
+    for t in tiempos:
+        por_metodo.setdefault(t["metodo"] or "sin_fila", []).append(t["ms"])
+    reparto = " · ".join(
+        f"{m}: {sum(v)/1000:.1f} s ({len(v)})"
+        for m, v in sorted(por_metodo.items(), key=lambda kv: -sum(kv[1])))
+    typer.echo(f"  por método: {reparto}")
+    lentos = sorted(tiempos, key=lambda t: -t["ms"])[:5]
+    if lentos and lentos[0]["ms"] > 0:
+        typer.echo("  más lentos: " + " · ".join(
+            f"{t['rel_path']} {t['ms']/1000:.1f} s" for t in lentos))
+
+
+def _registrar_tiempos(case_dir: Path, lineas: list[dict]) -> None:
+    """Añade el rastro de tiempos a `_tiempos.jsonl`. Append-only a propósito.
+
+    Comparar dos corridas ES el uso del artefacto —«¿duele la primera o la re-corrida?»—,
+    así que sobrescribirlo lo anularía. Un fallo escribiéndolo nunca aborta nada: es
+    instrumentación, no resultado.
+    """
+    try:
+        d = sm._sala_maquina_dir(case_dir)
+        d.mkdir(parents=True, exist_ok=True)
+        with (d / "_tiempos.jsonl").open("a", encoding="utf-8") as fh:
+            for linea in lineas:
+                fh.write(json.dumps(linea, ensure_ascii=False) + "\n")
+    except OSError as exc:
+        typer.echo(f"AVISO: no se pudo escribir el rastro de tiempos: {exc}", err=True)
 
 
 def _cobertura_previa(case_dir: Path) -> list[sm.DocCobertura]:
@@ -113,8 +196,27 @@ def _exigir_vision_cableada() -> None:
 
 
 def _construir_plan(case_dir: Path, force: bool):
+    """Plan + `(cache_nueva, ms_inventario, n_hasheados, agotados)`.
+
+    **Un solo seam a propósito.** La primera versión de esto dejaba un
+    `_construir_plan` fino para los tests y un `_construir_plan_medido` para producción;
+    `test_atomiza_antes_de_construir_el_plan_de_ocr` lo cazó en el acto — su doble se
+    quedó fuera del camino real y el test dejó de verificar el orden sin ponerse rojo por
+    ello. Un seam que solo pisan los tests es una comprobación que miente.
+
+    El inventario es el coste fijo de CADA corrida —hoy rehashea `00_Input` entero, 2,6 GB
+    en W-02VND1, aunque no haya nada nuevo—, así que se mide aparte del OCR: son las dos
+    cifras que separan «duele la primera corrida» de «duelen las re-corridas».
+    """
     previo = set() if force else _estado_previo(case_dir)
-    return sm.plan(sm.inventariar(case_dir), previo)
+    intentos = {} if force else _intentos_previos(case_dir)
+    agotados = frozenset(sha for sha, n in intentos.items() if n >= sm.MAX_INTENTOS)
+    cache = _cache_hashes(case_dir)
+    t0 = time.perf_counter()
+    inventario, cache_nueva = sm.inventariar_cacheado(case_dir, cache)
+    ms = int((time.perf_counter() - t0) * 1000)
+    n_hasheados = sum(1 for rel, v in cache_nueva.items() if cache.get(rel) != v)
+    return (sm.plan(inventario, previo, agotados), cache_nueva, ms, n_hasheados, agotados)
 
 
 def _exitosos_por_bundle(cob_delta: list[sm.DocCobertura]) -> set[str]:
@@ -257,8 +359,13 @@ def plan(case_id: str):
     """Muestra la propuesta (Preview); no escribe nada salvo el manifiesto de
     segmentación propuesto (gate editable) de los bundles multi-documento detectados."""
     case_id, case_dir = _resolver_caso(case_id)
-    p = _construir_plan(case_dir, force=False)
+    # `plan` es preview: descarta la caché en vez de persistirla (no escribe estado) y
+    # se queda solo con el plan y el recuento de agotados, que sí hay que declarar.
+    p, _cache, _ms, _n, agotados = _construir_plan(case_dir, force=False)
     nuevos = [d for d in p if not d.skip]
+    if agotados:
+        typer.echo(f"  {len(agotados)} documento(s) con intentos agotados (se saltan; "
+                   f"--force o --solo para reintentar)")
     typer.echo(f"Caso: {case_id}")
     for ruta in ("pdf", "imagen", "nativo", "sin_soporte"):
         n = sum(1 for d in nuevos if d.ruta == ruta)
@@ -319,11 +426,23 @@ def apply(case_id: str, vision: bool = False, force: bool = False,
     if vision:
         _exigir_vision_cableada()          # preflight: aborta antes de procesar
     _atomizar_correo(case_id, case_dir)   # cableado: atomizar ANTES del OCR (spec §4)
+    t_corrida = time.perf_counter()
     try:
-        p = sm.acotar_plan(_construir_plan(case_dir, force=force), rutas)
+        p_bruto, cache_nueva, ms_inv, n_hasheados, agotados = \
+            _construir_plan(case_dir, force=force)
+        p = sm.acotar_plan(p_bruto, rutas)
     except ValueError as exc:              # errata en --solo: parar antes de OCR-izar
         typer.echo(f"ERROR: {exc}", err=True)
         raise typer.Exit(2) from exc
+
+    # `--solo` desmarca el skip de lo pedido, incluidos los agotados: es la vía de escape
+    # explícita, igual que `--force`.
+    if agotados:
+        typer.echo(
+            f"AVISO: {len(agotados)} documento(s) con {sm.MAX_INTENTOS} intentos agotados "
+            f"se saltan y NO se han vuelto a procesar. Si son TODOS los del caso, "
+            f"sospecha del motor (¿está OCRmyPDF instalado?) antes de forzar. "
+            f"Reintento: --force, o --solo <ruta>.", err=True)
 
     # Cobertura ACUMULATIVA: una corrida incremental procesa solo el delta, así que
     # la cobertura debe fusionarse con la persistida (si no, se pierden las filas de
@@ -339,7 +458,20 @@ def apply(case_id: str, vision: bool = False, force: bool = False,
                    f"nada.\n{exc}", err=True)
         raise typer.Exit(2) from exc
 
-    cob_delta = sm.ejecutar(case_dir, p, case_id=case_id, vision=vision, force=force)
+    tiempos: list[dict] = []
+
+    def _medir(doc, ms: int, filas) -> None:
+        tiempos.append({
+            "tipo": "documento", "slug": doc.slug, "rel_path": doc.rel_path,
+            "ruta": doc.ruta, "ms": ms,
+            "metodo": filas[0].metodo if filas else "",
+            "estado": filas[0].estado if filas else "",
+            "segmentos": len(filas),
+            "paginas": filas[0].paginas if filas else "",
+        })
+
+    cob_delta = sm.ejecutar(case_dir, p, case_id=case_id, vision=vision, force=force,
+                            on_documento=_medir)
 
     # La corrida es AUTORITATIVA sobre lo que reprocesa (spec §6.1): sus filas previas se
     # descartan. El conjunto sale del PLAN, no de las filas, porque cuando un documento
@@ -361,7 +493,20 @@ def apply(case_id: str, vision: bool = False, force: bool = False,
     # normal lo saltaría, contradiciendo "un fallo se reintenta sin --force".
     exitosos = _exitosos_por_bundle(cob_delta)
     procesados = exitosos if force else (_estado_previo(case_dir) | exitosos)
-    _guardar_estado(case_dir, procesados)
+
+    # Contador de intentos (`MEJORAS #84`): +1 a cada documento que se procesó y NO
+    # salió resuelto; se BORRA al primer éxito, para que un fallo transitorio no deje
+    # deuda acumulada. Sin esto, un documento que no se resuelve vuelve a pagar OCR real
+    # en cada corrida, para siempre.
+    intentos = {} if force else dict(_intentos_previos(case_dir))
+    for d in p:
+        if d.skip:
+            continue
+        if d.sha256 in exitosos:
+            intentos.pop(d.sha256, None)
+        else:
+            intentos[d.sha256] = intentos.get(d.sha256, 0) + 1
+    _guardar_estado(case_dir, procesados, intentos=intentos, hashes=cache_nueva)
     append_event(case_id, "procesado_sala_maquina", details={
         "count": len(cob_delta),
         "files": [{"path": c.rel_path, "sha256": c.sha256, "slug": c.slug,
@@ -370,6 +515,16 @@ def apply(case_id: str, vision: bool = False, force: bool = False,
     _exigir_integridad(case_dir, cob, {d.slug for d in p if not d.skip})
     dudosos = [c for c in cob if c.estado != "ok"]
     typer.echo(f"Sala de máquina actualizada: {len(cob)} documentos, {len(dudosos)} a revisar.")
+
+    ms_total = int((time.perf_counter() - t_corrida) * 1000)
+    _registrar_tiempos(case_dir, tiempos + [{
+        "tipo": "corrida", "ts": now_iso(), "case_id": case_id,
+        "ms_total": ms_total, "ms_inventario": ms_inv,
+        "ficheros_hasheados": n_hasheados, "ficheros_inventariados": len(cache_nueva),
+        "documentos_procesados": len(tiempos), "agotados": len(agotados),
+        "force": bool(force), "solo": len(rutas),
+    }])
+    _resumir_tiempos(tiempos, ms_total, ms_inv, n_hasheados, len(cache_nueva))
     typer.echo("Siguiente paso sugerido: organizar-sala-lectura sobre este caso.")
 
 
