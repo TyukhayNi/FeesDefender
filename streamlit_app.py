@@ -1002,11 +1002,6 @@ with tab_casos:
                      "bloquear la descarga. Útil para tener todos los procesales "
                      "(p. ej. de cara al juicio).",
             )
-            _pipe_ij = st.checkbox(
-                "Encadenar pipeline (anon → MD → frontier) tras el intake",
-                key="casos_ij_pipe",
-                value=False,
-            )
             _force_ij = st.checkbox(
                 "He verificado el ID a mano — descargar aunque el W-code no coincida",
                 key="casos_ij_force",
@@ -1139,19 +1134,25 @@ with tab_casos:
                         for _eij_err in _rij.errors:
                             st.caption(f"⚠️ {_eij_err}")
 
-                        if _pipe_ij and (_written or _overlap):
-                            with st.spinner("Ejecutando pipeline (OCR → MD → anon)…"):
-                                _prij = pipeline.run(
-                                    _caso_ij, do_sync=False, do_demanda=False,
-                                    do_anonimizar=True,
-                                    politica_anonimizar="SALTAR",
-                                    tipo_proc_anonimizar="Juicio Ordinario",
-                                )
-                            for _s in _prij.steps:
-                                st.write(
-                                    f"{'✅' if _s.ok else '❌'} {_s.name}: "
-                                    f"{_s.detail or _s.artifact or ''}"
-                                )
+                        if _written or _overlap:
+                            # Aquí había un checkbox «Encadenar pipeline» que llamaba a
+                            # `pipeline.run` — el motor JUBILADO (Docling, tope de 30
+                            # páginas, salida a `raw_text/`+`MD/` legacy)— con un
+                            # spinner que anunciaba «OCR → MD → anon». Retirado el
+                            # 2026-08-04 (`MEJORAS #113`). El motor documental es la
+                            # sala de máquina, y se lanza a conciencia: una corrida
+                            # puede pasar de una hora, que no cabe en un click.
+                            st.info(
+                                "Los documentos ya están en `00_Input/05_CRM/`. "
+                                "El intake **no los procesa**: para eso está la sala "
+                                "de máquina, que se ejecuta aparte."
+                            )
+                            st.code(
+                                f'python -m scripts.sala_maquina apply "{_caso_ij}"\n'
+                                f'python -m scripts.anonimizar_caso "{_caso_ij}"'
+                                "   # solo si hace falta 06_Anonimizado/",
+                                language="powershell",
+                            )
 
         st.divider()
         with st.expander("🤖 Organizar localmente"):

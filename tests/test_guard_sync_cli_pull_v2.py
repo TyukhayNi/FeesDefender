@@ -236,6 +236,24 @@ def test_ningun_cli_de_sync_menciona_el_motor_jubilado(ruta):
     assert "pull_expediente(" not in fuente
 
 
+def test_la_ui_solo_llama_al_motor_jubilado_desde_su_boton_con_nombre():
+    """El quinto call site: el intake judicial de Streamlit encadenaba lo mismo.
+
+    Y era el peor de los cinco, porque la UI es la superficie de Paola y Ana: el
+    checkbox decía «Encadenar pipeline (anon → MD → frontier)», el spinner decía
+    «Ejecutando pipeline (OCR → MD → anon)» y lo que corría era el motor jubilado.
+
+    El botón «Ejecutar pipeline» del tab de análisis SÍ se conserva: es la superficie
+    **honesta** del motor viejo, como `scripts/run_pipeline.py`. Retirar ese motor es
+    otra decisión; lo que este guard prohíbe es volver a encadenarlo detrás de otra
+    operación anunciando que hace OCR.
+    """
+    fuente = Path("streamlit_app.py").read_text(encoding="utf-8")
+
+    assert fuente.count("pipeline.run(") == 1
+    assert "_pipe_ij" not in fuente
+
+
 # ---------------------------------------------------------------------------
 # Grupo 1c — el siguiente paso se señaliza (nada silencioso)
 # ---------------------------------------------------------------------------

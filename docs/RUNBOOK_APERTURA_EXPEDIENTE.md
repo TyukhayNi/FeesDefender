@@ -204,6 +204,13 @@ python -m scripts.abrir_caso --case-id W-XXXXXX --fuente email --cuenta <gmail> 
   vincular el expediente (`[APER-36]`) NO descarga sus documentos, es solo bookkeeping.
   Saltarse esto deja `00_Input` incompleto y la sala de máquina hay que reprocesarla.
   Memoria `feedback-orden-intake-antes-sala-maquina`.
+  **Dos cosas del pull, actualizadas el 2026-08-04 (`MEJORAS #113`):** deposita en
+  `00_Input/05_CRM/<rama>/` y es **idempotente por hash**, así que repetirlo es seguro y
+  no hay `--force` ni `--incremental`; y **no procesa nada** — el flag `--run-pipeline`
+  llamaba al motor jubilado y se retiró, por eso este paso va *antes* de la sala de
+  máquina y no dentro de ella. Si el caso arrastra una carpeta `00_Input/sudespacho_*/`
+  (layout v1, congelado), el pull se bloquea y explica la migración: no lo fuerces sin
+  mirar qué hay dentro.
 
 ---
 

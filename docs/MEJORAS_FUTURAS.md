@@ -4618,6 +4618,11 @@ expediente del CRM no aterrizan solos en crudo → sala de máquina → sala de 
   gestor documental (con `--incremental` y `--force`).
 - Aterrizan en el sitio correcto: `case_manager.crm_branch_path` los coloca en
   `00_Input/05_CRM/<bucket>`, buckets planos por rama procesal (reorg del 2026-06-10).
+
+  > ❌ **ESTA AFIRMACIÓN ERA FALSA, y de ella salió la mitad del arreglo (medido el 2026-08-04).**
+  > Es cierta de `intake_judicial`, que usa `pull_expediente_v2`, y **falsa de `pull`, `sync_all` y
+  > `scheduled_sync`**, que usaban `pull_expediente` (v1) → `00_Input/sudespacho_<id>/`. Se escribió
+  > verificando un camino y generalizando a los otros tres. Ver el hueco 2-bis, abajo.
 - La sala de máquina los ve sin flags: `sala_maquina.inventariar` recorre **todo** `00_Input`.
 - La sala de lectura los declara entre sus fuentes (`01_Drive EV`/`05_CRM` en el `SKILL.md`).
 
@@ -4632,6 +4637,42 @@ expediente del CRM no aterrizan solos en crudo → sala de máquina → sala de 
    `raw_text/` + `MD/` legacy. **No es la sala de máquina.** Quien lo use creyendo que procesa el
    expediente produce artefactos del motor que la sala de máquina vino a sustituir. Aparece también en
    `intake_judicial` y en `sync_all`.
+
+   ✅ **CERRADO el 2026-08-04**, y eran **cinco** call sites, no tres: `pull`, `intake_judicial`,
+   `sync_all`, `scheduled_sync` y —el peor— el **checkbox del intake judicial de Streamlit**, cuya
+   etiqueta decía «Encadenar pipeline (anon → MD → frontier)» y cuyo spinner decía «Ejecutando
+   pipeline (OCR → MD → anon)»: tres descripciones distintas de lo mismo y ninguna cierta, en la
+   superficie que usan Paola y Ana. Retirados los cinco, junto con
+   `--anonimizar`/`--politica`/`--tipo-proc`, que solo existían para alimentar el flag. Cada comando
+   **señaliza** ahora qué correr (`scripts.sala_maquina apply`, y `scripts.anonimizar_caso` donde
+   antes encadenaba anon): retirar el flag sin decir con qué se sustituye habría cambiado una promesa
+   falsa por un silencio. **El botón «Ejecutar pipeline» del tab de análisis se conserva**: es la
+   superficie honesta del motor viejo, como `scripts/run_pipeline.py`; retirar ese motor es otra
+   decisión y no se ha tomado.
+
+2-bis. **Y el defecto gordo, que no estaba en esta entrada: tres de los cuatro comandos usaban el
+   pull v1.** `pull`, `sync_all` y `scheduled_sync` llamaban a `pull_expediente`, que escribe en
+   `00_Input/sudespacho_<id>/`. Tres consecuencias, verificadas contra código el 2026-08-04:
+
+   - **`is_legacy_intake_v1` declara ese layout congelado** y `pull_expediente_v2` devuelve
+     `blocked_legacy_v1` sin escribir nada. O sea: **un `pull` inutilizaba el caso para
+     `intake_judicial`**. Y la carpeta nace de un `mkdir` **antes** de bajar el primer byte, así que
+     bastaba un pull que fallara o que se saltara por marcador.
+   - Queda **fuera de las fuentes que declara `organizar-sala-lectura`** (`01_Drive EV`, `05_CRM` +
+     cajones legacy).
+   - **Se salta el guard de escritura del caso prestado.** `_pendiente_checkin` solo aparece en v2
+     (`sync_sudespacho.py:1481`), así que un pull v1 sobre un caso en checkout escribía en el árbol
+     vivo — exactamente la ruta de pérdida de datos que cerraron los PR #156/#160, con este call site
+     sin cubrir.
+
+   ✅ **CERRADO el 2026-08-04**: los tres pasan a `pull_expediente_v2`. `--force` y `--incremental`
+   desaparecen (v2 es idempotente por hash del manifiesto M9 y su docstring ya lo declaraba). Un caso
+   ya envenenado deja de hundirse más en cada pull: se reporta bloqueado con la migración manual, y en
+   los dos barridos no aborta el recorrido. **`pull_expediente` (v1) NO se retira**:
+   `scripts/bulk_pull_expedientes.py` lo usa y tiene tests propios; queda marcado legacy en su
+   docstring y avisado en el script. **Migrar ese script es lo único que queda vivo de este punto**, y
+   no urge: su fuente es el listado paginado del frontal heredado.
+
 3. **Entre sala de máquina y sala de lectura tampoco hay encadenado**: la primera «sugiere» la segunda,
    en prosa, en su `SKILL.md`.
 
@@ -4646,6 +4687,39 @@ las otras cuatro fuentes; (b) reapuntar `--run-pipeline` a la sala de máquina *
 mínimo — un flag que hace algo distinto de lo que promete es peor que no tenerlo.
 
 **Coste estimado.** Bajo. (b) por sí solo son minutos y cierra la trampa.
+
+### Estado (2026-08-04)
+
+- **(b) HECHA**, con el alcance ampliado que se describe en los puntos 2 y 2-bis: retirado el flag en
+  los cinco call sites y migrados los tres comandos al pull v2. +15 tests
+  (`tests/test_guard_sync_cli_pull_v2.py`), con **prueba de mutación** del guard estructural:
+  reintroducir `pipeline.run(` en `scheduled_sync` y una llamada a `pull_expediente(` en
+  `sync_sudespacho` pone en rojo las asserts que les corresponden, y `pull_expediente_v2(` no las
+  dispara por falso positivo.
+- **(a) SIGUE PENDIENTE** — `abrir_caso` no acepta `--fuente crm`.
+- **(3) SIGUE PENDIENTE** — sala de máquina → sala de lectura no encadena.
+- **Nuevo pendiente que destapa el arreglo:** `scripts/bulk_pull_expedientes.py` sigue en v1 (ver 2-bis).
+- **Lo que la corrección deja peor a corto plazo, dicho sin adornos:** los casos que ya tienen
+  `00_Input/sudespacho_*/` (el `is_legacy_intake_v1` cita **BaRR3 y MaRS15**) pasan de «el pull
+  funcionaba y hundía el caso» a «el pull no funciona y lo dice». Es lo correcto —el guard existía y lo
+  que fallaba era que el CLI no lo cruzaba— pero **hasta migrarlos a mano no se les puede bajar el
+  CRM**. La migración (borrar `sudespacho_*/` + repetir el pull) es destructiva sobre documentos ya
+  descargados, así que **no se automatiza aquí**: pide Preview→Apply (principio M7) y es trabajo
+  aparte. No se promueve a `PLAN.md` sin que Nikolai lo mire: hay que censar antes cuántos casos
+  reales están en v1, y ese censo se hace contra `G:`, no contra el repo.
+
+### 113.1 Los dos barridos son el mismo programa escrito dos veces
+
+**Verificado el 2026-08-04** al migrarlos: `sync_sudespacho sync_all` y `scheduled_sync` hacen lo mismo
+—recorrer los casos, leer `sudespacho_expedientes` del frontmatter, pull de cada uno— con dos
+implementaciones distintas: el primero lista con `case_manager.list_cases()` y parsea el frontmatter en
+línea; el segundo usa `case_locator.list_cases` y su propio `_read_expedientes`. La diferencia real es
+solo la envoltura (logging a fichero, código de salida, keep-alive de `gdrive_ev`).
+
+**Por qué importa:** todo arreglo en esa zona hay que hacerlo por duplicado, y este mismo cambio lo pagó.
+
+**Mejora propuesta.** Que `scheduled_sync` sea una envoltura de la función de barrido, no una copia.
+**Disparador:** el siguiente cambio que toque el barrido. Sin él, no urge.
 
 ## 114. No hay contrato de «dame el mejor texto de este documento», y `01_OCR/` no lo lee nadie
 
