@@ -716,6 +716,25 @@ Cuantifica y matiza el hallazgo anterior con mediciones reales desde Cowork (wal
 
 ---
 
+## Reasignar letras de Google Drive for Desktop sin cerrar antes el cliente deja un proceso huérfano sirviendo las letras viejas como "Disco local" fantasma
+
+- **Intentado:** cambiar, desde Preferencias de Google Drive para escritorio, las letras de las dos cuentas del despacho de `G:`/`H:` a `D:`/`E:`, sin cerrar antes el cliente (perfil `Nikolai Tyukhay 1`, migración de capacidad).
+- **Resultado:** quedaron **dos** instancias de `GoogleDriveFS.exe` corriendo. `G:`/`H:` seguían apareciendo en "Este equipo" con icono de "Disco local" genérico (sin cuenta, sin contenido) — un proceso viejo huérfano las retenía — y el cliente no dejaba reasignarlas de vuelta porque las veía "ocupadas". "Salir" del cliente desde la bandeja del sistema mató el proceso, pero al reabrirlo **reaparecía el mismo estado roto**.
+- **Confirmado:** 2026-08-14.
+- **Conclusión:** un reinicio completo de Windows libera la reserva de letra a nivel de controlador de disco virtual — un `Quit`/reapertura normal de la app no basta cuando la reasignación ya falló una vez. Si vas a tocar letras de unidad de Drive for Desktop, ciérralo primero y hazlo en un solo intento limpio.
+
+---
+
+## `FEESDEFENDER_ACTOR` (fijado solo en `$PROFILE` de PowerShell) no llega a procesos lanzados por Claude Code
+
+- **Intentado:** verificar F.4.3 de la migración de perfil (discriminación de actor entre `tnm33` y `Nikolai Tyukhay 1`) con un checkout real, esperando que quedara registrado `checkout_user = "Nikolai Tyukhay (procesal)"` — el valor que `$PROFILE` fija en `FEESDEFENDER_ACTOR`.
+- **Resultado:** el `_intake_log.jsonl` del caso de prueba registró `actor: "Nikolai Tyukhay 1"` — el `os.getlogin()` crudo, no el valor de la variable de entorno. Confirmado con `echo $FEESDEFENDER_ACTOR` (Bash tool) y `$env:FEESDEFENDER_ACTOR` (PowerShell tool): vacío en los dos. `$PROFILE` solo se carga en una PowerShell interactiva abierta a mano; ni el Bash tool ni el PowerShell tool de Claude Code la cargan, y `run_app.bat` corre bajo `cmd.exe`, que no tiene el concepto de `$PROFILE` de PowerShell en absoluto.
+- **Confirmado:** 2026-08-14.
+- **Conclusión:** la discriminación real entre perfiles la da `os.getlogin()` (llega a cualquier proceso, viene del SO), no `FEESDEFENDER_ACTOR`. Tratar la variable de entorno como una capa cosmética (nombre legible en `ACTORES_DESPACHO`/el selector de la UI), nunca como la garantía de aislamiento — esa ya la daba `os.getlogin()` sin configurar nada (ver F.4 del handoff de migración, "RESUELTO").
+- **Acción pendiente:** si algún día se necesita que `FEESDEFENDER_ACTOR` llegue de verdad a procesos automatizados (no solo a PowerShell interactiva), fijarla como variable de entorno de **usuario** persistente (`[Environment]::SetEnvironmentVariable(..., 'User')`), no solo dentro de `$PROFILE`.
+
+---
+
 ## Plantilla para nuevas entradas
 
 ```markdown
