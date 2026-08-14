@@ -412,3 +412,41 @@ def test_actores_despacho_lista_minima():
     assert "Nikolai Tyukhay" in ACTORES_DESPACHO
     # Set cerrado, sin duplicados
     assert len(set(ACTORES_DESPACHO)) == len(ACTORES_DESPACHO)
+
+
+# ---------------------------------------------------------------------------
+# resolve_ui_default_actor — F.4.4 (desempate del selector "¿Quién eres?")
+# ---------------------------------------------------------------------------
+
+def test_resolve_ui_default_actor_usa_feesdefender_actor(monkeypatch):
+    """FEESDEFENDER_ACTOR fijo y válido gana sobre cualquier heurística de login."""
+    from core.config import ACTORES_DESPACHO, resolve_ui_default_actor
+
+    monkeypatch.setenv("FEESDEFENDER_ACTOR", "Nikolai Tyukhay (procesal)")
+    monkeypatch.setattr("os.getlogin", lambda: "Nikolai Tyukhay 1")
+
+    assert resolve_ui_default_actor(ACTORES_DESPACHO) == "Nikolai Tyukhay (procesal)"
+
+
+def test_resolve_ui_default_actor_ignora_env_fuera_del_set_cerrado(monkeypatch):
+    """FEESDEFENDER_ACTOR con un valor fuera de ACTORES_DESPACHO no se usa: el
+    desplegable no podría preseleccionar algo que no está en la lista."""
+    from core.config import ACTORES_DESPACHO, resolve_ui_default_actor
+
+    monkeypatch.setenv("FEESDEFENDER_ACTOR", "Becario de turno")
+    monkeypatch.setattr("os.getlogin", lambda: "algo-que-no-casa")
+
+    assert resolve_ui_default_actor(ACTORES_DESPACHO) == ACTORES_DESPACHO[0]
+
+
+def test_resolve_ui_default_actor_login_perfil_completo_sin_env(monkeypatch):
+    """Regresión del bug real (F.4.4): un login de cuenta Windows con nombre
+    completo (p. ej. "Nikolai Tyukhay 1") nunca calza por substring contra
+    ningún actor. Sin FEESDEFENDER_ACTOR fijado esto no se puede adivinar,
+    así que cae de forma documentada al primero de la lista."""
+    from core.config import ACTORES_DESPACHO, resolve_ui_default_actor
+
+    monkeypatch.delenv("FEESDEFENDER_ACTOR", raising=False)
+    monkeypatch.setattr("os.getlogin", lambda: "Nikolai Tyukhay 1")
+
+    assert resolve_ui_default_actor(ACTORES_DESPACHO) == ACTORES_DESPACHO[0]
