@@ -11,8 +11,6 @@ from pathlib import Path
 
 import streamlit as st
 
-import os as _os
-
 from core import case_manager, llm, pipeline, sudespacho_create as _sc
 from core import local_organizer as _org
 from core.local_organizer import OrganizadorError as _OrgError
@@ -52,6 +50,7 @@ from core.config import (
     CASO_SUBDIRS,
     CRM_TREE,
     caso_path,
+    resolve_ui_default_actor,
     settings,
     TIPOS_CASO_ALL,
     TIPOS_CASO_OTROS,
@@ -105,16 +104,9 @@ st.set_page_config(
 with st.sidebar:
     st.markdown("**¿Quién eres?**")
 
-    # Default: si os.getlogin() coincide (substring case-insensitive) con
-    # algún actor, ese; si no, el primero de la lista (Nikolai).
-    try:
-        _login = (_os.getlogin() or "").lower()
-    except (OSError, AttributeError):
-        _login = ""
-    _default_actor = next(
-        (a for a in ACTORES_DESPACHO if _login and _login in a.lower()),
-        ACTORES_DESPACHO[0],
-    )
+    # Default: FEESDEFENDER_ACTOR (si fija un actor válido) > substring de
+    # os.getlogin() > el primero de la lista. Ver resolve_ui_default_actor.
+    _default_actor = resolve_ui_default_actor(ACTORES_DESPACHO)
 
     _actor_options = list(ACTORES_DESPACHO) + ["Otros…"]
     _actor_prev = st.session_state.get("_actor_selected", _default_actor)

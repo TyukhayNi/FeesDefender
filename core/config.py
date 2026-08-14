@@ -723,6 +723,35 @@ ACTORES_DESPACHO: tuple[str, ...] = (
     "Marta Reynares",               # Administrativa (Engel & Völkers)
 )
 
+
+def resolve_ui_default_actor(actores_despacho: tuple[str, ...] = ACTORES_DESPACHO) -> str:
+    """Actor por defecto para el selector "¿Quién eres?" del sidebar Streamlit.
+
+    Mismo orden de precedencia que ``intake_log.get_actor()``, pero acotado
+    al conjunto cerrado (el desplegable solo puede preseleccionar un valor
+    de ``actores_despacho``):
+
+    1. ``FEESDEFENDER_ACTOR`` si está fijada y es uno de ``actores_despacho``.
+       Sin esta comprobación, dos perfiles Windows con nombre de cuenta
+       completo (p. ej. "Nikolai Tyukhay 1") nunca casan por substring con
+       ningún actor y ambos caían en el mismo fallback (#1).
+    2. ``os.getlogin()`` por coincidencia de substring — heurística heredada,
+       se mantiene como segundo intento por si alguna cuenta usa un nombre
+       corto (p. ej. "paola") que sí casa con un actor.
+    3. El primero de ``actores_despacho``.
+    """
+    env_actor = os.environ.get("FEESDEFENDER_ACTOR", "").strip()
+    if env_actor in actores_despacho:
+        return env_actor
+    try:
+        login = (os.getlogin() or "").lower()
+    except (OSError, AttributeError):
+        login = ""
+    return next(
+        (a for a in actores_despacho if login and login in a.lower()),
+        actores_despacho[0],
+    )
+
 # Tipos de caso para los que ensure_case() copia la plantilla
 # data/_plantillas/informe_viabilidad.xlsx a 02_Analisis/_informe_viabilidad.xlsx
 # (M1, copiado condicional). BAD_DEBT, LAU_20, DEVOLUCION_RESERVA y
