@@ -715,11 +715,12 @@ ENTREVISTA_ROLES: frozenset[str] = frozenset({
 # Cada upload / pull / link emite un evento en `_intake_log.jsonl` con el
 # actor activo (`intake_log.set_actor` sincroniza desde la UI cada render).
 ACTORES_DESPACHO: tuple[str, ...] = (
-    "Nikolai Tyukhay",          # Abogado Senior (Tyukhay Legal)
-    "Karen Paola Barreto",      # Abogada (Tyukhay Legal)
-    "Sergio Piñol",             # Abogado junior (Tyukhay Legal)
-    "Ana Solange Velastegui",   # Administrativa (Tyukhay Legal)
-    "Marta Reynares",           # Administrativa (Engel & Völkers)
+    "Nikolai Tyukhay",              # Abogado Senior (Tyukhay Legal)
+    "Nikolai Tyukhay (procesal)",   # ídem, sesión Windows del asiento procesal@
+    "Karen Paola Barreto",          # Abogada (Tyukhay Legal)
+    "Sergio Piñol",                 # Abogado junior (Tyukhay Legal)
+    "Ana Solange Velastegui",       # Administrativa (Tyukhay Legal)
+    "Marta Reynares",               # Administrativa (Engel & Völkers)
 )
 
 # Tipos de caso para los que ensure_case() copia la plantilla
