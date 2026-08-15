@@ -64,6 +64,10 @@ modelo/familia. La rev. 3 incorpora los remedios, pero **no se autoaprueba y sig
 de R3**. El contrato hermano `FeesDefender-crm` v3.7, commit `8bc09ea`, autoriza antes de la
 medición la excepción temporal de Nikolai sin entrega probatoria.
 
+Actas custodiadas y todavía vinculadas a este ítem abierto:
+`docs/superpowers/specs/2026-08-15-apertura-integral-r1-adversarial-review.md` y
+`docs/superpowers/specs/2026-08-15-apertura-integral-r2-adversarial-review.md`.
+
 **Estado del piloto:** el expediente extrajudicial y sus relaciones básicas existen en
 Sudespacho; la ficha del contrario se corrigió con nombre completo, apellidos separados,
 domicilio postal completo y textos normalizados. Los datos personales y los documentos del
