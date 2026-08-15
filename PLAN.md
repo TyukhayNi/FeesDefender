@@ -31,7 +31,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 12 | [La firma no es intercalada: falso positivo que bloquea la Capa B](#siguiente-sandwich-firma-la-firma-no-es-una-respuesta-intercalada) | ✅ **CERRADO** — PR #164 (`aaf7dc1`) | queda su cola: `MEJORAS #109` (el síntoma original sigue sin explicar) y borrar el corpus de prueba | bajo |
 | 13 | [Presupuesto explícito de proceso](#siguiente-presupuesto-proceso-cuánta-gobernanza-se-compra) | pendiente — **decisión de Nikolai**, no hay nada que construir | sin gates. Disparador: el mes 2026-07 cerró con **9,4 líneas de `docs/` por línea de `core/`** y cuatro cierres seguidos sin código de producción | bajo (5 min) |
 | 14 | [Desplegar en Cowork las skills ya construidas](#siguiente-reimport-skills-lo-construido-que-no-ha-llegado-al-equipo) | pendiente — **acción manual de Nikolai**; ningún test la cubre | sin gates. Disparador: `organizar-sala-lectura` va por **v1.14 en el repo** y Paola/Ana/Sergio ejecutan la **v1.12** | bajo (una tarde) |
-| 15 | [Apertura integral + piloto W-02Q38C](#siguiente-apertura-integral-apertura-completa-sobre-componentes-existentes) | spec única **rev. 2** en **PR #225 (borrador)**; **R1 NO-SHIP adjudicada (9 confirmados), pendiente R2 y plan**. Piloto abierto, no cerrado | superar y adjudicar R2; solo después, plan TDD sin crear otro orquestador de entrada y cierre del piloto por el camino común | medio-alto |
+| 15 | [Apertura integral + piloto W-02Q38C](#siguiente-apertura-integral-apertura-completa-sobre-componentes-existentes) | spec única **rev. 3** en **PR #225 (borrador)**; **R1+R2 NO-SHIP adjudicadas (17 confirmados), pendiente R3 y plan**. Piloto abierto, no cerrado | superar y adjudicar R3; solo después, plan TDD sin crear otro orquestador de entrada y cierre del piloto por el camino común | medio-alto |
 
 > **Filas 13 y 14 añadidas el 2026-08-03 al final de la cola a propósito: no reordeno prioridades
 > ajenas.** Las dos son baratas y una degrada a terceros hoy — dónde encajan de verdad lo decide
@@ -57,11 +57,12 @@ crear specs separadas por CRM. La decisión de arquitectura es completar y cable
 `scripts.abrir_caso`, `scripts.crm_ficha` y los motores existentes; solo una prueba E2E que
 demuestre huecos residuales puede justificar un coordinador nuevo.
 
-La R1 externa de Codex devolvió **NO-SHIP** con nueve hallazgos, todos confirmados contra las
-fuentes. La adjudicación excepcional la firma **Codex (subagente independiente, sustitución
-excepcional por indisponibilidad de Claude Code)**. Esta independencia es más débil que la
-prevista por la gobernanza porque revisor y adjudicador pertenecen al mismo modelo/familia; la
-rev. 2 incorpora los remedios, pero **no se autoaprueba y sigue pendiente de R2**.
+R1 y R2 devolvieron **NO-SHIP** con diecisiete hallazgos, todos confirmados contra las
+fuentes. Las adjudicaciones excepcionales las firma Codex por indisponibilidad de Claude
+Code. La independencia es más débil porque revisor y adjudicador pertenecen al mismo
+modelo/familia. La rev. 3 incorpora los remedios, pero **no se autoaprueba y sigue pendiente
+de R3**. El contrato hermano `FeesDefender-crm` v3.7, commit `8bc09ea`, autoriza antes de la
+medición la excepción temporal de Nikolai sin entrega probatoria.
 
 **Estado del piloto:** el expediente extrajudicial y sus relaciones básicas existen en
 Sudespacho; la ficha del contrario se corrigió con nombre completo, apellidos separados,
@@ -70,8 +71,8 @@ caso permanecen fuera de Git. No se declara la apertura cerrada: `_caso.md` toda
 sincroniza por el camino común y el paquete probatorio completo de LeadHub sigue limitado por
 la capacidad actual del repositorio hermano `FeesDefender-crm`.
 
-**Siguiente:** (1) revisión adversarial R2 de la spec rev. 2; (2) adjudicar R2 conforme a la
-gobernanza; (3) solo entonces, plan TDD único; (4) completar W-02Q38C mediante ese mismo wiring
+**Siguiente:** (1) revisión adversarial R3 de la spec rev. 3; (2) adjudicar R3 conforme a la
+gobernanza; (3) solo con veredicto favorable, plan TDD único; (4) completar W-02Q38C mediante ese mismo wiring
 —sin parche manual específico del caso—
 y verificar intake, sala de máquina, sala de lectura, prerrelleno y las tres superficies de
 partes (`_caso.md`, `_ficha_crm.yaml`, GET de Sudespacho).

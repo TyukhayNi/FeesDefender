@@ -1,8 +1,8 @@
 ---
-estado: propuesto (R1 adjudicada; pendiente R2)
+estado: propuesto (R2 adjudicada; pendiente R3)
 dueño: Nikolai Tyukhay
 fecha: 2026-08-15
-revision: "2"
+revision: "3"
 ---
 
 # Diseño — Apertura integral sobre componentes existentes
@@ -14,10 +14,10 @@ revision: "2"
 > cierre solo prevalecen las sustituciones expresas adjudicadas en el §16; una omisión no
 > deroga una regla anterior.
 >
-> **Naturaleza:** diseño. No autoriza todavía la implementación. La R1 terminó `NO-SHIP`;
-> sus nueve hallazgos están adjudicados y remediados en esta rev. 2 (§18), que queda
-> **pendiente de R2**. Solo después de adjudicar R2 podrá escribirse el plan único de
-> implementación.
+> **Naturaleza:** diseño. No autoriza todavía la implementación. R1 y R2 terminaron
+> `NO-SHIP`; sus diecisiete hallazgos están adjudicados y remediados en esta rev. 3
+> (§§18-19), que queda **pendiente de R3**. Solo después de adjudicar una R3 favorable
+> podrá escribirse el plan único de implementación.
 
 ## 1. Problema y decisión
 
@@ -37,9 +37,10 @@ un coordinador fino, reanudable e idempotente. Ese coordinador, si la prueba E2E
 que sigue siendo necesario, se limitará a ordenar llamadas, conservar estado y presentar el
 resultado; no incorporará reglas de identidad, CRM, intake ni procesamiento documental.
 Una autorización inicial podrá cubrir los efectos ordinarios. El trabajo mecánico se
-ejecutará sin supervisión, con las escrituras compartidas serializadas conforme a §§6-7,
-y solo se detendrá ante riesgo de mezclar expedientes, una identidad materialmente dudosa
-o una decisión jurídica.
+ejecutará sin supervisión, con staging disjunto y una sección crítica protegida desde la
+primera entrega por el mutex interproceso corto y el protocolo durable de §§6-7. Solo se
+detendrá ante riesgo de mezclar expedientes, una identidad materialmente dudosa, un estado
+de workspace no admitido, una recuperación no reconciliada o una decisión jurídica.
 
 El flujo no decide la viabilidad. Prerrellena datos y evidencia; el veredicto y el
 recuadro ejecutivo permanecen reservados al abogado.
@@ -101,6 +102,27 @@ exige antes una prueba E2E que muestre qué estado o reanudación no pueden reso
 entrypoints actuales. `--yes` no autoriza resolver en silencio una ambigüedad de identidad,
 una colisión de contenido o una decisión jurídica.
 
+La primera vertical mutante queda deliberadamente limitada a Drive canónico. En un caso
+**existente**, el frontmatter debe declarar expresamente `estado_repositorio: disponible`:
+ausencia, corrupción o error de lectura no heredan el default retrocompatible de
+`leer_estado_repositorio`, sino que bloquean como `workspace_no_soportado` con motivo
+`estado_ausente_o_ilegible`. `prestado`, `conflicto`, un checkout local o `local_scratch`
+también bloquean con cero efectos.
+
+Un caso **genuinamente nuevo** no puede leer un `_caso.md` inexistente. Tras demostrar que
+no hay candidato en Drive, Sudespacho, checkout ni scratch, adquiere el mutex del W-code y
+crea atómicamente la estructura canónica mínima y `_caso.md` con
+`estado_repositorio: disponible`; ese es el único efecto local permitido antes del gate y
+ningún servicio externo se toca hasta releerlo con éxito. Un caso legacy existente sin el
+campo no se confunde con uno nuevo: exige migración explícita fuera de esta corrida. Cuando
+exista `CaseWorkspace`, esta restricción se sustituirá por su contrato; hasta entonces no
+se imita parcialmente la arquitectura dual.
+
+Un expediente ya abierto se reutiliza siempre por `--case-id` —acepta W-code o identidad
+canónica resuelta—. Repetir los flags de alta es una colisión, y `--force` nunca convierte
+esa colisión en una carpeta nueva. La reanudación por `--case-id` incorpora únicamente
+fuentes nuevas o cambiadas y no emite un segundo POST de alta.
+
 La autorización única `--yes` sustituye el gate por cada escritura CRM de la spec de
 2026-07-09 y la revisión humana **previa** de `_ficha_crm.yaml` de la spec de 2026-07-18.
 Cuando cada valor tiene la procedencia y concordancia exigidas por el §8.1, la creación o
@@ -135,6 +157,11 @@ Antes de escribir:
 4. Derivar W-code, ciudad, equipo, tipo canónico y dirección.
 5. Buscar candidatos existentes en Drive y Sudespacho.
 6. Resolver una sola identidad canónica y fijarla para toda la ejecución.
+7. Clasificar la resolución como `existente`, `nuevo` o `legacy/error`. En `existente`,
+   leer el valor explícito y exigir `estado_repositorio: disponible`; en `legacy/error`,
+   bloquear sin defaults; en `nuevo`, adquirir el mutex, inicializar atómicamente el caso
+   canónico con ese valor y releerlo. Cualquier checkout o scratch bloquea antes de toda
+   escritura; la inicialización nueva precede solo a efectos remotos.
 
 Se bloquea la apertura si el mismo W-code presenta varios frentes incompatibles, si hay
 más de un expediente candidato no reconciliable o si una referencia de Sudespacho no
@@ -144,14 +171,20 @@ El preflight conserva el contrato operativo del §0 del runbook: el pipeline con
 ejecuta desde el repo canónico que contiene `.env` y `.venv`, mediante PowerShell; las
 ediciones versionadas permanecen en el worktree asignado; y nunca se barre recursivamente
 una unidad `G:` completa para localizar un caso. El modo local no se presenta como cerrado
-mientras no exista un checkin probado para un caso nacido sin baseline en Drive.
+mientras no exista un checkin probado para un caso nacido sin baseline en Drive. En esta
+primera entrega el modo local no se ejecuta: se bloquea conforme al punto 7.
+
+La clasificación `nuevo` se prueba por ausencia concordante en todos los resolvedores, no
+por la falta de `_caso.md` en una ruta elegida. Si existe carpeta, referencia remota,
+checkout, scratch o lectura fallida, no se inicializa nada. La creación mínima usa temp +
+`os.replace`, el mutex por W-code y readback antes de liberar el lock.
 
 La política de colisión queda fijada así:
 
 - un código de equipo repetido con W-code nuevo es normal y queda cubierto por `--yes`;
 - un W-code ya existente no autoriza crear otra carpeta: el intake incremental entra por
   `--case-id`;
-- `--force` solo puede reutilizar el mismo caso canónico ya resuelto; nunca permite crear
+- `--force` solo puede reutilizar el mismo caso canónico ya resuelto por `--case-id`; nunca permite crear
   una sombra plana ni saltarse una discrepancia de referencia;
 - varios expedientes CRM con el mismo W-code se tratan como posibles frentes distintos y
   exigen decisión del abogado sobre el alcance.
@@ -198,8 +231,10 @@ equivalente y verificado. El alta manual o parcial no permite declarar `crm_alta
 
 ### 5.2 Resultado remoto desconocido
 
-Antes de cada POST de alta se persiste atómicamente una intención con elemento, W-code,
-referencia canónica e importe exacto. Si la petición pudo alcanzar Sudespacho pero no llega
+Antes de cada POST de alta se persiste una intención durable con `operation_id`, tipo de
+efecto, elemento, W-code, referencia canónica, importe exacto, revisión esperada y estado
+`en_curso`. Esa intención se escribe antes de la llamada remota y solo pasa a `completada`
+después del GET de verificación. Si la petición pudo alcanzar Sudespacho pero no llega
 una respuesta verificable —incluido timeout después de commit remoto—, el resultado queda
 `escritura_resultado_desconocido`: no se registra `crm_alta`, no se imprime una apertura
 completa y no se repite el POST.
@@ -217,8 +252,9 @@ Después de fijar la identidad pueden arrancar en paralelo el descubrimiento y l
 de las cuatro ramas, pero cada una escribe solo en un staging propio identificado por
 `run_id` y fuente. En la primera entrega ningún proceso paralelo incorpora directamente a
 `00_Input` ni escribe `_intake_hashes.json`, `_intake_log.jsonl`, `_caso.md` o
-`estado.json`: esos commits se serializan por caso. Solo un lock interproceso o CAS probado
-contra dos writers solapados permite relajar esta regla.
+`estado.json`: esos commits atraviesan el mutex interproceso corto por caso del §7. La
+exclusión se prueba con dos procesos solapados; una cola en memoria o `os.replace` no
+cumplen el contrato.
 
 ### 6.1 Gmail E&V
 
@@ -269,10 +305,10 @@ el paquete vuelve para recepción y reverificación. No es una rama local automa
 
 Durante el piloto el operador principal es **Nikolai Tyukhay con sus propias credenciales**;
 subsidiariamente puede ejecutarla **Marta Reynares con las suyas**. Esta decisión es
-provisional y contradice de forma expresa el contrato todavía vigente de
-`FeesDefender-crm`, que asigna la ejecución a Marta. No se modifica ese repositorio desde
-esta entrega: antes se medirán ambas vías y solo después se propondrá allí el contrato
-definitivo.
+provisional y ya está autorizada antes de la medición por la excepción §2.1 del contrato de
+`FeesDefender-crm`, versión 3.7, commit `8bc09ea`. La vía Nikolai solo ejecuta el arnés de
+medición y no produce ni entrega un paquete probatorio; Marta conserva la captura probatoria
+ordinaria. Los resultados servirán para proponer después el contrato definitivo.
 
 En cada vía se registran, sin credenciales: actor presente, cuenta y rol confirmados en
 pantalla, tiempo total, tiempo activo del operador, número y clase de intervenciones
@@ -360,9 +396,32 @@ fotografía y no se presenta como lote. El flujo:
 
 Cada staging se valida por separado. La incorporación a `00_Input`, la publicación de una
 generación del espejo y toda escritura de manifiesto, log, `_caso.md` o `estado.json` se
-hacen en una sección crítica serializada por caso. La atomicidad de `os.replace` no se toma
-como protección frente a lost updates. Un modo multiproceso futuro exige lock o CAS con
-versión y una prueba que solape dos commits y conserve la unión íntegra.
+hacen en una sección crítica protegida por un mutex interproceso corto por caso desde la
+primera entrega. Todos los entrypoints que puedan publicar adquieren la misma primitiva,
+con propietario y nonce verificables, espera acotada y recuperación segura del abandono
+tras crash; liberar exige demostrar titularidad. El lock de checkout/checkin no se reutiliza
+mientras sus defectos caracterizados sigan abiertos. La atomicidad de `os.replace` no se
+toma como protección frente a lost updates. Una prueba con dos procesos realmente
+solapados debe conservar la unión íntegra.
+
+La exclusión no vuelve atómico un conjunto de ficheros. Cada incorporación o efecto remoto
+usa además un protocolo durable mínimo:
+
+1. persistir `operation_id`, conjunto esperado, generación y estado `en_curso` antes de
+   publicar bytes o llamar al remoto;
+2. marcar inválidas las fases derivadas antes de exponer una generación nueva;
+3. publicar bytes o ejecutar el efecto, registrando el mismo `operation_id` en cada
+   artefacto afectado;
+4. escribir manifests, log, `_caso.md`, YAML y `estado.json` en el orden específico de la
+   operación, con el estado global todavía no completado;
+5. reconciliar disco y servicio remoto mediante inventario, GET o readback material;
+6. marcar la operación `completada` siempre al final.
+
+Al arrancar, toda operación `en_curso` o de resultado desconocido se reconcilia antes de
+continuar. Un manifest corrupto o una línea corrupta del log bloquean y se preservan para
+diagnóstico: nunca se convierten en manifest vacío ni se saltan. Las pruebas inyectan un
+crash después de cada frontera, incluidas Gmail, Drive, Sudespacho, archivo y la proyección
+Sudespacho → YAML → `_caso.md`.
 
 La deduplicación en `00_Input` es lógica: cada fuente conserva su copia fiel y su ocurrencia,
 aunque el hash coincida. La sala de lectura sí puede materializar una sola copia por hash y
@@ -394,7 +453,9 @@ Solo cuando termina la primera ronda de intake se ejecuta esta secuencia:
 1. Atomizar correo y adjuntos.
 2. Ejecutar y verificar la sala de máquina vigente.
 3. Ejecutar y verificar la skill canónica de sala de lectura.
-4. Prerrellenar y verificar el informe de viabilidad.
+4. Prerrellenar y verificar el informe de viabilidad, o registrar
+   `no_aplica_confirmado` si el tipo canónico está fuera de
+   `core.config.INFORME_VIABILIDAD_TIPOS`.
 5. Crear o actualizar y releer la ficha de Sudespacho: cliente propio, contrario y
    colaboradores; dejarla `pendiente_revision_humana`.
 6. Tras la revisión humana en el CRM, ejecutar GET y sincronizar el resultado revisado a
@@ -408,8 +469,17 @@ materiales y producir manifiesto.
 Antes de lanzar `sala_maquina apply` se comprueba que no exista otra corrida activa y se
 lee su salida real; nunca se deduce que terminó por el tiempo transcurrido. Una reconstrucción
 forzada parte de una fotografía fresca de `00_Input` y detecta derivados huérfanos que el
-motor actual no poda. Si un texto sale roto tras el split, se contrasta primero con la
+motor actual no poda. Antes de volver a verde, la reconciliación compara el manifiesto
+derivado con la generación activa: mueve a historial o marca inactivos los derivados cuyo
+hash ya no esté vigente y los excluye de índices, cobertura, sala de lectura y consumidores.
+No borra crudo ni historia. Si un texto sale roto tras el split, se contrasta primero con la
 extracción del PDF de origen antes de atribuir el defecto al pipeline.
+
+Esta regla sustituye parcialmente solo la consecuencia operativa de «solo añade; nunca
+borra» de los contratos de sala de máquina y sala de lectura: los bytes previos se siguen
+conservando y el crudo continúa intocable, pero una copia obsoleta ya no permanece en la
+**generación activa**. La retirada activa se implementa por historial versionado o marca de
+inactividad, nunca por borrado irreversible.
 
 Antes de regenerar derivados, la fase detecta ficheros temporales de Office (`~$*`) y prueba
 la apertura exclusiva de cada destino que vaya a reemplazar. Un derivado bloqueado conserva
@@ -419,12 +489,19 @@ ejecución no cierra Word ni mata procesos del usuario.
 El prerrelleno cita evidencia localizable, conserva los datos desconocidos como tales y
 deja siempre en blanco `VIABILIDAD` y el recuadro ejecutivo.
 
+La aplicabilidad se deriva únicamente del catálogo canónico
+`INFORME_VIABILIDAD_TIPOS`. Para `BAD_DEBT`, `LAU_20`, `DEVOLUCION_RESERVA` y
+`DEVOLUCION_HONORARIOS` el estado normal es `no_aplica_confirmado`: no se fabrica un XLSX
+vacío ni se bloquea la ficha CRM. Una excepción solicitada por el abogado puede generar el
+informe, pero no cambia la regla automática.
+
 ### 8.1 Ficha completa del contrario tras la lectura documental
 
 Esta fase solo empieza cuando los documentos de Drive E&V y las demás fuentes disponibles
-se han materializado, la sala de máquina y la sala de lectura están verificadas y el
-prerrelleno permite localizar la evidencia. El correo que anuncia la incidencia no basta
-para decidir la identidad del contrario.
+se han materializado, la sala de máquina y la sala de lectura están verificadas y la fase
+de viabilidad está `completada` o `no_aplica_confirmado`. Cuando existe prerrelleno, debe
+permitir localizar la evidencia. El correo que anuncia la incidencia no basta para decidir
+la identidad del contrario.
 
 La selección distingue propietario, firmante del encargo y deudor de los honorarios. Se
 ancla prioritariamente en el encargo firmado y en los documentos contractuales de la
@@ -523,13 +600,18 @@ NIG, referencia propia y número de autos. Hasta entonces se aplica el bloqueo d
 Un campo vacío de `_caso.md` se completa automáticamente. Dos valores no vacíos de fuentes
 independientes e incompatibles no se sobrescriben en silencio: producen
 `pendiente_sincronizacion`. Después de la escritura automática, una persona revisa la ficha
-dentro de Sudespacho y registra actor, instante y resultado. Si no corrige nada, un GET
-posterior debe coincidir campo por campo con YAML y `_caso.md`. Si corrige en el CRM, ese
-GET es la fuente de la versión revisada y se resincroniza en dirección **Sudespacho →
-`_ficha_crm.yaml` → `_caso.md`**. Un CAS puede sustituir exclusivamente los valores y
-digests de la `candidate_revision` esperada; un cambio local o documental independiente
-desde esa revisión bloquea en `pendiente_sincronizacion`. Los commits son atómicos y una
-nueva lectura verifica la igualdad final. Solo entonces queda `crm_ficha_completa`.
+dentro de Sudespacho y registra actor, instante, `candidate_revision`, ID remoto y digest o
+versión remota exacta que vio —ETag o `updated_at` cuando el API los ofrezca; en su defecto,
+hash canónico de todos los campos materiales del GET—. Si no corrige nada, un GET posterior
+debe coincidir con esa attestación y campo por campo con YAML y `_caso.md`. Si corrige en el
+CRM, el humano confirma la nueva versión y ese GET atestado se resincroniza en dirección
+**Sudespacho → `_ficha_crm.yaml` → `_caso.md`**. Cualquier mutación remota posterior o
+diferencia no atestada exige nueva revisión; nunca se adopta como «corrección humana» por
+mera cronología. Un CAS puede sustituir exclusivamente los valores y digests de la
+`candidate_revision` esperada; un cambio local o documental independiente desde esa
+revisión bloquea en `pendiente_sincronizacion`. La proyección completa el protocolo durable
+del §7 y una nueva lectura verifica la igualdad final. Solo entonces queda
+`crm_ficha_completa`.
 Mientras exista `pendiente_revision_humana`,
 `pendiente_sincronizacion` o discrepancia posterior, ningún entrypoint puede preparar o
 enviar requerimiento ni demanda.
@@ -566,6 +648,15 @@ han sido consultadas realmente, no hay novedad y las invariantes están verdes. 
 dar `preparado_con_pendientes`, pero no incrementa su contador de ausencia de cambios. El
 punto fijo y la generación que lo sostiene se persisten conforme al §10.
 
+Cada adaptador define de forma cerrada su fotografía material: Gmail incluye IDs de hilo y
+mensaje más hashes de EML/adjuntos; Drive, ruta, ID/versión remota, hash, tamaño y tombstone;
+Sudespacho, expediente, documentos, versiones y campos materiales; LeadHub, referencias,
+cuenta/rol, cobertura y artefactos recibidos. Sustituir contenido bajo el mismo ID o ruta
+cambia la fotografía. Cada attestación lleva `round_id`, generación e instante; el contador
+solo avanza cuando una actualización atómica incorpora todas las fuentes obligatorias y
+frescas de esa misma ronda. Se conservan las dos attestations completas que acreditan el
+punto fijo —o una cadena de digests equivalente que permita reproducirlas—.
+
 ### 9.1 Archivo por decisión jurídica
 
 El flujo no decide que un asunto es inviable. Si el abogado ordena archivarlo, se conserva
@@ -600,6 +691,8 @@ Cada fuente o fase, según corresponda, puede estar en:
 - `pendiente_domicilio`;
 - `pendiente_revision_humana`;
 - `pendiente_sincronizacion`;
+- `no_aplica_confirmado`;
+- `workspace_no_soportado`;
 - `escritura_resultado_desconocido`;
 - `escritura_sin_readback`;
 - `espera_decision_juridica`;
@@ -616,52 +709,87 @@ Su esquema mínimo y obligatorio es:
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "case_id": "<identidad canónica>",
   "revision": 1,
   "input_generation": 1,
   "sources": {
     "<fuente>": {
-      "status": "completada|vacio_confirmado|no_consultada|fallida|espera_login|espera_operador_ev|espera_entrega|adaptador_no_disponible|recibida_pendiente_reverificacion",
+      "status": "pendiente|en_curso|completada|vacio_confirmado|no_consultada|pendiente_reintento|fallida|espera_login|espera_operador_ev|espera_entrega|adaptador_no_disponible|recibida_pendiente_reverificacion",
+      "round_id": "<ronda de consulta común>",
       "checked_at": "<ISO-8601>",
       "query_id": "<id sin PII>",
       "snapshot_sha256": "<digest del inventario>",
       "input_generation": 1,
-      "changed": false
+      "changed": false,
+      "attempts": 1
     }
   },
   "phases": {
     "<fase>": {
-      "status": "pendiente|en_curso|completada|pendiente_reintento|pendiente_identidad_contrario|pendiente_domicilio|pendiente_revision_humana|pendiente_sincronizacion|escritura_resultado_desconocido|escritura_sin_readback|espera_decision_juridica|fallida",
+      "status": "pendiente|en_curso|completada|no_aplica_confirmado|workspace_no_soportado|pendiente_reintento|pendiente_identidad_contrario|pendiente_domicilio|pendiente_revision_humana|pendiente_sincronizacion|escritura_resultado_desconocido|escritura_sin_readback|espera_decision_juridica|fallida",
       "input_generation": 1,
       "artifact_sha256": "<digest del manifiesto o resultado>",
-      "verified_at": "<ISO-8601>"
+      "verified_at": "<ISO-8601>",
+      "attempts": 1
+    }
+  },
+  "operations": {
+    "<operation_id>": {
+      "kind": "<intake|crm|gmail|drive|archivo|proyeccion>",
+      "status": "en_curso|resultado_desconocido|completada|fallida",
+      "generation": 1,
+      "expected": ["<artefacto o efecto>"],
+      "started_at": "<ISO-8601>",
+      "verified_at": "<ISO-8601 o null>"
     }
   },
   "fixed_point": {
-    "round_id": "<id>",
     "generation": 1,
     "consecutive_unchanged": 0,
-    "reached": false
+    "reached": false,
+    "attested_rounds": [
+      {"round_id": "<id>", "sources_digest": "<sha256>", "completed_at": "<ISO-8601>"}
+    ]
   }
 }
 ```
 
-`input_generation` aumenta si cambia el inventario de cualquier fuente. En la misma
-actualización se invalidan todas las fases derivadas con una generación anterior y se
-reinicia `consecutive_unchanged`. Una consulta real sin cambios registra `checked_at`,
+`input_generation` aumenta si cambia la fotografía material de cualquier fuente. Antes de
+publicar la nueva generación se persiste su operación `en_curso`; en la misma sección
+crítica se invalidan todas las fases derivadas con una generación anterior y se reinicia
+`consecutive_unchanged`. Una consulta real sin cambios registra `round_id`, `checked_at`,
 `query_id` y digest; una fuente saltada no puede imitarla. Cada actualización usa temp +
-`os.replace` y compara `revision`, dentro de la sección crítica serializada del §7; si se
-habilitan varios writers, un CAS fallido obliga a releer y fusionar, nunca a sobrescribir.
+`os.replace`, compara `revision` y atraviesa el mutex del §7. Un CAS fallido obliga a releer
+y fusionar, nunca a sobrescribir.
 
-La fase `crm_ficha` añade `candidate_revision` y `candidate_digests` para YAML,
-`_caso.md` y el primer GET. Son la precondición exacta del CAS posterior a la revisión
-humana; no se sustituyen valores que ya no correspondan a esa fotografía.
+Las transiciones son cerradas y separadas por entidad:
 
-Esta fotografía no sustituye `_caso.md` ni los manifiestos y no ejecuta fases: solo enlaza
-fuente, fase, generación y verificación material. Un ledger append-only por ejecución queda
-fuera de la primera entrega y solo se añadirá si una prueba E2E demuestra que la fotografía
-no basta.
+- **fuente:** `pendiente → en_curso`; desde `en_curso` solo pasa a `completada`,
+  `vacio_confirmado`, `no_consultada`, `pendiente_reintento`, `fallida` o uno de sus estados
+  de espera/adaptador/recepción. Un estado no exitoso vuelve a `en_curso` incrementando
+  `attempts`; una fuente exitosa vuelve a `pendiente` al abrir una ronda posterior o al
+  invalidarse su fotografía. Solo `completada` y `vacio_confirmado`, con consulta real,
+  digest y `round_id`, cuentan para punto fijo;
+- **fase:** `pendiente → en_curso`; desde `en_curso` solo pasa a `completada`,
+  `no_aplica_confirmado`, `fallida` o un estado bloqueante de su enum. Un bloqueo vuelve a
+  `en_curso` con nuevo intento; `completada`/`no_aplica_confirmado` vuelven a `pendiente`
+  cuando cambia `input_generation`;
+- **operación:** `en_curso` termina en `completada`, `fallida` o
+  `resultado_desconocido`; este último exige reconciliación y nunca autoriza directamente
+  un segundo efecto.
+
+Ninguna transición se infiere por ausencia de fichero o por un control corrupto.
+
+La fase `crm_ficha` añade `candidate_revision`, `candidate_digests` para YAML, `_caso.md` y
+primer GET, y `human_review_attestation` con actor, instante, ID remoto y digest/versión
+exacta revisada. Son la precondición del CAS posterior; no se sustituyen valores que ya no
+correspondan a esa fotografía ni se acepta una versión remota posterior no atestada.
+
+Esta fotografía no sustituye `_caso.md` ni los manifiestos y no ejecuta fases: enlaza
+fuente, fase, generación, operaciones durables y verificación material. No se crea un motor
+de workflows ni un ledger general adicional: `operations` es el mínimo necesario para
+recuperar efectos ya iniciados.
 
 Los fallos transitorios de red, ficheros fríos y respuestas temporales se reintentan con
 backoff acotado. La reanudación empieza en la primera fase no válida y no repite efectos ya
@@ -761,9 +889,12 @@ rutas de los manifiestos; no vuelca secretos ni contenido sensible al terminal.
 ## 14. Criterios de aceptación
 
 1. La secuencia documentada de entrypoints existentes completa una apertura normal sin
-   pedir datos que puedan obtenerse de las fuentes autorizadas.
+   pedir datos que puedan obtenerse de las fuentes autorizadas y, en la primera vertical,
+   solo después de releer `estado_repositorio: disponible`: explícito en un caso existente
+   o escrito atómicamente en la inicialización de un caso nuevo probado.
 2. Interrumpir y reanudar en cualquier fase no duplica efectos confirmados ni repite una
-   escritura cuyo resultado remoto sea desconocido.
+   escritura cuyo resultado remoto sea desconocido; cada frontera de crash se reconcilia
+   mediante el `operation_id` durable antes de continuar.
 3. Ninguna fase se marca completa solo por un código de salida cero.
 4. Todo fichero procesado resuelve a una fila de manifiesto y su hash coincide.
 5. Ningún destino se repite con hashes distintos.
@@ -773,23 +904,27 @@ rutas de los manifiestos; no vuelca secretos ni contenido sensible al terminal.
 9. Una captura LeadHub incompleta nunca recibe veredicto de entrega completa y el piloto
    registra actor, cuenta, rol, tiempos, intervenciones manuales y cobertura de la vía usada.
 10. Cada vuelta consulta realmente Gmail, Drive, LeadHub y Sudespacho; un nuevo correo o
-    documento invalida y regenera las salidas dependientes, y `.pulled` no omite Drive.
+    documento invalida y regenera las salidas dependientes, retira del corpus activo los
+    derivados obsoletos y `.pulled` no omite Drive.
 11. La cuantía usa decimal exacto de escala máxima 2 en Drive, informe y Sudespacho. Si el
     CRM no demuestra soporte de céntimos, rechaza el valor fraccionario; nunca lo redondea.
-12. `VIABILIDAD` y el recuadro ejecutivo quedan en blanco durante el prerrelleno.
+12. `VIABILIDAD` y el recuadro ejecutivo quedan en blanco durante el prerrelleno; un tipo
+    fuera de `INFORME_VIABILIDAD_TIPOS` registra `no_aplica_confirmado` sin crear XLSX.
 13. El resumen final usa uno de los tres estados definidos en §13.
 14. La suite E2E reproduce, sin PII, colisiones, intake tardío, ruta desviada, descarga
-    parcial, operador/entrega LeadHub pendiente, reanudación tras interrupción y punto fijo.
+    parcial, operador/entrega LeadHub pendiente, la matriz Drive disponible/checkout/
+    conflicto/scratch, crash después de cada frontera y punto fijo.
 15. Un resolvedor no crea estructura alguna y rechaza una carpeta sombra que solo coincide
     por nombre.
 16. Los controles internos y temporales `~$*` no cuentan como documentos materiales.
-17. La sala de lectura no pasa si su manifiesto cuadra pero el layout, la taxonomía o los
-    nombres de destino infringen el contrato vigente.
+17. La sala de lectura no pasa si su manifiesto cuadra pero el layout, la taxonomía, los
+    nombres de destino o la generación activa infringen el contrato vigente.
 18. Sudespacho distingue un gestor documental vacío confirmado de una respuesta con errores.
 19. LeadHub no se marca disponible mientras solo exista el arnés de medición.
 20. Toda ficha de contrario releída por API contiene nombre visible completo, apellidos
     separados, identificador y domicilio con código postal, población y provincia, pero
-    permanece `pendiente_revision_humana` hasta revisión registrada y segundo GET.
+    permanece `pendiente_revision_humana` hasta revisión atestada contra la versión remota
+    exacta y segundo GET coincidente.
 21. Los campos de texto libre del contrario quedan en mayúsculas y el email en minúsculas;
     los `Select` conservan el literal exacto del CRM.
 22. Una dirección postal incompleta o ambigua impide preparar o enviar requerimiento o
@@ -797,8 +932,9 @@ rutas de los manifiestos; no vuelca secretos ni contenido sensible al terminal.
 23. Un código postal resuelto automáticamente usa solo expediente, Correos o Catastro;
     conserva fuente, consulta y confianza en la ficha local, minimiza los datos enviados y
     cumple el contrato de logs/retención del §8.1 sin filtrar PII a Git.
-24. `scripts.crm_ficha` sincroniza la identidad candidata en los tres destinos y, tras una
-    corrección humana en CRM, la resincroniza Sudespacho → YAML → `_caso.md` y verifica.
+24. `scripts.crm_ficha` sincroniza la identidad candidata en los tres destinos mediante el
+    protocolo durable y, tras una corrección humana atestada en CRM, la resincroniza
+    Sudespacho → YAML → `_caso.md` y verifica.
 25. Un contrario ya existente se actualiza mediante GET, merge, PUT y GET; vincularlo o
     releerlo antes de la revisión humana no se considera ficha completa.
 26. La actualización de `_caso.md` modifica frontmatter y `## Partes` de forma atómica,
@@ -807,8 +943,8 @@ rutas de los manifiestos; no vuelca secretos ni contenido sensible al terminal.
     sus contratos y una prueba E2E no demuestre una carencia concreta de coordinación.
 28. El alta mínima no crea ni actualiza un contrario a partir del correo inicial y conserva
     `crm_ficha_pendiente` hasta completar las fuentes documentales.
-29. La fase 8.1 no comienza antes de materializar Drive E&V y verificar sala de máquina,
-    sala de lectura y prerrelleno.
+29. La fase 8.1 no comienza antes de materializar Drive E&V y verificar sala de máquina y
+    sala de lectura; la viabilidad debe estar `completada` o `no_aplica_confirmado`.
 30. Firmante del encargo, propietario y deudor se distinguen; una discrepancia documental
     produce `pendiente_identidad_contrario` y bloquea el requerimiento.
 31. La etiqueta Gmail no se crea ni se mueve antes de confirmar la rama judicial o
@@ -816,57 +952,67 @@ rutas de los manifiestos; no vuelca secretos ni contenido sensible al terminal.
 32. La autorización única sustituye los antiguos gates previos para valores con procedencia
     concordante; una contradicción material bloquea y toda escritura queda
     `pendiente_revision_humana` hasta el gate posterior.
-33. Un código de equipo repetido no crea conflicto, un W-code existente entra por
-    `--case-id` y `--force` nunca crea una carpeta sombra.
+33. Un código de equipo repetido no crea conflicto; un W-code existente entra por
+    `--case-id`, no repite el alta CRM ni los hashes ya ingeridos, y `--force` nunca crea
+    una carpeta sombra.
 34. Todo intake incremental usa `--crm skip`; un expediente CRM preexistente se registra y
     descarga antes de ejecutar la sala de máquina.
 35. B2–B5 conservan `--case-id`, autodetección desde `folder-id`, tags de alta,
     normalización telefónica y evento `archivado`.
-36. El intake conserva crudo, nombres originales, hashes y locks, y nunca toca
-    `90_Notas personales/`.
-37. Dos corridas de sala de máquina no se solapan y una reconstrucción detecta derivados
-    huérfanos antes de validarse.
+36. El intake conserva crudo, nombres originales, hashes y locks, nunca toca
+    `90_Notas personales/`; un workspace existente no explícitamente `disponible` bloquea
+    sin efectos, y el caso nuevo probado solo admite la inicialización local atómica antes
+    de cualquier efecto remoto.
+37. Dos corridas de sala de máquina no se solapan y una reconstrucción retira del corpus
+    activo los derivados huérfanos antes de validarse, conservándolos en historial.
 38. Un caso judicial no pasa por los entrypoints extrajudiciales ni puede terminar
     `crm_ficha_completa` mientras falte el adaptador judicial verificado.
 39. Una relación CRM sin readback no se reenvía ni se declara idempotente; queda
     `escritura_sin_readback`.
-40. El archivo ordenado por el abogado verifica CRM, actuación, Gmail, Drive, `_caso.md` y
-    evento forense antes de declararse completo.
-41. Dos ramas solapadas descargan a staging disjunto y sus commits serializados conservan la
-    unión de entradas en manifest, log, `_caso.md` y `estado.json`; no hay lost updates.
+40. El archivo ordenado por el abogado registra intención y readback por cada efecto y
+    verifica CRM, actuación, Gmail, Drive, `_caso.md` y evento forense antes de declararse
+    completo; cada corte intermedio se reanuda sin repetir lo confirmado.
+41. Dos procesos solapados descargan a staging disjunto y atraviesan el mismo mutex por
+    caso; sus commits conservan la unión de entradas en manifest, log, `_caso.md` y
+    `estado.json`, y un proceso no puede liberar el lock del otro.
 42. Sustituir o retirar un fichero Drive conserva los bytes anteriores, la generación y el
-    tombstone, y el inventario vigente no procesa el historial como si fuera evidencia nueva.
-43. El piloto LeadHub ejecuta y mide por separado la vía Nikolai y la vía Marta antes de
-    proponer el cambio del contrato definitivo en `FeesDefender-crm`.
+    tombstone; solo la generación activa alimenta índices y lectores.
+43. La excepción §2.1 de `FeesDefender-crm` está vigente antes de ejecutar la vía Nikolai;
+    el piloto mide por separado Nikolai y Marta y no presenta la medición como captura
+    probatoria antes de proponer el contrato definitivo.
 44. Una ficha con `pendiente_revision_humana` no habilita ningún requerimiento ni demanda;
-    revisión + GET son necesarios incluso cuando el primer GET coincidió.
+    revisión atestada contra la versión remota exacta + GET coincidente son necesarios
+    incluso cuando el primer GET coincidió.
 45. Una corrección humana en Sudespacho se refleja por GET en YAML y `_caso.md`; el CAS
-    sustituye la `candidate_revision` esperada, bloquea cualquier cambio independiente y
-    termina con igualdad verificada.
+    sustituye la `candidate_revision` y versión remota atestadas, bloquea cualquier cambio
+    local, documental o remoto independiente y termina con igualdad verificada.
 46. Un test de timeout después del commit remoto deja `escritura_resultado_desconocido`,
     encuentra y adopta exactamente un expediente por referencia y demuestra que no hubo
     segundo POST.
 47. `estado.json` existe desde la primera entrega y vincula cada fuente y fase a una
-    `input_generation`; una fuente saltada no incrementa `consecutive_unchanged`.
-48. Cambiar el inventario de una fuente incrementa la generación, invalida atómicamente
-    todas las fases derivadas y reinicia el punto fijo.
+    `input_generation` y `round_id`; conserva las dos rondas atestadas y una fuente saltada
+    no incrementa `consecutive_unchanged`.
+48. Cambiar la fotografía material de una fuente registra primero una operación durable,
+    incrementa la generación, invalida todas las fases derivadas antes de publicar y
+    reinicia el punto fijo; un crash nunca deja una fase verde sobre la generación anterior.
 49. Los perfiles y respuestas temporales del enriquecimiento postal se eliminan al terminar;
     todo log técnico transitorio, de éxito o fallo, desaparece en un máximo de 7 días y no
     conserva hash ni otro derivado determinista del domicilio.
-50. La primera entrega no crea `scripts.apertura_expediente`: el estado mínimo y la sección
-    crítica se cablean detrás de los entrypoints existentes.
+50. La primera entrega no crea `scripts.apertura_expediente`: el mutex, el gate de workspace,
+    `operations` y el estado mínimo se cablean detrás de los entrypoints existentes.
 
 ## 15. Estrategia de entrega
 
 La implementación se detallará en un único plan y en este orden:
 
-1. Construir la sección crítica por caso y `estado.json` mínimo; staging disjunto, commit
-   serializado, generaciones e invalidación, sin crear un CLI coordinador.
+1. Construir el mutex interproceso corto, el gate `estado_repositorio: disponible`, el
+   protocolo durable por `operation_id` y `estado.json`; staging disjunto, generaciones,
+   rondas atestadas e invalidación, sin crear un CLI coordinador.
 2. Cerrar el alta de resultado incierto y el dominio monetario; completar `crm_ficha` con
    procedencia, modelo postal, actualización de registros preexistentes, revisión humana
    posterior, sincronización de `_caso.md` y readback campo a campo, sin romper B2–B5.
-3. Cerrar por separado los contratos pendientes de Drive, Gmail, Sudespacho, sala de
-   máquina, sala de lectura, viabilidad y el piloto LeadHub.
+3. Cerrar por separado los contratos pendientes de Drive, Gmail, Sudespacho, reconciliación
+   de derivados por generación, viabilidad `no_aplica_confirmado` y el piloto LeadHub.
 4. Cablear el orden vigente mediante los entrypoints existentes, aplicar la adjudicación
    expresa del §16 y actualizar el runbook sin borrar sus gotchas todavía válidos.
 5. Ejecutar una prueba E2E con fixtures sin PII y una apertura real controlada.
@@ -875,7 +1021,7 @@ La implementación se detallará en un único plan y en este orden:
 
 Cada bloque se construirá con TDD. Las integraciones vivas tendrán pruebas de contrato
 separadas de la suite rápida y nunca usarán datos reales en fixtures versionados.
-Este orden no es autorización para planificar todavía: la rev. 2 permanece pendiente de R2.
+Este orden no es autorización para planificar todavía: la rev. 3 permanece pendiente de R3.
 
 ## 16. Relación con documentación anterior
 
@@ -894,8 +1040,11 @@ siguen vigentes salvo sustitución expresa en esta tabla:
 | 2026-07-18: revisión humana obligatoria del YAML | Sustituida | No hay aprobación previa: el humano revisa después en CRM; revisión + GET son condición de `crm_ficha_completa` y de cualquier requerimiento/demanda |
 | 2026-07-18 B2–B5 | Conservadas | Rige la cláusula de no regresión de §3 y el criterio 35 |
 | 2026-07-09 / código vigente: Drive E&V como espejo | Conservada y ampliada | Es un espejo versionado, nunca lote: staging, historial content-addressed, generaciones y tombstones sin pérdida |
-| Contrato LeadHub de 2026-07-31: Marta ejecuta | Excepción piloto, no sustitución definitiva | Nikolai principal y Marta subsidiaria; se miden ambas vías con actor/cuenta reales y solo después se modificará el contrato en `FeesDefender-crm` |
-| Runbook §§0–5: entorno, intake y sala de máquina | Conservados | Rigen salvo los cambios expresos de esta tabla y los nuevos verificadores materiales |
+| Arquitectura dual de 2026-07-29 | Conservada con restricción temporal explícita | Un caso existente exige Drive explícitamente `disponible`; legacy/error, checkout, conflicto y scratch bloquean. Un caso nuevo probado se inicializa atómicamente en Drive antes de efectos remotos. `CaseWorkspace` sustituirá este gate cuando exista |
+| Contrato LeadHub de 2026-07-31 v3.7, commit `8bc09ea` | Excepción piloto autorizada, no sustitución definitiva | Nikolai puede ejecutar solo el arnés de medición sin entrega probatoria; Marta conserva la captura ordinaria. Se miden ambas vías antes del contrato definitivo |
+| Sala de máquina 2026-07-09 §8: nunca borra productos previos | Conservada y ampliada | Nunca borra crudo ni bytes históricos; la reconciliación por generación retira productos obsoletos solo del corpus activo mediante historial o marca inactiva |
+| Sala de lectura canónica: re-aplicación solo añade y nunca borra | Sustituida parcialmente | Se conserva el crudo y toda copia histórica; se sustituye únicamente que una copia obsoleta siga activa: queda versionada/inactiva y fuera de manifiesto, índices y lectores vigentes |
+| Runbook §§0–5: entorno, intake y sala de máquina | Conservados y ampliados | Rigen con la reconciliación por generación declarada en las dos filas anteriores y los nuevos verificadores materiales |
 | Runbook §6: momento y mecánica de etiqueta Gmail | Conservado | La etiqueta espera a la clasificación judicial/extrajudicial |
 | Runbook §§7–8: sala de lectura y viabilidad | Conservados por referencia | Sus skills canónicas siguen siendo el contrato interno |
 | Runbook §9: CRM extrajudicial y gotchas | Conservado | La rama judicial continúa no disponible y las relaciones sin readback no se dan por idempotentes |
@@ -913,8 +1062,10 @@ fuentes técnicas de implementación:
 - la skill canónica `.claude/skills/viabilidad-prerelleno/`;
 - `docs/superpowers/plans/PLAN_INTAKE_CRM_COMPLETO.md` hasta que sus requisitos se absorban
   en el plan único;
+- `docs/superpowers/specs/2026-07-29-feesdefender-dual-case-workspace-design.md`, con la
+  restricción temporal expresa de esta spec;
 - contrato de descarga de fichas LeadHub del repositorio hermano `FeesDefender-crm`
-  (31 de julio de 2026).
+  (versión 3.7, commit `8bc09ea`).
 
 La implementación actualizará el runbook para reflejar las sustituciones expresas, sin
 borrar los gotchas operativos que sigan vigentes ni mantener un segundo diseño divergente.
@@ -967,7 +1118,7 @@ El piloto termina `preparado_con_pendientes`: las fuentes disponibles, las dos s
 Sudespacho y el prerrelleno están materializados; quedan fuera del cierre `completo` la
 captura probatoria integral de LeadHub, el readback de relaciones del CRM y el registro por
 el camino común de la revisión humana + GET + resincronización de la ficha. Esta evidencia
-no convierte la spec en lista: la rev. 2 queda pendiente de R2.
+no convierte la spec en lista: la rev. 3 queda pendiente de R3.
 
 ## 18. Adjudicación de la revisión adversarial (Codex, 2026-08-15) — NO-SHIP, remediado
 
@@ -1002,3 +1153,34 @@ revisor no sustituye la decisión del dueño: H-02 adopta un piloto con actor pr
 distinto antes de modificar el contrato hermano, y H-05 desplaza la revisión humana al
 momento posterior a la escritura. Esas divergencias y sus riesgos quedan declarados, no
 contados como refutaciones.
+
+## 19. Adjudicación de la revisión adversarial (Codex, 2026-08-15) — NO-SHIP, remediado
+
+- **Objeto revisado:** esta spec rev. 2, commit `f087edadbe803df8a738397b8697cdfccb1d52c4`
+- **Ronda:** 2
+- **Revisor:** Codex (subagente independiente, solo lectura)
+- **Informe recibido:** `2026-08-15-apertura-integral-r2-adversarial-review.md`
+- **SHA-256:** `FA1C5129FA76ABFDE991406140BE4FA415CCB4B3BA905A2E1B7D4DCB3D68DF17`
+- **Hallazgos:** 8 confirmados · 0 rebajados · 0 refutados · 0 escalados · 0 sin verificar
+- **Remediado en:** rev. 3 de este documento; pendiente R3
+
+**Adjudicador excepcional:** Codex, por decisión expresa de Nikolai ante la indisponibilidad
+de Claude Code. Revisor y adjudicador pertenecen al mismo modelo/familia; la independencia
+es más débil y puede compartir puntos ciegos. La adjudicación se hizo contra el código y los
+contratos citados, no contra el informe, y no convierte la rev. 3 en `SHIP`.
+
+| ID | Sev. | Adjudicación contra la fuente | Decisión y remedio mínimo |
+|---|---|---|---|
+| H2-01 | CRÍTICA | **CONFIRMADO.** Manifest y `_caso.md` siguen siendo read-modify-replace sin exclusión interproceso; el lock de checkout conserva siete defectos caracterizados | §§1, 6, 7 y 10: mutex interproceso corto por caso desde la primera entrega, titularidad/nonce, abandono seguro y prueba de dos procesos solapados. No se reutiliza el lock de checkout |
+| H2-02 | CRÍTICA | **CONFIRMADO.** `CaseWorkspace` todavía no existe y la spec omitía el contrato dual antes de efectos locales y remotos | **Remedio mínimo elegido:** §§3-4 y 16 distinguen existente/nuevo/legacy: el existente exige Drive explícitamente `disponible`, el nuevo probado se inicializa atómicamente y legacy/error, checkout, conflicto o scratch bloquean hasta que `CaseWorkspace` sustituya el gate |
+| H2-03 | CRÍTICA | **CONFIRMADO.** `os.replace` por fichero no hace atómico bytes–manifest–log–estado–remoto; loaders actuales pueden degradar controles corruptos | §§5.2, 7 y 10: `operation_id` durable, invalidez antes de publicar, readback y `completada` al final; reconciliación al arrancar y crash-injection en cada frontera; control corrupto bloquea |
+| H2-04 | ALTA | **CONFIRMADO.** El esquema rev. 2 no ligaba fuentes a ronda, sobrescribía la única observación y no definía fotografía ni transiciones | §§9-10: fotografía cerrada por adaptador, `round_id` por fuente, dos rondas atestadas, enums/transiciones cerrados y contador de intentos |
+| H2-05 | ALTA | **CONFIRMADO.** Actor e instante no prueban qué versión remota vio el humano; una edición posterior podía adoptarse como corrección revisada | §§8.1 y 10: attestación con `candidate_revision`, ID y digest/versión remota exacta; cualquier cambio posterior exige nueva revisión |
+| H2-06 | ALTA | **CONFIRMADO.** Medir primero con Nikolai infringía el contrato hermano que reservaba la ejecución a Marta | **Remediado también fuera de este repo:** `FeesDefender-crm` v3.7, commit `8bc09ea`, autoriza antes de medir una excepción temporal sin entrega probatoria; §§6.3 y 16 |
+| H2-07 | ALTA | **CONFIRMADO.** Sala de máquina y sala de lectura son add-only y podían volver a verde conservando derivados retirados | §§8-9: reconciliación contra generación activa; derivados obsoletos se archivan o inactivan y quedan fuera de índices/lectores, sin borrar crudo ni historia |
+| H2-08 | ALTA | **CONFIRMADO.** La secuencia exigía XLSX a tipos excluidos por `INFORME_VIABILIDAD_TIPOS` | §§8 y 10: `no_aplica_confirmado` permite continuar sin fabricar informe; criterios 12 y 29 |
+
+Los ocho defectos se sostienen. No se adopta la alternativa más grande de H2-02 —terminar
+primero toda la arquitectura dual— porque la restricción a Drive `disponible` elimina el
+riesgo en la primera vertical y evita bloquear aperturas normales. La rev. 3 debe superar y
+adjudicar R3 antes de pasar a plan TDD.
