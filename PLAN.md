@@ -31,13 +31,43 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 12 | [La firma no es intercalada: falso positivo que bloquea la Capa B](#siguiente-sandwich-firma-la-firma-no-es-una-respuesta-intercalada) | ✅ **CERRADO** — PR #164 (`aaf7dc1`) | queda su cola: `MEJORAS #109` (el síntoma original sigue sin explicar) y borrar el corpus de prueba | bajo |
 | 13 | [Presupuesto explícito de proceso](#siguiente-presupuesto-proceso-cuánta-gobernanza-se-compra) | pendiente — **decisión de Nikolai**, no hay nada que construir | sin gates. Disparador: el mes 2026-07 cerró con **9,4 líneas de `docs/` por línea de `core/`** y cuatro cierres seguidos sin código de producción | bajo (5 min) |
 | 14 | [Desplegar en Cowork las skills ya construidas](#siguiente-reimport-skills-lo-construido-que-no-ha-llegado-al-equipo) | pendiente — **acción manual de Nikolai**; ningún test la cubre | sin gates. Disparador: `organizar-sala-lectura` va por **v1.14 en el repo** y Paola/Ana/Sergio ejecutan la **v1.12** | bajo (una tarde) |
+| 15 | [Apertura integral + piloto W-02Q38C](#siguiente-apertura-integral-apertura-completa-sobre-componentes-existentes) | spec única aprobada en brainstorming; **pendiente de revisión adversarial y plan**. Piloto abierto, no cerrado | cerrar el piloto por el camino común: sincronizar `_caso.md`, completar la evidencia LeadHub y verificar salas/viabilidad; después plan TDD sin crear otro orquestador de entrada | medio-alto |
 
 > **Filas 13 y 14 añadidas el 2026-08-03 al final de la cola a propósito: no reordeno prioridades
 > ajenas.** Las dos son baratas y una degrada a terceros hoy — dónde encajan de verdad lo decide
 > Nikolai. Origen: `docs/superpowers/handoffs/handoff-2026-08-03-formacion-git-nikolai.md`.
 
+> **Fila 15 añadida el 2026-08-15 por disparador real y decisión expresa de Nikolai.** Se conserva
+> al final para no reordenar la cola sin una decisión específica de prioridad.
+
 > Detalle de cada ítem en su bloque `[SIGUIENTE-*]` más abajo. Backlog sin
 > promover: `docs/MEJORAS_FUTURAS.md`. Ledger de cerrados: `## Cerrados` (final).
+
+---
+
+## [SIGUIENTE-APERTURA-INTEGRAL] Apertura completa sobre componentes existentes
+
+*Fila #15. Disparador: apertura real de W-02Q38C y decisión expresa de convertir sus fallos
+operativos en el contrato único de apertura.*
+
+La spec canónica es
+[`docs/superpowers/specs/2026-08-15-orquestador-apertura-expediente-design.md`](docs/superpowers/specs/2026-08-15-orquestador-apertura-expediente-design.md).
+Absorbe y adjudica lo vigente de los diseños de 2026-07-09 y 2026-07-18 y del runbook, sin
+crear specs separadas por CRM. La decisión de arquitectura es completar y cablear primero
+`scripts.abrir_caso`, `scripts.crm_ficha` y los motores existentes; solo una prueba E2E que
+demuestre huecos residuales puede justificar un coordinador nuevo.
+
+**Estado del piloto:** el expediente extrajudicial y sus relaciones básicas existen en
+Sudespacho; la ficha del contrario se corrigió con nombre completo, apellidos separados,
+domicilio postal completo y textos normalizados. Los datos personales y los documentos del
+caso permanecen fuera de Git. No se declara la apertura cerrada: `_caso.md` todavía no se
+sincroniza por el camino común y el paquete probatorio completo de LeadHub sigue limitado por
+la capacidad actual del repositorio hermano `FeesDefender-crm`.
+
+**Siguiente:** (1) revisión adversarial de la spec; (2) adjudicación por Claude; (3) plan TDD
+único; (4) completar W-02Q38C mediante ese mismo wiring —sin parche manual específico del caso—
+y verificar intake, sala de máquina, sala de lectura, prerrelleno y las tres superficies de
+partes (`_caso.md`, `_ficha_crm.yaml`, GET de Sudespacho).
 
 ---
 

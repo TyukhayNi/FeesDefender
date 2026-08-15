@@ -673,7 +673,8 @@ fuentes técnicas de implementación:
 - la skill canónica `.claude/skills/viabilidad-prerelleno/`;
 - `docs/superpowers/plans/PLAN_INTAKE_CRM_COMPLETO.md` hasta que sus requisitos se absorban
   en el plan único;
-- `FeesDefender-crm/docs/superpowers/specs/2026-07-31-descarga-fichas-crm-leadhub-design.md`.
+- contrato de descarga de fichas LeadHub del repositorio hermano `FeesDefender-crm`
+  (31 de julio de 2026).
 
 La implementación actualizará el runbook para reflejar las sustituciones expresas, sin
 borrar los gotchas operativos que sigan vigentes ni mantener un segundo diseño divergente.
