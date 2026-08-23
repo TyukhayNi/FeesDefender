@@ -1,5 +1,5 @@
 ---
-estado: propuesto (R3 adjudicada; rev. 5 fija el alcance de V1; pendiente R4)
+estado: propuesto (R4 adjudicada; REQUIERE-REVISION, pendiente rev. 6)
 dueño: Nikolai Tyukhay
 fecha: 2026-08-15
 revision: "5"
@@ -1391,3 +1391,60 @@ alcance y **no remedia** los hallazgos de R3, que siguen abiertos.
 Quedan, por tanto, **tres decisiones de Nikolai** (§20) y **cuatro hallazgos** que la rev. 4 debe
 cerrar en el texto —H3-03 acotado, H3-05, H3-06 acotado y, cuando vuelva, H3-07—. Nada de esto
 autoriza un plan hasta que R4 se corra y se adjudique.
+
+## 22. Adjudicación de la revisión adversarial del estrechamiento (Codex, 2026-08-24) — REQUIERE-REVISION, pendiente
+
+- **Objeto revisado:** `docs/superpowers/specs/2026-08-15-orquestador-apertura-expediente-design.md` rev. 5, commit `806079c`
+- **Ronda:** 4
+- **Revisor:** Codex (solo lectura por construcción: copia externa del árbol vía `git archive`, sin `.git` y sin red)
+- **Informe recibido:** `2026-08-24-apertura-integral-r4-adversarial-review.md`
+- **Hallazgos:** 5 confirmados · 0 rebajados · 0 refutados · 0 escalados · 0 sin verificar
+- **Remediado en:** pendiente — dos correcciones son mecánicas, tres exigen decisión
+
+**Objeto de la ronda.** R4 no revisó la spec entera: revisó el **estrechamiento** del §21. El
+mandato le prohibió redescubrir H3-03, H3-05, H3-06 y las tres decisiones del §20, y le pidió
+decir si el estrechamiento les cambia la forma o describe falsamente su efecto. Ahí acertó de
+lleno: **dos de los cinco hallazgos son errores del texto que escribí yo el mismo día**, y uno de
+ellos es una palabra que me inventé.
+
+| ID | Sev. | Adjudicación contra la fuente | Decisión y remedio mínimo |
+|---|---|---|---|
+| H4-01 | CRÍTICA | **CONFIRMADO.** `scripts/abrir_caso.py:381` declara `crm: str = typer.Option("api", ...)`: el default es `api`, no `skip`. `:497` llama a `_alta_crm` incondicionalmente, `:275-276` solo corta `if crm_mode != "api"` y `:298` alcanza `create_expediente`. Mi §21.2 afirma que «toda invocación de V1 usa `--crm skip`»: eso es una **convención del llamador**, no una invariante ejecutable. **Matiz que añado y que no salva:** hay puerta humana antes del POST (`:293`, `yes or typer.confirm`), así que hoy hace falta el default `api` **más** un sí o `--yes`. Baja la probabilidad, no la alcanzabilidad — y el §21.5 disuelve la puerta al pedir que este mismo entrypoint sea el driver de trabajo mecánico sin supervisión, porque un driver no interactivo pasa `--yes` por construcción | El §21 debe definir cómo se reconoce una ejecución V1 y hacer que ese camino **rechace técnicamente** cualquier modo distinto de `skip`, en caso nuevo y en incremental. Más un criterio negativo: omitir el flag aborta antes de cualquier efecto y un spy acredita cero llamadas remotas de alta/ficha/relaciones |
+| H4-02 | ALTA | **CONFIRMADO.** `scripts/sala_maquina.py:491-492` llama `_atomizar_correo(...)` y `_procesar_adjuntos(...)` **incondicionalmente**, con el comentario «atomizar ANTES del OCR (spec §4)». La sala de máquina que el §21 mete en V1 procesa correo, y el §21 declara el correo fuera. La contradicción es real y es mía | **Requiere decisión de alcance**, y es binaria: (a) V1 invoca una modalidad de sala de máquina que **no** atomiza y registra la fuente como pendiente, o (b) V1 incluye la **atomización local de correo ya depositado** —no el descubrimiento Gmail— y suma sus artefactos, generación, puntos de crash y poda a los criterios 10, 14, 41 y 48. Ninguna de las dos amplía V1 hasta Gmail remoto |
+| H4-03 | ALTA | **CONFIRMADO en sus tres puntos.** (1) El criterio 1 promete «completa una apertura normal» y el §21.3 ordena que V1 nunca sea `completo`: literalmente indemostrable dentro de V1. (2) **`fuentes_pendientes` no existe**: `grep` en todo el árbol da **dos** apariciones, `:1342` y `PLAN.md:98`, ambas escritas por mí hoy. No está en los tres estados del §13 —`completo`, `preparado_con_pendientes`, `bloqueado`— ni en los enums del §10. Cité como garantía un token que no tiene esquema. (3) El criterio 35 se difiere entero a V2 aunque V1 modifica el mismo `scripts.abrir_caso` y ejerce `--case-id` y la autodetección desde `--folder-id` | Mecánico y sin decisión: sustituir `fuentes_pendientes` por **`preparado_con_pendientes`**, que ya existe y significa exactamente lo que quise decir; redactar la versión V1 del criterio 1 como «completa la secuencia V1 y termina `preparado_con_pendientes`»; y partir el 35 conservando en V1 `--case-id` y la autodetección |
+| H4-04 | ALTA | **CONFIRMADO.** El criterio 29 (`:950-951`) exige que la fase 8.1 espere Drive, sala de máquina, **sala de lectura** y viabilidad. Mi tabla del §21.3 manda sala de lectura y viabilidad a V3 pero el criterio 29 a V2, diciendo «su precondición pasa a ser el cierre de V1». Eso no difiere: **suprime dos precondiciones**, que es justo lo que la regla «diferido no derogado» prohíbe. Error de lógica mío, no del código | Mecánico: el cierre de V1 es necesario y **no** suficiente. La ejecución de la fase 8.1 y su criterio 29 pertenecen a una integración posterior a V3, o V3 precede al gate final de V2. No se amplía V1 |
+| H4-05 | ALTA | **CONFIRMADO, y la lista es más larga que la mía.** Verificado uno a uno: `core/case_manager.py:277-278` crea `01_Procesado/Sala lectura` y `:347-376` copia las plantillas de viabilidad, así que llamar a `ensure_case` «esqueleto canónico mínimo» es **falso** —ejecuta andamiaje de dos verticales diferidas—; `core/intake_drive.py:321-323` llama `register_drive_ev` con `returncode == 0` sin consultar la decisión del guard, y reescribe el `_caso.md` canónico; `scripts/abrir_caso.py:110-111` hashea el cajón **canónico** y no el destino efectivo, así que un desvío puede quedar sin hashes de los bytes realmente depositados. Y la insuficiencia de las pruebas es comprobable: `tests/test_guard_intake_wiring.py:132-138` solo afirma sobre `*.pdf` y el evento, no sobre los controles canónicos — los 21 tests de ese fichero y del cableado de atomización **pasan** en verde con todo lo anterior en pie | El §21 debe **enumerar el write-set de V1** y decidir por artefacto: bloqueado, publicado bajo el mutex, o exento como protocolo por contrato explícito (`es_protocolo=True`, nunca por omisión). El E2E de workspace no disponible debe comparar el árbol byte a byte y acreditar cero cambios; la custodia debe seguir el **destino efectivo**. Y el inicializador de V1 tiene que ser mínimo de verdad |
+
+**El veredicto se acepta: `REQUIERE-REVISION`.** Y la distinción que hace el revisor es la útil: lo
+que bloquea el **alcance** son estos cinco, locales al §21; lo que bloquea el **plan**, además, son
+las tres decisiones del §20 y los contratos abiertos de H3-03 acotado, H3-05 y H3-06.
+
+**Una corrección de honestidad que acepto entera.** La frase absoluta «V1 no escribe en ningún
+servicio externo» es demasiado fuerte incluso con H4-01 cerrado: el preflight de Drive puede
+ejecutar `rclone about gdrive_ev:`, usar el refresh token, emitir un access token nuevo y
+reescribir `rclone.conf` (`core/intake_drive.py:457-466,513-540`). Es un efecto del servicio de
+autenticación, no una mutación de datos del expediente, pero la invariante hay que formularla como
+el revisor propone: **cero mutaciones de datos y de acciones de comunicación, y cero efectos
+remotos no idempotentes del caso**, declarando el refresh. Un absoluto que se rompe con un caso
+conocido no es una invariante: es una frase.
+
+**Y un aviso del revisor que va más allá del §21, anotado aquí para que no se pierda:** tanto
+`core/sync_sudespacho.py:1356` como `scripts/sync_sudespacho.py:167` tienen **default judicial**
+(`expedientes_judiciales`). La parte negativa del criterio 38 —una apertura extrajudicial no entra
+por la vía judicial— no debería descansar en que nadie use el default; conviene hacerla global,
+como el 27 y el 50.
+
+**Lo que no hago aquí.** No remedio en esta adjudicación. Dos de los cinco son correcciones
+mecánicas de mi propio texto (H4-03 y H4-04) y podrían aplicarse ya; los otros tres exigen
+decisión: la forma del enforcement de `skip` (H4-01), la frontera binaria de la atomización de
+correo (H4-02) y el alcance del write-set enumerado (H4-05). Aplicar solo las mecánicas fabricaría
+una revisión intermedia que nadie ha revisado, y la lección de la rev. 4→5 es que multiplicar
+revisiones sin objeto es churn. Se remedia todo junto, en la rev. 6, cuando las decisiones estén
+tomadas.
+
+**Autocrítica que corresponde registrar.** De los cinco hallazgos, tres —H4-02, H4-03 y H4-04— son
+defectos que introduje al estrechar, no defectos heredados. Escribí un token de estado inexistente
+y lo cité como garantía; moví un criterio a una vertical suprimiendo dos de sus precondiciones; y
+llamé mínimo a un inicializador que ejecuta andamiaje de las verticales que acababa de diferir.
+Ninguno lo habría detectado un guard: los tres son coherencia de contenido, y por eso existe la
+ronda con revisor independiente.
