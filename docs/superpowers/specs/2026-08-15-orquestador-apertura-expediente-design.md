@@ -1,8 +1,8 @@
 ---
-estado: propuesto (R3 adjudicada; NO-SHIP, pendiente rev. 4)
+estado: propuesto (R3 adjudicada; rev. 4 estrecha el alcance a V1; pendiente R4)
 dueño: Nikolai Tyukhay
 fecha: 2026-08-15
-revision: "3"
+revision: "4"
 ---
 
 # Diseño — Apertura integral sobre componentes existentes
@@ -888,6 +888,10 @@ rutas de los manifiestos; no vuelca secretos ni contenido sensible al terminal.
 
 ## 14. Criterios de aceptación
 
+> **Alcance vigente (rev. 4).** Estos cincuenta criterios describen la apertura completa.
+> La primera vertical exige **diecinueve** de ellos; los otros treinta y uno quedan
+> **diferidos con su vertical**, no exentos. La enumeración y el reparto, en el §21.4.
+
 1. La secuencia documentada de entrypoints existentes completa una apertura normal sin
    pedir datos que puedan obtenerse de las fuentes autorizadas y, en la primera vertical,
    solo después de releer `estado_repositorio: disponible`: explícito en un caso existente
@@ -1002,6 +1006,10 @@ rutas de los manifiestos; no vuelca secretos ni contenido sensible al terminal.
     `operations` y el estado mínimo se cablean detrás de los entrypoints existentes.
 
 ## 15. Estrategia de entrega
+
+> **Sustituido para V1 (rev. 4).** El orden de siete bloques de esta sección presupone la
+> vertical ancha. Mientras V1 esté en curso rige el §21.5; esta sección vuelve a aplicarse
+> cuando entren V2 y V3.
 
 La implementación se detallará en un único plan y en este orden:
 
@@ -1247,3 +1255,119 @@ no aquí.
 3. **H3-04.** Quién ejecuta la secuencia. O se amplía un entrypoint existente hasta ser dueño real
    del orden y la reanudación, o se retira de la spec la promesa de trabajo mecánico sin
    supervisión y el criterio E2E prueba que el operador sigue siendo el driver.
+
+## 21. Alcance de la primera vertical (rev. 4) — Drive → intake → sala de máquina
+
+*Decisión de Nikolai del 2026-08-24, tras adjudicar R3. Esta sección es una **sustitución
+expresa** en el sentido del §16: lo que sale de la primera vertical **no queda derogado, queda
+diferido**, y su contrato sigue vigente para la vertical donde entre. Una omisión no deroga
+nada; solo lo hace esta enumeración.*
+
+### 21.1. Por qué se estrecha
+
+R3 devolvió `NO-SHIP` con siete hallazgos y ninguno refutado (§20). Tres de los siete no eran
+defectos de la mecánica sino **el precio de la anchura**: la rev. 3 pedía definir el orden de
+publicación durable, la prueba de rondas y la retención de residuos **a la vez** para Gmail,
+Drive, LeadHub, Sudespacho, salas, viabilidad, enriquecimiento postal y rama judicial. Estrechar
+no contesta esos hallazgos: hace que dos desaparezcan del alcance y dos se vuelvan acotados, y
+deja en pie exactamente los tres que hay que resolver de todos modos.
+
+El segundo motivo es de proceso y se declara sin adornos: este ítem lleva **tres rondas de
+revisión, veinticuatro hallazgos y cero líneas de código de producción**. Es el síntoma que
+`PLAN.md` fila #13 tiene aparcado desde el 2026-08-03.
+
+### 21.2. Qué es la primera vertical
+
+**V1 = resolución de identidad → esqueleto → materialización de Drive E&V → intake con custodia
+→ sala de máquina.** Nada más.
+
+En concreto, V1 comprende:
+
+- resolver la identidad del caso y, en un caso nuevo probado, inicializar atómicamente la
+  estructura canónica mínima y `_caso.md`;
+- el pull de Drive E&V con la semántica de **espejo versionado** del §6.2 (staging disjunto,
+  historia content-addressed, generaciones, tombstones);
+- el intake con su custodia forense: crudo intacto, nombres originales, hashes SHA-256, eventos
+  en `_intake_log.jsonl`, `90_Notas personales/` nunca tocada;
+- la sala de máquina: OCR y espejos Markdown bajo `01_Procesado/02_Sala de máquina/`, con
+  reconciliación por generación activa y retirada de derivados huérfanos del corpus activo;
+- el mutex interproceso, el gate de workspace, `operations` y `estado.json` que gobiernan lo
+  anterior.
+
+**V1 no escribe en ningún servicio externo.** El alta CRM queda fuera: toda invocación de V1 usa
+`--crm skip`, que además es la práctica ya establecida del despacho. Esa es la propiedad que hace
+tratable H3-03: en V1 no existe ningún efecto remoto no idempotente que reconciliar.
+
+### 21.3. Qué sale de V1, y a dónde va
+
+Sale **diferido, no derogado**. Cada bloque conserva su contrato en la sección que lo define.
+
+| Sale de V1 | Contrato que sigue vigente | Entra en |
+|---|---|---|
+| Pull de Sudespacho (lectura) y su universo listado | §§6.2, 9 · criterios 7, 18 | **V2** |
+| Alta CRM y dominio monetario | §5 · criterios 11, 35, 46 | V2 |
+| `crm_ficha` completa: procedencia, identidad del contrario, revisión humana atestada, las tres superficies | §§5.2, 8.1 · criterios 20-22, 24-26, 28, 30, 32, 44, 45 | V2 |
+| Enriquecimiento postal (Correos, Catastro) y su retención | §§8.1, 11 · criterios 23, 49 | V3 |
+| Descubrimiento y etiquetado de Gmail | §§6, 8 · criterios 6, 31 | V3 |
+| LeadHub y el piloto de medición | §§6.3, 16 · criterios 8, 9, 19, 43 | V3 |
+| Sala de **lectura** y su taxonomía | §§8-9 · criterio 17 | V3 |
+| Viabilidad y `no_aplica_confirmado` | §8 · criterio 12 | V3 |
+| Archivo multiefecto ordenado por el abogado | §12 · criterio 40 | V3 |
+| Rama judicial | §5 · criterio 38 | sigue **bloqueada** hasta que exista adaptador judicial verificado (sin cambio) |
+| Relaciones CRM sin readback | §5.2 · criterio 39 | V2 |
+| Orden de la fase 8.1 | §8.1 · criterio 29 | V2, y su precondición pasa a ser el cierre de V1 |
+
+**Una consecuencia que se declara, no se esconde.** Sacar el pull de Sudespacho de V1 contradice
+el gotcha del runbook —«atomizar correo y pull CRM **antes** de `sala_maquina apply`, o el OCR
+queda incompleto»—. En V1 la sala de máquina se valida sobre el **universo de Drive**, y un caso
+con documentos en el gestor del CRM exigirá una segunda pasada al entrar V2. Es admisible porque
+el motor es aditivo e idempotente, pero **no** es gratis: quien cierre V1 sobre un caso real no
+puede declarar su corpus completo. El estado del caso lo dice: `fuentes_pendientes`, nunca
+`completo`.
+
+### 21.4. Criterios de aceptación de V1
+
+De los cincuenta del §14, V1 exige **diecinueve**: 1, 2, 3, 4, 5, 10 (solo la parte de Drive y
+`.pulled`), 13, 14 (solo colisiones, intake tardío, ruta desviada, descarga parcial, la matriz de
+workspace, crash tras cada frontera **local** y punto fijo), 15, 16, 33, 34 (solo la obligación de
+`--crm skip`), 36, 37, 41, 42, 47, 48 y 50.
+
+Los treinta y uno restantes quedan **diferidos con su vertical**, según la tabla del §21.3. Un
+criterio diferido no se declara cumplido ni exento: no se evalúa todavía.
+
+### 21.5. Estrategia de entrega de V1 (sustituye al §15 mientras V1 esté en curso)
+
+El orden de siete bloques del §15 presupone la vertical ancha y **no se aplica a V1**. En su lugar:
+
+1. **Núcleo de workspace** — la Fase 1 de la arquitectura dual (`PLAN.md` fila #3): `CaseRef` con
+   unicidad de W-code y `AMBIGUOUS_CASE`, registro local atómico, resolver por identidad, modo
+   estricto donde `caso_path` deja de devolver rutas inexistentes, `core.intake_log` migrado, y la
+   matriz pura de resolución de siete casos como criterio de salida. **Predecesor de todo lo
+   demás**: pendiente de la decisión (1) del §20.
+2. **Mutex y protocolo durable local** — primitiva y namespace pendientes de la decisión (2) del
+   §20; `operations` y `estado.json` limitados a las fronteras locales de V1.
+3. **Espejo versionado de Drive** con monotonía de observación (H3-05) y snapshot inmutable por
+   ronda (H3-06) sobre una sola fuente.
+4. **Cableado** de Drive → intake → sala de máquina detrás de `scripts.abrir_caso`, pendiente de
+   la decisión (3) del §20, con un test que afirme que una corrida completa toca todas las fases
+   de V1.
+5. **E2E de V1** con fixtures sin PII, y una apertura real controlada con `--crm skip`.
+
+Cada bloque con TDD. Este orden tampoco es autorización para planificar: la rev. 4 estrecha el
+alcance y **no remedia** los hallazgos de R3, que siguen abiertos.
+
+### 21.6. Efecto sobre los siete hallazgos de R3
+
+| Hallazgo | Efecto del estrechamiento |
+|---|---|
+| H3-01 gate de workspace | **Íntegro.** V1 muta el expediente canónico: escribe bytes en `00_Input` y derivados en `01_Procesado`. Sigue exigiendo la decisión (1) |
+| H3-02 mutex sin primitiva | **Íntegro.** Sigue exigiendo la decisión (2) |
+| H3-03 protocolo durable | **Acotado.** Sin efectos remotos no idempotentes en V1, queda **una** clase de operación cuyo orden hay que definir: publicación local de bytes + manifiesto + log + `_caso.md` + `estado.json`. Sigue siendo precondición del plan, ya no de cinco fronteras |
+| H3-04 nadie encadena el flujo | **Íntegro pero menor.** Se reduce a que `scripts.abrir_caso` llame a la sala de máquina tras el intake. Sigue exigiendo la decisión (3) |
+| H3-05 regresión de frescura | **Íntegro.** Drive es el núcleo de V1: es aquí donde este hallazgo importa más, no menos |
+| H3-06 punto fijo no auditable | **Acotado.** Una sola fuente: el snapshot inmutable por ronda atestada es directo |
+| H3-07 retención postal | **Fuera de alcance.** No hay adaptador postal en V1. Vuelve con V3, con su contrato intacto |
+
+Quedan, por tanto, **tres decisiones de Nikolai** (§20) y **cuatro hallazgos** que la rev. 4 debe
+cerrar en el texto —H3-03 acotado, H3-05, H3-06 acotado y, cuando vuelva, H3-07—. Nada de esto
+autoriza un plan hasta que R4 se corra y se adjudique.

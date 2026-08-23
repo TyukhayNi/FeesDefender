@@ -31,7 +31,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 12 | [La firma no es intercalada: falso positivo que bloquea la Capa B](#siguiente-sandwich-firma-la-firma-no-es-una-respuesta-intercalada) | ✅ **CERRADO** — PR #164 (`aaf7dc1`) | queda su cola: `MEJORAS #109` (el síntoma original sigue sin explicar) y borrar el corpus de prueba | bajo |
 | 13 | [Presupuesto explícito de proceso](#siguiente-presupuesto-proceso-cuánta-gobernanza-se-compra) | pendiente — **decisión de Nikolai**, no hay nada que construir | sin gates. Disparador: el mes 2026-07 cerró con **9,4 líneas de `docs/` por línea de `core/`** y cuatro cierres seguidos sin código de producción | bajo (5 min) |
 | 14 | [Desplegar en Cowork las skills ya construidas](#siguiente-reimport-skills-lo-construido-que-no-ha-llegado-al-equipo) | pendiente — **acción manual de Nikolai**; ningún test la cubre | sin gates. Disparador: `organizar-sala-lectura` va por **v1.14 en el repo** y Paola/Ana/Sergio ejecutan la **v1.12** | bajo (una tarde) |
-| 15 | [Apertura integral + piloto W-02Q38C](#siguiente-apertura-integral-apertura-completa-sobre-componentes-existentes) | spec única **rev. 3** en **PR #225 (borrador)**; **R3 adjudicada el 2026-08-24 por Claude Code: `NO-SHIP`, 7 confirmados (3 CRÍTICOS), 0 refutados** (§20). R1+R2 las había adjudicado Codex mismo. Piloto abierto, no cerrado | **tres decisiones de Nikolai** antes de la rev. 4: predecesor `CaseWorkspace` (H3-01), primitiva y namespace del mutex (H3-02), dueño ejecutable de la secuencia (H3-04). Sin ellas no hay plan TDD | medio-alto |
+| 15 | [Apertura integral + piloto W-02Q38C](#siguiente-apertura-integral-apertura-completa-sobre-componentes-existentes) | spec única **rev. 4** en **PR #225**; **R3 adjudicada el 2026-08-24 por Claude Code: `NO-SHIP`, 7 confirmados, 0 refutados** (§20). La **rev. 4 estrecha la primera vertical a Drive → intake → sala de máquina** (§21, decisión de Nikolai): H3-07 sale de alcance, H3-03 y H3-06 quedan acotados, y los tres críticos de mecánica siguen íntegros. Piloto abierto, no cerrado | **tres decisiones de Nikolai** (§20): predecesor `CaseWorkspace` = Fase 1 de la fila #3 (H3-01), primitiva y namespace del mutex (H3-02), dueño ejecutable de la secuencia (H3-04). Después: rev. 4 cierra H3-03/H3-05/H3-06 en texto, R4 y su adjudicación. Sin eso no hay plan TDD | medio-alto |
 
 > **Filas 13 y 14 añadidas el 2026-08-03 al final de la cola a propósito: no reordeno prioridades
 > ajenas.** Las dos son baratas y una degrada a terceros hoy — dónde encajan de verdad lo decide
@@ -86,12 +86,21 @@ de la spec. La ronda cerró además dos `SIN VERIFICAR` heredados —la autoriza
 hermano es **cierta** (`8bc09ea`, ancestro de `main`)— y ejecutó la caracterización del lock
 (7 xfailed, 0 xpassed): los siete defectos siguen vivos.
 
-**Siguiente:** (1) las **tres decisiones de Nikolai** del §20 —predecesor `CaseWorkspace`,
-primitiva/namespace del mutex, dueño ejecutable de la secuencia—; (2) rev. 4 que las incorpore y
-cierre H3-03, H3-05, H3-06 y H3-07; (3) R4 y su adjudicación; (4) solo con veredicto favorable,
-plan TDD único; (5) completar W-02Q38C mediante ese mismo wiring —sin parche manual específico del
-caso— y verificar intake, sala de máquina, sala de lectura, prerrelleno y las tres superficies de
-partes (`_caso.md`, `_ficha_crm.yaml`, GET de Sudespacho).
+**Alcance estrechado (rev. 4, 2026-08-24, decisión de Nikolai).** La primera vertical es
+**V1 = identidad → esqueleto → Drive E&V → intake con custodia → sala de máquina**, con `--crm
+skip` obligatorio y **sin ninguna escritura en servicio externo**. Salen diferidos —no derogados—
+el pull de Sudespacho, el alta CRM, `crm_ficha` completa, el enriquecimiento postal, Gmail,
+LeadHub, la sala de **lectura**, la viabilidad y el archivo multiefecto; el reparto por vertical y
+los 19 criterios de aceptación que quedan en V1, en el §21 de la spec. Consecuencia declarada: en
+V1 la sala de máquina se valida sobre el universo de **Drive**, así que un caso con documentos en
+el gestor del CRM exige segunda pasada al entrar V2 y no puede declararse `completo`.
+
+**Siguiente:** (1) las **tres decisiones de Nikolai** del §20 —predecesor `CaseWorkspace` (que es
+la Fase 1 de la fila #3, no trabajo nuevo), primitiva y namespace del mutex, dueño ejecutable de
+la secuencia—; (2) cerrar en la rev. 4 los cuatro hallazgos de texto que quedan (H3-03 acotado,
+H3-05, H3-06 acotado, y H3-07 cuando vuelva con V3); (3) R4 y su adjudicación; (4) solo con
+veredicto favorable, plan TDD de V1; (5) W-02Q38C se cierra por ese wiring, sin parche manual del
+caso.
 
 ---
 
