@@ -5257,6 +5257,12 @@ Lo caro sería auditar los 96 tags a mano por la UI, y eso no hace falta para ce
 
 ## 120. El registro de ocurrencias del pull CRM escribe en un caso prestado sin pasar el guard
 
+> **[ABSORBIDO → `PLAN.md` fila #15, V1]** (2026-08-24). El disparador se cumplió el mismo día en
+> que se escribió: la rev. 5 de la spec de apertura integral **mete el pull de Sudespacho en V1**,
+> y el gate de workspace de H3-01 es criterio de esa vertical. Deja de ser backlog: V1 no puede
+> cerrarse con esta escritura saltándose el guard. Se conserva aquí la medición; el estado de
+> ciclo de vida vive en `PLAN.md`.
+
 *Origen: verificación de la evidencia de H3-03 al adjudicar la revisión adversarial R3 de la
 apertura integral (2026-08-24). El revisor lo aportó como evidencia de otro hallazgo; como defecto
 propio no estaba levantado.*
@@ -5278,9 +5284,10 @@ guard es real y verificable, y por eso baja aquí en vez de quedarse en la adjud
 contenido es reconstruible desde el CRM. Lo que se pierde es la propiedad de que *toda* escritura
 en un caso prestado pase por el guard — la que hace auditable el checkout.
 
-**Disparador de promoción:** que se toque `pull_expediente_v2` por otra razón, que la Fase 2 de la
-arquitectura dual arregle el lock, o que un checkout real recoja un `_registro_ocurrencias` con
-huellas de una corrida ajena.
+**Disparador de promoción: CUMPLIDO** el 2026-08-24 —la primera de las tres vías previstas, «que se
+toque `pull_expediente_v2` por otra razón»—. Las otras dos siguen valiendo si esto se reabriera:
+que la Fase 2 de la arquitectura dual arregle el lock, o que un checkout real recoja un
+`_registro_ocurrencias` con huellas de una corrida ajena.
 
 **Coste estimado.** Bajo: llamar al guard con `es_protocolo=True` y un test que fije la
 exención de forma explícita en vez de por omisión.

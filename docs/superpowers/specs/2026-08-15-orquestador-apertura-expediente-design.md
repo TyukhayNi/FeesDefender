@@ -1,8 +1,8 @@
 ---
-estado: propuesto (R3 adjudicada; rev. 4 estrecha el alcance a V1; pendiente R4)
+estado: propuesto (R3 adjudicada; rev. 5 fija el alcance de V1; pendiente R4)
 dueño: Nikolai Tyukhay
 fecha: 2026-08-15
-revision: "4"
+revision: "5"
 ---
 
 # Diseño — Apertura integral sobre componentes existentes
@@ -889,7 +889,7 @@ rutas de los manifiestos; no vuelca secretos ni contenido sensible al terminal.
 ## 14. Criterios de aceptación
 
 > **Alcance vigente (rev. 4).** Estos cincuenta criterios describen la apertura completa.
-> La primera vertical exige **diecinueve** de ellos; los otros treinta y uno quedan
+> La primera vertical exige **veintidós** de ellos; los otros veintiocho quedan
 > **diferidos con su vertical**, no exentos. La enumeración y el reparto, en el §21.4.
 
 1. La secuencia documentada de entrypoints existentes completa una apertura normal sin
@@ -1256,10 +1256,12 @@ no aquí.
    del orden y la reanudación, o se retira de la spec la promesa de trabajo mecánico sin
    supervisión y el criterio E2E prueba que el operador sigue siendo el driver.
 
-## 21. Alcance de la primera vertical (rev. 4) — Drive → intake → sala de máquina
+## 21. Alcance de la primera vertical (rev. 5) — Drive y Sudespacho → intake → sala de máquina
 
-*Decisión de Nikolai del 2026-08-24, tras adjudicar R3. Esta sección es una **sustitución
-expresa** en el sentido del §16: lo que sale de la primera vertical **no queda derogado, queda
+*Decisión de Nikolai del 2026-08-24, tras adjudicar R3. **Cambio de la rev. 5 frente a la
+rev. 4:** el pull de Sudespacho entra en V1 —en la rev. 4 salía diferido—, por decisión expresa
+de Nikolai; el resto del reparto no cambia. Esta sección es una **sustitución expresa** en el
+sentido del §16: lo que sale de la primera vertical **no queda derogado, queda
 diferido**, y su contrato sigue vigente para la vertical donde entre. Una omisión no deroga
 nada; solo lo hace esta enumeración.*
 
@@ -1278,8 +1280,8 @@ revisión, veinticuatro hallazgos y cero líneas de código de producción**. Es
 
 ### 21.2. Qué es la primera vertical
 
-**V1 = resolución de identidad → esqueleto → materialización de Drive E&V → intake con custodia
-→ sala de máquina.** Nada más.
+**V1 = resolución de identidad → esqueleto → materialización de Drive E&V y pull de Sudespacho
+→ intake con custodia → sala de máquina.** Nada más.
 
 En concreto, V1 comprende:
 
@@ -1287,6 +1289,9 @@ En concreto, V1 comprende:
   estructura canónica mínima y `_caso.md`;
 - el pull de Drive E&V con la semántica de **espejo versionado** del §6.2 (staging disjunto,
   historia content-addressed, generaciones, tombstones);
+- el **pull de Sudespacho** (`pull_expediente_v2`): registro del universo listado por el CRM,
+  descarga a `05_CRM/`, bloqueo de referencias ajenas y distinción entre gestor documental vacío
+  confirmado y respuesta con errores;
 - el intake con su custodia forense: crudo intacto, nombres originales, hashes SHA-256, eventos
   en `_intake_log.jsonl`, `90_Notas personales/` nunca tocada;
 - la sala de máquina: OCR y espejos Markdown bajo `01_Procesado/02_Sala de máquina/`, con
@@ -1294,9 +1299,19 @@ En concreto, V1 comprende:
 - el mutex interproceso, el gate de workspace, `operations` y `estado.json` que gobiernan lo
   anterior.
 
-**V1 no escribe en ningún servicio externo.** El alta CRM queda fuera: toda invocación de V1 usa
-`--crm skip`, que además es la práctica ya establecida del despacho. Esa es la propiedad que hace
-tratable H3-03: en V1 no existe ningún efecto remoto no idempotente que reconciliar.
+**V1 no escribe en ningún servicio externo, y esa es la invariante que hay que preservar.** El
+pull de Sudespacho entra porque es una **lectura**: autentica, enumera y descarga, y todo lo que
+escribe es local (`05_CRM/`, manifiesto, registro de ocurrencias, log). El **alta** CRM y toda
+`crm_ficha` quedan fuera: toda invocación de V1 usa `--crm skip`, que además es la práctica ya
+establecida del despacho. Esa es la propiedad que hace tratable H3-03: en V1 no existe ningún
+efecto remoto no idempotente que reconciliar.
+
+**Y una deuda conocida entra en alcance con el pull.** `MEJORAS #120` deja de ser backlog remoto:
+`core/sync_sudespacho.py` persiste el registro de ocurrencias **antes** de `guard_escritura`, así
+que hoy una escritura de protocolo alcanza la ruta canónica de un caso prestado sin pasar el
+guard. Con el pull dentro de V1 y el gate de workspace de H3-01 como criterio, V1 tiene que
+cerrarla: llamar al guard con `es_protocolo=True` y fijar la exención por escrito en vez de por
+omisión.
 
 ### 21.3. Qué sale de V1, y a dónde va
 
@@ -1304,7 +1319,6 @@ Sale **diferido, no derogado**. Cada bloque conserva su contrato en la sección 
 
 | Sale de V1 | Contrato que sigue vigente | Entra en |
 |---|---|---|
-| Pull de Sudespacho (lectura) y su universo listado | §§6.2, 9 · criterios 7, 18 | **V2** |
 | Alta CRM y dominio monetario | §5 · criterios 11, 35, 46 | V2 |
 | `crm_ficha` completa: procedencia, identidad del contrario, revisión humana atestada, las tres superficies | §§5.2, 8.1 · criterios 20-22, 24-26, 28, 30, 32, 44, 45 | V2 |
 | Enriquecimiento postal (Correos, Catastro) y su retención | §§8.1, 11 · criterios 23, 49 | V3 |
@@ -1317,22 +1331,26 @@ Sale **diferido, no derogado**. Cada bloque conserva su contrato en la sección 
 | Relaciones CRM sin readback | §5.2 · criterio 39 | V2 |
 | Orden de la fase 8.1 | §8.1 · criterio 29 | V2, y su precondición pasa a ser el cierre de V1 |
 
-**Una consecuencia que se declara, no se esconde.** Sacar el pull de Sudespacho de V1 contradice
-el gotcha del runbook —«atomizar correo y pull CRM **antes** de `sala_maquina apply`, o el OCR
-queda incompleto»—. En V1 la sala de máquina se valida sobre el **universo de Drive**, y un caso
-con documentos en el gestor del CRM exigirá una segunda pasada al entrar V2. Es admisible porque
-el motor es aditivo e idempotente, pero **no** es gratis: quien cierre V1 sobre un caso real no
-puede declarar su corpus completo. El estado del caso lo dice: `fuentes_pendientes`, nunca
-`completo`.
+**El orden del runbook se respeta, y por eso entra el pull.** El gotcha vigente es «atomizar
+correo y pull CRM **antes** de `sala_maquina apply`, o el OCR queda incompleto». Con Drive y
+Sudespacho dentro de V1, la sala de máquina se valida sobre las dos fuentes documentales que
+alimentan el OCR y no hace falta una segunda pasada por el CRM.
+
+**Lo que sigue faltando, dicho igual.** El correo no está en V1: un caso cuyo material llegue por
+Gmail tendrá corpus incompleto hasta V3, y la atomización del correo es precisamente la otra mitad
+de ese gotcha. Quien cierre V1 sobre un caso real así no puede declarar su corpus completo: el
+estado del caso lo dice, `fuentes_pendientes`, nunca `completo`.
 
 ### 21.4. Criterios de aceptación de V1
 
-De los cincuenta del §14, V1 exige **diecinueve**: 1, 2, 3, 4, 5, 10 (solo la parte de Drive y
-`.pulled`), 13, 14 (solo colisiones, intake tardío, ruta desviada, descarga parcial, la matriz de
-workspace, crash tras cada frontera **local** y punto fijo), 15, 16, 33, 34 (solo la obligación de
-`--crm skip`), 36, 37, 41, 42, 47, 48 y 50.
+De los cincuenta del §14, V1 exige **veintidós**: 1, 2, 3, 4, 5, 7, 10 (Drive y Sudespacho,
+incluido que `.pulled` no omita Drive; no Gmail ni LeadHub), 13, 14 (solo colisiones, intake
+tardío, ruta desviada, descarga parcial, la matriz de workspace, crash tras cada frontera **local**
+y punto fijo), 15, 16, 18, 27, 33, 34 (íntegro: `--crm skip` y el expediente CRM preexistente
+registrado y descargado antes de la sala de máquina), 36, 37, 41, 42, 47, 48 y 50.
 
-Los treinta y uno restantes quedan **diferidos con su vertical**, según la tabla del §21.3. Un
+Los criterios **27 y 50** son restricciones globales, no fases: rigen en V1 y siguen rigiendo
+después. Los veintiocho restantes quedan **diferidos con su vertical**, según la tabla del §21.3. Un
 criterio diferido no se declara cumplido ni exento: no se evalúa todavía.
 
 ### 21.5. Estrategia de entrega de V1 (sustituye al §15 mientras V1 esté en curso)
@@ -1346,9 +1364,11 @@ El orden de siete bloques del §15 presupone la vertical ancha y **no se aplica 
    demás**: pendiente de la decisión (1) del §20.
 2. **Mutex y protocolo durable local** — primitiva y namespace pendientes de la decisión (2) del
    §20; `operations` y `estado.json` limitados a las fronteras locales de V1.
-3. **Espejo versionado de Drive** con monotonía de observación (H3-05) y snapshot inmutable por
-   ronda (H3-06) sobre una sola fuente.
-4. **Cableado** de Drive → intake → sala de máquina detrás de `scripts.abrir_caso`, pendiente de
+3. **Espejo versionado de Drive y pull de Sudespacho** con monotonía de observación por fuente
+   (H3-05) y snapshot inmutable por ronda atestada (H3-06) sobre **dos** fuentes, más el cierre de
+   `MEJORAS #120` en el camino del pull.
+4. **Cableado** de Drive y Sudespacho → intake → sala de máquina detrás de `scripts.abrir_caso`,
+   respetando el orden del runbook (pull antes de la sala de máquina), pendiente de
    la decisión (3) del §20, con un test que afirme que una corrida completa toca todas las fases
    de V1.
 5. **E2E de V1** con fixtures sin PII, y una apertura real controlada con `--crm skip`.
@@ -1364,8 +1384,8 @@ alcance y **no remedia** los hallazgos de R3, que siguen abiertos.
 | H3-02 mutex sin primitiva | **Íntegro.** Sigue exigiendo la decisión (2) |
 | H3-03 protocolo durable | **Acotado.** Sin efectos remotos no idempotentes en V1, queda **una** clase de operación cuyo orden hay que definir: publicación local de bytes + manifiesto + log + `_caso.md` + `estado.json`. Sigue siendo precondición del plan, ya no de cinco fronteras |
 | H3-04 nadie encadena el flujo | **Íntegro pero menor.** Se reduce a que `scripts.abrir_caso` llame a la sala de máquina tras el intake. Sigue exigiendo la decisión (3) |
-| H3-05 regresión de frescura | **Íntegro.** Drive es el núcleo de V1: es aquí donde este hallazgo importa más, no menos |
-| H3-06 punto fijo no auditable | **Acotado.** Una sola fuente: el snapshot inmutable por ronda atestada es directo |
+| H3-05 regresión de frescura | **Íntegro, y ahora sobre dos fuentes.** Drive y el pull del CRM son el núcleo de V1: es aquí donde este hallazgo importa más, no menos |
+| H3-06 punto fijo no auditable | **Acotado.** Dos fuentes en vez de cuatro: el snapshot inmutable por ronda atestada sigue siendo directo, y afirmaciones como «una fuente saltada no incrementa `consecutive_unchanged`» (criterio 47) ya son observables con dos |
 | H3-07 retención postal | **Fuera de alcance.** No hay adaptador postal en V1. Vuelve con V3, con su contrato intacto |
 
 Quedan, por tanto, **tres decisiones de Nikolai** (§20) y **cuatro hallazgos** que la rev. 4 debe
