@@ -1,5 +1,5 @@
 ---
-estado: propuesto (R2 adjudicada; pendiente R3)
+estado: propuesto (R3 adjudicada; NO-SHIP, pendiente rev. 4)
 dueño: Nikolai Tyukhay
 fecha: 2026-08-15
 revision: "3"
@@ -1184,3 +1184,66 @@ Los ocho defectos se sostienen. No se adopta la alternativa más grande de H2-02
 primero toda la arquitectura dual— porque la restricción a Drive `disponible` elimina el
 riesgo en la primera vertical y evita bloquear aperturas normales. La rev. 3 debe superar y
 adjudicar R3 antes de pasar a plan TDD.
+
+## 20. Adjudicación de la revisión adversarial (Codex, 2026-08-24) — NO-SHIP, pendiente
+
+- **Objeto revisado:** `docs/superpowers/specs/2026-08-15-orquestador-apertura-expediente-design.md` rev. 3, commit `eb1b81a`
+- **Ronda:** 3
+- **Revisor:** Codex (solo lectura por construcción: copia externa del árbol vía `git archive`, sin `.git` y sin red)
+- **Informe recibido:** `2026-08-24-apertura-integral-r3-adversarial-review.md`
+- **Hallazgos:** 7 confirmados · 0 rebajados · 0 refutados · 0 escalados · 0 sin verificar
+- **Remediado en:** pendiente — la rev. 4 requiere tres decisiones de Nikolai, enumeradas al final
+
+**Independencia restablecida.** R1 y R2 las adjudicó Codex por indisponibilidad de Claude Code,
+declarando `independencia_adjudicacion: debilitada-misma-familia`. Esta ronda vuelve a la regla
+ordinaria de `CLAUDE.md`: revisa Codex, adjudica Claude Code contra la fuente. El mandato ordenó
+atacar ese punto ciego antes que la rev. 3, y el resultado justifica la ronda: los diecisiete
+hallazgos de R1 y R2 se habían adjudicado **17 de 17 confirmados, 0 refutados**, y siete de esos
+remedios no cierran el daño que decían cerrar.
+
+| ID | Sev. | Adjudicación contra la fuente | Decisión y remedio mínimo |
+|---|---|---|---|
+| H3-01 | CRÍTICA | **CONFIRMADO en su núcleo, con una premisa refutada.** No existe `CaseWorkspace` (0 apariciones en `core/`, `scripts/`, `tests/`), `path_for` termina en `return flat` (`core/casos/case_locator.py:26-43`), `resolve_ref` devuelve la referencia sin resolver (`:99-121`) y el guard vigente **desvía** escrituras en vez de resolver la copia activa (`core/case_manager.py:692-727`). **Premisa refutada:** el informe atribuye a la rev. 3 la degradación de estado ausente/corrupto a `disponible`; la spec la bloquea expresamente como `workspace_no_soportado` (`:105-110`). Esa degradación es del **código** (`core/case_manager.py:94`, `core/config.py:368`), no del diseño. El defecto que sí queda: la spec exige «demostrar que no hay candidato en checkout ni scratch» sin mecanismo para demostrarlo —no hay registro local— y el único indicio disponible es el lock del Drive, cuyos siete defectos siguen vivos (7 xfailed, 0 xpassed) | Retirar la afirmación de que el gate temporal **elimina** el riesgo: acota la ventana, no la cierra. Decisión de Nikolai en (1) |
+| H3-02 | CRÍTICA | **CONFIRMADO y reforzado por la prueba dinámica.** La spec exige mutex con propietario, nonce, espera acotada y recuperación de abandono (`:397-405`) sin fijar primitiva, ubicación ni ámbito; el árbol no contiene ninguna (`filelock`/`portalocker`/`fasteners`/`LockFileEx`/`fcntl` ausentes; el único `msvcrt` es `getwch`), y `_atomic_write_caso_md` declara «Sin lock, sin versionado» (`core/case_manager.py:1020-1028`). El refuerzo: propietario y nonce **ya existen** en el lock de checkout y no bastan — `test_defecto_doble_titular` y `test_defecto_rollback_cancela_un_lock_ajeno` reproducen los dos daños que el hallazgo predice | Especificar primitiva y namespace por identidad canónica, independientes de que exista la carpeta, con adquisición/liberación atómicas y prueba de titularidad. Decisión de Nikolai en (2) |
+| H3-03 | CRÍTICA | **CONFIRMADO.** El esquema de `operations` (`:702-745`) conserva `kind`, `status`, `generation`, `expected` y dos instantes: sin identidad del destino remoto, digest de petición, clave de reconciliación, paso alcanzado ni resultado del readback, el paso 5 del protocolo no es ejecutable en general y el paso 4 remite a «el orden específico de la operación», que no está definido para ninguna frontera | Definir, por clase de operación no idempotente, registro durable cerrado, orden de publicación, evidencia de readback y algoritmo de recuperación. Es precondición del plan TDD, no un detalle de implementación |
+| H3-04 | ALTA | **CONFIRMADO sin matices.** `scripts/abrir_caso.py:479-499` termina en `_alta_crm(...)` + `OK Caso abierto`, y el fichero **no menciona** `pull_expediente_v2`, `sala_lectura`, `sala_maquina`, `viabilidad` ni `crm_ficha`. Es la tercera recurrencia del mismo defecto de familia: el motor existe y nadie lo encadena | Nombrar el dueño ejecutable de la secuencia, o retirar la promesa de trabajo mecánico sin supervisión. Decisión de Nikolai en (3) |
+| H3-05 | ALTA | **CONFIRMADO.** `sources` ya guarda `snapshot_sha256` y `round_id` (`:713-725`), así que el dato existe; lo que no existe es la regla que lo use: ni `:249-257` ni `:397-418` rechazan publicar una observación anterior después de una posterior. `input_generation` se incrementa por cambio, no por frescura | Persistir el cursor de origen en cada staging y comparar dentro del lock contra la última atestación comprometida de esa fuente. Añadir el interleaving A(V1)–B(V2)–A(commit) a los criterios 41, 42 y 48 |
+| H3-06 | ALTA | **CONFIRMADO.** `attested_rounds` conserva `round_id`, `sources_digest` y `completed_at` (`:748-753`) sobre un `sources` de una sola observación mutable por fuente: sobrescrita la ronda 1, su digest ya no es recomputable. El punto fijo acredita dos rondas con dos hashes opacos | Conservar cada ronda como snapshot inmutable, o una referencia content-addressed verificable con canonicalización y encadenamiento definidos |
+| H3-07 | MEDIA | **CONFIRMADO.** El plazo está fijado (`:566-568`, criterio 49) y no hay actor: `:420` reconcilia **operaciones** al arrancar, no residuos, y la estrategia de entrega no construye recolector. «Al terminar» no cubre kill ni corte | Cleanup en `finally` para la ruta normal y un janitor nombrado al arranque o un almacén con TTL para el residuo, con prueba de reloj inyectado |
+
+**El veredicto se acepta: `NO-SHIP`.** La rev. 3 no pasa a plan TDD único. La razón no es el
+número de hallazgos, es su naturaleza: tres de los siete son precondiciones de arquitectura que
+un plan tendría que **decidir** en vez de ejecutar, y H3-04 dice que el flujo prometido no lo
+ejecuta nadie hoy.
+
+**Divergencias con el revisor, declaradas.** Una sola, y es de hecho, no de severidad: el «Hecho»
+de H3-01 imputa al diseño una degradación que el diseño bloquea. Se corrige aquí y el hallazgo se
+mantiene CRÍTICO por su núcleo. En sentido contrario, dos apartados del informe se quedaron cortos
+por el acotamiento del mandato, y esta adjudicación los cierra: la autorización del repo hermano
+(`FeesDefender-crm`, `8bc09ea`, ancestro de `main`, y la v3.7 en
+`C:\Users\tnm33\Dev\FeesDefender-crm\docs\superpowers\specs\2026-07-31-descarga-fichas-crm-leadhub-design.md:38-41,56-59`) es **cierta**
+con el alcance que la spec le atribuye, y la prueba dinámica de los siete defectos de checkout
+**se ejecutó** (7 xfailed, 0 xpassed). De lo que el informe declaró `SIN VERIFICAR` solo sobrevive
+una cosa, y se declara: las condiciones reales de uso del localizador de Correos y de la Sede
+Electrónica del Catastro no las ha mirado nadie, en ninguna ronda.
+
+**Una observación derivada, que no era hallazgo del informe.** Al verificar la evidencia de H3-03
+se comprueba que `core/sync_sudespacho.py:1467-1479` persiste el registro de ocurrencias **antes**
+de `guard_escritura` (`:1486`). El orden es deliberado y está razonado (N2: el universo enumerado
+debe sobrevivir a un fallo de descarga), pero su efecto es que una escritura de protocolo alcanza
+la ruta canónica de un caso **prestado** sin pasar el guard y sin declararse `es_protocolo=True`.
+Como evidencia de H3-03 es débil; como defecto propio es real y va a `docs/MEJORAS_FUTURAS.md`,
+no aquí.
+
+**Las tres decisiones que bloquean la rev. 4** —son de Nikolai, no de esta adjudicación—:
+
+1. **H3-01.** ¿El núcleo contractual mínimo de `CaseWorkspace` (identidad inequívoca, registro
+   local, resolver estricto) pasa a ser **predecesor** de esta vertical, o la apertura mutante
+   queda bloqueada hasta que exista? La tercera vía —seguir con el gate de `estado_repositorio`—
+   exige aceptar por escrito que una copia local no registrada puede coexistir con la apertura.
+2. **H3-02.** Qué primitiva de exclusión y qué namespace. El lock de checkout **no se puede
+   reutilizar**: sus siete defectos siguen reproducidos en `xfail` y dos de ellos son exactamente
+   los que este hallazgo predice.
+3. **H3-04.** Quién ejecuta la secuencia. O se amplía un entrypoint existente hasta ser dueño real
+   del orden y la reanudación, o se retira de la spec la promesa de trabajo mecánico sin
+   supervisión y el criterio E2E prueba que el operador sigue siendo el driver.

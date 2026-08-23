@@ -31,7 +31,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 12 | [La firma no es intercalada: falso positivo que bloquea la Capa B](#siguiente-sandwich-firma-la-firma-no-es-una-respuesta-intercalada) | ✅ **CERRADO** — PR #164 (`aaf7dc1`) | queda su cola: `MEJORAS #109` (el síntoma original sigue sin explicar) y borrar el corpus de prueba | bajo |
 | 13 | [Presupuesto explícito de proceso](#siguiente-presupuesto-proceso-cuánta-gobernanza-se-compra) | pendiente — **decisión de Nikolai**, no hay nada que construir | sin gates. Disparador: el mes 2026-07 cerró con **9,4 líneas de `docs/` por línea de `core/`** y cuatro cierres seguidos sin código de producción | bajo (5 min) |
 | 14 | [Desplegar en Cowork las skills ya construidas](#siguiente-reimport-skills-lo-construido-que-no-ha-llegado-al-equipo) | pendiente — **acción manual de Nikolai**; ningún test la cubre | sin gates. Disparador: `organizar-sala-lectura` va por **v1.14 en el repo** y Paola/Ana/Sergio ejecutan la **v1.12** | bajo (una tarde) |
-| 15 | [Apertura integral + piloto W-02Q38C](#siguiente-apertura-integral-apertura-completa-sobre-componentes-existentes) | spec única **rev. 3** en **PR #225 (borrador)**; **R1+R2 NO-SHIP adjudicadas (17 confirmados), pendiente R3 y plan**. Piloto abierto, no cerrado | superar y adjudicar R3; solo después, plan TDD sin crear otro orquestador de entrada y cierre del piloto por el camino común | medio-alto |
+| 15 | [Apertura integral + piloto W-02Q38C](#siguiente-apertura-integral-apertura-completa-sobre-componentes-existentes) | spec única **rev. 3** en **PR #225 (borrador)**; **R3 adjudicada el 2026-08-24 por Claude Code: `NO-SHIP`, 7 confirmados (3 CRÍTICOS), 0 refutados** (§20). R1+R2 las había adjudicado Codex mismo. Piloto abierto, no cerrado | **tres decisiones de Nikolai** antes de la rev. 4: predecesor `CaseWorkspace` (H3-01), primitiva y namespace del mutex (H3-02), dueño ejecutable de la secuencia (H3-04). Sin ellas no hay plan TDD | medio-alto |
 
 > **Filas 13 y 14 añadidas el 2026-08-03 al final de la cola a propósito: no reordeno prioridades
 > ajenas.** Las dos son baratas y una degrada a terceros hoy — dónde encajan de verdad lo decide
@@ -75,10 +75,22 @@ caso permanecen fuera de Git. No se declara la apertura cerrada: `_caso.md` toda
 sincroniza por el camino común y el paquete probatorio completo de LeadHub sigue limitado por
 la capacidad actual del repositorio hermano `FeesDefender-crm`.
 
-**Siguiente:** (1) revisión adversarial R3 de la spec rev. 3; (2) adjudicar R3 conforme a la
-gobernanza; (3) solo con veredicto favorable, plan TDD único; (4) completar W-02Q38C mediante ese mismo wiring
-—sin parche manual específico del caso—
-y verificar intake, sala de máquina, sala de lectura, prerrelleno y las tres superficies de
+**R3 corrida y adjudicada (2026-08-24).** Revisor Codex por CLI sobre una copia externa del
+árbol (`git archive`, solo lectura por construcción); adjudica Claude Code contra la fuente, con
+lo que la independencia debilitada de R1/R2 queda restablecida. Veredicto `NO-SHIP`: **7
+hallazgos confirmados, 0 refutados** —3 CRÍTICOS (gate de workspace incompatible con el contrato
+dual, mutex sin primitiva, protocolo durable no recuperable), 3 ALTOS (nadie encadena el flujo,
+regresión de frescura, punto fijo no auditable) y 1 MEDIO (retención postal sin ejecutor). Acta:
+`docs/superpowers/specs/2026-08-24-apertura-integral-r3-adversarial-review.md`. Adjudicación: §20
+de la spec. La ronda cerró además dos `SIN VERIFICAR` heredados —la autorización v3.7 del repo
+hermano es **cierta** (`8bc09ea`, ancestro de `main`)— y ejecutó la caracterización del lock
+(7 xfailed, 0 xpassed): los siete defectos siguen vivos.
+
+**Siguiente:** (1) las **tres decisiones de Nikolai** del §20 —predecesor `CaseWorkspace`,
+primitiva/namespace del mutex, dueño ejecutable de la secuencia—; (2) rev. 4 que las incorpore y
+cierre H3-03, H3-05, H3-06 y H3-07; (3) R4 y su adjudicación; (4) solo con veredicto favorable,
+plan TDD único; (5) completar W-02Q38C mediante ese mismo wiring —sin parche manual específico del
+caso— y verificar intake, sala de máquina, sala de lectura, prerrelleno y las tres superficies de
 partes (`_caso.md`, `_ficha_crm.yaml`, GET de Sudespacho).
 
 ---

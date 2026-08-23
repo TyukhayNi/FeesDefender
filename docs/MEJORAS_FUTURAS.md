@@ -5254,3 +5254,33 @@ O decisión de Nikolai.
 
 **Coste estimado.** Bajo: una llamada de descubrimiento, un recuento y una línea en `STATUS.md`.
 Lo caro sería auditar los 96 tags a mano por la UI, y eso no hace falta para cerrar esto.
+
+## 120. El registro de ocurrencias del pull CRM escribe en un caso prestado sin pasar el guard
+
+*Origen: verificación de la evidencia de H3-03 al adjudicar la revisión adversarial R3 de la
+apertura integral (2026-08-24). El revisor lo aportó como evidencia de otro hallazgo; como defecto
+propio no estaba levantado.*
+
+En `core/sync_sudespacho.py`, `pull_expediente_v2` persiste el registro de ocurrencias
+(`ocurrencias.save()`, `:1467-1479`) **antes** de llamar a `guard_escritura` (`:1486`). El orden es
+deliberado y está razonado en el propio código (N2: el universo de lo que el CRM enumera debe
+sobrevivir a un fallo de descarga posterior, o la puerta de integridad de la vista procesal no
+comprueba nada). El efecto colateral no está declarado: si el caso está `prestado` o en
+`conflicto`, esa escritura de protocolo alcanza la ruta canónica del Drive **sin pasar el guard y
+sin declararse `es_protocolo=True`**, que es el mecanismo previsto para las escrituras del propio
+protocolo.
+
+**Por qué no es un hallazgo de la revisión.** Como evidencia de «el protocolo durable no permite
+recuperar efectos cruzados» es débil: no habla de recuperación. Como defecto de la disciplina del
+guard es real y verificable, y por eso baja aquí en vez de quedarse en la adjudicación.
+
+**Prioridad: baja.** El fichero de ocurrencias es del protocolo, no prueba del expediente, y su
+contenido es reconstruible desde el CRM. Lo que se pierde es la propiedad de que *toda* escritura
+en un caso prestado pase por el guard — la que hace auditable el checkout.
+
+**Disparador de promoción:** que se toque `pull_expediente_v2` por otra razón, que la Fase 2 de la
+arquitectura dual arregle el lock, o que un checkout real recoja un `_registro_ocurrencias` con
+huellas de una corrida ajena.
+
+**Coste estimado.** Bajo: llamar al guard con `es_protocolo=True` y un test que fije la
+exención de forma explícita en vez de por omisión.
