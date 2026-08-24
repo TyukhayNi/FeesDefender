@@ -8,6 +8,30 @@
 
 **Tech Stack:** Python 3.14, Typer, pytest, `typer.testing.CliRunner`.
 
+## Erratas del plan, detectadas al ejecutarlo (2026-08-24)
+
+Tres defectos del texto de arriba. Se corrigieron **en la implementación**, no en la aserción, y
+se anotan aquí porque los Planes 2-5 heredarían el patrón:
+
+1. **El Task 2 traía un test vacuo.** `test_v1_rechaza_el_default_de_crm` contenía
+   `assert default or True`, que no puede fallar nunca — el antipatrón que este repo tiene
+   documentado (memoria `feedback-guard-sin-prueba-de-mutacion`). Sustituido por la aserción que
+   sí muerde: `inspect.signature(cli.main).parameters["crm"].default.default == "api"`. Si alguien
+   cambiara el default a `skip`, el test lo dice.
+2. **El dato de identidad de los tests del Task 4 no existe.** `--tipo-caso honorarios` levanta
+   `ValueError: Tipo de caso desconocido`. Los canónicos están en `config.TIPOS_CASO_ALL`; se usa
+   `--tipo-caso BAD_DEBT --sufijo "Bad debt"` (memoria `feedback-case-sufijo-tipo-canonico`).
+   Que el test del **aborto** pasara con el dato malo y solo cayera el de camino feliz es, de
+   hecho, evidencia de la propiedad: v1 aborta antes de resolver identidad.
+3. **La aritmética de tests iba desfasada en 1 desde el Task 3.** La parametrización de tres
+   fuentes suma 3 casos, no 2: son **11** tras el Task 3 y **14** al final, no 10 y 13.
+
+Y una comprobación que el plan no pedía y la doctrina del repo sí: el test del *orden* se validó
+**por mutación** —desplazar la puerta por debajo de `ensure_case` lo pone rojo con
+`no debía llegar a ejecutarse ningún efecto`—, restaurando después con `git checkout`. Sin esa
+prueba, «valida antes de cualquier efecto» sería otra propiedad nombrada y no contratada, que es
+justo la figura que el §23 de la spec detuvo tres veces.
+
 ## Por qué este plan es el primero, y por qué V1 no cabe en un plan
 
 La spec rev. 8 fija V1 (§21), toma cuatro decisiones (§24) y enumera un write-set de 27 clases
