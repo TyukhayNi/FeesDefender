@@ -468,9 +468,17 @@ def _derivar_variantes_cliente(case_id: str) -> list[str]:
     """
     from core.config import VARIANTES_OCR_CLIENTE
 
-    index = caso_path(case_id) / SUBDIR_INPUT / "_caso.md"
+    # Se captura sobre el binding del MODULO, no via `buscar()`: los tests de
+    # anon parchean `anon_api.caso_path` para montar el caso fuera de CASOS_ROOT,
+    # y un import dentro de la funcion se saltaria el parche (el error del paso 3).
+    # Funciona porque `LocalWorkspaceMissing` ES un `FileNotFoundError`.
+    try:
+        base = caso_path(case_id)
+    except FileNotFoundError:
+        return []                      # el caso no existe
+    index = base / SUBDIR_INPUT / "_caso.md"
     if not index.exists():
-        return []
+        return []                      # el caso existe, `_caso.md` no
     try:
         meta_fm, _ = read_md(index)
     except Exception:
@@ -499,9 +507,12 @@ def _listar_documentos(case_id: str) -> list[Path]:
     Ignora ficheros y carpetas que empiezan por ``_`` (auxiliares como
     ``_caso.md``, ``_inventory.json``, ``_pulled``, etc.).
     """
-    raiz = caso_path(case_id) / SUBDIR_INPUT
+    try:
+        raiz = caso_path(case_id) / SUBDIR_INPUT
+    except FileNotFoundError:
+        return []                      # el caso no existe
     if not raiz.is_dir():
-        return []
+        return []                      # el caso existe, `00_Input` no
     docs: list[Path] = []
     for p in raiz.rglob("*"):
         # Saltar si alguna parte del path empieza por '_'

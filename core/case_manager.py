@@ -167,7 +167,11 @@ def register_expediente(
     Es idempotente: si el expediente ya está registrado, no hace nada.
     """
     input_dir_name = f"sudespacho_{expediente_id}"
-    index = caso_path(case_id) / "00_Input" / "_caso.md"
+    from core.casos.case_locator import buscar
+    base = buscar(case_id)
+    if base is None:
+        return input_dir_name  # el caso no existe — se registrará al crearlo
+    index = base / "00_Input" / "_caso.md"
 
     if not index.exists():
         return input_dir_name  # ensure_case no se llamó aún — se registrará al crearlo
@@ -263,7 +267,12 @@ def ensure_case(
             componer REF del informe.
         (resto): metadatos del caso, opcionales.
     """
-    case_dir = caso_path(case_id)
+    # La UNICA puerta de alta del sistema, y por eso es explicita en el nombre
+    # (Task 6 / R7-H7-01). `destino_de_alta` admite que el caso no exista —es su
+    # caso normal— y devuelve SU ubicacion si ya existe, lo que impide fabricar
+    # una carpeta sombra plana junto a un caso que ya vive en su ciudad.
+    from core.casos.case_locator import destino_de_alta
+    case_dir = destino_de_alta(case_id)
     if not case_dir.exists() and ciudad:
         from core.casos.case_locator import path_for_ciudad
         case_dir = path_for_ciudad(case_id, ciudad)
@@ -390,9 +399,13 @@ def register_drive_ev(
     """
     import yaml as _yaml
 
-    index = caso_path(case_id) / "00_Input" / "_caso.md"
+    from core.casos.case_locator import buscar
+    base = buscar(case_id)
+    if base is None:
+        return                            # el caso no existe
+    index = base / "00_Input" / "_caso.md"
     if not index.exists():
-        return  # ensure_case no se llamó aún
+        return                            # el caso existe, `_caso.md` no
 
     text = index.read_text(encoding="utf-8")
     if text.startswith("---"):
@@ -439,9 +452,13 @@ def get_drive_ev_ids(case_id: str) -> tuple[str | None, str | None]:
     """
     import yaml as _yaml
 
-    index = caso_path(case_id) / "00_Input" / "_caso.md"
+    from core.casos.case_locator import buscar
+    base = buscar(case_id)
+    if base is None:
+        return None, None                      # el caso no existe
+    index = base / "00_Input" / "_caso.md"
     if not index.exists():
-        return None, None
+        return None, None                      # el caso existe, `_caso.md` no
     text = index.read_text(encoding="utf-8")
     if not text.startswith("---"):
         return None, None
@@ -463,9 +480,13 @@ def get_cached_drive_folder_info(
     """
     import yaml as _yaml
 
-    index = caso_path(case_id) / "00_Input" / "_caso.md"
+    from core.casos.case_locator import buscar
+    base = buscar(case_id)
+    if base is None:
+        return None, None                      # el caso no existe
+    index = base / "00_Input" / "_caso.md"
     if not index.exists():
-        return None, None
+        return None, None                      # el caso existe, `_caso.md` no
     text = index.read_text(encoding="utf-8")
     if not text.startswith("---"):
         return None, None
@@ -493,9 +514,13 @@ def cache_drive_folder_info(
     """
     import yaml as _yaml
 
-    index = caso_path(case_id) / "00_Input" / "_caso.md"
+    from core.casos.case_locator import buscar
+    base = buscar(case_id)
+    if base is None:
+        return                      # el caso no existe
+    index = base / "00_Input" / "_caso.md"
     if not index.exists():
-        return
+        return                      # el caso existe, `_caso.md` no
 
     text = index.read_text(encoding="utf-8")
     if text.startswith("---"):
@@ -539,8 +564,13 @@ def get_case_status(case_id: str) -> dict:
     """
     import yaml as _yaml
 
-    case_dir = caso_path(case_id)
-    local_exists = case_dir.exists()
+    # Su contrato, escrito en el docstring de arriba, es que NO lanza: es una
+    # consulta de estado, y `local_exists` es precisamente la respuesta a «¿existe?».
+    # Desde el paso 5 `caso_path` lanza ante un caso ausente, asi que la pregunta
+    # se hace con `buscar()`, que devuelve `None` en vez de romper la consulta.
+    from core.casos.case_locator import buscar
+    case_dir = buscar(case_id)
+    local_exists = case_dir is not None
     expedientes: list[dict] = []
 
     if local_exists:
@@ -586,9 +616,13 @@ def list_cases() -> list[str]:
 
 def _read_fm(case_id: str) -> dict:
     """Devuelve el frontmatter completo de `_caso.md` (o {} si no hay/no parsea)."""
-    index = caso_path(case_id) / "00_Input" / "_caso.md"
+    from core.casos.case_locator import buscar
+    base = buscar(case_id)
+    if base is None:
+        return {}                      # el caso no existe
+    index = base / "00_Input" / "_caso.md"
     if not index.exists():
-        return {}
+        return {}                      # el caso existe, `_caso.md` no
     try:
         fm, _ = read_md(index)
     except Exception:
@@ -912,9 +946,13 @@ def read_bucket_overrides(case_id: str) -> dict[str, str]:
     """
     import yaml as _yaml
 
-    index = caso_path(case_id) / "00_Input" / "_caso.md"
+    from core.casos.case_locator import buscar
+    base = buscar(case_id)
+    if base is None:
+        return {}                      # el caso no existe
+    index = base / "00_Input" / "_caso.md"
     if not index.exists():
-        return {}
+        return {}                      # el caso existe, `_caso.md` no
     text = index.read_text(encoding="utf-8")
     if not text.startswith("---"):
         return {}
@@ -1008,9 +1046,13 @@ def is_legacy_intake_v1(case_id: str) -> bool:
     en UI (BaRR3, MaRS15). Migración manual: borrar ``sudespacho_*/`` +
     ``force-pull`` v2.
     """
-    input_dir = caso_path(case_id) / "00_Input"
+    from core.casos.case_locator import buscar
+    base = buscar(case_id)
+    if base is None:
+        return False                      # el caso no existe
+    input_dir = base / "00_Input"
     if not input_dir.exists():
-        return False
+        return False                      # el caso existe, `00_Input` no
     for child in input_dir.iterdir():
         if child.is_dir() and child.name.startswith("sudespacho_"):
             return True
@@ -1039,9 +1081,14 @@ def _atomic_write_caso_md(
     Raises:
         FileNotFoundError: si ``_caso.md`` no existe.
     """
-    index = caso_path(case_id) / "00_Input" / "_caso.md"
+    # `localizar` lanza el error estructurado del §10 si el caso no existe. El
+    # mensaje que habia aqui interpolaba el `case_id` ENTERO, y un `case_id` es
+    # `BaXXX - <direccion> - (W-XXXXX) - <tipo>`: publicaba la direccion del
+    # inmueble, que el §16 prohibe.
+    from core.casos.case_locator import localizar
+    index = localizar(case_id) / "00_Input" / "_caso.md"
     if not index.exists():
-        raise FileNotFoundError(f"_caso.md no existe para el caso {case_id!r}")
+        raise FileNotFoundError("falta `_caso.md` en el caso")
 
     fm, body = read_md(index)
     new_fm = mutator(fm)
@@ -1097,9 +1144,13 @@ def read_pull_state(
     Schema D8 del entry: ``{id, element, linked_at, last_sync,
     documents_total_crm, doc_ids, by_carpeta, errors}``.
     """
-    index = caso_path(case_id) / "00_Input" / "_caso.md"
+    from core.casos.case_locator import buscar
+    base = buscar(case_id)
+    if base is None:
+        return None                      # el caso no existe
+    index = base / "00_Input" / "_caso.md"
     if not index.exists():
-        return None
+        return None                      # el caso existe, `_caso.md` no
     try:
         fm, _ = read_md(index)
     except Exception:

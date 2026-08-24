@@ -343,3 +343,82 @@ def test_el_error_dice_que_no_hubo_efecto_cuando_no_lo_hubo():
     texto = str(err).lower()
     assert "sin efecto" in texto or "no se produjo" in texto
     assert "reintenta" not in texto
+
+
+# --------------------------------------------------------------------------
+# `LocalWorkspaceMissing` tambien es un `FileNotFoundError`
+# --------------------------------------------------------------------------
+#
+# Medido al migrar el Task 6: **15 sitios de produccion** capturan
+# `FileNotFoundError`, entre ellos `scripts/abrir_caso.py:162` y `:173`,
+# `scripts/crm_ficha.py:60` y `core/intake_drive.py:297`. Cinco funciones lanzaban
+# `FileNotFoundError` a mano cuando el caso no existia, y al migrarlas al error
+# estructurado del §10 la excepcion se ESCAPABA de esos manejadores.
+#
+# La suite solo cazo 3 de esos caminos, que es exactamente el modo de fallo caro:
+# un cambio de tipo de excepcion rompe manejadores que ningun test cubre.
+#
+# La herencia doble no es un parche de compatibilidad: «el workspace local no
+# existe» ES una condicion de fichero ausente. Lo que estaba mal era tener dos
+# vocabularios para lo mismo.
+
+
+def test_local_workspace_missing_es_tambien_filenotfounderror():
+    assert issubclass(wm.LocalWorkspaceMissing, FileNotFoundError)
+    assert issubclass(wm.LocalWorkspaceMissing, wm.WorkspaceError)
+
+
+def test_un_except_filenotfounderror_preexistente_sigue_capturandolo():
+    """El contrato que protege los 15 manejadores de produccion."""
+    try:
+        raise wm.LocalWorkspaceMissing(w_code="W-TEST01")
+    except FileNotFoundError as exc:
+        assert exc.codigo == "LOCAL_WORKSPACE_MISSING"
+    else:
+        pytest.fail("no lo capturo `except FileNotFoundError`")
+
+
+def test_los_demas_errores_NO_son_filenotfounderror():
+    """Solo este mapea a «no encontrado». Heredar en bloque seria mentir:
+    un caso PRESTADO existe, y tratarlo como ausente es justo la confusion que
+    todo este diseno intenta deshacer."""
+    for clase in wm.errores_conocidos():
+        if clase is wm.LocalWorkspaceMissing:
+            continue
+        assert not issubclass(clase, FileNotFoundError), clase.__name__
+
+
+# --------------------------------------------------------------------------
+# El mensaje dice, en palabras, QUE paso
+# --------------------------------------------------------------------------
+#
+# `[LOCAL_WORKSPACE_MISSING]` a secas es un codigo, no un mensaje. Lo destaparon
+# dos tests que esperaban la frase «no existe» y recibian solo el corchete — y
+# tenian razon: quien lee un error en una CLI no deberia tener que traducir un
+# identificador en mayusculas.
+#
+# La frase es FIJA por clase, nunca interpolada: el §16 prohibe rutas y PII, y una
+# descripcion fija no puede filtrar nada por construccion.
+
+
+def test_el_mensaje_lleva_una_frase_humana_ademas_del_codigo():
+    texto = str(wm.LocalWorkspaceMissing(w_code="W-TEST01"))
+    assert "LOCAL_WORKSPACE_MISSING" in texto
+    assert "no existe" in texto.lower()
+
+
+def test_la_descripcion_es_fija_y_no_interpola_nada():
+    """Dos instancias con datos distintos comparten la misma frase."""
+    a = str(wm.LocalWorkspaceMissing(w_code="W-AAAA1", detalle="/ruta/uno"))
+    b = str(wm.LocalWorkspaceMissing(w_code="W-BBBB2", detalle="/ruta/dos"))
+    frase = "no existe"
+    assert frase in a.lower() and frase in b.lower()
+    assert "/ruta/" not in a and "/ruta/" not in b
+
+
+@pytest.mark.parametrize("clase", sorted(wm.errores_conocidos(), key=lambda c: c.codigo))
+def test_toda_descripcion_declarada_respeta_los_canarios(clase):
+    """Si una clase declara frase, la frase tampoco puede llevar ruta ni PII."""
+    texto = str(clase(w_code="W-TEST01"))
+    assert not _RE_UNIDAD_WINDOWS.search(texto), texto
+    assert chr(92) not in texto, texto

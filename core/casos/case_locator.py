@@ -9,6 +9,7 @@ Plan: ``docs/superpowers/plans/PLAN_SUBDIVISION_CIUDADES.md`` (Fase 1).
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Iterator
 
@@ -23,11 +24,21 @@ def _root() -> Path:
     return settings.casos_root
 
 
-def path_for(case_id: str) -> Path:
-    """Devuelve la ruta a un expediente, buscando en flat y luego por ciudades.
+def path_for(case_id: str, *, strict: bool = True) -> Path:
+    """La ruta de un expediente. **Lanza si no existe** (Fase 1, Task 6, paso 5).
 
-    Si el expediente no existe en ninguna ubicación, devuelve la ruta flat
-    (compatible con creación de casos nuevos).
+    Es lo que la spec pide de esta fase: «`caso_path` deja de devolver rutas
+    inexistentes y ningún escritor hace `mkdir` de la raíz». Durante años devolvía
+    la ruta flat de un caso ausente, y esa ruta inventada es la que fabricaba
+    expedientes fantasma en cuanto alguien escribía sobre ella.
+
+    Prefiere las tres APIs explícitas, que dicen en su nombre qué preguntan:
+    `localizar()` si el caso debe existir, `buscar()` si quieres saber si está, y
+    `destino_de_alta()` si vas a crearlo.
+
+    `strict=False` es la **escotilla legacy declarada**: conserva el comportamiento
+    viejo para los llamadores que aún no se han migrado. Su censo no puede crecer
+    —lo vigila `tests/test_guard_localizador.py`— y se retira en la Fase 4.
     """
     root = _root()
     flat = root / case_id
@@ -40,7 +51,102 @@ def path_for(case_id: str) -> Path:
     candidate = root / _FALLBACK_CITY / case_id
     if candidate.is_dir():
         return candidate
+    if strict:
+        from .workspace_model import LocalWorkspaceMissing
+        raise LocalWorkspaceMissing(
+            w_code=_w_code_de(case_id),
+            detalle="el caso no existe en ningun layout del catalogo")
     return flat
+
+
+# ---------------------------------------------------------------------------
+# Las TRES intenciones (Fase 1, Task 6) — R7/H7-01
+# ---------------------------------------------------------------------------
+#
+# `path_for` servia a tres preguntas distintas con una sola respuesta, y por eso
+# no habia forma de arreglarlo con un booleano: `strict=True` rompe el alta,
+# `strict=False` conserva el expediente fantasma. Las preguntas son:
+#
+#   - «damelo, que tiene que estar»      -> localizar(): LANZA si falta
+#   - «esta?»                            -> buscar(): devuelve None
+#   - «donde lo creo»                    -> destino_de_alta(): faltar es lo normal
+#
+# Separarlas por NOMBRE es lo que las hace auditables: un `grep` dice quien
+# espera que el caso exista y quien no, cosa que un flag no permite.
+
+
+_RE_W_CODE = re.compile(r"\((W-[A-Za-z0-9]+)\)")
+
+
+def _w_code_de(case_id: str) -> str | None:
+    """El W-code del `case_id`, o `None`. **Nunca el `case_id` entero.**
+
+    El error tiene que decir DE QUE caso habla, o deja de ser diagnosticable —y eso
+    lo pedia un test que ya existia (`test_pull_falla_si_caso_no_existe`). Pero un
+    `case_id` es `BaXXX - <direccion> - (W-XXXXX) - <tipo>`: lleva la direccion del
+    inmueble dentro, o sea PII, y el §16 prohibe que aparezca en un mensaje. Se
+    extrae solo el W-code, que identifica sin exponer.
+
+    Si no hay W-code el error no lleva identificador: preferible a filtrar una
+    cadena arbitraria. Los casos reales siempre lo llevan, por convencion de nombre.
+    """
+    m = _RE_W_CODE.search(case_id or "")
+    return m.group(1) if m else None
+
+
+def localizar(case_id: str) -> Path:
+    """La ruta de un caso que **debe** existir. Lanza `LocalWorkspaceMissing` si no.
+
+    Es la puerta de todo lector y de todo escritor de un caso ya abierto. No crea
+    nada, ni siquiera al fallar.
+    """
+    encontrada = buscar(case_id)
+    if encontrada is None:
+        from .workspace_model import LocalWorkspaceMissing
+        raise LocalWorkspaceMissing(
+            w_code=_w_code_de(case_id),
+            detalle="el caso no existe en ningun layout del catalogo")
+    return encontrada
+
+
+def buscar(case_id: str) -> Path | None:
+    """La ruta del caso, o `None` si no existe. **No lanza y no crea nada.**
+
+    Existe por los detectores de ausencia: los que preguntan si el caso esta y
+    siguen por otra rama si no. Sin ella, migrarlos a `localizar()` cambiaria un
+    error legible por una traza sin salida.
+
+    Y hace explicita una pregunta que hoy se confunde con otra: con el fallback,
+    «el caso no existe» y «el fichero que buscaba dentro del caso no existe» dan
+    el mismo `False`.
+    """
+    root = _root()
+    flat = root / case_id
+    if flat.is_dir():
+        return flat
+    for city in sorted(CIUDADES):
+        candidate = root / city / case_id
+        if candidate.is_dir():
+            return candidate
+    candidate = root / _FALLBACK_CITY / case_id
+    if candidate.is_dir():
+        return candidate
+    return None
+
+
+def destino_de_alta(case_id: str) -> Path:
+    """Donde se materializa un caso. Que no exista es su caso NORMAL.
+
+    **Nombrar no es crear:** devuelve la ruta y no toca el disco. Crear es del
+    llamador (`case_manager.ensure_case`), que es el unico que debe usar esto.
+
+    Si el caso YA existe devuelve **su** ubicacion, no la ruta flat. Esa regla no
+    es cosmetica: devolver siempre la flat haria que un alta sobre un caso que ya
+    vive en su ciudad creara un duplicado plano al lado — el defecto CRITICO que
+    R6 encontro en el `--force` del `--modo v1`, una carpeta sombra con el W-code
+    duplicado.
+    """
+    return buscar(case_id) or (_root() / case_id)
 
 
 def _id_go_of(case_dir: Path) -> str | None:
@@ -67,6 +173,17 @@ def _id_go_of(case_dir: Path) -> str | None:
     if isinstance(meta, dict) and meta.get("id_go"):
         return str(meta["id_go"]).strip()
     return None
+
+
+def _es_proyeccion_local(case_dir: Path) -> bool:
+    """¿Es el reflejo de un caso prestado, y no el caso? (§5.1 / §6.3)
+
+    La copia local lleva su propio `_caso.md` con el MISMO W-code, asi que sin
+    esta marca el catalogo veria dos expedientes con una identidad y el A-8 se
+    dispararia sobre el caso normal. Regla de ambiguedad y marca de proyeccion son
+    dos mitades de la misma decision.
+    """
+    return bool(read_case_meta(case_dir).get("proyeccion_local"))
 
 
 def read_case_meta(case_dir: Path) -> dict:
@@ -115,9 +232,20 @@ def resolve_ref(ref: str) -> str:
         if case_dir.name == ref and (case_dir / "00_Input" / "_caso.md").is_file():
             return ref
     # W-code (meta.id_go) → nombre de carpeta canónico.
-    for case_dir in cases:
-        if _id_go_of(case_dir) == ref:
-            return case_dir.name
+    #
+    # A-8 (§5.1): antes devolvia EL PRIMERO que casaba, elegido por orden de
+    # escaneo y sin aviso — renombrar una carpeta cambiaba la respuesta, y el
+    # llamador acababa trabajando sobre otro expediente sin enterarse. Ahora una
+    # identidad duplicada lanza. Las proyecciones locales no cuentan: `list_cases`
+    # ya las excluye, asi que lo que llegue duplicado es ambiguedad de verdad.
+    casan = [c for c in cases if _id_go_of(c) == ref]
+    if len(casan) > 1:
+        from .workspace_model import AmbiguousCase
+        raise AmbiguousCase(
+            w_code=ref,
+            detalle=f"{len(casan)} carpetas del catalogo comparten esta identidad")
+    if casan:
+        return casan[0].name
     return ref
 
 
@@ -217,7 +345,8 @@ def list_cases(ciudad: str | None = None) -> Iterator[Path]:
         city_dir = root / ciudad
         if city_dir.is_dir():
             yield from sorted(
-                (p for p in city_dir.iterdir() if p.is_dir()),
+                (p for p in city_dir.iterdir()
+                 if p.is_dir() and not _es_proyeccion_local(p)),
                 key=lambda p: p.name,
             )
         return
@@ -228,9 +357,12 @@ def list_cases(ciudad: str | None = None) -> Iterator[Path]:
             continue
         if es_carpeta_de_sistema(p.name):
             continue
+        if _es_proyeccion_local(p):
+            continue
         if p.name in _CITY_NAMES:
             for child in sorted(p.iterdir(), key=lambda c: c.name):
-                if child.is_dir() and child.name not in seen:
+                if (child.is_dir() and child.name not in seen
+                        and not _es_proyeccion_local(child)):
                     seen.add(child.name)
                     yield child
         else:

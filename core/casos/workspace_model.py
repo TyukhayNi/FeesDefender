@@ -137,8 +137,16 @@ class WorkspaceError(Exception):
         self.detalle = detalle
         super().__init__(self._mensaje())
 
+    #: Frase humana, FIJA por clase. Nunca interpolada: el §16 prohibe rutas y
+    #: PII, y una descripcion fija no puede filtrar nada por construccion. Vacia
+    #: por defecto — una clase sin frase solo muestra su codigo, que es lo que
+    #: habia antes.
+    descripcion: str = ""
+
     def _mensaje(self) -> str:
         partes = [f"[{self.codigo}]"]
+        if self.descripcion:
+            partes.append(self.descripcion)
         if self.w_code:
             partes.append(f"caso {self.w_code}")
         if self.titular:
@@ -158,8 +166,27 @@ class CaseLocked(WorkspaceError):
     codigo = "CASE_LOCKED"
 
 
-class LocalWorkspaceMissing(WorkspaceError):
+class LocalWorkspaceMissing(WorkspaceError, FileNotFoundError):
+    """El caso no existe en ningun layout del catalogo.
+
+    **Hereda tambien de `FileNotFoundError`**, y no es un parche de
+    compatibilidad: «el workspace local no existe» ES una condicion de fichero
+    ausente. Lo que estaba mal era tener dos vocabularios para lo mismo — cinco
+    funciones lanzaban `FileNotFoundError` a mano para este caso exacto.
+
+    Lo que la herencia protege, medido: **15 sitios de produccion** capturan
+    `FileNotFoundError`, entre ellos `scripts/abrir_caso.py:162` y `:173`,
+    `scripts/crm_ficha.py:60` y `core/intake_drive.py:297`. Sin ella, migrar esas
+    cinco funciones al error estructurado hacia que la excepcion se ESCAPARA de
+    manejadores existentes, y la suite solo cubria 3 de esos caminos.
+
+    Ninguno de los otros catorce errores del §10 hereda de `FileNotFoundError`, y
+    eso es deliberado: un caso PRESTADO existe. Tratarlo como ausente seria la
+    misma confusion que todo este diseno deshace.
+    """
+
     codigo = "LOCAL_WORKSPACE_MISSING"
+    descripcion = "el caso no existe en el catalogo local"
 
 
 class LockMismatch(WorkspaceError):

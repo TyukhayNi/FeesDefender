@@ -43,8 +43,9 @@ def main(
     yes: bool = typer.Option(False, "--yes", help="auto-confirma la escritura al CRM"),
 ) -> None:
     resolved = case_locator.resolve_ref(case_id)
-    case_dir = case_locator.path_for(resolved)
-    if not (case_dir / "00_Input" / "_caso.md").is_file():
+    # `buscar` y no `path_for`: el error legible es el contrato de un CLI.
+    case_dir = case_locator.buscar(resolved)
+    if case_dir is None or not (case_dir / "00_Input" / "_caso.md").is_file():
         typer.echo(f"[ERROR] Caso no encontrado: {case_id!r} (resuelto: {resolved!r})", err=True)
         raise typer.Exit(code=1)
 

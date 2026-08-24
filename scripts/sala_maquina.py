@@ -277,11 +277,19 @@ def _resolver_caso(case_id: str) -> tuple[str, Path]:
     Mismo patrón que ``scripts/atomize_emails.py``/``scripts/crm_ficha.py``.
     """
     case_id = case_locator.resolve_ref(case_id)
-    case_dir = caso_path(case_id)
+    # Igual que en anon: 20 tests parchean `cli.caso_path`, asi que la guarda va
+    # sobre el binding del modulo y no via `buscar()`.
+    try:
+        case_dir = caso_path(case_id)
+    except FileNotFoundError:
+        typer.echo(f"[ERROR] Caso no encontrado: {case_id!r}. "
+                   f"Comprueba el case_id o W-code.", err=True)
+        raise typer.Exit(code=1)
     if not (case_dir / "00_Input").is_dir():
+        # Sin interpolar `case_dir`: el §16 prohibe publicar la ruta local.
         typer.echo(
-            f"[ERROR] Caso no encontrado: {case_id!r} (ruta resuelta sin "
-            f"00_Input: {case_dir}). Comprueba el case_id o W-code.",
+            f"[ERROR] Caso no encontrado: {case_id!r} (resuelto, pero sin "
+            f"00_Input). Comprueba el case_id o W-code.",
             err=True,
         )
         raise typer.Exit(code=1)

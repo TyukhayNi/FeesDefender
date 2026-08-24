@@ -323,9 +323,13 @@ def sync_all() -> None:
     tocados: list[str] = []
 
     for case_id in casos:
-        index = caso_path(case_id) / "00_Input" / "_caso.md"
+        from core.casos.case_locator import buscar
+        base = buscar(case_id)
+        if base is None:
+            continue                   # el caso no existe
+        index = base / "00_Input" / "_caso.md"
         if not index.exists():
-            continue
+            continue                   # el caso existe, `_caso.md` no
 
         text = index.read_text(encoding="utf-8")
         if not text.startswith("---"):

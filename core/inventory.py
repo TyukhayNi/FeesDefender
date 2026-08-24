@@ -79,9 +79,10 @@ def _entry(root: Path, path: Path) -> FileEntry:
 
 def scan(case_id: str) -> Path:
     """Recorre 00_Input/, escribe _inventory.json y devuelve su ruta."""
-    input_dir = caso_path(case_id) / "00_Input"
+    from core.casos.case_locator import localizar
+    input_dir = localizar(case_id) / "00_Input"
     if not input_dir.exists():
-        raise FileNotFoundError(f"No existe {input_dir}")
+        raise FileNotFoundError("falta 00_Input en el caso")
 
     entries: list[FileEntry] = []
     skipped: list[str] = []
@@ -117,7 +118,8 @@ def scan(case_id: str) -> Path:
 
 
 def load(case_id: str) -> dict:
-    inv = caso_path(case_id) / "00_Input" / "_inventory.json"
+    from core.casos.case_locator import localizar
+    inv = localizar(case_id) / "00_Input" / "_inventory.json"
     if not inv.exists():
-        raise FileNotFoundError(f"Inventario no generado: {inv}")
+        raise FileNotFoundError("inventario no generado para el caso")
     return json.loads(inv.read_text(encoding="utf-8"))

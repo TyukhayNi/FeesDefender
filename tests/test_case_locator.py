@@ -28,9 +28,18 @@ class TestPathForFlat:
         (root / "BaRR3 - Roser").mkdir()
         assert path_for("BaRR3 - Roser") == root / "BaRR3 - Roser"
 
-    def test_caso_inexistente_devuelve_flat(self, root):
+    def test_caso_inexistente_LANZA_desde_el_paso_5(self, root):
+        """Fijaba el fallback: `path_for` de un caso ausente devolvia la ruta flat.
+
+        Esa ruta inventada es la que fabricaba expedientes fantasma en cuanto
+        alguien escribia sobre ella, y por eso la Fase 1 la retira. El
+        comportamiento viejo sigue disponible por la escotilla declarada.
+        """
         from core.casos.case_locator import path_for
-        result = path_for("NO-EXISTE")
+        from core.casos.workspace_model import LocalWorkspaceMissing
+        with pytest.raises(LocalWorkspaceMissing):
+            path_for("NO-EXISTE")
+        result = path_for("NO-EXISTE", strict=False)
         assert result == root / "NO-EXISTE"
         assert not result.exists()
 
@@ -469,3 +478,220 @@ class TestResolveRef:
         # resolve_ref no debe lanzar
         result = resolve_ref("W-000AAA")
         assert result == "W-000AAA"
+
+
+# ---------------------------------------------------------------------------
+# Las TRES intenciones (Fase 1, Task 6) — R7/H7-01
+#
+# El booleano `strict` metia tres intenciones en dos valores, y por eso el plan
+# quedo atrapado eligiendo entre romper el alta y conservar el expediente
+# fantasma. Se separan por NOMBRE, que es lo que las hace auditables:
+#
+#   localizar()       lo que debe existir        -> LANZA si falta
+#   buscar()          preguntar si existe        -> devuelve None
+#   destino_de_alta() nombrar destino de un alta -> su caso normal es que falte
+#
+# Esta tanda es ADITIVA a proposito: `path_for` no cambia de comportamiento
+# todavia. El default se invierte al final de la migracion, cuando ya no queden
+# llamadores apoyados en el fallback — medido: invertirlo hoy rompe 377 tests en
+# 42 ficheros, y la causa raiz es que `ensure_case` usa el fallback para CREAR.
+# ---------------------------------------------------------------------------
+
+
+def _arbol(root) -> dict[str, str]:
+    """Huella del arbol, para probar que localizar/buscar no crean nada."""
+    return {p.relative_to(root).as_posix(): ("d" if p.is_dir() else "f")
+            for p in sorted(root.rglob("*"))}
+
+
+class TestLocalizar:
+    def test_caso_flat_existente(self, root):
+        from core.casos.case_locator import localizar
+        (root / "BaRR3 - Roser").mkdir()
+        assert localizar("BaRR3 - Roser") == root / "BaRR3 - Roser"
+
+    def test_caso_en_ciudad(self, root):
+        from core.casos.case_locator import localizar
+        (root / "Barcelona" / "BaRR3 - Roser").mkdir(parents=True)
+        assert localizar("BaRR3 - Roser") == root / "Barcelona" / "BaRR3 - Roser"
+
+    def test_caso_ausente_LANZA(self, root):
+        """El nucleo del criterio de salida (2): no se devuelve una ruta inventada."""
+        from core.casos.case_locator import localizar
+        from core.casos.workspace_model import LocalWorkspaceMissing
+        with pytest.raises(LocalWorkspaceMissing):
+            localizar("NO-EXISTE")
+
+    def test_el_error_no_lleva_la_ruta_local(self, root):
+        """§16: el mensaje cita W-code y codigo, nunca la ruta."""
+        from core.casos.case_locator import localizar
+        from core.casos.workspace_model import LocalWorkspaceMissing
+        with pytest.raises(LocalWorkspaceMissing) as exc:
+            localizar("NO-EXISTE")
+        assert str(root) not in str(exc.value)
+
+    def test_no_crea_nada_al_lanzar(self, root):
+        from core.casos.case_locator import localizar
+        from core.casos.workspace_model import LocalWorkspaceMissing
+        antes = _arbol(root)
+        with pytest.raises(LocalWorkspaceMissing):
+            localizar("NO-EXISTE")
+        assert _arbol(root) == antes
+
+
+class TestBuscar:
+    def test_caso_existente_devuelve_la_ruta(self, root):
+        from core.casos.case_locator import buscar
+        (root / "BaRR3 - Roser").mkdir()
+        assert buscar("BaRR3 - Roser") == root / "BaRR3 - Roser"
+
+    def test_caso_en_ciudad(self, root):
+        from core.casos.case_locator import buscar
+        (root / "Barcelona" / "CASO-X").mkdir(parents=True)
+        assert buscar("CASO-X") == root / "Barcelona" / "CASO-X"
+
+    def test_caso_ausente_devuelve_None(self, root):
+        """La tercera API: los 27 detectores de ausencia con rama elegante.
+
+        Sin ella, migrarlos a `localizar()` cambiaria un error legible por una
+        traza — medido sobre `abrir_caso --case-id` inexistente.
+        """
+        from core.casos.case_locator import buscar
+        assert buscar("NO-EXISTE") is None
+
+    def test_no_crea_nada(self, root):
+        from core.casos.case_locator import buscar
+        antes = _arbol(root)
+        assert buscar("NO-EXISTE") is None
+        assert _arbol(root) == antes
+
+
+class TestDestinoDeAlta:
+    def test_caso_nuevo_devuelve_la_ruta_flat(self, root):
+        from core.casos.case_locator import destino_de_alta
+        assert destino_de_alta("NUEVO") == root / "NUEVO"
+
+    def test_nombrar_no_es_crear(self, root):
+        """Devuelve la ruta y NO la materializa: crear es del llamador."""
+        from core.casos.case_locator import destino_de_alta
+        antes = _arbol(root)
+        d = destino_de_alta("NUEVO")
+        assert not d.exists()
+        assert _arbol(root) == antes
+
+    def test_caso_YA_EXISTENTE_devuelve_SU_ubicacion_no_la_flat(self, root):
+        """La regla que impide la carpeta sombra.
+
+        Si `destino_de_alta` devolviera siempre la ruta flat, un alta sobre un
+        caso que ya vive en su ciudad crearia un duplicado plano al lado — que es
+        exactamente el defecto CRITICO que R6 encontro en el `--force` del
+        `--modo v1` (una sombra con el W-code duplicado).
+        """
+        from core.casos.case_locator import destino_de_alta
+        (root / "Barcelona" / "BaRR3 - Roser").mkdir(parents=True)
+        assert destino_de_alta("BaRR3 - Roser") == root / "Barcelona" / "BaRR3 - Roser"
+
+
+class TestLasTresSonCoherentes:
+    def test_sobre_un_caso_existente_las_tres_coinciden(self, root):
+        from core.casos.case_locator import buscar, destino_de_alta, localizar
+        (root / "Barcelona" / "CASO-X").mkdir(parents=True)
+        esperada = root / "Barcelona" / "CASO-X"
+        assert localizar("CASO-X") == esperada
+        assert buscar("CASO-X") == esperada
+        assert destino_de_alta("CASO-X") == esperada
+
+    def test_sobre_un_caso_ausente_las_tres_DIFIEREN(self, root):
+        """Es el punto entero del cambio: la ausencia deja de tener una sola
+        respuesta, porque las tres preguntas eran distintas desde el principio."""
+        from core.casos.case_locator import buscar, destino_de_alta, localizar
+        from core.casos.workspace_model import LocalWorkspaceMissing
+        with pytest.raises(LocalWorkspaceMissing):
+            localizar("NO-EXISTE")
+        assert buscar("NO-EXISTE") is None
+        assert destino_de_alta("NO-EXISTE") == root / "NO-EXISTE"
+
+
+class TestElDefaultYaEstaInvertido:
+    """Paso 5: lo que la spec pide de la Fase 1.
+
+    Hasta aqui estos dos tests fijaban lo contrario —que `path_for` NO cambiaba—
+    porque la tanda era aditiva a proposito: invertir de golpe rompia 377 tests en
+    42 ficheros, y la causa raiz era que `ensure_case` creaba por el fallback.
+    Migrados el alta y los detectores, el numero es otro y la inversion cabe.
+    """
+
+    def test_path_for_de_un_caso_ausente_LANZA(self, root):
+        from core.casos.case_locator import path_for
+        from core.casos.workspace_model import LocalWorkspaceMissing
+        with pytest.raises(LocalWorkspaceMissing):
+            path_for("NO-EXISTE")
+
+    def test_caso_path_PROPAGA_el_keyword(self, root):
+        """El unico test que caza que la fachada se olvide de propagar: la llama
+        SIN argumentos sobre un caso ausente."""
+        from core.config import caso_path
+        from core.casos.workspace_model import LocalWorkspaceMissing
+        with pytest.raises(LocalWorkspaceMissing):
+            caso_path("NO-EXISTE")
+
+    def test_la_escotilla_legacy_conserva_el_comportamiento_viejo(self, root):
+        from core.casos.case_locator import path_for
+        from core.config import caso_path
+        assert path_for("NO-EXISTE", strict=False) == root / "NO-EXISTE"
+        assert caso_path("NO-EXISTE", strict=False) == root / "NO-EXISTE"
+
+    def test_ni_estricto_ni_con_escotilla_crean_nada(self, root):
+        from core.casos.case_locator import path_for
+        from core.casos.workspace_model import LocalWorkspaceMissing
+        antes = sorted(p.name for p in root.iterdir())
+        with pytest.raises(LocalWorkspaceMissing):
+            path_for("NO-EXISTE")
+        path_for("NO-EXISTE", strict=False)
+        assert sorted(p.name for p in root.iterdir()) == antes
+
+
+# ---------------------------------------------------------------------------
+# El alta pasa por la puerta explicita (Task 6, paso 2)
+# ---------------------------------------------------------------------------
+
+class TestEnsureCasePasaPorLaPuertaExplicita:
+    def test_el_alta_de_un_caso_nuevo_sigue_funcionando(self, root):
+        """Regresion: invertir la puerta no puede romper crear un caso."""
+        from core.case_manager import ensure_case
+        ensure_case("BaRS9 - Prueba - (W-TEST99) - Vuelta", tipo_caso="BAD_DEBT")
+        assert (root / "BaRS9 - Prueba - (W-TEST99) - Vuelta" / "00_Input").is_dir()
+
+    def test_el_alta_va_por_destino_de_alta_y_no_por_localizar(self, root, monkeypatch):
+        """El mutante que el plan exige, fijado como test.
+
+        Si `ensure_case` llamara a `localizar()`, el alta de un caso NUEVO
+        lanzaria — que es precisamente el empate del que R7 saco al plan. Se
+        comprueba por observacion directa: `destino_de_alta` se invoca.
+        """
+        from core.casos import case_locator
+        vistos: list[str] = []
+        real = case_locator.destino_de_alta
+        monkeypatch.setattr(case_locator, "destino_de_alta",
+                            lambda cid: vistos.append(cid) or real(cid))
+
+        from core.case_manager import ensure_case
+        ensure_case("BaRS9 - Prueba - (W-TEST99) - Vuelta", tipo_caso="BAD_DEBT")
+
+        assert vistos == ["BaRS9 - Prueba - (W-TEST99) - Vuelta"], (
+            "`ensure_case` no paso por `destino_de_alta`: la puerta de alta "
+            "sigue siendo implicita")
+
+    def test_el_alta_sobre_un_caso_que_ya_vive_en_su_ciudad_NO_crea_sombra(self, root):
+        """El defecto CRITICO de R6, aqui como regresion del alta.
+
+        Si el alta resolviera a la ruta flat, un caso que ya vive en su ciudad
+        recibiria un duplicado plano al lado, con el mismo W-code.
+        """
+        from core.case_manager import ensure_case
+        ciudad = root / "Barcelona" / "BaRS9 - Prueba - (W-TEST99) - Vuelta"
+        ciudad.mkdir(parents=True)
+        ensure_case("BaRS9 - Prueba - (W-TEST99) - Vuelta", tipo_caso="BAD_DEBT")
+        assert (ciudad / "00_Input").is_dir()
+        assert not (root / "BaRS9 - Prueba - (W-TEST99) - Vuelta").exists(), (
+            "se fabrico una carpeta sombra plana junto al caso real")

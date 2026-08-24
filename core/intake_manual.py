@@ -249,12 +249,10 @@ def save_file_crm_branch(
                 f"branch_path inválido (path traversal): {branch_path!r}"
             )
 
-    case_dir = caso_path(case_id)
-    if not case_dir.exists():
-        raise FileNotFoundError(
-            f"El caso '{case_id}' no existe en {settings.casos_root}. "
-            "Llama a ensure_case() antes de save_file_crm_branch()."
-        )
+    # `localizar` lanza el error estructurado del §10; el `FileNotFoundError` que
+    # habia aqui interpolaba `settings.casos_root`, que el §16 prohibe.
+    from core.casos.case_locator import localizar
+    case_dir = localizar(case_id)
 
     # Guard de escritura (DISEÑO_V2 §6): si el caso está prestado/conflicto, el
     # fichero va a la bandeja _pendiente_checkin/crm_manual/ con evento en el log.
@@ -291,7 +289,10 @@ def list_crm_branch_files(case_id: str, branch_path: str) -> list[Path]:
     Excluye archivos de control internos. Devuelve lista vacía si el
     directorio no existe.
     """
-    case_dir = caso_path(case_id)
+    from core.casos.case_locator import buscar
+    case_dir = buscar(case_id)
+    if case_dir is None:
+        return []                      # el caso no existe
     branch = Path(branch_path.strip()) if branch_path else None
     if branch is None:
         return []
@@ -319,9 +320,13 @@ def list_files(case_id: str) -> list[Path]:
     """
     from .intake_lotes import MANIFIESTO_LOTE, PATRON_LOTE
 
-    input_dir = caso_path(case_id) / "00_Input"
+    from core.casos.case_locator import buscar
+    base = buscar(case_id)
+    if base is None:
+        return []                      # el caso no existe
+    input_dir = base / "00_Input"
     if not input_dir.exists():
-        return []
+        return []                      # el caso existe, `00_Input` no
     bases = [d for d in input_dir.iterdir() if d.is_dir()
              and (m := PATRON_LOTE.match(d.name)) and m.group(2) == "manual"]
     legacy = input_dir / _MANUAL_SUBDIR
