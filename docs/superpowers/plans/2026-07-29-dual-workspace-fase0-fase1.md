@@ -476,14 +476,52 @@ bloqueado:** ya tiene el `estado_compartido` y el `bajo_catalogo` que consume.
 - Ambos **lanzan** `WorkspaceError` en los caminos de bloqueo; no devuelven un modo `BLOCKED_*` como valor de retorno normal salvo cuando el llamante pide diagnóstico explícito. Ese `diagnostico: bool = False` **va en las dos firmas de arriba**, que no lo declaraban: la excepción se mencionaba en prosa y no existía en la interfaz (R7/H7-11).
 - `mutate_canonical=False` en el camino offline (§7.1.5 / §7.2.9).
 
-- [ ] **Step 1: Write the failing tests** — una fila por escenario del §14.1, más: `prestado` por otra máquina → `CaseLocked` con titular y fecha en el mensaje y **sin** ruta local; `prestado` propio con nonce distinto → `LockMismatch`; `prestado` propio sin entrada de registro → `LocalWorkspaceMissing` (no se adopta solo, §15); `conflicto` → `CaseConflict` en cualquier modo; Drive inaccesible con **un** checkout verificado → `LOCAL_CHECKOUT` sin `MUTATE_CANONICAL`; Drive inaccesible con dos candidatos → `AmbiguousCase`; scratch cuyo W-code colisiona con un caso publicado → `AmbiguousCase` que exige `--case-dir`; `--case-dir` a una ruta bajo `CASOS_ROOT` → `WorkspaceUnderCatalogRoot`; `--case-dir` donde identidad, manifest y registro se contradicen → aborta.
-- [ ] **Step 2: Run tests to verify they fail**
-- [ ] **Step 3: Write the implementation**
-- [ ] **Step 4: Verify**
+- [x] **Step 1: Write the failing tests** — una fila por escenario del §14.1, más: `prestado` por otra máquina → `CaseLocked` con titular y fecha en el mensaje y **sin** ruta local; `prestado` propio con nonce distinto → `LockMismatch`; `prestado` propio sin entrada de registro → `LocalWorkspaceMissing` (no se adopta solo, §15); `conflicto` → `CaseConflict` en cualquier modo; Drive inaccesible con **un** checkout verificado → `LOCAL_CHECKOUT` sin `MUTATE_CANONICAL`; Drive inaccesible con dos candidatos → `AmbiguousCase`; scratch cuyo W-code colisiona con un caso publicado → `AmbiguousCase` que exige `--case-dir`; `--case-dir` a una ruta bajo `CASOS_ROOT` → `WorkspaceUnderCatalogRoot`; `--case-dir` donde identidad, manifest y registro se contradicen → aborta.
+- [x] **Step 2: Run tests to verify they fail**
+- [x] **Step 3: Write the implementation**
+- [x] **Step 4: Verify**
 
 ```bash
 python -m pytest tests/test_workspace_resolver.py -q
 ```
+
+---
+
+**Estado del Task 7 — ✅ COMPLETO.** `core/casos/workspace_resolver.py`, 23 tests, y
+**18 mutantes que mueren cada uno por su propia frontera**.
+
+**La prueba de mutación encontró un defecto real, no tests flojos.** De las 18 fronteras,
+**cinco no estaban contratadas**, y una de ellas era un mecanismo que no hacía nada:
+
+- **La resta de capacidad para el offline era inerte.** Quitaba `MUTATE_CANONICAL` de
+  `local_checkout`, y ese modo **nunca la tuvo** — solo la tiene `drive_active`. El test
+  lo confirmaba pasando con el mecanismo desactivado. Lo que un modo local puede hacer
+  contra el canon es **`checkin`** (cerrar el ciclo) o **`promote`**, así que tal como
+  estaba **un checkout offline seguía anunciando `CHECKIN`**: el sistema habría dejado
+  intentar publicar sin Drive, justo lo que el §7.1.5 prohíbe. Se retira ahora
+  `CAPACIDADES_DE_CANON` = {`mutate_canonical`, `checkin`, `promote`}.
+- **Dos tests pasaban por el camino equivocado.** El de «offline con dos candidatos» no
+  creaba el caso en el catálogo, así que la ambigüedad la levantaba **otra** guarda
+  (`_solo_local`) y la del camino offline no se ejercitaba nunca. El de «ruta que no
+  existe» usaba una ruta sin registrar, así que la rechazaba la guarda del **registro**,
+  no la de existencia. Mismo patrón: **el test pasaba, pero por una razón distinta de la
+  que decía comprobar** — y con el verde idéntico, sin mutación no se ve.
+
+**Dos decisiones de diseño:**
+
+- **Restar una capacidad no es inyectarlas.** El modelo prohíbe inyectar —un llamador
+  podría fabricarse un `blocked_*` con permiso de escritura— pero restar solo puede
+  hacerlo **menos** poderoso. La asimetría es lo que permite expresar el offline sin
+  abrir el agujero, y hay test que la fija sobre los cinco modos.
+- **Bloquear lanzando, no devolviendo.** Un motor que va a escribir no debe recibir un
+  valor que *parezca* un workspace y no lo sea. La excepción es `diagnostico=True`, para
+  quien va a **pintar** el estado en vez de operar.
+
+**Un test mío que estaba mal, y se conserva el razonamiento:** escribí que el conflicto
+debía bloquear «en cualquier modo». Falso — el §7.2 lee el estado compartido en el paso
+(3) **solo si Drive está accesible**. El hueco lo cierra el §7.1 por el otro lado: el
+checkin revalida el nonce contra Drive, así que el conflicto aflora al publicar. Está
+explicado en el propio test en vez de borrado.
 
 ---
 
