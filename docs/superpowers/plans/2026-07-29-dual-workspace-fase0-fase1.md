@@ -241,20 +241,46 @@ Es la pieza que todas las demás consumen y no tiene dependencias: primero.
 - `class WorkspaceError(Exception)` con `codigo: str` + subclases por cada código del §10 (`CaseLocked`, `LocalWorkspaceMissing`, `LockMismatch`, `LockNotMine`, `CaseConflict`, `AmbiguousCase`, `RuntimeCannotAccessWorkspace`, `CapabilityDenied`, `CanonicalMutationDeferred`, `CheckoutCancelledElsewhere`, `WorkspaceUnderCatalogRoot`, `AuditBaselineMissing`).
 - `str(error)` **nunca** incluye rutas locales (§16): el mensaje se construye con W-code, código, titular y fecha.
 
-- [ ] **Step 1: Write the failing tests** — `CaseRef` sin identidad lanza; `working_root is None` con modo mutable es incoherente y lanza; `exigir` lanza `CapabilityDenied` con `codigo == "CAPABILITY_DENIED"`; un `CaseWorkspace` es inmutable (`dataclasses.FrozenInstanceError`).
+- [x] **Step 1: Write the failing tests** — `CaseRef` sin identidad lanza; `working_root is None` con modo mutable es incoherente y lanza; `exigir` lanza `CapabilityDenied` con `codigo == "CAPABILITY_DENIED"`; un `CaseWorkspace` es inmutable (`dataclasses.FrozenInstanceError`).
 
   **La tabla se prueba por IGUALDAD COMPLETA, no por negativos sueltos** (R7/H7-10). Los tres negativos que este Step tenía —`BLOCKED_*` sin `WRITE_CASE` ni `INGEST`, `LOCAL_CHECKOUT` sin `MUTATE_CANONICAL`— los pasa también una tabla **casi vacía**, que es el modo de fallo caro: difiere el descubrimiento a una fase posterior. Por tanto: `CAPACIDADES_POR_MODO[modo] == esperado[modo]` parametrizado por los cinco modos, con las **ocho** capacidades del §5.4 nombradas en positivo donde corresponda (`read_case`, `write_case`, `ingest`, `generate_derivatives`, `mutate_canonical`, `checkout`, `checkin`, `promote`).
 
   **Mutación obligatoria:** ocho mutantes, uno por capacidad, cada uno quitándola o intercambiándola en un modo. Los ocho deben morir. Una tabla es un dato, y un dato solo queda contratado por la igualdad que lo fija (memoria `feedback-mutacion-vale-por-su-mutante`).
 
   **Los doce errores del §10, y sus mensajes** (R7/H7-12). El canario «no contiene el separador de unidad de Windows» solo detecta `:\`: dejaba pasar `C:/...`, `\\servidor\...`, `/home/...` y cualquier ruta relativa. Se parametrizan **las doce subclases** contra un juego de canarios —Windows con las dos barras, UNC, POSIX, relativa— más nombre, email y dirección (§16), exigiendo ausencia de todos. Y se prueban las otras dos reglas del §10, que no estaban en ningún Step: el mensaje **declara que no hubo efecto** cuando el camino es de bloqueo, y **nunca sugiere reintentar contra Drive**. Se comprueba el `codigo` exacto de cada una de las doce, no solo el de `CapabilityDenied`.
-- [ ] **Step 2: Run tests to verify they fail**
-- [ ] **Step 3: Write the implementation**
-- [ ] **Step 4: Verify**
+- [x] **Step 2: Run tests to verify they fail**
+- [x] **Step 3: Write the implementation**
+- [x] **Step 4: Verify**
 
-```bash
-python -m pytest tests/test_workspace_model.py -q
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests/test_workspace_model.py -q
 ```
+
+**✅ CONSTRUIDO** en `d6cee04` (modelo + tests) y `de14b20` (el hueco que encontró un mutante
+superviviente: un `w_code` en blanco se normalizaba a cadena vacía en vez de a `None`, así que
+pasaba por identidad válida).
+
+**Lo que R7 le cambió después de estar construido.** El task se levantó **antes** de que R7
+adjudicara, así que sus dos hallazgos se comprobaron contra el código ya escrito, no contra el plan:
+
+- **H7-10 (tabla de capacidades) — ya cubierto.** `test_la_matriz_de_capacidades_es_la_del_spec`
+  compara el diccionario **entero** contra una transcripción a mano, así que un mutante que quite o
+  intercambie cualquiera de las ocho capacidades en cualquiera de los cinco modos muere ahí. La
+  igualdad completa que el hallazgo pedía ya estaba; no hicieron falta ocho mutantes sueltos, porque
+  la igualdad los mata a todos.
+- **H7-12 (mensajes de error) — hueco real, y doble.** El canario era **uno solo** —una ruta de
+  Windows— y sus dos asertos (`[A-Za-z]:[\/]` y la contrabarra) cazaban **3 de 8** casos: Windows
+  con las dos barras y UNC. Se le escapaban POSIX puro, la ruta relativa y las tres de PII del §16;
+  y como solo **inyectaba** una ruta Windows, esos cinco no se ejercitaban en ningún caso. Ampliado
+  a **ocho canarios × doce clases**, con fragmentos parciales además de la copia literal, y la
+  segunda regla del §10 —no empujar a reintentar contra Drive— extendida de **una** clase a las
+  doce. Verificado por mutación: filtrar `detalle` tal cual mata los cinco canarios que antes
+  pasaban, por las doce clases.
+
+**Y una frontera que se respeta a propósito:** *no* se prueba que el mensaje no lleve un nombre. El
+§10.3 manda construirlo con «W-code, código, titular y fecha», o sea que el `titular` va dentro por
+diseño. Un canario de «ningún nombre» contradiría la fuente en vez de protegerla, así que el vector
+que se vigila es `detalle`.
 
 ---
 
