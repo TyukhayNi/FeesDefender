@@ -124,6 +124,13 @@ python -m scripts.abrir_caso --w-code W-XXXXXX --ciudad Barcelona --tipo-caso VU
   --fuente drive_ev --crm api --cuantia <n> --yes --force
 ```
 
+> **Modo V1 (`--modo v1`).** La primera vertical se ejecuta con
+> `--modo v1 --crm skip --fuente drive_ev`. El modo es el **discriminante**: estar en él ES ser
+> una ejecución V1, y valida antes de cualquier efecto. Rechaza `--crm api` —el default, que
+> alcanza un POST de alta— y rechaza `--fuente email|manual|whatsapp`, porque V1 no descubre ni
+> exporta correo. Sin `--modo`, el comportamiento es el de siempre (`libre`), que es el que usan
+> V2, V3 y el uso ad hoc. Contrato: spec de apertura integral §24 D3.
+
 - **`[APER-34]` Auto-derivación (B5):** en `--fuente drive_ev`, si se omiten,
   `--team-id` (driveId), `--codigo-caso` (nombre de la unidad compartida vía Drive API) y
   `--sufijo` (del `tipo_caso` canónico) se **auto-derivan** desde `--folder-id`. Los flags
