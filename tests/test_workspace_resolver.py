@@ -188,14 +188,23 @@ class TestPorIdentidad:
         r.registry.alta(_entrada_local(tmp_path, nonce="n1"))
         ws = r.resolver_por_identidad(CaseRef(w_code="W-TEST99"), drive_accesible=False)
         assert ws.mode == WorkspaceMode.LOCAL_CHECKOUT
-        assert not ws.permite(Capability.MUTATE_CANONICAL)
+        # `CHECKIN`, no `MUTATE_CANONICAL`: este modo nunca tuvo la segunda, asi
+        # que afirmarlo pasaba con el mecanismo desactivado (lo cazo la mutacion).
+        assert not ws.permite(Capability.CHECKIN)
+        assert ws.permite(Capability.WRITE_CASE)
 
     def test_drive_inaccesible_con_DOS_candidatos_es_ambiguo(self, root, tmp_path):
-        """§7.2.10 — sin canon al que preguntar, dos copias no se desempatan solas."""
+        """§7.2.10 — sin canon al que preguntar, dos copias no se desempatan solas.
+
+        **El caso existe en el catalogo a proposito.** Sin el, la resolucion cae por
+        `_solo_local` y la ambiguedad la levanta OTRA guarda — el test pasaba igual
+        con la del camino offline desactivada, y eso lo cazo la mutacion.
+        """
         from core.casos.workspace_model import AmbiguousCase, CaseRef
+        _canon(root, estado="prestado", titular=YO, maquina=ESTA, nonce="n1")
         r = _resolver(tmp_path)
         r.registry.alta(_entrada_local(tmp_path, nonce="n1", sufijo="_a"))
-        r.registry.alta(_entrada_local(tmp_path, nonce="n2", tipo="scratch", sufijo="_b"))
+        r.registry.alta(_entrada_local(tmp_path, nonce="n2", sufijo="_b"))
         with pytest.raises(AmbiguousCase):
             r.resolver_por_identidad(CaseRef(w_code="W-TEST99"), drive_accesible=False)
 
@@ -238,10 +247,20 @@ class TestPorRuta:
             _resolver(tmp_path).resolver_por_ruta(dentro, drive_accesible=True)
 
     def test_una_ruta_que_no_existe_se_rechaza(self, root, tmp_path):
+        """La ruta esta REGISTRADA pero ya no existe en disco.
+
+        Con una ruta sin registrar el test pasaba igual —lo rechazaba la guarda
+        del registro, no la de existencia— y la mutacion lo cazo. Registrarla
+        primero aisla la frontera: lo unico que falla es que la carpeta no esta.
+        """
+        import shutil
         from core.casos.workspace_model import LocalWorkspaceMissing
+        r = _resolver(tmp_path)
+        e = _entrada_local(tmp_path, nonce="n1")
+        r.registry.alta(e)
+        shutil.rmtree(e.local_path)          # registrada, pero borrada del disco
         with pytest.raises(LocalWorkspaceMissing):
-            _resolver(tmp_path).resolver_por_ruta(
-                tmp_path / "no-existe", drive_accesible=True)
+            r.resolver_por_ruta(e.local_path, drive_accesible=True)
 
     def test_una_ruta_registrada_como_scratch_da_local_scratch(self, root, tmp_path):
         from core.casos.workspace_model import WorkspaceMode
@@ -267,7 +286,8 @@ class TestPorRuta:
         e = _entrada_local(tmp_path, nonce="n1")
         r.registry.alta(e)
         ws = r.resolver_por_ruta(e.local_path, drive_accesible=False)
-        assert not ws.permite(Capability.MUTATE_CANONICAL)
+        assert not ws.permite(Capability.CHECKIN)
+        assert ws.permite(Capability.WRITE_CASE)
 
 
 # ==========================================================================

@@ -327,6 +327,24 @@ class CaseRef:
 
 # ---------------------------------------------------- §5.3 el valor validado
 
+#: Las capacidades que TOCAN EL CANON, y que el trabajo offline retira.
+#:
+#: No es solo `MUTATE_CANONICAL`, y esa fue una equivocacion mia que cazo la prueba
+#: de mutacion: `local_checkout` **no tiene** `MUTATE_CANONICAL` —solo lo tiene
+#: `drive_active`—, asi que restarla en el camino offline no hacia absolutamente
+#: nada. Lo que un checkout local puede hacer contra el canon es **cerrar el ciclo**
+#: (`CHECKIN`), y un scratch, **promover** (`PROMOTE`). Sin Drive no se puede ni
+#: revalidar el nonce ni publicar, asi que las tres se retiran.
+#:
+#: El §7.1.5 lo llama «marca `mutate_canonical = false`»; en el vocabulario de
+#: capacidades del §5.4 eso son estas tres.
+CAPACIDADES_DE_CANON = frozenset({
+    Capability.MUTATE_CANONICAL,
+    Capability.CHECKIN,
+    Capability.PROMOTE,
+})
+
+
 @dataclasses.dataclass(frozen=True)
 class CaseWorkspace:
     """Valor validado e inmutable durante una operación (§5.3).
@@ -365,7 +383,7 @@ class CaseWorkspace:
         object.__setattr__(self, "mode", modo)
         caps = CAPACIDADES_POR_MODO[modo]
         if not self.mutate_canonical:
-            caps = frozenset(caps - {Capability.MUTATE_CANONICAL})
+            caps = frozenset(caps - CAPACIDADES_DE_CANON)
         object.__setattr__(self, "capabilities", caps)
 
         # §5.3: `working_root` existe «solo cuando el runtime puede acceder».

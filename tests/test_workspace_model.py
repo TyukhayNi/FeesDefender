@@ -438,11 +438,38 @@ def test_toda_descripcion_declarada_respeta_los_canarios(clase):
 # permite expresar el offline sin abrir el agujero.
 
 
-def test_offline_resta_mutate_canonical_sin_tocar_lo_demas():
+def test_offline_retira_las_capacidades_que_TOCAN_el_canon():
+    """La version anterior de este test era VACUA y lo cazo la mutacion.
+
+    Comprobaba que un `local_checkout` offline no tuviera `MUTATE_CANONICAL` — y
+    ese modo **nunca la tuvo**: solo la tiene `drive_active`. Restarla no hacia
+    nada, y el test pasaba con el mecanismo desactivado.
+
+    Lo que un checkout local puede hacer contra el canon es CERRAR EL CICLO
+    (`CHECKIN`); un scratch, PROMOVER. Sin Drive no se puede revalidar el nonce ni
+    publicar, asi que son esas las que se retiran. Tal como estaba, un checkout
+    offline seguia anunciando `CHECKIN`.
+    """
     ws = _ws("local_checkout", mutate_canonical=False)
-    assert not ws.permite(wm.Capability.MUTATE_CANONICAL)
+    assert not ws.permite(wm.Capability.CHECKIN)
     assert ws.permite(wm.Capability.WRITE_CASE)
+    assert ws.permite(wm.Capability.INGEST)
     assert ws.permite(wm.Capability.READ_CASE)
+
+
+def test_offline_retira_promote_en_un_scratch():
+    ws = _ws("local_scratch", mutate_canonical=False)
+    assert not ws.permite(wm.Capability.PROMOTE)
+    assert ws.permite(wm.Capability.WRITE_CASE)
+
+
+def test_offline_retira_las_tres_y_solo_esas():
+    """El conjunto retirado es exactamente `CAPACIDADES_DE_CANON`."""
+    for modo in wm.WorkspaceMode:
+        base = wm.CAPACIDADES_POR_MODO[modo]
+        off = _ws(modo.value, mutate_canonical=False).capabilities
+        assert base - off <= wm.CAPACIDADES_DE_CANON, modo
+        assert not (off & wm.CAPACIDADES_DE_CANON), modo
 
 
 def test_por_defecto_no_resta_nada():
