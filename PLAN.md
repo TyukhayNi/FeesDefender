@@ -31,13 +31,81 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 12 | [La firma no es intercalada: falso positivo que bloquea la Capa B](#siguiente-sandwich-firma-la-firma-no-es-una-respuesta-intercalada) | ✅ **CERRADO** — PR #164 (`aaf7dc1`) | queda su cola: `MEJORAS #109` (el síntoma original sigue sin explicar) y borrar el corpus de prueba | bajo |
 | 13 | [Presupuesto explícito de proceso](#siguiente-presupuesto-proceso-cuánta-gobernanza-se-compra) | pendiente — **decisión de Nikolai**, no hay nada que construir | sin gates. Disparador: el mes 2026-07 cerró con **9,4 líneas de `docs/` por línea de `core/`** y cuatro cierres seguidos sin código de producción | bajo (5 min) |
 | 14 | [Desplegar en Cowork las skills ya construidas](#siguiente-reimport-skills-lo-construido-que-no-ha-llegado-al-equipo) | pendiente — **acción manual de Nikolai**; ningún test la cubre | sin gates. Disparador: `organizar-sala-lectura` va por **v1.14 en el repo** y Paola/Ana/Sergio ejecutan la **v1.12** | bajo (una tarde) |
+| 15 | [Apertura integral + piloto W-02Q38C](#siguiente-apertura-integral-apertura-completa-sobre-componentes-existentes) | spec única **rev. 7** en **PR #225**; **cinco rondas adversariales corridas y adjudicadas** (R3 §20, R4 §22, R5 §23). **R5: `REQUIERE-REVISION`, 5 confirmados + 1 añadido por el adjudicador.** El §23 **detiene el bucle de revisión del diseño**: tres de los cinco no son remediables en prosa —el discriminante de V1 ES el dueño de secuencia, la regla de estado cuelga del mutex, y el write-set es un barrido de código—; la rev. 7 corrige solo los errores; **R3 adjudicada el 2026-08-24 por Claude Code: `NO-SHIP`, 7 confirmados, 0 refutados** (§20). La **rev. 5 fija la primera vertical en Drive + pull de Sudespacho → intake → sala de máquina** (§21, decisión de Nikolai): H3-07 sale de alcance, H3-03 y H3-06 quedan acotados, los tres críticos de mecánica siguen íntegros y **`MEJORAS #120` entra en V1**. Piloto abierto, no cerrado | **cuatro decisiones de Nikolai**: predecesor `CaseWorkspace` = Fase 1 de la fila #3 (H3-01), primitiva y namespace del mutex (H3-02), **dueño ejecutable de la secuencia, que es también el discriminante de V1** (H3-04 + H5-01), y qué status de la atomización bloquea el cierre de V1 (H5-02). Más el **barrido del write-set** como trabajo, no como redacción (H5-03). Después: contratos de H3-03/H3-05/H3-06, y la **R6 se corre sobre el PLAN, no sobre la spec** | medio-alto |
 
 > **Filas 13 y 14 añadidas el 2026-08-03 al final de la cola a propósito: no reordeno prioridades
 > ajenas.** Las dos son baratas y una degrada a terceros hoy — dónde encajan de verdad lo decide
 > Nikolai. Origen: `docs/superpowers/handoffs/handoff-2026-08-03-formacion-git-nikolai.md`.
 
+> **Fila 15 añadida el 2026-08-15 por disparador real y decisión expresa de Nikolai.** Se conserva
+> al final para no reordenar la cola sin una decisión específica de prioridad.
+
 > Detalle de cada ítem en su bloque `[SIGUIENTE-*]` más abajo. Backlog sin
 > promover: `docs/MEJORAS_FUTURAS.md`. Ledger de cerrados: `## Cerrados` (final).
+
+---
+
+## [SIGUIENTE-APERTURA-INTEGRAL] Apertura completa sobre componentes existentes
+
+*Fila #15. Disparador: apertura real de W-02Q38C y decisión expresa de convertir sus fallos
+operativos en el contrato único de apertura.*
+
+La spec canónica es
+[`docs/superpowers/specs/2026-08-15-orquestador-apertura-expediente-design.md`](docs/superpowers/specs/2026-08-15-orquestador-apertura-expediente-design.md).
+Absorbe y adjudica lo vigente de los diseños de 2026-07-09 y 2026-07-18 y del runbook, sin
+crear specs separadas por CRM. La decisión de arquitectura es completar y cablear primero
+`scripts.abrir_caso`, `scripts.crm_ficha` y los motores existentes; solo una prueba E2E que
+demuestre huecos residuales puede justificar un coordinador nuevo.
+
+R1 y R2 devolvieron **NO-SHIP** con diecisiete hallazgos, todos confirmados contra las
+fuentes. Las adjudicaciones excepcionales las firma Codex por indisponibilidad de Claude
+Code. La independencia es más débil porque revisor y adjudicador pertenecen al mismo
+modelo/familia. La rev. 3 incorpora los remedios, pero **no se autoaprueba y sigue pendiente
+de R3**. El contrato hermano `FeesDefender-crm` v3.7, commit `8bc09ea`, autoriza antes de la
+medición la excepción temporal de Nikolai sin entrega probatoria.
+
+Actas custodiadas y todavía vinculadas a este ítem abierto:
+`docs/superpowers/specs/2026-08-15-apertura-integral-r1-adversarial-review.md` y
+`docs/superpowers/specs/2026-08-15-apertura-integral-r2-adversarial-review.md`.
+
+**Estado del piloto:** el expediente extrajudicial y sus relaciones básicas existen en
+Sudespacho; la ficha del contrario se corrigió con nombre completo, apellidos separados,
+domicilio postal completo y textos normalizados. Los datos personales y los documentos del
+caso permanecen fuera de Git. No se declara la apertura cerrada: `_caso.md` todavía no se
+sincroniza por el camino común y el paquete probatorio completo de LeadHub sigue limitado por
+la capacidad actual del repositorio hermano `FeesDefender-crm`.
+
+**R3 corrida y adjudicada (2026-08-24).** Revisor Codex por CLI sobre una copia externa del
+árbol (`git archive`, solo lectura por construcción); adjudica Claude Code contra la fuente, con
+lo que la independencia debilitada de R1/R2 queda restablecida. Veredicto `NO-SHIP`: **7
+hallazgos confirmados, 0 refutados** —3 CRÍTICOS (gate de workspace incompatible con el contrato
+dual, mutex sin primitiva, protocolo durable no recuperable), 3 ALTOS (nadie encadena el flujo,
+regresión de frescura, punto fijo no auditable) y 1 MEDIO (retención postal sin ejecutor). Acta:
+`docs/superpowers/specs/2026-08-24-apertura-integral-r3-adversarial-review.md`. Adjudicación: §20
+de la spec. La ronda cerró además dos `SIN VERIFICAR` heredados —la autorización v3.7 del repo
+hermano es **cierta** (`8bc09ea`, ancestro de `main`)— y ejecutó la caracterización del lock
+(7 xfailed, 0 xpassed): los siete defectos siguen vivos.
+
+**Alcance estrechado (rev. 4→5, 2026-08-24, decisión de Nikolai).** La primera vertical es
+**V1 = identidad → esqueleto → Drive E&V + pull de Sudespacho + atomización local del correo ya
+depositado → intake con custodia → sala de máquina**, con `--crm skip` como **requisito ejecutable**
+(no convención: hoy el default es `api`) e invariante sin absolutos —cero mutaciones de datos, de
+comunicación y de efectos remotos no idempotentes del caso; el refresh de token de `rclone` queda
+declarado—. Salen
+diferidos —no derogados— el alta CRM, `crm_ficha` completa, el enriquecimiento postal, Gmail,
+LeadHub, la sala de **lectura**, la viabilidad y el archivo multiefecto; el reparto por vertical y
+los 24 criterios de aceptación que quedan en V1, en el §21 de la spec. Con las tres fuentes
+documentales dentro, V1 **respeta entero** el gotcha del runbook (atomizar y pull antes del OCR).
+Lo que sigue faltando: V1 no **descubre** correo, así que un caso cuyo material siga en Gmail sin
+depositar queda `preparado_con_pendientes` hasta V3, nunca `completo` — **corregido tras R4**:
+`fuentes_pendientes` no existía en ningún vocabulario, me lo inventé al estrechar (§22, H4-03).
+
+**Siguiente:** (1) las **tres decisiones de Nikolai** del §20 —predecesor `CaseWorkspace` (que es
+la Fase 1 de la fila #3, no trabajo nuevo), primitiva y namespace del mutex, dueño ejecutable de
+la secuencia—; (2) cerrar en la rev. 4 los cuatro hallazgos de texto que quedan (H3-03 acotado,
+H3-05, H3-06 acotado, y H3-07 cuando vuelva con V3); (3) R4 y su adjudicación; (4) solo con
+veredicto favorable, plan TDD de V1; (5) W-02Q38C se cierra por ese wiring, sin parche manual del
+caso.
 
 ---
 

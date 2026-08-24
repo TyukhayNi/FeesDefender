@@ -155,7 +155,10 @@ def test_citas_a_specs_y_plans_existen():
     rotas: dict[str, list[str]] = {}
     for f in _md_trackeados():
         txt = f.read_text(encoding="utf-8", errors="replace")
-        malas = _citas_rotas_en(txt, nombres)
+        # El informe de un acta se conserva literal y puede citar specs de un
+        # repositorio hermano. No es voz documental de este repo: aplica la
+        # misma delimitacion por nonce que G7/G8 antes de resolver sus citas.
+        malas = _citas_rotas_en(_texto_documental_g2(txt), nombres)
         if malas:
             rotas[f.relative_to(ROOT).as_posix()] = malas
     assert not rotas, f"citas a specs/plans que no existen en disco: {rotas}"
@@ -173,6 +176,23 @@ def test_g2_no_confunde_una_ruta_absoluta_con_una_cita_al_repo():
     assert _citas_rotas_en(absoluta, nombres) == []
     assert _citas_rotas_en(absoluta + "\ny ademas `2026-06-25-cita-rota.md`", nombres) == [
         "2026-06-25-cita-rota.md"]
+
+
+def test_g2_ignora_solo_informe_literal_y_caza_citas_rotas_en_cercas():
+    """El sello del acta no convierte las cercas Markdown en zonas ciegas de G2."""
+    txt = """---
+tipo: revision-adversarial
+marcador_nonce: g2zx
+---
+<!-- informe-literal:inicio:g2zx -->
+docs/superpowers/specs/2026-07-31-spec-del-repo-hermano.md
+<!-- informe-literal:fin:g2zx -->
+```text
+2026-06-25-cita-en-cerca-rota.md
+```
+"""
+    assert _citas_rotas_en(_texto_documental_g2(txt), set()) == [
+        "2026-06-25-cita-en-cerca-rota.md"]
 
 
 def test_todo_doc_de_raiz_esta_en_el_indice():
@@ -422,6 +442,16 @@ def _visibles(txt: str) -> list[str]:
         for i in range(reg[0], reg[1] + 1):
             lineas[i] = ""
     return lineas
+
+
+def _texto_documental_g2(txt: str) -> str:
+    """Voz documental para G2: vacía solo el informe literal sellado."""
+    lineas = txt.splitlines()
+    reg = _region_informe(txt)
+    if reg:
+        for i in range(reg[0], reg[1] + 1):
+            lineas[i] = ""
+    return "\n".join(lineas)
 
 
 def _adjudicaciones(txt: str) -> list[tuple[int, str]]:
