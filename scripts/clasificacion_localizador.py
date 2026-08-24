@@ -99,3 +99,66 @@ SIN_MIGRAR: dict[str, str] = {
         "es la fachada `caso_path`, no un llamador: se le invierte el default en "
         "el paso 5 y por eso no elige una de las tres intenciones"),
 }
+
+# ---------------------------------------------------------------------------
+# Los 33 detectores, leidos uno a uno (paso 4)
+# ---------------------------------------------------------------------------
+#
+# La heuristica proponia «buscar» para los 33. Al leerlos, TRES clases distintas —y
+# es la tercera vez que un cubo confiado de esta heuristica contiene falsos, asi que
+# la leccion queda escrita: cada sitio se lee, sin excepcion.
+
+#: Ya implementan la estrictez a mano con `raise FileNotFoundError`. No son
+#: detectores: su sitio es `localizar()`, y de paso cambian un error ad hoc por uno
+#: estructurado del §10 (con su codigo y sin ruta local en el mensaje).
+YA_ESTRICTOS: dict[str, str] = {
+    "core/intake_drive.py:185": "localizar",
+    "core/intake_manual.py:252": "localizar",
+    "core/inventory.py:82": "localizar",
+    "core/inventory.py:120": "localizar",
+    "core/whatsapp_intake.py:151": "localizar",
+}
+
+#: Constructores de rutas disfrazados: componen y devuelven. No se tocan — heredan
+#: la estrictez al invertir el default en el paso 5, y por el seam correcto.
+CONSTRUCTORES_NO_TOCAR: dict[str, str] = {
+    "core/email_export.py:1156": "devuelve `path_for(...) / 00_Input`",
+    "core/sala_lectura.py:246": "compone la ruta del MD de una entrada",
+    "core/viability.py:27": "compone `01_Procesado/MD`",
+    "core/demanda_generator.py:26": "compone la base y recorre subrutas",
+    "scripts/migrate_05crm_buckets.py:125": "compone y comprueba la SUBruta `05_CRM`",
+}
+
+#: Detectores de verdad: rama blanda ante la ausencia. Migran a `buscar()`.
+DETECTORES: dict[str, str] = {
+    "core/case_manager.py:170": "buscar",      # los diez de case_manager, tanda 1
+    "core/case_manager.py:398": "buscar",
+    "core/case_manager.py:447": "buscar",
+    "core/case_manager.py:471": "buscar",
+    "core/case_manager.py:501": "buscar",
+    "core/case_manager.py:594": "buscar",
+    "core/case_manager.py:920": "buscar",
+    "core/case_manager.py:1016": "buscar",
+    "core/case_manager.py:1047": "buscar",
+    "core/case_manager.py:1105": "buscar",
+    "core/anon/api.py:471": "buscar",          # SEAM: tests parchean `anon_api.caso_path`
+    "core/anon/api.py:502": "buscar",          # SEAM
+    "core/intake_manual.py:294": "buscar",
+    "core/intake_manual.py:322": "buscar",
+    "core/viability.py:22": "buscar",
+    "scripts/limpieza_post_audit.py:148": "buscar",
+    "scripts/remove_expediente_link.py:44": "buscar",
+    "scripts/scheduled_sync.py:117": "buscar",
+    "scripts/sync_sudespacho.py:326": "buscar",
+}
+
+#: Entrypoints CLI que hoy dan un error LEGIBLE y salen con codigo. Migran a
+#: `buscar()` por una razon medida: con la estrictez a secas, `abrir_caso --case-id`
+#: de un caso inexistente pasa de `[ERROR] Caso no encontrado` con salida 1 a un
+#: `FileNotFoundError` sin capturar y sin una sola linea de salida.
+ENTRYPOINTS_CLI: dict[str, str] = {
+    "scripts/abrir_caso.py:490": "buscar",
+    "scripts/crm_ficha.py:46": "buscar",
+    "scripts/detectar_ocr_ciego.py:157": "buscar",
+    "scripts/sala_maquina.py:280": "buscar",   # SEAM: 20 tests parchean `cli.caso_path`
+}

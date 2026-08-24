@@ -167,7 +167,11 @@ def register_expediente(
     Es idempotente: si el expediente ya está registrado, no hace nada.
     """
     input_dir_name = f"sudespacho_{expediente_id}"
-    index = caso_path(case_id) / "00_Input" / "_caso.md"
+    from core.casos.case_locator import buscar
+    base = buscar(case_id)
+    if base is None:
+        return input_dir_name  # el caso no existe — se registrará al crearlo
+    index = base / "00_Input" / "_caso.md"
 
     if not index.exists():
         return input_dir_name  # ensure_case no se llamó aún — se registrará al crearlo
@@ -395,9 +399,13 @@ def register_drive_ev(
     """
     import yaml as _yaml
 
-    index = caso_path(case_id) / "00_Input" / "_caso.md"
+    from core.casos.case_locator import buscar
+    base = buscar(case_id)
+    if base is None:
+        return                            # el caso no existe
+    index = base / "00_Input" / "_caso.md"
     if not index.exists():
-        return  # ensure_case no se llamó aún
+        return                            # el caso existe, `_caso.md` no
 
     text = index.read_text(encoding="utf-8")
     if text.startswith("---"):
@@ -444,9 +452,13 @@ def get_drive_ev_ids(case_id: str) -> tuple[str | None, str | None]:
     """
     import yaml as _yaml
 
-    index = caso_path(case_id) / "00_Input" / "_caso.md"
+    from core.casos.case_locator import buscar
+    base = buscar(case_id)
+    if base is None:
+        return None, None                      # el caso no existe
+    index = base / "00_Input" / "_caso.md"
     if not index.exists():
-        return None, None
+        return None, None                      # el caso existe, `_caso.md` no
     text = index.read_text(encoding="utf-8")
     if not text.startswith("---"):
         return None, None
@@ -468,9 +480,13 @@ def get_cached_drive_folder_info(
     """
     import yaml as _yaml
 
-    index = caso_path(case_id) / "00_Input" / "_caso.md"
+    from core.casos.case_locator import buscar
+    base = buscar(case_id)
+    if base is None:
+        return None, None                      # el caso no existe
+    index = base / "00_Input" / "_caso.md"
     if not index.exists():
-        return None, None
+        return None, None                      # el caso existe, `_caso.md` no
     text = index.read_text(encoding="utf-8")
     if not text.startswith("---"):
         return None, None
@@ -498,9 +514,13 @@ def cache_drive_folder_info(
     """
     import yaml as _yaml
 
-    index = caso_path(case_id) / "00_Input" / "_caso.md"
+    from core.casos.case_locator import buscar
+    base = buscar(case_id)
+    if base is None:
+        return                      # el caso no existe
+    index = base / "00_Input" / "_caso.md"
     if not index.exists():
-        return
+        return                      # el caso existe, `_caso.md` no
 
     text = index.read_text(encoding="utf-8")
     if text.startswith("---"):
@@ -591,9 +611,13 @@ def list_cases() -> list[str]:
 
 def _read_fm(case_id: str) -> dict:
     """Devuelve el frontmatter completo de `_caso.md` (o {} si no hay/no parsea)."""
-    index = caso_path(case_id) / "00_Input" / "_caso.md"
+    from core.casos.case_locator import buscar
+    base = buscar(case_id)
+    if base is None:
+        return {}                      # el caso no existe
+    index = base / "00_Input" / "_caso.md"
     if not index.exists():
-        return {}
+        return {}                      # el caso existe, `_caso.md` no
     try:
         fm, _ = read_md(index)
     except Exception:
@@ -917,9 +941,13 @@ def read_bucket_overrides(case_id: str) -> dict[str, str]:
     """
     import yaml as _yaml
 
-    index = caso_path(case_id) / "00_Input" / "_caso.md"
+    from core.casos.case_locator import buscar
+    base = buscar(case_id)
+    if base is None:
+        return {}                      # el caso no existe
+    index = base / "00_Input" / "_caso.md"
     if not index.exists():
-        return {}
+        return {}                      # el caso existe, `_caso.md` no
     text = index.read_text(encoding="utf-8")
     if not text.startswith("---"):
         return {}
@@ -1013,9 +1041,13 @@ def is_legacy_intake_v1(case_id: str) -> bool:
     en UI (BaRR3, MaRS15). Migración manual: borrar ``sudespacho_*/`` +
     ``force-pull`` v2.
     """
-    input_dir = caso_path(case_id) / "00_Input"
+    from core.casos.case_locator import buscar
+    base = buscar(case_id)
+    if base is None:
+        return False                      # el caso no existe
+    input_dir = base / "00_Input"
     if not input_dir.exists():
-        return False
+        return False                      # el caso existe, `00_Input` no
     for child in input_dir.iterdir():
         if child.is_dir() and child.name.startswith("sudespacho_"):
             return True
@@ -1102,9 +1134,13 @@ def read_pull_state(
     Schema D8 del entry: ``{id, element, linked_at, last_sync,
     documents_total_crm, doc_ids, by_carpeta, errors}``.
     """
-    index = caso_path(case_id) / "00_Input" / "_caso.md"
+    from core.casos.case_locator import buscar
+    base = buscar(case_id)
+    if base is None:
+        return None                      # el caso no existe
+    index = base / "00_Input" / "_caso.md"
     if not index.exists():
-        return None
+        return None                      # el caso existe, `_caso.md` no
     try:
         fm, _ = read_md(index)
     except Exception:
