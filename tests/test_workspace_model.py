@@ -287,7 +287,7 @@ _CANARIOS_FUGA = {
     "relativa":          "../Desktop/caso",
     "email":             "alguien@example.com",
     "direccion":         "Calle Mayor 3, 2 B",
-    "nombre_en_detalle": "Maria Del Burgo",
+    "nombre_en_detalle": "Fulanita Menganez",
 }
 
 
@@ -313,7 +313,7 @@ def test_ningun_mensaje_de_error_reproduce_lo_que_se_le_pasa_en_detalle(clase, c
     assert not _RE_UNIDAD_WINDOWS.search(texto), texto
     assert chr(92) not in texto, texto
     # Fragmentos que delatan una fuga parcial, no solo la copia literal.
-    for fragmento in ("alguien", "servidor", "Desktop", "example.com", "Del Burgo",
+    for fragmento in ("alguien", "servidor", "Desktop", "example.com", "Menganez",
                       "Calle Mayor"):
         assert fragmento not in texto, (fragmento, texto)
     assert "W-TEST01" in texto
