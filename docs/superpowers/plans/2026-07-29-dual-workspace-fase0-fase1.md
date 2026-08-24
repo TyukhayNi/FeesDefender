@@ -403,9 +403,9 @@ dos valores tenía que servir a tres intenciones distintas**. Se separan:
   **Barrido parametrizado de escritores, sobre el inventario AST del Step 0:** para cada escritor de producción, invocarlo con un W-code inexistente y exigir `LocalWorkspaceMissing` **más** hash de `CASOS_ROOT` idéntico antes y después. Es el test que convierte el criterio de salida (2) en algo que muere si alguien lo rompe, en vez de una frase. Incluye a `catalogo_documental.save_catalog`, que hoy hace `mkdir(parents=True)` sobre la ruta resuelta.
 
   **`ensure_case` sigue creando, por la puerta explícita:** un test exige que el alta de un caso nuevo funciona igual que hoy, y que lo hace vía `destino_de_alta` — mutar `ensure_case` para que llame a `localizar()` debe dejarlo ROJO.
-- [ ] **Step 2: Run tests to verify they fail**
-- [ ] **Step 3: Write the implementation**
-- [ ] **Step 4: Verify** — aquí es donde puede romperse algo ajeno:
+- [x] **Step 2: Run tests to verify they fail**
+- [~] **Step 3: Write the implementation** — **la mitad del LOCALIZADOR, sí; el `CaseCatalog`, NO.**
+- [x] **Step 4: Verify** — aquí es donde puede romperse algo ajeno:
 
 ```bash
 python -m pytest tests/test_case_locator.py tests/test_workspace_catalog.py -q
@@ -413,6 +413,40 @@ python -m pytest -q --tb=short
 ```
 
 Expected: suite completa verde. Si un test ajeno falla, **no** es del entorno: es un consumidor de `path_for` que dependía del fallback (memoria `feedback-test-roto-culpar-al-entorno`). Diagnostícalo y repórtalo.
+
+---
+
+**Estado del Task 6 — la mitad del localizador CERRADA, el `CaseCatalog` NO.**
+
+Se separa así porque el task mezclaba dos piezas con riesgos muy distintos, y solo una
+tocaba los 43 ficheros de producción.
+
+**✅ Construido y verificado (PR #231 + commits posteriores):**
+
+- Las **tres intenciones** — `localizar()` lanza, `buscar()` devuelve `None`,
+  `destino_de_alta()` admite la ausencia. 7 mutantes, cada uno muerto por su frontera.
+- El **alta por la puerta explícita** (`ensure_case` → `destino_de_alta`).
+- **Los 33 detectores migrados**, en cuatro clases que hubo que leer una a una: 19
+  detectores de verdad, 6 que ya lanzaban (pasan a `localizar` y ganan el error del §10),
+  5 constructores que no se tocan, y 3 con *seam* que usan el patrón `try/except` sobre el
+  binding del módulo.
+- **El default invertido**, que es el criterio de salida (2) de la Fase 1. Radio medido
+  **dos veces**: 377 rotos antes de migrar, **18** después.
+- **El guard permanente** (`tests/test_guard_localizador.py`), que **no depende de números
+  de línea** —la lista de trabajo indexada por línea caducó a mitad de la propia
+  migración— y lleva su prueba de mutación. Censo de `strict=False` en producción: **CERO**.
+- Seis fugas del **§16** cerradas por el camino, ninguna buscada.
+
+**❌ Pendiente, y no se marca como hecho:**
+
+- `class CaseCatalog` con `localizar`, `estado_compartido`, `es_proyeccion_local` y
+  `bajo_catalogo`. **No existe el fichero.**
+- `resolve_ref` → `AmbiguousCase` cuando dos casos comparten `meta.id_go`; hoy sigue
+  devolviendo el primero por orden de escaneo (es el A-8 que este task debía cerrar).
+- `meta.proyeccion_local`: ni se escribe ni excluye de `list_cases()`.
+
+Lo pendiente **no bloquea** al Task 7 en su parte de registro y modos, pero sí en
+`estado_compartido` y `bajo_catalogo`, que el resolver consume. Conviene cerrarlo antes.
 
 ---
 
