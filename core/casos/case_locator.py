@@ -175,6 +175,17 @@ def _id_go_of(case_dir: Path) -> str | None:
     return None
 
 
+def _es_proyeccion_local(case_dir: Path) -> bool:
+    """¿Es el reflejo de un caso prestado, y no el caso? (§5.1 / §6.3)
+
+    La copia local lleva su propio `_caso.md` con el MISMO W-code, asi que sin
+    esta marca el catalogo veria dos expedientes con una identidad y el A-8 se
+    dispararia sobre el caso normal. Regla de ambiguedad y marca de proyeccion son
+    dos mitades de la misma decision.
+    """
+    return bool(read_case_meta(case_dir).get("proyeccion_local"))
+
+
 def read_case_meta(case_dir: Path) -> dict:
     """Lee el dict ``meta`` del frontmatter de ``00_Input/_caso.md``.
 
@@ -221,9 +232,20 @@ def resolve_ref(ref: str) -> str:
         if case_dir.name == ref and (case_dir / "00_Input" / "_caso.md").is_file():
             return ref
     # W-code (meta.id_go) → nombre de carpeta canónico.
-    for case_dir in cases:
-        if _id_go_of(case_dir) == ref:
-            return case_dir.name
+    #
+    # A-8 (§5.1): antes devolvia EL PRIMERO que casaba, elegido por orden de
+    # escaneo y sin aviso — renombrar una carpeta cambiaba la respuesta, y el
+    # llamador acababa trabajando sobre otro expediente sin enterarse. Ahora una
+    # identidad duplicada lanza. Las proyecciones locales no cuentan: `list_cases`
+    # ya las excluye, asi que lo que llegue duplicado es ambiguedad de verdad.
+    casan = [c for c in cases if _id_go_of(c) == ref]
+    if len(casan) > 1:
+        from .workspace_model import AmbiguousCase
+        raise AmbiguousCase(
+            w_code=ref,
+            detalle=f"{len(casan)} carpetas del catalogo comparten esta identidad")
+    if casan:
+        return casan[0].name
     return ref
 
 
@@ -323,7 +345,8 @@ def list_cases(ciudad: str | None = None) -> Iterator[Path]:
         city_dir = root / ciudad
         if city_dir.is_dir():
             yield from sorted(
-                (p for p in city_dir.iterdir() if p.is_dir()),
+                (p for p in city_dir.iterdir()
+                 if p.is_dir() and not _es_proyeccion_local(p)),
                 key=lambda p: p.name,
             )
         return
@@ -334,9 +357,12 @@ def list_cases(ciudad: str | None = None) -> Iterator[Path]:
             continue
         if es_carpeta_de_sistema(p.name):
             continue
+        if _es_proyeccion_local(p):
+            continue
         if p.name in _CITY_NAMES:
             for child in sorted(p.iterdir(), key=lambda c: c.name):
-                if child.is_dir() and child.name not in seen:
+                if (child.is_dir() and child.name not in seen
+                        and not _es_proyeccion_local(child)):
                     seen.add(child.name)
                     yield child
         else:
