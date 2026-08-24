@@ -1,8 +1,8 @@
 ---
-estado: propuesto (R5 adjudicada; rev. 7 corrige errores; el bucle de revisión del diseño se detiene, ver §23)
+estado: propuesto (rev. 8: cuatro decisiones tomadas y write-set enumerado; pendiente R6 sobre el plan)
 dueño: Nikolai Tyukhay
 fecha: 2026-08-15
-revision: "7"
+revision: "8"
 ---
 
 # Diseño — Apertura integral sobre componentes existentes
@@ -1609,3 +1609,210 @@ encontraría lo que esta ronda ya sabe.
 Esto no deroga el contrato de revisión de `CLAUDE.md`: todo diff no trivial seguirá pasando por
 revisión adversarial. Lo que se suspende es **iterar el diseño contra sí mismo** cuando lo que
 falta no son palabras.
+
+## 24. Las cuatro decisiones (rev. 8)
+
+*Tomadas el 2026-08-24 por **delegación expresa de Nikolai**. Tres de las cuatro estaban
+declaradas suyas en el §20 y el §23; me las delegó y las tomo, señalando la única que le cuesta
+algo. Cada decisión trae su mecanismo, porque el §23 se detuvo precisamente por escribir
+propiedades sin mecanismo tres veces seguidas.*
+
+### D1 — `CaseWorkspace`: sí, la Fase 1 es predecesora de V1
+
+**Decisión.** La **Fase 1 de la arquitectura dual** (`PLAN.md` fila #3) precede a V1. No se
+construye V1 sobre el gate de `estado_repositorio`.
+
+**Mecanismo, que ya está especificado y no lo invento aquí.** La Fase 1 entrega `CaseRef` con
+unicidad de W-code y `AMBIGUOUS_CASE`, registro local atómico, resolver por identidad, modo
+estricto donde `caso_path` deja de devolver rutas inexistentes y ningún escritor hace `mkdir` de
+la raíz, `core.intake_log` migrado, y **tests contractuales del resolver**. Su criterio de salida
+es una matriz pura con una única resolución para Drive disponible, checkout propio, checkout
+ajeno, scratch, conflicto, ruta ausente y nonce divergente
+(`docs/superpowers/specs/2026-07-29-feesdefender-dual-case-workspace-design.md`, Fase 1). Esa
+matriz **es** el mecanismo que H3-01 echaba en falta.
+
+**Lo que esta decisión te cuesta, dicho sin adornos.** Reordena la cola: la Fase 1 de la fila #3
+pasa a ser trabajo previo al de la fila #15. No es trabajo nuevo —los dos ítems ya estaban
+encolados y la #3 ya iba delante—, pero sí es un compromiso: V1 no empieza antes. La alternativa
+que descarto es la única gratis, y por eso la descarto: seguir con el gate de `estado_repositorio`
+exige aceptar por escrito que el expediente canónico puede mutarse mientras existe una copia local
+no registrada. Con `data/CASOS/` fuera de Git y la custodia forense como argumento probatorio, no
+firmo eso.
+
+**Además, los dos ítems ya estaban acoplados por su propio diseño:** el primer consumidor real de
+`--case-dir` que la Fase 1 nombra es `scripts/sala_maquina`, que es la última etapa de V1.
+
+### D2 — Mutex: lockfile local con creación atómica, y dos ámbitos separados
+
+**Decisión.** Se separan dos problemas que la spec confundía.
+
+1. **Concurrencia entre procesos de esta máquina** —el dolor medido: dos pipelines sobre el mismo
+   caso, relanzar `sala_maquina apply` sin saber si la corrida anterior terminó—. Primitiva:
+   **lockfile con creación atómica** (`O_CREAT|O_EXCL`), vía `filelock`, no artesanía.
+   - **Namespace:** derivado de la **identidad canónica** (W-code), no de la ruta del caso, porque
+     el mutex tiene que existir **antes** de que exista la carpeta. Vive en el **registro local**
+     que entrega D1, que es su hogar natural por la misma razón.
+   - **Contenido:** propietario (host, pid, `boot_id`), nonce, `acquired_at`, `renewed_at`,
+     `lease_seconds`.
+   - **Abandono:** por **lease con renovación**, nunca por antigüedad de PID. La reutilización de
+     PID es justo la trampa que H3-02 nombra.
+   - **Liberación:** exige releer el nonce y demostrar titularidad.
+   - **Escritores obligados:** los de la tabla del §25 marcados «mutex».
+2. **Coordinación entre máquinas:** sigue siendo el lock de checkout del Drive, con sus **siete
+   defectos declarados** y su arreglo en la Fase 2 de la fila #3.
+
+**Por qué no se reutiliza el lock de checkout, con la prueba delante.** No es que esté mal
+escrito: **Drive no es un mutex**. `test_defecto_doble_titular` demuestra que write-then-verify
+sobre un fichero remoto compartido no da exclusión mutua —A relee su propio nonce porque su push
+pisó el de B— y `test_defecto_rollback_cancela_un_lock_ajeno`, que se libera sin comprobar
+titularidad. Un lockfile local con `O_EXCL` no tiene el primero de esos modos de fallo.
+
+**Ámbito declarado:** una máquina. El pipeline corre en este PC y Cowork no toca `core/`. Un mutex
+entre máquinas sobre Drive es lo que produjo los siete defectos; no se repite.
+
+### D3 — Dueño de la secuencia y discriminante de V1: `--modo v1`, no un subcomando
+
+**Decisión.** El discriminante de V1 y el dueño ejecutable de la secuencia son **el mismo objeto**
+—eso es lo que el §23 identificó— y se implementan como un **modo del entrypoint existente**:
+`scripts/abrir_caso.py --modo v1|libre`, con `libre` por defecto.
+
+**Mecanismo.**
+- **Estar en `--modo v1` ES ser una ejecución V1.** No hay heurística ni contexto implícito: el
+  discriminante es el argumento, y por eso es observable y testeable.
+- **Orden de validación: antes de cualquier efecto**, es decir antes de la autoderivación de
+  identidad, antes de `ensure_case`, antes de todo intake y antes de toda lectura remota. En ese
+  punto, en modo `v1`:
+  - `--crm` distinto de `skip` **aborta**; `skip` es el único valor admitido y es el efectivo.
+  - `--fuente` se restringe a `drive_ev`; `email`, `manual` y `whatsapp` **abortan** con mensaje
+    explícito. Esto cierra la vía que R5 encontró y yo no vi: `_FUENTES_CLI` incluye `"email"` y
+    `--fuente email` ejecuta `email_export.export_label`, o sea Gmail real.
+  - se resuelve el workspace por D1 y se adquiere el mutex de D2.
+- **Es dueño del orden completo** de V1: Drive → pull de Sudespacho → intake → atomización local →
+  sala de máquina, y de las rondas de estabilización. Cierra H3-04.
+- **`libre` no cambia**: V2, V3 y el uso ad hoc conservan el comportamiento actual, así que B2-B5
+  no se regresan.
+
+**Por qué un modo y no un subcomando, medido.** Añadir un segundo `@app.command()` a un Typer de
+un solo comando obliga a nombrar el subcomando en **todas** las invocaciones existentes. Hay
+**103 referencias** a `scripts.abrir_caso` en el repo, más `tests/test_abrir_caso_cli.py`. Romper
+la forma documentada del CLI para colocar un marcador de modo es coste sin beneficio: un flag
+validado antes de cualquier efecto es igual de ejecutable. El criterio 50 se respeta en cualquier
+caso: no se crea `scripts.apertura_expediente`.
+
+**Lo que este mecanismo NO promete.** Nada impide correr `--modo libre` sobre un caso de V1. V1 es
+un **contrato de modo**, no una propiedad del expediente, y el criterio E2E prueba el modo. Decirlo
+es preferible a fingir una frontera que no existe.
+
+### D4 — Atomización: `fallo` bloquea el cierre de V1; `parcial` lo deja `preparado_con_pendientes`
+
+**Decisión.** Se conserva el comportamiento vigente del motor —el OCR **sigue** aunque la
+atomización falle, que es lo que fijan
+`tests/test_sala_maquina_cableado_atomize.py:185` y `:213`, y no se regresan— y se separa de él el
+**resultado de V1**:
+
+- atomización `ok` → V1 puede terminar `completo` si el resto lo permite;
+- atomización `parcial` (publicó con errores, o con poda omitida) → V1 termina
+  **`preparado_con_pendientes`**, nunca `completo`;
+- atomización `fallo` → V1 termina **`bloqueado`**.
+
+**Y la poda deja de borrar.** `core/email_atomize/pipeline.py:220,267` y
+`core/adjuntos_contenido/pipeline.py:109` hacen `p.unlink()`. Contra el contrato general del §8
+—conservar o inactivar, no retirada irreversible—, en V1 la poda **archiva o inactiva**, y el
+histórico se conserva. Es un cambio de comportamiento del motor y por tanto lleva su test de no
+regresión.
+
+**Lo que esta decisión no cierra:** el contrato de publicación de la atomización —una sola
+fotografía de entrada, una generación de salida, intención persistida antes de publicar, manifiesto
+content-addressed enlazado al evento— cuelga de la primitiva de D2 y se escribe con ella, no antes.
+
+## 25. El write-set de V1 (rev. 8) — tabla cerrada, no ejemplos
+
+*Esto es lo que H4-05 exigía y la rev. 6 prometió sin hacer, según adjudicó H5-03. Barrido
+ejecutado el 2026-08-24 sobre el árbol de `a91d562`, buscando las primitivas de escritura
+(`write_text`, `write_bytes`, `json.dump`, `mkdir`, `unlink`, `os.replace`, `shutil.copy2`,
+`open(...,"a")`, `append_event`, `.save()`) en los módulos del camino de V1. Re-ejecutable con el
+mismo grep; si aparece un productor nuevo, esta tabla es incompleta y hay que decirlo, no
+extenderla en silencio.*
+
+### 25.1. El hallazgo central del barrido
+
+**No son cinco familias de deuda: es una capa entera.** Los llamadores del guard de escritura en
+todo el árbol son seis —`case_manager` (definición y envoltura), `intake_drive`, `intake_lotes`,
+`intake_manual`, `sync_sudespacho`, `whatsapp_intake`—. **Ninguno** de estos lo llama:
+`scripts/sala_maquina`, `core/sala_maquina`, `core/split_documental`, `core/email_atomize`,
+`core/adjuntos_contenido`. Es decir: **toda la mitad productora de derivados de V1 escribe sin
+pasar por el guard**, y por tanto un caso `prestado` o en `conflicto` recibe derivados en su ruta
+canónica sin desvío ni evento.
+
+`MEJORAS #120` era un caso particular de esto. La deuda real es la capa.
+
+### 25.2. Clases y regla por clase
+
+| Clase | Qué es | Regla en V1 |
+|---|---|---|
+| **contenido** | bytes del expediente | guard **obligatorio** (desvío a `_pendiente_checkin` si procede), bajo mutex, hash SHA-256, evento, y **hash calculado sobre el destino efectivo** |
+| **protocolo** | lock, log forense, manifiesto, estado, marcadores | exento del **desvío**, nunca del **mutex**, y la exención se declara con `es_protocolo=True` explícito. Exento por omisión no vale |
+| **derivado** | OCR, MD, atomización, contenido de adjuntos, vistas, índices | guard **obligatorio**, bajo mutex, ligado a `input_generation`, y **poda por archivado o inactivación, nunca `unlink`** |
+| **estructura** | directorios creados por el inicializador | solo los que tienen productor **dentro de V1** |
+
+### 25.3. La tabla
+
+| # | Productor | Artefacto | `file:line` | Clase | Guard hoy | Decisión V1 |
+|---|---|---|---|---|---|---|
+| 1 | `ensure_case` | raíz del caso + `CASO_SUBDIRS` (9 dirs) | `core/case_manager.py:270-274` | estructura | no | **mínimo**: solo `00_Input`, `01_Procesado` y la base `05_CRM`. `90_Notas personales` sigue eager y **exenta declarada** (`core/config.py:470-483` lo documenta como deliberado; ningún camino de V1 lee ni escribe su contenido) |
+| 2 | `ensure_case` | `01_Procesado/{Sala lectura, MD, _revisar}` | `core/case_manager.py:277-278` | estructura | no | **no se crean.** Barrido: sus productores son `core/sala_lectura.py:92-119` —**módulo deprecado**— y `core/markdown_generator.py:25` —pipeline legacy—. **Ninguno de los tres tiene productor en V1** |
+| 3 | `ensure_case` | plantillas de viabilidad en `02_Analisis/` | `core/case_manager.py:347-376` | estructura | no | **no se copian**: viabilidad es vertical diferida (V3) |
+| 4 | `_atomic_write_caso_md` | `00_Input/_caso.md` | `core/case_manager.py:1020-1061` | protocolo | no («Sin lock, sin versionado», literal) | **bajo mutex**, `es_protocolo=True` |
+| 5 | `register_drive_ev` | `_caso.md` (ids de Drive) | `core/intake_drive.py:321-323` → `core/case_manager.py:393-425` | protocolo | **no consulta la decisión del guard** | bajo mutex; y **debe consumir** la decisión del guard, porque hoy se ejecuta tras un desvío como si no lo hubiera |
+| 6 | `pull_drive_ev` | bytes en `00_Input/01_Drive EV/**` | `core/intake_drive.py:195-198` | contenido | **sí** (`dir_intake`) | sin cambio, más mutex |
+| 7 | `pull_drive_ev` | marcador `.pulled` | `core/intake_drive.py:306` | protocolo | no | exento declarado, **pero siguiendo el destino efectivo** |
+| 8 | `_intake_drive_ev` | hashes del árbol de Drive | `scripts/abrir_caso.py:110-111` | protocolo | n/a | **defecto**: hashea el cajón **canónico**, no el destino efectivo. Con desvío, los bytes depositados quedan sin hash |
+| 9 | `pull_expediente_v2` | bytes en `00_Input/05_CRM/**` | `core/sync_sudespacho.py:1574,1583` | contenido | **sí** (`:1494`) | sin cambio, más mutex |
+| 10 | `pull_expediente_v2` | registro de ocurrencias | `core/sync_sudespacho.py:1479,1635` | protocolo | **no, y se persiste ANTES del guard** | bajo mutex y `es_protocolo=True`. Es `MEJORAS #120`; el orden deliberado (N2) se conserva, la exención se declara |
+| 11 | `pull_expediente_v2` | marcador de pull | `core/sync_sudespacho.py:1244` | protocolo | no | exento declarado, bajo mutex |
+| 12 | `IntakeManifest.save` | `_intake_hashes.json` | `core/intake_manifest.py:182-198` | protocolo | no (ligado al path canónico) | bajo mutex; y **no puede afirmar una ruta viva mientras los bytes están en la bandeja** |
+| 13 | `intake_log.append_event` | `_intake_log.jsonl` | `core/intake_log.py:191-200` | protocolo | no | append-only, exento declarado, bajo mutex |
+| 14 | `email_atomize` | `01_Procesado/Emails/mensajes/*.md` y `*.historial.md` | `core/email_atomize/pipeline.py:165,187` | derivado | **no** | guard + mutex + generación |
+| 15 | `email_atomize` | `adjuntos/<base><ext>` (binario) y su ficha | `core/email_atomize/pipeline.py:371,390` | derivado | **no** | guard + mutex + generación |
+| 16 | `email_atomize` | `corpus.jsonl`, `CORREOS_LECTURA.md`, `INDICE_ADJUNTOS.md` | `core/email_atomize/pipeline.py:242,243,245` | derivado | **no** | guard + mutex; agregados **coherentes con el árbol completo**, no con el conjunto reducido |
+| 17 | `email_atomize` | `_revision/*`, `vistas/*`, `_registro.json` | `core/email_atomize/pipeline.py:251,263,272` | derivado | **no** | guard + mutex + generación |
+| 18 | `email_atomize` | **poda** de mensajes y vistas | `core/email_atomize/pipeline.py:220,267` (`unlink()`) | derivado | **no** | **archivar o inactivar, no borrar** (D4) |
+| 19 | `adjuntos_contenido` | `*.contenido.md` y `_contenido_estado.json` | `core/adjuntos_contenido/pipeline.py:86,32` | derivado | **no** | guard + mutex + generación |
+| 20 | `adjuntos_contenido` | **poda** de contenidos | `core/adjuntos_contenido/pipeline.py:109` (`unlink()`) | derivado | **no** | **archivar o inactivar** (D4) |
+| 21 | `sala_maquina` (CLI) | `_sala_maquina_state.json` | `scripts/sala_maquina.py:95` | protocolo | **no** | bajo mutex, `es_protocolo=True` |
+| 22 | `sala_maquina` (CLI) | `_tiempos.jsonl` | `scripts/sala_maquina.py:135` | protocolo | **no** | append-only, exento declarado, bajo mutex |
+| 23 | `sala_maquina` | `_cobertura.json` y su vista `_cobertura.md` | `scripts/sala_maquina.py:27,142-165` | derivado | **no** | guard + mutex. La vista se reescribe por corrida: debe fusionarse, no reducirse al delta (defecto ya medido: 169 filas → 2 en W-02XOR7) |
+| 24 | `sala_maquina` | `01_OCR/**`, `03_MD/**`, `raw_text` | `core/sala_maquina.py` (salidas del motor) | derivado | **no** | guard + mutex + generación |
+| 25 | `sala_maquina` | `99_Versiones anteriores/**` | `core/sala_maquina.py:448` | derivado | **no** | destino del **archivado** de #18, #20 y #24; nunca se borra de aquí |
+| 26 | `split_documental` | `_MANIFIESTO.json` y `_MANIFIESTO.md` del bundle | `core/split_documental.py:305,320` | protocolo | **no** | bajo mutex, `es_protocolo=True` |
+| 27 | `sala_maquina` / atomización | eventos `atomizado_email`, `contenido_adjuntos` y los del OCR | `scripts/sala_maquina.py:42` y `core/sala_maquina.py:30` | protocolo | no | append-only, exento declarado |
+
+**27 clases de artefacto, 6 productores.** Repartidas por clase: 3 de estructura, 12 de protocolo,
+**2 de contenido** y **10 de derivado**.
+
+Y el recuento que importa: **solo dos consultan el guard hoy —#6 y #9— y son justamente las dos de
+clase contenido.** Las **diez de clase derivado no lo consultan ninguna**, y ahí la exención no es
+legítima: son bytes del expediente que un caso prestado recibiría en su ruta canónica. Las doce de
+protocolo están exentas **por omisión, no por declaración**, que es lo que esta tabla convierte en
+explícito. Además: dos borran de forma irreversible (#18, #20), una hashea el cajón equivocado (#8)
+y una persiste antes del guard (#10).
+
+### 25.4. La prueba que exige esta tabla
+
+- **E2E de workspace no disponible:** comparar los **cuatro planos** del contrato dual —árbol del
+  caso, canon incluido el estado de canal, llamadas externas y estado local de aplicación— y
+  acreditar cero cambios. No basta comparar los bytes del árbol: `tests/test_guard_intake_wiring.py:132-138`
+  afirma solo sobre `*.pdf` y el evento, y sus 21 tests **pasan en verde** con las 17 escrituras
+  sin guard en pie.
+- **Custodia:** por cada artefacto de clase «contenido», la cadena bytes → hash → manifiesto →
+  evento debe seguir el **destino efectivo**, no la ruta intencionada.
+- **Poda:** una prueba por cada `unlink` retirado, que demuestre que el artefacto retirado sigue
+  recuperable en `99_Versiones anteriores`.
+
+### 25.5. Lo que esta tabla NO cierra
+
+El **orden durable** de publicación por clase de operación (H3-03 acotado), la **monotonía de
+observación** por fuente (H3-05) y el **snapshot inmutable por ronda** (H3-06) siguen abiertos: son
+contratos que cuelgan de la primitiva de D2 y se escriben con el plan, no aquí. Esta tabla dice
+**qué se escribe, dónde, de qué clase y bajo qué regla**; no dice todavía **en qué orden** ni **cómo
+se reconcilia tras un crash**.
