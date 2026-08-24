@@ -249,12 +249,10 @@ def save_file_crm_branch(
                 f"branch_path inválido (path traversal): {branch_path!r}"
             )
 
-    case_dir = caso_path(case_id)
-    if not case_dir.exists():
-        raise FileNotFoundError(
-            f"El caso '{case_id}' no existe en {settings.casos_root}. "
-            "Llama a ensure_case() antes de save_file_crm_branch()."
-        )
+    # `localizar` lanza el error estructurado del §10; el `FileNotFoundError` que
+    # habia aqui interpolaba `settings.casos_root`, que el §16 prohibe.
+    from core.casos.case_locator import localizar
+    case_dir = localizar(case_id)
 
     # Guard de escritura (DISEÑO_V2 §6): si el caso está prestado/conflicto, el
     # fichero va a la bandeja _pendiente_checkin/crm_manual/ con evento en el log.

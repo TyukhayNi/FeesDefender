@@ -9,6 +9,7 @@ Plan: ``docs/superpowers/plans/PLAN_SUBDIVISION_CIUDADES.md`` (Fase 1).
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Iterator
 
@@ -59,6 +60,25 @@ def path_for(case_id: str) -> Path:
 # espera que el caso exista y quien no, cosa que un flag no permite.
 
 
+_RE_W_CODE = re.compile(r"\((W-[A-Za-z0-9]+)\)")
+
+
+def _w_code_de(case_id: str) -> str | None:
+    """El W-code del `case_id`, o `None`. **Nunca el `case_id` entero.**
+
+    El error tiene que decir DE QUE caso habla, o deja de ser diagnosticable —y eso
+    lo pedia un test que ya existia (`test_pull_falla_si_caso_no_existe`). Pero un
+    `case_id` es `BaXXX - <direccion> - (W-XXXXX) - <tipo>`: lleva la direccion del
+    inmueble dentro, o sea PII, y el §16 prohibe que aparezca en un mensaje. Se
+    extrae solo el W-code, que identifica sin exponer.
+
+    Si no hay W-code el error no lleva identificador: preferible a filtrar una
+    cadena arbitraria. Los casos reales siempre lo llevan, por convencion de nombre.
+    """
+    m = _RE_W_CODE.search(case_id or "")
+    return m.group(1) if m else None
+
+
 def localizar(case_id: str) -> Path:
     """La ruta de un caso que **debe** existir. Lanza `LocalWorkspaceMissing` si no.
 
@@ -69,6 +89,7 @@ def localizar(case_id: str) -> Path:
     if encontrada is None:
         from .workspace_model import LocalWorkspaceMissing
         raise LocalWorkspaceMissing(
+            w_code=_w_code_de(case_id),
             detalle="el caso no existe en ningun layout del catalogo")
     return encontrada
 

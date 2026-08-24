@@ -146,9 +146,31 @@ class TestParseDriveUrl:
 # ---------------------------------------------------------------------------
 
 def test_pull_falla_si_caso_no_existe(tmp_casos_root, monkeypatch):
+    """Ahora lanza el error estructurado del §10, no un `FileNotFoundError` ad hoc.
+
+    Y el mensaje identifica el caso por su **W-code**, no por el `case_id` entero:
+    un `case_id` es `BaXXX - <direccion> - (W-XXXXX) - <tipo>` y lleva la direccion
+    del inmueble dentro, que el §16 prohibe publicar en un mensaje. Este caso
+    sintetico no tiene W-code, asi que el error no lleva identificador — preferible
+    a filtrar una cadena arbitraria.
+    """
+    from core.casos.workspace_model import LocalWorkspaceMissing
     _mock_rclone_ok(monkeypatch)
-    with pytest.raises(FileNotFoundError, match="EV-9999-XXX"):
+    with pytest.raises(LocalWorkspaceMissing) as exc:
         pull_drive_ev("EV-9999-XXX", folder_id="folderABC", team_id="teamXYZ")
+    assert exc.value.codigo == "LOCAL_WORKSPACE_MISSING"
+    assert str(tmp_casos_root) not in str(exc.value)
+
+
+def test_pull_de_un_caso_con_w_code_lo_identifica_en_el_error(tmp_casos_root, monkeypatch):
+    """La otra mitad: con W-code, el error SI dice de que caso habla."""
+    from core.casos.workspace_model import LocalWorkspaceMissing
+    _mock_rclone_ok(monkeypatch)
+    with pytest.raises(LocalWorkspaceMissing) as exc:
+        pull_drive_ev("BaRS9 - Calle Falsa 1 - (W-TEST99) - Vuelta",
+                      folder_id="folderABC", team_id="teamXYZ")
+    assert "W-TEST99" in str(exc.value)
+    assert "Calle Falsa" not in str(exc.value)      # la direccion NO
 
 
 # ---------------------------------------------------------------------------

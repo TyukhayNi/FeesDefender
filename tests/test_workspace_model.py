@@ -343,3 +343,46 @@ def test_el_error_dice_que_no_hubo_efecto_cuando_no_lo_hubo():
     texto = str(err).lower()
     assert "sin efecto" in texto or "no se produjo" in texto
     assert "reintenta" not in texto
+
+
+# --------------------------------------------------------------------------
+# `LocalWorkspaceMissing` tambien es un `FileNotFoundError`
+# --------------------------------------------------------------------------
+#
+# Medido al migrar el Task 6: **15 sitios de produccion** capturan
+# `FileNotFoundError`, entre ellos `scripts/abrir_caso.py:162` y `:173`,
+# `scripts/crm_ficha.py:60` y `core/intake_drive.py:297`. Cinco funciones lanzaban
+# `FileNotFoundError` a mano cuando el caso no existia, y al migrarlas al error
+# estructurado del §10 la excepcion se ESCAPABA de esos manejadores.
+#
+# La suite solo cazo 3 de esos caminos, que es exactamente el modo de fallo caro:
+# un cambio de tipo de excepcion rompe manejadores que ningun test cubre.
+#
+# La herencia doble no es un parche de compatibilidad: «el workspace local no
+# existe» ES una condicion de fichero ausente. Lo que estaba mal era tener dos
+# vocabularios para lo mismo.
+
+
+def test_local_workspace_missing_es_tambien_filenotfounderror():
+    assert issubclass(wm.LocalWorkspaceMissing, FileNotFoundError)
+    assert issubclass(wm.LocalWorkspaceMissing, wm.WorkspaceError)
+
+
+def test_un_except_filenotfounderror_preexistente_sigue_capturandolo():
+    """El contrato que protege los 15 manejadores de produccion."""
+    try:
+        raise wm.LocalWorkspaceMissing(w_code="W-TEST01")
+    except FileNotFoundError as exc:
+        assert exc.codigo == "LOCAL_WORKSPACE_MISSING"
+    else:
+        pytest.fail("no lo capturo `except FileNotFoundError`")
+
+
+def test_los_demas_errores_NO_son_filenotfounderror():
+    """Solo este mapea a «no encontrado». Heredar en bloque seria mentir:
+    un caso PRESTADO existe, y tratarlo como ausente es justo la confusion que
+    todo este diseno intenta deshacer."""
+    for clase in wm.errores_conocidos():
+        if clase is wm.LocalWorkspaceMissing:
+            continue
+        assert not issubclass(clase, FileNotFoundError), clase.__name__

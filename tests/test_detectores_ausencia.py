@@ -180,3 +180,43 @@ class TestSobrevivenALaInversion:
     def test_register_drive_ev_no_propaga(self, localizador_estricto):
         import core.case_manager as cm
         cm.register_drive_ev("NO-EXISTE", team_id="T", folder_id="F")
+
+
+# --------------------------------------------------------------------------
+# Los cinco que YA lanzaban: de `FileNotFoundError` ad hoc al error del §10
+# --------------------------------------------------------------------------
+#
+# La heuristica los proponia como detectores, y no lo son: ya implementaban la
+# estrictez a mano. Migrarlos a `localizar()` no cambia QUE lanzan, cambia QUE
+# lanzan — un error estructurado con su codigo, en vez de un `FileNotFoundError`
+# generico cuyo mensaje, ademas, interpolaba `settings.casos_root`.
+#
+# Ese detalle no es menor: el §16 prohibe rutas locales en los mensajes, y estos
+# cinco las metian. Es una fuga de la misma clase que los canarios del Task 4
+# vigilan en el modelo, cometida en el borde del sistema.
+
+
+class TestLosQueYaLanzabanMejoranElError:
+    @pytest.mark.parametrize("modulo,funcion,args", [
+        ("core.intake_drive", "pull_drive_ev", ("NO-EXISTE", "F", "T")),
+        ("core.inventory", "scan", ("NO-EXISTE",)),
+    ])
+    def test_lanza_el_error_estructurado_del_spec(self, root, modulo, funcion, args):
+        import importlib as il
+        from core.casos.workspace_model import LocalWorkspaceMissing
+        mod = il.import_module(modulo)
+        with pytest.raises(LocalWorkspaceMissing):
+            getattr(mod, funcion)(*args)
+
+    @pytest.mark.parametrize("modulo,funcion,args", [
+        ("core.intake_drive", "pull_drive_ev", ("NO-EXISTE", "F", "T")),
+        ("core.inventory", "scan", ("NO-EXISTE",)),
+    ])
+    def test_el_mensaje_no_lleva_la_raiz_de_casos(self, root, modulo, funcion, args):
+        """§16: el `FileNotFoundError` viejo interpolaba `settings.casos_root`."""
+        import importlib as il
+        from core.casos.workspace_model import LocalWorkspaceMissing
+        mod = il.import_module(modulo)
+        with pytest.raises(LocalWorkspaceMissing) as exc:
+            getattr(mod, funcion)(*args)
+        assert str(root) not in str(exc.value)

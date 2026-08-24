@@ -148,12 +148,11 @@ def deposit_export(
             f"rol_subdir inválido: {rol_subdir!r}. "
             f"Válidos: {WHATSAPP_SUBDIRS}"
         )
-    case_dir = caso_path(case_id)
-    if not case_dir.exists():
-        raise FileNotFoundError(
-            f"El caso '{case_id}' no existe en {settings.casos_root}. "
-            "Llama a ensure_case() antes de deposit_export()."
-        )
+    # `localizar` ya lanza el error estructurado del §10 si el caso no existe, y su
+    # mensaje NO lleva la ruta local — el `FileNotFoundError` que habia aqui
+    # interpolaba `settings.casos_root`, que el §16 prohibe.
+    from core.casos.case_locator import localizar
+    case_dir = localizar(case_id)
 
     preview = analyze(content, zip_name=zip_name)
     zip_sha = compute_sha256_bytes(content)
