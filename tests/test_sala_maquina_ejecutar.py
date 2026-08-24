@@ -209,7 +209,7 @@ def test_apply_estado_y_log_solo_exitos_con_sha256(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "caso_path", lambda cid: case)
     eventos = []
     monkeypatch.setattr(cli, "append_event",
-                        lambda cid, ev, *, details=None: eventos.append((ev, details)))
+                        lambda destino, ev, *, details=None, case_id=None: eventos.append((ev, details)))
 
     real_write_md = sm.write_md
 
@@ -728,7 +728,7 @@ def test_reforzar_fuentes_desaparecidas_no_emite_evento(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "caso_path", lambda cid: case)
     eventos = []
     monkeypatch.setattr(cli, "append_event",
-                        lambda cid, ev, *, details=None: eventos.append(ev))
+                        lambda destino, ev, *, details=None, case_id=None: eventos.append(ev))
     cli.apply("EV-2026-001")                     # escaneado = empty (reforzable)
     eventos.clear()
 
@@ -752,7 +752,7 @@ def test_reforzar_excluye_dudoso_nativo_no_reforzable(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "caso_path", lambda cid: case)
     eventos = []
     monkeypatch.setattr(cli, "append_event",
-                        lambda cid, ev, *, details=None: eventos.append(ev))
+                        lambda destino, ev, *, details=None, case_id=None: eventos.append(ev))
     cli.apply("EV-2026-001")                     # nativo empty
     eventos.clear()
 

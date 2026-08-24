@@ -65,16 +65,21 @@ def test_paridad_shape_con_core(tmp_path, monkeypatch):
     """La línea de traza tiene las MISMAS claves que core.append_event escribe.
 
     `caso_path` delega en case_locator; para aislar el test de esa maquinaria,
-    parcheamos `intake_log.log_path` para que escriba en tmp_path directamente.
+    le pasamos el arbol del caso directamente (Task 8: `append_event` recibe
+    el destino, asi que ya no hace falta parchear la resolucion de rutas).
     """
     import json as _json
     from core import intake_log
 
-    logf = tmp_path / "_intake_log.jsonl"
-    monkeypatch.setattr(intake_log, "log_path", lambda case_id: logf)
+    # Ya no hace falta parchear nada para redirigir: `append_event` acepta el
+    # arbol del caso, que es justo el punto del Task 8 (B0-1). Antes habia que
+    # sustituir `log_path` porque la ruta se resolvia SIEMPRE por `CASOS_ROOT`.
+    caso = tmp_path / "CASO_PARIDAD"
+    (caso / "00_Input").mkdir(parents=True)
+    logf = caso / "00_Input" / "_intake_log.jsonl"
 
     intake_log.append_event(
-        "CASO_PARIDAD", "upload_manual",
+        caso, "upload_manual", case_id="CASO_PARIDAD",
         details={"count": 1, "files": [{"path": "04_Manual/a.pdf", "sha256": "H"}]},
         actor="a", ts="t",
     )

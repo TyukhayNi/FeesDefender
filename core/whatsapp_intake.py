@@ -216,9 +216,11 @@ def deposit_export(
             origen="whatsapp_intake", items=items,
         )
 
+    # B0-1: `case_dir` se resolvio al principio de la funcion.
     intake_log.append_event(
-        case_id,
+        case_dir,
         "upload_whatsapp",
+        case_id=case_id,
         details={
             "chat": preview.chat_name,
             "rol": rol_subdir,

@@ -103,7 +103,9 @@ def _intake_generico(
                    f"mismatch={rec.mismatches} extra={rec.extras}", err=True)
         raise typer.Exit(code=1)
     if plan.con_sha:
-        intake_log.append_event(case_id, brain.FUENTE_A_EVENTO[fuente],
+        # B0-1: `_intake_generico` ya tiene el `case_dir`, asi que el evento cae
+        # junto a los documentos que acaba de ingerir.
+        intake_log.append_event(case_dir, brain.FUENTE_A_EVENTO[fuente], case_id=case_id,
                                 details={"count": len(plan.con_sha), "files": plan.con_sha})
 
 

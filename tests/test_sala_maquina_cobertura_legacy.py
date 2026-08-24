@@ -57,7 +57,7 @@ def caso_legacy(tmp_path, monkeypatch):
                         estado="ok", chars=8912, ocr=True)
 
     monkeypatch.setattr(cli, "caso_path", lambda cid: case_dir)
-    monkeypatch.setattr(cli, "append_event", lambda cid, ev, *, details=None: None)
+    monkeypatch.setattr(cli, "append_event", lambda destino, ev, *, details=None, case_id=None: None)
     monkeypatch.setattr(cli, "_atomizar_correo", lambda cid, cd: None)
     return case_dir
 

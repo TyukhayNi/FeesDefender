@@ -35,7 +35,7 @@ def caso(tmp_path, monkeypatch):
     eventos: list[tuple[str, dict]] = []
     monkeypatch.setattr(cli, "caso_path", lambda cid: case_dir)
     monkeypatch.setattr(cli, "append_event",
-                        lambda cid, ev, *, details=None: eventos.append((ev, details or {})))
+                        lambda destino, ev, *, details=None, case_id=None: eventos.append((ev, details or {})))
     monkeypatch.setattr(cli, "_atomizar_correo", lambda cid, cd: None)
     monkeypatch.setattr(cli.sm, "ejecutar", lambda *a, **k: [])
     return case_dir, eventos
@@ -275,7 +275,7 @@ def test_el_evento_real_es_valido_y_serializable(tmp_path, monkeypatch):
 
     cli.apply("W-TEST97")
 
-    eventos = [e for e in intake_log.read_events("W-TEST97")
+    eventos = [e for e in intake_log.read_events_de(case_dir)
                if e["event"] == "contenido_adjuntos"]
     assert len(eventos) == 1
     assert eventos[0]["details"]["status"] == "ok"

@@ -85,6 +85,17 @@ INTAKE_EVENTS: frozenset[str] = frozenset({
                                  # un evento de schema 2 nunca lo lleva. No lleva "files".
                                  # Sin `details_schema`: forma 1 (claves
                                  # `eml_nivel_superior`/`eml_totales`, retiradas en #98).
+
+    # --- Fase 1 dual: ciclo de vida del workspace (Task 8) -------------------
+    # Se declaran aqui aunque su EMISION llegue en fases posteriores: el
+    # vocabulario del log es contrato de lectura, y un evento que no se puede
+    # nombrar no se puede escribir cuando toque.
+    "scratch_creado",                # nace un local_scratch sin canon todavia
+    "scratch_promovido",             # el scratch pasa a expediente publicado
+    "checkout_adoptado",             # §15: adopcion explicita de un checkout legacy
+    "conflicto_resuelto",            # se sale de estado_repositorio=conflicto
+    "checkout_cancelado_unilateral", # el lock se cancelo mientras el titular
+                                     # trabajaba offline (§8.7)
 })
 
 
@@ -148,18 +159,54 @@ def get_actor() -> str:
 # API pública: escritura y lectura
 # ---------------------------------------------------------------------------
 
-def log_path(case_id: str) -> Path:
-    """Ruta absoluta al log JSONL del caso. No crea el archivo."""
-    return caso_path(case_id) / "00_Input" / _LOG_FILENAME
+def log_path_de(case_dir: Path) -> Path:
+    """Ruta del log JSONL **dentro de un arbol de caso ya resuelto**. No crea nada.
+
+    Sustituye a `log_path(case_id)`, que se **retira** en esta fase (Fase 1, B0-1).
+    La diferencia no es de estilo: `log_path(case_id)` resolvia siempre por
+    `CASOS_ROOT`, asi que con `--case-dir` los documentos iban a la copia local y
+    el evento de custodia al canon. Custodia partida en dos.
+    """
+    return Path(case_dir) / "00_Input" / _LOG_FILENAME
+
+
+def _resolver_destino(destino: Any, case_id: str | None) -> tuple[Path, str | None]:
+    """`(case_dir, case_id)` a partir de un workspace, una ruta o un `case_id`.
+
+    Las tres formas existen a proposito, y solo la tercera es legado:
+
+    - **`CaseWorkspace`** — la via normal. El `case_id` sale de el, asi que no hay
+      forma de que el evento diga un caso y los bytes esten en otro.
+    - **`Path`** — un arbol ya resuelto (`--case-dir`). El `case_id` lo pasa el
+      llamante, que es quien sabe a que expediente pertenece.
+    - **`str`** — `legacy_unresolved` (Fase 4): resuelve por el catalogo. Ya no
+      puede fabricar un fantasma —`localizar` es estricto desde el Task 6— pero
+      sigue sin poder apuntar a una copia local.
+    """
+    from pathlib import Path as _P
+
+    ws_root = getattr(destino, "working_root", None)
+    if ws_root is not None:                                  # CaseWorkspace
+        ref = getattr(destino, "case_ref", None)
+        return _P(ws_root), (case_id or getattr(ref, "case_id", None)
+                             or getattr(ref, "w_code", None))
+    if isinstance(destino, _P):
+        return destino, case_id
+    if isinstance(destino, str):                             # legacy_unresolved
+        from core.casos.case_locator import localizar
+        return localizar(destino), case_id or destino
+    raise TypeError(
+        f"destino debe ser CaseWorkspace, Path o case_id; llego {type(destino).__name__}")
 
 
 def append_event(
-    case_id: str,
+    destino: Any,
     event: str,
     *,
     details: dict[str, Any] | None = None,
     actor: str | None = None,
     ts: str | None = None,
+    case_id: str | None = None,
 ) -> Path:
     """Añade una línea al log JSONL del caso (M10).
 
@@ -167,8 +214,11 @@ def append_event(
     para resistir crashes (M10-Q4).
 
     Args:
-        case_id: ID del caso. La carpeta ``00_Input/`` se crea si no existe.
+        destino: **Donde estan los bytes.** Un `CaseWorkspace` (la via normal, lo
+            que devuelve el resolver), un `Path` al arbol del caso ya resuelto, o
+            un `case_id` en el camino legacy (`legacy_unresolved`, Fase 4).
         event: Tipo de evento (debe estar en ``INTAKE_EVENTS``).
+        case_id: Solo para el camino `Path`. Con un `CaseWorkspace` sale de el.
         details: Payload específico del evento. Default ``{}``. Debe ser
             JSON-serializable.
         actor: Override explícito del actor. Default ``get_actor()``.
@@ -187,8 +237,20 @@ def append_event(
             f"Eventos válidos: {sorted(INTAKE_EVENTS)}"
         )
 
-    path = log_path(case_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    case_dir, case_id = _resolver_destino(destino, case_id)
+
+    # B0-1: **no** se crea la raiz del caso. Antes habia un
+    # `path.parent.mkdir(parents=True, exist_ok=True)` aqui, y eso convertia un
+    # `append_event` sobre un W-code mal escrito en una carpeta fantasma con ese
+    # nombre en la unidad COMPARTIDA. Crear un expediente es trabajo de la
+    # apertura, no de la auditoria.
+    entrada_dir = case_dir / "00_Input"
+    if not entrada_dir.is_dir():
+        from core.casos.workspace_model import LocalWorkspaceMissing
+        raise LocalWorkspaceMissing(
+            detalle="no hay `00_Input` en el destino: auditar no crea expedientes")
+
+    path = log_path_de(case_dir)
 
     entry: dict[str, Any] = {
         "ts": ts or now_iso(),
@@ -220,12 +282,27 @@ def read_events(case_id: str) -> list[dict[str, Any]]:
     """
     # Guarda seam-safe: `log_path` pasa por `caso_path`, que desde el paso 5
     # lanza si el caso no existe. Se captura aqui para conservar la rama elegante.
-    try:
-        path = log_path(case_id)
-    except FileNotFoundError:
+    # Conserva su firma a proposito: es un LECTOR, no fabrica nada, asi que nunca
+    # causo el B0-1 — y cambiarsela tocaria 46 sitios de test sin cerrar ningun
+    # defecto. Resuelve por `buscar`, que devuelve `None` en vez de lanzar.
+    from core.casos.case_locator import buscar
+    case_dir = buscar(case_id)
+    if case_dir is None:
         return []                      # el caso no existe
+    return read_events_de(case_dir)
+
+
+def read_events_de(case_dir: Path) -> list[dict[str, Any]]:
+    """Lee el log **de un arbol de caso ya resuelto**. Hermano de `log_path_de`.
+
+    Existe porque sin el la migracion quedaba a medias: `append_event` podia
+    escribir junto a los bytes, pero recuperarlo exigia pasar por el catalogo. Con
+    `--case-dir` —una copia local que el catalogo NO conoce— eso hacia ilegible lo
+    que se acababa de escribir.
+    """
+    path = log_path_de(case_dir)
     if not path.exists():
-        return []                      # el caso existe, el log no
+        return []
     out: list[dict[str, Any]] = []
     with open(path, encoding="utf-8") as f:
         for raw in f:

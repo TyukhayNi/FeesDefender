@@ -41,7 +41,7 @@ def caso(tmp_path, monkeypatch):
     eventos: list[tuple[str, dict]] = []
     monkeypatch.setattr(cli, "caso_path", lambda cid: case_dir)
     monkeypatch.setattr(cli, "append_event",
-                        lambda cid, ev, *, details=None: eventos.append((ev, details or {})))
+                        lambda destino, ev, *, details=None, case_id=None: eventos.append((ev, details or {})))
     monkeypatch.setattr(cli.sm, "ejecutar", lambda *a, **k: [])
     return case_dir, eventos
 
@@ -81,7 +81,7 @@ def test_atomiza_antes_de_construir_el_plan_de_ocr(caso, monkeypatch):
         orden.append("ejecutar")
         return []
 
-    def fake_evento(cid, ev, *, details=None):
+    def fake_evento(destino, ev, *, details=None, case_id=None):
         orden.append(f"evento:{ev}")
 
     def fake_echo(msg="", **kw):
@@ -279,7 +279,7 @@ def test_un_fallo_de_log_no_aborta_el_ocr(caso, monkeypatch, capsys):
     (case_dir / "00_Input" / "03_Email" / "a.eml").write_bytes(_eml("<a@x>"))
     ejecutado: list[int] = []
 
-    def log_roto(cid, ev, *, details=None):
+    def log_roto(destino, ev, *, details=None, case_id=None):
         # SOLO el evento de atomización. `apply` emite después `procesado_sala_maquina`
         # con un `append_event` SIN captura (`scripts/sala_maquina.py:195`): un doble que
         # lanzara para todo evento haría fallar este test por una vía ajena al cableado
@@ -424,7 +424,7 @@ def test_evento_real_es_valido_y_serializable(tmp_path, monkeypatch):
 
     cli.apply("W-TEST99")
 
-    eventos = [e for e in intake_log.read_events("W-TEST99")
+    eventos = [e for e in intake_log.read_events_de(case_dir)
                if e["event"] == "atomizado_email"]
     assert len(eventos) == 1
     assert eventos[0]["details"]["status"] == "ok"

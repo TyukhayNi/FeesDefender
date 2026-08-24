@@ -55,16 +55,15 @@ def _caso(root):
 # --------------------------------------------------- el constructor es estricto
 
 class TestLosConstructoresExigenElCaso:
-    def test_log_path_de_un_caso_ausente_LANZA(self, root):
-        from core.casos.workspace_model import LocalWorkspaceMissing
-        from core.intake_log import log_path
-        with pytest.raises(LocalWorkspaceMissing):
-            log_path("NO-EXISTE")
-
-    def test_log_path_de_un_caso_existente_devuelve_la_ruta(self, root):
-        from core.intake_log import log_path
-        d = _caso(root)
-        assert log_path(CASO) == d / "00_Input" / "_intake_log.jsonl"
+    # `log_path(case_id)` se RETIRO en el Task 8 (B0-1), asi que los dos tests que
+    # vivian aqui —que era estricto y que devolvia la ruta— se quedaron sin sujeto.
+    # No se borran en silencio: su propiedad sobrevive en otro sitio y con otra
+    # forma. `log_path_de(case_dir)` no puede ser estricto sobre un `case_id`
+    # porque ya no recibe uno, que es justo el punto del task: la ruta del log
+    # sale del arbol donde estan los bytes, no del catalogo.
+    #
+    # Lo que fijaban se prueba ahora en `tests/test_intake_log_workspace.py`:
+    # `TestLogPathSeRetira` y `TestNoFabricaExpedientes`.
 
     def test_revisar_dir_de_un_caso_ausente_LANZA(self, root):
         from core.casos.workspace_model import LocalWorkspaceMissing
@@ -79,11 +78,12 @@ class TestLosConstructoresExigenElCaso:
             _drive_ev_dir("NO-EXISTE")
 
     def test_ninguno_crea_nada_al_lanzar(self, root):
+        """Se prueba con `_revisar_dir`: `log_path` se retiro en el Task 8."""
         from core.casos.workspace_model import LocalWorkspaceMissing
-        from core.intake_log import log_path
+        from core.sala_lectura import _revisar_dir
         antes = sorted(p.name for p in root.iterdir())
         with pytest.raises(LocalWorkspaceMissing):
-            log_path("NO-EXISTE")
+            _revisar_dir("NO-EXISTE")
         assert sorted(p.name for p in root.iterdir()) == antes
 
 

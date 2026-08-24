@@ -28,8 +28,8 @@ def _caso(tmp_path, monkeypatch):
     case_dir = tmp_path / "BaRS9 - Prueba - (W-TEST99) - Negativa oferta aceptada"
     (case_dir / "00_Input" / "01_Drive EV").mkdir(parents=True)
     monkeypatch.setattr(cli, "caso_path", lambda cid: case_dir)
-    monkeypatch.setattr(cli, "append_event", lambda cid, ev, *, details=None: None)
-    monkeypatch.setattr(sm, "append_event", lambda cid, ev, *, details=None: None)
+    monkeypatch.setattr(cli, "append_event", lambda destino, ev, *, details=None, case_id=None: None)
+    monkeypatch.setattr(sm, "append_event", lambda destino, ev, *, details=None, case_id=None: None)
     monkeypatch.setattr(cli, "_atomizar_correo", lambda cid, cd: None)
     monkeypatch.setattr(cli.case_locator, "resolve_ref", lambda ref: ref)
     return case_dir

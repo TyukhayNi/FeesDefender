@@ -859,7 +859,8 @@ def _split_o_md(case_dir: Path, sm_dir: Path, case_id: str, d: DocPlan,
                      f"generación anterior archivados en {VERSIONES_ANTERIORES}/")
             nota = f"{nota} · {aviso}" if nota else aviso
             try:
-                append_event(case_id, "split_documental", details={
+                # B0-1: el evento va donde estan los bytes, no a CASOS_ROOT.
+                append_event(case_dir, "split_documental", case_id=case_id, details={
                     "bundle": d.rel_path, "bundle_sha256": d.sha256, "n_segmentos": 0,
                     "modo": "passthrough_retira_bundle", "archivados": archivados,
                 })
