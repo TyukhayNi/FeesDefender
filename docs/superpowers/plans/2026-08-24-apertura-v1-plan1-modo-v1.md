@@ -2,11 +2,35 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Hacer que «ser una ejecución V1» sea un hecho comprobable del CLI —`--modo v1`— que rechaza, antes de cualquier efecto, todo lo que V1 no admite.
+**Goal:** Hacer que «ser una ejecución V1» sea un hecho comprobable del CLI —`--modo v1`— que rechaza, **antes de las cuatro fronteras que enumera el §24 D3 de la spec** —autoderivación de identidad, `ensure_case`, todo intake y toda lectura remota—, todo lo que V1 no admite. *No* «antes de cualquier efecto»: ese absoluto es falso y R6 lo midió (H6-01, H6-05). Las dos excepciones, declaradas y fuera del alcance de un flag: `core/config.py` lee `.env` al **importarse**, antes de que Typer exista, y `--help` es un callback *eager* de Click que resuelve antes de entrar en `main`. Ninguna toca el expediente.
 
-**Architecture:** Un flag de modo en el entrypoint existente `scripts/abrir_caso.py`, con vocabulario cerrado y validación como primera sentencia del cuerpo de `main`, antes de la autoderivación de identidad, de `ensure_case`, de todo intake y de toda lectura remota. En modo `v1`: `--crm` solo admite `skip` y `--fuente` solo admite `drive_ev`. El modo `libre` conserva el comportamiento actual byte a byte, así que V2, V3 y el uso ad hoc no se regresan.
+**Architecture:** Un flag de modo en el entrypoint existente `scripts/abrir_caso.py`, con vocabulario cerrado y validación como primera sentencia del cuerpo de `main`, antes de la autoderivación de identidad, de `ensure_case`, de todo intake y de toda lectura remota. En modo `v1`: `--crm` solo admite `skip` y `--fuente` solo admite `drive_ev`. El modo `libre` conserva el comportamiento **observable** —códigos de salida, efectos y secuencia—, así que V2, V3 y el uso ad hoc no se regresan. **No** «byte a byte»: añadir un flag cambia `--help` por construcción (medido: 2.640 → 3.040 caracteres), así que la promesa literal era imposible de cumplir y R6 la tumbó (H6-06).
 
 **Tech Stack:** Python 3.14, Typer, pytest, `typer.testing.CliRunner`.
+
+## Erratas del plan, detectadas al ejecutarlo (2026-08-24)
+
+Tres defectos del texto de arriba. Se corrigieron **en la implementación**, no en la aserción, y
+se anotan aquí porque los Planes 2-5 heredarían el patrón:
+
+1. **El Task 2 traía un test vacuo.** `test_v1_rechaza_el_default_de_crm` contenía
+   `assert default or True`, que no puede fallar nunca — el antipatrón que este repo tiene
+   documentado (memoria `feedback-guard-sin-prueba-de-mutacion`). Sustituido por la aserción que
+   sí muerde: `inspect.signature(cli.main).parameters["crm"].default.default == "api"`. Si alguien
+   cambiara el default a `skip`, el test lo dice.
+2. **El dato de identidad de los tests del Task 4 no existe.** `--tipo-caso honorarios` levanta
+   `ValueError: Tipo de caso desconocido`. Los canónicos están en `config.TIPOS_CASO_ALL`; se usa
+   `--tipo-caso BAD_DEBT --sufijo "Bad debt"` (memoria `feedback-case-sufijo-tipo-canonico`).
+   Que el test del **aborto** pasara con el dato malo y solo cayera el de camino feliz es, de
+   hecho, evidencia de la propiedad: v1 aborta antes de resolver identidad.
+3. **La aritmética de tests iba desfasada en 1 desde el Task 3.** La parametrización de tres
+   fuentes suma 3 casos, no 2: son **11** tras el Task 3 y **14** al final, no 10 y 13.
+
+Y una comprobación que el plan no pedía y la doctrina del repo sí: el test del *orden* se validó
+**por mutación** —desplazar la puerta por debajo de `ensure_case` lo pone rojo con
+`no debía llegar a ejecutarse ningún efecto`—, restaurando después con `git checkout`. Sin esa
+prueba, «valida antes de cualquier efecto» sería otra propiedad nombrada y no contratada, que es
+justo la figura que el §23 de la spec detuvo tres veces.
 
 ## Por qué este plan es el primero, y por qué V1 no cabe en un plan
 
@@ -45,7 +69,7 @@ es la precondición de todo lo demás y lo que R5 declaró ausente (H5-01).
 - Nombres de carpeta en tipo oración (`06_Anonimizado`, no `06_ANONIMIZADO`).
 - La lógica vive en el core; la UI y los CLI solo orquestan. Este plan toca un CLI a propósito: lo que añade es validación de argumentos, no lógica de negocio.
 - **No se crea `scripts.apertura_expediente`** (criterio 50 de la spec).
-- El modo `libre` no cambia de comportamiento. Cualquier test existente que falle es una regresión, no un ajuste.
+- El modo `libre` no cambia de **comportamiento observable**. Cualquier test existente que falle es una regresión, no un ajuste. La salida de `--help` sí cambia, y es la única diferencia admitida (R6/H6-06).
 
 ## File Structure
 
@@ -551,3 +575,67 @@ establecido del fichero.
 hoy en `scripts/abrir_caso.py:248` y `:265`, y se llaman en `:487` y `:497`. Si un refactor los
 renombra, estos tests fallan por el arnés y no por el comportamiento: en ese caso se ajusta el
 parche, no la aserción.
+
+---
+
+## 6. Adjudicación de la revisión adversarial del PLAN (Codex, 2026-08-24) — NO-SHIP, remediado
+
+- **Objeto revisado:** el diff `bb115de..d4b4777` — cuatro ficheros, 265 líneas — que ejecuta los cinco tasks de este plan.
+- **Ronda:** R6, la primera de este diseño que revisa código ejecutado y no prosa (el §23 de la spec detuvo el bucle sobre el diseño).
+- **Revisor:** Codex, por CLI, sobre dos copias externas `git archive` (base y head) sin `.git` ni red — solo lectura por construcción. Adjudica Claude Code contra la fuente.
+- **Informe recibido:** `docs/superpowers/specs/2026-08-24-apertura-v1-plan1-r6-adversarial-review.md`, §1 literal, `sha256` `7594d41daf49ca1b079c30ae813d105283123d92bf0209bb9f89436e43b43253` — recomputado al archivarlo y **coincide** con el que declaró el revisor.
+- **Hallazgos:** 9 — 1 CRÍTICO, 5 ALTOS, 2 MEDIOS, 1 BAJO. **9 confirmados, 0 refutados.** Cinco de ellos son defectos que el adjudicador introdujo o dejó pasar el mismo día.
+- **Remediado en:** commits `5a0a047` (código y tests) y el de documentación que acompaña a esta adjudicación; más el hueco propio del §21.4/criterio 34, que el revisor no vio.
+
+*El «6» sigue a los cinco tasks: es la sección posterior al plan, no una sexta tarea.*
+
+### 6.1. Veredicto de cada hallazgo
+
+**Los cinco de código. Confirmados y remediados.**
+
+| ID | Sev. | Qué era | Cómo lo verifiqué **yo** | Remedio |
+|---|---|---|---|---|
+| **H6-02** | CRÍTICO | `validar_modo` no veía `force`, así que `--modo v1 … --force` con un W-code ya presente esquivaba `ColisionCaso` y componía un `case_id` nuevo | probe propio: `exit 0` y `ensure_case('BaNEW … (W-DUP01) …')` — **la sombra existía** | la puerta rechaza `--force` **sin** `--case-id`; con `--case-id` sigue admitido, porque ahí el `case_id` queda pineado al ya verificado y no puede haber sombra |
+| **H6-03** | ALTO | `--dry-run` pasaba la puerta; `_intake_drive_ev` llama a `pull_drive_ev` **antes** de consultar `dry_run` | lectura del código: el pull precede al uso de la bandera | la puerta rechaza `--dry-run` en `v1` |
+| **H6-04** | ALTO | `_validar_flags` no exige nada para `drive_ev`, así que sin `--folder-id` el pull recibe `None` **después** del `mkdir` del destino | lectura de `_validar_flags` y de `pull_drive_ev` | la puerta exige `--folder-id` en todo `v1`, no solo con `drive_ev`: es su única fuente |
+| **H6-07** | ALTO | **mi prueba de mutación era más estrecha que mi afirmación**: solo movía la puerta bajo `ensure_case`. Con la puerta bajo la resolución de identidad y la autoderivación de Drive, los 14 tests seguían verdes | reproducido: **14/14 verdes, mutante superviviente** | bombas también en `_autoderivar_drive_ev`, `_derivar_team_id`, `brain.resolver_identidad`, `case_locator.list_cases` y `resolve_ref`. El mutante ahora **muere**: `efecto anterior a la puerta: _autoderivar_drive_ev` |
+| **H6-08** | MEDIO | `test_modo_libre_conserva_el_comportamiento` solo comprobaba la ausencia de dos frases | reproducido: con `validar_modo` devolviendo `["BROKEN"]` y el CLI saliendo 1, **el test pasaba** | ahora afirma `exit_code == 0` y la secuencia observable. Mutación re-corrida: **muere** |
+
+**Los cuatro de redacción. Confirmados como defectos del texto, refutados como defectos de código
+— y la distinción no es una salida cómoda: es la que decide qué se arregla.**
+
+| ID | Sev. dada | Adjudicación |
+|---|---|---|
+| **H6-01** | ALTO → **BAJO** | Es **cierto** que `core/config.py:16-18` lee `.env` al importarse, antes de que Typer exista. Pero el §24 D3 enumera cuatro fronteras —autoderivación de identidad, `ensure_case`, todo intake, toda lectura remota— y un `load_dotenv` local no es ninguna de las cuatro; ocurre igual en `base` que en `head`, en todos los modos. El defecto está en **mi** absoluto («antes de cualquier efecto»), no en el orden del código. Remedio: el Goal enuncia las cuatro fronteras y declara las dos excepciones. |
+| **H6-05** | BAJO | Igual, y el revisor le puso bien la severidad: `--help` es un callback *eager* de Click y sale antes de `main`. No toca el expediente. Queda declarado como excepción, no negado. |
+| **H6-06** | MEDIO → **BAJO** | «`libre` byte a byte» era **imposible de cumplir**: añadir un flag cambia `--help` por construcción (2.640 → 3.040 caracteres). La promesa era falsa el día que se escribió. Lo sustantivo —cero regresión de comportamiento— sí se sostiene: los 70 tests preexistentes del entrypoint siguen verdes. Remedio: la promesa pasa a «comportamiento **observable**» y la ayuda queda como única diferencia admitida. |
+| **H6-09** | ALTO | **Confirmado, y me lo había visto venir yo mismo antes de recibir el informe** — lo cual no me exime: lo escribí igual. El runbook decía que la primera vertical «**se ejecuta con**» `--modo v1 …`, mientras este plan declara en dos sitios que no cablea nada. Remedio: el bloque del runbook ahora separa «puerta» de «secuencia», enumera las cinco invocaciones que rechaza, avisa de que el comando de arriba lleva `--crm api` y `--force` —y por tanto aborta en `v1`—, y dice qué falta hasta el Plan 5. |
+
+### 6.2. Un hueco que encontró el adjudicador y no el revisor
+
+El §21.4, al precisar el criterio **34**, exige un criterio negativo con «un spy que acredite cero
+llamadas remotas de alta, ficha o relaciones». Mis tests parcheaban `_alta_crm` **entero**, que es
+más grueso que el contrato: si la llamada remota se moviera fuera de esa función, el test seguiría
+verde sin cubrir nada. Añadido `test_v1_cero_llamadas_remotas_de_alta`, con el spy sobre
+`sudespacho_create.create_expediente`, que es la escritura real.
+
+### 6.3. Lo que esta ronda dice del proceso, sin adornarlo
+
+**Cinco de los nueve hallazgos son míos, del mismo día.** Y el más caro, H6-07, no es un descuido
+de implementación: es que **afirmé como probada una propiedad más ancha que mi prueba**. Había
+escrito en la sección de erratas de este plan que el orden quedaba «contratado por mutación», y
+declarado lo mismo por chat. La mutación que hice mataba una puerta bajo `ensure_case`; la que
+importaba —bajo la autoderivación y la identidad, que son dos de las cuatro fronteras del §24 D3—
+la dejaba viva. Es exactamente la figura que el §23 de la spec castigó tres veces: **nombrar la
+propiedad y llamarlo contrato**, ahora en su versión más difícil de ver, porque venía envuelta en
+una prueba de mutación real pero mal dirigida.
+
+**La lección operativa, para los Planes 2-5:** una prueba de mutación vale lo que vale su
+**elección de mutante**. Si el contrato enumera cuatro fronteras, hacen falta cuatro mutantes —uno
+por frontera—, no uno cualquiera que resulte rojo. Un solo mutante rojo prueba que el test no está
+vacío; no prueba el contrato.
+
+**Y una que no es de proceso sino de coste:** esta ronda costó una revisión sobre 265 líneas y
+produjo un defecto CRÍTICO que ningún guard, ningún test y ninguna de mis dos lecturas habían
+visto. La fila #13 de `PLAN.md` pregunta cuánta gobernanza se compra; este es el caso a favor de
+comprarla **sobre diffs de código**, que es donde las cinco rondas anteriores no la gastaron.

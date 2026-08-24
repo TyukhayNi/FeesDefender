@@ -62,6 +62,8 @@ def hash_tree_local(root: Path, *, prefijo: str) -> dict[str, str]:
 
 
 _FUENTES_CLI = ("drive_ev", "manual", "whatsapp", "email")
+_MODOS = ("libre", "v1")
+_FUENTES_V1 = ("drive_ev",)
 
 
 def _inventario_desde_hashes(case_dir: Path, base: str, hashes: dict[str, str]) -> list[dict]:
@@ -352,6 +354,78 @@ def _derivar_team_id(folder_id):
     return info.drive_id if (info and info.drive_id) else None
 
 
+def validar_modo(
+    modo: str,
+    *,
+    crm: str,
+    fuente: str,
+    force: bool = False,
+    dry_run: bool = False,
+    folder_id: str | None = None,
+    case_id: str | None = None,
+) -> list[str]:
+    """Errores que impiden ejecutar en `modo`. Lista vacía = admisible.
+
+    Pura a propósito: la matriz de combinaciones se prueba sin arrancar el CLI ni
+    tocar disco, y el orden —validar ANTES de cualquier efecto— queda demostrable.
+
+    Los cuatro parámetros con default los añadió la remediación de R6: la puerta
+    solo mirando `crm` y `fuente` admitía tres invocaciones que V1 prohíbe
+    (H6-02, H6-03, H6-04). Llevan default para no regresar a los llamadores del
+    modo `libre`, donde la función retorna antes de leerlos.
+    """
+    if modo not in _MODOS:
+        return [f"Modo desconocido: {modo!r}. Válidos: {_MODOS}"]
+    if modo == "libre":
+        return []
+    errores: list[str] = []
+    if crm != "skip":
+        errores.append(
+            f"--modo v1 no escribe en el CRM: exige --crm skip (recibido: {crm!r}). "
+            "El default es `api` y alcanza un POST de alta, así que omitir el flag "
+            "también aborta."
+        )
+    if fuente not in _FUENTES_V1:
+        errores.append(
+            f"--modo v1 solo admite --fuente {_FUENTES_V1[0]} (recibido: {fuente!r}). "
+            "V1 no descubre ni exporta correo: `email` ejecuta email_export.export_label, "
+            "que llama a Gmail. La atomización local de V1 actúa sobre correo YA depositado "
+            "y la ejecuta la sala de máquina."
+        )
+    # H6-02 (CRÍTICO). Criterio 33 del §14, que el §21.4 mete en los 24 de V1:
+    # «--force nunca crea una carpeta sombra». La política de colisión de la spec
+    # admite --force SOLO para reutilizar el caso canónico ya resuelto por
+    # --case-id; sin él, `resolver_identidad` esquiva `ColisionCaso` y compone un
+    # case_id NUEVO para un W-code que ya existe.
+    if force and case_id is None:
+        errores.append(
+            "--modo v1 no admite --force sin --case-id: con el W-code ya presente "
+            "compondría un case_id nuevo y crearía una carpeta sombra, que el "
+            "criterio 33 prohibe. El intake incremental entra por --case-id."
+        )
+    # H6-03. `_intake_drive_ev` llama a `pull_drive_ev` ANTES de consultar
+    # dry_run, y el corte sale 0 antes del log de intake: una corrida con
+    # efectos e incompleta etiquetada como V1. D3 hace al modo dueño del orden
+    # COMPLETO, y el §13 exige que V1 termine en uno de sus tres estados.
+    if dry_run:
+        errores.append(
+            "--modo v1 no admite --dry-run: en drive_ev el pull es real de todos "
+            "modos y la corrida sale antes del log de intake, o sea con efectos y "
+            "sin terminar en ninguno de los tres estados del contrato."
+        )
+    # H6-04. `_validar_flags` no exige nada para drive_ev, así que sin
+    # --folder-id el pull recibe None DESPUÉS de que `pull_drive_ev` haya hecho
+    # `target_dir.mkdir(...)`: se muta antes de detectar el dato que falta.
+    # Se exige siempre en v1, no solo con drive_ev, porque drive_ev es su única
+    # fuente y toda ejecución V1 materializa Drive E&V.
+    if not folder_id:
+        errores.append(
+            "--modo v1 exige --folder-id: V1 materializa Drive E&V, y sin ese dato "
+            "el pull recibe None después de crear el directorio destino."
+        )
+    return errores
+
+
 @app.command()
 def main(
     w_code: str | None = typer.Option(None, "--w-code"),
@@ -368,6 +442,10 @@ def main(
     folder_id: str | None = typer.Option(None, "--folder-id"),
     team_id: str | None = typer.Option(None, "--team-id"),
     fuente: str = typer.Option("drive_ev", "--fuente", help="drive_ev|manual|whatsapp|email"),
+    modo: str = typer.Option(
+        "libre", "--modo",
+        help="libre|v1. `v1` es el discriminante de la primera vertical (spec §24 D3): "
+             "exige --crm skip y --fuente drive_ev, y valida antes de cualquier efecto."),
     src: str | None = typer.Option(None, "--src", help="manual/whatsapp: carpeta o .zip"),
     rol: str | None = typer.Option(None, "--rol", help="whatsapp: rol_subdir"),
     cuenta: str | None = typer.Option(None, "--cuenta", help="email: cuenta gmail"),
@@ -383,6 +461,17 @@ def main(
     dry_run: bool = typer.Option(False, "--dry-run"),
     yes: bool = typer.Option(False, "--yes", help="auto-confirma el gate CRM"),
 ) -> None:
+    # Puerta del modo (spec §24 D3): se valida ANTES de la identidad, de ensure_case,
+    # de todo intake y de toda lectura remota. El orden es la propiedad, no el mensaje.
+    errores_modo = validar_modo(
+        modo, crm=crm, fuente=fuente,
+        force=force, dry_run=dry_run, folder_id=folder_id, case_id=case_id,
+    )
+    if errores_modo:
+        for e in errores_modo:
+            typer.echo(f"[ERROR] {e}", err=True)
+        raise typer.Exit(code=1)
+
     if fuente not in _FUENTES_CLI:
         typer.echo(f"[ERROR] Fuente desconocida: {fuente}. Válidas: {_FUENTES_CLI}", err=True)
         raise typer.Exit(code=1)
