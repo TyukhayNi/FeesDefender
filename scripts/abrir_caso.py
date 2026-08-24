@@ -361,7 +361,16 @@ def validar_modo(modo: str, *, crm: str, fuente: str) -> list[str]:
     """
     if modo not in _MODOS:
         return [f"Modo desconocido: {modo!r}. Válidos: {_MODOS}"]
-    return []
+    if modo == "libre":
+        return []
+    errores: list[str] = []
+    if crm != "skip":
+        errores.append(
+            f"--modo v1 no escribe en el CRM: exige --crm skip (recibido: {crm!r}). "
+            "El default es `api` y alcanza un POST de alta, así que omitir el flag "
+            "también aborta."
+        )
+    return errores
 
 
 @app.command()
