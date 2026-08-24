@@ -350,12 +350,23 @@ class CaseWorkspace:
     checkout_timestamp: str | None
     validado_en: str
     procedencia: str
+    #: Trabajo offline (§7.1.5 / §7.2.9): se puede seguir, no publicar. RESTA
+    #: `MUTATE_CANONICAL` de la tabla del modo.
+    #:
+    #: La asimetria es deliberada y es lo que permite expresar el offline sin
+    #: abrir el agujero que el docstring de arriba describe: inyectar capacidades
+    #: dejaria fabricar un `blocked_*` con permiso de escritura, mientras que
+    #: RESTAR una solo puede hacer al llamador menos poderoso, nunca mas.
+    mutate_canonical: bool = True
     capabilities: frozenset[Capability] = dataclasses.field(init=False)
 
     def __post_init__(self) -> None:
         modo = WorkspaceMode(self.mode)
         object.__setattr__(self, "mode", modo)
-        object.__setattr__(self, "capabilities", CAPACIDADES_POR_MODO[modo])
+        caps = CAPACIDADES_POR_MODO[modo]
+        if not self.mutate_canonical:
+            caps = frozenset(caps - {Capability.MUTATE_CANONICAL})
+        object.__setattr__(self, "capabilities", caps)
 
         # §5.3: `working_root` existe «solo cuando el runtime puede acceder».
         # Las dos direcciones son incoherencias, y la segunda es la que se

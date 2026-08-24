@@ -422,3 +422,45 @@ def test_toda_descripcion_declarada_respeta_los_canarios(clase):
     texto = str(clase(w_code="W-TEST01"))
     assert not _RE_UNIDAD_WINDOWS.search(texto), texto
     assert chr(92) not in texto, texto
+
+
+# --------------------------------------------------------------------------
+# El trabajo offline: restar una capacidad, nunca inyectarlas
+# --------------------------------------------------------------------------
+#
+# El §7.1.5 y el §7.2.9 permiten trabajar en local cuando Drive no esta
+# accesible, pero con `mutate_canonical = false`: se puede seguir, no publicar.
+#
+# `capabilities` NO se acepta en el constructor, y con razon —un llamador podria
+# fabricarse un `blocked_*` con `MUTATE_CANONICAL` y el contrato entero dejaria de
+# valer—. Pero eso prohibe INYECTAR, no RESTAR: un llamador que se quita una
+# capacidad solo puede hacerse menos poderoso, nunca mas. La asimetria es la que
+# permite expresar el offline sin abrir el agujero.
+
+
+def test_offline_resta_mutate_canonical_sin_tocar_lo_demas():
+    ws = _ws("local_checkout", mutate_canonical=False)
+    assert not ws.permite(wm.Capability.MUTATE_CANONICAL)
+    assert ws.permite(wm.Capability.WRITE_CASE)
+    assert ws.permite(wm.Capability.READ_CASE)
+
+
+def test_por_defecto_no_resta_nada():
+    completo = _ws("local_checkout")
+    assert completo.capabilities == wm.CAPACIDADES_POR_MODO[
+        wm.WorkspaceMode.LOCAL_CHECKOUT]
+
+
+def test_restar_NUNCA_puede_conceder_de_mas():
+    """La asimetria, fijada: el resultado siempre es subconjunto de la tabla."""
+    for modo in wm.WorkspaceMode:
+        base = wm.CAPACIDADES_POR_MODO[modo]
+        for restar in (True, False):
+            ws = _ws(modo.value, mutate_canonical=not restar)
+            assert ws.capabilities <= base, (modo, restar)
+
+
+def test_un_modo_bloqueado_sigue_sin_conceder_nada_aunque_no_se_reste():
+    ws = _ws("blocked_conflict", mutate_canonical=True)
+    assert not ws.permite(wm.Capability.MUTATE_CANONICAL)
+    assert not ws.permite(wm.Capability.WRITE_CASE)
