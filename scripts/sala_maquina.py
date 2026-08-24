@@ -36,10 +36,15 @@ _BANNER_FALLO_ATOMIZE = (
     f"de citar MSG-ids nuevos.\n{_SEP}"
 )
 
-def _registrar_atomizado(case_id: str, details: dict) -> None:
-    """Emite `atomizado_email`; un fallo de log nunca aborta el OCR."""
+def _registrar_atomizado(case_dir: Path, case_id: str, details: dict) -> None:
+    """Emite `atomizado_email`; un fallo de log nunca aborta el OCR.
+
+    B0-1: recibe el `case_dir` para que el evento caiga JUNTO A LOS BYTES. Con
+    `--case-dir` los documentos van a la copia local, y hasta la Fase 1 el evento
+    se iba a `CASOS_ROOT`: custodia partida en dos.
+    """
     try:
-        append_event(case_id, "atomizado_email", details=details)
+        append_event(case_dir, "atomizado_email", case_id=case_id, details=details)
     except Exception as exc:  # noqa: BLE001
         typer.echo(f"AVISO: no se pudo registrar el evento atomizado_email: {exc}", err=True)
 
@@ -360,7 +365,7 @@ def _atomizar_correo(case_id: str, case_dir: Path) -> None:
 
     # Se emite ANTES de arrancar el OCR: si la corrida larga muere, el rastro ya está
     # en disco. Un fallo de log tampoco aborta el OCR.
-    _registrar_atomizado(case_id, details)
+    _registrar_atomizado(case_dir, case_id, details)
 
 
 def _adjuntos_dir_de(case_dir: Path) -> Path:
@@ -412,7 +417,8 @@ def _procesar_adjuntos(case_id: str, case_dir: Path) -> None:
             typer.echo(f"NOTA (adjuntos): {e}", err=True)
 
     try:
-        append_event(case_id, "contenido_adjuntos", details=details)
+        # B0-1: junto a los bytes, que es lo que `--case-dir` necesita.
+        append_event(case_dir, "contenido_adjuntos", case_id=case_id, details=details)
     except Exception as exc:  # noqa: BLE001
         typer.echo(f"AVISO: no se pudo registrar el evento contenido_adjuntos: {exc}",
                    err=True)
@@ -579,7 +585,11 @@ def apply(case_id: str, vision: bool = False, force: bool = False,
         else:
             intentos[d.sha256] = intentos.get(d.sha256, 0) + 1
     _guardar_estado(case_dir, procesados, intentos=intentos, hashes=cache_nueva)
-    append_event(case_id, "procesado_sala_maquina", details={
+    # B0-1: `apply`/`reforzar` resuelven el `case_dir` al principio, asi que el
+    # evento cae junto a los bytes aunque no lo lleven en la firma. Mi criterio
+    # inicial —«lo tiene en la FIRMA»— era demasiado estrecho y dejaba fuera a dos
+    # llamadores que si podian migrar.
+    append_event(case_dir, "procesado_sala_maquina", case_id=case_id, details={
         "count": len(cob_delta),
         "files": [{"path": c.rel_path, "sha256": c.sha256, "slug": c.slug,
                    "metodo": c.metodo, "estado": c.estado} for c in cob_delta],
@@ -657,7 +667,11 @@ def reforzar(case_id: str):
 
     exitosos = _exitosos_por_bundle(cob_delta)
     _guardar_estado(case_dir, _estado_previo(case_dir) | exitosos)
-    append_event(case_id, "procesado_sala_maquina", details={
+    # B0-1: `apply`/`reforzar` resuelven el `case_dir` al principio, asi que el
+    # evento cae junto a los bytes aunque no lo lleven en la firma. Mi criterio
+    # inicial —«lo tiene en la FIRMA»— era demasiado estrecho y dejaba fuera a dos
+    # llamadores que si podian migrar.
+    append_event(case_dir, "procesado_sala_maquina", case_id=case_id, details={
         "modo": "reforzar",
         "count": len(cob_delta),
         "files": [{"path": c.rel_path, "sha256": c.sha256, "slug": c.slug,

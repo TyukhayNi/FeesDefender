@@ -52,7 +52,7 @@ def caso(tmp_path, monkeypatch):
     (drive / "escaneo.pdf").write_bytes(b"%PDF-1.4 escaneo")
 
     monkeypatch.setattr(cli, "caso_path", lambda cid: case_dir)
-    monkeypatch.setattr(cli, "append_event", lambda cid, ev, *, details=None: None)
+    monkeypatch.setattr(cli, "append_event", lambda destino, ev, *, details=None, case_id=None: None)
     monkeypatch.setattr(cli, "_atomizar_correo", lambda cid, cd: None)
     return case_dir
 
@@ -309,7 +309,7 @@ def test_el_motor_real_dispara_el_gancho(tmp_path, monkeypatch):
     (case_dir / "00_Input" / "04_Manual" / "nota.txt").write_text(
         "Encargo firmado el 3 de marzo. " * 20, encoding="utf-8")
     monkeypatch.setattr(cli, "caso_path", lambda cid: case_dir)
-    monkeypatch.setattr(cli, "append_event", lambda cid, ev, *, details=None: None)
+    monkeypatch.setattr(cli, "append_event", lambda destino, ev, *, details=None, case_id=None: None)
     monkeypatch.setattr(cli, "_atomizar_correo", lambda cid, cd: None)
 
     cli.apply("W-TEST98")

@@ -10,7 +10,7 @@ línea ``upload_manual`` happy path):
 - Singleton de actor (thread-safe) + reset + override por llamada.
 - ``_default_actor``: env var > ``os.getlogin()`` > "system".
 - ``read_events`` con log vacío, múltiples entradas y líneas corruptas.
-- ``log_path`` no crea el archivo.
+- ``log_path_de`` no crea el archivo (``log_path`` se retiro: B0-1).
 - ``os.fsync`` se invoca en cada ``append_event`` (resiliencia a crashes
   según M10-Q4).
 - ``INTAKE_EVENTS`` sanity (24 eventos documentados).
@@ -122,23 +122,28 @@ def test_append_event_multiples_lineas_en_orden(il, cm):
     assert [e["details"]["i"] for e in events] == [1, 2, 3]
 
 
-def test_append_event_crea_subcarpeta_00_input_si_falta(il, tmp_casos_root):
-    """``append_event`` debe crear ``00_Input/`` si no existe.
+def test_append_event_NO_crea_la_subcarpeta_00_input(il, tmp_casos_root):
+    """Este test decia lo contrario, y lo que fijaba era el defecto **B0-1**.
 
-    Útil en escenarios de migración / casos creados sin ``ensure_case``.
+    Su version anterior exigia que `append_event` **creara** `00_Input/` si
+    faltaba, «util en escenarios de migracion». Esa comodidad es exactamente la
+    maquina de expedientes fantasma: un `append_event` sobre un W-code mal escrito
+    dejaba una carpeta con ese nombre en la unidad COMPARTIDA, y el bug ya ocurrio
+    con W-02ZIIF.
+
+    Crear un expediente es trabajo de la apertura, no de la auditoria. La Fase 1
+    lo invierte: si no hay `00_Input`, se lanza y no se toca el disco.
     """
+    from core.casos.workspace_model import LocalWorkspaceMissing
+
     case_root = tmp_casos_root / "LOG-NO-INPUT"
     case_root.mkdir()  # no creamos 00_Input
+    antes = sorted(p.name for p in case_root.iterdir())
 
-    il.append_event("LOG-NO-INPUT", "upload_manual")
+    with pytest.raises(LocalWorkspaceMissing):
+        il.append_event("LOG-NO-INPUT", "upload_manual")
 
-    log = case_root / "00_Input" / "_intake_log.jsonl"
-    assert log.is_file()
-
-
-# ---------------------------------------------------------------------------
-# Overrides
-# ---------------------------------------------------------------------------
+    assert sorted(p.name for p in case_root.iterdir()) == antes
 
 def test_append_event_actor_override(il, cm):
     cm.ensure_case("LOG-4")
@@ -261,20 +266,20 @@ def test_read_events_log_inexistente(il, cm):
     assert il.read_events("LOG-8") == []
 
 
-def test_read_events_log_vacio(il, cm):
+def test_read_events_log_vacio(il, cm, tmp_casos_root):
     cm.ensure_case("LOG-9")
-    il.log_path("LOG-9").write_text("", encoding="utf-8")
+    il.log_path_de(tmp_casos_root / "LOG-9").write_text("", encoding="utf-8")
     assert il.read_events("LOG-9") == []
 
 
-def test_read_events_salta_lineas_corruptas(il, cm):
+def test_read_events_salta_lineas_corruptas(il, cm, tmp_casos_root):
     """JSON inválido o no-dict → línea se salta silenciosamente."""
     cm.ensure_case("LOG-10")
     il.set_actor("Tester")
 
     il.append_event("LOG-10", "upload_manual", details={"i": 1})
     # Inyectamos basura intermedia
-    with open(il.log_path("LOG-10"), "a", encoding="utf-8") as f:
+    with open(il.log_path_de(tmp_casos_root / "LOG-10"), "a", encoding="utf-8") as f:
         f.write("esto no es json\n")
         f.write('"solo un string"\n')   # JSON válido pero no dict
         f.write("null\n")               # JSON válido pero no dict
@@ -286,12 +291,16 @@ def test_read_events_salta_lineas_corruptas(il, cm):
 
 
 # ---------------------------------------------------------------------------
-# log_path — sólo computa, no crea
+# log_path_de — sólo computa, no crea
 # ---------------------------------------------------------------------------
 
-def test_log_path_no_crea_el_archivo(il, cm, tmp_casos_root):
+def test_log_path_de_no_crea_el_archivo(il, cm, tmp_casos_root):
+    """`log_path(case_id)` se RETIRA en la Fase 1 (B0-1): resolvia siempre por
+    `CASOS_ROOT`, asi que con `--case-dir` el evento se iba al canon mientras los
+    documentos estaban en la copia local. `log_path_de(case_dir)` es la via."""
     cm.ensure_case("LOG-11")
-    path = il.log_path("LOG-11")
+    assert not hasattr(il, "log_path")
+    path = il.log_path_de(tmp_casos_root / "LOG-11")
     assert path == tmp_casos_root / "LOG-11" / "00_Input" / "_intake_log.jsonl"
     assert not path.exists()
 
@@ -329,12 +338,12 @@ def test_append_event_invoca_fsync_por_cada_escritura(il, cm, monkeypatch):
 # INTAKE_EVENTS — sanity
 # ---------------------------------------------------------------------------
 
-def test_intake_events_es_frozenset_con_28_eventos(il):
+def test_intake_events_es_frozenset_con_33_eventos(il):
     # 28 desde el 2026-08-04: alta de `contenido_adjuntos` (`MEJORAS #87`, el cableado del
     # texto de los adjuntos de correo en la sala de máquina). Este test existe para que
     # ampliar el vocabulario sea un acto deliberado y no un efecto colateral.
     assert isinstance(il.INTAKE_EVENTS, frozenset)
-    assert len(il.INTAKE_EVENTS) == 28
+    assert len(il.INTAKE_EVENTS) == 33
     assert "atomizado_email" in il.INTAKE_EVENTS
     assert "contenido_adjuntos" in il.INTAKE_EVENTS
 
@@ -384,6 +393,15 @@ def test_intake_events_contiene_los_canonicos(il):
         "archivado",
         "atomizado_email",
         "contenido_adjuntos",
+        # Fase 1 dual (Task 8): ciclo de vida del workspace. Se declaran aunque su
+        # emision llegue en fases posteriores — el vocabulario del log es contrato
+        # de LECTURA, y un evento que no se puede nombrar no se puede escribir
+        # cuando toque.
+        "scratch_creado",
+        "scratch_promovido",
+        "checkout_adoptado",
+        "conflicto_resuelto",
+        "checkout_cancelado_unilateral",
     }
     assert il.INTAKE_EVENTS == expected
 

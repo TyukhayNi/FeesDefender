@@ -541,7 +541,7 @@ split brain.
 - Altas en `INTAKE_EVENTS` (**28 → 33**): `scratch_creado`, `scratch_promovido`, `checkout_adoptado`, `conflicto_resuelto`, `checkout_cancelado_unilateral`. `pendiente_checkin` **se conserva** (lectura histórica) con comentario de que su emisión se retira en la Fase 2.
 - **La aritmética estaba rancia y era peligrosa** (R7/H7-06). El plan decía «27 → 32», pero el repo tiene **28** eventos desde que `contenido_adjuntos` entró el 2026-08-04, **después** de escribirse este plan. Verificado: `len(INTAKE_EVENTS) == 28`. Sumar los cinco da **33**. Un `assert len(...) == 32` habría forzado al implementador a **borrar en silencio un evento histórico** para cuadrar el número — y en un log forense retirar vocabulario rompe la lectura de lo ya escrito. El aserto es doble: `len(INTAKE_EVENTS) == 33` **y** comparación de conjuntos —los 28 actuales son subconjunto estricto y la diferencia es exactamente los cinco nuevos—, que es lo que impide cuadrar la cifra por resta.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 def test_append_event_no_crea_la_raiz_del_caso(tmp_path):
@@ -580,14 +580,52 @@ def test_append_event_escribe_en_el_arbol_del_workspace_no_en_casos_root(tmp_pat
 
 Más: `log_path(case_id)` **ya no existe** y su desaparición se prueba (`AttributeError` o `ImportError` al referenciarlo); el set de eventos pasa a **33** con el doble aserto de arriba **y se actualiza el `expected` completo** del test existente; un evento desconocido sigue lanzando `ValueError`.
 
-- [ ] **Step 2: Run tests to verify they fail**
-- [ ] **Step 3: Write the implementation** — migrar además **todos** los llamadores internos de `append_event(case_id, …)` que ya disponen del `case_dir`. Los que no lo tengan se dejan en el camino legacy con comentario `# legacy_unresolved (Fase 4)`, nunca «arreglados» a medias.
-- [ ] **Step 4: Verify**
+- [x] **Step 2: Run tests to verify they fail**
+- [x] **Step 3: Write the implementation** — migrar además **todos** los llamadores internos de `append_event(case_id, …)` que ya disponen del `case_dir`. Los que no lo tengan se dejan en el camino legacy con comentario `# legacy_unresolved (Fase 4)`, nunca «arreglados» a medias.
+- [x] **Step 4: Verify**
 
 ```bash
 python -m pytest tests/test_intake_log.py -q
 python -m pytest -q --tb=short
 ```
+
+---
+
+**Estado del Task 8 — ✅ COMPLETO.** 24 tests y **7 mutantes que mueren cada uno por su
+frontera**, incluido el que el plan declaraba **obligatorio** (sustituir el destino por
+`caso_path(case_id)` deja rojo el test del corazón del task).
+
+**Migrados 7 de 14 llamadores**, y la cifra está contada por AST, no estimada. Mi criterio
+inicial —«tiene `case_dir` en la FIRMA»— era demasiado estrecho: dejaba fuera a `apply`,
+`reforzar` y `_registrar_atomizado`, que lo resuelven en su primera línea. Los 7 restantes
+quedan `legacy_unresolved` (Fase 4), y ya **no son peligrosos**: desde el paso 5 del Task 6
+`caso_path` es estricto, así que el camino legacy no puede materializar un fantasma.
+
+**Un test fijaba el defecto como comportamiento deseado.** `test_append_event_crea_subcarpeta_00_input_si_falta`
+**exigía** que `append_event` creara `00_Input`, «útil en escenarios de migración». Esa
+comodidad **es** la máquina de expedientes fantasma —el bug que ya ocurrió con W-02ZIIF—.
+La suite estaba verde defendiendo el B0-1, y ninguna cobertura adicional lo habría
+detectado: el problema no era falta de tests, era que apuntaban al lado contrario. Se
+invirtió dejando escrito qué decía antes y por qué estaba mal.
+
+**La migración estaba a medias sin que yo lo viera.** `append_event` podía escribir junto a
+los bytes, pero `read_events` seguía exigiendo pasar por el catálogo — y con `--case-dir`
+el catálogo **no conoce** esa copia, así que lo recién escrito era **ilegible**. Lo destapó
+un test ajeno. Se añadió `read_events_de(case_dir)`, hermano de `log_path_de`.
+
+**`read_events(case_id)` conserva su firma a propósito:** es un lector, nunca causó el
+B0-1, y cambiarla tocaría 46 sitios de test sin cerrar ningún defecto.
+
+**Tres fronteras no estaban contratadas** y lo dijo la mutación: el camino legacy tenía
+**dos** guardas y el test no distinguía cuál actuaba; `log_path_de` se probaba sobre un
+árbol que ya existía, así que un `mkdir` dentro habría sido no-op; y `read_events_de` se
+probaba de rebote. De paso salió un hueco real en `_w_code_de`, que solo reconocía la
+forma entre paréntesis: un **W-code suelto** —entrada legítima— no se identificaba en el
+mensaje de error.
+
+**Anotado y NO arreglado (ajeno a este task):** producción envuelve `append_event` en
+`try/except Exception` y un fallo de escritura **solo imprime un aviso**. En un log
+forense, perder un evento de custodia con un aviso por stderr es débil. Es preexistente.
 
 ---
 

@@ -107,7 +107,7 @@ def caso(tmp_path, monkeypatch):
     (case_dir / "00_Input" / "01_Drive EV" / "encargo.pdf").write_bytes(b"%PDF-1.4 encargo")
 
     monkeypatch.setattr(cli, "caso_path", lambda cid: case_dir)
-    monkeypatch.setattr(cli, "append_event", lambda cid, ev, *, details=None: None)
+    monkeypatch.setattr(cli, "append_event", lambda destino, ev, *, details=None, case_id=None: None)
     monkeypatch.setattr(cli, "_atomizar_correo", lambda cid, cd: None)
 
     inv = sm.inventariar(case_dir)
