@@ -614,3 +614,49 @@ class TestAditividad:
     def test_caso_path_NO_cambia_todavia(self, root):
         from core.config import caso_path
         assert caso_path("NO-EXISTE") == root / "NO-EXISTE"
+
+
+# ---------------------------------------------------------------------------
+# El alta pasa por la puerta explicita (Task 6, paso 2)
+# ---------------------------------------------------------------------------
+
+class TestEnsureCasePasaPorLaPuertaExplicita:
+    def test_el_alta_de_un_caso_nuevo_sigue_funcionando(self, root):
+        """Regresion: invertir la puerta no puede romper crear un caso."""
+        from core.case_manager import ensure_case
+        ensure_case("BaRS9 - Prueba - (W-TEST99) - Vuelta", tipo_caso="BAD_DEBT")
+        assert (root / "BaRS9 - Prueba - (W-TEST99) - Vuelta" / "00_Input").is_dir()
+
+    def test_el_alta_va_por_destino_de_alta_y_no_por_localizar(self, root, monkeypatch):
+        """El mutante que el plan exige, fijado como test.
+
+        Si `ensure_case` llamara a `localizar()`, el alta de un caso NUEVO
+        lanzaria — que es precisamente el empate del que R7 saco al plan. Se
+        comprueba por observacion directa: `destino_de_alta` se invoca.
+        """
+        from core.casos import case_locator
+        vistos: list[str] = []
+        real = case_locator.destino_de_alta
+        monkeypatch.setattr(case_locator, "destino_de_alta",
+                            lambda cid: vistos.append(cid) or real(cid))
+
+        from core.case_manager import ensure_case
+        ensure_case("BaRS9 - Prueba - (W-TEST99) - Vuelta", tipo_caso="BAD_DEBT")
+
+        assert vistos == ["BaRS9 - Prueba - (W-TEST99) - Vuelta"], (
+            "`ensure_case` no paso por `destino_de_alta`: la puerta de alta "
+            "sigue siendo implicita")
+
+    def test_el_alta_sobre_un_caso_que_ya_vive_en_su_ciudad_NO_crea_sombra(self, root):
+        """El defecto CRITICO de R6, aqui como regresion del alta.
+
+        Si el alta resolviera a la ruta flat, un caso que ya vive en su ciudad
+        recibiria un duplicado plano al lado, con el mismo W-code.
+        """
+        from core.case_manager import ensure_case
+        ciudad = root / "Barcelona" / "BaRS9 - Prueba - (W-TEST99) - Vuelta"
+        ciudad.mkdir(parents=True)
+        ensure_case("BaRS9 - Prueba - (W-TEST99) - Vuelta", tipo_caso="BAD_DEBT")
+        assert (ciudad / "00_Input").is_dir()
+        assert not (root / "BaRS9 - Prueba - (W-TEST99) - Vuelta").exists(), (
+            "se fabrico una carpeta sombra plana junto al caso real")

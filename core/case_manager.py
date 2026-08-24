@@ -263,7 +263,12 @@ def ensure_case(
             componer REF del informe.
         (resto): metadatos del caso, opcionales.
     """
-    case_dir = caso_path(case_id)
+    # La UNICA puerta de alta del sistema, y por eso es explicita en el nombre
+    # (Task 6 / R7-H7-01). `destino_de_alta` admite que el caso no exista —es su
+    # caso normal— y devuelve SU ubicacion si ya existe, lo que impide fabricar
+    # una carpeta sombra plana junto a un caso que ya vive en su ciudad.
+    from core.casos.case_locator import destino_de_alta
+    case_dir = destino_de_alta(case_id)
     if not case_dir.exists() and ciudad:
         from core.casos.case_locator import path_for_ciudad
         case_dir = path_for_ciudad(case_id, ciudad)
