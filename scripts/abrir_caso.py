@@ -63,6 +63,7 @@ def hash_tree_local(root: Path, *, prefijo: str) -> dict[str, str]:
 
 _FUENTES_CLI = ("drive_ev", "manual", "whatsapp", "email")
 _MODOS = ("libre", "v1")
+_FUENTES_V1 = ("drive_ev",)
 
 
 def _inventario_desde_hashes(case_dir: Path, base: str, hashes: dict[str, str]) -> list[dict]:
@@ -369,6 +370,13 @@ def validar_modo(modo: str, *, crm: str, fuente: str) -> list[str]:
             f"--modo v1 no escribe en el CRM: exige --crm skip (recibido: {crm!r}). "
             "El default es `api` y alcanza un POST de alta, así que omitir el flag "
             "también aborta."
+        )
+    if fuente not in _FUENTES_V1:
+        errores.append(
+            f"--modo v1 solo admite --fuente {_FUENTES_V1[0]} (recibido: {fuente!r}). "
+            "V1 no descubre ni exporta correo: `email` ejecuta email_export.export_label, "
+            "que llama a Gmail. La atomización local de V1 actúa sobre correo YA depositado "
+            "y la ejecuta la sala de máquina."
         )
     return errores
 

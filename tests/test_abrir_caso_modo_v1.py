@@ -5,6 +5,7 @@ Spec: docs/superpowers/specs/2026-08-15-orquestador-apertura-expediente-design.m
 """
 import inspect
 
+import pytest
 from typer.testing import CliRunner
 
 from scripts import abrir_caso as cli
@@ -46,3 +47,19 @@ def test_v1_rechaza_el_default_de_crm():
     default_crm = inspect.signature(cli.main).parameters["crm"].default.default
     assert default_crm == "api"
     assert cli.validar_modo("v1", crm=default_crm, fuente="drive_ev") != []
+
+
+@pytest.mark.parametrize("fuente", ["email", "manual", "whatsapp"])
+def test_v1_rechaza_fuentes_ajenas(fuente):
+    errores = cli.validar_modo("v1", crm="skip", fuente=fuente)
+    assert len(errores) == 1
+    assert fuente in errores[0]
+
+
+def test_v1_admite_drive_ev():
+    assert cli.validar_modo("v1", crm="skip", fuente="drive_ev") == []
+
+
+def test_v1_acumula_los_errores():
+    errores = cli.validar_modo("v1", crm="api", fuente="email")
+    assert len(errores) == 2
