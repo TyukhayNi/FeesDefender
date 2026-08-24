@@ -123,6 +123,23 @@ def test_caseref_vacio_en_blanco_no_cuenta_como_identidad():
         wm.CaseRef(w_code="   ")
 
 
+def test_caseref_normaliza_un_w_code_en_blanco_a_none_no_a_cadena_vacia():
+    """El hueco que encontró un mutante superviviente del arnés del Task 4.
+
+    Con `case_id` presente, el `ValueError` NO salta, así que la única defensa
+    contra un `w_code = ""` colándose en la identidad es que la normalización lo
+    convierta en `None`. Y un `""` sería dañino: dos `CaseRef` del mismo caso
+    —uno construido con `w_code="  "` y otro sin `w_code`— dejarían de ser
+    iguales, y el catálogo buscaría por cadena vacía.
+
+    El test anterior no lo cubría: pasaba por falsedad de `""`, no por la
+    normalización. Es la misma figura que R6/H6-07 a escala pequeña.
+    """
+    ref = wm.CaseRef(case_id="BaX - Calle Falsa 1 (W-A1) - Bad debt", w_code="   ")
+    assert ref.w_code is None
+    assert ref == wm.CaseRef(case_id="BaX - Calle Falsa 1 (W-A1) - Bad debt")
+
+
 # -------------------------------------------------------- §5.2 / §5.4 la matriz
 
 def test_los_modos_son_los_cinco_del_spec():
