@@ -76,6 +76,7 @@ def path_for(case_id: str, *, strict: bool = True) -> Path:
 
 
 _RE_W_CODE = re.compile(r"\((W-[A-Za-z0-9]+)\)")
+_RE_W_CODE_SUELTO = re.compile(r"W-[A-Za-z0-9]+")
 
 
 def _w_code_de(case_id: str) -> str | None:
@@ -90,8 +91,16 @@ def _w_code_de(case_id: str) -> str | None:
     Si no hay W-code el error no lleva identificador: preferible a filtrar una
     cadena arbitraria. Los casos reales siempre lo llevan, por convencion de nombre.
     """
-    m = _RE_W_CODE.search(case_id or "")
-    return m.group(1) if m else None
+    ref = (case_id or "").strip()
+    m = _RE_W_CODE.search(ref)
+    if m:
+        return m.group(1)
+    # Un W-code SUELTO tambien es una entrada legitima —`resolve_ref` los acepta—
+    # y sin esta rama el error no decia de que caso hablaba. Lo cazo un test que
+    # exigia distinguir cual de las dos guardas de `append_event` habia actuado.
+    if _RE_W_CODE_SUELTO.fullmatch(ref):
+        return ref
+    return None
 
 
 def localizar(case_id: str) -> Path:

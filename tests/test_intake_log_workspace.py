@@ -97,9 +97,14 @@ class TestNoFabricaExpedientes:
         from core.casos.workspace_model import LocalWorkspaceMissing
         from core.intake_log import append_event
         antes = _huella(root)
-        with pytest.raises(LocalWorkspaceMissing):
+        with pytest.raises(LocalWorkspaceMissing) as exc:
             append_event("W-NOEXISTE", "upload_manual", details={})
         assert _huella(root) == antes
+        # Y que lo pare `localizar`, no la guarda de `00_Input`. Hay DOS guardas
+        # —defensa en profundidad, y esta bien que la haya— pero sin distinguirlas
+        # el test pasaba aunque el camino legacy dejara de ser estricto. Solo
+        # `localizar` sabe el W-code, asi que su presencia identifica al autor.
+        assert "W-NOEXISTE" in str(exc.value)
 
 
 # ==========================================================================
@@ -180,11 +185,36 @@ class TestLogPathSeRetira:
         assert log_path_de(scratch) == scratch / "00_Input" / "_intake_log.jsonl"
 
     def test_log_path_de_no_crea_nada(self, root, tmp_path):
+        """Sobre un arbol SIN `00_Input`, que es donde se nota.
+
+        Con el arbol ya montado, un `mkdir(exist_ok=True)` dentro de `log_path_de`
+        seria un no-op y el test pasaria igual — lo cazo la mutacion.
+        """
         from core.intake_log import log_path_de
+        pelado = tmp_path / "pelado"
+        pelado.mkdir()
+        antes = _huella(pelado)
+        log_path_de(pelado)
+        assert _huella(pelado) == antes, "`log_path_de` creo algo: solo debe computar"
+        assert not (pelado / "00_Input").exists()
+
+    def test_read_events_de_lee_lo_que_append_event_escribio(self, root, tmp_path):
+        """La simetria del task, contratada.
+
+        Sin ella la migracion queda a medias: se puede escribir junto a los bytes
+        pero recuperarlo exige pasar por el catalogo — y con `--case-dir` el
+        catalogo NO conoce esa copia, asi que lo recien escrito era ilegible.
+        """
+        from core.intake_log import append_event, read_events_de
         scratch = _arbol(tmp_path / "fuera")
-        antes = _huella(scratch)
-        log_path_de(scratch)
-        assert _huella(scratch) == antes
+        append_event(scratch, "upload_manual", details={"n": 1}, case_id="W-TEST99")
+        eventos = read_events_de(scratch)
+        assert [e["event"] for e in eventos] == ["upload_manual"]
+        assert eventos[0]["details"] == {"n": 1}
+
+    def test_read_events_de_de_un_arbol_sin_log_devuelve_vacio(self, root, tmp_path):
+        from core.intake_log import read_events_de
+        assert read_events_de(_arbol(tmp_path / "fuera")) == []
 
     def test_read_events_conserva_su_firma(self, root):
         """Es un LECTOR: no fabrica nada, así que no causaba el B0-1. Cambiarle la
