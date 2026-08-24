@@ -735,9 +735,20 @@ su significado. Como mínimo:
 | `CHECKOUT_CANCELLED_ELSEWHERE` | El lock se canceló mientras el titular trabajaba offline (§8.7) |
 | `WORKSPACE_UNDER_CATALOG_ROOT` | El destino local cae bajo `CASOS_ROOT` (§5.1) |
 | `AUDIT_BASELINE_MISSING` | Falta el baseline del log para reconciliar (§6.3) |
+| `REGISTRY_UNREADABLE` | El registro local existe pero no se puede leer — **no** es «no había nada» (Fase 1 Task 5) |
+| `SCHEMA_NO_SOPORTADO` | El registro lo escribió una versión desconocida; no se adivina (Fase 1 Task 5) |
+| `RUTA_YA_REGISTRADA` | Esa carpeta local ya es el workspace de otro caso (Fase 1 Task 5) |
 
 Los mensajes deben indicar que no se produjo ningún efecto cuando así sea. No
 pueden sugerir que el usuario reintente contra Drive como atajo.
+
+Las tres últimas se añadieron al construir el Task 5 de la Fase 1, y la tabla lo admitía
+sin reabrir nada: dice «Como mínimo». `REGISTRY_UNREADABLE` la fuerza el hallazgo **H7-02**
+de la R7 —el fallo cerrado necesita un error propagable, porque una lista vacía es
+indistinguible de «no había copia local» y con ella se autorizaría Drive sobre un caso
+quizá prestado—. Viven en `core/casos/workspace_model.py` con las otras doce, y no en el
+registro, precisamente para que les apliquen estas dos reglas de mensaje y los ocho
+canarios de fuga del §16.
 
 ## 11. Brechas concretas respecto de la arquitectura vigente
 

@@ -300,20 +300,47 @@ que se vigila es `detalle`.
 - **Un registro corrupto NO se convierte en «registro vacío»: FALLA CERRADO** (R7/H7-02). Los bytes se preservan renombrando a `*.corrupto.<ts>` (el `ts` lo pasa el llamante: nada de reloj implícito en la lógica pura), pero `cargar()` **lanza** `RegistryUnreadable`, no devuelve `[]`. Devolver vacío borra la diferencia entre «no había workspace local» y «no puedo saber qué había», y esa segunda es precisamente la que el resolver necesita para **no** autorizar `DRIVE_ACTIVE` sobre un caso que quizá está prestado. La cuarentena salva los bytes; la decisión de autorización ya habría fallado abierta. Contraría el «Fail closed» del §3 de la spec dual y la constraint global de este plan.
 - `schema` distinto del soportado → error explícito, no adivinar.
 
-- [ ] **Step 1: Write the failing tests** — dos entradas para el mismo `w_code` se devuelven **ambas** (la desambiguación es del resolver, no del registro); `alta` sobre una ruta que ya está registrada para otro caso lanza; ruta del registro bajo `CASOS_ROOT` → lanza; el fichero **no** contiene secretos ni contenido de documentos; `schema` no soportado → lanza; `revalidar` usa el `ts` **inyectado** y no un reloj propio.
+- [x] **Step 1: Write the failing tests** — dos entradas para el mismo `w_code` se devuelven **ambas** (la desambiguación es del resolver, no del registro); `alta` sobre una ruta que ya está registrada para otro caso lanza; ruta del registro bajo `CASOS_ROOT` → lanza; el fichero **no** contiene secretos ni contenido de documentos; `schema` no soportado → lanza; `revalidar` usa el `ts` **inyectado** y no un reloj propio.
 
   **La atomicidad se prueba ATRAVESANDO LA API** (R7/H7-03). La versión anterior de este Step decía «simulado escribiendo el temporal y no renombrando», que **no llama a `alta()`**: ese test pasa aunque producción escriba el JSON destino in-place y jamás use `os.replace`. Prueba correcta: sembrar bytes válidos, parchear `os.replace` **en el módulo de producción** para que lance, invocar `alta()`, y exigir tres cosas — que la excepción salió, que el destino conserva **exactamente** los bytes anteriores, y que el temporal quedó en el mismo directorio. **Mutante obligatorio:** sustituir `os.replace(tmp, dst)` por `dst.write_text(...)` debe dejar el test ROJO.
 
   **Fallo cerrado del registro corrupto:** un registro truncado que contenga el comienzo de una entrada local hace que `cargar()` lance `RegistryUnreadable`; el fichero original sigue en `*.corrupto.<ts>` con sus bytes intactos; y `resolver_por_identidad` sobre un canon `disponible` devuelve **error estructurado y cero efectos**, nunca `DRIVE_ACTIVE` (esa segunda mitad se prueba en el Task 7, con este error ya disponible).
 
   **Concurrencia:** dos procesos, barrera después de `cargar()`, `alta()` simultánea de W-codes **distintos**; al terminar deben existir **ambas** entradas. Y un test de layout que demuestre que un lockfile de D2 en la raíz del registro no se lee como entrada ni se manda a cuarentena.
-- [ ] **Step 2: Run tests to verify they fail**
-- [ ] **Step 3: Write the implementation**
-- [ ] **Step 4: Verify**
+- [x] **Step 2: Run tests to verify they fail**
+- [x] **Step 3: Write the implementation**
+- [x] **Step 4: Verify**
 
-```bash
-python -m pytest tests/test_workspace_registry.py -q
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests/test_workspace_registry.py -q
 ```
+
+**✅ CONSTRUIDO.** 22 tests, y **once mutantes que mueren cada uno POR SU FRONTERA** —no
+«alguno falla»: el arnés comprueba que el test asesino sea el que le toca. Se hizo así
+porque los 22 pasaron a la primera, y un test que nunca se vio fallar por su propia razón
+no prueba nada; es la lección de H7-07 aplicada al propio trabajo. Las once fronteras:
+atomicidad, temporal en el mismo directorio, fallo cerrado, cuarentena que preserva bytes,
+`ts` inyectado en el nombre de la cuarentena, layout por W-code, `*.json` (el lockfile de
+D2 no es una entrada), devolver **ambas** entradas, reloj inyectado en `revalidar`, guarda
+de raíz, y ruta duplicada.
+
+**Tres errores nuevos, y el §10 pasa de 12 a 15 códigos.** `REGISTRY_UNREADABLE` lo fuerza
+H7-02; `SCHEMA_NO_SOPORTADO` y `RUTA_YA_REGISTRADA` los pide este contrato. Van al
+**modelo** y no al registro: el resolver los muestra, así que les aplican las reglas de
+mensaje del §10 y los ocho canarios del §16 — definirlos aquí los habría dejado fuera de
+`errores_conocidos()`, que es el hueco que R7 castigó en H7-12. La tabla del §10 admitía
+las filas sin reabrir nada, porque dice «Como mínimo».
+
+**Desviación declarada del plan: `core/config.py` NO se toca.** Este task decía «Modify:
+`core/config.py` (raíz por defecto del registro)», y la raíz acabó en
+`workspace_registry.raiz_por_defecto()`. El motivo es concreto: `Settings` es un
+`@dataclass(frozen=True)` cuyos campos se evalúan **en el import**, así que un
+`workspace_registry_dir` ahí queda congelado y solo se puede redirigir con
+`importlib.reload(core.config)` —que la barrera permite pero desaconseja, y que arrastra
+el gotcha de `reload` + `isinstance`—. `raiz_por_defecto()` lee el entorno de forma
+perezosa. Y la clase **no** se cae a ese default: recibe la raíz inyectada, porque la
+barrera de test cubre rclone y `subprocess` pero no las escrituras a `%LOCALAPPDATA%`, y
+sin default no hay dónde caerse.
 
 ---
 
