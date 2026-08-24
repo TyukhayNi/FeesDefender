@@ -62,6 +62,7 @@ def hash_tree_local(root: Path, *, prefijo: str) -> dict[str, str]:
 
 
 _FUENTES_CLI = ("drive_ev", "manual", "whatsapp", "email")
+_MODOS = ("libre", "v1")
 
 
 def _inventario_desde_hashes(case_dir: Path, base: str, hashes: dict[str, str]) -> list[dict]:
@@ -350,6 +351,17 @@ def _derivar_team_id(folder_id):
         return None
     info = intake_drive.get_drive_folder_info(folder_id)
     return info.drive_id if (info and info.drive_id) else None
+
+
+def validar_modo(modo: str, *, crm: str, fuente: str) -> list[str]:
+    """Errores que impiden ejecutar en `modo`. Lista vacía = admisible.
+
+    Pura a propósito: la matriz de combinaciones se prueba sin arrancar el CLI ni
+    tocar disco, y el orden —validar ANTES de cualquier efecto— queda demostrable.
+    """
+    if modo not in _MODOS:
+        return [f"Modo desconocido: {modo!r}. Válidos: {_MODOS}"]
+    return []
 
 
 @app.command()
