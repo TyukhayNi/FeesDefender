@@ -487,8 +487,10 @@ def main(
             typer.echo(f"[ERROR] --case-id es excluyente con los flags de identidad: {dados}", err=True)
             raise typer.Exit(code=1)
         resolved = case_locator.resolve_ref(case_id)
-        case_dir = case_locator.path_for(resolved)
-        if not (case_dir / "00_Input" / "_caso.md").is_file():
+        # `buscar` y no `path_for`: un `--case-id` inexistente tiene que salir
+        # por este mensaje, no por una traza. Medido antes de migrar.
+        case_dir = case_locator.buscar(resolved)
+        if case_dir is None or not (case_dir / "00_Input" / "_caso.md").is_file():
             typer.echo(f"[ERROR] Caso no encontrado para --case-id {case_id!r} "
                        f"(resuelto: {resolved!r})", err=True)
             raise typer.Exit(code=1)

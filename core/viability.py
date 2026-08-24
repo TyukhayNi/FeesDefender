@@ -19,9 +19,13 @@ _MAX_CONTEXT_CHARS = 18_000  # margen prudente para llama3 8k contexto
 
 
 def _gather_top_context(case_id: str) -> tuple[str, list[str]]:
-    top_path = caso_path(case_id) / "02_Analisis" / "documentos_top.md"
+    from core.casos.case_locator import buscar
+    base = buscar(case_id)
+    if base is None:
+        return "", []                  # el caso no existe
+    top_path = base / "02_Analisis" / "documentos_top.md"
     if not top_path.exists():
-        return "", []
+        return "", []                  # el caso existe, el fichero no
     _, body = read_md(top_path)
     slugs = _LINK_RE.findall(body)
     proc_dir = caso_path(case_id) / "01_Procesado" / "MD"

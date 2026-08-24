@@ -145,9 +145,15 @@ def run(cmd: list[str], *, check: bool = True) -> int:
 def remove_expediente_entries(case_id: str, ids: tuple[str, ...] | list[str]) -> int:
     """Aplica remove_expediente_link sobre `case_id` para los IDs dados."""
     ids_target = {str(x).strip() for x in ids if str(x).strip()}
-    index = caso_path(case_id) / "00_Input" / "_caso.md"
+    from core.casos.case_locator import buscar
+    base = buscar(case_id)
+    if base is None:
+        print("  (!) el caso no existe en el catalogo")
+        return 0
+    index = base / "00_Input" / "_caso.md"
     if not index.exists():
-        print(f"  (!) _caso.md no existe: {index}")
+        # Sin la ruta absoluta: el §16 prohibe publicarla.
+        print("  (!) falta `_caso.md` en el caso")
         return 0
 
     removed: list[str] = []

@@ -1076,9 +1076,14 @@ def _atomic_write_caso_md(
     Raises:
         FileNotFoundError: si ``_caso.md`` no existe.
     """
-    index = caso_path(case_id) / "00_Input" / "_caso.md"
+    # `localizar` lanza el error estructurado del §10 si el caso no existe. El
+    # mensaje que habia aqui interpolaba el `case_id` ENTERO, y un `case_id` es
+    # `BaXXX - <direccion> - (W-XXXXX) - <tipo>`: publicaba la direccion del
+    # inmueble, que el §16 prohibe.
+    from core.casos.case_locator import localizar
+    index = localizar(case_id) / "00_Input" / "_caso.md"
     if not index.exists():
-        raise FileNotFoundError(f"_caso.md no existe para el caso {case_id!r}")
+        raise FileNotFoundError("falta `_caso.md` en el caso")
 
     fm, body = read_md(index)
     new_fm = mutator(fm)

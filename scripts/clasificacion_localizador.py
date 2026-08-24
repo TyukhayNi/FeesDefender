@@ -117,6 +117,11 @@ YA_ESTRICTOS: dict[str, str] = {
     "core/inventory.py:82": "localizar",
     "core/inventory.py:120": "localizar",
     "core/whatsapp_intake.py:151": "localizar",
+    # Corregido al regenerar el inventario: `_atomic_write_caso_md` estaba
+    # firmado como detector y NO lo es — lanza. Mi propia firma lo tenia mal,
+    # que es la cuarta vez que una clasificacion mia falla en un cubo confiado.
+    # Su mensaje ademas interpolaba el `case_id` entero (direccion incluida).
+    "core/case_manager.py:_atomic_write_caso_md": "localizar",
 }
 
 #: Constructores de rutas disfrazados: componen y devuelven. No se tocan — heredan
@@ -139,7 +144,6 @@ DETECTORES: dict[str, str] = {
     "core/case_manager.py:594": "buscar",
     "core/case_manager.py:920": "buscar",
     "core/case_manager.py:1016": "buscar",
-    "core/case_manager.py:1047": "buscar",
     "core/case_manager.py:1105": "buscar",
     "core/anon/api.py:471": "buscar",          # SEAM: tests parchean `anon_api.caso_path`
     "core/anon/api.py:502": "buscar",          # SEAM

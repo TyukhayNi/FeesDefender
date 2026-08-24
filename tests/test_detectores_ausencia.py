@@ -220,3 +220,55 @@ class TestLosQueYaLanzabanMejoranElError:
         with pytest.raises(LocalWorkspaceMissing) as exc:
             getattr(mod, funcion)(*args)
         assert str(root) not in str(exc.value)
+
+
+# --------------------------------------------------------------------------
+# Los entrypoints CLI: error legible, no traza
+# --------------------------------------------------------------------------
+#
+# Esta es la regresion que se midio al empezar el Task 6, y la razon de que
+# `buscar()` exista como tercera API. Hoy:
+#
+#     $ abrir_caso --case-id W-NOEXISTE
+#     [ERROR] Caso no encontrado para --case-id 'W-NOEXISTE'      (salida 1)
+#
+# Con la estrictez aplicada a secas, eso se convertia en un `FileNotFoundError`
+# sin capturar y **sin una sola linea de salida**. Un usuario que pide un caso que
+# no existe merece una frase, no un volcado.
+
+
+class TestLosEntrypointsCLISiguenDandoErrorLegible:
+    def test_abrir_caso_con_case_id_inexistente(self, root, monkeypatch):
+        from typer.testing import CliRunner
+        from core.casos import case_locator
+        from scripts import abrir_caso as cli
+        monkeypatch.setattr(case_locator, "_root", lambda: root)
+        res = CliRunner().invoke(cli.app, ["--case-id", "W-NOEXISTE", "--crm", "skip"])
+        assert res.exit_code == 1
+        assert "Caso no encontrado" in res.output
+        assert res.exception is None or isinstance(res.exception, SystemExit), (
+            "salio por excepcion sin capturar en vez de por mensaje")
+
+    def test_crm_ficha_con_case_id_inexistente(self, root, monkeypatch):
+        from typer.testing import CliRunner
+        from core.casos import case_locator
+        from scripts import crm_ficha as cli
+        monkeypatch.setattr(case_locator, "_root", lambda: root)
+        res = CliRunner().invoke(cli.app, ["--case-id", "W-NOEXISTE"])
+        assert res.exit_code == 1
+        assert "Caso no encontrado" in res.output
+
+
+# --------------------------------------------------------------------------
+# Y los mensajes de los scripts no publican la ruta local (§16)
+# --------------------------------------------------------------------------
+
+def test_los_scripts_no_imprimen_la_ruta_del_caso(root, capsys, monkeypatch):
+    """`limpieza_post_audit` y `remove_expediente_link` imprimian
+    `_caso.md no existe: <ruta absoluta>`. El §16 lo prohibe."""
+    from core.casos import case_locator
+    monkeypatch.setattr(case_locator, "_root", lambda: root)
+    from scripts import limpieza_post_audit as lpa
+    lpa.remove_expediente_entries("NO-EXISTE", ["1"])
+    salida = capsys.readouterr().out
+    assert str(root) not in salida, salida

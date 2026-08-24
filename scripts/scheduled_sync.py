@@ -114,9 +114,13 @@ def _keepalive_gdrive_ev(log: logging.Logger) -> None:
 def _read_expedientes(case_id: str) -> list[dict]:
     """Lee la lista de expedientes del índice _caso.md."""
     from core.config import caso_path
-    index = caso_path(case_id) / "00_Input" / "_caso.md"
+    from core.casos.case_locator import buscar
+    base = buscar(case_id)
+    if base is None:
+        return []                      # el caso no existe
+    index = base / "00_Input" / "_caso.md"
     if not index.exists():
-        return []
+        return []                      # el caso existe, `_caso.md` no
     text = index.read_text(encoding="utf-8")
     if not text.startswith("---"):
         return []

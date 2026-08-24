@@ -289,7 +289,10 @@ def list_crm_branch_files(case_id: str, branch_path: str) -> list[Path]:
     Excluye archivos de control internos. Devuelve lista vacía si el
     directorio no existe.
     """
-    case_dir = caso_path(case_id)
+    from core.casos.case_locator import buscar
+    case_dir = buscar(case_id)
+    if case_dir is None:
+        return []                      # el caso no existe
     branch = Path(branch_path.strip()) if branch_path else None
     if branch is None:
         return []
@@ -317,9 +320,13 @@ def list_files(case_id: str) -> list[Path]:
     """
     from .intake_lotes import MANIFIESTO_LOTE, PATRON_LOTE
 
-    input_dir = caso_path(case_id) / "00_Input"
+    from core.casos.case_locator import buscar
+    base = buscar(case_id)
+    if base is None:
+        return []                      # el caso no existe
+    input_dir = base / "00_Input"
     if not input_dir.exists():
-        return []
+        return []                      # el caso existe, `00_Input` no
     bases = [d for d in input_dir.iterdir() if d.is_dir()
              and (m := PATRON_LOTE.match(d.name)) and m.group(2) == "manual"]
     legacy = input_dir / _MANUAL_SUBDIR

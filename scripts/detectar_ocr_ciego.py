@@ -154,8 +154,9 @@ def _render(nombre: str, candidatos: list[tuple[dict, Perfil]], descartes: dict,
 def caso(case_id: str):
     """Criba un expediente concreto."""
     case_id = case_locator.resolve_ref(case_id)
-    case_dir = caso_path(case_id)
-    if not sm._sala_maquina_dir(case_dir).exists():
+    from core.casos.case_locator import buscar
+    case_dir = buscar(case_id)
+    if case_dir is None or not sm._sala_maquina_dir(case_dir).exists():
         typer.echo(f"[ERROR] {case_id}: la Sala de máquina no se ha ejecutado.", err=True)
         raise typer.Exit(code=1)
     candidatos, descartes = analizar_caso(case_dir)

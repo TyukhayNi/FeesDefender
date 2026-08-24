@@ -41,9 +41,15 @@ def main() -> int:
     case_id = sys.argv[1]
     ids_target: set[str] = {str(x).strip() for x in sys.argv[2:] if str(x).strip()}
 
-    index = caso_path(case_id) / "00_Input" / "_caso.md"
+    from core.casos.case_locator import buscar
+    base = buscar(case_id)
+    if base is None:
+        print("❌ el caso no existe en el catalogo")
+        return 1
+    index = base / "00_Input" / "_caso.md"
     if not index.exists():
-        print(f"❌ _caso.md no existe: {index}")
+        # Sin la ruta absoluta (§16).
+        print("❌ falta `_caso.md` en el caso")
         return 1
 
     removed: list[str] = []
