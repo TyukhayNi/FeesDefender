@@ -397,6 +397,10 @@ def main(
     folder_id: str | None = typer.Option(None, "--folder-id"),
     team_id: str | None = typer.Option(None, "--team-id"),
     fuente: str = typer.Option("drive_ev", "--fuente", help="drive_ev|manual|whatsapp|email"),
+    modo: str = typer.Option(
+        "libre", "--modo",
+        help="libre|v1. `v1` es el discriminante de la primera vertical (spec §24 D3): "
+             "exige --crm skip y --fuente drive_ev, y valida antes de cualquier efecto."),
     src: str | None = typer.Option(None, "--src", help="manual/whatsapp: carpeta o .zip"),
     rol: str | None = typer.Option(None, "--rol", help="whatsapp: rol_subdir"),
     cuenta: str | None = typer.Option(None, "--cuenta", help="email: cuenta gmail"),
@@ -412,6 +416,14 @@ def main(
     dry_run: bool = typer.Option(False, "--dry-run"),
     yes: bool = typer.Option(False, "--yes", help="auto-confirma el gate CRM"),
 ) -> None:
+    # Puerta del modo (spec §24 D3): se valida ANTES de la identidad, de ensure_case,
+    # de todo intake y de toda lectura remota. El orden es la propiedad, no el mensaje.
+    errores_modo = validar_modo(modo, crm=crm, fuente=fuente)
+    if errores_modo:
+        for e in errores_modo:
+            typer.echo(f"[ERROR] {e}", err=True)
+        raise typer.Exit(code=1)
+
     if fuente not in _FUENTES_CLI:
         typer.echo(f"[ERROR] Fuente desconocida: {fuente}. Válidas: {_FUENTES_CLI}", err=True)
         raise typer.Exit(code=1)
