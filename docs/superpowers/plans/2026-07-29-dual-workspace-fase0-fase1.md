@@ -404,7 +404,7 @@ dos valores tenía que servir a tres intenciones distintas**. Se separan:
 
   **`ensure_case` sigue creando, por la puerta explícita:** un test exige que el alta de un caso nuevo funciona igual que hoy, y que lo hace vía `destino_de_alta` — mutar `ensure_case` para que llame a `localizar()` debe dejarlo ROJO.
 - [x] **Step 2: Run tests to verify they fail**
-- [~] **Step 3: Write the implementation** — **la mitad del LOCALIZADOR, sí; el `CaseCatalog`, NO.**
+- [x] **Step 3: Write the implementation**
 - [x] **Step 4: Verify** — aquí es donde puede romperse algo ajeno:
 
 ```bash
@@ -416,7 +416,7 @@ Expected: suite completa verde. Si un test ajeno falla, **no** es del entorno: e
 
 ---
 
-**Estado del Task 6 — la mitad del localizador CERRADA, el `CaseCatalog` NO.**
+**Estado del Task 6 — ✅ COMPLETO.**
 
 Se separa así porque el task mezclaba dos piezas con riesgos muy distintos, y solo una
 tocaba los 43 ficheros de producción.
@@ -437,16 +437,28 @@ tocaba los 43 ficheros de producción.
   migración— y lleva su prueba de mutación. Censo de `strict=False` en producción: **CERO**.
 - Seis fugas del **§16** cerradas por el camino, ninguna buscada.
 
-**❌ Pendiente, y no se marca como hecho:**
+**✅ Y el `CaseCatalog`, que cierra el A-8:**
 
-- `class CaseCatalog` con `localizar`, `estado_compartido`, `es_proyeccion_local` y
-  `bajo_catalogo`. **No existe el fichero.**
-- `resolve_ref` → `AmbiguousCase` cuando dos casos comparten `meta.id_go`; hoy sigue
-  devolviendo el primero por orden de escaneo (es el A-8 que este task debía cerrar).
-- `meta.proyeccion_local`: ni se escribe ni excluye de `list_cases()`.
+- `core/casos/case_catalog.py` con las cuatro preguntas del §5.1 — y ninguna más: no
+  decide sobre qué copia se trabaja (Task 7) ni conoce las copias locales (el registro).
+- **El A-8 cerrado por las dos puertas.** Medido antes de escribir nada: con dos
+  carpetas declarando `id_go: W-DUPLI`, `resolve_ref` devolvía «Calle A» **sin aviso**,
+  elegida por orden de escaneo — renombrar una carpeta cambiaba la respuesta. Ahora
+  lanza `AmbiguousCase`, y se cierra **también** `case_locator.resolve_ref`, que era la
+  que elegía en silencio. Cerrar solo la puerta nueva habría dejado viva la dañina.
+- **La marca de proyección va en la misma pieza**, y no es un extra: el §6.3 prevé que
+  la copia local lleve su `_caso.md` con el **mismo** W-code, así que sin la marca el
+  propio diseño fabricaría la ambigüedad que la regla detecta. El filtro va en los
+  **tres** caminos de `list_cases()` — una proyección puede vivir bajo una ciudad.
+- `estado_compartido` **reutiliza** `config.ESTADO_REPO_*` y los lectores puros de
+  `repository_checkout`. Dos vocabularios para el mismo hecho es como nacen las
+  divergencias.
+- `bajo_catalogo` compara por **componentes de ruta**, no por prefijo de cadena:
+  `CASOS_x` no está bajo `CASOS`, y confundirlos daría por bueno un destino de checkout
+  fuera de la biblioteca.
 
-Lo pendiente **no bloquea** al Task 7 en su parte de registro y modos, pero sí en
-`estado_compartido` y `bajo_catalogo`, que el resolver consume. Conviene cerrarlo antes.
+17 tests y 8 mutantes, cada uno muerto por su frontera. **El Task 7 deja de estar
+bloqueado:** ya tiene el `estado_compartido` y el `bajo_catalogo` que consume.
 
 ---
 
