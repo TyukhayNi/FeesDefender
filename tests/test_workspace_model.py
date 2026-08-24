@@ -422,3 +422,72 @@ def test_toda_descripcion_declarada_respeta_los_canarios(clase):
     texto = str(clase(w_code="W-TEST01"))
     assert not _RE_UNIDAD_WINDOWS.search(texto), texto
     assert chr(92) not in texto, texto
+
+
+# --------------------------------------------------------------------------
+# El trabajo offline: restar una capacidad, nunca inyectarlas
+# --------------------------------------------------------------------------
+#
+# El §7.1.5 y el §7.2.9 permiten trabajar en local cuando Drive no esta
+# accesible, pero con `mutate_canonical = false`: se puede seguir, no publicar.
+#
+# `capabilities` NO se acepta en el constructor, y con razon —un llamador podria
+# fabricarse un `blocked_*` con `MUTATE_CANONICAL` y el contrato entero dejaria de
+# valer—. Pero eso prohibe INYECTAR, no RESTAR: un llamador que se quita una
+# capacidad solo puede hacerse menos poderoso, nunca mas. La asimetria es la que
+# permite expresar el offline sin abrir el agujero.
+
+
+def test_offline_retira_las_capacidades_que_TOCAN_el_canon():
+    """La version anterior de este test era VACUA y lo cazo la mutacion.
+
+    Comprobaba que un `local_checkout` offline no tuviera `MUTATE_CANONICAL` — y
+    ese modo **nunca la tuvo**: solo la tiene `drive_active`. Restarla no hacia
+    nada, y el test pasaba con el mecanismo desactivado.
+
+    Lo que un checkout local puede hacer contra el canon es CERRAR EL CICLO
+    (`CHECKIN`); un scratch, PROMOVER. Sin Drive no se puede revalidar el nonce ni
+    publicar, asi que son esas las que se retiran. Tal como estaba, un checkout
+    offline seguia anunciando `CHECKIN`.
+    """
+    ws = _ws("local_checkout", mutate_canonical=False)
+    assert not ws.permite(wm.Capability.CHECKIN)
+    assert ws.permite(wm.Capability.WRITE_CASE)
+    assert ws.permite(wm.Capability.INGEST)
+    assert ws.permite(wm.Capability.READ_CASE)
+
+
+def test_offline_retira_promote_en_un_scratch():
+    ws = _ws("local_scratch", mutate_canonical=False)
+    assert not ws.permite(wm.Capability.PROMOTE)
+    assert ws.permite(wm.Capability.WRITE_CASE)
+
+
+def test_offline_retira_las_tres_y_solo_esas():
+    """El conjunto retirado es exactamente `CAPACIDADES_DE_CANON`."""
+    for modo in wm.WorkspaceMode:
+        base = wm.CAPACIDADES_POR_MODO[modo]
+        off = _ws(modo.value, mutate_canonical=False).capabilities
+        assert base - off <= wm.CAPACIDADES_DE_CANON, modo
+        assert not (off & wm.CAPACIDADES_DE_CANON), modo
+
+
+def test_por_defecto_no_resta_nada():
+    completo = _ws("local_checkout")
+    assert completo.capabilities == wm.CAPACIDADES_POR_MODO[
+        wm.WorkspaceMode.LOCAL_CHECKOUT]
+
+
+def test_restar_NUNCA_puede_conceder_de_mas():
+    """La asimetria, fijada: el resultado siempre es subconjunto de la tabla."""
+    for modo in wm.WorkspaceMode:
+        base = wm.CAPACIDADES_POR_MODO[modo]
+        for restar in (True, False):
+            ws = _ws(modo.value, mutate_canonical=not restar)
+            assert ws.capabilities <= base, (modo, restar)
+
+
+def test_un_modo_bloqueado_sigue_sin_conceder_nada_aunque_no_se_reste():
+    ws = _ws("blocked_conflict", mutate_canonical=True)
+    assert not ws.permite(wm.Capability.MUTATE_CANONICAL)
+    assert not ws.permite(wm.Capability.WRITE_CASE)
