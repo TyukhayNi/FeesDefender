@@ -898,6 +898,128 @@ def test_g8_rechaza_nonce_presente_en_el_informe():
     assert any("aparece DENTRO" in f for f in fallos), fallos
 
 
+# G9 — el veredicto declarado debe estar EN el informe archivado.
+#
+# Encontrado el 2026-08-24 archivando el acta de R7, y por accidente: un mutante
+# mal dirigido cambio `veredicto: NO-SHIP` por `SHIP` en el FRONTMATTER en vez de
+# dentro del bloque literal, y los 39 guards siguieron verdes. G8 solo hashea el
+# cuerpo, asi que el campo de cabecera —el que lee un script, o un humano con
+# prisa— podia decir lo contrario que el informe que el acta custodia. Eso vacia
+# el proposito del acta, que es poder contrastar QUE DIJO el revisor con QUE
+# DECIDI YO que dijo.
+
+
+def _norm_veredicto(s: str) -> str:
+    """`NO SHIP` y `NO-SHIP` son el mismo veredicto escrito de dos maneras.
+
+    Las actas R1/R2 de apertura integral escriben «NO SHIP» con espacio en el
+    cuerpo y «NO-SHIP» con guion en el frontmatter. Normalizar guion y espacio es
+    lo que hace este guard aplicable a las trece actas existentes sin retrofit.
+    """
+    return re.sub(r"[\s-]+", " ", s).strip().upper()
+
+
+def _veredictos_en(cuerpo: str) -> set[str]:
+    """Los veredictos que el cuerpo declara, reclamados de mas largo a mas corto.
+
+    El orden NO es cosmetico: `"SHIP" in "NO SHIP"` es True, asi que una busqueda
+    por subcadena deja pasar un frontmatter `SHIP` sobre un informe `NO-SHIP` —
+    justo el mutante que motivo este guard. Tachando lo ya reclamado, `NO-SHIP` se
+    lleva el texto antes de que `SHIP` pueda mirarlo.
+    """
+    resto, hallados = _norm_veredicto(cuerpo), set()
+    for v in sorted(_VEREDICTOS_REV, key=len, reverse=True):
+        n = _norm_veredicto(v)
+        if n in resto:
+            hallados.add(v)
+            resto = resto.replace(n, "\x00" * len(n))
+    return hallados
+
+
+def _errores_veredicto(txt: str) -> list[str]:
+    """El veredicto del frontmatter aparece en el bloque literal. Sin tocar disco."""
+    fm = _fm(txt)
+    veredicto = fm.get("veredicto", "")
+    if not veredicto:
+        return []                      # la ausencia ya la reporta G8 por _CLAVES_ACTA
+    nonce = fm.get("marcador_nonce", "")
+    ini, fin = _marcadores(nonce)
+    if txt.count(ini) != 1 or txt.count(fin) != 1:
+        return []                      # delimitacion rota: es hallazgo de G8, no de G9
+    cuerpo = txt.split(ini, 1)[1].split(fin, 1)[0]
+    declarados = _veredictos_en(cuerpo)
+    if veredicto not in declarados:
+        return ["VEREDICTO DIVERGENTE: el frontmatter declara " + repr(veredicto)
+                + " y el informe archivado declara " + repr(sorted(declarados))]
+    return []
+
+
+def test_actas_veredicto_concuerda_con_el_informe():
+    """G9 — el `veredicto` del frontmatter aparece literalmente en el §1."""
+    malos = {}
+    for p, txt in _actas_con_nonce():
+        fallos = _errores_veredicto(txt)
+        if fallos:
+            malos[p.name] = fallos
+    assert not malos, ("actas cuyo veredicto declarado no consta en el informe que "
+                       "archivan: " + repr(malos))
+
+
+def test_g9_cubre_las_actas_con_veredicto():
+    """Hermano de los guards de cobertura de G7/G8: que no pase en verde por vacio."""
+    vistos = [p.name for p, txt in _actas_con_nonce() if _fm(txt).get("veredicto")]
+    assert len(vistos) >= 2, (
+        "G9 deberia cubrir al menos dos actas con veredicto; cubre " + repr(vistos))
+
+
+# --- G9, fixtures negativas --------------------------------------------------
+
+def _acta_con_veredicto(veredicto_fm, cuerpo, nonce="vq4t"):
+    ini, fin = _marcadores(nonce)
+    canon = (cuerpo.replace("\r\n", "\n").strip("\n") + "\n").encode("utf-8")
+    return ("---\nmarcador_nonce: " + nonce
+            + "\nveredicto: " + veredicto_fm
+            + "\nsha256_informe: " + hashlib.sha256(canon).hexdigest()
+            + "\n---\n\n" + ini + "\n" + cuerpo + fin + "\n")
+
+
+def test_g9_acepta_el_veredicto_coherente():
+    acta = _acta_con_veredicto("NO-SHIP", "hallazgos\n\nVeredicto final: NO-SHIP\n")
+    assert _errores_veredicto(acta) == []
+
+
+def test_g9_rechaza_el_frontmatter_que_miente():
+    """El mutante que encontro el hueco: cabecera SHIP, informe NO-SHIP."""
+    acta = _acta_con_veredicto("SHIP", "hallazgos\n\nVeredicto final: NO-SHIP\n")
+    fallos = _errores_veredicto(acta)
+    assert any("VEREDICTO DIVERGENTE" in f for f in fallos), fallos
+
+
+def test_g9_tolera_la_variante_de_guion_y_espacio():
+    """R1/R2 de apertura integral: «NO SHIP» en el cuerpo, «NO-SHIP» en la ficha.
+
+    Es variacion de formato, no tergiversacion, y el guard no debe confundirlas:
+    si las confundiera, el precio seria un retrofit de dos actas historicas.
+    """
+    acta = _acta_con_veredicto("NO-SHIP", "hallazgos\n\n**NO SHIP.** por H-01\n")
+    assert _errores_veredicto(acta) == []
+
+
+def test_g9_no_confunde_ship_con_no_ship():
+    """La trampa de la subcadena, fijada como test: `SHIP` no vive en `NO SHIP`."""
+    assert _veredictos_en("veredicto: NO-SHIP\n") == {"NO-SHIP"}
+    assert _veredictos_en("veredicto: NO SHIP\n") == {"NO-SHIP"}
+    assert _veredictos_en("veredicto: SHIP\n") == {"SHIP"}
+
+
+def test_g9_no_se_pronuncia_si_la_delimitacion_esta_rota():
+    """Un fallo de marcadores es de G8. G9 callado evita el diagnostico doble."""
+    ini, fin = _marcadores("vq4t")
+    acta = ("---\nmarcador_nonce: vq4t\nveredicto: SHIP\n---\n\n"
+            + ini + "\nuno\n" + fin + "\n" + ini + "\ndos\n" + fin + "\n")
+    assert _errores_veredicto(acta) == []
+
+
 def test_un_word_abierto_no_puede_romper_la_suite(tmp_path, monkeypatch):
     """Un fichero de bloqueo de Office (`~$*.md`) no es documentación: se ignora.
 

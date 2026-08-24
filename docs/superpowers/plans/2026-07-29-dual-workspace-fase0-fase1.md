@@ -33,8 +33,8 @@ Sin dependencias nuevas.
 - **Fail closed.** Ante ambigüedad, el resolver lanza. Nunca devuelve un workspace «probable».
 - **Cero PII en tests y en mensajes.** Casos sintéticos tipo `BaRS9 - Prueba - (W-TEST99) - Vuelta`; los errores citan W-code y código de error, nunca nombres ni rutas de terceros (spec §16).
 - **Encoding:** UTF-8 sin BOM explícito (`encoding="utf-8"`) en toda lectura/escritura.
-- **Comandos desde la raíz del worktree**, con el venv del repo: `python -m pytest ...`.
-- **Suite completa verde antes del PR.** El CI del PR solo corre `leak-scan`; pytest es responsabilidad local (memoria `feedback-ci-pr-solo-leak-scan`). Conteo por `--junit-xml`, no por el resumen de la tubería (`feedback-pytest-junit-xml-y-dead-ends`).
+- **Comandos desde la raíz del worktree, con el intérprete del venv EXPLÍCITO** (`.\.venv\Scripts\python.exe -m pytest ...`). El `python` global de esta máquina **recoge** los tests y luego falla con `ModuleNotFoundError: dotenv` — medido en R7, siete errores de setup. Y `--basetemp` va **corto** y bajo `$env:TEMP`: con un basetemp bajo un worktree de ruta larga, `test_resumen_cuenta_por_estado` falla por presupuesto de ruta (MAX_PATH) y el fallo **no es del test** (memoria `feedback-pytest-junit-xml-y-dead-ends`).
+- **Suite completa verde antes del PR.** El CI del PR solo corre `leak-scan`; pytest es responsabilidad local (memoria `feedback-ci-pr-solo-leak-scan`). Conteo por `--junit-xml`, no por el resumen de la tubería (`feedback-pytest-junit-xml-y-dead-ends`). **La sintaxis es de PowerShell, no de `cmd.exe`:** `--junit-xml="$env:TEMP\fd_junit.xml"`. `%TEMP%` no se expande en el shell normativo de este repo y llega literal al argumento (medido en R7).
 
 ---
 
@@ -241,14 +241,46 @@ Es la pieza que todas las demás consumen y no tiene dependencias: primero.
 - `class WorkspaceError(Exception)` con `codigo: str` + subclases por cada código del §10 (`CaseLocked`, `LocalWorkspaceMissing`, `LockMismatch`, `LockNotMine`, `CaseConflict`, `AmbiguousCase`, `RuntimeCannotAccessWorkspace`, `CapabilityDenied`, `CanonicalMutationDeferred`, `CheckoutCancelledElsewhere`, `WorkspaceUnderCatalogRoot`, `AuditBaselineMissing`).
 - `str(error)` **nunca** incluye rutas locales (§16): el mensaje se construye con W-code, código, titular y fecha.
 
-- [ ] **Step 1: Write the failing tests** — `CaseRef` sin identidad lanza; un modo `BLOCKED_*` **no** concede `WRITE_CASE` ni `INGEST`; `LOCAL_CHECKOUT` no concede `MUTATE_CANONICAL`; `working_root is None` con modo mutable es incoherente y lanza; `exigir` lanza `CapabilityDenied` con `codigo == "CAPABILITY_DENIED"`; un `CaseWorkspace` es inmutable (`dataclasses.FrozenInstanceError`); ningún `str(error)` contiene el separador de unidad de Windows.
-- [ ] **Step 2: Run tests to verify they fail**
-- [ ] **Step 3: Write the implementation**
-- [ ] **Step 4: Verify**
+- [x] **Step 1: Write the failing tests** — `CaseRef` sin identidad lanza; `working_root is None` con modo mutable es incoherente y lanza; `exigir` lanza `CapabilityDenied` con `codigo == "CAPABILITY_DENIED"`; un `CaseWorkspace` es inmutable (`dataclasses.FrozenInstanceError`).
 
-```bash
-python -m pytest tests/test_workspace_model.py -q
+  **La tabla se prueba por IGUALDAD COMPLETA, no por negativos sueltos** (R7/H7-10). Los tres negativos que este Step tenía —`BLOCKED_*` sin `WRITE_CASE` ni `INGEST`, `LOCAL_CHECKOUT` sin `MUTATE_CANONICAL`— los pasa también una tabla **casi vacía**, que es el modo de fallo caro: difiere el descubrimiento a una fase posterior. Por tanto: `CAPACIDADES_POR_MODO[modo] == esperado[modo]` parametrizado por los cinco modos, con las **ocho** capacidades del §5.4 nombradas en positivo donde corresponda (`read_case`, `write_case`, `ingest`, `generate_derivatives`, `mutate_canonical`, `checkout`, `checkin`, `promote`).
+
+  **Mutación obligatoria:** ocho mutantes, uno por capacidad, cada uno quitándola o intercambiándola en un modo. Los ocho deben morir. Una tabla es un dato, y un dato solo queda contratado por la igualdad que lo fija (memoria `feedback-mutacion-vale-por-su-mutante`).
+
+  **Los doce errores del §10, y sus mensajes** (R7/H7-12). El canario «no contiene el separador de unidad de Windows» solo detecta `:\`: dejaba pasar `C:/...`, `\\servidor\...`, `/home/...` y cualquier ruta relativa. Se parametrizan **las doce subclases** contra un juego de canarios —Windows con las dos barras, UNC, POSIX, relativa— más nombre, email y dirección (§16), exigiendo ausencia de todos. Y se prueban las otras dos reglas del §10, que no estaban en ningún Step: el mensaje **declara que no hubo efecto** cuando el camino es de bloqueo, y **nunca sugiere reintentar contra Drive**. Se comprueba el `codigo` exacto de cada una de las doce, no solo el de `CapabilityDenied`.
+- [x] **Step 2: Run tests to verify they fail**
+- [x] **Step 3: Write the implementation**
+- [x] **Step 4: Verify**
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests/test_workspace_model.py -q
 ```
+
+**✅ CONSTRUIDO** en `d6cee04` (modelo + tests) y `de14b20` (el hueco que encontró un mutante
+superviviente: un `w_code` en blanco se normalizaba a cadena vacía en vez de a `None`, así que
+pasaba por identidad válida).
+
+**Lo que R7 le cambió después de estar construido.** El task se levantó **antes** de que R7
+adjudicara, así que sus dos hallazgos se comprobaron contra el código ya escrito, no contra el plan:
+
+- **H7-10 (tabla de capacidades) — ya cubierto.** `test_la_matriz_de_capacidades_es_la_del_spec`
+  compara el diccionario **entero** contra una transcripción a mano, así que un mutante que quite o
+  intercambie cualquiera de las ocho capacidades en cualquiera de los cinco modos muere ahí. La
+  igualdad completa que el hallazgo pedía ya estaba; no hicieron falta ocho mutantes sueltos, porque
+  la igualdad los mata a todos.
+- **H7-12 (mensajes de error) — hueco real, y doble.** El canario era **uno solo** —una ruta de
+  Windows— y sus dos asertos (`[A-Za-z]:[\/]` y la contrabarra) cazaban **3 de 8** casos: Windows
+  con las dos barras y UNC. Se le escapaban POSIX puro, la ruta relativa y las tres de PII del §16;
+  y como solo **inyectaba** una ruta Windows, esos cinco no se ejercitaban en ningún caso. Ampliado
+  a **ocho canarios × doce clases**, con fragmentos parciales además de la copia literal, y la
+  segunda regla del §10 —no empujar a reintentar contra Drive— extendida de **una** clase a las
+  doce. Verificado por mutación: filtrar `detalle` tal cual mata los cinco canarios que antes
+  pasaban, por las doce clases.
+
+**Y una frontera que se respeta a propósito:** *no* se prueba que el mensaje no lleve un nombre. El
+§10.3 manda construirlo con «W-code, código, titular y fecha», o sea que el `titular` va dentro por
+diseño. Un canario de «ningún nombre» contradiría la fuente en vez de protegerla, así que el vector
+que se vigila es `detalle`.
 
 ---
 
@@ -263,25 +295,75 @@ python -m pytest tests/test_workspace_model.py -q
 - Raíz: `settings.workspace_registry_dir`, por defecto `%LOCALAPPDATA%\FeesDefender\workspaces` y override por `FEESDEFENDER_WORKSPACE_REGISTRY`. **Nunca** bajo el repo ni bajo `CASOS_ROOT` (comprobado en el arranque; si coincide, lanza).
 - `@dataclass(frozen=True) WorkspaceEntry`: `case_id`, `w_code`, `canonical_ref`, `local_path: Path`, `nonce`, `maquina`, `tipo: Literal["checkout","scratch"]`, `ultima_validacion: str`, `schema: int`.
 - `class WorkspaceRegistry`: `cargar()`, `buscar(ref: CaseRef) -> list[WorkspaceEntry]`, `alta(entry)`, `baja(ref)`, `revalidar(ref, *, local_path)`.
+- **Forma del registro: UN FICHERO POR ENTRADA, nombrado por W-code** — `<w_code>.json` bajo la raíz del registro. **Esto se decide aquí y no después** (R7/H7-04). Un JSON agregado —la lectura natural de `cargar()` en singular— tiene dos problemas que un `os.replace` no resuelve: (1) *lost updates*, dos procesos cargan el mismo estado y el último reemplazo borra el alta del primero; y (2) el mutex de **D2** (§24 de la spec de apertura) es un lockfile `O_CREAT|O_EXCL` con **namespace por W-code** que vive en este registro, y locks por W-code **no se excluyen entre sí** sobre un fichero agregado. Cambiar la forma después arrastra cuarentena, migración y tests. Un fichero por W-code hace que la atomicidad por entrada baste y que los lockfiles de D2 convivan sin colisión.
 - Escritura atómica: fichero temporal en el mismo directorio + `os.replace`. Nunca escritura in-place.
-- Un registro corrupto **no se borra**: se renombra a `*.corrupto.<ts>` y se devuelve vacío con aviso; el `ts` lo pasa el llamante (nada de `Date.now()` implícito en la lógica pura).
+- **Un registro corrupto NO se convierte en «registro vacío»: FALLA CERRADO** (R7/H7-02). Los bytes se preservan renombrando a `*.corrupto.<ts>` (el `ts` lo pasa el llamante: nada de reloj implícito en la lógica pura), pero `cargar()` **lanza** `RegistryUnreadable`, no devuelve `[]`. Devolver vacío borra la diferencia entre «no había workspace local» y «no puedo saber qué había», y esa segunda es precisamente la que el resolver necesita para **no** autorizar `DRIVE_ACTIVE` sobre un caso que quizá está prestado. La cuarentena salva los bytes; la decisión de autorización ya habría fallado abierta. Contraría el «Fail closed» del §3 de la spec dual y la constraint global de este plan.
 - `schema` distinto del soportado → error explícito, no adivinar.
 
-- [ ] **Step 1: Write the failing tests** — dos entradas para el mismo `w_code` se devuelven **ambas** (la desambiguación es del resolver, no del registro); `alta` sobre una ruta que ya está registrada para otro caso lanza; `os.replace` deja el fichero íntegro si el proceso muere entre escritura y rename (simulado escribiendo el temporal y no renombrando); JSON corrupto → cuarentena + vacío; ruta del registro bajo `CASOS_ROOT` → lanza; el fichero **no** contiene secretos ni contenido de documentos.
-- [ ] **Step 2: Run tests to verify they fail**
-- [ ] **Step 3: Write the implementation**
-- [ ] **Step 4: Verify**
+- [x] **Step 1: Write the failing tests** — dos entradas para el mismo `w_code` se devuelven **ambas** (la desambiguación es del resolver, no del registro); `alta` sobre una ruta que ya está registrada para otro caso lanza; ruta del registro bajo `CASOS_ROOT` → lanza; el fichero **no** contiene secretos ni contenido de documentos; `schema` no soportado → lanza; `revalidar` usa el `ts` **inyectado** y no un reloj propio.
 
-```bash
-python -m pytest tests/test_workspace_registry.py -q
+  **La atomicidad se prueba ATRAVESANDO LA API** (R7/H7-03). La versión anterior de este Step decía «simulado escribiendo el temporal y no renombrando», que **no llama a `alta()`**: ese test pasa aunque producción escriba el JSON destino in-place y jamás use `os.replace`. Prueba correcta: sembrar bytes válidos, parchear `os.replace` **en el módulo de producción** para que lance, invocar `alta()`, y exigir tres cosas — que la excepción salió, que el destino conserva **exactamente** los bytes anteriores, y que el temporal quedó en el mismo directorio. **Mutante obligatorio:** sustituir `os.replace(tmp, dst)` por `dst.write_text(...)` debe dejar el test ROJO.
+
+  **Fallo cerrado del registro corrupto:** un registro truncado que contenga el comienzo de una entrada local hace que `cargar()` lance `RegistryUnreadable`; el fichero original sigue en `*.corrupto.<ts>` con sus bytes intactos; y `resolver_por_identidad` sobre un canon `disponible` devuelve **error estructurado y cero efectos**, nunca `DRIVE_ACTIVE` (esa segunda mitad se prueba en el Task 7, con este error ya disponible).
+
+  **Concurrencia:** dos procesos, barrera después de `cargar()`, `alta()` simultánea de W-codes **distintos**; al terminar deben existir **ambas** entradas. Y un test de layout que demuestre que un lockfile de D2 en la raíz del registro no se lee como entrada ni se manda a cuarentena.
+- [x] **Step 2: Run tests to verify they fail**
+- [x] **Step 3: Write the implementation**
+- [x] **Step 4: Verify**
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests/test_workspace_registry.py -q
 ```
+
+**✅ CONSTRUIDO.** 22 tests, y **once mutantes que mueren cada uno POR SU FRONTERA** —no
+«alguno falla»: el arnés comprueba que el test asesino sea el que le toca. Se hizo así
+porque los 22 pasaron a la primera, y un test que nunca se vio fallar por su propia razón
+no prueba nada; es la lección de H7-07 aplicada al propio trabajo. Las once fronteras:
+atomicidad, temporal en el mismo directorio, fallo cerrado, cuarentena que preserva bytes,
+`ts` inyectado en el nombre de la cuarentena, layout por W-code, `*.json` (el lockfile de
+D2 no es una entrada), devolver **ambas** entradas, reloj inyectado en `revalidar`, guarda
+de raíz, y ruta duplicada.
+
+**Tres errores nuevos, y el §10 pasa de 12 a 15 códigos.** `REGISTRY_UNREADABLE` lo fuerza
+H7-02; `SCHEMA_NO_SOPORTADO` y `RUTA_YA_REGISTRADA` los pide este contrato. Van al
+**modelo** y no al registro: el resolver los muestra, así que les aplican las reglas de
+mensaje del §10 y los ocho canarios del §16 — definirlos aquí los habría dejado fuera de
+`errores_conocidos()`, que es el hueco que R7 castigó en H7-12. La tabla del §10 admitía
+las filas sin reabrir nada, porque dice «Como mínimo».
+
+**Desviación declarada del plan: `core/config.py` NO se toca.** Este task decía «Modify:
+`core/config.py` (raíz por defecto del registro)», y la raíz acabó en
+`workspace_registry.raiz_por_defecto()`. El motivo es concreto: `Settings` es un
+`@dataclass(frozen=True)` cuyos campos se evalúan **en el import**, así que un
+`workspace_registry_dir` ahí queda congelado y solo se puede redirigir con
+`importlib.reload(core.config)` —que la barrera permite pero desaconseja, y que arrastra
+el gotcha de `reload` + `isinstance`—. `raiz_por_defecto()` lee el entorno de forma
+perezosa. Y la clase **no** se cae a ese default: recibe la raíz inyectada, porque la
+barrera de test cubre rclone y `subprocess` pero no las escrituras a `%LOCALAPPDATA%`, y
+sin default no hay dónde caerse.
 
 ---
 
 ### Task 6: `CaseCatalog` + modo estricto del localizador (cierra A-5 y A-8)
 
 Aquí se mata el fallback silencioso. Es el cambio con más superficie de
-regresión de la Fase 1: `path_for` y `caso_path` los llaman 80 ficheros.
+regresión de la Fase 1.
+
+**El inventario, medido por AST y no por `grep`** (R7/H7-14). La versión anterior decía «los
+llaman 80 ficheros», y ese 80 sale de contar ficheros que **mencionan** la subcadena —imports,
+comentarios, docstrings y 25 ficheros de test incluidos—, no llamadas. Contando nodos
+`ast.Call`:
+
+| Símbolo | Llamadas | Ficheros |
+|---|---|---|
+| `path_for` | 39 | 13 |
+| `caso_path` | 112 | 44 |
+| **unión, todo el repo** | **151** | **55** (43 producción + 12 tests) |
+| unión, solo producción | 95 | **43** |
+
+La superficie real de migración es de **43 ficheros de producción**. El Step 1 exige emitir ese
+inventario con un script AST versionado (fichero, línea, símbolo, producción/test), porque es a
+la vez la lista de trabajo y el insumo del guard de `legacy_unresolved`.
 
 **Files:**
 - Create: `core/casos/case_catalog.py`
@@ -289,13 +371,38 @@ regresión de la Fase 1: `path_for` y `caso_path` los llaman 80 ficheros.
 - Test: `tests/test_workspace_catalog.py`, `tests/test_case_locator.py` (añadir)
 
 **Interfaces:**
-- `path_for(case_id: str, *, strict: bool = False) -> Path`: con `strict=True` lanza `LocalWorkspaceMissing` en vez de devolver la ruta flat inexistente. **Default `False` en esta fase** (compatibilidad); el default se invierte en la Fase 4, cuando ya no queden llamadores legacy.
-- `caso_path(case_id, *, strict: bool = False)` propaga el keyword.
+**El booleano `strict` era la forma equivocada, y por eso el plan se contradecía a sí mismo**
+(R7/H7-01, el CRÍTICO). Su *Goal* y su criterio de salida (2) exigen que ningún camino cree un
+directorio bajo `CASOS_ROOT` para una identidad que el catálogo no conoce; su sección final
+declaraba no invertir el default «hasta la Fase 4». Las dos cosas no caben, y la spec zanja el
+empate: la Fase 1 es donde «`caso_path` deja de devolver rutas inexistentes y ningún escritor
+hace `mkdir` de la raíz» (§Fase 1 de la spec dual, y D1 en los mismos términos).
+
+El plan quedó atrapado eligiendo entre romper el alta e invertir el default porque **un flag de
+dos valores tenía que servir a tres intenciones distintas**. Se separan:
+
+| Intención | API | Ausencia del caso | Quién la usa |
+|---|---|---|---|
+| **Localizar** lo que debe existir | `localizar(case_id) -> Path` | **lanza** `LocalWorkspaceMissing` | todo lector y todo escritor de un caso ya abierto |
+| **Preguntar** si existe | `buscar(case_id) -> Path \| None` | devuelve `None` | los detectores de ausencia con rama elegante |
+| **Nombrar** destino de un alta | `destino_de_alta(case_id) -> Path` | es su caso normal | **solo** `case_manager.ensure_case` |
+
+- `path_for(case_id: str, *, strict: bool = True) -> Path`: **default `True` ya en esta fase**, como manda la spec. `strict=False` sobrevive únicamente como escotilla legacy explícita, inventariada y con guard que impide que crezca.
+- `caso_path(case_id, *, strict: bool = True)` propaga el keyword.
+- `destino_de_alta` **no pasa por el localizador estricto**: nombra una ruta que por definición todavía no existe. Es la única puerta por la que se crea, y es explícita en el nombre.
+
+**Los 27 detectores de ausencia, medidos** (aportación del adjudicador, que el revisor no vio). Hay una tercera clase de llamador que ni crea ni lee un caso existente: usa la ruta del fallback **para saber si el caso existe** —`caso_path(x) / "_caso.md"` y luego `if not .exists(): <rama elegante>`—. Son **27 sitios en 17 ficheros**. Con `strict=True` no reciben `False`: reciben una excepción, y su rama elegante desaparece. Medido en vivo sobre `scripts/abrir_caso.py`: hoy un `--case-id` inexistente da `[ERROR] Caso no encontrado para --case-id 'W-NOEXISTE'` con salida 1; con `strict=True` aplicado sin más, da un `FileNotFoundError` sin capturar y **sin una sola línea de salida**. Esos 27 migran a `buscar()`, no a `localizar()`. Sin esta tercera API, invertir el default degrada la interfaz de dos entrypoints (`abrir_caso`, `crm_ficha`) de un error legible a una traza.
 - `resolve_ref(ref)` conserva firma, **pero** si dos casos del catálogo comparten `meta.id_go` lanza `AmbiguousCase` en lugar de devolver el primero por orden de escaneo.
 - `class CaseCatalog`: `localizar(ref: CaseRef) -> Path` (estricto siempre), `estado_compartido(ref) -> dict` (lee el `_caso.md` del canon vía `read_case_meta`), `es_proyeccion_local(case_dir) -> bool` (marca `meta.proyeccion_local`), `bajo_catalogo(path) -> bool` (para `WorkspaceUnderCatalogRoot`).
 - Un `case_dir` marcado como proyección local **se excluye** de `list_cases()`.
 
-- [ ] **Step 1: Write the failing tests** — `path_for(strict=True)` de un caso ausente lanza y **no crea nada** (comprobar el árbol antes/después); dos casos con el mismo `id_go` → `AmbiguousCase`; una carpeta con `meta.proyeccion_local: true` no aparece en `list_cases()` ni gana la resolución por W-code; `bajo_catalogo` reconoce un subdirectorio de `CASOS_ROOT` y rechaza uno de fuera; `path_for(strict=False)` sigue comportándose exactamente como hoy (regresión).
+- [ ] **Step 1: Write the failing tests** — `localizar()` de un caso ausente lanza `LocalWorkspaceMissing` y **no crea nada** (hash del árbol antes/después, idéntico); `buscar()` del mismo caso devuelve `None` y tampoco crea nada; `destino_de_alta()` devuelve la ruta y **tampoco** crea nada (nombrar no es crear); dos casos con el mismo `id_go` → `AmbiguousCase`; una carpeta con `meta.proyeccion_local: true` no aparece en `list_cases()` ni gana la resolución por W-code; `bajo_catalogo` reconoce un subdirectorio de `CASOS_ROOT` y rechaza uno de fuera; `path_for(strict=False)` sigue comportándose exactamente como hoy (la escotilla legacy).
+
+  **La propagación del keyword se prueba, no se supone** (R7/H7-01): un test llama `config.caso_path(ausente)` **sin argumentos** y exige `LocalWorkspaceMissing` — si `caso_path` se olvida de propagar, ese test es el único que lo caza.
+
+  **Barrido parametrizado de escritores, sobre el inventario AST del Step 0:** para cada escritor de producción, invocarlo con un W-code inexistente y exigir `LocalWorkspaceMissing` **más** hash de `CASOS_ROOT` idéntico antes y después. Es el test que convierte el criterio de salida (2) en algo que muere si alguien lo rompe, en vez de una frase. Incluye a `catalogo_documental.save_catalog`, que hoy hace `mkdir(parents=True)` sobre la ruta resuelta.
+
+  **`ensure_case` sigue creando, por la puerta explícita:** un test exige que el alta de un caso nuevo funciona igual que hoy, y que lo hace vía `destino_de_alta` — mutar `ensure_case` para que llame a `localizar()` debe dejarlo ROJO.
 - [ ] **Step 2: Run tests to verify they fail**
 - [ ] **Step 3: Write the implementation**
 - [ ] **Step 4: Verify** — aquí es donde puede romperse algo ajeno:
@@ -317,9 +424,10 @@ Expected: suite completa verde. Si un test ajeno falla, **no** es del entorno: e
 
 **Interfaces:**
 - `class CaseWorkspaceResolver(catalog: CaseCatalog, registry: WorkspaceRegistry, *, usuario: str, maquina: str, ahora: str)` — el reloj y la identidad **se inyectan**: la pieza es pura y determinista.
+- **Y eso se contrata, no se enuncia** (R7/H7-11). Un constructor puede aceptar los tres argumentos y luego ignorarlos llamando a `datetime.now()`, `getpass.getuser()` o `socket.gethostname()` por dentro; el Step 1 anterior comprobaba resultados de escenarios, que pasan igual. Prueba: parchear los tres **globales** para que **lancen**, resolver, y exigir que no salte nada; luego resolver dos veces con entradas idénticas y exigir igualdad completa del `CaseWorkspace`; luego variar **solo** una inyección y exigir que cambien únicamente los campos que dependen de ella.
 - `resolver_por_identidad(ref: CaseRef, *, drive_accesible: bool) -> CaseWorkspace` — implementa §7.2 paso por paso.
 - `resolver_por_ruta(path: Path, *, drive_accesible: bool) -> CaseWorkspace` — implementa §7.1.
-- Ambos **lanzan** `WorkspaceError` en los caminos de bloqueo; no devuelven un modo `BLOCKED_*` como valor de retorno normal salvo cuando el llamante pide diagnóstico explícito (`diagnostico=True`).
+- Ambos **lanzan** `WorkspaceError` en los caminos de bloqueo; no devuelven un modo `BLOCKED_*` como valor de retorno normal salvo cuando el llamante pide diagnóstico explícito. Ese `diagnostico: bool = False` **va en las dos firmas de arriba**, que no lo declaraban: la excepción se mencionaba en prosa y no existía en la interfaz (R7/H7-11).
 - `mutate_canonical=False` en el camino offline (§7.1.5 / §7.2.9).
 
 - [ ] **Step 1: Write the failing tests** — una fila por escenario del §14.1, más: `prestado` por otra máquina → `CaseLocked` con titular y fecha en el mensaje y **sin** ruta local; `prestado` propio con nonce distinto → `LockMismatch`; `prestado` propio sin entrada de registro → `LocalWorkspaceMissing` (no se adopta solo, §15); `conflicto` → `CaseConflict` en cualquier modo; Drive inaccesible con **un** checkout verificado → `LOCAL_CHECKOUT` sin `MUTATE_CANONICAL`; Drive inaccesible con dos candidatos → `AmbiguousCase`; scratch cuyo W-code colisiona con un caso publicado → `AmbiguousCase` que exige `--case-dir`; `--case-dir` a una ruta bajo `CASOS_ROOT` → `WorkspaceUnderCatalogRoot`; `--case-dir` donde identidad, manifest y registro se contradicen → aborta.
@@ -344,9 +452,10 @@ split brain.
 
 **Interfaces:**
 - `append_event(destino, event, *, details=None, actor=None, ts=None, case_id=None) -> Path`, donde `destino` es un `CaseWorkspace` **o** un `Path` al árbol del caso ya resuelto. El `case_id` del registro sale del workspace; el keyword existe solo para el camino `Path`.
-- `log_path(case_id)` queda **deprecado**: emite `DeprecationWarning` y exige `strict=False` explícito; se retira en la Fase 4. `log_path_de(case_dir: Path) -> Path` es la vía nueva.
+- **`log_path(case_id)` SE RETIRA en esta fase**, no se deprecia hasta la Fase 4 (R7/H7-01). La spec lo dice sin matices al definir la Fase 1: «`core.intake_log` migrado en esta fase (B0-1): `append_event` recibe el workspace o el log ya resuelto; `log_path(case_id)` **se retira**». Dejarlo vivo con `DeprecationWarning` conserva exactamente la vía que parte la custodia en dos, que es el defecto que este task existe para cerrar. `log_path_de(case_dir: Path) -> Path` es la única vía.
 - **`append_event` deja de crear la raíz del caso.** Si `00_Input/` no existe bajo el destino, lanza `LocalWorkspaceMissing`: crear un expediente es trabajo de la apertura, no de la auditoría. Solo crea el fichero de log.
-- Altas en `INTAKE_EVENTS` (27 → 32): `scratch_creado`, `scratch_promovido`, `checkout_adoptado`, `conflicto_resuelto`, `checkout_cancelado_unilateral`. `pendiente_checkin` **se conserva** (lectura histórica) con comentario de que su emisión se retira en la Fase 2.
+- Altas en `INTAKE_EVENTS` (**28 → 33**): `scratch_creado`, `scratch_promovido`, `checkout_adoptado`, `conflicto_resuelto`, `checkout_cancelado_unilateral`. `pendiente_checkin` **se conserva** (lectura histórica) con comentario de que su emisión se retira en la Fase 2.
+- **La aritmética estaba rancia y era peligrosa** (R7/H7-06). El plan decía «27 → 32», pero el repo tiene **28** eventos desde que `contenido_adjuntos` entró el 2026-08-04, **después** de escribirse este plan. Verificado: `len(INTAKE_EVENTS) == 28`. Sumar los cinco da **33**. Un `assert len(...) == 32` habría forzado al implementador a **borrar en silencio un evento histórico** para cuadrar el número — y en un log forense retirar vocabulario rompe la lectura de lo ya escrito. El aserto es doble: `len(INTAKE_EVENTS) == 33` **y** comparación de conjuntos —los 28 actuales son subconjunto estricto y la diferencia es exactamente los cinco nuevos—, que es lo que impide cuadrar la cifra por resta.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -362,10 +471,30 @@ def test_append_event_no_crea_la_raiz_del_caso(tmp_path):
 def test_append_event_escribe_en_el_arbol_del_workspace_no_en_casos_root(tmp_path, monkeypatch):
     # Con --case-dir, el evento cae junto a los bytes. Si alguien reintroduce
     # caso_path aquí, este test lo caza.
-    ...
+    #
+    # R7/H7-05: este cuerpo era literalmente `...`, que es una expresión Python
+    # válida. El test PASABA sin llamar a append_event, sin sembrar CASOS_ROOT y
+    # sin comprobar ningún fichero — verde en la frontera central del plan, en el
+    # task que él mismo llama «la más importante».
+    canon = tmp_path / "CASOS"                      # el sentinel que NO debe tocarse
+    (canon / "BaRS9 - Prueba - (W-TEST99) - Vuelta" / "00_Input").mkdir(parents=True)
+    monkeypatch.setattr(config.settings, "casos_root", canon)
+    antes = hash_arbol(canon)
+
+    scratch = tmp_path / "fuera" / "BaRS9 - Prueba - (W-TEST99) - Vuelta"
+    (scratch / "00_Input").mkdir(parents=True)
+
+    destino = append_event(scratch, "upload_manual", details={}, case_id="W-TEST99")
+
+    assert scratch in destino.parents          # el log cae junto a los BYTES
+    assert destino.read_text(encoding="utf-8").strip()
+    assert hash_arbol(canon) == antes          # y el canon queda INTACTO
+
+# Mutante obligatorio: sustituir el destino por `caso_path(case_id)` deja este
+# test ROJO por la última aserción. Si no muere, el test no contrata nada.
 ```
 
-Más: `log_path(case_id)` emite `DeprecationWarning`; el set de eventos pasa a 32 **y se actualiza el `expected` completo** del test existente; un evento desconocido sigue lanzando `ValueError`.
+Más: `log_path(case_id)` **ya no existe** y su desaparición se prueba (`AttributeError` o `ImportError` al referenciarlo); el set de eventos pasa a **33** con el doble aserto de arriba **y se actualiza el `expected` completo** del test existente; un evento desconocido sigue lanzando `ValueError`.
 
 - [ ] **Step 2: Run tests to verify they fail**
 - [ ] **Step 3: Write the implementation** — migrar además **todos** los llamadores internos de `append_event(case_id, …)` que ya disponen del `case_dir`. Los que no lo tengan se dejan en el camino legacy con comentario `# legacy_unresolved (Fase 4)`, nunca «arreglados» a medias.
@@ -374,6 +503,50 @@ Más: `log_path(case_id)` emite `DeprecationWarning`; el set de eventos pasa a 3
 ```bash
 python -m pytest tests/test_intake_log.py -q
 python -m pytest -q --tb=short
+```
+
+---
+
+### Task 8b: Adopción explícita de checkouts anteriores al registro (cierra el hueco de §15)
+
+**Esta tarea no existía y el Task 9 la necesita** (R7/H7-09). El §15 de la spec ordena que «los
+checkouts anteriores sin registro requieren `--case-dir` y una operación explícita de
+adopción/verificación». El Task 7 prueba el lado negativo —checkout propio sin entrada de
+registro → `LocalWorkspaceMissing`, «no se adopta solo»— y ningún task construía el lado
+positivo: el único rastro en todo el plan era el **nombre** del evento `checkout_adoptado` en el
+Task 8. Sin esta pieza, en cuanto el Task 9 sustituye `_resolver_caso`, un checkout legacy que
+hoy se procesa queda **bloqueado sin vía normativa de desbloqueo**: se construye el error y no
+la puerta.
+
+**Files:**
+- Create: `core/casos/workspace_adopcion.py`
+- Modify: `scripts/repository_cli.py` (subcomando `adoptar`)
+- Test: `tests/test_workspace_adopcion.py`
+
+**Interfaces:**
+- `verificar_adopcion(case_dir: Path, ref: CaseRef, *, usuario, maquina, ahora) -> Adopcion`:
+  pieza **pura de decisión**, sin efectos. Comprueba las tres cosas que hacen adoptable un
+  checkout: existe `MANIFEST_CHECKOUT.json` legible, la identidad del árbol concuerda con `ref`,
+  y el lock del canon es **propio** (mismo usuario y máquina). Cualquier discrepancia devuelve
+  `Adopcion(ok=False, motivo=...)`; no adivina.
+- `adoptar(...)`: da de alta la `WorkspaceEntry` y emite `checkout_adoptado`. **Es el único
+  escritor**, y solo corre si `verificar_adopcion` dio `ok`.
+- `repository_cli adoptar --case-dir <ruta>`: la puerta humana. **Nunca** implícita: adoptar es
+  una decisión del abogado sobre custodia, no un efecto colateral de correr un motor.
+
+- [ ] **Step 1: Write the failing tests** — un checkout legacy válido (manifest + identidad +
+  lock propio) **sin** `WorkspaceEntry`: `verificar_adopcion` da `ok`, `adoptar` registra, y a
+  continuación `sala_maquina --case-dir` **resuelve** donde antes lanzaba; lock de **otra**
+  máquina → `ok=False` y cero escrituras; manifest ausente o ilegible → `ok=False`; identidad
+  del árbol que no concuerda con `ref` → `ok=False`; `verificar_adopcion` no escribe **nada** en
+  ninguno de los cuatro planos (se comprueba con el arnés del Task 10); adoptar dos veces es
+  idempotente y no duplica el evento.
+- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **Step 3: Write the implementation**
+- [ ] **Step 4: Verify**
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests/test_workspace_adopcion.py -q
 ```
 
 ---
@@ -395,7 +568,7 @@ nunca se construyó).
 - `append_event` recibe el workspace, no el `case_id`.
 - Sobre un caso `prestado` por otro, los tres subcomandos **abortan con código 2 y cero bytes**: ni `_atomizar_correo`, ni `_segmentacion.md`, ni estado, ni cobertura, ni evento.
 
-- [ ] **Step 1: Write the failing tests** — death test de cero escritura: hash del árbol antes y después de invocar `plan` y `apply` sobre un caso prestado por otra máquina (idénticos, y `registro` del log sin líneas nuevas); `--case-dir` sobre un scratch procesa y escribe el evento **en el scratch**; `--case-dir` junto con identidad → error de uso; identidad de un caso disponible → se comporta como hoy (regresión de `test_sala_maquina_*`).
+- [ ] **Step 1: Write the failing tests** — death test de cero escritura sobre **los tres** subcomandos, `plan`, `apply` **y `reforzar`** (R7/H7-13: la interfaz promete que «los tres abortan con código 2 y cero bytes» y este Step solo probaba dos; `reforzar` escribe cobertura, estado y evento, así que puede omitir el guard y dejar la suite verde). Se muta el preflight de `reforzar` **en solitario** y debe morir. Hash del árbol antes y después de invocar cada uno sobre un caso prestado por otra máquina (idénticos, y `registro` del log sin líneas nuevas); `--case-dir` sobre un scratch procesa y escribe el evento **en el scratch**; `--case-dir` junto con identidad → error de uso; identidad de un caso disponible → se comporta como hoy (regresión de `test_sala_maquina_*`).
 - [ ] **Step 2: Run tests to verify they fail**
 - [ ] **Step 3: Write the implementation**
 - [ ] **Step 4: Verify**
@@ -418,6 +591,13 @@ la vertical de correo).
 
 **Interfaces:**
 - `ESCENARIOS`: las 9 filas del §14.1 como datos (`id`, sembrado, resultado esperado).
+- **«Servicio externo falla» necesita un mecanismo, no una fila** (R7/H7-08). La firma
+  `matriz_para(invocar)` solo entrega workspace o ruta: se puede cumplir `len(ESCENARIOS) == 9`
+  y **no inducir jamás** el fallo externo. La fila se acompaña de: un doble que falla **después**
+  de un efecto observable, el instante de fallo como dato del escenario, un contador de llamadas,
+  y una **segunda invocación** con aserto de idempotencia — o cero publicación, o una única
+  publicación estable, más el conteo exacto de llamadas. Sin la segunda invocación no se prueba
+  «reintento seguro o aborto idempotente», que es lo que el §14.1 exige.
 - `matriz_para(invocar: Callable[[CaseWorkspace | Path], int])`: arnés parametrizado que cualquier test de entrypoint puede consumir.
 - `hash_arbol(root) -> dict[str, str]` y `assert_sin_efectos(antes, despues, *, log_antes, log_despues, llamadas_externas)`: comprueba los **cuatro planos** del §3.2-bis — árbol, canon (incluidas carpetas creadas), servicios externos (contador de llamadas del doble) y estado local (registro y sentinels).
 
@@ -428,7 +608,13 @@ la vertical de correo).
 python -m pytest tests/test_workspace_matriz_contractual.py -q
 ```
 
-- [ ] **Step 3: Comprobar que el arnés falla cuando debe** — introducir a mano una escritura en un caso bloqueado, verificar que la matriz la caza, y revertir. Un arnés que no puede fallar no prueba nada.
+- [ ] **Step 3: Comprobar que el arnés falla cuando debe — CUATRO mutantes, uno por plano** (R7/H7-07). La interfaz promete los cuatro planos del §3.2-bis y este Step mandaba «introducir a mano **una** escritura en un caso bloqueado»: un solo mutante, que prueba el detector de ficheros y deja `llamadas_externas`, registro y sentinels sin participar en ninguna aserción. Es el modo de fallo que R6 encontró ayer en el Plan 1 y que ya tengo medido: **si el contrato enumera N fronteras, hacen falta N mutantes** (memoria `feedback-mutacion-vale-por-su-mutante`). Los cuatro, independientes, y los cuatro ROJOS obligatorios:
+  1. **árbol** — crear o modificar un fichero bajo el árbol del caso;
+  2. **canon** — crear un directorio o fichero bajo `CASOS_ROOT`, que es el plano que las carpetas fantasma usan;
+  3. **servicios externos** — ejecutar una llamada del doble sin que el contador la vea;
+  4. **estado local** — modificar el registro, una caché o un sentinel.
+
+  El Step solo se cierra si **cada** mutante falla **por su plano**, no si «alguno» falla: un mutante que muere por la aserción de otro plano no prueba el suyo. Revertir con `git checkout` tras cada uno, nunca reescribiendo el texto a mano.
 
 **Criterio de salida de la Fase 1:** (1) la matriz pura demuestra una única resolución para Drive disponible, checkout propio, checkout ajeno, scratch, conflicto, ruta ausente y nonce divergente; (2) ninguna ruta del código crea un directorio bajo `CASOS_ROOT` para una identidad que el catálogo no conoce; (3) con `--case-dir`, el evento de auditoría cae en el mismo árbol que los bytes.
 
@@ -446,7 +632,7 @@ python -m pytest tests/test_workspace_matriz_contractual.py -q
 - [ ] **Step 2: Suite completa + leak-scan**
 
 ```bash
-python -m pytest -q --junit-xml=%TEMP%\fd_junit.xml
+.\.venv\Scripts\python.exe -m pytest -q --junit-xml="$env:TEMP\fd_junit.xml" --basetemp="$env:TEMP\fd_bt"
 ```
 
 - [ ] **Step 3: PR** — rama `claude/dual-case-workspace`, PR a `main` (protegida: nunca commit directo). El PR describe qué `xfail` quedan vivos y por qué (son la lista de trabajo de la Fase 2).
@@ -459,5 +645,86 @@ python -m pytest -q --junit-xml=%TEMP%\fd_junit.xml
 - No cambia `decidir_escritura` ni retira `_pendiente_checkin/` (Fase 2, conmutación atómica).
 - No arregla A-1 ni A-2: los deja reproducidos en `xfail(strict=True)` (Fase 2).
 - No toca `expedientes_xl/tiers.py` ni las skills de checkout/checkin (Fase 2 para la decisión, Fase 5 para el resto).
-- No migra `email_export`, `catalogo_documental` ni Streamlit (Fases 3 y 4).
-- No invierte el default de `strict` en `path_for`/`caso_path` (Fase 4, cuando no queden llamadores legacy).
+- No migra `email_export` ni Streamlit (Fases 3 y 4). **`catalogo_documental` sí entra**: su `save_catalog` hace `mkdir(parents=True)` sobre la ruta resuelta, así que dejarlo fuera hacía inalcanzable el criterio de salida (2) de esta misma fase (R7/H7-01).
+- **Retirada:** «no invierte el default de `strict`» estaba aquí y contradecía el *Goal* y el criterio de salida (2) de este mismo plan. La Fase 1 **sí** invierte el default; lo que se aplaza a la Fase 4 es retirar la escotilla `strict=False` y los `# legacy_unresolved` que queden inventariados (R7/H7-01).
+
+---
+
+## 12. Adjudicación de la revisión adversarial del plan de la Fase 1 (Codex, 2026-08-24) — NO-SHIP, remediado
+
+- **Objeto revisado:** este plan, sus **Tasks 4 a 11** (los 1-3 estaban supersedidos y quedaron fuera de alcance), en el commit `3f092f8`.
+- **Ronda:** R7, y es la **primera** revisión adversarial que este plan recibe. La fila #3 de `PLAN.md` lo decía expresamente; las tres pasadas adjudicadas que allí se mencionan fueron sobre la **spec**, no sobre el plan. Se corrió **antes de ejecutarlo**, no después.
+- **Revisor:** Codex, por CLI, sobre una copia externa `git archive` sin `.git` ni red —solo lectura por construcción—, trabajando sobre su propia copia en `scratch_objeto/`. Adjudica Claude Code contra la fuente.
+- **Informe recibido:** `docs/superpowers/specs/2026-08-24-dual-workspace-fase1-r7-adversarial-review.md`, §1 literal, `sha256` `53ba2b4d0370d1564a336cde7021b942c902807d78f39e053b8d0ed8ab45fbec` — recomputado al archivarlo y **coincide**. El árbol se recomputó de forma independiente al recibir el informe: 1.057 ficheros, `12616082…b503055`, idéntico en apertura y cierre.
+- **Hallazgos:** 15 — 1 CRÍTICO, 7 ALTOS, 7 MEDIOS. **15 confirmados, 0 refutados**, más una aportación del adjudicador que el revisor no vio.
+- **Remediado en:** el commit que acompaña a esta adjudicación, que reescribe los Tasks 4-11 y añade el Task 8b.
+
+*El «12» sigue a los once tasks: es la sección posterior al plan, no una duodécima tarea.*
+
+### Por qué esta ronda valió la pena, dicho sin adornos
+
+Iba a ejecutar los ocho tasks. Si lo hubiera hecho, habría construido una Fase 1 que **no cumple su
+propio criterio de salida**, y me habría enterado al llegar a la Fase 4 — con ocho tasks de código
+encima. El §23 de la spec de apertura detuvo el bucle de revisar un diseño por sexta vez, y esa
+lección sigue siendo buena; lo que no era lo mismo es aplicarla a un plan que nunca había sido
+revisado **ninguna** vez.
+
+**Tres de los quince son el mismo modo de fallo que ya tengo medido**, y eso es lo que más me
+interesa del resultado: el test central del Task 8 era literalmente `...`; el death test de «cuatro
+planos» mutaba uno; el canario de rutas solo detectaba `:\`. Es *nombrar la propiedad y llamarlo
+contrato*, otra vez, en un plan escrito el 2026-07-29 — anterior a las rondas que me enseñaron a
+buscarlo. Un plan viejo no es solo un plan viejo: es un plan escrito por alguien que aún no sabía
+esto.
+
+### Las quince, una por una
+
+| # | Sev. | Hallazgo | Veredicto | Remedio |
+|---|---|---|---|---|
+| H7-01 | CRÍTICO | La Fase 1 conserva el fallback que su criterio de salida exige eliminar | **CONFIRMADO** | Tres APIs en vez de un booleano; default `strict=True`; `catalogo_documental` entra; `log_path` se retira |
+| H7-02 | ALTO | Registro corrupto → «vacío» abre una vía fail-open | **CONFIRMADO** | `cargar()` lanza `RegistryUnreadable`; la cuarentena salva los bytes, no la decisión |
+| H7-03 | ALTO | La prueba de atomicidad no ejecuta la operación atómica | **CONFIRMADO** | Se atraviesa `alta()` con `os.replace` parcheado; mutante `write_text` obligatorio |
+| H7-04 | MEDIO | Forma concurrente no decidida, incompatible con el namespace de D2 | **CONFIRMADO** | Se decide **aquí**: un fichero por W-code; test de concurrencia y de layout |
+| H7-05 | ALTO | El test que impedía el split brain es `...` y pasa | **CONFIRMADO** | Cuerpo real escrito, con sentinel del canon y mutante `caso_path` |
+| H7-06 | ALTO | 28 + 5 no son 32 | **CONFIRMADO** | 33, con doble aserto de longitud **y** conjuntos |
+| H7-07 | ALTO | El death test de «cuatro planos» muta uno | **CONFIRMADO** | Cuatro mutantes independientes, cada uno rojo **por su plano** |
+| H7-08 | ALTO | «Servicio externo falla» es una fila sin mecanismo | **CONFIRMADO** | Doble, instante de fallo, contador y segunda invocación con idempotencia |
+| H7-09 | ALTO | Se migra `sala_maquina` antes de construir la adopción que §15 exige | **CONFIRMADO** | **Task 8b nueva**: `verificar_adopcion` puro + `adoptar` + subcomando |
+| H7-10 | MEDIO | La tabla de ocho capacidades puede estar incompleta y pasar | **CONFIRMADO** | Igualdad completa por modo + ocho mutantes |
+| H7-11 | MEDIO | Pureza y reloj inyectado nombrados, no contratados | **CONFIRMADO** | Globales parcheados para lanzar + determinismo + `diagnostico` a la firma |
+| H7-12 | MEDIO | El canario de rutas solo ve `:\` | **CONFIRMADO** | Doce subclases × canarios Windows/UNC/POSIX/relativa + PII + las dos reglas del §10 |
+| H7-13 | MEDIO | El cero-escritura excluye `reforzar` | **CONFIRMADO** | Los tres subcomandos, con mutación en solitario del preflight de `reforzar` |
+| H7-14 | MEDIO | «80 ficheros» no mide llamadores | **CONFIRMADO** | Inventario AST: 151 llamadas / 55 ficheros (43 de producción) |
+| H7-15 | MEDIO | Los comandos no son autoejecutables en el entorno declarado | **CONFIRMADO** | Intérprete del venv explícito, `$env:TEMP`, `--basetemp` corto |
+
+### Lo que aporta el adjudicador y el revisor no vio
+
+**Hay una TERCERA clase de llamador, y es la que explica por qué el plan se acobardó.** El H7-01
+señala la contradicción pero razona con dos clases: quien crea (necesita el fallback) y quien lee un
+caso existente (a quien el fallback miente). Falta la que hace inviable la inversión ingenua: el que
+usa la ruta del fallback **para saber si el caso existe**. Son **27 sitios en 17 ficheros**, medidos.
+Con `strict=True` no reciben `False`, reciben una excepción.
+
+Medido en vivo, no deducido: hoy `abrir_caso --case-id W-NOEXISTE` responde
+`[ERROR] Caso no encontrado para --case-id 'W-NOEXISTE'` con salida 1; con `strict=True` aplicado sin
+más, responde un `FileNotFoundError` sin capturar y **sin una sola línea de salida**. Lo mismo en
+`crm_ficha`. Por eso el remedio no es invertir el flag, sino la tercera API `buscar() -> Path | None`:
+sin ella, cumplir el criterio de salida (2) se paga degradando dos entrypoints de un error legible a
+una traza.
+
+**Y el plan se contradecía a sí mismo, no solo con la spec.** El revisor comparó plan contra spec y
+D1. La contradicción es interna: el *Goal* y el criterio de salida (2) exigen que ningún camino cree
+un directorio bajo `CASOS_ROOT` para una identidad desconocida, y la sección final declaraba no
+invertir el default «hasta la Fase 4». Un documento que se desmiente en dos páginas no necesita una
+fuente externa para estar mal.
+
+### Lo que sigue SIN VERIFICAR, y se declara
+
+- **El comportamiento dinámico de los Tasks 4-11**: su código no existe. Los quince hallazgos atacan
+  la **suficiencia del plan y de los tests que propone**, no una implementación observada. Esto se
+  cierra ejecutando, y con una ronda sobre el diff — que es donde R6 demostró morder de verdad.
+- **El empeoramiento de las siete `xfail` de la Fase 0**: siguen vivas (7 `xfailed`, 0 `xpassed`,
+  corrida protegida) y ningún Task 4-11 toca `scripts/repository_cli.py`. No se verificó que ninguna
+  empeore; se verificó que ninguna se toca. No es lo mismo y no se declara como si lo fuera.
+- **El coste real de migrar los 43 ficheros de producción**: el inventario AST está medido, la
+  clasificación por intención es una heurística con un cubo ambiguo reconocido. El Step 0 del Task 6
+  la convierte en inventario versionado; hasta entonces, los 27 detectores son un suelo, no un total.
