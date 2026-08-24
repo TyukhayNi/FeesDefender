@@ -259,26 +259,70 @@ def test_toda_subclase_desciende_de_workspace_error():
         assert issubclass(clase, wm.WorkspaceError)
 
 
-@pytest.mark.parametrize("clase", sorted(wm.errores_conocidos(), key=lambda c: c.codigo))
-def test_ningun_mensaje_de_error_lleva_una_ruta_local(clase):
-    """§16 y §10.3: el mensaje se construye con W-code, código, titular y fecha.
-    Nunca con la ruta local, que vive solo en el registro privado.
+# Los ocho canarios de R7/H7-12. El canario original era uno solo —una ruta de
+# Windows— y sus dos asertos (`[A-Za-z]:[\/]` y la contrabarra) cazaban 3 de los 8
+# casos: Windows con las dos barras y UNC. Se le escapaban POSIX puro, la ruta
+# relativa y las tres de PII del §16, y ademas nunca se INYECTABAN, asi que el
+# hueco era doble. Medido antes de ampliarlo.
+#
+# Lo que NO se prueba, a proposito: que el mensaje no lleve un nombre. El §10.3 y
+# el §5.3 mandan construirlo con «W-code, codigo, titular y fecha», o sea que el
+# `titular` va DENTRO por diseno. Un canario de «ningun nombre» contradiria la
+# fuente en vez de protegerla. El vector de fuga es `detalle`.
+_CANARIOS_FUGA = {
+    "windows_backslash": "C:" + chr(92) + "Users" + chr(92) + "alguien" + chr(92) + "caso",
+    "windows_barra":     "C:/Users/alguien/caso",
+    "unc":               chr(92) * 2 + "servidor" + chr(92) + "casos",
+    "posix":             "/home/alguien/caso",
+    "relativa":          "../Desktop/caso",
+    "email":             "alguien@example.com",
+    "direccion":         "Calle Mayor 3, 2 B",
+    "nombre_en_detalle": "Maria Del Burgo",
+}
 
-    Se le pasa una ruta de Windows COMO dato para comprobar que el mensaje no la
-    reproduce por accidente al formatear.
+
+@pytest.mark.parametrize("clase", sorted(wm.errores_conocidos(), key=lambda c: c.codigo))
+@pytest.mark.parametrize("canario", sorted(_CANARIOS_FUGA), ids=sorted(_CANARIOS_FUGA))
+def test_ningun_mensaje_de_error_reproduce_lo_que_se_le_pasa_en_detalle(clase, canario):
+    """§16 y §10.3: el mensaje se construye con W-code, código, titular y fecha.
+
+    Nunca con la ruta local ni con PII, que viven solo en el registro privado. Se
+    inyecta cada canario COMO dato en `detalle` y se exige que el mensaje no lo
+    reproduzca al formatear — ni entero ni en un fragmento reconocible.
     """
+    valor = _CANARIOS_FUGA[canario]
     err = clase(
         w_code="W-TEST01",
         titular="otro.usuario",
         maquina="OTRA-MAQUINA",
         fecha="2026-08-24T10:00:00Z",
-        detalle=r"C:\Users\alguien\Desktop\caso",
+        detalle=valor,
     )
     texto = str(err)
+    assert valor not in texto, texto
     assert not _RE_UNIDAD_WINDOWS.search(texto), texto
-    assert "\\" not in texto, texto
+    assert chr(92) not in texto, texto
+    # Fragmentos que delatan una fuga parcial, no solo la copia literal.
+    for fragmento in ("alguien", "servidor", "Desktop", "example.com", "Del Burgo",
+                      "Calle Mayor"):
+        assert fragmento not in texto, (fragmento, texto)
     assert "W-TEST01" in texto
     assert err.codigo in CODIGOS_ESPERADOS
+
+
+@pytest.mark.parametrize("clase", sorted(wm.errores_conocidos(), key=lambda c: c.codigo))
+def test_ningun_error_sugiere_reintentar_contra_drive(clase):
+    """§10, la segunda regla de mensaje, sobre LAS DOCE y no sobre una.
+
+    R7/H7-12: solo se probaba en `CaseLocked`. Un mensaje que empuje a reintentar
+    contra Drive convierte un bloqueo en una carrera, así que la regla es de todas.
+    """
+    err = clase(w_code="W-TEST01", titular="otro", maquina="M",
+                fecha="2026-08-24T10:00:00Z", sin_efecto=True)
+    texto = str(err).lower()
+    for empujon in ("reintenta", "reintentar", "vuelve a intentar", "prueba de nuevo",
+                    "fuerza", "--force"):
+        assert empujon not in texto, (empujon, texto)
 
 
 def test_el_error_dice_que_no_hubo_efecto_cuando_no_lo_hubo():
