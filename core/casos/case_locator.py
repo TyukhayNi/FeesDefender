@@ -43,6 +43,76 @@ def path_for(case_id: str) -> Path:
     return flat
 
 
+# ---------------------------------------------------------------------------
+# Las TRES intenciones (Fase 1, Task 6) — R7/H7-01
+# ---------------------------------------------------------------------------
+#
+# `path_for` servia a tres preguntas distintas con una sola respuesta, y por eso
+# no habia forma de arreglarlo con un booleano: `strict=True` rompe el alta,
+# `strict=False` conserva el expediente fantasma. Las preguntas son:
+#
+#   - «damelo, que tiene que estar»      -> localizar(): LANZA si falta
+#   - «esta?»                            -> buscar(): devuelve None
+#   - «donde lo creo»                    -> destino_de_alta(): faltar es lo normal
+#
+# Separarlas por NOMBRE es lo que las hace auditables: un `grep` dice quien
+# espera que el caso exista y quien no, cosa que un flag no permite.
+
+
+def localizar(case_id: str) -> Path:
+    """La ruta de un caso que **debe** existir. Lanza `LocalWorkspaceMissing` si no.
+
+    Es la puerta de todo lector y de todo escritor de un caso ya abierto. No crea
+    nada, ni siquiera al fallar.
+    """
+    encontrada = buscar(case_id)
+    if encontrada is None:
+        from .workspace_model import LocalWorkspaceMissing
+        raise LocalWorkspaceMissing(
+            detalle="el caso no existe en ningun layout del catalogo")
+    return encontrada
+
+
+def buscar(case_id: str) -> Path | None:
+    """La ruta del caso, o `None` si no existe. **No lanza y no crea nada.**
+
+    Existe por los detectores de ausencia: los que preguntan si el caso esta y
+    siguen por otra rama si no. Sin ella, migrarlos a `localizar()` cambiaria un
+    error legible por una traza sin salida.
+
+    Y hace explicita una pregunta que hoy se confunde con otra: con el fallback,
+    «el caso no existe» y «el fichero que buscaba dentro del caso no existe» dan
+    el mismo `False`.
+    """
+    root = _root()
+    flat = root / case_id
+    if flat.is_dir():
+        return flat
+    for city in sorted(CIUDADES):
+        candidate = root / city / case_id
+        if candidate.is_dir():
+            return candidate
+    candidate = root / _FALLBACK_CITY / case_id
+    if candidate.is_dir():
+        return candidate
+    return None
+
+
+def destino_de_alta(case_id: str) -> Path:
+    """Donde se materializa un caso. Que no exista es su caso NORMAL.
+
+    **Nombrar no es crear:** devuelve la ruta y no toca el disco. Crear es del
+    llamador (`case_manager.ensure_case`), que es el unico que debe usar esto.
+
+    Si el caso YA existe devuelve **su** ubicacion, no la ruta flat. Esa regla no
+    es cosmetica: devolver siempre la flat haria que un alta sobre un caso que ya
+    vive en su ciudad creara un duplicado plano al lado — el defecto CRITICO que
+    R6 encontro en el `--force` del `--modo v1`, una carpeta sombra con el W-code
+    duplicado.
+    """
+    return buscar(case_id) or (_root() / case_id)
+
+
 def _id_go_of(case_dir: Path) -> str | None:
     """Lee ``meta.id_go`` (el W-code) del ``_caso.md`` de un caso, o ``None``."""
     import yaml
