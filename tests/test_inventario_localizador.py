@@ -172,3 +172,49 @@ def test_el_inventario_del_repo_real_corre_y_encuentra_produccion():
     assert r["llamadas_produccion"] > 0
     assert r["ficheros_produccion"] > 0
     assert r["llamadas_total"] >= r["llamadas_produccion"]
+
+
+# ------------------------------ el falso positivo del cubo confiado -----------
+#
+# Medido sobre el repo real: `core/case_manager.py:170`, `:210` y `:393` viven en
+# `register_expediente` y `register_drive_ev`, y la heuristica los clasificaba
+# como `destino_de_alta` porque sus cuerpos MENCIONAN `ensure_case` en un
+# comentario (`# ensure_case no se llamo aun — se registrara al crearlo`).
+#
+# Un falso positivo en un cubo CONFIADO es mas peligroso que un cubo REVISAR
+# grande: el segundo pide una lectura, el primero deja el fallback donde no toca
+# y nadie vuelve a mirarlo. La senal valida es la funcion envolvente del AST, no
+# el texto de la ventana.
+
+
+def test_una_MENCION_de_ensure_case_en_un_comentario_no_es_la_puerta_de_alta(tmp_path):
+    raiz = _repo(tmp_path, **{"core/m.py":
+                              "def register_expediente(cid):\n"
+                              "    idx = caso_path(cid) / '_caso.md'\n"
+                              "    # ensure_case no se llamo aun\n"
+                              "    if not idx.exists():\n"
+                              "        return 'defecto'\n"})
+    s = inv.inventariar(raiz)[0]
+    assert s.propuesta != inv.DESTINO, (
+        "una mencion en un comentario no puede clasificar como puerta de alta")
+
+
+def test_una_llamada_a_ensure_case_tampoco_convierte_al_llamador_en_la_puerta(tmp_path):
+    """Llamar al alta no es SER el alta: el llamador sigue necesitando su propia
+    intencion, y aqui es preguntar si el caso esta."""
+    raiz = _repo(tmp_path, **{"core/m.py":
+                              "def preparar(cid):\n"
+                              "    d = caso_path(cid)\n"
+                              "    if not d.exists():\n"
+                              "        ensure_case(cid)\n"
+                              "        return None\n"})
+    assert inv.inventariar(raiz)[0].propuesta != inv.DESTINO
+
+
+def test_dentro_de_ensure_case_SI_es_la_puerta_de_alta(tmp_path):
+    """La senal valida: la funcion envolvente, que sale del AST."""
+    raiz = _repo(tmp_path, **{"core/m.py":
+                              "def ensure_case(cid):\n"
+                              "    d = caso_path(cid)\n"
+                              "    d.mkdir(parents=True, exist_ok=True)\n"})
+    assert inv.inventariar(raiz)[0].propuesta == inv.DESTINO

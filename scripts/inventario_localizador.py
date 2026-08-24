@@ -55,7 +55,7 @@ _VENTANA = 12
 # Lo que delata cada intención. Conservador a propósito: si hay señales de dos
 # intenciones, el sitio va a REVISAR y lo firma una persona.
 _ESCRIBE = (".mkdir(", ".write_text(", ".write_bytes(", ".touch(", "shutil.copy",
-            "shutil.move", "shutil.rmtree", "os.replace", "ensure_case", "ensure_dir")
+            "shutil.move", "shutil.rmtree", "os.replace", "ensure_dir")
 _PREGUNTA_NEGADA = ("if not ", "is None", "== False")
 _COMPRUEBA = (".exists()", ".is_dir()", ".is_file()")
 
@@ -120,8 +120,15 @@ def _proponer(ventana: str, envolvente: str = "") -> tuple[str, str]:
     comprueba = any(t in ventana for t in _COMPRUEBA)
     negada = any(t in ventana for t in _PREGUNTA_NEGADA)
 
-    if envolvente == "ensure_case" or "ensure_case" in ventana:
-        return DESTINO, "esta dentro de ensure_case o la menciona: es la puerta de alta"
+    if envolvente == "ensure_case":
+        # SOLO la funcion envolvente, que sale del AST. La clausula anterior
+        # aceptaba tambien `"ensure_case" in ventana`, y eso clasificaba como
+        # puerta de alta tres sitios de `case_manager` que viven en
+        # `register_expediente` y `register_drive_ev` y solo la MENCIONAN en un
+        # comentario. Un falso positivo en un cubo confiado es peor que un cubo
+        # REVISAR grande: el segundo pide una lectura, el primero deja el
+        # fallback donde no toca y nadie vuelve a mirarlo.
+        return DESTINO, "esta dentro de ensure_case: es la puerta de alta"
     if comprueba and negada and not escribe:
         return BUSCAR, "comprueba la ausencia y sigue: detector con rama elegante"
     if escribe and not comprueba:
