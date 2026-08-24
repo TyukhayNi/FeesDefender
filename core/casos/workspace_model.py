@@ -137,8 +137,16 @@ class WorkspaceError(Exception):
         self.detalle = detalle
         super().__init__(self._mensaje())
 
+    #: Frase humana, FIJA por clase. Nunca interpolada: el §16 prohibe rutas y
+    #: PII, y una descripcion fija no puede filtrar nada por construccion. Vacia
+    #: por defecto — una clase sin frase solo muestra su codigo, que es lo que
+    #: habia antes.
+    descripcion: str = ""
+
     def _mensaje(self) -> str:
         partes = [f"[{self.codigo}]"]
+        if self.descripcion:
+            partes.append(self.descripcion)
         if self.w_code:
             partes.append(f"caso {self.w_code}")
         if self.titular:
@@ -178,6 +186,7 @@ class LocalWorkspaceMissing(WorkspaceError, FileNotFoundError):
     """
 
     codigo = "LOCAL_WORKSPACE_MISSING"
+    descripcion = "el caso no existe en el catalogo local"
 
 
 class LockMismatch(WorkspaceError):

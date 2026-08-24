@@ -55,7 +55,6 @@ def _caso(root):
 # --------------------------------------------------- el constructor es estricto
 
 class TestLosConstructoresExigenElCaso:
-    @pytest.mark.xfail(strict=True, reason="Task 6 paso 5: llega al invertir el default de `caso_path`. Migrar el constructor a `localizar()` por su cuenta se salta el `monkeypatch` del binding de modulo que usan los tests con el caso fuera de CASOS_ROOT.")
     def test_log_path_de_un_caso_ausente_LANZA(self, root):
         from core.casos.workspace_model import LocalWorkspaceMissing
         from core.intake_log import log_path
@@ -67,21 +66,18 @@ class TestLosConstructoresExigenElCaso:
         d = _caso(root)
         assert log_path(CASO) == d / "00_Input" / "_intake_log.jsonl"
 
-    @pytest.mark.xfail(strict=True, reason="Task 6 paso 5: llega al invertir el default de `caso_path`. Migrar el constructor a `localizar()` por su cuenta se salta el `monkeypatch` del binding de modulo que usan los tests con el caso fuera de CASOS_ROOT.")
     def test_revisar_dir_de_un_caso_ausente_LANZA(self, root):
         from core.casos.workspace_model import LocalWorkspaceMissing
         from core.sala_lectura import _revisar_dir
         with pytest.raises(LocalWorkspaceMissing):
             _revisar_dir("NO-EXISTE")
 
-    @pytest.mark.xfail(strict=True, reason="Task 6 paso 5: llega al invertir el default de `caso_path`. Migrar el constructor a `localizar()` por su cuenta se salta el `monkeypatch` del binding de modulo que usan los tests con el caso fuera de CASOS_ROOT.")
     def test_drive_ev_dir_de_un_caso_ausente_LANZA(self, root):
         from core.casos.workspace_model import LocalWorkspaceMissing
         from core.local_organizer import _drive_ev_dir
         with pytest.raises(LocalWorkspaceMissing):
             _drive_ev_dir("NO-EXISTE")
 
-    @pytest.mark.xfail(strict=True, reason="Task 6 paso 5: llega al invertir el default de `caso_path`. Migrar el constructor a `localizar()` por su cuenta se salta el `monkeypatch` del binding de modulo que usan los tests con el caso fuera de CASOS_ROOT.")
     def test_ninguno_crea_nada_al_lanzar(self, root):
         from core.casos.workspace_model import LocalWorkspaceMissing
         from core.intake_log import log_path

@@ -24,11 +24,21 @@ def _root() -> Path:
     return settings.casos_root
 
 
-def path_for(case_id: str) -> Path:
-    """Devuelve la ruta a un expediente, buscando en flat y luego por ciudades.
+def path_for(case_id: str, *, strict: bool = True) -> Path:
+    """La ruta de un expediente. **Lanza si no existe** (Fase 1, Task 6, paso 5).
 
-    Si el expediente no existe en ninguna ubicación, devuelve la ruta flat
-    (compatible con creación de casos nuevos).
+    Es lo que la spec pide de esta fase: «`caso_path` deja de devolver rutas
+    inexistentes y ningún escritor hace `mkdir` de la raíz». Durante años devolvía
+    la ruta flat de un caso ausente, y esa ruta inventada es la que fabricaba
+    expedientes fantasma en cuanto alguien escribía sobre ella.
+
+    Prefiere las tres APIs explícitas, que dicen en su nombre qué preguntan:
+    `localizar()` si el caso debe existir, `buscar()` si quieres saber si está, y
+    `destino_de_alta()` si vas a crearlo.
+
+    `strict=False` es la **escotilla legacy declarada**: conserva el comportamiento
+    viejo para los llamadores que aún no se han migrado. Su censo no puede crecer
+    —lo vigila `tests/test_guard_localizador.py`— y se retira en la Fase 4.
     """
     root = _root()
     flat = root / case_id
@@ -41,6 +51,11 @@ def path_for(case_id: str) -> Path:
     candidate = root / _FALLBACK_CITY / case_id
     if candidate.is_dir():
         return candidate
+    if strict:
+        from .workspace_model import LocalWorkspaceMissing
+        raise LocalWorkspaceMissing(
+            w_code=_w_code_de(case_id),
+            detalle="el caso no existe en ningun layout del catalogo")
     return flat
 
 

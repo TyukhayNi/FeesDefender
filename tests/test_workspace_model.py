@@ -386,3 +386,39 @@ def test_los_demas_errores_NO_son_filenotfounderror():
         if clase is wm.LocalWorkspaceMissing:
             continue
         assert not issubclass(clase, FileNotFoundError), clase.__name__
+
+
+# --------------------------------------------------------------------------
+# El mensaje dice, en palabras, QUE paso
+# --------------------------------------------------------------------------
+#
+# `[LOCAL_WORKSPACE_MISSING]` a secas es un codigo, no un mensaje. Lo destaparon
+# dos tests que esperaban la frase «no existe» y recibian solo el corchete — y
+# tenian razon: quien lee un error en una CLI no deberia tener que traducir un
+# identificador en mayusculas.
+#
+# La frase es FIJA por clase, nunca interpolada: el §16 prohibe rutas y PII, y una
+# descripcion fija no puede filtrar nada por construccion.
+
+
+def test_el_mensaje_lleva_una_frase_humana_ademas_del_codigo():
+    texto = str(wm.LocalWorkspaceMissing(w_code="W-TEST01"))
+    assert "LOCAL_WORKSPACE_MISSING" in texto
+    assert "no existe" in texto.lower()
+
+
+def test_la_descripcion_es_fija_y_no_interpola_nada():
+    """Dos instancias con datos distintos comparten la misma frase."""
+    a = str(wm.LocalWorkspaceMissing(w_code="W-AAAA1", detalle="/ruta/uno"))
+    b = str(wm.LocalWorkspaceMissing(w_code="W-BBBB2", detalle="/ruta/dos"))
+    frase = "no existe"
+    assert frase in a.lower() and frase in b.lower()
+    assert "/ruta/" not in a and "/ruta/" not in b
+
+
+@pytest.mark.parametrize("clase", sorted(wm.errores_conocidos(), key=lambda c: c.codigo))
+def test_toda_descripcion_declarada_respeta_los_canarios(clase):
+    """Si una clase declara frase, la frase tampoco puede llevar ruta ni PII."""
+    texto = str(clase(w_code="W-TEST01"))
+    assert not _RE_UNIDAD_WINDOWS.search(texto), texto
+    assert chr(92) not in texto, texto

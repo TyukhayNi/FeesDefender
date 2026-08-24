@@ -248,9 +248,12 @@ def _md_path(case_id: str, entry) -> Path:
 
 
 def _filas_worklist(case_id: str) -> list[dict]:
-    path = _revisar_dir(case_id) / WORKLIST_NAME
+    try:
+        path = _revisar_dir(case_id) / WORKLIST_NAME
+    except FileNotFoundError:
+        return []                      # el caso no existe
     if not path.exists():
-        return []
+        return []                      # el caso existe, la worklist no
     return _parse_worklist(path.read_text(encoding="utf-8"))
 
 

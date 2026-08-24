@@ -205,7 +205,10 @@ def _build_anon_index(case_id: str) -> dict:
     """
     por_sha: dict[str, tuple[Path, str]] = {}
     por_slug: dict[str, tuple[Path, str]] = {}
-    raiz = _anonimizado_dir(case_id)
+    try:
+        raiz = _anonimizado_dir(case_id)
+    except FileNotFoundError:
+        return {"por_sha": por_sha, "por_slug": por_slug}   # el caso no existe
     if not raiz.is_dir():
         return {"por_sha": por_sha, "por_slug": por_slug}
     for md in raiz.glob("*.md"):
@@ -387,9 +390,12 @@ def _listar_documentos(case_id: str) -> list[Path]:
     Excluye nombres que empiezan por ``_`` o ``.`` (incluye ``_organizado/``,
     ``.pulled``, ficheros auxiliares).
     """
-    raiz = _drive_ev_dir(case_id)
+    try:
+        raiz = _drive_ev_dir(case_id)
+    except FileNotFoundError:
+        return []                      # el caso no existe
     if not raiz.is_dir():
-        return []
+        return []                      # el caso existe, la carpeta no
     docs = [
         p for p in raiz.iterdir()
         if p.is_file() and not p.name.startswith(("_", "."))

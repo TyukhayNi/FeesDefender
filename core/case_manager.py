@@ -564,8 +564,13 @@ def get_case_status(case_id: str) -> dict:
     """
     import yaml as _yaml
 
-    case_dir = caso_path(case_id)
-    local_exists = case_dir.exists()
+    # Su contrato, escrito en el docstring de arriba, es que NO lanza: es una
+    # consulta de estado, y `local_exists` es precisamente la respuesta a «¿existe?».
+    # Desde el paso 5 `caso_path` lanza ante un caso ausente, asi que la pregunta
+    # se hace con `buscar()`, que devuelve `None` en vez de romper la consulta.
+    from core.casos.case_locator import buscar
+    case_dir = buscar(case_id)
+    local_exists = case_dir is not None
     expedientes: list[dict] = []
 
     if local_exists:

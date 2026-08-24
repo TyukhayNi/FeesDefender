@@ -218,9 +218,14 @@ def read_events(case_id: str) -> list[dict[str, Any]]:
         Lista de eventos en orden cronológico (= orden de escritura).
         Lista vacía si el log no existe o está vacío.
     """
-    path = log_path(case_id)
+    # Guarda seam-safe: `log_path` pasa por `caso_path`, que desde el paso 5
+    # lanza si el caso no existe. Se captura aqui para conservar la rama elegante.
+    try:
+        path = log_path(case_id)
+    except FileNotFoundError:
+        return []                      # el caso no existe
     if not path.exists():
-        return []
+        return []                      # el caso existe, el log no
     out: list[dict[str, Any]] = []
     with open(path, encoding="utf-8") as f:
         for raw in f:

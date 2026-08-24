@@ -28,7 +28,13 @@ def test_extract_all_se_ejecuta_una_sola_vez(tmp_casos_root, monkeypatch):
     monkeypatch.setattr(pipeline.extractor, "extract_all", fake_extract_all)
     monkeypatch.setattr(pipeline.markdown_generator, "build", fake_build)
     # Neutralizar el resto de pasos: no son objeto de este test.
-    monkeypatch.setattr(pipeline.case_manager, "ensure_case", lambda *a, **k: None)
+    def _ensure_case_fiel(case_id, *a, **k):
+        # El real CREA el caso, y `_write_log` cuenta con ello un par de lineas
+        # despues. Un doble que no crea rompe esa invariante y hace fallar al
+        # llamador por una razon que no es suya (Task 6, paso 5).
+        (tmp_casos_root / case_id / "00_Input").mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(pipeline.case_manager, "ensure_case", _ensure_case_fiel)
     monkeypatch.setattr(pipeline.inventory, "scan", lambda *a, **k: 0)
     monkeypatch.setattr(pipeline.scorer, "score", lambda *a, **k: None)
     monkeypatch.setattr(pipeline.viability, "analyze", lambda *a, **k: None)
@@ -52,7 +58,13 @@ def test_pipeline_no_construye_catalogo(tmp_casos_root, monkeypatch):
     confirma que el paso NO vuelve a aparecer en pipeline.run."""
     from core import pipeline
     importlib.reload(pipeline)
-    monkeypatch.setattr(pipeline.case_manager, "ensure_case", lambda *a, **k: None)
+    def _ensure_case_fiel(case_id, *a, **k):
+        # El real CREA el caso, y `_write_log` cuenta con ello un par de lineas
+        # despues. Un doble que no crea rompe esa invariante y hace fallar al
+        # llamador por una razon que no es suya (Task 6, paso 5).
+        (tmp_casos_root / case_id / "00_Input").mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(pipeline.case_manager, "ensure_case", _ensure_case_fiel)
     monkeypatch.setattr(pipeline.inventory, "scan", lambda *a, **k: 0)
     monkeypatch.setattr(pipeline.extractor, "extract_all", lambda *a, **k: [])
     monkeypatch.setattr(pipeline.markdown_generator, "build", lambda *a, **k: [])

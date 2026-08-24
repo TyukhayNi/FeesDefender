@@ -107,8 +107,14 @@ def test_v1_aborta_antes_de_crear_el_esqueleto(casos_root, monkeypatch):
 def test_v1_con_los_flags_correctos_pasa_la_puerta(casos_root, monkeypatch):
     """La puerta no bloquea una invocacion V1 valida: llega al intake."""
     llamadas = []
-    monkeypatch.setattr(cli.case_manager, "ensure_case",
-                        lambda *a, **k: llamadas.append("ensure_case"))
+    def _ensure_case_fiel(case_id, *a, **k):
+        # El real CREA el caso, y el `path_for` posterior cuenta con ello. Un doble
+        # que no crea rompe esa invariante y hace fallar al llamador por una razon
+        # que no es suya (Task 6, paso 5).
+        (casos_root / case_id / "00_Input").mkdir(parents=True, exist_ok=True)
+        llamadas.append("ensure_case")
+
+    monkeypatch.setattr(cli.case_manager, "ensure_case", _ensure_case_fiel)
     monkeypatch.setattr(cli, "_despachar_intake",
                         lambda *a, **k: llamadas.append("intake"))
     monkeypatch.setattr(cli, "_alta_crm", lambda *a, **k: llamadas.append("crm"))
@@ -131,8 +137,14 @@ def test_modo_libre_conserva_el_comportamiento(casos_root, monkeypatch):
     secuencia observable, no que falte un texto.
     """
     llamadas = []
-    monkeypatch.setattr(cli.case_manager, "ensure_case",
-                        lambda *a, **k: llamadas.append("ensure_case"))
+    def _ensure_case_fiel(case_id, *a, **k):
+        # El real CREA el caso, y el `path_for` posterior cuenta con ello. Un doble
+        # que no crea rompe esa invariante y hace fallar al llamador por una razon
+        # que no es suya (Task 6, paso 5).
+        (casos_root / case_id / "00_Input").mkdir(parents=True, exist_ok=True)
+        llamadas.append("ensure_case")
+
+    monkeypatch.setattr(cli.case_manager, "ensure_case", _ensure_case_fiel)
     monkeypatch.setattr(cli, "_despachar_intake",
                         lambda *a, **k: llamadas.append("intake"))
     monkeypatch.setattr(cli, "_alta_crm", lambda *a, **k: llamadas.append("crm"))

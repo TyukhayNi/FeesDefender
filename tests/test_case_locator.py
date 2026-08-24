@@ -28,9 +28,18 @@ class TestPathForFlat:
         (root / "BaRR3 - Roser").mkdir()
         assert path_for("BaRR3 - Roser") == root / "BaRR3 - Roser"
 
-    def test_caso_inexistente_devuelve_flat(self, root):
+    def test_caso_inexistente_LANZA_desde_el_paso_5(self, root):
+        """Fijaba el fallback: `path_for` de un caso ausente devolvia la ruta flat.
+
+        Esa ruta inventada es la que fabricaba expedientes fantasma en cuanto
+        alguien escribia sobre ella, y por eso la Fase 1 la retira. El
+        comportamiento viejo sigue disponible por la escotilla declarada.
+        """
         from core.casos.case_locator import path_for
-        result = path_for("NO-EXISTE")
+        from core.casos.workspace_model import LocalWorkspaceMissing
+        with pytest.raises(LocalWorkspaceMissing):
+            path_for("NO-EXISTE")
+        result = path_for("NO-EXISTE", strict=False)
         assert result == root / "NO-EXISTE"
         assert not result.exists()
 
@@ -603,17 +612,43 @@ class TestLasTresSonCoherentes:
         assert destino_de_alta("NO-EXISTE") == root / "NO-EXISTE"
 
 
-class TestAditividad:
-    def test_path_for_NO_cambia_todavia(self, root):
-        """Esta tanda es aditiva: invertir el default hoy rompe 377 tests en 42
-        ficheros (medido), y la causa raiz es que `ensure_case` crea por el
-        fallback. El default se invierte cuando ya no quede quien se apoye en el."""
-        from core.casos.case_locator import path_for
-        assert path_for("NO-EXISTE") == root / "NO-EXISTE"
+class TestElDefaultYaEstaInvertido:
+    """Paso 5: lo que la spec pide de la Fase 1.
 
-    def test_caso_path_NO_cambia_todavia(self, root):
+    Hasta aqui estos dos tests fijaban lo contrario —que `path_for` NO cambiaba—
+    porque la tanda era aditiva a proposito: invertir de golpe rompia 377 tests en
+    42 ficheros, y la causa raiz era que `ensure_case` creaba por el fallback.
+    Migrados el alta y los detectores, el numero es otro y la inversion cabe.
+    """
+
+    def test_path_for_de_un_caso_ausente_LANZA(self, root):
+        from core.casos.case_locator import path_for
+        from core.casos.workspace_model import LocalWorkspaceMissing
+        with pytest.raises(LocalWorkspaceMissing):
+            path_for("NO-EXISTE")
+
+    def test_caso_path_PROPAGA_el_keyword(self, root):
+        """El unico test que caza que la fachada se olvide de propagar: la llama
+        SIN argumentos sobre un caso ausente."""
         from core.config import caso_path
-        assert caso_path("NO-EXISTE") == root / "NO-EXISTE"
+        from core.casos.workspace_model import LocalWorkspaceMissing
+        with pytest.raises(LocalWorkspaceMissing):
+            caso_path("NO-EXISTE")
+
+    def test_la_escotilla_legacy_conserva_el_comportamiento_viejo(self, root):
+        from core.casos.case_locator import path_for
+        from core.config import caso_path
+        assert path_for("NO-EXISTE", strict=False) == root / "NO-EXISTE"
+        assert caso_path("NO-EXISTE", strict=False) == root / "NO-EXISTE"
+
+    def test_ni_estricto_ni_con_escotilla_crean_nada(self, root):
+        from core.casos.case_locator import path_for
+        from core.casos.workspace_model import LocalWorkspaceMissing
+        antes = sorted(p.name for p in root.iterdir())
+        with pytest.raises(LocalWorkspaceMissing):
+            path_for("NO-EXISTE")
+        path_for("NO-EXISTE", strict=False)
+        assert sorted(p.name for p in root.iterdir()) == antes
 
 
 # ---------------------------------------------------------------------------

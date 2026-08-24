@@ -544,10 +544,15 @@ INTAKE_CONTROL_FILES: frozenset[str] = frozenset({
 })
 
 
-def caso_path(case_id: str) -> Path:
-    """Devuelve la ruta absoluta a un caso. Tolera layout flat y por ciudades."""
+def caso_path(case_id: str, *, strict: bool = True) -> Path:
+    """La ruta absoluta a un caso. **Lanza si no existe** (Task 6, paso 5).
+
+    Fachada de `case_locator.path_for`, y propaga el keyword. Que lo propague no
+    es un detalle: si se olvidara, la inversión quedaría a medias y solo lo
+    cazaría un test que llame a `caso_path` SIN argumentos sobre un caso ausente.
+    """
     from core.casos.case_locator import path_for
-    return path_for(case_id)
+    return path_for(case_id, strict=strict)
 
 
 # ---------------------------------------------------------------------------
