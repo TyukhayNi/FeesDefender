@@ -1,8 +1,8 @@
 ---
-estado: propuesto (R4 adjudicada y remediada en rev. 6; pendiente R5)
+estado: propuesto (R5 adjudicada; rev. 7 corrige errores; el bucle de revisión del diseño se detiene, ver §23)
 dueño: Nikolai Tyukhay
 fecha: 2026-08-15
-revision: "6"
+revision: "7"
 ---
 
 # Diseño — Apertura integral sobre componentes existentes
@@ -888,8 +888,8 @@ rutas de los manifiestos; no vuelca secretos ni contenido sensible al terminal.
 
 ## 14. Criterios de aceptación
 
-> **Alcance vigente (rev. 4).** Estos cincuenta criterios describen la apertura completa.
-> La primera vertical exige **veintidós** de ellos; los otros veintiocho quedan
+> **Alcance vigente (rev. 7).** Estos cincuenta criterios describen la apertura completa.
+> La primera vertical exige **veinticuatro** de ellos; los otros veintiséis quedan
 > **diferidos con su vertical**, no exentos. La enumeración y el reparto, en el §21.4.
 
 1. La secuencia documentada de entrypoints existentes completa una apertura normal sin
@@ -1256,10 +1256,12 @@ no aquí.
    del orden y la reanudación, o se retira de la spec la promesa de trabajo mecánico sin
    supervisión y el criterio E2E prueba que el operador sigue siendo el driver.
 
-## 21. Alcance de la primera vertical (rev. 6) — Drive, Sudespacho y correo depositado → intake → sala de máquina
+## 21. Alcance de la primera vertical (rev. 7) — Drive, Sudespacho y correo depositado → intake → sala de máquina
 
 *Decisión de Nikolai del 2026-08-24, tras adjudicar R3. **Rev. 4:** estrecha V1 a Drive →
-intake → sala de máquina. **Rev. 5:** el pull de Sudespacho entra en V1. **Rev. 6:** remedia los
+intake → sala de máquina. **Rev. 5:** el pull de Sudespacho entra en V1. **Rev. 7:** corrige los errores que R5 encontró en la rev. 6 —criterio 38 en la dirección
+contraria, recuentos rancios, cierre obsoleto, cabecera del §22 incoherente— y **no** escribe
+contrato para lo que necesita decisión (§23). **Rev. 6:** remedia los
 cinco hallazgos de R4 (§22) — entra la atomización local del correo depositado (decisión de
 Nikolai), el `--crm skip` pasa de convención a requisito ejecutable, la invariante se formula sin
 absolutos, el write-set se enumera, el criterio 29 deja de perder precondiciones y `fuentes_pendientes`
@@ -1365,8 +1367,8 @@ Sale **diferido, no derogado**. Cada bloque conserva su contrato en la sección 
 | Alta CRM y dominio monetario | §5 · criterios 11, 46, y la parte de 35 que toca tags de alta, normalización telefónica y evento `archivado` | V2 |
 | `crm_ficha` completa: procedencia, identidad del contrario, revisión humana atestada, las tres superficies | §§5.2, 8.1 · criterios 20-22, 24-26, 28, 30, 32, 44, 45 | V2 |
 | Enriquecimiento postal (Correos, Catastro) y su retención | §§8.1, 11 · criterios 23, 49 | V3 |
-| Descubrimiento y etiquetado de Gmail | §§6, 8 · criterios 6, 31 | V3 |
-| LeadHub y el piloto de medición | §§6.3, 16 · criterios 8, 9, 19, 43 | V3 |
+| Descubrimiento y etiquetado de Gmail | §§6, 8 · criterios 6, 31, **y la cola del 10**: la consulta real de Gmail por ronda | V3 |
+| LeadHub y el piloto de medición | §§6.3, 16 · criterios 8, 9, 19, 43, **y las colas del 10 y del 14**: la consulta real de LeadHub por ronda y los escenarios «operador/entrega LeadHub pendiente» y los crashes de las fronteras remotas que vuelven con V2 y V3 | V3 |
 | Sala de **lectura** y su taxonomía | §§8-9 · criterio 17 | V3 |
 | Viabilidad y `no_aplica_confirmado` | §8 · criterio 12 | V3 |
 | Archivo multiefecto ordenado por el abogado | §12 · criterio 40 | V3 |
@@ -1408,10 +1410,16 @@ adjudicar R4:
 - **35 parcial**: V1 conserva `--case-id` y la autodetección desde `--folder-id`, porque el bloque
   de cableado toca el mismo `scripts.abrir_caso` que las implementa y no puede regresarlas. Tags de
   alta, normalización telefónica y evento `archivado` se van con V2.
-- **38 parcial y global**: la parte negativa —un caso judicial no entra por los entrypoints
-  extrajudiciales— rige desde V1 y no descansa en que nadie use un default. Importa porque el
-  default **es** judicial, tanto en el core (`core/sync_sudespacho.py:1356`) como en el CLI
-  (`scripts/sync_sudespacho.py:167`). La parte de `crm_ficha_completa` se difiere.
+- **38 parcial y global, y BIDIRECCIONAL**: rige desde V1 que un caso judicial no entra por los
+  entrypoints extrajudiciales **ni un caso extrajudicial por la vía judicial**. La rev. 6
+  globalizó solo la primera dirección y ese fue un error: el defecto real es el **inverso**, porque
+  el default **es** judicial en el core (`core/sync_sudespacho.py:1356`) y en el CLI
+  (`scripts/sync_sudespacho.py:167`), así que lo que puede colarse es una apertura extrajudicial
+  por la rama judicial. Una suite que probara solo «judicial no usa extrajudicial» quedaría verde
+  sin tocar el defecto. Por tanto V1 exige además **`element` explícito**, derivado del expediente
+  vinculado, y retira el default en su camino; una discrepancia de referencia o de elemento aborta
+  antes de toda escritura, con pruebas separadas para los dos cruces. Detectado por H5-04. La parte
+  de `crm_ficha_completa` se difiere.
 - **41 y 48** cubren además los artefactos, la generación, los puntos de crash y la poda de la
   atomización local, no solo Drive y CRM.
 
@@ -1461,18 +1469,21 @@ alcance y **no remedia** los hallazgos de R3, que siguen abiertos.
 | H3-06 punto fijo no auditable | **Acotado.** Tres fuentes en vez de siete: el snapshot inmutable por ronda atestada sigue siendo directo, y afirmaciones como «una fuente saltada no incrementa `consecutive_unchanged`» (criterio 47) ya son observables |
 | H3-07 retención postal | **Fuera de alcance.** No hay adaptador postal en V1. Vuelve con V3, con su contrato intacto |
 
-Quedan, por tanto, **tres decisiones de Nikolai** (§20) y **cuatro hallazgos** que la rev. 4 debe
-cerrar en el texto —H3-03 acotado, H3-05, H3-06 acotado y, cuando vuelva, H3-07—. Nada de esto
-autoriza un plan hasta que R4 se corra y se adjudique.
+**Situación tras R4 y R5** (este párrafo sustituye al cierre que la rev. 4 escribió y que quedó
+obsoleto al correrse las dos rondas): **H3-07 no bloquea V1**, está fuera de alcance y vuelve con
+V3. Bloquean el plan **cuatro decisiones de Nikolai** —las tres del §20 más la regla de estado de
+la atomización que levantó H5-02— y los contratos abiertos de **H3-03 acotado, H3-05 y H3-06**.
+Bloquea el alcance el **barrido del write-set** (H5-03), que es trabajo y no redacción. El §23
+explica por qué el bucle de revisión del diseño se detiene aquí.
 
-## 22. Adjudicación de la revisión adversarial del estrechamiento (Codex, 2026-08-24) — REQUIERE-REVISION, pendiente
+## 22. Adjudicación de la revisión adversarial del estrechamiento (Codex, 2026-08-24) — REQUIERE-REVISION, parcial
 
 - **Objeto revisado:** `docs/superpowers/specs/2026-08-15-orquestador-apertura-expediente-design.md` rev. 5, commit `806079c`
 - **Ronda:** 4
 - **Revisor:** Codex (solo lectura por construcción: copia externa del árbol vía `git archive`, sin `.git` y sin red)
 - **Informe recibido:** `2026-08-24-apertura-integral-r4-adversarial-review.md`
 - **Hallazgos:** 5 confirmados · 0 rebajados · 0 refutados · 0 escalados · 0 sin verificar
-- **Remediado en:** rev. 6 de este documento
+- **Remediado en:** rev. 6 de este documento, **parcial** — R5 demostró que H4-01, H4-02 y H4-05 no cerraron (§23)
 
 **Objeto de la ronda.** R4 no revisó la spec entera: revisó el **estrechamiento** del §21. El
 mandato le prohibió redescubrir H3-03, H3-05, H3-06 y las tres decisiones del §20, y le pidió
@@ -1521,3 +1532,80 @@ y lo cité como garantía; moví un criterio a una vertical suprimiendo dos de s
 llamé mínimo a un inicializador que ejecuta andamiaje de las verticales que acababa de diferir.
 Ninguno lo habría detectado un guard: los tres son coherencia de contenido, y por eso existe la
 ronda con revisor independiente.
+
+## 23. Adjudicación de la revisión adversarial de la remediación (Codex, 2026-08-24) — REQUIERE-REVISION, parcial
+
+- **Objeto revisado:** `docs/superpowers/specs/2026-08-15-orquestador-apertura-expediente-design.md` rev. 6, commit `ce3ab5a`
+- **Ronda:** 5
+- **Revisor:** Codex (solo lectura por construcción: copia externa del árbol vía `git archive`, sin `.git` y sin red)
+- **Informe recibido:** `2026-08-24-apertura-integral-r5-adversarial-review.md`
+- **Hallazgos:** 5 confirmados · 0 rebajados · 0 refutados · 0 escalados · 0 sin verificar
+- **Remediado en:** rev. 7 de este documento, **parcial** — dos se corrigen aquí; tres no son remediables en prosa
+
+| ID | Sev. | Adjudicación contra la fuente | Decisión |
+|---|---|---|---|
+| H5-01 | CRÍTICA | **CONFIRMADO, y más ancho de lo que yo mismo predije.** No existe marcador de ejecución V1: `grep` de `modo_v1`/`MODO_V1`/`es_v1`/`V1_MODE`/`--v1` en `core/`, `scripts/`, `tests/` da **cero**. Mi remedio de H4-01 repetía la propiedad —«reconocer la ejecución V1 y rechazar técnicamente»— sin decir **por qué** se reconoce, que es el mismo modo de fallo que H3-02 le imputó al mutex. Y el revisor añade lo que yo no vi: la misma fachada acepta `_FUENTES_CLI = ("drive_ev", "manual", "whatsapp", "email")` (`scripts/abrir_caso.py:64`) y `--fuente email` ejecuta `email_export.export_label`, o sea Gmail real. «V1 no descubre correo» era también convención, no frontera | **No remediable en prosa.** Ver el juicio de abajo: es la decisión (3) del §20 |
+| H5-02 | ALTA | **CONFIRMADO.** La atomización entró por nombre y no su contrato. La semántica blanda no es accidental, está **fijada por test**: `tests/test_sala_maquina_cableado_atomize.py:185` (`test_fallo_del_motor_no_aborta_el_ocr_y_emite_evento`) y `:213` (`test_status_parcial_...`, que acepta `publicado=True`, `poda_omitida=True` y `errores`). Y la poda **borra**: `core/email_atomize/pipeline.py:220,267` hacen `p.unlink()`, contra el contrato general del §8 que exige conservar o inactivar. Escribí que los criterios 10/14/41/48 «cubren» sus artefactos, generación, crash y poda: eso era una afirmación, no un contrato | **No remediable sin decisión.** Necesita una regla —qué status bloquea el cierre de V1— y un contrato de publicación que depende de la primitiva del mutex, decisión (2) |
+| H5-03 | ALTA | **CONFIRMADO, y la contradicción es literal.** La nota de la rev. 6 dice «el write-set se enumera» (`:1265`); el cuerpo dice «V1 tiene una precondición nueva: **enumerar** su write-set completo» (`:1349`) y el §21.5 lo hace precondición de un bloque futuro (`:1440`). Enumeré cinco familias —las cinco de tu propio informe R4— y las llamé enumeración. El revisor lista además una docena de clases de artefacto sin clasificar: `_sala_maquina_state.json`, `_cobertura.json`, `_tiempos.jsonl`, staging y manifiestos de bundles, `01_OCR`, `03_MD`, `raw_text`, `99_Versiones anteriores` y los del correo | **No remediable en prosa: es trabajo.** Recorrer el código y clasificar artefacto por artefacto, no prometerlo |
+| H5-04 | ALTA | **CONFIRMADO.** El criterio 38 dice «un caso **judicial** no pasa por los entrypoints **extrajudiciales**» (`:972-973`) y globalicé exactamente eso, mientras el defecto que cito como justificación es el **inverso**: el default es judicial en core (`core/sync_sudespacho.py:1356`) y en CLI (`scripts/sync_sudespacho.py:167`), así que lo que puede colarse es una apertura **extrajudicial** por la vía **judicial**. Mi propio §22 lo formula bien y el remedio del §21.4 copió la otra dirección | **Corregido en la rev. 7:** restricción bidireccional y `element` explícito en el camino V1 |
+| H5-05 | MEDIA | **CONFIRMADO en los tres puntos.** La cabecera del §14 seguía diciendo «(rev. 4)», «veintidós» y «veintiocho» (`:891-893`); el cierre del §21.6 seguía diciendo que «la **rev. 4** debe cerrar» cuatro hallazgos y que falta «que **R4 se corra**», con H3-07 dentro, justo debajo de la tabla que lo declara fuera; y las colas diferidas de los criterios 10 y 14 no figuran en ninguna fila del §21.3, aunque el texto afirma que el resto de los partidos «figura en la tabla» | **Corregido en la rev. 7** |
+
+**A-01, añadido por el adjudicador — y también mío.** La cabecera del §22 decía `— REQUIERE-REVISION,
+pendiente` mientras su ficha, dos líneas después, decía `Remediado en: rev. 6`. Lo introduje al
+remediar: cambié la ficha y no el `estado_remediacion` del titular. **Ningún guard lo detecta**: G7
+valida el formato del encabezado y su vocabulario cerrado, no su acuerdo con la ficha. Y ninguna de
+las cinco rondas lo miró. Corregido en la rev. 7 — y no de forma cosmética: el valor honesto no era
+`remediado` sino **`parcial`**, porque R5 acaba de demostrar que H4-01, H4-02 y H4-05 no cerraron.
+
+### El juicio que corresponde a esta ronda: se para el bucle de revisión
+
+**El veredicto se acepta.** Pero adjudicar cinco hallazgos y escribir una rev. 7 completa sería
+repetir un movimiento que ya ha fallado tres veces, y eso es lo que esta adjudicación se niega a
+hacer.
+
+**El dato.** R3 devolvió 7 hallazgos, R4 cinco, R5 cinco. El número se estabiliza, pero lo que
+cambió es su **naturaleza**: de los cinco de R5, dos son errores mecánicos de mi texto —se corrigen
+en diez minutos— y tres son el mismo defecto de forma, cometido por mí tres veces seguidas:
+
+| Ronda | Remedio que escribí | Lo que le faltaba |
+|---|---|---|
+| R2 → rev. 3 | «mutex interproceso con propietario y nonce» | la primitiva y el namespace (H3-02) |
+| R4 → rev. 6 | «rechazar técnicamente cualquier modo distinto de `skip`» | el discriminante de V1 (H4-01 → H5-01) |
+| R5 → rev. 7 | *no se escribe* | — |
+
+Tres veces la misma figura: **nombrar la propiedad deseada y llamarlo contrato.** Un cuarto párrafo
+sobre el modo V1 produciría un cuarto hallazgo idéntico, y R6 lo encontraría.
+
+**Por qué no son remediables aquí.** H5-01 no es un defecto de redacción: el «discriminante de V1»
+y el «dueño ejecutable de la secuencia» de H3-04 son **el mismo objeto**. He estado tratándolos como
+dos cosas y son una: el modo V1 *es* el driver. Mientras la decisión (3) del §20 no se tome, no hay
+nada que escribir que no sea una promesa. H5-02 necesita una regla de estado y un contrato de
+publicación que cuelgan de la primitiva del mutex, decisión (2). Y H5-03 no es prosa: es recorrer
+el código y clasificar una docena de clases de artefacto — trabajo mecánico, del que
+`CLAUDE.md` dice que vuelve a Claude troceado, no del que se declara hecho en una nota.
+
+**El coste, dicho entero.** Este ítem lleva **cinco rondas de revisión adversarial, veintidós
+hallazgos del revisor más uno del adjudicador, siete revisiones del documento y cero líneas de
+código de producción**. Es la fila #13 de `PLAN.md` en miniatura: el mes de julio cerró con 9,4
+líneas de `docs/` por línea de `core/` y cuatro cierres sin código, y este ítem lo está repitiendo
+a mayor escala. El proceso de revisión **funciona** —ha cazado un token inventado, un criterio con
+la dirección invertida, una precondición suprimida y tres propiedades sin mecanismo, ninguno de
+ellos detectable por un guard—, pero su rendimiento marginal es ya negativo: la ronda siguiente
+encontraría lo que esta ronda ya sabe.
+
+**Lo que se hace en su lugar, y en este orden:**
+
+1. **La rev. 7 corrige solo los errores** (H5-04, H5-05, A-01). No inventa contrato para lo que
+   necesita decisión.
+2. **Nikolai toma las decisiones del §20**, que ahora son **cuatro**: núcleo `CaseWorkspace` como
+   predecesor; primitiva y namespace del mutex; **dueño ejecutable de la secuencia, que es también
+   el discriminante de V1**; y qué status de la atomización bloquea el cierre de V1.
+3. **Se hace el barrido del write-set** como trabajo: una tabla cerrada con productor, patrón de
+   ruta, destino efectivo, clase, guard, mutex, hash/evento, crash y poda. Cuando exista, H5-03
+   está cerrado; hasta entonces, ninguna redacción lo cierra.
+4. **La R6 se corre sobre el PLAN, no sobre la spec.** Revisar otra vez el diseño es lo que ya no
+   rinde; revisar el plan que convierta estas decisiones en tests, sí.
+
+Esto no deroga el contrato de revisión de `CLAUDE.md`: todo diff no trivial seguirá pasando por
+revisión adversarial. Lo que se suspende es **iterar el diseño contra sí mismo** cuando lo que
+falta no son palabras.
