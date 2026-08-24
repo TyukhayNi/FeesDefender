@@ -95,7 +95,15 @@ class TestAmbiguedad:
             CaseCatalog().localizar(CaseRef(w_code="W-DUPLI"))
 
     def test_el_error_no_publica_las_rutas(self, root):
-        """§16: puede decir CUANTAS hay, no donde estan."""
+        """§16: puede decir CUANTAS hay, no donde estan.
+
+        **Aviso para quien lo mute:** `detalle` NO sirve como vector. El modelo lo
+        acepta y no lo renderiza nunca (diseno del Task 4), asi que un mutante que
+        meta las rutas ahi SOBREVIVE — y no porque el test este vacio, sino porque
+        ataca algo estructuralmente inerte. Van tres veces cometido en esta misma
+        sesion. El vector real es un campo que SI se renderiza, como `w_code`:
+        mutar `w_code=str(candidatas)` mata este test, comprobado.
+        """
         from core.casos.case_catalog import CaseCatalog
         from core.casos.workspace_model import AmbiguousCase, CaseRef
         _caso(root, "BaRS9 - Calle A - (W-DUPLI) - Vuelta", id_go="W-DUPLI")
