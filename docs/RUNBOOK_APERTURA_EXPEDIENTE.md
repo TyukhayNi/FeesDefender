@@ -124,12 +124,31 @@ python -m scripts.abrir_caso --w-code W-XXXXXX --ciudad Barcelona --tipo-caso VU
   --fuente drive_ev --crm api --cuantia <n> --yes --force
 ```
 
-> **Modo V1 (`--modo v1`).** La primera vertical se ejecuta con
-> `--modo v1 --crm skip --fuente drive_ev`. El modo es el **discriminante**: estar en él ES ser
-> una ejecución V1, y valida antes de cualquier efecto. Rechaza `--crm api` —el default, que
-> alcanza un POST de alta— y rechaza `--fuente email|manual|whatsapp`, porque V1 no descubre ni
-> exporta correo. Sin `--modo`, el comportamiento es el de siempre (`libre`), que es el que usan
-> V2, V3 y el uso ad hoc. Contrato: spec de apertura integral §24 D3.
+> **Modo V1 (`--modo v1`) — hoy es una PUERTA, todavía no la secuencia.** Lo escribo así porque
+> la primera versión de este bloque decía «la primera vertical **se ejecuta con**…», y eso era
+> falso: el Plan 1 acota el modo, no lo cablea. Lo declaró R6/H6-09.
+>
+> **Lo que el modo ya hace.** `--modo v1` es el **discriminante**: rechaza, antes de resolver
+> identidad, de `ensure_case`, de todo intake y de toda lectura remota, las cinco invocaciones que
+> V1 prohíbe — `--crm` distinto de `skip` (el default es `api` y alcanza un POST de alta),
+> `--fuente email|manual|whatsapp` (`email` ejecuta `email_export.export_label`, o sea Gmail),
+> `--force` sin `--case-id` (crearía una carpeta sombra: criterio 33), `--dry-run` (en `drive_ev`
+> el pull es real igual y la corrida sale sin terminar en ninguno de los tres estados) y la falta
+> de `--folder-id`. Los errores se acumulan: se ven todos en una pasada.
+>
+> **Ojo con el comando de arriba:** lleva `--crm api` y `--force`. Copiarlo y añadirle `--modo v1`
+> aborta, y debe abortar. La forma V1 es `--modo v1 --crm skip --fuente drive_ev --folder-id <id>`.
+>
+> **Lo que el modo NO hace todavía.** No encadena el pull de Sudespacho, ni la atomización local
+> del correo ya depositado, ni la sala de máquina, que son parte de V1 (§21). Eso llega con el
+> Plan 5. Hasta entonces, una corrida en `--modo v1` es una apertura acotada y reconocible, **no**
+> la secuencia V1 completa, y no puede declararse `completo`.
+>
+> **Sin `--modo`**, el comportamiento es el de siempre (`libre`) — el que usan V2, V3 y el uso ad
+> hoc. La única diferencia observable es que `--help` ahora lista una opción más.
+>
+> Contrato: spec de apertura integral §24 D3 y §21; adjudicación de R6 en el §6 del plan
+> `docs/superpowers/plans/2026-08-24-apertura-v1-plan1-modo-v1.md`.
 
 - **`[APER-34]` Auto-derivación (B5):** en `--fuente drive_ev`, si se omiten,
   `--team-id` (driveId), `--codigo-caso` (nombre de la unidad compartida vía Drive API) y
