@@ -55,12 +55,22 @@ MATRIZ_ESPERADA = {
     "blocked_conflict": set(),
 }
 
-# Los doce del §10, en su forma de código.
+# Los doce del §10 más los tres del registro (Task 5), en su forma de código.
+#
+# Los tres últimos NO estaban en la tabla del §10 de la spec, y se añaden con ella:
+# `REGISTRY_UNREADABLE` lo fuerza R7/H7-02 —el fallo cerrado necesita un error que el
+# resolver pueda propagar en vez de un `[]` indistinguible de «no había nada»—, y los
+# otros dos los pide el contrato del Task 5. Viven en el MODELO y no en el registro
+# porque el resolver los muestra al usuario: así les aplican las reglas de mensaje del
+# §10 y los ocho canarios del §16. Definirlos en el registro los habría dejado fuera de
+# `errores_conocidos()` y por tanto fuera de los canarios, que es el hueco que R7
+# castigó en H7-12.
 CODIGOS_ESPERADOS = {
     "CASE_LOCKED", "LOCAL_WORKSPACE_MISSING", "LOCK_MISMATCH", "CASE_CONFLICT",
     "AMBIGUOUS_CASE", "RUNTIME_CANNOT_ACCESS_WORKSPACE", "CAPABILITY_DENIED",
     "CANONICAL_MUTATION_DEFERRED", "LOCK_NOT_MINE", "CHECKOUT_CANCELLED_ELSEWHERE",
     "WORKSPACE_UNDER_CATALOG_ROOT", "AUDIT_BASELINE_MISSING",
+    "REGISTRY_UNREADABLE", "SCHEMA_NO_SOPORTADO", "RUTA_YA_REGISTRADA",
 }
 
 _RE_UNIDAD_WINDOWS = re.compile(r"[A-Za-z]:[\\/]")
@@ -249,7 +259,7 @@ def test_exigir_no_lanza_cuando_el_modo_concede():
 
 # ------------------------------------------------------------- §10 los errores
 
-def test_estan_los_doce_codigos_del_spec():
+def test_estan_todos_los_codigos_declarados():
     reales = {c.codigo for c in wm.errores_conocidos()}
     assert reales == CODIGOS_ESPERADOS
 

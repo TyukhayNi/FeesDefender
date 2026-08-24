@@ -202,12 +202,47 @@ class AuditBaselineMissing(WorkspaceError):
     codigo = "AUDIT_BASELINE_MISSING"
 
 
+# --- Los tres del registro (Task 5), que el §10 no enumeraba ------------------
+#
+# Viven aquí y no en `workspace_registry` a propósito: el resolver los propaga al
+# usuario, así que les aplican las reglas de mensaje del §10 y los ocho canarios
+# del §16. Definirlos en el registro los habría dejado fuera de
+# `errores_conocidos()` y por tanto fuera de los canarios — el hueco que R7
+# castigó en H7-12.
+
+
+class RegistryUnreadable(WorkspaceError):
+    """El registro existe pero no se puede leer. NO es «no había nada».
+
+    La distinción es la razón de ser de esta clase (R7/H7-02): devolver una lista
+    vacía ante un registro corrupto borra la diferencia entre «este caso no tiene
+    workspace local» y «no puedo saber si lo tiene», y con ella la única señal que
+    impide autorizar `DRIVE_ACTIVE` sobre un caso que quizá está prestado.
+    """
+
+    codigo = "REGISTRY_UNREADABLE"
+
+
+class SchemaNoSoportado(WorkspaceError):
+    """El registro lo escribió una versión que no conocemos. No se adivina."""
+
+    codigo = "SCHEMA_NO_SOPORTADO"
+
+
+class RutaYaRegistrada(WorkspaceError):
+    """Esa carpeta local ya es el workspace de otro caso: sería split brain."""
+
+    codigo = "RUTA_YA_REGISTRADA"
+
+
 def errores_conocidos() -> tuple[type[WorkspaceError], ...]:
-    """Las doce subclases del §10.
+    """Las subclases con código: las doce del §10 más las tres del registro.
 
     Se enumeran explícitamente en vez de barrer `__subclasses__()`: así el test
-    que compara contra los doce códigos de la spec muere si alguien añade una
-    subclase sin código o retira una que la spec exige.
+    que compara contra los códigos declarados muere si alguien añade una subclase
+    sin código o retira una que la spec exige. Un barrido de subclases habría
+    hecho lo contrario —crecer en silencio— y es justo lo que no se quiere de una
+    tabla que también gobierna los canarios de fuga.
     """
     return (
         CaseLocked,
@@ -222,6 +257,9 @@ def errores_conocidos() -> tuple[type[WorkspaceError], ...]:
         CheckoutCancelledElsewhere,
         WorkspaceUnderCatalogRoot,
         AuditBaselineMissing,
+        RegistryUnreadable,
+        SchemaNoSoportado,
+        RutaYaRegistrada,
     )
 
 
