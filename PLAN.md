@@ -100,12 +100,36 @@ Lo que sigue faltando: V1 no **descubre** correo, así que un caso cuyo material
 depositar queda `preparado_con_pendientes` hasta V3, nunca `completo` — **corregido tras R4**:
 `fuentes_pendientes` no existía en ningún vocabulario, me lo inventé al estrechar (§22, H4-03).
 
-**Siguiente:** (1) las **tres decisiones de Nikolai** del §20 —predecesor `CaseWorkspace` (que es
-la Fase 1 de la fila #3, no trabajo nuevo), primitiva y namespace del mutex, dueño ejecutable de
-la secuencia—; (2) cerrar en la rev. 4 los cuatro hallazgos de texto que quedan (H3-03 acotado,
-H3-05, H3-06 acotado, y H3-07 cuando vuelva con V3); (3) R4 y su adjudicación; (4) solo con
-veredicto favorable, plan TDD de V1; (5) W-02Q38C se cierra por ese wiring, sin parche manual del
-caso.
+**R4, R5 y R6 corridas y adjudicadas.** R4 y R5 (`REQUIERE-REVISION`, 5 hallazgos cada una) cerraron
+el diseño en la rev. 8 y el §23 **detuvo a propósito** el bucle de revisión sobre la spec: un cuarto
+párrafo habría producido un cuarto hallazgo idéntico. Las cuatro decisiones quedaron tomadas en el
+§24 y el write-set barrido en el §25.
+
+**R6 es la primera ronda de este diseño que revisa CÓDIGO y no prosa** — el diff del Plan 1.
+Veredicto `NO-SHIP`: **9 hallazgos, 9 confirmados, 0 refutados** (1 CRÍTICO, 5 ALTOS, 2 MEDIOS,
+1 BAJO), **todos remediados**. Acta:
+`docs/superpowers/specs/2026-08-24-apertura-v1-plan1-r6-adversarial-review.md`; adjudicación en el
+**§6 del plan**. El dato que justifica haber gastado la ronda aquí: el CRÍTICO —`--force` en modo
+`v1` creaba una carpeta sombra con W-code duplicado, contra el criterio 33, que el §21.4 mete en
+los 24 de V1— no lo vio ningún guard, ningún test ni mis dos lecturas. **Y cinco de los nueve eran
+defectos míos del mismo día**, entre ellos una prueba de mutación real pero mal dirigida, que me
+había hecho declarar contratada una propiedad más ancha de lo que probaba.
+
+- [x] **Plan 1 — `--modo v1` y sus puertas negativas.** Cinco tasks TDD + la remediación de R6.
+      La puerta rechaza, antes de las cuatro fronteras del §24 D3, cinco invocaciones: `--crm` ≠
+      `skip`, `--fuente` ≠ `drive_ev`, `--force` sin `--case-id`, `--dry-run`, y la falta de
+      `--folder-id`. 22 tests, cuatro de ellos verificados por mutación.
+
+**Siguiente:** (1) la **Fase 1 de la arquitectura dual** (fila #3), que la decisión D1 convierte en
+predecesora de los Planes 2-5; (2) **Plan 2** — la primitiva de mutex de D2 (lockfile `O_EXCL`,
+namespace por W-code, lease); (3) **Plan 3** — el write-set, llevar al guard las 25 clases que hoy
+no pasan; (4) **Plan 4**, cuyo contrato hay que **escribir antes** en la spec (§25.5); (5) **Plan
+5** — el cableado del orden completo y el E2E, que es lo que hace que `--modo v1` deje de ser solo
+una puerta; (6) W-02Q38C se cierra por ese wiring, sin parche manual del caso.
+
+**Lección que los Planes 2-5 heredan, del §6.3 del plan:** una prueba de mutación vale lo que vale
+su **elección de mutante**. Si el contrato enumera cuatro fronteras, hacen falta cuatro mutantes,
+uno por frontera. Un solo mutante rojo prueba que el test no está vacío; no prueba el contrato.
 
 ---
 
