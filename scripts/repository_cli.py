@@ -823,6 +823,32 @@ def cmd_checkin(args: argparse.Namespace, *, entorno: Entorno = ENTORNO_REAL) ->
               f"pero `ultimo_checkin_auditlog` apuntará a un fichero que no llegó: "
               f"consérvalo en local ({log_file}).")
 
+    # CP10-bis: ¿se puede CERRAR el ciclo? Se pregunta ANTES de registrar nada.
+    #
+    # Antes esto vivía en CP11, después de subir, verificar, registrar el evento e
+    # integrar la bandeja — y cuando la transición no era legal reventaba con
+    # `TransicionInvalida`. De ahí salían dos defectos que parecían distintos: el
+    # usuario recibía un TRACEBACK con todo el trabajo ya bien hecho (`MEJORAS #93-B`,
+    # medido en vivo sobre W-02VND1) y un checkin reentrante dejaba DOS `case_checkin`
+    # en el registro de custodia (A-2c). El orden era el defecto, no la excepción.
+    #
+    # `#93-B` proponía convertir CP11 en un no-op idempotente y salir en verde. Eso
+    # arreglaba el traceback y EMPEORABA A-2c: el evento ya estaría registrado, así que
+    # el segundo checkin pasaría de morir ruidosamente a duplicar la traza en silencio.
+    pull_lib = _pull_caso_md(destino, work, entorno=entorno)
+    if pull_lib is None:
+        print("  ⚠ El merge está subido y verificado, pero NO se pudo leer el "
+              "_caso.md para comprobar si el ciclo se puede cerrar. No se registra "
+              "nada ni se integra la bandeja: el caso sigue 'prestado' en el Drive. "
+              "Re-ejecuta el checkin cuando el remote responda (converge).")
+        return 4
+    fm, cuerpo_lib = pull_lib
+    estado_actual = rc.estado_de_fm(fm)
+    try:
+        rc.validar_transicion(estado_actual, "disponible")
+    except rc.TransicionInvalida:
+        return _sin_ciclo_que_cerrar(fm, estado_actual, log_file)
+
     # Evento forense case_checkin en el _intake_log.jsonl del Drive.
     try:
         _append_evento_drive(destino, work, case_id=args.case_id, event="case_checkin",
@@ -855,17 +881,9 @@ def cmd_checkin(args: argparse.Namespace, *, entorno: Entorno = ENTORNO_REAL) ->
         print(f"  ✓ bandeja integrada: {integrados} fichero(s)"
               + (f", {colisiones} como _reingesta_ (colisión, sin sobrescribir)" if colisiones else ""))
 
-    # CP11: liberar el lock en el Drive (prestado → disponible).
-    pull_lib = _pull_caso_md(destino, work, entorno=entorno)
-    if pull_lib is None:
-        print("  ⚠ El merge está subido y verificado y el evento registrado, pero NO "
-              "se pudo leer el _caso.md para liberar el lock. El caso sigue 'prestado' "
-              "en el Drive. Re-ejecuta el checkin cuando el remote responda: converge "
-              "y solo quedará por liberar el lock.")
-        return 4
-    fm, cuerpo_lib = pull_lib
-    estado_actual = rc.estado_de_fm(fm)
-    rc.validar_transicion(estado_actual, "disponible")
+    # CP11: liberar el lock en el Drive (prestado → disponible). El `_caso.md` y la
+    # legalidad de la transición vienen de CP10-bis: no se relee, porque entre medias
+    # solo han corrido el evento y la bandeja, y ninguno toca el `_caso.md`.
     rc.aplicar_lock_liberado(fm, timestamp=ts, auditlog=nombre_auditlog(tsc))
     try:
         _push_caso_md(fm, destino, work, cuerpo=cuerpo_lib, entorno=entorno)
@@ -972,6 +990,36 @@ def _upload_evidencia(destino: str, tsc: str, files: list[str], *,
             if res.returncode != 0:
                 fallidos.append(p.name)
     return fallidos
+
+
+def _sin_ciclo_que_cerrar(fm: dict, estado_actual: str, log_file) -> int:
+    """El Drive no admite `→ disponible`. Diagnostica y decide el código de salida.
+
+    Las dos causas no son la misma cosa y colapsarlas en «verde» convertiría la
+    comprobación en decoración:
+
+    - **Reentrancia** — el caso ya consta cerrado (`ultimo_checkin_timestamp`). No hay
+      nada que hacer, y eso no es un error: se dice y se sale con 0.
+    - **Anomalía** — consta `disponible` y **nadie** registró un cierre. O el checkout
+      nunca escribió el lock (`MEJORAS #93-A`), o alguien lo liberó por fuera. Aquí
+      callar sería peor que el traceback que este cambio retira: sale con 4.
+    """
+    meta = (fm or {}).get("meta") or {}
+    if meta.get("ultimo_checkin_timestamp"):
+        print(f"  ✓ Nada que hacer: este caso YA está cerrado en el Drive "
+              f"(checkin previo del {meta['ultimo_checkin_timestamp']}). No se ha "
+              f"registrado ningún evento nuevo ni se ha tocado el lock.")
+        print("  Si tienes trabajo nuevo en local, abre un checkout otra vez: "
+              "escribir sobre el canon sin lock es justo lo que el protocolo impide.")
+        return 0
+    print(f"  ✗ El caso NO consta prestado en el Drive (estado {estado_actual!r}) y "
+          f"tampoco consta ningún checkin previo, así que no hay ciclo que cerrar.")
+    print("  El merge SÍ está subido y verificado — no lo repitas — pero no se ha "
+          "registrado el evento ni se ha tocado el lock.")
+    print(f"  Causa probable: el checkout no llegó a escribir el lock (MEJORAS #93-A), "
+          f"o se liberó por fuera. Comprueba el _caso.md del Drive antes de seguir. "
+          f"Evidencia del merge: {log_file}")
+    return 4
 
 
 def _append_evento_drive(

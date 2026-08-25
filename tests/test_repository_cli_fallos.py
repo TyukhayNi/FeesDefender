@@ -327,31 +327,39 @@ def test_ningun_artefacto_del_protocolo_cae_en_la_carpeta_del_caso(cli, tmp_path
 # Fila 9 · CP11 con `estado_repositorio` ausente — `MEJORAS #93-B`
 # ---------------------------------------------------------------------------
 
-def test_estado_ausente_revienta_en_cp11_DESPUES_de_mover_los_bytes(cli, tmp_path):
-    """`MEJORAS #93-B`, caracterizado tal cual: **no se arregla aquí**.
+def test_estado_ausente_sale_con_4_y_NO_registra_el_evento(cli, tmp_path, capsys):
+    """`MEJORAS #93-B`, **arreglado**. Y este test defendia el defecto.
 
-    `validar_transicion` lanza `TransicionInvalida` en el CP11, o sea **después** de
-    subir los bytes, registrar el evento e integrar la bandeja. El trabajo queda hecho
-    y a medio cerrar: la excepción sale cruda al operador, sin mensaje que explique en
-    qué punto quedó el ciclo. Eso es lo que #93-B propone arreglar.
+    Su nombre anterior lo decia todo: `...revienta_en_cp11_DESPUES_de_mover_los_bytes`.
+    Caracterizaba como esperado que `validar_transicion` lanzara `TransicionInvalida`
+    cruda al operador **despues** de subir los bytes, registrar el evento e integrar la
+    bandeja — y exigia POR ASERTO que el evento YA estuviera escrito. O sea que la suite
+    montaba guardia sobre la traza duplicada de A-2c: cualquier arreglo la ponia roja,
+    que es exactamente lo que paso.
+
+    El contrato nuevo: la transicion se valida **antes** de registrar nada. Los bytes
+    siguen subiendo y verificandose —eso ya ocurria y es correcto—, pero el ciclo no se
+    da por cerrado ni deja traza de un cierre que no hubo.
     """
     from core.utils import build_frontmatter
-    # Un `_caso.md` legítimo salvo que le falta `estado_repositorio`.
+    # Un `_caso.md` legitimo salvo que le falta `estado_repositorio`.
     sin_estado = (build_frontmatter({"meta": {"id_go": "W-TEST99", "ciudad": "Barcelona"}})
-                  + "\n" + CASO_MD_CUERPO).encode("utf-8")
+                  + chr(10) + CASO_MD_CUERPO).encode("utf-8")
     drive = {"00_Input/_caso.md": sin_estado,
              "00_Input/_intake_log.jsonl": LOG_PREVIO,
              "00_Input/doc.pdf": b"BASE"}
     local = montar_local(tmp_path, {"00_Input/doc.pdf": b"LOCAL"},
                          base={"00_Input/doc.pdf": b"BASE"})
-    from core.repository_checkout import TransicionInvalida
 
-    with pytest.raises(TransicionInvalida):
-        _correr(cli, tmp_path, drive, local)
+    rc_, _fake = _correr(cli, tmp_path, drive, local)
 
-    assert drive["00_Input/doc.pdf"] == b"LOCAL", "los bytes YA se movieron"
-    assert len(drive["00_Input/_intake_log.jsonl"].splitlines()) == 2, \
-        "y el evento case_checkin YA quedó registrado"
+    assert rc_ == 4, f"se esperaba 4 (ciclo no cerrable), dio {rc_}"
+    assert drive["00_Input/doc.pdf"] == b"LOCAL", "los bytes SI se mueven: eso no cambia"
+    assert len(drive["00_Input/_intake_log.jsonl"].splitlines()) == 1, (
+        "el evento case_checkin NO puede quedar registrado: no se cerro ningun ciclo")
+    salida = capsys.readouterr().out
+    assert "no consta prestado" in salida.lower(), (
+        f"la excepcion cruda se cambio por otro silencio: {salida[-300:]}")
 
 
 # ---------------------------------------------------------------------------

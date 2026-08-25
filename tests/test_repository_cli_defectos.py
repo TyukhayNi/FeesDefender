@@ -1,4 +1,4 @@
-"""Task 6 de la Fase 0 — los SIETE defectos, reproducidos. **Ninguno se arregla aquí.**
+"""Task 6 de la Fase 0 — los defectos del frontal, reproducidos. **Aquí no se arregla ninguno.**
 
 Siete y no ocho: el octavo (`_integrar_bandeja` devolvía `(0,0)` con un `lsjson` ilegible
 y el checkin liberaba el lock) lo cerró el PR #160, y su caracterización **verde** vive
@@ -16,7 +16,8 @@ SPEC, que es donde vive.
 
     python -m pytest tests/test_repository_cli_defectos.py -q -rxX
 
-Esperado: **7 xfailed, 0 xpassed**.
+Esperado: **6 xfailed, 0 xpassed**. Eran siete hasta el 2026-08-25, cuando
+A-2c se arregló junto con `MEJORAS #93-B` (ver la nota en su sitio).
 """
 
 from __future__ import annotations
@@ -301,43 +302,15 @@ def test_defecto_moveto_de_bandeja_fallido_libera_el_lock(cli, tmp_path):
         f"{meta_de(drive['00_Input/_caso.md'], tmp_path)['estado_repositorio']!r}")
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError,
-                   reason="A-2: un checkin reentrante vuelve a registrar `case_checkin` "
-                          "antes de que CP11 rechace la transición (MEJORAS #93-B)")
-def test_defecto_checkin_reentrante_duplica_el_evento(cli, tmp_path):
-    """Dos checkins en verde dejan DOS eventos `case_checkin` en el log forense.
-
-    El segundo no puede cerrar —`validar_transicion('disponible','disponible')` no está
-    permitida— pero revienta en el **CP11**, o sea después de subir, verificar y
-    registrar. La `TransicionInvalida` se captura **explícitamente**: sin capturarla, el
-    `xfail(raises=AssertionError)` no se cumpliría con ese traceback y el test saldría en
-    rojo en vez de documentar el defecto.
-    """
-    from core.repository_checkout import TransicionInvalida
-    drive = {"00_Input/_caso.md": caso_md("prestado", checkout_user="tester",
-                                          checkout_nonce=NONCE_A),
-             "00_Input/_intake_log.jsonl": LOG_PREVIO,
-             "00_Input/doc.pdf": b"BASE"}
-    local = montar_local(tmp_path, {"00_Input/doc.pdf": b"LOCAL"},
-                         base={"00_Input/doc.pdf": b"BASE"})
-
-    fake1 = FakeRclone(drive, raiz_local=tmp_path)
-    rc1 = cli.cmd_checkin(args_checkin(local), entorno=_entorno(cli, fake1, tmp_path))
-    if rc1 != 0 or not liberado(drive, tmp_path):
-        raise RuntimeError(f"precondición: el primer checkin debía cerrar verde (rc={rc1})")
-
-    fake2 = FakeRclone(drive, raiz_local=tmp_path)
-    try:
-        cli.cmd_checkin(args_checkin(local), entorno=_entorno(cli, fake2, tmp_path,
-                                                              sub="work2"))
-    except TransicionInvalida:
-        pass                      # esperado: CP11 rechaza disponible → disponible
-    else:
-        raise RuntimeError("precondición: el segundo checkin debía morir en CP11")
-
-    assert len(eventos(drive, "case_checkin")) == 1, (
-        f"el log forense tiene {len(eventos(drive, 'case_checkin'))} eventos "
-        f"`case_checkin` para un solo checkin real")
+# A-2c — RETIRADO el 2026-08-25: el defecto está ARREGLADO.
+#
+# `test_defecto_checkin_reentrante_duplica_el_evento` vivía aquí. `cmd_checkin` valida
+# ahora la transición ANTES de registrar el evento, así que un checkin reentrante ya no
+# duplica el `case_checkin` ni revienta con un traceback (`MEJORAS #93-B`).
+#
+# Su caracterización **verde** vive en `tests/test_checkin_reentrante.py`, que es el
+# mismo trato que recibió el octavo defecto cuando lo cerró el PR #160: el escenario no
+# se pierde, cambia de fichero porque cambia de naturaleza.
 
 
 # ---------------------------------------------------------------------------

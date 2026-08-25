@@ -413,10 +413,16 @@ def test_camino_verde_libera_el_lock_con_ultimo_checkin(cli, tmp_path, capsys):
 
     assert rc_ == 0
     # contrato temporal (A-2): inventario → copy → check → evidencia (AUDITLOG y log
-    # del check) → pull del log → push del log → lsjson de la bandeja → pull del
-    # _caso.md → push del lock liberado.
+    # del check) → **pull del _caso.md** → pull del log → push del log → lsjson de la
+    # bandeja → push del lock liberado.
+    #
+    # El pull del `_caso.md` se ADELANTÓ (antes iba el penúltimo, ya en CP11). Es el
+    # arreglo de `MEJORAS #93-B` + A-2c: la legalidad de la transición se comprueba
+    # ANTES de registrar el evento y de integrar la bandeja, para que un ciclo que no
+    # se puede cerrar no deje traza de haberse cerrado. **Siguen siendo DIEZ
+    # operaciones**: no se añadió ninguna, se movió una.
     assert _subs(fake) == ["lsjson", "copy", "check", "copyto", "copyto",
-                           "copyto", "copyto", "lsjson", "copyto", "copyto"]
+                           "copyto", "copyto", "copyto", "lsjson", "copyto"]
 
     meta = meta_de(drive["00_Input/_caso.md"], tmp_path)
     assert meta["estado_repositorio"] == "disponible"
