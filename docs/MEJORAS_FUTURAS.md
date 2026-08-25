@@ -5425,3 +5425,58 @@ que mantener donde había una.
 campo está vacío; el (3) es una línea en `docs/INTEGRACION_SUDESPACHO.md` o donde se documente la
 config de rclone. Solo si el proyecto existente no se localiza: +1 h para crear uno y reautorizar
 los tres remotes.
+
+---
+
+## 123. La poda del worktree no puede cerrarse al cerrar: `.claude/worktrees/` acumula carcasas
+
+**Disparador:** medido el 2026-08-25 al podar el worktree del 67º cierre. `.claude/worktrees/`
+tenía **10 directorios y `git worktree list` reconocía 1** (más la raíz). No bloquea nada —las
+carcasas están vacías— pero es una acumulación silenciosa en el árbol de trabajo, y su causa no es
+la que parece.
+
+**Estado actual.** `git worktree remove <ruta>` ejecutado **desde dentro** de ese worktree falla en
+Windows con `Permission denied`; `rmdir` y `rm -rf` fallan con `Device or resource busy`. Lo que
+ocurre es que git **sí borra el contenido y sí desregistra** el worktree, y solo no puede quitar el
+**directorio raíz**, porque el proceso que lo tiene como directorio de trabajo lo retiene. Queda
+una carcasa de 0 ficheros que git ya no conoce.
+
+**Y aquí está el hallazgo que cambia el remedio: no es descuido, es estructural.** Del censo de 10,
+al barrer quedaron exactamente **2 sin borrar**, y son **los dos que tenían sesión viva encima**.
+Los 8 restantes se fueron sin resistencia. Es decir: **en el momento del cierre la limpieza es
+imposible por construcción** —la sesión que debe borrar el directorio es la que lo está
+ocupando—, y solo es posible **después**, cuando ese proceso ya no existe. Prueba independiente
+recogida el mismo día: el único huérfano con contenido llevaba un `.claude/settings.local.json`
+escrito a las 14:34 cuyo permiso concedido era, literalmente, `rmdir` de su propio worktree — otra
+sesión había chocado con la misma pared unas horas antes y tampoco pudo terminar.
+
+**Consecuencia para el protocolo.** `docs/FLUJO_GIT.md §4` manda `git worktree remove` «desde la
+raíz, nunca desde dentro», que es correcto pero **no se puede cumplir cuando el agente que cierra
+vive dentro del worktree que poda**. El paso queda por definición a medias, y `scripts/session_close`
+no lo comprueba: sus avisos cubren `STATUS`/`PLAN`, trabajo sin publicar y coherencia `PLAN`↔git,
+pero **no** «¿queda un directorio en `.claude/worktrees/` que git no reconozca?».
+
+**Mejora propuesta.** Dos piezas, y la primera sola ya cierra el 90 %:
+
+1. **Barrido en la APERTURA, no en el cierre.** Un aviso —o una poda directa, que es segura— al
+   abrir sesión: listar `.claude/worktrees/`, cruzar con `git worktree list --porcelain`, y para
+   cada huérfano **vacío** borrarlo; para cada huérfano **con contenido**, avisar y no tocar. La
+   asimetría importa: un huérfano con ficheros puede ser trabajo sin publicar de una sesión que
+   murió, y ahí borrar es la operación equivocada.
+2. **Aviso en `session_close`**, en la misma familia que los actuales: «quedan N carcasas en
+   `.claude/worktrees/`; se limpian en la próxima apertura». No debe intentar borrar la propia
+   —fallará siempre— sino **dejar dicho que el paso no terminó**, que es justo lo que hoy no consta.
+
+**Cuidado documentado, aprendido al barrer.** El barrido debe tratar `.claude/settings.local.json`
+como lo que es —caché de permisos— pero **no darlo por muerto**: al barrer con `rm -rf` se borró el
+de una sesión **viva**, que perderá los permisos que ya tenía concedidos. Un barrido de apertura
+solo debería tocar directorios **completamente vacíos**, y dejar el resto al aviso.
+
+**Justificación de no aplicarlo ahora.** El síntoma es cosmético: carcasas de 0 ficheros en una
+carpeta ignorada. Lo que lo hace digno del backlog no es el residuo sino el **paso de protocolo que
+no se puede cumplir** — y arreglar eso toca `session_close` y `FLUJO_GIT.md §4`, que es trabajo con
+diseño propio y no se hace de paso al cerrar una sesión.
+
+**Coste estimado.** ~1 h el barrido de apertura con su test (la parte fina es la guarda de
+«vacío»); ~30 min el aviso de `session_close`; +15 min la frase de `FLUJO_GIT.md §4` que reconozca
+que el paso se completa en la apertura siguiente.
