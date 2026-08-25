@@ -1034,10 +1034,37 @@ caso: durante un checkout, un proceso escribe en el local y otro en Drive.
       de trabajo de la Fase 2; `MEJORAS #93` no se cierra y sus consecuencias **empeoran** (ver la
       nota de 2026-08-25 en esa entrada: el silencio de `estado_de_fm` ante el campo ausente ahora
       lo consume también el resolver); y quedan `legacy_unresolved` inventariados para la Fase 4.
-- [ ] **Fase 2 — checkout, scratch y checkin.** Requiere **arreglar `MEJORAS #96` primero**: la
-      proyección local de `_caso.md` es justo el disparador de ese bug. Incluye compare-and-swap
-      del lock, reordenación del checkin, baseline de auditoría, conmutación **atómica** del
-      guard a denegar, y que `checkout-caso` deje de adquirir el lock.
+- [~] **Fase 2 — checkout, scratch y checkin. APARCADA con disparador escrito (2026-08-25,
+      decisión de Nikolai), tras extraerle los dos arreglos que sí mordían.**
+
+      **El dato que la aparcó, medido y no opinado:** `scripts/abrir_caso.py` y
+      `core/abrir_caso.py` tienen **cero** referencias a `repository_cli`,
+      `repository_checkout` o `MANIFEST_CHECKOUT`. **Abrir un expediente nunca presta nada**:
+      son dos subsistemas que no se tocan. Lo que la decisión D1 puso como predecesora de la
+      apertura integral **no es el préstamo, es la Fase 1** — y la Fase 1 está cerrada. La
+      **fila #15 está desbloqueada desde hoy** y no espera a esta fila.
+
+      Y contra la realidad del despacho —tres abogados que prácticamente nunca trabajan un
+      expediente en paralelo— **tres de los cinco defectos que quedaban existen para proteger
+      de una concurrencia que no se produce**: A-2a (la bandeja se integra sin verificar) y
+      B0-2b (el baseline del log) solo muerden si alguien escribe en un caso prestado, y los
+      dos A-1 son literalmente el candado.
+
+      **Lo que sí se extrajo y se cerró** (PR de esta sesión): `MEJORAS #96` y `MEJORAS #93-B`
+      + el defecto **A-2c**, que son los dos únicos que habían mordido en la vida real —el
+      pipeline roto en silencio sobre una copia prestada, y el checkin de W-02VND1 que salió
+      verde (431 ficheros, 0 diferencias) y aun así devolvió un traceback que hubo que cerrar
+      a mano. Los `xfail` del frontal pasan de **7 a 6**.
+
+      **Disparador para retomarla:** uso concurrente real entre máquinas — que Paola, Ana o
+      Sergio empiecen a usar el préstamo, o dos sesiones sobre el mismo caso. Entonces se
+      retoma partida en **2a** (integridad del checkin: A-2a, A-2b, B0-2a, B0-2b) y **2b**
+      (concurrencia: los dos A-1, `MEJORAS #93-A`, y que `checkout-caso` deje de adquirir el
+      lock). El diseño de 2a está razonado en el bloque de cierre de esta
+      sesión; **no hay spec escrita y no se escribe hasta que el disparador exista.**
+
+      Siguen fuera, como estaban: la conmutación **atómica** del guard a denegar y la retirada
+      de `_pendiente_checkin`, que son de la Fase 3 y exigen inventario sobre casos reales.
 - [ ] **Fase 3 — primera vertical**: sala de máquina + correo (con el estado de canal dentro del
       workspace) + `catalogo_documental`.
 - [ ] **Fase 4 — resto de scripts y UI** (Streamlit entera; el `CaseWorkspace` no se cachea en

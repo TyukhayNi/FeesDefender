@@ -89,6 +89,7 @@ from typing import Any
 
 from core import repository_checkout as rc
 from core.config import (
+    ESTADO_REPO_DISPONIBLE,
     PENDIENTE_CHECKIN_SUBDIR,
     RCLONE_REMOTE_TL,
     TEAM_DRIVE_TL,
@@ -714,6 +715,32 @@ def cmd_checkin(args: argparse.Namespace, *, entorno: Entorno = ENTORNO_REAL) ->
               f"y relanza con --yes para confirmar. Nada tocado.")
         return 3
 
+    # CP3-bis: ¿hay un ciclo que cerrar? Se pregunta justo ANTES de la primera
+    # escritura al Drive, y esa colocación es deliberada.
+    #
+    # Antes esto vivía al final (CP11) y de ahí salían tres síntomas. Los dos que midió
+    # la revisión R9: un checkin reentrante llegaba a **subir trabajo nuevo al canon sin
+    # lock** —`plan_merge` clasifica como `COPY_LOCAL` cualquier fichero local que no
+    # esté ni en el baseline ni en Drive— y luego devolvía 0 diciendo «nada que hacer»
+    # (H9-02); y validar a media corrida ensanchaba la ventana de sobrescritura del
+    # frontmatter (H9-03). El tercero es `MEJORAS #93-B`: el traceback tardío.
+    #
+    # **Por qué aquí y no en la primera línea.** Comprobarlo al entrar era igual de
+    # correcto y añadía un `copyto` al principio de TODOS los caminos, incluidos los que
+    # abortan antes de tocar nada (inventario inválido, `--dry-run`, gate de borrados):
+    # diez tests de la red de caracterización de la Fase 0 se ponían rojos por una
+    # operación que en esos caminos no aporta. La primera escritura es el `copy` de
+    # CP4/CP5, así que basta con preguntar aquí: lo anterior son lecturas y el DELTA, que
+    # va al directorio temporal. El aborto sigue siendo «sin efectos», que es lo que el
+    # código 2 promete.
+    pull_previo = _pull_caso_md(destino, work, entorno=entorno)
+    if pull_previo is not None:
+        estado_previo = rc.estado_de_fm(pull_previo[0])
+        try:
+            rc.validar_transicion(estado_previo, "disponible")
+        except rc.TransicionInvalida:
+            return _sin_ciclo_que_cerrar(pull_previo[0], estado_previo, None)
+
     # CP4/CP5: copia por PLAN — solo COPY_LOCAL + destino de RENAME (--files-from).
     # PRESERVE_DRIVE y CONFLICT NO se suben: el Drive conserva su versión (no se
     # auto-resuelve el conflicto ni se pisa lo que solo cambió en Drive). El
@@ -856,6 +883,12 @@ def cmd_checkin(args: argparse.Namespace, *, entorno: Entorno = ENTORNO_REAL) ->
               + (f", {colisiones} como _reingesta_ (colisión, sin sobrescribir)" if colisiones else ""))
 
     # CP11: liberar el lock en el Drive (prestado → disponible).
+    #
+    # Se **relee** el `_caso.md` aquí, pegado al push, y no se reutiliza el de CP0-bis:
+    # entre uno y otro corren la copia, la verificación, la evidencia, el log y la
+    # bandeja. Adelantar la lectura ensanchaba la ventana en la que otro escritor puede
+    # tocar el frontmatter canónico y este push lo pisaría desde una foto vieja
+    # (R9/H9-03, que era una regresión introducida por el primer intento de arreglo).
     pull_lib = _pull_caso_md(destino, work, entorno=entorno)
     if pull_lib is None:
         print("  ⚠ El merge está subido y verificado y el evento registrado, pero NO "
@@ -865,7 +898,13 @@ def cmd_checkin(args: argparse.Namespace, *, entorno: Entorno = ENTORNO_REAL) ->
         return 4
     fm, cuerpo_lib = pull_lib
     estado_actual = rc.estado_de_fm(fm)
-    rc.validar_transicion(estado_actual, "disponible")
+    try:
+        rc.validar_transicion(estado_actual, "disponible")
+    except rc.TransicionInvalida:
+        # El estado cambió DURANTE la corrida (CP0-bis lo había validado). Aquí ya hay
+        # trabajo hecho, así que 4 —«estado indeterminado, recuperación necesaria»— es
+        # el código que corresponde, y el traceback de `#93-B` no.
+        return _sin_ciclo_que_cerrar(fm, estado_actual, log_file, tras_trabajar=True)
     rc.aplicar_lock_liberado(fm, timestamp=ts, auditlog=nombre_auditlog(tsc))
     try:
         _push_caso_md(fm, destino, work, cuerpo=cuerpo_lib, entorno=entorno)
@@ -972,6 +1011,53 @@ def _upload_evidencia(destino: str, tsc: str, files: list[str], *,
             if res.returncode != 0:
                 fallidos.append(p.name)
     return fallidos
+
+
+def _sin_ciclo_que_cerrar(fm: dict, estado_actual: str, log_file,
+                          *, tras_trabajar: bool = False) -> int:
+    """El Drive no admite `→ disponible`. Diagnostica y decide el código de salida.
+
+    Tres salidas, porque tres situaciones distintas:
+
+    - **Reentrancia** — el estado es `disponible` **y** consta un checkin previo. No hay
+      nada que hacer y eso no es un error: **0**.
+    - **Anomalía sin trabajo hecho** — se detectó en CP0-bis, así que no se ha tocado
+      nada: **2**, que es lo que la tabla de códigos de este módulo define como «abortado
+      sin efectos (caso no disponible…)». Usar 4 aquí, como hacía el primer intento,
+      contradecía el contrato publicado —4 promete «lock conservado, recuperación
+      necesaria»— y dejaba a un automatismo sin saber si reintentar (R9/H9-05).
+    - **Anomalía después de trabajar** — el estado cambió durante la corrida: **4**, que
+      ahí sí describe la situación.
+
+    **La reentrancia exige el estado, no solo la marca.** Un `_caso.md` con
+    `estado_repositorio: corrupto` y un `ultimo_checkin_timestamp` viejo no está cerrado:
+    está roto. La marca es histórica y no prueba el estado actual (R9/H9-04).
+    """
+    meta = (fm or {}).get("meta")
+    if not isinstance(meta, dict):
+        # `estado_de_fm` tolera un `meta` no-dict y lo lee como `disponible`; este helper
+        # no puede ser menos tolerante o reaparece el traceback tardío que retiramos.
+        meta = {}
+    cerrado = (estado_actual == ESTADO_REPO_DISPONIBLE
+               and bool(meta.get("ultimo_checkin_timestamp")))
+    if cerrado:
+        print(f"  ✓ Nada que hacer: este caso YA está cerrado en el Drive "
+              f"(checkin previo del {meta['ultimo_checkin_timestamp']}). No se ha "
+              f"tocado nada.")
+        print("  Si tienes trabajo nuevo en local, abre un checkout otra vez: escribir "
+              "sobre el canon sin lock es justo lo que el protocolo impide.")
+        return 0
+    print(f"  ✗ El caso NO consta prestado en el Drive (estado {estado_actual!r}) y "
+          f"tampoco consta un cierre previo, así que no hay ciclo que cerrar.")
+    if tras_trabajar:
+        print("  El estado cambió DURANTE esta corrida: el merge está subido y "
+              "verificado, pero el lock no se ha tocado y queda indeterminado.")
+        print(f"  Comprueba el _caso.md del Drive antes de seguir. Evidencia: {log_file}")
+        return 4
+    print("  No se ha tocado NADA: ni inventario, ni copia, ni log, ni lock.")
+    print("  Causa probable: el checkout no llegó a escribir el lock (MEJORAS #93-A), "
+          "o se liberó por fuera. Comprueba el _caso.md del Drive.")
+    return 2
 
 
 def _append_evento_drive(

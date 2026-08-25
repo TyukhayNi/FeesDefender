@@ -338,8 +338,10 @@ def test_conflicto_escribe_el_estado_y_no_libera_el_lock(cli, tmp_path, capsys):
     assert eventos_del_log(drive) == [{"event": "upload_manual"}], \
         "no se registra un case_checkin que no ocurrió"
     assert "NO se libera el lock" in salida
-    assert _subs(fake) == ["lsjson", "copyto", "copyto"], \
-        "inventario, pull del _caso.md y push del estado: nada más"
+    assert _subs(fake) == ["lsjson", "copyto", "copyto", "copyto"], (
+        "inventario, pull de CP3-bis, pull del _caso.md y push del estado: nada más. "
+        "El primero de los tres `copyto` es la comprobación de que hay un ciclo que "
+        "cerrar, que corre ANTES de cualquier escritura (R9/H9-02)")
 
 
 def test_veto_de_grupo_no_libera_el_lock_ni_sube_al_grupo(cli, tmp_path, capsys):
@@ -360,7 +362,10 @@ def test_veto_de_grupo_no_libera_el_lock_ni_sube_al_grupo(cli, tmp_path, capsys)
     assert rc_ == 0
     assert drive == antes, "el grupo sube junto o no sube: el Drive queda como estaba"
     assert not pushes_de_caso_md(fake), "sin conflicto no se escribe el _caso.md"
-    assert _subs(fake) == ["lsjson"], "un veto cuesta UNA operación de Drive"
+    assert _subs(fake) == ["lsjson", "copyto"], (
+        "un veto cuesta DOS operaciones de Drive, las dos de LECTURA: el inventario y "
+        "la comprobación de CP3-bis. Era una hasta que esa comprobación se adelantó "
+        "(R9/H9-02); sigue sin escribirse nada, que es lo que el veto promete")
     assert "grupo indivisible" in salida
     assert "NO se libera el lock" in salida
 
@@ -387,7 +392,9 @@ def test_copy_fallido_no_propaga_los_borrados(cli, tmp_path, capsys):
     assert rc_ == 1
     assert drive["00_Input/borrado.pdf"] == b"sigue aqui", "el borrado NO se propaga"
     assert "00_Input/nuevo.pdf" not in drive
-    assert _subs(fake) == ["lsjson", "copy"], "ni moveto ni check tras un copy fallido"
+    assert _subs(fake) == ["lsjson", "copyto", "copy"], (
+        "ni moveto ni check tras un copy fallido. El `copyto` intermedio es la "
+        "comprobación de CP3-bis, previa a la primera escritura")
     meta = meta_de(drive["00_Input/_caso.md"], tmp_path)
     assert meta["estado_repositorio"] == "prestado"
     assert "ultimo_checkin_timestamp" not in meta
@@ -413,9 +420,15 @@ def test_camino_verde_libera_el_lock_con_ultimo_checkin(cli, tmp_path, capsys):
 
     assert rc_ == 0
     # contrato temporal (A-2): inventario → copy → check → evidencia (AUDITLOG y log
-    # del check) → pull del log → push del log → lsjson de la bandeja → pull del
-    # _caso.md → push del lock liberado.
-    assert _subs(fake) == ["lsjson", "copy", "check", "copyto", "copyto",
+    # del check) → **pull del _caso.md** → pull del log → push del log → lsjson de la
+    # bandeja → push del lock liberado.
+    #
+    # El pull del `_caso.md` se ADELANTÓ (antes iba el penúltimo, ya en CP11). Es el
+    # arreglo de `MEJORAS #93-B` + A-2c: la legalidad de la transición se comprueba
+    # ANTES de registrar el evento y de integrar la bandeja, para que un ciclo que no
+    # se puede cerrar no deje traza de haberse cerrado. **Siguen siendo DIEZ
+    # operaciones**: no se añadió ninguna, se movió una.
+    assert _subs(fake) == ["lsjson", "copyto", "copy", "check", "copyto", "copyto",
                            "copyto", "copyto", "lsjson", "copyto", "copyto"]
 
     meta = meta_de(drive["00_Input/_caso.md"], tmp_path)

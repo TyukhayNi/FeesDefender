@@ -3764,7 +3764,32 @@ acepta el Drive. Tocar la local haría divergir las dos ramas y provocaría un c
 
 ---
 
-## 93. Ciclo de vida del lock de la biblioteca: no se escribió en el checkout y el checkin aborta al cerrar
+## 93. Ciclo de vida del lock de la biblioteca: no se escribió en el checkout y el checkin aborta al cerrar  [B RESUELTO 2026-08-25 · A ABIERTO]
+
+> **[B RESUELTO 2026-08-25]** — y **no con el remedio que esta entrada proponía**, que era
+> tratar `disponible → disponible` como no-op idempotente en CP11 y salir en VERDE. Eso
+> arreglaba el traceback y **empeoraba el defecto A-2c**: el evento `case_checkin` ya estaría
+> registrado, así que un checkin reentrante pasaría de morir ruidosamente a **duplicar la
+> traza de custodia en silencio**. El orden era el defecto, no la excepción.
+>
+> Lo que se hizo, **tras dos intentos y una revisión adversarial (R9)**: `cmd_checkin`
+> comprueba la transición en **CP3-bis, justo antes de la primera escritura al Drive**.
+> Tres salidas: **0** reentrancia (ya cerrado, nada que hacer) · **2** anomalía detectada
+> al entrar —«abortado sin efectos», que es lo que la tabla de códigos del módulo
+> define— · **4** solo si el estado cambia *durante* la corrida, cuando ya hay trabajo
+> hecho. Once operaciones rclone en el camino verde, una más: la lectura de CP3-bis.
+>
+> **El primer intento propio validaba a media corrida y tenía dos defectos que midió R9.**
+> Uno CRÍTICO: la reentrancia se detectaba tan tarde que el segundo checkin llegaba a
+> **subir trabajo nuevo al canon sin lock** —`plan_merge` clasifica `COPY_LOCAL`
+> cualquier fichero local ausente del baseline y del Drive— y luego devolvía 0 diciendo
+> «nada que hacer» (H9-02). Y uno ALTO: adelantar la lectura del `_caso.md` ensanchaba
+> la ventana en la que otro escritor puede tocar el frontmatter y el push final lo pisa
+> desde una foto vieja (H9-03). CP11 conserva por eso su propia relectura pegada al push.
+>
+> **El Fallo A sigue ABIERTO** — que el checkout falle en alto si el write-then-verify del
+> lock no confirma, y la distinción `sin_lock` / `disponible`. Es el mismo problema que los
+> defectos A-1 y va con ellos (Fase 2b, aparcada: ver `PLAN.md` fila #3).
 
 **Disparador:** ninguno todavía — detectado en vivo el 2026-07-27 al hacer el checkin de W-02VND1 (el
 que subió la recuperación de `#90`). Son **dos fallos del mismo ciclo de vida**, y el segundo tapa al
@@ -3950,7 +3975,27 @@ promueve por completitud: hoy nadie está bloqueado, y el checkin de W-02VND1 se
 **Coste estimado.** (1) ~1 h (caché + invalidación por mtime + test). (2) ~1 día con spec. (3) spec
 propia, sin estimar hasta responder los contraargumentos. (4) ~10 min de medición; el ajuste, trivial.
 
-## 96. El guard de escritura se dispara sobre la copia PRESTADA, y ahí no protege de nada
+## 96. El guard de escritura se dispara sobre la copia PRESTADA, y ahí no protege de nada  [RESUELTO 2026-08-25]
+
+> **[RESUELTO 2026-08-25]** `case_manager.es_copia_prestada()` pregunta al **registro privado
+> de workspaces** (Fase 1) si la ruta resuelta consta como copia local de esta máquina, y
+> `guard_escritura` no desvía en ese caso. Sobre el Drive nada cambia.
+>
+> **El discriminante que NO vale, y que era el primer intento: la presencia de
+> `MANIFEST_CHECKOUT.json`.** Parecía la marca inequívoca de copia prestada, y abría un
+> agujero de autorización: `cmd_checkout` sube además una copia del manifiesto **al
+> Drive** («debe sobrevivir a la muerte del Desktop», §3.3), así que mientras un caso está
+> prestado el fichero está en **las dos copias**. Discriminar por él desactivaba el guard
+> sobre el **canon** y justo **mientras otro lo tenía tomado**. Lo encontraron por separado
+> el autor y la revisión R9 (H9-01, CRÍTICO). Hay test que lo caza y un mutante que lo
+> revive y muere por él.
+>
+> **Lo que NO cubre, declarado:** un checkout anterior al registro y **sin adoptar** no
+> consta, así que sigue desviando. Es deliberado —el sistema no adivina sobre qué copia
+> está— y la vía de desbloqueo existe y es explícita: `core.casos.workspace_adopcion`.
+>
+> El *hallazgo menor* del final de esta entrada (`90_Notas personales/` creada vacía en la
+> copia local) **sigue abierto**: es inocuo y no se tocó.
 
 **Anotado 2026-07-27**, al preparar el caso `W-02MA0R` para seguir trabajando en local con el
 préstamo abierto. Hermano de `#93` (ciclo de vida del lock): los dos salen del mismo sitio, que el

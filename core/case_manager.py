@@ -723,6 +723,55 @@ def marcar_conflicto(case_id: str) -> dict[str, Any]:
     return leer_lock(case_id)
 
 
+def es_copia_prestada(case_id: str) -> bool:
+    """¿La ruta resuelta de este caso es una copia local conocida, y no el canon?
+
+    Lo contesta el **registro privado de workspaces** (Fase 1), que es el SSOT de qué
+    copias locales conoce esta máquina. El canon nunca está ahí: el resolver rechaza
+    registrar una ruta bajo el catálogo (`WORKSPACE_UNDER_CATALOG_ROOT`).
+
+    ## El discriminante que NO vale, y por qué lo escribo aquí
+
+    El primer intento fue la presencia de **`MANIFEST_CHECKOUT.json`**. Parecía la marca
+    inequívoca —la escribe `cmd_checkout`, la lee el checkin como baseline— y **abría un
+    agujero de autorización**: `cmd_checkout` sube además una copia del manifiesto **al
+    Drive** («debe sobrevivir a la muerte del Desktop», §3.3), así que mientras un caso
+    está prestado el fichero está en **las dos copias**. Discriminar por él desactivaba el
+    guard sobre el **canon** y justo **mientras otro lo tenía tomado**, que es el único
+    momento en que hace falta.
+
+    ## Falla cerrado, y eso es una decisión
+
+    Cualquier fallo al consultar el registro —ilegible, ausente, ruta rara— devuelve
+    `False`, o sea «trátalo como el canon» y por tanto **desvía**. «No puedo saberlo» no es
+    «no lo es»: es la misma polaridad que el propio registro se aplica (`RegistryUnreadable`
+    en vez de `[]`).
+
+    ## Lo que esto NO cubre, declarado
+
+    Un checkout **anterior al registro y sin adoptar** no consta, así que sigue desviando.
+    Es deliberado: el sistema no adivina sobre qué copia está. La vía de desbloqueo es
+    explícita y existe — `core.casos.workspace_adopcion` (la puerta del §15).
+    """
+    import os
+
+    try:
+        from .casos.case_locator import buscar
+        from .casos.workspace_registry import WorkspaceRegistry, raiz_por_defecto
+
+        case_dir = buscar(case_id)
+        if case_dir is None:
+            return False
+        objetivo = os.path.normcase(os.path.abspath(str(case_dir)))
+        registro = WorkspaceRegistry(raiz_por_defecto(), ahora="")
+        return any(
+            os.path.normcase(os.path.abspath(str(e.local_path))) == objetivo
+            for e in registro.cargar()
+        )
+    except Exception:                                   # noqa: BLE001 - falla cerrado
+        return False
+
+
 def guard_escritura(
     case_id: str,
     ruta_relativa: str,
@@ -750,7 +799,14 @@ def guard_escritura(
         ``repository_checkout.DecisionEscritura``.
     """
     from .intake_log import append_event
-    from .repository_checkout import decidir_escritura, evento_pendiente_details
+    from .repository_checkout import (DecisionEscritura, decidir_escritura,
+                                      evento_pendiente_details)
+
+    if es_copia_prestada(case_id):
+        return DecisionEscritura(
+            permitido=True, desviar=False, ruta_bandeja=None, evento=None,
+            motivo="copia local prestada: la bandeja no aplica (MEJORAS #96)",
+        )
 
     estado = leer_estado_repositorio(case_id)
     decision = decidir_escritura(estado, ruta_relativa, origen, es_protocolo=es_protocolo)
