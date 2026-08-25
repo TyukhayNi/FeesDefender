@@ -47,6 +47,11 @@ Pillow>=10.0              # imagen → PDF (core/anon/imagen_a_pdf.py)
 pillow-heif>=0.16         # soporte HEIC/HEIF para fotos de iPhone
 pypdfium2>=4.0            # render de páginas PDF a imagen (refuerzo --vision, core/sala_maquina.py)
 
+filelock>=3.29,<4        # mutex interproceso por caso (core/casos/case_mutex.py, D2 del
+                         # §24). En Windows es bloqueo NATIVO (msvcrt.locking), no
+                         # O_CREAT|O_EXCL: ver §0.2 del plan. Version fijada porque ese
+                         # backend es lo que se midio.
+
 # Tests
 pytest>=8.0
 pytest-cov>=5.0
