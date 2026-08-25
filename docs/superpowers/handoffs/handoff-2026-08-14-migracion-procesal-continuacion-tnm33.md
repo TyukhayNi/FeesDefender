@@ -143,7 +143,12 @@ Get-ChildItem "C:\Users\tnm33\Dev" -Directory -ErrorAction SilentlyContinue | Fo
 - **Aviso de rclone:** el `client_id` compartido por defecto de rclone se retira durante
   2026 — en algún momento conviene crear uno propio
   (https://rclone.org/drive/#making-your-own-client-id). No es bloqueante hoy; candidato a
-  `docs/MEJORAS_FUTURAS.md`.
+  `docs/MEJORAS_FUTURAS.md`. **✅ ESCRITO el 2026-08-25 como `MEJORAS #122`**, y al medirlo
+  cambió de forma: los dos remotes de `tnm33` **ya tienen `client_id` propio**, así que la
+  exposición se reduce al `gdrive_tl` de este perfil — cuyo `rclone.conf` no es legible desde
+  `tnm33`, de modo que **la comprobación que decide si hay algo que arreglar solo se puede
+  hacer desde aquí**, y es una línea. La fuente además no lo plantea como consejo sino como
+  obligación con plazo. Detalle en la entrada.
 - ~~**`reportlab` falta en `requirements.txt`**~~ — **enunciado CORREGIDO el 2026-08-25 desde
   `tnm33`: la dependencia no falta.** Está declarada en `requirements-dev.txt:7` (`reportlab>=4.0`)
   desde el 2026-07-09 (`1144a30`). Lo que falla es el **procedimiento de montaje**: el E.4 del

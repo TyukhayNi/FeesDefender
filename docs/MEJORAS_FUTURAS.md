@@ -5349,3 +5349,53 @@ remediación es cómo se compran guards que nadie mantiene.
 
 **Coste estimado.** ~2 h el guard literal con su prueba de mutación; +2-3 h si se persigue la
 derivación indirecta (variable intermedia, atributo de dataclass, retorno de helper).
+
+---
+
+## 122. El `client_id` compartido de rclone deja de funcionar en 2026 — y el perfil expuesto no es este
+
+**Disparador:** ninguno inmediato, pero **plazo externo con fecha**. Lo levantó el handoff de la
+migración al perfil `procesal@` (`docs/superpowers/handoffs/handoff-2026-08-14-migracion-procesal-continuacion-tnm33.md`,
+§3) al instalar rclone allí, y quedó como «candidato a este backlog» sin escribirse. Verificado
+contra la fuente el 2026-08-25: rclone lo dice como **obligación, no como consejo** —
+«*This shared client_id is being retired and will stop working during 2026. To avoid interruption
+you must create and use your own client_id*» (https://rclone.org/drive/#making-your-own-client-id).
+
+**Estado actual, medido el 2026-08-25 y no supuesto.** El aviso del handoff daba a entender una
+deuda general; no lo es. En `tnm33` los **dos** remotes —`gdrive_ev` y `gdrive_tl`— tienen
+`client_id` **propio** (72 caracteres, el formato de un cliente OAuth real, no el compartido de
+rclone). rclone v1.73.5. Medido sin volcar la configuración: se comprueba **si el campo está
+vacío**, nunca su valor ni el `client_secret` adyacente (`docs/DEAD_ENDS.md`, `rclone config show`
+expone secretos).
+
+**Lo que queda sin verificar, y es el hueco entero.** El remote `gdrive_tl` del perfil
+`Nikolai Tyukhay 1` se configuró el 2026-08-14 por OAuth desde cero, y su `rclone.conf` **no es
+legible desde `tnm33`** (`Permission denied` sobre el perfil ajeno, comprobado). Si ese remote
+quedó con el campo vacío, es el único punto de la máquina que dejará de funcionar durante 2026. La
+comprobación solo puede hacerse **desde ese perfil**, y es una línea.
+
+**Radio si se cumple el plazo sin actuar.** rclone es el motor del checkout/checkin del
+repositorio de casos y de los `pull` del Drive: 15 ficheros de producción lo mencionan —mención,
+no llamada medida— más las skills `checkout-caso` y `checkin-caso`, cuyos `.cmd` lo invocan
+directo. Un remote sin `client_id` propio deja de autenticar y con él cae la vía de préstamo de
+expedientes de ese perfil.
+
+**Mejora propuesta.** No es «crear un `client_id`»: ya existe uno que sostiene los dos remotes de
+`tnm33`. Los pasos, en orden de coste creciente: (1) desde el perfil procesal, comprobar si
+`client_id` de `gdrive_tl` está vacío; (2) si lo está, **reutilizar el proyecto de Google Cloud que
+ya usan los remotes de `tnm33`** —copiar `client_id`/`client_secret` al remote y reautorizar—, que
+es configuración, no montar un proyecto; (3) dejar constancia de **dónde vive ese proyecto**, dato
+que hoy no consta en ninguna parte del repo y que convierte el paso (2) en arqueología si se
+pierde. Ojo al pasar el `client_secret` entre perfiles: por variable de entorno o LastPass, nunca
+por `C:\Users\Public` (regla 7 del handoff v5) ni por el chat.
+
+**Justificación de no aplicarlo ahora.** El perfil expuesto es el **secundario**, su único remote
+es `gdrive_tl`, y el paso que decide si hay algo que arreglar no se puede ejecutar desde aquí. Ir
+más lejos sería crear un `client_id` nuevo sin saber si hace falta, duplicando proyectos de Google
+Cloud para el mismo despacho — que es la clase de trabajo que parece diligencia y deja dos cosas
+que mantener donde había una.
+
+**Coste estimado.** ~10 min la comprobación (1) desde el perfil procesal; ~15 min el (2) si el
+campo está vacío; el (3) es una línea en `docs/INTEGRACION_SUDESPACHO.md` o donde se documente la
+config de rclone. Solo si el proyecto existente no se localiza: +1 h para crear uno y reautorizar
+los tres remotes.
