@@ -723,6 +723,27 @@ def marcar_conflicto(case_id: str) -> dict[str, Any]:
     return leer_lock(case_id)
 
 
+def es_copia_prestada(case_id: str) -> bool:
+    """¿La ruta resuelta de este caso es una copia local prestada, y no el canon?
+
+    El discriminante es `MANIFEST_CHECKOUT.json` en la raíz: lo escribe `cmd_checkout` al
+    prestar y lo lee `cmd_checkin` como baseline del merge de tres vías. Es la marca
+    inequívoca, ya existe, y no hay que propagar un flag por todos los llamadores —donde
+    el default acabaría en el lado inseguro, que es el que rompe el pipeline en silencio.
+
+    **No** mira el `estado_repositorio`: en local ese campo no es autoridad del lock, y de
+    hecho la mitad de las veces ni está, porque el checkout excluye `_caso.md`
+    (`MERGE_EXCLUSIONS`). Depender de él es lo que hace que hoy el guard se comporte al
+    revés según se haya copiado o no un fichero.
+    """
+    try:
+        from .casos.case_locator import buscar
+        case_dir = buscar(case_id)
+    except Exception:                                   # noqa: BLE001 - defensivo
+        return False
+    return bool(case_dir) and (case_dir / "MANIFEST_CHECKOUT.json").is_file()
+
+
 def guard_escritura(
     case_id: str,
     ruta_relativa: str,
@@ -750,7 +771,14 @@ def guard_escritura(
         ``repository_checkout.DecisionEscritura``.
     """
     from .intake_log import append_event
-    from .repository_checkout import decidir_escritura, evento_pendiente_details
+    from .repository_checkout import (DecisionEscritura, decidir_escritura,
+                                      evento_pendiente_details)
+
+    if es_copia_prestada(case_id):
+        return DecisionEscritura(
+            permitido=True, desviar=False, ruta_bandeja=None, evento=None,
+            motivo="copia local prestada: la bandeja no aplica (MEJORAS #96)",
+        )
 
     estado = leer_estado_repositorio(case_id)
     decision = decidir_escritura(estado, ruta_relativa, origen, es_protocolo=es_protocolo)
