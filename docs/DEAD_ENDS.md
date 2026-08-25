@@ -735,6 +735,15 @@ Cuantifica y matiza el hallazgo anterior con mediciones reales desde Cowork (wal
 
 ---
 
+## Detectar si "hay Drive" mirando `settings.casos_root.is_dir()`: diverge del catálogo y da offline en cualquier clon limpio
+
+- **Intentado:** al construir `_drive_accesible()` en `scripts/sala_maquina.py` (Fase 1 dual, Task 10), hacer que la costura devolviera `False` no solo con `FEESDEFENDER_OFFLINE=1` sino también cuando la raíz del catálogo no estuviera montada, con `Path(settings.casos_root).is_dir()`. La idea era razonable: si `G:` no está, el estado compartido no se puede leer y suponerlo `disponible` abre la puerta a escribir sobre un caso prestado.
+- **Resultado:** dos fallos, los dos medidos en la **primera** suite completa. (1) **Divergencia de fuente de verdad:** el catálogo localiza por `case_locator._root()` y esa comprobación miraba `settings.casos_root`; tres tests de `test_sala_maquina_ejecutar.py` parchean `_root` sin tocar el entorno, así que el catálogo encontraba el caso y la comprobación decía que no había Drive — el resolver se iba a `_offline` y abortaba con `RUNTIME_CANNOT_ACCESS_WORKSPACE` un caso **perfectamente disponible**. (2) **Falso negativo en producción:** `data/CASOS` no existe en un clon limpio ni en un worktree, así que en cualquier máquina sin `CASOS_ROOT` apuntando a un montaje vivo **toda** invocación se habría ido al modo offline en silencio.
+- **Confirmado:** 2026-08-25 (PR #236).
+- **Conclusión:** la disponibilidad de Drive se declara, no se deduce del sistema de ficheros. `_drive_accesible()` lee **solo** `FEESDEFENDER_OFFLINE=1`, que es el control explícito del operador que el §7.1.5 de la spec dual prevé. Y no hace falta más: si la raíz no se puede leer, `catalogo.localizar` ya lanza `LocalWorkspaceMissing` unas líneas antes. Lo que se decide aquí es otra cosa —si el estado compartido es **de fiar**—, y de eso el único que sabe es quien está delante. **Regla general:** no introducir una segunda fuente de verdad sobre dónde está el canon; ya hay una y es `case_locator`.
+
+---
+
 ## Plantilla para nuevas entradas
 
 ```markdown

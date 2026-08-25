@@ -793,14 +793,14 @@ la vertical de correo).
 - `matriz_para(invocar: Callable[[CaseWorkspace | Path], int])`: arnés parametrizado que cualquier test de entrypoint puede consumir.
 - `hash_arbol(root) -> dict[str, str]` y `assert_sin_efectos(antes, despues, *, log_antes, log_despues, llamadas_externas)`: comprueba los **cuatro planos** del §3.2-bis — árbol, canon (incluidas carpetas creadas), servicios externos (contador de llamadas del doble) y estado local (registro y sentinels).
 
-- [ ] **Step 1: Write the tests** (arnés + aplicación a `sala_maquina`)
-- [ ] **Step 2: Run**
+- [x] **Step 1: Write the tests** (arnés + aplicación a `sala_maquina`)
+- [x] **Step 2: Run**
 
 ```bash
 python -m pytest tests/test_workspace_matriz_contractual.py -q
 ```
 
-- [ ] **Step 3: Comprobar que el arnés falla cuando debe — CUATRO mutantes, uno por plano** (R7/H7-07). La interfaz promete los cuatro planos del §3.2-bis y este Step mandaba «introducir a mano **una** escritura en un caso bloqueado»: un solo mutante, que prueba el detector de ficheros y deja `llamadas_externas`, registro y sentinels sin participar en ninguna aserción. Es el modo de fallo que R6 encontró ayer en el Plan 1 y que ya tengo medido: **si el contrato enumera N fronteras, hacen falta N mutantes** (memoria `feedback-mutacion-vale-por-su-mutante`). Los cuatro, independientes, y los cuatro ROJOS obligatorios:
+- [x] **Step 3: Comprobar que el arnés falla cuando debe — CUATRO mutantes, uno por plano** (R7/H7-07). La interfaz promete los cuatro planos del §3.2-bis y este Step mandaba «introducir a mano **una** escritura en un caso bloqueado»: un solo mutante, que prueba el detector de ficheros y deja `llamadas_externas`, registro y sentinels sin participar en ninguna aserción. Es el modo de fallo que R6 encontró ayer en el Plan 1 y que ya tengo medido: **si el contrato enumera N fronteras, hacen falta N mutantes** (memoria `feedback-mutacion-vale-por-su-mutante`). Los cuatro, independientes, y los cuatro ROJOS obligatorios:
   1. **árbol** — crear o modificar un fichero bajo el árbol del caso;
   2. **canon** — crear un directorio o fichero bajo `CASOS_ROOT`, que es el plano que las carpetas fantasma usan;
   3. **servicios externos** — ejecutar una llamada del doble sin que el contador la vea;
@@ -820,14 +820,14 @@ python -m pytest tests/test_workspace_matriz_contractual.py -q
 - Modify: `docs/ARQUITECTURA_RELACIONES.md` (el resolver pasa a ser **SSOT de la copia operativa**; `case_locator` queda como catálogo)
 - Modify: `docs/MEJORAS_FUTURAS.md` (cerrar lo que esta fase resuelva de `#93`, si algo; anotar lo que quede)
 
-- [ ] **Step 1: Actualizar los cuatro documentos**
-- [ ] **Step 2: Suite completa + leak-scan**
+- [x] **Step 1: Actualizar los cuatro documentos**
+- [x] **Step 2: Suite completa + leak-scan**
 
 ```bash
 .\.venv\Scripts\python.exe -m pytest -q --junit-xml="$env:TEMP\fd_junit.xml" --basetemp="$env:TEMP\fd_bt"
 ```
 
-- [ ] **Step 3: PR** — rama `claude/dual-case-workspace`, PR a `main` (protegida: nunca commit directo). El PR describe qué `xfail` quedan vivos y por qué (son la lista de trabajo de la Fase 2).
+- [x] **Step 3: PR** — rama `claude/fase1-tasks-10-11-ec3d35`, PR a `main` (protegida: nunca commit directo). El PR describe qué `xfail` quedan vivos y por qué (son la lista de trabajo de la Fase 2).
 
 ---
 
@@ -920,3 +920,196 @@ fuente externa para estar mal.
 - **El coste real de migrar los 43 ficheros de producción**: el inventario AST está medido, la
   clasificación por intención es una heurística con un cubo ambiguo reconocido. El Step 0 del Task 6
   la convierte en inventario versionado; hasta entonces, los 27 detectores son un suelo, no un total.
+
+---
+
+## 13. Lo que el Task 10 cambió del propio Task 10 (2026-08-25)
+
+*Adjudicación de las desviaciones al ejecutar. No sustituye a una revisión adversarial: el
+diff de los Tasks 10-11 pasa la suya (R8) antes de mergearse, y su acta hermana se archiva
+aparte.*
+
+Las tres desviaciones son **del mismo tipo que R7 encontró siete veces**: una interfaz que
+nombra una propiedad que su propia firma no puede expresar. Que aparezcan aquí, en la parte
+del plan que R7 acababa de reescribir, dice algo del método: **la firma solo se puede
+falsar escribiendo el consumidor.** R7 atacó la suficiencia de los tests propuestos y no
+podía ver esto, porque para verlo hay que intentar instanciar la firma.
+
+### 13.1. `invocar` recibe `CaseRef | Path`, no `CaseWorkspace | Path`
+
+**Medido, no deducido.** Tres de las nueve filas se resuelven con excepciones que
+`CaseWorkspaceResolver` lanza **incondicionalmente**, sin la rama de `diagnostico` que
+`_bloqueo` reserva a `CaseLocked` y `CaseConflict`:
+
+| Fila | Sitio | Excepción |
+|---|---|---|
+| Registro local ausente | `resolver_por_identidad`, §15 | `LocalWorkspaceMissing` |
+| Nonce divergente | `resolver_por_identidad` | `LockMismatch` |
+| Runtime sin acceso | `_offline`, §7.2.9-10 | `RuntimeCannotAccessWorkspace` |
+
+No existe ningún `CaseWorkspace` que represente esos tres estados, así que con la firma
+original **eran indatables**. `CaseRef` es además lo que un entrypoint necesita de verdad —la
+identidad, para volver a resolver él mismo—: un adaptador que se creyera el workspace que le
+pasa el arnés no probaría nada, porque la autorización la habría hecho el arnés.
+
+### 13.2. `assert_sin_efectos` conserva su firma y gana el plano 4
+
+La firma del plan —`(antes, despues, *, log_antes, log_despues, llamadas_externas)`— se
+mantiene **literal**. Lo que cambia es el tipo de `antes`/`despues`: no son hashes de un
+árbol sino instantáneas `Planos` de los tres planos de estado (árbol, canon, estado local).
+Como hashes de árbol, la función prometía cuatro planos y **solo podía comprobar dos**: el
+registro privado y los sentinels no tenían por dónde entrar.
+
+**Y el plano 2 se define como el canon EXCLUYENDO la copia de trabajo.** Esto no estaba en el
+plan y es lo que hace posible su Step 3: con «todo `CASOS_ROOT`», en `drive_active` el árbol
+del caso vive *dentro* del canon, así que un mutante del plano 1 mataría también al 2 y el
+Step se cerraría con un mutante que no prueba lo suyo. Definido como «el canon alrededor de
+la copia», dice exactamente el criterio de salida (2). Por eso los cuatro mutantes corren
+sobre la fila **«nonce divergente»**: es la única de las nueve donde los cuatro planos viven
+en tres raíces distintas y son separables.
+
+### 13.3. El plano 3 exige contador **o** motivo por escrito
+
+`sala_maquina` no hace ninguna llamada mutante a CRM, Gmail ni Drive: su motor es OCR local.
+Así que `assert llamadas_externas == 0` se cumple **por vacío**. Dejarlo así habría hecho que
+el plano 3 pasara en silencio en este consumidor y en todos los siguientes — la versión de
+test de dar por refutado lo que nadie miró. `matriz_para` exige ahora `contador_externo` o
+`sin_superficie_externa=<motivo>`, y el detector del plano 3 se prueba donde sí se puede:
+contra su mutante.
+
+### 13.4. Dos defectos que el Task 10 destapó por mirar al ENTRYPOINT
+
+> **Corregido tras R8.** El apartado (a) decía que con `_drive_accesible()` la fila 8 quedaba
+> cerrada. Era la mitad: la costura hacía **inducible** la fila en el test, y el trabajo offline
+> **por identidad** seguía sin funcionar en producción, porque `_resolver_workspace` se caía al
+> seam legacy antes de preguntarle al registro. Lo midió R8/H8-04 en vivo y se arregla en el §14.
+
+**(a) `drive_accesible=True` literal.** `_resolver_workspace` lo pasaba fijo en sus dos vías,
+así que la rama offline del §7.2.9-10 —diseñada, con tests unitarios en el resolver— era
+**código muerto en producción**, y la fila 8 solo era inducible mintiéndole al resolver.
+Cerrado con `_drive_accesible()`, que lee `FEESDEFENDER_OFFLINE=1`.
+
+**Y la segunda condición que le añadí duró exactamente una corrida completa.** Escribí también
+«…o la raíz del catálogo no está montada», con `Path(settings.casos_root).is_dir()`. Suena más
+listo y es peor por dos motivos que la suite midió: **diverge de la fuente de verdad** que usa
+el catálogo (`case_locator._root`), y tres tests que parchean `_root` sin tocar el entorno
+pasaron a abortar con `RUNTIME_CANNOT_ACCESS_WORKSPACE` un caso disponible; y **da falso
+negativo en producción**, porque `data/CASOS` no existe en un clon limpio ni en un worktree, así
+que toda invocación se habría ido al modo offline en silencio. Meter una segunda fuente de
+verdad sobre dónde está el canon era el defecto, no el detalle.
+
+**(b) 223 tests en 17 módulos dejaban `core.config` secuestrado.** El 65º cierre arregló la
+fixture `tmp_casos_root` y dio la clase por cerrada; una sonda de teardown sobre la suite
+entera midió que **tapar un pozo de diecisiete** no es tapar la fuga. Cerrado con un guard
+`autouse` en `conftest` (`restaurar_config_si_secuestrada`), que repone **también**
+`CASOS_ROOT` porque el orden de desmontaje no era el que supuse — lo desmintió el primer test
+al que se aplicó.
+
+### 13.5. El riesgo que el 65º anotó y no arregló, ya contratado
+
+Los ~28 tests que parchean `cli.caso_path` quedaban **por debajo** del estado ambiental del
+catálogo, y eso funcionaba por convención de nombres, no por contrato. Ahora hay test en las
+**dos** direcciones —el canon manda cuando conoce el caso; el binding del módulo manda cuando
+no— con un mutante que invierte la precedencia y muere. La dirección que importa es la
+primera: sin ella, cualquier código que reconfigure `caso_path` es una vía de escritura sobre
+un expediente prestado.
+
+### 13.6. Lo que sigue SIN VERIFICAR, y se declara
+
+- **El plano 3 sobre una superficie externa real.** Ningún entrypoint migrado tiene una, así
+  que el detector está probado contra su mutante pero **no** contra un servicio de verdad. Se
+  cierra en la Fase 3, con la vertical de correo.
+- **El arnés sobre un segundo MÓDULO.** Tras R8/H8-03 lo consumen los **tres** comandos de
+  `sala_maquina`, que es más de lo que había, pero sigue siendo un solo módulo. Que la firma
+  valga para la UI o para un plugin es una promesa, no una medición.
+- **Las siete `xfail` del frontal.** Siguen vivas (7 `xfailed`, 0 `xpassed`, corrida
+  protegida) y ningún Task 10-11 toca `scripts/repository_cli.py`. Se verificó que no se
+  tocan; no que ninguna empeore. No es lo mismo.
+
+---
+
+## 14. Adjudicación de la revisión adversarial R8 (Codex, 2026-08-25) — NO-SHIP, remediado
+
+- **Objeto revisado:** el **diff** de los Tasks 10-11, `533be06..4aac8b0` — código, no prosa.
+- **Ronda:** R8, la primera de este plan que revisa código; R7 revisó el plan antes de ejecutarlo.
+- **Revisor:** Codex por CLI sobre dos copias externas `git archive` sin `.git` ni red; adjudica Claude Code contra la fuente.
+- **Informe recibido:** `docs/superpowers/specs/2026-08-25-dual-workspace-tasks10-11-r8-adversarial-review.md`, `sha256` `401095e5e42f4a69444fa072aec79b25a5e831eff5478b0e14e3317e0a229f24`, recomputado al archivarlo y **coincide**.
+- **Hallazgos:** 9 — 0 críticos, 2 ALTOS, 6 MEDIOS, 1 BAJO. **9 confirmados, 0 refutados**, más una aportación del adjudicador.
+- **Remediado en:** el commit que acompaña a esta adjudicación (PR #236), con test por hallazgo.
+
+**No-mutación del objeto**, recomputada de forma independiente y no solo declarada por el revisor:
+`base` 1.077 ficheros `2c272198…c8c20c`, `head` 1.080 ficheros `2e2fbc46…14c67669`, idénticos a un
+`git archive` recién hecho de los mismos commits.
+
+### Por qué esta ronda valió la pena, dicho sin adornos
+
+**El arnés que existe para impedir que un test pase por vacío pasaba por vacío en dos sitios.**
+Las cinco filas bloqueadas admitían **cualquier** código de salida distinto de cero: un
+`typer.Exit(99)` de una guarda equivocada dejaba verde la fila que dice aislar el `LOCK_MISMATCH`.
+Y la fila del fallo externo no miraba ni el canon, ni el estado local, ni el baseline previo, ni
+los códigos de las dos invocaciones — así que un entrypoint que mutara el registro en cada
+reintento, o que **se tragara el fallo y devolviera éxito**, quedaba rotulado «aborto
+idempotente».
+
+Eso es exactamente lo que el Task 10 venía a impedir, cometido **dentro del Task 10**. Yo había
+escrito en su propio docstring que mi modo de fallo dominante es montar el escenario más fácil en
+vez del que aísla la guarda, y aun así el juez que escribí no comprobaba **por qué** abortaba una
+fila. Escribir la advertencia no es lo mismo que aplicarla.
+
+### Las nueve, una por una
+
+| # | Sev. | Hallazgo | Veredicto | Remedio |
+|---|---|---|---|---|
+| H8-01 | ALTO | Las filas bloqueadas aceptan cualquier `codigo != 0` | **CONFIRMADO** | `Escenario.codigo_error` + captura de `stderr` + `_exigir_codigo_del_10`; 3 mutantes (código ajeno, código del §10 equivocado, aborto mudo) |
+| H8-02 | ALTO | La fila 9 es ciega al canon, al estado local, al baseline y a los códigos | **CONFIRMADO** | Baseline `Planos` previo, comparación de planos 2 y 4 contra él, y juicio de las dos salidas; 3 mutantes |
+| H8-03 | MEDIO | La matriz solo ejecuta `apply` de los tres comandos mutantes | **CONFIRMADO** | Consumidor parametrizado por `plan`/`apply`/`reforzar`; censo AST que exige que estén **todos** |
+| H8-04 | MEDIO | El offline por identidad no llega al resolver | **CONFIRMADO en vivo** | El registro se consulta cuando el canon calla; 2 tests |
+| H8-05 | MEDIO | La segunda rama de la fila 9 no existe en los datos | **CONFIRMADO** | `variantes_de_fallo=((1, 0), (2, 1))` |
+| H8-06 | MEDIO | El guard retorna antes de reponer un `CASOS_ROOT` sucio | **CONFIRMADO** | El entorno se repone **siempre**, no solo si el módulo cambió |
+| H8-07 | MEDIO | El backstop del guard vuelca rutas absolutas (§16) | **CONFIRMADO** | Nombre + huella corta; canario en Windows/UNC/POSIX |
+| H8-08 | MEDIO | El criterio (2) se afirma más ancho que su prueba | **CONFIRMADO** | Afirmación **acotada** en `PLAN.md`; barrido pendiente en `MEJORAS #121` |
+| H8-09 | BAJO | «`intake_log` ya no depende de `caso_path`» es falso | **CONFIRMADO** | Importación muerta retirada y comentario obsoleto corregido |
+
+### Lo que aporta el adjudicador y el revisor no vio
+
+**El remedio de H8-04 reabre el defecto que el Task 7 cerró.** Hacer que el registro se consulte
+cuando el canon calla lleva el control a `_solo_local`, que **no recibía `drive_accesible`**: un
+checkout resuelto por esa rama sin Drive seguía anunciando `CHECKIN`. Es literalmente la «resta de
+capacidad inerte» que la prueba de mutación del Task 7 cazó en `_offline`, viva en el camino de al
+lado y **inalcanzable hasta que yo la hice alcanzable**. Cerrado en el mismo commit, con test.
+
+**Y el remedio de H8-09 rompió dos tests, por un censo mío mal hecho.** Antes de retirar la
+importación muerta comprobé quién la parcheaba desde fuera… **pasando el `grep` por `head -10`**.
+Los dos únicos parcheadores estaban por debajo del corte: `test_sala_maquina_cableado_atomize` y
+`…_adjuntos` hacen `monkeypatch.setattr(intake_log, "caso_path", …)`, y `setattr` revienta si el
+atributo no existe. Es la misma familia que el gotcha ya escrito en `CLAUDE.md` sobre no leer
+`$LASTEXITCODE` detrás de un `Select-Object -First N`: **truncar la salida y luego afirmar sobre el
+conjunto**. El hallazgo sigue confirmado —el módulo no usaba el símbolo— y los dos parches eran
+**inertes**, restos de antes del B0-1: los dos tests escriben con el `case_dir` explícito y leen por
+`read_events_de`. Se retiraron con su motivo escrito, no se restauró la importación para que
+callaran.
+
+**Y mi arreglo de H8-07 estaba a medias.** Recortar a «los dos últimos componentes» sigue
+filtrando un tramo interno en `…/servidor/SECRETO/CASOS`. Lo puso rojo el canario que había
+escrito para el hallazgo — la tercera vez medida en este repo de que **el arreglo de un hallazgo
+introduce el siguiente**, y la razón de escribir el canario antes de dar por bueno el remedio.
+
+### Sobre las severidades, y una que subo de facto
+
+Se aceptan las nueve del revisor. **H8-04 se remedia pese a ser MEDIO y fallar cerrado**, y el
+motivo es de honestidad y no de riesgo: este mismo diff **declara** haber hecho alcanzable la rama
+offline del §7.2.9-10. Dejar el hallazgo confirmado y sin arreglar habría significado publicar una
+capacidad que no funciona por su vía principal.
+
+### Lo que sigue SIN VERIFICAR, y se declara
+
+- **Todo lo que exige correr la suite lo aporta el adjudicador, no el revisor.** La copia externa
+  no lleva `.venv` y su Python carecía de `typer` y `python-dotenv`: `pytest` no pasó de colección.
+  Las dos semillas, el conteo, los `xfailed` y el `leak-scan` son corridas mías. Un revisor que no
+  corre no refuta, y aquí tampoco confirma: deja sin verificar.
+- **El criterio de salida (2) en su forma universal.** Cubierto para los caminos que la matriz
+  ejercita; sin barrido de escritores (`MEJORAS #121`).
+- **El plano 3 sobre una superficie externa real.** Ningún entrypoint migrado tiene una.
+- **Las filas de escritura de `plan` y `reforzar`.** Declaradas no aplicables **con motivo**: la
+  primera exigiría montar OCR y split reales, la segunda cablear visión. Las cinco filas
+  bloqueadas —las que impiden escribir sobre un caso ajeno— sí corren en los tres comandos.
