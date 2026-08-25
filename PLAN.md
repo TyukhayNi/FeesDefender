@@ -255,13 +255,26 @@ Con la clave en `ssh-agent`, funciona.
 
 **Tres pasos previos al primer push, medidos el 2026-08-25:**
 
-1. **Regenerar el bundle.** El actual es del **20 de julio 13:13**, y `intake-expediente` y
-   `exportar-correos-etiqueta` están entre los `.skill` que `session_close` marca como caducados:
-   publicarlo tal cual publica las skills de julio.
-2. **Excluir `__pycache__` en `scripts/package_plugin.py`.** El bundle arrastra hoy **9 `.pyc`**
-   (`cpython-314`) más un `dxt-build/expedientes-xl.dxt`. Los `.pyc` son ruido y son específicos de
-   una versión de intérprete.
-3. **El control de secretos** de abajo, que ya estaba.
+1. **Regenerar el bundle, y copiarlo acto seguido.** El actual es del **20 de julio 13:13**, y
+   `intake-expediente` y `exportar-correos-etiqueta` están entre los `.skill` que `session_close`
+   marca como caducados: publicarlo tal cual publica las skills de julio. Que la copia vaya *pegada*
+   al build no es manía: mientras el marketplace sea de tipo `directory`, los servidores **ejecutan
+   desde `dist/plugin`** y le van dejando residuo dentro (ver el punto 2). Un build fresco hace
+   `rmtree` de la salida, así que sale limpio; lo que contamina es publicar un árbol que ya se ha
+   usado. **Con el marketplace en git esto se extingue solo:** los servidores pasarán a ejecutar
+   desde `~\.claude\plugins\cache\`.
+2. ~~**Excluir `__pycache__` en `scripts/package_plugin.py`.**~~ **PREMISA FALSA, corregida el
+   2026-08-25 al ir a arreglarla.** El empaquetador **ya** los excluye, y desde el commit que lo
+   creó (`60fee81`, 2026-06-22). Los 9 `.pyc` del árbol son **residuo de ejecución**, no de
+   empaquetado: están fechados **12 horas después** del build. Esta entrada afirmaba un defecto que
+   no verifiqué en el código — el backlog describe, no mide, y aquí describió mal. **Lo que sí
+   había, y lo encontró el control del punto 3:** el bundle ataba el plugin a un perfil por **dos**
+   vías distintas (`run_server.bat` con el intérprete absoluto, la «bomba A.6-ter» que se parcheó en
+   el perfil destino y no en la fuente; y `dxt-build/` viajando dentro con su `manifest.json`).
+   **Arreglado, con contrato y tres mutantes** (`tests/test_package_plugin.py`).
+3. **El control de secretos** de abajo, que ya estaba — **y es el que encontró el defecto real**.
+   Ejecutado el 2026-08-25: 0 secretos, **4 rastros de `C:\Users\<perfil>`**. El término `tnm33` de
+   la lista no era paranoia de secretos: era la prueba de portabilidad, y es la que mordió.
 
 **Y una cifra del handoff que era de otra cosa:** decía «920 ficheros, 8,2 MB» — eso es el árbol
 `~\.claude\plugins` completo. `dist/plugin` son **35 ficheros y 310 KB**. El tamaño no era argumento
