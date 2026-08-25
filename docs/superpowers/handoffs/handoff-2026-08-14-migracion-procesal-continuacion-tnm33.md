@@ -36,7 +36,23 @@ git log --oneline -5   # debe mostrar 6e43ff0 en la punta
 
 ## 2. Los tres puntos que solo se cierran desde `tnm33`
 
-### 2.1 F.4.1 — confirmar `$PROFILE` de `tnm33`
+> **Estado al 2026-08-25, medido desde `tnm33`: de los tres queda uno.** 2.1 ✅ y 2.3 ✅ (detalle
+> en cada apartado). **2.2 (E.6 / D4) sigue abierto y es el único punto vivo de toda la
+> migración**, así que sale del andamio y pasa a `PLAN.md` como fila #16 —
+> `[SIGUIENTE-MARKETPLACE-PLUGIN]`—, según el §5 de `docs/GOBERNANZA_FUENTES_VERDAD.md`. Este
+> fichero **no** pasa a `consumido` todavía: los hallazgos del §3 siguen siendo su única sede.
+
+### 2.1 F.4.1 — confirmar `$PROFILE` de `tnm33` ✅ CERRADO (2026-08-25)
+
+**Comprobado:** `C:\Users\tnm33\Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1`
+(13/08/2026 19:41) fija `$env:FEESDEFENDER_ACTOR = "Nikolai Tyukhay"` y define la función
+`claude-procesal`. Valor distinto del perfil procesal, como exige la regla 5-bis.
+
+**Y el hallazgo de §3 vuelve a confirmarse por medición, no por lectura:** en la sesión de Claude
+Code de `tnm33` del 2026-08-25 la variable sale **vacía** —ni en el proceso ni a nivel de usuario
+(`[Environment]::GetEnvironmentVariable('FEESDEFENDER_ACTOR','User')`)—. El punto está *configurado*,
+no *efectivo* fuera de una PowerShell interactiva. La discriminación sigue colgando de
+`os.getlogin()`.
 
 Comprobar que `$PROFILE` de esta sesión fija `FEESDEFENDER_ACTOR` explícito y con un valor
 **distinto** al del perfil procesal ("Nikolai Tyukhay (procesal)"):
@@ -52,7 +68,14 @@ procesos no interactivos (Bash tool, PowerShell tool de Claude Code, `run_app.ba
 `$PROFILE`. Fíjala igualmente (es lo correcto y barato), pero no la trates como la garantía
 real de aislamiento: esa la da `os.getlogin()`, que ya funciona sin configurar nada.
 
-### 2.2 E.6 — publicar el marketplace del plugin en git (D4, nunca ejecutado)
+### 2.2 E.6 — publicar el marketplace del plugin en git (D4, nunca ejecutado) — ⏩ PROMOVIDO
+
+> **Promovido a `PLAN.md` fila #16 el 2026-08-25** (`[SIGUIENTE-MARKETPLACE-PLUGIN]`). Verificado
+> ese día que el defecto sigue vivo **también en `tnm33`**, no solo en el perfil procesal:
+> `~\.claude\plugins\known_marketplaces.json` y el `extraKnownMarketplaces` de
+> `~\.claude\settings.json` mantienen `despacho-tyukhay` de tipo `directory` apuntando a
+> `Dev\FeesDefender\dist\plugin` (`lastUpdated: 2026-07-20`). Lo que sigue debajo es el
+> procedimiento; el bloque de `PLAN.md` lleva el disparador y la decisión pendiente.
 
 `known_marketplaces.json`/`settings.json` en el perfil procesal **siguen** con la entrada
 `despacho-tyukhay` de tipo `directory` apuntando a `dist\plugin` (que no existe en ese
@@ -78,7 +101,12 @@ Pasos (documento original, Bloque E.6, líneas ~689-733):
    `/plugin marketplace remove` (no editando el JSON a mano). Debe quedar una sola entrada
    `despacho-tyukhay` y un solo `feesdefender` instalado.
 
-### 2.3 E.1 — otros repos en `Dev\` de `tnm33`
+### 2.3 E.1 — otros repos en `Dev\` de `tnm33` ✅ CERRADO (2026-08-25)
+
+**Censo ejecutado, sin bloqueo:** cuatro repos —`ElContable`, `FeesDefender`, `FeesDefender-crm`,
+`MCP-BOE`—, los cuatro en `main`, `Sucio=False` y `SinPush=0`. Ninguno impide clonar al perfil
+procesal si en algún momento lo necesita (D2: el perfil 2 clona del remoto, `Dev\` no se mueve).
+El script sigue abajo por si hay que repetirlo.
 
 Solo se migró `FeesDefender` al perfil procesal. Si hay otros repos en
 `C:\Users\tnm33\Dev\` que también vayan a necesitar el perfil procesal, comprobar antes de
@@ -116,9 +144,19 @@ Get-ChildItem "C:\Users\tnm33\Dev" -Directory -ErrorAction SilentlyContinue | Fo
   2026 — en algún momento conviene crear uno propio
   (https://rclone.org/drive/#making-your-own-client-id). No es bloqueante hoy; candidato a
   `docs/MEJORAS_FUTURAS.md`.
-- **`reportlab` falta en `requirements.txt`** — rompe ~30 tests de OCR/PDF en cualquier
-  `.venv` reconstruido desde cero (confirmado al montar el venv del perfil procesal). No se
-  arregló, queda como deuda.
+- ~~**`reportlab` falta en `requirements.txt`**~~ — **enunciado CORREGIDO el 2026-08-25 desde
+  `tnm33`: la dependencia no falta.** Está declarada en `requirements-dev.txt:7` (`reportlab>=4.0`)
+  desde el 2026-07-09 (`1144a30`). Lo que falla es el **procedimiento de montaje**: el E.4 del
+  handoff v5 (`C:\Users\Public\Documents\HANDOFF_migracion_perfil_procesal.md`, línea 667) instala
+  solo `requirements.txt`, así que el venv del perfil procesal se quedó sin las dependencias de
+  desarrollo. **Remedio, en el perfil procesal:**
+  `python -m pip install -r requirements-dev.txt` — nada que añadir al repo, y **no** añadir
+  `reportlab` a `requirements.txt`, que es de runtime.
+  **Radio medido** (no estimado): bloqueando el módulo por `PYTHONPATH` sobre los 4 ficheros de
+  test que lo importan, **37 de 59 tests caen** — `test_ocr_escalera` 13, `test_pdf_paginas` 5,
+  `test_sala_maquina_ejecutar` 13, `test_sala_maquina_escalera` 6; con `reportlab` presente, 0
+  fallos y 1 `skip` de `--runslow`. El «~30» era buena estimación; lo falso era la causa, y creerla
+  habría llevado a duplicar la línea en el fichero equivocado.
 - **Un test sensible a la longitud del nombre de perfil:**
   `tests/test_migrar_nombres_informe.py::test_resumen_cuenta_por_estado` falla en el perfil
   procesal (assert de un contador "fuera_de_presupuesto") — probablemente por el nombre de
