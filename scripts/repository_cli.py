@@ -1127,6 +1127,65 @@ def _usuario_por_defecto() -> str:
 # argparse
 # ---------------------------------------------------------------------------
 
+def _registro_de_workspaces(ahora: str):
+    """Costura: el registro real. Los tests la sustituyen por uno en `tmp_path`."""
+    from core.casos.workspace_registry import WorkspaceRegistry, raiz_por_defecto
+    return WorkspaceRegistry(raiz_por_defecto(), ahora=ahora)
+
+
+def _identidad_actor() -> tuple[str, str]:
+    """Costura: `(usuario, maquina)`. Inyectable, como manda el §7."""
+    import socket
+    from core.actor import get_actor
+    return get_actor(), socket.gethostname()
+
+
+def cmd_adoptar(args) -> int:
+    """Registra un checkout anterior al registro, tras verificarlo (§15).
+
+    Imprime **lo que no se pudo verificar** antes de dar el resultado. Sin eso, el
+    comando estaria pidiendo una decision de custodia sin dar los datos para
+    tomarla — y la firma humana es justamente lo que sustituye a la prueba que la
+    maquina no puede hacer: `_caso.md` esta excluido del checkout, asi que el
+    nonce del lock no existe en la copia local.
+    """
+    from pathlib import Path as _P
+
+    from core.casos.workspace_adopcion import AdopcionRechazada, adoptar
+    from core.casos.workspace_model import CaseRef
+    from core.utils import now_iso
+
+    case_dir = _P(args.case_dir)
+    ahora = now_iso()
+    usuario, maquina = _identidad_actor()
+
+    w_code = args.w_code
+    if not w_code:
+        from core.casos.case_locator import _w_code_de
+        w_code = _w_code_de(case_dir.name)
+    if not w_code:
+        print("✗ no se pudo deducir el W-code del nombre de la carpeta; "
+              "pasalo con --w-code")
+        return 1
+
+    ref = CaseRef(w_code=w_code)
+    registry = _registro_de_workspaces(ahora)
+    try:
+        veredicto = adoptar(case_dir, ref, registry=registry,
+                            usuario=usuario, maquina=maquina, ahora=ahora)
+    except AdopcionRechazada as exc:
+        # Sin la ruta local en el mensaje (§16).
+        print(f"✗ no se puede adoptar {w_code}: {exc.detalle or exc}")
+        return 1
+
+    print(f"✓ {w_code} adoptado como checkout de esta maquina.")
+    if veredicto.sin_verificar:
+        print("\n  Lo que NO se ha podido verificar, y que tu firma asume:")
+        for linea in veredicto.sin_verificar:
+            print(f"    · {linea}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="feesdefender",
@@ -1149,6 +1208,16 @@ def build_parser() -> argparse.ArgumentParser:
         if nombre == "checkin":
             sp.add_argument("--wcode", default=None, help="W-code para nombrar el backup-dir.")
             sp.add_argument("--yes", action="store_true", help="Confirma borrados propuestos (CP3).")
+
+    # `adoptar` — la puerta humana del §15. NUNCA implicita: adoptar es una
+    # decision sobre custodia, no un efecto colateral de correr un motor.
+    sp = sub.add_parser(
+        "adoptar",
+        help="Registra un checkout hecho ANTES del registro de workspaces (§15).")
+    sp.add_argument("--case-dir", required=True,
+                    help="Ruta de la copia local que se adopta.")
+    sp.add_argument("--w-code", default=None,
+                    help="W-code del caso (por defecto, el del nombre de la carpeta).")
     return p
 
 
@@ -1158,6 +1227,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_checkout(args)
     if args.comando == "checkin":
         return cmd_checkin(args)
+    if args.comando == "adoptar":
+        return cmd_adoptar(args)
     return 1
 
 
