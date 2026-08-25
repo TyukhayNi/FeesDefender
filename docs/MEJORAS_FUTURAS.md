@@ -3817,6 +3817,24 @@ decidir si `sin_lock` pasa a ser un estado del modelo afecta a `TRANSICIONES_PER
 **Coste estimado.** B: ~30 min (guarda + test). A: ~1 h el gate del nonce; +1 h si se añade `sin_lock`
 al modelo de estados y se migran las transiciones.
 
+**Nota al cerrar la Fase 1 dual (2026-08-25). La Fase 1 NO cierra nada de esta entrada, y conviene
+decirlo así en vez de dejarlo implícito.** Los dos fallos viven en `scripts/repository_cli.py`, que la
+Fase 1 no toca; siguen reproducidos en `xfail(strict=True)` en `tests/test_repository_cli_defectos.py`
+—verificados vivos: 7 `xfailed`, 0 `xpassed`— y su arreglo es la Fase 2.
+
+Lo que sí cambia son las **consecuencias del Fallo A**, y a peor. `estado_de_fm` devolvía `disponible`
+ante el campo ausente para **un** consumidor —el propio frontal—; desde la Fase 1 ese mismo silencio lo
+consume también `CaseCatalog.estado_compartido`, y por él el `CaseWorkspaceResolver`, que es quien
+decide **si un motor puede escribir**. Un `_caso.md` sin `estado_repositorio` ya no produce solo un
+checkin confuso: produce un `drive_active` con todas las capacidades sobre un caso que quizá esté
+prestado. El registro privado cierra el hueco **por la otra punta** —una copia local conocida se ve
+aunque el canon calle— pero solo en la máquina que la registró.
+
+Corolario para quien ejecute la Fase 2: la parte (A) de esta entrada dejó de ser «higiene del lock» y
+es la premisa del resolver. Si se decide distinguir `sin_lock` de `disponible`, hay que decidir a la
+vez qué modo resuelve el resolver ante `sin_lock` — y el lado seguro es **no** conceder `drive_active`.
+Hermana: `MEJORAS #111` no aplica aquí; la relacionada es `#95` (ventana de carrera del lock).
+
 ---
 
 ## 94. El montaje `G:` no es fiable justo después de escribir: verificar por API, nunca por el montaje

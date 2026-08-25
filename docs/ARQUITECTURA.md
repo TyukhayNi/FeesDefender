@@ -9,6 +9,10 @@
 │ Core: pipeline + módulos            │  ← lógica de negocio
 │   case_manager · sync · inventory    │
 │   casos/case_locator                 │  ← resolución de rutas (flat ↔ ciudad)
+│   casos/case_catalog                 │  ← qué existe en el canon y qué dice de ello
+│   casos/workspace_model · _registry   │  ← modelo puro + copias locales de ESTA máquina
+│   casos/workspace_resolver            │  ← SSOT de «sobre qué copia se trabaja» (§7)
+│   casos/workspace_adopcion            │  ← puerta explícita del §15 (checkouts legacy)
 │   ciudades                           │  ← catálogo cerrado + prefijo→ciudad
 │   sync_sudespacho · sync_sudespacho_legacy
 │   sudespacho_create · sudespacho_relations
@@ -81,7 +85,9 @@ Cada paso es ejecutable de forma aislada. El pipeline es **idempotente**: re-eje
 | `core/anon/mapa_caso.py` — `SUBDIR_ANONIMIZADO` / `MAPA_FILENAME` | `core/anon/deanonimizar.py` (`_SUBDIR_ANONIMIZADO` / `_MAPA_CASO_FILENAME` replicados para evitar acoplar el deanonimizador al resto del core; mantenerlos sincronizados) |
 | `core/anon/api.py` — campos del frontmatter del .md anonimizado | `core/anon/deanonimizar.py::_mapa_desde_frontmatter` (lee `mapa_caso_path` / `mapa_entidades` como fallback); añadir el nuevo nombre si se renombra |
 | `core/ciudades.py` — catálogo `CIUDADES` o función `ciudad_de_equipo` | `core/casos/case_locator.py` (`_CITY_NAMES` ya lo lee dinámicamente, pero los tests fijan ciudades concretas), `streamlit_app.py` selector ciudad (validación blanda prefijo↔ciudad + expander Reasignar) |
-| `core/casos/case_locator.py` — API de resolución de rutas | Toda llamada que componía `settings.casos_root / case_id` (auditar con grep) — `core/case_manager.list_cases`, `core/config.caso_path`, `scripts/{audit_referencias_casos,scheduled_sync,sync_sudespacho,sala_maquina}.py` (este último resuelve W-code vía `resolve_ref()` antes de `caso_path()`, PR #117 — mismo patrón exigible a los demás, ver `MEJORAS #81`) |
+| `core/casos/case_locator.py` — API de resolución de rutas | Toda llamada que componía `settings.casos_root / case_id` (auditar con grep) — `core/case_manager.list_cases`, `core/config.caso_path`, `scripts/{audit_referencias_casos,scheduled_sync,sync_sudespacho}.py`. **Desde la Fase 1 dual, la puerta no es la resolución sino la AUTORIZACIÓN:** `scripts/sala_maquina.py` ya no resuelve por `caso_path` sino por `CaseWorkspaceResolver` (`_resolver_workspace`), y conserva el binding del módulo solo cuando el catálogo **no** conoce el caso (`legacy_unresolved`). El inventario AST de llamadores vive en `scripts/clasificacion_localizador.py`; el censo de `strict=False` lo fija `tests/test_guard_localizador.py` |
+| `core/casos/workspace_resolver.py` — la matriz del §7 | Todo entrypoint que escriba en un expediente. Cambiar la matriz obliga a `tests/test_workspace_resolver.py` (18 mutantes, uno por frontera) **y** a `tests/_matriz_contractual.py`, que es donde las nueve filas del §14.1 viven como datos para todos los consumidores |
+| `core/intake_log.py` — `append_event` / `read_events_de` | Reciben el `case_dir` **ya resuelto**: el rastro cae junto a los bytes (B0-1). Ya **no** dependen de `config.caso_path`, y ese acoplamiento era el que fabricaba expedientes fantasma. Migrados 7 de 14 llamadores (contado por AST); el resto queda `legacy_unresolved` y no es peligroso porque `caso_path` es estricto desde el Task 6 |
 | `core/sala_lectura.py` — clasificador/copiador/render (sala de lectura F4–F6) | `core/catalogo_documental.py` (`CatalogEntry` + campos F6/F4), `core/conjunto_detector.py` (bundles CRM), `core/local_organizer.py` (helpers `_sanitize`/`_exif_o_mtime`), `scripts/sala_lectura.py` (CLI), `streamlit_app.py` (botón «📚 Sala de lectura»); taxonomía `TAXONOMIA_EV` en `core/config.py`. **[DEPRECADO 2026-06-18]** el camino de sala del motor queda superado por la skill `organizar-sala-lectura` v1.3 (sala ÚNICA plana sobre todo `00_Input`); el paso `catalogo.build` se quitó del pipeline. Diseño: `docs/superpowers/specs/2026-06-18-sala-lectura-unica-design.md`. ⚠️ **Pivote pendiente** (rendimiento): la skill por el conector de Drive (Cowork) tardó ~53 min — el camino rápido es local sobre `G:` (Drive for Desktop); ver `DEAD_ENDS.md` y `PLAN.md` `[SIGUIENTE-SALA-UNICA-PLANA]`. |
 | Catálogo `CIUDADES` cambia (nueva oficina) | Tests `tests/test_case_locator.py` actualizan expectativas; revisar si los expedientes en `_Sin clasificar/` corresponden a la ciudad nueva y reasignar manualmente con `scripts/migrate_to_city_structure.py` o UI «Reasignar ciudad» |
 | `data/_plantillas/*.yaml` | regenerar XLSX con `python -m scripts.render_plantillas all` y commitear ambos (YAML + XLSX) |
@@ -155,7 +161,11 @@ Desde 2026-05-21 (sesión 25) la raíz está subdividida en carpetas-ciudad: `CA
 
 **`core/casos/case_locator` es la única puerta de entrada para resolver rutas de expedientes.** Nadie en el core compone `settings.casos_root / case_id` directamente; todos pasan por:
 
-- `path_for(case_id)` — busca primero plano en raíz (legacy), luego en cada ciudad del catálogo + `_Sin clasificar`. Devuelve la ruta plana si no encuentra el caso (compat con creación de nuevos).
+- **Las tres intenciones (Fase 1, Task 6).** `path_for` servía a tres preguntas distintas con una sola respuesta, y por eso no había booleano que lo arreglara: `strict=True` rompía el alta de un caso nuevo y `strict=False` conservaba el expediente fantasma. Separadas por nombre —que es lo que las hace auditables con un `grep`, cosa que un flag no permite—:
+  - `localizar(case_id)` — el caso **debe** existir; lanza `LocalWorkspaceMissing` si no. No crea nada, ni al fallar.
+  - `buscar(case_id)` — «¿está?»; devuelve `None`. Existe por los detectores de ausencia, que con `localizar` habrían cambiado un error legible por una traza.
+  - `destino_de_alta(case_id)` — la **única** puerta de creación. Nombrar no es crear: devuelve la ruta y no toca el disco.
+- `path_for(case_id, *, strict=True)` — la puerta vieja, hoy **estricta por defecto**. `strict=False` es una escotilla legacy declarada cuyo censo en producción está a **cero** y lo vigila `tests/test_guard_localizador.py`; se retira en la Fase 4.
 - `path_for_ciudad(case_id, ciudad)` — calcula la ruta esperada sin chequear existencia (uso interno y migración).
 - `move_to_city(case_id, ciudad, motivo, usuario)` — atómico: mover carpeta + actualizar campo `ciudad` en `00_Input/_caso.md` + escribir línea en `_audit/relocations.jsonl`. Rollback automático si falla la actualización del metadato.
 - `list_cases(ciudad=None)` — itera todos los expedientes (o los de una ciudad concreta) deduplicando entre raíz plana (legacy) y ciudades.
@@ -166,6 +176,37 @@ El campo `ciudad` se persiste tanto en `meta.ciudad` como en la raíz del frontm
 **Segundo nivel `<Ciudad>/<Equipo>/<case_id>` preparado pero no activado.** `case_locator` tolera el catálogo actual; si en el futuro se decide subdividir además por equipo, el refactor de call-sites ya no será necesario — solo cambiar la composición en `path_for_ciudad`.
 
 Histórico operativo: la migración inicial del 2026-05-21 movió 9 expedientes a 5 ciudades (Barcelona, Madrid, Santander, Sevilla, Valencia). Plan completo en `docs/superpowers/plans/PLAN_SUBDIVISION_CIUDADES.md`. Snapshot pre-migración persistido en `_audit/snapshot_pre_migration_20260521_013728.json`.
+
+### El expediente activo puede no estar en `CASOS_ROOT` (arquitectura dual, Fase 1)
+
+`case_locator` contesta **dónde está el expediente en el canon**. No contesta **sobre qué
+copia se trabaja**, y confundir las dos preguntas es el defecto que la arquitectura dual
+cierra: mientras un caso está prestado a otra máquina, la copia canónica **no** es la
+operativa, y un motor que resuelva por ruta escribe encima del trabajo de otro.
+
+Cuatro piezas, cada una con una sola pregunta (spec `2026-07-29-feesdefender-dual-case-workspace-design.md`):
+
+| Pieza | Contesta |
+|---|---|
+| `casos/case_catalog.CaseCatalog` | qué existe en el canon y qué dice el canon de ello (`localizar`, `estado_compartido`, `bajo_catalogo`, `es_proyeccion_local`) |
+| `casos/workspace_registry.WorkspaceRegistry` | qué copias locales conoce **esta** máquina. Un fichero `<w_code>.json` por caso, con una lista dentro; fuera del repo y de `CASOS_ROOT`; **falla cerrado** (`RegistryUnreadable`, nunca `[]`) |
+| `casos/workspace_model` | el vocabulario: `CaseRef`, los cinco modos, la matriz de capacidades del §5.4 y los quince errores del §10 |
+| `casos/workspace_resolver.CaseWorkspaceResolver` | **la copia operativa y qué está permitido en ella** — la matriz del §7 en una sola pieza. **SSOT de esta decisión** |
+
+Más `casos/workspace_adopcion`, la puerta explícita del §15: un checkout anterior al
+registro no se adopta solo, y `verificar_adopcion` **declara lo que no pudo comprobar**
+(el nonce vive solo en el Drive, porque `_caso.md` está en `MERGE_EXCLUSIONS`).
+
+**Dependencia retirada: `core/intake_log` ya no pasa por `config.caso_path`.** `append_event`
+recibe el `case_dir` **resuelto** y escribe junto a los bytes (`read_events_de` lee lo
+mismo). Antes hacía `mkdir(parents=True)` sobre la ruta que devolvía `caso_path`, que es
+la fábrica de expedientes fantasma del bug de W-02ZIIF — y la suite llevaba tiempo verde
+**protegiéndolo**, con un test que exigía que auditar creara `00_Input`.
+
+**Contrato reutilizable.** La matriz mínima por entrypoint del §14.1 vive **una vez** como
+datos en `tests/_matriz_contractual.py` (nueve escenarios, cuatro planos de efecto), y la
+consume cada entrypoint migrado. Hoy `scripts/sala_maquina`; en la Fase 3, la vertical de
+correo.
 
 ---
 

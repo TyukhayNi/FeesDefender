@@ -574,7 +574,12 @@ def main(
         ident.case_id, titulo=ident.case_id, referencia_crm=ident.case_id,
         tipo_caso=ident.tipo_caso, ciudad=ciudad, direccion=ident.direccion, id_go=ident.w_code,
     )
-    case_dir = case_locator.path_for(ident.case_id)
+    # `localizar` y no `path_for`: el esqueleto acaba de crearse, así que el caso DEBE
+    # existir y su ausencia es un fallo, no un valor. Es lo que la clasificación firmada
+    # del Task 6 decía para este sitio, y quedó como cabo suelto del 65º cierre; el
+    # comportamiento no cambia —`path_for` ya es estricto por defecto— pero el nombre
+    # ahora dice qué se espera, que es justo lo que un flag no permite auditar.
+    case_dir = case_locator.localizar(ident.case_id)
 
     # 5.3-5.7 intake por fuente
     _despachar_intake(
