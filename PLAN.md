@@ -32,6 +32,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 13 | [Presupuesto explícito de proceso](#siguiente-presupuesto-proceso-cuánta-gobernanza-se-compra) | pendiente — **decisión de Nikolai**, no hay nada que construir | sin gates. Disparador: el mes 2026-07 cerró con **9,4 líneas de `docs/` por línea de `core/`** y cuatro cierres seguidos sin código de producción | bajo (5 min) |
 | 14 | [Desplegar en Cowork las skills ya construidas](#siguiente-reimport-skills-lo-construido-que-no-ha-llegado-al-equipo) | pendiente — **acción manual de Nikolai**; ningún test la cubre | sin gates. Disparador: `organizar-sala-lectura` va por **v1.14 en el repo** y Paola/Ana/Sergio ejecutan la **v1.12** | bajo (una tarde) |
 | 15 | [Apertura integral + piloto W-02Q38C](#siguiente-apertura-integral-apertura-completa-sobre-componentes-existentes) | spec única **rev. 8**; **cinco rondas adversariales corridas y adjudicadas** (R3 §20, R4 §22, R5 §23) y **las cuatro decisiones tomadas + write-set enumerado** (§§24-25). **R5: `REQUIERE-REVISION`, 5 confirmados + 1 añadido por el adjudicador.** El §23 **detiene el bucle de revisión del diseño**: tres de los cinco no son remediables en prosa —el discriminante de V1 ES el dueño de secuencia, la regla de estado cuelga del mutex, y el write-set es un barrido de código—; la rev. 7 corrige solo los errores; **R3 adjudicada el 2026-08-24 por Claude Code: `NO-SHIP`, 7 confirmados, 0 refutados** (§20). La **rev. 5 fija la primera vertical en Drive + pull de Sudespacho → intake → sala de máquina** (§21, decisión de Nikolai): H3-07 sale de alcance, H3-03 y H3-06 quedan acotados, los tres críticos de mecánica siguen íntegros y **`MEJORAS #120` entra en V1**. Piloto abierto, no cerrado | **decisiones TOMADAS** el 2026-08-24 por delegación de Nikolai (§24): D1 la Fase 1 de la fila #3 **precede a V1**; D2 mutex = lockfile local `O_EXCL` con namespace por W-code en el registro de D1, lease renovado, ámbito una máquina; D3 discriminante y dueño de secuencia = **`--modo v1`** del entrypoint existente (no subcomando: 103 referencias en el repo); D4 `fallo` bloquea, `parcial` → `preparado_con_pendientes`, y la poda archiva en vez de borrar. **Write-set enumerado** (§25): 27 clases, 6 productores, **solo 2 consultan el guard**. **Plan TDD troceado en 5** (V1 no es un subsistema y dos contratos no existen aún, §25.5): [Plan 1 — modo `v1` y puertas negativas](docs/superpowers/plans/2026-08-24-apertura-v1-plan1-modo-v1.md) **✅ EJECUTADO** (PR #229, `93810a0`) con su **R6 sobre código adjudicada**: `NO-SHIP`, 9 confirmados / 0 refutados, todos remediados — el CRÍTICO era `--force` creando una carpeta sombra contra el criterio 33. Era el único que no dependía de la Fase 1. Planes 2-5: mutex, write-set, generación/frescura/rondas, cableado + E2E. Queda: ejecutar el Plan 1, contratos de H3-03/H3-05/H3-06, y **R6 sobre el plan, no sobre la spec** | medio-alto |
+| 16 | [El marketplace del plugin no está publicado en git](#siguiente-marketplace-plugin-el-marketplace-despacho-tyukhay-no-está-publicado-en-git) | pendiente — **decisión de Nikolai** (E.6.1: dónde se publica). Ningún test lo cubre y ningún guard lo detecta | sin gates técnicos. **Disparador: es el único punto vivo de la migración al perfil `procesal@` —decisión D4, firmada el 2026-08-13 y nunca ejecutada— y hoy la vía de mantenimiento del plugin NO EXISTE.** El propio runbook manda actualizar el plugin en el perfil 2 con `/plugin update` «sin puente», y eso es imposible mientras el marketplace sea de tipo `directory` a un `dist\plugin` gitignorado: cualquier cambio del plugin obliga a rehacer el puente entero (Bloques 0, A.1-A.6, A.8 y D.1). Verificado el 2026-08-25 que la entrada rota está **también** en `tnm33`, no solo en el perfil procesal | bajo |
 
 > **Filas 13 y 14 añadidas el 2026-08-03 al final de la cola a propósito: no reordeno prioridades
 > ajenas.** Las dos son baratas y una degrada a terceros hoy — dónde encajan de verdad lo decide
@@ -39,6 +40,12 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 
 > **Fila 15 añadida el 2026-08-15 por disparador real y decisión expresa de Nikolai.** Se conserva
 > al final para no reordenar la cola sin una decisión específica de prioridad.
+
+> **Fila 16 añadida el 2026-08-25, también al final y por el mismo criterio: no reordeno la cola
+> sin decisión de prioridad.** Es la promoción del §2.2 de
+> `docs/superpowers/handoffs/handoff-2026-08-14-migracion-procesal-continuacion-tnm33.md` — el
+> último punto abierto de la migración al perfil `procesal@`. Los otros dos que el handoff dejaba
+> pendientes (F.4.1 y E.1) se cerraron al medirlos ese mismo día, así que no se promueven.
 
 > Detalle de cada ítem en su bloque `[SIGUIENTE-*]` más abajo. Backlog sin
 > promover: `docs/MEJORAS_FUTURAS.md`. Ledger de cerrados: `## Cerrados` (final).
@@ -186,6 +193,57 @@ nunca desde un worktree que luego se poda (el `.skill` acaba en un `dist/` que d
 
 **Al cerrar:** marcar `[x]` las seis entradas en sus bloques y anotar aquí la versión que quedó
 efectivamente en Cowork — que es el dato que hoy no consta en ninguna parte.
+
+---
+
+## [SIGUIENTE-MARKETPLACE-PLUGIN] El marketplace despacho-tyukhay no está publicado en git
+
+*Fila #16. Una decisión de Nikolai (E.6.1) y dos pasos mecánicos detrás. Origen: §2.2 de
+`docs/superpowers/handoffs/handoff-2026-08-14-migracion-procesal-continuacion-tnm33.md` — es la
+decisión **D4** de la migración al perfil `procesal@`, firmada el 2026-08-13 y nunca ejecutada.
+Mismo género que la fila #14: construido ≠ desplegado.*
+
+**El estado medido (2026-08-25).** En `tnm33`, `~\.claude\plugins\known_marketplaces.json` y el
+`extraKnownMarketplaces` de `~\.claude\settings.json` mantienen la entrada `despacho-tyukhay` de
+tipo `directory` apuntando a `C:\Users\tnm33\Dev\FeesDefender\dist\plugin` (`lastUpdated:
+2026-07-20`). El handoff declara la misma entrada en el perfil procesal, donde además **el
+directorio no existe** porque `dist/` está gitignorado (`.gitignore:23`) y el clon del perfil 2
+viene del remoto. Que el plugin funcione allí es un accidente: la caché de
+`~\.claude\plugins\cache\despacho-tyukhay\feesdefender\0.4.0\` viajó entera por el puente de
+migración, que después se destruyó (`C:\Users\Public\migracion` ya no existe, comprobado).
+
+**Por qué es disparador y no completitud de diseño.** No es que la vía diseñada esté a medias: es
+que **la vía de mantenimiento no existe**. El propio runbook v5, en «Operación diaria», ordena que
+al cambiar el plugin se publique la versión nueva y el perfil 2 haga `/plugin update` **sin
+puente** — y eso hoy es imposible. La alternativa real es rehacer el puente completo (Bloques 0,
+A.1-A.6, A.8 y D.1) por cada cambio del plugin, con su copia de `~\.claude` y su reescritura de
+rutas. Es decir: el coste de mantener el perfil procesal está hoy en su punto más alto justo en el
+tramo que D4 existía para abaratar.
+
+**La decisión que falta (E.6.1), y es tuya.** Dos opciones, con el mismo control previo:
+
+1. **Repo dedicado** (p. ej. `TyukhayNi/despacho-tyukhay-marketplace`). Separa distribución de
+   desarrollo, no toca el `.gitignore` de este repo, y deja el bundle con su propio historial.
+   Cuesta un repo más que mantener y un paso de publicación explícito.
+2. **Rama de distribución en este repo** con `dist/` desexcluido solo en esa rama. No añade repos,
+   pero mete artefactos construidos en el historial de FeesDefender y obliga a que `leak-scan` los
+   vea en cada push — que es una ventaja de control y un coste de ruido a la vez.
+
+**Control bloqueante antes de publicar, cualquiera de las dos.** Barrido del bundle buscando
+`sk-ant-`, `client_secret`, `refresh_token`, `AIza`, `ghp_`, `password` **y `tnm33`**. Debe salir
+vacío. Ojo al último término, que no es un secreto sino una prueba de portabilidad: si el bundle
+lleva rutas de este perfil, publicarlo no arregla nada. Precedente concreto en el handoff v5
+(A.6-ter): `email_export_mcp\run_server.bat` llevaba el intérprete Python absoluto de `tnm33`.
+
+**Los dos pasos mecánicos después.** E.6.2: en el perfil procesal, `/plugin marketplace add` +
+`/plugin install feesdefender@despacho-tyukhay`, y comprobar que `expedientes-xl` y `email-export`
+siguen cargando. E.6.3: retirar la entrada `directory` huérfana con `/plugin marketplace remove`
+—**no** editando el JSON a mano— hasta dejar un solo `despacho-tyukhay` y un solo `feesdefender`.
+Y en `tnm33` lo mismo: la entrada rota está en los dos perfiles.
+
+**Al cerrar:** marcar aquí dónde quedó publicado el marketplace y con qué versión, y pasar a
+`consumido` el handoff de la migración si no le queda nada más vivo. Hoy la fuente de verdad de
+esta pieza es un andamio efímero y dos ficheros en `C:\Users\Public\Documents`.
 
 ---
 

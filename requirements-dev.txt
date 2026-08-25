@@ -3,5 +3,7 @@
 pre-commit>=4.6
 # Requerido por los tests de los servers MCP (plugins/*_mcp, plugins/expedientes_xl)
 mcp>=1.28
-# Requerido por tests/test_sala_maquina_ejecutar.py para generar un PDF con capa de texto
+# Requerido para fabricar PDFs con capa de texto en 4 ficheros de test: test_ocr_escalera,
+# test_pdf_paginas, test_sala_maquina_ejecutar y test_sala_maquina_escalera. Sin el paquete caen
+# 37 tests (medido 2026-08-25); un venv montado solo con requirements.txt los rompe todos.
 reportlab>=4.0
