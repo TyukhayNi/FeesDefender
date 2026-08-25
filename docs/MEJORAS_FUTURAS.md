@@ -3772,12 +3772,20 @@ acepta el Drive. Tocar la local haría divergir las dos ramas y provocaría un c
 > registrado, así que un checkin reentrante pasaría de morir ruidosamente a **duplicar la
 > traza de custodia en silencio**. El orden era el defecto, no la excepción.
 >
-> Lo que se hizo: `cmd_checkin` valida la transición **antes** de registrar el evento y de
-> integrar la bandeja (CP10-bis). Si el ciclo no se puede cerrar, no se registra nada. Y las
-> dos causas se distinguen, porque colapsarlas en «verde» convertiría la comprobación en
-> decoración: **reentrancia** (hay `ultimo_checkin_timestamp`) sale con 0 diciendo que no hay
-> nada que hacer; **anomalía** (consta `disponible` y nadie cerró nada) sale con 4 y la nombra.
-> Siguen siendo diez operaciones rclone: no se añadió ninguna, se movió una.
+> Lo que se hizo, **tras dos intentos y una revisión adversarial (R9)**: `cmd_checkin`
+> comprueba la transición en **CP3-bis, justo antes de la primera escritura al Drive**.
+> Tres salidas: **0** reentrancia (ya cerrado, nada que hacer) · **2** anomalía detectada
+> al entrar —«abortado sin efectos», que es lo que la tabla de códigos del módulo
+> define— · **4** solo si el estado cambia *durante* la corrida, cuando ya hay trabajo
+> hecho. Once operaciones rclone en el camino verde, una más: la lectura de CP3-bis.
+>
+> **El primer intento propio validaba a media corrida y tenía dos defectos que midió R9.**
+> Uno CRÍTICO: la reentrancia se detectaba tan tarde que el segundo checkin llegaba a
+> **subir trabajo nuevo al canon sin lock** —`plan_merge` clasifica `COPY_LOCAL`
+> cualquier fichero local ausente del baseline y del Drive— y luego devolvía 0 diciendo
+> «nada que hacer» (H9-02). Y uno ALTO: adelantar la lectura del `_caso.md` ensanchaba
+> la ventana en la que otro escritor puede tocar el frontmatter y el push final lo pisa
+> desde una foto vieja (H9-03). CP11 conserva por eso su propia relectura pegada al push.
 >
 > **El Fallo A sigue ABIERTO** — que el checkout falle en alto si el write-then-verify del
 > lock no confirma, y la distinción `sin_lock` / `disponible`. Es el mismo problema que los
@@ -3969,11 +3977,22 @@ propia, sin estimar hasta responder los contraargumentos. (4) ~10 min de medici�
 
 ## 96. El guard de escritura se dispara sobre la copia PRESTADA, y ahí no protege de nada  [RESUELTO 2026-08-25]
 
-> **[RESUELTO 2026-08-25]** `case_manager.es_copia_prestada()` discrimina por la presencia
-> de `MANIFEST_CHECKOUT.json` en la raíz del caso, y `guard_escritura` no desvía cuando la
-> ruta resuelta es una copia local prestada. Sobre el Drive nada cambia — lo vigilan cinco
-> tests de control, tres de ellos preexistentes, y un mutante que fuerza `es_copia_prestada`
-> a `True` los mata: el arreglo **discrimina**, no apaga el guard.
+> **[RESUELTO 2026-08-25]** `case_manager.es_copia_prestada()` pregunta al **registro privado
+> de workspaces** (Fase 1) si la ruta resuelta consta como copia local de esta máquina, y
+> `guard_escritura` no desvía en ese caso. Sobre el Drive nada cambia.
+>
+> **El discriminante que NO vale, y que era el primer intento: la presencia de
+> `MANIFEST_CHECKOUT.json`.** Parecía la marca inequívoca de copia prestada, y abría un
+> agujero de autorización: `cmd_checkout` sube además una copia del manifiesto **al
+> Drive** («debe sobrevivir a la muerte del Desktop», §3.3), así que mientras un caso está
+> prestado el fichero está en **las dos copias**. Discriminar por él desactivaba el guard
+> sobre el **canon** y justo **mientras otro lo tenía tomado**. Lo encontraron por separado
+> el autor y la revisión R9 (H9-01, CRÍTICO). Hay test que lo caza y un mutante que lo
+> revive y muere por él.
+>
+> **Lo que NO cubre, declarado:** un checkout anterior al registro y **sin adoptar** no
+> consta, así que sigue desviando. Es deliberado —el sistema no adivina sobre qué copia
+> está— y la vía de desbloqueo existe y es explícita: `core.casos.workspace_adopcion`.
 >
 > El *hallazgo menor* del final de esta entrada (`90_Notas personales/` creada vacía en la
 > copia local) **sigue abierto**: es inocuo y no se tocó.

@@ -327,7 +327,7 @@ def test_ningun_artefacto_del_protocolo_cae_en_la_carpeta_del_caso(cli, tmp_path
 # Fila 9 · CP11 con `estado_repositorio` ausente — `MEJORAS #93-B`
 # ---------------------------------------------------------------------------
 
-def test_estado_ausente_sale_con_4_y_NO_registra_el_evento(cli, tmp_path, capsys):
+def test_estado_ausente_aborta_con_2_SIN_tocar_nada(cli, tmp_path, capsys):
     """`MEJORAS #93-B`, **arreglado**. Y este test defendia el defecto.
 
     Su nombre anterior lo decia todo: `...revienta_en_cp11_DESPUES_de_mover_los_bytes`.
@@ -337,9 +337,9 @@ def test_estado_ausente_sale_con_4_y_NO_registra_el_evento(cli, tmp_path, capsys
     montaba guardia sobre la traza duplicada de A-2c: cualquier arreglo la ponia roja,
     que es exactamente lo que paso.
 
-    El contrato nuevo: la transicion se valida **antes** de registrar nada. Los bytes
-    siguen subiendo y verificandose —eso ya ocurria y es correcto—, pero el ciclo no se
-    da por cerrado ni deja traza de un cierre que no hubo.
+    El contrato nuevo: la transicion se valida **antes de la primera escritura**. No se
+    copia, no se verifica, no se registra y no se toca el lock — el aborto es de verdad
+    «sin efectos», que es lo que el codigo 2 promete en la tabla del modulo.
     """
     from core.utils import build_frontmatter
     # Un `_caso.md` legitimo salvo que le falta `estado_repositorio`.
@@ -351,10 +351,17 @@ def test_estado_ausente_sale_con_4_y_NO_registra_el_evento(cli, tmp_path, capsys
     local = montar_local(tmp_path, {"00_Input/doc.pdf": b"LOCAL"},
                          base={"00_Input/doc.pdf": b"BASE"})
 
+    antes = {k: v for k, v in drive.items()}
     rc_, _fake = _correr(cli, tmp_path, drive, local)
 
-    assert rc_ == 4, f"se esperaba 4 (ciclo no cerrable), dio {rc_}"
-    assert drive["00_Input/doc.pdf"] == b"LOCAL", "los bytes SI se mueven: eso no cambia"
+    assert rc_ == 2, (
+        f"se esperaba 2 —«abortado sin efectos», que es lo que la tabla de códigos del "
+        f"modulo define para «caso no disponible»—, dio {rc_}")
+    assert drive == antes, (
+        "abortó «sin efectos» y mutó el Drive. El primer arreglo comprobaba esto DESPUÉS "
+        "de copiar y verificar, así que los bytes SÍ se movían; R9/H9-02 midió que por "
+        "esa vía un checkin reentrante subía trabajo nuevo al canon sin lock")
+    assert drive["00_Input/doc.pdf"] == b"BASE", "el fichero del Drive no se tocó"
     assert len(drive["00_Input/_intake_log.jsonl"].splitlines()) == 1, (
         "el evento case_checkin NO puede quedar registrado: no se cerro ningun ciclo")
     salida = capsys.readouterr().out
