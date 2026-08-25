@@ -5,7 +5,9 @@ creado: 2026-08-14
 origen: sesión de Claude Code en el perfil "Nikolai Tyukhay 1" (procesal@tyukhay.legal) —
   continuación de HANDOFF_migracion_perfil_procesal.md (v5) y de
   HANDOFF_continuacion_perfil2_para_Claude_Code.md (auditoría de Cowork del 13/08)
-destino: sesión de Claude Code en el perfil "tnm33"
+destino: sesión de Claude Code en el perfil "tnm33" y, desde el 2026-08-25, también en el
+  perfil "Nikolai Tyukhay 1" (procesal@tyukhay.legal) — ver §5: dos de las acciones que
+  quedan solo se pueden ejecutar desde ese perfil
 ---
 
 # Handoff — Migración al perfil procesal: lo que queda por cerrar desde `tnm33`
@@ -183,7 +185,45 @@ Get-ChildItem "C:\Users\tnm33\Dev" -Directory -ErrorAction SilentlyContinue | Fo
 ## 4. Reglas duras que siguen sin excepción
 
 `.credentials.json` nunca cruza entre perfiles · `FEESDEFENDER_ACTOR` con valores distintos
-en cada perfil (hoy: procesal fijado; `tnm33` pendiente de confirmar en §2.1) · las
+en cada perfil (**los dos fijados**: procesal el 13/08, `tnm33` confirmado el 2026-08-25 en
+§2.1 — con la advertencia de que la variable no llega a procesos no interactivos) · las
 extensiones DXT (`gmail-multiaccount`, `google-despacho`) no migran · nunca el mismo
 expediente abierto desde los dos perfiles a la vez · nunca el mismo repo trabajado sin
 `push` entre sesión y sesión · ningún secreto por `C:\Users\Public`.
+
+---
+
+## 5. Lo que queda, y en qué perfil se hace (añadido el 2026-08-25)
+
+**Este apartado existe porque faltaba.** Al cerrar la sesión del 2026-08-25 se comprobó que una
+sesión abierta en el perfil `procesal@` **no tenía por dónde retomar**: `STATUS.md` no menciona
+nada de ese perfil, `MEJORAS #122` es backlog que nadie lee al abrir, y este fichero declaraba
+`destino: tnm33`, así que una sesión de allí lo lee como dirigido a la otra — justo donde vivían
+las dos acciones que solo ella puede ejecutar.
+
+### En el perfil `Nikolai Tyukhay 1` (procesal@) — dos acciones, ninguna bloqueada
+
+1. **Devolver los tests que allí caen.** `python -m pip install -r requirements-dev.txt` en el
+   venv de ese perfil. Son **37 tests de 59** en los 4 ficheros que fabrican PDFs con capa de
+   texto (radio medido el 2026-08-25, ver §3). No toca el repo: el venv se montó solo con
+   `requirements.txt`.
+2. **La comprobación que decide `MEJORAS #122`.** Ver si el `client_id` del remote `gdrive_tl`
+   está vacío; si lo está, usa el compartido de rclone, que **deja de funcionar durante 2026**.
+   Es una línea, y **solo se puede hacer desde ahí** (`rclone.conf` de ese perfil no es legible
+   desde `tnm33`). Al comprobarlo: **nunca volcar la configuración completa** —expone el
+   `client_secret`—, solo mirar si el campo está vacío. Si lo está, el remedio no es crear un
+   `client_id` nuevo sino reutilizar el proyecto que ya sostiene los dos remotes de `tnm33`.
+
+### En `tnm33` — una decisión, que es de Nikolai
+
+**E.6.1: dónde se publica el marketplace del plugin** (repo dedicado, o rama de distribución en
+este repo con `dist/` desexcluido). Es lo único que bloquea `PLAN.md` **#16**; los pasos E.6.2 y
+E.6.3 son mecánicos después, y el E.6.3 hay que hacerlo **en los dos perfiles**, porque la entrada
+`directory` huérfana está en ambos.
+
+### Lo ya cerrado, para que nadie lo repita
+
+F.4.1 ✅ y E.1 ✅ (§2, medidos el 2026-08-25) · E.6 ⏩ promovido a `PLAN.md` #16 · el aviso del
+`client_id` ✅ escrito como `MEJORAS #122` · el enunciado de `reportlab` ✅ corregido aquí, en
+`requirements-dev.txt` y en `docs/INDICE.md`.
+
