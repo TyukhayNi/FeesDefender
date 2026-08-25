@@ -194,12 +194,17 @@ def assert_solo_escribe_en(plano: str, antes: Planos, despues: Planos, *,
     toca el canon, no cuando no escribe.
     """
     assert plano == PLANO_ARBOL, f"plano no soportado: {plano!r}"
-    assert antes.arbol != despues.arbol, (
-        f"{PLANO_ARBOL}: se esperaba escritura en la copia de trabajo y el árbol "
-        f"quedó idéntico — el motor no llegó a correr")
+    # El canon PRIMERO, y el orden es deliberado. Cuando un entrypoint escribe en el
+    # sitio equivocado los dos asertos son ciertos a la vez —«la copia no cambió» y
+    # «el canon sí»—, y el que informa de lo que pasó es el segundo. Medido con el
+    # mutante que deja de consultar el catálogo: con el orden inverso, el fallo se
+    # leía «el motor no llegó a correr», que es justo lo que NO ocurrió.
     assert antes.canon == despues.canon, (
         f"{PLANO_CANON}: escribió FUERA de la copia de trabajo. "
         f"{_diferencias(antes.canon, despues.canon)}")
+    assert antes.arbol != despues.arbol, (
+        f"{PLANO_ARBOL}: se esperaba escritura en la copia de trabajo y el árbol "
+        f"quedó idéntico — el motor no llegó a correr")
     assert llamadas_externas == 0, (
         f"{PLANO_EXTERNOS}: {llamadas_externas} llamada(s) externas no declaradas")
     assert antes.estado_local == despues.estado_local, (

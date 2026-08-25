@@ -20,8 +20,18 @@ Task 10 de la Fase 1. Dos mitades que se necesitan:
 literal.** Toda la rama offline del §7.2.9-10 —el modo que la spec diseñó para
 trabajar sin la unidad del despacho, con sus tests unitarios en el resolver— era
 **código muerto en producción**, y ningún test lo decía porque ningún test miraba al
-entrypoint. Se cierra con `_drive_accesible()`, que es una costura con dos condiciones
-reales (`FEESDEFENDER_OFFLINE=1` y la raíz del catálogo desmontada), no un doble.
+entrypoint. Se cierra con `_drive_accesible()`, una costura con una condición real y
+explícita: `FEESDEFENDER_OFFLINE=1`, el control del operador que el §7.1.5 prevé.
+
+**Y la segunda condición que le añadí duró una corrida.** Puse también «…o la raíz del
+catálogo no está montada», mirando `settings.casos_root`. Tres tests de
+`test_sala_maquina_ejecutar` la mataron en la primera suite completa: parchean
+`case_locator._root` sin tocar el entorno, así que el catálogo encontraba el caso y mi
+comprobación decía que no había Drive — un caso disponible abortando con
+`RUNTIME_CANNOT_ACCESS_WORKSPACE`. Y en producción era peor: `data/CASOS` no existe en
+un clon limpio, así que **toda** invocación se habría ido al modo offline en silencio.
+Meter una segunda fuente de verdad sobre dónde está el canon es el defecto, no el
+detalle de implementación.
 
 **Y el plano 3 es, para este entrypoint, cierto por vacío.** `sala_maquina` no llama
 a ningún servicio externo mutante: hace OCR local. Así que `llamadas == 0` se cumple
@@ -292,6 +302,75 @@ class TestSalaMaquinaContraLaMatriz:
         assert NO_APLICABLES == {}
 
 
+class TestPrecedenciaDelCatalogoSobreLaCosturaLegacy:
+    """El riesgo que el 65º cierre dejó anotado y NO arreglado, aquí contratado.
+
+    ~28 tests parchean `cli.caso_path` como **override explícito**, y
+    `_resolver_workspace` pregunta **primero al catálogo**: el override queda por
+    debajo del estado ambiental del canon. Hoy no colisiona porque los `case_id`
+    reales son `BaXXX - … - (W-XXXXX) - tipo` y los de esos tests no, pero eso es
+    **precedencia por azar de nombres**, no por contrato — y una convención de nombres
+    no es una autorización.
+
+    Las dos direcciones se fijan aquí, y son las dos mitades de la misma regla:
+
+    1. si el canon **conoce** el caso, manda el canon, y un `caso_path` parcheado
+       **no puede** saltarse un lock;
+    2. si el canon **no** lo conoce, manda el binding del módulo — porque donde no hay
+       nada que bloquear no hay bloqueo que respetar.
+
+    La primera es la que importa: sin ella, cualquier código que parchee o reconfigure
+    `caso_path` se convierte en una vía de escritura sobre un expediente prestado.
+    """
+
+    def _mundo(self, tmp_path, monkeypatch) -> Mundo:
+        m = Mundo(tmp_path / "precedencia", pytest.MonkeyPatch(),
+                  usuario=YO, maquina=ESTA)
+        monkeypatch.setattr(cli, "_identidad_actor", lambda: (YO, ESTA), raising=False)
+        monkeypatch.setattr(cli.sm, "ejecutar", lambda *a, **k: [])
+        monkeypatch.setattr(cli, "_atomizar_correo", lambda *a, **k: None)
+        monkeypatch.setattr(cli, "_procesar_adjuntos", lambda *a, **k: None)
+        return m
+
+    def test_un_caso_prestado_NO_se_salta_parcheando_caso_path(self, tmp_path,
+                                                               monkeypatch):
+        import typer
+        m = self._mundo(tmp_path, monkeypatch)
+        try:
+            m.sembrar_canon(estado="prestado", titular="otro.abogado",
+                            maquina="OTRA-MAQUINA", nonce="n9")
+            desvio = tmp_path / "desvio" / Mundo.CASE_ID
+            (desvio / "00_Input").mkdir(parents=True)
+            monkeypatch.setattr(cli, "caso_path", lambda cid: desvio)
+
+            antes_desvio = hash_arbol(desvio)
+            antes_canon = hash_arbol(m.casos_root)
+            with pytest.raises(typer.Exit) as exc:
+                cli.apply(Mundo.CASE_ID)
+            assert exc.value.exit_code == 2
+            assert hash_arbol(desvio) == antes_desvio, (
+                "el override de `caso_path` recibió escrituras: la precedencia del "
+                "catálogo se ha invertido y un caso prestado es escribible desviando "
+                "la ruta")
+            assert hash_arbol(m.casos_root) == antes_canon
+        finally:
+            m.cerrar()
+
+    def test_si_el_canon_NO_conoce_el_caso_manda_el_binding_del_modulo(self, tmp_path,
+                                                                      monkeypatch):
+        """La otra mitad: sin esto, media suite de sala de máquina caería."""
+        m = self._mundo(tmp_path, monkeypatch)
+        try:
+            fuera = tmp_path / "fuera" / Mundo.CASE_ID
+            (fuera / "00_Input").mkdir(parents=True)
+            monkeypatch.setattr(cli, "caso_path", lambda cid: fuera)
+            antes = hash_arbol(fuera)
+            cli.apply(Mundo.CASE_ID)
+            assert hash_arbol(fuera) != antes
+        finally:
+            m.cerrar()
+
+
 class TestLaFilaOchoEsRealYNoUnDoble:
     """La 8 dejó de ser indatable al construir `_drive_accesible`."""
 
@@ -299,31 +378,34 @@ class TestLaFilaOchoEsRealYNoUnDoble:
         monkeypatch.setenv("FEESDEFENDER_OFFLINE", "1")
         assert cli._drive_accesible() is False
 
-    def test_catalogo_desmontado(self, monkeypatch, tmp_path):
+    def test_sin_bandera_hay_drive(self, monkeypatch):
         monkeypatch.delenv("FEESDEFENDER_OFFLINE", raising=False)
-        monkeypatch.setenv("CASOS_ROOT", str(tmp_path / "no-existe"))
-        import importlib
+        assert cli._drive_accesible() is True
 
-        from core import config as cfg
-        importlib.reload(cfg)
-        try:
-            assert cli._drive_accesible() is False
-        finally:
-            monkeypatch.undo()
-            importlib.reload(cfg)
+    def test_la_bandera_solo_cuenta_con_el_valor_exacto(self, monkeypatch):
+        """`FEESDEFENDER_OFFLINE=0` o vacia NO es offline.
 
-    def test_con_catalogo_montado_y_sin_bandera_hay_drive(self, monkeypatch, tmp_path):
-        monkeypatch.delenv("FEESDEFENDER_OFFLINE", raising=False)
-        monkeypatch.setenv("CASOS_ROOT", str(tmp_path))
-        import importlib
+        Una comprobacion por veracidad —`if os.getenv(...)`— haria que el `0` de quien
+        cree estar desactivandola la ACTIVARA, que es el modo de fallo clasico de las
+        banderas por entorno.
+        """
+        for valor in ("0", "", "false", "no"):
+            monkeypatch.setenv("FEESDEFENDER_OFFLINE", valor)
+            assert cli._drive_accesible() is True, f"{valor!r} no deberia ser offline"
 
-        from core import config as cfg
-        importlib.reload(cfg)
-        try:
-            assert cli._drive_accesible() is True
-        finally:
-            monkeypatch.undo()
-            importlib.reload(cfg)
+    def test_la_comprobacion_NO_mira_la_raiz_del_catalogo(self):
+        """Regresion medida: mirar `settings.casos_root` aqui abre dos agujeros.
+
+        Divergia de la fuente que usa el catalogo (`case_locator._root`) y daba
+        offline en cualquier clon donde `data/CASOS` no exista. Lo cazaron tres tests
+        de `test_sala_maquina_ejecutar` en la primera corrida completa.
+        """
+        import inspect
+        fuente = inspect.getsource(cli._drive_accesible)
+        cuerpo = fuente.split('"""')[-1]
+        assert "casos_root" not in cuerpo, (
+            "`_drive_accesible` volvio a mirar la raiz del catalogo: eso diverge de "
+            "`case_locator._root` y da offline en un clon sin `data/CASOS`")
 
     def test_el_resolver_ya_no_recibe_un_True_literal(self):
         """Guard de regresión sobre la fuente: el literal era el que mataba la fila.

@@ -293,14 +293,27 @@ def _drive_accesible() -> bool:
     entrypoint podía llegar a él. La fila 8 de la matriz del §14.1 —«runtime sin
     acceso → error, Drive intacto»— solo era inducible mintiéndole al resolver.
 
-    Las dos condiciones son reales, no de test:
+    La condición es **una sola y explícita**: `FEESDEFENDER_OFFLINE=1`, el control del
+    operador —«estoy sin la unidad del despacho, trabaja contra mi checkout y no
+    publiques»—, que es exactamente la declaración que el §7.1.5 pide para retirar las
+    capacidades de canon.
 
-    - **`FEESDEFENDER_OFFLINE=1`** es el control del operador: «estoy sin la unidad
-      del despacho, trabaja contra mi checkout y no publiques». Es exactamente la
-      declaración que el §7.1.5 pide para retirar las capacidades de canon.
-    - **la raíz del catálogo no está montada** — `G:` desconectada. Sin ella el
-      estado compartido no se puede leer y suponerlo `disponible` es justo la
-      suposición que abre la puerta a escribir sobre un caso prestado.
+    **La segunda condición que escribí y hubo que retirar, porque conviene no repetirla.**
+    Añadí «…o la raíz del catálogo no está montada», con `Path(settings.casos_root).is_dir()`.
+    Suena más listo y es **peor por dos razones que la suite midió en la primera corrida**:
+
+    1. **Divergencia de fuente de verdad.** El catálogo localiza por `case_locator._root()`
+       y esa comprobación miraba `settings.casos_root`. Tres tests parchean `_root` sin
+       tocar el entorno, así que el catálogo encontraba el caso y la comprobación decía
+       que no había Drive: el resolver se iba a `_offline` y abortaba con
+       `RUNTIME_CANNOT_ACCESS_WORKSPACE` un caso perfectamente disponible.
+    2. **Falso negativo en producción.** `data/CASOS` no existe en un clon limpio ni en
+       un worktree, así que en cualquier máquina sin `CASOS_ROOT` apuntando a un montaje
+       vivo **toda** invocación se habría ido al modo offline en silencio.
+
+    Y no hacía falta: si la raíz no se puede leer, `catalogo.localizar` ya lanza
+    `LocalWorkspaceMissing` unas líneas más arriba. Lo que aquí se decide es otra cosa
+    —si el estado compartido es *de fiar*—, y de eso el único que sabe es el operador.
 
     Lo que **no** hace, y se declara: no distingue un montaje de Drive Stream con
     caché rancia de uno fresco. Esa es la comprobación que el §7.2 llama revalidar el
@@ -308,11 +321,7 @@ def _drive_accesible() -> bool:
     """
     import os
 
-    from core.config import settings
-
-    if (os.getenv("FEESDEFENDER_OFFLINE") or "").strip() == "1":
-        return False
-    return Path(settings.casos_root).is_dir()
+    return (os.getenv("FEESDEFENDER_OFFLINE") or "").strip() != "1"
 
 
 def _workspace_legacy(case_id: str, case_dir: Path):
