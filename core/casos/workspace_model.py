@@ -262,6 +262,49 @@ class RutaYaRegistrada(WorkspaceError):
     codigo = "RUTA_YA_REGISTRADA"
 
 
+# --- Los tres del mutex interproceso (Plan 2 de V1, decision D2 del §24) -------
+#
+# Viven aqui, con los del registro, por la misma razon: el resolver y los CLI los
+# propagan al usuario, asi que les aplican las reglas de mensaje del §10 y los ocho
+# canarios de fuga del §16. Definirlos en `case_mutex` los dejaria fuera de
+# `errores_conocidos()` y por tanto fuera de los canarios.
+
+
+class CaseBusy(WorkspaceError):
+    """Otro proceso de ESTA maquina tiene el mutex, y su lease sigue vivo.
+
+    No es lo mismo que `CaseLocked`: aquel dice que el caso esta prestado a OTRA
+    maquina segun el canon; este, que otro proceso de la mia lo esta tocando ahora.
+    """
+
+    codigo = "CASE_BUSY"
+    descripcion = "otro proceso de esta maquina esta operando sobre el caso"
+
+
+class MutexNotMine(WorkspaceError):
+    """Se intento renovar o liberar un mutex cuyo nonce es de otro.
+
+    Separado de `CaseBusy` a proposito: aquel es «espera»; este es «te equivocas de
+    dueño». Confundirlos es el defecto A-1 del frontal —el rollback que cancela un lock
+    ajeno— trasladado a esta capa.
+    """
+
+    codigo = "MUTEX_NOT_MINE"
+    descripcion = "el mutex del caso pertenece a otro titular"
+
+
+class MutexIlegible(WorkspaceError):
+    """El lock existe y no se puede leer o no cumple su esquema. **NO es «no hay lock».**
+
+    Falla cerrado por la misma razon que `RegistryUnreadable` (R7/H7-02), y aqui el
+    precio de confundirlos es mayor: leerlo como «libre» dejaria entrar a un segundo
+    proceso, que es lo unico que el mutex existe para impedir.
+    """
+
+    codigo = "MUTEX_ILEGIBLE"
+    descripcion = "el mutex del caso existe y no se puede interpretar"
+
+
 def errores_conocidos() -> tuple[type[WorkspaceError], ...]:
     """Las subclases con código: las doce del §10 más las tres del registro.
 
@@ -287,6 +330,9 @@ def errores_conocidos() -> tuple[type[WorkspaceError], ...]:
         RegistryUnreadable,
         SchemaNoSoportado,
         RutaYaRegistrada,
+        CaseBusy,
+        MutexNotMine,
+        MutexIlegible,
     )
 
 
