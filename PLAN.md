@@ -905,7 +905,7 @@ caso: durante un checkout, un proceso escribe en el local y otro en Drive.
 - [x] **Fase 1 — núcleo de workspace.** ✅ **PRs #230** (`291436d`, R7 + modelo + registro),
       **#231** (`0d14ab4`, localizador + catálogo), **#232** (`7f29365`, resolver), **#233**
       (`9ad1149`, `intake_log`), **#234** (`17c46a8`, adopción del §15), **#235** (`533be06`,
-      sala de máquina por workspace) y **#236** (Tasks 10-11: matriz contractual + gobernanza).
+      sala de máquina por workspace) y **#236** (`86c5414`, Tasks 10-11: matriz contractual + gobernanza, con **R8** adjudicada).
       `CaseRef`/modos/capacidades/errores, registro privado atómico, `CaseCatalog` con
       `AMBIGUOUS_CASE`, resolver, **las tres intenciones del localizador** en vez del booleano
       `strict` (mata el fallback que fabrica expedientes fantasma; censo de la escotilla a
