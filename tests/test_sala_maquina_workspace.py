@@ -150,11 +150,32 @@ class TestCasoEnConflicto:
 
 class TestCaseDir:
 
-    def test_case_dir_junto_con_identidad_es_error_de_uso(self, root, monkeypatch):
-        """Las dos formas de decir «este caso» son mutuamente excluyentes."""
+    def test_case_dir_junto_con_identidad_es_error_de_uso(self, root, tmp_path,
+                                                          monkeypatch):
+        """Las dos formas de decir «este caso» son mutuamente excluyentes.
+
+        El `--case-dir` que se pasa **funcionaria por si solo**: es un scratch
+        registrado. A proposito. Con una ruta inexistente el rechazo lo producia la
+        guarda de EXISTENCIA —que tambien sale con 2— y el test pasaba aunque la
+        exclusion mutua desapareciera. Lo cazo la mutacion, y es la quinta vez en
+        esta sesion que el escenario mas facil de montar no aisla la guarda.
+        """
+        from core.casos.workspace_registry import (SCHEMA_SOPORTADO,
+                                                   WorkspaceEntry, WorkspaceRegistry)
         _identidad_fija(monkeypatch)
+        scratch = tmp_path / "Desktop" / CASO
+        (scratch / "00_Input").mkdir(parents=True)
+        reg = WorkspaceRegistry(tmp_path / "registro", ahora=AHORA)
+        reg.alta(WorkspaceEntry(
+            case_id=CASO, w_code="W-TEST99", canonical_ref=None, local_path=scratch,
+            nonce="s1", maquina=ESTA, tipo="scratch", ultima_validacion=AHORA,
+            schema=SCHEMA_SOPORTADO))
+        monkeypatch.setattr(cli, "_registro_de_workspaces", lambda ahora: reg,
+                            raising=False)
+        monkeypatch.setattr(cli.sm, "ejecutar", lambda *a, **k: [])
+        monkeypatch.setattr(cli, "_atomizar_correo", lambda *a, **k: None)
         with pytest.raises(typer.Exit) as exc:
-            cli.plan("W-TEST99", case_dir="X")
+            cli.plan("W-TEST99", case_dir=str(scratch))
         assert exc.value.exit_code == 2
 
     def test_sin_identidad_ni_case_dir_es_error_de_uso(self, root, monkeypatch):
