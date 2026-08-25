@@ -284,6 +284,37 @@ def _registro_de_workspaces(ahora: str):
     return WorkspaceRegistry(raiz_por_defecto(), ahora=ahora)
 
 
+def _drive_accesible() -> bool:
+    """¿Se puede confiar HOY en el estado compartido del canon? (§7.2.9-10)
+
+    Hasta el Task 10 esto era el literal `True` en la llamada al resolver, y por eso
+    **toda la rama offline del §7.2.9-10 era código muerto en producción**: el modo
+    sin Drive existía en el diseño, tenía tests unitarios en el resolver y ningún
+    entrypoint podía llegar a él. La fila 8 de la matriz del §14.1 —«runtime sin
+    acceso → error, Drive intacto»— solo era inducible mintiéndole al resolver.
+
+    Las dos condiciones son reales, no de test:
+
+    - **`FEESDEFENDER_OFFLINE=1`** es el control del operador: «estoy sin la unidad
+      del despacho, trabaja contra mi checkout y no publiques». Es exactamente la
+      declaración que el §7.1.5 pide para retirar las capacidades de canon.
+    - **la raíz del catálogo no está montada** — `G:` desconectada. Sin ella el
+      estado compartido no se puede leer y suponerlo `disponible` es justo la
+      suposición que abre la puerta a escribir sobre un caso prestado.
+
+    Lo que **no** hace, y se declara: no distingue un montaje de Drive Stream con
+    caché rancia de uno fresco. Esa es la comprobación que el §7.2 llama revalidar el
+    nonce, y vive en el ciclo de checkout, no aquí.
+    """
+    import os
+
+    from core.config import settings
+
+    if (os.getenv("FEESDEFENDER_OFFLINE") or "").strip() == "1":
+        return False
+    return Path(settings.casos_root).is_dir()
+
+
 def _workspace_legacy(case_id: str, case_dir: Path):
     """`CaseWorkspace` sobre una ruta que el catálogo NO conoce.
 
@@ -353,9 +384,11 @@ def _resolver_workspace(case_id: str | None, case_dir: str | None):
     resolver = CaseWorkspaceResolver(catalogo, registro, usuario=usuario,
                                      maquina=maquina, ahora=ahora)
 
+    drive_ok = _drive_accesible()
+
     if case_dir:
         try:
-            ws = resolver.resolver_por_ruta(Path(case_dir), drive_accesible=True)
+            ws = resolver.resolver_por_ruta(Path(case_dir), drive_accesible=drive_ok)
         except WorkspaceError as exc:
             typer.echo(f"[ERROR] {exc}", err=True)
             raise typer.Exit(code=2) from exc
@@ -383,7 +416,7 @@ def _resolver_workspace(case_id: str | None, case_dir: str | None):
         return case_id, _workspace_legacy(case_id, case_dir_legacy)
 
     try:
-        ws = resolver.resolver_por_identidad(ref, drive_accesible=True)
+        ws = resolver.resolver_por_identidad(ref, drive_accesible=drive_ok)
     except WorkspaceError as exc:
         # Código 2 y cero bytes: el motor no ha arrancado.
         typer.echo(f"[ERROR] {exc}", err=True)
