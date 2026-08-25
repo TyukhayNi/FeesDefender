@@ -110,7 +110,9 @@ class TestVerificar:
         r = verificar_adopcion(local, CaseRef(w_code="W-TEST99"),
                                usuario=YO, maquina=ESTA, ahora=AHORA)
         assert r.ok is False
-        assert "manifest" in r.motivo.lower()
+        # «falta», no «ilegible»: son DOS guardas distintas y sin separarlas el
+        # test pasaba aunque la de existencia desapareciera (lo cazo la mutacion).
+        assert "falta" in r.motivo.lower()
 
     def test_un_manifest_ilegible_NO_es_adoptable(self, root, tmp_path):
         from core.casos.workspace_adopcion import verificar_adopcion
@@ -118,6 +120,26 @@ class TestVerificar:
         _canon(root)
         local = _checkout_legacy(tmp_path)
         (local / "MANIFEST_CHECKOUT.json").write_text("{roto", encoding="utf-8")
+        r = verificar_adopcion(local, CaseRef(w_code="W-TEST99"),
+                               usuario=YO, maquina=ESTA, ahora=AHORA)
+        assert r.ok is False
+
+    @pytest.mark.parametrize("cuerpo", ['[]', '{"otra_cosa": 1}', '"una cadena"'])
+    def test_un_manifest_con_JSON_valido_pero_sin_inventario_tampoco(
+            self, root, tmp_path, cuerpo):
+        """La otra guarda del manifest, aislada.
+
+        Con `{roto` basta el `json.loads` para rechazarlo, asi que el test
+        anterior pasaba aunque la comprobacion de FORMA desapareciera. Un JSON
+        valido con la forma equivocada solo lo caza esa segunda guarda — y es el
+        caso realista: un fichero truncado a la mitad rara vez sigue siendo JSON,
+        pero uno de otra version del formato si.
+        """
+        from core.casos.workspace_adopcion import verificar_adopcion
+        from core.casos.workspace_model import CaseRef
+        _canon(root)
+        local = _checkout_legacy(tmp_path)
+        (local / "MANIFEST_CHECKOUT.json").write_text(cuerpo, encoding="utf-8")
         r = verificar_adopcion(local, CaseRef(w_code="W-TEST99"),
                                usuario=YO, maquina=ESTA, ahora=AHORA)
         assert r.ok is False
@@ -134,10 +156,15 @@ class TestVerificar:
         assert "otra maquina" in r.motivo.lower() or "titular" in r.motivo.lower()
 
     def test_un_caso_DISPONIBLE_no_se_adopta(self, root, tmp_path):
-        """Sin lock no hay checkout que adoptar: la copia local es un scratch."""
+        """Sin lock no hay checkout que adoptar: la copia local es un scratch.
+
+        El canon lleva titular y maquina que SI casan, a proposito: con ellos a
+        `None` el rechazo lo producia la guarda de propiedad y el test pasaba
+        aunque la del estado desapareciera. Asi solo puede pararlo la del estado.
+        """
         from core.casos.workspace_adopcion import verificar_adopcion
         from core.casos.workspace_model import CaseRef
-        _canon(root, estado="disponible", titular=None, maquina=None, nonce=None)
+        _canon(root, estado="disponible", titular=YO, maquina=ESTA, nonce="n1")
         local = _checkout_legacy(tmp_path)
         r = verificar_adopcion(local, CaseRef(w_code="W-TEST99"),
                                usuario=YO, maquina=ESTA, ahora=AHORA)
