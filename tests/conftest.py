@@ -58,6 +58,20 @@ def _barrera_frontal(tmp_path, monkeypatch):
 
 @pytest.fixture
 def tmp_casos_root(tmp_path, monkeypatch):
+    """Un `CASOS_ROOT` aislado. **Restaura `core.config` al salir.**
+
+    `monkeypatch.setenv` deshace la variable de entorno, pero el `reload` de la
+    entrada NO se deshacía solo: el módulo quedaba apuntando al `tmp_path` de ese
+    test para todo lo que corriera después. Mientras nadie consultaba el catálogo
+    daba igual; en cuanto `sala_maquina` empezó a preguntar por el caso (Fase 1
+    dual, Task 9) la fuga se volvió un rojo dependiente del orden: con la semilla
+    777, `test_repository_checkout` dejaba un `EV-2026-001` **prestado** en su
+    tmp_path y ocho tests de sala de máquina —que usan ese mismo case_id— se
+    encontraban el caso ajeno con lock y abortaban.
+
+    El `reload` de salida corre DESPUÉS de que monkeypatch restaure el entorno,
+    así que `core.config` vuelve al `CASOS_ROOT` real.
+    """
     root = tmp_path / "CASOS"
     root.mkdir()
     monkeypatch.setenv("CASOS_ROOT", str(root))
@@ -67,4 +81,8 @@ def tmp_casos_root(tmp_path, monkeypatch):
     from core import config as cfg
 
     importlib.reload(cfg)
-    yield Path(root)
+    try:
+        yield Path(root)
+    finally:
+        monkeypatch.undo()          # devuelve CASOS_ROOT al valor real…
+        importlib.reload(cfg)       # …y ahora sí el módulo lo relee
