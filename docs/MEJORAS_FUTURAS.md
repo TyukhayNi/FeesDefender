@@ -3817,6 +3817,24 @@ decidir si `sin_lock` pasa a ser un estado del modelo afecta a `TRANSICIONES_PER
 **Coste estimado.** B: ~30 min (guarda + test). A: ~1 h el gate del nonce; +1 h si se añade `sin_lock`
 al modelo de estados y se migran las transiciones.
 
+**Nota al cerrar la Fase 1 dual (2026-08-25). La Fase 1 NO cierra nada de esta entrada, y conviene
+decirlo así en vez de dejarlo implícito.** Los dos fallos viven en `scripts/repository_cli.py`, que la
+Fase 1 no toca; siguen reproducidos en `xfail(strict=True)` en `tests/test_repository_cli_defectos.py`
+—verificados vivos: 7 `xfailed`, 0 `xpassed`— y su arreglo es la Fase 2.
+
+Lo que sí cambia son las **consecuencias del Fallo A**, y a peor. `estado_de_fm` devolvía `disponible`
+ante el campo ausente para **un** consumidor —el propio frontal—; desde la Fase 1 ese mismo silencio lo
+consume también `CaseCatalog.estado_compartido`, y por él el `CaseWorkspaceResolver`, que es quien
+decide **si un motor puede escribir**. Un `_caso.md` sin `estado_repositorio` ya no produce solo un
+checkin confuso: produce un `drive_active` con todas las capacidades sobre un caso que quizá esté
+prestado. El registro privado cierra el hueco **por la otra punta** —una copia local conocida se ve
+aunque el canon calle— pero solo en la máquina que la registró.
+
+Corolario para quien ejecute la Fase 2: la parte (A) de esta entrada dejó de ser «higiene del lock» y
+es la premisa del resolver. Si se decide distinguir `sin_lock` de `disponible`, hay que decidir a la
+vez qué modo resuelve el resolver ante `sin_lock` — y el lado seguro es **no** conceder `drive_active`.
+Hermana: `MEJORAS #111` no aplica aquí; la relacionada es `#95` (ventana de carrera del lock).
+
 ---
 
 ## 94. El montaje `G:` no es fiable justo después de escribir: verificar por API, nunca por el montaje
@@ -5291,3 +5309,43 @@ que la Fase 2 de la arquitectura dual arregle el lock, o que un checkout real re
 
 **Coste estimado.** Bajo: llamar al guard con `es_protocolo=True` y un test que fije la
 exención de forma explícita en vez de por omisión.
+
+---
+
+## 121. El criterio «ninguna ruta crea carpetas fantasma» no tiene barrido que lo demuestre
+
+**Disparador:** ninguno todavía — lo levantó la **R8/H8-08** al adjudicar el cierre de la Fase 1
+dual (2026-08-25). No bloquea nada hoy; es una **afirmación más ancha que su prueba**, que es
+justo la clase de deuda que este backlog existe para no perder.
+
+**Estado actual.** El criterio de salida (2) de la Fase 1 dice: *ninguna ruta del código crea un
+directorio bajo `CASOS_ROOT` para una identidad que el catálogo no conoce*. Lo que hay para
+sostenerlo son dos piezas, y ninguna es universal:
+
+- **El plano 2 del arnés contractual** (`tests/_matriz_contractual.py`) compara `CASOS_ROOT`
+  alrededor de la copia de trabajo antes y después. Pero solo observa **lo que la matriz
+  ejecuta**: hoy, los tres comandos de `sala_maquina`. Un escritor al que la matriz no llame es
+  invisible para él.
+- **`tests/test_guard_localizador.py`** mantiene a cero el censo de `path_for(..., strict=False)`.
+  Cuenta llamadas AST a **esa** escotilla; no ve a quien componga `settings.casos_root / algo` a
+  mano, ni a quien use otra API.
+
+El revisor propuso la comprobación que lo demuestra, y es concluyente: añadir en una copia una
+función de producción **no invocada** que haga `(settings.casos_root / 'W-FANTASMA').mkdir()`.
+La matriz y el guard siguen verdes. No existe inventario de **escritores**.
+
+**Mejora propuesta.** Un guard AST hermano del del localizador, que enumere los sitios de
+producción donde se llama a `mkdir`/`write_text`/`open(..., 'w')` sobre una expresión derivada de
+`settings.casos_root`, `caso_path(...)` o `path_for(...)`, y fije el censo con la misma polaridad
+—**solo puede encoger**—. La parte difícil no es el AST: es decidir qué cuenta como «derivada»
+sin producir tantos falsos positivos que alguien lo desactive. Empezar por el caso literal
+(`settings.casos_root / X` seguido de `.mkdir`) ya cerraría el hueco que el revisor demostró.
+
+**Justificación de no aplicarlo ahora.** La Fase 1 se cierra con el criterio **acotado por
+escrito** en `PLAN.md` («se cumple para los caminos ejercitados, no universalmente») en vez de
+afirmado entero, que es la corrección honesta y cuesta una frase. El barrido es trabajo con
+diseño propio —la heurística de «derivada de» es la pieza cara— y hacerlo bajo el plazo de una
+remediación es cómo se compran guards que nadie mantiene.
+
+**Coste estimado.** ~2 h el guard literal con su prueba de mutación; +2-3 h si se persigue la
+derivación indirecta (variable intermedia, atributo de dataclass, retorno de helper).

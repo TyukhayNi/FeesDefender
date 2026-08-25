@@ -22,6 +22,8 @@ un test que impide el *drift*.
 | Estado / plan | repo: `STATUS.md`, `PLAN.md` | — (Drive abandonado por divergencia) | — | — |
 | Auth/API sudespacho | `../ElContable/docs/REFERENCIA_SUDESPACHO_API_PERMISOS.md` | `docs/INTEGRACION_SUDESPACHO.md §14` | — | — |
 | Higiene de datos y secretos | `docs/SEGURIDAD_DATOS.md` (doctrina) | `CLAUDE.md §Reglas`, `GOBERNANZA §4` (enlazan) | — | `pre-commit` + CI de escaneo de fugas |
+| **Copia operativa de un expediente** (¿sobre qué copia se trabaja y qué está permitido?) | `core/casos/workspace_resolver.CaseWorkspaceResolver` | los entrypoints que la consumen (`scripts/sala_maquina`, y en la Fase 3 la vertical de correo) | — | `tests/test_workspace_resolver.py` + `tests/_matriz_contractual.py` (§14.1 en los cuatro planos) |
+| **Dónde está un expediente en el canon** (catálogo) | `core/casos/case_locator` + `core/casos/case_catalog` | — | — | `tests/test_case_locator.py`, `tests/test_workspace_catalog.py`, `tests/test_guard_localizador.py` |
 
 ## 1. Código — arquitectura de 3 capas
 
@@ -46,6 +48,41 @@ flowchart TD
     CLI --> CORE
     CORE --> DATA
 ```
+
+### 1.1. Catálogo ≠ copia operativa (arquitectura dual, Fase 1)
+
+Dentro de `core/casos/` conviven dos preguntas que **no** son la misma, y confundirlas
+es el defecto que la Fase 1 cierra:
+
+- **`case_locator` / `case_catalog` = el catálogo.** *¿Dónde está este expediente en el
+  canon, y qué dice el canon de él?* No decide nada sobre quién puede escribir.
+- **`workspace_resolver` = SSOT de la copia operativa.** *¿Sobre qué copia se trabaja, y
+  qué está permitido en ella?* Es el único sitio donde esa decisión se toma, y devuelve
+  un `CaseWorkspace` con sus capacidades **derivadas del modo**, nunca inyectadas.
+
+Antes de la Fase 1 la segunda pregunta no tenía dueño: cada módulo la contestaba por su
+cuenta mirando `CASOS_ROOT`, o no la contestaba. Un expediente prestado a otra máquina se
+procesaba igual, porque «dónde está» respondía y «si puedo» no se preguntaba.
+
+`workspace_registry` (las copias locales de **esta** máquina) y `workspace_model` (modos,
+capacidades y los quince errores del §10) le dan datos al resolver; no deciden.
+
+```mermaid
+flowchart LR
+    ENTRY["entrypoint<br/>(sala_maquina, ...)"]
+    RES["workspace_resolver<br/>SSOT: copia operativa"]
+    CAT["case_catalog / case_locator<br/>el canon"]
+    REG["workspace_registry<br/>copias de ESTA maquina"]
+    MOD["workspace_model<br/>modos, capacidades, errores"]
+
+    ENTRY -->|identidad o --case-dir| RES
+    RES --> CAT
+    RES --> REG
+    RES --> MOD
+    RES -->|CaseWorkspace validado| ENTRY
+```
+
+Diseño completo: `docs/superpowers/specs/2026-07-29-feesdefender-dual-case-workspace-design.md`.
 
 ## 2. Plugin — SSOT de metadatos + conectores, ensamblados por build
 

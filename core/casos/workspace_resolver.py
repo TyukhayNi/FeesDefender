@@ -86,7 +86,8 @@ class CaseWorkspaceResolver:
                         "identidad; usa --case-dir")
 
         if canonico is None:
-            return self._solo_local(ref, locales, diagnostico=diagnostico)
+            return self._solo_local(ref, locales, diagnostico=diagnostico,
+                                    drive_accesible=drive_accesible)
 
         # (3) Drive accesible: manda el estado compartido.
         if not drive_accesible:
@@ -205,8 +206,16 @@ class CaseWorkspaceResolver:
                 return e
         return None
 
-    def _solo_local(self, ref, locales, *, diagnostico):
-        """El catálogo no lo conoce: o es un scratch, o no hay nada."""
+    def _solo_local(self, ref, locales, *, diagnostico, drive_accesible=True):
+        """El catálogo no lo conoce: o es un scratch, o no hay nada.
+
+        `drive_accesible` llega hasta aquí por la misma razón que existe en `_offline`:
+        **sin Drive no se puede cerrar el ciclo**. Un checkout resuelto por esta rama
+        con `CHECKIN` concedido anunciaría una capacidad que la red no permite ejercer
+        — exactamente la «resta de capacidad inerte» que la prueba de mutación del
+        Task 7 cazó en el otro camino, y que aquí no se veía porque hasta R8/H8-04
+        ningún entrypoint llegaba a esta rama sin Drive.
+        """
         if len(locales) > 1:
             raise AmbiguousCase(
                 w_code=ref.w_code,
@@ -219,7 +228,8 @@ class CaseWorkspaceResolver:
         e = locales[0]
         modo = (WorkspaceMode.LOCAL_SCRATCH if e.tipo == "scratch"
                 else WorkspaceMode.LOCAL_CHECKOUT)
-        return self._workspace(ref, modo, e.local_path, _PROCEDENCIA_IDENTIDAD, {})
+        return self._workspace(ref, modo, e.local_path, _PROCEDENCIA_IDENTIDAD, {},
+                               mutate_canonical=drive_accesible)
 
     def _offline(self, ref, locales, *, diagnostico):
         """§7.2.9-10 — sin Drive, solo vale un candidato local inequívoco."""

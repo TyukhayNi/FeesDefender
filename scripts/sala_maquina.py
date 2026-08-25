@@ -284,6 +284,46 @@ def _registro_de_workspaces(ahora: str):
     return WorkspaceRegistry(raiz_por_defecto(), ahora=ahora)
 
 
+def _drive_accesible() -> bool:
+    """¿Se puede confiar HOY en el estado compartido del canon? (§7.2.9-10)
+
+    Hasta el Task 10 esto era el literal `True` en la llamada al resolver, y por eso
+    **toda la rama offline del §7.2.9-10 era código muerto en producción**: el modo
+    sin Drive existía en el diseño, tenía tests unitarios en el resolver y ningún
+    entrypoint podía llegar a él. La fila 8 de la matriz del §14.1 —«runtime sin
+    acceso → error, Drive intacto»— solo era inducible mintiéndole al resolver.
+
+    La condición es **una sola y explícita**: `FEESDEFENDER_OFFLINE=1`, el control del
+    operador —«estoy sin la unidad del despacho, trabaja contra mi checkout y no
+    publiques»—, que es exactamente la declaración que el §7.1.5 pide para retirar las
+    capacidades de canon.
+
+    **La segunda condición que escribí y hubo que retirar, porque conviene no repetirla.**
+    Añadí «…o la raíz del catálogo no está montada», con `Path(settings.casos_root).is_dir()`.
+    Suena más listo y es **peor por dos razones que la suite midió en la primera corrida**:
+
+    1. **Divergencia de fuente de verdad.** El catálogo localiza por `case_locator._root()`
+       y esa comprobación miraba `settings.casos_root`. Tres tests parchean `_root` sin
+       tocar el entorno, así que el catálogo encontraba el caso y la comprobación decía
+       que no había Drive: el resolver se iba a `_offline` y abortaba con
+       `RUNTIME_CANNOT_ACCESS_WORKSPACE` un caso perfectamente disponible.
+    2. **Falso negativo en producción.** `data/CASOS` no existe en un clon limpio ni en
+       un worktree, así que en cualquier máquina sin `CASOS_ROOT` apuntando a un montaje
+       vivo **toda** invocación se habría ido al modo offline en silencio.
+
+    Y no hacía falta: si la raíz no se puede leer, `catalogo.localizar` ya lanza
+    `LocalWorkspaceMissing` unas líneas más arriba. Lo que aquí se decide es otra cosa
+    —si el estado compartido es *de fiar*—, y de eso el único que sabe es el operador.
+
+    Lo que **no** hace, y se declara: no distingue un montaje de Drive Stream con
+    caché rancia de uno fresco. Esa es la comprobación que el §7.2 llama revalidar el
+    nonce, y vive en el ciclo de checkout, no aquí.
+    """
+    import os
+
+    return (os.getenv("FEESDEFENDER_OFFLINE") or "").strip() != "1"
+
+
 def _workspace_legacy(case_id: str, case_dir: Path):
     """`CaseWorkspace` sobre una ruta que el catálogo NO conoce.
 
@@ -353,9 +393,11 @@ def _resolver_workspace(case_id: str | None, case_dir: str | None):
     resolver = CaseWorkspaceResolver(catalogo, registro, usuario=usuario,
                                      maquina=maquina, ahora=ahora)
 
+    drive_ok = _drive_accesible()
+
     if case_dir:
         try:
-            ws = resolver.resolver_por_ruta(Path(case_dir), drive_accesible=True)
+            ws = resolver.resolver_por_ruta(Path(case_dir), drive_accesible=drive_ok)
         except WorkspaceError as exc:
             typer.echo(f"[ERROR] {exc}", err=True)
             raise typer.Exit(code=2) from exc
@@ -369,6 +411,24 @@ def _resolver_workspace(case_id: str | None, case_dir: str | None):
     try:
         catalogo.localizar(ref)
     except LocalWorkspaceMissing:
+        # …salvo que ESTA máquina sí lo conozca. Sin esta rama, el trabajo offline
+        # por identidad era inalcanzable (R8/H8-04, verificado en vivo): con la unidad
+        # desmontada, `catalogo.localizar` falla, `caso_path` falla detrás y el usuario
+        # recibe «Caso no encontrado» **teniendo el checkout delante**. El §7.2.9-10
+        # existe justo para eso, y el resolver ya lo implementa (`_solo_local`): lo que
+        # faltaba era que alguien le pasara la pregunta.
+        #
+        # No altera la precedencia que el Task 9 fijó: el catálogo sigue mandando
+        # cuando conoce el caso. Esta rama solo se abre donde el canon calla, y ahí el
+        # registro es más específico que el binding del módulo — que es el último
+        # recurso, no el primero.
+        if registro.buscar(ref):
+            try:
+                ws = resolver.resolver_por_identidad(ref, drive_accesible=drive_ok)
+            except WorkspaceError as exc:
+                typer.echo(f"[ERROR] {exc}", err=True)
+                raise typer.Exit(code=2) from exc
+            return case_id, ws
         try:
             case_dir_legacy = caso_path(case_id)
         except FileNotFoundError:
@@ -383,7 +443,7 @@ def _resolver_workspace(case_id: str | None, case_dir: str | None):
         return case_id, _workspace_legacy(case_id, case_dir_legacy)
 
     try:
-        ws = resolver.resolver_por_identidad(ref, drive_accesible=True)
+        ws = resolver.resolver_por_identidad(ref, drive_accesible=drive_ok)
     except WorkspaceError as exc:
         # Código 2 y cero bytes: el motor no ha arrancado.
         typer.echo(f"[ERROR] {exc}", err=True)

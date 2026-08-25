@@ -268,7 +268,10 @@ def test_el_evento_real_es_valido_y_serializable(tmp_path, monkeypatch):
     case_dir = tmp_path / "BaRS9 - Real - (W-TEST97) - Vuelta"
     (case_dir / "00_Input").mkdir(parents=True)
     monkeypatch.setattr(cli, "caso_path", lambda cid: case_dir)
-    monkeypatch.setattr(intake_log, "caso_path", lambda cid: case_dir)
+    # El parche de `intake_log.caso_path` que vivía aquí se retiró con R8/H8-09:
+    # era un resto de antes del B0-1. El módulo ya no usa ese símbolo —este test
+    # escribe con el `case_dir` explícito y lee por `read_events_de`—, así que el
+    # parche no participaba en nada y solo mantenía viva una importación muerta.
     monkeypatch.setattr(cli, "_atomizar_correo", lambda cid, cd: None)
     monkeypatch.setattr(cli.sm, "ejecutar", lambda *a, **k: [])
     _sembrar_adjunto(case_dir)
