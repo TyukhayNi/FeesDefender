@@ -5499,3 +5499,57 @@ diseño propio y no se hace de paso al cerrar una sesión.
 **Coste estimado.** ~1 h el barrido de apertura con su test (la parte fina es la guarda de
 «vacío»); ~30 min el aviso de `session_close`; +15 min la frase de `FLUJO_GIT.md §4` que reconozca
 que el paso se completa en la apertura siguiente.
+
+### 123-bis. La poda tiene DOS mitades, y el protocolo solo nombra una
+
+**Añadido el 2026-08-25, con la medida que lo destapó.** Mismo residuo que arriba —trabajo cerrado
+que nadie retira— pero en las **ramas**, no en los directorios. Va aquí y no en entrada nueva
+porque comparte causa, remedio y el momento en que se puede aplicar.
+
+**Lo medido, al barrer lo acumulado en una sola sesión:** **14 borrados sobre 9 ramas distintas**,
+todas con su PR en `MERGED`. El desglose es lo interesante:
+
+| | ramas |
+|---|---|
+| Rancias en **local** | 8 (PRs #214-#219, #226, #227) |
+| Rancias en **remoto** | 6 (PRs #208, #214-#218) |
+| **En los dos lados a la vez** | **5** (#214, #215, #216, #217, #218) |
+| Solo en local | 3 (#219, #226, #227) |
+| Solo en remoto | 1 (#208) |
+
+Que solo 5 de 9 coincidan es el hallazgo: **la poda se hace a medias con frecuencia, y no siempre
+por el mismo lado**. Tres ramas se quedaron vivas solo en local (alguien borró en `origin` al
+mergear y no en su clon) y una solo en remoto (al revés). No es un descuido puntual: es lo que pasa
+cuando el merge lo hace una máquina y la poda otra.
+
+**Por qué ocurre.** `FLUJO_GIT.md §4` nombra `gh pr merge --delete-branch` y el `git branch -d`
+local, que cubren el caso feliz —merge y poda en la misma sesión, en la misma máquina—. Fuera de
+ese caso no hay nada: si el `--delete-branch` no corre (merge desde la web, desde el móvil, o un
+`--squash` lanzado sin la bandera), o si la sesión que mergea no es la que tenía el clon, queda
+media rama viva **y nadie vuelve a mirar**. `session_close` tampoco lo comprueba: su aviso
+`PLAN.md`↔git mira lo contrario —ítems que citan ramas que git ya no conoce—, no ramas que git
+conoce y ya no cita nadie.
+
+**Mejora propuesta**, hermana de la de arriba y con la misma forma: en el barrido de **apertura**,
+censar `git branch` y `git ls-remote --heads origin`, cruzar cada una con `gh pr list --head <rama>
+--state all` y **listar** (no borrar sin más) las que estén en `MERGED`. La puerta debe ser el
+estado del PR **comprobado en el momento**, no un censo previo. Nunca tocar `main` ni una rama con
+worktree vivo, y **registrar el SHA antes de borrar**: revivir una rama es
+`git push origin <sha>:refs/heads/<rama>`, pero solo si alguien apuntó el SHA.
+
+**Y una lección de método del propio barrido, que casi lo estropea.** Un `push --delete` falló por
+un timeout de red y mi primera reacción fue suponer que el fallo era de mi `grep`, no del borrado.
+No lo era: la rama seguía viva y el informe habría dicho «seis borradas» con una intacta. Lo
+destapó comprobar contra `origin` en vez de contra la salida que yo mismo había parseado. Quien
+implemente el barrido: **verificar el resultado contra el remoto, no contra el código de salida del
+comando** — es la misma regla de `INTEGRACION_SUDESPACHO.md §14.6`, verificar por resultado y nunca
+por status.
+
+**Justificación de no aplicarlo ahora.** Igual que arriba: el residuo es inerte y el trabajo tiene
+diseño propio. Con un matiz que lo hace **menos** urgente que el barrido de directorios: una rama
+rancia no estorba a nadie hasta que hay tantas que el censo deja de leerse, mientras que las
+carcasas de worktree ensucian un directorio que se mira a diario.
+
+**Coste estimado.** ~45 min sobre el barrido de apertura una vez exista (reutiliza su esqueleto);
+la parte cara no es el cruce sino decidir si **lista** o **borra**, y para el remoto la respuesta
+prudente es listar.
