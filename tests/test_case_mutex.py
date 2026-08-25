@@ -201,3 +201,82 @@ class TestElLease:
         adquirir(W, ahora=AHORA, raiz=raiz)
         with pytest.raises(MutexNotMine):
             renovar(W, nonce="nonce-de-otro", ahora=AHORA, raiz=raiz)
+
+
+class TestLiberar:
+
+    def test_con_nonce_ajeno_NO_suelta_el_mutex(self, raiz):
+        """El defecto A-1 del frontal —cancelar un lock ajeno— aqui no se repite."""
+        from core.casos.case_mutex import adquirir, leer_estado, liberar
+        from core.casos.workspace_model import MutexNotMine
+        nonce = adquirir(W, ahora=AHORA, raiz=raiz)
+        with pytest.raises(MutexNotMine):
+            liberar(W, nonce="nonce-de-otro", raiz=raiz)
+        assert leer_estado(W, raiz=raiz)["nonce"] == nonce
+
+    def test_dos_veces_no_es_un_error(self, raiz):
+        from core.casos.case_mutex import adquirir, liberar
+        nonce = adquirir(W, ahora=AHORA, raiz=raiz)
+        liberar(W, nonce=nonce, raiz=raiz)
+        liberar(W, nonce=nonce, raiz=raiz)
+
+    def test_tras_liberar_otro_puede_entrar(self, raiz):
+        from core.casos.case_mutex import adquirir, liberar
+        nonce = adquirir(W, ahora=AHORA, raiz=raiz)
+        liberar(W, nonce=nonce, raiz=raiz)
+        assert adquirir(W, ahora=AHORA, raiz=raiz)
+
+
+def _esperar_a_que_renueve(raiz, *, intentos: int = 150) -> None:
+    """Espera activa acotada. Un `sleep` fijo haria el test lento o inestable."""
+    import time
+    from core.casos.case_mutex import leer_estado
+    for _ in range(intentos):
+        estado = leer_estado(W, raiz=raiz)
+        if estado and estado["renewed_at"] != estado["acquired_at"]:
+            return
+        time.sleep(0.02)
+    raise AssertionError("el renovador no latio en 3 s")
+
+
+class TestElGestorRenueva:
+
+    def test_libera_aunque_el_cuerpo_reviente(self, raiz):
+        from core.casos.case_mutex import adquirir, leer_estado, tomado
+        with pytest.raises(RuntimeError):
+            with tomado(W, ahora_fn=lambda: AHORA, raiz=raiz, lease_seconds=60):
+                raise RuntimeError("boom")
+        assert leer_estado(W, raiz=raiz) is None
+        assert adquirir(W, ahora=AHORA, raiz=raiz)
+
+    def test_RENUEVA_mientras_el_cuerpo_corre(self, raiz):
+        """El hallazgo critico R10/H10-04: sin esto, el lease vence y otro entra.
+
+        Reloj falso que avanza un minuto por lectura y lease de 1 s, para que el latido
+        caiga en fracciones de segundo REALES sin hacer el test lento.
+        """
+        import itertools
+        from core.casos.case_mutex import adquirir, leer_estado, tomado
+        from core.casos.workspace_model import CaseBusy
+
+        contador = itertools.count()
+
+        def reloj():
+            return f"2026-08-25T12:{next(contador) % 60:02d}:00Z"
+
+        with tomado(W, ahora_fn=reloj, raiz=raiz, lease_seconds=1):
+            _esperar_a_que_renueve(raiz)
+            estado = leer_estado(W, raiz=raiz)
+            assert estado["renewed_at"] != estado["acquired_at"], (
+                "el lease no se renovo ni una vez durante el cuerpo")
+            with pytest.raises(CaseBusy):
+                adquirir(W, ahora=estado["renewed_at"], raiz=raiz)
+
+    def test_el_renovador_para_al_salir(self, raiz):
+        """Un hilo que sobreviva al `with` renovaria un lock que ya es de otro."""
+        import threading
+        from core.casos.case_mutex import tomado
+        antes = threading.active_count()
+        with tomado(W, ahora_fn=lambda: AHORA, raiz=raiz, lease_seconds=1):
+            pass
+        assert threading.active_count() == antes

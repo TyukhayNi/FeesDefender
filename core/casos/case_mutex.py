@@ -23,10 +23,12 @@ Las tres cierran críticos de la revisión R10, y las tres comparten forma: una 
 """
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import json
 import os
 import secrets
+import threading
 import re
 import socket
 import uuid
@@ -299,3 +301,66 @@ def renovar(w_code: str, *, nonce: str, ahora: str, raiz: Path | None = None) ->
                 "propio y dejaria entrar a otro")
         estado["renewed_at"] = ahora
         _escribir_estado(w_code, estado, raiz=raiz)
+
+
+def liberar(w_code: str, *, nonce: str, raiz: Path | None = None) -> None:
+    """Suelta el mutex. Exige titularidad; idempotente si ya no esta.
+
+    Que exija el nonce es el defecto A-1 del frontal leido al reves: alli el rollback
+    del checkout cancela el lock **sin comprobar que siga siendo el propio**, y eso
+    sigue vivo en `xfail`. Aqui no se repite.
+    """
+    from .workspace_model import MutexNotMine
+
+    w_code = _w_code_valido(w_code)
+    with _guard(w_code, raiz):
+        estado = leer_estado(w_code, raiz=raiz)
+        if estado is None:
+            return
+        if estado["nonce"] != nonce:
+            raise MutexNotMine(w_code=w_code,
+                               detalle="el nonce no coincide con el del titular")
+        ruta_del_lock(w_code, raiz=raiz).unlink(missing_ok=True)
+
+
+#: Fraccion del lease tras la que se renueva. Un tercio deja margen para dos latidos
+#: perdidos antes de que el lease venza de verdad.
+_FRACCION_LATIDO = 3
+
+
+@contextlib.contextmanager
+def tomado(w_code: str, *, ahora_fn, raiz: Path | None = None,
+           lease_seconds: int = LEASE_POR_DEFECTO):
+    """Adquiere, **renueva mientras el cuerpo corre**, y libera pase lo que pase.
+
+    La renovacion no es un extra: sin ella, un cuerpo mas largo que el lease pierde el
+    mutex a mitad, otro proceso entra, y el primero **sigue escribiendo sin enterarse**
+    (R10/H10-04). Solo se entera al salir, cuando `liberar` le dice que el lock ya no
+    es suyo — o sea, cuando los dos ya han escrito.
+
+    `ahora_fn` es un **callable** y no una cadena porque el renovador necesita el
+    instante de cada latido; una cadena fija escribiria siempre el mismo `renewed_at`,
+    o sea que no renovaria nada.
+
+    El hilo es `daemon` y se para en el `finally`: un renovador que sobreviviera al
+    bloque estaria alargando un lock que quiza ya es de otro.
+    """
+    lease = _lease_valido(lease_seconds)
+    nonce = adquirir(w_code, ahora=ahora_fn(), raiz=raiz, lease_seconds=lease)
+    parar = threading.Event()
+
+    def _latir():
+        while not parar.wait(lease / _FRACCION_LATIDO):
+            try:
+                renovar(w_code, nonce=nonce, ahora=ahora_fn(), raiz=raiz)
+            except Exception:                    # noqa: BLE001
+                return       # perdimos la titularidad; el cuerpo se entera al liberar
+
+    hilo = threading.Thread(target=_latir, name=f"mutex-{w_code}", daemon=True)
+    hilo.start()
+    try:
+        yield nonce
+    finally:
+        parar.set()
+        hilo.join(timeout=5)
+        liberar(w_code, nonce=nonce, raiz=raiz)
