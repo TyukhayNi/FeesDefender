@@ -720,14 +720,54 @@ nunca se construyó).
 - `append_event` recibe el workspace, no el `case_id`.
 - Sobre un caso `prestado` por otro, los tres subcomandos **abortan con código 2 y cero bytes**: ni `_atomizar_correo`, ni `_segmentacion.md`, ni estado, ni cobertura, ni evento.
 
-- [ ] **Step 1: Write the failing tests** — death test de cero escritura sobre **los tres** subcomandos, `plan`, `apply` **y `reforzar`** (R7/H7-13: la interfaz promete que «los tres abortan con código 2 y cero bytes» y este Step solo probaba dos; `reforzar` escribe cobertura, estado y evento, así que puede omitir el guard y dejar la suite verde). Se muta el preflight de `reforzar` **en solitario** y debe morir. Hash del árbol antes y después de invocar cada uno sobre un caso prestado por otra máquina (idénticos, y `registro` del log sin líneas nuevas); `--case-dir` sobre un scratch procesa y escribe el evento **en el scratch**; `--case-dir` junto con identidad → error de uso; identidad de un caso disponible → se comporta como hoy (regresión de `test_sala_maquina_*`).
-- [ ] **Step 2: Run tests to verify they fail**
-- [ ] **Step 3: Write the implementation**
-- [ ] **Step 4: Verify**
+- [x] **Step 1: Write the failing tests** — death test de cero escritura sobre **los tres** subcomandos, `plan`, `apply` **y `reforzar`** (R7/H7-13: la interfaz promete que «los tres abortan con código 2 y cero bytes» y este Step solo probaba dos; `reforzar` escribe cobertura, estado y evento, así que puede omitir el guard y dejar la suite verde). Se muta el preflight de `reforzar` **en solitario** y debe morir. Hash del árbol antes y después de invocar cada uno sobre un caso prestado por otra máquina (idénticos, y `registro` del log sin líneas nuevas); `--case-dir` sobre un scratch procesa y escribe el evento **en el scratch**; `--case-dir` junto con identidad → error de uso; identidad de un caso disponible → se comporta como hoy (regresión de `test_sala_maquina_*`).
+- [x] **Step 2: Run tests to verify they fail**
+- [x] **Step 3: Write the implementation**
+- [x] **Step 4: Verify**
 
 ```bash
 python -m pytest tests/test_sala_maquina_workspace.py tests/test_sala_maquina_cableado_atomize.py -q
 ```
+
+---
+
+
+**Estado del Task 9 — ✅ COMPLETO.** 22 tests y **8 mutantes por su frontera**, incluido el
+que el plan exigía: mutar el preflight de **`reforzar` en solitario** (R7/H7-13). Muere por
+su propio test, así que los tres subcomandos están contratados y no solo dos.
+
+**Lo que cambia de verdad.** Antes, sobre un caso **prestado a otra máquina**, el motor
+arrancaba igual: atomizaba el correo, dejaba `_segmentacion.md`, actualizaba estado y
+cobertura y emitía el evento — todo sobre una copia que otro tenía en curso. Ahora los tres
+abortan con **código 2 y cero bytes**, verificado por hash del árbol antes y después.
+
+**El problema no era técnico sino de SITIO.** `sala_maquina` tiene **~28 puntos** donde los
+tests parchean `cli.caso_path` para montar casos fuera de `CASOS_ROOT`. Poner la resolución
+en el lugar equivocado habría tumbado media suite, y no por un defecto: por elegir mal.
+
+La forma que lo resuelve es **preguntar primero al catálogo**. Si el canon no conoce el
+caso, **no hay lock que respetar** y se conserva el binding del módulo
+(`legacy_unresolved`, §7.3); si lo conoce, manda el resolver y puede bloquear. No es un
+atajo de compatibilidad: el bloqueo solo puede existir donde hay algo que bloquear. Los
+190 tests de sala de máquina siguen verdes — ninguno de los 28 cayó.
+
+**`--case-dir` cierra A-7:** `local_scratch` tiene por fin vía de trabajo. Hasta hoy
+dependía de sobrescribir `CASOS_ROOT` por entorno, porque el Cluster B del diseño de
+scratch nunca se construyó.
+
+**`plan` dejaba de decir la verdad.** Su docstring decía «Preview; no escribe nada salvo el
+manifiesto de segmentación». Escribe. Un comando llamado `plan` que deja ficheros en el
+expediente es de las cosas que se declaran en la ayuda, no se descubren. Hay test.
+
+**Dos errores propios, cazados por la suite en segundos:** `from core.actor import
+get_actor` (ese módulo no existe; vive en `core.intake_log`), y los sentinelas de Typer —al
+invocar las funciones **directamente**, como hacen los tests de este repo, los defaults
+llegan como `OptionInfo` y no como `None`, así que la exclusión mutua se disparaba siempre.
+
+**Y una frontera sin contratar, la quinta del mismo patrón:** el test de exclusión mutua
+pasaba `--case-dir X` con `X` inexistente, así que el rechazo lo producía la guarda de
+**existencia** —que también sale con 2— y el test pasaba aunque la exclusión desapareciera.
+Ahora el `--case-dir` que se pasa **funcionaría por sí solo**.
 
 ---
 

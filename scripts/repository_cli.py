@@ -1136,7 +1136,7 @@ def _registro_de_workspaces(ahora: str):
 def _identidad_actor() -> tuple[str, str]:
     """Costura: `(usuario, maquina)`. Inyectable, como manda el §7."""
     import socket
-    from core.actor import get_actor
+    from core.intake_log import get_actor
     return get_actor(), socket.gethostname()
 
 

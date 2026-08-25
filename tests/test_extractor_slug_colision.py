@@ -139,9 +139,18 @@ def test_extract_all_colision_legacy_recupera_contenido(tmp_casos_root):
     assert by_rel["a/_chat.txt"].output_path != by_rel["b/_chat.txt"].output_path
 
 
-def test_sala_lectura_md_path_usa_sufijo_sha():
+def test_sala_lectura_md_path_usa_sufijo_sha(tmp_casos_root):
     """`_md_path` debe apuntar al nombre real generado (con sufijo SHA), no al
-    stem desnudo, para no romper el enlace cuando dos docs comparten stem."""
+    stem desnudo, para no romper el enlace cuando dos docs comparten stem.
+
+    Monta el caso porque `_md_path` LOCALIZA: desde el Task 6 de la Fase 1 dual,
+    `caso_path` ya no inventa la ruta de un expediente ausente. Sin fixture, este
+    test pasaba solo cuando el orden aleatorio lo colocaba DESPUES de los que
+    crean `EV-2026-TEST`, heredando su `CASOS_ROOT` — un verde prestado.
+    """
+    from core import case_manager
+    case_manager.ensure_case("EV-2026-TEST")
+
     from core import sala_lectura
     from core.catalogo_documental import CatalogEntry
     from core.utils import output_slug

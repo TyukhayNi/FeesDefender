@@ -270,35 +270,146 @@ def _exigir_integridad(case_dir: Path, cob: list[sm.DocCobertura],
     raise typer.Exit(3)
 
 
-def _resolver_caso(case_id: str) -> tuple[str, Path]:
-    """Resuelve `case_id` (case_id canónico o W-code) a su carpeta real.
+def _identidad_actor() -> tuple[str, str]:
+    """Costura: `(usuario, maquina)`. Inyectable, como manda el §7."""
+    import socket
 
-    `caso_path`/`path_for` solo entienden layout flat o por ciudad buscando
-    ``case_id`` COMO NOMBRE DE CARPETA — nunca resuelven un W-code
-    (``meta.id_go``). Sin este paso, un W-code puro no encontraba el caso
-    real y `path_for` caía a su fallback flat inexistente: la corrida seguía
-    en silencio con plan vacío ("0 documentos" reportado como éxito) y
-    creaba ahí una carpeta fantasma (bug reproducido 2026-07-22, W-02ZIIF).
-    Mismo patrón que ``scripts/atomize_emails.py``/``scripts/crm_ficha.py``.
+    from core.intake_log import get_actor
+    return get_actor(), socket.gethostname()
+
+
+def _registro_de_workspaces(ahora: str):
+    """Costura: el registro real. Los tests la sustituyen por uno en `tmp_path`."""
+    from core.casos.workspace_registry import WorkspaceRegistry, raiz_por_defecto
+    return WorkspaceRegistry(raiz_por_defecto(), ahora=ahora)
+
+
+def _workspace_legacy(case_id: str, case_dir: Path):
+    """`CaseWorkspace` sobre una ruta que el catálogo NO conoce.
+
+    Es la costura que conserva ~28 sitios de test —y el override por entorno que
+    el §7.3 admite mientras queden componentes `legacy_unresolved`—. No es un
+    agujero de autorización: si el canon no conoce el caso, **no hay lock que
+    respetar**. El bloqueo solo puede existir donde hay algo que bloquear.
     """
+    from core.casos.workspace_model import (CaseRef, CaseWorkspace, WorkspaceMode)
+    return CaseWorkspace(
+        case_ref=CaseRef(case_id=case_id, w_code=_wcode_o_none(case_id)),
+        mode=WorkspaceMode.LOCAL_SCRATCH,
+        working_root=case_dir, canonical_ref=None,
+        checkout_user=None, checkout_maquina=None, checkout_nonce=None,
+        checkout_timestamp=None,
+        validado_en="", procedencia="legacy_unresolved",
+    )
+
+
+def _wcode_o_none(case_id: str) -> str | None:
+    from core.casos.case_locator import _w_code_de
+    return _w_code_de(case_id or "")
+
+
+def _arg_o_none(valor):
+    """Normaliza los sentinelas de Typer a `None`.
+
+    Los tests de este repo invocan las funciones de comando DIRECTAMENTE (idiom
+    del repo, ya declarado en `apply`), y entonces los defaults llegan como
+    `OptionInfo`/`ArgumentInfo` en vez de `None`. Sin esto, un `--case-dir` no
+    pasado parecia pasado y la puerta de exclusion mutua se disparaba siempre.
+    """
+    return valor if isinstance(valor, (str, Path)) else None
+
+
+def _resolver_workspace(case_id: str | None, case_dir: str | None):
+    """**¿Dónde se trabaja, y está permitido?** Sustituye a `_resolver_caso`.
+
+    Antes esto resolvía una ruta y escribía sin preguntar a nadie: si el caso
+    estaba prestado a otra máquina, el motor arrancaba igual y dejaba
+    `_segmentacion.md`, estado, cobertura y evento sobre una copia que otro tenía
+    en curso. Ahora la resolución **y la autorización** las da el resolver.
+
+    Las dos formas de decir «este caso» son mutuamente excluyentes (§7.3):
+    `--case-dir` es la selección explícita; la identidad, la vía ordinaria.
+    """
+    from core.casos.case_catalog import CaseCatalog
+    from core.casos.workspace_model import (CaseRef, LocalWorkspaceMissing,
+                                            WorkspaceError)
+    from core.casos.workspace_resolver import CaseWorkspaceResolver
+    from core.utils import now_iso
+
+    case_id, case_dir = _arg_o_none(case_id), _arg_o_none(case_dir)
+    if case_id and case_dir:
+        typer.echo("[ERROR] --case-dir y la identidad del caso son mutuamente "
+                   "excluyentes: elige una.", err=True)
+        raise typer.Exit(code=2)
+    if not case_id and not case_dir:
+        typer.echo("[ERROR] falta el caso: pasa su case_id/W-code o --case-dir.",
+                   err=True)
+        raise typer.Exit(code=2)
+
+    ahora = now_iso()
+    usuario, maquina = _identidad_actor()
+    catalogo = CaseCatalog()
+    registro = _registro_de_workspaces(ahora)
+    resolver = CaseWorkspaceResolver(catalogo, registro, usuario=usuario,
+                                     maquina=maquina, ahora=ahora)
+
+    if case_dir:
+        try:
+            ws = resolver.resolver_por_ruta(Path(case_dir), drive_accesible=True)
+        except WorkspaceError as exc:
+            typer.echo(f"[ERROR] {exc}", err=True)
+            raise typer.Exit(code=2) from exc
+        return ws.case_ref.case_id or Path(case_dir).name, ws
+
     case_id = case_locator.resolve_ref(case_id)
-    # Igual que en anon: 20 tests parchean `cli.caso_path`, asi que la guarda va
-    # sobre el binding del modulo y no via `buscar()`.
+    ref = CaseRef(case_id=case_id, w_code=_wcode_o_none(case_id))
+
+    # Se pregunta PRIMERO al catálogo. Si el canon no conoce el caso no hay lock
+    # que respetar, y se conserva el binding del módulo (`legacy_unresolved`).
     try:
-        case_dir = caso_path(case_id)
-    except FileNotFoundError:
-        typer.echo(f"[ERROR] Caso no encontrado: {case_id!r}. "
-                   f"Comprueba el case_id o W-code.", err=True)
-        raise typer.Exit(code=1)
-    if not (case_dir / "00_Input").is_dir():
-        # Sin interpolar `case_dir`: el §16 prohibe publicar la ruta local.
-        typer.echo(
-            f"[ERROR] Caso no encontrado: {case_id!r} (resuelto, pero sin "
-            f"00_Input). Comprueba el case_id o W-code.",
-            err=True,
-        )
-        raise typer.Exit(code=1)
-    return case_id, case_dir
+        catalogo.localizar(ref)
+    except LocalWorkspaceMissing:
+        try:
+            case_dir_legacy = caso_path(case_id)
+        except FileNotFoundError:
+            typer.echo(f"[ERROR] Caso no encontrado: {case_id!r}. "
+                       f"Comprueba el case_id o W-code.", err=True)
+            raise typer.Exit(code=1)
+        if not (case_dir_legacy / "00_Input").is_dir():
+            typer.echo(
+                f"[ERROR] Caso no encontrado: {case_id!r} (resuelto, pero sin "
+                f"00_Input). Comprueba el case_id o W-code.", err=True)
+            raise typer.Exit(code=1)
+        return case_id, _workspace_legacy(case_id, case_dir_legacy)
+
+    try:
+        ws = resolver.resolver_por_identidad(ref, drive_accesible=True)
+    except WorkspaceError as exc:
+        # Código 2 y cero bytes: el motor no ha arrancado.
+        typer.echo(f"[ERROR] {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+    return case_id, ws
+
+
+def _exigir(ws, *caps) -> None:
+    """Los subcomandos declaran qué necesitan; el modo decide si lo tienen."""
+    from core.casos.workspace_model import CapabilityDenied
+    try:
+        for cap in caps:
+            ws.exigir(cap)
+    except CapabilityDenied as exc:
+        typer.echo(f"[ERROR] {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+
+
+def _resolver_caso(case_id: str) -> tuple[str, Path]:
+    """Compatibilidad: devuelve `(case_id, case_dir)` como antes.
+
+    Se conserva porque hay llamadores internos y tests que la usan; lo que ya no
+    hace es ser la ÚNICA puerta: la autorización vive en `_resolver_workspace`.
+    """
+    cid, ws = _resolver_workspace(case_id, None)
+    return cid, ws.working_root
 
 
 def _atomizar_correo(case_id: str, case_dir: Path) -> None:
@@ -425,10 +536,21 @@ def _procesar_adjuntos(case_id: str, case_dir: Path) -> None:
 
 
 @app.command()
-def plan(case_id: str):
-    """Muestra la propuesta (Preview); no escribe nada salvo el manifiesto de
-    segmentación propuesto (gate editable) de los bundles multi-documento detectados."""
-    case_id, case_dir = _resolver_caso(case_id)
+def plan(case_id: str = typer.Argument(None),
+         case_dir: str = typer.Option(None, "--case-dir",
+                                      help="Ruta de la copia local (excluyente "
+                                           "con la identidad del caso).")):
+    """Propuesta de la Sala de máquina. **ESCRIBE** el manifiesto de segmentación.
+
+    Deja `_segmentacion.md` en los bundles multi-documento detectados (gate
+    editable). Se anunciaba como «preview; no escribe nada salvo…», y que un
+    comando llamado `plan` escriba en el expediente es de las cosas que hay que
+    declarar en la ayuda, no descubrir.
+    """
+    case_id, ws = _resolver_workspace(case_id, case_dir)
+    from core.casos.workspace_model import Capability
+    _exigir(ws, Capability.WRITE_CASE, Capability.GENERATE_DERIVATIVES)
+    case_dir = ws.working_root
     # `plan` es preview: descarta la caché en vez de persistirla (no escribe estado) y
     # se queda solo con el plan y el recuento de agotados, que sí hay que declarar.
     p, _cache, _ms, _n, agotados = _construir_plan(case_dir, force=False)
@@ -483,7 +605,11 @@ def plan(case_id: str):
 
 
 @app.command()
-def apply(case_id: str, vision: bool = False, force: bool = False,
+def apply(case_id: str = typer.Argument(None), vision: bool = False,
+          force: bool = False,
+          case_dir: str = typer.Option(None, "--case-dir",
+                                       help="Ruta de la copia local (excluyente "
+                                            "con la identidad del caso)."),
           solo: list[str] = typer.Option(
               None, "--solo",
               help="Ruta relativa de 00_Input a reprocesar aunque su sha ya esté hecho "
@@ -499,7 +625,10 @@ def apply(case_id: str, vision: bool = False, force: bool = False,
             "acotado. Mezclarlos borraría la cobertura y el estado de los documentos no "
             "pedidos.", err=True)
         raise typer.Exit(2)
-    case_id, case_dir = _resolver_caso(case_id)
+    case_id, ws = _resolver_workspace(case_id, case_dir)
+    from core.casos.workspace_model import Capability
+    _exigir(ws, Capability.WRITE_CASE, Capability.GENERATE_DERIVATIVES)
+    case_dir = ws.working_root
     if vision:
         _exigir_vision_cableada()          # preflight: aborta antes de procesar
     _atomizar_correo(case_id, case_dir)   # cableado: atomizar ANTES del OCR (spec §4)
@@ -616,7 +745,10 @@ _REFORZABLES = ("pypdf", "ocr")
 
 
 @app.command()
-def reforzar(case_id: str):
+def reforzar(case_id: str = typer.Argument(None),
+             case_dir: str = typer.Option(None, "--case-dir",
+                                          help="Ruta de la copia local (excluyente "
+                                               "con la identidad del caso).")):
     """Re-procesa con visión SOLO los documentos dudosos ya conocidos y persiste.
 
     Cierra el ciclo que en VALERO hubo que hacer a mano: coge los `low`/`empty` con
@@ -624,7 +756,10 @@ def reforzar(case_id: str):
     reescribe MD + estado + cobertura. Exige el transcriptor cableado (flujo skill/
     sesión); el CLI pelado aborta en el preflight.
     """
-    case_id, case_dir = _resolver_caso(case_id)
+    case_id, ws = _resolver_workspace(case_id, case_dir)
+    from core.casos.workspace_model import Capability
+    _exigir(ws, Capability.WRITE_CASE, Capability.GENERATE_DERIVATIVES)
+    case_dir = ws.working_root
     _exigir_vision_cableada()
     previa = _cobertura_previa(case_dir)
     if not previa:
