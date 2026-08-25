@@ -656,20 +656,50 @@ la puerta.
 - `repository_cli adoptar --case-dir <ruta>`: la puerta humana. **Nunca** implícita: adoptar es
   una decisión del abogado sobre custodia, no un efecto colateral de correr un motor.
 
-- [ ] **Step 1: Write the failing tests** — un checkout legacy válido (manifest + identidad +
+- [x] **Step 1: Write the failing tests** — un checkout legacy válido (manifest + identidad +
   lock propio) **sin** `WorkspaceEntry`: `verificar_adopcion` da `ok`, `adoptar` registra, y a
   continuación `sala_maquina --case-dir` **resuelve** donde antes lanzaba; lock de **otra**
   máquina → `ok=False` y cero escrituras; manifest ausente o ilegible → `ok=False`; identidad
   del árbol que no concuerda con `ref` → `ok=False`; `verificar_adopcion` no escribe **nada** en
   ninguno de los cuatro planos (se comprueba con el arnés del Task 10); adoptar dos veces es
   idempotente y no duplica el evento.
-- [ ] **Step 2: Run tests to verify they fail**
-- [ ] **Step 3: Write the implementation**
-- [ ] **Step 4: Verify**
+- [x] **Step 2: Run tests to verify they fail**
+- [x] **Step 3: Write the implementation**
+- [x] **Step 4: Verify**
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest tests/test_workspace_adopcion.py -q
 ```
+
+---
+
+
+**Estado del Task 8b — ✅ COMPLETO.** 26 tests y **12 mutantes que mueren cada uno por su
+frontera**.
+
+**Una desviación de la letra del plan, y es de fondo.** El Step 1 pedía comprobar que «la
+identidad del árbol concuerda con `ref`». **El árbol local no tiene identidad**: medido
+antes de escribir nada, `MERGE_EXCLUSIONS` excluye `_caso.md` del checkout, y el nonce del
+préstamo se escribe **solo en el `_caso.md` del Drive** (`aplicar_lock_prestado(fm_drive, …)`).
+
+Eso no es un obstáculo para la pieza: **es su razón de ser.** El §15 exige adopción
+explícita porque la máquina **no puede probar** que esa carpeta sea la copia que el lock
+vigente designa. Lo que sí comprueba: que es un checkout (manifest legible), que el lock
+del canon es **mío** —la que de verdad autoriza— y que el W-code del nombre casa.
+
+Por eso `verificar_adopcion` devuelve `sin_verificar` y el subcomando lo **imprime antes
+del resultado**. Si no lo hiciera, estaría pidiendo una decisión de custodia sin dar los
+datos para tomarla, y la firma sería un trámite en vez de una decisión. Hay test que lo
+exige, y un mutante que lo mata.
+
+**Tres fronteras no estaban contratadas**, y las tres por el mismo motivo: **dos guardas y
+el test sin distinguir cuál actuaba**. Falta-de-manifest se confundía con manifest-ilegible;
+un `{roto` lo para el `json.loads`, así que la comprobación de **forma** no se ejercitaba
+(el caso realista es un JSON válido de otra versión del formato); y `disponible` con
+titular a `None` lo paraba la guarda de propiedad, no la del estado.
+
+`adoptar` es el **único escritor**, no re-decide, y es idempotente. El evento
+`checkout_adoptado` cae en el **local** — B0-1 aplicado también aquí.
 
 ---
 
