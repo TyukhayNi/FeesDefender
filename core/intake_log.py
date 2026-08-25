@@ -28,7 +28,6 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from .config import caso_path
 from .utils import now_iso
 
 
@@ -280,11 +279,15 @@ def read_events(case_id: str) -> list[dict[str, Any]]:
         Lista de eventos en orden cronológico (= orden de escritura).
         Lista vacía si el log no existe o está vacío.
     """
-    # Guarda seam-safe: `log_path` pasa por `caso_path`, que desde el paso 5
-    # lanza si el caso no existe. Se captura aqui para conservar la rama elegante.
-    # Conserva su firma a proposito: es un LECTOR, no fabrica nada, asi que nunca
-    # causo el B0-1 — y cambiarsela tocaria 46 sitios de test sin cerrar ningun
-    # defecto. Resuelve por `buscar`, que devuelve `None` en vez de lanzar.
+    # Resuelve por `buscar`, que devuelve `None` en vez de lanzar. Conserva su firma
+    # a proposito: es un LECTOR, no fabrica nada, asi que nunca causo el B0-1 — y
+    # cambiarsela tocaria 46 sitios de test sin cerrar ningun defecto.
+    #
+    # Este comentario decia «`log_path` pasa por `caso_path`» y era **falso desde la
+    # migracion**: el modulo ya no importa `caso_path` (R8/H8-09 lo cazo, junto con la
+    # importacion muerta que quedaba en la cabecera). Un comentario que describe un
+    # acoplamiento retirado es peor que ninguno: hace que la proxima auditoria del
+    # fallback busque donde ya no hay nada.
     from core.casos.case_locator import buscar
     case_dir = buscar(case_id)
     if case_dir is None:

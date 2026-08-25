@@ -41,6 +41,7 @@ donde sí se puede: contra el mutante 3 de la primera mitad.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -61,9 +62,35 @@ SIN_SUPERFICIE = (
     "mutante 3 de TestElArnesMuereEnCadaPlano, no aqui."
 )
 
-#: Ninguna fila se declara no aplicable. Se fija como conjunto EXACTO, igual que el
-#: techo de `test_guard_localizador`: solo puede cambiar si alguien lo cambia.
-NO_APLICABLES: dict[str, str] = {}
+#: Los TRES comandos mutantes de `sala_maquina`. R8/H8-03: la matriz corría solo
+#: `apply`, y el §14.1 pide matriz mínima **por entrypoint mutante**, no por fichero.
+COMANDOS = ("plan", "apply", "reforzar")
+
+_MOTIVO_PLAN = (
+    "`plan` solo escribe cuando detecta un bundle multi-documento (deja "
+    "`_segmentacion.md`); con la semilla del arnés —un documento suelto— no escribe "
+    "nada, asi que la fila de escritura exigiria montar OCR y split reales. Las cinco "
+    "filas BLOQUEADAS, que son las que impiden escribir sobre un caso ajeno, SI corren."
+)
+_MOTIVO_REFORZAR = (
+    "`reforzar` exige transcriptor de vision cableado y cobertura previa; sin eso "
+    "aborta en su preflight, que corre DESPUES del guard de workspace. Las cinco filas "
+    "BLOQUEADAS SI corren; las de escritura exigirian cablear vision, que es flujo de "
+    "skill/sesion y no de suite."
+)
+
+#: Qué fila no corre para qué comando, y **por qué**. Se fija como conjunto EXACTO,
+#: igual que el techo de `test_guard_localizador`: la cobertura ausente solo puede
+#: aparecer si alguien la escribe aquí, y entonces hay que justificarla.
+NO_APLICABLES_POR_COMANDO: dict[str, dict[str, str]] = {
+    "apply": {},
+    "plan": {"drive_disponible": _MOTIVO_PLAN, "checkout_propio": _MOTIVO_PLAN,
+             "scratch_local": _MOTIVO_PLAN, "servicio_externo_falla": _MOTIVO_PLAN},
+    "reforzar": {"drive_disponible": _MOTIVO_REFORZAR,
+                 "checkout_propio": _MOTIVO_REFORZAR,
+                 "scratch_local": _MOTIVO_REFORZAR,
+                 "servicio_externo_falla": _MOTIVO_REFORZAR},
+}
 
 
 # ==========================================================================
@@ -96,12 +123,14 @@ def fabrica_de_mundos(tmp_path):
                 pass
 
 
-@pytest.fixture
-def adaptador(monkeypatch):
-    """`invocar` sobre `sala_maquina apply`: identidad o `--case-dir`, y re-resuelve.
+def _adaptador_de(comando: str, monkeypatch):
+    """`invocar` sobre un comando de `sala_maquina`: identidad o `--case-dir`.
 
-    El adaptador **no** recibe workspace, recibe identidad: si el arnés le entregara
-    la autorización ya hecha, lo que se probaría sería el arnés.
+    El adaptador **no** recibe workspace, recibe identidad y **vuelve a resolver**: si
+    el arnés le entregara la autorización ya hecha, lo que se probaría sería el arnés.
+
+    Los tres comandos comparten firma en lo que aquí importa —`(case_id, …, case_dir=)`—
+    así que un solo adaptador vale para los tres.
     """
     monkeypatch.setattr(cli, "_identidad_actor", lambda: (YO, ESTA), raising=False)
     monkeypatch.setattr(cli.sm, "ejecutar", lambda *a, **k: [])
@@ -109,13 +138,20 @@ def adaptador(monkeypatch):
     monkeypatch.setattr(cli, "_procesar_adjuntos", lambda *a, **k: None)
 
     def invocar(objetivo):
+        fn = getattr(cli, comando)
         if isinstance(objetivo, Path):
-            cli.apply(None, case_dir=str(objetivo))
+            fn(None, case_dir=str(objetivo))
         else:
-            cli.apply(objetivo.case_id)
+            fn(objetivo.case_id)
         return 0
 
     return invocar
+
+
+@pytest.fixture
+def adaptador(monkeypatch):
+    """El de `apply`, que es el que usan las pruebas del propio arnés."""
+    return _adaptador_de("apply", monkeypatch)
 
 
 def _cablear_fallo(m: Mundo, doble: ServicioExterno) -> None:
@@ -212,6 +248,139 @@ class TestElArnesMuereEnCadaPlano:
         assert list(informe) == ["nonce_divergente"]
 
 
+class TestElAbortoTieneQueSerPORSUMOTIVO:
+    """R8/H8-01: el juez exigía `codigo != 0` y **cualquier** aborto pasaba.
+
+    El revisor lo midió sustituyendo el adaptador por uno que lanza `typer.Exit(99)`:
+    la fila devolvía «cero efectos … salida 99» en verde. Es mi modo de fallo dominante
+    en su forma más pura — la fila que dice aislar el `LOCK_MISMATCH` quedaba verde
+    aunque el aborto viniera de una guarda completamente distinta.
+    """
+
+    def test_un_exit_de_otra_guarda_ya_NO_pasa(self, fabrica_de_mundos, adaptador):
+        import typer
+
+        def se_va_por_otra_puerta(objetivo):
+            raise typer.Exit(99)
+
+        with pytest.raises(AssertionError, match="motivo EQUIVOCADO|NADA en stderr"):
+            matriz_para(se_va_por_otra_puerta, mundo=fabrica_de_mundos,
+                        escenarios=(ESC_NONCE,),
+                        sin_superficie_externa=SIN_SUPERFICIE)
+
+    def test_un_codigo_del_10_que_no_es_el_suyo_tampoco_pasa(self, fabrica_de_mundos,
+                                                             adaptador):
+        """Más fino que el anterior: aborta con un código del §10, pero el ajeno."""
+        import typer
+
+        def se_confunde_de_error(objetivo):
+            typer.echo("[ERROR] [CASE_CONFLICT] — caso W-MTZ01", err=True)
+            raise typer.Exit(2)
+
+        with pytest.raises(AssertionError, match="motivo EQUIVOCADO"):
+            matriz_para(se_confunde_de_error, mundo=fabrica_de_mundos,
+                        escenarios=(ESC_NONCE,),
+                        sin_superficie_externa=SIN_SUPERFICIE)
+
+    def test_abortar_en_silencio_tampoco_pasa(self, fabrica_de_mundos, adaptador):
+        """Un canal vacío haría vacua la comprobación: el §10 exige presentar el error."""
+        import typer
+
+        def calla(objetivo):
+            raise typer.Exit(2)
+
+        with pytest.raises(AssertionError, match="NADA en stderr"):
+            matriz_para(calla, mundo=fabrica_de_mundos, escenarios=(ESC_NONCE,),
+                        sin_superficie_externa=SIN_SUPERFICIE)
+
+    def test_las_cinco_filas_bloqueadas_declaran_su_codigo(self):
+        """Sin `codigo_error` la comprobación se autodesactiva: se fija por conjunto."""
+        esperados = {
+            "checkout_ajeno": "CASE_LOCKED",
+            "conflicto": "CASE_CONFLICT",
+            "registro_local_ausente": "LOCAL_WORKSPACE_MISSING",
+            "nonce_divergente": "LOCK_MISMATCH",
+            "runtime_sin_acceso": "RUNTIME_CANNOT_ACCESS_WORKSPACE",
+        }
+        declarados = {e.id: e.codigo_error for e in ESCENARIOS
+                      if e.esperado is Esperado.CERO_EFECTOS}
+        assert declarados == esperados
+        # Y cada código tiene que existir de verdad en el §10, no ser una cadena bonita.
+        from core.casos.workspace_model import errores_conocidos
+        del_10 = {c.codigo for c in errores_conocidos()}
+        assert set(esperados.values()) <= del_10, (
+            f"códigos inventados: {set(esperados.values()) - del_10}")
+
+
+class TestLaFilaNueveYaNoEsCiega:
+    """R8/H8-02: la fila 9 solo comparaba el árbol ENTRE los dos intentos.
+
+    No tomaba baseline previo, no miraba canon ni estado local, y descartaba los
+    `(codigo, error)` de las dos invocaciones. El revisor ejecutó dos mutantes y los
+    dos quedaron verdes, rotulados «aborto idempotente»: uno incrementaba el estado
+    local en cada intento; el otro hacía lo mismo **y además se tragaba el fallo
+    externo devolviendo salida 0**.
+
+    Un entrypoint que muta el registro en cada reintento, o que informa de éxito
+    aunque el servicio se haya caído, es exactamente lo que esta fila dice descartar.
+    """
+
+    FILA9 = tuple(e for e in ESCENARIOS if e.id == "servicio_externo_falla")
+
+    def _contador_creciente(self):
+        from core.casos.workspace_registry import raiz_por_defecto
+        raiz = raiz_por_defecto()
+        raiz.mkdir(parents=True, exist_ok=True)
+        marca = raiz / "_mutante_contador.txt"
+        n = int(marca.read_text(encoding="utf-8")) if marca.exists() else 0
+        marca.write_text(str(n + 1), encoding="utf-8")
+
+    def test_mutar_el_estado_local_en_cada_intento_ya_NO_pasa(self, fabrica_de_mundos,
+                                                              adaptador):
+        def muta_el_registro(objetivo):
+            self._contador_creciente()
+            return adaptador(objetivo)
+
+        with pytest.raises(AssertionError, match=re.escape(PLANO_ESTADO_LOCAL)):
+            matriz_para(muta_el_registro, mundo=fabrica_de_mundos,
+                        servicio=_cablear_fallo, escenarios=self.FILA9,
+                        sin_superficie_externa=SIN_SUPERFICIE)
+
+    def test_tragarse_el_fallo_externo_y_devolver_0_ya_NO_pasa(self, fabrica_de_mundos,
+                                                               adaptador):
+        """El más grave de los dos: éxito informado sobre un servicio caído."""
+        def se_traga_el_fallo(objetivo):
+            try:
+                return adaptador(objetivo)
+            except RuntimeError:
+                return 0                      # «no ha pasado nada aquí»
+
+        with pytest.raises(AssertionError, match="fallo tragado|ÉXITO"):
+            matriz_para(se_traga_el_fallo, mundo=fabrica_de_mundos,
+                        servicio=_cablear_fallo, escenarios=self.FILA9,
+                        sin_superficie_externa=SIN_SUPERFICIE)
+
+    def test_contaminar_el_canon_durante_el_fallo_ya_NO_pasa(self, fabrica_de_mundos,
+                                                             adaptador):
+        """El plano 2 en la fila 9: un fallo externo no deja carpetas fantasma."""
+        def ensucia_el_canon(objetivo):
+            from core import config as cfg
+            (Path(cfg.settings.casos_root) / "W-FANTASMA-9").mkdir(exist_ok=True)
+            return adaptador(objetivo)
+
+        with pytest.raises(AssertionError, match=re.escape(PLANO_CANON)):
+            matriz_para(ensucia_el_canon, mundo=fabrica_de_mundos,
+                        servicio=_cablear_fallo, escenarios=self.FILA9,
+                        sin_superficie_externa=SIN_SUPERFICIE)
+
+    def test_las_dos_ramas_del_14_1_estan_en_los_datos(self):
+        """R8/H8-05: el docstring prometía dos ramas y los datos traían una."""
+        fila9 = self.FILA9[0]
+        assert fila9.variantes_de_fallo == ((1, 0), (2, 1)), (
+            "la fila 9 debe correr las DOS ramas del §14.1: cero publicación "
+            "(falla_en=1) y una única publicación estable (falla_en=2)")
+
+
 class TestElArnesNoSeDejaCallar:
     """Las cuatro formas de tener una matriz verde que no prueba la matriz."""
 
@@ -288,18 +457,57 @@ def test_hash_arbol_excluye_la_copia_de_trabajo(tmp_path):
 # ==========================================================================
 
 class TestSalaMaquinaContraLaMatriz:
+    """La matriz por **entrypoint mutante**, que son tres y no uno (R8/H8-03)."""
 
-    def test_las_nueve_filas(self, fabrica_de_mundos, adaptador):
-        informe = matriz_para(adaptador, mundo=fabrica_de_mundos,
+    @pytest.mark.parametrize("comando", COMANDOS)
+    def test_la_matriz_del_14_1(self, comando, fabrica_de_mundos, monkeypatch):
+        no_aplicables = NO_APLICABLES_POR_COMANDO[comando]
+        informe = matriz_para(_adaptador_de(comando, monkeypatch),
+                              mundo=fabrica_de_mundos,
                               servicio=_cablear_fallo,
                               sin_superficie_externa=SIN_SUPERFICIE,
-                              no_aplicables=NO_APLICABLES)
-        assert_matriz_completa(informe, no_aplicables=NO_APLICABLES)
+                              no_aplicables=no_aplicables)
+        assert_matriz_completa(informe, no_aplicables=no_aplicables)
 
-    def test_ninguna_fila_se_declara_no_aplicable(self):
-        """Fijado como conjunto exacto: la cobertura ausente solo puede aparecer si
-        alguien la escribe aquí, y entonces hay que justificarla."""
-        assert NO_APLICABLES == {}
+    @pytest.mark.parametrize("comando", COMANDOS)
+    def test_las_cinco_filas_BLOQUEADAS_corren_en_los_tres(self, comando):
+        """La cobertura que no se negocia: ningún comando puede quedar fuera.
+
+        Las filas de escritura pueden declararse no aplicables con motivo —montar un
+        bundle real o cablear visión no es de esta suite—, pero las **bloqueadas** son
+        justamente las que impiden escribir sobre el checkout de otro. Si alguna se
+        colara en `no_aplicables`, este aserto se pone rojo.
+        """
+        bloqueadas = {e.id for e in ESCENARIOS if e.esperado is Esperado.CERO_EFECTOS}
+        declaradas = set(NO_APLICABLES_POR_COMANDO[comando])
+        assert not (bloqueadas & declaradas), (
+            f"[{comando}] se declararon no aplicables filas BLOQUEADAS: "
+            f"{sorted(bloqueadas & declaradas)}")
+
+    def test_apply_no_declara_ninguna_fila_no_aplicable(self):
+        """`apply` es el comando que escribe de verdad: corre la matriz entera."""
+        assert NO_APLICABLES_POR_COMANDO["apply"] == {}
+
+    def test_los_comandos_son_TODOS_los_mutantes_del_modulo(self):
+        """Un comando nuevo que escriba y no entre aquí es cobertura perdida en silencio.
+
+        Se cuenta por AST sobre el fuente, no por una lista a mano: la lista a mano es
+        lo que dejó fuera a `plan` y `reforzar` en primer lugar.
+        """
+        import ast
+        import io as _io
+
+        arbol = ast.parse(_io.open(cli.__file__, encoding="utf-8").read())
+        comandos = {
+            n.name for n in ast.walk(arbol)
+            if isinstance(n, ast.FunctionDef)
+            for d in n.decorator_list
+            if isinstance(d, ast.Call) and isinstance(d.func, ast.Attribute)
+            and d.func.attr == "command"
+        }
+        assert comandos == set(COMANDOS), (
+            f"los comandos Typer del módulo son {sorted(comandos)} y la matriz corre "
+            f"{sorted(COMANDOS)}: cada entrypoint mutante necesita su matriz (§14.1)")
 
 
 class TestPrecedenciaDelCatalogoSobreLaCosturaLegacy:
@@ -407,6 +615,68 @@ class TestLaFilaOchoEsRealYNoUnDoble:
             "`_drive_accesible` volvio a mirar la raiz del catalogo: eso diverge de "
             "`case_locator._root` y da offline en un clon sin `data/CASOS`")
 
+    def test_offline_por_identidad_resuelve_el_CHECKOUT_LOCAL(self, tmp_path):
+        """R8/H8-04: la capacidad offline no funcionaba por su vía principal.
+
+        Con la unidad desmontada, `catalogo.localizar` falla, `caso_path` falla detrás
+        y el usuario recibía «Caso no encontrado» **teniendo el checkout delante**. El
+        §7.2.9-10 existe justo para esto y el resolver ya lo implementaba: lo que
+        faltaba era que alguien le pasara la pregunta.
+
+        Verificado en vivo antes de arreglarlo, no deducido del código.
+        """
+        import importlib
+
+        from core import config as cfg
+
+        mp = pytest.MonkeyPatch()
+        m = Mundo(tmp_path / "offline", mp, usuario=YO, maquina=ESTA)
+        try:
+            local = m.sembrar_local(tipo="checkout", nonce="n1")
+            mp.setattr(cli, "_identidad_actor", lambda: (YO, ESTA), raising=False)
+            mp.setattr(cli.sm, "ejecutar", lambda *a, **k: [])
+            mp.setattr(cli, "_atomizar_correo", lambda *a, **k: None)
+            mp.setenv("CASOS_ROOT", str(tmp_path / "offline" / "NO-MONTADO"))
+            mp.setenv("FEESDEFENDER_OFFLINE", "1")
+            importlib.reload(cfg)
+
+            case_id, ws = cli._resolver_workspace(Mundo.CASE_ID, None)
+            assert Path(ws.working_root) == local, (
+                "no resolvió sobre la copia local registrada")
+            assert ws.mode == "local_checkout"
+        finally:
+            m.cerrar()
+
+    def test_offline_NO_anuncia_capacidades_que_no_puede_ejercer(self, tmp_path):
+        """Y el arreglo de arriba no puede reabrir el defecto que el Task 7 cerró.
+
+        Sin Drive no se puede revalidar el nonce ni publicar, así que un checkout
+        resuelto por esa rama **no** conserva `CHECKIN`. Es la misma «resta de
+        capacidad» que allí resultó ser inerte: aquí se comprueba que muerde.
+        """
+        import importlib
+
+        from core import config as cfg
+        from core.casos.workspace_model import Capability
+
+        mp = pytest.MonkeyPatch()
+        m = Mundo(tmp_path / "offline_caps", mp, usuario=YO, maquina=ESTA)
+        try:
+            m.sembrar_local(tipo="checkout", nonce="n1")
+            mp.setattr(cli, "_identidad_actor", lambda: (YO, ESTA), raising=False)
+            mp.setenv("CASOS_ROOT", str(tmp_path / "offline_caps" / "NO-MONTADO"))
+            mp.setenv("FEESDEFENDER_OFFLINE", "1")
+            importlib.reload(cfg)
+
+            _cid, ws = cli._resolver_workspace(Mundo.CASE_ID, None)
+            assert not ws.permite(Capability.CHECKIN), (
+                "un checkout sin Drive anuncia CHECKIN: no puede ni revalidar el "
+                "nonce ni publicar")
+            assert ws.permite(Capability.WRITE_CASE), (
+                "…pero sí puede seguir trabajando en local, que es el sentido del §7.1.5")
+        finally:
+            m.cerrar()
+
     def test_el_resolver_ya_no_recibe_un_True_literal(self):
         """Guard de regresión sobre la fuente: el literal era el que mataba la fila.
 
@@ -419,6 +689,14 @@ class TestLaFilaOchoEsRealYNoUnDoble:
         assert "drive_accesible=True" not in fuente, (
             "`drive_accesible=True` literal deja la rama offline del §7.2.9-10 "
             "inalcanzable y la fila 8 de la matriz sin inducir")
-        assert fuente.count("drive_accesible=drive_ok") == 2, (
-            "las DOS vías de resolución —por identidad y por ruta— consultan la "
-            "costura; si una se queda con el literal, la fila 8 solo cubre la otra")
+        # Se cuenta por INTENCIÓN y no con un número fijo: la primera versión ponía
+        # `== 2` y se puso roja al añadir la tercera llamada (la rama offline de
+        # R8/H8-04), que es un cambio legítimo. Un guard que caduca al primer cambio
+        # correcto es un guard que alguien desactiva.
+        llamadas = (fuente.count("resolver.resolver_por_identidad(")
+                    + fuente.count("resolver.resolver_por_ruta("))
+        assert llamadas >= 2, "esperaba al menos las dos vías de resolución"
+        assert fuente.count("drive_accesible=drive_ok") == llamadas, (
+            f"{llamadas} llamadas al resolver y solo "
+            f"{fuente.count('drive_accesible=drive_ok')} consultan la costura: la que "
+            f"se quede con un valor fijo deja su vía fuera de la fila 8")

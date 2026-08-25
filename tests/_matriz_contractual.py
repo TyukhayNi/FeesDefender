@@ -228,6 +228,11 @@ class ServicioExterno:
     - **instante de fallo como dato** — con `falla_en=1` se prueba *cero publicación*
       y con `falla_en=2`, *una única publicación estable*. Son las dos ramas que la
       fila 9 del §14.1 ofrece («o…, o…»), y probar una sola deja la otra sin contrato.
+      Las **dos** se corren: `ESCENARIOS` declara `variantes_de_fallo=((1, 0), (2, 1))`.
+      Este párrafo describió durante un rato las dos ramas mientras el escenario solo
+      llevaba la primera — o sea, nombrar la propiedad y llamarlo contrato, en el mismo
+      texto que advierte contra eso. La segunda rama es además la que más vale: es la
+      única donde un reintento **puede** duplicar una publicación que ya existía.
     """
 
     def __init__(self, *, falla_en: int | None = None,
@@ -374,10 +379,22 @@ class Escenario:
     fila: str                                   #: el texto literal del §14.1
     sembrar: Callable[["Mundo"], Semilla]
     esperado: Esperado
-    #: Solo la fila 9: en qué llamada del doble se cae. Es DATO del escenario.
-    falla_externa_en: int | None = None
-    #: Solo la fila 9: cuántas publicaciones admite el contrato tras el fallo.
-    publicaciones_admitidas: int = 0
+    #: Filas bloqueadas: el código del §10 que el contrato exige, literal.
+    #:
+    #: Sin él, el juez solo comprobaba `codigo != 0` y **cualquier** aborto controlado
+    #: pasaba por bueno — R8/H8-01 lo midió sustituyendo el adaptador por un
+    #: `typer.Exit(99)` y la fila siguió verde. Un montaje que cae por la guarda
+    #: equivocada conservaba en verde la fila que dice aislar otra, que es exactamente
+    #: mi modo de fallo dominante: el escenario más fácil de montar, no el que aísla.
+    codigo_error: str = ""
+    #: Solo la fila 9: pares `(instante de fallo, publicaciones que el contrato admite)`.
+    #: El instante es DATO del escenario, y son **dos** variantes y no una porque el
+    #: §14.1 ofrece dos ramas —«reintento seguro **o** aborto idempotente»— y probar
+    #: una sola deja la otra sin contrato. Con `(1, 0)` el doble cae en la primera
+    #: llamada y se exige **cero publicación**; con `(2, 1)`, la primera invocación
+    #: llega a publicar y la segunda cae, así que se exige **una única publicación
+    #: estable** — que es la rama donde de verdad se ve si el reintento duplica.
+    variantes_de_fallo: tuple[tuple[int, int], ...] = ()
 
 
 def _sembrar_drive_disponible(m: Mundo) -> Semilla:
@@ -443,20 +460,26 @@ ESCENARIOS: tuple[Escenario, ...] = (
     Escenario("checkout_propio", "Checkout propio → escribe solo en local",
               _sembrar_checkout_propio, Esperado.ESCRIBE_EN_LA_COPIA),
     Escenario("checkout_ajeno", "Checkout ajeno → cero bytes nuevos o modificados",
-              _sembrar_checkout_ajeno, Esperado.CERO_EFECTOS),
+              _sembrar_checkout_ajeno, Esperado.CERO_EFECTOS,
+              codigo_error="CASE_LOCKED"),
     Escenario("scratch_local", "Scratch local → escribe solo en scratch",
               _sembrar_scratch_local, Esperado.ESCRIBE_EN_LA_COPIA),
     Escenario("conflicto", "Conflicto → cero mutación",
-              _sembrar_conflicto, Esperado.CERO_EFECTOS),
+              _sembrar_conflicto, Esperado.CERO_EFECTOS,
+              codigo_error="CASE_CONFLICT"),
     Escenario("registro_local_ausente", "Registro local ausente → error, sin fallback",
-              _sembrar_registro_ausente, Esperado.CERO_EFECTOS),
+              _sembrar_registro_ausente, Esperado.CERO_EFECTOS,
+              codigo_error="LOCAL_WORKSPACE_MISSING"),
     Escenario("nonce_divergente", "Nonce divergente → error, local conservado",
-              _sembrar_nonce_divergente, Esperado.CERO_EFECTOS),
+              _sembrar_nonce_divergente, Esperado.CERO_EFECTOS,
+              codigo_error="LOCK_MISMATCH"),
     Escenario("runtime_sin_acceso", "Runtime sin acceso → error, Drive intacto",
-              _sembrar_runtime_sin_acceso, Esperado.CERO_EFECTOS),
+              _sembrar_runtime_sin_acceso, Esperado.CERO_EFECTOS,
+              codigo_error="RUNTIME_CANNOT_ACCESS_WORKSPACE"),
     Escenario("servicio_externo_falla",
               "Servicio externo falla → reintento seguro o aborto idempotente",
-              _sembrar_servicio_externo, Esperado.IDEMPOTENTE, falla_externa_en=1),
+              _sembrar_servicio_externo, Esperado.IDEMPOTENTE,
+              variantes_de_fallo=((1, 0), (2, 1))),
 )
 
 
@@ -478,9 +501,14 @@ def matriz_para(invocar: Callable[[object], int], *,
     Los dos ganchos del plano 3 son distintos y no se pueden fundir:
 
     - `contador_externo` instala un doble **que solo cuenta** sobre la superficie
-      mutante del entrypoint, y se usa en **todas** las filas: es lo que da contenido
+      mutante del entrypoint, y se usa en las filas de efecto: es lo que da contenido
       al «ninguna llamada mutante a CRM, Gmail o Drive» del §3.2-bis.
-    - `servicio` instala el doble **que falla**, y solo lo usa la fila 9.
+    - `servicio` instala el doble **que falla**, y solo lo usa la fila 9. Ahí el
+      contador NO se cablea aparte, y no es un olvido: en esa fila la superficie
+      externa **es** el doble que falla, y su contador ya se asierta
+      (`doble.llamadas == llamadas_1 * 2`). Instalar dos dobles sobre la misma costura
+      dejaría al segundo pisando al primero. R8/H8-02 vio el parámetro recibido y sin
+      usar y tenía razón en que sobraba: se retiró, no se cableó por cumplir.
 
     Y si el entrypoint no tiene superficie externa mutante, hay que **decirlo**:
     `sin_superficie_externa` exige el motivo por escrito. Sin esa exigencia, el
@@ -504,8 +532,7 @@ def matriz_para(invocar: Callable[[object], int], *,
         if esc.id in no_aplicables:
             continue
         if esc.esperado is Esperado.IDEMPOTENTE:
-            informe[esc.id] = _correr_idempotencia(esc, invocar, mundo, servicio,
-                                                   contador_externo)
+            informe[esc.id] = _correr_idempotencia(esc, invocar, mundo, servicio)
         else:
             informe[esc.id] = _correr_efectos(esc, invocar, mundo, contador_externo)
     return informe
@@ -518,7 +545,7 @@ def _correr_efectos(esc: Escenario, invocar, mundo, contador_externo) -> str:
         doble = contador_externo(m) if contador_externo else ServicioExterno()
         antes = m.planos(semilla.raiz_trabajo)
         log_antes = m.log(semilla.raiz_trabajo)
-        codigo, error = _ejecutar(invocar, semilla.objetivo)
+        codigo, error, err = _ejecutar(invocar, semilla.objetivo)
         despues = m.planos(semilla.raiz_trabajo)
         log_despues = m.log(semilla.raiz_trabajo)
         if esc.esperado is Esperado.CERO_EFECTOS:
@@ -529,11 +556,13 @@ def _correr_efectos(esc: Escenario, invocar, mundo, contador_externo) -> str:
                 f"[{esc.id}] {esc.fila}: abortó, pero con una excepción NO controlada "
                 f"({type(error).__name__}: {error}). Un bloqueo del contrato se "
                 f"presenta con su código del §10, no con una traza")
+            _exigir_codigo_del_10(esc, err)
             assert_sin_efectos(antes, despues, log_antes=log_antes,
                                log_despues=log_despues,
                                llamadas_externas=doble.llamadas)
             marca = "" if contador_externo else " (plano 3 sin superficie declarada)"
-            return f"cero efectos en los 4 planos; salida {codigo}{marca}"
+            return (f"cero efectos en los 4 planos; salida {codigo}; "
+                    f"{esc.codigo_error}{marca}")
         assert codigo == 0, (
             f"[{esc.id}] {esc.fila}: el entrypoint abortó ({codigo}) donde el "
             f"contrato exige que escriba en la copia de trabajo"
@@ -546,8 +575,26 @@ def _correr_efectos(esc: Escenario, invocar, mundo, contador_externo) -> str:
         m.cerrar()
 
 
-def _correr_idempotencia(esc: Escenario, invocar, mundo, servicio,
-                         contador_externo=None) -> str:
+def _exigir_codigo_del_10(esc: Escenario, err: str) -> None:
+    """La fila abortó **por su motivo**, no por cualquier guarda que salga con != 0.
+
+    Se lee del `stderr` capturado porque es lo que ve el operador: el §10 dice que cada
+    interfaz presenta el error «sin cambiar su significado», así que el código impreso ES
+    el contrato observable. Y si el adaptador no imprime nada, **falla**: un canal vacío
+    haría vacua esta comprobación, que es justo el defecto que viene a cerrar.
+    """
+    assert esc.codigo_error, (
+        f"[{esc.id}] la fila espera un aborto y no declara `codigo_error`: sin él, "
+        f"cualquier salida != 0 pasa por buena (R8/H8-01)")
+    assert err.strip(), (
+        f"[{esc.id}] el entrypoint abortó sin escribir NADA en stderr, así que no hay "
+        f"forma de saber por qué guarda salió. El §10 exige que el error se presente")
+    assert esc.codigo_error in err, (
+        f"[{esc.id}] {esc.fila}: abortó por el motivo EQUIVOCADO. Se esperaba "
+        f"{esc.codigo_error} y stderr dice: {err.strip()[:300]}")
+
+
+def _correr_idempotencia(esc: Escenario, invocar, mundo, servicio) -> str:
     """La fila 9, con las cuatro piezas que R7/H7-08 exigió.
 
     Doble que falla **después** de un efecto observable, instante de fallo como dato,
@@ -558,7 +605,20 @@ def _correr_idempotencia(esc: Escenario, invocar, mundo, servicio,
         raise ValueError(
             "la fila 'servicio_externo_falla' exige el cableado `servicio=`: sin "
             "doble no se induce el fallo y la fila queda decorativa (R7/H7-08)")
-    m = mundo(esc.id)
+    if not esc.variantes_de_fallo:
+        raise ValueError(
+            f"la fila {esc.id!r} es IDEMPOTENTE y no declara `variantes_de_fallo`: "
+            f"sin instante de fallo no hay nada que inducir")
+    veredictos = [
+        _una_variante(esc, invocar, mundo, servicio, falla_en, admitidas)
+        for falla_en, admitidas in esc.variantes_de_fallo
+    ]
+    return " | ".join(veredictos)
+
+
+def _una_variante(esc: Escenario, invocar, mundo, servicio, falla_en: int,
+                  admitidas: int) -> str:
+    m = mundo(f"{esc.id}_falla_en_{falla_en}")
     try:
         semilla = esc.sembrar(m)
         efectos: list[Path] = []
@@ -569,17 +629,51 @@ def _correr_idempotencia(esc: Escenario, invocar, mundo, servicio,
                              encoding="utf-8")
             efectos.append(marca)
 
-        doble = ServicioExterno(falla_en=esc.falla_externa_en, efecto=_efecto)
+        doble = ServicioExterno(falla_en=falla_en, efecto=_efecto)
         servicio(m, doble)
 
-        _ejecutar(invocar, semilla.objetivo)
+        # BASELINE antes del primer intento. R8/H8-02: sin él, esta fila solo
+        # comparaba el árbol ENTRE los dos intentos, así que un entrypoint que mutara
+        # el canon o el registro **en las dos** invocaciones por igual quedaba verde y
+        # rotulado «aborto idempotente». Dos mutantes del revisor pasaron así.
+        base = m.planos(semilla.raiz_trabajo)
+
+        codigo_1, error_1, _err1 = _ejecutar(invocar, semilla.objetivo)
         tras_primera = hash_arbol(semilla.raiz_trabajo)
+        planos_1 = m.planos(semilla.raiz_trabajo)
         publicaciones_1 = len(m.log(semilla.raiz_trabajo))
         llamadas_1 = doble.llamadas
 
-        _ejecutar(invocar, semilla.objetivo)
+        codigo_2, error_2, _err2 = _ejecutar(invocar, semilla.objetivo)
         tras_segunda = hash_arbol(semilla.raiz_trabajo)
+        planos_2 = m.planos(semilla.raiz_trabajo)
         publicaciones_2 = len(m.log(semilla.raiz_trabajo))
+
+        # El fallo externo se PROPAGA. Un entrypoint que se lo traga y devuelve 0
+        # informa de un éxito que no ocurrió, y sin este aserto pasaba por idempotente.
+        for i, (codigo, err_i) in enumerate(((codigo_1, error_1),
+                                             (codigo_2, error_2)), start=1):
+            if i >= falla_en:
+                assert codigo != 0, (
+                    f"[{esc.id}/falla_en={falla_en}] la invocación {i} devolvió "
+                    f"ÉXITO ({codigo}) pese a que el servicio externo cayó: un fallo "
+                    f"tragado es peor que un fallo")
+            else:
+                assert codigo == 0, (
+                    f"[{esc.id}/falla_en={falla_en}] la invocación {i} abortó "
+                    f"({codigo}) antes de que el servicio externo llegara a caer"
+                    + (f" — {type(err_i).__name__}: {err_i}" if err_i else ""))
+
+        # Los planos 2 y 4 se comparan contra el BASELINE, no entre intentos: un
+        # reintento sobre un canon ya contaminado sería «estable» y estaría mal.
+        assert base.canon == planos_1.canon == planos_2.canon, (
+            f"[{esc.id}/falla_en={falla_en}] {PLANO_CANON}: el fallo externo o su "
+            f"reintento tocaron el canon. "
+            f"{_diferencias(base.canon, planos_2.canon)}")
+        assert base.estado_local == planos_1.estado_local == planos_2.estado_local, (
+            f"[{esc.id}/falla_en={falla_en}] {PLANO_ESTADO_LOCAL}: el registro o un "
+            f"sentinel cambió durante el fallo o el reintento. "
+            f"{_diferencias(base.estado_local, planos_2.estado_local)}")
 
         assert llamadas_1 >= 1, (
             f"[{esc.id}] el doble NUNCA se llamó: el fallo externo no se indujo, "
@@ -591,22 +685,22 @@ def _correr_idempotencia(esc: Escenario, invocar, mundo, servicio,
             f"[{esc.id}] {PLANO_EXTERNOS}: la segunda invocación hizo "
             f"{doble.llamadas - llamadas_1} llamada(s) frente a {llamadas_1} de la "
             f"primera; un reintento no amplifica el tráfico externo")
-        assert publicaciones_1 == esc.publicaciones_admitidas, (
-            f"[{esc.id}] tras el fallo hubo {publicaciones_1} publicación(es) y el "
-            f"contrato admite {esc.publicaciones_admitidas}")
+        assert publicaciones_1 == admitidas, (
+            f"[{esc.id}/falla_en={falla_en}] tras la primera invocación hubo "
+            f"{publicaciones_1} publicación(es) y el contrato admite {admitidas}")
         assert publicaciones_2 == publicaciones_1, (
             f"[{esc.id}] la segunda invocación publicó de nuevo "
             f"({publicaciones_1} → {publicaciones_2}): no es idempotente")
         assert tras_segunda == tras_primera, (
             f"[{esc.id}] {PLANO_ARBOL}: el reintento dejó un árbol distinto. "
             f"{_diferencias(tras_primera, tras_segunda)}")
-        return (f"aborto idempotente: {publicaciones_1} publicación(es), "
-                f"{doble.llamadas} llamadas, árbol estable entre reintentos")
+        return (f"falla_en={falla_en}: {publicaciones_1} publicación(es) estable(s), "
+                f"{doble.llamadas} llamadas, árbol idéntico entre reintentos")
     finally:
         m.cerrar()
 
 
-def _ejecutar(invocar, objetivo) -> tuple[int, BaseException | None]:
+def _ejecutar(invocar, objetivo) -> tuple[int, BaseException | None, str]:
     """Ejecuta el adaptador y normaliza la salida a `(codigo, error)`.
 
     `typer.Exit` es la forma que tiene un CLI de este repo de decir «he abortado», y
@@ -617,16 +711,22 @@ def _ejecutar(invocar, objetivo) -> tuple[int, BaseException | None]:
     ve el operador— y se conserva para poder decirlo en el mensaje de fallo. Tragarla
     sin más convertiría un `AttributeError` en un «abortó, correcto» silencioso.
     """
+    import contextlib
+    import io as _io
+
     import typer
+
+    err = _io.StringIO()
     try:
-        codigo = invocar(objetivo)
+        with contextlib.redirect_stderr(err):
+            codigo = invocar(objetivo)
     except typer.Exit as exc:
-        return int(exc.exit_code or 0), None
+        return int(exc.exit_code or 0), None, err.getvalue()
     except SystemExit as exc:                      # pragma: no cover - defensivo
-        return int(exc.code or 0), None
+        return int(exc.code or 0), None, err.getvalue()
     except Exception as exc:                       # noqa: BLE001
-        return 1, exc
-    return int(codigo or 0), None
+        return 1, exc, err.getvalue()
+    return int(codigo or 0), None, err.getvalue()
 
 
 def assert_matriz_completa(informe: dict[str, str], *,

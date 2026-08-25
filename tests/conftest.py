@@ -61,19 +61,47 @@ def restaurar_config_si_secuestrada(antes: str, antes_env: str | None) -> None:
 
     from core import config as cfg
 
+    # El ENTORNO se repone SIEMPRE, aunque el módulo no haya cambiado. La primera
+    # versión salía por aquí en cuanto `cfg.settings` coincidía, y R8/H8-06 lo midió:
+    # un test que ensucia `CASOS_ROOT` **sin recargar** `core.config` dejaba el entorno
+    # sucio y el módulo intacto, o sea el guard verde y una bomba armada para el
+    # siguiente test que sí recargara. Mirar solo el módulo es mirar el síntoma.
+    if os.environ.get("CASOS_ROOT") != antes_env:
+        if antes_env is None:
+            os.environ.pop("CASOS_ROOT", None)
+        else:
+            os.environ["CASOS_ROOT"] = antes_env
+
     if str(cfg.settings.casos_root) == antes:
         return
-    if antes_env is None:
-        os.environ.pop("CASOS_ROOT", None)
-    else:
-        os.environ["CASOS_ROOT"] = antes_env
     importlib.reload(cfg)
     if str(cfg.settings.casos_root) != antes:
         raise AssertionError(
             f"`core.config` quedó secuestrado y ni reponer `CASOS_ROOT` + `reload` lo "
-            f"devuelve: {antes} -> {cfg.settings.casos_root}. La raíz se está fijando "
-            f"por una vía que esta restauración no ve, así que la fuga sobrevive al "
-            f"test y contaminará a los siguientes según el orden que toque")
+            f"devuelve: {_huella_de_raiz(antes)} -> {_huella_de_raiz(cfg.settings.casos_root)}. La raíz se "
+            f"está fijando por una vía que esta restauración no ve, así que la fuga "
+            f"sobrevive al test y contaminará a los siguientes según el orden que toque")
+
+
+def _huella_de_raiz(ruta) -> str:
+    """Nombre final + huella corta. **Nunca** la ruta absoluta ni un tramo interno (§16).
+
+    El backstop se dispara en un log de suite o de CI, que es justo el material que se
+    pega en un PR para diagnosticar. La ruta entera revelaría usuario, unidad y
+    estructura de carpetas del despacho sin añadir nada al diagnóstico (R8/H8-07).
+
+    **Y «los dos últimos componentes» no bastaba**, que fue mi primer arreglo: en
+    `…/servidor/SECRETO/CASOS` el penúltimo tramo ES un tramo interno, y el canario del
+    test lo cazó. La huella resuelve la tensión real —el nombre final casi siempre es
+    `CASOS` en las dos rutas, así que sin algo más el mensaje no distinguiría un
+    `tmp_path` muerto de la raíz buena— sin revelar de dónde sale.
+    """
+    import hashlib
+    from pathlib import Path
+
+    texto = str(ruta)
+    digest = hashlib.sha256(texto.encode("utf-8")).hexdigest()[:8]
+    return f"{Path(texto).name}#{digest}"
 
 
 @pytest.fixture(autouse=True)

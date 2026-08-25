@@ -411,6 +411,24 @@ def _resolver_workspace(case_id: str | None, case_dir: str | None):
     try:
         catalogo.localizar(ref)
     except LocalWorkspaceMissing:
+        # …salvo que ESTA máquina sí lo conozca. Sin esta rama, el trabajo offline
+        # por identidad era inalcanzable (R8/H8-04, verificado en vivo): con la unidad
+        # desmontada, `catalogo.localizar` falla, `caso_path` falla detrás y el usuario
+        # recibe «Caso no encontrado» **teniendo el checkout delante**. El §7.2.9-10
+        # existe justo para eso, y el resolver ya lo implementa (`_solo_local`): lo que
+        # faltaba era que alguien le pasara la pregunta.
+        #
+        # No altera la precedencia que el Task 9 fijó: el catálogo sigue mandando
+        # cuando conoce el caso. Esta rama solo se abre donde el canon calla, y ahí el
+        # registro es más específico que el binding del módulo — que es el último
+        # recurso, no el primero.
+        if registro.buscar(ref):
+            try:
+                ws = resolver.resolver_por_identidad(ref, drive_accesible=drive_ok)
+            except WorkspaceError as exc:
+                typer.echo(f"[ERROR] {exc}", err=True)
+                raise typer.Exit(code=2) from exc
+            return case_id, ws
         try:
             case_dir_legacy = caso_path(case_id)
         except FileNotFoundError:

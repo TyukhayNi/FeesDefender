@@ -117,6 +117,74 @@ def test_si_la_restauracion_NO_basta_lanza_en_vez_de_callar(tmp_path, monkeypatc
     assert _casos_root() == antes
 
 
+def test_repone_el_ENTORNO_aunque_el_modulo_no_haya_cambiado(tmp_path):
+    """R8/H8-06: la bomba armada que el guard no veía.
+
+    Un test que ensucia `CASOS_ROOT` **sin recargar** `core.config` deja el módulo
+    intacto — así que la comprobación por módulo salía por la rama de «nada que
+    hacer»— y el entorno sucio. El siguiente test que recargue hereda la raíz ajena,
+    y el guard que debía impedirlo habría estado verde todo el rato.
+    """
+    antes = _casos_root()
+    antes_env = os.environ.get("CASOS_ROOT")
+    sucio = str(tmp_path / "SUCIO")
+    os.environ["CASOS_ROOT"] = sucio          # a mano: sin monkeypatch y SIN reload
+    try:
+        assert _casos_root() == antes, "el montaje no debía tocar el módulo"
+        restaurar_config_si_secuestrada(antes, antes_env)
+        assert os.environ.get("CASOS_ROOT") == antes_env, (
+            "el entorno quedó sucio: la restauración solo miró el módulo")
+    finally:
+        if antes_env is None:
+            os.environ.pop("CASOS_ROOT", None)
+        else:
+            os.environ["CASOS_ROOT"] = antes_env
+    assert _casos_root() == antes
+
+
+def test_el_backstop_NO_vuelca_la_ruta_absoluta(tmp_path, monkeypatch):
+    """R8/H8-07: §16 también rige los mensajes que acaban pegados en un PR.
+
+    El backstop se dispara en un log de suite o de CI, que es justo el material que se
+    comparte para diagnosticar. La ruta entera revela usuario, unidad y estructura de
+    carpetas del despacho sin añadir nada al diagnóstico: para distinguir un `tmp_path`
+    muerto de la raíz real bastan la cola y el hecho de que difieran.
+
+    Canarios en las tres formas de ruta que el §16 vigila —Windows, UNC y POSIX—, y no
+    solo la del sistema donde corre la suite: el canario de R7/H7-12 cazaba 3 de 8 casos
+    justo por probar una sola forma.
+    """
+    from core import config as cfg
+
+    antes = _casos_root()
+    antes_env = os.environ.get("CASOS_ROOT")
+    canarios = {
+        "windows": tmp_path / "Usuarios" / "SECRETO-WIN" / "CASOS",
+        "unc": tmp_path / "servidor" / "SECRETO-UNC" / "CASOS",
+        "posix": tmp_path / "mnt" / "SECRETO-POSIX" / "CASOS",
+    }
+    for nombre, raiz in canarios.items():
+        mp = pytest.MonkeyPatch()
+        mp.setenv("CASOS_ROOT", str(raiz))
+        importlib.reload(cfg)
+        try:
+            monkeypatch.setattr(importlib, "reload", lambda modulo: modulo)
+            with pytest.raises(AssertionError) as exc:
+                restaurar_config_si_secuestrada(antes, antes_env)
+        finally:
+            monkeypatch.undo()
+            mp.undo()
+            importlib.reload(cfg)
+        mensaje = str(exc.value)
+        assert str(raiz) not in mensaje, (
+            f"[{nombre}] el backstop volcó la ruta absoluta: {mensaje}")
+        assert f"SECRETO-{nombre.upper()}" not in mensaje, (
+            f"[{nombre}] el backstop filtró un componente intermedio de la ruta")
+        assert "CASOS" in mensaje, (
+            f"[{nombre}] el backstop dejó de ser diagnosticable: no dice ni la cola")
+    assert _casos_root() == antes
+
+
 def test_el_guard_esta_instalado_y_es_autouse():
     """Un guard opt-in que el autor del próximo fichero olvide llamar no es un guard.
 

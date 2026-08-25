@@ -979,6 +979,11 @@ contra su mutante.
 
 ### 13.4. Dos defectos que el Task 10 destapó por mirar al ENTRYPOINT
 
+> **Corregido tras R8.** El apartado (a) decía que con `_drive_accesible()` la fila 8 quedaba
+> cerrada. Era la mitad: la costura hacía **inducible** la fila en el test, y el trabajo offline
+> **por identidad** seguía sin funcionar en producción, porque `_resolver_workspace` se caía al
+> seam legacy antes de preguntarle al registro. Lo midió R8/H8-04 en vivo y se arregla en el §14.
+
 **(a) `drive_accesible=True` literal.** `_resolver_workspace` lo pasaba fijo en sus dos vías,
 así que la rama offline del §7.2.9-10 —diseñada, con tests unitarios en el resolver— era
 **código muerto en producción**, y la fila 8 solo era inducible mintiéndole al resolver.
@@ -1014,8 +1019,97 @@ un expediente prestado.
 - **El plano 3 sobre una superficie externa real.** Ningún entrypoint migrado tiene una, así
   que el detector está probado contra su mutante pero **no** contra un servicio de verdad. Se
   cierra en la Fase 3, con la vertical de correo.
-- **El arnés sobre un segundo consumidor.** Su valor es ser reutilizable y hoy lo usa uno.
-  Que la firma valga para la UI o para un plugin es una promesa, no una medición.
+- **El arnés sobre un segundo MÓDULO.** Tras R8/H8-03 lo consumen los **tres** comandos de
+  `sala_maquina`, que es más de lo que había, pero sigue siendo un solo módulo. Que la firma
+  valga para la UI o para un plugin es una promesa, no una medición.
 - **Las siete `xfail` del frontal.** Siguen vivas (7 `xfailed`, 0 `xpassed`, corrida
   protegida) y ningún Task 10-11 toca `scripts/repository_cli.py`. Se verificó que no se
   tocan; no que ninguna empeore. No es lo mismo.
+
+---
+
+## 14. Adjudicación de la revisión adversarial R8 (Codex, 2026-08-25) — NO-SHIP, remediado
+
+- **Objeto revisado:** el **diff** de los Tasks 10-11, `533be06..4aac8b0` — código, no prosa.
+- **Ronda:** R8, la primera de este plan que revisa código; R7 revisó el plan antes de ejecutarlo.
+- **Revisor:** Codex por CLI sobre dos copias externas `git archive` sin `.git` ni red; adjudica Claude Code contra la fuente.
+- **Informe recibido:** `docs/superpowers/specs/2026-08-25-dual-workspace-tasks10-11-r8-adversarial-review.md`, `sha256` `401095e5e42f4a69444fa072aec79b25a5e831eff5478b0e14e3317e0a229f24`, recomputado al archivarlo y **coincide**.
+- **Hallazgos:** 9 — 0 críticos, 2 ALTOS, 6 MEDIOS, 1 BAJO. **9 confirmados, 0 refutados**, más una aportación del adjudicador.
+- **Remediado en:** el commit que acompaña a esta adjudicación (PR #236), con test por hallazgo.
+
+**No-mutación del objeto**, recomputada de forma independiente y no solo declarada por el revisor:
+`base` 1.077 ficheros `2c272198…c8c20c`, `head` 1.080 ficheros `2e2fbc46…14c67669`, idénticos a un
+`git archive` recién hecho de los mismos commits.
+
+### Por qué esta ronda valió la pena, dicho sin adornos
+
+**El arnés que existe para impedir que un test pase por vacío pasaba por vacío en dos sitios.**
+Las cinco filas bloqueadas admitían **cualquier** código de salida distinto de cero: un
+`typer.Exit(99)` de una guarda equivocada dejaba verde la fila que dice aislar el `LOCK_MISMATCH`.
+Y la fila del fallo externo no miraba ni el canon, ni el estado local, ni el baseline previo, ni
+los códigos de las dos invocaciones — así que un entrypoint que mutara el registro en cada
+reintento, o que **se tragara el fallo y devolviera éxito**, quedaba rotulado «aborto
+idempotente».
+
+Eso es exactamente lo que el Task 10 venía a impedir, cometido **dentro del Task 10**. Yo había
+escrito en su propio docstring que mi modo de fallo dominante es montar el escenario más fácil en
+vez del que aísla la guarda, y aun así el juez que escribí no comprobaba **por qué** abortaba una
+fila. Escribir la advertencia no es lo mismo que aplicarla.
+
+### Las nueve, una por una
+
+| # | Sev. | Hallazgo | Veredicto | Remedio |
+|---|---|---|---|---|
+| H8-01 | ALTO | Las filas bloqueadas aceptan cualquier `codigo != 0` | **CONFIRMADO** | `Escenario.codigo_error` + captura de `stderr` + `_exigir_codigo_del_10`; 3 mutantes (código ajeno, código del §10 equivocado, aborto mudo) |
+| H8-02 | ALTO | La fila 9 es ciega al canon, al estado local, al baseline y a los códigos | **CONFIRMADO** | Baseline `Planos` previo, comparación de planos 2 y 4 contra él, y juicio de las dos salidas; 3 mutantes |
+| H8-03 | MEDIO | La matriz solo ejecuta `apply` de los tres comandos mutantes | **CONFIRMADO** | Consumidor parametrizado por `plan`/`apply`/`reforzar`; censo AST que exige que estén **todos** |
+| H8-04 | MEDIO | El offline por identidad no llega al resolver | **CONFIRMADO en vivo** | El registro se consulta cuando el canon calla; 2 tests |
+| H8-05 | MEDIO | La segunda rama de la fila 9 no existe en los datos | **CONFIRMADO** | `variantes_de_fallo=((1, 0), (2, 1))` |
+| H8-06 | MEDIO | El guard retorna antes de reponer un `CASOS_ROOT` sucio | **CONFIRMADO** | El entorno se repone **siempre**, no solo si el módulo cambió |
+| H8-07 | MEDIO | El backstop del guard vuelca rutas absolutas (§16) | **CONFIRMADO** | Nombre + huella corta; canario en Windows/UNC/POSIX |
+| H8-08 | MEDIO | El criterio (2) se afirma más ancho que su prueba | **CONFIRMADO** | Afirmación **acotada** en `PLAN.md`; barrido pendiente en `MEJORAS #121` |
+| H8-09 | BAJO | «`intake_log` ya no depende de `caso_path`» es falso | **CONFIRMADO** | Importación muerta retirada y comentario obsoleto corregido |
+
+### Lo que aporta el adjudicador y el revisor no vio
+
+**El remedio de H8-04 reabre el defecto que el Task 7 cerró.** Hacer que el registro se consulte
+cuando el canon calla lleva el control a `_solo_local`, que **no recibía `drive_accesible`**: un
+checkout resuelto por esa rama sin Drive seguía anunciando `CHECKIN`. Es literalmente la «resta de
+capacidad inerte» que la prueba de mutación del Task 7 cazó en `_offline`, viva en el camino de al
+lado y **inalcanzable hasta que yo la hice alcanzable**. Cerrado en el mismo commit, con test.
+
+**Y el remedio de H8-09 rompió dos tests, por un censo mío mal hecho.** Antes de retirar la
+importación muerta comprobé quién la parcheaba desde fuera… **pasando el `grep` por `head -10`**.
+Los dos únicos parcheadores estaban por debajo del corte: `test_sala_maquina_cableado_atomize` y
+`…_adjuntos` hacen `monkeypatch.setattr(intake_log, "caso_path", …)`, y `setattr` revienta si el
+atributo no existe. Es la misma familia que el gotcha ya escrito en `CLAUDE.md` sobre no leer
+`$LASTEXITCODE` detrás de un `Select-Object -First N`: **truncar la salida y luego afirmar sobre el
+conjunto**. El hallazgo sigue confirmado —el módulo no usaba el símbolo— y los dos parches eran
+**inertes**, restos de antes del B0-1: los dos tests escriben con el `case_dir` explícito y leen por
+`read_events_de`. Se retiraron con su motivo escrito, no se restauró la importación para que
+callaran.
+
+**Y mi arreglo de H8-07 estaba a medias.** Recortar a «los dos últimos componentes» sigue
+filtrando un tramo interno en `…/servidor/SECRETO/CASOS`. Lo puso rojo el canario que había
+escrito para el hallazgo — la tercera vez medida en este repo de que **el arreglo de un hallazgo
+introduce el siguiente**, y la razón de escribir el canario antes de dar por bueno el remedio.
+
+### Sobre las severidades, y una que subo de facto
+
+Se aceptan las nueve del revisor. **H8-04 se remedia pese a ser MEDIO y fallar cerrado**, y el
+motivo es de honestidad y no de riesgo: este mismo diff **declara** haber hecho alcanzable la rama
+offline del §7.2.9-10. Dejar el hallazgo confirmado y sin arreglar habría significado publicar una
+capacidad que no funciona por su vía principal.
+
+### Lo que sigue SIN VERIFICAR, y se declara
+
+- **Todo lo que exige correr la suite lo aporta el adjudicador, no el revisor.** La copia externa
+  no lleva `.venv` y su Python carecía de `typer` y `python-dotenv`: `pytest` no pasó de colección.
+  Las dos semillas, el conteo, los `xfailed` y el `leak-scan` son corridas mías. Un revisor que no
+  corre no refuta, y aquí tampoco confirma: deja sin verificar.
+- **El criterio de salida (2) en su forma universal.** Cubierto para los caminos que la matriz
+  ejercita; sin barrido de escritores (`MEJORAS #121`).
+- **El plano 3 sobre una superficie externa real.** Ningún entrypoint migrado tiene una.
+- **Las filas de escritura de `plan` y `reforzar`.** Declaradas no aplicables **con motivo**: la
+  primera exigiría montar OCR y split reales, la segunda cablear visión. Las cinco filas
+  bloqueadas —las que impiden escribir sobre un caso ajeno— sí corren en los tres comandos.
