@@ -44,17 +44,45 @@ git log --oneline -5   # debe mostrar 6e43ff0 en la punta
 > `[SIGUIENTE-MARKETPLACE-PLUGIN]`—, según el §5 de `docs/GOBERNANZA_FUENTES_VERDAD.md`. Este
 > fichero **no** pasa a `consumido` todavía: los hallazgos del §3 siguen siendo su única sede.
 
-### 2.1 F.4.1 — confirmar `$PROFILE` de `tnm33` ✅ CERRADO (2026-08-25)
+### 2.1 F.4.1 — `$PROFILE` de `tnm33`: ⚠️ CONFIGURADO, pero el defecto que venía a cerrar sigue VIVO
 
-**Comprobado:** `C:\Users\tnm33\Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1`
+> **Errata de la misma jornada.** Este apartado se marcó `✅ CERRADO` el 2026-08-25 y **el `✅` era
+> engañoso**, corregido horas después el mismo día. La comprobación que pedía F.4.1 —¿está fijada la
+> variable?— sí pasa. Lo que **no** pasa es el defecto que fijarla debía corregir. Un punto se cierra
+> cuando su *efecto* está cerrado, no cuando su *comando* se ejecutó.
+
+**Lo que sí está hecho:** `C:\Users\tnm33\Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1`
 (13/08/2026 19:41) fija `$env:FEESDEFENDER_ACTOR = "Nikolai Tyukhay"` y define la función
 `claude-procesal`. Valor distinto del perfil procesal, como exige la regla 5-bis.
 
-**Y el hallazgo de §3 vuelve a confirmarse por medición, no por lectura:** en la sesión de Claude
-Code de `tnm33` del 2026-08-25 la variable sale **vacía** —ni en el proceso ni a nivel de usuario
-(`[Environment]::GetEnvironmentVariable('FEESDEFENDER_ACTOR','User')`)—. El punto está *configurado*,
-no *efectivo* fuera de una PowerShell interactiva. La discriminación sigue colgando de
-`os.getlogin()`.
+**Lo que sigue roto, medido el 2026-08-25 ejecutando el código, no leyendo la config:**
+
+```
+_default_actor()     = 'tnm33'
+in ACTORES_DESPACHO  = False
+```
+
+Es **literalmente** el defecto que el F.4.1 del runbook v5 decía corregir: «*hoy cualquier evento
+lanzado desde CLI registra `actor = "tnm33"`, un nombre de cuenta de Windows que no está en
+`ACTORES_DESPACHO`*». Sigue así, porque el `$PROFILE` solo se carga en una PowerShell 5.1
+interactiva y los procesos que registran eventos no pasan por ahí: en la sesión de Claude Code la
+variable sale **vacía**, ni en el proceso ni a nivel de usuario
+(`[Environment]::GetEnvironmentVariable('FEESDEFENDER_ACTOR','User')`). El «conjunto cerrado para
+que el log forense quede limpio de typos» sigue incumpliéndose en **esta** cuenta cada vez que un
+evento nace del CLI.
+
+**El remedio, que alcanza a los procesos no interactivos** (pendiente, es config de Windows y la
+ejecuta Nikolai):
+
+```powershell
+[Environment]::SetEnvironmentVariable('FEESDEFENDER_ACTOR','Nikolai Tyukhay','User')
+```
+
+Dos avisos: **no afecta a una sesión ya lanzada** —Claude Code no hereda variables puestas después
+de arrancar, así que hay que reabrir— y el valor **debe seguir siendo distinto** del de `procesal@`
+(«Nikolai Tyukhay (procesal)»), porque la variable tiene **precedencia sobre `os.getlogin()`** y el
+mismo valor en los dos destruiría la discriminación del lock y del log. Mientras no se aplique, lo
+que discrimina de verdad es `os.getlogin()` — que funciona, pero devuelve un valor fuera de la tupla.
 
 Comprobar que `$PROFILE` de esta sesión fija `FEESDEFENDER_ACTOR` explícito y con un valor
 **distinto** al del perfil procesal ("Nikolai Tyukhay (procesal)"):
@@ -185,8 +213,9 @@ Get-ChildItem "C:\Users\tnm33\Dev" -Directory -ErrorAction SilentlyContinue | Fo
 ## 4. Reglas duras que siguen sin excepción
 
 `.credentials.json` nunca cruza entre perfiles · `FEESDEFENDER_ACTOR` con valores distintos
-en cada perfil (**los dos fijados**: procesal el 13/08, `tnm33` confirmado el 2026-08-25 en
-§2.1 — con la advertencia de que la variable no llega a procesos no interactivos) · las
+en cada perfil (**fijada en los dos `$PROFILE`** —procesal el 13/08, `tnm33` confirmado el
+2026-08-25— pero **sin efecto sobre los procesos que registran eventos**: en `tnm33` el actor
+sigue saliendo `'tnm33'`, fuera de la tupla. Ver §2.1) · las
 extensiones DXT (`gmail-multiaccount`, `google-despacho`) no migran · nunca el mismo
 expediente abierto desde los dos perfiles a la vez · nunca el mismo repo trabajado sin
 `push` entre sesión y sesión · ningún secreto por `C:\Users\Public`.
@@ -214,16 +243,23 @@ las dos acciones que solo ella puede ejecutar.
    `client_secret`—, solo mirar si el campo está vacío. Si lo está, el remedio no es crear un
    `client_id` nuevo sino reutilizar el proyecto que ya sostiene los dos remotes de `tnm33`.
 
-### En `tnm33` — una decisión, que es de Nikolai
+### En `tnm33` — una decisión y una línea de config
 
-**E.6.1: dónde se publica el marketplace del plugin** (repo dedicado, o rama de distribución en
-este repo con `dist/` desexcluido). Es lo único que bloquea `PLAN.md` **#16**; los pasos E.6.2 y
-E.6.3 son mecánicos después, y el E.6.3 hay que hacerlo **en los dos perfiles**, porque la entrada
-`directory` huérfana está en ambos.
+1. **E.6.1: dónde se publica el marketplace del plugin** (repo dedicado, o rama de distribución en
+   este repo con `dist/` desexcluido). Es lo único que bloquea `PLAN.md` **#16**; los pasos E.6.2 y
+   E.6.3 son mecánicos después, y el **E.6.3 hay que hacerlo en los dos perfiles**, porque la
+   entrada `directory` huérfana está en ambos (verificado el 2026-08-25 en `tnm33`:
+   `known_marketplaces.json` y `settings.json`).
+2. **Fijar `FEESDEFENDER_ACTOR` a nivel de Usuario**, no solo en el `$PROFILE` — ver §2.1. Sin eso,
+   el log forense de esta cuenta sigue registrando `actor = 'tnm33'`, **fuera de
+   `ACTORES_DESPACHO`**. Es una línea, y es el único defecto de la migración que sigue vivo.
 
 ### Lo ya cerrado, para que nadie lo repita
 
-F.4.1 ✅ y E.1 ✅ (§2, medidos el 2026-08-25) · E.6 ⏩ promovido a `PLAN.md` #16 · el aviso del
-`client_id` ✅ escrito como `MEJORAS #122` · el enunciado de `reportlab` ✅ corregido aquí, en
+E.1 ✅ (§2.3, censo del 2026-08-25) · E.6 ⏩ promovido a `PLAN.md` #16 · el aviso del `client_id` ✅
+escrito como `MEJORAS #122` · el enunciado de `reportlab` ✅ corregido aquí, en
 `requirements-dev.txt` y en `docs/INDICE.md`.
+
+**F.4.1 NO está en esta lista a propósito.** Se marcó `✅` el 2026-08-25 y el `✅` era engañoso: la
+variable está fijada y el defecto que fijarla debía cerrar sigue vivo. Detalle y remedio en §2.1.
 
