@@ -724,24 +724,52 @@ def marcar_conflicto(case_id: str) -> dict[str, Any]:
 
 
 def es_copia_prestada(case_id: str) -> bool:
-    """¿La ruta resuelta de este caso es una copia local prestada, y no el canon?
+    """¿La ruta resuelta de este caso es una copia local conocida, y no el canon?
 
-    El discriminante es `MANIFEST_CHECKOUT.json` en la raíz: lo escribe `cmd_checkout` al
-    prestar y lo lee `cmd_checkin` como baseline del merge de tres vías. Es la marca
-    inequívoca, ya existe, y no hay que propagar un flag por todos los llamadores —donde
-    el default acabaría en el lado inseguro, que es el que rompe el pipeline en silencio.
+    Lo contesta el **registro privado de workspaces** (Fase 1), que es el SSOT de qué
+    copias locales conoce esta máquina. El canon nunca está ahí: el resolver rechaza
+    registrar una ruta bajo el catálogo (`WORKSPACE_UNDER_CATALOG_ROOT`).
 
-    **No** mira el `estado_repositorio`: en local ese campo no es autoridad del lock, y de
-    hecho la mitad de las veces ni está, porque el checkout excluye `_caso.md`
-    (`MERGE_EXCLUSIONS`). Depender de él es lo que hace que hoy el guard se comporte al
-    revés según se haya copiado o no un fichero.
+    ## El discriminante que NO vale, y por qué lo escribo aquí
+
+    El primer intento fue la presencia de **`MANIFEST_CHECKOUT.json`**. Parecía la marca
+    inequívoca —la escribe `cmd_checkout`, la lee el checkin como baseline— y **abría un
+    agujero de autorización**: `cmd_checkout` sube además una copia del manifiesto **al
+    Drive** («debe sobrevivir a la muerte del Desktop», §3.3), así que mientras un caso
+    está prestado el fichero está en **las dos copias**. Discriminar por él desactivaba el
+    guard sobre el **canon** y justo **mientras otro lo tenía tomado**, que es el único
+    momento en que hace falta.
+
+    ## Falla cerrado, y eso es una decisión
+
+    Cualquier fallo al consultar el registro —ilegible, ausente, ruta rara— devuelve
+    `False`, o sea «trátalo como el canon» y por tanto **desvía**. «No puedo saberlo» no es
+    «no lo es»: es la misma polaridad que el propio registro se aplica (`RegistryUnreadable`
+    en vez de `[]`).
+
+    ## Lo que esto NO cubre, declarado
+
+    Un checkout **anterior al registro y sin adoptar** no consta, así que sigue desviando.
+    Es deliberado: el sistema no adivina sobre qué copia está. La vía de desbloqueo es
+    explícita y existe — `core.casos.workspace_adopcion` (la puerta del §15).
     """
+    import os
+
     try:
         from .casos.case_locator import buscar
+        from .casos.workspace_registry import WorkspaceRegistry, raiz_por_defecto
+
         case_dir = buscar(case_id)
-    except Exception:                                   # noqa: BLE001 - defensivo
+        if case_dir is None:
+            return False
+        objetivo = os.path.normcase(os.path.abspath(str(case_dir)))
+        registro = WorkspaceRegistry(raiz_por_defecto(), ahora="")
+        return any(
+            os.path.normcase(os.path.abspath(str(e.local_path))) == objetivo
+            for e in registro.cargar()
+        )
+    except Exception:                                   # noqa: BLE001 - falla cerrado
         return False
-    return bool(case_dir) and (case_dir / "MANIFEST_CHECKOUT.json").is_file()
 
 
 def guard_escritura(
