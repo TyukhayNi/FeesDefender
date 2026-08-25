@@ -41,7 +41,7 @@ El namespace es el **W-code**, no la ruta del caso, porque el mutex tiene que ex
 | Fichero | Responsabilidad |
 |---|---|
 | `core/casos/case_mutex.py` (nuevo) | La primitiva entera: identidad de proceso, estado en disco, `adquirir`/`renovar`/`liberar` |
-| `core/casos/workspace_model.py` (modificar) | Dos errores nuevos del §10: `CaseBusy`, `MutexNotMine` |
+| `core/casos/workspace_model.py` (modificar) | Tres errores nuevos del §10: `CaseBusy`, `MutexNotMine`, `MutexIlegible` |
 | `requirements.txt` (modificar) | Declarar `filelock` y `psutil`, hoy usados sin declarar |
 | `tests/test_case_mutex.py` (nuevo) | Contrato de la primitiva |
 | `tests/test_case_mutex_concurrencia.py` (nuevo) | Dos procesos **de verdad**, solapados |
@@ -228,7 +228,7 @@ git commit -m "mutex D2: identidad de proceso con boot_id, que es lo que el PID 
 - Test: `tests/test_workspace_model.py`
 
 **Interfaces:**
-- Produces: `CaseBusy` (código `CASE_BUSY`) y `MutexNotMine` (código `MUTEX_NOT_MINE`), subclases de `WorkspaceError`, ambas en `errores_conocidos()`.
+- Produces: `CaseBusy` (`CASE_BUSY`), `MutexNotMine` (`MUTEX_NOT_MINE`) y `MutexIlegible` (`MUTEX_ILEGIBLE`), subclases de `WorkspaceError`, las tres en `errores_conocidos()`.
 
 > **Nota normativa:** el §10 dice «**Como mínimo** estos códigos», así que añadir dos no reabre la tabla. Es el mismo precedente que el Task 5 de la Fase 1, que la llevó de 12 a 15.
 
@@ -247,6 +247,7 @@ def test_los_errores_del_mutex_estan_en_la_tabla():
     codigos = {c.codigo for c in errores_conocidos()}
     assert "CASE_BUSY" in codigos
     assert "MUTEX_NOT_MINE" in codigos
+    assert "MUTEX_ILEGIBLE" in codigos
     assert CaseBusy in errores_conocidos()
     assert MutexNotMine in errores_conocidos()
 
@@ -288,6 +289,18 @@ class MutexNotMine(WorkspaceError):
 
     codigo = "MUTEX_NOT_MINE"
     descripcion = "el mutex del caso pertenece a otro titular"
+
+
+class MutexIlegible(WorkspaceError):
+    """El lock existe y no se puede leer. **NO es «no hay lock».**
+
+    Falla cerrado por la misma razón que `RegistryUnreadable` (R7/H7-02), y aquí el
+    precio de confundirlos es mayor: leerlo como «libre» dejaría entrar a un segundo
+    proceso, que es lo único que este módulo existe para impedir.
+    """
+
+    codigo = "MUTEX_ILEGIBLE"
+    descripcion = "el mutex del caso existe y no se puede leer"
 ```
 
 Y añadirlos a la tupla que devuelve `errores_conocidos()`.
@@ -421,14 +434,28 @@ def _guard(w_code: str, raiz: Path | None):
 
 
 def leer_estado(w_code: str, *, raiz: Path | None = None) -> dict | None:
+    """El estado del mutex, o `None` **si y solo si no hay lock**.
+
+    Un fichero ILEGIBLE no es «no hay lock»: lanza `MutexIlegible`. La distinción es la
+    misma que el registro de la Fase 1 se aplica a sí mismo (`RegistryUnreadable` en vez
+    de `[]`, R7/H7-02) y aquí es más grave todavía — si `adquirir` leyera `None` de un
+    lock corrupto, daría el caso por libre y **dos procesos entrarían a la vez**, que es
+    literalmente lo único que este módulo existe para impedir.
+    """
+    from .workspace_model import MutexIlegible
+
     p = ruta_del_lock(w_code, raiz=raiz)
     if not p.is_file():
         return None
     try:
         crudo = json.loads(p.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, UnicodeDecodeError, OSError):
-        return None
-    return crudo if isinstance(crudo, dict) else None
+    except (json.JSONDecodeError, UnicodeDecodeError, OSError) as exc:
+        raise MutexIlegible(
+            w_code=w_code,
+            detalle=f"el lock existe y no se puede leer: {type(exc).__name__}") from exc
+    if not isinstance(crudo, dict):
+        raise MutexIlegible(w_code=w_code, detalle="el lock no contiene un objeto")
+    return crudo
 
 
 def _escribir_estado(w_code: str, estado: dict, *, raiz: Path | None) -> None:
