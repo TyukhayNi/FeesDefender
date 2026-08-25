@@ -32,7 +32,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 13 | [Presupuesto explícito de proceso](#siguiente-presupuesto-proceso-cuánta-gobernanza-se-compra) | pendiente — **decisión de Nikolai**, no hay nada que construir | sin gates. Disparador: el mes 2026-07 cerró con **9,4 líneas de `docs/` por línea de `core/`** y cuatro cierres seguidos sin código de producción | bajo (5 min) |
 | 14 | [Desplegar en Cowork las skills ya construidas](#siguiente-reimport-skills-lo-construido-que-no-ha-llegado-al-equipo) | pendiente — **acción manual de Nikolai**; ningún test la cubre | sin gates. Disparador: `organizar-sala-lectura` va por **v1.14 en el repo** y Paola/Ana/Sergio ejecutan la **v1.12** | bajo (una tarde) |
 | 15 | [Apertura integral + piloto W-02Q38C](#siguiente-apertura-integral-apertura-completa-sobre-componentes-existentes) | spec única **rev. 8**; **cinco rondas adversariales corridas y adjudicadas** (R3 §20, R4 §22, R5 §23) y **las cuatro decisiones tomadas + write-set enumerado** (§§24-25). **R5: `REQUIERE-REVISION`, 5 confirmados + 1 añadido por el adjudicador.** El §23 **detiene el bucle de revisión del diseño**: tres de los cinco no son remediables en prosa —el discriminante de V1 ES el dueño de secuencia, la regla de estado cuelga del mutex, y el write-set es un barrido de código—; la rev. 7 corrige solo los errores; **R3 adjudicada el 2026-08-24 por Claude Code: `NO-SHIP`, 7 confirmados, 0 refutados** (§20). La **rev. 5 fija la primera vertical en Drive + pull de Sudespacho → intake → sala de máquina** (§21, decisión de Nikolai): H3-07 sale de alcance, H3-03 y H3-06 quedan acotados, los tres críticos de mecánica siguen íntegros y **`MEJORAS #120` entra en V1**. Piloto abierto, no cerrado | **decisiones TOMADAS** el 2026-08-24 por delegación de Nikolai (§24): D1 la Fase 1 de la fila #3 **precede a V1**; D2 mutex = lockfile local `O_EXCL` con namespace por W-code en el registro de D1, lease renovado, ámbito una máquina; D3 discriminante y dueño de secuencia = **`--modo v1`** del entrypoint existente (no subcomando: 103 referencias en el repo); D4 `fallo` bloquea, `parcial` → `preparado_con_pendientes`, y la poda archiva en vez de borrar. **Write-set enumerado** (§25): 27 clases, 6 productores, **solo 2 consultan el guard**. **Plan TDD troceado en 5** (V1 no es un subsistema y dos contratos no existen aún, §25.5): [Plan 1 — modo `v1` y puertas negativas](docs/superpowers/plans/2026-08-24-apertura-v1-plan1-modo-v1.md) **✅ EJECUTADO** (PR #229, `93810a0`) con su **R6 sobre código adjudicada**: `NO-SHIP`, 9 confirmados / 0 refutados, todos remediados — el CRÍTICO era `--force` creando una carpeta sombra contra el criterio 33. Era el único que no dependía de la Fase 1. Planes 2-5: mutex, write-set, generación/frescura/rondas, cableado + E2E. Queda: ejecutar el Plan 1, contratos de H3-03/H3-05/H3-06, y **R6 sobre el plan, no sobre la spec** | medio-alto |
-| 16 | [El marketplace del plugin no está publicado en git](#siguiente-marketplace-plugin-el-marketplace-despacho-tyukhay-no-está-publicado-en-git) | pendiente — **decisión de Nikolai** (E.6.1: dónde se publica). Ningún test lo cubre y ningún guard lo detecta | sin gates técnicos. **Disparador: es el único punto vivo de la migración al perfil `procesal@` —decisión D4, firmada el 2026-08-13 y nunca ejecutada— y hoy la vía de mantenimiento del plugin NO EXISTE.** El propio runbook manda actualizar el plugin en el perfil 2 con `/plugin update` «sin puente», y eso es imposible mientras el marketplace sea de tipo `directory` a un `dist\plugin` gitignorado: cualquier cambio del plugin obliga a rehacer el puente entero (Bloques 0, A.1-A.6, A.8 y D.1). Verificado el 2026-08-25 que la entrada rota está **también** en `tnm33`, no solo en el perfil procesal | bajo |
+| 16 | [El marketplace del plugin no está publicado en git](#siguiente-marketplace-plugin-el-marketplace-despacho-tyukhay-no-está-publicado-en-git) | **E.6.1 ✅ DECIDIDO el 2026-08-25: repo dedicado, privado, remoto SSH.** Quedan 3 pasos previos (regenerar el bundle, excluir `__pycache__` de `package_plugin.py`, control de secretos) + E.6.2 y E.6.3, los dos mecánicos. Ningún test lo cubre y ningún guard lo detecta | sin gates técnicos. **Disparador: es el único punto vivo de la migración al perfil `procesal@` —decisión D4, firmada el 2026-08-13 y nunca ejecutada— y hoy la vía de mantenimiento del plugin NO EXISTE.** El propio runbook manda actualizar el plugin en el perfil 2 con `/plugin update` «sin puente», y eso es imposible mientras el marketplace sea de tipo `directory` a un `dist\plugin` gitignorado: cualquier cambio del plugin obliga a rehacer el puente entero (Bloques 0, A.1-A.6, A.8 y D.1). Verificado el 2026-08-25 que la entrada rota está **también** en `tnm33`, no solo en el perfil procesal | bajo |
 
 > **Filas 13 y 14 añadidas el 2026-08-03 al final de la cola a propósito: no reordeno prioridades
 > ajenas.** Las dos son baratas y una degrada a terceros hoy — dónde encajan de verdad lo decide
@@ -220,16 +220,54 @@ A.1-A.6, A.8 y D.1) por cada cambio del plugin, con su copia de `~\.claude` y su
 rutas. Es decir: el coste de mantener el perfil procesal está hoy en su punto más alto justo en el
 tramo que D4 existía para abaratar.
 
-**La decisión que falta (E.6.1), y es tuya.** Dos opciones, con el mismo control previo:
+**E.6.1 ✅ DECIDIDO el 2026-08-25 por Nikolai: repo dedicado, privado, con remoto SSH.**
 
-1. **Repo dedicado** (p. ej. `TyukhayNi/despacho-tyukhay-marketplace`). Separa distribución de
-   desarrollo, no toca el `.gitignore` de este repo, y deja el bundle con su propio historial.
-   Cuesta un repo más que mantener y un paso de publicación explícito.
-2. **Rama de distribución en este repo** con `dist/` desexcluido solo en esa rama. No añade repos,
-   pero mete artefactos construidos en el historial de FeesDefender y obliga a que `leak-scan` los
-   vea en cada push — que es una ventaja de control y un coste de ruido a la vez.
+*La opción descartada estaba mal descrita en la rev. anterior de este bloque, y la corrección
+importa porque cambia su coste.* Se dijo «rama de distribución con `dist/` desexcluido»; la doc
+exige que el manifiesto viva en la **raíz del repositorio** —«*The `.claude-plugin/marketplace.json`
+file must be located at the repository root*»—, así que no basta desexcluir: haría falta una **rama
+huérfana** cuya raíz sea el contenido de `dist/plugin`, es decir **un segundo layout de raíz
+incompatible dentro del mismo repo**. (También se creyó, por inferencia del
+`known_marketplaces.json` local, que no se podía fijar rama. **Falso:** `/plugin marketplace add
+owner/repo@main` sí admite ref. La rama no estaba bloqueada; simplemente cuesta más de lo que
+parecía.)
 
-**Control bloqueante antes de publicar, cualquiera de las dos.** Barrido del bundle buscando
+Motivos de la decisión, en orden:
+
+1. **Encaje sin reestructurar nada.** `dist/plugin` ya *es* una raíz de marketplace válida
+   (`.claude-plugin/marketplace.json` arriba, `./feesdefender` al lado). El repo dedicado es su
+   contenido con un `.git`, y `scripts/package_plugin.py` sigue produciendo lo mismo.
+2. **No mete artefactos derivados en el repo fuente.** `.gitignore:23` existe por eso.
+3. **No abre una vía de publicación más débil.** `main` está protegida y todo entra por PR; una
+   rama `dist` sería no protegida y su forma natural de actualizarse es un push directo de salida
+   de build.
+4. **Todo lo de este repo asume una sola forma de raíz** — `pre-commit`, el `leak-scan` de CI, los
+   guards de docs, `session_close`. En una rama huérfana ninguno aplica, y los workflows se leen de
+   la rama.
+5. **Privado desde el día uno:** el bundle lleva los dos servidores MCP y dos skills con método del
+   despacho; y si algún día se distribuye por *Organization settings > Plugins*, la doc **exige**
+   que el repo del marketplace sea privado o interno.
+
+**Remoto SSH, no HTTPS — este es el detalle operativo que muerde.** Las actualizaciones automáticas
+en segundo plano **no autentican por HTTPS** (los credential helpers están deshabilitados en esos
+pulls). Con HTTPS quedaría `/plugin update` manual funcionando y el auto-update **roto en silencio**.
+Con la clave en `ssh-agent`, funciona.
+
+**Tres pasos previos al primer push, medidos el 2026-08-25:**
+
+1. **Regenerar el bundle.** El actual es del **20 de julio 13:13**, y `intake-expediente` y
+   `exportar-correos-etiqueta` están entre los `.skill` que `session_close` marca como caducados:
+   publicarlo tal cual publica las skills de julio.
+2. **Excluir `__pycache__` en `scripts/package_plugin.py`.** El bundle arrastra hoy **9 `.pyc`**
+   (`cpython-314`) más un `dxt-build/expedientes-xl.dxt`. Los `.pyc` son ruido y son específicos de
+   una versión de intérprete.
+3. **El control de secretos** de abajo, que ya estaba.
+
+**Y una cifra del handoff que era de otra cosa:** decía «920 ficheros, 8,2 MB» — eso es el árbol
+`~\.claude\plugins` completo. `dist/plugin` son **35 ficheros y 310 KB**. El tamaño no era argumento
+para ninguna de las dos opciones.
+
+**Control bloqueante antes de publicar.** Barrido del bundle buscando
 `sk-ant-`, `client_secret`, `refresh_token`, `AIza`, `ghp_`, `password` **y `tnm33`**. Debe salir
 vacío. Ojo al último término, que no es un secreto sino una prueba de portabilidad: si el bundle
 lleva rutas de este perfil, publicarlo no arregla nada. Precedente concreto en el handoff v5

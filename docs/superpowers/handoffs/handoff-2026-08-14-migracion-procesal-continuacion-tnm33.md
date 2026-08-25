@@ -243,13 +243,15 @@ las dos acciones que solo ella puede ejecutar.
    `client_secret`—, solo mirar si el campo está vacío. Si lo está, el remedio no es crear un
    `client_id` nuevo sino reutilizar el proyecto que ya sostiene los dos remotes de `tnm33`.
 
-### En `tnm33` — una decisión y una línea de config
+### En `tnm33` — trabajo mecánico y una línea de config
 
-1. **E.6.1: dónde se publica el marketplace del plugin** (repo dedicado, o rama de distribución en
-   este repo con `dist/` desexcluido). Es lo único que bloquea `PLAN.md` **#16**; los pasos E.6.2 y
-   E.6.3 son mecánicos después, y el **E.6.3 hay que hacerlo en los dos perfiles**, porque la
-   entrada `directory` huérfana está en ambos (verificado el 2026-08-25 en `tnm33`:
-   `known_marketplaces.json` y `settings.json`).
+1. **E.6: publicar el marketplace. La decisión E.6.1 ya está tomada** (2026-08-25, Nikolai): **repo
+   dedicado, privado, con remoto SSH** —SSH y no HTTPS porque el auto-update en segundo plano no
+   autentica por HTTPS y quedaría roto en silencio—. Motivos y los tres pasos previos (regenerar el
+   bundle, que es del 20 de julio; excluir `__pycache__` de `package_plugin.py`; control de
+   secretos) en `PLAN.md` **#16**. Después, E.6.2 y E.6.3, mecánicos — y el **E.6.3 hay que hacerlo
+   en los dos perfiles**, porque la entrada `directory` huérfana está en ambos (verificado el
+   2026-08-25 en `tnm33`: `known_marketplaces.json` y `settings.json`).
 2. **Fijar `FEESDEFENDER_ACTOR` a nivel de Usuario**, no solo en el `$PROFILE` — ver §2.1. Sin eso,
    el log forense de esta cuenta sigue registrando `actor = 'tnm33'`, **fuera de
    `ACTORES_DESPACHO`**. Es una línea, y es el único defecto de la migración que sigue vivo.
