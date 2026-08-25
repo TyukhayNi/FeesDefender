@@ -118,6 +118,24 @@ _CAMPOS = ("schema", "propietario", "nonce", "acquired_at", "renewed_at",
            "lease_seconds")
 
 
+def _normal(p: Path) -> str:
+    """Forma canonica LEXICA de una ruta: sin tocar el disco.
+
+    `os.path.normcase(os.path.abspath(...))` es puro texto, asi que da lo mismo con el
+    directorio creado o sin crear. Es el mismo patron que usa `workspace_registry._bajo`.
+    """
+    return os.path.normcase(os.path.abspath(str(p)))
+
+
+def _bajo(candidata: Path, raiz: Path) -> bool:
+    """¿`candidata` cae dentro de `raiz`? Por COMPONENTES, no por prefijo de cadena.
+
+    `CASOS_x` no esta bajo `CASOS` aunque su nombre empiece igual.
+    """
+    c, r = _normal(candidata), _normal(raiz)
+    return c == r or c.startswith(r + os.sep)
+
+
 def raiz_de_locks(raiz: Path | None = None) -> Path:
     """La raiz de los lockfiles, **validada aqui**.
 
@@ -134,14 +152,17 @@ def raiz_de_locks(raiz: Path | None = None) -> Path:
     if raiz is None:
         from .workspace_registry import raiz_por_defecto
         raiz = raiz_por_defecto()
-    raiz = Path(raiz).resolve()
+    # `abspath` y NO `resolve()`, y esto lo compro una carrera real: `Path.resolve()`
+    # consulta el sistema de ficheros y devuelve una cadena DISTINTA segun el directorio
+    # exista o no (en Windows, la forma larga frente a la que le pasaste). Con dos
+    # procesos creando la raiz a la vez, el mismo argumento resolvia distinto en cada
+    # uno y la comprobacion de contencion de abajo rechazaba una ruta legitima. Una
+    # comprobacion de seguridad no puede depender de quien haya llegado antes.
+    raiz = Path(os.path.abspath(str(raiz)))
     for prohibida, motivo in ((Path(config.settings.casos_root), "CASOS_ROOT"),
                               (Path(config.settings.project_root), "el repo")):
-        try:
-            prohibida = prohibida.resolve()
-        except OSError:                                  # pragma: no cover - defensivo
-            continue
-        if raiz == prohibida or prohibida in raiz.parents:
+        prohibida = Path(os.path.abspath(str(prohibida)))
+        if _bajo(raiz, prohibida):
             raise WorkspaceUnderCatalogRoot(
                 detalle=f"el mutex no puede vivir bajo {motivo}")
     return raiz
@@ -155,8 +176,8 @@ def ruta_del_lock(w_code: str, *, raiz: Path | None = None) -> Path:
     escape porque el revisor demostro que un W-code con `..` salia de la raiz.
     """
     base = raiz_de_locks(raiz)
-    candidata = (base / f"{_w_code_valido(w_code)}.lock").resolve()
-    if candidata.parent != base:
+    candidata = base / f"{_w_code_valido(w_code)}.lock"
+    if _normal(candidata.parent) != _normal(base):
         raise ValueError("la ruta del lock escapa de la raiz del registro")
     return candidata
 
