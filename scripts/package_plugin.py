@@ -23,7 +23,14 @@ CONECTORES = (
 OUT = ROOT / "dist" / "plugin"
 PLUGIN = OUT / "feesdefender"
 
-_IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc")
+# Nada que ate el bundle a una maquina o a un perfil debe viajar:
+#   * `__pycache__`/`*.pyc`: residuo de ejecucion, y el .pyc lleva DENTRO la ruta
+#     absoluta con la que se compilo. Excluido desde el primer dia (2026-06-22).
+#   * `dxt-build`: subproducto de la OTRA via de empaquetado (la extension DXT de
+#     Claude Desktop). Su `manifest.json` cablea el interprete y el PYTHONPATH del
+#     perfil que lo genero, y ademas arrastra un .dxt de 29 KB que el marketplace
+#     no usa. El propio handoff v5 lo clasifica como «subproducto, no tocar».
+_IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc", "dxt-build")
 
 
 def _copytree(src: Path, dst: Path) -> None:
