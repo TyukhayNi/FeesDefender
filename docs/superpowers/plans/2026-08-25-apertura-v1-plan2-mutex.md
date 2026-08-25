@@ -1,5 +1,5 @@
 ---
-estado: ejecutable
+estado: ejecutado
 dueño: Nikolai Tyukhay
 fecha: 2026-08-25
 revision: 2
@@ -102,7 +102,7 @@ En la raíz del registro privado (`workspace_registry.raiz_por_defecto()`). El T
 
 **Interfaces:** produce nada de código.
 
-- [ ] **Step 1: Escribir el test que falla**
+- [x] **Step 1: Escribir el test que falla**
 
 ```python
 # tests/test_case_mutex.py
@@ -156,12 +156,12 @@ def test_psutil_NO_se_declara():
     assert "psutil" not in _requisitos()
 ```
 
-- [ ] **Step 2: Correr y verificar que falla**
+- [x] **Step 2: Correr y verificar que falla**
 
 Run: `python -m pytest tests/test_case_mutex.py -q -p no:randomly`
 Expected: FAIL — `AssertionError: core/casos/case_mutex.py importa filelock y requirements.txt no lo declara`
 
-- [ ] **Step 3: Declararla**
+- [x] **Step 3: Declararla**
 
 En `requirements.txt`, antes del bloque `# Tests`:
 
@@ -172,12 +172,12 @@ filelock>=3.29,<4        # mutex interproceso por caso (core/casos/case_mutex.py
                          # backend es lo que se midió.
 ```
 
-- [ ] **Step 4: Correr y verificar que pasa**
+- [x] **Step 4: Correr y verificar que pasa**
 
 Run: `python -m pytest tests/test_case_mutex.py -q -p no:randomly`
 Expected: PASS (2 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add requirements.txt tests/test_case_mutex.py
@@ -201,7 +201,7 @@ git commit -m "deps: filelock fijado a >=3.29,<4 para el mutex de D2"
   - `_w_code_valido(w) -> str` — canónico; lanza si no casa `^W-[A-Z0-9]{3,20}$`.
   - `identidad_proceso() -> ProcesoID` con `host`, `pid`, `proceso_uid`.
 
-- [ ] **Step 1: Escribir el test que falla**
+- [x] **Step 1: Escribir el test que falla**
 
 ```python
 # añadir a tests/test_case_mutex.py
@@ -279,12 +279,12 @@ class TestIdentidadDeProceso:
         assert yo.es_el_mismo(impostor) is False
 ```
 
-- [ ] **Step 2: Correr y verificar que falla**
+- [x] **Step 2: Correr y verificar que falla**
 
 Run: `python -m pytest tests/test_case_mutex.py -q -p no:randomly`
 Expected: FAIL — `ModuleNotFoundError: No module named 'core.casos.case_mutex'`
 
-- [ ] **Step 3: Implementación mínima**
+- [x] **Step 3: Implementación mínima**
 
 ```python
 # core/casos/case_mutex.py
@@ -371,12 +371,12 @@ def identidad_proceso() -> ProcesoID:
                      proceso_uid=_PROCESO_UID)
 ```
 
-- [ ] **Step 4: Correr y verificar que pasa**
+- [x] **Step 4: Correr y verificar que pasa**
 
 Run: `python -m pytest tests/test_case_mutex.py -q -p no:randomly`
 Expected: PASS (20 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add core/casos/case_mutex.py tests/test_case_mutex.py
@@ -395,7 +395,7 @@ git commit -m "mutex D2: validar reloj, lease y W-code antes de tocar disco"
 
 > **Nota normativa, verificada:** el «como mínimo» que permite añadir códigos está en la spec **dual** (`2026-07-29-feesdefender-dual-case-workspace-design.md:719-746`), no en la de apertura. La rev. 1 lo citaba sin decir dónde.
 
-- [ ] **Step 1: Escribir el test que falla**
+- [x] **Step 1: Escribir el test que falla**
 
 ```python
 # añadir a tests/test_workspace_model.py
@@ -417,12 +417,12 @@ def test_el_mensaje_del_mutex_no_lleva_rutas_ni_PII():
     assert "Calle Falsa" not in texto and "C:\\" not in texto
 ```
 
-- [ ] **Step 2: Correr y verificar que falla**
+- [x] **Step 2: Correr y verificar que falla**
 
 Run: `python -m pytest tests/test_workspace_model.py -q -p no:randomly -k mutex`
 Expected: FAIL — `ImportError: cannot import name 'CaseBusy'`
 
-- [ ] **Step 3: Implementación mínima**
+- [x] **Step 3: Implementación mínima**
 
 En `core/casos/workspace_model.py`, junto a los tres errores del registro:
 
@@ -460,12 +460,12 @@ class MutexIlegible(WorkspaceError):
 
 Y añadirlas a la tupla de `errores_conocidos()`.
 
-- [ ] **Step 4: Correr y verificar que pasa**
+- [x] **Step 4: Correr y verificar que pasa**
 
 Run: `python -m pytest tests/test_workspace_model.py -q -p no:randomly`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add core/casos/workspace_model.py tests/test_workspace_model.py
@@ -485,7 +485,7 @@ git commit -m "mutex D2: CASE_BUSY, MUTEX_NOT_MINE y MUTEX_ILEGIBLE en la tabla 
 **Interfaces:**
 - Produces: `raiz_de_locks(raiz=None) -> Path` (valida ubicación), `ruta_del_lock(w_code, *, raiz=None) -> Path` (contención comprobada), `leer_estado(w_code, *, raiz=None) -> dict | None` (`None` **solo** si no hay fichero).
 
-- [ ] **Step 1: Escribir el test que falla**
+- [x] **Step 1: Escribir el test que falla**
 
 ```python
 # tests/test_case_mutex_estados_invalidos.py
@@ -567,12 +567,12 @@ def test_sin_fichero_SI_es_None(raiz):
     assert leer_estado(W, raiz=raiz) is None
 ```
 
-- [ ] **Step 2: Correr y verificar que falla**
+- [x] **Step 2: Correr y verificar que falla**
 
 Run: `python -m pytest tests/test_case_mutex_estados_invalidos.py -q -p no:randomly`
 Expected: FAIL — `ImportError: cannot import name 'ruta_del_lock'`
 
-- [ ] **Step 3: Implementación mínima**
+- [x] **Step 3: Implementación mínima**
 
 ```python
 # añadir a core/casos/case_mutex.py
@@ -656,12 +656,12 @@ def leer_estado(w_code: str, *, raiz: Path | None = None) -> dict | None:
     return _validar_estado(crudo, w_code)
 ```
 
-- [ ] **Step 4: Correr y verificar que pasa**
+- [x] **Step 4: Correr y verificar que pasa**
 
 Run: `python -m pytest tests/test_case_mutex_estados_invalidos.py -q -p no:randomly`
 Expected: PASS (25 tests)
 
-- [ ] **Step 5: Los dos mutantes obligatorios**
+- [x] **Step 5: Los dos mutantes obligatorios**
 
 Uno por uno; **cada uno tiene que morir**. Revertir con `git checkout`, nunca a mano.
 
@@ -672,7 +672,7 @@ Uno por uno; **cada uno tiene que morir**. Revertir con `git checkout`, nunca a 
 
 Si alguno **no** muere, ese test no contrata nada: párate y arréglalo.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add core/casos/case_mutex.py tests/test_case_mutex_estados_invalidos.py
@@ -689,7 +689,7 @@ git commit -m "mutex D2: esquema validado y fail-closed con sus mutantes"
 
 **Interfaces:** produce `adquirir(w_code, *, ahora, raiz=None, lease_seconds=LEASE_POR_DEFECTO) -> str`, `renovar(w_code, *, nonce, ahora, raiz=None) -> None`, `_caducado(estado, ahora) -> bool`.
 
-- [ ] **Step 1: Escribir el test que falla**
+- [x] **Step 1: Escribir el test que falla**
 
 ```python
 # añadir a tests/test_case_mutex.py
@@ -772,12 +772,12 @@ class TestElLease:
             renovar(W, nonce="nonce-de-otro", ahora=AHORA, raiz=raiz)
 ```
 
-- [ ] **Step 2: Correr y verificar que falla**
+- [x] **Step 2: Correr y verificar que falla**
 
 Run: `python -m pytest tests/test_case_mutex.py -q -p no:randomly`
 Expected: FAIL — `ImportError: cannot import name 'adquirir'`
 
-- [ ] **Step 3: Implementación mínima**
+- [x] **Step 3: Implementación mínima**
 
 ```python
 # añadir a core/casos/case_mutex.py
@@ -855,12 +855,12 @@ def renovar(w_code: str, *, nonce: str, ahora: str, raiz: Path | None = None) ->
         _escribir_estado(w_code, estado, raiz=raiz)
 ```
 
-- [ ] **Step 4: Correr y verificar que pasa**
+- [x] **Step 4: Correr y verificar que pasa**
 
 Run: `python -m pytest tests/test_case_mutex.py -q -p no:randomly`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add core/casos/case_mutex.py tests/test_case_mutex.py
@@ -877,7 +877,7 @@ git commit -m "mutex D2: adquirir, lease y renovacion monotona"
 
 **Interfaces:** produce `liberar(w_code, *, nonce, raiz=None) -> None`.
 
-- [ ] **Step 1: Escribir el test que falla**
+- [x] **Step 1: Escribir el test que falla**
 
 ```python
 # añadir a tests/test_case_mutex.py
@@ -905,12 +905,12 @@ class TestLiberar:
         assert adquirir(W, ahora=AHORA, raiz=raiz)
 ```
 
-- [ ] **Step 2: Correr y verificar que falla**
+- [x] **Step 2: Correr y verificar que falla**
 
 Run: `python -m pytest tests/test_case_mutex.py -q -p no:randomly`
 Expected: FAIL — `ImportError: cannot import name 'liberar'`
 
-- [ ] **Step 3: Implementación mínima**
+- [x] **Step 3: Implementación mínima**
 
 ```python
 # añadir a core/casos/case_mutex.py
@@ -929,12 +929,12 @@ def liberar(w_code: str, *, nonce: str, raiz: Path | None = None) -> None:
         ruta_del_lock(w_code, raiz=raiz).unlink(missing_ok=True)
 ```
 
-- [ ] **Step 4: Correr y verificar que pasa**
+- [x] **Step 4: Correr y verificar que pasa**
 
 Run: `python -m pytest tests/test_case_mutex.py -q -p no:randomly`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add core/casos/case_mutex.py tests/test_case_mutex.py
@@ -953,7 +953,7 @@ git commit -m "mutex D2: liberar exige demostrar titularidad"
 
 **Interfaces:** produce `tomado(w_code, *, ahora_fn, raiz=None, lease_seconds=LEASE_POR_DEFECTO)`. `ahora_fn` es un **callable**, no una cadena: el renovador necesita el instante de cada latido.
 
-- [ ] **Step 1: Escribir el test que falla**
+- [x] **Step 1: Escribir el test que falla**
 
 ```python
 # añadir a tests/test_case_mutex.py
@@ -1012,12 +1012,12 @@ class TestElGestorRenueva:
         assert threading.active_count() == antes
 ```
 
-- [ ] **Step 2: Correr y verificar que falla**
+- [x] **Step 2: Correr y verificar que falla**
 
 Run: `python -m pytest tests/test_case_mutex.py -q -p no:randomly -k Gestor`
 Expected: FAIL — `ImportError: cannot import name 'tomado'`
 
-- [ ] **Step 3: Implementación mínima**
+- [x] **Step 3: Implementación mínima**
 
 ```python
 # añadir a core/casos/case_mutex.py
@@ -1062,16 +1062,16 @@ def tomado(w_code: str, *, ahora_fn, raiz: Path | None = None,
         liberar(w_code, nonce=nonce, raiz=raiz)
 ```
 
-- [ ] **Step 4: Correr y verificar que pasa**
+- [x] **Step 4: Correr y verificar que pasa**
 
 Run: `python -m pytest tests/test_case_mutex.py -q -p no:randomly`
 Expected: PASS
 
-- [ ] **Step 5: El mutante obligatorio**
+- [x] **Step 5: El mutante obligatorio**
 
 Quitar `hilo.start()`. → `test_RENUEVA_mientras_el_cuerpo_corre` **rojo**; los otros dos **verdes**. Eso prueba que ese test contrata la renovación y no otra cosa. Revertir con `git checkout`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add core/casos/case_mutex.py tests/test_case_mutex.py
@@ -1087,7 +1087,7 @@ git commit -m "mutex D2: el gestor renueva el lease mientras el cuerpo corre"
 **Files:**
 - Create: `tests/test_case_mutex_concurrencia.py`
 
-- [ ] **Step 1: Escribir el test**
+- [x] **Step 1: Escribir el test**
 
 ```python
 # tests/test_case_mutex_concurrencia.py
@@ -1173,12 +1173,12 @@ def test_un_proceso_solo_SI_entra(tmp_path):
     assert out.strip() == "GANADOR"
 ```
 
-- [ ] **Step 2: Correr y verificar que pasa con el código real**
+- [x] **Step 2: Correr y verificar que pasa con el código real**
 
 Run: `python -m pytest tests/test_case_mutex_concurrencia.py -q -p no:randomly`
 Expected: PASS (2 tests)
 
-- [ ] **Step 3: EL MUTANTE QUE LA REV. 1 NO TENÍA**
+- [x] **Step 3: EL MUTANTE QUE LA REV. 1 NO TENÍA**
 
 Sustituir `_guard` por:
 
@@ -1197,7 +1197,7 @@ Expected: **`test_de_dos_procesos_que_COMPITEN_gana_exactamente_uno` ROJO** con 
 
 Revertir con `git checkout -- core/casos/case_mutex.py`.
 
-- [ ] **Step 4: Suite completa, dos semillas**
+- [x] **Step 4: Suite completa, dos semillas**
 
 ```bash
 python -m pytest -q -p randomly --randomly-seed=777 --basetemp="$env:TEMP\fd_bt"
@@ -1205,7 +1205,7 @@ python -m pytest -q -p randomly --randomly-seed=31337 --basetemp="$env:TEMP\fd_b
 ```
 Expected: 0 fallos en las dos. Toda variación del conteo que no sean los tests nuevos se explica antes de seguir.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tests/test_case_mutex_concurrencia.py
@@ -1232,3 +1232,40 @@ git commit -m "mutex D2: la carrera de verdad, con barrera y mutante que la mata
 - **No coordina entre máquinas.** Entre máquinas sigue el lock de checkout, con sus seis defectos vivos en `xfail`.
 - **No sustituye al `estado_repositorio`.** Aquel dice si el caso está prestado a otra máquina; este, si otro proceso **de esta** lo está tocando ahora.
 - **No implementa fencing tokens.** Era la tercera opción de la decisión de H10-04 y se descartó porque obliga a que **todos** los escritores del write-set presenten el token, o sea que arrastra el Plan 3 dentro del Plan 2.
+
+---
+
+## Ejecutado el 2026-08-25 — y tres cosas que solo aparecieron al ejecutarlo
+
+Las ocho tareas, con sus **cuatro mutantes obligatorios muertos cada uno por su
+frontera**. Suite **3.502 tests, 0 fallos con las semillas 777 y 31337**.
+
+**1. Un defecto real que la carrera encontró, y ningún test unitario podía encontrar.**
+La comprobación de contención de `ruta_del_lock` usaba `Path.resolve()`, que **consulta
+el sistema de ficheros** y devuelve una cadena distinta según el directorio exista o no.
+Con dos procesos creando la raíz a la vez, el mismo argumento resolvía distinto en cada
+uno y la comprobación rechazaba una ruta legítima: la ronda 8 de 12 reventó con
+`ValueError: la ruta del lock escapa de la raiz`. Ahora la comprobación es **léxica**
+(`normcase(abspath(...))`), como ya hacía `workspace_registry._bajo`. *Una comprobación
+de seguridad no puede depender de quién haya llegado antes.*
+
+**2. El mutante del Task 7 estaba mal apuntado, y lo dije en vez de aceptarlo.** El plan
+prescribía quitar `hilo.start()` y esperaba que muriera **solo** `test_RENUEVA_...`.
+Murieron los tres — pero los otros dos por un `RuntimeError` de `join()` sobre un hilo
+sin arrancar, o sea por el montaje y no por su contrato. Reapuntado a `_latir` (el hilo
+arranca y late, pero no renueva), muere **solo el que contrata la renovación**. Es la
+lección de `feedback-mutacion-vale-por-su-mutante` aplicada al propio plan que la cita.
+
+**3. Un fallo de orden en el plan.** Los tests del Task 4 llaman a `adquirir`, que
+construye el Task 5. Se ejecutaron juntos. No cambia el resultado, pero el plan decía
+«Expected: PASS (25 tests)» en un punto donde eso era imposible.
+
+**El §10 pasa de 15 a 18 códigos.** `CASE_BUSY` no es `CASE_LOCKED`: aquel dice que el
+caso está prestado a otra máquina según el canon; este, que otro proceso de la mía lo
+está tocando ahora. Con un solo código el operador no podría distinguir «espera dos
+minutos» de «llama a quien lo tiene prestado».
+
+**Lo que sigue SIN VERIFICAR:** **nadie llama todavía a la primitiva** — cablearla es el
+Plan 3, y hasta entonces el mutex no protege nada en producción. Y el criterio 41 sigue
+sin probarse: exige staging disjunto, unión conservada en cuatro artefactos y
+titularidad cruzada, que este plan **no reclama**.
