@@ -3764,7 +3764,24 @@ acepta el Drive. Tocar la local haría divergir las dos ramas y provocaría un c
 
 ---
 
-## 93. Ciclo de vida del lock de la biblioteca: no se escribió en el checkout y el checkin aborta al cerrar
+## 93. Ciclo de vida del lock de la biblioteca: no se escribió en el checkout y el checkin aborta al cerrar  [B RESUELTO 2026-08-25 · A ABIERTO]
+
+> **[B RESUELTO 2026-08-25]** — y **no con el remedio que esta entrada proponía**, que era
+> tratar `disponible → disponible` como no-op idempotente en CP11 y salir en VERDE. Eso
+> arreglaba el traceback y **empeoraba el defecto A-2c**: el evento `case_checkin` ya estaría
+> registrado, así que un checkin reentrante pasaría de morir ruidosamente a **duplicar la
+> traza de custodia en silencio**. El orden era el defecto, no la excepción.
+>
+> Lo que se hizo: `cmd_checkin` valida la transición **antes** de registrar el evento y de
+> integrar la bandeja (CP10-bis). Si el ciclo no se puede cerrar, no se registra nada. Y las
+> dos causas se distinguen, porque colapsarlas en «verde» convertiría la comprobación en
+> decoración: **reentrancia** (hay `ultimo_checkin_timestamp`) sale con 0 diciendo que no hay
+> nada que hacer; **anomalía** (consta `disponible` y nadie cerró nada) sale con 4 y la nombra.
+> Siguen siendo diez operaciones rclone: no se añadió ninguna, se movió una.
+>
+> **El Fallo A sigue ABIERTO** — que el checkout falle en alto si el write-then-verify del
+> lock no confirma, y la distinción `sin_lock` / `disponible`. Es el mismo problema que los
+> defectos A-1 y va con ellos (Fase 2b, aparcada: ver `PLAN.md` fila #3).
 
 **Disparador:** ninguno todavía — detectado en vivo el 2026-07-27 al hacer el checkin de W-02VND1 (el
 que subió la recuperación de `#90`). Son **dos fallos del mismo ciclo de vida**, y el segundo tapa al
@@ -3950,7 +3967,16 @@ promueve por completitud: hoy nadie está bloqueado, y el checkin de W-02VND1 se
 **Coste estimado.** (1) ~1 h (caché + invalidación por mtime + test). (2) ~1 día con spec. (3) spec
 propia, sin estimar hasta responder los contraargumentos. (4) ~10 min de medición; el ajuste, trivial.
 
-## 96. El guard de escritura se dispara sobre la copia PRESTADA, y ahí no protege de nada
+## 96. El guard de escritura se dispara sobre la copia PRESTADA, y ahí no protege de nada  [RESUELTO 2026-08-25]
+
+> **[RESUELTO 2026-08-25]** `case_manager.es_copia_prestada()` discrimina por la presencia
+> de `MANIFEST_CHECKOUT.json` en la raíz del caso, y `guard_escritura` no desvía cuando la
+> ruta resuelta es una copia local prestada. Sobre el Drive nada cambia — lo vigilan cinco
+> tests de control, tres de ellos preexistentes, y un mutante que fuerza `es_copia_prestada`
+> a `True` los mata: el arreglo **discrimina**, no apaga el guard.
+>
+> El *hallazgo menor* del final de esta entrada (`90_Notas personales/` creada vacía en la
+> copia local) **sigue abierto**: es inocuo y no se tocó.
 
 **Anotado 2026-07-27**, al preparar el caso `W-02MA0R` para seguir trabajando en local con el
 préstamo abierto. Hermano de `#93` (ciclo de vida del lock): los dos salen del mismo sitio, que el
