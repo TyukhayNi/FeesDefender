@@ -1022,8 +1022,8 @@ caso: durante un checkout, un proceso escribe en el local y otro en Drive.
       Sergio empiecen a usar el préstamo, o dos sesiones sobre el mismo caso. Entonces se
       retoma partida en **2a** (integridad del checkin: A-2a, A-2b, B0-2a, B0-2b) y **2b**
       (concurrencia: los dos A-1, `MEJORAS #93-A`, y que `checkout-caso` deje de adquirir el
-      lock). El diseño de 2a está razonado en la bitácora del 67º cierre; **no hay spec
-      escrita y no se escribe hasta que el disparador exista.**
+      lock). El diseño de 2a está razonado en el bloque de cierre de esta
+      sesión; **no hay spec escrita y no se escribe hasta que el disparador exista.**
 
       Siguen fuera, como estaban: la conmutación **atómica** del guard a denegar y la retirada
       de `_pendiente_checkin`, que son de la Fase 3 y exigen inventario sobre casos reales.
