@@ -36,8 +36,15 @@ HIJO = textwrap.dedent('''
     import sys, time
     sys.path.insert(0, {repo!r})
     from pathlib import Path
+    from core.casos import case_mutex as cm
     from core.casos.case_mutex import adquirir
     from core.casos.workspace_model import CaseBusy
+
+    # El hijo fija el reloj del sistema igual que la fixture del padre: la cota de
+    # desvio es SIMETRICA (R12/H12-01) y un timestamp fijo se aleja del reloj real en
+    # cuanto pasa un dia. Sin esto, la carrera dejaria de medir la exclusion para medir
+    # la fecha en que se corre.
+    cm._ahora_del_sistema = lambda: cm._instante({ahora!r})
 
     Path({listo!r}).write_text("x", encoding="utf-8")     # «estoy cargado»
     salida = Path({salida!r})

@@ -64,13 +64,25 @@ def _ahora_del_sistema() -> float:
 
 
 def _sin_desvio_absurdo(ts: str) -> float:
-    """`_instante(ts)`, y ademas: que no venga del futuro (R11/H11-01)."""
+    """`_instante(ts)`, y ademas: que no se aleje del reloj del sistema en NINGUNA
+    direccion (R11/H11-01 + R12/H12-01).
+
+    **La cota es simetrica, y que no lo fuera es la tercera vez que cierro media
+    frontera.** R10 dijo «naive o futuro» y cerre el naive. R11 cerro el futuro. Y el
+    pasado seguia abierto: `adquirir` con `ahora="2000-01-01"` publica un lease que
+    **nace vencido**, asi que el llamador recibe su nonce, se cree titular y cualquier
+    otro proceso entra al instante. El daño es identico al del futuro; solo cambia el
+    signo.
+    """
     momento = _instante(ts)
-    if momento > _ahora_del_sistema() + DESVIO_MAXIMO_SEGUNDOS:
+    desvio = momento - _ahora_del_sistema()
+    if abs(desvio) > DESVIO_MAXIMO_SEGUNDOS:
+        hacia = "el futuro" if desvio > 0 else "el pasado"
         raise ValueError(
-            "el instante " + repr(ts) + " esta demasiado en el futuro respecto del "
-            "reloj del sistema (mas de " + str(DESVIO_MAXIMO_SEGUNDOS) + " s): "
-            "aceptarlo dejaria robar el lease de un titular vivo")
+            "el instante " + repr(ts) + " se aleja mas de "
+            + str(DESVIO_MAXIMO_SEGUNDOS) + " s hacia " + hacia + " respecto del reloj "
+            "del sistema: hacia el futuro robaria el lease de un titular vivo, y hacia "
+            "el pasado publicaria un lease ya vencido")
     return momento
 
 
@@ -241,7 +253,15 @@ def _validar_estado(crudo, w_code: str) -> dict:
     faltan = [c for c in _CAMPOS if c not in crudo]
     if faltan:
         raise malo(f"al lock le faltan campos: {faltan}")
-    if crudo["schema"] != SCHEMA_MUTEX:
+    sobrantes = sorted(set(crudo) - set(_CAMPOS))
+    if sobrantes:
+        # Politica EXPLICITA (R12/H12-05): un lock con campos que esta version no conoce
+        # se rechaza. La compatibilidad hacia delante se lleva subiendo `SCHEMA_MUTEX`,
+        # no aceptando en silencio lo que no se entiende.
+        raise malo("el lock trae campos desconocidos: " + str(sobrantes))
+    # `type(...) is int` y no `isinstance` a proposito: `True == 1` en Python, asi que
+    # `schema: true` colaba como version 1 (R12/H12-05).
+    if type(crudo["schema"]) is not int or crudo["schema"] != SCHEMA_MUTEX:
         # No se adivina, igual que `WorkspaceRegistry` con `SchemaNoSoportado`: un lock
         # escrito por una version que no conocemos puede significar cualquier cosa, y
         # «cualquier cosa» no es base para autorizar una escritura (R11/H11-04).
@@ -254,6 +274,14 @@ def _validar_estado(crudo, w_code: str) -> dict:
         # `{}` cumplia «es un dict» y pasaba. Un propietario vacio no identifica a nadie,
         # asi que el `CaseBusy` saldria sin decir quien tiene el caso.
         raise malo("al propietario le faltan campos: " + str(faltan_prop))
+    # Y sus TIPOS: el propietario alimenta el diagnostico de `CaseBusy`, asi que un
+    # `host: 7` o un `proceso_uid: ["u"]` producen un mensaje que no identifica a nadie.
+    if type(propietario["host"]) is not str:
+        raise malo("el host del propietario no es texto")
+    if type(propietario["pid"]) is not int or propietario["pid"] <= 0:
+        raise malo("el pid del propietario no es un entero positivo")
+    if type(propietario["proceso_uid"]) is not str:
+        raise malo("el proceso_uid del propietario no es texto")
     if not isinstance(crudo["nonce"], str) or not crudo["nonce"]:
         raise malo("el nonce esta vacio o no es texto")
     try:
@@ -327,13 +355,25 @@ def _guard(w_code: str, raiz: Path | None):
 
     from .workspace_model import CaseBusy
 
+    # El `raise` va FUERA del `except` a proposito (R12/H12-06): dentro, Python engancha
+    # el `Timeout` como `__context__` aunque se use `from None`, y ese objeto lleva la
+    # ruta del guard en su mensaje. `from None` solo suprime la PRESENTACION; lo que el
+    # §16 pide es que la ruta no viaje.
+    tipo_del_fallo = None
     try:
         lock = _abrir_guard(w_code, raiz)
     except Timeout as exc:
+        tipo_del_fallo = type(exc).__name__
+    if tipo_del_fallo is not None:
+        # `from None` y NO `from exc` (R12/H12-06): el `Timeout` de `filelock` lleva la
+        # ruta del guard en su mensaje, asi que encadenarlo la publicaba en cualquier
+        # traceback. El §16 no prohibe la ruta «en `str()`»: prohibe filtrarla. Se
+        # conserva el tipo de la causa, que diagnostica sin exponer.
         raise CaseBusy(
             w_code=_w_code_valido(w_code),
             detalle="la seccion critica sigue ocupada tras "
-                    + str(ESPERA_SECCION_CRITICA) + " s") from exc
+                    + str(ESPERA_SECCION_CRITICA) + " s ("
+                    + tipo_del_fallo + ")")
     try:
         yield lock
     finally:
@@ -458,6 +498,7 @@ class SesionMutex:
     w_code: str
     nonce: str
     raiz: "Path | None"
+    ahora_fn: "object" = None
     _perdido: bool = False
     _causa: "BaseException | None" = None
 
@@ -486,6 +527,14 @@ class SesionMutex:
         if estado is None or estado["nonce"] != self.nonce:
             self.marcar_perdido()
             return False
+        # Y el LEASE (R12/H12-02). Comprobar solo el nonce daba una garantia falsa justo
+        # donde mas cara sale: el cuerpo llama a esto ANTES de publicar algo
+        # irreversible, y desde que el lease vence otro proceso esta autorizado a
+        # adquirir. «Sigue siendo mi nonce» y «sigo siendo titular» dejaron de ser lo
+        # mismo en el instante en que el lease caduco.
+        if self.ahora_fn is not None and _caducado(estado, self.ahora_fn()):
+            self.marcar_perdido()
+            return False
         return True
 
 
@@ -508,16 +557,20 @@ def tomado(w_code: str, *, ahora_fn, raiz: Path | None = None,
     """
     lease = _lease_valido(lease_seconds)
     nonce = adquirir(w_code, ahora=ahora_fn(), raiz=raiz, lease_seconds=lease)
-    sesion = SesionMutex(w_code=_w_code_valido(w_code), nonce=nonce, raiz=raiz)
+    sesion = SesionMutex(w_code=_w_code_valido(w_code), nonce=nonce, raiz=raiz,
+                         ahora_fn=ahora_fn)
     parar = threading.Event()
 
     def _latir():
         while not parar.wait(lease / _FRACCION_LATIDO):
             try:
                 renovar(w_code, nonce=nonce, ahora=ahora_fn(), raiz=raiz)
-            except Exception as exc:                     # noqa: BLE001
-                # NO se traga: se registra. El hilo no puede parar el cuerpo, pero
-                # callarse es lo que dejaba a dos procesos escribiendo a la vez.
+            except BaseException as exc:                 # noqa: BLE001
+                # `BaseException` y no `Exception` (R12/H12-03): un `SystemExit` en el
+                # hilo lo dejaba morir SIN señal, que es exactamente el defecto que esta
+                # rama existe para cerrar. NO se traga: se registra. El hilo no puede
+                # parar el cuerpo, pero callarse es lo que dejaba a dos procesos
+                # escribiendo a la vez.
                 sesion.marcar_perdido(exc)
                 return
 
@@ -534,12 +587,22 @@ def tomado(w_code: str, *, ahora_fn, raiz: Path | None = None,
         hilo.join(timeout=5)
         try:
             liberar(w_code, nonce=nonce, raiz=raiz)
-        except Exception as exc:                         # noqa: BLE001
+        except BaseException as exc:                     # noqa: BLE001
             # `liberar` exige titularidad, asi que fallar aqui ES la señal de perdida.
             # NO se revalida despues de una liberacion CORRECTA: acabamos de borrar el
             # lock, asi que «no hay lock» significa «lo solte yo», no «lo perdi». Ese
             # matiz lo cazaron dos tests que ya existian, no yo al escribirlo.
             sesion.marcar_perdido(exc)
+        if sesion.perdido() and fallo_del_cuerpo and sesion._causa is not None:
+            # El error del cuerpo manda, pero la perdida del mutex no puede evaporarse
+            # (R12/H12-04): antes solo quedaba en `sesion._causa`, invisible para el
+            # llamador. Una nota es observable en el traceback sin desplazar al primario.
+            import sys
+            en_vuelo = sys.exc_info()[1]
+            if en_vuelo is not None:
+                en_vuelo.add_note(
+                    "[mutex] ademas, el mutex se perdio durante la operacion: "
+                    + type(sesion._causa).__name__ + ": " + str(sesion._causa))
         if sesion.perdido() and not fallo_del_cuerpo:
             from .workspace_model import MutexPerdido
             raise MutexPerdido(
