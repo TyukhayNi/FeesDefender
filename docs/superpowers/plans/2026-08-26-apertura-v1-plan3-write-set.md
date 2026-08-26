@@ -349,16 +349,41 @@ que ese test mide. Lo diagnostiqué imprimiendo el `detalle` de la excepción en
 teorizar: el mensaje visible de `MutexPerdido` es su `descripcion` de clase y **no** dice de
 qué `raise` viene, así que a ojo era indistinguible del cierre de `tomado()`.
 
-## Task 2: `escritura` — la costura y la capacidad
+## Task 2: `escritura` — la costura y la capacidad ✅ COMPLETO (`c43ee38`)
 
-- [ ] `tests/test_escritura_costura.py` con un test por frontera **C0-C8**, antes del módulo.
-- [ ] **C0 primero:** montar un caso cuyo nombre de carpeta y cuyo `meta.id_go` discrepen, y
-      exigir rechazo. Es el CRÍTICO de R14 y sin este test la pieza no vale.
-- [ ] C6 con los tres estados y **tres** salidas distinguibles; el test comprueba **cuál**.
-- [ ] C7: con el mutex NO sostenido y el caso `prestado`, la costura rechaza **sin** haber escrito
-      el evento del desvío. Si el evento aparece, el orden está mal.
-- [ ] C8: buscar por AST un método de `Deposito` que devuelva la raíz del caso. No debe existir.
-- [ ] Implementar `core/casos/escritura.py`. Commitear. Nueve mutantes por frontera.
+- [x] `tests/test_escritura_costura.py` con un test por frontera **C0-C8**: **18 tests**, verdes.
+- [x] **C0 primero:** un caso cuyo nombre de carpeta y cuyo `meta.id_go` discrepan, y su control
+      negativo. Es el CRÍTICO de R14 y sin este test la pieza no vale.
+- [x] C6 con los tres estados y tres salidas distinguibles; el test comprueba **cuál**.
+- [x] C7: con el mutex NO sostenido y el caso `prestado`, la costura rechaza **sin** haber escrito
+      el evento del desvío.
+- [x] C8: ningún atributo público de `Deposito` es un `Path`, **y** toda relativa que se salga de
+      la base se rechaza. Sin la segunda mitad la primera sería mentira: la capacidad no
+      expondría la raíz por un atributo, la regalaría por un argumento.
+- [x] Implementar `core/casos/escritura.py`. Commiteado antes de mutar.
+- [x] **12 mutantes, los 12 muertos cada uno por su frontera, a la primera.**
+
+### 2.1. El mutante que más vale, y por qué
+
+**C7 invierte el orden** —hace correr el guard antes de exigir el mutex— y **muere**. Eso
+convierte en propiedad contratada lo que hasta ahora era una afirmación en prosa: verificado en
+la fuente que `guard_escritura` llama a `append_event` al desviar
+(`core/case_manager.py:812-816`), y esa escritura es la fila #13, protocolo, obligada a ir bajo
+mutex. Con el orden invertido, la escritura del propio guard nacería fuera de toda protección.
+
+### 2.2. Tres códigos nuevos: el §10 pasa de 19 a 22
+
+`IDENTIDAD_DISCORDANTE`, `IDENTIDAD_NO_UTILIZABLE` y `ESCRITURA_SIN_MUTEX`. Los dos primeros
+estaban colapsados en uno en mi primera pasada, y separarlos es el argumento con el que este
+repo separó `CASE_BUSY` de `CASE_LOCKED`: «este caso tiene **dos** identidades» es integridad y
+pide mirarlo ya; «esta carpeta no lleva W-code» es una convención que no se cumple. Con un solo
+código el operador no puede distinguirlas.
+
+**Viven en `workspace_model` y no en `escritura.py`**, y eso no es colocación: define allí, les
+aplican las reglas de mensaje del §10 y los **ocho canarios de fuga del §16** sin escribir un
+test más. Definirlas en el módulo que las lanza las dejaría fuera de `errores_conocidos()`, que
+es exactamente el hueco que R7/H7-12 castigó. Medido: las tres clases nuevas heredaron **30
+tests de contrato** (10 cada una) que no escribí.
 
 ## Task 3: `3A-alta` — la operación de alta bajo el mismo mutex
 
@@ -422,9 +447,26 @@ qué `raise` viene, así que a ojo era indistinguible del cierre de `tomado()`.
 7. Suite verde con **dos semillas** (`pytest-randomly`).
 8. Un mutante por frontera, cada uno muerto por **la suya**, con arnés que falla si un ancla no
    casa **y** si el mutante mata de más. Del anidamiento: **11 muertos + M7 declarado sin
-   cubrir**. De la costura: 9 (C0-C8), pendientes del Task 2. Lo que **no** vale como criterio
-   es un número de mutantes: vale que ninguna frontera se quede sin el suyo, y que las que no
-   puedan tenerlo se declaren.
+   cubrir**. De la costura: **12 muertos**. Lo que **no** vale como criterio es un número de
+   mutantes: vale que ninguna frontera se quede sin el suyo, y que las que no puedan tenerlo se
+   declaren.
+
+### Medición al cerrar los Tasks 1 y 2
+
+**Suite: 3.638 tests, 0 fallos, 0 errores, 83 `skip`, con las semillas 777 y 31337.**
+
+El conteo cuadra y se explica entero, que es lo que `CLAUDE.md` exige de cualquier variación:
+**3.577 (baseline al abrir) + 13 (`mutex_sesion`) + 18 (costura) + 30 = 3.638**. Los 30 son los
+tests de contrato que `test_workspace_model` aplica por parametrización a las tres clases de
+error nuevas —10 cada una, los ocho canarios del §16 incluidos—: no los escribí, los heredaron
+por vivir en el modelo.
+
+**Y una corrida anterior no vale, por un error mío de método.** La primera medición con la
+semilla 31337 devolvió **17 fallos**, todos en `test_escritura_costura`. No era una regresión:
+escribí ese fichero de tests **mientras la suite corría en background**, así que ese run lo
+recogió antes de que existiera su módulo. Auto-infligido. Queda anotado porque la conclusión
+operativa es corta: **con una corrida en background, no se toca el árbol** —ni `tests/`, ni
+`core/`, ni `docs/`, porque los guards de documentación leen del disco en tiempo de test—.
 
 **Lo que 3A NO permite declarar:** «el write-set está protegido». Al cerrar 3A lo estarán las trece
 filas de esta tanda en `v1`; las catorce restantes siguen contadas en el censo. La frase honesta es
