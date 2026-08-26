@@ -498,7 +498,13 @@ class SesionMutex:
     w_code: str
     nonce: str
     raiz: "Path | None"
-    ahora_fn: "object" = None
+    #: SIN default a proposito (R13/H13-02). Con `ahora_fn=None` la comprobacion del
+    #: lease se saltaba entera, o sea que una sesion construida sin reloj volvia al
+    #: comportamiento que R12/H12-02 declaro critico. Un default que desactiva una
+    #: comprobacion de seguridad es fail-open, y este modulo lleva tres rondas diciendo
+    #: que falla cerrado. Que sea IMPOSIBLE construirla mal es mejor que comprobarlo
+    #: dentro.
+    ahora_fn: "object"
     _perdido: bool = False
     _causa: "BaseException | None" = None
 
@@ -532,7 +538,19 @@ class SesionMutex:
         # irreversible, y desde que el lease vence otro proceso esta autorizado a
         # adquirir. «Sigue siendo mi nonce» y «sigo siendo titular» dejaron de ser lo
         # mismo en el instante en que el lease caduco.
-        if self.ahora_fn is not None and _caducado(estado, self.ahora_fn()):
+        #
+        # El reloj se ACOTA aqui igual que en `adquirir` y `renovar` (R13/H13-01): la
+        # cota simetrica de R12 no alcanzaba a esta via, asi que un `ahora_fn` roto
+        # calculaba la caducidad contra un instante arbitrario y devolvia garantia. Si
+        # el reloj no es utilizable, se falla CERRADO: no saber si sigo siendo titular
+        # es, a efectos de autorizar una escritura, lo mismo que no serlo.
+        try:
+            ahora = self.ahora_fn()
+            _sin_desvio_absurdo(ahora)
+        except Exception as exc:                         # noqa: BLE001
+            self.marcar_perdido(exc)
+            return False
+        if _caducado(estado, ahora):
             self.marcar_perdido()
             return False
         return True
@@ -593,16 +611,22 @@ def tomado(w_code: str, *, ahora_fn, raiz: Path | None = None,
             # lock, asi que «no hay lock» significa «lo solte yo», no «lo perdi». Ese
             # matiz lo cazaron dos tests que ya existian, no yo al escribirlo.
             sesion.marcar_perdido(exc)
-        if sesion.perdido() and fallo_del_cuerpo and sesion._causa is not None:
+        if sesion.perdido() and fallo_del_cuerpo:
             # El error del cuerpo manda, pero la perdida del mutex no puede evaporarse
             # (R12/H12-04): antes solo quedaba en `sesion._causa`, invisible para el
             # llamador. Una nota es observable en el traceback sin desplazar al primario.
+            #
+            # Y se anota HAYA O NO excepcion detras (R13/H13-03): una perdida por lease
+            # caducado no deja `_causa`, y exigirla dejaba esa mitad sin avisar. La
+            # propiedad es «una perdida no se evapora», no «una excepcion no se evapora».
             import sys
             en_vuelo = sys.exc_info()[1]
             if en_vuelo is not None:
+                porque = (type(sesion._causa).__name__ + ": " + str(sesion._causa)
+                          if sesion._causa is not None
+                          else "el lease caduco o la titularidad cambio")
                 en_vuelo.add_note(
-                    "[mutex] ademas, el mutex se perdio durante la operacion: "
-                    + type(sesion._causa).__name__ + ": " + str(sesion._causa))
+                    "[mutex] ademas, el mutex se perdio durante la operacion: " + porque)
         if sesion.perdido() and not fallo_del_cuerpo:
             from .workspace_model import MutexPerdido
             raise MutexPerdido(
