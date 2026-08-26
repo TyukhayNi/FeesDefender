@@ -221,6 +221,7 @@ prestatario que sale; la transición 1→0 es atómica y **rechaza uniones nueva
 | M7 | El mapa es del proceso y la profundidad se toca bajo `_CANDADO`; unirse entre hilos es correcto —el lock del SO es del proceso— y contarlo mal es lo que rompe |
 | **M8** | **El adquirente puede salir antes que un prestatario.** Orden `A entra → B entra → A sale → B escribe → B sale`: el lock sigue vivo mientras B está dentro, y se libera al salir B. Más la variante en que A sale **por excepción** (H14-03) |
 | **M9** | Mismo W-code y **raíz distinta** son sesiones distintas; misma raíz escrita de dos formas equivalentes es **una** (H14-04) |
+| **M10** | `vigente()` distingue **tres** estados —nunca lo tuve / lo tengo / **lo perdí**— y exige identidad ya resuelta. Añadida al enumerar: el §3 la contrataba en prosa y no tenía número, así que no habría tenido mutante |
 
 ---
 
@@ -301,19 +302,52 @@ tests/test_escritura_censo.py    NUEVO  — el trinquete sintáctico del Task 7
 
 ---
 
-## Task 1: `mutex_sesion` — reentrancia y ciclo de vida
+## Task 1: `mutex_sesion` — reentrancia y ciclo de vida ✅ COMPLETO (`fb3ffd1`)
 
-- [ ] `tests/test_mutex_sesion.py` con un test por frontera **M1-M9**, antes del módulo.
-- [ ] **M8 es la frontera que R14 compró** y se prueba con dos hilos y barreras en el orden
+- [x] `tests/test_mutex_sesion.py` con un test por frontera **M1-M10**, antes del módulo. **13
+      tests**, verdes.
+- [x] **M8 es la frontera que R14 compró** y se prueba con dos hilos y barreras en el orden
       `A entra → B entra → A sale → B verifica el lock vivo y escribe → B sale → lock liberado`.
       Más la variante con A saliendo por excepción.
-- [ ] M9 con dos raíces distintas **y** la misma raíz escrita de dos formas equivalentes.
-- [ ] M2 contando hilos vivos con nombre `mutex-<W>` antes y dentro del anidamiento.
-- [ ] M6 borrando el lock desde fuera: `sostenido()` anidado **lanza** y **no** crea uno nuevo.
-- [ ] Implementar `core/casos/mutex_sesion.py`.
-- [ ] **Commitear antes de mutar.** `git checkout` restaura desde el ÍNDICE; en el 70º perdí una
-      remediación entera por no hacerlo.
-- [ ] Nueve mutantes, uno por frontera, con arnés que **falla si un ancla no casa**.
+- [x] M9 con dos raíces distintas **y** la misma raíz escrita de dos formas equivalentes.
+- [x] M2 contando hilos vivos con nombre `mutex-<W>` antes y dentro del anidamiento.
+- [x] M6 borrando el lock desde fuera: `sostenido()` anidado **lanza** y **no** crea uno nuevo.
+- [x] Implementar `core/casos/mutex_sesion.py`.
+- [x] **Commitear antes de mutar** — hecho en `fb3ffd1`, antes de la primera mutación.
+- [x] **12 mutantes: 11 mueren cada uno por su frontera; M7 se declara SIN CUBRIR.**
+
+### 1.1. Lo que el arnés encontró, que es de él y no del módulo
+
+El arnés **falla si un ancla no casa o casa más de una vez**, y además exige que cada mutante
+mate **exactamente** los tests previstos. Esa segunda exigencia paró la primera corrida con
+**cuatro** discrepancias, y adjudicarlas una por una fue el trabajo útil:
+
+- **Tres eran expectativas mías demasiado estrechas**, no mala puntería. Cuando un mutante mata
+  tests de más porque esos tests **contratan la misma propiedad** por otra vía, eso es
+  coherencia: el mutante de la clave incompleta mata M5 *y* M9 porque «clave distinta → sesión
+  distinta» es lo que contratan los dos, uno por el W-code y otro por la raíz.
+- **Una era un mutante genuinamente mal apuntado:** el primero de M2 mataba **siete** tests
+  porque fabricaba una sesión nueva dentro de la rama de unión. Se sustituyó por el mínimo que
+  rompe la propiedad —ceder una **copia** de la sesión—, y entonces mueren exactamente los
+  cuatro tests que afirman identidad de objeto.
+
+**La distinción que el arnés no puede hacer solo:** muerte conjunta legítima frente a mutante
+demasiado ancho. Eso lo adjudica quien lo lee, y por eso el arnés para en vez de decidir.
+
+### 1.2. M7 queda SIN CUBRIR por mutación, y se declara
+
+Quitar `_CANDADO` de la sección crítica **no produce un rojo determinista**: con el GIL y sin
+contención real, los dos hilos del test casi nunca se intercalan en el `-= 1`. Un mutante que
+sobrevive aquí **no** prueba que la propiedad esté contratada; prueba que este test no puede
+medirla. La propiedad se sostiene por lectura del código y consta como no verificada.
+
+### 1.3. Un defecto del TEST, no del módulo
+
+La primera versión de M8-bis dejaba salir a A **antes** de que B se uniera, así que lo que
+saltaba era la guarda `cerrando` —«no se admiten uniones nuevas»—, que es correcta y no es lo
+que ese test mide. Lo diagnostiqué imprimiendo el `detalle` de la excepción en vez de
+teorizar: el mensaje visible de `MutexPerdido` es su `descripcion` de clase y **no** dice de
+qué `raise` viene, así que a ojo era indistinguible del cierre de `tomado()`.
 
 ## Task 2: `escritura` — la costura y la capacidad
 
@@ -386,7 +420,11 @@ tests/test_escritura_censo.py    NUEVO  — el trinquete sintáctico del Task 7
 5. **El E2E de los cuatro planos pasa, incluida #8.** Mientras falle, 3A no es desplegable.
 6. `--modo v1` **rechaza** una escritura sin mutex.
 7. Suite verde con **dos semillas** (`pytest-randomly`).
-8. 18 mutantes (9 de la costura, 9 del anidamiento), cada uno muerto por **su** frontera.
+8. Un mutante por frontera, cada uno muerto por **la suya**, con arnés que falla si un ancla no
+   casa **y** si el mutante mata de más. Del anidamiento: **11 muertos + M7 declarado sin
+   cubrir**. De la costura: 9 (C0-C8), pendientes del Task 2. Lo que **no** vale como criterio
+   es un número de mutantes: vale que ninguna frontera se quede sin el suyo, y que las que no
+   puedan tenerlo se declaren.
 
 **Lo que 3A NO permite declarar:** «el write-set está protegido». Al cerrar 3A lo estarán las trece
 filas de esta tanda en `v1`; las catorce restantes siguen contadas en el censo. La frase honesta es
