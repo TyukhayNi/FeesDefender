@@ -41,6 +41,21 @@ def raiz(tmp_path):
     return tmp_path / "locks"
 
 
+@pytest.fixture(autouse=True)
+def _reloj_del_sistema_fijo(monkeypatch):
+    """Fija el reloj REAL al `AHORA` del fichero (R11/H11-01).
+
+    `adquirir` y `renovar` rechazan un `ahora` que venga del futuro respecto del reloj
+    del sistema, porque sin esa cota un llamador con un bug roba el lease de un titular
+    vivo. La costura `_ahora_del_sistema` existe justamente para que eso no convierta
+    los tests en dependientes de la hora a la que se corran: aqui se ancla, y los
+    timestamps fijos siguen valiendo dentro de su ventana.
+    """
+    from core.casos import case_mutex
+    monkeypatch.setattr(case_mutex, "_ahora_del_sistema",
+                        lambda: case_mutex._instante(AHORA))
+
+
 def _sembrar(raiz, datos: bytes):
     from core.casos.case_mutex import ruta_del_lock
     p = ruta_del_lock(W, raiz=raiz)

@@ -1235,6 +1235,46 @@ git commit -m "mutex D2: la carrera de verdad, con barrera y mutante que la mata
 
 ---
 
+## 1. Adjudicación de la revisión adversarial R11 (Codex, 2026-08-26) — NO-SHIP, remediado
+
+- **Objeto revisado:** el **diff** de la rama, en el commit `5998888` (PR #247).
+- **Ronda:** R11, la **primera sobre el código** de este plan. Las anteriores (R10) revisaron el plan.
+- **Revisor:** Codex por CLI sobre copia externa `git archive`. **La ronda NO se completó**: su arnés se ejecutó entero pero la redacción del informe la cortó el filtro de contenido de su plataforma. No hay veredicto del revisor.
+- **Informe recibido:** **ninguno** — la ronda no llegó a redactarlo. Lo que se archiva son las **siete sondas literales** de su arnés, en `docs/superpowers/specs/2026-08-26-apertura-v1-plan2-r11-adversarial-review.md`, con el `sha256` del log completo (`00691bfdffcd59ec…`) recomputado al archivarlo. Que el campo se llame «informe» y aquí ponga «ninguno» es exactamente lo que hay que poder leer de un vistazo.
+- **Hallazgos:** 6 — 2 CRÍTICOS, 3 ALTOS, 1 MEDIO. **6 confirmados, 0 refutados**, más una sonda sin hallazgo. El veredicto **`NO-SHIP` lo firma el adjudicador**, no el revisor.
+- **Remediado en:** el commit que acompaña a esta adjudicación.
+
+### 1.1. Las seis, una por una
+
+| # | Sev. | Hallazgo | Quién lo vio primero | Remedio |
+|---|---|---|---|---|
+| H11-01 | CRÍTICO | Un `ahora` futuro **roba un lease vivo** | el arnés | `_sin_desvio_absurdo()`: cota de 600 s contra el reloj del sistema, por la costura `_ahora_del_sistema` |
+| H11-02 | CRÍTICO | El hilo traga el fallo, el cuerpo sigue de titular y **otro entra** | los dos | `SesionMutex` con `perdido()`/`revalidar()`, y `MutexPerdido` al salir |
+| H11-03 | ALTO | `liberar` en el `finally` **enmascara el error del cuerpo** | yo | El error del cuerpo manda; el de liberación se registra |
+| H11-04 | ALTO | `schema: 999` y `propietario: {}` se aceptan | el arnés | `SCHEMA_MUTEX` comprobado + los tres campos del propietario |
+| H11-05 | ALTO | Una junction **escapa** la contención léxica | el arnés | La **raíz** resuelve; la ruta **por llamada** sigue léxica |
+| H11-06 | MEDIO | `filelock.Timeout` sale crudo, fuera del §10 | yo | `_guard` lo traduce a `CaseBusy` |
+
+El §10 pasa de **18 a 19 códigos** (`MUTEX_PERDIDO`).
+
+### 1.2. Las dos que dicen algo sobre cómo fallo
+
+**H11-01 es la mitad de R10/H10-02 que no cerré.** Aquel hallazgo decía «un `ahora` **naïve o futuro**». Cerré el naïve, añadí monotonía a `renovar` y **di el crítico por remediado**. La mitad abierta la encontró un revisor una ronda después. *Remediar la parte que entiendes y declarar cerrado el hallazgo entero* es el modo de fallo, y conviene tenerlo con nombre.
+
+**H11-05 es una regresión que introduje AL ARREGLAR otra cosa.** Hice la contención léxica para matar una carrera real; al hacerlo dejé de ver a dónde apunta un enlace. Las dos propiedades hacen falta y viven en sitios distintos: la raíz resuelve, la ruta por llamada no.
+
+**Y un tercero, mío, sobre la propia remediación:** al cerrar H11-02 puse un `revalidar()` después de `liberar()`. Como `liberar` borra el lock, «no hay lock» se leía como «lo perdí» y el camino feliz lanzaba `MutexPerdido`. **No lo vi yo**: lo vieron dos tests escritos dos días antes.
+
+### 1.3. Lo que sigue SIN VERIFICAR, y se declara
+
+- **La ronda fue parcial y no se sabe cuánto.** Las siete sondas son las que el revisor alcanzó a ejecutar, no necesariamente las que pensaba escribir.
+- **Las seis remediaciones no tienen ronda propia.** Son código nuevo sin revisar.
+- **La cota de 600 s es una decisión, no una medición.** No se ha probado contra un NTP saltando a mitad de operación.
+
+**Suite tras remediar: 3.539 tests, 0 fallos con las semillas 777 y 31337.**
+
+---
+
 ## Ejecutado el 2026-08-25 — y tres cosas que solo aparecieron al ejecutarlo
 
 Las ocho tareas, con sus **cuatro mutantes obligatorios muertos cada uno por su

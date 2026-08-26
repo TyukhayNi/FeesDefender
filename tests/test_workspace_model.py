@@ -78,6 +78,9 @@ CODIGOS_ESPERADOS = {
     # ahora. Con un solo codigo, el operador no podria distinguir «espera dos minutos»
     # de «llama a quien lo tiene prestado».
     "CASE_BUSY", "MUTEX_NOT_MINE", "MUTEX_ILEGIBLE",
+    # R11/H11-02: perder el mutex a mitad NO es «te equivocas de dueño». El §10
+    # pasa de 18 a 19 codigos.
+    "MUTEX_PERDIDO",
 }
 
 _RE_UNIDAD_WINDOWS = re.compile(r"[A-Za-z]:[\\/]")

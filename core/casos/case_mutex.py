@@ -32,7 +32,7 @@ import threading
 import re
 import socket
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 _RE_W_CODE = re.compile(r"^W-[A-Z0-9]{3,20}$")
@@ -41,6 +41,37 @@ _RE_W_CODE = re.compile(r"^W-[A-Z0-9]{3,20}$")
 #: cualquier otro. Sustituye al `boot_id` derivado del reloj (R10/H10-07), que `psutil`
 #: declara sensible a ajustes de hora, NTP e hibernación.
 _PROCESO_UID = uuid.uuid4().hex
+
+#: Version del formato del lock en disco. Un lock de otra version NO se adivina.
+SCHEMA_MUTEX = 1
+
+#: Desvio maximo admitido entre el `ahora` que pasa el llamador y el reloj del sistema.
+#: Diez minutos: holgado para relojes desincronizados y muy por debajo de cualquier lease
+#: util. Existe porque el reloj es INYECTADO (R11/H11-01): sin cota, un llamador con un
+#: bug —o una maquina con la hora disparatada— pasa `2099-01-01` y se lleva por delante
+#: el lease de un proceso que sigue trabajando.
+DESVIO_MAXIMO_SEGUNDOS = 600
+
+
+def _ahora_del_sistema() -> float:
+    """Costura: el reloj real, como referencia para acotar el desvio.
+
+    Es lo unico de este modulo que mira el reloj, y solo para DESCONFIAR del `ahora`
+    ajeno, no para decidir nada. La inyeccion del §7 se conserva: quien decide sigue
+    siendo el `ahora` del llamador, dentro de una cota.
+    """
+    return datetime.now(timezone.utc).timestamp()
+
+
+def _sin_desvio_absurdo(ts: str) -> float:
+    """`_instante(ts)`, y ademas: que no venga del futuro (R11/H11-01)."""
+    momento = _instante(ts)
+    if momento > _ahora_del_sistema() + DESVIO_MAXIMO_SEGUNDOS:
+        raise ValueError(
+            "el instante " + repr(ts) + " esta demasiado en el futuro respecto del "
+            "reloj del sistema (mas de " + str(DESVIO_MAXIMO_SEGUNDOS) + " s): "
+            "aceptarlo dejaria robar el lease de un titular vivo")
+    return momento
 
 
 def _instante(ts: str) -> float:
@@ -159,12 +190,28 @@ def raiz_de_locks(raiz: Path | None = None) -> Path:
     # uno y la comprobacion de contencion de abajo rechazaba una ruta legitima. Una
     # comprobacion de seguridad no puede depender de quien haya llegado antes.
     raiz = Path(os.path.abspath(str(raiz)))
+    # DOS formas de la misma raiz, y hacen falta las dos (R11/H11-05):
+    #   - la lexica, que es la que se devuelve y con la que compara `ruta_del_lock`;
+    #   - la RESUELTA, porque una junction al repo pasa el filtro lexico sin problema.
+    # La resolucion vive AQUI y no en `ruta_del_lock` a proposito: alli reabriria la
+    # carrera que reventaba con dos procesos creando la raiz a la vez.
+    formas = {raiz}
+    try:
+        formas.add(raiz.resolve())
+    except OSError:                                      # pragma: no cover - defensivo
+        pass
     for prohibida, motivo in ((Path(config.settings.casos_root), "CASOS_ROOT"),
                               (Path(config.settings.project_root), "el repo")):
-        prohibida = Path(os.path.abspath(str(prohibida)))
-        if _bajo(raiz, prohibida):
-            raise WorkspaceUnderCatalogRoot(
-                detalle=f"el mutex no puede vivir bajo {motivo}")
+        candidatas = {Path(os.path.abspath(str(prohibida)))}
+        try:
+            candidatas.add(prohibida.resolve())
+        except OSError:                                  # pragma: no cover - defensivo
+            pass
+        for forma in formas:
+            for candidata in candidatas:
+                if _bajo(forma, candidata):
+                    raise WorkspaceUnderCatalogRoot(
+                        detalle=f"el mutex no puede vivir bajo {motivo}")
     return raiz
 
 
@@ -194,8 +241,19 @@ def _validar_estado(crudo, w_code: str) -> dict:
     faltan = [c for c in _CAMPOS if c not in crudo]
     if faltan:
         raise malo(f"al lock le faltan campos: {faltan}")
-    if not isinstance(crudo["propietario"], dict):
+    if crudo["schema"] != SCHEMA_MUTEX:
+        # No se adivina, igual que `WorkspaceRegistry` con `SchemaNoSoportado`: un lock
+        # escrito por una version que no conocemos puede significar cualquier cosa, y
+        # «cualquier cosa» no es base para autorizar una escritura (R11/H11-04).
+        raise malo("schema " + repr(crudo["schema"]) + " != " + str(SCHEMA_MUTEX))
+    propietario = crudo["propietario"]
+    if not isinstance(propietario, dict):
         raise malo("el propietario no es un objeto")
+    faltan_prop = [c for c in ("host", "pid", "proceso_uid") if not propietario.get(c)]
+    if faltan_prop:
+        # `{}` cumplia «es un dict» y pasaba. Un propietario vacio no identifica a nadie,
+        # asi que el `CaseBusy` saldria sin decir quien tiene el caso.
+        raise malo("al propietario le faltan campos: " + str(faltan_prop))
     if not isinstance(crudo["nonce"], str) or not crudo["nonce"]:
         raise malo("el nonce esta vacio o no es texto")
     try:
@@ -242,17 +300,44 @@ LEASE_POR_DEFECTO = 300
 ESPERA_SECCION_CRITICA = 10
 
 
+def _abrir_guard(w_code: str, raiz: Path | None):
+    """Costura: el `FileLock` crudo, ya adquirido. Separada para poder doblarla."""
+    from filelock import FileLock
+    p = ruta_del_lock(w_code, raiz=raiz)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    lock = FileLock(str(p) + ".guard", timeout=ESPERA_SECCION_CRITICA)
+    lock.acquire()
+    return lock
+
+
+@contextlib.contextmanager
 def _guard(w_code: str, raiz: Path | None):
     """Bloqueo NATIVO durante la seccion critica. Ver la cabecera sobre por que no `O_EXCL`.
 
     Vive en un fichero HERMANO (`.lock.guard`) y no en el propio `.lock`: el estado se
     publica con `os.replace`, que sustituye el inodo, y bloquear el fichero que vas a
     reemplazar es pedir que el bloqueo se quede sobre un inodo huerfano.
+
+    **Traduce el `Timeout` de `filelock` a `CaseBusy`** (R11/H11-06). Un `Timeout` crudo
+    se salta la tabla del §10 entera: sale sin codigo, sin W-code y sin la garantia de
+    que el mensaje no lleva rutas. Y su significado es exactamente `CASE_BUSY`: otro
+    proceso de esta maquina esta dentro de la seccion critica.
     """
-    from filelock import FileLock
-    p = ruta_del_lock(w_code, raiz=raiz)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    return FileLock(str(p) + ".guard", timeout=ESPERA_SECCION_CRITICA)
+    from filelock import Timeout
+
+    from .workspace_model import CaseBusy
+
+    try:
+        lock = _abrir_guard(w_code, raiz)
+    except Timeout as exc:
+        raise CaseBusy(
+            w_code=_w_code_valido(w_code),
+            detalle="la seccion critica sigue ocupada tras "
+                    + str(ESPERA_SECCION_CRITICA) + " s") from exc
+    try:
+        yield lock
+    finally:
+        lock.release()
 
 
 def _escribir_estado(w_code: str, estado: dict, *, raiz: Path | None) -> None:
@@ -284,7 +369,7 @@ def adquirir(w_code: str, *, ahora: str, raiz: Path | None = None,
 
     w_code = _w_code_valido(w_code)
     lease = _lease_valido(lease_seconds)
-    _instante(ahora)                       # valida el reloj antes de crear nada
+    _sin_desvio_absurdo(ahora)             # valida el reloj antes de crear nada
     yo = identidad_proceso()
     with _guard(w_code, raiz):
         estado = leer_estado(w_code, raiz=raiz)
@@ -310,7 +395,7 @@ def renovar(w_code: str, *, nonce: str, ahora: str, raiz: Path | None = None) ->
     from .workspace_model import MutexNotMine
 
     w_code = _w_code_valido(w_code)
-    momento = _instante(ahora)
+    momento = _sin_desvio_absurdo(ahora)
     with _guard(w_code, raiz):
         estado = leer_estado(w_code, raiz=raiz)
         if estado is None or estado["nonce"] != nonce:
@@ -349,39 +434,115 @@ def liberar(w_code: str, *, nonce: str, raiz: Path | None = None) -> None:
 _FRACCION_LATIDO = 3
 
 
+@dataclasses.dataclass
+class SesionMutex:
+    """Lo que `tomado()` entrega al cuerpo: su nonce, y la verdad sobre si sigue siendo suyo.
+
+    Existe por R11/H11-02. Antes el gestor cedia solo el nonce y el hilo de renovacion
+    hacia `except Exception: return`: si la renovacion fallaba, el hilo moria **callado**
+    y el cuerpo seguia escribiendo como titular mientras otro proceso entraba. El arnes
+    del revisor lo midio con dos procesos —`BODY_CONTINUES_AFTER_RENEW_ERROR`,
+    `SECOND_ENTERED`— o sea que H10-04 seguia vivo, movido de sitio.
+
+    **Lo que esta pieza NO puede hacer, y se declara:** interrumpir el cuerpo. No se
+    preempta codigo Python arbitrario a mitad. Lo que si hace es que la perdida deje de
+    ser silenciosa por tres vias: el cuerpo puede **preguntar** (`perdido()`), puede
+    **comprobar contra el disco** cuando le convenga (`revalidar()`), y la salida del
+    bloque **lanza** `MutexPerdido` en vez de un `MutexNotMine` que parece un error de
+    programacion del llamador.
+
+    Un cuerpo largo —una corrida de OCR— deberia consultar `perdido()` antes de publicar
+    nada irreversible. Eso es una convencion, no una garantia, y por eso se dice aqui.
+    """
+
+    w_code: str
+    nonce: str
+    raiz: "Path | None"
+    _perdido: bool = False
+    _causa: "BaseException | None" = None
+
+    def perdido(self) -> bool:
+        """¿Se sabe ya que el mutex dejo de ser nuestro? No consulta el disco."""
+        return self._perdido
+
+    def marcar_perdido(self, causa: BaseException | None = None) -> None:
+        self._perdido = True
+        if causa is not None and self._causa is None:
+            self._causa = causa
+
+    def revalidar(self) -> bool:
+        """Comprueba contra el disco si el nonce sigue siendo el nuestro.
+
+        Devuelve `True` si seguimos siendo titulares. Un lock ilegible o ausente **no**
+        se lee como «sigue siendo mio»: se marca la perdida, que es el lado seguro.
+        """
+        from .workspace_model import WorkspaceError
+
+        try:
+            estado = leer_estado(self.w_code, raiz=self.raiz)
+        except WorkspaceError as exc:
+            self.marcar_perdido(exc)
+            return False
+        if estado is None or estado["nonce"] != self.nonce:
+            self.marcar_perdido()
+            return False
+        return True
+
+
 @contextlib.contextmanager
 def tomado(w_code: str, *, ahora_fn, raiz: Path | None = None,
            lease_seconds: int = LEASE_POR_DEFECTO):
     """Adquiere, **renueva mientras el cuerpo corre**, y libera pase lo que pase.
 
-    La renovacion no es un extra: sin ella, un cuerpo mas largo que el lease pierde el
-    mutex a mitad, otro proceso entra, y el primero **sigue escribiendo sin enterarse**
-    (R10/H10-04). Solo se entera al salir, cuando `liberar` le dice que el lock ya no
-    es suyo — o sea, cuando los dos ya han escrito.
+    Cede una `SesionMutex`, no una cadena: el cuerpo necesita poder preguntar si sigue
+    siendo titular (R11/H11-02).
 
     `ahora_fn` es un **callable** y no una cadena porque el renovador necesita el
     instante de cada latido; una cadena fija escribiria siempre el mismo `renewed_at`,
     o sea que no renovaria nada.
 
-    El hilo es `daemon` y se para en el `finally`: un renovador que sobreviviera al
-    bloque estaria alargando un lock que quiza ya es de otro.
+    **El error del cuerpo manda** (R11/H11-03). Si el cuerpo lanza y ademas la
+    liberacion falla, el llamador ve **el suyo**: perder el error de liberacion es
+    molesto, perder el del cuerpo es perder la causa. Medido antes de arreglarlo: un
+    `except RuntimeError` del llamador no entraba, porque lo que salia era `MutexNotMine`.
     """
     lease = _lease_valido(lease_seconds)
     nonce = adquirir(w_code, ahora=ahora_fn(), raiz=raiz, lease_seconds=lease)
+    sesion = SesionMutex(w_code=_w_code_valido(w_code), nonce=nonce, raiz=raiz)
     parar = threading.Event()
 
     def _latir():
         while not parar.wait(lease / _FRACCION_LATIDO):
             try:
                 renovar(w_code, nonce=nonce, ahora=ahora_fn(), raiz=raiz)
-            except Exception:                    # noqa: BLE001
-                return       # perdimos la titularidad; el cuerpo se entera al liberar
+            except Exception as exc:                     # noqa: BLE001
+                # NO se traga: se registra. El hilo no puede parar el cuerpo, pero
+                # callarse es lo que dejaba a dos procesos escribiendo a la vez.
+                sesion.marcar_perdido(exc)
+                return
 
     hilo = threading.Thread(target=_latir, name=f"mutex-{w_code}", daemon=True)
     hilo.start()
+    fallo_del_cuerpo = False
     try:
-        yield nonce
+        yield sesion
+    except BaseException:
+        fallo_del_cuerpo = True
+        raise
     finally:
         parar.set()
         hilo.join(timeout=5)
-        liberar(w_code, nonce=nonce, raiz=raiz)
+        try:
+            liberar(w_code, nonce=nonce, raiz=raiz)
+        except Exception as exc:                         # noqa: BLE001
+            # `liberar` exige titularidad, asi que fallar aqui ES la señal de perdida.
+            # NO se revalida despues de una liberacion CORRECTA: acabamos de borrar el
+            # lock, asi que «no hay lock» significa «lo solte yo», no «lo perdi». Ese
+            # matiz lo cazaron dos tests que ya existian, no yo al escribirlo.
+            sesion.marcar_perdido(exc)
+        if sesion.perdido() and not fallo_del_cuerpo:
+            from .workspace_model import MutexPerdido
+            raise MutexPerdido(
+                w_code=sesion.w_code,
+                detalle="el mutex dejo de ser nuestro durante la operacion"
+            ) from sesion._causa

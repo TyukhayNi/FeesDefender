@@ -305,6 +305,24 @@ class MutexIlegible(WorkspaceError):
     descripcion = "el mutex del caso existe y no se puede interpretar"
 
 
+class MutexPerdido(WorkspaceError):
+    """Teniamos el mutex y **dejamos de tenerlo mientras el cuerpo corria** (R11/H11-02).
+
+    Separado de `MutexNotMine` porque nombran cosas distintas y confundirlas cuesta un
+    diagnostico: aquel dice «te equivocas de dueño», o sea un error de programacion del
+    llamador; este dice «lo tenias y lo perdiste», que apunta a un lease vencido o a un
+    reloj mal puesto.
+
+    **Lo que este error NO puede hacer**, y se declara: interrumpir el cuerpo. No se
+    puede preemptar codigo Python arbitrario a mitad. Lo que si hace es impedir que la
+    perdida pase callada — el cuerpo puede consultarla con `perdido()` y la salida la
+    nombra.
+    """
+
+    codigo = "MUTEX_PERDIDO"
+    descripcion = "el mutex se perdio mientras la operacion estaba en curso"
+
+
 def errores_conocidos() -> tuple[type[WorkspaceError], ...]:
     """Las subclases con código: las doce del §10 más las tres del registro.
 
@@ -333,6 +351,7 @@ def errores_conocidos() -> tuple[type[WorkspaceError], ...]:
         CaseBusy,
         MutexNotMine,
         MutexIlegible,
+        MutexPerdido,
     )
 
 
