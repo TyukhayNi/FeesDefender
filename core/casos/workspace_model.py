@@ -262,6 +262,67 @@ class RutaYaRegistrada(WorkspaceError):
     codigo = "RUTA_YA_REGISTRADA"
 
 
+# --- Los tres del mutex interproceso (Plan 2 de V1, decision D2 del §24) -------
+#
+# Viven aqui, con los del registro, por la misma razon: el resolver y los CLI los
+# propagan al usuario, asi que les aplican las reglas de mensaje del §10 y los ocho
+# canarios de fuga del §16. Definirlos en `case_mutex` los dejaria fuera de
+# `errores_conocidos()` y por tanto fuera de los canarios.
+
+
+class CaseBusy(WorkspaceError):
+    """Otro proceso de ESTA maquina tiene el mutex, y su lease sigue vivo.
+
+    No es lo mismo que `CaseLocked`: aquel dice que el caso esta prestado a OTRA
+    maquina segun el canon; este, que otro proceso de la mia lo esta tocando ahora.
+    """
+
+    codigo = "CASE_BUSY"
+    descripcion = "otro proceso de esta maquina esta operando sobre el caso"
+
+
+class MutexNotMine(WorkspaceError):
+    """Se intento renovar o liberar un mutex cuyo nonce es de otro.
+
+    Separado de `CaseBusy` a proposito: aquel es «espera»; este es «te equivocas de
+    dueño». Confundirlos es el defecto A-1 del frontal —el rollback que cancela un lock
+    ajeno— trasladado a esta capa.
+    """
+
+    codigo = "MUTEX_NOT_MINE"
+    descripcion = "el mutex del caso pertenece a otro titular"
+
+
+class MutexIlegible(WorkspaceError):
+    """El lock existe y no se puede leer o no cumple su esquema. **NO es «no hay lock».**
+
+    Falla cerrado por la misma razon que `RegistryUnreadable` (R7/H7-02), y aqui el
+    precio de confundirlos es mayor: leerlo como «libre» dejaria entrar a un segundo
+    proceso, que es lo unico que el mutex existe para impedir.
+    """
+
+    codigo = "MUTEX_ILEGIBLE"
+    descripcion = "el mutex del caso existe y no se puede interpretar"
+
+
+class MutexPerdido(WorkspaceError):
+    """Teniamos el mutex y **dejamos de tenerlo mientras el cuerpo corria** (R11/H11-02).
+
+    Separado de `MutexNotMine` porque nombran cosas distintas y confundirlas cuesta un
+    diagnostico: aquel dice «te equivocas de dueño», o sea un error de programacion del
+    llamador; este dice «lo tenias y lo perdiste», que apunta a un lease vencido o a un
+    reloj mal puesto.
+
+    **Lo que este error NO puede hacer**, y se declara: interrumpir el cuerpo. No se
+    puede preemptar codigo Python arbitrario a mitad. Lo que si hace es impedir que la
+    perdida pase callada — el cuerpo puede consultarla con `perdido()` y la salida la
+    nombra.
+    """
+
+    codigo = "MUTEX_PERDIDO"
+    descripcion = "el mutex se perdio mientras la operacion estaba en curso"
+
+
 def errores_conocidos() -> tuple[type[WorkspaceError], ...]:
     """Las subclases con código: las doce del §10 más las tres del registro.
 
@@ -287,6 +348,10 @@ def errores_conocidos() -> tuple[type[WorkspaceError], ...]:
         RegistryUnreadable,
         SchemaNoSoportado,
         RutaYaRegistrada,
+        CaseBusy,
+        MutexNotMine,
+        MutexIlegible,
+        MutexPerdido,
     )
 
 

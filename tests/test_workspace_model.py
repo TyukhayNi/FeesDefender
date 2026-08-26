@@ -71,6 +71,16 @@ CODIGOS_ESPERADOS = {
     "CANONICAL_MUTATION_DEFERRED", "LOCK_NOT_MINE", "CHECKOUT_CANCELLED_ELSEWHERE",
     "WORKSPACE_UNDER_CATALOG_ROOT", "AUDIT_BASELINE_MISSING",
     "REGISTRY_UNREADABLE", "SCHEMA_NO_SOPORTADO", "RUTA_YA_REGISTRADA",
+    # Los tres del mutex interproceso (Plan 2 de V1, decision D2 del §24). El §10 pasa
+    # de 15 a 18 codigos, y la tabla lo admite sin reabrir nada porque dice «Como
+    # minimo». `CASE_BUSY` NO es `CASE_LOCKED`: aquel dice que el caso esta prestado a
+    # otra maquina segun el canon; este, que otro proceso de la mia lo esta tocando
+    # ahora. Con un solo codigo, el operador no podria distinguir «espera dos minutos»
+    # de «llama a quien lo tiene prestado».
+    "CASE_BUSY", "MUTEX_NOT_MINE", "MUTEX_ILEGIBLE",
+    # R11/H11-02: perder el mutex a mitad NO es «te equivocas de dueño». El §10
+    # pasa de 18 a 19 codigos.
+    "MUTEX_PERDIDO",
 }
 
 _RE_UNIDAD_WINDOWS = re.compile(r"[A-Za-z]:[\\/]")
@@ -491,3 +501,22 @@ def test_un_modo_bloqueado_sigue_sin_conceder_nada_aunque_no_se_reste():
     ws = _ws("blocked_conflict", mutate_canonical=True)
     assert not ws.permite(wm.Capability.MUTATE_CANONICAL)
     assert not ws.permite(wm.Capability.WRITE_CASE)
+
+
+def test_los_errores_del_mutex_estan_en_la_tabla():
+    from core.casos.workspace_model import (CaseBusy, MutexIlegible, MutexNotMine,
+                                            errores_conocidos)
+    codigos = {c.codigo for c in errores_conocidos()}
+    assert {"CASE_BUSY", "MUTEX_NOT_MINE", "MUTEX_ILEGIBLE"} <= codigos
+    for clase in (CaseBusy, MutexNotMine, MutexIlegible):
+        assert clase in errores_conocidos()
+
+
+def test_el_mensaje_del_mutex_no_lleva_rutas_ni_PII():
+    from core.casos.workspace_model import CaseBusy
+    exc = CaseBusy(w_code="W-TEST01", maquina="ESTA",
+                   detalle=r"C:\Users\alguien\CASOS\BaRS1 - Calle Falsa 1 - (W-TEST01)")
+    texto = str(exc)
+    assert "W-TEST01" in texto
+    assert "Calle Falsa" not in texto
+    assert "C:" not in texto
