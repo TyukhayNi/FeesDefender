@@ -385,7 +385,7 @@ test más. Definirlas en el módulo que las lanza las dejaría fuera de `errores
 es exactamente el hueco que R7/H7-12 castigó. Medido: las tres clases nuevas heredaron **30
 tests de contrato** (10 cada una) que no escribí.
 
-## Task 3: `3A-alta` — la operación de alta bajo el mismo mutex
+## Task 3: `3A-alta` — la operación de alta bajo el mismo mutex ✅ COMPLETO (`05a0ab0`)
 
 - [ ] Diseñar y construir el alta (#1, #2, #3) como operación **distinta** del guard de caso
       existente: crea la raíz **bajo el mutex del W-code**, que existe antes que la carpeta.
@@ -394,7 +394,7 @@ tests de contrato** (10 cada una) que no escribí.
       `{Sala lectura, MD, _revisar}` ni las plantillas de viabilidad.
 - [ ] Test de no regresión: `ensure_case` en modo `libre` conserva su comportamiento.
 
-## Task 4: Medir el radio ANTES de migrar
+## Task 4: Medir el radio ANTES de migrar ✅ COMPLETO
 
 - [ ] Contar **las tres cosas del §4 por separado**: (a) llegadas sin mutex, (b) censo AST, y
       cuántos tests rompen. Los tres números **escritos aquí**, no en el chat.
@@ -403,7 +403,7 @@ tests de contrato** (10 cada una) que no escribí.
 - [ ] Fixture del mutex en tests **explícita, no `autouse`**: una fixture `autouse` haría
       invisible la exigencia, que es la «exención por omisión» que el §25 existe para eliminar.
 
-## Task 5: Los entrypoints adquieren
+## Task 5: Los entrypoints adquieren ✅ COMPLETO (`499d1f6`)
 
 - [ ] `scripts/abrir_caso.py`, `scripts/sala_maquina.py`, `scripts/sync_sudespacho.py` y las vías
       de intake de `streamlit_app.py` envuelven su trabajo en
@@ -411,7 +411,7 @@ tests de contrato** (10 cada una) que no escribí.
 - [ ] `--modo v1` adquiere **una vez** y las etapas se unen; test que recorra las dos capas.
 - [ ] Un entrypoint que no pueda resolver identidad en `--modo v1` **aborta** (C0/C6).
 
-## Task 6: Migrar las filas de 3A, incluida #8
+## Task 6: Migrar las filas de 3A, incluida #8 — ⚠️ PARCIAL (`de7c92f`, `0857086`)
 
 - [ ] #6 y #9 (contenido, las dos que ya consultan el guard): pasar por `Deposito`, más mutex.
 - [ ] #4, #5, #7, #10, #11, #12, #13 (protocolo): por la costura con `clase="protocolo"`, lo que
@@ -424,7 +424,7 @@ tests de contrato** (10 cada una) que no escribí.
       contenido, doblar **los dos** destinos y probar **cuál** cambió. Es la prueba de cierre; el
       censo AST no lo es.
 
-## Task 7: El trinquete sintáctico
+## Task 7: El trinquete sintáctico ✅ COMPLETO (`de7c92f`)
 
 - [ ] Guard AST: producción entra por `mutex_sesion.sostenido`, no por `case_mutex.tomado` crudo.
 - [ ] Censo (b) del §4 con su tope actual **escrito**. El tope solo baja.
@@ -471,6 +471,52 @@ operativa es corta: **con una corrida en background, no se toca el árbol** —n
 **Lo que 3A NO permite declarar:** «el write-set está protegido». Al cerrar 3A lo estarán las trece
 filas de esta tanda en `v1`; las catorce restantes siguen contadas en el censo. La frase honesta es
 «el mutex protege las trece filas de 3A», y el número del censo dice cuánto falta.
+
+---
+
+## Estado al cerrar los Tasks 1-7 (2026-08-26)
+
+| Task | Estado | Mutantes |
+|---|---|---|
+| 1 `mutex_sesion` | ✅ | 11 + M7 declarado sin cubrir |
+| 2 la costura | ✅ | 12 |
+| 3 `3A-alta` | ✅ | 8 |
+| 4 medir el radio | ✅ | (medición) |
+| 5 entrypoints | ✅ | 6 |
+| 6 fila #8 y la vía manual | ⚠️ **parcial** | 4 |
+| 7 trinquete del censo | ✅ | detector con prueba propia |
+
+**Los tres números del §4, medidos:**
+
+- **(a) métrica dinámica:** no aplica todavía — ningún productor llama a la costura, así que
+  no hay llegadas que contar. Se activará con 3B.
+- **(b) censo AST:** **93 sitios de escritura en 11 productores, 0 ficheros entrando por la
+  costura.** Es el `TECHO_CENSO` de `tests/test_escritura_censo.py`, y solo baja. Hay un test
+  que exige que el techo sea el número **real** y no uno holgado.
+- **(c) tests roto por el trinquete:** **0**. El trinquete está donde creía.
+
+**Suite: 3.663 tests con las semillas 777 y 31337.**
+
+### Por qué el Task 6 es PARCIAL y no completo
+
+Se cerró la fila **#8**, que R14 marcó CRÍTICO y prohibió diferir — y con ella un defecto
+gemelo **que no tenía fila en el §25**: la vía manual resolvía su inventario contra la ruta
+canónica igual que drive_ev. Mismo arreglo, misma frontera.
+
+**Lo que NO se migró, y por qué no es mecánico:** las filas **#4, #5, #7, #10, #11, #12, #13**
+siguen sin pasar por la costura. La que explica el resto es **#5**: `register_drive_ev` estampa
+el `_caso.md` **canónico** con los ids de Drive, y hacerlo mientras el caso está prestado a
+otra máquina es **mutar el canon durante un checkout**. Este repo ya tiene código para eso
+—`CANONICAL_MUTATION_DEFERRED`— lo que dice que la decisión existe y que nadie la ha tomado
+aquí. Su remedio es un cambio de **comportamiento** (¿se aplaza el registro? ¿se escribe en la
+bandeja? ¿aborta el pull?), no un cambio de destino, y meterlo de paso en una tanda de
+migración sería exactamente la clase de decisión que este plan lleva siete tasks evitando
+tomar sin escribirla.
+
+**La frase honesta al cerrar 3A:** el mutex protege lo que pasa por `abrir_caso` y
+`sala_maquina`, y la cadena de custodia sigue el destino efectivo en las dos vías de intake
+que existen. Las 93 escrituras del censo **siguen fuera de la costura**. «Cableado» significa
+hoy «cableado en dos puertas y en la custodia», no «write-set migrado».
 
 ## Lo que este plan deliberadamente NO hace
 
