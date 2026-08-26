@@ -6,6 +6,7 @@ Uso:
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import time
 from pathlib import Path
@@ -451,6 +452,58 @@ def _resolver_workspace(case_id: str | None, case_dir: str | None):
     return case_id, ws
 
 
+@contextlib.contextmanager
+def _bajo_mutex(ws, case_id: str):
+    """Sostiene el mutex del caso mientras el subcomando trabaja (Plan 3A, Task 5).
+
+    **Este es el sitio donde el mutex paga lo que costó.** El dolor medido que justificó
+    la decisión D2 es literalmente éste: relanzar `apply` sin saber si la corrida anterior
+    terminó, con dos procesos escribiendo OCR y estado sobre el mismo expediente. Hasta
+    ahora el mutex existía, tenía cuatro rondas de revisión y no lo llamaba nadie.
+
+    Se adquiere en los **dos** modos, no solo en `v1`: el modo que se usa hoy es `libre`,
+    así que restringirlo a `v1` habría dejado el dolor medido sin cubrir.
+
+    **Sin W-code no hay namespace**, y ahí se avisa en vez de abortar. Es el mismo
+    trinquete de la frontera C1 de la costura: cerrar en falso una vía que hoy funciona le
+    rompe el día al equipo, y declarar el hueco permite contarlo y cerrarlo después.
+    """
+    from core.casos import mutex_sesion
+    from core.casos.workspace_model import CaseBusy, CaseRef, MutexPerdido
+    # `now_iso_utc` y NO `now_iso`: la primitiva rechaza un instante sin offset porque
+    # uno naïve se lee en hora local y el lease se calcularía mal.
+    from core.utils import now_iso_utc
+
+    w = getattr(getattr(ws, "case_ref", None), "w_code", None)
+    if not w:
+        typer.echo(
+            "[aviso] este caso no declara W-code, así que la corrida NO va bajo el mutex: "
+            "otro proceso de esta máquina podría estar escribiendo el mismo expediente",
+            err=True)
+        yield None
+        return
+    try:
+        with mutex_sesion.sostenido(CaseRef(w_code=w), ahora_fn=now_iso_utc) as sesion:
+            yield sesion
+    except CaseBusy as exc:
+        # Código 2 y cero bytes, igual que el resto de abortos de este entrypoint: el
+        # motor no ha arrancado. Un traceback aquí sería un fallo de producto, porque
+        # «otra corrida está en curso» es información útil, no un error de programación.
+        typer.echo(f"[ERROR] {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+    except MutexPerdido as exc:
+        # Distinto de `CaseBusy` en el mensaje **y en lo que significa**: aquí el motor SÍ
+        # arrancó y el lease se perdió a mitad —lease vencido, reloj movido, o alguien
+        # borró el lock—, así que puede haber trabajo a medio publicar. Sin esta rama el
+        # usuario recibía un traceback al final de un OCR largo, que es el peor momento
+        # posible para tener que interpretar una excepción.
+        typer.echo(
+            f"[ERROR] {exc}. El mutex se perdió DURANTE la corrida, así que el "
+            f"resultado puede estar a medias: revisa `_cobertura.md` antes de fiarte, y "
+            f"comprueba si otro proceso entró.", err=True)
+        raise typer.Exit(code=2) from exc
+
+
 def _exigir(ws, *caps) -> None:
     """Los subcomandos declaran qué necesitan; el modo decide si lo tienen."""
     from core.casos.workspace_model import CapabilityDenied
@@ -608,60 +661,61 @@ def plan(case_id: str = typer.Argument(None),
     declarar en la ayuda, no descubrir.
     """
     case_id, ws = _resolver_workspace(case_id, case_dir)
-    from core.casos.workspace_model import Capability
-    _exigir(ws, Capability.WRITE_CASE, Capability.GENERATE_DERIVATIVES)
-    case_dir = ws.working_root
-    # `plan` es preview: descarta la caché en vez de persistirla (no escribe estado) y
-    # se queda solo con el plan y el recuento de agotados, que sí hay que declarar.
-    p, _cache, _ms, _n, agotados = _construir_plan(case_dir, force=False)
-    nuevos = [d for d in p if not d.skip]
-    if agotados:
-        typer.echo(f"  {len(agotados)} documento(s) con intentos agotados (se saltan; "
-                   f"--force o --solo para reintentar)")
-    # Los adjuntos NO se procesan en preview, pero callar cuántos hay esconde el coste que
-    # `apply` va a pagar — y ese coste es nuevo desde que se cableó (`MEJORAS #87`).
-    _adj_dir = _adjuntos_dir_de(case_dir)
-    if _adj_dir.is_dir():
-        n_adj = len(contenido.descubrir(_adj_dir))
-        if n_adj:
-            typer.echo(f"  adjuntos: {n_adj} (se extraerá su texto en apply)")
-    typer.echo(f"Caso: {case_id}")
-    for ruta in ("pdf", "imagen", "nativo", "sin_soporte"):
-        n = sum(1 for d in nuevos if d.ruta == ruta)
+    with _bajo_mutex(ws, case_id):
+        from core.casos.workspace_model import Capability
+        _exigir(ws, Capability.WRITE_CASE, Capability.GENERATE_DERIVATIVES)
+        case_dir = ws.working_root
+        # `plan` es preview: descarta la caché en vez de persistirla (no escribe estado) y
+        # se queda solo con el plan y el recuento de agotados, que sí hay que declarar.
+        p, _cache, _ms, _n, agotados = _construir_plan(case_dir, force=False)
+        nuevos = [d for d in p if not d.skip]
+        if agotados:
+            typer.echo(f"  {len(agotados)} documento(s) con intentos agotados (se saltan; "
+                       f"--force o --solo para reintentar)")
+        # Los adjuntos NO se procesan en preview, pero callar cuántos hay esconde el coste que
+        # `apply` va a pagar — y ese coste es nuevo desde que se cableó (`MEJORAS #87`).
+        _adj_dir = _adjuntos_dir_de(case_dir)
+        if _adj_dir.is_dir():
+            n_adj = len(contenido.descubrir(_adj_dir))
+            if n_adj:
+                typer.echo(f"  adjuntos: {n_adj} (se extraerá su texto en apply)")
+        typer.echo(f"Caso: {case_id}")
+        for ruta in ("pdf", "imagen", "nativo", "sin_soporte"):
+            n = sum(1 for d in nuevos if d.ruta == ruta)
+            if n:
+                typer.echo(f"  {ruta}: {n}")
+
+        # Preview del cableado: `plan` NO atomiza (es preview), solo informa de lo que
+        # `apply` atomizará, con el MISMO contador que usa `apply` (spec §4.7).
+        n = atomize.contar_eml(atomize.emails_src_dirs_de_caso(case_dir))
         if n:
-            typer.echo(f"  {ruta}: {n}")
+            typer.echo(f"  correo: {n} .eml (se atomizarán en apply)")
 
-    # Preview del cableado: `plan` NO atomiza (es preview), solo informa de lo que
-    # `apply` atomizará, con el MISMO contador que usa `apply` (spec §4.7).
-    n = atomize.contar_eml(atomize.emails_src_dirs_de_caso(case_dir))
-    if n:
-        typer.echo(f"  correo: {n} .eml (se atomizarán en apply)")
+        # Pre-detección de bundles (Preview del split): informa de los PDFs multi-documento
+        # y deja su manifiesto de segmentación propuesto (editable) para que el letrado lo
+        # ajuste antes de `apply`. Solo corre sobre PDFs ya buscables (con capa de texto);
+        # los escaneados sin OCR aún se segmentan en `apply`, tras el OCR (asimetría
+        # documentada en el SKILL). El gate sigue vigente: `apply` respeta el manifiesto si
+        # existe y solo lo crea si falta.
+        from core import split_documental as split
+        sm_dir = sm._sala_maquina_dir(case_dir)
+        for d in nuevos:
+            if d.ruta != "pdf":
+                continue
+            src = case_dir / "00_Input" / d.rel_path
+            try:
+                segmentos, blancos = split.detectar(src)
+            except Exception:
+                continue
+            if len(segmentos) > 1:
+                carpeta = sm.destino_seguro(sm_dir / "02_Documentos" / d.slug, case_dir)
+                if not split.manifiesto_existe(carpeta):
+                    split.escribir_manifiesto(carpeta, split.construir_manifiesto(
+                        d.rel_path, d.sha256, segmentos, blancos))
+                typer.echo(f"  bundle {d.rel_path}: {len(segmentos)} documentos → revisa "
+                           f"{carpeta / '_segmentacion.md'} y ajusta antes de apply")
 
-    # Pre-detección de bundles (Preview del split): informa de los PDFs multi-documento
-    # y deja su manifiesto de segmentación propuesto (editable) para que el letrado lo
-    # ajuste antes de `apply`. Solo corre sobre PDFs ya buscables (con capa de texto);
-    # los escaneados sin OCR aún se segmentan en `apply`, tras el OCR (asimetría
-    # documentada en el SKILL). El gate sigue vigente: `apply` respeta el manifiesto si
-    # existe y solo lo crea si falta.
-    from core import split_documental as split
-    sm_dir = sm._sala_maquina_dir(case_dir)
-    for d in nuevos:
-        if d.ruta != "pdf":
-            continue
-        src = case_dir / "00_Input" / d.rel_path
-        try:
-            segmentos, blancos = split.detectar(src)
-        except Exception:
-            continue
-        if len(segmentos) > 1:
-            carpeta = sm.destino_seguro(sm_dir / "02_Documentos" / d.slug, case_dir)
-            if not split.manifiesto_existe(carpeta):
-                split.escribir_manifiesto(carpeta, split.construir_manifiesto(
-                    d.rel_path, d.sha256, segmentos, blancos))
-            typer.echo(f"  bundle {d.rel_path}: {len(segmentos)} documentos → revisa "
-                       f"{carpeta / '_segmentacion.md'} y ajusta antes de apply")
-
-    typer.echo(f"  (saltados por sha ya procesado: {sum(1 for d in p if d.skip)})")
+        typer.echo(f"  (saltados por sha ya procesado: {sum(1 for d in p if d.skip)})")
 
 
 @app.command()
@@ -686,117 +740,118 @@ def apply(case_id: str = typer.Argument(None), vision: bool = False,
             "pedidos.", err=True)
         raise typer.Exit(2)
     case_id, ws = _resolver_workspace(case_id, case_dir)
-    from core.casos.workspace_model import Capability
-    _exigir(ws, Capability.WRITE_CASE, Capability.GENERATE_DERIVATIVES)
-    case_dir = ws.working_root
-    if vision:
-        _exigir_vision_cableada()          # preflight: aborta antes de procesar
-    _atomizar_correo(case_id, case_dir)   # cableado: atomizar ANTES del OCR (spec §4)
-    _procesar_adjuntos(case_id, case_dir)  # cableado: contenido de adjuntos (MEJORAS #87)
-    t_corrida = time.perf_counter()
-    try:
-        p_bruto, cache_nueva, ms_inv, n_hasheados, agotados = \
-            _construir_plan(case_dir, force=force)
-        p = sm.acotar_plan(p_bruto, rutas)
-    except ValueError as exc:              # errata en --solo: parar antes de OCR-izar
-        typer.echo(f"ERROR: {exc}", err=True)
-        raise typer.Exit(2) from exc
+    with _bajo_mutex(ws, case_id):
+        from core.casos.workspace_model import Capability
+        _exigir(ws, Capability.WRITE_CASE, Capability.GENERATE_DERIVATIVES)
+        case_dir = ws.working_root
+        if vision:
+            _exigir_vision_cableada()          # preflight: aborta antes de procesar
+        _atomizar_correo(case_id, case_dir)   # cableado: atomizar ANTES del OCR (spec §4)
+        _procesar_adjuntos(case_id, case_dir)  # cableado: contenido de adjuntos (MEJORAS #87)
+        t_corrida = time.perf_counter()
+        try:
+            p_bruto, cache_nueva, ms_inv, n_hasheados, agotados = \
+                _construir_plan(case_dir, force=force)
+            p = sm.acotar_plan(p_bruto, rutas)
+        except ValueError as exc:              # errata en --solo: parar antes de OCR-izar
+            typer.echo(f"ERROR: {exc}", err=True)
+            raise typer.Exit(2) from exc
 
-    # `--solo` desmarca el skip de lo pedido, incluidos los agotados: es la vía de escape
-    # explícita, igual que `--force`.
-    if agotados:
-        typer.echo(
-            f"AVISO: {len(agotados)} documento(s) con {sm.MAX_INTENTOS} intentos agotados "
-            f"se saltan y NO se han vuelto a procesar. Si son TODOS los del caso, "
-            f"sospecha del motor (¿está OCRmyPDF instalado?) antes de forzar. "
-            f"Reintento: --force, o --solo <ruta>.", err=True)
+        # `--solo` desmarca el skip de lo pedido, incluidos los agotados: es la vía de escape
+        # explícita, igual que `--force`.
+        if agotados:
+            typer.echo(
+                f"AVISO: {len(agotados)} documento(s) con {sm.MAX_INTENTOS} intentos agotados "
+                f"se saltan y NO se han vuelto a procesar. Si son TODOS los del caso, "
+                f"sospecha del motor (¿está OCRmyPDF instalado?) antes de forzar. "
+                f"Reintento: --force, o --solo <ruta>.", err=True)
 
-    # Cobertura ACUMULATIVA: una corrida incremental procesa solo el delta, así que
-    # la cobertura debe fusionarse con la persistida (si no, se pierden las filas de
-    # corridas anteriores — bug de VALERO). Con --force, foto fresca (previa=[]):
-    # nada se saltó, la corrida es autoritativa (simétrico con el estado).
-    # Se lee AQUÍ, antes de procesar, porque el preflight la necesita como baseline de
-    # identidades y porque leerla dos veces duplicaría su aviso de reconstrucción.
-    previa = [] if force else _cobertura_previa(case_dir)
-    try:
-        sm.preflight_manifiestos(case_dir, p, previa, force=force)
-    except split.ManifestValidationError as exc:
-        typer.echo(f"ERROR: manifiesto de segmentación inválido; no se ha procesado "
-                   f"nada.\n{exc}", err=True)
-        raise typer.Exit(2) from exc
+        # Cobertura ACUMULATIVA: una corrida incremental procesa solo el delta, así que
+        # la cobertura debe fusionarse con la persistida (si no, se pierden las filas de
+        # corridas anteriores — bug de VALERO). Con --force, foto fresca (previa=[]):
+        # nada se saltó, la corrida es autoritativa (simétrico con el estado).
+        # Se lee AQUÍ, antes de procesar, porque el preflight la necesita como baseline de
+        # identidades y porque leerla dos veces duplicaría su aviso de reconstrucción.
+        previa = [] if force else _cobertura_previa(case_dir)
+        try:
+            sm.preflight_manifiestos(case_dir, p, previa, force=force)
+        except split.ManifestValidationError as exc:
+            typer.echo(f"ERROR: manifiesto de segmentación inválido; no se ha procesado "
+                       f"nada.\n{exc}", err=True)
+            raise typer.Exit(2) from exc
 
-    tiempos: list[dict] = []
+        tiempos: list[dict] = []
 
-    def _medir(doc, ms: int, filas) -> None:
-        tiempos.append({
-            "tipo": "documento", "slug": doc.slug, "rel_path": doc.rel_path,
-            "ruta": doc.ruta, "ms": ms,
-            "metodo": filas[0].metodo if filas else "",
-            "estado": filas[0].estado if filas else "",
-            "segmentos": len(filas),
-            "paginas": filas[0].paginas if filas else "",
+        def _medir(doc, ms: int, filas) -> None:
+            tiempos.append({
+                "tipo": "documento", "slug": doc.slug, "rel_path": doc.rel_path,
+                "ruta": doc.ruta, "ms": ms,
+                "metodo": filas[0].metodo if filas else "",
+                "estado": filas[0].estado if filas else "",
+                "segmentos": len(filas),
+                "paginas": filas[0].paginas if filas else "",
+            })
+
+        cob_delta = sm.ejecutar(case_dir, p, case_id=case_id, vision=vision, force=force,
+                                on_documento=_medir)
+
+        # La corrida es AUTORITATIVA sobre lo que reprocesa (spec §6.1): sus filas previas se
+        # descartan. El conjunto sale del PLAN, no de las filas, porque cuando un documento
+        # falla no hay filas suyas que mirar.
+        cob = sm.fusionar_cobertura(previa, cob_delta,
+                                    rel_paths_reprocesados={d.rel_path for d in p if not d.skip})
+        _guardar_cobertura(case_dir, cob)
+        _escribir_cobertura_md(case_dir, cob)
+
+        # El estado idempotente solo cuenta lo que produjo salida real (ok/low): un
+        # PDF cifrado/bloqueado NO se marca "resuelto", así se reintenta en la
+        # siguiente corrida normal de apply (sin --force). Se calcula sobre el DELTA
+        # de esta corrida, no sobre la cobertura fusionada.
+        #
+        # Con --force el plan trae TODOS los documentos (nada se saltó), así que el
+        # estado nuevo debe reflejar SOLO los éxitos de esta corrida: no se une con el
+        # estado en disco, que puede marcar "resuelto" un documento que ahora falla
+        # (p. ej. tras cambiar el motor OCR) → si se uniera, la siguiente corrida
+        # normal lo saltaría, contradiciendo "un fallo se reintenta sin --force".
+        exitosos = _exitosos_por_bundle(cob_delta)
+        procesados = exitosos if force else (_estado_previo(case_dir) | exitosos)
+
+        # Contador de intentos (`MEJORAS #84`): +1 a cada documento que se procesó y NO
+        # salió resuelto; se BORRA al primer éxito, para que un fallo transitorio no deje
+        # deuda acumulada. Sin esto, un documento que no se resuelve vuelve a pagar OCR real
+        # en cada corrida, para siempre.
+        intentos = {} if force else dict(_intentos_previos(case_dir))
+        for d in p:
+            if d.skip:
+                continue
+            if d.sha256 in exitosos:
+                intentos.pop(d.sha256, None)
+            else:
+                intentos[d.sha256] = intentos.get(d.sha256, 0) + 1
+        _guardar_estado(case_dir, procesados, intentos=intentos, hashes=cache_nueva)
+        # B0-1: `apply`/`reforzar` resuelven el `case_dir` al principio, asi que el
+        # evento cae junto a los bytes aunque no lo lleven en la firma. Mi criterio
+        # inicial —«lo tiene en la FIRMA»— era demasiado estrecho y dejaba fuera a dos
+        # llamadores que si podian migrar.
+        append_event(case_dir, "procesado_sala_maquina", case_id=case_id, details={
+            "count": len(cob_delta),
+            "files": [{"path": c.rel_path, "sha256": c.sha256, "slug": c.slug,
+                       "metodo": c.metodo, "estado": c.estado} for c in cob_delta],
         })
+        _exigir_integridad(case_dir, cob, {d.slug for d in p if not d.skip})
+        dudosos = [c for c in cob if c.estado != "ok"]
+        typer.echo(f"Sala de máquina actualizada: {len(cob)} documentos, {len(dudosos)} a revisar.")
 
-    cob_delta = sm.ejecutar(case_dir, p, case_id=case_id, vision=vision, force=force,
-                            on_documento=_medir)
-
-    # La corrida es AUTORITATIVA sobre lo que reprocesa (spec §6.1): sus filas previas se
-    # descartan. El conjunto sale del PLAN, no de las filas, porque cuando un documento
-    # falla no hay filas suyas que mirar.
-    cob = sm.fusionar_cobertura(previa, cob_delta,
-                                rel_paths_reprocesados={d.rel_path for d in p if not d.skip})
-    _guardar_cobertura(case_dir, cob)
-    _escribir_cobertura_md(case_dir, cob)
-
-    # El estado idempotente solo cuenta lo que produjo salida real (ok/low): un
-    # PDF cifrado/bloqueado NO se marca "resuelto", así se reintenta en la
-    # siguiente corrida normal de apply (sin --force). Se calcula sobre el DELTA
-    # de esta corrida, no sobre la cobertura fusionada.
-    #
-    # Con --force el plan trae TODOS los documentos (nada se saltó), así que el
-    # estado nuevo debe reflejar SOLO los éxitos de esta corrida: no se une con el
-    # estado en disco, que puede marcar "resuelto" un documento que ahora falla
-    # (p. ej. tras cambiar el motor OCR) → si se uniera, la siguiente corrida
-    # normal lo saltaría, contradiciendo "un fallo se reintenta sin --force".
-    exitosos = _exitosos_por_bundle(cob_delta)
-    procesados = exitosos if force else (_estado_previo(case_dir) | exitosos)
-
-    # Contador de intentos (`MEJORAS #84`): +1 a cada documento que se procesó y NO
-    # salió resuelto; se BORRA al primer éxito, para que un fallo transitorio no deje
-    # deuda acumulada. Sin esto, un documento que no se resuelve vuelve a pagar OCR real
-    # en cada corrida, para siempre.
-    intentos = {} if force else dict(_intentos_previos(case_dir))
-    for d in p:
-        if d.skip:
-            continue
-        if d.sha256 in exitosos:
-            intentos.pop(d.sha256, None)
-        else:
-            intentos[d.sha256] = intentos.get(d.sha256, 0) + 1
-    _guardar_estado(case_dir, procesados, intentos=intentos, hashes=cache_nueva)
-    # B0-1: `apply`/`reforzar` resuelven el `case_dir` al principio, asi que el
-    # evento cae junto a los bytes aunque no lo lleven en la firma. Mi criterio
-    # inicial —«lo tiene en la FIRMA»— era demasiado estrecho y dejaba fuera a dos
-    # llamadores que si podian migrar.
-    append_event(case_dir, "procesado_sala_maquina", case_id=case_id, details={
-        "count": len(cob_delta),
-        "files": [{"path": c.rel_path, "sha256": c.sha256, "slug": c.slug,
-                   "metodo": c.metodo, "estado": c.estado} for c in cob_delta],
-    })
-    _exigir_integridad(case_dir, cob, {d.slug for d in p if not d.skip})
-    dudosos = [c for c in cob if c.estado != "ok"]
-    typer.echo(f"Sala de máquina actualizada: {len(cob)} documentos, {len(dudosos)} a revisar.")
-
-    ms_total = int((time.perf_counter() - t_corrida) * 1000)
-    _registrar_tiempos(case_dir, tiempos + [{
-        "tipo": "corrida", "ts": now_iso(), "case_id": case_id,
-        "ms_total": ms_total, "ms_inventario": ms_inv,
-        "ficheros_hasheados": n_hasheados, "ficheros_inventariados": len(cache_nueva),
-        "documentos_procesados": len(tiempos), "agotados": len(agotados),
-        "force": bool(force), "solo": len(rutas),
-    }])
-    _resumir_tiempos(tiempos, ms_total, ms_inv, n_hasheados, len(cache_nueva))
-    typer.echo("Siguiente paso sugerido: organizar-sala-lectura sobre este caso.")
+        ms_total = int((time.perf_counter() - t_corrida) * 1000)
+        _registrar_tiempos(case_dir, tiempos + [{
+            "tipo": "corrida", "ts": now_iso(), "case_id": case_id,
+            "ms_total": ms_total, "ms_inventario": ms_inv,
+            "ficheros_hasheados": n_hasheados, "ficheros_inventariados": len(cache_nueva),
+            "documentos_procesados": len(tiempos), "agotados": len(agotados),
+            "force": bool(force), "solo": len(rutas),
+        }])
+        _resumir_tiempos(tiempos, ms_total, ms_inv, n_hasheados, len(cache_nueva))
+        typer.echo("Siguiente paso sugerido: organizar-sala-lectura sobre este caso.")
 
 
 # metodos con páginas renderizables: solo estos se benefician del refuerzo por
@@ -817,66 +872,67 @@ def reforzar(case_id: str = typer.Argument(None),
     sesión); el CLI pelado aborta en el preflight.
     """
     case_id, ws = _resolver_workspace(case_id, case_dir)
-    from core.casos.workspace_model import Capability
-    _exigir(ws, Capability.WRITE_CASE, Capability.GENERATE_DERIVATIVES)
-    case_dir = ws.working_root
-    _exigir_vision_cableada()
-    previa = _cobertura_previa(case_dir)
-    if not previa:
-        typer.echo("Nada que reforzar: no hay cobertura. Corre `apply` primero.")
-        return
-    objetivos = {c.rel_path for c in previa
-                 if c.estado in ("low", "empty") and c.metodo in _REFORZABLES}
-    if not objetivos:
-        typer.echo("0 documentos a reforzar (ningún dudoso con páginas renderizables).")
-        return
+    with _bajo_mutex(ws, case_id):
+        from core.casos.workspace_model import Capability
+        _exigir(ws, Capability.WRITE_CASE, Capability.GENERATE_DERIVATIVES)
+        case_dir = ws.working_root
+        _exigir_vision_cableada()
+        previa = _cobertura_previa(case_dir)
+        if not previa:
+            typer.echo("Nada que reforzar: no hay cobertura. Corre `apply` primero.")
+            return
+        objetivos = {c.rel_path for c in previa
+                     if c.estado in ("low", "empty") and c.metodo in _REFORZABLES}
+        if not objetivos:
+            typer.echo("0 documentos a reforzar (ningún dudoso con páginas renderizables).")
+            return
 
-    # estado_previo=set() → nada se salta; filtramos el plan a los objetivos, que se
-    # re-procesan íntegros (reutiliza `ejecutar`; re-OCR-iza, decisión del diseño).
-    plan = [d for d in sm.plan(sm.inventariar(case_dir), estado_previo=set())
-            if d.rel_path in objetivos]
-    if not plan:
-        # Los dudosos están en la cobertura previa pero ya no en 00_Input (borrados
-        # o renombrados). Sin este guard se reescribiría cobertura/estado idénticos
-        # y se emitiría un evento forense count=0 (ruido en el log de custodia).
-        typer.echo(f"Los {len(objetivos)} documentos dudosos ya no están en "
-                   "00_Input (borrados o renombrados); nada que reforzar.")
-        return
+        # estado_previo=set() → nada se salta; filtramos el plan a los objetivos, que se
+        # re-procesan íntegros (reutiliza `ejecutar`; re-OCR-iza, decisión del diseño).
+        plan = [d for d in sm.plan(sm.inventariar(case_dir), estado_previo=set())
+                if d.rel_path in objetivos]
+        if not plan:
+            # Los dudosos están en la cobertura previa pero ya no en 00_Input (borrados
+            # o renombrados). Sin este guard se reescribiría cobertura/estado idénticos
+            # y se emitiría un evento forense count=0 (ruido en el log de custodia).
+            typer.echo(f"Los {len(objetivos)} documentos dudosos ya no están en "
+                       "00_Input (borrados o renombrados); nada que reforzar.")
+            return
 
-    # `reforzar` es el otro comando que entra en `_split_o_md`, no acepta `--force` y no
-    # tenía válvula propia: con un manifiesto legacy, `validar_manifiesto` lanzaba dentro
-    # de `ejecutar`, el fallo quedaba aislado y la corrida cerraba en salida 3 DESPUÉS de
-    # haber escrito.
-    try:
-        sm.preflight_manifiestos(case_dir, plan, previa)
-    except split.ManifestValidationError as exc:
-        typer.echo(f"ERROR: manifiesto de segmentación inválido; no se ha reforzado "
-                   f"nada.\n{exc}", err=True)
-        raise typer.Exit(2) from exc
+        # `reforzar` es el otro comando que entra en `_split_o_md`, no acepta `--force` y no
+        # tenía válvula propia: con un manifiesto legacy, `validar_manifiesto` lanzaba dentro
+        # de `ejecutar`, el fallo quedaba aislado y la corrida cerraba en salida 3 DESPUÉS de
+        # haber escrito.
+        try:
+            sm.preflight_manifiestos(case_dir, plan, previa)
+        except split.ManifestValidationError as exc:
+            typer.echo(f"ERROR: manifiesto de segmentación inválido; no se ha reforzado "
+                       f"nada.\n{exc}", err=True)
+            raise typer.Exit(2) from exc
 
-    cob_delta = sm.ejecutar(case_dir, plan, case_id=case_id, vision=True)
+        cob_delta = sm.ejecutar(case_dir, plan, case_id=case_id, vision=True)
 
-    cob = sm.fusionar_cobertura(previa, cob_delta)
-    _guardar_cobertura(case_dir, cob)
-    _escribir_cobertura_md(case_dir, cob)
+        cob = sm.fusionar_cobertura(previa, cob_delta)
+        _guardar_cobertura(case_dir, cob)
+        _escribir_cobertura_md(case_dir, cob)
 
-    exitosos = _exitosos_por_bundle(cob_delta)
-    _guardar_estado(case_dir, _estado_previo(case_dir) | exitosos)
-    # B0-1: `apply`/`reforzar` resuelven el `case_dir` al principio, asi que el
-    # evento cae junto a los bytes aunque no lo lleven en la firma. Mi criterio
-    # inicial —«lo tiene en la FIRMA»— era demasiado estrecho y dejaba fuera a dos
-    # llamadores que si podian migrar.
-    append_event(case_dir, "procesado_sala_maquina", case_id=case_id, details={
-        "modo": "reforzar",
-        "count": len(cob_delta),
-        "files": [{"path": c.rel_path, "sha256": c.sha256, "slug": c.slug,
-                   "metodo": c.metodo, "estado": c.estado} for c in cob_delta],
-    })
-    _exigir_integridad(case_dir, cob, {d.slug for d in plan})
-    mejorados = sum(1 for c in cob_delta if c.estado == "ok")
-    dudosos = [c for c in cob if c.estado != "ok"]
-    typer.echo(f"Reforzados {len(cob_delta)} documentos ({mejorados} ahora ok); "
-               f"{len(dudosos)} a revisar.")
+        exitosos = _exitosos_por_bundle(cob_delta)
+        _guardar_estado(case_dir, _estado_previo(case_dir) | exitosos)
+        # B0-1: `apply`/`reforzar` resuelven el `case_dir` al principio, asi que el
+        # evento cae junto a los bytes aunque no lo lleven en la firma. Mi criterio
+        # inicial —«lo tiene en la FIRMA»— era demasiado estrecho y dejaba fuera a dos
+        # llamadores que si podian migrar.
+        append_event(case_dir, "procesado_sala_maquina", case_id=case_id, details={
+            "modo": "reforzar",
+            "count": len(cob_delta),
+            "files": [{"path": c.rel_path, "sha256": c.sha256, "slug": c.slug,
+                       "metodo": c.metodo, "estado": c.estado} for c in cob_delta],
+        })
+        _exigir_integridad(case_dir, cob, {d.slug for d in plan})
+        mejorados = sum(1 for c in cob_delta if c.estado == "ok")
+        dudosos = [c for c in cob if c.estado != "ok"]
+        typer.echo(f"Reforzados {len(cob_delta)} documentos ({mejorados} ahora ok); "
+                   f"{len(dudosos)} a revisar.")
 
 
 if __name__ == "__main__":

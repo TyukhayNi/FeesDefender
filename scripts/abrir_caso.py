@@ -34,9 +34,12 @@ from core import (
     case_manager, config, email_export, intake_drive, intake_log, intake_manual,
     sudespacho_create, whatsapp_intake,
 )
-from core.casos import case_locator
+from core.casos import case_locator, mutex_sesion
+from core.casos.workspace_model import CaseRef
 from core.ciudades import CIUDADES
-from core.utils import file_sha256
+# `now_iso_utc` y NO `now_iso`: la primitiva del mutex rechaza a proposito un instante sin
+# offset, porque un timestamp naive se lee en hora LOCAL y el lease se calcularia mal.
+from core.utils import file_sha256, now_iso_utc
 
 app = typer.Typer(add_completion=False, help="Abrir un expediente E&V en una pasada")
 
@@ -66,18 +69,28 @@ _MODOS = ("libre", "v1")
 _FUENTES_V1 = ("drive_ev",)
 
 
-def _inventario_desde_hashes(case_dir: Path, base: str, hashes: dict[str, str]) -> list[dict]:
-    """Inventario {relpath, sha256, size} a partir de {base/rel: sha}."""
+def _inventario_desde_hashes(raiz: Path, base: str, hashes: dict[str, str]) -> list[dict]:
+    """Inventario {relpath, sha256, size} a partir de {base/rel: sha}.
+
+    `raiz` es la raíz **EFECTIVA** bajo la que viven las claves: el `00_Input` del destino
+    que decidió el guard, que con un caso prestado es el de la bandeja.
+
+    Antes recomponía `case_dir / "00_Input" / clave`, o sea la ruta **intencionada**
+    (R14/H14-02, CRÍTICO). Con desvío eso es un `FileNotFoundError` o —peor— el tamaño de
+    un fichero homónimo del canon, y entonces bytes, hash, manifiesto y evento dejan de
+    describir el mismo destino. Eso no es cobertura pendiente: es una afirmación forense
+    falsa, y por eso la ronda prohibió diferirlo.
+    """
     return [
         {"relpath": k[len(base) + 1:], "sha256": v,
-         "size": (case_dir / "00_Input" / k).stat().st_size}
+         "size": (raiz / k).stat().st_size}
         for k, v in hashes.items()
     ]
 
 
 def _intake_generico(
     case_dir: Path, case_id: str, fuente: str, hashes: dict[str, str], *, base: str,
-    dry_run: bool,
+    dry_run: bool, raiz_hashes: Path | None = None,
 ) -> None:
     """Camino de custodia orquestado (drive_ev, manual): plan → (dry-run) →
     reconcile → append_event. `hashes` cubre SOLO lo recién depositado.
@@ -85,8 +98,19 @@ def _intake_generico(
     `base` es el cajón espejo (drive_ev) o el nombre del lote ya reservado
     (fuentes de entrega); la cadena de custodia toma la fuente de `fuente`,
     no del primer segmento de la ruta.
+
+    `raiz_hashes` es la raíz **efectiva** bajo la que viven las claves de `hashes`
+    (R14/H14-02). Su default es la canónica —el comportamiento de siempre— y cada
+    llamador que pueda ser desviado por el guard pasa la suya. Es aditivo a propósito:
+    la vía que no puede desviarse no tiene que enterarse de nada.
+
+    **El evento se queda en el log CANÓNICO** aunque los bytes se desvíen, y eso es
+    deliberado: `_intake_log.jsonl` es fila #13 del §25, clase protocolo, exenta del
+    desvío. Es también donde el guard deja su propio `pendiente_checkin`, así que las dos
+    mitades de la historia quedan en el mismo sitio y en orden.
     """
-    inventario = _inventario_desde_hashes(case_dir, base, hashes)
+    inventario = _inventario_desde_hashes(
+        raiz_hashes if raiz_hashes is not None else case_dir / "00_Input", base, hashes)
     plan = brain.plan_intake(inventario, intake_log.read_events(case_id), fuente,
                              lote=None if fuente == "drive_ev" else base)
     if dry_run:
@@ -110,10 +134,45 @@ def _intake_generico(
 
 
 def _intake_drive_ev(ident, case_dir: Path, folder_id, team_id, *, dry_run: bool) -> None:
-    intake_drive.pull_drive_ev(ident.case_id, folder_id, team_id)
+    """Pull de Drive E&V + cadena de custodia sobre el destino EFECTIVO (R14/H14-02).
+
+    **El dato que hacía barato el arreglo: `DriveIntakeResult` ya traía `target_dir`.**
+    El destino que eligió el guard venía de vuelta en el resultado y este llamador lo
+    tiraba para recomponer la ruta canónica a mano. No faltaba información: se descartaba.
+    """
+    try:
+        res = intake_drive.pull_drive_ev(ident.case_id, folder_id, team_id)
+    except intake_drive.DriveIntakeError as exc:
+        # R15/H15-06: un `rclone` no cero puede haber copiado PARTE del árbol, y esos bytes
+        # se quedan en el expediente. Antes la excepción subía sin que nada los inventariase,
+        # así que quedaban depositados y **sin un solo evento** que dijera qué llegó ni que
+        # la operación había fallado. Custodia partida en dos.
+        #
+        # Se emite `pull_drive_ev` con `status: fallo` —el vocabulario de `INTAKE_EVENTS` es
+        # cerrado y no se añade un evento a la ligera; el patrón `status` ya lo usa
+        # `contenido_adjuntos`— y se relanza. Registrar lo parcial NO es declararlo un
+        # intake correcto: el status lo dice y el comando sigue fallando.
+        parcial = getattr(exc, "result", None)
+        destino = getattr(parcial, "target_dir", None)
+        if destino is not None:
+            hashes = hash_tree_local(destino, prefijo=brain.SUBDIR_DRIVE_EV)
+            intake_log.append_event(
+                case_dir, "pull_drive_ev", case_id=ident.case_id,
+                details={"status": "fallo", "count": len(hashes),
+                         "files": [{"path": k, "sha256": v} for k, v in hashes.items()],
+                         "rclone_returncode": getattr(parcial, "rclone_returncode", None)})
+            typer.echo(
+                f"[ERROR] el pull falló y quedaron {len(hashes)} ficheros parciales; "
+                f"registrados en el log con status=fallo antes de abortar", err=True)
+        raise
+
     subdir = brain.SUBDIR_DRIVE_EV
-    hashes = hash_tree_local(case_dir / "00_Input" / subdir, prefijo=subdir)
-    _intake_generico(case_dir, ident.case_id, "drive_ev", hashes, base=subdir, dry_run=dry_run)
+    # `target_dir` es `<algo>/00_Input/01_Drive EV`, así que su padre es la raíz bajo la
+    # que resuelven las claves `01_Drive EV/...`. Con el caso disponible es el `00_Input`
+    # del caso; con el caso prestado, el de la bandeja.
+    hashes = hash_tree_local(res.target_dir, prefijo=subdir)
+    _intake_generico(case_dir, ident.case_id, "drive_ev", hashes, base=subdir,
+                     dry_run=dry_run, raiz_hashes=res.target_dir.parent)
 
 
 def _inventario_local(src: Path) -> list[dict]:
@@ -176,7 +235,12 @@ def _intake_manual(ident, case_dir: Path, src_str: str, *, dry_run: bool) -> Non
         typer.echo(f"[ERROR] {exc}", err=True)
         raise typer.Exit(code=1)
     hashes = {f"{lote.name}/{rel}": file_sha256(lote / rel) for rel in rels}
-    _intake_generico(case_dir, ident.case_id, "manual", hashes, base=lote.name, dry_run=False)
+    # `lote` ya es el directorio EFECTIVO (`abrir_lote_manual` pasa por el guard), así que
+    # los hashes de arriba siempre fueron correctos. Lo que no lo era es el inventario, que
+    # resolvía contra la ruta canónica: la vía manual tenía el mismo defecto que #8, latente
+    # y sin fila propia en el §25. Se cierra aquí porque es el MISMO arreglo.
+    _intake_generico(case_dir, ident.case_id, "manual", hashes, base=lote.name,
+                     dry_run=False, raiz_hashes=lote.parent)
 
 
 def _intake_whatsapp(ident, src_str: str, rol: str, *, dry_run: bool) -> None:
@@ -569,30 +633,48 @@ def main(
                        "pásalo explícito.", err=True)
             raise typer.Exit(code=1)
 
-    # 5.2 esqueleto (idempotente; con --case-id el caso ya existe)
-    case_manager.ensure_case(
-        ident.case_id, titulo=ident.case_id, referencia_crm=ident.case_id,
-        tipo_caso=ident.tipo_caso, ciudad=ciudad, direccion=ident.direccion, id_go=ident.w_code,
-    )
-    # `localizar` y no `path_for`: el esqueleto acaba de crearse, así que el caso DEBE
-    # existir y su ausencia es un fallo, no un valor. Es lo que la clasificación firmada
-    # del Task 6 decía para este sitio, y quedó como cabo suelto del 65º cierre; el
-    # comportamiento no cambia —`path_for` ya es estricto por defecto— pero el nombre
-    # ahora dice qué se espera, que es justo lo que un flag no permite auditar.
-    case_dir = case_locator.localizar(ident.case_id)
+    # 5.2 — a partir de aquí, TODO va bajo el mutex del caso (Plan 3A, Task 5).
+    #
+    # Este es el punto en que el mutex de #247 empieza a proteger algo: hasta ahora
+    # existía, estaba probado y no lo llamaba nadie. El bloque cubre el esqueleto, el
+    # intake y el alta CRM, que es la secuencia que D3 pone bajo el dueño del modo.
+    #
+    # **En los dos modos, no solo en `v1`.** El dolor MEDIDO que justificó D2 es
+    # «relanzar el pipeline sobre el mismo caso sin saber si la corrida anterior
+    # terminó», y eso pasa en `libre`, que es el modo que se usa hoy. Adquirir solo en
+    # `v1` habría dejado el mutex sin proteger nada real otra vez.
+    #
+    # El reloj va con offset EXPLÍCITO: `case_mutex` rechaza un instante naïve a
+    # propósito, y `now_iso` —el mayoritario del repo, 43 usos frente a 5— lo es.
+    with mutex_sesion.sostenido(CaseRef(w_code=ident.w_code) if ident.w_code
+                                else CaseRef(case_id=ident.case_id),
+                                ahora_fn=now_iso_utc):
+        # 5.2 esqueleto (idempotente; con --case-id el caso ya existe)
+        case_manager.ensure_case(
+            ident.case_id, titulo=ident.case_id, referencia_crm=ident.case_id,
+            tipo_caso=ident.tipo_caso, ciudad=ciudad, direccion=ident.direccion,
+            id_go=ident.w_code, modo=modo,
+        )
+        # `localizar` y no `path_for`: el esqueleto acaba de crearse, así que el caso DEBE
+        # existir y su ausencia es un fallo, no un valor. Es lo que la clasificación firmada
+        # del Task 6 decía para este sitio, y quedó como cabo suelto del 65º cierre; el
+        # comportamiento no cambia —`path_for` ya es estricto por defecto— pero el nombre
+        # ahora dice qué se espera, que es justo lo que un flag no permite auditar.
+        case_dir = case_locator.localizar(ident.case_id)
 
-    # 5.3-5.7 intake por fuente
-    _despachar_intake(
-        fuente, ident, case_dir,
-        folder_id=folder_id, team_id=team_id, src=src, rol=rol,
-        cuenta=cuenta, label=label, dry_run=dry_run,
-        extraer_adjuntos=extraer_adjuntos,
-    )
-    if dry_run:
-        typer.echo(f"[dry-run] esqueleto en {case_dir}; se omiten log de intake y alta CRM")
-        raise typer.Exit(code=0)
+        # 5.3-5.7 intake por fuente
+        _despachar_intake(
+            fuente, ident, case_dir,
+            folder_id=folder_id, team_id=team_id, src=src, rol=rol,
+            cuenta=cuenta, label=label, dry_run=dry_run,
+            extraer_adjuntos=extraer_adjuntos,
+        )
+        if dry_run:
+            typer.echo(
+                f"[dry-run] esqueleto en {case_dir}; se omiten log de intake y alta CRM")
+            raise typer.Exit(code=0)
 
-    _alta_crm(ident, cuantia=cuantia, crm_mode=crm, yes=yes)
+        _alta_crm(ident, cuantia=cuantia, crm_mode=crm, yes=yes)
 
     typer.echo(f"OK Caso abierto: {ident.case_id}")
 

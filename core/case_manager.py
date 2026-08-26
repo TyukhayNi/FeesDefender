@@ -29,6 +29,7 @@ from .config import (
     CRM_SUBDIR,
     CRM_TREE,
     INFORME_VIABILIDAD_TIPOS,
+    SUBDIRS_ALTA_V1,
     caso_path,
     settings,
 )
@@ -231,6 +232,8 @@ def ensure_case(
     id_go: str | None = None,
     tipo_caso: str | None = None,
     ciudad: str | None = None,
+    modo: str = "libre",
+    raiz_mutex: "Path | None" = None,
 ) -> Path:
     """Crea (o asegura) la estructura de un caso. Devuelve la ruta del caso.
 
@@ -267,6 +270,67 @@ def ensure_case(
             componer REF del informe.
         (resto): metadatos del caso, opcionales.
     """
+    # --- Puerta de alta de V1 (Plan 3A, Task 3). Va ANTES de crear nada.
+    #
+    # Las tres filas de clase estructura del §25 (#1, #2, #3) no pueden pasar por
+    # `core.casos.escritura`: esto crea la raiz ANTES de que exista un caso que el
+    # catalogo pueda resolver o un `_caso.md` que el guard pueda leer. De ahi la puerta
+    # propia, y de ahi que viva DENTRO de `ensure_case`: su docstring la declara «la UNICA
+    # puerta de alta del sistema» y una segunda funcion de alta seria justo lo que esa
+    # frase existe para impedir.
+    if modo not in ("v1", "libre"):
+        raise ValueError(f"modo {modo!r} desconocido; los del §24 D3 son ('v1', 'libre')")
+    es_v1 = modo == "v1"
+    if es_v1:
+        from core.casos import mutex_sesion
+        from core.casos.workspace_model import (CaseRef, EscrituraSinMutex,
+                                                IdentidadNoUtilizable)
+
+        # El `id_go` EXPLICITO es la identidad, y no se deriva del nombre de la carpeta.
+        # En el alta no hay `meta.id_go` todavia, asi que este kwarg es la unica fuente
+        # canonica; extraerlo del nombre seria el critico de R14/H14-01 cometido en el
+        # unico punto donde no hay metadato que lo desmienta.
+        if not id_go:
+            raise IdentidadNoUtilizable(
+                detalle="el alta en modo v1 exige id_go explicito: sin identidad canonica "
+                        "no hay mutex que tomar, y el nombre de la carpeta no es identidad")
+        if mutex_sesion.vigente(CaseRef(w_code=id_go), raiz=raiz_mutex) is None:
+            raise EscrituraSinMutex(
+                w_code=id_go,
+                detalle="el alta en modo v1 va bajo el mutex del caso; adquierelo en el "
+                        "entrypoint con mutex_sesion.sostenido antes de llamar")
+
+        # --- Concordancia de identidad, ANTES de crear o tocar nada (R15/H15-01).
+        #
+        # Tener `id_go` y su mutex NO basta: hay que tener el mutex **de este expediente**.
+        # Medido: con `meta.id_go = W-OLD01` persistido, el alta aceptaba `id_go=W-NEW01`,
+        # **reescribia el metadato** y devolvia el mismo directorio — asi que un proceso con
+        # el lock nuevo y otro con el viejo operaban la misma carpeta, los dos creyendose
+        # protegidos. Es la falsa exclusion que `IdentidadDiscordante` existe para impedir.
+        #
+        # Y es la TERCERA vez que aparece la misma propiedad: R14 la cerro en la costura
+        # (frontera C0) y yo remedie **ese sitio** en vez de la propiedad — «todo camino que
+        # fije identidad comprueba concordancia». El alta es un camino que fija identidad.
+        from core.casos import case_locator as _cl
+        from core.casos.workspace_model import IdentidadDiscordante
+
+        _canon = CaseRef.normalizar(id_go)
+        _existente = _cl.buscar(case_id)
+        _declaradas = {_canon}
+        if _existente is not None:
+            _persistido = str(_cl.read_case_meta(_existente).get("id_go") or "").strip().upper()
+            if _persistido:
+                _declaradas.add(_persistido)
+        _del_nombre = _cl._w_code_de(case_id)
+        if _del_nombre:
+            _declaradas.add(_del_nombre.strip().upper())
+        if len(_declaradas) > 1:
+            raise IdentidadDiscordante(
+                w_code=_canon,
+                detalle="el id_go recibido, el `meta.id_go` persistido y/o el W-code del "
+                        "nombre de la carpeta no coinciden; en v1 la identidad de un caso "
+                        "NO es un campo que el alta actualice")
+
     # La UNICA puerta de alta del sistema, y por eso es explicita en el nombre
     # (Task 6 / R7-H7-01). `destino_de_alta` admite que el caso no exista —es su
     # caso normal— y devuelve SU ubicacion si ya existe, lo que impide fabricar
@@ -278,13 +342,20 @@ def ensure_case(
         case_dir = path_for_ciudad(case_id, ciudad)
     case_dir.mkdir(parents=True, exist_ok=True)
 
-    # Subcarpetas estándar (nivel 1)
-    for sub in CASO_SUBDIRS:
+    # Subcarpetas estándar (nivel 1). En V1, solo las que tienen productor DENTRO de la
+    # primera vertical (§25 fila #1): las otras seis son andamiaje que luego nadie retira.
+    # `90_Notas personales` se conserva eager y es **exencion declarada** —ningun camino de
+    # V1 lee ni escribe su contenido, y `core/config.py` ya lo documenta como deliberado—.
+    subdirs = SUBDIRS_ALTA_V1 if es_v1 else CASO_SUBDIRS
+    for sub in subdirs:
         (case_dir / sub).mkdir(exist_ok=True)
 
-    # Subestructura de 01_Procesado (sala de lectura + MD + cuarentena)
-    for sub01 in ("Sala lectura", "MD", "_revisar"):
-        (case_dir / "01_Procesado" / sub01).mkdir(exist_ok=True)
+    # Subestructura de 01_Procesado (sala de lectura + MD + cuarentena). Fuera de V1
+    # (§25 fila #2): sus productores son `core/sala_lectura.py`, DEPRECADO, y
+    # `core/markdown_generator.py`, del pipeline legacy. Ninguno corre en la vertical.
+    if not es_v1:
+        for sub01 in ("Sala lectura", "MD", "_revisar"):
+            (case_dir / "01_Procesado" / sub01).mkdir(exist_ok=True)
 
     # (ELIMINADO — spec §8 «Scaffolding de ensure_case»: los cajones de entrega y
     # sus roles ya no se crean al alta; los lotes nacen con cada intake y
@@ -352,6 +423,12 @@ def ensure_case(
                 fm_in["meta"] = meta_in
                 return fm_in
             _atomic_write_caso_md(case_id, _mutate)
+
+    # Fuera de V1 (§25 fila #3): la viabilidad es vertical DIFERIDA (V3), así que copiar
+    # sus plantillas al alta deja ficheros de una vertical que todavía no corre. Se
+    # devuelve aquí porque lo que queda del cuerpo es plantillas y su pre-rellenado.
+    if es_v1:
+        return case_dir
 
     # Copia idempotente de plantillas de viabilidad.
     # Nombre del informe: ``Informe viabilidad - <case_id>.xlsx`` si el
