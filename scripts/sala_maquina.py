@@ -469,7 +469,7 @@ def _bajo_mutex(ws, case_id: str):
     rompe el día al equipo, y declarar el hueco permite contarlo y cerrarlo después.
     """
     from core.casos import mutex_sesion
-    from core.casos.workspace_model import CaseBusy, CaseRef
+    from core.casos.workspace_model import CaseBusy, CaseRef, MutexPerdido
     # `now_iso_utc` y NO `now_iso`: la primitiva rechaza un instante sin offset porque
     # uno naïve se lee en hora local y el lease se calcularía mal.
     from core.utils import now_iso_utc
@@ -490,6 +490,17 @@ def _bajo_mutex(ws, case_id: str):
         # motor no ha arrancado. Un traceback aquí sería un fallo de producto, porque
         # «otra corrida está en curso» es información útil, no un error de programación.
         typer.echo(f"[ERROR] {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+    except MutexPerdido as exc:
+        # Distinto de `CaseBusy` en el mensaje **y en lo que significa**: aquí el motor SÍ
+        # arrancó y el lease se perdió a mitad —lease vencido, reloj movido, o alguien
+        # borró el lock—, así que puede haber trabajo a medio publicar. Sin esta rama el
+        # usuario recibía un traceback al final de un OCR largo, que es el peor momento
+        # posible para tener que interpretar una excepción.
+        typer.echo(
+            f"[ERROR] {exc}. El mutex se perdió DURANTE la corrida, así que el "
+            f"resultado puede estar a medias: revisa `_cobertura.md` antes de fiarte, y "
+            f"comprueba si otro proceso entró.", err=True)
         raise typer.Exit(code=2) from exc
 
 

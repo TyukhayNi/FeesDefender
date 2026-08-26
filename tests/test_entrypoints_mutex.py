@@ -206,3 +206,32 @@ def test_e5_ningun_modulo_de_core_adquiere_el_mutex():
     assert not infractores, (
         "modulos de core/ que ADQUIEREN el mutex en vez de exigirlo:\n  "
         + "\n  ".join(infractores))
+
+
+# --------------------------------------------------------------------------- E6
+
+def test_e6_perder_el_mutex_a_mitad_no_saca_un_traceback(tmp_casos_root, monkeypatch):
+    """E6 — `MutexPerdido` es un abort con mensaje, no una excepción sin gestionar.
+
+    `CaseBusy` y `MutexPerdido` no significan lo mismo y no piden lo mismo: el primero dice
+    «el motor no arrancó, espera»; el segundo, «arrancó y el lease se perdió a mitad, puede
+    haber trabajo a medias». Sin esta rama, el segundo salía como traceback **al final de un
+    OCR largo**, que es el peor momento para tener que interpretar una excepción.
+    """
+    from core.casos import mutex_sesion
+    from core.casos.workspace_model import MutexPerdido
+    from scripts import sala_maquina as cli
+
+    monta_caso(tmp_casos_root)
+
+    def pierde(*a, **kw):
+        raise MutexPerdido(w_code=W, detalle="simulado: el lease se fue a mitad")
+    monkeypatch.setattr(mutex_sesion, "sostenido", pierde)
+
+    res = runner.invoke(cli.app, ["apply", CASE_ID])
+    assert res.exit_code == 2, (
+        f"se esperaba abort limpio con codigo 2, salio {res.exit_code}: {res.output!r}")
+    assert res.exception is None or isinstance(res.exception, SystemExit), (
+        f"salio una excepcion sin gestionar: {res.exception!r}")
+    assert "a medias" in (res.output or ""), (
+        f"el mensaje no avisa de que el resultado puede estar incompleto: {res.output!r}")
