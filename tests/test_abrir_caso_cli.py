@@ -31,14 +31,32 @@ def drive_temporal(tmp_path, monkeypatch):
     monkeypatch.setattr(case_locator, "_root", lambda: root)
 
     # Mock del pull: deposita 2 ficheros en 00_Input/01_Drive EV (+ el marcador
-    # de control .pulled, como haría pull_drive_ev de verdad) y devuelve un stub
+    # de control .pulled, como haría pull_drive_ev de verdad) y devuelve el
+    # `DriveIntakeResult` REAL.
+    #
+    # Antes devolvía `type("R", (), {"count": 2})()`, un stub con un atributo que
+    # `DriveIntakeResult` no tiene y sin `target_dir`, que sí tiene desde siempre. Colaba
+    # solo porque el llamador **ignoraba el valor devuelto**; en cuanto la fila #8 empezó a
+    # consumir `target_dir` —el destino EFECTIVO, que es lo que arregla la custodia— el
+    # doble dejó de sostener el contrato que suplanta y tumbó 16 tests.
+    #
+    # Se usa la clase de verdad y no otro stub a propósito: así un campo nuevo obligatorio
+    # rompe aquí en la construcción, en vez de aparecer como `AttributeError` dentro de
+    # producción.
     def fake_pull(case_id, folder_id, team_id, *, force=False):
+        from core.intake_drive import DriveIntakeResult
+
         dest = case_locator.path_for(case_id) / "00_Input" / "01_Drive EV" / "ACTIVACION"
         dest.mkdir(parents=True, exist_ok=True)
         (dest / "hoja.pdf").write_bytes(b"contenido-1")
         (dest.parent / "oferta.pdf").write_bytes(b"contenido-2")
         (dest.parent / ".pulled").write_text('{"team_id": "TID"}', encoding="utf-8")
-        return type("R", (), {"count": 2})()
+        return DriveIntakeResult(
+            case_id=case_id, team_id=team_id, folder_id=folder_id,
+            # `dest.parent` es `00_Input/01_Drive EV`, que es lo que devuelve el pull real:
+            # el cajón, no la subcarpeta que este doble crea dentro.
+            target_dir=dest.parent, files_after=2, skipped=False,
+        )
 
     monkeypatch.setattr("core.intake_drive.pull_drive_ev", fake_pull)
     monkeypatch.setattr("core.sudespacho_create.create_expediente", lambda dto, **kw: "9999")
@@ -572,7 +590,10 @@ def test_cli_drive_ev_autoderiva_codigo_team_sufijo(drive_temporal, monkeypatch)
         dest.mkdir(parents=True, exist_ok=True)
         (dest / "a.pdf").write_bytes(b"x")
         (dest / ".pulled").write_text("{}", encoding="utf-8")
-        return type("R", (), {"count": 1})()
+        from core.intake_drive import DriveIntakeResult
+        return DriveIntakeResult(case_id=case_id, team_id=team_id,
+                                 folder_id=folder_id, target_dir=dest,
+                                 files_after=1, skipped=False)
     monkeypatch.setattr("core.intake_drive.pull_drive_ev", fake_pull)
 
     result = CliRunner().invoke(cli.app, _args_b5_autoderivar(crm="skip"))
@@ -644,7 +665,10 @@ def test_cli_case_id_drive_ev_autoderiva_team_id(drive_temporal, monkeypatch):
         dest = case_locator.path_for(case_id) / "00_Input" / "01_Drive EV"
         dest.mkdir(parents=True, exist_ok=True)
         (dest / "nuevo.pdf").write_bytes(b"contenido-nuevo")
-        return type("R", (), {"count": 1})()
+        from core.intake_drive import DriveIntakeResult
+        return DriveIntakeResult(case_id=case_id, team_id=team_id,
+                                 folder_id=folder_id, target_dir=dest,
+                                 files_after=1, skipped=False)
     monkeypatch.setattr("core.intake_drive.pull_drive_ev", fake_pull)
 
     r2 = CliRunner().invoke(cli.app, [
