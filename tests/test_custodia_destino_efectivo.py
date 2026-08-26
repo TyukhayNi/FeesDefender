@@ -173,3 +173,31 @@ def test_f4_el_inventario_resuelve_contra_la_raiz_efectiva(tmp_casos_root):
     inv = cli._inventario_desde_hashes(raiz, "01_Drive EV",
                                        {"01_Drive EV/x.pdf": "deadbeef"})
     assert inv == [{"relpath": "x.pdf", "sha256": "deadbeef", "size": 5}]
+
+
+# --------------------------------------------------------------------------- F5
+
+def test_f5_la_via_manual_tambien_sigue_el_destino_efectivo(tmp_casos_root, tmp_path):
+    """F5 — el hueco que encontró el arnés, cerrado con un test funcional.
+
+    Lo destapó un mutante que metí **a propósito sin aserto de muerte**: quitar
+    `raiz_hashes=lote.parent` de la vía manual y ver si algo se quejaba. No se quejó nada,
+    porque la vía manual no tenía test propio. Un mutante que sobrevive no siempre acusa al
+    código: aquí acusaba a la cobertura, y eso solo se sabe si se le deja sobrevivir.
+
+    `reservar_lote` pasa por `dir_intake`, así que con el caso prestado el lote nace en la
+    bandeja y todo el inventario tiene que resolver contra ella.
+    """
+    from scripts import abrir_caso as cli
+
+    case_dir = monta_caso(tmp_casos_root, estado="prestado")
+    origen = tmp_path / "entrega"
+    origen.mkdir()
+    (origen / "contrato.pdf").write_bytes(b"un contrato de la entrega manual")
+
+    cli._intake_manual(ident_de(), case_dir, str(origen), dry_run=False)
+
+    evs = [e for e in _eventos(case_dir) if e["event"] == "upload_manual"]
+    assert evs, ("la vía manual no registró la entrega: con el lote en la bandeja, el "
+                 "inventario resolvía contra la ruta canónica")
+    assert any("contrato.pdf" in r for r in _rutas(evs[-1])), _rutas(evs[-1])
