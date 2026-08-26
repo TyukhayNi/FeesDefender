@@ -60,7 +60,19 @@ AMBIGUAS = frozenset({"replace", "copy", "dump"})
 #: `test_el_techo_no_esta_holgado` dice prevenir, cometido dentro del detector que ese test
 #: comprueba. Lo encontré al preparar la ronda del diff, mirando el desglose por primitiva
 #: en vez del total: **un número agregado esconde su propia composición.**
-TECHO_CENSO = 82
+#:
+#: **82 -> 83 el 2026-08-26, y es la PRIMERA vez que el trinquete sube.** Lo permite su
+#: propia regla —«o es una escritura nueva sin costura, y entonces falta migrarla, o la
+#: lista creció y hay que decirlo, **no absorberlo**»— y este es el primer caso: la
+#: remediación de **R15/H15-06** añadió un `append_event` en `scripts/abrir_caso.py` para
+#: que un pull fallido deje constancia de sus bytes parciales en vez de perderlos.
+#:
+#: Es una escritura de **protocolo** (fila #13) y **no pasa por la costura**, porque las
+#: filas de protocolo son precisamente las que el Task 6 dejó declaradas como diferidas.
+#: Así que este +1 es **deuda declarada, no cobertura**: baja cuando se migre la #13.
+#: Subirlo sin esta explicación sería justo lo que la regla prohíbe — y el trinquete me lo
+#: cazó a mí, con mi propio cambio, que es la única prueba de que sirve.
+TECHO_CENSO = 83
 
 
 def _nombre_llamado(n: ast.Call) -> str | None:
@@ -287,3 +299,28 @@ def test_el_detector_distingue_replace_de_ficheros_del_de_cadenas(tmp_path):
     assert sitios == 4, (
         f"el detector cuenta {sitios} y hay 4 escrituras reales: si sube, está contando "
         f"`replace`/`copy`/`dump` de str/dict/dataclasses y el techo se infla")
+
+
+# ------------------------------------------------------------- R15/H15-09
+
+def test_la_raiz_por_defecto_del_registro_sigue_teniendo_su_rama(tmp_path, monkeypatch):
+    """R15/H15-09 — la fixture global aislaba el registro y dejaba el fallback sin cubrir.
+
+    `_registro_y_locks_aislados` fija `FEESDEFENDER_WORKSPACE_REGISTRY` en **toda** la suite,
+    que es lo correcto —ningún test debe escribir en el perfil real—. El efecto colateral es
+    que ningún test ejercitaba ya la rama «sin override», y de ella cuelga la raíz de los
+    lockfiles cuando no se pasa `raiz`: una regresión ahí habría quedado invisible.
+
+    Aquí se retira la variable **dentro de `tmp_path`**, con `LOCALAPPDATA` redirigido, para
+    ejercitar el fallback sin tocar nada del usuario.
+    """
+    from core.casos.workspace_registry import raiz_por_defecto
+
+    monkeypatch.delenv("FEESDEFENDER_WORKSPACE_REGISTRY", raising=False)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "LocalAppData"))
+
+    raiz = raiz_por_defecto()
+    assert raiz == tmp_path / "LocalAppData" / "FeesDefender" / "workspaces", raiz
+    # Y sigue estando fuera del árbol de casos y del repo, que es su barrera de ubicación.
+    from core.casos.case_mutex import raiz_de_locks
+    assert raiz_de_locks(raiz) == raiz

@@ -140,7 +140,32 @@ def _intake_drive_ev(ident, case_dir: Path, folder_id, team_id, *, dry_run: bool
     El destino que eligió el guard venía de vuelta en el resultado y este llamador lo
     tiraba para recomponer la ruta canónica a mano. No faltaba información: se descartaba.
     """
-    res = intake_drive.pull_drive_ev(ident.case_id, folder_id, team_id)
+    try:
+        res = intake_drive.pull_drive_ev(ident.case_id, folder_id, team_id)
+    except intake_drive.DriveIntakeError as exc:
+        # R15/H15-06: un `rclone` no cero puede haber copiado PARTE del árbol, y esos bytes
+        # se quedan en el expediente. Antes la excepción subía sin que nada los inventariase,
+        # así que quedaban depositados y **sin un solo evento** que dijera qué llegó ni que
+        # la operación había fallado. Custodia partida en dos.
+        #
+        # Se emite `pull_drive_ev` con `status: fallo` —el vocabulario de `INTAKE_EVENTS` es
+        # cerrado y no se añade un evento a la ligera; el patrón `status` ya lo usa
+        # `contenido_adjuntos`— y se relanza. Registrar lo parcial NO es declararlo un
+        # intake correcto: el status lo dice y el comando sigue fallando.
+        parcial = getattr(exc, "result", None)
+        destino = getattr(parcial, "target_dir", None)
+        if destino is not None:
+            hashes = hash_tree_local(destino, prefijo=brain.SUBDIR_DRIVE_EV)
+            intake_log.append_event(
+                case_dir, "pull_drive_ev", case_id=ident.case_id,
+                details={"status": "fallo", "count": len(hashes),
+                         "files": [{"path": k, "sha256": v} for k, v in hashes.items()],
+                         "rclone_returncode": getattr(parcial, "rclone_returncode", None)})
+            typer.echo(
+                f"[ERROR] el pull falló y quedaron {len(hashes)} ficheros parciales; "
+                f"registrados en el log con status=fallo antes de abortar", err=True)
+        raise
+
     subdir = brain.SUBDIR_DRIVE_EV
     # `target_dir` es `<algo>/00_Input/01_Drive EV`, así que su padre es la raíz bajo la
     # que resuelven las claves `01_Drive EV/...`. Con el caso disponible es el `00_Input`

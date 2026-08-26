@@ -72,6 +72,14 @@ class Deposito:
 
         Sin esta comprobación C8 sería mentira: la capacidad no expondría la raíz por un
         atributo, la regalaría por un argumento (`dir_para("..")`).
+
+        **Lo que esta comprobación NO hace, y se dice aquí porque R15/H15-03 midió que la
+        promesa era más ancha que el hecho:** es texto, así que no sigue enlaces ni puntos
+        de reanálisis, y no reconoce que la forma corta 8.3 de una carpeta sea la misma
+        carpeta. Léxico es deliberado —`resolve()` en el camino de cada escritura reabre la
+        carrera que R12 cerró en el mutex— y la identidad real se comprueba **una vez** al
+        construir el `Deposito`, en `deposito()`. Una junction creada dentro de la base
+        *después* de esa comprobación queda fuera de alcance: es un TOCTOU declarado.
         """
         if rel is None:
             raise ValueError("la ruta relativa no puede ser None")
@@ -208,6 +216,29 @@ def deposito(ref, rel_base: str, origen: str, *, clase: str,
     if not _bajo(base, case_dir):
         raise ValueError(
             f"la base {rel_base!r} escapa del expediente; {_normal(base)!r} no cae dentro")
+    # Y la identidad REAL de la base, una sola vez, al construir (R15/H15-03).
+    #
+    # La comprobación de `Deposito._resolver` es **léxica** a propósito: `resolve()` consulta
+    # disco y devuelve distinto según el directorio exista o no, y eso produjo una carrera
+    # real en el mutex (R12). Pero léxico no ve *reparse points*: el revisor demostró que una
+    # junction colocada bajo la base apunta fuera y las escrituras la atraviesan.
+    #
+    # El compromiso: la comprobación por disco se hace **aquí**, una vez por `Deposito`, no
+    # en cada escritura. Cierra el caso realista —una base cuyo ancestro existente resuelve
+    # fuera del expediente— sin poner una llamada al disco en el camino de cada byte. Lo que
+    # NO cierra, y se declara: una junction creada DENTRO de la base después de construir
+    # esto. Eso es un TOCTOU que una comprobación previa no puede cerrar.
+    try:
+        ancestro = next((p for p in [base, *base.parents] if p.exists()), None)
+        if ancestro is not None and not _bajo(ancestro.resolve(), case_dir.resolve()):
+            raise ValueError(
+                f"la base {rel_base!r} resuelve fuera del expediente: hay un enlace o "
+                f"punto de reanálisis en su camino")
+    except OSError:
+        # Un fallo al resolver no autoriza: si no se puede comprobar dónde cae, no se
+        # entrega la capacidad. Misma polaridad que el resto de la pieza.
+        raise ValueError(
+            f"no se pudo comprobar dónde resuelve la base {rel_base!r}") from None
 
     return Deposito(clase=clase, origen=origen, desviada=bool(decision.desviar),
                     protegida_por_mutex=protegida, motivo_sin_mutex=motivo,
