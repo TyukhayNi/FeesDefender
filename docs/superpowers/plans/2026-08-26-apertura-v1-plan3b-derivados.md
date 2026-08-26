@@ -54,6 +54,21 @@ toma mutex ni consulta el guard:**
 `caso_path` compone la ruta **canónica**. Las tres escriben en el árbol vivo del canon de un caso
 que otra máquina puede tener prestado, sin preguntar a nadie.
 
+**Medido el 2026-08-26**, con el caso en `estado_repositorio: prestado` por otra máquina:
+
+```
+via GUARD  (dir_intake):     _pendiente_checkin/email/01_Procesado/Emails
+via PUERTA (emails_out_dir):                        01_Procesado/Emails
+>>> coinciden? False
+
+>>> procesar_caso escribio en: 01_Procesado/Emails/adjuntos/_contenido_estado.json
+>>> ese sitio esta en la bandeja? False
+```
+
+El guard, preguntado por esa misma ruta relativa, responde **bandeja**. La puerta resuelve al
+**árbol vivo**, y `procesar_caso` escribió ahí de verdad: no es una ruta que se compone y no se usa.
+La diferencia entre las dos líneas es exactamente el hueco de esta tanda.
+
 > **Ésta es la tanda, y no la migración.** 3B no es principalmente mover once escrituras a la
 > costura: es **cerrar tres puertas que llegan a cinco de ellas**. La migración de las escrituras
 > es lo que hace la clausura *exigible* en vez de una promesa repetida en cada puerta —que es

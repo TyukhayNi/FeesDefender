@@ -107,6 +107,30 @@ Los tres `_rutas_de` tienen extensiones distintas (`.pdf`, `.md`, `.txt`), así 
 sale de ahí. Sale del `rglob`: un `indice.json` en la raíz del bundle y otro en un subdirectorio, o
 un `.pdf` de segmento con el mismo nombre en dos niveles.
 
+**Medido el 2026-08-26, y sale peor de lo que este párrafo afirmaba antes de la sonda.** Con un
+`indice.json` en la raíz del bundle («RAIZ DEL BUNDLE») y otro en `sub/` («SUBDIRECTORIO»):
+
+```
+devuelto archivados = ['seg1.pdf', 'seg1.md', 'indice.json', 'indice.json']
+EN EL ARCHIVO:        ['indice.json', 'seg1.md', 'seg1.pdf']
+contenido de indice.json en el archivo: 'SUBDIRECTORIO'
+carpeta_bundle sigue existiendo? False
+```
+
+La función **no solo pierde el fichero: lo declara archivado.** Devuelve **cuatro** nombres, en el
+archivo hay **tres**, «RAIZ DEL BUNDLE» no existe en ninguna parte, y la carpeta de origen se
+retiró. Y el nombre repetido dentro de la propia lista de retorno **era la prueba de la colisión,
+en la mano del llamador**, sin que nadie la mire.
+
+Dos consecuencias para el diseño, y las dos cambian una pieza:
+
+1. La frontera **P2 se comprueba por CONTENIDO, no por conteo.** Un test que contara ficheros
+   habría visto 4 → 3 y podido leerse como deduplicación legítima; lo que prueba la pérdida es que
+   «RAIZ DEL BUNDLE» no está.
+2. Hay un **detector gratis**: `len(set(nombres)) != len(nombres)` en el retorno. La pieza I lo
+   incorpora como aserto además de preservar la ruta relativa — el segundo cierra la causa, el
+   primero cierra la clase «el archivo afirma más de lo que contiene» aunque aparezca otra causa.
+
 **Y el `rmtree` con `ignore_errors=True`** de la línea siguiente puede no borrar nada (una sharing
 violation del cliente de Drive en Windows es el caso citado por el comentario de la función
 hermana, doce líneas más arriba) y la función **devuelve la lista de archivados igual**, así que el
@@ -163,6 +187,12 @@ Con eso, `03_MD/x.md` y `02_Documentos/slug/x.md` dejan de colisionar porque dej
 destino. Y si dos orígenes **sí** produjeran el mismo destino —no debería ocurrir, pero la
 propiedad no puede depender de eso—, la operación **rompe** en vez de sobrescribir: `os.link` /
 `p.replace` sobre un destino existente es un error, no un caso a absorber.
+
+**Y el aserto del retorno, que es la otra mitad.** La sonda del §1.3 midió que el nombre repetido
+aparecía **en la lista devuelta** sin que nadie lo mirara: `len(set(nombres)) != len(nombres)` es un
+detector gratis de «el archivo afirma más de lo que contiene». Se pone, aunque la ruta relativa ya
+cierre la causa conocida — porque cierra la **clase**, y la clase sobrevive a que aparezca otra
+causa. Es literalmente la lección que 3A pagó cuatro veces: remediar la propiedad, no el ejemplo.
 
 **El sello ya existe** (`_sello_reproceso()`); no se inventa un esquema nuevo.
 
@@ -232,7 +262,8 @@ solo si** se comprueba que su CLI ya no es vía viva; si lo es, entra.
 | # | Frontera | El mutante |
 |---|---|---|
 | **P1** | el archivo preserva la ruta relativa de origen | volver a `archivo / p.name` |
-| **P2** | dos orígenes con el mismo basename no colisionan | ídem, comprobando los dos contenidos |
+| **P2** | dos orígenes con el mismo basename no colisionan — comprobado por **CONTENIDO**, nunca por conteo (§1.3) | ídem, comprobando que los dos contenidos siguen ahí |
+| **P2-bis** | el retorno no puede listar un nombre dos veces: si lo hace, rompe | degradar el aserto del retorno a aviso |
 | **P3** | un destino de archivo ya existente **rompe**, no se sobrescribe | usar `replace` sobre destino existente |
 | **P4** | la retirada devuelve residuo cuando la carpeta no queda vacía | volver a `ignore_errors=True` y lista sin residuo |
 | **P5** | un `rmtree` fallido no se reporta como retirada hecha | tragarse la excepción |
@@ -248,7 +279,7 @@ solo si** se comprueba que su CLI ya no es vía viva; si lo es, entra.
 | **P15** | la lista de exenciones del guard **solo puede encoger** | añadir una entrada y comprobar que el test lo rechaza |
 | **P16** | el sello del archivo es el de la corrida, no uno nuevo por fichero | recalcular el sello dentro del bucle |
 
-Dieciséis fronteras, dieciséis mutantes. Arnés con restauración **binaria** y ancla adaptada al
+Diecisiete fronteras (P2-bis incluida), diecisiete mutantes. Arnés con restauración **binaria** y ancla adaptada al
 terminador de línea.
 
 ---
@@ -317,7 +348,7 @@ tests/test_guard_destrucciones.py    NUEVO — P14, P15
 4. Sobre un caso prestado no se retira nada, y se dice.
 5. Ninguna destrucción de producción sobre un expediente queda fuera del guard, salvo las
    exenciones declaradas por nombre.
-6. Dieciséis fronteras, dieciséis mutantes, cada uno muerto por la suya.
+6. Diecisiete fronteras, diecisiete mutantes, cada uno muerto por la suya.
 7. Suite verde con dos semillas, con la variación del conteo explicada.
 
 ## Lo que este plan deliberadamente NO hace
