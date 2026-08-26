@@ -34,9 +34,12 @@ from core import (
     case_manager, config, email_export, intake_drive, intake_log, intake_manual,
     sudespacho_create, whatsapp_intake,
 )
-from core.casos import case_locator
+from core.casos import case_locator, mutex_sesion
+from core.casos.workspace_model import CaseRef
 from core.ciudades import CIUDADES
-from core.utils import file_sha256
+# `now_iso_utc` y NO `now_iso`: la primitiva del mutex rechaza a proposito un instante sin
+# offset, porque un timestamp naive se lee en hora LOCAL y el lease se calcularia mal.
+from core.utils import file_sha256, now_iso_utc
 
 app = typer.Typer(add_completion=False, help="Abrir un expediente E&V en una pasada")
 
@@ -569,30 +572,48 @@ def main(
                        "pásalo explícito.", err=True)
             raise typer.Exit(code=1)
 
-    # 5.2 esqueleto (idempotente; con --case-id el caso ya existe)
-    case_manager.ensure_case(
-        ident.case_id, titulo=ident.case_id, referencia_crm=ident.case_id,
-        tipo_caso=ident.tipo_caso, ciudad=ciudad, direccion=ident.direccion, id_go=ident.w_code,
-    )
-    # `localizar` y no `path_for`: el esqueleto acaba de crearse, así que el caso DEBE
-    # existir y su ausencia es un fallo, no un valor. Es lo que la clasificación firmada
-    # del Task 6 decía para este sitio, y quedó como cabo suelto del 65º cierre; el
-    # comportamiento no cambia —`path_for` ya es estricto por defecto— pero el nombre
-    # ahora dice qué se espera, que es justo lo que un flag no permite auditar.
-    case_dir = case_locator.localizar(ident.case_id)
+    # 5.2 — a partir de aquí, TODO va bajo el mutex del caso (Plan 3A, Task 5).
+    #
+    # Este es el punto en que el mutex de #247 empieza a proteger algo: hasta ahora
+    # existía, estaba probado y no lo llamaba nadie. El bloque cubre el esqueleto, el
+    # intake y el alta CRM, que es la secuencia que D3 pone bajo el dueño del modo.
+    #
+    # **En los dos modos, no solo en `v1`.** El dolor MEDIDO que justificó D2 es
+    # «relanzar el pipeline sobre el mismo caso sin saber si la corrida anterior
+    # terminó», y eso pasa en `libre`, que es el modo que se usa hoy. Adquirir solo en
+    # `v1` habría dejado el mutex sin proteger nada real otra vez.
+    #
+    # El reloj va con offset EXPLÍCITO: `case_mutex` rechaza un instante naïve a
+    # propósito, y `now_iso` —el mayoritario del repo, 43 usos frente a 5— lo es.
+    with mutex_sesion.sostenido(CaseRef(w_code=ident.w_code) if ident.w_code
+                                else CaseRef(case_id=ident.case_id),
+                                ahora_fn=now_iso_utc):
+        # 5.2 esqueleto (idempotente; con --case-id el caso ya existe)
+        case_manager.ensure_case(
+            ident.case_id, titulo=ident.case_id, referencia_crm=ident.case_id,
+            tipo_caso=ident.tipo_caso, ciudad=ciudad, direccion=ident.direccion,
+            id_go=ident.w_code, modo=modo,
+        )
+        # `localizar` y no `path_for`: el esqueleto acaba de crearse, así que el caso DEBE
+        # existir y su ausencia es un fallo, no un valor. Es lo que la clasificación firmada
+        # del Task 6 decía para este sitio, y quedó como cabo suelto del 65º cierre; el
+        # comportamiento no cambia —`path_for` ya es estricto por defecto— pero el nombre
+        # ahora dice qué se espera, que es justo lo que un flag no permite auditar.
+        case_dir = case_locator.localizar(ident.case_id)
 
-    # 5.3-5.7 intake por fuente
-    _despachar_intake(
-        fuente, ident, case_dir,
-        folder_id=folder_id, team_id=team_id, src=src, rol=rol,
-        cuenta=cuenta, label=label, dry_run=dry_run,
-        extraer_adjuntos=extraer_adjuntos,
-    )
-    if dry_run:
-        typer.echo(f"[dry-run] esqueleto en {case_dir}; se omiten log de intake y alta CRM")
-        raise typer.Exit(code=0)
+        # 5.3-5.7 intake por fuente
+        _despachar_intake(
+            fuente, ident, case_dir,
+            folder_id=folder_id, team_id=team_id, src=src, rol=rol,
+            cuenta=cuenta, label=label, dry_run=dry_run,
+            extraer_adjuntos=extraer_adjuntos,
+        )
+        if dry_run:
+            typer.echo(
+                f"[dry-run] esqueleto en {case_dir}; se omiten log de intake y alta CRM")
+            raise typer.Exit(code=0)
 
-    _alta_crm(ident, cuantia=cuantia, crm_mode=crm, yes=yes)
+        _alta_crm(ident, cuantia=cuantia, crm_mode=crm, yes=yes)
 
     typer.echo(f"OK Caso abierto: {ident.case_id}")
 

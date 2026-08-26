@@ -161,6 +161,25 @@ def _barrera_frontal(tmp_path, monkeypatch):
     _barrera.instalar(monkeypatch, raiz_local=tmp_path)
 
 
+@pytest.fixture(autouse=True)
+def _registro_y_locks_aislados(tmp_path, monkeypatch):
+    """Ningún test escribe en el registro REAL del usuario.
+
+    `workspace_registry.raiz_por_defecto()` apunta a
+    `%LOCALAPPDATA%\\FeesDefender\\workspaces`, y de ahí cuelga también la raíz de los
+    lockfiles del mutex (`case_mutex.raiz_de_locks`). En cuanto los **entrypoints**
+    empezaron a adquirir el mutex (Plan 3A, Task 5), correr la suite dejaba lockfiles en
+    el perfil real de quien la corriera — un efecto fuera de `tmp_path`, invisible y
+    compartido entre corridas concurrentes.
+
+    `autouse` y de scope función por la misma razón que `_barrera_frontal`: un helper
+    opt-in que el autor olvide llamar no aísla nada. Los dos tests que ya fijaban la
+    variable a mano siguen ganando, porque su `monkeypatch.setenv` se aplica después.
+    """
+    monkeypatch.setenv("FEESDEFENDER_WORKSPACE_REGISTRY",
+                       str(tmp_path / "_registro_workspaces"))
+
+
 @pytest.fixture
 def tmp_casos_root(tmp_path, monkeypatch):
     """Un `CASOS_ROOT` aislado. **Restaura `core.config` al salir.**
