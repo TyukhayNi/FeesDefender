@@ -7,6 +7,19 @@ creado: 2026-08-26
 
 # Apertura V1 — Plan 3A-bis: la ficha sigue a los bytes, y la clase de la que tres registradores son ejemplo (rev. 1)
 
+> ## ⛔ ESTADO: rev. 1 `NO-EJECUTABLE`. NO se construye con este diseño.
+>
+> **R16 (diseño) devolvió `NO-EJECUTABLE`: 13 hallazgos, 13 confirmados, 0 refutados, 4 críticos.**
+> Adjudicación en el **§7**; acta en
+> `docs/superpowers/specs/2026-08-26-apertura-v1-plan3a-bis-r16-adversarial-review.md`.
+>
+> **La DECISIÓN D5 (§3) sobrevive intacta y sigue autorizada.** Lo que la ronda tumbó es el diseño
+> de su implementación, no la decisión. Lo medido en el §1 también sobrevive, reproducido por el
+> revisor.
+>
+> **Pendiente: rev. 2**, con los cinco puntos del §7.4 resueltos. Su cobertura de revisión será
+> **ausente** hasta que alguien la mire: un revisor que no corre no refuta.
+
 > **Predecesores.** [Plan 3A](2026-08-26-apertura-v1-plan3-write-set.md) (PR #251, `6bd78ad`),
 > cuyo **Task 6 quedó PARCIAL** precisamente por esta fila. La spec canónica es
 > [`2026-08-15-orquestador-apertura-expediente-design.md`](../specs/2026-08-15-orquestador-apertura-expediente-design.md),
@@ -88,9 +101,15 @@ misma reincidencia que R14 y R15 castigaron en 3A, y ésta es su cuarta aparici�
 > claves**. Reconstruir el fichero desde un snapshot es pisar a quien escribió en medio.
 
 La primitiva que ya cumple C1 existe y está en producción desde D10: `_atomic_write_caso_md`, que
-lee, aplica un `mutator(fm)` y cierra con `os.replace`. La usan las cinco transiciones del lock y
-el `ensure_case` de caso existente. **Los tres registradores son las únicas mutaciones del
-fichero que no la usan.**
+lee, aplica un `mutator(fm)` y cierra con `os.replace`. Tiene **seis** usos de producción: las
+**cuatro** transiciones del lock, el `ensure_case` de caso existente y `update_pull_state`.
+
+> **Corregido tras R16 (H16-13 y H16-08).** Este párrafo decía «las cinco transiciones del lock» —
+> son cuatro— y afirmaba que **«los tres registradores son las únicas mutaciones del fichero que no
+> la usan»**. Eso era una afirmación sobre una **clase**, hecha sin barrido: `case_locator.
+> _update_ciudad_metadata` (llamado por `move_to_city`) y `scripts/migrate_05crm_buckets.py`
+> reescriben `_caso.md` desde una foto por su cuenta. Son **cinco** sitios, no tres, y el guard
+> F3-bis tal como estaba escrito **no los ve**. La rev. 2 parte de un barrido, no de una lista.
 
 Regla operativa que se deriva de C1, y que es lo que un guard puede comprobar:
 
@@ -163,7 +182,9 @@ El atajo de idempotencia vuelve **antes** de la línea que sella. Así que tras 
 pull posterior repara la ficha: se lo salta el atajo.
 
 **Es un defecto vivo hoy, sin relación con los préstamos:** si el primer sellado falla o no
-ocurre por cualquier motivo, nada lo repone jamás. Lo encontré preguntando *quién consume el
+ocurre por cualquier motivo, **ningún pull ordinario lo repone**. (Corregido tras R16/H16-12: el
+retorno anticipado está condicionado por `not force`, así que un `--force` sí llega a sellar. La
+rev. 1 decía «nada lo repone jamás», que era una exageración.) Lo encontré preguntando *quién consume el
 aplazamiento*, que es la lección de las piezas construidas que nadie encadena.
 
 ---
@@ -406,3 +427,115 @@ tests/test_guard_write_case_index.py       nuevo — el trinquete de F3-bis
 - **La reacción del mutex a un salto real de NTP**, heredada de 3A y del plan del mutex.
 - **Las seis remediaciones de R13 no tienen ronda propia** y 3A las usa; este plan las usa por
   transitividad, sin revisarlas.
+
+---
+
+## 7. Adjudicación de la revisión adversarial R16 (Codex, 2026-08-26) — NO-EJECUTABLE, pendiente
+
+- **Objeto revisado:** este documento, **rev. 1**, en el commit `34cdf6a`.
+- **Ronda:** R16, la ronda de **DISEÑO**, corrida **antes de escribir una línea de código**.
+- **Revisor:** Codex por CLI sobre un `git archive` sin `.git`, solo lectura por construcción.
+- **Informe recibido:** `docs/superpowers/specs/2026-08-26-apertura-v1-plan3a-bis-r16-adversarial-review.md`, `sha256` `c1c821f9f9de9b33…`, recomputado al archivarlo y **coincide**.
+- **Hallazgos:** 13 — 4 CRÍTICOS, 4 ALTOS, 3 MEDIOS, 2 BAJOS. **13 confirmados, 0 refutados.**
+- **Remediado en:** nada todavía. **No se escribe código con este diseño.**
+
+**Qué ejecutó el revisor:** una sonda determinista, 146 tests focalizados y el resto de la suite
+salvo cinco módulos MCP que no coleccionan por una dependencia ausente de su entorno. La rev. 2 es
+trabajo de diseño, no una tanda de ediciones.
+
+### 7.1. Lo que la ronda demuestra sobre cómo fallo, que vale más que los trece
+
+**Los cuatro críticos son cuatro formas de la misma cosa: prometí propiedades que el mecanismo
+elegido no da.** No son descuidos de detalle; son la firma de mi modo de fallo, y ésta es su
+**quinta** aparición documentada en esta serie de planes.
+
+**El peor es H16-03, porque el plan se contradice a sí mismo dentro del mismo documento.** La
+frontera F4 dice *«un lock escrito entre la lectura y la escritura del sello no se pisa»* y el
+criterio de salida 2 lo repite. Y mi propio §«Lo que sigue SIN VERIFICAR» dice, cuatro páginas
+después, que la ventana de `_atomic_write_caso_md` *«no es cero»* y que A *«la estrecha al mínimo
+[…] pero no la elimina»*. El revisor lo midió: inyectó un lock `prestado` entre la lectura y el
+`os.replace`, y el resultado fue `estado_final: disponible`, `nonce_final: None`.
+
+**Estrechar una ventana no es cerrarla, y escribí una frontera que afirmaba lo segundo.** Es
+literalmente *el nombre de una cosa no es la cosa* aplicado a una garantía: llamé «cerrada» a una
+mitigación. Y lo hice **en el mismo documento donde declaré la ventana abierta**, lo que descarta
+la excusa de no saberlo.
+
+### 7.2. El hallazgo que no es de este plan, y es el más grande de la sesión
+
+**H16-01: `es_copia_prestada` es INERTE en producción.** La segunda mitad de mi regla de sellado
+—`AND NOT es_copia_prestada(case_id)`— no puede ser falsa nunca.
+
+La prueba está en dos hechos que se tocan:
+
+- `case_locator.buscar()` mira **solo** bajo `CASOS_ROOT`: plano, por ciudad y por ciudad de
+  reserva (`core/casos/case_locator.py:121-143`). Nunca devuelve una ruta fuera del catálogo, y no
+  consulta el registro de workspaces.
+- El registro **solo** contiene rutas fuera del catálogo: el resolver rechaza registrar una bajo él
+  (`WORKSPACE_UNDER_CATALOG_ROOT`), y el docstring de `es_copia_prestada` lo dice como razón para
+  confiar en el registro: *«El canon nunca está ahí»*.
+
+Se compara una ruta que siempre está en el catálogo contra un conjunto que nunca contiene rutas del
+catálogo. **Lo medí yo, con una copia local real registrada fuera del catálogo:
+`es_copia_prestada = False`.**
+
+**Y nueve tests verdes lo defienden.** `tests/test_guard_copia_prestada.py` pasa porque su helper
+`_registrar_como_copia_local` da de alta `local_path=caso_path(case_id)` —**el canon**— llamando a
+`registro.alta` directamente, sin pasar por el resolver que lo prohíbe. La fixture **fabrica el
+estado que producción tiene prohibido**, y por eso la rama parece funcionar.
+
+Tres lecciones, y ninguna es nueva:
+
+1. **Un test puede defender el defecto.** Añadir cobertura no lo encuentra; hay que preguntar
+   **quién** lo defiende.
+2. **Es la misma «resta inerte»** que la mutación del Task 7 de la Fase 1 encontró: quitar
+   `MUTATE_CANONICAL` de un modo que nunca la tuvo. Idéntica forma, otra capa.
+3. **Su docstring contiene las dos mitades de la prueba, tres párrafos aparte.** Escribir la razón
+   correcta no es comprobarla.
+
+**No es de 3A-bis arreglarlo:** es un defecto vivo de la capa de la Fase 1 / `MEJORAS #96`, anterior
+a este plan. Va a `docs/MEJORAS_FUTURAS.md` con su medición. Lo que sí es de 3A-bis: **mi regla de
+sellado no puede apoyarse en él**, así que el tercer estado de mi §2 no está cubierto por la
+conjunción que escribí, y la rev. 2 tiene que resolverlo por otra vía.
+
+### 7.3. Los trece, uno por uno
+
+| # | Sev. | Veredicto | Qué se hace |
+|---|---|---|---|
+| **H16-01** `es_copia_prestada` inerte | CRÍTICO | **CONFIRMADO** (verificado con sonda propia) | **Rev. 2**: la regla de sellado no puede colgar de él. El defecto de fondo va a `MEJORAS` — no es de este plan |
+| **H16-02** la fila #5 sigue sin mutex | CRÍTICO | **CONFIRMADO** | **Rev. 2**: la spec exige la #5 «bajo mutex» y mi File Structure no incluye `mutex_sesion`, ni hay frontera que lo exija. Los dos pulls de Streamlit y el sello directo quedan fuera de `sostenido()` |
+| **H16-03** F4 incompatible con la primitiva | CRÍTICO | **CONFIRMADO** | **Rev. 2**: F4 y el criterio 2 se reescriben a lo que A da de verdad —estrechar—, o A cambia de mecanismo. No se conserva una frontera que afirme lo que la primitiva no cumple |
+| **H16-04** C-1 puede sellar ids que no produjeron los bytes | CRÍTICO | **CONFIRMADO** | **Rev. 2**: mi «arreglo» *introducía* un defecto que hoy no existe, porque hoy el skip no sella. El skip debe comparar los ids del marcador con los argumentos, y un marcador ilegible no es evidencia positiva |
+| **H16-05** el no-op pierde el aplazamiento en silencio | ALTO | **CONFIRMADO** (verificado: `localizar` no exige `_caso.md`; `_read_fm` vacío → `disponible`) | **Rev. 2**: un caso sin `_caso.md` da «sellar» y el registrador no-op no sella ni avisa |
+| **H16-06** C-bis promete un aviso sin canal | ALTO | **CONFIRMADO** | **Rev. 2**: `register_drive_ev` devuelve `None`; no hay dónde viaje la deuda en esa vía. Y el bloque de Streamlit atrapa todo con `pass`, y llama además a `cache_drive_folder_info`, que C-bis no clasificaba |
+| **H16-07** el E2E no prueba los cuatro planos | ALTO | **CONFIRMADO** | **Rev. 2**: la spec y 3A exigen cuatro planos; reduje la prueba a dos rutas |
+| **H16-08** el guard AST no cierra la clase C1 | ALTO | **CONFIRMADO** | **Rev. 2**: `case_locator._update_ciudad_metadata` y `scripts/migrate_05crm_buckets.py` reescriben `_caso.md` desde una foto y **pasan** un guard que cuenta llamadores de `_write_case_index`. Mi §2 afirmaba «los tres registradores son las únicas», sin barrido |
+| **H16-09** la regresión del cuerpo está incompleta y su precedente es falso | MEDIO | **CONFIRMADO** | **Rev. 2**: `register_expediente` proyecta una **sección entera** al cuerpo, no una línea; y no existen los mutadores atómicos de `cliente`/`cuantía`/`estado` que cité como precedente. Además el cuerpo **sí** tiene contratos activos (wikilinks, `linker`, CP11) |
+| **H16-10** A no conserva el caso sin frontmatter | MEDIO | **CONFIRMADO** | **Rev. 2**: hoy un `_caso.md` sin `---` se reconstruye entero; con A quedaría parcial |
+| **H16-11** los mutantes no son uno por frontera | MEDIO | **CONFIRMADO** | **Rev. 2**: F1/F2 comparten mutante, F5 mata F6, F8 mata F12, y con F3-bis son dieciséis mutaciones declaradas, no quince |
+| **H16-12** «nada lo repone jamás» ignora `force` | BAJO | **CONFIRMADO** | Se corrige la frase: el retorno anticipado está condicionado por `not force` |
+| **H16-13** dos cifras inexactas | BAJO | **CONFIRMADO** | Son **cuatro** transiciones de lock, no cinco; `_atomic_write_caso_md` tiene seis usos de producción; `dir_intake` son cinco líneas, no dos |
+
+### 7.4. Qué queda de la rev. 1
+
+**La DECISIÓN D5 sobrevive intacta**, y conviene separarlo del resto: ninguno de los trece ataca la
+decisión de que la ficha acompañe a los bytes. Atacan **el diseño de su implementación**, que es
+otra cosa. D5 sigue tomada y autorizada.
+
+**Lo medido en el §1 sobrevive**: los tres registradores destruyen cuerpo y claves ajenas, y el
+revisor lo confirmó por su cuenta (`PROBE_A_CLAVE_AJENA False`, `PROBE_A_NOTA_MANUAL False`). El
+problema no es el diagnóstico: es que las piezas que propuse prometen más de lo que dan.
+
+**Lo que la rev. 2 tiene que resolver antes de que exista código**, en orden de dependencia:
+
+1. La regla de sellado, sin apoyarse en `es_copia_prestada` (H16-01).
+2. El mutex de la fila #5, que la spec exige y el plan olvidó (H16-02).
+3. Qué promete A de verdad sobre la carrera, dicho una sola vez y en un solo sitio (H16-03).
+4. El contrato del skip: ids del marcador contra argumentos, y marcador ilegible como no-evidencia
+   (H16-04).
+5. El barrido real de mutadores de `_caso.md`, en vez de la lista de tres (H16-08).
+
+**No se pide tercera ronda.** El techo duro de `CLAUDE.md` la prohíbe sin autorización expresa de
+Nikolai, y no hace falta pedirla: lo que toca es una **rev. 2 del diseño**. La rev. 2 declarará su
+cobertura de revisión como **ausente** hasta que alguien la mire, que es la regla de la casa: un
+revisor que no corre no refuta, deja **sin verificar**.

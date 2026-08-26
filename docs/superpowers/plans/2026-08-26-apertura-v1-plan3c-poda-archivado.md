@@ -7,6 +7,18 @@ creado: 2026-08-26
 
 # Apertura V1 — Plan 3C: la poda y el archivado (rev. 1)
 
+> ## ⛔ ESTADO: rev. 1 `REQUIERE-REVISION`. NO se construye con este diseño.
+>
+> **R20 (diseño) devolvió `REQUIERE-REVISION`: 13 hallazgos, 13 confirmados, 0 refutados, 3
+> críticos.** Adjudicación en el **§5**; acta en
+> `docs/superpowers/specs/2026-08-26-apertura-v1-plan3c-r20-adversarial-review.md`.
+>
+> **Las tres mediciones del §1 sobreviven y el revisor las reprodujo con hashes.** El censo del
+> §1.1 **no**: omitía un `unlink` vivo dentro de `00_Input` que estaba en mi propia salida de
+> `grep`, y su total («cuatro») no cuadra con su propia tabla (tres filas «NINGUNA»).
+>
+> **Pendiente: rev. 2**, con el censo hecho por AST y las piezas I/K/L/M rehechas.
+
 > **Predecesores.** [Plan 3A](2026-08-26-apertura-v1-plan3-write-set.md) (PR #251, `6bd78ad`),
 > [3A-bis](2026-08-26-apertura-v1-plan3a-bis-fila5.md) y
 > [3B](2026-08-26-apertura-v1-plan3b-derivados.md). Spec canónica:
@@ -380,3 +392,109 @@ tests/test_guard_destrucciones.py    NUEVO — P14, P15
   durante un préstamo. No medido.
 - **La reacción del mutex a un salto real de NTP**, heredada.
 - **Las seis remediaciones de R13 no tienen ronda propia** y esta tanda las usa por transitividad.
+
+---
+
+## 5. Adjudicación de la revisión adversarial R20 (Codex, 2026-08-26) — REQUIERE-REVISION, pendiente
+
+- **Objeto revisado:** este documento, **rev. 1**, en el commit `d1b09e2`.
+- **Ronda:** R20, la ronda de **DISEÑO** de 3C. R15 cubrió 3A y solo 3A.
+- **Revisor:** Codex por CLI sobre un `git archive` sin `.git`, solo lectura por construcción.
+- **Informe recibido:** `docs/superpowers/specs/2026-08-26-apertura-v1-plan3c-r20-adversarial-review.md`, `sha256` `77ac21c54ede785c…`, recomputado al archivarlo y **coincide**.
+- **Hallazgos:** 13 — 3 CRÍTICOS, 6 ALTOS, 3 MEDIOS, 1 BAJO. **13 confirmados, 0 refutados.**
+- **Remediado en:** nada. **No se escribe código con este diseño.**
+
+**Qué ejecutó el revisor:** censo destructivo por AST además del textual, seis sondas propias
+(colisión de nombres, retirada no comprobada, ruta de `_organizado/`, gate de vistas,
+`Path.replace`, longitud de ruta) y la verja existente (241 pasados, 3 omitidos).
+
+### 5.1. Un aviso de método antes de los hallazgos: casi archivé un informe a medias
+
+Al calcular el `sha256` del informe de esta ronda obtuve `2ac43cdb…`; dos minutos después, al
+archivarlo, `77ac21c5…`. **El revisor seguía escribiendo.** La presencia de `INFORME.md` **no** es
+la señal de que la ronda terminó; lo es la salida del proceso (aquí, `_ultimo_mensaje.txt`).
+
+Sin esa comprobación habría archivado un informe truncado **como la voz literal del revisor**, con
+un digest internamente coherente y falso — es decir, habría destruido exactamente la garantía que el
+acta existe para dar: que se pueda contrastar *qué dijo el revisor* con *qué decidí yo que dijo*.
+Queda como regla: **el digest solo significa algo sobre un fichero terminado.**
+
+### 5.2. Los tres críticos, y el que más me señala
+
+**H20-01: el censo omite un `unlink` vivo dentro de `00_Input`, y mi aritmética tampoco cuadra.**
+
+`scripts/migrar_layout_intake.py:124` hace `hijo.unlink()` sobre duplicados bajo
+`caso_path(case_id) / "00_Input"`, por una vía viva (su propio comando Typer). **Estaba en mi
+propia salida de `grep`** y lo dejé fuera de la tabla: el barrido decía descartar «temporales,
+staging y `.partial`», y esto no es ninguna de las tres.
+
+Y la cuenta: escribí *«Cuatro destrucciones vivas que las 27 clases del §25 no enumeran»* y mi tabla
+rotula **tres** filas como NINGUNA. Con la que me faltaba serían cuatro, pero **no son las cuatro
+que dije**.
+
+**Es la lección del 71º cierre cometida en el párrafo que la cita.** «Un número agregado esconde su
+propia composición: mirar el DESGLOSE, no el total.» Escribí un total sin contar mi propia tabla, en
+una sección cuyo argumento entero es que el write-set se cerró sin volver a barrer. **Hice con mi
+censo lo que denunciaba del §25.**
+
+El revisor añade además las formas que mi barrido declaraba abiertas y no miró: `Path.rmdir` en
+lotes y bajo `00_Input/05_CRM`, `shutil.move` del expediente completo (llamado desde Streamlit), y
+destrucción remota por `rclone moveto`/`rmdirs`.
+
+**H20-02: el plan no remedia dos destrucciones que sí censó, así que su propio guard no puede quedar
+verde.** `local_organizer.py:845` (`old.unlink()` en `ejecutar_plan`) y `core/sala_lectura.py:646`
+no tienen tarea asignada. Y mi exención condicional para `sala_lectura` —«si y solo si su CLI ya no
+es vía viva»— **es falsa en este árbol**: `scripts/sala_lectura.py:64` llama a `poblar_sala_lectura`,
+que borra. O el guard falla y no hay tarea que lo lleve a verde, o no falla y no prueba nada.
+
+**H20-03: la costura heredada no puede expresar la retirada no desviable que la pieza K da por
+diseñada.** `clase="derivado"` **no** produce rechazo: produce desvío. No existe operación de
+retirada en la costura de 3A. Escribí «las dos pasan por la costura con `clase="derivado"`» y la
+consecuencia de eso es desviar, que es justo lo que la misma pieza declara que no debe pasar. **Es
+el mismo error que H18-02 en el otro plan: enuncié una condición sin comprobar que fuera
+alcanzable.** Tercera guarda inerte del día.
+
+### 5.3. El hallazgo que contradice mi propia sonda, en el mismo documento
+
+**H20-04: la pieza I conserva la primitiva de sobrescritura que dice eliminar.** Escribí que
+*«`p.replace` sobre un destino existente es un error, no un caso a absorber»*. **`Path.replace`
+sobrescribe.** El revisor lo midió, y no hacía falta: **mi propia sonda del §1.3 lo había
+demostrado nueve párrafos antes** — «SUBDIRECTORIO» pisó a «RAIZ DEL BUNDLE» exactamente por un
+`p.replace`.
+
+Tenía la refutación de mi premisa impresa en mi propio documento y escribí la premisa igual. No es
+falta de datos: es no releer lo que acabo de medir cuando redacto el remedio.
+
+### 5.4. Los trece, uno por uno
+
+| # | Sev. | Veredicto | Qué se hace |
+|---|---|---|---|
+| **H20-01** censo incompleto y aritmética falsa | CRÍTICO | **CONFIRMADO** (verificado: `migrar_layout_intake.py:124`, y mi tabla rotula 3 «NINGUNA») | **Rev. 2**: el censo se hace por **AST**, con las formas enumeradas y su tope, y el total se cuenta de la tabla |
+| **H20-02** dos destrucciones censadas sin remedio; la exención de `sala_lectura` es falsa | CRÍTICO | **CONFIRMADO** | **Rev. 2**: o entran en las piezas, o la exención se justifica por otra razón que no sea «no es vía viva» |
+| **H20-03** la costura no expresa la retirada no desviable | CRÍTICO | **CONFIRMADO** | **Rev. 2**: hace falta una operación de retirada, y ligarla a `clase="derivado"` la desvía |
+| **H20-04** `Path.replace` sí sobrescribe | ALTO | **CONFIRMADO** (por mi propia sonda del §1.3, antes que por la suya) | **Rev. 2**: la pieza I necesita comprobación explícita de existencia, no confiar en la primitiva |
+| **H20-05** I/J no definen el fallo a mitad de lote ni la reentrada con el mismo sello | ALTO | **CONFIRMADO** | **Rev. 2**: es la mitad del contrato de una operación que mueve N ficheros |
+| **H20-06** el §1.4 atribuye a #18 un gate que no gobierna la poda de vistas | ALTO | **CONFIRMADO** | **Rev. 2**: el gate cubre `mensajes/`, no `vistas/`; mi §1.4 los trataba como uno |
+| **H20-07** L no aplica D4 a `_organizado/` y su excepción amplía una puerta general | ALTO | **CONFIRMADO** | **Rev. 2**: la excepción nominal abría más de lo que decía, y `_organizado/` se borra sin archivar, contra D4 |
+| **H20-08** J cambia el tipo sin diseñar qué hace el llamador con el residuo | ALTO | **CONFIRMADO** | **Rev. 2**: cambiar la firma sin decidir la conducta es mover el problema |
+| **H20-09** «rechazar la retirada» puede ocurrir tras publicar una corrida parcial | ALTO | **CONFIRMADO** | **Rev. 2**: el rechazo llega tarde en el orden real de `sala_maquina` |
+| **H20-10** la ruta propuesta añade 52 caracteres sin presupuesto ni frontera | MEDIO | **CONFIRMADO** | **Rev. 2**: MAX_PATH es un riesgo real en este repo, con historial propio |
+| **H20-11** M no puede inferir estáticamente «ruta bajo un expediente» | MEDIO | **CONFIRMADO** | **Rev. 2**: si el guard no puede distinguirlo, es decorativo. Hay que redefinir qué observa |
+| **H20-12** las dieciséis fronteras no son dieciséis mutantes y omiten propiedades | MEDIO | **CONFIRMADO** | **Rev. 2** |
+| **H20-13** D4 parafraseada más estrecha que la fuente | BAJO | **CONFIRMADO** | Se cita D4 literal en la rev. 2 |
+
+### 5.5. Qué sobrevive de la rev. 1
+
+**Las tres mediciones del §1 sobreviven, y el revisor las reprodujo por su cuenta con hashes:** la
+colisión de nombres del archivado es real, la retirada ficticia por `ignore_errors=True` es real, y
+el `rmtree` dentro de `00_Input` es real y alcanzable.
+
+**Lo que no sobrevive es, otra vez, el remedio.** Y el patrón de los tres planes de hoy es el mismo:
+**el diagnóstico medido aguanta; las piezas que prometen cerrarlo, no.** Las tres rondas
+encontraron, entre otras cosas, **tres condiciones que no pueden ser verdad nunca** —
+`es_copia_prestada` (H16-01), `agregado=True` sobre protocolo (H18-02) y `clase="derivado"` como
+rechazo (H20-03)—. Tres guardas inertes escritas el mismo día por la misma mano.
+
+**La regla operativa que sale de aquí, y que no estaba en `CLAUDE.md`:** al enunciar una condición
+de guarda, **comprobar que puede ser falsa** antes de construir sobre ella. Es una sonda de tres
+líneas y hoy habría ahorrado tres críticos.

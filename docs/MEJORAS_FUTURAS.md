@@ -5553,3 +5553,80 @@ carcasas de worktree ensucian un directorio que se mira a diario.
 **Coste estimado.** ~45 min sobre el barrido de apertura una vez exista (reutiliza su esqueleto);
 la parte cara no es el cruce sino decidir si **lista** o **borra**, y para el remoto la respuesta
 prudente es listar.
+
+---
+
+### 124. `es_copia_prestada` es INERTE en producción, y nueve tests verdes lo defienden
+
+**Añadido el 2026-08-26, con la medición que lo destapó.** Lo encontró la **R16** revisando el
+diseño del Plan 3A-bis, y **no es de ese plan**: es un defecto vivo de la capa de la Fase 1 dual /
+`MEJORAS #96`, anterior a él. Se anota aquí, con su medida, en vez de arreglarlo de paso dentro de
+una tanda que no le corresponde.
+
+**Qué debería hacer.** `core/case_manager.es_copia_prestada(case_id)` es la **primera rama** de
+`guard_escritura`: si la ruta resuelta del caso es una copia local conocida y no el canon, la
+bandeja no aplica y la escritura procede al árbol local (`MEJORAS #96`).
+
+**Qué hace.** Devuelve `False` siempre. La condición no puede ser verdad, por dos hechos que se
+tocan:
+
+- `case_locator.buscar()` mira **solo** bajo `CASOS_ROOT` —plano, por ciudad, y por ciudad de
+  reserva (`core/casos/case_locator.py:121-143`)—. Nunca devuelve una ruta fuera del catálogo, y
+  **no consulta el registro de workspaces**.
+- El registro **solo** contiene rutas fuera del catálogo: el resolver rechaza registrar una bajo él
+  (`WORKSPACE_UNDER_CATALOG_ROOT`, `core/casos/workspace_model.py:225`).
+
+Se compara una ruta que siempre está en el catálogo contra un conjunto que nunca contiene rutas del
+catálogo.
+
+**Medido el 2026-08-26**, con una copia local real registrada fuera del catálogo, como manda el
+contrato:
+
+```
+buscar() devuelve      : <CASOS_ROOT>/BaXX1 - … - (W-SONDAEC) - NEGATIVA_OFERTA
+copia local registrada : <TEMP>/Desktop/BaXX1 - … - (W-SONDAEC) - NEGATIVA_OFERTA
+es_copia_prestada      : False
+```
+
+El revisor lo midió por su cuenta y obtuvo lo mismo (`PROBE_B_ES_COPIA False`).
+
+**Y el docstring de la propia función contiene las dos mitades de la prueba, tres párrafos aparte.**
+Dice *«El canon nunca está ahí: el resolver rechaza registrar una ruta bajo el catálogo»* — como
+razón para **confiar** en el registro, sin notar que lo que se compara contra el registro es
+siempre el canon. **Escribir la razón correcta no es comprobarla.**
+
+**Por qué la suite no lo caza, que es la mitad interesante.** `tests/test_guard_copia_prestada.py`
+tiene nueve tests verdes sobre esta rama. Pasan porque su helper `_registrar_como_copia_local`
+(`:81-87`) da de alta `local_path=caso_path(case_id)` —**el canon**— llamando a `registro.alta`
+directamente, **sin pasar por el resolver que lo prohíbe**. La fixture fabrica el estado que
+producción tiene prohibido, y en ese estado la rama sí funciona.
+
+Es un caso de libro de **«un test puede defender el defecto»**: no es falta de cobertura, es
+cobertura al revés. Añadir tests no lo encuentra; hay que preguntar **quién** lo defiende. Y es la
+misma forma que la **«resta inerte»** que la prueba de mutación del Task 7 de la Fase 1 ya encontró
+en esta misma arquitectura (quitar `MUTATE_CANONICAL` de un modo que nunca la tuvo). Segunda
+aparición de la clase, en la capa de al lado.
+
+**Qué se rompe hoy, sin inflarlo.** Con la función siempre `False`, toda escritura sobre un caso que
+esta máquina tiene sacado cae por la rama del estado del canon: `prestado` → **desvío a la bandeja**.
+No hay pérdida de datos ni corrupción; hay una rama diseñada, probada y **muerta**, y un desvío que
+ocurre donde el diseño decía que no debía ocurrir. Lo caro es la **falsa cobertura**: nueve tests
+afirman que el discriminante funciona.
+
+**Mejora propuesta.** No es «arreglar la comparación»: es decidir **quién** contesta la pregunta.
+El repo ya tiene la pieza que sabe cuál es la copia de trabajo —`CaseWorkspaceResolver`, con
+`CaseWorkspace.working_root`— y el guard no la usa. Las opciones, sin elegir aquí:
+
+1. `guard_escritura` recibe (o resuelve) un `CaseWorkspace` y pregunta por `working_root`, en vez de
+   comparar una ruta de catálogo contra el registro.
+2. `es_copia_prestada` deja de existir y su pregunta se contesta en el resolver, que es donde vive
+   el modelo de capacidades.
+
+**Disparador:** la **Fase 2** de la fila #3 (los 7 defectos del frontal), que es donde el resolver
+se cablea de verdad; o la **rev. 2 del Plan 3A-bis**, si su regla de sellado necesita distinguir la
+copia local — que es exactamente el punto en que R16 lo destapó.
+
+**Condición de cierre, y es dura:** el arreglo **no vale** si los nueve tests siguen pasando con la
+fixture actual. Hay que rehacer la fixture para que registre una copia **fuera** del catálogo —el
+estado que producción sí produce— y comprobar que la rama muere sin el arreglo. Un guard sin prueba
+de mutación no es un guard, y una fixture que fabrica el estado imposible no es una prueba.

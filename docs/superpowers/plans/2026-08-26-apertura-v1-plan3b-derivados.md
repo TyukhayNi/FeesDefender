@@ -7,6 +7,19 @@ creado: 2026-08-26
 
 # Apertura V1 — Plan 3B: los derivados, y las tres puertas laterales que llegan a ellos (rev. 1)
 
+> ## ⛔ ESTADO: rev. 1 `NO-EJECUTABLE`. NO se construye con este diseño.
+>
+> **R18 (diseño) devolvió `NO-EJECUTABLE`: 15 hallazgos, 15 confirmados, 0 refutados, 4 críticos.**
+> Adjudicación en el **§6**; acta en
+> `docs/superpowers/specs/2026-08-26-apertura-v1-plan3b-r18-adversarial-review.md`.
+>
+> **El diagnóstico del §1 sobrevive** —el revisor reprodujo las tres puertas y el rechazo de
+> `sala_maquina`—. **Las cuatro piezas no**: H18-01 hace que E y F sean **incompatibles entre sí**,
+> porque `deposito(ref, …)` no puede transportar `CaseWorkspace.working_root`.
+>
+> **Pendiente: rev. 2**, que es rediseñar la interfaz por la que un motor recibe permiso de
+> escritura, no una tanda de ediciones.
+
 > **Predecesores.** [Plan 3A](2026-08-26-apertura-v1-plan3-write-set.md) (PR #251, `6bd78ad`) —
 > la costura, el mutex de sesión y las dos puertas cableadas— y
 > [Plan 3A-bis](2026-08-26-apertura-v1-plan3a-bis-fila5.md), que toma la decisión de la fila #5.
@@ -427,3 +440,108 @@ tests/test_agregados_poblacion.py     NUEVO — G10-G12
   test cubre, no lo veremos.
 - **La reacción del mutex a un salto real de NTP**, heredada de 3A y del plan del mutex.
 - **Las seis remediaciones de R13 no tienen ronda propia** y esta tanda las usa por transitividad.
+
+---
+
+## 6. Adjudicación de la revisión adversarial R18 (Codex, 2026-08-26) — NO-EJECUTABLE, pendiente
+
+- **Objeto revisado:** este documento, **rev. 1**, en el commit `d1b09e2`.
+- **Ronda:** R18, la ronda de **DISEÑO** de 3B. **R15 cubrió 3A y solo 3A**; ésta no la reutiliza.
+- **Revisor:** Codex por CLI sobre un `git archive` sin `.git`, solo lectura por construcción.
+- **Informe recibido:** `docs/superpowers/specs/2026-08-26-apertura-v1-plan3b-r18-adversarial-review.md`, `sha256` `4a5415ba5520738d…`, recomputado al archivarlo y **coincide**.
+- **Hallazgos:** 15 — 4 CRÍTICOS, 5 ALTOS, 5 MEDIOS, 1 BAJO. **15 confirmados, 0 refutados.**
+- **Remediado en:** nada. **No se escribe código con este diseño.**
+
+**Qué ejecutó el revisor:** 222 tests dirigidos (219 pasados, 3 `slow` omitidos), cinco sondas
+propias y censos de llamadores por AST.
+
+### 6.1. El crítico que invalida la pieza, y por qué era predecible
+
+**H18-01: la costura pierde la copia que la pieza E acaba de resolver.** `deposito(ref, …)` recibe
+un `CaseRef`, y su `_identidad()` hace `CaseCatalog().localizar(ref)` — que por contrato **solo
+localiza el canon** y declara que no decide la copia de trabajo. Mientras tanto `CaseWorkspace`
+guarda la raíz efectiva en `working_root`, que la firma que propuse **no transporta**.
+
+El revisor lo midió: canon prestado + checkout separado, y el depósito escribió bajo `CASOS_ROOT`;
+**el checkout quedó intacto.**
+
+Así que las piezas E y F **no se pueden ejecutar juntas** con las interfaces que fijé: E resuelve un
+workspace y F lo tira. Y sobre la herramienta diaria del equipo —que trabaja en `local_checkout` /
+`local_scratch`— el efecto sería escribir o rechazar contra el canon en vez de contra la copia en la
+que se está trabajando.
+
+**Es la misma clase, otra vez: `ref` no es `working_root`.** Un identificador de caso no es la copia
+sobre la que se opera, igual que el nombre de la carpeta no era la identidad (R14) y el sitio no era
+la clase (R15). **Sexta aparición.** Y esta vez la señal estaba a la vista: `CaseWorkspace` existe
+precisamente porque hay más de una copia, y diseñé la costura de 3B como si `ref` bastara.
+
+### 6.2. Y los otros tres críticos son, cada uno, una pieza que no hace lo que dice
+
+**H18-02: `agregado=True` no puede rechazar la fila #21.** La costura llama a `guard_escritura` con
+`es_protocolo=(clase == "protocolo")`, y `decidir_escritura` devuelve **siempre** `desviar=False`
+para protocolo, incluso con el caso prestado. `_sala_maquina_state.json` es de clase `protocolo`, así
+que nunca desviaría y por tanto **mi rechazo nunca dispararía** sobre la fila que más lo necesita.
+
+**Es una segunda guarda inerte, en la misma sesión que descubrió la primera** (`es_copia_prestada`,
+H16-01). Dos condiciones que no pueden ser verdad nunca, escritas por mí en dos documentos
+distintos el mismo día. Eso ya no es un descuido: es que **enuncio una condición y no compruebo su
+alcanzabilidad**, que es una comprobación de tres líneas.
+
+**H18-03: la fila #26 es A, no P.** `core/sala_maquina.py:883` llama a
+`split.reconciliar_manifiesto(previo, propuesto)`, que hereda `doc_id`, avanza `next_doc_id` y
+acumula tombstones **desde el manifiesto anterior**. Es read-modify-write. Lo verifiqué en la
+fuente. El revisor además lo midió: dos corridas sobre la misma foto viva y la segunda perdió los
+rangos `5-9` de la primera y reutilizó `d02`.
+
+Mi §«SIN VERIFICAR» declaraba justo esta duda —*«un sexto agregado que lea su versión anterior por
+un camino que no vi quedaría clasificado como P»*— y la dejé declarada en vez de mirarla. **Declarar
+una duda no la resuelve, y aquí bastaba un `grep`.**
+
+**H18-04: los doce depósitos no hacen exigible la familia que representan.** `Deposito` autoriza
+cualquier relativa contenida bajo su `_base`; no lleva lista de ficheros ni la marca de agregado. Y
+mis bases **se solapan a propósito**: `01_Procesado/Emails` sirve a #16 (G) y a #17 (A);
+`…/adjuntos` a #15 (P) y #19 (A); `…/02_Sala de máquina` a #21 (A), #22 (L) y #24 (P). Así que un
+motor puede escribir el artefacto de una categoría con el depósito de otra **sin salirse de la
+contención y sin violar ningún tipo**. La frontera G8 no lo ve porque muta otra cosa.
+
+O sea: la separación por familia era **nominal**. Yo mismo escribí que «uno por motor» dejaría
+heredar exenciones, y el remedio que propuse las deja heredar igual por un camino distinto.
+
+### 6.3. Los quince, uno por uno
+
+| # | Sev. | Veredicto | Qué se hace |
+|---|---|---|---|
+| **H18-01** la costura pierde `working_root` | CRÍTICO | **CONFIRMADO** (verificado en `escritura.py:119-132` y `case_catalog.py:1-15`) | **Rev. 2**: la costura tiene que recibir el workspace, no el `ref`. Es un cambio de interfaz, no un parámetro |
+| **H18-02** `agregado=True` inerte para protocolo | CRÍTICO | **CONFIRMADO** (verificado en `repository_checkout.py:541-576`) | **Rev. 2**: el rechazo por agregado no puede colgar del desvío del guard, porque protocolo nunca desvía |
+| **H18-03** la fila #26 es A | CRÍTICO | **CONFIRMADO** (verificado: `sala_maquina.py:883` → `reconciliar_manifiesto`) | **Rev. 2**: recategorizar, y **medir** las once en vez de clasificarlas por lectura |
+| **H18-04** los depósitos solapan bases entre categorías | CRÍTICO | **CONFIRMADO** | **Rev. 2**: la familia tiene que ser exigible, no nominal |
+| **H18-05** las cuatro respuestas no son alcanzables en motores monolíticos | ALTO | **CONFIRMADO** | **Rev. 2**: una corrida escribe artefactos de varias categorías; «rechazar» y «desviar» no son compatibles dentro de la misma llamada |
+| **H18-06** «tres puertas» no es el censo de la superficie | ALTO | **CONFIRMADO** | **Rev. 2**: el censo se hace por AST, no por lectura. La cifra «tres» era una lista, no una medición |
+| **H18-07** la pieza H evita el merge perdiendo `_tiempos.jsonl` | ALTO | **CONFIRMADO** | **Rev. 2**: meterlo en `MERGE_EXCLUSIONS` no es «un solo hogar», es descartar el del prestatario. Mi §4-H lo presentaba como cierre y es una pérdida |
+| **H18-08** el depósito de #27 no cubre al escritor real | ALTO | **CONFIRMADO** | **Rev. 2**: la base que asigné no es donde escribe `append_event` tras el Task 8 de la Fase 1 |
+| **H18-09** la población de G no tiene magnitud computable | ALTO | **CONFIRMADO** | **Rev. 2**: «12 en la bandeja» exige un conteo que el motor no puede hacer donde lo puse |
+| **H18-10** la línea nueva de `corpus.jsonl` no tiene el lector que afirmo | MEDIO | **CONFIRMADO** | **Rev. 2**: dije «el lector la salta por la clave» sin comprobar que exista tal lector |
+| **H18-11** E no puede ser extracción pura y core silencioso a la vez | MEDIO | **CONFIRMADO** | **Rev. 2**: `_resolver_workspace` imprime; extraerlo a `core/` choca con «core no imprime» |
+| **H18-12** G16 contradice el contrato que dice conservar | MEDIO | **CONFIRMADO** | **Rev. 2** |
+| **H18-13** el rechazo de D ocurre después de una escritura del guard | MEDIO | **CONFIRMADO** | **Rev. 2**: el guard emite `pendiente_checkin` **antes** de que yo rechace, así que un rechazo deja un evento de un desvío que no ocurrió |
+| **H18-14** las diecisiete fronteras no son diecisiete mutantes | MEDIO | **CONFIRMADO** | **Rev. 2**: y uno de los propuestos ya mata tests preexistentes por razones ajenas a su frontera |
+| **H18-15** afirmaciones y cifras de superficie inexactas | BAJO | **CONFIRMADO** | Se corrigen en la rev. 2 con el patrón de medición publicado |
+
+### 6.4. Qué sobrevive de la rev. 1
+
+**El diagnóstico, medido y confirmado por el revisor por su cuenta:**
+
+- las tres puertas laterales **sí** escriben hoy sobre el canon de un caso prestado — que es lo que
+  yo había medido y él reprodujo;
+- los tres subcomandos de `sala_maquina` **sí** rechazan con código 2 sin tocar bytes;
+- desviar un agregado read-modify-write **sí** lo rompe, y él lo demostró sobre una fila que yo
+  había clasificado mal.
+
+**Lo que no sobrevive es el remedio.** Las cuatro piezas —D, E, F, H— fallan cada una por su
+cuenta, y H18-01 hace que E y F sean incompatibles entre sí. La rev. 2 no es una edición: es
+rediseñar la interfaz por la que un motor recibe permiso de escritura.
+
+**Y una consecuencia de alcance que hay que decir en alto:** H18-01 no es solo de 3B. Si la costura
+de 3A no puede expresar «escribe en esta copia», entonces **la costura tal como se mergeó en #251
+solo sirve para el canon**, y eso limita lo que 3A puede reclamar. No se toca `escritura.py` desde
+aquí sin ronda propia, pero queda dicho.
