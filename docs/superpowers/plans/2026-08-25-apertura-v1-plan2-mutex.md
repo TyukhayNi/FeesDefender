@@ -1325,6 +1325,58 @@ Tres rondas para una propiedad de una línea. Cada vez remedié **el caso que el
 
 ---
 
+## 3. Adjudicación de la revisión adversarial R13 (Codex, 2026-08-26) — NO-SHIP, remediado
+
+- **Objeto revisado:** el **diff de remediación de R12**, en el commit `21714c8`.
+- **Ronda:** R13, la cuarta sobre el mismo componente.
+- **Revisor:** Codex por CLI sobre copia externa `git archive`. Informe completo.
+- **Informe recibido:** `docs/superpowers/specs/2026-08-26-apertura-v1-plan2-r13-adversarial-review.md`, `sha256` `05dd51bc1f724ae5…`, recomputado al archivarlo y **coincide**.
+- **Hallazgos:** 8 — 2 CRÍTICOS, 1 ALTO, 3 MEDIOS, 2 BAJOS. **8 confirmados, 0 refutados**; **2 superados** por `97670d2`, posterior al archivado del objeto, y **6 vivos**.
+- **Remediado en:** el commit `3691a04`.
+
+### 3.1. El hallazgo que justifica la ronda
+
+**H13-01 — la cota de desvío protegía los leases largos y no los cortos.** `DESVIO_MAXIMO` son 600 s y `_lease_valido` admite desde 1 s, así que **cualquier lease más corto que el desvío tolerado se agota con un reloj dentro de lo admitido**. Medido: con lease de 60 s, un `ahora` 300 s adelantado —aceptado sin rechistar— da el lease vivo por caducado y lo sustituye.
+
+**Y mi propio control negativo de R12 usaba esa combinación** (`±5 min` con `lease_seconds=60`) para demostrar que el arreglo no era demasiado estricto. El test escrito para defender la corrección **documentaba su agujero**.
+
+### 3.2. Es la cuarta ronda con la misma forma de fallo
+
+| Ronda | Dijo | Cerré | Quedó abierto |
+|---|---|---|---|
+| R10 | «naïve **o futuro**» | el naïve | el futuro |
+| R11 | «futuro» | el futuro | el pasado |
+| R12 | «pasado» | los dos, con cota simétrica | **la relación con el lease** |
+| R13 | «la cota no protege leases cortos» | la cota se mide **contra el lease** | — |
+
+La propiedad nunca fue «rechazar el futuro», ni «el pasado», ni «acotar el desvío». Era **«el error de reloj no puede agotar el lease que protege»** — una *relación entre dos magnitudes*, no una cota sobre una. Tres rondas remediando cotas; a la cuarta apareció la relación.
+
+### 3.3. Los otros cinco vivos
+
+| # | Sev. | Hallazgo | Remedio |
+|---|---|---|---|
+| H13-04 | MEDIO | `except BaseException` en `liberar` disfrazaba un `SystemExit` de `MutexPerdido` | `Exception` aquí; el **hilo** conserva `BaseException`, que es donde hace falta |
+| H13-05 | MEDIO | La nota copiaba el texto de la causa, con rutas dentro | Solo el **tipo**: reabría por la nota la fuga que H12-06 cerró por la causa |
+| H13-06 | MEDIO | El rechazo de campos desconocidos solo miraba el nivel superior | También dentro de `propietario` |
+| H13-07 | BAJO | El test del reloj no mataba la desconexión de la costura | Test que comprueba que `_sin_desvio_absurdo` **la consulta** |
+| H13-08 | BAJO | El control negativo de la nota no inspeccionaba las notas | Ahora sí |
+
+### 3.4. Tres defectos de mi instrumental, ninguno del revisor
+
+- **El arnés de mutación imprimió «los N mutantes mueren» habiendo ejecutado menos**, dos veces, por anclas rancias. Ahora **falla** si un ancla no casa — y esta ronda lo demostró parando con dos anclas ambiguas y un mutante mal apuntado.
+- **Perdí una remediación entera con `git checkout`** tras un crash del arnés, por no commitear antes de mutar.
+- **Dos tests estaban calibrados sobre el agujero** (el control negativo de R12 y el reloj falso del test de renovación). Se recalibraron: eran montaje, no contrato.
+
+**Diecisiete mutantes ejecutados y muertos.** Suite: **3.577 tests, 0 fallos con dos semillas**.
+
+### 3.5. Lo que sigue SIN VERIFICAR
+
+- El revisor **no pudo correr la batería** ni acreditar exclusión entre procesos (sin `filelock`, su doble serializa hilos).
+- **La reacción a un salto real de NTP** sigue sin medirse.
+- **Las seis remediaciones de R13 no tienen ronda propia** — cuarta vez que se dice. El rendimiento por ronda (6 → 7 → 6 vivos, cada vez más finos) es el dato con el que se decide cuándo parar.
+
+---
+
 ## Ejecutado el 2026-08-25 — y tres cosas que solo aparecieron al ejecutarlo
 
 Las ocho tareas, con sus **cuatro mutantes obligatorios muertos cada uno por su
