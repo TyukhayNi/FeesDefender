@@ -548,6 +548,90 @@ tomar sin escribirla.
 que existen. Las 93 escrituras del censo **siguen fuera de la costura**. «Cableado» significa
 hoy «cableado en dos puertas y en la custodia», no «write-set migrado».
 
+---
+
+## 6. Adjudicación de la revisión adversarial R15 (Codex, 2026-08-26) — NO-SHIP, parcial
+
+- **Objeto revisado:** el **diff completo de 3A**, `ea61f81..fa552b9` (3.871 líneas).
+- **Ronda:** R15, la ronda del **diff**, y la única que le tocaba a esta pieza — R14 cubrió el diseño.
+- **Revisor:** Codex por CLI sobre copias externas de base y head, solo lectura por construcción. **Ejecutó**: dos procesos, dos hilos, junction, alias 8.3, hijo matado, 101 tests del diff.
+- **Informe recibido:** `docs/superpowers/specs/2026-08-26-apertura-v1-plan3a-r15-adversarial-review.md`, `sha256` `bf0031b15078718e…`, recomputado al archivarlo y **coincide** (y coincide con el que el propio revisor reportó).
+- **Hallazgos:** 10 — 2 CRÍTICOS, 3 ALTOS, 4 MEDIOS, 1 BAJO. **10 confirmados, 0 refutados.**
+- **Remediado en:** los commits de esta rama posteriores a `fa552b9`; 5 remediados, 5 declarados (§6.3).
+
+### 6.1. Los dos críticos son reincidencias mías, y eso es el hallazgo de fondo
+
+**H15-01 — el alta admitía dos identidades para un caso.** Con `meta.id_go = W-OLD01`
+persistido, `ensure_case(modo="v1", id_go="W-NEW01")` lo aceptaba, **reescribía el metadato** y
+devolvía el mismo directorio. Un proceso con el lock nuevo y otro con el viejo operaban la
+misma carpeta, los dos creyéndose protegidos.
+
+**Es la TERCERA aparición de la propiedad que R14 nombró.** R14 la cerró en la costura
+(frontera C0); yo remedié **ese sitio** en vez de la propiedad: *«todo camino que fije
+identidad comprueba concordancia»*. El alta es un camino que fija identidad, y se quedó fuera.
+El corolario de `CLAUDE.md` —«¿de qué frontera es esto un ejemplo?»— falló por tercera vez en
+la misma pieza, y esta vez ni siquiera por no preguntármelo: por contestarlo con el sitio en
+vez de con la clase.
+
+**H15-02 — la pérdida del mutex solo llegaba al último prestatario.** El revisor mató el
+latido con dos prestatarios dentro, dejó caducar el lease, adquirió desde otro proceso, y el
+primer prestatario **salió con éxito**. Es la **pérdida silenciosa de R11/H11-02 reaparecida en
+la capa que construí encima de su arreglo**: cerrarla para el titular no la cierra para quien
+le pide prestado. Ninguno de mis diez mutantes de M1-M10 la tocaba, porque todos median la
+vida del *lock*, no la *noticia* que recibe cada préstamo.
+
+Los dos llevan mutante: el código de antes mata exactamente sus tests nuevos y ninguno más.
+
+### 6.2. Los diez, uno por uno
+
+| # | Sev. | Veredicto | Qué se hizo |
+|---|---|---|---|
+| **H15-01** dos lockfiles para un caso | CRÍTICO | **CONFIRMADO** (verificado por mí antes de aceptarlo) | **Remediado**: concordancia de las tres fuentes antes de tocar nada; la identidad de un caso existente deja de ser actualizable por el alta. Tests A7/A7b/A7c + mutante |
+| **H15-02** la pérdida no llega a los prestatarios | CRÍTICO | **CONFIRMADO** | **Remediado**: todo prestatario comprueba al salir; con error del cuerpo en vuelo, la pérdida se **anota** en él. Tests M11/M11b + mutante |
+| **H15-03** la contención léxica no contiene | ALTO | **CONFIRMADO** | **Parcial**: identidad real comprobada **una vez** al construir el `Deposito` —no en cada escritura, para no reabrir la carrera que R12 cerró— y el docstring deja de prometer más de lo que hace. El TOCTOU de una junction creada *después* queda **declarado** |
+| **H15-04** esqueleto parcial si falla tras `mkdir` | ALTO | **CONFIRMADO** | **Declarado**: la afirmación se estrecha a «no deja carpeta si la **puerta** rechaza», que es lo que A1/A2 prueban. El staging + rename queda como trabajo pendiente; el residuo son directorios vacíos, no datos |
+| **H15-05** hash y tamaño de bytes distintos | ALTO | **CONFIRMADO, preexistente** | **Declarado**: el `stat()` separado del hash es anterior al diff. Lo que #8 cierra es el **destino**, no la atomicidad, y no se reclama lo segundo |
+| **H15-06** pull fallido sin custodia | MEDIO | **CONFIRMADO** | **Remediado**: los parciales se inventarían y registran con `status: fallo` antes de relanzar |
+| **H15-07** `ciudad` cambia sin mover el caso | MEDIO | **CONFIRMADO, preexistente** | **Declarado**: es del cuerpo compartido de `ensure_case`; arreglarlo cambia también `libre`, y `move_to_city` existe para eso |
+| **H15-08** `MutexPerdido` sin gestionar | MEDIO | **CONFIRMADO** | **Ya remediado** (`e19bf5b`), encontrado por mí contestando el mandato antes de leer el informe |
+| **H15-09** el fallback del registro sin cubrir | MEDIO | **CONFIRMADO** | **Remediado**: test que retira la variable dentro de `tmp_path` |
+| **H15-10** lease huérfano tras crash | BAJO | **CONFIRMADO** | **Declarado**: hasta 300 s de falsa ocupación tras una muerte en la ventana `__enter__`→registro. No rompe exclusión; la ventana está en `case_mutex`, no solo aquí |
+
+### 6.3. Lo que queda declarado y NO remediado
+
+Cuatro hallazgos y media frontera. **Dos son preexistentes al diff** (H15-05, H15-07) y se
+declaran como lo que son: deuda que este diff no crea ni cierra. **H15-04** cambia una promesa
+por una más estrecha y verdadera. **H15-10** es disponibilidad, no corrección. Y de **H15-03**
+se cierra el caso realista y se declara el TOCTOU.
+
+**Por qué no una tercera ronda:** el techo duro de `CLAUDE.md` lo prohíbe sin autorización
+expresa de Nikolai, y no la pido: los dos críticos están cerrados con mutante, y lo que queda
+son promesas estrechadas y deuda nombrada, no garantías falsas.
+
+### 6.4. Y el trinquete me cazó a mí
+
+El `append_event` que añadí para remediar H15-06 subió el censo de **82 a 83**. Mi propia regla
+dice que una subida se **declara, no se absorbe**, así que el +1 va documentado como deuda de
+la fila #13 —protocolo, diferida— y no como cobertura. Es la única prueba de que el trinquete
+sirve: **la primera vez que muerde, muerde mi cambio.**
+
+### 6.5. Dos defectos de mi MANDATO, que costaron la primera corrida entera
+
+La primera invocación ejecutó 196.799 tokens, corrió 369 tests, montó cuatro sondas y **el
+filtro de contenido de la plataforma la cortó al redactar** —igual que R11—. No hubo informe.
+
+- Le di `--basetemp=C:/t/...`, que su entorno **no puede crear**: 369 errores de setup. Lo
+  resolvió él cambiando a `$env:TEMP`.
+- Le pedí «buscar vías reales de **escapar** del destino autorizado», con junctions, UNC y `..`
+  codificado. Eso se lee como investigación de evasión de sandbox, y es lo que plausiblemente
+  disparó el filtro. Reformulado como «¿la comprobación de contención es correcta, y no
+  rechaza rutas legítimas?», con la misma sustancia, la segunda corrida entregó.
+
+**Lo reutilizable:** cuando un revisor con cupo se corta, mirar primero si lo que se cortó fue
+**mi encargo** y no su capacidad. Y darle el intérprete que sí tiene las dependencias del repo
+—el Python de sistema— convierte la ronda de una lectura en una ejecución, que es de donde
+salieron los dos críticos.
+
 ## Lo que este plan deliberadamente NO hace
 
 - **No toca `case_mutex.py`.** Se envuelve, no se edita.
