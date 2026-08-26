@@ -75,9 +75,15 @@ class TestElDesvioSeAcotaEnLasDosDirecciones:
 
     @pytest.mark.parametrize("delta", ["2026-08-26T11:55:00Z", "2026-08-26T12:05:00Z"])
     def test_los_desvios_NORMALES_se_aceptan(self, raiz, delta):
-        """Control negativo: relojes que difieren en minutos son lo corriente."""
+        """Control negativo: relojes que difieren en minutos son lo corriente.
+
+        **El lease sube de 60 s a 3600 (R13/H13-01).** Tal como estaba escrito, este test
+        exigia aceptar 300 s de desvio sobre un lease de 60 s — o sea, documentaba como
+        «normal» justo la combinacion en que el error de reloj agota el lease que
+        protege. El control negativo de un arreglo estaba fijando su agujero.
+        """
         from core.casos.case_mutex import adquirir
-        assert adquirir(W + "X", ahora=delta, raiz=raiz, lease_seconds=60)
+        assert adquirir(W + "X", ahora=delta, raiz=raiz, lease_seconds=3600)
 
 
 # ==========================================================================

@@ -201,7 +201,11 @@ class TestElLease:
         estado["propietario"]["pid"] = 999999          # un PID que no existe
         p.write_text(json.dumps(estado), encoding="utf-8")
         with pytest.raises(CaseBusy):
-            adquirir(W, ahora="2026-08-25T12:05:00Z", raiz=raiz)
+            # `lease_seconds=600` explicito: el tope de desvio es ahora el MENOR
+            # entre la cota absoluta y el lease (R13/H13-01), y con el lease por
+            # defecto (300) un salto de 300 s cae justo en el borde inadmisible.
+            # Lo que este test mide es el PID, no el reloj.
+            adquirir(W, ahora="2026-08-25T12:05:00Z", raiz=raiz, lease_seconds=600)
 
     def test_renovar_hacia_ATRAS_se_rechaza(self, raiz):
         """R10/H10-02: sin monotonia, un `ahora` retrasado acorta el lease propio."""
@@ -267,8 +271,11 @@ class TestElGestorRenueva:
     def test_RENUEVA_mientras_el_cuerpo_corre(self, raiz):
         """El hallazgo critico R10/H10-04: sin esto, el lease vence y otro entra.
 
-        Reloj falso que avanza un minuto por lectura y lease de 1 s, para que el latido
-        caiga en fracciones de segundo REALES sin hacer el test lento.
+        **El reloj avanza en DECIMAS, no en minutos (R13/H13-01).** Antes saltaba un
+        minuto por lectura con `lease_seconds=1`, y desde que el tope de desvio es el
+        MENOR entre la cota absoluta y el lease, eso es inadmisible por definicion: con
+        un lease de 1 s, un reloj 60 s adelantado agota el lease que protege. El montaje
+        viejo media la renovacion con un reloj que el contrato ya no admite.
         """
         import itertools
         from core.casos.case_mutex import adquirir, leer_estado, tomado
@@ -277,9 +284,10 @@ class TestElGestorRenueva:
         contador = itertools.count()
 
         def reloj():
-            return f"2026-08-25T12:{next(contador) % 60:02d}:00Z"
+            n = next(contador)
+            return f"2026-08-25T12:00:{n // 10:02d}.{n % 10}00000Z"
 
-        with tomado(W, ahora_fn=reloj, raiz=raiz, lease_seconds=1):
+        with tomado(W, ahora_fn=reloj, raiz=raiz, lease_seconds=3):
             _esperar_a_que_renueve(raiz)
             estado = leer_estado(W, raiz=raiz)
             assert estado["renewed_at"] != estado["acquired_at"], (

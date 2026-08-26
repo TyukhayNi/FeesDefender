@@ -63,7 +63,7 @@ def _ahora_del_sistema() -> float:
     return datetime.now(timezone.utc).timestamp()
 
 
-def _sin_desvio_absurdo(ts: str) -> float:
+def _sin_desvio_absurdo(ts: str, lease: int | None = None) -> float:
     """`_instante(ts)`, y ademas: que no se aleje del reloj del sistema en NINGUNA
     direccion (R11/H11-01 + R12/H12-01).
 
@@ -76,13 +76,22 @@ def _sin_desvio_absurdo(ts: str) -> float:
     """
     momento = _instante(ts)
     desvio = momento - _ahora_del_sistema()
-    if abs(desvio) > DESVIO_MAXIMO_SEGUNDOS:
+    # La cota util es la MENOR de las dos, y esto es R13/H13-01: la propiedad nunca fue
+    # «el desvio es menor que 600 s», sino **«el error de reloj no puede agotar el lease
+    # que protege»**. Con `DESVIO_MAXIMO` a 600 y `_lease_valido` admitiendo desde 1 s,
+    # cualquier lease mas corto que el desvio tolerado se agota con un reloj DENTRO de lo
+    # admitido: medido, un `ahora` 300 s adelantado se lleva por delante un lease de 60 s.
+    # Es la cuarta ronda seguida en que el remedio cerraba el ejemplo y no la relacion.
+    tope = DESVIO_MAXIMO_SEGUNDOS if lease is None else min(DESVIO_MAXIMO_SEGUNDOS, lease)
+    if abs(desvio) >= tope:
         hacia = "el futuro" if desvio > 0 else "el pasado"
+        porque = ("lease de " + str(lease) + " s" if lease is not None
+                  else "cota absoluta de " + str(DESVIO_MAXIMO_SEGUNDOS) + " s")
         raise ValueError(
-            "el instante " + repr(ts) + " se aleja mas de "
-            + str(DESVIO_MAXIMO_SEGUNDOS) + " s hacia " + hacia + " respecto del reloj "
-            "del sistema: hacia el futuro robaria el lease de un titular vivo, y hacia "
-            "el pasado publicaria un lease ya vencido")
+            "el instante " + repr(ts) + " se aleja " + str(int(abs(desvio)))
+            + " s hacia " + hacia + " del reloj del sistema, y el tope aqui es "
+            + str(int(tope)) + " s (" + porque + "): hacia el futuro robaria el lease de "
+            "un titular vivo, y hacia el pasado publicaria un lease ya vencido")
     return momento
 
 
@@ -282,6 +291,12 @@ def _validar_estado(crudo, w_code: str) -> dict:
         raise malo("el pid del propietario no es un entero positivo")
     if type(propietario["proceso_uid"]) is not str:
         raise malo("el proceso_uid del propietario no es texto")
+    # Y sus campos desconocidos (R13/H13-06): la politica era «lo que esta version no
+    # entiende se rechaza», y solo miraba el nivel superior, asi que el sub-objeto
+    # quedaba exento sin que nadie lo hubiera decidido.
+    sobran_prop = sorted(set(propietario) - {"host", "pid", "proceso_uid"})
+    if sobran_prop:
+        raise malo("el propietario trae campos desconocidos: " + str(sobran_prop))
     if not isinstance(crudo["nonce"], str) or not crudo["nonce"]:
         raise malo("el nonce esta vacio o no es texto")
     try:
@@ -409,7 +424,7 @@ def adquirir(w_code: str, *, ahora: str, raiz: Path | None = None,
 
     w_code = _w_code_valido(w_code)
     lease = _lease_valido(lease_seconds)
-    _sin_desvio_absurdo(ahora)             # valida el reloj antes de crear nada
+    _sin_desvio_absurdo(ahora, lease)      # valida el reloj antes de crear nada
     yo = identidad_proceso()
     with _guard(w_code, raiz):
         estado = leer_estado(w_code, raiz=raiz)
@@ -438,6 +453,9 @@ def renovar(w_code: str, *, nonce: str, ahora: str, raiz: Path | None = None) ->
     momento = _sin_desvio_absurdo(ahora)
     with _guard(w_code, raiz):
         estado = leer_estado(w_code, raiz=raiz)
+        if estado is not None:
+            # Ahora que se conoce el lease real, se reaplica la cota CONTRA EL (H13-01).
+            _sin_desvio_absurdo(ahora, estado["lease_seconds"])
         if estado is None or estado["nonce"] != nonce:
             raise MutexNotMine(w_code=w_code,
                                detalle="el nonce no coincide con el del titular")
@@ -546,7 +564,7 @@ class SesionMutex:
         # es, a efectos de autorizar una escritura, lo mismo que no serlo.
         try:
             ahora = self.ahora_fn()
-            _sin_desvio_absurdo(ahora)
+            _sin_desvio_absurdo(ahora, estado["lease_seconds"])
         except Exception as exc:                         # noqa: BLE001
             self.marcar_perdido(exc)
             return False
@@ -605,7 +623,11 @@ def tomado(w_code: str, *, ahora_fn, raiz: Path | None = None,
         hilo.join(timeout=5)
         try:
             liberar(w_code, nonce=nonce, raiz=raiz)
-        except BaseException as exc:                     # noqa: BLE001
+        # `Exception` y NO `BaseException` (R13/H13-04): el HILO si necesita
+        # `BaseException` —alli el objetivo es no morir callado—, pero aqui tragarse un
+        # `SystemExit` o un `KeyboardInterrupt` para convertirlos en `MutexPerdido`
+        # secuestra el control de terminacion del proceso.
+        except Exception as exc:                         # noqa: BLE001
             # `liberar` exige titularidad, asi que fallar aqui ES la señal de perdida.
             # NO se revalida despues de una liberacion CORRECTA: acabamos de borrar el
             # lock, asi que «no hay lock» significa «lo solte yo», no «lo perdi». Ese
@@ -622,7 +644,10 @@ def tomado(w_code: str, *, ahora_fn, raiz: Path | None = None,
             import sys
             en_vuelo = sys.exc_info()[1]
             if en_vuelo is not None:
-                porque = (type(sesion._causa).__name__ + ": " + str(sesion._causa)
+                # SOLO el tipo, nunca el texto (R13/H13-05): un `OSError` de
+                # escritura lleva la ruta en su mensaje, y copiarlo literal reabria por
+                # la nota la fuga que H12-06 acababa de cerrar por la causa.
+                porque = (type(sesion._causa).__name__
                           if sesion._causa is not None
                           else "el lease caduco o la titularidad cambio")
                 en_vuelo.add_note(
