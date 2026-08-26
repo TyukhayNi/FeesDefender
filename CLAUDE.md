@@ -46,6 +46,41 @@ en `docs/DEAD_ENDS.md`. **No la reintentes.**
   compartido es justo el riesgo, y eso espera a Codex.
 - **Se queda en Claude, sin delegar:** juicio jurídico, escritos con la voz del despacho, veredictos,
   anclaje a fuente y revisión final.
+
+### Cuántas rondas — decidido por Nikolai el 2026-08-26
+
+**El número de rondas lo fija el RADIO DE DAÑO de la pieza, no lo interesante que sea su
+código.** Dos categorías y nada más:
+
+| La pieza… | Rondas |
+|---|---|
+| decide **quién puede escribir** sobre qué copia, o puede **destruir o corromper datos de cliente** | **2** — una sobre el diseño (spec/plan) y una sobre el diff |
+| todo lo demás | **1** — sobre el diff |
+
+**Techo duro: nunca una tercera ronda sobre la misma pieza sin que Nikolai la autorice
+expresamente.** No es burocracia, es el remedio a un sesgo medido. En el 55º cierre, cuando
+mi propia regla de parada me obligaba a parar, **redefiní el disparador**; un revisor sin
+nada invertido lo llamó racionalización *ex post*. Y el 2026-08-26 volvió a pasar en
+pequeño: encadené R10→R11→R12→R13 justificando cada una con que la anterior había
+encontrado algo — un argumento que **nunca se agota**, porque siempre encuentra algo.
+
+**Por qué dos y no cuatro, con la medición delante.** El mutex de V1 recibió cuatro rondas:
+660 líneas de producción contra 1.562 de test y 2.376 de plan y actas, seis a uno. Las
+cuatro devolvieron defectos reales y ninguna volvió limpia, así que **el criterio «hasta que
+una ronda vuelva sin críticos» no converge**. Lo que sí se midió es que los defectos que
+habrían entrado parando antes no tenían consecuencia práctica para un despacho de tres
+abogados que no trabajan en paralelo. El coste de la ronda es cierto; el del defecto, no.
+
+**Corolario operativo, que es lo que de verdad ahorra rondas:** ante cada hallazgo,
+preguntar **«¿de qué frontera es esto un ejemplo?»** antes de remediarlo. Las cuatro rondas
+del mutex encontraron cuatro veces la misma propiedad mal cerrada —naïve, futuro, pasado, y
+por fin la relación entre el desvío y el lease— porque cada vez remedié el caso que el
+informe describía y no la propiedad de la que era ejemplo. Esa pregunta no necesita una
+ronda para hacerse.
+
+**Lo que NO cambia:** la revisión sigue siendo obligatoria, la ejecuta Codex, la adjudica
+Claude contra la fuente, y un revisor que no corre deja **sin verificar**, nunca refutado.
+
 - **El trabajo mecánico pesado vuelve a Claude** (barridos de corpus, OCR/extracción, resúmenes
   masivos, boilerplate): con `agy` fuera ya no hay a quién delegarlo en bloque. Para lo paralelizable,
   subagentes; para lo grande, trocearlo.
