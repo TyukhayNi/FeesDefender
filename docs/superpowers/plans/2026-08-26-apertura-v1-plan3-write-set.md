@@ -490,9 +490,13 @@ filas de esta tanda en `v1`; las catorce restantes siguen contadas en el censo. 
 
 - **(a) métrica dinámica:** no aplica todavía — ningún productor llama a la costura, así que
   no hay llegadas que contar. Se activará con 3B.
-- **(b) censo AST:** **93 sitios de escritura en 11 productores, 0 ficheros entrando por la
+- **(b) censo AST:** **83 sitios de escritura en 11 productores, 0 ficheros entrando por la
   costura.** Es el `TECHO_CENSO` de `tests/test_escritura_censo.py`, y solo baja. Hay un test
   que exige que el techo sea el número **real** y no uno holgado.
+  *(Decía «93» hasta el 2026-08-26. No era la medición de una ventana pasada —afirmaba ser el
+  valor de una constante viva— así que era simplemente falsa: el detector contaba
+  `str.replace` y `dataclasses.replace`. Bajó a 82 al arreglarlo y subió a 83 con el
+  `append_event` de H15-06, declarado en el §6.4.)*
 - **(c) tests roto por el trinquete:** **0**. El trinquete está donde creía.
 
 **Suite: 3.664 tests, 0 fallos, 0 errores, 83 `skip`, con las semillas 777 y 31337.** El
@@ -545,8 +549,16 @@ tomar sin escribirla.
 
 **La frase honesta al cerrar 3A:** el mutex protege lo que pasa por `abrir_caso` y
 `sala_maquina`, y la cadena de custodia sigue el destino efectivo en las dos vías de intake
-que existen. Las 93 escrituras del censo **siguen fuera de la costura**. «Cableado» significa
+que existen. Las 83 escrituras del censo **siguen fuera de la costura**. «Cableado» significa
 hoy «cableado en dos puertas y en la custodia», no «write-set migrado».
+
+> **Corregido el 2026-08-26 (Plan 3A-bis, Task 7): decía «93».** El 93 era el número que el
+> detector inflaba contando `str.replace` y `dataclasses.replace` como escrituras, y el §6.4 de
+> este mismo documento ya narra su corrección a 82 y la subida declarada a 83. La cifra vieja
+> sobrevivió aquí porque este párrafo se escribió antes de medir el desglose y **no se releyó al
+> corregir el total** — el modo de fallo de siempre: se arregla el sitio donde se descubre el
+> error y no los sitios que lo repiten. El techo vive en **un** sitio recomputable
+> (`TECHO_CENSO` en `tests/test_escritura_censo.py`), y es ése el que manda, no la prosa.
 
 ---
 
