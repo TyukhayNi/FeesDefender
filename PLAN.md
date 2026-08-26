@@ -107,7 +107,10 @@ Lo que sigue faltando: V1 no **descubre** correo, así que un caso cuyo material
 depositar queda `preparado_con_pendientes` hasta V3, nunca `completo` — **corregido tras R4**:
 `fuentes_pendientes` no existía en ningún vocabulario, me lo inventé al estrechar (§22, H4-03).
 
-**R4, R5 y R6 corridas y adjudicadas.** R4 y R5 (`REQUIERE-REVISION`, 5 hallazgos cada una) cerraron
+**R4, R5 y R6 corridas y adjudicadas.** Actas:
+`docs/superpowers/specs/2026-08-24-apertura-integral-r4-adversarial-review.md` y
+`docs/superpowers/specs/2026-08-24-apertura-integral-r5-adversarial-review.md`.
+R4 y R5 (`REQUIERE-REVISION`, 5 hallazgos cada una) cerraron
 el diseño en la rev. 8 y el §23 **detuvo a propósito** el bucle de revisión sobre la spec: un cuarto
 párrafo habría producido un cuarto hallazgo idéntico. Las cuatro decisiones quedaron tomadas en el
 §24 y el write-set barrido en el §25.
