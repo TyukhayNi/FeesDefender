@@ -482,6 +482,29 @@ CASO_SUBDIRS: tuple[str, ...] = (
     "90_Notas personales",
 )
 
+# Las que crea el alta en `--modo v1` (write-set del §25, fila #1): solo las que tienen
+# productor DENTRO de la primera vertical. Las otras seis son andamiaje que luego nadie
+# retira, y el §25 las deja fuera a proposito.
+#
+# `90_Notas personales` se queda, y es **exencion declarada**: ningun camino de V1 lee ni
+# escribe su contenido —es zona del abogado— pero su creacion eager es el patron
+# establecido del caso y retirarla seria un cambio que V1 no ha pedido.
+#
+# Se define por FILTRO sobre `CASO_SUBDIRS` y no como una lista aparte: dos listas
+# literales derivan en silencio en cuanto alguien anada un cajon nuevo arriba, y entonces
+# «el minimo de V1» dejaria de ser un subconjunto sin que ningun test lo notara.
+_FUERA_DE_ALTA_V1: frozenset[str] = frozenset({
+    "02_Analisis",            # viabilidad: vertical diferida (V3)
+    "03_Decision",
+    "04_Output predemanda",
+    "05_Procedimiento",
+    "06_Anonimizado",
+    "07_AI cowork",
+})
+SUBDIRS_ALTA_V1: tuple[str, ...] = tuple(
+    s for s in CASO_SUBDIRS if s not in _FUERA_DE_ALTA_V1
+)
+
 # Subcarpetas de intake dentro de 00_INPUT/.
 #
 # Terminología de partes (cubre compraventa, arrendamiento y traspaso):
