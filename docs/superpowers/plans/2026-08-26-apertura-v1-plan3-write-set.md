@@ -495,7 +495,37 @@ filas de esta tanda en `v1`; las catorce restantes siguen contadas en el censo. 
   que exige que el techo sea el número **real** y no uno holgado.
 - **(c) tests roto por el trinquete:** **0**. El trinquete está donde creía.
 
-**Suite: 3.663 tests con las semillas 777 y 31337.**
+**Suite: 3.664 tests, 0 fallos, 0 errores, 83 `skip`, con las semillas 777 y 31337.** El
+conteo cuadra: 3.652 al cerrar el Task 5 + 5 de custodia + 7 del censo.
+
+*(Este párrafo decía «3.663» antes de que la corrida terminara: una predicción escrita como si
+fuera una medición. Se corrige con el número real y se deja dicho, porque el hábito de
+adelantar la cifra es el que produce los conteos rancios que `CLAUDE.md` prohíbe.)*
+
+### La regresión que la suite completa cazó, y que un subconjunto no habría cazado
+
+La primera corrida de estos tasks devolvió **16 fallos en `test_abrir_caso_cli`, idénticos con
+las dos semillas** — o sea nada de orden: una regresión de verdad, introducida por la fila #8.
+
+**La causa:** tres dobles de `pull_drive_ev` devolvían `type("R", (), {"count": N})()`, un stub
+con un atributo que `DriveIntakeResult` **no tiene** y sin `target_dir`, que **sí tiene desde
+siempre**. Colaban porque el llamador ignoraba el valor devuelto. En cuanto #8 empezó a
+consumirlo, el doble dejó de sostener el contrato que suplanta.
+
+**Por qué se me escapó:** corrí `test_abrir_caso_cli.py` después del Task 5 y **no** después
+del Task 6. El fichero entraba en el subconjunto de regresión por coincidencia de palabra
+clave; tras editar #8 solo corrí los tests nuevos.
+
+**El remedio y su justificación**, porque «cambiar el fixture para que pase mi código» es un
+modo de fallo conocido y caro: el doble **nunca fue fiel**, y el campo que ahora hace falta es
+anterior al cambio. Se sustituyen los stubs por la **clase real**, no por otro stub más
+completo, para que un campo nuevo obligatorio reviente en la construcción del doble y no como
+`AttributeError` dentro de producción.
+
+**Lo reutilizable:** tres veces en esta tanda un cambio mío destapó un doble infra-especificado.
+No es mala suerte — es lo que pasa cuando el código empieza a **consumir** valores que antes
+ignoraba. Al hacer que una función lea un campo que nadie leía, todos sus dobles pasan a estar
+potencialmente mal, y el subconjunto de tests que uno elige a mano no los encuentra.
 
 ### Por qué el Task 6 es PARCIAL y no completo
 
