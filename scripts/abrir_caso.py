@@ -69,18 +69,28 @@ _MODOS = ("libre", "v1")
 _FUENTES_V1 = ("drive_ev",)
 
 
-def _inventario_desde_hashes(case_dir: Path, base: str, hashes: dict[str, str]) -> list[dict]:
-    """Inventario {relpath, sha256, size} a partir de {base/rel: sha}."""
+def _inventario_desde_hashes(raiz: Path, base: str, hashes: dict[str, str]) -> list[dict]:
+    """Inventario {relpath, sha256, size} a partir de {base/rel: sha}.
+
+    `raiz` es la raíz **EFECTIVA** bajo la que viven las claves: el `00_Input` del destino
+    que decidió el guard, que con un caso prestado es el de la bandeja.
+
+    Antes recomponía `case_dir / "00_Input" / clave`, o sea la ruta **intencionada**
+    (R14/H14-02, CRÍTICO). Con desvío eso es un `FileNotFoundError` o —peor— el tamaño de
+    un fichero homónimo del canon, y entonces bytes, hash, manifiesto y evento dejan de
+    describir el mismo destino. Eso no es cobertura pendiente: es una afirmación forense
+    falsa, y por eso la ronda prohibió diferirlo.
+    """
     return [
         {"relpath": k[len(base) + 1:], "sha256": v,
-         "size": (case_dir / "00_Input" / k).stat().st_size}
+         "size": (raiz / k).stat().st_size}
         for k, v in hashes.items()
     ]
 
 
 def _intake_generico(
     case_dir: Path, case_id: str, fuente: str, hashes: dict[str, str], *, base: str,
-    dry_run: bool,
+    dry_run: bool, raiz_hashes: Path | None = None,
 ) -> None:
     """Camino de custodia orquestado (drive_ev, manual): plan → (dry-run) →
     reconcile → append_event. `hashes` cubre SOLO lo recién depositado.
@@ -88,8 +98,19 @@ def _intake_generico(
     `base` es el cajón espejo (drive_ev) o el nombre del lote ya reservado
     (fuentes de entrega); la cadena de custodia toma la fuente de `fuente`,
     no del primer segmento de la ruta.
+
+    `raiz_hashes` es la raíz **efectiva** bajo la que viven las claves de `hashes`
+    (R14/H14-02). Su default es la canónica —el comportamiento de siempre— y cada
+    llamador que pueda ser desviado por el guard pasa la suya. Es aditivo a propósito:
+    la vía que no puede desviarse no tiene que enterarse de nada.
+
+    **El evento se queda en el log CANÓNICO** aunque los bytes se desvíen, y eso es
+    deliberado: `_intake_log.jsonl` es fila #13 del §25, clase protocolo, exenta del
+    desvío. Es también donde el guard deja su propio `pendiente_checkin`, así que las dos
+    mitades de la historia quedan en el mismo sitio y en orden.
     """
-    inventario = _inventario_desde_hashes(case_dir, base, hashes)
+    inventario = _inventario_desde_hashes(
+        raiz_hashes if raiz_hashes is not None else case_dir / "00_Input", base, hashes)
     plan = brain.plan_intake(inventario, intake_log.read_events(case_id), fuente,
                              lote=None if fuente == "drive_ev" else base)
     if dry_run:
@@ -113,10 +134,20 @@ def _intake_generico(
 
 
 def _intake_drive_ev(ident, case_dir: Path, folder_id, team_id, *, dry_run: bool) -> None:
-    intake_drive.pull_drive_ev(ident.case_id, folder_id, team_id)
+    """Pull de Drive E&V + cadena de custodia sobre el destino EFECTIVO (R14/H14-02).
+
+    **El dato que hacía barato el arreglo: `DriveIntakeResult` ya traía `target_dir`.**
+    El destino que eligió el guard venía de vuelta en el resultado y este llamador lo
+    tiraba para recomponer la ruta canónica a mano. No faltaba información: se descartaba.
+    """
+    res = intake_drive.pull_drive_ev(ident.case_id, folder_id, team_id)
     subdir = brain.SUBDIR_DRIVE_EV
-    hashes = hash_tree_local(case_dir / "00_Input" / subdir, prefijo=subdir)
-    _intake_generico(case_dir, ident.case_id, "drive_ev", hashes, base=subdir, dry_run=dry_run)
+    # `target_dir` es `<algo>/00_Input/01_Drive EV`, así que su padre es la raíz bajo la
+    # que resuelven las claves `01_Drive EV/...`. Con el caso disponible es el `00_Input`
+    # del caso; con el caso prestado, el de la bandeja.
+    hashes = hash_tree_local(res.target_dir, prefijo=subdir)
+    _intake_generico(case_dir, ident.case_id, "drive_ev", hashes, base=subdir,
+                     dry_run=dry_run, raiz_hashes=res.target_dir.parent)
 
 
 def _inventario_local(src: Path) -> list[dict]:
@@ -179,7 +210,12 @@ def _intake_manual(ident, case_dir: Path, src_str: str, *, dry_run: bool) -> Non
         typer.echo(f"[ERROR] {exc}", err=True)
         raise typer.Exit(code=1)
     hashes = {f"{lote.name}/{rel}": file_sha256(lote / rel) for rel in rels}
-    _intake_generico(case_dir, ident.case_id, "manual", hashes, base=lote.name, dry_run=False)
+    # `lote` ya es el directorio EFECTIVO (`abrir_lote_manual` pasa por el guard), así que
+    # los hashes de arriba siempre fueron correctos. Lo que no lo era es el inventario, que
+    # resolvía contra la ruta canónica: la vía manual tenía el mismo defecto que #8, latente
+    # y sin fila propia en el §25. Se cierra aquí porque es el MISMO arreglo.
+    _intake_generico(case_dir, ident.case_id, "manual", hashes, base=lote.name,
+                     dry_run=False, raiz_hashes=lote.parent)
 
 
 def _intake_whatsapp(ident, src_str: str, rol: str, *, dry_run: bool) -> None:
