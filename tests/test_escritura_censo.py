@@ -31,19 +31,36 @@ PRODUCTORES = (
     "scripts/abrir_caso.py", "scripts/sala_maquina.py",
 )
 
-#: Las primitivas del barrido del §25.
+#: Las primitivas del barrido del §25 que NO son ambiguas: su nombre solo existe en el
+#: sistema de ficheros.
 PRIMITIVAS = frozenset({
-    "write_text", "write_bytes", "mkdir", "unlink", "replace", "copy2", "copy",
-    "dump", "append_event",
+    "write_text", "write_bytes", "mkdir", "unlink", "copy2", "append_event",
 })
+
+#: Las AMBIGUAS, que comparten nombre con métodos de `str`, `dict` y `dataclasses`.
+#:
+#: Medido el 2026-08-26: contarlas por el nombre inflaba el censo en **12** sitios —
+#: `path.replace("\\", "/")`, `dt.replace(tzinfo=...)`, `dataclasses.replace(ident, ...)`—
+#: y un techo inflado es un techo con hueco: deja entrar escrituras nuevas de verdad sin
+#: que el trinquete muerda. Es el defecto que `test_el_techo_no_esta_holgado` decía
+#: prevenir, cometido en el detector que ese mismo test comprueba.
+AMBIGUAS = frozenset({"replace", "copy", "dump"})
 
 #: **Techo del censo, medido el 2026-08-26. Solo puede bajar.**
 #:
-#: 93 sitios de escritura en los 11 productores, y **cero** ficheros entrando por la
+#: 82 sitios de escritura en los 11 productores, y **cero** ficheros entrando por la
 #: costura. Bajarlo es el trabajo de 3B (los derivados) y 3C (la poda). Si un cambio lo
 #: sube, o es una escritura nueva sin costura —y entonces falta migrarla— o la lista de
 #: productores creció y hay que decirlo, no absorberlo.
-TECHO_CENSO = 93
+#:
+#: **Decía 93, y era un techo con 11 huecos.** El detector contaba `replace`/`copy`/`dump`
+#: por el nombre, así que `path.replace("\\", "/")`, `dt.replace(tzinfo=...)` y
+#: `dataclasses.replace(...)` entraban como si escribieran en disco. Un techo inflado deja
+#: entrar escrituras nuevas de verdad sin que el trinquete muerda — exactamente lo que
+#: `test_el_techo_no_esta_holgado` dice prevenir, cometido dentro del detector que ese test
+#: comprueba. Lo encontré al preparar la ronda del diff, mirando el desglose por primitiva
+#: en vez del total: **un número agregado esconde su propia composición.**
+TECHO_CENSO = 82
 
 
 def _nombre_llamado(n: ast.Call) -> str | None:
@@ -63,7 +80,41 @@ def _es_escritura(n: ast.Call) -> bool:
         modos = [a.value for a in n.args
                  if isinstance(a, ast.Constant) and isinstance(a.value, str)]
         return any("a" in m or "w" in m for m in modos)
+    if nombre in AMBIGUAS:
+        return _ambigua_es_de_ficheros(n, nombre)
     return False
+
+
+def _ambigua_es_de_ficheros(n: ast.Call, nombre: str) -> bool:
+    """¿Este `replace`/`copy`/`dump` toca el disco, o es de `str`/`dict`/`dataclasses`?
+
+    Se decide por la **forma de la llamada**, que es lo único que un análisis estático
+    tiene: quién es el receptor y cuántos argumentos lleva.
+
+    - `os.replace(a, b)` y `shutil.copy(a, b)` → el receptor es el módulo. Escritura.
+    - `p.replace(destino)` → `Path.replace` toma **un** argumento y nada más. Escritura.
+    - `s.replace("a", "b")` → dos argumentos y receptor que no es `os`. Cadena.
+    - `dt.replace(tzinfo=...)` → keywords y ningún posicional. No es de ficheros.
+    - `dataclasses.replace(x, k=v)` y el `replace(x, k=v)` importado → receptor `dataclasses`
+      o función suelta. No es de ficheros.
+    """
+    f = n.func
+    if isinstance(f, ast.Name):
+        # `replace(obj, campo=...)` suelto es el de `dataclasses`, importado por nombre.
+        return False
+    receptor = f.value if isinstance(f, ast.Attribute) else None
+    modulo = receptor.id if isinstance(receptor, ast.Name) else None
+    if modulo in ("os", "shutil"):
+        return True
+    if modulo == "dataclasses":
+        return False
+    if nombre == "dump":
+        # `json.dump(obj, fh)` escribe; `yaml.dump(obj)` sin stream devuelve una cadena.
+        return modulo in ("json", "yaml", "pickle") and len(n.args) >= 2
+    if nombre == "copy":
+        return False            # sin `shutil` delante, es `dict.copy`/`list.copy`
+    # `replace` con UN posicional y sin keywords es `Path.replace`.
+    return len(n.args) == 1 and not n.keywords
 
 
 def censar(ruta: str | Path) -> tuple[int, bool]:
@@ -205,3 +256,34 @@ def test_los_entrypoints_cableados_siguen_adquiriendo(entrypoint):
     assert any(isinstance(n, ast.Call) and _nombre_llamado(n) == "sostenido"
                for n in ast.walk(arbol)), (
         f"{entrypoint} ya no adquiere el mutex: el cableado del Task 5 se perdió")
+
+def test_el_detector_distingue_replace_de_ficheros_del_de_cadenas(tmp_path):
+    """El falso positivo que infló el techo en 11, ahora contratado.
+
+    `replace`, `copy` y `dump` existen también en `str`, `dict`, `datetime` y `dataclasses`.
+    Contarlos por el nombre convierte cualquier normalización de rutas en una «escritura», y
+    el techo acaba con hueco para escrituras nuevas de verdad.
+    """
+    fuente = "\n".join([
+        "import os, shutil, dataclasses, json",
+        "from dataclasses import replace",
+        "def g(p, d, s, dt, obj, fh):",
+        "    os.replace(p, p)               # 1 escritura",
+        "    p.replace(d)                   # 2 escritura (Path.replace)",
+        "    shutil.copy(p, d)              # 3 escritura",
+        "    json.dump(obj, fh)             # 4 escritura",
+        "    s.replace('a', 'b')            # cadena, NO",
+        "    dt.replace(tzinfo=None)        # datetime, NO",
+        "    dataclasses.replace(obj, x=1)  # dataclass, NO",
+        "    replace(obj, x=1)              # dataclass importado, NO",
+        "    d.copy()                       # dict, NO",
+        "    json.dumps(obj)                # no escribe, NO",
+        "    return 0",
+    ])
+    f = tmp_path / "ambiguas.py"
+    f.write_text(fuente, encoding="utf-8")
+
+    sitios, _ = censar(f)
+    assert sitios == 4, (
+        f"el detector cuenta {sitios} y hay 4 escrituras reales: si sube, está contando "
+        f"`replace`/`copy`/`dump` de str/dict/dataclasses y el techo se infla")
