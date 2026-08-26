@@ -323,6 +323,49 @@ class MutexPerdido(WorkspaceError):
     descripcion = "el mutex se perdio mientras la operacion estaba en curso"
 
 
+class IdentidadDiscordante(WorkspaceError):
+    """El nombre de la carpeta y `meta.id_go` nombran expedientes DISTINTOS (R14/H14-01).
+
+    Es un problema de integridad, no de convencion: el catalogo considera canonico
+    `meta.id_go` y el mutex se indexa por una sola identidad, asi que elegir en silencio
+    fabrica **dos lockfiles para un expediente** y con ellos dos escritores que se creen
+    los dos protegidos.
+
+    Separado de `IdentidadNoUtilizable` por el mismo argumento con el que `CASE_BUSY` se
+    separo de `CASE_LOCKED`: «este caso tiene dos identidades» pide mirarlo ya, y «esta
+    carpeta no lleva W-code» es una convencion que no se cumple. Con un codigo unico el
+    operador no puede separarlas.
+    """
+
+    codigo = "IDENTIDAD_DISCORDANTE"
+    descripcion = "el nombre de la carpeta y el metadato del caso no concuerdan"
+
+
+class IdentidadNoUtilizable(WorkspaceError):
+    """No hay W-code, o el que hay no cumple la gramatica que el mutex exige.
+
+    El tercer estado de identidad, que la rev. 1 del Plan 3A no enumeraba. Medido:
+    `case_locator._w_code_de` extrae `W-AB` y codigos de 22 caracteres, y
+    `case_mutex._w_code_valido` los rechaza porque exige 3-20. Sin este error, eso salia
+    como un `ValueError` crudo escapando de un validador privado.
+    """
+
+    codigo = "IDENTIDAD_NO_UTILIZABLE"
+    descripcion = "el caso no declara una identidad que pueda nombrar su mutex"
+
+
+class EscrituraSinMutex(WorkspaceError):
+    """Se intento escribir en modo `v1` sin sostener el mutex del caso.
+
+    Distinto de `MUTEX_PERDIDO` a proposito: aquel dice «lo tenias y lo perdiste» —otro
+    proceso puede estar dentro ahora—, y este dice «nadie lo adquirio», que apunta a un
+    entrypoint sin cablear. Las dos condiciones piden acciones opuestas.
+    """
+
+    codigo = "ESCRITURA_SIN_MUTEX"
+    descripcion = "en modo v1 no se escribe sin sostener el mutex del caso"
+
+
 def errores_conocidos() -> tuple[type[WorkspaceError], ...]:
     """Las subclases con código: las doce del §10 más las tres del registro.
 
@@ -352,6 +395,14 @@ def errores_conocidos() -> tuple[type[WorkspaceError], ...]:
         MutexNotMine,
         MutexIlegible,
         MutexPerdido,
+        # Los tres de la costura de escritura (Plan 3A, Task 2). El §10 pasa de 19 a 22
+        # codigos. Viven en el MODELO y no en `escritura.py` por la misma razon que los
+        # tres del registro: asi les aplican las reglas de mensaje del §10 y los ocho
+        # canarios de fuga del §16. Definirlos en el modulo que los lanza los dejaria
+        # fuera de `errores_conocidos()`, que es el hueco que R7/H7-12 castigo.
+        IdentidadDiscordante,
+        IdentidadNoUtilizable,
+        EscrituraSinMutex,
     )
 
 

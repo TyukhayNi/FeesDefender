@@ -81,6 +81,15 @@ CODIGOS_ESPERADOS = {
     # R11/H11-02: perder el mutex a mitad NO es «te equivocas de dueño». El §10
     # pasa de 18 a 19 codigos.
     "MUTEX_PERDIDO",
+    # Los tres de la costura de escritura (Plan 3A, Task 2). El §10 pasa de 19 a 22.
+    # `IDENTIDAD_DISCORDANTE` es el CRITICO de R14: el nombre de la carpeta y `meta.id_go`
+    # nombrando expedientes distintos son DOS lockfiles para uno. Se separa de
+    # `IDENTIDAD_NO_UTILIZABLE` —no hay W-code, o el que hay no cumple la gramatica del
+    # mutex— por el argumento de `CASE_BUSY` frente a `CASE_LOCKED`: dos condiciones que
+    # piden acciones distintas no pueden compartir codigo. Y `ESCRITURA_SIN_MUTEX` no es
+    # `MUTEX_PERDIDO`: aquel dice «nadie lo adquirio» (entrypoint sin cablear) y este «lo
+    # tenias y lo perdiste» (otro proceso puede estar dentro ahora).
+    "IDENTIDAD_DISCORDANTE", "IDENTIDAD_NO_UTILIZABLE", "ESCRITURA_SIN_MUTEX",
 }
 
 _RE_UNIDAD_WINDOWS = re.compile(r"[A-Za-z]:[\\/]")
