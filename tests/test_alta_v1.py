@@ -185,3 +185,65 @@ def test_a6b_libre_no_exige_mutex_ni_id_go(tmp_casos_root):
 
     case_dir = case_manager.ensure_case(CASE_ID)          # sin id_go, sin mutex, sin modo
     assert case_dir.is_dir()
+
+
+# --------------------------------------------------------------------- A7 (R15)
+
+def test_a7_v1_rechaza_un_id_go_que_discrepa_del_persistido(tmp_casos_root, raiz):
+    """A7 — R15/H15-01, CRÍTICO: tener un mutex no es tener EL mutex del expediente.
+
+    Medido antes del arreglo: con `meta.id_go = W-OLD01` persistido, el alta aceptaba
+    `id_go=W-NEW01`, **reescribía el metadato** y devolvía el mismo directorio. Un proceso
+    con el lock nuevo y otro con el viejo operaban la misma carpeta, los dos creyéndose
+    protegidos — la falsa exclusión que la pieza entera existe para impedir.
+
+    **Es la tercera aparición de la misma propiedad.** R14 la cerró en la costura (C0) y yo
+    remedié *ese sitio* en vez de la propiedad: «todo camino que fije identidad comprueba
+    concordancia». El alta es un camino que fija identidad.
+    """
+    from core import case_manager
+    from core.casos import case_locator, mutex_sesion
+    from core.casos.workspace_model import CaseRef, IdentidadDiscordante
+
+    viejo = "Ba001 - Calle X - (W-OLD01) - honorarios"
+    d = tmp_casos_root / viejo
+    (d / "00_Input").mkdir(parents=True)
+    import io as _io
+    _io.open(d / "00_Input" / "_caso.md", "w", encoding="utf-8", newline="\n").write(
+        "---\nmeta:\n  id_go: W-OLD01\n  estado_repositorio: disponible\n---\n")
+
+    with mutex_sesion.sostenido(CaseRef(w_code="W-NEW01"), ahora_fn=reloj, raiz=raiz):
+        with pytest.raises(IdentidadDiscordante):
+            case_manager.ensure_case(viejo, modo="v1", id_go="W-NEW01", raiz_mutex=raiz)
+
+    assert case_locator.read_case_meta(d).get("id_go") == "W-OLD01", (
+        "el alta reescribió la identidad canónica del caso: en v1 `meta.id_go` no es un "
+        "campo que el alta actualice")
+
+
+def test_a7b_v1_rechaza_si_el_nombre_lleva_otro_w_code(tmp_casos_root, raiz):
+    """A7-bis — la otra mitad: caso NUEVO cuyo nombre declara un W-code distinto.
+
+    Sin esto se podría crear de cero una carpeta `(W-AAA01)` con `id_go=W-BBB01` dentro,
+    o sea fabricar la discordancia que A7 detecta después.
+    """
+    from core import case_manager
+    from core.casos import mutex_sesion
+    from core.casos.workspace_model import CaseRef, IdentidadDiscordante
+
+    nombre = "Ba001 - Calle Y - (W-AAA01) - honorarios"
+    with mutex_sesion.sostenido(CaseRef(w_code="W-BBB01"), ahora_fn=reloj, raiz=raiz):
+        with pytest.raises(IdentidadDiscordante):
+            case_manager.ensure_case(nombre, modo="v1", id_go="W-BBB01", raiz_mutex=raiz)
+    assert not (tmp_casos_root / nombre).exists(), "un alta rechazada no deja carpeta"
+
+
+def test_a7c_v1_acepta_cuando_las_tres_concuerdan(tmp_casos_root, raiz):
+    """A7-ter — control negativo, o A7 pasaría con un alta que rechaza todo."""
+    from core import case_manager
+    from core.casos import mutex_sesion
+    from core.casos.workspace_model import CaseRef
+
+    with mutex_sesion.sostenido(CaseRef(w_code=W), ahora_fn=reloj, raiz=raiz):
+        case_dir = case_manager.ensure_case(CASE_ID, modo="v1", id_go=W, raiz_mutex=raiz)
+    assert (case_dir / "00_Input").is_dir()

@@ -188,3 +188,27 @@ def sostenido(ref, *, ahora_fn, raiz=None, lease_seconds: int = LEASE_POR_DEFECT
             finally:
                 with _CANDADO:
                     _SESIONES.pop(clave, None)
+        else:
+            # **Un prestatario que NO es el último también tiene que enterarse** (R15/H15-02).
+            #
+            # Antes, solo quien llevaba la cuenta a cero llamaba al gestor, así que solo él
+            # veía la pérdida. Medido por el revisor con dos prestatarios: el latido murió,
+            # el lease caducó, **otro proceso adquirió**, y el primer prestatario salió con
+            # éxito. Eso no es un mensaje pobre: es una falsa garantía de exclusión, que es
+            # justo el daño que esta capa existe para impedir.
+            #
+            # Es la misma clase que R11/H11-02 —la pérdida silenciosa— reaparecida en la
+            # capa que construí ENCIMA del arreglo de R11. Cerrar la pérdida para el
+            # titular no la cierra para quien le pide prestado.
+            if entrada.sesion.perdido():
+                if fallo is None:
+                    from .workspace_model import MutexPerdido
+                    raise MutexPerdido(
+                        w_code=entrada.sesion.w_code,
+                        detalle="el mutex se perdió mientras este préstamo estaba dentro; "
+                                "otro proceso pudo entrar") from entrada.sesion._causa
+                # Con error del cuerpo en vuelo, el error del cuerpo manda: la pérdida se
+                # anota en él para que no se evapore, igual que hace `tomado`.
+                fallo.add_note(
+                    "[mutex] además, el mutex se perdió durante este préstamo: otro "
+                    "proceso pudo entrar")

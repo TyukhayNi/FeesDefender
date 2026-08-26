@@ -300,6 +300,37 @@ def ensure_case(
                 detalle="el alta en modo v1 va bajo el mutex del caso; adquierelo en el "
                         "entrypoint con mutex_sesion.sostenido antes de llamar")
 
+        # --- Concordancia de identidad, ANTES de crear o tocar nada (R15/H15-01).
+        #
+        # Tener `id_go` y su mutex NO basta: hay que tener el mutex **de este expediente**.
+        # Medido: con `meta.id_go = W-OLD01` persistido, el alta aceptaba `id_go=W-NEW01`,
+        # **reescribia el metadato** y devolvia el mismo directorio — asi que un proceso con
+        # el lock nuevo y otro con el viejo operaban la misma carpeta, los dos creyendose
+        # protegidos. Es la falsa exclusion que `IdentidadDiscordante` existe para impedir.
+        #
+        # Y es la TERCERA vez que aparece la misma propiedad: R14 la cerro en la costura
+        # (frontera C0) y yo remedie **ese sitio** en vez de la propiedad — «todo camino que
+        # fije identidad comprueba concordancia». El alta es un camino que fija identidad.
+        from core.casos import case_locator as _cl
+        from core.casos.workspace_model import IdentidadDiscordante
+
+        _canon = CaseRef.normalizar(id_go)
+        _existente = _cl.buscar(case_id)
+        _declaradas = {_canon}
+        if _existente is not None:
+            _persistido = str(_cl.read_case_meta(_existente).get("id_go") or "").strip().upper()
+            if _persistido:
+                _declaradas.add(_persistido)
+        _del_nombre = _cl._w_code_de(case_id)
+        if _del_nombre:
+            _declaradas.add(_del_nombre.strip().upper())
+        if len(_declaradas) > 1:
+            raise IdentidadDiscordante(
+                w_code=_canon,
+                detalle="el id_go recibido, el `meta.id_go` persistido y/o el W-code del "
+                        "nombre de la carpeta no coinciden; en v1 la identidad de un caso "
+                        "NO es un campo que el alta actualice")
+
     # La UNICA puerta de alta del sistema, y por eso es explicita en el nombre
     # (Task 6 / R7-H7-01). `destino_de_alta` admite que el caso no exista —es su
     # caso normal— y devuelve SU ubicacion si ya existe, lo que impide fabricar

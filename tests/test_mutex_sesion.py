@@ -422,3 +422,59 @@ def test_m10b_vigente_exige_identidad_resuelta(raiz):
     assert solo_nombre.w_code is None
     with pytest.raises(ValueError, match="w_code"):
         mutex_sesion.vigente(solo_nombre, raiz=raiz)
+
+
+# -------------------------------------------------------------------- M11 (R15)
+
+def test_m11_un_prestatario_que_no_es_el_ultimo_tambien_se_entera_de_la_perdida(raiz):
+    """M11 — R15/H15-02, CRÍTICO: la pérdida silenciosa, reaparecida en esta capa.
+
+    Antes, **solo** quien llevaba la cuenta a cero llamaba al gestor subyacente, así que solo
+    él veía la pérdida. El revisor lo midió con dos prestatarios: mató el latido, dejó caducar
+    el lease, **otro proceso adquirió**, y el primer prestatario salió con **éxito**.
+
+    Eso no es un mensaje pobre — es una falsa garantía de exclusión, que es el daño entero que
+    esta capa existe para impedir. Y es la misma clase que R11/H11-02 (la pérdida silenciosa
+    del titular) reaparecida en la capa que construí ENCIMA de su arreglo: cerrarla para el
+    titular no la cierra para quien le pide prestado.
+    """
+    from core.casos import mutex_sesion
+    from core.casos.workspace_model import MutexPerdido
+
+    # El `raises` de FUERA no es decoración: una pérdida se denuncia en CADA salida, la del
+    # prestatario y la del titular. Es el mismo contrato que M10 ya fijó, y lo mismo que se
+    # me olvidó allí la primera vez.
+    with pytest.raises(MutexPerdido):
+        with mutex_sesion.sostenido(ref(), ahora_fn=reloj, raiz=raiz) as fuera:
+            # El préstamo interno sale ANTES que el externo, y mientras está dentro la
+            # sesión se marca perdida — que es lo que hace el hilo de latido al fallar una
+            # renovación. ESTE es el aserto que compró R15: antes salía en verde.
+            with pytest.raises(MutexPerdido):
+                with mutex_sesion.sostenido(ref(), ahora_fn=reloj, raiz=raiz):
+                    fuera.marcar_perdido()
+
+    assert mutex_sesion._SESIONES == {}, "el mapa quedó sucio tras la pérdida"
+
+
+def test_m11b_con_error_del_cuerpo_la_perdida_se_anota_y_no_desplaza(raiz):
+    """M11-bis — el error del cuerpo sigue mandando, y la pérdida no se evapora.
+
+    Misma regla que `tomado` aplica al titular (R12/H12-04): si el cuerpo ya venía fallando,
+    su error es el primario y la pérdida se **anota** en él. Perder el error del cuerpo es
+    perder la causa; perder la pérdida es perder la garantía.
+    """
+    from core.casos import mutex_sesion
+
+    from core.casos.workspace_model import MutexPerdido
+
+    notas = ""
+    with pytest.raises(MutexPerdido):          # la salida del titular la denuncia también
+        with mutex_sesion.sostenido(ref(), ahora_fn=reloj, raiz=raiz) as fuera:
+            with pytest.raises(RuntimeError) as capturado:
+                with mutex_sesion.sostenido(ref(), ahora_fn=reloj, raiz=raiz):
+                    fuera.marcar_perdido()
+                    raise RuntimeError("el cuerpo del prestatario revienta")
+            notas = " ".join(getattr(capturado.value, "__notes__", []))
+
+    assert "mutex" in notas and "perd" in notas, (
+        f"la pérdida se evaporó en vez de anotarse en el error del cuerpo: {notas!r}")
