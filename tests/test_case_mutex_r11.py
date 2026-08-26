@@ -153,6 +153,44 @@ class TestPerderElMutexNoSePuedeCallar:
                 estado["nonce"] = "de-otro"
                 p.write_text(json.dumps(estado), encoding="utf-8")
 
+    def test_es_EL_HILO_quien_detecta_la_perdida_sin_que_nadie_pregunte(self, raiz):
+        """La vía que los otros dos tests de esta clase NO tocaban.
+
+        Lo destapó una corrida de mutación: al revertir el `marcar_perdido` del hilo
+        —o sea, al reponer el `except Exception: return` que ERA el defecto crítico—
+        los tres tests de esta clase seguían **verdes**. Pasaban por `revalidar()`,
+        que lo llama el cuerpo, y por `liberar()`, que lo llama la salida: dos caminos
+        que no son el del hilo.
+
+        Aquí nadie pregunta y nadie libera todavía: se rompe la titularidad en disco, se
+        espera a que **lata la renovación**, y se comprueba que el hilo lo registró él
+        solo. Si el hilo vuelve a tragarse la excepción, esto se pone rojo y los otros
+        tres no.
+        """
+        import time
+
+        from core.casos.case_mutex import ruta_del_lock, tomado
+        from core.casos.workspace_model import MutexPerdido
+
+        detectado_por_el_hilo = {}
+        with pytest.raises(MutexPerdido):
+            with tomado(W, ahora_fn=lambda: AHORA, raiz=raiz,
+                        lease_seconds=1) as sesion:
+                p = ruta_del_lock(W, raiz=raiz)
+                estado = json.loads(p.read_text(encoding="utf-8"))
+                estado["nonce"] = "de-otro"
+                p.write_text(json.dumps(estado), encoding="utf-8")
+                # Espera acotada a que el latido intente renovar y falle. NO se llama a
+                # `revalidar()`: la detección tiene que venir del hilo.
+                for _ in range(150):
+                    if sesion.perdido():
+                        break
+                    time.sleep(0.02)
+                detectado_por_el_hilo["perdido"] = sesion.perdido()
+        assert detectado_por_el_hilo["perdido"] is True, (
+            "el hilo de renovación falló y no lo registró: el cuerpo habría seguido "
+            "escribiendo como titular sin enterarse (R11/H11-02)")
+
     def test_MutexPerdido_esta_en_la_tabla_del_10(self):
         from core.casos.workspace_model import MutexPerdido, errores_conocidos
         assert MutexPerdido in errores_conocidos()
