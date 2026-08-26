@@ -1275,6 +1275,56 @@ El §10 pasa de **18 a 19 códigos** (`MUTEX_PERDIDO`).
 
 ---
 
+## 2. Adjudicación de la revisión adversarial R12 (Codex, 2026-08-26) — NO-SHIP, remediado
+
+- **Objeto revisado:** el **diff de remediación de R11**, en el commit `b4b82cc`. Es la primera ronda de esta serie que revisa *correcciones* en vez de código nuevo.
+- **Ronda:** R12.
+- **Revisor:** Codex por CLI sobre copia externa `git archive`. **Esta vez sí completó el informe**, a diferencia de R11: el mandato se reencuadró como verificación defensiva y prohibió expresamente los arneses que simulan ataques, que fue lo que disparó el filtro de su plataforma.
+- **Informe recibido:** `docs/superpowers/specs/2026-08-26-apertura-v1-plan2-r12-adversarial-review.md`, `sha256` `efc690d2176df3e9…`, recomputado al archivarlo y **coincide**.
+- **Hallazgos:** 7 — 2 CRÍTICOS, 2 ALTOS, 2 MEDIOS, 1 BAJO. **7 confirmados, 0 refutados** (uno con una mitad ya superada por trabajo propio).
+- **Remediado en:** el commit `8b55d87`.
+
+### 2.1. Las siete, una por una
+
+| # | Sev. | Hallazgo | Remedio |
+|---|---|---|---|
+| H12-01 | CRÍTICO | Un `ahora` del **pasado remoto** publica un lease que **nace vencido** | La cota pasa a ser **simétrica**: `abs(desvío) > 600 s` |
+| H12-02 | CRÍTICO | `revalidar()` afirma titularidad **con el lease caducado** | Comprueba también el lease, con el reloj de la sesión |
+| H12-03 | ALTO | El hilo captura `Exception`, no `BaseException` | `except BaseException`; la mitad del mutante ya la había cerrado yo en `0165037` |
+| H12-04 | ALTO | El fallo de liberación **no llega al llamador** | `add_note()` sobre el error del cuerpo, que sigue mandando |
+| H12-05 | MEDIO | `schema: true` cuela (`True == 1`), y los tipos del propietario no se validan | `type(...) is int`, tipos del propietario y **rechazo de campos desconocidos** |
+| H12-06 | MEDIO | La ruta viaja en `__cause__` del `CaseBusy` | El `raise` sale **fuera** del `except`: sin causa ni contexto |
+| H12-07 | BAJO | La fixture horaria deja **sin probar** la costura real | `tests/test_case_mutex_reloj_real.py`, fuera de su alcance |
+
+### 2.2. Lo que esta ronda dice de cómo fallo, y es lo que más vale
+
+**H12-01 es la TERCERA ronda consecutiva cerrando media frontera del mismo hallazgo.**
+
+| Ronda | Dijo | Cerré | Quedó abierto |
+|---|---|---|---|
+| R10/H10-02 | «un `ahora` **naïve o futuro** roba un lease» | el naïve | el futuro |
+| R11/H11-01 | «un `ahora` **futuro** roba un lease» | el futuro | **el pasado** |
+| R12/H12-01 | «un `ahora` del **pasado** nace vencido» | los dos, con cota simétrica | — |
+
+Tres rondas para una propiedad de una línea. Cada vez remedié **el caso que el revisor escribió** sin preguntarme de qué **frontera** era ejemplo. El remedio bueno nunca fue «rechazar el futuro» ni «rechazar el pasado»: era **acotar el desvío**.
+
+**Y dos defectos míos que aparecieron al remediar, ninguno del revisor:**
+
+- **Mi arnés de mutación mentía.** Imprimía «los seis mutantes mueren» habiendo ejecutado **tres**: las otras tres anclas quedaron rancias al reescribir esas líneas y el resumen solo miraba los mutantes aplicados. Ahora **falla** si un ancla no casa.
+- **Perdí la remediación entera de R12 con un `git checkout`.** El arnés reventó a mitad por una `ñ` contra una consola cp1252, dejando el módulo mutado; restauré sin haber commiteado, y `checkout` restaura **desde el índice**. Mi propia nota lo dice —*commitea antes de mutar*— y no la seguí.
+
+**Los once mutantes se ejecutaron y murieron**, cada uno por su frontera.
+
+### 2.3. Lo que sigue SIN VERIFICAR, y se declara
+
+- **El revisor no pudo correr la batería del repo**: su entorno no tenía `filelock` ni `dotenv`, así que trabajó con dobles y lo declara. El comportamiento con `filelock` real lo cubre la suite de aquí, no su ronda.
+- **La reacción a un salto real de NTP** a mitad de operación. La cota de 600 s es una decisión, no una medición.
+- **Las siete remediaciones de R12 no tienen ronda propia.** Es la misma deuda con la que salió R11, y se dice en vez de dejarla implícita.
+
+**Suite tras remediar: 3.560 tests, 0 fallos con las semillas 777 y 31337.**
+
+---
+
 ## Ejecutado el 2026-08-25 — y tres cosas que solo aparecieron al ejecutarlo
 
 Las ocho tareas, con sus **cuatro mutantes obligatorios muertos cada uno por su
