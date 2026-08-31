@@ -2,12 +2,16 @@
   "mcpServers": {
     "expedientes-xl": {
       "command": "cmd",
-      "args": ["/c", "${CLAUDE_PLUGIN_ROOT}/expedientes_xl/run_server.bat"]
+      "args": [
+        "/c",
+        "${CLAUDE_PLUGIN_ROOT}/expedientes_xl/run_server.bat"
+      ]
     },
     "email-export": {
-      "command": "python",
+      "command": "cmd",
       "args": [
-        "${CLAUDE_PLUGIN_ROOT}/email_export_mcp/server.py"
+        "/c",
+        "${CLAUDE_PLUGIN_ROOT}/email_export_mcp/run_server.bat"
       ]
     }
   }

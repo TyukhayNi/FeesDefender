@@ -47,16 +47,29 @@ def test_server_arranca_como_modulo_sin_importerror():
     assert "Uso:" in r.stderr  # llego a _parse_argv => imports resolvieron
 
 
-def test_wrapper_bat_evita_stub_windowsapps():
-    """El .bat resuelve un Python REAL (via %PYEXE%) evitando el stub de la Microsoft
-    Store (WindowsApps). Regresion del bug 2026-07-19 (2a parte): `python` pelado
-    resolvia al stub `...\\WindowsApps\\python.exe` en el PATH que ve Claude Desktop
-    (PATH persistente, no el del terminal) -> el server salia -> 'Server disconnected'."""
+def test_wrapper_bat_no_lanza_un_interprete_sin_verificar():
+    """El .bat lanza un interprete RESUELTO y VERIFICADO, no `python` pelado.
+
+    Regresion del bug 2026-07-19 (2a parte): `python` pelado resolvia al stub de la
+    Microsoft Store (`...\\WindowsApps\\python.exe`) en el PATH que ve Claude Desktop
+    (PATH persistente, no el del terminal) -> el server salia -> 'Server disconnected'.
+
+    El 2026-08-31 esta asercion cambio de FORMA, no de fondo. Comprobaba
+    `"WindowsApps" in txt`: que el wrapper esquivara **ese** interprete malo por su
+    nombre. Y volvio a pasar lo mismo con otro interprete distinto: un
+    `pip install --user mcp` sin pin trajo mcp 2.0.0, que retiro
+    `mcp.server.fastmcp`, y el wrapper lanzo tranquilamente un python que no era el
+    stub y tampoco podia arrancar el server. La frontera no era «no lanzar el stub»
+    sino «no lanzar un interprete cuya CAPACIDAD no se ha comprobado». Eso es lo que
+    se exige aqui, y para todos los wrappers en `tests/test_mcp_wrappers.py`.
+    """
     txt = BAT.read_text(encoding="utf-8")
     # La invocacion final usa el interprete resuelto, no `python` pelado.
     assert '"%PYEXE%" -m expedientes_xl.server' in txt, "invocar el interprete resuelto %PYEXE%"
-    # Debe eludir explicitamente el stub de WindowsApps.
-    assert "WindowsApps" in txt, "el wrapper debe eludir el stub WindowsApps"
+    # Y ese interprete se prueba por capacidad ANTES de lanzar el server.
+    assert "import mcp.server.fastmcp" in txt, (
+        "el wrapper debe comprobar que %PYEXE% puede importar la API que usa el server"
+    )
 
 
 def test_main_no_escanea_las_bd_antes_de_run(monkeypatch):

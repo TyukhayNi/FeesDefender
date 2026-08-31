@@ -5630,3 +5630,49 @@ copia local — que es exactamente el punto en que R16 lo destapó.
 fixture actual. Hay que rehacer la fixture para que registre una copia **fuera** del catálogo —el
 estado que producción sí produce— y comprobar que la rama muere sin el arreglo. Un guard sin prueba
 de mutación no es un guard, y una fixture que fabrica el estado imposible no es una prueba.
+---
+
+## 125. Los tres manifiestos `.dxt` de Claude Desktop cablean UN intérprete, y por eso se apagaron los tres a la vez
+
+**Estado:** pendiente. Detectado el 2026-08-31 al reparar los conectores de Claude Code (PR #253).
+
+Los tres conectores que corren en **Claude Desktop** —`expedientes-xl`, `gmail-multiaccount`,
+`google-despacho`— arrancan desde su `dxt-build/manifest.json`, y los tres cablean el **mismo**
+intérprete literal:
+
+```
+"command": "C:\\Users\\tnm33\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe"
+```
+
+**Qué pasó, medido.** El 2026-08-23 un `pip install --user mcp` sin pin trajo `mcp 2.0.0` al site
+de usuario de ese intérprete. La 2.0 retiró `mcp.server.fastmcp`, que es la API que importan los
+cuatro servers del despacho. Consecuencia que no se vio en su momento: **los tres conectores de
+Claude Desktop estuvieron caídos del 2026-08-23 al 2026-08-31**, igual que los de Claude Code, y
+volvieron solo porque la reparación (`pip install --user "mcp>=1.28,<2"`) tocó ese mismo
+intérprete. Nadie lo notó porque el badge del panel de Desktop ya miente por otra razón conocida
+(health-check que expira en frío, ver `docs/DEAD_ENDS.md`), así que un conector muerto y un
+conector lento se ven igual.
+
+**Por qué NO se arregló en el PR #253.** El `.dxt` empaqueta una **copia** del código y del
+manifiesto; cambiar el manifiesto fuente no mueve nada hasta que se **reconstruye el `.dxt` y se
+reinstala a mano** en Desktop (borrar la vieja por la papelera del panel + importar el nuevo, con
+bump de `manifest.version`). Eso es un paso manual de Nikolai, no del PR, y dejar el fuente
+«arreglado» sin desplegar es justo la trampa que `DEAD_ENDS` ya documenta. Además el empaquetador
+del plugin declara `dxt-build` «subproducto, no tocar».
+
+**Mejora propuesta.** Que los tres manifiestos dejen de cablear un intérprete concreto y arranquen
+por el **wrapper** correspondiente (`plugins/<conector>/run_server.bat`), que desde el PR #253
+resuelve el intérprete **por capacidad** (prueba `import mcp.server.fastmcp` y falla ruidosamente)
+en vez de por ruta que existe. Con eso los dos frentes —Code y Desktop— comparten una sola
+resolución y un solo sitio que arreglar. Atención al detalle que sí cambia entre frentes: el
+wrapper **no** redirige en la línea del intérprete (Claude Code cierra la conexión si lo hace), y
+Desktop recoge el stderr por su cuenta, así que la pérdida del log propio es asumible.
+
+**Disparador:** la próxima vez que haya que reconstruir cualquiera de los tres `.dxt` por otro
+motivo — no merece una reinstalación manual de tres extensiones solo por esto, mientras el pin
+`mcp<2` de los `requirements.txt` sostenga la causa raíz.
+
+**Condición de cierre:** los tres manifiestos arrancan por wrapper, `.dxt` reconstruidos y
+reinstalados, y verificación **por resultado** (no por el badge): `%APPDATA%\Claude\logs\main.log`
+con `[LocalMcpServerManager] Connected to <server> (N tools)` para los tres, o una tool exclusiva
+de cada uno respondiendo.
