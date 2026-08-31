@@ -12,7 +12,14 @@ REM    Este wrapper NO lanza node hasta que G: este montado y poblado.
 REM
 REM  REGLAS DE ORO (no romper al editar; rompen el pipe JSON-RPC de MCP):
 REM    * JAMAS escribir a stdout (fd 1). Todo diagnostico -> fd 2 (1>&2) o al LOG.
-REM    * JAMAS redirigir 1> en la linea final de node (solo 2>>).
+REM    * JAMAS redirigir NINGUN descriptor en la linea final de node.
+REM      OJO: esta linea decia "jamas 1>, solo 2>>" y ESO ERA LA TRAMPA.
+REM      Medido el 2026-08-31 en los conectores Python: con `2>>fichero` en la
+REM      linea del interprete, Claude Code da CONNECTION_CLOSED (Claude Desktop
+REM      lo toleraba). Este server Node esta JUBILADO -lo sustituyo
+REM      expedientes_xl-, asi que no se toca su codigo; pero NO copies de aqui
+REM      la regla vieja: la buena esta en plugins/expedientes_xl/run_server.bat
+REM      y en docs/DEAD_ENDS.md.
 REM    * JAMAS usar "timeout": lee stdin y falla bajo pipe MCP
 REM      ("Input redirection is not supported"). Usar "ping -n" (no toca stdin).
 REM    * JAMAS usar "start" ni "call": crean proceso/consola nueva y rompen la
