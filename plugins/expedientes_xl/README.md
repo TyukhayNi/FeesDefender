@@ -18,8 +18,11 @@ para la secuencia de migración).
 
 ### Claude Code
 ```
-claude mcp add expedientes-xl -- python <ruta>/plugins/expedientes_xl/server.py --rw G:\ --ro H:\
+claude mcp add expedientes-xl -- cmd /c <ruta>/plugins/expedientes_xl/run_server.bat
 ```
+> Por el wrapper, no con `python` pelado: el wrapper espera el montaje de `G:`/`H:` y
+> **prueba** que el intérprete pueda importar `mcp.server.fastmcp` antes de lanzar. Un
+> `python` del PATH puede traer mcp 2.0, que retiró ese módulo (ver `docs/DEAD_ENDS.md`).
 
 ### Cowork (Claude Desktop, vía claude_desktop_config.json)
 El plugin empaquetado (`plugin-src/.mcp.json`) ya apunta al wrapper `run_server.bat`

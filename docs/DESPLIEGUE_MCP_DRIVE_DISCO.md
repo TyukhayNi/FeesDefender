@@ -33,7 +33,10 @@ fecha: 2026-07-18
 - El `.bat` del wrapper corría `python server.py` (script suelto) → `ImportError` de imports relativos.
   Fix: `python -m expedientes_xl.server` (contexto de paquete). PR #80.
 - `python` a secas = stub de WindowsApps en el PATH persistente que ve Claude Desktop (no el del
-  terminal). Fix: resolver un Python real, eludir WindowsApps. PR #82.
+  terminal). Fix de entonces: resolver un Python real, eludir WindowsApps. PR #82.
+  **Superado el 2026-08-31:** eludir *ese* intérprete por su nombre no cerraba la clase. El
+  wrapper ahora **prueba la capacidad** (`import mcp.server.fastmcp`) de cada candidato y
+  descarta el que no la tenga, sea el stub o un intérprete con mcp 2.0. PR de la revisión R1.
 - Editar `claude_desktop_config.json` con la app viva **no recarga** (Electron reengancha a procesos
   de fondo) y el fichero se vacía/reescribe solo. Vía fiable: **`taskkill /F /IM claude.exe /T` + relanzar**.
 - Dos `expedientes-xl` a la vez (config.json + `.dxt`) → conflicto que parpadea `failed` y tira otro
@@ -114,12 +117,23 @@ detectados durante la construcción (Tasks 1-17). Revisar explícitamente en el 
    una hoja más poblada y específica). Si `H:` da un **falso-montado** (la carpeta
    `Unidades compartidas` existe pero el contenido real de E&V aún no sincronizó),
    **profundizar la sonda** de `PROBE_H` a una ruta más específica dentro de `H:`.
-3. **`python` debe resolver en el PATH que ve Claude Desktop.** El wrapper invoca
-   `python "%SRV%"` sin ruta absoluta al intérprete. Si Claude Desktop arranca con un
-   PATH distinto al de la sesión interactiva (p. ej. servicio/entorno restringido), el
-   fallo es **silencioso hacia el pipe MCP** — solo se ve en
-   `%APPDATA%\Claude\logs\mcp-server-expedientes-xl-wrapper.log`. Revisar ese log si
-   Cowork no conecta.
+3. **RESUELTO el 2026-08-31 — el wrapper ya no depende del PATH que vea el cliente.**
+   Este punto decía que el wrapper invocaba `python "%SRV%"` sin ruta absoluta y que un
+   PATH distinto lo tumbaba en silencio. Ya no: `run_server.bat` recorre candidatos
+   (`FEESDEFENDER_PYTHON`, el venv del repo, el venv en la ubicación convencional, el
+   PATH) y toma **el primero que demuestra poder importar `mcp.server.fastmcp`**,
+   fallando ruidosamente si ninguno puede. El PATH sigue siendo candidato legítimo; lo
+   que ya no ocurre es aceptarlo sin probarlo.
+   La lección que lo motivó, y que corrige de paso la recomendación vieja de «eludir
+   WindowsApps»: **esquivar el intérprete malo por su nombre solo cubre el ejemplo
+   conocido.** El apagón del 2026-08-23 no lo causó el stub de la Store, sino un
+   `pip install --user mcp` que trajo mcp 2.0.0 —que retiró `mcp.server.fastmcp`— a un
+   intérprete perfectamente «real». Ver `docs/DEAD_ENDS.md`.
+   **Y la otra mitad, que era una trampa activa:** la línea que lanza el server **no
+   puede redirigir** ningún descriptor (`2>>` incluido). Con la redirección, Claude Code
+   cierra la conexión. El log del wrapper sigue existiendo para el diagnóstico del
+   propio wrapper (esperas de montaje, resolución del intérprete), pero el stderr del
+   server lo recoge el cliente.
 4. **Cancelación real de operaciones pesadas es V2.** `XL_OP_TIMEOUT` hace que el canal
    MCP **responda** aunque la E/S siga en curso en un hilo daemon en segundo plano — no
    hay forma de abortar esa E/S desde fuera. Si la sesión de humo dispara una operación

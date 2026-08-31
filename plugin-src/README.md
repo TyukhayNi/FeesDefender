@@ -80,25 +80,28 @@ Para que Cowork use los conectores desde el mismo PC, añadir las entradas en
 {
   "mcpServers": {
     "expedientes-xl": {
-      "command": "python",
-      "args": [
-        "C:\\Users\\tnm33\\Dev\\FeesDefender\\plugins\\expedientes_xl\\server.py",
-        "G:\\Unidades compartidas\\EXPEDIENTES - TYUKHAY LEGAL"
-      ]
+      "command": "cmd",
+      "args": ["/c", "C:\\Users\\tnm33\\Dev\\FeesDefender\\plugins\\expedientes_xl\\run_server.bat"]
     },
     "email-export": {
-      "command": "python",
-      "args": [
-        "C:\\Users\\tnm33\\Dev\\FeesDefender\\plugins\\email_export_mcp\\server.py"
-      ]
+      "command": "cmd",
+      "args": ["/c", "C:\\Users\\tnm33\\Dev\\FeesDefender\\plugins\\email_export_mcp\\run_server.bat"]
     }
   }
 }
 ```
 
-> El server `email-export` detecta la raíz del repo automáticamente a partir de la
-> ubicación del script; no hace falta pasar `--repo-root` si el script se ejecuta
-> desde la ruta canónica del repo.
+> **Siempre por el wrapper, nunca `"command": "python"`.** Este snippet mandaba
+> `python` pelado hasta el 2026-08-31, y eso es exactamente lo que apagó los tres
+> conectores del despacho: el primer python del PATH puede no tener `mcp`, o
+> tenerlo en la versión 2.0 que retiró `mcp.server.fastmcp`. El `run_server.bat`
+> elige el intérprete **probando** que puede importar la API que el server usa, y
+> falla ruidosamente si ninguno puede. Detalle en `docs/DEAD_ENDS.md`.
+>
+> El wrapper de `email-export` resuelve además la raíz del repo y la pasa con
+> `--repo-root`. **No** confíes en la detección automática del script: desde el
+> bundle del plugin apunta dentro del bundle, donde no hay `core/`, y el server
+> muere antes de contestar `initialize`.
 
 Reiniciar Claude Desktop (Cowork) tras editar el config.
 

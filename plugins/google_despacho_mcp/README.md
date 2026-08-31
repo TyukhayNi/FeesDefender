@@ -52,7 +52,9 @@ Reiniciar Claude Desktop. El puente expone el conector a Cowork/claude.ai
 ## Ejecutar desde Claude Code
 
 Añadir a la config MCP de Claude Code el mismo comando, o lanzar
-`python plugins/google_despacho_mcp/server.py` como server stdio.
+`cmd /c plugins/google_despacho_mcp/run_server.bat` como server stdio (el wrapper
+elige el intérprete probando que puede importar `mcp.server.fastmcp`; con `python`
+pelado puede tocarte uno con mcp 2.0, que retiró ese módulo).
 
 ## Actualizar de F1 a F2
 
