@@ -1052,9 +1052,23 @@ siempre vía `GET /api/view/enums/autos/fase_procedimiento` (patrón §14.4) ant
 **Propiedades de `autos`** (8, vía probe §0.3): `Auto` (TextCorto, requerido), `fase_procedimiento`
 (Select), `id`, `grupo_contable_id`, `id_creador`, `id_ultimo_modificador`, `fecha_creacion`,
 `fecha_ultima_modificacion` — más las relaciones `left.juzgados.*` y `left.expedientes_judiciales.*`.
-Búsqueda del juzgado existente (478 registros en el tenant): `GET /api/element_registries/juzgados`.
-Alta de un juzgado NUEVO (modal "Crear elemento Juzgados" — Juzgado/Email/Telefono1): endpoint
-sin capturar todavía, previsiblemente `POST /api/element_register/juzgados` por el patrón genérico.
+Búsqueda del juzgado existente: `GET /api/element_registries/juzgados`. ⚠️ La property del
+nombre es **`nombre`**, no `Juzgado` (el label del modal engaña): filtrar `like` sobre `Juzgado`
+devuelve 0 sin error. Campos reales del elemento en `CRM_SUDESPACHO_ATLAS.md` §juzgados.
+
+**Alta de un juzgado NUEVO — CONFIRMADO en vivo (2026-09-01, expediente 682 / W-02X1WJ):**
+`POST /api/element_register/juzgados` con `x-api-key` → **201 `{"id":N}`**, tal y como predecía
+el patrón genérico. Body usado (todos opcionales salvo `nombre`): `nombre`, `direccion`, `cp`,
+`poblacion`, `provincia` (**valor literal del enum**, p. ej. `"Barcelona"`), `telefono1`, `fax`,
+`email`. La secuencia completa de 4 llamadas de arriba se ejecutó a continuación sobre ese mismo
+expediente sin incidencias (201/201/201/200).
+
+⚠️ **`num_asunto` y `juzgado` del expediente NO son la verificación.** Tras cablear el juzgado,
+`GET` del expediente devuelve ambas properties **vacías** — y también las devuelve vacías el
+expediente 674, cuyo juzgado se cableó y confirmó el 2026-07-22. El dato vive en `autos`, no
+denormalizado en el expediente. Además **no hay ruta REST de LECTURA de relaciones**
+(`GET /api/relation_element/{elem}/{id}` → 405 `Allow: POST, PUT, DELETE`), así que el vínculo
+solo se verifica por UI: los 201 de escritura son toda la evidencia que da la API.
 
 **No cableado en código.** Ningún wrapper en `core/sudespacho_relations.py` hace esta secuencia
 todavía — habría que añadir `link_juzgado_judicial(exp_id, juzgado_id, num_autos, fase_procedimiento)`

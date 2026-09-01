@@ -5676,3 +5676,279 @@ motivo — no merece una reinstalación manual de tres extensiones solo por esto
 reinstalados, y verificación **por resultado** (no por el badge): `%APPDATA%\Claude\logs\main.log`
 con `[LocalMcpServerManager] Connected to <server> (N tools)` para los tres, o una tool exclusiva
 de cada uno respondiendo.
+
+
+---
+
+## 126. Cuatro entrypoints escriben en el expediente SIN pedir el mutex `[PROMOVIDO → PLAN.md]`
+
+**Medido el 2026-09-01** durante la apertura de W-02X1WJ. El mutex de sesión **sí** está
+cableado en `scripts/abrir_caso.py:649` y `scripts/sala_maquina.py:486`
+(`mutex_sesion.sostenido`). Lo que no lo está es todo lo demás que escribe en el árbol del
+caso:
+
+```
+scripts/export_label_emails.py   0 referencias a mutex_sesion
+scripts/atomize_emails.py        0
+scripts/sync_sudespacho.py       0
+scripts/crm_ficha.py             0
+```
+
+**Por qué importa, y por qué no es teórico.** Los dos primeros escriben en `00_Input`, que es
+justo lo que `sala_maquina apply` está leyendo durante una corrida de OCR de una hora. El
+runbook lo advierte en `[APER-39]` con su coste medido —~1h40 de OCR repetido más huérfanos
+que hay que borrar a mano— pero la advertencia vive en prosa, no en código. En esta sesión
+la regla la sostuve yo: retuve a mano el export y la atomización tres veces mientras corría
+el OCR. Y `sync_sudespacho pull` es el peor de los cuatro, porque el propio `[APER-37]`
+manda ejecutarlo **justo antes** del `apply`.
+
+Nótese el contraste que hace el caso: cuando retuve el pull de `--fuente drive_ev`, el mutex
+lo habría bloqueado con `CaseBusy` de todas formas. La disciplina manual solo era
+load-bearing en los caminos que no lo tienen.
+
+**Mejora propuesta.** `mutex_sesion.sostenido(CaseRef(w_code=…))` en los cuatro entrypoints,
+con el mismo tratamiento de `CaseBusy` que ya usa `sala_maquina` (salida 2, mensaje útil, sin
+traceback). No toca `case_mutex.py`, que lleva cuatro rondas y 17 mutantes: solo añade
+adquirentes.
+
+**Radio de daño:** decide quién puede escribir sobre el árbol del caso → **dos rondas** de
+revisión adversarial por la regla de `CLAUDE.md` §«Cuántas rondas».
+
+**Condición de cierre:** los cuatro entrypoints adquieren; un test que lance dos de ellos en
+paralelo sobre el mismo W-code y exija `CaseBusy` en el segundo; y un mutante por entrypoint
+que, al retirar la adquisición, ponga ese test en rojo.
+
+---
+
+## 127. `--modo v1` es una puerta, no una secuencia: el orden lo sostiene quien ejecuta
+
+**Medido el 2026-09-01.** La apertura completa de W-02X1WJ fueron doce pasos encadenados a
+mano: alta CRM judicial → `abrir_caso` → `register_expediente` → `sync_sudespacho pull` →
+`sala_maquina apply` → `export_label_emails` → `atomize_emails` → segundo `apply` →
+`organizar-sala-lectura`. Las dependencias de orden —`[APER-37]` (atomizar y pullear ANTES
+del apply) y `[APER-39]` (no relanzar sin comprobar que la corrida anterior terminó)— las
+sostuve recordándolas, no el código.
+
+Esto ya está declarado en el runbook §3: «hoy es una PUERTA, todavía no la secuencia», y el
+Plan 5 de la fila #15 de `PLAN.md` es donde vive. Esta entrada **no abre trabajo nuevo**: deja
+constancia de una apertura real ejecutada entera a mano, como evidencia de coste para cuando
+se priorice ese plan.
+
+**Disparador:** el Plan 5 de V1. No antes.
+
+---
+
+## 128. No hay orquestador de ficha CRM judicial, y ahora hay material para cerrarlo
+
+`[APER-49]` lo declara: `crm_ficha.py` es extrajudicial-only. **Medido el 2026-09-01**: la
+ficha judicial de W-02X1WJ (expediente 682) salió de seis llamadas a mano —
+`create_expediente_judicial`, `link_ev_mmc_judicial`, `link_contrario_judicial`,
+`link_colaborador_judicial`, más la secuencia de `autos`/juzgado.
+
+**Lo que esta sesión aporta y antes no existía:** la secuencia de juzgado quedó **confirmada
+en vivo**, incluido el alta de un juzgado nuevo (`POST /api/element_register/juzgados` → 201),
+que `INTEGRACION_SUDESPACHO.md §12.5` daba por «previsiblemente» y sin capturar. También
+quedaron documentadas dos trampas: la property del nombre es `nombre`, no `Juzgado`, y
+`num_asunto`/`juzgado` del expediente salen **vacíos** aunque el cableado sea correcto.
+
+**Mejora propuesta.** `link_juzgado_judicial(exp_id, juzgado_id, num_autos, fase)` en
+`core/sudespacho_relations.py` (resolviendo el enum antes de escribir) y `crm_ficha --judicial`
+que orqueste las seis llamadas.
+
+**Límite conocido, no resoluble aquí:** no hay ruta REST de LECTURA de relaciones
+(`GET /api/relation_element/{elem}/{id}` → 405). La verificación por resultado de los vínculos
+solo es posible por UI.
+
+**Disparador:** el siguiente caso que nazca judicial.
+
+---
+
+## 129. La cobertura se llavea por `(slug, rel_path)` y los artefactos por `slug`
+
+**Medido el 2026-09-01, W-02X1WJ.** `Anexo a oferta.pdf` existe **dos veces** en el Drive de
+E&V —en `RECLAMACIONES` y en `ARRAS ／ OFERTA`— con sha256 idéntico. El intake depositó las
+dos copias (correcto: `00_Input` es espejo fiel). Como el slug se compone de nombre + prefijo
+del hash, **ambas rutas producen la misma carpeta de salida**, y la cobertura acabó con
+**cuatro filas para dos ficheros**:
+
+```
+__d01_ACTUACION_PROCESAL  sha 3f15e25a…  rel …/ARRAS ／ OFERTA…/Anexo a oferta.pdf
+__d02_DOC_ARRAS           sha 9da56f94…  rel …/ARRAS ／ OFERTA…/Anexo a oferta.pdf
+__d01_ACTUACION_PROCESAL  sha 6ffd5360…  rel …/RECLAMACIONES/Anexo a oferta.pdf
+__d02_DOC_ARRAS           sha 05921e33…  rel …/RECLAMACIONES/Anexo a oferta.pdf
+```
+
+El OCR no es determinista byte a byte (metadatos, Ghostscript), así que las dos pasadas sobre
+el mismo original dieron ficheros distintos y una pareja de filas queda desfasada **por
+construcción**. `verificar_integridad_bundles` sale con código 3 y **`--solo` no converge**:
+reprocesar una copia hace casar sus dos filas y deja rancias las otras dos; reprocesar la otra
+invierte el problema. Se comprobó ejecutando ambas.
+
+**Por qué se repetirá:** en los Drive de E&V el mismo documento en dos carpetas es lo normal,
+no la excepción.
+
+**Remedio aplicado en el caso (no es la solución):** poda de las dos filas huérfanas con
+respaldo en `_cobertura.json.bak`; `00_Input` intacto.
+
+**Mejora propuesta.** Que la fila de cobertura se funda por `slug` y transporte las
+procedencias en lista —`DocLogico` ya tiene `fuentes: list[str]`, la asimetría es solo de la
+fila de cobertura—; o que el guard compare por slug contra el sha del artefacto realmente
+publicado.
+
+**Condición de cierre:** un test que deposite el mismo sha desde dos rutas y exija que
+`verificar_integridad_bundles` devuelva `[]`.
+
+---
+
+## 130. El guard de integridad escribe su diagnóstico donde no se lee
+
+**Medido el 2026-09-01.** `sala_maquina apply` salió con código 3 y el fichero de salida de la
+corrida en segundo plano contenía **solo** cuatro avisos de DPI de Ghostscript. La lista de
+fallos —lo único que dice qué pasó— se emite con `typer.echo(..., err=True)` y no sobrevivió
+al `2>&1` de la invocación. Hubo que reproducir `verificar_integridad_bundles` a mano en un
+script aparte para saber que el problema era la entrada #129.
+
+**Por qué importa más que el fallo que oculta:** el código 3 existe precisamente para que el
+operador distinga «no empecé» de «terminé mal» (así lo dice el docstring de `_exigir_integridad`).
+Un código de salida que distingue pero no explica obliga a reconstruir el diagnóstico cada vez.
+
+**Mejora propuesta.** Persistir el listado junto a `_cobertura.json`
+(`_integridad_fallos.txt`, sobrescrito por corrida) además de emitirlo por stderr. Dos líneas.
+
+**Condición de cierre:** provocar el fallo de #129 en un caso de prueba y comprobar que el
+fichero existe con las filas, sin depender de cómo se capturó la salida.
+
+---
+
+## 131. `fecha_de_nombre` devuelve la cadena `"0000-00-00"`, que es *truthy* `[PROMOVIDO → PLAN.md]`
+
+**Medido el 2026-09-01**, montando la sala de lectura de W-02X1WJ. El Paso 1-bis.d de
+`organizar-sala-lectura` obliga a consultar el espejo MD antes de escribir `0000-00-00` en un
+binario opaco —es el paso que la propia skill marca como **no opcional**, porque saltárselo
+dejó 7 binarios sin fechar en W-02VUDR—. Lo implementé con:
+
+```python
+sin_fecha = [f for f in filas if not f["fecha"] and f["ext"] in OPACOS]
+```
+
+`preclasificar.fecha_de_nombre` devuelve `_SIN_FECHA = "0000-00-00"`, una cadena no vacía. El
+filtro dio **0 candidatos** y el paso quedó **completamente desactivado**, en silencio y con
+apariencia de éxito. Al corregirlo comparando contra la constante: **47 candidatos, 27 fechas
+recuperadas del espejo**.
+
+**Por qué es el sentinel más peligroso del módulo:** falla hacia el lado que parece que
+funciona. No hay excepción, no hay aviso, y el informe dice «0 binarios sin fecha», que es
+exactamente lo que uno querría leer.
+
+**Mejora propuesta.** Que `fecha_de_nombre` devuelva `None` cuando no hay fecha (y el llamador
+formatee), o —si el valor centinela es deliberado por compatibilidad— exportar
+`SIN_FECHA` y un `tiene_fecha(valor) -> bool` públicos, y que el `SKILL.md` diga
+explícitamente «compara contra `SIN_FECHA`, nunca con `not`».
+
+**Radio de daño:** no destruye datos, pero degrada en silencio el timeline del expediente,
+que es el producto entero de la sala de lectura.
+
+**Condición de cierre:** el test que hoy cubre `fecha_de_nombre` afirma también que el valor
+de «sin fecha» es falsy, o que existe el helper y la skill lo cita.
+
+---
+
+## 132. El exportador de correo fabrica basenames que colisionan dentro del mismo lote
+
+**Medido el 2026-09-01.** `export_label_emails` deja el mensaje **con** adjuntos en una
+subcarpeta y el mensaje **sin** adjuntos plano en la raíz del lote, pero **da a los dos el
+mismo** `<fecha>_<asunto_slug>.eml`. En W-02X1WJ eso produjo 6 pares en colisión; no eran
+duplicados:
+
+```
+0507110a  9.191.442 B  …/2026-01-14_bf_recibido_<asunto>/<mismo nombre>.eml
+c5e43cf2     21.889 B  …/2026-01-14_bf_recibido_<asunto>.eml
+```
+
+Dos mensajes del mismo hilo el mismo día. El discriminante existe **solo en el nombre de la
+carpeta**, que es información que el basename no lleva.
+
+**Consecuencia aguas abajo:** `layout_bundle_hilo` aborta con `ValueError` ante basenames
+repetidos —correctamente, es su contrato—, así que la sala de lectura no se puede montar sin
+desambiguar antes a mano.
+
+**Mejora propuesta.** Que `eml_filename` añada un discriminante **estable** derivado del
+`Message-ID` cuando el nombre ya esté tomado en el lote. Estable, no posicional: un contador
+renumera entre corridas y pisa ficheros ya copiados (es la razón que el propio `SKILL.md` da
+para prohibirlos en los anexos).
+
+**Condición de cierre:** exportar una etiqueta con dos mensajes del mismo hilo, mismo día,
+uno con adjuntos y otro sin, y comprobar que los dos `.eml` tienen nombres distintos.
+
+---
+
+## 133. `agrupar_por_hilo` recibe nombres y devuelve nombres: con colisiones, colapsa en silencio
+
+**Medido el 2026-09-01.** Al agrupar los 58 `.eml` de W-02X1WJ pasé un **conjunto** de nombres
+de hilo, como sugiere la firma de la función. Con los 6 basenames en colisión de la entrada
+#132, el conjunto los fusionó y la membresía derivada perdió un mensaje de cada par —**y con
+él sus adjuntos**: 19 documentos fuera de la sala, entre ellos los dos borradores del acuerdo
+transaccional y los dos escaneados de la demanda.
+
+**Cómo se detectó, que es lo que vale:** cuadrando el manifiesto contra un censo independiente
+de `00_Input` (`104 filas` vs `105 sha únicos`), no releyendo el código. La misma técnica que
+`feedback-migracion-verificar-recall-del-recorrido`.
+
+**Mejora propuesta.** Que el contrato no permita expresar el error: aceptar pares
+`(clave, id_único)` o devolver la membresía por índice, de modo que dos ficheros distintos no
+puedan colapsar aunque compartan nombre. La función ya protege el caso simétrico
+(`layout_bundle_hilo` aborta ante repetidos); esta es la puerta que quedó abierta.
+
+**Condición de cierre:** un test con dos ficheros de distinto sha y mismo basename que exija
+dos miembros en el grupo, no uno.
+
+---
+
+## 134. La skill obliga a consultar el espejo MD pero no da con qué extraer la fecha
+
+**Medido el 2026-09-01.** El Paso 1-bis.d manda aplicar «la jerarquía de fecha del Paso 2»
+(otorgamiento/firma → otra fecha inequívoca → nombre → `0000-00-00`) al texto del espejo, pero
+no existe función que lo haga: cada sesión improvisa un regex. El mío falló de tres formas
+distintas sobre documentos reales del expediente:
+
+| Documento | Devolvió | Correcto | Causa |
+|---|---|---|---|
+| `Escritura.pdf` | `0000-00-00` | 1994-10-25 | mes y año en letra |
+| `Update on Mortgage Operation - Caixa.pdf` | `0000-00-00` | 2025-12-02 | fecha en inglés |
+| `Nota simple.pdf` | 1992-07-30 | 2025-11-14 | primera fecha del texto ≠ expedición |
+| `Caixa Denial…pdf` | 2025-09-25 | 2025-12-04 | primera fecha = la solicitud citada |
+
+Las cuatro hubo que corregirlas a mano tras leer el espejo. De 27 fechas «recuperadas», **23
+quedaron marcadas `(*)`** (aproximadas) precisamente porque el heurístico no distingue
+otorgamiento de mención.
+
+**Mejora propuesta.** `fecha_del_texto(txt) -> (fecha, confianza)` en `preclasificar.py`:
+meses en castellano y en inglés, años en letra, y **prioridad por marcadores de otorgamiento**
+(«En … a …», «Fecha de expedición», «Date:») sobre cualquier otra fecha del cuerpo. Se escribe
+una vez y se prueba una vez, contra un corpus de estos cuatro documentos.
+
+**Condición de cierre:** los cuatro casos de la tabla, como test.
+
+---
+
+## 135. `--extraer-adjuntos` sigue en `False` por defecto, y eso deja prueba fuera del OCR
+
+Con el default en `False`, los `.eml` adjuntos con MIME genérico (`application/octet-stream`)
+son **invisibles** para la sala de máquina: `extract.py:117` los descarta por el fast-path y
+solo aparecen si el flag los escribe a disco. Está documentado en el §55.1 de este mismo
+fichero como «el arreglo de `#98`».
+
+**Lo que esta sesión añade** es el coste en un caso judicial: en W-02X1WJ el flag activado
+extrajo **41 adjuntos** y rescató 3 enlaces. Sin él, los certificados bancarios, los burofaxes
+y los dos borradores del acuerdo transaccional se habrían quedado dentro de los `.eml`, sin
+OCR y sin espejo MD — es decir, fuera de la sala de lectura y fuera de cualquier búsqueda.
+
+**Nota de higiene:** esta entrada corrige una creencia mía anotada al revés en memoria
+persistente («`--extraer-adjuntos` deja ciego al atomizador»). Se comprobó contra el §55.1 el
+2026-09-01: el flag **es** el arreglo, no el problema.
+
+**Estado:** ya es la casilla 3 de la fila #11 de `PLAN.md`, declarada «decidible, sin gates»,
+a la espera de una decisión de Nikolai porque mueve la superficie de dedup de todo intake
+futuro. Esta entrada solo aporta la medición que faltaba.
+
+**Disparador:** la decisión de la fila #11.
