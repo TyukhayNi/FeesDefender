@@ -177,34 +177,44 @@ def _sin_desvio():
         motivo="copia local de trabajo: la bandeja vive en el canon (MEJORAS #96)")
 
 
-def _exigir_modo_coherente_con_la_raiz(workspace) -> None:
+def _exigir_modo_coherente_con_la_raiz(workspace, canon_dir: Path | None) -> None:
     """El modo y la raíz tienen que **concordar**, y eso no lo garantiza nadie más.
 
     `CaseWorkspace.__post_init__` solo exige que un modo utilizable traiga raíz; **no**
-    comprueba que `DRIVE_ACTIVE` apunte al catálogo ni que los modos locales queden fuera
-    (R25/H25-03). El resolver de producción sí mantiene la dicotomía, pero
-    `CaseWorkspace` es un valor **público**: cualquiera puede construir un
-    `LOCAL_CHECKOUT` apuntando al canon y quedarse con el bypass del guard.
+    comprueba que `DRIVE_ACTIVE` sea el canon ni que los modos locales no lo sean
+    (R25/H25-03). El resolver de producción mantiene la dicotomía, pero `CaseWorkspace` es
+    un valor **público**: cualquiera puede construir un `LOCAL_CHECKOUT` apuntando al canon
+    y quedarse con el bypass del guard. Aquí se exige, porque aquí es donde se concede.
 
-    Aquí se exige, porque aquí es donde el bypass se concede. Se usa
-    `case_catalog.clasificar_bajo`, que es la definición única y la que `MEJORAS #136`
-    dejó con comparación por componentes e identidad física.
+    ## Se compara con el canon RESUELTO, no con `CASOS_ROOT`
+
+    La primera versión preguntaba `clasificar_bajo(raiz, config.settings.casos_root)`. Eso
+    **rompió dos tests que estaban bien**: el catálogo resuelve por `case_locator._root()`
+    y yo comparaba contra `settings.casos_root`, así que un caso perfectamente canónico
+    caía «fuera» en cuanto las dos fuentes divergían. **Dos definiciones de «el catálogo»**
+    — exactamente la clase de defecto que `MEJORAS #136` vino a cerrar, cometida al
+    remediar otra cosa.
+
+    Ahora se compara contra el directorio que **el propio catálogo devolvió** para este
+    caso. Es una sola fuente y además una comprobación más fuerte: identidad del
+    expediente, no contención en una raíz.
     """
-    from .. import config
-    from .case_catalog import DENTRO, clasificar_bajo
     from .workspace_model import WorkspaceMode
 
     modo = WorkspaceMode(workspace.mode)
-    raiz = Path(workspace.working_root)
-    dentro = clasificar_bajo(raiz, Path(config.settings.casos_root)) == DENTRO
-    if modo is WorkspaceMode.DRIVE_ACTIVE and not dentro:
+    raiz = _normal(Path(workspace.working_root))
+    canon = _normal(canon_dir) if canon_dir is not None else None
+
+    if modo is WorkspaceMode.DRIVE_ACTIVE:
+        if canon is None or raiz != canon:
+            raise ValueError(
+                "un workspace `drive_active` tiene que ser el expediente canonico; esta "
+                "raiz no es la que el catalogo resuelve, y concederia capacidad canonica "
+                "sobre algo que no es el canon")
+    elif canon is not None and raiz == canon:
         raise ValueError(
-            "un workspace `drive_active` tiene que apuntar al catalogo; esta raiz cae "
-            "fuera y concederia capacidad canonica sobre algo que no es el canon")
-    if modo is not WorkspaceMode.DRIVE_ACTIVE and dentro:
-        raise ValueError(
-            "un workspace local no puede apuntar DENTRO del catalogo: eso saltaria el "
-            "guard de desvio sobre el propio expediente canonico")
+            "un workspace local no puede apuntar AL canon: eso saltaria el guard de "
+            "desvio sobre el propio expediente canonico")
 
 
 def _identidad_de_workspace(ref, workspace) -> tuple[str | None, Path, str | None]:
@@ -244,7 +254,6 @@ def _identidad_de_workspace(ref, workspace) -> tuple[str | None, Path, str | Non
         raise ValueError(
             "un workspace bloqueado no autoriza ninguna escritura y no tiene raiz de "
             "trabajo; el llamador debe tratar el bloqueo, no pasarlo aqui")
-    _exigir_modo_coherente_con_la_raiz(workspace)
 
     raiz = Path(workspace.working_root)
     ws_ref = getattr(workspace, "case_ref", None)
@@ -266,6 +275,9 @@ def _identidad_de_workspace(ref, workspace) -> tuple[str | None, Path, str | Non
         canon_dir = CaseCatalog().localizar(CaseRef(case_id=case_id) if case_id else ref)
     except LocalWorkspaceMissing:
         canon_dir = None
+
+    # La coherencia modo/raiz, con el canon YA resuelto: una sola fuente.
+    _exigir_modo_coherente_con_la_raiz(workspace, canon_dir)
 
     if canon_dir is not None:
         id_go = (str(case_locator.read_case_meta(canon_dir).get("id_go") or "")
