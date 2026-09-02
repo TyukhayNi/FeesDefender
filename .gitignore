@@ -64,6 +64,14 @@ _out_*.md
 # se versiona ni se empaqueta en el .skill (política RGPD del despacho).
 data/_skill_logs/
 
+# `--basetemp` de pytest. La convencion (AGENTS.md) es correrlo FUERA del arbol,
+# pero un basetemp corto dentro del repo es la salida facil al limite MAX_PATH de
+# Windows, y el 2026-09-02 acabo con 232 ficheros de andamio commiteados en main.
+# Esto es la red; el guard que lo detecta es tests/test_guard_no_basetemp_versionado.py.
+.mut_tmp/
+.pytest_tmp/
+/_bt/
+
 # Sistema
 .DS_Store
 Thumbs.db

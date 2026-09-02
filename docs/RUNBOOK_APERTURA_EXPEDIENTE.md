@@ -67,6 +67,18 @@ fecha: 2026-07-22
     que nace en local** sin ese baseline previo. Ese primer *checkin* de un caso nuevo es
     un hueco de infraestructura sin resolver, no algo ya construido — no prometer una vía
     de vuelta a Drive sin verificarla primero. Memoria `project-apertura-local-vs-drive`.
+  - **Recorrido y medido el 2026-09-02, a mano — sigue sin construirse.** El hueco de arriba se
+    materializó en este mismo caso: W-02ZIIF pasó **seis semanas** con su *work product* (OCR, sala
+    de lectura, análisis, borrador de contestación y documental para procurador) en **copia única**
+    sobre el Desktop. La vía de vuelta existe ya como **procedimiento verificado**, no como código:
+    la primera publicación degrada el checkin a una copia conservadora —sin baseline que comparar y
+    con destino inexistente, el merge a 3 vías no aplica y el `--backup-dir` queda vacío por
+    construcción— seguida de los dos ficheros de protocolo con `--ignore-existing`, `check
+    --one-way` para verificar por hash, el evento `case_checkin` y el lock a `disponible`. Los dos
+    ficheros de protocolo están en `MERGE_EXCLUSIONS`, luego **el `check` no los cubre**: se
+    verifican releyéndolos del Drive. Y **no rellenes `drive_remote_path`** al cerrar: lo consume
+    `sync.pull` como *fuente* de pull, así que apuntarlo al hogar canónico hace que un pull futuro
+    se traiga el caso sobre sí mismo. Automatizarlo en `repository_cli checkin`: `MEJORAS #139`.
 
 ---
 
