@@ -5957,6 +5957,11 @@ futuro. Esta entrada solo aporta la medición que faltaba.
 
 ## 136. Adoptar el CANON como copia local está permitido, y desactiva el desvío del guard `[PROMOVIDO → PLAN.md]`
 
+> ✅ **RESUELTO el 2026-09-02.** Diseño, adjudicaciones de **R22 y R23** y el límite declarado (UNC ↔ letra de unidad, **sin verificar**), en
+> [`2026-09-02-mejoras-136-el-canon-no-es-una-copia.md`](superpowers/plans/2026-09-02-mejoras-136-el-canon-no-es-una-copia.md).
+> Prueba de mutación reproducible: `python -m tests._mutantes_mejoras_136`.
+> **Cobertura de revisión de lo remediado tras R23: ausente.**
+
 **Estado:** pendiente. **Defecto VIVO en `main`**, no latente. Detectado el 2026-09-02 por el
 hallazgo **H21-01** de la R21 (revisión del diseño de `MEJORAS #124`) y **reproducido con sonda
 propia** el mismo día. Es el defecto del que `MEJORAS #124` era el síntoma visible.
@@ -6026,3 +6031,82 @@ aquí la avería fue exactamente tener el rechazo en **un** sitio y creerlo glob
 
 **Disparador:** la **rev. 2 del plan de `MEJORAS #124`**, que no puede derivar «¿es el canon?» del
 modo mientras esta puerta esté abierta. Va **antes** que ella.
+
+---
+
+## 137. `revalidar` pisa la ruta de TODAS las entradas del mismo W-code
+
+**Estado:** pendiente. **Preexistente**, no introducido por `MEJORAS #136`. Detectado el 2026-09-02
+por el hallazgo **H23-05** de la R23, con sonda del revisor.
+
+**Qué debería hacer.** `WorkspaceRegistry.revalidar(ref, local_path=…)` sella **una** entrada con el
+`ahora` inyectado.
+
+**Qué hace.** Toma `halladas[0]` para deducir el W-code y después reemplaza `local_path` en **todas**
+las entradas que casan con el `CaseRef`. Y el registro contrata expresamente que dos entradas del
+mismo W-code coexisten —un `checkout` y un `scratch` del mismo caso—, precisamente para que el
+resolver pueda ver la ambigüedad en vez de que el registro elija por él.
+
+Medido por el revisor con un checkout y un scratch legítimos del mismo caso:
+
+```
+antes
+  checkout a -> …\workspace-a
+  scratch  b -> …\workspace-b
+despues de revalidar(w_code, local_path=a)
+  checkout a -> …\workspace-a
+  scratch  b -> …\workspace-a
+```
+
+La segunda ruta **se pierde** y el registro queda con dos entradas distintas apuntando al mismo
+sitio — que es además el estado que `alta` se niega a crear.
+
+**Qué NO se rompe hoy.** No se encontró llamador productivo de `revalidar` fuera de los tests. Por
+eso es latente y no urgente, y por eso `MEJORAS #136` lo dejó fuera en vez de ensanchar su PR.
+
+**Mejora propuesta.** Hacer inequívoca la entrada que se revalida —por ruta anterior, por nonce, o
+por una clave propia— y modificar **solo** esa. Si el selector casa con más de una, lanzar ambigüedad
+**sin escribir**, que es la misma polaridad que el resolver aplica al `AmbiguousCase`.
+
+**Condición de cierre:** un test con checkout + scratch del mismo W-code que exija que la entrada no
+seleccionada queda intacta, más un mutante que elimine la desambiguación y muera por él.
+
+**Disparador:** el primer llamador productivo de `revalidar`, o la Fase 2 de la fila #3.
+
+---
+
+## 138. La unicidad de carpeta del registro compara cadenas, no identidad
+
+**Estado:** pendiente. **Preexistente**, no introducido por `MEJORAS #136`. Detectado el 2026-09-02
+por el hallazgo **H23-06** de la R23.
+
+**Qué debería hacer.** `WorkspaceRegistry.alta` promete rechazar reutilizar **una carpeta** como
+workspace de otro caso (`RutaYaRegistrada`).
+
+**Qué hace.** Compara `os.path.normcase(str(path))` — cadenas. La misma carpeta escrita de dos
+formas atraviesa la guarda:
+
+```
+samefile                 True
+segunda alta             ACEPTADA
+entry W-DUPA -> C:\…\duplicate_probe\same_workspace
+entry W-DUPB -> duplicate_probe\same_workspace
+```
+
+Relativa frente a absoluta, y lo mismo con *junction*, alias 8.3 y el resto de alias físicos. El
+resultado es **dos expedientes distintos compartiendo carpeta de trabajo**, que es exactamente lo que
+la guarda existe para impedir.
+
+**Es la misma clase que `MEJORAS #136`**, en la guarda de al lado: una propiedad sobre *carpetas*
+comprobada sobre *cadenas*. Ahí ya existe la pieza que la contesta bien —`case_catalog.clasificar_bajo`
+resuelve físicamente con `os.path.realpath`—, así que el remedio tiene dónde apoyarse.
+
+**Mejora propuesta.** Para rutas que existen, comparar **identidad física**; para destinos que aún no
+existen, componentes absolutos normalizados. Es la misma pareja de comparaciones que `#136` dejó
+construida.
+
+**Condición de cierre:** tests de relativa/absoluta, *junction* y 8.3 contra `RutaYaRegistrada`, con
+un mutante por cada una de las dos comparaciones.
+
+**Disparador:** el primer caso real de dos expedientes compartiendo carpeta, o la Fase 2 de la
+fila #3.
