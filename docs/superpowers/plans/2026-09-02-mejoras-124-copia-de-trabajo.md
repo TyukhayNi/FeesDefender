@@ -7,10 +7,18 @@ creado: 2026-09-02
 
 # `MEJORAS #124` — la copia de trabajo la contesta el resolver, y la capacidad la transporta (rev. 2)
 
-> ## ⚠️ ESTADO: rev. 2 SIN REVISAR. Cobertura de revisión **ausente**.
+> ## ⛔ ESTADO: rev. 2 `NO-EJECUTABLE`. NO se construye con este diseño.
 >
-> Los cinco puntos del **§8.4** están resueltos en el cuerpo; el §8 conserva la adjudicación de
-> **R21** sin tocar. Nadie ha atacado esta revisión: un revisor que no corre no refuta.
+> **R24 devolvió `NO-EJECUTABLE`: 12 hallazgos, 12 confirmados, 0 refutados, 3 críticos.**
+> Adjudicación en el **§9**; acta en `docs/superpowers/specs/2026-09-02-mejoras-124-r24-adversarial-review.md`.
+>
+> **Es el segundo `NO-EJECUTABLE` sobre esta pieza, y con él se agota su presupuesto de rondas sin
+> una línea de código.** La decisión que toca no es escribir una rev. 3: es la del §9.4, y es de
+> Nikolai.
+>
+> **Lo que NO sobrevive, y hay que leerlo antes que nada:** el «teorema» del §1 es **falso**
+> (§9.1), y el criterio 1 del §7 es **insatisfecho por construcción** con el entrypoint que el §6
+> elige (§9.2). Los §§1-8 se conservan tal como los revisó R24.
 >
 > **Presupuesto de rondas: 2.** La pieza decide **quién puede escribir sobre qué copia**. R21 se
 > gastó en la rev. 1 y **no cuenta como cobertura de ésta**: lo que revisó ya no es el diseño que
@@ -322,3 +330,85 @@ el otro valor; hay que comprobar que el *mutante* puede producir el otro resulta
 **No se pide tercera ronda.** El techo duro de `CLAUDE.md` la prohíbe sin autorización expresa de
 Nikolai, y no hace falta: lo que toca es una **rev. 2 del diseño**, cuya cobertura de revisión será
 **ausente** hasta que alguien la mire.
+
+---
+
+## 9. Adjudicación de la revisión adversarial (Codex, 2026-09-02) — NO-EJECUTABLE, pendiente
+
+- **Objeto revisado:** la rev. 2 de este plan, commit `b01dabe`
+- **Ronda:** R24 (diseño, antes de escribir código)
+- **Revisor:** Codex
+- **Informe recibido:** `docs/superpowers/specs/2026-09-02-mejoras-124-r24-adversarial-review.md`
+- **Hallazgos:** 12 — 3 CRÍTICOS, 8 ALTOS, 1 BAJO; **12 confirmados, 0 refutados**
+- **Remediado en:** nada todavía; ver §9.4
+
+### 9.1. El «teorema» del §1 es falso, y lo reproduje
+
+Afirmé que `es_copia_prestada` es demostrablemente `False` **siempre**. No lo es:
+
+```
+buscar('..\workspace')    : <CASOS>\..\workspace   ← escapa del catalogo
+es_copia_prestada         : True
+guard: permitido/desviar  : True / False            ← permite SIN desviar
+```
+
+`buscar()` compone `root / case_id` **sin validar** que `case_id` sea un nombre simple, y
+`resolve_ref` devuelve sin tocar lo que no reconoce. Alcanzable: `export_label_emails.py` toma
+`--ref` como texto libre.
+
+**Es la afirmación que más me convenía que fuera cierta** —cerraba el §1 con un resultado fuerte— y
+la escribí sin sondearla, razonando sobre dos conjuntos en vez de medir la función. La lección no es
+«validar el `case_id`»: es que **un teorema sobre código se prueba ejecutándolo**, y yo tenía la
+sonda escrita desde R21.
+
+**Calibración de la severidad, que el informe no hace:** son CLI locales, no un servicio expuesto.
+El riesgo real es el **error de operador**, no un atacante. Va a `MEJORAS #141` con esa lectura.
+
+### 9.2. Los otros dos críticos, y los dos son contradicciones internas
+
+**H24-02.** La fila «`BLOCKED_*` en `libre` ⇒ raíz = canon + desvío» **no se puede construir**:
+`CaseWorkspace` prohíbe por invariante que un modo bloqueado lleve raíz, y `diagnostico=True`
+devuelve `working_root=None`. Para cumplirla haría falta una segunda resolución — que es justo lo
+que **D124 prohíbe**. Es la misma clase que R21/H21-03: la cerré para los *errores* y no para los
+*bloqueos*.
+
+**H24-03.** El criterio 1 exige «canon intacto, verificado por hash», y el único entrypoint que el
+§6 caba (`abrir_caso --modo v1`) llama a `pull_drive_ev`, que sella el `_caso.md` canónico — un
+efecto que **mi propio §8 excluye**. El criterio y la exclusión se contradicen dentro del mismo
+documento.
+
+### 9.3. Y una cita heredada que no comprobé
+
+**H24-04.** Escribí que la capacidad «no expone la raíz», repitiendo la doctrina de 3A. Pero
+`dir_para(".")` devuelve la base y `escribir_texto`/`escribir_bytes` devuelven el `Path` escrito.
+3A no *devuelve* la raíz; entrega un directorio dentro de ella. **Séptima aparición de «el nombre de
+una cosa no es la cosa»**, y la primera en que la frase no comprobada era de mi propio repo — que es
+peor, porque una cita interna se lee como verificada.
+
+### 9.4. La decisión que toca, y es de Nikolai
+
+**El presupuesto de esta pieza está agotado**: dos rondas, las dos de diseño, las dos
+`NO-EJECUTABLE`, cero líneas de código. El §13 de `PLAN.md` previó este punto exacto — *«cuántas
+rondas come un documento antes de que la conclusión razonable sea recortar alcance en vez de revisar
+otra vez»*—, y escribir una rev. 3 sería justo el movimiento que ese ítem existe para frenar.
+
+**Lo que los doce hallazgos dicen en conjunto no es que el diseño esté mal ejecutado, sino que es
+demasiado ancho.** Intenta a la vez: redirigir los bytes, cubrir todos los desenlaces del resolver,
+conservar la conducta de Streamlit, desbloquear la fila #5 y entregar un E2E — y H24-03 demuestra
+que dos de esos objetivos son **incompatibles** con sus propias exclusiones.
+
+**Las opciones, sin elegir aquí:**
+
+1. **Recortar a lo que sí cierra una propiedad**: que `deposito()` acepte un workspace **ya
+   resuelto por el llamador**, dueño de la resolución y de sus errores — que es exactamente lo que
+   `sala_maquina` ya hace hoy. Cierra **H18-01**, no necesita la tabla del §4.2 (los errores los
+   trata el entrypoint), no promete E2E y no toca la fila #5. Una frontera, un task.
+2. **Rev. 3 con los doce puntos**, aceptando una tercera ronda de diseño sobre la misma pieza —
+   que el techo duro prohíbe sin autorización expresa.
+3. **Aparcar `#124`** y dejar la fila #15 avanzando por otro lado.
+
+**Mi recomendación es la 1**, y no por prudencia: porque es la única de las tres que produce código
+esta semana, y porque las dos rondas coinciden en que el problema del diseño es el **alcance**, no
+el detalle.
+
+**No se pide tercera ronda.**

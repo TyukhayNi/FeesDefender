@@ -6166,3 +6166,60 @@ el despacho ya aplica a las revisiones adversariales: un revisor que no corre no
 verificar**.
 
 **Disparador:** que vuelva a pasar, o cualquier sesión que toque `scripts/session_close.py`.
+
+---
+
+## 141. `buscar()` no valida el `case_id`, así que una referencia con `..` escribe fuera del catálogo
+
+**Estado:** pendiente. **Defecto vivo.** Detectado el 2026-09-02 por el hallazgo **H24-01** de la
+R24 (revisión de la rev. 2 del diseño de `MEJORAS #124`) y **reproducido con sonda propia**.
+
+**Qué debería pasar.** `case_locator.buscar(case_id)` devuelve la ruta de un caso **dentro** de
+`CASOS_ROOT`, o `None`. Todo el modelo dual lo da por sentado: es la premisa de la que cuelga
+«el canon está bajo el catálogo».
+
+**Qué pasa.** Compone `root / case_id` sin comprobar que `case_id` sea un **nombre simple**
+(`core/casos/case_locator.py:132-143`). En `pathlib`, un componente absoluto **descarta la raíz**, y
+`..\algo` sale por el padre. `resolve_ref` devuelve sin modificar la referencia que no reconoce
+(`case_locator.py:226-258`), así que nada la sanea por el camino.
+
+**Medido el 2026-09-02**, con una copia local legítima registrada fuera del catálogo:
+
+```
+buscar('Caso')            : <CASOS>\Caso              ← el caso normal, bien
+es_copia_prestada('Caso') : False
+
+buscar('..\workspace')    : <CASOS>\..\workspace      ← escapa
+escapa de CASOS_ROOT      : True
+es_copia_prestada         : True
+guard: permitido/desviar  : True / False              ← permite SIN desviar
+```
+
+**Alcanzable desde un entrypoint real:** `scripts/export_label_emails.py` toma `--ref` como texto
+libre, lo pasa por `resolve_ref` y de ahí a `email_dest_dir(case_id)`. `scripts/atomize_emails.py`
+tiene el mismo `--ref`.
+
+**Qué se rompe, con la severidad calibrada y sin inflarla.** Son **CLI locales** que corre el
+letrado en su portátil, no un servicio expuesto a entrada ajena. El modo de fallo realista es el
+**error de operador** —una ruta pegada por error, una referencia con un separador de más— que
+deposita documentos **fuera del catálogo** y, de paso, desactiva el desvío del guard porque
+`es_copia_prestada` pasa a ser cierta. No se rotula como agujero de seguridad; se rotula como lo que
+es: una frontera de entrada sin validar en la función de la que cuelga todo el modelo dual.
+
+**Y tiene una consecuencia documental:** invalida el «teorema» que la rev. 2 del plan de `#124`
+afirmaba en su §1 —que `es_copia_prestada` es demostrablemente `False` siempre—. Lo corrige el §9.1
+de ese plan.
+
+**Mejora propuesta.** Validar en la frontera: `case_id` es **un único componente de ruta**, no
+absoluto, sin separadores ni `..`. Y comprobar la **contención** del resultado bajo `CASOS_ROOT`
+antes de devolverlo — la pieza que lo sabe hacer ya existe y está probada,
+`case_catalog.clasificar_bajo`, que `MEJORAS #136` dejó con comparación por componentes e identidad
+física.
+
+**Condición de cierre:** un test por cada forma —absoluto, `..`, separador embebido— contra
+`buscar`, `localizar` y `resolve_ref`, y **un mutante por cada validación** que muera solo por su
+test. Que la referencia canónica normal siga funcionando es la mitad que hace falta para que la
+guarda no sea inerte.
+
+**Disparador:** cualquier trabajo sobre `#124`, que ya no puede apoyarse en la premisa; o el primer
+caso real de un depósito fuera del catálogo.
