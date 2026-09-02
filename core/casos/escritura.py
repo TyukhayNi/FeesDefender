@@ -199,22 +199,33 @@ def _exigir_modo_coherente_con_la_raiz(workspace, canon_dir: Path | None) -> Non
     caso. Es una sola fuente y además una comprobación más fuerte: identidad del
     expediente, no contención en una raíz.
     """
+    from .case_catalog import FUERA, clasificar_bajo, raiz_del_catalogo
     from .workspace_model import WorkspaceMode
 
     modo = WorkspaceMode(workspace.mode)
-    raiz = _normal(Path(workspace.working_root))
-    canon = _normal(canon_dir) if canon_dir is not None else None
+    raiz = Path(workspace.working_root)
 
     if modo is WorkspaceMode.DRIVE_ACTIVE:
-        if canon is None or raiz != canon:
+        if canon_dir is None or _normal(raiz) != _normal(canon_dir):
             raise ValueError(
                 "un workspace `drive_active` tiene que ser el expediente canonico; esta "
                 "raiz no es la que el catalogo resuelve, y concederia capacidad canonica "
                 "sobre algo que no es el canon")
-    elif canon is not None and raiz == canon:
+        return
+
+    # Local: FUERA del catalogo ENTERO, y no solo distinto del canon de ESTE caso.
+    #
+    # La version anterior comparaba `raiz != canon_dir`, o sea el ejemplo y no la
+    # frontera: un workspace local del caso A apuntando al canon de B pasaba, y escribia
+    # en B **sin guard** aunque B estuviera prestado a otra maquina. Reproducido
+    # (R26/H26-01). Un descendiente del canon pasaba por lo mismo.
+    #
+    # Falla CERRADO ante `INDETERMINADO`: quien autoriza lee «no lo se» como «no».
+    if clasificar_bajo(raiz, raiz_del_catalogo()) != FUERA:
         raise ValueError(
-            "un workspace local no puede apuntar AL canon: eso saltaria el guard de "
-            "desvio sobre el propio expediente canonico")
+            "un workspace local tiene que estar FUERA del catalogo: esta raiz cae dentro "
+            "—o no se puede demostrar que no—, y saltaria el guard de desvio sobre un "
+            "expediente canonico")
 
 
 def _identidad_de_workspace(ref, workspace) -> tuple[str | None, Path, str | None]:
@@ -258,8 +269,11 @@ def _identidad_de_workspace(ref, workspace) -> tuple[str | None, Path, str | Non
     raiz = Path(workspace.working_root)
     ws_ref = getattr(workspace, "case_ref", None)
 
-    # (1) La peticion es lo que el llamador y el workspace piden JUNTOS. Que discrepen
-    #     entre si ya es discordancia: son dos identidades para una escritura.
+    # (1) La peticion es lo que el llamador y el workspace piden JUNTOS, en sus DOS
+    #     campos. Que discrepen entre si ya es discordancia: son dos identidades para
+    #     una escritura. La version anterior comparaba solo los W-codes y elegia el
+    #     `case_id` con un `or`, asi que dos `case_id` distintos pasaban sin ruido
+    #     (R26/H26-03).
     pedidos = {x.strip().upper()
                for x in (getattr(ws_ref, "w_code", None), getattr(ref, "w_code", None))
                if x}
@@ -268,24 +282,38 @@ def _identidad_de_workspace(ref, workspace) -> tuple[str | None, Path, str | Non
             w_code=None,
             detalle="el workspace y la referencia pedida declaran W-codes distintos; "
                     "con dos identidades hay dos lockfiles para un expediente")
-    case_id = (getattr(ws_ref, "case_id", None) or getattr(ref, "case_id", None))
+    ids = {x for x in (getattr(ws_ref, "case_id", None),
+                       getattr(ref, "case_id", None)) if x}
+    if len(ids) > 1:
+        raise IdentidadDiscordante(
+            w_code=next(iter(pedidos), None),
+            detalle="el workspace y la referencia pedida declaran case_id distintos; "
+                    "con dos identidades hay dos lockfiles para un expediente")
 
-    # (2) La PRUEBA: `meta.id_go` del canon, por la misma via que la historica.
+    # (2) La PRUEBA: `meta.id_go` del canon. Se localiza con la peticion COMPLETA -- el
+    #     W-code tambien -- porque el catalogo resuelve por W-code antes que por nombre,
+    #     y descartarlo hacia que un caso localizable se declarara «sin canon»
+    #     (R26/H26-03).
+    peticion = CaseRef(case_id=next(iter(ids), None),
+                       w_code=next(iter(pedidos), None)) if (ids or pedidos) else ref
     try:
-        canon_dir = CaseCatalog().localizar(CaseRef(case_id=case_id) if case_id else ref)
+        canon_dir = CaseCatalog().localizar(peticion)
     except LocalWorkspaceMissing:
         canon_dir = None
 
     # La coherencia modo/raiz, con el canon YA resuelto: una sola fuente.
     _exigir_modo_coherente_con_la_raiz(workspace, canon_dir)
 
-    if canon_dir is not None:
-        id_go = (str(case_locator.read_case_meta(canon_dir).get("id_go") or "")
-                 .strip().upper()) or None
-        del_nombre = case_locator._w_code_de(canon_dir.name)
-    else:
-        id_go = None
-        del_nombre = case_locator._w_code_de(raiz.name)
+    if canon_dir is None:
+        # Sin canon no hay PRUEBA. El nombre de la carpeta local no la sustituye: es
+        # fabricable por quien la crea, y elevarlo a identidad convierte la peticion en
+        # prueba por la puerta de atras (R26/H26-02). Se declara la garantia debil.
+        return None, raiz, ("el catalogo no conoce este caso, asi que no hay identidad "
+                            "canonica que probar; sin ella no se nombra el mutex")
+
+    id_go = (str(case_locator.read_case_meta(canon_dir).get("id_go") or "")
+             .strip().upper()) or None
+    del_nombre = case_locator._w_code_de(canon_dir.name)
     del_nombre = del_nombre.strip().upper() if del_nombre else None
 
     # (3) La MISMA comparacion de tres fuentes que `_identidad`. Cualquier desacuerdo
@@ -297,7 +325,11 @@ def _identidad_de_workspace(ref, workspace) -> tuple[str | None, Path, str | Non
             detalle="el metadato canonico, la presentacion y la referencia pedida no "
                     "coinciden; con dos identidades hay dos lockfiles para un expediente")
 
-    canon = id_go or del_nombre or (next(iter(pedidos)) if pedidos else None)
+    # La PETICION participa en la comparacion de arriba y NUNCA en este respaldo. Lo
+    # tenia como `id_go or del_nombre or pedidos`, o sea que con un canon sin W-code la
+    # peticion se volvia prueba -- y la via historica ahi declara identidad no utilizable
+    # (R26/H26-02). Lo escribi tres lineas debajo de un docstring que dice lo contrario.
+    canon = id_go or del_nombre
     if not canon:
         return None, raiz, ("no hay identidad canonica: ni `meta.id_go` ni el nombre de "
                             "la carpeta declaran un W-code")

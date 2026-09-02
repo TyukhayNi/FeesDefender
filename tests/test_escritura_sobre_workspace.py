@@ -77,8 +77,23 @@ def canon(tmp_casos_root):
     ruta = caso_path(CASE)
     p = ruta / "00_Input" / "_caso.md"
     txt = p.read_text(encoding="utf-8")
-    if "id_go" not in txt:
-        p.write_text(txt.replace("meta:", "meta:\n  id_go: W-DEPO01", 1), encoding="utf-8")
+    # `ensure_case` escribe `id_go: null`. La version anterior hacia
+    # `if "id_go" not in txt` -- la cadena SI estaba -- y el valor real nunca entraba, asi
+    # que los 26 tests pasaban por el NOMBRE de la carpeta y no por el metadato que sus
+    # docstrings dicen probar. Un mutante que anulaba `read_case_meta` los dejaba los 26
+    # verdes (R26/H26-04). Ahora se sustituye el valor de verdad.
+    lineas = []
+    puesto = False
+    for ln in txt.replace("\r\n", "\n").split("\n"):
+        if not puesto and ln.strip().startswith("id_go:"):
+            lineas.append(ln.split("id_go:")[0] + "id_go: W-DEPO01")
+            puesto = True
+        else:
+            lineas.append(ln)
+    if not puesto:
+        lineas = txt.replace("meta:", "meta:\n  id_go: W-DEPO01", 1).split("\n")
+    p.write_text("\n".join(lineas), encoding="utf-8")
+    assert "id_go: W-DEPO01" in p.read_text(encoding="utf-8")   # la fixture se comprueba
     return ruta
 
 
@@ -193,12 +208,35 @@ class TestIdentidad:
             validado_en=AHORA, procedencia="test")
         assert escritura._identidad_de_workspace(solo_id, ws)[0] == "W-DEPO01"
 
-    def test_un_W_code_con_gramatica_invalida_no_da_namespace(self, canon, copia_local):
-        """La rama que el mutante de R25/H25-08 sobrevivio: `_w_code_valido` sin efecto."""
-        ws = _ws(WorkspaceMode.LOCAL_SCRATCH, copia_local)
-        w, _raiz, motivo = escritura._identidad_de_workspace(
-            CaseRef(case_id="sin-w-code-en-el-nombre"), ws)
-        assert w == "W-DEPO01" and motivo is None
+    def test_un_caso_que_el_catalogo_NO_conoce_no_da_namespace(self, copia_local):
+        """Sin canon no hay PRUEBA, y el nombre de la carpeta local no la sustituye.
+
+        La version anterior de este test decia probar la gramatica invalida y no
+        construia ninguna: `_ws(...)` llevaba siempre un W-code valido y su `case_id`
+        ganaba (R26/H26-04). Lo que si hay que contratar es que un scratch desconocido
+        **no eleve su basename a identidad**, que es como la peticion volvia a ser prueba.
+        """
+        desconocido = CaseRef(case_id="Scratch inventado - (W-FABRIC) - Vuelta")
+        ws = CaseWorkspace(
+            case_ref=desconocido, mode=WorkspaceMode.LOCAL_SCRATCH,
+            working_root=copia_local, canonical_ref=None, checkout_user=None,
+            checkout_maquina=None, checkout_nonce=None, checkout_timestamp=None,
+            validado_en=AHORA, procedencia="test")
+        w, raiz, motivo = escritura._identidad_de_workspace(desconocido, ws)
+        assert w is None
+        assert raiz == copia_local
+        assert "no conoce este caso" in motivo
+
+    def test_dos_case_id_distintos_se_rechazan(self, canon, copia_local):
+        """R26/H26-03: se elegia uno con un `or` y nadie los comparaba."""
+        from core.casos.workspace_model import IdentidadDiscordante
+        ws = CaseWorkspace(
+            case_ref=CaseRef(case_id="OTRO CASO"), mode=WorkspaceMode.LOCAL_CHECKOUT,
+            working_root=copia_local, canonical_ref=None, checkout_user=None,
+            checkout_maquina=None, checkout_nonce=None, checkout_timestamp=None,
+            validado_en=AHORA, procedencia="test")
+        with pytest.raises(IdentidadDiscordante):
+            escritura._identidad_de_workspace(CaseRef(case_id=CASE), ws)
 
     def test_un_workspace_de_OTRO_caso_se_rechaza(self, canon, copia_local):
         """Dos identidades para una escritura es la puerta de los dos lockfiles."""
@@ -261,11 +299,15 @@ class TestModoYRaizConcuerdan:
 
     def test_pero_la_combinacion_correcta_pasa(self, canon, copia_local):
         """La guarda tiene que poder ser falsa en las dos direcciones."""
-        assert escritura.deposito(REF, "00_Input", "e", clase="contenido",
-                                  workspace=_ws(WorkspaceMode.DRIVE_ACTIVE, canon))
-        assert escritura.deposito(REF, "00_Input", "e", clase="contenido",
-                                  workspace=_ws(WorkspaceMode.LOCAL_CHECKOUT,
-                                                copia_local))
+        # `Deposito` no define `__bool__`, asi que `assert deposito(...)` no anadia
+        # condicion ninguna (R26/H26-06). Se comprueba DONDE cae la escritura.
+        d_canon = escritura.deposito(REF, "00_Input", "e", clase="contenido",
+                                     workspace=_ws(WorkspaceMode.DRIVE_ACTIVE, canon))
+        assert d_canon.escribir_texto("a.txt", "1").parent == canon / "00_Input"
+        d_local = escritura.deposito(REF, "00_Input", "e", clase="contenido",
+                                     workspace=_ws(WorkspaceMode.LOCAL_CHECKOUT,
+                                                   copia_local))
+        assert d_local.escribir_texto("a.txt", "1").parent == copia_local / "00_Input"
 
 
 class TestModoBloqueado:
@@ -276,3 +318,58 @@ class TestModoBloqueado:
         with pytest.raises(ValueError, match="bloquead"):
             escritura.deposito(REF, "00_Input", "email", clase="contenido",
                                workspace=bloqueado)
+
+
+class TestLaPRUEBAEsElMetadato:
+    """El unico test que obliga a `meta.id_go`, y hubo que medirlo dos veces.
+
+    Arreglar la fixture no bastó: con la carpeta llamandose
+    `BaXX1 - Prueba - (W-DEPO01) - ...`, el NOMBRE suple al metadato y el mutante
+    `id_go = None` seguia dejando los 27 verdes. La unica forma de que el metadato sea
+    indispensable es que el nombre **no** lo lleve (R26/H26-04).
+
+    Es la tercera vez en esta pieza que un test verde no probaba lo que decia: la
+    diferencia entre «pasa» y «pasa por lo que dice» solo la da el mutante.
+    """
+
+    def test_con_el_nombre_NEUTRO_la_identidad_sale_solo_del_metadato(
+            self, tmp_casos_root, tmp_path):
+        import importlib
+
+        from core import case_manager as cm
+        from core.config import caso_path
+        importlib.reload(cm)
+
+        neutro = "Carpeta sin codigo en el nombre"
+        cm.ensure_case(neutro, titulo=neutro)
+        p_caso = caso_path(neutro) / "00_Input" / "_caso.md"
+        txt = p_caso.read_text(encoding="utf-8")
+        lineas, puesto = [], False
+        for ln in txt.replace("\r\n", "\n").split("\n"):
+            if not puesto and ln.strip().startswith("id_go:"):
+                lineas.append(ln.split("id_go:")[0] + "id_go: W-SOLOME")
+                puesto = True
+            else:
+                lineas.append(ln)
+        p_caso.write_text("\n".join(lineas), encoding="utf-8")
+
+        # Precondicion SIN `assert`: si el nombre llevara W-code, el test no probaria
+        # nada -- y eso es exactamente lo que pasaba antes.
+        from core.casos import case_locator
+        if case_locator._w_code_de(neutro):
+            pytest.skip("el nombre lleva W-code y podria suplir al metadato")
+
+        local = tmp_path / "Desktop" / neutro
+        (local / "00_Input").mkdir(parents=True)
+        ref = CaseRef(case_id=neutro, w_code="W-SOLOME")
+        ws = CaseWorkspace(
+            case_ref=ref, mode=WorkspaceMode.LOCAL_CHECKOUT, working_root=local,
+            canonical_ref=None, checkout_user=None, checkout_maquina=None,
+            checkout_nonce=None, checkout_timestamp=None, validado_en=AHORA,
+            procedencia="test")
+
+        w, raiz, motivo = escritura._identidad_de_workspace(ref, ws)
+        assert (w, raiz, motivo) == ("W-SOLOME", local, None), (
+            "la identidad no salio de `meta.id_go`; si el mutante `id_go = None` "
+            "sobrevive, este test no esta mordiendo")
+

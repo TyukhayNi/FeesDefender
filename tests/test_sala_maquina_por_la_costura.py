@@ -37,8 +37,23 @@ def caso(tmp_casos_root):
     ruta = caso_path(nombre)
     p = ruta / "00_Input" / "_caso.md"
     txt = p.read_text(encoding="utf-8")
-    if "id_go" not in txt:
-        p.write_text(txt.replace("meta:", "meta:\n  id_go: W-SMCOST", 1), encoding="utf-8")
+    # `ensure_case` escribe `id_go: null`. La version anterior hacia
+    # `if "id_go" not in txt` -- la cadena SI estaba -- y el valor real nunca entraba, asi
+    # que los 26 tests pasaban por el NOMBRE de la carpeta y no por el metadato que sus
+    # docstrings dicen probar. Un mutante que anulaba `read_case_meta` los dejaba los 26
+    # verdes (R26/H26-04). Ahora se sustituye el valor de verdad.
+    lineas = []
+    puesto = False
+    for ln in txt.replace("\r\n", "\n").split("\n"):
+        if not puesto and ln.strip().startswith("id_go:"):
+            lineas.append(ln.split("id_go:")[0] + "id_go: W-SMCOST")
+            puesto = True
+        else:
+            lineas.append(ln)
+    if not puesto:
+        lineas = txt.replace("meta:", "meta:\n  id_go: W-SMCOST", 1).split("\n")
+    p.write_text("\n".join(lineas), encoding="utf-8")
+    assert "id_go: W-SMCOST" in p.read_text(encoding="utf-8")   # la fixture se comprueba
     return nombre, ruta
 
 
