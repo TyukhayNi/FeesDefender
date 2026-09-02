@@ -252,6 +252,27 @@ def _identidad_de_workspace(ref, workspace) -> tuple[str | None, Path, str | Non
         canon_dir = None
 
     if canon_dir is None:
+        # Un `drive_active` SIN canon localizado no es «garantia debil»: es una
+        # contradiccion. El modo dice «esto es el expediente canonico» y el catalogo dice
+        # que no conoce ninguno. Rechazar aqui, ANTES del retorno debil.
+        #
+        # **Es una regresion que introduje al partir la pieza** (R27/H27-01), y es
+        # instructiva: la funcion acoplada rechazaba este caso porque recibia `canon_dir`
+        # y comprobaba `canon_dir is None or raiz != canon_dir`. Al mover la mitad de
+        # ubicacion a su modulo, ubicacion se quedo con «¿esta DENTRO del catalogo?» —que
+        # es cierto para la raiz del catalogo, un directorio suelto o la bandeja de otro
+        # caso— y esta mitad se salto por el retorno temprano. Medido: las tres escribian
+        # dentro del catalogo sin identidad y sin mutex.
+        #
+        # La leccion, que es de la particion y no de este caso: **al partir una funcion
+        # hay que preguntarse que rechazaba la union que no rechaza ninguna de las
+        # partes.**
+        if WorkspaceMode(workspace.mode) is WorkspaceMode.DRIVE_ACTIVE:
+            raise IdentidadDiscordante(
+                w_code=None,
+                detalle="un workspace `drive_active` dice ser el expediente canonico y "
+                        "el catalogo no conoce ningun caso con esa identidad; no hay "
+                        "canon que escribir")
         # Sin canon no hay PRUEBA. El nombre de la carpeta local no la sustituye: es
         # fabricable por quien la crea, y elevarlo a identidad convierte la peticion en
         # prueba por la puerta de atras (R26/H26-02). Se declara la garantia debil.
@@ -261,6 +282,12 @@ def _identidad_de_workspace(ref, workspace) -> tuple[str | None, Path, str | Non
     # La mitad de la vieja invariante que SI era identidad: que la raiz de un
     # `drive_active` sea el canon de ESTE caso, y no de otro. `ubicacion` ya garantizo
     # que esta dentro del catalogo; que sea el expediente correcto es esta pregunta.
+    # La comparacion es LEXICA a proposito, y R27/H27-06 obliga a decirlo: `ubicacion`
+    # resuelve fisicamente (junction, 8.3, prefijo extendido, Volume GUID) y esta no. La
+    # asimetria es deliberada: ubicacion contesta «¿pertenece al catalogo?», donde un
+    # alias fisico SI cuenta; identidad contesta «¿es la forma canonica que el resolver
+    # entrega?», y un alias NO lo es. Un `drive_active` con alias se acepta por ubicacion
+    # y se rechaza aqui — que es el orden correcto, no una contradiccion.
     if WorkspaceMode(workspace.mode) is WorkspaceMode.DRIVE_ACTIVE \
             and _normal(raiz) != _normal(canon_dir):
         raise IdentidadDiscordante(

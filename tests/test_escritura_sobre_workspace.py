@@ -291,16 +291,6 @@ class TestLaBandejaEsDelCanon:
 # lo que se hizo — que cada propiedad se pueda mover sin romper la otra.
 
 
-class TestModoBloqueado:
-
-    def test_un_workspace_bloqueado_se_rechaza(self, canon):
-        """No tiene `working_root` por invariante; aceptarlo seria fingir una raíz."""
-        bloqueado = _ws(WorkspaceMode.BLOCKED_FOREIGN_CHECKOUT, None)
-        with pytest.raises(ValueError, match="bloquead"):
-            escritura.deposito(REF, "00_Input", "email", clase="contenido",
-                               workspace=bloqueado)
-
-
 class TestLaPRUEBAEsElMetadato:
     """El unico test que obliga a `meta.id_go`, y hubo que medirlo dos veces.
 
@@ -412,4 +402,53 @@ class TestLaPeticionNoEsRespaldo:
         w, _dir, motivo = escritura._identidad(CaseRef(case_id=neutro,
                                                        w_code="W-PEDIDA"))
         assert w is None and motivo is not None
+
+
+class TestElExpedienteCORRECTO:
+    """La mitad de la vieja invariante que se quedo en identidad, y no tenia test.
+
+    R27/H27-02: el mutante que desactiva la igualdad `drive_active == canon de este caso`
+    sobrevivia a los 56. Que la raiz este DENTRO del catalogo lo garantiza `ubicacion`;
+    que sea ESTE expediente es identidad, y hasta ahora era una afirmacion sin contrato.
+    """
+
+    def test_un_drive_active_sobre_el_canon_de_OTRO_caso_se_rechaza(self, canon,
+                                                                    tmp_casos_root):
+        import importlib
+
+        from core import case_manager as cm
+        from core.config import caso_path
+        from core.casos.workspace_model import IdentidadDiscordante
+        importlib.reload(cm)
+        otro = "BaXX7 - Otro - (W-OTROID) - NEGATIVA_OFERTA"
+        cm.ensure_case(otro, titulo=otro)
+        ws = CaseWorkspace(
+            case_ref=REF, mode=WorkspaceMode.DRIVE_ACTIVE,
+            working_root=caso_path(otro), canonical_ref=None, checkout_user=None,
+            checkout_maquina=None, checkout_nonce=None, checkout_timestamp=None,
+            validado_en=AHORA, procedencia="test")
+        with pytest.raises(IdentidadDiscordante):
+            escritura.deposito(REF, "00_Input", "x", clase="contenido", workspace=ws)
+
+    def test_un_drive_active_de_un_caso_DESCONOCIDO_se_rechaza(self, tmp_casos_root):
+        """R27/H27-01: la regresion que introduje al partir.
+
+        El modo dice «soy el canon» y el catalogo no conoce ningun caso con esa
+        identidad. `ubicacion` dice DENTRO —lo esta— y el retorno debil de identidad se
+        saltaba la contradiccion: escribia en la raiz del catalogo, en un directorio
+        suelto o en la bandeja de otro caso, sin identidad y sin mutex.
+        """
+        from core.casos.workspace_model import IdentidadDiscordante
+        from pathlib import Path as _P
+        suelto = _P(str(tmp_casos_root)) / "directorio_suelto"
+        suelto.mkdir(parents=True, exist_ok=True)
+        fantasma = CaseRef(case_id="Caso que el catalogo no conoce", w_code="W-FANTAS")
+        ws = CaseWorkspace(
+            case_ref=fantasma, mode=WorkspaceMode.DRIVE_ACTIVE, working_root=suelto,
+            canonical_ref=None, checkout_user=None, checkout_maquina=None,
+            checkout_nonce=None, checkout_timestamp=None, validado_en=AHORA,
+            procedencia="test")
+        with pytest.raises(IdentidadDiscordante):
+            escritura.deposito(fantasma, "00_Input", "x", clase="contenido",
+                               modo="libre", workspace=ws)
 

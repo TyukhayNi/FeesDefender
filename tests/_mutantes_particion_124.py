@@ -67,26 +67,85 @@ MUTANTES = [
      '    if len(ids) > 1:',
      '    if False:',
      IDE),
+
+    # --- Los TRES que escribio R27 y yo no tenia. --------------------------------
+    #
+    # Mis seis pasaban, y con ellos afirme «cero cruzan». El revisor escribio otros y
+    # dos SOBREVIVIERON y uno CRUZO. La leccion no es que faltaran mutantes: es que
+    # **«mis mutantes no cruzan» no es «la particion no se cruza»**, y yo dije lo
+    # segundo habiendo medido lo primero.
+    ("A4 la ubicacion no se llama para `drive_active` (R27/H27-02)",
+     "core/casos/escritura.py",
+     "    ubicacion.exigir_coherente(workspace)",
+     "    if WorkspaceMode(workspace.mode) is not WorkspaceMode.DRIVE_ACTIVE:\n"
+     "        ubicacion.exigir_coherente(workspace)",
+     UBI),
+    ("A5 el rechazo temprano de modo bloqueado (R27/H27-03)", "core/casos/ubicacion.py",
+     "    if modo.es_bloqueado or workspace.working_root is None:",
+     "    if False and (modo.es_bloqueado or workspace.working_root is None):",
+     UBI),
+    ("B4 `drive_active` deja de exigir el expediente CORRECTO (R27/H27-02)",
+     "core/casos/escritura.py",
+     "    if WorkspaceMode(workspace.mode) is WorkspaceMode.DRIVE_ACTIVE \\\n"
+     "            and _normal(raiz) != _normal(canon_dir):",
+     "    if False and WorkspaceMode(workspace.mode) is WorkspaceMode.DRIVE_ACTIVE \\\n"
+     "            and _normal(raiz) != _normal(canon_dir):",
+     IDE),
+    ("B5 un `drive_active` sin canon deja de rechazarse (R27/H27-01)",
+     "core/casos/escritura.py",
+     "        if WorkspaceMode(workspace.mode) is WorkspaceMode.DRIVE_ACTIVE:\n"
+     "            raise IdentidadDiscordante(",
+     "        if False:\n"
+     "            raise IdentidadDiscordante(",
+     IDE),
 ]
 
 
-def _corre() -> set[str]:
+def _corre() -> tuple[set[str], bool]:
+    """`(tests que fallaron, la corrida fue una ejecucion VALIDA de pytest)`.
+
+    **La segunda mitad la obliga R27/H27-04, y sin ella nada de lo que este arnes dijo
+    valia.** La version anterior devolvia solo las lineas `FAILED `, asi que un error de
+    coleccion —un fichero que no existe, un `ImportError`— daba el conjunto vacio, o sea
+    «cero fallos», o sea **baseline verde**. El revisor lo reprodujo apuntandolo a un
+    fichero inexistente.
+
+    Es la misma clase que la busqueda mutilada leida como ausencia: «no hay fallos» y
+    «no pude ejecutar» se veian igual.
+    """
     r = subprocess.run(
         [PY, "-m", "pytest", *FICHEROS, "-q", "--tb=no", "-p", "no:cacheprovider",
          "--basetemp=" + _BASETEMP, "-p", "no:randomly"],
         cwd=RAIZ, capture_output=True, encoding="utf-8", errors="replace")
-    return {ln.split(" ")[1] for ln in (r.stdout or "").splitlines()
-            if ln.startswith("FAILED ")}
+    salida = (r.stdout or "") + (r.stderr or "")
+    fallos = {ln.split(" ")[1] for ln in salida.splitlines()
+              if ln.startswith("FAILED ")}
+    # `returncode` 0 = todo verde; 1 = hubo fallos de test. Cualquier otro (2 = uso,
+    # 3 = interno, 4 = uso de linea de comandos, 5 = nada recogido) NO es una ejecucion
+    # valida. Y un `ERROR` de coleccion o de setup tampoco, aunque el codigo sea 1.
+    valida = r.returncode in (0, 1) and "ERROR" not in salida and "error" not in (
+        r.stderr or "").lower()
+    return fallos, valida
 
 
 def main() -> int:
-    sucio = subprocess.run(["git", "status", "--porcelain"], cwd=RAIZ,
-                           capture_output=True, encoding="utf-8").stdout.strip()
-    if sucio:
-        print("ARBOL SUCIO: se restaura con `git checkout` desde el INDICE.\n" + sucio)
+    g = subprocess.run(["git", "status", "--porcelain"], cwd=RAIZ,
+                       capture_output=True, encoding="utf-8")
+    if g.returncode != 0:                      # H27-04: `git` tambien puede fallar
+        print("NO SE PUDO CONSULTAR GIT:", g.stderr)
         return 2
-    if _corre():
-        print("EL ARBOL LIMPIO NO ESTA VERDE")
+    if g.stdout.strip():
+        print("ARBOL SUCIO: se restaura desde los bytes originales, pero un arbol sucio\n"
+              "hace ambiguo el baseline.\n" + g.stdout.strip())
+        return 2
+
+    fallos, valida = _corre()
+    if not valida:
+        print("LA CORRIDA BASE NO FUE UNA EJECUCION VALIDA DE PYTEST: no se puede "
+              "afirmar nada. «Cero fallos» y «no se ejecuto» NO son lo mismo.")
+        return 2
+    if fallos:
+        print("EL ARBOL LIMPIO NO ESTA VERDE:", sorted(fallos))
         return 2
     print("base: verde\n")
 
@@ -98,12 +157,24 @@ def main() -> int:
             print(f"[X ] {nombre}: el ancla aparece {txt.count(viejo)} veces")
             fallidos += 1
             continue
-        p.write_text(txt.replace(viejo, nuevo), encoding="utf-8", newline="")
+        # H27-05: los bytes originales se guardan ANTES, la escritura va DENTRO del
+        # `try`, y se restaura SOLO este fichero — no `git checkout -- .`, que se
+        # llevaria por delante cualquier cambio concurrente en otro sitio.
+        original = p.read_bytes()
         try:
-            rojos = _corre()
+            p.write_text(txt.replace(viejo, nuevo), encoding="utf-8", newline="")
+            rojos, valida = _corre()
         finally:
-            subprocess.run(["git", "checkout", "--", "."], cwd=RAIZ, check=True)
+            p.write_bytes(original)
+            if p.read_bytes() != original:
+                print(f"[X ] {nombre}: NO SE PUDO RESTAURAR {fichero}. Se aborta.")
+                return 2
 
+        if not valida:
+            print(f"[X ] {nombre}: la corrida NO fue valida; no se puede decir si "
+                  f"muere o sobrevive")
+            fallidos += 1
+            continue
         if not rojos:
             print(f"[X ] {nombre}: SOBREVIVE")
             fallidos += 1

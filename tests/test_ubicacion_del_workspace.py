@@ -183,3 +183,59 @@ class TestPorLaPUERTA:
         with pytest.raises(ubicacion.UbicacionIncoherente):
             escritura.deposito(ref, "00_Input", "x", clase="contenido", workspace=ws)
 
+
+class TestPorLaPUERTA_driveActive:
+    """R27/H27-02: al mover los tests se perdio la integracion de `drive_active`.
+
+    `TestPorLaPUERTA` conservo el caso LOCAL y no el canonico, asi que un mutante que
+    quitara la llamada a `exigir_coherente` **solo para `drive_active`** sobrevivia: los
+    tests unitarios de arriba llaman a la funcion directamente y no ven el cableado.
+
+    Es el reverso exacto del defecto que la particion vino a arreglar. Alli el problema
+    era probar la propiedad **por su consumidor**; aqui, probarla **solo** por su unidad.
+    Hacen falta las dos.
+    """
+
+    def test_deposito_rechaza_un_DRIVE_ACTIVE_de_fuera(self, tmp_casos_root, tmp_path):
+        from core.casos import escritura
+        fuera = tmp_path / "Desktop" / "Caso"
+        fuera.mkdir(parents=True)
+        ref = CaseRef(case_id="Caso", w_code="W-UBIDR2")
+        ws = CaseWorkspace(
+            case_ref=ref, mode=WorkspaceMode.DRIVE_ACTIVE, working_root=fuera,
+            canonical_ref=None, checkout_user=None, checkout_maquina=None,
+            checkout_nonce=None, checkout_timestamp=None, validado_en=AHORA,
+            procedencia="test")
+        with pytest.raises(ubicacion.UbicacionIncoherente):
+            escritura.deposito(ref, "00_Input", "x", clase="contenido", workspace=ws)
+
+
+class TestElModoBLOQUEADO:
+    """Venia del fichero de identidad, y es UBICACION (R27/H27-03).
+
+    Un mutante que desactivaba el rechazo temprano de modo bloqueado mataba tests de los
+    **dos** ficheros, porque su integracion vivia en identidad. Mi «cero mutantes cruzan»
+    era cierto **de mis tres mutantes**, no de la propiedad: el revisor escribio un cuarto
+    y cruzo. La afirmacion era mas ancha que la medicion.
+    """
+
+    def test_sin_raiz_no_hay_ubicacion_que_comprobar(self, tmp_casos_root):
+        bloqueado = CaseWorkspace(
+            case_ref=REF, mode=WorkspaceMode.BLOCKED_CONFLICT, working_root=None,
+            canonical_ref=None, checkout_user=None, checkout_maquina=None,
+            checkout_nonce=None, checkout_timestamp=None, validado_en=AHORA,
+            procedencia="test")
+        with pytest.raises(ValueError, match="bloquead"):
+            ubicacion.exigir_coherente(bloqueado)
+
+    def test_y_la_costura_lo_propaga(self, tmp_casos_root):
+        from core.casos import escritura
+        bloqueado = CaseWorkspace(
+            case_ref=REF, mode=WorkspaceMode.BLOCKED_FOREIGN_CHECKOUT, working_root=None,
+            canonical_ref=None, checkout_user=None, checkout_maquina=None,
+            checkout_nonce=None, checkout_timestamp=None, validado_en=AHORA,
+            procedencia="test")
+        with pytest.raises(ValueError, match="bloquead"):
+            escritura.deposito(REF, "00_Input", "x", clase="contenido",
+                               workspace=bloqueado)
+
