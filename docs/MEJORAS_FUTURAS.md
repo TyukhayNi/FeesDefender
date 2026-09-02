@@ -5952,3 +5952,77 @@ a la espera de una decisión de Nikolai porque mueve la superficie de dedup de t
 futuro. Esta entrada solo aporta la medición que faltaba.
 
 **Disparador:** la decisión de la fila #11.
+
+---
+
+## 136. Adoptar el CANON como copia local está permitido, y desactiva el desvío del guard `[PROMOVIDO → PLAN.md]`
+
+**Estado:** pendiente. **Defecto VIVO en `main`**, no latente. Detectado el 2026-09-02 por el
+hallazgo **H21-01** de la R21 (revisión del diseño de `MEJORAS #124`) y **reproducido con sonda
+propia** el mismo día. Es el defecto del que `MEJORAS #124` era el síntoma visible.
+
+**Qué debería pasar.** El registro privado de workspaces es la lista de **copias locales**. El canon
+no puede estar en él: es la invariante que `es_copia_prestada` cita en su docstring para confiar en
+el registro, la que sostiene la derivación de «¿es el canon?» en el diseño de `#124`, y la que el
+resolver hace cumplir con `WORKSPACE_UNDER_CATALOG_ROOT`.
+
+**Qué pasa.** Esa invariante **no existe en la frontera que escribe el registro**. Solo la aplica
+`resolver_por_ruta` (`core/casos/workspace_resolver.py:150-152`), que es un **lector**:
+
+- `WorkspaceRegistry.alta` no comprueba `bajo_catalogo` — solo rechaza reusar la ruta de **otro**
+  caso (`core/casos/workspace_registry.py:235-247`).
+- `verificar_adopcion` comprueba cinco cosas —directorio, `MANIFEST_CHECKOUT.json`, W-code del
+  nombre, canon en `prestado`, lock propio— y **ninguna** es «fuera del catálogo»
+  (`core/casos/workspace_adopcion.py:68-105`).
+- `adoptar` pasa el `case_dir` tal cual a `registry.alta`, y ésa es la vía del CLI productivo
+  (`scripts/repository_cli.py`, subcomando `adoptar`).
+- `resolver_por_identidad` consume la entrada **sin revalidar su raíz**
+  (`core/casos/workspace_resolver.py:122-136`).
+
+Y la condición es alcanzable porque **el canon también recibe `MANIFEST_CHECKOUT.json`** mientras
+está prestado: `cmd_checkout` lo sube al Drive para que sobreviva a la muerte del Desktop (§3.3).
+Ese hecho ya estaba escrito —es el argumento con el que se descartó el manifiesto como
+discriminante— y nadie lo cruzó con la adopción.
+
+**Medido el 2026-09-02**, con el canon prestado al propio usuario y máquina de quien adopta:
+
+```
+verificar_adopcion.ok  : True | checkout propio con manifest y nombre coherente
+adoptar(CANON)         : ACEPTADO
+registro contiene canon: True
+estado del canon       : prestado
+es_copia_prestada      : True
+dir_intake             : <CANON>\00_Input\03_Email        ← SIN desviar
+resolver .mode         : local_checkout
+resolver .working_root : <CANON>
+```
+
+**Qué se rompe, sin inflarlo.** Tras esa adopción, **todo el intake escribe sobre el canon sin
+desviar mientras el canon está prestado**: los cuatro consumidores del guard calculan su destino con
+`caso_path`/`localizar`, así que el veredicto «no desvíes» los manda a la copia canónica, que es
+justo la que hay que proteger. Además `resolver_por_identidad` devuelve `LOCAL_CHECKOUT` con
+`working_root` = canon, o sea que un modo que el contrato define **sin** `MUTATE_CANONICAL` acaba
+apuntando al canon: la resta de capacidad queda inerte por la vía del dato, no por la del código.
+
+**Lo que NO es.** No es un fallo del checkout ordinario: `cmd_checkout` escribe la copia local y la
+registra desde su propia ruta. La puerta es la **adopción** (§15), que existe para checkouts
+anteriores al registro y pide firma humana. Que pida firma humana **no basta**: el comando imprime
+lo que no pudo verificar, y «esta carpeta es el canon» no está entre lo que mira.
+
+**Mejora propuesta.** Convertir «ninguna entrada apunta bajo el catálogo» en invariante **de
+escritura y de lectura**, no de un solo lector:
+
+1. Rechazo en `WorkspaceRegistry.alta` (la frontera que escribe).
+2. Rechazo previo en `verificar_adopcion`, para que el motivo sea legible antes de la firma.
+3. Revalidación al cargar y en `resolver_por_identidad`, no solo en `resolver_por_ruta`.
+4. La comparación por **identidad física** de la ruta, no solo léxica: junctions y alias 8.3 de
+   Windows convierten «no está bajo el catálogo» en una afirmación que la comparación de cadenas no
+   sostiene.
+
+**Condición de cierre, y es dura:** un test que ejecute `adoptar(<ruta del canon>)` y exija rechazo,
+más un **mutante por cada una de las cuatro puertas** — quitar cualquiera de los cuatro rechazos
+debe poner rojo su propio test y solo el suyo. Un guard sin prueba de mutación no es un guard, y
+aquí la avería fue exactamente tener el rechazo en **un** sitio y creerlo global.
+
+**Disparador:** la **rev. 2 del plan de `MEJORAS #124`**, que no puede derivar «¿es el canon?» del
+modo mientras esta puerta esté abierta. Va **antes** que ella.

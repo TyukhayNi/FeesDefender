@@ -7,11 +7,23 @@ creado: 2026-09-02
 
 # MEJORAS #124 — la copia de trabajo la contesta el resolver, y el veredicto viaja con su raíz (rev. 1)
 
-> ## ⚠️ ESTADO: rev. 1 SIN REVISAR. Cobertura de revisión **ausente**.
+> ## ⛔ ESTADO: rev. 1 `NO-EJECUTABLE`. NO se construye con este diseño.
 >
-> Este documento es el objeto de la **R21** (diseño). Hasta que R21 corra y se adjudique, nada de
-> lo que aquí se afirma está verificado por nadie salvo por mí, que soy la parte revisada. **Un
-> revisor que no corre no refuta: deja sin verificar.**
+> **R21 (diseño) devolvió `NO-EJECUTABLE`: 8 hallazgos, 8 confirmados, 0 refutados, 4 críticos.**
+> Adjudicación en el **§8**; acta en
+> `docs/superpowers/specs/2026-09-02-mejoras-124-r21-adversarial-review.md`.
+>
+> **Lo que sobrevive:** el diagnóstico del §1.1-1.2 (reproducido por el revisor) y la **decisión
+> D124** — que el veredicto y el destino salgan de una sola resolución. Lo que la ronda tumbó es el
+> diseño de su implementación.
+>
+> **Lo que NO sobrevive, y hay que leerlo antes que nada:** la frase del §1.3 «hoy eso no ocurre
+> porque la guarda es inerte» es **FALSA**. Hay una vía productiva —`repository_cli adoptar` sobre
+> la ruta del canon— que la vuelve verdadera y abre el agujero **hoy, en `main`**. Es un defecto
+> vivo, no del plan: `MEJORAS #136`. Detalle y sonda en el **§8.1**.
+>
+> **Pendiente: rev. 2**, con los cinco puntos del §8.4 resueltos y `MEJORAS #136` cerrada antes que
+> ninguno. Su cobertura de revisión será **ausente** hasta que alguien la mire.
 >
 > **Presupuesto de rondas: 2** (`CLAUDE.md` §«Cuántas rondas»). La pieza decide **quién puede
 > escribir sobre qué copia** — la primera condición del cuadro, y por sí sola suficiente. R21 sobre
@@ -77,8 +89,15 @@ dir_intake (hoy, guarda inerte)     : <CASO>\_pendiente_checkin\email\00_Input\0
 dir_intake (guarda «arreglada»)     : <CASO>\00_Input\03_Email        ← el CANON, sin desviar
 ```
 
-Hoy el desvío ocurre **porque la guarda es inerte**. O sea: la avería que H16-01 denuncia es lo
-único que hoy impide una escritura sin desvío sobre un expediente que otra máquina tiene tomado.
+> ### ❌ CORRECCIÓN (R21/H21-01): el párrafo que sigue es FALSO
+>
+> Se conserva tal como lo revisó R21, tachado y no borrado, porque el §8.1 lo cita. **La guarda no
+> es inerte por todos los caminos:** `repository_cli adoptar` sobre la ruta del canon la vuelve
+> verdadera, y entonces el agujero está abierto **hoy en `main`** — reproducido con sonda propia.
+> `MEJORAS #136`.
+
+~~Hoy el desvío ocurre **porque la guarda es inerte**. O sea: la avería que H16-01 denuncia es lo
+único que hoy impide una escritura sin desvío sobre un expediente que otra máquina tiene tomado.~~
 
 **Arreglar la comparación, en solitario, no es un arreglo: abre la puerta que la avería mantenía
 cerrada.** Ésta es la razón por la que `MEJORAS #124` acierta al decir que la pregunta no es «cómo
@@ -261,7 +280,90 @@ vacía, log junto a los bytes.
 
 ---
 
-## 8. Adjudicación de R21
+## 8. Adjudicación de la revisión adversarial (Codex, 2026-09-02) — NO-EJECUTABLE, pendiente
 
-*(Pendiente. **Cobertura de revisión ausente** hasta que se corra: nada de este documento está
-verificado por un tercero.)*
+- **Objeto revisado:** el diseño de este plan, rev. 1, commit `f062639`
+- **Ronda:** R21 (diseño, antes de escribir código)
+- **Revisor:** Codex
+- **Informe recibido:** `docs/superpowers/specs/2026-09-02-mejoras-124-r21-adversarial-review.md`
+- **Hallazgos:** 8 — 4 CRÍTICOS, 3 ALTOS, 1 BAJO; **8 confirmados, 0 refutados**
+- **Remediado en:** rev. 2 de este plan (pendiente)
+
+### 8.1. El hallazgo que cambia el problema, y no solo el plan
+
+**H21-01. La adopción productiva registra EL CANON como copia local.** Lo reproduje con sonda
+propia, y desmiente una frase de mi §1.3.
+
+`verificar_adopcion` comprueba cinco cosas —que el directorio existe, que tiene
+`MANIFEST_CHECKOUT.json`, que el W-code del nombre casa, que el canon lo da por `prestado` y que el
+lock es mío— y **ninguna de ellas es «está fuera del catálogo»**
+(`core/casos/workspace_adopcion.py:68-105`). `WorkspaceRegistry.alta` tampoco: solo rechaza reusar
+la ruta de **otro** caso (`core/casos/workspace_registry.py:235-247`). Y el canon **sí** tiene
+`MANIFEST_CHECKOUT.json` mientras está prestado — lo dice el docstring de `es_copia_prestada`, que
+lo usó como argumento para descartar ese discriminante.
+
+Sonda mía, con el canon prestado a mi propio usuario y máquina:
+
+```
+verificar_adopcion.ok  : True | checkout propio con manifest y nombre coherente
+adoptar(CANON)         : ACEPTADO
+es_copia_prestada      : True
+dir_intake             : <CANON>\00_Input\03_Email      ← SIN desviar, con el canon PRESTADO
+resolver .mode         : local_checkout
+resolver .working_root : <CANON>
+```
+
+**Mi §1.3 dice «hoy eso no ocurre porque la guarda es inerte». Es falso.** La guarda es inerte por
+el camino que yo sondeé; hay un camino productivo —`repository_cli adoptar`— que la vuelve
+verdadera y abre exactamente el agujero que el §1.3 describía como hipotético. **No es un defecto
+del diseño: es un defecto vivo de `main`,** y va a `docs/MEJORAS_FUTURAS.md` **#136** con su
+medición.
+
+**Y el error de método que lo escondió es mío y tiene nombre.** Cité
+`workspace_model.py:224-225` como prueba de que «el registro solo contiene rutas fuera del
+catálogo». Ahí solo está **declarada la clase de excepción**. El rechazo vive en
+`workspace_resolver.py:150-152` y **no gobierna a `alta`**. Cité el nombre de la garantía en vez de
+su cumplimiento — sexta aparición de *el nombre de una cosa no es la cosa*, y esta vez me costó el
+crítico entero. Lo peor es que la mis-cita es de H21-08, severidad BAJO: **el hallazgo barato era
+la puerta del caro**.
+
+### 8.2. El mutante inerte que yo mismo escribí
+
+**H21-06.** Bajo el diseño literal de mi §3.3, quitar `diagnostico=True` **no cambia nada
+observable**: sin él, `CaseLocked` se lanza, el `except WorkspaceError` la captura y produce el
+mismo fallback. El revisor lo midió:
+
+```
+F5 conflicto diagnostico_true= FALLBACK diagnostico_false= FALLBACK
+```
+
+O sea que **F5 no muere**, y el mutante que la mata no existe. Lo escribí en el mismo documento
+cuyo §4 cita la regla de las guardas inertes. Cuarta aparición de la clase, y la primera **dentro
+de la prueba de mutación que existe para cazarla**: no basta comprobar que una *guarda* puede tener
+el otro valor; hay que comprobar que el *mutante* puede producir el otro resultado.
+
+### 8.3. Los ocho, uno por uno
+
+| # | Sev. | Veredicto | Qué se hace |
+|---|---|---|---|
+| **H21-01** la adopción registra el canon | CRÍTICO | **CONFIRMADO** (sonda propia, §8.1) | `MEJORAS #136` + la invariante se cierra **en la escritura del registro**, no solo en `resolver_por_ruta`. `es_canon` no puede derivarse del modo hasta entonces |
+| **H21-02** `Destino` no transporta el veredicto | CRÍTICO | **CONFIRMADO** | Mi `resolver_destino` no recibe `ruta_relativa`/`origen`/`es_protocolo`, que es de lo que depende `decidir_escritura`. **Rev. 2**: la puerta entrega una **capacidad** con base privada —un `Deposito`—, no un `Path` público. Exponer `raiz: Path` reabría justo lo que 3A cerró |
+| **H21-03** el fallback no tiene canon en todos los caminos | CRÍTICO | **CONFIRMADO** | `CaseWorkspace` prohíbe que un modo bloqueado lleve raíz (`workspace_model.py:509-513`), y con «catálogo mudo» no hay canon que poner en `raiz: Path`. **Rev. 2**: tabla cerrada error→resultado, y un tipo que sepa decir «no hay raíz» sin fingir un canon |
+| **H21-04** el write-set transitivo queda partido | CRÍTICO | **CONFIRMADO** (`intake_manifest.py:86-88`, `ocurrencias_crm.py:70-72`) | Mover solo los bytes deja manifiesto, ocurrencias, estado y ficha en el canon. **Rev. 2**: censo transitivo por consumidor, y E2E que compare los DOS árboles |
+| **H21-05** F3 es falsa: el protocolo está exento | ALTO | **CONFIRMADO** (`repository_checkout.py:565`) | F3 se reformula a «toda escritura **no protocolaria**», y la excepción se prueba aparte |
+| **H21-06** F5 es un mutante inerte | ALTO | **CONFIRMADO** (§8.2) | La matriz se rehace por **mutantes observables e independientes**, no por fronteras enunciadas |
+| **H21-07** matriz cartesiana + criterios inejecutables | ALTO | **CONFIRMADO, con un matiz** | El modo **es función** del estado: la tabla cartesiana fabricaría celdas que producción no genera — el mismo defecto de la fixture que este plan denuncia. **Matiz:** su sub-punto sobre el criterio 5 (dos semillas) es cierto **de su entorno**, que no tiene `pytest-randomly`; en el mío se ejecuta y se ejecutará. No es un defecto del plan |
+| **H21-08** citas que no prueban lo que sostienen | BAJO | **CONFIRMADO** | Se corrigen todas. La de `workspace_model.py:224-225` **no es cosmética**: es la que escondió H21-01 (§8.1) |
+
+### 8.4. Qué tiene que resolver la rev. 2, en orden de dependencia
+
+1. **La invariante del registro**, cerrada donde se escribe (`MEJORAS #136`). Todo lo demás cuelga
+   de ella: sin invariante, `es_canon` no es un discriminante.
+2. **El resultado que transporta autorización + destino sin exponer la raíz** (H21-02).
+3. **La tabla cerrada de error→resultado**, con un tipo capaz de decir «no hay raíz» (H21-03).
+4. **El censo transitivo por consumidor** (H21-04).
+5. **F3 reformulada** y la matriz rehecha como mutantes observables (H21-05, H21-06, H21-07).
+
+**No se pide tercera ronda.** El techo duro de `CLAUDE.md` la prohíbe sin autorización expresa de
+Nikolai, y no hace falta: lo que toca es una **rev. 2 del diseño**, cuya cobertura de revisión será
+**ausente** hasta que alguien la mire.
