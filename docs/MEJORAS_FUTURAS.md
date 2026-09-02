@@ -5952,3 +5952,59 @@ a la espera de una decisión de Nikolai porque mueve la superficie de dedup de t
 futuro. Esta entrada solo aporta la medición que faltaba.
 
 **Disparador:** la decisión de la fila #11.
+
+## 136. `repository_cli checkin` no cubre la primera publicación de un caso nacido en local
+
+`cmd_checkin` construye su plan de 3 vías desde tres inventarios: local, Drive y baseline
+(`MANIFEST_CHECKOUT.json`). Un caso que **nace en local** —el modo `[APER-41]` del runbook, que
+apunta `CASOS_ROOT` al Desktop para evitar los cuelgues de `G:`— no tiene ninguno de los dos
+últimos: no hubo checkout, así que no hay baseline, y la carpeta de destino **no existe** en
+Drive. El propio runbook lo declaraba «un hueco de infraestructura sin resolver».
+
+**Medido el 2026-09-02 en W-02ZIIF**, recorriendo el hueco a mano: la operación degrada a una
+copia conservadora y es más simple que el merge, no más compleja — sin baseline que comparar y
+con destino vacío, ninguna acción puede ser `PRESERVE_DRIVE`, `DELETE_DRIVE` ni `CONFLICT`, todo
+es `COPY_LOCAL`, y el `--backup-dir` queda vacío por construcción porque no hay nada que
+sobrescribir. 276 ficheros / 177,4 MiB, `check --one-way` con 274 matching y 0 differences.
+
+**Lo que la automatización tendría que resolver, y no es la copia:**
+
+1. **Los dos ficheros de protocolo caen por la grieta.** `_caso.md` y `_intake_log.jsonl` están en
+   `MERGE_EXCLUSIONS`, luego el `check --one-way` **no los verifica**. En un merge da igual (ya
+   estaban arriba); en una primera publicación son ficheros nuevos que nadie comprueba. Hoy se
+   verificaron releyéndolos del Drive y parseando el JSONL.
+2. **El `case_checkin` no tiene checkout que cerrar.** El evento se registra igual (es el cierre
+   del ciclo de custodia, no del préstamo), pero `estado_repositorio` ya era `disponible`: hay que
+   distinguir «liberar un lock» de «no había lock», y `validar_transicion` no lo contempla.
+3. **`drive_remote_path` es una trampa de nombre.** Tienta rellenarlo —el caso ya vive en Drive—
+   pero lo consume `sync.pull` como **fuente** de pull (`core/pipeline.py:60`): apuntarlo al hogar
+   canónico haría que un pull futuro se trajese el caso sobre sí mismo. Se dejó a `null`.
+
+**Riesgo que justifica construirlo:** mientras el modo local no tenga vía de vuelta automática, un
+caso abierto ahí queda en copia única sobre el Desktop por tiempo indefinido. En W-02ZIIF fueron
+**seis semanas** con el borrador de contestación y la documental del procurador sin respaldo.
+
+**Disparador:** la próxima apertura en modo local, o una decisión de Nikolai. Sin él, la vía manual
+está documentada en `[APER-41]` del runbook y basta.
+
+## 137. `session_close` da rojo falso cuando corre fuera del venv
+
+En un worktree, `python -m scripts.session_close` resuelve al **Python del sistema** (los worktrees
+no tienen `.venv` propio; el venv vive en la raíz del repo). El resultado, medido el 2026-09-02:
+**97 errores de colección** —el primero `ModuleNotFoundError: No module named 'yaml'` en
+`core/utils.py:11`— presentados como **«[X] Tests fallando - commit abortado»**. La suite estaba
+verde: con `.venv\Scripts\python.exe` dio 3.695 recogidos, 0 fallos, 0 errores, 83 skipped.
+
+**Por qué importa aunque falle en la dirección segura.** Es un rojo falso, no un verde falso, así
+que no deja pasar nada roto. El coste es de diagnóstico: manda a buscar una rotura inexistente
+justo en el paso donde la disciplina del despacho dice «suite roja → parar y avisar antes de tocar
+docs», y en el peor caso empuja a saltarse el guard por creerlo averiado.
+
+**Arreglo propuesto, barato:** antes de invocar pytest, comprobar que el intérprete es el del repo
+—`sys.prefix` distinto de `sys.base_prefix`, o un `importlib.util.find_spec("yaml")`— y, si no lo
+es, abortar con el mensaje correcto («no estás en el venv: usa `.venv\Scripts\python.exe`») en vez
+de atribuirlo a los tests. Distinguir «no pude medir» de «medí y salió mal» es la misma regla que
+el despacho ya aplica a las revisiones adversariales: un revisor que no corre no refuta, deja **sin
+verificar**.
+
+**Disparador:** que vuelva a pasar, o cualquier sesión que toque `scripts/session_close.py`.
