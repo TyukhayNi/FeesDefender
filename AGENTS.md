@@ -35,7 +35,8 @@ una instrucción divergente es peor que ninguna.
     sistemas externos (CRM, Drive) son **entradas de solo lectura durante toda la revisión**. Sí
     puedes **ejecutar código y tests** cuando todas sus escrituras van fuera del repo y no hay
     efectos externos: `PYTHONDONTWRITEBYTECODE=1`, `-p no:cacheprovider`, `--basetemp` fuera del
-    árbol. `git status --porcelain --untracked-files=all` antes y después es evidencia adicional,
+    árbol — lo hace cumplir, para cualquier sesión y no solo para el revisor, el guard
+    `tests/test_guard_no_basetemp_versionado.py`. `git status --porcelain --untracked-files=all` antes y después es evidencia adicional,
     **no sustituto** de la prohibición.
   - **Contrasta contra el código real**, no solo contra el diff: un hallazgo que solo se sostiene
     mirando el diff suele ser un falso positivo.
