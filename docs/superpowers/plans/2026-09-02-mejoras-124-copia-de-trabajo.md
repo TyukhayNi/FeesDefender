@@ -528,3 +528,82 @@ Los dos datos que sostienen la decisión, que es suya:
 
 La alternativa que se dejó anotada y **no** se tomó: partir la pieza en dos —la invariante modo/raíz
 y la regla de identidad son propiedades independientes, y cada arreglo de una rompió la otra—.
+
+---
+
+## 13. La partición: dos propiedades, dos módulos
+
+`MEJORAS #124` recibió **cuatro rondas y ninguna volvió limpia**, y el §12.3 dejó anotada —sin
+tomar— la alternativa: **partir la pieza**. Se tomó el 2026-09-02.
+
+| | Propiedad | Dónde | ¿Necesita identidad? |
+|---|---|---|---|
+| **A** | local ⇒ **FUERA** del catálogo · `drive_active` ⇒ **DENTRO** · lo indeterminado se rechaza en los dos | `core/casos/ubicacion.py` | **no** |
+| **B** | el W-code se prueba contra `meta.id_go` del canon; y la raíz de un `drive_active` es el expediente **correcto** | `escritura._identidad_de_workspace` | sí |
+
+**Lo que aparece al partirlas, y explica las cuatro rondas: la ubicación no necesita saber qué caso
+es.** La versión acoplada preguntaba «¿es *el* canon de *este* caso?», que sí lo necesita, y por eso
+las dos vivían en una función compartiendo `canon_dir`. Enunciada como pertenencia al catálogo, los
+dos defectos de R26 —el canon de otro caso y un descendiente— dejan de ser excepciones: son el mismo
+caso de la misma frontera.
+
+**Condición de cierre ejecutable:** `python -m tests._mutantes_particion_124` — **diez mutantes**,
+y cada uno mata **solo** tests de su propiedad. Que los dos ficheros pasen no demuestra nada.
+
+---
+
+## 14. Adjudicación de la revisión adversarial (Codex, 2026-09-02) — NO-SHIP, remediado
+
+- **Objeto revisado:** el diff de la partición, commit `e05d5a6`
+- **Ronda:** R27
+- **Revisor:** Codex
+- **Informe recibido:** `docs/superpowers/specs/2026-09-02-mejoras-124-r27-adversarial-review.md`
+- **Hallazgos:** 6 — 1 CRÍTICO, 2 ALTOS, 2 MEDIOS, 1 BAJO; **6 confirmados, 0 refutados**
+- **Remediado en:** esta rama, todos
+
+### 14.1. El crítico es una regresión que introdujo la propia partición
+
+Un `drive_active` cuyo caso el catálogo **no conoce** escribía dentro del catálogo **sin identidad y
+sin mutex**. Reproducido con sonda propia y cerrado con la misma:
+
+```
+antes    la RAIZ del catalogo     ACEPTADO | mutex=False | dentro del catalogo=True
+         un directorio suelto     ACEPTADO | …
+         la bandeja de OTRO caso  ACEPTADO | …
+despues  las tres                 rechazado: IdentidadDiscordante
+```
+
+**El mecanismo, que es la lección:** la función acoplada rechazaba ese estado porque recibía
+`canon_dir` y comprobaba `canon_dir is None or raiz != canon_dir`. Al partirla, `ubicacion` se quedó
+con «¿está DENTRO?» —cierto para la raíz del catálogo— y la mitad de identidad se saltaba por el
+retorno temprano de «el catálogo no conoce este caso».
+
+> **Al partir una función hay que preguntarse qué rechazaba la unión que no rechaza ninguna de las
+> partes.** No lo pregunté.
+
+### 14.2. Y un hallazgo que invalidaba mis propias afirmaciones
+
+**H27-04:** el arnés de partición ignoraba el código de salida de pytest, así que un error de
+colección devolvía el conjunto vacío — o sea «cero fallos», o sea **baseline verde**. El revisor lo
+reprodujo apuntándolo a un fichero inexistente.
+
+Es la clase «una búsqueda mutilada leída como ausencia»: *«no hay fallos»* y *«no pude ejecutar»* se
+veían igual. Y significa que **«cero mutantes cruzan» pudo haberse dicho sobre corridas que no
+ejecutaron nada**. Corregido y comprobado en las dos polaridades.
+
+### 14.3. Los otros cuatro
+
+| # | Sev. | Qué era |
+|---|---|---|
+| **H27-02** | ALTO | Dos mutantes suyos **sobrevivían**: el cableado de `ubicacion` para `drive_active` y la igualdad «el expediente correcto». Al mover los tests se perdió la integración canónica |
+| **H27-03** | MEDIO | Un mutante suyo **cruzaba**: `TestModoBloqueado` es ubicación y vivía en identidad. Mi «cero cruzan» era cierto **de mis tres mutantes**, no de la propiedad — dije lo segundo habiendo medido lo primero |
+| **H27-05** | MEDIO | El arnés escribía **fuera** del `try` y restauraba con `git checkout -- .`, que se lleva por delante cualquier cambio concurrente. Ahora guarda bytes, escribe dentro y restaura solo ese fichero, comprobándolo |
+| **H27-06** | BAJO | `ubicacion` resuelve físicamente y la identidad compara léxicamente. **No se cambia**: la asimetría es deliberada —ubicación pregunta «¿pertenece?», donde un alias cuenta; identidad pregunta «¿es la forma canónica?», donde no— y ahora está **declarada** en el código |
+
+### 14.4. Estado
+
+**Diez mutantes, cero cruzan.** Suite **3.793 / 0 / 0**, 77 omitidos + 10 `xfailed`, `XPASS 0`, con
+las semillas 777 y 31337.
+
+**Cobertura de esta remediación: AUSENTE.** La pieza ha gastado **una** ronda de las dos que su radio
+compra; la segunda está disponible sin techo duro, y la decisión de gastarla es de Nikolai.
