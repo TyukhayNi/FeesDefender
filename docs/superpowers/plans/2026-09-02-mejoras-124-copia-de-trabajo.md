@@ -7,7 +7,15 @@ creado: 2026-09-02
 
 # `MEJORAS #124` — la copia de trabajo la contesta el resolver, y la capacidad la transporta (rev. 2)
 
-> ## ⛔ ESTADO: rev. 2 `NO-EJECUTABLE`. NO se construye con este diseño.
+> ## ✅ ALCANCE RECORTADO Y CONSTRUIDO. La rev. 2 sigue `NO-EJECUTABLE` y no se construye.
+>
+> **Decisión de Nikolai del 2026-09-02, tras R24: recortar en vez de escribir una rev. 3.** Lo
+> construido es el **§10**: `deposito()` acepta un `CaseWorkspace` **ya resuelto por el llamador**.
+> Cierra `H18-01`. Los §§1-9 se conservan como el diseño que las dos rondas tumbaron — no describen
+> lo que hay en el árbol.
+>
+> **Cobertura de revisión de la última remediación: AUSENTE**, y mergeado con esa declaración
+> (decisión de Nikolai). Ver §12.3.
 >
 > **R24 devolvió `NO-EJECUTABLE`: 12 hallazgos, 12 confirmados, 0 refutados, 3 críticos.**
 > Adjudicación en el **§9**; acta en `docs/superpowers/specs/2026-09-02-mejoras-124-r24-adversarial-review.md`.
@@ -412,3 +420,111 @@ esta semana, y porque las dos rondas coinciden en que el problema del diseño es
 el detalle.
 
 **No se pide tercera ronda.**
+
+---
+
+## 10. El alcance recortado, que es lo que existe en el árbol
+
+Las rev. 1 y 2 querían que la costura **resolviera** el workspace. R21 y R24 las tumbaron con 20
+hallazgos confirmados y **las dos coincidieron en que el problema era el alcance**. Lo que se
+construyó es una sola propiedad:
+
+> `deposito(ref, …, workspace=…)` escribe bajo `workspace.working_root`. **Quien resuelve es el
+> llamador**, que tiene el contexto y ya sabe tratar los errores del resolver — como
+> `scripts/sala_maquina.py` hace desde el Task 9 de la Fase 1.
+
+Sin `workspace`, la conducta es la de siempre. Cierra **H18-01**: hasta hoy la costura de 3A solo
+servía para el canon.
+
+**Primer cliente de producción:** `sala_maquina`, en `apply` y `reforzar`. **No mueve un byte de
+sitio** —ya escribía en `ws.working_root`—; lo que gana es pasar por la puerta, y lo que gana el
+proyecto es que la puerta deje de tener cero clientes, que era la frontera **F7** que la rev. 2
+añadió tras medir que `deposito()` no lo llamaba nadie.
+
+### 10.1. Las dos cosas que el diseño destapó y ningún informe traía
+
+1. **Una copia local no tiene `_caso.md`** (`MERGE_EXCLUSIONS`). Cambia dónde caen los **bytes**,
+   no dónde vive la **prueba** de identidad — que sigue siendo `meta.id_go` del canon.
+2. **La bandeja vive en el canon.** Sobre una copia local no se consulta el guard, y el
+   discriminante es el **modo** que el llamador resolvió. Eso lo deja inmune a `MEJORAS #141`,
+   porque el modo no depende de clasificar una ruta.
+
+---
+
+## 11. Adjudicación de la revisión adversarial (Codex, 2026-09-02) — NO-SHIP, remediado
+
+- **Objeto revisado:** el diff del alcance recortado, commit `5e75553`
+- **Ronda:** R25
+- **Revisor:** Codex
+- **Informe recibido:** `docs/superpowers/specs/2026-09-02-mejoras-124-r25-adversarial-review.md`
+- **Hallazgos:** 8 — 1 CRÍTICO, 5 ALTOS, 2 BAJOS; **8 confirmados, 0 refutados**
+- **Remediado en:** `6c42102`, `43471be`
+
+### 11.1. Una regresión mía, nacida de una frase sin comprobar
+
+Escribí que «el resolver ya validó la identidad contra el canon». **Es falso**: el resolver conserva
+el `CaseRef` **pedido** sin enriquecerlo. Medido:
+
+```
+via HISTORICA (sin workspace) : rechazada IdentidadDiscordante
+via NUEVA (con workspace)     : ACEPTADA — escribe en el canon real con el W-code falso
+```
+
+**Mi cambio abría una puerta que el código ya tenía cerrada.** La frontera es la contraria de la que
+escribí: el `case_ref` de un workspace es la **petición**, no la **prueba**.
+
+R25 midió además que **mis tests no protegían el cableado**: mutó los cuatro `dep=_dep_sala` y los
+diez pasaron, porque llamaban a los *helpers* y no a los *comandos*.
+
+---
+
+## 12. Adjudicación de la revisión adversarial (Codex, 2026-09-02) — NO-SHIP, remediado
+
+- **Objeto revisado:** el diff remediado tras R25, commit `43471be`
+- **Ronda:** R26
+- **Revisor:** Codex
+- **Informe recibido:** `docs/superpowers/specs/2026-09-02-mejoras-124-r26-adversarial-review.md`
+- **Hallazgos:** 6 — 1 CRÍTICO, 2 ALTOS, 2 MEDIOS, 1 BAJO; **6 confirmados, 0 refutados**
+- **Remediado en:** `db6e4a3` (5 de 6; el sexto declarado sin cubrir en el §12.2)
+
+### 12.1. Cerré el ejemplo, no la frontera — por quinta vez
+
+Tres graves, los tres míos:
+
+- **H26-01 (CRÍTICO).** Contraté «la raíz local no puede ser *el* canon de este caso». La propiedad
+  es **«está fuera del catálogo entero»**. Un workspace local del caso A apuntando al canon de B
+  escribía en B **sin desviar**, con B prestado a otra máquina.
+- **H26-02.** Usé la petición como respaldo de la identidad **tres líneas debajo** del docstring que
+  dice que la petición no es prueba. Mi vía seguía siendo más permisiva que la histórica.
+- **H26-03.** Los `case_id` se fusionaban con un `or` sin compararse, y al localizar se descartaba
+  el W-code.
+
+**Y H26-04 invalidaba mi evidencia:** `ensure_case` escribe `id_go: null`, mi fixture comprobaba
+`if "id_go" not in txt` —la cadena sí estaba— y el valor real nunca entraba. Los 26 tests pasaban
+por el **nombre de la carpeta**. Arreglar la fixture **no bastó**: hizo falta un caso con nombre
+neutro para que el mutante del metadato muriera. Tercera vez en esta pieza que un verde no probaba
+lo que decía.
+
+### 12.2. Lo declarado sin cubrir
+
+**H26-05**: no hay test de comando para `reforzar`, ni canario de propagación de
+`IdentidadDiscordante`, ni canario en `plan`. Son **regresiones posibles sin test**, no defectos
+vivos: el arnés del revisor comprobó que los tres caminos se comportan bien hoy.
+
+### 12.3. Por qué se mergea sin una tercera ronda
+
+**La pieza gastó sus dos rondas** (R25, R26), las dos `NO-SHIP`. Una tercera exige autorización
+expresa de Nikolai, y **no se pidió**: el argumento «pero la última encontró un crítico» es el que
+`CLAUDE.md` identifica como el que nunca se agota.
+
+Los dos datos que sostienen la decisión, que es suya:
+
+1. **El coste de un defecto residual es hoy casi cero.** Nada en producción escribe por esta vía
+   salvo `sala_maquina`, que ya escribía donde escribe. Los tres defectos de R26 solo eran
+   alcanzables construyendo un `CaseWorkspace` a mano; ningún entrypoint los produce.
+2. **Seis rondas en la sesión, ninguna limpia, y cada remediación mía dejó la misma frontera abierta
+   por otro lado.** El rendimiento por ronda no cae, lo que sugiere que el problema no es cuánto se
+   revisa sino que estoy iterando sobre una pieza cuyo espacio de estados no controlo.
+
+La alternativa que se dejó anotada y **no** se tomó: partir la pieza en dos —la invariante modo/raíz
+y la regla de identidad son propiedades independientes, y cada arreglo de una rompió la otra—.
