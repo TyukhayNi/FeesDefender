@@ -40,6 +40,7 @@ from pathlib import Path
 #     léxica por una carrera real: `resolve()` consulta disco y devuelve distinto según el
 #     directorio exista o no).
 # El plan promete no MODIFICAR `case_mutex.py`, no ignorarlo.
+from . import ubicacion
 from .case_mutex import _bajo, _normal, _w_code_valido
 
 #: Las cuatro clases del §25.2. Cerrado: lo que no está aquí no puede degradar a exento.
@@ -177,57 +178,6 @@ def _sin_desvio():
         motivo="copia local de trabajo: la bandeja vive en el canon (MEJORAS #96)")
 
 
-def _exigir_modo_coherente_con_la_raiz(workspace, canon_dir: Path | None) -> None:
-    """El modo y la raíz tienen que **concordar**, y eso no lo garantiza nadie más.
-
-    `CaseWorkspace.__post_init__` solo exige que un modo utilizable traiga raíz; **no**
-    comprueba que `DRIVE_ACTIVE` sea el canon ni que los modos locales no lo sean
-    (R25/H25-03). El resolver de producción mantiene la dicotomía, pero `CaseWorkspace` es
-    un valor **público**: cualquiera puede construir un `LOCAL_CHECKOUT` apuntando al canon
-    y quedarse con el bypass del guard. Aquí se exige, porque aquí es donde se concede.
-
-    ## Se compara con el canon RESUELTO, no con `CASOS_ROOT`
-
-    La primera versión preguntaba `clasificar_bajo(raiz, config.settings.casos_root)`. Eso
-    **rompió dos tests que estaban bien**: el catálogo resuelve por `case_locator._root()`
-    y yo comparaba contra `settings.casos_root`, así que un caso perfectamente canónico
-    caía «fuera» en cuanto las dos fuentes divergían. **Dos definiciones de «el catálogo»**
-    — exactamente la clase de defecto que `MEJORAS #136` vino a cerrar, cometida al
-    remediar otra cosa.
-
-    Ahora se compara contra el directorio que **el propio catálogo devolvió** para este
-    caso. Es una sola fuente y además una comprobación más fuerte: identidad del
-    expediente, no contención en una raíz.
-    """
-    from .case_catalog import FUERA, clasificar_bajo, raiz_del_catalogo
-    from .workspace_model import WorkspaceMode
-
-    modo = WorkspaceMode(workspace.mode)
-    raiz = Path(workspace.working_root)
-
-    if modo is WorkspaceMode.DRIVE_ACTIVE:
-        if canon_dir is None or _normal(raiz) != _normal(canon_dir):
-            raise ValueError(
-                "un workspace `drive_active` tiene que ser el expediente canonico; esta "
-                "raiz no es la que el catalogo resuelve, y concederia capacidad canonica "
-                "sobre algo que no es el canon")
-        return
-
-    # Local: FUERA del catalogo ENTERO, y no solo distinto del canon de ESTE caso.
-    #
-    # La version anterior comparaba `raiz != canon_dir`, o sea el ejemplo y no la
-    # frontera: un workspace local del caso A apuntando al canon de B pasaba, y escribia
-    # en B **sin guard** aunque B estuviera prestado a otra maquina. Reproducido
-    # (R26/H26-01). Un descendiente del canon pasaba por lo mismo.
-    #
-    # Falla CERRADO ante `INDETERMINADO`: quien autoriza lee «no lo se» como «no».
-    if clasificar_bajo(raiz, raiz_del_catalogo()) != FUERA:
-        raise ValueError(
-            "un workspace local tiene que estar FUERA del catalogo: esta raiz cae dentro "
-            "—o no se puede demostrar que no—, y saltaria el guard de desvio sobre un "
-            "expediente canonico")
-
-
 def _identidad_de_workspace(ref, workspace) -> tuple[str | None, Path, str | None]:
     """`(w_code, working_root, motivo)`. El workspace aporta el **destino**, no la identidad.
 
@@ -261,10 +211,10 @@ def _identidad_de_workspace(ref, workspace) -> tuple[str | None, Path, str | Non
     from .workspace_model import (CaseRef, IdentidadDiscordante,
                                   LocalWorkspaceMissing, WorkspaceMode)
 
-    if WorkspaceMode(workspace.mode).es_bloqueado or workspace.working_root is None:
-        raise ValueError(
-            "un workspace bloqueado no autoriza ninguna escritura y no tiene raiz de "
-            "trabajo; el llamador debe tratar el bloqueo, no pasarlo aqui")
+    # (0) La UBICACION es otra propiedad y vive en otro modulo. Aqui solo se invoca.
+    #     Estuvieron mezcladas y costo cuatro rondas: cada arreglo de una rompia la otra
+    #     porque compartian funcion y `canon_dir`. Ver `core/casos/ubicacion.py`.
+    ubicacion.exigir_coherente(workspace)
 
     raiz = Path(workspace.working_root)
     ws_ref = getattr(workspace, "case_ref", None)
@@ -301,15 +251,49 @@ def _identidad_de_workspace(ref, workspace) -> tuple[str | None, Path, str | Non
     except LocalWorkspaceMissing:
         canon_dir = None
 
-    # La coherencia modo/raiz, con el canon YA resuelto: una sola fuente.
-    _exigir_modo_coherente_con_la_raiz(workspace, canon_dir)
-
     if canon_dir is None:
+        # Un `drive_active` SIN canon localizado no es «garantia debil»: es una
+        # contradiccion. El modo dice «esto es el expediente canonico» y el catalogo dice
+        # que no conoce ninguno. Rechazar aqui, ANTES del retorno debil.
+        #
+        # **Es una regresion que introduje al partir la pieza** (R27/H27-01), y es
+        # instructiva: la funcion acoplada rechazaba este caso porque recibia `canon_dir`
+        # y comprobaba `canon_dir is None or raiz != canon_dir`. Al mover la mitad de
+        # ubicacion a su modulo, ubicacion se quedo con «¿esta DENTRO del catalogo?» —que
+        # es cierto para la raiz del catalogo, un directorio suelto o la bandeja de otro
+        # caso— y esta mitad se salto por el retorno temprano. Medido: las tres escribian
+        # dentro del catalogo sin identidad y sin mutex.
+        #
+        # La leccion, que es de la particion y no de este caso: **al partir una funcion
+        # hay que preguntarse que rechazaba la union que no rechaza ninguna de las
+        # partes.**
+        if WorkspaceMode(workspace.mode) is WorkspaceMode.DRIVE_ACTIVE:
+            raise IdentidadDiscordante(
+                w_code=None,
+                detalle="un workspace `drive_active` dice ser el expediente canonico y "
+                        "el catalogo no conoce ningun caso con esa identidad; no hay "
+                        "canon que escribir")
         # Sin canon no hay PRUEBA. El nombre de la carpeta local no la sustituye: es
         # fabricable por quien la crea, y elevarlo a identidad convierte la peticion en
         # prueba por la puerta de atras (R26/H26-02). Se declara la garantia debil.
         return None, raiz, ("el catalogo no conoce este caso, asi que no hay identidad "
                             "canonica que probar; sin ella no se nombra el mutex")
+
+    # La mitad de la vieja invariante que SI era identidad: que la raiz de un
+    # `drive_active` sea el canon de ESTE caso, y no de otro. `ubicacion` ya garantizo
+    # que esta dentro del catalogo; que sea el expediente correcto es esta pregunta.
+    # La comparacion es LEXICA a proposito, y R27/H27-06 obliga a decirlo: `ubicacion`
+    # resuelve fisicamente (junction, 8.3, prefijo extendido, Volume GUID) y esta no. La
+    # asimetria es deliberada: ubicacion contesta «¿pertenece al catalogo?», donde un
+    # alias fisico SI cuenta; identidad contesta «¿es la forma canonica que el resolver
+    # entrega?», y un alias NO lo es. Un `drive_active` con alias se acepta por ubicacion
+    # y se rechaza aqui — que es el orden correcto, no una contradiccion.
+    if WorkspaceMode(workspace.mode) is WorkspaceMode.DRIVE_ACTIVE \
+            and _normal(raiz) != _normal(canon_dir):
+        raise IdentidadDiscordante(
+            w_code=None,
+            detalle="la raiz de este workspace canonico no es el expediente que su "
+                    "identidad designa; escribiria en el canon de otro caso")
 
     id_go = (str(case_locator.read_case_meta(canon_dir).get("id_go") or "")
              .strip().upper()) or None

@@ -283,41 +283,12 @@ class TestLaBandejaEsDelCanon:
 
 # --- F5: un modo bloqueado no entrega capacidad -------------------------------
 
-class TestModoYRaizConcuerdan:
-    """R25/H25-03: `CaseWorkspace` no exige que el modo case con la raiz."""
-
-    def test_un_modo_LOCAL_apuntando_al_canon_se_rechaza(self, canon):
-        """Sin esto, un valor construido a mano se salta el guard sobre el canon."""
-        with pytest.raises(ValueError, match="local"):
-            escritura.deposito(REF, "00_Input", "email", clase="contenido",
-                               workspace=_ws(WorkspaceMode.LOCAL_CHECKOUT, canon))
-
-    def test_un_DRIVE_ACTIVE_fuera_del_catalogo_tambien(self, canon, copia_local):
-        with pytest.raises(ValueError, match="drive_active"):
-            escritura.deposito(REF, "00_Input", "email", clase="contenido",
-                               workspace=_ws(WorkspaceMode.DRIVE_ACTIVE, copia_local))
-
-    def test_pero_la_combinacion_correcta_pasa(self, canon, copia_local):
-        """La guarda tiene que poder ser falsa en las dos direcciones."""
-        # `Deposito` no define `__bool__`, asi que `assert deposito(...)` no anadia
-        # condicion ninguna (R26/H26-06). Se comprueba DONDE cae la escritura.
-        d_canon = escritura.deposito(REF, "00_Input", "e", clase="contenido",
-                                     workspace=_ws(WorkspaceMode.DRIVE_ACTIVE, canon))
-        assert d_canon.escribir_texto("a.txt", "1").parent == canon / "00_Input"
-        d_local = escritura.deposito(REF, "00_Input", "e", clase="contenido",
-                                     workspace=_ws(WorkspaceMode.LOCAL_CHECKOUT,
-                                                   copia_local))
-        assert d_local.escribir_texto("a.txt", "1").parent == copia_local / "00_Input"
-
-
-class TestModoBloqueado:
-
-    def test_un_workspace_bloqueado_se_rechaza(self, canon):
-        """No tiene `working_root` por invariante; aceptarlo seria fingir una raíz."""
-        bloqueado = _ws(WorkspaceMode.BLOCKED_FOREIGN_CHECKOUT, None)
-        with pytest.raises(ValueError, match="bloquead"):
-            escritura.deposito(REF, "00_Input", "email", clase="contenido",
-                               workspace=bloqueado)
+# --- La UBICACION vive en `test_ubicacion_del_workspace.py` -------------------
+#
+# `TestModoYRaizConcuerdan` estaba aqui, y la prueba de mutacion de la particion lo
+# delato: sus mutantes de ubicacion mataban tests de este fichero, o sea que el CODIGO
+# estaba partido y los TESTS no. Una particion que solo separa el codigo no sirve para
+# lo que se hizo — que cada propiedad se pueda mover sin romper la otra.
 
 
 class TestLaPRUEBAEsElMetadato:
@@ -372,4 +343,112 @@ class TestLaPRUEBAEsElMetadato:
         assert (w, raiz, motivo) == ("W-SOLOME", local, None), (
             "la identidad no salio de `meta.id_go`; si el mutante `id_go = None` "
             "sobrevive, este test no esta mordiendo")
+
+
+class TestLaPeticionNoEsRespaldo:
+    """Con canon pero SIN W-code en él, la petición no puede nombrar el mutex.
+
+    **Este test faltaba, y lo destapó la prueba de mutación de la partición.** El arreglo
+    de R26/H26-02 —quitar `pedidos` del respaldo de `canon`— entró **sin contrato**: el
+    mutante que lo revierte sobrevivía a los 25 tests. El caso que ya existía cubre el
+    camino «el catálogo no conoce el caso», que retorna antes; éste cubre el otro, que es
+    el que R26 midió.
+
+    Y la vía histórica hace lo mismo: ahí también «sin `meta.id_go` ni nombre» es
+    identidad no utilizable. Que las dos coincidan es la propiedad, no una coincidencia.
+    """
+
+    def test_sin_id_go_y_sin_W_en_el_nombre_no_hay_namespace(self, tmp_casos_root,
+                                                             tmp_path):
+        import importlib
+
+        from core import case_manager as cm
+        from core.config import caso_path
+        importlib.reload(cm)
+
+        neutro = "Carpeta sin codigo ninguno"
+        cm.ensure_case(neutro, titulo=neutro)
+        # `ensure_case` deja `id_go: null`, que es exactamente el estado que hace falta:
+        # canon localizable, sin W-code ni en el metadato ni en el nombre.
+        p_caso = caso_path(neutro) / "00_Input" / "_caso.md"
+        meta = p_caso.read_text(encoding="utf-8")
+        if "id_go: null" not in meta and "id_go:" in meta:
+            pytest.skip("la fixture no dejo el metadato vacio")
+
+        local = tmp_path / "Desktop" / neutro
+        (local / "00_Input").mkdir(parents=True)
+        pedida = CaseRef(case_id=neutro, w_code="W-PEDIDA")
+        ws = CaseWorkspace(
+            case_ref=pedida, mode=WorkspaceMode.LOCAL_CHECKOUT, working_root=local,
+            canonical_ref=None, checkout_user=None, checkout_maquina=None,
+            checkout_nonce=None, checkout_timestamp=None, validado_en=AHORA,
+            procedencia="test")
+
+        w, raiz, motivo = escritura._identidad_de_workspace(pedida, ws)
+        assert w is None, (
+            "la peticion `W-PEDIDA` se convirtio en identidad: sin `meta.id_go` ni "
+            "W-code en el nombre no hay PRUEBA, y la peticion no la sustituye")
+        assert raiz == local
+        assert "no hay identidad canonica" in motivo
+
+    def test_y_la_via_HISTORICA_dice_lo_mismo(self, tmp_casos_root):
+        """Las dos vías coinciden, y eso es la propiedad: una sola regla."""
+        import importlib
+
+        from core import case_manager as cm
+        importlib.reload(cm)
+        neutro = "Otra carpeta sin codigo"
+        cm.ensure_case(neutro, titulo=neutro)
+        w, _dir, motivo = escritura._identidad(CaseRef(case_id=neutro,
+                                                       w_code="W-PEDIDA"))
+        assert w is None and motivo is not None
+
+
+class TestElExpedienteCORRECTO:
+    """La mitad de la vieja invariante que se quedo en identidad, y no tenia test.
+
+    R27/H27-02: el mutante que desactiva la igualdad `drive_active == canon de este caso`
+    sobrevivia a los 56. Que la raiz este DENTRO del catalogo lo garantiza `ubicacion`;
+    que sea ESTE expediente es identidad, y hasta ahora era una afirmacion sin contrato.
+    """
+
+    def test_un_drive_active_sobre_el_canon_de_OTRO_caso_se_rechaza(self, canon,
+                                                                    tmp_casos_root):
+        import importlib
+
+        from core import case_manager as cm
+        from core.config import caso_path
+        from core.casos.workspace_model import IdentidadDiscordante
+        importlib.reload(cm)
+        otro = "BaXX7 - Otro - (W-OTROID) - NEGATIVA_OFERTA"
+        cm.ensure_case(otro, titulo=otro)
+        ws = CaseWorkspace(
+            case_ref=REF, mode=WorkspaceMode.DRIVE_ACTIVE,
+            working_root=caso_path(otro), canonical_ref=None, checkout_user=None,
+            checkout_maquina=None, checkout_nonce=None, checkout_timestamp=None,
+            validado_en=AHORA, procedencia="test")
+        with pytest.raises(IdentidadDiscordante):
+            escritura.deposito(REF, "00_Input", "x", clase="contenido", workspace=ws)
+
+    def test_un_drive_active_de_un_caso_DESCONOCIDO_se_rechaza(self, tmp_casos_root):
+        """R27/H27-01: la regresion que introduje al partir.
+
+        El modo dice «soy el canon» y el catalogo no conoce ningun caso con esa
+        identidad. `ubicacion` dice DENTRO —lo esta— y el retorno debil de identidad se
+        saltaba la contradiccion: escribia en la raiz del catalogo, en un directorio
+        suelto o en la bandeja de otro caso, sin identidad y sin mutex.
+        """
+        from core.casos.workspace_model import IdentidadDiscordante
+        from pathlib import Path as _P
+        suelto = _P(str(tmp_casos_root)) / "directorio_suelto"
+        suelto.mkdir(parents=True, exist_ok=True)
+        fantasma = CaseRef(case_id="Caso que el catalogo no conoce", w_code="W-FANTAS")
+        ws = CaseWorkspace(
+            case_ref=fantasma, mode=WorkspaceMode.DRIVE_ACTIVE, working_root=suelto,
+            canonical_ref=None, checkout_user=None, checkout_maquina=None,
+            checkout_nonce=None, checkout_timestamp=None, validado_en=AHORA,
+            procedencia="test")
+        with pytest.raises(IdentidadDiscordante):
+            escritura.deposito(fantasma, "00_Input", "x", clase="contenido",
+                               modo="libre", workspace=ws)
 
