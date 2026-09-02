@@ -36,6 +36,7 @@ legitima desaparecia del fichero en la siguiente reescritura: el arreglo perdia 
 """
 from __future__ import annotations
 
+import dataclasses
 import importlib
 import json
 import os
@@ -493,10 +494,38 @@ class TestRutasQueNoEXISTEN:
             pytest.skip("la ruta de la sonda existe, y debe no existir")
         assert case_catalog.bajo_catalogo(Path(_EXT + str(inexistente))) is True
 
+    def test_con_el_CATALOGO_inexistente_solo_lo_salva_el_saneado_del_prefijo(
+            self, tmp_path, monkeypatch):
+        """El unico escenario donde la comparacion lexica es INDISPENSABLE.
+
+        Lo destapo la mutacion: quitar el saneado del prefijo extendido dejaba el mutante
+        VIVO incluso con un destino inexistente, porque `_dentro_fisicamente` sube por los
+        ancestros y **el catalogo si existia**. Sin catalogo en disco -- un clon recien
+        hecho, sin `data/CASOS` -- no hay ancestro que consultar y solo queda lo lexico.
+
+        O sea: mi test anterior probaba la propiedad por el camino equivocado. Un test que
+        pasa no dice por que pasa; el mutante si.
+        """
+        from core import config
+        import core.casos.case_catalog as cc
+        raiz = tmp_path / "CASOS_QUE_NO_EXISTE"
+        monkeypatch.setattr(config, "settings",
+                            dataclasses.replace(config.settings,
+                                                casos_root=str(raiz)))
+        importlib.reload(cc)
+        try:
+            destino = raiz / CASE
+            # Precondicion sin `assert`.
+            if raiz.exists():
+                pytest.skip("la raiz de la sonda existe, y debe no existir")
+            assert cc.bajo_catalogo(Path(_EXT + str(destino))) is True
+        finally:
+            importlib.reload(cc)
+
+
     def test_y_uno_inexistente_de_verdad_fuera_sigue_dando_False(self, tmp_casos_root,
                                                                  tmp_path):
         inexistente = tmp_path / "Desktop" / "no-existe" / CASE
         if inexistente.exists():
             pytest.skip("la ruta de la sonda existe, y debe no existir")
         assert case_catalog.bajo_catalogo(inexistente) is False
-
