@@ -458,6 +458,46 @@ def deps_que_faltan(deps: tuple[str, ...] = DEPS_DE_COLECCION) -> list[str]:
     return faltan
 
 
+def venv_sugerido() -> Path | None:
+    """El `python.exe` del venv del repo, resolviendo el caso worktree.
+
+    **Por que no vale `ROOT/.venv`.** En un worktree ese venv NO existe -el
+    venv vive en el repo principal-, y el worktree es justamente el escenario
+    que dispara la verja: sugerir `ROOT/.venv` manda a un interprete
+    inexistente. Defecto real del PR #258, cazado al ejecutarlo y no por sus
+    tests (uno pedia solo `".venv" in salida`, y una ruta equivocada tambien lo
+    cumple).
+
+    **Como se resuelve sin subproceso.** En un worktree, `ROOT/.git` es un
+    FICHERO con `gitdir: <repo>/.git/worktrees/<nombre>`; el antecesor llamado
+    `.git` da la raiz real. La verja va antes de cualquier subproceso, asi que
+    no se le puede preguntar a git.
+
+    Returns:
+        La ruta si existe en disco; ``None`` si no hay venv en ninguna de las
+        dos raices -mejor callar que inventar una ruta.
+    """
+    raices = [ROOT]
+    dot_git = ROOT / ".git"
+    if dot_git.is_file():
+        try:
+            texto = dot_git.read_text(encoding="utf-8", errors="replace").strip()
+        except OSError:
+            texto = ""
+        if texto.startswith("gitdir:"):
+            gitdir = Path(texto.split(":", 1)[1].strip().replace("\\", "/"))
+            for ancestro in gitdir.parents:
+                if ancestro.name == ".git":
+                    raices.append(ancestro.parent)
+                    break
+    for raiz in raices:
+        for rel in (("Scripts", "python.exe"), ("bin", "python")):
+            candidato = raiz.joinpath(".venv", *rel)
+            if candidato.exists():
+                return candidato
+    return None
+
+
 def main() -> None:
     # Antes de cualquier otra cosa: si este interprete no puede importar las
     # dependencias, la suite no va a "fallar" — no va a correr. Presentar eso
@@ -467,12 +507,20 @@ def main() -> None:
     # VERIFICAR. De ahi el codigo 2, distinto del 1 de "medi y salio mal".
     faltan = deps_que_faltan()
     if faltan:
-        venv = ROOT / ".venv" / "Scripts" / "python.exe"
         print(f"\n[X] NO SE HA MEDIDO NADA: este interprete no puede importar "
               f"{', '.join(faltan)}.")
         print(f"    Interprete usado: {PYTHON}")
-        print("    Los worktrees no tienen `.venv` propio. Usa el del repo:")
-        print(f'      & "{venv}" -m scripts.session_close')
+        venv = venv_sugerido()
+        if venv is not None:
+            print("    Los worktrees no tienen `.venv` propio. Usa el del repo:")
+            print(f'      & "{venv}" -m scripts.session_close')
+        else:
+            # Nunca imprimir una ruta compuesta a ciegas: si no se encuentra el
+            # venv, decirlo es mas util que mandar a un fichero inexistente.
+            print("    No encuentro el `.venv` del repo (ni aqui ni en la raiz "
+                  "principal).")
+            print("    Crealo o activalo antes de cerrar: pip install -r "
+                  "requirements.txt")
         print("    La suite NO ha corrido: esto no dice nada sobre su estado.")
         sys.exit(2)
 
