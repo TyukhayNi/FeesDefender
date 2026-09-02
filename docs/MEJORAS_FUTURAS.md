@@ -6181,3 +6181,21 @@ git para elegir el modo: si no se puede medir, no se hace nada en absoluto.
 8 tests, en RED antes de la implementación, y **cuatro mutantes** —salida 2→1, puerta que nunca
 dispara, puerta que dispara siempre, y `find_spec` sin capturar la excepción del padre ausente—
 que matan exactamente su frontera. Suite 3.745/0/0 (+87 skip) con dos semillas.
+
+**Y el PR #258 se mergeó con un defecto dentro, corregido acto seguido.** El mensaje componía
+`ROOT/.venv/Scripts/python.exe`, que **en un worktree no existe** — y el worktree es justamente el
+escenario que dispara la verja: mandaba a usar un intérprete inventado. Lo cazó la **prueba de
+aceptación** —correr el comando real con el Python del sistema y leer su salida—, **no los tests**:
+`test_el_mensaje_..._nombra_el_interprete` pedía solo `".venv" in salida`, y una ruta equivocada
+también lo cumple. El test **defendía el bug** (ver la memoria `feedback-un-test-puede-defender-el-defecto`).
+
+Arreglado con `venv_sugerido()`, que resuelve la raíz real **sin subproceso** —la verja va antes de
+cualquiera—: en un worktree `ROOT/.git` es un *fichero* con `gitdir: <repo>/.git/worktrees/<n>`, y
+el antecesor `.git` da el repo principal; prueba `Scripts/python.exe` y `bin/python`, y **solo
+devuelve lo que existe en disco**, con `None` y un mensaje honesto si no hay ninguno. 6 tests más
+—entre ellos el que faltaba: que la ruta sugerida **exista**, no que el texto contenga `.venv`— y
+tres mutantes (volver al bug, no comprobar la existencia, ignorar el `gitdir`).
+
+**La lección, que es de método y no de este fichero:** los tests dieron 8/8 verde sobre un mensaje
+inservible. Lo que lo destapó fue **ejecutar la cosa y mirar lo que imprime**. Un arreglo cuya mitad
+útil es un texto para un humano no está verificado hasta que alguien lee ese texto.
