@@ -6145,7 +6145,7 @@ caso abierto ahí queda en copia única sobre el Desktop por tiempo indefinido. 
 **Disparador:** la próxima apertura en modo local, o una decisión de Nikolai. Sin él, la vía manual
 está documentada en `[APER-41]` del runbook y basta.
 
-## 140. `session_close` da rojo falso cuando corre fuera del venv
+## 140. `session_close` da rojo falso cuando corre fuera del venv `[RESUELTO]`
 
 En un worktree, `python -m scripts.session_close` resuelve al **Python del sistema** (los worktrees
 no tienen `.venv` propio; el venv vive en la raíz del repo). El resultado, medido el 2026-09-02:
@@ -6165,4 +6165,19 @@ de atribuirlo a los tests. Distinguir «no pude medir» de «medí y salió mal�
 el despacho ya aplica a las revisiones adversariales: un revisor que no corre no refuta, deja **sin
 verificar**.
 
-**Disparador:** que vuelva a pasar, o cualquier sesión que toque `scripts/session_close.py`.
+**RESUELTO el 2026-09-02, PR [#258](https://github.com/TyukhayNi/FeesDefender/pull/258)** — en la
+misma sesión que lo midió, por decisión de Nikolai. `deps_que_faltan()` sonda las dependencias de
+colección (`pytest`, `dotenv`, `yaml`, `slugify`) y una puerta al principio de `main()` aborta con
+**salida 2** —distinta del **1** de «medí y salió mal»— antes de lanzar **ningún** subproceso,
+incluida la consulta a git que decide el modo.
+
+**Dos desvíos respecto al arreglo propuesto arriba, y por qué.** (1) Se descartó
+`sys.prefix != sys.base_prefix`: mide «estoy dentro de un venv», que **no es la propiedad que
+decide** si la medición vale — alguien con las dependencias instaladas globalmente está
+perfectamente y recibiría una falsa alarma. Lo que se sonda es la importabilidad real. (2) La
+puerta va antes de **todo** subproceso, no solo antes de pytest, porque `_anon_tocado()` consulta
+git para elegir el modo: si no se puede medir, no se hace nada en absoluto.
+
+8 tests, en RED antes de la implementación, y **cuatro mutantes** —salida 2→1, puerta que nunca
+dispara, puerta que dispara siempre, y `find_spec` sin capturar la excepción del padre ausente—
+que matan exactamente su frontera. Suite 3.745/0/0 (+87 skip) con dos semillas.
