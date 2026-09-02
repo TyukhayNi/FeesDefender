@@ -116,9 +116,28 @@ class TestLaVerja:
         assert "NO SE HA MEDIDO NADA" in salida
         assert "yaml" in salida and "dotenv" in salida
         assert sys.executable in salida, "debe nombrar el intérprete culpable"
-        assert ".venv" in salida, "debe decir cuál usar"
         assert "Tests fallando" not in salida, (
             "no puede reutilizarse el mensaje que culpa a los tests")
+
+    def test_el_mensaje_sugiere_un_interprete_QUE_EXISTE(
+            self, monkeypatch, pytest_espia, capsys):
+        """La ruta del mensaje tiene que resolver en disco, no solo contener «.venv».
+
+        **Defecto real, cazado por la prueba de aceptación y no por los tests**
+        (2026-09-02, PR #258): la primera versión componía `ROOT/.venv/...`, y
+        en un worktree eso NO existe — que es justamente el escenario que
+        dispara la verja. El test original solo pedía `".venv" in salida`, y una
+        ruta equivocada también lo cumple: **defendía el bug**.
+        """
+        monkeypatch.setattr(sc, "deps_que_faltan", lambda *a, **k: ["yaml"])
+        with pytest.raises(SystemExit):
+            sc.main()
+        salida = capsys.readouterr().out
+        sugerido = sc.venv_sugerido()
+        assert sugerido is not None, "en este repo el venv existe: debe encontrarlo"
+        assert sugerido.exists(), f"sugiere un intérprete inexistente: {sugerido}"
+        assert str(sugerido) in salida, (
+            f"el mensaje no nombra la ruta resuelta ({sugerido}):\n{salida}")
 
     def test_con_las_dependencias_presentes_la_verja_no_dispara(
             self, monkeypatch, pytest_espia):
@@ -132,3 +151,48 @@ class TestLaVerja:
             sc.main()
         lanzo_pytest = [c for c in pytest_espia if "pytest" in c]
         assert lanzo_pytest, f"no llegó a pytest; solo lanzó: {pytest_espia}"
+
+
+class TestLaRutaQueSugiere:
+    """`venv_sugerido` resuelve el venso del repo PRINCIPAL, no el del worktree."""
+
+    def test_en_este_repo_encuentra_uno_que_existe(self):
+        py = sc.venv_sugerido()
+        assert py is not None and py.exists(), f"no resolvió un intérprete real: {py}"
+
+    def test_desde_un_worktree_resuelve_el_venv_del_repo_principal(
+            self, tmp_path, monkeypatch):
+        """En un worktree, `.git` es un FICHERO con `gitdir:` al repo principal.
+
+        De ahí sale la raíz real sin lanzar un subproceso — la verja va antes de
+        cualquiera, así que no puede preguntárselo a git.
+        """
+        repo = tmp_path / "repo"
+        real = repo / ".venv" / "Scripts" / "python.exe"
+        real.parent.mkdir(parents=True)
+        real.write_text("")
+        wt = repo / ".claude" / "worktrees" / "w1"
+        wt.mkdir(parents=True)
+        (wt / ".git").write_text(
+            f"gitdir: {repo.as_posix()}/.git/worktrees/w1\n", encoding="utf-8")
+
+        monkeypatch.setattr(sc, "ROOT", wt)
+        assert sc.venv_sugerido() == real
+
+    def test_en_el_repo_principal_usa_el_propio(self, tmp_path, monkeypatch):
+        real = tmp_path / ".venv" / "Scripts" / "python.exe"
+        real.parent.mkdir(parents=True)
+        real.write_text("")
+        monkeypatch.setattr(sc, "ROOT", tmp_path)
+        assert sc.venv_sugerido() == real
+
+    def test_sin_venv_en_ninguna_parte_devuelve_None_en_vez_de_inventarla(
+            self, tmp_path, monkeypatch):
+        monkeypatch.setattr(sc, "ROOT", tmp_path)
+        assert sc.venv_sugerido() is None
+
+    def test_un_git_ilegible_no_revienta(self, tmp_path, monkeypatch):
+        """Un `.git` con basura dentro no puede tumbar el cierre."""
+        (tmp_path / ".git").write_text("esto no es un gitdir\n", encoding="utf-8")
+        monkeypatch.setattr(sc, "ROOT", tmp_path)
+        assert sc.venv_sugerido() is None
