@@ -42,10 +42,57 @@ from .. import config
 from . import case_locator
 from .workspace_model import AmbiguousCase, CaseRef, LocalWorkspaceMissing
 
-__all__ = ["CaseCatalog", "MARCA_PROYECCION_LOCAL"]
+__all__ = ["CaseCatalog", "MARCA_PROYECCION_LOCAL", "bajo_catalogo"]
 
 #: Clave del frontmatter que marca una copia local como reflejo, no expediente.
 MARCA_PROYECCION_LOCAL = "proyeccion_local"
+
+
+def bajo_catalogo(path: Path) -> bool:
+    """¿`path` cae dentro de `CASOS_ROOT`? **La única definición, para todos.**
+
+    Era un `staticmethod` de `CaseCatalog` y lo consultaba **un solo lector**
+    (`resolver_por_ruta`). `MEJORAS #136` midió el precio: ni `WorkspaceRegistry.alta`
+    ni `verificar_adopcion` lo miraban, así que `adoptar` aceptaba la ruta del canon y
+    el intake pasaba a escribir sobre el expediente prestado **sin desviar**. Vive aquí,
+    a nivel de módulo, para que la frontera que escribe pueda importarla sin arrastrar
+    la clase — y para que no haya una segunda definición que diverja.
+
+    ## Dos comparaciones, y hacen falta las dos
+
+    **Léxica**, sobre `abspath`: coge la ruta relativa y el caso ordinario, y funciona
+    sobre rutas que **no existen** (que es cuando se pregunta al dar de alta un destino).
+
+    **Física**, sobre `resolve()`: coge lo que la léxica no puede ver. Una *junction* de
+    Windows colocada fuera del catálogo apunta dentro, y el alias 8.3 escribe el mismo
+    directorio con otro nombre. Con solo la comparación de cadenas, las dos contestan
+    «fuera» sobre algo que **es** el canon.
+
+    Se compara por **componentes de ruta**, no por prefijo de cadena: `CASOS_x` no está
+    bajo `CASOS` aunque su nombre empiece igual, y confundirlos daría por bueno un
+    destino que está fuera.
+
+    ## Falla CERRADO, y ése es el cambio de conducta
+
+    Antes, un `OSError`/`ValueError` al comparar devolvía `False` — o sea «no está bajo
+    el catálogo», o sea **adelante**. Ahora devuelve `True`: «no puedo saber dónde cae»
+    no es «cae fuera». Es la misma polaridad que el resto del modelo dual, y afecta
+    también a `resolver_por_ruta`, que era su único consumidor.
+    """
+    raiz = Path(config.settings.casos_root)
+    try:
+        c = os.path.normcase(os.path.abspath(str(Path(path))))
+        r = os.path.normcase(os.path.abspath(str(raiz)))
+    except (OSError, ValueError):
+        return True
+    if c == r or c.startswith(r + os.sep):
+        return True
+    try:
+        cf = os.path.normcase(str(Path(path).resolve()))
+        rf = os.path.normcase(str(raiz.resolve()))
+    except (OSError, ValueError, RuntimeError):
+        return True
+    return cf == rf or cf.startswith(rf + os.sep)
 
 
 class CaseCatalog:
@@ -126,20 +173,12 @@ class CaseCatalog:
 
     @staticmethod
     def bajo_catalogo(path: Path) -> bool:
-        """¿`path` cae dentro de `CASOS_ROOT`?
+        """Delega en :func:`bajo_catalogo`. **La lógica ya no vive aquí.**
 
-        Sirve para rechazar el destino de un checkout que viviría **dentro** de la
-        propia biblioteca (§5.1): tendrías la copia de trabajo y el original
-        mezclados, y el siguiente `list_cases()` los vería como dos expedientes.
-
-        Compara por **componentes de ruta**, no por prefijo de cadena: `CASOS_x` no
-        está bajo `CASOS` aunque su nombre empiece igual, y confundirlos daría por
-        bueno un destino que está fuera.
+        Se conserva el método porque `resolver_por_ruta` y sus tests lo llaman por este
+        nombre; lo que se retira es que la definición estuviera colgada de una clase que
+        la frontera de escritura no puede importar sin arrastrarla entera. Dos copias de
+        «¿está bajo el catálogo?» es como nacen las divergencias, y `MEJORAS #136` es lo
+        que cuesta tenerla en un solo lector.
         """
-        raiz = Path(config.settings.casos_root)
-        try:
-            c = os.path.normcase(os.path.abspath(str(Path(path))))
-            r = os.path.normcase(os.path.abspath(str(raiz)))
-        except (OSError, ValueError):
-            return False
-        return c == r or c.startswith(r + os.sep)
+        return bajo_catalogo(path)

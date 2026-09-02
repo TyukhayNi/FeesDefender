@@ -171,7 +171,28 @@ class WorkspaceRegistry:
         if not isinstance(crudo, list):
             self._cuarentena(fichero)
             raise RegistryUnreadable(detalle=f"{fichero.name} no contiene una lista")
-        return [WorkspaceEntry.de_json(e) for e in crudo]
+        return self._sin_canonicas(WorkspaceEntry.de_json(e) for e in crudo)
+
+    @staticmethod
+    def _sin_canonicas(entradas) -> list[WorkspaceEntry]:
+        """Descarta las entradas que apuntan bajo el catálogo (`MEJORAS #136`).
+
+        Es la frontera de **lectura**, hermana del rechazo de `alta`. Existe por el estado
+        heredado: una máquina que adoptó el canon antes del arreglo tiene esa entrada en
+        disco, y el rechazo del alta no la retira.
+
+        **Descarta en vez de lanzar, y es deliberado.** Lanzar dejaría la máquina
+        inutilizable por un dato que el propio sistema permitió escribir; descartar la
+        devuelve a la conducta segura —el caso vuelve a resolverse contra el canon y el
+        intake vuelve a desviar—, que es exactamente donde debía haber estado siempre.
+
+        **Y aquí termina: el resolver NO lleva una segunda comprobación.** R21 la
+        recomendaba «al cargar y en `resolver_por_identidad`», pero el resolver recibe sus
+        candidatos por aquí, así que esa segunda guarda **no podría ser falsa nunca** — la
+        clase de defecto que esta corrección viene a cerrar. Se hace una vez, en el sitio.
+        """
+        from .case_catalog import bajo_catalogo
+        return [e for e in entradas if not bajo_catalogo(Path(e.local_path))]
 
     def _cuarentena(self, fichero: Path) -> None:
         """Preserva los bytes. NO borra nunca: un registro ilegible es evidencia."""
@@ -233,7 +254,24 @@ class WorkspaceRegistry:
             raise
 
     def alta(self, entrada: WorkspaceEntry) -> None:
-        """Registra una copia local. Rechaza reusar una ruta de otro caso."""
+        """Registra una copia local. Rechaza el canon y reusar la ruta de otro caso.
+
+        **El rechazo del canon es `MEJORAS #136`**, y su lugar es éste: la frontera que
+        escribe. Antes la invariante «el registro no contiene rutas del catálogo» solo la
+        aplicaba `resolver_por_ruta`, que es un **lector** — de modo que `adoptar` podía
+        dar de alta la ruta canónica y todo el que leyera el registro después trataba el
+        canon como copia prestada, dejando de desviar el intake sobre un caso prestado.
+
+        Escribir la razón correcta en un docstring no la aplica: eso es lo que hacía la
+        vieja documentación de `es_copia_prestada`, que citaba esta invariante como motivo
+        para confiar en el registro.
+        """
+        from .case_catalog import bajo_catalogo
+        if bajo_catalogo(Path(entrada.local_path)):
+            raise wm.WorkspaceUnderCatalogRoot(
+                w_code=entrada.w_code,
+                detalle="una copia local no puede vivir bajo el catalogo: esa ruta es "
+                        "el expediente canonico, no una copia de trabajo")
         for otra in self.cargar():
             if (os.path.normcase(str(otra.local_path))
                     == os.path.normcase(str(entrada.local_path))
