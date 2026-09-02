@@ -208,16 +208,24 @@ class CaseWorkspaceResolver:
 
     @staticmethod
     def _sin_canonicos(entradas):
-        """Descarta candidatos cuya raíz cae dentro del catálogo (`MEJORAS #136`).
+        """Solo los candidatos **demostrablemente fuera** del catálogo (`MEJORAS #136`).
 
-        El registro concreto ya los oculta al leer; esto cubre el **seam inyectado**, que
-        es superficie publicada y no una hipótesis (R22/H22-05, con doble).
+        El registro concreto ya oculta los canónicos al leer; esto cubre el **seam
+        inyectado**, que es superficie publicada y no una hipótesis (R22/H22-05).
+
+        ## Exige `FUERA`, no «distinto de `DENTRO`», y ésa es la corrección de R23/H23-03
+
+        Aquí se **autoriza a usar** un workspace, y conservar no es autorizar. El registro
+        guarda lo indeterminado a propósito —para no borrarlo— pero entregárselo al
+        resolver convertía esa entrada conservada en un `LOCAL_CHECKOUT` cuya raíz podía
+        ser físicamente el canon. Las dos fronteras tienen la misma pregunta y polaridades
+        opuestas: una decide qué se conserva, la otra qué se puede tocar.
         """
-        from .case_catalog import DENTRO, clasificar_bajo
+        from .case_catalog import FUERA, clasificar_bajo
         from .. import config
         raiz = Path(config.settings.casos_root)
         return [e for e in entradas
-                if clasificar_bajo(Path(e.local_path), raiz) != DENTRO]
+                if clasificar_bajo(Path(e.local_path), raiz) == FUERA]
 
     def _entrada_de_ruta(self, path: Path):
         import os

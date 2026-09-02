@@ -60,9 +60,6 @@ DENTRO = "dentro"
 FUERA = "fuera"
 INDETERMINADO = "indeterminado"
 
-#: Cuántos ancestros se recorren buscando identidad física. Un tope explícito, porque
-#: un ciclo de reparse points haría infinito el ascenso.
-_MAX_ANCESTROS = 64
 
 
 def _sin_prefijo_extendido(s: str) -> str:
@@ -94,34 +91,38 @@ def _componentes(p) -> tuple[str, ...]:
 def _dentro_fisicamente(candidata: Path, raiz: Path):
     """¿`candidata` está físicamente bajo `raiz`? `None` = no se pudo determinar.
 
-    Sube por los ancestros comparando **identidad de directorio** (`os.path.samestat`),
-    no cadenas. Es lo único que cierra a la vez la *junction*, el alias 8.3, el nombre
-    Volume GUID y la ruta UNC: todas escriben el mismo directorio de forma distinta, y
-    el sistema de ficheros sí sabe que es el mismo.
+    **Resuelve las dos rutas y compara componentes.** `os.path.realpath` sigue las
+    *junctions* estén donde estén en la cadena, expande el alias 8.3 y traduce el nombre
+    Volume GUID a su forma con letra de unidad; sobre una ruta que aún no existe resuelve
+    lo que puede y deja el resto, que es justo lo que hace falta al autorizar un destino.
 
-    Se asciende porque la pregunta es de **contención**, no de igualdad, y porque la ruta
-    por la que se pregunta puede no existir todavía —el caso normal al autorizar un
-    destino—: se compara desde el primer ancestro que sí existe.
+    ## La versión anterior ascendía por los ancestros, y era una frontera mal cerrada
+
+    Comparaba `os.path.samestat` contra la raíz subiendo por `p.parent` — que sigue el
+    árbol **léxico**. Con una junction que apunta a la **raíz** funcionaba; con una que
+    apunta a un **descendiente** —`link → CASOS/<caso>`— nunca visitaba el padre físico
+    canónico y contestaba «fuera» sobre la misma carpeta (R23/H23-01, CRÍTICO, que
+    reproduje). Yo había contratado el caso «junction → raíz» y di por generalizada la
+    frontera, que es *«cualquier alias cuyo destino físico caiga dentro del catálogo»*.
+
+    Al sustituir el ascenso desaparecen además el tope de 64 ancestros y la rama del
+    `stat` de la raíz, donde R23 encontró otros dos defectos (H23-04, H23-07). Menos
+    superficie propia y más sistema operativo.
+
+    ## Cuándo devuelve `None`, dicho sin inflarlo
+
+    Su disparador en producción es **estrecho**: `realpath` no lanza sobre rutas que no
+    existen, así que solo quedan los errores duros de resolución y las rutas con
+    caracteres imposibles. Se conserva porque la *polaridad* importa —«no puedo saberlo»
+    no es «cae fuera»— y porque una entrada ya registrada puede volverse inclasificable,
+    no porque sea un caso frecuente. Los tests lo fuerzan por inyección y lo declaran.
     """
     try:
-        st_raiz = os.stat(raiz)
-    except OSError:
-        # Si la raíz no existe, nada puede estar físicamente dentro de ella. No es
-        # fallo abierto: es que la pregunta física no tiene sujeto.
-        return False
-    p = Path(os.path.abspath(_sin_prefijo_extendido(str(candidata))))
-    for _ in range(_MAX_ANCESTROS):
-        try:
-            if os.path.samestat(os.stat(p), st_raiz):
-                return True
-        except FileNotFoundError:
-            pass                       # ese ancestro no existe: se sigue subiendo
-        except OSError:
-            return None                # permisos, dispositivo: NO se puede determinar
-        if p.parent == p:
-            return False
-        p = p.parent
-    return None
+        c = _componentes(os.path.realpath(str(candidata)))
+        r = _componentes(os.path.realpath(str(raiz)))
+    except (OSError, ValueError):
+        return None
+    return len(c) >= len(r) and c[:len(r)] == r
 
 
 def clasificar_bajo(path, raiz) -> str:

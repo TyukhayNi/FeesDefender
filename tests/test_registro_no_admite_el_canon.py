@@ -233,20 +233,23 @@ class TestPredicado:
                                                             monkeypatch):
         """Falla cerrado. Antes devolvia `False` -- o sea «adelante» -- ante un error.
 
-        Se induce el fallo en `os.stat`, que es lo que el codigo usa de verdad. La
-        version anterior de este test parcheaba `Path.resolve`, y cuando la comparacion
-        fisica paso a `samestat` el parche dejo de tocar nada: **un test puede quedarse
-        apuntando a una implementacion que ya no existe y seguir verde por otra via**.
-        Aqui se puso rojo, que es la senal correcta.
+        Se induce el fallo en `os.path.realpath`, que es lo que el codigo usa AHORA. Van
+        ya dos veces que este test se queda apuntando a una implementacion retirada -- lo
+        parcheaba en `Path.resolve`, luego en `os.stat` -- y las dos se puso rojo al
+        cambiarla, que es exactamente para lo que sirve. Un test que sobrevive a un
+        cambio de implementacion sin enterarse estaria probando otra cosa.
+
+        Rama defensiva declarada: `realpath` no lanza sobre rutas inexistentes, asi que su
+        disparador natural es estrecho. Se ejercita por inyeccion y se dice.
         """
-        real = os.stat
+        real = os.path.realpath
 
         def _revienta(ruta, *a, **k):
             if "denegado" in str(ruta):
-                raise PermissionError("no se puede determinar")
+                raise OSError("no se puede determinar")
             return real(ruta, *a, **k)
 
-        monkeypatch.setattr(os, "stat", _revienta)
+        monkeypatch.setattr(os.path, "realpath", _revienta)
         assert case_catalog.bajo_catalogo(Path("C:/denegado/sitio")) is True
 
     def test_una_ruta_de_verdad_fuera_sigue_dando_False(self, tmp_casos_root, tmp_path):
@@ -529,3 +532,130 @@ class TestRutasQueNoEXISTEN:
         if inexistente.exists():
             pytest.skip("la ruta de la sonda existe, y debe no existir")
         assert case_catalog.bajo_catalogo(inexistente) is False
+
+
+def _junction(destino: Path, enlace: Path) -> bool:
+    r = subprocess.run(["cmd", "/c", "mklink", "/J", str(enlace), str(destino)],
+                       capture_output=True, encoding="utf-8", errors="replace")
+    return r.returncode == 0
+
+
+class TestCualquierAliasAlCatalogo:
+    """La frontera es «el destino FISICO cae dentro», no «la junction apunta a la raiz».
+
+    Yo habia contratado un solo caso —junction hacia la raiz— y di la frontera por
+    generalizada. R23/H23-01 la rompio con la junction hacia un DESCENDIENTE: el ascenso
+    por ancestros seguia el arbol lexico, asi que nunca visitaba el padre fisico canonico
+    y contestaba «fuera» sobre la misma carpeta. Cuarta vez en la misma sesion que cierro
+    el ejemplo en vez de la frontera; por eso aqui van los tres alias, no uno.
+    """
+
+    def test_junction_a_la_RAIZ(self, tmp_casos_root, tmp_path):
+        from core.config import settings
+        enlace = tmp_path / "link_raiz"
+        if not _junction(Path(settings.casos_root), enlace):
+            pytest.skip("no se pudo crear la junction")
+        assert case_catalog.bajo_catalogo(enlace) is True
+
+    def test_junction_a_un_DESCENDIENTE(self, tmp_casos_root, tmp_path):
+        from core.config import settings
+        caso = Path(settings.casos_root) / CASE
+        caso.mkdir(parents=True, exist_ok=True)
+        enlace = tmp_path / "link_caso"
+        if not _junction(caso, enlace):
+            pytest.skip("no se pudo crear la junction")
+        # Precondicion sin `assert`: si no fueran la misma carpeta, el test no prueba nada.
+        if not os.path.samefile(str(enlace), str(caso)):
+            pytest.skip("el host no trata la junction como la misma carpeta")
+        assert case_catalog.bajo_catalogo(enlace) is True
+
+    def test_y_un_hijo_DENTRO_de_esa_junction(self, tmp_casos_root, tmp_path):
+        from core.config import settings
+        caso = Path(settings.casos_root) / CASE
+        (caso / "00_Input").mkdir(parents=True, exist_ok=True)
+        enlace = tmp_path / "link_caso2"
+        if not _junction(caso, enlace):
+            pytest.skip("no se pudo crear la junction")
+        assert case_catalog.bajo_catalogo(enlace / "00_Input") is True
+
+    def test_el_alias_tampoco_entra_por_alta(self, tmp_casos_root, registro, tmp_path):
+        """De punta a punta: el alias no solo se clasifica, se RECHAZA."""
+        from core.config import settings
+        caso = Path(settings.casos_root) / CASE
+        caso.mkdir(parents=True, exist_ok=True)
+        enlace = tmp_path / "link_alta"
+        if not _junction(caso, enlace):
+            pytest.skip("no se pudo crear la junction")
+        with pytest.raises(WorkspaceUnderCatalogRoot):
+            registro.alta(_entrada(enlace))
+
+    def test_el_nombre_Volume_GUID_de_la_misma_carpeta(self, tmp_casos_root):
+        """R23/H23-02. `realpath` traduce el GUID a su forma con letra de unidad."""
+        from core.config import settings
+        caso = Path(settings.casos_root) / CASE
+        caso.mkdir(parents=True, exist_ok=True)
+        unidad = str(caso)[:3]
+        r = subprocess.run(["cmd", "/c", "mountvol", unidad, "/L"],
+                           capture_output=True, encoding="utf-8", errors="replace")
+        lineas = [x.strip() for x in (r.stdout or "").splitlines() if x.strip()]
+        guid = lineas[-1] if lineas and lineas[-1].startswith(_EXT + "Volume") else ""
+        if not guid:
+            pytest.skip("no se pudo obtener el GUID del volumen")
+        por_guid = Path(guid.rstrip(chr(92)) + chr(92) + str(caso)[3:])
+        if not os.path.samefile(str(caso), str(por_guid)):
+            pytest.skip("el host no trata el GUID como la misma carpeta")
+        assert case_catalog.bajo_catalogo(por_guid) is True
+
+
+class TestConservarNoEsAutorizar:
+    """R23/H23-03: la misma pregunta con polaridades opuestas en dos fronteras."""
+
+    def test_el_registro_CONSERVA_lo_indeterminado(self, tmp_casos_root, registro,
+                                                   tmp_path, monkeypatch):
+        fuera = tmp_path / "Desktop" / CASE
+        fuera.mkdir(parents=True)
+        registro.alta(_entrada(fuera))
+        monkeypatch.setattr(case_catalog, "_dentro_fisicamente",
+                            _indeterminada_solo(fuera))
+        assert [Path(e.local_path) for e in registro.cargar()] == [fuera]
+
+    def test_pero_el_resolver_NO_lo_autoriza(self, tmp_casos_root, tmp_path,
+                                             monkeypatch):
+        """Conservar una entrada no es concederle un workspace."""
+        from core.casos.workspace_resolver import CaseWorkspaceResolver
+        from core.casos.workspace_model import LocalWorkspaceMissing
+        fuera = tmp_path / "Desktop" / CASE
+        fuera.mkdir(parents=True)
+
+        class RegistroFalso:
+            def buscar(self, ref):
+                return [_entrada(fuera)]
+
+            def cargar(self):
+                return [_entrada(fuera)]
+
+        monkeypatch.setattr(case_catalog, "_dentro_fisicamente",
+                            _indeterminada_solo(fuera))
+        r = CaseWorkspaceResolver(case_catalog.CaseCatalog(), RegistroFalso(),
+                                  usuario=USUARIO, maquina=MAQUINA, ahora=AHORA)
+        with pytest.raises(LocalWorkspaceMissing):
+            r.resolver_por_identidad(REF, drive_accesible=True)
+
+    def test_y_una_entrada_FUERA_si_se_autoriza(self, tmp_casos_root, tmp_path):
+        """La guarda tiene que poder ser falsa."""
+        from core.casos.workspace_resolver import CaseWorkspaceResolver
+        fuera = tmp_path / "Desktop" / CASE
+        fuera.mkdir(parents=True)
+
+        class RegistroFalso:
+            def buscar(self, ref):
+                return [_entrada(fuera)]
+
+            def cargar(self):
+                return [_entrada(fuera)]
+
+        r = CaseWorkspaceResolver(case_catalog.CaseCatalog(), RegistroFalso(),
+                                  usuario=USUARIO, maquina=MAQUINA, ahora=AHORA)
+        ws = r.resolver_por_identidad(REF, drive_accesible=True)
+        assert Path(ws.working_root) == fuera
+
