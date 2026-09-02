@@ -82,24 +82,71 @@ def _cache_hashes(case_dir: Path) -> dict[str, list]:
     return crudo if isinstance(crudo, dict) else {}
 
 
+#: Base relativa de los derivados de la sala de máquina, con `/` como manda la costura.
+_REL_SALA = "01_Procesado/02_Sala de máquina"
+
+
+def _deposito_sala(ws):
+    """La capacidad de escritura de los derivados, **ligada al workspace resuelto**.
+
+    Es lo que convierte a `sala_maquina` en el **primer cliente de producción** de
+    `core/casos/escritura.deposito()`. Hasta hoy la costura tenía cero llamadores: estaba
+    construida, probada con 18 tests y 12 mutantes, y no la usaba nadie — la misma
+    enfermedad que el mutex antes de 3A.
+
+    **Pasa el `workspace`, y ahí está todo el asunto.** Sin él, `deposito()` resolvería el
+    caso contra el catálogo y escribiría en el **canon** aunque se esté trabajando sobre
+    una copia prestada: es el `H18-01` que este trabajo cierra.
+
+    **No cambia el destino de nada.** `sala_maquina` ya escribía en `ws.working_root`; lo
+    que gana es la contención de la base y la declaración del mutex. Decirlo importa
+    porque un cliente que parece mover bytes y no los mueve es peor que ninguno.
+
+    ## No hay red: si la costura no entrega capacidad, esto ABORTA
+
+    Las dos versiones anteriores degradaban a la vía directa. La primera con un
+    `except Exception`, que convertía cualquier bug mío en un `None` mudo. La segunda con
+    un `except` estrecho de dos errores de identidad — y **R25/H25-05 mostró por qué eso
+    seguía estando mal**: `IdentidadDiscordante` no significa «falta namespace», significa
+    **no se ha demostrado qué caso se está escribiendo**. Degradarla salta exactamente la
+    comprobación que acaba de fallar, y con el cierre de H25-01 habría convertido la nueva
+    garantía en un bypass.
+
+    Aquí no hay que proteger la pantalla de nadie: `sala_maquina` es una CLI que se corre a
+    mano. Abortar con el error a la vista es la conducta correcta, y es la que el resto del
+    entrypoint ya tiene para `CaseBusy` y `MutexPerdido`.
+    """
+    from core.casos import escritura
+
+    return escritura.deposito(ws.case_ref, _REL_SALA, "sala_maquina",
+                              clase="derivado", modo="libre", workspace=ws)
+
+
 def _guardar_estado(case_dir: Path, shas: set[str], *,
                     intentos: dict[str, int] | None = None,
-                    hashes: dict[str, list] | None = None) -> None:
+                    hashes: dict[str, list] | None = None,
+                    dep=None) -> None:
     """Persiste el estado. `intentos`/`hashes` a `None` = conservar lo que hubiera.
 
     Conservar y no vaciar importa: `reforzar` y otros caminos llaman aquí sin saber nada
     de la caché, y vaciarla haría que la corrida siguiente rehashease el caso entero.
+
+    `dep`: capacidad de `_deposito_sala`. `None` = la vía directa de siempre, que los
+    tests existentes usan y que sigue siendo el camino cuando no hay workspace.
     """
-    d = sm._sala_maquina_dir(case_dir)
-    d.mkdir(parents=True, exist_ok=True)
     payload = {
         "procesados": sorted(shas),
         "intentos": _intentos_previos(case_dir) if intentos is None else
                     {k: v for k, v in sorted(intentos.items()) if v},
         "hashes": _cache_hashes(case_dir) if hashes is None else hashes,
     }
-    (d / _STATE).write_text(json.dumps(payload, ensure_ascii=False, indent=2),
-                            encoding="utf-8")
+    cuerpo = json.dumps(payload, ensure_ascii=False, indent=2)
+    if dep is not None:
+        dep.escribir_texto(_STATE, cuerpo)
+        return
+    d = sm._sala_maquina_dir(case_dir)
+    d.mkdir(parents=True, exist_ok=True)
+    (d / _STATE).write_text(cuerpo, encoding="utf-8")
 
 
 def _resumir_tiempos(tiempos: list[dict], ms_total: int, ms_inv: int,
@@ -171,12 +218,15 @@ def _cobertura_previa(case_dir: Path) -> list[sm.DocCobertura]:
     return sm.cobertura_desde_dicts(json.loads(f.read_text(encoding="utf-8")))
 
 
-def _guardar_cobertura(case_dir: Path, cob: list[sm.DocCobertura]) -> None:
+def _guardar_cobertura(case_dir: Path, cob: list[sm.DocCobertura], *, dep=None) -> None:
+    """`dep`: capacidad de `_deposito_sala`. `None` = la vía directa de siempre."""
+    cuerpo = json.dumps(sm.cobertura_a_dicts(cob), ensure_ascii=False, indent=2)
+    if dep is not None:
+        dep.escribir_texto(_COBERTURA, cuerpo)
+        return
     d = sm._sala_maquina_dir(case_dir)
     d.mkdir(parents=True, exist_ok=True)
-    (d / _COBERTURA).write_text(
-        json.dumps(sm.cobertura_a_dicts(cob), ensure_ascii=False, indent=2),
-        encoding="utf-8")
+    (d / _COBERTURA).write_text(cuerpo, encoding="utf-8")
 
 
 def _escribir_cobertura_md(case_dir: Path, cob: list[sm.DocCobertura]) -> None:
@@ -665,6 +715,13 @@ def plan(case_id: str = typer.Argument(None),
         from core.casos.workspace_model import Capability
         _exigir(ws, Capability.WRITE_CASE, Capability.GENERATE_DERIVATIVES)
         case_dir = ws.working_root
+        # `plan` NO construye la capacidad: no persiste estado ni cobertura, asi que
+        # pedirla seria una llamada MUERTA —y una que puede abortar el comando por un
+        # resultado que nadie usa—. La primera version la puso aqui por un reemplazo
+        # mecanico sobre todas las apariciones de `case_dir = ws.working_root`, sin mirar
+        # si el comando escribia (R25/H25-04). Su unico manifiesto, `_segmentacion.md`,
+        # sigue por `split.escribir_manifiesto` y queda DECLARADO sin migrar.
+        #
         # `plan` es preview: descarta la caché en vez de persistirla (no escribe estado) y
         # se queda solo con el plan y el recuento de agotados, que sí hay que declarar.
         p, _cache, _ms, _n, agotados = _construir_plan(case_dir, force=False)
@@ -744,6 +801,7 @@ def apply(case_id: str = typer.Argument(None), vision: bool = False,
         from core.casos.workspace_model import Capability
         _exigir(ws, Capability.WRITE_CASE, Capability.GENERATE_DERIVATIVES)
         case_dir = ws.working_root
+        _dep_sala = _deposito_sala(ws)
         if vision:
             _exigir_vision_cableada()          # preflight: aborta antes de procesar
         _atomizar_correo(case_id, case_dir)   # cableado: atomizar ANTES del OCR (spec §4)
@@ -800,7 +858,7 @@ def apply(case_id: str = typer.Argument(None), vision: bool = False,
         # falla no hay filas suyas que mirar.
         cob = sm.fusionar_cobertura(previa, cob_delta,
                                     rel_paths_reprocesados={d.rel_path for d in p if not d.skip})
-        _guardar_cobertura(case_dir, cob)
+        _guardar_cobertura(case_dir, cob, dep=_dep_sala)
         _escribir_cobertura_md(case_dir, cob)
 
         # El estado idempotente solo cuenta lo que produjo salida real (ok/low): un
@@ -828,7 +886,8 @@ def apply(case_id: str = typer.Argument(None), vision: bool = False,
                 intentos.pop(d.sha256, None)
             else:
                 intentos[d.sha256] = intentos.get(d.sha256, 0) + 1
-        _guardar_estado(case_dir, procesados, intentos=intentos, hashes=cache_nueva)
+        _guardar_estado(case_dir, procesados, intentos=intentos,
+                        hashes=cache_nueva, dep=_dep_sala)
         # B0-1: `apply`/`reforzar` resuelven el `case_dir` al principio, asi que el
         # evento cae junto a los bytes aunque no lo lleven en la firma. Mi criterio
         # inicial —«lo tiene en la FIRMA»— era demasiado estrecho y dejaba fuera a dos
@@ -876,6 +935,7 @@ def reforzar(case_id: str = typer.Argument(None),
         from core.casos.workspace_model import Capability
         _exigir(ws, Capability.WRITE_CASE, Capability.GENERATE_DERIVATIVES)
         case_dir = ws.working_root
+        _dep_sala = _deposito_sala(ws)
         _exigir_vision_cableada()
         previa = _cobertura_previa(case_dir)
         if not previa:
@@ -913,11 +973,12 @@ def reforzar(case_id: str = typer.Argument(None),
         cob_delta = sm.ejecutar(case_dir, plan, case_id=case_id, vision=True)
 
         cob = sm.fusionar_cobertura(previa, cob_delta)
-        _guardar_cobertura(case_dir, cob)
+        _guardar_cobertura(case_dir, cob, dep=_dep_sala)
         _escribir_cobertura_md(case_dir, cob)
 
         exitosos = _exitosos_por_bundle(cob_delta)
-        _guardar_estado(case_dir, _estado_previo(case_dir) | exitosos)
+        _guardar_estado(case_dir, _estado_previo(case_dir) | exitosos,
+                        dep=_dep_sala)
         # B0-1: `apply`/`reforzar` resuelven el `case_dir` al principio, asi que el
         # evento cae junto a los bytes aunque no lo lleven en la firma. Mi criterio
         # inicial —«lo tiene en la FIRMA»— era demasiado estrecho y dejaba fuera a dos

@@ -160,7 +160,24 @@ def bajo_catalogo(path: Path) -> bool:
     aceptaba la ruta del canon y desde ahí el intake escribía sobre el expediente
     prestado **sin desviar**.
     """
-    return clasificar_bajo(path, Path(config.settings.casos_root)) != FUERA
+    return clasificar_bajo(path, raiz_del_catalogo()) != FUERA
+
+
+def raiz_del_catalogo() -> Path:
+    """La raíz que **el catálogo usa de verdad**, y por tanto la única autoritativa.
+
+    Es `case_locator._root()` y no `config.settings.casos_root` directamente, aunque hoy la
+    primera lea de la segunda. La diferencia importa: el catálogo resuelve llamando a
+    `_root()`, y quien redirige el catálogo —los tests, y el override por entorno que el
+    §7.3 admite— parchea **esa** función.
+
+    Lo aprendí rompiendo dos tests que estaban bien: comparé contra `settings.casos_root`
+    mientras el catálogo resolvía por otra vía, y un expediente perfectamente canónico
+    cayó «fuera». Dos definiciones de «el catálogo» es como nacen las divergencias, y
+    `MEJORAS #136` existe precisamente por una de ellas (R25/H25-03, R26/H26-01).
+    """
+    from . import case_locator
+    return Path(case_locator._root())
 
 
 class CaseCatalog:

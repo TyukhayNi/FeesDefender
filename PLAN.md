@@ -150,23 +150,40 @@ una puerta; (6) W-02Q38C se cierra por ese wiring, sin parche manual del caso.
 su **elección de mutante**. Si el contrato enumera cuatro fronteras, hacen falta cuatro mutantes,
 uno por frontera. Un solo mutante rojo prueba que el test no está vacío; no prueba el contrato.
 
-**`MEJORAS #124` — diseño escrito y R21 adjudicada (2026-09-02).** El gate declarado de la rev. 2 de
-3A-bis y 3B: quién contesta «¿cuál es la copia de trabajo?». Plan
-[`2026-09-02-mejoras-124-copia-de-trabajo.md`](docs/superpowers/plans/2026-09-02-mejoras-124-copia-de-trabajo.md),
-rev. 1 `NO-EJECUTABLE` — **R21: 8 hallazgos, 8 confirmados, 0 refutados, 4 críticos**; acta
-`…-mejoras-124-r21-adversarial-review.md`, adjudicación en el §8 del plan. **Lo que sobrevive:** el
-diagnóstico y la decisión **D124** (el veredicto y el destino salen de una sola resolución). **Lo
-que la ronda destapó y no es de este plan:** `MEJORAS #136` — `repository_cli adoptar` sobre la ruta
-del **canon** es **ACEPTADO**, y desde ese momento el intake escribe sobre el canon **sin desviar
-mientras está prestado**. Reproducido con sonda propia. La invariante «el registro no contiene el
-canon» solo la aplica `resolver_por_ruta`, que es un lector; ni `alta` ni `verificar_adopcion` la
-comprueban. **Va ANTES de la rev. 2**, porque `es_canon` no es un discriminante mientras esa puerta
-esté abierta. **Y el error de método que lo escondió:** cité la línea donde se **declara** la
-excepción como prueba de que la garantía se **aplica** — sexta aparición de «el nombre de una cosa
-no es la cosa», y el hallazgo BAJO que la denunció (H21-08, una mis-cita) era la puerta del CRÍTICO.
-**Segundo defecto propio de la ronda:** el mutante **F5 que yo escribí era inerte** —con el
-`except` catch-all del diseño, quitar `diagnostico=True` no cambia nada observable—, o sea que la
-clase «guarda inerte» apareció **dentro de la prueba de mutación que existe para cazarla**.
+**`MEJORAS #124` — alcance RECORTADO y construido (2026-09-02).** Plan
+[`2026-09-02-mejoras-124-copia-de-trabajo.md`](docs/superpowers/plans/2026-09-02-mejoras-124-copia-de-trabajo.md).
+
+**Cuatro rondas sobre esta pieza, las cuatro con hallazgos confirmados y ninguna limpia.** R21
+(diseño rev. 1, `NO-EJECUTABLE`, 8) y R24 (diseño rev. 2, `NO-EJECUTABLE`, 12) tumbaron **los dos
+diseños**, y las dos coincidieron en que el problema era el **alcance**, no el detalle. **Decisión de
+Nikolai: recortar en vez de escribir una rev. 3** — que es justo el movimiento que la fila #13
+existe para frenar.
+
+**Lo construido (§10 del plan):** `deposito()` acepta un `CaseWorkspace` **ya resuelto por el
+llamador**; quien resuelve es el entrypoint, que tiene el contexto. Cierra **H18-01** — la costura de
+3A solo servía para el canon. **Primer cliente de producción:** `sala_maquina` (`apply`/`reforzar`),
+que cierra la frontera **F7** medida en la rev. 2: `deposito()` tenía **cero llamadores**. No mueve
+bytes de sitio, y eso se dice.
+
+**R25 y R26 sobre el diff, las dos `NO-SHIP`, 14 hallazgos, 14 confirmados** (§§11-12 del plan;
+actas `…-r25-` y `…-r26-`). **Los graves son todos míos y de la misma familia:** R25 midió que mi vía
+nueva **aceptaba una identidad que la histórica rechazaba** —una regresión, nacida de escribir en un
+docstring «el resolver ya validó contra el canon» sin comprobarlo— y R26 midió que al remediarla
+cerré **el ejemplo y no la frontera**: un workspace local del caso A apuntando al canon de B escribía
+en B sin desviar. **Quinta aparición del patrón en la sesión.**
+
+**Y el hallazgo que más enseña, R26/H26-04:** mi fixture comprobaba `if "id_go" not in txt` y
+`ensure_case` ya escribe `id_go: null`, así que el valor real **nunca entraba**: los 26 tests pasaban
+por el nombre de la carpeta, no por el metadato. Arreglar la fixture **no bastó** —el nombre suplía—;
+hizo falta un caso con nombre neutro para que el mutante del metadato muriera.
+
+**Se mergea sin tercera ronda, con la cobertura de la última remediación declarada AUSENTE**
+(decisión de Nikolai, §12.3). El dato que la sostiene: nada en producción escribe por esta vía salvo
+`sala_maquina`, que ya escribía donde escribe. La alternativa anotada y no tomada: **partir la pieza
+en dos** —invariante modo/raíz e identidad son independientes, y cada arreglo de una rompió la otra—.
+
+**Destapó tres defectos vivos que no eran del plan:** `MEJORAS #136` (cerrado, PR #255), `#141`
+(`buscar()` no valida el `case_id`) y las entradas `#137`/`#138`.
 
 ---
 
