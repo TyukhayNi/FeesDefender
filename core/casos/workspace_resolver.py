@@ -64,8 +64,16 @@ class CaseWorkspaceResolver:
     def resolver_por_identidad(self, ref: CaseRef, *, drive_accesible: bool,
                                diagnostico: bool = False) -> CaseWorkspace:
         """Resuelve por W-code o `case_id`, siguiendo el §7.2 paso por paso."""
-        # (1) candidatos del registro privado.
-        locales = self.registry.buscar(ref)
+        # (1) candidatos del registro privado, sin los que apuntan al canon.
+        #
+        # Esta segunda guarda la descarté una vez por «inerte»: el registro concreto ya
+        # filtra al leer, así que ningún llamador de producción puede activarla. **R22
+        # demostró que el argumento es falso** (H22-05): `registry` se INYECTA, y un
+        # doble que devuelva una entrada canónica hace que el resolver anuncie
+        # `local_checkout` con la raíz del canon. Una guarda que un test puede activar
+        # con el seam publicado no es inerte — es la diferencia entre «nadie lo hace hoy»
+        # y «no puede pasar».
+        locales = self._sin_canonicos(self.registry.buscar(ref))
 
         # (2) el caso canónico, si el catálogo lo conoce.
         canonico: Path | None = None
@@ -198,10 +206,31 @@ class CaseWorkspaceResolver:
 
     # -------------------------------------------------------------- internos
 
+    @staticmethod
+    def _sin_canonicos(entradas):
+        """Solo los candidatos **demostrablemente fuera** del catálogo (`MEJORAS #136`).
+
+        El registro concreto ya oculta los canónicos al leer; esto cubre el **seam
+        inyectado**, que es superficie publicada y no una hipótesis (R22/H22-05).
+
+        ## Exige `FUERA`, no «distinto de `DENTRO`», y ésa es la corrección de R23/H23-03
+
+        Aquí se **autoriza a usar** un workspace, y conservar no es autorizar. El registro
+        guarda lo indeterminado a propósito —para no borrarlo— pero entregárselo al
+        resolver convertía esa entrada conservada en un `LOCAL_CHECKOUT` cuya raíz podía
+        ser físicamente el canon. Las dos fronteras tienen la misma pregunta y polaridades
+        opuestas: una decide qué se conserva, la otra qué se puede tocar.
+        """
+        from .case_catalog import FUERA, clasificar_bajo
+        from .. import config
+        raiz = Path(config.settings.casos_root)
+        return [e for e in entradas
+                if clasificar_bajo(Path(e.local_path), raiz) == FUERA]
+
     def _entrada_de_ruta(self, path: Path):
         import os
         objetivo = os.path.normcase(os.path.abspath(str(path)))
-        for e in self.registry.cargar():
+        for e in self._sin_canonicos(self.registry.cargar()):
             if os.path.normcase(os.path.abspath(str(e.local_path))) == objetivo:
                 return e
         return None

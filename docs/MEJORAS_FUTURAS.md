@@ -5952,3 +5952,161 @@ a la espera de una decisión de Nikolai porque mueve la superficie de dedup de t
 futuro. Esta entrada solo aporta la medición que faltaba.
 
 **Disparador:** la decisión de la fila #11.
+
+---
+
+## 136. Adoptar el CANON como copia local está permitido, y desactiva el desvío del guard `[PROMOVIDO → PLAN.md]`
+
+> ✅ **RESUELTO el 2026-09-02.** Diseño, adjudicaciones de **R22 y R23** y el límite declarado (UNC ↔ letra de unidad, **sin verificar**), en
+> [`2026-09-02-mejoras-136-el-canon-no-es-una-copia.md`](superpowers/plans/2026-09-02-mejoras-136-el-canon-no-es-una-copia.md).
+> Prueba de mutación reproducible: `python -m tests._mutantes_mejoras_136`.
+> **Cobertura de revisión de lo remediado tras R23: ausente.**
+
+**Estado:** pendiente. **Defecto VIVO en `main`**, no latente. Detectado el 2026-09-02 por el
+hallazgo **H21-01** de la R21 (revisión del diseño de `MEJORAS #124`) y **reproducido con sonda
+propia** el mismo día. Es el defecto del que `MEJORAS #124` era el síntoma visible.
+
+**Qué debería pasar.** El registro privado de workspaces es la lista de **copias locales**. El canon
+no puede estar en él: es la invariante que `es_copia_prestada` cita en su docstring para confiar en
+el registro, la que sostiene la derivación de «¿es el canon?» en el diseño de `#124`, y la que el
+resolver hace cumplir con `WORKSPACE_UNDER_CATALOG_ROOT`.
+
+**Qué pasa.** Esa invariante **no existe en la frontera que escribe el registro**. Solo la aplica
+`resolver_por_ruta` (`core/casos/workspace_resolver.py:150-152`), que es un **lector**:
+
+- `WorkspaceRegistry.alta` no comprueba `bajo_catalogo` — solo rechaza reusar la ruta de **otro**
+  caso (`core/casos/workspace_registry.py:235-247`).
+- `verificar_adopcion` comprueba cinco cosas —directorio, `MANIFEST_CHECKOUT.json`, W-code del
+  nombre, canon en `prestado`, lock propio— y **ninguna** es «fuera del catálogo»
+  (`core/casos/workspace_adopcion.py:68-105`).
+- `adoptar` pasa el `case_dir` tal cual a `registry.alta`, y ésa es la vía del CLI productivo
+  (`scripts/repository_cli.py`, subcomando `adoptar`).
+- `resolver_por_identidad` consume la entrada **sin revalidar su raíz**
+  (`core/casos/workspace_resolver.py:122-136`).
+
+Y la condición es alcanzable porque **el canon también recibe `MANIFEST_CHECKOUT.json`** mientras
+está prestado: `cmd_checkout` lo sube al Drive para que sobreviva a la muerte del Desktop (§3.3).
+Ese hecho ya estaba escrito —es el argumento con el que se descartó el manifiesto como
+discriminante— y nadie lo cruzó con la adopción.
+
+**Medido el 2026-09-02**, con el canon prestado al propio usuario y máquina de quien adopta:
+
+```
+verificar_adopcion.ok  : True | checkout propio con manifest y nombre coherente
+adoptar(CANON)         : ACEPTADO
+registro contiene canon: True
+estado del canon       : prestado
+es_copia_prestada      : True
+dir_intake             : <CANON>\00_Input\03_Email        ← SIN desviar
+resolver .mode         : local_checkout
+resolver .working_root : <CANON>
+```
+
+**Qué se rompe, sin inflarlo.** Tras esa adopción, **todo el intake escribe sobre el canon sin
+desviar mientras el canon está prestado**: los cuatro consumidores del guard calculan su destino con
+`caso_path`/`localizar`, así que el veredicto «no desvíes» los manda a la copia canónica, que es
+justo la que hay que proteger. Además `resolver_por_identidad` devuelve `LOCAL_CHECKOUT` con
+`working_root` = canon, o sea que un modo que el contrato define **sin** `MUTATE_CANONICAL` acaba
+apuntando al canon: la resta de capacidad queda inerte por la vía del dato, no por la del código.
+
+**Lo que NO es.** No es un fallo del checkout ordinario: `cmd_checkout` escribe la copia local y la
+registra desde su propia ruta. La puerta es la **adopción** (§15), que existe para checkouts
+anteriores al registro y pide firma humana. Que pida firma humana **no basta**: el comando imprime
+lo que no pudo verificar, y «esta carpeta es el canon» no está entre lo que mira.
+
+**Mejora propuesta.** Convertir «ninguna entrada apunta bajo el catálogo» en invariante **de
+escritura y de lectura**, no de un solo lector:
+
+1. Rechazo en `WorkspaceRegistry.alta` (la frontera que escribe).
+2. Rechazo previo en `verificar_adopcion`, para que el motivo sea legible antes de la firma.
+3. Revalidación al cargar y en `resolver_por_identidad`, no solo en `resolver_por_ruta`.
+4. La comparación por **identidad física** de la ruta, no solo léxica: junctions y alias 8.3 de
+   Windows convierten «no está bajo el catálogo» en una afirmación que la comparación de cadenas no
+   sostiene.
+
+**Condición de cierre, y es dura:** un test que ejecute `adoptar(<ruta del canon>)` y exija rechazo,
+más un **mutante por cada una de las cuatro puertas** — quitar cualquiera de los cuatro rechazos
+debe poner rojo su propio test y solo el suyo. Un guard sin prueba de mutación no es un guard, y
+aquí la avería fue exactamente tener el rechazo en **un** sitio y creerlo global.
+
+**Disparador:** la **rev. 2 del plan de `MEJORAS #124`**, que no puede derivar «¿es el canon?» del
+modo mientras esta puerta esté abierta. Va **antes** que ella.
+
+---
+
+## 137. `revalidar` pisa la ruta de TODAS las entradas del mismo W-code
+
+**Estado:** pendiente. **Preexistente**, no introducido por `MEJORAS #136`. Detectado el 2026-09-02
+por el hallazgo **H23-05** de la R23, con sonda del revisor.
+
+**Qué debería hacer.** `WorkspaceRegistry.revalidar(ref, local_path=…)` sella **una** entrada con el
+`ahora` inyectado.
+
+**Qué hace.** Toma `halladas[0]` para deducir el W-code y después reemplaza `local_path` en **todas**
+las entradas que casan con el `CaseRef`. Y el registro contrata expresamente que dos entradas del
+mismo W-code coexisten —un `checkout` y un `scratch` del mismo caso—, precisamente para que el
+resolver pueda ver la ambigüedad en vez de que el registro elija por él.
+
+Medido por el revisor con un checkout y un scratch legítimos del mismo caso:
+
+```
+antes
+  checkout a -> …\workspace-a
+  scratch  b -> …\workspace-b
+despues de revalidar(w_code, local_path=a)
+  checkout a -> …\workspace-a
+  scratch  b -> …\workspace-a
+```
+
+La segunda ruta **se pierde** y el registro queda con dos entradas distintas apuntando al mismo
+sitio — que es además el estado que `alta` se niega a crear.
+
+**Qué NO se rompe hoy.** No se encontró llamador productivo de `revalidar` fuera de los tests. Por
+eso es latente y no urgente, y por eso `MEJORAS #136` lo dejó fuera en vez de ensanchar su PR.
+
+**Mejora propuesta.** Hacer inequívoca la entrada que se revalida —por ruta anterior, por nonce, o
+por una clave propia— y modificar **solo** esa. Si el selector casa con más de una, lanzar ambigüedad
+**sin escribir**, que es la misma polaridad que el resolver aplica al `AmbiguousCase`.
+
+**Condición de cierre:** un test con checkout + scratch del mismo W-code que exija que la entrada no
+seleccionada queda intacta, más un mutante que elimine la desambiguación y muera por él.
+
+**Disparador:** el primer llamador productivo de `revalidar`, o la Fase 2 de la fila #3.
+
+---
+
+## 138. La unicidad de carpeta del registro compara cadenas, no identidad
+
+**Estado:** pendiente. **Preexistente**, no introducido por `MEJORAS #136`. Detectado el 2026-09-02
+por el hallazgo **H23-06** de la R23.
+
+**Qué debería hacer.** `WorkspaceRegistry.alta` promete rechazar reutilizar **una carpeta** como
+workspace de otro caso (`RutaYaRegistrada`).
+
+**Qué hace.** Compara `os.path.normcase(str(path))` — cadenas. La misma carpeta escrita de dos
+formas atraviesa la guarda:
+
+```
+samefile                 True
+segunda alta             ACEPTADA
+entry W-DUPA -> C:\…\duplicate_probe\same_workspace
+entry W-DUPB -> duplicate_probe\same_workspace
+```
+
+Relativa frente a absoluta, y lo mismo con *junction*, alias 8.3 y el resto de alias físicos. El
+resultado es **dos expedientes distintos compartiendo carpeta de trabajo**, que es exactamente lo que
+la guarda existe para impedir.
+
+**Es la misma clase que `MEJORAS #136`**, en la guarda de al lado: una propiedad sobre *carpetas*
+comprobada sobre *cadenas*. Ahí ya existe la pieza que la contesta bien —`case_catalog.clasificar_bajo`
+resuelve físicamente con `os.path.realpath`—, así que el remedio tiene dónde apoyarse.
+
+**Mejora propuesta.** Para rutas que existen, comparar **identidad física**; para destinos que aún no
+existen, componentes absolutos normalizados. Es la misma pareja de comparaciones que `#136` dejó
+construida.
+
+**Condición de cierre:** tests de relativa/absoluta, *junction* y 8.3 contra `RutaYaRegistrada`, con
+un mutante por cada una de las dos comparaciones.
+
+**Disparador:** el primer caso real de dos expedientes compartiendo carpeta, o la Fase 2 de la
+fila #3.
