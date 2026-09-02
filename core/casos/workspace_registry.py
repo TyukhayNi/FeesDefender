@@ -148,9 +148,15 @@ class WorkspaceRegistry:
 
     def __init__(self, raiz: Path, *, ahora: str) -> None:
         raiz = Path(raiz)
+        # Con la MISMA definición que todo lo demás. Tenía la suya (`_bajo`, sin
+        # `abspath` ni identidad física) y divergía: R22/H22-03 metió la raíz del
+        # registro dentro del catálogo por una junction y por una ruta relativa, con la
+        # comprobación pasando en verde. Dos definiciones de «bajo el catálogo» es como
+        # nacen las divergencias, y ésta ya había nacido.
+        from .case_catalog import FUERA, clasificar_bajo
         for prohibida, motivo in ((_casos_root(), "CASOS_ROOT"),
                                   (_project_root(), "el repo")):
-            if _bajo(raiz, prohibida):
+            if clasificar_bajo(raiz, prohibida) != FUERA:
                 raise wm.WorkspaceUnderCatalogRoot(
                     detalle=f"el registro no puede vivir bajo {motivo}")
         self._raiz = raiz
@@ -173,6 +179,43 @@ class WorkspaceRegistry:
             raise RegistryUnreadable(detalle=f"{fichero.name} no contiene una lista")
         return [WorkspaceEntry.de_json(e) for e in crudo]
 
+    @staticmethod
+    def _exigir_clasificable(entrada: WorkspaceEntry) -> None:
+        """La entrada que se INTRODUCE tiene que poder demostrarse fuera del catálogo.
+
+        Falla cerrado (`bajo_catalogo` cuenta lo indeterminado como dentro), que es la
+        polaridad de quien autoriza. La invariante de `_escribir` es más laxa a propósito:
+        ver su docstring.
+        """
+        from .case_catalog import bajo_catalogo
+        if bajo_catalogo(Path(entrada.local_path)):
+            raise wm.WorkspaceUnderCatalogRoot(
+                w_code=entrada.w_code,
+                detalle="una copia local no puede vivir bajo el catalogo, y una ruta que "
+                        "no se puede clasificar tampoco se admite")
+
+    @staticmethod
+    def _visibles(entradas) -> list[WorkspaceEntry]:
+        """Oculta las entradas que apuntan **dentro** del catálogo (`MEJORAS #136`).
+
+        Existe por el estado heredado: una máquina que adoptó el canon antes del arreglo
+        tiene esa entrada en disco, y el rechazo de la escritura no la retira.
+
+        ## Oculta `DENTRO`, y NUNCA `INDETERMINADO`
+
+        La primera versión de este arreglo usaba el booleano que falla cerrado, así que
+        una entrada legítima cuya clasificación se volviera indeterminada **desaparecía**
+        — y en la siguiente escritura desaparecía también del fichero. R22/H22-04 lo midió
+        y yo lo reproduje: la entrada quedó fuera del JSON.
+
+        Ocultar no es borrar **solo si nadie reescribe desde la vista oculta**: por eso
+        `alta` y `revalidar` releen el fichero **crudo**. Las dos mitades hacen falta.
+        """
+        from .case_catalog import DENTRO, FUERA, clasificar_bajo  # noqa: F401
+        raiz = _casos_root()
+        return [e for e in entradas
+                if clasificar_bajo(Path(e.local_path), raiz) != DENTRO]
+
     def _cuarentena(self, fichero: Path) -> None:
         """Preserva los bytes. NO borra nunca: un registro ilegible es evidencia."""
         marca = self._ahora.replace(":", "-")
@@ -181,7 +224,12 @@ class WorkspaceRegistry:
             os.replace(fichero, destino)
 
     def cargar(self) -> list[WorkspaceEntry]:
-        """Todas las entradas. Lanza si algo es ilegible: NO devuelve `[]`."""
+        """Las entradas **visibles**. Lanza si algo es ilegible: NO devuelve `[]`.
+
+        «Visibles» = todas menos las que apuntan **dentro** del catálogo, que el contrato
+        prohíbe (`MEJORAS #136`). Lo que hay en disco sin filtrar lo da `_leer`, y solo lo
+        usan las reescrituras: **reescribir desde la vista filtrada borra**.
+        """
         if not self._raiz.is_dir():
             return []
         entradas: list[WorkspaceEntry] = []
@@ -189,7 +237,7 @@ class WorkspaceRegistry:
         # misma raíz y no son entradas ni candidatos a cuarentena.
         for fichero in sorted(self._raiz.glob("*.json")):
             entradas.extend(self._leer(fichero))
-        return entradas
+        return self._visibles(entradas)
 
     def buscar(self, ref: wm.CaseRef) -> list[WorkspaceEntry]:
         """Todas las entradas que casan con `ref`. **Devuelve las dos si hay dos:**
@@ -197,7 +245,8 @@ class WorkspaceRegistry:
         ni ver la ambigüedad."""
         if ref.w_code:
             fichero = self._fichero(ref.w_code)
-            candidatas = self._leer(fichero) if fichero.is_file() else []
+            candidatas = (self._visibles(self._leer(fichero))
+                          if fichero.is_file() else [])
         else:
             candidatas = self.cargar()
         return [e for e in candidatas if self._casa(e, ref)]
@@ -217,7 +266,37 @@ class WorkspaceRegistry:
 
         El mismo directorio no es cosmético: `os.replace` solo es atómico dentro del
         mismo sistema de ficheros.
+
+        ## Aquí vive la INVARIANTE, y no en los llamadores
+
+        La primera versión de `MEJORAS #136` puso la guarda en `alta` y en
+        `verificar_adopcion` —los dos sitios donde encontré el ejemplo— y **se dejó
+        `revalidar`**, que también reemplaza `local_path` y escribe (R22/H22-02, que lo
+        demostró metiendo el canon por ahí). Es el mismo error que el defecto original,
+        cometido al arreglarlo. **La frontera es este método:** toda entrada que llegue a
+        disco pasa por aquí, incluidos los escritores que nadie ha escrito todavía.
+
+        ## Rechaza `DENTRO`, y NO lo meramente indeterminado
+
+        Y esa asimetría no es descuido. Aquí se comprueba la **invariante** —«ninguna
+        entrada apunta al canon»—, que solo se viola con un `DENTRO` demostrado. Rechazar
+        también lo indeterminado dejaría el registro **bloqueado para escritura** en
+        cuanto una entrada ya presente se volviera inclasificable: no podrías ni darla de
+        baja.
+
+        La **política de autorización** —«no introduzcas lo que no puedas clasificar»— es
+        otra regla, se aplica a la entrada que se introduce y vive en `alta` y
+        `revalidar`. Dos reglas distintas en dos sitios distintos no son una guarda
+        duplicada: tienen sujetos distintos.
         """
+        from .case_catalog import DENTRO, clasificar_bajo
+        raiz = _casos_root()
+        for e in entradas:
+            if clasificar_bajo(Path(e.local_path), raiz) == DENTRO:
+                raise wm.WorkspaceUnderCatalogRoot(
+                    w_code=e.w_code,
+                    detalle="una copia local no puede vivir bajo el catalogo: esa ruta "
+                            "es el expediente canonico, no una copia de trabajo")
         self._raiz.mkdir(parents=True, exist_ok=True)
         destino = self._fichero(w_code)
         if not entradas:
@@ -233,7 +312,34 @@ class WorkspaceRegistry:
             raise
 
     def alta(self, entrada: WorkspaceEntry) -> None:
-        """Registra una copia local. Rechaza reusar una ruta de otro caso."""
+        """Registra una copia local. Rechaza reusar una ruta de otro caso.
+
+        El rechazo del canon (`MEJORAS #136`) **no está aquí**: está en `_escribir`, que
+        es la frontera por la que pasa toda entrada que llegue a disco. Ponerlo en los
+        llamadores fue el error de la primera versión — dejó fuera a `revalidar`.
+
+        ## Qué se pierde al reescribir, y por qué ahora no se pierde nada
+
+        Toda reescritura parte de la vista de `_visibles`, así que **purga** las entradas
+        heredadas que apuntan al catálogo en vez de arrastrarlas — que además es lo único
+        que puede hacer, porque `_escribir` las rechazaría y dejaría el registro
+        bloqueado para siempre.
+
+        Eso es seguro **solo desde que `_visibles` no oculta lo indeterminado**. La
+        versión anterior filtraba con el booleano que falla cerrado, así que una entrada
+        legítima cuya clasificación se volviera indeterminada se ocultaba y desaparecía
+        del fichero en la siguiente alta: el arreglo de `MEJORAS #136` **perdía datos**
+        (R22/H22-04, que reproduje). Ocultar solo es reversible si lo oculto es
+        exactamente lo que el contrato prohíbe.
+
+        ## La política de autorización, que sí es de aquí
+
+        `_escribir` comprueba la invariante sobre toda la lista y solo rechaza lo
+        demostradamente `DENTRO`. Lo que se aplica **a la entrada que se introduce** es
+        más estricto: si no se puede clasificar, no entra. Fallar cerrado es correcto para
+        autorizar algo nuevo, y sería un candado para lo que ya estaba.
+        """
+        self._exigir_clasificable(entrada)
         for otra in self.cargar():
             if (os.path.normcase(str(otra.local_path))
                     == os.path.normcase(str(entrada.local_path))
@@ -257,17 +363,29 @@ class WorkspaceRegistry:
         fichero = self._fichero(objetivo)
         if not fichero.is_file():
             return
-        quedan = [e for e in self._leer(fichero) if not self._casa(e, ref)]
+        # Por `_visibles`, como toda reescritura: si el fichero arrastra una entrada
+        # canonica heredada, `_escribir` la rechazaria y no se podria ni dar de baja.
+        quedan = [e for e in self._visibles(self._leer(fichero))
+                  if not self._casa(e, ref)]
         self._escribir(objetivo, quedan)
 
     def revalidar(self, ref: wm.CaseRef, *, local_path: Path) -> None:
-        """Sella la entrada con el `ahora` **inyectado**. Sin reloj propio."""
+        """Sella la entrada con el `ahora` **inyectado**. Sin reloj propio.
+
+        **Es el segundo escritor, y la primera versión de `MEJORAS #136` lo olvidó.**
+        Reemplaza `local_path`, así que podía meter el canon en el registro por una vía
+        que ninguna de las dos guardas de entonces miraba (R22/H22-02, demostrado con
+        sonda). Ahora el rechazo vive en `_escribir` y lo cubre sin que este método
+        tenga que acordarse.
+        """
         halladas = self.buscar(ref)
         if not halladas:
             raise wm.LocalWorkspaceMissing(
                 w_code=ref.w_code, detalle="no hay entrada que revalidar")
         w_code = halladas[0].w_code
-        todas = self._leer(self._fichero(w_code))
+        self._exigir_clasificable(dataclasses.replace(
+            halladas[0], local_path=Path(local_path)))
+        todas = self._visibles(self._leer(self._fichero(w_code)))
         nuevas = [
             dataclasses.replace(e, ultima_validacion=self._ahora,
                                 local_path=Path(local_path))

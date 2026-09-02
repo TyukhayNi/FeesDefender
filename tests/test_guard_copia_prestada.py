@@ -78,13 +78,44 @@ def _con_manifiesto(case_id: str) -> None:
         encoding="utf-8")
 
 
-def _registrar_como_copia_local(registro, case_id: str, tipo: str = "checkout") -> None:
-    from core.config import caso_path
+def _registrar_como_copia_local(registro, case_id: str, raiz_local,
+                                tipo: str = "checkout"):
+    """Registra una copia local REAL: **fuera** del catálogo, y devuelve su ruta.
+
+    ## Por qué cambió esta función, que es lo que enseña el fichero
+
+    Hasta el 2026-09-02 daba de alta `caso_path(case_id)` —**el canon**—, saltándose al
+    resolver que lo prohíbe. Fabricaba el estado que producción tiene prohibido, y en ese
+    estado la rama que estos tests dicen probar sí funcionaba: **nueve tests verdes
+    defendían el defecto** (`MEJORAS #124`, hallazgo H16-01 de la R16).
+
+    Es un caso de libro de cobertura al revés: añadir tests no lo encuentra, hay que
+    preguntar **quién** lo defiende.
+
+    Ahora registra una ruta fuera del catálogo, que es el único estado que producción
+    puede producir desde que `alta` rechaza el canon (`MEJORAS #136`). Con esta fixture
+    honesta, cuatro de los tests **fallan** — y ése es el resultado correcto: la rama que
+    describen está muerta mientras `MEJORAS #124` siga abierta.
+    """
     from core.casos.workspace_registry import SCHEMA_SOPORTADO, WorkspaceEntry
+    local = raiz_local / case_id
+    local.mkdir(parents=True, exist_ok=True)
     registro.alta(WorkspaceEntry(
         case_id=case_id, w_code="W-GUARD1", canonical_ref=None,
-        local_path=caso_path(case_id), nonce="n", maquina="ESTA",
+        local_path=local, nonce="n", maquina="ESTA",
         tipo=tipo, ultima_validacion=AHORA, schema=SCHEMA_SOPORTADO))
+    return local
+
+
+#: Motivo compartido de los `xfail` de `MEJORAS #124`.
+_MOTIVO_124 = (
+    "MEJORAS #124: `es_copia_prestada` compara la ruta que devuelve `buscar()` —que "
+    "solo mira bajo CASOS_ROOT— contra un registro que solo contiene rutas de fuera, "
+    "asi que la rama de copia local no puede activarse. Verde hasta el 2026-09-02 "
+    "solo porque la fixture registraba el canon. Se reactivan con la rev. 2 del plan "
+    "de #124; si alguno pasa (XPASS), PARA: significa que #124 se cerro y hay que "
+    "retirar el marcador."
+)
 
 
 class TestSobreElCanon:
@@ -123,38 +154,57 @@ class TestSobreElCanon:
 
 
 class TestSobreLaCopiaLocalRegISTRADA:
-    """Donde el guard no protege de nada y sí rompe el pipeline."""
+    """Donde el guard no protege de nada y sí rompe el pipeline.
 
-    def test_NO_desvia(self, tmp_casos_root, registro):
+    **Los cuatro están en `xfail(strict=True)` desde el 2026-09-02**, y eso NO es una
+    regresión de ese día: es el día en que la fixture dejó de mentir. Describen lo que
+    `MEJORAS #96` quería y `MEJORAS #124` demuestra que no ocurre. Ver `_MOTIVO_124`.
+
+    Disciplina del `xfail` (la misma de `test_repository_cli_defectos.py`): **ninguna
+    precondición usa `assert`**, para que el marcador solo pueda darse por satisfecho con
+    la aserción que de verdad prueba el defecto.
+    """
+
+    @pytest.mark.xfail(strict=True, raises=AssertionError, reason=_MOTIVO_124)
+    def test_NO_desvia(self, tmp_casos_root, registro, tmp_path):
         _caso_prestado()
         _con_manifiesto(CASE_ID)
-        _registrar_como_copia_local(registro, CASE_ID)
+        _registrar_como_copia_local(registro, CASE_ID, tmp_path / "Desktop")
         decision = case_manager.guard_escritura(CASE_ID, "00_Input/nuevo.pdf", "intake")
         assert decision.desviar is False, (
             "el guard desvió sobre una copia local registrada: los documentos caen "
             "fuera de 00_Input y la sala de máquina no los ve (MEJORAS #96)")
 
-    def test_dir_intake_devuelve_el_arbol_vivo(self, tmp_casos_root, registro):
-        from core.config import caso_path
-        _caso_prestado()
-        _registrar_como_copia_local(registro, CASE_ID)
-        destino = case_manager.dir_intake(CASE_ID, "00_Input/01_Drive EV", "intake")
-        assert "_pendiente_checkin" not in destino.as_posix(), (
-            f"el intake apunta a la bandeja en una copia registrada: {destino}")
-        assert destino == caso_path(CASE_ID) / "00_Input/01_Drive EV"
+    @pytest.mark.xfail(strict=True, raises=AssertionError, reason=_MOTIVO_124)
+    def test_dir_intake_devuelve_el_arbol_vivo(self, tmp_casos_root, registro, tmp_path):
+        """Y «el árbol vivo» es **la copia local**, no el canon.
 
-    def test_no_emite_evento_de_desvio(self, tmp_casos_root, registro):
+        La versión anterior esperaba `caso_path(case_id)`, que es el canon — coherente
+        con su fixture y con nada más. Con la copia registrada donde de verdad está, la
+        expectativa correcta es la copia; que hoy no se cumpla es justo `MEJORAS #124`.
+        """
+        _caso_prestado()
+        local = _registrar_como_copia_local(registro, CASE_ID, tmp_path / "Desktop")
+        destino = case_manager.dir_intake(CASE_ID, "00_Input/01_Drive EV", "intake")
+        assert destino == local / "00_Input/01_Drive EV", (
+            f"el intake no apunta a la copia de trabajo registrada: {destino}")
+
+    @pytest.mark.xfail(strict=True, raises=AssertionError, reason=_MOTIVO_124)
+    def test_no_emite_evento_de_desvio(self, tmp_casos_root, registro, tmp_path):
         """Un desvío que no ocurre no se registra: el log no puede narrar ficción."""
         from core.intake_log import read_events
         _caso_prestado()
-        _registrar_como_copia_local(registro, CASE_ID)
+        _registrar_como_copia_local(registro, CASE_ID, tmp_path / "Desktop")
         case_manager.guard_escritura(CASE_ID, "00_Input/nuevo.pdf", "intake")
         assert [e for e in read_events(CASE_ID) if e["event"] == "pendiente_checkin"] == []
 
-    def test_un_scratch_registrado_tambien_cuenta(self, tmp_casos_root, registro):
+    @pytest.mark.xfail(strict=True, raises=AssertionError, reason=_MOTIVO_124)
+    def test_un_scratch_registrado_tambien_cuenta(self, tmp_casos_root, registro,
+                                                  tmp_path):
         """`local_scratch` es la otra forma de copia local del §5.2."""
         _caso_prestado()
-        _registrar_como_copia_local(registro, CASE_ID, tipo="scratch")
+        _registrar_como_copia_local(registro, CASE_ID, tmp_path / "Desktop",
+                                    tipo="scratch")
         decision = case_manager.guard_escritura(CASE_ID, "00_Input/nuevo.pdf", "intake")
         assert decision.desviar is False
 
@@ -163,15 +213,30 @@ class TestFallaCerrado:
     """Ante la duda, desviar: el lado seguro es el que protege el canon."""
 
     def test_un_registro_ilegible_NO_desactiva_el_guard(self, tmp_casos_root, registro,
-                                                        monkeypatch):
+                                                        monkeypatch, tmp_path):
         """`RegistryUnreadable` no puede leerse como «no es copia local, adelante».
 
         Es la misma regla que el registro aplica a sí mismo (falla cerrado, R7/H7-02):
         «no puedo saberlo» no es «no lo es».
+
+        ## Sí discrimina, y lo digo aquí porque llegué a escribir lo contrario
+
+        Escribí en su día que con `MEJORAS #124` abierta este test «no puede distinguir»
+        lo que su nombre promete, razonando que `es_copia_prestada` devuelve `False` por
+        las dos vías. **Es falso, y lo midió R22/H22-08**: el `monkeypatch` obliga a pasar
+        por el `except`, así que mutar ese `except` a `return True` pone el test **rojo**.
+        La polaridad del fallo cerrado está contratada aquí y solo aquí.
+
+        Que la vía sana de `#124` también devuelva `False` no le quita valor probatorio:
+        el test no compara las dos vías, ejerce una.
+
+        Conviene registrarlo porque el error iba en la dirección **contraria** a la
+        habitual: no inflé lo que el test probaba, lo rebajé — y una nota de humildad
+        falsa habría retirado de la vista la única prueba de esa polaridad.
         """
         from core.casos import workspace_registry as wr
         _caso_prestado()
-        _registrar_como_copia_local(registro, CASE_ID)
+        _registrar_como_copia_local(registro, CASE_ID, tmp_path / "Desktop")
 
         def _revienta(self):
             raise wr.RegistryUnreadable(detalle="ilegible")

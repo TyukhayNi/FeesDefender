@@ -78,7 +78,7 @@ fecha: 2026-07-22
     ficheros de protocolo están en `MERGE_EXCLUSIONS`, luego **el `check` no los cubre**: se
     verifican releyéndolos del Drive. Y **no rellenes `drive_remote_path`** al cerrar: lo consume
     `sync.pull` como *fuente* de pull, así que apuntarlo al hogar canónico hace que un pull futuro
-    se traiga el caso sobre sí mismo. Automatizarlo en `repository_cli checkin`: `MEJORAS #136`.
+    se traiga el caso sobre sí mismo. Automatizarlo en `repository_cli checkin`: `MEJORAS #139`.
 
 ---
 

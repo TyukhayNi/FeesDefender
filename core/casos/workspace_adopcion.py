@@ -73,6 +73,20 @@ def verificar_adopcion(case_dir: Path, ref: CaseRef, *, usuario: str,
     if not case_dir.is_dir():
         return Adopcion(False, "la ruta indicada no existe")
 
+    # (0) ¿Es siquiera una COPIA? `MEJORAS #136`: esta comprobación no existía, y sin
+    # ella las cinco de abajo pasaban sobre el propio canon —el lock es mío, el nombre
+    # casa, y `MANIFEST_CHECKOUT.json` está también en el Drive porque `cmd_checkout` lo
+    # sube (§3.3)—. El resultado era adoptar el expediente canónico como si fuera la
+    # copia de trabajo, y con eso el intake dejaba de desviar sobre un caso prestado.
+    #
+    # Va la PRIMERA a propósito: `alta` también lo rechaza, pero un rechazo allí llega
+    # como excepción opaca. Aquí produce el motivo que el humano lee ANTES de firmar, que
+    # es para lo que existe este comando.
+    from .case_catalog import bajo_catalogo
+    if bajo_catalogo(case_dir):
+        return Adopcion(False, "esa ruta esta bajo el catalogo: es el expediente "
+                               "canonico, no una copia de trabajo que adoptar")
+
     # (1) ¿Es un checkout, o una carpeta cualquiera con nombre parecido?
     manifest = case_dir / _MANIFEST
     if not manifest.is_file():
