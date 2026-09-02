@@ -158,8 +158,71 @@ def _identidad(ref) -> tuple[str | None, Path, str | None]:
                                 "mutex exige, así que no hay namespace utilizable")
 
 
+def _es_canon(workspace) -> bool:
+    """¿La raíz de trabajo de este workspace **es** el expediente canónico?
+
+    Se lee del **modo**, que es lo que el resolver decidió, y no de la ruta. Derivarlo de
+    la ruta exigiría clasificarla otra vez —y `MEJORAS #141` acaba de medir que esa
+    clasificación tiene una entrada sin validar—. El modo no depende de eso.
+    """
+    from .workspace_model import WorkspaceMode
+    return WorkspaceMode(workspace.mode) is WorkspaceMode.DRIVE_ACTIVE
+
+
+def _sin_desvio():
+    """La decisión que corresponde a una copia local: escribir donde toca, sin bandeja."""
+    from ..repository_checkout import DecisionEscritura
+    return DecisionEscritura(
+        permitido=True, desviar=False, ruta_bandeja=None, evento=None,
+        motivo="copia local de trabajo: la bandeja vive en el canon (MEJORAS #96)")
+
+
+def _identidad_de_workspace(ref, workspace) -> tuple[str | None, Path, str | None]:
+    """`(w_code, working_root, motivo)` a partir de un workspace **ya resuelto**.
+
+    ## Por qué la identidad NO sale del árbol, que es lo que costó descubrir
+
+    `_identidad()` la lee del `_caso.md` del directorio. Sobre una copia local eso **no
+    funciona**: `_caso.md` está en `MERGE_EXCLUSIONS` (`core/config.py:391-399`), así que
+    el checkout no se lo lleva. Leerlo devolvería vacío y la comprobación de **tres**
+    fuentes degradaría silenciosamente a dos —nombre de carpeta y referencia pedida—, que
+    es exactamente el fallo que `_identidad` existe para impedir.
+
+    La identidad sale de `workspace.case_ref`, que el resolver ya validó **contra el
+    canon**, donde el `_caso.md` sí está. Es la fuente más fuerte disponible, no un atajo.
+    """
+    from .workspace_model import IdentidadDiscordante, WorkspaceMode
+
+    if WorkspaceMode(workspace.mode).es_bloqueado or workspace.working_root is None:
+        raise ValueError(
+            "un workspace bloqueado no autoriza ninguna escritura y no tiene raiz de "
+            "trabajo; el llamador debe tratar el bloqueo, no pasarlo aqui")
+
+    del_ws = getattr(workspace.case_ref, "w_code", None)
+    pedido = getattr(ref, "w_code", None)
+    presentes = {x.strip().upper() for x in (del_ws, pedido) if x}
+    if len(presentes) > 1:
+        raise IdentidadDiscordante(
+            w_code=del_ws,
+            detalle="el workspace resuelto y la referencia pedida no son el mismo caso; "
+                    "con dos identidades hay dos lockfiles para un expediente")
+
+    canon = (del_ws or pedido or "").strip().upper() or None
+    raiz = Path(workspace.working_root)
+    if not canon:
+        return None, raiz, ("el workspace no declara W-code: no hay namespace utilizable "
+                            "para el mutex")
+    try:
+        return _w_code_valido(canon), raiz, None
+    except ValueError:
+        # El valor crudo NO se reproduce: el §16 gobierna los mensajes.
+        return None, raiz, ("la identidad del workspace no cumple la gramatica que el "
+                            "mutex exige")
+
+
 def deposito(ref, rel_base: str, origen: str, *, clase: str,
-             modo: str = "libre", raiz: Path | None = None) -> Deposito:
+             modo: str = "libre", raiz: Path | None = None,
+             workspace=None) -> Deposito:
     """Autoriza y **efectúa** una escritura sobre el caso de `ref`.
 
     Args:
@@ -169,6 +232,23 @@ def deposito(ref, rel_base: str, origen: str, *, clase: str,
         clase: una de :data:`CLASES`. Gobierna la exención de desvío, nunca la de mutex.
         modo: `v1` exige el mutex; `libre` lo declara si falta (§4 del plan).
         raiz: raíz de lockfiles. `None` = la por defecto.
+        workspace: `CaseWorkspace` **ya resuelto por el llamador**. `None` = el canon, que
+            es la conducta de siempre.
+
+    ## `workspace` cierra H18-01, y quién resuelve es la decisión
+
+    Hasta hoy la base salía de `CaseCatalog().localizar(ref)`, así que **esta costura solo
+    servía para el canon**: con un caso prestado a esta máquina, los bytes iban al Drive y
+    no a la copia sobre la que se trabaja.
+
+    Resolver **aquí dentro** fue el diseño de las rev. 1 y 2 de `MEJORAS #124`, y **dos
+    rondas adversariales lo tumbaron** (R21 y R24, 20 hallazgos confirmados). El motivo de
+    fondo, en una línea: la costura no tiene el contexto —reloj, usuario, máquina, acceso a
+    Drive— y fabricarlo aquí obliga a una segunda resolución que contradice la premisa.
+
+    **Lo resuelve el llamador**, que ya lo tiene y ya sabe tratar los errores del resolver.
+    No es un patrón nuevo: `scripts/sala_maquina.py` lo hace así desde el Task 9 de la
+    Fase 1.
     """
     from ..case_manager import guard_escritura
     from .workspace_model import EscrituraSinMutex, IdentidadNoUtilizable
@@ -181,7 +261,10 @@ def deposito(ref, rel_base: str, origen: str, *, clase: str,
     if modo not in MODOS:
         raise ValueError(f"modo {modo!r} desconocido; los del §24 D3 son {MODOS}")
 
-    w_code, case_dir, motivo_identidad = _identidad(ref)
+    if workspace is None:
+        w_code, case_dir, motivo_identidad = _identidad(ref)
+    else:
+        w_code, case_dir, motivo_identidad = _identidad_de_workspace(ref, workspace)
 
     # ---- 1. El mutex, ANTES del guard. Ver el docstring del módulo.
     protegida, motivo = False, None
@@ -206,9 +289,17 @@ def deposito(ref, rel_base: str, origen: str, *, clase: str,
             protegida = True
 
     # ---- 2. El guard, ya dentro del mutex si lo hay.
-    case_id = case_dir.name
-    decision = guard_escritura(case_id, rel_base, origen,
-                              es_protocolo=(clase == "protocolo"))
+    #
+    # Sobre una COPIA LOCAL no se consulta: la bandeja `_pendiente_checkin` vive en el
+    # canon, y desviar dentro de la copia seria una bandeja dentro de la bandeja
+    # (`MEJORAS #96`). El discriminante es el MODO que el llamador ya resolvio, no una
+    # segunda lectura del estado — que es justo lo que R24/H24-02 demostro imposible.
+    if workspace is not None and not _es_canon(workspace):
+        decision = _sin_desvio()
+    else:
+        case_id = case_dir.name
+        decision = guard_escritura(case_id, rel_base, origen,
+                                   es_protocolo=(clase == "protocolo"))
 
     base = case_dir / (decision.ruta_bandeja if decision.desviar else rel_base)
     # Contención de la propia base: `rel_base` viene de código del repo, pero una base que
