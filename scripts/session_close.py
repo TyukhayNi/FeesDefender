@@ -431,7 +431,51 @@ def _avisar_specs_sin_traza() -> None:
     print("(Un handoff que lo mencione NO cuenta: no es fuente de verdad.)")
 
 
+#: Dependencias de terceros que la suite necesita ya en la fase de COLECCION:
+#: `core.config` importa `dotenv`; `core.utils`, `yaml` y `slugify`. Sin ellas
+#: pytest no "falla": no llega a ejecutar ninguna asercion.
+DEPS_DE_COLECCION: tuple[str, ...] = ("pytest", "dotenv", "yaml", "slugify")
+
+
+def deps_que_faltan(deps: tuple[str, ...] = DEPS_DE_COLECCION) -> list[str]:
+    """Las de `deps` que ESTE interprete no puede importar.
+
+    No mide "estoy dentro de un venv" —alguien puede tenerlas instaladas
+    globalmente y estar perfectamente— sino la propiedad que de verdad decide
+    si la medicion vale: si el interprete que va a lanzar pytest puede importar
+    lo que la suite necesita.
+    """
+    import importlib.util
+    faltan = []
+    for mod in deps:
+        try:
+            if importlib.util.find_spec(mod) is None:
+                faltan.append(mod)
+        except (ImportError, ValueError, ModuleNotFoundError):
+            # Un paquete padre ausente hace que `find_spec` LANCE en vez de
+            # devolver None; cuenta igual como ausente.
+            faltan.append(mod)
+    return faltan
+
+
 def main() -> None:
+    # Antes de cualquier otra cosa: si este interprete no puede importar las
+    # dependencias, la suite no va a "fallar" — no va a correr. Presentar eso
+    # como "tests fallando" manda a diagnosticar una rotura inexistente y
+    # ensena a ignorar esta verja por creerla averiada. Misma regla que la
+    # revision adversarial del despacho: quien no corre no refuta, deja SIN
+    # VERIFICAR. De ahi el codigo 2, distinto del 1 de "medi y salio mal".
+    faltan = deps_que_faltan()
+    if faltan:
+        venv = ROOT / ".venv" / "Scripts" / "python.exe"
+        print(f"\n[X] NO SE HA MEDIDO NADA: este interprete no puede importar "
+              f"{', '.join(faltan)}.")
+        print(f"    Interprete usado: {PYTHON}")
+        print("    Los worktrees no tienen `.venv` propio. Usa el del repo:")
+        print(f'      & "{venv}" -m scripts.session_close')
+        print("    La suite NO ha corrido: esto no dice nada sobre su estado.")
+        sys.exit(2)
+
     force_slow = "--runslow" in sys.argv or os.getenv("RUN_SLOW") == "1"
     runslow = force_slow or _anon_tocado()
 
