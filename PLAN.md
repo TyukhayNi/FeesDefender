@@ -150,23 +150,33 @@ una puerta; (6) W-02Q38C se cierra por ese wiring, sin parche manual del caso.
 su **elección de mutante**. Si el contrato enumera cuatro fronteras, hacen falta cuatro mutantes,
 uno por frontera. Un solo mutante rojo prueba que el test no está vacío; no prueba el contrato.
 
-**`MEJORAS #124` — diseño escrito y R21 adjudicada (2026-09-02).** El gate declarado de la rev. 2 de
+**`MEJORAS #124` — rev. 2 escrita (2026-09-02), sin revisar.** El gate declarado de la rev. 2 de
 3A-bis y 3B: quién contesta «¿cuál es la copia de trabajo?». Plan
-[`2026-09-02-mejoras-124-copia-de-trabajo.md`](docs/superpowers/plans/2026-09-02-mejoras-124-copia-de-trabajo.md),
-rev. 1 `NO-EJECUTABLE` — **R21: 8 hallazgos, 8 confirmados, 0 refutados, 4 críticos**; acta
-`…-mejoras-124-r21-adversarial-review.md`, adjudicación en el §8 del plan. **Lo que sobrevive:** el
-diagnóstico y la decisión **D124** (el veredicto y el destino salen de una sola resolución). **Lo
-que la ronda destapó y no es de este plan:** `MEJORAS #136` — `repository_cli adoptar` sobre la ruta
-del **canon** es **ACEPTADO**, y desde ese momento el intake escribe sobre el canon **sin desviar
-mientras está prestado**. Reproducido con sonda propia. La invariante «el registro no contiene el
-canon» solo la aplica `resolver_por_ruta`, que es un lector; ni `alta` ni `verificar_adopcion` la
-comprueban. **Va ANTES de la rev. 2**, porque `es_canon` no es un discriminante mientras esa puerta
-esté abierta. **Y el error de método que lo escondió:** cité la línea donde se **declara** la
-excepción como prueba de que la garantía se **aplica** — sexta aparición de «el nombre de una cosa
-no es la cosa», y el hallazgo BAJO que la denunció (H21-08, una mis-cita) era la puerta del CRÍTICO.
-**Segundo defecto propio de la ronda:** el mutante **F5 que yo escribí era inerte** —con el
-`except` catch-all del diseño, quitar `diagnostico=True` no cambia nada observable—, o sea que la
-clase «guarda inerte» apareció **dentro de la prueba de mutación que existe para cazarla**.
+[`2026-09-02-mejoras-124-copia-de-trabajo.md`](docs/superpowers/plans/2026-09-02-mejoras-124-copia-de-trabajo.md).
+
+**La rev. 1 fue `NO-EJECUTABLE`** — R21: 8 hallazgos, 8 confirmados, 4 críticos; acta
+`…-mejoras-124-r21-adversarial-review.md`, adjudicación en el §8 del plan. Dos defectos míos que la
+ronda midió: cité la línea donde se **declara** una excepción como prueba de que la garantía se
+**aplica** (sexta aparición de «el nombre de una cosa no es la cosa», y el hallazgo BAJO que la
+denunció era la puerta del CRÍTICO), y **el mutante F5 que escribí era inerte** — la clase «guarda
+inerte» apareció dentro de la prueba de mutación que existe para cazarla.
+
+**Y la ronda destapó un defecto VIVO que no era del plan:** `MEJORAS #136` — `adoptar` sobre la ruta
+del canon era ACEPTADO y desde ahí el intake escribía sobre el expediente prestado sin desviar.
+**✅ CERRADO y mergeado** (PR #255, `9c947ba`) con **dos rondas propias, R22 y R23, ambas `NO-SHIP`,
+16 hallazgos y 16 confirmados**. Los dos que más enseñan son míos: una **pérdida de datos que
+introduje al arreglar**, y **la misma frontera mal cerrada por cuarta vez**.
+
+**La rev. 2 resuelve los cinco puntos del §8.4**, con dos mediciones nuevas que cambian el diseño:
+`deposito()` —la «puerta única»— tiene **cero llamadores en producción** (misma enfermedad que el
+mutex antes de 3A), y hay **28 escrituras transitivas por canon** en los siete módulos que consultan
+el guard, así que mover solo los bytes **parte el expediente**. Cambios de fondo respecto de la
+rev. 1: se **retira** el tipo `Destino` —no podía transportar el veredicto y exponía la raíz que 3A
+había cerrado— y la puerta pasa a ser `deposito()`, que ya entrega una capacidad con base privada;
+la tabla error→resultado **aborta** en los errores de custodia en los dos modos, que es un cambio de
+conducta declarado. **Nota:** `#136` convirtió `#124` de accidente en **teorema** — la intersección
+entre lo que `buscar()` devuelve y lo que el registro puede contener es vacía **por construcción**.
+**Cobertura de revisión de la rev. 2: AUSENTE.**
 
 ---
 
