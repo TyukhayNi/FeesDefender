@@ -177,47 +177,125 @@ def _sin_desvio():
         motivo="copia local de trabajo: la bandeja vive en el canon (MEJORAS #96)")
 
 
-def _identidad_de_workspace(ref, workspace) -> tuple[str | None, Path, str | None]:
-    """`(w_code, working_root, motivo)` a partir de un workspace **ya resuelto**.
+def _exigir_modo_coherente_con_la_raiz(workspace) -> None:
+    """El modo y la raíz tienen que **concordar**, y eso no lo garantiza nadie más.
 
-    ## Por qué la identidad NO sale del árbol, que es lo que costó descubrir
+    `CaseWorkspace.__post_init__` solo exige que un modo utilizable traiga raíz; **no**
+    comprueba que `DRIVE_ACTIVE` apunte al catálogo ni que los modos locales queden fuera
+    (R25/H25-03). El resolver de producción sí mantiene la dicotomía, pero
+    `CaseWorkspace` es un valor **público**: cualquiera puede construir un
+    `LOCAL_CHECKOUT` apuntando al canon y quedarse con el bypass del guard.
 
-    `_identidad()` la lee del `_caso.md` del directorio. Sobre una copia local eso **no
-    funciona**: `_caso.md` está en `MERGE_EXCLUSIONS` (`core/config.py:391-399`), así que
-    el checkout no se lo lleva. Leerlo devolvería vacío y la comprobación de **tres**
-    fuentes degradaría silenciosamente a dos —nombre de carpeta y referencia pedida—, que
-    es exactamente el fallo que `_identidad` existe para impedir.
-
-    La identidad sale de `workspace.case_ref`, que el resolver ya validó **contra el
-    canon**, donde el `_caso.md` sí está. Es la fuente más fuerte disponible, no un atajo.
+    Aquí se exige, porque aquí es donde el bypass se concede. Se usa
+    `case_catalog.clasificar_bajo`, que es la definición única y la que `MEJORAS #136`
+    dejó con comparación por componentes e identidad física.
     """
-    from .workspace_model import IdentidadDiscordante, WorkspaceMode
+    from .. import config
+    from .case_catalog import DENTRO, clasificar_bajo
+    from .workspace_model import WorkspaceMode
+
+    modo = WorkspaceMode(workspace.mode)
+    raiz = Path(workspace.working_root)
+    dentro = clasificar_bajo(raiz, Path(config.settings.casos_root)) == DENTRO
+    if modo is WorkspaceMode.DRIVE_ACTIVE and not dentro:
+        raise ValueError(
+            "un workspace `drive_active` tiene que apuntar al catalogo; esta raiz cae "
+            "fuera y concederia capacidad canonica sobre algo que no es el canon")
+    if modo is not WorkspaceMode.DRIVE_ACTIVE and dentro:
+        raise ValueError(
+            "un workspace local no puede apuntar DENTRO del catalogo: eso saltaria el "
+            "guard de desvio sobre el propio expediente canonico")
+
+
+def _identidad_de_workspace(ref, workspace) -> tuple[str | None, Path, str | None]:
+    """`(w_code, working_root, motivo)`. El workspace aporta el **destino**, no la identidad.
+
+    ## La frontera, y escribí la contraria
+
+    La primera versión decía que la identidad salía de `workspace.case_ref` «que el
+    resolver ya validó contra el canon». **Es falso**, y R25/H25-01 lo demostró
+    ejecutándolo: `CaseCatalog.localizar` cae a `case_id` sin contrastar `meta.id_go`, y
+    el resolver **conserva el `CaseRef` pedido sin enriquecerlo**. Resultado medido: una
+    petición con `W-FAKE01` sobre el canon de `W-REAL01` era **aceptada por la vía nueva y
+    rechazada por la vieja** — o sea que mi cambio abría una puerta que el código ya tenía
+    cerrada, y encima tomaba el mutex del namespace equivocado.
+
+    **El `case_ref` de un workspace es la PETICIÓN, no la PRUEBA.** La prueba es
+    `meta.id_go` del canon, y sigue estando donde siempre: en el catálogo. Que la copia
+    local no lleve `_caso.md` (`MERGE_EXCLUSIONS`) no cambia dónde vive la prueba —
+    cambia dónde caen los bytes, que es otra cosa.
+
+    Así que aquí hay **una sola regla de identidad**, la misma que la vía histórica, y lo
+    único que el workspace decide es la raíz de escritura. Dos reglas de identidad que
+    puedan divergir es precisamente cómo nació este defecto.
+
+    ## El caso sin canon, declarado
+
+    Un `local_scratch` que el catálogo no conoce no tiene prueba canónica. Ahí se cae al
+    par (nombre de la carpeta, petición) y **se declara** que la garantía es más débil, en
+    vez de fingir que es la misma.
+    """
+    from . import case_locator
+    from .case_catalog import CaseCatalog
+    from .workspace_model import (CaseRef, IdentidadDiscordante,
+                                  LocalWorkspaceMissing, WorkspaceMode)
 
     if WorkspaceMode(workspace.mode).es_bloqueado or workspace.working_root is None:
         raise ValueError(
             "un workspace bloqueado no autoriza ninguna escritura y no tiene raiz de "
             "trabajo; el llamador debe tratar el bloqueo, no pasarlo aqui")
+    _exigir_modo_coherente_con_la_raiz(workspace)
 
-    del_ws = getattr(workspace.case_ref, "w_code", None)
-    pedido = getattr(ref, "w_code", None)
-    presentes = {x.strip().upper() for x in (del_ws, pedido) if x}
+    raiz = Path(workspace.working_root)
+    ws_ref = getattr(workspace, "case_ref", None)
+
+    # (1) La peticion es lo que el llamador y el workspace piden JUNTOS. Que discrepen
+    #     entre si ya es discordancia: son dos identidades para una escritura.
+    pedidos = {x.strip().upper()
+               for x in (getattr(ws_ref, "w_code", None), getattr(ref, "w_code", None))
+               if x}
+    if len(pedidos) > 1:
+        raise IdentidadDiscordante(
+            w_code=None,
+            detalle="el workspace y la referencia pedida declaran W-codes distintos; "
+                    "con dos identidades hay dos lockfiles para un expediente")
+    case_id = (getattr(ws_ref, "case_id", None) or getattr(ref, "case_id", None))
+
+    # (2) La PRUEBA: `meta.id_go` del canon, por la misma via que la historica.
+    try:
+        canon_dir = CaseCatalog().localizar(CaseRef(case_id=case_id) if case_id else ref)
+    except LocalWorkspaceMissing:
+        canon_dir = None
+
+    if canon_dir is not None:
+        id_go = (str(case_locator.read_case_meta(canon_dir).get("id_go") or "")
+                 .strip().upper()) or None
+        del_nombre = case_locator._w_code_de(canon_dir.name)
+    else:
+        id_go = None
+        del_nombre = case_locator._w_code_de(raiz.name)
+    del_nombre = del_nombre.strip().upper() if del_nombre else None
+
+    # (3) La MISMA comparacion de tres fuentes que `_identidad`. Cualquier desacuerdo
+    #     entre las presentes es discordancia: elegir en silencio fabrica el segundo lock.
+    presentes = {x for x in (id_go, del_nombre, *pedidos) if x}
     if len(presentes) > 1:
         raise IdentidadDiscordante(
-            w_code=del_ws,
-            detalle="el workspace resuelto y la referencia pedida no son el mismo caso; "
-                    "con dos identidades hay dos lockfiles para un expediente")
+            w_code=id_go,
+            detalle="el metadato canonico, la presentacion y la referencia pedida no "
+                    "coinciden; con dos identidades hay dos lockfiles para un expediente")
 
-    canon = (del_ws or pedido or "").strip().upper() or None
-    raiz = Path(workspace.working_root)
+    canon = id_go or del_nombre or (next(iter(pedidos)) if pedidos else None)
     if not canon:
-        return None, raiz, ("el workspace no declara W-code: no hay namespace utilizable "
-                            "para el mutex")
+        return None, raiz, ("no hay identidad canonica: ni `meta.id_go` ni el nombre de "
+                            "la carpeta declaran un W-code")
     try:
-        return _w_code_valido(canon), raiz, None
+        w = _w_code_valido(canon)
     except ValueError:
         # El valor crudo NO se reproduce: el §16 gobierna los mensajes.
-        return None, raiz, ("la identidad del workspace no cumple la gramatica que el "
-                            "mutex exige")
+        return None, raiz, ("la identidad declarada no cumple la gramatica que el mutex "
+                            "exige, asi que no hay namespace utilizable")
+    return w, raiz, None
 
 
 def deposito(ref, rel_base: str, origen: str, *, clase: str,

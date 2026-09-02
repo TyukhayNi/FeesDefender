@@ -108,12 +108,145 @@ class TestElDepositoLlevaElWorkspace:
         assert d is not None
         assert d.clase == "derivado"
 
-    def test_un_workspace_sin_W_code_no_rompe_la_corrida(self, caso):
-        """Sin namespace no hay mutex, y eso se declara — no se aborta.
+    def test_un_workspace_sin_W_code_toma_el_del_CANON(self, caso):
+        """UNA conducta, no dos.
 
-        Es el mismo trinquete que `_bajo_mutex`: cerrar en falso una vía que hoy
-        funciona le rompe el día al equipo.
+        La primera version asertaba `d is None or d.motivo_sin_mutex is not None`, que
+        acepta dos contratos incompatibles y pasa con cualquiera de los dos
+        (R25/H25-08). Con la identidad resuelta contra el canon, la conducta es una: el
+        W-code lo pone el `meta.id_go`, aunque el workspace no lo traiga.
         """
         _, ruta = caso
         d = cli._deposito_sala(_ws_de(ruta, w_code=None))
-        assert d is None or d.motivo_sin_mutex is not None
+        # El motivo que queda es el del MUTEX —este test no lo sostiene—, y NO uno de
+        # identidad. Distinguirlos es el contrato: «identidad resuelta, mutex ausente» es
+        # correcto; «identidad no utilizable» era el defecto de R25/H25-02.
+        assert d is not None
+        assert "mutex del caso" in d.motivo_sin_mutex
+        assert "identidad" not in d.motivo_sin_mutex
+
+
+class _DepositoEspia:
+    """Registra lo que se le escribe. Sustituye a la capacidad real en el comando."""
+
+    def __init__(self, real):
+        self._real = real
+        self.escrituras = []
+
+    def escribir_texto(self, rel, contenido, **k):
+        self.escrituras.append(rel)
+        return self._real.escribir_texto(rel, contenido, **k)
+
+    def escribir_bytes(self, rel, contenido):
+        self.escrituras.append(rel)
+        return self._real.escribir_bytes(rel, contenido)
+
+    def dir_para(self, rel="."):
+        return self._real.dir_para(rel)
+
+
+class TestElCableadoDeLosCOMANDOS:
+    """R25/H25-06: sin esto, los mutantes del cableado SOBREVIVEN.
+
+    El revisor mutó los cuatro `dep=_dep_sala` a llamadas directas y **toda** la familia
+    `test_sala_maquina*` siguió verde. La razón es que la vía directa y la capacidad
+    apuntan hoy a la misma ruta, así que un aserto de existencia no distingue una de otra.
+
+    Lo que sí distingue: un **espía** que exige que la persistencia atraviese el objeto, y
+    un **canario** que hace explotar la vía directa. Con los dos, la ruta compartida deja
+    de esconder cuál se usó.
+    """
+
+    def _canario(self, monkeypatch):
+        """La vía directa pasa a ser un error: si se usa, el test se entera."""
+        def _revienta(*a, **k):
+            raise AssertionError(
+                "la escritura fue por la via DIRECTA, no por la capacidad: el cableado "
+                "de `dep=` se ha perdido")
+        monkeypatch.setattr(cli.sm, "_sala_maquina_dir", _revienta)
+
+    def test_guardar_estado_atraviesa_la_capacidad(self, caso, monkeypatch):
+        _, ruta = caso
+        espia = _DepositoEspia(cli._deposito_sala(_ws_de(ruta)))
+        self._canario(monkeypatch)
+        cli._guardar_estado(ruta, {"sha"}, intentos={}, hashes={}, dep=espia)
+        assert espia.escrituras == [cli._STATE]
+
+    def test_guardar_cobertura_atraviesa_la_capacidad(self, caso, monkeypatch):
+        import core.sala_maquina as sm
+        _, ruta = caso
+        espia = _DepositoEspia(cli._deposito_sala(_ws_de(ruta)))
+        self._canario(monkeypatch)
+        cli._guardar_cobertura(ruta, [sm.DocCobertura(
+            slug="d", rel_path="00_Input/d.pdf", metodo="pypdf", estado="ok")], dep=espia)
+        assert espia.escrituras == [cli._COBERTURA]
+
+    def test_y_el_canario_MUERDE_si_se_usa_la_via_directa(self, caso, monkeypatch):
+        """El canario tiene que poder disparar: si no, los dos tests de arriba pasan
+        por casualidad y no por contrato."""
+        _, ruta = caso
+        self._canario(monkeypatch)
+        with pytest.raises(AssertionError, match="via DIRECTA"):
+            cli._guardar_estado(ruta, {"sha"}, intentos={}, hashes={})
+
+
+class TestLaNormalizacionLF:
+    """R25/H25-07: un cambio de conducta que NO había declarado.
+
+    La vía directa usaba `Path.write_text(..., encoding="utf-8")`, que en Windows escribe
+    **CRLF**. `Deposito.escribir_texto` fuerza `newline="\n"`. La ruta y el JSON parseado
+    son idénticos, pero **los bytes no**, y con ellos el hash — que es justo lo que el
+    checkin compara.
+
+    Se declara como intencional —LF es lo que el repo exige en todas partes— y se contrata
+    con un aserto de bytes, para que «sin cambio de conducta» deje de ser ambiguo.
+    """
+
+    def test_la_capacidad_escribe_LF(self, caso):
+        _, ruta = caso
+        cli._guardar_estado(ruta, {"sha"}, intentos={}, hashes={},
+                            dep=cli._deposito_sala(_ws_de(ruta)))
+        crudo = (ruta / "01_Procesado" / "02_Sala de máquina" / cli._STATE).read_bytes()
+        assert b"\r\n" not in crudo
+
+
+class TestElCOMANDO:
+    """El unico test que muerde el cableado de verdad (R25/H25-06).
+
+    Los de arriba llaman a los *helpers*. Mute los cuatro `dep=_dep_sala` a `dep=None` y
+    **los diez pasaron**: la via directa y la capacidad apuntan hoy a la misma ruta, asi
+    que ningun aserto sobre el fichero distingue una de otra.
+
+    Lo que distingue es ejecutar el COMANDO con la capacidad espiada. Si el cableado se
+    pierde, el espia no ve nada y esto se pone rojo.
+    """
+
+    def test_apply_persiste_ATRAVESANDO_la_capacidad(self, tmp_path, monkeypatch):
+        import core.sala_maquina as sm
+        from tests.test_sala_maquina_ejecutar import _pdf_con_texto
+
+        case = tmp_path / "EV-2026-001"
+        (case / "00_Input" / "01_Drive EV").mkdir(parents=True)
+        _pdf_con_texto(case / "00_Input" / "01_Drive EV" / "doc.pdf")
+        monkeypatch.setattr(cli, "caso_path", lambda cid: case)
+        monkeypatch.setattr(cli, "append_event",
+                            lambda *a, **k: None)
+
+        espiados = []
+        real = cli._deposito_sala
+
+        def _espia(ws):
+            d = _DepositoEspia(real(ws))
+            espiados.append(d)
+            return d
+
+        monkeypatch.setattr(cli, "_deposito_sala", _espia)
+        cli.apply("EV-2026-001")
+
+        assert espiados, "`apply` no construyo la capacidad: el cableado se perdio"
+        escrito = [r for d in espiados for r in d.escrituras]
+        assert cli._STATE in escrito, (
+            "`apply` no persistio el estado por la capacidad; si el mutante "
+            "`dep=None` sobrevive, este test no esta mordiendo")
+        assert cli._COBERTURA in escrito
+

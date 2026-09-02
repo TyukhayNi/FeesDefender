@@ -102,25 +102,24 @@ def _deposito_sala(ws):
     que gana es la contención de la base y la declaración del mutex. Decirlo importa
     porque un cliente que parece mover bytes y no los mueve es peor que ninguno.
 
-    Devuelve `None` si la costura no puede entregar capacidad, y entonces el llamador
-    sigue por la vía directa. Es el mismo trinquete que `_bajo_mutex`: cerrar en falso una
-    vía que hoy funciona le rompe el día al equipo.
+    ## No hay red: si la costura no entrega capacidad, esto ABORTA
 
-    **El `except` es ESTRECHO a propósito.** Lo escribí primero como `except Exception` y
-    eso convertía cualquier error —un bug mío incluido— en un `None` mudo que degradaba a
-    la vía directa sin que nadie se enterara: el modo de fallo más caro que hay, porque
-    parece que funciona. Solo se degrada ante los dos errores que **significan** «este caso
-    no tiene namespace utilizable»; lo demás sube.
+    Las dos versiones anteriores degradaban a la vía directa. La primera con un
+    `except Exception`, que convertía cualquier bug mío en un `None` mudo. La segunda con
+    un `except` estrecho de dos errores de identidad — y **R25/H25-05 mostró por qué eso
+    seguía estando mal**: `IdentidadDiscordante` no significa «falta namespace», significa
+    **no se ha demostrado qué caso se está escribiendo**. Degradarla salta exactamente la
+    comprobación que acaba de fallar, y con el cierre de H25-01 habría convertido la nueva
+    garantía en un bypass.
+
+    Aquí no hay que proteger la pantalla de nadie: `sala_maquina` es una CLI que se corre a
+    mano. Abortar con el error a la vista es la conducta correcta, y es la que el resto del
+    entrypoint ya tiene para `CaseBusy` y `MutexPerdido`.
     """
     from core.casos import escritura
-    from core.casos.workspace_model import (IdentidadDiscordante,
-                                            IdentidadNoUtilizable)
 
-    try:
-        return escritura.deposito(ws.case_ref, _REL_SALA, "sala_maquina",
-                                  clase="derivado", modo="libre", workspace=ws)
-    except (IdentidadNoUtilizable, IdentidadDiscordante):
-        return None
+    return escritura.deposito(ws.case_ref, _REL_SALA, "sala_maquina",
+                              clase="derivado", modo="libre", workspace=ws)
 
 
 def _guardar_estado(case_dir: Path, shas: set[str], *,
@@ -716,7 +715,13 @@ def plan(case_id: str = typer.Argument(None),
         from core.casos.workspace_model import Capability
         _exigir(ws, Capability.WRITE_CASE, Capability.GENERATE_DERIVATIVES)
         case_dir = ws.working_root
-        _dep_sala = _deposito_sala(ws)
+        # `plan` NO construye la capacidad: no persiste estado ni cobertura, asi que
+        # pedirla seria una llamada MUERTA —y una que puede abortar el comando por un
+        # resultado que nadie usa—. La primera version la puso aqui por un reemplazo
+        # mecanico sobre todas las apariciones de `case_dir = ws.working_root`, sin mirar
+        # si el comando escribia (R25/H25-04). Su unico manifiesto, `_segmentacion.md`,
+        # sigue por `split.escribir_manifiesto` y queda DECLARADO sin migrar.
+        #
         # `plan` es preview: descarta la caché en vez de persistirla (no escribe estado) y
         # se queda solo con el plan y el recuento de agotados, que sí hay que declarar.
         p, _cache, _ms, _n, agotados = _construir_plan(case_dir, force=False)
