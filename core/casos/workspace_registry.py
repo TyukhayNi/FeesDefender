@@ -211,7 +211,7 @@ class WorkspaceRegistry:
         Ocultar no es borrar **solo si nadie reescribe desde la vista oculta**: por eso
         `alta` y `revalidar` releen el fichero **crudo**. Las dos mitades hacen falta.
         """
-        from .case_catalog import DENTRO, clasificar_bajo
+        from .case_catalog import DENTRO, FUERA, clasificar_bajo  # noqa: F401
         raiz = _casos_root()
         return [e for e in entradas
                 if clasificar_bajo(Path(e.local_path), raiz) != DENTRO]

@@ -416,3 +416,87 @@ class TestElSeamInyectado:
                                   usuario=USUARIO, maquina=MAQUINA, ahora=AHORA)
         with pytest.raises(LocalWorkspaceMissing):
             r.resolver_por_identidad(REF, drive_accesible=True)
+
+
+class TestInvarianteYPoliticaSonDISTINTAS:
+    """Las dos capas se solapan en `DENTRO`; lo que las separa es lo INDETERMINADO.
+
+    La mutacion lo destapo: quitar la comprobacion de `alta`, la de `revalidar` o la de
+    `_escribir` dejaba los tres mutantes VIVOS, porque cada una tapaba a la otra en el
+    unico caso que yo habia contratado. Un contrato con dos reglas necesita un caso donde
+    las dos den respuestas distintas, o no son dos reglas: es una repetida.
+    """
+
+    def test_alta_rechaza_lo_que_no_puede_clasificar(self, tmp_casos_root, registro,
+                                                     tmp_path, monkeypatch):
+        """La POLITICA: no se introduce lo que no se puede demostrar fuera."""
+        fuera = tmp_path / "Desktop" / CASE
+        fuera.mkdir(parents=True)
+        monkeypatch.setattr(case_catalog, "_dentro_fisicamente",
+                            _indeterminada_solo(fuera))
+        with pytest.raises(WorkspaceUnderCatalogRoot):
+            registro.alta(_entrada(fuera))
+
+    def test_revalidar_rechaza_lo_que_no_puede_clasificar(self, tmp_casos_root, registro,
+                                                          tmp_path, monkeypatch):
+        fuera = tmp_path / "Desktop" / CASE
+        fuera.mkdir(parents=True)
+        registro.alta(_entrada(fuera))
+        destino = tmp_path / "Desktop" / "otro_destino"
+        destino.mkdir(parents=True)
+        monkeypatch.setattr(case_catalog, "_dentro_fisicamente",
+                            _indeterminada_solo(destino))
+        with pytest.raises(WorkspaceUnderCatalogRoot):
+            registro.revalidar(REF, local_path=destino)
+
+    def test_la_invariante_muerde_aunque_la_politica_no_haya_mirado(self, canon,
+                                                                    registro):
+        """La INVARIANTE, en su frontera y sin pasar por los llamadores.
+
+        Se llama al metodo privado a proposito: es donde vive la garantia de que
+        **ningun** escritor, ni los que no existen todavia, deje el canon en disco. Fue
+        justamente confiar en los llamadores lo que dejo fuera a `revalidar`.
+        """
+        with pytest.raises(WorkspaceUnderCatalogRoot):
+            registro._escribir("W-CANON1", [_entrada(canon)])
+
+    def test_pero_la_invariante_NO_bloquea_lo_indeterminado_que_ya_estaba(
+            self, tmp_casos_root, registro, tmp_path, monkeypatch):
+        """Si `_escribir` rechazara lo indeterminado, no podrias ni dar de baja.
+
+        Es la razon de que la invariante sea mas laxa que la politica, y sin este test
+        esa asimetria seria una afirmacion de docstring.
+        """
+        fuera = tmp_path / "Desktop" / CASE
+        fuera.mkdir(parents=True)
+        registro.alta(_entrada(fuera))
+        monkeypatch.setattr(case_catalog, "_dentro_fisicamente",
+                            _indeterminada_solo(fuera))
+        registro.baja(REF)                    # no lanza
+        assert registro.buscar(REF) == []
+
+
+class TestRutasQueNoEXISTEN:
+    """La comparacion lexica solo es indispensable cuando el directorio no existe.
+
+    Tambien lo destapo la mutacion: quitar el saneado del prefijo extendido dejaba el
+    mutante VIVO, porque la comparacion fisica lo cubria por su cuenta... para rutas que
+    existen. Y el caso que de verdad importa al AUTORIZAR un destino es el contrario.
+    """
+
+    def test_un_destino_inexistente_con_prefijo_extendido_se_clasifica_dentro(
+            self, tmp_casos_root):
+        from core.config import settings
+        inexistente = Path(settings.casos_root) / "no-existe-todavia" / CASE
+        # Precondicion sin `assert`.
+        if inexistente.exists():
+            pytest.skip("la ruta de la sonda existe, y debe no existir")
+        assert case_catalog.bajo_catalogo(Path(_EXT + str(inexistente))) is True
+
+    def test_y_uno_inexistente_de_verdad_fuera_sigue_dando_False(self, tmp_casos_root,
+                                                                 tmp_path):
+        inexistente = tmp_path / "Desktop" / "no-existe" / CASE
+        if inexistente.exists():
+            pytest.skip("la ruta de la sonda existe, y debe no existir")
+        assert case_catalog.bajo_catalogo(inexistente) is False
+
