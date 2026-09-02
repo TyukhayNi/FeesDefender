@@ -219,18 +219,20 @@ class TestFallaCerrado:
         Es la misma regla que el registro aplica a sí mismo (falla cerrado, R7/H7-02):
         «no puedo saberlo» no es «no lo es».
 
-        ## Lo que este test NO puede distinguir hoy, dicho aquí y no escondido
+        ## Sí discrimina, y lo digo aquí porque llegué a escribir lo contrario
 
-        Con `MEJORAS #124` abierta, `es_copia_prestada` devuelve `False` **por las dos
-        vías**: porque la excepción cae en el `except` que falla cerrado, y porque la rama
-        de copia local está muerta de todos modos. O sea que **verde aquí no prueba la
-        polaridad que el nombre promete**; sí prueba que la excepción no escapa y que el
-        guard no se convierte en una vía nueva de error.
+        Escribí en su día que con `MEJORAS #124` abierta este test «no puede distinguir»
+        lo que su nombre promete, razonando que `es_copia_prestada` devuelve `False` por
+        las dos vías. **Es falso, y lo midió R22/H22-08**: el `monkeypatch` obliga a pasar
+        por el `except`, así que mutar ese `except` a `return True` pone el test **rojo**.
+        La polaridad del fallo cerrado está contratada aquí y solo aquí.
 
-        Se deja pasando y no en `xfail` porque **pasa**, y marcar como fallo esperado algo
-        que no falla sería otra ficción. Lo que se corrige es la afirmación: cuando la
-        rev. 2 de #124 reviva la rama, este test pasará a discriminar de verdad y hay que
-        volver a leerlo entonces.
+        Que la vía sana de `#124` también devuelva `False` no le quita valor probatorio:
+        el test no compara las dos vías, ejerce una.
+
+        Conviene registrarlo porque el error iba en la dirección **contraria** a la
+        habitual: no inflé lo que el test probaba, lo rebajé — y una nota de humildad
+        falsa habría retirado de la vista la única prueba de esa polaridad.
         """
         from core.casos import workspace_registry as wr
         _caso_prestado()
