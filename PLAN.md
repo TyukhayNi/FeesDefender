@@ -182,6 +182,14 @@ hizo falta un caso con nombre neutro para que el mutante del metadato muriera.
 `sala_maquina`, que ya escribía donde escribe. La alternativa anotada y no tomada: **partir la pieza
 en dos** —invariante modo/raíz e identidad son independientes, y cada arreglo de una rompió la otra—.
 
+**PARTIDA EN DOS (2026-09-02), que era la alternativa anotada y no tomada.** `ubicacion.py`
+—local FUERA del catálogo, `drive_active` DENTRO, sin identidad ninguna— y la regla de identidad,
+que conserva lo suyo. **Lo que aparece al partirlas explica las cuatro rondas:** la ubicación **no
+necesita saber qué caso es**, y la versión acoplada preguntaba «¿es *el* canon de *este* caso?».
+Condición de cierre ejecutable: `python -m tests._mutantes_particion_124` — seis mutantes, y cada uno
+mata **solo** tests de su propiedad. El arnés destapó que el **código** estaba partido y los **tests**
+no, y que el arreglo de R26/H26-02 había entrado **sin test**.
+
 **Destapó tres defectos vivos que no eran del plan:** `MEJORAS #136` (cerrado, PR #255), `#141`
 (`buscar()` no valida el `case_id`) y las entradas `#137`/`#138`.
 
