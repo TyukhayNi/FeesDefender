@@ -314,3 +314,28 @@ def test_dos_expedientes_validos_se_pullan_LOS_DOS():
                       pull=pull)
     assert r.estado == "hecha"
     assert vistos == [("648", "extrajudiciales"), ("649", "extrajudiciales")]
+
+
+def test_el_informe_de_drive_cuenta_EL_ARBOL_y_no_solo_el_primer_nivel(tmp_path):
+    """Medido en la corrida real sobre W-02Q38C: la etapa decia «0 ficheros» justo
+    despues de depositar dos, porque `files_after` cuenta solo el primer nivel del destino
+    y los documentos de un caso viven en subcarpetas. Un proxy en vez de la cosa.
+
+    El operador que lee «0 ficheros» concluye que no paso nada y no va a mirar los
+    documentos nuevos.
+    """
+    destino = tmp_path / "00_Input" / "01_Drive EV"
+    (destino / "Activacion").mkdir(parents=True)
+    (destino / "Activacion" / "encargo.pdf").write_bytes(b"x")
+    (destino / "Activacion" / "nota.pdf").write_bytes(b"y")
+    (destino / ".pulled").write_text("marcador", encoding="utf-8")
+
+    r = cli.etapa_drive(
+        None, tmp_path, folder_id="F", team_id="T",
+        # `files_after=0` es lo que devuelve el pull de verdad en este arbol: cero
+        # ficheros en el primer nivel una vez excluido el marcador.
+        intake=lambda *a, **k: _drive_result(target_dir=destino, files_after=0))
+
+    assert r.estado == "hecha"
+    assert "2 documento" in r.detalle, r.detalle
+    assert "0 ficheros" not in r.detalle

@@ -391,9 +391,20 @@ def etapa_drive(ident, case_dir: Path, *, folder_id, team_id, intake=None):
             nombre="drive", estado="fallo",
             detalle="la consulta remota no se hizo: el pull devolvio `skipped` pese a "
                     "pedirse con force=True")
+    # `files_after` cuenta SOLO el primer nivel del destino (`core/intake_drive.py:120`),
+    # y los documentos de un caso viven en subcarpetas. Reportarlo era decir «0 ficheros»
+    # justo despues de depositar dos — medido en la corrida real sobre W-02Q38C el
+    # 2026-09-03. Un proxy en vez de la cosa, otra vez.
+    try:
+        total = sum(1 for p in res.target_dir.rglob("*")
+                    if p.is_file() and p.name not in intake_drive.CONTROL_FILES)
+    except OSError as exc:
+        return av1.EtapaResultado(
+            nombre="drive", estado="hecha",
+            detalle=f"consultado, pero no se pudo contar el destino: {exc}")
     return av1.EtapaResultado(
         nombre="drive", estado="hecha",
-        detalle=f"{res.files_after} ficheros en {res.target_dir}")
+        detalle=f"consulta remota hecha; {total} documento(s) en el destino")
 
 
 #: Vocabulario cerrado de ramas del CRM. `_ELEMENT_EXTRAJUDICIAL` ya existe arriba y lo
