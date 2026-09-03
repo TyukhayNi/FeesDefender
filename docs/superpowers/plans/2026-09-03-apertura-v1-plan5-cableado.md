@@ -7,8 +7,9 @@ creado: 2026-09-03
 
 # Apertura V1 — Plan 5: el cableado de la secuencia y el E2E (rev. 2)
 
-> ## ⚠ ESTADO: rev. 2 EJECUTADA y R-B adjudicada `NO-SHIP`. Remediada en parte; NO se
-> mergea sin autorización expresa de Nikolai (ver §6).
+> ## ⚠ ESTADO: rev. 2 ejecutada; **TRES rondas adjudicadas** (R-A plan, R-B sustituto, R-C
+> Codex). Remediada en parte; **cuatro bloques abiertos** y NO se mergea sin decisión de
+> Nikolai sobre HC-04 y HC-06 (ver §7).
 >
 > **R-A (diseño) devolvió `NO-EJECUTABLE` sobre la rev. 1: 12 hallazgos, 11 confirmados y 1
 > parcialmente refutado**, 4 críticos y uno más elevado a crítico por el adjudicador. Acta:
@@ -2599,3 +2600,73 @@ presupuesto). Mi lectura: lo que queda abierto no es del mismo orden que lo reme
 los diez bloquea una apertura ni pierde datos de cliente—, pero son **diez**, y el punto 1 es una
 decisión de alcance que tomamos sobre una descripción mía que resultó engañosa. Eso último no lo
 arregla una ronda: lo decide él.
+
+
+---
+
+## 7. Adjudicación de la revisión adversarial (Codex, 2026-09-03) — NO-SHIP, parcial
+
+- **Objeto revisado:** diff **remediado** del Plan 5, commit `80edd24`
+- **Ronda:** C
+- **Revisor:** Codex
+- **Informe recibido:** `docs/superpowers/specs/2026-09-03-apertura-v1-plan5-rC-adversarial-review.md`
+- **Hallazgos:** 7 recibidos — 7 confirmados, 0 refutados (2 CRÍTICOS, 2 ALTOS, 3 MEDIOS)
+- **Remediado en:** los commits posteriores a `80edd24` (HC-01, HC-02 y HC-03); HC-04 a HC-07 abiertos
+
+**Tercera ronda, autorizada expresamente por Nikolai** («codex tiene cupo, relánzalo»). El techo
+duro la prohíbe sin esa autorización y aquí consta. **La independencia queda restablecida:** el
+revisor es Codex, no el sustituto de R-B. Se sondeó la vía con un `exec` de una línea **antes** de
+montar el objeto — lección de esta misma sesión, donde Codex murió a mitad de R-B tras quemar
+~153.000 tokens sin dejar informe.
+
+### El hallazgo que justifica la ronda: HC-02, y es un defecto que introduje al remediar
+
+Remediando R-B saqué la publicación del registro durable **fuera** del bloque de mutex, para no
+afirmar un éxito que la pérdida del lease desmiente. Con eso abrí una ventana **sin exclusión
+ninguna**. Codex lo mutó y lo ejecutó: la intercalación `R1 abre → R1 libera → R2 abre → R1 cierra`
+deja el fichero con `ronda_id=R1` y **borra la evidencia de que R2 sigue en curso**; una tercera
+corrida ve una ronda cerrada y no avisa. Ese mutante **sobrevivió a los 105 tests contractuales**.
+
+**Y lo que lo hace instructivo, no solo grave:** cuatro líneas encima de esa escritura yo había
+escrito el comentario «escribir sin mutex es la violacion que el mutex existe para impedir». Enuncié
+la propiedad correcta en prosa y escribí lo contrario en código, en el acto mismo de remediar. Es
+[[feedback-nombrar-la-propiedad-no-es-contrato]] cometido dentro de una remediación.
+
+### La frontera, que cierra tres hallazgos con un cambio
+
+**`revalidar → publicar → liberar → salir`, indivisible.**
+
+- La publicación vuelve **dentro** del bloque, como **último acto** (HC-02).
+- Precedida de `sesion.revalidar()`: `mutex_sesion.sostenido()` **cede la sesión** y `main` usaba
+  `with` sin `as`, así que una pérdida a mitad de una etapa larga pasaba inadvertida hasta la salida,
+  con dos escritores sobre el mismo expediente (HC-01).
+- El **evento forense va primero** y el `estado.json` después: el `.jsonl` es append-only y
+  autoritativo, el JSON es el marcador derivado. Al revés, un append fallido dejaba el estado
+  diciendo «terminada» sin rastro alguno (HC-03).
+- Fuera del bloque queda **solo informar y salir**, con lo que la propiedad de HA-07 se conserva —y
+  ahora sin ninguna escritura a ese lado, que es lo que antes la contradecía.
+
+**Dos cosas que aparecieron al arreglar.** La costura de escritura ya **defendía en profundidad**
+(lanza `EscrituraSinMutex` en modo `v1` sin mutex sostenido, y salta antes que la revalidación
+nueva); el test se ancló a la propiedad y no al mensaje de una de las dos guardas. Y hubo que
+**acotar el guard F25** a `typer.Exit` en vez de cualquier `raise`: su propiedad es «no terminar el
+proceso aquí dentro», y un `raise MutexPerdido` deliberado es lo contrario del defecto —prohibirlo
+bloqueaba el arreglo correcto—. Queda justificado en el propio test para que no se lea como una
+relajación de conveniencia.
+
+**Medición tras remediar: 3.883 tests, 0 fallos con dos semillas; 31/31 mutantes muertos, cada uno
+solo por su frontera.**
+
+### Los cuatro que quedan ABIERTOS, confirmados y sin remediar
+
+| Id | Sev. | Qué es | Por qué no se cierra hoy |
+|---|---|---|---|
+| **HC-04** | ALTO | La **contaminación cruzada** que detecta la atomización va a `report.notas`, y el status solo mira `publicado` y `errores`: con notas y cero errores devuelve `ok`, el OCR sigue y V1 declara la etapa hecha sin pendiente | Es el que más pesa de los cuatro: documentos de otros casos colados van por su **tercera aparición** en este repo. Tocar el vocabulario de status del motor es alcance propio |
+| **HC-05** | MEDIO | «El productor clasifica» solo lo pregunta mi adaptador. Otros **cuatro** consumidores de `PullResultV2` reinterpretan el mismo sum type implícito, y `sync_all` llega a imprimir «Sync completado» con errores dentro | El arreglo correcto es del módulo del CRM, compartido con El Contable / El Auditor: pieza propia con su presupuesto |
+| **HC-06** | MEDIO | **Cambié el §3 de este plan sin adjudicarlo**: F19 pasó de «hecha con pendiente» a `fallo`. Y el «31/31» es cierto sobre *mi lista*, no sobre *el §3* — faltan F19, F20 y F26 | Es corrección **documental** y de gobernanza, no de código, y su frase da en el clavo: que bloquear sea más prudente no autoriza al diff a cambiar su propia fuente |
+| **HC-07** | MEDIO | El «punto fijo material» del E2E es **vacuo**: los tres dobles no escriben nada, así que la foto compara un árbol de un fichero y excluye el único que cambia | Arreglarlo pide dobles que escriban de verdad, o un E2E con OCR real bajo `--runslow` |
+
+**No se pide una cuarta ronda.** Lo que queda son cuatro bloques confirmados, tres de ellos con
+alcance fuera de esta pieza, y ninguno bloquea una apertura ni pierde datos de cliente. Lo que sí
+hace falta es **decidir HC-04 y HC-06**: el primero porque toca prueba documental, el segundo porque
+es una fuente que yo modifiqué sin permiso de nadie.
