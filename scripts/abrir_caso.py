@@ -51,6 +51,25 @@ _ELEMENT_EXTRAJUDICIAL = "extrajudiciales"
 ETAPAS_V1 = ("drive", "crm", "sala_maquina")
 
 
+class AbortarApertura(Exception):
+    """El intake no puede seguir. **No termina el proceso: lo decide el entrypoint.**
+
+    Existe por `MEJORAS #142`. Las funciones de intake lanzaban `typer.Exit` desde DENTRO
+    del bloque de mutex, y eso rompe la propiedad que R12/H12-04 construyo: el `finally`
+    de `case_mutex.tomado` **lanza** `MutexPerdido` si el bloque sale limpio y solo lo
+    **anota** si hay una excepcion en vuelo. Con un `Exit` en vuelo la perdida de exclusion
+    quedaba en una nota que Typer descarta al formatear la salida: invisible.
+
+    Una excepcion de dominio no arregla eso por si sola —sigue estando en vuelo— y por eso
+    el handler de `main` **imprime las notas** antes de traducirla a un codigo de salida.
+    Lo que si arregla es que quien decide terminar el proceso vuelva a ser el entrypoint.
+    """
+
+    def __init__(self, codigo: int = 1):
+        super().__init__(f"apertura abortada (codigo {codigo})")
+        self.codigo = codigo
+
+
 def hash_tree_local(root: Path, *, prefijo: str) -> dict[str, str]:
     """SHA-256 recursivo de todos los ficheros bajo root.
 
@@ -130,7 +149,7 @@ def _intake_generico(
     if not rec.ok:
         typer.echo(f"[ERROR] Reconciliación falló: faltan={rec.faltantes} "
                    f"mismatch={rec.mismatches} extra={rec.extras}", err=True)
-        raise typer.Exit(code=1)
+        raise AbortarApertura(1)   # MEJORAS #142: no se termina el proceso bajo el mutex
     if plan.con_sha:
         # B0-1: `_intake_generico` ya tiene el `case_dir`, asi que el evento cae
         # junto a los documentos que acaba de ingerir.
@@ -233,7 +252,7 @@ def _intake_manual(ident, case_dir: Path, src_str: str, *, dry_run: bool) -> Non
             inv = _inventario_local(src)
         except FileNotFoundError as exc:
             typer.echo(f"[ERROR] {exc}", err=True)
-            raise typer.Exit(code=1)
+            raise AbortarApertura(1) from exc   # MEJORAS #142
         plan = brain.plan_intake(inv, intake_log.read_events(ident.case_id), "manual",
                                  lote="<fecha>_manual_NN")
         typer.echo(f"[dry-run] manual: {len(plan.depositables)} depositables, "
@@ -244,7 +263,7 @@ def _intake_manual(ident, case_dir: Path, src_str: str, *, dry_run: bool) -> Non
         rels = _depositar_manual(ident.case_id, src, lote)
     except FileNotFoundError as exc:
         typer.echo(f"[ERROR] {exc}", err=True)
-        raise typer.Exit(code=1)
+        raise AbortarApertura(1) from exc   # MEJORAS #142
     hashes = {f"{lote.name}/{rel}": file_sha256(lote / rel) for rel in rels}
     # `lote` ya es el directorio EFECTIVO (`abrir_lote_manual` pasa por el guard), así que
     # los hashes de arriba siempre fueron correctos. Lo que no lo era es el inventario, que
@@ -258,7 +277,7 @@ def _intake_whatsapp(ident, src_str: str, rol: str, *, dry_run: bool) -> None:
     src = Path(src_str)
     if not src.is_file():
         typer.echo(f"[ERROR] --src no existe: {src}", err=True)
-        raise typer.Exit(code=1)
+        raise AbortarApertura(1)   # MEJORAS #142
     if dry_run:
         typer.echo(f"[dry-run] whatsapp: se depositaría {src.name} en rol {rol} (sin ejecutar)")
         return
@@ -303,7 +322,7 @@ def _validar_flags(fuente, *, folder_id, team_id, src, rol, cuenta, label) -> No
     faltan = [n for n, v in requeridos if not v]
     if faltan:
         typer.echo(f"[ERROR] Fuente {fuente}: faltan flags {faltan}", err=True)
-        raise typer.Exit(code=1)
+        raise AbortarApertura(1)
 
     ajenos = {
         "drive_ev": [("--src", src), ("--rol", rol), ("--cuenta", cuenta), ("--label", label)],
@@ -317,17 +336,18 @@ def _validar_flags(fuente, *, folder_id, team_id, src, rol, cuenta, label) -> No
     presentes = [n for n, v in ajenos if v]
     if presentes:
         typer.echo(f"[ERROR] Fuente {fuente}: flags ajenos a la fuente {presentes}", err=True)
-        raise typer.Exit(code=1)
+        raise AbortarApertura(1)
 
     if fuente == "whatsapp" and rol not in config.WHATSAPP_SUBDIRS:
         typer.echo(f"[ERROR] rol inválido: {rol}. Válidos: {config.WHATSAPP_SUBDIRS}", err=True)
-        raise typer.Exit(code=1)
+        raise AbortarApertura(1)
 
 
 def _despachar_intake(fuente, ident, case_dir, *, folder_id, team_id, src, rol,
                       cuenta, label, dry_run, extraer_adjuntos=False):
-    _validar_flags(fuente, folder_id=folder_id, team_id=team_id, src=src, rol=rol,
-                   cuenta=cuenta, label=label)
+    """Despacha el intake de UNA fuente. **Ya no valida flags**: eso corre antes del
+    mutex (`MEJORAS #142`), porque fallar por un flag mal puesto no necesita el lock
+    adquirido y hacerlo dentro convertia el fallo en un `Exit` bajo exclusion."""
     if fuente == "drive_ev":
         _intake_drive_ev(ident, case_dir, folder_id, team_id, dry_run=dry_run)
     elif fuente == "manual":
@@ -338,7 +358,7 @@ def _despachar_intake(fuente, ident, case_dir, *, folder_id, team_id, src, rol,
         _intake_email(ident, case_dir, cuenta, label, dry_run=dry_run,
                       extraer_adjuntos=extraer_adjuntos)
     else:
-        raise typer.Exit(code=1)  # red de seguridad: _FUENTES_CLI ya filtra el valor
+        raise AbortarApertura(1)  # red de seguridad: _FUENTES_CLI ya filtra el valor
 
 
 def etapa_drive(ident, case_dir: Path, *, folder_id, team_id, intake=None):
@@ -929,7 +949,23 @@ def main(
     # `case_mutex.tomado` LANZA `MutexPerdido` si el bloque sale limpio y solo lo ANOTA si
     # hay una excepcion en vuelo. Un `typer.Exit` dentro del `with` convertiria una perdida
     # de exclusion en una salida 0 con el aviso enterrado en una nota del traceback.
+    # `MEJORAS #142`: la validacion de flags corre AQUI — fuera del mutex, porque fallar
+    # por un flag mal puesto no necesita el lock adquirido y hacerlo dentro dejaba un
+    # `typer.Exit` bajo exclusion, que es el defecto entero.
+    #
+    # **Y despues de resolver identidad, no antes.** Adelantarla del todo cambiaba el
+    # diagnostico que ve el operador: con `--fuente manual` y sin flags de identidad, antes
+    # decia «faltan los seis flags de identidad» y pasaba a decir solo «falta --src», que
+    # es el problema menos fundamental de los dos. Lo midio la ronda de este diff (HD-04):
+    # sacar la validacion del lock no autorizaba a reordenar lo que el operador lee.
+    try:
+        _validar_flags(fuente, folder_id=folder_id, team_id=team_id, src=src, rol=rol,
+                       cuenta=cuenta, label=label)
+    except AbortarApertura as exc:
+        raise typer.Exit(code=exc.codigo) from exc
+
     resultado_v1 = None
+    salida_dry_run = False
     try:
         with mutex_sesion.sostenido(CaseRef(w_code=ident.w_code) if ident.w_code
                                     else CaseRef(case_id=ident.case_id),
@@ -996,17 +1032,31 @@ def main(
                     extraer_adjuntos=extraer_adjuntos,
                 )
                 if dry_run:
-                    # Este `Exit` SI esta dentro del bloque y tiene el defecto de HA-07.
-                    # Queda fuera del alcance del Plan 5 a proposito: `MEJORAS #142`.
+                    # **El peor de los nueve de `MEJORAS #142`.** Un `Exit(0)` es una
+                    # terminacion CON EXITO disfrazada de excepcion, asi que el `finally`
+                    # de `case_mutex.tomado` se limitaba a ANOTAR una perdida del lease
+                    # sobre ella en vez de lanzarla: anotar una perdida de exclusion sobre
+                    # un exito es exactamente la mentira que el mecanismo evita.
+                    #
+                    # Ahora se marca y se sale FUERA del bloque, con lo que un lease
+                    # perdido vuelve a levantar `MutexPerdido` y el operador se entera.
                     typer.echo(
                         f"[dry-run] esqueleto en {case_dir}; se omiten log de intake y alta CRM")
-                    raise typer.Exit(code=0)
-
-                _alta_crm(ident, cuantia=cuantia, crm_mode=crm, yes=yes)
+                    salida_dry_run = True
+                else:
+                    _alta_crm(ident, cuantia=cuantia, crm_mode=crm, yes=yes)
     except CaseBusy as exc:
         typer.echo(f"=== Apertura: {av1.EstadoV1.BLOQUEADO} ===", err=True)
         typer.echo(f"  otro proceso tiene este caso; espera y reintenta: {exc}", err=True)
         raise typer.Exit(code=codigo_de_salida(av1.EstadoV1.BLOQUEADO))
+    except AbortarApertura as exc:
+        # El mensaje ya lo imprimio quien aborto. Lo que se anade aqui es lo que Typer
+        # descartaba: si el `finally` del mutex anoto una perdida de exclusion sobre esta
+        # excepcion, esa nota es lo mas importante de la salida y hay que decirla en voz
+        # alta en vez de dejarla en un traceback que nadie ve.
+        for nota in getattr(exc, "__notes__", ()) or ():
+            typer.echo(f"[AVISO] {nota}", err=True)
+        raise typer.Exit(code=exc.codigo) from exc
     except MutexPerdido as exc:
         # NO es lo mismo que `CaseBusy` (R-B/L3-05): aqui puede haber trabajo a medias
         # escrito sin exclusion, y el operador tiene que revisar antes de reintentar.
@@ -1028,6 +1078,9 @@ def main(
     # Fuera del bloque queda SOLO lo que no escribe: informar y salir. El `Exit` sigue
     # aqui porque dentro convertiria una perdida del lease en una nota sobre una salida
     # limpia (HA-07 de R-A) — pero ya no hay ninguna escritura a este lado.
+    if salida_dry_run:
+        raise typer.Exit(code=0)
+
     if resultado_v1 is not None:
         _informar_v1(resultado_v1)
         raise typer.Exit(code=codigo_de_salida(resultado_v1.estado))
