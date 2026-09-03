@@ -34,6 +34,8 @@ from core import (
     case_manager, config, email_export, intake_drive, intake_log, intake_manual,
     sudespacho_create, whatsapp_intake,
 )
+from core import apertura_v1 as av1
+from core import apertura_v1_estado as estado_v1
 from core.casos import case_locator, mutex_sesion
 from core.casos.workspace_model import CaseRef
 from core.ciudades import CIUDADES
@@ -44,6 +46,9 @@ from core.utils import file_sha256, now_iso_utc
 app = typer.Typer(add_completion=False, help="Abrir un expediente E&V en una pasada")
 
 _ELEMENT_EXTRAJUDICIAL = "extrajudiciales"
+
+#: Nombres de las etapas de V1, en orden. Es tambien el vocabulario de `--hasta`.
+ETAPAS_V1 = ("drive", "crm", "sala_maquina")
 
 
 def hash_tree_local(root: Path, *, prefijo: str) -> dict[str, str]:
@@ -133,7 +138,9 @@ def _intake_generico(
                                 details={"count": len(plan.con_sha), "files": plan.con_sha})
 
 
-def _intake_drive_ev(ident, case_dir: Path, folder_id, team_id, *, dry_run: bool) -> None:
+def _intake_drive_ev(ident, case_dir: Path, folder_id, team_id, *,
+                     dry_run: bool,
+                     force: bool = False) -> intake_drive.DriveIntakeResult:
     """Pull de Drive E&V + cadena de custodia sobre el destino EFECTIVO (R14/H14-02).
 
     **El dato que hacía barato el arreglo: `DriveIntakeResult` ya traía `target_dir`.**
@@ -141,7 +148,7 @@ def _intake_drive_ev(ident, case_dir: Path, folder_id, team_id, *, dry_run: bool
     tiraba para recomponer la ruta canónica a mano. No faltaba información: se descartaba.
     """
     try:
-        res = intake_drive.pull_drive_ev(ident.case_id, folder_id, team_id)
+        res = intake_drive.pull_drive_ev(ident.case_id, folder_id, team_id, force=force)
     except intake_drive.DriveIntakeError as exc:
         # R15/H15-06: un `rclone` no cero puede haber copiado PARTE del árbol, y esos bytes
         # se quedan en el expediente. Antes la excepción subía sin que nada los inventariase,
@@ -173,6 +180,10 @@ def _intake_drive_ev(ident, case_dir: Path, folder_id, team_id, *, dry_run: bool
     hashes = hash_tree_local(res.target_dir, prefijo=subdir)
     _intake_generico(case_dir, ident.case_id, "drive_ev", hashes, base=subdir,
                      dry_run=dry_run, raiz_hashes=res.target_dir.parent)
+    # Lo devuelve para que el secuenciador de V1 pueda informar sin rodear esta funcion:
+    # la custodia (hashes del destino EFECTIVO, reconciliacion y el registro de los bytes
+    # parciales de un pull fallido) vive aqui, y un adaptador que la esquive la deroga.
+    return res
 
 
 def _inventario_local(src: Path) -> list[dict]:
@@ -330,6 +341,256 @@ def _despachar_intake(fuente, ident, case_dir, *, folder_id, team_id, src, rol,
         raise typer.Exit(code=1)  # red de seguridad: _FUENTES_CLI ya filtra el valor
 
 
+def etapa_drive(ident, case_dir: Path, *, folder_id, team_id, intake=None):
+    """Etapa 1 de V1: materializar la carpeta de Drive E&V, con custodia.
+
+    **Pasa por `_intake_drive_ev` y no por `pull_drive_ev`**: la custodia —hashes sobre el
+    destino efectivo, reconciliacion, y registro de los bytes parciales de un pull
+    fallido— vive ahi, y es el resultado de R14/H14-02 y R15/H15-06. Un adaptador que la
+    rodea la deroga en silencio.
+
+    **`force=True` siempre.** La tabla de riesgos de la spec llama al skip por `.pulled`
+    «falso punto fijo»: en V1 la consulta remota se hace en cada ronda, y `rclone`
+    transfiere solo lo que difiere.
+    """
+    _intake = intake or _intake_drive_ev
+    try:
+        res = _intake(ident, case_dir, folder_id, team_id, dry_run=False, force=True)
+    except Exception as exc:  # noqa: BLE001 — el estado de V1 es el producto, no la traza
+        return av1.EtapaResultado(nombre="drive", estado="fallo",
+                                  detalle=f"{type(exc).__name__}: {exc}")
+    if res.errors or res.rclone_returncode != 0:
+        return av1.EtapaResultado(
+            nombre="drive", estado="fallo",
+            detalle=f"rclone rc={res.rclone_returncode}; errores={res.errors}")
+    if res.skipped:
+        # Con `force=True` esto no deberia poder pasar. Si pasa, el marcador `.pulled`
+        # volvio al camino y la ronda NO consulto Drive: decirlo `saltada` seria firmar
+        # el falso punto fijo que la spec prohibe.
+        return av1.EtapaResultado(
+            nombre="drive", estado="fallo",
+            detalle="la consulta remota no se hizo: el pull devolvio `skipped` pese a "
+                    "pedirse con force=True")
+    return av1.EtapaResultado(
+        nombre="drive", estado="hecha",
+        detalle=f"{res.files_after} ficheros en {res.target_dir}")
+
+
+#: Vocabulario cerrado de ramas del CRM. `_ELEMENT_EXTRAJUDICIAL` ya existe arriba y lo
+#: usa el alta: aqui se reutiliza, no se inventa.
+_ELEMENT_JUDICIAL = "expedientes_judiciales"
+ELEMENTS_CRM = frozenset({_ELEMENT_EXTRAJUDICIAL, _ELEMENT_JUDICIAL})
+
+
+def traducir_pull_crm(res) -> tuple[str, str, tuple]:
+    """`PullResultV2` -> (estado, detalle, pendientes). Tres ramas, las tres alcanzables.
+
+    **Reescrita tras la R-B, y la leccion es el orden de las preguntas.** La version
+    anterior leia `errors` primero y lo trataba como fatal. Pero el PRODUCTOR
+    (`core/sync_sudespacho.pull_expediente_v2`) mete en `errors` el aviso de un gestor
+    documental **vacio** —que no es un error— y ademas incrementa `documents_failed` en el
+    mismo bloque que su `errors.append`. Resultado medido: las ramas de «vacio confirmado»
+    y «documentos fallidos» eran INALCANZABLES, y un expediente sin documentos dejaba V1
+    `bloqueado` sin correr el OCR.
+
+    **Quien clasifica es el productor**, via `sync_sudespacho.es_gestor_vacio`: la forma en
+    que codifica «vacio» es suya, y replicarla aqui la duplicaria.
+
+    **Y un cambio de criterio propio:** unos documentos que no se descargan dejan el espejo
+    del CRM incompleto. La version anterior seguia con un pendiente; para prueba documental
+    de un litigio eso es peor que parar, asi que ahora **bloquea** y el operador re-corre.
+    """
+    from core import sync_sudespacho
+
+    if getattr(res, "blocked_legacy_v1", False):
+        return "fallo", "el expediente esta bloqueado por el legado v1", ()
+    if sync_sudespacho.es_gestor_vacio(res):
+        return ("saltada", "el gestor documental del expediente esta vacio",
+                (av1.Pendiente(
+                    codigo="crm_gestor_vacio",
+                    detalle="El expediente existe en el CRM y su gestor documental no "
+                            "tiene documentos. No es un fallo; es que no hay nada."),))
+    errores = list(getattr(res, "errors", []) or [])
+    if errores:
+        return "fallo", f"el pull devolvio errores: {errores}", ()
+    return "hecha", f"{getattr(res, 'documents_written', 0)} documento(s) escritos", ()
+
+
+def etapa_crm(ident, case_dir: Path, *, leer_meta=None, pull=None):
+    """Etapa 2 de V1: pull del expediente CRM ya registrado.
+
+    **El `element` sale del `ExpedienteLink`, pertenece al vocabulario cerrado, y la rama
+    judicial aborta.** El criterio 38 pide los dos cruces: el obvio —que un caso judicial
+    no entre por la via extrajudicial— y el que produce el default de
+    `core/sync_sudespacho.py:1356`, que es el inverso y el que nadie prueba.
+    """
+    from core import sync_sudespacho
+
+    _leer = leer_meta or case_locator.read_case_meta
+    _pull = pull or sync_sudespacho.pull_expediente_v2
+
+    try:
+        meta = _leer(case_dir)
+    except Exception as exc:  # noqa: BLE001
+        return av1.EtapaResultado(nombre="crm", estado="fallo",
+                                  detalle=f"no se pudo leer _caso.md: {exc}")
+
+    links = list(meta.get("sudespacho_expedientes") or [])
+    if not links:
+        return av1.EtapaResultado(
+            nombre="crm", estado="saltada",
+            detalle="sin expediente CRM registrado en _caso.md",
+            pendientes=(av1.Pendiente(
+                codigo="crm_sin_expediente",
+                detalle="El caso no tiene expediente CRM vinculado, asi que no hay nada "
+                        "que pullar. El alta CRM es de V2."),))
+
+    # Las tres puertas de la rama se comprueban ANTES de pullar nada: con dos expedientes
+    # vinculados, descubrir el segundo invalido a mitad dejaria el primero ya escrito.
+    for link in links:
+        el = link.get("element")
+        if not el:
+            return av1.EtapaResultado(
+                nombre="crm", estado="fallo",
+                detalle=f"el expediente {link.get('id')!r} no declara `element` en "
+                        f"_caso.md. No se adivina: el default del pull es judicial.")
+        if el not in ELEMENTS_CRM:
+            return av1.EtapaResultado(
+                nombre="crm", estado="fallo",
+                detalle=f"`element` fuera del vocabulario: {el!r}; validos: "
+                        f"{sorted(ELEMENTS_CRM)}")
+        if el == _ELEMENT_JUDICIAL:
+            return av1.EtapaResultado(
+                nombre="crm", estado="fallo",
+                detalle=f"el expediente {link.get('id')!r} es de la rama judicial, que "
+                        f"sigue bloqueada: V1 no tiene adaptador judicial verificado.")
+
+    hechos, pendientes, vacios = [], [], 0
+    for link in links:
+        try:
+            res = _pull(ident.case_id, str(link["id"]), element=link["element"])
+        except Exception as exc:  # noqa: BLE001
+            return av1.EtapaResultado(
+                nombre="crm", estado="fallo",
+                detalle=f"pull de {link['id']} fallo: {type(exc).__name__}: {exc}")
+        estado, detalle, pend = traducir_pull_crm(res)
+        if estado == "fallo":
+            return av1.EtapaResultado(nombre="crm", estado="fallo",
+                                      detalle=f"{link['id']}: {detalle}")
+        if estado == "saltada":
+            vacios += 1
+        hechos.append(f"{link['id']} ({detalle})")
+        pendientes.extend(pend)
+
+    # `saltada` solo si TODOS lo fueron: un expediente vacio junto a otro con documentos
+    # es una etapa hecha.
+    estado = "saltada" if vacios == len(links) else "hecha"
+    return av1.EtapaResultado(nombre="crm", estado=estado,
+                              detalle="; ".join(hechos), pendientes=tuple(pendientes))
+
+
+def etapa_sala_maquina(ident, *, correr=None):
+    """Etapa 3 de V1: atomizacion del correo depositado + OCR y espejos MD.
+
+    La maquina de estados es la del §24 D4: el motor NO cambia —el OCR sigue aunque la
+    atomizacion falle, y eso no se regresa— y lo que cambia es el RESULTADO de V1, que si
+    lo refleja.
+
+    El import va dentro: `scripts/sala_maquina` arrastra el motor de OCR y el atomizador,
+    y pagarlo en cada arranque del modo `libre` seria una regresion para sus llamadores.
+    """
+    def _correr():
+        from scripts import sala_maquina
+        return sala_maquina.apply(case_id=ident.case_id)
+
+    try:
+        status = (correr or _correr)()
+    except typer.Exit as exc:
+        codigo = getattr(exc, "exit_code", 0) or 0
+        if codigo:
+            return av1.EtapaResultado(
+                nombre="sala_maquina", estado="fallo",
+                detalle=f"la sala de maquina salio con codigo {codigo}")
+        status = None
+    except Exception as exc:  # noqa: BLE001
+        return av1.EtapaResultado(nombre="sala_maquina", estado="fallo",
+                                  detalle=f"{type(exc).__name__}: {exc}")
+
+    if status == "fallo":
+        return av1.EtapaResultado(
+            nombre="sala_maquina", estado="fallo",
+            detalle="la atomizacion del correo fallo (§24 D4: bloquea el cierre de V1)")
+    if status == "parcial":
+        return av1.EtapaResultado(
+            nombre="sala_maquina", estado="hecha",
+            detalle="OCR hecho; atomizacion PARCIAL",
+            pendientes=(av1.Pendiente(
+                codigo="atomizacion_parcial",
+                detalle="La atomizacion publico con errores o con poda omitida: "
+                        "`01_Procesado/Emails` no esta completo. Ver el evento "
+                        "`atomizado_email` en `_intake_log.jsonl`."),))
+    return av1.EtapaResultado(
+        nombre="sala_maquina", estado="hecha",
+        detalle=("OCR hecho; sin correo que atomizar" if status is None
+                 else "OCR hecho; atomizacion ok"))
+
+
+def registrar_cierre_v1(case_dir: Path, ident, resultado) -> None:
+    """Deja el estado de V1 en el log forense del caso.
+
+    Es el unico rastro DURABLE de la corrida: la pantalla se pierde, el `.jsonl` no.
+    """
+    intake_log.append_event(
+        case_dir, "apertura_v1_terminada", case_id=ident.case_id,
+        details={
+            "estado": resultado.estado,
+            "parada": resultado.parada,
+            "pendientes": [p.codigo for p in resultado.pendientes],
+            "etapas": [{"nombre": e.nombre, "estado": e.estado}
+                       for e in resultado.etapas],
+        },
+    )
+
+
+def codigo_de_salida(estado: str) -> int:
+    """`bloqueado` sale distinto de 0: quien invoque la secuencia tiene que poder
+    distinguir «termino con pendientes» de «no termino»."""
+    return 1 if estado == av1.EstadoV1.BLOQUEADO else 0
+
+
+def secuencia_v1(ident, case_dir, *, folder_id, team_id, hasta=None, etapas=None):
+    """El orden completo de V1 (spec §24 D3): Drive -> CRM -> sala de maquina.
+
+    La atomizacion del correo depositado va DENTRO de la tercera, que es donde el cableado
+    de 2026-07-27 la puso; por eso el gotcha del runbook —atomizar y pull antes del OCR—
+    se cumple por construccion y no por memoria del operador.
+
+    `etapas` es el punto de inyeccion de los tests. En produccion se construyen aqui.
+    """
+    if etapas is None:
+        etapas = [
+            av1.Etapa("drive", lambda: etapa_drive(
+                ident, case_dir, folder_id=folder_id, team_id=team_id)),
+            av1.Etapa("crm", lambda: etapa_crm(ident, case_dir)),
+            av1.Etapa("sala_maquina", lambda: etapa_sala_maquina(ident)),
+        ]
+    return av1.secuenciar(etapas, hasta=hasta)
+
+
+def _informar_v1(resultado) -> None:
+    """El informe en pantalla. Lo durable es el evento; esto es para el operador."""
+    typer.echo("")
+    typer.echo(f"=== Apertura V1: {resultado.estado} ===")
+    for e in resultado.etapas:
+        typer.echo(f"  [{e.estado:>7}] {e.nombre}: {e.detalle}")
+    for n in resultado.no_ejecutadas:
+        typer.echo(f"  [no corre] {n}")
+    if resultado.parada:
+        typer.echo(f"  (parada pedida tras la etapa {resultado.parada!r})")
+    for p in resultado.pendientes:
+        typer.echo(f"  PENDIENTE {p.codigo}: {p.detalle}")
+
+
 def _alta_crm(
     ident: "brain.Identidad",
     *,
@@ -429,6 +690,7 @@ def validar_modo(
     dry_run: bool = False,
     folder_id: str | None = None,
     case_id: str | None = None,
+    hasta: str | None = None,
 ) -> list[str]:
     """Errores que impiden ejecutar en `modo`. Lista vacía = admisible.
 
@@ -443,8 +705,17 @@ def validar_modo(
     if modo not in _MODOS:
         return [f"Modo desconocido: {modo!r}. Válidos: {_MODOS}"]
     if modo == "libre":
+        if hasta is not None:
+            return ["--hasta solo existe en --modo v1: en `libre` no hay secuencia que "
+                    "parar, y aceptarlo en silencio fingiria haberla parado."]
         return []
     errores: list[str] = []
+    # HA-06 de la R-A. El vocabulario se valida AQUI y no dentro de `secuenciar`, que
+    # corre despues de la identidad, del mutex y de `ensure_case`: en la rev. 1 un typo
+    # abortaba con el esqueleto del caso ya creado.
+    if hasta is not None and hasta not in ETAPAS_V1:
+        errores.append(
+            f"--hasta {hasta!r} no es una etapa de V1; validas: {list(ETAPAS_V1)}")
     if crm != "skip":
         errores.append(
             f"--modo v1 no escribe en el CRM: exige --crm skip (recibido: {crm!r}). "
@@ -512,6 +783,11 @@ def main(
         "libre", "--modo",
         help="libre|v1. `v1` es el discriminante de la primera vertical (spec §24 D3): "
              "exige --crm skip y --fuente drive_ev, y valida antes de cualquier efecto."),
+    hasta: str | None = typer.Option(
+        None, "--hasta",
+        help="v1: para DESPUES de esta etapa (drive|crm|sala_maquina). Para reanudar, "
+             "relanza con --case-id (los 6 flags de identidad darian ColisionCaso): las "
+             "etapas ya hechas se saltan solas."),
     src: str | None = typer.Option(None, "--src", help="manual/whatsapp: carpeta o .zip"),
     rol: str | None = typer.Option(None, "--rol", help="whatsapp: rol_subdir"),
     cuenta: str | None = typer.Option(None, "--cuenta", help="email: cuenta gmail"),
@@ -532,6 +808,7 @@ def main(
     errores_modo = validar_modo(
         modo, crm=crm, fuente=fuente,
         force=force, dry_run=dry_run, folder_id=folder_id, case_id=case_id,
+        hasta=hasta,
     )
     if errores_modo:
         for e in errores_modo:
@@ -646,35 +923,114 @@ def main(
     #
     # El reloj va con offset EXPLÍCITO: `case_mutex` rechaza un instante naïve a
     # propósito, y `now_iso` —el mayoritario del repo, 43 usos frente a 5— lo es.
-    with mutex_sesion.sostenido(CaseRef(w_code=ident.w_code) if ident.w_code
-                                else CaseRef(case_id=ident.case_id),
-                                ahora_fn=now_iso_utc):
-        # 5.2 esqueleto (idempotente; con --case-id el caso ya existe)
-        case_manager.ensure_case(
-            ident.case_id, titulo=ident.case_id, referencia_crm=ident.case_id,
-            tipo_caso=ident.tipo_caso, ciudad=ciudad, direccion=ident.direccion,
-            id_go=ident.w_code, modo=modo,
-        )
-        # `localizar` y no `path_for`: el esqueleto acaba de crearse, así que el caso DEBE
-        # existir y su ausencia es un fallo, no un valor. Es lo que la clasificación firmada
-        # del Task 6 decía para este sitio, y quedó como cabo suelto del 65º cierre; el
-        # comportamiento no cambia —`path_for` ya es estricto por defecto— pero el nombre
-        # ahora dice qué se espera, que es justo lo que un flag no permite auditar.
-        case_dir = case_locator.localizar(ident.case_id)
+    from core.casos.workspace_model import CaseBusy, MutexPerdido
 
-        # 5.3-5.7 intake por fuente
-        _despachar_intake(
-            fuente, ident, case_dir,
-            folder_id=folder_id, team_id=team_id, src=src, rol=rol,
-            cuenta=cuenta, label=label, dry_run=dry_run,
-            extraer_adjuntos=extraer_adjuntos,
-        )
-        if dry_run:
-            typer.echo(
-                f"[dry-run] esqueleto en {case_dir}; se omiten log de intake y alta CRM")
-            raise typer.Exit(code=0)
+    # `resultado_v1` se calcula DENTRO del bloque y se consume FUERA (HA-07 de la R-A):
+    # `case_mutex.tomado` LANZA `MutexPerdido` si el bloque sale limpio y solo lo ANOTA si
+    # hay una excepcion en vuelo. Un `typer.Exit` dentro del `with` convertiria una perdida
+    # de exclusion en una salida 0 con el aviso enterrado en una nota del traceback.
+    resultado_v1 = None
+    try:
+        with mutex_sesion.sostenido(CaseRef(w_code=ident.w_code) if ident.w_code
+                                    else CaseRef(case_id=ident.case_id),
+                                    ahora_fn=now_iso_utc) as sesion:
+            # 5.2 esqueleto (idempotente; con --case-id el caso ya existe)
+            case_manager.ensure_case(
+                ident.case_id, titulo=ident.case_id, referencia_crm=ident.case_id,
+                tipo_caso=ident.tipo_caso, ciudad=ciudad, direccion=ident.direccion,
+                id_go=ident.w_code, modo=modo,
+            )
+            # `localizar` y no `path_for`: el esqueleto acaba de crearse, así que el caso DEBE
+            # existir y su ausencia es un fallo, no un valor. Es lo que la clasificación firmada
+            # del Task 6 decía para este sitio, y quedó como cabo suelto del 65º cierre; el
+            # comportamiento no cambia —`path_for` ya es estricto por defecto— pero el nombre
+            # ahora dice qué se espera, que es justo lo que un flag no permite auditar.
+            case_dir = case_locator.localizar(ident.case_id)
 
-        _alta_crm(ident, cuantia=cuantia, crm_mode=crm, yes=yes)
+            if modo == "v1":
+                # El estado durable de la spec §11. Se abre ANTES de correr nada: si la
+                # corrida muere, lo que queda en disco dice que empezo y no termino.
+                previa = estado_v1.leer(case_dir)
+                if previa is not None and previa.sin_cerrar():
+                    typer.echo(
+                        f"[AVISO] la ronda {previa.ronda_id!r} (iniciada "
+                        f"{previa.iniciada}) no llego a cerrarse: esta corrida no da por "
+                        f"buena su salida.", err=True)
+                # Un solo reloj: `ronda_id` e `iniciada` eran dos lecturas y divergian.
+                arranque = now_iso_utc()
+                ronda = estado_v1.abrir(case_dir, ronda_id=arranque, ahora=arranque)
+                resultado_v1 = secuencia_v1(ident, case_dir, folder_id=folder_id,
+                                            team_id=team_id, hasta=hasta)
+                # **revalidar -> publicar -> liberar**, en ese orden e indivisible.
+                #
+                # La rev. anterior publicaba FUERA del bloque «para no afirmar un exito
+                # que la perdida del lease desmiente», y con eso escribia sin exclusion
+                # ninguna: R-C midio la intercalacion `R1 abre / R1 libera / R2 abre / R1
+                # cierra`, que deja el fichero con la ronda R1 y BORRA la evidencia de que
+                # R2 sigue en curso (HC-02). El comentario de entonces decia, correcto,
+                # que «escribir sin mutex es la violacion que el mutex existe para
+                # impedir» — y el codigo hacia justo eso cuatro lineas mas abajo.
+                #
+                # Y `revalidar()` primero porque el gestor cede la sesion y no consultarla
+                # deja que una perdida a mitad de una etapa larga pase inadvertida hasta la
+                # salida, con dos escritores sobre el mismo expediente (HC-01).
+                if not sesion.revalidar():
+                    raise MutexPerdido(
+                        w_code=getattr(sesion, "w_code", None) or "",
+                        detalle="el mutex dejo de ser nuestro antes de publicar el "
+                                "resultado: no se escribe nada")
+                # El evento forense va PRIMERO (HC-03): el `.jsonl` es append-only y
+                # autoritativo, y el `estado.json` es el marcador derivado. Al reves, un
+                # append fallido dejaba el estado diciendo «terminada» sin rastro alguno.
+                registrar_cierre_v1(case_dir, ident, resultado_v1)
+                estado_v1.cerrar(
+                    case_dir, ronda, estado=resultado_v1.estado,
+                    etapas={e.nombre: e.estado for e in resultado_v1.etapas},
+                    ahora=now_iso_utc())
+            else:
+                # 5.3-5.7 intake por fuente
+                _despachar_intake(
+                    fuente, ident, case_dir,
+                    folder_id=folder_id, team_id=team_id, src=src, rol=rol,
+                    cuenta=cuenta, label=label, dry_run=dry_run,
+                    extraer_adjuntos=extraer_adjuntos,
+                )
+                if dry_run:
+                    # Este `Exit` SI esta dentro del bloque y tiene el defecto de HA-07.
+                    # Queda fuera del alcance del Plan 5 a proposito: `MEJORAS #142`.
+                    typer.echo(
+                        f"[dry-run] esqueleto en {case_dir}; se omiten log de intake y alta CRM")
+                    raise typer.Exit(code=0)
+
+                _alta_crm(ident, cuantia=cuantia, crm_mode=crm, yes=yes)
+    except CaseBusy as exc:
+        typer.echo(f"=== Apertura: {av1.EstadoV1.BLOQUEADO} ===", err=True)
+        typer.echo(f"  otro proceso tiene este caso; espera y reintenta: {exc}", err=True)
+        raise typer.Exit(code=codigo_de_salida(av1.EstadoV1.BLOQUEADO))
+    except MutexPerdido as exc:
+        # NO es lo mismo que `CaseBusy` (R-B/L3-05): aqui puede haber trabajo a medias
+        # escrito sin exclusion, y el operador tiene que revisar antes de reintentar.
+        typer.echo(f"=== Apertura: {av1.EstadoV1.BLOQUEADO} ===", err=True)
+        typer.echo(f"  se PERDIO la exclusion durante la operacion: {exc}", err=True)
+        typer.echo("  puede haber trabajo a medias; revisa el caso antes de reintentar.",
+                   err=True)
+        raise typer.Exit(code=codigo_de_salida(av1.EstadoV1.BLOQUEADO))
+
+    # El registro DURABLE se escribe aqui, fuera del bloque, y solo si el bloque salio
+    # limpio (R-B/L3-01, confirmado por cuatro lentes). Dentro, una perdida del lease se
+    # anota en vez de lanzarse, asi que el `.jsonl` y el `estado.json` quedaban afirmando
+    # un exito que la pantalla desmentia.
+    #
+    # **Y si se perdio la exclusion no se escribe NADA**, ni siquiera un `bloqueado`:
+    # escribir sin mutex es la violacion que el mutex existe para impedir. La ronda queda
+    # ABIERTA en disco, y la corrida siguiente la ve `sin_cerrar()` y avisa — que es lo
+    # que hace que ese aviso sea el mecanismo y no un adorno.
+    # Fuera del bloque queda SOLO lo que no escribe: informar y salir. El `Exit` sigue
+    # aqui porque dentro convertiria una perdida del lease en una nota sobre una salida
+    # limpia (HA-07 de R-A) — pero ya no hay ninguna escritura a este lado.
+    if resultado_v1 is not None:
+        _informar_v1(resultado_v1)
+        raise typer.Exit(code=codigo_de_salida(resultado_v1.estado))
 
     typer.echo(f"OK Caso abierto: {ident.case_id}")
 

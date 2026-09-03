@@ -396,6 +396,8 @@ MERGE_EXCLUSIONS: tuple[str, ...] = (
     "_snapshot/**",              # backup selectivo (--backup-dir)
     "_pendiente_checkin/**",     # bandeja: integración controlada en CP10
     "90_Notas personales/**",    # D5: zona reservada, fuera del checkout por completo
+    "_apertura_v1.json",         # estado por ronda de V1: es de la copia, no del caso
+    ".apertura_v1.*.tmp",        # sus temporales de escritura atómica
 )
 
 # Derivados regenerables (DISEÑO_V2 §4.2): local gana (COPY_LOCAL directo)
@@ -564,7 +566,17 @@ ESPEJO_SUBDIRS: tuple[str, ...] = ("01_Drive EV", "05_CRM")
 INTAKE_CONTROL_FILES: frozenset[str] = frozenset({
     ".pulled", ".synced", "_inventory.json",
     "_exported_ids.json", "_resolved_links.json",
+    # Estado durable por ronda de la apertura V1 (Plan 5). Añadido el 2026-09-03: la
+    # R-B midió que sin declararlo aquí el fichero entraba en el inventario probatorio
+    # de la sala de máquina y salía en `_cobertura` como `sin_soporte`, en la MISMA
+    # corrida que lo escribía.
+    "_apertura_v1.json",
 })
+
+#: Prefijo de los temporales de escritura atómica de los ficheros de control. No son
+#: documento **ni siquiera transitoriamente**: si una escritura muere entre el `mkstemp`
+#: y el `os.replace`, el huérfano no puede acabar en el inventario de prueba.
+INTAKE_CONTROL_PREFIXES: tuple[str, ...] = (".apertura_v1.",)
 
 
 def caso_path(case_id: str, *, strict: bool = True) -> Path:

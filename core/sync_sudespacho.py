@@ -1318,6 +1318,33 @@ class PullResultV2:
     kind_distribution: dict[str, int] = field(default_factory=dict)
 
 
+#: Prefijo del aviso que `pull_expediente_v2` deposita en `errors` cuando el gestor
+#: documental contesta y no tiene documentos. Vive aqui, junto a quien lo escribe.
+_AVISO_GESTOR_VACIO = "El Gestor Documental del expediente"
+
+
+def es_gestor_vacio(res: "PullResultV2") -> bool:
+    """El gestor documental contesto y **no tiene documentos**. No es un error.
+
+    **Por que vive aqui y no en el llamador.** Este modulo deposita ese aviso dentro de
+    `errors` —contrato fijado a proposito por `tests/test_pull_expediente_v2.py:331`— y
+    ademas deja `documents_total_crm` a 0 tanto si el gestor esta vacio como si el LISTADO
+    fallo, porque en ese caso retorna antes de asignarlo. Un llamador que quisiera
+    distinguir los dos casos tendria que replicar esa codificacion; si el mensaje cambia,
+    lo que se rompe es este predicado y su test, no cada consumidor.
+
+    Lo aprendio la R-B del Plan 5: un adaptador leyo los CAMPOS de `PullResultV2` y no su
+    PRODUCTOR, concluyo que `errors` no vacio era fatal, y con eso un expediente sin
+    documentos —lo normal en uno recien creado— abortaba la apertura entera.
+    """
+    errores = list(getattr(res, "errors", []) or [])
+    if not errores:
+        return False
+    # Vacio confirmado: el aviso del gestor es el UNICO error. Con cualquier otro error
+    # encima no se puede afirmar que el gestor contestara: manda el error.
+    return all(e.startswith(_AVISO_GESTOR_VACIO) for e in errores)
+
+
 def _resolve_name_collision(target: Path, sha: str) -> Path:
     """Defensa en profundidad ante colisión de nombre con hash distinto.
 
@@ -1454,8 +1481,10 @@ def pull_expediente_v2(
         result.documents_total_crm = len(docs)
 
         if not docs:
+            # Por la constante y no por literal: `es_gestor_vacio` reconoce este aviso
+            # por su prefijo, y dos copias del mismo texto derivan.
             result.errors.append(
-                f"El Gestor Documental del expediente {expediente_id} está vacío "
+                f"{_AVISO_GESTOR_VACIO} {expediente_id} está vacío "
                 f"(o el elemento '{element}' no es el correcto)."
             )
 

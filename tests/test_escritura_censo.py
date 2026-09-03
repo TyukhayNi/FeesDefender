@@ -29,12 +29,22 @@ PRODUCTORES = (
     "core/email_atomize/pipeline.py", "core/adjuntos_contenido/pipeline.py",
     "core/sala_maquina.py", "core/split_documental.py",
     "scripts/abrir_caso.py", "scripts/sala_maquina.py",
+    # Anadido el 2026-09-03 (Plan 5, Task 8b): `core/apertura_v1_estado.py`
+    # escribe el estado durable por ronda y NO pasa por la costura. Dejarlo fuera
+    # de esta lista habria mantenido el techo en 84 con una escritura nueva sin
+    # contar, que es el «techo con hueco» contra el que avisa el comentario de abajo.
+    "core/apertura_v1_estado.py",
 )
 
 #: Las primitivas del barrido del §25 que NO son ambiguas: su nombre solo existe en el
 #: sistema de ficheros.
 PRIMITIVAS = frozenset({
     "write_text", "write_bytes", "mkdir", "unlink", "copy2", "append_event",
+    # `mkstemp` anadido el 2026-09-03 (R-B/L1-17 y L5-02). El Plan 5 estreno el patron
+    # de escritura atomica —`mkstemp` + `os.fdopen` + `os.replace`— y con el un hueco:
+    # la escritura PRINCIPAL de ese patron no la contaba nadie, asi que una funcion de
+    # escritura nueva que lo usara pasaba el trinquete sin mover el numero.
+    "mkstemp",
 })
 
 #: Las AMBIGUAS, que comparten nombre con métodos de `str`, `dict` y `dataclasses`.
@@ -72,7 +82,31 @@ AMBIGUAS = frozenset({"replace", "copy", "dump"})
 #: Así que este +1 es **deuda declarada, no cobertura**: baja cuando se migre la #13.
 #: Subirlo sin esta explicación sería justo lo que la regla prohíbe — y el trinquete me lo
 #: cazó a mí, con mi propio cambio, que es la única prueba de que sirve.
-TECHO_CENSO = 83
+#: **83 -> 84 el 2026-09-03, y es la SEGUNDA vez que sube.** El cableado de V1 (Plan 5)
+#: añade `apertura_v1_terminada` en `scripts/abrir_caso.py`: el estado con que termina la
+#: secuencia tiene que quedar en el log forense, o la unica constancia de una apertura es
+#: la pantalla, que se pierde. Misma clase que el +1 anterior —escritura de **protocolo**,
+#: fila #13— y misma condicion de bajada: se migra con la #13.
+#:
+#: **Lo que NO se hizo, y era tentador:** mover `registrar_cierre_v1` a `core/apertura_v1.py`,
+#: que no esta en `PRODUCTORES`. El censo habria bajado a 83 sin que la escritura
+#: desapareciera. Eso es absorber la deuda, que es justo lo que la regla de arriba prohibe.
+#: Lo cazo la R-A del Plan 5 (HA-11) antes de escribir una linea.
+#: **84 -> 87 el 2026-09-03, y las tres son de la MISMA pieza.** El Plan 5 anade
+#: `core/apertura_v1_estado.py` —el estado durable por ronda que la spec §11 hace
+#: obligatorio «desde la primera entrega»— con `mkdir`, `os.replace` y el `unlink` del
+#: temporal de su escritura atomica. Es escritura de **protocolo**: un fichero de control
+#: en `00_Input`, no un documento del caso.
+#:
+#: **La lista de PRODUCTORES creció, y eso se declara aqui.** Lo alternativo era dejar el
+#: modulo fuera de la lista: el techo se habria quedado en 84 con tres escrituras nuevas
+#: sin contar, que es literalmente el «techo con hueco» que el comentario de abajo dice
+#: prevenir. Un censo que no cuenta lo nuevo no es un censo, es un numero.
+#: **87 -> 88 el 2026-09-03, y esta subida NO es una escritura nueva.** Es el `mkstemp`
+#: que el detector no contaba: al anadirlo a `PRIMITIVAS` aparecio una escritura que ya
+#: existia y estaba invisible. Subir el techo aqui es *reconocer* deuda, no contraerla —
+#: y es exactamente lo que la regla de arriba pide cuando el detector mejora.
+TECHO_CENSO = 88
 
 
 def _nombre_llamado(n: ast.Call) -> str | None:

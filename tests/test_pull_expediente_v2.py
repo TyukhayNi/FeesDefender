@@ -334,6 +334,25 @@ def test_pull_v2_cliente_devuelve_vacio_emite_pull_crm_igual(modules):
     assert any(e["event"] == "pull_crm" for e in events)
 
 
+def test_el_predicado_reconoce_el_vacio_DEL_PRODUCTOR_REAL(modules):
+    """La costura completa, corrida de punta a punta (R-B/L2-01).
+
+    El aviso de «gestor vacío» viaja dentro de `errors`, y un consumidor que lea `errors`
+    como fatal bloquea una apertura por un expediente sin documentos. `es_gestor_vacio`
+    existe para que ese consumidor pregunte en vez de inferir — y este test lo corre
+    contra el resultado REAL del productor, no contra un `PullResultV2` fabricado a mano.
+    Sin él, el predicado y el productor pueden derivar sin que nada se ponga rojo.
+    """
+    cm = modules["case_manager"]
+    ss = modules["sync_sudespacho"]
+    cm.ensure_case("PV2-5B")
+
+    vacio = ss.pull_expediente_v2("PV2-5B", "648", client=FakeSudespachoClient(docs=[]))
+    assert ss.es_gestor_vacio(vacio) is True, (
+        "el productor cambió la forma del aviso y el predicado ya no lo reconoce: "
+        "una apertura V1 sobre un expediente sin documentos volvería a bloquearse")
+
+
 # ---------------------------------------------------------------------------
 # 6. Dedup — hash ya presente en manifest pre-existente
 # ---------------------------------------------------------------------------

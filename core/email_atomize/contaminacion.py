@@ -56,6 +56,10 @@ class Hallazgo:
     detalle: str = ""     # el texto donde se avistó (nombre de fichero o asunto)
 
 
+#: Prefijo de la nota de contaminación. Público a propósito: `hay_contaminacion` lo
+#: reconoce por él, y dos copias del mismo texto derivan.
+PREFIJO_NOTA = "posible contaminación cruzada: "
+
 _MAX_MSGS_EN_NOTA = 5
 
 
@@ -77,8 +81,23 @@ def resumir(hallazgos: list[Hallazgo]) -> list[str]:
             muestra += f" +{resto} más"
         plural = "mensaje" if len(ids) == 1 else "mensajes"
         notas.append(
-            f"posible contaminación cruzada: {w_code} en {len(ids)} {plural} ({muestra})")
+            f"{PREFIJO_NOTA}{w_code} en {len(ids)} {plural} ({muestra})")
     return notas
+
+
+def hay_contaminacion(notas) -> bool:
+    """¿Alguna de estas notas denuncia contaminación cruzada?
+
+    **Vive aquí, junto a quien escribe la nota.** `report.notas` es una bolsa mixta —hay
+    vistas rotas, historiales no escritos, poda omitida— y el consumidor que quisiera
+    distinguir la contaminación tendría que replicar el prefijo. Si el texto cambia, lo
+    que se rompe es este predicado y su test, no cada llamador.
+
+    Lo pidió la R-C del Plan 5 (HC-04): el status de la atomización solo miraba
+    `publicado` y `errores`, así que una contaminación detectada devolvía `ok`, el OCR
+    seguía y la apertura declaraba la etapa hecha sin pendiente alguno.
+    """
+    return any(str(n).startswith(PREFIJO_NOTA) for n in (notas or ()))
 
 
 def detectar_cruce(mensajes, *, w_code_propio: str) -> list[Hallazgo]:

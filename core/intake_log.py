@@ -6,7 +6,9 @@ quién hizo qué, cuándo y con qué efecto sobre el repositorio del caso.
 
 Decisiones cerradas (memoria persistente: ``project_intake_estructura_v2.md``):
 
-- M10-Q1: 27 tipos de evento permitidos (constante ``INTAKE_EVENTS``).
+- M10-Q1: 34 tipos de evento permitidos (constante ``INTAKE_EVENTS``).
+  *(Decia 27 y eran 33; corregido el 2026-09-03 al medirlo — hallazgo HA-12
+  de la R-A del Plan 5. Un contador escrito a mano se pudre en silencio.)*
 - M10-Q2: schema común ``{ts, actor, event, case_id, details}`` con
   ``details`` específico por evento.
 - M10-Q3: actor resuelto desde un singleton thread-safe (``set_actor`` /
@@ -95,6 +97,7 @@ INTAKE_EVENTS: frozenset[str] = frozenset({
     "conflicto_resuelto",            # se sale de estado_repositorio=conflicto
     "checkout_cancelado_unilateral", # el lock se cancelo mientras el titular
                                      # trabajaba offline (§8.7)
+    "apertura_v1_terminada",         # cierre de la secuencia de V1 con estado y pendientes
 })
 
 

@@ -105,7 +105,15 @@ def test_v1_aborta_antes_de_crear_el_esqueleto(casos_root, monkeypatch):
 
 
 def test_v1_con_los_flags_correctos_pasa_la_puerta(casos_root, monkeypatch):
-    """La puerta no bloquea una invocacion V1 valida: llega al intake."""
+    """La puerta no bloquea una invocacion V1 valida: llega a la SECUENCIA.
+
+    **Migrado el 2026-09-03 (Plan 5, Task 10b).** Antes doblaba `_despachar_intake`, que
+    en modo `v1` ya no se llama: el doble quedaba INERTE y la invocacion salia al Drive
+    real. Lo cazo la R-A (HA-11) antes de que nadie lo corriera. Por eso ahora, ademas de
+    doblar la costura nueva, se AFIRMA que se llamo y se pone una trampa en el pull.
+    """
+    from core import apertura_v1 as av1
+
     llamadas = []
     def _ensure_case_fiel(case_id, *a, **k):
         # El real CREA el caso, y el `path_for` posterior cuenta con ello. Un doble
@@ -114,9 +122,20 @@ def test_v1_con_los_flags_correctos_pasa_la_puerta(casos_root, monkeypatch):
         (casos_root / case_id / "00_Input").mkdir(parents=True, exist_ok=True)
         llamadas.append("ensure_case")
 
+    def _secuencia_falsa(ident, case_dir, **kw):
+        llamadas.append("secuencia")
+        return av1.ResultadoV1(
+            estado=av1.EstadoV1.PREPARADO_CON_PENDIENTES,
+            etapas=(av1.EtapaResultado(nombre="drive", estado="hecha", detalle="doble"),),
+            pendientes=(av1.PENDIENTE_FUENTES_V3,), parada=None, no_ejecutadas=())
+
     monkeypatch.setattr(cli.case_manager, "ensure_case", _ensure_case_fiel)
-    monkeypatch.setattr(cli, "_despachar_intake",
-                        lambda *a, **k: llamadas.append("intake"))
+    monkeypatch.setattr(cli, "secuencia_v1", _secuencia_falsa)
+    monkeypatch.setattr(cli, "registrar_cierre_v1", lambda *a, **k: None)
+    # Trampa: si la migracion se hace mal, el test lo DICE en vez de tardar medio minuto
+    # y tocar el Drive de verdad.
+    monkeypatch.setattr(cli, "_intake_drive_ev",
+                        lambda *a, **k: pytest.fail("el test salio al Drive real"))
     monkeypatch.setattr(cli, "_alta_crm", lambda *a, **k: llamadas.append("crm"))
 
     res = runner.invoke(cli.app, [
@@ -125,7 +144,9 @@ def test_v1_con_los_flags_correctos_pasa_la_puerta(casos_root, monkeypatch):
     ])
 
     assert res.exit_code == 0, res.output
-    assert "ensure_case" in llamadas and "intake" in llamadas
+    assert "ensure_case" in llamadas
+    assert "secuencia" in llamadas, "el doble quedo inerte: no se paso por secuencia_v1"
+    assert "crm" not in llamadas, "modo v1 no puede alcanzar el alta CRM"
 
 
 def test_modo_libre_conserva_el_comportamiento(casos_root, monkeypatch):
@@ -284,3 +305,43 @@ def test_v1_cero_llamadas_remotas_de_alta(casos_root, monkeypatch):
 
     assert res.exit_code == 1
     assert remotas == []
+
+
+@pytest.mark.parametrize("excepcion,esperado", [
+    ("CaseBusy", "otro proceso tiene este caso"),
+    ("MutexPerdido", "se PERDIO la exclusion"),
+])
+def test_la_exclusion_fallida_llega_al_OPERADOR(excepcion, esperado, casos_root,
+                                                monkeypatch):
+    """F26 reescrita tras la R-B, y la primera version de esta reescritura tambien estaba
+    mal: usaba `--case-id X`, que muere en la resolucion de identidad ANTES del mutex, asi
+    que pasaba con `exit_code != 0` por una razon que no era la suya.
+
+    Se conduce por la via de los 6 flags, que si llega al bloque, y se afirma el MENSAJE:
+    `CaseBusy` es «espera», `MutexPerdido` es «puede haber trabajo a medias». La version
+    anterior probaba un helper que produccion no llamaba.
+    """
+    import contextlib
+
+    from core.casos import mutex_sesion
+    from core.casos.workspace_model import CaseBusy, MutexPerdido
+
+    clase = {"CaseBusy": CaseBusy, "MutexPerdido": MutexPerdido}[excepcion]
+
+    @contextlib.contextmanager
+    def _revienta(*a, **k):
+        raise clase(w_code="W-000000", detalle="sonda")
+        yield  # pragma: no cover — inalcanzable; hace de esto un generador
+
+    monkeypatch.setattr(mutex_sesion, "sostenido", _revienta)
+    monkeypatch.setattr(cli, "secuencia_v1",
+                        lambda *a, **k: pytest.fail("no debe correr sin exclusion"))
+
+    res = runner.invoke(cli.app, [
+        "--modo", "v1", "--crm", "skip", *_IDENT,
+        "--folder-id", "FID", "--team-id", "TID",
+    ])
+
+    assert res.exit_code != 0, res.output
+    assert esperado in res.output, res.output
+    assert "bloqueado" in res.output

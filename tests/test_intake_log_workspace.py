@@ -234,9 +234,14 @@ class TestVocabulario:
     NUEVOS = {"scratch_creado", "scratch_promovido", "checkout_adoptado",
               "conflicto_resuelto", "checkout_cancelado_unilateral"}
 
-    def test_son_treinta_y_tres(self, root):
+    #: Anadido el 2026-09-03 por el cableado de V1 (Plan 5, Task 7). Va en su propio
+    #: conjunto y no en `NUEVOS` para que el doble aserto de abajo siga midiendo lo que
+    #: mide: que los 28 historicos siguen todos ahi.
+    NUEVOS_V1 = {"apertura_v1_terminada"}
+
+    def test_son_treinta_y_cuatro(self, root):
         from core.intake_log import INTAKE_EVENTS
-        assert len(INTAKE_EVENTS) == 33
+        assert len(INTAKE_EVENTS) == 34
 
     def test_los_veintiocho_de_antes_SIGUEN_estando(self, root):
         """El doble aserto que impide cuadrar la cifra por resta (R7/H7-06).
@@ -248,9 +253,10 @@ class TestVocabulario:
         """
         from core.intake_log import INTAKE_EVENTS
         nuevos = set(self.NUEVOS)
-        antiguos = set(INTAKE_EVENTS) - nuevos
+        antiguos = set(INTAKE_EVENTS) - nuevos - set(self.NUEVOS_V1)
         assert len(antiguos) == 28
         assert nuevos < set(INTAKE_EVENTS)
+        assert set(self.NUEVOS_V1) < set(INTAKE_EVENTS)
 
     def test_pendiente_checkin_se_conserva(self, root):
         """Lectura historica: su EMISION se retira en la Fase 2, no su nombre."""

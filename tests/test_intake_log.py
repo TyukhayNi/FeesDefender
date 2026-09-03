@@ -338,14 +338,18 @@ def test_append_event_invoca_fsync_por_cada_escritura(il, cm, monkeypatch):
 # INTAKE_EVENTS — sanity
 # ---------------------------------------------------------------------------
 
-def test_intake_events_es_frozenset_con_33_eventos(il):
+def test_intake_events_es_frozenset_con_34_eventos(il):
     # 28 desde el 2026-08-04: alta de `contenido_adjuntos` (`MEJORAS #87`, el cableado del
     # texto de los adjuntos de correo en la sala de máquina). Este test existe para que
     # ampliar el vocabulario sea un acto deliberado y no un efecto colateral.
+    #
+    # 33 -> 34 el 2026-09-03: `apertura_v1_terminada`, el cierre de la secuencia de V1
+    # (Plan 5, Task 7). Y funcionó: este guard fue el que me obligó a declararlo.
     assert isinstance(il.INTAKE_EVENTS, frozenset)
-    assert len(il.INTAKE_EVENTS) == 33
+    assert len(il.INTAKE_EVENTS) == 34
     assert "atomizado_email" in il.INTAKE_EVENTS
     assert "contenido_adjuntos" in il.INTAKE_EVENTS
+    assert "apertura_v1_terminada" in il.INTAKE_EVENTS
 
 
 def test_intake_events_contiene_los_canonicos(il):
@@ -402,6 +406,8 @@ def test_intake_events_contiene_los_canonicos(il):
         "checkout_adoptado",
         "conflicto_resuelto",
         "checkout_cancelado_unilateral",
+        # Cableado de V1 (Plan 5, Task 7): el estado con que termina la secuencia.
+        "apertura_v1_terminada",
     }
     assert il.INTAKE_EVENTS == expected
 
