@@ -37,7 +37,8 @@ SUITE = ("tests/test_apertura_v1_secuenciador.py",
          # y no lo que las une.
          "tests/test_apertura_v1_costuras.py",
          "tests/test_apertura_v1_control_files.py",
-         "tests/test_abrir_caso_modo_v1.py")
+         "tests/test_abrir_caso_modo_v1.py",
+         "tests/test_sala_maquina_cableado_atomize.py")
 
 SEC = "tests/test_apertura_v1_secuenciador.py"
 ETA = "tests/test_apertura_v1_etapas.py"
@@ -45,6 +46,7 @@ CAB = "tests/test_apertura_v1_cableado.py"
 EST = "tests/test_apertura_v1_estado.py"
 COS = "tests/test_apertura_v1_costuras.py"
 CTL = "tests/test_apertura_v1_control_files.py"
+ATO = "tests/test_sala_maquina_cableado_atomize.py"
 MV1 = "tests/test_abrir_caso_modo_v1.py"
 E2E = "tests/test_apertura_v1_e2e.py"
 
@@ -273,6 +275,18 @@ MUTANTES: list[tuple[str, str, str, str, set[str]]] = [
      "})",
      {f"{CTL}::test_esta_en_el_registro_canonico_de_control[_apertura_v1.json]",
       f"{CTL}::test_el_inventario_de_la_sala_de_maquina_no_lo_toma_por_documento[_apertura_v1.json]"}),
+
+    # --- HC-04 de R-C: la contaminacion cruzada deja `parcial` -----------------
+    ("F35-contaminacion-parcial", "scripts/sala_maquina.py",
+     "                             else \"parcial\" if (report.errores or contaminado)",
+     "                             else \"parcial\" if report.errores",
+     {f"{ATO}::test_hc04_una_contaminacion_cruzada_deja_la_atomizacion_PARCIAL"}),
+
+    ("F36-contaminacion-predicado", "core/email_atomize/contaminacion.py",
+     "    return any(str(n).startswith(PREFIJO_NOTA) for n in (notas or ()))",
+     "    return False",
+     {f"{ATO}::test_hc04_una_contaminacion_cruzada_deja_la_atomizacion_PARCIAL",
+      f"{ATO}::test_hc04_el_predicado_reconoce_la_nota_DEL_PRODUCTOR_REAL"}),
 
     ("F28", EST_MOD,
      "    def sin_cerrar(self) -> bool:\n        return self.terminada is None",
