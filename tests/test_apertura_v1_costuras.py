@@ -294,3 +294,23 @@ def test_hc03_el_evento_forense_se_emite_ANTES_de_cerrar_el_estado(caso_v1, monk
 
     _correr_main(monkeypatch, _resultado(av1.EstadoV1.PREPARADO_CON_PENDIENTES))
     assert orden == ["evento", "estado"], orden
+
+
+def test_costura_los_agotados_del_OCR_viajan_por_el_camino_POR_DEFECTO(monkeypatch):
+    """`MEJORAS #144`, el otro extremo de la costura. El pendiente puede estar bien
+    cableado en el adaptador y no servir de nada si `apply` no manda el dato — que es
+    exactamente lo que pasaba: el contador existía, se imprimía, y no viajaba."""
+    from scripts import sala_maquina
+    from scripts.sala_maquina import ResultadoApply
+
+    monkeypatch.setattr(sala_maquina, "apply",
+                        lambda case_id=None, **k: ResultadoApply(
+                            status_atomizacion="ok", documentos_agotados=7))
+
+    class _Ident:
+        case_id = "C"
+        w_code = "W-000000"
+
+    r = cli.etapa_sala_maquina(_Ident())
+    assert [p.codigo for p in r.pendientes] == ["ocr_documentos_agotados"]
+    assert "7 documento" in r.pendientes[0].detalle

@@ -288,6 +288,19 @@ MUTANTES: list[tuple[str, str, str, str, set[str]]] = [
      {f"{ATO}::test_hc04_una_contaminacion_cruzada_deja_la_atomizacion_PARCIAL",
       f"{ATO}::test_hc04_el_predicado_reconoce_la_nota_DEL_PRODUCTOR_REAL"}),
 
+    # --- MEJORAS #144: los agotados del OCR aparecen en los pendientes ---------
+    ("F37-agotados-pendiente", CLI,
+     "    if agotados:" + NL +      "        pendientes.append(av1.Pendiente(",
+     "    if False:" + NL +      "        pendientes.append(av1.Pendiente(",
+     {f"{ETA}::test_f37_los_documentos_agotados_del_OCR_APARECEN_en_los_pendientes",
+      f"{ETA}::test_f38_los_agotados_se_acumulan_CON_la_atomizacion_parcial",
+      f"{ETA}::test_los_agotados_se_declaran_incluso_si_la_atomizacion_FALLA"}),
+
+    ("F38-agotados-viajan", "scripts/sala_maquina.py",
+     "        return ResultadoApply(status_atomizacion=status_atomizacion," + NL +      "                              documentos_agotados=len(agotados))",
+     "        return ResultadoApply(status_atomizacion=status_atomizacion,"  + NL +      "                              documentos_agotados=0)",
+     {f"{COS}::test_costura_los_agotados_del_OCR_viajan_por_el_camino_POR_DEFECTO"}),
+
     ("F28", EST_MOD,
      "    def sin_cerrar(self) -> bool:\n        return self.terminada is None",
      "    def sin_cerrar(self) -> bool:\n        return False",
