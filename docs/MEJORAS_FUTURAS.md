@@ -3845,7 +3845,8 @@ al modelo de estados y se migran las transiciones.
 **Nota al cerrar la Fase 1 dual (2026-08-25). La Fase 1 NO cierra nada de esta entrada, y conviene
 decirlo así en vez de dejarlo implícito.** Los dos fallos viven en `scripts/repository_cli.py`, que la
 Fase 1 no toca; siguen reproducidos en `xfail(strict=True)` en `tests/test_repository_cli_defectos.py`
-—verificados vivos: 7 `xfailed`, 0 `xpassed`— y su arreglo es la Fase 2.
+—verificados vivos: 7 `xfailed`, 0 `xpassed` **ese día; son SEIS desde que
+`MEJORAS #93-B` cerró A-2c, remedido el 2026-09-03**— y su arreglo es la Fase 2.
 
 Lo que sí cambia son las **consecuencias del Fallo A**, y a peor. `estado_de_fm` devolvía `disponible`
 ante el campo ausente para **un** consumidor —el propio frontal—; desde la Fase 1 ese mismo silencio lo
@@ -5622,7 +5623,7 @@ El repo ya tiene la pieza que sabe cuál es la copia de trabajo —`CaseWorkspac
 2. `es_copia_prestada` deja de existir y su pregunta se contesta en el resolver, que es donde vive
    el modelo de capacidades.
 
-**Disparador:** la **Fase 2** de la fila #3 (los 7 defectos del frontal), que es donde el resolver
+**Disparador:** la **Fase 2** de la fila #3 (los 6 defectos del frontal), que es donde el resolver
 se cablea de verdad; o la **rev. 2 del Plan 3A-bis**, si su regla de sellado necesita distinguir la
 copia local — que es exactamente el punto en que R16 lo destapó.
 

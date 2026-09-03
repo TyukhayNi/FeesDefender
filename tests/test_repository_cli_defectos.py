@@ -1,8 +1,11 @@
 """Task 6 de la Fase 0 — los defectos del frontal, reproducidos. **Aquí no se arregla ninguno.**
 
-Siete y no ocho: el octavo (`_integrar_bandeja` devolvía `(0,0)` con un `lsjson` ilegible
-y el checkin liberaba el lock) lo cerró el PR #160, y su caracterización **verde** vive
-en `tests/test_repository_cli_checkin.py`.
+**Seis**, y en su día fueron ocho. El octavo (`_integrar_bandeja` devolvía `(0,0)` con un
+`lsjson` ilegible y el checkin liberaba el lock) lo cerró el PR #160, y su caracterización
+**verde** vive en `tests/test_repository_cli_checkin.py`. El séptimo (A-2c, el orden del
+cierre del checkin) lo cerró `MEJORAS #93-B` el 2026-08-25, y **lo declaró su propio plan**
+(`docs/superpowers/plans/2026-08-25-checkin-integridad-96-93b.md`: los `xfail` del frontal
+pasan de 7 a 6) — pero el recuento no llegó a `PLAN.md` hasta el 2026-09-03.
 
 Cada test lleva `xfail(strict=True, raises=AssertionError)`. Eso obliga a una disciplina
 que no es opcional: **las precondiciones del montaje lanzan `RuntimeError`**, no
