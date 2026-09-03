@@ -167,7 +167,7 @@ porque solo conoce la forma del adaptador.
 
 ---
 
-## §3. Las veintiocho fronteras que este plan contrata
+## §3. Las fronteras que este plan contrata (28 enunciadas; **3 retiradas**, 6 añadidas → 31 vivas)
 
 Una por mutante. Si el arnés de mutación no las mata todas, el plan no está cumplido.
 
@@ -191,16 +191,41 @@ Una por mutante. Si el arnés de mutación no las mata todas, el plan no está c
 | **F16** | En V1 el pull se pide con `force=True`: **consulta remota real en cada ronda** | pasar `force=False` |
 | **F17** | `PullResultV2.errors` no vacío → `fallo`, aunque no se lanzara excepción | ignorar `errors` |
 | **F18** | `blocked_legacy_v1` → `fallo` | ignorar el flag |
-| **F19** | `documents_failed > 0` → `hecha` **con pendiente**, no `hecha` a secas | ignorar el contador |
-| **F20** | Gestor documental **vacío confirmado** (0 docs, 0 errores) → `saltada`, distinguible del error | mapearlo a `fallo` |
+| ~~F19~~ | ~~`documents_failed > 0` → `hecha` **con pendiente**~~ → **`fallo`**. **CAMBIO DE CONTRATO, decidido por Nikolai el 2026-09-03** (ver la nota bajo la tabla) | — el contador no es señal independiente: el productor lo incrementa en el mismo bloque que su `errors.append` |
+| ~~F20~~ | ~~vacío confirmado = **0 docs y 0 errores**~~. La premisa era falsa: el productor **sí** deja un aviso en `errors` al estar vacío. La frontera vive ahora en `sync_sudespacho.es_gestor_vacio` y su mutante es **F33** | — |
 | **F21** | El `element` pertenece al vocabulario cerrado `{"extrajudiciales", "expedientes_judiciales"}` | aceptar cualquier cadena |
 | **F22** | En V1 un `element` judicial **aborta**: la rama judicial sigue bloqueada (criterio 38, cruce inverso) | aceptar el judicial |
 | **F23** | El vocabulario de `--hasta` se valida en `validar_modo`, **antes de todo efecto** | validarlo solo dentro de `secuenciar` |
 | **F24** | Una parada pedida **enumera como pendientes** las etapas que no corrieron | no enumerarlas |
 | **F25** | La salida del proceso ocurre **fuera** del bloque de mutex | lanzar `typer.Exit` dentro del `with` |
-| **F26** | `CaseBusy` y `MutexPerdido` en la frontera → estado `bloqueado` y salida no cero | dejarlos propagar como traza |
+| ~~F26~~ | ~~`traducir_fallo_de_mutex` traduce `CaseBusy`/`MutexPerdido`~~. **Retirada: la función no tenía llamadores de producción.** La propiedad se contrata ahora conduciendo `main` (`test_la_exclusion_fallida_llega_al_OPERADOR`), donde además se distinguen las dos causas | — |
 | **F27** | `estado.json` se escribe **atómicamente** y con id de ronda | escribir en sitio, sin `os.replace` |
 | **F28** | Una ronda anterior **sin cerrar** se detecta y se dice en el informe | ignorar el estado previo |
+
+**Reconciliación de esta tabla con el código, y la firma que le faltaba (HC-06 de R-C).**
+
+La R-C midió dos cosas sobre esta tabla y las dos eran ciertas: que **F19, F20 y F26 ya no existen
+como fronteras**, y —lo importante— que **yo cambié F19 sin adjudicarlo**. Decidí que unos
+documentos del CRM que no bajan deben *bloquear* en vez de dejar un pendiente, cambié el código, y
+reescribí esta fila para que cuadrara. La frase del revisor da en el clavo: **que bloquear sea más
+prudente no autoriza al diff a cambiar su propia fuente.**
+
+**Adjudicado por Nikolai el 2026-09-03: se mantiene el bloqueo, y queda firmado como su decisión**,
+con la regla que separa los dos casos escrita aquí para que no haya que reinventarla:
+
+> **«Falta prueba» bloquea; «puede sobrar» avisa.** Un documento del CRM que no se descarga es
+> prueba que **falta**, y el espejo de `05_CRM` queda demostrablemente incompleto: seguir significa
+> hacer OCR sobre una documental parcial en silencio. Una nota de **contaminación cruzada** es la
+> sospecha de material **de más**, y es heurística: se trata como `parcial` —pendiente y aviso— y no
+> planta la corrida.
+
+La segunda mitad de esa regla es la decisión de **HC-04**, tomada el mismo día y por lo mismo.
+
+**Y el «31/31» de la Task 9 hay que leerlo con precisión:** es cierto sobre la lista del arnés, que
+son 31 mutantes tras retirar F19/F20/F26 y añadir seis de costura. **No** es «una por cada fila
+original de esta tabla». Decirlo importa porque la cifra se usó como prueba de cobertura.
+
+---
 
 ## Task 1: El vocabulario de estados y la regla que impide mentir
 

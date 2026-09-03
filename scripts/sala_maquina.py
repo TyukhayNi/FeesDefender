@@ -18,6 +18,7 @@ from core.adjuntos_contenido import pipeline as contenido
 from core.casos import case_locator
 from core.config import caso_path
 from core.email_atomize import pipeline as atomize
+from core.email_atomize import contaminacion
 from core.intake_log import append_event
 from core import split_documental as split
 from core.utils import now_iso
@@ -615,8 +616,23 @@ def _atomizar_correo(case_id: str, case_dir: Path) -> str | None:
         details["errores"] = [f"{type(exc).__name__}: {exc}"]
         typer.echo(_BANNER_FALLO_ATOMIZE.format(tipo=type(exc).__name__, exc=exc), err=True)
     else:
+        # HC-04 de la R-C, decidido por Nikolai el 2026-09-03: una contaminación cruzada
+        # detectada deja la atomización en `parcial`, **no la bloquea**.
+        #
+        # La regla que separa los dos casos, y conviene tenerla escrita: «falta prueba»
+        # bloquea; «puede sobrar» avisa. Un documento del CRM que no baja es prueba que
+        # FALTA y el espejo queda demostrablemente incompleto. Una nota de contaminación
+        # es la sospecha de material DE MÁS, y es heurística: plantar la corrida sobre una
+        # heurística haría frágil la herramienta que usa el equipo a diario, y el remedio
+        # de la casa para un documento colado es que un humano lo BORRE.
+        #
+        # `parcial` no es vocabulario nuevo: ya produce un pendiente y ya impide que V1
+        # termine `completo`.
+        contaminado = contaminacion.hay_contaminacion(report.notas)
         details["status"] = ("fallo" if not report.publicado
-                             else "parcial" if report.errores else "ok")
+                             else "parcial" if (report.errores or contaminado)
+                             else "ok")
+        details["contaminacion_cruzada"] = contaminado
         details.update({
             "eml_leidos": report.eml_leidos,
             "publicado": report.publicado,

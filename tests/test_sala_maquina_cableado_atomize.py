@@ -223,7 +223,7 @@ def test_status_parcial_cuando_el_motor_termina_con_errores(caso, monkeypatch):
     # todos los contadores del schema 2. `poda_omitida=True` es lo coherente con que el
     # motor terminase con errores.
     assert _evento(eventos)[0] == {
-        "details_schema": 2, "status": "parcial",
+        "details_schema": 2, "status": "parcial", "contaminacion_cruzada": False,
         "eml_en_disco": 1, "eml_leidos": 1, "publicado": True, "poda_omitida": True,
         "mensajes": 2, "adjuntos_unicos": 0, "reconstruidos_b": 0,
         "citas_a_revision": 0, "upgrades": 0,
@@ -244,8 +244,13 @@ def test_payload_atado_a_los_campos_reales_del_report(caso, monkeypatch, capsys)
 
     cli.apply("W-TEST99")
 
+    # `contaminacion_cruzada` añadido el 2026-09-03 (HC-04 de R-C): el evento tiene que
+    # decir POR QUÉ una atomización quedó `parcial`. Estos dos tests comparan el payload
+    # ENTERO por igualdad y fueron los que cazaron el cambio de contrato — se declara,
+    # no se absorbe. El camino de `fallo` por excepción (arriba) NO lo lleva a propósito:
+    # si el motor no terminó, el payload no finge saber lo que no puede conocer.
     assert _evento(eventos)[0] == {
-        "details_schema": 2, "status": "ok",
+        "details_schema": 2, "status": "ok", "contaminacion_cruzada": False,
         "eml_en_disco": 1, "eml_leidos": 1, "publicado": True, "poda_omitida": False,
         "mensajes": 413, "adjuntos_unicos": 162, "reconstruidos_b": 136,
         "citas_a_revision": 43, "upgrades": 8,
@@ -491,3 +496,56 @@ def test_atomizar_correo_devuelve_fallo_si_el_motor_revienta(tmp_path, monkeypat
 
     monkeypatch.setattr(sm_cli.atomize, "atomize_dir", explota)
     assert sm_cli._atomizar_correo("C", case_dir) == "fallo"
+
+
+class _ReportContaminado:
+    """Publica sin errores, pero con una nota de contaminación cruzada."""
+    publicado = True
+    errores: list = []
+    eml_leidos = 3
+    poda_omitida = False
+    mensajes = 3
+    adjuntos_unicos = 0
+    reconstruidos_b = 0
+    citas_a_revision = 0
+    upgrades = 0
+    fallos_lectura: list = []
+
+    def __init__(self):
+        from core.email_atomize import contaminacion
+        # La nota se construye con la constante DEL PRODUCTOR, no con un literal: si el
+        # texto cambia, este test cae con el predicado en vez de pasar en falso.
+        self.notas = [f"{contaminacion.PREFIJO_NOTA}W-999999 en 2 mensajes (a, b)"]
+
+    def resumen(self):
+        return "3 mensajes"
+
+
+def test_hc04_una_contaminacion_cruzada_deja_la_atomizacion_PARCIAL(tmp_path, monkeypatch):
+    """HC-04 de R-C. El status solo miraba `publicado` y `errores`: con una contaminación
+    detectada y cero errores devolvía `ok`, el OCR seguía y la apertura declaraba la etapa
+    hecha sin pendiente. Decisión de Nikolai: `parcial`, no bloqueo."""
+    from scripts import sala_maquina as sm_cli
+
+    case_dir = tmp_path / "caso"
+    (case_dir / "00_Input").mkdir(parents=True)
+    monkeypatch.setattr(sm_cli.atomize, "contar_eml", lambda _f: 3)
+    monkeypatch.setattr(sm_cli.atomize, "atomize_dir",
+                        lambda *a, **k: _ReportContaminado())
+
+    assert sm_cli._atomizar_correo("C", case_dir) == "parcial"
+
+
+def test_hc04_el_predicado_reconoce_la_nota_DEL_PRODUCTOR_REAL():
+    """La costura: el detector real produce la nota y el predicado real la reconoce. Sin
+    esto, el prefijo y su lector pueden derivar sin que nada se ponga rojo."""
+    from core.email_atomize import contaminacion as c
+
+    notas = c.resumir([
+        c.Hallazgo(w_code="W-999999", msg_id="m1", donde="asunto", detalle="RE: W-999999"),
+        c.Hallazgo(w_code="W-999999", msg_id="m2", donde="adjunto", detalle="W-999999.pdf"),
+    ])
+    assert notas, "el detector real no produjo nota alguna"
+    assert c.hay_contaminacion(notas) is True
+    assert c.hay_contaminacion(["vista sin 'id' omitida"]) is False
+    assert c.hay_contaminacion([]) is False
