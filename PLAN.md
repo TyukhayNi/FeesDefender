@@ -231,6 +231,50 @@ puede escribir sobre esa copia): R-A sobre el plan antes de escribir código, R-
 **Validación real sobre W-02Q38C**, elegida por Nikolai: es el caso que disparó el ítem y se cierra
 **por el cableado, no por parche manual**.
 
+**R-A corrida y adjudicada ANTES de una línea de código: `NO-EJECUTABLE`, 12 hallazgos, 11
+confirmados y 1 parcialmente refutado** (4 críticos + 1 elevado por el adjudicador). Acta
+[`…-plan5-rA-adversarial-review.md`](docs/superpowers/specs/2026-09-03-apertura-v1-plan5-rA-adversarial-review.md);
+adjudicación en el §5 del plan. **La ronda EJECUTÓ** —midió que mi adaptador de Drive no llamaba a
+la custodia (`custodia_calls= []`), puso el trinquete del censo en 84/83, dejó VIVO el mutante F12,
+pasó mi fixture del E2E por el lector real de metadatos y obtuvo `{}`, y reprodujo la pérdida de
+mutex bajo un `typer.Exit(0)`— y los cuatro críticos salieron de ahí, no de leer.
+
+**El hallazgo de fondo es sobre la premisa, y la premisa se la había dado yo a Nikolai.** Dos de las
+cuatro deudas que el §0 declaraba «aceptadas» no eran deudas: eran **contradicciones literales de
+la tabla de riesgos de la spec**, que ya nombraba los dos mecanismos con su mitigación obligatoria
+—«`.pulled` evita volver a Drive → **falso punto fijo** → consulta remota real en cada ronda» y
+«`estado.json` atómico **obligatorio desde la primera entrega**»—. Yo construí sobre esos dos el
+argumento de que la reanudación «no cuesta diseño nuevo» y **se lo presenté como razón para
+preferir la ejecución desatendida**. Consecuencia práctica: con ese diseño, un documento que E&V
+añadiese a la carpeta del caso después de la primera apertura **no se vería nunca**.
+
+**Por qué no lo vi:** leí el §21 y el §24 de la spec —el alcance y las decisiones— y no su tabla de
+**riesgos**, que es donde vivía la respuesta a la pregunta que me estaba haciendo. Misma clase que
+ya tengo medida: el dato se busca en el registro del nivel de su alcance, y «qué mecanismo es un
+falso punto fijo» es un riesgo, no un criterio.
+
+**Y tres de los críticos son la misma forma: mis adaptadores RODEABAN costuras que ya existían.**
+`etapa_drive` se saltaba la custodia que R14/H14-02 y R15/H15-06 pusieron en `_intake_drive_ev`;
+`etapa_crm` leía la ausencia de excepción como éxito, contra la regla que `CLAUDE.md` tiene escrita
+—«verificar por resultado, nunca por status»—; y la salida con `typer.Exit(0)` **dentro** del bloque
+de mutex convertía en una nota la pérdida ruidosa que R12/H12-04 había construido. **Escribir un
+adaptador nuevo encima de una costura vieja es la manera silenciosa de derogarla.**
+
+**Una corrección contra mí, no contra el revisor: HA-08 quedó PARCIALMENTE REFUTADO.** Lo confirmé
+y encima le añadí un escenario más grave —«una corrida parcial poda contra un `esperados`
+incompleto»— **sin comprobar la guarda**. La guarda existe: el `unlink` de `mensajes/` vive dentro
+del `else` de `if report.errores:` (`core/email_atomize/pipeline.py:204-220`). Sobrevive solo en
+`vistas/` y `*.contenido.md`, derivados regenerables. **Un adjudicador que no comprueba la guarda no
+confirma: infla.**
+
+**Rev. 2 escrita y commiteada**, con los doce remediados y **dos cambios de fondo decididos con
+Nikolai**: la etapa de Drive **consulta en cada ronda** (`force=True`) y entra el **`estado.json`
+por ronda** (Task 8b). El plan pasa de 11 a 13 tasks y de 14 a **28 fronteras**, con un mutante por
+frontera y un arnés que ahora **sí puede medir su propia regla** —ejecuta el conjunto contractual
+completo y compara el conjunto exacto de rojos, en vez de leer un booleano de un solo `nodeid`—.
+**El censo sube a 84 con su declaración**, que es lo que su propia regla exige. **Siguiente: ejecutar
+las 13 tasks y R-B sobre el diff.**
+
 ---
 
 ## [SIGUIENTE-PRESUPUESTO-PROCESO] Cuánta gobernanza se compra

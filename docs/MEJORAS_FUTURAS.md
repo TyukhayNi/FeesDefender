@@ -6255,3 +6255,61 @@ guarda no sea inerte.
 
 **Disparador:** cualquier trabajo sobre `#124`, que ya no puede apoyarse en la premisa; o el primer
 caso real de un depósito fuera del catálogo.
+
+---
+
+## 142. El `dry-run` del modo `libre` sale con `typer.Exit(0)` DENTRO del bloque de mutex
+
+**Medido el 2026-09-03**, al remediar el hallazgo **HA-07** de la R-A del Plan 5 de apertura V1.
+Es el mismo defecto en otro sitio, y ese sitio queda fuera del alcance de ese plan.
+
+`scripts/abrir_caso.py` lanza `typer.Exit(code=0)` para el `--dry-run` **dentro** del
+`with mutex_sesion.sostenido(...)`. `case_mutex.tomado` (`core/casos/case_mutex.py:615-659`)
+distingue dos caminos en su `finally`: **sin** excepción en vuelo, una pérdida del lease **lanza**
+`MutexPerdido`; **con** excepción en vuelo, solo la **anota** con `add_note`. Un `Exit(0)` es esa
+excepción, así que si el lease se pierde durante un `--dry-run`, el proceso sale **0** y el aviso
+queda enterrado en una nota del traceback que nadie mira.
+
+**La propiedad que rompe** es la que R12/H12-04 construyó a propósito: «una pérdida no se evapora».
+
+**Cómo se comprobó:** el revisor de R-A lo reprodujo con el gestor real para el caso del cableado
+—`TIPO=Exit EXIT_CODE=0`, la pérdida solo en `__notes__`— y la misma forma está en el camino del
+`dry-run`. **SIN VERIFICAR** en ese camino concreto: la sonda se corrió sobre el otro.
+
+**Remedio:** el mismo que el Plan 5 aplica a su rama `v1` — calcular dentro del `with`, salir
+fuera. Es un movimiento de tres líneas.
+
+**Disparador de promoción:** cualquier trabajo que toque el cuerpo de `main` en
+`scripts/abrir_caso.py` —el Plan 5 lo toca, pero deliberadamente no esta rama—, o el primer caso
+real de un `--dry-run` que salga 0 sin haber sostenido la exclusión.
+
+---
+
+## 143. La spec del orquestador sostiene una decisión sobre una cifra irreproducible
+
+**Medido el 2026-09-03**, hallazgo **HA-12** de la R-A del Plan 5.
+
+El **§24 D3** de `docs/superpowers/specs/2026-08-15-orquestador-apertura-expediente-design.md`
+justifica la decisión de implementar V1 como **modo** y no como **subcomando** así: «Hay **103
+referencias** a `scripts.abrir_caso` en el repo». La cifra no es reproducible y no declara comando,
+patrón ni unidad:
+
+```
+git grep -o "scripts\.abrir_caso" | wc -l   ->  53
+git grep -l "scripts\.abrir_caso" | wc -l   ->  19
+```
+
+53 apariciones en 19 ficheros. El token ancho `abrir_caso` da 657 en 64, que cuenta el módulo del
+core, los tests y la prosa.
+
+**Por qué importa aunque la decisión no cambie.** 53 referencias siguen siendo demasiadas para
+romper la forma documentada del CLI, así que D3 se sostiene. Lo que no se sostiene es **poder
+auditarla**: una cifra sin comando no se puede recomputar, y una spec cuyos números no se pueden
+recomputar deja de ser fuente y pasa a ser recuerdo. La rev. 1 del Plan 5 la copió a sus
+restricciones globales **sin medirla**, que es exactamente cómo se propaga.
+
+**Remedio:** en el §24 D3, sustituir la cifra por el comando y su resultado con fecha, o retirarla
+y dejar el argumento cualitativo (que es el que de verdad decide).
+
+**Disparador de promoción:** la próxima revisión de esa spec, o cualquier trabajo que vuelva a
+apoyarse en el recuento de referencias del entrypoint.
