@@ -73,3 +73,106 @@ def test_drive_que_revienta_es_fallo_y_no_propaga():
     r = cli.etapa_drive(None, Path("."), folder_id="F", team_id="T", intake=explota)
     assert r.estado == "fallo"
     assert "token caducado" in r.detalle
+
+
+class _IdentFalsa:
+    def __init__(self, case_id="C"):
+        self.case_id = case_id
+        self.w_code = "W-000000"
+
+
+def _meta(element="extrajudiciales", **extra):
+    link = {"id": "648", "input_dir": "sudespacho_648"}
+    if element is not None:
+        link["element"] = element
+    link.update(extra)
+    return {"sudespacho_expedientes": [link]}
+
+
+class _Res:
+    def __init__(self, **kw):
+        self.blocked_legacy_v1 = kw.get("blocked_legacy_v1", False)
+        self.documents_total_crm = kw.get("documents_total_crm", 5)
+        self.documents_written = kw.get("documents_written", 5)
+        self.documents_failed = kw.get("documents_failed", 0)
+        self.errors = kw.get("errors", [])
+
+
+def test_f7_el_element_sale_del_link_y_nunca_del_default():
+    """F7. El default de `pull_expediente_v2` es JUDICIAL (`core/sync_sudespacho.py:1356`)."""
+    visto = {}
+
+    def pull(case_id, expediente_id, *, element):
+        visto.update(expediente_id=expediente_id, element=element)
+        return _Res()
+
+    r = cli.etapa_crm(_IdentFalsa(), Path("."), leer_meta=lambda _d: _meta(), pull=pull)
+    assert r.estado == "hecha"
+    assert visto == {"expediente_id": "648", "element": "extrajudiciales"}
+
+
+def test_f8_un_link_sin_element_es_fallo_y_no_se_adivina():
+    r = cli.etapa_crm(_IdentFalsa(), Path("."), leer_meta=lambda _d: _meta(element=None),
+                      pull=lambda *a, **k: pytest.fail("no debe pullar sin rama"))
+    assert r.estado == "fallo"
+    assert "element" in r.detalle
+
+
+def test_f21_un_element_fuera_del_vocabulario_es_fallo():
+    """F21. Aceptar cualquier cadena deja pasar un typo hasta la API."""
+    r = cli.etapa_crm(_IdentFalsa(), Path("."),
+                      leer_meta=lambda _d: _meta(element="extrajudicial"),
+                      pull=lambda *a, **k: pytest.fail("no debe pullar"))
+    assert r.estado == "fallo"
+    assert "extrajudicial" in r.detalle
+
+
+def test_f22_un_element_judicial_aborta_en_v1():
+    """F22. El cruce INVERSO del criterio 38, que es el peligroso: la rama judicial sigue
+    bloqueada hasta que exista adaptador verificado."""
+    r = cli.etapa_crm(_IdentFalsa(), Path("."),
+                      leer_meta=lambda _d: _meta(element="expedientes_judiciales"),
+                      pull=lambda *a, **k: pytest.fail("no debe pullar la rama judicial"))
+    assert r.estado == "fallo"
+    assert "judicial" in r.detalle
+
+
+def test_f9_un_caso_sin_expediente_registrado_es_saltada_con_pendiente():
+    r = cli.etapa_crm(_IdentFalsa(), Path("."),
+                      leer_meta=lambda _d: {"sudespacho_expedientes": []},
+                      pull=lambda *a, **k: pytest.fail("no debe pullar"))
+    assert r.estado == "saltada"
+    assert [p.codigo for p in r.pendientes] == ["crm_sin_expediente"]
+
+
+@pytest.mark.parametrize("kw,estado,codigo", [
+    ({"errors": ["list_gdocu_docs_rest: 500"]}, "fallo", None),
+    ({"blocked_legacy_v1": True}, "fallo", None),
+    ({"documents_failed": 2}, "hecha", "crm_documentos_fallidos"),
+    ({"documents_total_crm": 0, "documents_written": 0}, "saltada", "crm_gestor_vacio"),
+    ({}, "hecha", None),
+])
+def test_f17_f20_el_resultado_del_pull_gobierna_la_etapa(kw, estado, codigo):
+    """HA-04. `pull_expediente_v2` NO lanza: lo dice todo por retorno. Leer solo la
+    ausencia de excepcion es incumplir «verificar por resultado, nunca por status»."""
+    r = cli.etapa_crm(_IdentFalsa(), Path("."), leer_meta=lambda _d: _meta(),
+                      pull=lambda *a, **k: _Res(**kw))
+    assert r.estado == estado
+    assert [p.codigo for p in r.pendientes] == ([codigo] if codigo else [])
+
+
+def test_crm_que_revienta_es_fallo():
+    def explota(*a, **k):
+        raise RuntimeError("PHPSESSID caducada")
+    r = cli.etapa_crm(_IdentFalsa(), Path("."), leer_meta=lambda _d: _meta(), pull=explota)
+    assert r.estado == "fallo"
+    assert "PHPSESSID" in r.detalle
+
+
+def test_un_caso_md_ilegible_es_fallo():
+    def revienta(_d):
+        raise OSError("permiso denegado")
+    r = cli.etapa_crm(_IdentFalsa(), Path("."), leer_meta=revienta,
+                      pull=lambda *a, **k: pytest.fail("no debe pullar"))
+    assert r.estado == "fallo"
+    assert "_caso.md" in r.detalle

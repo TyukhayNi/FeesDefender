@@ -372,6 +372,115 @@ def etapa_drive(ident, case_dir: Path, *, folder_id, team_id, intake=None):
         detalle=f"{res.files_after} ficheros en {res.target_dir}")
 
 
+#: Vocabulario cerrado de ramas del CRM. `_ELEMENT_EXTRAJUDICIAL` ya existe arriba y lo
+#: usa el alta: aqui se reutiliza, no se inventa.
+_ELEMENT_JUDICIAL = "expedientes_judiciales"
+ELEMENTS_CRM = frozenset({_ELEMENT_EXTRAJUDICIAL, _ELEMENT_JUDICIAL})
+
+
+def traducir_pull_crm(res) -> tuple[str, str, tuple]:
+    """`PullResultV2` -> (estado, detalle, pendientes). Tabla completa, una rama por linea.
+
+    Existe como funcion aparte para que cada rama se pueda mutar por separado: el defecto
+    que remedia (HA-04) era leer la AUSENCIA DE EXCEPCION como exito, y `pull_expediente_v2`
+    no lanza casi nunca — lo dice todo por retorno. `CLAUDE.md` §14.6: «verificar por
+    resultado, nunca por status».
+    """
+    if getattr(res, "blocked_legacy_v1", False):
+        return "fallo", "el expediente esta bloqueado por el legado v1", ()
+    errores = list(getattr(res, "errors", []) or [])
+    if errores:
+        return "fallo", f"el pull devolvio errores: {errores}", ()
+    fallidos = int(getattr(res, "documents_failed", 0) or 0)
+    if fallidos:
+        return ("hecha", f"pull con {fallidos} documento(s) fallido(s)",
+                (av1.Pendiente(
+                    codigo="crm_documentos_fallidos",
+                    detalle=f"{fallidos} documento(s) del gestor documental no se "
+                            f"descargaron: `00_Input/05_CRM` esta incompleto."),))
+    if int(getattr(res, "documents_total_crm", 0) or 0) == 0:
+        # Vacio CONFIRMADO, que no es lo mismo que un error: el CRM contesto y no hay nada.
+        return ("saltada", "el gestor documental del expediente esta vacio",
+                (av1.Pendiente(
+                    codigo="crm_gestor_vacio",
+                    detalle="El expediente existe en el CRM y su gestor documental no "
+                            "tiene documentos. No es un fallo; es que no hay nada."),))
+    return "hecha", f"{getattr(res, 'documents_written', 0)} documento(s) escritos", ()
+
+
+def etapa_crm(ident, case_dir: Path, *, leer_meta=None, pull=None):
+    """Etapa 2 de V1: pull del expediente CRM ya registrado.
+
+    **El `element` sale del `ExpedienteLink`, pertenece al vocabulario cerrado, y la rama
+    judicial aborta.** El criterio 38 pide los dos cruces: el obvio —que un caso judicial
+    no entre por la via extrajudicial— y el que produce el default de
+    `core/sync_sudespacho.py:1356`, que es el inverso y el que nadie prueba.
+    """
+    from core import sync_sudespacho
+
+    _leer = leer_meta or case_locator.read_case_meta
+    _pull = pull or sync_sudespacho.pull_expediente_v2
+
+    try:
+        meta = _leer(case_dir)
+    except Exception as exc:  # noqa: BLE001
+        return av1.EtapaResultado(nombre="crm", estado="fallo",
+                                  detalle=f"no se pudo leer _caso.md: {exc}")
+
+    links = list(meta.get("sudespacho_expedientes") or [])
+    if not links:
+        return av1.EtapaResultado(
+            nombre="crm", estado="saltada",
+            detalle="sin expediente CRM registrado en _caso.md",
+            pendientes=(av1.Pendiente(
+                codigo="crm_sin_expediente",
+                detalle="El caso no tiene expediente CRM vinculado, asi que no hay nada "
+                        "que pullar. El alta CRM es de V2."),))
+
+    # Las tres puertas de la rama se comprueban ANTES de pullar nada: con dos expedientes
+    # vinculados, descubrir el segundo invalido a mitad dejaria el primero ya escrito.
+    for link in links:
+        el = link.get("element")
+        if not el:
+            return av1.EtapaResultado(
+                nombre="crm", estado="fallo",
+                detalle=f"el expediente {link.get('id')!r} no declara `element` en "
+                        f"_caso.md. No se adivina: el default del pull es judicial.")
+        if el not in ELEMENTS_CRM:
+            return av1.EtapaResultado(
+                nombre="crm", estado="fallo",
+                detalle=f"`element` fuera del vocabulario: {el!r}; validos: "
+                        f"{sorted(ELEMENTS_CRM)}")
+        if el == _ELEMENT_JUDICIAL:
+            return av1.EtapaResultado(
+                nombre="crm", estado="fallo",
+                detalle=f"el expediente {link.get('id')!r} es de la rama judicial, que "
+                        f"sigue bloqueada: V1 no tiene adaptador judicial verificado.")
+
+    hechos, pendientes, vacios = [], [], 0
+    for link in links:
+        try:
+            res = _pull(ident.case_id, str(link["id"]), element=link["element"])
+        except Exception as exc:  # noqa: BLE001
+            return av1.EtapaResultado(
+                nombre="crm", estado="fallo",
+                detalle=f"pull de {link['id']} fallo: {type(exc).__name__}: {exc}")
+        estado, detalle, pend = traducir_pull_crm(res)
+        if estado == "fallo":
+            return av1.EtapaResultado(nombre="crm", estado="fallo",
+                                      detalle=f"{link['id']}: {detalle}")
+        if estado == "saltada":
+            vacios += 1
+        hechos.append(f"{link['id']} ({detalle})")
+        pendientes.extend(pend)
+
+    # `saltada` solo si TODOS lo fueron: un expediente vacio junto a otro con documentos
+    # es una etapa hecha.
+    estado = "saltada" if vacios == len(links) else "hecha"
+    return av1.EtapaResultado(nombre="crm", estado=estado,
+                              detalle="; ".join(hechos), pendientes=tuple(pendientes))
+
+
 def _alta_crm(
     ident: "brain.Identidad",
     *,
