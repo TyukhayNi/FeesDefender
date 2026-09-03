@@ -839,15 +839,6 @@ def main(
         typer.echo(f"[ERROR] Fuente desconocida: {fuente}. Válidas: {_FUENTES_CLI}", err=True)
         raise typer.Exit(code=1)
 
-    # `MEJORAS #142`: la validacion de flags se adelanta AQUI, antes de resolver identidad
-    # y antes de adquirir el mutex. Fallar por un flag mal puesto no necesita el lock, y
-    # hacerlo dentro dejaba un `typer.Exit` bajo exclusion — que es el defecto entero.
-    try:
-        _validar_flags(fuente, folder_id=folder_id, team_id=team_id, src=src, rol=rol,
-                       cuenta=cuenta, label=label)
-    except AbortarApertura as exc:
-        raise typer.Exit(code=exc.codigo) from exc
-
     # 5.1 identidad — dos vías excluyentes: --case-id (intake incremental) o los 6 flags.
     flags_ident = [
         ("--w-code", w_code), ("--ciudad", ciudad), ("--tipo-caso", tipo_caso),
@@ -958,6 +949,21 @@ def main(
     # `case_mutex.tomado` LANZA `MutexPerdido` si el bloque sale limpio y solo lo ANOTA si
     # hay una excepcion en vuelo. Un `typer.Exit` dentro del `with` convertiria una perdida
     # de exclusion en una salida 0 con el aviso enterrado en una nota del traceback.
+    # `MEJORAS #142`: la validacion de flags corre AQUI — fuera del mutex, porque fallar
+    # por un flag mal puesto no necesita el lock adquirido y hacerlo dentro dejaba un
+    # `typer.Exit` bajo exclusion, que es el defecto entero.
+    #
+    # **Y despues de resolver identidad, no antes.** Adelantarla del todo cambiaba el
+    # diagnostico que ve el operador: con `--fuente manual` y sin flags de identidad, antes
+    # decia «faltan los seis flags de identidad» y pasaba a decir solo «falta --src», que
+    # es el problema menos fundamental de los dos. Lo midio la ronda de este diff (HD-04):
+    # sacar la validacion del lock no autorizaba a reordenar lo que el operador lee.
+    try:
+        _validar_flags(fuente, folder_id=folder_id, team_id=team_id, src=src, rol=rol,
+                       cuenta=cuenta, label=label)
+    except AbortarApertura as exc:
+        raise typer.Exit(code=exc.codigo) from exc
+
     resultado_v1 = None
     salida_dry_run = False
     try:
