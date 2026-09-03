@@ -6381,3 +6381,47 @@ esto porque la frontera no existe todavía.
 resuelva—, o el primer informe de viabilidad que se redacte sobre un expediente cuyo estado decía
 «preparado» con documental sin procesar. Es barato: el dato ya está calculado.
 
+---
+
+## 145. `test_case_mutex` falla ~1 de cada 3 corridas por una carrera en su desmontaje
+
+**Medido el 2026-09-03**, cerrando `MEJORAS #144`. En la suite completa con semilla `31337`:
+
+```
+PermissionError: [Errno 13] Permission denied: 'C:	\q2	est_RENUEVA_mientras_el_cuerp0\locks\W-MUTEX1.lock'
+MutexIlegible: [MUTEX_ILEGIBLE] — el mutex del caso existe y no se puede interpretar — caso W-MUTEX1
+FAILED tests/test_case_mutex.py::TestElGestorRenueva::test_RENUEVA_mientras_el_cuerpo_corre
+```
+
+**Qué se midió, y descarta las dos explicaciones fáciles:**
+
+- **No es dependencia de orden.** La misma semilla `31337`, sobre el mismo árbol, dos repeticiones
+  más: **verde las dos, 0 fallos**. El orden lo fija la semilla; si el resultado cambia, la causa es
+  de **tiempos**.
+- **No es el test.** `tests/test_case_mutex.py` **solo**, con esa misma semilla: 44 verdes.
+
+**Hipótesis, y está SIN VERIFICAR:** el hilo de latido (`heartbeat`) de una sesión de mutex sigue
+teniendo abierto el `.lock` cuando pytest intenta limpiar su `tmp_path`. En Windows un fichero
+abierto no se puede borrar, y el `PermissionError` sale del `filelock`/`msvcrt.locking` que
+`case_mutex` usa por diseño. El `join(timeout=5)` del `finally` puede vencer sin que el hilo haya
+soltado el descriptor.
+
+**Alcance: es higiene de TEST, no de producción.** En producción el fichero de lock *debe* seguir
+existiendo mientras alguien lo sostiene; lo que aquí molesta es que el desmontaje del test no puede
+borrar su directorio temporal.
+
+**Por qué importa igual:** la regla de este repo es correr **dos semillas** antes de cerrar. Un test
+que falla una de cada tres corridas hace que esa regla dé rojos que no significan nada, y un rojo
+que no significa nada enseña a ignorar los rojos.
+
+**Remedio probable:** esperar a que el hilo de latido termine de verdad antes de salir del gestor en
+el camino de test (o que el `finally` cierre el descriptor explícitamente en vez de fiarlo al GC), y
+un `tmp_path` con reintento de borrado en Windows.
+
+**Lo que NO se hace aquí, y por qué:** `core/casos/case_mutex.py` tiene cuatro rondas de revisión y
+diecisiete mutantes, y el Plan 5 lo declara intocable — editarlo es reabrirlas. Esta entrada existe
+para que quien lo abra con un motivo lo arregle entonces, con su presupuesto de rondas.
+
+**Disparador de promoción.** El siguiente rojo de este test en un cierre, o cualquier trabajo que ya
+tenga que abrir `case_mutex.py` por otra razón.
+
