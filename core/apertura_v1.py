@@ -86,6 +86,8 @@ class ResultadoV1:
     etapas: tuple[EtapaResultado, ...]
     pendientes: tuple[Pendiente, ...]
     parada: str | None
+    #: Etapas que NO llegaron a correr, por parada pedida o por un fallo anterior.
+    no_ejecutadas: tuple[str, ...] = ()
 
 
 def secuenciar(etapas: Sequence[Etapa], *, hasta: str | None = None) -> ResultadoV1:
@@ -115,9 +117,20 @@ def secuenciar(etapas: Sequence[Etapa], *, hasta: str | None = None) -> Resultad
             parada = etapa.nombre
             break
 
+    corridas = {r.nombre for r in hechas}
+    no_ejecutadas = tuple(e.nombre for e in etapas if e.nombre not in corridas)
+    # Una fase que no corrio es un PENDIENTE, no un silencio: sin esto, una parada pedida
+    # produciria un `preparado_con_pendientes` indistinguible de una corrida completa, y
+    # el evento diria «terminada» sobre media secuencia.
+    pendientes.extend(
+        Pendiente(codigo=f"etapa_no_ejecutada:{n}",
+                  detalle=f"La etapa {n!r} no se ejecuto en esta ronda.")
+        for n in no_ejecutadas)
+
     return ResultadoV1(
         estado=estado_de(pendientes, hubo_fallo=hubo_fallo),
         etapas=tuple(hechas),
         pendientes=tuple(pendientes),
         parada=parada,
+        no_ejecutadas=no_ejecutadas,
     )

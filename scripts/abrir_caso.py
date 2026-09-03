@@ -46,6 +46,9 @@ app = typer.Typer(add_completion=False, help="Abrir un expediente E&V en una pas
 
 _ELEMENT_EXTRAJUDICIAL = "extrajudiciales"
 
+#: Nombres de las etapas de V1, en orden. Es tambien el vocabulario de `--hasta`.
+ETAPAS_V1 = ("drive", "crm", "sala_maquina")
+
 
 def hash_tree_local(root: Path, *, prefijo: str) -> dict[str, str]:
     """SHA-256 recursivo de todos los ficheros bajo root.
@@ -544,6 +547,58 @@ def registrar_cierre_v1(case_dir: Path, ident, resultado) -> None:
     )
 
 
+def codigo_de_salida(estado: str) -> int:
+    """`bloqueado` sale distinto de 0: quien invoque la secuencia tiene que poder
+    distinguir «termino con pendientes» de «no termino»."""
+    return 1 if estado == av1.EstadoV1.BLOQUEADO else 0
+
+
+def traducir_fallo_de_mutex(fn):
+    """Corre `fn`; devuelve `(None, valor)` o `(BLOQUEADO, detalle)` si falla la exclusion.
+
+    `CaseBusy` y `MutexPerdido` no son trazas que mostrar: son uno de los tres estados del
+    §13. Dejarlos propagar deja la corrida sin estado y al operador con un stacktrace.
+    """
+    from core.casos.workspace_model import CaseBusy, MutexPerdido
+    try:
+        return None, fn()
+    except (CaseBusy, MutexPerdido) as exc:
+        return av1.EstadoV1.BLOQUEADO, str(exc)
+
+
+def secuencia_v1(ident, case_dir, *, folder_id, team_id, hasta=None, etapas=None):
+    """El orden completo de V1 (spec §24 D3): Drive -> CRM -> sala de maquina.
+
+    La atomizacion del correo depositado va DENTRO de la tercera, que es donde el cableado
+    de 2026-07-27 la puso; por eso el gotcha del runbook —atomizar y pull antes del OCR—
+    se cumple por construccion y no por memoria del operador.
+
+    `etapas` es el punto de inyeccion de los tests. En produccion se construyen aqui.
+    """
+    if etapas is None:
+        etapas = [
+            av1.Etapa("drive", lambda: etapa_drive(
+                ident, case_dir, folder_id=folder_id, team_id=team_id)),
+            av1.Etapa("crm", lambda: etapa_crm(ident, case_dir)),
+            av1.Etapa("sala_maquina", lambda: etapa_sala_maquina(ident)),
+        ]
+    return av1.secuenciar(etapas, hasta=hasta)
+
+
+def _informar_v1(resultado) -> None:
+    """El informe en pantalla. Lo durable es el evento; esto es para el operador."""
+    typer.echo("")
+    typer.echo(f"=== Apertura V1: {resultado.estado} ===")
+    for e in resultado.etapas:
+        typer.echo(f"  [{e.estado:>7}] {e.nombre}: {e.detalle}")
+    for n in resultado.no_ejecutadas:
+        typer.echo(f"  [no corre] {n}")
+    if resultado.parada:
+        typer.echo(f"  (parada pedida tras la etapa {resultado.parada!r})")
+    for p in resultado.pendientes:
+        typer.echo(f"  PENDIENTE {p.codigo}: {p.detalle}")
+
+
 def _alta_crm(
     ident: "brain.Identidad",
     *,
@@ -643,6 +698,7 @@ def validar_modo(
     dry_run: bool = False,
     folder_id: str | None = None,
     case_id: str | None = None,
+    hasta: str | None = None,
 ) -> list[str]:
     """Errores que impiden ejecutar en `modo`. Lista vacía = admisible.
 
@@ -657,8 +713,17 @@ def validar_modo(
     if modo not in _MODOS:
         return [f"Modo desconocido: {modo!r}. Válidos: {_MODOS}"]
     if modo == "libre":
+        if hasta is not None:
+            return ["--hasta solo existe en --modo v1: en `libre` no hay secuencia que "
+                    "parar, y aceptarlo en silencio fingiria haberla parado."]
         return []
     errores: list[str] = []
+    # HA-06 de la R-A. El vocabulario se valida AQUI y no dentro de `secuenciar`, que
+    # corre despues de la identidad, del mutex y de `ensure_case`: en la rev. 1 un typo
+    # abortaba con el esqueleto del caso ya creado.
+    if hasta is not None and hasta not in ETAPAS_V1:
+        errores.append(
+            f"--hasta {hasta!r} no es una etapa de V1; validas: {list(ETAPAS_V1)}")
     if crm != "skip":
         errores.append(
             f"--modo v1 no escribe en el CRM: exige --crm skip (recibido: {crm!r}). "
@@ -726,6 +791,10 @@ def main(
         "libre", "--modo",
         help="libre|v1. `v1` es el discriminante de la primera vertical (spec §24 D3): "
              "exige --crm skip y --fuente drive_ev, y valida antes de cualquier efecto."),
+    hasta: str | None = typer.Option(
+        None, "--hasta",
+        help="v1: para DESPUES de esta etapa (drive|crm|sala_maquina). Reanudar es "
+             "volver a lanzar la misma orden: lo hecho se salta solo."),
     src: str | None = typer.Option(None, "--src", help="manual/whatsapp: carpeta o .zip"),
     rol: str | None = typer.Option(None, "--rol", help="whatsapp: rol_subdir"),
     cuenta: str | None = typer.Option(None, "--cuenta", help="email: cuenta gmail"),
@@ -746,6 +815,7 @@ def main(
     errores_modo = validar_modo(
         modo, crm=crm, fuente=fuente,
         force=force, dry_run=dry_run, folder_id=folder_id, case_id=case_id,
+        hasta=hasta,
     )
     if errores_modo:
         for e in errores_modo:
@@ -860,35 +930,58 @@ def main(
     #
     # El reloj va con offset EXPLÍCITO: `case_mutex` rechaza un instante naïve a
     # propósito, y `now_iso` —el mayoritario del repo, 43 usos frente a 5— lo es.
-    with mutex_sesion.sostenido(CaseRef(w_code=ident.w_code) if ident.w_code
-                                else CaseRef(case_id=ident.case_id),
-                                ahora_fn=now_iso_utc):
-        # 5.2 esqueleto (idempotente; con --case-id el caso ya existe)
-        case_manager.ensure_case(
-            ident.case_id, titulo=ident.case_id, referencia_crm=ident.case_id,
-            tipo_caso=ident.tipo_caso, ciudad=ciudad, direccion=ident.direccion,
-            id_go=ident.w_code, modo=modo,
-        )
-        # `localizar` y no `path_for`: el esqueleto acaba de crearse, así que el caso DEBE
-        # existir y su ausencia es un fallo, no un valor. Es lo que la clasificación firmada
-        # del Task 6 decía para este sitio, y quedó como cabo suelto del 65º cierre; el
-        # comportamiento no cambia —`path_for` ya es estricto por defecto— pero el nombre
-        # ahora dice qué se espera, que es justo lo que un flag no permite auditar.
-        case_dir = case_locator.localizar(ident.case_id)
+    from core.casos.workspace_model import CaseBusy, MutexPerdido
 
-        # 5.3-5.7 intake por fuente
-        _despachar_intake(
-            fuente, ident, case_dir,
-            folder_id=folder_id, team_id=team_id, src=src, rol=rol,
-            cuenta=cuenta, label=label, dry_run=dry_run,
-            extraer_adjuntos=extraer_adjuntos,
-        )
-        if dry_run:
-            typer.echo(
-                f"[dry-run] esqueleto en {case_dir}; se omiten log de intake y alta CRM")
-            raise typer.Exit(code=0)
+    # `resultado_v1` se calcula DENTRO del bloque y se consume FUERA (HA-07 de la R-A):
+    # `case_mutex.tomado` LANZA `MutexPerdido` si el bloque sale limpio y solo lo ANOTA si
+    # hay una excepcion en vuelo. Un `typer.Exit` dentro del `with` convertiria una perdida
+    # de exclusion en una salida 0 con el aviso enterrado en una nota del traceback.
+    resultado_v1 = None
+    try:
+        with mutex_sesion.sostenido(CaseRef(w_code=ident.w_code) if ident.w_code
+                                    else CaseRef(case_id=ident.case_id),
+                                    ahora_fn=now_iso_utc):
+            # 5.2 esqueleto (idempotente; con --case-id el caso ya existe)
+            case_manager.ensure_case(
+                ident.case_id, titulo=ident.case_id, referencia_crm=ident.case_id,
+                tipo_caso=ident.tipo_caso, ciudad=ciudad, direccion=ident.direccion,
+                id_go=ident.w_code, modo=modo,
+            )
+            # `localizar` y no `path_for`: el esqueleto acaba de crearse, así que el caso DEBE
+            # existir y su ausencia es un fallo, no un valor. Es lo que la clasificación firmada
+            # del Task 6 decía para este sitio, y quedó como cabo suelto del 65º cierre; el
+            # comportamiento no cambia —`path_for` ya es estricto por defecto— pero el nombre
+            # ahora dice qué se espera, que es justo lo que un flag no permite auditar.
+            case_dir = case_locator.localizar(ident.case_id)
 
-        _alta_crm(ident, cuantia=cuantia, crm_mode=crm, yes=yes)
+            if modo == "v1":
+                resultado_v1 = secuencia_v1(ident, case_dir, folder_id=folder_id,
+                                            team_id=team_id, hasta=hasta)
+                registrar_cierre_v1(case_dir, ident, resultado_v1)
+            else:
+                # 5.3-5.7 intake por fuente
+                _despachar_intake(
+                    fuente, ident, case_dir,
+                    folder_id=folder_id, team_id=team_id, src=src, rol=rol,
+                    cuenta=cuenta, label=label, dry_run=dry_run,
+                    extraer_adjuntos=extraer_adjuntos,
+                )
+                if dry_run:
+                    # Este `Exit` SI esta dentro del bloque y tiene el defecto de HA-07.
+                    # Queda fuera del alcance del Plan 5 a proposito: `MEJORAS #142`.
+                    typer.echo(
+                        f"[dry-run] esqueleto en {case_dir}; se omiten log de intake y alta CRM")
+                    raise typer.Exit(code=0)
+
+                _alta_crm(ident, cuantia=cuantia, crm_mode=crm, yes=yes)
+    except (CaseBusy, MutexPerdido) as exc:
+        typer.echo(f"=== Apertura: {av1.EstadoV1.BLOQUEADO} ===", err=True)
+        typer.echo(f"  exclusion: {exc}", err=True)
+        raise typer.Exit(code=codigo_de_salida(av1.EstadoV1.BLOQUEADO))
+
+    if resultado_v1 is not None:
+        _informar_v1(resultado_v1)
+        raise typer.Exit(code=codigo_de_salida(resultado_v1.estado))
 
     typer.echo(f"OK Caso abierto: {ident.case_id}")
 
