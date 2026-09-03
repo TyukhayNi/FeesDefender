@@ -27,12 +27,21 @@ SUITE = ("tests/test_apertura_v1_secuenciador.py",
          "tests/test_apertura_v1_etapas.py",
          "tests/test_apertura_v1_cableado.py",
          "tests/test_apertura_v1_estado.py",
-         "tests/test_apertura_v1_e2e.py")
+         "tests/test_apertura_v1_e2e.py",
+         # Añadidos tras la R-B (L6-15): la version anterior EXCLUIA justo los ficheros
+         # donde vive el cableado a `main` y las costuras, asi que medía el interior de
+         # las piezas y no lo que las une.
+         "tests/test_apertura_v1_costuras.py",
+         "tests/test_apertura_v1_control_files.py",
+         "tests/test_abrir_caso_modo_v1.py")
 
 SEC = "tests/test_apertura_v1_secuenciador.py"
 ETA = "tests/test_apertura_v1_etapas.py"
 CAB = "tests/test_apertura_v1_cableado.py"
 EST = "tests/test_apertura_v1_estado.py"
+COS = "tests/test_apertura_v1_costuras.py"
+CTL = "tests/test_apertura_v1_control_files.py"
+MV1 = "tests/test_abrir_caso_modo_v1.py"
 E2E = "tests/test_apertura_v1_e2e.py"
 
 AV1 = "core/apertura_v1.py"
@@ -207,17 +216,52 @@ MUTANTES: list[tuple[str, str, str, str, set[str]]] = [
      "                raise typer.Exit(code=0)",
      {f"{CAB}::test_f25_la_rama_v1_no_sale_del_proceso_dentro_del_bloque_de_mutex"}),
 
-    ("F26", CLI,
-     "    except (CaseBusy, MutexPerdido) as exc:\n"
-     "        return av1.EstadoV1.BLOQUEADO, str(exc)",
-     "    except (CaseBusy, MutexPerdido):\n        raise",
-     {f"{CAB}::test_f26_case_busy_se_traduce_a_bloqueado_y_no_a_una_traza"}),
-
     ("F27", EST_MOD,
      "        os.replace(tmp, f)",
      '        f.write_text(cuerpo, encoding="utf-8")',
      {f"{EST}::test_f27_la_escritura_es_atomica_y_lleva_id_de_ronda",
       f"{EST}::test_no_queda_temporal_tras_una_escritura_correcta"}),
+
+    # --- Fronteras cerradas en la remediacion de la R-B -----------------------
+    ("F29-costura-apply", CLI,
+     "        return sala_maquina.apply(case_id=ident.case_id)",
+     "        sala_maquina.apply(case_id=ident.case_id)
+        return None",
+     {f"{COS}::test_costura_el_status_de_apply_llega_por_el_camino_POR_DEFECTO[parcial-hecha]",
+      f"{COS}::test_costura_el_status_de_apply_llega_por_el_camino_POR_DEFECTO[fallo-fallo]"}),
+
+    ("F30-costura-force", CLI,
+     "        res = intake_drive.pull_drive_ev(ident.case_id, folder_id, team_id, force=force)",
+     "        res = intake_drive.pull_drive_ev(ident.case_id, folder_id, team_id)",
+     {f"{COS}::test_costura_la_custodia_REENVIA_force_a_quien_lo_consume"}),
+
+    ("F31-costura-retorno", CLI,
+     "    # Lo devuelve para que el secuenciador de V1 pueda informar sin rodear esta",
+     "    return None
+    # Lo devuelve para que el secuenciador de V1 pueda informar sin rodear esta",
+     {f"{COS}::test_costura_la_custodia_REENVIA_force_a_quien_lo_consume"}),
+
+    ("F32-costura-hasta", CLI,
+     "                resultado_v1 = secuencia_v1(ident, case_dir, folder_id=folder_id,
+"
+     "                                            team_id=team_id, hasta=hasta)",
+     "                resultado_v1 = secuencia_v1(ident, case_dir, folder_id=folder_id,
+"
+     "                                            team_id=team_id, hasta=None)",
+     {f"{COS}::test_costura_main_PASA_el_hasta_a_la_secuencia"}),
+
+    ("F33-productor-vacio", "core/sync_sudespacho.py",
+     "    return all(e.startswith(_AVISO_GESTOR_VACIO) for e in errores)",
+     "    return False",
+     {f"{ETA}::test_el_gestor_vacio_lo_clasifica_el_PRODUCTOR_real_y_no_una_cadena_mia",
+      f"{ETA}::test_f17_f20_el_resultado_del_pull_gobierna_la_etapa[kw3-saltada-crm_gestor_vacio]"}),
+
+    ("F34-control-registro", "core/config.py",
+     '    "_apertura_v1.json",
+})',
+     "})",
+     {f"{CTL}::test_esta_en_el_registro_canonico_de_control[_apertura_v1.json]",
+      f"{CTL}::test_el_inventario_de_la_sala_de_maquina_no_lo_toma_por_documento[_apertura_v1.json]"}),
 
     ("F28", EST_MOD,
      "    def sin_cerrar(self) -> bool:\n        return self.terminada is None",

@@ -28,6 +28,7 @@ from core import pdf_paginas
 from core.utils import file_sha256, now_iso, output_slug, text_sha256, write_md
 from core import split_documental as split
 from core.intake_log import append_event
+from core import config
 
 _EXTS_IMAGEN = {".jpg", ".jpeg", ".png", ".tiff", ".tif", ".heic", ".heif", ".webp", ".bmp", ".gif"}
 _EXTS_NATIVO = {".eml", ".txt", ".md", ".rtf", ".ics", ".csv", ".xlsx", ".xls", ".docx", ".html", ".htm"}
@@ -1170,7 +1171,21 @@ def ejecutar(case_dir: Path, docs: list[DocPlan], *, case_id: str,
     return cobertura
 
 
-_IGNORAR = {"_intake_log.jsonl", "_inventory.json", ".pulled", ".synced"}
+# Derivado del registro CANONICO (`config.INTAKE_CONTROL_FILES`) y no duplicado: esta
+# lista era una copia que se quedo corta cuando el registro crecio, y por ese hueco un
+# fichero de control nuevo entro en el inventario probatorio (R-B del Plan 5). El
+# `_intake_log.jsonl` se suma porque es forense y no vive en el registro de intake.
+_IGNORAR = set(config.INTAKE_CONTROL_FILES) | {"_intake_log.jsonl"}
+
+
+def _es_control(nombre: str) -> bool:
+    """True si el fichero es de protocolo y NO documento del caso.
+
+    Cubre los temporales de escritura atomica: un huerfano de `mkstemp` no puede acabar
+    en el inventario de prueba solo porque el proceso muriera en mal momento.
+    """
+    return (nombre in _IGNORAR
+            or any(nombre.startswith(pre) for pre in config.INTAKE_CONTROL_PREFIXES))
 
 
 def inventariar(case_dir: Path) -> list[dict]:
@@ -1210,7 +1225,7 @@ def inventariar_cacheado(case_dir: Path,
     out: list[dict] = []
     nueva: dict[str, list] = {}
     for p in sorted(root.rglob("*")):
-        if not p.is_file() or p.name in _IGNORAR:
+        if not p.is_file() or _es_control(p.name):
             continue
         rel = p.relative_to(root).as_posix()
         try:

@@ -28,7 +28,14 @@ _NOTAS = {"90_notas personales", "90_notas_personales"}
 _INPUT = "00_input"
 
 # Carve-out de protocolo bajo 00_Input (espeja core.config.MERGE_EXCLUSIONS)
-PROTOCOL_EDIT: tuple[str, ...] = ("_caso.md", "MANIFEST_CHECKOUT.json")
+PROTOCOL_EDIT: tuple[str, ...] = (
+    "_caso.md", "MANIFEST_CHECKOUT.json",
+    # Estado durable por ronda de la apertura V1 (Plan 5) y el temporal de su
+    # escritura atomica: los dos se reescriben en `00_Input` y ninguno es documento
+    # del caso. El guard `test_carveout_espeja_merge_exclusions` exige el espejo con
+    # `core.config.MERGE_EXCLUSIONS`, y fue quien cazo el olvido.
+    "_apertura_v1.json", ".apertura_v1.*.tmp",
+)
 PROTOCOL_APPEND: tuple[str, ...] = ("_intake_log.jsonl", "AUDITLOG_MERGE_*.jsonl")
 
 

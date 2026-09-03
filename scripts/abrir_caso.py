@@ -383,32 +383,36 @@ ELEMENTS_CRM = frozenset({_ELEMENT_EXTRAJUDICIAL, _ELEMENT_JUDICIAL})
 
 
 def traducir_pull_crm(res) -> tuple[str, str, tuple]:
-    """`PullResultV2` -> (estado, detalle, pendientes). Tabla completa, una rama por linea.
+    """`PullResultV2` -> (estado, detalle, pendientes). Tres ramas, las tres alcanzables.
 
-    Existe como funcion aparte para que cada rama se pueda mutar por separado: el defecto
-    que remedia (HA-04) era leer la AUSENCIA DE EXCEPCION como exito, y `pull_expediente_v2`
-    no lanza casi nunca — lo dice todo por retorno. `CLAUDE.md` §14.6: «verificar por
-    resultado, nunca por status».
+    **Reescrita tras la R-B, y la leccion es el orden de las preguntas.** La version
+    anterior leia `errors` primero y lo trataba como fatal. Pero el PRODUCTOR
+    (`core/sync_sudespacho.pull_expediente_v2`) mete en `errors` el aviso de un gestor
+    documental **vacio** —que no es un error— y ademas incrementa `documents_failed` en el
+    mismo bloque que su `errors.append`. Resultado medido: las ramas de «vacio confirmado»
+    y «documentos fallidos» eran INALCANZABLES, y un expediente sin documentos dejaba V1
+    `bloqueado` sin correr el OCR.
+
+    **Quien clasifica es el productor**, via `sync_sudespacho.es_gestor_vacio`: la forma en
+    que codifica «vacio» es suya, y replicarla aqui la duplicaria.
+
+    **Y un cambio de criterio propio:** unos documentos que no se descargan dejan el espejo
+    del CRM incompleto. La version anterior seguia con un pendiente; para prueba documental
+    de un litigio eso es peor que parar, asi que ahora **bloquea** y el operador re-corre.
     """
+    from core import sync_sudespacho
+
     if getattr(res, "blocked_legacy_v1", False):
         return "fallo", "el expediente esta bloqueado por el legado v1", ()
-    errores = list(getattr(res, "errors", []) or [])
-    if errores:
-        return "fallo", f"el pull devolvio errores: {errores}", ()
-    fallidos = int(getattr(res, "documents_failed", 0) or 0)
-    if fallidos:
-        return ("hecha", f"pull con {fallidos} documento(s) fallido(s)",
-                (av1.Pendiente(
-                    codigo="crm_documentos_fallidos",
-                    detalle=f"{fallidos} documento(s) del gestor documental no se "
-                            f"descargaron: `00_Input/05_CRM` esta incompleto."),))
-    if int(getattr(res, "documents_total_crm", 0) or 0) == 0:
-        # Vacio CONFIRMADO, que no es lo mismo que un error: el CRM contesto y no hay nada.
+    if sync_sudespacho.es_gestor_vacio(res):
         return ("saltada", "el gestor documental del expediente esta vacio",
                 (av1.Pendiente(
                     codigo="crm_gestor_vacio",
                     detalle="El expediente existe en el CRM y su gestor documental no "
                             "tiene documentos. No es un fallo; es que no hay nada."),))
+    errores = list(getattr(res, "errors", []) or [])
+    if errores:
+        return "fallo", f"el pull devolvio errores: {errores}", ()
     return "hecha", f"{getattr(res, 'documents_written', 0)} documento(s) escritos", ()
 
 
@@ -552,19 +556,6 @@ def codigo_de_salida(estado: str) -> int:
     """`bloqueado` sale distinto de 0: quien invoque la secuencia tiene que poder
     distinguir «termino con pendientes» de «no termino»."""
     return 1 if estado == av1.EstadoV1.BLOQUEADO else 0
-
-
-def traducir_fallo_de_mutex(fn):
-    """Corre `fn`; devuelve `(None, valor)` o `(BLOQUEADO, detalle)` si falla la exclusion.
-
-    `CaseBusy` y `MutexPerdido` no son trazas que mostrar: son uno de los tres estados del
-    §13. Dejarlos propagar deja la corrida sin estado y al operador con un stacktrace.
-    """
-    from core.casos.workspace_model import CaseBusy, MutexPerdido
-    try:
-        return None, fn()
-    except (CaseBusy, MutexPerdido) as exc:
-        return av1.EstadoV1.BLOQUEADO, str(exc)
 
 
 def secuencia_v1(ident, case_dir, *, folder_id, team_id, hasta=None, etapas=None):
@@ -794,8 +785,9 @@ def main(
              "exige --crm skip y --fuente drive_ev, y valida antes de cualquier efecto."),
     hasta: str | None = typer.Option(
         None, "--hasta",
-        help="v1: para DESPUES de esta etapa (drive|crm|sala_maquina). Reanudar es "
-             "volver a lanzar la misma orden: lo hecho se salta solo."),
+        help="v1: para DESPUES de esta etapa (drive|crm|sala_maquina). Para reanudar, "
+             "relanza con --case-id (los 6 flags de identidad darian ColisionCaso): las "
+             "etapas ya hechas se saltan solas."),
     src: str | None = typer.Option(None, "--src", help="manual/whatsapp: carpeta o .zip"),
     rol: str | None = typer.Option(None, "--rol", help="whatsapp: rol_subdir"),
     cuenta: str | None = typer.Option(None, "--cuenta", help="email: cuenta gmail"),
@@ -964,15 +956,11 @@ def main(
                         f"[AVISO] la ronda {previa.ronda_id!r} (iniciada "
                         f"{previa.iniciada}) no llego a cerrarse: esta corrida no da por "
                         f"buena su salida.", err=True)
-                ronda = estado_v1.abrir(case_dir, ronda_id=now_iso_utc(),
-                                        ahora=now_iso_utc())
+                # Un solo reloj: `ronda_id` e `iniciada` eran dos lecturas y divergian.
+                arranque = now_iso_utc()
+                ronda = estado_v1.abrir(case_dir, ronda_id=arranque, ahora=arranque)
                 resultado_v1 = secuencia_v1(ident, case_dir, folder_id=folder_id,
                                             team_id=team_id, hasta=hasta)
-                estado_v1.cerrar(
-                    case_dir, ronda, estado=resultado_v1.estado,
-                    etapas={e.nombre: e.estado for e in resultado_v1.etapas},
-                    ahora=now_iso_utc())
-                registrar_cierre_v1(case_dir, ident, resultado_v1)
             else:
                 # 5.3-5.7 intake por fuente
                 _despachar_intake(
@@ -989,12 +977,34 @@ def main(
                     raise typer.Exit(code=0)
 
                 _alta_crm(ident, cuantia=cuantia, crm_mode=crm, yes=yes)
-    except (CaseBusy, MutexPerdido) as exc:
+    except CaseBusy as exc:
         typer.echo(f"=== Apertura: {av1.EstadoV1.BLOQUEADO} ===", err=True)
-        typer.echo(f"  exclusion: {exc}", err=True)
+        typer.echo(f"  otro proceso tiene este caso; espera y reintenta: {exc}", err=True)
+        raise typer.Exit(code=codigo_de_salida(av1.EstadoV1.BLOQUEADO))
+    except MutexPerdido as exc:
+        # NO es lo mismo que `CaseBusy` (R-B/L3-05): aqui puede haber trabajo a medias
+        # escrito sin exclusion, y el operador tiene que revisar antes de reintentar.
+        typer.echo(f"=== Apertura: {av1.EstadoV1.BLOQUEADO} ===", err=True)
+        typer.echo(f"  se PERDIO la exclusion durante la operacion: {exc}", err=True)
+        typer.echo("  puede haber trabajo a medias; revisa el caso antes de reintentar.",
+                   err=True)
         raise typer.Exit(code=codigo_de_salida(av1.EstadoV1.BLOQUEADO))
 
+    # El registro DURABLE se escribe aqui, fuera del bloque, y solo si el bloque salio
+    # limpio (R-B/L3-01, confirmado por cuatro lentes). Dentro, una perdida del lease se
+    # anota en vez de lanzarse, asi que el `.jsonl` y el `estado.json` quedaban afirmando
+    # un exito que la pantalla desmentia.
+    #
+    # **Y si se perdio la exclusion no se escribe NADA**, ni siquiera un `bloqueado`:
+    # escribir sin mutex es la violacion que el mutex existe para impedir. La ronda queda
+    # ABIERTA en disco, y la corrida siguiente la ve `sin_cerrar()` y avisa — que es lo
+    # que hace que ese aviso sea el mecanismo y no un adorno.
     if resultado_v1 is not None:
+        estado_v1.cerrar(
+            case_dir, ronda, estado=resultado_v1.estado,
+            etapas={e.nombre: e.estado for e in resultado_v1.etapas},
+            ahora=now_iso_utc())
+        registrar_cierre_v1(case_dir, ident, resultado_v1)
         _informar_v1(resultado_v1)
         raise typer.Exit(code=codigo_de_salida(resultado_v1.estado))
 

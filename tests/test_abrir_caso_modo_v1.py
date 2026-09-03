@@ -305,3 +305,43 @@ def test_v1_cero_llamadas_remotas_de_alta(casos_root, monkeypatch):
 
     assert res.exit_code == 1
     assert remotas == []
+
+
+@pytest.mark.parametrize("excepcion,esperado", [
+    ("CaseBusy", "otro proceso tiene este caso"),
+    ("MutexPerdido", "se PERDIO la exclusion"),
+])
+def test_la_exclusion_fallida_llega_al_OPERADOR(excepcion, esperado, casos_root,
+                                                monkeypatch):
+    """F26 reescrita tras la R-B, y la primera version de esta reescritura tambien estaba
+    mal: usaba `--case-id X`, que muere en la resolucion de identidad ANTES del mutex, asi
+    que pasaba con `exit_code != 0` por una razon que no era la suya.
+
+    Se conduce por la via de los 6 flags, que si llega al bloque, y se afirma el MENSAJE:
+    `CaseBusy` es «espera», `MutexPerdido` es «puede haber trabajo a medias». La version
+    anterior probaba un helper que produccion no llamaba.
+    """
+    import contextlib
+
+    from core.casos import mutex_sesion
+    from core.casos.workspace_model import CaseBusy, MutexPerdido
+
+    clase = {"CaseBusy": CaseBusy, "MutexPerdido": MutexPerdido}[excepcion]
+
+    @contextlib.contextmanager
+    def _revienta(*a, **k):
+        raise clase(w_code="W-000000", detalle="sonda")
+        yield  # pragma: no cover — inalcanzable; hace de esto un generador
+
+    monkeypatch.setattr(mutex_sesion, "sostenido", _revienta)
+    monkeypatch.setattr(cli, "secuencia_v1",
+                        lambda *a, **k: pytest.fail("no debe correr sin exclusion"))
+
+    res = runner.invoke(cli.app, [
+        "--modo", "v1", "--crm", "skip", *_IDENT,
+        "--folder-id", "FID", "--team-id", "TID",
+    ])
+
+    assert res.exit_code != 0, res.output
+    assert esperado in res.output, res.output
+    assert "bloqueado" in res.output

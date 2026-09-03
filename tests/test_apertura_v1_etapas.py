@@ -166,20 +166,55 @@ def test_f9_un_caso_sin_expediente_registrado_es_saltada_con_pendiente():
     assert [p.codigo for p in r.pendientes] == ["crm_sin_expediente"]
 
 
+_AVISO_VACIO = ("El Gestor Documental del expediente 648 está vacío "
+                "(o el elemento 'extrajudiciales' no es el correcto).")
+
+
 @pytest.mark.parametrize("kw,estado,codigo", [
+    # Error de listado, de cliente o de descarga: el espejo del CRM esta incompleto y en
+    # prueba documental eso BLOQUEA, no se anota como pendiente.
     ({"errors": ["list_gdocu_docs_rest: 500"]}, "fallo", None),
     ({"blocked_legacy_v1": True}, "fallo", None),
-    ({"documents_failed": 2}, "hecha", "crm_documentos_fallidos"),
-    ({"documents_total_crm": 0, "documents_written": 0}, "saltada", "crm_gestor_vacio"),
+    # Documentos fallidos: el productor los acompaña SIEMPRE de una entrada en `errors`
+    # (`core/sync_sudespacho.py:1546-1547`), asi que caen en la rama de error.
+    ({"documents_failed": 2, "errors": ["download doc 9: timeout"]}, "fallo", None),
+    # Vacio confirmado: el UNICO error es el aviso del gestor. No bloquea.
+    ({"documents_total_crm": 0, "documents_written": 0, "errors": [_AVISO_VACIO]},
+     "saltada", "crm_gestor_vacio"),
+    # Vacio + otro error encima: ya no se puede afirmar que el gestor contestara.
+    ({"documents_total_crm": 0, "errors": [_AVISO_VACIO, "update_pull_state: disco"]},
+     "fallo", None),
     ({}, "hecha", None),
 ])
 def test_f17_f20_el_resultado_del_pull_gobierna_la_etapa(kw, estado, codigo):
-    """HA-04. `pull_expediente_v2` NO lanza: lo dice todo por retorno. Leer solo la
-    ausencia de excepcion es incumplir «verificar por resultado, nunca por status»."""
+    """HA-04. `pull_expediente_v2` NO lanza: lo dice todo por retorno.
+
+    Los `kw` de este test estan tomados de lo que el PRODUCTOR produce de verdad, no de
+    lo que su dataclass admite. La version anterior fabricaba `documents_failed=2` sin
+    `errors` y `documents_total_crm=0` sin aviso — dos estados que produccion no puede
+    producir— y con eso dos ramas quedaban verdes siendo inalcanzables (R-B/L2-01).
+    """
     r = cli.etapa_crm(_IdentFalsa(), Path("."), leer_meta=lambda _d: _meta(),
                       pull=lambda *a, **k: _Res(**kw))
     assert r.estado == estado
     assert [p.codigo for p in r.pendientes] == ([codigo] if codigo else [])
+
+
+def test_el_gestor_vacio_lo_clasifica_el_PRODUCTOR_real_y_no_una_cadena_mia():
+    """La frontera de R-B/L2-01: quien sabe como se codifica «vacio» es quien lo escribe.
+
+    Este test NO fabrica el aviso: se lo pide al productor real construyendo su mismo
+    mensaje desde su propia constante. Si el mensaje cambia, este test y el predicado
+    caen juntos — que es lo que se quiere— en vez de que caiga una apertura en produccion.
+    """
+    from core import sync_sudespacho as ss
+
+    aviso = f"{ss._AVISO_GESTOR_VACIO} 648 está vacío (o el elemento 'x' no es correcto)."
+    assert ss.es_gestor_vacio(_Res(documents_total_crm=0, errors=[aviso])) is True
+    assert ss.es_gestor_vacio(_Res(errors=["list_gdocu_docs_rest: 500"])) is False
+    assert ss.es_gestor_vacio(_Res(errors=[])) is False
+    # Con otro error encima, no se puede afirmar que el gestor contestara.
+    assert ss.es_gestor_vacio(_Res(errors=[aviso, "download doc 9: timeout"])) is False
 
 
 def test_crm_que_revienta_es_fallo():

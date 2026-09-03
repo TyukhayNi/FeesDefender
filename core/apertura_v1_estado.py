@@ -19,6 +19,14 @@ from pathlib import Path
 
 _FICHERO = "_apertura_v1.json"
 
+#: Lo que este modulo deposita en `00_Input` y que **no es documento del caso**. Se
+#: declara aqui, junto a quien lo escribe, para que el guard
+#: `tests/test_apertura_v1_control_files.py` lo compruebe contra TODOS los registros que
+#: clasifican ficheros de esa carpeta. La R-B midio que sin esa comprobacion el fichero
+#: entraba en el inventario probatorio y provocaba CONFLICT en un checkin.
+FICHEROS_CONTROL: tuple[str, ...] = (_FICHERO,)
+PREFIJOS_CONTROL: tuple[str, ...] = (".apertura_v1.",)
+
 
 @dataclasses.dataclass(frozen=True)
 class RondaV1:

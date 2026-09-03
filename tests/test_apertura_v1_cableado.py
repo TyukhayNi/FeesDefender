@@ -127,20 +127,3 @@ def test_f25_la_rama_v1_no_sale_del_proceso_dentro_del_bloque_de_mutex():
     assert raises == [], (
         "la rama v1 sale del proceso DENTRO del bloque de mutex: la perdida del lease "
         "quedaria como una nota sobre una salida limpia")
-
-
-def test_f26_case_busy_se_traduce_a_bloqueado_y_no_a_una_traza():
-    from core.casos.workspace_model import CaseBusy
-
-    def revienta():
-        raise CaseBusy(w_code="W-000000", detalle="otro proceso lo tiene")
-
-    estado, detalle = cli.traducir_fallo_de_mutex(revienta)
-    assert estado == av1.EstadoV1.BLOQUEADO
-    assert "otro proceso" in str(detalle)
-
-
-def test_traducir_fallo_de_mutex_deja_pasar_lo_que_no_es_de_exclusion():
-    estado, valor = cli.traducir_fallo_de_mutex(lambda: "resultado")
-    assert estado is None
-    assert valor == "resultado"
