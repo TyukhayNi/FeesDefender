@@ -6258,7 +6258,7 @@ caso real de un depósito fuera del catálogo.
 
 ---
 
-## 142. El `dry-run` del modo `libre` sale con `typer.Exit(0)` DENTRO del bloque de mutex
+## 142. El `dry-run` del modo `libre` sale con `typer.Exit(0)` DENTRO del bloque de mutex `[RESUELTO 2026-09-03]`
 
 **Medido el 2026-09-03**, al remediar el hallazgo **HA-07** de la R-A del Plan 5 de apertura V1.
 Es el mismo defecto en otro sitio, y ese sitio queda fuera del alcance de ese plan.
@@ -6294,6 +6294,24 @@ exit 0 y cero aviso. Y `libre` es **el modo por defecto y el que usa el equipo a
 **Consecuencia sobre la decisión:** Nikolai aprobó aplazar esto como deuda de radio pequeño sobre mi
 descripción. Con la medición delante, el radio no es pequeño y la prioridad sube. Reabrirlo es
 decisión suya.
+
+**✅ RESUELTO el 2026-09-03**, por decisión de Nikolai de reabrirlo. Plan
+`docs/superpowers/plans/2026-09-03-mejoras-142-exit-bajo-mutex.md`, con su ronda adjudicada
+(`NO-SHIP`, 5 hallazgos, 5 confirmados). **Las nueve salidas están fuera:** cuatro eran validación y
+corren fuera del lock —después de resolver identidad, para no reordenar el diagnóstico que ve el
+operador—, cuatro lanzan `AbortarApertura` y el entrypoint decide, y la del `--dry-run` marca una
+bandera y sale fuera del bloque.
+
+**Y el arreglo trajo una pieza que no estaba en el diagnóstico:** convertir los `Exit` en excepciones
+de dominio **no basta**, porque siguen en vuelo y el `finally` sigue anotando en vez de lanzar. Lo
+que faltaba es que alguien **lea** la nota: el handler la imprime como `[AVISO]`, porque Typer
+descarta el traceback.
+
+**El guard vigila la frontera y no los nueve ejemplos:** `tests/test_abrir_caso_exit_bajo_mutex.py`
+**deriva** el cierre transitivo de funciones alcanzadas desde el bloque —17— y reconoce las cuatro
+formas de terminar (`typer.Exit`, `Abort`, `sys.exit`, `SystemExit`), con una prueba negativa por
+forma. Su primera versión mantenía la lista a mano y solo veía `typer.Exit`: la ronda midió que un
+`sys.exit` la dejaba verde.
 
 ---
 
