@@ -312,11 +312,14 @@ por mi cuenta, con el comando o la lectura que lo sostiene:
 - **HA-10.** `core/casos/case_locator.py:222-223`: `read_case_meta` devuelve `fm.get("meta")`. Mi
   fixture escribia las claves en el nivel superior del frontmatter, asi que el lector devolvia
   `{}` y la etapa CRM tomaba la rama `saltada`: el E2E habria pasado sin probar el CRM.
-- **HA-08, con el escenario corregido.** Los tres `unlink` podan **huerfanos** derivados
-  (`core/email_atomize/pipeline.py:218-220,265-267`; `core/adjuntos_contenido/pipeline.py:107-109`).
-  Mi lectura ante Nikolai —«regenerables, riesgo bajo»— era incompleta: en una corrida **parcial**
-  el conjunto `esperados` se calcula sobre una lectura incompleta, asi que la poda puede retirar
-  salidas buenas. El disparador es justo el estado `parcial` que el plan ya modela y automatiza.
+- **HA-08 — PARCIALMENTE REFUTADO, y la primera version de esta linea era mia y estaba mal.**
+  Escribi aqui que una corrida parcial podaba contra un `esperados` incompleto. **La guarda
+  existe:** el `unlink` de `mensajes/` esta dentro del `else` de `if report.errores:`
+  (`core/email_atomize/pipeline.py:204-220`), y el comentario dice «La poda solo retira huerfanos
+  cuando la foto esta completa». Sobrevive solo en `vistas/*.md` (`:262-267`) y en
+  `*.contenido.md` (`core/adjuntos_contenido/pipeline.py:107-109`), que no llevan la guarda y donde
+  lo perdible es un derivado regenerable, nunca material de cliente. La contradiccion con D4 sigue;
+  el riesgo de perdida que le atribui, no.
 - **HA-12.** `len(INTAKE_EVENTS)` es **33**, no 27. Y «103 referencias a `scripts.abrir_caso`» no
   es reproducible: `git grep -o` da **53** en **19** ficheros. **La cifra no es mia: es del §24 D3
   de la spec**, que la usa para justificar la decision de modo-frente-a-subcomando. La copie sin
