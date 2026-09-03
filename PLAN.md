@@ -303,8 +303,16 @@ dentro del bloque de mutex— vive **casi solo en el modo `libre`**, con 9 salid
 remedié apenas podía manifestarlo. Lo aplazamos sobre una descripción mía que resultó engañosa.
 
 **DECIDIDO por Nikolai el 2026-09-03: se PARA aquí y se espera a Codex.** No se gasta tercera
-ronda, no se remedia más, y **no se mergea**. El 2026-09-07, cuando Codex recupere cupo, ve el diff;
-con sus hallazgos más los diez declarados en el §6 se hace **una sola** remediación informada.
+ronda, no se remedia más, y **no se mergea**. Cuando Codex vuelva a correr ve el diff; con sus
+hallazgos más los diez declarados en el §6 se hace **una sola** remediación informada.
+
+**El disparador es un EVENTO, no una fecha, y la primera versión de esta línea decía «el
+2026-09-07»: mal.** Esa fecha salía del mensaje de error de Codex —«purchase more credits **or** try
+again at Sep 7th»—, o sea el reset gratuito **con una alternativa al lado**, y yo la convertí en
+«Codex vuelve el 7». Peor: al sondearlo horas después el fallo **ya era otro**, un **404** de
+`backend-api/codex/responses` con sesión iniciada y el mismo binario que había corrido R-A. Eso no
+es cupo y un reset no lo cura. Antes de dar la vía por recuperada hay que **sondearla**, no mirar el
+calendario.
 
 **El razonamiento, que es el de la propia sesión:** hoy remedié HA-07 en la rama que no podía
 manifestarlo y dejé el defecto donde vivía. Arreglar diez bloques más antes de que un revisor con
