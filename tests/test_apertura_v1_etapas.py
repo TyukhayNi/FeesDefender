@@ -280,3 +280,37 @@ def test_una_excepcion_del_ocr_es_fallo():
     r = cli.etapa_sala_maquina(_IdentFalsa(), correr=explota)
     assert r.estado == "fallo"
     assert "ocrmypdf" in r.detalle
+
+
+def _meta2(el1, el2):
+    return {"sudespacho_expedientes": [
+        {"id": "648", "element": el1, "input_dir": "a"},
+        {"id": "649", "element": el2, "input_dir": "b"},
+    ]}
+
+
+def test_las_puertas_de_la_rama_valen_para_TODOS_los_expedientes_no_para_el_primero():
+    """L1-11 de la R-B: `links[:1]` sobrevivia. El codigo comprueba las tres puertas ANTES
+    de pullar nada precisamente para que un segundo expediente invalido no deje el primero
+    ya escrito — y ningun test lo afirmaba porque todas las fixturas tenian UN link."""
+    llamado = []
+    r = cli.etapa_crm(_IdentFalsa(), Path("."),
+                      leer_meta=lambda _d: _meta2("extrajudiciales", "expedientes_judiciales"),
+                      pull=lambda *a, **k: llamado.append(1))
+    assert r.estado == "fallo"
+    assert "judicial" in r.detalle
+    assert llamado == [], "pullo el primero antes de validar el segundo"
+
+
+def test_dos_expedientes_validos_se_pullan_LOS_DOS():
+    vistos = []
+
+    def pull(case_id, expediente_id, *, element):
+        vistos.append((expediente_id, element))
+        return _Res()
+
+    r = cli.etapa_crm(_IdentFalsa(), Path("."),
+                      leer_meta=lambda _d: _meta2("extrajudiciales", "extrajudiciales"),
+                      pull=pull)
+    assert r.estado == "hecha"
+    assert vistos == [("648", "extrajudiciales"), ("649", "extrajudiciales")]

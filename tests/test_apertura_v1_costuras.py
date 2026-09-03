@@ -130,3 +130,65 @@ def test_costura_main_PASA_el_hasta_a_la_secuencia(caso_v1, monkeypatch):
     ])
     assert visto.get("hasta") == "drive", (
         "`main` no propaga --hasta: el flag queda inerte y nadie se enteraria")
+
+
+# --------------------------------------------------------------------------
+# Costura 4: `main` -> el proceso. Codigo de salida, evento y estado durable.
+# --------------------------------------------------------------------------
+
+def _correr_main(monkeypatch, resultado, extra=()):
+    """Conduce `main --modo v1` hasta el final con la secuencia doblada."""
+    from typer.testing import CliRunner
+    monkeypatch.setattr(cli, "secuencia_v1", lambda *a, **k: resultado)
+    return CliRunner().invoke(cli.app, [
+        "--modo", "v1", "--crm", "skip",
+        "--w-code", "W-000000", "--ciudad", "Barcelona",
+        "--tipo-caso", "BAD_DEBT", "--codigo-caso", "BaXX7",
+        "--sufijo", "Bad debt", "--direccion", "Prueba 2",
+        "--folder-id", "FID", "--team-id", "TID", "--yes", *extra,
+    ])
+
+
+def _resultado(estado):
+    return av1.ResultadoV1(
+        estado=estado,
+        etapas=(av1.EtapaResultado(nombre="drive", estado="hecha", detalle="d"),),
+        pendientes=(av1.PENDIENTE_FUENTES_V3,), parada=None, no_ejecutadas=())
+
+
+@pytest.mark.parametrize("estado,codigo", [
+    (av1.EstadoV1.BLOQUEADO, 1),
+    (av1.EstadoV1.PREPARADO_CON_PENDIENTES, 0),
+])
+def test_costura_el_estado_gobierna_el_CODIGO_DE_SALIDA_DEL_PROCESO(estado, codigo,
+                                                                    caso_v1, monkeypatch):
+    """L1-03. `codigo_de_salida` se probaba como funcion pura: borrar la salida de `main`
+    dejaba todo verde. Un script que invoque la secuencia lee el codigo del PROCESO."""
+    res = _correr_main(monkeypatch, _resultado(estado))
+    assert res.exit_code == codigo, res.output
+
+
+def test_costura_main_EMITE_el_evento_y_cierra_la_ronda(caso_v1, monkeypatch):
+    """L1-05/L1-06. F13 contrataba la pertenencia del nombre al set cerrado, no la
+    EMISION: `registrar_cierre_v1(...) -> pass` no mataba nada. Y nada exigia que `main`
+    usara el estado durable, asi que `_apertura_v1.json` podia no existir nunca."""
+    res = _correr_main(monkeypatch, _resultado(av1.EstadoV1.PREPARADO_CON_PENDIENTES))
+    assert res.exit_code == 0, res.output
+
+    casos = [d for d in caso_v1.rglob("00_Input") if d.is_dir()]
+    assert casos, "el esqueleto del caso no se creo"
+    entrada = casos[0]
+
+    log = entrada / "_intake_log.jsonl"
+    assert log.is_file(), "no se emitio ningun evento"
+    eventos = [json.loads(l) for l in log.read_text(encoding="utf-8").splitlines() if l]
+    cierres = [e for e in eventos if e["event"] == "apertura_v1_terminada"]
+    assert cierres, "la corrida no dejo el evento de cierre en el log forense"
+    assert cierres[-1]["details"]["estado"] == "preparado_con_pendientes"
+
+    durable = entrada / "_apertura_v1.json"
+    assert durable.is_file(), "no se escribio el estado durable por ronda"
+    ronda = json.loads(durable.read_text(encoding="utf-8"))
+    assert ronda["terminada"], "la ronda quedo abierta tras una corrida con exito"
+    assert ronda["estado"] == "preparado_con_pendientes"
+    assert ronda["etapas"] == {"drive": "hecha"}

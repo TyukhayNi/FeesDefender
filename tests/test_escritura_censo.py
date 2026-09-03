@@ -40,6 +40,11 @@ PRODUCTORES = (
 #: sistema de ficheros.
 PRIMITIVAS = frozenset({
     "write_text", "write_bytes", "mkdir", "unlink", "copy2", "append_event",
+    # `mkstemp` anadido el 2026-09-03 (R-B/L1-17 y L5-02). El Plan 5 estreno el patron
+    # de escritura atomica —`mkstemp` + `os.fdopen` + `os.replace`— y con el un hueco:
+    # la escritura PRINCIPAL de ese patron no la contaba nadie, asi que una funcion de
+    # escritura nueva que lo usara pasaba el trinquete sin mover el numero.
+    "mkstemp",
 })
 
 #: Las AMBIGUAS, que comparten nombre con métodos de `str`, `dict` y `dataclasses`.
@@ -97,7 +102,11 @@ AMBIGUAS = frozenset({"replace", "copy", "dump"})
 #: modulo fuera de la lista: el techo se habria quedado en 84 con tres escrituras nuevas
 #: sin contar, que es literalmente el «techo con hueco» que el comentario de abajo dice
 #: prevenir. Un censo que no cuenta lo nuevo no es un censo, es un numero.
-TECHO_CENSO = 87
+#: **87 -> 88 el 2026-09-03, y esta subida NO es una escritura nueva.** Es el `mkstemp`
+#: que el detector no contaba: al anadirlo a `PRIMITIVAS` aparecio una escritura que ya
+#: existia y estaba invisible. Subir el techo aqui es *reconocer* deuda, no contraerla —
+#: y es exactamente lo que la regla de arriba pide cuando el detector mejora.
+TECHO_CENSO = 88
 
 
 def _nombre_llamado(n: ast.Call) -> str | None:
