@@ -123,12 +123,14 @@ MUTANTES: list[tuple[str, str, str, str, set[str]]] = [
     ("F10", CLI,
      '    if status == "parcial":',
      '    if False:',
-     {f"{ETA}::test_f10_f12_el_status_de_atomizacion_gobierna_el_pendiente[parcial-hecha-True]"}),
+     {f"{ETA}::test_f10_f12_el_status_de_atomizacion_gobierna_el_pendiente[parcial-hecha-True]",
+      f"{COS}::test_costura_el_status_de_apply_llega_por_el_camino_POR_DEFECTO[parcial-hecha]"}),
 
     ("F11", CLI,
      '    if status == "fallo":',
      '    if False:',
-     {f"{ETA}::test_f11_atomizacion_en_fallo_bloquea_la_etapa"}),
+     {f"{ETA}::test_f11_atomizacion_en_fallo_bloquea_la_etapa",
+      f"{COS}::test_costura_el_status_de_apply_llega_por_el_camino_POR_DEFECTO[fallo-fallo]"}),
 
     ("F12", CLI,
      '        detalle=("OCR hecho; sin correo que atomizar" if status is None\n'
@@ -137,7 +139,9 @@ MUTANTES: list[tuple[str, str, str, str, set[str]]] = [
      '                 else "OCR hecho; atomizacion ok"),\n'
      '        pendientes=(av1.Pendiente(codigo="x", detalle="x"),))',
      {f"{ETA}::test_f10_f12_el_status_de_atomizacion_gobierna_el_pendiente[None-hecha-False]",
-      f"{ETA}::test_f10_f12_el_status_de_atomizacion_gobierna_el_pendiente[ok-hecha-False]"}),
+      f"{ETA}::test_f10_f12_el_status_de_atomizacion_gobierna_el_pendiente[ok-hecha-False]",
+      f"{COS}::test_costura_el_status_de_apply_llega_por_el_camino_POR_DEFECTO[None-hecha]",
+      f"{COS}::test_costura_el_status_de_apply_llega_por_el_camino_POR_DEFECTO[ok-hecha]"}),
 
     ("F13", LOG,
      '    "apertura_v1_terminada",         # cierre de la secuencia de V1 con estado y pendientes\n',
@@ -149,7 +153,9 @@ MUTANTES: list[tuple[str, str, str, str, set[str]]] = [
     ("F14", CLI,
      "    return 1 if estado == av1.EstadoV1.BLOQUEADO else 0",
      "    return 0",
-     {f"{CAB}::test_f14_un_resultado_bloqueado_sale_con_codigo_no_cero"}),
+     {f"{CAB}::test_f14_un_resultado_bloqueado_sale_con_codigo_no_cero",
+      f"{MV1}::test_la_exclusion_fallida_llega_al_OPERADOR[CaseBusy-otro proceso tiene este caso]",
+      f"{MV1}::test_la_exclusion_fallida_llega_al_OPERADOR[MutexPerdido-se PERDIO la exclusion]"}),
 
     ("F15", CLI,
      "    _intake = intake or _intake_drive_ev",
@@ -174,6 +180,8 @@ MUTANTES: list[tuple[str, str, str, str, set[str]]] = [
      '    if errores:\n        return "fallo", f"el pull devolvio errores: {errores}", ()',
      '    if False:\n        return "fallo", f"el pull devolvio errores: {errores}", ()',
      {f"{ETA}::test_f17_f20_el_resultado_del_pull_gobierna_la_etapa[kw0-fallo-None]",
+      f"{ETA}::test_f17_f20_el_resultado_del_pull_gobierna_la_etapa[kw2-fallo-None]",
+      f"{ETA}::test_f17_f20_el_resultado_del_pull_gobierna_la_etapa[kw4-fallo-None]",
       f"{E2E}::test_e2e_un_fallo_del_crm_bloquea_y_la_sala_no_corre"}),
 
     ("F18", CLI,
@@ -181,15 +189,11 @@ MUTANTES: list[tuple[str, str, str, str, set[str]]] = [
      '    if False:',
      {f"{ETA}::test_f17_f20_el_resultado_del_pull_gobierna_la_etapa[kw1-fallo-None]"}),
 
-    ("F19", CLI,
-     "    if fallidos:",
-     "    if False:",
-     {f"{ETA}::test_f17_f20_el_resultado_del_pull_gobierna_la_etapa[kw2-hecha-crm_documentos_fallidos]"}),
-
-    ("F20", CLI,
-     '    if int(getattr(res, "documents_total_crm", 0) or 0) == 0:',
-     '    if False:',
-     {f"{ETA}::test_f17_f20_el_resultado_del_pull_gobierna_la_etapa[kw3-saltada-crm_gestor_vacio]"}),
+    # F19 y F20 RETIRADOS el 2026-09-03. Mutaban `if fallidos:` y
+    # `documents_total_crm == 0`, dos ramas que la R-B (L2-01) midio INALCANZABLES:
+    # el productor mete su aviso en `errors` en el mismo sitio donde produce ambos
+    # estados. La remediacion las borro, asi que sus mutantes tampoco existen — y que
+    # murieran "por su frontera" era el ejemplo perfecto de una muerte VACUA.
 
     ("F21", CLI,
      "        if el not in ELEMENTS_CRM:",
@@ -214,8 +218,8 @@ MUTANTES: list[tuple[str, str, str, str, set[str]]] = [
      {f"{CAB}::test_f24_una_parada_pedida_enumera_las_etapas_que_no_corrieron"}),
 
     ("F25", CLI,
-     "                registrar_cierre_v1(case_dir, ident, resultado_v1)",
-     "                registrar_cierre_v1(case_dir, ident, resultado_v1)\n"
+     "                                            team_id=team_id, hasta=hasta)",
+     "                                            team_id=team_id, hasta=hasta)\n"
      "                raise typer.Exit(code=0)",
      {f"{CAB}::test_f25_la_rama_v1_no_sale_del_proceso_dentro_del_bloque_de_mutex"}),
 
@@ -254,8 +258,8 @@ MUTANTES: list[tuple[str, str, str, str, set[str]]] = [
       f"{ETA}::test_f17_f20_el_resultado_del_pull_gobierna_la_etapa[kw3-saltada-crm_gestor_vacio]"}),
 
     ("F34-control-registro", "core/config.py",
-     '    "_apertura_v1.json",',
-     "",
+     '    "_apertura_v1.json",' + NL + '})',
+     "})",
      {f"{CTL}::test_esta_en_el_registro_canonico_de_control[_apertura_v1.json]",
       f"{CTL}::test_el_inventario_de_la_sala_de_maquina_no_lo_toma_por_documento[_apertura_v1.json]"}),
 
