@@ -6283,6 +6283,18 @@ fuera. Es un movimiento de tres líneas.
 `scripts/abrir_caso.py` —el Plan 5 lo toca, pero deliberadamente no esta rama—, o el primer caso
 real de un `--dry-run` que salga 0 sin haber sostenido la exclusión.
 
+**MEDIDO el 2026-09-03 por la R-B del Plan 5 (L3-04), y mi descripción de arriba era engañosa en lo
+que más importa.** No es «el mismo defecto en otro sitio»: el defecto vive **casi solo aquí**. Hay
+**9 salidas del proceso** dentro del bloque de mutex alcanzables desde el modo `libre` —8 en las
+funciones que invoca (`_despachar_intake`, `_alta_crm`, `_validar_flags`, los `_intake_*`) más el
+`--dry-run`—, mientras la rama `v1` que el Plan 5 remedió **apenas podía manifestarlo**, porque sus
+etapas capturan `Exception` y devuelven un resultado en vez de lanzar. El revisor lo reprodujo:
+exit 0 y cero aviso. Y `libre` es **el modo por defecto y el que usa el equipo a diario**.
+
+**Consecuencia sobre la decisión:** Nikolai aprobó aplazar esto como deuda de radio pequeño sobre mi
+descripción. Con la medición delante, el radio no es pequeño y la prioridad sube. Reabrirlo es
+decisión suya.
+
 ---
 
 ## 143. La spec del orquestador sostiene una decisión sobre una cifra irreproducible

@@ -272,8 +272,39 @@ Nikolai**: la etapa de Drive **consulta en cada ronda** (`force=True`) y entra e
 por ronda** (Task 8b). El plan pasa de 11 a 13 tasks y de 14 a **28 fronteras**, con un mutante por
 frontera y un arnés que ahora **sí puede medir su propia regla** —ejecuta el conjunto contractual
 completo y compara el conjunto exacto de rojos, en vez de leer un booleano de un solo `nodeid`—.
-**El censo sube a 84 con su declaración**, que es lo que su propia regla exige. **Siguiente: ejecutar
-las 13 tasks y R-B sobre el diff.**
+**El censo sube a 84 con su declaración**, que es lo que su propia regla exige. **R-B adjudicada `NO-SHIP` el 2026-09-03, con REVISOR SUSTITUTO y la independencia declarada más
+débil.** Codex agotó su cupo a mitad de la ronda (vuelve el 2026-09-07), así que la corrió una
+sesión de Claude Code —el mismo modelo que escribió el código— con la compensación que `AGENTS.md`
+exige: **seis lentes en paralelo**, copia congelada, sin la adjudicación de R-A. Acta
+[`…-plan5-rB-adversarial-review.md`](docs/superpowers/specs/2026-09-03-apertura-v1-plan5-rB-adversarial-review.md);
+adjudicación en el §6 del plan. **73 hallazgos, 10 críticos.**
+
+**El defecto vivo que decidió el veredicto:** las dos ramas de `traducir_pull_crm` que producción
+alcanzaría eran **inalcanzables**, porque el productor mete en `errors` el aviso de un gestor
+documental **vacío** e incrementa `documents_failed` en el mismo bloque que su `errors.append`. Un
+expediente CRM sin documentos —lo normal en uno recién creado— **abortaba la apertura entera** sin
+que el OCR arrancase. Leí los campos del dataclass y no su productor.
+
+**Y el hallazgo transversal, que invalida mi propia medición:** el «28/28 mutantes muertos» era una
+**autoatestación cerrada**. Tres lentes con mutantes propios midieron **17 de 21 vivos** y **11 de
+12**, y cuatro de mis 28 muertes caían sobre fronteras que no existen en producción; mi arnés
+**excluía justo los ficheros del cableado**. La lección, ya en memoria: un mutante muerto prueba que
+el test no está vacío, **no que la frontera exista**.
+
+**Cuatro fronteras cerradas** (no sus ejemplos): el productor clasifica y el adaptador pregunta; un
+fichero de control se declara en **los cuatro** registros de `00_Input` —hay uno canónico y lo
+declaré en ninguno—; si se perdió la exclusión **no se escribe nada**; y una costura tiene dos
+extremos, así que hay diez tests nuevos que recorren el camino **por defecto**. **3.880 tests, 0
+fallos con dos semillas; 31/31 mutantes, ya con el cableado dentro del arnés.**
+
+**Diez bloques quedan ABIERTOS y declarados** en el §6 del plan; ninguno bloquea una apertura ni
+pierde datos de cliente. **El primero cambia una decisión que tomamos:** `MEJORAS #142` —el `Exit`
+dentro del bloque de mutex— vive **casi solo en el modo `libre`**, con 9 salidas, y la rama `v1` que
+remedié apenas podía manifestarlo. Lo aplazamos sobre una descripción mía que resultó engañosa.
+
+**Siguiente:** decisión de Nikolai sobre (a) una tercera ronda —prohibida por el techo duro sin su
+autorización—, (b) pasar el diff por **Codex el 2026-09-07** antes de mergear, y (c) `MEJORAS #142`.
+Y la **Task 11** (corrida real sobre W-02Q38C) sigue sin ejecutarse.
 
 ---
 
