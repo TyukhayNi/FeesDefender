@@ -1742,6 +1742,6 @@ mismos nombres de campo (`nombre`, `estado`, `detalle`, `pendientes`); `Pendient
 
 ## §5. Hueco reservado para R-A
 
-*Pendiente: la ronda R-A sobre este plan, antes de escribir una línea de código. Se rellena aquí, con el
-encabezado canónico y su ficha; el informe literal del revisor va al acta hermana
-`docs/superpowers/specs/2026-09-03-apertura-v1-plan5-rA-adversarial-review.md`.*
+*Pendiente: la ronda R-A sobre este plan, antes de escribir una línea de código. Se rellena aquí,
+con el encabezado canónico y su ficha de seis campos; el informe literal del revisor va a su acta
+hermana, que se crea con la ronda y se enlaza desde aquí al adjudicarla.*
