@@ -13,7 +13,7 @@ test puede comprobar la propiedad en vez de creerse el docstring.
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 
 class EstadoV1:
@@ -49,3 +49,75 @@ def estado_de(pendientes: Sequence[Pendiente], *, hubo_fallo: bool) -> str:
     if pendientes:
         return EstadoV1.PREPARADO_CON_PENDIENTES
     return EstadoV1.COMPLETO
+
+
+#: Vocabulario cerrado del resultado de una etapa. `saltada` NO es `hecha`: significa
+#: que la etapa decidio, con razon declarada, que no habia nada que hacer.
+ESTADOS_ETAPA = ("hecha", "saltada", "fallo")
+
+
+class EtapaDesconocida(ValueError):
+    """`hasta` nombra una etapa que no esta en la secuencia."""
+
+
+@dataclasses.dataclass(frozen=True)
+class EtapaResultado:
+    nombre: str
+    estado: str
+    detalle: str
+    pendientes: tuple[Pendiente, ...] = ()
+
+    def __post_init__(self):
+        if self.estado not in ESTADOS_ETAPA:
+            raise ValueError(
+                f"estado de etapa fuera del vocabulario: {self.estado!r}; "
+                f"validos: {ESTADOS_ETAPA}")
+
+
+@dataclasses.dataclass(frozen=True)
+class Etapa:
+    nombre: str
+    correr: Callable[[], EtapaResultado]
+
+
+@dataclasses.dataclass(frozen=True)
+class ResultadoV1:
+    estado: str
+    etapas: tuple[EtapaResultado, ...]
+    pendientes: tuple[Pendiente, ...]
+    parada: str | None
+
+
+def secuenciar(etapas: Sequence[Etapa], *, hasta: str | None = None) -> ResultadoV1:
+    """Corre las etapas en orden. Para tras `hasta`, y para en el primer `fallo`.
+
+    `hasta` se valida ANTES de correr nada: un nombre mal escrito no puede convertirse
+    en «no pares», porque entonces el operador pidio parar y la secuencia siguio.
+    """
+    nombres = [e.nombre for e in etapas]
+    if hasta is not None and hasta not in nombres:
+        raise EtapaDesconocida(
+            f"--hasta {hasta!r} no es una etapa de V1; validas: {nombres}")
+
+    hechas: list[EtapaResultado] = []
+    pendientes: list[Pendiente] = [PENDIENTE_FUENTES_V3]
+    hubo_fallo = False
+    parada: str | None = None
+
+    for etapa in etapas:
+        res = etapa.correr()
+        hechas.append(res)
+        pendientes.extend(res.pendientes)
+        if res.estado == "fallo":
+            hubo_fallo = True
+            break
+        if hasta is not None and etapa.nombre == hasta:
+            parada = etapa.nombre
+            break
+
+    return ResultadoV1(
+        estado=estado_de(pendientes, hubo_fallo=hubo_fallo),
+        etapas=tuple(hechas),
+        pendientes=tuple(pendientes),
+        parada=parada,
+    )
