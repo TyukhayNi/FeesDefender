@@ -234,6 +234,12 @@ def test_un_caso_md_ilegible_es_fallo():
     assert "_caso.md" in r.detalle
 
 
+def _res_apply(status=None, agotados=0):
+    """Lo que `apply` devuelve de verdad desde `MEJORAS #144`: un objeto, no un `str`."""
+    from scripts.sala_maquina import ResultadoApply
+    return ResultadoApply(status_atomizacion=status, documentos_agotados=agotados)
+
+
 @pytest.mark.parametrize("status,estado,hay_pendiente", [
     ("ok", "hecha", False),
     (None, "hecha", False),      # F12: no se ejecuto != quedo pendiente
@@ -241,15 +247,48 @@ def test_un_caso_md_ilegible_es_fallo():
 ])
 def test_f10_f12_el_status_de_atomizacion_gobierna_el_pendiente(status, estado,
                                                                 hay_pendiente):
-    r = cli.etapa_sala_maquina(_IdentFalsa(), correr=lambda: status)
+    r = cli.etapa_sala_maquina(_IdentFalsa(), correr=lambda: _res_apply(status))
     assert r.estado == estado
     assert bool(r.pendientes) is hay_pendiente
 
 
 def test_f11_atomizacion_en_fallo_bloquea_la_etapa():
     """F11. D4: `fallo` de atomizacion deja V1 `bloqueado`."""
-    r = cli.etapa_sala_maquina(_IdentFalsa(), correr=lambda: "fallo")
+    r = cli.etapa_sala_maquina(_IdentFalsa(), correr=lambda: _res_apply("fallo"))
     assert r.estado == "fallo"
+
+
+def test_f37_los_documentos_agotados_del_OCR_APARECEN_en_los_pendientes():
+    """`MEJORAS #144`, medido en la corrida real de la Task 11 sobre W-02Q38C: cinco
+    documentos con los intentos agotados se saltaban y V1 terminaba
+    `preparado_con_pendientes` **sin mencionarlos**, ni en el `estado.json` ni en el evento
+    forense. Quien lea ese evento dentro de seis meses concluye que la documental esta
+    procesada — y es prueba de un litigio."""
+    r = cli.etapa_sala_maquina(_IdentFalsa(), correr=lambda: _res_apply("ok", agotados=5))
+    assert r.estado == "hecha"
+    codigos = [p.codigo for p in r.pendientes]
+    assert codigos == ["ocr_documentos_agotados"], codigos
+    assert "5 documento" in r.pendientes[0].detalle
+    assert "5 documento" in r.detalle, "el informe en pantalla tampoco los menciona"
+
+
+def test_f38_los_agotados_se_acumulan_CON_la_atomizacion_parcial():
+    """Los dos pendientes son independientes: que la atomizacion vaya parcial no puede
+    tapar que haya documentos sin procesar, ni al reves."""
+    r = cli.etapa_sala_maquina(_IdentFalsa(),
+                               correr=lambda: _res_apply("parcial", agotados=2))
+    assert r.estado == "hecha"
+    assert sorted(p.codigo for p in r.pendientes) == [
+        "atomizacion_parcial", "ocr_documentos_agotados"]
+
+
+def test_los_agotados_se_declaran_incluso_si_la_atomizacion_FALLA():
+    """Un `fallo` de atomizacion bloquea V1, pero los documentos sin procesar siguen
+    siendo un hecho del expediente y tienen que constar."""
+    r = cli.etapa_sala_maquina(_IdentFalsa(),
+                               correr=lambda: _res_apply("fallo", agotados=3))
+    assert r.estado == "fallo"
+    assert [p.codigo for p in r.pendientes] == ["ocr_documentos_agotados"]
 
 
 def test_un_typer_exit_no_cero_del_ocr_es_fallo():

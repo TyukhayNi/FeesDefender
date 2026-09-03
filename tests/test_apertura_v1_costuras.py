@@ -31,7 +31,10 @@ def test_costura_el_status_de_apply_llega_por_el_camino_POR_DEFECTO(status, esta
     estados del §24 D4 queda muerta en produccion y ningun test lo notaba."""
     from scripts import sala_maquina
 
-    monkeypatch.setattr(sala_maquina, "apply", lambda case_id=None, **k: status)
+    from scripts.sala_maquina import ResultadoApply
+    monkeypatch.setattr(sala_maquina, "apply",
+                        lambda case_id=None, **k: ResultadoApply(
+                            status_atomizacion=status))
 
     class _Ident:
         case_id = "C"
@@ -48,8 +51,10 @@ def test_costura_apply_recibe_EL_caso_y_no_otro(monkeypatch):
     from scripts import sala_maquina
 
     vistos = []
+    from scripts.sala_maquina import ResultadoApply
     monkeypatch.setattr(sala_maquina, "apply",
-                        lambda case_id=None, **k: vistos.append(case_id) or "ok")
+                        lambda case_id=None, **k: (vistos.append(case_id)
+                                                   or ResultadoApply("ok")))
 
     class _Ident:
         case_id = "BaXX9 - Otro (W-999999) - X"

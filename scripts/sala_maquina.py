@@ -19,6 +19,8 @@ from core.casos import case_locator
 from core.config import caso_path
 from core.email_atomize import pipeline as atomize
 from core.email_atomize import contaminacion
+from dataclasses import dataclass
+
 from core.intake_log import append_event
 from core import split_documental as split
 from core.utils import now_iso
@@ -49,6 +51,25 @@ def _registrar_atomizado(case_dir: Path, case_id: str, details: dict) -> None:
         append_event(case_dir, "atomizado_email", case_id=case_id, details=details)
     except Exception as exc:  # noqa: BLE001
         typer.echo(f"AVISO: no se pudo registrar el evento atomizado_email: {exc}", err=True)
+
+
+@dataclass(frozen=True)
+class ResultadoApply:
+    """Lo que `apply` le cuenta a su llamador. **Un objeto y no dos valores de retorno.**
+
+    Nace de `MEJORAS #144`, medido en la corrida real de la Task 11 sobre W-02Q38C: cinco
+    documentos con los intentos agotados se saltaban, y la secuencia de V1 terminaba
+    `preparado_con_pendientes` sin mencionarlos ni en el `estado.json` ni en el evento
+    forense. Quien lea ese evento dentro de seis meses concluye que la documental esta
+    procesada, y cinco documentos no lo estan.
+
+    Es un objeto para que el siguiente dato que haga falta se anada sin volver a cambiar
+    la firma: la version anterior devolvia un `str | None` pelado y ampliarlo obligaba a
+    tocar el contrato otra vez.
+    """
+
+    status_atomizacion: str | None = None
+    documentos_agotados: int = 0
 
 
 def _leer_estado(case_dir: Path) -> dict:
@@ -936,7 +957,12 @@ def apply(case_id: str = typer.Argument(None), vision: bool = False,
         # Typer ignora el retorno de un comando, asi que el CLI no cambia. Quien lo lee es
         # el secuenciador de V1, que llama a esta funcion directamente (el idiom de los
         # tests de este repo) y necesita el status para la maquina de estados de D4.
-        return status_atomizacion
+        #
+        # `documentos_agotados` va por `MEJORAS #144`: el dato ya estaba calculado —se
+        # imprime y se registra en los tiempos— y no viajaba al llamador, asi que V1 no
+        # podia declarar como pendiente lo que el OCR no habia podido procesar.
+        return ResultadoApply(status_atomizacion=status_atomizacion,
+                              documentos_agotados=len(agotados))
 
 
 # metodos con páginas renderizables: solo estos se benefician del refuerzo por
