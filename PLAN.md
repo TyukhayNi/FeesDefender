@@ -302,9 +302,18 @@ pierde datos de cliente. **El primero cambia una decisión que tomamos:** `MEJOR
 dentro del bloque de mutex— vive **casi solo en el modo `libre`**, con 9 salidas, y la rama `v1` que
 remedié apenas podía manifestarlo. Lo aplazamos sobre una descripción mía que resultó engañosa.
 
-**Siguiente:** decisión de Nikolai sobre (a) una tercera ronda —prohibida por el techo duro sin su
-autorización—, (b) pasar el diff por **Codex el 2026-09-07** antes de mergear, y (c) `MEJORAS #142`.
-Y la **Task 11** (corrida real sobre W-02Q38C) sigue sin ejecutarse.
+**DECIDIDO por Nikolai el 2026-09-03: se PARA aquí y se espera a Codex.** No se gasta tercera
+ronda, no se remedia más, y **no se mergea**. El 2026-09-07, cuando Codex recupere cupo, ve el diff;
+con sus hallazgos más los diez declarados en el §6 se hace **una sola** remediación informada.
+
+**El razonamiento, que es el de la propia sesión:** hoy remedié HA-07 en la rama que no podía
+manifestarlo y dejé el defecto donde vivía. Arreglar diez bloques más antes de que un revisor con
+puntos ciegos distintos mire la base es repetir ese movimiento a mayor escala. `MEJORAS #142` queda
+abierta con su medición corregida y espera esa misma pasada.
+
+**Estado de la rama al parar:** 28 commits, **3.880 tests con 0 fallos en dos semillas**, **31/31
+mutantes** muertos por su frontera con el cableado ya dentro del arnés, las dos actas archivadas con
+digest y los guards de gobernanza en verde. **Sin mergear y sin pushear. Task 11 sin ejecutar.**
 
 ---
 
