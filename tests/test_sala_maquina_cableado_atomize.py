@@ -432,3 +432,62 @@ def test_evento_real_es_valido_y_serializable(tmp_path, monkeypatch):
     assert len(eventos) == 1
     assert eventos[0]["details"]["status"] == "ok"
     assert eventos[0]["details"]["mensajes"] == 1
+
+
+class _ReportParcial:
+    publicado = True
+    errores = ["un fallo blando"]
+    eml_leidos = 2
+    poda_omitida = False
+    mensajes = 2
+    adjuntos_unicos = 0
+    reconstruidos_b = 0
+    citas_a_revision = 0
+    upgrades = 0
+    notas: list = []
+    fallos_lectura: list = []
+
+    def resumen(self):
+        return "2 mensajes"
+
+
+def test_atomizar_correo_devuelve_el_status(tmp_path, monkeypatch):
+    """El status va al valor de retorno, no solo al evento: si esta corrida no atomiza,
+    el ultimo evento del log es de OTRA corrida y leerlo miente (Plan 5, Task 5)."""
+    from scripts import sala_maquina as sm_cli
+
+    case_dir = tmp_path / "caso"
+    (case_dir / "00_Input").mkdir(parents=True)
+
+    monkeypatch.setattr(sm_cli.atomize, "contar_eml", lambda _f: 2)
+    monkeypatch.setattr(sm_cli.atomize, "atomize_dir", lambda *a, **k: _ReportParcial())
+    assert sm_cli._atomizar_correo("C", case_dir) == "parcial"
+
+
+def test_atomizar_correo_devuelve_none_cuando_no_se_ejecuta(tmp_path, monkeypatch):
+    """El no-op estricto: sin correo y sin arbol previo no se llama al motor. `None` NO es
+    `ok`, y el secuenciador tiene que poder distinguirlo."""
+    import pytest as _pytest
+
+    from scripts import sala_maquina as sm_cli
+
+    case_dir = tmp_path / "caso"
+    (case_dir / "00_Input").mkdir(parents=True)
+    monkeypatch.setattr(sm_cli.atomize, "contar_eml", lambda _f: 0)
+    monkeypatch.setattr(sm_cli.atomize, "atomize_dir",
+                        lambda *a, **k: _pytest.fail("no debe llamarse"))
+    assert sm_cli._atomizar_correo("C", case_dir) is None
+
+
+def test_atomizar_correo_devuelve_fallo_si_el_motor_revienta(tmp_path, monkeypatch):
+    from scripts import sala_maquina as sm_cli
+
+    case_dir = tmp_path / "caso"
+    (case_dir / "00_Input").mkdir(parents=True)
+    monkeypatch.setattr(sm_cli.atomize, "contar_eml", lambda _f: 1)
+
+    def explota(*a, **k):
+        raise RuntimeError("motor roto")
+
+    monkeypatch.setattr(sm_cli.atomize, "atomize_dir", explota)
+    assert sm_cli._atomizar_correo("C", case_dir) == "fallo"

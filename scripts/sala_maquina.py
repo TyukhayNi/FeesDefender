@@ -575,8 +575,13 @@ def _resolver_caso(case_id: str) -> tuple[str, Path]:
     return cid, ws.working_root
 
 
-def _atomizar_correo(case_id: str, case_dir: Path) -> None:
+def _atomizar_correo(case_id: str, case_dir: Path) -> str | None:
     """Atomiza el correo del caso ANTES del OCR (cableado, spec 2026-07-27 §4).
+
+    Devuelve el status de ESTA corrida — `"ok" | "parcial" | "fallo"` — o `None` si no se
+    ejecuto (no-op estricto). Lo devuelve ADEMAS de emitirlo en el evento porque el
+    consumidor que lee el ultimo `atomizado_email` del log no puede saber si es suyo: en
+    una corrida que no atomiza, el ultimo evento es de la corrida anterior.
 
     Garantiza por código el orden intake → atomización → sala de máquina, en vez de
     dejarlo en la memoria del operador, y hace correr el detector de contaminación
@@ -596,7 +601,7 @@ def _atomizar_correo(case_id: str, case_dir: Path) -> None:
     # crearía `mensajes/`/`adjuntos/` y sembraría carpetas vacías en todo caso sin
     # correo. Con árbol previo SÍ se llama, para que la retirada genuina se refleje.
     if n == 0 and not out.exists():
-        return
+        return None
 
     details: dict[str, object] = {"details_schema": 2, "eml_en_disco": n}
     try:
@@ -640,6 +645,7 @@ def _atomizar_correo(case_id: str, case_dir: Path) -> None:
     # Se emite ANTES de arrancar el OCR: si la corrida larga muere, el rastro ya está
     # en disco. Un fallo de log tampoco aborta el OCR.
     _registrar_atomizado(case_dir, case_id, details)
+    return details.get("status")
 
 
 def _adjuntos_dir_de(case_dir: Path) -> Path:
@@ -804,7 +810,7 @@ def apply(case_id: str = typer.Argument(None), vision: bool = False,
         _dep_sala = _deposito_sala(ws)
         if vision:
             _exigir_vision_cableada()          # preflight: aborta antes de procesar
-        _atomizar_correo(case_id, case_dir)   # cableado: atomizar ANTES del OCR (spec §4)
+        status_atomizacion = _atomizar_correo(case_id, case_dir)  # ANTES del OCR (spec §4)
         _procesar_adjuntos(case_id, case_dir)  # cableado: contenido de adjuntos (MEJORAS #87)
         t_corrida = time.perf_counter()
         try:
@@ -911,6 +917,10 @@ def apply(case_id: str = typer.Argument(None), vision: bool = False,
         }])
         _resumir_tiempos(tiempos, ms_total, ms_inv, n_hasheados, len(cache_nueva))
         typer.echo("Siguiente paso sugerido: organizar-sala-lectura sobre este caso.")
+        # Typer ignora el retorno de un comando, asi que el CLI no cambia. Quien lo lee es
+        # el secuenciador de V1, que llama a esta funcion directamente (el idiom de los
+        # tests de este repo) y necesita el status para la maquina de estados de D4.
+        return status_atomizacion
 
 
 # metodos con páginas renderizables: solo estos se benefician del refuerzo por
