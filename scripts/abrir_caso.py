@@ -50,6 +50,10 @@ _ELEMENT_EXTRAJUDICIAL = "extrajudiciales"
 #: Nombres de las etapas de V1, en orden. Es tambien el vocabulario de `--hasta`.
 ETAPAS_V1 = ("drive", "crm", "sala_maquina")
 
+#: Intentos que la sala de maquina da a un documento antes de saltarlo. Se lee del
+#: motor y no se copia: un numero a mano aqui se pudre cuando alli cambie.
+from core.sala_maquina import MAX_INTENTOS as SM_MAX_INTENTOS  # noqa: E402
+
 
 class AbortarApertura(Exception):
     """El intake no puede seguir. **No termina el proceso: lo decide el entrypoint.**
@@ -391,9 +395,20 @@ def etapa_drive(ident, case_dir: Path, *, folder_id, team_id, intake=None):
             nombre="drive", estado="fallo",
             detalle="la consulta remota no se hizo: el pull devolvio `skipped` pese a "
                     "pedirse con force=True")
+    # `files_after` cuenta SOLO el primer nivel del destino (`core/intake_drive.py:120`),
+    # y los documentos de un caso viven en subcarpetas. Reportarlo era decir «0 ficheros»
+    # justo despues de depositar dos — medido en la corrida real sobre W-02Q38C el
+    # 2026-09-03. Un proxy en vez de la cosa, otra vez.
+    try:
+        total = sum(1 for p in res.target_dir.rglob("*")
+                    if p.is_file() and p.name not in intake_drive.CONTROL_FILES)
+    except OSError as exc:
+        return av1.EtapaResultado(
+            nombre="drive", estado="hecha",
+            detalle=f"consultado, pero no se pudo contar el destino: {exc}")
     return av1.EtapaResultado(
         nombre="drive", estado="hecha",
-        detalle=f"{res.files_after} ficheros en {res.target_dir}")
+        detalle=f"consulta remota hecha; {total} documento(s) en el destino")
 
 
 #: Vocabulario cerrado de ramas del CRM. `_ELEMENT_EXTRAJUDICIAL` ya existe arriba y lo
@@ -524,35 +539,54 @@ def etapa_sala_maquina(ident, *, correr=None):
         return sala_maquina.apply(case_id=ident.case_id)
 
     try:
-        status = (correr or _correr)()
+        res = (correr or _correr)()
     except typer.Exit as exc:
         codigo = getattr(exc, "exit_code", 0) or 0
         if codigo:
             return av1.EtapaResultado(
                 nombre="sala_maquina", estado="fallo",
                 detalle=f"la sala de maquina salio con codigo {codigo}")
-        status = None
+        res = None
     except Exception as exc:  # noqa: BLE001
         return av1.EtapaResultado(nombre="sala_maquina", estado="fallo",
                                   detalle=f"{type(exc).__name__}: {exc}")
 
+    status = getattr(res, "status_atomizacion", None)
+    # `MEJORAS #144`: los documentos que el OCR no pudo procesar tienen que APARECER en
+    # los pendientes. Antes se imprimian y nada mas, asi que el evento forense decia
+    # «preparado con pendientes» enumerando pendientes ajenos a la documental.
+    agotados = int(getattr(res, "documentos_agotados", 0) or 0)
+
+    pendientes = []
+    if agotados:
+        pendientes.append(av1.Pendiente(
+            codigo="ocr_documentos_agotados",
+            detalle=f"{agotados} documento(s) llevan {SM_MAX_INTENTOS} intentos de "
+                    f"procesado agotados y la sala de maquina los salta: su texto NO esta "
+                    f"en el corpus. Hay que mirarlos a mano. Reintento: "
+                    f"`sala_maquina apply --force`, o `--solo <ruta>`."))
+
     if status == "fallo":
         return av1.EtapaResultado(
             nombre="sala_maquina", estado="fallo",
-            detalle="la atomizacion del correo fallo (§24 D4: bloquea el cierre de V1)")
+            detalle="la atomizacion del correo fallo (§24 D4: bloquea el cierre de V1)",
+            pendientes=tuple(pendientes))
     if status == "parcial":
+        pendientes.append(av1.Pendiente(
+            codigo="atomizacion_parcial",
+            detalle="La atomizacion publico con errores o con poda omitida: "
+                    "`01_Procesado/Emails` no esta completo. Ver el evento "
+                    "`atomizado_email` en `_intake_log.jsonl`."))
         return av1.EtapaResultado(
             nombre="sala_maquina", estado="hecha",
             detalle="OCR hecho; atomizacion PARCIAL",
-            pendientes=(av1.Pendiente(
-                codigo="atomizacion_parcial",
-                detalle="La atomizacion publico con errores o con poda omitida: "
-                        "`01_Procesado/Emails` no esta completo. Ver el evento "
-                        "`atomizado_email` en `_intake_log.jsonl`."),))
-    return av1.EtapaResultado(
-        nombre="sala_maquina", estado="hecha",
-        detalle=("OCR hecho; sin correo que atomizar" if status is None
-                 else "OCR hecho; atomizacion ok"))
+            pendientes=tuple(pendientes))
+    base = ("OCR hecho; sin correo que atomizar" if status is None
+            else "OCR hecho; atomizacion ok")
+    if agotados:
+        base += f"; {agotados} documento(s) con intentos agotados"
+    return av1.EtapaResultado(nombre="sala_maquina", estado="hecha", detalle=base,
+                              pendientes=tuple(pendientes))
 
 
 def registrar_cierre_v1(case_dir: Path, ident, resultado) -> None:

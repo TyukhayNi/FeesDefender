@@ -86,8 +86,9 @@ def dobles(caso, monkeypatch):
         return _ResCRM()
 
     def _apply(case_id=None, **kw):
+        from scripts.sala_maquina import ResultadoApply
         llamadas["ocr"] += 1
-        return "ok"
+        return ResultadoApply(status_atomizacion="ok")
 
     from core import sync_sudespacho
     from scripts import sala_maquina

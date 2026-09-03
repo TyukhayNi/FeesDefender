@@ -355,10 +355,60 @@ yo había hecho sin adjudicar y que ahora **queda firmado como decisión suya** 
 **Estado al cerrar: 3.885 tests, 0 fallos en dos semillas; 33/33 mutantes muertos por su frontera.
 Rama PUSHEADA a `origin` sin PR.** Sin mergear.
 
-**Siguiente:** `MEJORAS #142` como pieza propia (las 9 salidas dentro del mutex en modo `libre`, que
-es el que usa el equipo), la **Task 11** sobre W-02Q38C —necesita `PHPSESSID` y a Nikolai delante—, y
-el merge. **No se pide cuarta ronda:** la tercera ya solo encontró defectos que yo introduje
-remediando la segunda, y eso es rendimiento decreciente, no falta de revisión.
+**`MEJORAS #142` ✅ CERRADA** (PR #264): las nueve salidas del proceso están fuera del bloque de
+mutex, con un guard que **deriva** el cierre transitivo de las 17 funciones alcanzadas y reconoce las
+cuatro formas de terminar. Su ronda: `NO-SHIP`, 5 hallazgos, 5 confirmados — y lo que tumbó fue el
+guard, no el arreglo.
+
+**Task 11 ✅ EJECUTADA el 2026-09-03 sobre W-02Q38C** (`BaRS11 - Xabec 8`, Barcelona), en tres pasos:
+`--hasta drive`, `--hasta crm` y completa. **Terminó `preparado_con_pendientes`, salida 0, las tres
+etapas**, con el estado durable cerrado y el evento forense emitido.
+
+**Y la corrida pagó dos hallazgos de revisión sobre el caso real:**
+
+1. **El falso punto fijo del `.pulled` (HA-03/HC-03).** El marcador estaba presente, así que con el
+   código de ayer la corrida se habría **saltado el Drive entero**. Con la consulta por ronda trajo
+   **2 documentos** que E&V había añadido y el expediente no tenía. Prueba documental de un litigio.
+2. **El gestor documental vacío (L2-01 de R-B).** El expediente CRM 634 lo tiene vacío, así que
+   antes de esta mañana la etapa habría devuelto `fallo` → V1 `bloqueado` → **la sala de máquina no
+   habría corrido**. Ahora es `saltada` con su pendiente, que es lo correcto.
+
+**Punto fijo demostrado materialmente**: la segunda corrida dio `0 depositables, 38 duplicados
+omitidos` y no cambió el árbol.
+
+**Dos defectos que solo aparecieron al correr de verdad:** el informe de la etapa de Drive decía «0
+ficheros» justo tras depositar dos —contaba el primer nivel del destino, un proxy— y está **ya
+arreglado** con su test; y **`MEJORAS #144`**: V1 no cuenta los documentos que el OCR no pudo
+procesar. Cinco quedaron con tres intentos agotados y el evento forense dice «preparado con
+pendientes» enumerando dos pendientes ajenos a la documental. Eso es de prueba y está anotado con su
+medición.
+
+**Y una corrección de método que costó una vuelta:** dije que la corrida necesitaba renovar la
+`PHPSESSID`. Falso. El pull va por **API REST** (`x-api-key`) y la cookie es su *fallback*; la API
+key llevaba todo el tiempo en el entorno de usuario de Windows. Lo que la tapaba era mi propio
+envoltorio, con `load_dotenv(override=True)` pisándola con el hueco vacío del `.env` — cuando
+`core/config.py` usa `override=False` **a propósito**, porque los secretos van por entorno y el
+entorno tiene que ganar sobre el fichero. Leí esa línea media hora antes y no me pregunté por qué.
+
+**`MEJORAS #144` ✅ CERRADA el mismo día.** `apply` devuelve un `ResultadoApply` en vez de un
+`str | None` —un objeto, para que el siguiente dato no obligue a cambiar la firma otra vez— y
+`etapa_sala_maquina` levanta el pendiente `ocr_documentos_agotados`. **35/35 mutantes** muertos por
+su frontera, con F37/F38 nuevos.
+
+**Y el arreglo enseñó dos cosas sobre mi propio arnés, las dos ya conocidas y repetidas:** escribí
+un test llamado «por el camino POR DEFECTO» que **doblaba `apply`**, o sea la función cuyo dato
+quería contratar, así que la mutación quedaba invisible y el mutante sobrevivía —se reescribió
+contra el `apply` **real**, que se puede sin OCR porque un documento con los intentos agotados se
+salta—; y **F12 volvió a mutar prosa que ningún test afirma**, cuando su frontera es el pendiente.
+
+**`MEJORAS #145` anotada**: `test_case_mutex` falla ~1 de cada 3 corridas por una carrera en su
+desmontaje. **No es orden** —la misma semilla, dos repeticiones más, verde las dos— **ni es el
+test** —el fichero solo, 44 verdes—: es tiempos. Es higiene de test, no de producción, pero eleva
+rojos que no significan nada en la regla de las dos semillas. No se toca `case_mutex.py`, que el
+Plan 5 declara intocable.
+
+**Siguiente:** el merge de esta rama. **No se pide cuarta ronda** sobre el cableado: la tercera ya
+solo encontró defectos que yo introduje remediando la segunda.
 
 **El razonamiento, que es el de la propia sesión:** hoy remedié HA-07 en la rama que no podía
 manifestarlo y dejé el defecto donde vivía. Arreglar diez bloques más antes de que un revisor con

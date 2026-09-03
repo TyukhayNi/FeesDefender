@@ -6343,3 +6343,85 @@ y dejar el argumento cualitativo (que es el que de verdad decide).
 
 **Disparador de promoción:** la próxima revisión de esa spec, o cualquier trabajo que vuelva a
 apoyarse en el recuento de referencias del entrypoint.
+
+---
+
+## 144. V1 no cuenta los documentos que el OCR no pudo procesar
+
+**Medido el 2026-09-03 en la corrida real de la Task 11 sobre W-02Q38C**, que es exactamente lo que
+una apertura de verdad enseña y una fixture no.
+
+La sala de máquina imprimió:
+
+```
+AVISO: 5 documento(s) con 3 intentos agotados se saltan y NO se han vuelto a procesar.
+```
+
+Y la secuencia de V1 terminó `preparado_con_pendientes` enumerando **dos** pendientes:
+`fuentes_v3_sin_consultar` y `crm_gestor_vacio`. **Los cinco documentos no aparecen en ninguno de
+los dos registros durables** — ni en `_apertura_v1.json` ni en el evento `apertura_v1_terminada`.
+
+**Por qué importa, y es de prueba documental.** El evento forense es lo único que queda de una
+apertura dentro de seis meses. Quien lo lea verá «preparado con pendientes» con dos pendientes
+ajenos a la documental y concluirá que los documentos del caso están procesados. Cinco no lo están,
+y llevan tres intentos fallidos: son justo los que alguien tendría que mirar a mano.
+
+**La causa, y es de diseño mío.** `etapa_sala_maquina` mapea el status de la **atomización** a un
+pendiente (`atomizacion_parcial`) y nunca el del **OCR**. `scripts/sala_maquina.py:apply` devuelve
+solo `status_atomizacion`; el contador de agotados existe (`MEJORAS #84`) y se imprime, pero no
+viaja al llamador. El estado de V1 se deriva de una lista de pendientes que no incluye todo lo
+pendiente — la misma familia que los defectos que R-B y R-C encontraron el mismo día.
+
+**Remedio.** Que `apply` devuelva también los agotados (o un resultado con los dos datos, que es
+mejor que un segundo valor de retorno), y que `etapa_sala_maquina` levante un pendiente
+`ocr_documentos_agotados` con la cuenta. Con su mutante: el arnés de mutación del Plan 5 no cubre
+esto porque la frontera no existe todavía.
+
+**Disparador de promoción.** La próxima apertura real —cualquier caso con documentos que el motor no
+resuelva—, o el primer informe de viabilidad que se redacte sobre un expediente cuyo estado decía
+«preparado» con documental sin procesar. Es barato: el dato ya está calculado.
+
+---
+
+## 145. `test_case_mutex` falla ~1 de cada 3 corridas por una carrera en su desmontaje
+
+**Medido el 2026-09-03**, cerrando `MEJORAS #144`. En la suite completa con semilla `31337`:
+
+```
+PermissionError: [Errno 13] Permission denied: '<basetemp>/test_RENUEVA_mientras_el_cuerp0/locks/W-MUTEX1.lock'
+MutexIlegible: [MUTEX_ILEGIBLE] — el mutex del caso existe y no se puede interpretar — caso W-MUTEX1
+FAILED tests/test_case_mutex.py::TestElGestorRenueva::test_RENUEVA_mientras_el_cuerpo_corre
+```
+
+**Qué se midió, y descarta las dos explicaciones fáciles:**
+
+- **No es dependencia de orden.** La misma semilla `31337`, sobre el mismo árbol, dos repeticiones
+  más: **verde las dos, 0 fallos**. El orden lo fija la semilla; si el resultado cambia, la causa es
+  de **tiempos**.
+- **No es el test.** `tests/test_case_mutex.py` **solo**, con esa misma semilla: 44 verdes.
+
+**Hipótesis, y está SIN VERIFICAR:** el hilo de latido (`heartbeat`) de una sesión de mutex sigue
+teniendo abierto el `.lock` cuando pytest intenta limpiar su `tmp_path`. En Windows un fichero
+abierto no se puede borrar, y el `PermissionError` sale del `filelock`/`msvcrt.locking` que
+`case_mutex` usa por diseño. El `join(timeout=5)` del `finally` puede vencer sin que el hilo haya
+soltado el descriptor.
+
+**Alcance: es higiene de TEST, no de producción.** En producción el fichero de lock *debe* seguir
+existiendo mientras alguien lo sostiene; lo que aquí molesta es que el desmontaje del test no puede
+borrar su directorio temporal.
+
+**Por qué importa igual:** la regla de este repo es correr **dos semillas** antes de cerrar. Un test
+que falla una de cada tres corridas hace que esa regla dé rojos que no significan nada, y un rojo
+que no significa nada enseña a ignorar los rojos.
+
+**Remedio probable:** esperar a que el hilo de latido termine de verdad antes de salir del gestor en
+el camino de test (o que el `finally` cierre el descriptor explícitamente en vez de fiarlo al GC), y
+un `tmp_path` con reintento de borrado en Windows.
+
+**Lo que NO se hace aquí, y por qué:** `core/casos/case_mutex.py` tiene cuatro rondas de revisión y
+diecisiete mutantes, y el Plan 5 lo declara intocable — editarlo es reabrirlas. Esta entrada existe
+para que quien lo abra con un motivo lo arregle entonces, con su presupuesto de rondas.
+
+**Disparador de promoción.** El siguiente rojo de este test en un cierre, o cualquier trabajo que ya
+tenga que abrir `case_mutex.py` por otra razón.
+

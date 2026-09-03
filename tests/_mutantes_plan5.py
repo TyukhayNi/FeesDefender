@@ -128,24 +128,31 @@ MUTANTES: list[tuple[str, str, str, str, set[str]]] = [
      '    if status == "parcial":',
      '    if False:',
      {f"{ETA}::test_f10_f12_el_status_de_atomizacion_gobierna_el_pendiente[parcial-hecha-True]",
-      f"{COS}::test_costura_el_status_de_apply_llega_por_el_camino_POR_DEFECTO[parcial-hecha]"}),
+      f"{COS}::test_costura_el_status_de_apply_llega_por_el_camino_POR_DEFECTO[parcial-hecha]",
+      f"{ETA}::test_f38_los_agotados_se_acumulan_CON_la_atomizacion_parcial"}),
 
     ("F11", CLI,
      '    if status == "fallo":',
      '    if False:',
      {f"{ETA}::test_f11_atomizacion_en_fallo_bloquea_la_etapa",
-      f"{COS}::test_costura_el_status_de_apply_llega_por_el_camino_POR_DEFECTO[fallo-fallo]"}),
+      f"{COS}::test_costura_el_status_de_apply_llega_por_el_camino_POR_DEFECTO[fallo-fallo]",
+      f"{ETA}::test_los_agotados_se_declaran_incluso_si_la_atomizacion_FALLA"}),
 
+    # F12 ataca el PENDIENTE y no la prosa del detalle: su frontera es «no ejecutada
+    # != quedo pendiente», y mutar un texto que ningun test afirma dejaba el mutante
+    # vivo. Ya paso una vez y volvio a pasar al reescribirlo tras MEJORAS #144.
     ("F12", CLI,
-     '        detalle=("OCR hecho; sin correo que atomizar" if status is None\n'
-     '                 else "OCR hecho; atomizacion ok"))',
-     '        detalle=("OCR hecho; sin correo que atomizar" if status is None\n'
-     '                 else "OCR hecho; atomizacion ok"),\n'
-     '        pendientes=(av1.Pendiente(codigo="x", detalle="x"),))',
+     "    return av1.EtapaResultado(nombre=\"sala_maquina\", estado=\"hecha\", detalle=base," + NL +
+     "                              pendientes=tuple(pendientes))",
+     "    return av1.EtapaResultado(nombre=\"sala_maquina\", estado=\"hecha\", detalle=base," + NL +
+     "                              pendientes=tuple(pendientes) + (av1.Pendiente(" + NL +
+     "                                  codigo=\"x\", detalle=\"x\"),))",
      {f"{ETA}::test_f10_f12_el_status_de_atomizacion_gobierna_el_pendiente[None-hecha-False]",
       f"{ETA}::test_f10_f12_el_status_de_atomizacion_gobierna_el_pendiente[ok-hecha-False]",
+      f"{COS}::test_costura_el_status_de_apply_llega_por_el_camino_POR_DEFECTO[ok-hecha]",
       f"{COS}::test_costura_el_status_de_apply_llega_por_el_camino_POR_DEFECTO[None-hecha]",
-      f"{COS}::test_costura_el_status_de_apply_llega_por_el_camino_POR_DEFECTO[ok-hecha]"}),
+      # F37 afirma la lista EXACTA de pendientes, asi que un pendiente de mas la mata.
+      f"{ETA}::test_f37_los_documentos_agotados_del_OCR_APARECEN_en_los_pendientes"}),
 
     ("F13", LOG,
      '    "apertura_v1_terminada",         # cierre de la secuencia de V1 con estado y pendientes\n',
@@ -287,6 +294,19 @@ MUTANTES: list[tuple[str, str, str, str, set[str]]] = [
      "    return False",
      {f"{ATO}::test_hc04_una_contaminacion_cruzada_deja_la_atomizacion_PARCIAL",
       f"{ATO}::test_hc04_el_predicado_reconoce_la_nota_DEL_PRODUCTOR_REAL"}),
+
+    # --- MEJORAS #144: los agotados del OCR aparecen en los pendientes ---------
+    ("F37-agotados-pendiente", CLI,
+     "    if agotados:" + NL +      "        pendientes.append(av1.Pendiente(",
+     "    if False:" + NL +      "        pendientes.append(av1.Pendiente(",
+     {f"{ETA}::test_f37_los_documentos_agotados_del_OCR_APARECEN_en_los_pendientes",
+      f"{ETA}::test_f38_los_agotados_se_acumulan_CON_la_atomizacion_parcial",
+      f"{ETA}::test_los_agotados_se_declaran_incluso_si_la_atomizacion_FALLA"}),
+
+    ("F38-agotados-viajan", "scripts/sala_maquina.py",
+     "        return ResultadoApply(status_atomizacion=status_atomizacion," + NL +      "                              documentos_agotados=len(agotados))",
+     "        return ResultadoApply(status_atomizacion=status_atomizacion,"  + NL +      "                              documentos_agotados=0)",
+     {f"{COS}::test_costura_los_agotados_viajan_desde_el_apply_REAL"}),
 
     ("F28", EST_MOD,
      "    def sin_cerrar(self) -> bool:\n        return self.terminada is None",
