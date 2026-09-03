@@ -6383,7 +6383,7 @@ resuelva—, o el primer informe de viabilidad que se redacte sobre un expedient
 
 ---
 
-## 145. `test_case_mutex` falla ~1 de cada 3 corridas por una carrera en su desmontaje
+## 145. Un LECTOR del lock puede hacer que el titular PIERDA su mutex (Windows) `[RECLASIFICADO 2026-09-03: es de PRODUCCIÓN]`
 
 **Medido el 2026-09-03**, cerrando `MEJORAS #144`. En la suite completa con semilla `31337`:
 
@@ -6406,22 +6406,62 @@ abierto no se puede borrar, y el `PermissionError` sale del `filelock`/`msvcrt.l
 `case_mutex` usa por diseño. El `join(timeout=5)` del `finally` puede vencer sin que el hilo haya
 soltado el descriptor.
 
-**Alcance: es higiene de TEST, no de producción.** En producción el fichero de lock *debe* seguir
-existiendo mientras alguien lo sostiene; lo que aquí molesta es que el desmontaje del test no puede
-borrar su directorio temporal.
+**RECLASIFICADO, y mi primera versión de esta entrada estaba equivocada.** Escribí «es higiene de
+TEST, no de producción». **Es de producción.** Lo que me hizo mirar fue que el fallo traía DOS cosas
+y no una: el `PermissionError` y un `MutexIlegible`, que significa «el lock existe y no se puede
+interpretar». Eso no es la limpieza de un directorio temporal.
+
+**La anatomía lo explica.** El fichero `.lock` **contiene el estado JSON**; el bloqueo del sistema
+vive en un hermano `.lock.guard`, a propósito, porque `os.replace` sustituye el inodo
+(`core/casos/case_mutex.py:360-362`). Así que el estado se **publica** con `os.replace` y se **lee**
+con un `read_text` normal — y en Windows esas dos operaciones chocan.
+
+**Medido con una sonda propia** (tres lectores y un escritor, 3 segundos):
+
+```
+lecturas OK             : 27570
+lector PermissionError  :   326   (~1,2 % de las lecturas)
+escritor PermissionError:  2389
+```
+
+**Las dos direcciones fallan, y cada una con su consecuencia:**
+
+1. **El lector** recibe `PermissionError` y `leer_estado` lo convierte en `MutexIlegible`
+   (`:320-332`), cuyo contrato es «un lock ilegible es evidencia»: una alarma de corrupción sobre un
+   lock sano.
+2. **El escritor** —el latido renovando el lease— falla, y `tomado` trata **cualquier** excepción de
+   `renovar` como pérdida de titularidad (`:603-611`: `sesion.marcar_perdido(exc); return`). Con lo
+   cual **un proceso que solo COMPRUEBA si el caso está ocupado puede hacer que el dueño legítimo
+   pierda su mutex**, y el dueño acaba viendo «se perdió la exclusión, puede haber trabajo a medias»
+   sobre una corrida sana.
+
+**Los dos son falsas alarmas producidas por un uso concurrente correcto** — justo lo que esta
+primitiva existe para hacer fiable.
+
+**Lo que NO está medido: la frecuencia real en producción.** La sonda es un bucle apretado a
+propósito. Con el latido renovando cada pocos segundos y lecturas ocasionales la ventana es mucho
+más estrecha, y que esto se manifieste como un test intermitente y no como una incidencia diaria
+apunta a eso. El **mecanismo** está confirmado; su tasa real, no.
 
 **Por qué importa igual:** la regla de este repo es correr **dos semillas** antes de cerrar. Un test
 que falla una de cada tres corridas hace que esa regla dé rojos que no significan nada, y un rojo
 que no significa nada enseña a ignorar los rojos.
 
-**Remedio probable:** esperar a que el hilo de latido termine de verdad antes de salir del gestor en
-el camino de test (o que el `finally` cierre el descriptor explícitamente en vez de fiarlo al GC), y
-un `tmp_path` con reintento de borrado en Windows.
+**Remedio, y el precio no está en el código:** un reintento acotado ante `PermissionError` en
+`leer_estado` y alrededor del `os.replace` de `_escribir_estado` — una violación de compartición en
+Windows es transitoria por naturaleza y hay que distinguirla de un fichero de verdad ilegible, que
+es evidencia y no se puede tragar. Serán quince líneas.
+
+**Lo que cuesta es que toca la primitiva de exclusión.** Por radio de daño son **dos rondas**
+(decide quién puede escribir sobre qué copia), y el Plan 5 la declara intocable porque editarla
+reabre sus cuatro rondas y sus diecisiete mutantes. Ese es el precio real: no el diff, la garantía.
 
 **Lo que NO se hace aquí, y por qué:** `core/casos/case_mutex.py` tiene cuatro rondas de revisión y
 diecisiete mutantes, y el Plan 5 lo declara intocable — editarlo es reabrirlas. Esta entrada existe
 para que quien lo abra con un motivo lo arregle entonces, con su presupuesto de rondas.
 
-**Disparador de promoción.** El siguiente rojo de este test en un cierre, o cualquier trabajo que ya
-tenga que abrir `case_mutex.py` por otra razón.
+**Disparador de promoción.** Ya no es «el siguiente rojo del test». Al reclasificarse es **la
+primera vez que una apertura real informe de una pérdida de exclusión que no se explique por otro
+proceso**: desde fuera eso es indistinguible de esta carrera, y en un despacho donde nadie trabaja
+en paralelo sería casi con seguridad esto.
 
