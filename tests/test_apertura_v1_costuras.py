@@ -17,6 +17,10 @@ from core import apertura_v1 as av1
 from core.intake_drive import DriveIntakeResult
 from scripts import abrir_caso as cli
 
+#: Salto de linea explicito: escribirlo como escape dentro de estas cadenas es
+#: como se rompio este fichero tres veces hoy.
+FIN = chr(10)
+
 
 # --------------------------------------------------------------------------
 # Costura 1: `etapa_sala_maquina` -> `sala_maquina.apply` -> el status
@@ -296,21 +300,49 @@ def test_hc03_el_evento_forense_se_emite_ANTES_de_cerrar_el_estado(caso_v1, monk
     assert orden == ["evento", "estado"], orden
 
 
-def test_costura_los_agotados_del_OCR_viajan_por_el_camino_POR_DEFECTO(monkeypatch):
-    """`MEJORAS #144`, el otro extremo de la costura. El pendiente puede estar bien
-    cableado en el adaptador y no servir de nada si `apply` no manda el dato — que es
-    exactamente lo que pasaba: el contador existía, se imprimía, y no viajaba."""
+def test_costura_los_agotados_viajan_desde_el_apply_REAL(tmp_path, monkeypatch):
+    """`MEJORAS #144`, el otro extremo de la costura — y la primera versión de este test
+    **no valía**: se llamaba «por el camino por defecto» y doblaba `apply`, que es justo
+    la función cuyo dato quiere contratar. La mutación vive DENTRO de `apply`, así que el
+    doble la hacía invisible: el mutante F38 sobrevivía.
+
+    Aquí corre el `apply` de verdad, sin OCR, porque un documento con los intentos
+    agotados **se salta** — así que basta fabricar ese estado en disco.
+    """
+    from core.utils import file_sha256
     from scripts import sala_maquina
-    from scripts.sala_maquina import ResultadoApply
 
-    monkeypatch.setattr(sala_maquina, "apply",
-                        lambda case_id=None, **k: ResultadoApply(
-                            status_atomizacion="ok", documentos_agotados=7))
+    # Bajo una raiz aislada y resuelto por IDENTIDAD: `--case-dir` exige que el caso este
+    # en el catalogo local, y saltarse el resolver seria probar otra cosa.
+    from core.casos import case_locator
+    root = tmp_path / "CASOS"
+    root.mkdir()
+    monkeypatch.setattr(case_locator, "_root", lambda: root)
 
-    class _Ident:
-        case_id = "C"
-        w_code = "W-000000"
+    caso = root / "BaXX5 - Prueba (W-000005) - BAD_DEBT"
+    entrada = caso / "00_Input"
+    entrada.mkdir(parents=True)
+    (entrada / "_caso.md").write_text(
+        "---" + FIN + "meta:" + FIN
+        + "  case_id: BaXX5 - Prueba (W-000005) - BAD_DEBT" + FIN
+        + "  id_go: W-000005" + FIN
+        + "  tipo_caso: BAD_DEBT" + FIN
+        + "  ciudad: Barcelona" + FIN
+        + "---" + FIN,
+        encoding="utf-8")
+    doc = entrada / "imposible.pdf"
+    doc.write_bytes(b"%PDF-1.4 roto")
+    sha = file_sha256(doc)
 
-    r = cli.etapa_sala_maquina(_Ident())
-    assert [p.codigo for p in r.pendientes] == ["ocr_documentos_agotados"]
-    assert "7 documento" in r.pendientes[0].detalle
+    sm_dir = caso / "01_Procesado" / "02_Sala de máquina"
+    sm_dir.mkdir(parents=True)
+    (sm_dir / sala_maquina._STATE).write_text(
+        json.dumps({"procesados": [], "intentos": {sha: 3}, "hashes": {}}),
+        encoding="utf-8")
+
+    res = sala_maquina.apply("BaXX5 - Prueba (W-000005) - BAD_DEBT")
+
+    assert res is not None, "apply dejo de devolver su resultado"
+    assert res.documentos_agotados == 1, (
+        f"el contador de agotados no viaja: {res}. El pendiente del adaptador puede estar "
+        "perfecto y no servir de nada si el dato no sale de `apply`.")
