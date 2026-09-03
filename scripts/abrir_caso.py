@@ -35,6 +35,7 @@ from core import (
     sudespacho_create, whatsapp_intake,
 )
 from core import apertura_v1 as av1
+from core import apertura_v1_estado as estado_v1
 from core.casos import case_locator, mutex_sesion
 from core.casos.workspace_model import CaseRef
 from core.ciudades import CIUDADES
@@ -955,8 +956,22 @@ def main(
             case_dir = case_locator.localizar(ident.case_id)
 
             if modo == "v1":
+                # El estado durable de la spec §11. Se abre ANTES de correr nada: si la
+                # corrida muere, lo que queda en disco dice que empezo y no termino.
+                previa = estado_v1.leer(case_dir)
+                if previa is not None and previa.sin_cerrar():
+                    typer.echo(
+                        f"[AVISO] la ronda {previa.ronda_id!r} (iniciada "
+                        f"{previa.iniciada}) no llego a cerrarse: esta corrida no da por "
+                        f"buena su salida.", err=True)
+                ronda = estado_v1.abrir(case_dir, ronda_id=now_iso_utc(),
+                                        ahora=now_iso_utc())
                 resultado_v1 = secuencia_v1(ident, case_dir, folder_id=folder_id,
                                             team_id=team_id, hasta=hasta)
+                estado_v1.cerrar(
+                    case_dir, ronda, estado=resultado_v1.estado,
+                    etapas={e.nombre: e.estado for e in resultado_v1.etapas},
+                    ahora=now_iso_utc())
                 registrar_cierre_v1(case_dir, ident, resultado_v1)
             else:
                 # 5.3-5.7 intake por fuente

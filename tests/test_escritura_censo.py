@@ -29,6 +29,11 @@ PRODUCTORES = (
     "core/email_atomize/pipeline.py", "core/adjuntos_contenido/pipeline.py",
     "core/sala_maquina.py", "core/split_documental.py",
     "scripts/abrir_caso.py", "scripts/sala_maquina.py",
+    # Anadido el 2026-09-03 (Plan 5, Task 8b): `core/apertura_v1_estado.py`
+    # escribe el estado durable por ronda y NO pasa por la costura. Dejarlo fuera
+    # de esta lista habria mantenido el techo en 84 con una escritura nueva sin
+    # contar, que es el «techo con hueco» contra el que avisa el comentario de abajo.
+    "core/apertura_v1_estado.py",
 )
 
 #: Las primitivas del barrido del §25 que NO son ambiguas: su nombre solo existe en el
@@ -82,7 +87,17 @@ AMBIGUAS = frozenset({"replace", "copy", "dump"})
 #: que no esta en `PRODUCTORES`. El censo habria bajado a 83 sin que la escritura
 #: desapareciera. Eso es absorber la deuda, que es justo lo que la regla de arriba prohibe.
 #: Lo cazo la R-A del Plan 5 (HA-11) antes de escribir una linea.
-TECHO_CENSO = 84
+#: **84 -> 87 el 2026-09-03, y las tres son de la MISMA pieza.** El Plan 5 anade
+#: `core/apertura_v1_estado.py` —el estado durable por ronda que la spec §11 hace
+#: obligatorio «desde la primera entrega»— con `mkdir`, `os.replace` y el `unlink` del
+#: temporal de su escritura atomica. Es escritura de **protocolo**: un fichero de control
+#: en `00_Input`, no un documento del caso.
+#:
+#: **La lista de PRODUCTORES creció, y eso se declara aqui.** Lo alternativo era dejar el
+#: modulo fuera de la lista: el techo se habria quedado en 84 con tres escrituras nuevas
+#: sin contar, que es literalmente el «techo con hueco» que el comentario de abajo dice
+#: prevenir. Un censo que no cuenta lo nuevo no es un censo, es un numero.
+TECHO_CENSO = 87
 
 
 def _nombre_llamado(n: ast.Call) -> str | None:
