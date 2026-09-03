@@ -152,7 +152,8 @@ MUTANTES: list[tuple[str, str, str, str, set[str]]] = [
       f"{CAB}::test_el_evento_de_cierre_lleva_el_estado_y_los_pendientes",
       f"{E2E}::test_e2e_el_evento_de_cierre_queda_en_el_log",
       f"{COS}::test_costura_el_estado_gobierna_el_CODIGO_DE_SALIDA_DEL_PROCESO[preparado_con_pendientes-0]",
-      f"{COS}::test_costura_main_EMITE_el_evento_y_cierra_la_ronda"}),
+      f"{COS}::test_costura_main_EMITE_el_evento_y_cierra_la_ronda",
+      f"{COS}::test_hc03_el_evento_forense_se_emite_ANTES_de_cerrar_el_estado"}),
 
     ("F14", CLI,
      "    return 1 if estado == av1.EstadoV1.BLOQUEADO else 0",
@@ -229,7 +230,9 @@ MUTANTES: list[tuple[str, str, str, str, set[str]]] = [
      "                raise typer.Exit(code=0)",
      {f"{CAB}::test_f25_la_rama_v1_no_sale_del_proceso_dentro_del_bloque_de_mutex",
       f"{COS}::test_costura_el_estado_gobierna_el_CODIGO_DE_SALIDA_DEL_PROCESO[bloqueado-1]",
-      f"{COS}::test_costura_main_EMITE_el_evento_y_cierra_la_ronda"}),
+      f"{COS}::test_costura_main_EMITE_el_evento_y_cierra_la_ronda",
+      f"{COS}::test_hc02_la_publicacion_ocurre_DENTRO_del_bloque_de_mutex",
+      f"{COS}::test_hc03_el_evento_forense_se_emite_ANTES_de_cerrar_el_estado"}),
 
     ("F27", EST_MOD,
      "        os.replace(tmp, f)",
