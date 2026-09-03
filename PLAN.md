@@ -343,9 +343,22 @@ defecto, uno imprimiendo «Sync completado» con errores dentro; **HC-06**, camb
 plan sin adjudicarlo y el «31/31» es cierto sobre mi lista pero no sobre el §3 (faltan F19, F20 y
 F26); y **HC-07**, el punto fijo material del E2E es vacuo.
 
-**Siguiente:** decisión de Nikolai sobre **HC-04** (toca prueba documental) y **HC-06** (una fuente
-que modifiqué sin permiso de nadie), más `MEJORAS #142` y los diez bloques del §6. **Task 11 sigue
-sin ejecutarse.** No se pide cuarta ronda.
+**HC-04 y HC-06 DECIDIDOS y cerrados el 2026-09-03 por Nikolai**, y la regla que salió de los dos
+merece quedarse: **«falta prueba» bloquea; «puede sobrar» avisa.** Un documento del CRM que no baja
+es prueba que **falta** y el espejo queda demostrablemente incompleto → bloquea. Una nota de
+contaminación cruzada es sospecha de material **de más** y es heurística → **`parcial`**, con
+pendiente y aviso, sin plantar la corrida. Lo segundo es HC-04; lo primero es el cambio de F19 que
+yo había hecho sin adjudicar y que ahora **queda firmado como decisión suya** en el §3.
+
+**HC-05 y HC-07 van a piezas propias** (el módulo del CRM compartido, y el punto fijo del E2E).
+
+**Estado al cerrar: 3.885 tests, 0 fallos en dos semillas; 33/33 mutantes muertos por su frontera.
+Rama PUSHEADA a `origin` sin PR.** Sin mergear.
+
+**Siguiente:** `MEJORAS #142` como pieza propia (las 9 salidas dentro del mutex en modo `libre`, que
+es el que usa el equipo), la **Task 11** sobre W-02Q38C —necesita `PHPSESSID` y a Nikolai delante—, y
+el merge. **No se pide cuarta ronda:** la tercera ya solo encontró defectos que yo introduje
+remediando la segunda, y eso es rendimiento decreciente, no falta de revisión.
 
 **El razonamiento, que es el de la propia sesión:** hoy remedié HA-07 en la rama que no podía
 manifestarlo y dejé el defecto donde vivía. Arreglar diez bloques más antes de que un revisor con

@@ -2682,13 +2682,13 @@ relajación de conveniencia.
 **Medición tras remediar: 3.883 tests, 0 fallos con dos semillas; 31/31 mutantes muertos, cada uno
 solo por su frontera.**
 
-### Los cuatro que quedan ABIERTOS, confirmados y sin remediar
+### De los cuatro, DOS cerrados por decisión de Nikolai el 2026-09-03 y dos abiertos
 
 | Id | Sev. | Qué es | Por qué no se cierra hoy |
 |---|---|---|---|
-| **HC-04** | ALTO | La **contaminación cruzada** que detecta la atomización va a `report.notas`, y el status solo mira `publicado` y `errores`: con notas y cero errores devuelve `ok`, el OCR sigue y V1 declara la etapa hecha sin pendiente | Es el que más pesa de los cuatro: documentos de otros casos colados van por su **tercera aparición** en este repo. Tocar el vocabulario de status del motor es alcance propio |
+| **HC-04** | ALTO | **✅ CERRADO.** La contaminación detectada deja la atomización en **`parcial`** —pendiente y aviso—, **no bloquea**. `contaminacion.hay_contaminacion()` vive **con el productor** de la nota y el consumidor pregunta; el evento forense gana `contaminacion_cruzada` para decir por qué quedó parcial. Fronteras F35/F36 con su mutante | Decisión de Nikolai. La regla: **«falta prueba» bloquea; «puede sobrar» avisa** — bloquear sobre una heurística haría frágil la herramienta diaria, y el remedio de la casa para un documento colado es que un humano lo borre |
 | **HC-05** | MEDIO | «El productor clasifica» solo lo pregunta mi adaptador. Otros **cuatro** consumidores de `PullResultV2` reinterpretan el mismo sum type implícito, y `sync_all` llega a imprimir «Sync completado» con errores dentro | El arreglo correcto es del módulo del CRM, compartido con El Contable / El Auditor: pieza propia con su presupuesto |
-| **HC-06** | MEDIO | **Cambié el §3 de este plan sin adjudicarlo**: F19 pasó de «hecha con pendiente» a `fallo`. Y el «31/31» es cierto sobre *mi lista*, no sobre *el §3* — faltan F19, F20 y F26 | Es corrección **documental** y de gobernanza, no de código, y su frase da en el clavo: que bloquear sea más prudente no autoriza al diff a cambiar su propia fuente |
+| **HC-06** | MEDIO | **✅ CERRADO.** El §3 queda reconciliado: F19, F20 y F26 tachadas con el motivo de cada retirada, el título dice «28 enunciadas, 3 retiradas, 6 añadidas → 31 vivas», y la nota bajo la tabla **firma el cambio de F19 como decisión de Nikolai** con la regla escrita | Se mantiene el bloqueo porque es lo correcto para prueba documental, pero la firma es suya. Y el «31/31» queda leído con precisión: cierto sobre la lista del arnés, no sobre las filas originales |
 | **HC-07** | MEDIO | El «punto fijo material» del E2E es **vacuo**: los tres dobles no escriben nada, así que la foto compara un árbol de un fichero y excluye el único que cambia | Arreglarlo pide dobles que escriban de verdad, o un E2E con OCR real bajo `--runslow` |
 
 **No se pide una cuarta ronda.** Lo que queda son cuatro bloques confirmados, tres de ellos con
