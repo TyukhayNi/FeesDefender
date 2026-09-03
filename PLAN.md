@@ -312,7 +312,40 @@ again at Sep 7th»—, o sea el reset gratuito **con una alternativa al lado**, 
 «Codex vuelve el 7». Peor: al sondearlo horas después el fallo **ya era otro**, un **404** de
 `backend-api/codex/responses` con sesión iniciada y el mismo binario que había corrido R-A. Eso no
 es cupo y un reset no lo cura. Antes de dar la vía por recuperada hay que **sondearla**, no mirar el
-calendario.
+calendario. **Y se recuperó el mismo día:** el sondeo dio verde unas horas después, así que
+la espera de cuatro días nunca existió.
+
+**R-C corrida y adjudicada el 2026-09-03: TERCERA ronda, autorizada expresamente por Nikolai, con
+Codex y la independencia RESTABLECIDA. `NO-SHIP`, 7 hallazgos, 7 confirmados, 0 refutados.** Acta
+[`…-plan5-rC-adversarial-review.md`](docs/superpowers/specs/2026-09-03-apertura-v1-plan5-rC-adversarial-review.md);
+adjudicación en el §7 del plan.
+
+**El hallazgo que justifica la ronda: HC-02 es un defecto que introduje AL REMEDIAR R-B.** Saqué la
+publicación del registro durable fuera del bloque de mutex «para no afirmar un éxito que la pérdida
+del lease desmiente», y con eso escribí **sin exclusión ninguna**. Codex mutó y ejecutó la
+intercalación `R1 abre → R1 libera → R2 abre → R1 cierra`: el fichero queda con la ronda R1 y
+**borra la evidencia de que R2 sigue en curso**, y ese mutante sobrevivió a los 105 tests
+contractuales. Cuatro líneas encima yo había escrito «escribir sin mutex es la violación que el
+mutex existe para impedir». Enuncié la propiedad y escribí lo contrario, en el acto de remediar.
+
+**La frontera, que cerró tres hallazgos con un cambio: `revalidar → publicar → liberar → salir`,
+indivisible.** La publicación vuelve **dentro** del bloque como último acto, previa
+`sesion.revalidar()` —el gestor cede la sesión y yo usaba `with` sin `as`, así que una pérdida a
+mitad de una etapa larga pasaba inadvertida—, con el evento forense **antes** del `estado.json`
+porque el `.jsonl` es append-only y autoritativo. Fuera del bloque queda solo informar y salir, así
+que la propiedad de HA-07 se conserva **y ya no hay escrituras a ese lado**, que es lo que antes la
+contradecía. **3.883 tests, 0 fallos en dos semillas; 31/31 mutantes.**
+
+**Cuatro bloques quedan abiertos y confirmados** (§7): **HC-04**, la contaminación cruzada devuelve
+`ok` y el OCR sigue —el que más pesa, porque los documentos de otros casos colados van por su
+tercera aparición en este repo—; **HC-05**, cuatro consumidores más de `PullResultV2` con el mismo
+defecto, uno imprimiendo «Sync completado» con errores dentro; **HC-06**, cambié el §3 de mi propio
+plan sin adjudicarlo y el «31/31» es cierto sobre mi lista pero no sobre el §3 (faltan F19, F20 y
+F26); y **HC-07**, el punto fijo material del E2E es vacuo.
+
+**Siguiente:** decisión de Nikolai sobre **HC-04** (toca prueba documental) y **HC-06** (una fuente
+que modifiqué sin permiso de nadie), más `MEJORAS #142` y los diez bloques del §6. **Task 11 sigue
+sin ejecutarse.** No se pide cuarta ronda.
 
 **El razonamiento, que es el de la propia sesión:** hoy remedié HA-07 en la rama que no podía
 manifestarlo y dejé el defecto donde vivía. Arreglar diez bloques más antes de que un revisor con
