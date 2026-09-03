@@ -176,3 +176,51 @@ def test_un_caso_md_ilegible_es_fallo():
                       pull=lambda *a, **k: pytest.fail("no debe pullar"))
     assert r.estado == "fallo"
     assert "_caso.md" in r.detalle
+
+
+@pytest.mark.parametrize("status,estado,hay_pendiente", [
+    ("ok", "hecha", False),
+    (None, "hecha", False),      # F12: no se ejecuto != quedo pendiente
+    ("parcial", "hecha", True),  # F10
+])
+def test_f10_f12_el_status_de_atomizacion_gobierna_el_pendiente(status, estado,
+                                                                hay_pendiente):
+    r = cli.etapa_sala_maquina(_IdentFalsa(), correr=lambda: status)
+    assert r.estado == estado
+    assert bool(r.pendientes) is hay_pendiente
+
+
+def test_f11_atomizacion_en_fallo_bloquea_la_etapa():
+    """F11. D4: `fallo` de atomizacion deja V1 `bloqueado`."""
+    r = cli.etapa_sala_maquina(_IdentFalsa(), correr=lambda: "fallo")
+    assert r.estado == "fallo"
+
+
+def test_un_typer_exit_no_cero_del_ocr_es_fallo():
+    import typer
+
+    def revienta():
+        raise typer.Exit(code=2)
+
+    r = cli.etapa_sala_maquina(_IdentFalsa(), correr=revienta)
+    assert r.estado == "fallo"
+    assert "2" in r.detalle
+
+
+def test_un_typer_exit_cero_no_es_fallo():
+    import typer
+
+    def sale_limpio():
+        raise typer.Exit(code=0)
+
+    r = cli.etapa_sala_maquina(_IdentFalsa(), correr=sale_limpio)
+    assert r.estado == "hecha"
+
+
+def test_una_excepcion_del_ocr_es_fallo():
+    def explota():
+        raise RuntimeError("ocrmypdf no esta instalado")
+
+    r = cli.etapa_sala_maquina(_IdentFalsa(), correr=explota)
+    assert r.estado == "fallo"
+    assert "ocrmypdf" in r.detalle

@@ -481,6 +481,52 @@ def etapa_crm(ident, case_dir: Path, *, leer_meta=None, pull=None):
                               detalle="; ".join(hechos), pendientes=tuple(pendientes))
 
 
+def etapa_sala_maquina(ident, *, correr=None):
+    """Etapa 3 de V1: atomizacion del correo depositado + OCR y espejos MD.
+
+    La maquina de estados es la del §24 D4: el motor NO cambia —el OCR sigue aunque la
+    atomizacion falle, y eso no se regresa— y lo que cambia es el RESULTADO de V1, que si
+    lo refleja.
+
+    El import va dentro: `scripts/sala_maquina` arrastra el motor de OCR y el atomizador,
+    y pagarlo en cada arranque del modo `libre` seria una regresion para sus llamadores.
+    """
+    def _correr():
+        from scripts import sala_maquina
+        return sala_maquina.apply(case_id=ident.case_id)
+
+    try:
+        status = (correr or _correr)()
+    except typer.Exit as exc:
+        codigo = getattr(exc, "exit_code", 0) or 0
+        if codigo:
+            return av1.EtapaResultado(
+                nombre="sala_maquina", estado="fallo",
+                detalle=f"la sala de maquina salio con codigo {codigo}")
+        status = None
+    except Exception as exc:  # noqa: BLE001
+        return av1.EtapaResultado(nombre="sala_maquina", estado="fallo",
+                                  detalle=f"{type(exc).__name__}: {exc}")
+
+    if status == "fallo":
+        return av1.EtapaResultado(
+            nombre="sala_maquina", estado="fallo",
+            detalle="la atomizacion del correo fallo (§24 D4: bloquea el cierre de V1)")
+    if status == "parcial":
+        return av1.EtapaResultado(
+            nombre="sala_maquina", estado="hecha",
+            detalle="OCR hecho; atomizacion PARCIAL",
+            pendientes=(av1.Pendiente(
+                codigo="atomizacion_parcial",
+                detalle="La atomizacion publico con errores o con poda omitida: "
+                        "`01_Procesado/Emails` no esta completo. Ver el evento "
+                        "`atomizado_email` en `_intake_log.jsonl`."),))
+    return av1.EtapaResultado(
+        nombre="sala_maquina", estado="hecha",
+        detalle=("OCR hecho; sin correo que atomizar" if status is None
+                 else "OCR hecho; atomizacion ok"))
+
+
 def _alta_crm(
     ident: "brain.Identidad",
     *,
