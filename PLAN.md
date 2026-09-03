@@ -390,8 +390,25 @@ envoltorio, con `load_dotenv(override=True)` pisándola con el hueco vacío del 
 `core/config.py` usa `override=False` **a propósito**, porque los secretos van por entorno y el
 entorno tiene que ganar sobre el fichero. Leí esa línea media hora antes y no me pregunté por qué.
 
-**Siguiente:** el merge de esta rama, y `MEJORAS #144` cuando toque. **No se pide cuarta ronda** sobre
-el cableado: la tercera ya solo encontró defectos que yo introduje remediando la segunda.
+**`MEJORAS #144` ✅ CERRADA el mismo día.** `apply` devuelve un `ResultadoApply` en vez de un
+`str | None` —un objeto, para que el siguiente dato no obligue a cambiar la firma otra vez— y
+`etapa_sala_maquina` levanta el pendiente `ocr_documentos_agotados`. **35/35 mutantes** muertos por
+su frontera, con F37/F38 nuevos.
+
+**Y el arreglo enseñó dos cosas sobre mi propio arnés, las dos ya conocidas y repetidas:** escribí
+un test llamado «por el camino POR DEFECTO» que **doblaba `apply`**, o sea la función cuyo dato
+quería contratar, así que la mutación quedaba invisible y el mutante sobrevivía —se reescribió
+contra el `apply` **real**, que se puede sin OCR porque un documento con los intentos agotados se
+salta—; y **F12 volvió a mutar prosa que ningún test afirma**, cuando su frontera es el pendiente.
+
+**`MEJORAS #145` anotada**: `test_case_mutex` falla ~1 de cada 3 corridas por una carrera en su
+desmontaje. **No es orden** —la misma semilla, dos repeticiones más, verde las dos— **ni es el
+test** —el fichero solo, 44 verdes—: es tiempos. Es higiene de test, no de producción, pero eleva
+rojos que no significan nada en la regla de las dos semillas. No se toca `case_mutex.py`, que el
+Plan 5 declara intocable.
+
+**Siguiente:** el merge de esta rama. **No se pide cuarta ronda** sobre el cableado: la tercera ya
+solo encontró defectos que yo introduje remediando la segunda.
 
 **El razonamiento, que es el de la propia sesión:** hoy remedié HA-07 en la rama que no podía
 manifestarlo y dejé el defecto donde vivía. Arreglar diez bloques más antes de que un revisor con
