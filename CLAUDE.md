@@ -150,10 +150,15 @@ Código: este directorio (`C:\Users\tnm33\Dev\FeesDefender`), versionado en Git 
   `main`. El trabajo va en **rama + PR**, que debe pasar el check `leak-scan` para poder
   mergear (cubre todas las máquinas y Cowork). El auto-push `post-commit` ya no existe.
   Instalar en cada clon/worktree: `pre-commit install && pre-commit install --hook-type pre-push`.
-- `90_NOTAS_PERSONALES/` en cada caso es zona del abogado — ningún módulo
-  del core la lee ni la escribe.
+- `90_Notas personales/` en cada caso es zona del abogado — ningún módulo
+  del core la lee ni la escribe. **Y por eso es el único sitio seguro para una nota a
+  mano: NO se escriben notas en `_caso.md`.** Los registradores no *mutan* ese fichero,
+  lo **reconstruyen** con `_write_case_index` —el constructor del alta—, así que el
+  cuerpo escrito a mano se pierde **sin aviso y sin necesidad de carrera**. Medido el
+  2026-08-26 y **reproducido por resultado el 2026-09-04**. Vigente hasta que cierre
+  `MEJORAS #146`.
 - Los prompts nunca inventan jurisprudencia. Solo citan lo que está en contexto.
-- Pipeline idempotente: re-ejecutar nunca toca `00_Input/` ni `90_NOTAS_PERSONALES/`.
+- Pipeline idempotente: re-ejecutar nunca toca `00_Input/` ni `90_Notas personales/`.
 - `core/anon/` — cero pérdida de lógica del Anonimizador original. No tocar
   regex/listas/thresholds. Mejoras solo en `docs/MEJORAS_FUTURAS.md`.
 - Nombres de carpetas: tipo oración siempre (`06_Anonimizado`, no `06_ANONIMIZADO`).
