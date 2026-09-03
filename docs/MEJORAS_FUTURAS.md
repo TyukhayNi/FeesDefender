@@ -6343,3 +6343,41 @@ y dejar el argumento cualitativo (que es el que de verdad decide).
 
 **Disparador de promoción:** la próxima revisión de esa spec, o cualquier trabajo que vuelva a
 apoyarse en el recuento de referencias del entrypoint.
+
+---
+
+## 144. V1 no cuenta los documentos que el OCR no pudo procesar
+
+**Medido el 2026-09-03 en la corrida real de la Task 11 sobre W-02Q38C**, que es exactamente lo que
+una apertura de verdad enseña y una fixture no.
+
+La sala de máquina imprimió:
+
+```
+AVISO: 5 documento(s) con 3 intentos agotados se saltan y NO se han vuelto a procesar.
+```
+
+Y la secuencia de V1 terminó `preparado_con_pendientes` enumerando **dos** pendientes:
+`fuentes_v3_sin_consultar` y `crm_gestor_vacio`. **Los cinco documentos no aparecen en ninguno de
+los dos registros durables** — ni en `_apertura_v1.json` ni en el evento `apertura_v1_terminada`.
+
+**Por qué importa, y es de prueba documental.** El evento forense es lo único que queda de una
+apertura dentro de seis meses. Quien lo lea verá «preparado con pendientes» con dos pendientes
+ajenos a la documental y concluirá que los documentos del caso están procesados. Cinco no lo están,
+y llevan tres intentos fallidos: son justo los que alguien tendría que mirar a mano.
+
+**La causa, y es de diseño mío.** `etapa_sala_maquina` mapea el status de la **atomización** a un
+pendiente (`atomizacion_parcial`) y nunca el del **OCR**. `scripts/sala_maquina.py:apply` devuelve
+solo `status_atomizacion`; el contador de agotados existe (`MEJORAS #84`) y se imprime, pero no
+viaja al llamador. El estado de V1 se deriva de una lista de pendientes que no incluye todo lo
+pendiente — la misma familia que los defectos que R-B y R-C encontraron el mismo día.
+
+**Remedio.** Que `apply` devuelva también los agotados (o un resultado con los dos datos, que es
+mejor que un segundo valor de retorno), y que `etapa_sala_maquina` levante un pendiente
+`ocr_documentos_agotados` con la cuenta. Con su mutante: el arnés de mutación del Plan 5 no cubre
+esto porque la frontera no existe todavía.
+
+**Disparador de promoción.** La próxima apertura real —cualquier caso con documentos que el motor no
+resuelva—, o el primer informe de viabilidad que se redacte sobre un expediente cuyo estado decía
+«preparado» con documental sin procesar. Es barato: el dato ya está calculado.
+
