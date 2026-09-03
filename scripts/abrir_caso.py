@@ -933,7 +933,7 @@ def main(
     try:
         with mutex_sesion.sostenido(CaseRef(w_code=ident.w_code) if ident.w_code
                                     else CaseRef(case_id=ident.case_id),
-                                    ahora_fn=now_iso_utc):
+                                    ahora_fn=now_iso_utc) as sesion:
             # 5.2 esqueleto (idempotente; con --case-id el caso ya existe)
             case_manager.ensure_case(
                 ident.case_id, titulo=ident.case_id, referencia_crm=ident.case_id,
@@ -961,6 +961,32 @@ def main(
                 ronda = estado_v1.abrir(case_dir, ronda_id=arranque, ahora=arranque)
                 resultado_v1 = secuencia_v1(ident, case_dir, folder_id=folder_id,
                                             team_id=team_id, hasta=hasta)
+                # **revalidar -> publicar -> liberar**, en ese orden e indivisible.
+                #
+                # La rev. anterior publicaba FUERA del bloque «para no afirmar un exito
+                # que la perdida del lease desmiente», y con eso escribia sin exclusion
+                # ninguna: R-C midio la intercalacion `R1 abre / R1 libera / R2 abre / R1
+                # cierra`, que deja el fichero con la ronda R1 y BORRA la evidencia de que
+                # R2 sigue en curso (HC-02). El comentario de entonces decia, correcto,
+                # que «escribir sin mutex es la violacion que el mutex existe para
+                # impedir» — y el codigo hacia justo eso cuatro lineas mas abajo.
+                #
+                # Y `revalidar()` primero porque el gestor cede la sesion y no consultarla
+                # deja que una perdida a mitad de una etapa larga pase inadvertida hasta la
+                # salida, con dos escritores sobre el mismo expediente (HC-01).
+                if not sesion.revalidar():
+                    raise MutexPerdido(
+                        w_code=getattr(sesion, "w_code", None) or "",
+                        detalle="el mutex dejo de ser nuestro antes de publicar el "
+                                "resultado: no se escribe nada")
+                # El evento forense va PRIMERO (HC-03): el `.jsonl` es append-only y
+                # autoritativo, y el `estado.json` es el marcador derivado. Al reves, un
+                # append fallido dejaba el estado diciendo «terminada» sin rastro alguno.
+                registrar_cierre_v1(case_dir, ident, resultado_v1)
+                estado_v1.cerrar(
+                    case_dir, ronda, estado=resultado_v1.estado,
+                    etapas={e.nombre: e.estado for e in resultado_v1.etapas},
+                    ahora=now_iso_utc())
             else:
                 # 5.3-5.7 intake por fuente
                 _despachar_intake(
@@ -999,12 +1025,10 @@ def main(
     # escribir sin mutex es la violacion que el mutex existe para impedir. La ronda queda
     # ABIERTA en disco, y la corrida siguiente la ve `sin_cerrar()` y avisa — que es lo
     # que hace que ese aviso sea el mecanismo y no un adorno.
+    # Fuera del bloque queda SOLO lo que no escribe: informar y salir. El `Exit` sigue
+    # aqui porque dentro convertiria una perdida del lease en una nota sobre una salida
+    # limpia (HA-07 de R-A) — pero ya no hay ninguna escritura a este lado.
     if resultado_v1 is not None:
-        estado_v1.cerrar(
-            case_dir, ronda, estado=resultado_v1.estado,
-            etapas={e.nombre: e.estado for e in resultado_v1.etapas},
-            ahora=now_iso_utc())
-        registrar_cierre_v1(case_dir, ident, resultado_v1)
         _informar_v1(resultado_v1)
         raise typer.Exit(code=codigo_de_salida(resultado_v1.estado))
 

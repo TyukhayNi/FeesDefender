@@ -192,3 +192,100 @@ def test_costura_main_EMITE_el_evento_y_cierra_la_ronda(caso_v1, monkeypatch):
     assert ronda["terminada"], "la ronda quedo abierta tras una corrida con exito"
     assert ronda["estado"] == "preparado_con_pendientes"
     assert ronda["etapas"] == {"drive": "hecha"}
+
+
+# --------------------------------------------------------------------------
+# Costura 5: revalidar -> publicar -> liberar -> salir. Indivisible.
+# --------------------------------------------------------------------------
+
+def test_hc02_la_publicacion_ocurre_DENTRO_del_bloque_de_mutex():
+    """HC-01/HC-02 de R-C. La rev. anterior publicaba FUERA «para no afirmar un exito que
+    la perdida del lease desmiente», y con eso escribia sin exclusion ninguna: la
+    intercalacion `R1 abre / R1 libera / R2 abre / R1 cierra` dejaba el fichero con la
+    ronda R1 y borraba la evidencia de que R2 seguia en curso.
+
+    Se comprueba estructuralmente porque la propiedad es de ORDEN, no de valor: las dos
+    publicaciones tienen que estar dentro del `with`, y el `typer.Exit` fuera.
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    arbol = ast.parse(textwrap.dedent(inspect.getsource(cli.main)))
+    withs = [n for n in ast.walk(arbol) if isinstance(n, ast.With)]
+    assert withs, "el cuerpo de main ya no tiene el bloque de mutex"
+
+    def _llamadas(nodo):
+        return {n.func.id for n in ast.walk(nodo)
+                if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
+
+    dentro = set()
+    for w in withs:
+        for hijo in w.body:
+            dentro |= _llamadas(hijo)
+    assert "registrar_cierre_v1" in dentro, (
+        "el evento forense se emite FUERA del bloque de mutex: eso es escribir sin "
+        "exclusion, que es la violacion que el mutex existe para impedir")
+
+    # Y el `Exit` sigue fuera (HA-07): dentro convertiria una perdida del lease en una
+    # nota sobre una salida limpia.
+    ramas_v1 = [n for w in withs for n in ast.walk(w)
+                if isinstance(n, ast.If) and isinstance(n.test, ast.Compare)
+                and isinstance(n.test.left, ast.Name) and n.test.left.id == "modo"]
+    raises = [n for r in ramas_v1 for hijo in r.body for n in ast.walk(hijo)
+              if isinstance(n, ast.Raise) and "Exit" in ast.dump(n)]
+    assert raises == [], "volvio a haber un typer.Exit dentro del bloque de mutex"
+
+
+def test_hc02_se_revalida_la_titularidad_ANTES_de_publicar(caso_v1, monkeypatch):
+    """HC-01. `sostenido()` cede la sesion y la version anterior usaba `with` sin `as`:
+    una perdida a mitad de una etapa larga pasaba inadvertida hasta la salida, con dos
+    escritores sobre el mismo expediente. Si la titularidad ya no es nuestra, NO se
+    publica nada y la ronda queda abierta para que la corrida siguiente avise."""
+    import contextlib
+
+    from core.casos import mutex_sesion
+
+    class _SesionPerdida:
+        w_code = "W-000000"
+
+        def revalidar(self):
+            return False
+
+    @contextlib.contextmanager
+    def _sostenido(*a, **k):
+        yield _SesionPerdida()
+
+    monkeypatch.setattr(mutex_sesion, "sostenido", _sostenido)
+    monkeypatch.setattr(cli, "registrar_cierre_v1",
+                        lambda *a, **k: pytest.fail("publico sin ser titular"))
+
+    res = _correr_main(monkeypatch, _resultado(av1.EstadoV1.PREPARADO_CON_PENDIENTES))
+
+    # La propiedad es «no se publica y no se sale 0», no el texto del mensaje: con este
+    # doble salta ANTES la propia costura de escritura (`EscrituraSinMutex`), porque una
+    # sesion que no esta en el registro de `mutex_sesion` no sostiene nada. Es defensa en
+    # profundidad y se deja dicho en vez de forzar el mensaje: afirmar el texto de UNA de
+    # las dos guardas ataria el test a cual de ellas salta primero.
+    assert res.exit_code != 0, res.output
+    # El motivo puede llegar por la salida o como excepcion (la costura la LANZA), asi que
+    # se mira en los dos sitios: lo que importa es que el fallo NOMBRE la exclusion y no
+    # sea un error cualquiera que pase por bueno.
+    motivo = (res.output + " " + str(res.exception or "")).lower()
+    assert "mutex" in motivo or "exclusion" in motivo, motivo
+
+
+def test_hc03_el_evento_forense_se_emite_ANTES_de_cerrar_el_estado(caso_v1, monkeypatch):
+    """HC-03. El orden inverso dejaba el JSON diciendo «ronda terminada» sin rastro en el
+    log si el append fallaba. El `.jsonl` es append-only y autoritativo; el `estado.json`
+    es el marcador derivado."""
+    orden = []
+    real_ev = cli.registrar_cierre_v1
+    real_cerrar = cli.estado_v1.cerrar
+    monkeypatch.setattr(cli, "registrar_cierre_v1",
+                        lambda *a, **k: (orden.append("evento"), real_ev(*a, **k))[1])
+    monkeypatch.setattr(cli.estado_v1, "cerrar",
+                        lambda *a, **k: (orden.append("estado"), real_cerrar(*a, **k))[1])
+
+    _correr_main(monkeypatch, _resultado(av1.EstadoV1.PREPARADO_CON_PENDIENTES))
+    assert orden == ["evento", "estado"], orden

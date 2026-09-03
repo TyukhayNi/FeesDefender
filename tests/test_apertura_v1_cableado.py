@@ -122,8 +122,16 @@ def test_f25_la_rama_v1_no_sale_del_proceso_dentro_del_bloque_de_mutex():
     assert ramas_v1, "no se encuentra la rama `modo == \"v1\"` dentro del bloque de mutex"
     # Solo el CUERPO de la rama: `ast.walk` sobre el `If` entero recorreria tambien su
     # `else`, donde vive el `Exit` del `--dry-run` del modo `libre` (MEJORAS #142).
+    #
+    # Y solo los `raise` de `typer.Exit`, no cualquier `raise`. **Acotado el 2026-09-03
+    # tras R-C**, y conviene decir por que no es debilitarlo: la propiedad de HA-07 es «no
+    # TERMINAR EL PROCESO aqui dentro», porque un `Exit` en vuelo hace que
+    # `case_mutex.tomado` se limite a ANOTAR una perdida del lease en vez de lanzarla. Un
+    # `raise MutexPerdido` deliberado es justo lo contrario del defecto: es la perdida
+    # denunciada en voz alta, y la remediacion de HC-01 lo necesita para no publicar sin
+    # ser titular. Prohibirlo bloqueaba el arreglo correcto.
     raises = [n for rama in ramas_v1 for hijo in rama.body for n in ast.walk(hijo)
-              if isinstance(n, ast.Raise)]
+              if isinstance(n, ast.Raise) and "Exit" in ast.dump(n)]
     assert raises == [], (
         "la rama v1 sale del proceso DENTRO del bloque de mutex: la perdida del lease "
         "quedaria como una nota sobre una salida limpia")
