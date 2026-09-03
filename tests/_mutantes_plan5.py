@@ -60,7 +60,9 @@ MUTANTES: list[tuple[str, str, str, str, set[str]]] = [
      "    pendientes: list[Pendiente] = []",
      {f"{SEC}::test_f3_una_corrida_impecable_sigue_siendo_preparado_con_pendientes",
       f"{CAB}::test_una_corrida_completa_toca_TODAS_las_fases_de_v1",
-      f"{E2E}::test_e2e_la_secuencia_recorre_las_tres_etapas_y_las_LLAMA"}),
+      f"{E2E}::test_e2e_la_secuencia_recorre_las_tres_etapas_y_las_LLAMA",
+      # Sin el pendiente permanente el estado pasa a `completo`, y el evento lo dice.
+      f"{E2E}::test_e2e_el_evento_de_cierre_queda_en_el_log"}),
 
     ("F4", AV1,
      "        if hasta is not None and etapa.nombre == hasta:\n"
@@ -88,8 +90,9 @@ MUTANTES: list[tuple[str, str, str, str, set[str]]] = [
      {f"{ETA}::test_f7_el_element_sale_del_link_y_nunca_del_default",
       f"{E2E}::test_e2e_la_secuencia_recorre_las_tres_etapas_y_las_LLAMA",
       f"{E2E}::test_e2e_el_evento_de_cierre_queda_en_el_log",
-      f"{E2E}::test_e2e_es_punto_fijo_MATERIAL_y_no_solo_de_estado",
-      f"{E2E}::test_e2e_un_fallo_del_crm_bloquea_y_la_sala_no_corre"}),
+      f"{E2E}::test_e2e_es_punto_fijo_MATERIAL_y_no_solo_de_estado"}),
+      # `test_e2e_un_fallo_del_crm...` NO muere aqui: su doble ignora el `element`, asi
+      # que la rama del pull no cambia nada para el. Prediccion mia corregida al medir.
 
     ("F8", CLI,
      '        el = link.get("element")\n        if not el:',
@@ -238,9 +241,15 @@ def _rojos() -> set[str]:
         raise RuntimeError("pytest no genero el XML: el arnes no puede medir nada")
     rojos = set()
     for tc in ET.parse(xml).iter("testcase"):
-        if tc.find("failure") is not None or tc.find("error") is not None:
-            archivo = (tc.get("file") or "").replace("\\", "/")
-            rojos.add(f"{archivo}::{tc.get('name')}")
+        if tc.find("failure") is None and tc.find("error") is None:
+            continue
+        # Por `classname` y NO por `file`: en este pytest el atributo `file` viene VACIO,
+        # asi que los nodeids salian como "::test_x" y NINGUN conjunto podia coincidir.
+        # El arnes declaraba 28 mutantes mal apuntados cuando los 28 mataban lo correcto:
+        # un arnes roto que dictamina sobre tests buenos.
+        modulo = (tc.get("classname") or "").split(".")
+        archivo = "/".join(modulo) + ".py" if modulo != [""] else ""
+        rojos.add(f"{archivo}::{tc.get('name')}")
     xml.unlink()
     return rojos
 

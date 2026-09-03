@@ -66,17 +66,23 @@ class _ResCRM:
 @pytest.fixture()
 def dobles(caso, monkeypatch):
     llamadas = {"drive": 0, "crm": 0, "ocr": 0}
+    #: Lo que los dobles VIERON. No se afirma dentro del doble: `etapa_drive` y
+    #: `etapa_crm` capturan `Exception`, asi que un `assert` ahi dentro se lo traga el
+    #: codigo bajo prueba y se convierte en un `fallo` de etapa. Una asercion que el
+    #: sujeto puede tragarse no puede fallar. Lo destapo el arnes de mutacion: el mutante
+    #: F16 sobrevivia a un test que decia comprobar `force`.
+    visto = {"force": [], "element": []}
 
     def _intake(ident, case_dir, folder_id, team_id, *, dry_run, force):
         llamadas["drive"] += 1
-        assert force is True, "V1 tiene que consultar Drive en cada ronda"
+        visto["force"].append(force)
         return DriveIntakeResult(case_id="C", team_id="T", folder_id="F",
                                  target_dir=caso / "00_Input" / "01_Drive EV",
                                  files_after=2, skipped=False)
 
     def _pull(case_id, expediente_id, *, element):
         llamadas["crm"] += 1
-        assert element == "extrajudiciales"
+        visto["element"].append(element)
         return _ResCRM()
 
     def _apply(case_id=None, **kw):
@@ -88,7 +94,13 @@ def dobles(caso, monkeypatch):
     monkeypatch.setattr(cli, "_intake_drive_ev", _intake)
     monkeypatch.setattr(sync_sudespacho, "pull_expediente_v2", _pull)
     monkeypatch.setattr(sala_maquina, "apply", _apply)
+    llamadas["_visto"] = visto
     return llamadas
+
+
+def _conteos(dobles):
+    """Los contadores, sin la clave de espionaje."""
+    return {k: v for k, v in dobles.items() if not k.startswith("_")}
 
 
 def test_e2e_la_secuencia_recorre_las_tres_etapas_y_las_LLAMA(caso, dobles):
@@ -96,9 +108,11 @@ def test_e2e_la_secuencia_recorre_las_tres_etapas_y_las_LLAMA(caso, dobles):
 
     assert [e.nombre for e in r.etapas] == list(cli.ETAPAS_V1)
     assert [e.estado for e in r.etapas] == ["hecha", "hecha", "hecha"]
-    assert dobles == {"drive": 1, "crm": 1, "ocr": 1}
+    assert _conteos(dobles) == {"drive": 1, "crm": 1, "ocr": 1}
     assert r.estado == av1.EstadoV1.PREPARADO_CON_PENDIENTES
     assert r.no_ejecutadas == ()
+    assert dobles["_visto"]["force"] == [True], "V1 consulta Drive en cada ronda"
+    assert dobles["_visto"]["element"] == ["extrajudiciales"]
 
 
 def test_e2e_el_evento_de_cierre_queda_en_el_log(caso, dobles):
@@ -131,7 +145,7 @@ def test_e2e_es_punto_fijo_MATERIAL_y_no_solo_de_estado(caso, dobles):
     assert tras_1 == tras_2, "la segunda corrida cambio el arbol: no es punto fijo"
     # Y las tres etapas se CONSULTARON las dos veces: el punto fijo de V1 no es «no
     # mirar», es «mirar y no cambiar nada» (HA-03).
-    assert dobles == {"drive": 2, "crm": 2, "ocr": 2}
+    assert _conteos(dobles) == {"drive": 2, "crm": 2, "ocr": 2}
 
 
 def test_e2e_un_fallo_del_crm_bloquea_y_la_sala_no_corre(caso, dobles, monkeypatch):
@@ -149,5 +163,5 @@ def test_e2e_un_fallo_del_crm_bloquea_y_la_sala_no_corre(caso, dobles, monkeypat
 
 def test_e2e_hasta_drive_no_consulta_el_crm_ni_el_ocr(caso, dobles):
     r = cli.secuencia_v1(_Ident(), caso, folder_id="F", team_id="T", hasta="drive")
-    assert dobles == {"drive": 1, "crm": 0, "ocr": 0}
+    assert _conteos(dobles) == {"drive": 1, "crm": 0, "ocr": 0}
     assert r.no_ejecutadas == ("crm", "sala_maquina")
