@@ -33,6 +33,27 @@ def test_f15_la_etapa_pasa_por_la_custodia_y_no_por_el_pull_a_pelo():
     assert visto["team_id"] == "T"
 
 
+def test_f15_bis_el_camino_POR_DEFECTO_pasa_por_la_custodia():
+    """F15 de verdad. El test de arriba pasa `intake=` explicito, asi que no dice nada
+    sobre el DEFAULT — y el default es justo la propiedad: que produccion vaya por
+    `_intake_drive_ev` y no por `pull_drive_ev`. Sin esto, un mutante que cambiara el
+    default sobreviviria."""
+    visto = []
+
+    def _falso(ident, case_dir, folder_id, team_id, *, dry_run, force):
+        visto.append("custodia")
+        return _drive_result()
+
+    original = cli._intake_drive_ev
+    cli._intake_drive_ev = _falso
+    try:
+        r = cli.etapa_drive(None, Path("."), folder_id="F", team_id="T")
+    finally:
+        cli._intake_drive_ev = original
+    assert visto == ["custodia"]
+    assert r.estado == "hecha"
+
+
 def test_f16_en_v1_el_pull_consulta_en_cada_ronda():
     """F16. La spec llama al skip por `.pulled` «falso punto fijo»."""
     visto = {}
