@@ -128,24 +128,20 @@ MUTANTES: list[tuple[str, str, str, str, set[str]]] = [
      '    if status == "parcial":',
      '    if False:',
      {f"{ETA}::test_f10_f12_el_status_de_atomizacion_gobierna_el_pendiente[parcial-hecha-True]",
-      f"{COS}::test_costura_el_status_de_apply_llega_por_el_camino_POR_DEFECTO[parcial-hecha]"}),
+      f"{COS}::test_costura_el_status_de_apply_llega_por_el_camino_POR_DEFECTO[parcial-hecha]",
+      f"{ETA}::test_f38_los_agotados_se_acumulan_CON_la_atomizacion_parcial"}),
 
     ("F11", CLI,
      '    if status == "fallo":',
      '    if False:',
      {f"{ETA}::test_f11_atomizacion_en_fallo_bloquea_la_etapa",
-      f"{COS}::test_costura_el_status_de_apply_llega_por_el_camino_POR_DEFECTO[fallo-fallo]"}),
+      f"{COS}::test_costura_el_status_de_apply_llega_por_el_camino_POR_DEFECTO[fallo-fallo]",
+      f"{ETA}::test_los_agotados_se_declaran_incluso_si_la_atomizacion_FALLA"}),
 
     ("F12", CLI,
-     '        detalle=("OCR hecho; sin correo que atomizar" if status is None\n'
-     '                 else "OCR hecho; atomizacion ok"))',
-     '        detalle=("OCR hecho; sin correo que atomizar" if status is None\n'
-     '                 else "OCR hecho; atomizacion ok"),\n'
-     '        pendientes=(av1.Pendiente(codigo="x", detalle="x"),))',
-     {f"{ETA}::test_f10_f12_el_status_de_atomizacion_gobierna_el_pendiente[None-hecha-False]",
-      f"{ETA}::test_f10_f12_el_status_de_atomizacion_gobierna_el_pendiente[ok-hecha-False]",
-      f"{COS}::test_costura_el_status_de_apply_llega_por_el_camino_POR_DEFECTO[None-hecha]",
-      f"{COS}::test_costura_el_status_de_apply_llega_por_el_camino_POR_DEFECTO[ok-hecha]"}),
+     '    base = ("OCR hecho; sin correo que atomizar" if status is None',
+     '    base = ("OCR hecho; atomizacion ok" if status is None',
+     {f"{ETA}::test_f10_f12_el_status_de_atomizacion_gobierna_el_pendiente[None-hecha-False]"}),
 
     ("F13", LOG,
      '    "apertura_v1_terminada",         # cierre de la secuencia de V1 con estado y pendientes\n',
@@ -299,7 +295,7 @@ MUTANTES: list[tuple[str, str, str, str, set[str]]] = [
     ("F38-agotados-viajan", "scripts/sala_maquina.py",
      "        return ResultadoApply(status_atomizacion=status_atomizacion," + NL +      "                              documentos_agotados=len(agotados))",
      "        return ResultadoApply(status_atomizacion=status_atomizacion,"  + NL +      "                              documentos_agotados=0)",
-     {f"{COS}::test_costura_los_agotados_del_OCR_viajan_por_el_camino_POR_DEFECTO"}),
+     {f"{COS}::test_costura_los_agotados_viajan_desde_el_apply_REAL"}),
 
     ("F28", EST_MOD,
      "    def sin_cerrar(self) -> bool:\n        return self.terminada is None",
