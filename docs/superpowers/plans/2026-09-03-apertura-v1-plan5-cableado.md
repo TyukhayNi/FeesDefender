@@ -7,6 +7,21 @@ creado: 2026-09-03
 
 # Apertura V1 — Plan 5: el cableado de la secuencia y el E2E (rev. 1)
 
+> ## ⛔ ESTADO: rev. 1 `NO-EJECUTABLE`. NO se construye con este diseño.
+>
+> **R-A (diseño) devolvió `NO-EJECUTABLE`: 12 hallazgos, 12 confirmados, 0 refutados**, 4
+> críticos y uno más elevado a crítico por el adjudicador. Acta:
+> `docs/superpowers/specs/2026-09-03-apertura-v1-plan5-rA-adversarial-review.md`. Adjudicación
+> completa en el §5.
+>
+> **Lo que sobrevive:** el diagnóstico del §1 —nadie encadena, `preparado_con_pendientes` no
+> existe, el `element` del CRM tiene default judicial— lo reprodujo el revisor entero. La
+> decisión de invertir el orden es de Nikolai y sigue en pie.
+>
+> **Lo que cae:** dos de las cuatro deudas del §0 no eran deudas aceptables sino **contradicciones
+> literales de la spec**, y las tres etapas se saltaban costuras que ya existían. Pendiente:
+> **rev. 2**, con los puntos enumerados en el §5.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development
 > (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use
 > checkbox (`- [ ]`) syntax for tracking.
@@ -1740,8 +1755,97 @@ mismos nombres de campo (`nombre`, `estado`, `detalle`, `pendientes`); `Pendient
 
 ---
 
-## §5. Hueco reservado para R-A
+## 5. Adjudicación de la revisión adversarial (Codex, 2026-09-03) — NO-EJECUTABLE, pendiente
 
-*Pendiente: la ronda R-A sobre este plan, antes de escribir una línea de código. Se rellena aquí,
-con el encabezado canónico y su ficha de seis campos; el informe literal del revisor va a su acta
-hermana, que se crea con la ronda y se enlaza desde aquí al adjudicarla.*
+- **Objeto revisado:** diseño del Plan 5 — el cableado de la secuencia de V1 y el E2E (rev. 1), commit `a95326e`
+- **Ronda:** A
+- **Revisor:** Codex
+- **Informe recibido:** `docs/superpowers/specs/2026-09-03-apertura-v1-plan5-rA-adversarial-review.md`
+- **Hallazgos:** 12 recibidos — 12 confirmados, 0 refutados (4 CRÍTICOS + 1 elevado por el adjudicador, 5 ALTOS, 1 MEDIO, 1 BAJO)
+- **Remediado en:** pendiente — la rev. 2 de este plan
+
+**La ronda EJECUTÓ, y ahí está su valor.** Los cuatro críticos no se deducen leyendo: salieron de
+correr los adaptadores propuestos con dobles, de aplicar las piezas al trinquete del censo, de
+pasar la fixture del E2E por el lector real de metadatos y de reproducir una pérdida de mutex bajo
+un `typer.Exit(0)`. Un revisor que solo hubiera leído habría devuelto tres o cuatro medios.
+
+**El hallazgo de fondo, y es sobre la premisa, no sobre el detalle.** Dos de las cuatro deudas que
+el §0 declaraba «aceptadas» no son deudas: son **contradicciones literales de la tabla de riesgos
+de la spec**, que ya había nombrado los dos mecanismos con su mitigación obligatoria. La spec dice,
+palabra por palabra, «`.pulled` evita volver a Drive → Falso punto fijo → Consulta remota real en
+cada ronda; caché o skip no cuentan como "sin novedad"» y «Reanudación sin generación común → Fase
+verde sobre inputs obsoletos → `estado.json` atómico obligatorio desde la primera entrega». Yo
+construí sobre esos dos mecanismos el argumento de que la reanudación «no cuesta diseño nuevo», y
+**se lo presenté a Nikolai como razón para preferir la ejecución desatendida**. La premisa era
+falsa y la decisión se tomó sobre ella.
+
+**Por qué no lo vi, que es lo que hay que llevarse.** Leí el §21 y el §24 de la spec —el alcance y
+las decisiones— y no leí su **tabla de riesgos**, que es donde vivía la respuesta a la pregunta que
+me estaba haciendo. Busqué el dato en el sitio donde se declara la intención, no en el sitio donde
+se declara lo que puede salir mal. Es la misma clase que ya tengo medida cuatro veces: **el dato de
+alcance se busca en el registro del nivel de su alcance**, y «qué mecanismo es un falso punto fijo»
+es un riesgo, no un criterio.
+
+**Y tres de los críticos son la misma forma:** mis tres adaptadores **rodeaban** costuras que ya
+existían y que rondas anteriores habían construido a propósito. `etapa_drive` se saltaba la custodia
+que R14/H14-02 y R15/H15-06 pusieron en `_intake_drive_ev`; `etapa_crm` marcaba `hecha` leyendo la
+ausencia de excepción en vez del resultado, contra una regla que `CLAUDE.md` tiene escrita
+—«verificar por resultado, nunca por status»—; y `etapa_sala_maquina` salía con `typer.Exit(0)`
+**dentro** del bloque de mutex, convirtiendo en una nota la pérdida ruidosa que R12/H12-04 había
+construido. Escribir un adaptador nuevo por encima de una costura vieja es la manera silenciosa de
+derogarla.
+
+### Adjudicación hallazgo por hallazgo
+
+| Id | Sev. | Veredicto | Contrastado contra |
+|---|---|---|---|
+| HA-01 | CRÍTICO | **CONFIRMADO** | spec §11: `estado.json` atómico «obligatorio desde la primera entrega» |
+| HA-02 | CRÍTICO | **CONFIRMADO** | `scripts/abrir_caso.py:136-175`: hashes, `_intake_generico` y registro de parciales, los tres rodeados |
+| HA-03 | ALTO → **CRÍTICO** | **CONFIRMADO y elevado** | spec §11: «`.pulled` … Falso punto fijo … caché o skip no cuentan» |
+| HA-04 | CRÍTICO | **CONFIRMADO** | `core/sync_sudespacho.py:1306-1318` + `CLAUDE.md` §14.6 |
+| HA-05 | ALTO | **CONFIRMADO** | el criterio 38 pide los dos cruces y preflight de referencia; F7/F8 solo cierran la herencia del default |
+| HA-06 | ALTO | **CONFIRMADO** | `--hasta` se valida dentro de `secuenciar`, después de identidad, mutex y `ensure_case` |
+| HA-07 | CRÍTICO | **CONFIRMADO** | `core/casos/case_mutex.py:615-659`: con excepción en vuelo, la pérdida solo se anota |
+| HA-08 | ALTO | **CONFIRMADO**, escenario corregido | no es «borra derivados»: es que una corrida **parcial** poda contra un `esperados` incompleto |
+| HA-09 | ALTO | **CONFIRMADO** | F12 muta solo el texto de `detalle` y su test no lo afirma: sobrevive. Y `_correr` no puede medir su propia regla |
+| HA-10 | ALTO | **CONFIRMADO** | `core/casos/case_locator.py:222`: `read_case_meta` devuelve `fm.get("meta")`; la fixture daba `{}` |
+| HA-11 | MEDIO | **CONFIRMADO** | el evento nuevo sube el censo a 84/83, y el test vigente de V1 dobla una costura que el plan retira |
+| HA-12 | BAJO | **CONFIRMADO** | `len(INTAKE_EVENTS)` = 33; `git grep -o` da 53 en 19 ficheros, no 103 |
+
+**Sobre HA-12, una precisión que no exculpa.** La cifra «103 referencias» **no es mía: es del §24
+D3 de la spec**, donde sostiene la decisión de usar un modo en vez de un subcomando. La copié a las
+restricciones globales sin medirla. La decisión no cambia —53 referencias siguen siendo demasiadas
+para romper la forma del CLI—, pero **la spec lleva una cifra no reproducible en un sitio portante**
+y eso hay que corregirlo donde vive.
+
+**Lo que R-A dejó SIN VERIFICAR, y por tanto sin cubrir:** la corrida real sobre W-02Q38C, el acceso
+a Drive y a Sudespacho, la suite completa con las dos semillas —el intérprete del revisor no tiene
+`pytest-randomly`— y el aislamiento dinámico de los trece mutantes distintos de F12. Nada de eso
+está refutado: está sin mirar, y así se declara.
+
+### Lo que tiene que traer la rev. 2
+
+**Nueve defectos son mecánicos y se arreglan sin tocar el alcance:** HA-02 (adaptar
+`_intake_drive_ev`, no rodearlo), HA-04 (tabla completa de traducción de `PullResultV2`, con el
+vacío confirmado distinguido del error), HA-05 (los dos cruces del criterio 38 con pruebas
+separadas y vocabulario cerrado), HA-06 (validar `--hasta` en la puerta previa a todo efecto, y no
+emitir terminación en una parada pedida), HA-07 (salir **fuera** del bloque de mutex, y capturar
+`CaseBusy`/`MutexPerdido` en la frontera), HA-09 (mutante F12 que introduzca de verdad el pendiente,
+y arnés que compare el conjunto exacto de rojos), HA-10 (fixture con el esquema real y espías),
+HA-11 (el evento nuevo por la costura, sin subir el censo; y migrar el test vigente), HA-12
+(corregir 33→34 y retirar o medir la cifra de referencias).
+
+**Dos no son mecánicos y cambian el plan:**
+
+- **HA-03 tiene arreglo barato y hay que tomarlo:** la etapa de Drive **consulta en cada ronda** en
+  vez de apoyarse en `.pulled`. `rclone` transfiere solo lo que difiere, así que el coste es una
+  consulta remota real, no una re-descarga. Eso cumple la mitigación que la spec exige sin
+  construir el espejo versionado entero.
+- **HA-01 obliga a elegir, y la elección es de Nikolai porque es alcance y coste:** o el plan
+  incorpora un `estado.json` mínimo por ronda —que es lo que la spec llama obligatorio desde la
+  primera entrega— o deja de llamarse V1 y de prometer que cierra W-02Q38C. Lo que no cabe es
+  seguir prometiendo V1 sin ello.
+
+**No se pide una tercera ronda sobre la rev. 1.** El techo duro la prohíbe sin autorización expresa,
+y además no haría falta: lo que falta no es más ataque sobre este documento, es un documento
+distinto.
