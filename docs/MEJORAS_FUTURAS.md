@@ -6388,7 +6388,7 @@ resuelva—, o el primer informe de viabilidad que se redacte sobre un expedient
 **Medido el 2026-09-03**, cerrando `MEJORAS #144`. En la suite completa con semilla `31337`:
 
 ```
-PermissionError: [Errno 13] Permission denied: 'C:	\q2	est_RENUEVA_mientras_el_cuerp0\locks\W-MUTEX1.lock'
+PermissionError: [Errno 13] Permission denied: '<basetemp>/test_RENUEVA_mientras_el_cuerp0/locks/W-MUTEX1.lock'
 MutexIlegible: [MUTEX_ILEGIBLE] — el mutex del caso existe y no se puede interpretar — caso W-MUTEX1
 FAILED tests/test_case_mutex.py::TestElGestorRenueva::test_RENUEVA_mientras_el_cuerpo_corre
 ```
