@@ -527,6 +527,23 @@ def etapa_sala_maquina(ident, *, correr=None):
                  else "OCR hecho; atomizacion ok"))
 
 
+def registrar_cierre_v1(case_dir: Path, ident, resultado) -> None:
+    """Deja el estado de V1 en el log forense del caso.
+
+    Es el unico rastro DURABLE de la corrida: la pantalla se pierde, el `.jsonl` no.
+    """
+    intake_log.append_event(
+        case_dir, "apertura_v1_terminada", case_id=ident.case_id,
+        details={
+            "estado": resultado.estado,
+            "parada": resultado.parada,
+            "pendientes": [p.codigo for p in resultado.pendientes],
+            "etapas": [{"nombre": e.nombre, "estado": e.estado}
+                       for e in resultado.etapas],
+        },
+    )
+
+
 def _alta_crm(
     ident: "brain.Identidad",
     *,

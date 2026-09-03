@@ -72,7 +72,17 @@ AMBIGUAS = frozenset({"replace", "copy", "dump"})
 #: Así que este +1 es **deuda declarada, no cobertura**: baja cuando se migre la #13.
 #: Subirlo sin esta explicación sería justo lo que la regla prohíbe — y el trinquete me lo
 #: cazó a mí, con mi propio cambio, que es la única prueba de que sirve.
-TECHO_CENSO = 83
+#: **83 -> 84 el 2026-09-03, y es la SEGUNDA vez que sube.** El cableado de V1 (Plan 5)
+#: añade `apertura_v1_terminada` en `scripts/abrir_caso.py`: el estado con que termina la
+#: secuencia tiene que quedar en el log forense, o la unica constancia de una apertura es
+#: la pantalla, que se pierde. Misma clase que el +1 anterior —escritura de **protocolo**,
+#: fila #13— y misma condicion de bajada: se migra con la #13.
+#:
+#: **Lo que NO se hizo, y era tentador:** mover `registrar_cierre_v1` a `core/apertura_v1.py`,
+#: que no esta en `PRODUCTORES`. El censo habria bajado a 83 sin que la escritura
+#: desapareciera. Eso es absorber la deuda, que es justo lo que la regla de arriba prohibe.
+#: Lo cazo la R-A del Plan 5 (HA-11) antes de escribir una linea.
+TECHO_CENSO = 84
 
 
 def _nombre_llamado(n: ast.Call) -> str | None:
