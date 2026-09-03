@@ -45,6 +45,7 @@ CAB = "tests/test_apertura_v1_cableado.py"
 EST = "tests/test_apertura_v1_estado.py"
 COS = "tests/test_apertura_v1_costuras.py"
 CTL = "tests/test_apertura_v1_control_files.py"
+MV1 = "tests/test_abrir_caso_modo_v1.py"
 E2E = "tests/test_apertura_v1_e2e.py"
 
 AV1 = "core/apertura_v1.py"
