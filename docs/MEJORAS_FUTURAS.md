@@ -6466,3 +6466,35 @@ primera vez que una apertura real informe de una pérdida de exclusión que no s
 proceso**: desde fuera eso es indistinguible de esta carrera, y en un despacho donde nadie trabaja
 en paralelo sería casi con seguridad esto.
 
+---
+
+## 146. Escribir una nota a mano en `_caso.md` la destruye en el siguiente pull
+
+**Reproducido por resultado el 2026-09-04.** Sonda: `_caso.md` con una nota del abogado en el
+cuerpo → una llamada a `_write_case_index` → la nota ya no está y el fichero se ha reescrito
+entero. No es lectura de código: es la salida de la sonda.
+
+**La causa.** `register_drive_ev` (`core/case_manager.py:515`) **no muta** el fichero: lo
+**reconstruye** llamando a `_write_case_index`, que arma el cuerpo desde cero a partir de
+`CaseMeta` y nunca lee lo que había. **Y no es un sitio, son CUATRO** llamadores, todos en
+`core/case_manager.py` y contados por AST el 2026-09-04: `register_expediente()`,
+`ensure_case()`, `register_drive_ev()` y `cache_drive_folder_info()`. El
+comentario de la línea 684 ya avisa —«nunca `_write_case_index` (que reconstruye y podría
+descartar campos)»— para *otro* consumidor, y ese aviso no llegó a los registradores.
+
+**Por qué importa, y por qué se registra ahora.** No necesita carrera: basta un pull de Drive, que
+es lo normal en una apertura. Lo que se pierde es una **nota del abogado sobre un expediente**, sin
+aviso y sin dejar rastro de que existía. Se midió el 2026-08-26 (72º cierre, tabla de las tres
+pérdidas) y la **instrucción operativa que salió de ahí —«que nadie escriba notas en `_caso.md`»—
+nunca llegó al repo**: vivía en un bloque de cierre que no se commiteó y que estuvo a punto de
+borrarse con su worktree. Se ha llevado ahora a `CLAUDE.md` y al runbook (`[APER-54]`).
+
+**Remedio.** Que los registradores **muten** el frontmatter y conserven el cuerpo, en vez de
+reconstruir; o que `_write_case_index` lea el fichero existente y preserve todo lo que no sea suyo
+—cuerpo y claves de frontmatter ajenas a `CaseMeta`, que se pierden por la misma razón (es la
+segunda fila de aquella tabla)—. Con su mutante: un test que escriba una nota, llame al registrador
+y exija que siga ahí; hoy no existe ninguno, y esa ausencia es la que dejó pasar el defecto.
+
+**Disparador de promoción.** La primera nota perdida de verdad, o el arreglo del grupo **B0-2** de
+la Fase 2 de la fila #3, que toca la misma familia (escrituras que reconstruyen en vez de añadir) y
+puede pagar los dos de una vez. Mientras tanto, lo que protege es la instrucción, no el código.

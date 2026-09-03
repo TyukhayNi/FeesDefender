@@ -27,6 +27,14 @@ fecha: 2026-07-22
 
 ## 0. Entorno e higiene (leer antes de tocar nada)
 
+- **`[APER-54]` Ninguna nota a mano en `_caso.md` — se pierde.** Cualquier registrador
+  (`register_drive_ev` y otros cuatro) **reconstruye** el fichero con `_write_case_index`
+  en vez de mutarlo, así que el cuerpo escrito a mano desaparece en el siguiente pull de
+  Drive, **sin aviso**. No hace falta que dos procesos compitan: basta con un pull. Las
+  notas van a **`90_Notas personales/`**, que ningún motor lee ni escribe. Reproducido por
+  resultado el 2026-09-04; vigente hasta que cierre `MEJORAS #146`. **Díselo a quién toque
+  el expediente a mano**, no solo a quien corra el pipeline.
+
 - **`[APER-01]` Ejecuta el PIPELINE desde el repo principal, sandbox OFF.** Un worktree no
   hereda `.venv`, `.env`, `CASOS_ROOT` ni PHPSESSID (gitignored) → el pipeline no corre ahí.
   Prefijo: `Set-Location "C:\Users\tnm33\Dev\FeesDefender"` + `.venv\Scripts\python.exe`.
