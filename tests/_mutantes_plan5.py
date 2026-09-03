@@ -105,7 +105,8 @@ MUTANTES: list[tuple[str, str, str, str, set[str]]] = [
      # prediccion mia, no una propiedad.
      {f"{ETA}::test_f7_el_element_sale_del_link_y_nunca_del_default",
       f"{E2E}::test_e2e_la_secuencia_recorre_las_tres_etapas_y_las_LLAMA",
-      f"{E2E}::test_e2e_es_punto_fijo_MATERIAL_y_no_solo_de_estado"}),
+      f"{E2E}::test_e2e_es_punto_fijo_MATERIAL_y_no_solo_de_estado",
+      f"{ETA}::test_dos_expedientes_validos_se_pullan_LOS_DOS"}),
       # `test_e2e_un_fallo_del_crm...` NO muere aqui: su doble ignora el `element`, asi
       # que la rama del pull no cambia nada para el. Prediccion mia corregida al medir.
 
@@ -149,14 +150,17 @@ MUTANTES: list[tuple[str, str, str, str, set[str]]] = [
      "",
      {f"{CAB}::test_f13_el_evento_de_cierre_esta_en_el_set_cerrado",
       f"{CAB}::test_el_evento_de_cierre_lleva_el_estado_y_los_pendientes",
-      f"{E2E}::test_e2e_el_evento_de_cierre_queda_en_el_log"}),
+      f"{E2E}::test_e2e_el_evento_de_cierre_queda_en_el_log",
+      f"{COS}::test_costura_el_estado_gobierna_el_CODIGO_DE_SALIDA_DEL_PROCESO[preparado_con_pendientes-0]",
+      f"{COS}::test_costura_main_EMITE_el_evento_y_cierra_la_ronda"}),
 
     ("F14", CLI,
      "    return 1 if estado == av1.EstadoV1.BLOQUEADO else 0",
      "    return 0",
      {f"{CAB}::test_f14_un_resultado_bloqueado_sale_con_codigo_no_cero",
       f"{MV1}::test_la_exclusion_fallida_llega_al_OPERADOR[CaseBusy-otro proceso tiene este caso]",
-      f"{MV1}::test_la_exclusion_fallida_llega_al_OPERADOR[MutexPerdido-se PERDIO la exclusion]"}),
+      f"{MV1}::test_la_exclusion_fallida_llega_al_OPERADOR[MutexPerdido-se PERDIO la exclusion]",
+      f"{COS}::test_costura_el_estado_gobierna_el_CODIGO_DE_SALIDA_DEL_PROCESO[bloqueado-1]"}),
 
     ("F15", CLI,
      "    _intake = intake or _intake_drive_ev",
@@ -204,7 +208,8 @@ MUTANTES: list[tuple[str, str, str, str, set[str]]] = [
     ("F22", CLI,
      "        if el == _ELEMENT_JUDICIAL:",
      "        if False:",
-     {f"{ETA}::test_f22_un_element_judicial_aborta_en_v1"}),
+     {f"{ETA}::test_f22_un_element_judicial_aborta_en_v1",
+      f"{ETA}::test_las_puertas_de_la_rama_valen_para_TODOS_los_expedientes_no_para_el_primero"}),
 
     ("F23", CLI,
      "    if hasta is not None and hasta not in ETAPAS_V1:",
@@ -222,7 +227,9 @@ MUTANTES: list[tuple[str, str, str, str, set[str]]] = [
      "                                            team_id=team_id, hasta=hasta)",
      "                                            team_id=team_id, hasta=hasta)\n"
      "                raise typer.Exit(code=0)",
-     {f"{CAB}::test_f25_la_rama_v1_no_sale_del_proceso_dentro_del_bloque_de_mutex"}),
+     {f"{CAB}::test_f25_la_rama_v1_no_sale_del_proceso_dentro_del_bloque_de_mutex",
+      f"{COS}::test_costura_el_estado_gobierna_el_CODIGO_DE_SALIDA_DEL_PROCESO[bloqueado-1]",
+      f"{COS}::test_costura_main_EMITE_el_evento_y_cierra_la_ronda"}),
 
     ("F27", EST_MOD,
      "        os.replace(tmp, f)",
