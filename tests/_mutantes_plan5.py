@@ -87,9 +87,11 @@ MUTANTES: list[tuple[str, str, str, str, set[str]]] = [
      '            res = _pull(ident.case_id, str(link["id"]), element=link["element"])',
      '            res = _pull(ident.case_id, str(link["id"]),\n'
      '                        element="expedientes_judiciales")',
+     # Solo los dos tests que AFIRMAN sobre lo que vio el doble. Los otros dos e2e no
+     # observan el `element`, asi que no pueden morir por el: declararlo era una
+     # prediccion mia, no una propiedad.
      {f"{ETA}::test_f7_el_element_sale_del_link_y_nunca_del_default",
       f"{E2E}::test_e2e_la_secuencia_recorre_las_tres_etapas_y_las_LLAMA",
-      f"{E2E}::test_e2e_el_evento_de_cierre_queda_en_el_log",
       f"{E2E}::test_e2e_es_punto_fijo_MATERIAL_y_no_solo_de_estado"}),
       # `test_e2e_un_fallo_del_crm...` NO muere aqui: su doble ignora el `element`, asi
       # que la rama del pull no cambia nada para el. Prediccion mia corregida al medir.
@@ -153,9 +155,7 @@ MUTANTES: list[tuple[str, str, str, str, set[str]]] = [
      "        res = _intake(ident, case_dir, folder_id, team_id, dry_run=False, force=False)",
      {f"{ETA}::test_f16_en_v1_el_pull_consulta_en_cada_ronda",
       f"{E2E}::test_e2e_la_secuencia_recorre_las_tres_etapas_y_las_LLAMA",
-      f"{E2E}::test_e2e_el_evento_de_cierre_queda_en_el_log",
       f"{E2E}::test_e2e_es_punto_fijo_MATERIAL_y_no_solo_de_estado",
-      f"{E2E}::test_e2e_un_fallo_del_crm_bloquea_y_la_sala_no_corre",
       f"{E2E}::test_e2e_hasta_drive_no_consulta_el_crm_ni_el_ocr"}),
 
     ("F17", CLI,

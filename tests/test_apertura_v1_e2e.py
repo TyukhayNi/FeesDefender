@@ -144,8 +144,12 @@ def test_e2e_es_punto_fijo_MATERIAL_y_no_solo_de_estado(caso, dobles):
     assert primera.estado == segunda.estado
     assert tras_1 == tras_2, "la segunda corrida cambio el arbol: no es punto fijo"
     # Y las tres etapas se CONSULTARON las dos veces: el punto fijo de V1 no es «no
-    # mirar», es «mirar y no cambiar nada» (HA-03).
+    # mirar», es «mirar y no cambiar nada» (HA-03). Por eso se afirma tambien que las DOS
+    # rondas pidieron consulta remota: es la propiedad de HA-03 en el tiempo, no en un
+    # instante.
     assert _conteos(dobles) == {"drive": 2, "crm": 2, "ocr": 2}
+    assert dobles["_visto"]["force"] == [True, True]
+    assert dobles["_visto"]["element"] == ["extrajudiciales", "extrajudiciales"]
 
 
 def test_e2e_un_fallo_del_crm_bloquea_y_la_sala_no_corre(caso, dobles, monkeypatch):
@@ -165,3 +169,4 @@ def test_e2e_hasta_drive_no_consulta_el_crm_ni_el_ocr(caso, dobles):
     r = cli.secuencia_v1(_Ident(), caso, folder_id="F", team_id="T", hasta="drive")
     assert _conteos(dobles) == {"drive": 1, "crm": 0, "ocr": 0}
     assert r.no_ejecutadas == ("crm", "sala_maquina")
+    assert dobles["_visto"]["force"] == [True]
