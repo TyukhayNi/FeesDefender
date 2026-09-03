@@ -7,7 +7,8 @@ creado: 2026-09-03
 
 # Apertura V1 — Plan 5: el cableado de la secuencia y el E2E (rev. 2)
 
-> ## ✅ ESTADO: rev. 2, remediada contra R-A. Ejecutable; pendiente R-B sobre el diff.
+> ## ⚠ ESTADO: rev. 2 EJECUTADA y R-B adjudicada `NO-SHIP`. Remediada en parte; NO se
+> mergea sin autorización expresa de Nikolai (ver §6).
 >
 > **R-A (diseño) devolvió `NO-EJECUTABLE` sobre la rev. 1: 12 hallazgos, 11 confirmados y 1
 > parcialmente refutado**, 4 críticos y uno más elevado a crítico por el adjudicador. Acta:
@@ -2520,3 +2521,81 @@ HA-11 (el evento nuevo por la costura, sin subir el censo; y migrar el test vige
 **No se pide una tercera ronda sobre la rev. 1.** El techo duro la prohíbe sin autorización expresa,
 y además no haría falta: lo que falta no es más ataque sobre este documento, es un documento
 distinto.
+
+
+---
+
+## 6. Adjudicación de la revisión adversarial (Claude Code sesión independiente, 2026-09-03) — NO-SHIP, parcial
+
+- **Objeto revisado:** diff del Plan 5 — el cableado de la secuencia de V1, commit `5cdf7da`
+- **Ronda:** B
+- **Revisor:** Claude Code (sesión independiente)
+- **Informe recibido:** `docs/superpowers/specs/2026-09-03-apertura-v1-plan5-rB-adversarial-review.md`
+- **Hallazgos:** 73 recibidos — 10 CRÍTICOS, 10 ALTOS, 2 MEDIO-ALTOS, ~29 MEDIOS, ~22 BAJOS; 1 parcialmente refutado
+- **Remediado en:** los commits de esta rama posteriores a `5cdf7da`
+
+**La independencia es MÁS DÉBIL de lo contratado, y va primero.** Codex agotó su cupo a mitad de
+la ronda —vuelve el 2026-09-07— y se aplicó el revisor sustituto de `AGENTS.md`: seis lentes de
+**Claude Code**, o sea el mismo modelo que escribió el código. La compensación que el contrato
+exige se aplicó entera (seis lentes en paralelo, copia congelada, sin mi adjudicación de R-A ni su
+acta, obligación de abrir el fichero y de ejecutar), y aun así **este diff no debería mergearse sin
+que Codex lo haya visto**.
+
+### Lo que la ronda demostró, y no es un defecto sino un método
+
+**El «28/28 mutantes muertos» con que cerré la pieza era una autoatestación cerrada.** Tres lentes
+lo desmontaron con mutantes propios: **17 de 21 vivos** en una, **11 de 12** en otra, y una tercera
+midió que **cuatro de mis 28 muertes caían sobre fronteras inexistentes en producción**. El
+conjunto de ficheros de mi arnés **excluía justo el cableado**, así que medía el interior de las
+piezas y no lo que las une. Un número que yo genero con mi arnés, sobre mi lista de fronteras, en
+mi suite, **no es evidencia independiente**: es mi hipótesis escrita en cifras.
+
+### Las cuatro fronteras cerradas (no los ejemplos)
+
+| Frontera | Lo que estaba mal | Lo que se cerró |
+|---|---|---|
+| **A. El productor decide, no el tipo** | Leí los *campos* de `PullResultV2` y no su *productor*: `errors` se rellena también cuando el gestor está **vacío**, y `documents_failed` se incrementa en el mismo bloque que su `errors.append`. Las dos ramas eran inalcanzables y un expediente sin documentos **abortaba la apertura** | `sync_sudespacho.es_gestor_vacio()` vive **con el productor** y el adaptador pregunta; tres ramas, las tres alcanzables; y un test que corre el **productor real** y le pregunta al predicado. Cambio de criterio propio: unos documentos que no bajan dejan el espejo incompleto y eso **bloquea**, no se anota |
+| **B. Un fichero de control se declara en TODOS los registros** | Existe un registro canónico (`config.INTAKE_CONTROL_FILES`, «Lista ÚNICA») y lo declaré en **ninguno** de los cuatro sitios que clasifican `00_Input` | Declarado en los cuatro; `sala_maquina._IGNORAR` pasa a **derivar** del canónico en vez de duplicarlo (esa duplicación era el hueco); y un **guard que itera sobre lo que el módulo declara**, así que el próximo fichero de control obliga a declararlo |
+| **C. Escribir sin exclusión es la violación que el mutex impide** | El registro durable se escribía **dentro** del bloque, y una pérdida de lease solo se anota: disco y `.jsonl` afirmaban un éxito que la pantalla desmentía | El registro sale del bloque, y **si se perdió la exclusión no se escribe nada**: la ronda queda abierta y la corrida siguiente la ve `sin_cerrar()`. Eso convierte ese aviso en el mecanismo y no en un adorno. Y `CaseBusy` deja de colapsarse con `MutexPerdido` |
+| **D. Una costura tiene dos extremos** | Todos mis tests inyectaban el colaborador, así que contrataban solo el lado del llamador. Se podía hacer que `apply` dejara de devolver el status, que la custodia dejara de reenviar `force`, o que `main` pasara `hasta=None`, **sin un solo rojo** | `tests/test_apertura_v1_costuras.py`: diez tests que recorren el camino **por defecto** y afirman el efecto donde el valor se consume, incluidos el código de salida del **proceso**, la emisión del evento y el cierre de la ronda. El arnés incorpora los ficheros del cableado |
+
+**Y dos cosas que no eran fronteras sino errores planos:** `traducir_fallo_de_mutex` tenía tres
+tests y **cero llamadores** (retirada; su prueba se reescribió conduciendo `main`, donde además
+distingue las dos causas de fallo de exclusión), y el help de `--hasta` prometía una reanudación
+que la puerta impide (corregido: se reanuda por `--case-id`).
+
+**Medición tras remediar: 3.880 tests, 0 fallos con dos semillas (777 y 31337); 31/31 mutantes
+muertos, cada uno solo por su frontera**, con el arnés ya cubriendo el cableado y sin las dos
+muertes vacuas (F19/F20 retirados: sus fronteras dejaron de existir).
+
+### Lo que NO se remedió, declarado uno por uno
+
+No se declara refutado nada de esto: está **abierto**.
+
+1. **`MEJORAS #142` sube de prioridad y su descripción era engañosa.** El `Exit` dentro del bloque
+   de mutex vive **casi solo en el modo `libre`** —el que usa el equipo— con **9 salidas**; la rama
+   `v1` que remedié apenas podía manifestarlo porque sus etapas capturan `Exception`. Remedié donde
+   el defecto no podía darse.
+2. **La atomicidad se contrata con un espía de llamada** (L4-01, L6-13): el test comprueba que se
+   pasó por `os.replace`, no que ningún estado parcial sea observable. Una escritura en sitio con un
+   `os.replace(f, f)` de adorno pasaría.
+3. **`os.replace` puede lanzar `PermissionError` en Windows** si otro proceso tiene el destino
+   abierto, y nadie lo captura (L4-02); en `cerrar` invierte la semántica.
+4. **Un JSON truncado se lee como «primera ronda»** (L4-04): el modo de fallo que el fichero existe
+   para detectar es el que no detecta.
+5. **`abrir` sobrescribe la evidencia de una ronda anterior sin cerrar** (L1-07, L4-03).
+6. **El guard AST de F25 vigila `ast.Raise`**, así que enrutar la salida por un helper lo elude
+   (L1-04). Limitación declarada, no cerrada.
+7. **Flecos del arnés:** F15 muere 5 de 6 veces por un error de montaje de su fixture y no por su
+   frontera (L1-13); F27 espía `os.replace` y sobrevive a quitar el `dir=` de `mkstemp` (L1-12).
+8. **`_informar_v1` no tiene frontera** y el campo `parada` del evento puede mentir (L1-15); el
+   `details` del evento es subconjunto estricto de lo que se imprime (L5-06).
+9. **`fsync` cubre el fichero y no el directorio** (L4-08); el temporal es más largo que el destino,
+   con una ventana de `MAX_PATH` (L4-12, SIN VERIFICAR).
+10. **Task 11 —la corrida real sobre W-02Q38C— sigue sin ejecutarse.**
+
+**Una tercera ronda sobre esta pieza necesita autorización expresa de Nikolai** (techo duro del
+presupuesto). Mi lectura: lo que queda abierto no es del mismo orden que lo remediado —ninguno de
+los diez bloquea una apertura ni pierde datos de cliente—, pero son **diez**, y el punto 1 es una
+decisión de alcance que tomamos sobre una descripción mía que resultó engañosa. Eso último no lo
+arregla una ronda: lo decide él.
