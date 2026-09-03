@@ -150,7 +150,9 @@ MUTANTES: list[tuple[str, str, str, str, set[str]]] = [
      {f"{ETA}::test_f10_f12_el_status_de_atomizacion_gobierna_el_pendiente[None-hecha-False]",
       f"{ETA}::test_f10_f12_el_status_de_atomizacion_gobierna_el_pendiente[ok-hecha-False]",
       f"{COS}::test_costura_el_status_de_apply_llega_por_el_camino_POR_DEFECTO[ok-hecha]",
-      f"{COS}::test_costura_el_status_de_apply_llega_por_el_camino_POR_DEFECTO[None-hecha]"}),
+      f"{COS}::test_costura_el_status_de_apply_llega_por_el_camino_POR_DEFECTO[None-hecha]",
+      # F37 afirma la lista EXACTA de pendientes, asi que un pendiente de mas la mata.
+      f"{ETA}::test_f37_los_documentos_agotados_del_OCR_APARECEN_en_los_pendientes"}),
 
     ("F13", LOG,
      '    "apertura_v1_terminada",         # cierre de la secuencia de V1 con estado y pendientes\n',
