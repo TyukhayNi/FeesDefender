@@ -138,10 +138,19 @@ MUTANTES: list[tuple[str, str, str, str, set[str]]] = [
       f"{COS}::test_costura_el_status_de_apply_llega_por_el_camino_POR_DEFECTO[fallo-fallo]",
       f"{ETA}::test_los_agotados_se_declaran_incluso_si_la_atomizacion_FALLA"}),
 
+    # F12 ataca el PENDIENTE y no la prosa del detalle: su frontera es «no ejecutada
+    # != quedo pendiente», y mutar un texto que ningun test afirma dejaba el mutante
+    # vivo. Ya paso una vez y volvio a pasar al reescribirlo tras MEJORAS #144.
     ("F12", CLI,
-     '    base = ("OCR hecho; sin correo que atomizar" if status is None',
-     '    base = ("OCR hecho; atomizacion ok" if status is None',
-     {f"{ETA}::test_f10_f12_el_status_de_atomizacion_gobierna_el_pendiente[None-hecha-False]"}),
+     "    return av1.EtapaResultado(nombre=\"sala_maquina\", estado=\"hecha\", detalle=base," + NL +
+     "                              pendientes=tuple(pendientes))",
+     "    return av1.EtapaResultado(nombre=\"sala_maquina\", estado=\"hecha\", detalle=base," + NL +
+     "                              pendientes=tuple(pendientes) + (av1.Pendiente(" + NL +
+     "                                  codigo=\"x\", detalle=\"x\"),))",
+     {f"{ETA}::test_f10_f12_el_status_de_atomizacion_gobierna_el_pendiente[None-hecha-False]",
+      f"{ETA}::test_f10_f12_el_status_de_atomizacion_gobierna_el_pendiente[ok-hecha-False]",
+      f"{COS}::test_costura_el_status_de_apply_llega_por_el_camino_POR_DEFECTO[ok-hecha]",
+      f"{COS}::test_costura_el_status_de_apply_llega_por_el_camino_POR_DEFECTO[None-hecha]"}),
 
     ("F13", LOG,
      '    "apertura_v1_terminada",         # cierre de la secuencia de V1 con estado y pendientes\n',
