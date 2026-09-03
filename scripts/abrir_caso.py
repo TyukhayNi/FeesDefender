@@ -34,6 +34,7 @@ from core import (
     case_manager, config, email_export, intake_drive, intake_log, intake_manual,
     sudespacho_create, whatsapp_intake,
 )
+from core import apertura_v1 as av1
 from core.casos import case_locator, mutex_sesion
 from core.casos.workspace_model import CaseRef
 from core.ciudades import CIUDADES
@@ -133,7 +134,9 @@ def _intake_generico(
                                 details={"count": len(plan.con_sha), "files": plan.con_sha})
 
 
-def _intake_drive_ev(ident, case_dir: Path, folder_id, team_id, *, dry_run: bool) -> None:
+def _intake_drive_ev(ident, case_dir: Path, folder_id, team_id, *,
+                     dry_run: bool,
+                     force: bool = False) -> intake_drive.DriveIntakeResult:
     """Pull de Drive E&V + cadena de custodia sobre el destino EFECTIVO (R14/H14-02).
 
     **El dato que hacía barato el arreglo: `DriveIntakeResult` ya traía `target_dir`.**
@@ -141,7 +144,7 @@ def _intake_drive_ev(ident, case_dir: Path, folder_id, team_id, *, dry_run: bool
     tiraba para recomponer la ruta canónica a mano. No faltaba información: se descartaba.
     """
     try:
-        res = intake_drive.pull_drive_ev(ident.case_id, folder_id, team_id)
+        res = intake_drive.pull_drive_ev(ident.case_id, folder_id, team_id, force=force)
     except intake_drive.DriveIntakeError as exc:
         # R15/H15-06: un `rclone` no cero puede haber copiado PARTE del árbol, y esos bytes
         # se quedan en el expediente. Antes la excepción subía sin que nada los inventariase,
@@ -173,6 +176,10 @@ def _intake_drive_ev(ident, case_dir: Path, folder_id, team_id, *, dry_run: bool
     hashes = hash_tree_local(res.target_dir, prefijo=subdir)
     _intake_generico(case_dir, ident.case_id, "drive_ev", hashes, base=subdir,
                      dry_run=dry_run, raiz_hashes=res.target_dir.parent)
+    # Lo devuelve para que el secuenciador de V1 pueda informar sin rodear esta funcion:
+    # la custodia (hashes del destino EFECTIVO, reconciliacion y el registro de los bytes
+    # parciales de un pull fallido) vive aqui, y un adaptador que la esquive la deroga.
+    return res
 
 
 def _inventario_local(src: Path) -> list[dict]:
@@ -328,6 +335,41 @@ def _despachar_intake(fuente, ident, case_dir, *, folder_id, team_id, src, rol,
                       extraer_adjuntos=extraer_adjuntos)
     else:
         raise typer.Exit(code=1)  # red de seguridad: _FUENTES_CLI ya filtra el valor
+
+
+def etapa_drive(ident, case_dir: Path, *, folder_id, team_id, intake=None):
+    """Etapa 1 de V1: materializar la carpeta de Drive E&V, con custodia.
+
+    **Pasa por `_intake_drive_ev` y no por `pull_drive_ev`**: la custodia —hashes sobre el
+    destino efectivo, reconciliacion, y registro de los bytes parciales de un pull
+    fallido— vive ahi, y es el resultado de R14/H14-02 y R15/H15-06. Un adaptador que la
+    rodea la deroga en silencio.
+
+    **`force=True` siempre.** La tabla de riesgos de la spec llama al skip por `.pulled`
+    «falso punto fijo»: en V1 la consulta remota se hace en cada ronda, y `rclone`
+    transfiere solo lo que difiere.
+    """
+    _intake = intake or _intake_drive_ev
+    try:
+        res = _intake(ident, case_dir, folder_id, team_id, dry_run=False, force=True)
+    except Exception as exc:  # noqa: BLE001 — el estado de V1 es el producto, no la traza
+        return av1.EtapaResultado(nombre="drive", estado="fallo",
+                                  detalle=f"{type(exc).__name__}: {exc}")
+    if res.errors or res.rclone_returncode != 0:
+        return av1.EtapaResultado(
+            nombre="drive", estado="fallo",
+            detalle=f"rclone rc={res.rclone_returncode}; errores={res.errors}")
+    if res.skipped:
+        # Con `force=True` esto no deberia poder pasar. Si pasa, el marcador `.pulled`
+        # volvio al camino y la ronda NO consulto Drive: decirlo `saltada` seria firmar
+        # el falso punto fijo que la spec prohibe.
+        return av1.EtapaResultado(
+            nombre="drive", estado="fallo",
+            detalle="la consulta remota no se hizo: el pull devolvio `skipped` pese a "
+                    "pedirse con force=True")
+    return av1.EtapaResultado(
+        nombre="drive", estado="hecha",
+        detalle=f"{res.files_after} ficheros en {res.target_dir}")
 
 
 def _alta_crm(
