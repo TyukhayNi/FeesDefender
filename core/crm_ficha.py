@@ -114,6 +114,6 @@ def cargar_ficha_yaml(path: Path) -> FichaCRMInput:
     return FichaCRMInput(
         contrario=contrario,
         colaboradores=colaboradores,
-        notas_html=str(data.get("notas_html", "")),
-        cliente_propio=str(data.get("cliente_propio") or CLIENTE_PROPIO_DEFAULT),
+        notas_html=_escalar(data.get("notas_html"), "notas_html"),
+        cliente_propio=_escalar(data.get("cliente_propio") or CLIENTE_PROPIO_DEFAULT, "cliente_propio"),
     )

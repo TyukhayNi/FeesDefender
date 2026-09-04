@@ -79,3 +79,37 @@ class TestElMovilDelContrarioTampoco:
         c = _carga(tmp_path, cuerpo).contrario
         malos = [k for k in claves if getattr(c, k) != ""]
         assert malos == [], f"estos salieron con valor: {malos}"
+
+
+class TestNotasHtmlSinNoneLiteral:
+    """H-09 para notas_html: quedó fuera del arreglo de campos en PR #275."""
+
+    def test_notas_html_vacio_es_cadena_vacia_no_none(self, tmp_path):
+        ficha = _carga(tmp_path, "notas_html:\n")
+        assert ficha.notas_html == "", f"esperaba '', obtuve {ficha.notas_html!r}"
+
+    def test_notas_html_con_contenido_sobrevive(self, tmp_path):
+        ficha = _carga(tmp_path, "notas_html: '<p>Abogado de la parte contraria</p>'\n")
+        assert ficha.notas_html == "<p>Abogado de la parte contraria</p>"
+
+    def test_notas_html_ausente_es_cadena_vacia(self, tmp_path):
+        ficha = _carga(tmp_path, "contrario:\n  nombre: ANA\n")
+        assert ficha.notas_html == ""
+
+
+class TestClientePropioConPorDefecto:
+    """cliente_propio: si viene None, cae al default; si viene valor, se respeta."""
+
+    def test_cliente_propio_ausente_toma_default(self, tmp_path):
+        from core.crm_ficha import CLIENTE_PROPIO_DEFAULT
+        ficha = _carga(tmp_path, "contrario:\n  nombre: ANA\n")
+        assert ficha.cliente_propio == CLIENTE_PROPIO_DEFAULT
+
+    def test_cliente_propio_vacio_toma_default(self, tmp_path):
+        from core.crm_ficha import CLIENTE_PROPIO_DEFAULT
+        ficha = _carga(tmp_path, "cliente_propio:\n")
+        assert ficha.cliente_propio == CLIENTE_PROPIO_DEFAULT
+
+    def test_cliente_propio_con_valor_se_respeta(self, tmp_path):
+        ficha = _carga(tmp_path, "cliente_propio: 'OTRO_CLIENTE'\n")
+        assert ficha.cliente_propio == "OTRO_CLIENTE"
