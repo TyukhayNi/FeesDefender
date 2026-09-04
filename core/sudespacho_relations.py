@@ -1417,8 +1417,98 @@ def _resolver_o_crear_contrario(datos: NuevoClienteContrario) -> tuple[str, bool
     _exigir_identidad_cierta(r, elemento="clientes_contrarios",
                              nif=datos.nif, email=datos.email)
     if r.id:
+        _completar_contrario_existente(r.id, datos)
         return r.id, False
     return create_cliente_contrario(datos), True
+
+
+#: Campos de la ficha que se COMPLETAN sobre un contrario que ya existe, con su nombre
+#: de property en el CRM. Solo se rellena lo que esta VACIO en el CRM: la ficha local
+#: aporta datos, no manda sobre lo que ya hay — otra sesion o la propia E&V pueden haber
+#: corregido algo ahi y pisarlo seria destruir trabajo ajeno.
+_COMPLETABLES_CONTRARIO = (
+    ("email", "email"),
+    ("movil", "movil"),
+    ("direccion", "direccion"),
+    ("poblacion", "poblacion"),
+    ("cp", "cp"),
+    ("telefono", "telefono1"),
+)
+
+
+def _completar_contrario_existente(contrario_id: str, datos: NuevoClienteContrario) -> None:
+    """Rellena en el CRM los campos que la ficha trae y la ficha del CRM no tiene.
+
+    **R1/H-07, y desmiente una afirmacion previa mia.** Anadir `cp`, `provincia` y
+    `telefono` al DTO solo los hacia llegar en el camino de CREACION. Con el contrario ya
+    existente —el caso normal en cuanto un caso se reabre o la parte aparece en dos
+    operaciones— `ensure_contrario_vinculado` solo vinculaba, nunca actualizaba, y los
+    tres campos seguian sin llegar. Los tests no lo cazaron porque llamaban directamente
+    al POST, saltandose esta rama.
+
+    No lanza: completar la ficha es un extra sobre el vinculo, y perder el vinculo por no
+    poder escribir un codigo postal seria peor que quedarse sin el codigo postal. Lo que
+    no se pueda hacer se registra.
+    """
+    cambios: dict[str, str] = {}
+    try:
+        actual = get_cliente_contrario(contrario_id)
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("no se pudo leer el contrario %s para completarlo (%r): los datos "
+                     "de la ficha que faltasen siguen sin llegar", contrario_id, exc)
+        return
+
+    for campo, prop in _COMPLETABLES_CONTRARIO:
+        valor = (getattr(datos, campo, "") or "").strip()
+        if valor and not (actual.get(prop) or "").strip():
+            cambios[prop] = valor
+
+    provincia = provincia_canonica(datos.provincia) if datos.provincia else None
+    if provincia and not (actual.get("provincia") or "").strip():
+        cambios["provincia"] = provincia
+
+    if not cambios:
+        return
+    try:
+        update_cliente_contrario(contrario_id, cambios)
+        _log.info("contrario %s completado con %s", contrario_id, sorted(cambios))
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("no se pudieron completar los campos %s del contrario %s (%r)",
+                     sorted(cambios), contrario_id, exc)
+
+
+def get_cliente_contrario(contrario_id: str) -> dict:
+    """Ficha completa de un contrario, aplanada a `{property: value}`.
+
+    Las properties se piden **al propio CRM** en vez de mantener una lista aqui: un 500
+    con una property inventada las enumera todas (metodo del §14.6 de
+    `INTEGRACION_SUDESPACHO.md`), pero eso gasta una peticion de mas por corrida, asi que
+    se piden las que este modulo sabe leer y escribir.
+    """
+    api_key = (os.getenv("SUDESPACHO_API_KEY") or "").strip()
+    if not api_key:
+        raise ValueError("SUDESPACHO_API_KEY no configurada")
+
+    props = ",".join([
+        "nombre", "1apellido", "2apellido", "email", "movil", "nif_cif",
+        "direccion", "poblacion", "cp", "provincia", "telefono1", "id",
+    ])
+    url = (f"{_REST_BASE}{_REST_CREATE_CLIENTE_CONTRARIO}/{contrario_id}"
+           f"?properties={props}")
+    r = httpx.get(url, headers={"x-api-key": api_key, "Accept": "application/json"},
+                  timeout=_REST_TIMEOUT)
+    if r.status_code != 200:
+        raise SudespachoRelationsError(
+            f"REST GET clientes_contrarios/{contrario_id} -> HTTP {r.status_code}")
+    plano: dict[str, str] = {}
+    for item in (r.json().get("values") or []):
+        if not isinstance(item, dict):
+            continue
+        prop = item.get("property")
+        nombre = prop.get("name") if isinstance(prop, dict) else prop
+        if nombre:
+            plano[nombre] = item.get("value")
+    return plano
 
 
 def ensure_contrario_vinculado_judicial(

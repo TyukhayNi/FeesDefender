@@ -36,12 +36,38 @@ def _contrario_de(d: dict) -> NuevoClienteContrario:
         nif=d.get("nif", ""),
         direccion=d.get("direccion", ""),
         poblacion=d.get("poblacion", ""),
-        # Estos tres se leian del YAML? No: no se leian, y por eso nunca llegaban al
-        # CRM aunque estuvieran escritos.
-        cp=str(d.get("cp", "")),
-        provincia=d.get("provincia", ""),
-        telefono=str(d.get("telefono", "")),
+        # Estos tres no se leian del YAML, y por eso nunca llegaban al CRM aunque
+        # estuvieran escritos.
+        cp=_escalar(d.get("cp"), "contrario.cp"),
+        provincia=_escalar(d.get("provincia"), "contrario.provincia"),
+        telefono=_escalar(d.get("telefono"), "contrario.telefono"),
     )
+
+
+def _escalar(valor: object, campo: str) -> str:
+    """Un escalar del YAML como cadena, sin corromperlo ni inventarlo.
+
+    Dos defectos que R1 midio y que `str(...)` producia por si solo:
+
+    - **H-08, el codigo postal en octal.** `cp: 01001` sin comillas lo resuelve PyYAML
+      como el **entero octal 513**, y `str()` lo manda al CRM como `"513"`. El caso
+      concreto de `08019` se salvaba solo porque tiene un `8` y un `9`, que no son
+      digitos octales validos — o sea, por suerte. Un `int` en un campo que es una
+      cadena con ceros a la izquierda **no se puede recuperar**: se rechaza y se dice.
+    - **H-09, el nulo que viaja como texto.** `cp:` sin valor da `None`, y `str(None)`
+      es `"None"`, que es *truthy* y viajaba al CRM tal cual. Una clave preparada y
+      vacia significa «no hay dato».
+    """
+    if valor is None:
+        return ""
+    if isinstance(valor, bool) or isinstance(valor, int) or isinstance(valor, float):
+        raise ValueError(
+            f"{campo} vino del YAML como {type(valor).__name__} ({valor!r}). Un valor "
+            "con ceros a la izquierda lo reinterpreta YAML (por ejemplo `01001` es el "
+            "octal 513) y el dato original ya no se puede recuperar. Escribelo entre "
+            "comillas: por ejemplo `cp: \'01001\'`."
+        )
+    return str(valor).strip()
 
 
 def _colaborador_de(d: dict) -> NuevoColaborador:

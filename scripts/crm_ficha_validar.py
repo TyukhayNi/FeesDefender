@@ -19,6 +19,7 @@ from core.casos import case_locator
 from core.crm_ficha import cargar_ficha_yaml
 from core.crm_ficha_validacion import (
     ENCONTRADO,
+    NO_BUSCABLE,
     NO_ENCONTRADO,
     SIN_COMPROBAR,
     corpus_legible,
@@ -31,7 +32,8 @@ app = typer.Typer(add_completion=False,
                   help="Validar el _ficha_crm.yaml contra la documental del expediente")
 
 _SALA = Path("01_Procesado") / "02_Sala de máquina"
-_MARCA = {ENCONTRADO: "ok", NO_ENCONTRADO: "FALTA", SIN_COMPROBAR: "sin comprobar"}
+_MARCA = {ENCONTRADO: "ok", NO_ENCONTRADO: "FALTA", SIN_COMPROBAR: "sin comprobar",
+          NO_BUSCABLE: "DATO MAL FORMADO"}
 
 
 @app.command()
@@ -54,7 +56,7 @@ def main(
         raise typer.Exit(code=1)
     except ValueError as exc:
         typer.echo(f"[ERROR] _ficha_crm.yaml inválido: {exc}", err=True)
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=2)
 
     cobertura = case_dir / _SALA / "_cobertura.json"
     if not cobertura.is_file():
@@ -64,7 +66,19 @@ def main(
             "`organizar-sala-maquina`.", err=True)
         raise typer.Exit(code=1)
 
-    entradas = json.loads(cobertura.read_text(encoding="utf-8"))
+    # R1/H-12: un `_cobertura.json` truncado salia con codigo 1 por `JSONDecodeError`
+    # crudo, sin un solo mensaje del CLI. Un fallo de precondicion no puede parecerse a
+    # un dato que falta.
+    try:
+        entradas = json.loads(cobertura.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        typer.echo(f"[ERROR] {cobertura.name} no se puede leer ({exc}). No es que falten "
+                   "datos: es que no hay contra qué validar.", err=True)
+        raise typer.Exit(code=2)
+    if not isinstance(entradas, list):
+        typer.echo(f"[ERROR] {cobertura.name} no contiene una lista de documentos.",
+                   err=True)
+        raise typer.Exit(code=2)
     slugs, ilegibles = corpus_legible(entradas)
 
     md_dir = case_dir / _SALA / "03_MD"
@@ -110,7 +124,13 @@ def main(
             "son de una sola palabra (una población, un apellido) y casan con cualquier "
             "tercero del expediente. Encontrarlos no prueba que este dato sea correcto.")
 
-    if cuenta[SIN_COMPROBAR]:
+    if cuenta[NO_BUSCABLE]:
+        typer.echo("")
+        typer.echo("Hay datos de la ficha que no se pueden buscar (un teléfono de menos "
+                   "de 9 dígitos, un documento de menos de 4 caracteres). No es que no "
+                   "aparezcan: es que están mal escritos en la ficha.")
+
+    if cuenta[SIN_COMPROBAR] and ilegibles:
         typer.echo("")
         typer.echo("No se pudo mirar en estos documentos — revísalos a mano:")
         for ruta in ilegibles:
@@ -119,7 +139,7 @@ def main(
     # Codigo de salida: 1 solo si algo NO APARECE teniendo todo el corpus legible. Lo
     # que no se pudo comprobar no es un fallo del dato, y tratarlo como tal entrenaria
     # a ignorar el comando en cuanto un DNI escaneado no tenga OCR — que es lo normal.
-    if cuenta[NO_ENCONTRADO]:
+    if cuenta[NO_ENCONTRADO] or cuenta[NO_BUSCABLE]:
         typer.echo("")
         typer.echo("[ERROR] Hay datos en la ficha que no aparecen en NINGÚN documento "
                    "legible del expediente. Compruébalos antes de escribirlos al CRM.",

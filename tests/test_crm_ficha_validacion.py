@@ -287,14 +287,24 @@ class TestUnDatoDeUnaPalabraNoAcredita:
                       {"doc.md": f"dato {valores[clase]} aqui"}, ilegibles=())
         assert h.acredita is True
 
-    def test_los_apellidos_sueltos_ya_no_se_validan(self, tmp_path):
+    def test_los_apellidos_sueltos_SI_se_validan_pero_no_acreditan(self, tmp_path):
+        """Corregido por R1/H-05: la primera version los OMITIA, y eso era peor.
+
+        Se sacaban de `datos_de_ficha` con el argumento de que el apellido va cubierto
+        por el nombre completo. Pero omitirlos los saca del **denominador**: una errata
+        en `apellido1` no salia ni como encontrada, ni como faltante, ni como sin
+        comprobar — simplemente no existia. La respuesta correcta ya estaba en el propio
+        modulo: se validan, y `discriminante` dice que no acreditan. Omitir era resolver
+        dos veces la misma cosa, y mal la segunda.
+        """
         from core.crm_ficha import cargar_ficha_yaml
 
         y = tmp_path / "_ficha_crm.yaml"
         y.write_text("contrario:\n  nombre: ALBERTO CAMPRUBI CORDAL\n"
                      "  apellido1: CAMPRUBI\n  apellido2: CORDAL\n", encoding="utf-8")
-        campos = {d.campo for d in datos_de_ficha(cargar_ficha_yaml(y))}
+        por_campo = {d.campo: d for d in datos_de_ficha(cargar_ficha_yaml(y))}
 
-        assert "contrario.nombre" in campos
-        assert "contrario.apellido1" not in campos
-        assert "contrario.apellido2" not in campos
+        assert "contrario.apellido1" in por_campo
+        assert "contrario.apellido2" in por_campo
+        assert not por_campo["contrario.apellido1"].discriminante
+        assert por_campo["contrario.nombre"].discriminante
