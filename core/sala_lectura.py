@@ -130,10 +130,21 @@ def _write_worklist(case_id: str, residuo: list) -> Path:
         "| " + " | ".join(_WL_COLS) + " |",
         "|" + "|".join(["---"] * len(_WL_COLS)) + "|",
     ]
+    # **Fusiona, no reconstruye** (`MEJORAS #151`). Hasta el 2026-09-04 esto escribia las
+    # columnas en blanco, asi que el ciclo que el propio CLI recomienda —«rellena la
+    # worklist y vuelve a correr organizar»— DESTRUIA lo rellenado: medido, 99 filas
+    # clasificadas a mano perdidas en la corrida siguiente, y el `aplicar` posterior
+    # devolvio «Aplicadas: 0». Se preserva toda celda no vacia, sea del letrado o de una
+    # corrida previa del clasificador LLM, que es la misma politica que `rellenar_worklist`.
+    previas = {f["Hash"]: f for f in _filas_worklist(case_id)}
     for e in residuo:
         fecha, _ = _fecha_de(case_id, e)
+        prev = previas.get(e.hash, {})
         fila = [e.hash, _celda(e.nombre_original), _celda(e.fuente),
-                "", fecha or "", "", ""]
+                prev.get("Tipo", ""),
+                prev.get("Fecha") or (fecha or ""),
+                prev.get("Parte", ""),
+                prev.get("Descripcion", "")]
         lineas.append("| " + " | ".join(fila) + " |")
     lineas.append("")
     path.write_text("\n".join(lineas), encoding="utf-8")
@@ -706,7 +717,27 @@ def poblar_sala_lectura(case_id: str, *, crm_docs=None) -> dict:
 
 
 def organizar(case_id: str, *, crm_docs=None) -> dict:
-    """Orquestador: clasificar -> (si hay residuo, parar) -> render -> poblar."""
+    """Orquestador: catálogo -> aplicar -> clasificar -> (parar si residuo) -> render -> poblar.
+
+    **Le faltaban el primero y el segundo** (`MEJORAS #151`), y por eso no convergía:
+
+    - Sin `catalogo`, sobre un caso recién abierto clasificaba un
+      `indice_documental.yaml` que no existía, encontraba 0 documentos y remataba con
+      «Sala de lectura organizada. Acciones: {}» — éxito sobre una sala vacía. Un
+      inventario vacío que no activa nada es indistinguible de «no había nada que hacer».
+      La guarda existía… en el subcomando `clasificar` del CLI, y `organizar` la rodeaba
+      llamando aquí directamente.
+    - Sin `aplicar`, la worklist rellenada por el letrado no llegaba nunca al catálogo,
+      así que el residuo no bajaba y `organizar` volvía a pedir lo mismo para siempre.
+
+    `aplicar` va ANTES de `clasificar` a propósito: vuelca lo rellenado con
+    `confianza = 1.0`, y así `clasificar_caso` ya no lo cuenta como residuo.
+    """
+    if not catalogo_documental.load_catalog(case_id):
+        from core import inventory
+        inventory.scan(case_id)
+        catalogo_documental.build_catalog(case_id)
+    aplicar_clasificacion(case_id)
     clasif = clasificar_caso(case_id)
     if clasif["n_residuo"] > 0:
         return {"case_id": case_id, "detenido_por_residuo": True,

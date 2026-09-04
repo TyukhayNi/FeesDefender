@@ -731,3 +731,126 @@ def test_preparar_residuo_resuelve_un_bundle_partido_por_el_split(tmp_casos_root
     assert len(docs) == 1, "el bundle partido quedo invisible"
     assert "Primer segmento." in docs[0]["md_text"]
     assert "Segundo segmento." in docs[0]["md_text"], "solo leyo el primer segmento"
+
+
+# ---------------------------------------------------------------------------
+# MEJORAS #151, piezas (b) y (c): `organizar` no converge y borra tu trabajo
+#
+# Medido el 2026-09-04 en W-02JSVZ. `organizar` es `clasificar -> render ->
+# poblar`: le faltan `catalogo` al principio y `aplicar` tras la worklist. Sobre
+# un caso recien abierto declaro «Sala de lectura organizada. Acciones: {}» —
+# exito sobre una sala vacia— y en la corrida siguiente `clasificar_caso`
+# reconstruyo `_clasificar.md` en blanco: 99 filas clasificadas a mano perdidas,
+# y `aplicar` devolvio «Aplicadas: 0». El ciclo que su propio mensaje recomienda
+# («rellena la worklist y vuelve a correr organizar») es un bucle.
+#
+# Estaba latente porque `_caso_con_docs` construye el catalogo SIEMPRE, asi que
+# la via del caso recien abierto no se ejercitaba nunca.
+# ---------------------------------------------------------------------------
+
+def _rellenar_una_fila(case_dir, sl, *, tipo, parte, descripcion):
+    """Rellena a mano la primera fila de datos de la worklist, como haria el letrado."""
+    path = _worklist_path(case_dir, sl)
+    lineas = path.read_text(encoding="utf-8").splitlines()
+    for i, line in enumerate(lineas):
+        celdas = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(celdas) != 7 or celdas[0] == "Hash" or set(celdas[0]) <= {"-"}:
+            continue
+        celdas[3], celdas[5], celdas[6] = tipo, parte, descripcion
+        lineas[i] = "| " + " | ".join(celdas) + " |"
+        path.write_text("\n".join(lineas) + "\n", encoding="utf-8")
+        return celdas[0]
+    raise AssertionError("la worklist no tenia filas de datos")
+
+
+def test_clasificar_caso_no_pisa_la_worklist_rellenada_a_mano(tmp_casos_root):
+    """El defecto que costo 99 filas: reconstruir en vez de fusionar."""
+    cm, inv, cat, sl = _reload()
+    case_id, case_dir = _caso_con_docs(cm, inv, cat, [
+        ("01_Drive EV", "ambiguo.pdf", b"%PDF-1"),
+    ])
+    sl.clasificar_caso(case_id)
+    h = _rellenar_una_fila(case_dir, sl, tipo="07. RECLAMACIONES",
+                           parte="propietario", descripcion="Requerimiento de pago")
+
+    sl.clasificar_caso(case_id)          # la segunda corrida NO puede borrarlo
+
+    fila = {f["Hash"]: f for f in sl._filas_worklist(case_id)}[h]
+    assert fila["Tipo"] == "07. RECLAMACIONES", "la clasificacion a mano se perdio"
+    assert fila["Parte"] == "propietario"
+    assert fila["Descripcion"] == "Requerimiento de pago"
+
+
+def test_el_ciclo_worklist_aplicar_converge_por_organizar(tmp_casos_root):
+    """El bucle: rellenar y volver a `organizar` tiene que TERMINAR, no repetirse."""
+    cm, inv, cat, sl = _reload()
+    case_id, case_dir = _caso_con_docs(cm, inv, cat, [
+        ("01_Drive EV", "ambiguo.pdf", b"%PDF-1"),
+    ])
+    primera = sl.organizar(case_id)
+    assert primera["detenido_por_residuo"] is True
+
+    _rellenar_una_fila(case_dir, sl, tipo="07. RECLAMACIONES",
+                       parte="propietario", descripcion="Requerimiento de pago")
+
+    segunda = sl.organizar(case_id)
+
+    assert segunda["detenido_por_residuo"] is False, (
+        "con la worklist rellenada, `organizar` sigue pidiendo rellenarla: no converge")
+    assert (case_dir / "01_Procesado" / "Sala lectura" / "INDICE.md").exists()
+
+
+def test_organizar_sobre_un_caso_SIN_catalogo_no_canta_exito_sobre_una_sala_vacia(
+        tmp_casos_root):
+    """La primera linea del defecto medido: exito con `Acciones: {}` y 0 KB de indice."""
+    cm, inv, cat, sl = _reload()
+    case_id = "EV-2026-TEST"
+    case_dir = cm.ensure_case(case_id)
+    doc = case_dir / "00_Input" / "01_Drive EV" / "Factura honorarios.pdf"
+    doc.parent.mkdir(parents=True, exist_ok=True)
+    doc.write_bytes(b"%PDF-1")
+    # A PROPOSITO sin inventory.scan ni build_catalog: es el caso recien abierto.
+    assert not cat.load_catalog(case_id)
+
+    res = sl.organizar(case_id)
+
+    assert cat.load_catalog(case_id), "no construyo el catalogo que le faltaba"
+    assert not (res["detenido_por_residuo"] is False and not res.get("acciones")), (
+        "declaro organizada una sala vacia")
+    assert any((case_dir / "01_Procesado" / "Sala lectura").rglob("*.pdf")), (
+        "la sala quedo sin documentos")
+
+
+# ---------------------------------------------------------------------------
+# MEJORAS #151, pieza (d): la CLI no resolvia el W-code
+#
+# `abrir_caso` y `sala_maquina` aceptan `W-02JSVZ`; `sala_lectura` abortaba con
+# `LocalWorkspaceMissing` tras derivar ademas una ciudad equivocada
+# (`city='Valencia'` para un caso de Barcelona) — resolver una referencia que no
+# entiende en vez de rechazarla.
+# ---------------------------------------------------------------------------
+
+def test_la_cli_de_la_sala_de_lectura_acepta_el_w_code(tmp_casos_root):
+    from typer.testing import CliRunner
+
+    cm, inv, cat, sl = _reload()
+    case_id = "BaRS8 - Falsa 1 (W-000AAA) - Bad debt"
+    case_dir = cm.ensure_case(
+        case_id, titulo=case_id, referencia_crm=case_id, tipo_caso="BAD_DEBT",
+        ciudad="Barcelona", direccion="Falsa 1", id_go="W-000AAA",
+    )
+    doc = case_dir / "00_Input" / "01_Drive EV" / "Factura honorarios.pdf"
+    doc.parent.mkdir(parents=True, exist_ok=True)
+    doc.write_bytes(b"%PDF-1")
+
+    import importlib
+
+    from scripts import sala_lectura as cli
+    importlib.reload(cli)
+
+    r = CliRunner().invoke(cli.app, ["catalogo", "--case", "W-000AAA"])
+
+    assert r.exit_code == 0, r.output
+    assert "1 entradas" in r.output
+    # Y sobre el caso DE VERDAD, no sobre una carpeta inventada con el W-code.
+    assert cat.load_catalog(case_id), "resolvio el W-code a otro sitio"
