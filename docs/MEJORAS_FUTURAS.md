@@ -6603,15 +6603,28 @@ pero el siguiente que copie la dirección de la tabla vuelve a pisarlo.
 
 ## 149. Los ficheros de protocolo que el registro NO declara entran en el inventario probatorio
 
-> ✅ **CERRADO 2026-09-04 — PR #278**, en la superficie que se midió. Los cuatro están en
-> `INTAKE_CONTROL_FILES`, y el mutante muere en tres niveles (declaración, `_es_control` y el
-> **efecto** sobre `inventariar`) — comprobado inyectándolo.
+> 🔴 **ABIERTA, y el arreglo del 2026-09-04 se REVIRTIÓ el mismo día** (`4cd71dd`). Se cerró
+> declarando los cuatro nombres en `INTAKE_CONTROL_FILES` y la **R1 adversarial lo tumbó con un
+> hallazgo CRÍTICO**: `scripts/migrar_layout_intake.py:122` hace `hijo.unlink()` **sin comparar
+> bytes ni hash**, y con los cuatro declarados un `03_Email/_ficha_crm.yaml` que sea un adjunto
+> legítimo pasa a tratarse como estado de canal y **se borra** si existe el de la raíz. El
+> revisor lo reprodujo: los dos contenidos sobreviven en base y el segundo desaparece en head.
 >
-> **Sigue abierto, y a propósito:** los cuatro tampoco están en `MERGE_EXCLUSIONS` ni en el
-> carve-out del plugin (medido). Ese eje decide **qué se propaga en un checkin**, o sea quién
-> escribe sobre qué copia, y por el presupuesto de rondas pide **dos** rondas de revisión, no una.
-> Además los cuatro no son iguales ahí: `_ficha_crm.yaml` y `_manifiesto.yaml` son artefactos
-> durables del caso, `_intake_hashes.json` es estado derivado. Decisión aparte.
+> Dos más de la misma causa: `core/intake_lotes.py:197` excluye por basename **a cualquier
+> profundidad** (`rglob`), así que un adjunto llamado así desaparece del manifiesto del lote; y la
+> migración mueve el homónimo anidado dejando las referencias forenses de M9 apuntando a una ruta
+> inexistente.
+>
+> **La causa es una y estaba escrita en esta misma entrada:** «excluir `_manifiesto.yaml` por
+> *basename* excluye cualquier fichero así llamado en cualquier sitio… Lo correcto es excluirlo
+> solo en la raíz de un lote, o sea una línea **más** una comprobación de ruta». Se implementó
+> solo la línea. **El contrato es por UBICACIÓN, no por nombre**, y eso toca cinco consumidores
+> (`intake_drive`, `intake_manual`, `inventory`, `email_export`, `migrar_layout_intake`).
+>
+> **Presupuesto corregido: dos rondas, no una.** La pieza puede destruir prueba del cliente, luego
+> por radio de daño le tocan dos. Al revertir, el diff volvió a la categoría de una.
+>
+> Informe literal y adjudicación: `docs/superpowers/specs/2026-09-04-apertura-w02jsvz-pipeline-r1-adversarial-review.md`.
 
 **Medido el 2026-09-04 en la corrida de apertura de W-02JSVZ, con el código de hoy.** El
 `_cobertura` de la sala de máquina trae dos entradas `sin_soporte` que no son documentos del caso:
@@ -6725,6 +6738,16 @@ código de salida como señal.
 > catálogo vacío *falle* en vez de felicitarse —hoy ya no puede ocurrir por (c), así que es
 > cinturón y tirantes— y (f) la **estructura plana**, que toca el layout de `poblar` y del índice y
 > espera la decisión sobre el pivote a la skill. Y con ella el tercer defecto de `MEJORAS #67`.
+>
+> **La R1 adversarial encontró OCHO defectos más en esta misma pieza, y los ocho eran míos**
+> (`65f543a`): `organizar` no incorporaba documentos nuevos si ya había catálogo; una fila obsoleta
+> de la worklist pisaba una clasificación vigente; la CLI entregaba solo el primer segmento de un
+> bundle; un MD canónico obsoleto tapaba los segmentos actuales; los enlaces «ver texto» seguían
+> muertos **justo** para los bundles partidos que esta pieza había medido; un `Tipo` inválido
+> volvía el documento invisible; una `Fecha` vaciada a propósito se reponía (familia del `H-09`);
+> y el glob no exigía gramática ni ordenaba por número. Nueve mutantes en
+> `tests/test_sala_lectura_r1_adversarial.py`, los nueve rojos antes. Informe y adjudicación:
+> `docs/superpowers/specs/2026-09-04-apertura-w02jsvz-pipeline-r1-adversarial-review.md`.
 >
 > **El diagnóstico del §«frontera» se confirmó al arreglarlo:** las guardas existían en el
 > envoltorio —`clasificar` del CLI ya rebuildeaba el catálogo, `rellenar_worklist` ya respetaba las
@@ -6853,3 +6876,65 @@ cliente se pierde el `respaldo.assert_not_called()`, se pierde justo la propieda
 worktree. La alternativa barata mientras no se arregle —correr la suite desde la raíz— es la que ya
 prescribe `[APER-01]`, pero conviene decirlo también en el §11 del runbook, que es donde se mira al
 cerrar.
+
+
+## 153. La puerta PRINCIPAL de alta no valida nada: la UI reproduce el caso `s/n`
+
+> 🔴 **ABIERTA.** Levantado por la R1 adversarial del 2026-09-04 (`docs/superpowers/specs/2026-09-04-apertura-w02jsvz-pipeline-r1-adversarial-review.md`).
+> **Preexistente**: no lo introdujo el diff de `MEJORAS #148`, lo dejó al descubierto.
+
+`MEJORAS #148` arregló `componer_case_id`, que es la vía del **CLI de seis flags**. Pero
+`streamlit_app.py:1977-1994` **compone `_case_id_auto` con su propia interpolación** y pasa
+`final_case_id` directo a `case_manager.ensure_case` (`:338-343`), sin pasar por
+`componer_case_id` ni por `exigir_sin_caracteres_de_ruta`. Con una dirección que lleve `s/n`,
+Windows interpreta el `/` como separador, se crean dos componentes bajo la ciudad y **la UI
+muestra «Caso local disponible»**. El revisor lo reprodujo sobre head:
+
+```text
+FAILED test_case_creation_rejects_multicomponent_case_id
+E Failed: DID NOT RAISE ValueError
+```
+
+**Por qué esto va POR DELANTE de lo que ya se arregló.** El CLI de seis flags lo uso yo; la UI de
+Streamlit es la que usan **Paola y Ana**, que no tocan código. Arreglar la puerta de servicio y
+dejar abierta la principal es el orden equivocado, y solo se vio porque el mandato de la R1
+declaraba esta duda como no verificada: «¿queda alguna vía que componga una ruta de caso desde
+entrada del usuario sin pasar por `componer_case_id`?». La respuesta fue sí.
+
+**Remedio.** El sumidero es único: `ensure_case`. Validar **ahí** —no en cada puerta— es lo que
+cierra la familia en vez del ejemplo, y de paso cubre cualquier llamador futuro. Su mutante: una
+dirección con `/` desde la composición real de Streamlit debe abortar **antes** de `ensure_case`
+y no dejar ninguna carpeta parcial; el test muere si vuelve a crearse el esqueleto.
+
+**Disparador de promoción.** Disparado: cualquier finca rústica con `s/n` dada de alta desde la UI.
+
+
+## 154. El override de ruta permite escapar de `CASOS_ROOT`
+
+> 🔴 **ABIERTA.** Levantado por la R1 adversarial del 2026-09-04 (`docs/superpowers/specs/2026-09-04-apertura-w02jsvz-pipeline-r1-adversarial-review.md`).
+> **Preexistente.** Familia de `MEJORAS #141` (`buscar()` no valida el `case_id`, así que una
+> referencia con `..` escribe fuera del catálogo): mismo agujero, otra puerta.
+
+`streamlit_app.py:1983-1994` acepta un override de ruta del usuario; `destino_de_alta` y
+`path_for_ciudad` (`core/casos/case_locator.py:132-158, 261-267`) **concatenan sin exigir un
+componente relativo ni verificar contención**. Una ruta absoluta descarta la raíz y un `..` la
+atraviesa; después `ensure_case` hace `mkdir(parents=True)` y deposita el expediente ahí. El
+revisor midió que la composición pura devuelve `C:\Windows` para un `case_id` absoluto:
+
+```text
+FAILED test_case_creation_rejects_parent_traversal
+E Failed: DID NOT RAISE ValueError
+```
+
+**Lo que NO hace falta** es imponer el formato canónico del `case_id` —eso ya se midió como una
+guarda demasiado ancha en `#148`—. Lo que falta es la **contención**: que el destino resuelto esté
+bajo `CASOS_ROOT`, comprobado con `Path.resolve()` y no con comparación de cadenas.
+
+**Remedio.** La misma comprobación en el sumidero que `#153`, y con los dos mutantes que hacen
+falta: una ruta absoluta y un `..` abortan sin crear nada, **y** un `case_id` legítimo con
+paréntesis, comas y acentos sigue pasando — endurecer de más aquí rompe el alta de casos que ya
+existen en el catálogo.
+
+**Disparador de promoción.** Se promueve **junto a `#153`**: comparten sumidero y arreglarlos por
+separado es hacer dos veces el mismo trabajo. Riesgo bajo por frecuencia (hay que teclear el
+override a mano) y alto por consecuencia (expediente con PII fuera del árbol gobernado).
