@@ -138,13 +138,22 @@ def _write_worklist(case_id: str, residuo: list) -> Path:
     # corrida previa del clasificador LLM, que es la misma politica que `rellenar_worklist`.
     previas = {f["Hash"]: f for f in _filas_worklist(case_id)}
     for e in residuo:
-        fecha, _ = _fecha_de(case_id, e)
-        prev = previas.get(e.hash, {})
-        fila = [e.hash, _celda(e.nombre_original), _celda(e.fuente),
-                prev.get("Tipo", ""),
-                prev.get("Fecha") or (fecha or ""),
-                prev.get("Parte", ""),
-                prev.get("Descripcion", "")]
+        prev = previas.get(e.hash)
+        if prev is None:
+            # Fila nueva: la fecha inferida es una PISTA, no un dato.
+            fecha, _ = _fecha_de(case_id, e)
+            celdas_prev = ["", fecha or "", "", ""]
+        else:
+            # **Fila que ya existía: se copia TAL CUAL, celdas vacías incluidas.** La
+            # primera versión hacía `prev.get("Fecha") or fecha`, y con eso una fecha que
+            # el letrado había **borrado a propósito** volvía a aparecer en la siguiente
+            # corrida. Lo levantó la R1 adversarial, y es la familia del `H-09` que este
+            # repo ya aprendió en `crm_ficha`: una celda **presente y vacía** significa
+            # «no hay dato», no «usa el valor inferido». Distinguir «fila ausente» de
+            # «celda vacía» es todo el arreglo.
+            celdas_prev = [prev.get("Tipo", ""), prev.get("Fecha", ""),
+                           prev.get("Parte", ""), prev.get("Descripcion", "")]
+        fila = [e.hash, _celda(e.nombre_original), _celda(e.fuente), *celdas_prev]
         lineas.append("| " + " | ".join(fila) + " |")
     lineas.append("")
     path.write_text("\n".join(lineas), encoding="utf-8")
@@ -203,7 +212,20 @@ def _parse_worklist(text: str) -> list[dict]:
     return filas
 
 
-def aplicar_clasificacion(case_id: str) -> dict:
+def aplicar_clasificacion(case_id: str, *, solo_residuo: bool = False) -> dict:
+    """Vuelca la worklist al catálogo. Con `solo_residuo`, no pisa lo ya resuelto.
+
+    **`solo_residuo=True` es lo que usa `organizar`**, y lo pidió la R1 adversarial: al
+    encadenar `aplicar` sin condición, una fila **obsoleta** de la worklist (de un hash que
+    el catálogo ya había resuelto por otra vía, con confianza plena) sobrescribía la
+    decisión vigente, porque el casado es solo por hash. Con la bandera, una entrada ya
+    resuelta se respeta.
+
+    Sin la bandera —el `aplicar` suelto del CLI— se mantiene el comportamiento permisivo a
+    propósito: ahí el letrado ha pedido explícitamente aplicar, y tiene que poder
+    **corregir** una clasificación que ya se aplicó. Restringirlo también habría cerrado
+    esa vía sin decirlo.
+    """
     path = _revisar_dir(case_id) / WORKLIST_NAME
     if not path.exists():
         return {"case_id": case_id, "n_aplicadas": 0}
@@ -214,11 +236,15 @@ def aplicar_clasificacion(case_id: str) -> dict:
         fila = filas.get(e.hash)
         if not fila:
             continue
+        ya_resuelto = bool(e.tipo_documental) and (e.confianza or 0) >= UMBRAL_CONFIANZA_AUTOMOVE
+        if solo_residuo and ya_resuelto:
+            continue
         tipo = fila["Tipo"].strip()
         if tipo not in TAXONOMIA_EV:
             continue  # sin tipo válido → sigue pendiente
         e.tipo_documental = tipo
-        e.fecha_doc = fila["Fecha"].strip() or e.fecha_doc
+        # Presente y vacía = «no hay fecha», por la misma razón que en `_write_worklist`.
+        e.fecha_doc = fila["Fecha"].strip() or None
         e.fecha_fuente = e.fecha_fuente or "contenido"
         e.parte = fila["Parte"].strip() or None
         e.descripcion = fila["Descripcion"].strip() or None
@@ -270,20 +296,43 @@ def _md_path(case_id: str, entry) -> Path:
     return _md_dir(case_id) / f"{output_slug(entry.ruta_relativa, entry.hash)}.md"
 
 
+def _segmentos_md(case_id: str, entry) -> list[Path]:
+    """Los espejos de los SEGMENTOS del documento, en orden documental.
+
+    La gramática es estricta —`<slug>__d<dígitos>_<tipo>.md`— y el orden es **numérico**.
+    Las dos cosas las pidió la R1 adversarial: un `glob("__d*")` casaba `__draft_notes.md`
+    como si fuera un segmento, y `sorted()` lexicográfico pone `d100` **antes** de `d99`,
+    alterando el orden del documento.
+    """
+    slug = output_slug(entry.ruta_relativa, entry.hash)
+    patron = re.compile(rf"^{re.escape(slug)}__d(\d+)_.*\.md$")
+    hallados: list[tuple[int, Path]] = []
+    for p in _md_dir(case_id).glob(f"{slug}__d*.md"):
+        m = patron.match(p.name)
+        if m:
+            hallados.append((int(m.group(1)), p))
+    return [p for _, p in sorted(hallados, key=lambda t: t[0])]
+
+
 def _md_paths(case_id: str, entry) -> list[Path]:
-    """Los espejos MD del documento: el canónico, o los de sus segmentos si se partió.
+    """Los espejos MD del documento: sus segmentos si se partió, o el canónico.
 
     Cuando el split de la sala de máquina parte un PDF compuesto, **el padre no tiene
     espejo propio**: su texto vive en `<slug>__d01_TIPO.md`, `<slug>__d02_TIPO.md`… Medido
     el 2026-09-04 sobre los 99 documentos de residuo de W-02JSVZ: **88 casaban** por el
-    nombre canónico y **11 no**, y los 11 eran bundles partidos. Apuntar solo el
-    directorio nuevo dejaba fuera a esos once, así que el arreglo tiene dos piezas.
+    nombre canónico y **11 no**, y los 11 eran bundles partidos.
+
+    **Los segmentos MANDAN sobre el canónico**, y esa precedencia es al revés de como se
+    escribió primero. Lo levantó la R1: un documento que antes pasó sin split conserva su
+    `<slug>.md`, y si una corrida posterior lo parte, ese canónico queda **obsoleto**.
+    Devolverlo con preferencia entregaba a la clasificación texto viejo, en silencio. Al
+    revés no hay riesgo: un documento no partido no tiene segmentos.
     """
+    segmentos = _segmentos_md(case_id, entry)
+    if segmentos:
+        return segmentos
     canon = _md_path(case_id, entry)
-    if canon.is_file():
-        return [canon]
-    slug = output_slug(entry.ruta_relativa, entry.hash)
-    return sorted(_md_dir(case_id).glob(f"{slug}__d*.md"))
+    return [canon] if canon.is_file() else []
 
 
 def _filas_worklist(case_id: str) -> list[dict]:
@@ -297,8 +346,17 @@ def _filas_worklist(case_id: str) -> list[dict]:
 
 
 def _hashes_residuo(case_id: str) -> list[str]:
-    """Hashes de las filas del worklist SIN Tipo (residuo aún sin resolver)."""
-    return [f["Hash"] for f in _filas_worklist(case_id) if not f["Tipo"].strip()]
+    """Hashes de las filas del worklist sin Tipo **o con un Tipo que no es de la taxonomía**.
+
+    Lo segundo lo añadió la R1 adversarial, y cerraba un agujero por el que un documento
+    desaparecía: con un `Tipo` inventado (un typo del letrado), `aplicar_clasificacion` lo
+    rechaza —bien—, `clasificar_caso` sigue contándolo como residuo —bien—, pero esta
+    función solo miraba las celdas **vacías**, así que `preparar_residuo` devolvía `[]`.
+    Resultado: `organizar` se detenía pidiendo rellenar una worklist que ya no ofrecía
+    nada que corregir. Un typo convertía el documento en invisible.
+    """
+    return [f["Hash"] for f in _filas_worklist(case_id)
+            if f["Tipo"].strip() not in TAXONOMIA_EV]
 
 
 def preparar_residuo(case_id: str) -> list[dict]:
@@ -538,18 +596,27 @@ def _link_original(e) -> str:
     return f"../../00_Input/{e.ruta_relativa}"
 
 
-def _link_md(e) -> str | None:
+def _link_md(case_id: str, e) -> str | None:
     """Enlace «ver texto» del índice, relativo a `01_Procesado/Sala lectura/INDICE.md`.
 
     Apuntaba a `../MD/` —el motor jubilado—, así que los enlaces salían muertos: 140 de
     140 en W-02JSVZ (`MEJORAS #151`). Comparte el directorio con `_md_dir` vía
     `_MD_SUBDIR` para que no vuelvan a divergir; se salta el primer segmento
     (`01_Procesado`), que es el padre del propio índice.
+
+    **Y ahora resuelve contra el disco, en vez de construir el nombre canónico.** Lo
+    levantó la R1 adversarial: arreglar el directorio y seguir enlazando `<slug>.md`
+    dejaba el enlace muerto **justo en los bundles partidos**, que son los 11 de 99 que
+    esta misma pieza había medido sin espejo canónico. Si no hay ningún MD, se devuelve
+    `None` y el índice **no publica enlace**: mejor sin enlace que con uno a la nada.
     """
     if Path(e.nombre_original).suffix.lower() == ".md":
         return None
+    mds = _md_paths(case_id, e)
+    if not mds:
+        return None
     subdir = "/".join(_MD_SUBDIR[1:])
-    return f"../{subdir}/{output_slug(e.ruta_relativa, e.hash)}.md"
+    return f"../{subdir}/{mds[0].name}"
 
 
 def render_indices(case_id: str) -> list[Path]:
@@ -572,7 +639,7 @@ def render_indices(case_id: str) -> list[Path]:
         for tipo in sorted(por_tipo):
             li.append(f"### {tipo}")
             for e in sorted(por_tipo[tipo], key=lambda x: (x.fecha_doc or "", x.nombre_original)):
-                md = _link_md(e)
+                md = _link_md(case_id, e)
                 ver_texto = f" · [ver texto]({md})" if md else ""
                 fecha = e.fecha_doc or "s/f"
                 li.append(f"- {fecha} — [{e.nombre_original}]({_link_original(e)}){ver_texto}")
@@ -733,11 +800,16 @@ def organizar(case_id: str, *, crm_docs=None) -> dict:
     `aplicar` va ANTES de `clasificar` a propósito: vuelca lo rellenado con
     `confianza = 1.0`, y así `clasificar_caso` ya no lo cuenta como residuo.
     """
-    if not catalogo_documental.load_catalog(case_id):
-        from core import inventory
-        inventory.scan(case_id)
-        catalogo_documental.build_catalog(case_id)
-    aplicar_clasificacion(case_id)
+    # El catálogo se reconstruye SIEMPRE, no solo cuando está vacío. La primera versión
+    # ponía `if not load_catalog(...)`, y con eso un documento que llegara a `00_Input`
+    # después de la primera corrida **no entraba nunca** —ni al catálogo, ni a la worklist,
+    # ni a los índices, ni a la sala— y `organizar` declaraba éxito igual. Lo levantó la R1
+    # adversarial. Reconstruir es seguro: `build_catalog` es idempotente y preserva por
+    # hash lo ya clasificado, así que solo añade lo nuevo.
+    from core import inventory
+    inventory.scan(case_id)
+    catalogo_documental.build_catalog(case_id)
+    aplicar_clasificacion(case_id, solo_residuo=True)
     clasif = clasificar_caso(case_id)
     if clasif["n_residuo"] > 0:
         return {"case_id": case_id, "detenido_por_residuo": True,

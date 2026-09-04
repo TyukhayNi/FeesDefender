@@ -162,8 +162,10 @@ def test_sala_lectura_md_path_usa_sufijo_sha(tmp_casos_root):
     )
     p = sala_lectura._md_path("EV-2026-TEST", e)
     assert p.name == output_slug(rel, e.hash) + ".md"
-    # El enlace relativo del índice usa el mismo NOMBRE, que es lo que este test
-    # protege. Antes fijaba además el directorio (`../MD/`), y ese literal era la ruta
-    # del motor jubilado: un test sobre el sufijo SHA que de paso clavaba el defecto de
-    # `MEJORAS #151`. El directorio lo comprueban los tests de `test_sala_lectura.py`.
-    assert sala_lectura._link_md(e).endswith(f"/{output_slug(rel, e.hash)}.md")
+    # Este test protege el **sufijo SHA del nombre**, y nada más. Antes fijaba además el
+    # directorio (`../MD/`) llamando a `_link_md`, y ese literal era la ruta del motor
+    # jubilado: un test sobre el sufijo que de paso clavaba el defecto de `MEJORAS #151`.
+    # Desde la R1 adversarial `_link_md` además **resuelve contra el disco** (devuelve
+    # `None` si no hay espejo), así que atarlo aquí obligaría a fabricar ficheros para
+    # comprobar un nombre. El directorio y la resolución los cubren
+    # `test_sala_lectura.py` y `test_sala_lectura_r1_adversarial.py`.

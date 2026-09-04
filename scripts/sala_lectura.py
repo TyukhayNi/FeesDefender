@@ -96,7 +96,14 @@ def preparar_residuo(case: str = typer.Option(..., "--case")):
         return
     typer.echo(f"{len(docs)} doc(s) en residuo. Lee cada MD y rellena la worklist:")
     for d in docs:
-        typer.echo(f"  - [{d['hash'][:8]}] {d['nombre_original']}  →  {d['md_path']}")
+        # **TODOS los espejos, no solo el primero.** El core concatena los segmentos de un
+        # bundle partido y devuelve `md_paths`; imprimir solo `md_path` hacía que el flujo
+        # humano que este mismo comando prescribe («lee cada MD») clasificara el documento
+        # con información incompleta. Lo levantó la R1 adversarial.
+        rutas = d.get("md_paths") or [d["md_path"]]
+        typer.echo(f"  - [{d['hash'][:8]}] {d['nombre_original']}")
+        for r in rutas:
+            typer.echo(f"        {r}")
     typer.echo(
         f"\nWorklist: 01_Procesado/_revisar/{sala_lectura.WORKLIST_NAME}\n"
         "Tras rellenar, corre 'aplicar'."

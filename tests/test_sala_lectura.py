@@ -671,8 +671,14 @@ def test_el_enlace_ver_texto_del_indice_apunta_a_la_sala_de_maquina(tmp_casos_ro
         ("01_Drive EV", "ambiguo.pdf", b"%PDF-1"),
     ])
     e = cat.load_catalog(case_id)[0]
+    # Desde la R1 adversarial `_link_md` resuelve contra el disco y devuelve `None` si no
+    # hay espejo, así que hay que crearlo: el enlace muerto es justo lo que ya no publica.
+    from core.utils import output_slug
+    md = _sm_md_dir(case_dir) / f"{output_slug(e.ruta_relativa, e.hash)}.md"
+    md.parent.mkdir(parents=True, exist_ok=True)
+    md.write_text("texto", encoding="utf-8")
 
-    enlace = sl._link_md(e)
+    enlace = sl._link_md(case_id, e)
 
     assert enlace is not None
     assert enlace.startswith("../02_Sala de máquina/03_MD/"), enlace
