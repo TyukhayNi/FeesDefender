@@ -231,8 +231,20 @@ def apply(
         return
 
     if cambios:
-        # `default_flow_style=False` + `default_style` en los telefonos: sin comillas,
-        # `0612345678` lo relee YAML como octal y `_escalar` lo RECHAZA (con razon).
+        # QUIEN pone las comillas, dicho con precision porque la version anterior de este
+        # comentario mentia. Un telefono sin comillas (`0612345678`) lo relee YAML como un
+        # entero octal, el cero inicial se pierde y `core.crm_ficha._escalar` lo RECHAZA
+        # con ValueError, a proposito: un dato corrompido en silencio seria peor.
+        #
+        # Las comillas las pone `yaml.safe_dump` SOLO: su resolver ve que la cadena
+        # "612345678" se releeria como int y la cita. Lo unico que hay que garantizar aqui
+        # es que el valor llegue como **str** y no como int, porque un int se vuelca sin
+        # comillas y ahi si se pierde el cero.
+        #
+        # Habia debajo un bucle que reemplazaba `f"{clave}: "` por si mismo, con un
+        # comentario que decia «se fuerzan entre comillas simples». Era un no-op literal:
+        # aparentaba una proteccion que no daba, y el que viniera detras habria confiado
+        # en ella. Retirado.
         for col in colaboradores:
             if isinstance(col, dict):
                 for _, clave in _AL_YAML:
@@ -240,9 +252,6 @@ def apply(
                         col[clave] = str(col[clave])
         volcado = yaml.safe_dump(datos, allow_unicode=True, default_flow_style=False,
                                  sort_keys=False)
-        # Los telefonos son cadenas de digitos: se fuerzan entre comillas simples.
-        for _, clave in _AL_YAML:
-            volcado = volcado.replace(f"{clave}: ", f"{clave}: ", 1)
         ficha_path.write_text(volcado, encoding="utf-8")
         typer.echo(f"[OK] {ficha_path} actualizado ({len(cambios)} campos).")
         typer.echo("     Ahora: python -m scripts.crm_ficha --case-id " + resolved)
