@@ -920,11 +920,18 @@ def update_cliente_contrario(contrario_id: str, cambios: dict) -> dict:
     )
 
 
-#: Propiedad que guarda el NIF, por elemento. El CRM no usa el mismo nombre en todos.
+#: Propiedad que guarda el NIF, por elemento. El CRM no usa el mismo nombre en todos,
+#: pero `colaboradores` SI usa el mismo que el contrario: se le preguntó al propio CRM
+#: el 2026-09-04 con una property inventada y su 500 enumeró el contrato entero
+#: (método del §14.6). Antes decía `nif` aquí, y como esa property NO EXISTE el CRM
+#: devolvía 500 → `resolver_parte` marcaba el criterio `sin_comprobar` →
+#: `_resolver_colaborador` abortaba el alta en cuanto la ficha traía un NIF. O sea: la
+#: dedup por NIF del colaborador no ha funcionado nunca. El atlas ya lo decía bien;
+#: era este dict el que lo contradecía.
 _PROP_NIF = {
     "clientes_contrarios": "nif_cif",
     "clientes_propios": "nif_cif",
-    "colaboradores": "nif",
+    "colaboradores": "nif_cif",
 }
 
 
