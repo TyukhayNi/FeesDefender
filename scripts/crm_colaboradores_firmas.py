@@ -1,0 +1,165 @@
+"""CLI local: leer las firmas de los correos de un expediente y proponer los datos que
+faltan en las fichas de colaborador del CRM.
+
+Dos comandos, y el orden importa:
+
+    python -m scripts.crm_colaboradores_firmas report --case-id W-XXXXXX
+    python -m scripts.crm_colaboradores_firmas apply  --case-id W-XXXXXX --confirmar
+
+`report` **no escribe nada**: deja un informe en `01_Procesado/_firmas_colaboradores.md`
+para que Nikolai lo lea. `apply` mete lo aprobado en `00_Input/_ficha_crm.yaml`, y es
+`python -m scripts.crm_ficha` quien lo lleva al CRM. Ninguno de los dos escribe en el
+CRM directamente: un solo camino de escritura.
+
+El informe lleva PII (telefonos de personas), asi que vive en `data/CASOS/` y nunca se
+commitea.
+"""
+from __future__ import annotations
+
+from pathlib import Path
+
+import typer
+
+from core.casos import case_locator
+from core.email_firmas import (VEREDICTO_CONFLICTO, VEREDICTO_ENCONTRADO,
+                               VEREDICTO_FIRMA_SIN_CAMPO, VEREDICTO_NO_LEIBLE,
+                               VEREDICTO_SIN_FIRMA, Consolidado, extraer_de_directorio)
+from core.sudespacho_relations import get_colaborador, resolver_parte
+
+app = typer.Typer(add_completion=False,
+                  help="Firmas de correo -> datos que faltan en las fichas de colaborador")
+
+
+@app.callback()
+def _callback() -> None:
+    """Firmas de correo -> datos que faltan en las fichas de colaborador.
+
+    Un `@app.command()` UNICO colapsa en Typer a un CLI sin subcomando (invocable
+    sin nombrar `report`): medido con Typer 0.21.2, la condicion que fuerza el modo
+    grupo es `registered_callback or registered_groups or len(commands) > 1`
+    (`typer/main.py:get_command`). Hoy solo existe `report` -- `apply` es la Task
+    10 -- asi que sin este callback (aunque no haga nada) `report --case-id X`
+    fallaria con "Got unexpected extra argument (report)". Se fuerza el modo grupo
+    ahora para que la interfaz de linea de comandos no cambie de forma cuando
+    `apply` se anada.
+    """
+
+
+_INFORME = "_firmas_colaboradores.md"
+
+_CABECERA = """\
+<!-- GENERADO por scripts.crm_colaboradores_firmas — NO editar a mano. -->
+# Firmas de colaboradores — {caso}
+
+Leido de los `.eml` de `00_Input/`. **Este informe no ha escrito nada en el CRM.**
+
+Como leer los veredictos:
+
+| Veredicto | Significa |
+|---|---|
+| `ENCONTRADO` | El dato se leyo, y la columna «Origen» dice de donde |
+| `FIRMA_SIN_CAMPO` | Hay firma de esa persona y **no trae ese campo**. Una de las dos plantillas corporativas de E&V no incluye movil, asi que esto **no** significa que no lo tenga |
+| `CONFLICTO` | Dos valores distintos y ninguno decide. **No se propone nada** |
+
+"""
+
+
+def _caso_dir(case_id: str) -> tuple[str, Path]:
+    resolved = case_locator.resolve_ref(case_id)
+    case_dir = case_locator.buscar(resolved)
+    if case_dir is None or not (case_dir / "00_Input" / "_caso.md").is_file():
+        typer.echo(f"[ERROR] Caso no encontrado: {case_id!r} (resuelto: {resolved!r})",
+                   err=True)
+        raise typer.Exit(code=1)
+    return resolved, case_dir
+
+
+def _falta_en_el_crm(email: str) -> tuple[str, dict[str, str]]:
+    """`(id o "", ficha)` del colaborador. Nunca lanza: sin CRM, se informa igual.
+
+    Un fallo aqui deja la ficha en blanco y el informe lo dice; no se afirma que el
+    campo del CRM este vacio cuando no se pudo mirar.
+    """
+    try:
+        r = resolver_parte("colaboradores", nif="", email=email)
+    except Exception:  # noqa: BLE001
+        return "", {}
+    colab_id = getattr(r, "id", None) or ""
+    if not colab_id:
+        return "", {}
+    try:
+        return colab_id, get_colaborador(colab_id)
+    except Exception:  # noqa: BLE001
+        return colab_id, {}
+
+
+def _fila(c: Consolidado, colab_id: str, ficha: dict[str, str]) -> str:
+    def celda(valor: str, veredicto: str, prop: str) -> str:
+        actual = (ficha.get(prop) or "").strip() if ficha else ""
+        if veredicto == VEREDICTO_CONFLICTO:
+            return "**CONFLICTO** (no se propone)"
+        if veredicto == VEREDICTO_FIRMA_SIN_CAMPO:
+            return "`FIRMA_SIN_CAMPO`"
+        if actual:
+            return f"{valor} — el CRM ya tiene `{actual}`, **no se toca**"
+        return f"**{valor}** — el CRM lo tiene vacio"
+
+    donde = f"id {colab_id}" if colab_id else "**no existe como colaborador**"
+    return (f"| {c.email} | {donde} | {celda(c.movil, c.veredicto_movil, 'movil')} "
+            f"| {celda(c.telefono, c.veredicto_telefono, 'telefono1')} "
+            f"| {c.cargo or '`' + c.veredicto_cargo + '`'} "
+            f"| {', '.join(c.fuentes)} |")
+
+
+@app.command()
+def report(case_id: str = typer.Option(..., "--case-id",
+                                       help="case_id canonico o W-code")) -> None:
+    """Escribe el informe. NO toca el CRM ni el `_ficha_crm.yaml`."""
+    resolved, case_dir = _caso_dir(case_id)
+    consolidados, vistos, ilegibles = extraer_de_directorio(case_dir / "00_Input")
+
+    partes = [_CABECERA.format(caso=resolved)]
+    partes.append("## Quien firma, y que le falta en el CRM\n")
+    partes.append("| Firma de | En el CRM | Movil | Fijo (`telefono1`) | Cargo | Origen |")
+    partes.append("|---|---|---|---|---|---|")
+    for email in sorted(consolidados):
+        colab_id, ficha = _falta_en_el_crm(email)
+        partes.append(_fila(consolidados[email], colab_id, ficha))
+
+    candidatos = sorted(vistos - set(consolidados))
+    partes.append("\n## Candidatos — SUGERENCIA, no un alta\n")
+    partes.append(
+        "Estas direcciones de E&V aparecen en los correos del expediente y **no firman "
+        "ninguno**. Aparecer en un correo del caso no te hace colaborador del caso: "
+        "medido el 2026-09-04 sobre otro expediente, de 7 direcciones en 6 correos solo "
+        "3 estaban vinculadas, y estaban ahi por CC o por ser una unidad interna. "
+        "**Decide tu**; este informe no da de alta a nadie.\n")
+    if candidatos:
+        partes.append("| Direccion | Veredicto | En el CRM |")
+        partes.append("|---|---|---|")
+        for email in candidatos:
+            colab_id, _ = _falta_en_el_crm(email)
+            partes.append(f"| {email} | `{VEREDICTO_SIN_FIRMA}` | "
+                          f"{'id ' + colab_id if colab_id else 'no existe'} |")
+    else:
+        partes.append("_Ninguna._\n")
+
+    partes.append("\n## Lo que NO se pudo mirar\n")
+    if ilegibles:
+        partes.append(
+            f"**`{VEREDICTO_NO_LEIBLE}`.** Estos ficheros no se pudieron leer. Eso "
+            "**no** es que no tengan firma: es que no se sabe.\n")
+        partes.extend(f"- `{x}`" for x in ilegibles)
+    else:
+        partes.append("_Todos los `.eml` se leyeron._\n")
+
+    destino = case_dir / "01_Procesado" / _INFORME
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    destino.write_text("\n".join(partes) + "\n", encoding="utf-8")
+    typer.echo(f"[OK] Informe: {destino}")
+    typer.echo(f"     {len(consolidados)} firmas, {len(candidatos)} candidatos, "
+               f"{len(ilegibles)} ilegibles")
+
+
+if __name__ == "__main__":
+    app()

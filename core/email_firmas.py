@@ -19,6 +19,9 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
+from email import policy
+from email.parser import BytesParser
+from pathlib import Path
 
 from core.utils import normalize_es_phone
 
@@ -536,3 +539,85 @@ def consolidar(firmas: Iterable[DatosFirma]) -> dict[str, Consolidado]:
             fuentes=tuple(dict.fromkeys(f"{f.fichero}:{f.linea}" for f in grupo)),
         )
     return salida
+
+
+@dataclass(frozen=True)
+class ResultadoEml:
+    """Lo que UN .eml dio, con la constancia de lo que no se pudo leer.
+
+    `ilegible` con texto significa que el fichero no se pudo mirar. Eso **no** es que
+    no haya firma: es que no se sabe. Se declara y sube al informe.
+    """
+    firmas: tuple[DatosFirma, ...] = ()
+    emails_vistos: frozenset[str] = frozenset()
+    sin_atribuir: int = 0
+    ilegible: str = ""
+
+
+def extraer_de_eml(path: Path) -> ResultadoEml:
+    """Las firmas de un .eml, atribuidas por su propio contenido.
+
+    **La cabecera `From:` no participa en la atribucion.** Se lee solo para
+    `emails_vistos`, que alimenta la seccion de candidatos del informe: aparecer en un
+    correo del expediente no te hace colaborador de ese expediente (medido el
+    2026-09-04 sobre W-02Q38C: 7 direcciones @ev en 6 correos, 3 vinculadas).
+    """
+    try:
+        msg = BytesParser(policy=policy.default).parse(path.open("rb"))
+    except Exception as exc:  # noqa: BLE001 — un .eml corrupto se declara, no rompe
+        return ResultadoEml(ilegible=f"{path}: no parsea ({exc!r})")
+
+    if not msg.keys():
+        # Medido (Task 9): BytesParser(policy.default) casi NUNCA lanza, ni con
+        # basura sin ninguna forma de correo -- es deliberadamente permisivo (RFC
+        # 5322 lo pide asi). Bytes sueltos sin una sola linea "Clave: Valor" los
+        # vuelca ENTEROS como cuerpo (defecto MissingHeaderBodySeparatorDefect) en
+        # vez de fallar, y el try/except de arriba nunca se dispara para este caso.
+        # Sin ninguna cabecera reconocida no hay correo que leer -- la misma
+        # situacion que un fichero vacio (que tampoco tiene ninguna).
+        return ResultadoEml(ilegible=f"{path}: no parsea (sin cabeceras reconocibles)")
+
+    try:
+        parte = msg.get_body(preferencelist=("plain",))
+        cuerpo = parte.get_content() if parte is not None else ""
+    except Exception as exc:  # noqa: BLE001 — charset roto, base64 truncado...
+        return ResultadoEml(ilegible=f"{path}: cuerpo ilegible ({exc!r})")
+
+    if not cuerpo.strip():
+        return ResultadoEml(ilegible=f"{path}: sin parte text/plain con contenido")
+
+    cabeceras = " ".join(str(msg.get(h) or "") for h in ("From", "To", "Cc"))
+    vistos = {m.group(0).lower()
+              for m in _RE_EMAIL_COLAB.finditer(cabeceras + "\n" + cuerpo)}
+
+    bloques, sin_atribuir = extraer_bloques(cuerpo, fichero=path.name)
+    return ResultadoEml(
+        firmas=tuple(leer_campos(b) for b in bloques),
+        emails_vistos=frozenset(vistos),
+        sin_atribuir=sin_atribuir,
+    )
+
+
+def extraer_de_directorio(
+    raiz: Path,
+) -> tuple[dict[str, Consolidado], frozenset[str], tuple[str, ...]]:
+    """Recorre `raiz` en busca de `.eml` y consolida lo que digan sus firmas.
+
+    Devuelve `(consolidados, emails_vistos, ilegibles)`. El recorrido va **ordenado**:
+    `consolidar` se queda con el ultimo valor cuando nada mas lo separa, asi que un
+    orden no determinista daria resultados distintos entre corridas.
+
+    Un fichero ilegible no hunde el recorrido y **se lista**: «no pude mirar» y «no hay
+    nada» tienen que verse distinto.
+    """
+    firmas: list[DatosFirma] = []
+    vistos: set[str] = set()
+    ilegibles: list[str] = []
+    for path in sorted(Path(raiz).rglob("*.eml")):
+        r = extraer_de_eml(path)
+        if r.ilegible:
+            ilegibles.append(r.ilegible)
+            continue
+        firmas.extend(r.firmas)
+        vistos |= r.emails_vistos
+    return consolidar(firmas), frozenset(vistos), tuple(ilegibles)

@@ -6,14 +6,16 @@ sin marcador ninguno. Anclar en el marcador pierde la mitad EN SILENCIO.
 
 Los esqueletos de abajo son los reales; los datos, inventados.
 """
+from pathlib import Path
+
 import pytest
 
 from core.email_firmas import (BloqueFirma, Consolidado, DatosFirma, PROCEDENCIA_CITADO,
                                PROCEDENCIA_DIRECTO, VEREDICTO_CONFLICTO,
                                VEREDICTO_ENCONTRADO, VEREDICTO_FIRMA_SIN_CAMPO,
                                atribuir, consolidar, desmarcar, extraer_bloques,
-                               leer_campos, limpiar_telefono, localizar_bloques,
-                               zonas_citadas)
+                               extraer_de_directorio, extraer_de_eml, leer_campos,
+                               limpiar_telefono, localizar_bloques, zonas_citadas)
 
 # --- Plantilla «Barcelona»: nombre en negrita, cargo en linea suelta, Telf + Movil ---
 FIRMA_BCN = """\
@@ -1007,3 +1009,98 @@ class TestFirmaSinCampoNoEsNoTiene:
     def test_el_cargo_ausente_tambien_se_declara(self):
         c = consolidar([_f(movil="612345678")])["ana@engelvoelkers.com"]
         assert c.veredicto_cargo == VEREDICTO_FIRMA_SIN_CAMPO
+
+
+_EML = """\
+From: "Otro, Remitente" <otro@engelvoelkers.com>
+To: despacho@tyukhay.example
+Subject: Te reenvio esto
+Date: Wed, 12 Aug 2026 10:00:00 +0200
+Content-Type: text/plain; charset="utf-8"
+MIME-Version: 1.0
+
+Te reenvio lo que me manda ella.
+
+{firma}
+"""
+
+
+def _escribe_eml(tmp_path, nombre, firma):
+    p = tmp_path / nombre
+    p.write_text(_EML.format(firma=firma), encoding="utf-8")
+    return p
+
+
+class TestLeerUnEmlDeVerdad:
+
+    def test_el_texto_plano_se_lee(self, tmp_path):
+        r = extraer_de_eml(_escribe_eml(tmp_path, "a.eml", FIRMA_BCN))
+        assert r.ilegible == ""
+        assert [f.email for f in r.firmas] == ["ana@engelvoelkers.com"]
+
+    def test_EL_FROM_DE_UN_REENVIO_NO_RECIBE_EL_TELEFONO_DE_OTRO(self, tmp_path):
+        """EL GUARD CENTRAL, ahora con cabecera de verdad. El `From:` es una persona
+        y la firma es de otra: si esto falla, el movil de A va a la ficha de B."""
+        r = extraer_de_eml(_escribe_eml(tmp_path, "b.eml", FIRMA_BCN))
+        atribuidos = {f.email for f in r.firmas}
+
+        assert "otro@engelvoelkers.com" not in atribuidos, (
+            "el remitente del reenvío no firma este correo")
+        assert atribuidos == {"ana@engelvoelkers.com"}
+
+    def test_el_From_SI_cuenta_como_direccion_VISTA(self, tmp_path):
+        """Para la seccion de candidatos: aparecer no es firmar, pero se registra."""
+        r = extraer_de_eml(_escribe_eml(tmp_path, "c.eml", FIRMA_BCN))
+        assert "otro@engelvoelkers.com" in r.emails_vistos
+        assert "ana@engelvoelkers.com" in r.emails_vistos
+
+    def test_un_eml_que_no_parsea_es_NO_LEIBLE_no_una_ausencia(self, tmp_path):
+        p = tmp_path / "roto.eml"
+        p.write_bytes(b"\xff\xfe esto no es un correo")
+        r = extraer_de_eml(p)
+        assert r.ilegible != "", "tiene que DECLARAR que no se pudo leer"
+        assert r.firmas == ()
+
+    def test_un_eml_sin_parte_text_plain_es_NO_LEIBLE(self, tmp_path):
+        p = tmp_path / "solo_html.eml"
+        p.write_text(
+            "From: a@engelvoelkers.com\nSubject: x\n"
+            'Content-Type: text/html; charset="utf-8"\nMIME-Version: 1.0\n\n'
+            "<p>Hola</p>\n", encoding="utf-8")
+        r = extraer_de_eml(p)
+        assert r.ilegible != ""
+
+
+class TestRecorrerUnDirectorio:
+
+    def test_encuentra_los_eml_en_subcarpetas(self, tmp_path):
+        lote = tmp_path / "2026-08-14_email_01"
+        lote.mkdir()
+        _escribe_eml(lote, "uno.eml", FIRMA_BCN)
+        sub = lote / "compuesto"
+        sub.mkdir()
+        _escribe_eml(sub, "dos.eml", FIRMA_MAD)
+
+        cons, vistos, ilegibles = extraer_de_directorio(tmp_path)
+        assert set(cons) == {"ana@engelvoelkers.com", "berta@engelvoelkers.com"}
+        assert ilegibles == ()
+
+    def test_un_ilegible_no_hunde_el_recorrido_y_SE_LISTA(self, tmp_path):
+        _escribe_eml(tmp_path, "bueno.eml", FIRMA_BCN)
+        (tmp_path / "malo.eml").write_bytes(b"\xff\xfe no")
+
+        cons, _, ilegibles = extraer_de_directorio(tmp_path)
+        assert "ana@engelvoelkers.com" in cons
+        assert len(ilegibles) == 1 and "malo.eml" in ilegibles[0]
+
+    def test_un_directorio_vacio_no_es_un_error(self, tmp_path):
+        assert extraer_de_directorio(tmp_path) == ({}, frozenset(), ())
+
+    def test_el_orden_es_estable(self, tmp_path):
+        """`consolidar` se queda con el ultimo cuando nada mas separa: el orden del
+        recorrido tiene que ser determinista o el resultado varia entre corridas."""
+        _escribe_eml(tmp_path, "b.eml", FIRMA_BCN)
+        _escribe_eml(tmp_path, "a.eml", FIRMA_MAD)
+        primera = extraer_de_directorio(tmp_path)
+        segunda = extraer_de_directorio(tmp_path)
+        assert primera == segunda
