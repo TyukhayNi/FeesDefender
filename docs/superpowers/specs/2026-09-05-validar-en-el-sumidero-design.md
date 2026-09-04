@@ -1,16 +1,19 @@
 ---
-estado: rev2-aprobado-alcance-estrecho
+estado: rev3-remediado-r2
 autor: Claude Code
 fecha: 2026-09-05
-revision: 2
+revision: 3
 cierra: MEJORAS #153, MEJORAS #154
-abre: MEJORAS #155, MEJORAS #156, MEJORAS #157
+abre: MEJORAS #155, MEJORAS #156, MEJORAS #157, MEJORAS #158, MEJORAS #159
 rondas_previstas: 2
 motivo_dos_rondas: "la pieza decide DONDE se deposita un expediente con PII"
 r1: docs/superpowers/specs/2026-09-05-validar-en-el-sumidero-r1-adversarial-review.md
+r2: docs/superpowers/specs/2026-09-05-validar-en-el-sumidero-r2-adversarial-review.md
 ---
 
 # Validar en el sumidero, no en cada puerta
+
+> **Rev. 3 (2026-09-05), tras la R2 adversarial sobre el diff: `NO-SHIP`, seis hallazgos, los seis confirmados.** Tres eran defectos que introdujo el propio arreglo. Lo que cambia en este documento es el **§3(c)**: describía la contención como léxica y con la primitiva equivocada, y son **dos mitades** con la léxica en `_contenido_en`. La adjudicación completa, en el **§8**; la voz del revisor, en el acta hermana `…-r2-adversarial-review.md`.
 
 > **Rev. 2 (2026-09-05), tras la R1 adversarial que dio `NO-SHIP` con cinco hallazgos, los
 > cinco confirmados contra la fuente.** La rev. 1 sostenía que **una** comprobación en
@@ -98,17 +101,41 @@ la raíz, y crea un caso que `buscar` **no encuentra**; un segundo alta genera u
 una ciudad desconocida de un solo componente pasaría lo mismo. **Contención y localización son
 propiedades distintas**, y el alta debe garantizar las dos.
 
-**(c) Contención: el destino cae bajo la raíz.**
-`case_mutex._bajo(case_dir, _root())`, la primitiva **léxica** que este repo ya tiene y que
-`core/casos/escritura.py:88` ya usa para el mismo fin. Compara por **componentes** (`CASOS_x` no
-está bajo `CASOS`) y **no toca el disco**, que es lo correcto aquí: el destino **todavía no
-existe** cuando se valida.
+**(c) Contención: el destino cae bajo la raíz. Y hacen falta LAS DOS mitades.**
 
-**La rev. 1 proponía `resolve()` + `is_relative_to` y era peor por dos razones**: introducía una
-segunda primitiva de contención distinta de la que el repo ya tiene —la divergencia por
-duplicación que causó el defecto de la ruta MD— y `resolve()` toca disco sobre una ruta
-inexistente. Su docstring lo dice: *«es puro texto, así que da lo mismo con el directorio
-creado o sin crear»*.
+> **Corregido en la rev. 3.** La rev. 2 describía aquí una contención **léxica** implementada
+> con `case_mutex._bajo`, y las dos mitades de esa frase resultaron falsas. Se deja escrita la
+> historia porque el error tiene forma reutilizable, no por arqueología.
+
+- **LÉXICA** — `core/case_manager._contenido_en`, con `os.path.commonpath`. Compara por
+  **componentes** (`CASOS_x` no está bajo `CASOS`) y **no toca el disco**, que es lo correcto
+  aquí: el destino **todavía no existe** cuando se valida. Caza `..` y las rutas absolutas.
+- **FÍSICA** — resuelve el **ancestro existente más cercano** y comprueba que siga bajo la raíz
+  resuelta, con los **dos lados** resueltos (la propia raíz puede ser un enlace: `G:` es Drive
+  Stream). Caza las junctions, que la léxica no puede ver. El paseo **se detiene en la raíz**, y
+  solo corre `if raiz.exists()`.
+
+**Por qué no basta la léxica, que es lo que decía la rev. 2.** Lo desmintió el mutante 6 al
+implementarlo: `raiz/Enlace` es **léxicamente** hija de `raiz` aunque la junction lleve los bytes
+fuera. Reusé una primitiva llamada «contención» sin comprobar que diera la contención que
+necesitaba — **el mismo error que este diseño viene a arreglar, cometido un nivel más arriba** y
+por la vía de querer no duplicar código.
+
+**Por qué tampoco es `_bajo`, que es lo otro que decía la rev. 2.** La R2 lo midió: `_bajo` hace
+`c.startswith(r + os.sep)`, así que con una raíz que **ya termina en separador** —`C:\` o un
+recurso UNC— exige dos separadores seguidos y rechaza a **todos** sus descendientes legítimos.
+No se arregla `_bajo` aquí porque lo consume el **mutex del caso**, cuyo radio de daño es otro y
+cuyo presupuesto son dos rondas: queda como `MEJORAS #159`, con el remedio y sus cuatro mutantes
+ya escritos.
+
+**Por qué el paseo tiene tope, que es lo que la rev. 2 no tenía.** Sin él, con `CASOS_ROOT`
+todavía sin crear —**el primer alta de cualquier máquina nueva**— se sube al padre de la raíz y
+se le acusa de escapar por un enlace inexistente. Un alta que crea su propia raíz es legítima
+(R2/H-01).
+
+**La rev. 1 proponía `resolve()` + `is_relative_to`**, y su defecto era otro: `resolve()` toca
+disco sobre una ruta inexistente. La lección de las tres versiones es la misma dicha tres veces:
+**el nombre de una primitiva no acredita la propiedad que promete**; hay que medirla.
 
 **Y la limitación se declara, no se disimula:** (c) contiene los **ancestros** de `case_dir`.
 **No** protege de una junction preexistente en un **hijo** (H-04, demostrado con junction real
@@ -177,3 +204,33 @@ Los tres son sumideros reales y **ninguno lo cubre esta pieza**.
 
 **No aborda** el tercer defecto de `MEJORAS #67` (estructura plana de la sala de lectura), ni la
 reapertura de `#149`, que necesita su propio contrato por ubicación.
+
+## 8. Adjudicación de la revisión adversarial R2 (Codex, 2026-09-05) — NO-SHIP, remediado
+
+- **Objeto revisado:** diff `9ec96f7..eee9a7e` — validación en el sumidero + los puntos 2, 3 y 4 de los aprendizajes en código
+- **Ronda:** 2 de 2 (la R1 fue sobre este mismo diseño)
+- **Revisor:** Codex
+- **Informe recibido:** 2026-09-05, literal y con su `sha256` en `…-r2-adversarial-review.md`
+- **Hallazgos:** 6 recibidos · **6 confirmados** · 0 refutados · 0 escalados
+- **Remediado en:** `e8fa35e` y el commit de esta rev. 3
+
+**6 de 6 confirmados, y tres eran míos.** H-01 (la contención física impedía el primer alta con
+la raíz sin crear), H-03 (el validador dejaba andamiaje parcial con un espacio final) y H-04 (la
+CLI afirmaba «todo el catálogo está clasificado» sin worklist, con salida 0) los **introdujo el
+propio arreglo**. H-02 y H-06 son preexistentes y se registran como `#159` y `#158`. H-05 es un
+defecto de **prueba**: mis cuatro tests del punto 4 no detectaban un `_link_md` que cruzara los
+enlaces, y el revisor lo demostró con un mutante que los dejaba a los cuatro en verde.
+
+**Lo que este diseño cambia por ello:** el §3(c) de arriba, que describía la contención como
+léxica y con la primitiva equivocada. El detalle de cada hallazgo, la evidencia que verifiqué por
+mi cuenta y el informe literal están en el acta hermana.
+
+**Y la lección que se lleva el presupuesto de rondas.** La primera remediación de H-04 arregló
+**el ejemplo** que el informe describía —«la worklist no se ha generado»— cuando el propio
+informe señalaba la frontera en la frase siguiente: los brazos del `if` *«son disjuntos sobre sus
+dos listas, no exhaustivos sobre el estado documental»*. Con la worklist **presente pero rancia**
+volvía a mentir. La segunda deriva la afirmación del **catálogo**, que es la propiedad. Eso es el
+corolario de `CLAUDE.md` —*«¿de qué frontera es esto un ejemplo?»*— y es lo que evita la tercera
+ronda, no la disciplina de no pedirla.
+
+**No se pide tercera ronda.** El techo lo fija Nikolai y solo él lo levanta.

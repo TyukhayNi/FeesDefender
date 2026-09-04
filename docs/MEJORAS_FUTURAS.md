@@ -7055,3 +7055,122 @@ aborta **antes** de escribir fuera y **sin dejar andamiaje parcial**.
 **Disparador de promoción.** El más bajo de los tres: exige una junction preexistente en el árbol
 de casos, que hoy nadie crea. Se registra porque está **medido** y porque el arreglo de
 `#153`/`#154` declara expresamente no cubrirlo.
+
+
+## 158. La cuarta puerta al sumidero: `intake_manual` confía en el `lote` que le pasan
+
+> 🔴 **ABIERTA.** R2 adversarial del 2026-09-05 (`docs/superpowers/specs/2026-09-05-validar-en-el-sumidero-r2-adversarial-review.md`, H-06), **preexistente** — no la
+> introdujo el arreglo de `#153`/`#154`, la destapó. Verificada contra la fuente el mismo día.
+
+`core/intake_manual.py` tiene tres funciones de depósito y **las tres validan la mitad
+relativa y ninguna la absoluta**:
+
+| Función | Qué valida | Qué acepta sin mirar |
+|---|---|---|
+| `save_file` | que `filename` no lleve separadores, y que el caso **exista** | `lote` |
+| `extract_zip` | que el caso exista, y `safe_zip_extract` contra `lote` | `lote` |
+| `save_file_en_lote` | `rel` contra `lote`, con `resolve()` y todo | `lote` |
+
+En las tres, `lote` entra como argumento y sale como `dest = lote / rel`. Un `lote` absoluto
+apunta a donde quiera: `pathlib` descarta el lado izquierdo, así que ni siquiera hace falta un
+`..`. La guarda de nombre y la de existencia del caso dan la **apariencia** de camino cerrado.
+
+**Es exactamente la forma del defecto que ya está anotado como propio:** la guarda vive en el
+envoltorio y el otro llamador no pasa por ella. Aquí está incluso escrito en el docstring de
+`save_file_en_lote` — «el caller ya validó la existencia del caso al abrir el lote con
+`abrir_lote_manual`/`reservar_lote`, que aplica el guard §6)». Eso es una **premisa sobre el
+llamador**, no una comprobación; y `save_file`, cuando recibe `lote=None`, sí llama a
+`abrir_lote_manual` —o sea que la vía buena existe— pero cuando lo recibe, no comprueba nada.
+
+**Remedio.** Una sola línea en cada una de las tres, antes del primer `mkdir`: que `lote` esté
+contenido en `caso_path(case_id)` —o en la copia operativa que resuelva `CaseWorkspace`—, con
+`_contenido_en` de `core/case_manager.py`, que ya tiene la propiedad y ya documenta por qué no
+usa `case_mutex._bajo`.
+
+**Su mutante:** quitar esa línea y pasar `lote=Path(tmp_path)/"FUERA"` a cada una de las tres
+tiene que dejar el fichero fuera del árbol de casos — hoy lo deja, y los tests actuales pasan.
+
+**Disparador de promoción.** Junto a `#155`/`#156`/`#157`, que son las otras puertas del mismo
+sumidero. Por sí sola no urge: hoy los tres callers vivos (`streamlit_app`, el CLI de intake
+manual, `intake_lotes`) pasan lotes que ellos mismos han abierto. Lo que la hace registrable es
+que **el contrato no lo dice y nada lo impide**.
+
+
+## 159. `case_mutex._bajo` rechaza a los hijos de una raíz anclada
+
+> 🔴 **ABIERTA.** R2 adversarial del 2026-09-05 (H-02), medida. Es el motivo de que
+> `core/case_manager._contenido_en` exista en vez de reutilizar `_bajo`, y así está dicho en su
+> docstring.
+
+`core/casos/case_mutex._bajo` decide contención con `c.startswith(r + os.sep)`. Cuando la raíz
+**ya termina en separador** —una unidad (`C:\`) o un recurso UNC (`\server\share\`)— eso exige
+dos separadores seguidos y devuelve `False` para **todo** descendiente legítimo:
+
+```
+_bajo(Path('C:/CASOS/EV-2026-001'),      Path('C:/'))              -> False
+_bajo(Path('//server/share/CASOS/EV'),   Path('//server/share/'))  -> False
+```
+
+Con `CASOS_ROOT` apuntado a la raíz de una unidad o a un recurso de red —los dos configurables
+hoy por `.env`— el mutex del caso consideraría que ningún caso está bajo su raíz.
+
+**Por qué no se arregló de noche, junto al resto.** Lo consume el **mutex del caso**, cuyo radio
+de daño es «quién puede escribir sobre qué copia»: por presupuesto de rondas son **dos**, una de
+diseño y una de diff, y esta pieza entró como remediación de una R2 ya cerrada. Cambiar la
+semántica de contención del mutex a las 3 de la mañana, sobre una propiedad que no falla en
+ninguna configuración viva, es precisamente lo que el techo de rondas existe para impedir.
+
+**Remedio.** Sustituir el cuerpo de `_bajo` por `os.path.commonpath`, que no tiene el caso
+especial, y **borrar `_contenido_en`** dejando un solo hogar para la propiedad — el mismo patrón
+que cerró el punto 4 de este encargo con `_MD_SUBDIR`. Sus mutantes: los dos casos anclados de
+arriba en verde, y los dos negativos (`D:/CASOS/EV` bajo `C:/CASOS`, `C:/CASOS_x/EV` bajo
+`C:/CASOS`) que impiden que el arreglo se vuelva permisivo. Los cuatro ya están escritos en
+`tests/test_ensure_case_sumidero_r2.py::test_la_contencion_acepta_los_hijos_de_una_raiz_anclada`,
+apuntados a `_contenido_en`: al unificar, se reapuntan a `_bajo`.
+
+**Disparador de promoción.** Que alguien configure `CASOS_ROOT` en la raíz de una unidad o en un
+UNC. Mientras `CASOS_ROOT` sea una subcarpeta —lo que es en las tres máquinas— la propiedad no
+se ejerce.
+
+
+## 160. `ensure_colaborador_vinculado` necesita credenciales ANTES de poder fallar cerrado
+
+> 🔴 **ABIERTA.** Medido el 2026-09-05 al correr la suite **desde un worktree**, que es el
+> flujo estándar del repo (`docs/FLUJO_GIT.md`) y **no hereda `.env`**. Preexistente: entró con
+> el PR #272 (`ecc21ac`) y no la toca ninguna rama en curso mía.
+> ⚠️ **Módulo de la sesión hermana** (alta de colaborador en el CRM): avisada, no tocado.
+
+Dos tests de `tests/test_crm_dedup_incertidumbre.py` fallan en cualquier clon sin `.env`:
+
+```
+tests/test_crm_dedup_incertidumbre.py::TestUnaConsultaCaidaNoEsAusencia::test_el_colaborador_tampoco
+tests/test_crm_dedup_incertidumbre.py::test_el_respaldo_del_colaborador_no_corre_si_el_NIF_no_se_pudo_mirar
+E   core.sync_sudespacho_legacy.SudespachoLegacyError: Falta SUDESPACHO_LEGACY_HOST en .env.
+```
+
+**No es un fallo del test: es la forma de la función.** `core/sudespacho_relations.py:2123-2125`
+construye el cliente **antes** del `try`, así que `ensure_colaborador_vinculado` exige
+credenciales para llegar a la comprobación de identidad. Su hermana `ensure_contrario_vinculado`
+no falla en el mismo entorno, y las dos tienen el mismo parámetro `client=None`: la asimetría es
+**cuándo** se materializa el cliente, no la firma.
+
+**Por qué importa más que un test rojo.** La propiedad que esos dos tests fijan es del PR #272 y
+es buena —*«un 500 tiene que constar, no colapsar en no existe»*—, pero en un entorno sin `.env`
+la función levanta un **error de configuración** donde la propiedad pide `IdentidadSinComprobar`.
+Los dos fallan cerrado, así que no hay pérdida de datos; lo que se pierde es la **capacidad de
+distinguir** «no pude mirar la identidad» de «no pude mirar nada porque no hay credenciales».
+Es la familia de `feedback-no-lo-se-no-es-no-hay` en el nivel de la causa.
+
+Y el efecto práctico: **la suite no es verde en un worktree limpio**, o sea que el instrumento
+con el que se decide si una rama entra a `main` depende de un fichero que el worktree no tiene.
+Eso convierte dos rojos permanentes en ruido de fondo, que es cómo se pierden los rojos de
+verdad.
+
+**Remedio.** Mover la construcción del cliente **después** de resolver la identidad, o
+—equivalente y más barato— hacerla perezosa: `_resolver_colaborador` ya recibe `client`, así que
+basta que el cliente se materialice en el primer uso real. Su mutante: los dos tests de arriba
+tienen que pasar **sin `.env`** y seguir levantando `IdentidadSinComprobar`, no
+`SudespachoLegacyError`.
+
+**Disparador de promoción.** Inmediato en cuanto la sesión hermana toque ese módulo: es una
+línea movida dentro de la función que está reescribiendo, y arreglarlo desde fuera sería pisarla.
