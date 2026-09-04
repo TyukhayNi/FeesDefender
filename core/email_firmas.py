@@ -310,7 +310,9 @@ _RE_FIJO = re.compile(
 #: linea no vacia, en negrita o no (las dos plantillas medidas difieren en eso).
 _RE_NEGRITA = re.compile(r"^\s*\*(.+?)\*\s*$")
 
-#: Lo que una linea tras el nombre puede ser sin ser un cargo.
+#: Lo que una linea tras el nombre puede ser sin ser un cargo. LISTA NEGRA, no
+#: blanca (Hallazgo D, revision tasks 7-8: ver docstring de `_cargo_de` para la
+#: limitacion que eso implica).
 _RE_NO_ES_CARGO = re.compile(
     r"(?i)engel\s*&?\s*v[öo]lkers"
     r"|ev\s+mmc|s\.?l\.?u|s\.?a\.?$"
@@ -318,16 +320,39 @@ _RE_NO_ES_CARGO = re.compile(
     r"|^\s*\*?\s*(?:telf|tel|tel[ée]fono|m[óo]vil|movil|mobile|mailto|fax)\b"
     r"|\d{4,}"                       # un CP o un numero largo: es direccion
     r"|^\s*\*?\s*(?:c/|calle|avinguda|avenida|passeig|plaza|pl\.|paseo)\b"
+    r"|www\.|://"                    # una URL (Hallazgo D)
 )
+
+
+def _mayoritariamente_digitos_y_signos(linea: str) -> bool:
+    """Un horario o un codigo: la linea tiene tantos o mas digitos que letras.
+
+    Exclusion barata del Hallazgo D (revision tasks 7-8): no calcula una proporcion
+    exacta sobre todos los caracteres de la linea, solo cuenta digitos contra
+    letras -- un cargo real (todo letras, cero o muy pocos digitos) no la dispara;
+    un horario ("Lu-Vi 9:00-18:00", 7 digitos contra 4 letras) o un codigo si.
+    """
+    letras = sum(c.isalpha() for c in linea)
+    digitos = sum(c.isdigit() for c in linea)
+    return digitos > 0 and digitos >= letras
+
 
 _RE_EXTENSION = re.compile(r"(?i)\s*(?:/|\bext\b|\bextension\b|\bextensión\b).*$")
 
-#: Lo que queda tras limpiar TIENE que SER un telefono: solo digitos, o un `+`
-#: seguido de solo digitos (los extranjeros que `normalize_es_phone` conserva a
-#: proposito). Cualquier otra cosa -- una etiqueta que se colo entera, una frase
-#: con un numero de atencion al cliente dentro, una direccion con el numero del
-#: piso -- NO es un telefono aunque contenga digitos. Ver `limpiar_telefono`.
-_RE_TELEFONO_VALIDO = re.compile(r"^\+?\d+$")
+#: Lo que queda tras limpiar TIENE que SER un telefono, y no cualquier longitud
+#: (Hallazgo A, revision tasks 7-8): un ESPANOL (sin `+` -- `normalize_es_phone` ya
+#: le quito el `+34`/`0034` si lo traia) tiene que ser EXACTAMENTE 9 digitos, que es
+#: lo que exige el CRM (`HTTP 400 movil is incorrect` con cualquier otra cosa). Antes
+#: de este arreglo "solo digitos, cualquier longitud" colaba un fijo y un movil
+#: pegados (13 digitos) o un movil truncado (7) como si fueran telefono valido, y
+#: como el escritor al CRM se traga el error a proposito, el rechazo del CRM habria
+#: fallado en SILENCIO. Un EXTRANJERO (`+` seguido de digitos: los que
+#: `normalize_es_phone` conserva a proposito, `+33...` etc.) no se somete a los 9
+#: digitos -- su longitud la decide su pais. Cualquier otra cosa -- una etiqueta que
+#: se colo entera, una frase con un numero de atencion al cliente dentro, una
+#: direccion con el numero del piso -- NO es un telefono aunque contenga digitos.
+#: Ver `limpiar_telefono`.
+_RE_TELEFONO_VALIDO = re.compile(r"^(?:\d{9}|\+\d+)$")
 
 
 @dataclass(frozen=True)
@@ -357,8 +382,16 @@ def limpiar_telefono(valor: str) -> str:
     fuera un telefono. Tras quitar extension/asteriscos/separadores y pasar por
     `normalize_es_phone`, lo que queda tiene que ser SOLO digitos, o un `+` seguido
     de SOLO digitos (los extranjeros que `normalize_es_phone` deja intactos a
-    proposito) -- cualquier otra cosa devuelve cadena vacia. Es mejor no tener el
-    telefono que escribir una cadena rara en la ficha del cliente.
+    proposito) -- cualquier otra cosa devuelve cadena vacia.
+
+    **Y un espanol tiene que ser EXACTAMENTE 9 digitos** (Hallazgo A, revision tasks
+    7-8): "solo digitos" no es lo mismo que "es un telefono espanol" -- el CRM exige
+    9 digitos y devuelve HTTP 400 con cualquier otra longitud, y como el escritor al
+    CRM se traga el error a proposito, un valor de longitud equivocada habria
+    fallado en silencio. Los extranjeros (`+` que sobrevive a `normalize_es_phone`
+    porque no era `+34`/`0034`) quedan fuera de esta regla: su longitud la decide su
+    pais. Es mejor no tener el telefono que escribir una cadena que el CRM va a
+    rechazar en la ficha del cliente.
     """
     v = _RE_EXTENSION.sub("", valor or "")
     v = v.replace("*", "").replace("<", "").replace(">", "").strip()
@@ -371,8 +404,21 @@ def _cargo_de(lineas: list[str]) -> str:
 
     Regla medida: la primera linea enteramente en negrita es el NOMBRE, y el cargo es
     la siguiente linea no vacia — en negrita en la plantilla de Madrid, sin negrita en
-    la de Barcelona. Si esa linea es la razon social, una direccion, un telefono o un
-    email, no hay cargo: **antes vacio que inventado**.
+    la de Barcelona. Si esa linea es la razon social, una direccion, un telefono, un
+    email, una URL o un horario/codigo, no hay cargo: **antes vacio que inventado**.
+
+    **Esto es una lista NEGRA, nunca una blanca** (Hallazgo D, revision tasks 7-8,
+    Minor): el conjunto de cargos reales es abierto -- no se puede enumerar "los
+    cargos posibles" -- asi que `_RE_NO_ES_CARGO` y `_mayoritariamente_digitos_y_signos`
+    solo excluyen lo que se reconoce barato y con seguridad (razon social, direccion,
+    telefono, email, URL, horario/codigo). Cualquier OTRA linea que no sea un cargo y
+    tampoco tenga ninguna de esas formas **pasa el filtro igual**: un lema comercial,
+    un pais suelto ("España"), cualquier prosa que no encaje en la lista de arriba.
+    Esta limitacion es real y no se corrige aqui -- perseguir el caso general es
+    perseguir una lista blanca imposible. Es exactamente POR ESO que este campo **no
+    se escribe en el CRM** (no existe ese campo en la ficha): el cargo solo alimenta
+    un informe que una persona lee y confirma antes de que el dato vaya a ningun
+    sitio.
     """
     for i, ln in enumerate(lineas):
         if not _RE_NEGRITA.match(ln):
@@ -380,7 +426,7 @@ def _cargo_de(lineas: list[str]) -> str:
         for siguiente in lineas[i + 1:]:
             if not siguiente.strip():
                 continue
-            if _RE_NO_ES_CARGO.search(siguiente):
+            if _RE_NO_ES_CARGO.search(siguiente) or _mayoritariamente_digitos_y_signos(siguiente):
                 return ""
             m = _RE_NEGRITA.match(siguiente)
             return (m.group(1) if m else siguiente).strip()
@@ -392,17 +438,7 @@ def leer_campos(bloque: BloqueFirma) -> DatosFirma:
     """Los campos de UN bloque ya atribuido. No decide veredictos: eso es `consolidar`."""
     lineas = bloque.texto.splitlines()
     m_movil = _RE_MOVIL.search(bloque.texto)
-    # Esta resta SI hace falta (dejo de ser codigo muerto en el arreglo de la
-    # etiqueta compuesta, 2026-09-04): desde que `_RE_MOVIL` admite un prefijo
-    # `Teléfono`/`Tel.` opcional, una linea como "Teléfono móvil: 612..." casa con
-    # las DOS regex a la vez -- `_RE_FIJO` tambien tiene `tel[ée]fono`/`tel\.` entre
-    # sus alternativas, y su cola libre `(.+?)\s*$` capturaria "móvil: 612..." como
-    # si fuera el numero de fijo. Restar aqui la linea que YA se leyo como movil
-    # evita que `_RE_FIJO` la vuelva a leer mal. (Antes de ese arreglo las dos regex
-    # eran disjuntas -- ancladas y con etiquetas que no se solapaban -- y esta linea
-    # si era inerte; un mutante que la quitaba no hacia caer ningun test.)
-    texto_sin_movil = _RE_MOVIL.sub("", bloque.texto)
-    m_fijo = _RE_FIJO.search(texto_sin_movil)
+    m_fijo = _RE_FIJO.search(bloque.texto)
     return DatosFirma(
         email=bloque.email,
         movil=limpiar_telefono(m_movil.group(1)) if m_movil else "",
@@ -432,6 +468,22 @@ class Consolidado:
     fuentes: tuple[str, ...] = ()
 
 
+def _normalizar_para_comparar(valor: str) -> str:
+    """La forma en la que dos valores cuentan como "el mismo dato" al decidir
+    conflicto (Hallazgo B, revision tasks 7-8).
+
+    SOLO para comparar -- `_elegir` no guarda esto en ningun sitio, solo lo usa para
+    poblar `distintos`. El movil y el fijo llegan a `_elegir` ya normalizados por
+    `limpiar_telefono` (siempre solo digitos, o `+` y digitos) asi que aplicar esto
+    tambien a ellos no cambia nada; es el cargo, que no pasa por ninguna
+    normalizacion antes de aqui, el que la necesita: dos informes del mismo cargo
+    real con distinta capitalizacion o espaciado ("Asesora Inmobiliaria" /
+    "asesora inmobiliaria", o con un espacio duplicado) son el MISMO dato, no un
+    conflicto.
+    """
+    return " ".join(valor.split()).lower()
+
+
 def _elegir(valores: list[tuple[str, str]]) -> tuple[str, str]:
     """El valor de un campo entre varios bloques, y su veredicto.
 
@@ -440,16 +492,22 @@ def _elegir(valores: list[tuple[str, str]]) -> tuple[str, str]:
 
     Jerarquia: un DIRECTO manda sobre un CITADO, porque el citado es mas antiguo y el
     consultor puede haber cambiado de numero. Entre dos del mismo nivel manda el
-    ultimo. Si quedan dos distintos que nada separa, **CONFLICTO y campo vacio**: un
+    ultimo. Si quedan dos distintos (una vez normalizados para comparar, ver
+    `_normalizar_para_comparar`) que nada separa, **CONFLICTO y campo vacio**: un
     movil mal elegido acaba en la ficha del cliente, y fallar cerrado es la politica de
     este modulo desde el dedup del PR #272.
+
+    **El valor que se propone es siempre el ORIGINAL sin normalizar** (el ultimo de
+    los candidatos, por la regla de arriba) -- la normalizacion de
+    `_normalizar_para_comparar` es solo para decidir SI hay conflicto, nunca para
+    elegir QUE se propone.
     """
     if not valores:
         return "", VEREDICTO_FIRMA_SIN_CAMPO
 
     directos = [v for v, p in valores if p == PROCEDENCIA_DIRECTO]
     candidatos = directos or [v for v, _ in valores]
-    distintos = set(candidatos)
+    distintos = {_normalizar_para_comparar(v) for v in candidatos}
     if len(distintos) > 1:
         return "", VEREDICTO_CONFLICTO
     return candidatos[-1], VEREDICTO_ENCONTRADO

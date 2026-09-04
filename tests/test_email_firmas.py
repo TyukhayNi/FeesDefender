@@ -635,6 +635,49 @@ class TestLimpiarTelefonoValidaLaFormaYNoSoloElDigito:
         assert limpiar_telefono(basura) == ""
 
 
+class TestLimpiarTelefonoExigeNueveDigitosEnEspana:
+    """Hallazgo A (revision tasks 7-8, Important): "solo digitos" no es lo mismo que
+    "es un telefono". El CRM exige 9 digitos exactos para un numero espanol y devuelve
+    HTTP 400 (`movil is incorrect`) con cualquier otra longitud -- medido con un fijo y
+    un movil pegados (13 digitos) y con un movil truncado (7 digitos). El codigo que
+    escribe en el CRM se traga el error a proposito (perder el vinculo de un expediente
+    por no poder escribir un telefono seria peor que quedarse sin el), asi que un valor
+    que el CRM rechaza NO da un error visible: falla en silencio. Proponer un valor que
+    sabemos que va a ser rechazado es peor que no proponer ninguno.
+
+    La propiedad: un valor ESPANOL limpio es valido si y solo si son EXACTAMENTE 9
+    digitos. Los EXTRANJEROS son la excepcion deliberada -- `normalize_es_phone` los
+    deja intactos salvo separadores, y su longitud la decide su pais, no esta regla:
+    un valor que empieza por `+` y no es `+34` no se somete a los 9 digitos."""
+
+    @pytest.mark.parametrize("crudo", [
+        "912.345.678.1234",   # 13 digitos: un fijo y un movil pegados
+        "912 345 678 1234",   # lo mismo con espacios en vez de puntos
+        "6123456",            # 7 digitos: un movil truncado
+    ])
+    def test_una_longitud_espanola_que_no_son_9_digitos_no_produce_telefono(self, crudo):
+        assert limpiar_telefono(crudo) == ""
+
+    @pytest.mark.parametrize("crudo,esperado", [
+        ("612345678", "612345678"),
+        ("931112233", "931112233"),
+        ("+34 93 111 22 33", "931112233"),
+    ])
+    def test_un_espanol_de_9_digitos_sobrevive(self, crudo, esperado):
+        assert limpiar_telefono(crudo) == esperado
+
+    def test_un_extranjero_no_se_somete_a_los_9_digitos(self):
+        """`+33 1 23 45 67 89` da 11 digitos tras el `+` (33 de pais + 9 del numero) --
+        a proposito distinto de 9, para que este test no pase por casualidad bajo una
+        regla (equivocada) de "siempre 9 digitos". Ver tambien
+        `TestLimpiarTelefono.test_un_numero_extranjero_no_se_mutila`, que ya fijaba
+        este caso antes de este hallazgo."""
+        assert limpiar_telefono("+33 1 23 45 67 89") == "+33123456789"
+
+    def test_el_prefijo_de_pais_solo_sin_numero_detras_no_produce_telefono(self):
+        assert limpiar_telefono("+34") == ""
+
+
 class TestLeerLosCamposDeLaPlantillaDeBarcelona:
 
     @staticmethod
@@ -719,6 +762,25 @@ class TestElCargoNoSeInventa:
         cuerpo = ("ENGEL&VÖLKERS\n*Ana Ejemplo*\nCalle Falsa 34, 28001 Madrid\n"
                   "ana@engelvoelkers.com\n")
         bloques, _ = extraer_bloques(cuerpo, fichero="j.eml")
+        assert leer_campos(bloques[0]).cargo == ""
+
+    def test_una_URL_tras_el_nombre_no_es_un_cargo(self):
+        """Hallazgo D (revision tasks 7-8, Minor): medido que `www.engelvoelkers.com`
+        pasaba el filtro y se leia como cargo. Exclusion barata: una linea que
+        parece una URL (contiene `www.` o `://`)."""
+        cuerpo = ("ENGEL&VÖLKERS\n*Ana Ejemplo*\nwww.engelvoelkers.com\n"
+                  "ana@engelvoelkers.com\n")
+        bloques, _ = extraer_bloques(cuerpo, fichero="url.eml")
+        assert leer_campos(bloques[0]).cargo == ""
+
+    def test_un_horario_tras_el_nombre_no_es_un_cargo(self):
+        """Hallazgo D: medido que `Lu-Vi 9:00-18:00` pasaba el filtro. `\\d{4,}`
+        (digitos consecutivos) no lo atrapa: ninguna tirada de digitos seguidos
+        llega a 4 ("9", "00", "18", "00"). Exclusion barata: una linea
+        mayoritariamente digitos y signos (un horario, un codigo)."""
+        cuerpo = ("ENGEL&VÖLKERS\n*Ana Ejemplo*\nLu-Vi 9:00-18:00\n"
+                  "ana@engelvoelkers.com\n")
+        bloques, _ = extraer_bloques(cuerpo, fichero="horario.eml")
         assert leer_campos(bloques[0]).cargo == ""
 
 
@@ -878,6 +940,54 @@ class TestElConflictoFALLA_CERRADO:
         c = consolidar([_f(movil="612345678", fichero="a.eml", linea=3),
                         _f(movil="600000000", fichero="b.eml", linea=5)])["ana@engelvoelkers.com"]
         assert "a.eml:3" in c.fuentes and "b.eml:5" in c.fuentes
+
+
+class TestElConflictoDeCargoEsPorContenidoNoPorFormato:
+    """Hallazgo B (revision tasks 7-8, Important): el movil y el fijo llegan ya
+    normalizados por `limpiar_telefono` antes de entrar en `_elegir`, pero el cargo no
+    pasa por ninguna normalizacion -- asi que una diferencia TRIVIAL de formato entre
+    dos informes del MISMO dato real se blanqueaba como si discreparan. Medido:
+    `consolidar([firma(cargo="Asesora Inmobiliaria"), firma(cargo="asesora
+    inmobiliaria")])` daba `cargo='', veredicto=CONFLICTO`.
+
+    La propiedad: dos valores son "el mismo" si lo son UNA VEZ NORMALIZADOS PARA
+    COMPARAR (sin distinguir mayusculas, con los espacios colapsados) -- y el valor
+    que se PROPONE sigue siendo el ORIGINAL, nunca el normalizado: lo lee una persona
+    en el informe, y "Asesora Inmobiliaria" se lee mejor que "asesora inmobiliaria"."""
+
+    def test_una_diferencia_de_mayusculas_no_es_conflicto(self):
+        c = consolidar([_f(cargo="Asesora Inmobiliaria"),
+                        _f(cargo="asesora inmobiliaria")])["ana@engelvoelkers.com"]
+        assert c.veredicto_cargo == VEREDICTO_ENCONTRADO
+        assert c.cargo in ("Asesora Inmobiliaria", "asesora inmobiliaria"), (
+            "el valor propuesto tiene que ser uno de los ORIGINALES, no vacio ni "
+            "una tercera forma normalizada")
+
+    def test_espacios_duplicados_tampoco_es_conflicto(self):
+        c = consolidar([_f(cargo="Asesora  Inmobiliaria"),
+                        _f(cargo="Asesora Inmobiliaria")])["ana@engelvoelkers.com"]
+        assert c.veredicto_cargo == VEREDICTO_ENCONTRADO
+        assert c.cargo != ""
+
+    def test_dos_cargos_de_verdad_distintos_siguen_dando_CONFLICTO(self):
+        """Sin este test, la normalizacion de la comparacion podria estar tragandose
+        conflictos reales y nadie lo sabria."""
+        c = consolidar([_f(cargo="Asesora Inmobiliaria"),
+                        _f(cargo="Técnico de PBC")])["ana@engelvoelkers.com"]
+        assert c.veredicto_cargo == VEREDICTO_CONFLICTO
+        assert c.cargo == ""
+
+    def test_dos_cargos_con_la_MISMA_primera_palabra_tambien_son_CONFLICTO(self):
+        """La forma FUERTE del test anterior: si la normalizacion fuera tan agresiva
+        que comparase solo la primera palabra (u otro resumen que descarte el resto),
+        estos dos colapsarian -- los dos EMPIEZAN por "Asesora" y solo difieren en lo
+        que viene despues. Sin este test, una normalizacion asi de agresiva pasaria
+        el test anterior (primeras palabras ya distintas: "Asesora" / "Técnico") sin
+        que nadie lo notase."""
+        c = consolidar([_f(cargo="Asesora Inmobiliaria"),
+                        _f(cargo="Asesora Comercial")])["ana@engelvoelkers.com"]
+        assert c.veredicto_cargo == VEREDICTO_CONFLICTO
+        assert c.cargo == ""
 
 
 class TestFirmaSinCampoNoEsNoTiene:
