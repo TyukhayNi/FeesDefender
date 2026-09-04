@@ -186,6 +186,15 @@ class SudespachoRelationsError(RuntimeError):
     pass
 
 
+class IdentidadSinComprobar(SudespachoRelationsError):
+    """No se pudo consultar si la parte ya existe, asi que no se crea ni se vincula.
+
+    R1/H-01: antes un 500 de la consulta se leia como «no existe» y se creaba una ficha
+    duplicada. La politica, decidida por Nikolai el 2026-09-04, es **fallar cerrado**:
+    si no se pudo mirar, se para y se dice que no se pudo mirar.
+    """
+
+
 class ConflictoDeIdentidad(SudespachoRelationsError):
     """El NIF y el email de una parte apuntan a fichas DISTINTAS del CRM.
 
@@ -896,6 +905,38 @@ _PROP_NIF = {
 }
 
 
+@dataclass(frozen=True)
+class Consulta:
+    """El resultado de preguntarle algo al CRM, **con si se pudo preguntar**.
+
+    R1/H-01 y H-02: la version anterior devolvia una lista y colapsaba «no hay
+    coincidencias» y «el CRM devolvio 500» en el mismo `[]`. Con eso, una caida de red
+    durante una apertura hacia concluir «esta parte no existe» y se creaba una ficha
+    duplicada, o «no hay expediente con este W-code» y se daba de alta otro. La
+    proteccion desaparecia **en silencio y justo cuando fallaba algo**.
+    """
+
+    registros: list[dict] = field(default_factory=list)
+    #: False cuando la consulta no se pudo completar. NO es «no hay resultados».
+    ok: bool = True
+    motivo: str = ""
+
+    @property
+    def ids(self) -> list[str]:
+        return [i for i in (str(r.get("id") or "").strip() for r in self.registros) if i]
+
+
+def _canonizar_documento(valor: str) -> str:
+    """NIF/NIE/CIF sin separadores. Medido contra el tenant el 2026-09-04.
+
+    Medido contra el tenant con una ficha real (cuyo documento NO se transcribe aqui):
+    el CRM **si** normaliza caja y espacios envolventes —`nnnnnnnnx` y `" nnnnnnnnX "`
+    encuentran la ficha— pero **no** los separadores: `nn.nnn.nnn-X` no encuentra nada.
+    Se canoniza aqui igualmente para no depender de que el backend siga haciendolo.
+    """
+    return "".join(c for c in (valor or "") if c.isalnum()).upper()
+
+
 def _buscar_registros(
     elemento: str,
     propiedad: str,
@@ -903,8 +944,9 @@ def _buscar_registros(
     *,
     operador: str = "equal",
     limite: int = 5,
-) -> list[dict]:
-    """Busca registros de `elemento` filtrando por una propiedad. Nunca lanza.
+    properties: tuple[str, ...] = (),
+) -> Consulta:
+    """Busca registros de `elemento` filtrando por una propiedad. **Nunca lanza.**
 
     Generalizacion del filtro que ya usaba `find_cliente_contrario_by_nif`: mismo
     endpoint `element_registries` y misma gramatica `filterGroup`, pero con el elemento
@@ -916,23 +958,29 @@ def _buscar_registros(
     greater-than-or-equal, less-than-or-equal, is-empty, is-not-empty, in, not-in,
     between, group-by. **`contains` NO existe** — es `like`.
 
+    «Nunca lanza» aqui es un contrato, no una aspiracion: R1/H-07 midio que la version
+    anterior **si** lanzaba `AttributeError` ante un `200` con un JSON de forma
+    inesperada (una lista en vez de un objeto), porque el `try` solo envolvia
+    `r.json()`. Ahora el parseo entero esta cubierto y una forma rara sale como
+    `ok=False`, que es lo que un llamador puede tratar.
+
     Returns:
-        Lista de registros (cada uno con al menos `id`). Vacia si no hay coincidencia,
-        si falta la clave o si el CRM no responde: esta funcion **no distingue** «no hay»
-        de «no pude mirar», asi que no la uses como prueba de ausencia para nada
-        destructivo. Los llamadores de dedup pueden vivir con eso porque el peor caso es
-        crear una ficha de mas, no borrar una.
+        Una `Consulta`. **Mira siempre `ok` antes que `registros`**: una lista vacia con
+        `ok=False` significa «no pude mirar», y tratarla como ausencia es el defecto que
+        este contrato existe para impedir.
     """
     valor = (valor or "").strip()
     if not valor:
-        return []
+        return Consulta()
     api_key = (os.getenv("SUDESPACHO_API_KEY") or "").strip()
     if not api_key:
-        return []
+        return Consulta(ok=False, motivo="SUDESPACHO_API_KEY no configurada")
 
     url = f"{_REST_BASE}/api/element_registries/{elemento}"
-    params: list[tuple[str, str]] = [
-        ("properties[0]", propiedad),
+    params: list[tuple[str, str]] = [("properties[0]", propiedad)]
+    for i, extra in enumerate(properties, start=1):
+        params.append((f"properties[{i}]", extra))
+    params += [
         ("filterGroup[condition]", "AND"),
         ("filterGroup[filterGroups][0][condition]", "AND"),
         ("filterGroup[filterGroups][0][filters][0][operator]", operador),
@@ -943,27 +991,43 @@ def _buscar_registros(
     headers = {"x-api-key": api_key, "Accept": "application/json"}
     try:
         r = httpx.get(url, params=params, headers=headers, timeout=_REST_TIMEOUT)
-    except Exception:  # noqa: BLE001 — red caida no debe romper al llamador
-        return []
+    except Exception as exc:  # noqa: BLE001 — red caida no debe romper al llamador
+        return Consulta(ok=False, motivo=f"red: {exc!r}")
     if r.status_code != 200:
-        return []
+        return Consulta(ok=False, motivo=f"HTTP {r.status_code}")
     try:
         data = r.json()
-    except Exception:  # noqa: BLE001
-        return []
-    items = data.get("items") or data.get("hydra:member") or []
-    return [i for i in items if isinstance(i, dict)]
+        items = data.get("items") or data.get("hydra:member") or []
+        return Consulta(registros=[i for i in items if isinstance(i, dict)])
+    except Exception as exc:  # noqa: BLE001 — cuerpo con forma inesperada
+        return Consulta(ok=False, motivo=f"cuerpo inesperado: {exc!r}")
 
 
 @dataclass(frozen=True)
 class ResolucionParte:
-    """A que ficha del CRM corresponde una parte, y por que criterio se supo."""
+    """A que ficha del CRM corresponde una parte, y con cuanta certeza.
+
+    Tres estados que **no se pueden colapsar** sin abrir un agujero:
+
+    - `id` con valor: resuelta.
+    - todo vacio: la parte no existe, y se puede crear con tranquilidad.
+    - `conflicto`, `ambiguo` o `sin_comprobar`: **no se sabe**, y hay que parar.
+    """
 
     id: str | None = None
     #: "nif" | "email" | None
     por: str | None = None
-    #: (id_por_nif, id_por_email) cuando difieren. Con conflicto, `id` es None.
+    #: (ids_por_nif, ids_por_email) cuando son disjuntos.
     conflicto: tuple[str, str] | None = None
+    #: Un criterio devolvio VARIAS fichas: elegir una seria elegir por orden de llegada.
+    ambiguo: tuple[str, ...] = ()
+    #: Criterios que no se pudieron consultar. Vacio NO implica que no existan.
+    sin_comprobar: tuple[str, ...] = ()
+
+    @property
+    def resuelta(self) -> bool:
+        """True solo si se sabe con certeza a que ficha corresponde (o que no hay)."""
+        return not (self.conflicto or self.ambiguo or self.sin_comprobar)
 
 
 def resolver_parte(elemento: str, *, nif: str = "", email: str = "") -> ResolucionParte:
@@ -973,30 +1037,86 @@ def resolver_parte(elemento: str, *, nif: str = "", email: str = "") -> Resoluci
     (`clientes_contrarios`, `colaboradores`, `clientes_propios`) son **los mismos** en
     las dos jurisdicciones — solo cambia el expediente padre.
 
-    **El NIF manda** cuando ambos criterios coinciden o solo uno resuelve: es la
-    identidad legal. **Si apuntan a fichas distintas devuelve un conflicto y NINGUNA
-    id**, para que el llamador pare. Elegir una en silencio es lo que fusiona a dos
-    personas o parte a una en dos.
+    **El NIF manda** cuando ambos criterios apuntan a lo mismo o solo uno resuelve.
+
+    **Todo lo demas para la corrida**, y cada caso por su razon (R1/H-01, H-03):
+
+    - **Conflicto**: los dos criterios dan conjuntos DISJUNTOS de fichas. Elegir uno
+      fusiona dos personas o parte una en dos.
+    - **Ambiguo**: un criterio devuelve VARIAS fichas. La version anterior cogia
+      `items[0]`, con lo que la identidad —y hasta la deteccion del conflicto—
+      dependian del orden en que el servidor devolviera las filas. Se midio: con
+      `[111, 222]` habia conflicto y con `[222, 111]` no lo habia, para el mismo estado
+      del CRM.
+    - **Sin comprobar**: la consulta fallo. No es ausencia.
+
+    La comparacion es por **conjuntos**, no por primer elemento: si se solapan, la
+    interseccion decide; si la interseccion tiene mas de una ficha, sigue siendo ambiguo.
     """
     prop_nif = _PROP_NIF.get(elemento, "nif_cif")
-    id_nif = _primer_id(_buscar_registros(elemento, prop_nif, nif)) if (nif or "").strip() else None
-    id_mail = _primer_id(_buscar_registros(elemento, "email", email)) if (email or "").strip() else None
+    nif_canon = _canonizar_documento(nif)
 
-    if id_nif and id_mail and id_nif != id_mail:
-        return ResolucionParte(id=None, por=None, conflicto=(id_nif, id_mail))
-    if id_nif:
-        return ResolucionParte(id=id_nif, por="nif")
-    if id_mail:
-        return ResolucionParte(id=id_mail, por="email")
+    sin: list[str] = []
+    ambiguo: list[str] = []
+
+    c_nif = _buscar_registros(elemento, prop_nif, nif_canon) if nif_canon else Consulta()
+    c_mail = _buscar_registros(elemento, "email", (email or "").strip()) if (email or "").strip() else Consulta()
+
+    if nif_canon and not c_nif.ok:
+        sin.append(f"NIF ({c_nif.motivo})")
+    if (email or "").strip() and not c_mail.ok:
+        sin.append(f"email ({c_mail.motivo})")
+
+    ids_nif = set(c_nif.ids)
+    ids_mail = set(c_mail.ids)
+    if len(ids_nif) > 1:
+        ambiguo.extend(sorted(ids_nif))
+    if len(ids_mail) > 1:
+        ambiguo.extend(sorted(ids_mail))
+
+    if sin or ambiguo:
+        return ResolucionParte(sin_comprobar=tuple(sin), ambiguo=tuple(dict.fromkeys(ambiguo)))
+
+    if ids_nif and ids_mail:
+        comun = ids_nif & ids_mail
+        if not comun:
+            return ResolucionParte(
+                conflicto=(sorted(ids_nif)[0], sorted(ids_mail)[0]))
+        if len(comun) > 1:
+            return ResolucionParte(ambiguo=tuple(sorted(comun)))
+        return ResolucionParte(id=comun.pop(), por="nif")
+    if ids_nif:
+        return ResolucionParte(id=ids_nif.pop(), por="nif")
+    if ids_mail:
+        return ResolucionParte(id=ids_mail.pop(), por="email")
     return ResolucionParte()
 
 
-def _primer_id(registros: list[dict]) -> str | None:
-    for reg in registros:
-        rid = str(reg.get("id") or "").strip()
-        if rid:
-            return rid
-    return None
+def _exigir_identidad_cierta(r: ResolucionParte, *, elemento: str, nif: str, email: str) -> None:
+    """Levanta si la identidad no se sabe con certeza. La politica es fallar CERRADO.
+
+    Decision de Nikolai (2026-09-04): si no se puede comprobar, no se crea ni se
+    vincula. Un duplicado en el CRM del cliente cuesta mas de deshacer que repetir la
+    operacion cuando el CRM vuelva.
+    """
+    if r.conflicto:
+        por_nif, por_email = r.conflicto
+        raise ConflictoDeIdentidad(
+            f"En {elemento}, el NIF {nif!r} apunta a la ficha {por_nif} y el email "
+            f"{email!r} a la {por_email}. No se vincula ninguna ni se crea otra: "
+            "resuelvelo en el CRM (fusiona las fichas o corrige el dato) y repite."
+        )
+    if r.ambiguo:
+        raise ConflictoDeIdentidad(
+            f"En {elemento}, la busqueda devolvio VARIAS fichas ({', '.join(r.ambiguo)}) "
+            "para la misma parte. Elegir una seria elegirla por el orden en que el CRM "
+            "devuelve las filas. Deduplica en el CRM y repite."
+        )
+    if r.sin_comprobar:
+        raise IdentidadSinComprobar(
+            f"No se pudo comprobar si esta parte ya existe en {elemento}: "
+            f"{'; '.join(r.sin_comprobar)}. No se crea ni se vincula nada."
+        )
 
 
 #: La referencia del expediente NO se llama igual en las dos jurisdicciones. Medido el
@@ -1008,7 +1128,7 @@ _PROP_REFERENCIA = {
 }
 
 
-@dataclass(frozen=True)
+@dataclass
 class DuplicadosExpediente:
     """Lo que se encontro al buscar un expediente ya existente, por criterio.
 
@@ -1019,12 +1139,18 @@ class DuplicadosExpediente:
     por_wcode: list[tuple[str, str]] = field(default_factory=list)
     por_direccion: list[tuple[str, str]] = field(default_factory=list)
     por_contrario: list[tuple[str, str]] = field(default_factory=list)
-    #: Criterios que no se pudieron comprobar. «No pude mirar» no es «no hay».
+    #: Criterios que no se pudieron comprobar. «No pude mirar» no es «no hay», y por
+    #: eso `bloquea` NO se puede leer solo: hay que mirar tambien esta lista.
     sin_comprobar: list[str] = field(default_factory=list)
 
     @property
     def bloquea(self) -> bool:
         return bool(self.por_wcode)
+
+    @property
+    def incierto(self) -> bool:
+        """Algo no se pudo consultar. La politica del proyecto es fallar CERRADO."""
+        return bool(self.sin_comprobar)
 
     @property
     def avisos(self) -> list[str]:
@@ -1054,8 +1180,10 @@ def buscar_expedientes_duplicados(
     expedientes correctos, igual que el mismo propietario en dos operaciones. Un
     bloqueo que salta siempre se contesta con `--force` por rutina y deja de proteger.
 
-    No escribe nada y **no lanza**: un criterio que no se pueda comprobar se declara en
-    `sin_comprobar`, porque «no pude mirar» no es «no hay».
+    No escribe nada y **no lanza**. Lo que no se pueda consultar cae en `sin_comprobar`,
+    y el llamador debe tratarlo como «no se sabe», no como «no hay»: R1/H-02 midio que
+    la version anterior dejaba esa lista **vacia** ante un 500 y devolvia `bloquea=False`
+    — el criterio que debia bloquear fallaba ABIERTO justo cuando no habia podido mirar.
     """
     res = DuplicadosExpediente()
     w_code = (w_code or "").strip()
@@ -1063,12 +1191,31 @@ def buscar_expedientes_duplicados(
 
     for elemento, prop in _PROP_REFERENCIA.items():
         if w_code:
-            for reg in _buscar_registros(elemento, prop, w_code, operador="like", limite=10):
+            c = _buscar_registros(elemento, prop, w_code, operador="like", limite=25)
+            if not c.ok:
+                res.sin_comprobar.append(f"W-code en {elemento} ({c.motivo})")
+            for reg in c.registros:
                 rid = str(reg.get("id") or "").strip()
-                if rid:
+                if not rid:
+                    continue
+                # R1/H-06: `like` casa por subcadena, asi que buscar `W-12345` trae
+                # tambien `W-123456`, que es OTRA operacion. Se confirma el codigo exacto
+                # contra la referencia devuelta con `wcode_match` — que ya existia en
+                # este modulo y no se estaba usando. Si la referencia no viene, no se
+                # puede confirmar: cuenta como sin comprobar, nunca como duplicado.
+                ref = _referencia_de(reg, prop)
+                if ref is None:
+                    res.sin_comprobar.append(
+                        f"{elemento} #{rid}: el CRM no devolvio su referencia, "
+                        "no se puede confirmar que el W-code sea el mismo")
+                elif wcode_match(ref, w_code):
                     res.por_wcode.append((elemento, rid))
+
         if direccion:
-            for reg in _buscar_registros(elemento, prop, direccion, operador="like", limite=10):
+            c = _buscar_registros(elemento, prop, direccion, operador="like", limite=25)
+            if not c.ok:
+                res.sin_comprobar.append(f"direccion en {elemento} ({c.motivo})")
+            for reg in c.registros:
                 rid = str(reg.get("id") or "").strip()
                 # Un mismo expediente casa por W-code y por direccion: no se cuenta dos
                 # veces, y sobre todo no se degrada un bloqueo a aviso.
@@ -1087,6 +1234,24 @@ def buscar_expedientes_duplicados(
                     if rid and (elemento, rid) not in res.por_wcode:
                         res.por_contrario.append((elemento, rid))
     return res
+
+
+def _referencia_de(registro: dict, propiedad: str) -> str | None:
+    """La referencia del expediente dentro de un registro de `element_registries`.
+
+    El CRM devuelve `{"id": ..., "values": [{"property": {"name": ...}, "value": ...}]}`.
+    Devuelve `None` si no viene: **ausencia de dato, no cadena vacia**, porque el
+    llamador tiene que poder distinguir «la referencia no casa» de «no me la han dado».
+    """
+    for v in registro.get("values") or []:
+        if not isinstance(v, dict):
+            continue
+        prop = v.get("property")
+        nombre = prop.get("name") if isinstance(prop, dict) else prop
+        if nombre == propiedad:
+            valor = v.get("value")
+            return valor if isinstance(valor, str) else None
+    return None
 
 
 def find_cliente_contrario_by_nif(nif: str) -> str | None:
@@ -1187,13 +1352,8 @@ def _resolver_o_crear_contrario(datos: NuevoClienteContrario) -> tuple[str, bool
     generaba ficha nueva en cada caso— y **levanta** si los dos criterios discrepan.
     """
     r = resolver_parte("clientes_contrarios", nif=datos.nif, email=datos.email)
-    if r.conflicto:
-        por_nif, por_email = r.conflicto
-        raise ConflictoDeIdentidad(
-            f"El NIF {datos.nif!r} apunta al contrario {por_nif} y el email "
-            f"{datos.email!r} al {por_email}. No se vincula ninguno ni se crea otro: "
-            "resuelvelo en el CRM (fusiona las fichas o corrige el dato) y repite."
-        )
+    _exigir_identidad_cierta(r, elemento="clientes_contrarios",
+                             nif=datos.nif, email=datos.email)
     if r.id:
         return r.id, False
     return create_cliente_contrario(datos), True
@@ -1718,6 +1878,57 @@ def link_colaborador(
 # Función de alto nivel: ensure_colaborador_vinculado
 # ---------------------------------------------------------------------------
 
+def _resolver_colaborador(
+    datos: NuevoColaborador,
+    *,
+    client: SudespachoLegacyClient | None = None,
+) -> str | None:
+    """La ficha del colaborador, o `None` si no existe. Levanta si no se sabe.
+
+    Compartida por las dos jurisdicciones: R1/H-05 midio que
+    `ensure_colaborador_vinculado_judicial` seguia siendo **email-only** y no pasaba por
+    aqui, asi que en judicial ni deduplicaba por NIF ni detectaba el conflicto. Anadir
+    el contrario judicial y olvidar el colaborador judicial es el mismo error de
+    siempre: cerrar una propiedad para un rol no la cierra para los demas.
+    """
+    r = resolver_parte("colaboradores", nif=datos.nif, email=datos.email)
+
+    # Conflicto y ambiguedad no los arregla ningun respaldo: son estados en los que el
+    # CRM SI respondio y lo que dijo no identifica a una sola ficha.
+    if r.conflicto or r.ambiguo:
+        _exigir_identidad_cierta(r, elemento="colaboradores",
+                                 nif=datos.nif, email=datos.email)
+
+    # El respaldo por listado completo es una VIA ALTERNATIVA legitima, no un parche:
+    # `element_registries/colaboradores` puede no exponer `email` como filtrable en
+    # todos los tenants, y hay un camino legacy que funciona sin `x-api-key`.
+    #
+    # Pero **solo cubre el criterio EMAIL**. R1/H-04: antes corria tambien cuando la
+    # consulta del NIF habia fallado, y entonces vinculaba por email una ficha distinta
+    # de la que el NIF senalaba — el respaldo tapaba el criterio caido. Por eso un NIF
+    # sin comprobar levanta aunque el email si se pudiera mirar.
+    if any(s.startswith("NIF") for s in r.sin_comprobar):
+        raise IdentidadSinComprobar(
+            f"No se pudo comprobar el NIF {datos.nif!r} en colaboradores: "
+            f"{'; '.join(s for s in r.sin_comprobar if s.startswith('NIF'))}. "
+            "El respaldo por email no cubre ese criterio, asi que no se crea ni se "
+            "vincula nada."
+        )
+
+    if r.id:
+        return r.id
+    if datos.email:
+        return find_colaborador_by_email(datos.email, client=client)
+
+    # Sin email no queda via alguna: si el criterio que faltaba era ese, no se sabe.
+    if r.sin_comprobar:
+        raise IdentidadSinComprobar(
+            f"No se pudo comprobar si este colaborador ya existe: "
+            f"{'; '.join(r.sin_comprobar)}. No se crea ni se vincula nada."
+        )
+    return None
+
+
 def ensure_colaborador_vinculado(
     exp_id: str,
     datos: NuevoColaborador,
@@ -1763,20 +1974,7 @@ def ensure_colaborador_vinculado(
     try:
         # 1. Resolver por email O por NIF (antes solo por email, asi que el mismo
         #    consultor con dos direcciones daba dos fichas).
-        r = resolver_parte("colaboradores", nif=datos.nif, email=datos.email)
-        if r.conflicto:
-            por_nif, por_email = r.conflicto
-            raise ConflictoDeIdentidad(
-                f"El NIF {datos.nif!r} apunta al colaborador {por_nif} y el email "
-                f"{datos.email!r} al {por_email}. No se vincula ninguno ni se crea otro: "
-                "resuelvelo en el CRM y repite."
-            )
-        colab_id = r.id
-        # Respaldo por el listado completo: `element_registries/colaboradores` puede no
-        # exponer `email` como filtrable en todos los tenants, y perder la dedup que ya
-        # habia seria una regresion. Si el filtro no encontro nada, se mira la lista.
-        if colab_id is None and datos.email:
-            colab_id = find_colaborador_by_email(datos.email, client=client)
+        colab_id = _resolver_colaborador(datos, client=client)
         created = False
 
         # 2. Crear si no existe
@@ -1937,44 +2135,29 @@ def ensure_colaborador_vinculado_judicial(
     *,
     client: SudespachoLegacyClient | None = None,
 ) -> tuple[str, bool]:
-    """Garantiza que el colaborador existe en el CRM y está vinculado al expediente judicial.
+    """Igual que :func:`ensure_colaborador_vinculado`, para expedientes JUDICIALES.
 
-    Mismo flujo que ensure_colaborador_vinculado() pero para expedientes judiciales.
-
-    Args:
-        exp_id: ID del expediente judicial.
-        datos: Datos del colaborador.
-        client: Cliente legacy reutilizable (opcional).
-
-    Returns:
-        Tupla (colab_id, created).
+    Pasa por `_resolver_colaborador`, o sea por NIF **y** email con su politica de
+    conflicto. Antes era email-only (R1/H-05) y contradecia la premisa del cambio: la
+    identidad de una parte no depende del tipo de expediente al que se vincule.
     """
     owns_client = client is None
     if owns_client:
         client = SudespachoLegacyClient()
     try:
-        colab_id = find_colaborador_by_email(datos.email, client=client)
+        colab_id = _resolver_colaborador(datos, client=client)
         created = False
-
         if colab_id is None:
             colab_id = create_colaborador(datos, client=client)
             created = True
-
         link_colaborador_judicial(exp_id, colab_id, client=client)
-
         return colab_id, created
-
     finally:
         if owns_client:
             try:
                 client.__exit__(None, None, None)
             except Exception:
                 pass
-
-
-# ---------------------------------------------------------------------------
-# Creación de tags en el grupo judicial (grupo 2)
-# ---------------------------------------------------------------------------
 
 def create_tag_judicial(
     nombre: str,

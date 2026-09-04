@@ -21,8 +21,19 @@ import pytest
 
 from core.sudespacho_relations import (
     _PROP_REFERENCIA,
+    Consulta,
     buscar_expedientes_duplicados,
 )
+
+
+def _reg(rid: str, ref: str, prop: str = "Referencia_Cliente") -> dict:
+    """Registro con la forma REAL del CRM: `id` + `values`.
+
+    Los dobles de la primera version devolvian `{"id": ...}` a secas, y por eso no
+    ejercian la confirmacion exacta del W-code (R1/H-06 y H-10): cualquier resultado
+    del `like` se elevaba a bloqueo y el test pasaba igual.
+    """
+    return {"id": rid, "values": [{"property": {"name": prop}, "value": ref}]}
 
 
 @pytest.fixture(autouse=True)
@@ -31,7 +42,7 @@ def _api_key(monkeypatch):
 
 
 def _sin_nada(*a, **k):
-    return []
+    return Consulta()
 
 
 class TestLosCriteriosNoValenLoMismo:
@@ -39,8 +50,9 @@ class TestLosCriteriosNoValenLoMismo:
     def test_el_wcode_BLOQUEA(self):
         def _busca(elemento, propiedad, valor, **kw):
             if elemento == "extrajudiciales" and "W-02Q38C" in valor:
-                return [{"id": "634"}]
-            return []
+                return Consulta(registros=[
+                    _reg("634", "BaRS11 - Xabec 8 (W-02Q38C) - Negativa")])
+            return Consulta()
         with patch("core.sudespacho_relations._buscar_registros", side_effect=_busca):
             d = buscar_expedientes_duplicados(w_code="W-02Q38C", direccion="Xabec 8")
         assert d.bloquea is True
@@ -50,8 +62,8 @@ class TestLosCriteriosNoValenLoMismo:
         """Dos expedientes en la misma calle son legitimos: vuelta y bad debt."""
         def _busca(elemento, propiedad, valor, **kw):
             if elemento == "extrajudiciales" and "Xabec" in valor:
-                return [{"id": "700"}]
-            return []
+                return Consulta(registros=[_reg("700", "Otro (W-OTRO1) - Vuelta")])
+            return Consulta()
         with patch("core.sudespacho_relations._buscar_registros", side_effect=_busca):
             d = buscar_expedientes_duplicados(w_code="W-NUEVO", direccion="Xabec 8")
         assert d.bloquea is False
@@ -80,7 +92,7 @@ class TestLasDosJurisdicciones:
 
         def _busca(elemento, propiedad, valor, **kw):
             vistos.append((elemento, propiedad))
-            return []
+            return Consulta()
         with patch("core.sudespacho_relations._buscar_registros", side_effect=_busca):
             buscar_expedientes_duplicados(w_code="W-X", direccion="Y")
 
@@ -95,8 +107,9 @@ class TestLasDosJurisdicciones:
     def test_un_wcode_en_JUDICIAL_tambien_bloquea(self):
         def _busca(elemento, propiedad, valor, **kw):
             if elemento == "expedientes_judiciales" and "W-02Q38C" in valor:
-                return [{"id": "700"}]
-            return []
+                return Consulta(registros=[
+                    _reg("700", "MaRS2 (W-02Q38C) - Ordinario", "referencia_cliente")])
+            return Consulta()
         with patch("core.sudespacho_relations._buscar_registros", side_effect=_busca):
             d = buscar_expedientes_duplicados(w_code="W-02Q38C", direccion="Z")
         assert d.bloquea is True
@@ -111,7 +124,7 @@ class TestElOperadorYLosDatosQueFaltan:
 
         def _busca(elemento, propiedad, valor, *, operador="equal", **kw):
             ops.append(operador)
-            return []
+            return Consulta()
         with patch("core.sudespacho_relations._buscar_registros", side_effect=_busca):
             buscar_expedientes_duplicados(w_code="W-X", direccion="Y")
         assert ops and set(ops) == {"like"}
@@ -122,7 +135,7 @@ class TestElOperadorYLosDatosQueFaltan:
 
         def _busca(elemento, propiedad, valor, **kw):
             valores.append(valor)
-            return []
+            return Consulta()
         with patch("core.sudespacho_relations._buscar_registros", side_effect=_busca):
             buscar_expedientes_duplicados(w_code="W-X", direccion="")
         assert all("W-X" in v for v in valores), valores
@@ -194,7 +207,12 @@ class TestElAltaLoUSA:
         assert crear.llamadas == 1
         assert "AVISO" in capsys.readouterr().out
 
-    def test_lo_que_no_se_pudo_comprobar_se_dice(self, monkeypatch, capsys):
+    def test_lo_que_no_se_pudo_comprobar_ABORTA_el_alta(self, monkeypatch, capsys):
+        """Politica de Nikolai (2026-09-04): fallar CERRADO.
+
+        R1/H-02: antes esto seguia adelante con un aviso y creaba el expediente. La
+        proteccion desaparecia justo cuando algo habia fallado.
+        """
         import scripts.abrir_caso as cli
         from core.sudespacho_relations import DuplicadosExpediente
 
@@ -202,13 +220,35 @@ class TestElAltaLoUSA:
                             lambda cid: {"expedientes": []})
         monkeypatch.setattr(cli.sudespacho_relations, "buscar_expedientes_duplicados",
                             lambda **k: DuplicadosExpediente(
-                                sin_comprobar=["contrario #1108 (RuntimeError())"]))
-        monkeypatch.setattr(cli.sudespacho_create, "create_expediente",
-                            _Espia(devuelve="801"))
+                                sin_comprobar=["W-code en extrajudiciales (HTTP 500)"]))
+        crear = _Espia(devuelve="801")
+        monkeypatch.setattr(cli.sudespacho_create, "create_expediente", crear)
         monkeypatch.setattr(cli.case_manager, "register_expediente", lambda *a, **k: None)
 
-        cli._alta_crm(self._ident(), cuantia=1.0, crm_mode="api", yes=True)
-        assert "SIN VERIFICAR" in capsys.readouterr().out
+        with pytest.raises(cli.AbortarApertura) as exc:
+            cli._alta_crm(self._ident(), cuantia=1.0, crm_mode="api", yes=True)
+        assert exc.value.codigo == 1
+        assert crear.llamadas == 0, "se dio de alta sin poder comprobar el duplicado"
+        assert "HTTP 500" in capsys.readouterr().err
+
+    def test_con_force_se_da_de_alta_declarando_lo_no_comprobado(self, monkeypatch, capsys):
+        """`--force` es la salida explicita, y deja constancia de lo que no se miro."""
+        import scripts.abrir_caso as cli
+        from core.sudespacho_relations import DuplicadosExpediente
+
+        monkeypatch.setattr(cli.case_manager, "get_case_status",
+                            lambda cid: {"expedientes": []})
+        monkeypatch.setattr(cli.sudespacho_relations, "buscar_expedientes_duplicados",
+                            lambda **k: DuplicadosExpediente(
+                                sin_comprobar=["W-code en extrajudiciales (HTTP 500)"]))
+        crear = _Espia(devuelve="801")
+        monkeypatch.setattr(cli.sudespacho_create, "create_expediente", crear)
+        monkeypatch.setattr(cli.case_manager, "register_expediente", lambda *a, **k: None)
+
+        cli._alta_crm(self._ident(), cuantia=1.0, crm_mode="api", yes=True, force=True)
+        salida = capsys.readouterr().out
+        assert crear.llamadas == 1
+        assert "--force" in salida and "HTTP 500" in salida
 
 
 class _Espia:

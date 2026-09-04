@@ -651,6 +651,7 @@ def _alta_crm(
     cuantia: float,
     crm_mode: str,
     yes: bool,
+    force: bool = False,
 ) -> None:
     """5.9 alta CRM con gate + idempotencia (§8: no re-dar de alta si ya hay un
     extrajudicial registrado para este caso) + tolerancia a caída (§9)."""
@@ -676,11 +677,29 @@ def _alta_crm(
     dup = sudespacho_relations.buscar_expedientes_duplicados(
         w_code=ident.w_code, direccion=ident.direccion,
     )
-    for nota in dup.sin_comprobar:
-        typer.echo(f"[AVISO] no se pudo comprobar duplicado por {nota} — SIN VERIFICAR")
     for aviso in dup.avisos:
         typer.echo(f"[AVISO] posible expediente relacionado ({aviso}). "
                    "No bloquea: el mismo inmueble o la misma parte pueden tener varios.")
+
+    # Politica ante lo que NO se pudo consultar, decidida por Nikolai el 2026-09-04:
+    # **fallar cerrado**. R1/H-02 midio que la version anterior seguia adelante y daba
+    # de alta igual, o sea que la proteccion desaparecia justo cuando algo fallaba. Un
+    # expediente duplicado en el CRM del cliente cuesta mas de deshacer que repetir la
+    # apertura cuando el CRM vuelva; `--force` sigue siendo la salida explicita.
+    if dup.incierto and not force:
+        for nota in dup.sin_comprobar:
+            typer.echo(f"  - sin comprobar: {nota}", err=True)
+        typer.echo(
+            "[ERROR] No se pudo comprobar si este expediente ya existe en el CRM, asi "
+            "que no se da de alta: crearlo a ciegas puede duplicarlo. Reintenta cuando "
+            "el CRM responda, o pasa --force si sabes que no existe.",
+            err=True,
+        )
+        raise AbortarApertura(1)
+    if dup.incierto:
+        for nota in dup.sin_comprobar:
+            typer.echo(f"[AVISO] --force: se da de alta SIN comprobar {nota}")
+
     if dup.bloquea:
         donde = ", ".join(f"{el} #{i}" for el, i in dup.por_wcode)
         typer.echo(
@@ -1103,7 +1122,8 @@ def main(
                         f"[dry-run] esqueleto en {case_dir}; se omiten log de intake y alta CRM")
                     salida_dry_run = True
                 else:
-                    _alta_crm(ident, cuantia=cuantia, crm_mode=crm, yes=yes)
+                    _alta_crm(ident, cuantia=cuantia, crm_mode=crm, yes=yes,
+                              force=force)
     except CaseBusy as exc:
         typer.echo(f"=== Apertura: {av1.EstadoV1.BLOQUEADO} ===", err=True)
         typer.echo(f"  otro proceso tiene este caso; espera y reintenta: {exc}", err=True)

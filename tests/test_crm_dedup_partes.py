@@ -19,6 +19,7 @@ import pytest
 
 from core.sudespacho_relations import (
     ConflictoDeIdentidad,
+    Consulta,
     NuevoClienteContrario,
     NuevoColaborador,
     resolver_parte,
@@ -33,13 +34,19 @@ def _api_key(monkeypatch):
 
 
 def _busca(por_nif=None, por_email=None):
-    """Sustituye la busqueda por propiedad: devuelve el id segun el criterio."""
+    """Sustituye la busqueda por propiedad: devuelve el id segun el criterio.
+
+    Devuelve `Consulta`, no una lista: desde R1/H-01 el contrato distingue «no hay»
+    de «no pude mirar», y un doble que devuelva `[]` a secas no reproduce ninguno de
+    los dos estados que importan. Los casos de consulta CAIDA viven en
+    `test_crm_dedup_incertidumbre.py`.
+    """
     def _f(elemento, propiedad, valor, **kw):
         if propiedad in ("nif_cif", "nif"):
-            return [{"id": por_nif}] if por_nif else []
+            return Consulta(registros=[{"id": por_nif}] if por_nif else [])
         if propiedad == "email":
-            return [{"id": por_email}] if por_email else []
-        return []
+            return Consulta(registros=[{"id": por_email}] if por_email else [])
+        return Consulta()
     return _f
 
 
@@ -52,7 +59,7 @@ class TestResolverParte:
     def test_el_nif_manda_cuando_los_dos_coinciden(self):
         with patch("core.sudespacho_relations._buscar_registros",
                    side_effect=_busca(por_nif="1108", por_email="1108")):
-            r = resolver_parte("clientes_contrarios", nif="46139867G", email="a@b.com")
+            r = resolver_parte("clientes_contrarios", nif="12345678Z", email="a@b.com")
         assert (r.id, r.por, r.conflicto) == ("1108", "nif", None)
 
     def test_el_email_resuelve_cuando_no_hay_ficha_por_nif(self):
@@ -72,13 +79,13 @@ class TestResolverParte:
         """La decision de Nikolai: parar. Ni fusiona, ni crea una tercera."""
         with patch("core.sudespacho_relations._buscar_registros",
                    side_effect=_busca(por_nif="1108", por_email="999")):
-            r = resolver_parte("clientes_contrarios", nif="46139867G", email="a@b.com")
+            r = resolver_parte("clientes_contrarios", nif="12345678Z", email="a@b.com")
         assert r.conflicto == ("1108", "999")
         assert r.id is None, "con conflicto NO se resuelve una identidad"
 
     def test_sin_datos_para_buscar_no_llama_al_CRM(self):
         """Sin NIF ni email no hay nada que deduplicar; no se gasta una peticion."""
-        espia = MagicMock(return_value=[])
+        espia = MagicMock(return_value=Consulta())
         with patch("core.sudespacho_relations._buscar_registros", espia):
             r = resolver_parte("clientes_contrarios", nif="  ", email="")
         assert r.id is None
@@ -94,7 +101,7 @@ class TestElConflictoDetieneLaEscritura:
 
     def _datos(self):
         return NuevoClienteContrario(nombre="ALBERTO", apellido1="C",
-                                     nif="46139867G", email="a@b.com")
+                                     nif="12345678Z", email="a@b.com")
 
     def test_extrajudicial_levanta_y_no_crea_ni_vincula(self):
         crear = MagicMock()
@@ -136,7 +143,7 @@ class TestJudicialYExtrajudicialResuelvenIGUAL:
              patch("core.sudespacho_relations.create_cliente_contrario", crear), \
              patch("core.sudespacho_relations.link_contrario_judicial", vincular):
             cid, creado = ensure_contrario_vinculado_judicial(
-                "700", NuevoClienteContrario(nombre="A", nif="46139867G"))
+                "700", NuevoClienteContrario(nombre="A", nif="12345678Z"))
 
         assert (cid, creado) == ("1108", False)
         crear.assert_not_called()
