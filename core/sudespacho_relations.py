@@ -248,9 +248,17 @@ class NuevoClienteContrario:
     nif: str = ""                        # nif_cif
     direccion: str = ""
     poblacion: str = ""
+    #: Los tres siguientes faltaban, asi que el CRM nunca los recibia: el `_ficha_crm.yaml`
+    #: de W-02Q38C traia `cp` y `provincia` escritos y se descartaban en silencio al
+    #: cargarlo, porque este DTO no tenia donde ponerlos. Y `telefono1` existe en el
+    #: elemento `clientes_contrarios` del CRM pero no habia campo que lo alimentara.
+    cp: str = ""                         # cp
+    provincia: str = ""                  # Select: valor LITERAL del enum
+    telefono: str = ""                   # telefono1
 
     def __post_init__(self) -> None:
         self.movil = normalize_es_phone(self.movil)
+        self.telefono = normalize_es_phone(self.telefono)
 
 
 # ---------------------------------------------------------------------------
@@ -779,6 +787,21 @@ def _rest_post_cliente_contrario(datos: "NuevoClienteContrario") -> str:
         payload["direccion"] = datos.direccion
     if datos.poblacion:
         payload["poblacion"] = datos.poblacion
+    if datos.cp:
+        payload["cp"] = datos.cp
+    if datos.telefono:
+        payload["telefono1"] = datos.telefono
+    if datos.provincia:
+        # `provincia` es un Select: o se manda el literal del enum, o no se manda. Una
+        # cadena que no case la descarta el CRM sin decir nada, y el campo queda vacio
+        # pareciendo que se escribio.
+        canonica = provincia_canonica(datos.provincia)
+        if canonica:
+            payload["provincia"] = canonica
+        else:
+            _log.warning(
+                "provincia %r no casa con ninguna del enum del CRM: se omite en vez de "
+                "mandar un valor que el Select descartaria en silencio", datos.provincia)
 
     url = f"{_REST_BASE}{_REST_CREATE_CLIENTE_CONTRARIO}"
     headers = {
@@ -1251,6 +1274,45 @@ def _referencia_de(registro: dict, propiedad: str) -> str | None:
         if nombre == propiedad:
             valor = v.get("value")
             return valor if isinstance(valor, str) else None
+    return None
+
+
+#: Valores LITERALES del Select `provincia` de `clientes_contrarios`, leidos del CRM el
+#: 2026-09-04 (`GET /api/view/enums/clientes_contrarios/provincia`, 52 entradas). Un
+#: Select no acepta cualquier cadena, y la convencion del despacho es escribir las fichas
+#: en MAYUSCULAS: mandar `BARCELONA` donde el enum dice `Barcelona` **pierde el dato sin
+#: avisar**. Por eso se traduce, en vez de confiar en como se tecleo.
+_PROVINCIAS = (
+    "A Coruña", "Álava", "Albacete", "Alicante", "Almería", "Asturias", "Ávila",
+    "Badajoz", "Baleares (Illes)", "Barcelona", "Burgos", "Cáceres", "Cádiz",
+    "Cantabria", "Castellón", "Ceuta", "Ciudad Real", "Córdoba", "Cuenca", "Girona",
+    "Granada", "Guadalajara", "Guipúzcoa", "Huelva", "Huesca", "Jaén", "La Rioja",
+    "Las Palmas", "León", "Lleida", "Lugo", "Madrid", "Málaga", "Melilla", "Murcia",
+    "Navarra", "Ourense", "Palencia", "Pontevedra", "Salamanca",
+    "Santa Cruz de Tenerife", "Segovia", "Sevilla", "Soria", "Tarragona", "Teruel",
+    "Toledo", "Valencia", "Valladolid", "Vizcaya", "Zamora", "Zaragoza",
+)
+
+
+def _sin_tildes_min(s: str) -> str:
+    base = unicodedata.normalize("NFD", (s or "").strip().lower())
+    return "".join(c for c in base if unicodedata.category(c) != "Mn")
+
+
+def provincia_canonica(valor: str) -> str | None:
+    """El literal del enum que corresponde a `valor`, o `None` si no hay ninguno.
+
+    Tolera caja y tildes —`BARCELONA`, `barcelona` y `Barcelona` son la misma— porque es
+    como se escribe de verdad en las fichas. Lo que **no** hace es inventar: si no casa
+    con ninguna provincia devuelve `None`, y el llamador decide. Mandar al CRM una cadena
+    que el Select no reconoce es perder el dato creyendo haberlo escrito.
+    """
+    aguja = _sin_tildes_min(valor)
+    if not aguja:
+        return None
+    for prov in _PROVINCIAS:
+        if _sin_tildes_min(prov) == aguja:
+            return prov
     return None
 
 

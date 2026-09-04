@@ -36,6 +36,11 @@ def _contrario_de(d: dict) -> NuevoClienteContrario:
         nif=d.get("nif", ""),
         direccion=d.get("direccion", ""),
         poblacion=d.get("poblacion", ""),
+        # Estos tres se leian del YAML? No: no se leian, y por eso nunca llegaban al
+        # CRM aunque estuvieran escritos.
+        cp=str(d.get("cp", "")),
+        provincia=d.get("provincia", ""),
+        telefono=str(d.get("telefono", "")),
     )
 
 
