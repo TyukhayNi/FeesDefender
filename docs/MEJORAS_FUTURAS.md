@@ -5756,9 +5756,12 @@ quedaron documentadas dos trampas: la property del nombre es `nombre`, no `Juzga
 `core/sudespacho_relations.py` (resolviendo el enum antes de escribir) y `crm_ficha --judicial`
 que orqueste las seis llamadas.
 
-**Límite conocido, no resoluble aquí:** no hay ruta REST de LECTURA de relaciones
-(`GET /api/relation_element/{elem}/{id}` → 405). La verificación por resultado de los vínculos
-solo es posible por UI.
+**~~Límite conocido, no resoluble aquí~~ — REFUTADO el 2026-09-04.** Este párrafo decía que
+«no hay ruta REST de LECTURA de relaciones» y que verificar los vínculos por resultado «solo es
+posible por UI». **Falso:** el 405 es de `relation_element`, pero la lectura vive en
+`GET /api/related_register/{element}/{id}`, cableada en
+`core.sudespacho_relations.get_relaciones()`. El orquestador judicial que pide esta entrada
+**puede** verificarse por resultado como ya hace el extrajudicial.
 
 **Disparador:** el siguiente caso que nazca judicial.
 
