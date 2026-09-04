@@ -146,3 +146,96 @@ def localizar_bloques(texto: str, *, fichero: str = "") -> list[BloqueFirma]:
             continue
         bloques.append(BloqueFirma(texto=cuerpo, linea=inicio + 1, fichero=fichero))
     return bloques
+
+
+PROCEDENCIA_DIRECTO = "directo"
+PROCEDENCIA_CITADO = "citado"
+
+
+def zonas_citadas(texto: str) -> list[tuple[int, int]]:
+    """Rangos de linea (0-indexed, fin exclusivo) que llegan con marca de cita.
+
+    Se calculan sobre el texto ORIGINAL, antes de desmarcar: despues ya no se distingue
+    lo citado de lo escrito.
+
+    Cuenta las lineas con `split("\\n")`, NO con `splitlines()`: es la misma convencion
+    con la que `desmarcar` tiene medida y documentada su garantia de conservar el
+    indice de linea (ver su docstring). `localizar_bloques` calcula `linea` con
+    `texto.splitlines()` sobre el texto DESMARCADO, pero la diferencia entre los dos
+    metodos de contar es solo el segmento vacio final cuando el texto termina en salto
+    de linea -- un indice que ninguna linea de firma real puede ocupar (una cadena
+    vacia nunca corrobora ni contiene un email). Para toda linea de contenido real el
+    indice es identico en `split("\\n")` y en `splitlines()`, asi que usar `split("\\n")`
+    aqui mantiene el cruce alineado con el `linea` de un bloque sin heredar el
+    desajuste que `splitlines()` introduciria justo en ese ultimo segmento.
+    """
+    zonas: list[tuple[int, int]] = []
+    inicio: int | None = None
+    lineas = texto.split("\n")
+    for i, ln in enumerate(lineas):
+        if _RE_CITA.match(ln):
+            if inicio is None:
+                inicio = i
+        elif inicio is not None:
+            zonas.append((inicio, i))
+            inicio = None
+    if inicio is not None:
+        zonas.append((inicio, len(lineas)))
+    return zonas
+
+
+def _en_zona_citada(linea0: int, zonas: list[tuple[int, int]]) -> bool:
+    return any(a <= linea0 < b for a, b in zonas)
+
+
+def atribuir(bloques: list[BloqueFirma], *,
+             texto_original: str) -> tuple[list[BloqueFirma], int]:
+    """Pone a cada bloque el email de QUIEN FIRMA, y su procedencia.
+
+    **El email sale de DENTRO del bloque, nunca de la cabecera `From:`.** Medido el
+    2026-09-04: en 2 de los 6 .eml de W-02Q38C la firma del cuerpo pertenece a otra
+    persona (un reenvio, y un bloque citado). Atribuir por cabecera escribiria el
+    telefono de una persona en la ficha de otra, en el CRM del cliente.
+
+    Por eso esta funcion **no recibe el remitente**: no es que decida ignorarlo, es que
+    no lo tiene. Un bloque sin email dentro se descarta y se cuenta.
+    """
+    zonas = zonas_citadas(texto_original)
+    atribuidos: list[BloqueFirma] = []
+    sin_atribuir = 0
+    for b in bloques:
+        # El ULTIMO email del bloque, no el primero: cuando dos firmas quedan
+        # pegadas, la ventana hacia atras de la segunda (_VENTANA_ATRAS) puede
+        # arrastrar el email de la PRIMERA sin que la propia haya salido todavia
+        # de la ventana. El disparador de cada bloque esta a una distancia FIJA
+        # del final de su ventana (`_VENTANA_ADELANTE`), nunca del principio, asi
+        # que buscar el primero le atribuiria a Berta el email de Ana con solo
+        # que sus firmas fueran consecutivas -- justo el patron que corrobora
+        # `test_dos_firmas_distintas_en_un_correo_se_separan`. La plantilla de
+        # Barcelona repite su propio email al final del bloque (ver
+        # `localizar_bloques`), asi que el ultimo sigue siendo el correcto
+        # incluso sin overlap con otra firma.
+        coincidencias = list(_RE_EMAIL_COLAB.finditer(b.texto))
+        if not coincidencias:
+            sin_atribuir += 1
+            continue
+        m = coincidencias[-1]
+        procedencia = (PROCEDENCIA_CITADO if _en_zona_citada(b.linea - 1, zonas)
+                       else PROCEDENCIA_DIRECTO)
+        atribuidos.append(BloqueFirma(
+            texto=b.texto, email=m.group(0).lower(), linea=b.linea,
+            fichero=b.fichero, procedencia=procedencia,
+        ))
+    return atribuidos, sin_atribuir
+
+
+def extraer_bloques(texto: str, *,
+                    fichero: str = "") -> tuple[list[BloqueFirma], int]:
+    """Localizar + atribuir.
+
+    Las zonas citadas se calculan sobre el texto ORIGINAL: despues de desmarcar ya no se
+    distingue lo citado de lo escrito. `localizar_bloques` desmarca por su cuenta desde
+    la Task 5, asi que aqui se le pasa el texto tal cual.
+    """
+    bloques = localizar_bloques(texto, fichero=fichero)
+    return atribuir(bloques, texto_original=texto)

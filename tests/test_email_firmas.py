@@ -8,7 +8,9 @@ Los esqueletos de abajo son los reales; los datos, inventados.
 """
 import pytest
 
-from core.email_firmas import BloqueFirma, desmarcar, localizar_bloques
+from core.email_firmas import (BloqueFirma, PROCEDENCIA_CITADO, PROCEDENCIA_DIRECTO,
+                               atribuir, desmarcar, extraer_bloques, localizar_bloques,
+                               zonas_citadas)
 
 # --- Plantilla «Barcelona»: nombre en negrita, cargo en linea suelta, Telf + Movil ---
 FIRMA_BCN = """\
@@ -278,3 +280,129 @@ class TestLoQueDevuelve:
     def test_la_plantilla_de_Madrid_tambien(self):
         bloque = localizar_bloques(FIRMA_MAD, fichero="k.eml")[0]
         assert "Tel. Fijo:" in bloque.texto
+
+
+class TestLaFirmaNoEsLaDelRemitente:
+    """EL GUARD CENTRAL. Medido: en 2 de los 6 .eml de W-02Q38C la firma del cuerpo
+    pertenece a otra persona. Atribuir por cabecera escribe el telefono de A en la
+    ficha de B, en el CRM del cliente."""
+
+    def test_la_atribucion_sale_del_email_de_DENTRO_del_bloque(self):
+        """El caso del REENVIO: `From:` es una persona, la firma es de otra."""
+        cuerpo = "Te reenvio lo que me manda ella.\n\n" + FIRMA_BCN
+        bloques, sin_atribuir = extraer_bloques(cuerpo, fichero="a.eml")
+
+        assert [b.email for b in bloques] == ["ana@engelvoelkers.com"]
+        assert sin_atribuir == 0
+
+    def test_el_From_NO_influye_en_la_atribucion(self):
+        """`extraer_bloques` no recibe el `From:`: no puede equivocarse con el."""
+        import inspect
+        firma = inspect.signature(extraer_bloques)
+        assert "from" not in " ".join(firma.parameters).lower(), (
+            "si el remitente entra aqui, alguien acabara atribuyendo por el")
+
+    def test_dos_firmas_distintas_en_un_correo_se_separan(self):
+        """Y cada una se queda con SU email, no con el primero del texto."""
+        cuerpo = FIRMA_BCN + "\n\n" + FIRMA_MAD
+        bloques, _ = extraer_bloques(cuerpo, fichero="c.eml")
+        assert {b.email for b in bloques} == {"ana@engelvoelkers.com",
+                                              "berta@engelvoelkers.com"}
+
+    def test_cada_bloque_lleva_el_email_QUE_ESTA_DENTRO_de_el(self):
+        """La forma fuerte del anterior: no basta con que el CONJUNTO sea correcto,
+        cada bloque tiene que llevar el suyo. Un mutante que asigne a todos el primer
+        email del texto pasaria el test de conjunto si solo se mirase `set()`."""
+        cuerpo = FIRMA_BCN + "\n\n" + FIRMA_MAD
+        bloques, _ = extraer_bloques(cuerpo, fichero="c.eml")
+        for b in bloques:
+            assert b.email in b.texto.lower(), (
+                f"el bloque en linea {b.linea} lleva un email que no esta en su texto")
+
+
+class TestZonasCitadas:
+
+    def test_una_zona_citada_se_detecta(self):
+        texto = "hola\n> citado\n> mas citado\nadios"
+        assert zonas_citadas(texto) == [(1, 3)]
+
+    def test_sin_citas_no_hay_zonas(self):
+        assert zonas_citadas("hola\nadios") == []
+
+    def test_dos_zonas_separadas(self):
+        texto = "a\n> uno\nb\n> dos"
+        assert zonas_citadas(texto) == [(1, 2), (3, 4)]
+
+    def test_un_texto_sin_citas_que_acaba_en_salto_no_inventa_zona(self):
+        assert zonas_citadas("hola\nadios\n") == []
+
+    def test_una_cita_al_final_sin_salto_final_se_cuenta(self):
+        assert zonas_citadas("hola\n> citado") == [(1, 2)]
+
+
+class TestLaProcedenciaSeRegistra:
+    """Un bloque citado es MAS ANTIGUO. La consolidacion (Task 8) lo usa para decidir
+    cuando dos valores discrepan; aqui solo se registra con fidelidad."""
+
+    @staticmethod
+    def _citar(texto: str) -> str:
+        return "\n".join("> " + ln for ln in texto.split("\n"))
+
+    def test_una_firma_en_el_cuerpo_es_directa(self):
+        bloques, _ = extraer_bloques("Hola.\n\n" + FIRMA_BCN, fichero="a.eml")
+        assert bloques[0].procedencia == PROCEDENCIA_DIRECTO
+
+    def test_una_firma_dentro_de_un_bloque_citado_es_citada(self):
+        """El segundo caso real: la firma llega dentro del `> ` de la respuesta."""
+        cuerpo = "Conforme, lo vemos manana.\n\n" + self._citar(FIRMA_BCN) + "\n"
+        bloques, _ = extraer_bloques(cuerpo, fichero="b.eml")
+
+        assert [b.email for b in bloques] == ["ana@engelvoelkers.com"]
+        assert bloques[0].procedencia == PROCEDENCIA_CITADO
+
+    def test_la_firma_citada_se_lee_DESMARCADA(self):
+        bloques, _ = extraer_bloques(self._citar(FIRMA_BCN), fichero="c.eml")
+        assert not bloques[0].texto.lstrip().startswith(">")
+        assert "Movil:" in bloques[0].texto or "Telf:" in bloques[0].texto
+
+
+class TestElCruceDeLineasSeAlinea:
+    """[CORREGIDO] `zonas_citadas` cuenta sobre el ORIGINAL y `localizar_bloques`
+    reporta `linea` sobre el DESMARCADO. `atribuir` cruza los dos, asi que las dos
+    partes tienen que contar las lineas con la MISMA convencion.
+
+    La garantia medida en la Task 5 es sobre `split("\\n")`: `splitlines()` no cuenta el
+    segmento vacio final, y por eso un texto que acaba SIN salto de linea y cuya ultima
+    linea es una marca de cita pelada desalinea los dos recuentos.
+    """
+
+    @staticmethod
+    def _citar(texto: str) -> str:
+        return "\n".join("> " + ln for ln in texto.split("\n"))
+
+    def test_citada_en_un_texto_que_TERMINA_en_salto(self):
+        cuerpo = "Hola.\n\n" + self._citar(FIRMA_BCN) + "\n"
+        bloques, _ = extraer_bloques(cuerpo, fichero="d.eml")
+        assert bloques and bloques[0].procedencia == PROCEDENCIA_CITADO
+
+    def test_citada_en_un_texto_que_NO_termina_en_salto(self):
+        cuerpo = ("Hola.\n\n" + self._citar(FIRMA_BCN)).rstrip("\n")
+        bloques, _ = extraer_bloques(cuerpo, fichero="e.eml")
+        assert bloques and bloques[0].procedencia == PROCEDENCIA_CITADO
+
+    def test_una_cita_pelada_al_final_no_descoloca_la_procedencia(self):
+        """El caso exacto que la Task 5 midio como problematico: ultima linea `>` sin
+        salto final. Si las convenciones no coinciden, la firma directa de arriba se
+        marcaria citada o al reves."""
+        cuerpo = "Hola.\n\n" + FIRMA_BCN + "\n> "
+        bloques, _ = extraer_bloques(cuerpo.rstrip(), fichero="f.eml")
+        assert bloques and bloques[0].procedencia == PROCEDENCIA_DIRECTO
+
+    def test_directa_arriba_y_citada_abajo_en_el_mismo_correo(self):
+        """Dos bloques, uno de cada procedencia, en un solo texto. Si el cruce esta
+        desplazado, uno de los dos sale mal."""
+        cuerpo = FIRMA_MAD + "\n\n" + self._citar(FIRMA_BCN) + "\n"
+        bloques, _ = extraer_bloques(cuerpo, fichero="g.eml")
+        por_email = {b.email: b.procedencia for b in bloques}
+        assert por_email.get("berta@engelvoelkers.com") == PROCEDENCIA_DIRECTO
+        assert por_email.get("ana@engelvoelkers.com") == PROCEDENCIA_CITADO
