@@ -204,7 +204,12 @@ class TestVerificacionPorLectura:
         assert r.exit_code == 0, r.output
         assert "VERIFICADA por lectura" in r.output
         assert "visualmente" not in r.output
+        # Las TRES relaciones se listan. Sin esto el test es una asercion debil: un
+        # `esperado` al que le falte el cliente propio seguiria diciendo VERIFICADA.
+        assert "[ok] clientes_propios id=2" in r.output
         assert "[ok] clientes_contrarios id=1099" in r.output
+        assert "[ok] colaboradores id=776" in r.output
+        assert "FALTA" not in r.output
 
     def test_un_vinculo_ausente_TUMBA_la_corrida(self, caso_con_ficha, monkeypatch):
         """La escritura dijo OK por su 201; la lectura dice que no esta. Manda la lectura."""
