@@ -99,19 +99,36 @@ def preparar_residuo(case: str = typer.Option(..., "--case")):
     # defecto donde no estaba. Un mensaje que no distingue «no hay» de «no pude mirar»
     # cuesta sesiones enteras y nunca aparece en un backlog, porque no rompe nada.
     if not docs and not sin_texto:
-        # **CUARTO estado, y me lo había dejado (R2/H-04).** `_filas_worklist` devuelve `[]`
-        # cuando el fichero no existe, así que los dos métodos de residuo salen vacíos y esto
-        # afirmaba «todo el catálogo está clasificado» con documentos SIN clasificar en el
-        # catálogo — un hecho falso, y encima con salida 0. Es el mismo defecto que este
-        # comando acaba de arreglar, un estado más allá: arreglé tres ramas y la cuarta seguía
-        # mintiendo. La distinción es «no hay residuo» contra «la worklist no se ha generado».
+        # **La afirmación se deriva del CATÁLOGO, no de que las dos listas salgan vacías.**
+        #
+        # Historia, porque la segunda versión de esto también estaba mal. La R2 levantó que
+        # `_filas_worklist` devuelve `[]` cuando el fichero no existe, así que los dos
+        # métodos de residuo salían vacíos y esto afirmaba «todo el catálogo está
+        # clasificado» con documentos SIN clasificar dentro — falso, y con salida 0. Lo
+        # arreglé preguntando `sin_tipo and not hay_worklist`, o sea **remediando el
+        # ejemplo**. El propio informe señalaba la frontera en la frase siguiente: los
+        # brazos del `if` «son disjuntos sobre sus dos listas, no exhaustivos sobre el
+        # estado documental», y anotaba por LECTURA un estado más: una fila de worklist
+        # cuyo hash no está en el catálogo se descarta en silencio en los dos métodos
+        # (`core/sala_lectura.py`, el `if e is None: continue` de ambos). Con la worklist
+        # presente pero rancia —documentos reemplazados en `00_Input`, hashes que ya no
+        # casan— `hay_worklist` es `True`, y la versión anterior volvía a mentir.
+        #
+        # Así que la condición no enumera causas: **si el catálogo tiene documentos sin
+        # tipo, esta frase no se puede decir**, venga el vacío de donde venga. La causa solo
+        # decide qué se aconseja, nunca si se afirma ni el código de salida.
         sin_tipo = [e for e in catalogo_documental.load_catalog(case)
                     if not e.tipo_documental]
-        hay_worklist = (sala_lectura._revisar_dir(case) / sala_lectura.WORKLIST_NAME).exists()
-        if sin_tipo and not hay_worklist:
+        if sin_tipo:
+            hay_worklist = (sala_lectura._revisar_dir(case)
+                            / sala_lectura.WORKLIST_NAME).exists()
+            causa = ("la worklist existe pero ninguna de sus filas casa con el catálogo "
+                     "(hashes rancios: el material de 00_Input cambió después)"
+                     if hay_worklist else
+                     "la worklist no existe todavía")
             typer.echo(
-                f"[AVISO] {len(sin_tipo)} doc(s) del catálogo están sin clasificar y la "
-                "worklist no existe todavía.\n"
+                f"[AVISO] {len(sin_tipo)} doc(s) del catálogo están sin clasificar y "
+                f"{causa}.\n"
                 "        No es que no haya residuo: es que nadie lo ha calculado.\n"
                 "        Corre primero:  python -m scripts.sala_lectura clasificar "
                 '--case "<case_id>"',

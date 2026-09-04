@@ -366,9 +366,16 @@ def ensure_case(
     # Va aqui y no en los compositores porque el defecto se repitio cuatro veces con la
     # misma forma —«la guarda esta en el envoltorio y el otro llamador la rodea»—: la
     # UI compone su propio `case_id` sin pasar por `componer_case_id`, y el CLI valida la
-    # ciudad mientras el core no. Este es el unico sitio que materializa el arbol de un
-    # caso nuevo (`git grep` de `mkdir(parents=True`), asi que validando aqui queda
-    # cubierta tambien la puerta que nadie ha escrito todavia.
+    # ciudad mientras el core no.
+    #
+    # ALCANCE, y aqui estaba escrito de mas hasta la R2: esto es el sumidero **del alta
+    # nominal**, no del arbol de casos. La primera version de este comentario decia que
+    # validando aqui «queda cubierta tambien la puerta que nadie ha escrito todavia», y la
+    # R1 lo desmintio con `move_to_city`, que materializa un caso en otra ciudad sin pasar
+    # por aqui; la R2 anadio una cuarta puerta (`intake_manual`, que confia en el `lote`
+    # que le pasan: `MEJORAS #158`). Las demas estan enumeradas en `#155`/`#156`/`#157` y
+    # en el §2 del diseno. Un enunciado mas ancho que lo que la funcion puede prometer es
+    # peor que ninguno: invita a no escribir la guarda que falta.
     #
     # ORDEN IMPORTANTE: el `case_id` se valida ANTES de `destino_de_alta`, porque
     # `buscar("")` devuelve la propia raiz y con eso el vacio pasaba entera la validacion.
@@ -402,9 +409,11 @@ def ensure_case(
     # Reusar algo llamado «contencion» sin comprobar que contenga es el mismo error que
     # este cambio viene a arreglar, cometido un nivel mas arriba.
     #
-    #   - LEXICA (`_bajo`, la del repo): compara por componentes —`CASOS_x` no esta bajo
-    #     `CASOS`— y no toca disco, asi que vale con el destino sin crear. Caza `..` y las
-    #     rutas absolutas.
+    #   - LEXICA (`_contenido_en`, aqui al lado): compara por componentes —`CASOS_x` no
+    #     esta bajo `CASOS`— y no toca disco, asi que vale con el destino sin crear. Caza
+    #     `..` y las rutas absolutas. **NO es `case_mutex._bajo`**, que era la primera
+    #     version: la R2 midio que `_bajo` rechaza a los hijos de una raiz anclada
+    #     (`MEJORAS #159`), y su docstring lo explica.
     #   - FISICA: resuelve el ancestro EXISTENTE mas cercano y comprueba que siga bajo la
     #     raiz resuelta. Caza los enlaces/junctions, que la lexica no puede ver. Se resuelve
     #     el ancestro y no la hoja porque la hoja normalmente todavia no existe. Se resuelven
