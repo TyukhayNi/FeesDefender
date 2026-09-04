@@ -32,7 +32,7 @@ import typer
 from core import abrir_caso as brain
 from core import (
     case_manager, config, email_export, intake_drive, intake_log, intake_manual,
-    sudespacho_create, whatsapp_intake,
+    sudespacho_create, sudespacho_relations, whatsapp_intake,
 )
 from core import apertura_v1 as av1
 from core import apertura_v1_estado as estado_v1
@@ -669,6 +669,31 @@ def _alta_crm(
             "no se re-da de alta"
         )
         return
+
+    # El chequeo de arriba mira el `_caso.md` LOCAL. Si ese registro se perdio —o el
+    # caso se abrio en otra maquina— el CRM puede tener ya el expediente y esto crearia
+    # un duplicado en el CRM del cliente. Se pregunta al CRM.
+    dup = sudespacho_relations.buscar_expedientes_duplicados(
+        w_code=ident.w_code, direccion=ident.direccion,
+    )
+    for nota in dup.sin_comprobar:
+        typer.echo(f"[AVISO] no se pudo comprobar duplicado por {nota} — SIN VERIFICAR")
+    for aviso in dup.avisos:
+        typer.echo(f"[AVISO] posible expediente relacionado ({aviso}). "
+                   "No bloquea: el mismo inmueble o la misma parte pueden tener varios.")
+    if dup.bloquea:
+        donde = ", ".join(f"{el} #{i}" for el, i in dup.por_wcode)
+        typer.echo(
+            f"[ERROR] El CRM ya tiene un expediente con el id GO {ident.w_code}: {donde}. "
+            "No se da de alta otro. Si de verdad hacen falta dos, vincula el existente "
+            "con `register_expediente` o crealo a mano en el CRM.",
+            err=True,
+        )
+        # MEJORAS #142: `_alta_crm` corre BAJO el mutex, asi que no puede terminar el
+        # proceso — un `typer.Exit` en vuelo hace que la perdida de exclusion quede en
+        # una nota que Typer descarta. Lo caza el guard de
+        # `tests/test_abrir_caso_exit_bajo_mutex.py`, que me cazo a mi al cablear esto.
+        raise AbortarApertura(1)
 
     payload = brain.crm_payload(ident, cuantia=cuantia)  # lee ident.tipo_caso (fd7a39f)
     typer.echo(f"CRM -> alta extrajudicial ref={payload.referencia_cliente} "

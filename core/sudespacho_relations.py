@@ -186,6 +186,16 @@ class SudespachoRelationsError(RuntimeError):
     pass
 
 
+class ConflictoDeIdentidad(SudespachoRelationsError):
+    """El NIF y el email de una parte apuntan a fichas DISTINTAS del CRM.
+
+    **Levanta a proposito, en vez de elegir una.** Decision de Nikolai del 2026-09-04:
+    ante el conflicto la corrida para y pregunta. Fusionar dos personas en una ficha —o
+    crear una tercera— es un dano en el CRM del cliente que nadie deshace despues, y un
+    aviso impreso no detiene una escritura que ya se hizo.
+    """
+
+
 # ---------------------------------------------------------------------------
 # DTO de colaborador
 # ---------------------------------------------------------------------------
@@ -878,6 +888,207 @@ def update_cliente_contrario(contrario_id: str, cambios: dict) -> dict:
     )
 
 
+#: Propiedad que guarda el NIF, por elemento. El CRM no usa el mismo nombre en todos.
+_PROP_NIF = {
+    "clientes_contrarios": "nif_cif",
+    "clientes_propios": "nif_cif",
+    "colaboradores": "nif",
+}
+
+
+def _buscar_registros(
+    elemento: str,
+    propiedad: str,
+    valor: str,
+    *,
+    operador: str = "equal",
+    limite: int = 5,
+) -> list[dict]:
+    """Busca registros de `elemento` filtrando por una propiedad. Nunca lanza.
+
+    Generalizacion del filtro que ya usaba `find_cliente_contrario_by_nif`: mismo
+    endpoint `element_registries` y misma gramatica `filterGroup`, pero con el elemento
+    y la propiedad como parametros, que es lo que permite deduplicar por NIF **y** por
+    email sin escribir la peticion cuatro veces.
+
+    Operadores validos (los enumera el propio CRM en el 404 cuando se le da uno malo):
+    equal, not-equal, not-associated, associated, like, not-like,
+    greater-than-or-equal, less-than-or-equal, is-empty, is-not-empty, in, not-in,
+    between, group-by. **`contains` NO existe** — es `like`.
+
+    Returns:
+        Lista de registros (cada uno con al menos `id`). Vacia si no hay coincidencia,
+        si falta la clave o si el CRM no responde: esta funcion **no distingue** «no hay»
+        de «no pude mirar», asi que no la uses como prueba de ausencia para nada
+        destructivo. Los llamadores de dedup pueden vivir con eso porque el peor caso es
+        crear una ficha de mas, no borrar una.
+    """
+    valor = (valor or "").strip()
+    if not valor:
+        return []
+    api_key = (os.getenv("SUDESPACHO_API_KEY") or "").strip()
+    if not api_key:
+        return []
+
+    url = f"{_REST_BASE}/api/element_registries/{elemento}"
+    params: list[tuple[str, str]] = [
+        ("properties[0]", propiedad),
+        ("filterGroup[condition]", "AND"),
+        ("filterGroup[filterGroups][0][condition]", "AND"),
+        ("filterGroup[filterGroups][0][filters][0][operator]", operador),
+        ("filterGroup[filterGroups][0][filters][0][value]", valor),
+        ("filterGroup[filterGroups][0][filters][0][property]", propiedad),
+        ("itemsPerPage", str(limite)),
+    ]
+    headers = {"x-api-key": api_key, "Accept": "application/json"}
+    try:
+        r = httpx.get(url, params=params, headers=headers, timeout=_REST_TIMEOUT)
+    except Exception:  # noqa: BLE001 — red caida no debe romper al llamador
+        return []
+    if r.status_code != 200:
+        return []
+    try:
+        data = r.json()
+    except Exception:  # noqa: BLE001
+        return []
+    items = data.get("items") or data.get("hydra:member") or []
+    return [i for i in items if isinstance(i, dict)]
+
+
+@dataclass(frozen=True)
+class ResolucionParte:
+    """A que ficha del CRM corresponde una parte, y por que criterio se supo."""
+
+    id: str | None = None
+    #: "nif" | "email" | None
+    por: str | None = None
+    #: (id_por_nif, id_por_email) cuando difieren. Con conflicto, `id` es None.
+    conflicto: tuple[str, str] | None = None
+
+
+def resolver_parte(elemento: str, *, nif: str = "", email: str = "") -> ResolucionParte:
+    """Identifica la ficha de una parte por NIF **o** email. No escribe nada.
+
+    Vale igual para expedientes judiciales y extrajudiciales: los elementos de parte
+    (`clientes_contrarios`, `colaboradores`, `clientes_propios`) son **los mismos** en
+    las dos jurisdicciones — solo cambia el expediente padre.
+
+    **El NIF manda** cuando ambos criterios coinciden o solo uno resuelve: es la
+    identidad legal. **Si apuntan a fichas distintas devuelve un conflicto y NINGUNA
+    id**, para que el llamador pare. Elegir una en silencio es lo que fusiona a dos
+    personas o parte a una en dos.
+    """
+    prop_nif = _PROP_NIF.get(elemento, "nif_cif")
+    id_nif = _primer_id(_buscar_registros(elemento, prop_nif, nif)) if (nif or "").strip() else None
+    id_mail = _primer_id(_buscar_registros(elemento, "email", email)) if (email or "").strip() else None
+
+    if id_nif and id_mail and id_nif != id_mail:
+        return ResolucionParte(id=None, por=None, conflicto=(id_nif, id_mail))
+    if id_nif:
+        return ResolucionParte(id=id_nif, por="nif")
+    if id_mail:
+        return ResolucionParte(id=id_mail, por="email")
+    return ResolucionParte()
+
+
+def _primer_id(registros: list[dict]) -> str | None:
+    for reg in registros:
+        rid = str(reg.get("id") or "").strip()
+        if rid:
+            return rid
+    return None
+
+
+#: La referencia del expediente NO se llama igual en las dos jurisdicciones. Medido el
+#: 2026-09-04: pedirle `Referencia_Cliente` al judicial devuelve HTTP 500 enumerando sus
+#: properties reales. Unificar los dos nombres rompe la busqueda judicial en silencio.
+_PROP_REFERENCIA = {
+    "extrajudiciales": "Referencia_Cliente",
+    "expedientes_judiciales": "referencia_cliente",
+}
+
+
+@dataclass(frozen=True)
+class DuplicadosExpediente:
+    """Lo que se encontro al buscar un expediente ya existente, por criterio.
+
+    Cada lista lleva pares `(elemento, exp_id)`. **`bloquea` solo lo levanta el W-code**:
+    los otros dos criterios producen falsos positivos legitimos y por eso avisan.
+    """
+
+    por_wcode: list[tuple[str, str]] = field(default_factory=list)
+    por_direccion: list[tuple[str, str]] = field(default_factory=list)
+    por_contrario: list[tuple[str, str]] = field(default_factory=list)
+    #: Criterios que no se pudieron comprobar. «No pude mirar» no es «no hay».
+    sin_comprobar: list[str] = field(default_factory=list)
+
+    @property
+    def bloquea(self) -> bool:
+        return bool(self.por_wcode)
+
+    @property
+    def avisos(self) -> list[str]:
+        salida: list[str] = []
+        for etiqueta, hallados in (("direccion", self.por_direccion),
+                                   ("contrario", self.por_contrario)):
+            for elemento, exp_id in hallados:
+                salida.append(f"mismo {etiqueta}: {elemento} #{exp_id}")
+        return salida
+
+
+def buscar_expedientes_duplicados(
+    *,
+    w_code: str,
+    direccion: str = "",
+    contrario_id: str | None = None,
+) -> DuplicadosExpediente:
+    """Busca expedientes que ya puedan ser este, en las DOS jurisdicciones.
+
+    Encargo de Nikolai (2026-09-04) tras medir que `_alta_crm` solo miraba el `_caso.md`
+    **local**: si el registro local se pierde, el alta crea un expediente duplicado en el
+    CRM del cliente.
+
+    Los tres criterios **no valen lo mismo**, y esa asimetria es la decision, no un
+    detalle: el **W-code bloquea** porque identifica la operacion de E&V; **direccion y
+    contrario avisan** porque una vuelta y una bad debt del mismo inmueble son dos
+    expedientes correctos, igual que el mismo propietario en dos operaciones. Un
+    bloqueo que salta siempre se contesta con `--force` por rutina y deja de proteger.
+
+    No escribe nada y **no lanza**: un criterio que no se pueda comprobar se declara en
+    `sin_comprobar`, porque «no pude mirar» no es «no hay».
+    """
+    res = DuplicadosExpediente()
+    w_code = (w_code or "").strip()
+    direccion = (direccion or "").strip()
+
+    for elemento, prop in _PROP_REFERENCIA.items():
+        if w_code:
+            for reg in _buscar_registros(elemento, prop, w_code, operador="like", limite=10):
+                rid = str(reg.get("id") or "").strip()
+                if rid:
+                    res.por_wcode.append((elemento, rid))
+        if direccion:
+            for reg in _buscar_registros(elemento, prop, direccion, operador="like", limite=10):
+                rid = str(reg.get("id") or "").strip()
+                # Un mismo expediente casa por W-code y por direccion: no se cuenta dos
+                # veces, y sobre todo no se degrada un bloqueo a aviso.
+                if rid and (elemento, rid) not in res.por_wcode:
+                    res.por_direccion.append((elemento, rid))
+
+    if contrario_id:
+        try:
+            rel = get_relaciones("clientes_contrarios", contrario_id)
+        except Exception as exc:  # noqa: BLE001 — un aviso que no se puede calcular
+            res.sin_comprobar.append(f"contrario #{contrario_id} ({exc!r})")
+        else:
+            for elemento in _PROP_REFERENCIA:
+                for v in rel.get(elemento, []):
+                    rid = str(v.get("id") or "").strip()
+                    if rid and (elemento, rid) not in res.por_wcode:
+                        res.por_contrario.append((elemento, rid))
+    return res
+
+
 def find_cliente_contrario_by_nif(nif: str) -> str | None:
     """Busca un cliente contrario en el CRM por NIF/CIF (búsqueda exacta).
 
@@ -964,12 +1175,46 @@ def ensure_contrario_vinculado(
     Raises:
         SudespachoRelationsError: si algún paso falla.
     """
-    contrario_id = find_cliente_contrario_by_nif(datos.nif)
-    created = False
-    if contrario_id is None:
-        contrario_id = create_cliente_contrario(datos)
-        created = True
+    contrario_id, created = _resolver_o_crear_contrario(datos)
     link_contrario(exp_id, contrario_id)
+    return contrario_id, created
+
+
+def _resolver_o_crear_contrario(datos: NuevoClienteContrario) -> tuple[str, bool]:
+    """La parte de identidad, compartida por las dos jurisdicciones.
+
+    Deduplica por **NIF o email** —antes solo por NIF, asi que un contrario sin NIF
+    generaba ficha nueva en cada caso— y **levanta** si los dos criterios discrepan.
+    """
+    r = resolver_parte("clientes_contrarios", nif=datos.nif, email=datos.email)
+    if r.conflicto:
+        por_nif, por_email = r.conflicto
+        raise ConflictoDeIdentidad(
+            f"El NIF {datos.nif!r} apunta al contrario {por_nif} y el email "
+            f"{datos.email!r} al {por_email}. No se vincula ninguno ni se crea otro: "
+            "resuelvelo en el CRM (fusiona las fichas o corrige el dato) y repite."
+        )
+    if r.id:
+        return r.id, False
+    return create_cliente_contrario(datos), True
+
+
+def ensure_contrario_vinculado_judicial(
+    exp_id: str,
+    datos: NuevoClienteContrario,
+    *,
+    client: SudespachoLegacyClient | None = None,
+) -> tuple[str, bool]:
+    """Igual que :func:`ensure_contrario_vinculado`, para expedientes JUDICIALES.
+
+    No existia: en judicial solo habia `link_contrario_judicial(exp_id, contrario_id)`,
+    que recibe un id ya creado, asi que **no habia deduplicacion ninguna** — el runbook
+    lo declaraba como hueco (`[APER-49]`). El elemento `clientes_contrarios` es el
+    MISMO en las dos jurisdicciones, asi que la identidad se resuelve igual y lo unico
+    que cambia es el expediente al que se vincula.
+    """
+    contrario_id, created = _resolver_o_crear_contrario(datos)
+    link_contrario_judicial(exp_id, contrario_id, client=client)
     return contrario_id, created
 
 
@@ -1516,8 +1761,22 @@ def ensure_colaborador_vinculado(
     if owns_client:
         client = SudespachoLegacyClient()
     try:
-        # 1. Buscar por email
-        colab_id = find_colaborador_by_email(datos.email, client=client)
+        # 1. Resolver por email O por NIF (antes solo por email, asi que el mismo
+        #    consultor con dos direcciones daba dos fichas).
+        r = resolver_parte("colaboradores", nif=datos.nif, email=datos.email)
+        if r.conflicto:
+            por_nif, por_email = r.conflicto
+            raise ConflictoDeIdentidad(
+                f"El NIF {datos.nif!r} apunta al colaborador {por_nif} y el email "
+                f"{datos.email!r} al {por_email}. No se vincula ninguno ni se crea otro: "
+                "resuelvelo en el CRM y repite."
+            )
+        colab_id = r.id
+        # Respaldo por el listado completo: `element_registries/colaboradores` puede no
+        # exponer `email` como filtrable en todos los tenants, y perder la dedup que ya
+        # habia seria una regresion. Si el filtro no encontro nada, se mira la lista.
+        if colab_id is None and datos.email:
+            colab_id = find_colaborador_by_email(datos.email, client=client)
         created = False
 
         # 2. Crear si no existe

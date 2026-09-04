@@ -23,6 +23,40 @@ def test_hash_tree_local(tmp_path: Path):
     assert len(hashes) == 2
 
 
+# ---------------------------------------------------------------------------
+# Guarda de red + duplicados del CRM
+#
+# `_alta_crm` consulta al CRM si el W-code ya existe (encargo de Nikolai, 2026-09-04).
+# Sin esta fixture los tests SALEN AL TENANT REAL y encuentran duplicados autenticos:
+# las fixtures usan W-codes de casos de verdad, asi que `W-02Z2NR` casaba con el
+# expediente 622 y abortaba el alta. La comprobacion hacia lo correcto; el defecto era
+# que el test hablase con produccion.
+#
+# Por defecto: «no hay duplicados». El test que quiera otra cosa la declara.
+# ---------------------------------------------------------------------------
+
+class _FugaDeRedEnTest(BaseException):
+    """BaseException a proposito: ningun `except Exception` del CLI puede tragarsela."""
+
+
+@pytest.fixture(autouse=True)
+def _sin_crm_real(monkeypatch):
+    from core.sudespacho_relations import DuplicadosExpediente
+
+    monkeypatch.setattr(cli.sudespacho_relations, "buscar_expedientes_duplicados",
+                        lambda **k: DuplicadosExpediente())
+
+    def _prohibido(metodo):
+        def _f(*a, **k):
+            destino = a[0] if a else k.get("url", "?")
+            raise _FugaDeRedEnTest(f"httpx.{metodo} salio a la red en un test ({destino!r})")
+        return _f
+
+    import httpx
+    for metodo in ("get", "post", "put", "delete", "patch", "request"):
+        monkeypatch.setattr(f"httpx.{metodo}", _prohibido(metodo))
+
+
 @pytest.fixture
 def drive_temporal(tmp_path, monkeypatch):
     """Apunta CASOS_ROOT al tmp y mockea el pull rclone y el alta CRM."""
