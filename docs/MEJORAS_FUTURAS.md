@@ -6543,3 +6543,72 @@ distintas deben producir **un** espejo, y el test tiene que morir si vuelven a s
 contado dos veces, o un importe que aparezca duplicado en un escrito— o el arreglo de `MEJORAS #129`
 (`la cobertura se llavea por (slug, rel_path) y los artefactos por slug`), que toca exactamente la
 misma clave y puede pagar la vía A de paso.
+
+---
+
+## 148. Documento de identidad y domicilio del colaborador desde los contratos del Drive
+
+**Estado:** esperando decisión de Nikolai. **No empezar.**
+
+Los contratos de los consultores llevan documento de identidad y domicilio de empleados
+de E&V que **no son parte de ningún caso**. La cuenta `@ev` accede a ellos por el rol en
+la empresa; volcarlos al CRM del despacho es un tratamiento con otra finalidad y otro
+responsable, y esa valoración es de Nikolai.
+
+Y puede ser innecesario: si lo que se busca es **identificar** al colaborador, el email
+ya lo hace; el NIF sólo hace falta para facturarle o demandarle.
+
+**Si se promueve:** preguntar primero **para qué colaboradores y con qué finalidad**. No
+construir un extractor masivo de documentos y domicilios.
+
+**Disparador:** petición expresa de Nikolai con esas dos respuestas.
+
+---
+
+## 149. El cargo del colaborador no tiene dónde vivir en el CRM
+
+`core/email_firmas.py` **ya extrae** el cargo y sale en el informe de
+`scripts.crm_colaboradores_firmas report`, pero no se escribe: el contrato de
+`colaboradores` no tiene property de cargo y `tipo` es un `Select` cerrado
+(§10.8 de `INTEGRACION_SUDESPACHO.md`).
+
+**Disparador:** que sudespacho añada un campo, o decisión de Nikolai de usar `notas`.
+Si llega el campo, sólo hay que añadir el par a `_COMPLETABLES_COLABORADOR` y a
+`_AL_YAML`.
+
+---
+
+## 150. `scripts/crm_ficha.py` sigue siendo extrajudicial-only
+
+`[APER-49]`. La pieza C sirve a las dos jurisdicciones (las dos pasan por
+`_resolver_o_crear_colaborador`), pero el CLI que la dispara hardcodea
+`_ELEMENT_EXTRAJUDICIAL`. Para un caso judicial hay que llamar a mano.
+
+**Hueco previo a este trabajo**, anotado para que no se lea como cerrado. `MEJORAS #128`
+ya cubre este mismo `[APER-49]` con más detalle (juzgado, `link_colaborador_judicial`,
+etc.); esta entrada no lo duplica, añade el dato nuevo de esta sesión: la pieza que
+faltaba para colaboradores (el resolvedor compartido `_resolver_o_crear_colaborador`) ya
+existe, así que del lado de colaboradores lo único que falta es cablear el CLI.
+
+---
+
+## 151. `core/email_firmas.py` no detecta el mojibake por charset mal declarado
+
+**Detectado en la Task 9, declarado fuera de alcance.** `extraer_de_eml`
+(`core/email_firmas.py:580-584`) envuelve `parte.get_content()` en un `except Exception`
+que marca `NO_LEIBLE` ante "charset roto, base64 truncado…". Pero `get_content()`
+decodifica con `errors="replace"` y, si el `Content-Type` declara un charset
+válido-pero-equivocado (los bytes son UTF-8 y la cabecera dice `iso-8859-1`, o al revés),
+la decodificación **no lanza**: produce texto con acentos rotos o con el carácter de
+reemplazo `�` y lo devuelve como si fuera válido. El `.eml` se procesa como legible,
+la firma se lee sobre texto corrompido y ningún veredicto avisa. Es la misma familia que
+el defecto ya anotado en el comentario de las líneas 570-578 del mismo fichero
+(`BytesParser` tampoco lanza ante basura sin cabeceras), pero por una vía distinta.
+
+Es una rama defensiva sin caso real que la dispare todavía: los `.eml` de E&V vistos hasta
+ahora declaran `charset="utf-8"` y lo son.
+
+**Disparador:** el primer `.eml` real cuyo informe de firmas salga con acentos rotos o con
+`�`, o una decisión de blindar `extraer_de_eml` de forma preventiva (por ejemplo,
+detectar `�` en `cuerpo` tras decodificar, o contrastar el `charset` declarado con
+una detección independiente antes de confiar en él).
