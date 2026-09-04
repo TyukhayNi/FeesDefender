@@ -2177,6 +2177,80 @@ def _resolver_colaborador(
     return None
 
 
+#: Campos de la ficha que se COMPLETAN sobre un colaborador que ya existe, con su
+#: nombre de property en el CRM. Solo se rellena lo que esta VACIO: la ficha local
+#: aporta datos, no manda sobre lo que ya hay — E&V u otra sesion pueden haber
+#: corregido algo ahi y pisarlo seria destruir trabajo ajeno.
+#:
+#: `telefono` -> `telefono1` y `nif` -> `nif_cif`: los nombres del DTO y los del CRM
+#: no coinciden, y el segundo se comprobo preguntandole al CRM (§14.6), no leyendo
+#: codigo. NO hay entrada de `cargo`: esa property no existe en `colaboradores`, y
+#: `tipo` es un Select cerrado (Sin Asignar / Colaborador / Perito / Tercero).
+_COMPLETABLES_COLABORADOR = (
+    ("email", "email"),
+    ("movil", "movil"),
+    ("telefono", "telefono1"),
+    ("nif", "nif_cif"),
+)
+
+
+def _completar_colaborador_existente(colab_id: str, datos: NuevoColaborador) -> None:
+    """Rellena en el CRM los campos que la ficha trae y la ficha del CRM no tiene.
+
+    Espejo de `_completar_contrario_existente`, y por el mismo motivo medido: anadir
+    campos al DTO solo los hace llegar en el camino de CREACION, y con el colaborador
+    ya existente —el caso normal, porque el mismo consultor aparece en todos los casos
+    de su Market Center— `ensure_colaborador_vinculado` solo vinculaba.
+
+    Medido el 2026-09-04 sobre los tres colaboradores vinculados a W-02Q38C: los tres
+    con `telefono1` y `nif_cif` vacios, y uno de los tres sin movil.
+
+    No lanza: completar la ficha es un extra sobre el vinculo, y perder el vinculo por
+    no poder escribir un telefono seria peor que quedarse sin el telefono. Lo que no se
+    pueda hacer se registra.
+    """
+    try:
+        actual = get_colaborador(colab_id)
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("no se pudo leer el colaborador %s para completarlo (%r): los "
+                     "datos de la ficha que faltasen siguen sin llegar", colab_id, exc)
+        return
+
+    cambios: dict[str, str] = {}
+    for campo, prop in _COMPLETABLES_COLABORADOR:
+        valor = (getattr(datos, campo, "") or "").strip()
+        if valor and not (actual.get(prop) or "").strip():
+            cambios[prop] = valor
+
+    if not cambios:
+        return
+    try:
+        update_colaborador(colab_id, cambios)
+        _log.info("colaborador %s completado con %s", colab_id, sorted(cambios))
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("no se pudieron completar los campos %s del colaborador %s (%r)",
+                     sorted(cambios), colab_id, exc)
+
+
+def _resolver_o_crear_colaborador(
+    datos: NuevoColaborador,
+    *,
+    client: SudespachoLegacyClient | None = None,
+) -> tuple[str, bool]:
+    """La parte de IDENTIDAD, compartida por las dos jurisdicciones.
+
+    Compartida a proposito, no por ahorrar lineas: R1/H-05 del PR #275 midio que
+    `ensure_colaborador_vinculado_judicial` seguia siendo email-only porque el cambio
+    se hizo en la rama extrajudicial y la otra se quedo atras. Con el gancho de
+    completar en un solo sitio, esa asimetria no puede volver a aparecer por olvido.
+    """
+    colab_id = _resolver_colaborador(datos, client=client)
+    if colab_id is not None:
+        _completar_colaborador_existente(colab_id, datos)
+        return colab_id, False
+    return create_colaborador(datos, client=client), True
+
+
 def ensure_colaborador_vinculado(
     exp_id: str,
     datos: NuevoColaborador,
@@ -2220,19 +2294,8 @@ def ensure_colaborador_vinculado(
     if owns_client:
         client = SudespachoLegacyClient()
     try:
-        # 1. Resolver por email O por NIF (antes solo por email, asi que el mismo
-        #    consultor con dos direcciones daba dos fichas).
-        colab_id = _resolver_colaborador(datos, client=client)
-        created = False
-
-        # 2. Crear si no existe
-        if colab_id is None:
-            colab_id = create_colaborador(datos, client=client)
-            created = True
-
-        # 3. Vincular al expediente
+        colab_id, created = _resolver_o_crear_colaborador(datos, client=client)
         link_colaborador(exp_id, colab_id, client=client)
-
         return colab_id, created
 
     finally:
@@ -2393,11 +2456,7 @@ def ensure_colaborador_vinculado_judicial(
     if owns_client:
         client = SudespachoLegacyClient()
     try:
-        colab_id = _resolver_colaborador(datos, client=client)
-        created = False
-        if colab_id is None:
-            colab_id = create_colaborador(datos, client=client)
-            created = True
+        colab_id, created = _resolver_o_crear_colaborador(datos, client=client)
         link_colaborador_judicial(exp_id, colab_id, client=client)
         return colab_id, created
     finally:

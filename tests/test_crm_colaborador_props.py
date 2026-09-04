@@ -166,3 +166,169 @@ class TestEscribirLaFichaDelColaborador:
         from core import sudespacho_relations as sr
         with pytest.raises(ValueError, match="cambios"):
             sr.update_colaborador("466", {})
+
+
+class TestElColaboradorExistenteSeCOMPLETA:
+    """Espejo del contrario (R1/H-07 del PR #275). El caso normal es que YA exista:
+    el mismo consultor aparece en todos los casos de su Market Center."""
+
+    @staticmethod
+    def _datos():
+        from core.sudespacho_relations import NuevoColaborador
+        return NuevoColaborador(nombre="ANA", email="ana@engelvoelkers.example",
+                                movil="612345678", telefono="912345678",
+                                nif="12345678Z")
+
+    def test_lo_que_falta_en_el_CRM_se_rellena(self):
+        from core.sudespacho_relations import ensure_colaborador_vinculado
+        actualizar = MagicMock()
+        with patch("core.sudespacho_relations._resolver_colaborador", return_value="466"), \
+             patch("core.sudespacho_relations.get_colaborador",
+                   return_value={"nombre": "ANA", "email": "", "movil": "",
+                                 "telefono1": "", "nif_cif": ""}), \
+             patch("core.sudespacho_relations.update_colaborador", actualizar), \
+             patch("core.sudespacho_relations.link_colaborador", MagicMock()), \
+             patch("core.sudespacho_relations.SudespachoLegacyClient", MagicMock()):
+            cid, creado = ensure_colaborador_vinculado("600", self._datos())
+
+        assert (cid, creado) == ("466", False)
+        cambios = actualizar.call_args.args[1]
+        assert cambios["movil"] == "612345678"
+        assert cambios["telefono1"] == "912345678", "el fijo va a telefono1"
+        assert cambios["nif_cif"] == "12345678Z", "nif_cif, no nif"
+        assert "cargo" not in cambios, "no existe esa property en el CRM"
+        assert "tipo" not in cambios, "es un Select cerrado: un puesto ahi la corrompe"
+
+    def test_lo_que_el_CRM_YA_tiene_no_se_pisa(self):
+        """La ficha local aporta datos; no manda sobre lo que E&V corrigio alli."""
+        from core.sudespacho_relations import ensure_colaborador_vinculado
+        actualizar = MagicMock()
+        with patch("core.sudespacho_relations._resolver_colaborador", return_value="466"), \
+             patch("core.sudespacho_relations.get_colaborador",
+                   return_value={"email": "otra@engelvoelkers.example",
+                                 "movil": "600000000", "telefono1": "930000000",
+                                 "nif_cif": "87654321X"}), \
+             patch("core.sudespacho_relations.update_colaborador", actualizar), \
+             patch("core.sudespacho_relations.link_colaborador", MagicMock()), \
+             patch("core.sudespacho_relations.SudespachoLegacyClient", MagicMock()):
+            ensure_colaborador_vinculado("600", self._datos())
+
+        actualizar.assert_not_called()
+
+    def test_rellena_SOLO_el_hueco_y_deja_el_resto(self):
+        """El caso real medido en W-02Q38C: movil puesto, telefono1 vacio."""
+        from core.sudespacho_relations import ensure_colaborador_vinculado
+        actualizar = MagicMock()
+        with patch("core.sudespacho_relations._resolver_colaborador", return_value="466"), \
+             patch("core.sudespacho_relations.get_colaborador",
+                   return_value={"email": "ana@engelvoelkers.example",
+                                 "movil": "600000000", "telefono1": "",
+                                 "nif_cif": ""}), \
+             patch("core.sudespacho_relations.update_colaborador", actualizar), \
+             patch("core.sudespacho_relations.link_colaborador", MagicMock()), \
+             patch("core.sudespacho_relations.SudespachoLegacyClient", MagicMock()):
+            ensure_colaborador_vinculado("600", self._datos())
+
+        cambios = actualizar.call_args.args[1]
+        assert set(cambios) == {"telefono1", "nif_cif"}
+        assert "movil" not in cambios, "el CRM ya tenia uno distinto: no se toca"
+
+    def test_un_valor_en_blanco_del_CRM_cuenta_como_VACIO(self):
+        """Un campo con espacios es un campo vacio, no un dato que respetar. Y `None`
+        tampoco: el CRM devuelve nulos en las properties sin valor."""
+        from core.sudespacho_relations import ensure_colaborador_vinculado
+        actualizar = MagicMock()
+        with patch("core.sudespacho_relations._resolver_colaborador", return_value="466"), \
+             patch("core.sudespacho_relations.get_colaborador",
+                   return_value={"movil": "   ", "telefono1": None}), \
+             patch("core.sudespacho_relations.update_colaborador", actualizar), \
+             patch("core.sudespacho_relations.link_colaborador", MagicMock()), \
+             patch("core.sudespacho_relations.SudespachoLegacyClient", MagicMock()):
+            ensure_colaborador_vinculado("600", self._datos())
+
+        cambios = actualizar.call_args.args[1]
+        assert cambios["movil"] == "612345678"
+        assert cambios["telefono1"] == "912345678"
+
+    def test_si_no_se_puede_LEER_la_ficha_no_se_pierde_el_VINCULO(self):
+        """Completar es un extra: perder el vinculo por un telefono seria peor."""
+        from core.sudespacho_relations import ensure_colaborador_vinculado
+        vincular = MagicMock()
+        with patch("core.sudespacho_relations._resolver_colaborador", return_value="466"), \
+             patch("core.sudespacho_relations.get_colaborador",
+                   side_effect=RuntimeError("500")), \
+             patch("core.sudespacho_relations.link_colaborador", vincular), \
+             patch("core.sudespacho_relations.SudespachoLegacyClient", MagicMock()):
+            cid, creado = ensure_colaborador_vinculado("600", self._datos())
+
+        assert (cid, creado) == ("466", False)
+        vincular.assert_called_once()
+
+    def test_si_no_se_puede_ESCRIBIR_tampoco_se_pierde_el_VINCULO(self):
+        from core.sudespacho_relations import ensure_colaborador_vinculado
+        vincular = MagicMock()
+        with patch("core.sudespacho_relations._resolver_colaborador", return_value="466"), \
+             patch("core.sudespacho_relations.get_colaborador",
+                   return_value={"movil": "", "telefono1": ""}), \
+             patch("core.sudespacho_relations.update_colaborador",
+                   side_effect=RuntimeError("400")), \
+             patch("core.sudespacho_relations.link_colaborador", vincular), \
+             patch("core.sudespacho_relations.SudespachoLegacyClient", MagicMock()):
+            cid, creado = ensure_colaborador_vinculado("600", self._datos())
+
+        assert (cid, creado) == ("466", False)
+        vincular.assert_called_once()
+
+    def test_al_CREAR_uno_nuevo_no_se_completa_nada(self):
+        """El POST ya lleva los campos: un PUT detras seria una peticion regalada."""
+        from core.sudespacho_relations import ensure_colaborador_vinculado
+        leer = MagicMock()
+        with patch("core.sudespacho_relations._resolver_colaborador", return_value=None), \
+             patch("core.sudespacho_relations.create_colaborador", return_value="999"), \
+             patch("core.sudespacho_relations.get_colaborador", leer), \
+             patch("core.sudespacho_relations.link_colaborador", MagicMock()), \
+             patch("core.sudespacho_relations.SudespachoLegacyClient", MagicMock()):
+            cid, creado = ensure_colaborador_vinculado("600", self._datos())
+
+        assert (cid, creado) == ("999", True)
+        leer.assert_not_called()
+
+
+class TestLasDosJurisdiccionesSeCompletanIGUAL:
+    """R1/H-05 midio que anadir algo al camino extrajudicial y olvidar el judicial es
+    el modo de fallo recurrente de este modulo. El gancho va en el resolvedor
+    COMPARTIDO, asi que esta simetria no es una coincidencia que haya que mantener."""
+
+    @staticmethod
+    def _datos():
+        from core.sudespacho_relations import NuevoColaborador
+        return NuevoColaborador(nombre="ANA", email="ana@engelvoelkers.example",
+                                movil="612345678")
+
+    def test_el_judicial_tambien_completa(self):
+        from core.sudespacho_relations import ensure_colaborador_vinculado_judicial
+        actualizar = MagicMock()
+        with patch("core.sudespacho_relations._resolver_colaborador", return_value="466"), \
+             patch("core.sudespacho_relations.get_colaborador",
+                   return_value={"movil": ""}), \
+             patch("core.sudespacho_relations.update_colaborador", actualizar), \
+             patch("core.sudespacho_relations.link_colaborador_judicial", MagicMock()), \
+             patch("core.sudespacho_relations.SudespachoLegacyClient", MagicMock()):
+            ensure_colaborador_vinculado_judicial("700", self._datos())
+
+        assert actualizar.call_args.args[1]["movil"] == "612345678"
+
+    def test_las_dos_pasan_por_el_MISMO_resolvedor(self):
+        """La frontera estructural: sin esto, alguien puede copiar el gancho en vez de
+        compartirlo y el siguiente cambio vuelve a olvidar una de las dos ramas."""
+        from core.sudespacho_relations import (ensure_colaborador_vinculado,
+                                               ensure_colaborador_vinculado_judicial)
+        resolver = MagicMock(return_value=("466", False))
+        with patch("core.sudespacho_relations._resolver_o_crear_colaborador", resolver), \
+             patch("core.sudespacho_relations.link_colaborador", MagicMock()), \
+             patch("core.sudespacho_relations.link_colaborador_judicial", MagicMock()), \
+             patch("core.sudespacho_relations.SudespachoLegacyClient", MagicMock()):
+            ensure_colaborador_vinculado("600", self._datos())
+            ensure_colaborador_vinculado_judicial("700", self._datos())
+
+        assert resolver.call_count == 2, "las dos jurisdicciones lo usan"
