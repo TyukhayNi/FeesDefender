@@ -359,6 +359,38 @@ def _hashes_residuo(case_id: str) -> list[str]:
             if f["Tipo"].strip() not in TAXONOMIA_EV]
 
 
+def residuo_sin_texto(case_id: str) -> list[dict]:
+    """El residuo que NO tiene espejo MD: lo que `preparar_residuo` se salta en silencio.
+
+    **Existe porque «no hay» y «no pude mirar» son hechos distintos y se decían igual.**
+    Medido en carne propia el 2026-09-04 abriendo W-02JSVZ: `preparar-residuo` respondió
+    *«Sin residuo con texto extraído. Nada que preparar»* con **99 documentos en residuo y
+    176 espejos MD en disco**. La frase era literalmente cierta —no había residuo *con
+    texto*— y por eso fue tan caro: mandó a buscar el defecto donde no estaba.
+
+    La causa raíz de aquel día (la ruta MD apuntando al motor jubilado) se arregló en
+    `MEJORAS #151`, pero **el mensaje seguiría siendo indistinguible** el día que la sala
+    de máquina simplemente no se haya corrido todavía, que es el caso normal en una
+    apertura. Así que lo que se arregla aquí no es un defecto: es la **capacidad de
+    distinguir**, que es la familia de `feedback-no-lo-se-no-es-no-hay`.
+
+    Y cubre además el defecto en miniatura: con 88 de 99 legibles, la lista salía y nadie
+    se enteraba de que 11 se habían saltado. Devuelve `{hash, nombre_original, fuente}`
+    por documento, sin `md_text` — que es justo lo que no hay.
+    """
+    residuo = set(_hashes_residuo(case_id))
+    if not residuo:
+        return []
+    by_hash = {e.hash: e for e in catalogo_documental.load_catalog(case_id)}
+    fuera = []
+    for h in residuo:
+        e = by_hash.get(h)
+        if e is None or _md_paths(case_id, e):
+            continue
+        fuera.append({"hash": h, "nombre_original": e.nombre_original, "fuente": e.fuente})
+    return sorted(fuera, key=lambda d: d["nombre_original"])
+
+
 def preparar_residuo(case_id: str) -> list[dict]:
     """Reúne el material del residuo para clasificarlo (Claude-en-sesión o conector).
 
@@ -809,13 +841,33 @@ def organizar(case_id: str, *, crm_docs=None) -> dict:
     from core import inventory
     inventory.scan(case_id)
     catalogo_documental.build_catalog(case_id)
+
+    # **Cero acciones sobre material que SÍ existe es un defecto, no un éxito.** Punto que
+    # la R1 adversarial dejó abierto: con el catálogo encadenado esto ya no puede pasar
+    # *por construcción*, y esto es el cinturón que lo comprueba.
+    #
+    # Y las tres causas de un catálogo vacío se distinguen, porque confundirlas sería
+    # repetir en otro sitio el defecto de `residuo_sin_texto`: solo la primera es un fallo.
+    if not catalogo_documental.load_catalog(case_id):
+        inv = inventory.load(case_id)
+        n_vistos, n_omitidos = int(inv.get("count") or 0), len(inv.get("skipped") or [])
+        if n_vistos:
+            raise RuntimeError(
+                f"El inventario vio {n_vistos} fichero(s) y el catálogo quedó VACÍO. "
+                "No se organiza nada sobre un catálogo que se comió el material: "
+                "revisa `catalogo_documental.build_catalog` antes de seguir.")
+        motivo = "sin_extension_relevante" if n_omitidos else "input_vacio"
+        return {"case_id": case_id, "detenido_por_residuo": False, "n_residuo": 0,
+                "acciones": {}, "sin_material": True, "motivo": motivo,
+                "n_omitidos": n_omitidos}
+
     aplicar_clasificacion(case_id, solo_residuo=True)
     clasif = clasificar_caso(case_id)
     if clasif["n_residuo"] > 0:
         return {"case_id": case_id, "detenido_por_residuo": True,
-                "n_residuo": clasif["n_residuo"],
+                "n_residuo": clasif["n_residuo"], "sin_material": False,
                 "worklist": str(_revisar_dir(case_id) / WORKLIST_NAME)}
     render_indices(case_id)
     pob = poblar_sala_lectura(case_id, crm_docs=crm_docs)
     return {"case_id": case_id, "detenido_por_residuo": False,
-            "n_residuo": 0, "acciones": pob["acciones"]}
+            "n_residuo": 0, "acciones": pob["acciones"], "sin_material": False}

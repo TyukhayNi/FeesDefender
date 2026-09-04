@@ -217,6 +217,30 @@ def register_expediente(
     return input_dir_name
 
 
+def _contenido_en(destino: Path, raiz: Path) -> bool:
+    """¿`destino` cae dentro de `raiz`? Comparación LÉXICA por componentes, sin tocar disco.
+
+    **Por qué no reutiliza `case_mutex._bajo`, que hace lo mismo.** Era la primera versión, y
+    la R2 adversarial demostró que `_bajo` **rechaza a los hijos de una raíz anclada**: hace
+    `c.startswith(r + os.sep)`, así que con `r` terminando ya en separador —`C:\\` o un
+    recurso UNC— exige dos separadores seguidos y devuelve `False` para todo descendiente
+    legítimo (R2/H-02). Medido:
+
+        _bajo(Path('C:/CASOS/EV'),             Path('C:/'))             -> False
+        _bajo(Path('//server/share/CASOS/EV'), Path('//server/share/')) -> False
+
+    Con `os.path.commonpath` no hay ese caso especial, y su `ValueError` entre unidades
+    distintas **es** la respuesta correcta: no contenido. No se arregla `_bajo` porque lo
+    consume el mutex del caso, cuyo radio de daño es otro y no se toca de noche: `MEJORAS #159`.
+    """
+    d = os.path.normcase(os.path.abspath(str(destino)))
+    r = os.path.normcase(os.path.abspath(str(raiz)))
+    try:
+        return os.path.commonpath([d, r]) == r
+    except ValueError:
+        return False
+
+
 def ensure_case(
     case_id: str,
     *,
@@ -335,11 +359,92 @@ def ensure_case(
     # (Task 6 / R7-H7-01). `destino_de_alta` admite que el caso no exista —es su
     # caso normal— y devuelve SU ubicacion si ya existe, lo que impide fabricar
     # una carpeta sombra plana junto a un caso que ya vive en su ciudad.
+    # ------------------------------------------------------------------
+    # Validacion EN EL SUMIDERO (`MEJORAS #153`/`#154`, diseno rev. 2:
+    # docs/superpowers/specs/2026-09-05-validar-en-el-sumidero-design.md).
+    #
+    # Va aqui y no en los compositores porque el defecto se repitio cuatro veces con la
+    # misma forma —«la guarda esta en el envoltorio y el otro llamador la rodea»—: la
+    # UI compone su propio `case_id` sin pasar por `componer_case_id`, y el CLI valida la
+    # ciudad mientras el core no.
+    #
+    # ALCANCE, y aqui estaba escrito de mas hasta la R2: esto es el sumidero **del alta
+    # nominal**, no del arbol de casos. La primera version de este comentario decia que
+    # validando aqui «queda cubierta tambien la puerta que nadie ha escrito todavia», y la
+    # R1 lo desmintio con `move_to_city`, que materializa un caso en otra ciudad sin pasar
+    # por aqui; la R2 anadio una cuarta puerta (`intake_manual`, que confia en el `lote`
+    # que le pasan: `MEJORAS #158`). Las demas estan enumeradas en `#155`/`#156`/`#157` y
+    # en el §2 del diseno. Un enunciado mas ancho que lo que la funcion puede prometer es
+    # peor que ninguno: invita a no escribir la guarda que falta.
+    #
+    # ORDEN IMPORTANTE: el `case_id` se valida ANTES de `destino_de_alta`, porque
+    # `buscar("")` devuelve la propia raiz y con eso el vacio pasaba entera la validacion.
+    # ------------------------------------------------------------------
+    from core.utils import exigir_componente_de_ruta
+    exigir_componente_de_ruta(case_id, campo="El case_id")
+    if ciudad:
+        # La ciudad tambien compone el destino, y el contrato no es «que sea un
+        # componente» sino **que el caso resultante sea LOCALIZABLE**: con
+        # `ciudad="Barcelona/subcarpeta"` el destino cae dentro de la raiz y aun asi
+        # `buscar` no lo encuentra, y un segundo alta crea un duplicado (R1/H-03).
+        # Se valida contra `_CITY_NAMES`, que es el MISMO conjunto que recorre `buscar`:
+        # crear otra lista aqui las haria divergir, que es la enfermedad que esto cura.
+        from core.casos.case_locator import _CITY_NAMES
+        exigir_componente_de_ruta(ciudad, campo="La ciudad")
+        if ciudad not in _CITY_NAMES:
+            raise ValueError(
+                f"La ciudad {ciudad!r} no esta en el catalogo del localizador, asi que el "
+                f"caso quedaria invisible para `buscar`. Admitidas: "
+                f"{', '.join(sorted(_CITY_NAMES))}.")
+
     from core.casos.case_locator import destino_de_alta
     case_dir = destino_de_alta(case_id)
     if not case_dir.exists() and ciudad:
         from core.casos.case_locator import path_for_ciudad
         case_dir = path_for_ciudad(case_id, ciudad)
+
+    # Contencion, y hacen falta LAS DOS mitades. La rev. 2 del diseno puso solo la lexica
+    # —reutilizar la primitiva que el repo ya tenia— y el mutante de la junction lo
+    # DESMINTIO: `raiz/Enlace` es lexicamente hija de `raiz` aunque los bytes caigan fuera.
+    # Reusar algo llamado «contencion» sin comprobar que contenga es el mismo error que
+    # este cambio viene a arreglar, cometido un nivel mas arriba.
+    #
+    #   - LEXICA (`_contenido_en`, aqui al lado): compara por componentes —`CASOS_x` no
+    #     esta bajo `CASOS`— y no toca disco, asi que vale con el destino sin crear. Caza
+    #     `..` y las rutas absolutas. **NO es `case_mutex._bajo`**, que era la primera
+    #     version: la R2 midio que `_bajo` rechaza a los hijos de una raiz anclada
+    #     (`MEJORAS #159`), y su docstring lo explica.
+    #   - FISICA: resuelve el ancestro EXISTENTE mas cercano y comprueba que siga bajo la
+    #     raiz resuelta. Caza los enlaces/junctions, que la lexica no puede ver. Se resuelve
+    #     el ancestro y no la hoja porque la hoja normalmente todavia no existe. Se resuelven
+    #     los DOS lados: la propia raiz puede ser un enlace (`G:` es Drive Stream).
+    #
+    # LIMITE DECLARADO: esto contiene el caso y sus ANCESTROS. NO protege de una junction
+    # preexistente en un HIJO del caso (p. ej. `00_Input` apuntando fuera), demostrado en la
+    # R1 con una junction real de Windows: ahi el `_caso.md` acaba fuera aunque el directorio
+    # del caso este contenido. Eso es `MEJORAS #157` y queda FUERA de esta pieza. Decirlo
+    # aqui es preferible a que alguien lea contencion total donde no la hay.
+    from core.casos.case_locator import _root
+    raiz = _root()
+    if not _contenido_en(case_dir, raiz):
+        raise ValueError(
+            f"El destino del caso cae FUERA de la raiz de casos: {case_dir} no esta bajo "
+            f"{raiz}. No se deposita un expediente fuera del arbol gobernado.")
+    # La comprobacion FISICA solo tiene sentido si hay algo creado que pueda ser un enlace, y
+    # el paseo se DETIENE EN LA RAIZ. La primera version subia al primer ancestro existente
+    # sin ese tope, asi que con `CASOS_ROOT` todavia sin crear —el primer alta de una maquina
+    # nueva— comparaba el PADRE de la raiz contra la raiz y acusaba de escapar por un enlace
+    # que no existia (R2/H-01). Un alta que crea su propia raiz es legitima.
+    if raiz.exists():
+        ancestro = case_dir
+        while not ancestro.exists() and _contenido_en(ancestro.parent, raiz):
+            ancestro = ancestro.parent
+        if ancestro.exists() and not _contenido_en(ancestro.resolve(), raiz.resolve()):
+            raise ValueError(
+                f"El destino del caso sale de la raiz por un enlace: {case_dir} resuelve a "
+                f"{ancestro.resolve()}, fuera de {raiz.resolve()}. No se deposita un "
+                "expediente fuera del arbol gobernado.")
+
     case_dir.mkdir(parents=True, exist_ok=True)
 
     # Subcarpetas estándar (nivel 1). En V1, solo las que tienen productor DENTRO de la

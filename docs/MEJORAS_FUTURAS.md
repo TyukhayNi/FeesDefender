@@ -6880,6 +6880,14 @@ cerrar.
 
 ## 153. La puerta PRINCIPAL de alta no valida nada: la UI reproduce el caso `s/n`
 
+> ✅ **CERRADO 2026-09-05.** Validado **en el sumidero** (`ensure_case`), no en la
+> puerta: así queda cubierta también la que nadie ha escrito todavía. Diseño en
+> `docs/superpowers/specs/2026-09-05-validar-en-el-sumidero-design.md` (rev. 2) y la R1 que lo falsó, con su informe literal, en `docs/superpowers/specs/2026-09-05-validar-en-el-sumidero-r1-adversarial-review.md`.
+>
+> **Lo que NO cierra, y se dice:** que sea imposible sacar un expediente de
+> `CASOS_ROOT` por otras vías. Hay tres puertas más, abiertas como `#155`, `#156` y
+> `#157` con la evidencia ejecutada de la R1.
+
 > 🔴 **ABIERTA.** Levantado por la R1 adversarial del 2026-09-04 (`docs/superpowers/specs/2026-09-04-apertura-w02jsvz-pipeline-r1-adversarial-review.md`).
 > **Preexistente**: no lo introdujo el diff de `MEJORAS #148`, lo dejó al descubierto.
 
@@ -6911,6 +6919,14 @@ y no dejar ninguna carpeta parcial; el test muere si vuelve a crearse el esquele
 
 ## 154. El override de ruta permite escapar de `CASOS_ROOT`
 
+> ✅ **CERRADO 2026-09-05.** Validado **en el sumidero** (`ensure_case`), no en la
+> puerta: así queda cubierta también la que nadie ha escrito todavía. Diseño en
+> `docs/superpowers/specs/2026-09-05-validar-en-el-sumidero-design.md` (rev. 2) y la R1 que lo falsó, con su informe literal, en `docs/superpowers/specs/2026-09-05-validar-en-el-sumidero-r1-adversarial-review.md`.
+>
+> **Lo que NO cierra, y se dice:** que sea imposible sacar un expediente de
+> `CASOS_ROOT` por otras vías. Hay tres puertas más, abiertas como `#155`, `#156` y
+> `#157` con la evidencia ejecutada de la R1.
+
 > 🔴 **ABIERTA.** Levantado por la R1 adversarial del 2026-09-04 (`docs/superpowers/specs/2026-09-04-apertura-w02jsvz-pipeline-r1-adversarial-review.md`).
 > **Preexistente.** Familia de `MEJORAS #141` (`buscar()` no valida el `case_id`, así que una
 > referencia con `..` escribe fuera del catálogo): mismo agujero, otra puerta.
@@ -6938,3 +6954,268 @@ existen en el catálogo.
 **Disparador de promoción.** Se promueve **junto a `#153`**: comparten sumidero y arreglarlos por
 separado es hacer dos veces el mismo trabajo. Riesgo bajo por frecuencia (hay que teclear el
 override a mano) y alto por consecuencia (expediente con PII fuera del árbol gobernado).
+
+
+## 155. `move_to_city` mueve el expediente completo fuera de `CASOS_ROOT`
+
+> 🔴 **ABIERTA.** Destapada por la R1 adversarial del 2026-09-05 (`docs/superpowers/specs/2026-09-05-validar-en-el-sumidero-r1-adversarial-review.md`, H-01), **con
+> reproducción ejecutada**. Es la puerta que falsó la premisa central de `#153`/`#154`.
+
+`core/casos/case_locator.py:270-319`. `move_to_city` valida **solo la longitud del motivo**;
+compone el destino con `path_for_ciudad(case_id, ciudad_destino)`, hace
+`dest.parent.mkdir(parents=True)` y `shutil.move(src, dest)`. No pasa por `ensure_case`, no
+valida la ciudad y no comprueba contención. El revisor lo corrió:
+
+```json
+{"test": "move", "dest": "...\\p\\move\\FUERA\\EV-2026-001", "outside": true,
+ "payload": "CANARIO", "source_exists": false, "buscar": null}
+```
+
+El árbol entero sale de la raíz, **el origen desaparece** y `buscar` pierde el caso. Con el
+canario dentro: los bytes del expediente se van con él.
+
+**Mi error, que conviene que conste porque es el patrón:** yo encontré esta función antes de que
+volviera el informe y la **archivé como no explotable** porque la UI ofrece la ciudad en un
+`selectbox` de catálogo cerrado (`streamlit_app.py:1436`). El revisor lo rebate en una línea:
+*el catálogo está en el envoltorio; no protege la API de core*. Usé como garantía exactamente la
+clase de cosa que `#153` venía a arreglar.
+
+**Remedio.** La misma pareja que `ensure_case`: `exigir_componente_de_ruta(ciudad_destino)` +
+pertenencia a `_CITY_NAMES` + contención léxica y física del destino, **antes** del `shutil.move`.
+Su mutante: `move_to_city(case, '../FUERA', motivo, actor)` aborta, **el origen sigue existiendo**
+y el exterior queda vacío — la aserción sobre el origen es la que importa, porque el daño de un
+`move` es que no hay copia que recuperar.
+
+**Disparador de promoción.** Riesgo bajo por frecuencia (la UI cierra el catálogo) y **alto por
+consecuencia**: mueve, no copia. Se promueve **junto a `#156`**, que comparte la falta de contrato
+en el destino.
+
+
+## 156. `reservar_lote` / `caso_path` admiten un directorio absoluto externo como si fuera un caso
+
+> 🔴 **ABIERTA.** R1 adversarial del 2026-09-05 (`docs/superpowers/specs/2026-09-05-validar-en-el-sumidero-r1-adversarial-review.md`, H-01, segundo contraejemplo), con
+> reproducción ejecutada.
+
+`core/casos/case_locator.py:43-46` acepta **cualquier directorio absoluto existente** como si
+fuera un caso, y **no exige `_caso.md`**. Con eso,
+`reservar_lote(str(directorio_exterior), 'manual', 'sonda')` (`core/intake_lotes.py:89-98`) crea
+`00_Input/<lote>` **fuera de la raíz**, sin pasar por `ensure_case`:
+
+```json
+{"test": "intake_absolute", "outside": true, "lote_exists": true, "index": false}
+```
+
+No es un alta completa —no hay `_caso.md`— y esa distinción **no devuelve la contención**: hay un
+árbol de intake de un caso fantasma fuera del árbol gobernado.
+
+**La frontera, y por eso no es trivial:** aceptar una ruta absoluta es **deliberado** en el modo
+local (`CASOS_ROOT` al Desktop tras un *checkout*), así que el remedio no es prohibirlo: es
+**exigir que sea un caso** (que tenga `_caso.md`) o que esté registrado como copia prestada. Es
+decir, distinguir *checkout legítimo* de *escape accidental*, que es literalmente lo que el
+revisor pidió.
+
+**Remedio.** Que `caso_path`/`localizar` exijan la marca de caso (`00_Input/_caso.md`) o
+pertenencia al `WorkspaceRegistry` antes de devolver un directorio de fuera. Dos mutantes: un
+directorio externo **sin** `_caso.md` se rechaza, y una copia prestada **registrada** sigue
+funcionando — sin el segundo, el arreglo rompe el modo local.
+
+**Disparador de promoción.** Junto a `#155`. Y ojo: toca la resolución de qué copia es la
+operativa, así que por radio de daño son **dos rondas**.
+
+
+## 157. Una junction preexistente en un hijo del caso saca los bytes del árbol gobernado
+
+> 🔴 **ABIERTA.** R1 adversarial del 2026-09-05 (`docs/superpowers/specs/2026-09-05-validar-en-el-sumidero-r1-adversarial-review.md`, H-04), demostrada con una **junction
+> real de Windows**. Límite declarado del arreglo de `#153`/`#154`, no un descuido.
+
+Con `CASOS/EV-2026-002/` como directorio normal y su `00_Input` como *junction* hacia fuera
+—creada **antes** del alta—, la contención de `ensure_case` pasa (el directorio del caso sí está
+contenido), `mkdir(exist_ok=True)` acepta el hijo enlazado, y `_write_case_index` deposita el
+`_caso.md` **fuera**:
+
+```json
+{"test": "junction_case",  "result": "ValueError", "out_empty": true}
+{"test": "junction_child", "case_inside": true, "outside_index": true}
+```
+
+La primera línea es el control hermano: una junction **en el propio caso** sí se rechaza. Al
+ponerla **en un hijo**, el índice acaba fuera. **No es un TOCTOU**: no hace falta cambiar ningún
+enlace entre la comprobación y la escritura.
+
+**Por qué no se arregla con una comprobación más.** `ensure_case` valida **un** directorio y
+escribe en **nueve** descendientes. Contenerlos todos es un contrato distinto: o se comprueba
+cada destino antes de cada escritura —y entonces la costura natural es
+`core/casos/escritura.py`, que ya lo hace con `_bajo` para las escrituras *dentro* de un caso—, o
+se declara que el árbol de un caso no puede contener enlaces y se verifica al abrirlo.
+
+**Remedio propuesto:** enrutar las escrituras del alta por la costura de `escritura.py`, que ya
+tiene la propiedad, en vez de añadir una comprobación nueva. Su mutante: el escenario de arriba
+aborta **antes** de escribir fuera y **sin dejar andamiaje parcial**.
+
+**Disparador de promoción.** El más bajo de los tres: exige una junction preexistente en el árbol
+de casos, que hoy nadie crea. Se registra porque está **medido** y porque el arreglo de
+`#153`/`#154` declara expresamente no cubrirlo.
+
+
+## 158. La cuarta puerta al sumidero: `intake_manual` confía en el `lote` que le pasan
+
+> 🔴 **ABIERTA.** R2 adversarial del 2026-09-05 (`docs/superpowers/specs/2026-09-05-validar-en-el-sumidero-r2-adversarial-review.md`, H-06), **preexistente** — no la
+> introdujo el arreglo de `#153`/`#154`, la destapó. Verificada contra la fuente el mismo día.
+
+`core/intake_manual.py` tiene tres funciones de depósito y **las tres validan la mitad
+relativa y ninguna la absoluta**:
+
+| Función | Qué valida | Qué acepta sin mirar |
+|---|---|---|
+| `save_file` | que `filename` no lleve separadores, y que el caso **exista** | `lote` |
+| `extract_zip` | que el caso exista, y `safe_zip_extract` contra `lote` | `lote` |
+| `save_file_en_lote` | `rel` contra `lote`, con `resolve()` y todo | `lote` |
+
+En las tres, `lote` entra como argumento y sale como `dest = lote / rel`. Un `lote` absoluto
+apunta a donde quiera: `pathlib` descarta el lado izquierdo, así que ni siquiera hace falta un
+`..`. La guarda de nombre y la de existencia del caso dan la **apariencia** de camino cerrado.
+
+**Es exactamente la forma del defecto que ya está anotado como propio:** la guarda vive en el
+envoltorio y el otro llamador no pasa por ella. Aquí está incluso escrito en el docstring de
+`save_file_en_lote` — «el caller ya validó la existencia del caso al abrir el lote con
+`abrir_lote_manual`/`reservar_lote`, que aplica el guard §6)». Eso es una **premisa sobre el
+llamador**, no una comprobación; y `save_file`, cuando recibe `lote=None`, sí llama a
+`abrir_lote_manual` —o sea que la vía buena existe— pero cuando lo recibe, no comprueba nada.
+
+**Remedio.** Una sola línea en cada una de las tres, antes del primer `mkdir`: que `lote` esté
+contenido en `caso_path(case_id)` —o en la copia operativa que resuelva `CaseWorkspace`—, con
+`_contenido_en` de `core/case_manager.py`, que ya tiene la propiedad y ya documenta por qué no
+usa `case_mutex._bajo`.
+
+**Su mutante:** quitar esa línea y pasar `lote=Path(tmp_path)/"FUERA"` a cada una de las tres
+tiene que dejar el fichero fuera del árbol de casos — hoy lo deja, y los tests actuales pasan.
+
+**Disparador de promoción.** Junto a `#155`/`#156`/`#157`, que son las otras puertas del mismo
+sumidero. Por sí sola no urge: hoy los tres callers vivos (`streamlit_app`, el CLI de intake
+manual, `intake_lotes`) pasan lotes que ellos mismos han abierto. Lo que la hace registrable es
+que **el contrato no lo dice y nada lo impide**.
+
+
+## 159. `case_mutex._bajo` rechaza a los hijos de una raíz anclada
+
+> 🔴 **ABIERTA.** R2 adversarial del 2026-09-05 (H-02), medida. Es el motivo de que
+> `core/case_manager._contenido_en` exista en vez de reutilizar `_bajo`, y así está dicho en su
+> docstring.
+
+`core/casos/case_mutex._bajo` decide contención con `c.startswith(r + os.sep)`. Cuando la raíz
+**ya termina en separador** —una unidad (`C:\`) o un recurso UNC (`\server\share\`)— eso exige
+dos separadores seguidos y devuelve `False` para **todo** descendiente legítimo:
+
+```
+_bajo(Path('C:/CASOS/EV-2026-001'),      Path('C:/'))              -> False
+_bajo(Path('//server/share/CASOS/EV'),   Path('//server/share/'))  -> False
+```
+
+Con `CASOS_ROOT` apuntado a la raíz de una unidad o a un recurso de red —los dos configurables
+hoy por `.env`— el mutex del caso consideraría que ningún caso está bajo su raíz.
+
+**Por qué no se arregló de noche, junto al resto.** Lo consume el **mutex del caso**, cuyo radio
+de daño es «quién puede escribir sobre qué copia»: por presupuesto de rondas son **dos**, una de
+diseño y una de diff, y esta pieza entró como remediación de una R2 ya cerrada. Cambiar la
+semántica de contención del mutex a las 3 de la mañana, sobre una propiedad que no falla en
+ninguna configuración viva, es precisamente lo que el techo de rondas existe para impedir.
+
+**Remedio.** Sustituir el cuerpo de `_bajo` por `os.path.commonpath`, que no tiene el caso
+especial, y **borrar `_contenido_en`** dejando un solo hogar para la propiedad — el mismo patrón
+que cerró el punto 4 de este encargo con `_MD_SUBDIR`. Sus mutantes: los dos casos anclados de
+arriba en verde, y los dos negativos (`D:/CASOS/EV` bajo `C:/CASOS`, `C:/CASOS_x/EV` bajo
+`C:/CASOS`) que impiden que el arreglo se vuelva permisivo. Los cuatro ya están escritos en
+`tests/test_ensure_case_sumidero_r2.py::test_la_contencion_acepta_los_hijos_de_una_raiz_anclada`,
+apuntados a `_contenido_en`: al unificar, se reapuntan a `_bajo`.
+
+**Disparador de promoción.** Que alguien configure `CASOS_ROOT` en la raíz de una unidad o en un
+UNC. Mientras `CASOS_ROOT` sea una subcarpeta —lo que es en las tres máquinas— la propiedad no
+se ejerce.
+
+
+## 160. `ensure_colaborador_vinculado` necesita credenciales ANTES de poder fallar cerrado
+
+> 🔴 **ABIERTA.** Medido el 2026-09-05 al correr la suite **desde un worktree**, que es el
+> flujo estándar del repo (`docs/FLUJO_GIT.md`) y **no hereda `.env`**. Preexistente: entró con
+> el PR #272 (`ecc21ac`) y no la toca ninguna rama en curso mía.
+> ⚠️ **Módulo de la sesión hermana** (alta de colaborador en el CRM): avisada, no tocado.
+
+Dos tests de `tests/test_crm_dedup_incertidumbre.py` fallan en cualquier clon sin `.env`:
+
+```
+tests/test_crm_dedup_incertidumbre.py::TestUnaConsultaCaidaNoEsAusencia::test_el_colaborador_tampoco
+tests/test_crm_dedup_incertidumbre.py::test_el_respaldo_del_colaborador_no_corre_si_el_NIF_no_se_pudo_mirar
+E   core.sync_sudespacho_legacy.SudespachoLegacyError: Falta SUDESPACHO_LEGACY_HOST en .env.
+```
+
+**No es un fallo del test: es la forma de la función.** `core/sudespacho_relations.py:2123-2125`
+construye el cliente **antes** del `try`, así que `ensure_colaborador_vinculado` exige
+credenciales para llegar a la comprobación de identidad. Su hermana `ensure_contrario_vinculado`
+no falla en el mismo entorno, y las dos tienen el mismo parámetro `client=None`: la asimetría es
+**cuándo** se materializa el cliente, no la firma.
+
+**Por qué importa más que un test rojo.** La propiedad que esos dos tests fijan es del PR #272 y
+es buena —*«un 500 tiene que constar, no colapsar en no existe»*—, pero en un entorno sin `.env`
+la función levanta un **error de configuración** donde la propiedad pide `IdentidadSinComprobar`.
+Los dos fallan cerrado, así que no hay pérdida de datos; lo que se pierde es la **capacidad de
+distinguir** «no pude mirar la identidad» de «no pude mirar nada porque no hay credenciales».
+Es la familia de `feedback-no-lo-se-no-es-no-hay` en el nivel de la causa.
+
+Y el efecto práctico: **la suite no es verde en un worktree limpio**, o sea que el instrumento
+con el que se decide si una rama entra a `main` depende de un fichero que el worktree no tiene.
+Eso convierte dos rojos permanentes en ruido de fondo, que es cómo se pierden los rojos de
+verdad.
+
+**Remedio.** Mover la construcción del cliente **después** de resolver la identidad, o
+—equivalente y más barato— hacerla perezosa: `_resolver_colaborador` ya recibe `client`, así que
+basta que el cliente se materialice en el primer uso real. Su mutante: los dos tests de arriba
+tienen que pasar **sin `.env`** y seguir levantando `IdentidadSinComprobar`, no
+`SudespachoLegacyError`.
+
+**Disparador de promoción.** Inmediato en cuanto la sesión hermana toque ese módulo: es una
+línea movida dentro de la función que está reescribiendo, y arreglarlo desde fuera sería pisarla.
+
+
+## 161. El `leak-guard` de pre-commit es INERTE en todo worktree, y por eso dejé pasar PII
+
+> 🔴 **ABIERTA y con daño real, no hipotético.** Medido el 2026-09-05: una dirección de inmueble
+> de la blocklist llegó a GitHub en el commit `eee9a7e` con el hook **en verde**. Lo paró
+> `leak-scan` en CI, que sí tiene la lista.
+
+`scripts/precommit_leak_guard.py::cargar_blocklist` lee los términos de dos artefactos
+**gitignored**: `data/_saneado/replacements.txt` y `data/_config/pii_blocklist.txt`. Un worktree
+recién creado **no tiene ninguno de los dos** — por definición, porque están gitignored. Y el
+docstring dice lo que pasa entonces: *«Vacío si no hay ninguno.»*
+
+Con la lista vacía el bucle de comprobación no itera, así que el guard **pasa en verde sin haber
+comprobado nada**. Medido en las dos raíces la misma noche:
+
+```
+<raíz del repo>          data/_config/pii_blocklist.txt -> existe, 12 líneas (70 términos)
+<worktree>               data/_config/pii_blocklist.txt -> NO existe          (0 términos)
+```
+
+**Y el flujo estándar del repo es el worktree.** `docs/FLUJO_GIT.md` manda «una mesa = una tarea =
+una rama», o sea que **la mayoría de los commits del proyecto se hacen donde el guard no puede
+ver nada**. El verde del hook no significa «no hay PII»: significa «no tengo con qué mirar».
+
+**Es exactamente la familia que este repo ya tiene documentada** —una guarda que no puede dar el
+otro valor— y aquí en su forma más cara, porque el instrumento inerte es justo el que protege el
+dato del cliente.
+
+**Remedio, y la elección importa.** Fallar cerrado es la doctrina de la casa, pero convertirlo hoy
+en bloqueo dejaría sin poder commitear a **todas** las sesiones con worktree hasta que alguien
+copie la lista, incluida la que está trabajando ahora mismo. Propuesta en dos tiempos:
+
+1. **Ya:** que `cargar_blocklist` **avise en STDERR** cuando devuelve cero términos, diciendo la
+   ruta que buscó y que la comprobación de PII **no se ha ejecutado**. Un guard que no puede
+   mirar tiene que decirlo; hoy calla.
+2. **Con decisión de Nikolai:** o bien fallar cerrado, o bien que el hook resuelva la lista desde
+   la **raíz común** (`git rev-parse --git-common-dir` da el `.git` compartido, y de ahí se llega
+   al checkout principal), que es lo que la haría funcionar en worktrees sin copiar nada.
+
+**Su mutante:** vaciar la blocklist y commitear un término conocido — hoy pasa en verde y en
+silencio; con (1) pasa pero **lo dice**; con (2) lo caza.
+
+**Disparador de promoción.** Inmediato: es la única guarda de PII que corre antes de que el dato
+salga de la máquina, y está probado que no corre.
