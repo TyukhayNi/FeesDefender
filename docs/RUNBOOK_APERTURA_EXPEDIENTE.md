@@ -402,6 +402,26 @@ python -m scripts.sala_lectura render  --case "<case_id>"    # 5. INDICE.md + CR
   Antes abortaba con `LocalWorkspaceMissing` tras derivar además una ciudad equivocada.
 - **`poblar` copia los documentos; `render` solo escribe los índices.** (En W-02T3XO se
   olvidó `poblar` y la sala salió vacía.)
+- **`[APER-57]` Una salida != 0 de `preparar-residuo` u `organizar` NO es un fallo: es el
+  comando diciéndote qué falta.** Desde el 2026-09-05 los dos distinguen estados que antes
+  decían igual, y **el código de salida es parte del mensaje**:
+
+  | Lo que ves | Qué pasa de verdad | Qué haces |
+  |---|---|---|
+  | `Sin residuo: todo el catálogo está clasificado` (0) | de verdad no queda nada | sigue con `poblar` |
+  | `N doc(s) del catálogo están sin clasificar y la worklist no existe todavía` (1) | nadie ha calculado el residuo | `clasificar` primero |
+  | `… y la worklist existe pero ninguna de sus filas casa con el catálogo (hashes rancios)` (1) | cambiaste `00_Input` después de clasificar | `clasificar` otra vez |
+  | `N doc(s) en residuo y NINGUNO tiene texto extraído` (1) | falta el OCR/extracción | `sala_maquina apply` |
+  | `[AVISO] N doc(s) … se quedan fuera por no tener texto` (0, con lista) | vas a clasificar con material incompleto | decide si merece re-correr la sala de máquina |
+  | `Sin material catalogable: N fichero(s) …, ninguno con extensión relevante` | `organizar` no montó nada, y es correcto | revisa qué hay en `00_Input` |
+  | `00_Input está vacío` | no has depositado nada todavía | intake |
+
+  **Por qué importa el detalle:** hasta el 2026-09-04 «no hay residuo» y «no pude leer el
+  residuo» se decían con la misma frase y **los dos salían con 0**. Medido en W-02JSVZ: la CLI
+  dijo *«Sin residuo con texto extraído. Nada que preparar»* con **99 documentos en residuo y
+  176 espejos MD en disco**. La frase era cierta, y por eso costó la tarde: manda a buscar el
+  defecto donde no está. Lo mismo con `organizar`, que decía *«Sala de lectura organizada.
+  Acciones: 0»* con `00_Input` lleno.
 - **`preparar-residuo` ya encuentra el texto**, y los enlaces «ver texto» del `INDICE.md` ya no
   salen muertos: `_md_path` apuntaba al `01_Procesado/MD/` del motor jubilado y la sala de máquina
   escribe en `01_Procesado/02_Sala de máquina/03_MD/`. Los **bundles partidos** también se
