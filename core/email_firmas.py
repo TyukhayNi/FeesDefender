@@ -287,8 +287,21 @@ VEREDICTO_CONFLICTO = "CONFLICTO"
 #: `Telf:` y `Tel. Fijo:` son FIJO. Se prueba movil primero para que `Móvil:` no caiga
 #: en el patron del fijo: un cruce mete un fijo en el campo `movil`, que es el que la
 #: UI del CRM muestra en el listado.
+#:
+#: La propiedad es que una etiqueta que NOMBRA el movil es un movil este donde este
+#: dentro de la etiqueta (defecto medido 2026-09-04): `Teléfono móvil:` / `Telefono
+#: movil:` / `Tel. móvil:` son etiquetas reales y frecuentes en firmas espanolas, y
+#: antes de este arreglo `_RE_MOVIL` estaba anclada a inicio de linea con SOLO la
+#: palabra movil como alternativa -- la linea empieza por "Teléfono", no por "móvil",
+#: asi que _RE_MOVIL nunca llegaba a probarse y la linea entera caia en `_RE_FIJO`
+#: (que si tiene `tel[ée]fono`/`tel\.` entre sus alternativas). El arreglo no es
+#: "probar movil antes que fijo" -- eso ya se hacia y no bastaba, porque el ancla de
+#: `_RE_MOVIL` le impedia ver la linea -- es admitir un prefijo `Teléfono`/`Tel.`
+#: opcional ANTES de la palabra movil, para que la etiqueta compuesta entera quede
+#: reconocida como movil.
 _RE_MOVIL = re.compile(
-    r"(?im)^\s*\*?\s*(?:m[óo]vil|mobile|m[óo]v\.?)\s*[:.]?\s*(.+?)\s*$")
+    r"(?im)^\s*\*?\s*(?:tel[ée]fono|tel\.)?\s*(?:m[óo]vil|mobile|m[óo]v\.?)"
+    r"\s*[:.]?\s*(.+?)\s*$")
 _RE_FIJO = re.compile(
     r"(?im)^\s*\*?\s*(?:telf|tel\.?\s*fijo|tel[ée]fono|tel\.|phone)\s*[:.]?\s*(.+?)\s*$")
 
@@ -307,6 +320,13 @@ _RE_NO_ES_CARGO = re.compile(
 )
 
 _RE_EXTENSION = re.compile(r"(?i)\s*(?:/|\bext\b|\bextension\b|\bextensión\b).*$")
+
+#: Lo que queda tras limpiar TIENE que SER un telefono: solo digitos, o un `+`
+#: seguido de solo digitos (los extranjeros que `normalize_es_phone` conserva a
+#: proposito). Cualquier otra cosa -- una etiqueta que se colo entera, una frase
+#: con un numero de atencion al cliente dentro, una direccion con el numero del
+#: piso -- NO es un telefono aunque contenga digitos. Ver `limpiar_telefono`.
+_RE_TELEFONO_VALIDO = re.compile(r"^\+?\d+$")
 
 
 @dataclass(frozen=True)
@@ -328,12 +348,21 @@ def limpiar_telefono(valor: str) -> str:
     negrita HTML degrada a `*` en el text/plain, y la plantilla de Madrid pega la
     extension detras (`+34 912 345 678 / Ext. 1234`). La extension no es parte del
     numero, y el CRM exige 9 digitos o devuelve HTTP 400 (`[APER-14]`).
+
+    **El valor limpio tiene que SER un telefono, no meramente contener un digito**
+    (defecto medido 2026-09-04): la comprobacion final era `any(c.isdigit() for c in
+    v)`, una guarda inerte que acepta cualquier cosa con un digito dentro --
+    `"movil:612345678"` la pasaba entera, letras y dos puntos incluidos, como si
+    fuera un telefono. Tras quitar extension/asteriscos/separadores y pasar por
+    `normalize_es_phone`, lo que queda tiene que ser SOLO digitos, o un `+` seguido
+    de SOLO digitos (los extranjeros que `normalize_es_phone` deja intactos a
+    proposito) -- cualquier otra cosa devuelve cadena vacia. Es mejor no tener el
+    telefono que escribir una cadena rara en la ficha del cliente.
     """
     v = _RE_EXTENSION.sub("", valor or "")
     v = v.replace("*", "").replace("<", "").replace(">", "").strip()
     v = normalize_es_phone(v)
-    # Un valor sin ningun digito no es un telefono, es basura del parseo.
-    return v if any(c.isdigit() for c in v) else ""
+    return v if _RE_TELEFONO_VALIDO.match(v) else ""
 
 
 def _cargo_de(lineas: list[str]) -> str:
@@ -362,7 +391,15 @@ def leer_campos(bloque: BloqueFirma) -> DatosFirma:
     """Los campos de UN bloque ya atribuido. No decide veredictos: eso es `consolidar`."""
     lineas = bloque.texto.splitlines()
     m_movil = _RE_MOVIL.search(bloque.texto)
-    # Un `Móvil:` no puede caer en el patron del fijo: se resta del texto antes.
+    # Esta resta SI hace falta (dejo de ser codigo muerto en el arreglo de la
+    # etiqueta compuesta, 2026-09-04): desde que `_RE_MOVIL` admite un prefijo
+    # `Teléfono`/`Tel.` opcional, una linea como "Teléfono móvil: 612..." casa con
+    # las DOS regex a la vez -- `_RE_FIJO` tambien tiene `tel[ée]fono`/`tel\.` entre
+    # sus alternativas, y su cola libre `(.+?)\s*$` capturaria "móvil: 612..." como
+    # si fuera el numero de fijo. Restar aqui la linea que YA se leyo como movil
+    # evita que `_RE_FIJO` la vuelva a leer mal. (Antes de ese arreglo las dos regex
+    # eran disjuntas -- ancladas y con etiquetas que no se solapaban -- y esta linea
+    # si era inerte; un mutante que la quitaba no hacia caer ningun test.)
     texto_sin_movil = _RE_MOVIL.sub("", bloque.texto)
     m_fijo = _RE_FIJO.search(texto_sin_movil)
     return DatosFirma(

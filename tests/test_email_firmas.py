@@ -600,6 +600,39 @@ class TestLimpiarTelefono:
         assert limpiar_telefono("+33 1 23 45 67 89") == "+33123456789"
 
 
+class TestLimpiarTelefonoValidaLaFormaYNoSoloElDigito:
+    """Defecto grave (medido 2026-09-04): el guard final era `any(c.isdigit() for c
+    in v)`, que acepta CUALQUIER cosa que contenga un digito -- una guarda inerte.
+    La propiedad correcta es que el valor limpio TENGA que SER un telefono: solo
+    digitos, o un `+` seguido de solo digitos (los extranjeros que
+    `normalize_es_phone` conserva a proposito). Cualquier otra cosa es basura del
+    parseo y tiene que devolver "": mejor no tener el telefono que escribir una
+    cadena rara en la ficha del cliente."""
+
+    @pytest.mark.parametrize("crudo", [
+        "612345678",
+        "+34 93 111 22 33",
+        "*612 34 56 78*",
+        "912 345 678 / Ext. 1234",
+        "+33 1 23 45 67 89",
+    ])
+    def test_los_valores_que_SI_son_telefono_sobreviven(self, crudo):
+        assert limpiar_telefono(crudo) != ""
+
+    @pytest.mark.parametrize("basura", [
+        "movil:612345678",     # el repro exacto del defecto: la etiqueta cuela entera
+        "Ext. 1234",           # extension sin numero delante
+        "atencion al cliente 900 123 456 para dudas",
+        None,
+        "-",
+        "*",
+        "",
+        "piso 3 puerta 2",     # texto y digitos mezclados
+    ])
+    def test_la_basura_con_digitos_NO_produce_un_telefono(self, basura):
+        assert limpiar_telefono(basura) == ""
+
+
 class TestLeerLosCamposDeLaPlantillaDeBarcelona:
 
     @staticmethod
@@ -707,3 +740,37 @@ class TestElMovilNoSeConfundeConElFijo:
         cuerpo = "ENGEL&VÖLKERS\nMovil: 612345678\nana@engelvoelkers.com\n"
         bloques, _ = extraer_bloques(cuerpo, fichero="h.eml")
         assert leer_campos(bloques[0]).movil == "612345678"
+
+
+class TestLaEtiquetaCompuestaTelefonoMovilEsMovil:
+    """Defecto medido (2026-09-04): `Telefono movil:` / `Telefono Movil:` / `Tel.
+    movil:` se clasificaban como FIJO. `_RE_FIJO` casa por su alternativa
+    `tel[ée]fono`/`tel\\.` y `_RE_MOVIL` no llegaba a probarse porque estaba
+    anclada a inicio de linea, y la linea empieza por "Telefono". La propiedad:
+    una etiqueta que NOMBRA el movil es un movil, este donde este dentro de la
+    etiqueta -- no es "probar movil antes que fijo" (eso ya se hacia y no
+    bastaba, porque el ancla de _RE_MOVIL le impedia ver la linea).
+
+    Cada caso comprueba TAMBIEN que el otro campo queda vacio: un cruce que
+    rellene los dos es igual de malo que clasificar mal uno solo."""
+
+    @pytest.mark.parametrize("etiqueta", [
+        "Móvil:", "Movil:", "Mobile:", "Teléfono móvil:", "Telefono movil:",
+        "Tel. móvil:", "Móv.:",
+    ])
+    def test_la_etiqueta_se_lee_como_movil_y_el_fijo_queda_vacio(self, etiqueta):
+        cuerpo = f"ENGEL&VÖLKERS\n{etiqueta} 612 34 56 78\nana@engelvoelkers.com\n"
+        bloques, _ = extraer_bloques(cuerpo, fichero="mv.eml")
+        d = leer_campos(bloques[0])
+        assert d.movil == "612345678", f"{etiqueta!r} deberia leerse como movil"
+        assert d.telefono == "", f"{etiqueta!r} no puede rellenar tambien el fijo"
+
+    @pytest.mark.parametrize("etiqueta", [
+        "Telf:", "Teléfono:", "Tel.:", "Tel. Fijo:", "Phone:",
+    ])
+    def test_la_etiqueta_se_lee_como_fijo_y_el_movil_queda_vacio(self, etiqueta):
+        cuerpo = f"ENGEL&VÖLKERS\n{etiqueta} 931112233\nana@engelvoelkers.com\n"
+        bloques, _ = extraer_bloques(cuerpo, fichero="fj.eml")
+        d = leer_campos(bloques[0])
+        assert d.telefono == "931112233", f"{etiqueta!r} deberia leerse como fijo"
+        assert d.movil == "", f"{etiqueta!r} no puede rellenar tambien el movil"
