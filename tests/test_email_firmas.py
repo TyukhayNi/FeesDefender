@@ -59,6 +59,29 @@ class TestDesmarcar:
         assert desmarcar("a > b") == "a > b"
 
 
+class TestDesmarcarPreservaElNumeroDeLineas:
+    """H-02: `>` solo (sin nada detras) no debe fusionar la linea con la siguiente.
+
+    `\\s` incluye el salto de linea, asi que `^\\s*>+\\s?` se comia el `\\n` cuando la
+    linea de cita era exactamente `>`. La task siguiente cruza el numero de linea del
+    bloque desmarcado con las zonas citadas del texto original: si `desmarcar` cambia
+    el recuento de lineas, ese cruce se desalinea.
+    """
+
+    @pytest.mark.parametrize("texto", [
+        ">\nfoo\nbar",
+        ">>\nfoo\nbar",
+        "> \nfoo\nbar",
+        ">\n\nfoo\nbar",
+        "foo\n>\nbar\n>\nbaz",
+        "> hola\n> mundo\n",
+        ">> hola\n",
+        "foo\n>>\n>\nbar",
+    ])
+    def test_desmarcar_no_cambia_el_numero_de_lineas(self, texto):
+        assert len(desmarcar(texto).splitlines()) == len(texto.splitlines())
+
+
 class TestElMarcadorNoEsNecesario:
     """El hallazgo H-01: 3 de 6 no lo traen."""
 
@@ -81,10 +104,30 @@ class TestElMarcadorNoEsNecesario:
         assert localizar_bloques(cuerpo, fichero="c.eml")
 
     def test_el_marcador_APRIETA_el_limite_superior(self):
-        """Con marcador, la prosa de encima no entra en el bloque."""
-        cuerpo = "PROSA QUE NO ES FIRMA\n\n-- \n" + FIRMA_BCN
+        """Con marcador, la prosa que SI cabria en la ventana fija de 12 no entra.
+
+        H-03: con `FIRMA_BCN` completa (13 lineas) la ventana fija ya coincide con el
+        arranque de la firma, y el test pasaba aunque se borrara toda la logica del
+        marcador (`previos = []`). Aqui la prosa esta dentro de la ventana de 12 lineas
+        contando hacia atras desde el email SOLO gracias al marcador: sin el, la
+        ventana fija por si sola alcanzaria la prosa.
+        """
+        cuerpo = "PROSA QUE NO ES FIRMA\n-- \nENGEL&VÖLKERS\nana@engelvoelkers.com\n"
         bloque = localizar_bloques(cuerpo, fichero="d.eml")[0]
         assert "PROSA QUE NO ES FIRMA" not in bloque.texto
+
+    def test_el_marcador_no_entra_en_el_bloque(self):
+        """H-04: cuando el marcador gana el max() frente a la ventana, el bloque
+        empieza DESPUES del marcador, no en la propia linea `-- `.
+
+        Con `FIRMA_BCN` completa (13 lineas) la ventana ya coincide con el arranque
+        de la firma y nunca deja ver este defecto: hace falta un caso donde el
+        marcador este mas cerca del email que la ventana fija, para que sea el
+        marcador el que decida `inicio`.
+        """
+        cuerpo = "PROSA QUE NO ES FIRMA\n-- \nENGEL&VÖLKERS\nana@engelvoelkers.com\n"
+        bloque = localizar_bloques(cuerpo, fichero="d2.eml")[0]
+        assert not bloque.texto.lstrip().startswith("--")
 
     def test_sin_marcador_el_bloque_se_limita_a_una_ventana(self):
         """Sin marcador no se puede ser exacto, pero tampoco se arrastra el correo entero."""
@@ -114,6 +157,24 @@ class TestLaCorroboracionEsOBLIGATORIA:
         """El colaborador es personal de E&V. Un tercero no entra por aqui."""
         cuerpo = "ENGEL&VÖLKERS\nMóvil: 612 34 56 78\nalguien@otraempresa.example\n"
         assert localizar_bloques(cuerpo, fichero="i.eml") == []
+
+    def test_EV_MMC_SPAIN_sola_en_su_linea_SI(self):
+        cuerpo = "EV MMC SPAIN, S.L.U.\nana@engelvoelkers.com\n"
+        assert localizar_bloques(cuerpo, fichero="i2.eml")
+
+    def test_mencion_de_la_marca_en_medio_de_una_frase_NO_corrobora(self):
+        """H-01: el corpus entero es correspondencia SOBRE E&V, asi que la marca
+        aparece en cualquier parte no es una puerta: casi todo la cumpliria.
+        La propiedad correcta es que la ventana tenga FORMA de firma (marca en su
+        propia linea), no que la marca aparezca en algun sitio de la ventana."""
+        cuerpo = ("Hemos hablado con Engel & Völkers y nos dicen que escribas a "
+                  "ana@engelvoelkers.com\n")
+        assert localizar_bloques(cuerpo, fichero="i3.eml") == []
+
+    def test_mencion_en_medio_de_frase_con_direccion_en_otra_linea_tampoco(self):
+        cuerpo = ("Hemos hablado con Engel & Völkers sobre la operacion.\n"
+                  "ana@engelvoelkers.com\n")
+        assert localizar_bloques(cuerpo, fichero="i4.eml") == []
 
 
 class TestLoQueDevuelve:

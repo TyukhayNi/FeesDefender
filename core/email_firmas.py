@@ -28,7 +28,9 @@ _VENTANA_ATRAS = 12
 #: queda un `<direccion>` de cortesia detras.
 _VENTANA_ADELANTE = 4
 
-_RE_CITA = re.compile(r"(?m)^\s*>+\s?")
+#: [ \t] y no \s: \s incluye el salto de linea, y una linea de cita vacia (un ">" solo,
+#: sin nada detras) se comeria el salto y fusionaria esa linea con la siguiente (H-02).
+_RE_CITA = re.compile(r"(?m)^[ \t]*>+[ \t]?")
 
 _RE_MARCADOR = re.compile(
     r"(?im)^\s*(?:--\s*|enviado desde mi.*|sent from my.*|obtener outlook.*|get outlook.*)$"
@@ -40,9 +42,17 @@ _RE_EMAIL_COLAB = re.compile(
 
 #: Que convierte una direccion en una FIRMA. Sin al menos una de estas, una direccion
 #: suelta en un texto produciria una «firma» inventada de quien solo se menciona.
+#:
+#: La marca y la razon social van ANCLADAS a linea propia (H-01): el corpus entero es
+#: correspondencia SOBRE operaciones de E&V, asi que "la marca aparece en algun punto
+#: de la ventana" no es una puerta, es la norma. Un correo que solo MENCIONA la gestion
+#: de E&V de paso, con una direccion suelta de un colaborador sin firmar, no debe
+#: corroborar. La propiedad es que la ventana tenga FORMA de firma: en las plantillas
+#: medidas, la marca y la razon social estan solas en su propia linea (admitiendo
+#: asteriscos de negrita y espacios alrededor).
 _RE_CORROBORA = re.compile(
-    r"(?im)engel\s*&?\s*v[öo]lkers"
-    r"|ev\s+mmc\s+spain"
+    r"(?im)^\s*\*?\s*engel\s*&?\s*v[öo]lkers\s*\*?\s*$"
+    r"|^\s*\*?\s*ev\s+mmc\s+spain\b.*$"
     r"|^\s*\*?\s*(?:telf|tel[ée]fono|tel\.|m[óo]vil|movil|mobile)\b"
 )
 
@@ -85,8 +95,11 @@ def localizar_bloques(texto: str, *, fichero: str = "") -> list[BloqueFirma]:
 
         # El marcador mas cercano por encima aprieta el limite superior; si no hay,
         # se usa una ventana fija. Sin limite se arrastraria el correo entero.
+        # El candidato del marcador es la linea DESPUES de el (H-04): la propia linea
+        # del marcador ("-- ") no es parte de la firma.
         previos = [m for m in marcadores if m < i]
-        inicio = max(previos[-1], i - _VENTANA_ATRAS) if previos else max(0, i - _VENTANA_ATRAS)
+        candidato_marcador = previos[-1] + 1 if previos else 0
+        inicio = max(candidato_marcador, i - _VENTANA_ATRAS)
         fin = min(len(lineas), i + 1 + _VENTANA_ADELANTE)
         cuerpo = "\n".join(lineas[inicio:fin])
 
