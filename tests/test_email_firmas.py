@@ -8,8 +8,10 @@ Los esqueletos de abajo son los reales; los datos, inventados.
 """
 import pytest
 
-from core.email_firmas import (BloqueFirma, DatosFirma, PROCEDENCIA_CITADO,
-                               PROCEDENCIA_DIRECTO, atribuir, desmarcar, extraer_bloques,
+from core.email_firmas import (BloqueFirma, Consolidado, DatosFirma, PROCEDENCIA_CITADO,
+                               PROCEDENCIA_DIRECTO, VEREDICTO_CONFLICTO,
+                               VEREDICTO_ENCONTRADO, VEREDICTO_FIRMA_SIN_CAMPO,
+                               atribuir, consolidar, desmarcar, extraer_bloques,
                                leer_campos, limpiar_telefono, localizar_bloques,
                                zonas_citadas)
 
@@ -774,3 +776,124 @@ class TestLaEtiquetaCompuestaTelefonoMovilEsMovil:
         d = leer_campos(bloques[0])
         assert d.telefono == "931112233", f"{etiqueta!r} deberia leerse como fijo"
         assert d.movil == "", f"{etiqueta!r} no puede rellenar tambien el movil"
+
+
+def _f(email="ana@engelvoelkers.com", movil="", telefono="", cargo="",
+       procedencia=PROCEDENCIA_DIRECTO, fichero="x.eml", linea=1):
+    return DatosFirma(email=email, movil=movil, telefono=telefono, cargo=cargo,
+                      procedencia=procedencia, fichero=fichero, linea=linea)
+
+
+class TestConsolidarLoBasico:
+
+    def test_sin_firmas_no_hay_nadie(self):
+        assert consolidar([]) == {}
+
+    def test_una_firma_da_un_consolidado(self):
+        c = consolidar([_f(movil="612345678")])
+        assert set(c) == {"ana@engelvoelkers.com"}
+        assert isinstance(c["ana@engelvoelkers.com"], Consolidado)
+
+    def test_el_valor_encontrado_lleva_su_veredicto_y_su_fuente(self):
+        c = consolidar([_f(movil="612345678", fichero="a.eml", linea=7)])["ana@engelvoelkers.com"]
+        assert c.movil == "612345678"
+        assert c.veredicto_movil == VEREDICTO_ENCONTRADO
+        assert "a.eml:7" in c.fuentes
+
+    def test_dos_personas_se_separan(self):
+        c = consolidar([_f(movil="612345678"),
+                        _f(email="berta@engelvoelkers.com", telefono="912345678")])
+        assert set(c) == {"ana@engelvoelkers.com", "berta@engelvoelkers.com"}
+
+    def test_el_email_se_normaliza_a_minusculas(self):
+        c = consolidar([_f(email="Ana@EngelVoelkers.com", movil="612345678")])
+        assert set(c) == {"ana@engelvoelkers.com"}
+
+
+class TestDosBloquesQueDicenLoMISMO:
+    """El caso normal: la plantilla de Barcelona repite la direccion, asi que un solo
+    .eml da dos bloques con los mismos valores. Eso NO es un conflicto."""
+
+    def test_dos_valores_iguales_no_son_conflicto(self):
+        c = consolidar([_f(movil="612345678", linea=1),
+                        _f(movil="612345678", linea=9)])["ana@engelvoelkers.com"]
+        assert c.movil == "612345678"
+        assert c.veredicto_movil == VEREDICTO_ENCONTRADO
+
+    def test_uno_vacio_y_uno_con_valor_se_completan(self):
+        c = consolidar([_f(movil="612345678"),
+                        _f(telefono="931112233")])["ana@engelvoelkers.com"]
+        assert (c.movil, c.telefono) == ("612345678", "931112233")
+
+
+class TestElDirectoMandaSobreElCitado:
+    """Un bloque citado es mas antiguo: si el consultor cambio de movil, el directo
+    es el bueno. Esto NO es un conflicto, es una jerarquia."""
+
+    def test_el_directo_gana(self):
+        c = consolidar([_f(movil="600000000", procedencia=PROCEDENCIA_CITADO),
+                        _f(movil="612345678", procedencia=PROCEDENCIA_DIRECTO)])
+        assert c["ana@engelvoelkers.com"].movil == "612345678"
+
+    def test_el_orden_en_que_llegan_no_cambia_el_resultado(self):
+        c = consolidar([_f(movil="612345678", procedencia=PROCEDENCIA_DIRECTO),
+                        _f(movil="600000000", procedencia=PROCEDENCIA_CITADO)])
+        assert c["ana@engelvoelkers.com"].movil == "612345678"
+
+    def test_si_SOLO_hay_citado_se_usa(self):
+        """Que sea mas antiguo no lo hace falso: es lo unico que hay."""
+        c = consolidar([_f(movil="600000000", procedencia=PROCEDENCIA_CITADO)])
+        assert c["ana@engelvoelkers.com"].movil == "600000000"
+        assert c["ana@engelvoelkers.com"].veredicto_movil == VEREDICTO_ENCONTRADO
+
+
+class TestElConflictoFALLA_CERRADO:
+    """Misma politica que el dedup del PR #272: ante lo que no puede comprobar, no
+    escribe. Un movil mal elegido va a la ficha del cliente."""
+
+    def test_dos_directos_distintos_son_CONFLICTO(self):
+        c = consolidar([_f(movil="612345678", fichero="a.eml"),
+                        _f(movil="600000000", fichero="b.eml")])["ana@engelvoelkers.com"]
+        assert c.veredicto_movil == VEREDICTO_CONFLICTO
+
+    def test_en_conflicto_NO_se_propone_valor(self):
+        """Lo que importa: que el campo salga VACIO, no que el veredicto lo diga."""
+        c = consolidar([_f(movil="612345678"), _f(movil="600000000")])["ana@engelvoelkers.com"]
+        assert c.movil == "", "un valor propuesto en conflicto acaba en el CRM"
+
+    def test_el_conflicto_de_un_campo_no_contamina_al_otro(self):
+        c = consolidar([_f(movil="612345678", telefono="931112233"),
+                        _f(movil="600000000", telefono="931112233")])["ana@engelvoelkers.com"]
+        assert c.veredicto_movil == VEREDICTO_CONFLICTO
+        assert c.veredicto_telefono == VEREDICTO_ENCONTRADO
+        assert c.telefono == "931112233"
+
+    def test_dos_citados_distintos_tambien_son_CONFLICTO(self):
+        c = consolidar([_f(movil="612345678", procedencia=PROCEDENCIA_CITADO),
+                        _f(movil="600000000", procedencia=PROCEDENCIA_CITADO)])
+        assert c["ana@engelvoelkers.com"].veredicto_movil == VEREDICTO_CONFLICTO
+
+    def test_el_conflicto_lista_TODAS_las_fuentes(self):
+        """Para que Nikolai pueda ir a mirar los dos y decidir."""
+        c = consolidar([_f(movil="612345678", fichero="a.eml", linea=3),
+                        _f(movil="600000000", fichero="b.eml", linea=5)])["ana@engelvoelkers.com"]
+        assert "a.eml:3" in c.fuentes and "b.eml:5" in c.fuentes
+
+
+class TestFirmaSinCampoNoEsNoTiene:
+    """La frontera del §6 del spec, y el aviso #3 del encargo."""
+
+    def test_hay_firma_y_no_hay_movil_es_FIRMA_SIN_CAMPO(self):
+        c = consolidar([_f(telefono="912345678")])["ana@engelvoelkers.com"]
+        assert c.movil == ""
+        assert c.veredicto_movil == VEREDICTO_FIRMA_SIN_CAMPO
+
+    def test_FIRMA_SIN_CAMPO_no_es_el_mismo_veredicto_que_ENCONTRADO_vacio(self):
+        """Si los dos colapsan en «sin dato», el informe afirma una ausencia que nadie
+        comprobo. Son constantes distintas a proposito."""
+        assert VEREDICTO_FIRMA_SIN_CAMPO != VEREDICTO_ENCONTRADO
+        assert VEREDICTO_FIRMA_SIN_CAMPO != VEREDICTO_CONFLICTO
+
+    def test_el_cargo_ausente_tambien_se_declara(self):
+        c = consolidar([_f(movil="612345678")])["ana@engelvoelkers.com"]
+        assert c.veredicto_cargo == VEREDICTO_FIRMA_SIN_CAMPO

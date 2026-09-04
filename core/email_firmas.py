@@ -17,6 +17,7 @@ Verdad de campo que fija el diseno, medida el 2026-09-04 sobre los 6 `.eml` de W
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 from core.utils import normalize_es_phone
@@ -411,3 +412,69 @@ def leer_campos(bloque: BloqueFirma) -> DatosFirma:
         fichero=bloque.fichero,
         linea=bloque.linea,
     )
+
+
+@dataclass(frozen=True)
+class Consolidado:
+    """Lo que el corpus dice de UNA persona, con el veredicto de cada campo.
+
+    Un campo vacio con veredicto `FIRMA_SIN_CAMPO` significa «hay firma y no lo trae»,
+    que NO es «no lo tiene»: una de las dos plantillas corporativas medidas no incluye
+    movil. Un campo vacio con `CONFLICTO` significa «hay dos y no se sabe cual».
+    """
+    email: str
+    movil: str = ""
+    telefono: str = ""
+    cargo: str = ""
+    veredicto_movil: str = VEREDICTO_FIRMA_SIN_CAMPO
+    veredicto_telefono: str = VEREDICTO_FIRMA_SIN_CAMPO
+    veredicto_cargo: str = VEREDICTO_FIRMA_SIN_CAMPO
+    fuentes: tuple[str, ...] = ()
+
+
+def _elegir(valores: list[tuple[str, str]]) -> tuple[str, str]:
+    """El valor de un campo entre varios bloques, y su veredicto.
+
+    `valores` son pares `(valor, procedencia)` ya filtrados de vacios, en el orden en
+    que llegaron (el llamador los pasa del .eml mas antiguo al mas reciente).
+
+    Jerarquia: un DIRECTO manda sobre un CITADO, porque el citado es mas antiguo y el
+    consultor puede haber cambiado de numero. Entre dos del mismo nivel manda el
+    ultimo. Si quedan dos distintos que nada separa, **CONFLICTO y campo vacio**: un
+    movil mal elegido acaba en la ficha del cliente, y fallar cerrado es la politica de
+    este modulo desde el dedup del PR #272.
+    """
+    if not valores:
+        return "", VEREDICTO_FIRMA_SIN_CAMPO
+
+    directos = [v for v, p in valores if p == PROCEDENCIA_DIRECTO]
+    candidatos = directos or [v for v, _ in valores]
+    distintos = set(candidatos)
+    if len(distintos) > 1:
+        return "", VEREDICTO_CONFLICTO
+    return candidatos[-1], VEREDICTO_ENCONTRADO
+
+
+def consolidar(firmas: Iterable[DatosFirma]) -> dict[str, Consolidado]:
+    """Un `Consolidado` por persona, agrupando por el email de su firma.
+
+    El orden de `firmas` es significativo: el llamador las pasa del .eml mas antiguo al
+    mas reciente, y `_elegir` se queda con el ultimo cuando nada mas los separa.
+    """
+    por_email: dict[str, list[DatosFirma]] = {}
+    for f in firmas:
+        if not f.email:
+            continue
+        por_email.setdefault(f.email.lower(), []).append(f)
+
+    salida: dict[str, Consolidado] = {}
+    for email, grupo in por_email.items():
+        movil, v_movil = _elegir([(f.movil, f.procedencia) for f in grupo if f.movil])
+        tel, v_tel = _elegir([(f.telefono, f.procedencia) for f in grupo if f.telefono])
+        cargo, v_cargo = _elegir([(f.cargo, f.procedencia) for f in grupo if f.cargo])
+        salida[email] = Consolidado(
+            email=email, movil=movil, telefono=tel, cargo=cargo,
+            veredicto_movil=v_movil, veredicto_telefono=v_tel, veredicto_cargo=v_cargo,
+            fuentes=tuple(dict.fromkeys(f"{f.fichero}:{f.linea}" for f in grupo)),
+        )
+    return salida
