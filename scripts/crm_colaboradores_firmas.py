@@ -19,6 +19,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import typer
+import yaml
 
 from core.casos import case_locator
 from core.email_firmas import (VEREDICTO_CONFLICTO, VEREDICTO_ENCONTRADO,
@@ -159,6 +160,92 @@ def report(case_id: str = typer.Option(..., "--case-id",
     typer.echo(f"[OK] Informe: {destino}")
     typer.echo(f"     {len(consolidados)} firmas, {len(candidatos)} candidatos, "
                f"{len(ilegibles)} ilegibles")
+
+
+#: Que campos del consolidado van al YAML, y con que clave. **`cargo` no esta**: no hay
+#: property de cargo en `colaboradores` (el CRM enumero su contrato el 2026-09-04) y
+#: escribirlo aqui seria dejar un dato muerto que nadie lleva a ningun sitio.
+_AL_YAML = (("movil", "movil"), ("telefono", "telefono"))
+
+
+@app.command()
+def apply(
+    case_id: str = typer.Option(..., "--case-id", help="case_id canonico o W-code"),
+    confirmar: bool = typer.Option(False, "--confirmar",
+                                   help="sin esto solo dice lo que haria"),
+) -> None:
+    """Mete en `_ficha_crm.yaml` lo que la firma dice y el YAML no tiene.
+
+    **No escribe en el CRM**: de ahi al CRM va `python -m scripts.crm_ficha`, que es
+    quien tiene el GET -> merge -> PUT.
+
+    **No da de alta a nadie.** Solo toca colaboradores que ya estan en la lista: el
+    corpus no sabe quien es colaborador del caso (§4 del spec), y eso lo decide Nikolai.
+    """
+    resolved, case_dir = _caso_dir(case_id)
+    ficha_path = case_dir / "00_Input" / "_ficha_crm.yaml"
+    if not ficha_path.is_file():
+        typer.echo(f"[ERROR] No existe {ficha_path.name}: escribe primero la lista de "
+                   "colaboradores del caso. `apply` rellena huecos, no da de alta.",
+                   err=True)
+        raise typer.Exit(code=1)
+
+    datos = yaml.safe_load(ficha_path.read_text(encoding="utf-8")) or {}
+    if not isinstance(datos, dict):
+        typer.echo("[ERROR] _ficha_crm.yaml no es un mapping YAML", err=True)
+        raise typer.Exit(code=1)
+
+    consolidados, _, ilegibles = extraer_de_directorio(case_dir / "00_Input")
+    colaboradores = datos.get("colaboradores") or []
+
+    cambios: list[str] = []
+    for col in colaboradores:
+        if not isinstance(col, dict):
+            continue
+        email = str(col.get("email") or "").strip().lower()
+        c = consolidados.get(email)
+        if c is None:
+            continue
+        for campo_c, clave in _AL_YAML:
+            valor = getattr(c, campo_c)
+            veredicto = getattr(c, f"veredicto_{campo_c}")
+            if veredicto != VEREDICTO_ENCONTRADO or not valor:
+                continue
+            if str(col.get(clave) or "").strip():
+                continue          # lo que ya hay manda: no se pisa
+            if confirmar:
+                col[clave] = valor
+            cambios.append(f"{email}: {clave} = {valor}")
+
+    if not cambios:
+        typer.echo("[OK] Nada que rellenar: o el CRM ya lo tiene, o la firma no lo trae.")
+    for linea in cambios:
+        typer.echo(f"  {'ESCRITO' if confirmar else 'SE ESCRIBIRIA'}  {linea}")
+
+    if ilegibles:
+        typer.echo(f"[AVISO] {len(ilegibles)} .eml no se pudieron leer: eso NO es que no "
+                   "tengan firma. Mira el informe de `report`.")
+
+    if not confirmar:
+        typer.echo("\nNada escrito. Repite con --confirmar para aplicarlo.")
+        return
+
+    if cambios:
+        # `default_flow_style=False` + `default_style` en los telefonos: sin comillas,
+        # `0612345678` lo relee YAML como octal y `_escalar` lo RECHAZA (con razon).
+        for col in colaboradores:
+            if isinstance(col, dict):
+                for _, clave in _AL_YAML:
+                    if clave in col and col[clave] is not None:
+                        col[clave] = str(col[clave])
+        volcado = yaml.safe_dump(datos, allow_unicode=True, default_flow_style=False,
+                                 sort_keys=False)
+        # Los telefonos son cadenas de digitos: se fuerzan entre comillas simples.
+        for _, clave in _AL_YAML:
+            volcado = volcado.replace(f"{clave}: ", f"{clave}: ", 1)
+        ficha_path.write_text(volcado, encoding="utf-8")
+        typer.echo(f"[OK] {ficha_path} actualizado ({len(cambios)} campos).")
+        typer.echo("     Ahora: python -m scripts.crm_ficha --case-id " + resolved)
 
 
 if __name__ == "__main__":

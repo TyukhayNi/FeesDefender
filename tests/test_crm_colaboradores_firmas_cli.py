@@ -158,3 +158,151 @@ class TestUnCasoQueNoExiste:
         r = CliRunner().invoke(cli.app, ["report", "--case-id", "W-NOEXISTE"])
         assert r.exit_code == 1
         assert "no encontrado" in r.output.lower()
+
+
+def _aplica(extra=None):
+    return CliRunner().invoke(cli.app, ["apply", "--case-id", "W-000AAA", *(extra or [])])
+
+
+def _ficha(caso):
+    return case_locator.path_for(caso) / "00_Input" / "_ficha_crm.yaml"
+
+
+class TestApplyNecesitaConfirmacion:
+
+    def test_sin_confirmar_no_toca_el_fichero(self, caso):
+        _ficha(caso).write_text(
+            "colaboradores:\n  - nombre: ANA\n    email: ana@engelvoelkers.com\n",
+            encoding="utf-8")
+        antes = _ficha(caso).read_text(encoding="utf-8")
+        r = _aplica()
+        assert r.exit_code == 0, r.output
+        assert _ficha(caso).read_text(encoding="utf-8") == antes
+        assert "confirmar" in r.output.lower()
+
+    def test_sin_confirmar_SI_dice_lo_que_haria(self, caso):
+        _ficha(caso).write_text(
+            "colaboradores:\n  - nombre: ANA\n    email: ana@engelvoelkers.com\n",
+            encoding="utf-8")
+        r = _aplica()
+        assert "612345678" in r.output
+
+
+class TestApplyRellenaSoloElHueco:
+
+    def test_rellena_movil_y_telefono_vacios(self, caso):
+        _ficha(caso).write_text(
+            "colaboradores:\n  - nombre: ANA\n    email: ana@engelvoelkers.com\n",
+            encoding="utf-8")
+        r = _aplica(["--confirmar"])
+        assert r.exit_code == 0, r.output
+
+        import yaml
+        datos = yaml.safe_load(_ficha(caso).read_text(encoding="utf-8"))
+        col = datos["colaboradores"][0]
+        assert col["movil"] == "612345678"
+        assert col["telefono"] == "931112233"
+
+    def test_NO_pisa_un_valor_que_ya_estaba(self, caso):
+        _ficha(caso).write_text(
+            "colaboradores:\n  - nombre: ANA\n    email: ana@engelvoelkers.com\n"
+            "    movil: '600000000'\n", encoding="utf-8")
+        _aplica(["--confirmar"])
+
+        import yaml
+        col = yaml.safe_load(_ficha(caso).read_text(encoding="utf-8"))["colaboradores"][0]
+        assert col["movil"] == "600000000", "lo que Nikolai escribio manda"
+        assert col["telefono"] == "931112233", "el hueco si se rellena"
+
+    def test_una_clave_PREPARADA_y_vacia_se_rellena(self, caso):
+        _ficha(caso).write_text(
+            "colaboradores:\n  - nombre: ANA\n    email: ana@engelvoelkers.com\n"
+            "    movil:\n", encoding="utf-8")
+        _aplica(["--confirmar"])
+
+        import yaml
+        col = yaml.safe_load(_ficha(caso).read_text(encoding="utf-8"))["colaboradores"][0]
+        assert col["movil"] == "612345678"
+
+    def test_el_cargo_NO_se_escribe_en_el_YAML(self, caso):
+        """No hay campo de cargo en el CRM: escribirlo aqui seria dejarlo muerto."""
+        _ficha(caso).write_text(
+            "colaboradores:\n  - nombre: ANA\n    email: ana@engelvoelkers.com\n",
+            encoding="utf-8")
+        _aplica(["--confirmar"])
+        assert "cargo" not in _ficha(caso).read_text(encoding="utf-8")
+
+    def test_los_telefonos_se_escriben_ENTRE_COMILLAS(self, caso):
+        """Sin comillas, `movil: 0612345678` lo relee YAML como un entero octal y el
+        cero inicial no se recupera. `_escalar` lo RECHAZA, asi que romperia el CLI."""
+        _ficha(caso).write_text(
+            "colaboradores:\n  - nombre: ANA\n    email: ana@engelvoelkers.com\n",
+            encoding="utf-8")
+        _aplica(["--confirmar"])
+        texto = _ficha(caso).read_text(encoding="utf-8")
+        assert "'612345678'" in texto or '"612345678"' in texto
+
+    def test_el_YAML_resultante_lo_puede_leer_cargar_ficha_yaml(self, caso):
+        """La prueba por RESULTADO: que el siguiente eslabon lo acepte."""
+        from core.crm_ficha import cargar_ficha_yaml
+        _ficha(caso).write_text(
+            "contrario:\n  nombre: JUAN\ncolaboradores:\n  - nombre: ANA\n"
+            "    email: ana@engelvoelkers.com\n", encoding="utf-8")
+        _aplica(["--confirmar"])
+
+        ficha = cargar_ficha_yaml(_ficha(caso))
+        col = ficha.colaboradores[0]
+        assert (col.movil, col.telefono) == ("612345678", "931112233")
+
+
+class TestApplyNoDaDeAltaANadie:
+    """La §4 del spec: la lista de colaboradores la pone Nikolai."""
+
+    def test_un_email_que_firma_y_NO_esta_en_la_lista_no_se_anade(self, caso):
+        _ficha(caso).write_text(
+            "colaboradores:\n  - nombre: BERTA\n    email: berta@engelvoelkers.com\n",
+            encoding="utf-8")
+        _aplica(["--confirmar"])
+
+        import yaml
+        datos = yaml.safe_load(_ficha(caso).read_text(encoding="utf-8"))
+        emails = [c.get("email") for c in datos["colaboradores"]]
+        assert emails == ["berta@engelvoelkers.com"]
+        assert "ana@engelvoelkers.com" not in str(datos["colaboradores"])
+
+    def test_sin_ficha_yaml_no_se_crea_una(self, caso):
+        assert not _ficha(caso).exists()
+        r = _aplica(["--confirmar"])
+        assert r.exit_code == 1
+        assert not _ficha(caso).exists()
+        assert "_ficha_crm.yaml" in r.output
+
+
+class TestApplyNoEscribeEnElCRM:
+
+    def test_no_llama_a_ninguna_escritura_del_CRM(self, caso, monkeypatch):
+        _ficha(caso).write_text(
+            "colaboradores:\n  - nombre: ANA\n    email: ana@engelvoelkers.com\n",
+            encoding="utf-8")
+        actualizar = MagicMock()
+        monkeypatch.setattr("core.sudespacho_relations.update_colaborador", actualizar)
+        monkeypatch.setattr("core.sudespacho_relations.create_colaborador", MagicMock())
+        _aplica(["--confirmar"])
+        actualizar.assert_not_called()
+
+
+class TestElConflictoNoSeAplica:
+
+    def test_un_conflicto_no_escribe_nada_en_el_YAML(self, caso):
+        """Dos .eml con moviles distintos para la misma persona."""
+        lote = case_locator.path_for(caso) / "00_Input" / "2026-08-14_email_01"
+        (lote / "dos.eml").write_text(_EML.replace("612 34 56 78", "600 00 00 00"),
+                                      encoding="utf-8")
+        _ficha(caso).write_text(
+            "colaboradores:\n  - nombre: ANA\n    email: ana@engelvoelkers.com\n",
+            encoding="utf-8")
+        _aplica(["--confirmar"])
+
+        import yaml
+        col = yaml.safe_load(_ficha(caso).read_text(encoding="utf-8"))["colaboradores"][0]
+        assert not col.get("movil"), "en conflicto no se propone valor"
