@@ -248,9 +248,17 @@ class NuevoClienteContrario:
     nif: str = ""                        # nif_cif
     direccion: str = ""
     poblacion: str = ""
+    #: Los tres siguientes faltaban, asi que el CRM nunca los recibia: el `_ficha_crm.yaml`
+    #: de W-02Q38C traia `cp` y `provincia` escritos y se descartaban en silencio al
+    #: cargarlo, porque este DTO no tenia donde ponerlos. Y `telefono1` existe en el
+    #: elemento `clientes_contrarios` del CRM pero no habia campo que lo alimentara.
+    cp: str = ""                         # cp
+    provincia: str = ""                  # Select: valor LITERAL del enum
+    telefono: str = ""                   # telefono1
 
     def __post_init__(self) -> None:
         self.movil = normalize_es_phone(self.movil)
+        self.telefono = normalize_es_phone(self.telefono)
 
 
 # ---------------------------------------------------------------------------
@@ -779,6 +787,21 @@ def _rest_post_cliente_contrario(datos: "NuevoClienteContrario") -> str:
         payload["direccion"] = datos.direccion
     if datos.poblacion:
         payload["poblacion"] = datos.poblacion
+    if datos.cp:
+        payload["cp"] = datos.cp
+    if datos.telefono:
+        payload["telefono1"] = datos.telefono
+    if datos.provincia:
+        # `provincia` es un Select: o se manda el literal del enum, o no se manda. Una
+        # cadena que no case la descarta el CRM sin decir nada, y el campo queda vacio
+        # pareciendo que se escribio.
+        canonica = provincia_canonica(datos.provincia)
+        if canonica:
+            payload["provincia"] = canonica
+        else:
+            _log.warning(
+                "provincia %r no casa con ninguna del enum del CRM: se omite en vez de "
+                "mandar un valor que el Select descartaria en silencio", datos.provincia)
 
     url = f"{_REST_BASE}{_REST_CREATE_CLIENTE_CONTRARIO}"
     headers = {
@@ -1254,6 +1277,45 @@ def _referencia_de(registro: dict, propiedad: str) -> str | None:
     return None
 
 
+#: Valores LITERALES del Select `provincia` de `clientes_contrarios`, leidos del CRM el
+#: 2026-09-04 (`GET /api/view/enums/clientes_contrarios/provincia`, 52 entradas). Un
+#: Select no acepta cualquier cadena, y la convencion del despacho es escribir las fichas
+#: en MAYUSCULAS: mandar `BARCELONA` donde el enum dice `Barcelona` **pierde el dato sin
+#: avisar**. Por eso se traduce, en vez de confiar en como se tecleo.
+_PROVINCIAS = (
+    "A Coruña", "Álava", "Albacete", "Alicante", "Almería", "Asturias", "Ávila",
+    "Badajoz", "Baleares (Illes)", "Barcelona", "Burgos", "Cáceres", "Cádiz",
+    "Cantabria", "Castellón", "Ceuta", "Ciudad Real", "Córdoba", "Cuenca", "Girona",
+    "Granada", "Guadalajara", "Guipúzcoa", "Huelva", "Huesca", "Jaén", "La Rioja",
+    "Las Palmas", "León", "Lleida", "Lugo", "Madrid", "Málaga", "Melilla", "Murcia",
+    "Navarra", "Ourense", "Palencia", "Pontevedra", "Salamanca",
+    "Santa Cruz de Tenerife", "Segovia", "Sevilla", "Soria", "Tarragona", "Teruel",
+    "Toledo", "Valencia", "Valladolid", "Vizcaya", "Zamora", "Zaragoza",
+)
+
+
+def _sin_tildes_min(s: str) -> str:
+    base = unicodedata.normalize("NFD", (s or "").strip().lower())
+    return "".join(c for c in base if unicodedata.category(c) != "Mn")
+
+
+def provincia_canonica(valor: str) -> str | None:
+    """El literal del enum que corresponde a `valor`, o `None` si no hay ninguno.
+
+    Tolera caja y tildes —`BARCELONA`, `barcelona` y `Barcelona` son la misma— porque es
+    como se escribe de verdad en las fichas. Lo que **no** hace es inventar: si no casa
+    con ninguna provincia devuelve `None`, y el llamador decide. Mandar al CRM una cadena
+    que el Select no reconoce es perder el dato creyendo haberlo escrito.
+    """
+    aguja = _sin_tildes_min(valor)
+    if not aguja:
+        return None
+    for prov in _PROVINCIAS:
+        if _sin_tildes_min(prov) == aguja:
+            return prov
+    return None
+
+
 def find_cliente_contrario_by_nif(nif: str) -> str | None:
     """Busca un cliente contrario en el CRM por NIF/CIF (búsqueda exacta).
 
@@ -1355,8 +1417,98 @@ def _resolver_o_crear_contrario(datos: NuevoClienteContrario) -> tuple[str, bool
     _exigir_identidad_cierta(r, elemento="clientes_contrarios",
                              nif=datos.nif, email=datos.email)
     if r.id:
+        _completar_contrario_existente(r.id, datos)
         return r.id, False
     return create_cliente_contrario(datos), True
+
+
+#: Campos de la ficha que se COMPLETAN sobre un contrario que ya existe, con su nombre
+#: de property en el CRM. Solo se rellena lo que esta VACIO en el CRM: la ficha local
+#: aporta datos, no manda sobre lo que ya hay — otra sesion o la propia E&V pueden haber
+#: corregido algo ahi y pisarlo seria destruir trabajo ajeno.
+_COMPLETABLES_CONTRARIO = (
+    ("email", "email"),
+    ("movil", "movil"),
+    ("direccion", "direccion"),
+    ("poblacion", "poblacion"),
+    ("cp", "cp"),
+    ("telefono", "telefono1"),
+)
+
+
+def _completar_contrario_existente(contrario_id: str, datos: NuevoClienteContrario) -> None:
+    """Rellena en el CRM los campos que la ficha trae y la ficha del CRM no tiene.
+
+    **R1/H-07, y desmiente una afirmacion previa mia.** Anadir `cp`, `provincia` y
+    `telefono` al DTO solo los hacia llegar en el camino de CREACION. Con el contrario ya
+    existente —el caso normal en cuanto un caso se reabre o la parte aparece en dos
+    operaciones— `ensure_contrario_vinculado` solo vinculaba, nunca actualizaba, y los
+    tres campos seguian sin llegar. Los tests no lo cazaron porque llamaban directamente
+    al POST, saltandose esta rama.
+
+    No lanza: completar la ficha es un extra sobre el vinculo, y perder el vinculo por no
+    poder escribir un codigo postal seria peor que quedarse sin el codigo postal. Lo que
+    no se pueda hacer se registra.
+    """
+    cambios: dict[str, str] = {}
+    try:
+        actual = get_cliente_contrario(contrario_id)
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("no se pudo leer el contrario %s para completarlo (%r): los datos "
+                     "de la ficha que faltasen siguen sin llegar", contrario_id, exc)
+        return
+
+    for campo, prop in _COMPLETABLES_CONTRARIO:
+        valor = (getattr(datos, campo, "") or "").strip()
+        if valor and not (actual.get(prop) or "").strip():
+            cambios[prop] = valor
+
+    provincia = provincia_canonica(datos.provincia) if datos.provincia else None
+    if provincia and not (actual.get("provincia") or "").strip():
+        cambios["provincia"] = provincia
+
+    if not cambios:
+        return
+    try:
+        update_cliente_contrario(contrario_id, cambios)
+        _log.info("contrario %s completado con %s", contrario_id, sorted(cambios))
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("no se pudieron completar los campos %s del contrario %s (%r)",
+                     sorted(cambios), contrario_id, exc)
+
+
+def get_cliente_contrario(contrario_id: str) -> dict:
+    """Ficha completa de un contrario, aplanada a `{property: value}`.
+
+    Las properties se piden **al propio CRM** en vez de mantener una lista aqui: un 500
+    con una property inventada las enumera todas (metodo del §14.6 de
+    `INTEGRACION_SUDESPACHO.md`), pero eso gasta una peticion de mas por corrida, asi que
+    se piden las que este modulo sabe leer y escribir.
+    """
+    api_key = (os.getenv("SUDESPACHO_API_KEY") or "").strip()
+    if not api_key:
+        raise ValueError("SUDESPACHO_API_KEY no configurada")
+
+    props = ",".join([
+        "nombre", "1apellido", "2apellido", "email", "movil", "nif_cif",
+        "direccion", "poblacion", "cp", "provincia", "telefono1", "id",
+    ])
+    url = (f"{_REST_BASE}{_REST_CREATE_CLIENTE_CONTRARIO}/{contrario_id}"
+           f"?properties={props}")
+    r = httpx.get(url, headers={"x-api-key": api_key, "Accept": "application/json"},
+                  timeout=_REST_TIMEOUT)
+    if r.status_code != 200:
+        raise SudespachoRelationsError(
+            f"REST GET clientes_contrarios/{contrario_id} -> HTTP {r.status_code}")
+    plano: dict[str, str] = {}
+    for item in (r.json().get("values") or []):
+        if not isinstance(item, dict):
+            continue
+        prop = item.get("property")
+        nombre = prop.get("name") if isinstance(prop, dict) else prop
+        if nombre:
+            plano[nombre] = item.get("value")
+    return plano
 
 
 def ensure_contrario_vinculado_judicial(
