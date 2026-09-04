@@ -12,6 +12,8 @@ data/CASOS/<caso>/00_Input/ y nunca se commitea.
 """
 from __future__ import annotations
 
+import html
+
 import typer
 
 from core import case_manager
@@ -27,6 +29,23 @@ app = typer.Typer(add_completion=False, help="Rellenar la ficha CRM completa de 
 
 _ELEMENT_EXTRAJUDICIAL = "extrajudiciales"
 _FICHA_YAML = "_ficha_crm.yaml"
+
+
+def _mismas_notas(guardado: str | None, escrito: str) -> bool:
+    """True si el CRM guardó lo que se escribió, salvo normalización de entidades HTML.
+
+    **El CRM DESESCAPA las entidades al guardar** (`&amp;` → `&`), así que la igualdad
+    byte a byte declaraba `[FALTA]` sobre una escritura que sí había entrado. Medido el
+    2026-09-04 sobre el expediente 637: de 5158 caracteres escritos y 5142 guardados, las
+    16 diferencias eran cuatro `&amp;` (`MEJORAS #150`). Y como el campo es HTML, escribir
+    `&` suelto no es la solución —sería HTML inválido—: el problema estaba en la igualdad.
+
+    Se **desescapan las dos partes** y se comparan por igualdad, no por inclusión: unas
+    notas realmente truncadas por el servidor tienen que seguir dando distinto, que es la
+    razón de ser de esta verificación. Los dos mutantes están en
+    `tests/test_crm_ficha_cli.py::TestElCRMDesescapaLasEntidadesHTML`.
+    """
+    return html.unescape(guardado or "").strip() == html.unescape(escrito).strip()
 
 
 def _exp_id_de(case_id: str) -> str | None:
@@ -172,7 +191,7 @@ def main(
         typer.echo(f"Verificación: expediente {exp_id} "
                    f"Numero_Expediente={rec.get('Numero_Expediente')}")
         if notas_escritas is not None:
-            if (rec.get("Notas") or "").strip() == notas_escritas.strip():
+            if _mismas_notas(rec.get("Notas"), notas_escritas):
                 typer.echo("  [ok] Notas coinciden con lo escrito")
             else:
                 typer.echo("  [FALTA] Notas: el CRM devuelve un contenido distinto del escrito")
