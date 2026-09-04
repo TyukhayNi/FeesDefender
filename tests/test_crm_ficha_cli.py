@@ -284,41 +284,74 @@ class TestVerificacionPorLectura:
 
 
 class TestLaGuardaDeRedMuerde:
-    """Un guard sin prueba de que muerde no es un guard — y este no mordia.
+    """Un guard sin prueba de que muerde no es un guard — y este no mordia (R1/H-04).
 
-    R1/H-04. Estos dos tests son la prueba de mutacion de la propia guarda: si alguien
-    la debilita (vuelve a `AssertionError`, o vuelve a parchear solo una funcion), aqui
-    se ve. Sin ellos la guarda puede quedarse inerte otra vez y nadie se entera.
+    Estos tests son la prueba de mutacion de la propia guarda: si alguien la debilita
+    —vuelve a `Exception`, o vuelve a cubrir un solo verbo— aqui se ve.
+
+    **Ninguno usa la red como oraculo.** La primera version de este bloque llamaba a
+    `httpx.post` contra el host real esperando que la guarda lo cortara; con la guarda
+    debilitada la llamada SALIA DE VERDAD, devolvia un 404 sin lanzar, y el test pasaba
+    — usando como prueba justo lo que pretendia impedir. Se comprueba contra un host
+    inexistente y por el TIPO de lo que levanta.
     """
 
-    def test_una_salida_a_red_no_declarada_MATA_el_test(self, caso_con_ficha, monkeypatch):
-        """Y muere de verdad: no llega a la salida 0 con un aviso."""
+    #: No resuelve, asi que si la guarda no corta, httpx lanza ConnectError. Nunca sale
+    #: trafico a un servicio real, ni siquiera con la guarda rota.
+    _URL = "http://guarda-de-red.invalid/api/loquesea"
+
+    def test_no_hereda_de_Exception(self):
+        """La razon de ser del tipo, fijada por un test y no por un comentario."""
+        assert issubclass(FugaDeRedEnTest, BaseException)
+        assert not issubclass(FugaDeRedEnTest, Exception)
+
+    def test_no_la_atrapa_un_except_Exception(self):
+        """Lo que el CLI hace con lo que la guarda levanta: nada. Debe morir el test."""
         import httpx
 
+        atrapada = False
+        try:
+            try:
+                httpx.get(self._URL)
+            except Exception:          # noqa: BLE001 — es el punto del test
+                atrapada = True
+        except FugaDeRedEnTest:
+            pass
+        assert not atrapada, "un `except Exception` se tragó la alarma: la guarda es inerte"
+
+    @pytest.mark.parametrize("verbo", ["get", "post", "put", "delete", "patch", "request"])
+    def test_la_guarda_corta_todos_los_verbos(self, verbo):
+        """La clase es «cualquier salida HTTP», no `httpx.get`.
+
+        El CLI escribe con POST y PUT: cubrir solo la lectura dejaria fuera justo las
+        llamadas que modifican el CRM real.
+        """
+        import httpx
+
+        fn = getattr(httpx, verbo)
+        args = ("GET", self._URL) if verbo == "request" else (self._URL,)
+        with pytest.raises(FugaDeRedEnTest):
+            fn(*args)
+
+    def test_una_salida_no_declarada_MATA_el_test(self, caso_con_ficha, monkeypatch):
+        """Escenario completo: un test olvida mockear `get_expediente`.
+
+        Antes esto terminaba en salida 0 con un aviso y el test pasaba por la razon
+        equivocada. Ahora la corrida entera muere.
+        """
         monkeypatch.setattr("scripts.crm_ficha.link_ev_mmc", MagicMock())
         monkeypatch.setattr("scripts.crm_ficha.ensure_contrario_vinculado",
                             MagicMock(return_value=("1099", False)))
         monkeypatch.setattr("scripts.crm_ficha.ensure_colaborador_vinculado",
                             MagicMock(return_value=("776", False)))
         monkeypatch.setattr("scripts.crm_ficha.update_expediente", MagicMock(return_value={}))
-        # `get_expediente` SIN mockear: usa httpx.get de verdad.
+        # `get_expediente` y `get_relaciones` SIN mockear, a proposito.
 
+        # Escapa del propio CliRunner: `invoke` captura Exception, no BaseException.
+        # Es mas fuerte de lo que se pidio — no hay nivel donde el aviso se coma la
+        # alarma y el test acabe en verde.
         with pytest.raises(FugaDeRedEnTest):
-            httpx.get("https://api-crm-commons-pro.sudespacho.biz/api/loquesea")
-
-    def test_no_la_atrapa_un_except_Exception(self):
-        """La razon de que herede de BaseException, fijada por un test."""
-        import httpx
-
-        atrapada = False
-        try:
-            try:
-                httpx.post("https://api-crm-commons-pro.sudespacho.biz/api/loquesea")
-            except Exception:          # noqa: BLE001 — es el punto del test
-                atrapada = True
-        except FugaDeRedEnTest:
-            pass
-        assert not atrapada, "un `except Exception` se tragó la alarma: la guarda es inerte"
+            CliRunner().invoke(cli.app, ["--case-id", "W-000AAA", "--yes"])
 
 
 class TestVerificarTODOLoQueLaCorridaEscribe:
