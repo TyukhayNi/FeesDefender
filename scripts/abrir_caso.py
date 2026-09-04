@@ -984,6 +984,14 @@ def main(
         except brain.ColisionCaso as exc:
             typer.echo(f"[ERROR] {exc}", err=True)
             raise typer.Exit(code=1)
+        # `ValueError` sale de `componer_case_id` (`MEJORAS #148`: una dirección con `/`
+        # no puede ser una carpeta) y de un `--tipo-caso` desconocido. Sin este `except`
+        # las dos salían en traceback, y la primera no salía en absoluto: la corrida
+        # terminaba en 0 dejando el intake en una ruta sombra. Muerde ANTES de
+        # `ensure_case`, así que no se crea esqueleto alguno.
+        except ValueError as exc:
+            typer.echo(f"[ERROR] Identidad del caso inválida: {exc}", err=True)
+            raise typer.Exit(code=1)
         if ident.requiere_confirmacion and not force:
             typer.echo(f"[AVISO] El código {ident.codigo} ya existe: {ident.colisiones}")
             if not (yes or typer.confirm("¿Crear igualmente con este código?")):
