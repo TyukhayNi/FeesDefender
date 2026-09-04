@@ -76,3 +76,53 @@ def test_con_la_worklist_generada_y_sin_residuo_si_puede_decirlo(tmp_casos_root)
 
     assert r.exit_code == 0, r.output
     assert "Sin residuo" in r.output, r.output
+
+
+def test_con_worklist_RANCIA_tampoco_afirma_que_todo_esta_clasificado(tmp_casos_root):
+    """El quinto estado, que el revisor anoto por LECTURA y no ejecuto (R2, nota de H-04).
+
+    Los dos metodos de residuo hacen `if e is None: continue` sobre el catalogo, asi que una
+    fila de worklist cuyo hash ya no existe se descarta EN SILENCIO. Con la worklist presente
+    pero rancia —el material de `00_Input` cambio despues— las dos listas salen vacias y
+    `hay_worklist` es `True`: la primera remediacion de H-04 volvia a afirmar el hecho falso.
+
+    Es la leccion del corolario de `CLAUDE.md`: remedie el EJEMPLO que el informe describia
+    («la worklist no se ha generado») y no la PROPIEDAD de la que era ejemplo («la afirmacion
+    se deriva del catalogo, no de que las listas salgan vacias»). Este test fija la propiedad.
+    """
+    cm, inv, cat, sl = _mods()
+    case_id = "EV-2026-TEST"
+    case_dir = cm.ensure_case(case_id)
+    doc = case_dir / "00_Input" / "01_Drive EV" / "ambiguo.pdf"
+    doc.parent.mkdir(parents=True, exist_ok=True)
+    doc.write_bytes(b"%PDF-VERSION-1")
+    inv.scan(case_id)
+    cat.build_catalog(case_id)
+    sl.clasificar_caso(case_id)                      # worklist con el hash VIEJO
+
+    worklist = sl._revisar_dir(case_id) / sl.WORKLIST_NAME
+    assert worklist.exists(), "la fixture necesita una worklist generada"
+    hashes_viejos = {f["Hash"] for f in sl._filas_worklist(case_id)}
+    assert hashes_viejos, "la worklist tiene que traer al menos una fila de residuo"
+
+    # El material cambia: mismo nombre, contenido distinto -> hash distinto.
+    doc.write_bytes(b"%PDF-VERSION-2-DISTINTA")
+    inv.scan(case_id)
+    cat.build_catalog(case_id)
+
+    hashes_nuevos = {e.hash for e in cat.load_catalog(case_id)}
+    assert hashes_viejos.isdisjoint(hashes_nuevos), (
+        "la fixture no ha conseguido dejar la worklist rancia")
+    assert worklist.exists(), "la worklist sigue en disco: eso es lo que enganaba"
+    assert sl.preparar_residuo(case_id) == []
+    assert sl.residuo_sin_texto(case_id) == []
+    assert [e for e in cat.load_catalog(case_id) if not e.tipo_documental], (
+        "y sin embargo hay documentos sin clasificar")
+
+    r = CliRunner().invoke(_cli().app, ["preparar-residuo", "--case", case_id])
+
+    assert "todo el catálogo está clasificado" not in r.output, r.output
+    assert r.exit_code != 0, "afirmo un hecho falso y ademas salio con 0"
+    assert "rancios" in r.output, (
+        "no distingue la causa: con la worklist presente el consejo no puede ser "
+        "«corre clasificar» sin decir por que la anterior no sirve")
