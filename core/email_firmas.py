@@ -43,22 +43,52 @@ _RE_EMAIL_COLAB = re.compile(
 #: Que convierte una direccion en una FIRMA. Sin al menos una de estas, una direccion
 #: suelta en un texto produciria una «firma» inventada de quien solo se menciona.
 #:
-#: La marca y la razon social van ANCLADAS a linea propia (H-01): el corpus entero es
-#: correspondencia SOBRE operaciones de E&V, asi que "la marca aparece en algun punto
-#: de la ventana" no es una puerta, es la norma. Un correo que solo MENCIONA la gestion
-#: de E&V de paso, con una direccion suelta de un colaborador sin firmar, no debe
-#: corroborar. La propiedad es que la ventana tenga FORMA de firma: en las plantillas
-#: medidas, la marca y la razon social estan solas en su propia linea (admitiendo
-#: asteriscos de negrita y espacios alrededor).
+#: La marca, la razon social y la etiqueta de telefono van ANCLADAS a linea propia
+#: (H-01): el corpus entero es correspondencia SOBRE operaciones de E&V, asi que "la
+#: marca aparece en algun punto de la ventana" no es una puerta, es la norma. Un correo
+#: que solo MENCIONA la gestion de E&V de paso, con una direccion suelta de un
+#: colaborador sin firmar, no debe corroborar. La propiedad es que la ventana tenga
+#: FORMA de firma:
+#:   - la marca y la razon social estan SOLAS en su propia linea, nada mas (admitiendo
+#:     asteriscos de negrita, forma juridica y puntuacion alrededor) -- una razon
+#:     social que arranca una frase en prosa ("EV MMC SPAIN es la empresa que...") no
+#:     tiene esa forma y no debe corroborar (hallazgo B, R2);
+#:   - una etiqueta de telefono solo corrobora si lo que la sigue tiene FORMA de
+#:     telefono (digitos, espacios, +, ., -, (, ), *, <, > y una extension opcional al
+#:     final, "/ Ext. NNNN") y nada mas en la linea -- una etiqueta seguida de prosa
+#:     ("Telefono de atencion al cliente 900 123 456...") no corrobora (hallazgo C, R2).
+#:
+#: Los separadores INTERNOS de la marca son `[ \t]*` y no `\s*`: `\s*` se comeria un
+#: salto de linea y dejaria corroborar "ENGEL" y "VOLKERS" en lineas distintas
+#: separadas por una linea en blanco (que no tiene forma de firma real; hallazgo D,
+#: R2). El precio deliberado de este cierre: una marca partida en dos lineas por el
+#: ajuste de longitud del cliente de correo deja de reconocerse. Es el intercambio
+#: correcto -- se prefiere perder una firma legitima a inventar una. NO "arreglar" esto
+#: volviendo a `\s*`.
 _RE_CORROBORA = re.compile(
-    r"(?im)^\s*\*?\s*engel\s*&?\s*v[öo]lkers\s*\*?\s*$"
-    r"|^\s*\*?\s*ev\s+mmc\s+spain\b.*$"
-    r"|^\s*\*?\s*(?:telf|tel[ée]fono|tel\.|m[óo]vil|movil|mobile)\b"
+    r"(?im)^\s*\*?\s*engel[ \t]*&?[ \t]*v[öo]lkers\s*\*?\s*$"
+    r"|^\s*\*?\s*ev\s+mmc\s+spain\s*,?\s*"
+    r"(?:s\.?\s*l\.?\s*u\.?|s\.?\s*l\.?|s\.?\s*a\.?)?\.?\s*\*?\s*$"
+    r"|^\s*\*?\s*(?:telf|tel[ée]fono|tel\.\s*fijo|m[óo]vil|movil|mobile)\b"
+    r"[ \t]*:?[ \t]*"
+    r"[0-9+()*<>.\- \t]+"
+    r"(?:[ \t]*/[ \t]*ext\.?[ \t]*\d+)?"
+    r"[ \t]*\.?[ \t]*\*?[ \t]*$"
 )
 
 
 def desmarcar(texto: str) -> str:
     """Quita las marcas de cita `>` del principio de cada linea.
+
+    Garantia exacta (Hallazgo E, R2): `len(desmarcar(t).split("\\n")) ==
+    len(t.split("\\n"))` para cualquier `t` -- el numero de lineas se conserva, y con
+    el la correspondencia posicional (la linea i del texto original es la linea i del
+    desmarcado). Esto se comprueba con `split("\\n")`, NO con `splitlines()`:
+    `splitlines()` no cuenta el segmento vacio final (`''.splitlines() == []` pero
+    `''.split("\\n") == ['']`), asi que compara mal cuando el texto termina en `>` o en
+    una linea vacia. La task siguiente cruza el numero de linea de un bloque
+    desmarcado contra las zonas citadas del texto original, y depende de esta garantia
+    medida con el instrumento correcto.
 
     **No toca los asteriscos de negrita**: `leer_campos` los necesita para localizar la
     linea del nombre, que es lo que posiciona el cargo (que no tiene etiqueta).
@@ -82,9 +112,18 @@ class BloqueFirma:
 def localizar_bloques(texto: str, *, fichero: str = "") -> list[BloqueFirma]:
     """Los bloques que parecen una firma, uno por linea con direccion corroborada.
 
+    Desmarca el texto ANTES de buscar (Hallazgo A, R2 -- regresion del arreglo de R1):
+    las anclas de `_RE_CORROBORA` exigen inicio de linea, y no pueden depender de si
+    el llamador ya le paso el texto desmarcado o no. `desmarcar` es idempotente (un
+    texto sin `>` no cambia), asi que un llamador que ya desmarco no sufre nada -- y
+    esto es lo que permite localizar una firma CITADA linea a linea (un reenvio con
+    `>` en cada linea), que es justo uno de los dos escenarios que motivan el modulo
+    entero (ver docstring de cabecera).
+
     Un mismo correo puede dar varios bloques para la misma persona (la plantilla de
     Barcelona repite la direccion al final); `consolidar` los une.
     """
+    texto = desmarcar(texto)
     lineas = texto.splitlines()
     marcadores = [i for i, ln in enumerate(lineas) if _RE_MARCADOR.match(ln)]
 

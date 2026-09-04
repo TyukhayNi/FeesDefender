@@ -60,12 +60,21 @@ class TestDesmarcar:
 
 
 class TestDesmarcarPreservaElNumeroDeLineas:
-    """H-02: `>` solo (sin nada detras) no debe fusionar la linea con la siguiente.
+    """H-02 (R1) + Hallazgo E (R2): `>` solo (sin nada detras) no debe fusionar la
+    linea con la siguiente.
 
     `\\s` incluye el salto de linea, asi que `^\\s*>+\\s?` se comia el `\\n` cuando la
     linea de cita era exactamente `>`. La task siguiente cruza el numero de linea del
     bloque desmarcado con las zonas citadas del texto original: si `desmarcar` cambia
     el recuento de lineas, ese cruce se desalinea.
+
+    El instrumento de medida importa: `splitlines()` NO cuenta el segmento vacio
+    final (`''.splitlines() == []`, `'>'.splitlines() == ['>']`), asi que comparar
+    `len(desmarcar(t).splitlines())` con `len(t.splitlines())` puede dar un falso
+    desajuste que no es un defecto de `desmarcar` sino del instrumento. Lo que la
+    task siguiente necesita de verdad es que el INDICE de cada linea se conserve
+    (la linea i del original es la linea i del desmarcado), y eso lo mide
+    `split("\\n")`, que si cuenta el segmento final. Ver docstring de `desmarcar`.
     """
 
     @pytest.mark.parametrize("texto", [
@@ -77,9 +86,26 @@ class TestDesmarcarPreservaElNumeroDeLineas:
         "> hola\n> mundo\n",
         ">> hola\n",
         "foo\n>>\n>\nbar",
+        # Los seis casos con los que el revisor midio el desajuste de splitlines():
+        ">",
+        "foo\n>",
+        "foo\n> ",
+        "foo\nbar\n>",
+        ">\nfoo\n>",
+        "> ",
+        # CRLF: lo que traen los .eml reales.
+        "foo\r\n>\r\nbar",
+        ">\r\n> \r\nfoo",
+        "foo\r\n>\r\n",
+        # Tabulador tras la marca.
+        "foo\n>\t\nbar",
+        # Linea de solo espacios, sin marca (no deberia cambiar nada).
+        "foo\n   \nbar",
+        # Texto vacio.
+        "",
     ])
-    def test_desmarcar_no_cambia_el_numero_de_lineas(self, texto):
-        assert len(desmarcar(texto).splitlines()) == len(texto.splitlines())
+    def test_desmarcar_conserva_el_indice_de_linea(self, texto):
+        assert len(desmarcar(texto).split("\n")) == len(texto.split("\n"))
 
 
 class TestElMarcadorNoEsNecesario:
@@ -175,6 +201,69 @@ class TestLaCorroboracionEsOBLIGATORIA:
         cuerpo = ("Hemos hablado con Engel & Völkers sobre la operacion.\n"
                   "ana@engelvoelkers.com\n")
         assert localizar_bloques(cuerpo, fichero="i4.eml") == []
+
+    def test_prosa_que_EMPIEZA_con_la_razon_social_NO_corrobora(self):
+        """Hallazgo B (R2): la cola libre `.*$` de la razon social admitia prosa
+        con tal de que EMPEZARA por "EV MMC SPAIN". Es la misma patologia del
+        Hallazgo 1 de R1, solo que limitada al inicio de linea. La propiedad es
+        que la razon social este SOLA en su linea (con forma juridica y
+        puntuacion alrededor), no que la linea EMPIECE por ella."""
+        cuerpo = ("EV MMC SPAIN es la empresa que gestiona la operacion, cualquier duda\n"
+                  "escribele a ana@engelvoelkers.com\n")
+        assert localizar_bloques(cuerpo, fichero="i5.eml") == []
+
+    def test_razon_social_con_forma_juridica_SA_tambien_corrobora(self):
+        """La forma juridica no es solo S.L.U.: S.A. y S.L. tambien son la razon
+        social sola en su linea, no cola libre."""
+        cuerpo = "EV MMC SPAIN, S.A.\nana@engelvoelkers.com\n"
+        assert localizar_bloques(cuerpo, fichero="i6.eml")
+
+    def test_etiqueta_de_telefono_sin_forma_de_telefono_NO_corrobora(self):
+        """Hallazgo C (R2): la etiqueta de telefono no comprobaba que hubiera un
+        telefono detras. La propiedad es que, tras la etiqueta, la linea tenga
+        FORMA de telefono (digitos/espacios/+-.()*<> y una extension opcional) y
+        nada mas -- no que la etiqueta simplemente aparezca."""
+        cuerpo = ("Teléfono de atención al cliente 900 123 456, para dudas generales\n"
+                  "puedes escribir tambien a ana@engelvoelkers.com\n")
+        assert localizar_bloques(cuerpo, fichero="i7.eml") == []
+
+    def test_etiqueta_de_telefono_con_extension_SI_corrobora(self):
+        """La forma real medida en la plantilla de Madrid: etiqueta, telefono,
+        y una extension opcional al final ("/ Ext. NNNN")."""
+        cuerpo = "Tel. Fijo: +34 912 345 678 / Ext. 1234\nana@engelvoelkers.com\n"
+        assert localizar_bloques(cuerpo, fichero="i8.eml")
+
+    def test_la_marca_partida_en_dos_lineas_por_un_salto_NO_corrobora(self):
+        """Hallazgo D (R2): el `\\s*` interno de la alternativa de marca incluye
+        el salto de linea, asi que "ENGEL" y "VOLKERS" corroboraban estando en
+        lineas distintas (separadas por una linea en blanco, que no tiene forma
+        de firma real). El separador interno correcto es `[ \\t]*`, que no cruza
+        lineas. El precio deliberado: una marca partida por el ajuste de longitud
+        del cliente de correo deja de reconocerse -- se prefiere perder una firma
+        legitima a inventar una (ver comentario junto a `_RE_CORROBORA`)."""
+        cuerpo = "ENGEL &\n   \nVÖLKERS\nana@engelvoelkers.com\n"
+        assert localizar_bloques(cuerpo, fichero="i9.eml") == []
+
+
+class TestBloqueCitadoLineaALinea:
+    """Hallazgo A (R2, Critical): `_RE_CORROBORA` corria sobre el texto SIN
+    desmarcar, y sus alternativas exigen inicio de linea (^): un `>` inicial las
+    rompe todas. Es una REGRESION del arreglo de R1 (Hallazgo 1) y anula el
+    escenario que motiva el modulo entero (docstring de cabecera: en 2 de los 6
+    correos medidos la firma viene en un reenvio o en un bloque CITADO, y
+    `BloqueFirma.procedencia == "citado"` nunca podria producirse si esto no se
+    localiza). La propiedad: `localizar_bloques` no puede depender de si el
+    llamador le paso el texto ya desmarcado -- lo desmarca por su cuenta al
+    entrar, y como `desmarcar` es idempotente, un llamador que ya desmarco no
+    sufre nada."""
+
+    def test_una_firma_citada_linea_a_linea_se_localiza(self):
+        firma_citada = "\n".join("> " + ln for ln in FIRMA_BCN.splitlines())
+        cuerpo = "> Te reenvio esto de abajo.\n>\n" + firma_citada
+        bloques = localizar_bloques(cuerpo, fichero="l.eml")
+        assert len(bloques) >= 1
+        assert "Móvil:" in bloques[0].texto
+        assert ">" not in bloques[0].texto, "el texto del bloque sale ya sin las marcas de cita"
 
 
 class TestLoQueDevuelve:
