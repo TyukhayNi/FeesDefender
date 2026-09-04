@@ -159,6 +159,22 @@ def exigir_componente_de_ruta(valor: str, *, campo: str) -> str:
         raise ValueError(
             f"{campo} no puede ser {valor.strip()!r}: no nombra una carpeta, "
             "nombra una posición relativa.")
+    # **Espacios al borde: los añadió la R2 (H-03).** Windows los recorta al crear, así que
+    # `case_id = "foo "` creaba `foo` y luego reventaba al crear `foo /00_Input`, dejando
+    # **andamiaje parcial** — justo lo que esta guarda promete impedir. El nombre pedido y el
+    # obtenido eran distintos y nadie lo comparaba.
+    if valor != valor.strip():
+        raise ValueError(
+            f"{campo} no puede empezar ni acabar en espacios ({valor!r}): Windows los "
+            "recorta al crear la carpeta, así que el nombre pedido y el creado no "
+            "coincidirían.")
+    # Caracteres de control: `_WIN_FORBIDDEN` no los cubre y Windows los rechaza al crear,
+    # también a mitad de camino. Medido el 2026-09-05 sobre el catálogo real: ninguno de los
+    # 27 casos lleva ni espacios al borde ni controles, así que esto no rechaza nada vivo.
+    if any(ord(c) < 32 for c in valor):
+        raise ValueError(
+            f"{campo} contiene caracteres de control, que no pueden estar en un nombre de "
+            "carpeta.")
     return valor
 
 

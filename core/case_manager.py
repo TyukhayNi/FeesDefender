@@ -217,6 +217,30 @@ def register_expediente(
     return input_dir_name
 
 
+def _contenido_en(destino: Path, raiz: Path) -> bool:
+    """¿`destino` cae dentro de `raiz`? Comparación LÉXICA por componentes, sin tocar disco.
+
+    **Por qué no reutiliza `case_mutex._bajo`, que hace lo mismo.** Era la primera versión, y
+    la R2 adversarial demostró que `_bajo` **rechaza a los hijos de una raíz anclada**: hace
+    `c.startswith(r + os.sep)`, así que con `r` terminando ya en separador —`C:\\` o un
+    recurso UNC— exige dos separadores seguidos y devuelve `False` para todo descendiente
+    legítimo (R2/H-02). Medido:
+
+        _bajo(Path('C:/CASOS/EV'),             Path('C:/'))             -> False
+        _bajo(Path('//server/share/CASOS/EV'), Path('//server/share/')) -> False
+
+    Con `os.path.commonpath` no hay ese caso especial, y su `ValueError` entre unidades
+    distintas **es** la respuesta correcta: no contenido. No se arregla `_bajo` porque lo
+    consume el mutex del caso, cuyo radio de daño es otro y no se toca de noche: `MEJORAS #159`.
+    """
+    d = os.path.normcase(os.path.abspath(str(destino)))
+    r = os.path.normcase(os.path.abspath(str(raiz)))
+    try:
+        return os.path.commonpath([d, r]) == r
+    except ValueError:
+        return False
+
+
 def ensure_case(
     case_id: str,
     *,
@@ -392,20 +416,25 @@ def ensure_case(
     # del caso este contenido. Eso es `MEJORAS #157` y queda FUERA de esta pieza. Decirlo
     # aqui es preferible a que alguien lea contencion total donde no la hay.
     from core.casos.case_locator import _root
-    from core.casos.case_mutex import _bajo
     raiz = _root()
-    if not _bajo(case_dir, raiz):
+    if not _contenido_en(case_dir, raiz):
         raise ValueError(
             f"El destino del caso cae FUERA de la raiz de casos: {case_dir} no esta bajo "
             f"{raiz}. No se deposita un expediente fuera del arbol gobernado.")
-    ancestro = case_dir
-    while not ancestro.exists() and ancestro != ancestro.parent:
-        ancestro = ancestro.parent
-    if ancestro.exists() and not _bajo(ancestro.resolve(), raiz.resolve()):
-        raise ValueError(
-            f"El destino del caso sale de la raiz por un enlace: {case_dir} resuelve a "
-            f"{ancestro.resolve()}, fuera de {raiz.resolve()}. No se deposita un "
-            "expediente fuera del arbol gobernado.")
+    # La comprobacion FISICA solo tiene sentido si hay algo creado que pueda ser un enlace, y
+    # el paseo se DETIENE EN LA RAIZ. La primera version subia al primer ancestro existente
+    # sin ese tope, asi que con `CASOS_ROOT` todavia sin crear —el primer alta de una maquina
+    # nueva— comparaba el PADRE de la raiz contra la raiz y acusaba de escapar por un enlace
+    # que no existia (R2/H-01). Un alta que crea su propia raiz es legitima.
+    if raiz.exists():
+        ancestro = case_dir
+        while not ancestro.exists() and _contenido_en(ancestro.parent, raiz):
+            ancestro = ancestro.parent
+        if ancestro.exists() and not _contenido_en(ancestro.resolve(), raiz.resolve()):
+            raise ValueError(
+                f"El destino del caso sale de la raiz por un enlace: {case_dir} resuelve a "
+                f"{ancestro.resolve()}, fuera de {raiz.resolve()}. No se deposita un "
+                "expediente fuera del arbol gobernado.")
 
     case_dir.mkdir(parents=True, exist_ok=True)
 
