@@ -841,13 +841,33 @@ def organizar(case_id: str, *, crm_docs=None) -> dict:
     from core import inventory
     inventory.scan(case_id)
     catalogo_documental.build_catalog(case_id)
+
+    # **Cero acciones sobre material que SÍ existe es un defecto, no un éxito.** Punto que
+    # la R1 adversarial dejó abierto: con el catálogo encadenado esto ya no puede pasar
+    # *por construcción*, y esto es el cinturón que lo comprueba.
+    #
+    # Y las tres causas de un catálogo vacío se distinguen, porque confundirlas sería
+    # repetir en otro sitio el defecto de `residuo_sin_texto`: solo la primera es un fallo.
+    if not catalogo_documental.load_catalog(case_id):
+        inv = inventory.load(case_id)
+        n_vistos, n_omitidos = int(inv.get("count") or 0), len(inv.get("skipped") or [])
+        if n_vistos:
+            raise RuntimeError(
+                f"El inventario vio {n_vistos} fichero(s) y el catálogo quedó VACÍO. "
+                "No se organiza nada sobre un catálogo que se comió el material: "
+                "revisa `catalogo_documental.build_catalog` antes de seguir.")
+        motivo = "sin_extension_relevante" if n_omitidos else "input_vacio"
+        return {"case_id": case_id, "detenido_por_residuo": False, "n_residuo": 0,
+                "acciones": {}, "sin_material": True, "motivo": motivo,
+                "n_omitidos": n_omitidos}
+
     aplicar_clasificacion(case_id, solo_residuo=True)
     clasif = clasificar_caso(case_id)
     if clasif["n_residuo"] > 0:
         return {"case_id": case_id, "detenido_por_residuo": True,
-                "n_residuo": clasif["n_residuo"],
+                "n_residuo": clasif["n_residuo"], "sin_material": False,
                 "worklist": str(_revisar_dir(case_id) / WORKLIST_NAME)}
     render_indices(case_id)
     pob = poblar_sala_lectura(case_id, crm_docs=crm_docs)
     return {"case_id": case_id, "detenido_por_residuo": False,
-            "n_residuo": 0, "acciones": pob["acciones"]}
+            "n_residuo": 0, "acciones": pob["acciones"], "sin_material": False}
