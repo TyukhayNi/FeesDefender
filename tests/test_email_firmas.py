@@ -8,8 +8,9 @@ Los esqueletos de abajo son los reales; los datos, inventados.
 """
 import pytest
 
-from core.email_firmas import (BloqueFirma, PROCEDENCIA_CITADO, PROCEDENCIA_DIRECTO,
-                               atribuir, desmarcar, extraer_bloques, localizar_bloques,
+from core.email_firmas import (BloqueFirma, DatosFirma, PROCEDENCIA_CITADO,
+                               PROCEDENCIA_DIRECTO, atribuir, desmarcar, extraer_bloques,
+                               leer_campos, limpiar_telefono, localizar_bloques,
                                zonas_citadas)
 
 # --- Plantilla «Barcelona»: nombre en negrita, cargo en linea suelta, Telf + Movil ---
@@ -568,3 +569,124 @@ class TestElInvarianteQueRETIRO_UN_VEREDICTO:
 
         assert atribuidos == []
         assert sin_atribuir == 1
+
+
+class TestLimpiarTelefono:
+    """`normalize_es_phone` no quita letras ni asteriscos: hay que limpiar antes."""
+
+    @pytest.mark.parametrize("crudo,esperado", [
+        ("*612 34 56 78*", "612345678"),
+        ("+34 93 111 22 33", "931112233"),
+        ("612.34.56.78", "612345678"),
+        ("<612345678>", "612345678"),
+        ("+34 912 345 678 / Ext. 1234", "912345678"),
+        ("912 345 678 / Ext. 1234", "912345678"),
+        ("  612345678  ", "612345678"),
+    ])
+    def test_los_casos_medidos(self, crudo, esperado):
+        assert limpiar_telefono(crudo) == esperado
+
+    def test_la_extension_no_es_parte_del_numero(self):
+        """El CRM exige 9 digitos; con la extension pegada da HTTP 400 ([APER-14])."""
+        assert limpiar_telefono("+34 912 345 678 / Ext. 1234") == "912345678"
+
+    def test_un_valor_sin_digitos_no_produce_un_telefono(self):
+        assert limpiar_telefono("*") == ""
+        assert limpiar_telefono("None") == ""
+        assert limpiar_telefono("") == ""
+
+    def test_un_numero_extranjero_no_se_mutila(self):
+        """`normalize_es_phone` deja los `+33…` intactos salvo separadores."""
+        assert limpiar_telefono("+33 1 23 45 67 89") == "+33123456789"
+
+
+class TestLeerLosCamposDeLaPlantillaDeBarcelona:
+
+    @staticmethod
+    def _datos():
+        bloques, _ = extraer_bloques("Hola.\n\n" + FIRMA_BCN, fichero="a.eml")
+        return leer_campos(bloques[0])
+
+    def test_el_movil(self):
+        assert self._datos().movil == "612345678"
+
+    def test_el_fijo_va_a_telefono(self):
+        assert self._datos().telefono == "931112233"
+
+    def test_el_cargo_es_la_linea_tras_el_nombre_en_negrita(self):
+        """No tiene etiqueta: se posiciona. Aqui el cargo NO va en negrita."""
+        assert self._datos().cargo == "Asesora Inmobiliaria"
+
+    def test_el_email_y_la_procedencia_viajan(self):
+        d = self._datos()
+        assert d.email == "ana@engelvoelkers.com"
+        assert d.procedencia == PROCEDENCIA_DIRECTO
+        assert (d.fichero, d.linea) == ("a.eml", d.linea) and d.linea >= 1
+
+
+class TestLeerLosCamposDeLaPlantillaDeMadrid:
+
+    @staticmethod
+    def _datos():
+        bloques, _ = extraer_bloques(FIRMA_MAD, fichero="b.eml")
+        return leer_campos(bloques[0])
+
+    def test_el_fijo_con_extension(self):
+        assert self._datos().telefono == "912345678"
+
+    def test_el_cargo_SI_va_en_negrita_en_esta_plantilla(self):
+        assert self._datos().cargo == "Técnico de PBC."
+
+    def test_NO_HAY_MOVIL_y_eso_no_es_lo_mismo_que_no_tenerlo(self):
+        """La frontera del §6 del spec: esta plantilla corporativa simplemente no lo
+        incluye. El campo sale vacio; QUIEN lo interprete es la Task 8."""
+        assert self._datos().movil == ""
+
+    def test_la_razon_social_no_se_confunde_con_el_cargo(self):
+        assert "ENGEL" not in self._datos().cargo
+
+    def test_la_direccion_no_se_confunde_con_el_cargo(self):
+        assert "Calle" not in self._datos().cargo
+
+
+class TestElCargoNoSeInventa:
+
+    def test_sin_linea_en_negrita_no_hay_cargo(self):
+        cuerpo = "ENGEL&VÖLKERS\nMóvil: 612 34 56 78\nana@engelvoelkers.com\n"
+        bloques, _ = extraer_bloques(cuerpo, fichero="c.eml")
+        assert leer_campos(bloques[0]).cargo == ""
+
+    def test_un_telefono_tras_el_nombre_no_es_un_cargo(self):
+        cuerpo = ("ENGEL&VÖLKERS\n*Ana Ejemplo*\nMóvil: 612 34 56 78\n"
+                  "ana@engelvoelkers.com\n")
+        bloques, _ = extraer_bloques(cuerpo, fichero="d.eml")
+        d = leer_campos(bloques[0])
+        assert d.cargo == ""
+        assert d.movil == "612345678", "el telefono sigue leyendose"
+
+    def test_un_email_tras_el_nombre_no_es_un_cargo(self):
+        cuerpo = "ENGEL&VÖLKERS\n*Ana Ejemplo*\nana@engelvoelkers.com\nMóvil: 612345678\n"
+        bloques, _ = extraer_bloques(cuerpo, fichero="e.eml")
+        assert leer_campos(bloques[0]).cargo == ""
+
+
+class TestElMovilNoSeConfundeConElFijo:
+    """`Telf:` y `Tel. Fijo:` son fijo; `Móvil:` es movil. Un cruce mete un fijo en el
+    campo `movil` del CRM, que es el que la UI muestra."""
+
+    def test_Telf_es_fijo_no_movil(self):
+        cuerpo = "ENGEL&VÖLKERS\nTelf: 931112233\nana@engelvoelkers.com\n"
+        bloques, _ = extraer_bloques(cuerpo, fichero="f.eml")
+        d = leer_campos(bloques[0])
+        assert (d.telefono, d.movil) == ("931112233", "")
+
+    def test_Movil_es_movil_no_fijo(self):
+        cuerpo = "ENGEL&VÖLKERS\nMóvil: 612345678\nana@engelvoelkers.com\n"
+        bloques, _ = extraer_bloques(cuerpo, fichero="g.eml")
+        d = leer_campos(bloques[0])
+        assert (d.movil, d.telefono) == ("612345678", "")
+
+    def test_Movil_sin_tilde_tambien(self):
+        cuerpo = "ENGEL&VÖLKERS\nMovil: 612345678\nana@engelvoelkers.com\n"
+        bloques, _ = extraer_bloques(cuerpo, fichero="h.eml")
+        assert leer_campos(bloques[0]).movil == "612345678"

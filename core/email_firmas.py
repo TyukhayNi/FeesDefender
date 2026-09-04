@@ -19,6 +19,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from core.utils import normalize_es_phone
+
 #: El colaborador es personal propio del cliente (E&V). Una direccion de otro dominio
 #: no se mira: un tercero de la operacion no es un colaborador del despacho.
 DOMINIO_COLABORADOR = "engelvoelkers.com"
@@ -255,3 +257,120 @@ def extraer_bloques(texto: str, *,
     """
     bloques = localizar_bloques(texto, fichero=fichero)
     return atribuir(bloques, texto_original=texto)
+
+
+# ---------------------------------------------------------------------------
+# Veredictos: «no lo se» y «no hay» no son lo mismo
+#
+# Un dato que no se pudo mirar NUNCA se convierte en un dato que no existe. Un .eml
+# ilegible no autoriza a escribir que ese colaborador no tiene telefono.
+# ---------------------------------------------------------------------------
+
+VEREDICTO_ENCONTRADO = "ENCONTRADO"
+#: Hay firma de esta persona y NO trae ese campo. Medido: una de las dos plantillas
+#: corporativas no incluye movil. No significa «no tiene movil».
+VEREDICTO_FIRMA_SIN_CAMPO = "FIRMA_SIN_CAMPO"
+#: La persona aparece en el corpus y no se le encontro bloque de firma.
+VEREDICTO_SIN_FIRMA = "SIN_FIRMA"
+#: NOTA: NO hay `VEREDICTO_NO_ATRIBUIBLE`. El §6 del spec lo preveia, pero con el ancla
+#: del bloque siendo el propio email, TODO bloque tiene email por construccion: seria una
+#: constante que nada puede emitir. `atribuir` conserva la rama defensiva y su contador
+#: como INVARIANTE, con un test que lo fija en 0. Si alguien anade una segunda via de
+#: deteccion —bloques anclados solo en el marcador, como la firma institucional sin
+#: direccion personal que se midio en un .eml de W-02Q38C— ese test se pondra rojo y le
+#: dira que ahi si hace falta un veredicto de verdad.
+#: El .eml no se pudo parsear o no tiene parte text/plain. SE DECLARA.
+VEREDICTO_NO_LEIBLE = "NO_LEIBLE"
+#: Dos valores distintos y ninguno decide. Se falla cerrado.
+VEREDICTO_CONFLICTO = "CONFLICTO"
+
+#: `Telf:` y `Tel. Fijo:` son FIJO. Se prueba movil primero para que `Móvil:` no caiga
+#: en el patron del fijo: un cruce mete un fijo en el campo `movil`, que es el que la
+#: UI del CRM muestra en el listado.
+_RE_MOVIL = re.compile(
+    r"(?im)^\s*\*?\s*(?:m[óo]vil|mobile|m[óo]v\.?)\s*[:.]?\s*(.+?)\s*$")
+_RE_FIJO = re.compile(
+    r"(?im)^\s*\*?\s*(?:telf|tel\.?\s*fijo|tel[ée]fono|tel\.|phone)\s*[:.]?\s*(.+?)\s*$")
+
+#: Una linea ENTERAMENTE en negrita. La primera es el nombre; el cargo es la siguiente
+#: linea no vacia, en negrita o no (las dos plantillas medidas difieren en eso).
+_RE_NEGRITA = re.compile(r"^\s*\*(.+?)\*\s*$")
+
+#: Lo que una linea tras el nombre puede ser sin ser un cargo.
+_RE_NO_ES_CARGO = re.compile(
+    r"(?i)engel\s*&?\s*v[öo]lkers"
+    r"|ev\s+mmc|s\.?l\.?u|s\.?a\.?$"
+    r"|@"
+    r"|^\s*\*?\s*(?:telf|tel|tel[ée]fono|m[óo]vil|movil|mobile|mailto|fax)\b"
+    r"|\d{4,}"                       # un CP o un numero largo: es direccion
+    r"|^\s*\*?\s*(?:c/|calle|avinguda|avenida|passeig|plaza|pl\.|paseo)\b"
+)
+
+_RE_EXTENSION = re.compile(r"(?i)\s*(?:/|\bext\b|\bextension\b|\bextensión\b).*$")
+
+
+@dataclass(frozen=True)
+class DatosFirma:
+    """Lo que dice UN bloque de firma. Los campos vacios NO afirman ausencia."""
+    email: str
+    movil: str = ""
+    telefono: str = ""
+    cargo: str = ""
+    procedencia: str = PROCEDENCIA_DIRECTO
+    fichero: str = ""
+    linea: int = 0
+
+
+def limpiar_telefono(valor: str) -> str:
+    """El numero que hay en una linea de firma, listo para el CRM.
+
+    `normalize_es_phone` no quita letras ni asteriscos, y los valores llegan sucios: la
+    negrita HTML degrada a `*` en el text/plain, y la plantilla de Madrid pega la
+    extension detras (`+34 912 345 678 / Ext. 1234`). La extension no es parte del
+    numero, y el CRM exige 9 digitos o devuelve HTTP 400 (`[APER-14]`).
+    """
+    v = _RE_EXTENSION.sub("", valor or "")
+    v = v.replace("*", "").replace("<", "").replace(">", "").strip()
+    v = normalize_es_phone(v)
+    # Un valor sin ningun digito no es un telefono, es basura del parseo.
+    return v if any(c.isdigit() for c in v) else ""
+
+
+def _cargo_de(lineas: list[str]) -> str:
+    """El cargo, por POSICION: no tiene etiqueta en ninguna de las dos plantillas.
+
+    Regla medida: la primera linea enteramente en negrita es el NOMBRE, y el cargo es
+    la siguiente linea no vacia — en negrita en la plantilla de Madrid, sin negrita en
+    la de Barcelona. Si esa linea es la razon social, una direccion, un telefono o un
+    email, no hay cargo: **antes vacio que inventado**.
+    """
+    for i, ln in enumerate(lineas):
+        if not _RE_NEGRITA.match(ln):
+            continue
+        for siguiente in lineas[i + 1:]:
+            if not siguiente.strip():
+                continue
+            if _RE_NO_ES_CARGO.search(siguiente):
+                return ""
+            m = _RE_NEGRITA.match(siguiente)
+            return (m.group(1) if m else siguiente).strip()
+        return ""
+    return ""
+
+
+def leer_campos(bloque: BloqueFirma) -> DatosFirma:
+    """Los campos de UN bloque ya atribuido. No decide veredictos: eso es `consolidar`."""
+    lineas = bloque.texto.splitlines()
+    m_movil = _RE_MOVIL.search(bloque.texto)
+    # Un `Móvil:` no puede caer en el patron del fijo: se resta del texto antes.
+    texto_sin_movil = _RE_MOVIL.sub("", bloque.texto)
+    m_fijo = _RE_FIJO.search(texto_sin_movil)
+    return DatosFirma(
+        email=bloque.email,
+        movil=limpiar_telefono(m_movil.group(1)) if m_movil else "",
+        telefono=limpiar_telefono(m_fijo.group(1)) if m_fijo else "",
+        cargo=_cargo_de(lineas),
+        procedencia=bloque.procedencia,
+        fichero=bloque.fichero,
+        linea=bloque.linea,
+    )
