@@ -99,6 +99,24 @@ def preparar_residuo(case: str = typer.Option(..., "--case")):
     # defecto donde no estaba. Un mensaje que no distingue «no hay» de «no pude mirar»
     # cuesta sesiones enteras y nunca aparece en un backlog, porque no rompe nada.
     if not docs and not sin_texto:
+        # **CUARTO estado, y me lo había dejado (R2/H-04).** `_filas_worklist` devuelve `[]`
+        # cuando el fichero no existe, así que los dos métodos de residuo salen vacíos y esto
+        # afirmaba «todo el catálogo está clasificado» con documentos SIN clasificar en el
+        # catálogo — un hecho falso, y encima con salida 0. Es el mismo defecto que este
+        # comando acaba de arreglar, un estado más allá: arreglé tres ramas y la cuarta seguía
+        # mintiendo. La distinción es «no hay residuo» contra «la worklist no se ha generado».
+        sin_tipo = [e for e in catalogo_documental.load_catalog(case)
+                    if not e.tipo_documental]
+        hay_worklist = (sala_lectura._revisar_dir(case) / sala_lectura.WORKLIST_NAME).exists()
+        if sin_tipo and not hay_worklist:
+            typer.echo(
+                f"[AVISO] {len(sin_tipo)} doc(s) del catálogo están sin clasificar y la "
+                "worklist no existe todavía.\n"
+                "        No es que no haya residuo: es que nadie lo ha calculado.\n"
+                "        Corre primero:  python -m scripts.sala_lectura clasificar "
+                '--case "<case_id>"',
+                err=True)
+            raise typer.Exit(code=1)
         typer.echo("Sin residuo: todo el catálogo está clasificado. Nada que preparar.")
         return
     if not docs:

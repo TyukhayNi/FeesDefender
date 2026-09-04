@@ -147,3 +147,36 @@ def test_la_consulta_y_el_indice_coinciden_sobre_los_mismos_documentos(caso_mixt
     assert con_texto == {"ambiguo canonico.pdf", "ambiguo partido.pdf"}
     assert sin_texto == {"ambiguo ciego.pdf"}
     assert con_texto.isdisjoint(sin_texto), "un documento no puede estar en los dos"
+
+
+def test_cada_enlace_apunta_al_TEXTO_DE_SU_documento(caso_mixto):
+    """R2/H-05: los otros cuatro tests no detectaban un `_link_md` que cruzara los enlaces.
+
+    El revisor lo demostro con un mutante que enlazaba SIEMPRE el primer MD del directorio
+    para cualquier documento legible: los cuatro pasaban, porque comprobaban que hay dos
+    enlaces, que existen, y qué filas lo llevan — **nunca que el enlace de una fila sea el
+    texto de ESA fila**. Existencia fisica no es correspondencia.
+
+    Se contrasta por CONTENIDO y no por nombre, que es la unica forma de que un cruce de
+    slugs no pase inadvertido.
+    """
+    sl, case_id, case_dir = caso_mixto["sl"], caso_mixto["case_id"], caso_mixto["case_dir"]
+    sl.render_indices(case_id)
+
+    indice = case_dir / "01_Procesado" / "Sala lectura" / "INDICE.md"
+    esperado = {
+        "ambiguo canonico.pdf": "TEXTO-CANONICO",
+        "ambiguo partido.pdf": "TEXTO-SEG-A",     # el primer segmento, en orden documental
+    }
+    vistos = {}
+    for linea in indice.read_text(encoding="utf-8").splitlines():
+        for nombre in esperado:
+            if f"[{nombre}]" not in linea:
+                continue
+            m = re.search(r"\[ver texto\]\(([^)]+)\)", linea)
+            assert m, f"{nombre} salio sin enlace de texto"
+            destino = (indice.parent / m.group(1)).resolve()
+            vistos[nombre] = destino.read_text(encoding="utf-8")
+
+    assert vistos == esperado, (
+        "el enlace de una fila no apunta al texto de su propio documento: " + repr(vistos))
