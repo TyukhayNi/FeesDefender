@@ -32,7 +32,7 @@ import typer
 from core import abrir_caso as brain
 from core import (
     case_manager, config, email_export, intake_drive, intake_log, intake_manual,
-    sudespacho_create, whatsapp_intake,
+    sudespacho_create, sudespacho_relations, whatsapp_intake,
 )
 from core import apertura_v1 as av1
 from core import apertura_v1_estado as estado_v1
@@ -651,6 +651,7 @@ def _alta_crm(
     cuantia: float,
     crm_mode: str,
     yes: bool,
+    force: bool = False,
 ) -> None:
     """5.9 alta CRM con gate + idempotencia (§8: no re-dar de alta si ya hay un
     extrajudicial registrado para este caso) + tolerancia a caída (§9)."""
@@ -669,6 +670,49 @@ def _alta_crm(
             "no se re-da de alta"
         )
         return
+
+    # El chequeo de arriba mira el `_caso.md` LOCAL. Si ese registro se perdio —o el
+    # caso se abrio en otra maquina— el CRM puede tener ya el expediente y esto crearia
+    # un duplicado en el CRM del cliente. Se pregunta al CRM.
+    dup = sudespacho_relations.buscar_expedientes_duplicados(
+        w_code=ident.w_code, direccion=ident.direccion,
+    )
+    for aviso in dup.avisos:
+        typer.echo(f"[AVISO] posible expediente relacionado ({aviso}). "
+                   "No bloquea: el mismo inmueble o la misma parte pueden tener varios.")
+
+    # Politica ante lo que NO se pudo consultar, decidida por Nikolai el 2026-09-04:
+    # **fallar cerrado**. R1/H-02 midio que la version anterior seguia adelante y daba
+    # de alta igual, o sea que la proteccion desaparecia justo cuando algo fallaba. Un
+    # expediente duplicado en el CRM del cliente cuesta mas de deshacer que repetir la
+    # apertura cuando el CRM vuelva; `--force` sigue siendo la salida explicita.
+    if dup.incierto and not force:
+        for nota in dup.sin_comprobar:
+            typer.echo(f"  - sin comprobar: {nota}", err=True)
+        typer.echo(
+            "[ERROR] No se pudo comprobar si este expediente ya existe en el CRM, asi "
+            "que no se da de alta: crearlo a ciegas puede duplicarlo. Reintenta cuando "
+            "el CRM responda, o pasa --force si sabes que no existe.",
+            err=True,
+        )
+        raise AbortarApertura(1)
+    if dup.incierto:
+        for nota in dup.sin_comprobar:
+            typer.echo(f"[AVISO] --force: se da de alta SIN comprobar {nota}")
+
+    if dup.bloquea:
+        donde = ", ".join(f"{el} #{i}" for el, i in dup.por_wcode)
+        typer.echo(
+            f"[ERROR] El CRM ya tiene un expediente con el id GO {ident.w_code}: {donde}. "
+            "No se da de alta otro. Si de verdad hacen falta dos, vincula el existente "
+            "con `register_expediente` o crealo a mano en el CRM.",
+            err=True,
+        )
+        # MEJORAS #142: `_alta_crm` corre BAJO el mutex, asi que no puede terminar el
+        # proceso — un `typer.Exit` en vuelo hace que la perdida de exclusion quede en
+        # una nota que Typer descarta. Lo caza el guard de
+        # `tests/test_abrir_caso_exit_bajo_mutex.py`, que me cazo a mi al cablear esto.
+        raise AbortarApertura(1)
 
     payload = brain.crm_payload(ident, cuantia=cuantia)  # lee ident.tipo_caso (fd7a39f)
     typer.echo(f"CRM -> alta extrajudicial ref={payload.referencia_cliente} "
@@ -1078,7 +1122,8 @@ def main(
                         f"[dry-run] esqueleto en {case_dir}; se omiten log de intake y alta CRM")
                     salida_dry_run = True
                 else:
-                    _alta_crm(ident, cuantia=cuantia, crm_mode=crm, yes=yes)
+                    _alta_crm(ident, cuantia=cuantia, crm_mode=crm, yes=yes,
+                              force=force)
     except CaseBusy as exc:
         typer.echo(f"=== Apertura: {av1.EstadoV1.BLOQUEADO} ===", err=True)
         typer.echo(f"  otro proceso tiene este caso; espera y reintenta: {exc}", err=True)

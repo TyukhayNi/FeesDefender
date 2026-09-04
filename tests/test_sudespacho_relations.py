@@ -1569,9 +1569,15 @@ def test_find_cliente_contrario_no_encontrado(monkeypatch):
 
 
 def test_ensure_contrario_vinculado_existente(monkeypatch):
-    """Si el contrario ya existe (por NIF), no se crea — solo se vincula."""
+    """Si el contrario ya existe, no se crea — solo se vincula.
+
+    Desde 2026-09-04 la identidad la resuelve `resolver_parte` (NIF **o** email), no
+    `find_cliente_contrario_by_nif`. La propiedad que este test defiende no cambia.
+    """
     monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
-    with patch("core.sudespacho_relations.find_cliente_contrario_by_nif", return_value="1099"):
+    from core.sudespacho_relations import ResolucionParte
+    with patch("core.sudespacho_relations.resolver_parte",
+               return_value=ResolucionParte(id="1099", por="nif")):
         with patch("core.sudespacho_relations.create_cliente_contrario") as mock_create:
             with patch("core.sudespacho_relations.link_contrario") as mock_link:
                 contrario_id, created = ensure_contrario_vinculado(
@@ -1584,9 +1590,15 @@ def test_ensure_contrario_vinculado_existente(monkeypatch):
 
 
 def test_ensure_contrario_vinculado_nuevo(monkeypatch):
-    """Si el contrario no existe, se crea y luego se vincula."""
+    """Si el contrario no existe, se crea y luego se vincula.
+
+    Antes mockeaba `find_cliente_contrario_by_nif` y, tras el cambio de via, **salia al
+    CRM de verdad** con una clave falsa: el 401 devolvia lista vacia y el test pasaba por
+    la razon equivocada. Mockear la resolucion lo deja sin red.
+    """
     monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
-    with patch("core.sudespacho_relations.find_cliente_contrario_by_nif", return_value=None):
+    from core.sudespacho_relations import ResolucionParte
+    with patch("core.sudespacho_relations.resolver_parte", return_value=ResolucionParte()):
         with patch("core.sudespacho_relations.create_cliente_contrario", return_value="1200") as mock_create:
             with patch("core.sudespacho_relations.link_contrario") as mock_link:
                 contrario_id, created = ensure_contrario_vinculado(
