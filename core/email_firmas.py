@@ -9,8 +9,10 @@ Verdad de campo que fija el diseno, medida el 2026-09-04 sobre los 6 `.eml` de W
   mitad en silencio. Lo que aparece en los 6 bloques es una **linea con la direccion
   corporativa**, asi que el ancla es esa y el marcador solo aprieta el limite superior.
 - **La firma del cuerpo NO es la del `From:`.** En 2 de los 6 pertenece a otra persona
-  (un reenvio, y un bloque citado). Por eso la atribucion sale del email de DENTRO del
-  bloque, y un bloque sin email no se atribuye a nadie.
+  (un reenvio, y un bloque citado). Por eso la atribucion sale del email de la **linea
+  ancla** que creo el bloque -- nunca de una busqueda posterior en su texto, que puede
+  contener tambien la direccion de una firma vecina -- y un bloque sin email no se
+  atribuye a nadie.
 """
 from __future__ import annotations
 
@@ -129,7 +131,8 @@ def localizar_bloques(texto: str, *, fichero: str = "") -> list[BloqueFirma]:
 
     bloques: list[BloqueFirma] = []
     for i, linea in enumerate(lineas):
-        if not _RE_EMAIL_COLAB.search(linea):
+        m_ancla = _RE_EMAIL_COLAB.search(linea)
+        if not m_ancla:
             continue
 
         # El marcador mas cercano por encima aprieta el limite superior; si no hay,
@@ -144,7 +147,17 @@ def localizar_bloques(texto: str, *, fichero: str = "") -> list[BloqueFirma]:
 
         if not _RE_CORROBORA.search(cuerpo):
             continue
-        bloques.append(BloqueFirma(texto=cuerpo, linea=inicio + 1, fichero=fichero))
+        # El email del bloque es el de SU LINEA ANCLA (`m_ancla`), no uno que se
+        # vuelva a buscar despues dentro de `cuerpo`. La ventana de un bloque
+        # puede contener MAS de una direccion -- la propia y la de una firma
+        # vecina, cuando dos firmas caen a menos de _VENTANA_ATRAS/_VENTANA_ADELANTE
+        # lineas de distancia -- y una busqueda posterior en el texto no tiene
+        # forma de distinguir cual de las dos era la que disparo ESTE bloque.
+        # `atribuir` ya no re-deriva el email; lo toma de aqui (Task 6, hallazgo
+        # espejo del 2026-09-04).
+        bloques.append(BloqueFirma(
+            texto=cuerpo, email=m_ancla.group(0).lower(), linea=inicio + 1, fichero=fichero,
+        ))
     return bloques
 
 
@@ -190,40 +203,43 @@ def _en_zona_citada(linea0: int, zonas: list[tuple[int, int]]) -> bool:
 
 def atribuir(bloques: list[BloqueFirma], *,
              texto_original: str) -> tuple[list[BloqueFirma], int]:
-    """Pone a cada bloque el email de QUIEN FIRMA, y su procedencia.
+    """Pone a cada bloque su procedencia; el email ya lo trae puesto.
 
-    **El email sale de DENTRO del bloque, nunca de la cabecera `From:`.** Medido el
+    **El bloque se identifica con el email que lo ANCLO en `localizar_bloques`,
+    nunca con uno que se busque de nuevo aqui.** Medido el 2026-09-04: el texto de
+    un bloque es una ventana de lineas alrededor de su ancla, y esa ventana puede
+    contener MAS de una direccion -- la propia y la de una firma vecina, cuando dos
+    firmas caen a menos de `_VENTANA_ATRAS`/`_VENTANA_ADELANTE` lineas de distancia.
+    Volver a buscar en el texto no tiene forma de saber cual de las direcciones que
+    aparecen era la que disparo ESTE bloque; el ancla si lo sabe, porque es la unica
+    linea que se miro para crearlo. Una primera version de este arreglo cambio
+    "primer match" por "ultimo match" y solo cerro la mitad del problema (el caso
+    hacia atras); la otra mitad -- el espejo, dos firmas seguidas donde la ventana
+    hacia atras de la PRIMERA alcanza tambien a la SEGUNDA -- seguia rota porque
+    seguia siendo una busqueda en texto compartido.
+
+    Sigue siendo cierto que el email nunca sale de la cabecera `From:` -- medido el
     2026-09-04: en 2 de los 6 .eml de W-02Q38C la firma del cuerpo pertenece a otra
     persona (un reenvio, y un bloque citado). Atribuir por cabecera escribiria el
-    telefono de una persona en la ficha de otra, en el CRM del cliente.
+    telefono de una persona en la ficha de otra, en el CRM del cliente. Por eso esta
+    funcion **no recibe el remitente**: no es que decida ignorarlo, es que no lo
+    tiene.
 
-    Por eso esta funcion **no recibe el remitente**: no es que decida ignorarlo, es que
-    no lo tiene. Un bloque sin email dentro se descarta y se cuenta.
+    Un bloque sin email (la rama defensiva: hoy todo bloque de `localizar_bloques`
+    trae uno por construccion, pero un `BloqueFirma` puede construirse a mano sin
+    el, o de otra via de deteccion futura) se descarta y se cuenta.
     """
     zonas = zonas_citadas(texto_original)
     atribuidos: list[BloqueFirma] = []
     sin_atribuir = 0
     for b in bloques:
-        # El ULTIMO email del bloque, no el primero: cuando dos firmas quedan
-        # pegadas, la ventana hacia atras de la segunda (_VENTANA_ATRAS) puede
-        # arrastrar el email de la PRIMERA sin que la propia haya salido todavia
-        # de la ventana. El disparador de cada bloque esta a una distancia FIJA
-        # del final de su ventana (`_VENTANA_ADELANTE`), nunca del principio, asi
-        # que buscar el primero le atribuiria a Berta el email de Ana con solo
-        # que sus firmas fueran consecutivas -- justo el patron que corrobora
-        # `test_dos_firmas_distintas_en_un_correo_se_separan`. La plantilla de
-        # Barcelona repite su propio email al final del bloque (ver
-        # `localizar_bloques`), asi que el ultimo sigue siendo el correcto
-        # incluso sin overlap con otra firma.
-        coincidencias = list(_RE_EMAIL_COLAB.finditer(b.texto))
-        if not coincidencias:
+        if not b.email:
             sin_atribuir += 1
             continue
-        m = coincidencias[-1]
         procedencia = (PROCEDENCIA_CITADO if _en_zona_citada(b.linea - 1, zonas)
                        else PROCEDENCIA_DIRECTO)
         atribuidos.append(BloqueFirma(
-            texto=b.texto, email=m.group(0).lower(), linea=b.linea,
+            texto=b.texto, email=b.email, linea=b.linea,
             fichero=b.fichero, procedencia=procedencia,
         ))
     return atribuidos, sin_atribuir

@@ -44,6 +44,13 @@ Mailto: berta@engelvoelkers.com
 Este correo electrónico así como cualquier anexo adjunto son confidenciales.
 """
 
+# --- Plantilla corta para una tercera persona: mismo esqueleto minimo que corrobora
+# solo con la marca sola en su linea (ver test_una_direccion_con_la_marca_corporativa_SI).
+FIRMA_CARLA = """\
+ENGEL&VÖLKERS
+carla@engelvoelkers.com
+"""
+
 
 class TestDesmarcar:
 
@@ -320,6 +327,94 @@ class TestLaFirmaNoEsLaDelRemitente:
                 f"el bloque en linea {b.linea} lleva un email que no esta en su texto")
 
 
+class TestElBloqueConservaSuEmailAncla:
+    """El defecto ESPEJO del que ya se arreglo en esta misma task: `atribuir`
+    volvia a buscar un email DENTRO del texto del bloque, y ese texto es una
+    ventana de lineas alrededor del ancla que puede contener MAS de una
+    direccion -- la del ancla y la de una firma vecina.
+
+    Un implementador anterior ya se topo con la variante HACIA ATRAS (dos firmas
+    consecutivas, la ventana de la SEGUNDA arrastraba el email de la PRIMERA) y
+    la parcheo cambiando "primer match" por "ultimo match". Eso cerro ese
+    ejemplo y dejo abierto el espejo: dos firmas seguidas donde la SEGUNDA es
+    compacta, y la ventana hacia ATRAS de la primera firma llega a incluir
+    tambien la segunda dentro de su propio texto -- el "ultimo match" del
+    bloque de la PRIMERA pasa a ser el de la SEGUNDA.
+
+    La propiedad correcta: un bloque se identifica con el email que lo ANCLO en
+    `localizar_bloques`, nunca con el que se encuentre buscando en su texto.
+    """
+
+    def test_el_caso_espejo_dos_firmas_seguidas_la_segunda_compacta(self):
+        """Repro literal del defecto: con el bug vivo, los DOS bloques salian
+        atribuidos a berta, incluido el de Ana."""
+        cuerpo = (
+            "ENGEL&VOLKERS\n"
+            "*Ana Ejemplo*\n"
+            "Asesora\n"
+            "Telf: +34 93 111 22 33\n"
+            "ana@engelvoelkers.com\n"
+            "\n"
+            "ENGEL&VOLKERS\n"
+            "berta@engelvoelkers.com\n"
+        )
+        bloques, sin_atribuir = extraer_bloques(cuerpo, fichero="espejo.eml")
+
+        assert sin_atribuir == 0
+        assert len(bloques) == 2
+        assert bloques[0].texto.startswith("ENGEL&VOLKERS\n*Ana Ejemplo*"), (
+            "el bloque anclado en la linea de Ana tiene que ser el primero de la lista")
+        assert bloques[0].email == "ana@engelvoelkers.com", (
+            "la firma de Ana no puede llevar el email de Berta")
+        assert bloques[1].email == "berta@engelvoelkers.com"
+
+    def test_el_caso_hacia_atras_dos_firmas_consecutivas_la_de_arriba_completa(self):
+        """El caso que el implementador anterior SI cerro (ver docstring de la
+        clase): dos firmas consecutivas separadas por una linea en blanco, la
+        de arriba completa (`FIRMA_BCN`). Sigue teniendo que quedar bien tras
+        este arreglo."""
+        cuerpo = FIRMA_BCN + "\n\n" + FIRMA_MAD
+        bloques, sin_atribuir = extraer_bloques(cuerpo, fichero="atras.eml")
+
+        assert sin_atribuir == 0
+        assert len(bloques) == 2
+        assert bloques[0].email == "ana@engelvoelkers.com"
+        assert bloques[1].email == "berta@engelvoelkers.com"
+
+    def test_tres_firmas_el_conjunto_de_emails_sale_completo_y_sin_repetidos(self):
+        """La forma general y fuerte: con tres firmas de tres personas
+        distintas, el conjunto de emails atribuidos tiene que ser EXACTAMENTE
+        el de las tres, sin repetidos. Con el defecto vivo, dos o tres bloques
+        comparten email (el de una ventana que se solapa con la vecina) y el
+        conjunto sale corto.
+
+        `FIRMA_CARLA` va PEGADA a `FIRMA_MAD` (sin linea en blanco entre
+        medias) a proposito: es lo que hace que el email de Carla caiga DENTRO
+        de la ventana hacia delante del bloque de Berta, y por tanto lo que
+        deja este caso realmente rojo con el defecto vivo (confirmado antes de
+        escribir el arreglo)."""
+        cuerpo = FIRMA_BCN + "\n\n" + FIRMA_MAD + FIRMA_CARLA
+        bloques, sin_atribuir = extraer_bloques(cuerpo, fichero="tres.eml")
+
+        assert sin_atribuir == 0
+        emails = [b.email for b in bloques]
+        assert set(emails) == {
+            "ana@engelvoelkers.com", "berta@engelvoelkers.com", "carla@engelvoelkers.com",
+        }
+        assert len(emails) == len(set(emails)), (
+            "con el defecto vivo, dos o tres bloques comparten email y el conjunto sale corto")
+
+    def test_tres_firmas_no_se_pierde_ninguna(self):
+        """Que ademas de sin repetidos, no falte ninguna: tiene que haber al
+        menos un bloque por cada uno de los tres emails."""
+        cuerpo = FIRMA_BCN + "\n\n" + FIRMA_MAD + FIRMA_CARLA
+        bloques, _ = extraer_bloques(cuerpo, fichero="tres2.eml")
+
+        for email in ("ana@engelvoelkers.com", "berta@engelvoelkers.com",
+                      "carla@engelvoelkers.com"):
+            assert any(b.email == email for b in bloques), f"falta el bloque de {email}"
+
+
 class TestZonasCitadas:
 
     def test_una_zona_citada_se_detecta(self):
@@ -422,7 +517,8 @@ class TestElCruceDeLineasSeAlinea:
         """
         texto_original = "a\n> \nc\n"
         assert zonas_citadas(texto_original) == [(1, 2)]
-        bloque = BloqueFirma(texto="ana@engelvoelkers.com", linea=2, fichero="x.eml")
+        bloque = BloqueFirma(texto="ana@engelvoelkers.com", email="ana@engelvoelkers.com",
+                             linea=2, fichero="x.eml")
 
         atribuidos, sin_atribuir = atribuir([bloque], texto_original=texto_original)
 
