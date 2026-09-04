@@ -99,13 +99,23 @@ Lee firmas de un `.eml`. **No conoce el CRM ni el expediente.**
 def extraer_firmas(eml: Path) -> ResultadoFirmas
 ```
 
-- **Detección con dos anclas**, porque H-01 dice que el marcador falta en la mitad:
-  1. el marcador (`-- `, «Enviado desde mi…»);
-  2. cuando no hay marcador, la **línea con email corporativo**, con **corroboración**
-     obligatoria: al menos una de `ENGEL&VÖLKERS` / `EV MMC SPAIN` / una etiqueta de teléfono en la
-     ventana. Sin corroboración no hay bloque: una dirección suelta en un cuerpo no es una firma.
-- Antes de leer: se quitan las marcas de cita `> ` y los asteriscos de negrita, y se descartan las
-  URL interleaved (H-03 midió enlaces de mapas partiendo las líneas).
+- **Un ancla, un refinamiento y una puerta.** *Precisado al implementar, el 2026-09-04: la primera
+  redacción hablaba de «dos anclas», el marcador y el email, y la segunda sólo «cuando no hay
+  marcador». Medido sobre los 6 `.eml`, el email corporativo aparece en los **seis** bloques —
+  también en los tres que traen marcador—, así que un solo mecanismo los cubre todos y el marcador
+  deja de estar en el camino crítico.*
+  - **Ancla:** la línea con el email corporativo. Siempre, haya marcador o no.
+  - **Refinamiento:** si existe un marcador entre el cuerpo y esa línea, **aprieta el límite
+    superior** del bloque para no arrastrar prosa. No decide si hay bloque; sólo dónde empieza.
+  - **Puerta obligatoria:** corroboración — al menos una de `ENGEL&VÖLKERS` / `EV MMC SPAIN` / una
+    etiqueta de teléfono en la ventana. Sin ella no hay bloque: una dirección suelta en un texto no
+    es una firma, y sin esta puerta cualquier correo que **mencione** a un consultor produciría una
+    firma suya inventada.
+- Antes de leer se quitan las marcas de cita `> ` y se descartan las URL interleaved (H-03 midió
+  enlaces de mapas partiendo las líneas). **Los asteriscos de negrita NO se quitan del bloque**
+  —esto también se precisó al implementar—: son la única señal que localiza la línea del nombre, y
+  el cargo se posiciona respecto a ella porque no tiene etiqueta. Se limpian por valor, al leer cada
+  campo, no antes.
 - **Atribución por el email de DENTRO del bloque, nunca por el `From:`** (H-02). Un bloque sin
   email dentro no se atribuye a nadie: `NO_ATRIBUIBLE`.
 - Cada firma registra `procedencia`: `directo` (fuera de zona citada) o `citado`. Importa porque un
@@ -166,12 +176,25 @@ Contrato, idéntico al del contrario y por las mismas razones:
 
 Dos decisiones de diseño con su fundamento:
 
-**(a) GET del conjunto completo → merge → PUT del conjunto completo.** `[APER-26]` verificó que el
-PUT es **parcial** para *expedientes*, no para `colaboradores`, y el docstring de
-`update_cliente_contrario` deja constancia de que para su elemento tampoco está confirmado. Enviar
-el conjunto completo es correcto **bajo las dos hipótesis**: si el PUT es parcial, sobra sin daño;
-si es de reemplazo, es lo único que no borra los campos omitidos. No se apuesta por la hipótesis no
-medida.
+**(a) El PUT manda sólo los campos que se rellenan, y el verbo está medido.** *Corregido durante la
+ejecución, el 2026-09-04: la primera redacción de este apartado era falsa y de la clase peligrosa.*
+Decía que un «GET del conjunto completo → merge → PUT del conjunto completo» era correcto «bajo las
+dos hipótesis», cuando el código que este diseño especifica manda al PUT **sólo los deltas**, no el
+conjunto — si el PUT fuera de reemplazo, esa frase habría dado por cubierto exactamente lo que no
+cubría, y el resultado sería borrar datos del cliente. Lo destapó el implementador de la Task 3 al
+medir que la tupla de properties cubre 12 de las 18.
+
+**La evidencia real:** el PUT es **PARCIAL — preserva los campos omitidos**, verificado en vivo el
+2026-07-18 sobre un expediente desechable (`INTEGRACION_SUDESPACHO.md` §10.7, `[APER-26]`): un
+`PUT {"Notas": …}` cambió sólo `Notas` y dejó intacto el resto. Y la ruta
+`/api/element_register/{element}/{id}` es **genérica sobre el elemento**, así que lo medido es el
+verbo y la ruta, no un elemento concreto.
+
+**Y se declara qué clase de evidencia es:** de endpoint, **no** específica de `colaboradores`. Nadie
+ha hecho la prueba sobre este elemento, y hacerla exigiría crear un colaborador desechable en el
+tenant del cliente sin endpoint de borrado documentado. El GET, por su parte, no necesita las 18
+properties: existe para saber **qué está vacío**, y lo que no se pide tampoco se puede borrar,
+porque nunca se envía.
 
 **(b) El gancho va en un `_resolver_o_crear_colaborador(datos, client)` COMPARTIDO** por
 `ensure_colaborador_vinculado` y `ensure_colaborador_vinculado_judicial`, no copiado en las dos. El

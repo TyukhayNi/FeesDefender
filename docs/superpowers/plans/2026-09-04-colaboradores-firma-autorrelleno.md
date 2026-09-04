@@ -477,8 +477,12 @@ class TestLeerLaFichaDelColaborador:
         assert plano == {"movil": "612345678"}
 
     def test_pide_TODO_el_conjunto_escribible_no_solo_lo_que_cambia(self, monkeypatch):
-        """GET completo -> merge -> PUT completo: correcto si el PUT es parcial Y si es
-        de reemplazo. Para `colaboradores` no esta medido cual de los dos es."""
+        """El GET pide las properties que el despacho usa, no solo la que cambia.
+
+        No es para round-trip: el PUT manda solo los deltas, y eso es seguro porque el
+        PUT esta medido PARCIAL (§10.7, 2026-07-18) sobre la MISMA ruta generica. Este
+        GET existe para saber QUE ESTA VACIO, y para eso hace falta leer los campos que
+        el completador puede rellenar."""
         from core import sudespacho_relations as sr
 
         capturado = {}
@@ -583,11 +587,19 @@ _PROPS_COLABORADOR: tuple[str, ...] = (
 def get_colaborador(colab_id: str) -> dict[str, str]:
     """Ficha de un colaborador, aplanada a `{property: value}`.
 
-    El GET plano da HTTP 500: `?properties=` es obligatorio (`[APER-26]`). Se pide el
-    conjunto escribible COMPLETO, no solo lo que se va a tocar, porque `_completar_*`
-    hace GET -> merge -> PUT y para `colaboradores` **no esta medido** si el PUT es
-    parcial o de reemplazo. Mandar el conjunto completo es correcto bajo las dos
-    hipotesis; apostar por una y equivocarse borra los campos omitidos.
+    El GET plano da HTTP 500: `?properties=` es obligatorio (`[APER-26]`). Se piden las
+    que el despacho usa —las que `_completar_colaborador_existente` puede rellenar, mas
+    las informativas para leer la ficha—, NO las 18 del contrato: este GET existe para
+    saber **que esta vacio**, no para round-trip.
+
+    Y no necesita las 18 porque el PUT **no reenvia el conjunto**: manda solo los campos
+    que se rellenan. Eso es seguro porque el PUT es **PARCIAL, preserva los omitidos**,
+    verificado en vivo el 2026-07-18 (§10.7 / `[APER-26]`) sobre la MISMA ruta
+    `/api/element_register/{element}/{id}`, que es generica sobre el elemento. Es
+    evidencia **de endpoint, no de este elemento**: la prueba especifica sobre
+    `colaboradores` exigiria crear uno desechable en el tenant del cliente sin endpoint
+    de borrado documentado, y no se ha hecho. Las properties que no se piden tampoco se
+    pueden borrar, porque nunca se envian.
     """
     api_key = (os.getenv("SUDESPACHO_API_KEY") or "").strip()
     if not api_key:
@@ -658,10 +670,12 @@ Esperado: PASA.
 git add core/sudespacho_relations.py tests/test_crm_colaborador_props.py
 git commit -m "feat(crm): leer y escribir la ficha de un colaborador (GET/PUT)
 
-Los dos primitivos no existian: solo habia POST de creacion. get_colaborador pide el
-conjunto escribible COMPLETO porque el GET plano da 500 y porque _completar_* hace
-GET -> merge -> PUT: para `colaboradores` no esta medido si el PUT es parcial o de
-reemplazo, y mandar el conjunto completo es correcto bajo las dos hipotesis.
+Los dos primitivos no existian: solo habia POST de creacion. El GET plano da 500, asi
+que `?properties=` es obligatorio, y se piden las que el despacho usa: este GET sirve
+para saber QUE ESTA VACIO, no para round-trip. El PUT manda solo los deltas, que es
+seguro porque el PUT esta medido PARCIAL —preserva los omitidos— en vivo el 2026-07-18
+(§10.7) sobre la MISMA ruta generica sobre el elemento. Evidencia de endpoint, no de
+este elemento en concreto: se declara asi.
 
 El contrato de properties no se supone: lo enumero el CRM (§14.6). No incluye cargo."
 ```
@@ -3567,10 +3581,13 @@ Tres consecuencias que costaron un día de suposiciones:
 
 Lectura y escritura: `get_colaborador(id)` / `update_colaborador(id, cambios)` en
 `core/sudespacho_relations.py`. El GET plano da 500: `?properties=` es obligatorio
-(`[APER-26]`). **Se pide el conjunto escribible completo**, porque
-`_completar_colaborador_existente` hace GET → merge → PUT y para este elemento **no está
-medido** si el PUT es parcial o de reemplazo; mandar el conjunto completo es correcto
-bajo las dos hipótesis.
+(`[APER-26]`). Se piden las properties que el despacho usa, no las 18: el GET sirve para
+saber **qué está vacío**, no para round-trip. El PUT manda **sólo los campos que se
+rellenan**, y eso es seguro porque el PUT es **parcial — preserva los omitidos**,
+verificado en vivo el 2026-07-18 (§10.7) sobre la **misma ruta genérica sobre el
+elemento**. Es evidencia de endpoint, no de `colaboradores` en concreto: la prueba
+específica exigiría crear un colaborador desechable en el tenant del cliente sin
+endpoint de borrado documentado.
 ```
 
 - [ ] **Step 3: Anotar la deuda declarada en MEJORAS_FUTURAS**
