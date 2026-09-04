@@ -42,9 +42,15 @@ def test_crm_ficha_orquesta_todo(caso_con_ficha, monkeypatch):
     monkeypatch.setattr("scripts.crm_ficha.ensure_contrario_vinculado", ensure_c)
     monkeypatch.setattr("scripts.crm_ficha.ensure_colaborador_vinculado", ensure_col)
     monkeypatch.setattr("scripts.crm_ficha.update_expediente", upd)
-    # GET de verificación: devuelve algo plausible
+    # GET de verificación: devuelve algo plausible, con las Notas que el CLI escribe
     monkeypatch.setattr("scripts.crm_ficha.get_expediente",
-                        MagicMock(return_value={"Numero_Expediente": "49"}))
+                        MagicMock(return_value={"Numero_Expediente": "49",
+                                                "Notas": "<p>Vuelta</p>"}))
+    # La guarda de red obliga a declarar la lectura: sin esto el test moriria.
+    monkeypatch.setattr("scripts.crm_ficha.get_relaciones",
+                        MagicMock(return_value={"clientes_propios": [{"id": "2"}],
+                                                "clientes_contrarios": [{"id": "1099"}],
+                                                "colaboradores": [{"id": "776"}]}))
 
     r = CliRunner().invoke(cli.app, ["--case-id", "W-000AAA", "--yes"])
     assert r.exit_code == 0, r.output
@@ -104,7 +110,9 @@ def test_crm_ficha_cliente_propio_engel_volkers_vincula_id_27(tmp_path, monkeypa
     monkeypatch.setattr("scripts.crm_ficha.link_ev_mmc", link_ev)
     monkeypatch.setattr("scripts.crm_ficha.update_expediente", MagicMock(return_value={}))
     monkeypatch.setattr("scripts.crm_ficha.get_expediente",
-                        MagicMock(return_value={"Numero_Expediente": "1"}))
+                        MagicMock(return_value={"Numero_Expediente": "1", "Notas": "x"}))
+    monkeypatch.setattr("scripts.crm_ficha.get_relaciones",
+                        MagicMock(return_value={"clientes_propios": [{"id": "27"}]}))
 
     r = CliRunner().invoke(cli.app, ["--case-id", "W-000CCC", "--yes"])
     assert r.exit_code == 0, r.output
@@ -115,6 +123,9 @@ def test_crm_ficha_falla_limpio_si_writer_revienta_mid_run(caso_con_ficha, monke
     """Si un writer revienta a mitad del secuenciado (tras link_ev_mmc OK), debe fallar
     limpio (spec §7.4: tolerancia a caída como _alta_crm — avisa, no revienta), no dejar
     burbujear la excepción cruda ni imprimir un traceback."""
+    # Tras H-03 el CLI audita lo ya escrito antes de rendirse, asi que tambien lee.
+    monkeypatch.setattr("scripts.crm_ficha.get_relaciones",
+                        MagicMock(return_value={"clientes_propios": [{"id": "2"}]}))
     link_ev = MagicMock()
     ensure_c = MagicMock(side_effect=RuntimeError("boom"))
     monkeypatch.setattr("scripts.crm_ficha.link_ev_mmc", link_ev)
@@ -155,20 +166,38 @@ def test_crm_ficha_cliente_propio_desconocido_falla_sin_escribir(tmp_path, monke
 
 
 # ---------------------------------------------------------------------------
-# Guarda de red: `get_relaciones` sale al CRM de verdad, y la API key vive en el
-# entorno de usuario de Windows — sin esto, correr la suite en el PC de Nikolai
-# golpearia el tenant real. Los tests que quieran una lectura concreta la
-# sobreescriben; los demas obtienen «no se pudo leer», que el CLI trata como
-# SIN VERIFICAR y no como fallo.
+# Guarda de red. Este fichero ejerce un CLI que escribe en el CRM real, y la
+# `SUDESPACHO_API_KEY` vive en el entorno de USUARIO de Windows (el `.env` la tiene
+# vacia a proposito), asi que un test que olvide un mock golpea el tenant de verdad.
+#
+# La primera version de esta guarda no mordia, y R1/H-04 lo midio: parcheaba solo
+# `get_relaciones` y levantaba `AssertionError`, que el `except Exception` del CLI
+# convertia en un aviso y en salida 0. Una guarda cuyo grito se traga el codigo que
+# vigila no es una guarda. Dos correcciones, y las dos son de frontera:
+#
+#   1. Se corta LA RED (`httpx`), no una funcion concreta. La funcion era un ejemplo;
+#      la clase es «cualquier salida HTTP desde este fichero».
+#   2. Levanta algo derivado de `BaseException`, que ningun `except Exception` atrapa.
+#      Asi el test muere en vez de pasar por la razon equivocada.
 # ---------------------------------------------------------------------------
 
+class FugaDeRedEnTest(BaseException):
+    """No hereda de Exception a proposito: ningun `except Exception` puede tragarsela."""
+
+
 @pytest.fixture(autouse=True)
-def _sin_red_en_relaciones(monkeypatch):
-    def _prohibido(*a, **k):
-        raise AssertionError(
-            "get_relaciones salio a la red en un test; mockealo explicitamente"
-        )
-    monkeypatch.setattr("scripts.crm_ficha.get_relaciones", _prohibido)
+def _sin_red(monkeypatch):
+    def _prohibido(metodo):
+        def _f(*a, **k):
+            destino = a[0] if a else k.get("url", "?")
+            raise FugaDeRedEnTest(
+                f"httpx.{metodo} salio a la red en un test ({destino!r}); "
+                "mockea la funcion del CLI que la usa"
+            )
+        return _f
+
+    for metodo in ("get", "post", "put", "delete", "patch", "request"):
+        monkeypatch.setattr(f"httpx.{metodo}", _prohibido(metodo))
 
 
 # ---------------------------------------------------------------------------
@@ -190,8 +219,11 @@ class TestVerificacionPorLectura:
         monkeypatch.setattr("scripts.crm_ficha.ensure_colaborador_vinculado",
                             MagicMock(return_value=("776", False)))
         monkeypatch.setattr("scripts.crm_ficha.update_expediente", MagicMock(return_value={}))
+        # Devuelve las Notas escritas: si no, la verificacion nueva las marca FALTA
+        # (y con razon — ese es justo el defecto H-01 que se acaba de cerrar).
         monkeypatch.setattr("scripts.crm_ficha.get_expediente",
-                            MagicMock(return_value={"Numero_Expediente": "49"}))
+                            MagicMock(return_value={"Numero_Expediente": "49",
+                                                    "Notas": "<p>Vuelta</p>"}))
 
     def test_todo_vinculado_dice_VERIFICADA(self, caso_con_ficha, monkeypatch):
         self._escrituras_en_verde(monkeypatch)
@@ -249,3 +281,133 @@ class TestVerificacionPorLectura:
         assert r.exit_code == 0, r.output
         assert "SIN VERIFICAR" in r.output
         assert "VERIFICADA por lectura" not in r.output
+
+
+class TestLaGuardaDeRedMuerde:
+    """Un guard sin prueba de que muerde no es un guard — y este no mordia.
+
+    R1/H-04. Estos dos tests son la prueba de mutacion de la propia guarda: si alguien
+    la debilita (vuelve a `AssertionError`, o vuelve a parchear solo una funcion), aqui
+    se ve. Sin ellos la guarda puede quedarse inerte otra vez y nadie se entera.
+    """
+
+    def test_una_salida_a_red_no_declarada_MATA_el_test(self, caso_con_ficha, monkeypatch):
+        """Y muere de verdad: no llega a la salida 0 con un aviso."""
+        import httpx
+
+        monkeypatch.setattr("scripts.crm_ficha.link_ev_mmc", MagicMock())
+        monkeypatch.setattr("scripts.crm_ficha.ensure_contrario_vinculado",
+                            MagicMock(return_value=("1099", False)))
+        monkeypatch.setattr("scripts.crm_ficha.ensure_colaborador_vinculado",
+                            MagicMock(return_value=("776", False)))
+        monkeypatch.setattr("scripts.crm_ficha.update_expediente", MagicMock(return_value={}))
+        # `get_expediente` SIN mockear: usa httpx.get de verdad.
+
+        with pytest.raises(FugaDeRedEnTest):
+            httpx.get("https://api-crm-commons-pro.sudespacho.biz/api/loquesea")
+
+    def test_no_la_atrapa_un_except_Exception(self):
+        """La razon de que herede de BaseException, fijada por un test."""
+        import httpx
+
+        atrapada = False
+        try:
+            try:
+                httpx.post("https://api-crm-commons-pro.sudespacho.biz/api/loquesea")
+            except Exception:          # noqa: BLE001 — es el punto del test
+                atrapada = True
+        except FugaDeRedEnTest:
+            pass
+        assert not atrapada, "un `except Exception` se tragó la alarma: la guarda es inerte"
+
+
+class TestVerificarTODOLoQueLaCorridaEscribe:
+    """R1/H-01..H-03. La frontera no es «las relaciones»: es TODO lo que se escribio.
+
+    Verificar solo los vinculos dejaba las Notas fuera y aun asi imprimia VERIFICADA
+    — el mismo falso OK que esta verificacion existe para eliminar, un nivel mas abajo.
+    """
+
+    @staticmethod
+    def _base(monkeypatch, *, notas_leidas="<p>Vuelta</p>", colab=("776", False)):
+        monkeypatch.setattr("scripts.crm_ficha.link_ev_mmc", MagicMock())
+        monkeypatch.setattr("scripts.crm_ficha.ensure_contrario_vinculado",
+                            MagicMock(return_value=("1099", False)))
+        monkeypatch.setattr("scripts.crm_ficha.ensure_colaborador_vinculado",
+                            MagicMock(return_value=colab))
+        monkeypatch.setattr("scripts.crm_ficha.update_expediente", MagicMock(return_value={}))
+        rec = {"Numero_Expediente": "49"}
+        if notas_leidas is not None:
+            rec["Notas"] = notas_leidas
+        monkeypatch.setattr("scripts.crm_ficha.get_expediente", MagicMock(return_value=rec))
+
+    def test_notas_que_el_CRM_no_guardo_TUMBAN_la_corrida(self, caso_con_ficha, monkeypatch):
+        """El PUT devolvio 200 y el contenido no cambio. Manda la lectura."""
+        self._base(monkeypatch, notas_leidas="<p>lo de ANTES</p>")
+        monkeypatch.setattr("scripts.crm_ficha.get_relaciones", lambda el, i: {
+            "clientes_propios": [{"id": "2"}],
+            "clientes_contrarios": [{"id": "1099"}],
+            "colaboradores": [{"id": "776"}],
+        })
+        r = CliRunner().invoke(cli.app, ["--case-id", "W-000AAA", "--yes"])
+        assert r.exit_code == 1, r.output
+        assert "[FALTA] Notas" in r.output
+        assert "VERIFICADA" not in r.output
+
+    def test_notas_no_leibles_son_SIN_VERIFICAR_no_VERIFICADA(self, caso_con_ficha, monkeypatch):
+        """Si el GET del expediente cae, las Notas quedan sin comprobar — y se dice."""
+        self._base(monkeypatch)
+        monkeypatch.setattr("scripts.crm_ficha.get_expediente",
+                            MagicMock(side_effect=RuntimeError("500")))
+        monkeypatch.setattr("scripts.crm_ficha.get_relaciones", lambda el, i: {
+            "clientes_propios": [{"id": "2"}],
+            "clientes_contrarios": [{"id": "1099"}],
+            "colaboradores": [{"id": "776"}],
+        })
+        r = CliRunner().invoke(cli.app, ["--case-id", "W-000AAA", "--yes"])
+        assert r.exit_code == 0, r.output
+        assert "SIN VERIFICAR: Notas" in r.output
+        assert "VERIFICADA por lectura" not in r.output
+
+    def test_dos_partes_que_colapsan_al_mismo_id_no_se_dan_por_buenas(
+            self, caso_con_ficha, monkeypatch):
+        """R1/H-02: `presentes` era un conjunto, asi que un vinculo satisfacia a dos.
+
+        Se compara CARDINALIDAD: la corrida escribio dos colaboradores (ambos con id
+        776 por una dedup erronea) y la lectura solo ve uno.
+        """
+        ficha = case_locator.path_for(caso_con_ficha) / "00_Input" / "_ficha_crm.yaml"
+        ficha.write_text(
+            "contrario:\n  nombre: JUAN\n  apellido1: PEREZ\n  nif: 00000000T\n"
+            "colaboradores:\n"
+            "  - nombre: ANA\n    email: ana@engelvoelkers.example\n"
+            "  - nombre: BEA\n    email: bea@engelvoelkers.example\n"
+            "notas_html: '<p>Vuelta</p>'\n",
+            encoding="utf-8",
+        )
+        self._base(monkeypatch)
+        monkeypatch.setattr("scripts.crm_ficha.get_relaciones", lambda el, i: {
+            "clientes_propios": [{"id": "2"}],
+            "clientes_contrarios": [{"id": "1099"}],
+            "colaboradores": [{"id": "776"}],          # uno solo para las DOS
+        })
+        r = CliRunner().invoke(cli.app, ["--case-id", "W-000AAA", "--yes"])
+        assert r.exit_code == 1, r.output
+        assert "la corrida escribió 2, la lectura ve 1" in r.output
+
+    def test_un_fallo_a_mitad_AUDITA_lo_ya_escrito(self, caso_con_ficha, monkeypatch):
+        """R1/H-03: se salia con 1 sin contrastar las escrituras ya impresas como OK.
+
+        Es justo cuando mas importa saber en que estado quedo la ficha.
+        """
+        self._base(monkeypatch)
+        monkeypatch.setattr("scripts.crm_ficha.ensure_colaborador_vinculado",
+                            MagicMock(side_effect=RuntimeError("caido")))
+        monkeypatch.setattr("scripts.crm_ficha.get_relaciones", lambda el, i: {
+            "clientes_propios": [{"id": "2"}],
+            "clientes_contrarios": [{"id": "1099"}],
+        })
+        r = CliRunner().invoke(cli.app, ["--case-id", "W-000AAA", "--yes"])
+        assert r.exit_code == 1, r.output
+        assert "Estado de lo que sí se llegó a escribir" in r.output
+        assert "[ok] clientes_contrarios id=1099" in r.output

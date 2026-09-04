@@ -1188,12 +1188,22 @@ def get_relaciones(element: str, exp_id: str) -> dict[str, list[dict[str, Any]]]
         exp_id: ID del expediente padre.
 
     Returns:
-        Un dict por elemento hijo relacionable → lista de sus vínculos. Un elemento
-        **sin** vínculos aparece con lista vacía: «relacionable y sin ninguno» y «no
-        relacionable» no son lo mismo, y el llamador debe poder distinguirlos.
+        `{elemento_hijo: [{id, ...valores}]}` con **solo los hijos que el servidor
+        devuelve**, que son los que tienen algún vínculo. Un `{}` significa «este
+        expediente no tiene ninguna relación», y **no** permite distinguir «X es
+        relacionable y no tiene ninguna» de «X no es relacionable»: para eso hace falta
+        `GET /api/view/config/{element}/relations`, que da el esquema. Un bloque vacío
+        sí se respeta si el servidor lo manda.
+
+        Los valores se copian **tal cual**, incluidos `False`, `0` y `""`: esta capa lee,
+        no decide qué campo es relevante. Filtrar es cosa de quien presenta.
 
     Raises:
-        SudespachoRelationsError: HTTP != 200 o error de red.
+        SudespachoRelationsError: HTTP != 200, error de red, o **cuerpo con una forma
+            que no case con el contrato**. Esto último es deliberado: una forma
+            inesperada tiene que llegar al llamador como «no pude leer», nunca como
+            «no hay vínculos». Confundir las dos es el defecto que esta función existe
+            para que `crm_ficha` no cometa.
         ValueError: SUDESPACHO_API_KEY no configurado.
     """
     api_key = (os.getenv("SUDESPACHO_API_KEY") or "").strip()
@@ -1225,18 +1235,41 @@ def get_relaciones(element: str, exp_id: str) -> dict[str, list[dict[str, Any]]]
             f"REST GET related_register/{element}/{exp_id}: 200 sin JSON válido"
         ) from exc
 
+    def _mal(que: str) -> SudespachoRelationsError:
+        return SudespachoRelationsError(
+            f"REST GET related_register/{element}/{exp_id}: cuerpo inesperado — {que}. "
+            "Se levanta en vez de devolver vacío: «no pude leer» no es «no hay vínculos»."
+        )
+
+    if bloques is None or not isinstance(bloques, list):
+        raise _mal(f"la raíz es {type(bloques).__name__}, se esperaba una lista de bloques")
+
     salida: dict[str, list[dict[str, Any]]] = {}
-    for bloque in bloques or []:
+    for i, bloque in enumerate(bloques):
         if not isinstance(bloque, dict):
-            continue
+            raise _mal(f"el bloque {i} es {type(bloque).__name__}, no un objeto")
         hijo = bloque.get("element")
-        if not hijo:
-            continue
+        if not hijo or not isinstance(hijo, str):
+            raise _mal(f"el bloque {i} no nombra su `element`")
+        registries = bloque.get("registries")
+        if registries is None:
+            registries = {}
+        if not isinstance(registries, dict):
+            # Una lista VACIA parece inofensiva y es la misma forma desconocida que una
+            # llena: si se acepta por vacía, el fallo depende de la cardinalidad.
+            raise _mal(f"`registries` de {hijo!r} es {type(registries).__name__}, no un objeto")
+
         vinculos: list[dict[str, Any]] = []
-        for rid, entradas in (bloque.get("registries") or {}).items():
-            propio = _registro_de_la_clave(rid, entradas)
-            vinculos.append(propio)
-        salida[hijo] = vinculos
+        for rid, entradas in registries.items():
+            if entradas is None:
+                entradas = []
+            if not isinstance(entradas, list):
+                raise _mal(f"`registries[{rid!r}]` de {hijo!r} no es una lista")
+            vinculos.append(_registro_de_la_clave(rid, entradas))
+
+        # Acumular, NO asignar: dos bloques con el mismo `element` sobrescribían al
+        # primero y afirmaban cero vínculos donde había uno.
+        salida.setdefault(hijo, []).extend(vinculos)
     return salida
 
 
@@ -1256,9 +1289,10 @@ def _registro_de_la_clave(rid: str, entradas: Any) -> dict[str, Any]:
                 continue
             prop = v.get("property")
             nombre = prop.get("name") if isinstance(prop, dict) else prop
-            valor = v.get("value")
-            if nombre and valor:
-                plano[nombre] = valor
+            # `if nombre and valor` borraba False, 0 y "" — y con ellos la diferencia
+            # entre «campo vacío» y «campo ausente». Esta capa copia; no juzga.
+            if nombre:
+                plano[nombre] = v.get("value")
         return plano
     return {"id": str(rid)}
 

@@ -89,12 +89,46 @@ def main(
         typer.echo("Cancelado.")
         raise typer.Exit(code=0)
 
-    #: Lo que la corrida AFIRMA haber vinculado, para contrastarlo por lectura al final.
+    #: Todo lo que la corrida AFIRMA haber escrito, para contrastarlo por lectura. La
+    #: frontera es «TODO», no «las relaciones»: R1/H-01 encontró que verificar solo los
+    #: vínculos dejaba las Notas fuera y aun así imprimía VERIFICADA — el mismo falso OK
+    #: que esta verificación existe para eliminar.
     esperado: dict[str, list[str]] = {
         "clientes_propios": [str(cliente_propio_id)],
         "clientes_contrarios": [],
         "colaboradores": [],
     }
+    notas_escritas: str | None = None
+
+    def _auditar(rel: dict) -> list[str]:
+        """Contrasta `esperado` contra lo leído. Devuelve la lista de lo que falta.
+
+        Compara por CARDINALIDAD, no por pertenencia: `presentes` era un conjunto, así
+        que dos colaboradores distintos que colapsaran al mismo id se daban los dos por
+        buenos con un solo vínculo (R1/H-02).
+        """
+        ausentes: list[str] = []
+        for elemento, ids in esperado.items():
+            leidos = [str(v.get("id")) for v in rel.get(elemento, [])]
+            for quiero in set(ids):
+                pedidos, hay = ids.count(quiero), leidos.count(quiero)
+                if hay >= pedidos:
+                    typer.echo(f"  [ok] {elemento} id={quiero}"
+                               + (f" (x{pedidos})" if pedidos > 1 else ""))
+                    continue
+                typer.echo(f"  [FALTA] {elemento} id={quiero} "
+                           f"(la corrida escribió {pedidos}, la lectura ve {hay})")
+                ausentes.append(f"{elemento} id={quiero}")
+        return ausentes
+
+    def _leer() -> dict | None:
+        """Las relaciones, o `None` si no se pudieron leer. `None` NO es «vacío»."""
+        try:
+            return get_relaciones(_ELEMENT_EXTRAJUDICIAL, exp_id)
+        except Exception as exc:  # noqa: BLE001
+            typer.echo(f"[AVISO] No se pudieron LEER las relaciones ({exc!r}); "
+                       "los vínculos quedan SIN VERIFICAR, que no es lo mismo que mal.")
+            return None
 
     try:
         link_ev_mmc(exp_id, cliente_propio_id=cliente_propio_id)
@@ -110,6 +144,7 @@ def main(
             typer.echo(f"OK colaborador id={colid} ({'creado' if creado else 'existente'}) vinculado")
         if ficha.notas_html:
             update_expediente(exp_id, {"Notas": ficha.notas_html})
+            notas_escritas = ficha.notas_html
             typer.echo("OK Notas actualizadas")
     except Exception as exc:  # noqa: BLE001 — tolerancia a caída (spec §7.4), como _alta_crm
         typer.echo(
@@ -117,44 +152,55 @@ def main(
             "Re-ejecutar es seguro: contrario/colaboradores deduplican por NIF/email.",
             err=True,
         )
+        # Auditar lo YA escrito antes de rendirse: es justo cuando más importa saber en
+        # qué estado quedó la ficha, y los `OK` de arriba se apoyaban en un status
+        # (R1/H-03). No cambia el código de salida: la corrida falló igual.
+        parcial = _leer()
+        if parcial is not None:
+            typer.echo("Estado de lo que sí se llegó a escribir:")
+            _auditar(parcial)
         raise typer.Exit(code=1)
 
     # Verificación POR RESULTADO. El 201 de `relation_element` no prueba el vínculo, y
     # hasta el 2026-09-04 aquí se remataba con «verificar partes visualmente en el CRM»
     # porque se creía que la API no sabía leer relaciones. Sí sabe: `related_register`.
+    faltan: list[str] = []
+    sin_verificar: list[str] = []
+
     try:
         rec = get_expediente(exp_id)
         typer.echo(f"Verificación: expediente {exp_id} "
                    f"Numero_Expediente={rec.get('Numero_Expediente')}")
+        if notas_escritas is not None:
+            if (rec.get("Notas") or "").strip() == notas_escritas.strip():
+                typer.echo("  [ok] Notas coinciden con lo escrito")
+            else:
+                typer.echo("  [FALTA] Notas: el CRM devuelve un contenido distinto del escrito")
+                faltan.append("Notas")
     except Exception as exc:  # noqa: BLE001 — la verificación no debe tumbar el éxito
         typer.echo(f"[AVISO] GET de verificación falló ({exc!r}); revisa manualmente el CRM")
+        if notas_escritas is not None:
+            sin_verificar.append("Notas")
 
-    try:
-        rel = get_relaciones(_ELEMENT_EXTRAJUDICIAL, exp_id)
-    except Exception as exc:  # noqa: BLE001
-        typer.echo(f"[AVISO] No se pudieron LEER las relaciones ({exc!r}); "
-                   "los vínculos quedan SIN VERIFICAR, que no es lo mismo que mal.")
-        typer.echo(f"OK ficha CRM completada: {resolved}")
-        return
-
-    faltan: list[str] = []
-    for elemento, ids in esperado.items():
-        presentes = {str(v.get("id")) for v in rel.get(elemento, [])}
-        for quiero in ids:
-            marca = "ok" if quiero in presentes else "FALTA"
-            typer.echo(f"  [{marca}] {elemento} id={quiero}")
-            if quiero not in presentes:
-                faltan.append(f"{elemento} id={quiero}")
+    rel = _leer()
+    if rel is None:
+        sin_verificar.extend(esperado)
+    else:
+        faltan += _auditar(rel)
 
     if faltan:
         typer.echo(
-            "[ERROR] La lectura DESMIENTE la escritura: no están vinculados -> "
+            "[ERROR] La lectura DESMIENTE la escritura: no consta -> "
             + ", ".join(faltan)
-            + ". Los 'OK ... vinculado' de arriba se apoyaban en el status, no en el "
-              "resultado.",
+            + ". Los 'OK ...' de arriba se apoyaban en el status, no en el resultado.",
             err=True,
         )
         raise typer.Exit(code=1)
+
+    if sin_verificar:
+        typer.echo(f"OK ficha CRM completada: {resolved} "
+                   f"— SIN VERIFICAR: {', '.join(sin_verificar)}")
+        return
 
     typer.echo(f"OK ficha CRM completada y VERIFICADA por lectura: {resolved}")
 

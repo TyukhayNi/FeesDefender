@@ -41,8 +41,11 @@ def _respuesta(bloques: list[dict], status: int = 200) -> MagicMock:
     return r
 
 
-#: La forma EXACTA que devolvió el CRM para el expediente 634: tres colaboradores
-#: cuyas listas acumulan 1, 2 y 3 entradas respectivamente.
+#: Forma MEDIDA sobre el exp 634 el 2026-09-04: tres colaboradores cuyas listas acumulan
+#: 1, 2 y 3 entradas. El bloque `facturas` de abajo es **sintético**, no medido — el
+#: servidor real NO envía los hijos sin vínculos. Se conserva a propósito para fijar que
+#: un bloque vacío, SI llega, se respeta; y va marcado porque una fixture que se presenta
+#: como medida y trae material inventado es un defecto de procedencia, no un detalle.
 _ACUMULADO = [
     {
         "element": "clientes_propios",
@@ -67,6 +70,7 @@ _ACUMULADO = [
             ],
         },
     },
+    # --- sintético a partir de aquí (ver nota de arriba) ---
     {"element": "facturas", "registries": {}},
 ]
 
@@ -135,8 +139,14 @@ def test_si_ninguna_entrada_casa_por_id_no_inventa_el_vinculo(_api_key):
 # Frontera 3: los elementos SIN vinculos no se confunden con vinculos
 # ---------------------------------------------------------------------------
 
-def test_elemento_relacionable_sin_vinculos_queda_vacio(_api_key):
-    """`facturas` es relacionable y no tiene ninguna: lista vacia, no ausencia."""
+def test_un_bloque_vacio_que_llegue_se_respeta(_api_key):
+    """Si el servidor manda un hijo sin vinculos, sale con lista vacia — no se descarta.
+
+    Ojo con lo que este test NO dice: el CRM real **no manda** los hijos sin vinculos,
+    asi que un `{}` de vuelta NO permite distinguir «relacionable y sin ninguno» de «no
+    relacionable». Eso lo responde `GET /api/view/config/{element}/relations`, y el
+    docstring de `get_relaciones` lo declara asi.
+    """
     with patch("httpx.get", return_value=_respuesta(_ACUMULADO)):
         rel = get_relaciones("extrajudiciales", "634")
 
@@ -171,6 +181,13 @@ def test_usa_la_ruta_related_register(_api_key):
     assert "/api/related_register/" in url
     assert "/api/relation_element/" not in url
 
+    # La peticion es la URL Y su autenticacion: sin esto, un mutante que vacie las
+    # cabeceras sobrevive a todo el fichero y el fallo aparece en produccion como 401.
+    headers = g.call_args.kwargs["headers"]
+    assert headers["x-api-key"] == "k-de-prueba"
+    assert headers["Accept"] == "application/json"
+    assert g.call_args.kwargs["timeout"]
+
 
 def test_status_no_200_levanta(_api_key):
     with patch("httpx.get", return_value=_respuesta({"detail": "nope"}, status=500)):
@@ -182,3 +199,86 @@ def test_sin_api_key_levanta_valueerror(monkeypatch):
     monkeypatch.setenv("SUDESPACHO_API_KEY", "")
     with pytest.raises(ValueError, match="SUDESPACHO_API_KEY"):
         get_relaciones("extrajudiciales", "634")
+
+
+# ---------------------------------------------------------------------------
+# Frontera 6 (R1 / H-06): toda forma inesperada del cuerpo es «NO PUDE LEER»
+#
+# El defecto que R1 encontro aqui es el mismo que este cambio existe para arreglar,
+# un nivel mas abajo: el parser devolvia vacio ante cuerpos que no entendia, y un
+# `{}` es indistinguible de «este expediente no tiene relaciones». Un llamador que
+# verifica vinculos con eso concluye «faltan todos» — o, peor, «no hay nada que
+# comprobar». Ahora cada forma desconocida levanta.
+# ---------------------------------------------------------------------------
+
+class TestCuerpoConFormaInesperada:
+
+    @pytest.mark.parametrize("cuerpo, pista", [
+        pytest.param({"element": "x"}, "la raíz es dict", id="raiz-dict"),
+        pytest.param(None, "la raíz es NoneType", id="raiz-none"),
+        pytest.param(["no soy un bloque"], "el bloque 0 es str", id="bloque-no-dict"),
+        pytest.param([{"registries": {}}], "no nombra su `element`", id="bloque-sin-element"),
+        pytest.param([{"element": 7, "registries": {}}], "no nombra su `element`",
+                     id="element-no-str"),
+        pytest.param([{"element": "colaboradores", "registries": []}],
+                     "es list, no un objeto", id="registries-lista-vacia"),
+        pytest.param([{"element": "colaboradores", "registries": [{"id": "1"}]}],
+                     "es list, no un objeto", id="registries-lista-llena"),
+        pytest.param([{"element": "colaboradores", "registries": {"1": "no soy lista"}}],
+                     "no es una lista", id="entradas-no-lista"),
+    ])
+    def test_levanta_en_vez_de_devolver_vacio(self, _api_key, cuerpo, pista):
+        with patch("httpx.get", return_value=_respuesta(cuerpo)):
+            with pytest.raises(SudespachoRelationsError) as exc:
+                get_relaciones("extrajudiciales", "634")
+        assert pista in str(exc.value)
+        assert "no pude leer" in str(exc.value).lower()
+
+    def test_registries_ausente_o_none_si_es_vacio_legitimo(self, _api_key):
+        """Distinto de una forma rara: `registries` ausente es «sin vinculos», no error."""
+        cuerpo = [{"element": "colaboradores"},
+                  {"element": "facturas", "registries": None}]
+        with patch("httpx.get", return_value=_respuesta(cuerpo)):
+            rel = get_relaciones("extrajudiciales", "634")
+        assert rel == {"colaboradores": [], "facturas": []}
+
+
+def test_dos_bloques_del_mismo_elemento_se_ACUMULAN(_api_key):
+    """R1 / H-06: el segundo bloque pisaba al primero y afirmaba cero vinculos.
+
+    Que el servidor no lo haga hoy no es la cuestion: perder un vinculo por
+    sobreescritura silenciosa es exactamente lo que no puede pasar en la pieza que
+    verifica vinculos.
+    """
+    cuerpo = [
+        {"element": "colaboradores", "registries": {"1": [_registro("1", "ANA")]}},
+        {"element": "colaboradores", "registries": {"2": [_registro("2", "BEA")]}},
+    ]
+    with patch("httpx.get", return_value=_respuesta(cuerpo)):
+        rel = get_relaciones("extrajudiciales", "634")
+
+    assert [r["id"] for r in rel["colaboradores"]] == ["1", "2"]
+
+
+# ---------------------------------------------------------------------------
+# Frontera 7 (R1 / H-05): esta capa COPIA los valores, no los juzga
+# ---------------------------------------------------------------------------
+
+def test_conserva_los_valores_falsy(_api_key):
+    """`False`, `0` y `""` son datos. Filtrarlos borra la diferencia entre «campo
+    vacio» y «campo ausente», que es justo lo que un verificador necesita ver."""
+    cuerpo = [{"element": "colaboradores", "registries": {"40": [{
+        "id": "40",
+        "values": [
+            _valor("nombre", "ANA"),
+            {"property": {"name": "email"}, "value": ""},
+            {"property": {"name": "activo"}, "value": False},
+            {"property": {"name": "orden"}, "value": 0},
+        ],
+    }]}}]
+    with patch("httpx.get", return_value=_respuesta(cuerpo)):
+        rel = get_relaciones("extrajudiciales", "634")
+
+    assert rel["colaboradores"] == [
+        {"id": "40", "nombre": "ANA", "email": "", "activo": False, "orden": 0}
+    ]
