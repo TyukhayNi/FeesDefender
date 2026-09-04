@@ -148,6 +148,16 @@ mitad.
 recibir y en el guard. Se calcula **al recibir el informe** y se compara con el que declara el revisor:
 ese es el único momento en que existe prueba independiente de origen. Después el acta se autoverifica.
 
+**Y «recibir» exige saber que el informe es el de esta ronda.** El directorio de trabajo de una ronda
+lleva un nombre **que no pueda colisionar** (tema + hora, nunca `rev1`) y se comprueba **vacío** antes de
+lanzar: `mkdir -p` no avisa de que ya existía. Medido el 2026-09-04 — el directorio elegido lo estaba
+usando una **sesión concurrente**, con su `INFORME.md` de otra ronda sobre otro objeto dentro. Lo delató
+una marca de tiempo *anterior al propio mandato*; sin mirarla, se habría archivado la voz de otro revisor
+como la del propio, con un digest internamente coherente y **falso**, que es exactamente la garantía que
+el acta existe para dar. Corolario doble: **un fichero más antiguo que el mandato no puede ser respuesta
+al mandato**, y el mandato lleva una cláusula de higiene del workdir («si encuentras otro fichero, no lo
+leas y decláralo») — funcionó: el revisor declaró en su primera línea el residuo que encontró.
+
 **Frontera de confianza, declarada.** El guard detecta que alteren el bloque; una edición coordinada de
 bloque y digest pasaría, y lo que la delata es el diff. Pero eso **no es inmutabilidad**: `STATUS.md:6`
 documenta que el historial de git fue reescrito y el repo recreado el 2026-07-07. La garantía real es
