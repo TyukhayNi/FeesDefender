@@ -766,10 +766,9 @@ def get_colaborador(colab_id: str) -> dict[str, str]:
     """Ficha de un colaborador, aplanada a `{property: value}`.
 
     El GET plano da HTTP 500: `?properties=` es obligatorio (`[APER-26]`). Se pide el
-    conjunto escribible COMPLETO, no solo lo que se va a tocar, porque `_completar_*`
-    hace GET -> merge -> PUT y para `colaboradores` **no esta medido** si el PUT es
-    parcial o de reemplazo. Mandar el conjunto completo es correcto bajo las dos
-    hipotesis; apostar por una y equivocarse borra los campos omitidos.
+    conjunto de _PROPS_COLABORADOR para tener visibilidad en round-trip GET -> merge
+    -> PUT. El PUT es PARCIAL (verificado en vivo 2026-07-18 sobre extrajudiciales,
+    INTEGRACION §10.7): preserva los campos omitidos.
     """
     api_key = (os.getenv("SUDESPACHO_API_KEY") or "").strip()
     if not api_key:
