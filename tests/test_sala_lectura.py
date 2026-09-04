@@ -630,3 +630,104 @@ def test_cli_clasificar_autoconstruye_catalogo_vacio(tmp_casos_root):
     assert "Catálogo vacío" in result.output
     assert len(cat.load_catalog(case_id)) == 2
     assert "Residuo: 1" in result.output
+
+
+# ---------------------------------------------------------------------------
+# MEJORAS #151: la ruta MD apuntaba al motor JUBILADO
+#
+# `_md_path` y `_link_md` construian `01_Procesado/MD/`, que es la salida del
+# motor documental jubilado; la sala de maquina escribe en
+# `01_Procesado/02_Sala de máquina/03_MD/`. Medido el 2026-09-04 en W-02JSVZ:
+# `preparar-residuo` respondia «Sin residuo con texto extraído. Nada que
+# preparar» con 99 documentos en residuo y 176 espejos MD en disco, y los 140
+# enlaces «ver texto» del INDICE.md salian TODOS muertos.
+#
+# Por que estaba latente en los tests: `_crear_md_del_residuo` escribe donde
+# `_md_path` diga, asi que seguia a la funcion y nunca comprobo DONDE apunta.
+# ---------------------------------------------------------------------------
+
+def _sm_md_dir(case_dir: Path) -> Path:
+    return case_dir / "01_Procesado" / "02_Sala de máquina" / "03_MD"
+
+
+def test_md_path_apunta_a_la_sala_de_maquina_no_al_motor_jubilado(tmp_casos_root):
+    cm, inv, cat, sl = _reload()
+    case_id, case_dir = _caso_con_docs(cm, inv, cat, [
+        ("01_Drive EV", "ambiguo.pdf", b"%PDF-1"),
+    ])
+    e = cat.load_catalog(case_id)[0]
+
+    p = sl._md_path(case_id, e)
+
+    assert p.parent == _sm_md_dir(case_dir), f"apunta a {p.parent}"
+    assert "01_Procesado/MD" not in p.as_posix(), "sigue apuntando al motor jubilado"
+
+
+def test_el_enlace_ver_texto_del_indice_apunta_a_la_sala_de_maquina(tmp_casos_root):
+    """Era el defecto con mas alcance: 140 enlaces muertos en el indice que lee el
+    abogado. El enlace es relativo a `01_Procesado/Sala lectura/INDICE.md`."""
+    cm, inv, cat, sl = _reload()
+    case_id, case_dir = _caso_con_docs(cm, inv, cat, [
+        ("01_Drive EV", "ambiguo.pdf", b"%PDF-1"),
+    ])
+    e = cat.load_catalog(case_id)[0]
+
+    enlace = sl._link_md(e)
+
+    assert enlace is not None
+    assert enlace.startswith("../02_Sala de máquina/03_MD/"), enlace
+    # Y que resuelva de verdad desde donde vive el indice, no solo que "parezca" bien.
+    indice_dir = case_dir / "01_Procesado" / "Sala lectura"
+    destino = (indice_dir / enlace).resolve()
+    assert destino.parent == _sm_md_dir(case_dir).resolve()
+
+
+def test_preparar_residuo_encuentra_el_md_donde_la_sala_de_maquina_lo_escribe(
+        tmp_casos_root):
+    """El «no hay» que en realidad era «mire donde no esta»."""
+    cm, inv, cat, sl = _reload()
+    case_id, case_dir = _caso_con_docs(cm, inv, cat, [
+        ("01_Drive EV", "ambiguo.pdf", b"%PDF-1"),
+    ])
+    sl.clasificar_caso(case_id)
+    e = [x for x in cat.load_catalog(case_id) if not x.tipo_documental][0]
+
+    from core.utils import output_slug
+    md = _sm_md_dir(case_dir) / f"{output_slug(e.ruta_relativa, e.hash)}.md"
+    md.parent.mkdir(parents=True, exist_ok=True)
+    md.write_text("Texto que la sala de maquina extrajo.", encoding="utf-8")
+
+    docs = sl.preparar_residuo(case_id)
+
+    assert len(docs) == 1, "preparar_residuo no vio el MD que si existe"
+    assert "Texto que la sala de maquina extrajo." in docs[0]["md_text"]
+
+
+def test_preparar_residuo_resuelve_un_bundle_partido_por_el_split(tmp_casos_root):
+    """Los 11 de 99 que no casaban por nombre: el padre no tiene MD propio.
+
+    La sala de maquina, cuando el split parte un PDF, no escribe
+    `<slug>.md` sino `<slug>__d01_TIPO.md`, `<slug>__d02_TIPO.md`... Sin resolverlos,
+    esos documentos quedan invisibles para la clasificacion aunque su texto exista.
+    """
+    cm, inv, cat, sl = _reload()
+    case_id, case_dir = _caso_con_docs(cm, inv, cat, [
+        ("01_Drive EV", "ambiguo.pdf", b"%PDF-1"),
+    ])
+    sl.clasificar_caso(case_id)
+    e = [x for x in cat.load_catalog(case_id) if not x.tipo_documental][0]
+
+    from core.utils import output_slug
+    slug = output_slug(e.ruta_relativa, e.hash)
+    d = _sm_md_dir(case_dir)
+    d.mkdir(parents=True, exist_ok=True)
+    # NO existe `<slug>.md`: solo los segmentos.
+    (d / f"{slug}__d01_DOC_ARRAS.md").write_text("Primer segmento.", encoding="utf-8")
+    (d / f"{slug}__d02_DOC_PODER_NOTARIAL.md").write_text("Segundo segmento.",
+                                                          encoding="utf-8")
+
+    docs = sl.preparar_residuo(case_id)
+
+    assert len(docs) == 1, "el bundle partido quedo invisible"
+    assert "Primer segmento." in docs[0]["md_text"]
+    assert "Segundo segmento." in docs[0]["md_text"], "solo leyo el primer segmento"

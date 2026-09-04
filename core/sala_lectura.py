@@ -124,7 +124,7 @@ def _write_worklist(case_id: str, residuo: list) -> Path:
         "",
         "> Rellena **Tipo**, **Fecha** (YYYY-MM-DD), **Parte** "
         "(propietario/buscador/tercero) y **Descripcion** (≤60 car., sin PII) "
-        "leyendo `01_Procesado/MD/<slug>.md`. No toques la columna **Hash**.",
+        "leyendo `01_Procesado/02_Sala de máquina/03_MD/<slug>.md`. No toques **Hash**.",
         "> Tipos válidos: " + " · ".join(TAXONOMIA_EV),
         "",
         "| " + " | ".join(_WL_COLS) + " |",
@@ -221,7 +221,7 @@ def aplicar_clasificacion(case_id: str) -> dict:
 # MEJORAS #37: clasificar_residuo_llm — autorrelleno LLM de la worklist del residuo
 #
 # Opera SOLO sobre el residuo (filas de `_clasificar.md` SIN Tipo). Lee el texto
-# extraído en claro de `01_Procesado/MD/<slug>.md` y autorrellena las columnas
+# extraído en claro de `01_Procesado/02_Sala de máquina/03_MD/` y autorrellena las columnas
 # vacías (Tipo, Fecha, Parte, Descripcion). NO pisa celdas ya rellenas (por humano
 # o por una corrida previa) → idempotente y respeta lo ya clasificado. Lo de baja
 # confianza se deja sin rellenar (sigue en residuo), no se adivina.
@@ -241,10 +241,38 @@ _COLS_LLM = ("Tipo", "Fecha", "Parte", "Descripcion")
 _PARTES_VALIDAS = {"propietario", "buscador", "tercero"}
 
 
+#: Subruta del directorio donde la **sala de máquina** escribe los espejos MD. Hasta el
+#: 2026-09-04 esto decía `01_Procesado/MD/`, que es la salida del motor documental
+#: JUBILADO, y por eso `preparar_residuo` respondía «nada que preparar» con 99 documentos
+#: en residuo y 176 espejos en disco, y los 140 enlaces «ver texto» del `INDICE.md` salían
+#: muertos (`MEJORAS #151`). Se declara una vez: los dos sitios que construían la ruta
+#: —absoluta para leer, relativa para el enlace— la duplicaban sin saberlo.
+_MD_SUBDIR = ("01_Procesado", "02_Sala de máquina", "03_MD")
+
+
+def _md_dir(case_id: str) -> Path:
+    return caso_path(case_id).joinpath(*_MD_SUBDIR)
+
+
 def _md_path(case_id: str, entry) -> Path:
-    """Ruta del texto extraído en claro de un documento (01_Procesado/MD/)."""
-    return (caso_path(case_id) / "01_Procesado" / "MD"
-            / f"{output_slug(entry.ruta_relativa, entry.hash)}.md")
+    """Ruta CANÓNICA del espejo MD de un documento, según la sala de máquina."""
+    return _md_dir(case_id) / f"{output_slug(entry.ruta_relativa, entry.hash)}.md"
+
+
+def _md_paths(case_id: str, entry) -> list[Path]:
+    """Los espejos MD del documento: el canónico, o los de sus segmentos si se partió.
+
+    Cuando el split de la sala de máquina parte un PDF compuesto, **el padre no tiene
+    espejo propio**: su texto vive en `<slug>__d01_TIPO.md`, `<slug>__d02_TIPO.md`… Medido
+    el 2026-09-04 sobre los 99 documentos de residuo de W-02JSVZ: **88 casaban** por el
+    nombre canónico y **11 no**, y los 11 eran bundles partidos. Apuntar solo el
+    directorio nuevo dejaba fuera a esos once, así que el arreglo tiene dos piezas.
+    """
+    canon = _md_path(case_id, entry)
+    if canon.is_file():
+        return [canon]
+    slug = output_slug(entry.ruta_relativa, entry.hash)
+    return sorted(_md_dir(case_id).glob(f"{slug}__d*.md"))
 
 
 def _filas_worklist(case_id: str) -> list[dict]:
@@ -280,16 +308,22 @@ def preparar_residuo(case_id: str) -> list[dict]:
         e = by_hash.get(h)
         if not e:
             continue
-        md = _md_path(case_id, e)
-        if not md.exists():
+        mds = _md_paths(case_id, e)
+        if not mds:
             continue
         out.append({
             "hash": h,
             "nombre_original": e.nombre_original,
             "fuente": e.fuente,
             "fecha_pista": pistas.get(h, ""),
-            "md_text": md.read_text(encoding="utf-8", errors="replace"),
-            "md_path": str(md),
+            # Un bundle partido aporta VARIOS segmentos: se concatenan con su nombre
+            # delante, porque clasificar un documento compuesto por un solo segmento es
+            # justo el error que el split existe para evitar.
+            "md_text": "\n\n".join(
+                f"<!-- {p.name} -->\n{p.read_text(encoding='utf-8', errors='replace')}"
+                for p in mds),
+            "md_path": str(mds[0]),
+            "md_paths": [str(p) for p in mds],
         })
     return out
 
@@ -494,9 +528,17 @@ def _link_original(e) -> str:
 
 
 def _link_md(e) -> str | None:
+    """Enlace «ver texto» del índice, relativo a `01_Procesado/Sala lectura/INDICE.md`.
+
+    Apuntaba a `../MD/` —el motor jubilado—, así que los enlaces salían muertos: 140 de
+    140 en W-02JSVZ (`MEJORAS #151`). Comparte el directorio con `_md_dir` vía
+    `_MD_SUBDIR` para que no vuelvan a divergir; se salta el primer segmento
+    (`01_Procesado`), que es el padre del propio índice.
+    """
     if Path(e.nombre_original).suffix.lower() == ".md":
         return None
-    return f"../MD/{output_slug(e.ruta_relativa, e.hash)}.md"
+    subdir = "/".join(_MD_SUBDIR[1:])
+    return f"../{subdir}/{output_slug(e.ruta_relativa, e.hash)}.md"
 
 
 def render_indices(case_id: str) -> list[Path]:
