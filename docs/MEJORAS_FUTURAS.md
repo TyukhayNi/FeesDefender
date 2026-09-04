@@ -7174,3 +7174,48 @@ tienen que pasar **sin `.env`** y seguir levantando `IdentidadSinComprobar`, no
 
 **Disparador de promoción.** Inmediato en cuanto la sesión hermana toque ese módulo: es una
 línea movida dentro de la función que está reescribiendo, y arreglarlo desde fuera sería pisarla.
+
+
+## 161. El `leak-guard` de pre-commit es INERTE en todo worktree, y por eso dejé pasar PII
+
+> 🔴 **ABIERTA y con daño real, no hipotético.** Medido el 2026-09-05: una dirección de inmueble
+> de la blocklist llegó a GitHub en el commit `eee9a7e` con el hook **en verde**. Lo paró
+> `leak-scan` en CI, que sí tiene la lista.
+
+`scripts/precommit_leak_guard.py::cargar_blocklist` lee los términos de dos artefactos
+**gitignored**: `data/_saneado/replacements.txt` y `data/_config/pii_blocklist.txt`. Un worktree
+recién creado **no tiene ninguno de los dos** — por definición, porque están gitignored. Y el
+docstring dice lo que pasa entonces: *«Vacío si no hay ninguno.»*
+
+Con la lista vacía el bucle de comprobación no itera, así que el guard **pasa en verde sin haber
+comprobado nada**. Medido en las dos raíces la misma noche:
+
+```
+<raíz del repo>          data/_config/pii_blocklist.txt -> existe, 12 líneas (70 términos)
+<worktree>               data/_config/pii_blocklist.txt -> NO existe          (0 términos)
+```
+
+**Y el flujo estándar del repo es el worktree.** `docs/FLUJO_GIT.md` manda «una mesa = una tarea =
+una rama», o sea que **la mayoría de los commits del proyecto se hacen donde el guard no puede
+ver nada**. El verde del hook no significa «no hay PII»: significa «no tengo con qué mirar».
+
+**Es exactamente la familia que este repo ya tiene documentada** —una guarda que no puede dar el
+otro valor— y aquí en su forma más cara, porque el instrumento inerte es justo el que protege el
+dato del cliente.
+
+**Remedio, y la elección importa.** Fallar cerrado es la doctrina de la casa, pero convertirlo hoy
+en bloqueo dejaría sin poder commitear a **todas** las sesiones con worktree hasta que alguien
+copie la lista, incluida la que está trabajando ahora mismo. Propuesta en dos tiempos:
+
+1. **Ya:** que `cargar_blocklist` **avise en STDERR** cuando devuelve cero términos, diciendo la
+   ruta que buscó y que la comprobación de PII **no se ha ejecutado**. Un guard que no puede
+   mirar tiene que decirlo; hoy calla.
+2. **Con decisión de Nikolai:** o bien fallar cerrado, o bien que el hook resuelva la lista desde
+   la **raíz común** (`git rev-parse --git-common-dir` da el `.git` compartido, y de ahí se llega
+   al checkout principal), que es lo que la haría funcionar en worktrees sin copiar nada.
+
+**Su mutante:** vaciar la blocklist y commitear un término conocido — hoy pasa en verde y en
+silencio; con (1) pasa pero **lo dice**; con (2) lo caza.
+
+**Disparador de promoción.** Inmediato: es la única guarda de PII que corre antes de que el dato
+salga de la máquina, y está probado que no corre.
