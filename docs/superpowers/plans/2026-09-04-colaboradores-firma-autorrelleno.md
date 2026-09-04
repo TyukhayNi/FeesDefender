@@ -1470,12 +1470,44 @@ class TestLaFirmaNoEsLaDelRemitente:
         assert "from" not in " ".join(firma.parameters).lower(), (
             "si el remitente entra aquí, alguien acabará atribuyendo por él")
 
-    def test_un_bloque_SIN_email_dentro_no_se_atribuye_a_nadie(self):
-        """No se sabe de quien es. No se propone nada, y se CUENTA."""
-        cuerpo = "ENGEL&VÖLKERS\n*Ana Ejemplo*\nAsesora\nMóvil: 612 34 56 78\n"
-        bloques, sin_atribuir = extraer_bloques(cuerpo, fichero="b.eml")
+    def test_sin_email_no_hay_ni_bloque(self):
+        """El ancla ES el email: sin el, no hay nada que atribuir."""
+        bloques, _ = extraer_bloques(
+            "ENGEL&VOLKERS
+*Ana Ejemplo*
+Asesora
+Movil: 612 34 56 78
+",
+            fichero="b.eml")
         assert bloques == []
-        assert sin_atribuir == 0, "sin email no hay ni ancla: no llega a ser bloque"
+
+    @pytest.mark.parametrize("cuerpo", [
+        "Hola.
+
+" + FIRMA_BCN,
+        FIRMA_MAD,
+        "ENGEL&VOLKERS
+*Ana Ejemplo*
+Asesora
+Movil: 612 34 56 78
+",
+        "Nada de nada.
+",
+    ])
+    def test_INVARIANTE_sin_atribuir_es_siempre_CERO(self, cuerpo):
+        """EL INVARIANTE que sostiene la retirada de `VEREDICTO_NO_ATRIBUIBLE`.
+
+        Todo bloque tiene email **por construccion**, porque el ancla del localizador es
+        el propio email. Por eso el contador no puede subir, y por eso no existe un
+        veredicto para ese caso.
+
+        **Si este test se pone rojo, NO lo ajustes:** significa que alguien anadio una
+        segunda via de deteccion —bloques anclados solo en el marcador, como la firma
+        institucional sin direccion personal que se midio en un .eml de W-02Q38C— y
+        entonces ese caso SI necesita un veredicto propio en vez de desaparecer.
+        """
+        _, sin_atribuir = extraer_bloques(cuerpo, fichero="inv.eml")
+        assert sin_atribuir == 0
 
     def test_dos_firmas_distintas_en_un_correo_se_separan(self):
         cuerpo = FIRMA_BCN + "\n\n" + FIRMA_MAD
@@ -1712,7 +1744,10 @@ móvil; eso no autoriza a escribir que esa persona no tiene móvil.
 - Consumes: `BloqueFirma` (Task 5); `normalize_es_phone` de `core/utils.py:28`.
 - Produces:
   - `VEREDICTO_ENCONTRADO`, `VEREDICTO_FIRMA_SIN_CAMPO`, `VEREDICTO_SIN_FIRMA`,
-    `VEREDICTO_NO_ATRIBUIBLE`, `VEREDICTO_NO_LEIBLE`, `VEREDICTO_CONFLICTO` — constantes `str`.
+    `VEREDICTO_NO_LEIBLE`, `VEREDICTO_CONFLICTO` — constantes `str`. **Cinco, no seis:**
+    el `NO_ATRIBUIBLE` del §6 del spec se retiró por inalcanzable (el ancla del bloque es
+    el propio email, así que todo bloque tiene email por construcción). El bloque de
+    constantes lleva la nota que lo explica y el invariante que lo vigila.
   - `DatosFirma` (frozen dataclass): `email: str`, `movil: str`, `telefono: str`, `cargo: str`,
     `procedencia: str`, `fichero: str`, `linea: int`.
   - `limpiar_telefono(valor: str) -> str`.
@@ -1877,8 +1912,13 @@ VEREDICTO_ENCONTRADO = "ENCONTRADO"
 VEREDICTO_FIRMA_SIN_CAMPO = "FIRMA_SIN_CAMPO"
 #: La persona aparece en el corpus y no se le encontro bloque de firma.
 VEREDICTO_SIN_FIRMA = "SIN_FIRMA"
-#: Habia bloque, sin email dentro: no se sabe de quien es. No se propone nada.
-VEREDICTO_NO_ATRIBUIBLE = "NO_ATRIBUIBLE"
+#: NOTA: NO hay `VEREDICTO_NO_ATRIBUIBLE`. El §6 del spec lo preveia, pero con el ancla
+#: del bloque siendo el propio email, TODO bloque tiene email por construccion: seria una
+#: constante que nada puede emitir. `atribuir` conserva la rama defensiva y su contador
+#: como INVARIANTE, con un test que lo fija en 0. Si alguien anade una segunda via de
+#: deteccion —bloques anclados solo en el marcador, como la firma institucional sin
+#: direccion personal que se midio en un .eml de W-02Q38C— ese test se pondra rojo y le
+#: dira que ahi si hace falta un veredicto de verdad.
 #: El .eml no se pudo parsear o no tiene parte text/plain. SE DECLARA.
 VEREDICTO_NO_LEIBLE = "NO_LEIBLE"
 #: Dos valores distintos y ninguno decide. Se falla cerrado.
@@ -2452,8 +2492,7 @@ Añadir a `tests/test_email_firmas.py`:
 ```python
 from pathlib import Path
 
-from core.email_firmas import (VEREDICTO_NO_LEIBLE, extraer_de_directorio,
-                               extraer_de_eml)
+from core.email_firmas import extraer_de_directorio, extraer_de_eml
 
 _EML = """\
 From: "Otro, Remitente" <otro@engelvoelkers.com>
@@ -2776,6 +2815,14 @@ class TestLosCandidatosSonSUGERENCIA:
         assert "otro@engelvoelkers.com" in texto, "el From: aparece, aunque no firme"
         assert "candidat" in texto.lower()
 
+    def test_cada_candidato_lleva_el_veredicto_SIN_FIRMA(self, caso, monkeypatch):
+        """«Aparece y no firma» es un veredicto con nombre, no una lista sin etiqueta."""
+        monkeypatch.setattr(cli, "resolver_parte", MagicMock(return_value=None))
+        _corre()
+        texto = (case_locator.path_for(caso) / "01_Procesado"
+                 / "_firmas_colaboradores.md").read_text(encoding="utf-8")
+        assert "SIN_FIRMA" in texto
+
     def test_el_informe_NO_da_de_alta_a_nadie(self, caso, monkeypatch):
         """Ni crea ni vincula: es un informe. El alta la decide Nikolai."""
         crear = MagicMock()
@@ -2841,8 +2888,8 @@ import typer
 
 from core.casos import case_locator
 from core.email_firmas import (VEREDICTO_CONFLICTO, VEREDICTO_ENCONTRADO,
-                               VEREDICTO_FIRMA_SIN_CAMPO, Consolidado,
-                               extraer_de_directorio)
+                               VEREDICTO_FIRMA_SIN_CAMPO, VEREDICTO_SIN_FIRMA,
+                               Consolidado, extraer_de_directorio)
 from core.sudespacho_relations import get_colaborador, resolver_parte
 
 app = typer.Typer(add_completion=False,
@@ -2938,11 +2985,11 @@ def report(case_id: str = typer.Option(..., "--case-id",
         "3 estaban vinculadas, y estaban ahi por CC o por ser una unidad interna. "
         "**Decide tu**; este informe no da de alta a nadie.\n")
     if candidatos:
-        partes.append("| Direccion | En el CRM |")
-        partes.append("|---|---|")
+        partes.append("| Direccion | Veredicto | En el CRM |")
+        partes.append("|---|---|---|")
         for email in candidatos:
             colab_id, _ = _falta_en_el_crm(email)
-            partes.append(f"| {email} | "
+            partes.append(f"| {email} | `{VEREDICTO_SIN_FIRMA}` | "
                           f"{'id ' + colab_id if colab_id else 'no existe'} |")
     else:
         partes.append("_Ninguna._\n")
@@ -3659,8 +3706,11 @@ Al adjudicar:
   cuatro rondas del mutex encontraron cuatro veces la misma propiedad mal cerrada porque cada vez se
   remedió el caso del informe y no la propiedad.
 - La adjudicación va **embebida** en este plan, con el encabezado canónico y su ficha; el informe
-  del revisor va **literal** a `docs/superpowers/specs/2026-09-04-colaboradores-firma-r1-adversarial-review.md`
-  con su digest. Los guards **G7 y G8** de `tests/test_docs_gobernanza.py` lo comprueban y
+  del revisor va **literal** al acta hermana, que esta task **crea**: en
+  `docs/superpowers/specs/`, con el stem de este plan y el sufijo
+  `-r1-adversarial-review.md`, y con su digest. (No se cita aqui la ruta completa a proposito:
+  el guard **G2** de `tests/test_docs_gobernanza.py` exige que toda cita a un spec resuelva en
+  disco, y hasta que la ronda corra ese fichero no existe.) Los guards **G7 y G8** de `tests/test_docs_gobernanza.py` lo comprueban y
   recomputan el digest.
 - **Si Codex no puede correr, se declara la cobertura AUSENTE**, nunca refutada. Cabe revisor
   sustituto (sesión limpia de Claude Code, sin el contexto de autoría) registrado como
@@ -3687,18 +3737,43 @@ Al adjudicar:
 | §5.3 pieza C | 3, 4 |
 | §5.3(a) GET completo → PUT completo | 3 |
 | §5.3(b) resolvedor compartido | 4 |
-| §6 los seis veredictos | 7 (constantes), 8 (`FIRMA_SIN_CAMPO`/`CONFLICTO`), 9 (`NO_LEIBLE`) |
+| §6 los veredictos | 7 (constantes), 8 (`FIRMA_SIN_CAMPO`/`CONFLICTO`), 9 (`NO_LEIBLE`, `SIN_FIRMA`). `NO_ATRIBUIBLE` **retirado**: inalcanzable, ver autorrevisión |
 | §7 D1 | 1 |
 | §7 D2 | 2 |
 | §8 las cinco mutaciones | 1, 4, 5, 6, 7, 8, 9, 10 — **17 mutantes en total**, más de los cinco que el spec pedía |
 | §9 deuda declarada | 11 |
 
-**Un hueco que declaro en vez de tapar:** `VEREDICTO_SIN_FIRMA` y `VEREDICTO_NO_ATRIBUIBLE` quedan
-definidos y **no los emite nadie**. `SIN_FIRMA` sería el veredicto de una dirección que aparece en el
-corpus sin firmar, y hoy eso se expresa como «candidato»; `NO_ATRIBUIBLE` lo cuenta `sin_atribuir`
-pero no llega al informe. **No son código muerto por descuido: son las dos formas de "no lo sé" que
-el informe expresa con otras palabras.** Si la ronda adversarial lo señala, la remediación correcta
-es emitirlos o retirarlos, no renombrarlos.
+**Un hueco cerrado en el pre-flight, no declarado:** en la primera redacción,
+`VEREDICTO_SIN_FIRMA` y `VEREDICTO_NO_ATRIBUIBLE` quedaban definidos y **sin emisor**, y lo iba a
+dejar anotado como deuda. Es la salida cómoda: shipear código muerto a sabiendas y esperar a que un
+revisor lo levante. Resuelto antes de dispatchar la Task 1, y en los dos casos midiendo primero:
+
+- **`SIN_FIRMA` se EMITE**: etiqueta a cada candidato del informe de la Task 9. «Aparece y no
+  firma» pasa a ser un veredicto con nombre en vez de una lista sin etiqueta.
+- **`NO_ATRIBUIBLE` se RETIRA**, porque al intentar escribirle un test descubrí que es **estructuralmente
+  inalcanzable**: el ancla del bloque *es* el email, así que todo bloque tiene email por construcción
+  y ningún fixture puede producirlo. Fabricar un caso artificial para justificar la constante habría
+  sido peor que el código muerto. La rama defensiva de `atribuir` y su contador se quedan como
+  **invariante**, con el test que lo fija en 0: si alguien añade una segunda vía de detección —bloques
+  anclados sólo en el marcador, como la firma institucional sin dirección personal que medí en un
+  `.eml` de W-02Q38C— ese test se pone rojo y le dice que ahí sí hace falta un veredicto.
+
+Así que el §6 del spec queda con **cinco** veredictos emitidos, no seis, y el sexto retirado por
+imposible en vez de anotado como deuda.
+
+**Una decisión de diseño que dejo escrita para que no se re-litigue en cada revisión:**
+`_completar_colaborador_existente` es un **espejo** de `_completar_contrario_existente`, con el
+cuerpo del bucle casi idéntico. Un revisor lo marcará como duplicación, y la respuesta es que
+**unificarlas requeriría que la unión aceptase lo que las separa**: el contrario normaliza
+`provincia` por `provincia_canonica` y el colaborador no tiene ese campo, y cada una tiene sus
+propias funciones de lectura y escritura. Eso son dos parámetros de comportamiento que nadie
+necesita todavía dos veces. La regla que aplico —de la partición del PR #262— es preguntar **qué
+tendría que aceptar la unión** antes de unir; aquí la respuesta es «más de lo que gana». Si aparece
+un tercer rol con el mismo patrón, entonces sí: tres es la señal, dos no.
+
+**Consistencia de tipos verificada tras el arreglo:** `extraer_de_directorio` devuelve **cuatro**
+valores en su firma declarada (Task 9 Interfaces), en su implementación, en los cuatro tests que la
+desempaquetan, y en los dos llamadores (`report` de la Task 9 y `apply` de la Task 10).
 
 **Consistencia de tipos:** `Consolidado.veredicto_<campo>` se lee en Task 9 (`_fila`) y Task 10
 (`getattr(c, f"veredicto_{campo_c}")`) con los mismos nombres que la Task 8 define
