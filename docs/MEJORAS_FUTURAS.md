@@ -6498,3 +6498,45 @@ y exija que siga ahí; hoy no existe ninguno, y esa ausencia es la que dejó pas
 **Disparador de promoción.** La primera nota perdida de verdad, o el arreglo del grupo **B0-2** de
 la Fase 2 de la fila #3, que toca la misma familia (escrituras que reconstruyen en vez de añadir) y
 puede pagar los dos de una vez. Mientras tanto, lo que protege es la instrucción, no el código.
+
+---
+
+## 147. La dedup es por `(ruta, sha256)` del crudo, así que el mismo documento entra dos veces
+
+**Medido el 2026-09-04 sobre W-02Q38C**, contando por contenido y no por nombre: de **51** espejos
+MD de la sala de máquina, **49** contenidos distintos. Tres documentos tienen doble espejo, y llegan
+ahí por **dos vías distintas** que conviene no confundir:
+
+| Vía | Ejemplo medido | `sha256` del PDF | Lo que falla |
+|---|---|---|---|
+| **A. Mismo fichero en dos carpetas de E&V** | `Certificado titularidad Bancaria…` en `ARRAS/` y en `OFERTAS/OFERTA 1 …/` | **el mismo** (`2323df1b…`) | El intake **sí** ve el hash, pero la clave es `(ruta, sha256)` y las rutas difieren; la sala de máquina slugifica por **nombre de fichero**, así que produce dos MD con `text_sha256` idéntico (`9def49d0…`) |
+| **B. Re-subida del mismo documento** | `Nota simple Actualizada 27／04／2026.pdf` y `NS ACTUALIZADA 06／05／26.pdf` | **distinto** | El PDF se regeneró (re-descarga del Registro) y la dedup por `sha256` no puede verlo. El contenido es idéntico y, en la nota simple, lo demuestra que ambos llevan el **mismo C.S.V.** (no se transcribe: es la llave de descarga del documento en la sede de registradores) |
+
+**La frontera, que no es «dos ficheros con el mismo nombre».** La identidad de un documento del
+expediente **no son sus bytes ni su ruta**: es su contenido, y en los documentos con sello
+electrónico viene con un identificador propio y estable (C.S.V. del Registro, CSV de la sede, número
+de protocolo notarial). Hoy no se mira ninguno de los tres niveles.
+
+**Qué cuesta, acotado por la misma medición.** No corrompe nada —el crudo debe conservar las dos
+copias, es el Drive del cliente— y **la sala de lectura NO hereda el defecto**: la de W-02Q38C tiene
+**41 ficheros y 41 contenidos distintos**, así que ahí el duplicado ya se colapsa. Lo que se paga es
+en la **sala de máquina**: OCR y espejo repetidos por documento duplicado, y el mismo hecho contado
+dos veces en el corpus MD que lee el LLM de viabilidad. Y **falsea el recuento** de lo que una
+corrida trae: la vía B es la que hizo escribir en la bitácora del 75º cierre que la corrida había
+traído «2 documentos que el expediente no tenía» — corregido allí mismo.
+
+> Esa acotación es el resultado de medirlo, no de razonarlo: la primera redacción de esta entrada
+> decía «entradas duplicadas en la sala de lectura», y el conteo lo desmintió el mismo día.
+
+**Remedio, por capas y en este orden.** (1) La vía A es barata y cierta: la sala de máquina puede
+llavear por `text_sha256` y emitir **un** espejo con las dos procedencias anotadas. (2) La vía B
+necesita una noción de identidad documental — extraer C.S.V./CSV/protocolo cuando exista y usarlo
+como llave, cayendo a un hash del texto normalizado cuando no. (3) Que el espejo único anote sus
+**N procedencias**, porque hoy la información de que el documento vive en dos carpetas de E&V se
+pierde al colapsar. Con su mutante en cada capa: dos ficheros de contenido idéntico y rutas
+distintas deben producir **un** espejo, y el test tiene que morir si vuelven a ser dos.
+
+**Disparador de promoción.** Un caso donde el duplicado cambie una conclusión —un hito de viabilidad
+contado dos veces, o un importe que aparezca duplicado en un escrito— o el arreglo de `MEJORAS #129`
+(`la cobertura se llavea por (slug, rel_path) y los artefactos por slug`), que toca exactamente la
+misma clave y puede pagar la vía A de paso.
