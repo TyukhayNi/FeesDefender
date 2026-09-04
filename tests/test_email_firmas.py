@@ -406,3 +406,25 @@ class TestElCruceDeLineasSeAlinea:
         por_email = {b.email: b.procedencia for b in bloques}
         assert por_email.get("berta@engelvoelkers.com") == PROCEDENCIA_DIRECTO
         assert por_email.get("ana@engelvoelkers.com") == PROCEDENCIA_CITADO
+
+    def test_el_cruce_no_esta_desplazado_en_uno(self):
+        """Hallazgo propio (Step 6, mutacion 3): ninguno de los tests anteriores
+        distingue `_en_zona_citada(b.linea - 1, zonas)` de la version desplazada
+        `_en_zona_citada(b.linea, zonas)`, porque en todos ellos la zona citada es
+        ANCHA (toda la firma citada) y el desplazamiento de una linea nunca cruza
+        su frontera.
+
+        Este test aisla el cruce en `atribuir()` directamente, sin pasar por
+        `localizar_bloques`: una zona citada de UNA SOLA linea que coincide
+        exactamente con `b.linea - 1` (0-indexado). Con el desplazamiento de +1,
+        esa zona de una linea nunca se detectaria para NINGUN bloque real -- el
+        desplazamiento quedaria sin verificar para siempre.
+        """
+        texto_original = "a\n> \nc\n"
+        assert zonas_citadas(texto_original) == [(1, 2)]
+        bloque = BloqueFirma(texto="ana@engelvoelkers.com", linea=2, fichero="x.eml")
+
+        atribuidos, sin_atribuir = atribuir([bloque], texto_original=texto_original)
+
+        assert sin_atribuir == 0
+        assert atribuidos[0].procedencia == PROCEDENCIA_CITADO
