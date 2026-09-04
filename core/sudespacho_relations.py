@@ -746,6 +746,81 @@ def _rest_post_colaborador(datos: "NuevoColaborador") -> str:
     )
 
 
+#: Las properties de `colaboradores` que este modulo lee y escribe. El contrato lo
+#: enumero el propio CRM el 2026-09-04 con una property inventada (§14.6): ccc, cp,
+#: direccion, email, fax, iva, movil, nacionalidad, nif_cif, nombre, notas, poblacion,
+#: provincia, telefono1, telefono2, telefono3, tipo, web. Aqui van solo las que el
+#: despacho usa: pedirlas todas gastaria ancho sin ganar nada, y `nacionalidad` esta
+#: marcada como cuarentena-PII en el atlas.
+#:
+#: NO hay property de CARGO. `tipo` es un Select con enum cerrado (Sin Asignar /
+#: Colaborador / Perito / Tercero), asi que un puesto ahi corrompe la taxonomia; por
+#: eso el cargo se extrae al informe y no se escribe (decision de Nikolai, 2026-09-04).
+_PROPS_COLABORADOR: tuple[str, ...] = (
+    "nombre", "email", "movil", "telefono1", "telefono2", "telefono3",
+    "nif_cif", "direccion", "poblacion", "cp", "provincia", "id",
+)
+
+
+def get_colaborador(colab_id: str) -> dict[str, str]:
+    """Ficha de un colaborador, aplanada a `{property: value}`.
+
+    El GET plano da HTTP 500: `?properties=` es obligatorio (`[APER-26]`). Se pide el
+    conjunto escribible COMPLETO, no solo lo que se va a tocar, porque `_completar_*`
+    hace GET -> merge -> PUT y para `colaboradores` **no esta medido** si el PUT es
+    parcial o de reemplazo. Mandar el conjunto completo es correcto bajo las dos
+    hipotesis; apostar por una y equivocarse borra los campos omitidos.
+    """
+    api_key = (os.getenv("SUDESPACHO_API_KEY") or "").strip()
+    if not api_key:
+        raise ValueError("SUDESPACHO_API_KEY no configurada")
+
+    url = (f"{_REST_BASE}{_REST_CREATE_COLABORADOR}/{colab_id}"
+           f"?properties={','.join(_PROPS_COLABORADOR)}")
+    r = httpx.get(url, headers={"x-api-key": api_key, "Accept": "application/json"},
+                  timeout=_REST_TIMEOUT)
+    if r.status_code != 200:
+        raise SudespachoRelationsError(
+            f"REST GET colaboradores/{colab_id} -> HTTP {r.status_code}")
+    return _parse_values(r.json())
+
+
+def update_colaborador(colab_id: str, cambios: dict) -> dict:
+    """PUT sobre la ficha de un colaborador. Devuelve el registro tal como responde.
+
+    PUT y no PATCH (PATCH da 405, §10.7). El llamador decide QUE va en `cambios`;
+    esta funcion no filtra ni completa.
+    """
+    if not cambios:
+        raise ValueError("update_colaborador: 'cambios' no puede estar vacío")
+
+    api_key = (os.getenv("SUDESPACHO_API_KEY") or "").strip()
+    if not api_key:
+        raise ValueError("SUDESPACHO_API_KEY no configurada")
+
+    url = f"{_REST_BASE}{_REST_CREATE_COLABORADOR}/{colab_id}"
+    headers = {"x-api-key": api_key, "Content-Type": "application/json",
+               "Accept": "application/json"}
+    try:
+        r = httpx.put(url, json=cambios, headers=headers, timeout=_REST_TIMEOUT)
+    except httpx.HTTPError as exc:
+        raise SudespachoRelationsError(
+            f"REST PUT colaboradores/{colab_id} falló: {exc}") from exc
+
+    if r.status_code == 200:
+        try:
+            return _parse_values(r.json())
+        except Exception:  # noqa: BLE001 — cuerpo 200 no parseable
+            return dict(cambios)
+
+    try:
+        detail = r.json().get("detail") or r.text[:300]
+    except Exception:  # noqa: BLE001
+        detail = r.text[:300]
+    raise SudespachoRelationsError(
+        f"REST PUT colaboradores/{colab_id} → HTTP {r.status_code}: {detail}")
+
+
 # ---------------------------------------------------------------------------
 # Creación de cliente contrario — REST (confirmado 2026-07-17, expediente 624)
 # ---------------------------------------------------------------------------

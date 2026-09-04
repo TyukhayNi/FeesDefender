@@ -66,3 +66,103 @@ class TestElContratoDeColaboradores:
                        for c in buscar.call_args_list]
         assert "nif_cif" in propiedades, f"consultó {propiedades!r}"
         assert "nif" not in propiedades
+
+
+class TestLeerLaFichaDelColaborador:
+
+    def test_pide_las_properties_explicitamente(self, monkeypatch):
+        """El GET plano da HTTP 500: `?properties=` es obligatorio ([APER-26])."""
+        from core import sudespacho_relations as sr
+
+        capturado = {}
+
+        class _R:
+            status_code = 200
+
+            @staticmethod
+            def json():
+                return {"values": [{"property": {"name": "movil"}, "value": "612345678"}]}
+
+        def _get(url, **kw):
+            capturado["url"] = url
+            return _R()
+
+        monkeypatch.setenv("SUDESPACHO_API_KEY", "k")
+        monkeypatch.setattr(sr.httpx, "get", _get)
+        plano = sr.get_colaborador("466")
+
+        assert "/api/element_register/colaboradores/466" in capturado["url"]
+        assert "properties=" in capturado["url"]
+        assert plano == {"movil": "612345678"}
+
+    def test_pide_TODO_el_conjunto_escribible_no_solo_lo_que_cambia(self, monkeypatch):
+        """GET completo -> merge -> PUT completo: correcto si el PUT es parcial Y si es
+        de reemplazo. Para `colaboradores` no esta medido cual de los dos es."""
+        from core import sudespacho_relations as sr
+
+        capturado = {}
+
+        class _R:
+            status_code = 200
+
+            @staticmethod
+            def json():
+                return {"values": []}
+
+        monkeypatch.setenv("SUDESPACHO_API_KEY", "k")
+        monkeypatch.setattr(sr.httpx, "get",
+                            lambda url, **kw: capturado.update(url=url) or _R())
+        sr.get_colaborador("466")
+
+        for prop in ("nombre", "email", "movil", "telefono1", "nif_cif"):
+            assert prop in capturado["url"], f"falta {prop} en el GET"
+
+    def test_una_property_que_el_CRM_no_tiene_NO_se_pide(self):
+        """El contrato lo enumero el CRM. `nif` no esta, y pedirla da 500."""
+        from core.sudespacho_relations import _PROPS_COLABORADOR
+        assert "nif" not in _PROPS_COLABORADOR
+        assert "nif_cif" in _PROPS_COLABORADOR
+        assert "cargo" not in _PROPS_COLABORADOR, "no existe: `tipo` es un Select cerrado"
+
+    def test_un_HTTP_no_200_levanta(self, monkeypatch):
+        from core import sudespacho_relations as sr
+
+        class _R:
+            status_code = 500
+            text = "boom"
+
+        monkeypatch.setenv("SUDESPACHO_API_KEY", "k")
+        monkeypatch.setattr(sr.httpx, "get", lambda *a, **k: _R())
+        with pytest.raises(sr.SudespachoRelationsError, match="500"):
+            sr.get_colaborador("466")
+
+
+class TestEscribirLaFichaDelColaborador:
+
+    def test_es_PUT_al_endpoint_del_registro(self, monkeypatch):
+        from core import sudespacho_relations as sr
+
+        capturado = {}
+
+        class _R:
+            status_code = 200
+
+            @staticmethod
+            def json():
+                return {"values": [{"property": {"name": "movil"}, "value": "612345678"}]}
+
+        def _put(url, **kw):
+            capturado.update(url=url, json=kw.get("json"))
+            return _R()
+
+        monkeypatch.setenv("SUDESPACHO_API_KEY", "k")
+        monkeypatch.setattr(sr.httpx, "put", _put)
+        sr.update_colaborador("466", {"movil": "612345678"})
+
+        assert capturado["url"].endswith("/api/element_register/colaboradores/466")
+        assert capturado["json"] == {"movil": "612345678"}
+
+    def test_cambios_vacio_es_un_error_del_llamador(self):
+        from core import sudespacho_relations as sr
+        with pytest.raises(ValueError, match="cambios"):
+            sr.update_colaborador("466", {})
