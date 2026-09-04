@@ -42,9 +42,15 @@ NUL = "\0"
 # [[feedback-guarda-inerte-comprobar-el-otro-valor]].
 _RC_VALIDOS = (0, 1)
 
-# Neutraliza `core.excludesFile` para la consulta: el ultimo `-c` gana. `.git/info/exclude`
-# NO se puede desactivar por configuracion, y por eso hace falta ademas el filtro por
-# fuente de `_ignorados`. Medido el 2026-09-04.
+# Neutraliza `core.excludesFile` para la consulta: el ultimo `-c` gana.
+#
+# **NO es lo que sostiene la correccion, y conviene decirlo.** Probado por mutacion el
+# 2026-09-04: quitar esta anulacion deja la suite VERDE, porque el filtro por fuente
+# versionada de `_ignorados` ya descarta la regla global igual. Se conserva solo para que
+# esos ficheros no lleguen a ser candidatos y no haya que gastar un `-v` por cada uno — en
+# una maquina con `*.md` en su fichero global serian cientos de subprocesos. Es
+# rendimiento, no garantia. `.git/info/exclude` no admite anulacion por configuracion, y
+# de el se ocupa el filtro.
 _SIN_EXCLUDES_GLOBALES = ("-c", "core.excludesFile=")
 
 # `-v` imprime `<fuente>:<linea>:<patron>\t<ruta>`. La fuente puede ser una ruta absoluta
