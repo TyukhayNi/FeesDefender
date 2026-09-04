@@ -359,6 +359,38 @@ def _hashes_residuo(case_id: str) -> list[str]:
             if f["Tipo"].strip() not in TAXONOMIA_EV]
 
 
+def residuo_sin_texto(case_id: str) -> list[dict]:
+    """El residuo que NO tiene espejo MD: lo que `preparar_residuo` se salta en silencio.
+
+    **Existe porque «no hay» y «no pude mirar» son hechos distintos y se decían igual.**
+    Medido en carne propia el 2026-09-04 abriendo W-02JSVZ: `preparar-residuo` respondió
+    *«Sin residuo con texto extraído. Nada que preparar»* con **99 documentos en residuo y
+    176 espejos MD en disco**. La frase era literalmente cierta —no había residuo *con
+    texto*— y por eso fue tan caro: mandó a buscar el defecto donde no estaba.
+
+    La causa raíz de aquel día (la ruta MD apuntando al motor jubilado) se arregló en
+    `MEJORAS #151`, pero **el mensaje seguiría siendo indistinguible** el día que la sala
+    de máquina simplemente no se haya corrido todavía, que es el caso normal en una
+    apertura. Así que lo que se arregla aquí no es un defecto: es la **capacidad de
+    distinguir**, que es la familia de `feedback-no-lo-se-no-es-no-hay`.
+
+    Y cubre además el defecto en miniatura: con 88 de 99 legibles, la lista salía y nadie
+    se enteraba de que 11 se habían saltado. Devuelve `{hash, nombre_original, fuente}`
+    por documento, sin `md_text` — que es justo lo que no hay.
+    """
+    residuo = set(_hashes_residuo(case_id))
+    if not residuo:
+        return []
+    by_hash = {e.hash: e for e in catalogo_documental.load_catalog(case_id)}
+    fuera = []
+    for h in residuo:
+        e = by_hash.get(h)
+        if e is None or _md_paths(case_id, e):
+            continue
+        fuera.append({"hash": h, "nombre_original": e.nombre_original, "fuente": e.fuente})
+    return sorted(fuera, key=lambda d: d["nombre_original"])
+
+
 def preparar_residuo(case_id: str) -> list[dict]:
     """Reúne el material del residuo para clasificarlo (Claude-en-sesión o conector).
 

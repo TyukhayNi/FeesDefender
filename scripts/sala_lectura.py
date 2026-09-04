@@ -91,9 +91,28 @@ def preparar_residuo(case: str = typer.Option(..., "--case")):
     escribe nada (modo por defecto del despacho, sin coste de API)."""
     case = _ref(case)
     docs = sala_lectura.preparar_residuo(case)
-    if not docs:
-        typer.echo("Sin residuo con texto extraído. Nada que preparar.")
+    sin_texto = sala_lectura.residuo_sin_texto(case)
+
+    # **Tres estados, no uno.** Hasta el 2026-09-04 esto decía «Sin residuo con texto
+    # extraído. Nada que preparar» tanto cuando no había residuo como cuando había 99 y
+    # ninguno tenía espejo. La frase era cierta y por eso costó caro: mandó a buscar el
+    # defecto donde no estaba. Un mensaje que no distingue «no hay» de «no pude mirar»
+    # cuesta sesiones enteras y nunca aparece en un backlog, porque no rompe nada.
+    if not docs and not sin_texto:
+        typer.echo("Sin residuo: todo el catálogo está clasificado. Nada que preparar.")
         return
+    if not docs:
+        typer.echo(
+            f"[AVISO] {len(sin_texto)} doc(s) en residuo y NINGUNO tiene texto extraído.\n"
+            "        No es que no haya nada que clasificar: es que no hay nada que leer.\n"
+            "        ¿Has corrido la sala de máquina?  "
+            "python -m scripts.sala_maquina apply \"<case_id>\"",
+            err=True,
+        )
+        for d in sin_texto:
+            typer.echo(f"  - [{d['hash'][:8]}] {d['nombre_original']}  (sin espejo MD)")
+        raise typer.Exit(code=1)
+
     typer.echo(f"{len(docs)} doc(s) en residuo. Lee cada MD y rellena la worklist:")
     for d in docs:
         # **TODOS los espejos, no solo el primero.** El core concatena los segmentos de un
@@ -104,6 +123,14 @@ def preparar_residuo(case: str = typer.Option(..., "--case")):
         typer.echo(f"  - [{d['hash'][:8]}] {d['nombre_original']}")
         for r in rutas:
             typer.echo(f"        {r}")
+    # Y lo que se SALTA se dice, aunque haya salido lista. Con 88 de 99 legibles el listado
+    # salía y nadie se enteraba de que 11 se habían quedado fuera.
+    if sin_texto:
+        typer.echo(
+            f"\n[AVISO] {len(sin_texto)} doc(s) del residuo se quedan fuera por no tener "
+            "texto extraído (sin espejo MD):", err=True)
+        for d in sin_texto:
+            typer.echo(f"  - [{d['hash'][:8]}] {d['nombre_original']}")
     typer.echo(
         f"\nWorklist: 01_Procesado/_revisar/{sala_lectura.WORKLIST_NAME}\n"
         "Tras rellenar, corre 'aplicar'."
