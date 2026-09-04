@@ -6762,3 +6762,43 @@ catálogo vacío **falle** en vez de felicitarse. (e) `resolve_ref` en el CLI. (
 **Disparador de promoción.** Disparado: es el montaje de la sala de lectura de cualquier caso, y hoy
 solo termina si quien lo corre sabe saltarse el comando que el runbook recomienda. Actualizar el §7
 del `RUNBOOK_APERTURA_EXPEDIENTE` con la secuencia que sí converge es lo primero, y no cuesta código.
+
+## 152. Dos tests exigen `.env`, así que la suite da rojo falso en cualquier worktree
+
+**Medido el 2026-09-04.** La suite corrida desde el worktree
+(`.claude/worktrees/nuevo-caso-bad-debt-ffe40e`) devuelve exit 1 con dos fallos, y desde la raíz del
+repo la misma selección va verde:
+
+```
+worktree: ..F.F................  → FAILED tests/test_crm_dedup_incertidumbre.py::TestUnaConsultaCaidaNoEsAusencia::test_el_colaborador_tampoco
+                                   FAILED tests/test_crm_dedup_incertidumbre.py::test_el_respaldo_del_colaborador_no_corre_si_el_NIF_no_se_pudo_mirar
+raíz:     .....................  → 21 passed
+```
+
+**La causa, y no es que el guard esté mal.** Los dos tests parchean `_buscar_registros` y esperan
+que `ensure_colaborador_vinculado` levante `IdentidadSinComprobar` cuando el NIF no se pudo mirar.
+Pero esa función construye `SudespachoLegacyClient()` (`core/sudespacho_relations.py:2125`) **antes**
+de llegar a lo parcheado, y el constructor exige `SUDESPACHO_LEGACY_HOST` del `.env`
+(`sync_sudespacho_legacy.py:393`). Sin `.env` explota con `SudespachoLegacyError`, que
+`pytest.raises(IdentidadSinComprobar)` no atrapa. Con `.env` la construcción es **inerte** —solo
+lee configuración, no abre red— y el test ejerce exactamente lo que dice ejercer. Luego el guard es
+correcto: lo que falla es la **hermeticidad**.
+
+**Por qué importa más de lo que parece.** `.env` está gitignored y un worktree no lo hereda; eso ya
+lo dice `[APER-01]` del runbook de apertura, pero **para el pipeline**, no para los tests. Y el
+flujo estándar del repo es «una mesa = una tarea = una rama», o sea worktree. Así que el gate de
+«suite verde» del cierre sale rojo por construcción en el sitio donde se trabaja, con dos fallos que
+no tienen nada que ver con lo que se acaba de cambiar. Es el patrón que enseña a ignorar el rojo, y
+ya costó una investigación aquí para descartar que fuera del diff.
+
+**Remedio.** Que los dos tests no dependan de la configuración real: parchear
+`core.sudespacho_relations.SudespachoLegacyClient` (o inyectar el `client`, que la firma ya acepta)
+en vez de dejar que se construya desde el entorno. Dos mutantes, y hacen falta los dos: (1) sin
+`.env`, los dos tests deben pasar — el test muere si vuelven a fallar por configuración ausente; y
+(2) con el respaldo por email **sí** llamado, el test debe seguir fallando — si al desacoplar el
+cliente se pierde el `respaldo.assert_not_called()`, se pierde justo la propiedad que H-04 protege.
+
+**Disparador de promoción.** Disparado y recurrente: sale en cada corrida de la suite desde un
+worktree. La alternativa barata mientras no se arregle —correr la suite desde la raíz— es la que ya
+prescribe `[APER-01]`, pero conviene decirlo también en el §11 del runbook, que es donde se mira al
+cerrar.
