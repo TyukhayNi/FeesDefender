@@ -765,10 +765,25 @@ _PROPS_COLABORADOR: tuple[str, ...] = (
 def get_colaborador(colab_id: str) -> dict[str, str]:
     """Ficha de un colaborador, aplanada a `{property: value}`.
 
-    El GET plano da HTTP 500: `?properties=` es obligatorio (`[APER-26]`). Se pide el
-    conjunto de _PROPS_COLABORADOR para tener visibilidad en round-trip GET -> merge
-    -> PUT. El PUT es PARCIAL (verificado en vivo 2026-07-18 sobre extrajudiciales,
-    INTEGRACION §10.7): preserva los campos omitidos.
+    El GET plano da HTTP 500: `?properties=` es obligatorio (`[APER-26]`). Se piden las
+    de `_PROPS_COLABORADOR` —12 de las 18 del contrato— y con eso basta, porque este GET
+    existe para saber **que esta vacio**, no para round-trip: quien escribe manda al PUT
+    solo los campos que rellena, nunca el conjunto leido.
+
+    Y eso es seguro porque el PUT es **PARCIAL: preserva los campos omitidos**. Medido en
+    vivo el 2026-07-18 sobre un expediente desechable (§10.7 / `[APER-26]`): un
+    `PUT {"Notas": ...}` cambio solo `Notas`. La ruta `element_register/{element}/{id}` es
+    **generica sobre el elemento**, asi que lo medido es el verbo y la ruta.
+
+    **Que clase de evidencia es, dicho sin adornos:** de ENDPOINT, no especifica de
+    `colaboradores`. Nadie ha hecho la prueba sobre este elemento, y hacerla exigiria
+    crear un colaborador desechable en el tenant del cliente sin endpoint de borrado
+    documentado. Las 6 properties que no se piden tampoco corren riesgo: no se pueden
+    borrar porque nunca se envian.
+
+    **Si algun dia hace falta un GET -> merge -> PUT del conjunto completo**, esta tupla
+    NO sirve tal cual: habria que ampliarla a las 18, porque con 12 un PUT de reemplazo
+    borraria `ccc`, `fax`, `iva`, `nacionalidad`, `notas`, `tipo` y `web`.
     """
     api_key = (os.getenv("SUDESPACHO_API_KEY") or "").strip()
     if not api_key:
