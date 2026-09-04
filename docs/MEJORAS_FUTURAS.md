@@ -6880,6 +6880,14 @@ cerrar.
 
 ## 153. La puerta PRINCIPAL de alta no valida nada: la UI reproduce el caso `s/n`
 
+> ✅ **CERRADO 2026-09-05.** Validado **en el sumidero** (`ensure_case`), no en la
+> puerta: así queda cubierta también la que nadie ha escrito todavía. Diseño en
+> `docs/superpowers/specs/2026-09-05-validar-en-el-sumidero-design.md` (rev. 2) y la R1 que lo falsó, con su informe literal, en `docs/superpowers/specs/2026-09-05-validar-en-el-sumidero-r1-adversarial-review.md`.
+>
+> **Lo que NO cierra, y se dice:** que sea imposible sacar un expediente de
+> `CASOS_ROOT` por otras vías. Hay tres puertas más, abiertas como `#155`, `#156` y
+> `#157` con la evidencia ejecutada de la R1.
+
 > 🔴 **ABIERTA.** Levantado por la R1 adversarial del 2026-09-04 (`docs/superpowers/specs/2026-09-04-apertura-w02jsvz-pipeline-r1-adversarial-review.md`).
 > **Preexistente**: no lo introdujo el diff de `MEJORAS #148`, lo dejó al descubierto.
 
@@ -6911,6 +6919,14 @@ y no dejar ninguna carpeta parcial; el test muere si vuelve a crearse el esquele
 
 ## 154. El override de ruta permite escapar de `CASOS_ROOT`
 
+> ✅ **CERRADO 2026-09-05.** Validado **en el sumidero** (`ensure_case`), no en la
+> puerta: así queda cubierta también la que nadie ha escrito todavía. Diseño en
+> `docs/superpowers/specs/2026-09-05-validar-en-el-sumidero-design.md` (rev. 2) y la R1 que lo falsó, con su informe literal, en `docs/superpowers/specs/2026-09-05-validar-en-el-sumidero-r1-adversarial-review.md`.
+>
+> **Lo que NO cierra, y se dice:** que sea imposible sacar un expediente de
+> `CASOS_ROOT` por otras vías. Hay tres puertas más, abiertas como `#155`, `#156` y
+> `#157` con la evidencia ejecutada de la R1.
+
 > 🔴 **ABIERTA.** Levantado por la R1 adversarial del 2026-09-04 (`docs/superpowers/specs/2026-09-04-apertura-w02jsvz-pipeline-r1-adversarial-review.md`).
 > **Preexistente.** Familia de `MEJORAS #141` (`buscar()` no valida el `case_id`, así que una
 > referencia con `..` escribe fuera del catálogo): mismo agujero, otra puerta.
@@ -6938,3 +6954,104 @@ existen en el catálogo.
 **Disparador de promoción.** Se promueve **junto a `#153`**: comparten sumidero y arreglarlos por
 separado es hacer dos veces el mismo trabajo. Riesgo bajo por frecuencia (hay que teclear el
 override a mano) y alto por consecuencia (expediente con PII fuera del árbol gobernado).
+
+
+## 155. `move_to_city` mueve el expediente completo fuera de `CASOS_ROOT`
+
+> 🔴 **ABIERTA.** Destapada por la R1 adversarial del 2026-09-05 (`docs/superpowers/specs/2026-09-05-validar-en-el-sumidero-r1-adversarial-review.md`, H-01), **con
+> reproducción ejecutada**. Es la puerta que falsó la premisa central de `#153`/`#154`.
+
+`core/casos/case_locator.py:270-319`. `move_to_city` valida **solo la longitud del motivo**;
+compone el destino con `path_for_ciudad(case_id, ciudad_destino)`, hace
+`dest.parent.mkdir(parents=True)` y `shutil.move(src, dest)`. No pasa por `ensure_case`, no
+valida la ciudad y no comprueba contención. El revisor lo corrió:
+
+```json
+{"test": "move", "dest": "...\\p\\move\\FUERA\\EV-2026-001", "outside": true,
+ "payload": "CANARIO", "source_exists": false, "buscar": null}
+```
+
+El árbol entero sale de la raíz, **el origen desaparece** y `buscar` pierde el caso. Con el
+canario dentro: los bytes del expediente se van con él.
+
+**Mi error, que conviene que conste porque es el patrón:** yo encontré esta función antes de que
+volviera el informe y la **archivé como no explotable** porque la UI ofrece la ciudad en un
+`selectbox` de catálogo cerrado (`streamlit_app.py:1436`). El revisor lo rebate en una línea:
+*el catálogo está en el envoltorio; no protege la API de core*. Usé como garantía exactamente la
+clase de cosa que `#153` venía a arreglar.
+
+**Remedio.** La misma pareja que `ensure_case`: `exigir_componente_de_ruta(ciudad_destino)` +
+pertenencia a `_CITY_NAMES` + contención léxica y física del destino, **antes** del `shutil.move`.
+Su mutante: `move_to_city(case, '../FUERA', motivo, actor)` aborta, **el origen sigue existiendo**
+y el exterior queda vacío — la aserción sobre el origen es la que importa, porque el daño de un
+`move` es que no hay copia que recuperar.
+
+**Disparador de promoción.** Riesgo bajo por frecuencia (la UI cierra el catálogo) y **alto por
+consecuencia**: mueve, no copia. Se promueve **junto a `#156`**, que comparte la falta de contrato
+en el destino.
+
+
+## 156. `reservar_lote` / `caso_path` admiten un directorio absoluto externo como si fuera un caso
+
+> 🔴 **ABIERTA.** R1 adversarial del 2026-09-05 (`docs/superpowers/specs/2026-09-05-validar-en-el-sumidero-r1-adversarial-review.md`, H-01, segundo contraejemplo), con
+> reproducción ejecutada.
+
+`core/casos/case_locator.py:43-46` acepta **cualquier directorio absoluto existente** como si
+fuera un caso, y **no exige `_caso.md`**. Con eso,
+`reservar_lote(str(directorio_exterior), 'manual', 'sonda')` (`core/intake_lotes.py:89-98`) crea
+`00_Input/<lote>` **fuera de la raíz**, sin pasar por `ensure_case`:
+
+```json
+{"test": "intake_absolute", "outside": true, "lote_exists": true, "index": false}
+```
+
+No es un alta completa —no hay `_caso.md`— y esa distinción **no devuelve la contención**: hay un
+árbol de intake de un caso fantasma fuera del árbol gobernado.
+
+**La frontera, y por eso no es trivial:** aceptar una ruta absoluta es **deliberado** en el modo
+local (`CASOS_ROOT` al Desktop tras un *checkout*), así que el remedio no es prohibirlo: es
+**exigir que sea un caso** (que tenga `_caso.md`) o que esté registrado como copia prestada. Es
+decir, distinguir *checkout legítimo* de *escape accidental*, que es literalmente lo que el
+revisor pidió.
+
+**Remedio.** Que `caso_path`/`localizar` exijan la marca de caso (`00_Input/_caso.md`) o
+pertenencia al `WorkspaceRegistry` antes de devolver un directorio de fuera. Dos mutantes: un
+directorio externo **sin** `_caso.md` se rechaza, y una copia prestada **registrada** sigue
+funcionando — sin el segundo, el arreglo rompe el modo local.
+
+**Disparador de promoción.** Junto a `#155`. Y ojo: toca la resolución de qué copia es la
+operativa, así que por radio de daño son **dos rondas**.
+
+
+## 157. Una junction preexistente en un hijo del caso saca los bytes del árbol gobernado
+
+> 🔴 **ABIERTA.** R1 adversarial del 2026-09-05 (`docs/superpowers/specs/2026-09-05-validar-en-el-sumidero-r1-adversarial-review.md`, H-04), demostrada con una **junction
+> real de Windows**. Límite declarado del arreglo de `#153`/`#154`, no un descuido.
+
+Con `CASOS/EV-2026-002/` como directorio normal y su `00_Input` como *junction* hacia fuera
+—creada **antes** del alta—, la contención de `ensure_case` pasa (el directorio del caso sí está
+contenido), `mkdir(exist_ok=True)` acepta el hijo enlazado, y `_write_case_index` deposita el
+`_caso.md` **fuera**:
+
+```json
+{"test": "junction_case",  "result": "ValueError", "out_empty": true}
+{"test": "junction_child", "case_inside": true, "outside_index": true}
+```
+
+La primera línea es el control hermano: una junction **en el propio caso** sí se rechaza. Al
+ponerla **en un hijo**, el índice acaba fuera. **No es un TOCTOU**: no hace falta cambiar ningún
+enlace entre la comprobación y la escritura.
+
+**Por qué no se arregla con una comprobación más.** `ensure_case` valida **un** directorio y
+escribe en **nueve** descendientes. Contenerlos todos es un contrato distinto: o se comprueba
+cada destino antes de cada escritura —y entonces la costura natural es
+`core/casos/escritura.py`, que ya lo hace con `_bajo` para las escrituras *dentro* de un caso—, o
+se declara que el árbol de un caso no puede contener enlaces y se verifica al abrirlo.
+
+**Remedio propuesto:** enrutar las escrituras del alta por la costura de `escritura.py`, que ya
+tiene la propiedad, en vez de añadir una comprobación nueva. Su mutante: el escenario de arriba
+aborta **antes** de escribir fuera y **sin dejar andamiaje parcial**.
+
+**Disparador de promoción.** El más bajo de los tres: exige una junction preexistente en el árbol
+de casos, que hoy nadie crea. Se registra porque está **medido** y porque el arreglo de
+`#153`/`#154` declara expresamente no cubrirlo.
