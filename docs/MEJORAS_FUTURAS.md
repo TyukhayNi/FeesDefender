@@ -6546,6 +6546,17 @@ misma clave y puede pagar la vía A de paso.
 
 ## 148. `abrir_caso` compone el `case_id` sin pasarlo por la guarda que lo valida
 
+> ✅ **CERRADO 2026-09-04 — PR #278.** `componer_case_id` valida los **tres** campos que
+> concatena (`--codigo-caso`, `--direccion`, `--sufijo`) y el CLI traduce el `ValueError` a un
+> error que nombra al culpable, sin crear esqueleto.
+>
+> **Y la guarda salió ESTRECHA, que es la lección.** La primera versión llamaba a
+> `validate_case_id` entero y rompió cinco fixtures con códigos sintéticos (`BaTEST`, sin
+> dígitos): una guarda **más ancha que el defecto medido**. La frontera era la gramática de
+> **rutas**, no el formato canónico del `case_id`. Se extrajo
+> `core.utils.exigir_sin_caracteres_de_ruta` con hogar único, del que `validate_case_id` también
+> tira. La tentación de arreglar los fixtures en vez del diagnóstico era el error de verdad.
+
 **Medido el 2026-09-04 abriendo W-02JSVZ**, cuya dirección operativa en E&V lleva un «**s/n**»
 (finca rústica sin número). Con `--direccion` copiada literal de la tabla de Bad Debt, la corrida
 terminó diciendo:
@@ -6591,6 +6602,16 @@ repitiendo el alta con «**sn**» en lugar de «s/n» —la grafía que E&V usa 
 pero el siguiente que copie la dirección de la tabla vuelve a pisarlo.
 
 ## 149. Los ficheros de protocolo que el registro NO declara entran en el inventario probatorio
+
+> ✅ **CERRADO 2026-09-04 — PR #278**, en la superficie que se midió. Los cuatro están en
+> `INTAKE_CONTROL_FILES`, y el mutante muere en tres niveles (declaración, `_es_control` y el
+> **efecto** sobre `inventariar`) — comprobado inyectándolo.
+>
+> **Sigue abierto, y a propósito:** los cuatro tampoco están en `MERGE_EXCLUSIONS` ni en el
+> carve-out del plugin (medido). Ese eje decide **qué se propaga en un checkin**, o sea quién
+> escribe sobre qué copia, y por el presupuesto de rondas pide **dos** rondas de revisión, no una.
+> Además los cuatro no son iguales ahí: `_ficha_crm.yaml` y `_manifiesto.yaml` son artefactos
+> durables del caso, `_intake_hashes.json` es estado derivado. Decisión aparte.
 
 **Medido el 2026-09-04 en la corrida de apertura de W-02JSVZ, con el código de hoy.** El
 `_cobertura` de la sala de máquina trae dos entradas `sin_soporte` que no son documentos del caso:
@@ -6642,6 +6663,11 @@ todas. Barato y de una línea; lo que cuesta es el test de la familia.
 
 ## 150. `crm_ficha` declara ERROR sobre una escritura que SÍ entró: el CRM desescapa `&amp;`
 
+> ✅ **CERRADO 2026-09-04 — PR #278.** `_mismas_notas` desescapa las dos partes y compara por
+> **igualdad** (no por inclusión: un `in`/`startswith` habría dejado pasar unas notas truncadas
+> por el servidor, perdiendo justo la cobertura por la que la verificación existe). Los dos
+> mutantes fijan las dos mitades.
+
 **Medido el 2026-09-04 sobre el expediente 637 (W-02JSVZ).** `python -m scripts.crm_ficha
 --case-id W-02JSVZ --yes` escribió la ficha entera y terminó en **exit 1**:
 
@@ -6688,6 +6714,22 @@ sale con exit 1 en cada apertura, así que ni sirve para encadenar en un script 
 código de salida como señal.
 
 ## 151. La sala de lectura: `organizar` no puede terminar un caso, y destruye la clasificación a mano
+
+> ✅ **CERRADO 2026-09-04 — PR #278**, cuatro de los seis remedios, y en el orden de daño que
+> esta entrada proponía: (a) ruta MD + resolución de bundles partidos, que reparó
+> `preparar-residuo` y los 140 enlaces muertos del índice; (b) `_write_worklist` fusiona en vez de
+> reconstruir; (c) `organizar` encadena `catalogo` y `aplicar`, así que el ciclo **converge**; (e)
+> la CLI resuelve el W-code. Con sus mutantes, y todos rojos antes.
+>
+> **Siguen abiertos los dos que no son baratos:** (d) que una sala poblada con 0 acciones sobre un
+> catálogo vacío *falle* en vez de felicitarse —hoy ya no puede ocurrir por (c), así que es
+> cinturón y tirantes— y (f) la **estructura plana**, que toca el layout de `poblar` y del índice y
+> espera la decisión sobre el pivote a la skill. Y con ella el tercer defecto de `MEJORAS #67`.
+>
+> **El diagnóstico del §«frontera» se confirmó al arreglarlo:** las guardas existían en el
+> envoltorio —`clasificar` del CLI ya rebuildeaba el catálogo, `rellenar_worklist` ya respetaba las
+> celdas rellenas— y `organizar` las rodeaba llamando al core. No faltaban guardas: faltaba que el
+> otro llamador pasara por ellas.
 
 **Medido el 2026-09-04 montando la sala de lectura de W-02JSVZ (167 documentos, 99 de residuo).**
 El runbook §7 ofrece `scripts.sala_lectura organizar` como el comando todo-en-uno y advierte, aparte,
@@ -6764,6 +6806,15 @@ solo termina si quien lo corre sabe saltarse el comando que el runbook recomiend
 del `RUNBOOK_APERTURA_EXPEDIENTE` con la secuencia que sí converge es lo primero, y no cuesta código.
 
 ## 152. Dos tests exigen `.env`, así que la suite da rojo falso en cualquier worktree
+
+> ⏳ **CEDIDO 2026-09-04 a la sesión hermana** que reescribe `ensure_colaborador_vinculado`
+> (rama `claude/beautiful-gates-438572`, autorrelleno de fichas de colaborador desde la firma del
+> correo). El arreglo son dos líneas —pasar `client=MagicMock()` en los dos tests, como ya hace la
+> variante judicial tres líneas más abajo—, pero cae dentro de la función que esa rama está
+> reescribiendo (`_resolver_o_crear_colaborador`, `_completar_colaborador_existente`), y ponerle
+> una tirita a mitad de refactor es peor que esperar. Coordinado por mensaje entre sesiones.
+>
+> **Mientras no esté: corre la suite desde la raíz del repo, no desde el worktree.**
 
 **Medido el 2026-09-04.** La suite corrida desde el worktree
 (`.claude/worktrees/nuevo-caso-bad-debt-ffe40e`) devuelve exit 1 con dos fallos, y desde la raíz del

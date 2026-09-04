@@ -178,8 +178,10 @@ python -m scripts.abrir_caso --w-code W-XXXXXX --ciudad Barcelona --tipo-caso VU
   Y no se descubre en el alta, sino en el comando siguiente: `--case-id W-02JSVZ` falla con
   `[ERROR] Caso no encontrado`, porque `resolve_ref` no puede reconstruir un caso partido.
   **Escribe la dirección sin barra** — para `s/n` usa `sn`, que es como la nombra E&V en su propia
-  factura. `validate_case_id` rechaza exactamente este carácter, pero `abrir_caso` no la llama
-  nunca: `MEJORAS #148`.
+  factura. **Arreglado el 2026-09-04** (`MEJORAS #148`): ahora el alta **aborta con un error que
+  nombra el campo culpable** (`--codigo-caso`, `--direccion` o `--sufijo`) y no crea esqueleto
+  alguno, en vez de terminar en 0 dejando el intake en una ruta sombra. El consejo sigue en pie
+  porque el error hay que evitarlo, no solo detectarlo.
 - **`[APER-34]` Auto-derivación (B5):** en `--fuente drive_ev`, si se omiten,
   `--team-id` (driveId), `--codigo-caso` (nombre de la unidad compartida vía Drive API) y
   `--sufijo` (del `tipo_caso` canónico) se **auto-derivan** desde `--folder-id`. Los flags
@@ -367,16 +369,25 @@ donde empieza la lectura real; no intercalar análisis a mitad de la mecánica d
 
 **Usa la skill canónica `organizar-sala-lectura` (v1.3, estructura PLANA).**
 
-**`[APER-55]` Si vas por el CLI, NO uses `organizar`: no converge y borra tu trabajo.**
-Medido el 2026-09-04 en W-02JSVZ. `core.sala_lectura.organizar` es
-`clasificar → render → poblar`: **le faltan `catalogo` al principio y `aplicar` después de la
-worklist**. Sobre un caso recién abierto declara *«Sala de lectura organizada. Acciones: {}»*
-—éxito sobre una sala vacía, porque clasificó un `indice_documental.yaml` que no existía— y en la
-corrida siguiente `clasificar_caso` **reconstruye `_clasificar.md` y deja en blanco las columnas que
-acabas de rellenar** (99 filas perdidas, y el `aplicar` posterior devolvió `Aplicadas: 0`). El ciclo
-que su propio mensaje recomienda («rellena la worklist y vuelve a correr `organizar`») es un bucle.
+**`[APER-55]` `organizar` ya converge — arreglado el 2026-09-04, `MEJORAS #151`.** Este punto
+decía «NO uses `organizar`» y eso dejó de ser cierto el mismo día: `core.sala_lectura.organizar`
+era `clasificar → render → poblar`, le faltaban `catalogo` al principio y `aplicar` tras la
+worklist, y por eso (a) sobre un caso recién abierto declaraba *«Sala de lectura organizada.
+Acciones: {}»* —éxito sobre una sala vacía— y (b) en la corrida siguiente `clasificar_caso`
+reconstruía `_clasificar.md` en blanco, **destruyendo la clasificación a mano** (99 filas perdidas
+en W-02JSVZ, y el `aplicar` posterior devolvió `Aplicadas: 0`).
 
-**Secuencia que SÍ termina** — rellenar entre el 2º y el 3º paso, y no volver a `organizar`:
+Hoy el ciclo que su propio mensaje recomienda —rellenar la worklist y volver a correr
+`organizar`— **termina**: encadena el catálogo si falta, vuelca la worklist con `aplicar` antes de
+recalcular el residuo, y `_write_worklist` fusiona en vez de reconstruir.
+
+```powershell
+python -m scripts.sala_lectura organizar --case "<W-code o case_id>"   # se detiene si hay residuo
+#    → rellena Tipo/Fecha/Parte/Descripcion en 01_Procesado/_revisar/_clasificar.md
+python -m scripts.sala_lectura organizar --case "<W-code o case_id>"   # y ahora sí termina
+```
+
+**Secuencia granular**, si quieres ver cada paso (o si `organizar` te deja algo a medias):
 
 ```powershell
 python -m scripts.sala_lectura catalogo --case "<case_id>"   # 1. inventario; sin esto todo lo demás es vacío
@@ -387,23 +398,24 @@ python -m scripts.sala_lectura poblar  --case "<case_id>"    # 4. copia los docu
 python -m scripts.sala_lectura render  --case "<case_id>"    # 5. INDICE.md + CRONOLOGIA.md
 ```
 
-- **`--case` exige el `case_id` COMPLETO, no el W-code**: `sala_lectura` no pasa por
-  `resolve_ref` (a diferencia de `abrir_caso` y `sala_maquina`) y con un W-code aborta con
-  `LocalWorkspaceMissing`, tras derivar además una ciudad equivocada.
+- **`--case` acepta el W-code** desde el 2026-09-04, igual que `abrir_caso` y `sala_maquina`.
+  Antes abortaba con `LocalWorkspaceMissing` tras derivar además una ciudad equivocada.
 - **`poblar` copia los documentos; `render` solo escribe los índices.** (En W-02T3XO se
   olvidó `poblar` y la sala salió vacía.)
-- **`preparar-residuo` responde «nada que preparar» aunque haya residuo, y los enlaces «ver
-  texto» del `INDICE.md` salen muertos:** `_md_path` apunta al `01_Procesado/MD/` del motor
-  jubilado y la sala de máquina escribe en `01_Procesado/02_Sala de máquina/03_MD/`. Para
-  clasificar el residuo, lee los MD de esa ruta a mano; ojo con los bundles partidos, cuyo texto
-  vive en los hijos `…__d01_…md` (medido: 88 de 99 casan por nombre, 11 son partidos).
+- **`preparar-residuo` ya encuentra el texto**, y los enlaces «ver texto» del `INDICE.md` ya no
+  salen muertos: `_md_path` apuntaba al `01_Procesado/MD/` del motor jubilado y la sala de máquina
+  escribe en `01_Procesado/02_Sala de máquina/03_MD/`. Los **bundles partidos** también se
+  resuelven: su texto vive en los hijos `…__d01_…md` y se concatenan (medido en W-02JSVZ: 88 de 99
+  casaban por nombre, 11 eran partidos).
 - La **subcarpeta con fecha es por diseño** `[APER-22]`: solo los `.eml` con adjuntos MIME
   (documentos compuestos) la generan; el resto es plano. No reinvestigar.
 - **La advertencia «no uses el CLI deprecado `core/sala_lectura.py` directamente» no protege de
-  nada:** `scripts/sala_lectura.py` es un paso-a-través de dos líneas a ese mismo módulo, así que la
-  vía sancionada *es* la que se advertía evitar. Los 3 defectos de `MEJORAS #67` (ruta MD, colisión
-  de nombres, subcarpetas por fuente) ya no son latentes: los tres se dieron en W-02JSVZ. Inventario
-  completo y remedios por orden de daño en **`MEJORAS #151`**.
+  nada:** `scripts/sala_lectura.py` es un paso-a-través a ese mismo módulo, así que la vía
+  sancionada *es* la que se advertía evitar. De los 3 defectos de `MEJORAS #67`, los dos que se
+  dieron en W-02JSVZ están arreglados (ruta MD; y la colisión de nombres la cubría ya el sufijo
+  SHA). **Sigue abierto el tercero:** la sala sale en **subcarpetas por fuente**
+  (`Sala lectura/Drive E&V/`, `Sala lectura/Email/`) cuando la skill v1.3 fija estructura PLANA.
+  Eso toca el layout de `poblar` y del índice, y espera la decisión sobre el pivote a la skill.
 
 ---
 
