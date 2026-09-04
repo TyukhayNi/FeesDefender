@@ -524,3 +524,47 @@ class TestElCruceDeLineasSeAlinea:
 
         assert sin_atribuir == 0
         assert atribuidos[0].procedencia == PROCEDENCIA_CITADO
+
+
+class TestElInvarianteQueRETIRO_UN_VEREDICTO:
+    """`sin_atribuir` vale SIEMPRE 0, y de eso depende una decision de diseno.
+
+    El §6 del spec preveia un veredicto `NO_ATRIBUIBLE` para «hay firma y no se sabe de
+    quien es». Se **retiro por inalcanzable**: el ancla de un bloque es su propia linea
+    de email, y desde el arreglo de la atribucion el bloque **conserva** ese email, asi
+    que no existe un bloque sin email que contar. Fabricar un caso artificial para
+    justificar la constante habria sido peor que dejar codigo muerto.
+
+    La rama defensiva de `atribuir` y su contador se quedan como **invariante**, y este
+    test es lo que lo vigila.
+
+    **Si este test se pone rojo, NO lo ajustes.** Significa que alguien anadio una
+    segunda via de deteccion —bloques anclados solo en el marcador, como la firma
+    institucional sin direccion personal que se midio en un .eml de W-02Q38C— y entonces
+    ese caso SI necesita un veredicto propio en vez de desaparecer del recuento.
+    """
+
+    @pytest.mark.parametrize("cuerpo", [
+        "Hola.\n\n" + FIRMA_BCN,
+        FIRMA_MAD,
+        FIRMA_BCN + "\n\n" + FIRMA_MAD,
+        "\n".join("> " + ln for ln in FIRMA_BCN.split("\n")),
+        "ENGEL&VÖLKERS\n*Ana Ejemplo*\nAsesora\nMóvil: 612 34 56 78\n",
+        "Nada de nada.\n",
+        "",
+        "ana@engelvoelkers.com",
+    ])
+    def test_sin_atribuir_es_siempre_CERO(self, cuerpo):
+        _, sin_atribuir = extraer_bloques(cuerpo, fichero="inv.eml")
+        assert sin_atribuir == 0
+
+    def test_un_bloque_construido_SIN_email_si_se_cuenta(self):
+        """La rama defensiva no es decorativa: si algun dia llega un bloque sin email,
+        se descarta y se CUENTA. Lo que el invariante de arriba afirma es que hoy
+        `localizar_bloques` no puede producirlo, no que la rama no exista."""
+        huerfano = BloqueFirma(texto="ENGEL&VÖLKERS\nsin direccion", email="",
+                               linea=1, fichero="x.eml")
+        atribuidos, sin_atribuir = atribuir([huerfano], texto_original="irrelevante")
+
+        assert atribuidos == []
+        assert sin_atribuir == 1
