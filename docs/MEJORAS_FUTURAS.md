@@ -6543,3 +6543,222 @@ distintas deben producir **un** espejo, y el test tiene que morir si vuelven a s
 contado dos veces, o un importe que aparezca duplicado en un escrito— o el arreglo de `MEJORAS #129`
 (`la cobertura se llavea por (slug, rel_path) y los artefactos por slug`), que toca exactamente la
 misma clave y puede pagar la vía A de paso.
+
+## 148. `abrir_caso` compone el `case_id` sin pasarlo por la guarda que lo valida
+
+**Medido el 2026-09-04 abriendo W-02JSVZ**, cuya dirección operativa en E&V lleva un «**s/n**»
+(finca rústica sin número). Con `--direccion` copiada literal de la tabla de Bad Debt, la corrida
+terminó diciendo:
+
+```
+OK Caso abierto: BaRS8 - <via> s/n <cp> <municipio> (W-02JSVZ) - BD
+```
+
+y lo que había en disco eran **dos** carpetas anidadas: `BaRS8 - <via> s\` conteniendo
+`n <cp> <municipio> (W-02JSVZ) - BD`, con los 170 ficheros del pull dentro. El `/` de «s/n» se
+comportó como separador de rutas. Ningún aviso, código de salida 0, y el `case_id` que el CLI
+imprime **no nombra a ninguna carpeta**.
+
+**La guarda existe y no puede haber disparado.** `core.utils.validate_case_id` rechaza exactamente
+esto: `_WIN_FORBIDDEN = re.compile(r'[\/:*?"<>|]')` (`core/utils.py:105`), con mensaje propio. Pero
+sus únicos llamadores son `core/anon/api.py` y `scripts/init_caso.py`. **`abrir_caso` —el único
+sitio que COMPONE el `case_id` desde lo que teclea el usuario— no la llama nunca**, ni en
+`core.abrir_caso.componer_case_id` ni en `scripts/abrir_caso.py`. Y el docstring de
+`componer_case_id` (`core/abrir_caso.py:30`) afirma «Formato validado por
+core.utils.validate_case_id»: enuncia una validación que en esta vía no ocurre.
+
+**Cuándo se descubre, que es lo caro.** No en el alta: en el comando *siguiente*. El intake
+incremental `--case-id W-02JSVZ` falló con `[ERROR] Caso no encontrado`, porque
+`case_locator.resolve_ref` no puede reconstruir un caso partido en dos. Entre una cosa y otra caben
+170 ficheros depositados en una ruta sombra y —si nadie mira— un `apply` de OCR sobre ella.
+
+**La frontera, que no es «sanear la dirección».** Es que **todo campo de identidad que acabe siendo
+una ruta tiene que atravesar la gramática de rutas, no solo la del `case_id`**. Aquí las dos
+gramáticas ya están escritas y son la misma función; lo que falta es la llamada. El mismo hueco
+cubre `--sufijo` y `--codigo-caso`, que también se concatenan sin mirar, y no lo tapa validar
+únicamente `--direccion`.
+
+**Remedio.** `componer_case_id` devuelve `validate_case_id(f"...")` en vez de la f-string cruda —un
+solo punto, porque todas las vías de `abrir_caso` pasan por ahí— y el CLI traduce el `ValueError` a
+un error legible que nombre el campo culpable. Su mutante: `--direccion "a/b"` debe abortar **antes**
+de `ensure_case`, y el test tiene que morir si la corrida vuelve a terminar en 0. Segunda capa,
+independiente: `ensure_case` comprueba que la carpeta que acaba de crear se llama como el `case_id`
+que le pasaron — hoy nadie compara el nombre pedido con el nombre obtenido.
+
+**Disparador de promoción.** Ya está disparado: pasa con cualquier dirección con `s/n`, que en el
+corpus de E&V es común (fincas rústicas, castillos, naves). Se remedió a mano borrando el árbol y
+repitiendo el alta con «**sn**» en lugar de «s/n» —la grafía que E&V usa en su propia factura—,
+pero el siguiente que copie la dirección de la tabla vuelve a pisarlo.
+
+## 149. Los ficheros de protocolo que el registro NO declara entran en el inventario probatorio
+
+**Medido el 2026-09-04 en la corrida de apertura de W-02JSVZ, con el código de hoy.** El
+`_cobertura` de la sala de máquina trae dos entradas `sin_soporte` que no son documentos del caso:
+
+```
+_intake_hashes.json
+2026-09-04_email_01/_manifiesto.yaml
+```
+
+Y trae, correctamente, **ninguna** de `.pulled`, `_exported_ids.json` ni `_resolved_links.json`. Esa
+asimetría es el hallazgo: `_es_control` (`core/sala_maquina.py:1181`) funciona —deriva de
+`config.INTAKE_CONTROL_FILES` en vez de duplicar la lista, que es lo que arregló la R-B del Plan 5—
+y lo que se cuela es **exactamente lo que nadie declaró en el registro**.
+
+**Los cuatro que faltan, y quién los escribe.** Ninguno es de un tercero: los produce este mismo
+repo, en `00_Input/`, por prescripción del propio runbook.
+
+| Fichero | Quién lo escribe | Medido |
+|---|---|---|
+| `_intake_hashes.json` | el intake | W-02JSVZ, 2026-09-04 (esta corrida) |
+| `<lote>/_manifiesto.yaml` | `core.email_export`, uno por lote | W-02JSVZ, 2026-09-04 (esta corrida) |
+| `_ficha_crm.yaml` | a mano, §9 del `RUNBOOK_APERTURA_EXPEDIENTE` | W-02Q38C (`ficha_crm__f53e4101 · sin_soporte`) |
+| `_ocurrencias_crm.json` | la vista procesal | W-02Q38C |
+
+Los dos últimos se midieron sobre un `_cobertura` anterior al arreglo, así que como *evidencia de
+hoy* valen los dos primeros; pero ninguno de los cuatro está en `INTAKE_CONTROL_FILES` ni casa con
+el único prefijo declarado (`.apertura_v1.`), luego los cuatro se cuelan igual. No se afirma más de
+lo medido: los dos primeros, verificados hoy; los dos últimos, por lectura del registro.
+
+**La frontera, y es la lección que la entrada de `_apertura_v1.json` dejó a medias.** El comentario
+de `config.py:569` cuenta que ese fichero se declaró porque «sin declararlo entraba en el inventario
+probatorio y salía como `sin_soporte`, en la MISMA corrida que lo escribía». Se remedió **el
+ejemplo**, no **la propiedad**: la propiedad es que *todo fichero de protocolo que el propio repo
+deposite bajo `00_Input/` tiene que estar en el registro*, y hay cuatro más en esa situación. Un
+`sin_soporte` sobre un fichero de control no es un aviso inocuo — es ruido en la **red de calidad**,
+que es justo donde se mira lo que el OCR no pudo leer, y entrena a ignorarla.
+
+**Remedio.** Declarar los cuatro en `INTAKE_CONTROL_FILES`. Su mutante: una corrida sobre un caso
+con lote de correo y `_ficha_crm.yaml` no debe producir **ninguna** fila `sin_soporte` cuyo origen
+empiece por `_` o cuyo basename empiece por `_`, y el test tiene que morir si vuelve a producirla.
+Y la capa que cierra la familia en vez del caso: un test que recorra los ficheros que el repo
+escribe en `00_Input/` —los literales que aparecen en `email_export`, en el intake y en el runbook—
+y exija que cada uno esté en el registro. Sin eso, el quinto fichero de protocolo que alguien añada
+vuelve a colarse y nadie lo verá hasta que salga en un `_cobertura`.
+
+**Disparador de promoción.** Ya está disparado: pasa en toda apertura con intake de correo, que son
+todas. Barato y de una línea; lo que cuesta es el test de la familia.
+
+
+## 150. `crm_ficha` declara ERROR sobre una escritura que SÍ entró: el CRM desescapa `&amp;`
+
+**Medido el 2026-09-04 sobre el expediente 637 (W-02JSVZ).** `python -m scripts.crm_ficha
+--case-id W-02JSVZ --yes` escribió la ficha entera y terminó en **exit 1**:
+
+```
+OK Notas actualizadas
+Verificación: expediente 637 Numero_Expediente=77
+  [FALTA] Notas: el CRM devuelve un contenido distinto del escrito
+[ERROR] La lectura DESMIENTE la escritura: no consta -> Notas.
+```
+
+La lectura no desmentía nada. Releído el campo por API y comparado contra el `_ficha_crm.yaml`:
+
+```
+escrito: 5158  guardado: 5142
+iguales: False
+iguales tras deshacer &amp;: True
+```
+
+Las 16 diferencias son cuatro `&amp;` que el CRM **decodifica a `&`** al guardar
+(`pitch&amp;putt` → `pitch&putt`, `E&amp;V` → `E&V`). El contenido está íntegro: mismo principio,
+mismo final, mismos 5.142 caracteres útiles.
+
+**Por qué esto es peor que un bug cosmético.** El verificador de `crm_ficha` es la pieza que
+implementa «verificar por resultado, nunca por status», y su mensaje —«los OK de arriba se apoyaban
+en el status»— es correcto como doctrina. Pero aquí produce un **rojo sobre un éxito**, y lo produce
+**siempre** que las notas escriban «E&amp;V» en HTML bien formado, o sea en casi toda ficha de este
+cliente. Un guardián que grita en el caso normal se desactiva solo: el operador aprende que el rojo
+de Notas no significa nada, y el día que la escritura falle de verdad no lo va a distinguir. Es la
+enfermedad simétrica de la familia que este repo ya persigue.
+
+**Lo que NO hay que hacer:** dejar de escapar `&` en el YAML. El campo es HTML y `&` suelto es HTML
+inválido; el problema no es el dato, es la igualdad con que se compara.
+
+**Remedio.** Comparar el campo `Notas` **normalizando entidades HTML en los dos lados** antes de
+decidir (`html.unescape` sobre escrito y guardado), y solo entonces declarar la discrepancia.
+Dos mutantes, porque hacen falta los dos: (1) unas notas con `&amp;` que el CRM devuelve
+desescapadas deben verificar **ok**, y el test muere si vuelve a dar `[FALTA]`; (2) unas notas
+realmente **truncadas** por el servidor deben seguir dando `[FALTA]` — si la normalización se hace
+con un `in` o un `startswith` en vez de una igualdad sobre texto normalizado, el segundo mutante
+sobrevive y se pierde justo la cobertura que esta pieza existe para dar.
+
+**Disparador de promoción.** Ya está disparado, y es de coste alto por frecuencia: hoy `crm_ficha`
+sale con exit 1 en cada apertura, así que ni sirve para encadenar en un script ni se puede leer su
+código de salida como señal.
+
+## 151. La sala de lectura: `organizar` no puede terminar un caso, y destruye la clasificación a mano
+
+**Medido el 2026-09-04 montando la sala de lectura de W-02JSVZ (167 documentos, 99 de residuo).**
+El runbook §7 ofrece `scripts.sala_lectura organizar` como el comando todo-en-uno y advierte, aparte,
+de «no usar el CLI deprecado `core/sala_lectura.py` directamente» por los tres defectos latentes de
+`MEJORAS #67`. **Esa advertencia nombra la cosa equivocada:** `scripts/sala_lectura.py:117` es un
+paso-a-través de dos líneas a `core.sala_lectura.organizar`, así que la vía sancionada *es* el
+módulo del que avisa. Los tres defectos dejaron de ser latentes y aparecieron dos más.
+
+**1. `organizar` omite dos de los cinco pasos de su propia secuencia.** La secuencia documentada es
+`catalogo → clasificar → [worklist] → aplicar → poblar → render`. `core.sala_lectura.organizar` es
+`clasificar_caso → (parar si residuo) → render_indices → poblar_sala_lectura`: sin `catalogo` y sin
+`aplicar`. Consecuencia sobre un caso recién abierto:
+
+```
+$ sala_lectura organizar   → "Sala de lectura organizada. Acciones: {}"    (indice_documental.yaml = 0 KB)
+$ sala_lectura catalogo    → "Catálogo: 167 entradas"                      (103 KB)
+$ sala_lectura organizar   → "Detenido: 99 doc(s) en revision."
+```
+
+La primera línea es el defecto: **declaró organizada una sala vacía**, con éxito y sin aviso, porque
+clasificó un índice que no existía. Un inventario vacío que no activa nada es indistinguible de «no
+había nada que hacer».
+
+**2. Y al volver a correrlo, borra la worklist rellenada a mano.** `clasificar_caso` **reconstruye**
+`_clasificar.md` con `path.write_text(...)` y las columnas Tipo/Parte/Descripcion en blanco. Así que
+el ciclo que el propio mensaje del CLI recomienda —«Rellena la worklist y vuelve a correr
+`organizar`»— **destruye lo que acabas de rellenar**: medido, 99 filas clasificadas a mano se
+perdieron en la corrida siguiente, y el `aplicar` posterior devolvió `Aplicadas: 0`. El ciclo que el
+CLI propone no converge nunca. La secuencia que sí funciona es rellenar y llamar `aplicar` →
+`poblar` → `render` **sin volver a pasar por `organizar`** (así salieron `Aplicadas: 99`,
+`COPY: 147, SKIP_DEDUP: 20`, 140 documentos en la sala).
+
+**3. La ruta MD apunta al motor jubilado, y eso mata los enlaces del índice.** `_md_path`
+(`core/sala_lectura.py:244`) construye `01_Procesado/MD/<slug>.md`; la sala de máquina escribe en
+`01_Procesado/02_Sala de máquina/03_MD/`. `01_Procesado/MD/` está vacío, luego:
+
+- `preparar-residuo` responde «**Sin residuo con texto extraído. Nada que preparar**» con 99
+  documentos en residuo y 176 espejos MD en disco. Es un «no hay» que en realidad es «miré donde no
+  está» — el `if not md.exists(): continue` se los come en silencio.
+- Los **140** enlaces «ver texto» de `INDICE.md` apuntan a `../MD/…` y están **todos muertos**, en
+  el índice que es justo lo que lee el abogado.
+
+Medido cuánto arregla mover solo el directorio: de los 99, **88 casan por nombre** con un MD real y
+**11 no**, y los 11 son bundles que el split partió (`165.pdf`, `Contrato Golf 14jul17.pdf`,
+`Anexo contrato restaurante 18jun20.pdf`, `20260709104308879.pdf`…): el padre no tiene MD propio,
+su texto vive en los hijos `…__d01_…md`, `…__d02_…md`. Luego el arreglo es de **dos** piezas —
+directorio nuevo, y resolución por `glob('*__<hash8>*.md')` para los partidos—, no de una.
+
+**4. La sala sale en subcarpetas por fuente.** `Sala lectura/Drive E&V/` (103) y
+`Sala lectura/Email/` (35), cuando la skill v1.3 fija estructura **PLANA** y la categoría en
+`INDICE.md`. Tercer defecto de `#67`, confirmado en vivo.
+
+**5. `sala_lectura` no resuelve el W-code.** `abrir_caso` y `sala_maquina` aceptan `W-02JSVZ`;
+`sala_lectura` llama a `config.caso_path` (o sea `path_for`) sin pasar por `resolve_ref` y aborta con
+`LocalWorkspaceMissing`. Y en el camino **deriva una ciudad equivocada** (`city='Valencia'` para un
+caso de Barcelona), que es el mismo error con otra cara: resolver una referencia que no entiende en
+vez de rechazarla.
+
+**La frontera.** No son cinco defectos, es uno: **el módulo está marcado como jubilado y sigue
+siendo la única implementación**, así que nadie lo arregla y nadie lo sustituye. El pivote a la
+skill se decidió pero no se hizo (ver memoria `project-sala-lectura-prompt-driven`, «el PIVOTE a
+local sin decidir»). Mientras el CLI sea la vía real, sus defectos son defectos de producción, no
+deuda de un módulo muerto.
+
+**Remedio, por orden de daño.** (a) Ruta MD + resolución de bundles: repara `preparar-residuo` y 140
+enlaces, y es lo más barato. (b) Que `clasificar_caso` **no pise** celdas ya rellenas — su mutante:
+una worklist con 99 filas clasificadas debe seguir teniendo 99 tras `organizar`, y el test muere si
+vuelven a quedar en blanco. (c) Que `organizar` encadene `catalogo` al principio y `aplicar` tras la
+worklist, o que deje de llamarse todo-en-uno. (d) Que una sala poblada con 0 acciones sobre un
+catálogo vacío **falle** en vez de felicitarse. (e) `resolve_ref` en el CLI. (f) Estructura plana.
+
+**Disparador de promoción.** Disparado: es el montaje de la sala de lectura de cualquier caso, y hoy
+solo termina si quien lo corre sabe saltarse el comando que el runbook recomienda. Actualizar el §7
+del `RUNBOOK_APERTURA_EXPEDIENTE` con la secuencia que sí converge es lo primero, y no cuesta código.
