@@ -287,7 +287,7 @@ de los cuatro hallazgos, que ningún revisor ha mirado** — solo su prueba de m
 - **Revisor:** Codex (solo lectura)
 - **Informe recibido:** `2026-09-04-gitignore-reglas-inertes-r1-adversarial-review.md` §1
 - **Hallazgos:** 4 confirmados · 0 rebajados · 0 refutados · 0 escalados · 0 sin verificar
-- **Remediado en:** PR pendiente de número (commits `edb1ba7` y siguiente)
+- **Remediado en:** PR #273 (`edb1ba7`, `e5c8990`)
 
 | # | Severidad | Veredicto | Dónde se remedia |
 |---|---|---|---|
