@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "_comment": "PLANTILLA. Copiala a `.claude/settings.local.json` (que SI esta ignorado) para tener overrides propios de tu maquina. Sobreescribe settings.json.",
+  "_comment_por_que_example": "El fichero real estaba VERSIONADO pese a figurar en .gitignore: se anadio al indice antes de ignorarse, y .gitignore no aplica a lo ya trackeado. Resultado: Claude Code le anadia permisos al conceder autorizaciones, git veia el cambio, y cambiar de rama fallaba con «Haz commit o stash de los cambios». Se saco del indice el 2026-09-04; esta plantilla queda para no perder el punto de partida.",
+  "env": {
+    "_comment_env": "Aqui puedes meter overrides puntuales. Las credenciales reales viven en .env, no aqui."
+  },
+  "permissions": {
+    "_comment_permissions": "Si en algun momento necesitas permitir algo mas restrictivo solo para tu maquina, anadelo aqui. Ejemplo: Bash(npm install -g *) si vas a instalar tooling global."
+  }
+}
