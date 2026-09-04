@@ -571,6 +571,21 @@ INTAKE_CONTROL_FILES: frozenset[str] = frozenset({
     # de la sala de máquina y salía en `_cobertura` como `sin_soporte`, en la MISMA
     # corrida que lo escribía.
     "_apertura_v1.json",
+    # Los cuatro de `MEJORAS #149`, añadidos el 2026-09-04. La R-B remedió su ejemplo y
+    # no la propiedad: **todo fichero de protocolo que el propio repo deposite bajo
+    # `00_Input/` tiene que estar declarado aquí**, y estos cuatro los escribe este repo
+    # sin declararlos. Medido en la apertura de W-02JSVZ: `_intake_hashes.json` y
+    # `<lote>/_manifiesto.yaml` salieron en `_cobertura` como `sin_soporte`, o sea como
+    # ruido en la red de calidad, que es justo donde se mira lo que el OCR no pudo leer.
+    # (`_ficha_crm.yaml` y `_ocurrencias_crm.json`, medidos igual sobre W-02Q38C.)
+    #
+    # `_manifiesto.yaml` estaba además duplicado: `intake_lotes.MANIFIESTO_LOTE` lo
+    # trataba como protocolo en un único sitio, y esa copia local es la enfermedad que
+    # este registro existe para curar.
+    "_ficha_crm.yaml",
+    "_intake_hashes.json",
+    "_ocurrencias_crm.json",
+    "_manifiesto.yaml",
 })
 
 #: Prefijo de los temporales de escritura atómica de los ficheros de control. No son

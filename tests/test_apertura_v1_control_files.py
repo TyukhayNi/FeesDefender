@@ -7,6 +7,7 @@ guard itera sobre lo que el módulo declara, así que el siguiente fichero de co
 alguien añada ahí lo obliga a declararlo o pone esto rojo.
 """
 import fnmatch
+from pathlib import Path
 
 import pytest
 
@@ -60,3 +61,61 @@ def test_el_guard_no_esta_vacio():
     parametrizados de arriba pasarían sin comprobar nada."""
     assert est.FICHEROS_CONTROL, "sin ficheros declarados, este guard es decorativo"
     assert est.PREFIJOS_CONTROL
+
+
+# ---------------------------------------------------------------------------
+# MEJORAS #149: los CUATRO que el repo escribe y no declaraba
+#
+# El guard de arriba itera sobre `apertura_v1_estado.FICHEROS_CONTROL`, asi que
+# cubre «lo declarado ahi esta en las cuatro superficies» — no «todo fichero de
+# protocolo que el repo escribe esta declarado». Por ese hueco pasaban cuatro.
+# Medido el 2026-09-04 en la apertura de W-02JSVZ: `_intake_hashes.json` y
+# `<lote>/_manifiesto.yaml` salieron en `_cobertura` como `sin_soporte`.
+# ---------------------------------------------------------------------------
+
+#: Ficheros de protocolo que ESTE repo deposita bajo `00_Input/`. Extender al añadir
+#: uno nuevo: es el punto debil que `#149` deja abierto a proposito, porque derivarlo
+#: del codigo fuente cuesta mas que el defecto que evita.
+PROTOCOLO_QUE_ESCRIBE_EL_REPO = (
+    "_ficha_crm.yaml",          # a mano, §9 del RUNBOOK_APERTURA_EXPEDIENTE
+    "_intake_hashes.json",      # el intake
+    "_ocurrencias_crm.json",    # la vista procesal
+    "_manifiesto.yaml",         # core.email_export, uno por lote
+)
+
+
+@pytest.mark.parametrize("nombre", PROTOCOLO_QUE_ESCRIBE_EL_REPO)
+def test_el_protocolo_del_repo_esta_en_el_registro_canonico(nombre):
+    assert nombre in config.INTAKE_CONTROL_FILES
+
+
+@pytest.mark.parametrize("nombre", PROTOCOLO_QUE_ESCRIBE_EL_REPO)
+def test_el_protocolo_del_repo_no_es_documento_para_la_sala_de_maquina(nombre):
+    from core import sala_maquina as sm
+    assert sm._es_control(nombre) is True
+
+
+def test_el_inventario_probatorio_los_excluye_y_no_excluye_el_documento(tmp_path):
+    """El mutante que muere de verdad si alguien retira un nombre del registro.
+
+    Los parametrizados de arriba comprueban la declaracion; este comprueba el EFECTO,
+    que es lo que se midio mal: un fichero de protocolo en el inventario probatorio sale
+    en `_cobertura` como `sin_soporte` y ensucia la red de calidad. Y afirma tambien lo
+    contrario —que un documento de verdad SI entra—, sin lo cual un `_es_control` que
+    devolviera `True` para todo pasaria el test.
+    """
+    from core import sala_maquina as sm
+
+    entrada = tmp_path / "00_Input"
+    (entrada / "2026-09-04_email_01").mkdir(parents=True)
+    for nombre in PROTOCOLO_QUE_ESCRIBE_EL_REPO:
+        (entrada / nombre).write_text("protocolo", encoding="utf-8")
+    # `_manifiesto.yaml` vive en la raiz del LOTE, no del caso: es donde se midio.
+    (entrada / "2026-09-04_email_01" / "_manifiesto.yaml").write_text("x", encoding="utf-8")
+    (entrada / "documento.pdf").write_bytes(b"%PDF-1.4 no es un PDF valido, basta el nombre")
+
+    nombres = {Path(e["rel_path"]).name for e in sm.inventariar(tmp_path)}
+
+    assert "documento.pdf" in nombres, "un documento de verdad tiene que entrar"
+    for nombre in PROTOCOLO_QUE_ESCRIBE_EL_REPO:
+        assert nombre not in nombres, f"{nombre} entro en el inventario probatorio"
