@@ -110,6 +110,9 @@ _CC_NUM = "HubspotCollectedFormsWorkaround"
 # Response: 201 "Created!" — idempotente (relaciones existentes no se duplican)
 _REST_BASE = "https://api-crm-commons-pro.sudespacho.biz"
 _REST_RELATION_PATH = "/api/relation_element/{element}/{exp_id}"
+#: LECTURA de relaciones. NO es `relation_element` —esa ruta responde 405
+#: `Allow: POST, PUT, DELETE`, medido el 2026-09-04— sino ésta. Ver `get_relaciones`.
+_REST_RELATED_REGISTER_PATH = "/api/related_register/{element}/{exp_id}"
 _REST_CREATE_COLABORADOR = "/api/element_register/colaboradores"
 _REST_CREATE_CLIENTE_CONTRARIO = "/api/element_register/clientes_contrarios"
 _REST_TIMEOUT = 30
@@ -1161,6 +1164,103 @@ def _link_rest(
         f"REST POST relation_element/{element}/{exp_id} "
         f"→ HTTP {r.status_code}: {r.text[:200]}"
     )
+
+
+def get_relaciones(element: str, exp_id: str) -> dict[str, list[dict[str, Any]]]:
+    """LEE las relaciones de un expediente. `{elemento_hijo: [{id, ...valores}]}`.
+
+    Descubierto sondeando el tenant tnm el 2026-09-04 (exp 634). Cierra el hueco que
+    `INTEGRACION_SUDESPACHO.md` daba por insalvable —«no hay ruta REST de LECTURA de
+    relaciones, el vínculo solo se verifica por UI»—: eso es cierto de
+    ``relation_element`` (405 `Allow: POST, PUT, DELETE`, medido) y **falso de la API**,
+    porque la lectura vive en ``related_register``, que el spec declara como
+    "Retrieves the collection of RelatedRegister resources".
+
+    **La trampa del formato, medida y no supuesta.** El servidor devuelve, por bloque,
+    ``registries`` llaveado por id; pero la lista de la clave ``N`` **arrastra todos los
+    registros anteriores**, así que la clave con más vínculos trae la colección entera.
+    Aplanar las entradas cuenta 6 colaboradores donde hay 3 y triplica al primero. El
+    registro que corresponde a una clave es **el que casa por ``id``** — no ``[-1]``,
+    que acierta solo mientras el arrastre ponga el propio al final.
+
+    Args:
+        element: Slug del elemento padre (ej. "extrajudiciales").
+        exp_id: ID del expediente padre.
+
+    Returns:
+        Un dict por elemento hijo relacionable → lista de sus vínculos. Un elemento
+        **sin** vínculos aparece con lista vacía: «relacionable y sin ninguno» y «no
+        relacionable» no son lo mismo, y el llamador debe poder distinguirlos.
+
+    Raises:
+        SudespachoRelationsError: HTTP != 200 o error de red.
+        ValueError: SUDESPACHO_API_KEY no configurado.
+    """
+    api_key = (os.getenv("SUDESPACHO_API_KEY") or "").strip()
+    if not api_key:
+        raise ValueError(
+            "SUDESPACHO_API_KEY vacío en .env — ve a tnm.sudespacho.net → Ajustes → API"
+        )
+
+    url = f"{_REST_BASE}{_REST_RELATED_REGISTER_PATH.format(element=element, exp_id=exp_id)}"
+    headers = {"x-api-key": api_key, "Accept": "application/json"}
+
+    try:
+        r = httpx.get(url, headers=headers, timeout=_REST_TIMEOUT)
+    except httpx.HTTPError as exc:
+        raise SudespachoRelationsError(
+            f"REST GET related_register/{element}/{exp_id} falló: {exc}"
+        ) from exc
+
+    if r.status_code != 200:
+        raise SudespachoRelationsError(
+            f"REST GET related_register/{element}/{exp_id} "
+            f"→ HTTP {r.status_code}: {r.text[:200]}"
+        )
+
+    try:
+        bloques = r.json()
+    except Exception as exc:  # pragma: no cover - defensivo
+        raise SudespachoRelationsError(
+            f"REST GET related_register/{element}/{exp_id}: 200 sin JSON válido"
+        ) from exc
+
+    salida: dict[str, list[dict[str, Any]]] = {}
+    for bloque in bloques or []:
+        if not isinstance(bloque, dict):
+            continue
+        hijo = bloque.get("element")
+        if not hijo:
+            continue
+        vinculos: list[dict[str, Any]] = []
+        for rid, entradas in (bloque.get("registries") or {}).items():
+            propio = _registro_de_la_clave(rid, entradas)
+            vinculos.append(propio)
+        salida[hijo] = vinculos
+    return salida
+
+
+def _registro_de_la_clave(rid: str, entradas: Any) -> dict[str, Any]:
+    """El registro que corresponde a la clave `rid`, aplanado a `{id, ...valores}`.
+
+    Casa por `id` en vez de tomar el último: la acumulación del servidor es un
+    artefacto observado, no un contrato. Si ninguna entrada casa, se devuelve el id
+    a secas — **nunca** los valores de un registro ajeno, que sería inventar el vínculo.
+    """
+    for entrada in entradas or []:
+        if not isinstance(entrada, dict) or str(entrada.get("id")) != str(rid):
+            continue
+        plano: dict[str, Any] = {"id": str(rid)}
+        for v in (entrada.get("values") or []):
+            if not isinstance(v, dict):
+                continue
+            prop = v.get("property")
+            nombre = prop.get("name") if isinstance(prop, dict) else prop
+            valor = v.get("value")
+            if nombre and valor:
+                plano[nombre] = valor
+        return plano
+    return {"id": str(rid)}
 
 
 def _link_rest_or_legacy(

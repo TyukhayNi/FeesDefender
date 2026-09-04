@@ -20,7 +20,7 @@ from core.casos import case_locator
 from core.crm_ficha import cargar_ficha_yaml
 from core.sudespacho_create import get_expediente, update_expediente
 from core.sudespacho_relations import (
-    ensure_colaborador_vinculado, ensure_contrario_vinculado, link_ev_mmc,
+    ensure_colaborador_vinculado, ensure_contrario_vinculado, get_relaciones, link_ev_mmc,
 )
 
 app = typer.Typer(add_completion=False, help="Rellenar la ficha CRM completa de un expediente")
@@ -89,15 +89,24 @@ def main(
         typer.echo("Cancelado.")
         raise typer.Exit(code=0)
 
+    #: Lo que la corrida AFIRMA haber vinculado, para contrastarlo por lectura al final.
+    esperado: dict[str, list[str]] = {
+        "clientes_propios": [str(cliente_propio_id)],
+        "clientes_contrarios": [],
+        "colaboradores": [],
+    }
+
     try:
         link_ev_mmc(exp_id, cliente_propio_id=cliente_propio_id)
         typer.echo(f"OK cliente propio {ficha.cliente_propio} (id {cliente_propio_id}) vinculado (exp {exp_id})")
 
         if ficha.contrario:
             cid, creado = ensure_contrario_vinculado(exp_id, ficha.contrario)
+            esperado["clientes_contrarios"].append(str(cid))
             typer.echo(f"OK contrario id={cid} ({'creado' if creado else 'existente'}) vinculado")
         for col in ficha.colaboradores:
             colid, creado = ensure_colaborador_vinculado(exp_id, col)
+            esperado["colaboradores"].append(str(colid))
             typer.echo(f"OK colaborador id={colid} ({'creado' if creado else 'existente'}) vinculado")
         if ficha.notas_html:
             update_expediente(exp_id, {"Notas": ficha.notas_html})
@@ -110,15 +119,44 @@ def main(
         )
         raise typer.Exit(code=1)
 
-    # GET de verificación (el 201/200 no prueba el vínculo; confirmar por lectura).
+    # Verificación POR RESULTADO. El 201 de `relation_element` no prueba el vínculo, y
+    # hasta el 2026-09-04 aquí se remataba con «verificar partes visualmente en el CRM»
+    # porque se creía que la API no sabía leer relaciones. Sí sabe: `related_register`.
     try:
         rec = get_expediente(exp_id)
-        typer.echo(f"Verificación: expediente {exp_id} Numero_Expediente="
-                   f"{rec.get('Numero_Expediente')} (verificar partes visualmente en el CRM)")
+        typer.echo(f"Verificación: expediente {exp_id} "
+                   f"Numero_Expediente={rec.get('Numero_Expediente')}")
     except Exception as exc:  # noqa: BLE001 — la verificación no debe tumbar el éxito
         typer.echo(f"[AVISO] GET de verificación falló ({exc!r}); revisa manualmente el CRM")
 
-    typer.echo(f"OK ficha CRM completada: {resolved}")
+    try:
+        rel = get_relaciones(_ELEMENT_EXTRAJUDICIAL, exp_id)
+    except Exception as exc:  # noqa: BLE001
+        typer.echo(f"[AVISO] No se pudieron LEER las relaciones ({exc!r}); "
+                   "los vínculos quedan SIN VERIFICAR, que no es lo mismo que mal.")
+        typer.echo(f"OK ficha CRM completada: {resolved}")
+        return
+
+    faltan: list[str] = []
+    for elemento, ids in esperado.items():
+        presentes = {str(v.get("id")) for v in rel.get(elemento, [])}
+        for quiero in ids:
+            marca = "ok" if quiero in presentes else "FALTA"
+            typer.echo(f"  [{marca}] {elemento} id={quiero}")
+            if quiero not in presentes:
+                faltan.append(f"{elemento} id={quiero}")
+
+    if faltan:
+        typer.echo(
+            "[ERROR] La lectura DESMIENTE la escritura: no están vinculados -> "
+            + ", ".join(faltan)
+            + ". Los 'OK ... vinculado' de arriba se apoyaban en el status, no en el "
+              "resultado.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    typer.echo(f"OK ficha CRM completada y VERIFICADA por lectura: {resolved}")
 
 
 if __name__ == "__main__":

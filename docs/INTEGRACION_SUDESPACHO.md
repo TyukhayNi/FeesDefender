@@ -1066,9 +1066,27 @@ expediente sin incidencias (201/201/201/200).
 ⚠️ **`num_asunto` y `juzgado` del expediente NO son la verificación.** Tras cablear el juzgado,
 `GET` del expediente devuelve ambas properties **vacías** — y también las devuelve vacías el
 expediente 674, cuyo juzgado se cableó y confirmó el 2026-07-22. El dato vive en `autos`, no
-denormalizado en el expediente. Además **no hay ruta REST de LECTURA de relaciones**
-(`GET /api/relation_element/{elem}/{id}` → 405 `Allow: POST, PUT, DELETE`), así que el vínculo
-solo se verifica por UI: los 201 de escritura son toda la evidencia que da la API.
+denormalizado en el expediente.
+
+> ⚠️ **Este párrafo afirmaba, hasta el 2026-09-04, que «no hay ruta REST de LECTURA de
+> relaciones» y que «el vínculo solo se verifica por UI». Es FALSO, y era una
+> generalización de una ruta a toda la API.** Lo cierto es solo la premisa:
+> `GET /api/relation_element/{elem}/{id}` → **405** `Allow: POST, PUT, DELETE`
+> (remedido el 2026-09-04). Pero la lectura vive en **otra ruta**, declarada en el propio
+> `/api/docs.json` como *"Retrieves the collection of RelatedRegister resources"*:
+>
+> ```
+> GET /api/related_register/{element}/{id}     # x-api-key, 200
+> ```
+>
+> Devuelve un bloque por elemento hijo con sus vínculos y los valores de cada ficha.
+> Cableado en `core.sudespacho_relations.get_relaciones()` y usado por
+> `scripts/crm_ficha.py` como verificación real. **§15.5 detalla el formato y su trampa.**
+>
+> Lo que costó creerlo: se dio por cerrada una superficie tras probar **una** ruta. El
+> catálogo de errores del §14.6 existe justo para esto — `element_register` con una
+> property inventada devuelve un 500 que **enumera el contrato entero**, y el `docs.json`
+> es público.
 
 **No cableado en código.** Ningún wrapper en `core/sudespacho_relations.py` hace esta secuencia
 todavía — habría que añadir `link_juzgado_judicial(exp_id, juzgado_id, num_autos, fase_procedimiento)`
@@ -1690,6 +1708,54 @@ como en el lenguaje coloquial del despacho).
 
 **Implementación:** aún sin promover a `core/sudespacho_relations.py` (ejecutado con `httpx` directo esta
 sesión). Construir cuando haya un segundo caso — mismo criterio que el resto de hallazgos de esta sesión.
+
+---
+
+### 15.5 LEER las relaciones de un expediente — `related_register` (confirmado 2026-09-04)
+
+**La ruta de escritura y la de lectura no son la misma, y esa asimetría costó semanas de «verifícalo
+en la UI».**
+
+| Operación | Ruta | Método |
+|---|---|---|
+| Crear / actualizar / borrar vínculo | `/api/relation_element/{element}/{id}` | `POST` · `PUT` · `DELETE` — **`GET` → 405** |
+| **Leer los vínculos** | `/api/related_register/{element}/{id}` | **`GET` → 200** |
+
+```
+GET https://api-crm-commons-pro.sudespacho.biz/api/related_register/extrajudiciales/634
+x-api-key: <clave>
+```
+
+Devuelve una lista de bloques `{"element": "<hijo>", "registries": {...}}`, uno por elemento hijo
+**que tenga vínculos** (los que no tienen no aparecen: un `[]` global significa «sin ninguno», y hay
+que distinguirlo de «no pude leer»). Cada `registries` llavea por id y trae los valores de la ficha
+—nombre, email, móvil, NIF—, así que **una sola llamada verifica la ficha entera**.
+
+> **La trampa, medida sobre el exp 634 el 2026-09-04: `registries` viene ACUMULADO.** La lista de
+> la clave `N` arrastra todos los registros anteriores, de forma que la última clave trae la
+> colección completa:
+>
+> ```
+> "40"  -> [ {id:40} ]
+> "61"  -> [ {id:40}, {id:61} ]
+> "466" -> [ {id:40}, {id:61}, {id:466} ]      # 3 colaboradores, 6 entradas
+> ```
+>
+> Un consumidor que aplane las entradas **cuenta 6 vínculos donde hay 3** y triplica al primero. La
+> lectura correcta: **un vínculo por clave**, y su registro es el que **casa por `id`** — no
+> `lista[-1]`, que acierta solo mientras el arrastre ponga el propio al final.
+
+**Cableado:** `core.sudespacho_relations.get_relaciones(element, exp_id)` desacumula y aplana a
+`{hijo: [{id, ...valores}]}`. `scripts/crm_ficha.py` lo usa como verificación por resultado: si la
+lectura desmiente a los `201`, **sale con código 1** en vez de imprimir un OK falso. Si la lectura no
+se puede hacer, dice **SIN VERIFICAR**, que no es lo mismo que mal.
+
+**Rutas descartadas al sondearlo** (para que nadie repita el barrido): `/api/relations_elements` y
+`/api/related_registers` devuelven `200 []` sin filtrar nada —un `[]` que **no** significa «sin
+relaciones»—; `/api/view/relation/{id}` da 500; `/api/related_registries/{element}/{id}` da 500
+(`Sabre\DAV\Exception\NotImplemented`); y las relaciones **no son properties** del expediente —
+pedirlas devuelve un 500 que enumera las 34 que sí son. `/api/view/config/{element}/relations` sí
+sirve, pero da el **esquema** de hijos posibles, no los datos.
 
 ---
 

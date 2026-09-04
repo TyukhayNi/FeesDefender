@@ -152,3 +152,95 @@ def test_crm_ficha_cliente_propio_desconocido_falla_sin_escribir(tmp_path, monke
     assert "Traceback" not in r.output  # falla limpia, no una excepción sin capturar
     assert "cliente_propio desconocido" in r.output.lower()
     link_ev.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Guarda de red: `get_relaciones` sale al CRM de verdad, y la API key vive en el
+# entorno de usuario de Windows — sin esto, correr la suite en el PC de Nikolai
+# golpearia el tenant real. Los tests que quieran una lectura concreta la
+# sobreescriben; los demas obtienen «no se pudo leer», que el CLI trata como
+# SIN VERIFICAR y no como fallo.
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def _sin_red_en_relaciones(monkeypatch):
+    def _prohibido(*a, **k):
+        raise AssertionError(
+            "get_relaciones salio a la red en un test; mockealo explicitamente"
+        )
+    monkeypatch.setattr("scripts.crm_ficha.get_relaciones", _prohibido)
+
+
+# ---------------------------------------------------------------------------
+# Verificacion POR RESULTADO de los vinculos (2026-09-04)
+#
+# Hasta hoy el CLI remataba con «verificar partes visualmente en el CRM» porque
+# `INTEGRACION_SUDESPACHO.md` daba por hecho que la API no sabe leer relaciones.
+# Si sabe: `GET /api/related_register/{element}/{id}`.
+# ---------------------------------------------------------------------------
+
+class TestVerificacionPorLectura:
+    """El 201 no prueba el vinculo; la lectura si, y debe mandar sobre el status."""
+
+    @staticmethod
+    def _escrituras_en_verde(monkeypatch):
+        monkeypatch.setattr("scripts.crm_ficha.link_ev_mmc", MagicMock())
+        monkeypatch.setattr("scripts.crm_ficha.ensure_contrario_vinculado",
+                            MagicMock(return_value=("1099", False)))
+        monkeypatch.setattr("scripts.crm_ficha.ensure_colaborador_vinculado",
+                            MagicMock(return_value=("776", False)))
+        monkeypatch.setattr("scripts.crm_ficha.update_expediente", MagicMock(return_value={}))
+        monkeypatch.setattr("scripts.crm_ficha.get_expediente",
+                            MagicMock(return_value={"Numero_Expediente": "49"}))
+
+    def test_todo_vinculado_dice_VERIFICADA(self, caso_con_ficha, monkeypatch):
+        self._escrituras_en_verde(monkeypatch)
+        monkeypatch.setattr("scripts.crm_ficha.get_relaciones", lambda el, i: {
+            "clientes_propios": [{"id": "2"}],
+            "clientes_contrarios": [{"id": "1099"}],
+            "colaboradores": [{"id": "776"}],
+        })
+        r = CliRunner().invoke(cli.app, ["--case-id", "W-000AAA", "--yes"])
+        assert r.exit_code == 0, r.output
+        assert "VERIFICADA por lectura" in r.output
+        assert "visualmente" not in r.output
+        assert "[ok] clientes_contrarios id=1099" in r.output
+
+    def test_un_vinculo_ausente_TUMBA_la_corrida(self, caso_con_ficha, monkeypatch):
+        """La escritura dijo OK por su 201; la lectura dice que no esta. Manda la lectura."""
+        self._escrituras_en_verde(monkeypatch)
+        monkeypatch.setattr("scripts.crm_ficha.get_relaciones", lambda el, i: {
+            "clientes_propios": [{"id": "2"}],
+            "clientes_contrarios": [{"id": "1099"}],
+            "colaboradores": [],                      # el 776 no llego
+        })
+        r = CliRunner().invoke(cli.app, ["--case-id", "W-000AAA", "--yes"])
+        assert r.exit_code == 1, r.output
+        assert "[FALTA] colaboradores id=776" in r.output
+        assert "DESMIENTE" in r.output
+        assert "VERIFICADA" not in r.output
+
+    def test_el_cliente_propio_tambien_se_verifica(self, caso_con_ficha, monkeypatch):
+        """Es el unico vinculo que no devuelve id: si no se comprueba, nadie lo mira."""
+        self._escrituras_en_verde(monkeypatch)
+        monkeypatch.setattr("scripts.crm_ficha.get_relaciones", lambda el, i: {
+            "clientes_propios": [],                   # EV MMC no quedo vinculado
+            "clientes_contrarios": [{"id": "1099"}],
+            "colaboradores": [{"id": "776"}],
+        })
+        r = CliRunner().invoke(cli.app, ["--case-id", "W-000AAA", "--yes"])
+        assert r.exit_code == 1, r.output
+        assert "[FALTA] clientes_propios id=2" in r.output
+
+    def test_lectura_caida_es_SIN_VERIFICAR_no_fallo(self, caso_con_ficha, monkeypatch):
+        """Un revisor que no corre no refuta: se declara la cobertura ausente."""
+        self._escrituras_en_verde(monkeypatch)
+
+        def _boom(el, i):
+            raise RuntimeError("sin cupo")
+        monkeypatch.setattr("scripts.crm_ficha.get_relaciones", _boom)
+
+        r = CliRunner().invoke(cli.app, ["--case-id", "W-000AAA", "--yes"])
+        assert r.exit_code == 0, r.output
+        assert "SIN VERIFICAR" in r.output
+        assert "VERIFICADA por lectura" not in r.output
