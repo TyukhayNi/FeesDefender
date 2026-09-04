@@ -669,6 +669,23 @@ class TestElCargoNoSeInventa:
         bloques, _ = extraer_bloques(cuerpo, fichero="e.eml")
         assert leer_campos(bloques[0]).cargo == ""
 
+    def test_la_razon_social_tras_el_nombre_no_es_un_cargo(self):
+        """Hallazgo propio (Step 8): en `FIRMA_MAD` la linea `ENGEL&VÖLKERS` nunca es
+        la PRIMERA candidata (media `*Técnico de PBC.*` antes), asi que
+        `test_la_razon_social_no_se_confunde_con_el_cargo` pasa aunque se borre el
+        guard entero de `_RE_NO_ES_CARGO` -- no ejercita esta rama. Aqui la razon
+        social es la linea inmediatamente siguiente al nombre."""
+        cuerpo = "ENGEL&VÖLKERS\n*Ana Ejemplo*\nENGEL&VÖLKERS\nana@engelvoelkers.com\n"
+        bloques, _ = extraer_bloques(cuerpo, fichero="i.eml")
+        assert leer_campos(bloques[0]).cargo == ""
+
+    def test_una_direccion_tras_el_nombre_no_es_un_cargo(self):
+        """Mismo hallazgo, para la rama de direccion (`c/|calle|...` y `\\d{4,}`)."""
+        cuerpo = ("ENGEL&VÖLKERS\n*Ana Ejemplo*\nCalle Falsa 34, 28001 Madrid\n"
+                  "ana@engelvoelkers.com\n")
+        bloques, _ = extraer_bloques(cuerpo, fichero="j.eml")
+        assert leer_campos(bloques[0]).cargo == ""
+
 
 class TestElMovilNoSeConfundeConElFijo:
     """`Telf:` y `Tel. Fijo:` son fijo; `Móvil:` es movil. Un cruce mete un fijo en el
