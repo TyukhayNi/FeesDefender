@@ -60,9 +60,13 @@ logs/
 # Hacen falta las TRES líneas: git no re-incluye un fichero cuyo directorio padre está
 # excluido, así que primero se rescata el directorio, luego se vuelve a excluir su
 # contenido, y solo entonces muerde la negación del README. Medido, no supuesto.
-!.claude/skills/*/logs/
-.claude/skills/*/logs/*
-!.claude/skills/*/logs/README.md
+# Y `**` en vez de `*` porque `*` no cruza `/`: con un solo asterisco una skill agrupada
+# (`skills/grupo/alpha/`) quedaba fuera de la excepción siendo el mismo caso. Lo que NO
+# se rescata, y es la mitad que importa: la telemetría `.jsonl`, que lleva referencias
+# `W-XXXXXX` de asuntos reales (`docs/SEGURIDAD_DATOS.md`).
+!.claude/skills/**/logs/
+.claude/skills/**/logs/*
+!.claude/skills/**/logs/README.md
 
 # Salidas de depuración/sondeo (OCR, pytest, volcados de auditoría de correos).
 # Texto volcado que arrastra PII real — el residuo de correos/OCR del 2026-07-07
