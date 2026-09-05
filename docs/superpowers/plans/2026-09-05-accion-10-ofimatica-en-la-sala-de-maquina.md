@@ -2,12 +2,18 @@
 titulo: "Los `.doc` dejan de ser ilegibles: ruta `ofimatica` en la sala de máquina"
 fecha: 2026-09-05
 estado: implementado
-rev: "1"
+rev: "2"
 relacionado: "MEJORAS #61 · PLAN fila #21 acción 10 · [SIGUIENTE-DOC-LIBREOFFICE]"
 ---
 
 # Los `.doc` dejan de ser ilegibles: ruta `ofimatica` en la sala de máquina
 
+> **Rev. 2 (2026-09-05), tras la R1 adversarial de Codex sobre el diff (`NO-SHIP`, cinco
+> hallazgos, los cinco confirmados, remediados en el PR #294).** Lo que cambia: el preflight de
+> manifiestos y `reforzar` conocen la ruta (H-01/H-02); el buscable se decide en staging y se
+> publica después (H-03); la publicación se DECLARA en el censo de escrituras en vez de
+> esquivarlo (H-04); O7/O9 miden el lote y los comandos (H-05). Adjudicación en el **§4**.
+>
 > Plan corto de una pieza pequeña con un daño concreto: en W-02MA0R la demanda del juicio
 > ordinario existía solo como `ordinario_vuelta_comprador.doc` y la sala de máquina la
 > dejaba en `sin_soporte`, sin PDF, sin MD y sin decir por qué. Radio de daño: no decide
@@ -78,3 +84,40 @@ Docs tocados: `SKILL.md` de `organizar-sala-maquina` (rutas y aviso), CHANGELOG 
 (sin disparador); el texto que pypdf saca de un PDF de LibreOffice puede partir los
 diacríticos («cancio n») —es del extractor, no de la conversión— y la calidad lo marca como
 cualquier otro PDF.
+
+## 4. Adjudicación de la revisión adversarial (Codex, 2026-09-05) — NO-SHIP, remediado
+
+- **Objeto revisado:** el diff `80b4050..01e945d` (PR #294)
+- **Ronda:** 1 (diff) — la única por radio de daño
+- **Revisor:** Codex
+- **Informe recibido:** `docs/superpowers/specs/2026-09-05-accion-10-ofimatica-r1-adversarial-review.md`
+- **Hallazgos:** 5 — 1 ALTO, 4 MEDIOS; **5 confirmados, 0 refutados**
+- **Remediado en:** commit `d5e0f54` (PR #294); esta rev. 2 del plan
+
+**Independencia: plena** — revisor Codex (`gpt-6-astra`), adjudicador Claude Code. Cada hallazgo
+se contrastó contra la fuente; lo que reproduje está en el §2 del acta.
+
+| # | Sev. | Hallazgo (frontera, no ejemplo) | Veredicto | Remedio |
+|---|---|---|---|---|
+| H-01 | ALTO | `preflight_manifiestos` filtraba `("pdf","imagen")`: los bundles de un `.doc` eludían la validación de identidad/edición y una permutación de `pp` se publicaba sin aviso | ✅ confirmado (leído en `core/sala_maquina.py:660`) | `_RUTAS_CON_BUNDLE = ("pdf","imagen","ofimatica")`, una sola lista para «rutas que segmentan»; O11; mutante M9 muere |
+| H-02 | MEDIO | `_REFORZABLES = ("pypdf","ocr")`: un convertido `low` con PDF renderizable en `01_OCR/` no entraba en `reforzar` y, como `low` cuenta como procesado, la siguiente corrida lo saltaba | ✅ confirmado | `ofimatica` en `_REFORZABLES`; O12 llega a `ejecutar`; mutante M10 muere |
+| H-03 | MEDIO | Se publicaba en `01_OCR/` ANTES de decidir y se apartaba después: si apartar fallaba (lector con el fichero abierto), quedaba un PDF mudo publicado con la fila en `error` | ✅ confirmado (el revisor lo reprodujo con un handle real de Windows) | staging en temporal → decidir → publicar solo el buscable; O13; mutante M6 («convertir directo a 01_OCR») muere |
+| H-04 | MEDIO | El censo seguía en 88 porque el `mkdir`/`move` se había desplazado a un módulo fuera de `PRODUCTORES`: la igualdad no garantizaba nada | ✅ confirmado — **era mi decisión, y era la que la regla del trinquete prohíbe** | `core/ofimatica_a_pdf.py` entra en `PRODUCTORES`; techo 88 → 91 **declarado** con su condición de bajada; el §2 del plan lo cuenta tal cual |
+| H-05 | MEDIO | O7 medía dos `ejecutar` separados (un `return` tras el fallo sobrevivía); O9 llamaba al helper, no a los comandos (un `pass` en la llamada sobrevivía) | ✅ confirmado (reproduje los dos mutantes del revisor: 29/29 verdes) | O7 con `[fallido, correcto]` en un lote; O9 invoca `plan` y `apply` cableados y lee stderr; M11/M12/M13 mueren |
+
+**Lo que el revisor verificó y resultó correcto:** 159 tests focalizados verdes con `--runslow`
+(O10 corrió de verdad); el estado guarda el sha del `.doc`, no el del PDF; segunda corrida no
+reconvierte; `--force`/`--solo` sí; los bundles ofimáticos conservan `parent_sha256`; sin
+conversor → `sin_soporte` con causa y los intentos se gastan (declarado); `.docx`/`.rtf` en
+`nativo`; `texto_de_pdf`, `_ocr_y_extraer`, `_extraer_nativo` sin cambios por AST; nombres
+Unicode/espacios/`%23` convierten; sin huérfanos de LibreOffice tras timeout (medido).
+**Declarado sin verificar por el revisor:** suite completa (la corre el autor: 4.630 con
+`--runslow`, dos semillas, antes de la remediación; se repite tras ella), OCR real sobre un
+`.doc` con escaneos, todos los formatos de `EXTS_OFIMATICA` con fixtures reales, cp1252 en
+`stderr`, rutas UNC/ADS. **Observación sin remedio, anotada:** `scripts/detectar_ocr_ciego.py`
+exige fuente `.pdf` en `00_Input` y no cubre los convertidos (cribado histórico, fuera de
+alcance).
+
+**Cobertura de la remediación: sin segunda ronda** (regla de rondas: una por radio de daño); los
+contraejemplos del revisor —permutación, `low` excluido, handle bloqueado, los dos mutantes de
+tests— se reprodujeron contra el código remediado y cada uno tiene su test y su mutante muerto.
