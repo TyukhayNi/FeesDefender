@@ -18,7 +18,7 @@ metadata:
   naturaleza: atomica
   jurisdiction: ES
   area: [civil, procesal]
-  version: "1.5"
+  version: "1.6"
   author: "Nikolai Tyukhay"
   organization: "Tyukhay Legal"
   contact: "nikolai.tyukhay@tyukhay.legal"
@@ -112,7 +112,10 @@ buscable (entre el OCR y el MD), para que cada documento lógico tenga su propio
 1. **Preview.** Dispara `python -m scripts.sala_maquina plan "<case_id>"`.
    Muestra, sin escribir nada: cuántos documentos nuevos por ruta (`pdf` /
    `imagen` / `nativo` / `ofimatica` / `sin_soporte`) y cuántos se saltan por
-   `sha256` ya procesado. `ofimatica` son `.doc`, `.odt`, `.ppt`, `.pptx`…: se
+   `sha256` ya procesado. Una línea `duplicados: N` son copias byte-idénticas de
+   otro fichero del caso (el mismo PDF en dos carpetas de E&V): no se procesan ni
+   tienen espejo propio; en `_cobertura.md` salen con método `duplicado` y la nota
+   dice dónde está el espejo único. `ofimatica` son `.doc`, `.odt`, `.ppt`, `.pptx`…: se
    convierten a PDF con LibreOffice y siguen el camino PDF. Si el preview avisa
    «LibreOffice (soffice) no encontrado», esos documentos saldrán `sin_soporte`
    con la causa en la nota: instálalo (o fija `FEESDEFENDER_SOFFICE`) antes de

@@ -802,9 +802,15 @@ def plan(case_id: str = typer.Argument(None),
                 typer.echo(f"  adjuntos: {n_adj} (se extraerá su texto en apply)")
         typer.echo(f"Caso: {case_id}")
         for ruta in ("pdf", "imagen", "nativo", "ofimatica", "sin_soporte"):
-            n = sum(1 for d in nuevos if d.ruta == ruta)
+            n = sum(1 for d in nuevos if d.ruta == ruta and not d.duplicado_de)
             if n:
                 typer.echo(f"  {ruta}: {n}")
+        n_dup = sum(1 for d in nuevos if d.duplicado_de)
+        if n_dup:
+            # MEJORAS #147, vía A: se cuentan aparte porque no se procesan (ni OCR ni espejo);
+            # ocultarlos en el recuento por ruta haría prometer más trabajo del que `apply` hará.
+            typer.echo(f"  duplicados: {n_dup} (copia byte-idéntica de otro fichero del caso; "
+                       f"fila de custodia sin espejo propio)")
         _avisar_ofimatica_sin_conversor(nuevos)
 
         # Preview del cableado: `plan` NO atomiza (es preview), solo informa de lo que

@@ -172,6 +172,10 @@ class DocPlan:
     ruta: str            # pdf | imagen | nativo | ofimatica | sin_soporte
     slug: str            # output_slug (slug__sha8)
     skip: bool = False
+    #: `rel_path` del PRIMER fichero del inventario con el mismo `sha256` (MEJORAS #147, vía A):
+    #: este es una copia byte-idéntica en otra carpeta. Se le da fila de custodia propia pero
+    #: NO se procesa ni se le escribe espejo: el espejo único es el del primero.
+    duplicado_de: str = ""
 
 
 @dataclass
@@ -218,11 +222,19 @@ def plan(inventario: list[dict], estado_previo: set[str],
     tope podría introducir si nadie lo cuenta.
     """
     out: list[DocPlan] = []
+    primero_por_sha: dict[str, str] = {}
     for f in inventario:
         rel = f["rel_path"]
         if rel.startswith(_EXCLUIR_PREFIJOS):
             continue
         sha = f["sha256"]
+        # MEJORAS #147, vía A: el mismo fichero (mismos bytes) en dos carpetas del cliente
+        # —medido en W-02Q38C: `Certificado titularidad…` en `ARRAS/` y en `OFERTAS/…`—
+        # producía dos OCR y dos espejos, y contaba el mismo hecho dos veces en el corpus
+        # que lee el LLM. El primero del inventario (orden `sorted`, determinista) es el
+        # titular del espejo; los demás son procedencias que se anotan, no documentos.
+        duplicado_de = primero_por_sha.get(sha, "")
+        primero_por_sha.setdefault(sha, rel)
         out.append(DocPlan(
             rel_path=rel,
             sha256=sha,
@@ -230,6 +242,7 @@ def plan(inventario: list[dict], estado_previo: set[str],
             ruta=clasificar_ruta(f["ext"]),
             slug=output_slug(rel, sha),
             skip=sha in estado_previo or sha in agotados,
+            duplicado_de=duplicado_de,
         ))
     return out
 
@@ -1019,6 +1032,37 @@ def _ocr_y_extraer(case_dir: Path, sm_dir: Path, case_id: str, d: DocPlan,
     return filas
 
 
+#: Método de la fila de custodia de una copia byte-idéntica (MEJORAS #147, vía A). No es un
+#: método de extracción: dice «este fichero existe aquí y su espejo es el del titular».
+METODO_DUPLICADO = "duplicado"
+
+
+def _peor_estado(filas: list[DocCobertura]) -> str:
+    """El estado que hereda la copia: el PEOR de las filas del titular, para que la copia no
+    salga `ok` con un titular `empty` y se pierda de la worklist de `_cobertura.md`."""
+    orden = {"empty": 0, "sin_soporte": 1, "low": 2, "ok": 3}
+    return min((f.estado for f in filas), key=lambda e: orden.get(e, 0))
+
+
+def _fila_duplicado(d: DocPlan, filas_titular: list[DocCobertura]) -> DocCobertura:
+    """Fila de custodia de una copia byte-idéntica, y anota en el titular la procedencia.
+
+    La copia conserva su `rel_path` y su `sha256` (cadena de custodia: el fichero existe en
+    esa carpeta), hereda el estado del titular y NO tiene espejo propio: la nota dice dónde
+    está el único. El titular gana «también en <ruta>» para que quien lea `_cobertura.md`
+    sepa que el documento vive en N carpetas del cliente sin tener que buscarlo.
+    """
+    titular = filas_titular[0]
+    espejo = titular.parent_slug or titular.slug
+    _anotar(filas_titular, f"también en {d.rel_path} (mismo sha256)")
+    return DocCobertura(
+        d.slug, d.rel_path, METODO_DUPLICADO, _peor_estado(filas_titular), 0, False,
+        f"copia byte-idéntica de {d.duplicado_de}: espejo único en 03_MD/{espejo}"
+        + ("" if len(filas_titular) == 1 else f" ({len(filas_titular)} documentos lógicos)"),
+        d.sha256,
+    )
+
+
 def _ofimatica_y_extraer(case_dir: Path, sm_dir: Path, case_id: str, d: DocPlan,
                          src: Path, vision: bool, force: bool = False) -> list[DocCobertura]:
     """`.doc`/`.odt`/`.ppt`… → PDF con LibreOffice → el mismo camino que un PDF de Drive.
@@ -1191,6 +1235,16 @@ def ejecutar(case_dir: Path, docs: list[DocPlan], *, case_id: str,
     for d in docs:
         if d.skip:
             continue
+        if d.duplicado_de:
+            filas_titular = [c for c in cobertura if c.rel_path == d.duplicado_de]
+            if filas_titular:
+                cobertura.append(_fila_duplicado(d, filas_titular))
+                if on_documento is not None:
+                    on_documento(d, 0, cobertura[-1:])
+                continue
+            # El titular no dejó filas en esta corrida (no debería pasar: mismo sha ⇒ mismo
+            # skip). Antes que perder un documento, se procesa como uno más: nunca se
+            # colapsa contra algo que no existe.
         _n_antes = len(cobertura)
         _t0 = time.perf_counter()
         # spec §9: aislar el fallo por documento. Un error en uno (lock ~$ de
