@@ -6356,8 +6356,11 @@ apoyarse en el recuento de referencias del entrypoint.
 > `ResultadoApply` (objeto, no `str | None`) con `status_atomizacion` y `documentos_agotados`, y
 > `etapa_sala_maquina` (`scripts/abrir_caso.py`) levanta el pendiente **`ocr_documentos_agotados`**
 > con la cuenta y el reintento (`sala_maquina apply --force`, o `--solo <ruta>`), así que el evento
-> `apertura_v1_terminada` y `_apertura_v1.json` ya lo dicen. 35/35 mutantes muertos por su
-> frontera (F37/F38). Texto original conservado como histórico.
+> `apertura_v1_terminada` ya lo dice (clave `pendientes`). **Residuo declarado:** el marcador
+> `_apertura_v1.json` sigue registrando solo `estado` + `etapas` (`RondaV1` no tiene campo de
+> pendientes): de los «dos registros durables» del texto original, el cierre remedia **uno**; el
+> docstring de `ResultadoApply` afirma los dos y hereda el mismo error. 35/35 mutantes muertos por
+> su frontera (F37/F38). Texto original conservado como histórico.
 
 **Medido el 2026-09-03 en la corrida real de la Task 11 sobre W-02Q38C**, que es exactamente lo que
 una apertura de verdad enseña y una fixture no.

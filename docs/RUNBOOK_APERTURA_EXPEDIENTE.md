@@ -146,7 +146,8 @@ python -m scripts.abrir_caso --w-code W-XXXXXX --ciudad Barcelona --tipo-caso VU
 
 > **`[APER-58]` Modo V1 (`--modo v1`) — desde el 2026-09-03 es la SECUENCIA, no solo la puerta.**
 > Este bloque dijo durante diez días «hoy es una PUERTA, todavía no la secuencia» y que el
-> encadenado «llega con el Plan 5». El Plan 5 se cableó en los PRs #263–#266 (`67063f2`…`4d75e6e`);
+> encadenado «llega con el Plan 5». El Plan 5 se cableó en el PR #263 (`67063f2`); #264 y #265 cerraron la deuda que
+> declaró (`MEJORAS #142`, `#144`) y #266 es solo documentación;
 > lo que sigue describe lo que el modo hace **hoy**, leído de `scripts/abrir_caso.py` y
 > `core/apertura_v1.py`.
 >
@@ -156,8 +157,10 @@ python -m scripts.abrir_caso --w-code W-XXXXXX --ciudad Barcelona --tipo-caso VU
 > `force=True`**: en cada ronda se consulta el remoto y `rclone` transfiere solo lo que difiere; el
 > `.pulled` no ahorra la consulta. (2) `crm` hace el pull del expediente **ya registrado en
 > `_caso.md`** (`sudespacho_expedientes`); si no hay ninguno la etapa sale `saltada` con el
-> pendiente `crm_sin_expediente` (el alta CRM es de V2), y si el registrado es **judicial** la etapa
-> **falla**: V1 no tiene adaptador judicial. (3) `sala_maquina` = `scripts.sala_maquina.apply`,
+> pendiente `crm_sin_expediente` (el alta CRM es de V2). La etapa **falla** —y con ella no corre
+> el OCR— si el registrado es **judicial** (V1 no tiene adaptador judicial), si el vínculo no declara
+> `element` o lo declara fuera de `extrajudiciales|expedientes_judiciales`, o si el pull devuelve
+> errores: **un documento del gestor que no baja bloquea la ronda**; re-correr. (3) `sala_maquina` = `scripts.sala_maquina.apply`,
 > que lleva **dentro** la atomización del correo ya depositado y después el OCR + espejos MD; por
 > eso el gotcha «atomizar y pull ANTES del OCR» se cumple por construcción.
 >
@@ -176,8 +179,8 @@ python -m scripts.abrir_caso --w-code W-XXXXXX --ciudad Barcelona --tipo-caso VU
 > avisa «la ronda … no llegó a cerrarse» y no da por buena su salida. Si se perdió el mutex durante
 > la corrida **no se escribe nada**, ni siquiera un `bloqueado`: revisar el caso antes de reintentar.
 >
-> **Comando de apertura en V1** (`--codigo-caso`, `--sufijo` y `--team-id` se auto-derivan de
-> `--folder-id`, como en `libre` — B5, `[APER-34]`; `--yes` porque la colisión del código `BaRS<N>`
+> **Comando de apertura en V1** (`--codigo-caso` y `--team-id` se auto-derivan de `--folder-id`, y
+> `--sufijo` de `--tipo-caso`, como en `libre` — B5, `[APER-34]`; `--yes` porque la colisión del código `BaRS<N>`
 > es la norma y `--force` está prohibido sin `--case-id`):
 >
 > ```powershell
@@ -187,7 +190,8 @@ python -m scripts.abrir_caso --w-code W-XXXXXX --ciudad Barcelona --tipo-caso VU
 >
 > **Comando de continuación** (reanudar tras un corte, o segunda ronda tras depositar más
 > material): se relanza con **`--case-id`**, que es excluyente con los seis flags de identidad
-> (con ellos daría `ColisionCaso`); `--folder-id` sigue siendo obligatorio en V1 y de él se deriva
+> (relanzar con los seis flags **en lugar de** `--case-id` daría `ColisionCaso`, porque en V1
+> `--force` está prohibido); `--folder-id` sigue siendo obligatorio en V1 y de él se deriva
 > `--team-id`. Para **parar** tras una etapa, `--hasta drive|crm|sala_maquina`:
 >
 > ```powershell
@@ -198,8 +202,11 @@ python -m scripts.abrir_caso --w-code W-XXXXXX --ciudad Barcelona --tipo-caso VU
 > Relanzar **repite la secuencia entera desde `drive`**: el código no lee `_apertura_v1.json` para
 > saltar etapas. Lo ya hecho no se rehace porque cada etapa es idempotente (el pull transfiere solo
 > lo que difiere; la sala de máquina salta lo ya procesado — punto fijo medido en W-02Q38C:
-> `0 depositables, 38 duplicados omitidos`), no porque se salte. `--hasta` solo existe en `v1`: en
-> `libre` aborta.
+> `0 depositables, 38 duplicados omitidos`), no porque se salte. **Ojo: la ayuda del propio flag `--hasta` dice que al reanudar «las
+> etapas ya hechas se saltan solas»; es falsa contra el código, que las repite.** Se corrige
+> el literal en la entrega de la política de alta compartida (spec
+> `2026-09-05-alta-ui-politica-compartida-design.md`); hasta entonces, cree a este runbook y
+> no al `--help`. `--hasta` solo existe en `v1`: en `libre` aborta.
 >
 > **La puerta sigue igual.** `--modo v1` rechaza, antes de resolver identidad, de `ensure_case`, de
 > todo intake y de toda lectura remota, las cinco invocaciones que V1 prohíbe (`validar_modo`) —
