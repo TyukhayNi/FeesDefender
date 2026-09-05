@@ -151,12 +151,14 @@ Código: este directorio (`C:\Users\tnm33\Dev\FeesDefender`), versionado en Git 
   mergear (cubre todas las máquinas y Cowork). El auto-push `post-commit` ya no existe.
   Instalar en cada clon/worktree: `pre-commit install && pre-commit install --hook-type pre-push`.
 - `90_Notas personales/` en cada caso es zona del abogado — ningún módulo
-  del core la lee ni la escribe. **Y por eso es el único sitio seguro para una nota a
-  mano: NO se escriben notas en `_caso.md`.** Los registradores no *mutan* ese fichero,
-  lo **reconstruyen** con `_write_case_index` —el constructor del alta—, así que el
-  cuerpo escrito a mano se pierde **sin aviso y sin necesidad de carrera**. Medido el
-  2026-08-26 y **reproducido por resultado el 2026-09-04**. Vigente hasta que cierre
-  `MEJORAS #146`.
+  del core la lee ni la escribe. **Sigue siendo el sitio preferente para una nota a
+  mano.** Hasta el 2026-09-05 era además el *único* seguro: los registradores
+  **reconstruían** `_caso.md` con `_write_case_index` y el cuerpo escrito a mano se perdía
+  sin aviso (medido el 2026-08-26, reproducido el 2026-09-04). Desde el cierre de
+  `MEJORAS #146` el sumidero **actualiza conservando** lo que no es suyo —cuerpo, claves
+  ajenas, wikilinks—, y solo reescribe la línea de estado, la de IDs de Drive E&V y la
+  sección `## Expedientes sudespacho` (marcada como generada). Una nota **dentro** de esos
+  tres fragmentos sí se pierde; fuera, no.
 - Los prompts nunca inventan jurisprudencia. Solo citan lo que está en contexto.
 - Pipeline idempotente: re-ejecutar nunca toca `00_Input/` ni `90_Notas personales/`.
 - `core/anon/` — cero pérdida de lógica del Anonimizador original. No tocar

@@ -6483,6 +6483,17 @@ en paralelo sería casi con seguridad esto.
 
 ## 146. Escribir una nota a mano en `_caso.md` la destruye en el siguiente pull
 
+> ✅ **CERRADO 2026-09-05.** `_write_case_index` distingue crear de actualizar y, al actualizar,
+> **conserva** el cuerpo, las claves top-level ajenas (`bucket_override`), las claves de `meta`
+> que el modelo no conoce (`proyeccion_local`), los wikilinks de `registrar_outputs` y el estado
+> D8 de `update_pull_state` en `sudespacho_expedientes` (fusión por entrada); reescribe **solo**
+> la línea de estado, la de IDs de Drive E&V y la sección `## Expedientes sudespacho`, y escribe
+> atómicamente en las dos ramas. Diseño rev. 2 con la adjudicación de la R1 (revisor sustituto,
+> 10/10 confirmados) en `docs/superpowers/specs/2026-09-05-caso-md-preservar-al-actualizar-design.md`;
+> acta `…-r1-adversarial-review.md`; 16 mutantes en `tests/test_caso_md_preservar_al_actualizar.py`.
+> La regla de `CLAUDE.md` y `[APER-54]` pasan a «preferente», no «único sitio seguro». Lo que la
+> pieza NO cubre —escritores que no pasan por el sumidero— está en el §6 del diseño y en `#167`.
+
 **Reproducido por resultado el 2026-09-04.** Sonda: `_caso.md` con una nota del abogado en el
 cuerpo → una llamada a `_write_case_index` → la nota ya no está y el fichero se ha reescrito
 entero. No es lectura de código: es la salida de la sonda.
@@ -7350,4 +7361,33 @@ el nombre que ya se conoce del `From:` o de la ficha del CRM, que es un dato que
 tiene a mano en el CLI aunque no dentro de `core/email_firmas.py`).
 
 ---
+
+---
+
+## 167. `case_locator._update_ciudad_metadata` escribe `_caso.md` en sitio y reordena el frontmatter
+
+**Levantado por la R1 adversarial del diseño de `MEJORAS #146` (H-08, 2026-09-05), al censar
+todos los escritores de `_caso.md`.** Es el único escritor de producción que ni pasa por
+`_write_case_index` ni por `_atomic_write_caso_md`.
+
+**Qué pasa.** `core/casos/case_locator.py::_update_ciudad_metadata` parte el fichero con
+`text.split("---", 2)`, hace `yaml.dump(fm, allow_unicode=True, default_flow_style=False)` **sin
+`sort_keys=False`** —el default de PyYAML ordena alfabéticamente— y escribe con `write_text` en
+sitio. Consecuencias, por lectura de código (sin sonda): (1) cada reasignación de ciudad
+**reordena** todas las claves del frontmatter, así que el `diff` del `_caso.md` tras un
+`move_to_city` es el fichero entero y no la línea `ciudad`; (2) un corte a mitad deja el índice
+truncado, el mismo agujero que `#146` acaba de cerrar en el sumidero; (3) el cuerpo se conserva,
+así que no destruye la nota.
+
+**Remedio.** Que `_update_ciudad_metadata` use `_atomic_write_caso_md` con un mutador que toque
+`fm["ciudad"]` y `fm["meta"]["ciudad"]`, que es exactamente lo que ya hace `ensure_case` sobre un
+caso existente. Su mutante: reasignar la ciudad de un caso con `bucket_override` y una nota, y
+exigir que el orden de claves y la nota no cambien y que no quede temporal.
+
+**Por qué no entra en `#146`.** `move_to_city` es otra pieza con otro radio de daño —mueve el
+expediente entero— y tiene su propia entrada abierta (`#155`); tocarla de paso sería remediar
+fuera del alcance revisado.
+
+**Disparador de promoción.** La primera reasignación de ciudad sobre un caso con edición manual
+del frontmatter, o el cierre de `#155`.
 
