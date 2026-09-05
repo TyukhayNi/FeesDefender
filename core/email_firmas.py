@@ -176,6 +176,16 @@ def localizar_bloques(texto: str, *, fichero: str = "") -> list[BloqueFirma]:
     `>` en cada linea), que es justo uno de los dos escenarios que motivan el modulo
     entero (ver docstring de cabecera).
 
+    Las lineas se cuentan con `split("\\n")`, NO con `splitlines()` (H-06, R1):
+    `splitlines()` trata como salto de linea un conjunto MAS AMPLIO de caracteres
+    (entre otros, U+2028/U+2029), y `zonas_citadas` -- que `atribuir` cruza con
+    `linea` para decidir la procedencia -- cuenta con `split("\\n")`. Si aqui se
+    contara distinto, un texto con uno de esos separadores desalinearia los dos
+    recuentos y `atribuir` consultaria la citacion de una linea que no es. Usar la
+    misma convencion en los dos sitios es lo que mantiene el cruce alineado; ver
+    tambien el docstring de `desmarcar`, cuya garantia esta medida con este mismo
+    instrumento.
+
     Un mismo correo puede dar varios bloques para la misma persona (la plantilla de
     Barcelona repite la direccion al final); `consolidar` los une.
 
@@ -184,27 +194,56 @@ def localizar_bloques(texto: str, *, fichero: str = "") -> list[BloqueFirma]:
     no firma nada, solo aparece porque el cliente de correo cita al autor del
     mensaje anterior -- y su ventana, mirando hacia atras, puede cubrir la firma de
     OTRA persona real. Ver `_es_cabecera_de_cita`.
+
+    **Cada bloque se acota por SU PROPIA firma, no por la del vecino** (H-01,
+    CRITICO, R1): con dos firmas seguidas y sin separacion de sobra, la ventana
+    fija (`_VENTANA_ATRAS`/`_VENTANA_ADELANTE`) de una persona alcanzaba los campos
+    de la persona de al lado -- hacia atras (la firma de abajo arrastraba el movil
+    de la de arriba) y hacia delante (un marcador `-- ` que viene DESPUES del ancla
+    no limitaba nada, asi que una simple mencion de una direccion arrastraba la
+    firma de quien viniera detras). La propiedad: los bloques se calculan en DOS
+    pasadas. La primera fija el INICIO de cada uno con el criterio de siempre
+    (marcador anterior, ventana fija) ACOTADO ADEMAS por donde termina el bloque
+    anterior. La segunda fija el FIN de cada uno con el criterio de siempre
+    (marcador posterior, ventana fija) ACOTADO ADEMAS por donde EMPIEZA el
+    siguiente bloque (su propio `inicio`, no solo la linea de su ancla): asi
+    ningun bloque puede leer ni un campo que ya pertenece al de al lado, y los
+    bloques nunca se solapan.
     """
     texto = desmarcar(texto)
-    lineas = texto.splitlines()
+    lineas = texto.split("\n")
     marcadores = [i for i, ln in enumerate(lineas) if _RE_MARCADOR.match(ln)]
+    anclas = [i for i, ln in enumerate(lineas)
+             if _RE_EMAIL_COLAB.search(ln) and not _es_cabecera_de_cita(lineas, i)]
 
-    bloques: list[BloqueFirma] = []
-    for i, linea in enumerate(lineas):
-        m_ancla = _RE_EMAIL_COLAB.search(linea)
-        if not m_ancla:
-            continue
-        if _es_cabecera_de_cita(lineas, i):
-            continue
-
-        # El marcador mas cercano por encima aprieta el limite superior; si no hay,
-        # se usa una ventana fija. Sin limite se arrastraria el correo entero.
-        # El candidato del marcador es la linea DESPUES de el (H-04): la propia linea
-        # del marcador ("-- ") no es parte de la firma.
+    # Primera pasada: el INICIO de cada bloque. Igual que siempre (marcador
+    # anterior mas cercano, o ventana fija hacia atras), acotado ademas por donde
+    # termina el bloque anterior -- para que la ventana de este nunca alcance un
+    # campo que es del anterior.
+    inicios: list[int] = []
+    for pos, i in enumerate(anclas):
         previos = [m for m in marcadores if m < i]
         candidato_marcador = previos[-1] + 1 if previos else 0
-        inicio = max(candidato_marcador, i - _VENTANA_ATRAS)
-        fin = min(len(lineas), i + 1 + _VENTANA_ADELANTE)
+        limite_bloque_anterior = anclas[pos - 1] + 1 if pos > 0 else 0
+        inicios.append(max(candidato_marcador, i - _VENTANA_ATRAS, limite_bloque_anterior))
+
+    bloques: list[BloqueFirma] = []
+    for pos, i in enumerate(anclas):
+        m_ancla = _RE_EMAIL_COLAB.search(lineas[i])
+        inicio = inicios[pos]
+
+        # El marcador mas cercano por DEBAJO aprieta el limite inferior, en espejo
+        # del que aprieta el superior: sin esto, un marcador que viene DESPUES del
+        # ancla (p.ej. una mencion de paso justo antes de un "-- " real de otra
+        # persona) no limitaba nada y la ventana arrastraba la firma siguiente.
+        siguientes = [m for m in marcadores if m > i]
+        candidato_marcador_fin = siguientes[0] if siguientes else len(lineas)
+        # Y el bloque siguiente empieza donde su PROPIO `inicio` (ya acotado)
+        # dice, no en la linea cruda de su ancla: eso es lo que impide que este
+        # bloque alcance a leer un campo que ya quedo dentro del bloque de al
+        # lado (H-01).
+        limite_bloque_siguiente = inicios[pos + 1] if pos + 1 < len(anclas) else len(lineas)
+        fin = min(candidato_marcador_fin, i + 1 + _VENTANA_ADELANTE, limite_bloque_siguiente)
         cuerpo = "\n".join(lineas[inicio:fin])
 
         if not _RE_CORROBORA.search(cuerpo):
@@ -217,8 +256,14 @@ def localizar_bloques(texto: str, *, fichero: str = "") -> list[BloqueFirma]:
         # forma de distinguir cual de las dos era la que disparo ESTE bloque.
         # `atribuir` ya no re-deriva el email; lo toma de aqui (Task 6, hallazgo
         # espejo del 2026-09-04).
+        #
+        # `linea` es la del ANCLA (`i`), NO la del inicio de la ventana (H-06,
+        # R1): `atribuir` la usa para decidir la procedencia, y la linea que
+        # identifica de quien es la firma es la del ancla -- la ventana puede
+        # empezar varias lineas por encima, en prosa que no esta citada aunque
+        # el ancla si lo este (o al reves).
         bloques.append(BloqueFirma(
-            texto=cuerpo, email=m_ancla.group(0).lower(), linea=inicio + 1, fichero=fichero,
+            texto=cuerpo, email=m_ancla.group(0).lower(), linea=i + 1, fichero=fichero,
         ))
     return bloques
 
@@ -235,14 +280,24 @@ def zonas_citadas(texto: str) -> list[tuple[int, int]]:
 
     Cuenta las lineas con `split("\\n")`, NO con `splitlines()`: es la misma convencion
     con la que `desmarcar` tiene medida y documentada su garantia de conservar el
-    indice de linea (ver su docstring). `localizar_bloques` calcula `linea` con
-    `texto.splitlines()` sobre el texto DESMARCADO, pero la diferencia entre los dos
-    metodos de contar es solo el segmento vacio final cuando el texto termina en salto
-    de linea -- un indice que ninguna linea de firma real puede ocupar (una cadena
-    vacia nunca corrobora ni contiene un email). Para toda linea de contenido real el
-    indice es identico en `split("\\n")` y en `splitlines()`, asi que usar `split("\\n")`
-    aqui mantiene el cruce alineado con el `linea` de un bloque sin heredar el
-    desajuste que `splitlines()` introduciria justo en ese ultimo segmento.
+    indice de linea (ver su docstring). `localizar_bloques` calcula `linea` sobre
+    `texto.split("\\n")` del texto DESMARCADO -- la MISMA convencion, no una
+    parecida.
+
+    **Ojo, esto NO es "solo difieren en el segmento vacio final"** (H-06, R1: la
+    version anterior de este comentario lo afirmaba, y es falso). `splitlines()`
+    trata como salto de linea un conjunto de caracteres MAS AMPLIO que `split("\\n")`
+    -- entre otros, el separador de linea Unicode U+2028 y el separador de parrafo
+    U+2029 -- asi que un texto que contenga alguno de esos dos metodos de contar
+    lineas puede DIFERIR en TODA la numeracion a partir de ahi, no solo en el
+    ultimo segmento. Medido: la cadena `"a\\u2028b\\u2028c\\u2028d\\u2028e\\n--\\n"
+    "> ENGEL&VOLKERS\\n> Móvil: 611111111\\n> ana@engelvoelkers.com"` da 5 lineas
+    con `split("\\n")` (lo que cuenta esta funcion) y 9 con `splitlines()` (lo que
+    contaba antes `localizar_bloques`): el indice del ancla quedaba fuera del rango
+    que esta funcion conocia, y la firma salia `directo` aunque estuviera citada.
+    La garantia que SI es cierta -- y la que de verdad importa aqui -- es que
+    `localizar_bloques` cuenta con esta MISMA funcion (`split("\\n")`), asi que los
+    indices de las dos siempre se refieren a la misma linea.
     """
     zonas: list[tuple[int, int]] = []
     inicio: int | None = None
@@ -440,7 +495,15 @@ _RE_TELEFONO_VALIDO = re.compile(r"^(?:\d{9}|\+\d+)$")
 
 @dataclass(frozen=True)
 class DatosFirma:
-    """Lo que dice UN bloque de firma. Los campos vacios NO afirman ausencia."""
+    """Lo que dice UN bloque de firma. Los campos vacios NO afirman ausencia.
+
+    `campos_en_conflicto` (H-04, R1): nombres de campo ("movil"/"telefono") para
+    los que ESTE MISMO bloque trae dos o mas valores validos y DISTINTOS -- p.ej.
+    dos lineas `Móvil:` con numeros distintos en una sola firma. No hay
+    informacion para elegir entre ellos: eso es incertidumbre, no un dato, y
+    `consolidar` lo traduce al `VEREDICTO_CONFLICTO` que ya existe (nunca se
+    inventa un veredicto nuevo). Vacio en el caso normal (cero o un valor).
+    """
     email: str
     movil: str = ""
     telefono: str = ""
@@ -448,6 +511,7 @@ class DatosFirma:
     procedencia: str = PROCEDENCIA_DIRECTO
     fichero: str = ""
     linea: int = 0
+    campos_en_conflicto: frozenset[str] = frozenset()
 
 
 def limpiar_telefono(valor: str) -> str:
@@ -517,19 +581,60 @@ def _cargo_de(lineas: list[str]) -> str:
     return ""
 
 
+def _valores_de_campo(patron: re.Pattern[str], texto: str) -> tuple[str, bool]:
+    """Todos los valores VALIDOS de un campo (movil o fijo) dentro de `texto`.
+
+    Hallazgo espejo H-04/H-07 (R1): `.search()` solo devuelve la PRIMERA
+    coincidencia del patron, y eso es insuficiente por dos motivos distintos que
+    comparten la misma cura:
+
+    - **H-04**: si un bloque trae DOS lineas del mismo campo con valores
+      DISTINTOS ("Móvil: 611111111" y "Móvil: 622222222"), la primera se
+      quedaba con el partido antes de que `consolidar` pudiera enterarse de que
+      habia una segunda. No hay forma de elegir entre dos igual de validos: eso
+      es incertidumbre, y se declara (ver `campos_en_conflicto` de `DatosFirma`).
+    - **H-07**: `_RE_FIJO` tambien casa con una etiqueta compuesta como "Teléfono
+      móvil:" (por su alternativa `tel[ée]fono`) y captura un valor que
+      `limpiar_telefono` RECHAZA ("móvil: 611111111" no es un telefono). Con
+      `.search()`, ahi se acababa la busqueda -- la linea `Telf:` real que
+      viniera despues nunca se llegaba a mirar. Recorrer TODAS las coincidencias
+      y quedarse con la primera VALIDA (no la primera a secas) hace que un match
+      invalido no tape uno valido que viene detras.
+
+    Devuelve `(valor, en_conflicto)`: sin ningun valor valido, `("", False)`; con
+    uno o mas repetidos del MISMO valor, `(ese valor, False)`; con dos o mas
+    valores validos y DISTINTOS, `("", True)`.
+    """
+    vistos: list[str] = []
+    for m in patron.finditer(texto):
+        limpio = limpiar_telefono(m.group(1))
+        if limpio and limpio not in vistos:
+            vistos.append(limpio)
+    if not vistos:
+        return "", False
+    if len(vistos) == 1:
+        return vistos[0], False
+    return "", True
+
+
 def leer_campos(bloque: BloqueFirma) -> DatosFirma:
     """Los campos de UN bloque ya atribuido. No decide veredictos: eso es `consolidar`."""
     lineas = bloque.texto.splitlines()
-    m_movil = _RE_MOVIL.search(bloque.texto)
-    m_fijo = _RE_FIJO.search(bloque.texto)
+    movil, conflicto_movil = _valores_de_campo(_RE_MOVIL, bloque.texto)
+    telefono, conflicto_telefono = _valores_de_campo(_RE_FIJO, bloque.texto)
+    conflictos = frozenset(
+        campo for campo, en_conflicto in
+        (("movil", conflicto_movil), ("telefono", conflicto_telefono)) if en_conflicto
+    )
     return DatosFirma(
         email=bloque.email,
-        movil=limpiar_telefono(m_movil.group(1)) if m_movil else "",
-        telefono=limpiar_telefono(m_fijo.group(1)) if m_fijo else "",
+        movil=movil,
+        telefono=telefono,
         cargo=_cargo_de(lineas),
         procedencia=bloque.procedencia,
         fichero=bloque.fichero,
         linea=bloque.linea,
+        campos_en_conflicto=conflictos,
     )
 
 
@@ -601,6 +706,13 @@ def consolidar(firmas: Iterable[DatosFirma]) -> dict[str, Consolidado]:
 
     El orden de `firmas` es significativo: el llamador las pasa del .eml mas antiguo al
     mas reciente, y `_elegir` se queda con el ultimo cuando nada mas los separa.
+
+    **Un conflicto DENTRO de un bloque manda sobre lo que `_elegir` decidiria**
+    (H-04, R1): si algun `DatosFirma` del grupo trae el campo en su propio
+    `campos_en_conflicto` (dos valores distintos en la MISMA firma, ya detectado
+    por `leer_campos`), el campo se fuerza a `VEREDICTO_CONFLICTO` con valor
+    vacio, sin importar lo que otros bloques del grupo digan: la incertidumbre
+    de un bloque no se diluye porque otro bloque distinto este seguro.
     """
     por_email: dict[str, list[DatosFirma]] = {}
     for f in firmas:
@@ -613,6 +725,10 @@ def consolidar(firmas: Iterable[DatosFirma]) -> dict[str, Consolidado]:
         movil, v_movil = _elegir([(f.movil, f.procedencia) for f in grupo if f.movil])
         tel, v_tel = _elegir([(f.telefono, f.procedencia) for f in grupo if f.telefono])
         cargo, v_cargo = _elegir([(f.cargo, f.procedencia) for f in grupo if f.cargo])
+        if any("movil" in f.campos_en_conflicto for f in grupo):
+            movil, v_movil = "", VEREDICTO_CONFLICTO
+        if any("telefono" in f.campos_en_conflicto for f in grupo):
+            tel, v_tel = "", VEREDICTO_CONFLICTO
         salida[email] = Consolidado(
             email=email, movil=movil, telefono=tel, cargo=cargo,
             veredicto_movil=v_movil, veredicto_telefono=v_tel, veredicto_cargo=v_cargo,

@@ -420,6 +420,77 @@ class TestElBloqueConservaSuEmailAncla:
             assert any(b.email == email for b in bloques), f"falta el bloque de {email}"
 
 
+class TestLaVentanaNoCruzaOtraFirma:
+    """H-01 CRITICO (revision R1): con el defecto vivo, dos firmas seguidas
+    comparten el mismo movil -- el de la PRIMERA -- porque la ventana de la
+    SEGUNDA mira hacia atras y arrastra el campo de la primera antes de que el
+    ancla de la segunda decida nada; y una mencion de paso justo delante de un
+    marcador arrastra hacia delante el movil de la firma que viene detras. La
+    propiedad contratada: la ventana de un bloque no cruza otra direccion
+    corporativa, ni hacia atras ni hacia delante -- ni un marcador de firma, en
+    ninguna de las dos direcciones."""
+
+    def test_dos_firmas_seguidas_cada_una_con_su_propio_movil(self):
+        """Entrada literal del informe (H-01, repros.json clave 'vecinas'). Con el
+        defecto vivo, ambos consolidados salian con movil='611111111' (el de Ana)."""
+        cuerpo = (
+            "ENGEL&VOLKERS\n"
+            "*Ana*\n"
+            "Móvil: 611111111\n"
+            "ana@engelvoelkers.com\n"
+            "\n"
+            "ENGEL&VOLKERS\n"
+            "*Berta*\n"
+            "Móvil: 622222222\n"
+            "berta@engelvoelkers.com\n"
+        )
+        bloques, sin_atribuir = extraer_bloques(cuerpo, fichero="h01.eml")
+        cons = consolidar(leer_campos(b) for b in bloques)
+
+        assert sin_atribuir == 0
+        assert cons["ana@engelvoelkers.com"].movil == "611111111"
+        assert cons["berta@engelvoelkers.com"].movil == "622222222", (
+            "con el defecto vivo, Berta sale con el movil de Ana")
+        assert cons["berta@engelvoelkers.com"].veredicto_movil == VEREDICTO_ENCONTRADO
+
+    def test_un_marcador_POSTERIOR_al_ancla_tambien_limita_fin(self):
+        """Entrada literal del informe (H-01, repros.json clave 'marcador_despues'):
+        el marcador aprieta tambien el limite de quien viene ANTES de el en el
+        texto, no solo el de quien viene despues. Con el defecto vivo, la mera
+        mencion "Escribe a berta@..." producia una firma de Berta con el movil de
+        Ana, porque `fin` no se limitaba al marcador `-- ` que viene DESPUES del
+        ancla de Berta."""
+        cuerpo = (
+            "Escribe a berta@engelvoelkers.com\n"
+            "-- \n"
+            "ENGEL&VOLKERS\n"
+            "Móvil: 611111111\n"
+            "ana@engelvoelkers.com\n"
+        )
+        bloques, _ = extraer_bloques(cuerpo, fichero="h01b.eml")
+        cons = consolidar(leer_campos(b) for b in bloques)
+
+        assert "berta@engelvoelkers.com" not in cons, (
+            "una mencion de paso, sin firma propia, no puede colar un consolidado "
+            "con el movil de otra persona")
+        assert cons["ana@engelvoelkers.com"].movil == "611111111"
+
+    def test_el_bloque_bogus_de_una_mencion_no_lleva_el_movil_del_vecino(self):
+        """La forma directa (antes de consolidar): ningun BLOQUE atribuido a la
+        mencion de Berta puede llevar el movil de Ana."""
+        cuerpo = (
+            "Escribe a berta@engelvoelkers.com\n"
+            "-- \n"
+            "ENGEL&VOLKERS\n"
+            "Móvil: 611111111\n"
+            "ana@engelvoelkers.com\n"
+        )
+        bloques, _ = extraer_bloques(cuerpo, fichero="h01c.eml")
+        de_berta = [leer_campos(b) for b in bloques if b.email == "berta@engelvoelkers.com"]
+        for d in de_berta:
+            assert d.movil != "611111111"
+
+
 class TestLaCabeceraDeCitaNoAnclaBloque:
     """Defecto medido en el mismo correo real de W-02Q38C (2026-09-05, Task 12): la
     linea con la que un cliente de correo introduce el mensaje citado --
@@ -578,6 +649,61 @@ class TestElCruceDeLineasSeAlinea:
 
         assert sin_atribuir == 0
         assert atribuidos[0].procedencia == PROCEDENCIA_CITADO
+
+
+class TestLaProcedenciaSeDecidePorLaLineaDelAncla:
+    """H-06 MEDIO (revision R1): la procedencia se decidia mirando la linea de
+    INICIO de la ventana, no la del ANCLA que identifica la firma. Una firma
+    entera citada podia salir 'directo' porque la ventana, sin marcador que la
+    apriete, empieza en la prosa de ARRIBA (que no esta citada), aunque el ancla
+    (la ultima linea, con el email) si lo este."""
+
+    def test_una_firma_entera_citada_sin_salto_final_sale_CITADA(self):
+        """Entrada literal del informe (H-06, repros.json clave 'cita_corta'): sin
+        marcador, la ventana fija alcanza 'Conforme.' (linea 0, no citada), pero el
+        ancla -- la ultima linea, con el email -- si esta dentro de la cita."""
+        cuerpo = "Conforme.\n\n> ENGEL&VOLKERS\n> Móvil: 611111111\n> ana@engelvoelkers.com"
+        bloques, _ = extraer_bloques(cuerpo, fichero="h06.eml")
+
+        assert len(bloques) == 1
+        assert bloques[0].procedencia == PROCEDENCIA_CITADO
+
+    def test_la_citada_pierde_frente_a_una_directa_independiente_del_mismo_dato(self):
+        """Con el defecto vivo, el bloque citado salia 'directo' y competia de tu a
+        tu con la firma directa real de Ana, produciendo CONFLICTO donde deberia
+        ganar limpiamente el valor directo."""
+        citada = "Conforme.\n\n> ENGEL&VOLKERS\n> Móvil: 611111111\n> ana@engelvoelkers.com\n"
+        directa = "ENGEL&VOLKERS\nMóvil: 622222222\nana@engelvoelkers.com\n"
+        bloques_c, _ = extraer_bloques(citada, fichero="h06_c.eml")
+        bloques_d, _ = extraer_bloques(directa, fichero="h06_d.eml")
+        firmas = [leer_campos(b) for b in bloques_c] + [leer_campos(b) for b in bloques_d]
+        cons = consolidar(firmas)
+
+        c = cons["ana@engelvoelkers.com"]
+        assert c.movil == "622222222", (
+            "el directo tiene que ganar; si sale vacio, la citada se coló como directa")
+        assert c.veredicto_movil == VEREDICTO_ENCONTRADO
+
+    def test_con_CRLF_tambien_sale_citada(self):
+        """El informe midio que el mismo fallo se reproduce con CRLF."""
+        cuerpo = "Conforme.\r\n\r\n> ENGEL&VOLKERS\r\n> Móvil: 611111111\r\n> ana@engelvoelkers.com"
+        bloques, _ = extraer_bloques(cuerpo, fichero="h06_crlf.eml")
+
+        assert len(bloques) == 1
+        assert bloques[0].procedencia == PROCEDENCIA_CITADO
+
+    def test_indice_unicode_aislado_U2028_no_desalinea_la_procedencia(self):
+        """Entrada literal del informe (H-06, repros.json clave
+        'indice_unicode_aislado'): con el defecto vivo, `zonas_citadas` cuenta con
+        `split('\\n')` (5 lineas) y `localizar_bloques` contaba con `splitlines()`,
+        que trata U+2028 como salto de linea (9 "lineas"); el indice del ancla
+        quedaba fuera del rango que `zonas_citadas` conocia y la firma salia
+        'directo' aunque estuviera citada."""
+        cuerpo = "a b c d e\n--\n> ENGEL&VOLKERS\n> Móvil: 611111111\n> ana@engelvoelkers.com"
+        bloques, _ = extraer_bloques(cuerpo, fichero="h06_u2028.eml")
+
+        assert len(bloques) == 1
+        assert bloques[0].procedencia == PROCEDENCIA_CITADO
 
 
 class TestElInvarianteQueRETIRO_UN_VEREDICTO:
@@ -891,6 +1017,32 @@ class TestLaEtiquetaCompuestaTelefonoMovilEsMovil:
         assert d.movil == "", f"{etiqueta!r} no puede rellenar tambien el movil"
 
 
+class TestUnaEtiquetaCompuestaInvalidaNoOcultaElFijoDeMasAbajo:
+    """H-07 MEDIO (revision R1): `_RE_FIJO.search()` TAMBIEN casa con "Teléfono
+    móvil:" (por la alternativa `tel[ée]fono`) y captura un valor ("móvil:
+    611111111") que `limpiar_telefono` rechaza -- y con `.search()` (solo la
+    PRIMERA coincidencia) ahi se acababa la busqueda: la linea `Telf:` de mas
+    abajo, que SI trae el fijo real, nunca se llegaba a mirar. El resultado
+    medido: `telefono=''` y `FIRMA_SIN_CAMPO`, afirmando una ausencia que la
+    firma no tiene."""
+
+    def test_la_etiqueta_compuesta_invalida_no_tapa_el_Telf_de_mas_abajo(self):
+        """Entrada literal del informe (H-07, repros.json clave
+        'fijo_despues_compuesta')."""
+        cuerpo = (
+            "ENGEL&VOLKERS\n"
+            "Teléfono móvil: 611111111\n"
+            "Telf: 931111111\n"
+            "ana@engelvoelkers.com\n"
+        )
+        bloques, _ = extraer_bloques(cuerpo, fichero="h07.eml")
+        d = leer_campos(bloques[0])
+
+        assert d.movil == "611111111", "la etiqueta compuesta sigue siendo movil"
+        assert d.telefono == "931111111", (
+            "con el defecto vivo, esto salia '' con veredicto FIRMA_SIN_CAMPO")
+
+
 class TestLasEtiquetasCortasDeLaPlantillaRealSeReconocen:
     """Defecto medido en un correo real del corpus de W-02Q38C (2026-09-05, Task 12):
     la firma trae `Tel:` (sin punto, sin "fono") y `Mob:` (sin "ile", sin "vil") --
@@ -1040,6 +1192,60 @@ class TestElConflictoFALLA_CERRADO:
         c = consolidar([_f(movil="612345678", fichero="a.eml", linea=3),
                         _f(movil="600000000", fichero="b.eml", linea=5)])["ana@engelvoelkers.com"]
         assert "a.eml:3" in c.fuentes and "b.eml:5" in c.fuentes
+
+
+class TestDosValoresDelMismoCampoDentroDeUnaFirmaEsConflicto:
+    """H-04 ALTO (revision R1): dos lineas `Móvil:` distintas EN LA MISMA firma no
+    tienen forma de elegir una -- eso es incertidumbre, no un dato. Con el defecto
+    vivo, `.search()` se quedaba con la PRIMERA y `consolidar` jamas se enteraba de
+    que habia una segunda: `leer_campos` ya habia colapsado el campo antes de que
+    `_elegir` pudiera comparar nada."""
+
+    def test_dos_moviles_distintos_en_una_firma_son_CONFLICTO(self):
+        """Entrada literal del informe (H-04, repros.json clave 'dos_moviles')."""
+        cuerpo = (
+            "ENGEL&VOLKERS\n"
+            "Móvil: 611111111\n"
+            "Móvil: 622222222\n"
+            "ana@engelvoelkers.com\n"
+        )
+        bloques, _ = extraer_bloques(cuerpo, fichero="h04.eml")
+        cons = consolidar(leer_campos(b) for b in bloques)
+
+        c = cons["ana@engelvoelkers.com"]
+        assert c.movil == "", "un valor elegido a ciegas entre dos acaba en el CRM"
+        assert c.veredicto_movil == VEREDICTO_CONFLICTO
+
+    def test_dos_moviles_IGUALES_en_una_firma_NO_son_conflicto(self):
+        """La plantilla de Barcelona repite el movil (negrita + texto plano en
+        algunos clientes); dos ocurrencias del MISMO valor no son incertidumbre."""
+        cuerpo = (
+            "ENGEL&VOLKERS\n"
+            "Móvil: 611111111\n"
+            "Móvil: 611111111\n"
+            "ana@engelvoelkers.com\n"
+        )
+        bloques, _ = extraer_bloques(cuerpo, fichero="h04b.eml")
+        cons = consolidar(leer_campos(b) for b in bloques)
+
+        c = cons["ana@engelvoelkers.com"]
+        assert c.movil == "611111111"
+        assert c.veredicto_movil == VEREDICTO_ENCONTRADO
+
+    def test_dos_fijos_distintos_en_una_firma_tambien_son_CONFLICTO(self):
+        """La misma propiedad para el otro campo de telefono."""
+        cuerpo = (
+            "ENGEL&VOLKERS\n"
+            "Telf: 931111111\n"
+            "Telf: 931112233\n"
+            "ana@engelvoelkers.com\n"
+        )
+        bloques, _ = extraer_bloques(cuerpo, fichero="h04c.eml")
+        cons = consolidar(leer_campos(b) for b in bloques)
+
+        c = cons["ana@engelvoelkers.com"]
+        assert c.telefono == ""
+        assert c.veredicto_telefono == VEREDICTO_CONFLICTO
 
 
 class TestElConflictoDeCargoEsPorContenidoNoPorFormato:
