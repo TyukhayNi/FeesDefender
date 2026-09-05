@@ -12,6 +12,9 @@ import argparse
 import sys
 
 from core.email_atomize import pipeline as P
+from scripts._mutex_cli import (
+    AVISO_FUERA_DE_CASO, CasoOcupado, MutexPerdidoEnCli, sostener, w_code_de, w_code_de_ruta,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -23,38 +26,59 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.ref:
-        report = P.atomize_case(args.ref)
-        out_dir = P.emails_out_dir(args.ref)
+        # MEJORAS #126: `w_code_de` resuelve la referencia ANTES de leer `_caso.md` (un W-code
+        # no es nombre de carpeta: R1/H-03).
+        w, aviso = w_code_de(args.ref), None
     elif args.src and args.out:
-        report = P.atomize_dir(args.src, args.out)
-        out_dir = args.out
+        # `--src/--out` NO significa «sin caso» (R1/H-04): el destino documentado es
+        # `<caso>/01_Procesado/Emails`. Si cae bajo un caso del catálogo, su mutex.
+        w, aviso = w_code_de_ruta(args.out), AVISO_FUERA_DE_CASO
     else:
         parser.error("usa --ref, o --src junto con --out")
         return 2
 
-    if not report.publicado:
-        # No se ha escrito NADA (rama transitoria, spec §4.3): un resumen en ceros por
-        # stdout + la nota solo en stderr es indistinguible de un caso sin correo. Y
-        # sellar una entrega aquí llamaría `sellar_entrega` -> `mkdir(parents=True)`,
-        # creando el árbol que el motor acaba de negarse a crear (o sellando uno viejo
-        # como si fuera de esta corrida). Se imprime en stdout, se salta `--entrega` y
-        # se devuelve 1 para que cualquier cosa que lea el exit code no lea éxito.
-        print("ATOMIZACIÓN NO PUBLICADA: no se ha escrito nada en esta corrida.")
-        for n in report.notas:
-            print(f"  NOTA: {n}")
-        for e in report.errores:
-            print(f"  ERROR: {e}", file=sys.stderr)
-        return 1
+    def _avisar(msg: str) -> None:
+        print(msg, file=sys.stderr)
 
-    print(report.resumen())
-    for n in report.notas:
-        print(f"  NOTA: {n}", file=sys.stderr)
-    for e in report.errores:
-        print(f"  ERROR: {e}", file=sys.stderr)
-    if args.entrega:
-        dest = P.sellar_entrega(out_dir, args.entrega)
-        print(f"Entrega sellada en: {dest}")
-    return 0
+    try:
+        # El bloque cubre el motor Y el sello: las dos escrituras de este CLI.
+        with sostener(w, avisar=_avisar, que="la atomización de correo", aviso_sin_w_code=aviso):
+            if args.ref:
+                report = P.atomize_case(args.ref)
+                out_dir = P.emails_out_dir(args.ref)
+            else:
+                report = P.atomize_dir(args.src, args.out)
+                out_dir = args.out
+
+            if not report.publicado:
+                # No se ha escrito NADA (rama transitoria, spec §4.3): un resumen en ceros por
+                # stdout + la nota solo en stderr es indistinguible de un caso sin correo. Y
+                # sellar una entrega aquí llamaría `sellar_entrega` -> `mkdir(parents=True)`,
+                # creando el árbol que el motor acaba de negarse a crear (o sellando uno viejo
+                # como si fuera de esta corrida). Se imprime en stdout, se salta `--entrega` y
+                # se devuelve 1 para que cualquier cosa que lea el exit code no lea éxito.
+                print("ATOMIZACIÓN NO PUBLICADA: no se ha escrito nada en esta corrida.")
+                for n in report.notas:
+                    print(f"  NOTA: {n}")
+                for e in report.errores:
+                    print(f"  ERROR: {e}", file=sys.stderr)
+                return 1
+
+            print(report.resumen())
+            for n in report.notas:
+                print(f"  NOTA: {n}", file=sys.stderr)
+            for e in report.errores:
+                print(f"  ERROR: {e}", file=sys.stderr)
+            if args.entrega:
+                dest = P.sellar_entrega(out_dir, args.entrega)
+                print(f"Entrega sellada en: {dest}")
+            return 0
+    except CasoOcupado as exc:
+        print(f"[ERROR] {exc}", file=sys.stderr)
+        return 2
+    except MutexPerdidoEnCli as exc:
+        print(f"[ERROR] {exc} Artefactos: 01_Procesado/Emails/ de este caso.", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

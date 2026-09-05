@@ -29,12 +29,14 @@ El pull es **idempotente por hash** (manifiesto M9), así que no hay `--force` n
 
 from __future__ import annotations
 
+import contextlib
 import json
 
 import typer
 
 from core.utils import read_md
 from core import case_manager
+from scripts._mutex_cli import AVISO_ALTA, CasoOcupado, MutexPerdidoEnCli, sostener, w_code_de
 from core.judicial_intake import intake_demanda_contestacion
 from core.sudespacho_relations import verify_expediente_referencia
 from core.sync_sudespacho import (
@@ -156,7 +158,35 @@ def pull(
     Idempotente por hash (manifiesto M9): re-llamarlo salta lo que ya está, así que no
     hay `--force` ni `--incremental`. Si el caso tiene estructura v1
     (`00_Input/sudespacho_*/`) el pull se bloquea y explica la migración.
+
+    Corre bajo el mutex del caso desde ANTES de `ensure_case` (MEJORAS #126). Si el caso no
+    existe todavía, este comando lo crea y NO hay identidad que sostener: se avisa y se sigue
+    (la vía canónica de alta es `abrir_caso`, que sí lo sostiene).
     """
+    with _mutex_o_exit(case, que="el pull del CRM", artefactos="00_Input/05_CRM/ de este caso"):
+        _pull(case, expediente, element, titulo, referencia, cliente, contraparte)
+
+
+@contextlib.contextmanager
+def _mutex_o_exit(case: str, *, que: str, artefactos: str):
+    """`sostener` + la traducción a códigos de salida de este CLI: ocupado → 2 y cero bytes;
+    perdido → 2 con qué revisar. Un caso que aún no existe es un alta sin identidad (aviso)."""
+    from core.casos.case_locator import buscar
+    w = w_code_de(case)
+    aviso = AVISO_ALTA if buscar(case) is None else None
+    try:
+        with sostener(w, avisar=lambda m: typer.echo(m, err=True), que=que,
+                      aviso_sin_w_code=aviso):
+            yield
+    except CasoOcupado as exc:
+        typer.echo(f"[ERROR] {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+    except MutexPerdidoEnCli as exc:
+        typer.echo(f"[ERROR] {exc} Artefactos: {artefactos}.", err=True)
+        raise typer.Exit(code=2) from exc
+
+
+def _pull(case, expediente, element, titulo, referencia, cliente, contraparte) -> None:
     case_manager.ensure_case(
         case,
         titulo=titulo or f"Expediente sudespacho {expediente}",
@@ -243,7 +273,15 @@ def intake_judicial(
     Con ``--full`` descarga el expediente COMPLETO (todo el gestor documental),
     dejando ``05_CRM`` físicamente completo; la clasificación se usa solo como
     etiquetado y los roles ambiguos se avisan sin bloquear la descarga.
+
+    Corre bajo el mutex del caso desde ANTES de `ensure_case` (MEJORAS #126); un caso que aún
+    no existe es un alta sin identidad: aviso y sigue.
     """
+    with _mutex_o_exit(case, que="el intake judicial", artefactos="00_Input/05_CRM/ de este caso"):
+        _intake_judicial(case, expediente, element, referencia, full)
+
+
+def _intake_judicial(case, expediente, element, referencia, full) -> None:
     case_manager.ensure_case(
         case,
         titulo=f"Expediente judicial sudespacho {expediente}",
@@ -321,6 +359,8 @@ def sync_all() -> None:
     total_new = 0
     errors_global: list[str] = []
     bloqueados: list[str] = []
+    bloqueados_por_mutex: list[str] = []     # MEJORAS #126: el caso que otro proceso tiene
+    mutex_perdido: list[str] = []            # el lease se perdió a mitad de ese caso
     tocados: list[str] = []
 
     for case_id in casos:
@@ -343,38 +383,36 @@ def sync_all() -> None:
             continue
 
         typer.echo(f"\n📂 {case_id}")
-        for exp in expedientes:
-            exp_id = str(exp.get("id", ""))
-            elem = exp.get("element", "expedientes_judiciales")
-            if not exp_id:
-                continue
-
-            try:
-                result = pull_expediente_v2(case_id, exp_id, element=elem)
-            except (SudespachoError, SudespachoLegacyError) as exc:
-                msg = f"  ❌ {exp_id}: {exc}"
-                typer.echo(msg)
-                errors_global.append(f"{case_id}/{exp_id}: {exc}")
-                continue
-
-            if result.blocked_legacy_v1:
-                typer.echo(f"  ⛔ {elem} {exp_id}: caso con estructura v1 — nada descargado")
-                if case_id not in bloqueados:
-                    bloqueados.append(case_id)
-                continue
-
-            new = result.documents_written
-            total_new += new
-            status = f"+{new} docs" if new else "sin cambios"
-            icon = "🆕" if new else "✓"
-            typer.echo(f"  {icon} {elem} {exp_id}: {status}")
-            if new and case_id not in tocados:
-                tocados.append(case_id)
-            if result.errors:
-                for e in result.errors:
-                    typer.echo(f"     ⚠️  {e}")
+        # MEJORAS #126: el mutex se sostiene POR CASO, envolviendo todos sus expedientes.
+        # Ocupado → se salta el caso y se resume; perdido a mitad → se anota y el barrido
+        # sigue con los demás (una pérdida afecta a un caso, no al barrido).
+        try:
+            with sostener(w_code_de(case_id), avisar=lambda m: typer.echo(m, err=True),
+                          que=f"el pull de {case_id}"):
+                _sync_caso(case_id, expedientes, errors_global, bloqueados, tocados)
+        except CasoOcupado as exc:
+            typer.echo(f"  ⏭ caso ocupado por otro proceso, se salta: {exc}", err=True)
+            bloqueados_por_mutex.append(case_id)
+            continue
+        except MutexPerdidoEnCli as exc:
+            typer.echo(f"  ⚠ {exc}", err=True)
+            mutex_perdido.append(case_id)
+            continue
+        total_new += _NUEVOS.pop(case_id, 0)
 
     typer.echo(f"\n✅ Sync completado — {total_new} doc(s) nuevos en {len(casos)} caso(s)")
+    if bloqueados_por_mutex:
+        typer.echo(
+            f"⏭ {len(bloqueados_por_mutex)} caso(s) saltado(s) porque otro proceso de esta "
+            "máquina los tenía tomados (MEJORAS #126); repite el sync cuando termine:")
+        for c in bloqueados_por_mutex:
+            typer.echo(f"   {c}")
+    if mutex_perdido:
+        typer.echo(
+            f"⚠ {len(mutex_perdido)} caso(s) cuyo mutex se perdió A MITAD del pull: revisa "
+            "00_Input/05_CRM/ de cada uno antes de fiarte.")
+        for c in mutex_perdido:
+            typer.echo(f"   {c}")
     if bloqueados:
         typer.echo(
             f"⛔ {len(bloqueados)} caso(s) con estructura v1 de intake "
@@ -391,6 +429,48 @@ def sync_all() -> None:
         typer.echo("\n▶ Siguiente paso — este comando descarga, NO procesa. Por cada caso:")
         for c in tocados:
             typer.echo(f'    python -m scripts.sala_maquina apply "{c}"')
+    if mutex_perdido:
+        raise typer.Exit(code=2)
+
+
+#: Documentos nuevos por caso en la corrida de `sync_all`; lo rellena `_sync_caso` y lo
+#: consume el bucle. Estado de una corrida, en memoria: no es una escritura de protocolo.
+_NUEVOS: dict[str, int] = {}
+
+
+def _sync_caso(case_id: str, expedientes: list, errors_global: list[str],
+               bloqueados: list[str], tocados: list[str]) -> None:
+    """Los pulls de TODOS los expedientes de un caso, bajo un mismo mutex (MEJORAS #126)."""
+    for exp in expedientes:
+        exp_id = str(exp.get("id", ""))
+        elem = exp.get("element", "expedientes_judiciales")
+        if not exp_id:
+            continue
+
+        try:
+            result = pull_expediente_v2(case_id, exp_id, element=elem)
+        except (SudespachoError, SudespachoLegacyError) as exc:
+            msg = f"  ❌ {exp_id}: {exc}"
+            typer.echo(msg)
+            errors_global.append(f"{case_id}/{exp_id}: {exc}")
+            continue
+
+        if result.blocked_legacy_v1:
+            typer.echo(f"  ⛔ {elem} {exp_id}: caso con estructura v1 — nada descargado")
+            if case_id not in bloqueados:
+                bloqueados.append(case_id)
+            continue
+
+        new = result.documents_written
+        _NUEVOS[case_id] = _NUEVOS.get(case_id, 0) + new
+        status = f"+{new} docs" if new else "sin cambios"
+        icon = "🆕" if new else "✓"
+        typer.echo(f"  {icon} {elem} {exp_id}: {status}")
+        if new and case_id not in tocados:
+            tocados.append(case_id)
+        if result.errors:
+            for e in result.errors:
+                typer.echo(f"     ⚠️  {e}")
 
 
 if __name__ == "__main__":

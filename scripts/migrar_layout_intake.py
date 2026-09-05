@@ -75,9 +75,10 @@ class ColisionConProtocoloError(RuntimeError):
     ``--dry-run``. Renombrar el documento es decisión del operador."""
 
 
-class CasoOcupadoError(RuntimeError):
-    """Otro proceso de esta máquina sostiene el mutex del caso: la migración no arranca y no
-    escribe un byte (R2/H-01). Es el mismo abort limpio que `sala_maquina`."""
+# El alias histórico de esta CLI apunta a la excepción única del helper (MEJORAS #126).
+from scripts._mutex_cli import CasoOcupado as CasoOcupadoError  # noqa: E402
+from scripts._mutex_cli import sostener as _sostener_cli  # noqa: E402
+from scripts._mutex_cli import w_code_de as _w_code_de  # noqa: E402
 
 
 class EstadoDeCanalDivergenteError(RuntimeError):
@@ -154,41 +155,16 @@ def _colisiones_con_protocolo(plan: list[migrar_layout.MovimientoCajon]) -> list
     ]
 
 
-def _w_code_de(case_id: str) -> str | None:
-    """`meta.id_go` del `_caso.md`, o None si el caso no declara W-code."""
-    from core.utils import read_md
-    try:
-        fm, _ = read_md(caso_path(case_id) / "00_Input" / "_caso.md")
-    except (OSError, ValueError):
-        return None
-    meta = fm.get("meta") if isinstance(fm, dict) else None
-    w = (meta or {}).get("id_go") if isinstance(meta, dict) else None
-    return str(w).strip() or None if w else None
-
-
 @contextlib.contextmanager
 def _bajo_mutex(case_id: str, *, avisos: list[str] | None = None):
-    """Sostiene el mutex del caso durante las fases 1 y 2 (R2/H-01). Sin W-code no hay
-    mutex, y se DICE (el trinquete E2 de `tests/test_entrypoints_mutex.py`): cerrar en
-    falso una vía que hoy funciona le rompe el día al equipo. `CaseBusy` → abort limpio
-    antes de mover nada."""
-    from core.casos import mutex_sesion
-    from core.casos.workspace_model import CaseBusy, CaseRef
-    from core.utils import now_iso_utc   # con offset: la primitiva rechaza un instante naïve
-
-    w = _w_code_de(case_id)
-    if not w:
-        msg = ("[aviso] este caso no declara W-code, así que la migración NO va bajo el mutex: "
-               "otro proceso de esta máquina podría estar escribiendo el mismo expediente")
+    """Sostiene el mutex del caso durante las fases 1 y 2 (R2/H-01 de MEJORAS #149). Delegado
+    en `scripts/_mutex_cli.sostener` (MEJORAS #126): un solo sitio adquiere desde los CLI. Sin
+    W-code no hay mutex y se DICE (trinquete E2); ocupado → `CasoOcupadoError` antes de mover."""
+    def _avisar(msg: str) -> None:
         if avisos is not None:
             avisos.append(msg)
-        yield None
-        return
-    try:
-        with mutex_sesion.sostenido(CaseRef(w_code=w), ahora_fn=now_iso_utc) as sesion:
-            yield sesion
-    except CaseBusy as exc:
-        raise CasoOcupadoError(str(exc)) from exc
+    with _sostener_cli(_w_code_de(case_id), avisar=_avisar, que="la migración de layout") as s:
+        yield s
 
 
 def migrar(case_id: str, *, dry_run: bool,
