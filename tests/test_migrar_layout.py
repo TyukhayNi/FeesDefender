@@ -466,3 +466,115 @@ def test_t6_el_homonimo_anidado_va_al_lote_y_entra_en_el_mapping_m9(tmp_casos_ro
     # y el albarán del lote lo lista como documento
     from core.intake_lotes import leer_manifiesto
     assert any(i["relpath"] == "hilo/_exported_ids.json" for i in leer_manifiesto(lote)["items"])
+
+
+# ── R2 de MEJORAS #149 sobre el diff: H-01 (mutex) y H-02 (colisión con protocolo) ──────────
+
+def test_r2_h02_un_documento_que_aterrizaria_en_ubicacion_de_protocolo_aborta_el_plan(tmp_casos_root):
+    """`04_Manual/_manifiesto.yaml` es un DOCUMENTO (por ubicación); movido a
+    `<lote>/_manifiesto.yaml` pasaría a ser protocolo y `escribir_manifiesto` lo sobrescribiría
+    con el albarán. El revisor lo reprodujo en base y en head: la prueba desaparecía sin
+    concurrencia ni fallo de disco. Ahora el plan aborta, también en --dry-run, sin mover nada."""
+    import pytest
+
+    from scripts.migrar_layout_intake import ColisionConProtocoloError, migrar
+
+    base = _caso_legacy_email(tmp_casos_root, "EV-149-H02", ficheros={
+        "04_Manual/_manifiesto.yaml": b"prueba original del cliente",
+        "04_Manual/doc.pdf": b"m",
+    })
+    antes = _arbol(base)
+    for dry in (True, False):
+        with pytest.raises(ColisionConProtocoloError) as exc:
+            migrar("EV-149-H02", dry_run=dry)
+        assert "04_Manual/_manifiesto.yaml" in str(exc.value)
+        assert _arbol(base) == antes
+    assert (base / "04_Manual" / "_manifiesto.yaml").read_bytes() == b"prueba original del cliente"
+
+
+def test_r2_h02_el_homonimo_anidado_no_colisiona(tmp_casos_root):
+    """`04_Manual/sub/_manifiesto.yaml` aterriza en `<lote>/sub/_manifiesto.yaml`, que NO es
+    ubicación de protocolo: migra y conserva sus bytes."""
+    from scripts.migrar_layout_intake import migrar
+
+    base = _caso_legacy_email(tmp_casos_root, "EV-149-H02b", ficheros={
+        "04_Manual/sub/_manifiesto.yaml": b"anidado del cliente",
+    })
+    plan = migrar("EV-149-H02b", dry_run=False)
+    lote = base / plan[0].lote
+    assert (lote / "sub" / "_manifiesto.yaml").read_bytes() == b"anidado del cliente"
+    assert (lote / "_manifiesto.yaml").is_file()   # el albarán, en la raíz del lote
+
+
+def _caso_con_w_code(tmp_casos_root, case_id, w):
+    from core import case_manager, config
+    case_manager.ensure_case(case_id, titulo="mig-mutex", id_go=w)
+    base = config.caso_path(case_id) / "00_Input"
+    (base / "04_Manual").mkdir(parents=True, exist_ok=True)
+    (base / "04_Manual" / "doc.pdf").write_bytes(b"m")
+    return base
+
+
+def test_r2_h01_la_migracion_no_arranca_si_otro_proceso_tiene_el_caso(tmp_casos_root):
+    """La relectura antes del `unlink()` reduce la ventana de H-01 pero no la cierra: leer,
+    comparar y borrar son tres operaciones. Lo que la cierra es el mutex del caso, que la
+    migración adquiere. Con el lock en manos de otro proceso: abort limpio y cero bytes."""
+    import pytest
+
+    from core.casos import case_mutex, mutex_sesion
+    from core.utils import now_iso_utc
+    from scripts.migrar_layout_intake import CasoOcupadoError, migrar
+
+    with mutex_sesion._CANDADO:
+        mutex_sesion._SESIONES.clear()
+    W = "W-MIG001"
+    base = _caso_con_w_code(tmp_casos_root, "Ba001 - Calle Falsa 3 - (W-MIG001) - honorarios", W)
+    antes = _arbol(base)
+    case_mutex.adquirir(W, ahora=now_iso_utc())      # otro proceso tiene el caso
+    try:
+        with pytest.raises(CasoOcupadoError):
+            migrar("Ba001 - Calle Falsa 3 - (W-MIG001) - honorarios", dry_run=False)
+    finally:
+        with mutex_sesion._CANDADO:
+            mutex_sesion._SESIONES.clear()
+    assert _arbol(base) == antes                     # ni un byte
+
+
+def test_r2_h01_la_migracion_sostiene_y_suelta_el_mutex(tmp_casos_root):
+    from core.casos import mutex_sesion
+    from core.casos.workspace_model import CaseRef
+    from scripts import migrar_layout_intake as mli
+
+    with mutex_sesion._CANDADO:
+        mutex_sesion._SESIONES.clear()
+    W = "W-MIG002"
+    cid = "Ba002 - Calle Falsa 4 - (W-MIG002) - honorarios"
+    base = _caso_con_w_code(tmp_casos_root, cid, W)
+    visto = {}
+    original = mli.intake_lotes.escribir_manifiesto
+
+    def espia(*a, **k):                              # corre en fase 2: ¿estamos bajo el mutex?
+        visto["sesion"] = mutex_sesion.vigente(CaseRef(w_code=W))
+        return original(*a, **k)
+
+    mli.intake_lotes.escribir_manifiesto = espia
+    try:
+        informe = {}
+        plan = mli.migrar(cid, dry_run=False, informe=informe)
+    finally:
+        mli.intake_lotes.escribir_manifiesto = original
+    assert plan and visto["sesion"] is not None          # bajo el mutex durante la fase 2
+    assert mutex_sesion.vigente(CaseRef(w_code=W)) is None   # y suelto al terminar
+    assert informe["avisos"] == []
+    assert (base / plan[0].lote / "doc.pdf").is_file()
+
+
+def test_r2_h01_sin_w_code_avisa_y_sigue(tmp_casos_root):
+    """Trinquete E2: sin identidad no hay mutex, y se declara en vez de abortar."""
+    from scripts.migrar_layout_intake import migrar
+
+    base = _caso_legacy_email(tmp_casos_root, "EV-149-SINW", ficheros={"04_Manual/doc.pdf": b"m"})
+    informe = {}
+    plan = migrar("EV-149-SINW", dry_run=False, informe=informe)
+    assert plan and any("NO va bajo el mutex" in a for a in informe["avisos"])
+    assert (base / plan[0].lote / "doc.pdf").is_file()

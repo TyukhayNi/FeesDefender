@@ -128,7 +128,14 @@ class TestQueEsDocumentalYQueEsControl:
         assert es_fichero_de_control("_CASO.MD")
 
     @pytest.mark.parametrize("rel", ["sub/_caso.md", "sub\\_ficha_crm.yaml",
-                                     "2026-09-05_email_01/adjuntos/_ficha_crm.yaml"])
+                                     "2026-09-05_email_01/adjuntos/_ficha_crm.yaml",
+                                     # R2/H-04: los cinco nombres «de fuera de 00_Input» que el
+                                     # diff conservaba por basename escondian adjuntos homonimos
+                                     "2026-09-05_email_01/adjuntos/_cobertura.json",
+                                     "2026-09-05_email_01/adjuntos/_cobertura.md",
+                                     "2026-09-05_email_01/adjuntos/_sala_maquina_state.json",
+                                     "2026-09-05_email_01/adjuntos/_registro.json",
+                                     "2026-09-05_email_01/adjuntos/_tiempos.jsonl"])
     def test_t13_el_homonimo_fuera_de_su_sitio_es_documental_y_si_esta_ilegible_cuenta(self, rel):
         """MEJORAS #149 (rev. 2 §3.3, H-08): un adjunto llamado como un fichero de protocolo
         NO es de control; si esta ilegible cuenta como ilegible. Antes se saltaba, y un

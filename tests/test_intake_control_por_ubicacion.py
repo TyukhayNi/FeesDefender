@@ -109,9 +109,11 @@ def test_t11_separador_windows_equivale_al_posix():
     assert es_fichero_de_protocolo("./_caso.md") is True
 
 
-def test_nombre_sin_distinguir_mayusculas_directorio_si():
+def test_nombre_y_directorio_sin_distinguir_mayusculas():
+    """La rev. 2 decía «el directorio, tal como lo escribe el repo». La R2 (H-03) lo refutó
+    con el escritor real en Windows: la identidad que cuenta es la física."""
     assert es_fichero_de_protocolo("_CASO.MD") is True          # mismo fichero en Windows
-    assert es_fichero_de_protocolo("01_drive ev/.pulled") is False  # el repo lo escribe así
+    assert es_fichero_de_protocolo("01_drive ev/.pulled") is True   # misma carpeta en Windows
 
 
 # ── T12: directorios derivados enteros ─────────────────────────────────────────────────────
@@ -304,4 +306,60 @@ def test_t7_un_fallo_entre_el_temporal_y_el_replace_no_deja_documento(tmp_casos_
     # y un huérfano que sí quedara en disco, con el prefijo real de cada escritor:
     for pre in RAIZ_PREFIJOS:
         (inp / f"{pre}4242.tmp").write_text("", encoding="utf-8")
+    assert sala_maquina.inventariar(case_dir) == []
+
+
+# ── R2 de MEJORAS #149 sobre el diff: H-03 (caja del directorio) y H-05 (temporal real) ───────
+
+def test_r2_h03_el_directorio_tampoco_distingue_mayusculas():
+    """La rev. 2 comparaba el directorio tal como lo escribe el repo. En Windows, si existe
+    `01_drive ev/`, el escritor que pide `01_Drive EV/.pulled` escribe DENTRO de aquélla y
+    `rglob` devuelve la caja almacenada: el marcador recién escrito pasaba por documento."""
+    assert es_fichero_de_protocolo("01_drive ev/.pulled") is True
+    assert es_fichero_de_protocolo("03_email/_exported_ids.json") is True
+    assert es_fichero_de_protocolo("01_DRIVE EV/_ORGANIZADO/copia.pdf") is True
+    assert es_fichero_de_protocolo("2026-09-05_EMAIL_01/_manifiesto.yaml") is False  # PATRON_LOTE es literal: ese lote no lo escribe nadie
+
+
+def test_r2_h03_el_marcador_del_pull_en_carpeta_preexistente_con_otra_caja_no_es_documento(tmp_casos_root):
+    """Reproducción del revisor con el escritor REAL: se precrea `01_drive ev/` y el pull
+    escribe su marcador pidiendo `01_Drive EV/.pulled`. En Windows es la misma carpeta."""
+    from core import intake_drive, sala_maquina
+
+    case_dir, inp = _caso("EV-149-H03")
+    (inp / "01_drive ev").mkdir()
+    marker = inp / "01_Drive EV" / intake_drive._PULL_MARKER
+    marker.parent.mkdir(exist_ok=True)               # en Windows resuelve a `01_drive ev/`
+    marker.write_text("{}", encoding="utf-8")
+    fisicos = sorted(p.relative_to(inp).as_posix() for p in inp.rglob("*") if p.is_file()
+                     and p.name == intake_drive._PULL_MARKER)
+    assert fisicos, "el marcador no se escribió"
+    assert sala_maquina.inventariar(case_dir) == []
+
+
+def test_r2_h05_una_descarga_interrumpida_no_deja_su_temporal(tmp_casos_root, monkeypatch):
+    """`sync_sudespacho.pull_expediente` escribe `sudespacho_<id>.tmp` en el destino y lo
+    renombra al terminar. Solo lo limpiaba ante `SudespachoError`; un `OSError`, un Ctrl-C o
+    un kill a mitad lo dejaban en `00_Input/sudespacho_<n>/<carpeta>/` y el parcial —escrito
+    por el repo, no por el cliente— entraba en el inventario probatorio."""
+    from core import case_manager, sala_maquina, sync_sudespacho
+    from core.sync_sudespacho import GdocuDocInfo, SudespachoClient, SudespachoConfig
+
+    case_dir = case_manager.ensure_case("EV-149-H05")
+    doc = GdocuDocInfo(doc_id="17", filename="Demanda.pdf", id_carpeta="306",
+                       id_carpeta_label="civil", mime="application/pdf", size=3, raw={})
+    monkeypatch.setattr(SudespachoClient, "list_gdocu_docs_rest", lambda self, exp_id, **kw: [doc])
+
+    def descarga_que_muere(self, doc_id, exp_id, target_path, **kw):
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        target_path.write_bytes(b"par")               # bytes parciales…
+        raise OSError("conexión cortada a mitad (inyectado)")   # …y muere sin SudespachoError
+
+    monkeypatch.setattr(SudespachoClient, "download_document_rest", descarga_que_muere)
+    monkeypatch.setattr(SudespachoConfig, "from_env",
+                        classmethod(lambda cls: SudespachoConfig(base_url="https://x", api_key="k")))
+    with pytest.raises(OSError):
+        sync_sudespacho.pull_expediente("EV-149-H05", "648")
+    temporales = [p for p in (case_dir / "00_Input").rglob("*.tmp")]
+    assert temporales == []
     assert sala_maquina.inventariar(case_dir) == []

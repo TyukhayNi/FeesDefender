@@ -51,15 +51,20 @@ RAIZ_PREFIJOS: tuple[str, ...] = (
 
 #: Protocolo a profundidad 2, SOLO en el directorio que su escritor usa (R1/H-04): un
 #: `_manifiesto.yaml` en `CarpetaRara/` es un documento de fuente manual.
+#: Los directorios se casan SIN distinguir mayúsculas (R2/H-03): el disco del despacho es
+#: Windows, y si existe `01_drive ev/` el escritor que pide `01_Drive EV/.pulled` escribe
+#: DENTRO de aquélla; `rglob` devuelve después la caja almacenada, y con una comparación
+#: exacta el marcador que el repo acaba de escribir pasaba por documento. La identidad que
+#: importa es la física, no la textual.
 ENTREGA: tuple[tuple[re.Pattern[str], str], ...] = (
     (PATRON_LOTE, "_manifiesto.yaml"),                     # intake_lotes.escribir_manifiesto
-    (re.compile(r"^01_Drive EV$"), ".pulled"),             # intake_drive
-    (re.compile(r"^sudespacho_\d+$"), ".pulled"),          # sync_sudespacho.pull_expediente (legacy)
-    (re.compile(r"^drive$"), ".synced"),                   # core/sync (pipeline legacy)
+    (re.compile(r"^01_Drive EV$", re.IGNORECASE), ".pulled"),      # intake_drive
+    (re.compile(r"^sudespacho_\d+$", re.IGNORECASE), ".pulled"),   # sync_sudespacho.pull_expediente (legacy)
+    (re.compile(r"^drive$", re.IGNORECASE), ".synced"),            # core/sync (pipeline legacy)
     # Estado de canal en su hogar LEGACY (R1/H-02): `email_export` sigue leyéndolo de aquí
     # como fallback en los casos no migrados, y la migración no tiene disparador automático.
-    (re.compile(r"^03_Email$"), "_exported_ids.json"),
-    (re.compile(r"^03_Email$"), "_resolved_links.json"),
+    (re.compile(r"^03_Email$", re.IGNORECASE), "_exported_ids.json"),
+    (re.compile(r"^03_Email$", re.IGNORECASE), "_resolved_links.json"),
 )
 
 #: Directorios enteros que son producto derivado del repo bajo `00_Input/`, no documental
@@ -93,9 +98,11 @@ def es_fichero_de_protocolo(rel_path: str) -> bool:
     - Cualquier profundidad: los primeros componentes forman un `DIRECTORIOS` de protocolo.
     - Lo demás: documento.
 
-    Los nombres se comparan sin distinguir mayúsculas (el disco del despacho es Windows y
-    `_CASO.MD` es el mismo fichero que `_caso.md`); los directorios, tal como los escribe el
-    repo.
+    Nombres Y directorios se comparan sin distinguir mayúsculas: el disco del despacho es
+    Windows, donde `_CASO.MD` es el mismo fichero que `_caso.md` y `01_drive ev/` la misma
+    carpeta que `01_Drive EV/` (R2/H-03: la rev. 2 del diseño comparaba el directorio tal como
+    lo escribe el repo, y el marcador que el propio repo acababa de escribir en una carpeta
+    preexistente con otra caja entraba en el inventario probatorio).
     """
     partes = _partes(rel_path)
     if partes is None:
@@ -103,9 +110,10 @@ def es_fichero_de_protocolo(rel_path: str) -> bool:
     nombre = partes[-1].casefold()
     if len(partes) == 1:
         return nombre in RAIZ or any(nombre.startswith(pre) for pre in RAIZ_PREFIJOS)
+    partes_cf = [c.casefold() for c in partes]
     for d in DIRECTORIOS:
-        dparts = d.split("/")
-        if len(partes) > len(dparts) and partes[: len(dparts)] == dparts:
+        dparts = [c.casefold() for c in d.split("/")]
+        if len(partes) > len(dparts) and partes_cf[: len(dparts)] == dparts:
             return True
     if len(partes) == 2:
         directorio = partes[0]

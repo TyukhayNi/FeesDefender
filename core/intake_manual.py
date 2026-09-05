@@ -285,8 +285,10 @@ def save_file_crm_branch(
 def list_crm_branch_files(case_id: str, branch_path: str) -> list[Path]:
     """Lista archivos en ``00_Input/05_CRM/<branch_path>/`` (nivel raíz).
 
-    Excluye archivos de control internos. Devuelve lista vacía si el
-    directorio no existe.
+    Devuelve lista vacía si el directorio no existe. Desde MEJORAS #149 NO excluye nada por
+    nombre: a esa profundidad ningún escritor del repo deposita protocolo, así que un
+    `.pulled` o un `_inventory.json` en una rama del CRM es un documento del cliente y se
+    lista (hasta el 2026-09-05 se excluían por basename).
     """
     from core.casos.case_locator import buscar
     case_dir = buscar(case_id)
@@ -299,8 +301,9 @@ def list_crm_branch_files(case_id: str, branch_path: str) -> list[Path]:
     if not d.exists():
         return []
     # Protocolo por UBICACIÓN (MEJORAS #149). A profundidad ≥ 3 —`05_CRM/<rama>/<f>`— el
-    # registro no declara nada, así que este filtro es un no-op y se deja escrito para que
-    # la pregunta sea la misma en los nueve consumidores, no por lo que excluye hoy.
+    # registro no declara nada, así que hoy nada queda fuera; la pregunta se hace igual para
+    # que sea la misma en los nueve consumidores. Esto SÍ cambia el resultado respecto al
+    # filtro anterior por basename, que excluía seis nombres a cualquier profundidad (R2/H-06).
     return sorted(
         p for p in d.iterdir()
         if p.is_file()
@@ -311,9 +314,10 @@ def list_crm_branch_files(case_id: str, branch_path: str) -> list[Path]:
 def list_files(case_id: str) -> list[Path]:
     """Nivel raíz de cada lote ``manual`` + legacy ``04_Manual`` (casos no migrados).
 
-    Excluye archivos de control internos (``.pulled``, ``_inventory.json``,
-    etc.) y el propio ``_manifiesto.yaml`` de cada lote. Devuelve lista vacía
-    si no hay ``00_Input/`` todavía.
+    Excluye SOLO el ``_manifiesto.yaml`` de la raíz de cada lote (protocolo por ubicación,
+    MEJORAS #149). Un ``.pulled``, ``_inventory.json`` o ``_manifiesto.yaml`` en el cajón
+    legacy ``04_Manual/`` es un documento y se lista. Devuelve lista vacía si no hay
+    ``00_Input/`` todavía.
 
     Args:
         case_id: Identificador del caso.

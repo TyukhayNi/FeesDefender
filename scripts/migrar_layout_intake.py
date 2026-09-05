@@ -24,14 +24,29 @@ demás y entra en el ``mapping`` M9. El 2026-09-04 una versión que decidía por
 un adjunto legítimo homónimo y se revirtió entera.
 
 **La migración no borra lo que no acaba de comparar.** El duplicado de estado de canal solo
-se borra si es idéntico por ``sha256`` al de la raíz, y eso se comprueba TRES veces: en el
-plan (también con ``--dry-run``; distintos → se aborta antes de mover nada, nombrando los
-dos), al empezar a mover (si la raíz apareció entre el plan y la ejecución → se aborta y la
-fase 1 revierte), y **en el momento del** ``unlink()`` (si la raíz ya no existe o difiere →
-NO se borra y se reporta; dejar el fichero en su cajón es seguro y no exige rollback).
+se borra si es idéntico por ``sha256`` al de la raíz. Tres comprobaciones, dos de ellas por
+hash: en el plan (también con ``--dry-run``; distintos → se aborta antes de mover nada,
+nombrando los dos), al empezar a mover (comprobación de EXISTENCIA: si la raíz apareció
+entre el plan y la ejecución → se aborta y la fase 1 revierte), y **en el momento del**
+``unlink()`` (relectura por hash de ambos: si la raíz ya no existe o difiere → NO se borra y
+se reporta; dejar el fichero en su cajón es seguro y no exige rollback).
+
+**Lo que la relectura NO garantiza (R2/H-01):** leer, comparar y borrar son tres operaciones;
+un escritor que cambie la raíz entre la relectura y el ``unlink()`` deja borrado un legacy que
+ya no es idéntico. La ventana es de milisegundos y no se cierra con más lecturas: se cierra
+con el **mutex del caso**, que esta migración adquiere (y que ``email_export`` y
+``sync_sudespacho`` aún no piden — ``MEJORAS #126``, fila #17 de ``PLAN.md``; hasta que lo
+pidan, la exclusión es unilateral).
+
+**Un documento del cliente no puede aterrizar en una ubicación de protocolo (R2/H-02).** Si
+un fichero del cajón acabaría, dentro del lote, en una ruta que el registro declara protocolo
+(``04_Manual/_manifiesto.yaml`` → ``<lote>/_manifiesto.yaml``), ``escribir_manifiesto`` lo
+sobrescribiría con el albarán y la prueba desaparecería. El plan lo detecta y **aborta**
+(también en ``--dry-run``), nombrando el fichero: renombrarlo es decisión del operador.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import shutil
@@ -51,6 +66,18 @@ app = typer.Typer(add_completion=False)
 
 class CasoPrestadoError(RuntimeError):
     """El caso está prestado/conflicto: migrar tras el checkin (§7.6)."""
+
+
+class ColisionConProtocoloError(RuntimeError):
+    """Un fichero del cajón legacy aterrizaría, dentro del lote, en una ruta que el registro
+    declara PROTOCOLO (p. ej. ``04_Manual/_manifiesto.yaml`` → ``<lote>/_manifiesto.yaml``):
+    ``escribir_manifiesto`` lo sobrescribiría. Se lanza ANTES de mover nada, también en
+    ``--dry-run``. Renombrar el documento es decisión del operador."""
+
+
+class CasoOcupadoError(RuntimeError):
+    """Otro proceso de esta máquina sostiene el mutex del caso: la migración no arranca y no
+    escribe un byte (R2/H-01). Es el mismo abort limpio que `sala_maquina`."""
 
 
 class EstadoDeCanalDivergenteError(RuntimeError):
@@ -119,10 +146,56 @@ def _estado_de_canal_legacy(base: Path,
     return decisiones
 
 
+def _colisiones_con_protocolo(plan: list[migrar_layout.MovimientoCajon]) -> list[str]:
+    """Rutas del plan cuyo destino en el lote es una ubicación de protocolo (R2/H-02)."""
+    return [
+        f"{k} -> {v}" for mov in plan for k, v in sorted(mov.mapping.items())
+        if not es_fichero_de_protocolo(k) and es_fichero_de_protocolo(v)
+    ]
+
+
+def _w_code_de(case_id: str) -> str | None:
+    """`meta.id_go` del `_caso.md`, o None si el caso no declara W-code."""
+    from core.utils import read_md
+    try:
+        fm, _ = read_md(caso_path(case_id) / "00_Input" / "_caso.md")
+    except (OSError, ValueError):
+        return None
+    meta = fm.get("meta") if isinstance(fm, dict) else None
+    w = (meta or {}).get("id_go") if isinstance(meta, dict) else None
+    return str(w).strip() or None if w else None
+
+
+@contextlib.contextmanager
+def _bajo_mutex(case_id: str, *, avisos: list[str] | None = None):
+    """Sostiene el mutex del caso durante las fases 1 y 2 (R2/H-01). Sin W-code no hay
+    mutex, y se DICE (el trinquete E2 de `tests/test_entrypoints_mutex.py`): cerrar en
+    falso una vía que hoy funciona le rompe el día al equipo. `CaseBusy` → abort limpio
+    antes de mover nada."""
+    from core.casos import mutex_sesion
+    from core.casos.workspace_model import CaseBusy, CaseRef
+    from core.utils import now_iso_utc   # con offset: la primitiva rechaza un instante naïve
+
+    w = _w_code_de(case_id)
+    if not w:
+        msg = ("[aviso] este caso no declara W-code, así que la migración NO va bajo el mutex: "
+               "otro proceso de esta máquina podría estar escribiendo el mismo expediente")
+        if avisos is not None:
+            avisos.append(msg)
+        yield None
+        return
+    try:
+        with mutex_sesion.sostenido(CaseRef(w_code=w), ahora_fn=now_iso_utc) as sesion:
+            yield sesion
+    except CaseBusy as exc:
+        raise CasoOcupadoError(str(exc)) from exc
+
+
 def migrar(case_id: str, *, dry_run: bool,
            informe: dict | None = None) -> list[migrar_layout.MovimientoCajon]:
     """Migra el caso. ``informe`` (opcional, se rellena) recibe ``estado_de_canal``
-    (decisiones del plan), ``duplicados_borrados`` y ``no_borrados`` (con motivo)."""
+    (decisiones del plan), ``duplicados_borrados``, ``no_borrados`` (con motivo) y
+    ``avisos``. Las fases 1 y 2 corren bajo el mutex del caso (R2/H-01)."""
     estado = leer_estado_repositorio(case_id)
     if estado in (config.ESTADO_REPO_PRESTADO, config.ESTADO_REPO_CONFLICTO):
         raise CasoPrestadoError(
@@ -133,11 +206,27 @@ def migrar(case_id: str, *, dry_run: bool,
     # Regla 2 (rev. 2 §3.4): la comparación por hash va EN EL PLAN, también en dry-run, y
     # aborta antes de mover nada si los dos estados de canal difieren.
     decisiones = _estado_de_canal_legacy(base, plan)
+    colisiones = _colisiones_con_protocolo(plan)
+    if colisiones:
+        raise ColisionConProtocoloError(
+            "Un documento del cajón aterrizaría en una ubicación de PROTOCOLO del lote y el "
+            "albarán lo sobrescribiría. No se mueve nada; renómbralo antes de migrar: "
+            + "; ".join(colisiones))
     if informe is not None:
         informe["estado_de_canal"] = decisiones
     if dry_run or not plan:
         return plan
+    avisos: list[str] = []
+    with _bajo_mutex(case_id, avisos=avisos):
+        plan = _migrar_bajo_mutex(case_id, base, plan, decisiones, informe)
+    if informe is not None:
+        informe["avisos"] = avisos
+    return plan
 
+
+def _migrar_bajo_mutex(case_id: str, base: Path, plan: list[migrar_layout.MovimientoCajon],
+                       decisiones: dict[str, dict],
+                       informe: dict | None) -> list[migrar_layout.MovimientoCajon]:
     # --- Fase 1: movimientos físicos, todo-o-nada -------------------------
     hechos: list[tuple[Path, Path]] = []
     lotes_creados: list[Path] = []
@@ -248,9 +337,15 @@ def main(case_id: str, dry_run: bool = typer.Option(False, "--dry-run")) -> None
     except CasoPrestadoError as exc:
         typer.echo(f"[ERROR] {exc}", err=True)
         raise typer.Exit(code=1)
+    except CasoOcupadoError as exc:
+        # Código 2 y cero bytes, como el resto de abortos por mutex de este repo.
+        typer.echo(f"[ERROR] {exc}", err=True)
+        raise typer.Exit(code=2)
     except Exception as exc:
         typer.echo(f"[ERROR] {exc}", err=True)
         raise typer.Exit(code=1)
+    for aviso in informe.get("avisos", []):
+        typer.echo(aviso, err=True)
     if not plan:
         typer.echo("Nada que migrar: sin cajones de entrega con contenido.")
         return

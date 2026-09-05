@@ -1111,6 +1111,14 @@ def pull_expediente(
                     except OSError:
                         pass
                     continue
+                except BaseException:
+                    # R2/H-05 de MEJORAS #149: solo se limpiaba el temporal ante un
+                    # SudespachoError. Un OSError, un Ctrl-C o un kill a mitad de descarga
+                    # dejaban `sudespacho_<id>.tmp` en el destino, y ese parcial —que
+                    # escribe este codigo, no el cliente— entraba en el inventario
+                    # probatorio de la sala de maquina como si fuera un documento.
+                    tmp.unlink(missing_ok=True)
+                    raise
 
                 # Renombrar con el nombre del archivo según el CRM
                 original = info.filename or f"doc_{info.doc_id}.bin"
