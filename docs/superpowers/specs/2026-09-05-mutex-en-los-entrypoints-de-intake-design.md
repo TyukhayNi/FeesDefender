@@ -3,11 +3,20 @@ tipo: spec
 estado: en-revision
 creado: 2026-09-05
 objeto: "MEJORAS #126 — tres entrypoints de intake escriben en el expediente sin pedir el mutex del caso"
-rev: "2"
+rev: "3"
 ---
 
 # El mutex del caso lo pide quien escribe, no quien lo recuerda
 
+> **Rev. 3 (2026-09-05), tras la R2 adversarial de Codex sobre el DIFF que implementa la rev. 2
+> (`NO-SHIP`, seis hallazgos, los seis confirmados, remediados en el PR #292).** Lo que cambia en
+> el diseño: la identidad de un destino `--out` es el caso **del catálogo** que lo contiene —el
+> ancestro con `_caso.md` más cercano a `CASOS_ROOT`, no el más cercano al destino— y se busca
+> por la forma **léxica** de la ruta antes que por la resuelta (§3.1, H-01/H-02); el contador de
+> `sync_all` es de la corrida y cuenta también lo escrito por un caso cuyo lease se perdió (§3.2,
+> H-03); E12b, E14 con pérdida real a mitad y E13 con 0/2 exactos (§4, H-04/H-05); el runbook no
+> atribuye a `sync-all` un aborto que no tiene (H-06). Adjudicación en el **§8**.
+>
 > **Rev. 2 (2026-09-05), tras la R1 adversarial de Codex sobre la rev. 1: `REQUIERE-REVISION`,
 > nueve hallazgos, los nueve confirmados.** Lo que cambia: el bloque del export empieza **antes de
 > reservar el lote** (H-01, la reserva es un `mkdir` y en caso prestado escribe además la traza);
@@ -221,3 +230,40 @@ mapa de sesiones; `scripts/_mutex_cli.py` no rompe E5; el `--help` de Typer expo
 `intake-judicial`, `sync-all`; la contención real entre dos procesos es viable en Windows con un
 arnés externo. **Lo que no pudo verificar:** nada del helper, que no existe aún; la R2 sobre el
 diff es donde se verifica.
+
+## 8. Adjudicación de la revisión adversarial (Codex, 2026-09-05) — NO-SHIP, remediado
+
+- **Objeto revisado:** el diff `8d03e13..4206b80` que implementa la rev. 2 (PR #292)
+- **Ronda:** 2 (diff) — la segunda y última por radio de daño
+- **Revisor:** Codex
+- **Informe recibido:** `docs/superpowers/specs/2026-09-05-mutex-en-los-entrypoints-de-intake-r2-adversarial-review.md`
+- **Hallazgos:** 6 — 1 ALTO, 4 MEDIOS, 1 BAJO; **6 confirmados, 0 refutados**
+- **Remediado en:** commit `eaf604d` (PR #292); esta rev. 3 del diseño
+
+**Independencia: plena** — revisor Codex (`gpt-6-astra`), adjudicador Claude Code. Cada hallazgo
+se contrastó contra la fuente; lo que reproduje está en el §2 del acta.
+
+| # | Sev. | Hallazgo (frontera, no ejemplo) | Veredicto | Remedio |
+|---|---|---|---|---|
+| H-01 | ALTO | `w_code_de_ruta` se paraba en el PRIMER ancestro con `_caso.md`; uno anidado sin `meta` convertía un destino dentro del caso A en «fuera de todo caso» y el motor real escribía con A tomado | ✅ confirmado (reproducido por el revisor con el motor real) | `caso_de_ruta`: el ancestro con `_caso.md` **más cercano a `CASOS_ROOT`** (el del catálogo); `atomize` distingue «fuera» de «sin identidad»; E11b; mutante «el más cercano» muere |
+| H-02 | MEDIO | `Path.resolve()` seguía una *junction* del catálogo hacia fuera y perdía la relación con la entrada; por referencia sí se reconocía | ✅ confirmado | forma **léxica** (`abspath`) antes que la resuelta, la lección de `raiz_de_locks`; E11c (se salta si no se puede crear la junction); mutante «solo resuelta» muere |
+| H-03 | MEDIO | `_NUEVOS` de módulo sobrevivía entre invocaciones y el `continue` por pérdida no consumía ni contaba lo escrito | ✅ confirmado (reproducido: 2 y luego 3 fantasmas) | `nuevos` local a la corrida, consumido en `finally`; E14 exige «5 doc(s)» tras la pérdida y «0» en la segunda corrida; dos mutantes mueren |
+| H-04 | MEDIO | E12 no cubría los escritores de `pull`/`intake_judicial`; «`with` vacío y trabajador fuera» pasaba toda la batería; E14 sustituía `sostenido` en vez de perder el lease a mitad | ✅ confirmado (dos mutantes del revisor sobrevivían) | E12b con sesión vigente en alta, registro y motor; E14 con `marcar_perdido` sobre la sesión real durante el motor; los dos mutantes mueren |
+| H-05 | MEDIO | E13 aceptaba `p1.returncode != 2`: un primer hijo muerto por excepción pasaba | ✅ confirmado (mutante del bootstrap sobrevivía) | el bootstrap publica su informe (0); E13 exige 0 y 2 exactos y drena los hijos; el mutante muere |
+| H-06 | BAJO | El runbook decía que los cinco abortan con 2; `sync-all` salta el caso y devuelve 0, por diseño | ✅ confirmado | runbook y `MEJORAS #126` distinguen la política del barrido |
+
+**Lo que el revisor verificó y resultó correcto:** cero escrituras antes del `with` en los cinco
+subcomandos; `_print_report`, `verify_expediente_referencia`, `list_cases`/`buscar`/`read_md` no
+escriben; `CaseBusy`/`MutexPerdido` son las clases reales de `workspace_model`; la pérdida
+sustituye el retorno y llega al `except`; una excepción del motor suelta el mutex; `CasoOcupadoError`
+es alias de `CasoOcupado`; sin ciclos de importación; censo 88; 201/216 tests base/head; las
+familias de mutantes a-g mueren. **Lo que declaró sin verificar:** suite completa (la corre el
+autor: 4.598 con `--runslow`, dos semillas, antes de la remediación; se repite tras ella), muerte
+antes de READY, arranque de Windows > 60 s, YAML corrupto en `_caso.md`. **Observaciones que no se
+remedian y se anotan:** un `id_go` no-W-code (p. ej. `123`) hace que `sostener` lance `ValueError`
+antes de escribir (rechazo, no aviso); la migración devuelve 1 y no 2 ante pérdida (su contrato no
+cambió aquí).
+
+**Cobertura de la remediación: sin tercera ronda** (regla de rondas); los contraejemplos del
+revisor —`_caso.md` anidado, junction, contador fantasma, `with` vacío, bootstrap que muere— se
+reprodujeron contra el código remediado y cada uno tiene su mutante muerto.
