@@ -4,6 +4,19 @@ Formato: una entrada por versión, la más reciente arriba. Cada entrada cita la
 **evidencia** que motivó el cambio (uso real, delta borrador↔firmado, decisión
 del letrado) — cultura source-locked del despacho.
 
+## 1.6 — 2026-09-06
+
+- **Un fichero, un espejo (MEJORAS #147, vía A).** El mismo documento (mismo `sha256`) en dos
+  carpetas del cliente ya no produce dos OCR ni dos MD: el primero del inventario es el titular
+  del espejo y la copia sale en `_cobertura.md` con método `duplicado`, el estado del titular y
+  la ruta del espejo único en la nota; el titular anota «también en …». **Evidencia:** W-02Q38C,
+  51 espejos para 49 contenidos, y el 75º cierre contó como «nuevos» dos documentos que el
+  expediente ya tenía. Lo que NO cubre: el mismo documento re-descargado con bytes distintos
+  (vía B, sigue en `MEJORAS #147`).
+- **Para quien dirige la skill:** el preview puede mostrar `duplicados: N`; no hace falta hacer
+  nada con ellos, pero al leer la sala de lectura conviene saber que ese documento vive en más de
+  una carpeta de E&V (la nota del titular lo dice).
+
 ## 1.5 — 2026-09-05
 
 - **Los `.doc` dejan de ser ilegibles: ruta `ofimatica`.** `.doc`, `.dot`, `.odt`, `.ott`,

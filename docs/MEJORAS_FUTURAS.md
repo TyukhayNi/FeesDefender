@@ -6586,6 +6586,16 @@ traído «2 documentos que el expediente no tenía» — corregido allí mismo.
 > Esa acotación es el resultado de medirlo, no de razonarlo: la primera redacción de esta entrada
 > decía «entradas duplicadas en la sala de lectura», y el conteo lo desmintió el mismo día.
 
+> **Vía A `[RESUELTA 2026-09-06]`** (acción 11 de la fila 21): `core/sala_maquina.plan` marca como
+> `duplicado_de` toda copia con el mismo `sha256` que un fichero anterior del inventario y
+> `ejecutar` no la procesa: fila de custodia propia (método `duplicado`, estado heredado del
+> titular, nota con la ruta del espejo único) y el titular anota «también en …». Sin OCR ni
+> espejo repetidos; `plan` cuenta los duplicados aparte. La llave es el `sha256` del crudo, no
+> `text_sha256`: para la vía A son equivalentes y el hash del crudo se conoce ANTES de pagar el
+> OCR. Plan y adjudicación:
+> `docs/superpowers/plans/2026-09-06-accion-11-dedup-via-a-sala-de-maquina.md`. **Las vías B y
+> C siguen abiertas** con el disparador de abajo.
+
 **Remedio, por capas y en este orden.** (1) La vía A es barata y cierta: la sala de máquina puede
 llavear por `text_sha256` y emitir **un** espejo con las dos procedencias anotadas. (2) La vía B
 necesita una noción de identidad documental — extraer C.S.V./CSV/protocolo cuando exista y usarlo

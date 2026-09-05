@@ -302,6 +302,14 @@ def corpus_legible(entradas: Iterable[dict]) -> tuple[tuple[str, ...], tuple[str
         if es_fichero_de_control(rel):
             continue
 
+        if str(e.get("metodo") or "") == "duplicado":
+            # Copia byte-identica de otro fichero del caso (MEJORAS #147, via A): NO tiene
+            # espejo propio y su texto esta, entero, en el espejo del titular (`alias_de`),
+            # que ya entra por su propia fila. Contarla como legible pediria un
+            # `<slug>.md` que no existe y la convertiria en un falso «sin espejo MD»
+            # (R1 de la accion 11, H-02), que ademas cambiaba la salida del validador.
+            continue
+
         if estado == _ESTADO_LEGIBLE and slug:
             legibles.append(slug)
         elif rel:

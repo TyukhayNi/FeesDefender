@@ -316,7 +316,19 @@ def _construir_plan(case_dir: Path, force: bool):
     inventario, cache_nueva = sm.inventariar_cacheado(case_dir, cache)
     ms = int((time.perf_counter() - t0) * 1000)
     n_hasheados = sum(1 for rel, v in cache_nueva.items() if cache.get(rel) != v)
-    return (sm.plan(inventario, previo, agotados), cache_nueva, ms, n_hasheados, agotados)
+    return (sm.plan(inventario, previo, agotados, productores_previos=_productores_previos(case_dir)),
+            cache_nueva, ms, n_hasheados, agotados)
+
+
+def _productores_previos(case_dir: Path) -> frozenset[str]:
+    """`rel_path` que ya tienen espejo propio según la cobertura persistida (MEJORAS #147).
+
+    Es lo que hace DURABLE la titularidad del espejo: una carpeta nueva con los mismos bytes
+    no le quita el espejo a quien ya lo tenía, y dos productoras legadas siguen siendo dos.
+    Se consulta también con `--force`: forzar rehace derivados, no cambia quién es titular.
+    """
+    return frozenset(c.rel_path for c in _cobertura_previa(case_dir)
+                     if c.metodo != sm.METODO_DUPLICADO)
 
 
 def _exitosos_por_bundle(cob_delta: list[sm.DocCobertura]) -> set[str]:
@@ -802,9 +814,15 @@ def plan(case_id: str = typer.Argument(None),
                 typer.echo(f"  adjuntos: {n_adj} (se extraerá su texto en apply)")
         typer.echo(f"Caso: {case_id}")
         for ruta in ("pdf", "imagen", "nativo", "ofimatica", "sin_soporte"):
-            n = sum(1 for d in nuevos if d.ruta == ruta)
+            n = sum(1 for d in nuevos if d.ruta == ruta and not d.duplicado_de)
             if n:
                 typer.echo(f"  {ruta}: {n}")
+        n_dup = sum(1 for d in nuevos if d.duplicado_de)
+        if n_dup:
+            # MEJORAS #147, vía A: se cuentan aparte porque no se procesan (ni OCR ni espejo);
+            # ocultarlos en el recuento por ruta haría prometer más trabajo del que `apply` hará.
+            typer.echo(f"  duplicados: {n_dup} (copia byte-idéntica de otro fichero del caso; "
+                       f"fila de custodia sin espejo propio)")
         _avisar_ofimatica_sin_conversor(nuevos)
 
         # Preview del cableado: `plan` NO atomiza (es preview), solo informa de lo que
@@ -923,8 +941,8 @@ def apply(case_id: str = typer.Argument(None), vision: bool = False,
         # La corrida es AUTORITATIVA sobre lo que reprocesa (spec §6.1): sus filas previas se
         # descartan. El conjunto sale del PLAN, no de las filas, porque cuando un documento
         # falla no hay filas suyas que mirar.
-        cob = sm.fusionar_cobertura(previa, cob_delta,
-                                    rel_paths_reprocesados={d.rel_path for d in p if not d.skip})
+        cob = sm.reconciliar_alias(sm.fusionar_cobertura(
+            previa, cob_delta, rel_paths_reprocesados={d.rel_path for d in p if not d.skip}))
         _guardar_cobertura(case_dir, cob, dep=_dep_sala)
         _escribir_cobertura_md(case_dir, cob)
 
@@ -947,7 +965,10 @@ def apply(case_id: str = typer.Argument(None), vision: bool = False,
         # en cada corrida, para siempre.
         intentos = {} if force else dict(_intentos_previos(case_dir))
         for d in p:
-            if d.skip:
+            if d.skip or d.duplicado_de:
+                # La copia byte-idéntica (MEJORAS #147, vía A) comparte sha con su titular y
+                # no se procesa: contarla aquí sumaría DOS intentos por corrida al mismo sha
+                # y agotaría `MAX_INTENTOS` en dos corridas en vez de tres.
                 continue
             if d.sha256 in exitosos:
                 intentos.pop(d.sha256, None)
@@ -1027,7 +1048,8 @@ def reforzar(case_id: str = typer.Argument(None),
 
         # estado_previo=set() → nada se salta; filtramos el plan a los objetivos, que se
         # re-procesan íntegros (reutiliza `ejecutar`; re-OCR-iza, decisión del diseño).
-        plan = [d for d in sm.plan(sm.inventariar(case_dir), estado_previo=set())
+        plan = [d for d in sm.plan(sm.inventariar(case_dir), estado_previo=set(),
+                                   productores_previos=_productores_previos(case_dir))
                 if d.rel_path in objetivos]
         if not plan:
             # Los dudosos están en la cobertura previa pero ya no en 00_Input (borrados
@@ -1050,7 +1072,7 @@ def reforzar(case_id: str = typer.Argument(None),
 
         cob_delta = sm.ejecutar(case_dir, plan, case_id=case_id, vision=True)
 
-        cob = sm.fusionar_cobertura(previa, cob_delta)
+        cob = sm.reconciliar_alias(sm.fusionar_cobertura(previa, cob_delta))
         _guardar_cobertura(case_dir, cob, dep=_dep_sala)
         _escribir_cobertura_md(case_dir, cob)
 
