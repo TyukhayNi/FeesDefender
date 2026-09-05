@@ -444,3 +444,72 @@ class TestVerificarTODOLoQueLaCorridaEscribe:
         assert r.exit_code == 1, r.output
         assert "Estado de lo que sí se llegó a escribir" in r.output
         assert "[ok] clientes_contrarios id=1099" in r.output
+
+
+# ---------------------------------------------------------------------------
+# MEJORAS #150: el CRM DESESCAPA las entidades HTML al guardar
+#
+# Medido el 2026-09-04 sobre el expediente 637: la ficha entera entro y la
+# verificacion declaro `[FALTA] Notas` con exit 1. Las 16 unicas diferencias
+# entre lo escrito (5158 chars) y lo guardado (5142) eran cuatro `&amp;` que el
+# CRM devuelve como `&`. Un rojo sobre un exito, y en casi toda ficha de este
+# cliente, que es como se desactiva solo el unico guardian que verifica por
+# resultado.
+# ---------------------------------------------------------------------------
+
+class TestElCRMDesescapaLasEntidadesHTML:
+    """La igualdad byte a byte confundia normalizacion del servidor con perdida."""
+
+    @staticmethod
+    def _con_notas(caso_con_ficha, monkeypatch, *, escritas: str, devueltas: str):
+        ficha = case_locator.path_for(caso_con_ficha) / "00_Input" / "_ficha_crm.yaml"
+        ficha.write_text(
+            "contrario:\n  nombre: JUAN\n  apellido1: PEREZ\n  nif: 00000000T\n"
+            "colaboradores: []\n"
+            f"notas_html: {escritas!r}\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr("scripts.crm_ficha.link_ev_mmc", MagicMock())
+        monkeypatch.setattr("scripts.crm_ficha.ensure_contrario_vinculado",
+                            MagicMock(return_value=("1099", False)))
+        monkeypatch.setattr("scripts.crm_ficha.update_expediente", MagicMock(return_value={}))
+        monkeypatch.setattr("scripts.crm_ficha.get_expediente",
+                            MagicMock(return_value={"Numero_Expediente": "49",
+                                                    "Notas": devueltas}))
+        monkeypatch.setattr("scripts.crm_ficha.get_relaciones", lambda el, i: {
+            "clientes_propios": [{"id": "2"}],
+            "clientes_contrarios": [{"id": "1099"}],
+            "colaboradores": [],
+        })
+
+    def test_una_entidad_desescapada_por_el_servidor_verifica_ok(
+            self, caso_con_ficha, monkeypatch):
+        """El caso medido: se escribio `&amp;` y el CRM devuelve `&`. Entro entero."""
+        self._con_notas(
+            caso_con_ficha, monkeypatch,
+            escritas="<p>E&amp;V y pitch&amp;putt</p>",
+            devueltas="<p>E&V y pitch&putt</p>",
+        )
+        r = CliRunner().invoke(cli.app, ["--case-id", "W-000AAA", "--yes"])
+        assert r.exit_code == 0, r.output
+        assert "[ok] Notas" in r.output
+        assert "FALTA" not in r.output
+        assert "DESMIENTE" not in r.output
+
+    def test_unas_notas_TRUNCADAS_por_el_servidor_siguen_faltando(
+            self, caso_con_ficha, monkeypatch):
+        """El segundo mutante, y el que importa: normalizar no puede volverse permisivo.
+
+        Si el arreglo se hace con un `in`/`startswith` en vez de una igualdad sobre
+        texto ya desescapado, este test sobrevive y se pierde justo la cobertura por la
+        que la verificacion existe.
+        """
+        self._con_notas(
+            caso_con_ficha, monkeypatch,
+            escritas="<p>E&amp;V y un parrafo largo que el servidor recorta</p>",
+            devueltas="<p>E&V y un parrafo largo",
+        )
+        r = CliRunner().invoke(cli.app, ["--case-id", "W-000AAA", "--yes"])
+        assert r.exit_code == 1, r.output
+        assert "[FALTA] Notas" in r.output
+        assert "DESMIENTE" in r.output

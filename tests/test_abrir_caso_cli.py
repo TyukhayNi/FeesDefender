@@ -780,3 +780,24 @@ def test_cli_extraer_adjuntos_llega_al_intake_de_email(drive_temporal, monkeypat
 
     assert result.exit_code == 0, result.output
     assert capturado["extraer"] is True
+
+
+# ---------------------------------------------------------------------------
+# MEJORAS #148: el `/` en --direccion partia la carpeta y la corrida salia en 0
+# ---------------------------------------------------------------------------
+
+def test_cli_una_barra_en_la_direccion_ABORTA_sin_crear_nada(drive_temporal):
+    """Lo caro no era el error: era que no lo hubiera. Medido en W-02JSVZ.
+
+    El alta imprimio `OK Caso abierto` y dejo 170 ficheros en una ruta sombra
+    con el segmento partido en dos por la barra. El fallo no se descubria en el alta,
+    sino en el comando siguiente: `--case-id` no encuentra un caso partido en dos.
+    """
+    result = CliRunner().invoke(
+        cli.app, _args(direccion="Castell De Rosanes s/n 08530 La Garriga"))
+
+    assert result.exit_code != 0, result.output
+    assert "[ERROR]" in result.output
+    # Y sobre todo: NADA en disco. Si se crea el esqueleto, el arreglo llego tarde.
+    assert not list(drive_temporal.rglob("*W-02Z2NR*")), (
+        "se creo un caso pese al error: la validacion tiene que morder ANTES de ensure_case")

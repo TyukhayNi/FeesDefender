@@ -6544,9 +6544,699 @@ contado dos veces, o un importe que aparezca duplicado en un escrito— o el arr
 (`la cobertura se llavea por (slug, rel_path) y los artefactos por slug`), que toca exactamente la
 misma clave y puede pagar la vía A de paso.
 
+## 148. `abrir_caso` compone el `case_id` sin pasarlo por la guarda que lo valida
+
+> ✅ **CERRADO 2026-09-04 — PR #278.** `componer_case_id` valida los **tres** campos que
+> concatena (`--codigo-caso`, `--direccion`, `--sufijo`) y el CLI traduce el `ValueError` a un
+> error que nombra al culpable, sin crear esqueleto.
+>
+> **Y la guarda salió ESTRECHA, que es la lección.** La primera versión llamaba a
+> `validate_case_id` entero y rompió cinco fixtures con códigos sintéticos (`BaTEST`, sin
+> dígitos): una guarda **más ancha que el defecto medido**. La frontera era la gramática de
+> **rutas**, no el formato canónico del `case_id`. Se extrajo
+> `core.utils.exigir_sin_caracteres_de_ruta` con hogar único, del que `validate_case_id` también
+> tira. La tentación de arreglar los fixtures en vez del diagnóstico era el error de verdad.
+
+**Medido el 2026-09-04 abriendo W-02JSVZ**, cuya dirección operativa en E&V lleva un «**s/n**»
+(finca rústica sin número). Con `--direccion` copiada literal de la tabla de Bad Debt, la corrida
+terminó diciendo:
+
+```
+OK Caso abierto: BaRS8 - <via> s/n <cp> <municipio> (W-02JSVZ) - BD
+```
+
+y lo que había en disco eran **dos** carpetas anidadas: `BaRS8 - <via> s\` conteniendo
+`n <cp> <municipio> (W-02JSVZ) - BD`, con los 170 ficheros del pull dentro. El `/` de «s/n» se
+comportó como separador de rutas. Ningún aviso, código de salida 0, y el `case_id` que el CLI
+imprime **no nombra a ninguna carpeta**.
+
+**La guarda existe y no puede haber disparado.** `core.utils.validate_case_id` rechaza exactamente
+esto: `_WIN_FORBIDDEN = re.compile(r'[\/:*?"<>|]')` (`core/utils.py:105`), con mensaje propio. Pero
+sus únicos llamadores son `core/anon/api.py` y `scripts/init_caso.py`. **`abrir_caso` —el único
+sitio que COMPONE el `case_id` desde lo que teclea el usuario— no la llama nunca**, ni en
+`core.abrir_caso.componer_case_id` ni en `scripts/abrir_caso.py`. Y el docstring de
+`componer_case_id` (`core/abrir_caso.py:30`) afirma «Formato validado por
+core.utils.validate_case_id»: enuncia una validación que en esta vía no ocurre.
+
+**Cuándo se descubre, que es lo caro.** No en el alta: en el comando *siguiente*. El intake
+incremental `--case-id W-02JSVZ` falló con `[ERROR] Caso no encontrado`, porque
+`case_locator.resolve_ref` no puede reconstruir un caso partido en dos. Entre una cosa y otra caben
+170 ficheros depositados en una ruta sombra y —si nadie mira— un `apply` de OCR sobre ella.
+
+**La frontera, que no es «sanear la dirección».** Es que **todo campo de identidad que acabe siendo
+una ruta tiene que atravesar la gramática de rutas, no solo la del `case_id`**. Aquí las dos
+gramáticas ya están escritas y son la misma función; lo que falta es la llamada. El mismo hueco
+cubre `--sufijo` y `--codigo-caso`, que también se concatenan sin mirar, y no lo tapa validar
+únicamente `--direccion`.
+
+**Remedio.** `componer_case_id` devuelve `validate_case_id(f"...")` en vez de la f-string cruda —un
+solo punto, porque todas las vías de `abrir_caso` pasan por ahí— y el CLI traduce el `ValueError` a
+un error legible que nombre el campo culpable. Su mutante: `--direccion "a/b"` debe abortar **antes**
+de `ensure_case`, y el test tiene que morir si la corrida vuelve a terminar en 0. Segunda capa,
+independiente: `ensure_case` comprueba que la carpeta que acaba de crear se llama como el `case_id`
+que le pasaron — hoy nadie compara el nombre pedido con el nombre obtenido.
+
+**Disparador de promoción.** Ya está disparado: pasa con cualquier dirección con `s/n`, que en el
+corpus de E&V es común (fincas rústicas, castillos, naves). Se remedió a mano borrando el árbol y
+repitiendo el alta con «**sn**» en lugar de «s/n» —la grafía que E&V usa en su propia factura—,
+pero el siguiente que copie la dirección de la tabla vuelve a pisarlo.
+
+## 149. Los ficheros de protocolo que el registro NO declara entran en el inventario probatorio
+
+> 🔴 **ABIERTA, y el arreglo del 2026-09-04 se REVIRTIÓ el mismo día** (`4cd71dd`). Se cerró
+> declarando los cuatro nombres en `INTAKE_CONTROL_FILES` y la **R1 adversarial lo tumbó con un
+> hallazgo CRÍTICO**: `scripts/migrar_layout_intake.py:122` hace `hijo.unlink()` **sin comparar
+> bytes ni hash**, y con los cuatro declarados un `03_Email/_ficha_crm.yaml` que sea un adjunto
+> legítimo pasa a tratarse como estado de canal y **se borra** si existe el de la raíz. El
+> revisor lo reprodujo: los dos contenidos sobreviven en base y el segundo desaparece en head.
+>
+> Dos más de la misma causa: `core/intake_lotes.py:197` excluye por basename **a cualquier
+> profundidad** (`rglob`), así que un adjunto llamado así desaparece del manifiesto del lote; y la
+> migración mueve el homónimo anidado dejando las referencias forenses de M9 apuntando a una ruta
+> inexistente.
+>
+> **La causa es una y estaba escrita en esta misma entrada:** «excluir `_manifiesto.yaml` por
+> *basename* excluye cualquier fichero así llamado en cualquier sitio… Lo correcto es excluirlo
+> solo en la raíz de un lote, o sea una línea **más** una comprobación de ruta». Se implementó
+> solo la línea. **El contrato es por UBICACIÓN, no por nombre**, y eso toca cinco consumidores
+> (`intake_drive`, `intake_manual`, `inventory`, `email_export`, `migrar_layout_intake`).
+>
+> **Presupuesto corregido: dos rondas, no una.** La pieza puede destruir prueba del cliente, luego
+> por radio de daño le tocan dos. Al revertir, el diff volvió a la categoría de una.
+>
+> Informe literal y adjudicación: `docs/superpowers/specs/2026-09-04-apertura-w02jsvz-pipeline-r1-adversarial-review.md`.
+
+**Medido el 2026-09-04 en la corrida de apertura de W-02JSVZ, con el código de hoy.** El
+`_cobertura` de la sala de máquina trae dos entradas `sin_soporte` que no son documentos del caso:
+
+```
+_intake_hashes.json
+2026-09-04_email_01/_manifiesto.yaml
+```
+
+Y trae, correctamente, **ninguna** de `.pulled`, `_exported_ids.json` ni `_resolved_links.json`. Esa
+asimetría es el hallazgo: `_es_control` (`core/sala_maquina.py:1181`) funciona —deriva de
+`config.INTAKE_CONTROL_FILES` en vez de duplicar la lista, que es lo que arregló la R-B del Plan 5—
+y lo que se cuela es **exactamente lo que nadie declaró en el registro**.
+
+**Los cuatro que faltan, y quién los escribe.** Ninguno es de un tercero: los produce este mismo
+repo, en `00_Input/`, por prescripción del propio runbook.
+
+| Fichero | Quién lo escribe | Medido |
+|---|---|---|
+| `_intake_hashes.json` | el intake | W-02JSVZ, 2026-09-04 (esta corrida) |
+| `<lote>/_manifiesto.yaml` | `core.email_export`, uno por lote | W-02JSVZ, 2026-09-04 (esta corrida) |
+| `_ficha_crm.yaml` | a mano, §9 del `RUNBOOK_APERTURA_EXPEDIENTE` | W-02Q38C (`ficha_crm__f53e4101 · sin_soporte`) |
+| `_ocurrencias_crm.json` | la vista procesal | W-02Q38C |
+
+Los dos últimos se midieron sobre un `_cobertura` anterior al arreglo, así que como *evidencia de
+hoy* valen los dos primeros; pero ninguno de los cuatro está en `INTAKE_CONTROL_FILES` ni casa con
+el único prefijo declarado (`.apertura_v1.`), luego los cuatro se cuelan igual. No se afirma más de
+lo medido: los dos primeros, verificados hoy; los dos últimos, por lectura del registro.
+
+**La frontera, y es la lección que la entrada de `_apertura_v1.json` dejó a medias.** El comentario
+de `config.py:569` cuenta que ese fichero se declaró porque «sin declararlo entraba en el inventario
+probatorio y salía como `sin_soporte`, en la MISMA corrida que lo escribía». Se remedió **el
+ejemplo**, no **la propiedad**: la propiedad es que *todo fichero de protocolo que el propio repo
+deposite bajo `00_Input/` tiene que estar en el registro*, y hay cuatro más en esa situación. Un
+`sin_soporte` sobre un fichero de control no es un aviso inocuo — es ruido en la **red de calidad**,
+que es justo donde se mira lo que el OCR no pudo leer, y entrena a ignorarla.
+
+**Remedio.** Declarar los cuatro en `INTAKE_CONTROL_FILES`. Su mutante: una corrida sobre un caso
+con lote de correo y `_ficha_crm.yaml` no debe producir **ninguna** fila `sin_soporte` cuyo origen
+empiece por `_` o cuyo basename empiece por `_`, y el test tiene que morir si vuelve a producirla.
+Y la capa que cierra la familia en vez del caso: un test que recorra los ficheros que el repo
+escribe en `00_Input/` —los literales que aparecen en `email_export`, en el intake y en el runbook—
+y exija que cada uno esté en el registro. Sin eso, el quinto fichero de protocolo que alguien añada
+vuelve a colarse y nadie lo verá hasta que salga en un `_cobertura`.
+
+**Disparador de promoción.** Ya está disparado: pasa en toda apertura con intake de correo, que son
+todas. Barato y de una línea; lo que cuesta es el test de la familia.
+
+
+## 150. `crm_ficha` declara ERROR sobre una escritura que SÍ entró: el CRM desescapa `&amp;`
+
+> ✅ **CERRADO 2026-09-04 — PR #278.** `_mismas_notas` desescapa las dos partes y compara por
+> **igualdad** (no por inclusión: un `in`/`startswith` habría dejado pasar unas notas truncadas
+> por el servidor, perdiendo justo la cobertura por la que la verificación existe). Los dos
+> mutantes fijan las dos mitades.
+
+**Medido el 2026-09-04 sobre el expediente 637 (W-02JSVZ).** `python -m scripts.crm_ficha
+--case-id W-02JSVZ --yes` escribió la ficha entera y terminó en **exit 1**:
+
+```
+OK Notas actualizadas
+Verificación: expediente 637 Numero_Expediente=77
+  [FALTA] Notas: el CRM devuelve un contenido distinto del escrito
+[ERROR] La lectura DESMIENTE la escritura: no consta -> Notas.
+```
+
+La lectura no desmentía nada. Releído el campo por API y comparado contra el `_ficha_crm.yaml`:
+
+```
+escrito: 5158  guardado: 5142
+iguales: False
+iguales tras deshacer &amp;: True
+```
+
+Las 16 diferencias son cuatro `&amp;` que el CRM **decodifica a `&`** al guardar
+(`pitch&amp;putt` → `pitch&putt`, `E&amp;V` → `E&V`). El contenido está íntegro: mismo principio,
+mismo final, mismos 5.142 caracteres útiles.
+
+**Por qué esto es peor que un bug cosmético.** El verificador de `crm_ficha` es la pieza que
+implementa «verificar por resultado, nunca por status», y su mensaje —«los OK de arriba se apoyaban
+en el status»— es correcto como doctrina. Pero aquí produce un **rojo sobre un éxito**, y lo produce
+**siempre** que las notas escriban «E&amp;V» en HTML bien formado, o sea en casi toda ficha de este
+cliente. Un guardián que grita en el caso normal se desactiva solo: el operador aprende que el rojo
+de Notas no significa nada, y el día que la escritura falle de verdad no lo va a distinguir. Es la
+enfermedad simétrica de la familia que este repo ya persigue.
+
+**Lo que NO hay que hacer:** dejar de escapar `&` en el YAML. El campo es HTML y `&` suelto es HTML
+inválido; el problema no es el dato, es la igualdad con que se compara.
+
+**Remedio.** Comparar el campo `Notas` **normalizando entidades HTML en los dos lados** antes de
+decidir (`html.unescape` sobre escrito y guardado), y solo entonces declarar la discrepancia.
+Dos mutantes, porque hacen falta los dos: (1) unas notas con `&amp;` que el CRM devuelve
+desescapadas deben verificar **ok**, y el test muere si vuelve a dar `[FALTA]`; (2) unas notas
+realmente **truncadas** por el servidor deben seguir dando `[FALTA]` — si la normalización se hace
+con un `in` o un `startswith` en vez de una igualdad sobre texto normalizado, el segundo mutante
+sobrevive y se pierde justo la cobertura que esta pieza existe para dar.
+
+**Disparador de promoción.** Ya está disparado, y es de coste alto por frecuencia: hoy `crm_ficha`
+sale con exit 1 en cada apertura, así que ni sirve para encadenar en un script ni se puede leer su
+código de salida como señal.
+
+## 151. La sala de lectura: `organizar` no puede terminar un caso, y destruye la clasificación a mano
+
+> ✅ **CERRADO 2026-09-04 — PR #278**, cuatro de los seis remedios, y en el orden de daño que
+> esta entrada proponía: (a) ruta MD + resolución de bundles partidos, que reparó
+> `preparar-residuo` y los 140 enlaces muertos del índice; (b) `_write_worklist` fusiona en vez de
+> reconstruir; (c) `organizar` encadena `catalogo` y `aplicar`, así que el ciclo **converge**; (e)
+> la CLI resuelve el W-code. Con sus mutantes, y todos rojos antes.
+>
+> **Siguen abiertos los dos que no son baratos:** (d) que una sala poblada con 0 acciones sobre un
+> catálogo vacío *falle* en vez de felicitarse —hoy ya no puede ocurrir por (c), así que es
+> cinturón y tirantes— y (f) la **estructura plana**, que toca el layout de `poblar` y del índice y
+> espera la decisión sobre el pivote a la skill. Y con ella el tercer defecto de `MEJORAS #67`.
+>
+> **La R1 adversarial encontró OCHO defectos más en esta misma pieza, y los ocho eran míos**
+> (`65f543a`): `organizar` no incorporaba documentos nuevos si ya había catálogo; una fila obsoleta
+> de la worklist pisaba una clasificación vigente; la CLI entregaba solo el primer segmento de un
+> bundle; un MD canónico obsoleto tapaba los segmentos actuales; los enlaces «ver texto» seguían
+> muertos **justo** para los bundles partidos que esta pieza había medido; un `Tipo` inválido
+> volvía el documento invisible; una `Fecha` vaciada a propósito se reponía (familia del `H-09`);
+> y el glob no exigía gramática ni ordenaba por número. Nueve mutantes en
+> `tests/test_sala_lectura_r1_adversarial.py`, los nueve rojos antes. Informe y adjudicación:
+> `docs/superpowers/specs/2026-09-04-apertura-w02jsvz-pipeline-r1-adversarial-review.md`.
+>
+> **El diagnóstico del §«frontera» se confirmó al arreglarlo:** las guardas existían en el
+> envoltorio —`clasificar` del CLI ya rebuildeaba el catálogo, `rellenar_worklist` ya respetaba las
+> celdas rellenas— y `organizar` las rodeaba llamando al core. No faltaban guardas: faltaba que el
+> otro llamador pasara por ellas.
+
+**Medido el 2026-09-04 montando la sala de lectura de W-02JSVZ (167 documentos, 99 de residuo).**
+El runbook §7 ofrece `scripts.sala_lectura organizar` como el comando todo-en-uno y advierte, aparte,
+de «no usar el CLI deprecado `core/sala_lectura.py` directamente» por los tres defectos latentes de
+`MEJORAS #67`. **Esa advertencia nombra la cosa equivocada:** `scripts/sala_lectura.py:117` es un
+paso-a-través de dos líneas a `core.sala_lectura.organizar`, así que la vía sancionada *es* el
+módulo del que avisa. Los tres defectos dejaron de ser latentes y aparecieron dos más.
+
+**1. `organizar` omite dos de los cinco pasos de su propia secuencia.** La secuencia documentada es
+`catalogo → clasificar → [worklist] → aplicar → poblar → render`. `core.sala_lectura.organizar` es
+`clasificar_caso → (parar si residuo) → render_indices → poblar_sala_lectura`: sin `catalogo` y sin
+`aplicar`. Consecuencia sobre un caso recién abierto:
+
+```
+$ sala_lectura organizar   → "Sala de lectura organizada. Acciones: {}"    (indice_documental.yaml = 0 KB)
+$ sala_lectura catalogo    → "Catálogo: 167 entradas"                      (103 KB)
+$ sala_lectura organizar   → "Detenido: 99 doc(s) en revision."
+```
+
+La primera línea es el defecto: **declaró organizada una sala vacía**, con éxito y sin aviso, porque
+clasificó un índice que no existía. Un inventario vacío que no activa nada es indistinguible de «no
+había nada que hacer».
+
+**2. Y al volver a correrlo, borra la worklist rellenada a mano.** `clasificar_caso` **reconstruye**
+`_clasificar.md` con `path.write_text(...)` y las columnas Tipo/Parte/Descripcion en blanco. Así que
+el ciclo que el propio mensaje del CLI recomienda —«Rellena la worklist y vuelve a correr
+`organizar`»— **destruye lo que acabas de rellenar**: medido, 99 filas clasificadas a mano se
+perdieron en la corrida siguiente, y el `aplicar` posterior devolvió `Aplicadas: 0`. El ciclo que el
+CLI propone no converge nunca. La secuencia que sí funciona es rellenar y llamar `aplicar` →
+`poblar` → `render` **sin volver a pasar por `organizar`** (así salieron `Aplicadas: 99`,
+`COPY: 147, SKIP_DEDUP: 20`, 140 documentos en la sala).
+
+**3. La ruta MD apunta al motor jubilado, y eso mata los enlaces del índice.** `_md_path`
+(`core/sala_lectura.py:244`) construye `01_Procesado/MD/<slug>.md`; la sala de máquina escribe en
+`01_Procesado/02_Sala de máquina/03_MD/`. `01_Procesado/MD/` está vacío, luego:
+
+- `preparar-residuo` responde «**Sin residuo con texto extraído. Nada que preparar**» con 99
+  documentos en residuo y 176 espejos MD en disco. Es un «no hay» que en realidad es «miré donde no
+  está» — el `if not md.exists(): continue` se los come en silencio.
+- Los **140** enlaces «ver texto» de `INDICE.md` apuntan a `../MD/…` y están **todos muertos**, en
+  el índice que es justo lo que lee el abogado.
+
+Medido cuánto arregla mover solo el directorio: de los 99, **88 casan por nombre** con un MD real y
+**11 no**, y los 11 son bundles que el split partió (`165.pdf`, `Contrato Golf 14jul17.pdf`,
+`Anexo contrato restaurante 18jun20.pdf`, `20260709104308879.pdf`…): el padre no tiene MD propio,
+su texto vive en los hijos `…__d01_…md`, `…__d02_…md`. Luego el arreglo es de **dos** piezas —
+directorio nuevo, y resolución por `glob('*__<hash8>*.md')` para los partidos—, no de una.
+
+**4. La sala sale en subcarpetas por fuente.** `Sala lectura/Drive E&V/` (103) y
+`Sala lectura/Email/` (35), cuando la skill v1.3 fija estructura **PLANA** y la categoría en
+`INDICE.md`. Tercer defecto de `#67`, confirmado en vivo.
+
+**5. `sala_lectura` no resuelve el W-code.** `abrir_caso` y `sala_maquina` aceptan `W-02JSVZ`;
+`sala_lectura` llama a `config.caso_path` (o sea `path_for`) sin pasar por `resolve_ref` y aborta con
+`LocalWorkspaceMissing`. Y en el camino **deriva una ciudad equivocada** (`city='Valencia'` para un
+caso de Barcelona), que es el mismo error con otra cara: resolver una referencia que no entiende en
+vez de rechazarla.
+
+**La frontera.** No son cinco defectos, es uno: **el módulo está marcado como jubilado y sigue
+siendo la única implementación**, así que nadie lo arregla y nadie lo sustituye. El pivote a la
+skill se decidió pero no se hizo (ver memoria `project-sala-lectura-prompt-driven`, «el PIVOTE a
+local sin decidir»). Mientras el CLI sea la vía real, sus defectos son defectos de producción, no
+deuda de un módulo muerto.
+
+**Remedio, por orden de daño.** (a) Ruta MD + resolución de bundles: repara `preparar-residuo` y 140
+enlaces, y es lo más barato. (b) Que `clasificar_caso` **no pise** celdas ya rellenas — su mutante:
+una worklist con 99 filas clasificadas debe seguir teniendo 99 tras `organizar`, y el test muere si
+vuelven a quedar en blanco. (c) Que `organizar` encadene `catalogo` al principio y `aplicar` tras la
+worklist, o que deje de llamarse todo-en-uno. (d) Que una sala poblada con 0 acciones sobre un
+catálogo vacío **falle** en vez de felicitarse. (e) `resolve_ref` en el CLI. (f) Estructura plana.
+
+**Disparador de promoción.** Disparado: es el montaje de la sala de lectura de cualquier caso, y hoy
+solo termina si quien lo corre sabe saltarse el comando que el runbook recomienda. Actualizar el §7
+del `RUNBOOK_APERTURA_EXPEDIENTE` con la secuencia que sí converge es lo primero, y no cuesta código.
+
+## 152. Dos tests exigen `.env`, así que la suite da rojo falso en cualquier worktree
+
+> ✅ **RESUELTA el 2026-09-05 en la rama a la que se cedió** (`claude/beautiful-gates-438572`,
+> autorrelleno de fichas de colaborador desde la firma del correo). La cesión funcionó: el arreglo
+> cae dentro de la función que esa rama reescribía, y hacerlo allí evitó la tirita a mitad de
+> refactor. **Los dos tests reciben ahora `client=MagicMock()`** y pasan **sin `.env`**: 21/21
+> verdes desde un worktree limpio.
+>
+> **Y la propiedad sigue protegida, que es lo que importaba:** mutando la guarda para que el
+> respaldo por email corra con el criterio del NIF caído, **los dos tests vuelven a fallar**. No se
+> arregló la configuración a costa de vaciar el test.
+>
+> **De paso, un defecto que la entrada no había visto.** La última línea del segundo test era
+> `respaldo.assert_not_called(), "mensaje"` — una **tupla**, no un `assert`. El método sí se llamaba
+> y sí levantaba, así que el test funcionaba, pero su mensaje no se mostraba **nunca**: al fallar no
+> decía qué propiedad se había roto. Convertida en un `assert` de verdad.
+>
+> **Lo que esto NO arregla, y conviene no leerlo de más:** el `leak-guard` de pre-commit sigue
+> ciego en los worktrees (`#161`). Son dos problemas distintos con la misma raíz —los artefactos
+> gitignored que un worktree no hereda—, y sólo se cierra el de los tests.
+
+**Medido el 2026-09-04.** La suite corrida desde el worktree
+(`.claude/worktrees/nuevo-caso-bad-debt-ffe40e`) devuelve exit 1 con dos fallos, y desde la raíz del
+repo la misma selección va verde:
+
+```
+worktree: ..F.F................  → FAILED tests/test_crm_dedup_incertidumbre.py::TestUnaConsultaCaidaNoEsAusencia::test_el_colaborador_tampoco
+                                   FAILED tests/test_crm_dedup_incertidumbre.py::test_el_respaldo_del_colaborador_no_corre_si_el_NIF_no_se_pudo_mirar
+raíz:     .....................  → 21 passed
+```
+
+**La causa, y no es que el guard esté mal.** Los dos tests parchean `_buscar_registros` y esperan
+que `ensure_colaborador_vinculado` levante `IdentidadSinComprobar` cuando el NIF no se pudo mirar.
+Pero esa función construye `SudespachoLegacyClient()` (`core/sudespacho_relations.py:2125`) **antes**
+de llegar a lo parcheado, y el constructor exige `SUDESPACHO_LEGACY_HOST` del `.env`
+(`sync_sudespacho_legacy.py:393`). Sin `.env` explota con `SudespachoLegacyError`, que
+`pytest.raises(IdentidadSinComprobar)` no atrapa. Con `.env` la construcción es **inerte** —solo
+lee configuración, no abre red— y el test ejerce exactamente lo que dice ejercer. Luego el guard es
+correcto: lo que falla es la **hermeticidad**.
+
+**Por qué importa más de lo que parece.** `.env` está gitignored y un worktree no lo hereda; eso ya
+lo dice `[APER-01]` del runbook de apertura, pero **para el pipeline**, no para los tests. Y el
+flujo estándar del repo es «una mesa = una tarea = una rama», o sea worktree. Así que el gate de
+«suite verde» del cierre sale rojo por construcción en el sitio donde se trabaja, con dos fallos que
+no tienen nada que ver con lo que se acaba de cambiar. Es el patrón que enseña a ignorar el rojo, y
+ya costó una investigación aquí para descartar que fuera del diff.
+
+**Remedio.** Que los dos tests no dependan de la configuración real: parchear
+`core.sudespacho_relations.SudespachoLegacyClient` (o inyectar el `client`, que la firma ya acepta)
+en vez de dejar que se construya desde el entorno. Dos mutantes, y hacen falta los dos: (1) sin
+`.env`, los dos tests deben pasar — el test muere si vuelven a fallar por configuración ausente; y
+(2) con el respaldo por email **sí** llamado, el test debe seguir fallando — si al desacoplar el
+cliente se pierde el `respaldo.assert_not_called()`, se pierde justo la propiedad que H-04 protege.
+
+**Disparador de promoción.** Disparado y recurrente: sale en cada corrida de la suite desde un
+worktree. La alternativa barata mientras no se arregle —correr la suite desde la raíz— es la que ya
+prescribe `[APER-01]`, pero conviene decirlo también en el §11 del runbook, que es donde se mira al
+cerrar.
+
+
+## 153. La puerta PRINCIPAL de alta no valida nada: la UI reproduce el caso `s/n`
+
+> ✅ **CERRADO 2026-09-05.** Validado **en el sumidero** (`ensure_case`), no en la
+> puerta: así queda cubierta también la que nadie ha escrito todavía. Diseño en
+> `docs/superpowers/specs/2026-09-05-validar-en-el-sumidero-design.md` (rev. 2) y la R1 que lo falsó, con su informe literal, en `docs/superpowers/specs/2026-09-05-validar-en-el-sumidero-r1-adversarial-review.md`.
+>
+> **Lo que NO cierra, y se dice:** que sea imposible sacar un expediente de
+> `CASOS_ROOT` por otras vías. Hay tres puertas más, abiertas como `#155`, `#156` y
+> `#157` con la evidencia ejecutada de la R1.
+
+> 🔴 **ABIERTA.** Levantado por la R1 adversarial del 2026-09-04 (`docs/superpowers/specs/2026-09-04-apertura-w02jsvz-pipeline-r1-adversarial-review.md`).
+> **Preexistente**: no lo introdujo el diff de `MEJORAS #148`, lo dejó al descubierto.
+
+`MEJORAS #148` arregló `componer_case_id`, que es la vía del **CLI de seis flags**. Pero
+`streamlit_app.py:1977-1994` **compone `_case_id_auto` con su propia interpolación** y pasa
+`final_case_id` directo a `case_manager.ensure_case` (`:338-343`), sin pasar por
+`componer_case_id` ni por `exigir_sin_caracteres_de_ruta`. Con una dirección que lleve `s/n`,
+Windows interpreta el `/` como separador, se crean dos componentes bajo la ciudad y **la UI
+muestra «Caso local disponible»**. El revisor lo reprodujo sobre head:
+
+```text
+FAILED test_case_creation_rejects_multicomponent_case_id
+E Failed: DID NOT RAISE ValueError
+```
+
+**Por qué esto va POR DELANTE de lo que ya se arregló.** El CLI de seis flags lo uso yo; la UI de
+Streamlit es la que usan **Paola y Ana**, que no tocan código. Arreglar la puerta de servicio y
+dejar abierta la principal es el orden equivocado, y solo se vio porque el mandato de la R1
+declaraba esta duda como no verificada: «¿queda alguna vía que componga una ruta de caso desde
+entrada del usuario sin pasar por `componer_case_id`?». La respuesta fue sí.
+
+**Remedio.** El sumidero es único: `ensure_case`. Validar **ahí** —no en cada puerta— es lo que
+cierra la familia en vez del ejemplo, y de paso cubre cualquier llamador futuro. Su mutante: una
+dirección con `/` desde la composición real de Streamlit debe abortar **antes** de `ensure_case`
+y no dejar ninguna carpeta parcial; el test muere si vuelve a crearse el esqueleto.
+
+**Disparador de promoción.** Disparado: cualquier finca rústica con `s/n` dada de alta desde la UI.
+
+
+## 154. El override de ruta permite escapar de `CASOS_ROOT`
+
+> ✅ **CERRADO 2026-09-05.** Validado **en el sumidero** (`ensure_case`), no en la
+> puerta: así queda cubierta también la que nadie ha escrito todavía. Diseño en
+> `docs/superpowers/specs/2026-09-05-validar-en-el-sumidero-design.md` (rev. 2) y la R1 que lo falsó, con su informe literal, en `docs/superpowers/specs/2026-09-05-validar-en-el-sumidero-r1-adversarial-review.md`.
+>
+> **Lo que NO cierra, y se dice:** que sea imposible sacar un expediente de
+> `CASOS_ROOT` por otras vías. Hay tres puertas más, abiertas como `#155`, `#156` y
+> `#157` con la evidencia ejecutada de la R1.
+
+> 🔴 **ABIERTA.** Levantado por la R1 adversarial del 2026-09-04 (`docs/superpowers/specs/2026-09-04-apertura-w02jsvz-pipeline-r1-adversarial-review.md`).
+> **Preexistente.** Familia de `MEJORAS #141` (`buscar()` no valida el `case_id`, así que una
+> referencia con `..` escribe fuera del catálogo): mismo agujero, otra puerta.
+
+`streamlit_app.py:1983-1994` acepta un override de ruta del usuario; `destino_de_alta` y
+`path_for_ciudad` (`core/casos/case_locator.py:132-158, 261-267`) **concatenan sin exigir un
+componente relativo ni verificar contención**. Una ruta absoluta descarta la raíz y un `..` la
+atraviesa; después `ensure_case` hace `mkdir(parents=True)` y deposita el expediente ahí. El
+revisor midió que la composición pura devuelve `C:\Windows` para un `case_id` absoluto:
+
+```text
+FAILED test_case_creation_rejects_parent_traversal
+E Failed: DID NOT RAISE ValueError
+```
+
+**Lo que NO hace falta** es imponer el formato canónico del `case_id` —eso ya se midió como una
+guarda demasiado ancha en `#148`—. Lo que falta es la **contención**: que el destino resuelto esté
+bajo `CASOS_ROOT`, comprobado con `Path.resolve()` y no con comparación de cadenas.
+
+**Remedio.** La misma comprobación en el sumidero que `#153`, y con los dos mutantes que hacen
+falta: una ruta absoluta y un `..` abortan sin crear nada, **y** un `case_id` legítimo con
+paréntesis, comas y acentos sigue pasando — endurecer de más aquí rompe el alta de casos que ya
+existen en el catálogo.
+
+**Disparador de promoción.** Se promueve **junto a `#153`**: comparten sumidero y arreglarlos por
+separado es hacer dos veces el mismo trabajo. Riesgo bajo por frecuencia (hay que teclear el
+override a mano) y alto por consecuencia (expediente con PII fuera del árbol gobernado).
+
+
+## 155. `move_to_city` mueve el expediente completo fuera de `CASOS_ROOT`
+
+> 🔴 **ABIERTA.** Destapada por la R1 adversarial del 2026-09-05 (`docs/superpowers/specs/2026-09-05-validar-en-el-sumidero-r1-adversarial-review.md`, H-01), **con
+> reproducción ejecutada**. Es la puerta que falsó la premisa central de `#153`/`#154`.
+
+`core/casos/case_locator.py:270-319`. `move_to_city` valida **solo la longitud del motivo**;
+compone el destino con `path_for_ciudad(case_id, ciudad_destino)`, hace
+`dest.parent.mkdir(parents=True)` y `shutil.move(src, dest)`. No pasa por `ensure_case`, no
+valida la ciudad y no comprueba contención. El revisor lo corrió:
+
+```json
+{"test": "move", "dest": "...\\p\\move\\FUERA\\EV-2026-001", "outside": true,
+ "payload": "CANARIO", "source_exists": false, "buscar": null}
+```
+
+El árbol entero sale de la raíz, **el origen desaparece** y `buscar` pierde el caso. Con el
+canario dentro: los bytes del expediente se van con él.
+
+**Mi error, que conviene que conste porque es el patrón:** yo encontré esta función antes de que
+volviera el informe y la **archivé como no explotable** porque la UI ofrece la ciudad en un
+`selectbox` de catálogo cerrado (`streamlit_app.py:1436`). El revisor lo rebate en una línea:
+*el catálogo está en el envoltorio; no protege la API de core*. Usé como garantía exactamente la
+clase de cosa que `#153` venía a arreglar.
+
+**Remedio.** La misma pareja que `ensure_case`: `exigir_componente_de_ruta(ciudad_destino)` +
+pertenencia a `_CITY_NAMES` + contención léxica y física del destino, **antes** del `shutil.move`.
+Su mutante: `move_to_city(case, '../FUERA', motivo, actor)` aborta, **el origen sigue existiendo**
+y el exterior queda vacío — la aserción sobre el origen es la que importa, porque el daño de un
+`move` es que no hay copia que recuperar.
+
+**Disparador de promoción.** Riesgo bajo por frecuencia (la UI cierra el catálogo) y **alto por
+consecuencia**: mueve, no copia. Se promueve **junto a `#156`**, que comparte la falta de contrato
+en el destino.
+
+
+## 156. `reservar_lote` / `caso_path` admiten un directorio absoluto externo como si fuera un caso
+
+> 🔴 **ABIERTA.** R1 adversarial del 2026-09-05 (`docs/superpowers/specs/2026-09-05-validar-en-el-sumidero-r1-adversarial-review.md`, H-01, segundo contraejemplo), con
+> reproducción ejecutada.
+
+`core/casos/case_locator.py:43-46` acepta **cualquier directorio absoluto existente** como si
+fuera un caso, y **no exige `_caso.md`**. Con eso,
+`reservar_lote(str(directorio_exterior), 'manual', 'sonda')` (`core/intake_lotes.py:89-98`) crea
+`00_Input/<lote>` **fuera de la raíz**, sin pasar por `ensure_case`:
+
+```json
+{"test": "intake_absolute", "outside": true, "lote_exists": true, "index": false}
+```
+
+No es un alta completa —no hay `_caso.md`— y esa distinción **no devuelve la contención**: hay un
+árbol de intake de un caso fantasma fuera del árbol gobernado.
+
+**La frontera, y por eso no es trivial:** aceptar una ruta absoluta es **deliberado** en el modo
+local (`CASOS_ROOT` al Desktop tras un *checkout*), así que el remedio no es prohibirlo: es
+**exigir que sea un caso** (que tenga `_caso.md`) o que esté registrado como copia prestada. Es
+decir, distinguir *checkout legítimo* de *escape accidental*, que es literalmente lo que el
+revisor pidió.
+
+**Remedio.** Que `caso_path`/`localizar` exijan la marca de caso (`00_Input/_caso.md`) o
+pertenencia al `WorkspaceRegistry` antes de devolver un directorio de fuera. Dos mutantes: un
+directorio externo **sin** `_caso.md` se rechaza, y una copia prestada **registrada** sigue
+funcionando — sin el segundo, el arreglo rompe el modo local.
+
+**Disparador de promoción.** Junto a `#155`. Y ojo: toca la resolución de qué copia es la
+operativa, así que por radio de daño son **dos rondas**.
+
+
+## 157. Una junction preexistente en un hijo del caso saca los bytes del árbol gobernado
+
+> 🔴 **ABIERTA.** R1 adversarial del 2026-09-05 (`docs/superpowers/specs/2026-09-05-validar-en-el-sumidero-r1-adversarial-review.md`, H-04), demostrada con una **junction
+> real de Windows**. Límite declarado del arreglo de `#153`/`#154`, no un descuido.
+
+Con `CASOS/EV-2026-002/` como directorio normal y su `00_Input` como *junction* hacia fuera
+—creada **antes** del alta—, la contención de `ensure_case` pasa (el directorio del caso sí está
+contenido), `mkdir(exist_ok=True)` acepta el hijo enlazado, y `_write_case_index` deposita el
+`_caso.md` **fuera**:
+
+```json
+{"test": "junction_case",  "result": "ValueError", "out_empty": true}
+{"test": "junction_child", "case_inside": true, "outside_index": true}
+```
+
+La primera línea es el control hermano: una junction **en el propio caso** sí se rechaza. Al
+ponerla **en un hijo**, el índice acaba fuera. **No es un TOCTOU**: no hace falta cambiar ningún
+enlace entre la comprobación y la escritura.
+
+**Por qué no se arregla con una comprobación más.** `ensure_case` valida **un** directorio y
+escribe en **nueve** descendientes. Contenerlos todos es un contrato distinto: o se comprueba
+cada destino antes de cada escritura —y entonces la costura natural es
+`core/casos/escritura.py`, que ya lo hace con `_bajo` para las escrituras *dentro* de un caso—, o
+se declara que el árbol de un caso no puede contener enlaces y se verifica al abrirlo.
+
+**Remedio propuesto:** enrutar las escrituras del alta por la costura de `escritura.py`, que ya
+tiene la propiedad, en vez de añadir una comprobación nueva. Su mutante: el escenario de arriba
+aborta **antes** de escribir fuera y **sin dejar andamiaje parcial**.
+
+**Disparador de promoción.** El más bajo de los tres: exige una junction preexistente en el árbol
+de casos, que hoy nadie crea. Se registra porque está **medido** y porque el arreglo de
+`#153`/`#154` declara expresamente no cubrirlo.
+
+
+## 158. La cuarta puerta al sumidero: `intake_manual` confía en el `lote` que le pasan
+
+> 🔴 **ABIERTA.** R2 adversarial del 2026-09-05 (`docs/superpowers/specs/2026-09-05-validar-en-el-sumidero-r2-adversarial-review.md`, H-06), **preexistente** — no la
+> introdujo el arreglo de `#153`/`#154`, la destapó. Verificada contra la fuente el mismo día.
+
+`core/intake_manual.py` tiene tres funciones de depósito y **las tres validan la mitad
+relativa y ninguna la absoluta**:
+
+| Función | Qué valida | Qué acepta sin mirar |
+|---|---|---|
+| `save_file` | que `filename` no lleve separadores, y que el caso **exista** | `lote` |
+| `extract_zip` | que el caso exista, y `safe_zip_extract` contra `lote` | `lote` |
+| `save_file_en_lote` | `rel` contra `lote`, con `resolve()` y todo | `lote` |
+
+En las tres, `lote` entra como argumento y sale como `dest = lote / rel`. Un `lote` absoluto
+apunta a donde quiera: `pathlib` descarta el lado izquierdo, así que ni siquiera hace falta un
+`..`. La guarda de nombre y la de existencia del caso dan la **apariencia** de camino cerrado.
+
+**Es exactamente la forma del defecto que ya está anotado como propio:** la guarda vive en el
+envoltorio y el otro llamador no pasa por ella. Aquí está incluso escrito en el docstring de
+`save_file_en_lote` — «el caller ya validó la existencia del caso al abrir el lote con
+`abrir_lote_manual`/`reservar_lote`, que aplica el guard §6)». Eso es una **premisa sobre el
+llamador**, no una comprobación; y `save_file`, cuando recibe `lote=None`, sí llama a
+`abrir_lote_manual` —o sea que la vía buena existe— pero cuando lo recibe, no comprueba nada.
+
+**Remedio.** Una sola línea en cada una de las tres, antes del primer `mkdir`: que `lote` esté
+contenido en `caso_path(case_id)` —o en la copia operativa que resuelva `CaseWorkspace`—, con
+`_contenido_en` de `core/case_manager.py`, que ya tiene la propiedad y ya documenta por qué no
+usa `case_mutex._bajo`.
+
+**Su mutante:** quitar esa línea y pasar `lote=Path(tmp_path)/"FUERA"` a cada una de las tres
+tiene que dejar el fichero fuera del árbol de casos — hoy lo deja, y los tests actuales pasan.
+
+**Disparador de promoción.** Junto a `#155`/`#156`/`#157`, que son las otras puertas del mismo
+sumidero. Por sí sola no urge: hoy los tres callers vivos (`streamlit_app`, el CLI de intake
+manual, `intake_lotes`) pasan lotes que ellos mismos han abierto. Lo que la hace registrable es
+que **el contrato no lo dice y nada lo impide**.
+
+
+## 159. `case_mutex._bajo` rechaza a los hijos de una raíz anclada
+
+> 🔴 **ABIERTA.** R2 adversarial del 2026-09-05 (H-02), medida. Es el motivo de que
+> `core/case_manager._contenido_en` exista en vez de reutilizar `_bajo`, y así está dicho en su
+> docstring.
+
+`core/casos/case_mutex._bajo` decide contención con `c.startswith(r + os.sep)`. Cuando la raíz
+**ya termina en separador** —una unidad (`C:\`) o un recurso UNC (`\server\share\`)— eso exige
+dos separadores seguidos y devuelve `False` para **todo** descendiente legítimo:
+
+```
+_bajo(Path('C:/CASOS/EV-2026-001'),      Path('C:/'))              -> False
+_bajo(Path('//server/share/CASOS/EV'),   Path('//server/share/'))  -> False
+```
+
+Con `CASOS_ROOT` apuntado a la raíz de una unidad o a un recurso de red —los dos configurables
+hoy por `.env`— el mutex del caso consideraría que ningún caso está bajo su raíz.
+
+**Por qué no se arregló de noche, junto al resto.** Lo consume el **mutex del caso**, cuyo radio
+de daño es «quién puede escribir sobre qué copia»: por presupuesto de rondas son **dos**, una de
+diseño y una de diff, y esta pieza entró como remediación de una R2 ya cerrada. Cambiar la
+semántica de contención del mutex a las 3 de la mañana, sobre una propiedad que no falla en
+ninguna configuración viva, es precisamente lo que el techo de rondas existe para impedir.
+
+**Remedio.** Sustituir el cuerpo de `_bajo` por `os.path.commonpath`, que no tiene el caso
+especial, y **borrar `_contenido_en`** dejando un solo hogar para la propiedad — el mismo patrón
+que cerró el punto 4 de este encargo con `_MD_SUBDIR`. Sus mutantes: los dos casos anclados de
+arriba en verde, y los dos negativos (`D:/CASOS/EV` bajo `C:/CASOS`, `C:/CASOS_x/EV` bajo
+`C:/CASOS`) que impiden que el arreglo se vuelva permisivo. Los cuatro ya están escritos en
+`tests/test_ensure_case_sumidero_r2.py::test_la_contencion_acepta_los_hijos_de_una_raiz_anclada`,
+apuntados a `_contenido_en`: al unificar, se reapuntan a `_bajo`.
+
+**Disparador de promoción.** Que alguien configure `CASOS_ROOT` en la raíz de una unidad o en un
+UNC. Mientras `CASOS_ROOT` sea una subcarpeta —lo que es en las tres máquinas— la propiedad no
+se ejerce.
+
+
+## 160. `ensure_colaborador_vinculado` necesita credenciales ANTES de poder fallar cerrado
+
+> ✅ **RESUELTA el 2026-09-05** en `claude/beautiful-gates-438572`, junto con la `#152`, que es el mismo defecto visto desde el lado del test: los dos tests inyectan ahora el `client` en vez de dejar que se construya desde el entorno. La función **no** cambió: el acoplamiento con el `.env` sigue ahí para cualquier otro llamador que no inyecte cliente, y eso es deliberado — arreglarlo de verdad es tocar la construcción del cliente legacy, que no es de esta rama.
+
+> 🔴 **ABIERTA.** Medido el 2026-09-05 al correr la suite **desde un worktree**, que es el
+> flujo estándar del repo (`docs/FLUJO_GIT.md`) y **no hereda `.env`**. Preexistente: entró con
+> el PR #272 (`ecc21ac`) y no la toca ninguna rama en curso mía.
+> ⚠️ **Módulo de la sesión hermana** (alta de colaborador en el CRM): avisada, no tocado.
+
+Dos tests de `tests/test_crm_dedup_incertidumbre.py` fallan en cualquier clon sin `.env`:
+
+```
+tests/test_crm_dedup_incertidumbre.py::TestUnaConsultaCaidaNoEsAusencia::test_el_colaborador_tampoco
+tests/test_crm_dedup_incertidumbre.py::test_el_respaldo_del_colaborador_no_corre_si_el_NIF_no_se_pudo_mirar
+E   core.sync_sudespacho_legacy.SudespachoLegacyError: Falta SUDESPACHO_LEGACY_HOST en .env.
+```
+
+**No es un fallo del test: es la forma de la función.** `core/sudespacho_relations.py:2123-2125`
+construye el cliente **antes** del `try`, así que `ensure_colaborador_vinculado` exige
+credenciales para llegar a la comprobación de identidad. Su hermana `ensure_contrario_vinculado`
+no falla en el mismo entorno, y las dos tienen el mismo parámetro `client=None`: la asimetría es
+**cuándo** se materializa el cliente, no la firma.
+
+**Por qué importa más que un test rojo.** La propiedad que esos dos tests fijan es del PR #272 y
+es buena —*«un 500 tiene que constar, no colapsar en no existe»*—, pero en un entorno sin `.env`
+la función levanta un **error de configuración** donde la propiedad pide `IdentidadSinComprobar`.
+Los dos fallan cerrado, así que no hay pérdida de datos; lo que se pierde es la **capacidad de
+distinguir** «no pude mirar la identidad» de «no pude mirar nada porque no hay credenciales».
+Es la familia de `feedback-no-lo-se-no-es-no-hay` en el nivel de la causa.
+
+Y el efecto práctico: **la suite no es verde en un worktree limpio**, o sea que el instrumento
+con el que se decide si una rama entra a `main` depende de un fichero que el worktree no tiene.
+Eso convierte dos rojos permanentes en ruido de fondo, que es cómo se pierden los rojos de
+verdad.
+
+**Remedio.** Mover la construcción del cliente **después** de resolver la identidad, o
+—equivalente y más barato— hacerla perezosa: `_resolver_colaborador` ya recibe `client`, así que
+basta que el cliente se materialice en el primer uso real. Su mutante: los dos tests de arriba
+tienen que pasar **sin `.env`** y seguir levantando `IdentidadSinComprobar`, no
+`SudespachoLegacyError`.
+
+**Disparador de promoción.** Inmediato en cuanto la sesión hermana toque ese módulo: es una
+línea movida dentro de la función que está reescribiendo, y arreglarlo desde fuera sería pisarla.
+
+
+## 161. El `leak-guard` de pre-commit es INERTE en todo worktree, y por eso dejé pasar PII  [PROMOVIDO → PLAN.md]
+
+> 🔴 **ABIERTA y con daño real, no hipotético.** Medido el 2026-09-05: una dirección de inmueble
+> de la blocklist llegó a GitHub en el commit `eee9a7e` con el hook **en verde**. Lo paró
+> `leak-scan` en CI, que sí tiene la lista.
+
+`scripts/precommit_leak_guard.py::cargar_blocklist` lee los términos de dos artefactos
+**gitignored**: `data/_saneado/replacements.txt` y `data/_config/pii_blocklist.txt`. Un worktree
+recién creado **no tiene ninguno de los dos** — por definición, porque están gitignored. Y el
+docstring dice lo que pasa entonces: *«Vacío si no hay ninguno.»*
+
+Con la lista vacía el bucle de comprobación no itera, así que el guard **pasa en verde sin haber
+comprobado nada**. Medido en las dos raíces la misma noche:
+
+```
+<raíz del repo>          data/_config/pii_blocklist.txt -> existe, 12 líneas (70 términos)
+<worktree>               data/_config/pii_blocklist.txt -> NO existe          (0 términos)
+```
+
+**Y el flujo estándar del repo es el worktree.** `docs/FLUJO_GIT.md` manda «una mesa = una tarea =
+una rama», o sea que **la mayoría de los commits del proyecto se hacen donde el guard no puede
+ver nada**. El verde del hook no significa «no hay PII»: significa «no tengo con qué mirar».
+
+**Es exactamente la familia que este repo ya tiene documentada** —una guarda que no puede dar el
+otro valor— y aquí en su forma más cara, porque el instrumento inerte es justo el que protege el
+dato del cliente.
+
+**Remedio, y la elección importa.** Fallar cerrado es la doctrina de la casa, pero convertirlo hoy
+en bloqueo dejaría sin poder commitear a **todas** las sesiones con worktree hasta que alguien
+copie la lista, incluida la que está trabajando ahora mismo. Propuesta en dos tiempos:
+
+1. **Ya:** que `cargar_blocklist` **avise en STDERR** cuando devuelve cero términos, diciendo la
+   ruta que buscó y que la comprobación de PII **no se ha ejecutado**. Un guard que no puede
+   mirar tiene que decirlo; hoy calla.
+2. **Con decisión de Nikolai:** o bien fallar cerrado, o bien que el hook resuelva la lista desde
+   la **raíz común** (`git rev-parse --git-common-dir` da el `.git` compartido, y de ahí se llega
+   al checkout principal), que es lo que la haría funcionar en worktrees sin copiar nada.
+
+**Su mutante:** vaciar la blocklist y commitear un término conocido — hoy pasa en verde y en
+silencio; con (1) pasa pero **lo dice**; con (2) lo caza.
+
+**Disparador de promoción.** Inmediato: es la única guarda de PII que corre antes de que el dato
+salga de la máquina, y está probado que no corre.
+
 ---
 
-## 148. Documento de identidad y domicilio del colaborador desde los contratos del Drive
+---
+
+## 162. Documento de identidad y domicilio del colaborador desde los contratos del Drive
 
 **Estado:** esperando decisión de Nikolai. **No empezar.**
 
@@ -6565,7 +7255,7 @@ construir un extractor masivo de documentos y domicilios.
 
 ---
 
-## 149. El cargo del colaborador no tiene dónde vivir en el CRM
+## 163. El cargo del colaborador no tiene dónde vivir en el CRM
 
 `core/email_firmas.py` **ya extrae** el cargo y sale en el informe de
 `scripts.crm_colaboradores_firmas report`, pero no se escribe: el contrato de
@@ -6578,7 +7268,7 @@ Si llega el campo, sólo hay que añadir el par a `_COMPLETABLES_COLABORADOR` y 
 
 ---
 
-## 150. `scripts/crm_ficha.py` sigue siendo extrajudicial-only
+## 164. `scripts/crm_ficha.py` sigue siendo extrajudicial-only
 
 `[APER-49]`. La pieza C sirve a las dos jurisdicciones (las dos pasan por
 `_resolver_o_crear_colaborador`), pero el CLI que la dispara hardcodea
@@ -6592,7 +7282,7 @@ existe, así que del lado de colaboradores lo único que falta es cablear el CLI
 
 ---
 
-## 151. `core/email_firmas.py` no detecta el mojibake por charset mal declarado
+## 165. `core/email_firmas.py` no detecta el mojibake por charset mal declarado
 
 **Detectado en la Task 9, declarado fuera de alcance.** `extraer_de_eml`
 (`core/email_firmas.py:580-584`) envuelve `parte.get_content()` en un `except Exception`
@@ -6615,7 +7305,7 @@ una detección independiente antes de confiar en él).
 
 ---
 
-## 152. El cargo se lee por posición, y en el corpus real falla en las dos firmas que lo traen
+## 166. El cargo se lee por posición, y en el corpus real falla en las dos firmas que lo traen
 
 **Medido el 2026-09-05 corriendo `crm_colaboradores_firmas report` contra W-02Q38C**, que es
 justamente lo que ninguna fixture sintética podía enseñar: de las cuatro firmas del
@@ -6635,7 +7325,7 @@ asteriscos son la negrita HTML degradada). Las dos causas medidas:
   postal partida en varias líneas con enlaces de mapas interleaved, y los teléfonos.
 
 **Qué NO es:** un riesgo para los datos del cliente. El cargo **no se escribe en el CRM**
-—no existe esa property, ver `#149`— y sólo sale en el informe que un humano confirma.
+—no existe esa property, ver `#161`— y sólo sale en el informe que un humano confirma.
 
 **Qué sí es:** el informe dice `FIRMA_SIN_CAMPO` en el cargo, y ese veredicto significa «hay
 firma y no trae ese campo» cuando la verdad es «no supe leerlo». Mitigado el 2026-09-05
@@ -6643,7 +7333,7 @@ escribiéndolo en la leyenda del propio informe, que es donde se lee; la mitigac
 honesta pero no arregla la lectura.
 
 **Disparador:** que a Nikolai le importe el cargo en el informe, o que aparezca un campo de
-cargo en el CRM (ver `#149`) y el dato deje de ser sólo informativo. Dos vías posibles, en
+cargo en el CRM (ver `#161`) y el dato deje de ser sólo informativo. Dos vías posibles, en
 orden de esfuerzo: ensanchar la ventana hacia atrás sólo para la búsqueda del cargo, o
 reconocer la línea del nombre por algo que no sea la negrita (por ejemplo, casarla contra
 el nombre que ya se conoce del `From:` o de la ficha del CRM, que es un dato que el módulo
@@ -6651,29 +7341,3 @@ tiene a mano en el CLI aunque no dentro de `core/email_firmas.py`).
 
 ---
 
-## 153. Dos tests exigen credenciales VIVAS del CRM, y llevan meses explicándose mal
-
-**Medido el 2026-09-05.** Estos dos fallan en cualquier árbol sin una sesión fresca del CRM:
-
-- `tests/test_crm_dedup_incertidumbre.py::TestUnaConsultaCaidaNoEsAusencia::test_el_colaborador_tampoco`
-- `tests/test_crm_dedup_incertidumbre.py::test_el_respaldo_del_colaborador_no_corre_si_el_NIF_no_se_pudo_mirar`
-
-**Lo caro no es el fallo: es el diagnóstico heredado.** Durante toda una sesión de once
-tasks, **seis informes seguidos** los explicaron como «el worktree no hereda el `.env` de
-la raíz», y nadie lo comprobó. Se comprobó al cerrar: puesta `SUDESPACHO_LEGACY_HOST`,
-**siguen fallando** — piden además `SUDESPACHO_LEGACY_PHPSESSID`, que es una **cookie de
-sesión que caduca por inactividad (~24 min)**. O sea que no es una variable que falte en un
-sitio: es que estos dos tests **no son herméticos** y dependen de un secreto perecedero.
-
-Que son preexistentes sí se confirmó, y por la vía correcta: corriéndolos contra el árbol
-**base** congelado del objeto de la revisión adversarial, donde fallan igual.
-
-**Por qué importa más de lo que parece.** Un test que no puede pasar nunca en una máquina
-limpia es un test que **siempre** se explica como ruido, y a partir de ahí cualquier fallo
-real en ese fichero se normaliza con la misma frase. Es la familia de «una guarda inerte»,
-aplicada a la suite: dos rojos permanentes que enseñan a no mirar.
-
-**Disparador:** el primer fallo real en `test_crm_dedup_incertidumbre.py` que se explique
-como ambiental sin comprobarlo — o, mejor, antes de eso. El arreglo es mockear el cliente
-legacy en esos dos tests, como ya hacen sus vecinos del mismo fichero, para que la suite
-no dependa de una cookie.

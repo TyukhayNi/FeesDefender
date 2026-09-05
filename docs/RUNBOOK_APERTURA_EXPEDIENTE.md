@@ -170,6 +170,18 @@ python -m scripts.abrir_caso --w-code W-XXXXXX --ciudad Barcelona --tipo-caso VU
 > Contrato: spec de apertura integral §24 D3 y §21; adjudicación de R6 en el §6 del plan
 > `docs/superpowers/plans/2026-08-24-apertura-v1-plan1-modo-v1.md`.
 
+- **`[APER-56]` NUNCA pases un `/` en `--direccion`: parte la carpeta en dos y la corrida
+  termina en 0.** Medido el 2026-09-04 en W-02JSVZ, cuya dirección operativa en E&V lleva un
+  «**s/n**» (finca rústica sin número). El alta imprimió `OK Caso abierto: BaRS8 - <via> s/n …
+  (W-02JSVZ) - BD` y en disco había **dos carpetas anidadas**, `BaRS8 - <via> s\` conteniendo
+  `n <cp> <municipio> (W-02JSVZ) - BD`, con los 170 ficheros del pull dentro. Sin aviso.
+  Y no se descubre en el alta, sino en el comando siguiente: `--case-id W-02JSVZ` falla con
+  `[ERROR] Caso no encontrado`, porque `resolve_ref` no puede reconstruir un caso partido.
+  **Escribe la dirección sin barra** — para `s/n` usa `sn`, que es como la nombra E&V en su propia
+  factura. **Arreglado el 2026-09-04** (`MEJORAS #148`): ahora el alta **aborta con un error que
+  nombra el campo culpable** (`--codigo-caso`, `--direccion` o `--sufijo`) y no crea esqueleto
+  alguno, en vez de terminar en 0 dejando el intake en una ruta sombra. El consejo sigue en pie
+  porque el error hay que evitarlo, no solo detectarlo.
 - **`[APER-34]` Auto-derivación (B5):** en `--fuente drive_ev`, si se omiten,
   `--team-id` (driveId), `--codigo-caso` (nombre de la unidad compartida vía Drive API) y
   `--sufijo` (del `tipo_caso` canónico) se **auto-derivan** desde `--folder-id`. Los flags
@@ -355,21 +367,75 @@ argumentos, estrategia) con la mecánica de intake.** Para llegar aquí ya deber
 cerrado TODO el intake + atomización + sala de máquina (§3-§5) — este es el punto natural
 donde empieza la lectura real; no intercalar análisis a mitad de la mecánica de arriba.
 
-**Usa la skill canónica `organizar-sala-lectura` (v1.3, estructura PLANA)** o el comando
-todo-en-uno del CLI:
+**Usa la skill canónica `organizar-sala-lectura` (v1.3, estructura PLANA).**
+
+**`[APER-55]` `organizar` ya converge — arreglado el 2026-09-04, `MEJORAS #151`.** Este punto
+decía «NO uses `organizar`» y eso dejó de ser cierto el mismo día: `core.sala_lectura.organizar`
+era `clasificar → render → poblar`, le faltaban `catalogo` al principio y `aplicar` tras la
+worklist, y por eso (a) sobre un caso recién abierto declaraba *«Sala de lectura organizada.
+Acciones: {}»* —éxito sobre una sala vacía— y (b) en la corrida siguiente `clasificar_caso`
+reconstruía `_clasificar.md` en blanco, **destruyendo la clasificación a mano** (99 filas perdidas
+en W-02JSVZ, y el `aplicar` posterior devolvió `Aplicadas: 0`).
+
+Hoy el ciclo que su propio mensaje recomienda —rellenar la worklist y volver a correr
+`organizar`— **termina**: encadena el catálogo si falta, vuelca la worklist con `aplicar` antes de
+recalcular el residuo, y `_write_worklist` fusiona en vez de reconstruir.
 
 ```powershell
-python -m scripts.sala_lectura organizar "<case_id>"
+python -m scripts.sala_lectura organizar --case "<W-code o case_id>"   # se detiene si hay residuo
+#    → rellena Tipo/Fecha/Parte/Descripcion en 01_Procesado/_revisar/_clasificar.md
+python -m scripts.sala_lectura organizar --case "<W-code o case_id>"   # y ahora sí termina
 ```
 
-- Si vas por pasos granulares, la secuencia COMPLETA es
-  `catalogo → clasificar → [rellenar worklist] → aplicar → poblar → render`.
-  **`poblar` copia los documentos; `render` solo escribe los índices.** (En W-02T3XO se
+**Secuencia granular**, si quieres ver cada paso (o si `organizar` te deja algo a medias):
+
+```powershell
+python -m scripts.sala_lectura catalogo --case "<case_id>"   # 1. inventario; sin esto todo lo demás es vacío
+python -m scripts.sala_lectura clasificar --case "<case_id>" # 2. auto + genera la worklist del residuo
+#    → rellena Tipo/Fecha/Parte/Descripcion en 01_Procesado/_revisar/_clasificar.md
+python -m scripts.sala_lectura aplicar --case "<case_id>"    # 3. worklist → catálogo (comprueba "Aplicadas: N")
+python -m scripts.sala_lectura poblar  --case "<case_id>"    # 4. copia los documentos
+python -m scripts.sala_lectura render  --case "<case_id>"    # 5. INDICE.md + CRONOLOGIA.md
+```
+
+- **`--case` acepta el W-code** desde el 2026-09-04, igual que `abrir_caso` y `sala_maquina`.
+  Antes abortaba con `LocalWorkspaceMissing` tras derivar además una ciudad equivocada.
+- **`poblar` copia los documentos; `render` solo escribe los índices.** (En W-02T3XO se
   olvidó `poblar` y la sala salió vacía.)
+- **`[APER-57]` Una salida != 0 de `preparar-residuo` u `organizar` NO es un fallo: es el
+  comando diciéndote qué falta.** Desde el 2026-09-05 los dos distinguen estados que antes
+  decían igual, y **el código de salida es parte del mensaje**:
+
+  | Lo que ves | Qué pasa de verdad | Qué haces |
+  |---|---|---|
+  | `Sin residuo: todo el catálogo está clasificado` (0) | de verdad no queda nada | sigue con `poblar` |
+  | `N doc(s) del catálogo están sin clasificar y la worklist no existe todavía` (1) | nadie ha calculado el residuo | `clasificar` primero |
+  | `… y la worklist existe pero ninguna de sus filas casa con el catálogo (hashes rancios)` (1) | cambiaste `00_Input` después de clasificar | `clasificar` otra vez |
+  | `N doc(s) en residuo y NINGUNO tiene texto extraído` (1) | falta el OCR/extracción | `sala_maquina apply` |
+  | `[AVISO] N doc(s) … se quedan fuera por no tener texto` (0, con lista) | vas a clasificar con material incompleto | decide si merece re-correr la sala de máquina |
+  | `Sin material catalogable: N fichero(s) …, ninguno con extensión relevante` | `organizar` no montó nada, y es correcto | revisa qué hay en `00_Input` |
+  | `00_Input está vacío` | no has depositado nada todavía | intake |
+
+  **Por qué importa el detalle:** hasta el 2026-09-04 «no hay residuo» y «no pude leer el
+  residuo» se decían con la misma frase y **los dos salían con 0**. Medido en W-02JSVZ: la CLI
+  dijo *«Sin residuo con texto extraído. Nada que preparar»* con **99 documentos en residuo y
+  176 espejos MD en disco**. La frase era cierta, y por eso costó la tarde: manda a buscar el
+  defecto donde no está. Lo mismo con `organizar`, que decía *«Sala de lectura organizada.
+  Acciones: 0»* con `00_Input` lleno.
+- **`preparar-residuo` ya encuentra el texto**, y los enlaces «ver texto» del `INDICE.md` ya no
+  salen muertos: `_md_path` apuntaba al `01_Procesado/MD/` del motor jubilado y la sala de máquina
+  escribe en `01_Procesado/02_Sala de máquina/03_MD/`. Los **bundles partidos** también se
+  resuelven: su texto vive en los hijos `…__d01_…md` y se concatenan (medido en W-02JSVZ: 88 de 99
+  casaban por nombre, 11 eran partidos).
 - La **subcarpeta con fecha es por diseño** `[APER-22]`: solo los `.eml` con adjuntos MIME
   (documentos compuestos) la generan; el resto es plano. No reinvestigar.
-- **No uses el CLI deprecado `core/sala_lectura.py`** directamente: tiene 3 defectos
-  latentes (ruta MD, colisión de nombres en `poblar`, subcarpetas por fuente) — `MEJORAS #67`.
+- **La advertencia «no uses el CLI deprecado `core/sala_lectura.py` directamente» no protege de
+  nada:** `scripts/sala_lectura.py` es un paso-a-través a ese mismo módulo, así que la vía
+  sancionada *es* la que se advertía evitar. De los 3 defectos de `MEJORAS #67`, los dos que se
+  dieron en W-02JSVZ están arreglados (ruta MD; y la colisión de nombres la cubría ya el sufijo
+  SHA). **Sigue abierto el tercero:** la sala sale en **subcarpetas por fuente**
+  (`Sala lectura/Drive E&V/`, `Sala lectura/Email/`) cuando la skill v1.3 fija estructura PLANA.
+  Eso toca el layout de `poblar` y del índice, y espera la decisión sobre el pivote a la skill.
 
 ---
 

@@ -201,6 +201,16 @@ Código: este directorio (`C:\Users\tnm33\Dev\FeesDefender`), versionado en Git 
   después de validar éxito.
 - **gdrive_ev token**: keep-alive diario + renovación proactiva por expiry
   ya implementada en `core/intake_drive._get_drive_access_token`.
+- **`core.fscache` rompe los worktrees de Claude Desktop (medido el 2026-09-04).** Si «Iniciar
+  con worktree» o un chip de tarea sugerida falla con **«No se ha podido iniciar la tarea
+  sugerida»**, la causa es la caché de listados de Git for Windows contra el **checkout
+  paralelo**: la app materializa el worktree con `-c checkout.workers=6` y git muere con
+  `unable to unlink '<dir>': Directory not empty`. Pasa en **todos los repos** (medido en
+  FeesDefender y MCP-BOE) porque `core.fscache=true` viene de la config de **sistema**.
+  Remedio: `git config --global core.fscache false` (lo global gana a lo de sistema; **por
+  config del repo no se puede**, la app pasa `-c` en la línea de órdenes). Cuesta ~80 ms por
+  `git status`. **Lo que NO sirve:** `checkout.thresholdForParallelism`. El fallo real sale
+  literal en `AppData\Local\Claude\Logs\main.log` — el de `Roaming` está rancio.
 
 ## Permisos y secretos
 

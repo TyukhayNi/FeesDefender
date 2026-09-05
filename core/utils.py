@@ -116,6 +116,68 @@ _CASE_ID_NEW = re.compile(
 _CASE_ID_LEGACY = re.compile(r"^[A-Z]{2,6}-\d{4}-\d{3}$")
 
 
+def exigir_sin_caracteres_de_ruta(valor: str, *, campo: str) -> str:
+    """Devuelve `valor` si puede ser un nombre de carpeta; si no, lanza `ValueError`.
+
+    Es la mitad de `validate_case_id` que **no** habla de formato canónico, extraída para
+    que la use quien compone un `case_id` a partir de campos del usuario (`MEJORAS #148`).
+    Se separó a propósito: la guarda que hacía falta era la de la **gramática de rutas**, y
+    exigir además el formato canónico rompía cinco fixtures con códigos sintéticos
+    (`BaTEST`) — una guarda más ancha que el defecto medido.
+    """
+    if _WIN_FORBIDDEN.search(valor or ""):
+        raise ValueError(
+            f"{campo} contiene caracteres que no pueden estar en una carpeta de Windows "
+            f'(\\ / : * ? " < > |): {valor!r}. Un `/` se comporta como separador de rutas '
+            "y partiría el expediente en dos carpetas anidadas."
+        )
+    return valor
+
+
+def exigir_componente_de_ruta(valor: str, *, campo: str) -> str:
+    """Devuelve `valor` si puede ser **un** componente de carpeta; si no, lanza `ValueError`.
+
+    Es la gramática de rutas completa, y se compone sobre
+    `exigir_sin_caracteres_de_ruta` en vez de duplicarla: **no vacío**, sin
+    `\\ / : * ? " < > |`, y no `.` ni `..`.
+
+    **El «no vacío» está aquí por un hallazgo de la R1 adversarial (H-02).** El 2026-09-04
+    extraje `exigir_sin_caracteres_de_ruta` de `validate_case_id` y **dejé atrás su
+    comprobación de vacío**, que sigue abajo en esta misma función. Reutilizar solo la mitad
+    extraída hacía que `ensure_case("")` pasara toda la validación —`buscar("")` devuelve la
+    propia raíz y `is_relative_to` incluye la igualdad— y **convirtiera `CASOS_ROOT` en un
+    expediente**, con sus nueve subcarpetas y su `_caso.md` dentro. Una extracción parcial
+    que perdió una propiedad, y el sitio donde se recupera es este.
+
+    Lo que NO comprueba: el formato canónico del `case_id`. Eso se midió el 2026-09-04 como
+    una guarda **más ancha que el defecto** — rompió cinco fixtures con códigos sintéticos.
+    """
+    if not (valor or "").strip():
+        raise ValueError(f"{campo} no puede estar vacío.")
+    exigir_sin_caracteres_de_ruta(valor, campo=campo)
+    if valor.strip() in (".", ".."):
+        raise ValueError(
+            f"{campo} no puede ser {valor.strip()!r}: no nombra una carpeta, "
+            "nombra una posición relativa.")
+    # **Espacios al borde: los añadió la R2 (H-03).** Windows los recorta al crear, así que
+    # `case_id = "foo "` creaba `foo` y luego reventaba al crear `foo /00_Input`, dejando
+    # **andamiaje parcial** — justo lo que esta guarda promete impedir. El nombre pedido y el
+    # obtenido eran distintos y nadie lo comparaba.
+    if valor != valor.strip():
+        raise ValueError(
+            f"{campo} no puede empezar ni acabar en espacios ({valor!r}): Windows los "
+            "recorta al crear la carpeta, así que el nombre pedido y el creado no "
+            "coincidirían.")
+    # Caracteres de control: `_WIN_FORBIDDEN` no los cubre y Windows los rechaza al crear,
+    # también a mitad de camino. Medido el 2026-09-05 sobre el catálogo real: ninguno de los
+    # 27 casos lleva ni espacios al borde ni controles, así que esto no rechaza nada vivo.
+    if any(ord(c) < 32 for c in valor):
+        raise ValueError(
+            f"{campo} contiene caracteres de control, que no pueden estar en un nombre de "
+            "carpeta.")
+    return valor
+
+
 def validate_case_id(case_id: str) -> str:
     """Valida y devuelve el case_id. Lanza ValueError si no es válido.
 
@@ -125,11 +187,7 @@ def validate_case_id(case_id: str) -> str:
     """
     if not case_id or not case_id.strip():
         raise ValueError("El case_id no puede estar vacío.")
-    if _WIN_FORBIDDEN.search(case_id):
-        raise ValueError(
-            f"El case_id contiene caracteres no permitidos en rutas Windows "
-            f"(\\ / : * ? \" < > |): {case_id!r}"
-        )
+    exigir_sin_caracteres_de_ruta(case_id, campo="El case_id")
     case_id = case_id.strip()
     if _CASE_ID_NEW.match(case_id) or _CASE_ID_LEGACY.match(case_id):
         return case_id

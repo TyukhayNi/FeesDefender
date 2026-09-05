@@ -10,7 +10,7 @@ import re
 from dataclasses import dataclass
 
 from core import config
-from core.utils import _CASE_ID_NEW_PARTES
+from core.utils import _CASE_ID_NEW_PARTES, exigir_sin_caracteres_de_ruta
 
 SUBDIR_DRIVE_EV = "01_Drive EV"          # espejo: cajón fijo (spec §2)
 FUENTES: tuple[str, ...] = ("drive_ev",) + config.FUENTES_LOTE
@@ -27,9 +27,32 @@ _W_CODE_EN_NOMBRE = re.compile(r"\((W-[A-Z0-9]+)\)")
 def componer_case_id(*, codigo: str, direccion: str, w_code: str, sufijo: str) -> str:
     """Compone el case_id canónico: '<codigo> - <direccion> (<w_code>) - <sufijo>'.
 
-    Formato validado por core.utils.validate_case_id (regex _CASE_ID_NEW):
-    la dirección va pegada al paréntesis de la referencia, sin guion previo.
+    La dirección va pegada al paréntesis de la referencia, sin guion previo.
+
+    **Y lo valida, que es lo que faltaba (`MEJORAS #148`).** Este docstring afirmaba
+    «formato validado por core.utils.validate_case_id» y esa validación no ocurría en
+    esta vía: los únicos llamadores de la guarda eran `core/anon/api.py` y
+    `scripts/init_caso.py`, nunca el sitio que COMPONE el `case_id` a partir de lo que
+    teclea el usuario. Medido el 2026-09-04 abriendo W-02JSVZ: con «s/n» en la dirección
+    —grafía normal en finca rústica— el `/` actuó como separador de rutas, el alta creó
+    **dos** carpetas anidadas con los 170 ficheros del pull dentro, imprimió
+    `OK Caso abierto: …` y salió con código **0**. El `case_id` que imprimía no nombraba
+    a ninguna carpeta, y el fallo no se veía hasta el comando siguiente, donde
+    `resolve_ref` no puede reconstruir un caso partido en dos.
+
+    Se valida **aquí** y no en cada llamador porque este es el punto único por el que
+    pasan todas las vías de `abrir_caso`; y se validan los **tres** campos que se
+    concatenan, no solo la dirección, porque los tres acaban siendo una ruta y el error
+    tiene que nombrar al culpable.
+
+    Lo que se exige es la **gramática de rutas**, no el formato canónico del `case_id`.
+    La primera versión llamaba a `validate_case_id` entero y eso rompió cinco fixtures
+    con códigos sintéticos (`BaTEST`, sin dígitos): una guarda más ancha que el defecto
+    medido. El formato canónico se sigue comprobando donde toca, no aquí.
     """
+    for campo, valor in (("--codigo-caso", codigo), ("--direccion", direccion),
+                         ("--sufijo", sufijo)):
+        exigir_sin_caracteres_de_ruta(valor, campo=campo)
     return f"{codigo} - {direccion} ({w_code}) - {sufijo}"
 
 

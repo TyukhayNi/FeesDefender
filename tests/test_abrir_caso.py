@@ -269,3 +269,38 @@ def test_crm_payload_incluye_tags_equipo_y_ciudad():
         assert t in payload.tags
     # orden canónico: rojo primero, azul después, defaults al final
     assert payload.tags.index(sc.tag_rojo_equipo("BaRS11")) == 0
+
+
+# ---------------------------------------------------------------------------
+# MEJORAS #148: componer sin validar, teniendo la guarda al lado
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("direccion", [
+    "Castell De Rosanes s/n 08530 La Garriga",   # el caso medido: `s/n` de finca rustica
+    "Calle Mayor 1 : bajo",
+    "Nave 3 ? sin numero",
+])
+def test_componer_case_id_rechaza_lo_que_no_puede_ser_una_carpeta(direccion):
+    """`_WIN_FORBIDDEN` ya rechazaba esto; nadie la llamaba desde aqui (MEJORAS #148).
+
+    Medido el 2026-09-04 abriendo W-02JSVZ: con un `/` en la direccion, el alta imprimio
+    `OK Caso abierto: ...` y en disco habia DOS carpetas anidadas con los 170 ficheros del
+    pull dentro, codigo de salida 0, y un `case_id` que no nombraba a ninguna carpeta.
+    """
+    with pytest.raises(ValueError):
+        abrir_caso.componer_case_id(
+            codigo="BaRS8", direccion=direccion, w_code="W-02JSVZ", sufijo="BD")
+
+
+def test_componer_case_id_sigue_aceptando_las_direcciones_de_verdad():
+    """El mutante hermano: validar no puede volverse restrictivo de mas.
+
+    Sin esto, endurecer la guarda (p. ej. rechazando parentesis o comas) pasaria
+    inadvertido y rompería el alta de casos legitimos que ya existen en el catalogo.
+    """
+    for direccion in ("Passeig Marítim, 30 - Castelldefels (08860)",
+                      "Puerto Rico 2, 5º 2",
+                      "Santes Creus 15 - Montcada i Reixac"):
+        cid = abrir_caso.componer_case_id(
+            codigo="BaRS10", direccion=direccion, w_code="W-000AAA", sufijo="Vuelta")
+        assert direccion in cid
