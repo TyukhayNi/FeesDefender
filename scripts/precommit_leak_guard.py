@@ -7,8 +7,9 @@ esos no ven, en tres capas:
   2. PII por VALOR (`escanear`): nombres/emails REALES de terceros desde una
      blocklist gitignored. Denylist: solo caza lo enumerado.
   3. PII por FORMA (`escanear_formas`): identificadores estructurados de CUALQUIER
-     caso — DNI/NIE/IBAN bloquean, email de tercero avisa. Generaliza a expedientes
-     que nadie ha listado aún; reutiliza los patrones canónicos de core/anon.
+     caso — DNI/NIE/IBAN bloquean, email de tercero avisa; el NIF/CIF societario queda
+     FUERA a propósito (dato público de registro). Generaliza a expedientes que nadie
+     ha listado aún; reutiliza los patrones canónicos de core/anon.
 
 Doctrina y encaje: docs/SEGURIDAD_DATOS.md (principios 2, 5, 7).
 
@@ -23,12 +24,23 @@ Dónde se busca la lista (`MEJORAS #161`, 2026-09-05). Por estar gitignored, un 
 recién creado NO tiene ninguno de los dos ficheros, y el flujo estándar del repo es el
 worktree: durante meses el hook pasó en verde sin haber comprobado nada, hasta que una
 dirección de inmueble llegó a GitHub con el pre-commit en verde. Desde entonces la lista se
-resuelve en DOS raíces: el árbol que se está commiteando y la RAÍZ COMÚN del repositorio
-(`git rev-parse --git-common-dir`, el checkout principal que sí conserva los gitignored). Se
-unen los términos de ambas. Y si aun así la lista sale VACÍA, `main` lo dice en STDERR con
-las rutas que buscó: un guard que no puede mirar tiene que declararlo, no callar. Sigue sin
-fallar cerrado — esa tercera vía queda para cuando no encontrar la lista sea una anomalía y
-no el caso normal.
+resuelve en DOS raíces: el árbol que se está commiteando y el CHECKOUT PRINCIPAL del mismo
+repositorio (el primero de `git worktree list`, que sí conserva los gitignored), y se unen
+los términos de ambas. El principal se acepta SOLO verificado por resultado: tiene que ser
+un árbol de trabajo cuyo `--git-common-dir` sea el mismo que el nuestro. Un `.git` separado
+(`--separate-git-dir`), un bare o un submódulo no pasan esa verificación, y entonces el
+principal queda «no determinado» y se dice — nunca se lee la carpeta padre de unos metadatos
+como si fuera un checkout (R1/H-02). La consulta a git ignora `GIT_DIR` y compañía del
+entorno: el repositorio lo fija el árbol que se revisa, no una variable heredada.
+
+La resolución ocurre UNA vez por invocación (`resolver_blocklist`) y ese mismo objeto sirve
+para escanear y para el aviso (R1/H-03). Si la lista sale VACÍA, `main` lo dice en STDERR
+con cada ruta buscada y su estado real —no existe / existe sin términos utilizables— y con
+si el principal se resolvió o no (R1/H-04): un guard que no puede mirar tiene que declararlo,
+sin afirmar causas que no comprobó. Para que ese aviso llegue a quien commitea, el hook va
+con `verbose: true` en `.pre-commit-config.yaml`: pre-commit solo muestra la salida de un
+hook que devuelve 0 si el hook es verbose (R1/H-01). Sigue sin fallar cerrado — esa tercera
+vía queda para cuando no encontrar la lista sea una anomalía y no el caso normal.
 
 Uso (lo invoca pre-commit con los ficheros staged como argv):
     python scripts/precommit_leak_guard.py <fichero> [<fichero> ...]
@@ -36,9 +48,11 @@ Sale 1 si encuentra algo (con detalle), 0 si está limpio.
 """
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 REPO_DEFECTO = Path(__file__).resolve().parent.parent
@@ -46,6 +60,10 @@ REPO_DEFECTO = Path(__file__).resolve().parent.parent
 # Artefactos gitignored de los que se lee la blocklist, relativos a cada raíz.
 _REL_REPLACEMENTS = Path("data") / "_saneado" / "replacements.txt"
 _REL_BLOCKLIST = Path("data") / "_config" / "pii_blocklist.txt"
+
+# Variables con las que el entorno puede redirigir a git a OTRO repositorio. Se quitan al
+# consultar: el repositorio lo fija `cwd=repo`, que es el árbol que se está revisando.
+_ENV_GIT_REDIRIGE = ("GIT_DIR", "GIT_COMMON_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE")
 
 # Rutas cuyo contenido es tóxico por defecto (capturas, PII, prueba real). Defensa
 # sobre el .gitignore: bloquea incluso un `git add -f`.
@@ -73,20 +91,15 @@ def _limpiar_regex_lhs(lhs: str) -> str:
     return lhs.replace(r"\ ", " ").strip()
 
 
-def _raiz_comun(repo: Path) -> Path | None:
-    """Checkout principal del repositorio al que pertenece `repo`, o None.
-
-    En un worktree, `git rev-parse --git-common-dir` devuelve el `.git` COMPARTIDO (el del
-    checkout principal), y su padre es la raíz que conserva los ficheros gitignored. En el
-    propio checkout principal devuelve `.git` y el padre es `repo`: se responde None para no
-    leer la misma raíz dos veces. Sin git, o fuera de un repositorio, None: el guard no
-    debe romperse por no poder preguntar — pero tampoco debe fingir que preguntó, y por eso
-    `rutas_blocklist` no incluirá ninguna raíz común en ese caso.
-    """
+def _git(repo: Path, *args: str) -> str | None:
+    """Salida de `git <args>` con `cwd=repo`, o None si git no está, falla o tarda. El
+    entorno se limpia de las variables que redirigen a otro repositorio (R1/P1)."""
+    env = {k: v for k, v in os.environ.items() if k not in _ENV_GIT_REDIRIGE}
     try:
         out = subprocess.run(
-            ["git", "rev-parse", "--git-common-dir"],
+            ["git", *args],
             cwd=str(repo),
+            env=env,
             capture_output=True,
             encoding="utf-8",
             errors="replace",
@@ -97,37 +110,53 @@ def _raiz_comun(repo: Path) -> Path | None:
         return None
     if out.returncode != 0:
         return None
-    git_dir = out.stdout.strip()
-    if not git_dir:
-        return None
-    comun = (repo / git_dir).resolve().parent
-    if comun == repo.resolve():
-        return None
-    return comun
+    return out.stdout
 
 
-def raices_blocklist(repo: Path) -> list[Path]:
-    """Raíces donde se busca la blocklist, en orden: el árbol dado y, si es distinto, el
-    checkout principal del repositorio (`MEJORAS #161`)."""
-    raices = [repo]
-    comun = _raiz_comun(repo)
-    if comun is not None:
-        raices.append(comun)
-    return raices
+def _resolver_principal(repo: Path) -> tuple[Path | None, str]:
+    """(checkout principal, motivo). El principal es el PRIMER árbol de `git worktree list`
+    —así lo documenta git—, aceptado solo si se verifica por resultado: es un árbol de
+    trabajo distinto de `repo` y comparte `--git-common-dir` con él. Todo lo que no pase esa
+    verificación devuelve None con el motivo, para que el aviso diga lo que pasó y no lo
+    que se supone (R1/H-02, H-04).
+    """
+    comun_propio = _git(repo, "rev-parse", "--git-common-dir")
+    if comun_propio is None:
+        return None, "no se pudo consultar git desde este árbol (¿sin git, fuera de un repo?)"
+    listado = _git(repo, "worktree", "list", "--porcelain")
+    if listado is None:
+        return None, "git worktree list falló"
+    lineas = listado.splitlines()
+    if not lineas or not lineas[0].startswith("worktree "):
+        return None, "git worktree list no devolvió ningún árbol"
+    if len(lineas) > 1 and lineas[1].strip() == "bare":
+        return None, "el repositorio es bare: no hay checkout principal"
+    candidato = Path(lineas[0][len("worktree "):].strip())
+    try:
+        if candidato.resolve() == repo.resolve():
+            return None, "este árbol ES el checkout principal"
+    except OSError:
+        return None, f"no se pudo resolver la ruta {candidato}"
+    toplevel = _git(candidato, "rev-parse", "--show-toplevel")
+    comun_cand = _git(candidato, "rev-parse", "--git-common-dir")
+    if toplevel is None or comun_cand is None:
+        return None, f"{candidato} no es un árbol de trabajo consultable (¿.git separado, submódulo?)"
+    try:
+        if Path(toplevel.strip()).resolve() != candidato.resolve():
+            return None, f"{candidato} no es la raíz de un árbol de trabajo"
+        if (candidato / comun_cand.strip()).resolve() != (repo / comun_propio.strip()).resolve():
+            return None, f"{candidato} pertenece a otro repositorio"
+    except OSError:
+        return None, f"no se pudo resolver la ruta {candidato}"
+    return candidato, f"resuelto: {candidato}"
 
 
-def rutas_blocklist(repo: Path) -> list[Path]:
-    """Todas las rutas concretas donde se ha buscado la blocklist (existan o no). Es lo que
-    el aviso imprime cuando la lista sale vacía, para que quien lo lea sepa qué faltó."""
-    rutas: list[Path] = []
-    for raiz in raices_blocklist(repo):
-        rutas.append(raiz / _REL_REPLACEMENTS)
-        rutas.append(raiz / _REL_BLOCKLIST)
-    return rutas
+def _leer_terminos(raiz: Path) -> list[tuple[Path, str, set[str]]]:
+    """Por cada artefacto de `raiz`: (ruta, estado observado, términos utilizables)."""
+    out: list[tuple[Path, str, set[str]]] = []
 
-
-def _leer_terminos(raiz: Path, terms: set[str]) -> None:
     repl = raiz / _REL_REPLACEMENTS
+    terms: set[str] = set()
     if repl.exists():
         for line in repl.read_text(encoding="utf-8", errors="replace").splitlines():
             line = line.strip()
@@ -138,39 +167,88 @@ def _leer_terminos(raiz: Path, terms: set[str]) -> None:
                 lhs = _limpiar_regex_lhs(lhs)
             if len(lhs) >= _TERM_MIN:
                 terms.add(lhs)
+        out.append((repl, _estado(terms), terms))
+    else:
+        out.append((repl, "no existe", terms))
 
     bl = raiz / _REL_BLOCKLIST
+    terms = set()
     if bl.exists():
         for line in bl.read_text(encoding="utf-8", errors="replace").splitlines():
             line = line.strip()
             if line and not line.startswith("#") and len(line) >= _TERM_MIN:
                 terms.add(line)
+        out.append((bl, _estado(terms), terms))
+    else:
+        out.append((bl, "no existe", terms))
+    return out
+
+
+def _estado(terms: set[str]) -> str:
+    if terms:
+        return f"existe, {len(terms)} términos"
+    return f"existe, 0 términos utilizables (vacío, comentarios o más cortos de {_TERM_MIN})"
+
+
+@dataclass(frozen=True)
+class Blocklist:
+    """Resultado de UNA resolución de la blocklist: lo que se leyó y de dónde. El mismo
+    objeto sirve para escanear y para el aviso, así los dos describen la misma carga
+    (R1/H-03)."""
+
+    terminos: list[str]                 # más largos primero
+    raices: list[Path]                  # árbol dado y, si se resolvió, el principal
+    rutas: list[tuple[Path, str]]       # (ruta buscada, estado observado)
+    principal: str                      # cómo acabó la resolución del checkout principal
+
+
+def resolver_blocklist(repo: Path) -> Blocklist:
+    """Términos sensibles desde artefactos gitignored, unión del árbol dado y del checkout
+    principal si es un worktree (`MEJORAS #161`). Consulta git una sola vez por invocación."""
+    raices = [repo]
+    principal, motivo = _resolver_principal(repo)
+    if principal is not None:
+        raices.append(principal)
+    terms: set[str] = set()
+    rutas: list[tuple[Path, str]] = []
+    for raiz in raices:
+        for ruta, estado, encontrados in _leer_terminos(raiz):
+            rutas.append((ruta, estado))
+            terms |= encontrados
+    # Los más largos primero: match más específico y mensajes más útiles.
+    return Blocklist(sorted(terms, key=len, reverse=True), raices, rutas, motivo)
 
 
 def cargar_blocklist(repo: Path) -> list[str]:
-    """Términos sensibles desde artefactos gitignored, unión de todas las raíces de
-    `raices_blocklist` (el árbol dado + el checkout principal si es un worktree). Vacío si
-    no hay ninguno en ninguna — y entonces `main` lo declara en STDERR."""
-    terms: set[str] = set()
-    for raiz in raices_blocklist(repo):
-        _leer_terminos(raiz, terms)
-    # Los más largos primero: match más específico y mensajes más útiles.
-    return sorted(terms, key=len, reverse=True)
+    """Solo los términos. Vacío si no hay ninguno en ninguna raíz — y entonces `main` lo
+    declara en STDERR."""
+    return resolver_blocklist(repo).terminos
 
 
-def aviso_blocklist_vacia(repo: Path) -> str:
-    """Texto del aviso cuando no hay blocklist: dice qué NO se comprobó y dónde se buscó."""
+def raices_blocklist(repo: Path) -> list[Path]:
+    """Raíces donde se busca la blocklist: el árbol dado y, si se resolvió, el principal."""
+    return resolver_blocklist(repo).raices
+
+
+def rutas_blocklist(repo: Path) -> list[Path]:
+    """Las rutas concretas donde se ha buscado la blocklist (existan o no)."""
+    return [ruta for ruta, _ in resolver_blocklist(repo).rutas]
+
+
+def aviso_blocklist_vacia(bl: Blocklist) -> str:
+    """Texto del aviso cuando la lista salió vacía: qué NO se comprobó, dónde se buscó y qué
+    se encontró en cada sitio. Solo afirma lo observado (R1/H-04)."""
     lineas = [
         "leak-guard AVISO — blocklist VACÍA: la comprobación de PII por VALOR (nombres, "
         "emails, direcciones de la lista) NO se ha ejecutado. Este verde no la acredita.",
+        f"  Checkout principal: {bl.principal}",
         "  Rutas buscadas:",
     ]
-    for ruta in rutas_blocklist(repo):
-        lineas.append(f"    - {ruta}")
+    for ruta, estado in bl.rutas:
+        lineas.append(f"    - {ruta} — {estado}")
     lineas.append(
-        "  Remedio: la lista vive en el checkout principal (gitignored); si esto es un worktree "
-        "y aun así falta, el checkout principal tampoco la tiene. Ver docs/SEGURIDAD_DATOS.md "
-        "y MEJORAS #161."
+        "  La lista vive gitignored en el checkout principal. Ver docs/SEGURIDAD_DATOS.md y "
+        "MEJORAS #161."
     )
     return "\n".join(lineas)
 
@@ -276,12 +354,17 @@ def escanear_formas(paths: list[str], repo: Path = REPO_DEFECTO) -> tuple[list[s
     return bloqueos, avisos
 
 
-def escanear(paths: list[str], repo: Path = REPO_DEFECTO) -> list[str]:
+def escanear(
+    paths: list[str], repo: Path = REPO_DEFECTO, blocklist: Blocklist | None = None
+) -> list[str]:
+    """Rutas vetadas + PII por valor. `blocklist` es la resolución ya hecha por quien llama
+    (así el aviso y el escaneo describen la misma carga); si no se pasa, se resuelve aquí."""
     problemas: list[str] = []
-    blocklist = cargar_blocklist(repo)
+    if blocklist is None:
+        blocklist = resolver_blocklist(repo)
     patrones = [
         (t, re.compile(r"(?<![\w])" + re.escape(t) + r"(?![\w@])", re.IGNORECASE))
-        for t in blocklist
+        for t in blocklist.terminos
     ]
     for raw in paths:
         p = _norm(raw)
@@ -308,11 +391,12 @@ def main(argv: list[str], repo: Path = REPO_DEFECTO) -> int:
     paths = argv[1:]
     if not paths:
         return 0
-    if not cargar_blocklist(repo):
+    bl = resolver_blocklist(repo)  # UNA resolución: la misma para el aviso y el escaneo
+    if not bl.terminos:
         # MEJORAS #161: el guard sin lista no refuta nada. Lo dice, y sigue (rutas + formas).
-        print(aviso_blocklist_vacia(repo), file=sys.stderr)
+        print(aviso_blocklist_vacia(bl), file=sys.stderr)
         print("", file=sys.stderr)
-    bloqueos = escanear(paths, repo)
+    bloqueos = escanear(paths, repo, bl)
     bloqueos_forma, avisos = escanear_formas(paths, repo)
     bloqueos += bloqueos_forma
 
@@ -329,7 +413,8 @@ def main(argv: list[str], repo: Path = REPO_DEFECTO) -> int:
         print(f"  ✗ {pr}", file=sys.stderr)
     print(
         "\nSaca el dato del árbol versionado (guía: docs/SEGURIDAD_DATOS.md).\n"
-        "Si es un valor sintético legítimo, anota la línea con 'leak-guard:allow'.\n"
+        "'leak-guard:allow' en la línea exime SOLO las detecciones por FORMA (DNI/NIE/IBAN); "
+        "un término de la blocklist no admite exención por anotación.\n"
         "Si es un falso positivo justificado, --no-verify lo salta (queda a tu criterio).",
         file=sys.stderr,
     )
