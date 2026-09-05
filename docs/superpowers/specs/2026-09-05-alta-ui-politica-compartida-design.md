@@ -223,6 +223,27 @@ colaboradores cuando 3b lanza algo que no es `SudespachoRelationsError` (hoy un
 `ValueError` en 3b corta 3c, comportamiento que ya tenía el formulario y que esta entrega
 no toca).
 
+### Verificado el 2026-09-05 (rev. 3), y cómo
+
+App arrancada por la sesión orquestadora en sandbox (`CASOS_ROOT` temporal, sin `.env`, variables
+`SUDESPACHO_*` retiradas, dobles fuera del repo: `buscar_expedientes_duplicados` devuelve dos frentes
+para `W-TEST02` e incierto para el resto; `create_expediente*` registran la llamada en un fichero y
+lanzan). Visto en el navegador de la vista previa:
+
+| # | Camino | Qué se hizo | Qué salió |
+|---|---|---|---|
+| 1 | `vincular`, dos frentes | alta de `W-TEST02` | `⛔ El CRM ya tiene 2 expediente(s)…`, radio con los dos frentes **sin preselección**, botón «Vincular» **deshabilitado** (comprobado por JS: `disabled: true`), botón «Cancelar»; ningún «Confirmar de todos modos» |
+| 2 | rerun sin clic | elegir `expedientes_judiciales #700` en el radio | el bloque sigue, pintado desde la decisión guardada; **no** aparece «Caso local disponible» (el alta no se reejecutó); el botón pasa a `disabled: false` |
+| 3 | clic en «Vincular» | — | «Expediente `expedientes_judiciales` ID 700 vinculado en `_caso.md`», relanzamiento, «Se reutiliza el expediente ID 700 … Es de la otra jurisdicción», 3a «Validación referencia CRM omitida»; `_caso.md` del sandbox con el 700 en los dos niveles; el fichero de creaciones interceptadas **no existe**: ninguna llamada a `create_expediente*` en todo el recorrido |
+
+**No re-verificado en pantalla en la rev. 3:** el camino `bloquear` y la casilla «crear
+igualmente» (verificados en la rev. 2; en la rev. 3 ese código solo cambia dónde se consume
+`forzar` y que ya no hay `st.stop()`), el error legible de `ensure_case` (sin cambios desde la
+rev. 2), y el 3b/3c con credenciales. **Observado y declarado:** el relanzamiento tras «Vincular»
+ejecuta el alta aunque la casilla «Entendido — continuar con la carpeta existente» no esté
+marcada (el token se lee después de pintar los botones, como señaló la R1): el operador acaba de
+actuar sobre ese mismo caso, así que no es un salto de intención, pero el gate no lo cubre.
+
 ## 6. Lo que queda fuera, con nombre
 
 - **La orquestación compartida completa** (acción 3): que el formulario ejecute `secuencia_v1`
