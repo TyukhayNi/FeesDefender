@@ -19,8 +19,8 @@ relacionado: "MEJORAS #147 · PLAN fila #21 acción 11"
 ## 1. Qué se cambia y qué no
 
 **Se cambia.** `plan()` marca `duplicado_de = <rel_path del titular>` en toda entrada del inventario
-cuyo `sha256` ya apareció antes (el inventario va en orden `sorted`, así que el titular es
-determinista: el primero por ruta). `ejecutar()` no procesa la copia: le da una **fila de custodia
+que comparte `sha256` con otra; quién es el titular lo fija el §2.2 (durable y por capacidad de
+extracción; en la rev. 1 era «el primero por ruta»). `ejecutar()` no procesa la copia: le da una **fila de custodia
 propia** (su `rel_path`, su `sha256`, método `duplicado`, `chars=0`, estado **heredado** del titular
 —el peor de sus filas—, nota con la ruta del espejo único) y **anota en el titular** «también en
 <ruta> (mismo sha256)». El preview del CLI cuenta `duplicados: N` aparte y no los suma a las rutas.
