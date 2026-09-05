@@ -7209,7 +7209,26 @@ tienen que pasar **sin `.env`** y seguir levantando `IdentidadSinComprobar`, no
 línea movida dentro de la función que está reescribiendo, y arreglarlo desde fuera sería pisarla.
 
 
-## 161. El `leak-guard` de pre-commit es INERTE en todo worktree, y por eso dejé pasar PII  [PROMOVIDO → PLAN.md]
+## 161. El `leak-guard` de pre-commit es INERTE en todo worktree, y por eso dejé pasar PII  [PROMOVIDO → PLAN.md] `[RESUELTO 2026-09-05 — vías (1)+(2); la (3) queda diferida]`
+
+> ✅ **Resuelto el 2026-09-05 (PR #289), con las vías (1) y (2) de abajo, decididas por
+> Nikolai ese día.** `cargar_blocklist` lee ahora la **unión** de dos raíces: el árbol que se
+> commitea y el **checkout principal** del mismo repo — el primero de `git worktree list`, aceptado
+> solo **verificado por resultado** (`resolver_blocklist` / `_resolver_principal` en
+> `scripts/precommit_leak_guard.py`). Y cuando la lista sale vacía en las dos, `main` lo **declara
+> en STDERR** con el estado observado de cada ruta y la frase «NO se ha ejecutado»; el hook va
+> con `verbose: true` porque pre-commit **no muestra** la salida de un hook que pasa si no lo es.
+> Tests con repos git **reales** (principal + worktree, gitdir separado, bare), aislados de la
+> config de la máquina (`tests/test_precommit_leak_guard.py`, bloque «MEJORAS #161»), incluido el
+> mutante de abajo: término conocido commiteado desde un worktree sin lista → ahora **bloquea**.
+> Efecto lateral buscado: `tests/test_no_pii_en_tests.py` deja de saltarse en los worktrees.
+> **R1 de Codex sobre el diff: NO-SHIP, 8/8 confirmados, remediados** — adjudicación en
+> `docs/superpowers/plans/2026-09-05-mejoras-161-blocklist-desde-la-raiz-comun.md` §4.
+> **Lo que NO se hizo:** fallar cerrado (vía 3). Sigue siendo la doctrina de la casa, pero solo
+> tiene sentido cuando no encontrar la lista sea una anomalía, y hasta este PR era el caso normal.
+> Disparador para promoverla: que el aviso aparezca en una máquina que SÍ debería tener la lista.
+>
+> Lo de abajo es el texto original, conservado como medición.
 
 > 🔴 **ABIERTA y con daño real, no hipotético.** Medido el 2026-09-05: una dirección de inmueble
 > de la blocklist llegó a GitHub en el commit `eee9a7e` con el hook **en verde**. Lo paró
