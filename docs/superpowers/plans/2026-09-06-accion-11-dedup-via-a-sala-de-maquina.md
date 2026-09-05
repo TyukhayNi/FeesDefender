@@ -39,15 +39,29 @@ hereda el `skip` del titular, así que en corridas posteriores ninguna de las do
 
 1. **La copia hereda el peor estado del titular.** Si el titular salió `empty`, la copia no puede
    salir `ok`: saldría de la worklist de `_cobertura.md` un documento que sí requiere revisión.
-2. **Nunca colapsar contra nada.** Si la copia llega a `ejecutar` y el titular no dejó filas en
-   esta corrida (no debería ocurrir: mismo sha ⇒ mismo skip), la copia se procesa como un
-   documento más. Perder un documento es peor que duplicarlo.
-3. **Copia de un bundle.** La nota apunta al slug del bundle y dice cuántos documentos lógicos
-   tiene; los N segmentos del titular anotan la procedencia.
-4. **Lo que sigue silencioso, con nombre.** Si el titular se procesó en una corrida ANTERIOR y la
+2. **La titularidad es DURABLE y la elige la capacidad de extraer, no el orden** (R1, H-01 y
+   H-06). `plan()` recibe `productores_previos` (los `rel_path` con espejo propio en la cobertura
+   persistida): quien ya tiene espejo lo conserva aunque aparezca una carpeta que ordene antes,
+   con `--force` incluido; dos productoras legadas siguen siendo dos (no se retira una generación
+   existente). Si nadie tiene espejo, titular es la primera procedencia cuya ruta sabe extraer
+   (un DOCX sin extensión es `sin_soporte`; su copia `.docx` es `nativo` y debe ser la titular).
+3. **Nunca colapsar contra nada** (R1, H-05). La copia es alias si el titular dejó filas en esta
+   corrida —salvo que todas sean `sin_soporte`— o si su espejo YA está en disco (`--solo <copia>`,
+   `reforzar`); solo si no hay ni filas ni espejo se procesa como un documento más.
+4. **La relación se reconcilia al fusionar** (R1, H-04). `reconciliar_alias` corre sobre la
+   cobertura completa tras `fusionar_cobertura` en `apply` y en `reforzar`: el alias toma el peor
+   estado vigente de las productoras con su sha, `alias_de` al día, y el titular recupera
+   «también en …» (idempotente). Sin esto, reprocesar solo al titular dejaba a la copia con el
+   estado viejo y al titular sin la procedencia.
+5. **El alias es una referencia ESTRUCTURADA** (R1, H-02): `DocCobertura.alias_de` (slug del
+   titular). El validador de la ficha CRM (`corpus_legible`) no cuenta la copia ni como legible ni
+   como ilegible: su texto está entero en el espejo del titular, y pedirle un `<slug>.md` propio la
+   convertía en un falso «sin espejo MD» que además cambiaba la salida del validador.
+6. **La nota apunta a rutas que existen** (R1, H-07): `03_MD/<slug>.md` para el suelto;
+   `02_Documentos/<parent>/` y el patrón `03_MD/<parent>__dNN_*.md` para el bundle.
+7. **Lo que sigue silencioso, con nombre.** Si el titular se procesó en una corrida ANTERIOR y la
    copia aparece después (nueva carpeta con el mismo fichero), el estado por `sha256` la salta y
-   **no deja fila**: es el comportamiento de siempre y no cambia aquí. Cubrirlo exige que `plan()`
-   sepa qué `rel_path` tienen fila en la cobertura previa, y eso es otro cambio de contrato.
+   **no deja fila**: es el comportamiento de siempre y no cambia aquí.
 
 ## 3. Pruebas
 

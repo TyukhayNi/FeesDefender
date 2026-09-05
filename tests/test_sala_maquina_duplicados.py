@@ -214,6 +214,191 @@ def test_d8_la_copia_no_consume_intentos_del_titular(tmp_path, monkeypatch):
     assert cli._intentos_previos(case) == {sha: 2}
 
 
+def _cli(monkeypatch, case):
+    import scripts.sala_maquina as cli
+    monkeypatch.setattr(cli, "caso_path", lambda cid: case)
+    monkeypatch.setattr(cli, "append_event", lambda destino, ev, *, details=None, case_id=None: None)
+    monkeypatch.setattr(sm, "append_event", lambda destino, ev, *, details=None, case_id=None: None)
+    monkeypatch.setattr(cli, "_atomizar_correo", lambda cid, cd: None)
+    monkeypatch.setattr(cli.case_locator, "resolve_ref", lambda ref: ref)
+    return cli
+
+
+# ── R1 de Codex: D9-D15 ────────────────────────────────────────────────────────────────
+
+def test_d9_el_titular_es_quien_sabe_extraer_no_el_primero(tmp_path, monkeypatch):
+    """R1/H-01: un DOCX sin extensión en `A/` (sin_soporte) y sus mismos bytes en `B/x.docx`
+    (nativo). El titular tiene que ser la copia que sabe extraer, y el texto tiene que salir."""
+    from docx import Document
+    case = tmp_path / "EV-2026-001"
+    (case / "00_Input" / "A").mkdir(parents=True)
+    (case / "00_Input" / "B").mkdir(parents=True)
+    d = Document()
+    d.add_paragraph("Encargo firmado por las partes con honorarios de intermediacion. " * 10)
+    d.save(case / "00_Input" / "B" / "encargo.docx")
+    (case / "00_Input" / "A" / "encargo").write_bytes((case / "00_Input" / "B" / "encargo.docx").read_bytes())
+    p = sm.plan(sm.inventariar(case), set())
+    por_rel = {x.rel_path: x for x in p}
+    assert por_rel["B/encargo.docx"].duplicado_de == ""
+    assert por_rel["A/encargo"].duplicado_de == "B/encargo.docx"
+    cob = sm.ejecutar(case, p, case_id="EV-2026-001")
+    estados = {c.rel_path: (c.metodo, c.estado) for c in cob}
+    assert estados["B/encargo.docx"] == ("nativo", "ok")
+    assert estados["A/encargo"][0] == sm.METODO_DUPLICADO
+    assert list((case / "01_Procesado" / "02_Sala de máquina" / "03_MD").glob("*.md"))
+
+
+def test_d9b_titular_sin_soporte_en_la_corrida_no_cancela_la_copia(tmp_path, monkeypatch):
+    """Y si aun así el titular acaba `sin_soporte` (todas sus filas), la copia se procesa."""
+    case = _caso_con_copias(tmp_path)
+    monkeypatch.setattr(sm, "ocr_pdf_escalera", _sin_ocr)
+    p = sm.plan(sm.inventariar(case), set())
+    from dataclasses import replace
+    p[0] = replace(p[0], ruta="sin_soporte")       # el titular no sabe extraer
+    cob = sm.ejecutar(case, p, case_id="EV-2026-001")
+    assert [c.metodo for c in cob] == ["sin_soporte", "pypdf"]
+    assert cob[1].estado == "ok"
+
+
+def test_d10_el_validador_crm_no_pide_espejo_a_la_copia():
+    """R1/H-02: la copia no es legible ni ilegible para `corpus_legible`: su texto está en el
+    espejo del titular, que entra por su propia fila."""
+    from core.crm_ficha_validacion import corpus_legible
+    filas = [
+        {"rel_path": "A/cert.pdf", "slug": "cert__aaaa1111", "estado": "ok", "metodo": "pypdf"},
+        {"rel_path": "B/cert bancario.pdf", "slug": "cert_bancario__aaaa1111", "estado": "ok",
+         "metodo": "duplicado", "alias_de": "cert__aaaa1111"},
+        {"rel_path": "C/escaneo.pdf", "slug": "escaneo__bbbb2222", "estado": "empty", "metodo": "ocr"},
+    ]
+    legibles, ilegibles = corpus_legible(filas)
+    assert legibles == ("cert__aaaa1111",)
+    assert ilegibles == ("C/escaneo.pdf",)
+
+
+def test_d11_reconciliar_alias_tras_reprocesar_al_titular(tmp_path, monkeypatch):
+    """R1/H-04: `apply` deja titular y copia `low`; `apply --solo <titular>` lo pasa a `ok`.
+    La copia tiene que seguirle (estado y `alias_de`) y el titular recuperar «también en»."""
+    case = _caso_con_copias(tmp_path)
+    cli = _cli(monkeypatch, case)
+    monkeypatch.setattr(sm, "ocr_pdf_escalera", _sin_ocr)
+    real = sm._calidad
+    monkeypatch.setattr(sm, "_calidad", lambda *a: ("low", "sonda"))
+    cli.apply("W-TEST99")
+    assert [c.estado for c in cli._cobertura_previa(case)] == ["low", "low"]
+    monkeypatch.setattr(sm, "_calidad", real)
+    p = sm.plan(sm.inventariar(case), set())
+    cli.apply("W-TEST99", solo=[p[0].rel_path])
+    cob = cli._cobertura_previa(case)
+    por_rel = {c.rel_path: c for c in cob}
+    assert por_rel[p[0].rel_path].estado == "ok" and "también en " + p[1].rel_path in por_rel[p[0].rel_path].nota
+    assert por_rel[p[1].rel_path].estado == "ok" and por_rel[p[1].rel_path].metodo == sm.METODO_DUPLICADO
+    assert por_rel[p[1].rel_path].alias_de == p[0].slug
+
+
+def test_d11b_reconciliar_alias_es_puro_e_idempotente():
+    tit = sm.DocCobertura("cert__aaaa1111", "A/cert.pdf", "pypdf", "low", 500, False, "", "a" * 64)
+    cop = sm.DocCobertura("cert_b__aaaa1111", "B/cert b.pdf", sm.METODO_DUPLICADO, "ok", 0, False, "copia", "a" * 64)
+    out = sm.reconciliar_alias([tit, cop])
+    assert out[1].estado == "low" and out[1].alias_de == "cert__aaaa1111"
+    assert out[0].nota.count("también en B/cert b.pdf") == 1
+    sm.reconciliar_alias(out)
+    assert out[0].nota.count("también en B/cert b.pdf") == 1, "idempotente"
+    # un alias sin productoras se deja como está (no hay contra qué reconciliar)
+    huerfano = sm.DocCobertura("x__cccc3333", "C/x.pdf", sm.METODO_DUPLICADO, "ok", 0, False, "copia", "c" * 64)
+    assert sm.reconciliar_alias([huerfano])[0].estado == "ok"
+
+
+@pytest.mark.parametrize("mismo_nombre", [False, True])
+def test_d12_solo_copia_no_reabre_la_doble_extraccion(tmp_path, monkeypatch, mismo_nombre):
+    """R1/H-05: tras un `apply`, `apply --solo <copia>` encuentra el espejo del titular en disco
+    y emite alias: ni segundo MD (stems distintos) ni reescritura del compartido (mismo stem)."""
+    case = _caso_con_copias(tmp_path)
+    cli = _cli(monkeypatch, case)
+    monkeypatch.setattr(sm, "ocr_pdf_escalera", _sin_ocr)
+    if mismo_nombre:
+        b = case / "00_Input" / "01_Drive EV" / "OFERTAS" / "OFERTA 1" / "Certificado titularidad bancaria.pdf"
+        b.rename(b.with_name("Certificado titularidad.pdf"))
+    p = sm.plan(sm.inventariar(case), set())
+    cli.apply("W-TEST99")
+    md_dir = case / "01_Procesado" / "02_Sala de máquina" / "03_MD"
+    antes = {x.name: x.read_bytes() for x in md_dir.glob("*.md")}
+    cli.apply("W-TEST99", solo=[p[1].rel_path])
+    despues = {x.name: x.read_bytes() for x in md_dir.glob("*.md")}
+    assert despues == antes, "ni un MD nuevo ni uno reescrito"
+    cob = cli._cobertura_previa(case)
+    assert sorted(c.metodo for c in cob) == [sm.METODO_DUPLICADO, "pypdf"]
+    assert all(c.estado == "ok" for c in cob)
+
+
+def test_d13_la_titularidad_es_durable(tmp_path, monkeypatch):
+    """R1/H-06: una carpeta nueva que ordena ANTES con los mismos bytes no le quita el espejo
+    al titular de ayer (con `--force` incluido); y dos productoras legadas siguen siendo dos."""
+    case = _caso_con_copias(tmp_path)
+    cli = _cli(monkeypatch, case)
+    monkeypatch.setattr(sm, "ocr_pdf_escalera", _sin_ocr)
+    cli.apply("W-TEST99")
+    antes = sm.plan(sm.inventariar(case), set())
+    nuevo = case / "00_Input" / "00_antes" / "nuevo.pdf"
+    nuevo.parent.mkdir(parents=True)
+    nuevo.write_bytes((case / "00_Input" / antes[0].rel_path).read_bytes())
+    cli.apply("W-TEST99", force=True)
+    cob = cli._cobertura_previa(case)
+    por_rel = {c.rel_path: c for c in cob}
+    assert por_rel[antes[0].rel_path].metodo == "pypdf", "el titular de ayer sigue siéndolo"
+    assert por_rel["00_antes/nuevo.pdf"].metodo == sm.METODO_DUPLICADO
+    md_dir = case / "01_Procesado" / "02_Sala de máquina" / "03_MD"
+    assert [x.name for x in md_dir.glob("*.md")] == [f"{antes[0].slug}.md"], "un solo espejo activo"
+    # dos productoras legadas: ninguna se degrada a alias
+    p = sm.plan(sm.inventariar(case), set(), productores_previos=frozenset({"A/x.pdf", "B/y.pdf"}))
+    inv = [{"rel_path": "A/x.pdf", "sha256": "f" * 64, "ext": ".pdf"},
+           {"rel_path": "B/y.pdf", "sha256": "f" * 64, "ext": ".pdf"},
+           {"rel_path": "C/z.pdf", "sha256": "f" * 64, "ext": ".pdf"}]
+    p = sm.plan(inv, set(), productores_previos=frozenset({"A/x.pdf", "B/y.pdf"}))
+    assert [d.duplicado_de for d in p] == ["", "", "A/x.pdf"]
+
+
+def test_d14_la_nota_apunta_a_rutas_que_existen(tmp_path, monkeypatch):
+    """R1/H-07: `03_MD/<slug>.md` para el suelto (con extensión, y existe)."""
+    case = _caso_con_copias(tmp_path)
+    monkeypatch.setattr(sm, "ocr_pdf_escalera", _sin_ocr)
+    cob = sm.ejecutar(case, sm.plan(sm.inventariar(case), set()), case_id="EV-2026-001")
+    copia = next(c for c in cob if c.metodo == sm.METODO_DUPLICADO)
+    ruta = copia.nota.split("espejo único en ")[1].split(" ")[0]
+    assert ruta.endswith(".md")
+    assert (case / "01_Procesado" / "02_Sala de máquina" / ruta).exists(), ruta
+    assert copia.alias_de == next(c for c in cob if c.metodo == "pypdf").slug
+
+
+def test_d15_mutantes_del_revisor():
+    """M1: el peor estado entre VARIAS filas; M2: mismo slug también es alias."""
+    filas = [sm.DocCobertura("b__aa", "A/b.pdf", "pypdf", "ok", 5, False, "", "a" * 64, parent_slug="b__aa"),
+             sm.DocCobertura("b__aa__d02", "A/b.pdf", "pypdf", "low", 5, False, "", "a" * 64, parent_slug="b__aa")]
+    assert sm._peor_estado(filas) == "low"
+    d = sm.DocPlan("B/b.pdf", "a" * 64, ".pdf", "pdf", "b__aa", duplicado_de="A/b.pdf")
+    fila = sm._fila_duplicado(d, filas)
+    assert fila.estado == "low" and fila.alias_de == "b__aa" and "2 documentos lógicos" in fila.nota
+
+
+def test_d15b_mismo_nombre_mismo_slug_tambien_es_alias(tmp_path, monkeypatch):
+    case = _caso_con_copias(tmp_path)
+    b = case / "00_Input" / "01_Drive EV" / "OFERTAS" / "OFERTA 1" / "Certificado titularidad bancaria.pdf"
+    b.rename(b.with_name("Certificado titularidad.pdf"))
+    monkeypatch.setattr(sm, "ocr_pdf_escalera", _sin_ocr)
+    escritos = []
+    original = sm._escribir_md
+
+    def _contando(*a, **k):
+        escritos.append(a[2])
+        return original(*a, **k)
+    monkeypatch.setattr(sm, "_escribir_md", _contando)
+    llamadas = []
+    cob = sm.ejecutar(case, sm.plan(sm.inventariar(case), set()), case_id="EV-2026-001",
+                      on_documento=lambda d, ms, filas: llamadas.append((d.rel_path, ms, len(filas))))
+    assert len(escritos) == 1, "el espejo compartido se escribe UNA vez"
+    assert sorted(c.metodo for c in cob) == [sm.METODO_DUPLICADO, "pypdf"]
+    assert len(llamadas) == 2 and any(ms == 0 and n == 1 for _r, ms, n in llamadas), "M3: el gancho ve la copia"
+
+
 def test_d7_fusionar_conserva_las_dos_filas():
     tit = sm.DocCobertura("cert__aaaa1111", "01_Drive EV/ARRAS/cert.pdf", "pypdf", "ok", 500, False,
                           "también en 01_Drive EV/OFERTAS/cert.pdf (mismo sha256)", "a" * 64)

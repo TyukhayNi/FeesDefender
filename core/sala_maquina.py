@@ -194,6 +194,10 @@ class DocCobertura:
     paginas: str = ""        # rango de páginas en el bundle ("1-4"); vacío si no aplica
     tipo: str = ""           # tipo clasificado del documento lógico
     doc_id: str = ""         # identidad persistente del segmento; vacío = documento suelto
+    #: Solo en filas `duplicado` (MEJORAS #147, vía A): slug del titular cuyo espejo sirve a
+    #: esta copia (el del bundle si el titular se segmentó). Referencia ESTRUCTURADA, no
+    #: texto en la nota: los consumidores que convierten filas en espejos la resuelven.
+    alias_de: str = ""
 
 
 #: Veces que se reintenta un documento que no se resuelve antes de dejarlo en paz.
@@ -211,7 +215,8 @@ MAX_INTENTOS = 3
 
 
 def plan(inventario: list[dict], estado_previo: set[str],
-         agotados: frozenset[str] = frozenset()) -> list[DocPlan]:
+         agotados: frozenset[str] = frozenset(), *,
+         productores_previos: frozenset[str] = frozenset()) -> list[DocPlan]:
     """Puro: enruta cada fichero y marca skip si su sha ya fue procesado.
 
     Excluye 90_Notas personales/ (zona del abogado, invariante del proyecto).
@@ -222,19 +227,11 @@ def plan(inventario: list[dict], estado_previo: set[str],
     tope podría introducir si nadie lo cuenta.
     """
     out: list[DocPlan] = []
-    primero_por_sha: dict[str, str] = {}
     for f in inventario:
         rel = f["rel_path"]
         if rel.startswith(_EXCLUIR_PREFIJOS):
             continue
         sha = f["sha256"]
-        # MEJORAS #147, vía A: el mismo fichero (mismos bytes) en dos carpetas del cliente
-        # —medido en W-02Q38C: `Certificado titularidad…` en `ARRAS/` y en `OFERTAS/…`—
-        # producía dos OCR y dos espejos, y contaba el mismo hecho dos veces en el corpus
-        # que lee el LLM. El primero del inventario (orden `sorted`, determinista) es el
-        # titular del espejo; los demás son procedencias que se anotan, no documentos.
-        duplicado_de = primero_por_sha.get(sha, "")
-        primero_por_sha.setdefault(sha, rel)
         out.append(DocPlan(
             rel_path=rel,
             sha256=sha,
@@ -242,9 +239,44 @@ def plan(inventario: list[dict], estado_previo: set[str],
             ruta=clasificar_ruta(f["ext"]),
             slug=output_slug(rel, sha),
             skip=sha in estado_previo or sha in agotados,
-            duplicado_de=duplicado_de,
         ))
+    _marcar_duplicados(out, productores_previos)
     return out
+
+
+def _marcar_duplicados(docs: list[DocPlan], productores_previos: frozenset[str]) -> None:
+    """MEJORAS #147, vía A: el mismo fichero (mismos bytes) en dos carpetas del cliente.
+
+    Medido en W-02Q38C —`Certificado titularidad…` en `ARRAS/` y en `OFERTAS/…`—: dos OCR,
+    dos espejos y el mismo hecho contado dos veces en el corpus que lee el LLM. Por cada
+    `sha256` hay UN titular del espejo y los demás son procedencias (`duplicado_de`).
+
+    Quién es el titular, en este orden (R1 de Codex, H-01 y H-06):
+    1. **Quien ya tiene espejo lo conserva.** Toda procedencia que en la cobertura previa fue
+       productora (`productores_previos`) sigue siéndolo: la titularidad es DURABLE y no la
+       cambia una carpeta nueva que ordene antes. Dos productoras legadas (materializadas
+       antes de esta regla) siguen siendo dos: no se retira una generación existente.
+    2. Si nadie tiene espejo, el titular es la primera procedencia con una ruta que sabe
+       extraer (`ruta != sin_soporte`): mismos bytes no es misma capacidad de extracción —un
+       DOCX guardado sin extensión es `sin_soporte`, su copia `.docx` es `nativo`.
+    3. Si ninguna sabe, el primero por ruta (orden `sorted`, determinista).
+    """
+    por_sha: dict[str, list[DocPlan]] = {}
+    for d in docs:
+        por_sha.setdefault(d.sha256, []).append(d)
+    for grupo in por_sha.values():
+        if len(grupo) < 2:
+            continue
+        productoras = [d for d in grupo if d.rel_path in productores_previos]
+        if productoras:
+            titular = productoras[0]
+            fijas = {d.rel_path for d in productoras}
+        else:
+            titular = next((d for d in grupo if d.ruta != "sin_soporte"), grupo[0])
+            fijas = {titular.rel_path}
+        for d in grupo:
+            if d.rel_path not in fijas:
+                d.duplicado_de = titular.rel_path
 
 
 NOTA_RECONSTRUIDA = "fila reconstruida del MD (sin _cobertura.json)"
@@ -1044,23 +1076,99 @@ def _peor_estado(filas: list[DocCobertura]) -> str:
     return min((f.estado for f in filas), key=lambda e: orden.get(e, 0))
 
 
+def _ruta_espejo(filas_titular: list[DocCobertura]) -> tuple[str, str]:
+    """(slug del titular, ruta REAL de su espejo): `03_MD/<slug>.md` si es suelto; si es
+    bundle, la carpeta del índice y el patrón de sus segmentos (R1/H-07: `03_MD/<parent>`
+    no existe como fichero ni como carpeta)."""
+    t = filas_titular[0]
+    if t.parent_slug:
+        return t.parent_slug, (f"02_Documentos/{t.parent_slug}/ y 03_MD/{t.parent_slug}__dNN_*.md "
+                               f"({len(filas_titular)} documentos lógicos)")
+    return t.slug, f"03_MD/{t.slug}.md"
+
+
+def _anotar_procedencia(filas_titular: list[DocCobertura], rel_copia: str) -> None:
+    """«también en <ruta>» en el titular, idempotente: reconciliar no duplica la nota."""
+    aviso = f"también en {rel_copia} (mismo sha256)"
+    for f in filas_titular:
+        if aviso not in f.nota:
+            f.nota = f"{f.nota} · {aviso}" if f.nota else aviso
+
+
 def _fila_duplicado(d: DocPlan, filas_titular: list[DocCobertura]) -> DocCobertura:
     """Fila de custodia de una copia byte-idéntica, y anota en el titular la procedencia.
 
     La copia conserva su `rel_path` y su `sha256` (cadena de custodia: el fichero existe en
-    esa carpeta), hereda el estado del titular y NO tiene espejo propio: la nota dice dónde
-    está el único. El titular gana «también en <ruta>» para que quien lea `_cobertura.md`
-    sepa que el documento vive en N carpetas del cliente sin tener que buscarlo.
+    esa carpeta), hereda el PEOR estado del titular, apunta al titular por `alias_de`
+    (referencia estructurada) y NO tiene espejo propio: la nota dice dónde está el único.
+    El titular gana «también en <ruta>» para que quien lea `_cobertura.md` sepa que el
+    documento vive en N carpetas del cliente sin tener que buscarlo.
     """
-    titular = filas_titular[0]
-    espejo = titular.parent_slug or titular.slug
-    _anotar(filas_titular, f"también en {d.rel_path} (mismo sha256)")
+    alias_de, espejo = _ruta_espejo(filas_titular)
+    _anotar_procedencia(filas_titular, d.rel_path)
     return DocCobertura(
         d.slug, d.rel_path, METODO_DUPLICADO, _peor_estado(filas_titular), 0, False,
-        f"copia byte-idéntica de {d.duplicado_de}: espejo único en 03_MD/{espejo}"
-        + ("" if len(filas_titular) == 1 else f" ({len(filas_titular)} documentos lógicos)"),
-        d.sha256,
+        f"copia byte-idéntica de {d.duplicado_de}: espejo único en {espejo}",
+        d.sha256, alias_de=alias_de,
     )
+
+
+def _alias_o_none(case_dir: Path, sm_dir: Path, d: DocPlan,
+                  cobertura: list[DocCobertura]) -> DocCobertura | None:
+    """La fila de alias de la copia `d`, o `None` si hay que procesarla como un documento.
+
+    - Titular con filas en ESTA corrida: alias, salvo que el titular no haya sabido extraer
+      nada (todas sus filas `sin_soporte`, R1/H-01): mismos bytes no es misma capacidad, y
+      la copia con extensión reconocida puede aportar el texto.
+    - Titular sin filas en esta corrida (`--solo <copia>`, `reforzar`, R1/H-05) pero con
+      espejo YA en disco: alias provisional (estado `ok`, nota que lo dice); el estado real
+      lo pone `reconciliar_alias` al fusionar con la cobertura previa, que sí conoce al
+      titular. Así `--solo <copia>` no reescribe el espejo compartido ni crea un segundo.
+    - Ni filas ni espejo: `None`.
+    """
+    filas_titular = [c for c in cobertura if c.rel_path == d.duplicado_de]
+    if filas_titular:
+        if all(c.metodo == "sin_soporte" for c in filas_titular):
+            return None
+        return _fila_duplicado(d, filas_titular)
+    slug_t = output_slug(d.duplicado_de, d.sha256)
+    if (sm_dir / "03_MD" / f"{slug_t}.md").exists():
+        espejo = f"03_MD/{slug_t}.md"
+    elif carpeta_bundle_de(case_dir, slug_t).is_dir():
+        espejo = f"02_Documentos/{slug_t}/ y 03_MD/{slug_t}__dNN_*.md"
+    else:
+        return None
+    return DocCobertura(
+        d.slug, d.rel_path, METODO_DUPLICADO, "ok", 0, False,
+        f"copia byte-idéntica de {d.duplicado_de}: espejo único en {espejo} (de una corrida "
+        f"anterior; estado heredado al fusionar)", d.sha256, alias_de=slug_t,
+    )
+
+
+def reconciliar_alias(cob: list[DocCobertura]) -> list[DocCobertura]:
+    """Tras fusionar cobertura previa y delta: los alias reflejan a su titular (R1/H-04).
+
+    Reprocesar solo al titular (`--solo`, `reforzar`) sustituye sus filas por otras frescas
+    —sin la nota «también en» y con otro estado— y deja a la copia con el estado viejo. Aquí
+    se rehace la relación sobre la cobertura COMPLETA: por cada alias, el peor estado vigente
+    de las filas productoras con su mismo `sha256`, `alias_de` al día, y la procedencia
+    anotada de nuevo en el titular (idempotente). Un alias sin productoras se deja como está:
+    no hay contra qué reconciliar y borrarlo sería perder custodia.
+    """
+    por_sha: dict[str, list[DocCobertura]] = {}
+    for c in cob:
+        if c.metodo != METODO_DUPLICADO:
+            por_sha.setdefault(c.sha256, []).append(c)
+    for c in cob:
+        if c.metodo != METODO_DUPLICADO:
+            continue
+        titulares = por_sha.get(c.sha256, [])
+        if not titulares:
+            continue
+        c.estado = _peor_estado(titulares)
+        c.alias_de = titulares[0].parent_slug or titulares[0].slug
+        _anotar_procedencia(titulares, c.rel_path)
+    return cob
 
 
 def _ofimatica_y_extraer(case_dir: Path, sm_dir: Path, case_id: str, d: DocPlan,
@@ -1232,18 +1340,21 @@ def ejecutar(case_dir: Path, docs: list[DocPlan], *, case_id: str,
     sm_dir = _sala_maquina_dir(case_dir)
     cobertura: list[DocCobertura] = []
 
-    for d in docs:
+    # Los titulares antes que sus copias: el alias se construye sobre las filas del titular
+    # en esta corrida, y el inventario ordenado puede traer la copia primero (`A/encargo`
+    # sin extensión antes que `B/encargo.docx`). Orden estable: entre titulares, el de siempre.
+    for d in sorted(docs, key=lambda x: bool(x.duplicado_de)):
         if d.skip:
             continue
         if d.duplicado_de:
-            filas_titular = [c for c in cobertura if c.rel_path == d.duplicado_de]
-            if filas_titular:
-                cobertura.append(_fila_duplicado(d, filas_titular))
+            fila = _alias_o_none(case_dir, sm_dir, d, cobertura)
+            if fila is not None:
+                cobertura.append(fila)
                 if on_documento is not None:
                     on_documento(d, 0, cobertura[-1:])
                 continue
-            # El titular no dejó filas en esta corrida (no debería pasar: mismo sha ⇒ mismo
-            # skip). Antes que perder un documento, se procesa como uno más: nunca se
+            # Sin espejo del titular (ni en esta corrida ni en disco), o titular sin
+            # capacidad de extracción: la copia se procesa como un documento más. Nunca se
             # colapsa contra algo que no existe.
         _n_antes = len(cobertura)
         _t0 = time.perf_counter()
