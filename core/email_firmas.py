@@ -117,6 +117,54 @@ class BloqueFirma:
     procedencia: str = "directo"
 
 
+#: Verbos con los que un cliente de correo introduce el mensaje citado, seguidos de
+#: dos puntos ("...Ferran <email> va escriure:", "...escribio:", "...wrote:",
+#: "...schrieb:"). Task 12, defecto medido 2026-09-05 sobre un correo real de
+#: W-02Q38C: esta linea trae una direccion @engelvoelkers.com que HOY ancla un
+#: bloque como cualquier otra, y su ventana (que mira hasta `_VENTANA_ATRAS` lineas
+#: hacia atras) puede cubrir la firma de OTRA persona que este justo encima -- ver
+#: `_es_cabecera_de_cita`.
+#:
+#: LISTA DELIBERADAMENTE INCOMPLETA -- no se persigue el caso general (cada cliente
+#: de correo y cada idioma tiene su propia frase de atribucion). Cubre los 4 verbos
+#: medidos o mas habituales: espanol ("escribio"/"escribió"), catalan ("va
+#: escriure"), ingles ("wrote"), aleman ("schrieb"). NO cubre frances ("a ecrit"),
+#: italiano ("ha scritto"), portugues ("escreveu") ni ningun otro idioma o variante
+#: de cliente de correo no medida -- una cabecera en esas formas NO se descarta hoy
+#: y puede seguir anclando un bloque bogus. Ampliar esta lista es seguro (solo
+#: reduce el conjunto de bloques que se crean), pero unicamente cuando el corpus
+#: real mida una forma nueva -- no por anticipacion.
+_RE_ATRIBUCION_VERBO = re.compile(r"(?i)\b(?:escribi[oó]|va\s+escriure|wrote|schrieb)\s*:")
+
+#: La cabecera Outlook De:/From: precede a la direccion en su MISMA linea
+#: ("De: Nombre <email>" / "From: Name <email>"). Anclada a inicio de linea (con el
+#: doble punto obligatorio justo detras, salvo espacios) para no disparar con el
+#: "de" comun del castellano en mitad de una frase ("De acuerdo con..."): sin la
+#: exigencia del `:` inmediato, cualquier linea que empezara por "de " colaria.
+_RE_ATRIBUCION_LABEL = re.compile(r"(?i)^\s*(?:de|from)\s*:")
+
+
+def _es_cabecera_de_cita(lineas: list[str], i: int) -> bool:
+    """La linea `i` (donde se ancloria un bloque) pertenece a una cabecera de
+    atribucion de cita y por tanto NO debe anclar nada.
+
+    Se comprueba tambien la linea ANTERIOR para el verbo (no para la etiqueta
+    De:/From:, que siempre precede a la direccion en su propia linea): el
+    envoltorio del cliente de correo puede partir la cabecera en dos lineas, con
+    la direccion sola en una y el verbo+":" en la otra -- el caso real medido
+    parte "...Nombre <" / "email> va escriure:" (verbo en la MISMA linea que la
+    direccion, la fecha/nombre en la anterior); la variante contraria (verbo en la
+    anterior, direccion sola en la suya) tambien se cubre por si el punto de corte
+    cae al reves en otro cliente.
+    """
+    candidatas = [lineas[i]]
+    if i > 0:
+        candidatas.append(lineas[i - 1])
+    if any(_RE_ATRIBUCION_VERBO.search(c) for c in candidatas):
+        return True
+    return bool(_RE_ATRIBUCION_LABEL.match(lineas[i]))
+
+
 def localizar_bloques(texto: str, *, fichero: str = "") -> list[BloqueFirma]:
     """Los bloques que parecen una firma, uno por linea con direccion corroborada.
 
@@ -130,6 +178,12 @@ def localizar_bloques(texto: str, *, fichero: str = "") -> list[BloqueFirma]:
 
     Un mismo correo puede dar varios bloques para la misma persona (la plantilla de
     Barcelona repite la direccion al final); `consolidar` los une.
+
+    Una direccion en una cabecera de atribucion de cita ("...fulano@ev.com>
+    escribio:") NO ancla bloque (Task 12, defecto medido 2026-09-05): esa direccion
+    no firma nada, solo aparece porque el cliente de correo cita al autor del
+    mensaje anterior -- y su ventana, mirando hacia atras, puede cubrir la firma de
+    OTRA persona real. Ver `_es_cabecera_de_cita`.
     """
     texto = desmarcar(texto)
     lineas = texto.splitlines()
@@ -139,6 +193,8 @@ def localizar_bloques(texto: str, *, fichero: str = "") -> list[BloqueFirma]:
     for i, linea in enumerate(lineas):
         m_ancla = _RE_EMAIL_COLAB.search(linea)
         if not m_ancla:
+            continue
+        if _es_cabecera_de_cita(lineas, i):
             continue
 
         # El marcador mas cercano por encima aprieta el limite superior; si no hay,
@@ -303,11 +359,35 @@ VEREDICTO_CONFLICTO = "CONFLICTO"
 #: `_RE_MOVIL` le impedia ver la linea -- es admitir un prefijo `Teléfono`/`Tel.`
 #: opcional ANTES de la palabra movil, para que la etiqueta compuesta entera quede
 #: reconocida como movil.
+#: `Tel:` y `Mob:` (Task 12, defecto medido 2026-09-05 sobre un correo real de
+#: W-02Q38C): la firma trae esas dos abreviaturas cortas -- sin punto, sin "fono",
+#: sin "vil"/"ile" -- y ninguna de las dos estaba en las listas de abajo. Esa
+#: persona salia en el informe con FIRMA_SIN_CAMPO en movil Y en fijo, afirmando
+#: una ausencia que la firma no tiene.
+#:
+#: Las dos se anaden AL FINAL de su alternancia y con los DOS PUNTOS obligatorios
+#: (`tel\s*:` / `mob\s*:`), no sueltas como el resto de abreviaturas de esta lista.
+#: Motivo: alternancia de regex prueba las opciones en ORDEN y se queda con la
+#: PRIMERA que permite completar el resto del patron -- no con la mas larga. El
+#: resto del patron (`\s*[:.]?\s*(.+?)\s*$`) es tan permisivo que casi cualquier
+#: contenido tras la etiqueta lo completa, asi que si `tel`/`mob` fueran sueltas y
+#: SIN dos puntos exigidos, tendrian que ir tras `telf`/`tel[ée]fono`/`tel\.`/
+#: `mobile`/`m[óo]v\.?` para no robarles el match (p.ej. `tel` suelta ANTES de
+#: `telf` en la lista dejaria `Telf:` leyendose como fijo="f: 931112233"). Puestas
+#: al final ya no roban nada a esas -- se prueban primero y ganan porque son mas
+#: especificas. Pero `tel`/`mob` sueltas siguen siendo el prefijo de palabras
+#: normales ("telecomunicaciones", "mobiliario"...) y `.search()` se queda con la
+#: PRIMERA linea del texto que case, asi que una linea de prosa asi ANTES de la
+#: firma real robaria el match entero (el fallo callado seria peor que el de
+#: partida: no "no reconocido", sino "reconocido en la linea equivocada"). Exigir
+#: los dos puntos es justo lo medido en el corpus (`Tel:`, `Mob:`) y cierra ese
+#: hueco sin tocar ninguna alternativa existente.
 _RE_MOVIL = re.compile(
-    r"(?im)^\s*\*?\s*(?:tel[ée]fono|tel\.)?\s*(?:m[óo]vil|mobile|m[óo]v\.?)"
+    r"(?im)^\s*\*?\s*(?:tel[ée]fono|tel\.)?\s*(?:m[óo]vil|mobile|m[óo]v\.?|mob\s*:)"
     r"\s*[:.]?\s*(.+?)\s*$")
 _RE_FIJO = re.compile(
-    r"(?im)^\s*\*?\s*(?:telf|tel\.?\s*fijo|tel[ée]fono|tel\.|phone)\s*[:.]?\s*(.+?)\s*$")
+    r"(?im)^\s*\*?\s*(?:telf|tel\.?\s*fijo|tel[ée]fono|tel\.|phone|tel\s*:)"
+    r"\s*[:.]?\s*(.+?)\s*$")
 
 #: Una linea ENTERAMENTE en negrita. La primera es el nombre; el cargo es la siguiente
 #: linea no vacia, en negrita o no (las dos plantillas medidas difieren en eso).

@@ -420,6 +420,55 @@ class TestElBloqueConservaSuEmailAncla:
             assert any(b.email == email for b in bloques), f"falta el bloque de {email}"
 
 
+class TestLaCabeceraDeCitaNoAnclaBloque:
+    """Defecto medido en el mismo correo real de W-02Q38C (2026-09-05, Task 12): la
+    linea con la que un cliente de correo introduce el mensaje citado --
+    "El <fecha> ... <direccion> va escriure:", version catalana de "escribio:"/
+    "wrote:"/"schrieb:" -- trae una direccion @engelvoelkers.com que HOY ancla un
+    bloque como cualquier otra. Esa direccion no firma nada: solo aparece porque el
+    cliente de correo la cita al reformatear el mensaje anterior.
+
+    La propiedad contratada (deliberadamente mas simple que intentar cubrir cada
+    idioma y cliente de correo): una direccion cuya linea -- o la linea anterior, por
+    si el envoltorio la parte igual que en el caso real -- contiene un verbo de
+    atribucion de cita seguido de dos puntos, o cuya propia linea va precedida de la
+    etiqueta `De:`/`From:` (cabecera Outlook), no ancla bloque.
+
+    Lista de formas cubiertas DELIBERADAMENTE INCOMPLETA -- ver el comentario junto a
+    `_RE_ATRIBUCION_VERBO` en el modulo. No se persigue el caso general (cada cliente
+    de correo e idioma tiene su propia frase), solo lo medido y lo mas habitual."""
+
+    @pytest.mark.parametrize("cuerpo", [
+        # Espanol, una sola linea.
+        "ENGEL&VÖLKERS\n\nEl dc, 12 ag. 2026 a las 14:32, Nombre Apellido "
+        "<x@engelvoelkers.com> escribió:\n",
+        # Catalan, PARTIDA EN DOS LINEAS -- el caso real medido: la direccion queda
+        # sola en su linea con un ">" de cierre y "va escriure:" detras.
+        "ENGEL&VÖLKERS\n\nEl dc, 12 ag. 2026 a les 14:32 Nombre Apellido <\n"
+        "x@engelvoelkers.com> va escriure:\n",
+        # Ingles, una sola linea.
+        "ENGEL&VÖLKERS\n\nOn Wed, 12 Aug 2026 at 14:32, Name Surname "
+        "<x@engelvoelkers.com> wrote:\n",
+        # Aleman, una sola linea.
+        "ENGEL&VÖLKERS\n\nAm Mi., 12 ag. 2026 um 14:32 Uhr Name Surname "
+        "<x@engelvoelkers.com> schrieb:\n",
+        # El verbo cae en la linea ANTERIOR a la de la direccion -- el otro sentido
+        # del envoltorio partido, para ejercitar esa mitad de la propiedad.
+        "ENGEL&VÖLKERS\n\nNombre Apellido escribió:\n<x@engelvoelkers.com>\n",
+        # Outlook De:/From: -- la etiqueta precede a la direccion en su MISMA linea.
+        "ENGEL&VÖLKERS\n\nDe: Nombre Apellido <x@engelvoelkers.com>\n",
+        "ENGEL&VÖLKERS\n\nFrom: Name Surname <x@engelvoelkers.com>\n",
+    ], ids=[
+        "es_una_linea", "ca_partida_caso_real", "en_una_linea", "de_una_linea",
+        "verbo_en_linea_anterior", "outlook_de", "outlook_from",
+    ])
+    def test_ninguna_forma_cubierta_ancla_bloque(self, cuerpo):
+        """Sin el descarte: la marca "ENGEL&VÖLKERS" esta dentro de la ventana hacia
+        atras de la direccion citada y SI corroboraria -- por eso el bloque saldria
+        si el descarte no funcionase, y este test seria rojo antes del arreglo."""
+        assert localizar_bloques(cuerpo, fichero="cita.eml") == []
+
+
 class TestZonasCitadas:
 
     def test_una_zona_citada_se_detecta(self):
@@ -842,6 +891,55 @@ class TestLaEtiquetaCompuestaTelefonoMovilEsMovil:
         assert d.movil == "", f"{etiqueta!r} no puede rellenar tambien el movil"
 
 
+class TestLasEtiquetasCortasDeLaPlantillaRealSeReconocen:
+    """Defecto medido en un correo real del corpus de W-02Q38C (2026-09-05, Task 12):
+    la firma trae `Tel:` (sin punto, sin "fono") y `Mob:` (sin "ile", sin "vil") --
+    ninguna de las dos estaba en las listas de `_RE_FIJO`/`_RE_MOVIL`. Consecuencia
+    medida: esa persona salia en el informe con FIRMA_SIN_CAMPO en movil Y en fijo,
+    afirmando una ausencia que la firma no tiene -- exactamente la frontera que este
+    modulo existe para respetar.
+
+    Cada caso comprueba TAMBIEN que el otro campo queda vacio, igual que
+    `TestLaEtiquetaCompuestaTelefonoMovilEsMovil`: un cruce que rellene los dos es
+    igual de malo que clasificar mal uno solo."""
+
+    @pytest.mark.parametrize("etiqueta", [
+        "Tel:", "Tel.:", "Telf:", "Teléfono:", "Phone:",
+    ])
+    def test_la_etiqueta_se_lee_como_fijo_y_el_movil_queda_vacio(self, etiqueta):
+        cuerpo = f"ENGEL&VÖLKERS\n{etiqueta} 931112233\nana@engelvoelkers.com\n"
+        bloques, _ = extraer_bloques(cuerpo, fichero="fj2.eml")
+        d = leer_campos(bloques[0])
+        assert d.telefono == "931112233", f"{etiqueta!r} deberia leerse como fijo"
+        assert d.movil == "", f"{etiqueta!r} no puede rellenar tambien el movil"
+
+    @pytest.mark.parametrize("etiqueta", [
+        "Mob:", "Móvil:", "Movil:", "Mobile:", "Teléfono móvil:",
+    ])
+    def test_la_etiqueta_se_lee_como_movil_y_el_fijo_queda_vacio(self, etiqueta):
+        cuerpo = f"ENGEL&VÖLKERS\n{etiqueta} 612 34 56 78\nana@engelvoelkers.com\n"
+        bloques, _ = extraer_bloques(cuerpo, fichero="mv2.eml")
+        d = leer_campos(bloques[0])
+        assert d.movil == "612345678", f"{etiqueta!r} deberia leerse como movil"
+        assert d.telefono == "", f"{etiqueta!r} no puede rellenar tambien el fijo"
+
+    def test_Tel_con_varios_espacios_tras_los_dos_puntos(self):
+        """El corpus real trae la etiqueta seguida de VARIOS espacios antes del
+        numero (`Tel:` y luego seis espacios, redactado en el encargo)."""
+        cuerpo = "ENGEL&VÖLKERS\nTel:      931112233\nana@engelvoelkers.com\n"
+        bloques, _ = extraer_bloques(cuerpo, fichero="esp1.eml")
+        d = leer_campos(bloques[0])
+        assert d.telefono == "931112233"
+        assert d.movil == ""
+
+    def test_Mob_con_varios_espacios_tras_los_dos_puntos(self):
+        cuerpo = "ENGEL&VÖLKERS\nMob:    612345678\nana@engelvoelkers.com\n"
+        bloques, _ = extraer_bloques(cuerpo, fichero="esp2.eml")
+        d = leer_campos(bloques[0])
+        assert d.movil == "612345678"
+        assert d.telefono == ""
+
+
 def _f(email="ana@engelvoelkers.com", movil="", telefono="", cargo="",
        procedencia=PROCEDENCIA_DIRECTO, fichero="x.eml", linea=1):
     return DatosFirma(email=email, movil=movil, telefono=telefono, cargo=cargo,
@@ -1009,6 +1107,75 @@ class TestFirmaSinCampoNoEsNoTiene:
     def test_el_cargo_ausente_tambien_se_declara(self):
         c = consolidar([_f(movil="612345678")])["ana@engelvoelkers.com"]
         assert c.veredicto_cargo == VEREDICTO_FIRMA_SIN_CAMPO
+
+
+class TestElCasoAcopladoDefecto1YDefecto2:
+    """Task 12: los dos defectos medidos en el corpus real de W-02Q38C estan
+    ACOPLADOS. Arreglar el Defecto 1 (las etiquetas cortas `Tel:`/`Mob:`) SIN el
+    Defecto 2 (la cabecera de cita ancla bloque) crea un fallo PEOR que el original:
+    el bloque bogus que ancla la direccion citada mira hasta 12 lineas hacia atras y
+    cubre la firma de OTRA persona -- y en cuanto esas etiquetas se reconocen, ese
+    bloque bogus SI consigue leer el telefono del vecino. Ese es el fallo que este
+    modulo entero existe para impedir: el telefono de A escrito en la ficha de B.
+
+    La forma real (redactada): la firma de A (con `Tel:`/`Mob:`) termina justo
+    encima de una cabecera de cita partida en dos lineas que nombra a B -- y debajo,
+    el mensaje citado y la firma PROPIA de B, con sus propios telefonos.
+    """
+
+    _CUERPO = (
+        "ENGEL&VÖLKERS\n"
+        "*Persona A*\n"
+        "Cargo de A\n"
+        "Tel:      931111111\n"
+        "Mob:    611111111\n"
+        "a@engelvoelkers.com\n"
+        "\n"
+        "El dc, 12 ag. 2026 a les 14:32 Persona B <\n"
+        "b@engelvoelkers.com> va escriure:\n"
+        "\n"
+        "> Mensaje citado de B.\n"
+        "\n"
+        "Un saludo,\n"
+        "\n"
+        "ENGEL&VÖLKERS\n"
+        "*Persona B*\n"
+        "Cargo de B\n"
+        "Tel:      932222222\n"
+        "Mob:    622222222\n"
+        "b@engelvoelkers.com\n"
+    )
+
+    def test_A_se_queda_con_los_suyos_y_B_con_los_suyos(self):
+        bloques, sin_atribuir = extraer_bloques(self._CUERPO, fichero="acoplado.eml")
+        assert sin_atribuir == 0
+        cons = consolidar(leer_campos(b) for b in bloques)
+
+        a = cons["a@engelvoelkers.com"]
+        assert (a.movil, a.telefono) == ("611111111", "931111111")
+        assert a.veredicto_movil == VEREDICTO_ENCONTRADO
+        assert a.veredicto_telefono == VEREDICTO_ENCONTRADO
+
+        b = cons["b@engelvoelkers.com"]
+        assert (b.movil, b.telefono) == ("622222222", "932222222"), (
+            "si esto sale vacio con veredicto CONFLICTO, es el bloque bogus de la "
+            "cabecera de cita metiendo los valores de A a competir con los de B")
+        assert b.veredicto_movil == VEREDICTO_ENCONTRADO
+        assert b.veredicto_telefono == VEREDICTO_ENCONTRADO
+
+    def test_ningun_valor_de_A_aparece_atribuido_a_B(self):
+        """La forma directa: ademas de que el consolidado de B salga limpio, ningun
+        BLOQUE atribuido a B puede llevar un valor que es de A -- ni siquiera de
+        camino, antes de que `_elegir` decida que hacer con el conflicto."""
+        bloques, sin_atribuir = extraer_bloques(self._CUERPO, fichero="acoplado2.eml")
+        assert sin_atribuir == 0
+
+        datos_de_b = [leer_campos(b) for b in bloques if b.email == "b@engelvoelkers.com"]
+        assert datos_de_b, "tiene que haber al menos un bloque atribuido a B"
+
+        for d in datos_de_b:
+            assert d.movil != "611111111", "el movil de A no puede salir en un bloque de B"
+            assert d.telefono != "931111111", "el fijo de A no puede salir en un bloque de B"
 
 
 _EML = """\
