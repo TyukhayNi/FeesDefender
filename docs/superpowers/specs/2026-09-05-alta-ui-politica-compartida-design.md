@@ -3,11 +3,25 @@ tipo: spec
 estado: en-revision
 creado: 2026-09-05
 objeto: "Acciones 3 y 4 del informe de Codex 2026-09-05: el formulario de alta comparte con la CLI la política de duplicados del CRM y reutiliza expedientes existentes"
-rev: "2"
+rev: "3"
 ---
 
 # El formulario de alta comparte la política de la CLI
 
+> **Rev. 3 (2026-09-05), tras la R1 adversarial sobre el diff: `REQUIERE-REVISION`, ocho
+> hallazgos, los ocho confirmados.** El ALTO era mío y estaba en la frontera exacta que el §2
+> declara: el remedio de la rev. 2 al «bloque que desaparecía al cambiar el radio» rearmaba el
+> token de relanzamiento desde el propio render, así que **cualquier rerun** volvía a ejecutar
+> el alta entera y, con el W-code editado bajo un override de `case_id` o una respuesta
+> transitoria del CRM, llegaba a `create_expediente` sin clic. Lo que cambia: la decisión
+> `vincular` se **guarda** y se pinta desde lo guardado sin ejecutar nada; solo los callbacks
+> arman el token; el radio no preselecciona y el botón queda deshabilitado sin elección; hay
+> «Cancelar»; no hay `st.stop()` en `bloquear`/`vincular`; el callback verifica por resultado
+> lo que registró; `forzar` se consume al principio del alta; la CLI conserva su literal de
+> `--force` y aplica la misma regla de «ya registrado» que el formulario; `decidir` colapsa
+> candidatos repetidos. Adjudicación en el **§7**; voz del revisor en el acta hermana
+> `…-r1-adversarial-review.md`.
+>
 > **Rev. 2 (2026-09-05, al implementar).** Cuatro cosas que la rev. 1 decía a medias o no
 > decía, descubiertas construyéndola; lo demás no cambia:
 >
@@ -106,22 +120,28 @@ Sobre el bloque `if btn_sudespacho:` de `streamlit_app.py`, en este orden:
 1. **`ensure_case` con error legible.** `ValueError` → `st.error(str(exc))` y `st.stop()`. El
    sumidero garantiza que no se creó nada (PR #280); la UI solo tiene que decirlo bien.
 2. **Reutilizar antes de buscar.** Si `get_case_status(final_case_id)["expedientes"]` ya tiene
-   una entrada del elemento elegido (`extrajudiciales` o `expedientes_judiciales`), **no se
-   crea**: se toma su `id`, se informa («se reutiliza el expediente ID N ya vinculado») y se
-   continúa con los pasos 3a-3c (verificación de referencia, cliente propio, colaboradores), que
+   **cualquier** expediente registrado —prefiriendo el del elemento elegido y, si no lo hay, el
+   de la otra jurisdicción, con aviso en pantalla (rev. 2, nota 1)—, **no se crea**: se toma su
+   `id`, se informa («se reutiliza el expediente ID N ya vinculado») y se continúa con los
+   pasos 3a-3c (verificación de referencia, cliente propio, colaboradores), que
    son idempotentes por construcción (`ensure_*` deduplican). Esto es «continuar una apertura
    parcial sin repetir altas» en la forma más pequeña que la hace cierta.
 3. **Si no hay local, la política.** `buscar_expedientes_duplicados(w_code=ref_mls,
    direccion=direccion)` y `decidir(dup, forzar=<casilla>)`:
    - **`vincular`**: se listan los candidatos `(elemento, id)`. Con uno, un botón «Vincular este
      expediente al caso local»; con varios, un `st.radio` para elegir el frente **y** el mismo
-     botón: **nunca se vinculan dos a la vez ni se elige por el usuario**. El botón llama a
-     `register_expediente(final_case_id, id, elemento)` y la corrida sigue con el pull. **No hay
-     botón de «crear de todos modos»**: si de verdad hacen falta dos expedientes para un W-code,
+     botón: **nunca se vinculan dos a la vez ni se elige por el usuario** (el radio arranca sin
+     selección y el botón está deshabilitado hasta que la haya; hay un «Cancelar»). La decisión
+     se **guarda** en `session_state` ligada al `case_id` **y al W-code**, y en los reruns se
+     pinta desde lo guardado sin ejecutar el alta ni consultar el CRM; el callback del botón
+     llama a `register_expediente(final_case_id, id, elemento)`, **comprueba releyendo
+     `_caso.md`** que quedó registrado, y solo entonces arma el token de relanzamiento con el
+     que la corrida continúa por «reutilizar». **No hay botón de «crear de todos modos»**: si de verdad hacen falta dos expedientes para un W-code,
      eso se decide en el CRM, no en un clic del formulario.
    - **`bloquear`**: `st.error` con la lista literal de lo que no se pudo comprobar y una casilla
-     «Sé que este expediente no existe en el CRM: crear igualmente», que rearma la decisión con
-     `forzar=True`. Es el pendiente explícito que el informe pide: la pantalla dice qué no se
+     «Sé que este expediente no existe en el CRM: crear igualmente», cuyo callback arma
+     `forzar` y el token. `forzar` se **consume al principio** del siguiente alta, salga lo que
+     salga (rev. 3, H-06): un intento que muera antes de la consulta no lo deja armado. Es el pendiente explícito que el informe pide: la pantalla dice qué no se
      miró, y crear exige un acto separado.
    - **`crear`**: como hoy, con los `avisos` en `st.warning` (no bloquean: una vuelta y una bad
      debt del mismo inmueble son dos expedientes correctos).
@@ -213,3 +233,40 @@ no toca).
 - La ayuda del flag `--hasta` dice que al reanudar «las etapas ya hechas se saltan solas» y el
   código las repite (idempotentes). Se corrige el texto en esta misma entrega porque toca
   `abrir_caso.py` de todos modos.
+
+## 7. Adjudicación de la revisión adversarial del diff (Claude Code sesión independiente, 2026-09-05) — REQUIERE-REVISION, remediado
+
+- **Objeto revisado:** diff `origin/main...450d61b` del PR #285 (cinco ficheros; base `2b32c32`), commit `450d61b`
+- **Ronda:** 1
+- **Revisor:** Claude Code (sesión independiente), solo lectura, con sondas ejecutadas (matriz 8×2 de `_alta_crm` antes/después, diez mutantes de la política, totalidad de `decidir`); la UI no se ejecutó en la ronda
+- **Informe recibido:** `2026-09-05-alta-ui-politica-compartida-r1-adversarial-review.md`
+- **Hallazgos:** 8 confirmados · 0 rebajados · 0 refutados · 0 escalados · 0 sin verificar
+- **Remediado en:** rev. 3 de este documento y el commit que la acompaña
+
+**Independencia, declarada más débil**: Codex sin cupo; el revisor fue un subagente de Claude Code
+sin el contexto de autoría (`AGENTS.md` §«Revisor sustituto»). Lo que compensa: el ALTO viene con
+la traza de código línea a línea y dos vectores concretos, y la CLI se contrastó ejecutando las
+dos versiones. El código del formulario lo escribió un subagente y lo reviso yo por segunda vez al
+adjudicar: la lectura del H-01 es exacta contra el diff. El digest se recalculó al recibirlo y
+coincide. **La ronda no ejecutó la UI**: la rev. 3 se verifica en pantalla igual que la rev. 2
+(sandbox sin credenciales, doble de `buscar_expedientes_duplicados`), y lo que no se pueda ver se
+declara en el §5.
+
+| # | Sev. | Hallazgo | Veredicto | Dónde se remedia |
+|---|---|---|---|---|
+| H-01 | ALTO | el bloque `vincular` rearmaba el token en cada render: cualquier rerun ejecutaba el alta entera, y con override de `case_id` + W-code editado, o respuesta transitoria del CRM, llegaba a `create_expediente` sin clic | **confirmado** (traza exacta contra el diff) | decisión guardada en `_nc_vincular_pend` (case_id + W-code) y pintada sin ejecutar; solo los callbacks arman el token; §3.2 |
+| H-02 | MEDIO | el radio preseleccionaba el primer frente; «Vincular» registraba sin elección y la rama «no se eligió» era inalcanzable | **confirmado** | `index=None`, botón deshabilitado sin selección; §3.2 |
+| H-03 | MEDIO | `st.stop()` con el token vivo dejaba en blanco el resto de la app y relanzaba el alta en cada interacción; sin cancelar | **confirmado** | sin `st.stop()` en `bloquear`/`vincular` (`_alta_detenida`); botón «Cancelar»; queda un `st.stop()` en el `ValueError` de `ensure_case`, declarado |
+| H-04 | BAJO | el callback anunciaba «vinculado» sin comprobar que `register_expediente` escribió, y sin `try/except` | **confirmado** | relee `get_case_status` antes de anunciar y armar; errores al aviso |
+| H-05 | BAJO | tres cambios observables en la CLI no declarados (literal `SIN COMPROBAR:`; con W-code+incierto+`--force` ya no se imprime la línea de «se da de alta») | **confirmado** | la CLI vuelve al literal «SIN comprobar <criterio>»; el tercero se **conserva y se declara** aquí: no anunciar un alta que no ocurre es lo correcto |
+| H-06 | BAJO | `forzar` podía sobrevivir a un relanzamiento abortado antes de la consulta y consumirse en un clic posterior | **confirmado** | se consume al principio del bloque del alta |
+| H-07 | BAJO | el cuerpo del §3 decía la regla vieja; «queda escrito» era solo pantalla/consola; `decidir` no colapsaba candidatos repetidos | **confirmado** | §3.2 alineado; docstring de `decidir` («queda en pantalla»); `dict.fromkeys` sobre candidatos; P11 |
+| H-08 | BAJO | la CLI solo reconocía `extrajudiciales` como «ya registrado»; dos vocabularios de `element` en `_caso.md` | **confirmado** | la CLI usa `expediente_local_para_alta` (P12). Los dos vocabularios (`judiciales` del camino `crear` de la UI y `expedientes_judiciales` del `vincular`) **se dejan**: `elemento_canonico` los absorbe y cambiar lo que escribe el `crear` toca a `sync_sudespacho`/`scheduled_sync`, fuera de este alcance; queda anotado |
+
+**Lo que el revisor verificó y resultó correcto** está en el §2 del acta: política pura, total e
+inmutable; «el W-code manda» defendible porque `por_wcode` solo recibe referencias confirmadas
+por `wcode_match`; diez mutantes muertos por su P-test; CLI con códigos de salida y número de
+creaciones idénticos en las 16 celdas; `test_crm_dedup_expediente.py` intacto y verde; conteos del
+§5 exactos; G2 verde; ninguna vía «Confirmar de todos modos». **No verificado por el revisor:** la
+UI en ejecución, el consumo de `forzar` y el token (no testeables con pytest), el camino `crear`
+contra el CRM real.

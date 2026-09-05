@@ -162,3 +162,34 @@ class TestLaCLILaConsume:
             cli._alta_crm(self._ident(), cuantia=1.0, crm_mode="api", yes=True, force=True)
         assert vistas == [True], "`--force` tiene que llegar a `decidir` como `forzar`"
         assert llamadas == []
+
+
+class TestRemediacionR1:
+    """Mutantes anadidos tras la R1 sobre el diff (2026-09-05)."""
+
+    def test_P11_candidatos_repetidos_se_colapsan(self):
+        """R1/H-07: el mismo `(elemento, id)` dos veces salia como dos candidatos."""
+        d = politica.decidir(
+            DuplicadosExpediente(por_wcode=[(EXTRA, "648"), (EXTRA, "648"), (JUD, "700")]),
+            forzar=False)
+        assert d.candidatos == ((EXTRA, "648"), (JUD, "700"))
+
+    def test_P12_la_cli_reconoce_un_judicial_ya_vinculado_y_no_consulta_al_crm(self, monkeypatch):
+        """R1/H-08: la CLI solo veia `extrajudiciales` como «ya registrado»; un judicial
+        vinculado desde el formulario la mandaba al CRM a abortar pidiendo vincular lo ya
+        vinculado. Ahora aplica la misma regla que el formulario."""
+        import scripts.abrir_caso as cli
+
+        monkeypatch.setattr(cli.case_manager, "get_case_status",
+                            lambda cid: {"expedientes": [{"id": "700", "element": "judiciales"}]})
+        consultas = []
+        monkeypatch.setattr(cli.sudespacho_relations, "buscar_expedientes_duplicados",
+                            lambda **k: consultas.append(k) or DuplicadosExpediente())
+        creaciones = []
+        monkeypatch.setattr(cli.sudespacho_create, "create_expediente",
+                            lambda *a, **k: creaciones.append(1) or "1")
+
+        cli._alta_crm(TestLaCLILaConsume._ident(), cuantia=1.0, crm_mode="api", yes=True)
+
+        assert consultas == [] and creaciones == []
+

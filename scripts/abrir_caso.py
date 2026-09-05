@@ -660,13 +660,14 @@ def _alta_crm(
         return
 
     expedientes = case_manager.get_case_status(ident.case_id)["expedientes"]
-    ya_registrado = any(
-        isinstance(e, dict) and e.get("element") == _ELEMENT_EXTRAJUDICIAL
-        for e in expedientes
-    )
-    if ya_registrado:
+    # La MISMA regla que el formulario (R1/H-08): cualquier expediente ya vinculado —de la
+    # jurisdiccion que sea— cuenta como registrado. Antes solo se miraba el extrajudicial,
+    # y un judicial vinculado desde la UI mandaba a la CLI al CRM, que abortaba pidiendo
+    # «vincula el existente»: lo que ya estaba hecho.
+    ya = alta_crm_politica.expediente_local_para_alta(expedientes, _ELEMENT_EXTRAJUDICIAL)
+    if ya is not None:
         typer.echo(
-            f"CRM ya registrado (element={_ELEMENT_EXTRAJUDICIAL}), "
+            f"CRM ya registrado (element={ya.get('element')}, id={ya.get('id')}), "
             "no se re-da de alta"
         )
         return
@@ -691,7 +692,10 @@ def _alta_crm(
 
     for aviso in decision.avisos:
         if aviso.startswith(alta_crm_politica.SIN_COMPROBAR):
-            typer.echo(f"[AVISO] --force: se da de alta {aviso}")
+            # El literal de siempre («SIN comprobar <criterio>»), no el prefijo del core:
+            # la R1 (H-05) midio que el mensaje habia cambiado sin declararse.
+            criterio = aviso[len(alta_crm_politica.SIN_COMPROBAR):]
+            typer.echo(f"[AVISO] --force: se da de alta SIN comprobar {criterio}")
         else:
             typer.echo(f"[AVISO] posible expediente relacionado ({aviso}). "
                        "No bloquea: el mismo inmueble o la misma parte pueden tener varios.")

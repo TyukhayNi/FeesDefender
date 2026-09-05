@@ -65,12 +65,14 @@ def decidir(dup: DuplicadosExpediente, *, forzar: bool) -> DecisionAltaCRM:
        consultar el resto o no.
     2. `dup.incierto` y no `forzar` -> `bloquear`, con la lista literal de lo no comprobado.
     3. En otro caso -> `crear`. Si venia incierto y se forzo, cada criterio no comprobado
-       se anade a `avisos` con el prefijo `SIN_COMPROBAR`, para que quede escrito que se
-       dio por bueno a ciegas.
+       se anade a `avisos` con el prefijo `SIN_COMPROBAR`, para que quede en pantalla (CLI o
+       formulario) que se dio por bueno a ciegas; ningun registro durable lo recibe hoy.
 
     Es una funcion pura: la misma entrada da la misma decision en la CLI y en la UI.
     """
-    candidatos = tuple((str(el), str(i)) for el, i in dup.por_wcode)
+    # Sin repetidos (R1/H-07): el mismo `(elemento, id)` dos veces en `por_wcode` salia
+    # como dos candidatos y la CLI imprimia «#648, #648».
+    candidatos = tuple(dict.fromkeys((str(el), str(i)) for el, i in dup.por_wcode))
     sin_comprobar = tuple(str(s) for s in dup.sin_comprobar)
     avisos = tuple(dup.avisos)
 
