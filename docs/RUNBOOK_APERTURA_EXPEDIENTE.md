@@ -204,9 +204,8 @@ python -m scripts.abrir_caso --w-code W-XXXXXX --ciudad Barcelona --tipo-caso VU
 > lo que difiere; la sala de máquina salta lo ya procesado — punto fijo medido en W-02Q38C:
 > `0 depositables, 38 duplicados omitidos`), no porque se salte. **Ojo: la ayuda del propio flag `--hasta` dice que al reanudar «las
 > etapas ya hechas se saltan solas»; es falsa contra el código, que las repite.** Se corrige
-> el literal en la entrega de la política de alta compartida (spec
-> `2026-09-05-alta-ui-politica-compartida-design.md`); hasta entonces, cree a este runbook y
-> no al `--help`. `--hasta` solo existe en `v1`: en `libre` aborta.
+> el literal en la entrega de la política de alta compartida (acciones 3-4 del informe de Codex
+> del 2026-09-05; su spec entra con ese PR); hasta entonces, cree a este runbook y no al `--help`. `--hasta` solo existe en `v1`: en `libre` aborta.
 >
 > **La puerta sigue igual.** `--modo v1` rechaza, antes de resolver identidad, de `ensure_case`, de
 > todo intake y de toda lectura remota, las cinco invocaciones que V1 prohíbe (`validar_modo`) —
