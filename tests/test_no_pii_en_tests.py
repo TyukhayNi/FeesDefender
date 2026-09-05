@@ -1,9 +1,11 @@
 """Guard anti-regresión: ningún fichero de `tests/` ni `core/` debe contener PII real.
 
 Reutiliza la lógica del leak-guard (`scripts/precommit_leak_guard.py`) con la blocklist
-real (`data/_saneado/replacements.txt`, gitignored). Donde no exista la blocklist
-(p. ej. CI sin el secret `PII_BLOCKLIST`), el test se salta — el escaneo efectivo corre
-donde la lista está disponible: el PC del abogado y los hooks pre-commit/pre-push.
+real (`data/_saneado/replacements.txt`, gitignored). Desde `MEJORAS #161` (2026-09-05) la
+lista se resuelve también desde el checkout principal del repositorio, así que este test
+CORRE en los worktrees y no solo en la raíz. Donde no exista en ninguna raíz (p. ej. CI sin
+el secret `PII_BLOCKLIST`), el test se salta y lo dice — el escaneo efectivo corre donde la
+lista está disponible: el PC del abogado y los hooks pre-commit/pre-push.
 
 Complementa a los hooks: si alguien commitea con `--no-verify`, la suite lo caza.
 Doctrina y encaje: docs/SEGURIDAD_DATOS.md (principios 3 y 7).
