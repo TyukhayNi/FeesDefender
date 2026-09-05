@@ -20,8 +20,10 @@ Salida en ASCII (gotcha cp1252 en PowerShell, CLAUDE.md).
 from __future__ import annotations
 
 import argparse
+import sys
 
 from core.casos.case_locator import resolve_ref
+from scripts._mutex_cli import CasoOcupado, MutexPerdidoEnCli, sostener, w_code_de
 from core.email_export import ExportReport, email_dest_dir, export_label
 
 
@@ -61,14 +63,27 @@ def main(argv: list[str] | None = None) -> int:
     case_id = resolve_ref(args.ref)
     if case_id != args.ref:
         print(f"[export-label] ref '{args.ref}' resuelta al caso '{case_id}'.")
-    dest = email_dest_dir(case_id)
-    report = export_label(
-        args.account, args.label, dest,
-        case_id=case_id, extract_attachments=args.extraer_adjuntos,
-        max_workers=args.workers, force=args.force,
-        flatten_nested_emails=args.aplanar,
-        resolve_drive_links=args.resolver_enlaces,
-    )
+    # El mutex del caso se sostiene desde ANTES de la primera escritura —y la primera escritura
+    # es `email_dest_dir`, que reserva el lote con un `mkdir` (R1/H-01 de MEJORAS #126)— hasta
+    # el final del export. Ocupado → código 2 y cero bytes.
+    try:
+        with sostener(w_code_de(case_id), avisar=lambda m: print(m, file=sys.stderr),
+                      que="el export de correo"):
+            dest = email_dest_dir(case_id)
+            report = export_label(
+                args.account, args.label, dest,
+                case_id=case_id, extract_attachments=args.extraer_adjuntos,
+                max_workers=args.workers, force=args.force,
+                flatten_nested_emails=args.aplanar,
+                resolve_drive_links=args.resolver_enlaces,
+            )
+    except CasoOcupado as exc:
+        print(f"[ERROR] {exc}", file=sys.stderr)
+        return 2
+    except MutexPerdidoEnCli as exc:
+        print(f"[ERROR] {exc} Artefactos: el lote de correo de esta corrida bajo 00_Input/.",
+              file=sys.stderr)
+        return 2
     _print_report(report, dest)
     if report.intake_logged:
         print("[export-label] traza forense: evento upload_email + hashes en el manifest.")

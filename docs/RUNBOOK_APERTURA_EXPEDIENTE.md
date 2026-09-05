@@ -322,6 +322,8 @@ python -m scripts.abrir_caso --case-id W-XXXXXX --fuente email --cuenta <gmail> 
   --case <case_id> --expediente <id> --element <extrajudiciales|expedientes_judiciales>
   --referencia "<referencia_cliente_exacta_del_CRM>"` por cada expediente vinculado —
   vincular el expediente (`[APER-36]`) NO descarga sus documentos, es solo bookkeeping.
+  Los dos comandos corren **bajo el mutex del caso** desde el 2026-09-05 (`MEJORAS #126`): si
+  `apply` ya está en marcha, abortan con código 2 sin escribir; espera a que termine.
   Saltarse esto deja `00_Input` incompleto y la sala de máquina hay que reprocesarla.
   Memoria `feedback-orden-intake-antes-sala-maquina`.
   **Dos cosas del pull, actualizadas el 2026-08-04 (`MEJORAS #113`):** deposita en
@@ -356,6 +358,13 @@ python -m scripts.sala_maquina apply "<case_id>"   # background
   huérfanos en `02_Sala de máquina/{01_OCR,03_MD,raw_text}` de documentos que ya no
   están en `00_Input`, porque `--force` no los toca. Coste real medido: ~1h40 de OCR
   repetido evitable. Memoria `feedback-concurrencia-pipelines-y-tiempos-apertura`.
+  **Desde el 2026-09-05 (`MEJORAS #126`) la parte «no escribas en `00_Input` mientras corre el
+  OCR» ya no depende de la disciplina del operador:** `export_label_emails`, `atomize_emails`
+  y `sync_sudespacho pull|intake-judicial` sostienen el **mutex del caso** y abortan con código
+  **2 y cero bytes** si `apply` (u otro proceso) lo tiene; `sync-all` lo sostiene **por caso** y
+  el caso ocupado se **salta** y se resume (el barrido sigue, código 0). Lo que sigue siendo
+  disciplina: la UI de Streamlit (exporta correo y lanza el intake judicial sin mutex) y el
+  alta de un caso nuevo por `pull` (sin identidad no hay mutex; la vía de alta es `abrir_caso`).
 - **`[APER-45]` / W-02ZIIF — Un documento con texto roto/desordenado tras el split
   (letras sueltas, orden alterado) puede ser un defecto del PDF DE ORIGEN, no del
   pipeline** — visto en documentos generados por LexNET / Junta de Andalucía. Verifica
