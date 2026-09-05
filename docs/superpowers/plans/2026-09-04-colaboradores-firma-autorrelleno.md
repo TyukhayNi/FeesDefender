@@ -3797,3 +3797,74 @@ desempaquetan, y en los dos llamadores (`report` de la Task 9 y `apply` de la Ta
 (`veredicto_movil`, `veredicto_telefono`, `veredicto_cargo`). `_AL_YAML` usa `("movil","movil")` y
 `("telefono","telefono")` — el campo del `Consolidado` y la clave del YAML, que coinciden por
 casualidad; `_COMPLETABLES_COLABORADOR` es el que traduce `telefono` → `telefono1` al llegar al CRM.
+
+---
+
+## 12. Adjudicación de la revisión adversarial (Codex, 2026-09-05) — NO-SHIP, remediado
+
+- **Objeto revisado:** diff `bf81fa9..8e7a796` — autorrelleno de fichas de colaborador desde la firma del correo
+- **Ronda:** 1
+- **Revisor:** Codex
+- **Informe recibido:** 2026-09-05, `sha256` en el frontmatter del acta hermana
+- **Hallazgos:** 12 recibidos · **12 confirmados** · 0 refutados · 0 escalados
+- **Remediado en:** `cbb176b`, `5819356`, `682e0be`, `cb6fb37`
+
+El informe literal del revisor está archivado en el acta hermana
+`docs/superpowers/specs/2026-09-04-colaboradores-firma-r1-adversarial-review.md`, con su
+digest. Aquí va sólo la decisión, que es lo que pertenece a este plan.
+
+### Doce de doce, y ninguno discutible
+
+**No adjudiqué contra el informe: ejecuté cinco de los doce contraejemplos contra el código
+antes de aceptar nada, y los cinco reprodujeron el defecto.** El detalle de esa evidencia
+está en el §2 del acta. Los otros siete venían con entrada concreta y reproducción propia
+del revisor, y ninguno resultó refutable al remediarlo.
+
+**El crítico es mío y es una frontera que cerré a medias.** H-01: la ventana de un bloque
+puede abarcar la firma del vecino, así que dos personas seguidas salían **con el mismo
+móvil**, y el revisor lo llevó hasta un PUT simulado que escribe el teléfono de una en la
+ficha de la otra. Yo había cerrado *de quién es el bloque* —conserva el email de su
+ancla— y había dado por cerrado *de quién son sus campos*, que es otra propiedad. Es la
+sexta vez en esta pieza que remedio el ejemplo y dejo la propiedad abierta.
+
+### Se remedió por FRONTERA, no por hallazgo
+
+Los doce caen en cuatro propiedades, y así se arreglaron —un commit por frontera— en vez
+de doce parches:
+
+| | Frontera | Hallazgos | Commit |
+|---|---|---|---|
+| **A** | Un bloque está acotado por **su propia** firma: su ventana no cruza otra dirección ni un marcador, un campo se busca en **todas** sus coincidencias y dos válidas distintas son incertidumbre, y la procedencia se decide por la línea del **ancla** | H-01, H-04, H-06, H-07 | `cbb176b` |
+| **B** | La puerta de detección exige lo mismo a **todas** sus alternativas: línea propia sin cruzar saltos, forma de teléfono de verdad, y la dirección reconocida **completa** con su dominio terminado | H-02, H-03, H-10 | `5819356` |
+| **C** | La incertidumbre **no** se convierte en ausencia ni en éxito: tres estados y no dos al consultar el CRM, no perder el vínculo por una respuesta ilegible, y no afirmar «completado» de lo que la respuesta no acredita | H-08, H-09, H-11, H-12 | `682e0be` |
+| **D** | `apply` sólo toca lo que escribe: un valor preexistente que el cargador rechaza **sigue rechazándose** después | H-05 | `cb6fb37` |
+
+**Cada uno de los doce tiene un test con la entrada literal del revisor**, y cinco
+mutaciones —una por frontera— comprueban que esos tests muerden.
+
+### Tres decisiones de la remediación, dichas para que no se relean como descuidos
+
+1. **H-12 no implementa el GET posterior al PUT.** Lo que se hizo es comparar el cuerpo de
+   la propia respuesta del PUT contra lo pedido, que corta las dos cosas que el revisor
+   midió —afirmar «completado» sin acreditarlo, y que el escritor *fabrique* una respuesta
+   cuando el cuerpo no parsea—. **La verificación por GET independiente sigue sin estar**,
+   y el spec la menciona: queda declarada, no cerrada.
+2. **H-09 se cerró por coerción, no por abstención total.** Un valor no interpretable que
+   venga del CRM se trata como «ya hay algo ahí» y **no se pisa**, y los demás campos se
+   siguen rellenando. Es la lectura que falla cerrado: ante un dato del cliente que no
+   entiendo, no escribir encima.
+3. **La frontera A reescribe `localizar_bloques` en dos pasadas.** Es el cambio estructural
+   más grande de la remediación. Los tests anteriores siguen verdes y el corpus real no
+   cambia de resultado, pero conviene saberlo antes de tocar ese módulo.
+
+### Lo que esta ronda NO cubre, dicho como tal
+
+- **El diff remediado no se ha vuelto a revisar.** La regla del proyecto da **una** ronda
+  para esta clase de pieza, y encadenar una segunda porque la primera encontró algo es un
+  argumento que nunca se agota. Lo que sí se hizo: **re-ejecutar los contraejemplos
+  concretos del revisor** contra el código remediado, y volver a correr el corpus real.
+- **El revisor no pudo correr las dos semillas** (su Python de sistema no trae
+  `pytest-randomly`) y lo declaró SIN VERIFICAR, correctamente. Las corrí yo: 4.371 tests,
+  mismo conteo con 777 y 31337.
+- **El revisor no acredita que sus copias sean los commits declarados**, porque no tienen
+  `.git`. Verificó contenido, que es lo que el patrón permite.

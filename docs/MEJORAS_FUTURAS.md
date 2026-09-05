@@ -6648,3 +6648,32 @@ orden de esfuerzo: ensanchar la ventana hacia atrás sólo para la búsqueda del
 reconocer la línea del nombre por algo que no sea la negrita (por ejemplo, casarla contra
 el nombre que ya se conoce del `From:` o de la ficha del CRM, que es un dato que el módulo
 tiene a mano en el CLI aunque no dentro de `core/email_firmas.py`).
+
+---
+
+## 153. Dos tests exigen credenciales VIVAS del CRM, y llevan meses explicándose mal
+
+**Medido el 2026-09-05.** Estos dos fallan en cualquier árbol sin una sesión fresca del CRM:
+
+- `tests/test_crm_dedup_incertidumbre.py::TestUnaConsultaCaidaNoEsAusencia::test_el_colaborador_tampoco`
+- `tests/test_crm_dedup_incertidumbre.py::test_el_respaldo_del_colaborador_no_corre_si_el_NIF_no_se_pudo_mirar`
+
+**Lo caro no es el fallo: es el diagnóstico heredado.** Durante toda una sesión de once
+tasks, **seis informes seguidos** los explicaron como «el worktree no hereda el `.env` de
+la raíz», y nadie lo comprobó. Se comprobó al cerrar: puesta `SUDESPACHO_LEGACY_HOST`,
+**siguen fallando** — piden además `SUDESPACHO_LEGACY_PHPSESSID`, que es una **cookie de
+sesión que caduca por inactividad (~24 min)**. O sea que no es una variable que falte en un
+sitio: es que estos dos tests **no son herméticos** y dependen de un secreto perecedero.
+
+Que son preexistentes sí se confirmó, y por la vía correcta: corriéndolos contra el árbol
+**base** congelado del objeto de la revisión adversarial, donde fallan igual.
+
+**Por qué importa más de lo que parece.** Un test que no puede pasar nunca en una máquina
+limpia es un test que **siempre** se explica como ruido, y a partir de ahí cualquier fallo
+real en ese fichero se normaliza con la misma frase. Es la familia de «una guarda inerte»,
+aplicada a la suite: dos rojos permanentes que enseñan a no mirar.
+
+**Disparador:** el primer fallo real en `test_crm_dedup_incertidumbre.py` que se explique
+como ambiental sin comprobarlo — o, mejor, antes de eso. El arreglo es mockear el cliente
+legacy en esos dos tests, como ya hacen sus vecinos del mismo fichero, para que la suite
+no dependa de una cookie.
