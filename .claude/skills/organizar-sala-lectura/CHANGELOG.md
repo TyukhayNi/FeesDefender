@@ -10,7 +10,15 @@
   el filtro**. `fecha_de_nombre` conserva su contrato (la cadena va en nombres canónicos y
   en el manifiesto); lo que cambia es que la pregunta «¿tiene fecha?» vive una vez, en
   código, y la skill la cita. Un guard (`tests/test_preclasificar_sala_lectura.py`) exige
-  que el SKILL.md cite `candidatos_sin_fecha` en ese paso y no vuelva al `not`.
+  que el Paso 1-bis del SKILL.md **cite** `candidatos_sin_fecha`; no puede probar que el
+  ejecutor lo llame ni detectar una instrucción contraria escrita al lado (R1/H-03 de la
+  ronda de Codex lo midió: un guard de subcadenas garantiza la cita, no la semántica).
+- **Tras la R1 de Codex (REQUIERE-REVISION, 6 hallazgos, 6 confirmados):** el helper acepta
+  las filas de cualquier etapa (`ruta`/`nombre` del Paso 1, `ruta_original`/`nombre_canonico`
+  del plan, `nombre_origen` de los bundles) y **falla ruidoso** ante una fila sin ninguna
+  clave o una tupla (antes devolvía 0 candidatos en silencio, el mismo defecto que venía a
+  arreglar); `heif` entra en las extensiones opacas, alineadas por guard con las imágenes
+  que convierte la sala de máquina; `tiene_fecha` dice lo que hace (no valida calendario).
 
 ## 1.14 — 2026-07-27
 - **Un bundle por hilo de correo, no un documento por mensaje.** `agrupar_por_hilo`

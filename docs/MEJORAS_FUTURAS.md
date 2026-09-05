@@ -5826,11 +5826,14 @@ fichero existe con las filas, sin depender de cómo se capturó la salida.
 
 ## 131. `fecha_de_nombre` devuelve la cadena `"0000-00-00"`, que es *truthy* `[PROMOVIDO → PLAN.md]` `[RESUELTO 2026-09-05]`
 
-> ✅ **Resuelto el 2026-09-05 (PR-131-PENDIENTE), skill `organizar-sala-lectura` v1.15.** Se eligió
+> ✅ **Resuelto el 2026-09-05 (PR #291), skill `organizar-sala-lectura` v1.15.** Se eligió
 > la segunda vía: `fecha_de_nombre` conserva su contrato (la cadena va en nombres canónicos y
 > en el manifiesto) y `scripts/preclasificar.py` exporta `SIN_FECHA`, `tiene_fecha(valor)` y
 > `candidatos_sin_fecha(filas)`; el Paso 1-bis.d del `SKILL.md` **llama al helper** en vez de
-> reescribir el filtro, y un guard exige que lo cite y no vuelva al `not`. Condición de cierre
+> reescribir el filtro, y un guard exige que lo cite (guard de cita, no de semántica: R1/H-03).
+> **R1 de Codex sobre el diff: REQUIERE-REVISION, 6 hallazgos, 6 confirmados** (3 remediados
+> aquí; H-05 y H-06 preexistentes fuera de alcance → `#169`). Adjudicación en
+> `docs/superpowers/plans/2026-09-05-mejoras-131-centinela-sin-fecha.md`. Condición de cierre
 > cumplida por la rama «helper + la skill lo cita». Texto original conservado como medición:
 
 **Medido el 2026-09-01**, montando la sala de lectura de W-02X1WJ. El Paso 1-bis.d de
@@ -7452,3 +7455,32 @@ entra en el M9; con el remedio, no.
 **Disparador de promoción.** Ningún llamador ordinario pasa un destino externo con `case_id`
 (`scripts/export_label_emails.py` deriva `dest` del caso). Espera a un caso real o al cableado
 de `#68`, que es donde `dest` deja de venir del CLI.
+
+## 169. El centinela `0000-00-00` se ordena y filtra como «un día muy antiguo» en las vistas de correo y en el motor deprecado de la sala
+
+> Medido por Codex en la **R1 de `MEJORAS #131`** (2026-09-05), preexistente y fuera del alcance de
+> esa pieza (que solo tocó la skill). Dos sitios, la misma familia: **el valor que significa
+> «no sé la fecha» se compara lexicográficamente como si fuera una fecha**.
+>
+> - `core/email_atomize/vistas.py:53,87-94` (`_seleccion_tematica`): con `hasta='2025-01-02'` un
+>   mensaje con `fecha_iso='0000-00-00'` **entra** en el rango; con `desde='2024-01-01'` **sale**.
+>   Una fecha desconocida no demuestra pertenencia a «antes de» ni exclusión por «después de»;
+>   hace falta una política explícita de desconocidos. Y `render.py:120` y
+>   `email_export.py:1356,1417` lo ordenan primero, como el mensaje más antiguo del hilo.
+> - `core/sala_lectura.py:673-692` (motor **deprecado** por la skill): `render_indices` ordena
+>   `0000-00-00` y `2024-03 (*)` por delante de `2025-01-01` y pierde la marca `(*)` — el
+>   criterio solo pregunta `fecha_doc is None`. También `core/whatsapp_atomize/corpus.py:37` y
+>   `render.py:80`, por inspección estática.
+
+**La frontera:** «desconocido» no es un valor del eje temporal. Ordenar: los desconocidos van
+**al final** (como ya hace `indices_desde_manifiesto`); filtrar por rango: los desconocidos se
+**declaran** (se listan aparte), ni entran ni salen en silencio. `tiene_fecha` de la skill es la
+pregunta correcta; los motores de `core/` no la tienen.
+
+**Remedio:** una función de comparación única para fechas ISO con centinela (`clave_orden_fecha`)
+en `core/` y una política de rango en `vistas._seleccion_tematica` con un tercer cubo
+`sin_fecha`. El motor deprecado no se toca: se anota.
+
+**Disparador de promoción.** Un caso real en que la vista temática de correo omita o incluya un
+mensaje sin `Date` en un rango, o que el orden del hilo ponga primero el mensaje sin fecha y eso
+confunda una lectura. Hoy no consta.

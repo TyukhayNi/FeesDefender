@@ -217,7 +217,13 @@ tal diálogo.
       SIEMPRE antes de escribir `0000-00-00` — no es opcional, ni solo para
       bundles conversacionales.** Los candidatos los da
       **`candidatos_sin_fecha(filas)`** (`scripts/preclasificar.py`): **NO
-      escribas el filtro a mano.** El valor «sin fecha» es la cadena
+      escribas el filtro a mano.** Pásale las filas tal como las tengas en
+      esta etapa —las del Paso 1 (`ruta`, `nombre`, `sha256`, más la `fecha`
+      que ya les hayas dado) o las del plan (`ruta_original`,
+      `nombre_canonico`)—; una fila sin ninguna de esas claves hace que el
+      helper **falle con `ValueError`**, y pasarle la tupla `(categoria,
+      motivo)` de `clasificar_por_patron` falla con `TypeError`: ensambla el
+      dict antes. El valor «sin fecha» es la cadena
       `0000-00-00` (`preclasificar.SIN_FECHA`), que es *truthy*: un filtro
       `if not f["fecha"]` devuelve **0 candidatos aunque haya 47** y deja este
       paso sin ejecutar en silencio, con el informe diciendo «0 sin fecha»
