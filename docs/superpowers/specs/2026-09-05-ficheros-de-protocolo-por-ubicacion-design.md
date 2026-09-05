@@ -352,7 +352,7 @@ el presupuesto de rondas— está en el §2 del acta. **Lo que no pudo verificar
 - **Revisor:** Codex
 - **Informe recibido:** `2026-09-05-ficheros-de-protocolo-por-ubicacion-r2-adversarial-review.md`
 - **Hallazgos:** 7 — 3 ALTOS, 3 MEDIOS, 1 BAJO; **7 confirmados, 0 refutados** (3 preexistentes en `main`, conservados por el diff)
-- **Remediado en:** commit `9b3684d` (PR #290); esta rev. 3 del diseño
+- **Remediado en:** commits `9b3684d` y `d5c0b2b` (PR #290); esta rev. 3 del diseño
 
 **Independencia: plena** — revisor Codex (`gpt-6-astra`, ~184.000 tokens), adjudicador Claude
 Code. Cada hallazgo se contrastó contra la fuente; lo que reproduje yo está en el §2 del acta.
