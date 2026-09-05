@@ -276,7 +276,7 @@ revisor lo distinguió correctamente. Lo que yo reproduje, contra la fuente:
   fallar. Retiradas; T13 ampliado a los cinco nombres bajo `<lote>/adjuntos/`. Mutante que las
   devuelve: mueren 5.
 - **H-05.** Leí `sync_sudespacho.py:1099-1112`: solo `except SudespachoError` limpiaba. Remedio:
-  `except BaseException: tmp.unlink(); raise`. Test con `download_document_rest` que escribe
+  una sola limpieza del temporal para CUALQUIER excepción (`except BaseException`), que relanza lo que no sea `SudespachoError`. Test con `download_document_rest` que escribe
   bytes parciales y lanza `OSError`: sin `.tmp` y `inventariar == []`. Mutante: muere.
 - **H-06/H-07.** Leídos los docstrings citados; decían exclusiones que ya no existen y «TRES»
   comprobaciones por hash donde hay dos más una de existencia. Corregidos; §5 del diseño
