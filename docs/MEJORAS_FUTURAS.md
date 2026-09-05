@@ -7176,7 +7176,7 @@ tienen que pasar **sin `.env`** y seguir levantando `IdentidadSinComprobar`, no
 línea movida dentro de la función que está reescribiendo, y arreglarlo desde fuera sería pisarla.
 
 
-## 161. El `leak-guard` de pre-commit es INERTE en todo worktree, y por eso dejé pasar PII
+## 161. El `leak-guard` de pre-commit es INERTE en todo worktree, y por eso dejé pasar PII  [PROMOVIDO → PLAN.md]
 
 > 🔴 **ABIERTA y con daño real, no hipotético.** Medido el 2026-09-05: una dirección de inmueble
 > de la blocklist llegó a GitHub en el commit `eee9a7e` con el hook **en verde**. Lo paró

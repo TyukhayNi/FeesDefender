@@ -35,6 +35,9 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 17 | Cuatro entrypoints escriben en el expediente sin pedir el mutex (`MEJORAS #126`) | pendiente | **disparador real: apertura de W-02X1WJ el 2026-09-01.** El mutex SÍ está en `abrir_caso.py:649` y `sala_maquina.py:486`; NO está en `export_label_emails.py`, `atomize_emails.py`, `sync_sudespacho.py` ni `crm_ficha.py` (0 referencias cada uno). Los dos primeros escriben en `00_Input` mientras `apply` lo lee — el escenario de `[APER-39]`, con coste medido de ~1h40 de OCR repetido —, y `pull` es el paso que `[APER-37]` manda ejecutar JUSTO antes del `apply`. En esta apertura la regla la sostuve yo a mano tres veces. **Radio de daño: decide quién escribe → dos rondas** | bajo |
 | 18 | `fecha_de_nombre` devuelve un centinela *truthy* y desactiva en silencio el paso de los espejos (`MEJORAS #131`) | pendiente | **disparador real: sala de lectura de W-02X1WJ, 2026-09-01.** `preclasificar.fecha_de_nombre` devuelve la cadena `"0000-00-00"`; el filtro `if not f["fecha"]` dio **0 candidatos** y dejó sin ejecutar el Paso 1-bis.d, que la skill marca como NO opcional porque saltárselo dejó 7 binarios sin fechar en W-02VUDR. Corregido el filtro: **47 candidatos, 27 fechas recuperadas**. Falla hacia el lado que parece que funciona —sin excepción y con un informe que dice «0 sin fecha»—, y degrada el timeline, que es el producto entero de la sala de lectura | bajo |
 | 19 | Adoptar el CANON como copia local está permitido, y desactiva el desvío del guard (`MEJORAS #136`) | ✅ **RESUELTO** (2026-09-02) | **disparador: R21, 2026-09-02.** `repository_cli adoptar <ruta del canon>` era **ACEPTADO**, y desde ahí el intake escribía sobre el expediente **sin desviar** con el caso `prestado`; el resolver daba `LOCAL_CHECKOUT` con `working_root` = canon. La invariante «el registro no contiene rutas del catálogo» la aplicaba **un lector** y ningún escritor. **Dos rondas sobre el diff, las dos `NO-SHIP`, 16 hallazgos y 16 confirmados** — R22 (9) y R23 (7, autorizada por Nikolai). **Los dos hallazgos que más enseñan son míos:** R22/H22-04 fue una **pérdida de datos que introduje al arreglar** (filtrar al leer con un booleano que falla cerrado, y reescribir desde la vista filtrada), y R23/H23-01 fue la **misma frontera mal cerrada por cuarta vez** — contraté «*junction* → raíz» y la frontera era «cualquier alias cuyo destino físico caiga dentro del catálogo». El remedio de fondo no fue parchear sino **retirar** mi ascenso por ancestros y dejar la resolución física a `os.path.realpath`. Documento con las dos adjudicaciones: [`…-mejoras-136-el-canon-no-es-una-copia.md`](docs/superpowers/plans/2026-09-02-mejoras-136-el-canon-no-es-una-copia.md). **14 mutantes, 14 muertos, reproducible** (`python -m tests._mutantes_mejoras_136`). Quedan fuera, **preexistentes y con su medición**, `MEJORAS #137` y `#138`. **Cobertura de revisión de lo remediado tras R23: ausente** | bajo-medio |
+| 20 | [Guardas de PII ciegas en worktree (`MEJORAS #161`)](#siguiente-pii-worktree-las-guardas-de-pii-solo-funcionan-en-la-raíz) | 🔴 **abierta, con daño medido** | **disparador CONSUMADO el 2026-09-05**, no previsto: una dirección de inmueble de la blocklist llegó a GitHub con el hook de pre-commit **en verde**; lo paró `leak-scan` en CI. Sin gate técnico — lo que falta es **una decisión de Nikolai** entre las tres vías del remedio, porque fallar cerrado hoy dejaría sin commitear a todas las sesiones con worktree. **Va al final por la convención de las filas 13-14, no por prioridad: colócala tú.** | bajo |
+
+> **Fila 20 añadida el 2026-09-05 al final, misma razón que las 13 y 14: no reordeno prioridades ajenas.** Renumerar tampoco era opción — la cola es **una tabla partida por una línea en blanco** y hay **19 referencias cruzadas en prosa** (`fila #1`, `fila #15`…) que una renumeración invalidaría, el mismo error que la errata de numeración de la bitácora documenta. Por daño medido yo la pondría en el **puesto 2**.
 
 > **Filas 13 y 14 añadidas el 2026-08-03 al final de la cola a propósito: no reordeno prioridades
 > ajenas.** Las dos son baratas y una degrada a terceros hoy — dónde encajan de verdad lo decide
@@ -53,6 +56,48 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 > **Filas 17 y 18 añadidas el 2026-09-01, al final y sin reordenar la cola,** por el mismo criterio que las anteriores. Las dos salen de la apertura de W-02X1WJ y las dos comparten un rasgo que justifica promoverlas y no dejarlas en backlog: **fallan en silencio**. La 17 no levanta error porque nadie pide el lock; la 18 informa «0 sin fecha», que es exactamente lo que uno querría leer. Las otras ocho de esa tanda (`MEJORAS #127-#130`, `#132-#135`) se quedan en backlog: o tienen su gate en un plan ya en cola (la #127 en el Plan 5 de la fila #15, la #135 en la casilla 3 de la fila #11) o esperan disparador.
 > Detalle de cada ítem en su bloque `[SIGUIENTE-*]` más abajo. Backlog sin
 > promover: `docs/MEJORAS_FUTURAS.md`. Ledger de cerrados: `## Cerrados` (final).
+
+---
+
+## [SIGUIENTE-PII-WORKTREE] Las guardas de PII solo funcionan en la raíz
+
+**Promovido desde `MEJORAS #161` el 2026-09-05.** Disparador **consumado**, no previsto: una
+dirección real de inmueble de la blocklist llegó a GitHub en un commit pusheado, con el hook de
+pre-commit en verde. La paró `leak-scan` en CI.
+
+**Qué pasa.** Tres instrumentos leen artefactos **gitignored** (`data/_config/pii_blocklist.txt`,
+`data/_saneado/replacements.txt`, `.env`), que por definición **no existen en un worktree** — y el
+flujo estándar de este repo es el worktree:
+
+| Instrumento | En la raíz | En un worktree |
+|---|---|---|
+| hook `leak-guard` de pre-commit | 70 términos, comprueba | **0 términos, verde sin mirar** |
+| `tests/test_no_pii_en_tests.py` | corre | **se salta** |
+| los 2 tests del colaborador (`MEJORAS #160`) | verdes | **rojos**, por `.env` |
+
+El verde del hook no significa «no hay PII»: significa «no tengo con qué mirar». Es la familia del
+*instrumento que no puede dar el otro valor*, aquí en la guarda que protege el dato del cliente.
+
+**La decisión que hace falta, y por eso está aquí y no en el backlog.** El remedio obvio —fallar
+cerrado— dejaría **sin poder commitear a todas las sesiones con worktree** hasta que alguien copie
+la lista. Tres vías:
+
+1. **Avisar** en STDERR cuando la blocklist carga cero términos, diciendo la ruta que buscó y que
+   la comprobación **no se ha ejecutado**. Mínimo imprescindible: hoy calla.
+2. **Resolver la lista desde la raíz común** — `git rev-parse --git-common-dir` da el `.git`
+   compartido y de ahí se llega al checkout principal. Hace que funcione en worktrees **sin copiar
+   nada**, y arreglaría de paso el `skip` del guard de tests.
+3. **Fallar cerrado.** Doctrina de la casa, pero con el coste de arriba.
+
+**Recomendación: (1) + (2).** La (3) solo tiene sentido **después** de la (2), cuando dejar de
+encontrar la lista sea de verdad una anomalía y no el caso normal.
+
+**Su mutante:** vaciar la blocklist y commitear un término conocido. Hoy pasa en verde y en
+silencio; con (1) pasa pero **lo dice**; con (2) lo caza.
+
+**Residuo abierto del incidente:** `refs/pull/279/head` sigue apuntando al commit con la
+dirección. Los `refs/pull/*` no se borran ni por API; solo los purga el **soporte de GitHub**.
+Repo privado, así que no es urgente, pero está sin cerrar.
 
 ---
 
