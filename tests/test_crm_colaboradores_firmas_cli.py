@@ -341,6 +341,67 @@ class TestApplyNoEscribeEnElCRM:
         actualizar.assert_not_called()
 
 
+class TestApplyNoLegitimaUnTelefonoPreexistenteInvalido:
+    """H-05 ALTO (revision R1): el bucle que serializa a `str` antes de volcar
+    recorria TODOS los telefonos del YAML, tambien los que no se acababan de
+    escribir. Un valor preexistente que YAML leyo como entero octal
+    (`0601234567` -> `101005687`) se convertia a cadena y, tras `apply`, la carga
+    posterior lo ACEPTABA como nueve digitos validos -- antes de `apply` lo
+    rechazaba. `apply`, al completar a OTRA persona, blanqueaba un dato corrupto
+    de la primera."""
+
+    def test_completar_a_ana_no_legitima_el_movil_octal_de_berta(self, caso):
+        """Entrada literal del informe (H-05, repros.json clave 'yaml_octal'): YAML
+        con Berta (`movil: 0601234567`, sin comillas -> octal) y Ana (movil vacio,
+        rellenable por el corpus del `.eml` de la fixture `caso`)."""
+        _ficha(caso).write_text(
+            "colaboradores:\n"
+            "- nombre: BERTA\n"
+            "  email: berta@engelvoelkers.com\n"
+            "  movil: 0601234567\n"
+            "- nombre: ANA\n"
+            "  email: ana@engelvoelkers.com\n",
+            encoding="utf-8",
+        )
+
+        r = _aplica(["--confirmar"])
+        assert r.exit_code == 0, r.output
+
+        import yaml
+        datos = yaml.safe_load(_ficha(caso).read_text(encoding="utf-8"))
+        por_email = {c["email"]: c for c in datos["colaboradores"]}
+        assert por_email["ana@engelvoelkers.com"]["movil"] == "612345678", (
+            "completar a Ana tiene que seguir funcionando")
+
+        from core.crm_ficha import cargar_ficha_yaml
+        with pytest.raises(ValueError, match="comillas"):
+            cargar_ficha_yaml(_ficha(caso))
+
+    def test_el_movil_octal_de_berta_sigue_siendo_int_tras_apply(self, caso):
+        """La forma directa (sin pasar por `cargar_ficha_yaml`): el YAML resultante
+        tiene que conservar el valor de Berta como lo que YAML lo interpreto --
+        un entero -- para que la siguiente carga lo seguiria rechazando. Si
+        `apply` lo hubiera convertido a texto, saldria entre comillas."""
+        _ficha(caso).write_text(
+            "colaboradores:\n"
+            "- nombre: BERTA\n"
+            "  email: berta@engelvoelkers.com\n"
+            "  movil: 0601234567\n"
+            "- nombre: ANA\n"
+            "  email: ana@engelvoelkers.com\n",
+            encoding="utf-8",
+        )
+
+        _aplica(["--confirmar"])
+
+        import yaml
+        datos = yaml.safe_load(_ficha(caso).read_text(encoding="utf-8"))
+        por_email = {c["email"]: c for c in datos["colaboradores"]}
+        assert isinstance(por_email["berta@engelvoelkers.com"]["movil"], int), (
+            "con el defecto vivo, esto salia como str '101005687' -- 9 digitos "
+            "'validos' fabricados a partir de un octal, no el dato original")
+
+
 class TestElConflictoNoSeAplica:
 
     def test_un_conflicto_no_escribe_nada_en_el_YAML(self, caso):

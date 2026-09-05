@@ -222,6 +222,10 @@ def apply(
     colaboradores = datos.get("colaboradores") or []
 
     cambios: list[str] = []
+    # (col, clave) de lo que ESTE run escribe de verdad -- H-05, R1: mas abajo se
+    # fuerza a str antes de volcar, y eso solo puede tocar lo que se acaba de
+    # escribir aqui, nunca un valor preexistente de OTRO colaborador.
+    escritos: list[tuple[dict, str]] = []
     for col in colaboradores:
         if not isinstance(col, dict):
             continue
@@ -238,6 +242,7 @@ def apply(
                 continue          # lo que ya hay manda: no se pisa
             if confirmar:
                 col[clave] = valor
+                escritos.append((col, clave))
             cambios.append(f"{email}: {clave} = {valor}")
 
     if not cambios:
@@ -268,11 +273,19 @@ def apply(
         # comentario que decia «se fuerzan entre comillas simples». Era un no-op literal:
         # aparentaba una proteccion que no daba, y el que viniera detras habria confiado
         # en ella. Retirado.
-        for col in colaboradores:
-            if isinstance(col, dict):
-                for _, clave in _AL_YAML:
-                    if clave in col and col[clave] is not None:
-                        col[clave] = str(col[clave])
+        #
+        # **Solo se fuerza a str lo que ESTE bucle acaba de escribir (`escritos`),
+        # NUNCA "todos los telefonos"** (H-05, R1): un bucle que recorriera TODOS
+        # los colaboradores tocaria tambien un valor PREEXISTENTE que YAML ya leyo
+        # como entero -- por ejemplo un octal (`0601234567` -> `101005687`) --
+        # convirtiendolo en una cadena de 9 digitos que la carga posterior
+        # aceptaria como valida. Ese dato es un error del FICHERO, de OTRA
+        # persona, y `apply` no lo arregla ni lo blanquea al completar a esta:
+        # sigue siendo un int cuando se vuelca, y `_escalar` lo seguira
+        # rechazando en la proxima carga, exactamente como antes de este `apply`.
+        for col, clave in escritos:
+            if col.get(clave) is not None:
+                col[clave] = str(col[clave])
         volcado = yaml.safe_dump(datos, allow_unicode=True, default_flow_style=False,
                                  sort_keys=False)
         ficha_path.write_text(volcado, encoding="utf-8")
