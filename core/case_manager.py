@@ -106,21 +106,87 @@ class CaseMeta:
             self.sudespacho_expedientes = []
 
 
-def _write_case_index(case_dir: Path, meta: CaseMeta) -> Path:
-    index = case_dir / "00_Input" / "_caso.md"
+# ---------------------------------------------------------------------------
+# El indice del caso (`00_Input/_caso.md`): crear y ACTUALIZAR sin destruir
+# ---------------------------------------------------------------------------
+#
+# `MEJORAS #146`, diseno rev. 2:
+# docs/superpowers/specs/2026-09-05-caso-md-preservar-al-actualizar-design.md.
+#
+# Hasta el 2026-09-05 `_write_case_index` RECONSTRUIA el fichero entero desde `CaseMeta`
+# cada vez que un registrador (`register_expediente`, `register_drive_ev`,
+# `cache_drive_folder_info`) lo llamaba sobre un `_caso.md` que ya existia. Con ello se
+# perdian, reproducido por sonda: la nota del abogado en el cuerpo, `bucket_override` y
+# cualquier clave top-level ajena, las claves de `meta` que el modelo no conoce
+# (`proyeccion_local`: un pull convertia la copia prestada en un caso mas del catalogo),
+# los wikilinks que `registrar_outputs` inserta bajo `## Navegacion`, y el estado D8 que
+# `update_pull_state` guarda solo en la lista top-level `sudespacho_expedientes`.
+#
+# La guarda va AQUI, en el sumidero, y no en cada registrador: es la leccion de
+# `MEJORAS #153` — una guarda en el envoltorio la rodea el siguiente llamador.
+#
+# El registrador es dueno de EXACTAMENTE tres fragmentos del cuerpo, los que la plantilla
+# deriva de los campos que los registradores escriben: la linea de estado, la linea de IDs
+# de Drive E&V y la seccion `## Expedientes sudespacho`. Al actualizar se reescriben solo
+# esos tres, localizados por su forma; todo lo demas se conserva linea a linea. La rev. 1
+# del diseno intentaba decidir si «alguien habia tocado» el cuerpo comparandolo con la
+# plantilla, y la R1 adversarial demostro que esa regla CONGELA el cuerpo tras cualquier
+# escritor legitimo del frontmatter o del cuerpo, dejando un indice que lista lo
+# desvinculado y omite lo vinculado. Aqui no se clasifica nada: no hay que acertar.
+
+#: Las diez claves del frontmatter que son del indice. Todo lo demas en el fichero es de otro.
+_CLAVES_PROPIAS_DEL_INDICE: tuple[str, ...] = (
+    "case_id", "tipo", "fase", "fecha", "estado", "ciudad", "referencia_crm",
+    "sudespacho_expedientes", "drive", "meta",
+)
+_ENCABEZADO_EXPEDIENTES = "## Expedientes sudespacho"
+_ENCABEZADOS_NAVEGACION = ("## Navegación", "## Navegacion")
+#: Va dentro de la seccion (c) porque su contrato es el contrario al del resto del cuerpo,
+#: y hay que decirlo donde se lee: una edicion a mano AQUI se pierde en la siguiente
+#: actualizacion; en el resto del cuerpo, no.
+_AVISO_SECCION_GENERADA = "<!-- sección generada por el registrador: no editar a mano -->"
+_PREFIJO_LINEA_DRIVE_EV = "- Drive E&V team:"
+_PREFIJO_LINEA_REMOTO = "- Remoto rclone:"
+
+
+def _linea_estado(meta: CaseMeta) -> str:
+    return f"Caso `{meta.case_id}` — estado **{meta.estado}**."
+
+
+def _linea_drive_ev(meta: CaseMeta) -> str | None:
+    if meta.drive_ev_team_id or meta.drive_ev_folder_id:
+        return f"- Drive E&V team: `{meta.drive_ev_team_id}` / folder: `{meta.drive_ev_folder_id}`"
+    return None
+
+
+def _seccion_expedientes(meta: CaseMeta) -> list[str]:
+    """Lineas de la seccion (c); vacia si no hay expedientes.
+
+    TOTAL sobre lo persistido (R1/H-05): `update_pull_state` crea entradas sin `input_dir`,
+    y la version anterior hacia `e['input_dir']`, asi que una sola entrada asi convertia en
+    fatal cada registrador sobre ese caso.
+    """
+    entradas = [e for e in (meta.sudespacho_expedientes or []) if isinstance(e, dict)]
+    if not entradas:
+        return []
+    lineas = [_ENCABEZADO_EXPEDIENTES, "", _AVISO_SECCION_GENERADA]
+    for e in entradas:
+        eid = e.get("id", "?")
+        input_dir = e.get("input_dir") or f"sudespacho_{eid}"
+        lineas.append(f"- `{e.get('element', '?')}` ID {eid} → `00_Input/{input_dir}/`")
+    return lineas
+
+
+def _cuerpo_del_indice(meta: CaseMeta) -> str:
+    """La plantilla del cuerpo, entera. Solo la usa la CREACION."""
     ref_line = f"- Referencia CRM: **{meta.referencia_crm}**\n" if meta.referencia_crm else ""
-    exp_lines = ""
-    if meta.sudespacho_expedientes:
-        exp_lines = "\n## Expedientes sudespacho\n\n"
-        for e in meta.sudespacho_expedientes:
-            exp_lines += f"- `{e['element']}` ID {e['id']} → `00_Input/{e['input_dir']}/`\n"
-    drive_ev_line = (
-        f"- Drive E&V team: `{meta.drive_ev_team_id}` / folder: `{meta.drive_ev_folder_id}`\n"
-        if meta.drive_ev_team_id or meta.drive_ev_folder_id else ""
-    )
-    body = (
+    drive_ev = _linea_drive_ev(meta)
+    drive_ev_line = f"{drive_ev}\n" if drive_ev else ""
+    seccion = _seccion_expedientes(meta)
+    exp_lines = ("\n" + "\n".join(seccion) + "\n") if seccion else ""
+    return (
         f"# {meta.titulo}\n\n"
-        f"Caso `{meta.case_id}` — estado **{meta.estado}**.\n\n"
+        f"{_linea_estado(meta)}\n\n"
         f"{ref_line}"
         f"## Partes\n\n"
         f"- Cliente: {meta.cliente or '_(pendiente)_'}\n"
@@ -141,7 +207,81 @@ def _write_case_index(case_dir: Path, meta: CaseMeta) -> Path:
         f"- [[contradicciones]]\n"
         f"- [[demanda]]\n"
     )
-    fm = {
+
+
+def _actualizar_cuerpo(cuerpo: str, meta: CaseMeta) -> str:
+    """Reescribe en `cuerpo` SOLO los tres fragmentos del registrador (diseno §3.3).
+
+    (a) la linea de estado, si esta; (b) la linea de IDs de Drive E&V: se sustituye, se
+    retira si ya no hay dato, o se inserta tras `- Remoto rclone:` si existe esa linea;
+    (c) la seccion `## Expedientes sudespacho`, desde su encabezado hasta el siguiente `## `
+    o el final: se sustituye, se retira si ya no hay expedientes, o se inserta antes de
+    `## Navegacion` (o al final si no hay). Ninguna otra linea se toca.
+    """
+    lineas = cuerpo.split("\n")
+
+    # (a) estado
+    prefijo_estado = f"Caso `{meta.case_id}` — estado **"
+    for i, ln in enumerate(lineas):
+        if ln.startswith(prefijo_estado):
+            lineas[i] = _linea_estado(meta)
+            break
+
+    # (b) IDs de Drive E&V
+    nueva_drive = _linea_drive_ev(meta)
+    idx = next((i for i, ln in enumerate(lineas) if ln.startswith(_PREFIJO_LINEA_DRIVE_EV)), None)
+    if idx is not None:
+        if nueva_drive is None:
+            del lineas[idx]
+        else:
+            lineas[idx] = nueva_drive
+    elif nueva_drive is not None:
+        j = next((i for i, ln in enumerate(lineas) if ln.startswith(_PREFIJO_LINEA_REMOTO)), None)
+        if j is not None:
+            lineas.insert(j + 1, nueva_drive)
+
+    # (c) seccion de expedientes
+    seccion = _seccion_expedientes(meta)
+    ini = next((i for i, ln in enumerate(lineas) if ln.strip() == _ENCABEZADO_EXPEDIENTES), None)
+    if ini is not None:
+        fin = next((i for i in range(ini + 1, len(lineas)) if lineas[i].startswith("## ")),
+                   len(lineas))
+        lineas[ini:fin] = (seccion + [""]) if seccion else []
+    elif seccion:
+        nav = next((i for i, ln in enumerate(lineas) if ln.strip() in _ENCABEZADOS_NAVEGACION), None)
+        if nav is not None:
+            lineas[nav:nav] = seccion + [""]
+        else:
+            lineas += [""] + seccion
+    return "\n".join(lineas)
+
+
+def _fusionar_expedientes(persistidos: Any, nuevos: Any) -> list:
+    """`sudespacho_expedientes` se fusiona POR ENTRADA (diseno §3.2, R1/H-02).
+
+    La lista top-level es el hogar del estado D8 de `update_pull_state` (`last_sync`,
+    `doc_ids`, `by_carpeta`, `errors`); el espejo `meta.sudespacho_expedientes` no lo tiene,
+    y dos de los tres registradores reconstruian la lista desde el espejo. Se parte de lo
+    persistido, en su orden; cada entrada nueva con el mismo `id` se aplica encima; las nuevas
+    sin `id` persistido se anaden; las persistidas que la lista nueva no trae se CONSERVAN
+    (ningun registrador borra por esta via: `remove_expediente_link` va por
+    `_atomic_write_caso_md`).
+    """
+    salida: list = [dict(e) if isinstance(e, dict) else e
+                    for e in (persistidos if isinstance(persistidos, list) else [])]
+    posicion = {str(e.get("id")): i for i, e in enumerate(salida)
+                if isinstance(e, dict) and e.get("id") is not None}
+    for n in (nuevos if isinstance(nuevos, list) else []):
+        if isinstance(n, dict) and n.get("id") is not None and str(n["id"]) in posicion:
+            i = posicion[str(n["id"])]
+            salida[i] = {**salida[i], **n}
+        else:
+            salida.append(n)
+    return salida
+
+
+def _frontmatter_del_indice(meta: CaseMeta, expedientes: list) -> dict:
+    return {
         "case_id": meta.case_id,
         "tipo": "caso_index",
         "fase": "00_Input",
@@ -149,11 +289,69 @@ def _write_case_index(case_dir: Path, meta: CaseMeta) -> Path:
         "estado": meta.estado,
         "ciudad": meta.ciudad,
         "referencia_crm": meta.referencia_crm,
-        "sudespacho_expedientes": meta.sudespacho_expedientes,
+        "sudespacho_expedientes": expedientes,
         "drive": meta.drive_remote_path,
         "meta": asdict(meta),
     }
-    return write_md(index, fm, body)
+
+
+def _escribir_indice_atomico(index: Path, fm: dict, cuerpo: str) -> Path:
+    """Temporal en el mismo directorio + `os.replace`, como `_atomic_write_caso_md`.
+
+    Las DOS ramas (crear y actualizar) escriben asi: `write_md` en sitio truncaba el
+    indice si el proceso moria a mitad, y dejar la creacion «como hoy» dejaba ese agujero
+    justo en el escenario que motiva la atomicidad (R1/H-03). El temporal esta en
+    `MERGE_EXCLUSIONS` y en el carve-out del plugin para que un huerfano no se trate como
+    contenido del expediente (R1/H-07).
+    """
+    index.parent.mkdir(parents=True, exist_ok=True)
+    tmp = index.parent / f"._caso.{os.getpid()}.tmp"
+    try:
+        write_md(tmp, fm, cuerpo)
+        os.replace(tmp, index)
+    except Exception:
+        if tmp.exists():
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+        raise
+    return index
+
+
+def _write_case_index(case_dir: Path, meta: CaseMeta) -> Path:
+    """Crea el indice del caso o, si ya existe, lo ACTUALIZA conservando lo que no es suyo.
+
+    Ver el bloque de comentario de arriba y el diseno rev. 2. Un `_caso.md` existente al que
+    `read_md` no le encuentra frontmatter (truncado a mitad de escritura) se trata como
+    creacion: no tiene nada que conservar y tratarlo como cuerpo lo congelaria corrupto.
+    """
+    index = case_dir / "00_Input" / "_caso.md"
+    if index.exists():
+        fm_previo, cuerpo_previo = read_md(index)
+        if isinstance(fm_previo, dict) and fm_previo:
+            return _actualizar_indice(index, fm_previo, cuerpo_previo, meta)
+    expedientes = list(meta.sudespacho_expedientes or [])
+    return _escribir_indice_atomico(index, _frontmatter_del_indice(meta, expedientes),
+                                    _cuerpo_del_indice(meta))
+
+
+def _actualizar_indice(index: Path, fm: dict, cuerpo: str, meta: CaseMeta) -> Path:
+    from dataclasses import replace as _dc_replace
+
+    expedientes = _fusionar_expedientes(fm.get("sudespacho_expedientes"),
+                                        meta.sudespacho_expedientes)
+    meta_previo = fm.get("meta") if isinstance(fm.get("meta"), dict) else {}
+    # Las claves de `CaseMeta` las manda el dataclass (los registradores ya las han
+    # coalescido desde lo persistido); las que el modelo no conoce se conservan.
+    meta_dict = {**meta_previo, **asdict(meta)}
+    meta_dict["sudespacho_expedientes"] = expedientes
+    propias = _frontmatter_del_indice(meta, expedientes)
+    propias["meta"] = meta_dict
+    # `{**fm, **propias}`: lo ajeno (p. ej. `bucket_override`) queda donde estaba.
+    fm_nuevo = {**fm, **propias}
+    meta_render = _dc_replace(meta, sudespacho_expedientes=expedientes)
+    return _escribir_indice_atomico(index, fm_nuevo, _actualizar_cuerpo(cuerpo, meta_render))
 
 
 def register_expediente(
@@ -178,13 +376,11 @@ def register_expediente(
         return input_dir_name  # ensure_case no se llamó aún — se registrará al crearlo
 
     import yaml as _yaml
-    text = index.read_text(encoding="utf-8")
-
-    # Extraer frontmatter existente
-    if text.startswith("---"):
-        _, fm_raw, _ = text.split("---", 2)
-        fm = _yaml.safe_load(fm_raw) or {}
-    else:
+    # Un solo parser para el indice (R1/H-03 del diseno de MEJORAS #146): `read_md`, el
+    # mismo que usa el sumidero. Con `text.split("---", 2)` un fichero truncado reventaba
+    # AQUI con ValueError antes de llegar al sumidero que sabe reconstruirlo.
+    fm, _ = read_md(index)
+    if not isinstance(fm, dict):
         fm = {}
 
     expedientes = fm.get("sudespacho_expedientes") or []
@@ -589,11 +785,9 @@ def register_drive_ev(
     if not index.exists():
         return                            # el caso existe, `_caso.md` no
 
-    text = index.read_text(encoding="utf-8")
-    if text.startswith("---"):
-        _, fm_raw, _ = text.split("---", 2)
-        fm = _yaml.safe_load(fm_raw) or {}
-    else:
+    # Un solo parser para el indice (R1/H-03 del diseno de MEJORAS #146): ver register_expediente.
+    fm, _ = read_md(index)
+    if not isinstance(fm, dict):
         fm = {}
 
     meta_dict = fm.get("meta") or {}
@@ -704,11 +898,9 @@ def cache_drive_folder_info(
     if not index.exists():
         return                      # el caso existe, `_caso.md` no
 
-    text = index.read_text(encoding="utf-8")
-    if text.startswith("---"):
-        _, fm_raw, _ = text.split("---", 2)
-        fm = _yaml.safe_load(fm_raw) or {}
-    else:
+    # Un solo parser para el indice (R1/H-03 del diseno de MEJORAS #146): ver register_expediente.
+    fm, _ = read_md(index)
+    if not isinstance(fm, dict):
         fm = {}
 
     meta_dict = fm.get("meta") or {}

@@ -398,6 +398,11 @@ MERGE_EXCLUSIONS: tuple[str, ...] = (
     "90_Notas personales/**",    # D5: zona reservada, fuera del checkout por completo
     "_apertura_v1.json",         # estado por ronda de V1: es de la copia, no del caso
     ".apertura_v1.*.tmp",        # sus temporales de escritura atómica
+    # Temporal de la escritura atómica de `_caso.md` (`_atomic_write_caso_md` y, desde
+    # MEJORAS #146, también `_write_case_index`). Un corte duro entre el temporal y el
+    # `os.replace` lo deja huérfano, y sin esta línea el checkin lo trataba como contenido
+    # del expediente (R1/H-07 del diseño «_caso.md: actualizar conserva»).
+    "._caso.*.tmp",
 )
 
 # Derivados regenerables (DISEÑO_V2 §4.2): local gana (COPY_LOCAL directo)
