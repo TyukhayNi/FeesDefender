@@ -27,9 +27,15 @@ def test_esta_en_el_registro_canonico_de_control(nombre):
 @pytest.mark.parametrize("nombre", est.FICHEROS_CONTROL)
 def test_el_inventario_de_la_sala_de_maquina_no_lo_toma_por_documento(nombre):
     """Si esto falla, el OCR lo inventaría y saldría en `_cobertura` como `sin_soporte`
-    — en la MISMA corrida que lo escribió, porque la secuencia lo abre antes del OCR."""
+    — en la MISMA corrida que lo escribió, porque la secuencia lo abre antes del OCR.
+    Se pregunta con la ruta REAL del fichero (la raíz de `00_Input/`), que es lo que
+    `sala_maquina._es_control` recibe desde MEJORAS #149; el mismo nombre a profundidad 3
+    sería un documento."""
     from core import sala_maquina as sm
+    from core.intake_control import es_fichero_de_protocolo
+    assert es_fichero_de_protocolo(nombre) is True
     assert sm._es_control(nombre) is True
+    assert es_fichero_de_protocolo(f"lote/sub/{nombre}") is False
 
 
 @pytest.mark.parametrize("nombre", est.FICHEROS_CONTROL)
@@ -51,7 +57,7 @@ def test_los_temporales_de_la_escritura_atomica_tampoco_son_documento():
     el proceso muriera entre el temporal y el `os.replace`."""
     from core import sala_maquina as sm
     huerfano = est.PREFIJOS_CONTROL[0] + "abc123.tmp"
-    assert sm._es_control(huerfano) is True
+    assert sm._es_control(huerfano) is True          # en la raíz de 00_Input
     assert _casa(huerfano, config.MERGE_EXCLUSIONS)
 
 

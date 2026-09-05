@@ -41,12 +41,13 @@ NO_BUSCABLE = "NO_BUSCABLE"
 #: **dejaba dentro `_caso.md`**, que es el indice administrativo del caso y contiene
 #: contraparte y ciudad. Un nombre tecleado ahi se acreditaba a si mismo. La extension no
 #: dice la naturaleza del fichero; el nombre de control, si.
-_NOMBRES_CONTROL = frozenset({
-    "_caso.md", "_ficha_crm.yaml", "_intake_log.jsonl", "_intake_hashes.json",
-    "_exported_ids.json", "_resolved_links.json", "_ocurrencias_crm.json",
-    "_inventory.json", "_manifiesto.yaml", "_apertura_v1.json", "_cobertura.json",
-    "_cobertura.md", "_sala_maquina_state.json", "_registro.json", "_tiempos.jsonl",
-})
+# (R2/H-04, 2026-09-05.) Aqui vivio una lista de cinco nombres «que no viven en 00_Input»
+# (`_cobertura.json`, `_cobertura.md`, `_sala_maquina_state.json`, `_registro.json`,
+# `_tiempos.jsonl`) que `es_fichero_de_control` seguia reconociendo por basename. Era falsa
+# por construccion: el unico llamador (`corpus_legible`) le pasa filas de `_cobertura`, cuyo
+# `rel_path` es SIEMPRE relativo a `00_Input/`, asi que nada de lo que recibe puede ser uno
+# de esos ficheros — y un adjunto del cliente llamado `_registro.json` desaparecia del
+# recuento de ilegibles, convirtiendo un `SIN_COMPROBAR` en `NO_ENCONTRADO`. Se retiro entera.
 
 #: Estados de `_cobertura.json` en los que el texto del documento NO es de fiar.
 _ESTADOS_ILEGIBLES = {"low", "empty", "sin_soporte"}
@@ -316,13 +317,19 @@ def corpus_legible(entradas: Iterable[dict]) -> tuple[tuple[str, ...], tuple[str
 
 
 def es_fichero_de_control(rel_path: str) -> bool:
-    """Si `rel_path` es un fichero de protocolo del expediente y no documental.
+    """Si `rel_path` (relativo a `00_Input/`, como en las filas de `_cobertura`) es un
+    fichero de protocolo del expediente y no documental.
 
-    Por **nombre**, no por extension. Un `evidencia.json` aportado como prueba es
-    documental; `_caso.md` no lo es aunque sea `.md` (R1/H-02, H-06).
+    Por **ubicacion**, no por extension ni por nombre suelto (MEJORAS #149): delega en
+    `intake_control.es_fichero_de_protocolo` y nada mas — las filas de `_cobertura` son
+    siempre relativas a `00_Input/`, asi que una excepcion por nombre aqui solo puede
+    esconder adjuntos (R2/H-04). Un `evidencia.json` aportado como prueba es documental; `_caso.md` en la
+    raiz no lo es aunque sea `.md` (R1/H-02, H-06); y `<lote>/adjuntos/_ficha_crm.yaml` es
+    un ADJUNTO: si esta ilegible cuenta como ilegible, no se salta — antes desaparecia del
+    recuento y un `SIN_COMPROBAR` pasaba a `NO_ENCONTRADO` (rev. 2 del diseño, H-08).
     """
-    nombre = (rel_path or "").replace("\\", "/").rsplit("/", 1)[-1].lower()
-    return nombre in _NOMBRES_CONTROL
+    from .intake_control import es_fichero_de_protocolo
+    return es_fichero_de_protocolo((rel_path or "").replace("\\", "/"))
 
 
 # ---------------------------------------------------------------------------

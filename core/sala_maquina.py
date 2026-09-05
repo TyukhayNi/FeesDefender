@@ -1171,21 +1171,20 @@ def ejecutar(case_dir: Path, docs: list[DocPlan], *, case_id: str,
     return cobertura
 
 
-# Derivado del registro CANONICO (`config.INTAKE_CONTROL_FILES`) y no duplicado: esta
-# lista era una copia que se quedo corta cuando el registro crecio, y por ese hueco un
-# fichero de control nuevo entro en el inventario probatorio (R-B del Plan 5). El
-# `_intake_log.jsonl` se suma porque es forense y no vive en el registro de intake.
-_IGNORAR = set(config.INTAKE_CONTROL_FILES) | {"_intake_log.jsonl"}
+def _es_control(rel: str) -> bool:
+    """True si `rel` (ruta RELATIVA a `00_Input/`) es protocolo y NO documento del caso.
 
-
-def _es_control(nombre: str) -> bool:
-    """True si el fichero es de protocolo y NO documento del caso.
-
-    Cubre los temporales de escritura atomica: un huerfano de `mkstemp` no puede acabar
-    en el inventario de prueba solo porque el proceso muriera en mal momento.
+    Delega en el registro por UBICACIÓN (`core/intake_control.py`, MEJORAS #149). Hasta el
+    2026-09-05 preguntaba por el basename contra `config.INTAKE_CONTROL_FILES` mas una
+    copia local: lo declarado se excluia a cualquier profundidad (un adjunto homonimo
+    desaparecia del inventario probatorio) y lo no declarado —`_intake_hashes.json`,
+    `<lote>/_manifiesto.yaml`— salia en `_cobertura` como `sin_soporte` (medido en
+    W-02JSVZ). Cubre los temporales de escritura atomica de la raiz: un huerfano de
+    `mkstemp` no puede acabar en el inventario de prueba porque el proceso muriera en mal
+    momento.
     """
-    return (nombre in _IGNORAR
-            or any(nombre.startswith(pre) for pre in config.INTAKE_CONTROL_PREFIXES))
+    from .intake_control import es_fichero_de_protocolo
+    return es_fichero_de_protocolo(rel)
 
 
 def inventariar(case_dir: Path) -> list[dict]:
@@ -1225,9 +1224,11 @@ def inventariar_cacheado(case_dir: Path,
     out: list[dict] = []
     nueva: dict[str, list] = {}
     for p in sorted(root.rglob("*")):
-        if not p.is_file() or _es_control(p.name):
+        if not p.is_file():
             continue
         rel = p.relative_to(root).as_posix()
+        if _es_control(rel):          # por ubicacion: `rel` se calcula ANTES de filtrar
+            continue
         try:
             st = p.stat()
         except OSError:      # desapareció entre el rglob y el stat

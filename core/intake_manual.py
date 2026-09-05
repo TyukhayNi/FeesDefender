@@ -29,7 +29,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .config import CRM_SUBDIR, INTAKE_CONTROL_FILES, caso_path, settings
+from .config import CRM_SUBDIR, caso_path, settings
+from .intake_control import es_fichero_de_protocolo
 from .intake_manifest import IntakeManifest, compute_sha256_bytes
 from .intake_utils import safe_zip_extract
 
@@ -39,8 +40,6 @@ from .intake_utils import safe_zip_extract
 # ---------------------------------------------------------------------------
 
 _MANUAL_SUBDIR = "04_Manual"  # legacy: casos no migrados a lotes.
-# Lista ÚNICA en config.INTAKE_CONTROL_FILES (MEJORAS #54 T1).
-_CONTROL_FILES: frozenset[str] = INTAKE_CONTROL_FILES
 
 
 # ---------------------------------------------------------------------------
@@ -286,8 +285,10 @@ def save_file_crm_branch(
 def list_crm_branch_files(case_id: str, branch_path: str) -> list[Path]:
     """Lista archivos en ``00_Input/05_CRM/<branch_path>/`` (nivel raíz).
 
-    Excluye archivos de control internos. Devuelve lista vacía si el
-    directorio no existe.
+    Devuelve lista vacía si el directorio no existe. Desde MEJORAS #149 NO excluye nada por
+    nombre: a esa profundidad ningún escritor del repo deposita protocolo, así que un
+    `.pulled` o un `_inventory.json` en una rama del CRM es un documento del cliente y se
+    lista (hasta el 2026-09-05 se excluían por basename).
     """
     from core.casos.case_locator import buscar
     case_dir = buscar(case_id)
@@ -299,18 +300,24 @@ def list_crm_branch_files(case_id: str, branch_path: str) -> list[Path]:
     d = case_dir / "00_Input" / CRM_SUBDIR / branch
     if not d.exists():
         return []
+    # Protocolo por UBICACIÓN (MEJORAS #149). A profundidad ≥ 3 —`05_CRM/<rama>/<f>`— el
+    # registro no declara nada, así que hoy nada queda fuera; la pregunta se hace igual para
+    # que sea la misma en los nueve consumidores. Esto SÍ cambia el resultado respecto al
+    # filtro anterior por basename, que excluía seis nombres a cualquier profundidad (R2/H-06).
     return sorted(
         p for p in d.iterdir()
-        if p.is_file() and p.name not in _CONTROL_FILES
+        if p.is_file()
+        and not es_fichero_de_protocolo(f"{CRM_SUBDIR}/{branch.as_posix()}/{p.name}")
     )
 
 
 def list_files(case_id: str) -> list[Path]:
     """Nivel raíz de cada lote ``manual`` + legacy ``04_Manual`` (casos no migrados).
 
-    Excluye archivos de control internos (``.pulled``, ``_inventory.json``,
-    etc.) y el propio ``_manifiesto.yaml`` de cada lote. Devuelve lista vacía
-    si no hay ``00_Input/`` todavía.
+    Excluye SOLO el ``_manifiesto.yaml`` de la raíz de cada lote (protocolo por ubicación,
+    MEJORAS #149). Un ``.pulled``, ``_inventory.json`` o ``_manifiesto.yaml`` en el cajón
+    legacy ``04_Manual/`` es un documento y se lista. Devuelve lista vacía si no hay
+    ``00_Input/`` todavía.
 
     Args:
         case_id: Identificador del caso.
@@ -318,7 +325,7 @@ def list_files(case_id: str) -> list[Path]:
     Returns:
         Lista de ``Path`` ordenada.
     """
-    from .intake_lotes import MANIFIESTO_LOTE, PATRON_LOTE
+    from .intake_lotes import PATRON_LOTE
 
     from core.casos.case_locator import buscar
     base = buscar(case_id)
@@ -332,7 +339,9 @@ def list_files(case_id: str) -> list[Path]:
     legacy = input_dir / _MANUAL_SUBDIR
     if legacy.is_dir():
         bases.append(legacy)
+    # Protocolo por UBICACIÓN (MEJORAS #149): fuera SOLO el `_manifiesto.yaml` de la raíz
+    # de cada lote. `04_Manual/.pulled` o `<lote>/_inventory.json` no los escribe nadie ahí:
+    # son documentos y se listan.
     out = [p for d in bases for p in d.iterdir()
-           if p.is_file() and p.name not in _CONTROL_FILES
-           and p.name != MANIFIESTO_LOTE]
+           if p.is_file() and not es_fichero_de_protocolo(f"{d.name}/{p.name}")]
     return sorted(out)

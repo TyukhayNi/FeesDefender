@@ -566,22 +566,24 @@ FUENTES_LOTE: tuple[str, ...] = ("whatsapp", "email", "manual", "entrevista")
 # Cajones espejo: no forman lotes, su sync no se toca.
 ESPEJO_SUBDIRS: tuple[str, ...] = ("01_Drive EV", "05_CRM")
 
-# Ficheros de control del intake: NUNCA son documento ni entran en manifiestos
-# de lote. Lista ÚNICA (antes: copias en inventory/intake_manual/intake_drive).
-INTAKE_CONTROL_FILES: frozenset[str] = frozenset({
-    ".pulled", ".synced", "_inventory.json",
-    "_exported_ids.json", "_resolved_links.json",
-    # Estado durable por ronda de la apertura V1 (Plan 5). Añadido el 2026-09-03: la
-    # R-B midió que sin declararlo aquí el fichero entraba en el inventario probatorio
-    # de la sala de máquina y salía en `_cobertura` como `sin_soporte`, en la MISMA
-    # corrida que lo escribía.
-    "_apertura_v1.json",
-})
+# Ficheros de control del intake — DERIVADO del registro por ubicación de
+# `core/intake_control.py` (MEJORAS #149, 2026-09-05) y NO clasifica nada: es el conjunto
+# de basenames que aparecen en ese registro, conservado para quien quiera saber «qué
+# nombres escribe el repo», no para decidir si un fichero concreto es protocolo. Esa
+# pregunta es `intake_control.es_fichero_de_protocolo(rel_path)`, por (directorio, nombre):
+# un `_inventory.json` dentro de un lote es un adjunto del cliente, y hasta el 2026-09-05
+# este conjunto, aplicado a cualquier profundidad, lo hacía desaparecer del inventario
+# probatorio. Un test comprueba que ningún módulo de producción lo lee para clasificar.
+from .intake_control import RAIZ_PREFIJOS as _RAIZ_PREFIJOS
+from .intake_control import nombres_registrados as _nombres_registrados
 
-#: Prefijo de los temporales de escritura atómica de los ficheros de control. No son
-#: documento **ni siquiera transitoriamente**: si una escritura muere entre el `mkstemp`
-#: y el `os.replace`, el huérfano no puede acabar en el inventario de prueba.
-INTAKE_CONTROL_PREFIXES: tuple[str, ...] = (".apertura_v1.",)
+INTAKE_CONTROL_FILES: frozenset[str] = _nombres_registrados()
+
+#: Prefijos de los temporales de escritura atómica de los ficheros de control en la raíz de
+#: `00_Input/`. Derivado del mismo registro. No son documento **ni siquiera
+#: transitoriamente**: si una escritura muere entre el `mkstemp` y el `os.replace`, el
+#: huérfano no puede acabar en el inventario de prueba.
+INTAKE_CONTROL_PREFIXES: tuple[str, ...] = _RAIZ_PREFIJOS
 
 
 def caso_path(case_id: str, *, strict: bool = True) -> Path:

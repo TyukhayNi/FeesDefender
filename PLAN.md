@@ -78,7 +78,7 @@ PRs antes de `main`, y la acción 1 ya estaba cerrada cuando llegó):
 | 3 | El formulario con el mismo servicio que la CLI | ✅ **primer corte, PR #285** (`108a461`) — una ronda sustituta (8/8 confirmados, el ALTO remediado y verificado en pantalla) | política compartida en `core/alta_crm_politica.py`; error legible de `ensure_case`; reutilizar el expediente local. **Lo que queda fuera con nombre:** que el formulario ejecute `secuencia_v1` (Drive → CRM → sala de máquina) y muestre las fases — exige sacar `etapa_*` de `scripts/abrir_caso.py` al core y resolver cómo corre una sala de máquina de una hora dentro de una petición de Streamlit |
 | 4 | Reutilizar expedientes y distinguir frentes | ✅ **PR #285** (`108a461`) | `vincular` con selector de frente, sin «crear de todos modos»; `bloquear` con la lista literal y casilla «crear igualmente» |
 | 6 | Incorporación de correo y adjuntos (checklist por fuente, `--extraer-adjuntos` por defecto, filtro de ruido) | pendiente, **sin empezar** | depende de resolver el efecto de `--extraer-adjuntos` en la dedup (`#98`) y del filtro de `[SIGUIENTE-INTAKE-EMAIL-FILTRO]` |
-| 7 | Ficheros de protocolo por ubicación (`#149`) | diseño **rev. 2 mergeado** (PR #287, `ac36bfa`) con la R1 adjudicada (11/11 confirmados); **sin código**: la implementación y su ronda sobre el diff son la siguiente entrega | diseño rev. 1: `docs/superpowers/specs/2026-09-05-ficheros-de-protocolo-por-ubicacion-design.md` |
+| 7 | Ficheros de protocolo por ubicación (`#149`) | ✅ **implementado, PR #290** — `core/intake_control.py` + nueve consumidores + migración con hash tres veces; 52 tests nuevos, 13 mutantes muertos. R1 sobre el diseño (PR #287, 11/11) y **R2 de Codex sobre el diff**: adjudicación en el §9 del diseño | diseño rev. 2: `docs/superpowers/specs/2026-09-05-ficheros-de-protocolo-por-ubicacion-design.md`; acta R2 `…-r2-adversarial-review.md` |
 | 8 | Ficha CRM judicial (`get/update_expediente_judicial`, `link_juzgado_judicial`, ramificar `crm_ficha.py`) | pendiente, **encargado a la sesión hermana** «Completar fichas de colaboradores» el 2026-09-05 tras mergear su #282 (es dueña de `crm_ficha.py`); sin escritura real al CRM, tests con `httpx` mockeado | `PLAN` F3-judicial piezas 1, 3, 4; `MEJORAS #164` |
 | 9 | Primera publicación de un caso nacido en local (`#139`) | pendiente, **sin empezar** — escribe en Drive, no se puede probar sin operar sobre el Drive real | `MEJORAS #139`, `[APER-41]` |
 | 10 | `.doc` ilegibles + cobertura visible | pendiente, **sin empezar**; herramienta local disponible (`C:\Program Files\LibreOffice\program\soffice.exe`, y `antiword` en msys) | `core/sala_maquina.clasificar_ruta`, `_EXTS_NATIVO` |
@@ -91,7 +91,7 @@ hermana «Completar fichas de colaboradores» es dueña de `core/crm_ficha.py`, 
 encargada la acción 8.
 
 **Lo que NO se declara hecho aunque esté escrito:** las acciones 6, 9, 10, 11 y 12 no tienen ni
-diseño; la 7 tiene diseño y no tiene código; la 8 está encargada, no construida.
+diseño; la 7 está implementada en el PR #290 (con su R2 adjudicada en el §9 del diseño); la 8 está encargada, no construida.
 
 ---
 

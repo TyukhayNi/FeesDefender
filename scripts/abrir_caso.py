@@ -30,6 +30,7 @@ from pathlib import Path
 import typer
 
 from core import abrir_caso as brain
+from core.intake_control import es_fichero_de_protocolo
 from core import (
     alta_crm_politica, case_manager, config, email_export, intake_drive, intake_log,
     intake_manual, sudespacho_create, sudespacho_relations, whatsapp_intake,
@@ -85,9 +86,12 @@ def hash_tree_local(root: Path, *, prefijo: str) -> dict[str, str]:
     for p in sorted(root.rglob("*")):
         if not p.is_file():
             continue
-        if p.name in intake_drive.CONTROL_FILES:
-            continue
         rel = p.relative_to(root).as_posix()
+        # Protocolo por UBICACIÓN (MEJORAS #149): con `prefijo="01_Drive EV"` solo queda
+        # fuera `01_Drive EV/.pulled`. Un `_inventory.json` de E&V en esa carpeta es un
+        # fichero del cliente y ENTRA en el ledger forense.
+        if es_fichero_de_protocolo(f"{prefijo}/{rel}"):
+            continue
         out[f"{prefijo}/{rel}"] = file_sha256(p)
     return out
 
@@ -400,8 +404,10 @@ def etapa_drive(ident, case_dir: Path, *, folder_id, team_id, intake=None):
     # justo despues de depositar dos — medido en la corrida real sobre W-02Q38C el
     # 2026-09-03. Un proxy en vez de la cosa, otra vez.
     try:
-        total = sum(1 for p in res.target_dir.rglob("*")
-                    if p.is_file() and p.name not in intake_drive.CONTROL_FILES)
+        total = sum(
+            1 for p in res.target_dir.rglob("*")
+            if p.is_file() and not es_fichero_de_protocolo(
+                f"{res.target_dir.name}/{p.relative_to(res.target_dir).as_posix()}"))
     except OSError as exc:
         return av1.EtapaResultado(
             nombre="drive", estado="hecha",

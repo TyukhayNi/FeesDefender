@@ -1102,9 +1102,18 @@ def pull_expediente(
                     api_client.download_document_rest(  # type: ignore[union-attr]
                         info.doc_id, str(expediente_id), tmp, element=elem,
                     )
-                except SudespachoError as exc:
-                    errors.append(f"download REST doc {info.doc_id}: {exc}")
+                except BaseException as exc:
+                    # UNA limpieza para CUALQUIER interrupcion (R2/H-05 de MEJORAS #149): antes
+                    # solo se limpiaba ante SudespachoError, y un OSError, un Ctrl-C o un kill
+                    # a mitad de descarga dejaban `sudespacho_<id>.tmp` en el destino — un
+                    # parcial que escribe este codigo, no el cliente, y que entraba en el
+                    # inventario probatorio de la sala de maquina como si fuera un documento.
+                    # Es un solo `unlink` a proposito: el censo de escrituras fuera de la
+                    # costura (`tests/test_escritura_censo.py`) solo puede bajar.
                     tmp.unlink(missing_ok=True)
+                    if not isinstance(exc, SudespachoError):
+                        raise
+                    errors.append(f"download REST doc {info.doc_id}: {exc}")
                     try:
                         if not any(doc_dir.iterdir()):
                             doc_dir.rmdir()

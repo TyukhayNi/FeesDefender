@@ -231,18 +231,24 @@ def test_cli_colision_sin_force_exit_1(drive_temporal):
     assert "ya existe" in r2.output
 
 
-def test_hash_tree_local_excluye_ficheros_de_control(tmp_path: Path):
-    """IMPORTANT 2: .pulled / _inventory.json / .synced no son documento."""
+def test_hash_tree_local_excluye_solo_el_protocolo_de_su_ubicacion(tmp_path: Path):
+    """IMPORTANT 2 + MEJORAS #149: en `01_Drive EV/` el único fichero de protocolo es
+    `.pulled` (lo escribe `intake_drive`). Un `_inventory.json` o un `.synced` ahí son
+    ficheros de E&V homónimos y ENTRAN en el ledger forense; hasta el 2026-09-05 se
+    excluían por basename y el ledger los perdía."""
     root = tmp_path / "01_Drive EV"
     root.mkdir(parents=True)
     (root / "a.txt").write_bytes(b"hola")
     (root / ".pulled").write_text('{"team_id": "TID"}', encoding="utf-8")
     (root / "_inventory.json").write_text("{}", encoding="utf-8")
     (root / ".synced").write_text("", encoding="utf-8")
+    (root / "sub").mkdir()
+    (root / "sub" / ".pulled").write_text("de E&V", encoding="utf-8")
 
     hashes = cli.hash_tree_local(root, prefijo="01_Drive EV")
 
-    assert list(hashes) == ["01_Drive EV/a.txt"]
+    assert set(hashes) == {"01_Drive EV/a.txt", "01_Drive EV/_inventory.json",
+                           "01_Drive EV/.synced", "01_Drive EV/sub/.pulled"}
 
 
 def test_cli_excluye_pulled_del_ledger(drive_temporal):

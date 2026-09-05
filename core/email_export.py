@@ -1078,9 +1078,11 @@ def export_label(
 
     es_lote = bool(case_id) and intake_lotes.PATRON_LOTE.match(dest.name) is not None
     if es_lote:
+        # Protocolo por UBICACIÓN (MEJORAS #149): solo el `_manifiesto.yaml` de la raíz del
+        # lote queda fuera; un adjunto homónimo anidado cuenta como contenido.
         contenido = [p for p in dest.rglob("*") if p.is_file()
-                     and p.name not in config.INTAKE_CONTROL_FILES
-                     and p.name != intake_lotes.MANIFIESTO_LOTE]
+                     and not intake_lotes.es_fichero_de_protocolo(
+                         f"{dest.name}/{p.relative_to(dest).as_posix()}")]
         if not contenido:
             _rmtree_vacio(dest)          # corrida sin novedad: no queda lote vacío
         else:
