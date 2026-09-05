@@ -6,8 +6,10 @@ perdian la nota del abogado en el cuerpo, las claves de frontmatter ajenas a las
 indice (`bucket_override`) y las claves de `meta` que el modelo no conoce.
 
 Diseno: `docs/superpowers/specs/2026-09-05-caso-md-preservar-al-actualizar-design.md`, §5.
-M1-M5 mueren con el codigo de `556b8b2`; M6-M10 son POSITIVOS, para que la guarda no se
-endurezca de mas.
+Medido por la R2 contra `origin/main` (2b32c32): MUEREN M1-M5, M10-bis, M10-ter, M11-M13 y
+los M17-M22 de la R2; son POSITIVOS (pasan tambien en main) M6-M8, M10, M14, M15 y la mitad
+del lock de M16. M14 y M15 no matan a main: matan a la REV. 1 del diseno (la deteccion
+«nadie lo toco»), y estan para que no vuelva.
 """
 from __future__ import annotations
 
@@ -421,11 +423,109 @@ def test_m16_clave_ajena_y_lock_en_None_coalescen_bien(tmp_casos_root):
     cm.register_expediente(CASE_ID, "648", "extrajudiciales")
 
     fm, _ = read_md(index)
-    assert fm["meta"]["clave_ajena"] == "valor-ajeno"
+    assert fm["meta"]["clave_ajena"] == "valor-ajeno"     # esta mitad MATA a main (es M5)
     # El sumidero NO inventa valores: lo persistido (aqui `None`) es lo que queda; los
     # registradores ya lo pasaban asi a `CaseMeta` y el lector lo trata como ausente.
-    assert fm["meta"]["estado_repositorio"] is None
+    assert fm["meta"]["estado_repositorio"] is None      # esta mitad es POSITIVA
     assert "checkout_user" in fm["meta"]
+
+
+# ---------------------------------------------------------------------------
+# R2 sobre el diff (2026-09-05): M17-M22
+# ---------------------------------------------------------------------------
+
+def test_m17_una_entrada_sin_id_no_se_duplica_en_cada_pull(tmp_casos_root):
+    """R2/H-01: el espejo `meta` ES la lista fusionada, y los registradores parten de el;
+    una entrada sin `id` volvia como «nueva» en cada pasada: 2 -> 4 -> 8 -> 16."""
+    cm = _cm()
+    index = _alta(cm)
+
+    def _rara(fm):
+        fm["sudespacho_expedientes"] = [{"element": "extrajudiciales"}]
+        fm["meta"]["sudespacho_expedientes"] = [{"element": "extrajudiciales"}]
+    _mutar_fm(index, _rara)
+
+    for folder in ("f1", "f2", "f3"):
+        cm.register_drive_ev(CASE_ID, "teamA", folder)
+        cm.cache_drive_folder_info(CASE_ID, f"W-{folder}", "0AD")
+
+    fm, cuerpo = read_md(index)
+    assert len(fm["sudespacho_expedientes"]) == 1
+    assert len(fm["meta"]["sudespacho_expedientes"]) == 1
+    assert cuerpo.count("ID ?") == 1
+
+
+def test_m18_un_encabezado_de_otro_nivel_tras_la_seccion_sobrevive(tmp_casos_root):
+    """R2/H-02: la seccion (c) acababa en el siguiente `## `; un `# Notas` o un `### Detalle`
+    a mano entre la seccion y `## Navegacion` se destruia."""
+    cm = _cm()
+    index = _alta(cm)
+    cm.register_expediente(CASE_ID, "648", "extrajudiciales")
+    texto = index.read_text(encoding="utf-8")
+    marca = "## Navegación\n"
+    i = texto.index(marca)
+    extra = "### Detalle del abogado\n\nEsto lo escribi yo bajo un ###.\n\n# Notas nivel 1\n\nY esto bajo un # nivel 1.\n\n"
+    index.write_text(texto[:i] + extra + texto[i:], encoding="utf-8")
+
+    cm.register_drive_ev(CASE_ID, "teamA", "folderB")
+
+    _, cuerpo = read_md(index)
+    for frase in ("### Detalle del abogado", "Esto lo escribi yo bajo un ###.",
+                  "# Notas nivel 1", "Y esto bajo un # nivel 1.", "ID 648", "`teamA`"):
+        assert frase in cuerpo, frase
+    assert cuerpo.count(_ENC_EXPEDIENTES) == 1
+
+
+def test_m19_el_frontmatter_no_gana_anclas_yaml(tmp_casos_root):
+    """R2/H-03: la misma lista en dos claves salia como `&id001` / `*id001`."""
+    cm = _cm()
+    index = _alta(cm)
+    cm.register_expediente(CASE_ID, "648", "extrajudiciales")
+    cm.register_drive_ev(CASE_ID, "teamA", "folderB")
+    texto = index.read_text(encoding="utf-8")
+    assert "&id" not in texto and "*id" not in texto
+
+
+def test_m20_un_cuerpo_sin_frontmatter_se_conserva_y_gana_frontmatter(tmp_casos_root):
+    """R2/H-07: un fichero que NO empieza por `---` es un cuerpo escrito, no un truncado."""
+    cm = _cm()
+    index = _alta(cm)
+    index.write_text("# Titulo mio\n\nNota importante sin frontmatter.\n", encoding="utf-8")
+
+    cm.register_drive_ev(CASE_ID, "teamA", "folderB")
+
+    fm, cuerpo = read_md(index)
+    assert fm.get("case_id") == CASE_ID
+    assert fm["meta"]["drive_ev_team_id"] == "teamA"
+    assert "Nota importante sin frontmatter." in cuerpo
+    assert "# Titulo mio" in cuerpo
+
+
+def test_m21_un_id_numerico_y_el_mismo_id_en_cadena_son_la_misma_entrada(tmp_casos_root):
+    cm = _cm()
+    index = _alta(cm)
+    _mutar_fm(index, lambda fm: fm.__setitem__(
+        "sudespacho_expedientes", [{"id": 648, "element": "extrajudiciales", "doc_ids": ["d"]}]))
+
+    cm.register_expediente(CASE_ID, "648", "extrajudiciales")
+
+    fm, _ = read_md(index)
+    assert [str(e["id"]) for e in fm["sudespacho_expedientes"]] == ["648"]
+    assert fm["sudespacho_expedientes"][0]["doc_ids"] == ["d"]
+
+
+@pytest.mark.parametrize("registrador", ["register_expediente", "cache_drive_folder_info"])
+def test_m22_el_truncado_se_reconstruye_con_los_otros_registradores(tmp_casos_root, registrador):
+    cm = _cm()
+    index = _alta(cm)
+    texto = index.read_text(encoding="utf-8")
+    index.write_text(texto[: len(texto) // 3], encoding="utf-8")
+
+    REGISTRADORES[registrador](cm)
+
+    fm, cuerpo = read_md(index)
+    assert fm.get("case_id") == CASE_ID
+    assert "---" not in cuerpo
 
 
 # ---------------------------------------------------------------------------

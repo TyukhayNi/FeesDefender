@@ -3,11 +3,19 @@ tipo: spec
 estado: en-revision
 creado: 2026-09-05
 objeto: "MEJORAS #146 — los registradores de `_caso.md` reconstruyen el fichero y destruyen lo que no es suyo"
-rev: "2"
+rev: "3"
 ---
 
 # `_caso.md`: actualizar conserva lo que no es del registrador
 
+> **Rev. 3 (2026-09-05), tras la R2 adversarial sobre el diff: `LISTA-CON-CAMBIOS`, ocho
+> hallazgos, los ocho confirmados.** Tres tocan el código y los tres eran defectos que el propio
+> diff introducía: la fusión por entrada reañadía en cada pasada las entradas sin `id` (la lista
+> doblaba con cada pull), la sección (c) se extendía hasta el siguiente `## ` y destruía un `#` o un
+> `###` escrito a mano, y el mismo objeto lista en dos claves salía como ancla YAML. Los cinco
+> restantes son rotulado del §5 y referencias. Adjudicación en el **§9**; voz del revisor en el
+> acta `…-r2-adversarial-review.md`.
+>
 > **Rev. 2 (2026-09-05), tras la R1 adversarial sobre la rev. 1: `LISTA-CON-CAMBIOS`, diez
 > hallazgos, los diez confirmados.** Lo que cambia es el **§3.3**: la rev. 1 decidía si
 > regenerar el cuerpo entero comparándolo con la plantilla («nadie lo tocó»), y el revisor
@@ -96,10 +104,12 @@ nada.
 
 ### 3.1. `_write_case_index` distingue crear de actualizar
 
-- **No existe**, o existe pero `read_md` no le encuentra frontmatter (`fm == {}`: un fichero
-  truncado a mitad de escritura, R1/H-03) → **creación**: frontmatter de diez claves y cuerpo de
-  plantilla, como hoy. Un fichero sin frontmatter parseable no tiene nada que conservar y hoy ya
-  se reconstruye limpio: tratarlo como «tocado» lo congelaría corrupto.
+- **No existe**, o existe pero `read_md` no le encuentra frontmatter **y el texto empieza por
+  `---`** (un fichero truncado a mitad de escritura, R1/H-03) → **creación**: frontmatter de diez
+  claves y cuerpo de plantilla, como hoy. Un truncado no tiene nada que conservar y hoy ya se
+  reconstruye limpio. **Si el texto no empieza por `---`** es un cuerpo escrito sin frontmatter
+  (R2/H-07), y se actualiza como cuerpo con frontmatter vacío: gana el frontmatter y conserva el
+  texto.
 - **Existe con frontmatter** → **actualización preservadora**:
   1. `fm, body = read_md(index)`.
   2. **Frontmatter:** `fm_nuevo = {**fm, **propias}`, donde `propias` son las diez claves de
@@ -129,8 +139,13 @@ tiene. Al actualizar: se parte de las entradas **persistidas** en top-level, en 
 entrada nueva con el mismo `id` se aplica encima (`{**persistida, **nueva}`); las nuevas sin
 `id` persistido se añaden al final; las persistidas que la lista nueva no trae **se conservan**
 (ningún registrador borra por esta vía: `remove_expediente_link` va por `_atomic_write_caso_md`).
-El espejo `meta.sudespacho_expedientes` pasa a ser el resultado, así que después de la primera
-actualización los dos niveles coinciden.
+El espejo `meta.sudespacho_expedientes` pasa a ser **una copia** del resultado (R2/H-03: el mismo
+objeto en las dos claves salía como ancla YAML), así que después de la primera actualización
+los dos niveles coinciden. **Y la fusión es idempotente sobre su propia salida** (R2/H-01): como
+los registradores construyen `CaseMeta` desde el espejo, una entrada sin `id` volvía como «nueva»
+en cada pasada y la lista doblaba con cada pull; ahora lo que ya está en la salida no se repite.
+Consecuencia declarada: cualquier escritor que retire una entrada debe retirarla de los dos
+niveles (los dos que existen, `remove_expediente_link` y `limpieza_post_audit`, ya lo hacen).
 
 ### 3.3. Cuerpo: el registrador reescribe solo lo que deriva de lo que escribe
 
@@ -148,7 +163,7 @@ que la plantilla deriva de los campos que los registradores escriben, y no toca 
 |---|---|---|---|
 | (a) la línea de estado | `Caso \`<case_id>\` — estado **…**.` | no se inserta | — |
 | (b) los IDs de Drive E&V | línea que empieza por `- Drive E&V team:` | se inserta tras la línea `- Remoto rclone:` si existe; si no, no se inserta | se retira |
-| (c) la sección de expedientes | desde `## Expedientes sudespacho` hasta el siguiente `## ` o el final | se inserta antes de `## Navegación` (o `## Navegacion`); si no hay, al final | se retira |
+| (c) la sección de expedientes | desde `## Expedientes sudespacho` hasta el siguiente **encabezado de cualquier nivel** (`#`…`######`) o el final (R2/H-02: cortar solo en `## ` destruía un `# Notas` o un `### Detalle` escrito a mano) | se inserta antes de `## Navegación` (o `## Navegacion`); si no hay, al final | se retira |
 
 Todo lo demás —título, partes, sede, `## Navegación` con sus wikilinks, notas al final,
 placeholders rellenados a mano— se conserva **línea a línea**. La sección (c) lleva, al
@@ -220,9 +235,15 @@ positivos: pasan también con `556b8b2` y existen para que la guarda no se endur
 | M11 | `register_expediente` → `update_pull_state(doc_ids…)` → `register_drive_ev` | `read_pull_state` sigue viendo `doc_ids` y `last_sync` |
 | M12 | entrada de `sudespacho_expedientes` sin `input_dir` (la crea `update_pull_state`) + `register_expediente` | no aborta; la sección (c) la pinta con `sudespacho_<id>` |
 | M13 | `_caso.md` truncado a mitad (sin cierre de frontmatter) + registrador | fichero íntegro con un solo frontmatter |
-| M14 | quitar un expediente por mutador de frontmatter (como `remove_expediente_link`) + `register_drive_ev` | la sección (c) **ya no** lista el expediente retirado |
-| M15 | dos actualizaciones iguales seguidas | el fichero es idéntico byte a byte tras la segunda |
-| M16 (+) | `meta` con clave ajena **y** `None` en un campo del lock + registrador | la ajena sigue y el campo del lock conserva lo persistido: el sumidero no inventa valores |
+| M14 (+ frente a `main`) | quitar un expediente por mutador de frontmatter (como `remove_expediente_link`) + `register_drive_ev` | la sección (c) **ya no** lista el expediente retirado. Pasa también en `main` (allí se reconstruía todo): mata la **rev. 1**, no `main` (R2/H-04) |
+| M15 (+ frente a `main`) | dos actualizaciones iguales seguidas | el fichero es idéntico byte a byte tras la segunda. Mata la rev. 1, no `main` |
+| M16 | `meta` con clave ajena **y** `None` en un campo del lock + registrador | la ajena sigue (esta mitad mata a `main`: es M5) y el campo del lock conserva lo persistido (esta mitad es positiva) |
+| M17 | entrada sin `id` en top-level y en `meta` + tres pares de registradores | la lista sigue teniendo **una** entrada (R2/H-01) |
+| M18 | `### Detalle` y `# Notas` con párrafo entre la sección (c) y `## Navegación` + `register_drive_ev` | los cuatro textos siguen y la sección (c) sigue siendo una (R2/H-02) |
+| M19 | `register_expediente` + `register_drive_ev` | el fichero no contiene `&id` ni `*id` (R2/H-03) |
+| M20 | cuerpo sin frontmatter (no empieza por `---`) + `register_drive_ev` | el texto sigue y el fichero gana frontmatter (R2/H-07) |
+| M21 | entrada persistida con `id: 648` numérico + `register_expediente("648")` | una sola entrada, con su estado D8 |
+| M22 | truncado + `register_expediente` / `cache_drive_folder_info` | íntegro (M13 solo probaba `register_drive_ev`) |
 
 ## 6. Alcance explícito
 
@@ -233,8 +254,13 @@ positivos: pasan también con `556b8b2` y existen para que la guarda no se endur
   regla de `CLAUDE.md` («NO se escriben notas en `_caso.md`… vigente hasta que cierre
   `MEJORAS #146`») y `[APER-54]` del runbook pasan a decir que la nota ya no se pierde,
   manteniendo `90_Notas personales` como sitio preferente porque ningún módulo del core lo lee.
-- **No toca:** `_atomic_write_caso_md`, el camino de `ensure_case` sobre caso existente, los
-  tres registradores, el formato del frontmatter, ni ningún `_caso.md` existente.
+- **No toca:** la lógica de `_atomic_write_caso_md` (pasa a delegar la escritura en el escritor
+  atómico compartido, para que el censo de `test_escritura_censo.py` no suba), el camino de
+  `ensure_case` sobre caso existente, la **forma** de los tres registradores (solo su parser,
+  §3.4), el formato del frontmatter, ni ningún `_caso.md` existente. **Sí toca**, fuera del
+  alcance de la rev. 1 y declarado por la R2 (H-08): el `split("---", 2)` sin guarda de
+  `scripts/sync_sudespacho.py::sync_all`, que reventaba el bucle entero ante un `_caso.md`
+  truncado una línea antes de llamar al sumidero que lo repararía.
 - **No cubre:** la concurrencia entre dos escritores del mismo `_caso.md` (`MEJORAS #126` y el
   mutex); el `_caso.md` de la copia del Drive durante un checkout (`repository_checkout`); y los
   escritores del censo de abajo que no pasan por el sumidero.
@@ -246,7 +272,7 @@ positivos: pasan también con `556b8b2` y existen para que la guarda no se endur
 |---|---|---|---|
 | `_write_case_index` ← los cuatro llamadores del §1 | `write_md` en sitio → **este diseño** | reconstruye → **conserva** | no → **sí** |
 | `_atomic_write_caso_md` ← lock, `ensure_case` existente, `update_pull_state`, `remove_expediente_link`, `limpieza_post_audit` | tmp + `os.replace` | conserva | sí |
-| `case_locator._update_ciudad_metadata` | `write_text` en sitio, `yaml.dump` con `sort_keys` por defecto (**reordena claves**) | conserva | **no** → `MEJORAS #162` |
+| `case_locator._update_ciudad_metadata` | `write_text` en sitio, `yaml.dump` con `sort_keys` por defecto (**reordena claves**) | conserva | **no** → `MEJORAS #167` |
 | `scripts/migrate_05crm_buckets.py` | `write_md` en sitio | conserva | no |
 | `scripts/repository_cli._push_caso_md` | `write_md` a temporal + rclone | conserva | n/a |
 | `.claude/skills/_shared/registrar_outputs.py` (+ copia en `cendoj-descarga`) | texto + `os.replace` | inserta wikilinks | sí |
@@ -284,7 +310,7 @@ fuente antes de adjudicar. El digest del informe se recalculó al recibirlo y co
 | H-05 | MEDIO | la plantilla no es total: `e['input_dir']` aborta con las entradas de `update_pull_state` | **confirmado** (`e['input_dir']` sin `.get`; entradas D8 sin `input_dir`) | §3.1: plantilla total; M12 |
 | H-06 | BAJO | «byte a byte» promete lo que `read_md`/`write_md` no dan | **confirmado** | §3.3 último párrafo; M1 compara texto |
 | H-07 | BAJO | `._caso.*.tmp` no está en `MERGE_EXCLUSIONS`; M10 pasaba hoy sin declararse positivo; sin mutante del fallo | **confirmado** (`MERGE_EXCLUSIONS` solo excluye `.apertura_v1.*.tmp`) | §6; M10 positivo con camino de fallo |
-| H-08 | BAJO | el §2 prometía «toda escritura» y la guarda cubre un sumidero | **confirmado** (censo: `_update_ciudad_metadata` escribe en sitio y reordena) | §2 y §6 (censo); `MEJORAS #162` para el escritor no atómico |
+| H-08 | BAJO | el §2 prometía «toda escritura» y la guarda cubre un sumidero | **confirmado** (censo: `_update_ciudad_metadata` escribe en sitio y reordena) | §2 y §6 (censo); `MEJORAS #167` para el escritor no atómico |
 | H-09 | BAJO | deriva de líneas en el §1 | **confirmado** | el §1 cita por símbolo |
 | H-10 | BAJO | faltan mutantes (`proyeccion_local`, idempotencia de bytes, coalescencia positiva) | **confirmado** | M5, M15, M16 |
 
@@ -300,3 +326,35 @@ propio texto. Cuenta como confirmado con remedio distinto, que el contrato de go
 lock, los cuatro llamadores, las diez claves, `_atomic_write_caso_md`, la equivalencia de la
 escritura atómica, las lentes 4 y 5 y el §4— está en el §2 del acta. **Lo que no pudo verificar**
 está en el §7 de este documento.
+
+## 9. Adjudicación de la revisión adversarial del diff (Claude Code sesión independiente, 2026-09-05) — LISTA-CON-CAMBIOS, remediado
+
+- **Objeto revisado:** diff `origin/main...81082a6` (nueve ficheros; base `2b32c32`), commit `81082a6`
+- **Ronda:** 2
+- **Revisor:** Claude Code (sesión independiente), solo lectura, con sondas ejecutadas (once `_caso.md` adversos por los tres registradores; el fichero de tests de HEAD corrido contra una copia de `origin/main`)
+- **Informe recibido:** `2026-09-05-caso-md-preservar-al-actualizar-r2-adversarial-review.md`
+- **Hallazgos:** 8 confirmados · 0 rebajados · 0 refutados · 0 escalados · 0 sin verificar
+- **Remediado en:** rev. 3 de este documento y el commit que la acompaña (código, tests, runbook)
+
+**Independencia, declarada más débil**, como en la R1 (mismo modelo, sin contexto de autoría). Lo
+que compensa: el revisor ejecutó los mutantes contra `origin/main` y midió cuál mataba qué, y las
+tres sondas de los hallazgos de código reproducen el defecto con salida literal. Yo he comprobado
+los tres contra mi propio código antes de remediar: la rama `salida.append(n)`, el
+`startswith("## ")` y la lista compartida entre `propias` y `meta_dict`. El digest se recalculó al
+recibirlo y coincide.
+
+| # | Sev. | Hallazgo | Veredicto | Dónde se remedia |
+|---|---|---|---|---|
+| H-01 | MEDIO | la fusión reañadía en cada pasada las entradas sin `id` (2 → 4 → 8 → 16), un defecto **introducido por el diff** | **confirmado** | `_fusionar_expedientes`: lo que ya está en la salida no se repite; §3.2; M17 |
+| H-02 | MEDIO | la sección (c) acababa en el siguiente `## ` y destruía un `#`/`###` a mano que `CLAUDE.md` prometía conservar | **confirmado** | `_RE_ENCABEZADO_MD`: cualquier encabezado cierra la sección; §3.3; M18; `[APER-54]` |
+| H-03 | BAJO | anclas YAML por compartir la lista entre dos claves; el §6 decía no tocar el formato | **confirmado** | `copy.deepcopy`; §3.2; M19 |
+| H-04 | BAJO | M14 y M15 pasan en `main` (matan la rev. 1); M16 no era positivo; el docstring del test mentía | **confirmado** | §5 rotulado; docstring del test |
+| H-05 | BAJO | `MEJORAS #162` donde debía decir `#167` (diseño §6 y §8, acta §3) | **confirmado** | corregido en los tres sitios |
+| H-06 | BAJO | el §6 decía «no toca los tres registradores» y el §3.4 declaraba el cambio de parser | **confirmado** | §6 |
+| H-07 | BAJO | un cuerpo sin frontmatter (que no empieza por `---`) iba a creación y perdía el texto | **confirmado** (heredado, pero el §3.1 lo justificaba con una frase falsa) | §3.1: se conserva el cuerpo; M20 |
+| H-08 | BAJO | `sync_all` parsea `_caso.md` con `split` sin guarda y muere antes del sumidero | **confirmado** (fuera del alcance de la rev. 1) | `scripts/sync_sudespacho.py` pasa a `read_md`; §6 |
+
+**Sin verificar por el revisor, y sigue así:** `os.replace` sobre `G:`; cuántos `_caso.md` reales
+tienen entradas sin `id`, encabezados tras la sección o alias YAML; cómo renderiza Cowork un alias
+YAML (ya no se produce); dos hilos en un proceso compartirían el nombre del temporal (heredado del
+patrón original). La suite completa corrió aparte, con dos semillas, antes del merge.

@@ -247,7 +247,7 @@ Digest del informe recalculado al recibirlo: `95a18400d1f1c292c1a90d61dda92e6d57
 | H-05 | MEDIO | confirmado | §3.1 plantilla total (`.get`); M12 |
 | H-06 | BAJO | confirmado | §3.3 último párrafo («el texto», no los bytes) |
 | H-07 | BAJO | confirmado | §6 `MERGE_EXCLUSIONS` + `PROTOCOL_EDIT`; M10 con camino de fallo |
-| H-08 | BAJO | confirmado | §2 acotado al sumidero; censo en §6; `MEJORAS #162` |
+| H-08 | BAJO | confirmado | §2 acotado al sumidero; censo en §6; `MEJORAS #167` |
 | H-09 | BAJO | confirmado | §1 cita por símbolo |
 | H-10 | BAJO | confirmado | M5 (`proyeccion_local`), M15, M16 |
 

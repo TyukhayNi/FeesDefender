@@ -6,6 +6,7 @@ subcarpetas estándar. Nunca borra contenido del usuario.
 
 from __future__ import annotations
 
+import copy
 import logging
 import os
 import re
@@ -147,6 +148,8 @@ _ENCABEZADOS_NAVEGACION = ("## Navegación", "## Navegacion")
 _AVISO_SECCION_GENERADA = "<!-- sección generada por el registrador: no editar a mano -->"
 _PREFIJO_LINEA_DRIVE_EV = "- Drive E&V team:"
 _PREFIJO_LINEA_REMOTO = "- Remoto rclone:"
+#: Encabezado Markdown ATX de cualquier nivel: es donde termina la seccion (c).
+_RE_ENCABEZADO_MD = re.compile(r"^#{1,6}\s")
 
 
 def _linea_estado(meta: CaseMeta) -> str:
@@ -244,7 +247,11 @@ def _actualizar_cuerpo(cuerpo: str, meta: CaseMeta) -> str:
     seccion = _seccion_expedientes(meta)
     ini = next((i for i, ln in enumerate(lineas) if ln.strip() == _ENCABEZADO_EXPEDIENTES), None)
     if ini is not None:
-        fin = next((i for i in range(ini + 1, len(lineas)) if lineas[i].startswith("## ")),
+        # La seccion acaba en el SIGUIENTE ENCABEZADO de cualquier nivel (R2/H-02). La
+        # primera version cortaba solo en `## `, y un `# Notas` o un `### Detalle` escrito
+        # a mano entre la seccion y `## Navegacion` se destruia con la siguiente
+        # actualizacion: justo la nota que `MEJORAS #146` promete conservar.
+        fin = next((i for i in range(ini + 1, len(lineas)) if _RE_ENCABEZADO_MD.match(lineas[i])),
                    len(lineas))
         lineas[ini:fin] = (seccion + [""]) if seccion else []
     elif seccion:
@@ -275,6 +282,14 @@ def _fusionar_expedientes(persistidos: Any, nuevos: Any) -> list:
         if isinstance(n, dict) and n.get("id") is not None and str(n["id"]) in posicion:
             i = posicion[str(n["id"])]
             salida[i] = {**salida[i], **n}
+        elif n in salida:
+            # IDEMPOTENCIA sobre la propia salida (R2/H-01). Desde la primera actualizacion
+            # el espejo `meta.sudespacho_expedientes` ES la lista fusionada, y los
+            # registradores construyen `CaseMeta` desde ese espejo: una entrada sin `id`
+            # volvia como «nueva» en cada pasada y la lista DOBLABA con cada pull de Drive
+            # (medido por el revisor: 2 -> 4 -> 8 -> 16). No se descarta —el sumidero no
+            # decide que es un vinculo valido—, pero tampoco se repite.
+            continue
         else:
             salida.append(n)
     return salida
@@ -331,6 +346,12 @@ def _write_case_index(case_dir: Path, meta: CaseMeta) -> Path:
         fm_previo, cuerpo_previo = read_md(index)
         if isinstance(fm_previo, dict) and fm_previo:
             return _actualizar_indice(index, fm_previo, cuerpo_previo, meta)
+        # Sin frontmatter parseable. Dos casos distintos (R2/H-07): un fichero TRUNCADO a
+        # mitad de escritura empieza por `---` y no tiene nada que conservar; un fichero
+        # que NO empieza por `---` es un cuerpo escrito sin frontmatter, y reconstruirlo
+        # perderia ese texto. El segundo se actualiza como cuerpo con frontmatter vacio.
+        if cuerpo_previo.strip() and not cuerpo_previo.lstrip().startswith("---"):
+            return _actualizar_indice(index, {}, cuerpo_previo, meta)
     expedientes = list(meta.sudespacho_expedientes or [])
     return _escribir_indice_atomico(index, _frontmatter_del_indice(meta, expedientes),
                                     _cuerpo_del_indice(meta))
@@ -345,7 +366,10 @@ def _actualizar_indice(index: Path, fm: dict, cuerpo: str, meta: CaseMeta) -> Pa
     # Las claves de `CaseMeta` las manda el dataclass (los registradores ya las han
     # coalescido desde lo persistido); las que el modelo no conoce se conservan.
     meta_dict = {**meta_previo, **asdict(meta)}
-    meta_dict["sudespacho_expedientes"] = expedientes
+    # COPIA, no el mismo objeto (R2/H-03): con la misma lista en las dos claves,
+    # `yaml.safe_dump` emitia un ancla `&id001` en top-level y un alias `*id001` en
+    # `meta`, ilegible y no editable a mano, y el §6 promete no tocar el formato.
+    meta_dict["sudespacho_expedientes"] = copy.deepcopy(expedientes)
     propias = _frontmatter_del_indice(meta, expedientes)
     propias["meta"] = meta_dict
     # `{**fm, **propias}`: lo ajeno (p. ej. `bucket_override`) queda donde estaba.

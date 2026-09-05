@@ -34,8 +34,9 @@ fecha: 2026-07-22
   el 2026-09-04). `MEJORAS #146` lo cerró: el sumidero conserva el cuerpo, las claves ajenas
   del frontmatter (`bucket_override`, `proyeccion_local`) y los wikilinks, y **solo reescribe**
   la línea de estado, la de IDs de Drive E&V y la sección `## Expedientes sudespacho`, que
-  lleva un comentario «sección generada: no editar a mano». Lo que escribas **dentro** de esa
-  sección sí se pierde en la siguiente actualización; fuera de ella, no.
+  lleva un comentario «sección generada: no editar a mano» y llega **hasta el siguiente
+  encabezado** (de cualquier nivel). Lo que escribas **dentro** de esa sección sí se pierde en
+  la siguiente actualización; bajo tu propio encabezado, o en cualquier otra parte, no.
 
 - **`[APER-01]` Ejecuta el PIPELINE desde el repo principal, sandbox OFF.** Un worktree no
   hereda `.venv`, `.env`, `CASOS_ROOT` ni PHPSESSID (gitignored) → el pipeline no corre ahí.
