@@ -6612,3 +6612,39 @@ ahora declaran `charset="utf-8"` y lo son.
 `�`, o una decisión de blindar `extraer_de_eml` de forma preventiva (por ejemplo,
 detectar `�` en `cuerpo` tras decodificar, o contrastar el `charset` declarado con
 una detección independiente antes de confiar en él).
+
+---
+
+## 152. El cargo se lee por posición, y en el corpus real falla en las dos firmas que lo traen
+
+**Medido el 2026-09-05 corriendo `crm_colaboradores_firmas report` contra W-02Q38C**, que es
+justamente lo que ninguna fixture sintética podía enseñar: de las cuatro firmas del
+expediente, **las dos que llevan cargo escrito salen con el cargo vacío**, y por dos causas
+distintas.
+
+El cargo **no tiene etiqueta** en ninguna plantilla corporativa de E&V, así que `_cargo_de`
+lo deduce por posición: es la primera línea no vacía después de la línea del nombre, y la
+línea del nombre se reconoce porque va **enteramente en negrita** (en el `text/plain` los
+asteriscos son la negrita HTML degradada). Las dos causas medidas:
+
+- **Una plantilla escribe el nombre sin negrita.** Sin línea en negrita no hay ancla, y el
+  cargo —que está justo debajo— no se lee.
+- **En la otra, la línea del nombre queda fuera de la ventana del bloque.** El bloque se
+  ancla en la línea de la dirección y mira 12 líneas hacia atrás; en esa firma el nombre y
+  el cargo están más arriba, separados de la dirección por la razón social, la dirección
+  postal partida en varias líneas con enlaces de mapas interleaved, y los teléfonos.
+
+**Qué NO es:** un riesgo para los datos del cliente. El cargo **no se escribe en el CRM**
+—no existe esa property, ver `#149`— y sólo sale en el informe que un humano confirma.
+
+**Qué sí es:** el informe dice `FIRMA_SIN_CAMPO` en el cargo, y ese veredicto significa «hay
+firma y no trae ese campo» cuando la verdad es «no supe leerlo». Mitigado el 2026-09-05
+escribiéndolo en la leyenda del propio informe, que es donde se lee; la mitigación es
+honesta pero no arregla la lectura.
+
+**Disparador:** que a Nikolai le importe el cargo en el informe, o que aparezca un campo de
+cargo en el CRM (ver `#149`) y el dato deje de ser sólo informativo. Dos vías posibles, en
+orden de esfuerzo: ensanchar la ventana hacia atrás sólo para la búsqueda del cargo, o
+reconocer la línea del nombre por algo que no sea la negrita (por ejemplo, casarla contra
+el nombre que ya se conoce del `From:` o de la ficha del CRM, que es un dato que el módulo
+tiene a mano en el CLI aunque no dentro de `core/email_firmas.py`).

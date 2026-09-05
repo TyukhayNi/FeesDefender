@@ -62,6 +62,15 @@ Como leer los veredictos:
 | `FIRMA_SIN_CAMPO` | Hay firma de esa persona y **no trae ese campo**. Una de las dos plantillas corporativas de E&V no incluye movil, asi que esto **no** significa que no lo tenga |
 | `CONFLICTO` | Dos valores distintos y ninguno decide. **No se propone nada** |
 
+**El CARGO es el campo menos fiable de este informe, y se dice aqui en vez de callarlo.**
+No tiene etiqueta en ninguna plantilla: se deduce por POSICION, como la linea siguiente a
+la del nombre, y la linea del nombre se reconoce porque va en negrita. Medido sobre un
+expediente real, sale vacio en dos firmas que si lo traen, por dos causas distintas: una
+plantilla escribe el nombre **sin negrita**, y en otra la linea del nombre queda **fuera
+de la ventana** del bloque. Asi que aqui `FIRMA_SIN_CAMPO` en el cargo significa «no supe
+leerlo», no «no lo tiene». El cargo **no se escribe en el CRM** —no existe ese campo—,
+solo se muestra para que lo confirmes tu. Detalle en `MEJORAS_FUTURAS`.
+
 """
 
 
