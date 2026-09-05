@@ -198,6 +198,22 @@ class TestLaCorroboracionEsOBLIGATORIA:
         cuerpo = "ENGEL&VÖLKERS\nMóvil: 612 34 56 78\nalguien@otraempresa.example\n"
         assert localizar_bloques(cuerpo, fichero="i.eml") == []
 
+    def test_un_dominio_que_solo_EMPIEZA_como_el_del_colaborador_no_se_mira(self):
+        """H-02 ALTO (revision R1): sin anclar el FINAL del dominio,
+        "ana@engelvoelkers.com.tercero.example" (un dominio de un TERCERO que
+        simplemente empieza igual) se leia como "ana@engelvoelkers.com" -- una
+        direccion que NO esta en el texto. Entrada literal del informe (H-02,
+        repros.json clave 'dominio_sufijo')."""
+        cuerpo = ("ENGEL&VOLKERS\nMóvil: 611111111\n"
+                  "ana@engelvoelkers.com.tercero.example\n")
+        assert localizar_bloques(cuerpo, fichero="h02.eml") == []
+
+    def test_un_punto_final_de_frase_no_impide_reconocer_la_direccion(self):
+        """El anclaje del H-02 no puede rechazar el caso normal: un punto suelto
+        de fin de frase, sin mas dominio detras, sigue siendo una direccion valida."""
+        cuerpo = "ENGEL&VOLKERS\nMóvil: 611111111\nEscribe a ana@engelvoelkers.com.\n"
+        assert localizar_bloques(cuerpo, fichero="h02b.eml")
+
     def test_EV_MMC_SPAIN_sola_en_su_linea_SI(self):
         cuerpo = "EV MMC SPAIN, S.L.U.\nana@engelvoelkers.com\n"
         assert localizar_bloques(cuerpo, fichero="i2.eml")
@@ -246,6 +262,22 @@ class TestLaCorroboracionEsOBLIGATORIA:
         y una extension opcional al final ("/ Ext. NNNN")."""
         cuerpo = "Tel. Fijo: +34 912 345 678 / Ext. 1234\nana@engelvoelkers.com\n"
         assert localizar_bloques(cuerpo, fichero="i8.eml")
+
+    def test_una_etiqueta_de_telefono_SIN_NINGUN_DIGITO_no_corrobora(self):
+        """H-10 MEDIO (revision R1): la clase `[0-9+()*<>.\\- \\t]+` admite solo
+        signos, sin exigir ni un digito. Entrada literal del informe (H-10,
+        repros.json clave 'corrobora_sin_numero'): 'Móvil: ---' no trae ni marca,
+        ni razon social, ni un solo digito, y con el defecto vivo SI corroboraba."""
+        cuerpo = "Móvil: ---\nPuedes escribir a ana@engelvoelkers.com\n"
+        assert localizar_bloques(cuerpo, fichero="h10a.eml") == []
+
+    def test_la_razon_social_repartida_en_varias_lineas_NO_corrobora(self):
+        """H-10 MEDIO (revision R1): el mismo defecto que ya se cerro para la marca
+        (hallazgo D, R2) seguia abierto para "EV MMC SPAIN" -- sus separadores
+        internos eran `\\s+`/`\\s*`, que cruzan saltos de linea. Entrada literal del
+        informe (H-10, repros.json clave 'razon_multilinea')."""
+        cuerpo = "EV\nMMC\nSPAIN\nana@engelvoelkers.com\n"
+        assert localizar_bloques(cuerpo, fichero="h10b.eml") == []
 
     def test_la_marca_partida_en_dos_lineas_por_un_salto_NO_corrobora(self):
         """Hallazgo D (R2): el `\\s*` interno de la alternativa de marca incluye
@@ -526,18 +558,41 @@ class TestLaCabeceraDeCitaNoAnclaBloque:
         # El verbo cae en la linea ANTERIOR a la de la direccion -- el otro sentido
         # del envoltorio partido, para ejercitar esa mitad de la propiedad.
         "ENGEL&VÖLKERS\n\nNombre Apellido escribió:\n<x@engelvoelkers.com>\n",
+        # H-03 (R1): el verbo cae en la linea SIGUIENTE a la de la direccion --
+        # entrada literal del informe ("El 12 agosto, Berta <berta@...>" /
+        # "escribió:" en la linea de abajo). La funcion miraba la linea del email y
+        # la ANTERIOR, pero no la SIGUIENTE: con el defecto vivo, esta forma SI
+        # anclaba bloque.
+        "ENGEL&VÖLKERS\n\nEl 12 agosto, Berta <berta@engelvoelkers.com>\nescribió:\n",
         # Outlook De:/From: -- la etiqueta precede a la direccion en su MISMA linea.
         "ENGEL&VÖLKERS\n\nDe: Nombre Apellido <x@engelvoelkers.com>\n",
         "ENGEL&VÖLKERS\n\nFrom: Name Surname <x@engelvoelkers.com>\n",
     ], ids=[
         "es_una_linea", "ca_partida_caso_real", "en_una_linea", "de_una_linea",
-        "verbo_en_linea_anterior", "outlook_de", "outlook_from",
+        "verbo_en_linea_anterior", "verbo_en_linea_siguiente", "outlook_de", "outlook_from",
     ])
     def test_ninguna_forma_cubierta_ancla_bloque(self, cuerpo):
         """Sin el descarte: la marca "ENGEL&VÖLKERS" esta dentro de la ventana hacia
         atras de la direccion citada y SI corroboraria -- por eso el bloque saldria
         si el descarte no funcionase, y este test seria rojo antes del arreglo."""
         assert localizar_bloques(cuerpo, fichero="cita.eml") == []
+
+    def test_entrada_completa_del_informe_berta_no_recibe_firma_ficticia(self):
+        """Entrada literal integra del informe (H-03, repros.json clave
+        'cita_verbo_siguiente'): la firma real de Ana precede a una cabecera de
+        cita partida que nombra a Berta, con el verbo en la linea siguiente."""
+        cuerpo = (
+            "ENGEL&VOLKERS\n"
+            "Móvil: 611111111\n"
+            "ana@engelvoelkers.com\n"
+            "\n"
+            "El 12 agosto, Berta <berta@engelvoelkers.com>\n"
+            "escribió:\n"
+            "> Hola\n"
+        )
+        bloques = localizar_bloques(cuerpo, fichero="cita2.eml")
+        assert [b.email for b in bloques] == ["ana@engelvoelkers.com"], (
+            "berta@... solo aparece en la atribucion de una cita, no firma nada")
 
 
 class TestZonasCitadas:

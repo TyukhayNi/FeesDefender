@@ -44,8 +44,18 @@ _RE_MARCADOR = re.compile(
     r"(?im)^\s*(?:--\s*|enviado desde mi.*|sent from my.*|obtener outlook.*|get outlook.*)$"
 )
 
+#: El dominio se reconoce COMPLETO, con su final anclado (H-02, R1): sin esto,
+#: "ana@engelvoelkers.com.tercero.example" -- el dominio de un TERCERO que solo
+#: EMPIEZA como el nuestro -- se leia como "ana@engelvoelkers.com", una direccion
+#: que no esta en el texto. El doble lookahead negativo dice: lo que sigue al
+#: dominio no puede ser (a) un caracter que extienda la MISMA etiqueta
+#: (letra/digito/guion), ni (b) un punto seguido de otra etiqueta de dominio
+#: (".tercero", ".example"...). Un punto SUELTO de fin de frase, sin mas dominio
+#: detras ("...ana@engelvoelkers.com."), sigue reconociendose: ahi el punto no va
+#: seguido de una letra/digito/guion, asi que (b) no se dispara.
 _RE_EMAIL_COLAB = re.compile(
-    r"[\w.+-]+@" + DOMINIO_COLABORADOR.replace(".", r"\."), re.IGNORECASE
+    r"[\w.+-]+@" + DOMINIO_COLABORADOR.replace(".", r"\.") + r"(?![\w-])(?!\.[\w-])",
+    re.IGNORECASE,
 )
 
 #: Que convierte una direccion en una FIRMA. Sin al menos una de estas, una direccion
@@ -66,20 +76,30 @@ _RE_EMAIL_COLAB = re.compile(
 #:     final, "/ Ext. NNNN") y nada mas en la linea -- una etiqueta seguida de prosa
 #:     ("Telefono de atencion al cliente 900 123 456...") no corrobora (hallazgo C, R2).
 #:
-#: Los separadores INTERNOS de la marca son `[ \t]*` y no `\s*`: `\s*` se comeria un
-#: salto de linea y dejaria corroborar "ENGEL" y "VOLKERS" en lineas distintas
-#: separadas por una linea en blanco (que no tiene forma de firma real; hallazgo D,
-#: R2). El precio deliberado de este cierre: una marca partida en dos lineas por el
-#: ajuste de longitud del cliente de correo deja de reconocerse. Es el intercambio
-#: correcto -- se prefiere perder una firma legitima a inventar una. NO "arreglar" esto
-#: volviendo a `\s*`.
+#: Los separadores INTERNOS de la marca y de la razon social son `[ \t]*`/`[ \t]+` y
+#: no `\s*`/`\s+` (hallazgo D, R2, para la marca; H-10, R1, para la razon social --
+#: EL MISMO defecto, cerrado para una alternativa y dejado abierto para la de al
+#: lado): `\s` incluye el salto de linea, y dejaria corroborar "ENGEL"/"VOLKERS" o
+#: "EV"/"MMC"/"SPAIN" en lineas DISTINTAS separadas por saltos (que no tiene forma
+#: de firma real). El precio deliberado de este cierre: una marca o razon social
+#: partida en varias lineas por el ajuste de longitud del cliente de correo deja de
+#: reconocerse. Es el intercambio correcto -- se prefiere perder una firma
+#: legitima a inventar una. NO "arreglar" esto volviendo a `\s*`/`\s+`.
+#:
+#: La alternativa de telefono exige ADEMAS que lo que sigue a la etiqueta tenga al
+#: menos un DIGITO (H-10, R1): la clase `[0-9+()*<>.\- \t]+` admitia una linea de
+#: solo signos ("Móvil: ---", sin un solo digito) como si tuviera forma de
+#: telefono. La propiedad es que corrobore un TELEFONO, no una etiqueta seguida de
+#: cualquier combinacion de signos -- por eso el digito obligatorio va en medio
+#: (`[+()*<>.\- \t]*\d[0-9+()*<>.\- \t]*`), permitiendo cualquier cantidad de
+#: signos antes y despues, pero exigiendo que exista al menos uno.
 _RE_CORROBORA = re.compile(
     r"(?im)^\s*\*?\s*engel[ \t]*&?[ \t]*v[öo]lkers\s*\*?\s*$"
-    r"|^\s*\*?\s*ev\s+mmc\s+spain\s*,?\s*"
-    r"(?:s\.?\s*l\.?\s*u\.?|s\.?\s*l\.?|s\.?\s*a\.?)?\.?\s*\*?\s*$"
+    r"|^\s*\*?[ \t]*ev[ \t]+mmc[ \t]+spain[ \t]*,?[ \t]*"
+    r"(?:s\.?[ \t]*l\.?[ \t]*u\.?|s\.?[ \t]*l\.?|s\.?[ \t]*a\.?)?\.?[ \t]*\*?[ \t]*$"
     r"|^\s*\*?\s*(?:telf|tel[ée]fono|tel\.\s*fijo|m[óo]vil|movil|mobile)\b"
     r"[ \t]*:?[ \t]*"
-    r"[0-9+()*<>.\- \t]+"
+    r"[+()*<>.\- \t]*\d[0-9+()*<>.\- \t]*"
     r"(?:[ \t]*/[ \t]*ext\.?[ \t]*\d+)?"
     r"[ \t]*\.?[ \t]*\*?[ \t]*$"
 )
@@ -148,18 +168,24 @@ def _es_cabecera_de_cita(lineas: list[str], i: int) -> bool:
     """La linea `i` (donde se ancloria un bloque) pertenece a una cabecera de
     atribucion de cita y por tanto NO debe anclar nada.
 
-    Se comprueba tambien la linea ANTERIOR para el verbo (no para la etiqueta
-    De:/From:, que siempre precede a la direccion en su propia linea): el
-    envoltorio del cliente de correo puede partir la cabecera en dos lineas, con
-    la direccion sola en una y el verbo+":" en la otra -- el caso real medido
-    parte "...Nombre <" / "email> va escriure:" (verbo en la MISMA linea que la
-    direccion, la fecha/nombre en la anterior); la variante contraria (verbo en la
-    anterior, direccion sola en la suya) tambien se cubre por si el punto de corte
-    cae al reves en otro cliente.
+    Se comprueba tambien la linea ANTERIOR y la SIGUIENTE para el verbo (no para
+    la etiqueta De:/From:, que siempre precede a la direccion en su propia
+    linea): el envoltorio del cliente de correo puede partir la cabecera en dos
+    lineas, con la direccion sola en una y el verbo+":" en la otra. Se han medido
+    los DOS sentidos de ese corte: el catalan real parte "...Nombre <" /
+    "email> va escriure:" (verbo en la MISMA linea que la direccion, la
+    fecha/nombre en la ANTERIOR); y un segundo caso real (Task 12+, R1, H-03)
+    parte "...Nombre <email>" / "escribió:" (la direccion sola en su linea, el
+    verbo en la SIGUIENTE). Mirar solo una de las dos direcciones deja abierto el
+    cruce de identidad que motivo el filtro: con solo la anterior cubierta, esta
+    segunda forma SI anclaba un bloque -- y su ventana, mirando hacia atras, podia
+    alcanzar la firma real de otra persona.
     """
     candidatas = [lineas[i]]
     if i > 0:
         candidatas.append(lineas[i - 1])
+    if i + 1 < len(lineas):
+        candidatas.append(lineas[i + 1])
     if any(_RE_ATRIBUCION_VERBO.search(c) for c in candidatas):
         return True
     return bool(_RE_ATRIBUCION_LABEL.match(lineas[i]))
