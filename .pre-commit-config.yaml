@@ -29,3 +29,8 @@ repos:
         language: system
         pass_filenames: true
         stages: [pre-commit, pre-push]
+        # verbose: pre-commit SOLO muestra la salida de un hook que devuelve 0 si el hook es
+        # verbose (pre_commit/commands/run.py: `verbose or hook.verbose or retcode`). Sin esto,
+        # el aviso «blocklist VACÍA» de MEJORAS #161 y los avisos de email de tercero se
+        # imprimen y nadie los ve (R1/H-01, 2026-09-05). El guard de tests lo comprueba.
+        verbose: true
