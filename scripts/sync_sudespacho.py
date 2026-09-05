@@ -362,6 +362,7 @@ def sync_all() -> None:
     bloqueados_por_mutex: list[str] = []     # MEJORAS #126: el caso que otro proceso tiene
     mutex_perdido: list[str] = []            # el lease se perdió a mitad de ese caso
     tocados: list[str] = []
+    nuevos: dict[str, int] = {}              # documentos nuevos por caso, de ESTA corrida (R2/H-03)
 
     for case_id in casos:
         from core.casos.case_locator import buscar
@@ -389,16 +390,17 @@ def sync_all() -> None:
         try:
             with sostener(w_code_de(case_id), avisar=lambda m: typer.echo(m, err=True),
                           que=f"el pull de {case_id}"):
-                _sync_caso(case_id, expedientes, errors_global, bloqueados, tocados)
+                _sync_caso(case_id, expedientes, errors_global, bloqueados, tocados, nuevos)
         except CasoOcupado as exc:
             typer.echo(f"  ⏭ caso ocupado por otro proceso, se salta: {exc}", err=True)
             bloqueados_por_mutex.append(case_id)
-            continue
         except MutexPerdidoEnCli as exc:
             typer.echo(f"  ⚠ {exc}", err=True)
             mutex_perdido.append(case_id)
-            continue
-        total_new += _NUEVOS.pop(case_id, 0)
+        finally:
+            # Lo que el motor llegó a escribir cuenta AUNQUE el lease se perdiera después
+            # (R2/H-03): esos documentos están en disco y el resumen tiene que decirlo.
+            total_new += nuevos.pop(case_id, 0)
 
     typer.echo(f"\n✅ Sync completado — {total_new} doc(s) nuevos en {len(casos)} caso(s)")
     if bloqueados_por_mutex:
@@ -433,14 +435,11 @@ def sync_all() -> None:
         raise typer.Exit(code=2)
 
 
-#: Documentos nuevos por caso en la corrida de `sync_all`; lo rellena `_sync_caso` y lo
-#: consume el bucle. Estado de una corrida, en memoria: no es una escritura de protocolo.
-_NUEVOS: dict[str, int] = {}
-
-
 def _sync_caso(case_id: str, expedientes: list, errors_global: list[str],
-               bloqueados: list[str], tocados: list[str]) -> None:
-    """Los pulls de TODOS los expedientes de un caso, bajo un mismo mutex (MEJORAS #126)."""
+               bloqueados: list[str], tocados: list[str], nuevos: dict[str, int]) -> None:
+    """Los pulls de TODOS los expedientes de un caso, bajo un mismo mutex (MEJORAS #126).
+    `nuevos` es el contador de ESTA corrida (R2/H-03: un dict de módulo sobrevivía entre
+    invocaciones en el mismo proceso y sumaba de más en la siguiente)."""
     for exp in expedientes:
         exp_id = str(exp.get("id", ""))
         elem = exp.get("element", "expedientes_judiciales")
@@ -462,7 +461,7 @@ def _sync_caso(case_id: str, expedientes: list, errors_global: list[str],
             continue
 
         new = result.documents_written
-        _NUEVOS[case_id] = _NUEVOS.get(case_id, 0) + new
+        nuevos[case_id] = nuevos.get(case_id, 0) + new
         status = f"+{new} docs" if new else "sin cambios"
         icon = "🆕" if new else "✓"
         typer.echo(f"  {icon} {elem} {exp_id}: {status}")

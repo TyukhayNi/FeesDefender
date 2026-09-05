@@ -324,7 +324,8 @@ def test_e8_atomize_por_ref_aborta_si_el_caso_esta_tomado(tmp_casos_root, monkey
     rc = cli.main(["--ref", W, "--entrega", "x"])
 
     assert rc == 2 and llamadas == [] and _instantanea(case_dir) == antes
-    assert "ocupado" in capsys.readouterr().err.lower() or True
+    err = capsys.readouterr().err.lower()
+    assert "case_busy" in err or "ocupado" in err or "otro proceso" in err, err
 
 
 def test_e9_pull_aborta_antes_de_ensure_case_si_el_caso_esta_tomado(tmp_casos_root, monkeypatch):
@@ -435,6 +436,49 @@ def test_e11_atomize_por_ruta_dentro_de_un_caso_tomado_aborta_y_fuera_avisa(tmp_
     assert "no cae bajo ningún caso" in capsys.readouterr().err
 
 
+def test_e11b_un_caso_md_anidado_sin_identidad_no_oculta_el_caso_del_catalogo(tmp_casos_root, monkeypatch):
+    """E11b (R2/H-01) — dentro del caso A hay una copia con su propio `_caso.md` sin `meta`.
+    Un `--out` bajo esa copia sigue siendo una escritura en A: se sostiene el mutex de A."""
+    from types import SimpleNamespace
+
+    from core.email_atomize import pipeline as P
+    from scripts import atomize_emails as cli
+    from scripts._mutex_cli import caso_de_ruta, w_code_de_ruta
+
+    case_dir = monta_caso(tmp_casos_root)
+    copia = case_dir / "01_Procesado" / "copied_case"
+    (copia / "00_Input").mkdir(parents=True)
+    (copia / "00_Input" / "_caso.md").write_text("texto sin metadatos", encoding="utf-8")
+    out = copia / "01_Procesado" / "Emails"
+    assert caso_de_ruta(out) == case_dir and w_code_de_ruta(out) == W
+
+    llamadas = []
+    monkeypatch.setattr(P, "atomize_dir", lambda s, o: (llamadas.append("motor"),
+                        SimpleNamespace(publicado=False, notas=[], errores=[]))[1])
+    _toma_otro_proceso()
+    src = case_dir / "00_Input"
+    assert cli.main(["--src", str(src), "--out", str(out)]) == 2 and llamadas == []
+
+
+def test_e11c_una_junction_del_catalogo_hacia_fuera_conserva_la_identidad_por_ruta(tmp_casos_root):
+    """E11c (R2/H-02) — la entrada del catálogo es una *junction* hacia un caso físico fuera de
+    `CASOS_ROOT`: por referencia se reconoce, y por ruta también (forma léxica antes que
+    resuelta). Requiere poder crear junctions (Windows); si no, se salta."""
+    import subprocess
+
+    from scripts._mutex_cli import w_code_de, w_code_de_ruta
+
+    fisico = tmp_casos_root.parent / "caso_fisico_fuera"
+    monta_caso(fisico.parent, nombre=fisico.name)
+    enlace = tmp_casos_root / CASE_ID
+    r = subprocess.run(["cmd", "/c", "mklink", "/J", str(enlace), str(fisico)],
+                       capture_output=True, encoding="utf-8", errors="replace")
+    if r.returncode != 0:
+        pytest.skip(f"no se pudo crear la junction: {r.stderr or r.stdout}")
+    assert w_code_de(CASE_ID) == W
+    assert w_code_de_ruta(enlace / "01_Procesado" / "Emails") == W
+
+
 def test_e12_el_mutex_se_sostiene_durante_cada_escritura_y_se_suelta_al_final(tmp_casos_root, monkeypatch):
     """E12 — «durante toda la escritura», no «antes»: los espías de reserva, motor y sello ven
     la sesión vigente, y al terminar no queda ninguna (éxito, y también tras una excepción)."""
@@ -472,34 +516,94 @@ def test_e12_el_mutex_se_sostiene_durante_cada_escritura_y_se_suelta_al_final(tm
     assert _vigente() is None
 
 
-def test_e14_perder_el_mutex_a_mitad_da_codigo_2_y_nombra_los_artefactos_del_motor(tmp_casos_root, monkeypatch, capsys):
-    """E14 — `MutexPerdido` → 2 con qué revisar; el texto NO apunta a `_cobertura.md`, que
-    estos motores no escriben (R1/H-05). En `sync-all`, el caso se anota y el barrido sigue."""
+def test_e12b_pull_e_intake_judicial_sostienen_la_sesion_en_cada_escritor(tmp_casos_root, monkeypatch):
+    """E12b (R2/H-04) — en los dos subcomandos del CRM la sesión está vigente en `ensure_case`,
+    en `register_expediente` y en el motor, y suelta al terminar. Sin esto, «`with` vacío y el
+    trabajador fuera» pasaba toda la batería."""
     from types import SimpleNamespace
 
-    from core.casos import mutex_sesion
-    from core.casos.workspace_model import MutexPerdido
+    from scripts import sync_sudespacho as cli
+
+    monta_caso(tmp_casos_root)
+    visto: dict[str, bool] = {}
+    monkeypatch.setattr(cli.case_manager, "ensure_case",
+                        lambda *a, **k: visto.setdefault("alta", _vigente() is not None))
+    monkeypatch.setattr(cli.case_manager, "register_expediente",
+                        lambda *a, **k: visto.setdefault("reg", _vigente() is not None))
+    monkeypatch.setattr(cli, "verify_expediente_referencia", lambda *a, **k: {"crm_unreachable": True})
+    monkeypatch.setattr(cli, "pull_expediente_v2", lambda *a, **k: (
+        visto.setdefault("motor", _vigente() is not None),
+        SimpleNamespace(case_id=CASE_ID, expediente_id="1", documents_total_crm=0, documents_written=0,
+                        documents_skipped_dedup=0, documents_overlap=0, documents_failed=0,
+                        by_carpeta={}, errors=[], blocked_legacy_v1=False))[1])
+    monkeypatch.setattr(cli, "_abortar_si_legacy_v1", lambda r: None)
+    monkeypatch.setattr(cli, "_siguiente_paso", lambda *a, **k: None)
+    res = runner.invoke(cli.app, ["pull", "--case", CASE_ID, "--expediente", "1"])
+    assert res.exit_code == 0, res.output
+    assert visto == {"alta": True, "reg": True, "motor": True} and _vigente() is None
+
+    visto.clear()
+    monkeypatch.setattr(cli, "intake_demanda_contestacion", lambda *a, **k: (
+        visto.setdefault("motor", _vigente() is not None),
+        SimpleNamespace(blocked_legacy_v1=False, case_id=CASE_ID, expediente_id="1", full=False,
+                        demanda_doc_id=None, contestacion_doc_id=None, pendientes=[], pull=None,
+                        errors=[], classification=None))[1])
+    res = runner.invoke(cli.app, ["intake-judicial", "--case", CASE_ID, "--expediente", "1"])
+    assert res.exit_code == 0, res.output
+    assert visto == {"alta": True, "reg": True, "motor": True} and _vigente() is None
+
+
+def test_e14_perder_el_mutex_a_mitad_da_codigo_2_y_nombra_los_artefactos_del_motor(tmp_casos_root, monkeypatch, capsys):
+    """E14 — la pérdida se inyecta A MITAD del motor (`marcar_perdido` sobre la sesión REAL,
+    R2/H-04), no sustituyendo `sostenido`. `MutexPerdido` → 2 con qué revisar, sin
+    `_cobertura.md` (R1/H-05). En `sync-all`, el caso perdido se anota, SUS documentos cuentan
+    (R2/H-03), el barrido sigue y el código final es 2; una segunda corrida en el mismo
+    proceso no hereda contadores."""
+    from types import SimpleNamespace
+
+    from core.email_atomize import pipeline as P
     from scripts import atomize_emails as cli
     from scripts import sync_sudespacho as sync
 
     monta_caso(tmp_casos_root)
 
-    def pierde(*a, **kw):
-        raise MutexPerdido(w_code=W, detalle="simulado: el lease se fue a mitad")
-    monkeypatch.setattr(mutex_sesion, "sostenido", pierde)
+    def motor_que_pierde_el_lease(ref):
+        _vigente().marcar_perdido()
+        return SimpleNamespace(publicado=True, notas=[], errores=[], resumen=lambda: "ok")
+    monkeypatch.setattr(P, "atomize_case", motor_que_pierde_el_lease)
+    monkeypatch.setattr(P, "emails_out_dir", lambda ref: tmp_casos_root / "x")
 
     assert cli.main(["--ref", W]) == 2
     err = capsys.readouterr().err
     assert "a medias" in err and "01_Procesado/Emails" in err and "_cobertura" not in err
+    assert _vigente() is None
 
-    # sync-all: el caso perdido se anota, el barrido termina, código 2 al final
-    monta_caso(tmp_casos_root, nombre="Ba002 - Calle B 2 - (W-SYNCB2) - honorarios", id_go="W-SYNCB2",
-               expedientes=("201",))
-    monkeypatch.setattr(sync, "pull_expediente_v2",
-                        lambda *a, **k: SimpleNamespace(documents_written=0, blocked_legacy_v1=False, errors=[]))
+    # sync-all: A pierde el lease a mitad tras escribir 3 docs; B escribe 2 y termina bien
+    WA, WB = "W-PERDA1", "W-PERDB1"
+    monta_caso(tmp_casos_root, nombre="Ba003 - Calle P 1 - (W-PERDA1) - honorarios", id_go=WA,
+               expedientes=("301",))
+    monta_caso(tmp_casos_root, nombre="Ba004 - Calle P 2 - (W-PERDB1) - honorarios", id_go=WB,
+               expedientes=("401",))
+    corridas = {"n": 0}
+
+    def pull(case_id, exp_id, element=None):
+        if corridas["n"] > 0:
+            return SimpleNamespace(documents_written=0, blocked_legacy_v1=False, errors=[])
+        if exp_id == "301":
+            _vigente(WA).marcar_perdido()
+            return SimpleNamespace(documents_written=3, blocked_legacy_v1=False, errors=[])
+        return SimpleNamespace(documents_written=2, blocked_legacy_v1=False, errors=[])
+    monkeypatch.setattr(sync, "pull_expediente_v2", pull)
+
     res = runner.invoke(sync.app, ["sync-all"])
     assert res.exit_code == 2, res.output
-    assert "se perdió A MITAD" in res.output
+    assert "se perdió A MITAD" in res.output and "W-PERDA1" in res.output
+    assert "5 doc(s) nuevos" in res.output          # 3 del caso perdido + 2 del bueno
+    assert "W-PERDB1" in res.output                  # B sí sincronizó
+
+    corridas["n"] = 1
+    res2 = runner.invoke(sync.app, ["sync-all"])
+    assert "0 doc(s) nuevos" in res2.output          # sin herencia entre corridas
 
 
 # --------------------------------------------------------------------------- E13
@@ -538,8 +642,12 @@ def test_e13_dos_procesos_reales_sobre_el_mismo_caso_uno_entra_y_el_otro_no(tmp_
         assert "case_busy" in r2.stderr.lower() or "ocupado" in r2.stderr.lower(), r2.stderr
         suelta.write_text("ok", encoding="utf-8")
         out1, err1 = p1.communicate(timeout=60)
-        assert p1.returncode != 2, f"el primero perdió el mutex que tenía: {err1}"
+        # Exactamente 0 y 2 (diseño §4). `!= 2` aceptaba un primer hijo muerto por excepción
+        # (R2/H-05): el bootstrap publica un informe y el CLI real devuelve 0.
+        assert p1.returncode == 0, f"el primero debía terminar con 0 y salió {p1.returncode}: {err1}"
+        assert "publicado" in out1
     finally:
         for p in (p1, p2):
             if p is not None and p.poll() is None:
                 p.kill()
+                p.communicate(timeout=10)          # drenar y esperar: sin zombis ni pipes abiertos

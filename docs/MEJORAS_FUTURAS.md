@@ -5687,7 +5687,8 @@ de cada uno respondiendo.
 > `atomize_emails` y `sync_sudespacho` (`pull`, `intake_judicial`, `sync_all` por caso) sostienen
 > el mutex a través de un helper único, `scripts/_mutex_cli.py` (`sostener`, `w_code_de`,
 > `w_code_de_ruta`), desde ANTES de la primera escritura —en el export esa escritura es la
-> **reserva del lote**, no el motor— y abortan con código 2 y cero bytes si el caso está tomado.
+> **reserva del lote**, no el motor— y abortan con código 2 y cero bytes si el caso está tomado
+> (`sync_all` lo sostiene por caso: el ocupado se salta y se resume, el barrido sigue).
 > Diseño rev. 2 con la R1 de Codex adjudicada (§7, 9/9) en
 > `docs/superpowers/specs/2026-09-05-mutex-en-los-entrypoints-de-intake-design.md`; la R2 sobre
 > el diff, en su §8. Fronteras E7-E14 en `tests/test_entrypoints_mutex.py` (E13 son **dos

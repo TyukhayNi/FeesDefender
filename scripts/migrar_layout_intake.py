@@ -34,9 +34,9 @@ se reporta; dejar el fichero en su cajón es seguro y no exige rollback).
 **Lo que la relectura NO garantiza (R2/H-01):** leer, comparar y borrar son tres operaciones;
 un escritor que cambie la raíz entre la relectura y el ``unlink()`` deja borrado un legacy que
 ya no es idéntico. La ventana es de milisegundos y no se cierra con más lecturas: se cierra
-con el **mutex del caso**, que esta migración adquiere (y que ``email_export`` y
-``sync_sudespacho`` aún no piden — ``MEJORAS #126``, fila #17 de ``PLAN.md``; hasta que lo
-pidan, la exclusión es unilateral).
+con el **mutex del caso**, que esta migración adquiere — y que desde ``MEJORAS #126`` (PR #292)
+también piden ``export_label_emails``, ``atomize_emails`` y ``sync_sudespacho``; la UI de
+Streamlit todavía no.
 
 **Un documento del cliente no puede aterrizar en una ubicación de protocolo (R2/H-02).** Si
 un fichero del cajón acabaría, dentro del lote, en una ruta que el registro declara protocolo

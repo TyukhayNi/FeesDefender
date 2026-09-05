@@ -13,7 +13,8 @@ import sys
 
 from core.email_atomize import pipeline as P
 from scripts._mutex_cli import (
-    AVISO_FUERA_DE_CASO, CasoOcupado, MutexPerdidoEnCli, sostener, w_code_de, w_code_de_ruta,
+    AVISO_FUERA_DE_CASO, CasoOcupado, MutexPerdidoEnCli, caso_de_ruta, sostener, w_code_de,
+    w_code_de_ruta,
 )
 
 
@@ -31,8 +32,11 @@ def main(argv: list[str] | None = None) -> int:
         w, aviso = w_code_de(args.ref), None
     elif args.src and args.out:
         # `--src/--out` NO significa «sin caso» (R1/H-04): el destino documentado es
-        # `<caso>/01_Procesado/Emails`. Si cae bajo un caso del catálogo, su mutex.
-        w, aviso = w_code_de_ruta(args.out), AVISO_FUERA_DE_CASO
+        # `<caso>/01_Procesado/Emails`. Si cae bajo un caso del catálogo, su mutex. Y «fuera de
+        # todo caso» solo se dice si de verdad no hay caso (R2/H-01): un caso sin W-code recibe
+        # el aviso de identidad ausente, que es otro problema.
+        w = w_code_de_ruta(args.out)
+        aviso = AVISO_FUERA_DE_CASO if caso_de_ruta(args.out) is None else None
     else:
         parser.error("usa --ref, o --src junto con --out")
         return 2

@@ -25,9 +25,13 @@ def main(argv: list[str]) -> int:
     from scripts import atomize_emails as cli
 
     class _Informe:
-        publicado = False
+        publicado = True                      # el que gana TERMINA con 0 (R2/H-05)
         notas = ["motor sustituido por el bootstrap de E13"]
         errores: list[str] = []
+
+        @staticmethod
+        def resumen() -> str:
+            return "E13: motor sustituido, informe publicado"
 
     def motor(case_id: str):
         Path(ready).write_text(str(os.getpid()), encoding="utf-8")   # «tengo el mutex y estoy dentro»

@@ -360,8 +360,9 @@ python -m scripts.sala_maquina apply "<case_id>"   # background
   repetido evitable. Memoria `feedback-concurrencia-pipelines-y-tiempos-apertura`.
   **Desde el 2026-09-05 (`MEJORAS #126`) la parte «no escribas en `00_Input` mientras corre el
   OCR» ya no depende de la disciplina del operador:** `export_label_emails`, `atomize_emails`
-  y `sync_sudespacho pull|intake-judicial|sync-all` sostienen el **mutex del caso** y abortan
-  con código **2 y cero bytes** si `apply` (u otro proceso) lo tiene. Lo que sigue siendo
+  y `sync_sudespacho pull|intake-judicial` sostienen el **mutex del caso** y abortan con código
+  **2 y cero bytes** si `apply` (u otro proceso) lo tiene; `sync-all` lo sostiene **por caso** y
+  el caso ocupado se **salta** y se resume (el barrido sigue, código 0). Lo que sigue siendo
   disciplina: la UI de Streamlit (exporta correo y lanza el intake judicial sin mutex) y el
   alta de un caso nuevo por `pull` (sin identidad no hay mutex; la vía de alta es `abrir_caso`).
 - **`[APER-45]` / W-02ZIIF — Un documento con texto roto/desordenado tras el split

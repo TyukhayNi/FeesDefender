@@ -71,26 +71,45 @@ def w_code_de(ref_o_case_id: str) -> str | None:
     return _leer_id_go(Path(case_dir))
 
 
-def w_code_de_ruta(ruta: Path | str) -> str | None:
-    """Para `--src/--out` (R1/H-04): si `ruta` cae bajo un caso del catálogo (algún ancestro
-    con `00_Input/_caso.md` dentro de `CASOS_ROOT`), su `meta.id_go`; si no, `None`. Un destino
-    dentro de un caso es una escritura en ese caso aunque el CLI no lo nombre."""
+def caso_de_ruta(ruta: Path | str) -> Path | None:
+    """El caso del CATÁLOGO que contiene `ruta`, o `None` si no cae bajo ninguno.
+
+    Es el ancestro con `00_Input/_caso.md` **más cercano a `CASOS_ROOT`**, no el más cercano al
+    destino: un `_caso.md` anidado dentro de un caso (una copia, un expediente arrastrado) no
+    suplanta la identidad del caso que lo contiene (R2/H-01). Se prueba la forma LÉXICA de la
+    ruta (`os.path.abspath`) antes que la resuelta: una entrada del catálogo que sea una
+    *junction* hacia fuera de `CASOS_ROOT` sigue siendo el caso `<CASOS_ROOT>/<case_id>` que el
+    localizador por referencia reconoce (R2/H-02) — la misma lección de `case_mutex.raiz_de_locks`.
+    """
+    import os
     from core.config import settings
+
+    formas: list[tuple[Path, Path]] = []
+    lex, raiz_lex = Path(os.path.abspath(str(ruta))), Path(os.path.abspath(str(settings.casos_root)))
+    formas.append((lex, raiz_lex))
     try:
-        p = Path(ruta).resolve()
-        raiz = Path(settings.casos_root).resolve()
+        formas.append((Path(ruta).resolve(), Path(settings.casos_root).resolve()))
     except OSError:
-        return None
-    try:
-        p.relative_to(raiz)
-    except ValueError:
-        return None
-    for cand in (p, *p.parents):
-        if cand == raiz:
-            break
-        if (cand / "00_Input" / "_caso.md").is_file():
-            return _leer_id_go(cand)
+        pass
+    for p, raiz in formas:
+        try:
+            p.relative_to(raiz)
+        except ValueError:
+            continue
+        casos = [c for c in (p, *p.parents) if c != raiz and raiz in c.parents
+                 and (c / "00_Input" / "_caso.md").is_file()]
+        if casos:
+            return casos[-1]          # el más externo: el del catálogo
     return None
+
+
+def w_code_de_ruta(ruta: Path | str) -> str | None:
+    """Para `--src/--out` (R1/H-04): el `meta.id_go` del caso del catálogo que contiene `ruta`
+    (`caso_de_ruta`); `None` si no cae bajo ninguno O si ese caso no declara W-code. Quien
+    llame distingue las dos ausencias con `caso_de_ruta`: «fuera de todo caso» no es lo mismo
+    que «dentro de un caso sin identidad»."""
+    caso = caso_de_ruta(ruta)
+    return _leer_id_go(caso) if caso is not None else None
 
 
 @contextlib.contextmanager
