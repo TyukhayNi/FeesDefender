@@ -24,6 +24,10 @@ from core.extractor import (
 )
 from core.anon.ocr import ocr_pdf_escalera
 from core.anon.imagen_a_pdf import convertir as convertir_imagen
+from core.ofimatica_a_pdf import (
+    EXTS_OFIMATICA, ConversionFallida, ConversorNoDisponible,
+    convertir as convertir_ofimatica,
+)
 from core import pdf_paginas
 from core.utils import file_sha256, now_iso, output_slug, text_sha256, write_md
 from core import split_documental as split
@@ -34,8 +38,19 @@ _EXTS_IMAGEN = {".jpg", ".jpeg", ".png", ".tiff", ".tif", ".heic", ".heif", ".we
 _EXTS_NATIVO = {".eml", ".txt", ".md", ".rtf", ".ics", ".csv", ".xlsx", ".xls", ".docx", ".html", ".htm"}
 
 
+#: Rutas cuyo producto es un PDF buscable que `_split_o_md` puede segmentar en bundle. Es la
+#: lista que consulta `preflight_manifiestos`: una ruta nueva que segmente y no esté aquí
+#: elude la validación de identidad/edición de su manifiesto (R1/H-01 de la acción 10).
+_RUTAS_CON_BUNDLE = ("pdf", "imagen", "ofimatica")
+
+
 def clasificar_ruta(ext: str) -> str:
-    """Enruta por extensión: 'pdf' | 'imagen' | 'nativo' | 'sin_soporte'."""
+    """Enruta por extensión: 'pdf' | 'imagen' | 'nativo' | 'ofimatica' | 'sin_soporte'.
+
+    `ofimatica` (`.doc`, `.odt`, `.ppt`, …; `MEJORAS #61`) se convierte a PDF con
+    LibreOffice y sigue por el camino PDF. `.docx`/`.rtf` NO: ya tienen extractor
+    determinista propio en `nativo`, y cambiarles la ruta cambiaría el MD de casos hechos.
+    """
     e = ext.lower()
     if e == ".pdf":
         return "pdf"
@@ -43,6 +58,8 @@ def clasificar_ruta(ext: str) -> str:
         return "imagen"
     if e in _EXTS_NATIVO:
         return "nativo"
+    if e in EXTS_OFIMATICA:
+        return "ofimatica"
     return "sin_soporte"
 
 
@@ -152,7 +169,7 @@ class DocPlan:
     rel_path: str
     sha256: str
     ext: str
-    ruta: str            # pdf | imagen | nativo | sin_soporte
+    ruta: str            # pdf | imagen | nativo | ofimatica | sin_soporte
     slug: str            # output_slug (slug__sha8)
     skip: bool = False
 
@@ -161,7 +178,7 @@ class DocPlan:
 class DocCobertura:
     slug: str
     rel_path: str
-    metodo: str          # pypdf | ocr | nativo | sin_soporte | error
+    metodo: str          # pypdf | ocr | nativo | ofimatica | sin_soporte | error
     estado: str          # ok | low | empty | sin_soporte
     chars: int = 0
     ocr: bool = False
@@ -646,7 +663,10 @@ def preflight_manifiestos(case_dir: Path, docs: list[DocPlan],
     """
     case_dir = Path(case_dir)
     for d in docs:
-        if d.skip or d.ruta not in ("pdf", "imagen"):
+        # Toda ruta que MATERIALIZA bundles pasa por aquí (R1/H-01 de la acción 10: la ruta
+        # `ofimatica` también segmenta, y sin esto una permutación de `pp` en su manifiesto
+        # se publicaba sin aviso).
+        if d.skip or d.ruta not in _RUTAS_CON_BUNDLE:
             continue
         carpeta = carpeta_bundle_de(case_dir, d.slug)
         if not split.manifiesto_existe(carpeta):
@@ -999,6 +1019,64 @@ def _ocr_y_extraer(case_dir: Path, sm_dir: Path, case_id: str, d: DocPlan,
     return filas
 
 
+def _ofimatica_y_extraer(case_dir: Path, sm_dir: Path, case_id: str, d: DocPlan,
+                         src: Path, vision: bool, force: bool = False) -> list[DocCobertura]:
+    """`.doc`/`.odt`/`.ppt`… → PDF con LibreOffice → el mismo camino que un PDF de Drive.
+
+    Acción 10 del informe de Codex sobre el alta (`MEJORAS #61`): hasta aquí un `.doc`
+    salía `sin_soporte` sin PDF, sin MD y sin decir por qué. Ahora:
+
+    - Si LibreOffice no está, la fila es `sin_soporte` **con la causa en la nota**: no es
+      «sin soporte para esta extensión», es «falta el conversor», y eso se lee en
+      `_cobertura.md`. Callarlo sería el mismo silencio que se viene a arreglar.
+    - Si la conversión falla, ídem con el motivo (`conversión a PDF falló: …`), como hace
+      la ruta imagen.
+    - Si el PDF convertido trae capa de texto suficiente (el caso normal: un documento
+      redactado), se **persiste en `01_OCR/`** como PDF buscable —custodia, igual que el
+      producto de la escalera— y sigue por `_split_o_md` con método `ofimatica`.
+    - Si no la trae (un `.doc` que solo envuelve un escaneo), baja a la escalera de OCR
+      sobre el intermedio, que es la que sabe persistir y anotar su propio resultado.
+
+    Aislamiento por documento: todo fallo se registra en la fila, nada aborta el lote.
+
+    **Staging antes que publicación** (R1/H-03): el conversor escribe en un temporal, se
+    decide sobre ese temporal, y solo el PDF que cumple el contrato de «buscable» se publica
+    en `01_OCR/<slug>.pdf`. La primera versión publicaba primero y apartaba después, y un
+    fallo al apartar (un lector con el fichero abierto, `WinError 32`) dejaba un PDF mudo en
+    `01_OCR/` con la fila diciendo `error`. Esa publicación es una escritura nueva de este
+    módulo y está DECLARADA en `tests/test_escritura_censo.py` (techo 88 → 91), no absorbida.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        intermedio = Path(tmp) / f"{d.slug}__ofimatica.pdf"
+        try:
+            convertir_ofimatica(src, intermedio)
+        except ConversorNoDisponible as e:
+            return [DocCobertura(d.slug, d.rel_path, "sin_soporte", "sin_soporte", 0, False,
+                                 f"sin convertir: {e}", d.sha256)]
+        except ConversionFallida as e:
+            return [DocCobertura(d.slug, d.rel_path, "sin_soporte", "sin_soporte", 0, False,
+                                 f"conversión a PDF falló: {e}", d.sha256)]
+        texto = _try_pypdf(intermedio) or ""
+        npags = _pdf_num_paginas(intermedio)
+        digital = bool(texto.strip()) and _texto_suficiente(texto, npags)
+        if not (digital and not _paginas_ciegas(intermedio)):
+            # Sin capa de texto suficiente (un .doc que envuelve un escaneo): la escalera de
+            # OCR publica ella su propio buscable en 01_OCR y anota su resultado.
+            filas = _ocr_y_extraer(case_dir, sm_dir, case_id, d, intermedio, vision, force,
+                                   conservador=digital)
+            _anotar(filas, f"convertido de {d.ext} con LibreOffice antes del OCR")
+            return filas
+        # Digital: se publica el buscable (custodia, como el producto de la escalera) y sigue
+        # por el split. Si publicar falla, no hay nada a medias en 01_OCR: el PDF sigue en tmp.
+        buscable = destino_seguro(sm_dir / "01_OCR" / f"{d.slug}.pdf", case_dir)
+        buscable.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(intermedio), str(buscable))
+    filas = _split_o_md(case_dir, sm_dir, case_id, d, buscable, "ofimatica", False,
+                        vision, force)
+    _anotar(filas, f"convertido de {d.ext} con LibreOffice; PDF buscable en 01_OCR")
+    return filas
+
+
 @dataclass
 class TextoPdf:
     """Texto de un PDF con la etiqueta de cómo salió y de si es fiable."""
@@ -1153,6 +1231,8 @@ def ejecutar(case_dir: Path, docs: list[DocPlan], *, case_id: str,
                             f"conversión a PDF falló: {e}", d.sha256))
                         continue
                     cobertura.extend(_ocr_y_extraer(case_dir, sm_dir, case_id, d, intermedio, vision, force))
+            elif d.ruta == "ofimatica":
+                cobertura.extend(_ofimatica_y_extraer(case_dir, sm_dir, case_id, d, src, vision, force))
             elif d.ruta == "nativo":
                 texto = _extraer_nativo(src, d.ext) or ""
                 estado, nota = ocr_quality(texto, None)

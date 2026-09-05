@@ -346,7 +346,11 @@ python -m scripts.sala_maquina apply "<case_id>"   # background
   decenas de documentos → siempre en **background** si son más de ~15 (W-046G2R).
 - **`[APER-21]`** Ficheros de Drive sin extensión usable (nombre sin punto, o `"… jpg"`) ya
   se **auto-detectan por firma de bytes** (magic bytes, PR #55). Si aún ves `sin_soporte`,
-  es un formato genuinamente desconocido, no un fallo de nombre.
+  es un formato genuinamente desconocido, no un fallo de nombre. Desde el 2026-09-05 los
+  **`.doc`/`.odt`/`.ppt`/`.pptx`** ya no lo son: van por la ruta `ofimatica` (LibreOffice
+  headless → PDF buscable en `01_OCR/` → camino PDF, `MEJORAS #61`). Si salen `sin_soporte`
+  con la nota «sin convertir: LibreOffice (soffice) no encontrado», falta el conversor en
+  esa máquina: instalarlo o fijar `FEESDEFENDER_SOFFICE`, y relanzar con `--solo <ruta>`.
 - **`[APER-39]` / W-02VUDR — NUNCA relanzar `apply` sobre el mismo caso sin comprobar que
   la corrida anterior en background terminó de verdad** (leer su `.output`, no asumir por
   el tiempo transcurrido). `core/sala_maquina.py` **no poda huérfanos**: sin `--force`,

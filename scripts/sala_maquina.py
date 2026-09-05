@@ -258,6 +258,27 @@ def _escribir_cobertura_md(case_dir: Path, cob: list[sm.DocCobertura]) -> None:
     (revisar / "_cobertura.md").write_text(sm.render_cobertura(cob), encoding="utf-8")
 
 
+def _avisar_ofimatica_sin_conversor(docs: "list[sm.DocPlan]") -> int:
+    """Preflight de la ruta `ofimatica`: avisa EN ALTO si hay `.doc`/`.odt`/… y no hay LibreOffice.
+
+    No aborta —el aislamiento por documento ya deja cada uno como `sin_soporte` con la causa
+    en la nota— pero decirlo ANTES de una corrida larga evita descubrirlo al final en
+    `_cobertura.md`, y evita el footgun de `MAX_INTENTOS`: sin conversor, cada `apply`
+    gastaría un intento de esos documentos hasta agotarlos y saltarlos «en verde».
+    Devuelve cuántos documentos quedarían sin convertir (0 si no aplica).
+    """
+    from core import ofimatica_a_pdf
+    n = sum(1 for d in docs if d.ruta == "ofimatica")
+    if n and ofimatica_a_pdf.localizar_soffice() is None:
+        typer.echo(
+            f"AVISO: {n} documento(s) ofimático(s) (.doc/.odt/.ppt…) y LibreOffice (soffice) "
+            f"no está en esta máquina: saldrán `sin_soporte` con la causa en la nota. "
+            f"Instálalo o fija {ofimatica_a_pdf.ENV_SOFFICE} y relanza con --solo <ruta>.",
+            err=True)
+        return n
+    return 0
+
+
 def _exigir_vision_cableada() -> None:
     """Preflight de `--vision`: aborta EN ALTO si no hay transcriptor cableado.
 
@@ -780,10 +801,11 @@ def plan(case_id: str = typer.Argument(None),
             if n_adj:
                 typer.echo(f"  adjuntos: {n_adj} (se extraerá su texto en apply)")
         typer.echo(f"Caso: {case_id}")
-        for ruta in ("pdf", "imagen", "nativo", "sin_soporte"):
+        for ruta in ("pdf", "imagen", "nativo", "ofimatica", "sin_soporte"):
             n = sum(1 for d in nuevos if d.ruta == ruta)
             if n:
                 typer.echo(f"  {ruta}: {n}")
+        _avisar_ofimatica_sin_conversor(nuevos)
 
         # Preview del cableado: `plan` NO atomiza (es preview), solo informa de lo que
         # `apply` atomizará, con el MISMO contador que usa `apply` (spec §4.7).
@@ -857,6 +879,8 @@ def apply(case_id: str = typer.Argument(None), vision: bool = False,
         except ValueError as exc:              # errata en --solo: parar antes de OCR-izar
             typer.echo(f"ERROR: {exc}", err=True)
             raise typer.Exit(2) from exc
+
+        _avisar_ofimatica_sin_conversor([d for d in p if not d.skip])
 
         # `--solo` desmarca el skip de lo pedido, incluidos los agotados: es la vía de escape
         # explícita, igual que `--force`.
@@ -967,7 +991,9 @@ def apply(case_id: str = typer.Argument(None), vision: bool = False,
 
 # metodos con páginas renderizables: solo estos se benefician del refuerzo por
 # visión (nativo/sin_soporte/error no tienen un PDF que renderizar página a página).
-_REFORZABLES = ("pypdf", "ocr")
+#: Métodos con un PDF renderizable persistido (00_Input o 01_OCR) sobre el que `--vision`
+#: puede volver. `ofimatica` entra desde la acción 10 (R1/H-02): su buscable vive en 01_OCR.
+_REFORZABLES = ("pypdf", "ocr", "ofimatica")
 
 
 @app.command()

@@ -2606,7 +2606,13 @@ testigo compradora (art. 156 LEC) y la testigo directora de zona (DNI pendiente)
 ## 61. Ingesta documental robusta: `.doc`, localizador de página en escaneado, extractor de entidades
 
 **Anotado 2026-07-14.** Cluster D (backlog). Tres huecos observados en VALERO:
-- **`.doc` binario → `sin_soporte`.** Añadir conversión LibreOffice headless (`soffice --convert-to`) aguas
+- **`.doc` binario → `sin_soporte`.** **[RESUELTO 2026-09-05]** — ruta `ofimatica` en
+  `clasificar_ruta` (`.doc`, `.dot`, `.odt`, `.ott`, `.ppt`, `.pps`, `.pptx`, `.odp`):
+  `core/ofimatica_a_pdf.convertir` (LibreOffice headless con perfil efímero, verificado por
+  resultado) → PDF buscable persistido en `01_OCR/` → camino PDF; sin LibreOffice la fila es
+  `sin_soporte` con la causa en la nota y `plan`/`apply` avisan antes. Plan y adjudicación:
+  `docs/superpowers/plans/2026-09-05-accion-10-ofimatica-en-la-sala-de-maquina.md`.
+  Texto original: añadir conversión LibreOffice headless (`soffice --convert-to`) aguas
   arriba en `core/sala_maquina.clasificar_ruta`. (En VALERO había gemelos PDF, sin pérdida.)
   **[PROMOVIDO → PLAN.md 2026-07-27]** — `[SIGUIENTE-DOC-LIBREOFFICE]`. **Disparador:** en W-02MA0R
   (expediente CRM 487) la **demanda del juicio ordinario** existe en el CRM *solo* como

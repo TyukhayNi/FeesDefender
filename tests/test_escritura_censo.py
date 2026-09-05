@@ -34,6 +34,13 @@ PRODUCTORES = (
     # de esta lista habria mantenido el techo en 84 con una escritura nueva sin
     # contar, que es el «techo con hueco» contra el que avisa el comentario de abajo.
     "core/apertura_v1_estado.py",
+    # Anadido el 2026-09-05 (accion 10, ruta `ofimatica`): `core/ofimatica_a_pdf.py`
+    # convierte con LibreOffice y escribe donde le dicen (dos `mkdir`: el `--outdir`
+    # temporal y el padre del destino). Su llamador publica el buscable en `01_OCR/`.
+    # Dejarlo fuera —«como `core/anon/ocr.py`»— fue mi primera version y la R1 la llamo
+    # por su nombre (H-04): un escritor nuevo fuera del conjunto medido no baja el censo,
+    # lo esconde. Se declara.
+    "core/ofimatica_a_pdf.py",
 )
 
 #: Las primitivas del barrido del §25 que NO son ambiguas: su nombre solo existe en el
@@ -106,7 +113,16 @@ AMBIGUAS = frozenset({"replace", "copy", "dump"})
 #: que el detector no contaba: al anadirlo a `PRIMITIVAS` aparecio una escritura que ya
 #: existia y estaba invisible. Subir el techo aqui es *reconocer* deuda, no contraerla —
 #: y es exactamente lo que la regla de arriba pide cuando el detector mejora.
-TECHO_CENSO = 88
+#: **88 -> 91 el 2026-09-05 (accion 10, `MEJORAS #61`), y esta vez la subida es de un
+#: DOCUMENTO del caso, no de protocolo.** La ruta `ofimatica` publica el PDF buscable de un
+#: `.doc`/`.odt`/`.ppt` en `01_OCR/` (+1 `mkdir` en `core/sala_maquina.py`, la misma clase de
+#: escritura que `ocr_pdf` hace por su cuenta), y `core/ofimatica_a_pdf.py` entra en
+#: `PRODUCTORES` con sus dos `mkdir` (+2). La primera version de la pieza dejaba el censo en
+#: 88 haciendo que el conversor escribiera directamente en `01_OCR/` —fuera de la lista— y
+#: la R1 de Codex lo cazo (H-04) junto con la ventana que abria (H-03: publicar antes de
+#: decidir). Condicion de bajada: cuando los derivados de la sala de maquina pasen por la
+#: costura (3B), estas tres bajan con los otros 13 de `sala_maquina`.
+TECHO_CENSO = 91
 
 
 def _nombre_llamado(n: ast.Call) -> str | None:
