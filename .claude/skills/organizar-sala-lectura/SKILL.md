@@ -21,7 +21,7 @@ metadata:
   naturaleza: atomica
   jurisdiction: ES
   area: [civil, procesal]
-  version: "1.14"
+  version: "1.15"
   author: "Nikolai Tyukhay"
   organization: "Tyukhay Legal"
   contact: "nikolai.tyukhay@tyukhay.legal"
@@ -215,9 +215,18 @@ tal diálogo.
    d. **Para TODO binario opaco (PDF escaneado, imagen) que vaya a quedar sin
       fecha por patrón/nombre: consulta `texto_espejo_md(sm_dir, sha256)`
       SIEMPRE antes de escribir `0000-00-00` — no es opcional, ni solo para
-      bundles conversacionales.** Si devuelve texto, aplícale la jerarquía de
-      fecha del Paso 2 (otorgamiento/firma → otra fecha inequívoca del
-      contenido → nombre del fichero → `0000-00-00`) antes de rendirte.
+      bundles conversacionales.** Los candidatos los da
+      **`candidatos_sin_fecha(filas)`** (`scripts/preclasificar.py`): **NO
+      escribas el filtro a mano.** El valor «sin fecha» es la cadena
+      `0000-00-00` (`preclasificar.SIN_FECHA`), que es *truthy*: un filtro
+      `if not f["fecha"]` devuelve **0 candidatos aunque haya 47** y deja este
+      paso sin ejecutar en silencio, con el informe diciendo «0 sin fecha»
+      (medido en W-02X1WJ, 2026-09-01: 47 candidatos, 27 fechas recuperadas
+      tras corregirlo — MEJORAS #131). Si necesitas preguntar por una fila
+      suelta, `tiene_fecha(valor)`; nunca `not`. Si devuelve texto, aplícale
+      la jerarquía de fecha del Paso 2 (otorgamiento/firma → otra fecha
+      inequívoca del contenido → nombre del fichero → `0000-00-00`) antes de
+      rendirte.
       Motivo (sesión 2026-07-21, W-02VUDR): 7 binarios quedaron en
       `0000-00-00` con el espejo ya disponible y una fecha inequívoca en el
       texto (p.ej. un burofax certificado con "Fecha y hora del envío:

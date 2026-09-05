@@ -5824,7 +5824,14 @@ fichero existe con las filas, sin depender de cómo se capturó la salida.
 
 ---
 
-## 131. `fecha_de_nombre` devuelve la cadena `"0000-00-00"`, que es *truthy* `[PROMOVIDO → PLAN.md]`
+## 131. `fecha_de_nombre` devuelve la cadena `"0000-00-00"`, que es *truthy* `[PROMOVIDO → PLAN.md]` `[RESUELTO 2026-09-05]`
+
+> ✅ **Resuelto el 2026-09-05 (PR-131-PENDIENTE), skill `organizar-sala-lectura` v1.15.** Se eligió
+> la segunda vía: `fecha_de_nombre` conserva su contrato (la cadena va en nombres canónicos y
+> en el manifiesto) y `scripts/preclasificar.py` exporta `SIN_FECHA`, `tiene_fecha(valor)` y
+> `candidatos_sin_fecha(filas)`; el Paso 1-bis.d del `SKILL.md` **llama al helper** en vez de
+> reescribir el filtro, y un guard exige que lo cite y no vuelva al `not`. Condición de cierre
+> cumplida por la rama «helper + la skill lo cita». Texto original conservado como medición:
 
 **Medido el 2026-09-01**, montando la sala de lectura de W-02X1WJ. El Paso 1-bis.d de
 `organizar-sala-lectura` obliga a consultar el espejo MD antes de escribir `0000-00-00` en un

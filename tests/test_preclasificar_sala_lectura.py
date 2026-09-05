@@ -108,6 +108,54 @@ def test_fecha_de_nombre():
     assert preclasificar.fecha_de_nombre("oferta_suelta.eml") == "0000-00-00"
 
 
+# ── MEJORAS #131 (PLAN fila #18): el centinela «sin fecha» es truthy y hay que preguntar bien ──
+
+def test_131_el_centinela_es_publico_truthy_y_tiene_fecha_lo_reconoce():
+    """El valor «sin fecha» va en nombres canónicos y en el manifiesto, así que es una
+    cadena no vacía: `not` NO lo detecta. La pregunta correcta es `tiene_fecha`."""
+    assert preclasificar.SIN_FECHA == "0000-00-00"
+    assert preclasificar.fecha_de_nombre("oferta_suelta.eml") == preclasificar.SIN_FECHA
+    assert bool(preclasificar.SIN_FECHA) is True            # la trampa, documentada
+    assert preclasificar.tiene_fecha(preclasificar.SIN_FECHA) is False
+    assert preclasificar.tiene_fecha(preclasificar.fecha_de_nombre("oferta_suelta.eml")) is False
+    assert preclasificar.tiene_fecha("2025-03-20") is True
+    assert preclasificar.tiene_fecha(None) is False
+    assert preclasificar.tiene_fecha("") is False
+    assert preclasificar.tiene_fecha("0000-00-00 (*)") is False
+    assert preclasificar.tiene_fecha("2025-03 (*)") is False   # aproximada: sigue sin fecha cierta
+
+
+def test_131_candidatos_sin_fecha_es_el_filtro_del_paso_1bis_d():
+    """Reproduce el defecto de W-02X1WJ: con el filtro a mano `not f["fecha"]` salían 0;
+    el helper devuelve exactamente los binarios opacos sin fecha real."""
+    filas = [
+        {"nombre_canonico": "0000-00-00_burofax.pdf", "fecha": "0000-00-00", "sha256": "a"},
+        {"nombre_canonico": "0000-00-00_foto.jpg", "fecha": preclasificar.SIN_FECHA, "sha256": "b"},
+        {"nombre_canonico": "2025-04-08_burofax.pdf", "fecha": "2025-04-08", "sha256": "c"},
+        {"nombre_canonico": "0000-00-00_hilo.eml", "fecha": "0000-00-00", "sha256": "d"},  # no opaco
+        {"nombre_canonico": "sin_fecha_clave.pdf", "fecha": None, "sha256": "e"},
+        {"nombre_canonico": "2025-03 (*)_escritura.pdf", "fecha": "2025-03 (*)", "sha256": "f"},
+    ]
+    a_mano = [f for f in filas if not f["fecha"]]
+    assert [f["sha256"] for f in a_mano] == ["e"]              # el filtro que falló: 1 de 4
+    candidatos = preclasificar.candidatos_sin_fecha(filas)
+    assert [f["sha256"] for f in candidatos] == ["a", "b", "e", "f"]
+    assert candidatos[0] is filas[0]                           # las filas mismas, para rellenar en sitio
+
+
+def test_131_la_skill_cita_el_helper_y_no_el_filtro_a_mano():
+    """Condición de cierre de MEJORAS #131: existe el helper Y la skill lo cita en el paso que
+    lo necesita. Y el paso no vuelve a decir `not f["fecha"]`."""
+    skill = (Path(__file__).parent.parent / ".claude/skills/organizar-sala-lectura/SKILL.md"
+             ).read_text(encoding="utf-8")
+    ini = skill.index("d. **Para TODO binario opaco")
+    paso = skill[ini: skill.index("   e. `subcategoria_crm(ruta)`", ini)]
+    assert "candidatos_sin_fecha(filas)" in paso
+    assert "SIN_FECHA" in paso and "truthy" in paso
+    assert 'not f["fecha"]' in paso            # citado como lo que NO se hace…
+    assert "NO\n      escribas el filtro a mano" in paso or "NO escribas el filtro a mano" in paso.replace("\n      ", " ")
+
+
 def test_subcategoria_crm_extrae_la_subcarpeta():
     assert preclasificar.subcategoria_crm("sudespacho_602/civil/auto_inadmite_diligencias_preliminares.pdf") == "civil"
     assert preclasificar.subcategoria_crm("01_Drive EV/OFERTA.PDF") is None

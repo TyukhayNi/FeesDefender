@@ -87,7 +87,14 @@ def dedup_por_sha(ficheros: list[dict]) -> tuple[list[dict], list[dict]]:
 
 _SUFIJO_HILO_RE = re.compile(r"^(.*)_(\d+)$")
 _PREFIJO_FECHA_RE = _re.compile(r"^(\d{4}-\d{2}-\d{2})_(.+)$")
-_SIN_FECHA = "0000-00-00"
+#: Centinela «sin fecha». Es una CADENA NO VACÍA a propósito —va en nombres canónicos y en
+#: la columna `fecha` del manifiesto, y `email_export._fecha_iso` lo emite cuando la cabecera
+#: `Date` falta—, así que es *truthy*: `if not fila["fecha"]` NUNCA detecta la ausencia.
+#: Compara contra `SIN_FECHA` o usa `tiene_fecha` / `candidatos_sin_fecha` (MEJORAS #131:
+#: un filtro con `not` dio 0 candidatos sobre 47 en W-02X1WJ y dejó sin ejecutar el paso
+#: que consulta el espejo MD, en silencio y con apariencia de éxito).
+SIN_FECHA = "0000-00-00"
+_SIN_FECHA = SIN_FECHA   # alias interno histórico
 
 
 # Nombre EXACTO del zip crudo que deposita whatsapp_intake.deposit_export
@@ -134,13 +141,37 @@ def emparejar_exports_whatsapp(rutas: list[str]) -> tuple[list[str], list[dict]]
 
 
 def fecha_de_nombre(nombre: str) -> str:
-    """Prefijo `AAAA-MM-DD` del nombre canónico de `email_export`, o `0000-00-00`
-    si el nombre no lo lleva. NO valida que la fecha exista en el calendario:
-    `0000-00-00` es un valor legítimo que emite `_fecha_iso` cuando la cabecera
-    `Date` falta o no parsea."""
+    """Prefijo `AAAA-MM-DD` del nombre canónico de `email_export`, o `SIN_FECHA`
+    (`0000-00-00`) si el nombre no lo lleva. NO valida que la fecha exista en el
+    calendario: `0000-00-00` es un valor legítimo que emite `_fecha_iso` cuando la
+    cabecera `Date` falta o no parsea.
+
+    **El valor de «sin fecha» es una cadena no vacía y por tanto truthy.** Para saber
+    si hay fecha usa `tiene_fecha(valor)`; para el Paso 1-bis.d de la skill usa
+    `candidatos_sin_fecha(filas)`. No escribas `if not fecha` (MEJORAS #131).
+    """
     base = nombre[:-4] if nombre.lower().endswith(".eml") else nombre
     m = _PREFIJO_FECHA_RE.match(base)
-    return m.group(1) if m else _SIN_FECHA
+    return m.group(1) if m else SIN_FECHA
+
+
+def tiene_fecha(valor: str | None) -> bool:
+    """True si `valor` es una fecha real. False para `None`, vacío, `SIN_FECHA` y las
+    fechas aproximadas marcadas `(*)` que la skill escribe en el manifiesto. Es la ÚNICA
+    forma correcta de preguntar «¿tiene fecha esta fila?»: el centinela es truthy."""
+    f = (valor or "").strip()
+    return bool(f) and not f.startswith(SIN_FECHA) and "(*)" not in f
+
+
+def candidatos_sin_fecha(filas: list[dict]) -> list[dict]:
+    """Las filas que el Paso 1-bis.d de la skill debe consultar contra el espejo MD:
+    binarios opacos (PDF, imagen) cuya `fecha` no es una fecha real. Devuelve las filas
+    mismas (no copias), en el orden recibido, para que quien las rellene lo haga en sitio.
+
+    Existe porque el filtro escrito a mano en la sesión de W-02X1WJ —`not f["fecha"]`—
+    devolvió 0 candidatos de 47 y desactivó el paso en silencio (MEJORAS #131). La
+    pregunta vive aquí, una vez, y la skill la llama en vez de reescribirla."""
+    return [f for f in filas if _es_binario_opaco(f) and not tiene_fecha(f.get("fecha"))]
 
 
 def _descripcion_hilo(nombre: str) -> str:

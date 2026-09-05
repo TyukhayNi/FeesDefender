@@ -1,5 +1,17 @@
 # Changelog — organizar-sala-lectura
 
+## 1.15 — 2026-09-05
+- **El centinela «sin fecha» deja de ser una trampa (MEJORAS #131, `PLAN.md` fila #18).**
+  `fecha_de_nombre` devuelve `0000-00-00` cuando no hay fecha, y esa cadena es *truthy*:
+  en W-02X1WJ el Paso 1-bis.d se implementó con `not f["fecha"]`, dio **0 candidatos de
+  47** y quedó desactivado en silencio, con el informe diciendo «0 sin fecha». Ahora
+  `scripts/preclasificar.py` exporta `SIN_FECHA`, `tiene_fecha(valor)` y
+  `candidatos_sin_fecha(filas)`, y el Paso 1-bis.d **llama al helper en vez de reescribir
+  el filtro**. `fecha_de_nombre` conserva su contrato (la cadena va en nombres canónicos y
+  en el manifiesto); lo que cambia es que la pregunta «¿tiene fecha?» vive una vez, en
+  código, y la skill la cita. Un guard (`tests/test_preclasificar_sala_lectura.py`) exige
+  que el SKILL.md cite `candidatos_sin_fecha` en ese paso y no vuelva al `not`.
+
 ## 1.14 — 2026-07-27
 - **Un bundle por hilo de correo, no un documento por mensaje.** `agrupar_por_hilo`
   cambia de clave: ahora agrupa por la **descripción** del nombre ignorando el
