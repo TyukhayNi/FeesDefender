@@ -73,10 +73,16 @@ flujo estándar de este repo es el worktree:
 |---|---|---|
 | hook `leak-guard` de pre-commit | 70 términos, comprueba | **0 términos, verde sin mirar** |
 | `tests/test_no_pii_en_tests.py` | corre | **se salta** |
-| los 2 tests del colaborador (`MEJORAS #160`) | verdes | **rojos**, por `.env` |
+| los 2 tests del colaborador (`MEJORAS #160`) | verdes | ✅ **resuelto** el 2026-09-05 (PR #282): inyectan el `client` en vez de construirlo del entorno |
 
 El verde del hook no significa «no hay PII»: significa «no tengo con qué mirar». Es la familia del
 *instrumento que no puede dar el otro valor*, aquí en la guarda que protege el dato del cliente.
+
+> **Actualización 2026-09-05 (PR #282).** De las tres filas, **la tercera está cerrada**: los dos
+> tests del colaborador ya son herméticos y pasan sin `.env`. **Las otras dos siguen abiertas, y la
+> primera es la grave** — durante toda esa sesión el hook dio «Passed» en cada commit sin poder
+> mirar nada. El remedio de esa sesión fue manual y no escala: copiar las blocklists reales al
+> worktree y pasar el guard a mano antes de mergear. **La decisión de abajo sigue haciendo falta.**
 
 **La decisión que hace falta, y por eso está aquí y no en el backlog.** El remedio obvio —fallar
 cerrado— dejaría **sin poder commitear a todas las sesiones con worktree** hasta que alguien copie
